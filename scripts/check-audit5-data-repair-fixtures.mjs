@@ -18,7 +18,7 @@ const before = {
     outputs: [], anchorLinks: Array.from({ length: 5 }, (_, vin) => ({ vin, valueSats: "600" })), opReturnCount: 0 },
   targetEvents: targets.map(([event_id, txid]) => ({ event_id, txid, protocol: "pwt1",
     kind: "token-listing-sealed-invalid", status: "confirmed", valid: false, amount_sats: 0,
-    updated_at: "before", payload: { amount: "0", amountSats: "0", attemptedKind: "seal",
+    updated_at: "before", payload: { amount: "0", amountSats: 0, attemptedKind: "seal",
       reason: "work-amo-v6-listing-already-sealed", reasonCode: "work-amo-v6-listing-already-sealed",
       saleAuthorization: { version: "pwt-sale-v8" } } })),
   missingZeroMetadataTxids: targets.map(([, txid]) => txid).sort(),
@@ -50,6 +50,13 @@ function check(label, original, repaired, succeeds) {
 }
 try {
   check("exact authorized repair", before, after, true);
+  for (const value of ["0", false, null]) {
+    const wrongBefore = structuredClone(before);
+    const wrongAfter = structuredClone(after);
+    wrongBefore.targetEvents[0].payload.amountSats = value;
+    wrongAfter.targetEvents[0].payload.amountSats = value;
+    check("reject changed numeric-zero JSON type", wrongBefore, wrongAfter, false);
+  }
   for (const [label, mutate] of [
     ["live application connection", row => { row.otherDatabaseSessions = 1; }],
     ["changed anchor link", row => { row.aux.anchorLinks[0].valueSats = "601"; }],

@@ -311,7 +311,8 @@ def validate_repair_evidence(blob, expected_sha):
                 and row['kind'] == 'token-listing-sealed-invalid' and row['protocol'] == 'pwt1'
                 and row['amount_sats'] == 0
                 and all(key not in payload for key in ('amountSubatoms', 'decimals', 'unitScale', 'amountStorageModel', 'precisionModel'))
-                and payload['amount'] == '0' and payload['amountSats'] == '0' and payload['attemptedKind'] == 'seal'
+                and payload['amount'] == '0' and type(payload['amountSats']) is int
+                and payload['amountSats'] == 0 and payload['attemptedKind'] == 'seal'
                 and payload['reason'] == 'work-amo-v6-listing-already-sealed'
                 and payload['reasonCode'] == 'work-amo-v6-listing-already-sealed'
                 and payload['saleAuthorization']['version'] == 'pwt-sale-v8')

@@ -3249,9 +3249,15 @@ when another surface serves identical bytes. Quoted text, escaped/backslash
 strings, non-ASCII literals, traversal
 candidates, and other strings that do not resolve to an existing regular file
 inside that surface are soft-ignored. Only resolved file edges count against
-the 4,096-edge graph limit; a separate 524,288-candidate scan ceiling admits
-the measured 421,994-candidate compatibility-complete pre-v3 monolith while
-still bounding hostile input. Thus a client that fetched the prior HTML
+the 4,096-edge graph limit. The September 5 read-only follow-up counted
+527,332 quoted-reference candidates in the 15-surface live closure, with at
+most 35,160 per surface, 525 dependencies, 1,005 resolved edges and 43,649,254
+dependency bytes. This exceeded the former 524,288 search ceiling, which had
+covered the 421,994-candidate pre-v3 monolith. Both stager and publisher now use
+a finite 1,048,576-candidate ceiling, aligned with the previously doubled
+dependency allowance; dependency, edge, per-file, total-byte, path and collision
+limits remain independent. Both actual parsers accept the boundary and reject
+the next candidate. Thus a client that fetched the prior HTML
 immediately before exchange can still fetch its complete old asset graph
 afterward.
 
@@ -3305,6 +3311,20 @@ a growth reserve throughout transfer, staging and provenance verification.
 The audit-5 approval uses the reviewed, release-bound helpers in `deploy/audit5/`
 to implement this sequence under the UI host's measured capacity. They are
 one-audit operational tools, not scheduled jobs or permission for later repairs.
+The UI capacity gate holds the existing deployment lock while reading both
+trees and the installed stager's bounded prior-asset parser. It models the
+initial live-tree copy, each old-surface removal and complete incoming copy,
+internal deduplication, and each prior-compatibility copy before deduplication.
+It credits removal only for the logical contribution of a proven singly-linked
+old regular inode; shared inodes, old metadata and preallocation remain charged.
+Each copy includes allocation rounding and per-entry metadata, and deduplication
+requires matching bytes, mode, uid, gid and xattrs. Input identity, link counts,
+sizes, timestamps and allocated blocks must remain stable through the read-only
+inspection. The gate checks its largest phase against fresh free space while
+preserving the 10 GiB floor plus 64 MiB reserve. This does not preapprove later
+archive or source-upload capacity: those gates still use the completed candidate,
+the actual compressed archive allocation and the source's allocated size.
+
 The node stager accepts a SHA256-bound Git bundle and an exact clean commit,
 installs dependencies with lifecycle scripts disabled, and reuses the unchanged
 production publisher's hash-pinned recursive attestation. It leaves services and

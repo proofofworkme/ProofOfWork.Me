@@ -6,6 +6,7 @@ import io
 import json
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 import tarfile
@@ -25,6 +26,7 @@ def load(name, relative):
 
 stream = load('audit5_stream', 'deploy/audit5/stream-ui-bundle.py')
 capacity = load('audit5_capacity', 'deploy/audit5/ui-capacity.py')
+stager = load('audit5_stager', 'deploy/proofofwork-ui-release-stage.py')
 RELEASE = 'abcdef012345-20260905T000000Z'
 
 
@@ -201,11 +203,24 @@ class CapacityTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'independent regular copies'):
             capacity.tree_budget(self.root, owner=os.getuid())
 
-    def test_candidate_bound_includes_new_assets_compatibility_and_copy_peak(self):
-        result = capacity.tree_budget(self.root, owner=os.getuid())
-        live = 400 * 1024**2
-        required = live + result['uniqueIncomingBytes'] + result['incomingMetadataBytes'] + result['largestSurfaceCopyBytes']
-        self.assertGreater(required, live + result['largestSurfaceCopyBytes'])
+    def test_stage_workflow_uses_locked_phase_gate_with_unchanged_reserve(self):
+        script = (ROOT / 'deploy/audit5/ui-stage-candidate.sh').read_text()
+        self.assertLess(script.index('flock --exclusive'), script.index('"$capacity" stage'))
+        self.assertIn('floor=10737418240; reserve=67108864', script)
+        self.assertIn('free >= floor + reserve + required', script)
+        self.assertNotIn('live + unique + metadata + largest', script)
+
+    def test_separate_tooling_pins_match_exact_helpers_and_keep_app_provenance(self):
+        script = (ROOT / 'deploy/audit5/ui-publish-candidate.sh').read_text()
+        stage_sha = hashlib.sha256((ROOT / 'deploy/proofofwork-ui-release-stage.py').read_bytes()).hexdigest()
+        publisher_sha = hashlib.sha256((ROOT / 'deploy/proofofwork-ui-release-publish.sh').read_bytes()).hexdigest()
+        self.assertEqual(capacity.EXPECTED_STAGER_SHA256, stage_sha)
+        self.assertIn('stage:' + stage_sha, script)
+        self.assertIn('publish:' + publisher_sha, script)
+        self.assertIn('"$source/deploy/proofofwork-ui-release-provenance.sh"', script)
+        self.assertIn('"$source/deploy/proofofwork-ui-retained-root.py"', script)
+        self.assertLess(script.index('flock --exclusive'), script.index('stage:' + stage_sha))
+        self.assertIn('$(git -C "$source" rev-parse HEAD) == "$commit"', script)
 
     def test_portable_archive_dereferences_candidate_links_and_fits_bound(self):
         stage = self.root / 'stage'; stage.mkdir()
@@ -233,6 +248,105 @@ class CapacityTests(unittest.TestCase):
         self.assertEqual(len({p.stat().st_ino for p in targets}), len(targets))
         self.assertTrue(all(p.read_bytes() == previous.read_bytes() for p in targets))
         self.assertTrue(all(p.stat().st_ino != previous.stat().st_ino for p in targets))
+
+
+class PhaseCapacityTests(unittest.TestCase):
+    BLOCK = 4096
+
+    @staticmethod
+    def row(name='x', *, size=4096, mode=0o644, attrs=()):
+        return {'kind': 'file', 'path': name, 'size': size, 'mode': mode,
+                'uid': 0, 'gid': 0, 'sha256': 'same', 'xattrs': list(attrs)}
+
+    def test_removal_precedes_copy_and_shared_inode_gets_no_credit(self):
+        rows = {'activity': [self.row(size=8 * self.BLOCK)]}
+        exclusive = capacity.phase_bound(20 * self.BLOCK, rows, {'activity': 10 * self.BLOCK}, {}, ['activity'], self.BLOCK)
+        self.assertEqual(exclusive['peakAdditionalBytes'], 20 * self.BLOCK)
+        shared = capacity.phase_bound(20 * self.BLOCK, rows, {'activity': 0}, {}, ['activity'], self.BLOCK)
+        self.assertEqual(shared['peakAdditionalBytes'], 29 * self.BLOCK)
+
+    def test_copy_peak_and_dedup_identity_include_mode_and_xattrs(self):
+        rows = [self.row(), self.row('same'), self.row('mode', mode=0o600),
+                self.row('xattr', attrs=[('user.tag', 'different')])]
+        result = capacity.phase_bound(0, {'activity': rows}, {}, {}, ['activity'], self.BLOCK)
+        self.assertEqual(result['peakAdditionalBytes'], 8 * self.BLOCK)
+        self.assertEqual(result['finalCandidateUpperBytes'], 7 * self.BLOCK)
+
+    def test_compatibility_full_copy_is_counted_before_dedup(self):
+        result = capacity.phase_bound(0, {'activity': [self.row()]}, {},
+                                      {'activity': [self.row('old-a'), self.row('old-b')]}, ['activity'], self.BLOCK)
+        self.assertEqual(result['peakAdditionalBytes'], 6 * self.BLOCK)
+        self.assertEqual(result['finalCandidateUpperBytes'], 4 * self.BLOCK)
+
+    def fixture(self, base):
+        live, incoming = base / 'live', base / 'incoming'
+        live.mkdir(mode=0o755); incoming.mkdir(mode=0o755)
+        for surface in stager.SURFACES:
+            for directory, asset, content in ((live / ('proofofwork-' + surface), 'prior.js', b'o' * 16384),
+                                               (incoming / surface, 'new.js', b'n' * 8192)):
+                directory.mkdir(mode=0o755)
+                (directory / 'assets').mkdir(mode=0o755)
+                (directory / 'index.html').write_text(f'<script src="/assets/{asset}"></script>')
+                (directory / 'index.html').chmod(0o644)
+                (directory / 'assets' / asset).write_bytes(content)
+                (directory / 'assets' / asset).chmod(0o644)
+        os.link(live / 'proofofwork-activity/assets/prior.js', live / 'preserved-alias')
+        return live, incoming
+
+    @staticmethod
+    def allocated(root):
+        return int(subprocess.check_output(['du', '-s', '-B1', str(root)], text=True).split()[0])
+
+    def test_real_stager_copies_and_compatibility_stay_below_each_phase_bound(self):
+        with tempfile.TemporaryDirectory(prefix='pow-phase-real-copy-') as temporary:
+            base = Path(temporary)
+            live, incoming = self.fixture(base)
+            result = capacity.stage_budget(incoming, live, stager, owner=os.getuid())
+            self.assertTrue(result['inputStabilityVerified'])
+            self.assertEqual(result['compatibilityCounters']['dependencies'], 15)
+            exclusive = sum(capacity.rounded(path.stat().st_size, self.BLOCK)
+                            for path in live.rglob('*') if path.is_file() and path.stat().st_nlink == 1)
+            self.assertEqual(result['exclusiveOldContributionBytes'], exclusive)
+            phases = {row['phase']: row['upperBytes'] for row in result['phases']}
+            parent = base / 'private'; parent.mkdir(mode=0o700)
+            candidate = parent / 'candidate'
+            subprocess.run(['cp', '--archive', str(live), str(candidate)], check=True)
+            self.assertLessEqual(self.allocated(candidate), phases['initial-copy'])
+            dedup = stager.CandidateManagedDeduplicator(candidate, os.getuid())
+            try:
+                for surface in stager.SURFACES:
+                    destination = candidate / ('proofofwork-' + surface)
+                    shutil.rmtree(destination)
+                    subprocess.run(['cp', '--archive', str(incoming / surface), str(destination)], check=True)
+                    self.assertLessEqual(self.allocated(candidate), phases['incoming-copy:' + surface])
+                    dedup.add_surface(surface)
+                    self.assertLessEqual(self.allocated(candidate), phases['incoming-dedup:' + surface])
+                original = dedup.add_surface
+                def checked_compatibility(surface):
+                    self.assertLessEqual(self.allocated(candidate), phases['compatibility-copy:' + surface])
+                    original(surface)
+                    self.assertLessEqual(self.allocated(candidate), phases['compatibility-dedup:' + surface])
+                with mock.patch.object(dedup, 'add_surface', side_effect=checked_compatibility):
+                    stager.copy_prior_asset_compatibility(live, candidate, deduplicator=dedup)
+                self.assertEqual((candidate / 'preserved-alias').read_bytes(), b'o' * 16384)
+                self.assertNotEqual((candidate / 'proofofwork-activity/assets/new.js').stat().st_ino,
+                                    (incoming / 'activity/assets/new.js').stat().st_ino)
+                self.assertNotEqual((candidate / 'proofofwork-activity/assets/prior.js').stat().st_ino,
+                                    (live / 'proofofwork-activity/assets/prior.js').stat().st_ino)
+            finally:
+                dedup.close()
+
+    def test_input_mutation_fails_the_final_stability_check(self):
+        with tempfile.TemporaryDirectory(prefix='pow-phase-mutation-') as temporary:
+            live, incoming = self.fixture(Path(temporary))
+            original = capacity.check_snapshot
+            def mutate_then_check(snapshot):
+                with (incoming / 'activity/assets/new.js').open('ab') as output:
+                    output.write(b'changed')
+                original(snapshot)
+            with mock.patch.object(capacity, 'check_snapshot', side_effect=mutate_then_check):
+                with self.assertRaisesRegex(ValueError, 'changed during inspection'):
+                    capacity.stage_budget(incoming, live, stager, owner=os.getuid())
 
 
 if __name__ == '__main__':

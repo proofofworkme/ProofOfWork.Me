@@ -45,7 +45,7 @@ function validate(evidence, repaired) {
     assert.equal(event.valid, false);
     assert.equal(event.amount_sats, 0);
     assert.equal(event.payload.amount, "0");
-    assert.equal(event.payload.amountSats, "0");
+    assert.equal(event.payload.amountSats, 0);
     assert.equal(event.payload.attemptedKind, "seal");
     assert.equal(event.payload.reason, "work-amo-v6-listing-already-sealed");
     assert.equal(event.payload.reasonCode, "work-amo-v6-listing-already-sealed");

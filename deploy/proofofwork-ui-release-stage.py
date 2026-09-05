@@ -48,11 +48,11 @@ MAXIMUM_TOTAL_BYTES = 512 * 1024 * 1024
 # a finite ceiling above that measured set alongside the byte/edge limits.
 MAXIMUM_DEPENDENCIES = 1024
 MAXIMUM_REFERENCE_EDGES = 4096
-# The compatibility-complete pre-v3 monolith produces 421,994 candidates
-# across the 14 canonical surfaces. Keep a bounded power-of-two ceiling above
-# that measured migration input while the tighter edge/dependency/byte bounds
-# continue to constrain files that can actually enter the release.
-MAXIMUM_REFERENCE_CANDIDATES = 524288
+# The September 5 live 15-surface closure produces 527,332 candidates, slightly
+# beyond the former 524,288 ceiling (the pre-v3 input had 421,994). Match the
+# doubled dependency ceiling with a finite scan bound; edge/byte/path limits
+# still independently constrain files that can enter the release.
+MAXIMUM_REFERENCE_CANDIDATES = 1048576
 MAXIMUM_PAYLOAD_ENTRIES = 10000
 MAXIMUM_PAYLOAD_BYTES = 1024 * 1024 * 1024
 MANIFEST_NAME = ".proofofwork-ui-release"

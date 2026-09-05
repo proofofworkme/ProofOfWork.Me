@@ -1,8 +1,9 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { readFile } from 'node:fs/promises';
-import { apiBase, canonicalJson, compareCandidate, decimalQ8, digest, FIXTURE, integer, inventory,
-  verifyBonds, verifyBookPair, verifyBoost, verifyCounts, verifyDirectory, verifyWallet } from '../deploy/audit5/probe-candidate.mjs';
+import { apiBase, canonicalJson, compareCandidate, decimalQ8, digest, FIXTURE, integer, inventory, listingCommitmentRecord,
+  verifyBonds, verifyBookPair, verifyBoost, verifyCounts, verifyDirectory, verifyWallet,
+  verifyWalletListingScopes } from '../deploy/audit5/probe-candidate.mjs';
 import { registryCountsProjection, tokenDirectoryProjection, tokenListingDisplayProjection } from '../server/read-projections.mjs';
 
 const h = (n) => String(n).padStart(64, '0');
@@ -23,7 +24,7 @@ const rows = [2, 3].map((n) => ({ listingId: h(n), txid: h(n), confirmed: true, 
   saleAuthorization: { anchorType: 'sale-ticket-v1', anchorVout: 2, anchorValueSats: 546, anchorScriptPubKey: '0014ff' },
   workAmoV5ReplayOutput: { exact: '9007199254740993' }, workAmoV5RawScriptWitness: ['abcdef'], priceSats: '25000' }));
 function book() {
-  const membership = digest(rows.map((item) => ({ item, key: [item.listingId, 99, item.blockIndex, 1, 0] })));
+  const membership = digest(rows.map((item) => ({ item: listingCommitmentRecord(item), key: [item.listingId, 99, item.blockIndex, 1, 0] })));
   const source = h(77), core = h(88);
   const first = { ...cp, source: 'proof-indexer-complete-core-reconciled-token-listings', kind: 'listings', totalCount: rows.length,
     start: 0, end: rows.length, cursor: '', hasMore: false, nextCursor: '',
@@ -33,7 +34,7 @@ function book() {
       checkedOutpointsSha256: core, checkedListingCount: 3, inputListingCount: 3, outputListingCount: 2, spentListingCount: 1, unspentListingCount: 2 },
     listingProjection: { model: 'proof-token-market-cutover-after-core-v1', membershipSha256: membership,
       activeListingCount: 2, coreUnspentListingCount: 2, excludedByProtocolCount: 0 }, items: clone(rows) };
-  const shown = rows.map((row) => tokenListingDisplayProjection(row, { fullRecordSha256: digest(row), network: 'livenet' }));
+  const shown = rows.map((row) => tokenListingDisplayProjection(row, { fullRecordSha256: digest(listingCommitmentRecord(row)), network: 'livenet' }));
   return { full: { first, rows: clone(rows), pages: 1 }, display: { first: { ...first, items: shown,
     itemProjection: { model: 'proof-token-listing-display-v1', fullMembershipSha256: membership, fullSourceSha256: source } }, rows: shown, pages: 1 } };
 }
@@ -100,6 +101,19 @@ test('book recomputes full row and membership hashes and binds historical source
     (v) => { v.first.itemProjection.fullMembershipSha256 = h(91); },
     (v) => { v.first.itemProjection.fullSourceSha256 = h(92); },
   ]) { const changed = clone(display); mutate(changed); assert.throws(() => verifyBookPair(full, changed)); }
+});
+test('commitment reconstructs only declared wire omissions and preserves present values', () => {
+  const source = { ...listingCommitmentRecord(rows[0]), buyerAddress: 'public-buyer', saleTxid: undefined, saleAt: undefined };
+  const wire = JSON.parse(JSON.stringify(source));
+  assert.equal(Object.hasOwn(wire, 'saleTxid'), false);
+  assert.equal(digest(listingCommitmentRecord(wire)), digest(source));
+  assert.equal(listingCommitmentRecord(wire).buyerAddress, 'public-buyer');
+  assert.equal(Object.hasOwn(wire, 'saleTxid'), false, 'wire object remains unchanged');
+  assert.notEqual(digest(listingCommitmentRecord({ ...wire, buyerAddress: 'wrong-buyer' })), digest(source));
+  assert.notEqual(digest(listingCommitmentRecord({ ...wire, saleTxid: 'wrong' })), digest(source));
+  const { full, display } = book();
+  display.rows[0].displayEvidence.fullRecordSha256 = h(99);
+  assert.throws(() => verifyBookPair(full, display), /FULL_RECORD_DIGEST_CHANGED/u);
 });
 test('pagination exhausts continuation and rejects same-height event update or projection mutation', async () => {
   const b = boosts();
@@ -187,6 +201,84 @@ test('complete orchestration qualifies current smaller inventories and public wa
   assert.equal(result.wallet.remainingWORKSubatoms, '90');
   assert.equal(result.boost.rawCarrierSamples, 2);
   assert.equal(result.core.mempoolSequenceStable, true);
+});
+function pendingWalletFixture() {
+  const io = fakeIO();
+  io.wallet.listings = clone(io.wallet.listings);
+  const listing = { listingId: h(12), txid: h(12), tokenId: WORK, sellerAddress: FIXTURE,
+    network: 'livenet', confirmed: false, status: 'pending', estimateOnly: true,
+    saleAuthorization: { version: 'pwt-sale-v8', anchorType: 'sale-ticket-v1', anchorVout: 2,
+      anchorValueSats: 546, anchorScriptPubKey: '0014ff', network: 'livenet', tokenId: WORK, sellerAddress: FIXTURE } };
+  io.wallet.listings.push(listing);
+  io.utxos.push({ txid: listing.txid, vout: 2, value: 546, status: { confirmed: false } });
+  const core = io.core;
+  const ticket = { bestblock: h(1), confirmations: 0, exactValueProofs: '546',
+    scriptPubKey: { address: FIXTURE, hex: '0014ff' } };
+  io.core = async (method, args) => {
+    if (method === 'gettxout' && args[0] === listing.txid) {
+      assert.deepEqual(args, [listing.txid, '2', 'true']);
+      return ticket;
+    }
+    // A pending listing may arrive after the initial mempool sample. Its later
+    // gettxout witness is independent evidence, not an atomic membership claim.
+    if (method === 'getrawmempool') return { mempool_sequence: 50, txids: [] };
+    return core(method, args);
+  };
+  return { io, listing, ticket };
+}
+test('wallet separates confirmed reservations from later Core-witnessed pending estimates', async () => {
+  const { io } = pendingWalletFixture();
+  const result = await compareCandidate(io);
+  assert.equal(result.wallet.confirmedListingCount, 1);
+  assert.equal(result.wallet.pendingListingCount, 1);
+  assert.equal(result.wallet.pendingTicketWitnesses[0].confirmations, 0);
+  assert.equal(result.wallet.pendingTicketWitnesses[0].valueProofs, '546');
+  assert.equal(result.wallet.pendingProofs, '546');
+  assert.equal(result.wallet.reservedProofs, '546');
+  assert.equal(result.wallet.availableProofs, '10000');
+  assert.equal(result.wallet.reservedWORKSubatoms, '10');
+  assert.equal(result.wallet.remainingWORKSubatoms, '90');
+  assert.match(result.wallet.pendingQualification, /no atomic mempool snapshot or confirmed WORK amount/u);
+});
+test('pending rows cannot hide missing or extra confirmed wallet listings', async () => {
+  for (const mutate of [
+    (io) => { io.wallet.listings.shift(); },
+    (io) => { io.wallet.listings.unshift({ ...clone(rows[0]), listingId: h(13), txid: h(13) }); },
+    (io) => { io.wallet.listings.push(clone(io.wallet.listings[1])); },
+  ]) {
+    const { io } = pendingWalletFixture(); mutate(io);
+    await assert.rejects(verifyWalletListingScopes(io, io.wallet.listings, [rows[0]], { bestblockhash: h(1) }),
+      /WALLET_LISTING_MEMBERSHIP_CHANGED|DUPLICATE_OR_MISSING_IDENTITY/u);
+  }
+});
+test('wallet rejects ambiguous labels, confirmed amounts on estimates and wrong pending scope', async () => {
+  for (const mutate of [
+    (row) => { delete row.confirmed; }, (row) => { row.confirmed = true; },
+    (row) => { row.status = 'listed'; }, (row) => { row.estimateOnly = false; },
+    (row) => { row.amountSubatoms = '0'; }, (row) => { row.amountAtoms = '1'; },
+    (row) => { row.amount = '0.1'; }, (row) => { row.blockHeight = 100; },
+    (row) => { row.txid = h(13); }, (row) => { row.tokenId = h(21); },
+    (row) => { row.saleAuthorization.version = 'pwt-sale-v5'; },
+    (row) => { row.saleAuthorization.anchorVout = -1; },
+    (row) => { row.saleAuthorization.anchorValueSats = 547; },
+    (row) => { row.saleAuthorization.sellerAddress = 'other'; },
+  ]) {
+    const { io, listing } = pendingWalletFixture(); mutate(listing);
+    await assert.rejects(verifyWalletListingScopes(io, io.wallet.listings, [rows[0]], { bestblockhash: h(1) }));
+  }
+});
+test('pending ticket proof rejects spent, confirmed, wrong-checkpoint or altered outputs', async () => {
+  for (const replacement of [null, { confirmations: 1 }, { bestblock: h(99) },
+    { exactValueProofs: '547' }, { scriptPubKey: { address: FIXTURE, hex: '0014ee' } },
+    { scriptPubKey: { address: 'other', hex: '0014ff' } }]) {
+    const { io, ticket } = pendingWalletFixture();
+    io.core = async (method, args) => {
+      assert.equal(method, 'gettxout'); assert.deepEqual(args, [h(12), '2', 'true']);
+      return replacement === null ? null : { ...ticket, ...replacement };
+    };
+    await assert.rejects(verifyWalletListingScopes(io, io.wallet.listings, [rows[0]], { bestblockhash: h(1) }),
+      /WALLET_PENDING_CORE_TICKET_MISMATCH/u);
+  }
 });
 test('wallet negative reservation, spent outputs and moving Core tip fail explicitly', async () => {
   const io = fakeIO(), { full } = book();

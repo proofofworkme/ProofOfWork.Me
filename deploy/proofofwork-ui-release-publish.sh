@@ -329,10 +329,10 @@ maximum_total_bytes = 512 * 1024 * 1024
 # byte, reference-edge, candidate and per-file limits remain independent.
 maximum_dependencies = 1024
 maximum_reference_edges = 4096
-# The compatibility-complete pre-v3 monolith produces 421,994 candidates
-# across the 14 canonical surfaces. Keep this verifier aligned with the
-# stager's bounded migration ceiling.
-maximum_reference_candidates = 524288
+# The September 5 live 15-surface closure produces 527,332 candidates; the
+# pre-v3 input had 421,994. Keep this finite scan bound aligned with the stager
+# and doubled dependency ceiling; all edge/byte/path limits remain independent.
+maximum_reference_candidates = 1048576
 dependency_count = 0
 reference_edge_count = 0
 reference_candidate_count = 0

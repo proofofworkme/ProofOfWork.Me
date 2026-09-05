@@ -27,10 +27,23 @@ export function requireFact(ok, code) {
   if (!ok) throw new Error(code);
 }
 export function canonicalJson(value) {
-  if (value === null || typeof value !== 'object') return JSON.stringify(value);
+  if (value === null || value === undefined) return 'null';
+  if (typeof value === 'bigint') return JSON.stringify(value.toString());
+  if (typeof value !== 'object') return JSON.stringify(value);
   if (Array.isArray(value)) return `[${value.map(canonicalJson).join(',')}]`;
   return `{${Object.keys(value).sort((a, b) => Buffer.compare(Buffer.from(a), Buffer.from(b)))
     .map((key) => `${JSON.stringify(key)}:${canonicalJson(value[key])}`).join(',')}}`;
+}
+// The lifecycle reader creates these optional properties unconditionally.
+// Its checkpoint serializer commits undefined as null; JSON.stringify omits
+// undefined object properties on the wire. Reconstruct only those declared
+// properties for digest verification, preserving wire rows and present values.
+// Source: proof-index-reader.mjs lifecycle return; proof-api.mjs
+// checkpointCursorCanonicalJson. This does not change either server contract.
+export function listingCommitmentRecord(row) {
+  const optional = ['buyerAddress', 'closedAt', 'saleTxid', 'saleAt', 'saleBlockHash', 'saleBlockHeight',
+    'saleBlockIndex', 'saleProtocolVout', 'saleRecordOrdinal', 'saleTransactionBlockHeight'];
+  return { ...Object.fromEntries(optional.map((key) => [key, null])), ...row };
 }
 export const digest = (value) => createHash('sha256').update(canonicalJson(value)).digest('hex');
 const equal = (a, b, code) => requireFact(digest(a) === digest(b), code);
@@ -160,7 +173,7 @@ export function verifyBookPair(full, display) {
   const projection = display.first.itemProjection;
   requireFact(projection?.model === 'proof-token-listing-display-v1' && HASH.test(projection.fullMembershipSha256 ?? '') &&
     HASH.test(projection.fullSourceSha256 ?? ''), 'MISSING_FULL_BOOK_DIGESTS');
-  const membership = digest(full.rows.map((item) => ({ item, key: [String(item.listingId ?? item.txid ?? '').trim().toLowerCase(),
+  const membership = digest(full.rows.map((item) => ({ item: listingCommitmentRecord(item), key: [String(item.listingId ?? item.txid ?? '').trim().toLowerCase(),
     Number(item.blockHeight ?? 0), Number(item.blockIndex ?? 0), Number(item.protocolVout ?? 0), Number(item.recordOrdinal ?? 0)] })));
   requireFact(projection.fullMembershipSha256 === membership && full.first.listingProjection.membershipSha256 === membership,
     'FULL_MEMBERSHIP_DIGEST_CHANGED');
@@ -176,7 +189,7 @@ export function verifyBookPair(full, display) {
     const shown = display.rows[index];
     const evidence = shown.displayEvidence;
     requireFact(row.confirmed === true && row.network === 'livenet' && HASH.test(row.listingId), 'UNCONFIRMED_BOOK_ROW');
-    requireFact(evidence?.model === projection.model && evidence.fullRecordSha256 === digest(row), 'FULL_RECORD_DIGEST_CHANGED');
+    requireFact(evidence?.model === projection.model && evidence.fullRecordSha256 === digest(listingCommitmentRecord(row)), 'FULL_RECORD_DIGEST_CHANGED');
     equal(evidence.omittedFields, OMIT.filter((key) => Object.hasOwn(row, key)), 'UNEXPECTED_OMITTED_FIELDS');
     const url = new URL(evidence.fullDetailPath, BASE);
     requireFact(url.origin === BASE && url.pathname === '/api/v1/token-history' && url.searchParams.get('kind') === 'listings' &&
@@ -280,6 +293,50 @@ export function verifyBonds(directory, infinity, inception) {
   return result;
 }
 
+export async function verifyWalletListingScopes(io, listings, confirmedBookListings, before) {
+  requireFact(Array.isArray(listings) && listings.length <= MAX_ROWS, 'WALLET_LISTING_BUDGET');
+  const scoped = listings.filter((row) => row.sellerAddress === FIXTURE);
+  unique(scoped, 'listingId');
+  const confirmed = [];
+  const pending = [];
+  for (const row of scoped) {
+    requireFact(row.tokenId === WORK_ID && HASH.test(row.listingId ?? ''), 'WALLET_LISTING_SCOPE');
+    if (row.confirmed === true) {
+      requireFact(row.status !== 'pending' && row.estimateOnly !== true, 'WALLET_LISTING_CONFIRMATION_CONFLICT');
+      confirmed.push(row);
+    } else {
+      requireFact(row.confirmed === false && row.status === 'pending' && row.estimateOnly === true &&
+        row.network === 'livenet' && row.txid === row.listingId &&
+        ['blockHeight', 'blockHash', 'blockIndex', 'amount', 'amountAtoms', 'amountSubatoms']
+          .every((key) => row[key] == null), 'WALLET_PENDING_LISTING_NOT_ESTIMATE');
+      pending.push(row);
+    }
+  }
+  // Wallet recovery deliberately includes pending estimates. They cannot replace
+  // confirmed book membership or contribute to confirmed WORK reservations.
+  equal(unique(confirmedBookListings, 'listingId').sort(), unique(confirmed, 'listingId').sort(),
+    'WALLET_LISTING_MEMBERSHIP_CHANGED');
+  const witnesses = [];
+  for (const row of pending) {
+    const auth = row.saleAuthorization;
+    requireFact(auth?.version === 'pwt-sale-v8' && auth.anchorType === 'sale-ticket-v1' &&
+      auth.network === 'livenet' && auth.tokenId === WORK_ID && auth.sellerAddress === FIXTURE &&
+      Number.isSafeInteger(auth.anchorVout) && auth.anchorVout >= 0 && units(auth.anchorValueSats) === 546n &&
+      typeof auth.anchorScriptPubKey === 'string' && /^(?:[0-9a-f]{2})+$/u.test(auth.anchorScriptPubKey),
+    'WALLET_PENDING_ANCHOR_INVALID');
+    const output = await io.core('gettxout', [row.listingId, String(auth.anchorVout), 'true']);
+    requireFact(output && output.bestblock === before.bestblockhash && output.confirmations === 0 &&
+      output.exactValueProofs === '546' && output.scriptPubKey?.hex === auth.anchorScriptPubKey &&
+      (output.scriptPubKey?.address === FIXTURE || output.scriptPubKey?.addresses?.includes(FIXTURE)),
+    'WALLET_PENDING_CORE_TICKET_MISMATCH');
+    witnesses.push({ listingId: row.listingId, anchorVout: auth.anchorVout, valueProofs: output.exactValueProofs,
+      scriptPubKey: output.scriptPubKey.hex, bestblock: output.bestblock, confirmations: 0 });
+  }
+  return { confirmedListingCount: confirmed.length, pendingListingCount: pending.length,
+    pendingTicketWitnesses: witnesses, pendingTicketWitnessSha256: digest(witnesses),
+    pendingQualification: 'Each pending ticket was unconfirmed and unspent in Core with includeMempool=true when checked; no atomic mempool snapshot or confirmed WORK amount is implied.' };
+}
+
 export async function verifyWallet(io, registry, book, before) {
   requireFact(Array.isArray(registry.listings) && registry.collectionHasMore?.listings !== true &&
     (registry.totalCounts?.listings == null || registry.totalCounts.listings === registry.listings.length), 'INCOMPLETE_ID_RESERVATIONS');
@@ -318,8 +375,7 @@ export async function verifyWallet(io, registry, book, before) {
   requireFact(holder, 'WALLET_CONFIRMED_HOLDER_MISSING');
   const balance = integer(holder.balanceSubatoms);
   const workListings = book.rows.filter((row) => row.sellerAddress === FIXTURE && row.tokenId === WORK_ID);
-  equal(unique(workListings, 'listingId').sort(), unique(wallet.listings.filter((row) => row.sellerAddress === FIXTURE), 'listingId').sort(),
-    'WALLET_LISTING_MEMBERSHIP_CHANGED');
+  const listingScopes = await verifyWalletListingScopes(io, wallet.listings, workListings, before);
   const workReserved = workListings.reduce((total, row) => total + integer(row.amountSubatoms), 0n);
   requireFact(balance >= workReserved && availableCount >= 1, 'WALLET_FIXTURE_PRECONDITION_UNMET');
   const finalUtxos = await io.get(`/api/v1/address/${FIXTURE}/utxo?network=livenet`);
@@ -328,6 +384,7 @@ export async function verifyWallet(io, registry, book, before) {
   return { address: FIXTURE, utxos: utxos.length, confirmedProofs: confirmed.toString(), pendingProofs: pending.toString(),
     reservedProofs: reserved.toString(), availableProofs: spendable.toString(), protectedCount, availableCount,
     confirmedWORKSubatoms: balance.toString(), reservedWORKSubatoms: workReserved.toString(), remainingWORKSubatoms: (balance - workReserved).toString(),
+    ...listingScopes,
     qualification: 'Public API inventory checked against current Core; wallet-provider exclusions, whole-chain address completeness, and transaction construction/signing are not proven.' };
 }
 
@@ -365,7 +422,7 @@ export async function compareCandidate(io) {
   for (const row of display.rows.slice(0, 3)) {
     const detail = await io.get(row.displayEvidence.fullDetailPath);
     requireFact(detail.totalCount === 1 && detail.items?.length === 1 &&
-      digest(detail.items[0]) === row.displayEvidence.fullRecordSha256, 'FULL_DETAIL_REFERENCE_MISMATCH');
+      digest(listingCommitmentRecord(detail.items[0])) === row.displayEvidence.fullRecordSha256, 'FULL_DETAIL_REFERENCE_MISMATCH');
   }
   // Recheck current complete Core membership after all individual RPCs. An
   // unrelated mempool sequence change is recorded, not mistaken for data loss.

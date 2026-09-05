@@ -719,3 +719,223 @@ active ticket, a public wallet sample, exact bonds and Boost against a stable
 Core checkpoint; it makes no signing or exhaustive historical replay claim.
 The isolated restore and fresh safeguard remain gates before the four-record
 repair. Production application publication remains pending.
+
+### Candidate verification and restored-backup proof — 18:24 UTC
+
+The application candidate is commit `2ddefac163d583138129c2527e747b11190a0635`
+(tree `89283688ad79cdcd0a4e04a9532aac8c8af735f2`). Its isolated Node 24
+installation passed recursive source/runtime attestation: 6,543 entries,
+191,440,061 runtime bytes, digest
+`ee78a47da73df81665e75354a570df9394a5b17f19cf719f0aa067be41b12b35`.
+The matching UI build completed TypeScript and all 14 primary Vite surfaces
+plus the NFT compatibility copy. Subsequent operational-verifier corrections
+are separately versioned; they do not change this application candidate.
+
+Two private-shadow startup attempts stopped before Node execution. First,
+`PrivateTmp` correctly hid the helper's `/var/tmp` location; identical,
+hash-verified root-private helper bytes were placed in `/run`. Second, the
+explicit root user/group transient-unit setup lacked effective `CAP_SETUID`.
+A no-exec diagnostic established that systemd's default root setup retained
+the requested three-capability bound and allowed the unchanged launcher to
+drop all capabilities and supplementary groups. All other sandbox and resource
+limits remained active. Retry 2 passed at 18:21:30: the actual candidate Node
+process ran as uid/gid 1000, no supplementary groups, all four capability masks
+zero and `NoNewPrivs=1`; its actual PostgreSQL pool verified both read-only
+settings, exact database and search path. Private health was 200/ready with
+zero lag at 965647. Original API/worker environments were not recaptured or
+exported; all failed-attempt evidence and the separate cache were preserved.
+
+Fresh full-node verification of the four approved repair targets passed at
+18:22:20, with Core stable at 965647 /
+`00000000000000000000b87ee40e3e4f81978c4be66a803a43c06a69968d7df6`.
+The auxiliary transaction has six inputs totaling 3,593 proofs, two outputs
+totaling 3,118 proofs and exact miner fee 475 proofs. Its five existing spent
+anchor links match the full-node parent outputs. All three invalid-zero events
+match their canonical transaction block positions and remain invalid, with
+zero contribution. No repair has run.
+
+The new verification harness initially assumed the payload's `amountSats` was
+a string and assumed event rows directly stored block hashes. Read-only schema
+and type evidence corrected those assumptions, and the bitcoin-cli adapter
+was corrected for plain-text block-hash output. These were verifier attempts,
+not new production findings. The committed repair scope guards now require
+the existing JSON number `0` exactly and preserve it; they do not coerce it
+to a string. Thirteen comparator fixtures and 12 private-launcher tests pass,
+including rejection of changed zero types. The final reproducible Core
+preflight is `deploy/audit5/verify-repair-core.py`; stopped-writer invariant
+checks and the repair writers' own canonicality proofs remain mandatory.
+
+The first wider candidate HTTP/Core probe stopped at a membership-digest
+comparison after 17 requests. Counts/directory and full/display transport had
+been read, but ticket, wallet and bond sections had not completed. Saved
+responses are being compared with the server's exact digest contract. This
+is not recorded as a passed candidate gate or automatically classified as an
+application fault.
+
+The saved listing responses subsequently proved a verifier serialization issue:
+the source declares ten optional fields unconditionally and its commitment
+serializer maps absent values to null, while JSON transport omits them.
+Reconstructing only those source-declared omissions reproduced all 616 full-row
+hashes and the complete membership hash. The application commitment contract
+is unchanged. A separately reviewed verifier correction and remaining live
+comparison sections are still required.
+
+A repeat Core proof at 18:27:20 added stable transaction-byte SHA256 values
+alongside the tip-sensitive verbose-response hashes and again passed at the
+same canonical tip. Both successful receipts and the prior failed harness
+attempts remain recorded; hashes are explicitly labeled by their input form.
+
+### Recovery and storage checkpoint
+
+The pinned 2026-09-05 03:18:55 logical backup restored successfully into `/data/proofofwork-audit5-restore-20260905T174233Z`. The private clone contains 25,765 events, 25,132 transactions, 238 credit definitions, 403 credit balances, 10,495 ledger snapshots and 5,936 transitions. Invalid indexes and unvalidated constraints are both zero. The stopped-clone check scanned 2,570,422 blocks across 1,455 files and found zero bad checksums. Runtime was 34min7.840s, CPU time 17min1.542s, reported memory peak 2.0G and swap peak zero. The clone is stopped and its socket is absent. This verifies data/schema restoration and physical page checksums; owner/grants/global roles and production tablespace placement were deliberately excluded.
+
+All source backup files, the completed 22,131,757,056-byte allocated clone and the interrupted 18,545,463,296-byte allocated clone remain preserved. The restored database size is 21,033,884,695 bytes. Live health after completion was HTTP200/ready at exact tip/index965647 with zero worker failures. The new creation-only safeguard `/data/proofofwork-audit5-safeguard-20260905T181729Z` is still running under 50% CPU, 2GiB memory,64 tasks and75min limits, with no retention. At 2026-09-05T18:22:36.193555+00:00 its dump held 3,540,279,296 bytes and /data had 415,422,734,336 bytes free; live health was HTTP200/ready. Its checksum/TOC completion remains pending.
+
+Maintenance warnings remain explicit. UI storage now correctly warns below12GiB: the18:05 run observed71% block use,7% inode use and11,458,801,664 bytes free. Node /data reached76% with417,075,429,376 bytes free while recovery artifacts are preserved. The18:20 PostgreSQL query-health alert observed one119-second query, zero lock waiters and fanout1; later pg_stat_activity metadata plus matching Unix socket peers positively bind the long COPY to safeguard clientPID1144535/backendPID1144538. Full SQL and environment values were not captured. Recheck that alert after the backup completes. Historical node release-health/prune exit2 records remain until the new hardened oneshots run. No additional existing archive deletion occurred after resume.
+
+The exact live UI compatibility closure measured 527,332 candidate strings,
+525 dependencies, 1,005 resolved edges and 43,649,254 bytes. The search limit
+had remained 524,288 when the approved dependency ceiling moved to 1,024.
+The reviewed paired stager/publisher correction uses a finite 1,048,576 search
+limit and preserves every other dependency/edge/byte/path/collision bound.
+This operational correction is not a new application finding.
+
+The initial aggregate storage estimate conservatively rejected staging by
+3,584,000 bytes. A read-only model of the actual remove/copy/deduplicate phases
+proved a 417,976,320-byte staging peak before the small extra parent-metadata
+allowance, with 31,907,840 bytes above the unchanged 10 GiB floor and 64 MiB
+reserve at the sampled free space. The production gate now recomputes this
+phase bound under the deployment lock, charging all old metadata and giving
+removal credit only to proven exclusive old regular inodes. Archive creation
+and source upload retain independent later capacity gates. No UI payload has
+yet been transferred or staged, and the corrected helper pair is not installed
+at this checkpoint. Application release artifacts remain bound to commit
+`2ddefac163d583138129c2527e747b11190a0635`; later operational helper hashes are
+bound separately, without substituting another application source tree.
+
+The corrected standalone comparison probe passed 12 fixtures and a saved-data
+check on Node 24: all 616 full/display rows, every retained field and full-row
+commitment, complete 505 confirmed IDs, and 238 credit definitions agreed.
+The full listing response was 24,921,145 bytes versus 10,079,485 for display.
+Those saved-response checks are distinct from the new current Core ticket,
+wallet and bond comparison now running. The separately sandboxed 11-gate Node
+24 test batch is also in progress, with no host network or PostgreSQL socket
+access and no writes to the candidate.
+
+Twenty-two UI workflow tests pass. The full UI operations rerun first hit the
+known sandbox Node-to-Python subprocess limitation; it is being repeated with
+normal local subprocess execution and the same timeout. That attempt remains
+recorded as a timeout, not a pass. The paired helper hashes are pinned in the
+phase gate and publication wrapper; application-source checks and unchanged
+provenance/retained-root helper comparisons still bind the built commit.
+
+### Fresh safeguard completed
+
+The creation-only safeguard passed with a readable 197-entry recovery table of
+contents, private globals and verified checksums. The new dump contains
+11,271,928,229 bytes, SHA256
+`5939ce9f6f8a615b6d4a29cfb2b019b39f6579f19be76130fe981df9e357aa96`.
+Runtime was 16min45.504s, CPU 8min22.490s, memory peak 2.0G and swap peak zero.
+The unit is inactive and its backup lock released. Both recovery clones and
+all source recovery chains remain preserved; no retention ran. At 18:36:43
+production was 200/ready at exact 965650, zero worker failures, and unchanged
+production service identities. Scheduled query-health naturally returned to
+exit0 at 18:35:04, with no long queries, lock waiters or tablespace errors.
+The earlier backup-related alert remains historical evidence.
+
+The Node 24 offline batch passed its first eight gates, including recovery and
+all exact arithmetic/AMO/Boost/projection checks. The API-truth script also has
+six optional HTTP reads when `POW_API_BASE` is set; its offline attempt reached
+that phase and correctly could not connect through the isolated network. It
+is being rerun unchanged against the private read-only candidate, and the two
+remaining source checks are running separately offline. The second wider
+probe likewise remains a refused attempt: a new block advanced Core and the
+index before the canonical summary caught up, so readiness correctly returned
+503. A further attempt requires stable matching Core/readiness samples.
+
+### Second user-requested safe pause
+
+The user requested another safe pause before application rollout. The private
+read-only candidate API was stopped successfully: MainPID0, inactive/dead,
+Resultsuccess, and no listener on18081. No application deployment or four-record
+database repair has occurred. The two local commits and all uncommitted
+operational corrections, build artifacts, private captures and audit evidence
+are preserved. No commit, push, additional archive removal or new fix is being
+performed as part of this pause. Existing approval remains limited to the six
+batches, and continuation requires the user to resume.
+
+All eleven requested Node24 gates ultimately passed, including the unchanged
+API-truth gate against the private candidate; earlier network-isolation and
+wrapper refusals remain evidence. The complete UI operations suite also passed
+with normal local subprocess execution, alongside22 workflow tests. These
+results supersede the earlier in-progress statuses without erasing failed
+attempts. The application build remains pinned to2ddefac163d5; operational
+helper corrections are still uncommitted and their paired UI installation is
+held. No UI payload was transferred or staged.
+
+The third bounded Core probe checked616 tickets and93 wallet UTXOs (80confirmed,
+13pending), then stopped because the verifier compared a confirmed-only book
+with a wallet view containing71 matching confirmed rows plus one pending
+listing. Saved Core gettxout responses independently confirm the additional
+listing's unconfirmed outputs at546 and6822proofs. The confirmed/pending
+comparison requires a verifier correction; no application fault is established
+by that assertion. Boost, bond and final repeated checkpoint/mempool comparisons
+remain unfinished, so the complete probe is not marked passed.
+
+Both the recovery restore and the fresh safeguard have completed successfully;
+no recovery job needs interruption. Preserve both restored clones and all
+backup chains. On resume, recheck production identities, full-node and mempool
+state, candidate/build hashes, capture provenance, safeguard freshness and
+actual capacity before continuing. The intended next steps are the bounded
+verifier correction, operational commit/helper installation, separate UI
+capacity phases, and only then the controlled four-record repair and rollout.
+The existing findings and historical audit prefix remain intact.
+
+The final pause safety receipt confirms HTTP200/ready with Core and index965650
+and zero lag. Production Core/PostgreSQL/API/worker/WAL/Caddy identities are
+unchanged. The UI provenance timer was restored to its previously active,
+enabled state; its naturally triggered verification completed with exit0. No
+maintenance timers remain held. Both private restore clusters are stopped,
+with no postmaster PID or private socket, and all recovery paths are preserved.
+The node has407,621,222,400 bytes free on/data; UI has11,457,499,136 bytes free.
+Previously documented storage warnings remain unresolved and visible. All
+agent work is paused. Repository hygiene found nothing allowlisted to clean
+and its state check passed; whitespace and the protected original audit prefix
+were verified. Resume from this checkpoint only after the user returns.
+
+### Second resume and final operational verifier correction
+
+The user resumed the existing six-batch approval. Local temporary build files
+and plans were absent after the pause; durable embedded audit receipts and
+remote evidence remain available. Rebuild the exact same application commit
+2ddefac163d5 rather than substituting a different application tree. The preserved
+node candidate re-attests byte-for-byte:6543 runtime entries,191,440,061 bytes,
+runtime SHA256ee78a47da73df81665e75354a570df9394a5b17f19cf719f0aa067be41b12b35.
+
+The four-target Core preflight passed again at20:45:09UTC, stable block965665.
+The auxiliary transaction proves3593 input proofs,3118 output proofs and475
+miner-fee proofs; all five anchor links and the exact three unrepaired invalid
+zero events match their documented scope. This remains read-only evidence.
+A20:45:33 readiness sample returned503 despite zero block lag. Later readiness
+and liveness returned200 at965666 with the worker idle, zero failures and no
+pending unresolved/error/deferred/stale candidates. Summary generation occurred
+after the first sample; its exact earlier failing predicate was not captured.
+
+The corrected standalone verifier partitions confirmed wallet listings from
+explicit pending estimates. Confirmed membership remains exact; each pending
+ticket requires an independent current Core unconfirmed/unspent output proof
+with exact value, script, address and checkpoint. Pending estimates cannot
+contribute to confirmed WORK reservations. Sixteen behavioral tests pass. All728
+saved prior response hashes were verified, and the corrected comparison accepts
+71 matching confirmed rows plus one independently proven pending ticket while
+rejecting missing confirmed rows, amount leakage and absent ticket evidence.
+This is a verifier correction, not a change to application or protocol rules.
+
+Private capture identities and environment hashes still match the unchanged
+live processes. The isolated cache is empty and retains its recorded inode.
+No rotation or recapture was needed. The resumed private API proves its actual
+Node24 process runs as UID/GID1000 with no supplementary groups or capabilities,
+NoNewPrivs1 and a verified read-only database pool. It reports200/ready at965666.
+A fresh bounded full-node comparison remains required before rollout. Operational
+helper corrections are committed separately from the already built application.
+No application publication or four-record repair has occurred at this checkpoint.

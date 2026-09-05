@@ -18,13 +18,20 @@ export GIT_OPTIONAL_LOCKS=0
 [[ $(git -C "$source" rev-parse HEAD) == "$commit" && $(git -C "$source" rev-parse 'HEAD^{tree}') == "$tree" ]]
 ! git -C "$source" symbolic-ref -q HEAD
 [[ -z $(git -C "$source" status --porcelain --untracked-files=all) ]]
-for pair in 'stage:proofofwork-ui-release-stage.py' 'publish:proofofwork-ui-release-publish.sh' 'provenance:proofofwork-ui-release-provenance.sh'; do
-  cmp -- "$source/deploy/${pair#*:}" "/usr/local/sbin/proofofwork-ui-release-${pair%%:*}"
-done
-cmp -- "$source/deploy/proofofwork-ui-retained-root.py" /usr/local/sbin/proofofwork-ui-retained-root
 exec {deploy_fd}</run/proofofwork-ui/deploy.lock
 flock --exclusive --nonblock "$deploy_fd"
 export POW_UI_DEPLOY_LOCK_FD=$deploy_fd
+# The reviewed operations revision changes only this paired compatibility cap;
+# application/source provenance remains bound to the already built app commit.
+for pair in 'stage:39f17624d0e244382c344e31f5b04b0b58bb8f4e8c7bc9c93d7418bc8ab0f238' 'publish:8846f6c6d3a8793fe83387e4d6fc317b87ef293b7961e2cd593490fd1bbd5024'; do
+  installed="/usr/local/sbin/proofofwork-ui-release-${pair%%:*}"
+  [[ -f "$installed" && ! -L "$installed" && $(stat -c %u "$installed") == 0 ]]
+  (( (8#$(stat -c %a "$installed") & 07022) == 0 ))
+  digest=$(sha256sum "$installed")
+  [[ ${digest%% *} == "${pair#*:}" ]]
+done
+cmp -- "$source/deploy/proofofwork-ui-release-provenance.sh" /usr/local/sbin/proofofwork-ui-release-provenance
+cmp -- "$source/deploy/proofofwork-ui-retained-root.py" /usr/local/sbin/proofofwork-ui-retained-root
 [[ $(grep '^release_id=' /var/www/.proofofwork-ui-release) == 'release_id=6a7d5c12e403-20260905T050937Z' ]]
 [[ $(grep '^commit=' /var/www/.proofofwork-ui-release) == 'commit=6a7d5c12e403e0ddb6247fa2a6865cb70d623a8e' ]]
 free=$(df -B1 --output=avail / | tail -1 | tr -d ' ')

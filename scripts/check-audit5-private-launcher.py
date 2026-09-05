@@ -165,7 +165,7 @@ class PrivateLauncherTests(unittest.TestCase):
     def test_four_target_scope_evidence_and_exact_hash_reject_broader_deficits(self):
         rows = [{'event_id': event_id, 'txid': txid, 'valid': False, 'status': 'confirmed', 'protocol': 'pwt1',
                  'kind': 'token-listing-sealed-invalid', 'amount_sats': 0,
-                 'payload': {'amount': '0', 'amountSats': '0', 'attemptedKind': 'seal',
+                 'payload': {'amount': '0', 'amountSats': 0, 'attemptedKind': 'seal',
                              'reason': 'work-amo-v6-listing-already-sealed',
                              'reasonCode': 'work-amo-v6-listing-already-sealed',
                              'saleAuthorization': {'version': 'pwt-sale-v8'}}} for event_id, txid in module.EVENTS.items()]
@@ -176,6 +176,12 @@ class PrivateLauncherTests(unittest.TestCase):
                 'missingZeroMetadataTxids': sorted(module.EVENTS.values()), 'targetEvents': rows}
         blob = json.dumps(data).encode()
         module.validate_repair_evidence(blob, hashlib.sha256(blob).hexdigest())
+        for value in ('0', False, None, 0.0):
+            data['targetEvents'][0]['payload']['amountSats'] = value
+            altered = json.dumps(data).encode()
+            with self.assertRaises(module.Refused):
+                module.validate_repair_evidence(altered, hashlib.sha256(altered).hexdigest())
+        data['targetEvents'][0]['payload']['amountSats'] = 0
         with self.assertRaises(module.Refused):
             module.validate_repair_evidence(blob, '0' * 64)
         data['targetEvents'][0]['payload']['amountSubatoms'] = None

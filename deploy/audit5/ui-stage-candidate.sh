@@ -21,15 +21,13 @@ exec {deploy_fd}</run/proofofwork-ui/deploy.lock
 flock --exclusive --nonblock "$deploy_fd"
 export POW_UI_DEPLOY_LOCK_FD=$deploy_fd
 floor=10737418240; reserve=67108864
+phase_budget=$(python3 -I "$capacity" stage "$payload/surfaces")
+required=$(python3 -I -c 'import json,sys;print(json.load(sys.stdin)["peakAdditionalBytes"])' <<<"$phase_budget")
+# The locked collector follows the real remove/copy/dedup order and prior
+# closure. Shared old inodes and all metadata remain conservatively charged.
 free=$(df -B1 --output=avail / | tail -1 | tr -d ' ')
-live=$(du -s -B1 /var/www | cut -f1)
-incoming=$(python3 -I "$capacity" incoming "$payload/surfaces")
-read -r unique metadata largest < <(python3 -I -c 'import json,sys;p=json.load(sys.stdin);print(p["uniqueIncomingBytes"],p["incomingMetadataBytes"],p["largestSurfaceCopyBytes"])' <<<"$incoming")
-# Includes distinct new assets retained alongside old compatibility bytes, all
-# incoming metadata, and a whole surface before its internal dedup completes.
-required=$((live + unique + metadata + largest))
 ((free >= floor + reserve + required))
-printf 'ui_capacity phase=before-stage free=%s required_additional=%s incoming=%s\n' "$free" "$required" "$incoming"
+printf 'ui_capacity phase=before-stage free=%s required_additional=%s budget=%s\n' "$free" "$required" "$phase_budget"
 record=$(/usr/local/sbin/proofofwork-ui-release-stage --release-id "$release_id" --surfaces-root "$payload/surfaces" --stage-root "$stage" --deduplicate-managed-files)
 printf '%s\n' "$record"
 [[ "$record" == "ui_release_stage status=staged release_id=$release_id "* ]]

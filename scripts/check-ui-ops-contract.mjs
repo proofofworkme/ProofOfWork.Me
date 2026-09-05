@@ -222,7 +222,7 @@ assert.match(publisher, /verify_current_rollback_capability/u);
 assert.match(publisher, /"\$\{provenance_script\}" verify-rollback/u);
 assert.match(publisher, /maximum_dependencies = 1024/u);
 assert.match(publisher, /maximum_reference_edges = 4096/u);
-assert.match(publisher, /maximum_reference_candidates = 524288/u);
+assert.match(publisher, /maximum_reference_candidates = 1048576/u);
 assert.match(publisher, /maximum_asset_bytes = 64 \* 1024 \* 1024/u);
 assert.match(publisher, /maximum_total_bytes = 512 \* 1024 \* 1024/u);
 assert.match(publisher, /details\.st_uid/u);
@@ -256,7 +256,7 @@ assert.match(
 );
 assert.match(stager, /MAXIMUM_DEPENDENCIES = 1024/u);
 assert.match(stager, /MAXIMUM_REFERENCE_EDGES = 4096/u);
-assert.match(stager, /MAXIMUM_REFERENCE_CANDIDATES = 524288/u);
+assert.match(stager, /MAXIMUM_REFERENCE_CANDIDATES = 1048576/u);
 assert.match(stager, /MAXIMUM_ASSET_BYTES = 64 \* 1024 \* 1024/u);
 assert.match(stager, /MAXIMUM_TOTAL_BYTES = 512 \* 1024 \* 1024/u);
 assert.match(stager, /MAXIMUM_PAYLOAD_ENTRIES = 10000/u);
@@ -426,6 +426,40 @@ publisher = Path("deploy/proofofwork-ui-release-publish.sh").read_text()
 publisher_function = publisher.split("verify_prior_asset_compatibility() {", 1)[1]
 publisher_code = publisher_function.split("<<'PY'\n", 1)[1].split("\nPY\n", 1)[0]
 assert "maximum_dependencies = 1024" in publisher_code
+
+# Execute both shipped parsers at the measured count and the exact finite
+# ceiling. Seed only the aggregate counter to avoid a million redundant file
+# lookups; the token counting and refusal branches are the actual functions.
+assert stage.MAXIMUM_REFERENCE_CANDIDATES == 1048576
+saved_argv = sys.argv
+try:
+    sys.argv = ["verify", "/tmp/ui-bound-live", "/tmp/ui-bound-staged"]
+    publisher_parser = {}
+    exec(publisher_code.split("\nfor surface in surfaces:\n", 1)[0], publisher_parser)
+finally:
+    sys.argv = saved_argv
+assert publisher_parser["maximum_reference_candidates"] == stage.MAXIMUM_REFERENCE_CANDIDATES
+token = b'"https://example.invalid"'
+for boundary in (527332, 1048576):
+    counters = {"reference_candidates": boundary - 1, "reference_edges": 0}
+    assert stage.dependency_references(Path("/tmp/ui-bound-live"), Path("/tmp/ui-bound-live/index.html"), token, counters) == []
+    assert counters["reference_candidates"] == boundary
+    publisher_parser["reference_candidate_count"] = boundary - 1
+    assert publisher_parser["dependency_references"]("/tmp/ui-bound-live", "/tmp/ui-bound-live/index.html", token) == []
+    assert publisher_parser["reference_candidate_count"] == boundary
+try:
+    stage.dependency_references(Path("/tmp/ui-bound-live"), Path("/tmp/ui-bound-live/index.html"), token, counters)
+except stage.StageError as error:
+    assert "reference-candidate bound exceeded" in str(error)
+else:
+    raise AssertionError("Stager accepted 1048577 reference candidates")
+try:
+    publisher_parser["dependency_references"]("/tmp/ui-bound-live", "/tmp/ui-bound-live/index.html", token)
+except SystemExit as error:
+    assert "reference-candidate bound exceeded" in str(error)
+else:
+    raise AssertionError("Publisher accepted 1048577 reference candidates")
+print("UI candidate regression: measured527332 and limit1048576 accepted;1048577 rejected by both parsers", flush=True)
 
 def fixture(parent, count):
     live, staged = parent / "live", parent / "staged"
