@@ -13,7 +13,7 @@ EXEC=pathlib.Path('/run/proofofwork-audit5-exec-'+OPS)
 CAPTURE=pathlib.Path('/run/proofofwork-audit5-'+APP)
 WINDOW=pathlib.Path('/run/proofofwork-audit5-window-tools-'+OPS)
 QUIESCENCE_SHA='710dbbe0fce1189b735e8e4795bdbef632040a36558fb4b0004a44d98204fb63'
-EXACT_REPAIR_SHA='d2a36b5a267a87990478f2ac8f6e3fda968643d5581729f979d61f95abf2fa0f'
+EXACT_REPAIR_SHA='3f2fc89dbd22d77253ebc698d78b37699bebb214dc842c90625b7eb761ea60d3'
 ENV={'PATH':'/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin','LANG':'C.UTF-8'}
 PINS={'private-env.py':'3785ce4ab40b21f5759a37e6170ad38949488ded6d1e1129710bc03d97dbc382','shadow-entry.mjs':'48da4605178d43d1cfbf7b33aeb45c1a64e9474913d8e51d1513904dd8d4bf4d'}
 MODES={'repair-canonical','repair-atoms','bootstrap-api','bootstrap-worker','gate'}
@@ -54,10 +54,10 @@ if mode.startswith('repair-'):
     exec(compile(exact_source,str(WINDOW/'check-exact-aux.py'),'exec'),exact)
     def evidence(name):
         return json.loads(ns['private_read'](str(CAPTURE/name),32*1024*1024),parse_float=exact['D'])
-    # The current approved five-anchor scope must refuse the newly discovered
-    # sixth existing funding parent before either writer starts. A later scope
-    # approval requires a separately reviewed verifier/controller revision.
-    exact['validate'](evidence('window-core-before.json'),[(evidence('repair-before.json'),evidence('repair-before-aux.json'))])
+    # The user approved only the exact funding parent's three spend-link fields
+    # in addition to the original four targets. Every other parent/anchor field
+    # is still preserved by this independently pinned baseline/phase verifier.
+    exact['validate'](evidence('window-core-approved-before.json'),[(evidence('repair-before.json'),evidence('repair-before-aux.json'))])
     argv+=['--repair-before-sha256',sha]
     guard={'__file__':str(WINDOW/'window-quiescence.py'),'__name__':'fixed_stopped_guard'}
     exec(compile(quiescence,str(WINDOW/'window-quiescence.py'),'exec'),guard)

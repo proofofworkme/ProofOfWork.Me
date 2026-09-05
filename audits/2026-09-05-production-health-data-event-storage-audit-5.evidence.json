@@ -4716,7 +4716,7 @@
     "pushed": false,
     "deployed": false
   },
-  "auditDocumentSha256": "5247ed3ca242dec7fa82ce70c64d15ad1d9dd98dae47396eacc84ee199c813c8",
+  "auditDocumentSha256": "e2196752ba16627553d94aababace77422d373abef366de5f45478b6257eee24",
   "orderedSurfaceAudit": {
     "schema": "pow-ordered-read-only-audit-addendum-v1",
     "recordedAt": "2026-09-05T14:00:36.751263+00:00",
@@ -12100,7 +12100,7 @@
     }
   },
   "approvedRemediation": {
-    "status": "candidate-ready-scope-hold-before-funding-parent-repair",
+    "status": "approved-funding-parent-prepared-for-controlled-window",
     "approvedBatches": [
       1,
       2,
@@ -37164,6 +37164,1145 @@
         "otherCanonicalDocs": "reviewed; no semantic change required",
         "commitPurpose": "Preserve successful candidate evidence, exact repair verifiers and explicit funding-parent scope hold; no production completion claimed",
         "push": "held until approved production workflow and required checks complete"
+      }
+    },
+    "approvedFundingParentContinuation": {
+      "at": "2026-09-05T21:32:18.060670+00:00",
+      "userApproval": "I approve the additional funding-output repair documented under H5-04. Preserve all existing requirements and continue.",
+      "approvedAdditionalEffect": "Only fc57450c502e054ecf23469d88f5249a578799da59d111fe234e50ca593c20e5:3 spent_by_txid/spent_by_vin/spent_at null to auxiliary txid/vin0/canonical header time. Existing five anchors and all other fields preserved.",
+      "applicationCommit": "2ddefac163d583138129c2527e747b11190a0635",
+      "applicationDeployed": false,
+      "databaseRepairApplied": false,
+      "maintenanceWindowStarted": false,
+      "approvedVerifierTests": {
+        "path": "/tmp/pow-resume2-20260905/exact-repair/approved-review-receipt.json",
+        "sha256": "8a3454750985fbfb1e11c4b99d4281cc920ff58ef3bf000fd4c01d3aacc05c98",
+        "receipt": {
+          "format": "audit5-approved-funding-repair-verifier-review-v1",
+          "capturedAt": "2026-09-05T21:26:42.895974+00:00",
+          "scope": "User-approved H5-04 funding output fc57450c...:3, exactly three spend columns; preserve five existing full anchors and all other funding fields. Metadata phase preserves all auxiliary/six parent rows.",
+          "files": [
+            {
+              "path": "/home/sixer/ProofOfWork.Me/scripts/check-audit5-data-repair.mjs",
+              "sha256": "4af49f042d8ece901f31e09362e53c1f6df954f2b3baa43385b0fc4a8b9d476e"
+            },
+            {
+              "path": "/home/sixer/ProofOfWork.Me/scripts/check-audit5-data-repair-fixtures.mjs",
+              "sha256": "25451e5f447a8779dffbdfad29ba5f1a73c89b8953122e505e98dba9605648aa"
+            },
+            {
+              "path": "/home/sixer/ProofOfWork.Me/deploy/audit5/check-exact-aux.py",
+              "sha256": "60e6650e87b4a3a0bbbe96e92a35cde362416f596d78fd6d416eab25c5b7ff4f"
+            },
+            {
+              "path": "/tmp/pow-resume2-20260905/exact-repair/test-approved-exact-aux.py",
+              "sha256": "79d527eda6bdb8f6a6351d9338cc6565a49ee26f41e65755c09373b66eb62167"
+            }
+          ],
+          "tests": {
+            "nodeVersion": "22.23.2",
+            "comparatorFixturesPassed": 27,
+            "pythonVersion": "3.12.3",
+            "outerFixturesPassed": 93,
+            "actualCoreRawBytes": 948,
+            "actualParentPrecheckRows": 6,
+            "positiveActualApprovedTransition": true,
+            "refuseExtraColumnsParentsAmountTimeAnchorsScope": true,
+            "syntaxAndDiffCheck": "PASS"
+          },
+          "productionCalls": 0,
+          "productionWrites": 0,
+          "applicationChanged": false,
+          "qualification": "Actual public Core raw transaction and parent rows are used; stopped transaction/event rows are fixtures. Real stopped-writer before/intermediate/after verification remains mandatory. Prior refusal receipt retained unchanged."
+        }
+      },
+      "actualShapeVerifierTests": {
+        "path": "/tmp/pow-resume2-20260905/exact-repair/actual-shape-review-receipt.json",
+        "sha256": "668410c84e6d9dcecc31dd24976beb7b444e3bda8173d6ba43b299321d7e42c1",
+        "receipt": {
+          "format": "audit5-actual-aux-shape-verifier-review-v1",
+          "capturedAt": "2026-09-05T21:30:18.554120+00:00",
+          "files": [
+            {
+              "path": "/home/sixer/ProofOfWork.Me/deploy/audit5/check-exact-aux.py",
+              "sha256": "3f2fc89dbd22d77253ebc698d78b37699bebb214dc842c90625b7eb761ea60d3"
+            },
+            {
+              "path": "/tmp/pow-resume2-20260905/exact-repair/test-approved-actual-shape.py",
+              "sha256": "909fcf9336a02508e63b0a4319ed6a30c21120a92ded61d5e1ede570c098556a"
+            },
+            {
+              "path": "/tmp/pow-approved-parent-20260905/live-aux-shape.json",
+              "sha256": "8888f2373d81074ed61dafb662d87a9e4dd3766b5bf1324b494d1266aaa513a5"
+            }
+          ],
+          "tests": {
+            "pythonVersion": "3.12.3",
+            "checksPassed": 116,
+            "actualLiveReceiptRejectsFourSessions": true,
+            "simulatedQuiescentFixtureAcceptsMissingRawBlocktime": true,
+            "pinnedHeaderAndDatabaseTimeAlwaysRequired": true,
+            "everyProvidedRawBlocktimeMustMatchHeader": true,
+            "metadataAndIntermediateDatabaseTimePreserved": true,
+            "syntaxAndDiffCheck": "PASS"
+          },
+          "actualShapeReview": {
+            "normalizedInputVins": [
+              1,
+              2,
+              3,
+              4,
+              5
+            ],
+            "inputValuesAllNull": true,
+            "rawTransactionHasTopLevelHex": true,
+            "rawTransactionHasNoBlocktimeOrRawCore": true,
+            "outputAsmMatchesVerifier": true,
+            "outputAddressMatchesScriptDerivedAddress": true,
+            "feeSatsAlready475": true,
+            "allSixParentShapesMatchApprovedBaseline": true
+          },
+          "applicationChanges": false,
+          "productionCalls": 0,
+          "qualification": "Actual live SQL row shapes are used only as offline fixture input. The original four-session live receipt correctly fails quiescence and does not replace mandatory real stopped-writer phases."
+        }
+      },
+      "windowHelperReview": {
+        "path": "/tmp/pow-resume2-ops-20260905/final-window-helpers-review.json",
+        "sha256": "19da15bd4a3ed826e0eb6dd3b71b4df8f36d565687e0cbb1a654bfdd0f4ddb76",
+        "receipt": {
+          "files": {
+            "window-unit.py": "06d1cd67d7f2238c91ffddc5cb50c3e0f325ae1bb5547e24019602d91dc52bb3",
+            "capture-repair-evidence.py": "395e088ec053d080220b70f769817e8c596c064568bcae910f9c194379d33f32",
+            "check-exact-aux.py": "3f2fc89dbd22d77253ebc698d78b37699bebb214dc842c90625b7eb761ea60d3"
+          },
+          "controllerChecks": 27,
+          "captureChecks": 18,
+          "tests": {
+            "window-unit-approved-scope-tests.json": "54ab2fcafce26467d39e00edbbb6276db43c73169da15a3998f616e4d0e7db39",
+            "capture-repair-evidence-tests.json": "a3285f7bba56341f44440d5bff6dfa651cbc561fe54c7f94eb31af9f5ea174c5"
+          },
+          "captureAndControllerExactCheckerPinsMatchActualBytes": true,
+          "productionCalls": 0,
+          "remainingBlockingFindings": [],
+          "scope": "Focused controller and capture control-flow tests; real pinned exact validator used by controller with explicitly labeled fixture evidence; all command execution mocked. Capture read-only SQL and validator stages mocked to test ordering/refusal/preservation.",
+          "freeze": "No further changes by reviewer."
+        }
+      },
+      "freshCoreProof": {
+        "path": "/tmp/pow-approved-parent-20260905/fresh-core-proof.json",
+        "sha256": "eef9c8933ab6d2c32332034098dbfad5c30e41a436b3e1483534fc527d100ff5",
+        "receipt": {
+          "format": "audit5-four-target-core-preflight-v1",
+          "ok": true,
+          "capturedAt": "2026-09-05T21:29:36.020427+00:00",
+          "coreBefore": {
+            "height": 965669,
+            "hash": "00000000000000000001e19cf6649efd18f0f844f6a81e10314645cf2bb9449e"
+          },
+          "coreAfter": {
+            "height": 965669,
+            "hash": "00000000000000000001e19cf6649efd18f0f844f6a81e10314645cf2bb9449e"
+          },
+          "targets": [
+            {
+              "txid": "4c079144b315ca08a846e7e7af3d37f5c96419a94f06af8384dc73e1ca307359",
+              "height": 962992,
+              "blockHash": "00000000000000000000635d4ae72706ed6d6f4a17299714a3014074d441824b",
+              "blockIndex": 1161,
+              "coreVerboseResponseSha256": "d4f4a83d1a09c8cb37124b4dcda04496718588ff8ba360dd05820327b2e37b97",
+              "transactionHexSha256": "c2649f4cda14af58ae35d69a6fbe09786de4b4485f9a0ce8f5a3990d453130b3",
+              "opReturns": [
+                {
+                  "vout": 1,
+                  "script": "6a5d081600ff7f8184ec02"
+                }
+              ],
+              "joinedDatabaseProofRowSha256": "3e2e9b7f81b320e15358da97880e774dab03522ed41f29d498ba498d38033213"
+            },
+            {
+              "txid": "6ac53aca33541d60d6d58af03d4c27d09bbeaab3e3c016ee10d270aad578957c",
+              "height": 962946,
+              "blockHash": "00000000000000000000236b6140effb693768fe39cad4c3c04fada5a8836265",
+              "blockIndex": 297,
+              "coreVerboseResponseSha256": "4c2b3d6ccb872bfe435825708b730b6d0ee1eca1e49dd1dfa062f422b4f7db36",
+              "transactionHexSha256": "f94bd3a24175dc73b87c99c664af249bb89420fe508691f450d072bfc9d8b237",
+              "opReturns": [
+                {
+                  "vout": 1,
+                  "script": "6a4d6b06707774313a7365616c353a363236346530376535353664356162343631393538613934373235306237633930393634663766313430316562316564363939383262326630626462663963343a65794a6862573931626e524e6232526c62434936496d4e68626d397561574e686243313362334a724c57467462793177636d39765a693131626d6c304c57467462335675644331324d794973496d467559326876636c4e6a636d6c7764464231596b746c65534936496a41774d5451304d6a466b5a54426b4d474e69597a4d794d7a466c4d7a63354e7a5668597a4d334d544a68596d51774f57457a4e4755304e475931496977695957356a6147397955326c6e5347467a61465235634755694f6a457a4d5377695957356a6147397956486c775a534936496e4e686247557464476c6a613256304c585978496977695957356a61473979566d4673645756545958527a496a6f314e445973496d467559326876636c5a76645851694f6a4973496d4a76626d5255636d467563326c30615739755457396b5a5777694f694a6a59573576626d6c6a5957777459323974634856305a533130614756754c574a76626d5174646a45694c434a696247396a61314e6c6358566c626d4e6c636b31765a475673496a6f695932467562323570593246734c586476636d7374595731764c575a31624777746347397a6158527062323474596d7876593273746332567864575675593256794c58593049697769596e56355a584a425a4752795a584e7a496a6f69496977695a58687761584a6c63304630496a6f6949697769626d56306432397961794936496d7870646d56755a5851694c434a756232356a5a534936496d317a645442755a44686c4c546872613359335a325a3049697769636d566e61584e30636e6c425a4752795a584e7a496a6f694d54597a4f465a754e6b743062557334634456794e473948646b465963546c75625670694d5756745654464556694973496e4e6c6247786c636b466b5a484a6c63334d694f694a69597a46785a3264334e3341316548526a646a4d7a6457523161485230634768364d6a52686348677a4e58557a4f4452735a446c30643273694c434a7a5a5778735a584a5164574a7361574e4c5a586b694f6949774d6a4a6d4d7a67354f475a6a597a67354e44566c4f4441324d7a59335a54457a4d6a457759545934597a59324d574d785a4468685a444d7a5932526d593245355a6d52695a4755324e57466b597a45335a5749774e574d694c434a7a644746305a5539795a4756795457396b5a5777694f694a6a59573576626d6c6a5957777463484a7662325974633352686447557462334a6b5a584974646a45694c434a3061574e725a5849694f694a5854314a4c49697769644739725a57354a5a434936496d51305a54566c596d59784d5751784d44526b4e6d45324d325a694e7a526c4e4449774f54517a4e6a52694d6a56684e5759334d546b35595441355a54566a4d4755334d5451774f446b334d6a51324e6d4534596a67694c434a31626d6c30526d466a5a5642796232396d637949364d6a55774d444173496e56756158524e6232526c62434936496d4e68626d397561574e686243313362334a724c57467462793177636d39765a693131626d6c304c58597a496977696457357064466476636d7450636d466a6247564e6232526c62434936496d4e68626d397561574e686243313362334a724c5842795a575a70654331695a575a76636d557459574e30615739754c58597849697769646d567963326c7662694936496e42336443317a5957786c4c585934496977695957356a6147397955326c6e626d463064584a6c496a6f694d7a41304e4441794d6a417a4e446b7a4d6a49784d5449784e6a55794f446b795a5756694e7a49345a6a457a4e446b324d475a685a54557a4e444e6c5954466a4d3249314d7a6b30596a59305a4455325a6d4d355a6a566a4e4459774d6a566a4d4449794d444d794e4459304e4745784e6d49304e444a684e6d45794d3255324d6a59314d7a4d304e57497a596a6c684d6a4d794d54526d596d51354d44597a4d5751774d6d51314d7a59344d7a526c593252684e6a5668595441344d794973496d467559326876636c5234615751694f6949324d6a59305a5441335a5455314e6d5131595749304e6a45354e5468684f5451334d6a5577596a646a4f5441354e6a526d4e3259784e4441785a5749785a5751324f546b344d6d49795a6a42695a474a6d4f574d30496e30"
+                }
+              ],
+              "joinedDatabaseProofRowSha256": "26ed23492f4dc68e5ffa11fd3a484bd002e3eb6a7ad159c80fcd9847ea21ea83"
+            },
+            {
+              "txid": "8eaa4098c631bded37ce40d88778cce53a6d00b2d4f3eb783d2b9713fc9951cc",
+              "height": 963019,
+              "blockHash": "00000000000000000001619dca6eb040fa951856c0188a3596015c0a28563fc3",
+              "blockIndex": 1753,
+              "coreVerboseResponseSha256": "6d8c8ef964c3ca7e7f829023af77abe9f20e613aa98edd7b8422a9a729c10f30",
+              "transactionHexSha256": "558bf60547f35010f73a9f5bc9ddac3e7b3feedf3be7ad5d61fccd58217af79c",
+              "opReturns": [
+                {
+                  "vout": 1,
+                  "script": "6a4d6b06707774313a7365616c353a316466653162383731326562663662643962356566653665346361633565383332613261303861363331383336633764346164656339303764313863666636333a65794a6862573931626e524e6232526c62434936496d4e68626d397561574e686243313362334a724c57467462793177636d39765a693131626d6c304c57467462335675644331324d794973496d467559326876636c4e6a636d6c7764464231596b746c65534936496a633259546b784e445a6a4d545133595755794f44466a4e7a4533597a566b4f47517a4e3259345a54686c596a51774e6d51795a5451784f5749794f4455344f47466a496977695957356a6147397955326c6e5347467a61465235634755694f6a457a4d5377695957356a6147397956486c775a534936496e4e686247557464476c6a613256304c585978496977695957356a61473979566d4673645756545958527a496a6f314e445973496d467559326876636c5a76645851694f6a4973496d4a76626d5255636d467563326c30615739755457396b5a5777694f694a6a59573576626d6c6a5957777459323974634856305a533130614756754c574a76626d5174646a45694c434a696247396a61314e6c6358566c626d4e6c636b31765a475673496a6f695932467562323570593246734c586476636d7374595731764c575a31624777746347397a6158527062323474596d7876593273746332567864575675593256794c58593049697769596e56355a584a425a4752795a584e7a496a6f69496977695a58687761584a6c63304630496a6f6949697769626d56306432397961794936496d7870646d56755a5851694c434a756232356a5a534936496d317a6547356e596e6c784c5442705a32466d6457353349697769636d566e61584e30636e6c425a4752795a584e7a496a6f694d54597a4f465a754e6b743062557334634456794e473948646b465963546c75625670694d5756745654464556694973496e4e6c6247786c636b466b5a484a6c63334d694f69497851584a5656326848616d4e6b5a314a6f536a6c4f5458647a546c467055314d355330565262304a5653446c6b4969776963325673624756795548566962476c6a53325635496a6f694d444a6d5957526b4f4452684f575531596a686a4e3251785a5455785a5749314d7a63354d32526d4f4745324d7a457a5a5459344d57566c597a67355a6d55334d4467345a5449774e4749785a574533596a497859544579496977696333526864475650636d526c636b31765a475673496a6f695932467562323570593246734c5842796232396d4c584e305958526c4c5739795a4756794c5859784969776964476c6a61325679496a6f695630395353794973496e527661325675535751694f694a6b4e4755315a574a6d4d54466b4d5441305a445a684e6a4e6d596a63305a5451794d446b304d7a5930596a49315954566d4e7a45354f5745774f575531597a426c4e7a45304d4467354e7a49304e6a5a684f474934496977696457357064455a6859325651636d39765a6e4d694f6a49314d4441774c434a31626d6c305457396b5a5777694f694a6a59573576626d6c6a5957777464323979617931686257387463484a766232597464573570644331324d794973496e56756158525862334a7254334a685932786c5457396b5a5777694f694a6a59573576626d6c6a595777746432397961793177636d566d61586774596d566d62334a6c4c57466a64476c76626931324d534973496e5a6c636e4e70623234694f694a7764335174633246735a5331324f434973496d467559326876636c4e705a323568644856795a534936496a4d774e4455774d6a49784d44426b4e445a6b4f44677a596a426d5a54566b5a6a45305a5445774f475a684e544179595451314e47597a4f4455314d7a49784e6d457a4e544e6b4d44457a4d6d59325a54497a596a52694d5455304e7a67354e444d7a4d4449794d444935596d4a6d4e3255355a4463304e4751354d324d30596a6c6a4e6d49334f4751315a4467354e444a6c4d7a466d593259354f4745354e7a4d775954466c4e6a68695a574d784d54566c5a6a6b794d325a6c596d59344d794973496d467559326876636c5234615751694f6949785a475a6c4d5749344e7a45795a574a6d4e6d4a6b4f5749315a575a6c4e6d55305932466a4e5755344d7a4a684d6d45774f4745324d7a45344d7a5a6a4e3251305957526c597a6b774e3251784f474e6d5a6a597a496e30"
+                }
+              ],
+              "joinedDatabaseProofRowSha256": "aea84e36186f2946cc1bcbb2460ed9bcc6944f04b8eb3b5234859383b2da73bd"
+            },
+            {
+              "txid": "9e202c0fae0f3ab500325fc7a5326dda1d68c8500c85fe51cb18385e7d8aeab0",
+              "height": 963517,
+              "blockHash": "00000000000000000000be1ecdf7ce6401f92de5eb7a8e310798821b43f1ed1a",
+              "blockIndex": 2962,
+              "coreVerboseResponseSha256": "65848c3fce32294f7b6f2836f80d2387bb1d3e8fc2d7b7385d3c97e3e952a95d",
+              "transactionHexSha256": "ba730b2a8a7e6f5d0ff6bc076c68a39235031ee053b3a1ef17f65ed11cf748f9",
+              "opReturns": [
+                {
+                  "vout": 1,
+                  "script": "6a4d9606707774313a7365616c353a383064623666323063326138396632663161306164646262323431393961653430393966623931396131303236363132333636616362383136623865656365613a65794a6862573931626e524e6232526c62434936496d4e68626d397561574e686243313362334a724c57467462793177636d39765a693131626d6c304c57467462335675644331324d794973496d467559326876636c4e6a636d6c7764464231596b746c65534936496a55784d6a41335a6a426a4d54646d4e474d784e54686a5a544d304d5456694d7a5a684d54646d4e7a46684e6d5933593246694e7a41785a6a59334d3251354d44633359574d775a4464685a6a526d595751774d324d31596d466c496977695957356a6147397955326c6e5347467a61465235634755694f6a457a4d5377695957356a6147397956486c775a534936496e4e686247557464476c6a613256304c585978496977695957356a61473979566d4673645756545958527a496a6f314e445973496d467559326876636c5a76645851694f6a4973496d4a76626d5255636d467563326c30615739755457396b5a5777694f694a6a59573576626d6c6a5957777459323974634856305a533130614756754c574a76626d5174646a45694c434a696247396a61314e6c6358566c626d4e6c636b31765a475673496a6f695932467562323570593246734c586476636d7374595731764c575a31624777746347397a6158527062323474596d7876593273746332567864575675593256794c58593049697769596e56355a584a425a4752795a584e7a496a6f69496977695a58687761584a6c63304630496a6f6949697769626d56306432397961794936496d7870646d56755a5851694c434a756232356a5a534936496d31304d6e46764f4451324c5751794d6d4a724e48597949697769636d566e61584e30636e6c425a4752795a584e7a496a6f694d54597a4f465a754e6b743062557334634456794e473948646b465963546c75625670694d5756745654464556694973496e4e6c6247786c636b466b5a484a6c63334d694f694a69597a46774d4856346344426865484230636a68795a7a6c6b626d526e64477833654734774d476f306148453462546734613263344d4852785a4442304e6a41304e5842316448646f6354566a5954646c5a434973496e4e6c6247786c636c4231596d78705930746c65534936496a417a4d445a69595745794d6a5a6c4d3245344e3245354f5455304e32526d4d6a45304e4759795a5459794d445a684e4745304e7a6c684e445a6b5a6a51785a574d784e6a45344f545131597a41324e4455324f44497a4e794973496e4e305958526c54334a6b5a584a4e6232526c62434936496d4e68626d397561574e6862433177636d39765a69317a644746305a533176636d526c636931324d534973496e52705932746c63694936496c6450556b73694c434a306232746c626b6c6b496a6f695a44526c4e5756695a6a45785a4445774e4751325954597a5a6d49334e4755304d6a41354e444d324e4749794e5745315a6a63784f546c684d446c6c4e574d775a5463784e4441344f5463794e445932595468694f434973496e56756158524759574e6c55484a7662325a7a496a6f794e5441774d43776964573570644531765a475673496a6f695932467562323570593246734c586476636d7374595731764c5842796232396d4c58567561585174646a4d694c434a31626d6c30563239796130397959574e735a5531765a475673496a6f695932467562323570593246734c586476636d737463484a6c5a6d6c344c574a6c5a6d39795a5331685933527062323474646a45694c434a325a584a7a61573975496a6f69634864304c584e6862475574646a67694c434a68626d4e6f62334a546157647559585231636d55694f694a6c4f5755304d6a45325a6a59305a47557a4d6d557a4d54457a4d5463794d32453059544a6c5a5755354f475a6d4d4451334d44457a4e475a6d5a6a4a6c593255774f44466d4e32526a4e57493359324e6c5a5451774f474d324e6d45334f574d325a6d4d334e444532593259354d44597a4e7a41325a4451324d324e6b5a57466c4e3255304f5467354d546331596d51354f44526b5a5467314e7a59354e7a46684f54566a597a466c4e44677a496977695957356a61473979564868705a434936496a67775a4749325a6a4977597a4a684f446c6d4d6d5978595442685a475269596a49304d546b35595755304d446b355a6d49354d546c684d5441794e6a59784d6a4d324e6d466a596a67784e6d49345a57566a5a5745696651"
+                }
+              ],
+              "joinedDatabaseProofRowSha256": "43ae157ff5e67fe2d6e5cf80155cf9af3aece48e04da413a01cc02e228cc566f"
+            }
+          ],
+          "auxiliaryInputs": [
+            {
+              "vin": 0,
+              "prevTxid": "fc57450c502e054ecf23469d88f5249a578799da59d111fe234e50ca593c20e5",
+              "prevVout": 3,
+              "valueSats": "863",
+              "scriptPubKey": "76a9144752142b83faf13d526a59212f3f228012890dbe88ac",
+              "parentCoreVerboseResponseSha256": "20def4e241dc7e83bd71e4d67b8cd73494232c40d075ba2cd2cced46a488b061",
+              "parentTransactionHexSha256": "57f91e3772bce7607a761388e49462180759ad473187418bb6f700bf38a0d7f1"
+            },
+            {
+              "vin": 1,
+              "prevTxid": "fc57450c502e054ecf23469d88f5249a578799da59d111fe234e50ca593c20e5",
+              "prevVout": 2,
+              "valueSats": "546",
+              "scriptPubKey": "76a9144752142b83faf13d526a59212f3f228012890dbe88ac",
+              "parentCoreVerboseResponseSha256": "20def4e241dc7e83bd71e4d67b8cd73494232c40d075ba2cd2cced46a488b061",
+              "parentTransactionHexSha256": "57f91e3772bce7607a761388e49462180759ad473187418bb6f700bf38a0d7f1"
+            },
+            {
+              "vin": 2,
+              "prevTxid": "db836174bde97f027c85553e26af3b896b9d3f04745f32f6f99af631865c7bcc",
+              "prevVout": 2,
+              "valueSats": "546",
+              "scriptPubKey": "76a9144752142b83faf13d526a59212f3f228012890dbe88ac",
+              "parentCoreVerboseResponseSha256": "8aea2b98a498367b8e2129499ebfa8fdbe21728f565a892d7c118cedcc3ca374",
+              "parentTransactionHexSha256": "526b52fe37ed17c18b2f46d23a61fe1f44951ca62f438352ff2b747602e2f655"
+            },
+            {
+              "vin": 3,
+              "prevTxid": "488f31b5ac317123a2383e49eaf06fb6351f117e217bdeb9440795de431175a5",
+              "prevVout": 2,
+              "valueSats": "546",
+              "scriptPubKey": "76a9144752142b83faf13d526a59212f3f228012890dbe88ac",
+              "parentCoreVerboseResponseSha256": "7c8e1bc08aa4da4aa899cc424cd029b5d00f8c64648ed733eafa5fff9ec7fdce",
+              "parentTransactionHexSha256": "c7cb915063bc8c4ecaf27deb869f2e828fbcfcffd144bc627cbda748fb46cf45"
+            },
+            {
+              "vin": 4,
+              "prevTxid": "3c69d397b2ec43c8eb8a83409b7f2dc979f5b887a307f8a12e053b3ebc545a00",
+              "prevVout": 2,
+              "valueSats": "546",
+              "scriptPubKey": "76a9144752142b83faf13d526a59212f3f228012890dbe88ac",
+              "parentCoreVerboseResponseSha256": "a2a73a77d1e5a86ce853ba4a84e6a27e3162d8350932b74fc9c46128e3b65f1d",
+              "parentTransactionHexSha256": "d815fe3ed951fe5955660ce494e8de27f65178d1d6e2c4bd50c5b04f81b6c7e5"
+            },
+            {
+              "vin": 5,
+              "prevTxid": "a8906b1f9bab7a791a5271a3e9276b8a91e0fb502a49235d4be0c1b8e8a27b79",
+              "prevVout": 2,
+              "valueSats": "546",
+              "scriptPubKey": "76a9144752142b83faf13d526a59212f3f228012890dbe88ac",
+              "parentCoreVerboseResponseSha256": "bef8629677d3187e8f51251bbecaf46b689d689d2c402769b6efd82699e44793",
+              "parentTransactionHexSha256": "e01a2b02a6628d18f6c44971b030e9743faace19b1be33187bfd438daf6b7a6d"
+            }
+          ],
+          "auxiliaryOutputs": [
+            {
+              "vout": 0,
+              "valueSats": "3118",
+              "scriptPubKey": "76a9144752142b83faf13d526a59212f3f228012890dbe88ac"
+            },
+            {
+              "vout": 1,
+              "valueSats": "0",
+              "scriptPubKey": "6a5d081600ff7f8184ec02"
+            }
+          ],
+          "auxiliaryInputProofs": "3593",
+          "auxiliaryOutputProofs": "3118",
+          "auxiliaryMinerFeeProofs": "475",
+          "preservedAnchors": [
+            {
+              "txid": "3c69d397b2ec43c8eb8a83409b7f2dc979f5b887a307f8a12e053b3ebc545a00",
+              "vout": 2,
+              "valueSats": "546",
+              "spentByVin": 4,
+              "spentByTxid": "4c079144b315ca08a846e7e7af3d37f5c96419a94f06af8384dc73e1ca307359",
+              "scriptPubKey": "76a9144752142b83faf13d526a59212f3f228012890dbe88ac"
+            },
+            {
+              "txid": "488f31b5ac317123a2383e49eaf06fb6351f117e217bdeb9440795de431175a5",
+              "vout": 2,
+              "valueSats": "546",
+              "spentByVin": 3,
+              "spentByTxid": "4c079144b315ca08a846e7e7af3d37f5c96419a94f06af8384dc73e1ca307359",
+              "scriptPubKey": "76a9144752142b83faf13d526a59212f3f228012890dbe88ac"
+            },
+            {
+              "txid": "a8906b1f9bab7a791a5271a3e9276b8a91e0fb502a49235d4be0c1b8e8a27b79",
+              "vout": 2,
+              "valueSats": "546",
+              "spentByVin": 5,
+              "spentByTxid": "4c079144b315ca08a846e7e7af3d37f5c96419a94f06af8384dc73e1ca307359",
+              "scriptPubKey": "76a9144752142b83faf13d526a59212f3f228012890dbe88ac"
+            },
+            {
+              "txid": "db836174bde97f027c85553e26af3b896b9d3f04745f32f6f99af631865c7bcc",
+              "vout": 2,
+              "valueSats": "546",
+              "spentByVin": 2,
+              "spentByTxid": "4c079144b315ca08a846e7e7af3d37f5c96419a94f06af8384dc73e1ca307359",
+              "scriptPubKey": "76a9144752142b83faf13d526a59212f3f228012890dbe88ac"
+            },
+            {
+              "txid": "fc57450c502e054ecf23469d88f5249a578799da59d111fe234e50ca593c20e5",
+              "vout": 2,
+              "valueSats": "546",
+              "spentByVin": 1,
+              "spentByTxid": "4c079144b315ca08a846e7e7af3d37f5c96419a94f06af8384dc73e1ca307359",
+              "scriptPubKey": "76a9144752142b83faf13d526a59212f3f228012890dbe88ac"
+            }
+          ],
+          "invalidZeroEvents": [
+            {
+              "eventId": 3607561,
+              "txid": "6ac53aca33541d60d6d58af03d4c27d09bbeaab3e3c016ee10d270aad578957c",
+              "valid": false,
+              "amountSats": "0",
+              "rowSha256": "26ed23492f4dc68e5ffa11fd3a484bd002e3eb6a7ad159c80fcd9847ea21ea83"
+            },
+            {
+              "eventId": 3621078,
+              "txid": "8eaa4098c631bded37ce40d88778cce53a6d00b2d4f3eb783d2b9713fc9951cc",
+              "valid": false,
+              "amountSats": "0",
+              "rowSha256": "aea84e36186f2946cc1bcbb2460ed9bcc6944f04b8eb3b5234859383b2da73bd"
+            },
+            {
+              "eventId": 3747805,
+              "txid": "9e202c0fae0f3ab500325fc7a5326dda1d68c8500c85fe51cb18385e7d8aeab0",
+              "valid": false,
+              "amountSats": "0",
+              "rowSha256": "43ae157ff5e67fe2d6e5cf80155cf9af3aece48e04da413a01cc02e228cc566f"
+            }
+          ],
+          "qualification": "Read-only historical canonical target and parent proofs; stopped-writer before/after invariants and repair writer Core verification remain required."
+        }
+      },
+      "liveAuxiliaryShape": {
+        "path": "/tmp/pow-approved-parent-20260905/live-aux-shape.json",
+        "sha256": "8888f2373d81074ed61dafb662d87a9e4dd3766b5bf1324b494d1266aaa513a5",
+        "receipt": {
+          "format": "audit5-exact-aux-fields-v1",
+          "inputs": [
+            {
+              "vin": 1,
+              "txid": "4c079144b315ca08a846e7e7af3d37f5c96419a94f06af8384dc73e1ca307359",
+              "address": null,
+              "network": "livenet",
+              "witness": null,
+              "sequence": null,
+              "prev_txid": "fc57450c502e054ecf23469d88f5249a578799da59d111fe234e50ca593c20e5",
+              "prev_vout": 2,
+              "script_sig": null,
+              "value_sats": null
+            },
+            {
+              "vin": 2,
+              "txid": "4c079144b315ca08a846e7e7af3d37f5c96419a94f06af8384dc73e1ca307359",
+              "address": null,
+              "network": "livenet",
+              "witness": null,
+              "sequence": null,
+              "prev_txid": "db836174bde97f027c85553e26af3b896b9d3f04745f32f6f99af631865c7bcc",
+              "prev_vout": 2,
+              "script_sig": null,
+              "value_sats": null
+            },
+            {
+              "vin": 3,
+              "txid": "4c079144b315ca08a846e7e7af3d37f5c96419a94f06af8384dc73e1ca307359",
+              "address": null,
+              "network": "livenet",
+              "witness": null,
+              "sequence": null,
+              "prev_txid": "488f31b5ac317123a2383e49eaf06fb6351f117e217bdeb9440795de431175a5",
+              "prev_vout": 2,
+              "script_sig": null,
+              "value_sats": null
+            },
+            {
+              "vin": 4,
+              "txid": "4c079144b315ca08a846e7e7af3d37f5c96419a94f06af8384dc73e1ca307359",
+              "address": null,
+              "network": "livenet",
+              "witness": null,
+              "sequence": null,
+              "prev_txid": "3c69d397b2ec43c8eb8a83409b7f2dc979f5b887a307f8a12e053b3ebc545a00",
+              "prev_vout": 2,
+              "script_sig": null,
+              "value_sats": null
+            },
+            {
+              "vin": 5,
+              "txid": "4c079144b315ca08a846e7e7af3d37f5c96419a94f06af8384dc73e1ca307359",
+              "address": null,
+              "network": "livenet",
+              "witness": null,
+              "sequence": null,
+              "prev_txid": "a8906b1f9bab7a791a5271a3e9276b8a91e0fb502a49235d4be0c1b8e8a27b79",
+              "prev_vout": 2,
+              "script_sig": null,
+              "value_sats": null
+            }
+          ],
+          "anchors": [
+            {
+              "txid": "3c69d397b2ec43c8eb8a83409b7f2dc979f5b887a307f8a12e053b3ebc545a00",
+              "vout": 2,
+              "address": "17W7JZ9KjjGUwdAyXeGxhzYe2vGe8YTRzA",
+              "network": "livenet",
+              "spent_at": "2026-08-18T05:09:21+00:00",
+              "value_sats": 546,
+              "scriptpubkey": "76a9144752142b83faf13d526a59212f3f228012890dbe88ac",
+              "spent_by_vin": 4,
+              "spent_by_txid": "4c079144b315ca08a846e7e7af3d37f5c96419a94f06af8384dc73e1ca307359",
+              "scriptpubkey_asm": "OP_DUP OP_HASH160 4752142b83faf13d526a59212f3f228012890dbe OP_EQUALVERIFY OP_CHECKSIG",
+              "scriptpubkey_type": "pubkeyhash"
+            },
+            {
+              "txid": "488f31b5ac317123a2383e49eaf06fb6351f117e217bdeb9440795de431175a5",
+              "vout": 2,
+              "address": "17W7JZ9KjjGUwdAyXeGxhzYe2vGe8YTRzA",
+              "network": "livenet",
+              "spent_at": "2026-08-18T05:09:21+00:00",
+              "value_sats": 546,
+              "scriptpubkey": "76a9144752142b83faf13d526a59212f3f228012890dbe88ac",
+              "spent_by_vin": 3,
+              "spent_by_txid": "4c079144b315ca08a846e7e7af3d37f5c96419a94f06af8384dc73e1ca307359",
+              "scriptpubkey_asm": "OP_DUP OP_HASH160 4752142b83faf13d526a59212f3f228012890dbe OP_EQUALVERIFY OP_CHECKSIG",
+              "scriptpubkey_type": "pubkeyhash"
+            },
+            {
+              "txid": "a8906b1f9bab7a791a5271a3e9276b8a91e0fb502a49235d4be0c1b8e8a27b79",
+              "vout": 2,
+              "address": "17W7JZ9KjjGUwdAyXeGxhzYe2vGe8YTRzA",
+              "network": "livenet",
+              "spent_at": "2026-08-18T05:09:21+00:00",
+              "value_sats": 546,
+              "scriptpubkey": "76a9144752142b83faf13d526a59212f3f228012890dbe88ac",
+              "spent_by_vin": 5,
+              "spent_by_txid": "4c079144b315ca08a846e7e7af3d37f5c96419a94f06af8384dc73e1ca307359",
+              "scriptpubkey_asm": "OP_DUP OP_HASH160 4752142b83faf13d526a59212f3f228012890dbe OP_EQUALVERIFY OP_CHECKSIG",
+              "scriptpubkey_type": "pubkeyhash"
+            },
+            {
+              "txid": "db836174bde97f027c85553e26af3b896b9d3f04745f32f6f99af631865c7bcc",
+              "vout": 2,
+              "address": "17W7JZ9KjjGUwdAyXeGxhzYe2vGe8YTRzA",
+              "network": "livenet",
+              "spent_at": "2026-08-18T05:09:21+00:00",
+              "value_sats": 546,
+              "scriptpubkey": "76a9144752142b83faf13d526a59212f3f228012890dbe88ac",
+              "spent_by_vin": 2,
+              "spent_by_txid": "4c079144b315ca08a846e7e7af3d37f5c96419a94f06af8384dc73e1ca307359",
+              "scriptpubkey_asm": "OP_DUP OP_HASH160 4752142b83faf13d526a59212f3f228012890dbe OP_EQUALVERIFY OP_CHECKSIG",
+              "scriptpubkey_type": "pubkeyhash"
+            },
+            {
+              "txid": "fc57450c502e054ecf23469d88f5249a578799da59d111fe234e50ca593c20e5",
+              "vout": 2,
+              "address": "17W7JZ9KjjGUwdAyXeGxhzYe2vGe8YTRzA",
+              "network": "livenet",
+              "spent_at": "2026-08-18T05:09:21+00:00",
+              "value_sats": 546,
+              "scriptpubkey": "76a9144752142b83faf13d526a59212f3f228012890dbe88ac",
+              "spent_by_vin": 1,
+              "spent_by_txid": "4c079144b315ca08a846e7e7af3d37f5c96419a94f06af8384dc73e1ca307359",
+              "scriptpubkey_asm": "OP_DUP OP_HASH160 4752142b83faf13d526a59212f3f228012890dbe OP_EQUALVERIFY OP_CHECKSIG",
+              "scriptpubkey_type": "pubkeyhash"
+            }
+          ],
+          "outputs": [],
+          "database": "proof_indexer",
+          "opReturns": [],
+          "capturedAt": "2026-09-05T21:28:08.656636+00:00",
+          "transaction": {
+            "txid": "4c079144b315ca08a846e7e7af3d37f5c96419a94f06af8384dc73e1ca307359",
+            "vsize": 948,
+            "raw_tx": {
+              "fee": 4.75e-06,
+              "hex": "0200000006e5203c59ca504e23fe11d159da9987579a24f5889d4623cf4e052e500c4557fc030000006b483045022100c56394b6d2a18736be8d2d768adce0b3dd5817f8f7f51cb17bfcd76ccc5255a402204094e46dab7c6d56910f2d87f54bb2577aebd64750caa09f41af63d561620722012102777b8fd3dc524694c52f2b505d14eacf289430f42b5785c48b7cb4948db8499bffffffffe5203c59ca504e23fe11d159da9987579a24f5889d4623cf4e052e500c4557fc020000006a473044022044f647c63a9f277857e1b661780f8dbb989f12e4e0cdf6fcfb12ca5e42a027890220535c121d362b15ee19df3eee6aec6611597b4721346b2174311d0d668884a270012102777b8fd3dc524694c52f2b505d14eacf289430f42b5785c48b7cb4948db8499bffffffffcc7b5c8631f69af9f6325f74043f9d6b893baf263e55857c027fe9bd746183db020000006a473044022068c84b07afb5e4a7853f25e637ded4ddbe099313f8e03cc486549ecab53cda7402207765d92d5002efa142de646ac370cb99f5965b1f02d9679066a0a06734d3f001012102777b8fd3dc524694c52f2b505d14eacf289430f42b5785c48b7cb4948db8499bffffffffa5751143de950744b9de7b217e111f35b66ff0ea493e38a2237131acb5318f48020000006b483045022100a2d581630c8b02ccc92ac5c3995843f0780716b44468ae001cddf996166d080c02205ce78e32130883977d3f4621638bd64cf9d5ac4d9ec93e494bebb06d58e128a8012102777b8fd3dc524694c52f2b505d14eacf289430f42b5785c48b7cb4948db8499bffffffff005a54bc3e3b052ea1f807a387b8f579c92d7f9b40838aebc843ecb297d3693c020000006a47304402207e057977ada352c1409b82aeeca0f549f745e33fded6de718d723ec68f689cb302206f824676cdea2e918d22ccc499cc85a4675b357418d8607bb43736566b4ba14f012102777b8fd3dc524694c52f2b505d14eacf289430f42b5785c48b7cb4948db8499bffffffff797ba2e8b8c1e04b5d23492a50fbe0918a6b27e9a371521a797aab9b1f6b90a8020000006a47304402200362f5ad6b84a1106a80402017ab7d6c5afd93fde65054932e0317aee8dfbb2c0220670f05641f98f451fa8abd78cf45ba590797520454e9e745f5e37a5d1b37e6b1012102777b8fd3dc524694c52f2b505d14eacf289430f42b5785c48b7cb4948db8499bffffffff022e0c0000000000001976a9144752142b83faf13d526a59212f3f228012890dbe88ac00000000000000000b6a5d081600ff7f8184ec0200000000",
+              "vin": [
+                {
+                  "txid": "fc57450c502e054ecf23469d88f5249a578799da59d111fe234e50ca593c20e5",
+                  "vout": 3,
+                  "prevout": {
+                    "value": 8.63e-06,
+                    "height": 962988,
+                    "generated": false,
+                    "scriptPubKey": {
+                      "asm": "OP_DUP OP_HASH160 4752142b83faf13d526a59212f3f228012890dbe OP_EQUALVERIFY OP_CHECKSIG",
+                      "hex": "76a9144752142b83faf13d526a59212f3f228012890dbe88ac",
+                      "desc": "addr(17W7JZ9KjjGUwdAyXeGxhzYe2vGe8YTRzA)#x8nh37v4",
+                      "type": "pubkeyhash",
+                      "address": "17W7JZ9KjjGUwdAyXeGxhzYe2vGe8YTRzA"
+                    }
+                  },
+                  "sequence": 4294967295,
+                  "scriptSig": {
+                    "asm": "3045022100c56394b6d2a18736be8d2d768adce0b3dd5817f8f7f51cb17bfcd76ccc5255a402204094e46dab7c6d56910f2d87f54bb2577aebd64750caa09f41af63d561620722[ALL] 02777b8fd3dc524694c52f2b505d14eacf289430f42b5785c48b7cb4948db8499b",
+                    "hex": "483045022100c56394b6d2a18736be8d2d768adce0b3dd5817f8f7f51cb17bfcd76ccc5255a402204094e46dab7c6d56910f2d87f54bb2577aebd64750caa09f41af63d561620722012102777b8fd3dc524694c52f2b505d14eacf289430f42b5785c48b7cb4948db8499b"
+                  }
+                },
+                {
+                  "txid": "fc57450c502e054ecf23469d88f5249a578799da59d111fe234e50ca593c20e5",
+                  "vout": 2,
+                  "prevout": {
+                    "value": 5.46e-06,
+                    "height": 962988,
+                    "generated": false,
+                    "scriptPubKey": {
+                      "asm": "OP_DUP OP_HASH160 4752142b83faf13d526a59212f3f228012890dbe OP_EQUALVERIFY OP_CHECKSIG",
+                      "hex": "76a9144752142b83faf13d526a59212f3f228012890dbe88ac",
+                      "desc": "addr(17W7JZ9KjjGUwdAyXeGxhzYe2vGe8YTRzA)#x8nh37v4",
+                      "type": "pubkeyhash",
+                      "address": "17W7JZ9KjjGUwdAyXeGxhzYe2vGe8YTRzA"
+                    }
+                  },
+                  "sequence": 4294967295,
+                  "scriptSig": {
+                    "asm": "3044022044f647c63a9f277857e1b661780f8dbb989f12e4e0cdf6fcfb12ca5e42a027890220535c121d362b15ee19df3eee6aec6611597b4721346b2174311d0d668884a270[ALL] 02777b8fd3dc524694c52f2b505d14eacf289430f42b5785c48b7cb4948db8499b",
+                    "hex": "473044022044f647c63a9f277857e1b661780f8dbb989f12e4e0cdf6fcfb12ca5e42a027890220535c121d362b15ee19df3eee6aec6611597b4721346b2174311d0d668884a270012102777b8fd3dc524694c52f2b505d14eacf289430f42b5785c48b7cb4948db8499b"
+                  }
+                },
+                {
+                  "txid": "db836174bde97f027c85553e26af3b896b9d3f04745f32f6f99af631865c7bcc",
+                  "vout": 2,
+                  "prevout": {
+                    "value": 5.46e-06,
+                    "height": 962957,
+                    "generated": false,
+                    "scriptPubKey": {
+                      "asm": "OP_DUP OP_HASH160 4752142b83faf13d526a59212f3f228012890dbe OP_EQUALVERIFY OP_CHECKSIG",
+                      "hex": "76a9144752142b83faf13d526a59212f3f228012890dbe88ac",
+                      "desc": "addr(17W7JZ9KjjGUwdAyXeGxhzYe2vGe8YTRzA)#x8nh37v4",
+                      "type": "pubkeyhash",
+                      "address": "17W7JZ9KjjGUwdAyXeGxhzYe2vGe8YTRzA"
+                    }
+                  },
+                  "sequence": 4294967295,
+                  "scriptSig": {
+                    "asm": "3044022068c84b07afb5e4a7853f25e637ded4ddbe099313f8e03cc486549ecab53cda7402207765d92d5002efa142de646ac370cb99f5965b1f02d9679066a0a06734d3f001[ALL] 02777b8fd3dc524694c52f2b505d14eacf289430f42b5785c48b7cb4948db8499b",
+                    "hex": "473044022068c84b07afb5e4a7853f25e637ded4ddbe099313f8e03cc486549ecab53cda7402207765d92d5002efa142de646ac370cb99f5965b1f02d9679066a0a06734d3f001012102777b8fd3dc524694c52f2b505d14eacf289430f42b5785c48b7cb4948db8499b"
+                  }
+                },
+                {
+                  "txid": "488f31b5ac317123a2383e49eaf06fb6351f117e217bdeb9440795de431175a5",
+                  "vout": 2,
+                  "prevout": {
+                    "value": 5.46e-06,
+                    "height": 962689,
+                    "generated": false,
+                    "scriptPubKey": {
+                      "asm": "OP_DUP OP_HASH160 4752142b83faf13d526a59212f3f228012890dbe OP_EQUALVERIFY OP_CHECKSIG",
+                      "hex": "76a9144752142b83faf13d526a59212f3f228012890dbe88ac",
+                      "desc": "addr(17W7JZ9KjjGUwdAyXeGxhzYe2vGe8YTRzA)#x8nh37v4",
+                      "type": "pubkeyhash",
+                      "address": "17W7JZ9KjjGUwdAyXeGxhzYe2vGe8YTRzA"
+                    }
+                  },
+                  "sequence": 4294967295,
+                  "scriptSig": {
+                    "asm": "3045022100a2d581630c8b02ccc92ac5c3995843f0780716b44468ae001cddf996166d080c02205ce78e32130883977d3f4621638bd64cf9d5ac4d9ec93e494bebb06d58e128a8[ALL] 02777b8fd3dc524694c52f2b505d14eacf289430f42b5785c48b7cb4948db8499b",
+                    "hex": "483045022100a2d581630c8b02ccc92ac5c3995843f0780716b44468ae001cddf996166d080c02205ce78e32130883977d3f4621638bd64cf9d5ac4d9ec93e494bebb06d58e128a8012102777b8fd3dc524694c52f2b505d14eacf289430f42b5785c48b7cb4948db8499b"
+                  }
+                },
+                {
+                  "txid": "3c69d397b2ec43c8eb8a83409b7f2dc979f5b887a307f8a12e053b3ebc545a00",
+                  "vout": 2,
+                  "prevout": {
+                    "value": 5.46e-06,
+                    "height": 962666,
+                    "generated": false,
+                    "scriptPubKey": {
+                      "asm": "OP_DUP OP_HASH160 4752142b83faf13d526a59212f3f228012890dbe OP_EQUALVERIFY OP_CHECKSIG",
+                      "hex": "76a9144752142b83faf13d526a59212f3f228012890dbe88ac",
+                      "desc": "addr(17W7JZ9KjjGUwdAyXeGxhzYe2vGe8YTRzA)#x8nh37v4",
+                      "type": "pubkeyhash",
+                      "address": "17W7JZ9KjjGUwdAyXeGxhzYe2vGe8YTRzA"
+                    }
+                  },
+                  "sequence": 4294967295,
+                  "scriptSig": {
+                    "asm": "304402207e057977ada352c1409b82aeeca0f549f745e33fded6de718d723ec68f689cb302206f824676cdea2e918d22ccc499cc85a4675b357418d8607bb43736566b4ba14f[ALL] 02777b8fd3dc524694c52f2b505d14eacf289430f42b5785c48b7cb4948db8499b",
+                    "hex": "47304402207e057977ada352c1409b82aeeca0f549f745e33fded6de718d723ec68f689cb302206f824676cdea2e918d22ccc499cc85a4675b357418d8607bb43736566b4ba14f012102777b8fd3dc524694c52f2b505d14eacf289430f42b5785c48b7cb4948db8499b"
+                  }
+                },
+                {
+                  "txid": "a8906b1f9bab7a791a5271a3e9276b8a91e0fb502a49235d4be0c1b8e8a27b79",
+                  "vout": 2,
+                  "prevout": {
+                    "value": 5.46e-06,
+                    "height": 962537,
+                    "generated": false,
+                    "scriptPubKey": {
+                      "asm": "OP_DUP OP_HASH160 4752142b83faf13d526a59212f3f228012890dbe OP_EQUALVERIFY OP_CHECKSIG",
+                      "hex": "76a9144752142b83faf13d526a59212f3f228012890dbe88ac",
+                      "desc": "addr(17W7JZ9KjjGUwdAyXeGxhzYe2vGe8YTRzA)#x8nh37v4",
+                      "type": "pubkeyhash",
+                      "address": "17W7JZ9KjjGUwdAyXeGxhzYe2vGe8YTRzA"
+                    }
+                  },
+                  "sequence": 4294967295,
+                  "scriptSig": {
+                    "asm": "304402200362f5ad6b84a1106a80402017ab7d6c5afd93fde65054932e0317aee8dfbb2c0220670f05641f98f451fa8abd78cf45ba590797520454e9e745f5e37a5d1b37e6b1[ALL] 02777b8fd3dc524694c52f2b505d14eacf289430f42b5785c48b7cb4948db8499b",
+                    "hex": "47304402200362f5ad6b84a1106a80402017ab7d6c5afd93fde65054932e0317aee8dfbb2c0220670f05641f98f451fa8abd78cf45ba590797520454e9e745f5e37a5d1b37e6b1012102777b8fd3dc524694c52f2b505d14eacf289430f42b5785c48b7cb4948db8499b"
+                  }
+                }
+              ],
+              "hash": "4c079144b315ca08a846e7e7af3d37f5c96419a94f06af8384dc73e1ca307359",
+              "size": 948,
+              "txid": "4c079144b315ca08a846e7e7af3d37f5c96419a94f06af8384dc73e1ca307359",
+              "vout": [
+                {
+                  "n": 0,
+                  "value": 3.118e-05,
+                  "scriptPubKey": {
+                    "asm": "OP_DUP OP_HASH160 4752142b83faf13d526a59212f3f228012890dbe OP_EQUALVERIFY OP_CHECKSIG",
+                    "hex": "76a9144752142b83faf13d526a59212f3f228012890dbe88ac",
+                    "desc": "addr(17W7JZ9KjjGUwdAyXeGxhzYe2vGe8YTRzA)#x8nh37v4",
+                    "type": "pubkeyhash",
+                    "address": "17W7JZ9KjjGUwdAyXeGxhzYe2vGe8YTRzA"
+                  }
+                },
+                {
+                  "n": 1,
+                  "value": 0,
+                  "scriptPubKey": {
+                    "asm": "OP_RETURN 13 1600ff7f8184ec02",
+                    "hex": "6a5d081600ff7f8184ec02",
+                    "desc": "raw(6a5d081600ff7f8184ec02)#9wt0yfth",
+                    "type": "nulldata"
+                  }
+                }
+              ],
+              "vsize": 948,
+              "weight": 3792,
+              "version": 2,
+              "locktime": 0,
+              "_powBlockIndex": 1161,
+              "canonicalBlockScan": {
+                "height": 962992,
+                "network": "livenet",
+                "blockHash": "00000000000000000000635d4ae72706ed6d6f4a17299714a3014074d441824b",
+                "blockIndex": 1161
+              }
+            },
+            "source": "canonical-listing-outpoint-scan",
+            "status": "confirmed",
+            "weight": 3792,
+            "network": "livenet",
+            "raw_hex": null,
+            "version": 2,
+            "fee_sats": 475,
+            "locktime": 0,
+            "block_hash": "00000000000000000000635d4ae72706ed6d6f4a17299714a3014074d441824b",
+            "block_time": "2026-08-18T05:09:21+00:00",
+            "dropped_at": null,
+            "updated_at": "2026-08-23T00:56:36.326127+00:00",
+            "block_index": 1161,
+            "block_height": 962992,
+            "confirmed_at": "2026-08-18T05:09:21+00:00",
+            "last_seen_at": "2026-08-18T05:12:41.927299+00:00",
+            "first_seen_at": "2026-08-18T05:12:41.927299+00:00",
+            "dropped_reason": null,
+            "replaced_by_txid": null
+          },
+          "parentOutputs": [
+            {
+              "txid": "3c69d397b2ec43c8eb8a83409b7f2dc979f5b887a307f8a12e053b3ebc545a00",
+              "vout": 2,
+              "address": "17W7JZ9KjjGUwdAyXeGxhzYe2vGe8YTRzA",
+              "network": "livenet",
+              "spent_at": "2026-08-18T05:09:21+00:00",
+              "value_sats": 546,
+              "scriptpubkey": "76a9144752142b83faf13d526a59212f3f228012890dbe88ac",
+              "spent_by_vin": 4,
+              "spent_by_txid": "4c079144b315ca08a846e7e7af3d37f5c96419a94f06af8384dc73e1ca307359",
+              "scriptpubkey_asm": "OP_DUP OP_HASH160 4752142b83faf13d526a59212f3f228012890dbe OP_EQUALVERIFY OP_CHECKSIG",
+              "scriptpubkey_type": "pubkeyhash"
+            },
+            {
+              "txid": "488f31b5ac317123a2383e49eaf06fb6351f117e217bdeb9440795de431175a5",
+              "vout": 2,
+              "address": "17W7JZ9KjjGUwdAyXeGxhzYe2vGe8YTRzA",
+              "network": "livenet",
+              "spent_at": "2026-08-18T05:09:21+00:00",
+              "value_sats": 546,
+              "scriptpubkey": "76a9144752142b83faf13d526a59212f3f228012890dbe88ac",
+              "spent_by_vin": 3,
+              "spent_by_txid": "4c079144b315ca08a846e7e7af3d37f5c96419a94f06af8384dc73e1ca307359",
+              "scriptpubkey_asm": "OP_DUP OP_HASH160 4752142b83faf13d526a59212f3f228012890dbe OP_EQUALVERIFY OP_CHECKSIG",
+              "scriptpubkey_type": "pubkeyhash"
+            },
+            {
+              "txid": "a8906b1f9bab7a791a5271a3e9276b8a91e0fb502a49235d4be0c1b8e8a27b79",
+              "vout": 2,
+              "address": "17W7JZ9KjjGUwdAyXeGxhzYe2vGe8YTRzA",
+              "network": "livenet",
+              "spent_at": "2026-08-18T05:09:21+00:00",
+              "value_sats": 546,
+              "scriptpubkey": "76a9144752142b83faf13d526a59212f3f228012890dbe88ac",
+              "spent_by_vin": 5,
+              "spent_by_txid": "4c079144b315ca08a846e7e7af3d37f5c96419a94f06af8384dc73e1ca307359",
+              "scriptpubkey_asm": "OP_DUP OP_HASH160 4752142b83faf13d526a59212f3f228012890dbe OP_EQUALVERIFY OP_CHECKSIG",
+              "scriptpubkey_type": "pubkeyhash"
+            },
+            {
+              "txid": "db836174bde97f027c85553e26af3b896b9d3f04745f32f6f99af631865c7bcc",
+              "vout": 2,
+              "address": "17W7JZ9KjjGUwdAyXeGxhzYe2vGe8YTRzA",
+              "network": "livenet",
+              "spent_at": "2026-08-18T05:09:21+00:00",
+              "value_sats": 546,
+              "scriptpubkey": "76a9144752142b83faf13d526a59212f3f228012890dbe88ac",
+              "spent_by_vin": 2,
+              "spent_by_txid": "4c079144b315ca08a846e7e7af3d37f5c96419a94f06af8384dc73e1ca307359",
+              "scriptpubkey_asm": "OP_DUP OP_HASH160 4752142b83faf13d526a59212f3f228012890dbe OP_EQUALVERIFY OP_CHECKSIG",
+              "scriptpubkey_type": "pubkeyhash"
+            },
+            {
+              "txid": "fc57450c502e054ecf23469d88f5249a578799da59d111fe234e50ca593c20e5",
+              "vout": 2,
+              "address": "17W7JZ9KjjGUwdAyXeGxhzYe2vGe8YTRzA",
+              "network": "livenet",
+              "spent_at": "2026-08-18T05:09:21+00:00",
+              "value_sats": 546,
+              "scriptpubkey": "76a9144752142b83faf13d526a59212f3f228012890dbe88ac",
+              "spent_by_vin": 1,
+              "spent_by_txid": "4c079144b315ca08a846e7e7af3d37f5c96419a94f06af8384dc73e1ca307359",
+              "scriptpubkey_asm": "OP_DUP OP_HASH160 4752142b83faf13d526a59212f3f228012890dbe OP_EQUALVERIFY OP_CHECKSIG",
+              "scriptpubkey_type": "pubkeyhash"
+            },
+            {
+              "txid": "fc57450c502e054ecf23469d88f5249a578799da59d111fe234e50ca593c20e5",
+              "vout": 3,
+              "address": "17W7JZ9KjjGUwdAyXeGxhzYe2vGe8YTRzA",
+              "network": "livenet",
+              "spent_at": null,
+              "value_sats": 863,
+              "scriptpubkey": "76a9144752142b83faf13d526a59212f3f228012890dbe88ac",
+              "spent_by_vin": null,
+              "spent_by_txid": null,
+              "scriptpubkey_asm": "OP_DUP OP_HASH160 4752142b83faf13d526a59212f3f228012890dbe OP_EQUALVERIFY OP_CHECKSIG",
+              "scriptpubkey_type": "pubkeyhash"
+            }
+          ],
+          "otherDatabaseSessions": 4
+        }
+      },
+      "nodePrewindow": {
+        "path": "/tmp/pow-resume2-ops-20260905/approved-parent-prewindow-checkpoint.json",
+        "sha256": "55693bfc0672d357df097c6dc53d4f29a96e26b247dd0892c9da747a94805423",
+        "receipt": {
+          "at": "2026-09-05T21:26:36.636205+00:00",
+          "scope": "Read-only prewindow checkpoint after user approved the additional H5-04 funding-parent fields; no window or production changes performed.",
+          "rawReceipt": {
+            "path": "/tmp/pow-resume2-ops-20260905/prewindow-resumed-readonly-receipt.json",
+            "sha256": "240c3ec3b6474546f743d23cd1f934b299d5512de3f36a609dcfc8dba37382b8"
+          },
+          "servicesOriginalIdentityMatch": true,
+          "servicePids": {
+            "proofofwork-api.service": "750532",
+            "proofofwork-indexer-worker.service": "750543",
+            "proofofwork-api-wg.service": "752962",
+            "proofofwork-api-wg.socket": null,
+            "bitcoind.service": "282028",
+            "electrs.service": "282210",
+            "postgresql@16-main.service": "3612661",
+            "pg_receivewal@16-main.service": "2922786"
+          },
+          "health": {
+            "http": 200,
+            "available": true,
+            "ready": true,
+            "tipHeight": 965669,
+            "indexedThroughBlock": 965669,
+            "lagBlocks": 0
+          },
+          "attestations": {
+            "/opt/proofofwork-api": {
+              "tsv": "6a7d5c12e403e0ddb6247fa2a6865cb70d623a8e\tbc84d0294fc4fdd9e0dd2b9943f6b330197e1ea7\t6498\t189933878\ta03424fccad900e36643ba89904df8214c23ddb4a60de068f9ac1c0949c6d782",
+              "matchesPriorExact": true
+            },
+            "/opt/proofofwork-api-stage-2ddefac163d5-20260905T180603Z": {
+              "tsv": "2ddefac163d583138129c2527e747b11190a0635\t89283688ad79cdcd0a4e04a9532aac8c8af735f2\t6543\t191440061\tee78a47da73df81665e75354a570df9394a5b17f19cf719f0aa067be41b12b35",
+              "matchesPriorExact": true
+            }
+          },
+          "privateCaptureCurrentIdentityAndEnvironmentHashMatchesBeforeAndAfterAttest": true,
+          "sevenTimersActiveAndAllOneshotsQuiescent": true,
+          "historicalFailedOneshots": {
+            "proofofwork-node-release-health.service": "2",
+            "proofofwork-node-release-prune.service": "2"
+          },
+          "activePrivateUnits": [],
+          "privateListeners": [],
+          "stoppedWriterCaptureAndHoldReceiptsAbsent": true,
+          "existingPriorReadOnlyEvidence": "Original window-core-before.json and window-preconditions.json remain preserved; they are prior read-only preflight evidence, not stopped-writer capture.",
+          "recoveryPreserved": {
+            "/data/proofofwork-postgres-backups/logical/proof_indexer-20260905T031855Z.dumpset": {
+              "membersUnchanged": 3,
+              "smallEvidenceHashesFreshlyMatched": 2,
+              "largeDumpBodiesRehashed": false,
+              "cloneBodiesRescanned": false
+            },
+            "/data/proofofwork-audit5-safeguard-20260905T181729Z": {
+              "membersUnchanged": 8,
+              "smallEvidenceHashesFreshlyMatched": 7,
+              "largeDumpBodiesRehashed": false,
+              "cloneBodiesRescanned": false
+            },
+            "/data/proofofwork-audit5-restore-20260905T144615Z": {
+              "membersUnchanged": 8,
+              "smallEvidenceHashesFreshlyMatched": 6,
+              "largeDumpBodiesRehashed": false,
+              "cloneBodiesRescanned": false
+            },
+            "/data/proofofwork-audit5-restore-20260905T174233Z": {
+              "membersUnchanged": 10,
+              "smallEvidenceHashesFreshlyMatched": 8,
+              "largeDumpBodiesRehashed": false,
+              "cloneBodiesRescanned": false
+            }
+          },
+          "safeguard": {
+            "bytes": 11271928229,
+            "previouslyVerifiedSha256": "5939ce9f6f8a615b6d4a29cfb2b019b39f6579f19be76130fe981df9e357aa96",
+            "age": {
+              "start": {
+                "at": "2026-09-05T18:17:34Z",
+                "ageSeconds": 11341.645848
+              },
+              "completion": {
+                "at": "2026-09-05T18:34:19Z",
+                "ageSeconds": 10336.645848
+              }
+            },
+            "freshBodyHash": false,
+            "newRestorePerformed": false
+          },
+          "backupLockAvailable": true,
+          "wal": {
+            "at": "2026-09-05T21:26:34.17682+00:00",
+            "slots": [
+              {
+                "name": "pg_receivewal_service",
+                "type": "physical",
+                "active": true,
+                "activePid": 3613103,
+                "walStatus": "reserved",
+                "restartLsn": "77/90000000"
+              }
+            ],
+            "senders": [
+              {
+                "pid": 3613103,
+                "state": "streaming",
+                "flushLsn": "77/90000000",
+                "writeLsn": "77/90A4A9C0",
+                "flushLagBytes": 10968704,
+                "applicationName": "pg_receivewal@16-main.service"
+              }
+            ],
+            "currentWalLsn": "77/90A75E80",
+            "walSegmentBytes": 16777216
+          },
+          "walFileSequence": {
+            "root": "/data/proofofwork-postgres-backups/physical/16-main/wal",
+            "completedCount": 1575,
+            "first": [
+              "000000010000007100000069.gz",
+              "00000001000000710000006A.gz"
+            ],
+            "last": [
+              "00000001000000770000008E.gz",
+              "00000001000000770000008F.gz"
+            ],
+            "gaps": {
+              "00000001": []
+            },
+            "partials": {
+              "000000010000007700000090.gz.partial": {
+                "exists": true,
+                "device": 64514,
+                "inode": 7472767,
+                "bytes": 4931584,
+                "uid": 108,
+                "gid": 112,
+                "mode": "0o600",
+                "mtimeNs": 1788643592700224908,
+                "ctimeNs": 1788643592700224908,
+                "regular": true,
+                "directory": false,
+                "symlink": false
+              }
+            }
+          },
+          "physicalBaseManifestSha256": "4eecdd0a3184e9067ed49d9087b5ea18cf93a62d404c97ba79418b283db86a56",
+          "walQualification": "WAL receiver/slot metadata and retained segment filename continuity only; no new physical restore or WAL body validation.",
+          "disks": {
+            "/": {
+              "availableBytes": 75800043520,
+              "freeInodes": 6201300
+            },
+            "/data": {
+              "availableBytes": 407219482624,
+              "freeInodes": 109476810
+            }
+          },
+          "cache": {
+            "files": 6,
+            "logicalBytes": 267549767,
+            "largestBytes": 77931434,
+            "directory": {
+              "exists": true,
+              "device": 64514,
+              "inode": 94765057,
+              "bytes": 4096,
+              "uid": 1000,
+              "gid": 1000,
+              "mode": "0o750",
+              "mtimeNs": 1788640153916004657,
+              "ctimeNs": 1788640153916004657,
+              "regular": false,
+              "directory": true,
+              "symlink": false
+            },
+            "guardIdentityMatches": true,
+            "preservedDestinationAbsent": true,
+            "guardChangeRequired": false
+          },
+          "databaseQueriesStillRunning": false,
+          "productionMutations": 0
+        }
+      },
+      "uiPrewindow": {
+        "path": "/tmp/pow-ui-resume-20260905/ui-candidate-refresh-2125.json",
+        "sha256": "db46d86f1f727ceecc7f86db9188b8655b463499e64b13b483da11043cc5c5bb",
+        "receipt": {
+          "status": "verified",
+          "at": "2026-09-05T21:25:37Z",
+          "release": "2ddefac163d5-20260905T204437Z",
+          "opsCommit": "0b63c8604456110380fe188864f33daa6aab6484",
+          "helperRoot": "/var/tmp/proofofwork-audit5-ops-source-0b63c8604456-20260905T205150Z/deploy/audit5",
+          "hashes": {
+            "/var/tmp/proofofwork-audit5-ops-source-0b63c8604456-20260905T205150Z/deploy/audit5/build-ui-release.sh": {
+              "sha256": "7fd8c0b9e13708bf97b40852af7fee4c434b2a4096686390fc03ecadb6755a0d",
+              "uid": 0,
+              "gid": 0,
+              "mode": "0o600"
+            },
+            "/var/tmp/proofofwork-audit5-ops-source-0b63c8604456-20260905T205150Z/deploy/audit5/stream-ui-bundle.py": {
+              "sha256": "2ed410286d6081a2b82e7ff26d9ffb9f202b0a7f0ea41d91db1ac2751f4b5914",
+              "uid": 0,
+              "gid": 0,
+              "mode": "0o600"
+            },
+            "/var/tmp/proofofwork-audit5-ops-source-0b63c8604456-20260905T205150Z/deploy/audit5/ui-capacity.py": {
+              "sha256": "7c2713d699bc9f956b2b8f721ef4650087c4eb02fd95114f5d615a824aaf37d5",
+              "uid": 0,
+              "gid": 0,
+              "mode": "0o600"
+            },
+            "/var/tmp/proofofwork-audit5-ops-source-0b63c8604456-20260905T205150Z/deploy/audit5/ui-stage-candidate.sh": {
+              "sha256": "525f93a7fc59aaa12474158b9546edc5a844eeb5183724886a17fe2600f00a6f",
+              "uid": 0,
+              "gid": 0,
+              "mode": "0o600"
+            },
+            "/var/tmp/proofofwork-audit5-ops-source-0b63c8604456-20260905T205150Z/deploy/audit5/ui-publish-candidate.sh": {
+              "sha256": "b720fdd1a0aecd1c49f4c5b7882c3804230de5e9f5727f90105088e66a724c4c",
+              "uid": 0,
+              "gid": 0,
+              "mode": "0o600"
+            },
+            "/usr/local/sbin/proofofwork-ui-release-stage": {
+              "sha256": "39f17624d0e244382c344e31f5b04b0b58bb8f4e8c7bc9c93d7418bc8ab0f238",
+              "uid": 0,
+              "gid": 0,
+              "mode": "0o755"
+            },
+            "/usr/local/sbin/proofofwork-ui-release-publish": {
+              "sha256": "8846f6c6d3a8793fe83387e4d6fc317b87ef293b7961e2cd593490fd1bbd5024",
+              "uid": 0,
+              "gid": 0,
+              "mode": "0o755"
+            },
+            "/usr/local/sbin/proofofwork-ui-release-provenance": {
+              "sha256": "1117642815e1caf02ad5dc5d262419802daf029e6e0b7a04ebff4ac227beddb5",
+              "uid": 0,
+              "gid": 0,
+              "mode": "0o755"
+            },
+            "/usr/local/sbin/proofofwork-ui-retained-root": {
+              "sha256": "6421d58ec8a2259cc21512679db05654b2a138a6e6f56d3656c0287b934ddd9e",
+              "uid": 0,
+              "gid": 0,
+              "mode": "0o755"
+            }
+          },
+          "liveManifestSha256": "2e75546ca7b21ff7b8a1d96d1a891c9bdc9e97dfa74b451f58dd4519c790a1ec",
+          "provenanceTimer": "active",
+          "provenanceService": "inactive",
+          "caddy": "active",
+          "priorScratchAndPayloadAbsent": 2,
+          "sourceActualAllocatedBytes": 224382976,
+          "sourceExactDetachedCleanShallow": true,
+          "sourceTransportReceipt": {
+            "status": "verified",
+            "kind": "source",
+            "releaseId": "2ddefac163d5-20260905T204437Z",
+            "archiveSha256": "72246046ae47a10eb639017d84fe339cf943a54a20397d6d5cac6ba4bc5bddc7",
+            "compressedBytes": 75700816,
+            "entries": 6594,
+            "logicalBytes": 206717402,
+            "extractedRoot": "/var/tmp/proofofwork-deploy/proofofwork-ui-source-2ddefac163d5-20260905T204437Z"
+          },
+          "stageAllocatedBytes": 231120896,
+          "archiveSha256": "5e05adbf7d905f2dc4d3540ac389484d21ef71241155c7f73559f1e879cbedea",
+          "archiveBytes": 185566324,
+          "rootFreeBytes": 10814324736,
+          "floorPlusReserveBytes": 10804527104,
+          "marginAboveFloorReserveBytes": 9797632,
+          "memAvailableBytes": 3313115136,
+          "devShmFreeBytes": 2002726912,
+          "fullCandidateProvenancePreviouslyVerifiedAt": "2026-09-05T21:13:23Z",
+          "fullCandidateProvenanceRepeated": false,
+          "identityDriftDetected": false,
+          "publicationHeld": true,
+          "deploymentLock": "exclusive during this check",
+          "remoteWrites": false
+        }
+      },
+      "uiPublicationContext": {
+        "path": "/tmp/pow-ui-resume-20260905/ui-publication-context-2125.json",
+        "sha256": "03e3440b40badf64d6dbb940280a31cd784136a02d416f55b531615c0d41dcaa",
+        "receipt": {
+          "status": "available-unpublished-awaiting-root-node-gates",
+          "at": "2026-09-05T21:25:37Z",
+          "freshReadOnlyReceipt": "/tmp/pow-ui-resume-20260905/ui-candidate-refresh-2125.json",
+          "freshReadOnlyReceiptSha256": "db46d86f1f727ceecc7f86db9188b8655b463499e64b13b483da11043cc5c5bb",
+          "changesSinceReady": "No checked identity drift. Normal provenance timer is active after approved safecheckpoint restoration. Root free-space margin has decreased by routine filesystem activity.",
+          "remoteWritesThisRefresh": false,
+          "applicationCommit": "2ddefac163d583138129c2527e747b11190a0635",
+          "applicationTree": "89283688ad79cdcd0a4e04a9532aac8c8af735f2",
+          "releaseId": "2ddefac163d5-20260905T204437Z",
+          "operationalHelperCommit": "0b63c8604456110380fe188864f33daa6aab6484",
+          "publishRemoteArgv": [
+            "/bin/bash",
+            "/var/tmp/proofofwork-audit5-ops-source-0b63c8604456-20260905T205150Z/deploy/audit5/ui-publish-candidate.sh",
+            "2ddefac163d5-20260905T204437Z",
+            "2ddefac163d583138129c2527e747b11190a0635",
+            "89283688ad79cdcd0a4e04a9532aac8c8af735f2"
+          ],
+          "publishSshArgv": [
+            "ssh",
+            "-o",
+            "BatchMode=yes",
+            "-o",
+            "ConnectTimeout=15",
+            "root@77.42.91.106",
+            "/bin/bash /var/tmp/proofofwork-audit5-ops-source-0b63c8604456-20260905T205150Z/deploy/audit5/ui-publish-candidate.sh 2ddefac163d5-20260905T204437Z 2ddefac163d583138129c2527e747b11190a0635 89283688ad79cdcd0a4e04a9532aac8c8af735f2"
+          ],
+          "wrapperEnvironment": {
+            "PATH": "/usr/sbin:/usr/bin:/sbin:/bin",
+            "LC_ALL": "C",
+            "GIT_OPTIONAL_LOCKS": "0",
+            "umask": "077",
+            "unset": [
+              "TAR_OPTIONS",
+              "GZIP",
+              "BASH_ENV",
+              "ENV",
+              "CDPATH"
+            ],
+            "note": "These are set by the exact reviewed wrapper; no additional caller-controlled config/path/provenance overrides."
+          },
+          "immediatelyBeforePublication": [
+            "Parent confirms Node repair/bootstrap/rollout gates complete",
+            "Parent coordinates stopping only provenance.timer; let any current service check finish normally and verify service inactive",
+            "Rerun current source/helper/live/retainedroot/free/RAM/tmpfs prerequisites enforced by the unchanged reviewed wrapper",
+            "Invoke exact publishargv once; preserve failure evidence and stop on failure; no blindretry"
+          ],
+          "capacity": {
+            "rootFreeBytes": 10814324736,
+            "floorPlusReserveBytes": 10804527104,
+            "marginAboveFloorReserveBytes": 9797632,
+            "memAvailableBytes": 3313115136,
+            "devShmFreeBytes": 2002726912
+          },
+          "postpublishLaunchPlan": "/tmp/pow-ui-resume-20260905/postpublish/launch-plan.json",
+          "postpublishPlanHistoricalHoldReasonSuperseded": "Additional funding-parent scope is now approved; publication remains held solely for coordinated root node gates and explicit execution handoff.",
+          "browserScriptSha256": {
+            "ordered-production-ui.mjs": "1543d65d09812fb42e2b8b7f3dca4a7af79f9eff3930d268df8b3233c668ef72",
+            "playwright.production-readonly.config.mjs": "790997f2360caacadd702fe4f5b89de41dd5053bee4012e271c05f84faa4486b",
+            "boost-guarded.spec.mjs": "95072a234daae32a9c3cfc772cc2e8e032ceba7915fa8926359e9faeda6ca18a"
+          },
+          "heavyCandidateProvenance": "Not repeated: full installed checker PASS21:13:23; fresh checks show no identity drift. Publication wrapper will enforce its normal complete gates.",
+          "priorRootsAndAllOriginalBuildsPreserved": true
+        }
+      },
+      "toolPins": {
+        "deploy/audit5/window-unit.py": {
+          "sha256": "06d1cd67d7f2238c91ffddc5cb50c3e0f325ae1bb5547e24019602d91dc52bb3",
+          "bytes": 7219
+        },
+        "deploy/audit5/window-quiescence.py": {
+          "sha256": "710dbbe0fce1189b735e8e4795bdbef632040a36558fb4b0004a44d98204fb63",
+          "bytes": 7831
+        },
+        "deploy/audit5/check-exact-aux.py": {
+          "sha256": "3f2fc89dbd22d77253ebc698d78b37699bebb214dc842c90625b7eb761ea60d3",
+          "bytes": 15531
+        },
+        "deploy/audit5/aux-fields.sql": {
+          "sha256": "2b83631a2f7495357ba1445948a525877b6cd6239043f5e5462aab376b18eccc",
+          "bytes": 2335
+        },
+        "deploy/audit5/capture-repair-evidence.py": {
+          "sha256": "395e088ec053d080220b70f769817e8c596c064568bcae910f9c194379d33f32",
+          "bytes": 6878
+        },
+        "deploy/audit5/rotate-cache.py": {
+          "sha256": "089ab6e7d8c482811cffc61279a40afcc7f4df6e3938f174bf45dca47fdb6529",
+          "bytes": 8092
+        },
+        "deploy/audit5/restore-window-timers.py": {
+          "sha256": "38c17ca564982b815ea3410c04e28aceca90513bcc96bc1ce8c6e533196ec79f",
+          "bytes": 7663
+        },
+        "scripts/check-audit5-data-repair.mjs": {
+          "sha256": "4af49f042d8ece901f31e09362e53c1f6df954f2b3baa43385b0fc4a8b9d476e",
+          "bytes": 7043
+        }
       }
     }
   }

@@ -1,5 +1,6 @@
 #!/usr/bin/python3 -I
-"""Offline exact-four-target outer check. No subprocess, network, or writes.
+"""Offline exact-four-target and approved funding-link outer check.
+No subprocess, network, or writes.
 Usage: python3 -I check-exact-aux.py CORE BASE_BEFORE EXTRA_BEFORE
        [BASE_INTERMEDIATE EXTRA_INTERMEDIATE [BASE_AFTER EXTRA_AFTER]]
 Run in addition to the reviewed standard before/after comparator.
@@ -72,6 +73,18 @@ def normalized_inputs(extra):
     return [{k:r[k] for k in ('vin','prev_txid','prev_vout','address','value_sats','sequence','script_sig','witness')} for r in extra['inputs']]
 def normalized_outputs(extra):
     return [{k:r[k] for k in ('vout','value_sats','address','scriptpubkey','scriptpubkey_asm','scriptpubkey_type')} for r in extra['outputs']]
+def sort_outputs(rows): return sorted(rows,key=lambda r:(r['txid'],r['vout']))
+def verify_optional_raw_blocktime(raw, block_epoch):
+    # Core getblock verbosity 2 omits per-transaction blocktime. The independently
+    # hash-bound block header and transaction.block_time are always required.
+    containers=[raw]
+    if 'rawCore' in raw:
+        need(isinstance(raw['rawCore'],dict),'raw Core transaction object')
+        containers.append(raw['rawCore'])
+    for container in containers:
+        if 'blocktime' in container:
+            value=container['blocktime']
+            need(type(value) is int and value==block_epoch,'provided raw Core blocktime agrees with canonical header timestamp')
 def base_extra_bind(base, extra):
     need(base['format']=='proofofwork-audit5-repair-evidence-v1' and extra['format']=='audit5-exact-aux-fields-v1','evidence format')
     for r in (base,extra): need(r['database']=='proof_indexer' and r['otherDatabaseSessions']==0,'stopped-writer database guard')
@@ -80,6 +93,7 @@ def base_extra_bind(base, extra):
     equal(base['aux']['inputs'],[dict(vin=r['vin'],prevTxid=r['prev_txid'],prevVout=r['prev_vout'],valueSats=None if r['value_sats'] is None else str(r['value_sats'])) for r in extra['inputs']],'base/extra input bind')
     equal(base['aux']['outputs'],[dict(vout=r['vout'],valueSats=str(r['value_sats']),scriptPubKey=r['scriptpubkey']) for r in extra['outputs']],'base/extra output bind')
     need(base['aux']['opReturnCount']==len(extra['opReturns']),'base/extra OP_RETURN bind')
+    equal(base['aux']['anchorLinks'],[dict(txid=r['txid'],vout=r['vout'],spentByTxid=r['spent_by_txid'],spentByVin=r['spent_by_vin'],valueSats=str(r['value_sats']),scriptPubKey=r['scriptpubkey']) for r in extra['anchors']],'base/extra spend-link bind')
     for rows in (extra['inputs'],extra['outputs'],extra['opReturns']):
         need(all(r['network']=='livenet' and r['txid']==AUX for r in rows),'row scope')
     return t
@@ -109,7 +123,11 @@ def validate(core, pairs):
     need(sum(r['value_sats'] for r in expected_inputs)==3593 and sum(r['value_sats'] for r in expected_outputs)==3118,'exact decoded economics')
     equal(before['aux']['anchorLinks'],core['preservedAnchors'],'five saved Core anchors')
     need(len(before_extra['anchors'])==5,'five complete anchor rows')
-    equal(before_extra['parentOutputs'],before_extra['anchors'],'six referenced outpoints must have only the five already-linked persisted rows')
+    funding=expected_inputs[0]
+    need(funding['prev_txid']=='fc57450c502e054ecf23469d88f5249a578799da59d111fe234e50ca593c20e5' and funding['prev_vout']==3 and funding['value_sats']==863,'only approved funding prevout')
+    funding_before=dict(network='livenet',txid=funding['prev_txid'],vout=3,value_sats=863,address=address,scriptpubkey=PAYMENT_SCRIPT,scriptpubkey_asm=expected_outputs[0]['scriptpubkey_asm'],scriptpubkey_type='pubkeyhash',spent_by_txid=None,spent_by_vin=None,spent_at=None)
+    parents_before=sort_outputs(before_extra['anchors']+[funding_before])
+    equal(before_extra['parentOutputs'],parents_before,'baseline must contain only five existing anchors and the exact approved unlinked funding row')
     block_time=tx['block_time']; need(isinstance(block_time,str),'existing transaction block_time')
     parsed_time=datetime.datetime.fromisoformat(block_time)
     need(parsed_time.tzinfo is not None and parsed_time.microsecond==0,'canonical whole-second timestamp with timezone')
@@ -117,8 +135,9 @@ def validate(core, pairs):
     header=bytes.fromhex(AUX_BLOCK_HEADER_HEX)
     need(len(header)==80 and hashlib.sha256(hashlib.sha256(header).digest()).digest()[::-1].hex()==target[AUX]['blockHash'],'canonical Core header hash binding')
     need(block_epoch==int.from_bytes(header[68:72],'little'),'exact canonical header timestamp')
-    raw_time=tx['raw_tx'].get('rawCore',tx['raw_tx']).get('blocktime')
-    need(type(raw_time) is int and raw_time==block_epoch,'stored raw Core blocktime agrees with transaction block_time')
+    verify_optional_raw_blocktime(tx['raw_tx'],block_epoch)
+    funding_after=dict(funding_before,spent_by_txid=AUX,spent_by_vin=0,spent_at=block_time)
+    parents_after=sort_outputs(before_extra['anchors']+[funding_after])
     for r in before_extra['anchors']:
         equal(r['spent_at'],block_time,'existing anchor spent_at must already equal canonical transaction block_time')
         parent=expected_inputs[r['spent_by_vin']]
@@ -132,8 +151,9 @@ def validate(core, pairs):
         need(script[4:].decode('utf-8')==e['raw_payload'],'event raw payload/Core bytes')
     for index,(base,extra) in enumerate(pairs):
         current=base_extra_bind(base,extra); need(raw_hex(extra)==raw,'raw transaction bytes preserved')
-        equal(extra['anchors'],before_extra['anchors'],'all complete existing anchor fields preserved')
-        equal(extra['parentOutputs'],before_extra['parentOutputs'],'all six referenced parent outpoints preserve their exact stored rows')
+        verify_optional_raw_blocktime(current['raw_tx'],block_epoch)
+        equal(extra['anchors'],before_extra['anchors'] if index==0 else parents_after,'five complete anchors unchanged plus only the approved funding spend link')
+        equal(extra['parentOutputs'],parents_before if index==0 else parents_after,'only three approved funding spend fields may change on six exact parent rows')
         for field in ('invariants','protectedSnapshots'): equal(base[field],before[field],'unchanged '+field)
         if index==0:
             need(len(extra['inputs'])==5 and len(extra['outputs'])==0 and extra['opReturns']==[] and all(r['value_sats'] is None for r in extra['inputs']),'known sparse baseline')
@@ -143,7 +163,7 @@ def validate(core, pairs):
         equal(extra['opReturns'],[],'OP_13 carrier has no push-only protocol row')
         need(current['fee_sats']==475 and current['source']=='canonical-block-scan','persisted fee/source')
         for field in ('version','locktime','vsize','weight'): equal(current[field],parsed[field],'raw exact transaction '+field)
-        for column in ('txid','status','block_hash','block_height','block_index','network','first_seen_at','raw_hex','dropped_at','dropped_reason','replaced_by_txid'):
+        for column in ('txid','status','block_hash','block_height','block_index','block_time','network','first_seen_at','raw_hex','dropped_at','dropped_reason','replaced_by_txid'):
             equal(current[column],tx[column],'transaction preserved '+column)
         if index==1:
             equal(base['targetEvents'],before['targetEvents'],'canonical repair must not change metadata events')
@@ -154,7 +174,7 @@ def validate(core, pairs):
             expected=copy.deepcopy(before['targetEvents'])
             for e,actual in zip(expected,base['targetEvents']): e['payload'].update(ADDITIONS); e['updated_at']=actual['updated_at']
             equal(base['targetEvents'],expected,'only approved five metadata keys and updated_at')
-    return dict(ok=True,phase=['before','intermediate','after'][len(pairs)-1],exactRawSha256=RAW_SHA,expectedInputRows=6,expectedOutputRows=2,persistedInputRows=len(pairs[-1][1]['inputs']),persistedOutputRows=len(pairs[-1][1]['outputs']),inputProofs='3593',outputProofs='3118',persistedFeeProofs='475' if len(pairs)>1 else None,parsedOpReturnRows=0,rawOpReturnScript=RETURN_SCRIPT,existingAnchorRows=5,metadataRecords=3,qualification='Saved canonical Core bytes/parents and stopped SQL phases; the standard comparator and quiescence guard remain mandatory. No spendability claim for newly restored auxiliary outputs.')
+    return dict(ok=True,phase=['before','intermediate','after'][len(pairs)-1],exactRawSha256=RAW_SHA,expectedInputRows=6,expectedOutputRows=2,persistedInputRows=len(pairs[-1][1]['inputs']),persistedOutputRows=len(pairs[-1][1]['outputs']),inputProofs='3593',outputProofs='3118',persistedFeeProofs='475' if len(pairs)>1 else None,parsedOpReturnRows=0,rawOpReturnScript=RETURN_SCRIPT,existingAnchorRows=5,approvedFundingLinks=1 if len(pairs)>1 else 0,metadataRecords=3,qualification='Saved canonical Core bytes/parents and stopped SQL phases; the standard comparator and quiescence guard remain mandatory. Exactly three funding spend fields are approved; no spendability claim for newly restored auxiliary outputs.')
 if __name__=='__main__':
     need(len(sys.argv) in (4,6,8),'expected CORE plus one/two/three BASE EXTRA pairs')
     values=[load(p) for p in sys.argv[1:]]

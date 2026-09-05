@@ -27,6 +27,14 @@ const auxiliaryOutputEvidence = [
   { vout: 0, valueSats: "3118", scriptPubKey: "76a9144752142b83faf13d526a59212f3f228012890dbe88ac" },
   { vout: 1, valueSats: "0", scriptPubKey: "6a5d081600ff7f8184ec02" },
 ];
+function canonicalAnchorLinks(inputs) {
+  return inputs.map(input => ({
+    txid: input.prevTxid, vout: input.prevVout,
+    spentByTxid: "4c079144b315ca08a846e7e7af3d37f5c96419a94f06af8384dc73e1ca307359",
+    spentByVin: input.vin, valueSats: input.valueSats,
+    scriptPubKey: auxiliaryOutputEvidence[0].scriptPubKey,
+  })).sort((a, b) => a.txid < b.txid ? -1 : a.txid > b.txid ? 1 : a.vout - b.vout);
+}
 function validate(evidence, repaired) {
   assert.equal(evidence.format, "proofofwork-audit5-repair-evidence-v1");
   assert.equal(evidence.database, "proof_indexer");
@@ -40,7 +48,9 @@ function validate(evidence, repaired) {
   assert.equal(evidence.aux.rawVout, 2);
   assert.equal(evidence.aux.inputs.length, repaired ? 6 : 5);
   assert.equal(evidence.aux.outputs.length, repaired ? 2 : 0);
-  assert.equal(evidence.aux.anchorLinks.length, 5);
+  assert.deepEqual(evidence.aux.anchorLinks,
+    canonicalAnchorLinks(repaired ? auxiliaryInputEvidence : auxiliaryInputEvidence.slice(1)),
+    "Preserve the five original anchors and add only the approved funding prevout at vin zero.");
   if (repaired) {
     assert.equal(evidence.aux.opReturnCount, 0, "OP_13 is not a push-only protocol payload.");
     assert.deepEqual(evidence.aux.inputs, auxiliaryInputEvidence, "Each input must match its exact Core prevout and value.");
@@ -88,7 +98,8 @@ function validate(evidence, repaired) {
 validate(before, false);
 if (after) {
   validate(after, true);
-  assert.deepEqual(after.aux.anchorLinks, before.aux.anchorLinks, "All five existing spend links must remain identical.");
+  assert.deepEqual(after.aux.anchorLinks.filter(link => link.spentByVin !== 0),
+    before.aux.anchorLinks, "All five existing spend links must remain identical.");
   assert.deepEqual(after.invariants, before.invariants, "Event/economic/transition commitments changed beyond the approved metadata.");
   assert.deepEqual(after.protectedSnapshots, before.protectedSnapshots, "Immutable H-1/seed evidence changed.");
   for (const event of after.targetEvents) {
@@ -99,4 +110,5 @@ if (after) {
 }
 console.log(JSON.stringify({ ok: true, phase: after ? "post-repair-before-bootstrap" : "stopped-writer-preflight",
   auxiliaryTransactions: 1, invalidZeroEvents: 3, preservedAnchorLinks: 5,
-  note: "Existing repair writers additionally verify exact hydrated Core details and strict atomic invariants. Resume writers only after this check and required bootstrap gates." }, null, 2));
+  approvedFundingLinks: after ? 1 : 0,
+  note: "The exact auxiliary checker must also bind the approved funding row's three spend fields and preserve all other columns. Existing repair writers additionally verify exact hydrated Core details and strict atomic invariants. Resume writers only after all checks and required bootstrap gates." }, null, 2));

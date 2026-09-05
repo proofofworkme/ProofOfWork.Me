@@ -1115,3 +1115,40 @@ Final checkpoint validation: `npm run hygiene:check` and `git diff --check`
 passed. No tracked file was deleted; only the current audit pair changed among
 audit records. The local checkpoint remains unpushed pending the scoped repair
 decision and required production workflow.
+
+
+### Funding-parent addition approved; final prewindow checks (2026-09-05)
+
+The user explicitly approved the additional H5-04 funding-output repair and
+preserved every existing requirement. The earlier scope hold is resolved only
+for the three specified spend-link columns on `fc57450c…93c20e5:3`. The five
+original anchors, funding amount/address/script, protocol events, credit
+balances, historical commitments and all other data remain protected.
+
+The updated comparator passed 27 checks; the exact auxiliary validator passed
+116 checks, including the actual database record shape and approved parent
+transition. Core block-member transaction JSON legitimately omits `blocktime`;
+verification requires the independently hash-bound block header and exact
+transaction table timestamp, and validates every raw timestamp when present.
+This corrected an audit-harness assumption without changing application code.
+The live shape read reported four other database sessions and is explicitly
+not a stopped-writer invariant capture. The final controlled-window capture
+must still observe zero other sessions.
+
+The revised unit launcher passed 27 checks and the phase capture helper passed
+18. Before either repair, the exact approved parent scope and full quiescence
+must pass. Each SQL phase creates an exclusive attempt marker before its first
+query and preserves partial/failure evidence; unsuccessful attempts cannot be
+blindly repeated. The standard and independent exact validators gate before,
+intermediate and after states, including unchanged auxiliary/parent data during
+the metadata repair. All source hashes are frozen in the evidence receipt.
+
+Fresh Core proof at 21:29:36 UTC, block 965669, confirms all four historical
+targets, six input parents, five original anchors and exact 3593/3118/475
+accounting. Fresh host checks found unchanged candidate/live fingerprints,
+private environment hashes, service identities, cache ownership and recovery
+metadata. The retained WAL sequence is continuous and the receiver is streaming;
+no new backup or destructive cleanup was needed. The UI candidate remains
+verified and unpublished, above the unchanged floor and reserve. All normal
+monitoring remains active at this preparation checkpoint. No controlled window,
+database repair or application publication has begun yet.

@@ -26,7 +26,8 @@ const before = {
     rawVin: 6, rawVout: 2, inputs: coreInputs.slice(1).map(input => ({ ...input, valueSats: null })),
     outputs: [], anchorLinks: coreInputs.slice(1).map(input => ({ txid: input.prevTxid, vout: input.prevVout,
       spentByTxid: "4c079144b315ca08a846e7e7af3d37f5c96419a94f06af8384dc73e1ca307359",
-      spentByVin: input.vin, valueSats: input.valueSats, scriptPubKey: paymentScript })), opReturnCount: 0 },
+      spentByVin: input.vin, valueSats: input.valueSats, scriptPubKey: paymentScript }))
+      .sort((a, b) => a.txid < b.txid ? -1 : a.txid > b.txid ? 1 : a.vout - b.vout), opReturnCount: 0 },
   targetEvents: targets.map(([event_id, txid]) => ({ event_id, txid, protocol: "pwt1",
     kind: "token-listing-sealed-invalid", status: "confirmed", valid: false, amount_sats: 0,
     updated_at: "before", payload: { amount: "0", amountSats: 0, attemptedKind: "seal",
@@ -41,6 +42,9 @@ const after = structuredClone(before);
 after.aux.inputs = structuredClone(coreInputs);
 after.aux.outputs = [{ vout: 0, valueSats: "3118", scriptPubKey: paymentScript },
   { vout: 1, valueSats: "0", scriptPubKey: "6a5d081600ff7f8184ec02" }];
+after.aux.anchorLinks.push({ txid: coreInputs[0].prevTxid, vout: 3,
+  spentByTxid: before.aux.txid, spentByVin: 0, valueSats: "863", scriptPubKey: paymentScript });
+after.aux.anchorLinks.sort((a, b) => a.txid < b.txid ? -1 : a.txid > b.txid ? 1 : a.vout - b.vout);
 after.missingZeroMetadataTxids = [];
 for (const event of after.targetEvents) {
   event.updated_at = "after";
@@ -87,6 +91,11 @@ try {
     ["invented parsed OP_RETURN row", row => { row.aux.opReturnCount = 1; }],
     ["changed raw OP_RETURN script", row => { row.aux.outputs[1].scriptPubKey = "6a0116"; }],
     ["changed payment output script", row => { row.aux.outputs[0].scriptPubKey = "51"; }],
+    ["missing approved funding link", row => { row.aux.anchorLinks = row.aux.anchorLinks.filter(link => link.spentByVin !== 0); }],
+    ["wrong funding amount", row => { row.aux.anchorLinks.find(link => link.spentByVin === 0).valueSats = "864"; }],
+    ["wrong funding input ordinal", row => { row.aux.anchorLinks.find(link => link.spentByVin === 0).spentByVin = 6; }],
+    ["wrong funding parent", row => { row.aux.anchorLinks.find(link => link.spentByVin === 0).txid = "f".repeat(64); }],
+    ["seventh spend link", row => { row.aux.anchorLinks.push({ ...row.aux.anchorLinks[0], vout: 4 }); }],
   ]) {
     const changed = structuredClone(after);
     mutate(changed);
