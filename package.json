@@ -51,6 +51,10 @@
     "check:live-data": "node scripts/check-live-data-contract.mjs",
     "check:index-recovery-behavior": "node scripts/check-index-recovery-behavior.mjs",
     "check:client-read-containment": "node scripts/check-client-read-containment.mjs",
+    "check:api-client-timeouts": "node --test scripts/check-proof-api-client.test.mjs",
+    "check:read-projections": "node --test server/read-projections.test.mjs",
+    "check:boost-regressions": "node --test scripts/check-boost-regressions.mjs",
+    "check:surface-read-state": "node scripts/check-surface-read-state.mjs",
     "check:worker-containment": "node scripts/check-worker-containment.mjs",
     "check:send-prep-regressions": "node scripts/check-send-prep-regressions.mjs",
     "check:credit-mint-regressions": "node scripts/check-credit-mint-regressions.mjs",
@@ -84,7 +88,16 @@
     "rank:powids": "node scripts/rank-powid-transactions.mjs",
     "proof-api": "node server/proof-api.mjs",
     "model:growth": "node scripts/generate-growth-forecast.mjs",
-    "check:growth": "node --test scripts/check-growth-forecast.test.mjs scripts/check-boost-growth-client.test.mjs scripts/check-boost-growth.mjs scripts/check-growth-archive.test.mjs"
+    "check:growth": "node --test scripts/check-growth-forecast.test.mjs scripts/check-boost-growth-client.test.mjs scripts/check-boost-growth.mjs scripts/check-growth-archive.test.mjs",
+    "check:ui-stage-dedup": "python3 -B scripts/check-ui-stage-dedup.py",
+    "check:ui-retained-root": "python3 -B scripts/check-ui-retained-root.py",
+    "check:approved-archive-prune": "python3 -B scripts/check-approved-archive-prune.py",
+    "check:audit5-data-repair": "node scripts/check-audit5-data-repair-fixtures.mjs",
+    "check:audit5-private-launcher": "node scripts/check-audit5-private-launcher.mjs",
+    "check:audit5-ui-workflow": "python3 -B scripts/check-audit5-ui-workflow.py",
+    "check:audit5-node-attestor": "python3 -I -B scripts/check-audit5-node-attestor.py",
+    "check:audit5-ops-installer": "python3 -I -B scripts/check-audit5-ops-installer.py",
+    "check:send-prep-fixtures": "node scripts/check-send-prep-fixtures.mjs"
   },
   "dependencies": {
     "@bitcoinerlab/secp256k1": "^1.2.0",

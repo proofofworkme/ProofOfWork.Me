@@ -420,13 +420,13 @@ expect(
     /registryLoaded/.test(landingRoot) &&
     /registryFresh/.test(landingRoot) &&
     /AbortController/.test(landingRoot) &&
-    /payload\.records\.map\(\(record, index\)/.test(landingRoot) &&
-    /Registry summary record \$\{index \+ 1\} is malformed/.test(landingRoot) &&
-    !/payload\.records\.flatMap/.test(landingRoot) &&
+    /projection=counts-v1/.test(landingRoot) &&
+    /setRegistryCounts\(completeRegistryCounts\(payload\)\)/.test(landingRoot) &&
+    !/payload\.records/.test(landingRoot) &&
     !/from "\.\.\/\.\.\/App"|bitcoinjs|signPsbt|buildPaymentPsbt/.test(
       landingRoot,
     ) &&
-    /registryLoaded \? confirmedRecords\.length\.toLocaleString\(\) : "…"/.test(
+    /registryLoaded \? registryCounts\.confirmedCount\.toLocaleString\(\) : "…"/.test(
       landingApp,
     ),
 );
@@ -609,30 +609,30 @@ expect(
 );
 expect(
   "Boost feed renders total signal while preserving proof and WORK lanes",
-  /function boostTotalSignalSats/u.test(boostRoot) &&
-    /function boostProofSignalSats/u.test(boostRoot) &&
-    /function boostWorkSignalValueSats/u.test(boostRoot) &&
+  /function boostTotalSignalQ8/u.test(boostRoot) &&
+    /function boostProofSignalQ8/u.test(boostRoot) &&
+    /function boostWorkSignalValueQ8/u.test(boostRoot) &&
     /function boostWorkSignalSubatoms/u.test(boostRoot) &&
     /function formatWorkSignal/u.test(boostRoot) &&
-    /<strong>\{formatProofs\(totalSignalSats\)\}<\/strong>/u.test(
+    /<strong>\{formatBoostSignal\(totalSignalQ8\)\}<\/strong>/u.test(
       boostRoot,
     ) &&
     /Total USD \{formatUsd\(boostTotalSignalUsd\(item\)\)\}/u.test(
       boostRoot,
     ) &&
-    /Proof \{formatProofs\(boostProofSignalSats\(item\)\)\}/u.test(
+    /Proof \{formatBoostSignal\(boostProofSignalQ8\(item\)\)\}/u.test(
       boostRoot,
     ) &&
-    /WORK \{formatWorkAmount\(workSignalSubatoms, true\)\}\{" "\}[\s\S]*formatProofs\(workSignalValueSats\)/u.test(
+    /WORK \{formatWorkAmount\(workSignalSubatoms, true\)\}\{" "\}[\s\S]*formatBoostSignal\(workSignalValueQ8\)/u.test(
       boostRoot,
     ) &&
-    /const headerSignalStats = useMemo\([\s\S]*boostProofSignalSats\(item\)[\s\S]*boostTotalSignalSats\(item\)[\s\S]*boostTotalSignalUsd\(item\)[\s\S]*boostWorkSignalSubatoms\(item\)/u.test(
+    /const headerSignalStats = useMemo\([\s\S]*boostProofSignalQ8\(item\)[\s\S]*boostTotalSignalQ8\(item\)[\s\S]*boostTotalSignalUsd\(item\)[\s\S]*boostWorkSignalSubatoms\(item\)/u.test(
       boostRoot,
     ) &&
-    /label:\s*"Total Signal"[\s\S]*formatProofs\(headerSignalStats\.totalSignalSats\)/u.test(
+    /label:\s*"Total Signal"[\s\S]*formatBoostSignal\(headerSignalStats\.totalSignalQ8\)/u.test(
       boostRoot,
     ) &&
-    /label:\s*"Proof Signal"[\s\S]*formatProofs\(headerSignalStats\.proofSignalSats\)/u.test(
+    /label:\s*"Proof Signal"[\s\S]*formatBoostSignal\(headerSignalStats\.proofSignalQ8\)/u.test(
       boostRoot,
     ) &&
     /label:\s*"WORK Signal"[\s\S]*formatWorkSignal\(headerSignalStats\.workSignalSubatoms\)/u.test(
@@ -641,8 +641,8 @@ expect(
     /label:\s*"Total USD"[\s\S]*formatUsd\(headerSignalStats\.totalSignalUsd\)/u.test(
       boostRoot,
     ) &&
-    /totalSignalSats\?: number/u.test(boostProtocol) &&
-    /workSignalValueSats\?: number/u.test(boostProtocol),
+    /totalSignalQ8\?: string/u.test(boostProtocol) &&
+    /workSignalValueQ8\?: string/u.test(boostProtocol),
 );
 expect(
   "Boost profile view is a person page with profile-specific tabs",
@@ -2989,9 +2989,8 @@ expect(
   "Computer WORK workspace shows loading state before ledger data arrives",
   /ledgerLoading/.test(app) &&
     /Loading \{detailToken\?\.ticker \?\? "credit"\} ledger/.test(app) &&
-    /tokenLedgerLoading &&[\s\S]*tokenSupplyUnits\([\s\S]*workTokenLedger\.confirmedSupply[\s\S]*\?\? 0n\) === 0n[\s\S]*\?\s*"\.\.\."/.test(
-      app,
-    ),
+    /const sidebarWorkState = acceptedTokenStatesRef\.current\.get\([\s\S]*tokenScope: WORK_TOKEN_ID, walletScoped: false/.test(app) &&
+    /sidebarWorkDefinition\?\.confirmedSupply === undefined[\s\S]*\? "…"[\s\S]*tokenSupplyDisplay\(sidebarWorkDefinition, sidebarWorkDefinition\.confirmedSupply\)/.test(app),
 );
 expect(
   "WORK bootstraps from the compact summary and pages history",

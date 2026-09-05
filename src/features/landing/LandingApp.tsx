@@ -53,8 +53,10 @@ import { AppStatusRow } from "../../shared/components/AppStatusRow";
 import { SocialFooter } from "../../shared/components/SocialFooter";
 import "./landing.css";
 
-type LandingRegistryRecord = {
-  confirmed: boolean;
+type LandingRegistryCounts = {
+  confirmedCount: number;
+  pendingCount: number;
+  totalCount: number;
 };
 
 const LANDING_VIDEO_URL = "https://www.youtube.com/watch?v=vJLBCylKMyc";
@@ -213,7 +215,7 @@ export function LandingApp({
   registryFresh = false,
   registryLoaded = true,
   registryLoading = false,
-  registryRecords,
+  registryCounts,
   registryWarning = "",
   onRefresh,
 }: {
@@ -222,12 +224,10 @@ export function LandingApp({
   registryFresh?: boolean;
   registryLoaded?: boolean;
   registryLoading?: boolean;
-  registryRecords: LandingRegistryRecord[];
+  registryCounts: LandingRegistryCounts;
   registryWarning?: string;
   onRefresh: () => void;
 }) {
-  const confirmedRecords = registryRecords.filter((record) => record.confirmed);
-  const pendingRecords = registryRecords.filter((record) => !record.confirmed);
 
   return (
     <main className="landing-app">
@@ -330,19 +330,19 @@ export function LandingApp({
           <div>
             <span>Confirmed IDs</span>
             <strong>
-              {registryLoaded ? confirmedRecords.length.toLocaleString() : "…"}
+              {registryLoaded ? registryCounts.confirmedCount.toLocaleString() : "…"}
             </strong>
           </div>
           <div>
             <span>Pending IDs</span>
             <strong>
-              {registryLoaded ? pendingRecords.length.toLocaleString() : "…"}
+              {registryLoaded ? registryCounts.pendingCount.toLocaleString() : "…"}
             </strong>
           </div>
           <div>
             <span>Visible records</span>
             <strong>
-              {registryLoaded ? registryRecords.length.toLocaleString() : "…"}
+              {registryLoaded ? registryCounts.totalCount.toLocaleString() : "…"}
             </strong>
           </div>
           <button

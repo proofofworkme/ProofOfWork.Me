@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+from contextlib import contextmanager
 import ctypes
 import errno
 import fcntl
@@ -79,6 +80,204 @@ class PayloadBudget(TypedDict):
     regular_bytes: int
     maximum_entries: int
     maximum_bytes: int
+
+
+class CandidateManagedDeduplicator:
+    """Share exact files only inside this private, newly constructed candidate.
+
+    This never registers source/live/passthrough paths. Pre-existing hardlinks
+    are rejected, so every registered inode starts as an independent copy.
+    Directory-descriptor traversal and O_NOFOLLOW keep all links and atomic
+    replacements inside the candidate even if an entry changes during a read.
+    """
+
+    def __init__(self, root: Path, expected_owner: int):
+        self.root = root
+        self.owner = expected_owner
+        parent = canonical_safe_directory(root.parent, "Private candidate parent", expected_owner)
+        if stat.S_IMODE(parent.st_mode) != 0o700:
+            fail("Managed deduplication requires a private 0700 candidate parent.")
+        details = canonical_safe_directory(root, "Deduplication candidate", expected_owner)
+        self.root_fd = os.open(root, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+        if file_identity(os.fstat(self.root_fd)) != file_identity(details):
+            os.close(self.root_fd)
+            fail("Deduplication candidate changed while opening.")
+        self.root_identity = (details.st_dev, details.st_ino)
+        self.records: dict[tuple, dict] = {}
+        self.paths: dict[str, dict] = {}
+        self.linked_files = 0
+        self.saved_bytes = 0
+
+    def close(self) -> None:
+        os.close(self.root_fd)
+
+    def validate_details(self, details: os.stat_result, relative: str) -> None:
+        if details.st_dev != self.root_identity[0]:
+            fail(f"Managed deduplication crosses a filesystem boundary: {relative}")
+        if details.st_uid != self.owner or details.st_mode & 0o7022:
+            fail(f"Managed deduplication encountered unsafe ownership or mode: {relative}")
+
+    @contextmanager
+    def open_directory(self, relative: str):
+        safe_relative(relative, "managed deduplication directory")
+        descriptors = [os.dup(self.root_fd)]
+        try:
+            for part in relative.split("/"):
+                descriptor = os.open(part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
+                                     dir_fd=descriptors[-1])
+                descriptors.append(descriptor)
+                self.validate_details(os.fstat(descriptor), relative)
+            yield descriptors[-1]
+        except OSError as error:
+            raise StageError(f"Unable to safely open managed directory {relative}: {error}") from error
+        finally:
+            for descriptor in reversed(descriptors):
+                os.close(descriptor)
+
+    @contextmanager
+    def open_file(self, relative: str):
+        safe_relative(relative, "managed deduplication")
+        parts = relative.split("/")
+        if len(parts) < 2 or parts[0] not in {f"proofofwork-{surface}" for surface in SURFACES}:
+            fail(f"Managed deduplication path is outside managed surfaces: {relative}")
+        root_details = self.root.lstat()
+        if (root_details.st_dev, root_details.st_ino) != self.root_identity:
+            fail("Managed deduplication candidate root changed.")
+        descriptors = [os.dup(self.root_fd)]
+        try:
+            for part in parts[:-1]:
+                descriptor = os.open(part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
+                                     dir_fd=descriptors[-1])
+                descriptors.append(descriptor)
+                self.validate_details(os.fstat(descriptor), relative)
+            parent_fd = descriptors[-1]
+            descriptor = os.open(parts[-1], os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK,
+                                 dir_fd=parent_fd)
+            descriptors.append(descriptor)
+            details = os.fstat(descriptor)
+            self.validate_details(details, relative)
+            if not stat.S_ISREG(details.st_mode):
+                fail(f"Managed deduplication requires a regular file: {relative}")
+            if file_identity(os.stat(parts[-1], dir_fd=parent_fd, follow_symlinks=False)) != file_identity(details):
+                fail(f"Managed deduplication entry changed while opening: {relative}")
+            yield parent_fd, parts[-1], descriptor, details
+        except OSError as error:
+            raise StageError(f"Unable to safely deduplicate managed file {relative}: {error}") from error
+        finally:
+            for descriptor in reversed(descriptors):
+                os.close(descriptor)
+
+    @staticmethod
+    def hash_file(descriptor: int, expected: os.stat_result, relative: str) -> bytes:
+        digest = hashlib.sha256()
+        offset = 0
+        while True:
+            chunk = os.pread(descriptor, 1024 * 1024, offset)
+            if not chunk:
+                break
+            digest.update(chunk)
+            offset += len(chunk)
+        if file_identity(os.fstat(descriptor)) != file_identity(expected):
+            fail(f"Managed file changed during deduplication hashing: {relative}")
+        return digest.digest()
+
+    def add_file(self, relative: str) -> None:
+        with self.open_file(relative) as (target_parent, target_name, target_fd, target_details):
+            registered = self.paths.get(relative)
+            if registered is not None:
+                if (file_identity(target_details) != registered["identity"] or
+                        target_details.st_nlink != registered["links"]):
+                    fail(f"Registered managed file changed: {relative}")
+                return
+            if target_details.st_nlink != 1:
+                fail(f"Managed deduplication refuses pre-existing hardlinks: {relative}")
+            digest = self.hash_file(target_fd, target_details, relative)
+            # Include every public byte/metadata fingerprint field and xattrs.
+            # Separate surface builds can give identical chunks different
+            # mtimes; aliases adopt the first candidate copy's mtime. No live
+            # or source timestamp is changed, and timestamps are not provenance.
+            key = (target_details.st_size, stat.S_IMODE(target_details.st_mode),
+                   target_details.st_uid, target_details.st_gid,
+                   tuple((name, os.getxattr(target_fd, name)) for name in sorted(os.listxattr(target_fd))), digest)
+            if file_identity(os.fstat(target_fd)) != file_identity(target_details):
+                fail(f"Managed file metadata changed during deduplication: {relative}")
+            source = self.records.get(key)
+            if source is None:
+                source = {"path": relative, "identity": file_identity(target_details), "links": 1}
+                self.records[key] = source
+                self.paths[relative] = source
+                return
+            with self.open_file(source["path"]) as (source_parent, source_name, source_fd, source_details):
+                if (file_identity(source_details) != source["identity"] or
+                        source_details.st_nlink != source["links"]):
+                    fail(f"Managed deduplication source changed: {source['path']}")
+                if self.hash_file(source_fd, source_details, source["path"]) != digest:
+                    fail("Managed deduplication source digest changed.")
+                for offset in range(0, target_details.st_size, 1024 * 1024):
+                    if os.pread(source_fd, 1024 * 1024, offset) != os.pread(target_fd, 1024 * 1024, offset):
+                        fail("Managed deduplication digest collision or concurrent byte change.")
+                for parent, name, descriptor, expected in (
+                    (source_parent, source_name, source_fd, source_details),
+                    (target_parent, target_name, target_fd, target_details),
+                ):
+                    if (file_identity(os.fstat(descriptor)) != file_identity(expected) or
+                            file_identity(os.stat(name, dir_fd=parent, follow_symlinks=False)) != file_identity(expected)):
+                        fail("Managed deduplication file changed before linking.")
+                temporary = f".proofofwork-dedup-{os.urandom(16).hex()}"
+                created = False
+                try:
+                    os.link(source_name, temporary, src_dir_fd=source_parent,
+                            dst_dir_fd=target_parent, follow_symlinks=False)
+                    created = True
+                    linked = os.stat(temporary, dir_fd=target_parent, follow_symlinks=False)
+                    if (not stat.S_ISREG(linked.st_mode) or
+                            (linked.st_dev, linked.st_ino) != (source_details.st_dev, source_details.st_ino) or
+                            file_identity(os.fstat(source_fd))[:-1] != file_identity(source_details)[:-1] or
+                            file_identity(os.stat(target_name, dir_fd=target_parent, follow_symlinks=False)) != file_identity(target_details)):
+                        fail("Managed deduplication link identity changed before replacement.")
+                    os.replace(temporary, target_name, src_dir_fd=target_parent, dst_dir_fd=target_parent)
+                    created = False
+                    final_source = os.fstat(source_fd)
+                    final_target = os.stat(target_name, dir_fd=target_parent, follow_symlinks=False)
+                    if (file_identity(final_source) != file_identity(final_target) or
+                            file_identity(final_source)[:-1] != file_identity(source_details)[:-1] or
+                            final_source.st_nlink != source["links"] + 1 or os.fstat(target_fd).st_nlink != 0):
+                        fail("Managed deduplication identity changed during replacement.")
+                    if self.hash_file(source_fd, final_source, source["path"]) != digest:
+                        fail("Managed deduplication bytes changed during replacement.")
+                    source["identity"] = file_identity(final_source)
+                    source["links"] += 1
+                    self.paths[relative] = source
+                    self.linked_files += 1
+                    self.saved_bytes += target_details.st_size
+                finally:
+                    if created:
+                        os.unlink(temporary, dir_fd=target_parent)
+
+    def add_surface(self, surface: str) -> None:
+        if surface not in SURFACES:
+            fail(f"Unknown managed deduplication surface: {surface}")
+        before = surface_fingerprint(self.root, surface, self.owner)
+        relative_root = f"proofofwork-{surface}"
+
+        def walk(relative: str) -> None:
+            # Enumerate through the anchored descriptor; each leaf is reopened
+            # without following links and checked again immediately before use.
+            with self.open_directory(relative) as descriptor:
+                for entry in sorted(os.scandir(descriptor), key=lambda entry: os.fsencode(entry.name)):
+                    child = f"{relative}/{entry.name}"
+                    details = entry.stat(follow_symlinks=False)
+                    self.validate_details(details, child)
+                    if stat.S_ISDIR(details.st_mode):
+                        walk(child)
+                    elif stat.S_ISREG(details.st_mode):
+                        self.add_file(child)
+                    else:
+                        fail(f"Managed deduplication encountered an unsupported file: {child}")
+
+        walk(relative_root)
+        if surface_fingerprint(self.root, surface, self.owner) != before:
+            fail(f"Managed deduplication changed a surface byte/metadata fingerprint: {surface}")
 
 
 def fail(message: str) -> None:
@@ -637,6 +836,7 @@ def copy_prior_asset_compatibility(
     live_root: Path,
     stage_root: Path,
     surfaces: tuple[str, ...] = SURFACES,
+    deduplicator: CandidateManagedDeduplicator | None = None,
 ) -> tuple[int, int]:
     counters = {
         "dependencies": 0,
@@ -703,6 +903,8 @@ def copy_prior_asset_compatibility(
                 pending.extend(
                     dependency_references(live_surface, live_asset, dependency_bytes, counters)
                 )
+        if deduplicator is not None:
+            deduplicator.add_surface(surface)
     return counters["dependencies"], counters["total_bytes"]
 
 
@@ -797,6 +999,10 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument("--release-id", required=True)
     parser.add_argument("--surfaces-root", required=True)
     parser.add_argument("--stage-root", required=True)
+    parser.add_argument(
+        "--deduplicate-managed-files", action="store_true",
+        help="Hardlink identical fresh candidate managed files internally; never link to another release or the source payload.",
+    )
     return parser.parse_args()
 
 
@@ -881,6 +1087,7 @@ def main() -> int:
 
     lock_descriptor = acquire_deploy_lock(deploy_lock, allow_test_roots)
     temporary_parent: Path | None = None
+    deduplicator: CandidateManagedDeduplicator | None = None
     try:
         root_identity = (www_details.st_dev, www_details.st_ino)
         root_metadata = (
@@ -930,6 +1137,9 @@ def main() -> int:
                 fail("Copied UI release manifest is not a regular file.")
             copied_manifest.unlink()
 
+        if arguments.deduplicate_managed_files:
+            deduplicator = CandidateManagedDeduplicator(candidate, expected_owner)
+
         for surface in SURFACES:
             destination = candidate / f"proofofwork-{surface}"
             if surface in live_surfaces and not path_is_canonical_directory(destination):
@@ -948,6 +1158,8 @@ def main() -> int:
                     str(destination),
                 ]
             )
+            if deduplicator is not None:
+                deduplicator.add_surface(surface)
 
         candidate_payload_copy, _, _ = bounded_managed_fingerprint(
             candidate,
@@ -971,6 +1183,7 @@ def main() -> int:
             www_root,
             candidate,
             live_surfaces,
+            deduplicator,
         )
 
         candidate_details = canonical_safe_directory(candidate, "Staged UI root", expected_owner)
@@ -1057,11 +1270,15 @@ def main() -> int:
             f"payload_bytes={payload_regular_bytes} "
             f"final_entries={final_entry_count} "
             f"final_bytes={final_regular_bytes} "
+            f"deduplicated_files={deduplicator.linked_files if deduplicator else 0} "
+            f"deduplicated_bytes={deduplicator.saved_bytes if deduplicator else 0} "
             f"stage_root={stage_root}"
         )
         return 0
     finally:
         try:
+            if deduplicator is not None:
+                deduplicator.close()
             if temporary_parent is not None and temporary_parent.exists():
                 shutil.rmtree(temporary_parent)
         finally:

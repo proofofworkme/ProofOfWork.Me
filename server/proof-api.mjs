@@ -24,7 +24,24 @@ import {
   compareCanonicalUtf8,
 } from "./canonical-order.mjs";
 import { createElectrumClient } from "./electrum-client.mjs";
+import {
+  registryCountsProjection,
+  tokenDirectoryProjection,
+  tokenListingDisplayProjection,
+  withTokenDirectoryQualification,
+} from "./read-projections.mjs";
 import { createBoostGrowthObservationLoader, withBoostGrowthObservation } from "./boost-growth.mjs";
+import {
+  assertBoostValuationCheckpoint,
+  boostExactQ8,
+  boostProjectionError,
+  boostProjectionFingerprint,
+  boostQ8Decimal,
+  compareBoostCanonicalEvents,
+  decodeBoostFeedCursor,
+  paginateBoostEntries,
+  readCompleteBoostHistory,
+} from "./boost-projection.mjs";
 import {
   electrumAddressHistoryCoverage,
   firstPartyAddressTransactionsPage,
@@ -50909,6 +50926,9 @@ function boostWorkSignalValue(workSignalSubatoms, workFloor) {
   }
   const { networkValueQ8, networkValueSats } =
     boostWorkNetworkValue(workFloor);
+  if (!networkValueQ8 && !networkValueSats) {
+    throw boostProjectionError("Exact WORK valuation is unavailable for Boost signal.");
+  }
   try {
     const valueQ8 = workSubatomsValueAtNetworkQ8(
       BigInt(subatoms),
@@ -50916,15 +50936,15 @@ function boostWorkSignalValue(workSignalSubatoms, workFloor) {
       networkValueQ8,
     );
     if (valueQ8 === null || valueQ8 < 0n) {
-      return emptyBoostWorkSignalValue();
+      throw boostProjectionError("Exact WORK valuation is unavailable for Boost signal.");
     }
     return {
       workSignalValueQ8: valueQ8.toString(),
       workSignalValueSats: q8ToNumber(valueQ8),
       workSignalValueSatsExact: q8ToCanonicalDecimal(valueQ8),
     };
-  } catch {
-    return emptyBoostWorkSignalValue();
+  } catch (cause) {
+    throw boostProjectionError(`Exact WORK valuation is unavailable for Boost signal: ${errorSummary(cause)}`);
   }
 }
 
@@ -50984,11 +51004,18 @@ function boostEventTimeMs(item) {
 
 function boostEventSearchText(item, state, profileState) {
   return [
+    item?.txid,
+    item?.boostTxid,
+    item?.targetTxid,
     item?.text,
     item?.memo,
     item?.detail,
     item?.title,
     item?.authorAddress,
+    item?.authorId,
+    item?.currentOwnerId,
+    item?.currentOwnerAddress,
+    item?.profile?.id,
     item?.actor,
     item?.profileId,
     profileState?.id,
@@ -51064,9 +51091,8 @@ function boostOwnershipState(items) {
   const counts = new Map();
   const followStates = new Map();
   const profiles = new Map();
-  const ordered = [...items].sort(
-    (left, right) => boostEventTimeMs(left) - boostEventTimeMs(right),
-  );
+  const ordered = items.filter((item) => item?.confirmed !== false)
+    .sort(compareBoostCanonicalEvents);
 
   const ensureState = (txid) => {
     if (!txid) {
@@ -51319,7 +51345,8 @@ function boostFeedItemFromEvent(
   const workSignal = boostWorkSignalDisplay(item);
   const workSignalSubatoms = boostWorkSignalSubatoms(item);
   const workSignalValue = boostWorkSignalValue(workSignalSubatoms, workFloor);
-  const proofSignalQ8 = BigInt(Math.floor(proofSignalSats)) * VALUE_Q8_SCALE;
+  const proofSignalQ8 = boostExactQ8(undefined,
+    item?.proofSignalSats ?? item?.signalSats ?? item?.amountSats ?? item?.proofs ?? 0);
   const totalSignalQ8 =
     proofSignalQ8 + BigInt(workSignalValue.workSignalValueQ8);
   const totalSignalSats = q8ToNumber(totalSignalQ8);
@@ -51330,6 +51357,7 @@ function boostFeedItemFromEvent(
 
   return {
     actionType,
+    eventId: item?.eventId,
     actionCount:
       Number(counter.likes ?? 0) +
       Number(counter.reboosts ?? 0) +
@@ -51366,6 +51394,8 @@ function boostFeedItemFromEvent(
         : undefined,
     profileId,
     proofSignalSats,
+    proofSignalQ8: proofSignalQ8.toString(),
+    proofSignalSatsExact: boostQ8Decimal(proofSignalQ8),
     proofSignalUsd:
       btcUsd > 0
         ? Number(satsToUsdAtBtcUsd(proofSignalSats, btcUsd).toFixed(6))
@@ -51405,10 +51435,11 @@ function compareBoostFeedItems(sortMode) {
     if (sortMode === "newest") {
       return boostEventTimeMs(right) - boostEventTimeMs(left);
     }
-    return (
-      numericValue(right?.valueRank) - numericValue(left?.valueRank) ||
-      boostEventTimeMs(right) - boostEventTimeMs(left)
-    );
+    const leftQ8 = boostExactQ8(left?.totalSignalQ8, left?.totalSignalSatsExact);
+    const rightQ8 = boostExactQ8(right?.totalSignalQ8, right?.totalSignalSatsExact);
+    return (leftQ8 < rightQ8 ? 1 : leftQ8 > rightQ8 ? -1 : 0) ||
+      boostEventTimeMs(right) - boostEventTimeMs(left) ||
+      compareCanonicalUtf8(left?.txid ?? "", right?.txid ?? "");
   };
 }
 
@@ -51582,7 +51613,7 @@ function boostUniqueProfileEntries(entries) {
   const seen = new Set();
   const unique = [];
   for (const entry of entries) {
-    const key = `${entry.feedItem?.kind ?? ""}:${entry.feedItem?.txid ?? ""}`;
+    const key = String(entry.feedItem?.eventId ?? `${entry.feedItem?.kind ?? ""}:${entry.feedItem?.txid ?? ""}`);
     if (!key || seen.has(key)) {
       continue;
     }
@@ -51678,15 +51709,15 @@ function boostProfileEntriesByTab(entries, sourceItems, subject, states, profile
 }
 
 function boostProfileSignalStats(entries) {
-  let totalSignalSats = 0;
+  let totalSignalQ8 = 0n;
   let totalSignalUsd = 0;
-  let proofSignalSats = 0;
+  let proofSignalQ8 = 0n;
   let workSignalSubatoms = 0n;
   for (const entry of boostUniqueProfileEntries(entries)) {
     const item = entry.feedItem;
-    totalSignalSats += numericValue(item?.totalSignalSats ?? item?.signalSats);
+    totalSignalQ8 += boostExactQ8(item?.totalSignalQ8, item?.totalSignalSatsExact);
     totalSignalUsd += numericValue(item?.totalSignalUsd ?? item?.signalUsd);
-    proofSignalSats += numericValue(item?.proofSignalSats);
+    proofSignalQ8 += boostExactQ8(item?.proofSignalQ8, item?.proofSignalSatsExact ?? item?.proofSignalSats);
     const subatoms = canonicalNonNegativeIntegerText(item?.workSignalSubatoms, {
       allowZero: false,
     });
@@ -51695,23 +51726,29 @@ function boostProfileSignalStats(entries) {
     }
   }
   return {
-    proofSignalSats,
-    totalSignalSats,
+    proofSignalQ8: proofSignalQ8.toString(),
+    proofSignalSats: q8ToNumber(proofSignalQ8),
+    proofSignalSatsExact: boostQ8Decimal(proofSignalQ8),
+    totalSignalQ8: totalSignalQ8.toString(),
+    totalSignalSats: q8ToNumber(totalSignalQ8),
+    totalSignalSatsExact: boostQ8Decimal(totalSignalQ8),
     totalSignalUsd,
     workSignalSubatoms: workSignalSubatoms.toString(),
   };
 }
 
 async function boostFeedPayload(network, searchParams, fresh = false) {
+  const listingsOnly = /^(?:1|true)$/iu.test(searchParams.get("listings") ?? "");
+  const cursor = decodeBoostFeedCursor(searchParams.get("cursor"));
   const sort = boostSortMode(searchParams);
   const view = boostTimelineView(searchParams);
   const profileTab = boostProfileTab(searchParams);
-  const valueWindow = boostValueWindow(searchParams);
+  const valueWindow = listingsOnly ? "all" : boostValueWindow(searchParams);
   const limit = boundedInteger(searchParams.get("limit"), 50, 1, 100);
-  const includePending = /^(?:1|true|yes)$/iu.test(
+  const includePending = !listingsOnly && /^(?:1|true|yes)$/iu.test(
     String(searchParams.get("pending") ?? ""),
   );
-  const profile = String(searchParams.get("profile") ?? "").trim();
+  const profile = listingsOnly ? "" : String(searchParams.get("profile") ?? "").trim();
   const viewerAddress = boostAddress(
     searchParams.get("viewer") ??
       searchParams.get("viewerAddress") ??
@@ -51725,21 +51762,13 @@ async function boostFeedPayload(network, searchParams, fresh = false) {
     .trim()
     .toLowerCase();
 
-  let indexedPayload = null;
-  if (proofIndexReadFeatureEnabled("event-history,events")) {
-    const eventParams = new URLSearchParams({
-      limit: "200",
-      protocol: "pwb1",
-      status: includePending ? "all" : "confirmed",
-    });
-    indexedPayload = await proofIndexEventHistoryPayload(
-      network,
-      eventParams,
-    ).catch((error) => {
-      console.error(`Boost event history read failed: ${errorSummary(error)}`);
-      return null;
-    });
+  if (!proofIndexReadFeatureEnabled("event-history,events")) {
+    throw boostProjectionError("Canonical Boost history is unavailable.");
   }
+  const indexedPayload = await readCompleteBoostHistory(network, proofIndexEventHistoryPayload, {
+    includePending,
+    snapshotId: cursor?.snapshotId ?? "",
+  });
 
   const [quote, workFloor] = network === "livenet"
     ? await Promise.all([
@@ -51756,9 +51785,10 @@ async function boostFeedPayload(network, searchParams, fresh = false) {
       ])
     : [null, null];
   const btcUsd = btcUsdFromQuote(quote) || numericValue(workFloor?.btcUsd);
-  const sourceItems = Array.isArray(indexedPayload?.items)
-    ? indexedPayload.items
-    : [];
+  const sourceItems = indexedPayload.items.filter((item) => item?.valid !== false &&
+    (item?.confirmed !== false || (includePending && item?.status === "pending")));
+  const usesWorkValuation = sourceItems.some((item) => Boolean(boostWorkSignalSubatoms(item)));
+  if (usesWorkValuation) assertBoostValuationCheckpoint(indexedPayload, workFloor);
   const {
     counts,
     followersByTarget,
@@ -51792,19 +51822,23 @@ async function boostFeedPayload(network, searchParams, fresh = false) {
         return false;
       }
       const state = states.get(boostPostTxid(item));
+      // A sale ticket belongs to the original post, not each reply/reboost
+      // referencing it. Discovery returns each original asset exactly once.
+      if (listingsOnly && (!state?.listing || item?.confirmed === false ||
+          kind !== "boost-post" || boostPostTxid(item) !== boostHexTxid(item?.txid))) return false;
       const profileState = profiles.get(
         boostAddress(item?.authorAddress ?? item?.actor).toLowerCase(),
       );
       const authorKey = boostAddress(item?.authorAddress ?? item?.actor)
         .toLowerCase();
       if (
-        !profileSubject &&
+        !listingsOnly && !profileSubject &&
         view === "following" &&
         (!viewerKey || !authorKey || !viewerFollowing.has(authorKey))
       ) {
         return false;
       }
-      return !query || boostEventSearchText(item, state, profileState).includes(query);
+      return listingsOnly || !query || boostEventSearchText(item, state, profileState).includes(query);
     })
     .map((item) => {
       const feedItem = boostFeedItemWithGraph(
@@ -51835,7 +51869,18 @@ async function boostFeedPayload(network, searchParams, fresh = false) {
     profileTabs ? profileTabs[profileTab] : entries
   ).sort((left, right) => compareBoostFeedItems(sort)(left.feedItem, right.feedItem));
 
-  const items = filteredEntries.slice(0, limit).map((entry) => entry.feedItem);
+  const fingerprint = boostProjectionFingerprint({
+    provenance: indexedPayload.provenance, sort, view, profile, profileTab,
+    valueWindow, viewerAddress, query, includePending,
+    // Bind ordering to exact valuation as well as event history. A changed
+    // WORK floor must restart pagination rather than duplicate/omit posts.
+    workValue: boostWorkNetworkValue(workFloor),
+    entries: filteredEntries.map((entry) => [entry.feedItem.eventId, entry.feedItem.totalSignalQ8]),
+  });
+  const page = listingsOnly
+    ? { items: filteredEntries, hasMore: false, nextCursor: "", start: 0, end: filteredEntries.length }
+    : paginateBoostEntries(filteredEntries, { limit, cursor, fingerprint, snapshotId: indexedPayload.snapshotId });
+  const items = page.items.map((entry) => entry.feedItem);
   const profileStatEntries = profileTabs
     ? boostUniqueProfileEntries([
         ...profileTabs.boosts,
@@ -51847,13 +51892,29 @@ async function boostFeedPayload(network, searchParams, fresh = false) {
     ? boostProfileSignalStats(profileStatEntries)
     : null;
   return {
+    complete: true,
+    provenance: indexedPayload.provenance,
+    snapshotId: indexedPayload.snapshotId,
+    indexedThroughBlockHash: indexedPayload.indexedThroughBlockHash,
+    hasMore: page.hasMore,
+    nextCursor: page.nextCursor,
+    start: page.start,
+    end: page.end,
+    signalStats: boostProfileSignalStats(filteredEntries),
+    valuationProvenance: {
+      used: usesWorkValuation,
+      networkValue: boostWorkNetworkValue(workFloor),
+      indexedThroughBlock: workFloor?.indexedThroughBlock,
+      indexedThroughBlockHash: payloadIndexedThroughBlockHash(workFloor),
+      snapshotId: workFloor?.snapshotId,
+    },
     btcUsd,
     btcUsdIndexedAt: quote?.priceIndexedAt,
     indexedAt: indexedPayload?.indexedAt ?? new Date().toISOString(),
     indexedThroughBlock: indexedPayload?.indexedThroughBlock,
     items,
     limit,
-    mode: profileSubject ? "profile" : "timeline",
+    mode: listingsOnly ? "listings" : profileSubject ? "profile" : "timeline",
     network,
     profile: profile || undefined,
     profileSubject: profileSubject
@@ -51865,6 +51926,8 @@ async function boostFeedPayload(network, searchParams, fresh = false) {
           id: profileSubject.id || undefined,
           profile: profileSubject.profile,
           proofSignalSats: profileSignalStats?.proofSignalSats ?? 0,
+          proofSignalQ8: profileSignalStats?.proofSignalQ8 ?? "0",
+          proofSignalSatsExact: profileSignalStats?.proofSignalSatsExact ?? "0",
           purchasedCount: profileTabs.purchased.length,
           query: profileSubject.query,
           replyCount: profileTabs.replies.length,
@@ -51872,6 +51935,8 @@ async function boostFeedPayload(network, searchParams, fresh = false) {
           boostCount: profileTabs.boosts.length,
           likeCount: profileTabs.likes.length,
           totalSignalSats: profileSignalStats?.totalSignalSats ?? 0,
+          totalSignalQ8: profileSignalStats?.totalSignalQ8 ?? "0",
+          totalSignalSatsExact: profileSignalStats?.totalSignalSatsExact ?? "0",
           totalSignalUsd: profileSignalStats?.totalSignalUsd ?? 0,
           viewerFollowsProfile: profileSubject.viewerFollowsProfile,
           workSignalSubatoms: profileSignalStats?.workSignalSubatoms ?? "0",
@@ -51892,10 +51957,10 @@ async function boostFeedPayload(network, searchParams, fresh = false) {
       viewerAddress: viewerAddress || undefined,
     },
     sort,
-    source: indexedPayload?.source ?? "proof-indexer-boost-events-unavailable",
+    source: indexedPayload.source,
     stats: {
-      confirmed: items.filter((item) => item.confirmed !== false).length,
-      pending: items.filter((item) => item.confirmed === false).length,
+      confirmed: filteredEntries.filter((entry) => entry.feedItem.confirmed !== false).length,
+      pending: filteredEntries.filter((entry) => entry.feedItem.confirmed === false).length,
       total: filteredEntries.length,
     },
     totalCount: filteredEntries.length,
@@ -54967,6 +55032,18 @@ async function completeTokenListingHistoryPayload(
   options = {},
 ) {
   const request = checkpointHistoryRequest(searchParams, TOKEN_LISTING_HISTORY_CURSOR_PREFIX);
+  const itemProjection = String(searchParams.get("projection") ?? "full").trim().toLowerCase();
+  const exactListingId = String(searchParams.get("listingId") ?? "").trim().toLowerCase();
+  if (exactListingId && !/^[0-9a-f]{64}$/u.test(exactListingId)) {
+    const error = new Error("Invalid exact token listing identity.");
+    error.statusCode = 400;
+    throw error;
+  }
+  if (itemProjection !== "full" && itemProjection !== "display-v1") {
+    const error = new Error("Unsupported token listing projection.");
+    error.statusCode = 400;
+    throw error;
+  }
   const scope = normalizeTokenScope(tokenScope);
   const includeAuthorityListingIds =
     options.includeAuthorityListingIds === true &&
@@ -55184,7 +55261,9 @@ async function completeTokenListingHistoryPayload(
   const addresses = recoveryAddressesFromSearchParams(searchParams, network);
   const filtered = historyItemsMatchingQuery(
     historyItemsMatchingAddresses(protocolAuthorityListings, addresses), request.query,
-  ).map((item) => ({ item, key: tokenListingHistoryStableKey(item) }))
+  ).filter((item) => !exactListingId ||
+    String(item.listingId ?? item.txid ?? "").trim().toLowerCase() === exactListingId)
+    .map((item) => ({ item, key: tokenListingHistoryStableKey(item) }))
     .sort((left, right) => compareCanonicalUtf8(
       checkpointCursorCanonicalJson(left.key), checkpointCursorCanonicalJson(right.key),
     ));
@@ -55193,6 +55272,8 @@ async function completeTokenListingHistoryPayload(
   const filterFingerprint = digest({
     addresses: [...addresses].sort(compareCanonicalUtf8), network,
     query: request.query, scope: scope || "all",
+    ...(itemProjection === "display-v1" ? { itemProjection } : {}),
+    ...(exactListingId ? { exactListingId } : {}),
   });
   const membershipSha256 = digest(filtered.map((entry) => ({
     item: entry.item,
@@ -55246,7 +55327,18 @@ async function completeTokenListingHistoryPayload(
   return {
     cursor: request.cursorRaw, end, hasMore, indexedAt: relational.indexedAt,
     indexedThroughBlock: relationalHeight, indexedThroughBlockHash: relationalHash,
-    items: pageEntries.map((entry) => entry.item), kind: "listings", limit: request.limit,
+    items: pageEntries.map((entry) => itemProjection === "display-v1"
+      ? tokenListingDisplayProjection(entry.item, {
+          fullRecordSha256: digest(entry.item), network, tokenScope: scope,
+        })
+      : entry.item), kind: "listings", limit: request.limit,
+    ...(itemProjection === "display-v1" ? {
+      itemProjection: {
+        model: "proof-token-listing-display-v1",
+        fullMembershipSha256: membershipSha256,
+        fullSourceSha256: sourceSha256,
+      },
+    } : {}),
     listingAuthority: authority.evidence, network, nextCursor,
     listingProjection: {
       activeListingCount: protocolAuthorityListings.length,
@@ -76189,7 +76281,9 @@ async function handleRequest(request, response) {
       jsonResponse(
         response,
         200,
-        await registrySummaryPayload(network, freshRead),
+        url.searchParams.get("projection") === "counts-v1"
+          ? registryCountsProjection(await strictPublicRegistryPayload(network, { fresh: freshRead }))
+          : await registrySummaryPayload(network, freshRead),
         freshRead ? FRESH_READ_CACHE_CONTROL : EXPENSIVE_READ_CACHE_CONTROL,
       );
       return;
@@ -76760,13 +76854,17 @@ async function handleRequest(request, response) {
         : await tokenSummaryPayload(network, tokenScope, freshRead, {
             recoveryAddresses,
           });
-      const tokenSummary =
+      const compactSummary =
         !walletScoped && compactRead
-          ? compactTokenSummaryPayload(rawTokenSummary, tokenScope, {
+          ? withTokenDirectoryQualification(compactTokenSummaryPayload(rawTokenSummary, tokenScope, {
               includeAllScopedListings: false,
               compactMarketRecords: true,
-            })
+            }))
           : rawTokenSummary;
+      const tokenSummary = !walletScoped && compactRead &&
+        url.searchParams.get("projection") === "directory-v1"
+          ? tokenDirectoryProjection(compactSummary)
+          : compactSummary;
       jsonResponse(
         response,
         200,

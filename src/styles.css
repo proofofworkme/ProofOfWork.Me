@@ -3524,7 +3524,7 @@ select {
 
 .growth-assumption-list div,
 .growth-product-metrics div,
-.growth-stat-grid div {
+.growth-stat-grid > div {
   background: var(--surface-soft);
   border: 1px solid var(--border);
   border-radius: 10px;
@@ -3622,7 +3622,7 @@ select {
   overflow-wrap: anywhere;
 }
 
-.growth-stat-grid span {
+.growth-stat-grid > div > span {
   color: var(--text-muted);
   font-size: 0.78rem;
   font-weight: 780;

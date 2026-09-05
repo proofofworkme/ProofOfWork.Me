@@ -20,7 +20,8 @@ ProtectControlGroups=true
 ProtectKernelLogs=true
 ProtectKernelModules=true
 ProtectKernelTunables=true
-CapabilityBoundingSet=
+# Read private runtime-owned Git metadata without changing its permissions.
+CapabilityBoundingSet=CAP_DAC_READ_SEARCH
 AmbientCapabilities=
 RestrictSUIDSGID=true
 LockPersonality=true

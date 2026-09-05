@@ -690,18 +690,28 @@ async function installApiFixtures(
       pathname === "/api/v1/token" ||
       pathname === "/api/v1/token-summary"
     ) {
-      json = fixtureTokenState;
+      json = {
+        ...fixtureTokenState,
+        directory: { model: "proof-token-directory-v1", complete: true, totalCount: fixtureTokenState.tokens.length },
+      };
     } else if (
       pathname === "/api/v1/registry" ||
       pathname === "/api/v1/registry-summary"
     ) {
-      json = REGISTRY_STATE;
+      json = url.searchParams.get("projection") === "counts-v1"
+        ? { ...REGISTRY_STATE, registryCounts: { model: "proof-registry-counts-v1", complete: true,
+            confirmedCount: REGISTRY_STATE.records.filter((row) => row.confirmed).length,
+            pendingCount: REGISTRY_STATE.records.filter((row) => !row.confirmed).length,
+            totalCount: REGISTRY_STATE.records.length } }
+        : REGISTRY_STATE;
     } else if (pathname === "/api/v1/prices/btc-usd") {
       json = { USD: 100_000, usd: 100_000 };
     } else if (pathname === "/api/v1/boost") {
       json = {
         indexedAt: NOW,
         items: boostItems,
+        complete: true,
+        mode: url.searchParams.get("listings") === "1" ? "listings" : "feed",
         network: "livenet",
         stats: { confirmed: 0, pending: 0, total: 0 },
         totalCount: boostItems.length,
@@ -3000,3 +3010,57 @@ for (const route of COMPUTER_ROUTES) {
     }
   });
 }
+
+test("cold AMO Bonds loads selected exact references without visiting standalone Bonds", async ({ page }) => {
+  await installApiFixtures(page);
+  let release;
+  const gate = new Promise((resolve) => { release = resolve; });
+  const requests = [];
+  await page.route("**/api/v1/*-summary*", async (route) => {
+    const path = new URL(route.request().url()).pathname;
+    if (!path.includes("inception-summary") && !path.includes("infinity-summary")) return route.fallback();
+    requests.push(path);
+    if (path.includes("inception")) await gate;
+    const inception = path.includes("inception");
+    await route.fulfill({ contentType: "application/json", body: JSON.stringify({
+      indexedAt: NOW, tokenId: inception ? INCB_TOKEN_ID : POWB_TOKEN_ID,
+      actualValue: { floorQ8: inception ? "123456789" : "234567891", floorSats: inception ? "1.23456789" : "2.34567891" },
+      stats: { confirmedSupply: "9007199254740993" }, token: TOKEN_STATE,
+    }) });
+  });
+  await page.goto(`/?marketplace=1&asset=${INCB_TOKEN_ID}`);
+  const market = page.getByLabel("INCB sale-ticket market");
+  await expect(market).toContainText("Verifying reference", { timeout: 45_000 });
+  await expect(market).not.toContainText("0 proofs / INCB");
+  release();
+  await expect(market).toContainText("1.23456789 proofs / INCB");
+  await page.getByLabel("Bond listing tabs").getByRole("button", { name: /Infinity/u }).click();
+  await expect(page.getByLabel("POWB sale-ticket market")).toContainText("2.34567891 proofs / POWB");
+  expect(requests).toContain("/api/v1/inception-summary");
+  expect(requests).toContain("/api/v1/infinity-summary");
+});
+
+test("Computer Credit directory refresh is isolated from AMO history regression guards", async ({ page }) => {
+  await installApiFixtures(page, {
+    marketplaceSummaryTransform: (summary) => ({
+      ...summary,
+      token: { ...summary.token, mints: [{ tokenId: POWB_TOKEN_ID, ticker: "POWB", amount: "1", confirmed: true, createdAt: NOW, txid: HASH, network: "livenet", minterAddress: "1BPVvi1GK4QkfqFMU4jHGjsQjyGwjJJJ7x" }] },
+    }),
+  });
+  await page.route("**/api/v1/token-summary?**", async (route) => {
+    const url = new URL(route.request().url());
+    if (url.searchParams.get("projection") !== "directory-v1") return route.fallback();
+    const tokens = [...TOKENS, { ...TOKENS[0], tokenId: "e".repeat(64), txid: "e".repeat(64), ticker: "AUD", confirmedSupply: 7, pendingSupply: 0, maxSupply: 100, mintAmount: 1, mintPriceSats: 546, confirmedMints: 7, pendingMints: 0 }];
+    await route.fulfill({ contentType: "application/json", body: JSON.stringify({
+      ...TOKEN_STATE, tokens, mints: [], transfers: [], sales: [], listings: [], closedListings: [], invalidEvents: [],
+      directory: { model: "proof-token-directory-v1", complete: true, totalCount: tokens.length },
+      directoryOnly: true, summaryOnly: true, listingBookComplete: false,
+    }) });
+  });
+  await page.goto("/?folder=marketplace");
+  await expect(page.locator(".marketplace-summary-read-state").first()).toHaveAttribute("data-state", "ready", { timeout: 45_000 });
+  await page.locator(".sidebar").getByRole("button", { name: /^Credit/u }).click();
+  await expect(page.getByLabel("Credit stats")).toContainText("2Created credits");
+  await expect(page.locator(".token-record").filter({ hasText: "AUD" })).toContainText("7");
+  await expect(page.locator(".sidebar").getByRole("button", { name: /^Credit/u })).toContainText("2");
+});

@@ -1,3 +1,4 @@
+import { assertCompleteTokenDirectory, assertCompleteIdReservations, walletReservationsReady, listingDisplayProjectionFingerprint } from "./shared/api/surfaceReadState";
 import {
   ChangeEvent,
   CSSProperties,
@@ -875,6 +876,9 @@ type PowTokenSaleAuthorization = PowTokenSaleAuthorizationDraft & {
 };
 
 type PowTokenListing = {
+  displayEvidence?: {
+    model?: string; fullRecordSha256?: string; omittedFields?: string[]; fullDetailPath?: string;
+  };
   amount: ExactIntegerValue;
   amountAtoms?: string;
   amountSubatoms?: string;
@@ -1551,6 +1555,9 @@ type ChainedMintBuildResult = {
 };
 
 type PowRegistryApiResponse = {
+  summaryOnly?: boolean;
+  collectionHasMore?: { listings?: boolean };
+  totalCounts?: { listings?: number | null };
   activity?: PowActivityItem[];
   indexedAt?: string;
   listings?: PowIdListing[];
@@ -1571,6 +1578,7 @@ type PowRegistryState = {
 };
 
 type PowTokenApiResponse = Partial<PowTokenState> & {
+  directory?: { model?: string; complete?: boolean; totalCount?: number };
   authoritativeWallet?: boolean;
   registryAddress?: string;
   reserveAddress?: string;
@@ -1619,6 +1627,7 @@ type PowTokenListingProjectionEvidence = {
 };
 
 type PowPaginatedApiResponse<T> = {
+  itemProjection?: { model?: string; fullMembershipSha256?: string; fullSourceSha256?: string };
   authoritative?: boolean;
   complete?: boolean;
   cursor?: string;
@@ -15839,6 +15848,9 @@ async function fetchTokenState(
   }
   if (summary) {
     params.set("compact", "1");
+    if (!walletScoped && !tokenScope.trim()) {
+      params.set("projection", "directory-v1");
+    }
   }
   const query = params.toString();
   const payload = await fetchProofApiJson<PowTokenApiResponse>(
@@ -15856,6 +15868,9 @@ async function fetchTokenState(
     throw new Error(
       "The ProofOfWork index could not verify this wallet balance.",
     );
+  }
+  if (summary && !walletScoped && !tokenScope.trim()) {
+    assertCompleteTokenDirectory(payload);
   }
   return normalizeTokenApiState(payload);
 }
@@ -16266,11 +16281,13 @@ async function fetchTokenHistoryPage<T>(
     pageIndex?: number;
     pageSize?: number;
     query?: string;
+    projection?: "display-v1";
     tokenScope?: string;
   } = {},
 ): Promise<PowPaginatedApiResponse<T>> {
   const params = new URLSearchParams();
   params.set("kind", kind);
+  if (options.projection) params.set("projection", options.projection);
   params.set("limit", String(options.pageSize ?? DATA_PAGE_SIZE));
   const cursor = options.cursor?.trim() ?? "";
   if (cursor) {
@@ -16377,6 +16394,7 @@ async function fetchCompleteTokenListings(
   let expectedTotalCount = -1;
   let expectedAuthorityFingerprint = "";
   let expectedProjectionFingerprint = "";
+  let expectedItemProjectionFingerprint = "";
 
   for (let pageIndex = 0; pageIndex < MAX_TOKEN_HISTORY_PAGES; pageIndex += 1) {
     const page = await fetchTokenHistoryPage<PowTokenListing>(
@@ -16384,6 +16402,7 @@ async function fetchCompleteTokenListings(
       "listings",
       {
         address: options.address,
+        projection: "display-v1",
         cursor: cursor || undefined,
         fresh: options.fresh,
         pageSize: TOKEN_HISTORY_PAGE_SIZE,
@@ -16496,6 +16515,7 @@ async function fetchCompleteTokenListings(
         "The complete credit listing book lacks exact checkpoint evidence.",
       );
     }
+    const itemProjectionFingerprint = listingDisplayProjectionFingerprint(page);
     const authorityFingerprint = JSON.stringify({
       checkedListingCount: authorityCheckedCount,
       checkedOutpointsSha256: authorityDigest,
@@ -16520,6 +16540,7 @@ async function fetchCompleteTokenListings(
       expectedTotalCount = pageTotalCount;
       expectedAuthorityFingerprint = authorityFingerprint;
       expectedProjectionFingerprint = projectionFingerprint;
+      expectedItemProjectionFingerprint = itemProjectionFingerprint;
     } else if (
       pageIndexedAt !== expectedIndexedAt ||
       pageIndexedThroughBlock !== expectedIndexedThroughBlock ||
@@ -16527,7 +16548,8 @@ async function fetchCompleteTokenListings(
       pageSnapshotId !== expectedSnapshotId ||
       pageTotalCount !== expectedTotalCount ||
       authorityFingerprint !== expectedAuthorityFingerprint ||
-      projectionFingerprint !== expectedProjectionFingerprint
+      projectionFingerprint !== expectedProjectionFingerprint ||
+      itemProjectionFingerprint !== expectedItemProjectionFingerprint
     ) {
       throw new Error(
         "The complete credit listing book changed checkpoints while paging.",
@@ -17366,6 +17388,7 @@ type TokenStateApplyOptions = {
 };
 
 const DEFAULT_TOKEN_STATE_SCOPE_KEY = "default";
+const TOKEN_DIRECTORY_STATE_SCOPE = "credit-directory";
 
 function finiteNonNegativeNumber(value: unknown) {
   const numberValue = Number(value);
@@ -18230,10 +18253,12 @@ async function fetchInfinitySummary(
 async function fetchBondSummary(
   config: BondUiConfig,
   fresh = false,
+  signal?: AbortSignal,
 ): Promise<InfinitySummarySnapshot> {
   const payload = await fetchProofApiJson<InfinitySummaryApiResponse>(
     fresh ? `${config.summaryPath}?fresh=1` : config.summaryPath,
     "livenet",
+    { signal },
   );
   return normalizeInfinitySummary(payload, config);
 }
@@ -20768,6 +20793,7 @@ export default function App() {
     PowPaginatedApiResponse<PowActivityItem> | undefined
   >();
   const [activityLoading, setActivityLoading] = useState(false);
+  const activitySearchGenerationRef = useRef(0);
   const [desktopLoading, setDesktopLoading] = useState(false);
   const [savedDraft, setSavedDraft] = useState<DraftMessage | undefined>();
   const [inbox, setInbox] = useState<InboxMessage[]>([]);
@@ -20857,7 +20883,9 @@ export default function App() {
           ? INCB_TOKEN_ID
           : workTokenMode || activeFolder === "work"
             ? WORK_TOKEN_ID
-            : ""),
+            : tokenMode || activeFolder === "token"
+              ? TOKEN_DIRECTORY_STATE_SCOPE
+              : ""),
     walletScoped: walletMode || activeFolder === "wallet",
   });
   const [activeCustomFolderId, setActiveCustomFolderId] = useState("");
@@ -21115,6 +21143,9 @@ export default function App() {
     useState<PowTokenState>(() => emptyTokenState());
   const [accountIncbTokenState, setAccountIncbTokenState] =
     useState<PowTokenState>(() => emptyTokenState());
+  const [accountIdReservations, setAccountIdReservations] = useState({
+    scope: "", loaded: false, loading: false, error: "", listings: [] as PowIdListing[],
+  });
   const [accountTokenLaneStatuses, setAccountTokenLaneStatuses] =
     useState<AccountTokenLaneStatuses>(() => emptyAccountTokenLaneStatuses());
   const [refreshing, setRefreshing] = useState(false);
@@ -22923,6 +22954,15 @@ export default function App() {
       tokenListings,
     ],
   );
+  const sidebarDirectoryState = acceptedTokenStatesRef.current.get(
+    tokenStateScopeKey({ network, tokenScope: TOKEN_DIRECTORY_STATE_SCOPE, walletScoped: false }),
+  ) ?? acceptedTokenStatesRef.current.get(
+    tokenStateScopeKey({ network, walletScoped: false }),
+  );
+  const sidebarWorkState = acceptedTokenStatesRef.current.get(
+    tokenStateScopeKey({ network, tokenScope: WORK_TOKEN_ID, walletScoped: false }),
+  ) ?? sidebarDirectoryState;
+  const sidebarWorkDefinition = sidebarWorkState?.tokens.find((token) => isWorkToken(token));
   const walletBalanceCountLoaded = address
     ? accountTokenLaneStatuses.all.loaded
     : activeTokenStateLoaded;
@@ -23003,13 +23043,18 @@ export default function App() {
           walletReservedTokenBalance -
           Number(walletPendingTokenBalance),
       );
+  const connectedWalletReservationsReady = walletReservationsReady(
+    tokenStateScopeKey({ network, address, walletScoped: true }), accountIdReservations, accountTokenLaneStatuses,
+  );
+  const connectedWalletReservationsError = accountIdReservations.error ||
+    Object.values(accountTokenLaneStatuses).find((lane) => lane.error)?.error || "";
   const connectedWalletReservedOutpoints = useMemo(() => {
     if (!address) {
       return [];
     }
 
     return [
-      ...activeListingAnchorOutpointsForAddress(idListings, address, {
+      ...activeListingAnchorOutpointsForAddress([...idListings, ...accountIdReservations.listings], address, {
         network,
       }),
       ...activeTokenListingAnchorOutpointsForAddress(
@@ -23029,6 +23074,7 @@ export default function App() {
     accountPowbTokenState.listings,
     accountTokenState.listings,
     accountWorkTokenState.listings,
+    accountIdReservations.listings,
     address,
     idListings,
     network,
@@ -23246,7 +23292,7 @@ export default function App() {
     if (confirmedBalanceSats > 0) {
       stats.push({
         detail: chainTotalReady
-          ? protectedSats > 0
+          ? connectedWalletReservationsReady && protectedSats > 0
             ? `${spendableSats.toLocaleString()} wallet-spendable proofs; ${protectedSats.toLocaleString()} confirmed proofs are protected or unavailable in UniSat.`
             : "Full-node confirmed UTXO value for the connected address."
           : "Confirmed UniSat wallet UTXO value. Full-node total is still loading.",
@@ -23256,7 +23302,10 @@ export default function App() {
       });
     }
 
-    if (spendableUtxos.length > 0) {
+    if (!connectedWalletReservationsReady) {
+      stats.push({ label: "spendable proofs", value: connectedWalletReservationsError ? "Unavailable" : "Verifying reservations", tone: "pending", detail: connectedWalletReservationsError || "Waiting for complete ID and credit sale-ticket reservations." });
+    }
+    if (connectedWalletReservationsReady && spendableUtxos.length > 0) {
       stats.push({
         detail: `${spendableUtxos.length.toLocaleString()} UniSat-signable confirmed UTXO${spendableUtxos.length === 1 ? "" : "s"}.${reservedListingUtxos.length > 0 ? ` ${reservedListingUtxos.length.toLocaleString()} active listing anchor${reservedListingUtxos.length === 1 ? " is" : "s are"} reserved.` : ""}`,
         label: "spendable proofs",
@@ -23264,7 +23313,7 @@ export default function App() {
       });
     }
 
-    if (protectedSats > 0) {
+    if (connectedWalletReservationsReady && protectedSats > 0) {
       stats.push({
         detail:
           "Confirmed by the node, but not selected for signing because UniSat marks the output unavailable or ProofOfWork has reserved it.",
@@ -23424,6 +23473,8 @@ export default function App() {
   }, [
     accountChainUtxosError,
     accountChainUtxosLoaded,
+    connectedWalletReservationsReady,
+    connectedWalletReservationsError,
     accountTokenLaneStatuses,
     accountUtxosError,
     accountUtxosLoaded,
@@ -24094,6 +24145,53 @@ export default function App() {
   }, [address, network]);
 
   useEffect(() => {
+    if (!address || !registryAddress) {
+      setAccountIdReservations({ scope: "", loaded: false, loading: false, error: "", listings: [] });
+      return;
+    }
+    const scope = tokenStateScopeKey({ network, address, walletScoped: true });
+    let cancelled = false;
+    let requestId = 0;
+    let controller: AbortController | undefined;
+    setAccountIdReservations({ scope, loaded: false, loading: true, error: "", listings: [] });
+    const refreshReservations = async () => {
+      const currentRequest = ++requestId;
+      controller?.abort();
+      const requestController = new AbortController();
+      controller = requestController;
+      setAccountIdReservations((current) => ({ ...current, loading: true }));
+      try {
+        // registry-summary has capped listings; the full registry is required here.
+        const payload = await fetchProofApiJson<PowRegistryApiResponse>(
+          "/api/v1/registry", network, { signal: requestController.signal },
+        );
+        assertCompleteIdReservations(payload);
+        if (cancelled || currentRequest !== requestId) return;
+        setAccountIdReservations({
+          scope, loaded: true, loading: false, error: "",
+          listings: (payload.listings ?? []).filter((listing) => listing.sellerAddress === address),
+        });
+      } catch (error) {
+        if (cancelled || currentRequest !== requestId) return;
+        setAccountIdReservations((current) => ({
+          ...current, loading: false,
+          error: errorMessage(error, "ID reservations are unavailable."),
+        }));
+      }
+    };
+    void refreshReservations();
+    const refresh = () => { void refreshReservations(); };
+    const interval = window.setInterval(refresh, 60_000);
+    window.addEventListener("focus", refresh);
+    return () => {
+      cancelled = true;
+      controller?.abort();
+      window.clearInterval(interval);
+      window.removeEventListener("focus", refresh);
+    };
+  }, [address, network, registryAddress]);
+
+  useEffect(() => {
     if (!address || !tokenIndexAddress) {
       setAccountTokenState(emptyTokenState());
       setAccountWorkTokenState(emptyTokenState());
@@ -24580,7 +24678,10 @@ export default function App() {
       } else {
         await refreshToken(true, false);
       }
-      if (!cancelled && document.visibilityState === "visible") {
+      // The directory is already checkpoint-qualified. Avoid a duplicate complete
+      // directory read on cold Credit; explicit refresh remains available.
+      const creditDirectoryRead = tokenMode || activeFolder === "token";
+      if (!creditDirectoryRead && !cancelled && document.visibilityState === "visible") {
         window.setTimeout(() => {
           if (!cancelled && document.visibilityState === "visible") {
             if (marketplaceMode || activeFolder === "marketplace") {
@@ -25140,7 +25241,7 @@ export default function App() {
               "livenet",
               false,
               "",
-              false,
+              !walletWorkspace,
               [nextAddress],
               walletWorkspace,
             ));
@@ -25157,7 +25258,7 @@ export default function App() {
             scopeKey: tokenStateScopeKey({
               address: workWorkspace ? "" : nextAddress,
               network: "livenet",
-              tokenScope: workWorkspace ? WORK_TOKEN_ID : "",
+              tokenScope: workWorkspace ? WORK_TOKEN_ID : walletWorkspace ? "" : TOKEN_DIRECTORY_STATE_SCOPE,
               walletScoped: walletWorkspace,
             }),
           });
@@ -25934,12 +26035,11 @@ export default function App() {
         registryAddress,
       );
       if (resolved.isId || resolved.error) {
-        const records = await fetchIdRegistry(network);
-        setIdRegistry(records);
+        const state = await fetchIdRecordState(network, query);
         resolved = resolveRecipientInput(
           query,
           network,
-          records,
+          state.records,
           registryAddress,
         );
       }
@@ -26155,10 +26255,12 @@ export default function App() {
 
   async function loadActivityTarget(target = activityQuery) {
     const requestWorkspaceKey = activeWorkspaceStatusKeyRef.current;
+    const generation = ++activitySearchGenerationRef.current;
     const readSource = "log-search";
     const readAttempt = nextProofApiReadAttempt();
     const requestIsActive = () =>
-      activeWorkspaceStatusKeyRef.current === requestWorkspaceKey;
+      activeWorkspaceStatusKeyRef.current === requestWorkspaceKey &&
+      generation === activitySearchGenerationRef.current;
     const query = target.trim();
     let cacheKey = "";
     let cachedSearchProfile: DesktopProfile | undefined;
@@ -26235,6 +26337,7 @@ export default function App() {
         );
       }
 
+      if (!requestIsActive()) return;
       if (resolved.error || !resolved.paymentAddress) {
         setStatusForWorkspace(requestWorkspaceKey, {
           tone: "bad",
@@ -26288,6 +26391,7 @@ export default function App() {
         text: `${profile.label} log loaded. ${total.toLocaleString()} matching action${total === 1 ? "" : "s"}.`,
       });
     } catch (error) {
+      if (!requestIsActive()) return;
       const cachedPage = cacheKey
         ? activityHistoryPagesRef.current.get(cacheKey)
         : undefined;
@@ -26325,11 +26429,22 @@ export default function App() {
         });
       }
     } finally {
-      setActivityLoading(false);
+      if (requestIsActive()) setActivityLoading(false);
     }
   }
 
+  function changeActivityQuery(query: string) {
+    activitySearchGenerationRef.current += 1;
+    setActivityLoading(false);
+    setActivityQuery(query);
+    setStatusForWorkspace(activeWorkspaceStatusKeyRef.current, {
+      tone: "idle", text: query.trim() ? "Log query ready. Search to verify matching results." : "Log filter cleared.",
+    });
+  }
+
   function clearActivity() {
+    activitySearchGenerationRef.current += 1;
+    setActivityLoading(false);
     setActivityQuery("");
     setActivityProfile(undefined);
     setActivityMail([]);
@@ -26671,11 +26786,19 @@ export default function App() {
       }
 
       try {
-        const [snapshot, registryState, btcUsdQuote] = await Promise.all([
-          fetchBondSummary(config, fresh),
+        const supplementalReads = Promise.all([
           fetchIdRegistryState("livenet", fresh, true).catch(() => undefined),
           fetchBtcUsdPrice(fresh).catch(() => undefined),
         ]);
+        const snapshot = await fetchBondSummary(config, fresh);
+        const summarySnapshot = applyInfinitySummary(snapshot) ?? snapshot;
+        applyTokenState(summarySnapshot.token, {
+          scopeKey: tokenStateScopeKey({
+            network: "livenet",
+            tokenScope: config.tokenId,
+            walletScoped: false,
+          }),
+        });
         const tokenState = await tokenStateWithCurrentCompleteBondListings(
           snapshot.token,
           config.tokenId,
@@ -26689,6 +26812,7 @@ export default function App() {
           );
           return snapshot.token;
         });
+        const [registryState, btcUsdQuote] = await supplementalReads;
         if (
           registryState &&
           !marketplaceWorkspaceIsCurrent()
@@ -26743,7 +26867,7 @@ export default function App() {
             indexedAt: lastGoodSnapshot?.indexedAt,
             label: config.displayName,
           });
-        if (!silent && !retainedLastGood) {
+        if ((!silent || !lastGoodSnapshot) && !retainedLastGood) {
           setStatusForWorkspace(requestWorkspaceKey, {
             tone: "bad",
             text: errorMessage(error, `${config.displayName} refresh failed.`),
@@ -26802,7 +26926,7 @@ export default function App() {
     const scopeKey = tokenStateScopeKey({
       address: workSummaryRead ? "" : address,
       network,
-      tokenScope,
+      tokenScope: !walletScoped && !tokenScope ? TOKEN_DIRECTORY_STATE_SCOPE : tokenScope,
       walletScoped,
     });
     const requestStillActive = () =>
@@ -26819,6 +26943,9 @@ export default function App() {
           work ?? WORK_TOKEN_DEFINITION,
           work?.confirmedSupply ?? state.confirmedSupply,
         )} confirmed WORK, ${holderCount.toLocaleString()} holder${holderCount === 1 ? "" : "s"}.`;
+      }
+      if (state.summaryOnly) {
+        return `Credit directory loaded. ${state.tokens.filter((token) => !isBondTokenDefinition(token)).length.toLocaleString()} credits. Holder and mint history load for the selected credit.`;
       }
       return `Credit index loaded. ${state.tokens.length.toLocaleString()} credit${state.tokens.length === 1 ? "" : "s"}, ${state.mints.length.toLocaleString()} mint${state.mints.length === 1 ? "" : "s"}, ${state.transfers.length.toLocaleString()} transfer${state.transfers.length === 1 ? "" : "s"}.`;
     };
@@ -26894,7 +27021,7 @@ export default function App() {
             network,
             fresh,
             tokenScope,
-            false,
+            !walletScoped,
             address ? [address] : [],
             walletScoped,
           );
@@ -27596,7 +27723,7 @@ export default function App() {
               "livenet",
               false,
               "",
-              false,
+              !walletWorkspace,
               [firstAddress],
               walletWorkspace,
             ));
@@ -27613,7 +27740,7 @@ export default function App() {
             scopeKey: tokenStateScopeKey({
               address: workWorkspace ? "" : firstAddress,
               network: "livenet",
-              tokenScope: workWorkspace ? WORK_TOKEN_ID : "",
+              tokenScope: workWorkspace ? WORK_TOKEN_ID : walletWorkspace ? "" : TOKEN_DIRECTORY_STATE_SCOPE,
               walletScoped: walletWorkspace,
             }),
           });
@@ -32818,8 +32945,10 @@ export default function App() {
         prepareTransferFeeReserveSats={tokenPrepareTransferFeeReserveSats}
         prepareTransferUtxos={prepareTokenTransferUtxos}
         preparingTransferUtxos={tokenAction === "split-transfer"}
-        proofBalanceError={accountUtxosError}
-        proofBalanceLoaded={accountUtxosLoaded}
+        proofBalanceError={accountUtxosError || connectedWalletReservationsError}
+        proofBalanceLoaded={accountUtxosLoaded && connectedWalletReservationsReady}
+        creditBalancesReady={!address || accountAllTokenLaneClean}
+        creditBalancesError={accountTokenLaneStatuses.all.error}
         proofBalanceSats={connectedWalletProofFundingContext.confirmedBalanceSats}
         proofProtectedSats={connectedWalletProofFundingContext.protectedSats}
         proofSpendableSats={connectedWalletProofAvailability.spendableSats}
@@ -32977,7 +33106,7 @@ export default function App() {
         btcUsd={tokenBtcUsd}
         hasUnisat={hasUnisat}
         holders={selectedTokenHolders}
-        ledgerError={workTokenMode ? tokenDataError : ""}
+        ledgerError={tokenDataError}
         mintBytes={tokenMintBytes}
         network={network}
         onNetworkChange={chooseNetwork}
@@ -33088,7 +33217,7 @@ export default function App() {
         profile={activityProfile}
         query={activityQuery}
         searchedActivity={activityMail}
-        setQuery={setActivityQuery}
+        setQuery={changeActivityQuery}
         status={status}
         onClear={clearActivity}
         onActivityPageChange={(pageIndex) =>
@@ -33493,8 +33622,8 @@ export default function App() {
                 <span>Credit</span>
               </span>
               <strong>
-                {activeTokenStateLoaded
-                  ? tokenDefinitions.length.toLocaleString()
+                {sidebarDirectoryState
+                  ? sidebarDirectoryState.tokens.filter((token) => !isBondTokenDefinition(token)).length.toLocaleString()
                   : "…"}
               </strong>
             </button>
@@ -33523,17 +33652,9 @@ export default function App() {
                 <span>WORK</span>
               </span>
               <strong>
-                {!activeTokenStateLoaded ||
-                (tokenLedgerLoading &&
-                  (tokenSupplyUnits(
-                    workTokenDefinition,
-                    workTokenLedger.confirmedSupply,
-                  ) ?? 0n) === 0n)
-                  ? "..."
-                  : tokenSupplyDisplay(
-                      workTokenDefinition,
-                      workTokenLedger.confirmedSupply,
-                    )}
+                {sidebarWorkDefinition?.confirmedSupply === undefined
+                  ? "…"
+                  : tokenSupplyDisplay(sidebarWorkDefinition, sidebarWorkDefinition.confirmedSupply)}
               </strong>
             </button>
             <button
@@ -33805,8 +33926,10 @@ export default function App() {
             }
             prepareTransferUtxos={prepareTokenTransferUtxos}
             preparingTransferUtxos={tokenAction === "split-transfer"}
-            proofBalanceError={accountUtxosError}
-            proofBalanceLoaded={accountUtxosLoaded}
+            proofBalanceError={accountUtxosError || connectedWalletReservationsError}
+            proofBalanceLoaded={accountUtxosLoaded && connectedWalletReservationsReady}
+        creditBalancesReady={!address || accountAllTokenLaneClean}
+        creditBalancesError={accountTokenLaneStatuses.all.error}
             proofBalanceSats={
               connectedWalletProofFundingContext.confirmedBalanceSats
             }
@@ -33922,7 +34045,8 @@ export default function App() {
             ledgerLoading={tokenLedgerLoading}
             tokenListings={tokenListings}
             tokenSales={tokenSales}
-            tokens={orderedTokenDefinitions}
+            tokens={orderedTokenDefinitions.filter((token) => !isBondTokenDefinition(token))}
+            ledgerError={tokenDataError}
             walletBalances={accountWalletBalances}
             workFloorLoading={workFloorLoading}
             workFloorQuote={workFloorQuote}
@@ -34052,11 +34176,12 @@ export default function App() {
             activityHistoryPage={activityHistoryPage}
             activityStats={activityStats}
             busy={activityLoading || busy}
+            readError={status.tone === "bad" ? status.text : ""}
             idActivity={idActivity}
             profile={activityProfile}
             query={activityQuery}
             searchedActivity={activityMail}
-            setQuery={setActivityQuery}
+            setQuery={changeActivityQuery}
             onClear={clearActivity}
             onActivityPageChange={(pageIndex) =>
               void loadLogHistoryPage(
@@ -35758,6 +35883,7 @@ function ActivityApp({
         activityHistoryPage={activityHistoryPage}
         activityStats={activityStats}
         busy={busy}
+        readError={status.tone === "bad" ? status.text : ""}
         idActivity={idActivity}
         profile={profile}
         query={query}
@@ -35846,6 +35972,7 @@ function ActivityWorkspace({
   idActivity,
   profile,
   query,
+  readError = "",
   searchedActivity,
   setQuery,
   onActivityPageChange,
@@ -35860,6 +35987,7 @@ function ActivityWorkspace({
   idActivity: PowActivityItem[];
   profile?: DesktopProfile;
   query: string;
+  readError?: string;
   searchedActivity: PowActivityItem[];
   setQuery: (value: string) => void;
   onActivityPageChange?: (pageIndex: number) => void;
@@ -35872,11 +36000,13 @@ function ActivityWorkspace({
     setActivityPageIndex(0);
   }, [profile?.query, query]);
 
+  const matchingProfile = profile?.query.trim().toLowerCase() === query.trim().toLowerCase()
+    ? profile : undefined;
   const items = activityItemsForView(
     idActivity,
     searchedActivity,
     query,
-    profile,
+    matchingProfile,
   );
   const normalizedQuery = query.trim().toLowerCase();
   const serverQuery = String(activityHistoryPage?.query ?? "")
@@ -35884,8 +36014,8 @@ function ActivityWorkspace({
     .toLowerCase();
   const useServerPage =
     Array.isArray(activityHistoryPage?.items) &&
-    (profile
-      ? serverQuery === profile.address.toLowerCase() ||
+    (matchingProfile
+      ? serverQuery === matchingProfile.address.toLowerCase() ||
         serverQuery === normalizedQuery
       : serverQuery === normalizedQuery);
   const serverPage = useServerPage
@@ -35901,20 +36031,23 @@ function ActivityWorkspace({
       ACTIVITY_FEED_PAGE_SIZE,
     );
   const activityPage = serverPage ?? localPage;
-  const stats = !profile && !normalizedQuery ? activityStats : undefined;
+  const stats = !matchingProfile && !normalizedQuery ? activityStats : undefined;
+  const resultsVerified = Boolean(useServerPage || stats);
+  const readStateLabel = busy ? "Searching" : readError ? "Unavailable" : normalizedQuery ? "Search to verify" : "Loading";
   const totalCount = stats?.total ?? activityPage.totalCount;
+  const countedItems = useServerPage ? activityPage.items : items;
+  const pageCountsOnly = !stats && totalCount > countedItems.length;
   const pendingCount =
-    stats?.pending ?? items.filter((item) => !item.confirmed).length;
+    stats?.pending ?? countedItems.filter((item) => !item.confirmed).length;
   const confirmedCount =
-    stats?.confirmed ??
-    Math.max(0, totalCount - pendingCount);
-  const dataBytes = stats?.dataBytes ?? totalActivityDataBytes(items);
+    stats?.confirmed ?? countedItems.filter((item) => item.confirmed).length;
+  const dataBytes = stats?.dataBytes ?? totalActivityDataBytes(countedItems);
   const visibleItems = activityPage.items;
   const indexedAt = activityHistoryPage?.indexedAt;
   const indexedThroughBlock =
     activityHistoryPage?.indexedThroughBlock ?? stats?.indexedThroughBlock;
-  const title = profile
-    ? `${profile.label} log`
+  const title = matchingProfile
+    ? `${matchingProfile.label} log`
     : normalizedQuery
       ? "Filtered log"
       : "Global ProofOfWork log";
@@ -35986,20 +36119,20 @@ function ActivityWorkspace({
 
       <div className="activity-stats" aria-label="Log stats">
         <div>
-          <strong>{totalCount.toLocaleString()}</strong>
+          <strong>{resultsVerified ? totalCount.toLocaleString() : readStateLabel}</strong>
           <span>Total actions</span>
         </div>
         <div>
-          <strong>{confirmedCount.toLocaleString()}</strong>
-          <span>Confirmed</span>
+          <strong>{resultsVerified ? confirmedCount.toLocaleString() : readStateLabel}</strong>
+          <span>{pageCountsOnly ? "Confirmed on page" : "Confirmed"}</span>
         </div>
         <div>
-          <strong>{pendingCount.toLocaleString()}</strong>
-          <span>Pending</span>
+          <strong>{resultsVerified ? pendingCount.toLocaleString() : readStateLabel}</strong>
+          <span>{pageCountsOnly ? "Pending on page" : "Pending"}</span>
         </div>
         <div>
-          <strong>{formatBytes(dataBytes)}</strong>
-          <span>Data stored</span>
+          <strong>{resultsVerified ? formatBytes(dataBytes) : readStateLabel}</strong>
+          <span>{pageCountsOnly ? "Data on page" : "Data stored"}</span>
         </div>
         <div>
           <strong>{networkLabel(activeNetwork)}</strong>
@@ -36018,7 +36151,7 @@ function ActivityWorkspace({
               Confirmed records are canonical. Pending records are visible until
               they confirm or disappear.
             </p>
-            {indexedAt || indexedThroughBlock ? (
+            {resultsVerified && (indexedAt || indexedThroughBlock) ? (
               <p>
                 {indexedAt ? `Refreshed ${formatDate(indexedAt)}` : "Refreshed"}{" "}
                 {indexedThroughBlock
@@ -36026,7 +36159,7 @@ function ActivityWorkspace({
                   : "from the confirmed Computer index."}
               </p>
             ) : null}
-            {totalCount > ACTIVITY_FEED_PAGE_SIZE ? (
+            {resultsVerified && totalCount > ACTIVITY_FEED_PAGE_SIZE ? (
               <p>
                 Showing paged results from {totalCount.toLocaleString()}{" "}
                 matching actions. Search an address, ID, txid, or app label to
@@ -36035,12 +36168,17 @@ function ActivityWorkspace({
             ) : null}
           </div>
         </div>
-        <ActivityFeed items={visibleItems} totalCount={totalCount} />
-        <PaginationControls
+        {resultsVerified ? <ActivityFeed items={visibleItems} totalCount={totalCount} /> : (
+          <div className="empty-state activity-empty" role="status">
+            <h3>{busy ? "Searching log" : readError ? "Log unavailable" : normalizedQuery ? "Search to verify this query" : "Loading log"}</h3>
+            <p>{readError || "Waiting for matching indexed results before reporting counts or an empty log."}</p>
+          </div>
+        )}
+        {resultsVerified ? <PaginationControls
           label="Actions"
           onPageChange={changePage}
           page={activityPage}
-        />
+        /> : null}
       </section>
     </section>
   );
@@ -36196,6 +36334,8 @@ type TokenWalletAppProps = {
   preparingTransferUtxos: boolean;
   proofBalanceError: string;
   proofBalanceLoaded: boolean;
+  creditBalancesReady?: boolean;
+  creditBalancesError?: string;
   proofBalanceSats: number;
   proofProtectedSats: number;
   proofSpendableSats: number;
@@ -36548,6 +36688,12 @@ function InfinityApp({
             { href: "#bond-market", label: "Market" },
           ]}
         />
+        {!summary ? (
+          <section className="id-launch-card" id="bond-overview" role="status">
+            <h2>{bondConfig.displayName}</h2>
+            <p>{status.tone === "bad" ? "Bond summary unavailable. Refresh to retry." : "Verifying confirmed bond supply, floor, and history…"}</p>
+          </section>
+        ) : <>
         <section className="id-launch-card token-dashboard-card" id="bond-overview">
           <div className="id-card-heading">
             <div className="id-card-icon">
@@ -36787,6 +36933,8 @@ function InfinityApp({
             </p>
           )}
         </section>
+
+        </>}
 
         <section className="id-launch-card token-mint-card" id="bond-create">
           <div className="id-card-heading compact">
@@ -37060,6 +37208,8 @@ function TokenWalletApp({
   preparingTransferUtxos,
   proofBalanceError,
   proofBalanceLoaded,
+  creditBalancesReady,
+  creditBalancesError,
   proofBalanceSats,
   proofProtectedSats,
   proofSpendableSats,
@@ -37145,6 +37295,8 @@ function TokenWalletApp({
         preparingTransferUtxos={preparingTransferUtxos}
         proofBalanceError={proofBalanceError}
         proofBalanceLoaded={proofBalanceLoaded}
+        creditBalancesReady={creditBalancesReady}
+        creditBalancesError={creditBalancesError}
         proofBalanceSats={proofBalanceSats}
         proofProtectedSats={proofProtectedSats}
         proofSpendableSats={proofSpendableSats}
@@ -37316,6 +37468,8 @@ function TokenWalletWorkspace({
   preparingTransferUtxos = false,
   proofBalanceError = "",
   proofBalanceLoaded = false,
+  creditBalancesReady = true,
+  creditBalancesError = "",
   proofBalanceSats = 0,
   proofProtectedSats = 0,
   proofSpendableSats = 0,
@@ -37403,6 +37557,8 @@ function TokenWalletWorkspace({
   preparingTransferUtxos?: boolean;
   proofBalanceError?: string;
   proofBalanceLoaded?: boolean;
+  creditBalancesReady?: boolean;
+  creditBalancesError?: string;
   proofBalanceSats?: number;
   proofProtectedSats?: number;
   proofSpendableSats?: number;
@@ -38040,7 +38196,7 @@ function TokenWalletWorkspace({
         <div className="id-launch-stats token-stats-row">
           <div>
             <span>{walletCopy.ownedLabel}</span>
-            <strong>{confirmedTokenCount.toLocaleString()}</strong>
+            <strong>{creditBalancesReady ? confirmedTokenCount.toLocaleString() : creditBalancesError ? "Unavailable" : "Loading"}</strong>
           </div>
           {showProofBalance ? (
             <div>
@@ -38056,7 +38212,7 @@ function TokenWalletWorkspace({
           ) : null}
           <div>
             <span>Movements seen</span>
-            <strong>{walletMovements.length.toLocaleString()}</strong>
+            <strong>{creditBalancesReady ? walletMovements.length.toLocaleString() : creditBalancesError ? "Unavailable" : "Loading"}</strong>
           </div>
           <div>
             <span>Mutation fee</span>
@@ -38176,8 +38332,8 @@ function TokenWalletWorkspace({
           ) : (
             <div className="empty-state">
               <Wallet size={28} />
-              <h3>{walletCopy.noBalanceTitle}</h3>
-              <p>{walletCopy.noBalanceBody}</p>
+              <h3>{creditBalancesError ? "Credit balances unavailable" : !creditBalancesReady ? "Loading credit balances" : walletCopy.noBalanceTitle}</h3>
+              <p>{creditBalancesError || (!creditBalancesReady ? "Verifying confirmed balances and reservations…" : walletCopy.noBalanceBody)}</p>
             </div>
           )}
         </section>
@@ -39812,6 +39968,15 @@ function TokenWorkspace({
       stats.set(mint.tokenId, current);
     }
 
+    for (const token of tokens) {
+      const row = stats.get(token.tokenId)!;
+      const confirmed = tokenSupplyUnits(token, token.confirmedSupply);
+      const pending = tokenSupplyUnits(token, token.pendingSupply);
+      if (confirmed !== null) row.confirmedSupply = confirmed;
+      if (pending !== null) row.pendingSupply = pending;
+      if (token.confirmedMints !== undefined) row.confirmedMints = token.confirmedMints;
+      if (token.pendingMints !== undefined) row.pendingMints = token.pendingMints;
+    }
     return stats;
   }, [mints, tokens]);
   const tokenDefinitionPage = pagedItems(
@@ -41323,7 +41488,7 @@ function TokenWorkspace({
                   value={selectedTokenId}
                 >
                   {tokens.length === 0 ? (
-                    <option value="">No credits created yet</option>
+                    <option value="">{ledgerError ? "Credit directory unavailable" : ledgerLoading ? "Loading credits" : "No credits created yet"}</option>
                   ) : null}
                   {tokens.map((token) => (
                     <option key={token.tokenId} value={token.tokenId}>
@@ -41452,19 +41617,19 @@ function TokenWorkspace({
 
       <div className="id-launch-stats" aria-label="Credit stats">
         <div>
-          <strong>{tokens.length.toLocaleString()}</strong>
+          <strong>{tokens.length === 0 && (ledgerLoading || ledgerError) ? (ledgerError ? "Unavailable" : "Loading") : tokens.length.toLocaleString()}</strong>
           <span>Created credits</span>
         </div>
         <div>
-          <strong>{confirmedTokenCount.toLocaleString()}</strong>
+          <strong>{tokens.length === 0 && (ledgerLoading || ledgerError) ? (ledgerError ? "Unavailable" : "Loading") : confirmedTokenCount.toLocaleString()}</strong>
           <span>Confirmed credits</span>
         </div>
         <div>
-          <strong>{pendingTokenCount.toLocaleString()}</strong>
+          <strong>{tokens.length === 0 && (ledgerLoading || ledgerError) ? (ledgerError ? "Unavailable" : "Loading") : pendingTokenCount.toLocaleString()}</strong>
           <span>Pending credits</span>
         </div>
         <div>
-          <strong>{creationSats.toLocaleString()}</strong>
+          <strong>{tokens.length === 0 && (ledgerLoading || ledgerError) ? (ledgerError ? "Unavailable" : "Loading") : creationSats.toLocaleString()}</strong>
           <span>Creation proofs</span>
         </div>
       </div>
@@ -41613,8 +41778,8 @@ function TokenWorkspace({
           <div className="id-record-list">
             {tokens.length === 0 ? (
               <div className="empty-state">
-                <h3>No credits yet</h3>
-                <p>Create WORK first, then mint against its credit id.</p>
+                <h3>{ledgerError ? "Credit directory unavailable" : ledgerLoading ? "Loading credits" : "No credits yet"}</h3>
+                <p>{ledgerError || (ledgerLoading ? "Verifying the complete credit directory and confirmed supplies…" : "Confirmed and pending credit creations will appear here.")}</p>
               </div>
             ) : (
               tokenDefinitionPage.items.map((token) => {
@@ -44249,12 +44414,11 @@ function GrowthWorkspace({
 
       <div className="growth-stat-grid" aria-label="Growth headline stats">
         <div>
-          <strong>
-            {bondProofAmountDisplay(
-              authoritativeNetworkValueSats,
-              authoritativeNetworkValueQ8,
-            )} proofs
-          </strong>
+          <MetricValue
+            exactValue={bondProofAmountDisplay(authoritativeNetworkValueSats, authoritativeNetworkValueQ8)}
+            label="Real network value"
+            unit="proofs"
+          />
           <span>
             Real network value now · {growthUsdForSats(authoritativeNetworkValueSats)}
           </span>
@@ -44294,12 +44458,11 @@ function GrowthWorkspace({
           </span>
         </div>
         <div>
-          <strong>
-            {bondProofAmountDisplay(
-              creditNetworkValueSats,
-              creditNetworkValueQ8,
-            )} proofs
-          </strong>
+          <MetricValue
+            exactValue={bondProofAmountDisplay(creditNetworkValueSats, creditNetworkValueQ8)}
+            label="WORK live event value"
+            unit="proofs"
+          />
           <span>
             WORK live event value · {bondProofAmountDisplay(
               creditMovementLiveValueSats,
@@ -46276,49 +46439,54 @@ function boostMarketplaceListingMatchesSearch(
 
 function useBoostMarketplaceData(network: BitcoinNetwork) {
   const [payload, setPayload] = useState<BoostFeedPayload>();
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(network === "livenet");
   const [error, setError] = useState("");
-  const refresh = useCallback(
-    async (fresh = false) => {
-      if (network !== "livenet") {
-        setPayload(undefined);
-        setError("");
-        return;
-      }
-      const params = new URLSearchParams({
-        limit: "100",
-        sort: "newest",
-        window: "all",
-      });
-      if (fresh) {
-        params.set("fresh", "1");
-      }
-      setLoading(true);
+  const generationRef = useRef(0);
+  const controllerRef = useRef<AbortController>();
+  const refresh = useCallback(async (fresh = false) => {
+    const generation = ++generationRef.current;
+    controllerRef.current?.abort();
+    const controller = new AbortController();
+    controllerRef.current = controller;
+    if (network !== "livenet") {
+      setPayload(undefined);
       setError("");
-      try {
-        const nextPayload = await fetchProofApiJson<BoostFeedPayload>(
-          `/api/v1/boost?${params.toString()}`,
-          network,
-          { timeoutMs: 60_000 },
-        );
-        setPayload(nextPayload);
-      } catch (loadError) {
-        setError(errorMessage(loadError, "Boost listings could not be loaded."));
-      } finally {
-        setLoading(false);
+      setLoading(false);
+      return;
+    }
+    const params = new URLSearchParams({ listings: "1" });
+    if (fresh) params.set("fresh", "1");
+    setLoading(true);
+    setError("");
+    try {
+      const nextPayload = await fetchProofApiJson<BoostFeedPayload>(
+        `/api/v1/boost?${params.toString()}`, network,
+        { timeoutMs: 60_000, signal: controller.signal },
+      );
+      if (generation !== generationRef.current || controller.signal.aborted) return;
+      if (nextPayload.complete !== true || nextPayload.mode !== "listings") {
+        throw new Error("The complete Boost listing book is unavailable. Retained listings are not current.");
       }
-    },
-    [network],
-  );
+      setPayload(nextPayload);
+    } catch (loadError) {
+      if (generation !== generationRef.current || controller.signal.aborted) return;
+      setError(errorMessage(loadError, "Boost listings could not be loaded. Retained listings are not current."));
+    } finally {
+      if (generation === generationRef.current) setLoading(false);
+    }
+  }, [network]);
   useEffect(() => {
+    setPayload(undefined);
     void refresh(false);
+    return () => {
+      generationRef.current += 1;
+      controllerRef.current?.abort();
+    };
   }, [refresh]);
   const listings = useMemo(
-    () =>
-      boostMarketplaceListingsFromItems(payload?.items ?? []).filter(
-        (listing) => listing.network === network,
-      ),
-    [network, payload?.items],
+    () => boostMarketplaceListingsFromItems(payload?.items ?? []).filter(
+      (listing) => listing.network === network,
+    ), [network, payload?.items],
   );
   return { error, listings, loading, payload, refresh };
 }
@@ -46344,6 +46512,8 @@ function BoostMarketplacePanel({
   const [sortMode, setSortMode] =
     useState<BoostMarketplaceSortMode>("newest");
   const [pageIndex, setPageIndex] = useState(0);
+  const countsReady = listings.length > 0 || (!loading && !error);
+  const unknownCount = error ? "Unavailable" : "Loading";
   const networkListings = listings.filter((listing) => listing.network === network);
   const filteredListings = networkListings.filter((listing) =>
     boostMarketplaceListingMatchesSearch(listing, searchQuery),
@@ -46397,21 +46567,21 @@ function BoostMarketplacePanel({
         >
           <div>
             <span>Open listings</span>
-            <strong>{networkListings.length.toLocaleString()}</strong>
+            <strong>{countsReady ? networkListings.length.toLocaleString() : unknownCount}</strong>
           </div>
           <div>
             <span>Visible sellers</span>
-            <strong>{sellerCount.toLocaleString()}</strong>
+            <strong>{countsReady ? sellerCount.toLocaleString() : unknownCount}</strong>
           </div>
           <div>
             <span>Lowest ask</span>
             <strong>
-              {lowestAsk > 0 ? lowestAsk.toLocaleString() : "0"} proofs
+              {countsReady ? `${lowestAsk.toLocaleString()} proofs` : unknownCount}
             </strong>
           </div>
           <div>
             <span>Lowest USD</span>
-            <strong>{lowestAsk > 0 ? tokenUsd(satsToUsd(lowestAsk, btcUsd)) : "$0.00"}</strong>
+            <strong>{countsReady ? tokenUsd(satsToUsd(lowestAsk, btcUsd)) : unknownCount}</strong>
           </div>
         </div>
 
@@ -46526,7 +46696,7 @@ function BoostMarketplacePanel({
         ) : (
           <div className="empty-state">
             <ShoppingBag size={28} />
-            <h3>{loading ? "Loading Boost listings" : "No Boost listings"}</h3>
+            <h3>{error ? "Boost listings unavailable" : loading ? "Loading Boost listings" : "No Boost listings"}</h3>
             <p>
               {network === "livenet"
                 ? "Create a Boost listing from Boost or from the original Mail item."
@@ -46555,7 +46725,7 @@ function MarketplaceTabs({
 }: {
   active: MarketplaceTab;
   bondCount?: number;
-  boostCount: number;
+  boostCount?: number;
   idCount?: number;
   onChange: (tab: MarketplaceTab) => void;
   tokenCount?: number;
@@ -46676,6 +46846,7 @@ function InfinityBondMarketPanel({
   sales,
   setFeeRate,
   summary,
+  referenceError = "",
   tokens,
 }: {
   address: string;
@@ -46691,6 +46862,7 @@ function InfinityBondMarketPanel({
   sales: PowTokenSale[];
   setFeeRate: (value: number) => void;
   summary?: InfinitySummarySnapshot;
+  referenceError?: string;
   tokens: PowTokenDefinition[];
 }) {
   const [tokenListingPageIndex, setTokenListingPageIndex] = useState(0);
@@ -46746,7 +46918,7 @@ function InfinityBondMarketPanel({
     tokenId: bondConfig.tokenId,
   };
   const tokenReferenceById = new Map<string, TokenReferenceSnapshot>([
-    [bondConfig.tokenId, powbReference],
+    ...(summary ? [[bondConfig.tokenId, powbReference] as [string, TokenReferenceSnapshot]] : []),
   ]);
   const sortedMarketListings = sortTokenListings(
     visibleMarketListings,
@@ -46825,15 +46997,12 @@ function InfinityBondMarketPanel({
           <div>
             <span>Bond floor</span>
             <strong>
-              {bondProofAmountDisplay(
-                powbReferenceValue,
-                powbReferenceQ8,
-              )} proofs / {bondConfig.ticker}
+              {summary ? `${bondProofAmountDisplay(powbReferenceValue, powbReferenceQ8)} proofs / ${bondConfig.ticker}` : referenceError ? "Unavailable" : "Verifying reference"}
             </strong>
           </div>
           <div>
             <span>USD/{bondConfig.ticker}</span>
-            <strong>{tokenUsd(powbFloorUsd)}</strong>
+            <strong>{summary ? tokenUsd(powbFloorUsd) : "—"}</strong>
           </div>
           <div>
             <span>Open tickets</span>
@@ -46966,7 +47135,7 @@ function InfinityBondMarketPanel({
                           powbReferenceValue,
                           powbReferenceQ8,
                         )} proofs / ${bondConfig.ticker} bond floor`
-                      : "no confirmed bond floor yet"}
+                      : summary ? "no confirmed bond floor yet" : referenceError ? "bond floor unavailable" : "verifying confirmed bond floor"}
                   </p>
                   <div className="id-record-actions">
                     <button
@@ -47364,8 +47533,28 @@ function BondMarketplacePanel({
   });
   const activeBondConfig =
     activeBondTab === "infinity" ? INFINITY_BOND_UI : INCEPTION_BOND_UI;
-  const activeSummary =
-    activeBondTab === "infinity" ? infinitySummary : inceptionSummary;
+  const [referenceSnapshots, setReferenceSnapshots] = useState<Record<string, InfinitySummarySnapshot>>({});
+  const [referenceError, setReferenceError] = useState("");
+  const [referenceRequest, setReferenceRequest] = useState(0);
+  const retainedSummary = activeBondTab === "infinity" ? infinitySummary : inceptionSummary;
+  const localSummary = referenceSnapshots[activeBondConfig.tokenId];
+  const activeSummary = localSummary && !infinitySummaryRegresses(localSummary, retainedSummary)
+    ? localSummary : retainedSummary;
+  useEffect(() => {
+    const controller = new AbortController();
+    setReferenceError("");
+    if (network !== "livenet") return () => controller.abort();
+    void fetchBondSummary(activeBondConfig, referenceRequest > 0, controller.signal)
+      .then((snapshot) => {
+        if (controller.signal.aborted) return;
+        setReferenceSnapshots((current) => infinitySummaryRegresses(snapshot, current[snapshot.tokenId])
+          ? current : { ...current, [snapshot.tokenId]: snapshot });
+      })
+      .catch((error) => {
+        if (!controller.signal.aborted) setReferenceError(errorMessage(error, "Bond reference is unavailable."));
+      });
+    return () => controller.abort();
+  }, [activeBondConfig, network, referenceRequest]);
   const bondListings = listings.filter(
     (listing) => listing.network === network && BOND_TOKEN_IDS.has(listing.tokenId),
   );
@@ -47432,6 +47621,12 @@ function BondMarketplacePanel({
         </div>
       </section>
 
+      {referenceError ? (
+        <p className="field-note bad" role="status">
+          {referenceError} {activeSummary ? "The last verified reference remains visible; it is not current." : "The bond floor is unavailable."}
+          {" "}<button type="button" className="secondary small" onClick={() => setReferenceRequest((value) => value + 1)}>Retry bond reference</button>
+        </p>
+      ) : null}
       <InfinityBondMarketPanel
         address={address}
         bondConfig={activeBondConfig}
@@ -47445,7 +47640,8 @@ function BondMarketplacePanel({
         network={network}
         sales={sales}
         setFeeRate={setFeeRate}
-        summary={activeSummary}
+        summary={network === "livenet" ? activeSummary : undefined}
+        referenceError={referenceError}
         tokens={tokens}
       />
     </>
@@ -50650,7 +50846,9 @@ function MarketplaceApp({
                 <span>Bond Books</span>
               </div>
             </div>
-          ) : marketplaceTab === "boosts" ? (
+          ) : marketplaceTab === "boosts" ? !boostPayload ? (
+            <p role="status">{boostMarketError ? "Boost listings unavailable." : "Loading complete Boost listings…"}</p>
+          ) : (
             <div className="id-launch-stats" aria-label="Boost AMO stats">
               <div>
                 <strong>{boostListings.length.toLocaleString()}</strong>
@@ -50692,7 +50890,7 @@ function MarketplaceApp({
         <MarketplaceTabs
           active={marketplaceTab}
           bondCount={marketplaceSummaryVerified ? bondListings.length : undefined}
-          boostCount={boostListings.length}
+          boostCount={boostListings.length > 0 || (!boostMarketLoading && !boostMarketError) ? boostListings.length : undefined}
           idCount={marketplaceSummaryVerified ? registryListings.length : undefined}
           onChange={setMarketplaceTab}
           tokenCount={marketplaceSummaryVerified ? creditTokens.length : undefined}
@@ -51186,7 +51384,7 @@ function MarketplaceWorkspace({
       <MarketplaceTabs
         active={marketplaceTab}
         bondCount={marketplaceSummaryVerified ? bondListings.length : undefined}
-        boostCount={boostListings.length}
+        boostCount={boostListings.length > 0 || (!boostMarketLoading && !boostMarketError) ? boostListings.length : undefined}
         idCount={marketplaceSummaryVerified ? networkListings.length : undefined}
         onChange={setMarketplaceTab}
         tokenCount={marketplaceSummaryVerified ? networkTokenCount : undefined}

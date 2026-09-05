@@ -1,9 +1,10 @@
 [Unit]
-Description=Prune managed ProofOfWork UI release backups
+Description=Inspect managed ProofOfWork UI release backup retention
 
 [Service]
 Type=oneshot
-ExecStart=/usr/local/sbin/proofofwork-release-prune /var/backups/proofofwork-ui/releases 5
+# Existing archives require exact deletion approval; scheduled checks only report.
+ExecStart=/usr/local/sbin/proofofwork-release-prune /var/backups/proofofwork-ui/releases 5 --dry-run
 TimeoutStartSec=30m
 NoNewPrivileges=true
 PrivateTmp=true

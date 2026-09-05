@@ -3,6 +3,19 @@ set -Eeuo pipefail
 
 root="${1:-}"
 keep="${2:-}"
+mode="${3:---apply}"
+multiple_rollback_warning=0
+case "${mode}" in
+  --dry-run | --apply) ;;
+  *)
+    echo "Usage: $0 <approved-root> <keep> [--dry-run|--apply]" >&2
+    exit 64
+    ;;
+esac
+if (($# > 3)); then
+  echo "Unexpected release-retention arguments." >&2
+  exit 64
+fi
 case "${root}:${keep}" in
   /var/backups/proofofwork-ui/releases:5)
     release_kind="ui"
@@ -291,8 +304,16 @@ if [[ "${release_kind}" == "ui" ]]; then
   rollback_discovery_file=""
   trap - EXIT
   if ((${#rollback_roots[@]} > 1)); then
-    echo "Refusing retention with more than one complete-root UI rollback." >&2
-    exit 2
+    if [[ "${mode}" == "--apply" ]]; then
+      echo "Refusing retention with more than one complete-root UI rollback." >&2
+      exit 2
+    fi
+    if ((${#rollback_roots[@]} > 9)); then
+      echo "Refusing dry-run retention beyond nine complete-root UI rollbacks." >&2
+      exit 2
+    fi
+    echo "WARNING multiple complete-root UI rollbacks are retained; archive deletion remains disabled pending exact classification." >&2
+    multiple_rollback_warning=1
   fi
   for rollback_checkout in "${rollback_roots[@]}"; do
     rollback_name="${rollback_checkout##*/}"
@@ -537,10 +558,15 @@ for ((index = keep; index < ${#verified_archives[@]}; index += 1)); do
     continue
   fi
   if [[ "${name}" =~ ^proofofwork-${release_kind}-release-[A-Za-z0-9._-]+\.tgz$ ]]; then
-    /usr/bin/rm -f -- \
-      "${root}/${name}" \
-      "${root}/${name}.sha256" \
-      "${root}/${name}.provenance"
+    if [[ "${mode}" == "--apply" ]]; then
+      /usr/bin/rm -f -- \
+        "${root}/${name}" \
+        "${root}/${name}.sha256" \
+        "${root}/${name}.provenance"
+    else
+      printf 'would_prune archive=%s checksum=%s provenance=%s\n' \
+        "${root}/${name}" "${root}/${name}.sha256" "${root}/${name}.provenance"
+    fi
   fi
 done
 
@@ -549,9 +575,19 @@ if ((unverified_count > 0)); then
 fi
 
 for stale_temporary_file in "${stale_temporary_files[@]}"; do
-  /usr/bin/rm -f -- "${stale_temporary_file}"
+  if [[ "${mode}" == "--apply" ]]; then
+    /usr/bin/rm -f -- "${stale_temporary_file}"
+  else
+    printf 'would_prune temporary=%s\n' "${stale_temporary_file}"
+  fi
 done
+
+printf 'release_retention mode=%s verified_archives=%s unverified_archives=%s\n' \
+  "${mode#--}" "${#verified_archives[@]}" "${unverified_count}"
 
 if ((unverified_count > 0)); then
   exit 2
+fi
+if ((multiple_rollback_warning)); then
+  exit 1
 fi

@@ -1,3 +1,4 @@
+import { completeRegistryCounts } from "../../shared/api/surfaceReadState";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   fetchProofApiJson,
@@ -7,41 +8,19 @@ import {
 import { registryAddressForNetwork } from "../../shared/protocol/idRegistry";
 import { LandingApp } from "./LandingApp";
 
-type LandingRegistryRecord = {
-  confirmed: boolean;
-};
-
 type RegistrySummaryResponse = {
   indexedAt?: string;
-  records?: unknown;
+  registryCounts?: {
+    model?: string;
+    complete?: boolean;
+    confirmedCount?: number;
+    pendingCount?: number;
+    totalCount?: number;
+  };
 };
 
-function registryRecordsFromSummary(payload: RegistrySummaryResponse) {
-  if (!Array.isArray(payload.records)) {
-    throw new Error("Registry summary did not include its visible records.");
-  }
-
-  return payload.records.map((record, index) => {
-    if (
-      !record ||
-      typeof record !== "object" ||
-      typeof (record as { confirmed?: unknown }).confirmed !== "boolean"
-    ) {
-      throw new Error(
-        `Registry summary record ${index + 1} is malformed. Keeping the last verified summary.`,
-      );
-    }
-
-    return {
-      confirmed: (record as { confirmed: boolean }).confirmed,
-    };
-  });
-}
-
 export default function LandingRoot() {
-  const [registryRecords, setRegistryRecords] = useState<
-    LandingRegistryRecord[]
-  >([]);
+  const [registryCounts, setRegistryCounts] = useState({ confirmedCount: 0, pendingCount: 0, totalCount: 0 });
   const [registryLoaded, setRegistryLoaded] = useState(false);
   const [registryLoading, setRegistryLoading] = useState(false);
   const [registryFresh, setRegistryFresh] = useState(false);
@@ -63,14 +42,14 @@ export default function LandingRoot() {
 
     try {
       const payload = await fetchProofApiJson<RegistrySummaryResponse>(
-        fresh ? "/api/v1/registry-summary?fresh=1" : "/api/v1/registry-summary",
+        fresh ? "/api/v1/registry-summary?projection=counts-v1&fresh=1" : "/api/v1/registry-summary?projection=counts-v1",
         "livenet",
         { signal: controller.signal },
       );
       if (generation !== requestGenerationRef.current) {
         return false;
       }
-      setRegistryRecords(registryRecordsFromSummary(payload));
+      setRegistryCounts(completeRegistryCounts(payload));
       setRegistryLoaded(true);
       setRegistryFresh(fresh);
       setRegistryWarning("");
@@ -132,7 +111,7 @@ export default function LandingRoot() {
       registryFresh={registryFresh}
       registryLoaded={registryLoaded}
       registryLoading={registryLoading}
-      registryRecords={registryRecords}
+      registryCounts={registryCounts}
       registryWarning={registryWarning}
       onRefresh={() => void refreshRegistry(true)}
     />

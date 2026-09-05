@@ -8,6 +8,7 @@ staging_root="${POW_UI_PUBLISH_STAGING_ROOT:-/var/tmp/proofofwork-deploy}"
 archive_root="${POW_UI_RELEASE_ARCHIVE_ROOT:-/var/backups/proofofwork-ui/releases}"
 rollback_root_parent="${POW_UI_PUBLISH_ROLLBACK_ROOT:-/var/backups/proofofwork-ui/rollback-roots}"
 provenance_script="${POW_UI_PUBLISH_PROVENANCE_SCRIPT:-/usr/local/sbin/proofofwork-ui-release-provenance}"
+retained_root_script="${POW_UI_RETAINED_ROOT_SCRIPT:-/usr/local/sbin/proofofwork-ui-retained-root}"
 deploy_lock="${POW_UI_DEPLOY_LOCK:-/run/proofofwork-ui/deploy.lock}"
 allow_test_roots="${POW_UI_ALLOW_TEST_ROOTS:-}"
 
@@ -15,6 +16,7 @@ release_id=""
 commit=""
 source_checkout=""
 archive=""
+declare -a retain_rollback_roots=()
 
 while (($# > 0)); do
   case "$1" in
@@ -32,6 +34,11 @@ while (($# > 0)); do
       ;;
     --archive)
       archive="${2:-}"
+      shift 2
+      ;;
+    --retain-rollback-root)
+      # Exact basename:manifest-SHA256:complete-root-SHA256 classification.
+      retain_rollback_roots+=("${2:-}")
       shift 2
       ;;
     *)
@@ -59,7 +66,8 @@ if [[ "${allow_test_roots}" != "1" ]] && {
     [[ "${staging_root}" != "/var/tmp/proofofwork-deploy" ]] ||
     [[ "${archive_root}" != "/var/backups/proofofwork-ui/releases" ]] ||
     [[ "${rollback_root_parent}" != "/var/backups/proofofwork-ui/rollback-roots" ]] ||
-    [[ "${provenance_script}" != "/usr/local/sbin/proofofwork-ui-release-provenance" ]] ||
+  [[ "${provenance_script}" != "/usr/local/sbin/proofofwork-ui-release-provenance" ]] ||
+  [[ "${retained_root_script}" != "/usr/local/sbin/proofofwork-ui-retained-root" ]] ||
     [[ "${deploy_lock}" != "/run/proofofwork-ui/deploy.lock" ]];
 }; then
   echo "Non-production UI publisher paths require POW_UI_ALLOW_TEST_ROOTS=1." >&2
@@ -128,11 +136,36 @@ fi
 
 refuse_existing_rollback_roots() {
   local -a existing_rollback_roots
+  local record name root
+  local -A classified=()
+  if ((${#retain_rollback_roots[@]} > 8)); then
+    echo "At most eight exact retained rollback classifications are permitted." >&2
+    return 1
+  fi
+  for record in "${retain_rollback_roots[@]}"; do
+    if [[ ! "${record}" =~ ^(proofofwork-www-pre-[A-Za-z0-9][A-Za-z0-9._-]{0,127}):([0-9a-f]{64}):([0-9a-f]{64})$ ]]; then
+      echo "Retained rollback requires an exact basename and both SHA256 fingerprints." >&2
+      return 1
+    fi
+    name="${BASH_REMATCH[1]}"
+    if [[ -n "${classified[${name}]:-}" ]]; then
+      echo "Duplicate retained rollback classification: ${name}" >&2
+      return 1
+    fi
+    classified["${name}"]=1
+  done
   shopt -s nullglob
   existing_rollback_roots=("${rollback_root_parent}"/proofofwork-www-pre-*)
   shopt -u nullglob
-  if ((${#existing_rollback_roots[@]} > 0)); then
-    echo "Refusing publication while a complete-root UI rollback awaits post-soak evidence classification: ${existing_rollback_roots[0]}" >&2
+  for root in "${existing_rollback_roots[@]}"; do
+    name="$(basename -- "${root}")"
+    if [[ -z "${classified[${name}]:-}" ]]; then
+      echo "Refusing publication while a complete-root UI rollback awaits post-soak evidence classification: ${root}" >&2
+      return 1
+    fi
+  done
+  if ((${#existing_rollback_roots[@]} != ${#retain_rollback_roots[@]})); then
+    echo "Retained rollback classification does not match the exact existing root set." >&2
     return 1
   fi
 }
@@ -594,6 +627,31 @@ fi
 # Repeat the growth guard under the shared lock so a lock-aware classifier or
 # publisher cannot race the earlier fail-fast check.
 refuse_existing_rollback_roots
+verify_retained_rollback_roots() {
+  local record name remainder manifest_sha tree_sha root
+  if ((${#retain_rollback_roots[@]} == 0)); then return 0; fi
+  if [[ ! -f "${retained_root_script}" || -L "${retained_root_script}" || ! -x "${retained_root_script}" ||
+    "$(realpath -e -- "${retained_root_script}")" != "${retained_root_script}" ||
+    "$(stat --format=%u -- "${retained_root_script}")" != "${EUID}" ]] ||
+    ((8#$(stat --format=%a -- "${retained_root_script}") & 07022)); then
+    echo "Retained rollback fingerprint helper is unsafe." >&2
+    return 1
+  fi
+  for record in "${retain_rollback_roots[@]}"; do
+    name="${record%%:*}"; remainder="${record#*:}"
+    manifest_sha="${remainder%%:*}"; tree_sha="${remainder#*:}"
+    root="${rollback_root_parent}/${name}"
+    canonical_safe_directory "${root}" "Explicit retained rollback"
+    reject_nested_mounts "${root}"
+    POW_UI_ALLOW_TEST_ROOTS="${allow_test_roots}" "${retained_root_script}" "${root}" \
+      --manifest-sha256 "${manifest_sha}" --tree-sha256 "${tree_sha}"
+    POW_UI_WWW_ROOT="${root}" POW_UI_RETAINED_ROOT=1 \
+      POW_UI_RELEASE_ARCHIVE_ROOT="${archive_root}" POW_UI_ALLOW_TEST_ROOTS="${allow_test_roots}" \
+      POW_UI_DEPLOY_LOCK="${deploy_lock}" POW_UI_DEPLOY_LOCK_FD="${deploy_lock_fd}" \
+      "${provenance_script}" verify-rollback
+  done
+}
+verify_retained_rollback_roots
 verify_prior_asset_compatibility
 
 verify_current_rollback_capability() {

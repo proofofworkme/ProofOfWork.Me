@@ -673,7 +673,7 @@ expect(
     /const workSignalValue = boostWorkSignalValue\(workSignalSubatoms, workFloor\)/u.test(
       boostFeedItem,
     ) &&
-    /const proofSignalQ8 = BigInt\(Math\.floor\(proofSignalSats\)\) \* VALUE_Q8_SCALE/u.test(
+    /const proofSignalQ8 = boostExactQ8\(undefined,/u.test(
       boostFeedItem,
     ) &&
     /proofSignalQ8 \+ BigInt\(workSignalValue\.workSignalValueQ8\)/u.test(

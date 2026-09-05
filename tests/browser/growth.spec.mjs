@@ -27,6 +27,13 @@ function growthFixture(mode = "ready") {
   for (const name of ["creditEventFrozenValue", "creditEventLiveValue", "creditFrozenNetworkValue", "creditLiveNetworkValue", "creditMovementFrozenValue", "creditMovementLiveValue", "creditNetworkValue"]) {
     actualValue[`${name}Q8`] = "0";
   }
+  if (mode === "large") {
+    for (const name of ["baseNetworkValue", "baseTotal", "frozenNetworkValue", "frozenTotal", "liveNetworkValue", "liveTotal", "networkValue", "total"]) {
+      actualValue[`${name}Q8`] = "900719925474099312345678";
+      actualValue[`${name}Sats`] = "9007199254740993.12345678";
+      actualValue[`${name}SatsExact`] = "9007199254740993.12345678";
+    }
+  }
   const boost = {
     model: "boost-growth-observation-v1", source: "proof-indexer-confirmed-boost-growth",
     countScope: "confirmed-indexed-shape-valid-records", ready: true, complete: true,
@@ -123,4 +130,26 @@ test("Boost details and assumptions fit a narrow Growth viewport", async ({ page
   expect(Math.max(widths.document, widths.body)).toBeLessThanOrEqual(widths.viewport + 1);
   await page.locator(".growth-boost-details").screenshot({ path: "/tmp/boost-growth-details-mobile.png" });
   await page.locator(".growth-model-details").screenshot({ path: "/tmp/all-product-growth-assumptions-mobile.png" });
+});
+
+
+test("Growth keeps every exact large-value digit readable and copyable on mobile", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
+  await openGrowth(page, "large");
+  const metric = page.locator(".growth-stat-grid > div").first();
+  const exact = "9,007,199,254,740,993.12345678";
+  await expect(metric.locator("data")).toHaveAttribute("value", exact);
+  const geometry = await metric.locator("data > span").evaluate((element) => ({
+    whiteSpace: getComputedStyle(element).whiteSpace,
+    scrollable: element.parentElement.scrollWidth >= element.parentElement.clientWidth,
+    documentWidth: document.documentElement.scrollWidth,
+    viewportWidth: window.innerWidth,
+  }));
+  expect(geometry.whiteSpace).toBe("nowrap");
+  expect(geometry.scrollable).toBe(true);
+  expect(geometry.documentWidth).toBeLessThanOrEqual(geometry.viewportWidth);
+  await metric.getByText("Exact value", { exact: true }).click();
+  await metric.getByRole("button", { name: "Copy exact value" }).click();
+  await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(`${exact} proofs`);
 });

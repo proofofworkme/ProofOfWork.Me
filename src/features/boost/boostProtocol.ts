@@ -12,7 +12,7 @@ export const BOOST_SALE_AUTH_VERSION = "pwb-sale-v1";
 
 export type BoostPaidAction = "like" | "reboost";
 export type BoostFollowAction = "follow" | "unfollow";
-export type BoostFeedMode = "timeline" | "profile";
+export type BoostFeedMode = "timeline" | "profile" | "listings";
 export type BoostProfileTab =
   | "boosts"
   | "replies"
@@ -36,6 +36,7 @@ export type BoostProfile = {
 };
 
 export type BoostFeedItem = {
+  eventId?: string | number;
   actionCount?: number;
   authorAddress: string;
   authorDisplay?: string;
@@ -61,6 +62,8 @@ export type BoostFeedItem = {
     size?: number;
   };
   proofSignalSats: number;
+  proofSignalQ8?: string;
+  proofSignalSatsExact?: string;
   proofSignalUsd?: number;
   replyCount?: number;
   reboostCount?: number;
@@ -86,6 +89,23 @@ export type BoostFeedItem = {
 };
 
 export type BoostFeedPayload = {
+  complete?: boolean;
+  snapshotId?: string;
+  indexedThroughBlock?: number;
+  indexedThroughBlockHash?: string;
+  provenance?: { model?: string; eventCount?: number; pages?: number };
+  hasMore?: boolean;
+  nextCursor?: string;
+  start?: number;
+  end?: number;
+  signalStats?: {
+    totalSignalQ8: string;
+    totalSignalSatsExact: string;
+    proofSignalQ8: string;
+    proofSignalSatsExact: string;
+    totalSignalUsd: number;
+    workSignalSubatoms: string;
+  };
   btcUsd?: number;
   graph?: {
     followingCount?: number;
@@ -104,6 +124,8 @@ export type BoostFeedPayload = {
     id?: string;
     profile?: BoostProfile;
     proofSignalSats?: number;
+    proofSignalQ8?: string;
+    proofSignalSatsExact?: string;
     purchasedCount?: number;
     query: string;
     replyCount?: number;
@@ -111,6 +133,8 @@ export type BoostFeedPayload = {
     boostCount?: number;
     likeCount?: number;
     totalSignalSats?: number;
+    totalSignalQ8?: string;
+    totalSignalSatsExact?: string;
     totalSignalUsd?: number;
     viewerFollowsProfile?: boolean;
     workSignalSubatoms?: string;

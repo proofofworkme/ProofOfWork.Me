@@ -82,15 +82,24 @@ export async function fetchProofApiJson<T>(
     controller.abort();
   }, options.timeoutMs ?? (isAddressMailRead ? 180_000 : 60_000));
 
-  let response: Response;
   try {
-    response = await fetch(url, {
+    const response = await fetch(url, {
       cache: isFreshRead ? "no-store" : "default",
       headers: {
         Accept: "application/json",
       },
       signal: controller.signal,
     });
+    if (!response.ok) {
+      const responseText = await response.text().catch((error: unknown) => {
+        // Keep cancellation and the deadline active while consuming error bodies.
+        if (controller.signal.aborted) throw error;
+        return "";
+      });
+      throw proofApiResponseError(responseText, response.status);
+    }
+    // Await body consumption inside the deadline/caller cancellation lifetime.
+    return (await response.json()) as T;
   } catch (error) {
     if (
       timedOut ||
@@ -110,10 +119,4 @@ export async function fetchProofApiJson<T>(
     options.signal?.removeEventListener("abort", abortFromCaller);
   }
 
-  if (!response.ok) {
-    const responseText = await response.text().catch(() => "");
-    throw proofApiResponseError(responseText, response.status);
-  }
-
-  return response.json() as Promise<T>;
 }

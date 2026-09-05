@@ -34,6 +34,7 @@ import {
   canonicalSummarySnapshotSqlTextMaxBytes,
 } from "../server/canonical-summary-budget.mjs";
 import { compareCanonicalUtf8 } from "../server/canonical-order.mjs";
+import { tokenListingDisplayProjection } from "../server/read-projections.mjs";
 import {
   PROOF_INDEX_EVENT_RELATION_PARITY_MODEL,
   proofIndexCanonicalEventRelationParity,
@@ -14082,7 +14083,8 @@ check("wallet holder overlays preserve WORK and POWB for one address", () => {
     appSource,
     /accountUtxoAvailability\(\s*accountUtxos,\s*connectedWalletReservedOutpoints,\s*\)/u,
   );
-  assert.match(appSource, /activeListingAnchorOutpointsForAddress\(idListings/u);
+  assert.match(appSource, /activeListingAnchorOutpointsForAddress\(\[\.\.\.idListings, \.\.\.accountIdReservations\.listings\]/u);
+  assert.match(appSource, /accountUtxosLoaded && connectedWalletReservationsReady/u);
   assert.match(appSource, /activeTokenListingAnchorOutpointsForAddress/u);
 
   const accountUtxoAvailability = isolatedTypeScriptFunction(
@@ -54374,6 +54376,7 @@ check("token listing history rejects previews and fences relational and Core evi
       },
       tokenListingHistoryStableKey,
       tokenListingHistoryUnavailable,
+      tokenListingDisplayProjection,
       tokenListingWithCanonicalWorkAmoV8Witness: (listing, witness) => ({
         ...tokenListingWithCanonicalWorkAmoV8Witness(listing, witness),
         witnessed: true,
@@ -54388,6 +54391,7 @@ check("token listing history rejects previews and fences relational and Core evi
     listingId: digit.repeat(64),
     spent: index === 1,
     txid: digit.repeat(64),
+    workAmoV5ReplayRawWitness: digit.repeat(4096),
   }));
   listings[1] = {
     ...listings[1],
@@ -54596,6 +54600,38 @@ check("token listing history rejects previews and fences relational and Core evi
   assert.equal(first.authorityCoreUnspentListingIds, undefined);
   assert.equal(first.authorityListingIds, undefined);
   assert.equal(first.authorityTokenId, undefined);
+  const exactIdentity = await completeTokenListingHistoryPayload(
+    "livenet", "work", new URLSearchParams({ limit: "1", listingId: listings[2].listingId }),
+  );
+  assert.equal(exactIdentity.totalCount, 1);
+  assert.equal(exactIdentity.items[0].listingId, listings[2].listingId);
+  assert.equal(exactIdentity.hasMore, false);
+  assert.deepEqual(exactIdentity.listingAuthority, first.listingAuthority);
+  const displayFirst = await completeTokenListingHistoryPayload(
+    "livenet", "work", new URLSearchParams("limit=1&projection=display-v1"),
+  );
+  assert.equal(displayFirst.snapshotId, first.snapshotId);
+  assert.deepEqual(displayFirst.listingAuthority, first.listingAuthority);
+  assert.deepEqual(displayFirst.listingProjection, first.listingProjection);
+  assert.equal(displayFirst.items[0].listingId, first.items[0].listingId);
+  assert.equal(displayFirst.items[0].workAmoV5ReplayRawWitness, undefined);
+  assert.equal(displayFirst.items[0].displayEvidence.fullRecordSha256,
+    createHash("sha256").update(checkpointCursorCanonicalJson(first.items[0]), "utf8").digest("hex"));
+  assert.equal(displayFirst.itemProjection.model, "proof-token-listing-display-v1");
+  const displaySecond = await completeTokenListingHistoryPayload(
+    "livenet", "work", new URLSearchParams({ limit: "1", projection: "display-v1", cursor: displayFirst.nextCursor }),
+  );
+  assert.equal(displaySecond.hasMore, false);
+  assert.equal(displaySecond.totalCount, 2);
+  assert.notEqual(displaySecond.items[0].listingId, displayFirst.items[0].listingId);
+  for (const [projection, cursor] of [["full", displayFirst.nextCursor], ["display-v1", first.nextCursor]]) {
+    await assert.rejects(() => completeTokenListingHistoryPayload(
+      "livenet", "work", new URLSearchParams({ limit: "1", projection, cursor }),
+    ), (error) => error?.statusCode === 409, "full/display cursor identities cannot be mixed");
+  }
+  await assert.rejects(() => completeTokenListingHistoryPayload(
+    "livenet", "work", new URLSearchParams("projection=unknown"),
+  ), (error) => error?.statusCode === 400);
   const internalAuthority = await completeTokenListingHistoryPayload(
     "livenet",
     WORK_TOKEN_ID,
@@ -54655,6 +54691,9 @@ check("token listing history rejects previews and fences relational and Core evi
   );
   coreOutputCountDelta = 0;
   coreDigest = "d".repeat(64);
+  await assert.rejects(() => completeTokenListingHistoryPayload(
+    "livenet", "work", new URLSearchParams({ limit: "1", projection: "display-v1", cursor: displayFirst.nextCursor }),
+  ), (error) => error?.statusCode === 409, "same-height mempool evidence changes invalidate display cursors");
   await assert.rejects(
     () => completeTokenListingHistoryPayload(
       "livenet", "work",

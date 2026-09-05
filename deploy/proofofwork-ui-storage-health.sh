@@ -6,6 +6,7 @@ critical_percent="${POW_STORAGE_CRITICAL_PERCENT:-85}"
 warn_inode_percent="${POW_STORAGE_WARN_INODE_PERCENT:-75}"
 critical_inode_percent="${POW_STORAGE_CRITICAL_INODE_PERCENT:-85}"
 root_min_free_bytes="${POW_STORAGE_ROOT_MIN_FREE_BYTES:-10737418240}"
+root_warn_free_bytes="${POW_STORAGE_ROOT_WARN_FREE_BYTES:-12884901888}"
 
 for value in \
   "${warn_percent}" \
@@ -19,6 +20,11 @@ for value in \
 done
 if [[ ! "${root_min_free_bytes}" =~ ^[0-9]+$ ]] || ((root_min_free_bytes < 1)); then
   echo "Storage free-byte threshold must be a positive integer." >&2
+  exit 64
+fi
+if [[ ! "${root_warn_free_bytes}" =~ ^[0-9]+$ ]] ||
+  ((root_warn_free_bytes <= root_min_free_bytes)); then
+  echo "Storage free-byte warning must be greater than the minimum." >&2
   exit 64
 fi
 if ((warn_percent >= critical_percent)); then
@@ -66,7 +72,8 @@ if ((used_percent >= critical_percent)) ||
   exit 2
 fi
 if ((used_percent >= warn_percent)) ||
-  ((inode_used_percent >= warn_inode_percent)); then
+  ((inode_used_percent >= warn_inode_percent)) ||
+  ((available_bytes < root_warn_free_bytes)); then
   echo "WARNING UI storage runway is narrowing for /." >&2
   exit 1
 fi

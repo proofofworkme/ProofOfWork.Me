@@ -229,7 +229,9 @@ assert.match(releaseHealth, /proof-of-work-node-release-provenance-v2/u);
 assert.match(releaseHealth, /POW_RELEASE_MAX_CHECKOUT_COUNT:-9/u);
 assert.match(releaseHealth, /unverified node release archives/u);
 assert.match(releaseHealthService, /ProtectSystem=strict/u);
-assert.match(releaseHealthService, /CapabilityBoundingSet=$/mu);
+assert.match(releaseHealthService, /^CapabilityBoundingSet=CAP_DAC_READ_SEARCH$/mu);
+assert.match(releasePruneService, /^CapabilityBoundingSet=CAP_DAC_READ_SEARCH$/mu);
+assert.match(releasePruneService, /^ExecStart=.*\/managed 3 --dry-run$/mu);
 assert.match(releaseHealthService, /^Nice=10$/mu);
 assert.match(releaseHealthService, /^IOSchedulingClass=idle$/mu);
 assert.match(releaseHealthService, /^CPUWeight=10$/mu);
@@ -809,6 +811,21 @@ try {
     assert.equal(existsSync(badNodeArchive), true);
   };
 
+  const dryRunTemporary = join(nodeRoot, ".approved-retention-fixture.tmp");
+  writeFileSync(dryRunTemporary, "retain during dry run\n", { mode: 0o600 });
+  utimesSync(dryRunTemporary, new Date(0), new Date(0));
+  const dryRunResult = spawnSync(
+    "/usr/bin/bash",
+    [fixturePath, nodeRoot, "3", "--dry-run"],
+    { encoding: "utf8", env: nodePruneEnvironment },
+  );
+  assert.equal(dryRunResult.status, 2, dryRunResult.stderr);
+  assert.match(dryRunResult.stdout, /would_prune archive=/u);
+  assert.match(dryRunResult.stdout, /would_prune temporary=/u);
+  assert.match(dryRunResult.stdout, /release_retention mode=dry-run/u);
+  assertAllNodeEvidenceRetained();
+  assert.equal(existsSync(dryRunTemporary), true);
+
   chmodSync(nodeRoot, 0o775);
   const unsafeNodeRootResult = spawnSync(
     "/usr/bin/bash",
@@ -906,6 +923,30 @@ try {
   chmodSync(`${verifiedUiArchives[0]}.provenance`, 0o644);
   chmodSync(join(uiRollbackCheckout, ".proofofwork-ui-release"), 0o644);
   chmodSync(`${verifiedUiArchives[1]}.provenance`, 0o644);
+  const secondRollback = join(uiRollbackRoot, "proofofwork-www-pre-explicit-retained-fixture");
+  mkdirSync(secondRollback, { mode: 0o700 });
+  writeFileSync(join(secondRollback, ".proofofwork-ui-release"), rollbackUiManifest, { mode: 0o644 });
+  const multiRollbackEnvironment = {
+    ...process.env, POW_RELEASE_ALLOW_TEST_ROOTS: "1", POW_RELEASE_UI_MANIFEST: uiManifest,
+    POW_RELEASE_UI_ROLLBACK_ROOT: uiRollbackRoot, POW_UI_DEPLOY_LOCK: uiDeployLock,
+  };
+  const multiRollbackDryRun = spawnSync("/usr/bin/bash", [fixturePath, uiRoot, "5", "--dry-run"], {
+    encoding: "utf8", env: multiRollbackEnvironment,
+  });
+  assert.equal(multiRollbackDryRun.status, 1, multiRollbackDryRun.stderr);
+  assert.match(multiRollbackDryRun.stderr, /WARNING multiple complete-root UI rollbacks/u);
+  assert.match(multiRollbackDryRun.stdout, /release_retention mode=dry-run/u);
+  const multiRollbackApply = spawnSync("/usr/bin/bash", [fixturePath, uiRoot, "5", "--apply"], {
+    encoding: "utf8", env: multiRollbackEnvironment,
+  });
+  assert.equal(multiRollbackApply.status, 2, multiRollbackApply.stderr);
+  assert.match(multiRollbackApply.stderr, /Refusing retention with more than one/u);
+  for (const archive of verifiedUiArchives) {
+    assert.ok(existsSync(archive));
+    assert.ok(existsSync(`${archive}.sha256`));
+  }
+  assert.equal(readFileSync(join(secondRollback, ".proofofwork-ui-release"), "utf8"), rollbackUiManifest);
+  rmSync(secondRollback, { recursive: true });
   const failedRollbackDiscoveryResult = spawnSync(
     "/usr/bin/bash",
     [failedRollbackDiscoveryFixturePath, uiRoot, "5"],

@@ -17,7 +17,12 @@ if [[ "${POW_UI_ALLOW_TEST_ROOTS:-}" != "1" ]] && {
 fi
 if [[ "${ui_root}" != "/var/www" || "${archive_root}" != "/var/backups/proofofwork-ui/releases" ]] &&
   [[ "${POW_UI_ALLOW_TEST_ROOTS:-}" != "1" ]]; then
-  if [[ "${POW_UI_STAGED_ROOT:-}" != "1" ||
+  if [[ "${POW_UI_RETAINED_ROOT:-}" == "1" &&
+    "${command}" =~ ^verify(-rollback)?$ &&
+    "${archive_root}" == "/var/backups/proofofwork-ui/releases" &&
+    "${ui_root}" =~ ^/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-[A-Za-z0-9][A-Za-z0-9._-]{0,127}$ ]]; then
+    : # Explicit retained-root verification is read-only; record remains forbidden.
+  elif [[ "${POW_UI_STAGED_ROOT:-}" != "1" ||
     "${archive_root}" != "/var/backups/proofofwork-ui/releases" ||
     ! "${ui_root}" =~ ^/var/tmp/proofofwork-deploy/proofofwork-www-stage-[A-Za-z0-9][A-Za-z0-9._-]{0,127}$ ]]; then
     echo "Non-production UI/archive roots require an allowlisted staged root or POW_UI_ALLOW_TEST_ROOTS=1." >&2

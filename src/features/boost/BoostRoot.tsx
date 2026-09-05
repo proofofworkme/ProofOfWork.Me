@@ -44,6 +44,9 @@ import {
 } from "../../shared/components/AppStatusRow";
 import { SocialFooter } from "../../shared/components/SocialFooter";
 import { formatDate, shortAddress } from "../../functions";
+import { formatExactDecimal } from "../../exactAmount";
+import { boostSignalQ8, formatBoostSignal } from "./boostAmounts";
+import { createBoostReadLifecycle } from "./boostReadLifecycle";
 import {
   formatWorkAmount,
   workAtomsFromDecimal,
@@ -162,16 +165,7 @@ function initialProfileTab(): BoostProfileTab {
 }
 
 function formatProofs(value: number | string | undefined) {
-  const proofs = Number(value ?? 0);
-  if (!Number.isFinite(proofs) || proofs <= 0) {
-    return "0 proofs";
-  }
-  const wholeProofs = Math.trunc(proofs);
-  const whole = Math.abs(proofs - wholeProofs) < Number.EPSILON;
-  return `${proofs.toLocaleString(undefined, {
-    maximumFractionDigits: whole ? 0 : 8,
-    minimumFractionDigits: 0,
-  })} proofs`;
+  return `${formatExactDecimal(value ?? 0)} proofs`;
 }
 
 function formatUsd(value: number | undefined) {
@@ -203,14 +197,13 @@ function boostAuthorAddressKey(item: BoostFeedItem) {
   return boostAuthorAddress(item).toLowerCase();
 }
 
-function boostTotalSignalSats(item: BoostFeedItem) {
-  const total = Number(item.totalSignalSats ?? item.signalSats);
-  return Number.isFinite(total) ? Math.max(0, total) : item.proofSignalSats;
+function boostTotalSignalQ8(item: BoostFeedItem) {
+  return boostSignalQ8(item.totalSignalQ8, item.totalSignalSatsExact,
+    item.totalSignalSats ?? item.signalSats ?? item.proofSignalSats);
 }
 
-function boostProofSignalSats(item: BoostFeedItem) {
-  const signal = Number(item.proofSignalSats);
-  return Number.isFinite(signal) ? Math.max(0, signal) : 0;
+function boostProofSignalQ8(item: BoostFeedItem) {
+  return boostSignalQ8(item.proofSignalQ8, item.proofSignalSatsExact, item.proofSignalSats);
 }
 
 function boostTotalSignalUsd(item: BoostFeedItem) {
@@ -218,9 +211,8 @@ function boostTotalSignalUsd(item: BoostFeedItem) {
   return Number.isFinite(total) ? Math.max(0, total) : 0;
 }
 
-function boostWorkSignalValueSats(item: BoostFeedItem) {
-  const value = Number(item.workSignalValueSats);
-  return Number.isFinite(value) ? Math.max(0, value) : 0;
+function boostWorkSignalValueQ8(item: BoostFeedItem) {
+  return boostSignalQ8(item.workSignalValueQ8, item.workSignalValueSatsExact, item.workSignalValueSats ?? 0);
 }
 
 function boostWorkSignalSubatoms(item: BoostFeedItem) {
@@ -437,8 +429,8 @@ function BoostPost({
   const ownerAddress = boostOwnerAddress(item);
   const authorAddress = boostAuthorAddress(item);
   const authorId = boostAuthorId(item);
-  const totalSignalSats = boostTotalSignalSats(item);
-  const workSignalValueSats = boostWorkSignalValueSats(item);
+  const totalSignalQ8 = boostTotalSignalQ8(item);
+  const workSignalValueQ8 = boostWorkSignalValueQ8(item);
   const workSignalSubatoms = boostWorkSignalSubatoms(item);
   const connectedOwner =
     activeAddress &&
@@ -473,7 +465,7 @@ function BoostPost({
             <span>{formatDate(item.createdAt)}</span>
           </div>
           <div className="boost-post-head-actions">
-            <strong>{formatProofs(totalSignalSats)}</strong>
+            <strong>{formatBoostSignal(totalSignalQ8)}</strong>
             {!connectedAuthor && authorAddress ? (
               <button
                 className="secondary small boost-follow-button"
@@ -516,11 +508,11 @@ function BoostPost({
 
         <div className="boost-signal-row">
           <span>Total USD {formatUsd(boostTotalSignalUsd(item))}</span>
-          <span>Proof {formatProofs(boostProofSignalSats(item))}</span>
+          <span>Proof {formatBoostSignal(boostProofSignalQ8(item))}</span>
           {workSignalSubatoms > 0n ? (
             <span>
               WORK {formatWorkAmount(workSignalSubatoms, true)}{" "}
-              {`(${formatProofs(workSignalValueSats)})`}
+              {`(${formatBoostSignal(workSignalValueQ8)})`}
             </span>
           ) : null}
           <span>{actionLabel(item.kind)}</span>
@@ -634,7 +626,10 @@ export default function BoostRoot({
     useState<BoostProfileTab>(initialProfileTab);
   const [listQuery] = useState(() => initialSearchParam("list"));
   const [searchQuery, setSearchQuery] = useState("");
-  const [payload, setPayload] = useState<BoostFeedPayload | undefined>();
+  const [indexedSearchQuery, setIndexedSearchQuery] = useState("");
+  const [storedPayload, setPayload] = useState<BoostFeedPayload | undefined>();
+  const [payloadScope, setPayloadScope] = useState("");
+  const readLifecycle = useRef(createBoostReadLifecycle());
   const [busy, setBusy] = useState(false);
   const [actionBusy, setActionBusy] = useState<BoostActionBusy>("");
   const [hasUnisat, setHasUnisat] = useState(() => Boolean(window.unisat));
@@ -664,33 +659,22 @@ export default function BoostRoot({
     text: "",
   });
 
+  const readScope = JSON.stringify([address, network, profileRouteValue, profileTab,
+    sortMode, timelineMode, valueWindow, indexedSearchQuery]);
+  const currentReadScope = useRef(readScope);
+  currentReadScope.current = readScope;
+  const searchPending = searchQuery.trim() !== indexedSearchQuery;
+  const payload = payloadScope === readScope && !searchPending ? storedPayload : undefined;
+  const readStateLabel = busy || searchPending ? "Loading" : "Unavailable";
+
   const items = useMemo(() => payload?.items ?? [], [payload]);
   const activeMarketListings = useMemo(
     () => boostMarketplaceListingsFromItems(items),
     [items],
   );
-  const visibleItems = useMemo(() => {
-    const query = searchQuery.trim().toLowerCase();
-    if (!query) {
-      return items;
-    }
-    return items.filter((item) =>
-      [
-        item.text,
-        item.authorId,
-        item.profile?.id,
-        item.authorAddress,
-        item.currentOwnerId,
-        item.currentOwnerAddress,
-        item.txid,
-        item.boostTxid,
-      ]
-        .filter(Boolean)
-        .join(" ")
-        .toLowerCase()
-        .includes(query),
-    );
-  }, [items, searchQuery]);
+  // The indexed query covers complete history and fields absent from display
+  // rows. Filtering a loaded page again can hide valid canonical matches.
+  const visibleItems = items;
   const suggestedProfiles = useMemo(() => {
     const activeAddress = address.trim().toLowerCase();
     const byAddress = new Map<string, BoostFeedItem>();
@@ -1211,7 +1195,10 @@ export default function BoostRoot({
     }
   }
 
-  const refresh = async () => {
+  const refresh = async (append = false, fresh = false) => {
+    if (currentReadScope.current !== readScope) return;
+    const request = readLifecycle.current.begin();
+    const ownsRequest = () => request.current() && currentReadScope.current === readScope;
     setBusy(true);
     setStatus({ tone: "idle", text: "Refreshing Boost..." });
     try {
@@ -1220,6 +1207,9 @@ export default function BoostRoot({
         sort: sortMode,
         window: valueWindow,
       });
+      if (indexedSearchQuery) params.set("q", indexedSearchQuery);
+      if (fresh) params.set("fresh", "1");
+      if (append && payload?.nextCursor) params.set("cursor", payload.nextCursor);
       if (address.trim()) {
         params.set("viewer", address.trim());
       }
@@ -1232,9 +1222,34 @@ export default function BoostRoot({
       const nextPayload = await fetchProofApiJson<BoostFeedPayload>(
         `/api/v1/boost?${params.toString()}`,
         network,
-        { timeoutMs: 60_000 },
+        { timeoutMs: 60_000, signal: request.signal },
       );
-      setPayload(nextPayload);
+      if (!ownsRequest()) return;
+      if (nextPayload.complete !== true || !Array.isArray(nextPayload.items)) {
+        throw new Error("Complete canonical Boost history is unavailable. Refresh again in a moment.");
+      }
+      // Validate exact amounts before admitting a payload to any render path.
+      for (const item of nextPayload.items) {
+        boostTotalSignalQ8(item);
+        boostProofSignalQ8(item);
+        boostWorkSignalValueQ8(item);
+      }
+      for (const stats of [nextPayload.signalStats, nextPayload.profileSubject]) {
+        if (!stats) continue;
+        boostSignalQ8(stats.totalSignalQ8, stats.totalSignalSatsExact);
+        boostSignalQ8(stats.proofSignalQ8, stats.proofSignalSatsExact);
+      }
+      if (append && (nextPayload.snapshotId !== payload?.snapshotId ||
+          nextPayload.start !== payload?.items?.length)) {
+        throw new Error("Boost history changed between pages. Refresh from page one.");
+      }
+      const nextItems = append ? [...(payload?.items ?? []), ...nextPayload.items] : nextPayload.items;
+      const identities = new Set(nextItems.map((item) => item.eventId ?? `${item.kind}:${item.txid}`));
+      if (identities.size !== nextItems.length) {
+        throw new Error("Boost feed repeated a page boundary. Refresh from page one.");
+      }
+      setPayload({ ...nextPayload, items: nextItems });
+      setPayloadScope(readScope);
       const total = Number(
         nextPayload.totalCount ?? nextPayload.items?.length ?? 0,
       );
@@ -1243,17 +1258,24 @@ export default function BoostRoot({
         text: `Boost indexed ${total.toLocaleString()} record${total === 1 ? "" : "s"}.`,
       });
     } catch (error) {
+      if (!ownsRequest()) return;
       setStatus({
         tone: "bad",
         text: error instanceof Error ? error.message : "Boost refresh failed.",
       });
     } finally {
-      setBusy(false);
+      if (ownsRequest()) setBusy(false);
     }
   };
 
   useEffect(() => {
+    const timeout = window.setTimeout(() => setIndexedSearchQuery(searchQuery.trim()), 250);
+    return () => window.clearTimeout(timeout);
+  }, [searchQuery]);
+
+  useEffect(() => {
     void refresh();
+    return () => readLifecycle.current.cancel();
   }, [
     address,
     network,
@@ -1262,6 +1284,7 @@ export default function BoostRoot({
     sortMode,
     timelineMode,
     valueWindow,
+    indexedSearchQuery,
   ]);
 
   useEffect(() => {
@@ -1416,22 +1439,30 @@ export default function BoostRoot({
   }, []);
 
   const headerSignalStats = useMemo(() => {
+    if (payload?.signalStats && searchQuery.trim() === indexedSearchQuery) {
+      return {
+        proofSignalQ8: boostSignalQ8(payload.signalStats.proofSignalQ8, payload.signalStats.proofSignalSatsExact),
+        totalSignalQ8: boostSignalQ8(payload.signalStats.totalSignalQ8, payload.signalStats.totalSignalSatsExact),
+        totalSignalUsd: payload.signalStats.totalSignalUsd,
+        workSignalSubatoms: workSubatomsFromCanonicalString(payload.signalStats.workSignalSubatoms) ?? 0n,
+      };
+    }
     return visibleItems.reduce(
       (totals, item) => ({
-        proofSignalSats: totals.proofSignalSats + boostProofSignalSats(item),
-        totalSignalSats: totals.totalSignalSats + boostTotalSignalSats(item),
+        proofSignalQ8: totals.proofSignalQ8 + boostProofSignalQ8(item),
+        totalSignalQ8: totals.totalSignalQ8 + boostTotalSignalQ8(item),
         totalSignalUsd: totals.totalSignalUsd + boostTotalSignalUsd(item),
         workSignalSubatoms:
           totals.workSignalSubatoms + boostWorkSignalSubatoms(item),
       }),
       {
-        proofSignalSats: 0,
-        totalSignalSats: 0,
+        proofSignalQ8: 0n,
+        totalSignalQ8: 0n,
         totalSignalUsd: 0,
         workSignalSubatoms: 0n,
       },
     );
-  }, [visibleItems]);
+  }, [visibleItems, payload?.signalStats, searchQuery, indexedSearchQuery]);
 
   const accountStats = [
     ...(address
@@ -1446,27 +1477,27 @@ export default function BoostRoot({
     {
       detail: "Proof-equivalent signal from proofs plus attached WORK value.",
       label: "Total Signal",
-      value: formatProofs(headerSignalStats.totalSignalSats),
+      value: payload ? formatBoostSignal(headerSignalStats.totalSignalQ8) : readStateLabel,
       tone: "strong" as const,
     },
     {
       detail: "Direct proof signal only.",
       label: "Proof Signal",
-      value: formatProofs(headerSignalStats.proofSignalSats),
+      value: payload ? formatBoostSignal(headerSignalStats.proofSignalQ8) : readStateLabel,
     },
     {
       detail: "Attached WORK signal only.",
       label: "WORK Signal",
-      value: formatWorkSignal(headerSignalStats.workSignalSubatoms),
+      value: payload ? formatWorkSignal(headerSignalStats.workSignalSubatoms) : readStateLabel,
     },
     {
       detail: "Total USD value from proof signal plus attached WORK.",
       label: "Total USD",
-      value: formatUsd(headerSignalStats.totalSignalUsd),
+      value: payload ? formatUsd(headerSignalStats.totalSignalUsd) : readStateLabel,
     },
     {
       label: "Posts",
-      value: visibleItems.length.toLocaleString(),
+      value: payload ? (payload.totalCount ?? visibleItems.length).toLocaleString() : readStateLabel,
     },
     {
       label: "Listings",
@@ -1508,7 +1539,7 @@ export default function BoostRoot({
           hasUnisat={hasUnisat}
           network={network}
           onNetworkChange={setNetwork}
-          onRefresh={() => void refresh()}
+          onRefresh={() => void refresh(false, true)}
           subtitle="Proof-ranked social signal"
           title="Boost"
         />
@@ -1816,9 +1847,9 @@ export default function BoostRoot({
                   <h2>{profileSubjectDisplay(payload)}</h2>
                   <p>{profileSubjectHandle(payload) || profileRouteValue}</p>
                   <div className="boost-profile-stats">
-                    <span>{followerLabel(profileSubject?.followerCount)}</span>
-                    <span>{followingLabel(profileSubject?.followingCount)}</span>
-                    <span>{formatProofs(profileSubject?.totalSignalSats)} signal</span>
+                    <span>{payload ? followerLabel(profileSubject?.followerCount) : "Followers unavailable"}</span>
+                    <span>{payload ? followingLabel(profileSubject?.followingCount) : "Following unavailable"}</span>
+                    <span>{profileSubject ? formatBoostSignal(boostSignalQ8(profileSubject.totalSignalQ8, profileSubject.totalSignalSatsExact, profileSubject.totalSignalSats ?? 0)) : "Unavailable"} signal</span>
                     {profileWorkSignalSubatoms > 0n ? (
                       <span>{formatWorkSignal(profileWorkSignalSubatoms)}</span>
                     ) : null}
@@ -1870,7 +1901,7 @@ export default function BoostRoot({
                     type="button"
                   >
                     <span>{option.label}</span>
-                    <strong>{payload?.profileTabs?.[option.value] ?? 0}</strong>
+                    <strong>{payload?.profileTabs?.[option.value] ?? "—"}</strong>
                   </button>
                 ))}
               </div>
@@ -1965,7 +1996,7 @@ export default function BoostRoot({
             <button
               className="secondary small"
               disabled={busy}
-              onClick={() => void refresh()}
+              onClick={() => void refresh(false, true)}
               type="button"
             >
               <span className="button-content">
@@ -1993,7 +2024,7 @@ export default function BoostRoot({
                   activeAddress={address}
                   activeIdentity={activeIdentity}
                   item={item}
-                  key={`${item.kind}-${item.txid}`}
+                  key={item.eventId ?? `${item.kind}-${item.txid}`}
                   network={network}
                   onFollow={(followAction, boostItem) =>
                     void publishFollowAction(followAction, boostItem)
@@ -2019,7 +2050,7 @@ export default function BoostRoot({
               <div className="boost-empty">
                 <Zap size={28} />
                 <h2>
-                  {isProfileView
+                  {!payload ? busy || searchPending ? "Loading Boost history" : "Boost history unavailable" : isProfileView
                     ? profileEmptyTitle(profileTab)
                     : timelineMode === "following"
                     ? address
@@ -2029,6 +2060,11 @@ export default function BoostRoot({
                 </h2>
               </div>
             )}
+            {payload?.hasMore ? (
+              <button className="secondary" disabled={busy} onClick={() => void refresh(true)} type="button">
+                {busy ? "Loading..." : "Load more Boosts"}
+              </button>
+            ) : null}
           </div>
         </section>
 
@@ -2036,26 +2072,26 @@ export default function BoostRoot({
           <section className="boost-rail-panel">
             <div className="boost-rail-head">
               <strong>{isProfileView ? "Profile Signal" : "Signal Now"}</strong>
-              <span>{formatDate(payload?.indexedAt ?? new Date().toISOString())}</span>
+              <span>{payload?.indexedAt ? formatDate(payload.indexedAt) : "Awaiting canonical history"}</span>
             </div>
             <div className="boost-rail-stats">
               <span>
                 <strong>
-                  {formatProofs(
+                  {payload ? formatBoostSignal(
                     isProfileView
-                      ? profileSubject?.totalSignalSats
-                      : headerSignalStats.totalSignalSats,
-                  )}
+                      ? boostSignalQ8(profileSubject?.totalSignalQ8, profileSubject?.totalSignalSatsExact, profileSubject?.totalSignalSats ?? 0)
+                      : headerSignalStats.totalSignalQ8,
+                  ) : "Unavailable"}
                 </strong>
                 Total
               </span>
               <span>
                 <strong>
-                  {formatProofs(
+                  {payload ? formatBoostSignal(
                     isProfileView
-                      ? profileSubject?.proofSignalSats
-                      : headerSignalStats.proofSignalSats,
-                  )}
+                      ? boostSignalQ8(profileSubject?.proofSignalQ8, profileSubject?.proofSignalSatsExact, profileSubject?.proofSignalSats ?? 0)
+                      : headerSignalStats.proofSignalQ8,
+                  ) : "Unavailable"}
                 </strong>
                 Proof
               </span>
@@ -2085,7 +2121,7 @@ export default function BoostRoot({
                     target="_blank"
                   >
                     <strong>{authorLabel(item, activeIdentity, address)}</strong>
-                    <span>{formatProofs(boostTotalSignalSats(item))}</span>
+                    <span>{formatBoostSignal(boostTotalSignalQ8(item))}</span>
                   </a>
                 ))
               ) : (

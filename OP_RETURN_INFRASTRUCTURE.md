@@ -3052,17 +3052,20 @@ a complete `proofofwork-ui-release-v3` record or a complete
 `proofofwork-ui-rollback-evidence-v1` record and exactly matches its
 archive-adjacent provenance, or at least one strict node provenance-v2 archive
 matches the live commit and tree. The active archive and any archive bound by
-the single complete-root UI rollback remain protected even when they fall
+a verified complete-root UI rollback remain protected even when they fall
 outside the ordinary keep window. Unknown, duplicate, incomplete, or malformed
 v3/legacy evidence stops retention before deletion. Node-provenance, rollback-
 root, release-archive, archive-ordering, and stale-temporary discovery are each
 fully materialized and checked before a deletion set is applied; partial or
 failed discovery deletes nothing.
 
-One unverified archive must not block retention of every independent verified
-pair. The prune script retains and skips unverifiable archives, counts only
-verified pairs toward the keep limit, safely prunes older verified pairs, then
-exits nonzero so the integrity gap remains alert-visible. It never fabricates a
+Both scheduled release-prune services run explicitly in `--dry-run` mode and
+remove no archives. An explicitly approved applying run retains and skips
+unverifiable archives, counts only verified pairs toward the keep limit,
+prunes older verified pairs, then exits nonzero so the integrity gap remains
+alert-visible. Applying UI retention refuses more than one complete-root
+rollback. Dry-run can inspect up to nine verified roots, protects each bound
+archive, and exits 1 with a warning when multiple roots remain. It never fabricates a
 missing checksum after the fact. Restore a missing sidecar only from trusted
 deployment evidence and only after separately proving the archived bytes;
 otherwise keep the archive quarantined for operator review.
@@ -3153,14 +3156,18 @@ low CPU/I/O weights, and a bounded 30-minute start timeout. It warns when
 `/opt` contains more than nine
 `proofofwork-api*` checkouts but never deletes them; rollback, incident, or
 recovery directories require separate operator classification and approval.
+The health and retention units retain `CAP_DAC_READ_SEARCH` solely to inspect
+private runtime-owned Git metadata; repository permissions remain private.
+The node retention unit invokes `--dry-run`: it reports eligible archives but
+does not delete them without a separately approved retention operation.
 Install root-executed scripts as `root:root 0755`, unit/config files as
 `root:root 0644`, and create their mandatory retention directories before
 starting the services.
 
 On the UI host, install the storage-health, bounded scratch-prune, and release-
 provenance scripts plus their services and timers. Storage health runs every
-five minutes, warns at 75% block/inode use, becomes critical at 85% or below
-10 GiB free, and never deletes data. The daily scratch cleaner defaults to
+five minutes, warns at 75% block/inode use or below 12 GiB free, becomes critical
+at 85% or below 10 GiB free, and never deletes data. The daily scratch cleaner defaults to
 dry-run and may automatically remove only age-qualified allowlisted stage,
 staging, failed, and `/var/tmp/proofofwork-ui-*` roots carrying a canonical
 `.proofofwork-rebuildable-stage-v1` marker. That owner-controlled marker must
@@ -3282,6 +3289,38 @@ boundary: active or rollback manifests created before Boost may verify with the
 legacy 14-surface set only when `/var/www/proofofwork-boost` is absent. New
 candidates, active releases after publication, and any manifest with Boost
 evidence remain 15-surface strict.
+
+For an approved capacity-constrained release, the stager accepts
+`--deduplicate-managed-files`. It hardlinks identical regular files only within
+the newly constructed candidate's managed surfaces, including the immediate
+prior compatibility closure. Mode, uid, gid, xattrs and bytes must match;
+aliases adopt the first candidate copy's timestamp. Source, live, passthrough
+and other rollback roots retain independent inodes. All ordinary path/metadata/
+byte provenance checks still run. Archive such a candidate with
+`tar --hard-dereference` so the retained archive contains independent regular
+members and remains portable. Recalculate peak and final allocated bytes from
+the actual artifacts before staging; preserve the 10 GiB production floor plus
+a growth reserve throughout transfer, staging and provenance verification.
+
+The audit-5 approval uses the reviewed, release-bound helpers in `deploy/audit5/`
+to implement this sequence under the UI host's measured capacity. They are
+one-audit operational tools, not scheduled jobs or permission for later repairs.
+The node stager accepts a SHA256-bound Git bundle and an exact clean commit,
+installs dependencies with lifecycle scripts disabled, and reuses the unchanged
+production publisher's hash-pinned recursive attestation. It leaves services and
+the live checkout running. Private API/worker environments are captured
+separately from identity-checked running processes into new root-only `/run`
+files; no environment file is sourced or secret printed. The launcher permits
+only the declared shadow/bootstrap/gate commands and the four-record repair
+scope. It drops to `powadmin` with no capabilities before invoking Node 24.
+The shadow uses a fresh separate cache and verifies both PostgreSQL read-only
+settings before importing the API. These settings constrain ordinary queries;
+they are not a replacement for reviewing code or a dedicated SELECT-only role.
+The creation-only safeguard acquires the existing backup lock, verifies its dump
+and globals checksums and recovery table of contents, and performs no retention.
+An isolated restore verification and fresh safeguard must pass before repairs.
+Keep the exact release receipts and interrupted-job evidence in audit 5. Never
+reuse a partly populated job directory or infer that an interrupted job passed.
 
 The following is the exact no-Node-on-UI-host release procedure. Run the first
 block on the trusted build host only after the approved release is committed.
@@ -3684,14 +3723,26 @@ candidate to its release-bound stage path even when rollback verification or
 parent durability fails, so the rollback name never labels the wrong bytes.
 
 On success, the prior root is renamed to the exact release-bound path below
-`/var/backups/proofofwork-ui/rollback-roots`. The publisher refuses every new
-release while any `proofofwork-www-pre-*` root remains there. After the
-post-deploy soak, an operator must checksum, archive, classify, and move that
-single complete-root rollback outside the active rollback parent under separate
-approval before another publish; no automatic cleanup or timer may delete it.
-Managed release retention reads that rollback root's archive-bound v3 or legacy
-manifest under the shared deploy lock and protects its exact archive and
-sidecars in addition to the active release archive. A first controlled publish
+`/var/backups/proofofwork-ui/rollback-roots`. By default the publisher refuses a
+new release while any `proofofwork-www-pre-*` root remains there. A scoped
+approval may instead preserve existing roots in place: supply one
+`--retain-rollback-root '<basename>:<manifest-sha256>:<complete-root-sha256>'`
+for every existing root (maximum eight). The root-owned
+`proofofwork-ui-retained-root.py` helper fingerprints every directory/file,
+path, type, mode, uid, gid and file byte; the publisher rechecks that fingerprint
+and archive-bound rollback provenance under the deployment lock. Missing,
+extra, duplicated or changed classifications abort publication. Read-only
+`POW_UI_RETAINED_ROOT=1` permits `verify`/`verify-rollback` on canonical retained
+roots; it never permits recording new provenance there. No root is moved or
+deleted by this option. Separate classification/move approval remains an
+alternative after the soak; no automatic cleanup or timer may delete a root.
+Scheduled UI release retention runs in explicit `--dry-run` mode. When two or
+more complete-root rollbacks are preserved, it verifies and protects each
+archive-bound v3 or legacy manifest under the shared deploy lock, up to nine
+roots (eight explicitly retained roots plus the new rollback). It reports a
+warning with exit status 1 and deletes nothing. Applying retention continues
+to refuse more than one rollback root; a future deletion still needs its own
+exact approval. A first controlled publish
 from a legacy record leaves new v3 provenance live and the honest legacy
 manifest with the complete prior root. Retention fails closed on a missing,
 ambiguous, unsafe, unknown, malformed, or unverified rollback manifest.
@@ -3965,8 +4016,12 @@ to make bootstrap recording pass.
 
 Production Ubuntu uses Apport, not `systemd-coredump`. Install
 `coredump-disable-sysctl.conf` as
-`/etc/sysctl.d/99-proofofwork-no-coredumps.conf`, stop/disable/mask
-`apport.service`, and run `sysctl --system`. Do not install a
+`/etc/sysctl.d/99-proofofwork-disable-coredumps.conf`,
+`apport-disable.conf` as `/etc/default/apport`, and `apport-hardening.conf`
+as `/etc/systemd/system/apport.service.d/hardening.conf`. Stop/disable
+`apport.service`, reload unit metadata, and apply only the reviewed
+`kernel.core_pattern=|/bin/false` setting. Existing crash evidence stays intact;
+an application or Caddy restart is unnecessary for this control. Do not install a
 `systemd-coredump` storage override and assume it controls the active handler.
 After installing any units, run `systemctl daemon-reload`, restart the affected
 services, enable both timers, and verify effective `LimitNOFILE`, `LimitCORE`,
@@ -4377,6 +4432,8 @@ The credit endpoint:
 - Credit market history merges active listings, closed listings, and settled sales into a paginated `market-log` view ordered by confirmation status, event time, and txid. It is not sorted by price or arbitrage.
 - Confirmed `pwt1` attempts that fail canonical token validation remain indexed as `token-event-invalid` audit rows with their txid, block position, attempted amount, sender, recipient, and reason. They are visible in address-scoped Wallet, Event History, and invalid-event history, but are excluded from the public canonical Log and its action totals. They never mutate balances, supply, valid transfer history, floor, or network value.
 - Fresh credit-directory and summary reads verify the stored hash-bound canonical checkpoint against Bitcoin Core instead of rebuilding the shared credit ledger in the request. Scoped wallet/history reads may still use bounded canonical recovery; explicit refresh must converge on current node truth and may not leave a spent sale-ticket visible as active.
+- Public read projections reduce transport without changing admission. `/api/v1/registry-summary?projection=counts-v1` returns qualified complete registration counts and the source checkpoint; pending registration counts exclude pending receiver/owner changes. `/api/v1/token-summary?compact=1` qualifies its complete definition inventory under `directory.model=proof-token-directory-v1`. Adding `projection=directory-v1` preserves every definition and exact aggregate while omitting the eight history previews, truthfully retaining their counts/`collectionHasMore` and setting `listingBookComplete=false`. Histories remain separately retrievable. Credit uses a separate client cache scope from the complete AMO book; neither projection can replace the other. Clients reject an incomplete directory rather than rendering it as empty.
+- Complete token listing history accepts `projection=display-v1`. It omits only the three bulky `workAmoV5ReplayOutput`, `workAmoV5ReplayRawWitness`, and `workAmoV5RawScriptWitness` transport fields, retaining frozen terms and authorizations, a full-record digest and a full-detail retrieval reference. Membership, source, protocol-cutover and Core outpoint digests are computed over full rows before projection; projection choice is cursor-bound. Default/full responses retain all evidence. Display projection does not replace fresh action admission, and same-height mempool outpoint changes invalidate continuation.
 - Fresh reads also remove dropped pending credit/WORK transactions from overlay state after liveness checks, so stale pending transfers, listings, seals, delistings, or buys do not survive after they disappear from mempool views.
 - Wallet-owned credit listing views are derived from the same active and closed listing state as AMO, so a connected seller can inspect confirmed, pending, delisted, and sold listings without a separate stale wallet-only book.
 - Credit UI surfaces show the starting unit price as mint price divided by mint amount, plus estimated USD per credit and per mint from BTC/USD.
@@ -4641,6 +4698,14 @@ pwb1:buy5:<listing-txid>:<new-owner-address>
 ```
 
 Boost is public behind `boost.proofofwork.me`, `/?boost=1`, and `VITE_BOOST_ONLY=1`. The Mail original-post writer and indexer treat `pwb1:` as a canonical governed protocol alongside Mail, IDs, AMO, and credits. Validation keeps posts and replies capped at 140 user-visible characters. Original posts are self-sends to the author's own address and do not pay the Boost registry fee; they only require miner fee plus any optional proof or WORK signal chosen by the author. Likes, replies, and reboosts are paid product actions: each pays 546 proofs to `boost@proofofwork.me` before the `pwb1:` OP_RETURN, and any extra proof or WORK signal goes to the current Boost owner or to the original poster when ownership has not moved. Follows and unfollows are paid social-graph actions: a follow pays the 546-proof Boost registry fee plus at least 546 proofs to the followed profile address, while an unfollow pays only the 546-proof Boost registry fee. The latest confirmed follow/unfollow event for a follower-address plus target-address pair determines the active graph edge used by Following views and profile counts. Paid action writers must resolve the confirmed `boost@proofofwork.me` receiver before they are enabled. Boost media and profile images should be created through the ProofOfWork Files attachment layer; Boost records store file txid/proof/hash/size metadata and render from Files. Addresses are canonical profile actors, confirmed ProofOfWork IDs are preferred display identities, and pending IDs are visible but not routable social identities. A wallet with multiple confirmed IDs chooses its Boost display identity by signing a local intent for one ID; publishing `pwb1:profile` makes that selection chain-readable without mutating the canonical ID registry. Boost records are assets keyed by original post txid; `pwb1:t`, `pwb1:list5`, `pwb1:seal5`, `pwb1:delist5`, and `pwb1:buy5` reuse the AMO sale-ticket model and each pay the 546-proof Boost registry fee. Owners can start `pwb1:list5` from the Boost feed or from the original Boost Mail item after the post txid exists, and active Boost sale tickets appear in AMO's Boost tab. Boost profile routes are person/profile projections, not home timeline filters: `profile=` resolves one address or confirmed ID and exposes authored boosts/reboosts, authored replies, currently owned or purchased boosts, liked boosts, and expanded replies to that person's original boosts. A confirmed `pwb1:hide` event hides the target record from default app/profile indexes without deleting it from ProofOfWork. Confirmed ProofOfWork history is canonical; pending Boost records are visibility only.
+
+Boost feed reconstruction exhausts the checkpoint-bound `pwb1` event cursor before
+deriving ownership, profiles and signal totals. Canonical unavailability is an
+error, never an authoritative empty feed. Value comparisons and proof totals use
+integer Q8 and WORK subatoms; decimal text carries exact display values. Feed
+pagination is bound to projection identity, and `listings=1` discovers the complete
+active original-post ticket inventory independently of the newest timeline page.
+Clients cancel superseded reads and reject responses for obsolete scopes.
 
 ## Launch Rule
 

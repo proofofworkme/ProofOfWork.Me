@@ -4,7 +4,8 @@ RequiresMountsFor=/data/proofofwork-release-backups
 
 [Service]
 Type=oneshot
-ExecStart=/usr/local/sbin/proofofwork-release-prune /data/proofofwork-release-backups/managed 3
+# Node archive deletion awaits a separate exact retention approval.
+ExecStart=/usr/local/sbin/proofofwork-release-prune /data/proofofwork-release-backups/managed 3 --dry-run
 TimeoutStartSec=30m
 NoNewPrivileges=true
 PrivateTmp=true
@@ -16,7 +17,8 @@ ProtectKernelLogs=true
 ProtectKernelModules=true
 ProtectKernelTunables=true
 ReadWritePaths=/data/proofofwork-release-backups/managed
-CapabilityBoundingSet=
+# Read private runtime-owned Git metadata; retain all existing private modes.
+CapabilityBoundingSet=CAP_DAC_READ_SEARCH
 AmbientCapabilities=
 RestrictSUIDSGID=true
 LockPersonality=true

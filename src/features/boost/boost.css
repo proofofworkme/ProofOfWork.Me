@@ -22,7 +22,42 @@
 
 .boost-shell-instrument .boost-sidebar {
   border-left: 1px solid var(--border);
+  grid-template-columns: minmax(0, 1fr);
+  min-inline-size: 0;
   padding: 18px;
+}
+
+/* Native selects and input intrinsic widths must not enlarge the shared rail
+   track when a connected wallet supplies a long full ProofOfWork identity. */
+.boost-shell-instrument .boost-sidebar > *,
+.boost-shell-instrument .boost-sidebar label,
+.boost-shell-instrument .boost-action-panel,
+.boost-shell-instrument .boost-compose-panel,
+.boost-shell-instrument .boost-profile-filter {
+  min-inline-size: 0;
+}
+
+.boost-shell-instrument .boost-action-panel,
+.boost-shell-instrument .boost-profile-filter,
+.boost-shell-instrument .boost-sidebar label:not(.boost-search) {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.boost-shell-instrument .boost-sidebar input,
+.boost-shell-instrument .boost-sidebar select,
+.boost-shell-instrument .boost-sidebar textarea {
+  inline-size: 100%;
+  max-inline-size: 100%;
+  min-inline-size: 0;
+}
+
+.boost-shell-instrument .boost-action-buttons {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 94px), 1fr));
+}
+
+.boost-shell-instrument .boost-rail-stats strong,
+.boost-shell-instrument .boost-post-head-actions > strong {
+  overflow-wrap: anywhere;
 }
 
 .boost-sidebar-mobile-head,

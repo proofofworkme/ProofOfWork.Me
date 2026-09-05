@@ -86,6 +86,9 @@ assert.match(
 );
 assert.doesNotMatch(caddy, /log_credentials|sampling\s*\{/u);
 assert.match(caddyService, /^UMask=0077$/mu);
+assert.match(read("deploy/apport-disable.conf"), /^enabled=0$/mu);
+assert.match(read("deploy/apport-hardening.conf"), /^LimitCORE=0$/mu);
+assert.match(read("deploy/coredump-disable-sysctl.conf"), /^kernel\.core_pattern=\|\/bin\/false$/mu);
 assert.match(caddyTmpfiles, /d \/var\/log\/caddy 0700 caddy caddy/u);
 assert.match(
   caddyTmpfiles,
@@ -304,7 +307,8 @@ assert.match(
   /immediate prior asset dependency closure[\s\S]*same-surface root-relative/u,
 );
 assert.match(infrastructure, /one-release compatibility set/u);
-assert.match(infrastructure, /post-deploy soak[\s\S]*checksum, archive, classify/u);
+assert.match(infrastructure, /post-deploy soak[\s\S]*checksum\/archive\/classification\/move/u);
+assert.match(infrastructure, /--retain-rollback-root[\s\S]*complete-root-sha256/u);
 assert.match(infrastructure, /separately co-attests/u);
 assert.match(infrastructure, /proofofwork-ui-rollback-evidence-v1/u);
 assert.match(
@@ -333,6 +337,7 @@ assert.match(
 );
 
 assert.match(releasePruneService, /^TimeoutStartSec=30m$/mu);
+assert.match(releasePruneService, /^ExecStart=.*\/proofofwork-release-prune \/var\/backups\/proofofwork-ui\/releases 5 --dry-run$/mu);
 assert.match(releasePruneService, /^Nice=10$/mu);
 assert.match(releasePruneService, /^IOSchedulingClass=idle$/mu);
 assert.match(releasePruneService, /^CPUWeight=10$/mu);
@@ -583,6 +588,22 @@ const healthCritical = run("deploy/proofofwork-ui-storage-health.sh", [], {
   POW_STORAGE_ROOT_MIN_FREE_BYTES: "1",
 });
 assert.equal(healthCritical.status, 2, healthCritical.stderr);
+
+const healthLowHeadroom = run("deploy/proofofwork-ui-storage-health.sh", [], {
+  POW_STORAGE_WARN_PERCENT: "99",
+  POW_STORAGE_CRITICAL_PERCENT: "100",
+  POW_STORAGE_WARN_INODE_PERCENT: "99",
+  POW_STORAGE_CRITICAL_INODE_PERCENT: "100",
+  POW_STORAGE_ROOT_MIN_FREE_BYTES: "1",
+  POW_STORAGE_ROOT_WARN_FREE_BYTES: "9007199254740991",
+});
+assert.equal(healthLowHeadroom.status, 1, healthLowHeadroom.stderr);
+assert.match(healthLowHeadroom.stderr, /runway is narrowing/u);
+const invalidHealthHeadroom = run("deploy/proofofwork-ui-storage-health.sh", [], {
+  POW_STORAGE_ROOT_MIN_FREE_BYTES: "1024",
+  POW_STORAGE_ROOT_WARN_FREE_BYTES: "1024",
+});
+assert.equal(invalidHealthHeadroom.status, 64, invalidHealthHeadroom.stderr);
 
 const fixture = mkdtempSync(join(tmpdir(), "proofofwork-ui-ops-"));
 try {
@@ -1585,6 +1606,7 @@ try {
     POW_UI_RELEASE_ARCHIVE_ROOT: fixture,
     POW_UI_PUBLISH_ROLLBACK_ROOT: publisherRollbackRoot,
     POW_UI_PUBLISH_PROVENANCE_SCRIPT: provenanceScript,
+    POW_UI_RETAINED_ROOT_SCRIPT: join(process.cwd(), "deploy/proofofwork-ui-retained-root.py"),
     POW_UI_ALLOW_TEST_ROOTS: "1",
     POW_UI_DEPLOY_LOCK: provenanceEnvironment.POW_UI_DEPLOY_LOCK,
   };
@@ -2677,7 +2699,7 @@ try {
   const rollbackCapReleaseId = "publisher-rollback-cap";
   const rollbackCapPrepared = preparePublisherRelease(
     rollbackCapReleaseId,
-    "rollback cap release bytes",
+    "published release bytes",
   );
   const rollbackCapPublish = run(
     "deploy/proofofwork-ui-release-publish.sh",
@@ -2698,6 +2720,37 @@ try {
     ),
     "published release bytes",
   );
+  const runRetainedRoot = arguments_ => spawnSync("/usr/bin/python3", ["-I",
+    "deploy/proofofwork-ui-retained-root.py", ...arguments_], {
+    encoding: "utf8", timeout: 10_000,
+    env: { ...process.env, POW_UI_ALLOW_TEST_ROOTS: "1" },
+  });
+  const retainedEvidence = runRetainedRoot([publishedRollback]);
+  assert.equal(retainedEvidence.status, 0, retainedEvidence.stderr);
+  const retained = JSON.parse(retainedEvidence.stdout);
+  const retainedArgument = `${basename(publishedRollback)}:${retained.manifestSha256}:${retained.treeSha256}`;
+  const wrongRetained = run("deploy/proofofwork-ui-release-publish.sh", [
+    ...publisherArguments(rollbackCapReleaseId, rollbackCapPrepared), "--retain-rollback-root",
+    `${basename(publishedRollback)}:${retained.manifestSha256}:${"0".repeat(64)}`,
+  ], publisherEnvironment);
+  assert.equal(wrongRetained.status, 1, wrongRetained.stderr);
+  assert.match(wrongRetained.stderr, /differs from the explicit reviewed classification/u);
+  const duplicateRetained = run("deploy/proofofwork-ui-release-publish.sh", [
+    ...publisherArguments(rollbackCapReleaseId, rollbackCapPrepared),
+    "--retain-rollback-root", retainedArgument, "--retain-rollback-root", retainedArgument,
+  ], publisherEnvironment);
+  assert.equal(duplicateRetained.status, 1, duplicateRetained.stderr);
+  assert.match(duplicateRetained.stderr, /Duplicate retained rollback classification/u);
+  const retainedPublish = run("deploy/proofofwork-ui-release-publish.sh", [
+    ...publisherArguments(rollbackCapReleaseId, rollbackCapPrepared),
+    "--retain-rollback-root", retainedArgument,
+  ], publisherEnvironment);
+  assert.equal(retainedPublish.status, 0, retainedPublish.stderr);
+  const unchangedRetained = runRetainedRoot([publishedRollback,
+    "--manifest-sha256", retained.manifestSha256, "--tree-sha256", retained.treeSha256]);
+  assert.equal(unchangedRetained.status, 0, unchangedRetained.stderr);
+  assert.ok(existsSync(join(publisherRollbackRoot, `proofofwork-www-pre-${rollbackCapReleaseId}`)),
+    "An explicitly retained old root must coexist with the new complete-root rollback.");
 } finally {
   rmSync(fixture, { recursive: true, force: true });
 }
