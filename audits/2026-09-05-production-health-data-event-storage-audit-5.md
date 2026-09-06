@@ -1360,3 +1360,188 @@ free, 2,921,357,312 bytes above the unchanged floor and reserve. No UI or node
 application publication has occurred at this checkpoint. All required gates
 now pass, and production continues serving the original release until the
 brief, separately recorded release switch.
+
+
+## Approved release deployed — September 6 UTC (September 5 local)
+
+This addendum supersedes the staged/pending status of the preceding checkpoints;
+it preserves the original audit observations and every failed attempt. The
+reviewed checkpoint was committed as `61211c5` with both repository hooks and
+required trailers intact. The application deployed on both VPS is still the
+previously built and tested `2ddefac163d583138129c2527e747b11190a0635`, tree
+`89283688ad79cdcd0a4e04a9532aac8c8af735f2`; later commits contain operations and
+audit evidence, not a different untested application build.
+
+### Release switch and continuity
+
+The seven documented timers were held at 00:18:36 after a fresh baseline proved
+that their paired jobs were stopped. Public proxy shutdown began at 00:18:49;
+the two fully attested directories were exchanged once at 00:19:02. The actual
+new live tree was published with its managed archive and v2 runtime provenance
+at 00:19:23. API and worker started at 00:19:33. A block arrived during the
+switch; the new summary caught up to Core/index block 965,690 before public
+traffic reopened at 00:20:26. This release interruption was approximately
+97 seconds, distinct from the earlier prolonged Window2 outage. All seven
+timers were restored at 00:20:38. Core, Electrs, PostgreSQL and WAL receiver
+kept their original process identities. No repair, cache rotation or archive
+deletion was repeated.
+
+The UI publisher completed at 00:24:03, verifying its actual live manifest,
+source tree, dependencies, archive and both retained rollback roots. Caddy
+kept PID 3002830 without a restart. UI provenance monitoring was immediately
+restored. New UI manifest SHA-256:
+`a218dd6e4b55a740f12cdb7d63559066f174c5e5e8257645e8a2afb2a90d9816`.
+The node managed archive is 87,296,146 bytes, SHA-256
+`41a7f3addc0f09f0168c51894f0e9d9f5108e29ac649cdb4276135dbb5aae6ac`.
+The UI archive remains 185,566,324 bytes, SHA-256
+`5e05adbf7d905f2dc4d3540ac389484d21ef71241155c7f73559f1e879cbedea`.
+
+### Post-deployment full-node verification
+
+The final unchanged data probe passed at 00:25:20 after two healthy same-tip
+samples more than ten seconds apart. It performed 752 full-node calls and
+29 API reads, preserving a complete receipt with SHA-256
+`98df4cb104a12d5394758ec3012ec5dd05aa430acbffe03cf33fa36f9c212957`.
+The separate successful completion/process-identity receipt is
+`a7326ee668292547f470860f72ad5d792ed1d7ad13b7877270a4102a7d41ab30`.
+
+- Registry counts match the complete 505 confirmed records, with zero observed
+  pending IDs. All 238 credit definitions and exact WORK supply agree.
+- The complete 634-row marketplace display projection matches the full source;
+  all 634 listing anchors were independently checked against Core.
+- The public wallet fixture has 111 outputs and 182,699 confirmed proofs:
+  49,140 reserved and 133,559 available. Its 90 protected outputs and 21 available
+  outputs reconcile. Exact WORK reservation is 58,345,485,226 subatoms from
+  10,000,000,000,000,000 confirmed subatoms. No transaction was constructed,
+  signed or broadcast.
+- POWB and INCB exact supply, network value and integer floor values reconcile.
+  Boost's three observed events/records preserve exact signal sums and three
+  raw-carrier samples; active-listing discovery agrees with feed annotations.
+
+The initial production preflight refused before any full probe ran because its
+wrapper incorrectly assumed the temporary audit sandbox's empty supplementary
+groups for the existing production service. Inspection found the established
+`powadmin` groups 27/110/988/1000; the service file dates from May and account
+group configuration from June. No service permission changed in this rollout.
+A separately reviewed wrapper now requires that exact group set, pins the
+existing service and account-group file hashes, and retains UID/GID 1000,
+zero capabilities, NoNewPrivileges, exact executable/cwd/inode/commit, and
+before/after process identity. The first refusal remains retained. The probe
+body, values, membership checks, readiness requirements and limits are unchanged.
+Future account least-privilege review belongs to H5-03's operations follow-up;
+the private audit sandbox and production service must not be conflated.
+
+Measured decoded response sizes at the same verification checkpoint:
+
+| Complete read | Full source bytes | Qualified projection bytes |
+| --- | ---: | ---: |
+| Registry counts | 2,204,059 | 774 |
+| Credit directory | 4,574,061 | 400,646 |
+| Entire listing book | 25,808,967 | 13,663,323 |
+
+The listing projection saves 12,145,644 decoded bytes (about 47%) while retaining
+the checked membership and exact display terms. These are payload comparisons,
+not a measured universal page-speed improvement. Full evidence remains available.
+
+Core stayed at block 965,690 during the full probe, but the mempool sequence
+changed. Consequently the probe establishes individually observed output and
+pending facts, not one atomic mempool snapshot. No pending sale tickets were
+present in this wallet fixture. It is not proof for every wallet extension,
+all historical replay, every address, or future inputs. The earlier complete
+arithmetic and semantic audits retain their own recorded checkpoints.
+
+### Final VPS health and remaining operational qualifications
+
+At 00:24–00:25, API health was 200/ready with zero lag, matching Core, Electrs,
+index and all summary scopes. Pending unresolved/error counts were zero and
+canonical fault metadata was empty. PostgreSQL had zero invalid indexes,
+unvalidated constraints, deadlocks or idle-in-transaction sessions. Database
+size was 21,751,028,759 bytes; approximately 20.48 GB is the preserved AMO
+transition table. WAL receipt remained streaming. Cumulative temporary-byte
+statistics are lifetime counters, not present disk occupancy.
+
+UI free space was 13,727,358,976 bytes; node root 75,242,205,184 bytes; node data
+406,631,415,808 bytes. Journal usage was about 218.5 MB on UI and 1.0 GB on node.
+No new error-level entries were observed for Caddy or the six node/application/
+database services since 00:18:45. This bounded log sample is not a claim that
+all application warnings or older incidents are absent.
+
+The node release verifier attested the new runtime and all 12 managed archives
+with zero unverified archives. It retains a warning for 22 checkout directories
+against its existing limit of nine. Retention dry-run passed and deleted
+nothing. The node data volume remains about 77% used; preserved restore clones,
+safeguard, recovery chains and rollback assets were not declared disposable.
+The only approved archive deletions remain the previously completed three
+transport duplicates totaling 433,340,471 bytes. No further cleanup is implied.
+Provider billing/transfer allowance, a specified off-host recovery destination,
+and the compatibility DNS decision remain outside verified/completed coverage.
+
+Ordered production browser verification, final hygiene and push are recorded
+in the next completion entry; they are not claimed complete by this checkpoint.
+
+
+### Ordered browser verification, recovery and final handoff
+
+The production browser pass completed at 00:31:32 UTC in the requested order:
+Home, ID, Desktop, Browser, AMO, Credit, Wallet, WORK, Infinity, Inception, Log,
+Growth, then the separately reported Boost surface and finally Computer.
+All 14 navigation responses were 200 with no uncaught application exceptions.
+Computer completed without console/API errors or loading/unavailable markers.
+The 14 standalone and four embedded connected Boost geometry fixtures passed
+against deployed assets. Screenshots confirm that the long connected identity
+and its controls fit within the sidebar. These fixtures use a deliberately
+fake public provider and mocked API data; they are geometry evidence, not
+live wallet-account or ledger evidence. H5-13's exercised layout cases pass.
+
+The initial browser run intentionally retained its nonzero review result.
+Home's nine external YouTube/Google POST attempts were blocked by the read-only
+GET-only harness. AMO crossed block 965,690→965,691; Inception crossed
+965,691→965,692. Complete listing hydration and fresh summary requests returned
+503, while accepted summaries remained visible and explicitly marked Last
+Verified. Wallet's unscoped token read also temporarily returned503. These are
+H5-06 availability qualifications, not absent balances or changed arithmetic.
+No repeated finding ID was created and those captures were not overwritten.
+
+Public AMO and Wallet health subsequently returned200/ready at block 965,691;
+Computer consistency was green with all checks passing and no missing Log
+events. AMO's compact summary returned200, 5,096,098 decoded bytes. After the
+user's later continuation, a targeted AMO/Wallet/Inception browser follow-up
+finished at 02:46:29. All three navigations and observed API responses succeeded
+without console or application exceptions. AMO and Inception had no loading or
+unavailable markers. AMO still had one fresh-summary request in flight at the
+60-second observation boundary; that request's completion/latency is not proved.
+Disconnected Wallet retains the text “Spendable proofs Loading” with no wallet
+provider/address. It does not assert zero or spendable funds; clearer disconnected
+copy remains a presentation follow-up. The separate real API/Core wallet probe
+above supplies the actual balance/reservation evidence. The raw follow-up report
+retains its review flag instead of being relabeled an unconditional pass.
+
+Fresh handoff health at 02:46:11 matched Core/index/all summaries at block
+965,707 with ready200, zero lag, zero pending errors/unresolved events and empty
+canonical-fault metadata. The API and worker retained their deployment PIDs;
+Core, PostgreSQL, Electrs and the WAL receiver were not restarted. No error-level
+node/application/database entries were observed since the release switch.
+Node root free space was 75,748,417,536 bytes; data free 406,301,405,184 bytes.
+The preserved complete probe and repair receipts remain point-in-time evidence,
+not expected immutable current inventory counts.
+
+All six approved batches have their implemented application/operations changes
+and the narrowly approved repairs deployed. This does not close every ongoing
+capacity/performance recommendation: H5-06 refresh interruptions, large repeated
+book reconciliation, the 22-checkout warning, node data-volume growth and the
+specified off-host recovery/DNS decisions remain explicitly qualified. Further
+work should measure incremental summary/read costs, reduce repeated complete
+book hydration without weakening same-height mempool or fresh action admission,
+and use exact approved retention manifests before any additional cleanup.
+The original three-archive deletion boundary remains unchanged.
+
+Final repository review covers SOUL, all six canonical documents, classified
+notes, generated artifacts and the narrow cleanup allowlist. The earlier
+application/operations tests, complete online gates, independent repair checks,
+full-node production probe and 18 deployed layout cases are retained together.
+The final edit is limited to this existing audit and its companion receipt;
+no new protocol change, source modification, data repair or deletion is made.
+`hygiene:fix` found no rebuildable allowlisted state; `hygiene:check` and final
+diff/JSON/hash validation pass. The commit containing this handoff carries the
+required review trailers; its exact identity and branch publication are verified
+through Git rather than a self-referential embedded commit hash.

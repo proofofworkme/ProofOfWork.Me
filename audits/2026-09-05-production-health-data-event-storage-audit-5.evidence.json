@@ -4716,7 +4716,7 @@
     "pushed": false,
     "deployed": false
   },
-  "auditDocumentSha256": "4b1f416eb4621e5f808d66d8cc2f18635e97b272a939dfe318482599f720ba27",
+  "auditDocumentSha256": "08799f24f989bb92b16896f1c457187f1cf2219551dcfa3f8bf217724cd74b4d",
   "orderedSurfaceAudit": {
     "schema": "pow-ordered-read-only-audit-addendum-v1",
     "recordedAt": "2026-09-05T14:00:36.751263+00:00",
@@ -12100,7 +12100,7 @@
     }
   },
   "approvedRemediation": {
-    "status": "approved-repairs-and-required-gates-passed-ready-for-release",
+    "status": "deployed-and-production-verified-with-documented-qualifications",
     "approvedBatches": [
       1,
       2,
@@ -12110,9 +12110,16 @@
       6
     ],
     "productionMutationsCompleted": [
-      "exact-three-approved-UI-transport-archive-removals"
+      "exact-three-approved-UI-transport-archive-removals",
+      "scoped-node-and-ui-release-operations-installation",
+      "approved-ui-crash-storage-controls",
+      "approved-auxiliary-transaction-and-funding-spend-link-repair",
+      "three-approved-invalid-zero-precision-metadata-records",
+      "original-cache-preservation-and-derived-summary-rebuild",
+      "attested-node-2ddefac-release-exchange-and-publication",
+      "attested-ui-2ddefac-publication"
     ],
-    "applicationDeployed": false,
+    "applicationDeployed": true,
     "databaseRepairApplied": true,
     "receipts": {
       "archiveRemoval": {
@@ -39003,7 +39010,7 @@
       "freshPostrepairCoreReceiptSha256": "226f58e54736b57421231b317b75cf4429d70eea3406df8a0db314468f90ffed",
       "firstParityEvidence": "incomplete: log filled16MiB despite process exit0; retained and not accepted as final gate evidence",
       "completeParityControllerSha256": "b837ed3c9b3106f853bb27f4b0dc51c2db06b2bc641bae97eab1b81c5940d17d",
-      "applicationDeployed": false,
+      "applicationDeployed": true,
       "timersRestored": true,
       "files": {
         "/tmp/pow-approved-window2-20260905/maintenance-hold.stdout": {
@@ -39210,6 +39217,1079 @@
           "qualification": "Candidate audit scripts against the existing6a production API; changed candidate endpoints separately verified in prior isolated full-node probe. Historical inactive V5 migration/USD warnings remain distinguished from active Q16 errors."
         }
       }
+    },
+    "finalRelease": {
+      "status": "deployed-and-production-verified-with-documented-qualifications",
+      "applicationCommit": "2ddefac163d583138129c2527e747b11190a0635",
+      "applicationTree": "89283688ad79cdcd0a4e04a9532aac8c8af735f2",
+      "checkpointCommit": "61211c5",
+      "priorAuditDocumentSha256": "4b1f416eb4621e5f808d66d8cc2f18635e97b272a939dfe318482599f720ba27",
+      "nodeProxyClosedAt": "2026-09-06T00:18:49Z",
+      "nodeProxyReopenedAt": "2026-09-06T00:20:26Z",
+      "timersRestoredAt": "2026-09-06T00:20:38Z",
+      "uiPublicationVerifiedAt": "2026-09-06T00:24:03Z",
+      "nodeHealth": {
+        "at": "2026-09-06T00:24:16.444564+00:00",
+        "mutations": false,
+        "core": {
+          "blocks": 965690,
+          "headers": 965690,
+          "bestblockhash": "0000000000000000000167c3ea35cac4952079699ee998062974f95fbe22875b",
+          "verificationprogress": 1,
+          "initialblockdownload": false,
+          "size_on_disk": 873589955044,
+          "pruned": false
+        },
+        "api": {
+          "http": 200,
+          "sha256": "59338334eb4475115dcb26f5d2aaf06d558e329d4c6fd03a765393a89049c41a",
+          "ready": true,
+          "available": true,
+          "tipHeight": 965690,
+          "indexedThroughBlock": 965690,
+          "lagBlocks": 0,
+          "summary": {
+            "blockHash": "0000000000000000000167c3ea35cac4952079699ee998062974f95fbe22875b",
+            "coverageByKey": {
+              "growthSummary": 965690,
+              "inceptionSummary": 965690,
+              "infinitySummary": 965690,
+              "logSummary": 965690,
+              "marketplaceSummary": 965690,
+              "tokenSummary": 965690,
+              "workFloor": 965690,
+              "workSummary": 965690
+            },
+            "eligible": true,
+            "generatedAt": "2026-09-06T00:19:58.601Z",
+            "indexedAt": "2026-09-06T00:19:58.601Z",
+            "indexedThroughBlock": 965690,
+            "payloadBytes": 16036542,
+            "snapshotId": "f1ea90787226183c899b2bc6",
+            "ok": true
+          },
+          "pending": {
+            "globalUnresolved": 0,
+            "model": "bounded-best-effort-pending-event-health-v1",
+            "ok": true,
+            "q16PendingUnresolved": 0,
+            "required": true,
+            "scope": "all-observed-pending-protocol-events",
+            "status": {
+              "checked": 0,
+              "deferred": 0,
+              "errors": 0,
+              "ok": true,
+              "q16ParentDeferred": 0,
+              "staleCandidates": 0,
+              "unavailable": false,
+              "unavailableValid": true
+            }
+          },
+          "canonicalFault": {}
+        },
+        "database": {
+          "databaseBytes": 21751028759,
+          "invalidIndexes": 0,
+          "unvalidatedConstraints": 0,
+          "sessions": 13,
+          "idleInTransaction": 0,
+          "deadlocks": 0,
+          "databaseStats": {
+            "numbackends": 13,
+            "xact_commit": 14577321,
+            "xact_rollback": 213,
+            "temp_files": 27236,
+            "temp_bytes": 421450699782
+          },
+          "largestTables": [
+            {
+              "schemaname": "proof_indexer",
+              "relname": "work_amo_block_transitions",
+              "n_live_tup": 6070,
+              "n_dead_tup": 0,
+              "bytes": 20478099456,
+              "last_autovacuum": "2026-08-26T19:58:45.601594+00:00",
+              "last_autoanalyze": "2026-09-02T16:51:37.896439+00:00"
+            },
+            {
+              "schemaname": "proof_indexer",
+              "relname": "ledger_snapshots",
+              "n_live_tup": 10495,
+              "n_dead_tup": 371,
+              "bytes": 856276992,
+              "last_autovacuum": "2026-09-04T04:33:04.403779+00:00",
+              "last_autoanalyze": "2026-09-04T10:40:39.827591+00:00"
+            },
+            {
+              "schemaname": "proof_indexer",
+              "relname": "events",
+              "n_live_tup": 25840,
+              "n_dead_tup": 1469,
+              "bytes": 118841344,
+              "last_autovacuum": "2026-09-05T19:40:29.306825+00:00",
+              "last_autoanalyze": "2026-09-05T21:49:30.680226+00:00"
+            },
+            {
+              "schemaname": "proof_indexer",
+              "relname": "transactions",
+              "n_live_tup": 25204,
+              "n_dead_tup": 3201,
+              "bytes": 78340096,
+              "last_autovacuum": "2026-09-05T18:29:26.88127+00:00",
+              "last_autoanalyze": "2026-09-06T00:19:33.076238+00:00"
+            },
+            {
+              "schemaname": "proof_indexer",
+              "relname": "event_participants",
+              "n_live_tup": 126690,
+              "n_dead_tup": 15930,
+              "bytes": 52510720,
+              "last_autovacuum": "2026-09-05T13:40:21.792011+00:00",
+              "last_autoanalyze": "2026-09-05T21:13:29.879324+00:00"
+            },
+            {
+              "schemaname": "proof_indexer",
+              "relname": "tx_outputs",
+              "n_live_tup": 74934,
+              "n_dead_tup": 1710,
+              "bytes": 47489024,
+              "last_autovacuum": "2026-08-26T19:58:45.341055+00:00",
+              "last_autoanalyze": "2026-08-26T19:58:45.50797+00:00"
+            }
+          ],
+          "wal": [
+            {
+              "application_name": "pg_receivewal@16-main.service",
+              "state": "streaming",
+              "sync_state": "async",
+              "write_lsn": "77/D09C9920",
+              "flush_lsn": "77/D0000000",
+              "replay_lsn": null
+            }
+          ]
+        },
+        "filesystems": {
+          "/": {
+            "availableBytes": 75242205184,
+            "totalBytes": 105089261568,
+            "freeInodes": 6201263,
+            "totalInodes": 6553600
+          },
+          "/data": {
+            "availableBytes": 406631415808,
+            "totalBytes": 1764768071680,
+            "freeInodes": 109476694,
+            "totalInodes": 109502464
+          }
+        },
+        "units": {
+          "bitcoind.service": "MainPID=282028\nNRestarts=0\nActiveState=active\nSubState=running\n",
+          "electrs.service": "MainPID=282210\nNRestarts=0\nActiveState=active\nSubState=running\n",
+          "postgresql@16-main.service": "MainPID=3612661\nNRestarts=0\nActiveState=active\nSubState=running\n",
+          "pg_receivewal@16-main.service": "MainPID=2922786\nNRestarts=0\nActiveState=active\nSubState=running\n",
+          "proofofwork-api.service": "MainPID=1333977\nNRestarts=0\nActiveState=active\nSubState=running\n",
+          "proofofwork-indexer-worker.service": "MainPID=1333990\nNRestarts=0\nActiveState=active\nSubState=running\n",
+          "proofofwork-api-wg.socket": "ActiveState=active\nSubState=running\n",
+          "proofofwork-api-wg.service": "MainPID=1334649\nNRestarts=0\nActiveState=active\nSubState=running\n",
+          "proofofwork-postgres-logical-backup.timer": "ActiveState=active\nSubState=waiting\n",
+          "pg_basebackup@16-main.timer": "ActiveState=active\nSubState=waiting\n",
+          "pg_compresswal@16-main.timer": "ActiveState=active\nSubState=waiting\n",
+          "proofofwork-postgres-query-health.timer": "ActiveState=active\nSubState=waiting\n",
+          "proofofwork-cache-prune.timer": "ActiveState=active\nSubState=waiting\n",
+          "proofofwork-node-release-health.timer": "ActiveState=active\nSubState=waiting\n",
+          "proofofwork-node-release-prune.timer": "ActiveState=active\nSubState=waiting\n",
+          "proofofwork-node-storage-health.timer": "ActiveState=active\nSubState=waiting\n"
+        },
+        "journalErrorCounts": {
+          "bitcoind.service": 0,
+          "electrs.service": 0,
+          "postgresql@16-main.service": 0,
+          "pg_receivewal@16-main.service": 0,
+          "proofofwork-api.service": 0,
+          "proofofwork-indexer-worker.service": 0
+        },
+        "journalUsage": "Archived and active journals take up 1.0G in the file system."
+      },
+      "uiHealth": {
+        "at": "2026-09-06T00:25:14.652645+00:00",
+        "mutations": false,
+        "disk": {
+          "availableBytes": 13727358976,
+          "totalBytes": 39973924864,
+          "freeInodes": 2288957,
+          "totalInodes": 2427136
+        },
+        "manifest": {
+          "sha256": "a218dd6e4b55a740f12cdb7d63559066f174c5e5e8257645e8a2afb2a90d9816",
+          "text": "format=proofofwork-ui-release-v3\nrelease_id=2ddefac163d5-20260905T204437Z\ncommit=2ddefac163d583138129c2527e747b11190a0635\nsource_tree=89283688ad79cdcd0a4e04a9532aac8c8af735f2\nsource_attestation=detached-recursive-git-tree-v1\nsource_dependency_model=node-modules-recursive-v1\nsource_dependency_entry_count=6118\nsource_dependency_bytes=160954989\nsource_dependency_sha256=74d54e7c58f15d225603104316eab06748209b85c6e2c27f8457ee6967f9b811\ndeployed_at=2026-09-06T00:23:25Z\narchive_name=proofofwork-ui-release-2ddefac163d5-20260905T204437Z.tgz\narchive_sha256=5e05adbf7d905f2dc4d3540ac389484d21ef71241155c7f73559f1e879cbedea\narchive_payload_model=surfaces-v1\nsurface.activity.file_count=51\nsurface.activity.sha256=505b1229a2e0159123fde666d0ac36850cef1480462475d0a0c81d6824f56e84\nsurface.browser.file_count=51\nsurface.browser.sha256=9a040734de7e4d9b84b038bb20e040fbfb25a81229fb6218bcb07db99609dca3\nsurface.boost.file_count=51\nsurface.boost.sha256=270936bf8b8c6f82852ab416959fc36146ba4010a9f98438c5df0f0e5df7f2d3\nsurface.computer.file_count=51\nsurface.computer.sha256=9ea51c69bf20aeca66faddf3dc458508dee20ae83971867d355b8a5751ce9462\nsurface.desktop.file_count=51\nsurface.desktop.sha256=3cb1f96732c659bfb5271d501c2b8f9418b17ae9784e44ccd0bb237eb2fce57e\nsurface.growth.file_count=51\nsurface.growth.sha256=aa9f5003326adbffcb75130d7b99ad88abce58a751c8adc909a1758c0a7fc53d\nsurface.id.file_count=51\nsurface.id.sha256=a3baffe2f276f133aea84a95608303fbbed2025dec9553d07705bb1a190f618e\nsurface.inception.file_count=51\nsurface.inception.sha256=05b7e66da3c7fcb9adcbecd0d02d67f91da091eeccf903e316f90df92f20d150\nsurface.infinity.file_count=51\nsurface.infinity.sha256=56d01061d26c790b7797c957215ab65018f5f9554b5e829490ac50a4b81c518c\nsurface.landing.file_count=51\nsurface.landing.sha256=f0d9e7fa0bacda7c05b76c43a6f1443d8fa54d94e60441146070c12dc7d2d3e7\nsurface.marketplace.file_count=51\nsurface.marketplace.sha256=228ae346158408e2a6ac318fba6194e18f7d2d7a28c6f473982b18d6550d3a63\nsurface.nft.file_count=51\nsurface.nft.sha256=9ea51c69bf20aeca66faddf3dc458508dee20ae83971867d355b8a5751ce9462\nsurface.token.file_count=51\nsurface.token.sha256=21826db4885705d66a3622cb9f3c3f3acbf21276f155f2ae6de4e58616287057\nsurface.wallet.file_count=51\nsurface.wallet.sha256=c7a597b803b95746494ad61fa0375affd1ef0fdec3e05f291eaf196f0d03d4fe\nsurface.work.file_count=51\nsurface.work.sha256=fd70b3204197dc298513c3d28fcb6084eb8802bdc3c9424e9157f641347dc799\n"
+        },
+        "units": {
+          "caddy": "MainPID=3002830\nNRestarts=0\nActiveState=active\nSubState=running\n",
+          "proofofwork-ui-release-provenance.timer": "ActiveState=active\nSubState=waiting\n",
+          "proofofwork-ui-release-provenance.service": "MainPID=0\nNRestarts=0\nActiveState=inactive\nSubState=dead\n",
+          "proofofwork-ui-storage-health.timer": "ActiveState=active\nSubState=waiting\n",
+          "proofofwork-ui-storage-prune.timer": "ActiveState=active\nSubState=waiting\n",
+          "proofofwork-ui-release-prune.timer": "ActiveState=active\nSubState=waiting\n"
+        },
+        "journalUsage": "Archived and active journals take up 218.5M in the file system.\n",
+        "caddyErrorCount": 0,
+        "corePattern": "|/bin/false\n"
+      },
+      "productionProbe": {
+        "format": "audit5-bounded-production-probe-summary-v1",
+        "sourceReceiptSha256": "98df4cb104a12d5394758ec3012ec5dd05aa430acbffe03cf33fa36f9c212957",
+        "sourceProbeSha256": "84c1d113f57dfc4f5631a11dfce62e5c9f4b0c381f42afa40912a4fe58e8fb4c",
+        "base": "http://127.0.0.1:8081",
+        "ok": true,
+        "failure": null,
+        "startedAt": "2026-09-06T00:23:40.023Z",
+        "finishedAt": "2026-09-06T00:25:20.557Z",
+        "responses": {
+          "core": 752,
+          "http": 29
+        },
+        "uncompressedResponseBytes": 60849595,
+        "readPayloadComparison": {
+          "registryFullBytes": 2204059,
+          "registryCountsBytes": 774,
+          "compactDirectoryFullBytes": 4574061,
+          "qualifiedDirectoryBytes": 400646,
+          "fullBookBytes": 25808967,
+          "displayBookBytes": 13663323,
+          "wholeBookResponseBytesSaved": 12145644
+        },
+        "result": {
+          "counts": {
+            "model": "proof-registry-counts-v1",
+            "complete": true,
+            "confirmedCount": 505,
+            "pendingCount": 0,
+            "totalCount": 505
+          },
+          "directory": {
+            "count": 238,
+            "definitionSha256": "a8a2fa6c40a731eed449f355bcff3d92fb2449c8d5a0268cc4585c16737a726e",
+            "workSupplySubatoms": "210000000000000000000000"
+          },
+          "book": {
+            "listings": 634,
+            "fullRowsSha256": "d2013ad83955ce518c1c2b30ef394272c919b70623d01015a1ae848057128381",
+            "savedRowBytes": 15291183,
+            "sourceDigestQualification": "Bound to full-route snapshot; excluded historical source rows are not independently replayed.",
+            "independentCoreAnchors": 634,
+            "independentCoreSha256": "84536cb7021f173aee0b2f5416401e550ba474f00d9841331b28361e58497e04"
+          },
+          "wallet": {
+            "address": "19JE7LS6TtQ4uSxu6ivJVZRiJyXXe8qEG3",
+            "utxos": 111,
+            "confirmedProofs": "182699",
+            "pendingProofs": "0",
+            "reservedProofs": "49140",
+            "availableProofs": "133559",
+            "protectedCount": 90,
+            "availableCount": 21,
+            "confirmedWORKSubatoms": "10000000000000000",
+            "reservedWORKSubatoms": "58345485226",
+            "remainingWORKSubatoms": "9999941654514774",
+            "confirmedListingCount": 90,
+            "pendingListingCount": 0,
+            "pendingTicketWitnesses": [],
+            "pendingTicketWitnessSha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+            "pendingQualification": "Each pending ticket was unconfirmed and unspent in Core with includeMempool=true when checked; no atomic mempool snapshot or confirmed WORK amount is implied.",
+            "qualification": "Public API inventory checked against current Core; wallet-provider exclusions, whole-chain address completeness, and transaction construction/signing are not proven."
+          },
+          "bonds": {
+            "POWB": {
+              "supply": "630496569",
+              "networkValueQ8": "63050039100000000",
+              "floorQ8": "100000606"
+            },
+            "INCB": {
+              "supply": "224847713398447926",
+              "networkValueQ8": "22484771339844794793582060",
+              "floorQ8": "100000000"
+            }
+          },
+          "boost": {
+            "events": 3,
+            "visibleRecords": 3,
+            "activeListings": 0,
+            "proofSignalQ8": "163800000000",
+            "totalSignalQ8": "42757280717071",
+            "workSubatoms": "11000000000",
+            "listingQualification": "Complete active discovery compared to complete feed annotations; no independent lifecycle reducer replay.",
+            "rawCarrierSamples": 3
+          },
+          "core": {
+            "height": 965690,
+            "hash": "0000000000000000000167c3ea35cac4952079699ee998062974f95fbe22875b",
+            "mempoolSequenceBefore": 23170700,
+            "mempoolSequenceAfter": 23172491,
+            "mempoolSequenceStable": false
+          },
+          "qualification": "Current confirmed inventories and sampled raw carriers; no exhaustive historical replay, atomic mempool snapshot, or signing proof. Prior604/238 counts are historical baselines, never expected current counts."
+        },
+        "qualification": "Current confirmed inventories and sampled raw carriers; no exhaustive historical replay, atomic mempool snapshot, or signing proof. Prior604/238 counts are historical baselines, never expected current counts.",
+        "failedAttemptsPreserved": true
+      },
+      "nodeRetention": [
+        {
+          "argv": [
+            "/usr/local/sbin/proofofwork-node-release-health"
+          ],
+          "exitCode": 1,
+          "stdout": "release live_commit=2ddefac163d583138129c2527e747b11190a0635 live_tree=89283688ad79cdcd0a4e04a9532aac8c8af735f2 runtime_sha256=ee78a47da73df81665e75354a570df9394a5b17f19cf719f0aa067be41b12b35 archives=12 verified=12 unverified=0 legacy_absolute=0 provenance=12 current_provenance=1 opt_checkouts=22\n",
+          "stderr": "WARNING /opt contains more node release checkouts than the bounded inventory allows.\n",
+          "at": "2026-09-06T00:25:12.080799+00:00"
+        },
+        {
+          "argv": [
+            "/usr/local/sbin/proofofwork-release-prune",
+            "/data/proofofwork-release-backups/managed",
+            "3",
+            "--dry-run"
+          ],
+          "exitCode": 0,
+          "stdout": "would_prune archive=/data/proofofwork-release-backups/managed/proofofwork-node-release-ca8de7e-ca8de7ef58b7-20260904T185317Z.tgz checksum=/data/proofofwork-release-backups/managed/proofofwork-node-release-ca8de7e-ca8de7ef58b7-20260904T185317Z.tgz.sha256 provenance=/data/proofofwork-release-backups/managed/proofofwork-node-release-ca8de7e-ca8de7ef58b7-20260904T185317Z.tgz.provenance\nwould_prune archive=/data/proofofwork-release-backups/managed/proofofwork-node-release-432c015-432c01581e5e-20260904T174541Z.tgz checksum=/data/proofofwork-release-backups/managed/proofofwork-node-release-432c015-432c01581e5e-20260904T174541Z.tgz.sha256 provenance=/data/proofofwork-release-backups/managed/proofofwork-node-release-432c015-432c01581e5e-20260904T174541Z.tgz.provenance\nwould_prune archive=/data/proofofwork-release-backups/managed/proofofwork-node-release-86d7c54-20260904T162941Z.tgz checksum=/data/proofofwork-release-backups/managed/proofofwork-node-release-86d7c54-20260904T162941Z.tgz.sha256 provenance=/data/proofofwork-release-backups/managed/proofofwork-node-release-86d7c54-20260904T162941Z.tgz.provenance\nwould_prune archive=/data/proofofwork-release-backups/managed/proofofwork-node-release-339ba3a-20260904T154740Z.tgz checksum=/data/proofofwork-release-backups/managed/proofofwork-node-release-339ba3a-20260904T154740Z.tgz.sha256 provenance=/data/proofofwork-release-backups/managed/proofofwork-node-release-339ba3a-20260904T154740Z.tgz.provenance\nwould_prune archive=/data/proofofwork-release-backups/managed/proofofwork-node-release-b035a67-20260904T151707Z.tgz checksum=/data/proofofwork-release-backups/managed/proofofwork-node-release-b035a67-20260904T151707Z.tgz.sha256 provenance=/data/proofofwork-release-backups/managed/proofofwork-node-release-b035a67-20260904T151707Z.tgz.provenance\nwould_prune archive=/data/proofofwork-release-backups/managed/proofofwork-node-release-42af4c6-42af4c69e248-20260904T062603Z.tgz checksum=/data/proofofwork-release-backups/managed/proofofwork-node-release-42af4c6-42af4c69e248-20260904T062603Z.tgz.sha256 provenance=/data/proofofwork-release-backups/managed/proofofwork-node-release-42af4c6-42af4c69e248-20260904T062603Z.tgz.provenance\nwould_prune archive=/data/proofofwork-release-backups/managed/proofofwork-node-release-b76a4f5-b76a4f56aff2-20260903T033208Z.tgz checksum=/data/proofofwork-release-backups/managed/proofofwork-node-release-b76a4f5-b76a4f56aff2-20260903T033208Z.tgz.sha256 provenance=/data/proofofwork-release-backups/managed/proofofwork-node-release-b76a4f5-b76a4f56aff2-20260903T033208Z.tgz.provenance\nwould_prune archive=/data/proofofwork-release-backups/managed/proofofwork-node-release-96d3f89-20260903T023228Z.tgz checksum=/data/proofofwork-release-backups/managed/proofofwork-node-release-96d3f89-20260903T023228Z.tgz.sha256 provenance=/data/proofofwork-release-backups/managed/proofofwork-node-release-96d3f89-20260903T023228Z.tgz.provenance\nwould_prune archive=/data/proofofwork-release-backups/managed/proofofwork-node-release-89736d9-89736d9d42f7-20260902T220921Z.tgz checksum=/data/proofofwork-release-backups/managed/proofofwork-node-release-89736d9-89736d9d42f7-20260902T220921Z.tgz.sha256 provenance=/data/proofofwork-release-backups/managed/proofofwork-node-release-89736d9-89736d9d42f7-20260902T220921Z.tgz.provenance\nrelease_retention mode=dry-run verified_archives=12 unverified_archives=0\n",
+          "stderr": "",
+          "at": "2026-09-06T00:25:12.758424+00:00"
+        }
+      ],
+      "files": {
+        "/tmp/pow-approved-window2-20260905/release-publish.stdout": {
+          "bytes": 2835,
+          "sha256": "b013b35a911ec348a917b0d4b91cc0a72bc67b88f904a7a1bba345c40f2b9993"
+        },
+        "/tmp/pow-approved-window2-20260905/release-exchange.stdout": {
+          "bytes": 2077,
+          "sha256": "4b4f760541df8e9d36159f363b085aedfa9411518ec935867dd39a53f27e4f4a"
+        },
+        "/tmp/pow-approved-window2-20260905/release-open-proxy.stdout": {
+          "bytes": 1906,
+          "sha256": "ca2e648f52fba782121b39bb4cd673a6bbe8f8a9818ca946e26ee511b508f2b3"
+        },
+        "/tmp/pow-approved-window2-20260905/release-start.stdout": {
+          "bytes": 1893,
+          "sha256": "8a9a7d6661c87d06fdf45a092f8e49f82c27eb8141c730a9cbfbbc281a272e64"
+        },
+        "/tmp/pow-approved-window2-20260905/cutover-timers-hold.stdout": {
+          "bytes": 1741,
+          "sha256": "fd5d39ca2e7d0a49ded528558dccd6891f955d7003676ae6c36abf9a9fd080ea"
+        },
+        "/tmp/pow-approved-window2-20260905/cutover-timers-restore.stdout": {
+          "bytes": 1753,
+          "sha256": "8e77cdd6be19c7e08a51f029645cbde3789c86b1573eb7f76dd2e13ff3454a9a"
+        },
+        "/tmp/pow-ui-resume-20260905/publication-final.stdout": {
+          "bytes": 3095,
+          "sha256": "99bcd7b24137ac80d92b77d43b7d733d3c7234c08a8534cbe893583cf82777ca"
+        },
+        "/tmp/pow-ui-resume-20260905/ui-final-prepublish-0020.json": {
+          "bytes": 3273,
+          "sha256": "dbc50e8d7f26440261b5e207fbdf056c4a50e9496b19048ab26ac0c98d745e05"
+        },
+        "/tmp/pow-final-verification-20260905/production-summary.json": {
+          "bytes": 4056,
+          "sha256": "c4c6f6c587c7095ee0a8f3b3f36ad2c37a3ab05da1dad14a632db59dd2a189a9"
+        },
+        "/tmp/pow-final-verification-20260905/production-probe-argv.json": {
+          "bytes": 2741,
+          "sha256": "abaca7045b7824a1e353658a5de85604e2b06da1281ba473b31a279cd2f6f7db"
+        },
+        "/tmp/pow-final-verification-20260905/production-final.json": {
+          "bytes": 286,
+          "sha256": "e0df9ca7c059fa0d5034fbc5c788ed94aa8ac21d23aa6ecb7c586073ee549772"
+        },
+        "/tmp/pow-final-verification-20260905/production-identity-v2.json": {
+          "bytes": 373,
+          "sha256": "93550a0911035194425c8b3eaa0da42a73201264365bb97467937f373a5ccf52"
+        },
+        "/tmp/pow-final-verification-20260905/final-node-health.json": {
+          "bytes": 6350,
+          "sha256": "0044a25bd81f646677cc90240bf7951d87b1f9018ec674993c20d31022a8a1cc"
+        },
+        "/tmp/pow-final-verification-20260905/ui-health-final.json": {
+          "bytes": 3473,
+          "sha256": "883018ec5647b714732c2760e0aba2255f52f1719027b2271bc8e15412ef189d"
+        },
+        "/tmp/pow-final-verification-20260905/node-release-health-retention-final.json": {
+          "bytes": 4229,
+          "sha256": "a4cdd8599b4d42af5e8e657277efec03c91f0beae7706a242503871df34cb298"
+        },
+        "/tmp/pow-final-verification-20260905/process-baseline-review.json": {
+          "bytes": 1005,
+          "sha256": "2ae601284be82887b21f0eada2cad93fbbcd00de116d350110410803f42dfc8c"
+        },
+        "/tmp/pow-final-verification-20260905/run-production-probe-identity-v2.py": {
+          "bytes": 13647,
+          "sha256": "6a52ad2a7c26af5992a7561e41b525fac9691d9ae8b2dcf2d226ba01c8aae84e"
+        },
+        "/tmp/pow-final-verification-20260905/browser-final-review.json": {
+          "bytes": 32514,
+          "sha256": "a6025912c75c714de280d30ace1d010313256a489d982f32ed1fe2436e0a3b77"
+        },
+        "/tmp/pow-final-verification-20260905/final-node-health-handoff.json": {
+          "bytes": 6352,
+          "sha256": "3415a21a23bdc369eb1fd8aba0ea2e318f724d522e2f5ee908d9413c5388bd5b"
+        },
+        "/tmp/pow-final-verification-20260905/public-recovery-followup.json": {
+          "bytes": 26141,
+          "sha256": "ccb16da52bac9b5a7f5f09efb27630d9403cca9b8ecd2dd97bf29f9607ab27b3"
+        },
+        "/tmp/pow-production-ui-final-20260906T0025Z/manifest.json": {
+          "bytes": 239386,
+          "sha256": "f2be809a6b34564f089f1f08ed86ed041ad24140be6395aa8f216d1f80a8fd36"
+        },
+        "/tmp/pow-production-ui-recovery-20260906T0032Z/manifest.json": {
+          "bytes": 68987,
+          "sha256": "c12b285e6e80d88937f329cb3f463a6f6e8206dd4bdfc2920ba5e4fba7563c92"
+        },
+        "/tmp/pow-production-ui-final-20260906T0025Z/boost-connected-layout/results.json": {
+          "bytes": 22415,
+          "sha256": "139aa8caafc0b50c023d512b29842d7a7569b0cb344f784b19bcdee0bfca247c"
+        },
+        "/tmp/pow-production-ui-final-20260906T0025Z/computer-connected-layout/results.json": {
+          "bytes": 7892,
+          "sha256": "6f8e3025a018b4dda5f1a803c0d8be2d0d8ad6160adeb15e0fe55a5a3932e59f"
+        }
+      },
+      "browserReview": {
+        "at": "2026-09-06T02:47:28.905870+00:00",
+        "status": "reviewed-with-retained-qualifications",
+        "orderedPages": [
+          {
+            "label": "Home",
+            "at": "2026-09-06T00:24:50.736Z",
+            "navigationStatus": 200,
+            "needsReview": true,
+            "pageErrors": [],
+            "badResponses": [],
+            "consoleErrors": [
+              "Failed to load resource: net::ERR_BLOCKED_BY_CLIENT.Inspector",
+              "Failed to load resource: net::ERR_BLOCKED_BY_CLIENT.Inspector",
+              "Failed to load resource: net::ERR_BLOCKED_BY_CLIENT.Inspector",
+              "Failed to load resource: net::ERR_BLOCKED_BY_CLIENT.Inspector",
+              "Failed to load resource: net::ERR_BLOCKED_BY_CLIENT.Inspector",
+              "Failed to load resource: net::ERR_BLOCKED_BY_CLIENT.Inspector",
+              "Failed to load resource: net::ERR_BLOCKED_BY_CLIENT.Inspector",
+              "Failed to load resource: net::ERR_BLOCKED_BY_CLIENT.Inspector",
+              "Failed to load resource: net::ERR_BLOCKED_BY_CLIENT.Inspector"
+            ],
+            "loading": [],
+            "unavailable": [],
+            "pendingApiRequests": [],
+            "documentWidth": 1920,
+            "viewport": {
+              "width": 1920,
+              "height": 1080
+            }
+          },
+          {
+            "label": "ID",
+            "at": "2026-09-06T00:25:02.317Z",
+            "navigationStatus": 200,
+            "needsReview": false,
+            "pageErrors": [],
+            "badResponses": [],
+            "consoleErrors": [],
+            "loading": [],
+            "unavailable": [],
+            "pendingApiRequests": [],
+            "documentWidth": 1920,
+            "viewport": {
+              "width": 1920,
+              "height": 1080
+            }
+          },
+          {
+            "label": "Desktop",
+            "at": "2026-09-06T00:25:14.547Z",
+            "navigationStatus": 200,
+            "needsReview": false,
+            "pageErrors": [],
+            "badResponses": [],
+            "consoleErrors": [],
+            "loading": [],
+            "unavailable": [],
+            "pendingApiRequests": [],
+            "documentWidth": 1920,
+            "viewport": {
+              "width": 1920,
+              "height": 1080
+            }
+          },
+          {
+            "label": "Browser",
+            "at": "2026-09-06T00:25:26.809Z",
+            "navigationStatus": 200,
+            "needsReview": false,
+            "pageErrors": [],
+            "badResponses": [],
+            "consoleErrors": [],
+            "loading": [],
+            "unavailable": [],
+            "pendingApiRequests": [],
+            "documentWidth": 1920,
+            "viewport": {
+              "width": 1920,
+              "height": 1080
+            }
+          },
+          {
+            "label": "AMO",
+            "at": "2026-09-06T00:26:09.594Z",
+            "navigationStatus": 200,
+            "needsReview": true,
+            "pageErrors": [],
+            "badResponses": [
+              {
+                "status": 503,
+                "url": "https://amo.proofofwork.me/api/v1/token-history"
+              },
+              {
+                "status": 503,
+                "url": "https://amo.proofofwork.me/api/v1/marketplace-summary"
+              }
+            ],
+            "consoleErrors": [
+              "Failed to load resource: the server responded with a status of 503 ()",
+              "Complete AMO listing hydration deferred: Complete Core token-listing evidence is unavailable.",
+              "Failed to load resource: the server responded with a status of 503 ()"
+            ],
+            "loading": [],
+            "unavailable": [
+              "roofOfWork AMO exact-tip summary publication is temporarily unavailable. Showing verified last-good summary block 965,690, snapshot f1ea90787226183c899b2bc6. Current canonical scan",
+              "roofOfWork AMO exact-tip summary publication is temporarily unavailable. Showing verified last-good summary block 965,690, snapshot f1ea90787226183c899b2bc6. Current canonical scan",
+              "roofOfWork AMO exact-tip summary publication is temporarily unavailable. Showing verified last-good summary block 965,690, snapshot f1ea90787226183c899b2bc6. Current canonical scan",
+              "roofOfWork AMO exact-tip summary publication is temporarily unavailable. Showing verified last-good summary block 965,690, snapshot f1ea90787226183c899b2bc6. Current canonical scan",
+              "roofOfWork AMO exact-tip summary publication is temporarily unavailable. Showing verified last-good summary block 965,690, snapshot f1ea90787226183c899b2bc6. Current canonical scan"
+            ],
+            "pendingApiRequests": [],
+            "documentWidth": 1920,
+            "viewport": {
+              "width": 1920,
+              "height": 1080
+            }
+          },
+          {
+            "label": "Credit",
+            "at": "2026-09-06T00:26:24.744Z",
+            "navigationStatus": 200,
+            "needsReview": false,
+            "pageErrors": [],
+            "badResponses": [],
+            "consoleErrors": [],
+            "loading": [],
+            "unavailable": [],
+            "pendingApiRequests": [],
+            "documentWidth": 1920,
+            "viewport": {
+              "width": 1920,
+              "height": 1080
+            }
+          },
+          {
+            "label": "Wallet",
+            "at": "2026-09-06T00:26:56.115Z",
+            "navigationStatus": 200,
+            "needsReview": true,
+            "pageErrors": [],
+            "badResponses": [
+              {
+                "status": 503,
+                "url": "https://wallet.proofofwork.me/api/v1/token"
+              },
+              {
+                "status": 503,
+                "url": "https://wallet.proofofwork.me/api/v1/token"
+              }
+            ],
+            "consoleErrors": [
+              "Failed to load resource: the server responded with a status of 503 ()",
+              "Failed to load resource: the server responded with a status of 503 ()"
+            ],
+            "loading": [
+              "ork confirms or drops them. Credit types 0 Spendable proofs Loading Movements seen 0 Mutation fee 546 proofs Balances Credits held by the connected address. No credit balance yet"
+            ],
+            "unavailable": [],
+            "pendingApiRequests": [],
+            "documentWidth": 1920,
+            "viewport": {
+              "width": 1920,
+              "height": 1080
+            }
+          },
+          {
+            "label": "WORK",
+            "at": "2026-09-06T00:27:13.599Z",
+            "navigationStatus": 200,
+            "needsReview": false,
+            "pageErrors": [],
+            "badResponses": [],
+            "consoleErrors": [],
+            "loading": [],
+            "unavailable": [],
+            "pendingApiRequests": [],
+            "documentWidth": 1920,
+            "viewport": {
+              "width": 1920,
+              "height": 1080
+            }
+          },
+          {
+            "label": "Infinity",
+            "at": "2026-09-06T00:27:48.833Z",
+            "navigationStatus": 200,
+            "needsReview": false,
+            "pageErrors": [],
+            "badResponses": [],
+            "consoleErrors": [],
+            "loading": [],
+            "unavailable": [],
+            "pendingApiRequests": [],
+            "documentWidth": 1920,
+            "viewport": {
+              "width": 1920,
+              "height": 1080
+            }
+          },
+          {
+            "label": "Inception",
+            "at": "2026-09-06T00:28:28.023Z",
+            "navigationStatus": 200,
+            "needsReview": true,
+            "pageErrors": [],
+            "badResponses": [
+              {
+                "status": 503,
+                "url": "https://inception.proofofwork.me/api/v1/token-history"
+              },
+              {
+                "status": 503,
+                "url": "https://inception.proofofwork.me/api/v1/inception-summary"
+              }
+            ],
+            "consoleErrors": [
+              "Failed to load resource: the server responded with a status of 503 ()",
+              "Complete INCB listing hydration deferred: Complete Core token-listing evidence is unavailable.",
+              "Failed to load resource: the server responded with a status of 503 ()"
+            ],
+            "loading": [
+              "led 0 Unsealed 0 Sort Price high Price low Arb high Arb low Loading complete INCB sale tickets The verified preview is incomplete, so empty-state claims are withheld until the che"
+            ],
+            "unavailable": [
+              "Inception Bond exact-tip summary publication is temporarily unavailable. Showing verified last-good summary block 965,691, snapshot 984ffd71b03d7e7910a2a735. Current canonical scan",
+              "Inception Bond exact-tip summary publication is temporarily unavailable. Showing verified last-good summary block 965,691, snapshot 984ffd71b03d7e7910a2a735. Current canonical scan"
+            ],
+            "pendingApiRequests": [],
+            "documentWidth": 1920,
+            "viewport": {
+              "width": 1920,
+              "height": 1080
+            }
+          },
+          {
+            "label": "Log",
+            "at": "2026-09-06T00:29:14.166Z",
+            "navigationStatus": 200,
+            "needsReview": false,
+            "pageErrors": [],
+            "badResponses": [],
+            "consoleErrors": [],
+            "loading": [],
+            "unavailable": [],
+            "pendingApiRequests": [],
+            "documentWidth": 1920,
+            "viewport": {
+              "width": 1920,
+              "height": 1080
+            }
+          },
+          {
+            "label": "Growth",
+            "at": "2026-09-06T00:29:47.333Z",
+            "navigationStatus": 200,
+            "needsReview": false,
+            "pageErrors": [],
+            "badResponses": [],
+            "consoleErrors": [],
+            "loading": [],
+            "unavailable": [],
+            "pendingApiRequests": [],
+            "documentWidth": 1920,
+            "viewport": {
+              "width": 1920,
+              "height": 1080
+            }
+          },
+          {
+            "label": "Boost cosmetic",
+            "at": "2026-09-06T00:29:59.339Z",
+            "navigationStatus": 200,
+            "needsReview": false,
+            "pageErrors": [],
+            "badResponses": [],
+            "consoleErrors": [],
+            "loading": [],
+            "unavailable": [],
+            "pendingApiRequests": [],
+            "documentWidth": 1920,
+            "viewport": {
+              "width": 1920,
+              "height": 1080
+            }
+          },
+          {
+            "label": "Computer FINAL",
+            "at": "2026-09-06T00:31:08.762Z",
+            "navigationStatus": 200,
+            "needsReview": false,
+            "pageErrors": [],
+            "badResponses": [],
+            "consoleErrors": [],
+            "loading": [],
+            "unavailable": [],
+            "pendingApiRequests": [],
+            "documentWidth": 1920,
+            "viewport": {
+              "width": 1920,
+              "height": 1080
+            }
+          }
+        ],
+        "layoutFixtures": [
+          {
+            "kind": "isolated-connected-layout-fixtures",
+            "embedded": false,
+            "expectedCases": 14,
+            "startedAt": "2026-09-06T00:29:59.350Z",
+            "finishedAt": "2026-09-06T00:30:57.319Z",
+            "exitCode": 0,
+            "output": "/tmp/pow-production-ui-final-20260906T0025Z/boost-connected-layout",
+            "qualification": "Production asset geometry with deliberately mocked API data and signing-refusing fake public provider; not live ledger evidence."
+          },
+          {
+            "kind": "isolated-connected-layout-fixtures",
+            "embedded": true,
+            "expectedCases": 4,
+            "startedAt": "2026-09-06T00:31:08.776Z",
+            "finishedAt": "2026-09-06T00:31:31.930Z",
+            "exitCode": 0,
+            "output": "/tmp/pow-production-ui-final-20260906T0025Z/computer-connected-layout",
+            "qualification": "Production asset geometry with deliberately mocked API data and signing-refusing fake public provider; not live ledger evidence."
+          }
+        ],
+        "recovery": [
+          {
+            "label": "AMO recovery",
+            "at": "2026-09-06T02:45:36.070Z",
+            "navigationStatus": 200,
+            "needsReview": false,
+            "pageErrors": [],
+            "badResponses": [],
+            "consoleErrors": [],
+            "loading": [],
+            "unavailable": [],
+            "pendingApiRequests": [
+              "https://amo.proofofwork.me/api/v1/marketplace-summary?compact=1&fresh=1&network=livenet"
+            ],
+            "documentWidth": 1920,
+            "viewport": {
+              "width": 1920,
+              "height": 1080
+            }
+          },
+          {
+            "label": "Wallet recovery",
+            "at": "2026-09-06T02:45:53.598Z",
+            "navigationStatus": 200,
+            "needsReview": true,
+            "pageErrors": [],
+            "badResponses": [],
+            "consoleErrors": [],
+            "loading": [
+              "ork confirms or drops them. Credit types 0 Spendable proofs Loading Movements seen 0 Mutation fee 546 proofs Balances Credits held by the connected address. No credit balance yet"
+            ],
+            "unavailable": [],
+            "pendingApiRequests": [],
+            "documentWidth": 1920,
+            "viewport": {
+              "width": 1920,
+              "height": 1080
+            }
+          },
+          {
+            "label": "Inception recovery",
+            "at": "2026-09-06T02:46:28.964Z",
+            "navigationStatus": 200,
+            "needsReview": false,
+            "pageErrors": [],
+            "badResponses": [],
+            "consoleErrors": [],
+            "loading": [],
+            "unavailable": [],
+            "pendingApiRequests": [],
+            "documentWidth": 1920,
+            "viewport": {
+              "width": 1920,
+              "height": 1080
+            }
+          }
+        ],
+        "dispositions": {
+          "Home": "Nine blocked external YouTube/Google POSTs are the deliberate GET-only harness restriction; no application exception or bad application response.",
+          "AMO and Inception initial": "New-block exact-tip convergence deferred listing hydration and fresh summaries. Previously verified values stayed explicitly labeled; not a clean uninterrupted availability pass. Existing H5-06 remains open.",
+          "Recovery": "All three pages returned200 with no HTTP errors or application exceptions. AMO observation ended with one fresh summary request still in flight; completion and latency of that request were not proved.",
+          "Wallet disconnected": "No provider or connected address. Spendable proofs remains Loading, never an asserted zero or available balance. Retain as display qualification; separate live API wallet fixture verifies reservations and funds.",
+          "Boost": "18 deployed-asset geometry fixtures passed with a fake public provider and mocked API data. No real wallet connection/signing/broadcast was exercised."
+        }
+      },
+      "finalHealthAfterContinuation": {
+        "at": "2026-09-06T02:46:11.015901+00:00",
+        "mutations": false,
+        "core": {
+          "blocks": 965707,
+          "headers": 965707,
+          "bestblockhash": "00000000000000000001e58a6ede6ce17ce3b60cd794bdf4a3930ec4c2a226b4",
+          "verificationprogress": 1,
+          "initialblockdownload": false,
+          "size_on_disk": 873620571710,
+          "pruned": false
+        },
+        "api": {
+          "http": 200,
+          "sha256": "76ccd7a5e2b3bf3beada902f84c218346909777f529b50d1193dc94a50ab009b",
+          "ready": true,
+          "available": true,
+          "tipHeight": 965707,
+          "indexedThroughBlock": 965707,
+          "lagBlocks": 0,
+          "summary": {
+            "blockHash": "00000000000000000001e58a6ede6ce17ce3b60cd794bdf4a3930ec4c2a226b4",
+            "coverageByKey": {
+              "growthSummary": 965707,
+              "inceptionSummary": 965707,
+              "infinitySummary": 965707,
+              "logSummary": 965707,
+              "marketplaceSummary": 965707,
+              "tokenSummary": 965707,
+              "workFloor": 965707,
+              "workSummary": 965707
+            },
+            "eligible": true,
+            "generatedAt": "2026-09-06T02:36:02.710Z",
+            "indexedAt": "2026-09-06T02:36:02.710Z",
+            "indexedThroughBlock": 965707,
+            "payloadBytes": 16036560,
+            "snapshotId": "0ee377c11d4aeafca1316293",
+            "ok": true
+          },
+          "pending": {
+            "globalUnresolved": 0,
+            "model": "bounded-best-effort-pending-event-health-v1",
+            "ok": true,
+            "q16PendingUnresolved": 0,
+            "required": true,
+            "scope": "all-observed-pending-protocol-events",
+            "status": {
+              "checked": 0,
+              "deferred": 0,
+              "errors": 0,
+              "ok": true,
+              "q16ParentDeferred": 0,
+              "staleCandidates": 0,
+              "unavailable": false,
+              "unavailableValid": true
+            }
+          },
+          "canonicalFault": {}
+        },
+        "database": {
+          "databaseBytes": 21820578839,
+          "invalidIndexes": 0,
+          "unvalidatedConstraints": 0,
+          "sessions": 12,
+          "idleInTransaction": 0,
+          "deadlocks": 0,
+          "databaseStats": {
+            "numbackends": 12,
+            "xact_commit": 14849856,
+            "xact_rollback": 213,
+            "temp_files": 27419,
+            "temp_bytes": 425014326170
+          },
+          "largestTables": [
+            {
+              "schemaname": "proof_indexer",
+              "relname": "work_amo_block_transitions",
+              "n_live_tup": 6087,
+              "n_dead_tup": 0,
+              "bytes": 20547526656,
+              "last_autovacuum": "2026-08-26T19:58:45.601594+00:00",
+              "last_autoanalyze": "2026-09-02T16:51:37.896439+00:00"
+            },
+            {
+              "schemaname": "proof_indexer",
+              "relname": "ledger_snapshots",
+              "n_live_tup": 10529,
+              "n_dead_tup": 371,
+              "bytes": 856276992,
+              "last_autovacuum": "2026-09-04T04:33:04.403779+00:00",
+              "last_autoanalyze": "2026-09-04T10:40:39.827591+00:00"
+            },
+            {
+              "schemaname": "proof_indexer",
+              "relname": "events",
+              "n_live_tup": 25840,
+              "n_dead_tup": 2195,
+              "bytes": 118841344,
+              "last_autovacuum": "2026-09-05T19:40:29.306825+00:00",
+              "last_autoanalyze": "2026-09-05T21:49:30.680226+00:00"
+            },
+            {
+              "schemaname": "proof_indexer",
+              "relname": "transactions",
+              "n_live_tup": 25204,
+              "n_dead_tup": 3927,
+              "bytes": 78340096,
+              "last_autovacuum": "2026-09-05T18:29:26.88127+00:00",
+              "last_autoanalyze": "2026-09-06T02:17:57.511603+00:00"
+            },
+            {
+              "schemaname": "proof_indexer",
+              "relname": "event_participants",
+              "n_live_tup": 126690,
+              "n_dead_tup": 18834,
+              "bytes": 52510720,
+              "last_autovacuum": "2026-09-05T13:40:21.792011+00:00",
+              "last_autoanalyze": "2026-09-05T21:13:29.879324+00:00"
+            },
+            {
+              "schemaname": "proof_indexer",
+              "relname": "tx_outputs",
+              "n_live_tup": 74934,
+              "n_dead_tup": 1710,
+              "bytes": 47489024,
+              "last_autovacuum": "2026-08-26T19:58:45.341055+00:00",
+              "last_autoanalyze": "2026-08-26T19:58:45.50797+00:00"
+            }
+          ],
+          "wal": [
+            {
+              "application_name": "pg_receivewal@16-main.service",
+              "state": "streaming",
+              "sync_state": "async",
+              "write_lsn": "77/EA465EA8",
+              "flush_lsn": "77/EA000000",
+              "replay_lsn": null
+            }
+          ]
+        },
+        "filesystems": {
+          "/": {
+            "availableBytes": 75748417536,
+            "totalBytes": 105089261568,
+            "freeInodes": 6201289,
+            "totalInodes": 6553600
+          },
+          "/data": {
+            "availableBytes": 406301405184,
+            "totalBytes": 1764768071680,
+            "freeInodes": 109475903,
+            "totalInodes": 109502464
+          }
+        },
+        "units": {
+          "bitcoind.service": "MainPID=282028\nNRestarts=0\nActiveState=active\nSubState=running\n",
+          "electrs.service": "MainPID=282210\nNRestarts=0\nActiveState=active\nSubState=running\n",
+          "postgresql@16-main.service": "MainPID=3612661\nNRestarts=0\nActiveState=active\nSubState=running\n",
+          "pg_receivewal@16-main.service": "MainPID=2922786\nNRestarts=0\nActiveState=active\nSubState=running\n",
+          "proofofwork-api.service": "MainPID=1333977\nNRestarts=0\nActiveState=active\nSubState=running\n",
+          "proofofwork-indexer-worker.service": "MainPID=1333990\nNRestarts=0\nActiveState=active\nSubState=running\n",
+          "proofofwork-api-wg.socket": "ActiveState=active\nSubState=running\n",
+          "proofofwork-api-wg.service": "MainPID=1334649\nNRestarts=0\nActiveState=active\nSubState=running\n",
+          "proofofwork-postgres-logical-backup.timer": "ActiveState=active\nSubState=waiting\n",
+          "pg_basebackup@16-main.timer": "ActiveState=active\nSubState=waiting\n",
+          "pg_compresswal@16-main.timer": "ActiveState=active\nSubState=waiting\n",
+          "proofofwork-postgres-query-health.timer": "ActiveState=active\nSubState=waiting\n",
+          "proofofwork-cache-prune.timer": "ActiveState=active\nSubState=waiting\n",
+          "proofofwork-node-release-health.timer": "ActiveState=active\nSubState=waiting\n",
+          "proofofwork-node-release-prune.timer": "ActiveState=active\nSubState=waiting\n",
+          "proofofwork-node-storage-health.timer": "ActiveState=active\nSubState=waiting\n"
+        },
+        "journalErrorCounts": {
+          "bitcoind.service": 0,
+          "electrs.service": 0,
+          "postgresql@16-main.service": 0,
+          "pg_receivewal@16-main.service": 0,
+          "proofofwork-api.service": 0,
+          "proofofwork-indexer-worker.service": 0
+        },
+        "journalUsage": "Archived and active journals take up 963.4M in the file system."
+      },
+      "publicRecovery": [
+        {
+          "url": "https://amo.proofofwork.me/health",
+          "status": 200,
+          "bytes": 11076,
+          "seconds": 2.35,
+          "sha256": "8024102c391202242dd56d15017a4f8088412768a71913a1ebfe5e28ded4027f",
+          "at": "2026-09-06T00:27:57.646203+00:00",
+          "fields": {
+            "ready": true,
+            "available": true,
+            "ok": true,
+            "tipHeight": 965691,
+            "indexedThroughBlock": 965691,
+            "lagBlocks": 0
+          }
+        },
+        {
+          "url": "https://wallet.proofofwork.me/health",
+          "status": 200,
+          "bytes": 11076,
+          "seconds": 2.21,
+          "sha256": "131f9a4e01548cc3bcc4db37da956ae331b0065377205d9e9e805ef2883c44d8",
+          "at": "2026-09-06T00:27:59.857140+00:00",
+          "fields": {
+            "ready": true,
+            "available": true,
+            "ok": true,
+            "tipHeight": 965691,
+            "indexedThroughBlock": 965691,
+            "lagBlocks": 0
+          }
+        },
+        {
+          "url": "https://computer.proofofwork.me/api/v1/consistency?network=livenet",
+          "status": 200,
+          "bytes": 17216,
+          "seconds": 7.08,
+          "sha256": "66a402cbd6f68ed50a5baaf0de727b837f19da859a7ca595c4c02dccb4e51fd3",
+          "at": "2026-09-06T00:28:06.936760+00:00",
+          "fields": {
+            "ok": true,
+            "indexedThroughBlock": 965691,
+            "status": "green",
+            "snapshotId": "984ffd71b03d7e7910a2a735",
+            "missingLogEvents": []
+          }
+        },
+        {
+          "url": "https://amo.proofofwork.me/api/v1/marketplace-summary?compact=1&network=livenet",
+          "status": 200,
+          "bytes": 5096098,
+          "seconds": 9.15,
+          "sha256": "ee476de1376a56af1ed567f15bffacb3f57529127ada9dc0b0d173c66ad9533f",
+          "at": "2026-09-06T00:28:16.129091+00:00",
+          "fields": {
+            "indexedThroughBlock": 965691,
+            "snapshotId": "984ffd71b03d7e7910a2a735"
+          }
+        }
+      ],
+      "publicRecoveryConsistencyChecks": 23
     }
   }
 }
