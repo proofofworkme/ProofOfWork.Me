@@ -11,7 +11,7 @@ It is distilled from current repository docs and public launch memory captured t
 - Full 2026-06-09 archive re-reviewed: 2026-06-17
 - Full 2026-07-14 archive re-reviewed: 2026-07-15
 - Full 2026-08-19 archive re-reviewed: 2026-08-21
-- Operational memory updated: 2026-08-01
+- Operational memory updated: 2026-09-05
 - Public archives reviewed: `/home/sixer/Downloads/twitter-2026-05-19-4780579747040c69c6ee36267c276b61d1375ffa6de1fde07a0d945892fafea7`, `/home/sixer/Downloads/twitter-2026-06-09-4780579747040c69c6ee36267c276b61d1375ffa6de1fde07a0d945892fafea7`, `/home/sixer/Downloads/twitter-2026-07-14-4780579747040c69c6ee36267c276b61d1375ffa6de1fde07a0d945892fafea7`, `/home/sixer/Downloads/twitter-2026-08-19-4780579747040c69c6ee36267c276b61d1375ffa6de1fde07a0d945892fafea7`
 - 2026-07-14 archive inventory reviewed without sampling: 2,486 active tweet records, 39 deleted-tweet records, 67 long-form Note Tweet records, 2,486 active headers, and 39 deleted headers. Active and deleted tweet IDs were each unique; 271 active records were retweets.
 - 2026-08-19 archive inventory reviewed with full file inventory and targeted public-record sampling: 3,195 active tweet records, 10 deleted-tweet records, 167 long-form Note Tweet records, 3,195 active headers, 10 deleted headers, 417 active tweet media files, and 4 deleted-tweet media files. Active and deleted tweet IDs were each unique; 35 active records were retweets. Active public tweet records span 2026-05-08 through 2026-08-19, while Note Tweet records span 2026-07-16 through 2026-08-17.
@@ -528,6 +528,7 @@ When working on ProofOfWork.Me:
 18. Treat repository hygiene as both mechanical and semantic: automation may remove only the explicit rebuildable allowlist, while agents decide whether `SOUL.md`, protocol docs, tracked notes, or generated artifacts need a meaningful update.
 19. Old is not stale. Preserve replayable protocol history, audits, ledgers, refunds, incident evidence, release records, and tx-backed artifacts; qualify them as historical when needed instead of deleting them.
 20. Before handoff, inspect `git status`, the final diff, and relevant tests. Every authored commit is a durable agent handoff and must carry the hygiene trailers required by `REPOSITORY_HYGIENE.md`; only an exact mechanical server merge may inherit its reviewed parents' attestations.
+21. Keep production serving during lengthy audit, build, backup and release checks. Limit any required stopped-writer window to the approved repair, invariant checks, necessary bootstrap and brief cutover. Prepare recovery before closing public access; if validation delays publication, restore the verified compatible release and continue checks online. Never leave the public API closed merely while completing audit paperwork or investigating a test harness.
 
 ## Future Directions From The Archive
 

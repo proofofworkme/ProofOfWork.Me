@@ -3346,6 +3346,19 @@ An isolated restore verification and fresh safeguard must pass before repairs.
 Keep the exact release receipts and interrupted-job evidence in audit 5. Never
 reuse a partly populated job directory or infer that an interrupted job passed.
 
+Keep lengthy release gates outside the stopped-writer window. After the approved
+repair invariants and necessary bootstrap pass, a verified compatible existing
+release can resume service while unchanged endpoint contracts are audited by
+candidate scripts through loopback 8081. Record both the script commit and the
+served commit: this does not prove a changed candidate endpoint. Those changes
+still require their own isolated candidate verification and production checks.
+The audit-5 unit controller accepts only loopback 18081 or 8081 for gates. It
+requires normal process exit, rejects a log at its file-size limit, and parses
+the complete strict parity result; a systemd stop reported as successful is
+not a passed gate. Parity evidence has a bounded 128 MiB allowance because its
+full report includes historical replay details. Original truncated or interrupted
+attempts remain evidence. Do not extend public downtime to collect long reports.
+
 The following is the exact no-Node-on-UI-host release procedure. Run the first
 block on the trusted build host only after the approved release is committed.
 It creates a fresh detached checkout, installs the lockfile without lifecycle

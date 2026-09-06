@@ -64,6 +64,57 @@ class FixtureOS:
 
 
 class Window2Tests(unittest.TestCase):
+    def test_gate_evidence_rejects_interruption_truncation_and_non_strict_results(self):
+        path = HELPERS / 'window-unit.py'
+        tree = ast.parse(path.read_bytes())
+        start = next(i for i, node in enumerate(tree.body)
+                     if isinstance(node, ast.Assign) and any(isinstance(target, ast.Name) and target.id == 'evidence_ok' for target in node.targets))
+        code = compile(ast.fix_missing_locations(ast.Module(body=tree.body[start - 1:start + 2], type_ignores=[])), str(path), 'exec')
+        valid = '{"operation":"exec"}\n{"ok":true,"strict":true}\n'
+        cases = [
+            ('complete', valid, 'ExecMainCode=1\nExecMainStatus=0', True, True),
+            ('collected-success', valid, 'ExecMainCode=0\nExecMainStatus=0', True, True),
+            ('terminated', valid, 'ExecMainCode=2\nExecMainStatus=15', True, False),
+            ('failed-exit', valid, 'ExecMainCode=1\nExecMainStatus=1', True, False),
+            ('not-stopped', valid, 'ExecMainCode=1\nExecMainStatus=0', False, False),
+            ('truncated', valid[:-3], 'ExecMainCode=1\nExecMainStatus=0', True, False),
+            ('non-strict', valid.replace('"strict":true', '"strict":false'), 'ExecMainCode=1\nExecMainStatus=0', True, False),
+            ('failed-result', valid.replace('"ok":true', '"ok":false'), 'ExecMainCode=1\nExecMainStatus=0', True, False),
+            ('trailing-data', valid + 'incomplete output', 'ExecMainCode=1\nExecMainStatus=0', True, False),
+        ]
+        with tempfile.TemporaryDirectory(prefix='audit5-gate-evidence-') as directory:
+            for name, body, properties, stopped, expected in cases:
+                with self.subTest(name=name):
+                    log = pathlib.Path(directory) / name
+                    log.write_text(body)
+                    namespace = {'mode': 'gate', 'gate': 'indexer:parity', 'complete': stopped,
+                                 'hashed_bytes': log.stat().st_size, 'file_limit': 134217728,
+                                 'properties': properties, 'result': types.SimpleNamespace(returncode=0, stderr='Main processes terminated with: code=killed/status=TERM' if name == 'terminated' else 'Main processes terminated with: code=exited/status=1' if name == 'failed-exit' else 'Main processes terminated with: code=exited/status=0'),
+                                 'log': log, 'json': json}
+                    exec(code, namespace)
+                    self.assertEqual(namespace['evidence_ok'], expected)
+            namespace.update(complete=True, hashed_bytes=134217728, properties='ExecMainCode=1\nExecMainStatus=0')
+            exec(code, namespace)
+            self.assertFalse(namespace['evidence_ok'])
+
+    def test_gate_port_override_cannot_redirect_repairs(self):
+        path = HELPERS / 'window-unit.py'
+        tree = ast.parse(path.read_bytes())
+        start = next(i for i, node in enumerate(tree.body)
+                     if isinstance(node, ast.Assign) and any(isinstance(target, ast.Name) and target.id == 'api_port' for target in node.targets))
+        code = compile(ast.fix_missing_locations(ast.Module(body=tree.body[start:start + 2], type_ignores=[])), str(path), 'exec')
+        for mode, port, allowed in [('gate', '8081', True), ('gate', '18081', True),
+                                    ('gate', '80', False), ('repair-canonical', '8081', False),
+                                    ('bootstrap-worker', '8081', False)]:
+            with self.subTest(mode=mode, port=port):
+                namespace = {'sys': types.SimpleNamespace(argv=['controller', mode, 'label', 'apply', 'gate-name', port]), 'mode': mode}
+                if allowed:
+                    exec(code, namespace)
+                    self.assertEqual(namespace['api_port'], int(port))
+                else:
+                    with self.assertRaises(AssertionError):
+                        exec(code, namespace)
+
     def test_original_source_is_byte_identical(self):
         self.assertEqual(hashlib.sha256(ORIGINAL).hexdigest(), ORIGINAL_SHA)
 

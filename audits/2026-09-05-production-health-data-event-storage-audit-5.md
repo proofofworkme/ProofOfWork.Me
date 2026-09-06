@@ -1245,3 +1245,118 @@ restoration receipts remain untouched. A second newly generated untracked
 bytecode file was removed after exact identity/hash review; no retained data
 or deployment artifact was removed. Production remains on the recovered
 original release with normal monitoring active until the new window starts.
+
+
+### Second controlled window: approved repairs and bootstrap verified
+
+Window2 held the seven documented maintenance timers at 22:02:09 UTC and
+closed the application proxy, worker and API by 22:02:54. The stopped-writer
+before capture passed with zero other database sessions. Core, Electrs,
+PostgreSQL, the WAL receiver and storage monitoring retained their identities.
+The window remained held until execution continued at 23:01; these are actual
+recorded times, not an estimate of active repair duration.
+
+The canonical repair completed at 23:02:05. Its intermediate checks passed:
+six inputs, two outputs, exactly 3,593 input proofs, 3,118 output proofs and
+475 proofs in fees. The five original spend links and every protected parent
+column remained unchanged. Only the separately approved funding parent's three
+spend-link columns were added. The raw OP_RETURN script remains intact; it
+correctly creates no push-only parsed OP_RETURN row.
+
+The metadata repair completed at 23:03:24 and changed exactly the three
+approved invalid-zero records. They remain invalid, zero-valued history.
+At 23:06:41 both the standard and independent exact after-state comparisons
+passed. Economic/event fingerprints, historical authorities and protected
+references were preserved across all stopped phases. The repair invalidated
+138 replaceable derived snapshots; all 29 protected issuance snapshots remain.
+The strict arithmetic audit passed across 23,467 amount-bearing events with
+zero missing precision units, invalid amounts or negative balances.
+
+At 23:07:56 the six original cache files (267,551,527 logical bytes) were
+preserved together under the original directory inode; a fresh canonical
+cache directory was created without copying or deleting those files. The
+private candidate API started as UID/GID 1000, with no supplementary groups
+or capabilities. The one-pass worker completed at 23:10:55, publishing a
+marked canonical summary at block 965,683 and reporting zero unresolved
+observed pending events. Private health and strict post-bootstrap precision
+verification passed. Fresh verification using 23 full-node calls subsequently
+confirmed all four repaired transactions and their approved funding facts.
+
+Ledger and Computer-event audits passed. The first strict parity process
+exited successfully but filled its temporary 16 MiB log allowance, so its
+report is explicitly incomplete evidence. Its unchanged strict check is being
+rerun with a bounded 128 MiB allowance and a controller requirement to parse
+the complete successful strict JSON result. The original report is retained.
+The controller change passed 27 existing launch/scope checks and five complete,
+truncated, non-strict, failed-result and trailing-data cases. At this checkpoint
+application publication, remaining gates, public verification and timer
+restoration are still pending. No additional archive cleanup occurred.
+
+
+### Service restored; remaining release verification continues online
+
+The public API remained closed too long during Window2. The user reported
+application-wide 502 errors and an unavailable AMO summary. This outage was
+caused by the maintenance workflow, not a new chain or arithmetic failure.
+The outstanding parity, ID, marketplace and mail jobs were deliberately stopped
+at 23:18:27 to prioritize recovery. Their terminated attempts are preserved
+and are not passed gates, even where systemd reported the stop as successful.
+The completed ledger, Computer-event and post-bootstrap precision gates remain
+valid evidence for their recorded checkpoints.
+
+The original `6a7d5c12e403` runtime was fully re-attested and restarted at
+23:18:27. Its database/indexer/worker and canonical summary code is unchanged
+from the candidate, so the verified repairs and rebuilt cache were retained;
+no database or cache rollback was needed. The public proxy reopened at
+23:18:53 after full-node-aligned readiness passed at block 965,683. Public AMO
+and Computer health both returned 200 with zero lag at 23:19:14. All seven
+held timers were restored at 23:19:16; Core, Electrs, PostgreSQL and WAL-receiver
+identities remained unchanged. The actual compact AMO summary request returned
+200 with its registry and canonical summary at 23:20:43 (5,107,149 bytes).
+The first non-compact recovery probe exceeded its deliberately small response
+bound; that probe assertion was not an API failure.
+
+No application release exchange or UI publication occurred. Remaining
+unchanged-endpoint contracts are being checked online with the candidate's
+audit scripts against the existing production API. This is qualified separately
+from the prior isolated candidate evidence for changed endpoints. Long audit
+checks and documentation must not prolong a stopped-writer window. The unit
+controller now requires a normal exit in addition to successful complete
+evidence, and supports the existing launcher's loopback-8081 gate mode.
+
+
+### Online gates completed; release remains staged
+
+The full ID audit verified 561 confirmed registry transactions, zero pending
+registry transactions, 535 lifecycle events, six active listings, four canonical
+sales and 505 confirmed winners against exact Core-ordered replay. Mail
+regressions passed for all eight address fixtures and the two history cases.
+The wallet preparation fixture returned 111 confirmed UTXOs totaling 182,699
+proofs without constructing, signing or broadcasting a transaction. The WORK
+participant regression passed after its previously unavailable endpoint
+recovered. The full marketplace gate passed at 23:39:39, covering delistings,
+fresh summaries, sealed listings, sales, wallet scopes and Log close status.
+
+The first online parity failure compared different summary checkpoints across
+a block update with the same reported network value. The second encountered
+unavailable current token projections; subsequent direct requests recovered.
+Both complete failed reports remain retained. With other heavy fresh-summary
+checks finished, strict parity passed at 23:41:40 with a complete 25,555,593-byte
+JSON report. No assertion, readiness limit or protocol rule was weakened.
+Historical inactive V5 migration/USD warnings remain qualified separately from
+the active Q16 protocol.
+
+A second controller compatibility correction distinguishes a collected transient
+unit's reset ExecMainCode from its actual process outcome. The preserved
+systemd-run normal-exit marker plus stopped, bounded complete output is required;
+TERM interruption still refuses. Successful mail, wallet, ID and marketplace
+logs were independently verified with separate evidence reviews, preserving the
+original controller classifications. Thirteen durable namespace/controller tests
+and 27 complete mock launch/scope checks pass.
+
+Fresh UI prepublication inspection at 23:38:53 verified the exact candidate,
+archive, source and retained rollback identities. It found 13,725,884,416 bytes
+free, 2,921,357,312 bytes above the unchanged floor and reserve. No UI or node
+application publication has occurred at this checkpoint. All required gates
+now pass, and production continues serving the original release until the
+brief, separately recorded release switch.

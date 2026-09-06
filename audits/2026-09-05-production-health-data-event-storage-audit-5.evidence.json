@@ -4716,7 +4716,7 @@
     "pushed": false,
     "deployed": false
   },
-  "auditDocumentSha256": "e2196752ba16627553d94aababace77422d373abef366de5f45478b6257eee24",
+  "auditDocumentSha256": "4b1f416eb4621e5f808d66d8cc2f18635e97b272a939dfe318482599f720ba27",
   "orderedSurfaceAudit": {
     "schema": "pow-ordered-read-only-audit-addendum-v1",
     "recordedAt": "2026-09-05T14:00:36.751263+00:00",
@@ -12100,7 +12100,7 @@
     }
   },
   "approvedRemediation": {
-    "status": "approved-funding-parent-prepared-for-controlled-window",
+    "status": "approved-repairs-and-required-gates-passed-ready-for-release",
     "approvedBatches": [
       1,
       2,
@@ -12113,7 +12113,7 @@
       "exact-three-approved-UI-transport-archive-removals"
     ],
     "applicationDeployed": false,
-    "databaseRepairApplied": false,
+    "databaseRepairApplied": true,
     "receipts": {
       "archiveRemoval": {
         "sha256": "f6b7b26fa44196eccc23c27a8ae3b0f0114f970ca09a9f71155395fc29496848",
@@ -38985,6 +38985,229 @@
         "/tmp/pow-approved-window2-20260905/new-bytecode-cleanup.json": {
           "bytes": 425,
           "sha256": "2c5dacfc9f00b073205e0a25594fa1650997897464d387fcf7097491c4cb3a4f"
+        }
+      }
+    },
+    "secondControlledWindow": {
+      "status": "approved-repairs-and-required-gates-passed-ready-for-release",
+      "updatedAt": "2026-09-05T23:17:15.109096+00:00",
+      "captureRoot": "/run/proofofwork-audit5-2ddefac163d5-20260905T180603Z-window2",
+      "maintenanceHeldAt": "2026-09-05T22:02:09Z",
+      "apiStoppedAt": "2026-09-05T22:02:54Z",
+      "canonicalRepairApplied": true,
+      "metadataRecordsRepaired": 3,
+      "standardAndExactAfterPassed": true,
+      "cachePreservedFiles": 6,
+      "cachePreservedBytes": 267551527,
+      "bootstrapHeight": 965683,
+      "freshPostrepairCoreReceiptSha256": "226f58e54736b57421231b317b75cf4429d70eea3406df8a0db314468f90ffed",
+      "firstParityEvidence": "incomplete: log filled16MiB despite process exit0; retained and not accepted as final gate evidence",
+      "completeParityControllerSha256": "b837ed3c9b3106f853bb27f4b0dc51c2db06b2bc641bae97eab1b81c5940d17d",
+      "applicationDeployed": false,
+      "timersRestored": true,
+      "files": {
+        "/tmp/pow-approved-window2-20260905/maintenance-hold.stdout": {
+          "bytes": 205,
+          "sha256": "2530ff6a45ed9e1db21d8f330c3ff5635ad28df1830115aa1c40f010d9cf0e1d"
+        },
+        "/tmp/pow-approved-window2-20260905/repair-before.stdout": {
+          "bytes": 2552,
+          "sha256": "e30797d1bc58b299a398643c0c29b94f87b3bf82391c934befb400a5dab77092"
+        },
+        "/tmp/pow-approved-window2-20260905/canonical-apply.stdout": {
+          "bytes": 1513,
+          "sha256": "97550613d1e68af2fe44b1e8820847dcc2f7899126e38b6439fbd6c6f147e7b4"
+        },
+        "/tmp/pow-approved-window2-20260905/repair-intermediate.stdout": {
+          "bytes": 2769,
+          "sha256": "fa6d01fe1bd7d237a4284d9fcb53a29d241c5cbe87446db704ed55bdd6b9cde9"
+        },
+        "/tmp/pow-approved-window2-20260905/atoms-apply.stdout": {
+          "bytes": 1502,
+          "sha256": "3999ae4ddb8167a1d8f48e81eacab5c7c2e2acf7bc8e1cbc9f852f593802f99d"
+        },
+        "/tmp/pow-approved-window2-20260905/repair-after.stdout": {
+          "bytes": 2949,
+          "sha256": "86d1549364d2d6292d5188df1aa78094bd5aadeeeb1b70aaf6e02f8d2f125579"
+        },
+        "/tmp/pow-approved-window2-20260905/atomic-audit-apply.stdout": {
+          "bytes": 940,
+          "sha256": "13aed475ce76d6a409f049efc597097d957f181fd082a739d86f17f743197de9"
+        },
+        "/tmp/pow-approved-window2-20260905/cache-rotation-apply.stdout": {
+          "bytes": 1214,
+          "sha256": "1d52a8524028736bf68e62ba44b8005c20ccb740347d256178d9e541d057b603"
+        },
+        "/tmp/pow-approved-window2-20260905/bootstrap-api-apply.stdout": {
+          "bytes": 765,
+          "sha256": "07cb19cfcf038dde6a20d89a667dd517f5de2eb50ad6ef9f30826e62200e98f3"
+        },
+        "/tmp/pow-approved-window2-20260905/bootstrap-worker-apply.stdout": {
+          "bytes": 953,
+          "sha256": "154d509a13e1730085168660b9025f259c89a6a7b59984cf80c62c3fcb66e80b"
+        },
+        "/tmp/pow-approved-window2-20260905/postbootstrap-atoms-apply.stdout": {
+          "bytes": 978,
+          "sha256": "64edd23dfb32332bccb98c622f2b4f97b52a450a513135240911b705e03109e0"
+        },
+        "/tmp/pow-approved-window2-20260905/ledger-apply.stdout": {
+          "bytes": 917,
+          "sha256": "6b58fb20c276621a629e2b8f7c6abb04d8ba3bf3ff4e31a933b7f08d2ad72341"
+        },
+        "/tmp/pow-approved-window2-20260905/computer-events-apply.stdout": {
+          "bytes": 957,
+          "sha256": "95209273e3228aa559ea18773e1c4262127131fc78570cc359357c9fe7911341"
+        },
+        "/tmp/pow-approved-window2-20260905/parity-apply.stdout": {
+          "bytes": 930,
+          "sha256": "17d70e8cfffdc00ffa1b1f812ce9d9aa18b02dd75a5ff6d6245f0046e268baa6"
+        },
+        "/tmp/pow-approved-window2-20260905/postrepair-core.stdout": {
+          "bytes": 253,
+          "sha256": "e5a4f91d7dbb2574862de14af425d254209085b11ca5deaca733d759a14025c7"
+        },
+        "/tmp/pow-approved-window2-20260905/restored-public-health.json": {
+          "bytes": 631,
+          "sha256": "9d380bafc428de7040d1dbc1a11ef922526cfe1f0c3692e69402b79ae14beb56"
+        },
+        "/tmp/pow-approved-window2-20260905/restored-amo-summary.json": {
+          "bytes": 682,
+          "sha256": "7b51394721625b7c32698135949b11476196c41a219f8b97c4ea74206eccafd1"
+        },
+        "/tmp/pow-approved-window2-20260905/recovery-timer-restore.stdout": {
+          "bytes": 1897,
+          "sha256": "e1640814a6c971380557752f9e759abfc4631fddd0f2212438a2e6e8b8ae27db"
+        },
+        "/tmp/pow-approved-window2-20260905/parity-complete-apply.stdout": {
+          "bytes": 980,
+          "sha256": "f701a4d30ca479c15f9b58e7f084bb8b7b90190b9f0c746f84671fbd79da50dd"
+        },
+        "/tmp/pow-approved-window2-20260905/ids-apply.stdout": {
+          "bytes": 907,
+          "sha256": "83ddda09f23945d8cb52d9266cf089d8e82c285649fb3b161b3990403c2ad638"
+        },
+        "/tmp/pow-approved-window2-20260905/marketplace-apply.stdout": {
+          "bytes": 953,
+          "sha256": "8660d81e85f5ed73d967b0e13c43a365436f199a85472b32b07ebc36665dffb9"
+        },
+        "/tmp/pow-approved-window2-20260905/mail-apply.stdout": {
+          "bytes": 918,
+          "sha256": "09ffc6aee993468bbe3037acb943b1cbe00ae8b0c1b1379ff8d7484b70f7180b"
+        },
+        "/tmp/pow-approved-window2-20260905/online-parity-apply.stdout": {
+          "bytes": 1020,
+          "sha256": "21dc742684e8941574c1bc2963ceece33765e7144bd64fdd95e1d6d64f496369"
+        },
+        "/tmp/pow-approved-window2-20260905/online-parity2-apply.stdout": {
+          "bytes": 1020,
+          "sha256": "fefc0df0a09d241bf9649efd98ac94ed3fa5fa61c6ffd7c261dc8f9e1b6b75bb"
+        },
+        "/tmp/pow-approved-window2-20260905/online-ids2-apply.stdout": {
+          "bytes": 992,
+          "sha256": "e56a02f9771f47843f984ac2d54226c93b323f0b2f4aeae4c6668102beab89ea"
+        },
+        "/tmp/pow-approved-window2-20260905/online-mail-apply.stdout": {
+          "bytes": 1007,
+          "sha256": "9ef01159d2eab330e85ec5ba0144f922a34907b814aac7c82e15edbae19a6506"
+        },
+        "/tmp/pow-approved-window2-20260905/online-marketplace-apply.stdout": {
+          "bytes": 1043,
+          "sha256": "a97077e44f711af4b59d40def38460e5583622e9af40a5a43f7e78c3b74cfdbd"
+        },
+        "/tmp/pow-approved-window2-20260905/online-work-participant2-apply.stdout": {
+          "bytes": 1051,
+          "sha256": "188696fdc8649a40bb8b59e1373e198c64d3a1d06a2702d70c7c4410e5b6aaa3"
+        },
+        "/tmp/pow-approved-window2-20260905/online-send-prep-apply.stdout": {
+          "bytes": 1018,
+          "sha256": "c5361558cf31cb799a6d87b5f0b7adcb369012719a51595ebf656bfa2b9b7130"
+        },
+        "/tmp/pow-approved-window2-20260905/online-parity3-apply.stdout": {
+          "bytes": 1014,
+          "sha256": "f2004cd86b07725351a384f3e2a38cb049c0d8d68ecfede89e1fcd90cbd2dc98"
+        }
+      },
+      "recovery": {
+        "originalRelease": "6a7d5c12e403e0ddb6247fa2a6865cb70d623a8e",
+        "restartedAt": "2026-09-05T23:18:27Z",
+        "publicProxyOpenedAt": "2026-09-05T23:18:53Z",
+        "publicHealthPassedAt": "2026-09-05T23:19:14Z",
+        "timersRestoredAt": "2026-09-05T23:19:16Z",
+        "amoSummaryPassedAt": "2026-09-05T23:20:43Z",
+        "databaseRollback": false,
+        "cacheRollback": false,
+        "cancelledGates": [
+          "parity-complete-1",
+          "ids-1",
+          "marketplace-1",
+          "mail-1"
+        ],
+        "causeOf502": "public API intentionally closed for maintenance too long",
+        "onlineGateScriptCommit": "2ddefac163d583138129c2527e747b11190a0635",
+        "onlineGateServedCommit": "6a7d5c12e403e0ddb6247fa2a6865cb70d623a8e"
+      },
+      "onlineVerification": {
+        "updatedAt": "2026-09-05T23:41:18.251675+00:00",
+        "scriptCommit": "2ddefac163d583138129c2527e747b11190a0635",
+        "servedCommit": "6a7d5c12e403e0ddb6247fa2a6865cb70d623a8e",
+        "passed": [
+          "audit:ids",
+          "check:mail-regressions",
+          "check:marketplace-regressions:full",
+          "check:work-participant-regression",
+          "check:send-prep-regressions",
+          "indexer:parity"
+        ],
+        "idCounts": {
+          "confirmedTransactions": 561,
+          "pendingTransactions": 0,
+          "lifecycleEvents": 535,
+          "activeListings": 6,
+          "canonicalSales": 4,
+          "registrationAttempts": 522,
+          "confirmedWinners": 505
+        },
+        "walletPreparation": {
+          "confirmedUtxos": 111,
+          "confirmedProofs": "182699",
+          "signing": false,
+          "broadcast": false
+        },
+        "parityPending": false,
+        "parityFailures": [
+          {
+            "unit": "online-parity-1",
+            "error": "marketplace-summary-snapshot-parity: differing snapshots across965684/965685; same reported value",
+            "retainedLogSha256": "b57dfb1ecac5127cafe6d6765834c4118c1bc6207ae0e73d5ba83eff7136d9c5"
+          },
+          {
+            "unit": "online-parity-2",
+            "error": "token/current relational payload and lifecycle temporarily unavailable; follow-up endpoint returned200; third attempt runs after full marketplace gate ends",
+            "retainedLogSha256": "928026eaeb44c03f8287a9f9d3b4ce2938ec1c124e825f367ee03151d859c01e"
+          }
+        ],
+        "controllerCorrection": {
+          "sha256": "5bdb2fa9ef3e3459e2cac98a9c1794d20a3f76b20ae9ba891e7a2762619a03d0",
+          "reason": "Completed transient units may expose ExecMainCode0 after collection. Require the preserved systemd-run normal-exit marker, status0, stopped complete bounded log, and strict parity JSON. TERM and truncated evidence refuse.",
+          "durableNamespaceTests": 13,
+          "fullMockControllerTests": 27,
+          "priorFalseClassificationsPreserved": true
+        },
+        "qualifiedEvidenceReviews": {
+          "online-send-prep-1": "635ecac8569a4aa60b988276355ca52e78c0399d704e62e77c8351085af0c7e0",
+          "online-mail-1": "1e12d34e1758567425daf8a27df8539c0448d17469a34bda51e8f1a803992736",
+          "online-ids-2": "948ec372942b3278127dcd20ddf0e017f8a21b19342fcf9a00dcfeb16454062b",
+          "online-marketplace-1": "f0c0a8ed2077ddfbe8430b4275f4b40297eeaaa0a90d42eaca74c51075bb74ec"
+        },
+        "finalParity": {
+          "at": "2026-09-05T23:41:40Z",
+          "unit": "online-parity-3",
+          "ok": true,
+          "strict": true,
+          "evidenceComplete": true,
+          "logBytes": 25555593,
+          "logSha256": "571d9fd6a2e9eac87409346cd059a0d2715265235c0f5b3601900a44fbb4a8f2",
+          "qualification": "Candidate audit scripts against the existing6a production API; changed candidate endpoints separately verified in prior isolated full-node probe. Historical inactive V5 migration/USD warnings remain distinguished from active Q16 errors."
         }
       }
     }
