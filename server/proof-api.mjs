@@ -3413,6 +3413,74 @@ async function walletScopedPayloadWithIndexedEnrichment(
   return indexedPayload;
 }
 
+async function walletOverlayWithCanonicalWorkSupply(overlay, network) {
+  const workDefinitions = (Array.isArray(overlay?.tokens) ? overlay.tokens : [])
+    .filter((token) => isWorkTokenId(token?.tokenId));
+  if (
+    network !== "livenet" ||
+    !workDefinitions.some(
+      (token) => token.amountStorageModel === WORK_SUBATOM_PROJECTION_MODEL,
+    )
+  ) {
+    return overlay;
+  }
+  const summary = await payloadWithFallbackAfterMs(
+    proofIndexSnapshotPayload(network, "workSummary").catch(() => null),
+    null,
+    Math.min(WALLET_SCOPED_INDEX_WAIT_MS, SUMMARY_PROOF_INDEX_READ_WAIT_MS),
+  );
+  const definitions = (Array.isArray(summary?.token?.tokens)
+    ? summary.token.tokens
+    : []).filter((token) => isWorkTokenId(token?.tokenId));
+  const definition = definitions[0];
+  const confirmedSupplySubatoms = canonicalWorkSubatomsText(
+    definition?.confirmedSupplySubatoms, { allowZero: true },
+  );
+  const pendingSupplySubatoms = canonicalWorkSubatomsText(
+    definition?.pendingSupplySubatoms, { allowZero: true },
+  );
+  if (
+    workDefinitions.length !== 1 || definitions.length !== 1 ||
+    !walletTokenOverlayMatchesPayloadCheckpoint(summary, overlay) ||
+    !walletTokenOverlayMatchesPayloadCheckpoint(summary?.token, overlay) ||
+    definition?.amountStorageModel !== WORK_SUBATOM_PROJECTION_MODEL ||
+    definition?.precisionModel !== WORK_PRECISION_V2_MODEL ||
+    definition?.decimals !== WORK_SUBATOM_DECIMALS ||
+    definition?.unitScale !== WORK_SUBATOM_UNIT_SCALE_TEXT ||
+    typeof definition?.confirmedSupplySubatoms !== "string" ||
+    typeof definition?.pendingSupplySubatoms !== "string" ||
+    !confirmedSupplySubatoms || !pendingSupplySubatoms ||
+    definition.confirmedSupply !== formatWorkSubatoms(confirmedSupplySubatoms) ||
+    definition.pendingSupply !== formatWorkSubatoms(pendingSupplySubatoms) ||
+    BigInt(confirmedSupplySubatoms) + BigInt(pendingSupplySubatoms) >
+      WORK_TOKEN_MAX_SUPPLY_SUBATOMS ||
+    ["confirmedMints", "pendingMints", "holderCount"].some(
+      (key) => !Number.isSafeInteger(definition?.[key]) || definition[key] < 0,
+    )
+  ) {
+    throw freshDataUnavailableError(
+      "Wallet WORK supply requires a matching canonical summary checkpoint.",
+    );
+  }
+  // Definitions alone have no global issuance or holder totals. Preserve
+  // account history and market metrics while binding these global metrics.
+  return {
+    ...overlay,
+    tokens: overlay.tokens.map((token) => isWorkTokenId(token?.tokenId)
+      ? {
+          ...token,
+          confirmedSupply: definition.confirmedSupply,
+          confirmedSupplySubatoms,
+          confirmedMints: definition.confirmedMints,
+          holderCount: definition.holderCount,
+          pendingMints: definition.pendingMints,
+          pendingSupply: definition.pendingSupply,
+          pendingSupplySubatoms,
+        }
+      : token),
+  };
+}
+
 async function proofIndexWalletScopedTokenPayloadForRead(
   network,
   tokenScope,
@@ -3459,7 +3527,7 @@ async function proofIndexWalletScopedTokenPayloadForRead(
     }
   }
   const payload = walletScopedTokenPayloadFromOverlay(
-    overlay,
+    await walletOverlayWithCanonicalWorkSupply(overlay, network),
     network,
     tokenScope,
   );

@@ -41623,6 +41623,1170 @@
           }
         ]
       }
+    },
+    "publicationRecovery": {
+      "status": "summary-recovered-wallet-global-supply-followup-required",
+      "applicationCommit": "39d5454e77f3274a2cd5bef51a76b0f45a579377",
+      "release": "39d5454e77f3-20260908T121810Z",
+      "candidateProbe": {
+        "apiPid": 3004024,
+        "at": "2026-09-08T12:25:00.292280+00:00",
+        "checkpoint": {
+          "block_atomic": true,
+          "closing_q8": "838610445454813924487963741",
+          "complete": true,
+          "fee_once": true,
+          "hash": "000000000000000000007bda3ae91bdd70d9aa406e3fdc19a839fc2fcb320cdc",
+          "height": 966071,
+          "invalid_zero": true,
+          "state_q8": "838610445454813924487963741"
+        },
+        "checks": {
+          "canonical-summary:http200": true,
+          "canonical:all-summary-keys": true,
+          "canonical:checkpoint": true,
+          "canonical:full-node-block": true,
+          "canonical:ledger-consistent": true,
+          "growthSummary:same-checkpoint": true,
+          "inceptionSummary:same-checkpoint": true,
+          "infinitySummary:same-checkpoint": true,
+          "logSummary:same-checkpoint": true,
+          "marketplaceSummary:same-checkpoint": true,
+          "token-summary:ask-rational": false,
+          "token-summary:q16-holder": false,
+          "token-summary:q16-model": false,
+          "token-summary:single-work-top-supply": false,
+          "token-summary:work-pending": false,
+          "token-summary:work-supply": false,
+          "token:ask-rational": false,
+          "token:q16-holder": false,
+          "token:q16-model": false,
+          "token:single-work-top-supply": false,
+          "token:work-pending": false,
+          "token:work-supply": false,
+          "tokenSummary:same-checkpoint": true,
+          "transition:complete-atomic-fee-once-invalid-zero": true,
+          "wallet-token-summary:http200": true,
+          "wallet-token:http200": true,
+          "workFloor:exact-transition-q8": true,
+          "workFloor:same-checkpoint": true,
+          "workSummary:exact-transition-q8": true,
+          "workSummary:same-checkpoint": true
+        },
+        "core": {
+          "checkpointHash": "000000000000000000007bda3ae91bdd70d9aa406e3fdc19a839fc2fcb320cdc",
+          "checkpointHeight": 966071,
+          "tipHeight": 966071
+        },
+        "ledger": {
+          "checks": [
+            {
+              "details": {
+                "activityItems": 25421,
+                "confirmedTokens": 238,
+                "powids": 505
+              },
+              "name": "livenet-confirmed-history-present",
+              "ok": true
+            },
+            {
+              "details": {
+                "confirmedTokenMints": 21875,
+                "confirmedTokens": 238
+              },
+              "name": "token-definitions-cover-confirmed-mints",
+              "ok": true
+            },
+            {
+              "details": {
+                "activityCounts": {
+                  "mints": 21875,
+                  "sales": 74,
+                  "tokens": 235,
+                  "transfers": 211
+                },
+                "missing": [],
+                "ok": true,
+                "stateCounts": {
+                  "mints": 21875,
+                  "sales": 74,
+                  "tokens": 238,
+                  "transfers": 211
+                }
+              },
+              "name": "token-components-cover-confirmed-activity",
+              "ok": true
+            },
+            {
+              "details": {
+                "canonicalActivityCount": 25421,
+                "canonicalConfirmedActivityCount": 25420,
+                "ledgerActivityCount": 25421,
+                "ledgerConfirmedActivityCount": 25420,
+                "ok": true
+              },
+              "name": "canonical-activity-count-matches-public-log",
+              "ok": true
+            },
+            {
+              "details": {
+                "indexedThroughBlock": 966071,
+                "lagBlocks": 0,
+                "maxLagBlocks": 6,
+                "tipHeight": 966071
+              },
+              "name": "ledger-covers-node-tip",
+              "ok": true
+            },
+            {
+              "details": {
+                "canonicalMints": 46,
+                "confirmedIssuanceUnits": "224847713398447926",
+                "confirmedMints": 46,
+                "incbConfirmedSupply": "224847713398447926",
+                "issuanceAccountingModel": "canonical-pre-bond-live-network-value-v2",
+                "issuanceNetworkValueSats": "224847713398447947.9358206"
+              },
+              "name": "inception-live-issuance-matches-incb-supply",
+              "ok": true
+            },
+            {
+              "details": {
+                "confirmedSupply": "224847713398447926",
+                "fixedFloorQ8": "100000000",
+                "fixedFloorSats": "1",
+                "fixedNetworkValueQ8": "22484771339844794793582060",
+                "fixedNetworkValueSats": "224847713398447947.9358206",
+                "issuanceNetworkValueSats": "224847713398447947.9358206",
+                "marketplaceMutationFeeSats": "0",
+                "networkValueAccountingModel": "fixed-incb-issuance-plus-market-flow-v1",
+                "saleVolumeSats": "0",
+                "transferFeeSats": "0"
+              },
+              "name": "inception-fixed-value-reconciles",
+              "ok": true
+            },
+            {
+              "details": {
+                "infinityBondFlowSats": "630496569",
+                "powbConfirmedSupply": "630496569"
+              },
+              "name": "infinity-bond-flow-matches-powb-supply",
+              "ok": true
+            },
+            {
+              "details": {
+                "growthActualValueSats": 8386104454548139000,
+                "growthWorkFloorValueSats": 8386104454548139000,
+                "workActualValueSats": 8386104454548139000,
+                "workNetworkValueSats": 8386104454548139000
+              },
+              "name": "network-values-finite",
+              "ok": true
+            },
+            {
+              "details": {
+                "actualValueSats": 8386104454548139000,
+                "networkValueSats": 8386104454548139000
+              },
+              "name": "work-floor-actual-total",
+              "ok": true
+            },
+            {
+              "details": {
+                "growthValueSats": 8386104454548139000,
+                "workValueSats": 8386104454548139000
+              },
+              "name": "growth-actual-total",
+              "ok": true
+            },
+            {
+              "details": {
+                "growthWorkFloorSats": 8386104454548139000,
+                "workValueSats": 8386104454548139000
+              },
+              "name": "growth-work-floor-total",
+              "ok": true
+            },
+            {
+              "details": {
+                "confirmedMarketplaceMutationFeeSats": 1036308,
+                "legacyBootstrapMarketplaceCarrySats": 546,
+                "marketplaceFeeSats": 1036308,
+                "marketplaceMutationFeeSats": 1036308
+              },
+              "name": "marketplace-mutation-fees-counted",
+              "ok": true
+            },
+            {
+              "details": {
+                "evidence": {
+                  "activeListingCount": 0,
+                  "baseCarryField": "tokenMarketplaceFeeSats",
+                  "baseCarryMode": "published-valid-excludes-carry",
+                  "blockHash": "000000000000000000005a63a2c00834b92746ab0658c9f0c98aeb509724e8f9",
+                  "blockHeight": 959311,
+                  "blockIndex": 2552,
+                  "committedBaseState": {
+                    "browserFlowSats": "0",
+                    "computerEventFlowSats": "506638",
+                    "driveFlowSats": "2730",
+                    "idMarketplaceFeeSats": "14742",
+                    "idMarketplaceVolumeSats": "22000",
+                    "inceptionBondFlowSats": "27932",
+                    "infinityBondFlowSats": "630496569",
+                    "mailFlowSats": "1488476",
+                    "powids": "505",
+                    "tokenCreationFlowSats": "128856",
+                    "tokenMarketplaceFeeSats": "1022112",
+                    "tokenMintFlowSats": "23545075",
+                    "tokenSaleVolumeSats": "9353286",
+                    "tokenTransferFlowSats": "115206"
+                  },
+                  "committedCreditFixedQ8": "4130320500000000",
+                  "complete": true,
+                  "creditFixedQ8": "276200000000",
+                  "creditFixedSats": 2762,
+                  "eventId": 3121341,
+                  "growthValueQ8": "273000000000",
+                  "growthValueSats": 2730,
+                  "listingCount": 1,
+                  "marketplaceMutationFeeSats": 546,
+                  "minerFeeSats": 2216,
+                  "model": "canonical-work-amo-v5-legacy-bootstrap-carry-v1",
+                  "postActivationBaseCarryFields": [],
+                  "postActivationBaseCarryQ8": "0",
+                  "protocolVout": 1,
+                  "publishedBaseNetworkValueQ8": "340213787869567677",
+                  "reasonCode": "work-market-v4-version-required",
+                  "recordOrdinal": 0,
+                  "txid": "5eb0a876603a7551653806b932533dc27a884631a581caa2e36dcf129b8278e8",
+                  "validActivityContributionSats": 0,
+                  "validBaseNetworkValueQ8": "340213787869567677",
+                  "validBaseState": {
+                    "browserFlowSats": "0",
+                    "computerEventFlowSats": "506638",
+                    "driveFlowSats": "2730",
+                    "idMarketplaceFeeSats": "14742",
+                    "idMarketplaceVolumeSats": "22000",
+                    "inceptionBondFlowSats": "27932",
+                    "infinityBondFlowSats": "630496569",
+                    "mailFlowSats": "1488476",
+                    "powids": "505",
+                    "tokenCreationFlowSats": "128856",
+                    "tokenMarketplaceFeeSats": "1021566",
+                    "tokenMintFlowSats": "23545075",
+                    "tokenSaleVolumeSats": "9353286",
+                    "tokenTransferFlowSats": "115206"
+                  },
+                  "validCreditFixedQ8": "4129960200000000",
+                  "validCreditFixedSats": 41299602,
+                  "validMarketplaceMutationFeeSats": 1036308
+                },
+                "indexedThroughBlock": 966071,
+                "model": "canonical-work-amo-v5-legacy-bootstrap-carry-v1"
+              },
+              "name": "work-amo-v5-legacy-bootstrap-carry-proven",
+              "ok": true
+            },
+            {
+              "details": {
+                "marketplaceFlowSats": 10411594,
+                "marketplaceMutationFeeSats": 1036308,
+                "marketplaceSaleVolumeSats": 9375286,
+                "marketplaceSats": 52057970
+              },
+              "name": "marketplace-value-includes-mutation-fees",
+              "ok": true
+            },
+            {
+              "details": {
+                "computerEventFlowSats": 506638,
+                "expectedComputerEventFlowSats": 506638,
+                "marketplaceMutationFeeSats": 1036308
+              },
+              "name": "computer-event-flow-excludes-marketplace",
+              "ok": true
+            },
+            {
+              "details": {
+                "creditEventFrozenValueQ8": "103712640381186938331014044",
+                "creditEventFrozenValueSats": 1037126403811869400,
+                "creditMarketplaceMutationFlowSats": 1031940,
+                "creditMinerFeeFlowSats": 9802992,
+                "creditMovementFrozenValueQ8": "103712640377056617831014044",
+                "creditMovementFrozenValueSats": 1037126403770566100,
+                "creditProofPaymentFlowSats": 21000000,
+                "creditRegistryMutationFlowSats": 111384,
+                "creditSalePaymentFlowSats": 9353286,
+                "legacyBootstrapCreditFixedQ8": "276200000000",
+                "legacyBootstrapCreditFixedSats": 2762,
+                "postActivationCreditFixedQ8": "84100000000",
+                "postActivationCreditFixedSats": 841
+              },
+              "name": "credit-frozen-value-includes-event-components",
+              "ok": true
+            },
+            {
+              "details": {
+                "creditEventLiveValueSats": 8386104451145998000,
+                "creditLiveNetworkValueSats": 8386104451145998000,
+                "creditNetworkValueSats": 8386104451145998000
+              },
+              "name": "credit-live-value-is-active-network-value",
+              "ok": true
+            },
+            {
+              "details": {
+                "missing": 0,
+                "sample": []
+              },
+              "name": "token-events-logged",
+              "ok": true
+            },
+            {
+              "details": {
+                "missing": 0
+              },
+              "name": "token-sales-logged",
+              "ok": true
+            },
+            {
+              "details": {
+                "missing": 0,
+                "seeded": 615
+              },
+              "name": "seeded-mail-events-logged",
+              "ok": true
+            },
+            {
+              "details": {
+                "loggedFlowSats": 27932,
+                "missing": 0,
+                "seeded": 47,
+                "seededFlowSats": 27932
+              },
+              "name": "seeded-inception-bonds-logged",
+              "ok": true
+            },
+            {
+              "details": {
+                "loggedFlowSats": 630496569,
+                "missing": 0,
+                "seeded": 467,
+                "seededFlowSats": 630496569
+              },
+              "name": "seeded-infinity-bonds-logged",
+              "ok": true
+            }
+          ],
+          "indexedThroughBlock": 966071,
+          "indexedThroughBlockHash": "000000000000000000007bda3ae91bdd70d9aa406e3fdc19a839fc2fcb320cdc",
+          "ok": true,
+          "status": "green"
+        },
+        "limitations": [
+          "Core proves checkpoint block membership; monetary state comparison uses canonical replay transitions.",
+          "Optional holder baseline is replay/API evidence, not direct full-node balance proof."
+        ],
+        "mutations": false,
+        "passed": false,
+        "requests": {
+          "canonical-summary": {
+            "bytes": 16405848,
+            "error": null,
+            "seconds": 15.124,
+            "sha256": "a56f458f48f4874097af4929c362549735225d34c410616e663830fa14e0ef56",
+            "status": 200
+          },
+          "wallet-token": {
+            "bytes": 1098,
+            "error": null,
+            "seconds": 8.947,
+            "sha256": "4cbbc7e7d1a6ad2dc0ec26535ffbf04372de5a27373e54e7dd49a680c522f0d8",
+            "status": 200
+          },
+          "wallet-token-summary": {
+            "bytes": 1493,
+            "error": null,
+            "seconds": 0.002,
+            "sha256": "131e3ce9d8e749bbda6409e64116b6a95d1f267b8c2b77471c4fa5c4a53289b8",
+            "status": 200
+          }
+        },
+        "summaryKeys": [
+          "growthSummary",
+          "inceptionSummary",
+          "infinitySummary",
+          "logSummary",
+          "marketplaceSummary",
+          "tokenSummary",
+          "workFloor",
+          "workSummary"
+        ],
+        "token-summaryWorkHolders": {},
+        "tokenWorkHolders": {},
+        "workFloorQ8": "838610445454813924487963741",
+        "workSummaryQ8": "838610445454813924487963741"
+      },
+      "firstCutover": {
+        "at": "2026-09-08T12:36:17.574450+00:00",
+        "release": "39d5454e77f3-20260908T121810Z",
+        "productionWalletVerificationRequired": true,
+        "productionWalletVerified": false,
+        "status": "failed",
+        "error": "KeyError: 'MainPID'",
+        "phase": "preexchange",
+        "recoveryErrors": [],
+        "finishedAt": "2026-09-08T12:36:18.858525+00:00"
+      },
+      "cutover": {
+        "at": "2026-09-08T12:40:01.883857+00:00",
+        "release": "39d5454e77f3-20260908T121810Z",
+        "productionWalletVerificationRequired": true,
+        "productionWalletVerified": false,
+        "published": "published archive=proofofwork-node-release-39d5454-20260908T121810Z.tgz commit=39d5454e77f3274a2cd5bef51a76b0f45a579377 tree=7c568baefd803e87f6e7d8f114679693bd2729e1 runtime_sha256=ece74e8015f89111f6c622cf9ce78c4845d729f42409f08e393bb16656226cf0 sha256=7b5d400565301fd3f96a206af22bc3b186669d674d0a08381579c0708dcef9c4 bytes=87800313",
+        "status": "published-verification-required",
+        "after": {
+          "at": "2026-09-08T12:40:11.686084+00:00",
+          "timers": {
+            "proofofwork-postgres-logical-backup.timer": {
+              "Result": "success",
+              "LoadState": "loaded",
+              "ActiveState": "active",
+              "SubState": "waiting",
+              "UnitFileState": "enabled",
+              "InvocationID": "eb350a450f054ebbba4ac7668e63d933"
+            },
+            "pg_basebackup@16-main.timer": {
+              "Result": "success",
+              "LoadState": "loaded",
+              "ActiveState": "active",
+              "SubState": "waiting",
+              "UnitFileState": "enabled",
+              "InvocationID": "d305393dead44a4483132694f12ee6d1"
+            },
+            "pg_compresswal@16-main.timer": {
+              "Result": "success",
+              "LoadState": "loaded",
+              "ActiveState": "active",
+              "SubState": "waiting",
+              "UnitFileState": "enabled",
+              "InvocationID": "27e776b0b5ab48aeb59d90d63f2cc2cc"
+            },
+            "proofofwork-postgres-query-health.timer": {
+              "Result": "success",
+              "LoadState": "loaded",
+              "ActiveState": "active",
+              "SubState": "running",
+              "UnitFileState": "enabled",
+              "InvocationID": "b933471076e54317921ec83faff00baf"
+            },
+            "proofofwork-cache-prune.timer": {
+              "Result": "success",
+              "LoadState": "loaded",
+              "ActiveState": "active",
+              "SubState": "waiting",
+              "UnitFileState": "enabled",
+              "InvocationID": "683f6b3e49e4486e969030b8f29e5a14"
+            },
+            "proofofwork-node-release-health.timer": {
+              "Result": "success",
+              "LoadState": "loaded",
+              "ActiveState": "active",
+              "SubState": "waiting",
+              "UnitFileState": "enabled",
+              "InvocationID": "43391913ae074b478471f51e7ff4abbe"
+            },
+            "proofofwork-node-release-prune.timer": {
+              "Result": "success",
+              "LoadState": "loaded",
+              "ActiveState": "active",
+              "SubState": "waiting",
+              "UnitFileState": "enabled",
+              "InvocationID": "0aaff94f2adc455ba1d11c692d837432"
+            }
+          },
+          "oneshots": {
+            "proofofwork-postgres-logical-backup.service": {
+              "MainPID": "0",
+              "Result": "success",
+              "NRestarts": "0",
+              "ExecMainStartTimestamp": "Tue 2026-09-08 03:18:55 UTC",
+              "ExecMainCode": "1",
+              "ExecMainStatus": "0",
+              "LoadState": "loaded",
+              "ActiveState": "inactive",
+              "SubState": "dead",
+              "UnitFileState": "static",
+              "InvocationID": "ab2f90ba276d4844ba65d1b5cfb10bec"
+            },
+            "pg_basebackup@16-main.service": {
+              "MainPID": "0",
+              "Result": "success",
+              "NRestarts": "0",
+              "ExecMainStartTimestamp": "Mon 2026-09-07 00:13:45 UTC",
+              "ExecMainCode": "1",
+              "ExecMainStatus": "0",
+              "LoadState": "loaded",
+              "ActiveState": "inactive",
+              "SubState": "dead",
+              "UnitFileState": "static",
+              "InvocationID": "0163f69bb3a7422490fa72509e567f50"
+            },
+            "pg_compresswal@16-main.service": {
+              "MainPID": "0",
+              "Result": "success",
+              "NRestarts": "0",
+              "ExecMainStartTimestamp": "Tue 2026-09-08 00:49:57 UTC",
+              "ExecMainCode": "1",
+              "ExecMainStatus": "0",
+              "LoadState": "loaded",
+              "ActiveState": "inactive",
+              "SubState": "dead",
+              "UnitFileState": "static",
+              "InvocationID": "ab6afbd346204296b732a8c57b72fbae"
+            },
+            "proofofwork-postgres-query-health.service": {
+              "MainPID": "3019739",
+              "Result": "success",
+              "NRestarts": "0",
+              "ExecMainStartTimestamp": "Tue 2026-09-08 12:40:11 UTC",
+              "ExecMainCode": "0",
+              "ExecMainStatus": "0",
+              "LoadState": "loaded",
+              "ActiveState": "activating",
+              "SubState": "start",
+              "UnitFileState": "static",
+              "InvocationID": "f893cfd4d907470e8e06cfd04ff25de6"
+            },
+            "proofofwork-cache-prune.service": {
+              "MainPID": "0",
+              "Result": "success",
+              "NRestarts": "0",
+              "ExecMainStartTimestamp": "Tue 2026-09-08 12:39:15 UTC",
+              "ExecMainCode": "1",
+              "ExecMainStatus": "1",
+              "LoadState": "loaded",
+              "ActiveState": "inactive",
+              "SubState": "dead",
+              "UnitFileState": "static",
+              "InvocationID": "53ab20f07a7943e5a66a06bcf675020b"
+            },
+            "proofofwork-node-release-health.service": {
+              "MainPID": "0",
+              "Result": "exit-code",
+              "NRestarts": "0",
+              "ExecMainStartTimestamp": "Tue 2026-09-08 04:28:15 UTC",
+              "ExecMainCode": "1",
+              "ExecMainStatus": "2",
+              "LoadState": "loaded",
+              "ActiveState": "failed",
+              "SubState": "failed",
+              "UnitFileState": "static",
+              "InvocationID": "6ac3a380404f47d88c138da3ffa68e12"
+            },
+            "proofofwork-node-release-prune.service": {
+              "MainPID": "0",
+              "Result": "success",
+              "NRestarts": "0",
+              "ExecMainStartTimestamp": "Tue 2026-09-08 00:14:20 UTC",
+              "ExecMainCode": "1",
+              "ExecMainStatus": "0",
+              "LoadState": "loaded",
+              "ActiveState": "inactive",
+              "SubState": "dead",
+              "UnitFileState": "static",
+              "InvocationID": "5380112288d547ae98dfd3f580fd4b9b"
+            }
+          },
+          "keep": {
+            "bitcoind.service": {
+              "MainPID": "282028",
+              "Result": "success",
+              "NRestarts": "0",
+              "ExecMainStartTimestamp": "Sun 2026-08-23 17:04:50 UTC",
+              "ExecMainCode": "0",
+              "ExecMainStatus": "0",
+              "LoadState": "loaded",
+              "ActiveState": "active",
+              "SubState": "running",
+              "UnitFileState": "enabled",
+              "InvocationID": "9f845f5aa5904ca9bcd5f5987c3b6ba4"
+            },
+            "electrs.service": {
+              "MainPID": "282210",
+              "Result": "success",
+              "NRestarts": "0",
+              "ExecMainStartTimestamp": "Sun 2026-08-23 17:04:59 UTC",
+              "ExecMainCode": "0",
+              "ExecMainStatus": "0",
+              "LoadState": "loaded",
+              "ActiveState": "active",
+              "SubState": "running",
+              "UnitFileState": "enabled",
+              "InvocationID": "45e3328de0764897bc873cdc5649cf84"
+            },
+            "postgresql@16-main.service": {
+              "MainPID": "3612661",
+              "Result": "success",
+              "NRestarts": "0",
+              "ExecMainStartTimestamp": "Thu 2026-09-03 06:51:01 UTC",
+              "ExecMainCode": "0",
+              "ExecMainStatus": "0",
+              "LoadState": "loaded",
+              "ActiveState": "active",
+              "SubState": "running",
+              "UnitFileState": "enabled-runtime",
+              "InvocationID": "c27fa7af11534ae6ba9d83dcb13f3cc2"
+            },
+            "pg_receivewal@16-main.service": {
+              "MainPID": "2922786",
+              "Result": "success",
+              "NRestarts": "0",
+              "ExecMainStartTimestamp": "Wed 2026-09-02 06:49:08 UTC",
+              "ExecMainCode": "0",
+              "ExecMainStatus": "0",
+              "LoadState": "loaded",
+              "ActiveState": "active",
+              "SubState": "running",
+              "UnitFileState": "enabled",
+              "InvocationID": "3134e68d2b02479e8506de49dddbd52a"
+            }
+          }
+        },
+        "phase": "new-proven",
+        "recoveryErrors": [],
+        "finishedAt": "2026-09-08T12:40:11.735950+00:00"
+      },
+      "productionProbe": {
+        "apiPid": 3018208,
+        "apiPort": 8081,
+        "at": "2026-09-08T12:41:09.920631+00:00",
+        "checkpoint": {
+          "block_atomic": true,
+          "closing_q8": "838610445454813924487963741",
+          "complete": true,
+          "fee_once": true,
+          "hash": "0000000000000000000010a13e060a135f4f80e574efec4f0f008767dc1e281a",
+          "height": 966074,
+          "invalid_zero": true,
+          "state_q8": "838610445454813924487963741",
+          "wallet_work_rows": [
+            {
+              "address": "19JE7LS6TtQ4uSxu6ivJVZRiJyXXe8qEG3",
+              "amount_model": "work-subatoms-v2",
+              "confirmed_subatoms": "10000000000000000",
+              "decimals": "16",
+              "pending_delta_subatoms": "0",
+              "unit_scale": "10000000000000000"
+            }
+          ]
+        },
+        "checks": {
+          "canonical-summary:http200": true,
+          "canonical:all-summary-keys": true,
+          "canonical:checkpoint": true,
+          "canonical:exact-current-tip": true,
+          "canonical:full-node-block": true,
+          "canonical:full-node-synced": true,
+          "canonical:ledger-consistent": true,
+          "canonical:transition-internal-q8": true,
+          "canonical:work-global-supply": true,
+          "growthSummary:same-checkpoint": true,
+          "inceptionSummary:same-checkpoint": true,
+          "infinitySummary:same-checkpoint": true,
+          "logSummary:same-checkpoint": true,
+          "marketplaceSummary:same-checkpoint": true,
+          "token-summary:ask-binds-visible-listing": true,
+          "token-summary:ask-exact-alias": true,
+          "token-summary:ask-rational": true,
+          "token-summary:authoritative-wallet": true,
+          "token-summary:checkpoint-identity": true,
+          "token-summary:confirmed-holder-matches-db": true,
+          "token-summary:full-node-exact-tip": true,
+          "token-summary:holder-q16-aliases:19JE7LS6TtQ4uSxu6ivJVZRiJyXXe8qEG3": true,
+          "token-summary:one-work-definition": true,
+          "token-summary:pending-holder-matches-db": true,
+          "token-summary:q16-model": true,
+          "token-summary:same-db-checkpoint": true,
+          "token-summary:single-work-top-supply": true,
+          "token-summary:work-global-supply": false,
+          "token-summary:work-supply-aliases": true,
+          "token:ask-binds-visible-listing": true,
+          "token:ask-exact-alias": true,
+          "token:ask-rational": true,
+          "token:authoritative-wallet": true,
+          "token:checkpoint-identity": true,
+          "token:confirmed-holder-matches-db": true,
+          "token:full-node-exact-tip": true,
+          "token:holder-q16-aliases:19JE7LS6TtQ4uSxu6ivJVZRiJyXXe8qEG3": true,
+          "token:one-work-definition": true,
+          "token:pending-holder-matches-db": true,
+          "token:q16-model": true,
+          "token:same-db-checkpoint": true,
+          "token:single-work-top-supply": true,
+          "token:work-global-supply": false,
+          "token:work-supply-aliases": true,
+          "tokenSummary:same-checkpoint": true,
+          "transition:complete-atomic-fee-once-invalid-zero": true,
+          "wallet-db:one-q16-fixture-holder": true,
+          "wallet-token-summary:http200": true,
+          "wallet-token:http200": true,
+          "wallet:endpoint-checkpoints-match": true,
+          "wallet:endpoint-confirmed-holders-match": true,
+          "workFloor:exact-transition-q8": true,
+          "workFloor:same-checkpoint": true,
+          "workSummary:exact-transition-q8": true,
+          "workSummary:same-checkpoint": true
+        },
+        "core": {
+          "checkpointHash": "0000000000000000000010a13e060a135f4f80e574efec4f0f008767dc1e281a",
+          "checkpointHeight": 966074,
+          "initialBlockDownload": false,
+          "tipHash": "0000000000000000000010a13e060a135f4f80e574efec4f0f008767dc1e281a",
+          "tipHeight": 966074
+        },
+        "ledger": {
+          "checks": [
+            {
+              "details": {
+                "activityItems": 25421,
+                "confirmedTokens": 238,
+                "powids": 505
+              },
+              "name": "livenet-confirmed-history-present",
+              "ok": true
+            },
+            {
+              "details": {
+                "confirmedTokenMints": 21875,
+                "confirmedTokens": 238
+              },
+              "name": "token-definitions-cover-confirmed-mints",
+              "ok": true
+            },
+            {
+              "details": {
+                "activityCounts": {
+                  "mints": 21875,
+                  "sales": 74,
+                  "tokens": 235,
+                  "transfers": 211
+                },
+                "missing": [],
+                "ok": true,
+                "stateCounts": {
+                  "mints": 21875,
+                  "sales": 74,
+                  "tokens": 238,
+                  "transfers": 211
+                }
+              },
+              "name": "token-components-cover-confirmed-activity",
+              "ok": true
+            },
+            {
+              "details": {
+                "canonicalActivityCount": 25421,
+                "canonicalConfirmedActivityCount": 25420,
+                "ledgerActivityCount": 25421,
+                "ledgerConfirmedActivityCount": 25420,
+                "ok": true
+              },
+              "name": "canonical-activity-count-matches-public-log",
+              "ok": true
+            },
+            {
+              "details": {
+                "indexedThroughBlock": 966074,
+                "lagBlocks": 0,
+                "maxLagBlocks": 6,
+                "tipHeight": 966074
+              },
+              "name": "ledger-covers-node-tip",
+              "ok": true
+            },
+            {
+              "details": {
+                "canonicalMints": 46,
+                "confirmedIssuanceUnits": "224847713398447926",
+                "confirmedMints": 46,
+                "incbConfirmedSupply": "224847713398447926",
+                "issuanceAccountingModel": "canonical-pre-bond-live-network-value-v2",
+                "issuanceNetworkValueSats": "224847713398447947.9358206"
+              },
+              "name": "inception-live-issuance-matches-incb-supply",
+              "ok": true
+            },
+            {
+              "details": {
+                "confirmedSupply": "224847713398447926",
+                "fixedFloorQ8": "100000000",
+                "fixedFloorSats": "1",
+                "fixedNetworkValueQ8": "22484771339844794793582060",
+                "fixedNetworkValueSats": "224847713398447947.9358206",
+                "issuanceNetworkValueSats": "224847713398447947.9358206",
+                "marketplaceMutationFeeSats": "0",
+                "networkValueAccountingModel": "fixed-incb-issuance-plus-market-flow-v1",
+                "saleVolumeSats": "0",
+                "transferFeeSats": "0"
+              },
+              "name": "inception-fixed-value-reconciles",
+              "ok": true
+            },
+            {
+              "details": {
+                "infinityBondFlowSats": "630496569",
+                "powbConfirmedSupply": "630496569"
+              },
+              "name": "infinity-bond-flow-matches-powb-supply",
+              "ok": true
+            },
+            {
+              "details": {
+                "growthActualValueSats": 8386104454548139000,
+                "growthWorkFloorValueSats": 8386104454548139000,
+                "workActualValueSats": 8386104454548139000,
+                "workNetworkValueSats": 8386104454548139000
+              },
+              "name": "network-values-finite",
+              "ok": true
+            },
+            {
+              "details": {
+                "actualValueSats": 8386104454548139000,
+                "networkValueSats": 8386104454548139000
+              },
+              "name": "work-floor-actual-total",
+              "ok": true
+            },
+            {
+              "details": {
+                "growthValueSats": 8386104454548139000,
+                "workValueSats": 8386104454548139000
+              },
+              "name": "growth-actual-total",
+              "ok": true
+            },
+            {
+              "details": {
+                "growthWorkFloorSats": 8386104454548139000,
+                "workValueSats": 8386104454548139000
+              },
+              "name": "growth-work-floor-total",
+              "ok": true
+            },
+            {
+              "details": {
+                "confirmedMarketplaceMutationFeeSats": 1036308,
+                "legacyBootstrapMarketplaceCarrySats": 546,
+                "marketplaceFeeSats": 1036308,
+                "marketplaceMutationFeeSats": 1036308
+              },
+              "name": "marketplace-mutation-fees-counted",
+              "ok": true
+            },
+            {
+              "details": {
+                "evidence": {
+                  "activeListingCount": 0,
+                  "baseCarryField": "tokenMarketplaceFeeSats",
+                  "baseCarryMode": "published-valid-excludes-carry",
+                  "blockHash": "000000000000000000005a63a2c00834b92746ab0658c9f0c98aeb509724e8f9",
+                  "blockHeight": 959311,
+                  "blockIndex": 2552,
+                  "committedBaseState": {
+                    "browserFlowSats": "0",
+                    "computerEventFlowSats": "506638",
+                    "driveFlowSats": "2730",
+                    "idMarketplaceFeeSats": "14742",
+                    "idMarketplaceVolumeSats": "22000",
+                    "inceptionBondFlowSats": "27932",
+                    "infinityBondFlowSats": "630496569",
+                    "mailFlowSats": "1488476",
+                    "powids": "505",
+                    "tokenCreationFlowSats": "128856",
+                    "tokenMarketplaceFeeSats": "1022112",
+                    "tokenMintFlowSats": "23545075",
+                    "tokenSaleVolumeSats": "9353286",
+                    "tokenTransferFlowSats": "115206"
+                  },
+                  "committedCreditFixedQ8": "4130320500000000",
+                  "complete": true,
+                  "creditFixedQ8": "276200000000",
+                  "creditFixedSats": 2762,
+                  "eventId": 3121341,
+                  "growthValueQ8": "273000000000",
+                  "growthValueSats": 2730,
+                  "listingCount": 1,
+                  "marketplaceMutationFeeSats": 546,
+                  "minerFeeSats": 2216,
+                  "model": "canonical-work-amo-v5-legacy-bootstrap-carry-v1",
+                  "postActivationBaseCarryFields": [],
+                  "postActivationBaseCarryQ8": "0",
+                  "protocolVout": 1,
+                  "publishedBaseNetworkValueQ8": "340213787869567677",
+                  "reasonCode": "work-market-v4-version-required",
+                  "recordOrdinal": 0,
+                  "txid": "5eb0a876603a7551653806b932533dc27a884631a581caa2e36dcf129b8278e8",
+                  "validActivityContributionSats": 0,
+                  "validBaseNetworkValueQ8": "340213787869567677",
+                  "validBaseState": {
+                    "browserFlowSats": "0",
+                    "computerEventFlowSats": "506638",
+                    "driveFlowSats": "2730",
+                    "idMarketplaceFeeSats": "14742",
+                    "idMarketplaceVolumeSats": "22000",
+                    "inceptionBondFlowSats": "27932",
+                    "infinityBondFlowSats": "630496569",
+                    "mailFlowSats": "1488476",
+                    "powids": "505",
+                    "tokenCreationFlowSats": "128856",
+                    "tokenMarketplaceFeeSats": "1021566",
+                    "tokenMintFlowSats": "23545075",
+                    "tokenSaleVolumeSats": "9353286",
+                    "tokenTransferFlowSats": "115206"
+                  },
+                  "validCreditFixedQ8": "4129960200000000",
+                  "validCreditFixedSats": 41299602,
+                  "validMarketplaceMutationFeeSats": 1036308
+                },
+                "indexedThroughBlock": 966074,
+                "model": "canonical-work-amo-v5-legacy-bootstrap-carry-v1"
+              },
+              "name": "work-amo-v5-legacy-bootstrap-carry-proven",
+              "ok": true
+            },
+            {
+              "details": {
+                "marketplaceFlowSats": 10411594,
+                "marketplaceMutationFeeSats": 1036308,
+                "marketplaceSaleVolumeSats": 9375286,
+                "marketplaceSats": 52057970
+              },
+              "name": "marketplace-value-includes-mutation-fees",
+              "ok": true
+            },
+            {
+              "details": {
+                "computerEventFlowSats": 506638,
+                "expectedComputerEventFlowSats": 506638,
+                "marketplaceMutationFeeSats": 1036308
+              },
+              "name": "computer-event-flow-excludes-marketplace",
+              "ok": true
+            },
+            {
+              "details": {
+                "creditEventFrozenValueQ8": "103712640381186938331014044",
+                "creditEventFrozenValueSats": 1037126403811869400,
+                "creditMarketplaceMutationFlowSats": 1031940,
+                "creditMinerFeeFlowSats": 9802992,
+                "creditMovementFrozenValueQ8": "103712640377056617831014044",
+                "creditMovementFrozenValueSats": 1037126403770566100,
+                "creditProofPaymentFlowSats": 21000000,
+                "creditRegistryMutationFlowSats": 111384,
+                "creditSalePaymentFlowSats": 9353286,
+                "legacyBootstrapCreditFixedQ8": "276200000000",
+                "legacyBootstrapCreditFixedSats": 2762,
+                "postActivationCreditFixedQ8": "84100000000",
+                "postActivationCreditFixedSats": 841
+              },
+              "name": "credit-frozen-value-includes-event-components",
+              "ok": true
+            },
+            {
+              "details": {
+                "creditEventLiveValueSats": 8386104451145998000,
+                "creditLiveNetworkValueSats": 8386104451145998000,
+                "creditNetworkValueSats": 8386104451145998000
+              },
+              "name": "credit-live-value-is-active-network-value",
+              "ok": true
+            },
+            {
+              "details": {
+                "missing": 0,
+                "sample": []
+              },
+              "name": "token-events-logged",
+              "ok": true
+            },
+            {
+              "details": {
+                "missing": 0
+              },
+              "name": "token-sales-logged",
+              "ok": true
+            },
+            {
+              "details": {
+                "missing": 0,
+                "seeded": 615
+              },
+              "name": "seeded-mail-events-logged",
+              "ok": true
+            },
+            {
+              "details": {
+                "loggedFlowSats": 27932,
+                "missing": 0,
+                "seeded": 47,
+                "seededFlowSats": 27932
+              },
+              "name": "seeded-inception-bonds-logged",
+              "ok": true
+            },
+            {
+              "details": {
+                "loggedFlowSats": 630496569,
+                "missing": 0,
+                "seeded": 467,
+                "seededFlowSats": 630496569
+              },
+              "name": "seeded-infinity-bonds-logged",
+              "ok": true
+            }
+          ],
+          "indexedThroughBlock": 966074,
+          "indexedThroughBlockHash": "0000000000000000000010a13e060a135f4f80e574efec4f0f008767dc1e281a",
+          "ok": true,
+          "status": "green"
+        },
+        "limitations": [
+          "Core proves checkpoint block membership; monetary state comparison uses canonical replay transitions.",
+          "Current holder comparison uses indexed balances; Core checkpoint checks do not independently replay every transfer.",
+          "Pending deltas are best-effort indexed mempool evidence, not confirmed balance.",
+          "A block or mempool change during sequential probes can make checks inconclusive; inspect evidence before treating a mismatch as a regression.",
+          "Optional historical baseline differences are reported separately; legitimate later transfers may change balances."
+        ],
+        "mutations": false,
+        "passed": false,
+        "requests": {
+          "canonical-summary": {
+            "bytes": 16405852,
+            "error": null,
+            "seconds": 17.628,
+            "sha256": "be33e5d1e4a88953776c156faf430abf995babac13c414a87c6ff70c9c794eb4",
+            "status": 200
+          },
+          "wallet-token": {
+            "bytes": 5156774,
+            "error": null,
+            "seconds": 1.145,
+            "sha256": "7723efe7cbf0ec63d9cc413f7601530e6441718b713d6e39c7573683b392a38b",
+            "status": 200
+          },
+          "wallet-token-summary": {
+            "bytes": 5149419,
+            "error": null,
+            "seconds": 0.14,
+            "sha256": "a7f4bb2d33fad7f5e3a3bec156a7ca3259a01d8c8abcb50f835d1524b44f32c2",
+            "status": 200
+          }
+        },
+        "summaryKeys": [
+          "growthSummary",
+          "inceptionSummary",
+          "infinitySummary",
+          "logSummary",
+          "marketplaceSummary",
+          "tokenSummary",
+          "workFloor",
+          "workSummary"
+        ],
+        "token-summaryCore": {
+          "initialBlockDownload": false,
+          "tipHash": "0000000000000000000010a13e060a135f4f80e574efec4f0f008767dc1e281a",
+          "tipHeight": 966074
+        },
+        "token-summaryWallet": {
+          "authoritativeWallet": true,
+          "checkpointComplete": true,
+          "indexedThroughBlock": 966074,
+          "indexedThroughBlockHash": "0000000000000000000010a13e060a135f4f80e574efec4f0f008767dc1e281a",
+          "snapshotId": "188f79e61a37fb0df6162692",
+          "source": "proof-indexer-wallet-token-overlay+proof-indexer-wallet-address-state",
+          "sourceHashes": {
+            "blockScan": "0000000000000000000010a13e060a135f4f80e574efec4f0f008767dc1e281a"
+          },
+          "walletScoped": true
+        },
+        "token-summaryWorkHolders": {
+          "19JE7LS6TtQ4uSxu6ivJVZRiJyXXe8qEG3": "10000000000000000"
+        },
+        "token-summaryWorkPendingDeltas": {
+          "19JE7LS6TtQ4uSxu6ivJVZRiJyXXe8qEG3": "0"
+        },
+        "token-summaryWorkSupply": {
+          "confirmedSubatoms": "0",
+          "pendingSubatoms": "0"
+        },
+        "tokenCore": {
+          "initialBlockDownload": false,
+          "tipHash": "0000000000000000000010a13e060a135f4f80e574efec4f0f008767dc1e281a",
+          "tipHeight": 966074
+        },
+        "tokenWallet": {
+          "authoritativeWallet": true,
+          "checkpointComplete": true,
+          "indexedThroughBlock": 966074,
+          "indexedThroughBlockHash": "0000000000000000000010a13e060a135f4f80e574efec4f0f008767dc1e281a",
+          "snapshotId": "188f79e61a37fb0df6162692",
+          "source": "proof-indexer-wallet-token-overlay+proof-indexer-wallet-address-state",
+          "sourceHashes": {
+            "blockScan": "0000000000000000000010a13e060a135f4f80e574efec4f0f008767dc1e281a"
+          },
+          "walletScoped": true
+        },
+        "tokenWorkHolders": {
+          "19JE7LS6TtQ4uSxu6ivJVZRiJyXXe8qEG3": "10000000000000000"
+        },
+        "tokenWorkPendingDeltas": {
+          "19JE7LS6TtQ4uSxu6ivJVZRiJyXXe8qEG3": "0"
+        },
+        "tokenWorkSupply": {
+          "confirmedSubatoms": "0",
+          "pendingSubatoms": "0"
+        },
+        "workFloorQ8": "838610445454813924487963741",
+        "workSummaryQ8": "838610445454813924487963741"
+      },
+      "readiness": {
+        "available": true,
+        "indexedAt": "2026-09-08T12:41:31.642Z",
+        "indexedThroughBlock": 966074,
+        "lagBlocks": 0,
+        "ok": true,
+        "ready": true,
+        "tipHeight": 966074
+      },
+      "receipts": {
+        "candidate-report-1.json": {
+          "bytes": 13025,
+          "sha256": "d12ef75df4ccc514f7ff9edbbf9800c01cbba4be912ffe3c313dfca1bf59aee8"
+        },
+        "cutover-result-1.json": {
+          "bytes": 7302,
+          "sha256": "302c389eaa955ada6367573b919e3f11a857d0b532b343491b2e354510b2c5a5"
+        },
+        "cutover-result-2.json": {
+          "bytes": 7652,
+          "sha256": "19ebe7adfe657a2ac01049299eca37743815813cb3bd7e9d529c451f531e0471"
+        },
+        "production-probe-1.json": {
+          "bytes": 16902,
+          "sha256": "22428c9821cb246a56583ef4b8a3ababaa0501c838d7f95c7ec3381404dce5eb"
+        },
+        "health-after-publication.json": {
+          "bytes": 11053,
+          "sha256": "3cddbd087da3f6ad5fe2371dc055e9f74d770f24857ead295d80619bc5cb2977"
+        }
+      },
+      "additionalDataRepairs": false,
+      "deletions": false,
+      "browserVerification": "unavailable; browser discovery returned no browsers"
     }
   }
 }

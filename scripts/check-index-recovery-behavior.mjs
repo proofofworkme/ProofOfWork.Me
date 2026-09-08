@@ -2122,6 +2122,148 @@ check("unscoped wallet summaries preserve global Q16 supply and normalize the en
   assert.equal(mixed.tokens[1].confirmedSupply, 123);
   assert.equal(mixed.tokens[1].holderCount, 5);
 });
+check("authoritative wallet definitions bind global WORK supply before normalization", async () => {
+  // Captured production-probe-1 at the Core-verified checkpoint, Sep 8 2026.
+  // Canonical-summary SHA256: be33e5d1e4a88953776c156faf430abf995babac13c414a87c6ff70c9c794eb4.
+  const blockHash = "0000000000000000000010a13e060a135f4f80e574efec4f0f008767dc1e281a";
+  const checkpoint = {
+    indexedThroughBlock: 966074,
+    indexedThroughBlockHash: blockHash,
+    snapshotId: "188f79e61a37fb0df6162692",
+    checkpointComplete: true,
+    sourceHashes: { blockScan: blockHash },
+  };
+  const overlay = {
+    ...checkpoint, network: "livenet", source: "proof-indexer-wallet-token-overlay",
+    tokens: [{ tokenId: WORK_TOKEN_ID, ticker: "WORK",
+      amountStorageModel: WORK_SUBATOM_PROJECTION_MODEL,
+      precisionModel: WORK_PRECISION_V2_MODEL, decimals: 16,
+      unitScale: WORK_SUBATOM_UNIT_SCALE_TEXT,
+      confirmedSupply: "0", confirmedSupplySubatoms: "0",
+      pendingSupply: "0", pendingSupplySubatoms: "0",
+      confirmedMints: 0, pendingMints: 0, holderCount: 1,
+      lowestAskPricePerToken: "333764839648.7039084874697857",
+      lowestAskPricePerTokenExact: { amountSubatoms: "749030366" } }],
+    holders: [{ address: "wallet", tokenId: WORK_TOKEN_ID,
+      balance: "1", balanceSubatoms: "10000000000000000",
+      pendingDelta: "0", pendingDeltaSubatoms: "0" }],
+    listings: [{ listingId: "wallet-listing", amountSubatoms: "749030366" }],
+    transfers: [], sales: [], closedListings: [], invalidEvents: [],
+  };
+  const summaryCheckpoint = {
+    network: "livenet", indexedThroughBlock: 966074,
+    indexedThroughBlockHash: blockHash, snapshotId: "74e769198f653690691776bd",
+  };
+  const published = {
+    ...summaryCheckpoint,
+    token: { ...summaryCheckpoint,
+      confirmedSupply: "21000000", confirmedSupplySubatoms: "210000000000000000000000",
+      pendingSupply: 0, pendingSupplySubatoms: "0",
+      tokens: [{ ...overlay.tokens[0],
+      confirmedSupply: "21000000", confirmedSupplySubatoms: "210000000000000000000000",
+      confirmedMints: 21000, pendingMints: 0, holderCount: 355,
+      lowestAskPricePerToken: "global-market-price-must-not-replace-wallet-price" }] },
+  };
+  let summary = published;
+  let reads = 0;
+  const walletTokenOverlayHasExactCheckpoint = isolatedFunction(API_PATH, "walletTokenOverlayHasExactCheckpoint");
+  const walletTokenOverlayMatchesPayloadCheckpoint = isolatedFunction(API_PATH, "walletTokenOverlayMatchesPayloadCheckpoint", {
+    walletTokenOverlayHasExactCheckpoint,
+    proofIndexPayloadIndexedThroughBlock: (payload) => Number(payload?.indexedThroughBlock ?? 0),
+  });
+  const bind = isolatedFunction(API_PATH, "walletOverlayWithCanonicalWorkSupply", {
+    WALLET_SCOPED_INDEX_WAIT_MS: 1000, SUMMARY_PROOF_INDEX_READ_WAIT_MS: 45000,
+    freshDataUnavailableError: (message) => new Error(message),
+    payloadWithFallbackAfterMs: async (pending, fallback, timeout) => {
+      assert.equal(fallback, null); assert.equal(timeout, 1000); return pending;
+    },
+    proofIndexSnapshotPayload: async (network, key) => {
+      assert.equal(network, "livenet"); assert.equal(key, "workSummary");
+      reads += 1; return summary;
+    },
+    walletTokenOverlayMatchesPayloadCheckpoint,
+  });
+  const walletScopedWorkSupplySubatoms = isolatedFunction(API_PATH, "walletScopedWorkSupplySubatoms");
+  const walletScopedWorkTokenWithQ16Supply = isolatedFunction(API_PATH, "walletScopedWorkTokenWithQ16Supply", {
+    walletScopedWorkSupplySubatoms,
+    canonicalWorkTokenDefinition: () => ({ tokenId: WORK_TOKEN_ID, ticker: "WORK" }),
+  });
+  const normalize = isolatedFunction(API_PATH, "walletScopedWorkPayloadWithQ16Supply", {
+    normalizeTokenScope: (value) => String(value ?? "").toLowerCase(), walletScopedWorkTokenWithQ16Supply,
+  });
+  const fromOverlay = isolatedFunction(API_PATH, "walletScopedTokenPayloadFromOverlay", {
+    mergeTokenStateItemsByKey: (base, incoming) => [...base, ...incoming],
+    mergedSourceLabel: (...values) => values.join("+"),
+    normalizeTokenScope: (value) => String(value ?? "").toLowerCase(),
+    numericValue: (value) => Number(value) || 0,
+    tokenClosedListingItemKey: (item) => item.listingId,
+    tokenListingItemKey: (item) => item.listingId,
+    tokenSaleItemKey: (item) => item.txid,
+    walletTokenPayloadWithCanonicalDefinitions: (payload) => payload,
+    walletScopedWorkPayloadWithQ16Supply: normalize,
+  });
+  const read = isolatedFunction(API_PATH, "proofIndexWalletScopedTokenPayloadForRead", {
+    proofIndexReadFeatureEnabled: () => true,
+    proofIndexWalletTokenOverlayPayload: async () => overlay,
+    walletTokenOverlayHasExactCheckpoint,
+    walletOverlayWithCanonicalWorkSupply: bind,
+    walletScopedTokenPayloadFromOverlay: fromOverlay,
+    walletTokenPayloadMissingDefinitions: () => [],
+  });
+  const before = JSON.stringify({ overlay, published });
+  for (const scope of ["", WORK_TOKEN_ID]) {
+    const result = await read("livenet", scope, ["wallet"], "wallet-regression");
+    assert.equal(result.confirmedSupplySubatoms, "210000000000000000000000");
+    assert.equal(result.confirmedSupply, "21000000");
+    assert.equal(result.pendingSupplySubatoms, "0");
+    assert.equal(result.tokens[0].confirmedSupplySubatoms, result.confirmedSupplySubatoms);
+    assert.equal(result.tokens[0].confirmedMints, 21000);
+    assert.equal(result.tokens[0].pendingMints, 0);
+    assert.equal(result.tokens[0].holderCount, 355);
+    assert.equal(result.holders.length, 1);
+    assert.equal(result.stats.holders, 1);
+    assert.equal(result.tokens[0].lowestAskPricePerToken, overlay.tokens[0].lowestAskPricePerToken);
+    assert.equal(JSON.stringify(result.holders), JSON.stringify(overlay.holders));
+    assert.equal(JSON.stringify(result.listings), JSON.stringify(overlay.listings));
+  }
+  assert.equal(reads, 2);
+  assert.equal(JSON.stringify({ overlay, published }), before);
+  const mixed = { ...overlay, tokens: [...overlay.tokens, { tokenId: "a".repeat(64), confirmedSupply: 123 }] };
+  const bound = await bind(mixed, "livenet");
+  assert.equal(bound.tokens[1], mixed.tokens[1]);
+  assert.equal(bound.holders, mixed.holders);
+  assert.equal(bound.listings, mixed.listings);
+  for (const mutate of [
+    (value) => { value.indexedThroughBlock -= 1; },
+    (value) => { value.indexedThroughBlockHash = "2".repeat(64); },
+    (value) => { value.token.indexedThroughBlock -= 1; },
+    (value) => { value.token.indexedThroughBlockHash = "2".repeat(64); },
+    (value) => { delete value.token.tokens[0].confirmedSupplySubatoms; },
+    (value) => { value.token.tokens[0].confirmedSupply = "0"; },
+    (value) => { value.token.tokens[0].pendingSupplySubatoms = "bad"; },
+    (value) => { value.token.tokens[0].pendingSupplySubatoms = 0; },
+    (value) => { value.token.tokens[0].pendingSupply = "1"; value.token.tokens[0].pendingSupplySubatoms = "10000000000000000"; },
+    (value) => { value.token.tokens[0].decimals = 8; },
+    (value) => { value.token.tokens[0].confirmedMints = -1; },
+    (value) => { value.token.tokens[0].pendingMints = 0.5; },
+    (value) => { value.token.tokens[0].holderCount = Number.MAX_SAFE_INTEGER + 1; },
+    (value) => { delete value.token.tokens[0].holderCount; },
+    (value) => { value.token.tokens.push({ ...value.token.tokens[0] }); },
+  ]) {
+    summary = structuredClone(published); mutate(summary);
+    await rejection(bind(overlay, "livenet"), (error) => /matching canonical summary checkpoint/u.test(error.message));
+  }
+  summary = null;
+  await rejection(read("livenet", "", ["wallet"], "wallet-regression"),
+    (error) => /matching canonical summary checkpoint/u.test(error.message));
+  const previousReads = reads;
+  const legacy = { ...overlay, tokens: [{ tokenId: WORK_TOKEN_ID, amountStorageModel: WORK_ATOMIC_PROJECTION_MODEL }] };
+  assert.equal(await bind(legacy, "livenet"), legacy);
+  assert.equal(await bind(overlay, "testnet"), overlay);
+  assert.equal(await bind({ tokens: [] }, "livenet").then((value) => value.tokens.length), 0);
+  assert.equal(reads, previousReads);
+});
+
 const WORK_MARKET_GOVERNED_AUTH_VERSIONS_FIXTURE = new Set([
   "pwt-sale-v3",
   "pwt-sale-v4",

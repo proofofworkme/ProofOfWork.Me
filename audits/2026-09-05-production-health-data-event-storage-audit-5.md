@@ -1645,3 +1645,60 @@ separate from passing final runs. No hook or production readiness gate is
 bypassed. SOUL and all canonical product/protocol documents were reviewed;
 OP_RETURN_INFRASTRUCTURE documents the candidate read contract, with no other
 protocol/operating-memory change required. Hygiene found no allowlisted cleanup.
+
+### September 8 UTC — summary publication recovered; Wallet verification continues
+
+Release `39d5454e77f3274a2cd5bef51a76b0f45a579377` passed the production Node 24
+gates and isolated read-only canonical construction at full-node block 966071.
+All eight summaries reconciled, including exact network Q8
+`838610445454813924487963741`; the two transfer fees were no longer omitted.
+The isolated Wallet checks failed with an empty cold-cache response: public
+Q16 Wallet readiness requires a stored current canonical summary, whereas the
+constructor permits bootstrap. Those responses are retained as failed Wallet
+evidence, not reclassified as successful tests.
+
+The original transient gate unit was collected after success. The unchanged
+eight-second gate batch was repeated with a retained normal-exit receipt. An
+initial cutover stopped before exchange because the temporary controller
+expected a service PID property on a socket. It restored the original API and
+all timers at 12:36:18; no exchange had been invoked. The reviewed retry fixed
+socket status handling, pinned that failed receipt, and re-attested both
+unchanged release directories before proceeding.
+UI access logs subsequently identified eight HTTP502 responses during this
+12:36:17–12:36:18 interrupted attempt. This brief additional disruption was
+caused by the cutover workflow and is separate from the original summary fault.
+
+The atomic exchange and managed archive publication completed at 12:40:11.
+The previous `2ddefac` release remains a rollback directory; Core, Electrs,
+PostgreSQL and WAL-receiver process identities were preserved and all seven
+maintenance timers restored. No data repair, cache deletion, archive deletion
+or protocol change occurred. Canonical summaries published at 12:40:28 at
+block 966074, hash
+`0000000000000000000010a13e060a135f4f80e574efec4f0f008767dc1e281a`,
+snapshot `74e769198f653690691776bd`. The worker completed at 12:41:15; readiness
+then passed with zero lag, zero consecutive failures and zero unresolved
+observed pending events. AMO and WORK public data resumed.
+
+The postpublication probe verified authoritative Wallet checkpoints, fixture
+balance `10000000000000000` WORK subatoms, pending delta zero, and matching exact
+ask aliases on both Wallet endpoints. It also caught an additional path of the
+same supply-display bug: bare authoritative overlay definitions lack global
+mint metrics, so both responses reported zero global WORK supply despite the
+correct canonical 21-million supply and correct wallet balance. Only these two
+supply assertions failed. The incident remains open for that projection fix
+and complete production verification. Browser runtime discovery returned no
+available browser; HTTP checks do not claim connected-wallet visual testing.
+The second public pass at 12:42:29–12:43:33 verified all 14 sites and AMO/WORK
+data at block 966075. Later brief HTTP503 responses were still observed during
+checkpoint transitions; this point-in-time pass does not claim uninterrupted
+readiness. Summary response times of 5.7–15.1 seconds remain a performance
+limitation for a future scoped improvement.
+
+The follow-up candidate binds the four exact WORK supply fields and three
+global definition counts (confirmed mints, pending mints and holders) to the
+published canonical WORK summary at the Wallet overlay's identical block
+height/hash. Both summary envelopes must agree; Q16 string values, display
+aliases, cap and nonnegative integer counts are validated. The lookup is bounded
+by the existing Wallet read timeout. Wallet-local counts, balances, pending
+deltas, holder arrays, listings, prices and other credit definitions retain
+their scope. Staging and production verification of this follow-up are pending.

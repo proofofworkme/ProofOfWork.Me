@@ -790,8 +790,9 @@ dedicated 10-second production wait, clamped between 5 and 15 seconds. A timed
 out or unprovable read still returns `CANONICAL_INDEX_UNAVAILABLE`; it never
 falls back to legacy history materialization.
 
-The September 8 incident correction is a candidate pending production
-verification. Its intended read contract is that wallet token-summary requests
+The September 8 incident correction restored canonical summary publication;
+the follow-up Wallet global-metrics projection remains a candidate pending
+production verification. The read contract is that wallet token-summary requests
 without a token filter use the same normalized wallet payload as scoped WORK
 reads. WORK definitions retain explicit canonical Q16 confirmed and pending
 subatom supply, including exact zero, before summary compaction. Address-bounded
@@ -800,8 +801,14 @@ issuance or holder metrics. Both WORK price aliases come from one exact
 proof-price/subatom ratio; lowest-ask selection uses integer cross-products,
 and an absent or unprovable price removes both aliases. Rounded display values
 never become price authority, and exact-tip and pending admission stay intact.
+The follow-up binds WORK supply, confirmed/pending mint counts and global holder
+count from the published canonical WORK summary at the overlay's identical
+height and block hash. It validates the nested token checkpoint, exact Q16
+supply aliases and nonnegative integer counts within the Wallet read timeout.
+Unavailable or mixed-checkpoint evidence fails closed. Wallet-local holder
+arrays, balances, pending deltas, history and market metrics retain their scope.
 
-The same candidate recovers omitted registry-fee display fields for confirmed
+The incident correction recovers omitted registry-fee display fields for confirmed
 valid generic-credit transfers only from one canonical transition trace at the
 event's exact block hash, height, transaction index, protocol output and record
 ordinal. The trace must agree with the raw carrier, transfer identity, amount,
