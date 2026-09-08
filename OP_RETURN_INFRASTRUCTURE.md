@@ -790,9 +790,9 @@ dedicated 10-second production wait, clamped between 5 and 15 seconds. A timed
 out or unprovable read still returns `CANONICAL_INDEX_UNAVAILABLE`; it never
 falls back to legacy history materialization.
 
-The September 8 incident correction restored canonical summary publication;
-the follow-up Wallet global-metrics projection remains a candidate pending
-production verification. The read contract is that wallet token-summary requests
+The September 8 incident correction restored canonical summary publication.
+The follow-up Wallet global-metrics projection deployed as `f342687` and passed
+full-node and public production verification. Wallet token-summary requests
 without a token filter use the same normalized wallet payload as scoped WORK
 reads. WORK definitions retain explicit canonical Q16 confirmed and pending
 subatom supply, including exact zero, before summary compaction. Address-bounded
@@ -801,7 +801,7 @@ issuance or holder metrics. Both WORK price aliases come from one exact
 proof-price/subatom ratio; lowest-ask selection uses integer cross-products,
 and an absent or unprovable price removes both aliases. Rounded display values
 never become price authority, and exact-tip and pending admission stay intact.
-The follow-up binds WORK supply, confirmed/pending mint counts and global holder
+The Wallet projection binds WORK supply, confirmed/pending mint counts and global holder
 count from the published canonical WORK summary at the overlay's identical
 height and block hash. It validates the nested token checkpoint, exact Q16
 supply aliases and nonnegative integer counts within the Wallet read timeout.
@@ -3389,6 +3389,17 @@ the complete strict parity result; a systemd stop reported as successful is
 not a passed gate. Parity evidence has a bounded 128 MiB allowance because its
 full report includes historical replay details. Original truncated or interrupted
 attempts remain evidence. Do not extend public downtime to collect long reports.
+
+For new incident gates, retain normal-exit evidence before systemd collects the
+transient unit; `Type=oneshot` with `RemainAfterExit=yes` can preserve a completed
+gate's invocation and exit status. Socket units do not expose a service PID:
+verify their inactive state and absent listeners separately. After application
+shutdown, allow a bounded read-only wait for PostgreSQL connections to drain
+before requiring zero sessions. A persistent connection still refuses exchange;
+record only identifying metadata and restore the verified application instead
+of terminating an unknown session. A retry must bind the failed pre-exchange
+receipt and prove the original release inodes, runtime hashes and absent
+exchange markers before proceeding.
 
 The following is the exact no-Node-on-UI-host release procedure. Run the first
 block on the trusted build host only after the approved release is committed.

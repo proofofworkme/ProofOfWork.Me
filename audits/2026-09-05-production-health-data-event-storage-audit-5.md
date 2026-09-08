@@ -1702,3 +1702,94 @@ aliases, cap and nonnegative integer counts are validated. The lookup is bounded
 by the existing Wallet read timeout. Wallet-local counts, balances, pending
 deltas, holder arrays, listings, prices and other credit definitions retain
 their scope. Staging and production verification of this follow-up are pending.
+
+### September 8 UTC — Wallet correction deployed and externally verified
+
+The follow-up committed as `f34268758527260caf110d78458d63daf71a9e5c` after
+504 recovery behaviors, API truth, live-data, server-globals, independent review
+and required hygiene passed. Production Node 24 gates also passed. The isolated
+read-only candidate then passed all 61 checks at full-node block 966077,
+including both authoritative Wallet endpoints, global supply/counts, exact
+listing-price aliases, and confirmed/pending balances against the indexed
+holder evidence at the Core-proven block.
+
+The first follow-up cutover refused before exchange because a database
+connection remained immediately after stopping the applications. It restored
+`39d5454` and every timer at 12:56:20. No session was terminated. A reviewed
+retry retained the zero-session requirement and allowed a bounded ten-second
+read-only disconnect wait, with metadata-only evidence on failure. Original
+release inodes, runtime hashes, failed receipt and absent exchange markers were
+verified before retrying. Four isolated drain-behavior checks passed.
+
+The final exchange and archive publication completed at 13:00:54. The managed
+archive is `proofofwork-node-release-f342687-20260908T125052Z.tgz`, 87,821,183
+bytes, SHA256 `cd6b2074abee9b43e8c94a448d25f60b907ef4533a9d79d7c856842241152166`.
+The live runtime fingerprint is
+`9b496cad7fdeeac2af01a5a6fa4f14492401b6b88f9e380be27847e2797353a4`.
+The previous `39d5454` release and earlier rollback assets remain preserved.
+All seven timers were restored. Core, Electrs, PostgreSQL and WAL receiver
+retained their original process identities; no additional data repairs or
+cleanup occurred. UI source and Caddy configuration were unchanged.
+
+All 61 production checks passed at block 966079, hash
+`00000000000000000001d486d0f4f1a7743213f2f55171bd29c828b3ebb8ea4a`.
+Exact network Q8 remained `838610445454813924487963741`. Both Wallet endpoints
+reported `210000000000000000000000` confirmed WORK subatoms, zero pending
+supply, 21,000 confirmed mints and 355 global holders. The fixture's confirmed
+balance remained `10000000000000000` subatoms with zero pending delta. Exact
+ask aliases and their visible listing evidence agreed. The SQL balance
+comparison is indexed evidence at a Core-proven checkpoint, not a claim that
+Core natively exposes credit balances or that every wallet was individually
+replayed in this probe.
+
+External verification passed for all 14 sites at 13:01:44–13:02:48, followed by
+both public Wallet endpoints at 13:03:23–13:03:32. AMO, WORK and Wallet used the
+same block 966079. UI disk remained 59% used with 15,756,406,784 bytes free and
+5% inode usage; Caddy kept its original PID and zero restarts. From first
+readiness recovery at 13:01:04 through the 13:04:16 inspection, access logs
+contained no HTTP502/503 responses. Nine status-zero requests are preserved
+without classifying them as successful. The controlled final cutover caused
+23 HTTP502 responses at 13:00:35–13:00:45; earlier 13:00:05–13:00:23 HTTP503s
+remain separately recorded. These brief interruptions are not hidden by the
+later successful checks.
+
+Wider read-only chain checks and the final repository handoff continue online.
+No transactions were constructed for signing, signed or broadcast. Browser
+interaction verification remained unavailable. Wallet responses are still
+about 5.15 MB and took roughly 4–5 seconds publicly; a future scoped improvement
+should provide bounded display projections and load detailed replay witnesses
+on demand, preserving exact fields, checkpoint identity and admission gates.
+
+The wider production probe passed at 13:07:04 after 826 read-only Core calls
+and 29 API reads. It verified 505 IDs, 238 credit definitions, 688 active listing
+anchors independently against Core, and exact bond supplies. The fixture had
+131 UTXOs: 71,951 confirmed proofs, 67,704 reserved and 4,247 available. Its
+124 confirmed listings reserved 79,631,403,166 WORK subatoms, leaving
+9,999,920,368,596,834 of its 10,000,000,000,000,000 confirmed subatoms available.
+There were no pending fixture listings. Three Boost carriers and their visible
+records agreed. Mempool sequence changed during the probe; individual current
+checks do not establish an atomic mempool snapshot or exhaustive historical
+replay. The complete receipt and individual compressed responses are retained.
+Strict index parity is the remaining online gate at this checkpoint.
+
+Strict parity completed successfully at 13:11:00 UTC: 100 checks passed, zero
+error-severity checks failed, and the two previously documented inactive V5
+migration/quote warnings remained unchanged. The read-only run retained a
+complete 25,555,335-byte report, SHA256
+`a38e96d651ffe2b54261bdf9fc2229ecdfe8b9ccc18c989bfc7def0051b135d7`.
+Its receipt and bounded summary are hashed in the evidence JSON. API, worker,
+Core, Electrs, PostgreSQL and WAL receiver identities were unchanged throughout.
+Confirmed transaction/event metadata, participant/reference projections,
+registry records, credit definitions, summary parity and history read checks
+passed. PostgreSQL measured 23,393,442,839 bytes, with zero recorded deadlocks
+and conflicts. No additional database repair was performed.
+
+Final public readiness at 13:13:24 UTC was healthy: full node, Electrs and
+index were at block 966079 with zero lag; all eight summary keys shared that
+checkpoint. The worker had zero consecutive failures and no current error.
+Node root disk was 28.40% used with 75,245,588,480 bytes available; the data
+volume was 78.54% used with 378,664,140,800 bytes available. Together with the
+earlier UI VPS check, this completes the incident's required production gates.
+The original H5-06 finding is continued here without creating a duplicate.
+Historical warnings, controlled-cutover interruptions, browser verification
+limits and the remaining response-size performance recommendation stay visible.

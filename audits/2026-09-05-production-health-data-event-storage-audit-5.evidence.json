@@ -42787,6 +42787,1469 @@
       "additionalDataRepairs": false,
       "deletions": false,
       "browserVerification": "unavailable; browser discovery returned no browsers"
+    },
+    "walletFollowupProduction": {
+      "status": "production-verified",
+      "observedThrough": "2026-09-08T13:13:24.391Z",
+      "continuationOf": [
+        "H5-06"
+      ],
+      "statusQualification": "All required incident production gates completed: targeted candidate and production checks, public site and Wallet reads, wider full-node audit, and strict index parity. Two existing inactive V5 warning checks remain qualified historical findings. Earlier candidate and deployment statuses remain dated evidence; no exhaustive per-wallet historical replay or atomic mempool guarantee is claimed.",
+      "applicationCommit": "f34268758527260caf110d78458d63daf71a9e5c",
+      "release": "f34268758527-20260908T125052Z",
+      "changeScope": {
+        "workDefinitionFields": [
+          "confirmedSupply",
+          "confirmedSupplySubatoms",
+          "pendingSupply",
+          "pendingSupplySubatoms",
+          "confirmedMints",
+          "pendingMints",
+          "holderCount"
+        ],
+        "authority": "One eligible canonical WORK summary, with outer and child height/hash matching the authoritative wallet checkpoint; exact Q16 strings and safe nonnegative counts required.",
+        "additionalDatabaseRepairs": false,
+        "additionalArchiveDeletions": false,
+        "protocolOrArithmeticRuleChanges": false,
+        "walletSigningOrBroadcast": false,
+        "preserved": "Account balances, pending deltas, history arrays, local wallet statistics, market prices/listings, other credits, frozen terms and historical carry."
+      },
+      "candidateProbe": {
+        "at": "2026-09-08T12:53:56.977559+00:00",
+        "apiPid": 3026943,
+        "apiPort": 18081,
+        "passed": true,
+        "core": {
+          "checkpointHash": "0000000000000000000218130624d5b8aa2dfa8d1b2b03412020a3b756944416",
+          "checkpointHeight": 966077,
+          "initialBlockDownload": false,
+          "tipHash": "0000000000000000000218130624d5b8aa2dfa8d1b2b03412020a3b756944416",
+          "tipHeight": 966077
+        },
+        "checkpoint": {
+          "block_atomic": true,
+          "closing_q8": "838610445454813924487963741",
+          "complete": true,
+          "fee_once": true,
+          "hash": "0000000000000000000218130624d5b8aa2dfa8d1b2b03412020a3b756944416",
+          "height": 966077,
+          "invalid_zero": true,
+          "state_q8": "838610445454813924487963741",
+          "wallet_work_rows": [
+            {
+              "address": "19JE7LS6TtQ4uSxu6ivJVZRiJyXXe8qEG3",
+              "amount_model": "work-subatoms-v2",
+              "confirmed_subatoms": "10000000000000000",
+              "decimals": "16",
+              "pending_delta_subatoms": "0",
+              "unit_scale": "10000000000000000"
+            }
+          ]
+        },
+        "summaryKeys": [
+          "growthSummary",
+          "inceptionSummary",
+          "infinitySummary",
+          "logSummary",
+          "marketplaceSummary",
+          "tokenSummary",
+          "workFloor",
+          "workSummary"
+        ],
+        "workFloorQ8": "838610445454813924487963741",
+        "workSummaryQ8": "838610445454813924487963741",
+        "validation": {
+          "count": 61,
+          "passedCount": 61,
+          "failedChecks": []
+        },
+        "ledger": {
+          "ok": true,
+          "status": "green",
+          "indexedThroughBlock": 966077,
+          "indexedThroughBlockHash": "0000000000000000000218130624d5b8aa2dfa8d1b2b03412020a3b756944416",
+          "checkCount": 23,
+          "failedChecks": []
+        },
+        "requests": {
+          "canonical-summary": {
+            "bytes": 16405828,
+            "error": null,
+            "seconds": 16.09,
+            "sha256": "c7a00c58514acd550187514f3385d4cd17846da9ae1366ab8e0c7bf7c60ba9f6",
+            "status": 200
+          },
+          "wallet-token": {
+            "bytes": 5156892,
+            "error": null,
+            "seconds": 2.102,
+            "sha256": "4a6d130fd1232f4def99b38edb4aa34bc8241429f61552a107407a862406d6eb",
+            "status": 200
+          },
+          "wallet-token-summary": {
+            "bytes": 5149485,
+            "error": null,
+            "seconds": 0.034,
+            "sha256": "7af4c33d645fbee6b5a7eefa07404f6c561214f80ebc17eb4ccd56b40cb3642f",
+            "status": 200
+          }
+        },
+        "wallet": {
+          "token": {
+            "Wallet": {
+              "authoritativeWallet": true,
+              "checkpointComplete": true,
+              "indexedThroughBlock": 966077,
+              "indexedThroughBlockHash": "0000000000000000000218130624d5b8aa2dfa8d1b2b03412020a3b756944416",
+              "snapshotId": "d99a688102a8b8f9e8b58073",
+              "source": "proof-indexer-wallet-token-overlay+proof-indexer-wallet-address-state",
+              "sourceHashes": {
+                "blockScan": "0000000000000000000218130624d5b8aa2dfa8d1b2b03412020a3b756944416"
+              },
+              "walletScoped": true
+            },
+            "WorkSupply": {
+              "confirmedSubatoms": "210000000000000000000000",
+              "pendingSubatoms": "0"
+            },
+            "WorkGlobalCounts": {
+              "confirmedMints": 21000,
+              "holderCount": 355,
+              "pendingMints": 0
+            },
+            "WorkHolders": {
+              "19JE7LS6TtQ4uSxu6ivJVZRiJyXXe8qEG3": "10000000000000000"
+            },
+            "WorkPendingDeltas": {
+              "19JE7LS6TtQ4uSxu6ivJVZRiJyXXe8qEG3": "0"
+            }
+          },
+          "token-summary": {
+            "Wallet": {
+              "authoritativeWallet": true,
+              "checkpointComplete": true,
+              "indexedThroughBlock": 966077,
+              "indexedThroughBlockHash": "0000000000000000000218130624d5b8aa2dfa8d1b2b03412020a3b756944416",
+              "snapshotId": "d99a688102a8b8f9e8b58073",
+              "source": "proof-indexer-wallet-token-overlay+proof-indexer-wallet-address-state",
+              "sourceHashes": {
+                "blockScan": "0000000000000000000218130624d5b8aa2dfa8d1b2b03412020a3b756944416"
+              },
+              "walletScoped": true
+            },
+            "WorkSupply": {
+              "confirmedSubatoms": "210000000000000000000000",
+              "pendingSubatoms": "0"
+            },
+            "WorkGlobalCounts": {
+              "confirmedMints": 21000,
+              "holderCount": 355,
+              "pendingMints": 0
+            },
+            "WorkHolders": {
+              "19JE7LS6TtQ4uSxu6ivJVZRiJyXXe8qEG3": "10000000000000000"
+            },
+            "WorkPendingDeltas": {
+              "19JE7LS6TtQ4uSxu6ivJVZRiJyXXe8qEG3": "0"
+            }
+          }
+        }
+      },
+      "cutoverAttempts": [
+        {
+          "at": "2026-09-08T12:56:19.239350+00:00",
+          "finishedAt": "2026-09-08T12:56:20.577915+00:00",
+          "release": "f34268758527-20260908T125052Z",
+          "status": "failed",
+          "error": "RuntimeError: Other database sessions remain; do not kill blindly",
+          "phase": "preexchange",
+          "recoveryErrors": [],
+          "candidateWalletVerified": true,
+          "productionWalletVerificationRequired": true,
+          "productionWalletVerification": "pending",
+          "restoredTimerStates": {
+            "proofofwork-postgres-logical-backup.timer": {
+              "ActiveState": "active",
+              "SubState": "waiting"
+            },
+            "pg_basebackup@16-main.timer": {
+              "ActiveState": "active",
+              "SubState": "waiting"
+            },
+            "pg_compresswal@16-main.timer": {
+              "ActiveState": "active",
+              "SubState": "waiting"
+            },
+            "proofofwork-postgres-query-health.timer": {
+              "ActiveState": "active",
+              "SubState": "waiting"
+            },
+            "proofofwork-cache-prune.timer": {
+              "ActiveState": "active",
+              "SubState": "waiting"
+            },
+            "proofofwork-node-release-health.timer": {
+              "ActiveState": "active",
+              "SubState": "waiting"
+            },
+            "proofofwork-node-release-prune.timer": {
+              "ActiveState": "active",
+              "SubState": "waiting"
+            }
+          },
+          "preservedServiceStates": {
+            "bitcoind.service": {
+              "MainPID": "282028",
+              "NRestarts": "0",
+              "ActiveState": "active",
+              "SubState": "running",
+              "ExecMainStartTimestamp": "Sun 2026-08-23 17:04:50 UTC"
+            },
+            "electrs.service": {
+              "MainPID": "282210",
+              "NRestarts": "0",
+              "ActiveState": "active",
+              "SubState": "running",
+              "ExecMainStartTimestamp": "Sun 2026-08-23 17:04:59 UTC"
+            },
+            "postgresql@16-main.service": {
+              "MainPID": "3612661",
+              "NRestarts": "0",
+              "ActiveState": "active",
+              "SubState": "running",
+              "ExecMainStartTimestamp": "Thu 2026-09-03 06:51:01 UTC"
+            },
+            "pg_receivewal@16-main.service": {
+              "MainPID": "2922786",
+              "NRestarts": "0",
+              "ActiveState": "active",
+              "SubState": "running",
+              "ExecMainStartTimestamp": "Wed 2026-09-02 06:49:08 UTC"
+            }
+          }
+        },
+        {
+          "at": "2026-09-08T13:00:35.364684+00:00",
+          "finishedAt": "2026-09-08T13:00:54.111770+00:00",
+          "release": "f34268758527-20260908T125052Z",
+          "status": "published-verification-required",
+          "error": null,
+          "phase": "new-proven",
+          "recoveryErrors": [],
+          "candidateWalletVerified": true,
+          "productionWalletVerificationRequired": true,
+          "productionWalletVerification": "pending",
+          "publicationReceipt": "published archive=proofofwork-node-release-f342687-20260908T125052Z.tgz commit=f34268758527260caf110d78458d63daf71a9e5c tree=200baf09f994eedb866cf73783a2991799940732 runtime_sha256=9b496cad7fdeeac2af01a5a6fa4f14492401b6b88f9e380be27847e2797353a4 sha256=cd6b2074abee9b43e8c94a448d25f60b907ef4533a9d79d7c856842241152166 bytes=87821183",
+          "restoredTimerStates": {
+            "proofofwork-postgres-logical-backup.timer": {
+              "ActiveState": "active",
+              "SubState": "waiting"
+            },
+            "pg_basebackup@16-main.timer": {
+              "ActiveState": "active",
+              "SubState": "waiting"
+            },
+            "pg_compresswal@16-main.timer": {
+              "ActiveState": "active",
+              "SubState": "waiting"
+            },
+            "proofofwork-postgres-query-health.timer": {
+              "ActiveState": "active",
+              "SubState": "waiting"
+            },
+            "proofofwork-cache-prune.timer": {
+              "ActiveState": "active",
+              "SubState": "waiting"
+            },
+            "proofofwork-node-release-health.timer": {
+              "ActiveState": "active",
+              "SubState": "waiting"
+            },
+            "proofofwork-node-release-prune.timer": {
+              "ActiveState": "active",
+              "SubState": "waiting"
+            }
+          },
+          "preservedServiceStates": {
+            "bitcoind.service": {
+              "MainPID": "282028",
+              "NRestarts": "0",
+              "ActiveState": "active",
+              "SubState": "running",
+              "ExecMainStartTimestamp": "Sun 2026-08-23 17:04:50 UTC"
+            },
+            "electrs.service": {
+              "MainPID": "282210",
+              "NRestarts": "0",
+              "ActiveState": "active",
+              "SubState": "running",
+              "ExecMainStartTimestamp": "Sun 2026-08-23 17:04:59 UTC"
+            },
+            "postgresql@16-main.service": {
+              "MainPID": "3612661",
+              "NRestarts": "0",
+              "ActiveState": "active",
+              "SubState": "running",
+              "ExecMainStartTimestamp": "Thu 2026-09-03 06:51:01 UTC"
+            },
+            "pg_receivewal@16-main.service": {
+              "MainPID": "2922786",
+              "NRestarts": "0",
+              "ActiveState": "active",
+              "SubState": "running",
+              "ExecMainStartTimestamp": "Wed 2026-09-02 06:49:08 UTC"
+            }
+          }
+        }
+      ],
+      "productionProbe": {
+        "at": "2026-09-08T13:01:22.408406+00:00",
+        "apiPid": 3036343,
+        "apiPort": 8081,
+        "passed": true,
+        "core": {
+          "checkpointHash": "00000000000000000001d486d0f4f1a7743213f2f55171bd29c828b3ebb8ea4a",
+          "checkpointHeight": 966079,
+          "initialBlockDownload": false,
+          "tipHash": "00000000000000000001d486d0f4f1a7743213f2f55171bd29c828b3ebb8ea4a",
+          "tipHeight": 966079
+        },
+        "checkpoint": {
+          "block_atomic": true,
+          "closing_q8": "838610445454813924487963741",
+          "complete": true,
+          "fee_once": true,
+          "hash": "00000000000000000001d486d0f4f1a7743213f2f55171bd29c828b3ebb8ea4a",
+          "height": 966079,
+          "invalid_zero": true,
+          "state_q8": "838610445454813924487963741",
+          "wallet_work_rows": [
+            {
+              "address": "19JE7LS6TtQ4uSxu6ivJVZRiJyXXe8qEG3",
+              "amount_model": "work-subatoms-v2",
+              "confirmed_subatoms": "10000000000000000",
+              "decimals": "16",
+              "pending_delta_subatoms": "0",
+              "unit_scale": "10000000000000000"
+            }
+          ]
+        },
+        "summaryKeys": [
+          "growthSummary",
+          "inceptionSummary",
+          "infinitySummary",
+          "logSummary",
+          "marketplaceSummary",
+          "tokenSummary",
+          "workFloor",
+          "workSummary"
+        ],
+        "workFloorQ8": "838610445454813924487963741",
+        "workSummaryQ8": "838610445454813924487963741",
+        "validation": {
+          "count": 61,
+          "passedCount": 61,
+          "failedChecks": []
+        },
+        "ledger": {
+          "ok": true,
+          "status": "green",
+          "indexedThroughBlock": 966079,
+          "indexedThroughBlockHash": "00000000000000000001d486d0f4f1a7743213f2f55171bd29c828b3ebb8ea4a",
+          "checkCount": 23,
+          "failedChecks": []
+        },
+        "requests": {
+          "canonical-summary": {
+            "bytes": 16405848,
+            "error": null,
+            "seconds": 18.672,
+            "sha256": "c2d12bfb4eaebfcb8e086f7c9fcdcdafc6d6bb1f07b7816eb5cd323a6250ff25",
+            "status": 200
+          },
+          "wallet-token": {
+            "bytes": 5156892,
+            "error": null,
+            "seconds": 3.771,
+            "sha256": "0f26fd97037c3e1e712d89bc6365ee65e6b92129e0dd5d7a044d35a2fe80a3cb",
+            "status": 200
+          },
+          "wallet-token-summary": {
+            "bytes": 5149485,
+            "error": null,
+            "seconds": 0.179,
+            "sha256": "572b49ccd28bc4bafe2a565296e8cd821e4738aa8b1eb66ade15dff2d6e4a021",
+            "status": 200
+          }
+        },
+        "wallet": {
+          "token": {
+            "Wallet": {
+              "authoritativeWallet": true,
+              "checkpointComplete": true,
+              "indexedThroughBlock": 966079,
+              "indexedThroughBlockHash": "00000000000000000001d486d0f4f1a7743213f2f55171bd29c828b3ebb8ea4a",
+              "snapshotId": "91e886d89a6f00b4ebc582df",
+              "source": "proof-indexer-wallet-token-overlay+proof-indexer-wallet-address-state",
+              "sourceHashes": {
+                "blockScan": "00000000000000000001d486d0f4f1a7743213f2f55171bd29c828b3ebb8ea4a"
+              },
+              "walletScoped": true
+            },
+            "WorkSupply": {
+              "confirmedSubatoms": "210000000000000000000000",
+              "pendingSubatoms": "0"
+            },
+            "WorkGlobalCounts": {
+              "confirmedMints": 21000,
+              "holderCount": 355,
+              "pendingMints": 0
+            },
+            "WorkHolders": {
+              "19JE7LS6TtQ4uSxu6ivJVZRiJyXXe8qEG3": "10000000000000000"
+            },
+            "WorkPendingDeltas": {
+              "19JE7LS6TtQ4uSxu6ivJVZRiJyXXe8qEG3": "0"
+            }
+          },
+          "token-summary": {
+            "Wallet": {
+              "authoritativeWallet": true,
+              "checkpointComplete": true,
+              "indexedThroughBlock": 966079,
+              "indexedThroughBlockHash": "00000000000000000001d486d0f4f1a7743213f2f55171bd29c828b3ebb8ea4a",
+              "snapshotId": "91e886d89a6f00b4ebc582df",
+              "source": "proof-indexer-wallet-token-overlay+proof-indexer-wallet-address-state",
+              "sourceHashes": {
+                "blockScan": "00000000000000000001d486d0f4f1a7743213f2f55171bd29c828b3ebb8ea4a"
+              },
+              "walletScoped": true
+            },
+            "WorkSupply": {
+              "confirmedSubatoms": "210000000000000000000000",
+              "pendingSubatoms": "0"
+            },
+            "WorkGlobalCounts": {
+              "confirmedMints": 21000,
+              "holderCount": 355,
+              "pendingMints": 0
+            },
+            "WorkHolders": {
+              "19JE7LS6TtQ4uSxu6ivJVZRiJyXXe8qEG3": "10000000000000000"
+            },
+            "WorkPendingDeltas": {
+              "19JE7LS6TtQ4uSxu6ivJVZRiJyXXe8qEG3": "0"
+            }
+          }
+        }
+      },
+      "publicPagesAndSummaries": {
+        "startedAt": "2026-09-08T13:01:44.759890+00:00",
+        "finishedAt": "2026-09-08T13:02:48.492148+00:00",
+        "passed": true,
+        "domains": [
+          "proofofwork.me",
+          "id.proofofwork.me",
+          "desktop.proofofwork.me",
+          "browser.proofofwork.me",
+          "boost.proofofwork.me",
+          "amo.proofofwork.me",
+          "credit.proofofwork.me",
+          "wallet.proofofwork.me",
+          "work.proofofwork.me",
+          "infinity.proofofwork.me",
+          "inception.proofofwork.me",
+          "log.proofofwork.me",
+          "growth.proofofwork.me",
+          "computer.proofofwork.me"
+        ],
+        "limitations": [
+          "Browser runtime is unavailable: HTTP and static shell checks do not execute UI JavaScript or validate connected-wallet interactions.",
+          "Full-node, exact arithmetic, wallet and strict-parity verification are separate production gates.",
+          "Sequential readings may straddle a new block; checkpoint differences require review, not an automatic corruption diagnosis."
+        ],
+        "validation": {
+          "count": 67,
+          "passedCount": 67,
+          "failedChecks": []
+        },
+        "domainsAndEndpoints": {
+          "amo-health": {
+            "url": "https://amo.proofofwork.me/api/v1/health",
+            "finalUrl": "https://amo.proofofwork.me/api/v1/health",
+            "status": 200,
+            "seconds": 1.731,
+            "bytes": 11052,
+            "sha256": "6979f0b0c352a31612e9208d48af44e5f1a2dd4187f0e733eef4b4efb2ca71b3",
+            "ready": true,
+            "available": true
+          },
+          "amo-page": {
+            "url": "https://amo.proofofwork.me/",
+            "finalUrl": "https://amo.proofofwork.me/",
+            "status": 200,
+            "seconds": 0.452,
+            "bytes": 1653,
+            "sha256": "58b8eccaf65b36567e1a11a0b88162eb7382a296bed640726ab401a8b0ef6754"
+          },
+          "amo-summary": {
+            "url": "https://amo.proofofwork.me/api/v1/marketplace-summary?network=livenet&compact=1",
+            "finalUrl": "https://amo.proofofwork.me/api/v1/marketplace-summary?network=livenet&compact=1",
+            "status": 200,
+            "seconds": 12.003,
+            "bytes": 5474096,
+            "sha256": "2bb3232cf56da1032ac6ea6f3c08ea272bf375c9b08e7f14768975737f0f950e",
+            "checkpoint": {
+              "indexedThroughBlock": 966079,
+              "indexedThroughBlockHash": "00000000000000000001d486d0f4f1a7743213f2f55171bd29c828b3ebb8ea4a",
+              "snapshotId": "fe6d24e7467899325f8eb568"
+            },
+            "networkValueQ8": "838610445454813924487963741"
+          },
+          "boost-health": {
+            "url": "https://boost.proofofwork.me/api/v1/health",
+            "finalUrl": "https://boost.proofofwork.me/api/v1/health",
+            "status": 200,
+            "seconds": 1.975,
+            "bytes": 11052,
+            "sha256": "fe1e44c447a2ee7b5d0575aad3ca33f2b5fd17e8e8322d8e733f741bed74ef3b",
+            "ready": true,
+            "available": true
+          },
+          "boost-page": {
+            "url": "https://boost.proofofwork.me/",
+            "finalUrl": "https://boost.proofofwork.me/",
+            "status": 200,
+            "seconds": 0.449,
+            "bytes": 1653,
+            "sha256": "834f9f4fb32b7be459699604c9ed315c26ff8b957a7b2008db3278f23e21a357"
+          },
+          "browser-health": {
+            "url": "https://browser.proofofwork.me/api/v1/health",
+            "finalUrl": "https://browser.proofofwork.me/api/v1/health",
+            "status": 200,
+            "seconds": 2.424,
+            "bytes": 11076,
+            "sha256": "1f32259da67632693880723983df952fbab662c6be8b60ed155a79fa06753509",
+            "ready": true,
+            "available": true
+          },
+          "browser-page": {
+            "url": "https://browser.proofofwork.me/",
+            "finalUrl": "https://browser.proofofwork.me/",
+            "status": 200,
+            "seconds": 0.432,
+            "bytes": 1653,
+            "sha256": "cb813b9aa9dee155738c21cb212d59a50d81ae167c24d043d6b27584c5aa007c"
+          },
+          "computer-health": {
+            "url": "https://computer.proofofwork.me/api/v1/health",
+            "finalUrl": "https://computer.proofofwork.me/api/v1/health",
+            "status": 200,
+            "seconds": 1.741,
+            "bytes": 11053,
+            "sha256": "93124633f1f40fef28e047a56af7402c1ecb9a7e1f127958b186d494ef3449c2",
+            "ready": true,
+            "available": true
+          },
+          "computer-page": {
+            "url": "https://computer.proofofwork.me/",
+            "finalUrl": "https://computer.proofofwork.me/",
+            "status": 200,
+            "seconds": 0.542,
+            "bytes": 1653,
+            "sha256": "1786594e868eb6b3b19d7ad37ceba2809643b5e0c4352be53b22ed332c09ae06"
+          },
+          "credit-health": {
+            "url": "https://credit.proofofwork.me/api/v1/health",
+            "finalUrl": "https://credit.proofofwork.me/api/v1/health",
+            "status": 200,
+            "seconds": 2.089,
+            "bytes": 11052,
+            "sha256": "8c617bd5b4ad2282b6942714ed4c9adc965d0ef0e4c9aa6f2cbf920a75f5ce73",
+            "ready": true,
+            "available": true
+          },
+          "credit-page": {
+            "url": "https://credit.proofofwork.me/",
+            "finalUrl": "https://credit.proofofwork.me/",
+            "status": 200,
+            "seconds": 0.512,
+            "bytes": 1653,
+            "sha256": "a480fdcd86b3487748832aaaf1fdbffe7cd151712146114da3b71a9c685cec58"
+          },
+          "desktop-health": {
+            "url": "https://desktop.proofofwork.me/api/v1/health",
+            "finalUrl": "https://desktop.proofofwork.me/api/v1/health",
+            "status": 200,
+            "seconds": 2.112,
+            "bytes": 11076,
+            "sha256": "09073ea180a35ccbc4f605f306ace249dbb7d4563310817dfd78f399e4139d02",
+            "ready": true,
+            "available": true
+          },
+          "desktop-page": {
+            "url": "https://desktop.proofofwork.me/",
+            "finalUrl": "https://desktop.proofofwork.me/",
+            "status": 200,
+            "seconds": 0.5,
+            "bytes": 1653,
+            "sha256": "938e5e220487e66cf4ede7a3471f951d1c9743dec9267ce41cabc1bdbb854c30"
+          },
+          "growth-health": {
+            "url": "https://growth.proofofwork.me/api/v1/health",
+            "finalUrl": "https://growth.proofofwork.me/api/v1/health",
+            "status": 200,
+            "seconds": 2.561,
+            "bytes": 11053,
+            "sha256": "8186eda377baf54f066667b52415c6f4d36eeff232d61e6aab984a306d6c2f98",
+            "ready": true,
+            "available": true
+          },
+          "growth-page": {
+            "url": "https://growth.proofofwork.me/",
+            "finalUrl": "https://growth.proofofwork.me/",
+            "status": 200,
+            "seconds": 0.638,
+            "bytes": 1653,
+            "sha256": "fc4c599c350a8bb4f20e368e0eba5da466752516f06fd263161f5345a5f484ce"
+          },
+          "home-health": {
+            "url": "https://proofofwork.me/api/v1/health",
+            "finalUrl": "https://www.proofofwork.me/api/v1/health",
+            "status": 200,
+            "seconds": 2.659,
+            "bytes": 11053,
+            "sha256": "946394ed99ce996964cc4e8a76a648ca8dd8397c69308496c1afa5c220a14d2f",
+            "ready": true,
+            "available": true
+          },
+          "home-page": {
+            "url": "https://proofofwork.me/",
+            "finalUrl": "https://www.proofofwork.me/",
+            "status": 200,
+            "seconds": 0.925,
+            "bytes": 1653,
+            "sha256": "1735dbffb7829ef79ff7c02e423c7fe302669b5b6cfe3d212ef33646a9c55774"
+          },
+          "id-health": {
+            "url": "https://id.proofofwork.me/api/v1/health",
+            "finalUrl": "https://id.proofofwork.me/api/v1/health",
+            "status": 200,
+            "seconds": 4.466,
+            "bytes": 11064,
+            "sha256": "a9f74695e48a94c3b12f072cacb41e133fa525fd02d609faaf23e765bd6714f1",
+            "ready": true,
+            "available": true
+          },
+          "id-page": {
+            "url": "https://id.proofofwork.me/",
+            "finalUrl": "https://id.proofofwork.me/",
+            "status": 200,
+            "seconds": 0.434,
+            "bytes": 1653,
+            "sha256": "c64b57e2ab2383824b8f3ef81e718e8d627a587c2a5a17d41b77b8ccec22d4fc"
+          },
+          "inception-health": {
+            "url": "https://inception.proofofwork.me/api/v1/health",
+            "finalUrl": "https://inception.proofofwork.me/api/v1/health",
+            "status": 200,
+            "seconds": 1.672,
+            "bytes": 11053,
+            "sha256": "f32fbd9f5f6586996fabdc1b9c97e64e8cb6b70b2ac6bf1ffb2c69fa91242b47",
+            "ready": true,
+            "available": true
+          },
+          "inception-page": {
+            "url": "https://inception.proofofwork.me/",
+            "finalUrl": "https://inception.proofofwork.me/",
+            "status": 200,
+            "seconds": 0.567,
+            "bytes": 1653,
+            "sha256": "c99d29700bcf9e62f6a5e516abbf08847d237808b38b175cea6886ae23b3dbda"
+          },
+          "infinity-health": {
+            "url": "https://infinity.proofofwork.me/api/v1/health",
+            "finalUrl": "https://infinity.proofofwork.me/api/v1/health",
+            "status": 200,
+            "seconds": 3.163,
+            "bytes": 11053,
+            "sha256": "820827c60e451cb9c22c4fa2fac98c28c4db8637c3cca78b1031970283f3e1f6",
+            "ready": true,
+            "available": true
+          },
+          "infinity-page": {
+            "url": "https://infinity.proofofwork.me/",
+            "finalUrl": "https://infinity.proofofwork.me/",
+            "status": 200,
+            "seconds": 0.431,
+            "bytes": 1653,
+            "sha256": "5150f400d5d0cc61f2e5f4ad814ce328b910df3e81ec8dd81ee19026ddbfd4f0"
+          },
+          "log-health": {
+            "url": "https://log.proofofwork.me/api/v1/health",
+            "finalUrl": "https://log.proofofwork.me/api/v1/health",
+            "status": 200,
+            "seconds": 1.991,
+            "bytes": 11053,
+            "sha256": "54cdd1e21994de632ae2f7e34e9eefe9a79fbcd1cf7c44ee0e73a1248e0d0856",
+            "ready": true,
+            "available": true
+          },
+          "log-page": {
+            "url": "https://log.proofofwork.me/",
+            "finalUrl": "https://log.proofofwork.me/",
+            "status": 200,
+            "seconds": 0.614,
+            "bytes": 1653,
+            "sha256": "64a79549bd27fc80ebe4904bb095b21c60313c98681488601ecaaa617405c62a"
+          },
+          "wallet-health": {
+            "url": "https://wallet.proofofwork.me/api/v1/health",
+            "finalUrl": "https://wallet.proofofwork.me/api/v1/health",
+            "status": 200,
+            "seconds": 2.042,
+            "bytes": 11052,
+            "sha256": "98f39aa3af5b589337857b9ed942b8d468348d6673d713a2c44acf9bd91ee398",
+            "ready": true,
+            "available": true
+          },
+          "wallet-page": {
+            "url": "https://wallet.proofofwork.me/",
+            "finalUrl": "https://wallet.proofofwork.me/",
+            "status": 200,
+            "seconds": 0.439,
+            "bytes": 1653,
+            "sha256": "4444e923941b1f2205e40c6cf47b030b0beec2a2d1bc944953c9524968c47016"
+          },
+          "work-floor": {
+            "url": "https://work.proofofwork.me/api/v1/work-floor?network=livenet",
+            "finalUrl": "https://work.proofofwork.me/api/v1/work-floor?network=livenet",
+            "status": 200,
+            "seconds": 5.2,
+            "bytes": 92756,
+            "sha256": "a0a7d7e22a54249ad83c188044bf76209eb56bf81fe636a3285b9fb71078db01",
+            "checkpoint": {
+              "indexedThroughBlock": 966079,
+              "indexedThroughBlockHash": "00000000000000000001d486d0f4f1a7743213f2f55171bd29c828b3ebb8ea4a",
+              "snapshotId": "fe6d24e7467899325f8eb568"
+            },
+            "networkValueQ8": "838610445454813924487963741"
+          },
+          "work-health": {
+            "url": "https://work.proofofwork.me/api/v1/health",
+            "finalUrl": "https://work.proofofwork.me/api/v1/health",
+            "status": 200,
+            "seconds": 1.638,
+            "bytes": 11053,
+            "sha256": "99c4d973f617be0d66620cf4ebe4117cd8aa1d8462d96a42dcfdeca7011d4216",
+            "ready": true,
+            "available": true
+          },
+          "work-page": {
+            "url": "https://work.proofofwork.me/",
+            "finalUrl": "https://work.proofofwork.me/",
+            "status": 200,
+            "seconds": 0.447,
+            "bytes": 1653,
+            "sha256": "8309d21ed244873acec93e80bed2a62e2a47a118e157f47aa9cb31be86333f6d"
+          },
+          "work-summary": {
+            "url": "https://work.proofofwork.me/api/v1/work-summary?network=livenet&compact=1",
+            "finalUrl": "https://work.proofofwork.me/api/v1/work-summary?network=livenet&compact=1",
+            "status": 200,
+            "seconds": 6.648,
+            "bytes": 5170355,
+            "sha256": "de69e25c50da1a8448f70880ce01aa9785f64eff202ddcdb3b016af05bc920a6",
+            "checkpoint": {
+              "indexedThroughBlock": 966079,
+              "indexedThroughBlockHash": "00000000000000000001d486d0f4f1a7743213f2f55171bd29c828b3ebb8ea4a",
+              "snapshotId": "fe6d24e7467899325f8eb568"
+            },
+            "networkValueQ8": "838610445454813924487963741"
+          }
+        }
+      },
+      "publicWallet": {
+        "startedAt": "2026-09-08T13:03:23.927317+00:00",
+        "finishedAt": "2026-09-08T13:03:32.927481+00:00",
+        "passed": true,
+        "wallet": "19JE7LS6TtQ4uSxu6ivJVZRiJyXXe8qEG3",
+        "limitations": [
+          "Public HTTP validation; Core and SQL monetary verification are separate root-agent gates.",
+          "No browser runtime or signing interaction was used."
+        ],
+        "validation": {
+          "count": 19,
+          "passedCount": 19,
+          "failedChecks": []
+        },
+        "requests": {
+          "token": {
+            "bytes": 5156892,
+            "checkpoint": {
+              "authoritativeWallet": true,
+              "checkpointComplete": true,
+              "indexedThroughBlock": 966079,
+              "indexedThroughBlockHash": "00000000000000000001d486d0f4f1a7743213f2f55171bd29c828b3ebb8ea4a",
+              "snapshotId": "91e886d89a6f00b4ebc582df",
+              "source": "proof-indexer-wallet-token-overlay+proof-indexer-wallet-address-state",
+              "walletScoped": true
+            },
+            "holders": [
+              {
+                "address": "19JE7LS6TtQ4uSxu6ivJVZRiJyXXe8qEG3",
+                "balanceSubatoms": "10000000000000000",
+                "pendingDeltaSubatoms": "0"
+              }
+            ],
+            "seconds": 4.725,
+            "sha256": "0f26fd97037c3e1e712d89bc6365ee65e6b92129e0dd5d7a044d35a2fe80a3cb",
+            "status": 200,
+            "url": "https://wallet.proofofwork.me/api/v1/token?network=livenet&wallet=1&address=19JE7LS6TtQ4uSxu6ivJVZRiJyXXe8qEG3",
+            "work": {
+              "confirmedMints": 21000,
+              "confirmedSupply": "21000000",
+              "confirmedSupplySubatoms": "210000000000000000000000",
+              "holderCount": 355,
+              "lowestAskPricePerToken": "333764839648.7039084874697857",
+              "lowestAskPricePerTokenExact": {
+                "amountSubatoms": "749030366",
+                "decimal": "333764839648.7039084874697857",
+                "denominator": "749030366",
+                "model": "exact-work-q16-sats-per-unit-ratio-v1",
+                "numerator": "250000000000000000000",
+                "priceSats": "25000",
+                "unitScale": "10000000000000000"
+              },
+              "pendingMints": 0,
+              "pendingSupplySubatoms": "0"
+            }
+          },
+          "token-summary": {
+            "bytes": 5149485,
+            "checkpoint": {
+              "authoritativeWallet": true,
+              "checkpointComplete": true,
+              "indexedThroughBlock": 966079,
+              "indexedThroughBlockHash": "00000000000000000001d486d0f4f1a7743213f2f55171bd29c828b3ebb8ea4a",
+              "snapshotId": "91e886d89a6f00b4ebc582df",
+              "source": "proof-indexer-wallet-token-overlay+proof-indexer-wallet-address-state",
+              "walletScoped": true
+            },
+            "holders": [
+              {
+                "address": "19JE7LS6TtQ4uSxu6ivJVZRiJyXXe8qEG3",
+                "balanceSubatoms": "10000000000000000",
+                "pendingDeltaSubatoms": "0"
+              }
+            ],
+            "seconds": 4.034,
+            "sha256": "572b49ccd28bc4bafe2a565296e8cd821e4738aa8b1eb66ade15dff2d6e4a021",
+            "status": 200,
+            "url": "https://wallet.proofofwork.me/api/v1/token-summary?network=livenet&wallet=1&address=19JE7LS6TtQ4uSxu6ivJVZRiJyXXe8qEG3",
+            "work": {
+              "confirmedMints": 21000,
+              "confirmedSupply": "21000000",
+              "confirmedSupplySubatoms": "210000000000000000000000",
+              "holderCount": 355,
+              "lowestAskPricePerToken": "333764839648.7039084874697857",
+              "lowestAskPricePerTokenExact": {
+                "amountSubatoms": "749030366",
+                "decimal": "333764839648.7039084874697857",
+                "denominator": "749030366",
+                "model": "exact-work-q16-sats-per-unit-ratio-v1",
+                "numerator": "250000000000000000000",
+                "priceSats": "25000",
+                "unitScale": "10000000000000000"
+              },
+              "pendingMints": 0,
+              "pendingSupplySubatoms": "0"
+            }
+          }
+        }
+      },
+      "uiVps": {
+        "observedAt": "2026-09-08T13:04:16.670013+00:00",
+        "since": "2026-09-08T13:01:04.200829+00:00",
+        "caddy": {
+          "MainPID": "3002830",
+          "Result": "success",
+          "NRestarts": "0",
+          "ExecMainStartTimestamp": "Wed 2026-08-12 06:03:49 UTC",
+          "ExecMainExitTimestamp": "",
+          "ExecMainStatus": "0",
+          "ActiveState": "active",
+          "SubState": "running"
+        },
+        "uiManifestSha256": "a218dd6e4b55a740f12cdb7d63559066f174c5e5e8257645e8a2afb2a90d9816",
+        "rootFilesystem": {
+          "device": "/dev/sda1",
+          "capacityBytes": 39973924864,
+          "usedBytes": 22533324800,
+          "availableBytes": 15756406784,
+          "usedPercent": 59,
+          "usedInodePercent": 5
+        },
+        "monitorStates": {
+          "proofofwork-ui-release-provenance.service": {
+            "MainPID": "0",
+            "Result": "success",
+            "NRestarts": "0",
+            "ExecMainStartTimestamp": "Tue 2026-09-08 13:00:30 UTC",
+            "ExecMainExitTimestamp": "Tue 2026-09-08 13:00:40 UTC",
+            "ExecMainStatus": "0",
+            "ActiveState": "inactive",
+            "SubState": "dead"
+          },
+          "proofofwork-ui-release-prune.service": {
+            "MainPID": "0",
+            "Result": "exit-code",
+            "NRestarts": "0",
+            "ExecMainStartTimestamp": "Tue 2026-09-08 00:10:10 UTC",
+            "ExecMainExitTimestamp": "Tue 2026-09-08 00:10:19 UTC",
+            "ExecMainStatus": "1",
+            "ActiveState": "failed",
+            "SubState": "failed"
+          },
+          "proofofwork-ui-storage-health.service": {
+            "MainPID": "0",
+            "Result": "success",
+            "NRestarts": "0",
+            "ExecMainStartTimestamp": "Tue 2026-09-08 13:00:30 UTC",
+            "ExecMainExitTimestamp": "Tue 2026-09-08 13:00:30 UTC",
+            "ExecMainStatus": "0",
+            "ActiveState": "inactive",
+            "SubState": "dead"
+          },
+          "proofofwork-ui-storage-prune.service": {
+            "MainPID": "0",
+            "Result": "success",
+            "NRestarts": "0",
+            "ExecMainStartTimestamp": "Tue 2026-09-08 01:18:43 UTC",
+            "ExecMainExitTimestamp": "Tue 2026-09-08 01:18:44 UTC",
+            "ExecMainStatus": "0",
+            "ActiveState": "inactive",
+            "SubState": "dead"
+          }
+        },
+        "postReadinessRequests": {
+          "errors": [],
+          "health": {
+            "200": 30,
+            "301": 1
+          },
+          "requests": 216,
+          "status": {
+            "0": 9,
+            "200": 205,
+            "301": 2
+          }
+        },
+        "logSampleCoversSince": true,
+        "postReadinessJournal": {
+          "boundedEntries": 150,
+          "exit": 0,
+          "warningErrorCounts": {}
+        },
+        "postReadinessErrors": {
+          "502": {
+            "count": 0,
+            "firstAt": null,
+            "lastAt": null
+          },
+          "503": {
+            "count": 0,
+            "firstAt": null,
+            "lastAt": null
+          }
+        },
+        "cutoverWindow": {
+          "since": "2026-09-08T13:00:00+00:00",
+          "observedAt": "2026-09-08T13:02:15.139424+00:00",
+          "firstReadyAt": "2026-09-08T13:01:04.200829+00:00",
+          "requests": {
+            "errors": [
+              {
+                "count": 7,
+                "host": "wallet.proofofwork.me",
+                "path": "/api/v1/work-floor",
+                "status": 502
+              },
+              {
+                "count": 5,
+                "host": "wallet.proofofwork.me",
+                "path": "/api/v1/token",
+                "status": 502
+              },
+              {
+                "count": 4,
+                "host": "wallet.proofofwork.me",
+                "path": "/api/v1/token",
+                "status": 503
+              },
+              {
+                "count": 4,
+                "host": "amo.proofofwork.me",
+                "path": "/api/v1/marketplace-summary",
+                "status": 502
+              },
+              {
+                "count": 3,
+                "host": "wallet.proofofwork.me",
+                "path": "/api/v1/prices/btc-usd",
+                "status": 502
+              },
+              {
+                "count": 2,
+                "host": "wallet.proofofwork.me",
+                "path": "/api/v1/work-floor",
+                "status": 503
+              },
+              {
+                "count": 2,
+                "host": "computer.proofofwork.me",
+                "path": "/api/v1/health",
+                "status": 503
+              },
+              {
+                "count": 2,
+                "host": "computer.proofofwork.me",
+                "path": "/api/v1/health",
+                "status": 502
+              },
+              {
+                "count": 2,
+                "host": "amo.proofofwork.me",
+                "path": "/api/v1/prices/btc-usd",
+                "status": 502
+              },
+              {
+                "count": 1,
+                "host": "amo.proofofwork.me",
+                "path": "/api/v1/marketplace-summary",
+                "status": 503
+              }
+            ],
+            "health": {
+              "200": 16,
+              "301": 1,
+              "502": 2,
+              "503": 2
+            },
+            "requests": 139,
+            "status": {
+              "0": 4,
+              "200": 101,
+              "301": 2,
+              "502": 23,
+              "503": 9
+            }
+          },
+          "errors": {
+            "502": {
+              "count": 23,
+              "firstAt": "2026-09-08T13:00:35.479028+00:00",
+              "lastAt": "2026-09-08T13:00:45.914560+00:00"
+            },
+            "503": {
+              "count": 9,
+              "firstAt": "2026-09-08T13:00:05.621116+00:00",
+              "lastAt": "2026-09-08T13:00:23.500652+00:00"
+            }
+          },
+          "journal": {
+            "boundedEntries": 150,
+            "exit": 0,
+            "warningErrorCounts": {
+              "EOF": 5,
+              "dial tcp 10.77.0.2:8081: connect: connection refused": 17,
+              "dial tcp 10.77.0.2:8081: connect: connection reset by peer": 1
+            }
+          }
+        },
+        "qualification": "Status 0 requests are retained separately and are not claimed successful. Cutover-window 502/503 responses are preserved; the later bounded post-readiness window has none."
+      },
+      "performanceObservation": {
+        "publicWalletTokenBytes": 5156892,
+        "publicWalletSummaryBytes": 5149485,
+        "publicWalletTokenSeconds": 4.725,
+        "publicWalletSummarySeconds": 4.034,
+        "recommendation": "Review a compact wallet read and deferred witness retrieval without weakening exact admission or proof verification; these responses remain approximately 5 MB each."
+      },
+      "browserVerification": "Unavailable; HTTP/static-shell checks do not execute JavaScript, connect a wallet or test visual interactions.",
+      "localEvidenceRoot": "/tmp/pow-incident-20260908",
+      "receipts": {
+        "wallet-followup/candidate-report.json": {
+          "bytes": 17462,
+          "sha256": "497c487702df897605563d6eba0f642c1f895cf57249ba21cef2a80dc3b39bb0"
+        },
+        "wallet-followup/production-report.json": {
+          "bytes": 17462,
+          "sha256": "2adbf9d07c324d12d33f13739002646859c2898bfbe882ea3d65b6c6da34b050"
+        },
+        "wallet-followup/release.json": {
+          "bytes": 401,
+          "sha256": "9746dc1207a2738279f7c0dcef0535643d9ad99e9cfa64c66a62d5e78c04d946"
+        },
+        "wallet-followup/cutover-result-1.json": {
+          "bytes": 7391,
+          "sha256": "1d3802e9e52319120bcd8196f0f5046a97bfcfe90565baa738e00657ac980004"
+        },
+        "wallet-followup/cutover-result-2.json": {
+          "bytes": 7686,
+          "sha256": "567755c83db2ba16391cb89af3cc25cb4cf1e1ab7a173a3c858a3f8f1c0cfc94"
+        },
+        "public-final-f342687-20260908T1300Z/report.json": {
+          "bytes": 227939,
+          "sha256": "970a2ff2d86ba16b4ef10ab20cbe879860b7feab165e2c3996fce06f20f112c8"
+        },
+        "public-wallet-final-f342687-20260908T1303Z/report.json": {
+          "bytes": 4336,
+          "sha256": "2d696c81a9c119bf01ef4a559a43f22a0569c24ce381c0a50a752e3adaf12a55"
+        },
+        "ui-final-f342687-20260908T1300Z.json": {
+          "bytes": 19822,
+          "sha256": "f762dafcb753fa91ea1db8a0178ae6156d2e9c6c545d214d47050d3218e9f49e"
+        },
+        "ui-final-ready-f342687-20260908T130104Z.json": {
+          "bytes": 11506,
+          "sha256": "0cc239fb2721433ab147883b1cd0b925288d01cabdf8a2766151fb9c5ce62011"
+        }
+      },
+      "largeResponseBodiesIncluded": false,
+      "protectedEnvironmentIncluded": false,
+      "previousEvidenceFileSha256": "093cdac57ff6652dc59ab82a9cbee0669d1e54915a6a61d3ea90d4b733c002ef",
+      "widerFullNode": {
+        "status": "passed",
+        "receiptSha256": "499a150d3652235f179c03c5d28227508729dbe68bed7cbf6c4a2f11f47891f3",
+        "receiptBytes": 302435,
+        "requestCounts": {
+          "core": 826,
+          "http": 29
+        },
+        "format": "audit5-candidate-http-core-v1",
+        "startedAt": "2026-09-08T13:04:49.276Z",
+        "base": "http://127.0.0.1:8081",
+        "limits": {
+          "pages": 32,
+          "rows": 2000,
+          "totalBytes": 201326592,
+          "httpRequests": 128,
+          "coreRequests": 2300,
+          "milliseconds": 600000
+        },
+        "result": {
+          "counts": {
+            "model": "proof-registry-counts-v1",
+            "complete": true,
+            "confirmedCount": 505,
+            "pendingCount": 0,
+            "totalCount": 505
+          },
+          "directory": {
+            "count": 238,
+            "definitionSha256": "54c299520807bd90df7e65cec17559bb53b80d17adb500bf20482681ffe7646a",
+            "workSupplySubatoms": "210000000000000000000000"
+          },
+          "book": {
+            "listings": 688,
+            "fullRowsSha256": "cc19392fd82ce857d994c598937aa5e531eec7d151e0ffe1ff16481e406e3f7d",
+            "savedRowBytes": 16609697,
+            "sourceDigestQualification": "Bound to full-route snapshot; excluded historical source rows are not independently replayed.",
+            "independentCoreAnchors": 688,
+            "independentCoreSha256": "f1342b086dec26447557694433bbaaafd5764fd5d2811f7b71cc6e54d7b3121b"
+          },
+          "wallet": {
+            "address": "19JE7LS6TtQ4uSxu6ivJVZRiJyXXe8qEG3",
+            "utxos": 131,
+            "confirmedProofs": "71951",
+            "pendingProofs": "0",
+            "reservedProofs": "67704",
+            "availableProofs": "4247",
+            "protectedCount": 124,
+            "availableCount": 7,
+            "confirmedWORKSubatoms": "10000000000000000",
+            "reservedWORKSubatoms": "79631403166",
+            "remainingWORKSubatoms": "9999920368596834",
+            "confirmedListingCount": 124,
+            "pendingListingCount": 0,
+            "pendingTicketWitnesses": [],
+            "pendingTicketWitnessSha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+            "pendingQualification": "Each pending ticket was unconfirmed and unspent in Core with includeMempool=true when checked; no atomic mempool snapshot or confirmed WORK amount is implied.",
+            "qualification": "Public API inventory checked against current Core; wallet-provider exclusions, whole-chain address completeness, and transaction construction/signing are not proven."
+          },
+          "bonds": {
+            "POWB": {
+              "supply": "630496569",
+              "networkValueQ8": "63050148300000000",
+              "floorQ8": "100000779"
+            },
+            "INCB": {
+              "supply": "224847713398447926",
+              "networkValueQ8": "22484771339844794793582060",
+              "floorQ8": "100000000"
+            }
+          },
+          "boost": {
+            "events": 3,
+            "visibleRecords": 3,
+            "activeListings": 0,
+            "proofSignalQ8": "163800000000",
+            "totalSignalQ8": "44091013809537",
+            "workSubatoms": "11000000000",
+            "listingQualification": "Complete active discovery compared to complete feed annotations; no independent lifecycle reducer replay.",
+            "rawCarrierSamples": 3
+          },
+          "core": {
+            "height": 966079,
+            "hash": "00000000000000000001d486d0f4f1a7743213f2f55171bd29c828b3ebb8ea4a",
+            "mempoolSequenceBefore": 28170518,
+            "mempoolSequenceAfter": 28172431,
+            "mempoolSequenceStable": false
+          },
+          "qualification": "Current confirmed inventories and sampled raw carriers; no exhaustive historical replay, atomic mempool snapshot, or signing proof. Prior604/238 counts are historical baselines, never expected current counts."
+        },
+        "ok": true,
+        "finishedAt": "2026-09-08T13:07:04.226Z"
+      },
+      "strictParity": {
+        "at": "2026-09-08T13:08:24.002888+00:00",
+        "finishedAt": "2026-09-08T13:11:00.432592+00:00",
+        "readOnly": true,
+        "complete": true,
+        "exitCode": 0,
+        "ok": true,
+        "strict": true,
+        "indexedThroughBlock": 966079,
+        "snapshotId": "fe6d24e7467899325f8eb568",
+        "checkCount": 102,
+        "passedCount": 100,
+        "errorFailures": [],
+        "existingHistoricalWarnings": [
+          {
+            "name": "work-amo-v5-migration",
+            "ok": false,
+            "severity": "warning"
+          },
+          {
+            "name": "work-amo-v5-usd-quote-head",
+            "ok": false,
+            "severity": "warning"
+          }
+        ],
+        "databaseCounts": {
+          "transactions_total": 25331,
+          "transactions_confirmed": 25073,
+          "transactions_pending": 33,
+          "transactions_dropped": 225,
+          "confirmed_transactions_without_canonical_block": 0,
+          "nonconfirmed_transactions_with_block_metadata": 0,
+          "events_total": 25969,
+          "events_confirmed": 25752,
+          "events_pending": 33,
+          "events_dropped": 184,
+          "events_confirmed_valid": 25420,
+          "events_pending_valid": 1,
+          "canonical_confirmed_transactions_with_volatile_pwid_events": 0,
+          "canonical_activity_txids": 24774,
+          "canonical_activity_txids_missing_transaction": 0,
+          "confirmed_activity_events_without_confirmed_transaction": 0,
+          "confirmed_events_without_parent_metadata": 0,
+          "nonconfirmed_events_with_block_metadata": 0,
+          "event_payload_status_mismatches": 0,
+          "event_refs": 55088,
+          "event_participants": 127337,
+          "credit_definitions_confirmed": 238,
+          "credit_balances": 403,
+          "credit_listings": 933,
+          "work_usd_quotes_confirmed": 0,
+          "work_amo_listing_terms": 0,
+          "id_records": 505,
+          "ledger_snapshots": 11000
+        },
+        "databaseHealth": {
+          "database": "proof_indexer",
+          "databaseBytes": 23393442839,
+          "deadlocks": 0,
+          "conflicts": 0,
+          "statsReset": null
+        },
+        "serviceIdentitiesUnchanged": true,
+        "serviceStates": {
+          "bitcoind.service": {
+            "MainPID": "282028",
+            "NRestarts": "0",
+            "ExecMainStartTimestamp": "Sun 2026-08-23 17:04:50 UTC",
+            "ActiveState": "active",
+            "SubState": "running",
+            "InvocationID": "9f845f5aa5904ca9bcd5f5987c3b6ba4"
+          },
+          "electrs.service": {
+            "MainPID": "282210",
+            "NRestarts": "0",
+            "ExecMainStartTimestamp": "Sun 2026-08-23 17:04:59 UTC",
+            "ActiveState": "active",
+            "SubState": "running",
+            "InvocationID": "45e3328de0764897bc873cdc5649cf84"
+          },
+          "postgresql@16-main.service": {
+            "MainPID": "3612661",
+            "NRestarts": "0",
+            "ExecMainStartTimestamp": "Thu 2026-09-03 06:51:01 UTC",
+            "ActiveState": "active",
+            "SubState": "running",
+            "InvocationID": "c27fa7af11534ae6ba9d83dcb13f3cc2"
+          },
+          "pg_receivewal@16-main.service": {
+            "MainPID": "2922786",
+            "NRestarts": "0",
+            "ExecMainStartTimestamp": "Wed 2026-09-02 06:49:08 UTC",
+            "ActiveState": "active",
+            "SubState": "running",
+            "InvocationID": "3134e68d2b02479e8506de49dddbd52a"
+          },
+          "proofofwork-api.service": {
+            "MainPID": "3036343",
+            "NRestarts": "0",
+            "ExecMainStartTimestamp": "Tue 2026-09-08 13:00:46 UTC",
+            "ActiveState": "active",
+            "SubState": "running",
+            "InvocationID": "a248514485dd4fdb94b6997ace97beec"
+          },
+          "proofofwork-indexer-worker.service": {
+            "MainPID": "3036355",
+            "NRestarts": "0",
+            "ExecMainStartTimestamp": "Tue 2026-09-08 13:00:46 UTC",
+            "ActiveState": "active",
+            "SubState": "running",
+            "InvocationID": "4882d845554e4bb7a3a6674b2c8c58db"
+          }
+        },
+        "stdout": {
+          "bytes": 25555335,
+          "sha256": "a38e96d651ffe2b54261bdf9fc2229ecdfe8b9ccc18c989bfc7def0051b135d7"
+        },
+        "stderr": {
+          "bytes": 102,
+          "sha256": "51ac1f1da87a9608466c4f4769c317b01fe4050e62bcec50c57dade9e0bb5794"
+        },
+        "receipt": {
+          "path": "/tmp/pow-incident-20260908/wallet-followup/strict-parity-receipt.json",
+          "bytes": 4401,
+          "sha256": "a8ce421dec5e4005d09364a6c66b3bd5018e2d05d12ee201b0e88637f5e64363"
+        },
+        "boundedSummaryReceipt": {
+          "path": "/tmp/pow-incident-20260908/wallet-followup/strict-parity-summary.json",
+          "bytes": 13134,
+          "sha256": "2e29995825aad4931929ddb7fe6dc7ef47661629b9922349493ce27783042791"
+        },
+        "fullReportIncluded": false
+      },
+      "finalHealth": {
+        "at": "2026-09-08T13:13:24.391Z",
+        "ok": true,
+        "ready": true,
+        "indexedThroughBlock": 966079,
+        "tipHeight": 966079,
+        "lagBlocks": 0,
+        "checkpointHash": "00000000000000000001d486d0f4f1a7743213f2f55171bd29c828b3ebb8ea4a",
+        "summarySnapshot": {
+          "blockHash": "00000000000000000001d486d0f4f1a7743213f2f55171bd29c828b3ebb8ea4a",
+          "coverageByKey": {
+            "growthSummary": 966079,
+            "inceptionSummary": 966079,
+            "infinitySummary": 966079,
+            "logSummary": 966079,
+            "marketplaceSummary": 966079,
+            "tokenSummary": 966079,
+            "workFloor": 966079,
+            "workSummary": 966079
+          },
+          "eligible": true,
+          "generatedAt": "2026-09-08T13:00:11.212Z",
+          "indexedAt": "2026-09-08T13:00:11.212Z",
+          "indexedThroughBlock": 966079,
+          "payloadBytes": 17243695,
+          "snapshotId": "fe6d24e7467899325f8eb568",
+          "ok": true
+        },
+        "worker": {
+          "ageMs": 12583,
+          "containment": {
+            "active": false,
+            "checkpointHash": "00000000000000000001d486d0f4f1a7743213f2f55171bd29c828b3ebb8ea4a",
+            "checkpointHeight": 966079,
+            "failingBlockHeight": null,
+            "fingerprint": "",
+            "network": "livenet",
+            "nextRetryAt": null,
+            "reason": "canonical-scan-success",
+            "repeatCount": 0,
+            "txid": ""
+          },
+          "consecutiveFailures": 0,
+          "error": "",
+          "lastSuccessAt": "2026-09-08T13:13:11.807Z",
+          "maxAgeMs": 600000,
+          "ok": true,
+          "proofReady": true,
+          "proofSource": "idle-confirmed-replay",
+          "pendingEvents": {
+            "globalUnresolved": 0,
+            "model": "bounded-best-effort-pending-event-health-v1",
+            "ok": true,
+            "q16PendingUnresolved": 0,
+            "required": true,
+            "scope": "all-observed-pending-protocol-events",
+            "status": {
+              "checked": 0,
+              "deferred": 0,
+              "errors": 0,
+              "ok": true,
+              "q16ParentDeferred": 0,
+              "staleCandidates": 0,
+              "unavailable": false,
+              "unavailableValid": true
+            }
+          },
+          "phase": "idle"
+        },
+        "disk": {
+          "cache": {
+            "availableBytes": 378664140800,
+            "maxUsedPercent": 90,
+            "minFreeBytes": 5368709120,
+            "ok": true,
+            "path": "/data/proofofwork-api-cache",
+            "probePath": "/data/proofofwork-api-cache",
+            "totalBytes": 1764768071680,
+            "usedPercent": 78.54312150833937
+          },
+          "ok": true,
+          "root": {
+            "availableBytes": 75245588480,
+            "maxUsedPercent": 90,
+            "minFreeBytes": 5368709120,
+            "ok": true,
+            "path": "/",
+            "probePath": "/",
+            "totalBytes": 105089261568,
+            "usedPercent": 28.398404025980412
+          }
+        },
+        "database": {
+          "canonicalMetaOk": true,
+          "ok": true,
+          "required": true,
+          "timedOut": false
+        },
+        "receipt": {
+          "path": "/tmp/pow-incident-20260908/wallet-followup/final-public-health.json",
+          "bytes": 11053,
+          "sha256": "7427080c5b9946a0c34e8cb7a426787056a9ded038a4fd607878642f0ea185f8"
+        }
+      }
     }
   }
 }
