@@ -789,6 +789,30 @@ Fresh wallet credit state uses the exact relational token projection with a
 dedicated 10-second production wait, clamped between 5 and 15 seconds. A timed
 out or unprovable read still returns `CANONICAL_INDEX_UNAVAILABLE`; it never
 falls back to legacy history materialization.
+
+The September 8 incident correction is a candidate pending production
+verification. Its intended read contract is that wallet token-summary requests
+without a token filter use the same normalized wallet payload as scoped WORK
+reads. WORK definitions retain explicit canonical Q16 confirmed and pending
+subatom supply, including exact zero, before summary compaction. Address-bounded
+mint, transfer and holder collections must not replace the token's global
+issuance or holder metrics. Both WORK price aliases come from one exact
+proof-price/subatom ratio; lowest-ask selection uses integer cross-products,
+and an absent or unprovable price removes both aliases. Rounded display values
+never become price authority, and exact-tip and pending admission stay intact.
+
+The same candidate recovers omitted registry-fee display fields for confirmed
+valid generic-credit transfers only from one canonical transition trace at the
+event's exact block hash, height, transaction index, protocol output and record
+ordinal. The trace must agree with the raw carrier, transfer identity, amount,
+participants and normalized transaction outputs. Its attributed registry
+outputs must sum exactly to the committed `tokenTransferFlowSats` contribution;
+missing, ambiguous or divergent evidence fails closed. This is a reader
+projection, not an event or database repair: stored events, balances, raw
+transactions, transition state and commitments, frozen values, and the
+historical legacy-bootstrap carry remain unchanged. A missing display field
+does not authorize inserting a fee constant or changing reconciliation math.
+
 Pending status checks use their own smaller timeout
 (`POW_INDEX_STATUS_FETCH_TIMEOUT_MS`) and batch limit
 (`POW_INDEX_PENDING_STATUS_LIMIT`) so a single cold tx lookup cannot block a

@@ -49,7 +49,7 @@
     "check:electrum-client": "node scripts/check-electrum-client.mjs",
     "check:message-signatures": "node scripts/check-bitcoin-message-signatures.mjs",
     "check:live-data": "node scripts/check-live-data-contract.mjs",
-    "check:index-recovery-behavior": "node scripts/check-index-recovery-behavior.mjs",
+    "check:index-recovery-behavior": "node --test server/db/canonical-transfer-fee.test.mjs && node scripts/check-index-recovery-behavior.mjs",
     "check:client-read-containment": "node scripts/check-client-read-containment.mjs",
     "check:api-client-timeouts": "node --test scripts/check-proof-api-client.test.mjs",
     "check:read-projections": "node --test server/read-projections.test.mjs",

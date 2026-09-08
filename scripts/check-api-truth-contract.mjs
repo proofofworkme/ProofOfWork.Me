@@ -528,6 +528,12 @@ const readerScopedExactWorkAggregation = sourceSliceBetween(
   /const confirmedWorkUnits = workScoped/,
   /const creationSats = tokens\.reduce/,
 );
+// Bound chained source patterns to their owning top-level function. Scanning
+// the complete server with repeated greedy wildcards can backtrack for minutes.
+const ledgerConsistencyRead = sliceBetween(
+  /^async function ledgerConsistencyPayload\(/m,
+  /\n(?:export )?(?:async )?function /,
+);
 const stableCrossLedgerAudit = (() => {
   const start = ledgerAudit.indexOf("async function readStableCrossLedgerBatch");
   const end = ledgerAudit.indexOf("function isGullishBuyerTokenSale", start);
@@ -588,13 +594,13 @@ expect(
 );
 expect(
   "fresh ledger token fallback starts from the exact relational token state",
-  /async function ledgerTokenPayload[\s\S]*indexedTokenStateForCanonicalLedger\(network, scope\)[\s\S]*tokenStateWithLivePendingTransactionCheck\(indexedFallback, network\)[\s\S]*fastTokenPayloadSnapshot/u.test(
+  /async function ledgerTokenPayload[\s\S]*?indexedTokenStateForCanonicalLedger\(network, scope\)[\s\S]*?tokenStateWithLivePendingTransactionCheck\(indexedFallback, network\)[\s\S]*?fastTokenPayloadSnapshot/u.test(
     server,
   ),
 );
 expect(
   "pending credit liveness only drops after affirmative Core absence proof",
-  /async function tokenStateWithLivePendingTransactionCheck[\s\S]*bitcoinCoreTxStatusPayload\(txid, network\)[\s\S]*status\.absenceProven === true[\s\S]*pending-liveness-core-proof/u.test(
+  /async function tokenStateWithLivePendingTransactionCheck[\s\S]*?bitcoinCoreTxStatusPayload\(txid, network\)[\s\S]*?status\.absenceProven === true[\s\S]*?pending-liveness-core-proof/u.test(
     server,
   ),
 );
@@ -631,7 +637,7 @@ expect(
     /preserveExistingTokenMetrics && existing !== undefined/u.test(
       compaction,
     ) &&
-    /if \(!preserveExistingTokenMetrics\) \{[\s\S]*return computed/u.test(
+    /if \(!preserveExistingTokenMetrics\) \{[\s\S]*?return computed/u.test(
       compaction,
     ) && /return null/u.test(compaction),
 );
@@ -656,7 +662,7 @@ expect(
     compaction.includes(`${field}: mergedTokenMarketMetric(`),
   ) &&
     /summaryCollectionIsTruncated/u.test(compaction) &&
-    /preserveExistingTokenMetrics && truncated[\s\S]*return undefined/u.test(
+    /preserveExistingTokenMetrics && truncated[\s\S]*?return undefined/u.test(
       compaction,
     ),
 );
@@ -686,7 +692,7 @@ expect(
 );
 expect(
   "Boost profile routes project person activity instead of filtering timeline tabs",
-  /const BOOST_PROFILE_TABS = new Set\(\[[\s\S]*"boosts"[\s\S]*"replies"[\s\S]*"purchased"[\s\S]*"likes"[\s\S]*"replies-to"/u.test(
+  /const BOOST_PROFILE_TABS = new Set\(\[[\s\S]*?"boosts"[\s\S]*?"replies"[\s\S]*?"purchased"[\s\S]*?"likes"[\s\S]*?"replies-to"/u.test(
     server,
   ) &&
     /function boostProfileSubjectForQuery/u.test(server) &&
@@ -695,7 +701,7 @@ expect(
     /profileTabs \? profileTabs\[profileTab\] : entries/u.test(
       boostFeedPayloadSource,
     ) &&
-    /!profileSubject &&[\s\S]*view === "following"/u.test(
+    /!profileSubject &&[\s\S]*?view === "following"/u.test(
       boostFeedPayloadSource,
     ),
 );
@@ -709,7 +715,7 @@ expect(
 );
 expect(
   "deep ledger audit requires atomic WORK amount strings",
-  /function workAmountMatches[\s\S]*amountAtoms/u.test(ledgerAudit) &&
+  /function workAmountMatches[\s\S]*?amountAtoms/u.test(ledgerAudit) &&
     /workAmountMatches\(item, "101000"\)/u.test(ledgerAudit) &&
     !/item\.amount === 101_000/u.test(ledgerAudit),
 );
@@ -717,25 +723,25 @@ expect(
   "deep ledger audit includes the exact post-activation credit carry",
   /postActivationCreditFixedQ8/u.test(ledgerAuditExact) &&
     /postActivationCreditFixedSats/u.test(ledgerAuditExact) &&
-    /legacyBootstrapCreditFixedSats \+[\s\S]*postActivationCreditFixedSats/u.test(
+    /legacyBootstrapCreditFixedSats \+[\s\S]*?postActivationCreditFixedSats/u.test(
       ledgerAuditExact,
     ) &&
-    /legacyBootstrapCreditFixedSats \+[\s\S]*postActivationCreditFixedSats/u.test(
+    /legacyBootstrapCreditFixedSats \+[\s\S]*?postActivationCreditFixedSats/u.test(
       ledgerAudit,
     ) &&
-    /q8FieldsAbsent &&[\s\S]*legacyFieldsAgree &&[\s\S]*postActivationFieldsAgree &&[\s\S]*numbersAgree/u.test(
+    /q8FieldsAbsent &&[\s\S]*?legacyFieldsAgree &&[\s\S]*?postActivationFieldsAgree &&[\s\S]*?numbersAgree/u.test(
       ledgerAudit,
     ),
 );
 expect(
   "stable canonical reads use a canonical checkpoint while exact-tip truth is independent of worker heartbeat health",
   /const available =/u.test(publicGate) &&
-    /const atTip =[\s\S]*available &&[\s\S]*indexedThroughBlock === tipHeight/u.test(
+    /const atTip =[\s\S]*?available &&[\s\S]*?indexedThroughBlock === tipHeight/u.test(
       publicGate,
     ) &&
-    /const broadcastReady =[\s\S]*atTip/u.test(publicGate) &&
+    /const broadcastReady =[\s\S]*?atTip/u.test(publicGate) &&
     /const ready =/u.test(publicGate) &&
-    /broadcastReady &&[\s\S]*workerReadiness\.ready === true/u.test(
+    /broadcastReady &&[\s\S]*?workerReadiness\.ready === true/u.test(
       publicGate,
     ) &&
     /proofIndexWorkerExactTipReadiness\(status/u.test(publicGate) &&
@@ -744,47 +750,47 @@ expect(
 );
 expect(
   "whole-index health degrades on any unresolved observed pending protocol event without disabling canonical availability",
-  /const pendingHealthEnvelope = workerReadiness\.q16Required[\s\S]*database\?\.worker\?\.lastSuccess[\s\S]*const pendingEventHealth =[\s\S]*const pendingStatus =/u.test(
+  /const pendingHealthEnvelope = workerReadiness\.q16Required[\s\S]*?database\?\.worker\?\.lastSuccess[\s\S]*?const pendingEventHealth =[\s\S]*?const pendingStatus =/u.test(
     healthPayload,
   ) &&
-    /bounded-best-effort-pending-event-health-v1[\s\S]*pendingGlobalUnresolved === 0[\s\S]*pendingQ16Unresolved === 0[\s\S]*pendingEventHealth\?\.ok === true/u.test(
+    /bounded-best-effort-pending-event-health-v1[\s\S]*?pendingGlobalUnresolved === 0[\s\S]*?pendingQ16Unresolved === 0[\s\S]*?pendingEventHealth\?\.ok === true/u.test(
       healthPayload,
     ) &&
     /const pendingEventHealthRequired = workerReadiness\.q16Required/u.test(
       healthPayload,
     ) &&
-    /const pendingStatusQ16ParentDeferredOk =[\s\S]*pendingStatusQ16ParentDeferred >= 0/u.test(
+    /const pendingStatusQ16ParentDeferredOk =[\s\S]*?pendingStatusQ16ParentDeferred >= 0/u.test(
       healthPayload,
     ) &&
-    /const pendingStatusOk =[\s\S]*Number\.isSafeInteger\(pendingStatusChecked\)[\s\S]*pendingStatusDeferred === 0[\s\S]*Number\.isSafeInteger\(pendingStatusStaleCandidates\)[\s\S]*pendingStatusChecked === pendingStatusStaleCandidates[\s\S]*pendingStatusErrors === 0[\s\S]*pendingStatusQ16ParentDeferredOk[\s\S]*pendingStatusUnavailableValid/u.test(
+    /const pendingStatusOk =[\s\S]*?Number\.isSafeInteger\(pendingStatusChecked\)[\s\S]*?pendingStatusDeferred === 0[\s\S]*?Number\.isSafeInteger\(pendingStatusStaleCandidates\)[\s\S]*?pendingStatusChecked === pendingStatusStaleCandidates[\s\S]*?pendingStatusErrors === 0[\s\S]*?pendingStatusQ16ParentDeferredOk[\s\S]*?pendingStatusUnavailableValid/u.test(
       healthPayload,
     ) &&
     /const pendingAccuracyOk = pendingEventHealthOk && pendingStatusOk/u.test(
       healthPayload,
     ) &&
-    /const indexOk =[\s\S]*workerOk &&[\s\S]*pendingAccuracyOk &&[\s\S]*const indexAvailable =[\s\S]*canonicalStateOk &&[\s\S]*readModelsOk;/u.test(
+    /const indexOk =[\s\S]*?workerOk &&[\s\S]*?pendingAccuracyOk &&[\s\S]*?const indexAvailable =[\s\S]*?canonicalStateOk &&[\s\S]*?readModelsOk;/u.test(
       healthPayload,
     ) &&
-    !/const indexAvailable =[\s\S]*pendingAccuracyOk/u.test(
+    !/const indexAvailable =[\s\S]*?pendingAccuracyOk/u.test(
       healthPayload.slice(
         healthPayload.indexOf("const indexAvailable ="),
         healthPayload.indexOf("const diskOk ="),
       ),
     ) &&
-    /pendingEvents: \{[\s\S]*globalUnresolved:[\s\S]*q16PendingUnresolved:[\s\S]*required: pendingEventHealthRequired[\s\S]*status: \{[\s\S]*errors:[\s\S]*q16ParentDeferred:[\s\S]*staleCandidates:[\s\S]*unavailable:/u.test(
+    /pendingEvents: \{[\s\S]*?globalUnresolved:[\s\S]*?q16PendingUnresolved:[\s\S]*?required: pendingEventHealthRequired[\s\S]*?status: \{[\s\S]*?errors:[\s\S]*?q16ParentDeferred:[\s\S]*?staleCandidates:[\s\S]*?unavailable:/u.test(
       healthPayload,
     ),
 );
 expect(
   "node health requires synced unpruned mainnet Core with exact-tip txindex",
-  /function exactCoreTipFromBlockchainInfo[\s\S]*info\?\.chain !== "main"[\s\S]*initialblockdownload !== false[\s\S]*headers !== height[\s\S]*verificationProgress < 0\.999/u.test(
+  /function exactCoreTipFromBlockchainInfo[\s\S]*?info\?\.chain !== "main"[\s\S]*?initialblockdownload !== false[\s\S]*?headers !== height[\s\S]*?verificationProgress < 0\.999/u.test(
     server,
   ) &&
-    /function exactCoreNodeAuthority[\s\S]*chain\?\.pruned !== false[\s\S]*txindex\.synced !== true[\s\S]*txindexHeight !== tip\.height/u.test(
+    /function exactCoreNodeAuthority[\s\S]*?chain\?\.pruned !== false[\s\S]*?txindex\.synced !== true[\s\S]*?txindexHeight !== tip\.height/u.test(
       server,
     ) &&
     /bitcoinRpc\("getindexinfo", \["txindex"\]\)/u.test(healthPayload) &&
-    /const available =[\s\S]*coreAuthority !== null/u.test(healthPayload) &&
+    /const available =[\s\S]*?coreAuthority !== null/u.test(healthPayload) &&
     /ok: coreAuthority !== null/u.test(healthPayload),
 );
 expect(
@@ -794,7 +800,7 @@ expect(
 );
 expect(
   "fresh reads require canonical exact-tip truth unless a bounded last-good read is explicit",
-  /let serveFreshLastGood = false[\s\S]*serveFreshLastGood =[\s\S]*canonicalFreshReadCanUseLastGood\(url, gate\)/u.test(
+  /let serveFreshLastGood = false[\s\S]*?serveFreshLastGood =[\s\S]*?canonicalFreshReadCanUseLastGood\(url, gate\)/u.test(
     requestGate,
   ) &&
     /if \(freshRead && gate\.atTip !== true && !serveFreshLastGood\)/u.test(
@@ -805,25 +811,25 @@ expect(
 );
 expect(
   "fresh wallet token reads require an authoritative wallet overlay before global token fallbacks",
-  /if \(walletScoped\)[\s\S]*walletScopedTokenPayload\([\s\S]*requireCurrent: freshRead/u.test(
+  /if \(walletScoped\)[\s\S]*?walletScopedTokenPayload\([\s\S]*?requireCurrent: freshRead/u.test(
     tokenRoute,
   ) &&
-    /const freshWalletIndexUnavailable = \(\) => \{[\s\S]*CANONICAL_WALLET_INDEX_UNAVAILABLE[\s\S]*requiredSource: "proof-indexer-wallet-token-overlay"/u.test(
+    /const freshWalletIndexUnavailable = \(\) => \{[\s\S]*?CANONICAL_WALLET_INDEX_UNAVAILABLE[\s\S]*?requiredSource: "proof-indexer-wallet-token-overlay"/u.test(
       walletScopedTokenRead,
     ) &&
-    /const authoritativeOverlay =[\s\S]*walletScopedPayloadUsesAuthoritativeOverlay\(walletPayload\)[\s\S]*if \(requireCurrent && !authoritativeOverlay\) \{[\s\S]*throw freshWalletIndexUnavailable\(\)/u.test(
+    /const authoritativeOverlay =[\s\S]*?walletScopedPayloadUsesAuthoritativeOverlay\(walletPayload\)[\s\S]*?if \(requireCurrent && !authoritativeOverlay\) \{[\s\S]*?throw freshWalletIndexUnavailable\(\)/u.test(
       walletScopedTokenRead,
     ) &&
-    /const addressScopedPayload = await proofIndexWalletScopedTokenPayloadForRead\([\s\S]*withWalletAuthority\(recoveredPayload\)[\s\S]*if \(requireCurrent\) \{[\s\S]*throw freshWalletIndexUnavailable\(\)[\s\S]*let payload = null/u.test(
+    /const addressScopedPayload = await proofIndexWalletScopedTokenPayloadForRead\([\s\S]*?withWalletAuthority\(recoveredPayload\)[\s\S]*?if \(requireCurrent\) \{[\s\S]*?throw freshWalletIndexUnavailable\(\)[\s\S]*?let payload = null/u.test(
       walletScopedTokenRead,
     ) &&
-    !/if \(requireCurrent\)[\s\S]*currentExactTipTokenPayloadForRead\(/u.test(
+    !/if \(requireCurrent\)[\s\S]*?currentExactTipTokenPayloadForRead\(/u.test(
       walletScopedTokenRead,
     ) &&
-    !/if \(requireCurrent\)[\s\S]*currentCanonicalTokenSummaryPayloadForFreshRead\(/u.test(
+    !/if \(requireCurrent\)[\s\S]*?currentCanonicalTokenSummaryPayloadForFreshRead\(/u.test(
       walletScopedTokenRead,
     ) &&
-    !/if \(requireCurrent\)[\s\S]*cachedTokenPayloadFallbackForRead\(/u.test(
+    !/if \(requireCurrent\)[\s\S]*?cachedTokenPayloadFallbackForRead\(/u.test(
       walletScopedTokenRead,
     ),
 );
@@ -831,11 +837,11 @@ expect(
   "fresh paginated Log reads use relational state bound to the exact summary",
   /"limit"/u.test(logRoute) &&
     /"offset"/u.test(logRoute) &&
-    /freshRead && !exactLogQueryTxid[\s\S]*freshProofIndexLogHistoryPayload/u.test(
+    /freshRead && !exactLogQueryTxid[\s\S]*?freshProofIndexLogHistoryPayload/u.test(
       logRoute,
     ) &&
     /exactLogHistoryMissPayload/u.test(logRoute) &&
-    /if \(exactLogQueryTxid\)[\s\S]*indexed exact Log lookup is temporarily unavailable/u.test(
+    /if \(exactLogQueryTxid\)[\s\S]*?indexed exact Log lookup is temporarily unavailable/u.test(
       logRoute,
     ) &&
     /activityHistoryPayload/u.test(logRoute) &&
@@ -843,20 +849,20 @@ expect(
     /boundSearchParams\.set\("snapshot", summarySnapshotId\)/u.test(
       server,
     ) &&
-    /function pendingLogSnapshotTimeSql\(snapshotTimeParam\)[\s\S]*COALESCE\(e\.event_time, e\.created_at\) <= \$\{snapshotTimeParam\}::timestamptz[\s\S]*pending_tx\.first_seen_at/u.test(
+    /function pendingLogSnapshotTimeSql\(snapshotTimeParam\)[\s\S]*?COALESCE\(e\.event_time, e\.created_at\) <= \$\{snapshotTimeParam\}::timestamptz[\s\S]*?pending_tx\.first_seen_at/u.test(
       reader,
     ) &&
-    /e\.status = 'confirmed'[\s\S]*e\.updated_at <= \$\{snapshotTimeParam\}::timestamptz[\s\S]*e\.status = 'pending'[\s\S]*pendingLogSnapshotTimeSql\(snapshotTimeParam\)/u.test(
+    /e\.status = 'confirmed'[\s\S]*?e\.updated_at <= \$\{snapshotTimeParam\}::timestamptz[\s\S]*?e\.status = 'pending'[\s\S]*?pendingLogSnapshotTimeSql\(snapshotTimeParam\)/u.test(
       reader,
     ) &&
     /snapshotTotalCount/u.test(reader) &&
-    /offsetRaw[\s\S]*transactionId/u.test(server) &&
-    /offsetRaw[\s\S]*transactionId/u.test(reader),
+    /offsetRaw[\s\S]*?transactionId/u.test(server) &&
+    /offsetRaw[\s\S]*?transactionId/u.test(reader),
 );
 expect(
   "fresh full Log reads use canonical transaction truth bound to the exact summary",
   /async function freshProofIndexLogPayload/u.test(server) &&
-    /proofIndexCanonicalActivityPayload\(network, \{[\s\S]*snapshotId: summarySnapshotId/u.test(
+    /proofIndexCanonicalActivityPayload\(network, \{[\s\S]*?snapshotId: summarySnapshotId/u.test(
       server,
     ) &&
     /pageSnapshotTotal !== summaryTotal/u.test(server) &&
@@ -867,10 +873,10 @@ expect(
       server,
     ) &&
     /await freshProofIndexLogPayload\(network\)/u.test(logRoute) &&
-    /function pendingLogSnapshotTimeSql\(snapshotTimeParam\)[\s\S]*COALESCE\(e\.event_time, e\.created_at\) <= \$\{snapshotTimeParam\}::timestamptz[\s\S]*pending_tx\.first_seen_at/u.test(
+    /function pendingLogSnapshotTimeSql\(snapshotTimeParam\)[\s\S]*?COALESCE\(e\.event_time, e\.created_at\) <= \$\{snapshotTimeParam\}::timestamptz[\s\S]*?pending_tx\.first_seen_at/u.test(
       reader,
     ) &&
-    /const snapshotTimeParam = requestedSnapshotId[\s\S]*snapshotWhere = requestedSnapshotId[\s\S]*e\.status = 'confirmed'[\s\S]*e\.updated_at <= \$\{snapshotTimeParam\}::timestamptz[\s\S]*e\.status = 'pending'[\s\S]*pendingLogSnapshotTimeSql\(snapshotTimeParam\)/u.test(
+    /const snapshotTimeParam = requestedSnapshotId[\s\S]*?snapshotWhere = requestedSnapshotId[\s\S]*?e\.status = 'confirmed'[\s\S]*?e\.updated_at <= \$\{snapshotTimeParam\}::timestamptz[\s\S]*?e\.status = 'pending'[\s\S]*?pendingLogSnapshotTimeSql\(snapshotTimeParam\)/u.test(
       reader,
     ) &&
     /snapshotTotalCount: requestedSnapshotId \? items\.length/u.test(reader),
@@ -880,23 +886,23 @@ expect(
   (server.match(/freshRead && !exactLogQueryTxid/gu) ?? []).length >= 2 &&
     (server.match(/\? await freshProofIndexLogHistoryPayload/gu) ?? [])
       .length >= 2 &&
-    /network === "livenet" \|\|[\s\S]*logHistoryEligibility\.eligible \|\|[\s\S]*freshRead && !exactLogQueryTxid/u.test(
+    /network === "livenet" \|\|[\s\S]*?logHistoryEligibility\.eligible \|\|[\s\S]*?freshRead && !exactLogQueryTxid/u.test(
       server,
     ) &&
-    /verifiedFreshLogCheckpointAfterRead\([\s\S]*"log-history"/u.test(
+    /verifiedFreshLogCheckpointAfterRead\([\s\S]*?"log-history"/u.test(
       server,
     ) &&
     /CANONICAL_LOG_HISTORY_TIP_CHANGED/u.test(server),
 );
 expect(
   "stable Log and consistency reads expose only one hash-bound last-good snapshot",
-  /async function stableProofIndexLogPayload[\s\S]*stableCanonicalLogSummaryPayload\(network, "Log"\)[\s\S]*proofIndexCanonicalActivityPayload\(network, \{[\s\S]*snapshotId: summarySnapshotId/u.test(
+  /async function stableProofIndexLogPayload[\s\S]*?stableCanonicalLogSummaryPayload\(network, "Log"\)[\s\S]*?proofIndexCanonicalActivityPayload\(network, \{[\s\S]*?snapshotId: summarySnapshotId/u.test(
     server,
   ) &&
-    /async function stableProofIndexLogHistoryPayload[\s\S]*boundSearchParams\.set\("snapshot", summarySnapshotId\)[\s\S]*proofIndexLogHistoryPayload\([\s\S]*\{\s*currentRelational:\s*true\s*\}/u.test(
+    /async function stableProofIndexLogHistoryPayload[\s\S]*?boundSearchParams\.set\("snapshot", summarySnapshotId\)[\s\S]*?proofIndexLogHistoryPayload\([\s\S]*?\{\s*currentRelational:\s*true\s*\}/u.test(
       server,
     ) &&
-    /async function stableProofIndexLogHistoryPayload[\s\S]*proofIndexCanonicalActivityPayload\(network, \{[\s\S]*eventIds: pageEventIds,[\s\S]*snapshotId: summarySnapshotId/u.test(
+    /async function stableProofIndexLogHistoryPayload[\s\S]*?proofIndexCanonicalActivityPayload\(network, \{[\s\S]*?eventIds: pageEventIds,[\s\S]*?snapshotId: summarySnapshotId/u.test(
       server,
     ) &&
     /canonicalPage\?\.membershipRestricted !== true/u.test(server) &&
@@ -906,18 +912,18 @@ expect(
     ) &&
     /terminal_tx\.updated_at <= \$5::timestamptz/u.test(reader) &&
     /candidate\.block_height = terminal_tx\.block_height/u.test(reader) &&
-    /candidate\.status = 'pending'[\s\S]*terminal_tx\.status <> 'confirmed'/u.test(
+    /candidate\.status = 'pending'[\s\S]*?terminal_tx\.status <> 'confirmed'/u.test(
       reader,
     ) &&
     /CANONICAL_LOG_EXACT_QUERY_OUTSIDE_SNAPSHOT/u.test(server) &&
     /CANONICAL_LOG_EXACT_QUERY_NOT_IN_SNAPSHOT/u.test(server) &&
-    /async function ledgerConsistencyPayload[\s\S]*if \(!fresh\)[\s\S]*activitySummaryPayload\(network, false\)[\s\S]*proofIndexCanonicalSummaryLedgerPayload\([\s\S]*summaryHeight,[\s\S]*summaryHash/u.test(
-      server,
+    /async function ledgerConsistencyPayload[\s\S]*?if \(!fresh\)[\s\S]*?activitySummaryPayload\(network, false\)[\s\S]*?proofIndexCanonicalSummaryLedgerPayload\([\s\S]*?summaryHeight,[\s\S]*?summaryHash/u.test(
+      ledgerConsistencyRead,
     ) &&
-    /verifyStableLogCheckpointAfterRead\([\s\S]*summary,[\s\S]*network,[\s\S]*"ledger-consistency"/u.test(
-      server,
+    /verifyStableLogCheckpointAfterRead\([\s\S]*?summary,[\s\S]*?network,[\s\S]*?"ledger-consistency"/u.test(
+      ledgerConsistencyRead,
     ) &&
-    /surface: "ledger-consistency"/u.test(server),
+    /surface: "ledger-consistency"/u.test(ledgerConsistencyRead),
 );
 expect(
   "Core and Electrum pending reads preserve Bitcoin Core mempool admission time",
@@ -939,16 +945,16 @@ expect(
 );
 expect(
   "historical dropped mail witnesses are transaction-gated and sender-only",
-  /HISTORICAL_DROPPED_MAIL_OUTBOX_WITNESSES[\s\S]*8e9074486fa0a6a75fd01f20c8a41a56ccd964be569e61e81e92c60266c001f0[\s\S]*1KNkUBREnfno2BeV7QsBf8XCWZN6YFfxPH/u.test(
+  /HISTORICAL_DROPPED_MAIL_OUTBOX_WITNESSES[\s\S]*?8e9074486fa0a6a75fd01f20c8a41a56ccd964be569e61e81e92c60266c001f0[\s\S]*?1KNkUBREnfno2BeV7QsBf8XCWZN6YFfxPH/u.test(
     reader,
   ) &&
-    /function historicalDroppedMailOutboxWitnessesForAddress[\s\S]*normalizedAddressKey\(witness\.senderAddress\) === targetKey/u.test(
+    /function historicalDroppedMailOutboxWitnessesForAddress[\s\S]*?normalizedAddressKey\(witness\.senderAddress\) === targetKey/u.test(
       reader,
     ) &&
-    /SELECT txid, first_seen_at, last_seen_at, dropped_at[\s\S]*FROM proof_indexer\.transactions[\s\S]*AND status = 'dropped'/u.test(
+    /SELECT txid, first_seen_at, last_seen_at, dropped_at[\s\S]*?FROM proof_indexer\.transactions[\s\S]*?AND status = 'dropped'/u.test(
       reader,
     ) &&
-    /droppedMailOutboxWitnessMessage[\s\S]*status: "dropped"[\s\S]*proof-indexer-mail\+historical-dropped-mail-witness[\s\S]*droppedOutboxWitnesses/u.test(
+    /droppedMailOutboxWitnessMessage[\s\S]*?status: "dropped"[\s\S]*?proof-indexer-mail\+historical-dropped-mail-witness[\s\S]*?droppedOutboxWitnesses/u.test(
       reader,
     ),
 );
@@ -957,10 +963,10 @@ expect(
   /const PENDING_DROP_CONFIRMATION_MS = pendingDropConfirmationMs\(\s*process\.env\.POW_INDEX_PENDING_DROP_CONFIRMATION_MS/u.test(
     worker,
   ) &&
-    /function pendingDropConfirmationMs[\s\S]*Math\.max\(\s*5 \* 60_000,[\s\S]*Number\.isFinite\(configured\)/u.test(
+    /function pendingDropConfirmationMs[\s\S]*?Math\.max\(\s*5 \* 60_000,[\s\S]*?Number\.isFinite\(configured\)/u.test(
       worker,
     ) &&
-    /function authoritativeDroppedStatusEvidence[\s\S]*sources\.length === requiredSources\.length[\s\S]*requiredSources\.every/u.test(
+    /function authoritativeDroppedStatusEvidence[\s\S]*?sources\.length === requiredSources\.length[\s\S]*?requiredSources\.every/u.test(
       worker,
     ) &&
     [
@@ -970,7 +976,7 @@ expect(
       "bitcoin-core:getblockchaininfo",
       "bitcoin-core:getindexinfo:txindex",
     ].every((value) => worker.includes(value)) &&
-    /SELECT status, raw_tx[\s\S]*FOR UPDATE/u.test(worker) &&
+    /SELECT status, raw_tx[\s\S]*?FOR UPDATE/u.test(worker) &&
     /WHERE network = \$1 AND txid = \$2 AND status = 'pending'/u.test(worker) &&
     /canonical-block-scan-required/u.test(worker) &&
     /repeat-absence-required/u.test(worker) &&
@@ -983,13 +989,13 @@ expect(
     /observedAtMs >= absenceStartedAtMs \+ PENDING_DROP_CONFIRMATION_MS/u.test(
       worker,
     ) &&
-    /normalizedStatus === "confirmed"[\s\S]*statusObservation[\s\S]*canonical-block-scan-required/u.test(
+    /normalizedStatus === "confirmed"[\s\S]*?statusObservation[\s\S]*?canonical-block-scan-required/u.test(
       worker,
     ) &&
-    /absenceProven:[\s\S]*normalizedStatus === "dropped" \? payload\.absenceProven : undefined/u.test(
+    /absenceProven:[\s\S]*?normalizedStatus === "dropped" \? payload\.absenceProven : undefined/u.test(
       worker,
     ) &&
-    /priorObservation\?\.status === "dropped" &&[\s\S]*authoritativeDroppedStatusEvidence\(priorObservation\)/u.test(
+    /priorObservation\?\.status === "dropped" &&[\s\S]*?authoritativeDroppedStatusEvidence\(priorObservation\)/u.test(
       worker,
     ) &&
     (worker.match(/'dropped', true/gu) ?? []).length >= 2 &&
@@ -997,7 +1003,7 @@ expect(
       /UPDATE proof_indexer\.mail_items mail[\s\S]*?status = event\.status,[\s\S]*?event_time = event\.event_time,[\s\S]*?message = event\.payload[\s\S]*?FROM proof_indexer\.events event/gu,
     ) ?? []).length >= 2 &&
     /block_hash = NULL/u.test(worker) &&
-    !/SET status = 'dropped'[\s\S]*\(listing_id = \$2 OR seal_txid = \$2 OR close_txid = \$2\)/u.test(
+    !/SET status = 'dropped'[\s\S]*?\(listing_id = \$2 OR seal_txid = \$2 OR close_txid = \$2\)/u.test(
       worker,
     ),
 );
@@ -1014,12 +1020,12 @@ expect(
   normalizedQuotedItems(backfillPublicLogKinds) ===
     normalizedQuotedItems(readerPublicLogKinds) &&
     /async function publicLogRelationalFingerprint/u.test(backfill) &&
-    /publicLogFingerprintsMatch\([\s\S]*currentPublicLogFingerprint[\s\S]*previousPublicLogFingerprint/u.test(
+    /publicLogFingerprintsMatch\([\s\S]*?currentPublicLogFingerprint[\s\S]*?previousPublicLogFingerprint/u.test(
       backfill,
     ) &&
     /publicLogRelational: finalPublicLogFingerprint\.hash/u.test(backfill) &&
     /publicLogFingerprint: finalPublicLogFingerprint/u.test(backfill) &&
-    /runCanonicalBeforePending\([\s\S]*runBackfillPhase\(backfillPhases\[0\]\)[\s\S]*pendingStatus = await refreshPendingStatusesSafely\(\);[\s\S]*runBackfillPhase\(backfillPhases\[1\]\)/u.test(
+    /runCanonicalBeforePending\([\s\S]*?runBackfillPhase\(backfillPhases\[0\]\)[\s\S]*?pendingStatus = await refreshPendingStatusesSafely\(\);[\s\S]*?runBackfillPhase\(backfillPhases\[1\]\)/u.test(
       worker,
     ) &&
     !/async \(\) => \{\s*await runBackfillPhase\(backfillPhases\[1\]\);\s*pendingStatus = await refreshPendingStatusesSafely\(\);/u.test(
@@ -1028,15 +1034,15 @@ expect(
 );
 expect(
   "rebroadcasts and dropped listing actions cannot retain stale terminal state",
-  /dropped_at = CASE[\s\S]*EXCLUDED\.status IN \('pending', 'confirmed'\)[\s\S]*THEN NULL/u.test(
+  /dropped_at = CASE[\s\S]*?EXCLUDED\.status IN \('pending', 'confirmed'\)[\s\S]*?THEN NULL/u.test(
     backfill,
   ) &&
     /- 'statusObservation'/u.test(backfill) &&
-    /WITH affected AS[\s\S]*base_event\.payload AS base_payload/u.test(
+    /WITH affected AS[\s\S]*?base_event\.payload AS base_payload/u.test(
       worker,
     ) &&
     /buyer_address = NULL/u.test(worker) &&
-    /- 'closeTxid'[\s\S]*- 'closedTxid'[\s\S]*- 'buyerAddress'/u.test(
+    /- 'closeTxid'[\s\S]*?- 'closedTxid'[\s\S]*?- 'buyerAddress'/u.test(
       worker,
     ),
 );
@@ -1060,7 +1066,7 @@ expect(
 );
 expect(
   "livenet broadcast requires an exact-tip verified canonical gate",
-  /const broadcastReady =[\s\S]*atTip/u.test(publicGate) &&
+  /const broadcastReady =[\s\S]*?atTip/u.test(publicGate) &&
     /canonicalPublicReadGate\(network, \{ force: true \}\)/u.test(
       broadcastAdmission,
     ) &&
@@ -1117,19 +1123,19 @@ expect(
 );
 expect(
   "zero-mint Inception verification is bound to the exact target and canonical block",
-  /normalizedTargetTxid[\s\S]*sourceBondTxid[\s\S]*verifierBlockHash/u.test(
+  /normalizedTargetTxid[\s\S]*?sourceBondTxid[\s\S]*?verifierBlockHash/u.test(
     invalidOnlyInceptionResolution,
   ) && /inceptionInvalidOnlyVerifierStateResolved/u.test(verifier),
 );
 expect(
   "pending WORK supply-cap classification is Core-current and exact-tip indexed",
-  /network !== "livenet"[\s\S]*tokenScope !== WORK_TOKEN_ID/u.test(
+  /network !== "livenet"[\s\S]*?tokenScope !== WORK_TOKEN_ID/u.test(
     pendingWorkSupplyCapVerifier,
   ) &&
-    /fetchTransactionFromBitcoinRpc[\s\S]*requireCanonicalPrevouts: true[\s\S]*getmempoolentry/u.test(
+    /fetchTransactionFromBitcoinRpc[\s\S]*?requireCanonicalPrevouts: true[\s\S]*?getmempoolentry/u.test(
       pendingWorkSupplyCapVerifier,
     ) &&
-    /inputAddresses\(vin\)\[0\][\s\S]*isValidBitcoinAddress\(actorAddress, network\)/u.test(
+    /inputAddresses\(vin\)\[0\][\s\S]*?isValidBitcoinAddress\(actorAddress, network\)/u.test(
       pendingWorkSupplyCapVerifier,
     ) &&
     /proofIndexExactlyCoversCoreTip/u.test(pendingWorkSupplyCapVerifier) &&
@@ -1140,7 +1146,7 @@ expect(
       pendingWorkSupplyCapVerifier,
     ) &&
     /pendingCandidatesComplete !== true/u.test(pendingWorkSupplyCapVerifier) &&
-    /compareCanonicalUtf8\([\s\S]*candidate\.txid,[\s\S]*normalizedTargetTxid,[\s\S]*\) >= 0/u.test(
+    /compareCanonicalUtf8\([\s\S]*?candidate\.txid,[\s\S]*?normalizedTargetTxid,[\s\S]*?\) >= 0/u.test(
       pendingWorkSupplyCapVerifier,
     ) &&
     (pendingWorkSupplyCapVerifier.match(
@@ -1205,7 +1211,7 @@ expect(
       "`/api/v1/token?asset=${POWB_TOKEN_ID}&fresh=1`",
       "`/api/v1/token?asset=${INCB_TOKEN_ID}&fresh=1`",
     ].every((path) => stableCrossLedgerAudit.includes(path)) &&
-    /if \(snapshotSentinelsMatch\(before, after\)\) \{[\s\S]*return \{/u.test(
+    /if \(snapshotSentinelsMatch\(before, after\)\) \{[\s\S]*?return \{/u.test(
       stableCrossLedgerAudit,
     ) &&
     /payloadMatchesAuditSentinel\(payload, after, false\)/u.test(
@@ -1219,7 +1225,7 @@ expect(
       stableCrossLedgerAudit,
     ) &&
     (stableCrossLedgerAudit.match(/\bcontinue;/gu) ?? []).length === 1 &&
-    /if \(attempt < CROSS_LEDGER_AUDIT_MAX_ATTEMPTS\)[\s\S]*continue;/u.test(
+    /if \(attempt < CROSS_LEDGER_AUDIT_MAX_ATTEMPTS\)[\s\S]*?continue;/u.test(
       stableCrossLedgerAudit,
     ),
 );
@@ -1287,7 +1293,7 @@ expect(
 );
 expect(
   "WORK pending cap ordering matches canonical pending transaction replay",
-  /function sortWorkMintsForPendingCap[\s\S]*compareCanonicalUtf8\(left\.txid, right\.txid\)[\s\S]*Date\.parse\(left\.createdAt\)/u.test(
+  /function sortWorkMintsForPendingCap[\s\S]*?compareCanonicalUtf8\(left\.txid, right\.txid\)[\s\S]*?Date\.parse\(left\.createdAt\)/u.test(
     server,
   ),
 );
@@ -1310,12 +1316,12 @@ expect(
 );
 expect(
   "historical AMO V5 replay uses full canonical positions and integer-only unit math",
-  /blockHeight[\s\S]*blockTransactionIndex[\s\S]*protocolVout[\s\S]*recordOrdinal/u.test(
+  /blockHeight[\s\S]*?blockTransactionIndex[\s\S]*?protocolVout[\s\S]*?recordOrdinal/u.test(
     workAmoV5,
   ) &&
     /workAmoCeilDiv/u.test(workAmoV5) &&
     /workAmoFloorDiv/u.test(workAmoV5) &&
-    /targetNumerator[\s\S]*targetDenominator[\s\S]*unitAmountAtoms[\s\S]*unitMinimumPriceSats/u.test(
+    /targetNumerator[\s\S]*?targetDenominator[\s\S]*?unitAmountAtoms[\s\S]*?unitMinimumPriceSats/u.test(
       workAmoV5,
     ) &&
     /workAmoV5FrozenTermsMatch/u.test(workAmoV5),
@@ -1332,11 +1338,11 @@ expect(
 );
 expect(
   "historical AMO V5 read caching preserves fresh negative checks and exact-tip positive reuse",
-  /function reusableWorkAmoV5StatusCache\([\s\S]*cache\.payload\.indexReady === true[\s\S]*Number\(cache\.expiresAt\) > now/u.test(
+  /function reusableWorkAmoV5StatusCache\([\s\S]*?cache\.payload\.indexReady === true[\s\S]*?Number\(cache\.expiresAt\) > now/u.test(
     server,
   ) &&
     /reusableWorkAmoV5StatusCache\(workAmoV5StatusCache/u.test(server) &&
-    /proofIndexWorkAmoReplayReadiness\(network,\s*\{[\s\S]*force,[\s\S]*throughBlockHash: tipHash/u.test(
+    /proofIndexWorkAmoReplayReadiness\(network,\s*\{[\s\S]*?force,[\s\S]*?throughBlockHash: tipHash/u.test(
       server,
     ),
 );
@@ -1374,47 +1380,47 @@ expect(
     /WORK_AMO_V6_ALLOWED_FACE_PROOFS = Object\.freeze\(\[\s*20_000,\s*50_000,\s*100_000,\s*\]\)/u.test(
       workAmoV6,
     ) &&
-    /export function workAmoV6UnitTerms\(\{[\s\S]*networkValueBeforeQ8,[\s\S]*unitFaceProofs,[\s\S]*unitPriceSats = BigInt\(face\)[\s\S]*unitAmountAtoms = workAmoFloorDiv\([\s\S]*unitPriceSats \* denominator,[\s\S]*networkValue,[\s\S]*unitMinimumPriceSats = workAmoCeilDiv\([\s\S]*unitAmountAtoms \* networkValue,[\s\S]*denominator/u.test(
+    /export function workAmoV6UnitTerms\(\{[\s\S]*?networkValueBeforeQ8,[\s\S]*?unitFaceProofs,[\s\S]*?unitPriceSats = BigInt\(face\)[\s\S]*?unitAmountAtoms = workAmoFloorDiv\([\s\S]*?unitPriceSats \* denominator,[\s\S]*?networkValue,[\s\S]*?unitMinimumPriceSats = workAmoCeilDiv\([\s\S]*?unitAmountAtoms \* networkValue,[\s\S]*?denominator/u.test(
       workAmoV6,
     ) &&
-    /function workAmoV6StatusFromEvidence[\s\S]*settlementWritesEnabled =\s*ready && protocolWritesEnabled === true[\s\S]*listingWritesEnabled = settlementWritesEnabled/u.test(
+    /function workAmoV6StatusFromEvidence[\s\S]*?settlementWritesEnabled =\s*ready && protocolWritesEnabled === true[\s\S]*?listingWritesEnabled = settlementWritesEnabled/u.test(
       workAmoV6,
     ) &&
-    /if \(metadata\?\.protocolWritesEnabled !== true\)[\s\S]*if \(actionName === "list5"\)[\s\S]*metadata\?\.listingWritesEnabled !== true/u.test(
+    /if \(metadata\?\.protocolWritesEnabled !== true\)[\s\S]*?if \(actionName === "list5"\)[\s\S]*?metadata\?\.listingWritesEnabled !== true/u.test(
       workAmoV6,
     ) &&
-    /validateWorkAmoV6SealOrBuyTerms\([\s\S]*legacyValidation/u.test(
+    /validateWorkAmoV6SealOrBuyTerms\([\s\S]*?legacyValidation/u.test(
       workAmoV6,
     ) &&
     /actionAuthorization: action\.saleAuthorization/u.test(workAmoV6) &&
-    /legacyValidation: \(\{[\s\S]*actionAuthorization,[\s\S]*validateWorkAmoV5ReferencedAuthorization\(\s*actionAuthorization,/u.test(
+    /legacyValidation: \(\{[\s\S]*?actionAuthorization,[\s\S]*?validateWorkAmoV5ReferencedAuthorization\(\s*actionAuthorization,/u.test(
       server,
     ),
 );
 expect(
   "AMO V6 signable authorization is proof-native and rejects every derived or USD field",
-  /WORK_AMO_V6_STATIC_AUTHORIZATION_FIELDS = Object\.freeze\(\[[\s\S]*"unitFaceProofs"[\s\S]*\]\)/u.test(
+  /WORK_AMO_V6_STATIC_AUTHORIZATION_FIELDS = Object\.freeze\(\[[\s\S]*?"unitFaceProofs"[\s\S]*?\]\)/u.test(
     workAmoV6,
   ) &&
-    /const V6_DERIVED_AUTHORIZATION_FIELDS = Object\.freeze\(\[[\s\S]*"unitFaceUsd"[\s\S]*"unitUsdAttestation"[\s\S]*\]\)/u.test(
+    /const V6_DERIVED_AUTHORIZATION_FIELDS = Object\.freeze\(\[[\s\S]*?"unitFaceUsd"[\s\S]*?"unitUsdAttestation"[\s\S]*?\]\)/u.test(
       workAmoV6,
     ) &&
-    /V6_DERIVED_AUTHORIZATION_FIELDS\.some\([\s\S]*work-amo-v6-derived-fields-not-signable/u.test(
+    /V6_DERIVED_AUTHORIZATION_FIELDS\.some\([\s\S]*?work-amo-v6-derived-fields-not-signable/u.test(
       workAmoV6,
     ),
 );
 expect(
   "AMO V6 API pins every declaration coordinate and exposes deterministic proof estimates only",
-  /WORK_AMO_V6_DECLARATION_PINS_CONFIGURED[\s\S]*WORK_AMO_V6_DECLARATION_TXID[\s\S]*WORK_AMO_V6_DECLARATION_HEIGHT[\s\S]*WORK_AMO_V6_DECLARATION_BLOCK_HASH[\s\S]*WORK_AMO_V6_DECLARATION_BLOCK_INDEX[\s\S]*WORK_AMO_V6_DECLARATION_MEMO_SHA256[\s\S]*WORK_AMO_V6_DECLARATION_MEMO_BYTES[\s\S]*WORK_AMO_V6_DECLARATION_PROTOCOL_VOUT[\s\S]*WORK_AMO_V6_DECLARATION_RECORD_ORDINAL[\s\S]*WORK_AMO_V6_DECLARATION_REGISTRY_PAYMENT_VOUT/u.test(
+  /WORK_AMO_V6_DECLARATION_PINS_CONFIGURED[\s\S]*?WORK_AMO_V6_DECLARATION_TXID[\s\S]*?WORK_AMO_V6_DECLARATION_HEIGHT[\s\S]*?WORK_AMO_V6_DECLARATION_BLOCK_HASH[\s\S]*?WORK_AMO_V6_DECLARATION_BLOCK_INDEX[\s\S]*?WORK_AMO_V6_DECLARATION_MEMO_SHA256[\s\S]*?WORK_AMO_V6_DECLARATION_MEMO_BYTES[\s\S]*?WORK_AMO_V6_DECLARATION_PROTOCOL_VOUT[\s\S]*?WORK_AMO_V6_DECLARATION_RECORD_ORDINAL[\s\S]*?WORK_AMO_V6_DECLARATION_REGISTRY_PAYMENT_VOUT/u.test(
     server,
   ) &&
-    /WORK_AMO_V6_ACTIVATION_HEIGHT =[\s\S]*WORK_AMO_V6_DECLARATION_HEIGHT \+ 1/u.test(
+    /WORK_AMO_V6_ACTIVATION_HEIGHT =[\s\S]*?WORK_AMO_V6_DECLARATION_HEIGHT \+ 1/u.test(
       server,
     ) &&
     /Number\.isSafeInteger\(WORK_AMO_V6_DECLARATION_RECORD_ORDINAL\) &&\s*WORK_AMO_V6_DECLARATION_RECORD_ORDINAL === 0/u.test(
       server,
     ) &&
-    /function workAmoV6Estimates\(networkValueBeforeQ8\)[\s\S]*WORK_AMO_V6_ALLOWED_FACE_PROOFS\.flatMap\([\s\S]*workAmoV6UnitTerms\(\{[\s\S]*unitFaceProofs/u.test(
+    /function workAmoV6Estimates\(networkValueBeforeQ8\)[\s\S]*?WORK_AMO_V6_ALLOWED_FACE_PROOFS\.flatMap\([\s\S]*?workAmoV6UnitTerms\(\{[\s\S]*?unitFaceProofs/u.test(
       server,
     ) &&
     !/\/api\/v1\/work-amo-v6\/attestation/u.test(server) &&
@@ -1500,26 +1506,26 @@ expect(
       /declaration_carrier\.data_bytes/u.test(source) &&
       !/FROM proof_indexer\.events/u.test(source),
   ) &&
-    /row\.payload_text !== pins\.declarationProtocolRecord[\s\S]*Number\(row\.data_bytes\) !== payload\.length/u.test(
+    /row\.payload_text !== pins\.declarationProtocolRecord[\s\S]*?Number\(row\.data_bytes\) !== payload\.length/u.test(
       workAmoV6IndexedDeclarationEvidence,
     ) &&
-    /Number\(row\.raw_carrier_count\) === 1[\s\S]*Number\(row\.registry_output_count\) === 1/u.test(
+    /Number\(row\.raw_carrier_count\) === 1[\s\S]*?Number\(row\.registry_output_count\) === 1/u.test(
       workAmoV6IndexedDeclarationEvidence,
     ) &&
-    /row\?\.payload_text !== expectedDeclaration\.protocolRecord[\s\S]*Number\(row\?\.data_bytes\) !== payload\.length/u.test(
+    /row\?\.payload_text !== expectedDeclaration\.protocolRecord[\s\S]*?Number\(row\?\.data_bytes\) !== payload\.length/u.test(
       workAmoV6ReaderDeclarationEvidence,
     ) &&
-    /Number\(row\?\.raw_carrier_count\) === 1[\s\S]*Number\(row\?\.registry_output_count\) === 1/u.test(
+    /Number\(row\?\.raw_carrier_count\) === 1[\s\S]*?Number\(row\?\.registry_output_count\) === 1/u.test(
       workAmoV6ReaderDeclarationEvidence,
     ),
 );
 expect(
   "AMO V6 API readiness consumes the dedicated V6 migration proof",
   /proofIndexWorkAmoV6MigrationReadiness/u.test(server) &&
-    /workAmoV6Metadata[\s\S]*proofIndexWorkAmoV6MigrationReadiness/u.test(
+    /workAmoV6Metadata[\s\S]*?proofIndexWorkAmoV6MigrationReadiness/u.test(
       server,
     ) &&
-    /function workAmoV6ReplayInputsForBlock[\s\S]*proofIndexWorkAmoV6MigrationReadiness\([\s\S]*migrationReadiness\?\.ready !== true[\s\S]*migrationReadiness\?\.active !== true[\s\S]*migrationReadiness\?\.canonical !== true[\s\S]*migrationReadiness\?\.confirmed !== true[\s\S]*migrationReadiness\?\.evidenceComplete !== true/u.test(
+    /function workAmoV6ReplayInputsForBlock[\s\S]*?proofIndexWorkAmoV6MigrationReadiness\([\s\S]*?migrationReadiness\?\.ready !== true[\s\S]*?migrationReadiness\?\.active !== true[\s\S]*?migrationReadiness\?\.canonical !== true[\s\S]*?migrationReadiness\?\.confirmed !== true[\s\S]*?migrationReadiness\?\.evidenceComplete !== true/u.test(
       server,
     ),
 );
@@ -1809,38 +1815,38 @@ expect(
 );
 expect(
   "worker Q16 readiness resamples one stable Core height and hash",
-  /async function readExactWorkerCoreTip[\s\S]*getblockchaininfo[\s\S]*getblockhash[\s\S]*afterHeight !== height[\s\S]*afterHash !== blockHash[\s\S]*heightHash !== blockHash[\s\S]*stable: true/u.test(
+  /async function readExactWorkerCoreTip[\s\S]*?getblockchaininfo[\s\S]*?getblockhash[\s\S]*?afterHeight !== height[\s\S]*?afterHash !== blockHash[\s\S]*?heightHash !== blockHash[\s\S]*?stable: true/u.test(
     worker,
   ),
 );
 expect(
   "worker Q16 readiness brackets the exact DB canonical tip audit with stable Core samples",
-  /async function assertWorkPrecisionReplayReady[\s\S]*const coreTipBefore = await readExactWorkerCoreTip\(\)[\s\S]*WITH canonical_tip AS[\s\S]*AS tip_height[\s\S]*AS tip_hash[\s\S]*const coreTipAfter = await readExactWorkerCoreTip\(\)[\s\S]*coreTipBefore\.height !== coreTipAfter\.height[\s\S]*coreTipBefore\.blockHash !== coreTipAfter\.blockHash/u.test(
+  /async function assertWorkPrecisionReplayReady[\s\S]*?const coreTipBefore = await readExactWorkerCoreTip\(\)[\s\S]*?WITH canonical_tip AS[\s\S]*?AS tip_height[\s\S]*?AS tip_hash[\s\S]*?const coreTipAfter = await readExactWorkerCoreTip\(\)[\s\S]*?coreTipBefore\.height !== coreTipAfter\.height[\s\S]*?coreTipBefore\.blockHash !== coreTipAfter\.blockHash/u.test(
     worker,
   ),
 );
 expect(
   "worker Q16 readiness checks immutable scalar transition hash, value, state, and payload-byte continuity",
-  /block\.previous_block_hash <>[\s\S]*transition\.previous_block_hash/u.test(
+  /block\.previous_block_hash <>[\s\S]*?transition\.previous_block_hash/u.test(
     worker,
   ) &&
-    /previous_transition\.block_hash <>[\s\S]*transition\.previous_block_hash/u.test(
+    /previous_transition\.block_hash <>[\s\S]*?transition\.previous_block_hash/u.test(
     worker,
   ) &&
-    /previous_transition\.closing_network_value_q8 <>[\s\S]*transition\.opening_network_value_q8/u.test(
+    /previous_transition\.closing_network_value_q8 <>[\s\S]*?transition\.opening_network_value_q8/u.test(
       worker,
     ) &&
-    /previous_transition\.closing_state_sha256 <>[\s\S]*transition\.opening_state_sha256/u.test(
+    /previous_transition\.closing_state_sha256 <>[\s\S]*?transition\.opening_state_sha256/u.test(
       worker,
     ) &&
-    /previous_transition\.closing_state_payload_bytes <>[\s\S]*transition\.opening_state_payload_bytes/u.test(
+    /previous_transition\.closing_state_payload_bytes <>[\s\S]*?transition\.opening_state_payload_bytes/u.test(
       worker,
     ) &&
     !/previous_transition\.payload/u.test(worker),
 );
 expect(
   "worker Q16 readiness validates immutable scalar transition models without mutating the bare closing preimage",
-  /transition\.model <> \$3[\s\S]*transition\.work_token_state_model <> \$4[\s\S]*transition\.state_commitment_model <> \$5/u.test(
+  /transition\.model <> \$3[\s\S]*?transition\.work_token_state_model <> \$4[\s\S]*?transition\.state_commitment_model <> \$5/u.test(
     worker,
   ) &&
     !/transition\.payload->'closingTokenState'\s*->>'model'\s*IS DISTINCT FROM \$4/u.test(
@@ -1849,55 +1855,55 @@ expect(
 );
 expect(
   "worker and reader behaviorally validate the full activation and latest transition payload boundaries",
-  /validateWorkAmoV8BoundaryTransitionPayload\(activation\)[\s\S]*validateWorkAmoV8BoundaryTransitionPayload\(latest\)[\s\S]*activationBoundary\.valid === true[\s\S]*latestBoundary\.valid === true/u.test(
+  /validateWorkAmoV8BoundaryTransitionPayload\(activation\)[\s\S]*?validateWorkAmoV8BoundaryTransitionPayload\(latest\)[\s\S]*?activationBoundary\.valid === true[\s\S]*?latestBoundary\.valid === true/u.test(
     worker,
   ) &&
-    /validateWorkAmoV8BoundaryTransitionPayload\(activationTransition\)[\s\S]*activationBoundaryValidation\.valid === true[\s\S]*validateWorkAmoV8BoundaryTransitionPayload\(latestTransition\)[\s\S]*latestBoundaryValidation\.valid === true/u.test(
+    /validateWorkAmoV8BoundaryTransitionPayload\(activationTransition\)[\s\S]*?activationBoundaryValidation\.valid === true[\s\S]*?validateWorkAmoV8BoundaryTransitionPayload\(latestTransition\)[\s\S]*?latestBoundaryValidation\.valid === true/u.test(
       reader,
     ),
 );
 expect(
   "worker Q16 readiness binds all snapshot hashes and model before full relational parity",
-  /jsonb_build_object\([\s\S]*'consistencyStatus'[\s\S]*'payloadBlockHash'[\s\S]*'sourceBlockHash'[\s\S]*'summaryBlockHash'[\s\S]*'workAmountStorageModel'[\s\S]*WORK_SUBATOM_PROJECTION_MODEL/u.test(
+  /jsonb_build_object\([\s\S]*?'consistencyStatus'[\s\S]*?'payloadBlockHash'[\s\S]*?'sourceBlockHash'[\s\S]*?'summaryBlockHash'[\s\S]*?'workAmountStorageModel'[\s\S]*?WORK_SUBATOM_PROJECTION_MODEL/u.test(
     worker,
   ) &&
-    /workerWorkPrecisionConfirmedReplayEnvelopeReady\(\{[\s\S]*coreTip: coreTipAfter[\s\S]*tipHash,[\s\S]*tipHeight,[\s\S]*workerWorkPrecisionRelationalParity\(\{[\s\S]*balanceRows: balanceResult\.rows[\s\S]*listingRows: listingResult\.rows/u.test(
+    /workerWorkPrecisionConfirmedReplayEnvelopeReady\(\{[\s\S]*?coreTip: coreTipAfter[\s\S]*?tipHash,[\s\S]*?tipHeight,[\s\S]*?workerWorkPrecisionRelationalParity\(\{[\s\S]*?balanceRows: balanceResult\.rows[\s\S]*?listingRows: listingResult\.rows/u.test(
       worker,
     ),
 );
 expect(
   "worker pending witness binds Q16, stable Core membership for persisted WORK, every projected relation, and freshness",
-  /function workerReadinessEpochCheckpointCovers[\s\S]*BigInt\(currentEpoch\[1\]\) >= BigInt\(epoch\)[\s\S]*export function workerWorkPrecisionPendingWitnessReady[\s\S]*witness\.ready === true[\s\S]*WORK_SUBATOM_PROJECTION_MODEL[\s\S]*WORK_PRECISION_V2_MODEL[\s\S]*invalidLegacyMutationCount[\s\S]*workerWorkPrecisionCoreTipReady[\s\S]*workerReadinessEpochCheckpointCovers[\s\S]*canonicalWorkerMempoolSnapshot\(currentMempoolTxids\)[\s\S]*canonicalWorkerJsonText\(witnessedProjection\) ===\s*canonicalWorkerJsonText\(currentProjection\)[\s\S]*scan\.complete === true[\s\S]*atomic-staged-pending-work-projection-audit-v1[\s\S]*bounded-best-effort-unconfirmed-discovery-v1[\s\S]*WORK_AMO_V8_PENDING_WITNESS_MAX_AGE_MS/u.test(
+  /function workerReadinessEpochCheckpointCovers[\s\S]*?BigInt\(currentEpoch\[1\]\) >= BigInt\(epoch\)[\s\S]*?export function workerWorkPrecisionPendingWitnessReady[\s\S]*?witness\.ready === true[\s\S]*?WORK_SUBATOM_PROJECTION_MODEL[\s\S]*?WORK_PRECISION_V2_MODEL[\s\S]*?invalidLegacyMutationCount[\s\S]*?workerWorkPrecisionCoreTipReady[\s\S]*?workerReadinessEpochCheckpointCovers[\s\S]*?canonicalWorkerMempoolSnapshot\(currentMempoolTxids\)[\s\S]*?canonicalWorkerJsonText\(witnessedProjection\) ===\s*canonicalWorkerJsonText\(currentProjection\)[\s\S]*?scan\.complete === true[\s\S]*?atomic-staged-pending-work-projection-audit-v1[\s\S]*?bounded-best-effort-unconfirmed-discovery-v1[\s\S]*?WORK_AMO_V8_PENDING_WITNESS_MAX_AGE_MS/u.test(
     worker,
   ),
 );
 expect(
   "API pending WORK verifier stages bind the direct V8 transition closing token state",
-  /import \{[\s\S]*WORK_AMO_V8_BLOCK_SEQUENCER_MODEL[\s\S]*\} from "\.\/work-amo-v8\.mjs";/u.test(
+  /import \{[\s\S]*?WORK_AMO_V8_BLOCK_SEQUENCER_MODEL[\s\S]*?\} from "\.\/work-amo-v8\.mjs";/u.test(
     server,
   ) &&
-    /async function pendingWorkVerifierStageConfirmedTransitionCommitment[\s\S]*proofIndexWorkAmoBlockTransition\([\s\S]*workAmoV8CanonicalTokenStateCommitment\(\s*transition\?\.payload\?\.closingTokenState,?\s*\)[\s\S]*transition\.workTokenStateModel !==[\s\S]*WORK_AMO_V8_TOKEN_STATE_PREIMAGE_MODEL/u.test(
+    /async function pendingWorkVerifierStageConfirmedTransitionCommitment[\s\S]*?proofIndexWorkAmoBlockTransition\([\s\S]*?workAmoV8CanonicalTokenStateCommitment\(\s*transition\?\.payload\?\.closingTokenState,?\s*\)[\s\S]*?transition\.workTokenStateModel !==[\s\S]*?WORK_AMO_V8_TOKEN_STATE_PREIMAGE_MODEL/u.test(
     server,
   ) &&
-    /const \[\s*initialTokenPayload,\s*initialTransitionCommitment,\s*transactions,\s*\] = await Promise\.all\([\s\S]*pendingWorkVerifierStageConfirmedTransitionCommitment\([\s\S]*const initialBase = pendingWorkVerifierStageConfirmedBase\([\s\S]*initialTransitionCommitment/u.test(
+    /const \[\s*initialTokenPayload,\s*initialTransitionCommitment,\s*transactions,\s*\] = await Promise\.all\([\s\S]*?pendingWorkVerifierStageConfirmedTransitionCommitment\([\s\S]*?const initialBase = pendingWorkVerifierStageConfirmedBase\([\s\S]*?initialTransitionCommitment/u.test(
       server,
     ) &&
-    /const \[\s*finalTokenPayload,\s*finalTransitionCommitment,\s*\] = await Promise\.all\([\s\S]*pendingWorkVerifierStageConfirmedTransitionCommitment\([\s\S]*const finalBase = pendingWorkVerifierStageConfirmedBase\([\s\S]*finalTransitionCommitment/u.test(
+    /const \[\s*finalTokenPayload,\s*finalTransitionCommitment,\s*\] = await Promise\.all\([\s\S]*?pendingWorkVerifierStageConfirmedTransitionCommitment\([\s\S]*?const finalBase = pendingWorkVerifierStageConfirmedBase\([\s\S]*?finalTransitionCommitment/u.test(
       server,
     ),
 );
 expect(
   "worker pending audit compares stable Core and mempool samples with every pending WORK projection",
-  /async function assertWorkPrecisionPendingReady[\s\S]*confirmedReplay\?\.ready !== true[\s\S]*readExactWorkerCoreMempoolSnapshot/u.test(
+  /async function assertWorkPrecisionPendingReady[\s\S]*?confirmedReplay\?\.ready !== true[\s\S]*?readExactWorkerCoreMempoolSnapshot/u.test(
     worker,
   ) &&
-    /readinessEpochCheckpoint =[\s\S]*workerReadinessEpochCheckpointCovers\([\s\S]*confirmedReplay\.readinessEpochCheckpoint[\s\S]*readinessEpochCheckpoint/u.test(
+    /readinessEpochCheckpoint =[\s\S]*?workerReadinessEpochCheckpointCovers\([\s\S]*?confirmedReplay\.readinessEpochCheckpoint[\s\S]*?readinessEpochCheckpoint/u.test(
       worker,
     ) &&
-    /SELECT address, pending_delta::text[\s\S]*AND status = 'pending'[\s\S]*listing\.status = 'pending'[\s\S]*listing\.status = 'sealing'/u.test(
+    /SELECT address, pending_delta::text[\s\S]*?AND status = 'pending'[\s\S]*?listing\.status = 'pending'[\s\S]*?listing\.status = 'sealing'/u.test(
       worker,
     ) &&
-    /invalidLegacyResult[\s\S]*const stableCore =[\s\S]*const stableMempool = membership\.expectedTxids\.every[\s\S]*mempoolBeforeTxids\.has\(txid\)[\s\S]*mempoolAfterTxids\.has\(txid\)[\s\S]*const stableEpoch =[\s\S]*workerReadinessEpochCheckpointCovers\([\s\S]*confirmedReplay\.readinessEpochCheckpoint[\s\S]*readinessEpochCheckpoint[\s\S]*workerReadinessEpochCheckpointCovers\([\s\S]*readinessEpochCheckpoint[\s\S]*readinessEpochAfter[\s\S]*workerWorkPrecisionPendingWitnessReady/u.test(
+    /invalidLegacyResult[\s\S]*?const stableCore =[\s\S]*?const stableMempool = membership\.expectedTxids\.every[\s\S]*?mempoolBeforeTxids\.has\(txid\)[\s\S]*?mempoolAfterTxids\.has\(txid\)[\s\S]*?const stableEpoch =[\s\S]*?workerReadinessEpochCheckpointCovers\([\s\S]*?confirmedReplay\.readinessEpochCheckpoint[\s\S]*?readinessEpochCheckpoint[\s\S]*?workerReadinessEpochCheckpointCovers\([\s\S]*?readinessEpochCheckpoint[\s\S]*?readinessEpochAfter[\s\S]*?workerWorkPrecisionPendingWitnessReady/u.test(
       worker,
     ),
 );
@@ -1906,16 +1912,16 @@ expect(
   /canonical-work-q16-pending-projection-v5/u.test(
     workQ16PendingProjection,
   ) &&
-    /pendingProtocolResolvedInvalid[\s\S]*pendingWorkMintAttemptCount[\s\S]*pendingWorkMintInspectionVersion[\s\S]*pendingWorkMintRecoveryNeeded[\s\S]*pendingWorkMintResolvedInvalid/u.test(
+    /pendingProtocolResolvedInvalid[\s\S]*?pendingWorkMintAttemptCount[\s\S]*?pendingWorkMintInspectionVersion[\s\S]*?pendingWorkMintRecoveryNeeded[\s\S]*?pendingWorkMintResolvedInvalid/u.test(
       workQ16PendingProjection,
     ) &&
     [backfillQ16PendingWitness, worker, readerPrecisionV2Readiness]
       .every((source) =>
         /workQ16PendingTransactionProjectionRows/u.test(source)
       ) &&
-    /eventParticipants[\s\S]*eventRefs/u.test(backfillQ16PendingWitness) &&
-    /eventParticipants[\s\S]*eventRefs/u.test(worker) &&
-    /eventParticipants[\s\S]*eventRefs/u.test(
+    /eventParticipants[\s\S]*?eventRefs/u.test(backfillQ16PendingWitness) &&
+    /eventParticipants[\s\S]*?eventRefs/u.test(worker) &&
+    /eventParticipants[\s\S]*?eventRefs/u.test(
       readerPrecisionV2Readiness,
     ) &&
     [backfillQ16PendingWitness, worker, readerPrecisionV2Readiness]
@@ -1927,13 +1933,13 @@ expect(
 );
 expect(
   "indexed address-mail reads merge only recent pending mail from the node overlay",
-  /function pendingOnlyMailPayload[\s\S]*inboxMessages\.filter\(\(message\) => !message\?\.confirmed\)[\s\S]*sentMessages\.filter\([\s\S]*message\?\.status !== "confirmed"[\s\S]*pendingOnlyOverlay/u.test(
+  /function pendingOnlyMailPayload[\s\S]*?inboxMessages\.filter\(\(message\) => !message\?\.confirmed\)[\s\S]*?sentMessages\.filter\([\s\S]*?message\?\.status !== "confirmed"[\s\S]*?pendingOnlyOverlay/u.test(
     server,
   ) &&
-    /async function mailPayloadWithPendingRecentOverlay[\s\S]*recentNodeMailPayload[\s\S]*pendingOnlyMailPayload[\s\S]*mergeMailPayloads/u.test(
+    /async function mailPayloadWithPendingRecentOverlay[\s\S]*?recentNodeMailPayload[\s\S]*?pendingOnlyMailPayload[\s\S]*?mergeMailPayloads/u.test(
       server,
     ) &&
-    /const indexedOnlyPayload = \(\) =>[\s\S]*mailPayloadWithIndexedEventOverlay[\s\S]*mailPayloadWithPendingRecentOverlay[\s\S]*reconcileMailPayloadStatuses[\s\S]*repairPendingMailWorkAttachments/u.test(
+    /const indexedOnlyPayload = \(\) =>[\s\S]*?mailPayloadWithIndexedEventOverlay[\s\S]*?mailPayloadWithPendingRecentOverlay[\s\S]*?reconcileMailPayloadStatuses[\s\S]*?repairPendingMailWorkAttachments/u.test(
       server,
     ),
 );
@@ -1944,7 +1950,7 @@ for (const [surface, source] of [
 ]) {
   expect(
     `${surface} uses the canonical event output column with one protocol-position alias`,
-    /op_return_vout AS protocol_vout[\s\S]*FROM proof_indexer\.events/u.test(
+    /op_return_vout AS protocol_vout[\s\S]*?FROM proof_indexer\.events/u.test(
       source,
     ) &&
       !/SELECT\s+event_id,\s+txid,\s+kind,\s+protocol,\s+protocol_vout,/u.test(
@@ -1953,7 +1959,7 @@ for (const [surface, source] of [
   );
   expect(
     `${surface} qualifies every joined pending-listing projection`,
-    /listing\.listing_id,[\s\S]*listing\.status,[\s\S]*listing\.seller_address,[\s\S]*listing\.buyer_address,[\s\S]*listing\.amount::text,[\s\S]*listing\.price_sats::text,[\s\S]*listing\.sale_ticket_txid,[\s\S]*listing\.seal_txid,[\s\S]*listing\.payload[\s\S]*FROM proof_indexer\.credit_listings listing[\s\S]*LEFT JOIN proof_indexer\.transactions seal_tx/u.test(
+    /listing\.listing_id,[\s\S]*?listing\.status,[\s\S]*?listing\.seller_address,[\s\S]*?listing\.buyer_address,[\s\S]*?listing\.amount::text,[\s\S]*?listing\.price_sats::text,[\s\S]*?listing\.sale_ticket_txid,[\s\S]*?listing\.seal_txid,[\s\S]*?listing\.payload[\s\S]*?FROM proof_indexer\.credit_listings listing[\s\S]*?LEFT JOIN proof_indexer\.transactions seal_tx/u.test(
       source,
     ) &&
       !/SELECT\s+listing_id,\s+status,/u.test(source),
@@ -1961,88 +1967,88 @@ for (const [surface, source] of [
 }
 expect(
   "worker publishes confirmed Q16 readiness before best-effort pending audit completes",
-  /workPrecision\.era === WORK_PRECISION_Q16_ERA[\s\S]*pendingRequired: true,[\s\S]*ready: false,[\s\S]*state: "canonical-phase-complete"/u.test(
+  /workPrecision\.era === WORK_PRECISION_Q16_ERA[\s\S]*?pendingRequired: true,[\s\S]*?ready: false,[\s\S]*?state: "canonical-phase-complete"/u.test(
     worker,
   ) &&
-    /workPrecision\.era === WORK_PRECISION_Q16_ERA[\s\S]*await assertWorkPrecisionPendingReadyWithRetries\([\s\S]*catch \(error\)[\s\S]*pendingReady: false[\s\S]*pendingRebuild:[\s\S]*WORK_AMO_V8_PENDING_REBUILD_MODEL[\s\S]*workPrecisionReplay\.pendingReady !== false/u.test(
+    /workPrecision\.era === WORK_PRECISION_Q16_ERA[\s\S]*?await assertWorkPrecisionPendingReadyWithRetries\([\s\S]*?catch \(error\)[\s\S]*?pendingReady: false[\s\S]*?pendingRebuild:[\s\S]*?WORK_AMO_V8_PENDING_REBUILD_MODEL[\s\S]*?workPrecisionReplay\.pendingReady !== false/u.test(
       worker,
     ),
 );
 expect(
   "worker status maintenance precedes the final backfill-owned Q16 pending witness",
-  /runCanonicalBeforePending\([\s\S]*runBackfillPhase\(backfillPhases\[0\]\)[\s\S]*pendingStatus = await refreshPendingStatusesSafely\(\);[\s\S]*runBackfillPhase\(backfillPhases\[1\]\)[\s\S]*assertWorkPrecisionPendingReadyWithRetries/u.test(
+  /runCanonicalBeforePending\([\s\S]*?runBackfillPhase\(backfillPhases\[0\]\)[\s\S]*?pendingStatus = await refreshPendingStatusesSafely\(\);[\s\S]*?runBackfillPhase\(backfillPhases\[1\]\)[\s\S]*?assertWorkPrecisionPendingReadyWithRetries/u.test(
     worker,
   ),
 );
 expect(
   "the pending scan retains the last exact witness until its atomic replacement is complete",
-  /const q16PendingActive =[\s\S]*const state = await mempoolScanState/u.test(
+  /const q16PendingActive =[\s\S]*?const state = await mempoolScanState/u.test(
     backfillMempoolScan,
   ) &&
     !/storeWorkQ16PendingWitnessNotReady/u.test(backfill) &&
     /await persistExactWorkQ16PendingWitness\(client/u.test(
       backfillMempoolScan,
     ) &&
-    /storeCurrentWorkQ16PendingStage[\s\S]*catch \(error\)[\s\S]*unresolved \+= 1/u.test(
+    /storeCurrentWorkQ16PendingStage[\s\S]*?catch \(error\)[\s\S]*?unresolved \+= 1/u.test(
       backfillMempoolScan,
     ) &&
-    /BEGIN ISOLATION LEVEL SERIALIZABLE[\s\S]*catch \(error\)[\s\S]*ROLLBACK[\s\S]*throw error/u.test(
+    /BEGIN ISOLATION LEVEL SERIALIZABLE[\s\S]*?catch \(error\)[\s\S]*?ROLLBACK[\s\S]*?throw error/u.test(
       backfillQ16PendingWitness,
     ),
 );
 expect(
   "normal worker phases preserve last success while consuming current confirmed Q16 proof",
-  /const currentSuccess = \{[\s\S]*workPrecision: runtime\.workPrecision[\s\S]*lastSuccess: currentSuccess/u.test(
+  /const currentSuccess = \{[\s\S]*?workPrecision: runtime\.workPrecision[\s\S]*?lastSuccess: currentSuccess/u.test(
     worker,
   ) &&
-    /canonicalPhase,[\s\S]*lastSuccess,[\s\S]*lastSuccessAt: lastSuccess\?\.finishedAt \?\? null[\s\S]*state: "canonical-phase-complete"/u.test(
+    /canonicalPhase,[\s\S]*?lastSuccess,[\s\S]*?lastSuccessAt: lastSuccess\?\.finishedAt \?\? null[\s\S]*?state: "canonical-phase-complete"/u.test(
       worker,
     ) &&
     !/lastSuccess: canonicalSuccess/u.test(worker) &&
-    /WORK_AMO_V8_TRANSIENT_WORKER_STATES[\s\S]*"canonical-phase-complete"[\s\S]*"running"[\s\S]*"starting"/u.test(
+    /WORK_AMO_V8_TRANSIENT_WORKER_STATES[\s\S]*?"canonical-phase-complete"[\s\S]*?"running"[\s\S]*?"starting"/u.test(
       workAmoV8WorkerReadiness,
     ) &&
-    /function confirmedReplayProof[\s\S]*const confirmed = objectRecord\(replay\.confirmed\)[\s\S]*currentConfirmedProofReady[\s\S]*durableConfirmedProofReady/u.test(
+    /function confirmedReplayProof[\s\S]*?const confirmed = objectRecord\(replay\.confirmed\)[\s\S]*?currentConfirmedProofReady[\s\S]*?durableConfirmedProofReady/u.test(
       workAmoV8WorkerReadiness,
     ) &&
-    /idleDurableConfirmedProofReady[\s\S]*!currentFullReplayReady[\s\S]*!currentConfirmedReplayReady[\s\S]*durableConfirmedReplay\.ready === true[\s\S]*idleProofReady[\s\S]*currentFullReplayReady[\s\S]*replayCommitmentsEqual\(currentReplay, durableReplay\)[\s\S]*currentConfirmedReplayReady[\s\S]*currentConfirmedMatchesDurable[\s\S]*idleDurableConfirmedProofReady/u.test(
+    /idleDurableConfirmedProofReady[\s\S]*?!currentFullReplayReady[\s\S]*?!currentConfirmedReplayReady[\s\S]*?durableConfirmedReplay\.ready === true[\s\S]*?idleProofReady[\s\S]*?currentFullReplayReady[\s\S]*?replayCommitmentsEqual\(currentReplay, durableReplay\)[\s\S]*?currentConfirmedReplayReady[\s\S]*?currentConfirmedMatchesDurable[\s\S]*?idleDurableConfirmedProofReady/u.test(
       workAmoV8WorkerReadiness,
     ),
 );
 expect(
   "V8 write readiness separates confirmed migration proof from pending mempool witness churn",
-  /const pendingWitnessReady =[\s\S]*migrationReadiness\?\.pendingReady === true &&[\s\S]*pendingMembershipLive;/u.test(
+  /const pendingWitnessReady =[\s\S]*?migrationReadiness\?\.pendingReady === true &&[\s\S]*?pendingMembershipLive;/u.test(
     workAmoV8MetadataSource,
   ) &&
-    /const confirmedMigrationReady =[\s\S]*migrationReadiness\?\.canonical === true &&[\s\S]*migrationReadiness\?\.confirmedReplayReady === true[\s\S]*migrationReadiness\?\.constraintsReady === true[\s\S]*migrationReadiness\?\.declarationIndexReady === true[\s\S]*migrationReadiness\?\.definitionReady === true[\s\S]*migrationReadiness\?\.legacyProjectionReady === true[\s\S]*migrationReadiness\?\.markerReady === true[\s\S]*migrationReadiness\?\.openingReady === true[\s\S]*migrationReadiness\?\.parityReady === true[\s\S]*migrationReadiness\?\.replayReady === true[\s\S]*tipVerified;/u.test(
+    /const confirmedMigrationReady =[\s\S]*?migrationReadiness\?\.canonical === true &&[\s\S]*?migrationReadiness\?\.confirmedReplayReady === true[\s\S]*?migrationReadiness\?\.constraintsReady === true[\s\S]*?migrationReadiness\?\.declarationIndexReady === true[\s\S]*?migrationReadiness\?\.definitionReady === true[\s\S]*?migrationReadiness\?\.legacyProjectionReady === true[\s\S]*?migrationReadiness\?\.markerReady === true[\s\S]*?migrationReadiness\?\.openingReady === true[\s\S]*?migrationReadiness\?\.parityReady === true[\s\S]*?migrationReadiness\?\.replayReady === true[\s\S]*?tipVerified;/u.test(
       workAmoV8MetadataSource,
     ) &&
     /const indexReady = confirmedMigrationReady;/u.test(
       workAmoV8MetadataSource,
     ) &&
     /pendingWitnessReady,/u.test(workAmoV8MetadataSource) &&
-    !/workerReadiness\.pendingMembershipCount ===[\s\S]*pendingMembershipSnapshot\?\.count/u.test(
+    !/workerReadiness\.pendingMembershipCount ===[\s\S]*?pendingMembershipSnapshot\?\.count/u.test(
       workAmoV8MetadataSource,
     ) &&
-    !/const indexReady =[\s\S]*migrationReadiness\?\.pendingReady === true/u.test(
+    !/const indexReady =[\s\S]*?migrationReadiness\?\.pendingReady === true/u.test(
       workAmoV8MetadataSource,
     ) &&
-    !/const indexReady =[\s\S]*workerReadiness\.ready === true/u.test(
+    !/const indexReady =[\s\S]*?workerReadiness\.ready === true/u.test(
       workAmoV8MetadataSource,
     ) &&
-    !/workerReadiness\.pendingProjectionSha256 ===[\s\S]*migrationReadiness\?\.pendingWitness/u.test(
+    !/workerReadiness\.pendingProjectionSha256 ===[\s\S]*?migrationReadiness\?\.pendingWitness/u.test(
       workAmoV8MetadataSource,
     ),
 );
 expect(
   "marketplace deployment convergence selects authoritative V8 before historical V6 and V5",
-  /function workAmoV8IsAuthoritative[\s\S]*activation\?\.reached === true[\s\S]*migrationReadiness\?\.active === true/u.test(
+  /function workAmoV8IsAuthoritative[\s\S]*?activation\?\.reached === true[\s\S]*?migrationReadiness\?\.active === true/u.test(
     marketplaceRegressions,
   ) &&
-    /function canonicalWorkAmoStatusIndexReady[\s\S]*workAmoV8IsAuthoritative\(v8\)[\s\S]*workAmoV8StatusIndexReady\(v8\)[\s\S]*workAmoV6StatusFromPayload/u.test(
+    /function canonicalWorkAmoStatusIndexReady[\s\S]*?workAmoV8IsAuthoritative\(v8\)[\s\S]*?workAmoV8StatusIndexReady\(v8\)[\s\S]*?workAmoV6StatusFromPayload/u.test(
       marketplaceRegressions,
     ) &&
-    /function expectedActiveWorkMarketVersion[\s\S]*workAmoV8IsAuthoritative\(workAmoV8\)[\s\S]*return WORK_AMO_V8_AUTH_VERSION[\s\S]*workAmoV6StatusFromPayload/u.test(
+    /function expectedActiveWorkMarketVersion[\s\S]*?workAmoV8IsAuthoritative\(workAmoV8\)[\s\S]*?return WORK_AMO_V8_AUTH_VERSION[\s\S]*?workAmoV6StatusFromPayload/u.test(
       marketplaceRegressions,
     ) &&
     /assertWorkAmoEraSelectionContract\(\)/u.test(
@@ -2063,75 +2069,75 @@ expect(
     /WORK_AMO_V8_PENDING_REBUILD_MODEL =\s*"canonical-work-q16-pending-rebuild-v2"/u.test(
       worker,
     ) &&
-    /WORK_Q16_PENDING_REUSE_MAX_AGE_MS = Math\.min\([\s\S]*POW_INDEX_WORKER_PENDING_WITNESS_MAX_AGE_MS[\s\S]*10 \* 60_000/u.test(
+    /WORK_Q16_PENDING_REUSE_MAX_AGE_MS = Math\.min\([\s\S]*?POW_INDEX_WORKER_PENDING_WITNESS_MAX_AGE_MS[\s\S]*?10 \* 60_000/u.test(
       backfill,
     ) &&
-    /WORK_AMO_V8_PENDING_WITNESS_MAX_AGE_MS = Math\.min\([\s\S]*POW_INDEX_WORKER_PENDING_WITNESS_MAX_AGE_MS[\s\S]*10 \* 60_000/u.test(
+    /WORK_AMO_V8_PENDING_WITNESS_MAX_AGE_MS = Math\.min\([\s\S]*?POW_INDEX_WORKER_PENDING_WITNESS_MAX_AGE_MS[\s\S]*?10 \* 60_000/u.test(
       worker,
     ),
 );
 expect(
   "backfill publishes the Q16 pending witness only after stable Core and exact DB commitments",
-  /async function persistExactWorkQ16PendingWitness[\s\S]*WORK_PROJECTION_STATE_Q16[\s\S]*getrawmempool[\s\S]*BEGIN ISOLATION LEVEL SERIALIZABLE[\s\S]*LOCK TABLE[\s\S]*FOR UPDATE[\s\S]*workQ16PendingCommitment[\s\S]*recheckedMempoolSnapshot[\s\S]*recheckedTipHeight[\s\S]*ready: true[\s\S]*complete:/u.test(
+  /async function persistExactWorkQ16PendingWitness[\s\S]*?WORK_PROJECTION_STATE_Q16[\s\S]*?getrawmempool[\s\S]*?BEGIN ISOLATION LEVEL SERIALIZABLE[\s\S]*?LOCK TABLE[\s\S]*?FOR UPDATE[\s\S]*?workQ16PendingCommitment[\s\S]*?recheckedMempoolSnapshot[\s\S]*?recheckedTipHeight[\s\S]*?ready: true[\s\S]*?complete:/u.test(
       backfill,
     ) &&
-    /atomic-staged-pending-work-projection-audit-v1[\s\S]*bounded-best-effort-unconfirmed-discovery-v1[\s\S]*WORK_Q16_PENDING_REBUILD_META_KEY[\s\S]*await client\.query\("COMMIT"\)/u.test(
+    /atomic-staged-pending-work-projection-audit-v1[\s\S]*?bounded-best-effort-unconfirmed-discovery-v1[\s\S]*?WORK_Q16_PENDING_REBUILD_META_KEY[\s\S]*?await client\.query\("COMMIT"\)/u.test(
       backfill,
     ) &&
     !/storeWorkQ16PendingWitnessNotReady/u.test(backfill),
 );
 expect(
   "Q16 pending readiness separates exact persisted-state parity from bounded best-effort discovery",
-  /function workQ16PendingMembershipStableAcrossSnapshots[\s\S]*WORK_Q16_PENDING_MEMPOOL_MODEL[\s\S]*initialMembership\.has\(txid\)[\s\S]*finalMembership\.has\(txid\)/u.test(
+  /function workQ16PendingMembershipStableAcrossSnapshots[\s\S]*?WORK_Q16_PENDING_MEMPOOL_MODEL[\s\S]*?initialMembership\.has\(txid\)[\s\S]*?finalMembership\.has\(txid\)/u.test(
     backfill,
   ) &&
-    /async function persistExactWorkQ16PendingWitness[\s\S]*workQ16PendingMembershipStableAcrossSnapshots[\s\S]*membership\.expectedTxids[\s\S]*atomic-staged-pending-work-projection-audit-v1[\s\S]*bounded-best-effort-unconfirmed-discovery-v1/u.test(
+    /async function persistExactWorkQ16PendingWitness[\s\S]*?workQ16PendingMembershipStableAcrossSnapshots[\s\S]*?membership\.expectedTxids[\s\S]*?atomic-staged-pending-work-projection-audit-v1[\s\S]*?bounded-best-effort-unconfirmed-discovery-v1/u.test(
       backfill,
     ) &&
     !/finalSha256 === initialSha256/u.test(backfill),
 );
 expect(
   "Q16 pending readiness proves mempool membership, exact inspection markers, transaction parity, and zero noncanonical balance deltas",
-  /function workQ16PendingMembership[\s\S]*canonical-work-q16-pending-membership-v2[\s\S]*function workQ16PendingInspectionMarkerReason[\s\S]*pendingWorkMintAttemptCount[\s\S]*pendingProtocolResolvedInvalid[\s\S]*function workQ16PendingParity[\s\S]*outsideMempoolTxids[\s\S]*missingTransactionTxids[\s\S]*invalidInspectionRows[\s\S]*pending-work-events-do-not-mutate-holder-balances-v1[\s\S]*canonical-work-q16-pending-parity-v2[\s\S]*ready:/u.test(
+  /function workQ16PendingMembership[\s\S]*?canonical-work-q16-pending-membership-v2[\s\S]*?function workQ16PendingInspectionMarkerReason[\s\S]*?pendingWorkMintAttemptCount[\s\S]*?pendingProtocolResolvedInvalid[\s\S]*?function workQ16PendingParity[\s\S]*?outsideMempoolTxids[\s\S]*?missingTransactionTxids[\s\S]*?invalidInspectionRows[\s\S]*?pending-work-events-do-not-mutate-holder-balances-v1[\s\S]*?canonical-work-q16-pending-parity-v2[\s\S]*?ready:/u.test(
     backfill,
   ) &&
-    /const parity = workQ16PendingParity\([\s\S]*if \(!parity\.ready\)[\s\S]*parity,[\s\S]*projection/u.test(
+    /const parity = workQ16PendingParity\([\s\S]*?if \(!parity\.ready\)[\s\S]*?parity,[\s\S]*?projection/u.test(
       backfill,
     ) &&
-    /function workQ16PendingParity[\s\S]*canonical-work-q16-pending-parity-v2[\s\S]*pendingParity\.ready === true[\s\S]*pendingWitness\.parity/u.test(
+    /function workQ16PendingParity[\s\S]*?canonical-work-q16-pending-parity-v2[\s\S]*?pendingParity\.ready === true[\s\S]*?pendingWitness\.parity/u.test(
       reader,
     ) &&
-    /function workQ16PendingInspectionMarkerReason[\s\S]*protocol-terminal-valid-projection-conflict[\s\S]*invalidInspectionRows/u.test(
+    /function workQ16PendingInspectionMarkerReason[\s\S]*?protocol-terminal-valid-projection-conflict[\s\S]*?invalidInspectionRows/u.test(
       reader,
     ) &&
-    /function workerWorkPrecisionPendingInspectionMarkerReason[\s\S]*protocol-terminal-valid-projection-conflict[\s\S]*invalidInspectionRows/u.test(
+    /function workerWorkPrecisionPendingInspectionMarkerReason[\s\S]*?protocol-terminal-valid-projection-conflict[\s\S]*?invalidInspectionRows/u.test(
       worker,
     ) &&
-    /function workQ16PendingInspectionMarkerReason[\s\S]*decisionCount !== attemptCount[\s\S]*work-decision-count-mismatch[\s\S]*resolvedInvalid !== \(validMintDecisionCount === 0\)[\s\S]*work-resolved-invalid-marker-mismatch/u.test(
+    /function workQ16PendingInspectionMarkerReason[\s\S]*?decisionCount !== attemptCount[\s\S]*?work-decision-count-mismatch[\s\S]*?resolvedInvalid !== \(validMintDecisionCount === 0\)[\s\S]*?work-resolved-invalid-marker-mismatch/u.test(
       backfill,
     ) &&
-    /function workQ16PendingInspectionMarkerReason[\s\S]*decisionCount !== attemptCount[\s\S]*work-decision-count-mismatch[\s\S]*resolvedInvalid !== \(validMintDecisionCount === 0\)[\s\S]*work-resolved-invalid-marker-mismatch/u.test(
+    /function workQ16PendingInspectionMarkerReason[\s\S]*?decisionCount !== attemptCount[\s\S]*?work-decision-count-mismatch[\s\S]*?resolvedInvalid !== \(validMintDecisionCount === 0\)[\s\S]*?work-resolved-invalid-marker-mismatch/u.test(
       reader,
     ) &&
-    /function workerWorkPrecisionPendingInspectionMarkerReason[\s\S]*decisionCount !== attemptCount[\s\S]*work-decision-count-mismatch[\s\S]*resolvedInvalid !== \(validMintDecisionCount === 0\)[\s\S]*work-resolved-invalid-marker-mismatch/u.test(
+    /function workerWorkPrecisionPendingInspectionMarkerReason[\s\S]*?decisionCount !== attemptCount[\s\S]*?work-decision-count-mismatch[\s\S]*?resolvedInvalid !== \(validMintDecisionCount === 0\)[\s\S]*?work-resolved-invalid-marker-mismatch/u.test(
       worker,
     ),
 );
 expect(
   "AMO V8 accepts only an exact Core mempool array and keeps full pending membership internal",
-  /function workQ16MempoolSnapshot[\s\S]*!Array\.isArray\(txids\)[\s\S]*normalizedTxids\.some[\s\S]*new Set\(normalizedTxids\)\.size[\s\S]*return null/u.test(
+  /function workQ16MempoolSnapshot[\s\S]*?!Array\.isArray\(txids\)[\s\S]*?normalizedTxids\.some[\s\S]*?new Set\(normalizedTxids\)\.size[\s\S]*?return null/u.test(
     server,
   ) &&
-    /async function workAmoV8ExactLiveProbe[\s\S]*mempoolTxidsResult\?\.ok !== true[\s\S]*!Array\.isArray\(mempoolTxidsResult\.result\)[\s\S]*return null[\s\S]*liveMempoolTxids = \[\.\.\.mempoolTxidsResult\.result\][\s\S]*workQ16MempoolSnapshot/u.test(
+    /async function workAmoV8ExactLiveProbe[\s\S]*?mempoolTxidsResult\?\.ok !== true[\s\S]*?!Array\.isArray\(mempoolTxidsResult\.result\)[\s\S]*?return null[\s\S]*?liveMempoolTxids = \[\.\.\.mempoolTxidsResult\.result\][\s\S]*?workQ16MempoolSnapshot/u.test(
       server,
     ) &&
-    /const publicMigrationReadiness =[\s\S]*membershipSnapshot:[\s\S]*count: pendingMembershipSnapshot\.count,[\s\S]*model: pendingMembershipSnapshot\.model,[\s\S]*sha256: pendingMembershipSnapshot\.sha256,[\s\S]*migrationReadiness: publicMigrationReadiness/u.test(
+    /const publicMigrationReadiness =[\s\S]*?membershipSnapshot:[\s\S]*?count: pendingMembershipSnapshot\.count,[\s\S]*?model: pendingMembershipSnapshot\.model,[\s\S]*?sha256: pendingMembershipSnapshot\.sha256,[\s\S]*?migrationReadiness: publicMigrationReadiness/u.test(
       server,
     ) &&
-    /function canonicalWorkerMempoolSnapshot[\s\S]*!Array\.isArray\(value\)[\s\S]*getrawmempool\(false\) array/u.test(
+    /function canonicalWorkerMempoolSnapshot[\s\S]*?!Array\.isArray\(value\)[\s\S]*?getrawmempool\(false\) array/u.test(
       worker,
     ) &&
-    /function canonicalMempoolTxidSnapshot[\s\S]*!Array\.isArray\(mempool\) && !verboseMempool[\s\S]*exact Core mempool array or verbose object/u.test(
+    /function canonicalMempoolTxidSnapshot[\s\S]*?!Array\.isArray\(mempool\) && !verboseMempool[\s\S]*?exact Core mempool array or verbose object/u.test(
       backfill,
     ),
 );
@@ -2206,40 +2212,40 @@ expect(
 );
 expect(
   "reader WORK projection helpers emit mutually exclusive Q8 atom or Q16 subatom fields with exact BigInt-derived supplies",
-  /export function workBalanceProjection[\s\S]*const units = storedWorkAtoms[\s\S]*WORK_SUBATOM_PROJECTION_MODEL[\s\S]*subatoms: units[\s\S]*atoms: units/u.test(
+  /export function workBalanceProjection[\s\S]*?const units = storedWorkAtoms[\s\S]*?WORK_SUBATOM_PROJECTION_MODEL[\s\S]*?subatoms: units[\s\S]*?atoms: units/u.test(
     reader,
   ) &&
-    /export function workSupplyFieldsForStorageModel[\s\S]*normalizeWorkSubatoms : normalizeWorkAtoms[\s\S]*formatWorkSubatoms : formatWorkAtoms[\s\S]*confirmedSupplySubatoms[\s\S]*pendingSupplySubatoms[\s\S]*precisionModel: WORK_PRECISION_V2_MODEL[\s\S]*confirmedSupplyAtoms[\s\S]*pendingSupplyAtoms/u.test(
+    /export function workSupplyFieldsForStorageModel[\s\S]*?normalizeWorkSubatoms : normalizeWorkAtoms[\s\S]*?formatWorkSubatoms : formatWorkAtoms[\s\S]*?confirmedSupplySubatoms[\s\S]*?pendingSupplySubatoms[\s\S]*?precisionModel: WORK_PRECISION_V2_MODEL[\s\S]*?confirmedSupplyAtoms[\s\S]*?pendingSupplyAtoms/u.test(
       reader,
     ) &&
-    /export function workAmountUnitsForStorageModel[\s\S]*legacyWorkAtomsToSubatoms[\s\S]*Native Q16 WORK cannot be projected back/u.test(
+    /export function workAmountUnitsForStorageModel[\s\S]*?legacyWorkAtomsToSubatoms[\s\S]*?Native Q16 WORK cannot be projected back/u.test(
       reader,
     ),
 );
 expect(
   "reader WORK mint statistics aggregate exact active-model units and publish matching Q8 or Q16 fields",
-  /const workStorageModel = workScoped[\s\S]*currentWorkAmountStorageModel[\s\S]*const exactIntegerUnits = exactWholeUnits \|\| workScoped[\s\S]*const amount = workScoped[\s\S]*BigInt\([\s\S]*workAmountUnitsForStorageModel[\s\S]*const workSupply = workScoped[\s\S]*workSupplyFieldsForStorageModel/u.test(
+  /const workStorageModel = workScoped[\s\S]*?currentWorkAmountStorageModel[\s\S]*?const exactIntegerUnits = exactWholeUnits \|\| workScoped[\s\S]*?const amount = workScoped[\s\S]*?BigInt\([\s\S]*?workAmountUnitsForStorageModel[\s\S]*?const workSupply = workScoped[\s\S]*?workSupplyFieldsForStorageModel/u.test(
     readerWorkMintStats,
   ) &&
-    /pendingCandidateSupplySubatoms[\s\S]*pendingCandidateSupplyAtoms/u.test(
+    /pendingCandidateSupplySubatoms[\s\S]*?pendingCandidateSupplyAtoms/u.test(
       readerWorkMintStats,
     ) &&
-    /pendingCandidates:[\s\S]*amountStorageModel: workStorageModel[\s\S]*amountSubatoms:[\s\S]*amountAtoms:/u.test(
+    /pendingCandidates:[\s\S]*?amountStorageModel: workStorageModel[\s\S]*?amountSubatoms:[\s\S]*?amountAtoms:/u.test(
       readerWorkMintStats,
     ),
 );
 expect(
   "reader mint overlays select WORK by exact units before any generic Number aggregation",
-  /if \(isWorkTokenId\(item\.tokenId\)\)[\s\S]*BigInt\([\s\S]*amountSubatoms \?\? item\.amountAtoms/u.test(
+  /if \(isWorkTokenId\(item\.tokenId\)\)[\s\S]*?BigInt\([\s\S]*?amountSubatoms \?\? item\.amountAtoms/u.test(
     readerWorkMintOverlay,
   ) &&
-    /const workStorageModel = workScoped[\s\S]*const confirmedWorkUnits = workScoped[\s\S]*workAmountUnitsForStorageModel[\s\S]*const pendingWorkUnits = workScoped[\s\S]*workAmountUnitsForStorageModel[\s\S]*const workSupply = workScoped[\s\S]*workSupplyFieldsForStorageModel[\s\S]*const confirmedSupply = workSupply[\s\S]*Number\(mint\.amount/u.test(
+    /const workStorageModel = workScoped[\s\S]*?const confirmedWorkUnits = workScoped[\s\S]*?workAmountUnitsForStorageModel[\s\S]*?const pendingWorkUnits = workScoped[\s\S]*?workAmountUnitsForStorageModel[\s\S]*?const workSupply = workScoped[\s\S]*?workSupplyFieldsForStorageModel[\s\S]*?const confirmedSupply = workSupply[\s\S]*?Number\(mint\.amount/u.test(
       readerWorkMintOverlay,
     ),
 );
 expect(
   "authoritative WORK holder and mint aggregation never coerces active-model units through Number",
-  /const amount = workScoped[\s\S]*\? BigInt\([\s\S]*workAmountUnitsForStorageModel[\s\S]*: exactWholeUnits[\s\S]*: Number\(mint\.amount\)/u.test(
+  /const amount = workScoped[\s\S]*?\? BigInt\([\s\S]*?workAmountUnitsForStorageModel[\s\S]*?: exactWholeUnits[\s\S]*?: Number\(mint\.amount\)/u.test(
     readerWorkMintStats,
   ) &&
     readerCurrentWorkMintBranches.length === 2 &&
@@ -2253,22 +2259,22 @@ expect(
 );
 expect(
   "reader holder and current-token aggregates carry exact active-model WORK fields through every authoritative sum",
-  /workBalanceUnitFields\(workBalance,[\s\S]*balanceAtoms[\s\S]*balanceSubatoms[\s\S]*workBalanceUnitFields\(workPending,[\s\S]*pendingDeltaAtoms[\s\S]*pendingDeltaSubatoms/u.test(
+  /workBalanceUnitFields\(workBalance,[\s\S]*?balanceAtoms[\s\S]*?balanceSubatoms[\s\S]*?workBalanceUnitFields\(workPending,[\s\S]*?pendingDeltaAtoms[\s\S]*?pendingDeltaSubatoms/u.test(
     readerWorkHolders,
   ) &&
-    /const storageModel = holder\.amountStorageModel[\s\S]*confirmedSupplyUnits = addAtomicStrings[\s\S]*pendingSupplyUnits = addAtomicStrings[\s\S]*workSupplyFieldsForStorageModel/u.test(
+    /const storageModel = holder\.amountStorageModel[\s\S]*?confirmedSupplyUnits = addAtomicStrings[\s\S]*?pendingSupplyUnits = addAtomicStrings[\s\S]*?workSupplyFieldsForStorageModel/u.test(
       readerWorkHolderSummaries,
     ) &&
-    /const workStorageModels = new Map[\s\S]*workAmountUnitsForStorageModel\([\s\S]*confirmedSupplyUnits = addAtomicStrings[\s\S]*pendingSupplyUnits = addAtomicStrings[\s\S]*workSupplyFieldsForStorageModel\([\s\S]*const workSupply = workScoped[\s\S]*confirmedSupplySubatoms \?\?[\s\S]*confirmedSupplyAtoms/u.test(
+    /const workStorageModels = new Map[\s\S]*?workAmountUnitsForStorageModel\([\s\S]*?confirmedSupplyUnits = addAtomicStrings[\s\S]*?pendingSupplyUnits = addAtomicStrings[\s\S]*?workSupplyFieldsForStorageModel\([\s\S]*?const workSupply = workScoped[\s\S]*?confirmedSupplySubatoms \?\?[\s\S]*?confirmedSupplyAtoms/u.test(
       readerCurrentTokenPayload,
     ),
 );
 expect(
   "reader scoped WORK payloads retain Q8 atom fields or Q16 subatom fields without Number coercion",
-  /workBalanceUnitFields\(balance,[\s\S]*balanceAtoms[\s\S]*balanceSubatoms/u.test(
+  /workBalanceUnitFields\(balance,[\s\S]*?balanceAtoms[\s\S]*?balanceSubatoms/u.test(
     readerScopedWorkHolders,
   ) &&
-    /const workStorageModel = workScoped[\s\S]*const confirmedWorkUnits = workScoped[\s\S]*balanceSubatoms[\s\S]*balanceAtoms[\s\S]*const pendingWorkUnits = workScoped[\s\S]*workAmountUnitsForStorageModel[\s\S]*const workSupply = workScoped[\s\S]*workSupplyFieldsForStorageModel/u.test(
+    /const workStorageModel = workScoped[\s\S]*?const confirmedWorkUnits = workScoped[\s\S]*?balanceSubatoms[\s\S]*?balanceAtoms[\s\S]*?const pendingWorkUnits = workScoped[\s\S]*?workAmountUnitsForStorageModel[\s\S]*?const workSupply = workScoped[\s\S]*?workSupplyFieldsForStorageModel/u.test(
       readerScopedTokenPayload,
     ),
 );
@@ -2277,13 +2283,13 @@ expect(
   /workBalanceProjection\(row\.confirmed_balance/u.test(
     readerWalletTokenPayload,
   ) &&
-    /workBalanceUnitFields\(balance,[\s\S]*atomField: "balanceAtoms"[\s\S]*subatomField: "balanceSubatoms"/u.test(
+    /workBalanceUnitFields\(balance,[\s\S]*?atomField: "balanceAtoms"[\s\S]*?subatomField: "balanceSubatoms"/u.test(
       readerWalletTokenPayload,
     ) &&
     /workBalanceProjection\(row\.pending_delta/u.test(
       readerWalletTokenPayload,
     ) &&
-    /workBalanceUnitFields\(pending,[\s\S]*atomField: "pendingDeltaAtoms"[\s\S]*subatomField: "pendingDeltaSubatoms"/u.test(
+    /workBalanceUnitFields\(pending,[\s\S]*?atomField: "pendingDeltaAtoms"[\s\S]*?subatomField: "pendingDeltaSubatoms"/u.test(
       readerWalletTokenPayload,
     ),
 );
@@ -2292,7 +2298,7 @@ expect(
   /workBalanceProjection\(row\.confirmed_balance, token\.metadata\)/u.test(
     readerScopedHolderHistory,
   ) &&
-    /workBalanceUnitFields\(balance,[\s\S]*atomField: "balanceAtoms"[\s\S]*subatomField: "balanceSubatoms"/u.test(
+    /workBalanceUnitFields\(balance,[\s\S]*?atomField: "balanceAtoms"[\s\S]*?subatomField: "balanceSubatoms"/u.test(
       readerScopedHolderHistory,
     ),
 );
@@ -2322,19 +2328,19 @@ expect(
 );
 expect(
   "Q16 record projection requires explicit precision metadata and rejects ambiguous aliases",
-  /function normalizeWorkSubatoms[\s\S]*must not use surrounding whitespace/u.test(
+  /function normalizeWorkSubatoms[\s\S]*?must not use surrounding whitespace/u.test(
     workUnits,
   ) &&
-    /function workAmountSubatomsFromRecord[\s\S]*model !== WORK_SUBATOM_PROJECTION_MODEL[\s\S]*WORK precision metadata is required/u.test(
+    /function workAmountSubatomsFromRecord[\s\S]*?model !== WORK_SUBATOM_PROJECTION_MODEL[\s\S]*?WORK precision metadata is required/u.test(
       workUnits,
     ) &&
-    /model === WORK_SUBATOM_PROJECTION_MODEL[\s\S]*atomAliases\.length > 0 \|\| subatomAliases\.length !== 1[\s\S]*exactly one subatom alias and no legacy atom alias/u.test(
+    /model === WORK_SUBATOM_PROJECTION_MODEL[\s\S]*?atomAliases\.length > 0 \|\| subatomAliases\.length !== 1[\s\S]*?exactly one subatom alias and no legacy atom alias/u.test(
       workUnits,
     ) &&
-    /atomAliases\.length > 1 \|\| subatomAliases\.length > 1[\s\S]*Legacy WORK amount aliases are ambiguous/u.test(
+    /atomAliases\.length > 1 \|\| subatomAliases\.length > 1[\s\S]*?Legacy WORK amount aliases are ambiguous/u.test(
       workUnits,
     ) &&
-    /normalizeWorkSubatoms\(subatomAliases\[0\],[\s\S]*!==\s*normalized[\s\S]*aliases conflict/u.test(
+    /normalizeWorkSubatoms\(subatomAliases\[0\],[\s\S]*?!==\s*normalized[\s\S]*?aliases conflict/u.test(
       workUnits,
     ),
 );
@@ -2345,25 +2351,25 @@ expect(
     /WORK_AMO_V8_ALLOWED_FACE_PROOFS = Object\.freeze\(\[\s*25_000,\s*\]\)/u.test(
       workAmoV8,
     ) &&
-    /export function workAmoV8UnitTerms\(\{[\s\S]*unitAmountSubatoms = workAmoFloorDiv\([\s\S]*unitPriceSats \* denominator,[\s\S]*networkValue,[\s\S]*unitMinimumPriceSats = workAmoCeilDiv\([\s\S]*unitAmountSubatoms \* networkValue/u.test(
+    /export function workAmoV8UnitTerms\(\{[\s\S]*?unitAmountSubatoms = workAmoFloorDiv\([\s\S]*?unitPriceSats \* denominator,[\s\S]*?networkValue,[\s\S]*?unitMinimumPriceSats = workAmoCeilDiv\([\s\S]*?unitAmountSubatoms \* networkValue/u.test(
       workAmoV8,
     ) &&
-    /function canonicalWorkAmoV8TokenStateListing[\s\S]*version === WORK_AMO_V8_AUTH_VERSION[\s\S]*validateWorkAmoV8StaticAuthorization[\s\S]*validateWorkAmoV8FrozenTerms[\s\S]*return null;/u.test(
+    /function canonicalWorkAmoV8TokenStateListing[\s\S]*?version === WORK_AMO_V8_AUTH_VERSION[\s\S]*?validateWorkAmoV8StaticAuthorization[\s\S]*?validateWorkAmoV8FrozenTerms[\s\S]*?return null;/u.test(
       workAmoV8,
     ) &&
-    /validateWorkAmoV8SealOrBuyTerms[\s\S]*listingVersion !== WORK_AMO_V8_AUTH_VERSION[\s\S]*work-amo-v8-relic-listing-nonsettleable[\s\S]*validateWorkAmoV8FrozenTerms/u.test(
+    /validateWorkAmoV8SealOrBuyTerms[\s\S]*?listingVersion !== WORK_AMO_V8_AUTH_VERSION[\s\S]*?work-amo-v8-relic-listing-nonsettleable[\s\S]*?validateWorkAmoV8FrozenTerms/u.test(
       workAmoV8,
     ),
 );
 expect(
   "token-history hydrates confirmed AMO V8 listings with canonical frozen witnesses",
-  /async function tokenHistoryPageWithCanonicalWorkAmoV8ListingWitnesses\([\s\S]*proofIndexCanonicalWorkListingById\([\s\S]*listingFrozenTerms[\s\S]*canonical-work-amo-v8-listing-witness/u.test(
+  /async function tokenHistoryPageWithCanonicalWorkAmoV8ListingWitnesses\([\s\S]*?proofIndexCanonicalWorkListingById\([\s\S]*?listingFrozenTerms[\s\S]*?canonical-work-amo-v8-listing-witness/u.test(
     server,
   ) &&
-    /const canonicalValuePayload =[\s\S]*tokenHistoryPageWithCanonicalWorkAmoV8ListingWitnesses\([\s\S]*canonicalValuePayload[\s\S]*jsonResponse\([\s\S]*responsePayload/u.test(
+    /const canonicalValuePayload =[\s\S]*?tokenHistoryPageWithCanonicalWorkAmoV8ListingWitnesses\([\s\S]*?canonicalValuePayload[\s\S]*?jsonResponse\([\s\S]*?responsePayload/u.test(
       server,
     ) &&
-    /const payload = await tokenHistoryPayload\([\s\S]*const responsePayload =[\s\S]*tokenHistoryPageWithCanonicalWorkAmoV8ListingWitnesses\([\s\S]*payload[\s\S]*shadowProofIndexTokenHistory\([\s\S]*responsePayload[\s\S]*jsonResponse\([\s\S]*responsePayload/u.test(
+    /const payload = await tokenHistoryPayload\([\s\S]*?const responsePayload =[\s\S]*?tokenHistoryPageWithCanonicalWorkAmoV8ListingWitnesses\([\s\S]*?payload[\s\S]*?shadowProofIndexTokenHistory\([\s\S]*?responsePayload[\s\S]*?jsonResponse\([\s\S]*?responsePayload/u.test(
       server,
     ),
 );
@@ -2384,113 +2390,113 @@ expect(
 );
 expect(
   "send3 is mandatory exactly at the confirmed V8 boundary with no legacy fallback",
-  /export function workAmoV8TransferEraDecision[\s\S]*v8Required = height >= activation[\s\S]*v8Required =\s*projectionModel === WORK_SUBATOM_PROJECTION_MODEL[\s\S]*nativeV8 !== v8Required[\s\S]*work-amo-v8-send3-required[\s\S]*work-amo-v8-send3-before-activation/u.test(
+  /export function workAmoV8TransferEraDecision[\s\S]*?v8Required = height >= activation[\s\S]*?v8Required =\s*projectionModel === WORK_SUBATOM_PROJECTION_MODEL[\s\S]*?nativeV8 !== v8Required[\s\S]*?work-amo-v8-send3-required[\s\S]*?work-amo-v8-send3-before-activation/u.test(
     workAmoV8,
   ) &&
     /TOKEN_SEND_SUBATOMS_ACTION = WORK_AMO_V8_TRANSFER_VERSION/u.test(
       server,
     ) &&
     /TOKEN_SEND_SUBATOMS_ACTION !== "send3"/u.test(server) &&
-    /function canonicalWorkSubatomsText[\s\S]*text !== text\.trim\(\)[\s\S]*WORK_TOKEN_MAX_SUPPLY_SUBATOMS[\s\S]*parts\.length === 4 && parts\[0\] === TOKEN_SEND_SUBATOMS_ACTION[\s\S]*canonicalWorkSubatomsText\(parts\[2\]\)[\s\S]*amountVersion: TOKEN_SEND_SUBATOMS_ACTION/u.test(
+    /function canonicalWorkSubatomsText[\s\S]*?text !== text\.trim\(\)[\s\S]*?WORK_TOKEN_MAX_SUPPLY_SUBATOMS[\s\S]*?parts\.length === 4 && parts\[0\] === TOKEN_SEND_SUBATOMS_ACTION[\s\S]*?canonicalWorkSubatomsText\(parts\[2\]\)[\s\S]*?amountVersion: TOKEN_SEND_SUBATOMS_ACTION/u.test(
       server,
     ) &&
-    /parsed\.tokenId !== WORK_TOKEN_ID[\s\S]*workAmoV8TransferEraDecision\([\s\S]*activationHeight:[\s\S]*blockHeight,[\s\S]*confirmed,[\s\S]*projectionModel:[\s\S]*transferVersion: parsedTransferVersion/u.test(
+    /parsed\.tokenId !== WORK_TOKEN_ID[\s\S]*?workAmoV8TransferEraDecision\([\s\S]*?activationHeight:[\s\S]*?blockHeight,[\s\S]*?confirmed,[\s\S]*?projectionModel:[\s\S]*?transferVersion: parsedTransferVersion/u.test(
       server,
     ),
 );
 expect(
   "V8 metadata separates an irreversible reached boundary from exact write readiness",
-  /export function workAmoV8StatusFromEvidence[\s\S]*const activation = \{[\s\S]*reached: Boolean\([\s\S]*indexed >= expected\.activationHeight[\s\S]*evidenceComplete =[\s\S]*precisionMigrationReady === true[\s\S]*protocolReady: ready[\s\S]*writeAdmission: settlementWritesEnabled/u.test(
+  /export function workAmoV8StatusFromEvidence[\s\S]*?const activation = \{[\s\S]*?reached: Boolean\([\s\S]*?indexed >= expected\.activationHeight[\s\S]*?evidenceComplete =[\s\S]*?precisionMigrationReady === true[\s\S]*?protocolReady: ready[\s\S]*?writeAdmission: settlementWritesEnabled/u.test(
     workAmoV8,
   ) &&
-    /let workAmoV8ReachedLatch = false[\s\S]*async function workAmoV8Metadata[\s\S]*tipVerified[\s\S]*tipHeight >= expectedDeclaration\.activationHeight[\s\S]*workAmoV8ReachedLatch = true[\s\S]*proofIndexWorkPrecisionV2MigrationReadiness/u.test(
+    /let workAmoV8ReachedLatch = false[\s\S]*?async function workAmoV8Metadata[\s\S]*?tipVerified[\s\S]*?tipHeight >= expectedDeclaration\.activationHeight[\s\S]*?workAmoV8ReachedLatch = true[\s\S]*?proofIndexWorkPrecisionV2MigrationReadiness/u.test(
       server,
     ) &&
-    /const confirmedMigrationReady =[\s\S]*migrationReadiness\?\.canonical === true[\s\S]*migrationReadiness\?\.confirmedReplayReady === true[\s\S]*migrationReadiness\?\.constraintsReady === true[\s\S]*migrationReadiness\?\.declarationIndexReady === true[\s\S]*migrationReadiness\?\.definitionReady === true[\s\S]*migrationReadiness\?\.legacyProjectionReady === true[\s\S]*migrationReadiness\?\.markerReady === true[\s\S]*migrationReadiness\?\.openingReady === true[\s\S]*migrationReadiness\?\.parityReady === true[\s\S]*migrationReadiness\?\.replayReady === true[\s\S]*Number\(migrationReadiness\?\.tipHeight\) === tipHeight/u.test(
+    /const confirmedMigrationReady =[\s\S]*?migrationReadiness\?\.canonical === true[\s\S]*?migrationReadiness\?\.confirmedReplayReady === true[\s\S]*?migrationReadiness\?\.constraintsReady === true[\s\S]*?migrationReadiness\?\.declarationIndexReady === true[\s\S]*?migrationReadiness\?\.definitionReady === true[\s\S]*?migrationReadiness\?\.legacyProjectionReady === true[\s\S]*?migrationReadiness\?\.markerReady === true[\s\S]*?migrationReadiness\?\.openingReady === true[\s\S]*?migrationReadiness\?\.parityReady === true[\s\S]*?migrationReadiness\?\.replayReady === true[\s\S]*?Number\(migrationReadiness\?\.tipHeight\) === tipHeight/u.test(
       workAmoV8MetadataSource,
     ) &&
-    /Number\(migrationReadiness\?\.tipHeight\) === tipHeight[\s\S]*String\(migrationReadiness\?\.tipHash \?\? ""\)[\s\S]*\.toLowerCase\(\) === tipHash/u.test(
+    /Number\(migrationReadiness\?\.tipHeight\) === tipHeight[\s\S]*?String\(migrationReadiness\?\.tipHash \?\? ""\)[\s\S]*?\.toLowerCase\(\) === tipHash/u.test(
       workAmoV8MetadataSource,
     ) &&
-    /relicCutover:[\s\S]*indexReady === true[\s\S]*migrationReadiness\?\.marker\?\.relicCutover/u.test(
+    /relicCutover:[\s\S]*?indexReady === true[\s\S]*?migrationReadiness\?\.marker\?\.relicCutover/u.test(
       workAmoV8MetadataSource,
     ) &&
-    /activation: \{[\s\S]*reached: workAmoV8ReachedLatch,[\s\S]*tipVerified,[\s\S]*migrationReadiness: publicMigrationReadiness,[\s\S]*writesConfigured: WORK_AMO_V8_WRITES_CONFIGURED/u.test(
+    /activation: \{[\s\S]*?reached: workAmoV8ReachedLatch,[\s\S]*?tipVerified,[\s\S]*?migrationReadiness: publicMigrationReadiness,[\s\S]*?writesConfigured: WORK_AMO_V8_WRITES_CONFIGURED/u.test(
       server,
     ) &&
-    /withWorkMarketplaceV4Metadata[\s\S]*workAmoV8Metadata\(network,[\s\S]*workAmoV8,[\s\S]*floor:[\s\S]*workAmoV8,[\s\S]*workFloor:[\s\S]*workAmoV8/u.test(
+    /withWorkMarketplaceV4Metadata[\s\S]*?workAmoV8Metadata\(network,[\s\S]*?workAmoV8,[\s\S]*?floor:[\s\S]*?workAmoV8,[\s\S]*?workFloor:[\s\S]*?workAmoV8/u.test(
       server,
     ),
 );
 expect(
   "API V8 pins accept only raw canonical integers and lowercase hashes while every malformed nonempty request stays fail-closed",
-  /function canonicalWorkAmoV8ConfiguredInteger\([\s\S]*const raw = String\(value \?\? ""\);[\s\S]*\/\^\(\?:0\|\[1-9\]\[0-9\]\*\)\$\//u.test(
+  /function canonicalWorkAmoV8ConfiguredInteger\([\s\S]*?const raw = String\(value \?\? ""\);[\s\S]*?\/\^\(\?:0\|\[1-9\]\[0-9\]\*\)\$\//u.test(
     server,
   ) &&
-    /function canonicalWorkAmoV8ConfiguredInteger\([\s\S]*Number\.isSafeInteger\(parsed\) && parsed >= minimum/u.test(
+    /function canonicalWorkAmoV8ConfiguredInteger\([\s\S]*?Number\.isSafeInteger\(parsed\) && parsed >= minimum/u.test(
       server,
     ) &&
-    /function canonicalWorkAmoV8ConfiguredHash\([\s\S]*const raw = String\(value \?\? ""\);[\s\S]*\/\^\[0-9a-f\]\{64\}\$\//u.test(
+    /function canonicalWorkAmoV8ConfiguredHash\([\s\S]*?const raw = String\(value \?\? ""\);[\s\S]*?\/\^\[0-9a-f\]\{64\}\$\//u.test(
       server,
     ) &&
-    /const WORK_AMO_V8_WRITES_SOURCE = String\([\s\S]*const WORK_AMO_V8_WRITES_RAW = WORK_AMO_V8_WRITES_SOURCE\.trim\(\);[\s\S]*const WORK_AMO_V8_WRITES_REQUESTED =\s*WORK_AMO_V8_WRITES_CONFIGURED \|\|[\s\S]*WORK_AMO_V8_WRITES_SOURCE !== WORK_AMO_V8_WRITES_RAW/u.test(
+    /const WORK_AMO_V8_WRITES_SOURCE = String\([\s\S]*?const WORK_AMO_V8_WRITES_RAW = WORK_AMO_V8_WRITES_SOURCE\.trim\(\);[\s\S]*?const WORK_AMO_V8_WRITES_REQUESTED =\s*WORK_AMO_V8_WRITES_CONFIGURED \|\|[\s\S]*?WORK_AMO_V8_WRITES_SOURCE !== WORK_AMO_V8_WRITES_RAW/u.test(
       server,
     ) &&
-    /const WORK_AMO_V8_ACTIVATION_HEIGHT_RAW = String\([\s\S]*canonicalWorkAmoV8ConfiguredInteger\([\s\S]*WORK_AMO_V8_EXPECTED_ACTIVATION_HEIGHT[\s\S]*WORK_AMO_V8_DECLARATION_HEIGHT \+ 1/u.test(
+    /const WORK_AMO_V8_ACTIVATION_HEIGHT_RAW = String\([\s\S]*?canonicalWorkAmoV8ConfiguredInteger\([\s\S]*?WORK_AMO_V8_EXPECTED_ACTIVATION_HEIGHT[\s\S]*?WORK_AMO_V8_DECLARATION_HEIGHT \+ 1/u.test(
       server,
     ) &&
-    /const WORK_AMO_V8_DECLARATION_PINS_REQUESTED =\s*WORK_AMO_V8_WRITES_REQUESTED \|\|[\s\S]*process\.env\.WORK_AMO_V8_DECLARATION_HEIGHT[\s\S]*process\.env\.WORK_AMO_V8_ACTIVATION_HEIGHT[\s\S]*\.some\(\(value\) => String\(value \?\? ""\)\.length > 0\)/u.test(
+    /const WORK_AMO_V8_DECLARATION_PINS_REQUESTED =\s*WORK_AMO_V8_WRITES_REQUESTED \|\|[\s\S]*?process\.env\.WORK_AMO_V8_DECLARATION_HEIGHT[\s\S]*?process\.env\.WORK_AMO_V8_ACTIVATION_HEIGHT[\s\S]*?\.some\(\(value\) => String\(value \?\? ""\)\.length > 0\)/u.test(
       server,
     ) &&
-    /const WORK_AMO_V8_DECLARATION_PINS_CONFIGURED =[\s\S]*Number\.isSafeInteger\(WORK_AMO_V8_ACTIVATION_HEIGHT\)[\s\S]*WORK_AMO_V8_ACTIVATION_HEIGHT ===\s*WORK_AMO_V8_EXPECTED_ACTIVATION_HEIGHT/u.test(
+    /const WORK_AMO_V8_DECLARATION_PINS_CONFIGURED =[\s\S]*?Number\.isSafeInteger\(WORK_AMO_V8_ACTIVATION_HEIGHT\)[\s\S]*?WORK_AMO_V8_ACTIVATION_HEIGHT ===\s*WORK_AMO_V8_EXPECTED_ACTIVATION_HEIGHT/u.test(
       server,
     ) &&
-    /const WORK_AMO_V8_DECLARATION_PIN_STATE =[\s\S]*\? "configured"[\s\S]*WORK_AMO_V8_DECLARATION_PINS_REQUESTED[\s\S]*\? "invalid"[\s\S]*: "unrequested"/u.test(
+    /const WORK_AMO_V8_DECLARATION_PIN_STATE =[\s\S]*?\? "configured"[\s\S]*?WORK_AMO_V8_DECLARATION_PINS_REQUESTED[\s\S]*?\? "invalid"[\s\S]*?: "unrequested"/u.test(
       server,
     ) &&
-    /pinsRequested: WORK_AMO_V8_DECLARATION_PINS_REQUESTED[\s\S]*pinsConfigured: Boolean\(configuredDeclaration\)/u.test(
+    /pinsRequested: WORK_AMO_V8_DECLARATION_PINS_REQUESTED[\s\S]*?pinsConfigured: Boolean\(configuredDeclaration\)/u.test(
       server,
     ),
 );
 expect(
   "backfill and precision migration use the same strict V8 pin grammar as API and worker",
-  /function canonicalWorkAmoV8ConfiguredInteger\([\s\S]*const raw = String\(value \?\? ""\);[\s\S]*\/\^\(\?:0\|\[1-9\]\[0-9\]\*\)\$\//u.test(
+  /function canonicalWorkAmoV8ConfiguredInteger\([\s\S]*?const raw = String\(value \?\? ""\);[\s\S]*?\/\^\(\?:0\|\[1-9\]\[0-9\]\*\)\$\//u.test(
     backfill,
   ) &&
-    /function canonicalWorkAmoV8ConfiguredHash\([\s\S]*const raw = String\(value \?\? ""\);[\s\S]*\/\^\[0-9a-f\]\{64\}\$\//u.test(
+    /function canonicalWorkAmoV8ConfiguredHash\([\s\S]*?const raw = String\(value \?\? ""\);[\s\S]*?\/\^\[0-9a-f\]\{64\}\$\//u.test(
       backfill,
     ) &&
-    /const WORK_AMO_V8_CONFIGURED_ACTIVATION_HEIGHT =\s*canonicalWorkAmoV8ConfiguredInteger\([\s\S]*process\.env\.WORK_AMO_V8_ACTIVATION_HEIGHT[\s\S]*WORK_AMO_V8_CONFIGURED_ACTIVATION_HEIGHT ===\s*WORK_AMO_V8_EXPECTED_ACTIVATION_HEIGHT/u.test(
+    /const WORK_AMO_V8_CONFIGURED_ACTIVATION_HEIGHT =\s*canonicalWorkAmoV8ConfiguredInteger\([\s\S]*?process\.env\.WORK_AMO_V8_ACTIVATION_HEIGHT[\s\S]*?WORK_AMO_V8_CONFIGURED_ACTIVATION_HEIGHT ===\s*WORK_AMO_V8_EXPECTED_ACTIVATION_HEIGHT/u.test(
       backfill,
     ) &&
-    /function optionalSafeInteger\([\s\S]*const raw = String\(value \?\? ""\);[\s\S]*UNSIGNED_INTEGER_PATTERN\.test\(raw\)[\s\S]*Number\.isSafeInteger\(parsed\)/u.test(
+    /function optionalSafeInteger\([\s\S]*?const raw = String\(value \?\? ""\);[\s\S]*?UNSIGNED_INTEGER_PATTERN\.test\(raw\)[\s\S]*?Number\.isSafeInteger\(parsed\)/u.test(
       workAmoV8Migration,
     ) &&
-    /function canonicalConfiguredHash\([\s\S]*const raw = String\(value \?\? ""\);[\s\S]*TXID_PATTERN\.test\(raw\)/u.test(
+    /function canonicalConfiguredHash\([\s\S]*?const raw = String\(value \?\? ""\);[\s\S]*?TXID_PATTERN\.test\(raw\)/u.test(
       workAmoV8Migration,
     ) &&
-    /export function configuredWorkPrecisionV2Pins\([\s\S]*canonicalConfiguredHash\([\s\S]*optionalSafeInteger\([\s\S]*configuredActivationHeight !== declarationHeight \+ 1/u.test(
+    /export function configuredWorkPrecisionV2Pins\([\s\S]*?canonicalConfiguredHash\([\s\S]*?optionalSafeInteger\([\s\S]*?configuredActivationHeight !== declarationHeight \+ 1/u.test(
       workAmoV8Migration,
     ),
 );
 expect(
   "broadcast admission gates transfers and AMO actions on V8 before considering V6",
-  /signedTransactionOutputs\(txHex\)[\s\S]*workTransferActions[\s\S]*parsed\?\.kind !== "send"[\s\S]*workTransferRequiredRegistryPaymentSats[\s\S]*selectWorkAmoV5DistinctRegistryPayment\([\s\S]*requiredSats:\s*workTransferRequiredRegistryPaymentSats[\s\S]*workTransferRegistryPaymentValid[\s\S]*workMintActions[\s\S]*parsed\?\.kind !== "mint"/u.test(
+  /signedTransactionOutputs\(txHex\)[\s\S]*?workTransferActions[\s\S]*?parsed\?\.kind !== "send"[\s\S]*?workTransferRequiredRegistryPaymentSats[\s\S]*?selectWorkAmoV5DistinctRegistryPayment\([\s\S]*?requiredSats:\s*workTransferRequiredRegistryPaymentSats[\s\S]*?workTransferRegistryPaymentValid[\s\S]*?workMintActions[\s\S]*?parsed\?\.kind !== "mint"/u.test(
     workAmoBroadcastAdmission,
   ) &&
-    /WORK_AMO_V8_DECLARATION_PINS_REQUESTED &&[\s\S]*!WORK_AMO_V8_DECLARATION_PINS_CONFIGURED[\s\S]*WORK_AMO_V8_PINS_INVALID/u.test(
+    /WORK_AMO_V8_DECLARATION_PINS_REQUESTED &&[\s\S]*?!WORK_AMO_V8_DECLARATION_PINS_CONFIGURED[\s\S]*?WORK_AMO_V8_PINS_INVALID/u.test(
       workAmoBroadcastAdmission,
     ) &&
-    /if \(WORK_AMO_V8_DECLARATION_PINS_CONFIGURED\)[\s\S]*workAmoV8Metadata\([\s\S]*activation\?\.reached !== true[\s\S]*activation\?\.tipVerified !== true[\s\S]*WORK_AMO_V8_ACTIVATION_UNKNOWN/u.test(
+    /if \(WORK_AMO_V8_DECLARATION_PINS_CONFIGURED\)[\s\S]*?workAmoV8Metadata\([\s\S]*?activation\?\.reached !== true[\s\S]*?activation\?\.tipVerified !== true[\s\S]*?WORK_AMO_V8_ACTIVATION_UNKNOWN/u.test(
       workAmoBroadcastAdmission,
     ) &&
-    /activation\?\.reached === true[\s\S]*metadata\?\.writeAdmission === true[\s\S]*metadata\?\.protocolReady === true[\s\S]*metadata\?\.evidenceComplete === true[\s\S]*workAmoV8ActiveMutationDecision/u.test(
+    /activation\?\.reached === true[\s\S]*?metadata\?\.writeAdmission === true[\s\S]*?metadata\?\.protocolReady === true[\s\S]*?metadata\?\.evidenceComplete === true[\s\S]*?workAmoV8ActiveMutationDecision/u.test(
       workAmoBroadcastAdmission,
     ) &&
-    /function workAmoV8ActiveMutationDecision[\s\S]*TOKEN_SEND_SUBATOMS_ACTION[\s\S]*workAmoV8BroadcastDecision/u.test(
+    /function workAmoV8ActiveMutationDecision[\s\S]*?TOKEN_SEND_SUBATOMS_ACTION[\s\S]*?workAmoV8BroadcastDecision/u.test(
       workAmoBroadcastAdmission,
     ) &&
-    /WORK_AMO_V8_SEND3_BEFORE_ACTIVATION[\s\S]*if \(WORK_AMO_V6_DECLARATION_PINS_CONFIGURED\)/u.test(
+    /WORK_AMO_V8_SEND3_BEFORE_ACTIVATION[\s\S]*?if \(WORK_AMO_V6_DECLARATION_PINS_CONFIGURED\)/u.test(
       workAmoBroadcastAdmission,
     ) &&
     workAmoBroadcastAdmission.indexOf(
@@ -2502,31 +2508,31 @@ expect(
 );
 expect(
   "WORK mint broadcast admission preserves the exact wire amount and fails closed with all other V8 writes after activation",
-  /workMintActions\.some\([\s\S]*mint\.amount !== WORK_TOKEN_MINT_AMOUNT[\s\S]*WORK_MINT_AMOUNT_INVALID/u.test(
+  /workMintActions\.some\([\s\S]*?mint\.amount !== WORK_TOKEN_MINT_AMOUNT[\s\S]*?WORK_MINT_AMOUNT_INVALID/u.test(
     workAmoBroadcastAdmission,
   ) &&
-    /activation\?\.reached === true[\s\S]*metadata\?\.writeAdmission === true[\s\S]*metadata\?\.protocolReady === true[\s\S]*metadata\?\.evidenceComplete === true[\s\S]*workTransferActions\.length > 0 \|\|[\s\S]*workMintActions\.length > 0[\s\S]*!protocolReady[\s\S]*WORK_AMO_V8_WRITES_PAUSED/u.test(
+    /activation\?\.reached === true[\s\S]*?metadata\?\.writeAdmission === true[\s\S]*?metadata\?\.protocolReady === true[\s\S]*?metadata\?\.evidenceComplete === true[\s\S]*?workTransferActions\.length > 0 \|\|[\s\S]*?workMintActions\.length > 0[\s\S]*?!protocolReady[\s\S]*?WORK_AMO_V8_WRITES_PAUSED/u.test(
       workAmoBroadcastAdmission,
     ) &&
-    /function workAmoV8ActiveMutationDecision[\s\S]*if \(workMintActions\.length > 0\)[\s\S]*workMintActions\.length === 1[\s\S]*marketplaceActions\.length === 0[\s\S]*signedTokenProtocolRecords\.length === 1[\s\S]*paysWorkRegistry === true[\s\S]*WORK_AMO_V8_MINT_SHAPE_INVALID/u.test(
+    /function workAmoV8ActiveMutationDecision[\s\S]*?if \(workMintActions\.length > 0\)[\s\S]*?workMintActions\.length === 1[\s\S]*?marketplaceActions\.length === 0[\s\S]*?signedTokenProtocolRecords\.length === 1[\s\S]*?paysWorkRegistry === true[\s\S]*?WORK_AMO_V8_MINT_SHAPE_INVALID/u.test(
       workAmoBroadcastAdmission,
     ) &&
-    /workMintActions\[0\]\.amount !== WORK_TOKEN_MINT_AMOUNT[\s\S]*WORK_AMO_V8_MINT_AMOUNT_INVALID/u.test(
+    /workMintActions\[0\]\.amount !== WORK_TOKEN_MINT_AMOUNT[\s\S]*?WORK_AMO_V8_MINT_AMOUNT_INVALID/u.test(
       workAmoBroadcastAdmission,
     ) &&
-    /WORK_AMO_V8_DECLARATION_PINS_REQUESTED[\s\S]*WORK_MINT_AMOUNT_INVALID[\s\S]*if \(WORK_AMO_V8_DECLARATION_PINS_CONFIGURED\)/u.test(
+    /WORK_AMO_V8_DECLARATION_PINS_REQUESTED[\s\S]*?WORK_MINT_AMOUNT_INVALID[\s\S]*?if \(WORK_AMO_V8_DECLARATION_PINS_CONFIGURED\)/u.test(
       workAmoBroadcastAdmission,
     ),
 );
 expect(
   "marketplace broadcast admission proves sellers and buyers by any signed input address, not only the first input",
-  /const originAddressSet = new Set\([\s\S]*const originHasAddress = \(address\) =>[\s\S]*originAddressSet\.has\(normalized\)/u.test(
+  /const originAddressSet = new Set\([\s\S]*?const originHasAddress = \(address\) =>[\s\S]*?originAddressSet\.has\(normalized\)/u.test(
     workMarketplaceWriteActions,
   ) &&
-    /const sellerAddress = String\([\s\S]*const buyerActorAddress =[\s\S]*candidateBuyerAddress \|\| authorizationBuyerAddress[\s\S]*const actorMatches =[\s\S]*originHasAddress\(buyerActorAddress\)[\s\S]*originHasAddress\(sellerAddress\)/u.test(
+    /const sellerAddress = String\([\s\S]*?const buyerActorAddress =[\s\S]*?candidateBuyerAddress \|\| authorizationBuyerAddress[\s\S]*?const actorMatches =[\s\S]*?originHasAddress\(buyerActorAddress\)[\s\S]*?originHasAddress\(sellerAddress\)/u.test(
       workMarketplaceWriteActions,
     ) &&
-    /const buyerLockMatches =[\s\S]*authorizationBuyerAddress === candidateBuyerAddress[\s\S]*originHasAddress\(authorizationBuyerAddress\)/u.test(
+    /const buyerLockMatches =[\s\S]*?authorizationBuyerAddress === candidateBuyerAddress[\s\S]*?originHasAddress\(authorizationBuyerAddress\)/u.test(
       workMarketplaceWriteActions,
     ) &&
     !/const firstInputAddress =/u.test(workMarketplaceWriteActions),
@@ -2536,118 +2542,118 @@ expect(
   /WORK_PRECISION_V2_MIGRATION_MODEL =\s*"canonical-work-q8-to-q16-migration-v1"/u.test(
     workAmoV8Migration,
   ) &&
-    /indexedWorkPrecisionV2DeclarationEvidence[\s\S]*JOIN proof_indexer\.op_returns carrier[\s\S]*carrier\.vout = \$5[\s\S]*carrier\.output_index = \$6/u.test(
+    /indexedWorkPrecisionV2DeclarationEvidence[\s\S]*?JOIN proof_indexer\.op_returns carrier[\s\S]*?carrier\.vout = \$5[\s\S]*?carrier\.output_index = \$6/u.test(
       workAmoV8Migration,
     ) &&
-    /indexedWorkPrecisionV2DeclarationEvidence[\s\S]*carrier\.payload_text[\s\S]*carrier\.payload_hex[\s\S]*carrier\.data_bytes/u.test(
+    /indexedWorkPrecisionV2DeclarationEvidence[\s\S]*?carrier\.payload_text[\s\S]*?carrier\.payload_hex[\s\S]*?carrier\.data_bytes/u.test(
       workAmoV8Migration,
     ) &&
-    /coreWorkPrecisionV2DeclarationEvidence[\s\S]*getblockhash[\s\S]*getblock[\s\S]*declarationProtocolVout/u.test(
+    /coreWorkPrecisionV2DeclarationEvidence[\s\S]*?getblockhash[\s\S]*?getblock[\s\S]*?declarationProtocolVout/u.test(
       workAmoV8Migration,
     ) &&
-    /readWorkPrecisionV2ActivationOpening[\s\S]*transition\.block_height = \$1[\s\S]*scaleWorkPrecisionV2TokenState/u.test(
+    /readWorkPrecisionV2ActivationOpening[\s\S]*?transition\.block_height = \$1[\s\S]*?scaleWorkPrecisionV2TokenState/u.test(
       workAmoV8Migration,
     ) &&
-    /readWorkPrecisionV2ActivationOpening[\s\S]*canonical-work-amo-full-position-block-sequencer-v2/u.test(
+    /readWorkPrecisionV2ActivationOpening[\s\S]*?canonical-work-amo-full-position-block-sequencer-v2/u.test(
       workAmoV8Migration,
     ) &&
-    /DELETE FROM proof_indexer\.credit_balances[\s\S]*INSERT INTO proof_indexer\.credit_balances[\s\S]*expectedScaledState\.balances/u.test(
+    /DELETE FROM proof_indexer\.credit_balances[\s\S]*?INSERT INTO proof_indexer\.credit_balances[\s\S]*?expectedScaledState\.balances/u.test(
       workAmoV8Migration,
     ) &&
-    /scaleWorkPrecisionV2TokenState[\s\S]*const relicListings =[\s\S]*listings: \[\][\s\S]*WORK_AMO_V8_RELIC_CUTOVER_MODEL/u.test(
+    /scaleWorkPrecisionV2TokenState[\s\S]*?const relicListings =[\s\S]*?listings: \[\][\s\S]*?WORK_AMO_V8_RELIC_CUTOVER_MODEL/u.test(
       workAmoV8Migration,
     ) &&
-    /expectedScaledState = \{[\s\S]*balances: scaledOpeningBalances,[\s\S]*listings: \[\][\s\S]*relicCutover: activationOpening\.relicCutover/u.test(
+    /expectedScaledState = \{[\s\S]*?balances: scaledOpeningBalances,[\s\S]*?listings: \[\][\s\S]*?relicCutover: activationOpening\.relicCutover/u.test(
       workAmoV8Migration,
     ) &&
-    /WITH relic AS[\s\S]*'actionable', false[\s\S]*'relic', true[\s\S]*'relicCutoverModel'[\s\S]*status = 'dropped'/u.test(
+    /WITH relic AS[\s\S]*?'actionable', false[\s\S]*?'relic', true[\s\S]*?'relicCutoverModel'[\s\S]*?status = 'dropped'/u.test(
       workAmoV8Migration,
     ) &&
-    /AS active_count[\s\S]*AS relic_count[\s\S]*active_count \?\? -1\) !== 0[\s\S]*relic_count \?\? -1\) !== relicItems\.length/u.test(
+    /AS active_count[\s\S]*?AS relic_count[\s\S]*?active_count \?\? -1\) !== 0[\s\S]*?relic_count \?\? -1\) !== relicItems\.length/u.test(
       workAmoV8Migration,
     ) &&
-    /verifyWorkPrecisionV2RowsConserved[\s\S]*WORK_PRECISION_V2_MIGRATION_META_KEY[\s\S]*workPrecisionV2MarkerMatches/u.test(
+    /verifyWorkPrecisionV2RowsConserved[\s\S]*?WORK_PRECISION_V2_MIGRATION_META_KEY[\s\S]*?workPrecisionV2MarkerMatches/u.test(
       workAmoV8Migration,
     ),
 );
 expect(
   "precision readiness rejects every wrong-era WORK transfer and listing mutation",
-  /AS invalid_post_activation_legacy_count[\s\S]*AS invalid_pre_activation_v7_count/u.test(
+  /AS invalid_post_activation_legacy_count[\s\S]*?AS invalid_pre_activation_v7_count/u.test(
     reader,
   ) &&
-    /event\.block_height >= \$11[\s\S]*event\.raw_payload LIKE 'pwt1:send:%'[\s\S]*event\.raw_payload LIKE 'pwt1:send2:%'[\s\S]*event\.kind = 'token-listing'[\s\S]*saleAuthorization'->>'version'[\s\S]*<> \$12/u.test(
+    /event\.block_height >= \$11[\s\S]*?event\.raw_payload LIKE 'pwt1:send:%'[\s\S]*?event\.raw_payload LIKE 'pwt1:send2:%'[\s\S]*?event\.kind = 'token-listing'[\s\S]*?saleAuthorization'->>'version'[\s\S]*?<> \$12/u.test(
       reader,
     ) &&
-    /event\.block_height < \$11[\s\S]*event\.raw_payload LIKE 'pwt1:send3:%'[\s\S]*event\.kind = 'token-listing'[\s\S]*saleAuthorization'->>'version'[\s\S]*= \$12/u.test(
+    /event\.block_height < \$11[\s\S]*?event\.raw_payload LIKE 'pwt1:send3:%'[\s\S]*?event\.kind = 'token-listing'[\s\S]*?saleAuthorization'->>'version'[\s\S]*?= \$12/u.test(
       reader,
     ) &&
-    /WORK_AMO_V8_AUTH_VERSION,[\s\S]*WORK_AMO_V8_BLOCK_SEQUENCER_MODEL/u.test(
+    /WORK_AMO_V8_AUTH_VERSION,[\s\S]*?WORK_AMO_V8_BLOCK_SEQUENCER_MODEL/u.test(
       reader,
     ) &&
-    /Number\(row\.invalid_post_activation_legacy_count\) === 0[\s\S]*Number\(row\.invalid_pre_activation_v7_count\) === 0/u.test(
+    /Number\(row\.invalid_post_activation_legacy_count\) === 0[\s\S]*?Number\(row\.invalid_pre_activation_v7_count\) === 0/u.test(
       reader,
     ),
 );
 expect(
   "precision readiness is bound to the exact canonical DB and Core tip hash",
-  /\) AS tip_height,[\s\S]*\) AS tip_hash,[\s\S]*\) AS transition_height,[\s\S]*\) AS transition_hash/u.test(
+  /\) AS tip_height,[\s\S]*?\) AS tip_hash,[\s\S]*?\) AS transition_height,[\s\S]*?\) AS transition_hash/u.test(
     reader,
   ) &&
-    /const tipHash = normalizedLowerText\(row\.tip_hash\)[\s\S]*Number\(row\.transition_height\) === tipHeight[\s\S]*\/\^\[0-9a-f\]\{64\}\$\/u\.test\(tipHash\)[\s\S]*normalizedLowerText\(row\.transition_hash\) === tipHash/u.test(
+    /const tipHash = normalizedLowerText\(row\.tip_hash\)[\s\S]*?Number\(row\.transition_height\) === tipHeight[\s\S]*?\/\^\[0-9a-f\]\{64\}\$\/u\.test\(tipHash\)[\s\S]*?normalizedLowerText\(row\.transition_hash\) === tipHash/u.test(
       reader,
     ) &&
-    /return \{[\s\S]*replayReady,[\s\S]*status: ready \? "complete" : "not-ready",[\s\S]*tipHash,[\s\S]*tipHeight/u.test(
+    /return \{[\s\S]*?replayReady,[\s\S]*?status: ready \? "complete" : "not-ready",[\s\S]*?tipHash,[\s\S]*?tipHeight/u.test(
       reader,
     ),
 );
 expect(
   "snapshots are stamped and selected by the exact WORK precision model at their checkpoint",
-  /function workDefinitionStorageModel[\s\S]*const q8 =[\s\S]*WORK_ATOMIC_PROJECTION_MODEL[\s\S]*const q16 =[\s\S]*WORK_SUBATOM_PROJECTION_MODEL[\s\S]*: ""/u.test(
+  /function workDefinitionStorageModel[\s\S]*?const q8 =[\s\S]*?WORK_ATOMIC_PROJECTION_MODEL[\s\S]*?const q16 =[\s\S]*?WORK_SUBATOM_PROJECTION_MODEL[\s\S]*?: ""/u.test(
     reader,
   ) &&
-    /async function currentWorkAmountStorageModel[\s\S]*LIMIT 2[\s\S]*result\.rows\.length === 1[\s\S]*workDefinitionStorageModel/u.test(
+    /async function currentWorkAmountStorageModel[\s\S]*?LIMIT 2[\s\S]*?result\.rows\.length === 1[\s\S]*?workDefinitionStorageModel/u.test(
       reader,
     ) &&
-    /async function workAmountStorageModelAtHeight[\s\S]*WORK_PRECISION_V2_MIGRATION_META_KEY[\s\S]*marker\.status !== "complete"[\s\S]*height < activationHeight[\s\S]*WORK_ATOMIC_PROJECTION_MODEL[\s\S]*WORK_SUBATOM_PROJECTION_MODEL/u.test(
+    /async function workAmountStorageModelAtHeight[\s\S]*?WORK_PRECISION_V2_MIGRATION_META_KEY[\s\S]*?marker\.status !== "complete"[\s\S]*?height < activationHeight[\s\S]*?WORK_ATOMIC_PROJECTION_MODEL[\s\S]*?WORK_SUBATOM_PROJECTION_MODEL/u.test(
       reader,
     ) &&
-    /async function storeLedgerSnapshot[\s\S]*currentWorkProjectionModel\(client,[\s\S]*if \(!workAmountStorageModel\)[\s\S]*snapshotPayload = \{[\s\S]*workAmountStorageModel/u.test(
+    /async function storeLedgerSnapshot[\s\S]*?currentWorkProjectionModel\(client,[\s\S]*?if \(!workAmountStorageModel\)[\s\S]*?snapshotPayload = \{[\s\S]*?workAmountStorageModel/u.test(
       backfill,
     ) &&
-    /async function storeCanonicalSummarySnapshot[\s\S]*workProjectionModelAtHeight\(\s*client,\s*summaryCheckpointHeight[\s\S]*if \(!workAmountStorageModel\)[\s\S]*snapshotPayload = \{[\s\S]*workAmountStorageModel/u.test(
+    /async function storeCanonicalSummarySnapshot[\s\S]*?workProjectionModelAtHeight\(\s*client,\s*summaryCheckpointHeight[\s\S]*?if \(!workAmountStorageModel\)[\s\S]*?snapshotPayload = \{[\s\S]*?workAmountStorageModel/u.test(
       backfill,
     ) &&
-    /async function ledgerSnapshot\([\s\S]*payload->>'workAmountStorageModel' =\s*ANY\(\$3::text\[\]\)[\s\S]*currentWorkAmountStorageModel\(pool, network\)[\s\S]*payload->>'workAmountStorageModel' = \$2/u.test(
+    /async function ledgerSnapshot\([\s\S]*?payload->>'workAmountStorageModel' =\s*ANY\(\$3::text\[\]\)[\s\S]*?currentWorkAmountStorageModel\(pool, network\)[\s\S]*?payload->>'workAmountStorageModel' = \$2/u.test(
       reader,
     ),
 );
 expect(
   "WORK definition reads reject missing or conflicting precision metadata instead of falling back to Q8",
-  /function tokenDefinitionFromRow[\s\S]*const workStorageModel = isWorkTokenId\(tokenId\)[\s\S]*workDefinitionStorageModel\(row\)[\s\S]*isWorkTokenId\(tokenId\) && !workStorageModel[\s\S]*missing or conflicting Q8\/Q16 precision metadata/u.test(
+  /function tokenDefinitionFromRow[\s\S]*?const workStorageModel = isWorkTokenId\(tokenId\)[\s\S]*?workDefinitionStorageModel\(row\)[\s\S]*?isWorkTokenId\(tokenId\) && !workStorageModel[\s\S]*?missing or conflicting Q8\/Q16 precision metadata/u.test(
     reader,
   ) &&
-    !/function tokenDefinitionFromRow[\s\S]*amountStorageModel:\s*WORK_LEGACY_ATOMIC_PROJECTION_MODEL[\s\S]*const metadataWithoutPosition/u.test(
+    !/function tokenDefinitionFromRow[\s\S]*?amountStorageModel:\s*WORK_LEGACY_ATOMIC_PROJECTION_MODEL[\s\S]*?const metadataWithoutPosition/u.test(
       reader,
     ),
 );
 expect(
   "backfill dispatches every mutable WORK projection through one explicit Q8 or Q16 definition state",
-  /const WORK_PROJECTION_STATE_Q8 = "q8"[\s\S]*const WORK_PROJECTION_STATE_Q16 = "q16"[\s\S]*const WORK_PROJECTION_STATE_INVALID = "invalid"/u.test(
+  /const WORK_PROJECTION_STATE_Q8 = "q8"[\s\S]*?const WORK_PROJECTION_STATE_Q16 = "q16"[\s\S]*?const WORK_PROJECTION_STATE_INVALID = "invalid"/u.test(
     backfill,
   ) &&
-    /function workDefinitionProjectionState[\s\S]*const q8 =[\s\S]*WORK_ATOMIC_PROJECTION_MODEL[\s\S]*const q16 =[\s\S]*WORK_SUBATOM_PROJECTION_MODEL[\s\S]*WORK_PROJECTION_STATE_INVALID/u.test(
+    /function workDefinitionProjectionState[\s\S]*?const q8 =[\s\S]*?WORK_ATOMIC_PROJECTION_MODEL[\s\S]*?const q16 =[\s\S]*?WORK_SUBATOM_PROJECTION_MODEL[\s\S]*?WORK_PROJECTION_STATE_INVALID/u.test(
       backfill,
     ) &&
     /workPrecisionV2MarkerReady as sharedWorkPrecisionV2MarkerReady/u.test(
       backfill,
     ) &&
-    /function workPrecisionV2MarkerAuthorizesQ16[\s\S]*sharedWorkPrecisionV2MarkerReady\(marker, pins,[\s\S]*network: NETWORK/u.test(
+    /function workPrecisionV2MarkerAuthorizesQ16[\s\S]*?sharedWorkPrecisionV2MarkerReady\(marker, pins,[\s\S]*?network: NETWORK/u.test(
       backfill,
     ) &&
-    /async function upsertProjection[\s\S]*WORK definition projection cannot update without one exact active Q8 or Q16 model[\s\S]*WORK holder projection cannot update without one exact active Q8 or Q16 model[\s\S]*WORK listing projection cannot update without one exact active Q8 or Q16 model/u.test(
+    /async function upsertProjection[\s\S]*?WORK definition projection cannot update without one exact active Q8 or Q16 model[\s\S]*?WORK holder projection cannot update without one exact active Q8 or Q16 model[\s\S]*?WORK listing projection cannot update without one exact active Q8 or Q16 model/u.test(
       backfill,
     ) &&
-    /function workBalanceForProjection[\s\S]*Q8 WORK balance storage cannot accept native subatom aliases[\s\S]*Native Q16 WORK balance storage cannot accept legacy atom aliases[\s\S]*Native Q16 WORK balance aliases are ambiguous/u.test(
+    /function workBalanceForProjection[\s\S]*?Q8 WORK balance storage cannot accept native subatom aliases[\s\S]*?Native Q16 WORK balance storage cannot accept legacy atom aliases[\s\S]*?Native Q16 WORK balance aliases are ambiguous/u.test(
       backfill,
     ),
 );
@@ -2656,10 +2662,10 @@ expect(
   /const AUDIT_WORK_ATOMS_ONLY = process\.argv\.includes\("--audit-work-atoms"\)/u.test(
     backfill,
   ) &&
-    /const ALLOW_REPAIRABLE_WORK_EVENT_PRECISION_AUDIT =[\s\S]*--allow-repairable-work-event-precision[\s\S]*POW_INDEX_WORK_EVENT_PRECISION_REPAIRABLE_OK/u.test(
+    /const ALLOW_REPAIRABLE_WORK_EVENT_PRECISION_AUDIT =[\s\S]*?--allow-repairable-work-event-precision[\s\S]*?POW_INDEX_WORK_EVENT_PRECISION_REPAIRABLE_OK/u.test(
       backfill,
     ) &&
-    /auditWorkAtomicProjection\(client, \{[\s\S]*allowRepairableEventPrecision:[\s\S]*ALLOW_REPAIRABLE_WORK_EVENT_PRECISION_AUDIT/u.test(
+    /auditWorkAtomicProjection\(client, \{[\s\S]*?allowRepairableEventPrecision:[\s\S]*?ALLOW_REPAIRABLE_WORK_EVENT_PRECISION_AUDIT/u.test(
       backfill,
     ) &&
     /repairable_q16_invalid_zero_events/u.test(backfill) &&
@@ -2672,7 +2678,7 @@ expect(
 );
 expect(
   "WORK mint projection preserves Q8 history and maps the unchanged wire amount to exact Q16 only from D+1",
-  /async function protocolIntegrityItemForPersistence[\s\S]*item\?\.kind[\s\S]*"token-mint"[\s\S]*isWorkTokenId\(item\?\.tokenId\)[\s\S]*currentWorkPrecisionV2Marker[\s\S]*const activationHeight = Number\(marker\?\.activationHeight\)[\s\S]*blockHeight >= activationHeight[\s\S]*String\(item\?\.amount \?\? ""\) !== "1000"[\s\S]*amountSubatoms: WORK_TOKEN_MINT_AMOUNT_SUBATOMS/u.test(
+  /async function protocolIntegrityItemForPersistence[\s\S]*?item\?\.kind[\s\S]*?"token-mint"[\s\S]*?isWorkTokenId\(item\?\.tokenId\)[\s\S]*?currentWorkPrecisionV2Marker[\s\S]*?const activationHeight = Number\(marker\?\.activationHeight\)[\s\S]*?blockHeight >= activationHeight[\s\S]*?String\(item\?\.amount \?\? ""\) !== "1000"[\s\S]*?amountSubatoms: WORK_TOKEN_MINT_AMOUNT_SUBATOMS/u.test(
     backfill,
   ) &&
     /const WORK_TOKEN_MINT_AMOUNT_SUBATOMS =\s*WORK_AMO_V8_MINT_AMOUNT_SUBATOMS\.toString\(\)/u.test(
@@ -2681,10 +2687,10 @@ expect(
 );
 expect(
   "backfill reconstructs Mail and Inception WORK attachments in canonical Q16 across both transfer eras",
-  /function preparedProtocolItemsWithCanonicalMailAttachments[\s\S]*const nativeQ16 =[\s\S]*WORK_SUBATOM_PROJECTION_MODEL[\s\S]*WORK_AMO_V8_TRANSFER_VERSION[\s\S]*canonicalWorkSubatomsText\(item\?\.amountSubatoms\)[\s\S]*BigInt\(amountAtoms\) \* WORK_ATOM_TO_SUBATOM_SCALE/u.test(
+  /function preparedProtocolItemsWithCanonicalMailAttachments[\s\S]*?const nativeQ16 =[\s\S]*?WORK_SUBATOM_PROJECTION_MODEL[\s\S]*?WORK_AMO_V8_TRANSFER_VERSION[\s\S]*?canonicalWorkSubatomsText\(item\?\.amountSubatoms\)[\s\S]*?BigInt\(amountAtoms\) \* WORK_ATOM_TO_SUBATOM_SCALE/u.test(
     backfill,
   ) &&
-    /nativeQ16[\s\S]*item\?\.amountAtoms[\s\S]*!nativeQ16[\s\S]*item\?\.amountSubatoms[\s\S]*withWorkSubatomPrecisionMetadata\([\s\S]*amountSubatoms,[\s\S]*legacyAmountAtoms:[\s\S]*legacyAmountStorageModel:[\s\S]*precisionModel: WORK_AMO_V8_GLOBAL_PRECISION_MODEL/u.test(
+    /nativeQ16[\s\S]*?item\?\.amountAtoms[\s\S]*?!nativeQ16[\s\S]*?item\?\.amountSubatoms[\s\S]*?withWorkSubatomPrecisionMetadata\([\s\S]*?amountSubatoms,[\s\S]*?legacyAmountAtoms:[\s\S]*?legacyAmountStorageModel:[\s\S]*?precisionModel: WORK_AMO_V8_GLOBAL_PRECISION_MODEL/u.test(
       backfill,
     ) &&
     /existing\.amountSubatoms !== transfer\.amountSubatoms/u.test(
@@ -2693,16 +2699,16 @@ expect(
 );
 expect(
   "V8 replay readiness rejects stale, forked, missing-model, and Q8 snapshots at the exact tip",
-  /current_snapshot\.snapshot_height,[\s\S]*current_snapshot\.snapshot_hash,[\s\S]*current_snapshot\.snapshot_work_amount_storage_model/u.test(
+  /current_snapshot\.snapshot_height,[\s\S]*?current_snapshot\.snapshot_hash,[\s\S]*?current_snapshot\.snapshot_work_amount_storage_model/u.test(
     reader,
   ) &&
-    /snapshot\.payload->>'workAmountStorageModel' = \$15[\s\S]*snapshot\.consistency->>'ok'[\s\S]*= 'true'[\s\S]*snapshot\.consistency->>'status'[\s\S]*= 'green'[\s\S]*summaryRefresh'->>'mode' =\s*'canonical-summary-refresh'/u.test(
+    /snapshot\.payload->>'workAmountStorageModel' = \$15[\s\S]*?snapshot\.consistency->>'ok'[\s\S]*?= 'true'[\s\S]*?snapshot\.consistency->>'status'[\s\S]*?= 'green'[\s\S]*?summaryRefresh'->>'mode' =\s*'canonical-summary-refresh'/u.test(
       reader,
     ) &&
-    /snapshot\.payload->>'indexedThroughBlockHash'[\s\S]*snapshot\.source_hashes->>'blockScan'[\s\S]*summaryRefresh'[\s\S]*indexedThroughBlockHash/u.test(
+    /snapshot\.payload->>'indexedThroughBlockHash'[\s\S]*?snapshot\.source_hashes->>'blockScan'[\s\S]*?summaryRefresh'[\s\S]*?indexedThroughBlockHash/u.test(
       reader,
     ) &&
-    /Number\(row\.snapshot_height\) === tipHeight[\s\S]*snapshotHash === tipHash[\s\S]*row\.snapshot_work_amount_storage_model ===\s*WORK_SUBATOM_PROJECTION_MODEL/u.test(
+    /Number\(row\.snapshot_height\) === tipHeight[\s\S]*?snapshotHash === tipHash[\s\S]*?row\.snapshot_work_amount_storage_model ===\s*WORK_SUBATOM_PROJECTION_MODEL/u.test(
       reader,
     ),
 );
@@ -2714,34 +2720,34 @@ expect(
     /process\.stdout\.write\(`\$\{declaration\.text\}\\n`\);/u.test(
       workAmoV8DeclarationBuilder,
     ) &&
-    /precisionRule=from activation,[\s\S]*maximum supply, mint increment, supply, balances, transfers, reservations, and listing amounts use exactly sixteen decimal places/u.test(
+    /precisionRule=from activation,[\s\S]*?maximum supply, mint increment, supply, balances, transfers, reservations, and listing amounts use exactly sixteen decimal places/u.test(
       workAmoV8Declaration,
     ) &&
-    /precisionMigrationRule=at the activation opening boundary,[\s\S]*each confirmed canonical current eight-decimal WORK atom becomes exactly 100000000 sixteen-decimal subatoms[\s\S]*raw confirmed history is not rewritten/u.test(
+    /precisionMigrationRule=at the activation opening boundary,[\s\S]*?each confirmed canonical current eight-decimal WORK atom becomes exactly 100000000 sixteen-decimal subatoms[\s\S]*?raw confirmed history is not rewritten/u.test(
       workAmoV8Declaration,
     ) &&
     /allowedFaceProofs=\$\{WORK_AMO_V8_ALLOWED_FACE_PROOFS\.join\(","\)\}/u.test(
       workAmoV8Declaration,
     ) &&
-    /unitFormula=unitPriceSats=F;unitAmountSubatoms=floor[\s\S]*unitMinimumPriceSats=ceil/u.test(
+    /unitFormula=unitPriceSats=F;unitAmountSubatoms=floor[\s\S]*?unitMinimumPriceSats=ceil/u.test(
       workAmoV8Declaration,
     ) &&
     !/unitPriceProofs=|unitMinimumPriceProofs=/u.test(
       workAmoV8Declaration,
     ) &&
-    /settlementRule=a confirmed V8 listing may be sealed or purchased only with its frozen terms[\s\S]*readinessFailureRule=[\s\S]*no legacy precision or listing protocol is re-enabled after activation/u.test(
+    /settlementRule=a confirmed V8 listing may be sealed or purchased only with its frozen terms[\s\S]*?readinessFailureRule=[\s\S]*?no legacy precision or listing protocol is re-enabled after activation/u.test(
       workAmoV8Declaration,
     ),
 );
 expect(
   "V8 admission auto-discovers the exact declaration and irreversibly closes legacy writes without a manual-pin window",
-  /async function discoverExactWorkAmoV8Declaration[\s\S]*workAmoV8DeclarationEmbargoLatch = true[\s\S]*canonical-registry-discovery/u.test(
+  /async function discoverExactWorkAmoV8Declaration[\s\S]*?workAmoV8DeclarationEmbargoLatch = true[\s\S]*?canonical-registry-discovery/u.test(
     server,
   ) &&
-    /WORK_AMO_V8_DECLARATION_DISCOVERY_UNAVAILABLE[\s\S]*WORK_AMO_V8_LEGACY_WRITE_EMBARGO[\s\S]*WORK_AMO_V8_PINS_REQUIRED_AFTER_DECLARATION/u.test(
+    /WORK_AMO_V8_DECLARATION_DISCOVERY_UNAVAILABLE[\s\S]*?WORK_AMO_V8_LEGACY_WRITE_EMBARGO[\s\S]*?WORK_AMO_V8_PINS_REQUIRED_AFTER_DECLARATION/u.test(
       server,
     ) &&
-    /async function discoverIndexedWorkAmoV8DeclarationPins[\s\S]*exact_carrier_count[\s\S]*registry_payment_count[\s\S]*ORDER BY[\s\S]*tx\.block_height ASC,[\s\S]*tx\.block_index ASC/u.test(
+    /async function discoverIndexedWorkAmoV8DeclarationPins[\s\S]*?exact_carrier_count[\s\S]*?registry_payment_count[\s\S]*?ORDER BY[\s\S]*?tx\.block_height ASC,[\s\S]*?tx\.block_index ASC/u.test(
       backfill,
     ) &&
     /async function persistWorkAmoV8ActivationLatch/u.test(

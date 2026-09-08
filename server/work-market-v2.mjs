@@ -1,4 +1,13 @@
-import { WORK_TOKEN_ID } from "./work-units.mjs";
+import {
+  WORK_PRECISION_V2_MODEL,
+  WORK_SUBATOM_PROJECTION_MODEL,
+  WORK_SUBATOM_UNIT_SCALE,
+  WORK_SUBATOM_UNIT_SCALE_TEXT,
+  WORK_TOKEN_ID,
+  formatWorkSubatoms,
+  normalizeWorkSubatoms,
+  workAmountSubatomsFromRecord,
+} from "./work-units.mjs";
 import workMarketV1RefundSnapshot from "../WORK_MARKET_V1_REFUNDS_959061.json" with {
   type: "json",
 };
@@ -455,13 +464,81 @@ function workListingAmount(listing) {
   return Number.isFinite(amount) && amount > 0 ? amount : 0;
 }
 
-function activeWorkListingMetrics(listings) {
+function workListingMetricsUseSubatoms(state, listings) {
+  const records = [
+    state,
+    ...(Array.isArray(state.tokens) ? state.tokens : []).filter(
+      (token) => listingTokenId(token) === WORK_TOKEN_ID,
+    ),
+    ...listings.filter((listing) => listingTokenId(listing) === WORK_TOKEN_ID),
+  ];
+  return records.some((record) =>
+    record?.amountStorageModel === WORK_SUBATOM_PROJECTION_MODEL ||
+    record?.precisionModel === WORK_PRECISION_V2_MODEL ||
+    record?.amountSubatoms !== undefined ||
+    listingAuthorizationVersion(record) === "pwt-sale-v8"
+  );
+}
+
+function workListingSubatomPriceDescriptor(listing) {
+  try {
+    const amountSubatoms = workAmountSubatomsFromRecord(listing, {
+      allowLegacy: false,
+      sourceModel: WORK_SUBATOM_PROJECTION_MODEL,
+    });
+    const amount = BigInt(amountSubatoms);
+    if (amount > WORK_MARKET_V2_MAX_SUPPLY * WORK_SUBATOM_UNIT_SCALE) {
+      return null;
+    }
+    // Proof prices and subatom quantities remain integers. The decimal is a
+    // rounded display alias of this ratio, never a Number-based price input.
+    const priceSats = normalizeWorkSubatoms(
+      listing?.priceSats ?? listing?.saleAuthorization?.priceSats,
+    );
+    const numerator = BigInt(priceSats) * WORK_SUBATOM_UNIT_SCALE;
+    const decimal = formatWorkSubatoms(
+      (numerator * WORK_SUBATOM_UNIT_SCALE + amount / 2n) / amount,
+    );
+    return {
+      amountSubatoms,
+      decimal,
+      denominator: amountSubatoms,
+      model: "exact-work-q16-sats-per-unit-ratio-v1",
+      numerator: numerator.toString(),
+      priceSats,
+      unitScale: WORK_SUBATOM_UNIT_SCALE_TEXT,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function activeWorkListingMetrics(listings, subatomic = false) {
   const workListings = listings.filter(
     (listing) => listingTokenId(listing) === WORK_TOKEN_ID,
   );
   let lowestAskPricePerToken = 0;
+  let lowestAskPricePerTokenExact = null;
+  let exactPriceUnavailable = false;
   for (const listing of workListings) {
     if (listing?.sealConfirmed !== true) {
+      continue;
+    }
+    if (subatomic) {
+      const exact = workListingSubatomPriceDescriptor(listing);
+      if (!exact) {
+        exactPriceUnavailable = true;
+        continue;
+      }
+      if (
+        !lowestAskPricePerTokenExact ||
+        BigInt(exact.numerator) *
+          BigInt(lowestAskPricePerTokenExact.denominator) <
+          BigInt(lowestAskPricePerTokenExact.numerator) *
+            BigInt(exact.denominator)
+      ) {
+        lowestAskPricePerTokenExact = exact;
+      }
       continue;
     }
     const amount = workListingAmount(listing);
@@ -483,7 +560,14 @@ function activeWorkListingMetrics(listings) {
     confirmedOpenListings: workListings.filter(
       (listing) => listing?.confirmed === true,
     ).length,
-    lowestAskPricePerToken,
+    ...(subatomic
+      ? !exactPriceUnavailable && lowestAskPricePerTokenExact
+        ? {
+            lowestAskPricePerToken: lowestAskPricePerTokenExact.decimal,
+            lowestAskPricePerTokenExact,
+          }
+        : {}
+      : { lowestAskPricePerToken }),
     openListings: workListings.length,
     pendingOpenListings: workListings.filter(
       (listing) => listing?.confirmed !== true,
@@ -870,13 +954,24 @@ export function applyWorkMarketV2CutoverToTokenState(state) {
   const confirmedInvalidEvents = invalidEvents.filter(
     (event) => event?.confirmed === true,
   ).length;
-  const workListingMetrics = activeWorkListingMetrics(listings);
+  const subatomicListingMetrics = workListingMetricsUseSubatoms(state, listings);
+  const workListingMetrics = activeWorkListingMetrics(
+    listings,
+    subatomicListingMetrics,
+  );
   const tokens = Array.isArray(state.tokens)
-    ? state.tokens.map((token) =>
-        listingTokenId(token) === WORK_TOKEN_ID
-          ? { ...token, ...workListingMetrics }
-          : token,
-      )
+    ? state.tokens.map((token) => {
+        if (listingTokenId(token) !== WORK_TOKEN_ID) {
+          return token;
+        }
+        const next = { ...token, ...workListingMetrics };
+        if (subatomicListingMetrics && !workListingMetrics.lowestAskPricePerTokenExact) {
+          // A removed or unverifiable best ask cannot keep either old alias.
+          delete next.lowestAskPricePerToken;
+          delete next.lowestAskPricePerTokenExact;
+        }
+        return next;
+      })
     : state.tokens;
   const tokenListingCounts = Array.isArray(tokens)
     ? tokens.map((token) => finiteListingCount(token?.openListings))

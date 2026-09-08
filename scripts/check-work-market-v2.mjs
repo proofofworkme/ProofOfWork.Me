@@ -37,7 +37,13 @@ import {
   workMarketplaceBroadcastDecision,
   workMarketplaceWriteActionIsGoverned,
 } from "../server/work-market-v2.mjs";
-import { WORK_TOKEN_ID } from "../server/work-units.mjs";
+import {
+  WORK_PRECISION_V2_MODEL,
+  WORK_SUBATOM_PROJECTION_MODEL,
+  WORK_SUBATOM_UNIT_SCALE_TEXT,
+  WORK_TOKEN_ID,
+  formatWorkSubatoms,
+} from "../server/work-units.mjs";
 import {
   tokenListingCanProjectCloseActivity,
   tokenListingTransactionCanProjectActive,
@@ -1328,6 +1334,117 @@ assert.deepEqual(
   applyWorkMarketV2CutoverToTokenState(cutoverState),
   cutoverState,
 );
+
+// September 8: an unscoped wallet read retained an exact descriptor while this
+// legacy cutover rewrote its decimal alias using Number division.
+const capturedAskDescriptor = {
+  amountSubatoms: "749030366",
+  decimal: "333764839648.7039084874697857",
+  denominator: "749030366",
+  model: "exact-work-q16-sats-per-unit-ratio-v1",
+  numerator: "250000000000000000000",
+  priceSats: "25000",
+  unitScale: WORK_SUBATOM_UNIT_SCALE_TEXT,
+};
+const q16Listing = (amountSubatoms, id = "71".repeat(32)) => ({
+  amount: formatWorkSubatoms(amountSubatoms),
+  amountSubatoms,
+  amountStorageModel: WORK_SUBATOM_PROJECTION_MODEL,
+  blockHeight: 966022,
+  confirmed: true,
+  listingId: id,
+  network: "livenet",
+  precisionModel: WORK_PRECISION_V2_MODEL,
+  priceSats: 25000,
+  saleAuthorization: {
+    tokenId: WORK_TOKEN_ID,
+    unitFaceProofs: 25000,
+    version: "pwt-sale-v8",
+  },
+  sealConfirmed: true,
+  tokenId: WORK_TOKEN_ID,
+  txid: id,
+});
+const q16Book = (listings, token = {}) => ({
+  amountStorageModel: WORK_SUBATOM_PROJECTION_MODEL,
+  indexedThroughBlock: 966022,
+  listings,
+  network: "livenet",
+  precisionModel: WORK_PRECISION_V2_MODEL,
+  tokens: [{
+    amountStorageModel: WORK_SUBATOM_PROJECTION_MODEL,
+    lowestAskPricePerToken: 333764839648.7039,
+    lowestAskPricePerTokenExact: capturedAskDescriptor,
+    precisionModel: WORK_PRECISION_V2_MODEL,
+    tokenId: WORK_TOKEN_ID,
+    ...token,
+  }],
+});
+const capturedAskInput = q16Book([q16Listing("749030366")]);
+const capturedAskBefore = JSON.stringify(capturedAskInput);
+const capturedAskOutput = applyWorkMarketV2CutoverToTokenState(capturedAskInput);
+assert.deepEqual(capturedAskOutput.tokens[0].lowestAskPricePerTokenExact, capturedAskDescriptor);
+assert.equal(capturedAskOutput.tokens[0].lowestAskPricePerToken, capturedAskDescriptor.decimal);
+assert.equal(JSON.stringify(capturedAskInput), capturedAskBefore, "projection must not mutate frozen input records");
+assert.deepEqual(applyWorkMarketV2CutoverToTokenState(capturedAskOutput), capturedAskOutput);
+for (const oldDescriptor of [undefined, { ...capturedAskDescriptor, numerator: "1" }]) {
+  const rebuilt = applyWorkMarketV2CutoverToTokenState(q16Book(
+    [q16Listing("749030366")],
+    { lowestAskPricePerTokenExact: oldDescriptor },
+  ));
+  assert.deepEqual(rebuilt.tokens[0].lowestAskPricePerTokenExact, capturedAskDescriptor,
+    "missing or invalid cached descriptors must be recomputed from exact listing evidence");
+}
+
+const firstExactListing = q16Listing("20000000000000000");
+const lowerExactListing = q16Listing("20000000000000001", "72".repeat(32));
+const selectedExactAsk = applyWorkMarketV2CutoverToTokenState(q16Book([
+  firstExactListing,
+  lowerExactListing,
+]));
+assert.equal(selectedExactAsk.tokens[0].lowestAskPricePerToken, "12499.999999999999375");
+assert.equal(selectedExactAsk.tokens[0].lowestAskPricePerTokenExact.amountSubatoms, lowerExactListing.amountSubatoms,
+  "ask selection must distinguish amounts that collapse to the same Number");
+const changedExactAsk = applyWorkMarketV2CutoverToTokenState({
+  ...selectedExactAsk,
+  listings: [firstExactListing],
+});
+assert.equal(changedExactAsk.tokens[0].lowestAskPricePerToken, "12500");
+assert.equal(changedExactAsk.tokens[0].lowestAskPricePerTokenExact.amountSubatoms, firstExactListing.amountSubatoms,
+  "both price aliases must change after the selected listing leaves the book");
+for (const listingPatch of [
+  { amountSubatoms: undefined },
+  { amountSubatoms: "0" },
+  { amountSubatoms: "0749030366" },
+  { amountSubatoms: "210000000000000000000001" },
+  { amountSubatoms: 9007199254740992 },
+  { amountAtoms: "7" },
+  { priceSats: 0 },
+  { priceSats: "2.5" },
+  { priceSats: 9007199254740992 },
+]) {
+  const unavailable = applyWorkMarketV2CutoverToTokenState(q16Book([
+    firstExactListing,
+    { ...q16Listing("749030366"), ...listingPatch },
+  ])).tokens[0];
+  assert.equal(Object.hasOwn(unavailable, "lowestAskPricePerToken"), false);
+  assert.equal(Object.hasOwn(unavailable, "lowestAskPricePerTokenExact"), false,
+    "incomplete exact book evidence must remove both aliases, without choosing a partial best ask");
+}
+for (const listings of [[], [{ ...firstExactListing, sealConfirmed: false }]]) {
+  const noSealedAsk = applyWorkMarketV2CutoverToTokenState(q16Book(listings)).tokens[0];
+  assert.equal(Object.hasOwn(noSealedAsk, "lowestAskPricePerToken"), false);
+  assert.equal(Object.hasOwn(noSealedAsk, "lowestAskPricePerTokenExact"), false);
+}
+const legacySealedAsk = applyWorkMarketV2CutoverToTokenState({
+  indexedThroughBlock: WORK_MARKET_V2_ACTIVATION_HEIGHT,
+  listings: [{ ...v3Listing, sealConfirmed: true }],
+  network: "livenet",
+  tokens: [{ tokenId: WORK_TOKEN_ID }],
+}).tokens[0];
+assert.equal(legacySealedAsk.lowestAskPricePerToken, 123);
+assert.equal(typeof legacySealedAsk.lowestAskPricePerToken, "number");
+assert.equal(legacySealedAsk.lowestAskPricePerTokenExact, undefined);
 
 const beforeActivation = {
   ...cutoverInput,

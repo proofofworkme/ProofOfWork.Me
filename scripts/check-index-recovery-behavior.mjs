@@ -50,6 +50,7 @@ import {
 } from "../server/proof-index-mail-projection.mjs";
 import {
   compareProofIndexRegistryPayloads,
+  rowsWithCanonicalTransferFees,
   workPrecisionV2CurrentPayloadIsExact,
   workPrecisionV2ProjectCurrentPayload,
 } from "../server/db/proof-index-reader.mjs";
@@ -1250,6 +1251,7 @@ function isolatedFunction(path, name, globals = {}) {
       warn() {},
     },
     canonicalPostgresSafeJsonValue,
+    rowsWithCanonicalTransferFees,
     WORK_ATOMIC_PROJECTION_MODEL,
     WORK_DECIMALS,
     WORK_LEGACY_ATOMIC_PROJECTION_MODEL,
@@ -2041,6 +2043,85 @@ const tests = [];
 function check(name, run) {
   tests.push({ name, run });
 }
+
+check("unscoped wallet summaries preserve global Q16 supply and normalize the envelope", async () => {
+  const normalizeTokenScope = (value) => String(value ?? "").trim().toLowerCase();
+  const walletScopedWorkSupplySubatoms = isolatedFunction(API_PATH, "walletScopedWorkSupplySubatoms");
+  const walletScopedWorkTokenWithQ16Supply = isolatedFunction(
+    API_PATH, "walletScopedWorkTokenWithQ16Supply", {
+      walletScopedWorkSupplySubatoms,
+      canonicalWorkTokenDefinition: () => ({ tokenId: WORK_TOKEN_ID, ticker: "WORK" }),
+    },
+  );
+  const normalize = isolatedFunction(API_PATH, "walletScopedWorkPayloadWithQ16Supply", {
+    normalizeTokenScope, walletScopedWorkTokenWithQ16Supply,
+  });
+  const tokenSummaryMetricValue = isolatedFunction(API_PATH, "tokenSummaryMetricValue");
+  const tokenSummarySupplyMetricValue = isolatedFunction(API_PATH, "tokenSummarySupplyMetricValue", { tokenSummaryMetricValue });
+  const compact = isolatedFunction(API_PATH, "compactTokenSummaryPayload", {
+    SUMMARY_MARKET_LIMIT: 40,
+    mergedTokenSummaryMetric: isolatedFunction(API_PATH, "mergedTokenSummaryMetric", {
+      tokenSummaryMetricValue, tokenSummarySupplyMetricValue,
+    }),
+    normalizeTokenScope,
+    numericValue: (value) => Number(value) || 0,
+    recentByCreatedAt: (items, limit) => (items ?? []).slice(0, limit),
+    recentClosedTokenListings: (items, limit) => items.slice(0, limit),
+    // The wallet has no mint history. These address-local totals are not supply.
+    tokenAggregateSummaries: () => new Map([[WORK_TOKEN_ID, {
+      confirmedSupply: "0", confirmedSupplySubatoms: "0",
+      pendingSupply: "0", pendingSupplySubatoms: "0", holderCount: 1,
+    }]]),
+    tokenListingHasConfirmedSaleTicketSeal: () => false,
+    tokenMatchesScope: (token, scope) => token.tokenId === scope,
+    tokenPayloadWithScopedHolderIdentity: (payload) => payload,
+    tokenSummaryListings: (items, limit) => items.slice(0, limit),
+    tokenSummaryMetricValue, tokenSummarySupplyMetricValue,
+  });
+  const address = "19JE7LS6TtQ4uSxu6ivJVZRiJyXXe8qEG3";
+  const input = {
+    network: "livenet", walletScoped: true, summaryOnly: false,
+    confirmedSupply: null, pendingSupply: 0,
+    tokens: [{ tokenId: WORK_TOKEN_ID, ticker: "WORK",
+      amountStorageModel: WORK_SUBATOM_PROJECTION_MODEL,
+      confirmedSupply: "21000000", confirmedSupplySubatoms: "210000000000000000000000",
+      pendingSupply: "0", pendingSupplySubatoms: "0", holderCount: 355 }],
+    holders: [{ address, tokenId: WORK_TOKEN_ID, balance: "1", balanceSubatoms: "10000000000000000" }],
+    mints: [], transfers: [], listings: [], sales: [], stats: {},
+  };
+  let fullReads = 0;
+  const summary = isolatedFunction(API_PATH, "walletScopedTokenSummaryPayload", {
+    normalizeTokenScope,
+    compactTokenSummaryPayload: compact,
+    walletScopedTokenPayload: async (network, scope, addresses, options) => {
+      fullReads += 1;
+      assert.equal(scope, "");
+      assert.deepEqual(Array.from(addresses), [address]);
+      assert.equal(options.requireCurrent, false);
+      return normalize(input, network, scope);
+    },
+  });
+  const result = await summary("livenet", "", [address]);
+  assert.equal(fullReads, 1);
+  for (const output of [result, compact(result)]) {
+    assert.equal(output.confirmedSupply, "21000000");
+    assert.equal(output.confirmedSupplySubatoms, "210000000000000000000000");
+    assert.equal(output.pendingSupply, "0");
+    assert.equal(output.pendingSupplySubatoms, "0");
+    assert.equal(output.tokens[0].confirmedSupplySubatoms, output.confirmedSupplySubatoms);
+    assert.equal(output.tokens[0].pendingSupplySubatoms, output.pendingSupplySubatoms);
+    assert.equal(output.tokens[0].holderCount, 355);
+    assert.equal(output.holders[0].balanceSubatoms, input.holders[0].balanceSubatoms);
+  }
+  const mixed = compact(normalize({ ...input, tokens: [...input.tokens, {
+    tokenId: "a".repeat(64), ticker: "TEST", confirmedSupply: 123,
+    pendingSupply: 0, holderCount: 5,
+  }] }, "livenet", ""));
+  assert.equal(mixed.tokens[0].confirmedSupplySubatoms, "210000000000000000000000");
+  assert.equal(mixed.tokens[0].holderCount, 355);
+  assert.equal(mixed.tokens[1].confirmedSupply, 123);
+  assert.equal(mixed.tokens[1].holderCount, 5);
+});
 const WORK_MARKET_GOVERNED_AUTH_VERSIONS_FIXTURE = new Set([
   "pwt-sale-v3",
   "pwt-sale-v4",

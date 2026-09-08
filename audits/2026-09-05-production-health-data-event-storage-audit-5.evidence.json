@@ -40291,5 +40291,1338 @@
       ],
       "publicRecoveryConsistencyChecks": 23
     }
+  },
+  "incident20260908": {
+    "status": "candidate-not-deployed",
+    "observedDate": "2026-09-08",
+    "productionMutations": false,
+    "node": {
+      "at": "2026-09-08T11:59:59.287685+00:00",
+      "mutations": false,
+      "services": {
+        "proofofwork-api.service": "MainPID=1333977\nNRestarts=0\nExecMainStartTimestamp=Sun 2026-09-06 00:19:33 UTC\nMemoryCurrent=3101687808\nCPUUsageNSec=71880693061000\nActiveState=active\nSubState=running\n",
+        "proofofwork-indexer-worker.service": "MainPID=0\nNRestarts=55\nExecMainStartTimestamp=Tue 2026-09-08 11:53:20 UTC\nMemoryCurrent=[not set]\nCPUUsageNSec=21828947000\nActiveState=activating\nSubState=auto-restart\n",
+        "bitcoind.service": "MainPID=282028\nNRestarts=0\nExecMainStartTimestamp=Sun 2026-08-23 17:04:50 UTC\nMemoryCurrent=61745082368\nCPUUsageNSec=259537804830000\nActiveState=active\nSubState=running\n",
+        "electrs.service": "MainPID=282210\nNRestarts=0\nExecMainStartTimestamp=Sun 2026-08-23 17:04:59 UTC\nMemoryCurrent=10844323840\nCPUUsageNSec=567603029344000\nActiveState=active\nSubState=running\n",
+        "postgresql@16-main.service": "MainPID=3612661\nNRestarts=0\nExecMainStartTimestamp=Thu 2026-09-03 06:51:01 UTC\nMemoryCurrent=29788073984\nCPUUsageNSec=404941157590000\nActiveState=active\nSubState=running\n",
+        "pg_receivewal@16-main.service": "MainPID=2922786\nNRestarts=0\nExecMainStartTimestamp=Wed 2026-09-02 06:49:08 UTC\nMemoryCurrent=3377520640\nCPUUsageNSec=522007646000\nActiveState=active\nSubState=running\n"
+      },
+      "release": {
+        "exitCode": 0,
+        "stdout": "2ddefac163d583138129c2527e747b11190a0635\n89283688ad79cdcd0a4e04a9532aac8c8af735f2\n",
+        "stderr": ""
+      },
+      "disks": {
+        "/": {
+          "totalBytes": 105089261568,
+          "availableBytes": 75874533376,
+          "freeInodes": 6201428
+        },
+        "/data": {
+          "totalBytes": 1764768071680,
+          "availableBytes": 379017314304,
+          "freeInodes": 109475236
+        }
+      },
+      "loadavg": "7.76 7.75 7.47 24/833 2993325\n",
+      "memory": {
+        "MemTotal": "130982180 kB",
+        "MemAvailable": "107434212 kB",
+        "SwapTotal": "16777212 kB",
+        "SwapFree": "16191228 kB"
+      },
+      "proofofwork-indexer-worker.serviceLogs": [
+        {
+          "at": "1788868537614424",
+          "message": "  \"canonicalSummarySnapshot\": null,"
+        },
+        {
+          "at": "1788868537614424",
+          "message": "  \"snapshotId\": null,"
+        },
+        {
+          "at": "1788868537614424",
+          "message": "  \"storeCanonicalSummarySnapshot\": false,"
+        },
+        {
+          "at": "1788868537614424",
+          "message": "  \"storeLedgerSnapshot\": false"
+        },
+        {
+          "at": "1788868554152953",
+          "message": "              const requestError = new Error("
+        },
+        {
+          "at": "1788868554152953",
+          "message": "Error: /api/v1/internal/canonical-summary returned HTTP 503"
+        },
+        {
+          "at": "1788868554152953",
+          "message": "  responseText: '{\"error\":\"The canonical AMO legacy bootstrap reconciliation diverged (legacy-bootstrap-base-field-diverged:tokenTransferFlowSats): {\\\\\"committed\\\\\":\\\\\"115206\\\\\",\\\\\"expectedCarry\\\\\":\\\\\"546\\\\\",\\\\\"field\\\\\":\\\\\"tokenTransferFlowSats\\\\\",\\\\\"published\\\\\":\\\\\"114114\\\\\"}.\",\"ok\":false}'"
+        },
+        {
+          "at": "1788868554184033",
+          "message": "{\"attempt\":1,\"delayMs\":1000,\"error\":\"backfill-proof-indexer.mjs exited with code 1\",\"phase\":\"worker-backfill-retry\",\"retrying\":true}"
+        },
+        {
+          "at": "1788868574996237",
+          "message": "              const requestError = new Error("
+        },
+        {
+          "at": "1788868574996237",
+          "message": "Error: /api/v1/internal/canonical-summary returned HTTP 503"
+        },
+        {
+          "at": "1788868574996237",
+          "message": "  responseText: '{\"error\":\"The canonical AMO legacy bootstrap reconciliation diverged (legacy-bootstrap-base-field-diverged:tokenTransferFlowSats): {\\\\\"committed\\\\\":\\\\\"115206\\\\\",\\\\\"expectedCarry\\\\\":\\\\\"546\\\\\",\\\\\"field\\\\\":\\\\\"tokenTransferFlowSats\\\\\",\\\\\"published\\\\\":\\\\\"114114\\\\\"}.\",\"ok\":false}'"
+        },
+        {
+          "at": "1788868575024522",
+          "message": "{\"attempt\":2,\"delayMs\":2000,\"error\":\"backfill-proof-indexer.mjs exited with code 1\",\"phase\":\"worker-backfill-retry\",\"retrying\":true}"
+        },
+        {
+          "at": "1788868602000396",
+          "message": "              const requestError = new Error("
+        },
+        {
+          "at": "1788868602000396",
+          "message": "Error: /api/v1/internal/canonical-summary returned HTTP 503"
+        },
+        {
+          "at": "1788868602000396",
+          "message": "  responseText: '{\"error\":\"The canonical AMO legacy bootstrap reconciliation diverged (legacy-bootstrap-base-field-diverged:tokenTransferFlowSats): {\\\\\"committed\\\\\":\\\\\"115206\\\\\",\\\\\"expectedCarry\\\\\":\\\\\"546\\\\\",\\\\\"field\\\\\":\\\\\"tokenTransferFlowSats\\\\\",\\\\\"published\\\\\":\\\\\"114114\\\\\"}.\",\"ok\":false}'"
+        },
+        {
+          "at": "1788868730881703",
+          "message": "  \"canonicalSummarySnapshot\": null,"
+        },
+        {
+          "at": "1788868730881703",
+          "message": "  \"snapshotId\": null,"
+        },
+        {
+          "at": "1788868730881703",
+          "message": "  \"storeCanonicalSummarySnapshot\": false,"
+        },
+        {
+          "at": "1788868730881703",
+          "message": "  \"storeLedgerSnapshot\": false"
+        },
+        {
+          "at": "1788868750518742",
+          "message": "              const requestError = new Error("
+        },
+        {
+          "at": "1788868750518742",
+          "message": "Error: /api/v1/internal/canonical-summary returned HTTP 503"
+        },
+        {
+          "at": "1788868750518742",
+          "message": "  responseText: '{\"error\":\"The canonical AMO legacy bootstrap reconciliation diverged (legacy-bootstrap-base-field-diverged:tokenTransferFlowSats): {\\\\\"committed\\\\\":\\\\\"115206\\\\\",\\\\\"expectedCarry\\\\\":\\\\\"546\\\\\",\\\\\"field\\\\\":\\\\\"tokenTransferFlowSats\\\\\",\\\\\"published\\\\\":\\\\\"114114\\\\\"}.\",\"ok\":false}'"
+        },
+        {
+          "at": "1788868750548954",
+          "message": "{\"attempt\":1,\"delayMs\":1000,\"error\":\"backfill-proof-indexer.mjs exited with code 1\",\"phase\":\"worker-backfill-retry\",\"retrying\":true}"
+        },
+        {
+          "at": "1788868770906003",
+          "message": "              const requestError = new Error("
+        },
+        {
+          "at": "1788868770906003",
+          "message": "Error: /api/v1/internal/canonical-summary returned HTTP 503"
+        },
+        {
+          "at": "1788868770906003",
+          "message": "  responseText: '{\"error\":\"The canonical AMO legacy bootstrap reconciliation diverged (legacy-bootstrap-base-field-diverged:tokenTransferFlowSats): {\\\\\"committed\\\\\":\\\\\"115206\\\\\",\\\\\"expectedCarry\\\\\":\\\\\"546\\\\\",\\\\\"field\\\\\":\\\\\"tokenTransferFlowSats\\\\\",\\\\\"published\\\\\":\\\\\"114114\\\\\"}.\",\"ok\":false}'"
+        },
+        {
+          "at": "1788868770929321",
+          "message": "{\"attempt\":2,\"delayMs\":2000,\"error\":\"backfill-proof-indexer.mjs exited with code 1\",\"phase\":\"worker-backfill-retry\",\"retrying\":true}"
+        },
+        {
+          "at": "1788868788622146",
+          "message": "              const requestError = new Error("
+        },
+        {
+          "at": "1788868788622146",
+          "message": "Error: /api/v1/internal/canonical-summary returned HTTP 503"
+        },
+        {
+          "at": "1788868788622146",
+          "message": "  responseText: '{\"error\":\"The canonical AMO legacy bootstrap reconciliation diverged (legacy-bootstrap-base-field-diverged:tokenTransferFlowSats): {\\\\\"committed\\\\\":\\\\\"115206\\\\\",\\\\\"expectedCarry\\\\\":\\\\\"546\\\\\",\\\\\"field\\\\\":\\\\\"tokenTransferFlowSats\\\\\",\\\\\"published\\\\\":\\\\\"114114\\\\\"}.\",\"ok\":false}'"
+        },
+        {
+          "at": "1788868789072562",
+          "message": "      const error = new Error("
+        },
+        {
+          "at": "1788868789072562",
+          "message": "Error: backfill-proof-indexer.mjs exited with code 1"
+        },
+        {
+          "at": "1788868789099636",
+          "message": "proofofwork-indexer-worker.service: Failed with result 'exit-code'."
+        }
+      ],
+      "proofofwork-api.serviceLogs": [
+        {
+          "at": "1788868584338742",
+          "message": "GET /api/v1/token failed: Error: Fresh wallet credit state is temporarily unavailable for d4e5ebf11d104d6a63fb74e42094364b25a5f7199a09e5c0e71408972466a8b8."
+        },
+        {
+          "at": "1788868584338742",
+          "message": "    at freshDataUnavailableError (file:///opt/proofofwork-api/server/proof-api.mjs:44492:17)"
+        },
+        {
+          "at": "1788868594606227",
+          "message": "Accepted proof-index work-summary fallback without current coverage proof; serving latest complete indexed summary while refresh continues."
+        },
+        {
+          "at": "1788868597492563",
+          "message": "Merged internal canonical summary with current proof-index token tables while preserving canonical movement history and accepting exact current listing state."
+        },
+        {
+          "at": "1788868601997794",
+          "message": "GET /api/v1/internal/canonical-summary failed: Error: The canonical AMO legacy bootstrap reconciliation diverged (legacy-bootstrap-base-field-diverged:tokenTransferFlowSats): {\"committed\":\"115206\",\"expectedCarry\":\"546\",\"field\":\"tokenTransferFlowSats\",\"published\":\"114114\"}."
+        },
+        {
+          "at": "1788868601997794",
+          "message": "    at freshDataUnavailableError (file:///opt/proofofwork-api/server/proof-api.mjs:44492:17)"
+        },
+        {
+          "at": "1788868601997794",
+          "message": "    at async buildIndexedCanonicalLedgerPayload (file:///opt/proofofwork-api/server/proof-api.mjs:49219:15)"
+        },
+        {
+          "at": "1788868601997794",
+          "message": "    at async internalCanonicalSummaryPayload (file:///opt/proofofwork-api/server/proof-api.mjs:49469:18)"
+        },
+        {
+          "at": "1788868602766627",
+          "message": "GET /api/v1/token failed: Error: Fresh wallet credit state is temporarily unavailable for d4e5ebf11d104d6a63fb74e42094364b25a5f7199a09e5c0e71408972466a8b8."
+        },
+        {
+          "at": "1788868602766627",
+          "message": "    at freshDataUnavailableError (file:///opt/proofofwork-api/server/proof-api.mjs:44492:17)"
+        },
+        {
+          "at": "1788868602766892",
+          "message": "GET /api/v1/token failed: Error: Fresh wallet credit state is temporarily unavailable for all."
+        },
+        {
+          "at": "1788868602766892",
+          "message": "    at freshDataUnavailableError (file:///opt/proofofwork-api/server/proof-api.mjs:44492:17)"
+        },
+        {
+          "at": "1788868608843710",
+          "message": "Accepted proof-index work-summary fallback without current coverage proof; serving latest complete indexed summary while refresh continues."
+        },
+        {
+          "at": "1788868613134130",
+          "message": "GET /api/v1/token failed: Error: Fresh wallet credit state is temporarily unavailable for all."
+        },
+        {
+          "at": "1788868613134130",
+          "message": "    at freshDataUnavailableError (file:///opt/proofofwork-api/server/proof-api.mjs:44492:17)"
+        },
+        {
+          "at": "1788868613134844",
+          "message": "GET /api/v1/token failed: Error: Fresh wallet credit state is temporarily unavailable for d4e5ebf11d104d6a63fb74e42094364b25a5f7199a09e5c0e71408972466a8b8."
+        },
+        {
+          "at": "1788868613134844",
+          "message": "    at freshDataUnavailableError (file:///opt/proofofwork-api/server/proof-api.mjs:44492:17)"
+        },
+        {
+          "at": "1788868618711449",
+          "message": "Fresh payload refresh failed: Recovered WORK wallet state refuses a Q8 fallback after Q16 activation."
+        },
+        {
+          "at": "1788868625778808",
+          "message": "Fresh payload refresh failed: Recovered WORK wallet state refuses a Q8 fallback after Q16 activation."
+        },
+        {
+          "at": "1788868628807187",
+          "message": "Fresh payload refresh failed: Confirmed protocol transaction order is incomplete."
+        },
+        {
+          "at": "1788868628822044",
+          "message": "GET /api/v1/token failed: Error: Fresh wallet credit state is temporarily unavailable for d4e5ebf11d104d6a63fb74e42094364b25a5f7199a09e5c0e71408972466a8b8."
+        },
+        {
+          "at": "1788868628822044",
+          "message": "    at freshDataUnavailableError (file:///opt/proofofwork-api/server/proof-api.mjs:44492:17)"
+        },
+        {
+          "at": "1788868628822177",
+          "message": "GET /api/v1/token failed: Error: Fresh wallet credit state is temporarily unavailable for all."
+        },
+        {
+          "at": "1788868628822177",
+          "message": "    at freshDataUnavailableError (file:///opt/proofofwork-api/server/proof-api.mjs:44492:17)"
+        },
+        {
+          "at": "1788868629662581",
+          "message": "Accepted proof-index work-summary fallback without current coverage proof; serving latest complete indexed summary while refresh continues."
+        },
+        {
+          "at": "1788868634265200",
+          "message": "Fresh payload refresh failed: Confirmed protocol transaction order is incomplete."
+        },
+        {
+          "at": "1788868635824351",
+          "message": "Fresh payload refresh failed: Recovered WORK wallet state refuses a Q8 fallback after Q16 activation."
+        },
+        {
+          "at": "1788868638510296",
+          "message": "Accepted proof-index work-summary fallback without current coverage proof; serving latest complete indexed summary while refresh continues."
+        },
+        {
+          "at": "1788868645220703",
+          "message": "Fresh payload refresh failed: Confirmed protocol transaction order is incomplete."
+        },
+        {
+          "at": "1788868658522827",
+          "message": "Accepted proof-index work-summary fallback without current coverage proof; serving latest complete indexed summary while refresh continues."
+        },
+        {
+          "at": "1788868667688886",
+          "message": "Accepted proof-index work-summary fallback without current coverage proof; serving latest complete indexed summary while refresh continues."
+        },
+        {
+          "at": "1788868668068002",
+          "message": "Fresh payload refresh failed: Recovered WORK wallet state refuses a Q8 fallback after Q16 activation."
+        },
+        {
+          "at": "1788868682767095",
+          "message": "Fresh payload refresh failed: Confirmed protocol transaction order is incomplete."
+        },
+        {
+          "at": "1788868688578854",
+          "message": "Accepted proof-index work-summary fallback without current coverage proof; serving latest complete indexed summary while refresh continues."
+        },
+        {
+          "at": "1788868692977746",
+          "message": "GET /api/v1/registry failed: Error: The indexed registry checkpoint is catching up to Bitcoin Core."
+        },
+        {
+          "at": "1788868697454844",
+          "message": "GET /api/v1/registry failed: Error: The indexed registry checkpoint is catching up to Bitcoin Core."
+        },
+        {
+          "at": "1788868697878470",
+          "message": "Accepted proof-index work-summary fallback without current coverage proof; serving latest complete indexed summary while refresh continues."
+        },
+        {
+          "at": "1788868706510752",
+          "message": "GET /api/v1/registry failed: Error: The indexed registry checkpoint is catching up to Bitcoin Core."
+        },
+        {
+          "at": "1788868719798491",
+          "message": "Accepted proof-index work-summary fallback without current coverage proof; serving latest complete indexed summary while refresh continues."
+        },
+        {
+          "at": "1788868730243749",
+          "message": "Fresh payload refresh failed: Recovered WORK wallet state refuses a Q8 fallback after Q16 activation."
+        },
+        {
+          "at": "1788868736284275",
+          "message": "Fresh payload refresh failed: Confirmed protocol transaction order is incomplete."
+        },
+        {
+          "at": "1788868739154189",
+          "message": "Fresh payload refresh failed: Recovered WORK wallet state refuses a Q8 fallback after Q16 activation."
+        },
+        {
+          "at": "1788868743949941",
+          "message": "Merged internal canonical summary with current proof-index token tables while preserving canonical movement history and accepting exact current listing state."
+        },
+        {
+          "at": "1788868749251164",
+          "message": "Fresh payload refresh failed: Confirmed protocol transaction order is incomplete."
+        },
+        {
+          "at": "1788868750516080",
+          "message": "GET /api/v1/internal/canonical-summary failed: Error: The canonical AMO legacy bootstrap reconciliation diverged (legacy-bootstrap-base-field-diverged:tokenTransferFlowSats): {\"committed\":\"115206\",\"expectedCarry\":\"546\",\"field\":\"tokenTransferFlowSats\",\"published\":\"114114\"}."
+        },
+        {
+          "at": "1788868750516080",
+          "message": "    at freshDataUnavailableError (file:///opt/proofofwork-api/server/proof-api.mjs:44492:17)"
+        },
+        {
+          "at": "1788868750516080",
+          "message": "    at async buildIndexedCanonicalLedgerPayload (file:///opt/proofofwork-api/server/proof-api.mjs:49219:15)"
+        },
+        {
+          "at": "1788868750516080",
+          "message": "    at async internalCanonicalSummaryPayload (file:///opt/proofofwork-api/server/proof-api.mjs:49469:18)"
+        },
+        {
+          "at": "1788868751963744",
+          "message": "GET /api/v1/registry failed: Error: The indexed registry checkpoint is catching up to Bitcoin Core."
+        },
+        {
+          "at": "1788868751998297",
+          "message": "GET /api/v1/registry failed: Error: The indexed registry checkpoint is catching up to Bitcoin Core."
+        },
+        {
+          "at": "1788868752088232",
+          "message": "Accepted proof-index work-summary fallback without current coverage proof; serving latest complete indexed summary while refresh continues."
+        },
+        {
+          "at": "1788868753232486",
+          "message": "Accepted proof-index work-summary fallback without current coverage proof; serving latest complete indexed summary while refresh continues."
+        },
+        {
+          "at": "1788868758346572",
+          "message": "GET /api/v1/registry failed: Error: The indexed registry checkpoint is catching up to Bitcoin Core."
+        },
+        {
+          "at": "1788868766637007",
+          "message": "Merged internal canonical summary with current proof-index token tables while preserving canonical movement history and accepting exact current listing state."
+        },
+        {
+          "at": "1788868770903584",
+          "message": "GET /api/v1/internal/canonical-summary failed: Error: The canonical AMO legacy bootstrap reconciliation diverged (legacy-bootstrap-base-field-diverged:tokenTransferFlowSats): {\"committed\":\"115206\",\"expectedCarry\":\"546\",\"field\":\"tokenTransferFlowSats\",\"published\":\"114114\"}."
+        },
+        {
+          "at": "1788868770903584",
+          "message": "    at freshDataUnavailableError (file:///opt/proofofwork-api/server/proof-api.mjs:44492:17)"
+        },
+        {
+          "at": "1788868770903584",
+          "message": "    at async buildIndexedCanonicalLedgerPayload (file:///opt/proofofwork-api/server/proof-api.mjs:49219:15)"
+        },
+        {
+          "at": "1788868770903584",
+          "message": "    at async internalCanonicalSummaryPayload (file:///opt/proofofwork-api/server/proof-api.mjs:49469:18)"
+        },
+        {
+          "at": "1788868773043578",
+          "message": "Accepted proof-index work-summary fallback without current coverage proof; serving latest complete indexed summary while refresh continues."
+        },
+        {
+          "at": "1788868784528320",
+          "message": "Merged internal canonical summary with current proof-index token tables while preserving canonical movement history and accepting exact current listing state."
+        },
+        {
+          "at": "1788868788619382",
+          "message": "GET /api/v1/internal/canonical-summary failed: Error: The canonical AMO legacy bootstrap reconciliation diverged (legacy-bootstrap-base-field-diverged:tokenTransferFlowSats): {\"committed\":\"115206\",\"expectedCarry\":\"546\",\"field\":\"tokenTransferFlowSats\",\"published\":\"114114\"}."
+        },
+        {
+          "at": "1788868788619382",
+          "message": "    at freshDataUnavailableError (file:///opt/proofofwork-api/server/proof-api.mjs:44492:17)"
+        },
+        {
+          "at": "1788868788619382",
+          "message": "    at async buildIndexedCanonicalLedgerPayload (file:///opt/proofofwork-api/server/proof-api.mjs:49219:15)"
+        },
+        {
+          "at": "1788868788619382",
+          "message": "    at async internalCanonicalSummaryPayload (file:///opt/proofofwork-api/server/proof-api.mjs:49469:18)"
+        },
+        {
+          "at": "1788868788826139",
+          "message": "Accepted proof-index work-summary fallback without current coverage proof; serving latest complete indexed summary while refresh continues."
+        },
+        {
+          "at": "1788868789111673",
+          "message": "Accepted proof-index work-summary fallback without current coverage proof; serving latest complete indexed summary while refresh continues."
+        },
+        {
+          "at": "1788868793972211",
+          "message": "Fresh payload refresh failed: Recovered WORK wallet state refuses a Q8 fallback after Q16 activation."
+        }
+      ]
+    },
+    "transferEvidence": {
+      "at": "2026-09-08T12:03:48.977393+00:00",
+      "db": [
+        {
+          "txid": "7a2436c755719eb2bd53e355b340617896453d075f97aa964767813e5670393d",
+          "index": 3651,
+          "valid": true,
+          "height": 963714,
+          "ticker": "POWB",
+          "eventId": 3777356,
+          "feeSats": 184,
+          "payload": {
+            "kind": "token-transfer",
+            "txid": "7a2436c755719eb2bd53e355b340617896453d075f97aa964767813e5670393d",
+            "valid": true,
+            "amount": "27420000",
+            "parsed": {
+              "kind": "send",
+              "amount": "27420000",
+              "payload": "pwt1:send:a3d0bc8528f91dfc52400a885bed7e49235396aa82aa9f95db41be629f1d5562:27420000:18xvbj6mpPpYYjWibcqsXdV7SCwBQNrqMW",
+              "tokenId": "a3d0bc8528f91dfc52400a885bed7e49235396aa82aa9f95db41be629f1d5562",
+              "amountVersion": "send",
+              "recipientAddress": "18xvbj6mpPpYYjWibcqsXdV7SCwBQNrqMW"
+            },
+            "status": "confirmed",
+            "derived": [],
+            "dropped": false,
+            "network": "livenet",
+            "payload": "pwt1:send:a3d0bc8528f91dfc52400a885bed7e49235396aa82aa9f95db41be629f1d5562:27420000:18xvbj6mpPpYYjWibcqsXdV7SCwBQNrqMW",
+            "tokenId": "a3d0bc8528f91dfc52400a885bed7e49235396aa82aa9f95db41be629f1d5562",
+            "position": {
+              "blockHash": "00000000000000000000f4d473278fcefab7993a2cf5914f98c25e492fe05045",
+              "blockHeight": 963714,
+              "protocolVout": 1,
+              "recordOrdinal": 0,
+              "blockTransactionIndex": 3651
+            },
+            "protocol": "pwt1",
+            "blockHash": "00000000000000000000f4d473278fcefab7993a2cf5914f98c25e492fe05045",
+            "blockTime": "2026-08-23T11:14:25.000Z",
+            "confirmed": true,
+            "createdAt": "2026-08-23T11:14:25.000Z",
+            "dataBytes": 118,
+            "timestamp": "2026-08-23T11:14:25.000Z",
+            "amountSats": 0,
+            "blockIndex": 3651,
+            "reasonCode": "",
+            "recipients": [
+              {
+                "vout": 0,
+                "address": "1H1arP2xpam6MZmHt6k1tB83stqVdH6ANK",
+                "amountSats": "546"
+              }
+            ],
+            "blockHeight": 963714,
+            "indexedFrom": "token-transfers",
+            "participants": [
+              "1PNdpQUScG1SnzyrsuGdErKWtjtrbWM5TV",
+              "18xvbj6mpPpYYjWibcqsXdV7SCwBQNrqMW"
+            ],
+            "protocolVout": 1,
+            "recordOrdinal": 0,
+            "senderAddress": "1PNdpQUScG1SnzyrsuGdErKWtjtrbWM5TV",
+            "_powEventIndex": 0,
+            "validationMode": "canonical-first-party-state",
+            "transferVersion": "send",
+            "recipientAddress": "18xvbj6mpPpYYjWibcqsXdV7SCwBQNrqMW",
+            "canonicalVerifier": "/api/v1/internal/work-amo-v5-block-verifier",
+            "_workAmoV5ReplayBound": true,
+            "workAmoV5RawCandidate": true,
+            "workAmoV5ReplayOutput": {
+              "amount": "27420000",
+              "tokenId": "a3d0bc8528f91dfc52400a885bed7e49235396aa82aa9f95db41be629f1d5562",
+              "projection": {
+                "kind": "token-transfer",
+                "txid": "7a2436c755719eb2bd53e355b340617896453d075f97aa964767813e5670393d",
+                "valid": true,
+                "amount": "27420000",
+                "parsed": {
+                  "kind": "send",
+                  "amount": "27420000",
+                  "payload": "pwt1:send:a3d0bc8528f91dfc52400a885bed7e49235396aa82aa9f95db41be629f1d5562:27420000:18xvbj6mpPpYYjWibcqsXdV7SCwBQNrqMW",
+                  "tokenId": "a3d0bc8528f91dfc52400a885bed7e49235396aa82aa9f95db41be629f1d5562",
+                  "amountVersion": "send",
+                  "recipientAddress": "18xvbj6mpPpYYjWibcqsXdV7SCwBQNrqMW"
+                },
+                "derived": [],
+                "tokenId": "a3d0bc8528f91dfc52400a885bed7e49235396aa82aa9f95db41be629f1d5562",
+                "position": {
+                  "blockHash": "00000000000000000000f4d473278fcefab7993a2cf5914f98c25e492fe05045",
+                  "blockHeight": 963714,
+                  "protocolVout": 1,
+                  "recordOrdinal": 0,
+                  "blockTransactionIndex": 3651
+                },
+                "protocol": "pwt1",
+                "reasonCode": "",
+                "senderAddress": "1PNdpQUScG1SnzyrsuGdErKWtjtrbWM5TV",
+                "recipientAddress": "18xvbj6mpPpYYjWibcqsXdV7SCwBQNrqMW"
+              },
+              "senderAddress": "1PNdpQUScG1SnzyrsuGdErKWtjtrbWM5TV",
+              "recipientAddress": "18xvbj6mpPpYYjWibcqsXdV7SCwBQNrqMW"
+            },
+            "workAmoV5ReplayOutcome": {
+              "kind": "pwt1-valid",
+              "valid": true,
+              "reasonCode": ""
+            },
+            "workAmoV5RawDecodeValid": true,
+            "workAmoV5RawScriptWitness": {
+              "payloadHex": "707774313a73656e643a613364306263383532386639316466633532343030613838356265643765343932333533393661613832616139663935646234316265363239663164353536323a32373432303030303a31387876626a366d70507059596a5769626371735864563753437742514e72714d57",
+              "reasonCode": "",
+              "decodeValid": true,
+              "decodeDetail": "",
+              "scriptPubKeyHex": "6a4c76707774313a73656e643a613364306263383532386639316466633532343030613838356265643765343932333533393661613832616139663935646234316265363239663164353536323a32373432303030303a31387876626a366d70507059596a5769626371735864563753437742514e72714d57"
+            },
+            "workAmoV5ReplayRawWitness": {
+              "model": "canonical-raw-protocol-record-v1",
+              "rawRecordParts": [
+                {
+                  "text": "pwt1:send:a3d0bc8528f91dfc52400a885bed7e49235396aa82aa9f95db41be629f1d5562:27420000:18xvbj6mpPpYYjWibcqsXdV7SCwBQNrqMW",
+                  "prefix": "pwt1:",
+                  "payloadHex": "707774313a73656e643a613364306263383532386639316466633532343030613838356265643765343932333533393661613832616139663935646234316265363239663164353536323a32373432303030303a31387876626a366d70507059596a5769626371735864563753437742514e72714d57",
+                  "reasonCode": "",
+                  "decodeValid": true,
+                  "decodeDetail": "",
+                  "protocolVout": 1,
+                  "scriptPubKeyHex": "6a4c76707774313a73656e643a613364306263383532386639316466633532343030613838356265643765343932333533393661613832616139663935646234316265363239663164353536323a32373432303030303a31387876626a366d70507059596a5769626371735864563753437742514e72714d57"
+                }
+              ]
+            },
+            "workAmoV5RawDecodeReasonCode": "",
+            "firstInputPrevoutScriptpubkey": "76a914f56a3c6a17866dcaf63cf559a5b69a6b279d7c7388ac"
+          },
+          "registry": "1H1arP2xpam6MZmHt6k1tB83stqVdH6ANK",
+          "blockHash": "00000000000000000000f4d473278fcefab7993a2cf5914f98c25e492fe05045"
+        },
+        {
+          "txid": "2b9991ab3a6f2c3b0de2ea18bf214669cadb44f866b9d0a468311c7211dd96c4",
+          "index": 478,
+          "valid": true,
+          "height": 966026,
+          "ticker": "POWB",
+          "eventId": 4002964,
+          "feeSats": 422,
+          "payload": {
+            "kind": "token-transfer",
+            "txid": "2b9991ab3a6f2c3b0de2ea18bf214669cadb44f866b9d0a468311c7211dd96c4",
+            "valid": true,
+            "amount": "950000",
+            "parsed": {
+              "kind": "send",
+              "amount": "950000",
+              "payload": "pwt1:send:a3d0bc8528f91dfc52400a885bed7e49235396aa82aa9f95db41be629f1d5562:950000:18xvbj6mpPpYYjWibcqsXdV7SCwBQNrqMW",
+              "tokenId": "a3d0bc8528f91dfc52400a885bed7e49235396aa82aa9f95db41be629f1d5562",
+              "amountVersion": "send",
+              "recipientAddress": "18xvbj6mpPpYYjWibcqsXdV7SCwBQNrqMW"
+            },
+            "status": "confirmed",
+            "derived": [],
+            "dropped": false,
+            "network": "livenet",
+            "payload": "pwt1:send:a3d0bc8528f91dfc52400a885bed7e49235396aa82aa9f95db41be629f1d5562:950000:18xvbj6mpPpYYjWibcqsXdV7SCwBQNrqMW",
+            "tokenId": "a3d0bc8528f91dfc52400a885bed7e49235396aa82aa9f95db41be629f1d5562",
+            "position": {
+              "blockHash": "00000000000000000001ab7ba52889cc799e3f9fec41ea63e173f9407b9e77ba",
+              "blockHeight": 966026,
+              "protocolVout": 1,
+              "recordOrdinal": 0,
+              "blockTransactionIndex": 478
+            },
+            "protocol": "pwt1",
+            "blockHash": "00000000000000000001ab7ba52889cc799e3f9fec41ea63e173f9407b9e77ba",
+            "blockTime": "2026-09-08T06:23:29.000Z",
+            "confirmed": true,
+            "createdAt": "2026-09-08T06:23:29.000Z",
+            "dataBytes": 116,
+            "timestamp": "2026-09-08T06:23:29.000Z",
+            "amountSats": 0,
+            "blockIndex": 478,
+            "reasonCode": "",
+            "recipients": [
+              {
+                "vout": 0,
+                "address": "1H1arP2xpam6MZmHt6k1tB83stqVdH6ANK",
+                "amountSats": "546"
+              }
+            ],
+            "blockHeight": 966026,
+            "indexedFrom": "token-transfers",
+            "participants": [
+              "bc1p3qlws3see5qlrrmax7e74hr6qmssjecmnykvvj3ggcles4drdtvqcyag7z",
+              "18xvbj6mpPpYYjWibcqsXdV7SCwBQNrqMW"
+            ],
+            "protocolVout": 1,
+            "recordOrdinal": 0,
+            "senderAddress": "bc1p3qlws3see5qlrrmax7e74hr6qmssjecmnykvvj3ggcles4drdtvqcyag7z",
+            "_powEventIndex": 0,
+            "validationMode": "canonical-first-party-state",
+            "transferVersion": "send",
+            "recipientAddress": "18xvbj6mpPpYYjWibcqsXdV7SCwBQNrqMW",
+            "canonicalVerifier": "/api/v1/internal/work-amo-v5-block-verifier",
+            "_workAmoV5ReplayBound": true,
+            "workAmoV5RawCandidate": true,
+            "workAmoV5ReplayOutput": {
+              "amount": "950000",
+              "tokenId": "a3d0bc8528f91dfc52400a885bed7e49235396aa82aa9f95db41be629f1d5562",
+              "projection": {
+                "kind": "token-transfer",
+                "txid": "2b9991ab3a6f2c3b0de2ea18bf214669cadb44f866b9d0a468311c7211dd96c4",
+                "valid": true,
+                "amount": "950000",
+                "parsed": {
+                  "kind": "send",
+                  "amount": "950000",
+                  "payload": "pwt1:send:a3d0bc8528f91dfc52400a885bed7e49235396aa82aa9f95db41be629f1d5562:950000:18xvbj6mpPpYYjWibcqsXdV7SCwBQNrqMW",
+                  "tokenId": "a3d0bc8528f91dfc52400a885bed7e49235396aa82aa9f95db41be629f1d5562",
+                  "amountVersion": "send",
+                  "recipientAddress": "18xvbj6mpPpYYjWibcqsXdV7SCwBQNrqMW"
+                },
+                "derived": [],
+                "tokenId": "a3d0bc8528f91dfc52400a885bed7e49235396aa82aa9f95db41be629f1d5562",
+                "position": {
+                  "blockHash": "00000000000000000001ab7ba52889cc799e3f9fec41ea63e173f9407b9e77ba",
+                  "blockHeight": 966026,
+                  "protocolVout": 1,
+                  "recordOrdinal": 0,
+                  "blockTransactionIndex": 478
+                },
+                "protocol": "pwt1",
+                "reasonCode": "",
+                "senderAddress": "bc1p3qlws3see5qlrrmax7e74hr6qmssjecmnykvvj3ggcles4drdtvqcyag7z",
+                "recipientAddress": "18xvbj6mpPpYYjWibcqsXdV7SCwBQNrqMW"
+              },
+              "senderAddress": "bc1p3qlws3see5qlrrmax7e74hr6qmssjecmnykvvj3ggcles4drdtvqcyag7z",
+              "recipientAddress": "18xvbj6mpPpYYjWibcqsXdV7SCwBQNrqMW"
+            },
+            "workAmoV5ReplayOutcome": {
+              "kind": "pwt1-valid",
+              "valid": true,
+              "reasonCode": ""
+            },
+            "workAmoV5RawDecodeValid": true,
+            "workAmoV5RawScriptWitness": {
+              "payloadHex": "707774313a73656e643a613364306263383532386639316466633532343030613838356265643765343932333533393661613832616139663935646234316265363239663164353536323a3935303030303a31387876626a366d70507059596a5769626371735864563753437742514e72714d57",
+              "reasonCode": "",
+              "decodeValid": true,
+              "decodeDetail": "",
+              "scriptPubKeyHex": "6a4c74707774313a73656e643a613364306263383532386639316466633532343030613838356265643765343932333533393661613832616139663935646234316265363239663164353536323a3935303030303a31387876626a366d70507059596a5769626371735864563753437742514e72714d57"
+            },
+            "workAmoV5ReplayRawWitness": {
+              "model": "canonical-raw-protocol-record-v1",
+              "rawRecordParts": [
+                {
+                  "text": "pwt1:send:a3d0bc8528f91dfc52400a885bed7e49235396aa82aa9f95db41be629f1d5562:950000:18xvbj6mpPpYYjWibcqsXdV7SCwBQNrqMW",
+                  "prefix": "pwt1:",
+                  "payloadHex": "707774313a73656e643a613364306263383532386639316466633532343030613838356265643765343932333533393661613832616139663935646234316265363239663164353536323a3935303030303a31387876626a366d70507059596a5769626371735864563753437742514e72714d57",
+                  "reasonCode": "",
+                  "decodeValid": true,
+                  "decodeDetail": "",
+                  "protocolVout": 1,
+                  "scriptPubKeyHex": "6a4c74707774313a73656e643a613364306263383532386639316466633532343030613838356265643765343932333533393661613832616139663935646234316265363239663164353536323a3935303030303a31387876626a366d70507059596a5769626371735864563753437742514e72714d57"
+                }
+              ]
+            },
+            "workAmoV5RawDecodeReasonCode": "",
+            "firstInputPrevoutScriptpubkey": "5120883ee84619cd01f18f7d37b3eadc7a06e109671b992cc64a28463f9855a36ad8"
+          },
+          "registry": "1H1arP2xpam6MZmHt6k1tB83stqVdH6ANK",
+          "blockHash": "00000000000000000001ab7ba52889cc799e3f9fec41ea63e173f9407b9e77ba"
+        },
+        {
+          "height": 966025,
+          "traces": [],
+          "blockHash": "0000000000000000000070708301bdc93685a255016b201e742cb28a51b1ec67",
+          "closingBase": {
+            "powids": "505",
+            "mailFlowSats": "1488476",
+            "driveFlowSats": "2730",
+            "browserFlowSats": "0",
+            "tokenMintFlowSats": "23545075",
+            "tokenSaleVolumeSats": "9353286",
+            "idMarketplaceFeeSats": "14742",
+            "infinityBondFlowSats": "630496569",
+            "computerEventFlowSats": "506638",
+            "inceptionBondFlowSats": "27932",
+            "tokenCreationFlowSats": "128856",
+            "tokenTransferFlowSats": "114660",
+            "idMarketplaceVolumeSats": "22000",
+            "tokenMarketplaceFeeSats": "1022112"
+          },
+          "openingBase": {
+            "powids": "505",
+            "mailFlowSats": "1488476",
+            "driveFlowSats": "2730",
+            "browserFlowSats": "0",
+            "tokenMintFlowSats": "23545075",
+            "tokenSaleVolumeSats": "9353286",
+            "idMarketplaceFeeSats": "14742",
+            "infinityBondFlowSats": "630496569",
+            "computerEventFlowSats": "506638",
+            "inceptionBondFlowSats": "27932",
+            "tokenCreationFlowSats": "128856",
+            "tokenTransferFlowSats": "114660",
+            "idMarketplaceVolumeSats": "22000",
+            "tokenMarketplaceFeeSats": "1022112"
+          },
+          "closingValue": "838610445454811060611074478",
+          "openingValue": "838610445454811060611074478"
+        },
+        {
+          "height": 966026,
+          "traces": [
+            {
+              "kind": "protocol-record",
+              "txid": "2b9991ab3a6f2c3b0de2ea18bf214669cadb44f866b9d0a468311c7211dd96c4",
+              "valid": true,
+              "output": {
+                "amount": "950000",
+                "tokenId": "a3d0bc8528f91dfc52400a885bed7e49235396aa82aa9f95db41be629f1d5562",
+                "projection": {
+                  "kind": "token-transfer",
+                  "txid": "2b9991ab3a6f2c3b0de2ea18bf214669cadb44f866b9d0a468311c7211dd96c4",
+                  "valid": true,
+                  "amount": "950000",
+                  "parsed": {
+                    "kind": "send",
+                    "amount": "950000",
+                    "payload": "pwt1:send:a3d0bc8528f91dfc52400a885bed7e49235396aa82aa9f95db41be629f1d5562:950000:18xvbj6mpPpYYjWibcqsXdV7SCwBQNrqMW",
+                    "tokenId": "a3d0bc8528f91dfc52400a885bed7e49235396aa82aa9f95db41be629f1d5562",
+                    "amountVersion": "send",
+                    "recipientAddress": "18xvbj6mpPpYYjWibcqsXdV7SCwBQNrqMW"
+                  },
+                  "derived": [],
+                  "tokenId": "a3d0bc8528f91dfc52400a885bed7e49235396aa82aa9f95db41be629f1d5562",
+                  "position": {
+                    "blockHash": "00000000000000000001ab7ba52889cc799e3f9fec41ea63e173f9407b9e77ba",
+                    "blockHeight": 966026,
+                    "protocolVout": 1,
+                    "recordOrdinal": 0,
+                    "blockTransactionIndex": 478
+                  },
+                  "protocol": "pwt1",
+                  "reasonCode": "",
+                  "senderAddress": "bc1p3qlws3see5qlrrmax7e74hr6qmssjecmnykvvj3ggcles4drdtvqcyag7z",
+                  "recipientAddress": "18xvbj6mpPpYYjWibcqsXdV7SCwBQNrqMW"
+                },
+                "senderAddress": "bc1p3qlws3see5qlrrmax7e74hr6qmssjecmnykvvj3ggcles4drdtvqcyag7z",
+                "recipientAddress": "18xvbj6mpPpYYjWibcqsXdV7SCwBQNrqMW"
+              },
+              "position": {
+                "blockHash": "00000000000000000001ab7ba52889cc799e3f9fec41ea63e173f9407b9e77ba",
+                "blockHeight": 966026,
+                "protocolVout": 1,
+                "recordOrdinal": 0,
+                "blockTransactionIndex": 478
+              },
+              "rawWitness": {
+                "model": "canonical-raw-protocol-record-v1",
+                "rawRecordParts": [
+                  {
+                    "text": "pwt1:send:a3d0bc8528f91dfc52400a885bed7e49235396aa82aa9f95db41be629f1d5562:950000:18xvbj6mpPpYYjWibcqsXdV7SCwBQNrqMW",
+                    "prefix": "pwt1:",
+                    "payloadHex": "707774313a73656e643a613364306263383532386639316466633532343030613838356265643765343932333533393661613832616139663935646234316265363239663164353536323a3935303030303a31387876626a366d70507059596a5769626371735864563753437742514e72714d57",
+                    "reasonCode": "",
+                    "decodeValid": true,
+                    "decodeDetail": "",
+                    "protocolVout": 1,
+                    "scriptPubKeyHex": "6a4c74707774313a73656e643a613364306263383532386639316466633532343030613838356265643765343932333533393661613832616139663935646234316265363239663164353536323a3935303030303a31387876626a366d70507059596a5769626371735864563753437742514e72714d57"
+                  }
+                ]
+              },
+              "reasonCode": "",
+              "stateDelta": {
+                "creditFixedQ8": "0",
+                "creditFixedSats": "0",
+                "economicOutputs": [
+                  {
+                    "role": "pwt-token-registry",
+                    "vout": 0,
+                    "address": "1H1arP2xpam6MZmHt6k1tB83stqVdH6ANK",
+                    "outputSats": "546",
+                    "attributedSats": "546"
+                  }
+                ],
+                "baseContributions": [
+                  {
+                    "field": "tokenTransferFlowSats",
+                    "value": "546"
+                  }
+                ]
+              },
+              "bondContributionQ8": "2480451762125",
+              "networkValueAfterQ8": "838610445454813541062836603",
+              "networkValueBeforeQ8": "838610445454811060611074478",
+              "transitionChainCommitmentAfter": {
+                "model": "canonical-work-amo-raw-transition-chain-sha256-v1",
+                "sha256": "afdf8facc08555d1f194430bb91c0ab42e97742d5d1f66bf80ee6bfb2fd33a9a",
+                "payloadBytes": 1960
+              }
+            },
+            {
+              "kind": "transaction-fee",
+              "txid": "2b9991ab3a6f2c3b0de2ea18bf214669cadb44f866b9d0a468311c7211dd96c4",
+              "valid": true,
+              "reasonCode": "",
+              "creditFixedQ8Added": "42200000000",
+              "networkValueAfterQ8": "838610445454813924487963741",
+              "networkValueBeforeQ8": "838610445454813541062836603",
+              "transactionMinerFeeSats": "422",
+              "transitionChainCommitmentAfter": {
+                "model": "canonical-work-amo-raw-transition-chain-sha256-v1",
+                "sha256": "63cfb38c87c817aee0a0b06f409c9a1c49f4ab390aa2beabf0299fddc6cd8ca8",
+                "payloadBytes": 593
+              }
+            }
+          ],
+          "blockHash": "00000000000000000001ab7ba52889cc799e3f9fec41ea63e173f9407b9e77ba",
+          "closingBase": {
+            "powids": "505",
+            "mailFlowSats": "1488476",
+            "driveFlowSats": "2730",
+            "browserFlowSats": "0",
+            "tokenMintFlowSats": "23545075",
+            "tokenSaleVolumeSats": "9353286",
+            "idMarketplaceFeeSats": "14742",
+            "infinityBondFlowSats": "630496569",
+            "computerEventFlowSats": "506638",
+            "inceptionBondFlowSats": "27932",
+            "tokenCreationFlowSats": "128856",
+            "tokenTransferFlowSats": "115206",
+            "idMarketplaceVolumeSats": "22000",
+            "tokenMarketplaceFeeSats": "1022112"
+          },
+          "openingBase": {
+            "powids": "505",
+            "mailFlowSats": "1488476",
+            "driveFlowSats": "2730",
+            "browserFlowSats": "0",
+            "tokenMintFlowSats": "23545075",
+            "tokenSaleVolumeSats": "9353286",
+            "idMarketplaceFeeSats": "14742",
+            "infinityBondFlowSats": "630496569",
+            "computerEventFlowSats": "506638",
+            "inceptionBondFlowSats": "27932",
+            "tokenCreationFlowSats": "128856",
+            "tokenTransferFlowSats": "114660",
+            "idMarketplaceVolumeSats": "22000",
+            "tokenMarketplaceFeeSats": "1022112"
+          },
+          "closingValue": "838610445454813924487963741",
+          "openingValue": "838610445454811060611074478"
+        }
+      ],
+      "core": {
+        "txid": "2b9991ab3a6f2c3b0de2ea18bf214669cadb44f866b9d0a468311c7211dd96c4",
+        "hex": "020000000001010efb97d00cce764228967d67c43efecf13460f12a6c70260a9570742297b30c30200000000ffffffff0222020000000000001976a914af9e452eed875de632185e8715f3c99efc428a1f88ac0000000000000000776a4c74707774313a73656e643a613364306263383532386639316466633532343030613838356265643765343932333533393661613832616139663935646234316265363239663164353536323a3935303030303a31387876626a366d70507059596a5769626371735864563753437742514e72714d5701403772653b679ae1df99e9866df33aea868106a1bbcf45565e09c4b5d0174bc844e4f93e27b14976e3670a10c03e96cc369985e01ec0d60c929b549d495676b1d200000000",
+        "blockHash": "00000000000000000001ab7ba52889cc799e3f9fec41ea63e173f9407b9e77ba",
+        "height": 966026,
+        "blockIndex": 478,
+        "confirmations": 43,
+        "inputs": [
+          {
+            "txid": "c3307b29420757a96002c7a6120f4613cffe3ec4677d96284276ce0cd097fb0e",
+            "vout": 2,
+            "valueSats": 968,
+            "scriptPubKey": {
+              "asm": "1 883ee84619cd01f18f7d37b3eadc7a06e109671b992cc64a28463f9855a36ad8",
+              "desc": "rawtr(883ee84619cd01f18f7d37b3eadc7a06e109671b992cc64a28463f9855a36ad8)#qmnyfpf4",
+              "hex": "5120883ee84619cd01f18f7d37b3eadc7a06e109671b992cc64a28463f9855a36ad8",
+              "address": "bc1p3qlws3see5qlrrmax7e74hr6qmssjecmnykvvj3ggcles4drdtvqcyag7z",
+              "type": "witness_v1_taproot"
+            }
+          }
+        ],
+        "outputs": [
+          {
+            "vout": 0,
+            "valueSats": 546,
+            "scriptPubKey": {
+              "asm": "OP_DUP OP_HASH160 af9e452eed875de632185e8715f3c99efc428a1f OP_EQUALVERIFY OP_CHECKSIG",
+              "desc": "addr(1H1arP2xpam6MZmHt6k1tB83stqVdH6ANK)#rpxy9can",
+              "hex": "76a914af9e452eed875de632185e8715f3c99efc428a1f88ac",
+              "address": "1H1arP2xpam6MZmHt6k1tB83stqVdH6ANK",
+              "type": "pubkeyhash"
+            }
+          },
+          {
+            "vout": 1,
+            "valueSats": 0,
+            "scriptPubKey": {
+              "asm": "OP_RETURN 707774313a73656e643a613364306263383532386639316466633532343030613838356265643765343932333533393661613832616139663935646234316265363239663164353536323a3935303030303a31387876626a366d70507059596a5769626371735864563753437742514e72714d57",
+              "desc": "raw(6a4c74707774313a73656e643a613364306263383532386639316466633532343030613838356265643765343932333533393661613832616139663935646234316265363239663164353536323a3935303030303a31387876626a366d70507059596a5769626371735864563753437742514e72714d57)#wx8x6n8r",
+              "hex": "6a4c74707774313a73656e643a613364306263383532386639316466633532343030613838356265643765343932333533393661613832616139663935646234316265363239663164353536323a3935303030303a31387876626a366d70507059596a5769626371735864563753437742514e72714d57",
+              "type": "nulldata"
+            }
+          }
+        ],
+        "feeSats": 422
+      }
+    },
+    "olderTransferCore": {
+      "at": "2026-09-08T12:08:04.983236+00:00",
+      "txid": "7a2436c755719eb2bd53e355b340617896453d075f97aa964767813e5670393d",
+      "blockHash": "00000000000000000000f4d473278fcefab7993a2cf5914f98c25e492fe05045",
+      "height": 963714,
+      "index": 3651,
+      "hex": "020000000179e6bf2b56273197addfdaf6788056fbd586409faa671338a3cb6ffce987cf0d020000006b483045022100a0df69194158b9321333595eb8d93e609b346bafa7b21e7fc17c8a7dc18123d302204d2f22e5828a76d4a16fda6e8ee5a1ef7dd99fc3677b40ac4910293bd67f8ce80121034d47a309651091ae8e908a646598aa7d9fb9ae8ecbae1f580455105459c11f50ffffffff0322020000000000001976a914af9e452eed875de632185e8715f3c99efc428a1f88ac0000000000000000796a4c76707774313a73656e643a613364306263383532386639316466633532343030613838356265643765343932333533393661613832616139663935646234316265363239663164353536323a32373432303030303a31387876626a366d70507059596a5769626371735864563753437742514e72714d577d230000000000001976a914f56a3c6a17866dcaf63cf559a5b69a6b279d7c7388ac00000000",
+      "inputs": [
+        {
+          "txid": "0dcf87e9fc6fcba3381367aa9f4086d5fb568078f6dadfad973127562bbfe679",
+          "vout": 2,
+          "valueSats": 9815,
+          "scriptPubKey": {
+            "asm": "OP_DUP OP_HASH160 f56a3c6a17866dcaf63cf559a5b69a6b279d7c73 OP_EQUALVERIFY OP_CHECKSIG",
+            "desc": "addr(1PNdpQUScG1SnzyrsuGdErKWtjtrbWM5TV)#7n98szh4",
+            "hex": "76a914f56a3c6a17866dcaf63cf559a5b69a6b279d7c7388ac",
+            "address": "1PNdpQUScG1SnzyrsuGdErKWtjtrbWM5TV",
+            "type": "pubkeyhash"
+          }
+        }
+      ],
+      "outputs": [
+        {
+          "vout": 0,
+          "valueSats": 546,
+          "scriptPubKey": {
+            "asm": "OP_DUP OP_HASH160 af9e452eed875de632185e8715f3c99efc428a1f OP_EQUALVERIFY OP_CHECKSIG",
+            "desc": "addr(1H1arP2xpam6MZmHt6k1tB83stqVdH6ANK)#rpxy9can",
+            "hex": "76a914af9e452eed875de632185e8715f3c99efc428a1f88ac",
+            "address": "1H1arP2xpam6MZmHt6k1tB83stqVdH6ANK",
+            "type": "pubkeyhash"
+          }
+        },
+        {
+          "vout": 1,
+          "valueSats": 0,
+          "scriptPubKey": {
+            "asm": "OP_RETURN 707774313a73656e643a613364306263383532386639316466633532343030613838356265643765343932333533393661613832616139663935646234316265363239663164353536323a32373432303030303a31387876626a366d70507059596a5769626371735864563753437742514e72714d57",
+            "desc": "raw(6a4c76707774313a73656e643a613364306263383532386639316466633532343030613838356265643765343932333533393661613832616139663935646234316265363239663164353536323a32373432303030303a31387876626a366d70507059596a5769626371735864563753437742514e72714d57)#yamg4taq",
+            "hex": "6a4c76707774313a73656e643a613364306263383532386639316466633532343030613838356265643765343932333533393661613832616139663935646234316265363239663164353536323a32373432303030303a31387876626a366d70507059596a5769626371735864563753437742514e72714d57",
+            "type": "nulldata"
+          }
+        },
+        {
+          "vout": 2,
+          "valueSats": 9085,
+          "scriptPubKey": {
+            "asm": "OP_DUP OP_HASH160 f56a3c6a17866dcaf63cf559a5b69a6b279d7c73 OP_EQUALVERIFY OP_CHECKSIG",
+            "desc": "addr(1PNdpQUScG1SnzyrsuGdErKWtjtrbWM5TV)#7n98szh4",
+            "hex": "76a914f56a3c6a17866dcaf63cf559a5b69a6b279d7c7388ac",
+            "address": "1PNdpQUScG1SnzyrsuGdErKWtjtrbWM5TV",
+            "type": "pubkeyhash"
+          }
+        }
+      ],
+      "feeSats": 184
+    },
+    "feeProjectionInputs": [
+      {
+        "event_id": 3777356,
+        "network": "livenet",
+        "txid": "7a2436c755719eb2bd53e355b340617896453d075f97aa964767813e5670393d",
+        "block_height": 963714,
+        "block_index": 3651,
+        "op_return_vout": 1,
+        "record_ordinal": 0,
+        "block_hash": "00000000000000000000f4d473278fcefab7993a2cf5914f98c25e492fe05045",
+        "token_id": "a3d0bc8528f91dfc52400a885bed7e49235396aa82aa9f95db41be629f1d5562",
+        "registry_address": "1H1arP2xpam6MZmHt6k1tB83stqVdH6ANK",
+        "raw_txid": "7a2436c755719eb2bd53e355b340617896453d075f97aa964767813e5670393d",
+        "raw_marker": {
+          "height": 963714,
+          "network": "livenet",
+          "blockHash": "00000000000000000000f4d473278fcefab7993a2cf5914f98c25e492fe05045",
+          "blockIndex": 3651
+        },
+        "carrier_output": {
+          "n": 1,
+          "value": 0,
+          "scriptPubKey": {
+            "asm": "OP_RETURN 707774313a73656e643a613364306263383532386639316466633532343030613838356265643765343932333533393661613832616139663935646234316265363239663164353536323a32373432303030303a31387876626a366d70507059596a5769626371735864563753437742514e72714d57",
+            "hex": "6a4c76707774313a73656e643a613364306263383532386639316466633532343030613838356265643765343932333533393661613832616139663935646234316265363239663164353536323a32373432303030303a31387876626a366d70507059596a5769626371735864563753437742514e72714d57",
+            "desc": "raw(6a4c76707774313a73656e643a613364306263383532386639316466633532343030613838356265643765343932333533393661613832616139663935646234316265363239663164353536323a32373432303030303a31387876626a366d70507059596a5769626371735864563753437742514e72714d57)#yamg4taq",
+            "type": "nulldata"
+          }
+        },
+        "traces": [
+          {
+            "kind": "protocol-record",
+            "txid": "7a2436c755719eb2bd53e355b340617896453d075f97aa964767813e5670393d",
+            "valid": true,
+            "output": {
+              "amount": "27420000",
+              "tokenId": "a3d0bc8528f91dfc52400a885bed7e49235396aa82aa9f95db41be629f1d5562",
+              "projection": {
+                "kind": "token-transfer",
+                "txid": "7a2436c755719eb2bd53e355b340617896453d075f97aa964767813e5670393d",
+                "valid": true,
+                "amount": "27420000",
+                "parsed": {
+                  "kind": "send",
+                  "amount": "27420000",
+                  "payload": "pwt1:send:a3d0bc8528f91dfc52400a885bed7e49235396aa82aa9f95db41be629f1d5562:27420000:18xvbj6mpPpYYjWibcqsXdV7SCwBQNrqMW",
+                  "tokenId": "a3d0bc8528f91dfc52400a885bed7e49235396aa82aa9f95db41be629f1d5562",
+                  "amountVersion": "send",
+                  "recipientAddress": "18xvbj6mpPpYYjWibcqsXdV7SCwBQNrqMW"
+                },
+                "derived": [],
+                "tokenId": "a3d0bc8528f91dfc52400a885bed7e49235396aa82aa9f95db41be629f1d5562",
+                "position": {
+                  "blockHash": "00000000000000000000f4d473278fcefab7993a2cf5914f98c25e492fe05045",
+                  "blockHeight": 963714,
+                  "protocolVout": 1,
+                  "recordOrdinal": 0,
+                  "blockTransactionIndex": 3651
+                },
+                "protocol": "pwt1",
+                "reasonCode": "",
+                "senderAddress": "1PNdpQUScG1SnzyrsuGdErKWtjtrbWM5TV",
+                "recipientAddress": "18xvbj6mpPpYYjWibcqsXdV7SCwBQNrqMW"
+              },
+              "senderAddress": "1PNdpQUScG1SnzyrsuGdErKWtjtrbWM5TV",
+              "recipientAddress": "18xvbj6mpPpYYjWibcqsXdV7SCwBQNrqMW"
+            },
+            "position": {
+              "blockHash": "00000000000000000000f4d473278fcefab7993a2cf5914f98c25e492fe05045",
+              "blockHeight": 963714,
+              "protocolVout": 1,
+              "recordOrdinal": 0,
+              "blockTransactionIndex": 3651
+            },
+            "rawWitness": {
+              "model": "canonical-raw-protocol-record-v1",
+              "rawRecordParts": [
+                {
+                  "text": "pwt1:send:a3d0bc8528f91dfc52400a885bed7e49235396aa82aa9f95db41be629f1d5562:27420000:18xvbj6mpPpYYjWibcqsXdV7SCwBQNrqMW",
+                  "prefix": "pwt1:",
+                  "payloadHex": "707774313a73656e643a613364306263383532386639316466633532343030613838356265643765343932333533393661613832616139663935646234316265363239663164353536323a32373432303030303a31387876626a366d70507059596a5769626371735864563753437742514e72714d57",
+                  "reasonCode": "",
+                  "decodeValid": true,
+                  "decodeDetail": "",
+                  "protocolVout": 1,
+                  "scriptPubKeyHex": "6a4c76707774313a73656e643a613364306263383532386639316466633532343030613838356265643765343932333533393661613832616139663935646234316265363239663164353536323a32373432303030303a31387876626a366d70507059596a5769626371735864563753437742514e72714d57"
+                }
+              ]
+            },
+            "reasonCode": "",
+            "stateDelta": {
+              "creditFixedQ8": "0",
+              "creditFixedSats": "0",
+              "economicOutputs": [
+                {
+                  "role": "pwt-token-registry",
+                  "vout": 0,
+                  "address": "1H1arP2xpam6MZmHt6k1tB83stqVdH6ANK",
+                  "outputSats": "546",
+                  "attributedSats": "546"
+                }
+              ],
+              "baseContributions": [
+                {
+                  "field": "tokenTransferFlowSats",
+                  "value": "546"
+                }
+              ]
+            },
+            "bondContributionQ8": "2476245694143",
+            "networkValueAfterQ8": "740027823726404573431985379",
+            "networkValueBeforeQ8": "740027823726402097186291236",
+            "transitionChainCommitmentAfter": {
+              "model": "canonical-work-amo-raw-transition-chain-sha256-v1",
+              "sha256": "8a0de6c9d028caf5a00b386f1c26998a9d274f9130d2b8ce751845859cac69e2",
+              "payloadBytes": 1906
+            }
+          }
+        ],
+        "outputs": [
+          {
+            "vout": 0,
+            "address": "1H1arP2xpam6MZmHt6k1tB83stqVdH6ANK",
+            "value_sats": "546"
+          }
+        ]
+      },
+      {
+        "event_id": 4002964,
+        "network": "livenet",
+        "txid": "2b9991ab3a6f2c3b0de2ea18bf214669cadb44f866b9d0a468311c7211dd96c4",
+        "block_height": 966026,
+        "block_index": 478,
+        "op_return_vout": 1,
+        "record_ordinal": 0,
+        "block_hash": "00000000000000000001ab7ba52889cc799e3f9fec41ea63e173f9407b9e77ba",
+        "token_id": "a3d0bc8528f91dfc52400a885bed7e49235396aa82aa9f95db41be629f1d5562",
+        "registry_address": "1H1arP2xpam6MZmHt6k1tB83stqVdH6ANK",
+        "raw_txid": "2b9991ab3a6f2c3b0de2ea18bf214669cadb44f866b9d0a468311c7211dd96c4",
+        "raw_marker": {
+          "height": 966026,
+          "network": "livenet",
+          "blockHash": "00000000000000000001ab7ba52889cc799e3f9fec41ea63e173f9407b9e77ba",
+          "blockIndex": 478
+        },
+        "carrier_output": {
+          "n": 1,
+          "value": 0,
+          "scriptPubKey": {
+            "asm": "OP_RETURN 707774313a73656e643a613364306263383532386639316466633532343030613838356265643765343932333533393661613832616139663935646234316265363239663164353536323a3935303030303a31387876626a366d70507059596a5769626371735864563753437742514e72714d57",
+            "hex": "6a4c74707774313a73656e643a613364306263383532386639316466633532343030613838356265643765343932333533393661613832616139663935646234316265363239663164353536323a3935303030303a31387876626a366d70507059596a5769626371735864563753437742514e72714d57",
+            "desc": "raw(6a4c74707774313a73656e643a613364306263383532386639316466633532343030613838356265643765343932333533393661613832616139663935646234316265363239663164353536323a3935303030303a31387876626a366d70507059596a5769626371735864563753437742514e72714d57)#wx8x6n8r",
+            "type": "nulldata"
+          }
+        },
+        "traces": [
+          {
+            "kind": "protocol-record",
+            "txid": "2b9991ab3a6f2c3b0de2ea18bf214669cadb44f866b9d0a468311c7211dd96c4",
+            "valid": true,
+            "output": {
+              "amount": "950000",
+              "tokenId": "a3d0bc8528f91dfc52400a885bed7e49235396aa82aa9f95db41be629f1d5562",
+              "projection": {
+                "kind": "token-transfer",
+                "txid": "2b9991ab3a6f2c3b0de2ea18bf214669cadb44f866b9d0a468311c7211dd96c4",
+                "valid": true,
+                "amount": "950000",
+                "parsed": {
+                  "kind": "send",
+                  "amount": "950000",
+                  "payload": "pwt1:send:a3d0bc8528f91dfc52400a885bed7e49235396aa82aa9f95db41be629f1d5562:950000:18xvbj6mpPpYYjWibcqsXdV7SCwBQNrqMW",
+                  "tokenId": "a3d0bc8528f91dfc52400a885bed7e49235396aa82aa9f95db41be629f1d5562",
+                  "amountVersion": "send",
+                  "recipientAddress": "18xvbj6mpPpYYjWibcqsXdV7SCwBQNrqMW"
+                },
+                "derived": [],
+                "tokenId": "a3d0bc8528f91dfc52400a885bed7e49235396aa82aa9f95db41be629f1d5562",
+                "position": {
+                  "blockHash": "00000000000000000001ab7ba52889cc799e3f9fec41ea63e173f9407b9e77ba",
+                  "blockHeight": 966026,
+                  "protocolVout": 1,
+                  "recordOrdinal": 0,
+                  "blockTransactionIndex": 478
+                },
+                "protocol": "pwt1",
+                "reasonCode": "",
+                "senderAddress": "bc1p3qlws3see5qlrrmax7e74hr6qmssjecmnykvvj3ggcles4drdtvqcyag7z",
+                "recipientAddress": "18xvbj6mpPpYYjWibcqsXdV7SCwBQNrqMW"
+              },
+              "senderAddress": "bc1p3qlws3see5qlrrmax7e74hr6qmssjecmnykvvj3ggcles4drdtvqcyag7z",
+              "recipientAddress": "18xvbj6mpPpYYjWibcqsXdV7SCwBQNrqMW"
+            },
+            "position": {
+              "blockHash": "00000000000000000001ab7ba52889cc799e3f9fec41ea63e173f9407b9e77ba",
+              "blockHeight": 966026,
+              "protocolVout": 1,
+              "recordOrdinal": 0,
+              "blockTransactionIndex": 478
+            },
+            "rawWitness": {
+              "model": "canonical-raw-protocol-record-v1",
+              "rawRecordParts": [
+                {
+                  "text": "pwt1:send:a3d0bc8528f91dfc52400a885bed7e49235396aa82aa9f95db41be629f1d5562:950000:18xvbj6mpPpYYjWibcqsXdV7SCwBQNrqMW",
+                  "prefix": "pwt1:",
+                  "payloadHex": "707774313a73656e643a613364306263383532386639316466633532343030613838356265643765343932333533393661613832616139663935646234316265363239663164353536323a3935303030303a31387876626a366d70507059596a5769626371735864563753437742514e72714d57",
+                  "reasonCode": "",
+                  "decodeValid": true,
+                  "decodeDetail": "",
+                  "protocolVout": 1,
+                  "scriptPubKeyHex": "6a4c74707774313a73656e643a613364306263383532386639316466633532343030613838356265643765343932333533393661613832616139663935646234316265363239663164353536323a3935303030303a31387876626a366d70507059596a5769626371735864563753437742514e72714d57"
+                }
+              ]
+            },
+            "reasonCode": "",
+            "stateDelta": {
+              "creditFixedQ8": "0",
+              "creditFixedSats": "0",
+              "economicOutputs": [
+                {
+                  "role": "pwt-token-registry",
+                  "vout": 0,
+                  "address": "1H1arP2xpam6MZmHt6k1tB83stqVdH6ANK",
+                  "outputSats": "546",
+                  "attributedSats": "546"
+                }
+              ],
+              "baseContributions": [
+                {
+                  "field": "tokenTransferFlowSats",
+                  "value": "546"
+                }
+              ]
+            },
+            "bondContributionQ8": "2480451762125",
+            "networkValueAfterQ8": "838610445454813541062836603",
+            "networkValueBeforeQ8": "838610445454811060611074478",
+            "transitionChainCommitmentAfter": {
+              "model": "canonical-work-amo-raw-transition-chain-sha256-v1",
+              "sha256": "afdf8facc08555d1f194430bb91c0ab42e97742d5d1f66bf80ee6bfb2fd33a9a",
+              "payloadBytes": 1960
+            }
+          }
+        ],
+        "outputs": [
+          {
+            "vout": 0,
+            "address": "1H1arP2xpam6MZmHt6k1tB83stqVdH6ANK",
+            "value_sats": "546"
+          }
+        ]
+      }
+    ],
+    "walletContracts": {
+      "token": {
+        "sha256": "22eb24a642466693987afe611e0bebc093b7f325d2bcb72b62bb62d90bb9608f",
+        "bytes": 5158088,
+        "envelope": {
+          "amountStorageModel": "work-subatoms-v2",
+          "confirmedSupply": "21000000",
+          "confirmedSupplySubatoms": "210000000000000000000000",
+          "pendingSupply": "0",
+          "pendingSupplySubatoms": "0",
+          "precisionModel": "canonical-work-subatoms-v2",
+          "snapshotId": "c2742659d7c1e6f4957256e6",
+          "indexedThroughBlock": 966022,
+          "source": "proof-indexer-token-state-tables+canonical-work-transfer-value-projection",
+          "walletScoped": true
+        },
+        "workDefinitions": [
+          {
+            "amountStorageModel": "work-subatoms-v2",
+            "confirmedSupply": "21000000",
+            "confirmedSupplySubatoms": "210000000000000000000000",
+            "pendingSupply": "0",
+            "pendingSupplySubatoms": "0",
+            "precisionModel": "canonical-work-subatoms-v2",
+            "lowestAskPricePerToken": 333764839648.7039,
+            "lowestAskPricePerTokenExact": {
+              "amountSubatoms": "749030366",
+              "decimal": "333764839648.7039084874697857",
+              "denominator": "749030366",
+              "model": "exact-work-q16-sats-per-unit-ratio-v1",
+              "numerator": "250000000000000000000",
+              "priceSats": "25000",
+              "unitScale": "10000000000000000"
+            },
+            "holderCount": 355,
+            "tokenId": "d4e5ebf11d104d6a63fb74e42094364b25a5f7199a09e5c0e71408972466a8b8",
+            "ticker": "WORK"
+          }
+        ]
+      },
+      "summary": {
+        "sha256": "5591f668273715967f16ceda1ed068d216d3a3cdc370e0ea715f10012475930e",
+        "bytes": 5146663,
+        "envelope": {
+          "confirmedSupply": null,
+          "pendingSupply": 0,
+          "snapshotId": "c2742659d7c1e6f4957256e6",
+          "indexedThroughBlock": 966022,
+          "source": "proof-indexer-token-state-tables+canonical-work-transfer-value-projection",
+          "walletScoped": true
+        },
+        "workDefinitions": [
+          {
+            "amountStorageModel": "work-subatoms-v2",
+            "confirmedSupply": "0",
+            "confirmedSupplySubatoms": "0",
+            "pendingSupply": "0",
+            "pendingSupplySubatoms": "0",
+            "precisionModel": "canonical-work-subatoms-v2",
+            "lowestAskPricePerToken": "333764839648.7039084874697857",
+            "lowestAskPricePerTokenExact": {
+              "amountSubatoms": "749030366",
+              "decimal": "333764839648.7039084874697857",
+              "denominator": "749030366",
+              "model": "exact-work-q16-sats-per-unit-ratio-v1",
+              "numerator": "250000000000000000000",
+              "priceSats": "25000",
+              "unitScale": "10000000000000000"
+            },
+            "holderCount": 5,
+            "tokenId": "d4e5ebf11d104d6a63fb74e42094364b25a5f7199a09e5c0e71408972466a8b8",
+            "ticker": "WORK"
+          }
+        ]
+      }
+    }
   }
 }

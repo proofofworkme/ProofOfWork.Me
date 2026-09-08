@@ -1545,3 +1545,103 @@ no new protocol change, source modification, data repair or deletion is made.
 diff/JSON/hash validation pass. The commit containing this handoff carries the
 required review trailers; its exact identity and branch publication are verified
 through Git rather than a self-referential embedded commit hash.
+
+
+## Production incident continuation — 2026-09-08 (candidate, not yet deployed)
+
+The user reported persistent AMO unavailability, stale WORK summary and two
+intermittent Wallet contract errors. This continues H5-06 and the prior audit-2
+WORK price-alias finding; it does not repeat their historical fixes as new
+completed work. The preceding 146,018 bytes have SHA256 `08799f24f989bb92b16896f1c457187f1cf2219551dcfa3f8bf217724cd74b4d`.
+Existing six-batch implementation authorization remains in force. This incident
+adds no database repair, archive deletion, protocol migration or signing scope.
+
+At 11:59–12:00 UTC, Core/headers/Electrs were 966066 and the canonical scan was
+966065. The latest eligible summary remained block 966025, generated
+06:19:45 UTC. Caddy's last successful health response was 06:23:31 UTC; subsequent
+samples through 12:00:40 returned 503. The worker had 55 restarts and repeatedly
+failed canonical summary construction with
+`legacy-bootstrap-base-field-diverged:tokenTransferFlowSats`:
+committed 115206, published 114114, permitted historical carry 546.
+This is a persistent accounting-projection failure, not normal one-block
+convergence. API PID 1333977 and application commit
+`2ddefac163d583138129c2527e747b11190a0635` remained unchanged since September 6.
+No production restart or modification had occurred during this diagnosis.
+
+Both hosts have storage runway. UI: 59% used, 15.76 GB free, inodes 5%; Caddy
+active with zero restarts and release provenance verified. Node: root 75.87 GB
+free and data 379.02 GB free; Core, Electrs, PostgreSQL and WAL receiver active.
+The existing dry-run rollback-root retention warning is unchanged and is not
+this incident's cause.
+
+The discrepancy is exactly two confirmed POWB transfer display records with
+omitted fee aliases, although canonical raw replay correctly counted each
+registry payment. Read-only SQL found no other confirmed valid token transfers
+with both paidSats and amountSats absent/zero. Both were verified against Core:
+
+| Event | Transaction | Block/index | Amount POWB | Registry proofs | Miner proofs |
+| --- | --- | --- | --- | --- | --- |
+| 3777356 | `7a2436c755719eb2bd53e355b340617896453d075f97aa964767813e5670393d` | 963714 / 3651 | 27420000 | 546 | 184 |
+| 4002964 | `2b9991ab3a6f2c3b0de2ea18bf214669cadb44f866b9d0a468311c7211dd96c4` | 966026 / 478 | 950000 | 546 | 422 |
+
+For the new transfer, Core confirms one 968-proof input, registry output 0 of
+546 proofs and the exact send carrier at output 1. Its canonical transition
+moves tokenTransferFlowSats from 114660 to 115206 and its closing network Q8
+value is `838610445454813924487963741`. The older missing 546 was previously
+visible as postActivationBaseCarryFields; the second omission exceeded that
+existing reconciliation allowance. The candidate does not expand the allowance.
+
+A single nonfresh fixture-wallet token read returned HTTP200 with a rounded
+Number price `333764839648.7039` alongside exact decimal
+`333764839648.7039084874697857` (25000 proofs / 749030366 WORK subatoms).
+A separate unscoped token-summary read returned top-level pendingSupply 0
+without pendingSupplySubatoms, and recomputed the lone WORK definition's global
+supply as zero from bounded wallet arrays. These reproduce the user's exact
+price-alias and missing-Q16 errors. The fixture address is the retained audit
+address, not a claim to have identified carbonz's wallet.
+
+Candidate changes recover missing transfer fee aliases only from the unique
+canonical transition trace at the exact event position, bound to raw carrier
+and normalized registry outputs. They preserve stored rows, amounts, miner fees,
+state commitments and historical carry. Unscoped Wallet summaries share the
+existing normalized Wallet path; compaction preserves global supply/holder
+metrics over address-limited collections. WORK ask aliases and descriptors are
+computed together with integer ratio arithmetic. Missing exact price evidence
+cannot become a floating-point fallback.
+
+Local checks so far: 503/503 recovery behaviors, four attribution tests with
+negative/overpayment cases, marketplace-V2 tests, 131 precision checks and AMO-V8
+protocol/gates passed. The actual new SELECT returned exactly the two intended
+production proof rows; the pure projection returned 546 for each. Candidate
+summary construction against the live node, remaining release gates and
+production verification are still pending. No recovery is claimed yet.
+
+Sanitized evidence retained under `/tmp/pow-incident-20260908`:
+
+- initial-node.json: `310ae15a71c5e49d3314ea3e754a7fdcc937eccc5c69b99dc0cb2b345f8de517`
+- transfer-chain-evidence.json: `789454826827a53dec3660a75ff3c67a37e87171765a34d552b5b2c17696dbf5`
+- older-transfer-core.json: `3bc55c96e2729f2ccc092f8649af9a5301ded376cb34e439ced4f5ebf0e74c2c`
+- fee-query-evidence.json: `975dc8afee63b1b07ecf417355893a2f7d3447ad1798d5e796979ce76146a4f5`
+- wallet-fixture-unscoped-token.json: `22eb24a642466693987afe611e0bebc093b7f325d2bcb72b62bb62d90bb9608f`
+- wallet-fixture-unscoped-summary.json: `5591f668273715967f16ceda1ed068d216d3a3cdc370e0ea715f10012475930e`
+
+UI evidence under `/tmp/pow-incident-ui-20260908`: inspection.json
+`a281a146a3d1ca403593f92cbd6c2b82eda56b6b1390cfe46e617becc967fecc`,
+and timeline.json
+`4fffc5c484268bd8af41cf02f238b2225f669089c98d28f83f343a0c9f8b5855`.
+Full large Wallet responses remain local; final durable evidence should retain
+bounded proof facts and these hashes rather than duplicate megabytes of payload.
+
+The complete local candidate gates subsequently passed: recovery 503/503 plus
+four attribution tests, WORK precision/V2, bond exact arithmetic, AMO-V8/gates,
+marketplace-V2, read projections, API truth, live-data, server free identifiers,
+node operations and hygiene. Single-WORK and mixed-wallet regression fixtures
+preserve global supply through compaction. Two pre-existing greedy source-test
+scans consumed minutes; equivalent boolean-only lazy regex matching reduces
+API truth to 1.99 seconds and live-data to 3.11 seconds. AST review proves
+extraction/capture semantics unchanged; three source assertions now explicitly
+require the new wallet contract. Initial stalled/old-assertion runs remain
+separate from passing final runs. No hook or production readiness gate is
+bypassed. SOUL and all canonical product/protocol documents were reviewed;
+OP_RETURN_INFRASTRUCTURE documents the candidate read contract, with no other
+protocol/operating-memory change required. Hygiene found no allowlisted cleanup.

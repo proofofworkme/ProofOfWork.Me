@@ -35544,7 +35544,9 @@ function compactTokenSummaryPayload(payload, tokenScope = "", options = {}) {
   const workAmountStorageModel =
     tokenSummaryWorkAmountStorageModel(payload);
   const tokenSummaries = tokenAggregateSummaries({ ...payload, listings });
-  const preserveExistingTokenMetrics = payload.summaryOnly === true;
+  // Wallet collections cover an address, not global issuance or holder totals.
+  const preserveExistingTokenMetrics =
+    payload.summaryOnly === true || walletScopedSummary;
   const explicitCount = (value) => {
     if (value === undefined || value === null || value === "") {
       return undefined;
@@ -40960,7 +40962,7 @@ async function walletScopedTokenSummaryPayload(
   const scope = normalizeTokenScope(tokenScope);
   const requireCurrent =
     options.requireCurrent === true && network === "livenet";
-  if (scope === WORK_TOKEN_ID || requireCurrent) {
+  if (!scope || scope === WORK_TOKEN_ID || requireCurrent) {
     return compactTokenSummaryPayload(
       await walletScopedTokenPayload(network, scope, recoveryAddresses, {
         allowLastGood: options.allowLastGood === true,
@@ -41190,10 +41192,10 @@ async function walletScopedTokenPayload(
       network,
       scope,
     );
-    const walletPayload =
-      scope === WORK_TOKEN_ID
-        ? workQ16PayloadWithoutOrphanPriceAliases(normalizedPayload, scope)
-        : normalizedPayload;
+    const walletPayload = workQ16PayloadWithoutOrphanPriceAliases(
+      normalizedPayload,
+      scope,
+    );
     const authoritativeOverlay =
       walletScopedPayloadUsesAuthoritativeOverlay(walletPayload);
     if (requireCurrent && !authoritativeOverlay) {
