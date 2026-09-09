@@ -2610,7 +2610,7 @@ expect(
 );
 expect(
   "standalone Browser keeps the network selector in the form, not the shared topbar",
-  /<BrowserNetworkTabs\s+network=\{network\}\s+onChange=\{setNetwork\}/.test(
+  /<BrowserNetworkTabs\s+network=\{network\}\s+onChange=\{\(nextNetwork\) => \{[\s\S]*?loadGenerationRef\.current \+= 1;[\s\S]*?setNetwork\(nextNetwork\)/.test(
     browserAppBlock,
   ) && !/<AppHeader[\s\S]*?onNetworkChange=\{setNetwork\}/.test(browserAppBlock),
 );
@@ -3300,17 +3300,17 @@ expect(
     ),
 );
 expect(
-  "Marketplace hydrates one exact complete listing book before accepting a summary",
+  "Marketplace hydrates current exact listing authority and never reuses a completed same-block book",
   /completeMarketplaceListingHistoryRef\.current/.test(
     currentCompleteGlobalTokenListingsBlock,
   ) &&
     /completeMarketplaceListingHistoryInFlightRef\.current/.test(
       currentCompleteGlobalTokenListingsBlock,
     ) &&
-    /fetchCompleteTokenListings\("livenet", \{ fresh \}\)/.test(
+    /fetchCompleteTokenListings\("livenet", \{ fresh, signal: controller\.signal \}\)/.test(
       currentCompleteGlobalTokenListingsBlock,
     ) &&
-    /completeTokenListingHistoryMatchesCheckpoint\(retained, state\)/.test(
+    !/return retained;/.test(
       currentCompleteGlobalTokenListingsBlock,
     ) &&
     /const history = await currentCompleteGlobalTokenListings\(state, fresh\)/.test(

@@ -109,7 +109,7 @@ function outputAddress(output) {
   return String(output?.scriptpubkey_address ?? output?.scriptPubKey?.address ?? "");
 }
 
-function verifiedRawTransaction(row, checkpoint) {
+export function verifiedRawTransaction(row, checkpoint) {
   const tx = row.raw_tx;
   const scan = tx?.canonicalBlockScan;
   const verified = tx && tx.txid === row.txid && Array.isArray(tx.vout) &&

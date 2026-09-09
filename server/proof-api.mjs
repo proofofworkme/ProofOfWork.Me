@@ -1,5 +1,9 @@
 #!/usr/bin/env node
 
+import { tokenEventIsPending } from "./token-event-lifecycle.mjs";
+import { validateBoostAuthority } from "./boost-authority.mjs";
+import { publicFencedRegistryPayload, buildFencedRegistryObservation } from "./registry-provenance.mjs";
+import { qualifyWorkReadinessStatus } from "./work-readiness-diagnostics.mjs";
 import { execFile } from "node:child_process";
 import { createHash, timingSafeEqual } from "node:crypto";
 import fs from "node:fs/promises";
@@ -288,6 +292,7 @@ import {
   proofIndexConfirmedValueEventsAfterBlock,
   proofIndexCreditListingsPayload,
   proofIndexEventHistoryPayload,
+  proofIndexBoostAuthorityWitnesses,
   proofIndexBoostGrowthObservation,
   proofIndexIdRegistryAuditStream,
   proofIndexLogHistoryReadEligibility,
@@ -299,6 +304,7 @@ import {
   proofIndexReadUnconfirmedTxStatus,
   proofIndexIdRecordPayload,
   proofIndexRegistryPayload,
+  proofIndexCompleteRegistryObservation,
   proofIndexShadowFeatureEnabled,
   proofIndexSnapshotPayload,
   proofIndexTokenMarketHistoryOverlayPayload,
@@ -3221,10 +3227,10 @@ function walletScopedTokenPayloadFromOverlay(overlay, network, tokenScope) {
         .length,
       holders: holders.length,
       invalidEvents: invalidEvents.length,
-      pendingListings: listings.filter((listing) => !listing.confirmed).length,
-      pendingSales: sales.filter((sale) => !sale.confirmed).length,
-      pendingTokens: tokens.filter((token) => !token.confirmed).length,
-      pendingTransfers: transfers.filter((transfer) => !transfer.confirmed)
+      pendingListings: listings.filter(tokenEventIsPending).length,
+      pendingSales: sales.filter(tokenEventIsPending).length,
+      pendingTokens: tokens.filter(tokenEventIsPending).length,
+      pendingTransfers: transfers.filter(tokenEventIsPending)
         .length,
       tokenScope: normalizeTokenScope(tokenScope),
       walletScoped: true,
@@ -4054,10 +4060,10 @@ async function tokenPayloadWithIndexedWalletOverlay(
             .length,
           holders: holders.length,
           invalidEvents: invalidEvents.length,
-          pendingListings: listings.filter((listing) => !listing.confirmed)
+          pendingListings: listings.filter(tokenEventIsPending)
             .length,
-          pendingSales: sales.filter((sale) => !sale.confirmed).length,
-          pendingTransfers: transfers.filter((transfer) => !transfer.confirmed)
+          pendingSales: sales.filter(tokenEventIsPending).length,
+          pendingTransfers: transfers.filter(tokenEventIsPending)
             .length,
           walletScoped: true,
         },
@@ -4478,7 +4484,7 @@ async function tokenPayloadWithRecoveredWalletWorkTransfers(
         confirmedTransfers: transfers.filter((transfer) => transfer.confirmed)
           .length,
         holders: holders.length,
-        pendingTransfers: transfers.filter((transfer) => !transfer.confirmed)
+        pendingTransfers: transfers.filter(tokenEventIsPending)
           .length,
         walletScoped: true,
       },
@@ -10369,7 +10375,7 @@ async function workAmoV8ExactLiveProbe(network) {
 async function workAmoV8ExactReadinessSweep(
   network,
   expectedDeclaration,
-  { force = false } = {},
+  { force = false, diagnostics = null } = {},
 ) {
   // Exclude unrelated full-mempool and publication churn while keeping Core/
   // worker tips, readiness/era, and pending membership/projection bound.
@@ -10377,27 +10383,65 @@ async function workAmoV8ExactReadinessSweep(
     includeMempool: false,
     includeWorkerPublication: false,
   };
-  const before = await workAmoV8ExactLiveProbe(network);
-  const beforeKey = workAmoV8ExactLiveProbeKey(before, sweepKeyOptions);
-  if (!beforeKey) {
-    return null;
-  }
-  const migrationReadiness =
-    await proofIndexWorkPrecisionV2MigrationReadiness(
-      network,
-      expectedDeclaration,
-      { force },
-    ).catch(() => null);
-  const after = await workAmoV8ExactLiveProbe(network);
-  if (
-    workAmoV8ExactLiveProbeKey(after, sweepKeyOptions) !== beforeKey
-  ) {
-    return null;
-  }
-  return {
-    migrationReadiness,
-    probe: after,
+  // This observation never supplies authority or changes the sweep result. Keep
+  // raw SQL/RPC error text out of public responses; stage and bounded error codes
+  // are sufficient to correlate a refusal with its checkpoint and elapsed time.
+  const startedAt = Date.now();
+  const observation = diagnostics ?? {};
+  Object.assign(observation, {
+    model: "work-readiness-sweep-diagnostics-v1",
+    network,
+    startedAt: new Date(startedAt).toISOString(),
+    phases: {},
+    outcome: "in-progress",
+  });
+  let phase = "beforeProbe";
+  const checkpoint = (probe) => probe ? {
+    tipHeight: probe.tipHeight,
+    tipHash: probe.tipHash,
+    workerState: probe.workerReadiness?.state ?? "unknown",
+  } : null;
+  const errorCode = (error) => /^[A-Z0-9_]{1,48}$/.test(String(error?.code ?? ""))
+    ? String(error.code)
+    : "read-error";
+  const timed = async (name, read) => {
+    phase = name;
+    const start = Date.now();
+    try { return await read(); }
+    finally { observation.phases[name] = Math.max(0, Date.now() - start); }
   };
+  try {
+    const before = await timed("beforeProbe", () => workAmoV8ExactLiveProbe(network));
+    observation.beforeCheckpoint = checkpoint(before);
+    const beforeKey = workAmoV8ExactLiveProbeKey(before, sweepKeyOptions);
+    if (!beforeKey) {
+      observation.outcome = "before-probe-unavailable";
+      return null;
+    }
+    const migrationReadiness = await timed("migrationRead", () =>
+      proofIndexWorkPrecisionV2MigrationReadiness(network, expectedDeclaration, { force })
+    ).catch((error) => {
+      observation.migrationReadError = errorCode(error);
+      return null;
+    });
+    const after = await timed("afterProbe", () => workAmoV8ExactLiveProbe(network));
+    observation.afterCheckpoint = checkpoint(after);
+    if (workAmoV8ExactLiveProbeKey(after, sweepKeyOptions) !== beforeKey) {
+      observation.outcome = after ? "readiness-fence-changed" : "after-probe-unavailable";
+      return null;
+    }
+    observation.outcome = migrationReadiness == null
+      ? "migration-read-unavailable"
+      : "readiness-fence-stable";
+    return { migrationReadiness, probe: after };
+  } catch (error) {
+    observation.outcome = "probe-read-error";
+    observation.failedPhase = phase;
+    observation.readError = errorCode(error);
+    throw error;
+  } finally {
+    observation.elapsedMs = Math.max(0, Date.now() - startedAt);
+  }
 }
 
 function workAmoV8PersistentDeclarationEvidence(
@@ -10581,6 +10625,7 @@ async function workAmoV8Metadata(
   let readinessCacheKey = "";
   let declarationTx = null;
   let canonicalDeclarationHash = "";
+  const readinessSweepDiagnostics = {};
   let workerReadiness = {
     era: "",
     finishedAt: "",
@@ -10756,7 +10801,7 @@ async function workAmoV8Metadata(
     const finalSweep = await workAmoV8ExactReadinessSweep(
       network,
       expectedDeclaration,
-      { force },
+      { force, diagnostics: readinessSweepDiagnostics },
     ).catch(() => null);
     migrationReadiness = finalSweep?.migrationReadiness ?? null;
     if (finalSweep?.probe) {
@@ -10841,6 +10886,17 @@ async function workAmoV8Metadata(
       WORK_AMO_V8_WRITES_CONFIGURED &&
       Boolean(configuredDeclaration),
   });
+  // Keep the original fail-closed status and all its admission bits. A failed
+  // migration read cannot erase separately verified declaration evidence from
+  // the operational explanation presented to clients.
+  const publicStatus = qualifyWorkReadinessStatus(status, {
+    declarationEvidenceVerified:
+      validateWorkAmoV8DeclarationEvidence(statusEvidence, {
+        expectedDeclaration,
+      }).valid === true,
+    migrationReadinessAvailable: migrationReadiness !== null,
+    exactTipVerified: tipVerified,
+  });
   const publicMigrationReadiness = migrationReadiness
     ? {
         ...migrationReadiness,
@@ -10864,7 +10920,11 @@ async function workAmoV8Metadata(
       }
     : null;
   const payload = {
-    ...status,
+    ...publicStatus,
+    readinessDiagnostics: {
+      ...(publicStatus.readinessDiagnostics ?? {}),
+      sweep: readinessSweepDiagnostics,
+    },
     activation: {
       ...status.activation,
       activationHeight: expectedDeclaration.activationHeight,
@@ -23974,6 +24034,14 @@ function pendingWorkMarketPayloadFromTransactions(
   const listings = [];
   const invalidEvents = [];
   for (const tx of tokenProtocolSortedTransactions(pendingTxs)) {
+    // Address discovery includes ordinary payments. Only exact script bytes
+    // identifying a PWT carrier belong in strict WORK recovery. Recognizable
+    // malformed PWT carriers still reach that verifier and retain diagnostics.
+    if (!(Array.isArray(tx.vout) ? tx.vout : []).some(
+      (output) => canonicalProtocolCandidateFromOutput(output)?.prefix === "pwt1:",
+    )) {
+      continue;
+    }
     const txid = transactionTxid(tx);
     const actorAddress = inputAddresses(Array.isArray(tx.vin) ? tx.vin : [])[0] ??
       "";
@@ -25282,14 +25350,22 @@ async function strictCoreRegistryListingReconciliation(
 }
 
 function registryPayloadWithoutPrivateAuthority(payload) {
-  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
-    return payload;
-  }
-  const {
-    _powRegistryParityAuthority: _privateAuthority,
-    ...publicPayload
-  } = payload;
-  return publicPayload;
+  return publicFencedRegistryPayload(payload);
+}
+
+async function freshCanonicalRegistryPayload(network) {
+  return buildFencedRegistryObservation(network, {
+    readTip: async () => exactCoreTipFromBlockchainInfo(await bitcoinRpc("getblockchaininfo", [])),
+    readMempool: async () => {
+      const response = await bitcoinRpc("getrawmempool", [false]);
+      if (response?.ok !== true) throw registryAuthorityUnavailable("Core registry mempool membership is unavailable.");
+      return response.result;
+    },
+    readIndexed: (tip) => proofIndexCompleteRegistryObservation(network, {
+      expectedHeight: tip.height, expectedHash: tip.blockHash, registryAddress: registryAddressForNetwork(network),
+    }),
+    reconcileListings: (payload, tip) => strictCoreRegistryListingReconciliation(payload, network, { checkpoint: tip, verifyFinalTip: false }),
+  });
 }
 
 async function strictPublicRegistryPayload(network, options = {}) {
@@ -25304,9 +25380,7 @@ async function strictPublicRegistryPayload(network, options = {}) {
   }
 
   if (options.fresh === true) {
-    return registryPayloadWithoutPrivateAuthority(
-      await internalRegistryParityPayload(network),
-    );
+    return freshCanonicalRegistryPayload(network);
   }
 
   let priorTipTransition = false;
@@ -25314,9 +25388,7 @@ async function strictPublicRegistryPayload(network, options = {}) {
   for (let attempt = 1; attempt <= 3; attempt += 1) {
     const indexedPayload = await indexedRegistryPayload(network);
     if (!indexedPayload) {
-      return registryPayloadWithoutPrivateAuthority(
-        await internalRegistryParityPayload(network),
-      );
+      return freshCanonicalRegistryPayload(network);
     }
     try {
       return (
@@ -33739,10 +33811,10 @@ async function workTokenPayload(network, fallbackPayload = null) {
       indexedThroughBlock,
       invalidEvents: (state.invalidEvents ?? []).filter((event) => event.confirmed)
         .length,
-      pendingMints: state.mints.filter((mint) => !mint.confirmed).length,
-      pendingTransfers: state.transfers.filter((transfer) => !transfer.confirmed)
+      pendingMints: state.mints.filter(tokenEventIsPending).length,
+      pendingTransfers: state.transfers.filter(tokenEventIsPending)
         .length,
-      pendingTokens: state.tokens.filter((token) => !token.confirmed).length,
+      pendingTokens: state.tokens.filter(tokenEventIsPending).length,
       registries: 1,
       transactions: registryTxs.length,
     },
@@ -33996,10 +34068,10 @@ async function bondTokenPayload(network, registryState = null, config) {
       indexedThroughBlock,
       invalidEvents: (state.invalidEvents ?? []).filter((event) => event.confirmed)
         .length,
-      pendingMints: state.mints.filter((mint) => !mint.confirmed).length,
-      pendingTransfers: state.transfers.filter((transfer) => !transfer.confirmed)
+      pendingMints: state.mints.filter(tokenEventIsPending).length,
+      pendingTransfers: state.transfers.filter(tokenEventIsPending)
         .length,
-      pendingTokens: state.tokens.filter((token) => !token.confirmed).length,
+      pendingTokens: state.tokens.filter(tokenEventIsPending).length,
       registries: 1,
       transactions: registryTxs.length,
     },
@@ -34141,10 +34213,10 @@ async function tokenPayload(network, tokenScope = "") {
       indexedThroughBlock,
       invalidEvents: (state.invalidEvents ?? []).filter((event) => event.confirmed)
         .length,
-      pendingMints: state.mints.filter((mint) => !mint.confirmed).length,
-      pendingTransfers: state.transfers.filter((transfer) => !transfer.confirmed)
+      pendingMints: state.mints.filter(tokenEventIsPending).length,
+      pendingTransfers: state.transfers.filter(tokenEventIsPending)
         .length,
-      pendingTokens: state.tokens.filter((token) => !token.confirmed).length,
+      pendingTokens: state.tokens.filter(tokenEventIsPending).length,
       registries: registryAddresses.length,
       transactions:
         indexTxs.length +
@@ -34789,7 +34861,7 @@ function tokenAggregateSummaries(payload) {
       current.confirmedMints += 1;
       current.confirmedSupply += amount;
       addBalance(mint.tokenId, mint.minterAddress, amount);
-    } else {
+    } else if (tokenEventIsPending(mint)) {
       current.pendingMints += 1;
       current.pendingSupply += amount;
     }
@@ -34831,8 +34903,10 @@ function tokenAggregateSummaries(payload) {
       current.confirmedSales += 1;
       current.confirmedSalesVolumeSats += numericValue(sale.priceSats);
     } else {
-      current.pendingSales += 1;
-      current.pendingSalesVolumeSats += numericValue(sale.priceSats);
+      if (tokenEventIsPending(sale)) {
+        current.pendingSales += 1;
+        current.pendingSalesVolumeSats += numericValue(sale.priceSats);
+      }
       continue;
     }
     const amount = canonicalTokenSaleLedgerAmount(sale.tokenId, sale, {
@@ -35267,7 +35341,7 @@ function scopedTokenPayloadFromState(tokenState, scope) {
   const pendingWorkSupply = confirmedWorkSupply === null
     ? null
     : mints
-        .filter((mint) => !mint.confirmed)
+        .filter(tokenEventIsPending)
         .reduce((total, mint) => {
           const amount = ledgerAmountFromRecord(
             WORK_TOKEN_ID,
@@ -35381,11 +35455,11 @@ function scopedTokenPayloadFromState(tokenState, scope) {
       creationSats,
       holders: holders.length,
       invalidEvents: invalidEvents.filter((event) => event.confirmed).length,
-      pendingMints: mints.filter((mint) => !mint.confirmed).length,
-      pendingSales: sales.filter((sale) => !sale.confirmed).length,
-      pendingTransfers: transfers.filter((transfer) => !transfer.confirmed)
+      pendingMints: mints.filter(tokenEventIsPending).length,
+      pendingSales: sales.filter(tokenEventIsPending).length,
+      pendingTransfers: transfers.filter(tokenEventIsPending)
         .length,
-      pendingTokens: tokens.filter((token) => !token.confirmed).length,
+      pendingTokens: tokens.filter(tokenEventIsPending).length,
       registries: new Set(
         tokens.map((token) => token.registryAddress).filter(Boolean),
       ).size,
@@ -36115,25 +36189,25 @@ function compactTokenSummaryPayload(payload, tokenScope = "", options = {}) {
         holders: authoritativeStat("holders", holders.length),
         pendingMints: authoritativeStat(
           "pendingMints",
-          mints.filter((mint) => !mint?.confirmed).length,
+          mints.filter(tokenEventIsPending).length,
         ),
         pendingSales: authoritativeStat(
           "pendingSales",
-          sales.filter((sale) => !sale?.confirmed).length,
+          sales.filter(tokenEventIsPending).length,
         ),
         pendingSalesVolumeSats: authoritativeStat(
           "pendingSalesVolumeSats",
           sales
-            .filter((sale) => !sale?.confirmed)
+            .filter(tokenEventIsPending)
             .reduce((total, sale) => total + numericValue(sale.priceSats), 0),
         ),
         pendingTransfers: authoritativeStat(
           "pendingTransfers",
-          transfers.filter((transfer) => !transfer?.confirmed).length,
+          transfers.filter(tokenEventIsPending).length,
         ),
         pendingTokens: authoritativeStat(
           "pendingTokens",
-          tokenDefinitions.filter((token) => !token?.confirmed).length,
+          tokenDefinitions.filter(tokenEventIsPending).length,
         ),
       },
     }, scope),
@@ -36241,7 +36315,7 @@ function tokenStateWithPendingStats(state) {
     ? mints
         .filter(
           (mint) =>
-            !mint.confirmed && mint.tokenId === scopedBondTokenId,
+            tokenEventIsPending(mint) && mint.tokenId === scopedBondTokenId,
         )
         .reduce((total, mint) => {
           const amount = tokenLedgerAmountFromRecord(scopedBondTokenId, mint);
@@ -36249,7 +36323,7 @@ function tokenStateWithPendingStats(state) {
         }, 0n)
         .toString()
     : mints
-        .filter((mint) => !mint.confirmed)
+        .filter(tokenEventIsPending)
         .reduce((total, mint) => total + Number(mint.amount || 0), 0);
   const confirmedSales = sales.filter((sale) => sale.confirmed);
 
@@ -36268,11 +36342,11 @@ function tokenStateWithPendingStats(state) {
         .length,
       confirmedTokens: tokens.filter((token) => token.confirmed).length,
       holders: holders.length,
-      pendingMints: mints.filter((mint) => !mint.confirmed).length,
-      pendingSales: sales.filter((sale) => !sale.confirmed).length,
-      pendingTransfers: transfers.filter((transfer) => !transfer.confirmed)
+      pendingMints: mints.filter(tokenEventIsPending).length,
+      pendingSales: sales.filter(tokenEventIsPending).length,
+      pendingTransfers: transfers.filter(tokenEventIsPending)
         .length,
-      pendingTokens: tokens.filter((token) => !token.confirmed).length,
+      pendingTokens: tokens.filter(tokenEventIsPending).length,
     },
   };
 }
@@ -37411,9 +37485,9 @@ function workMintSupplyTotals(mints) {
     confirmedSupply: rows
       .filter((mint) => mint.confirmed)
       .reduce((total, mint) => total + Number(mint.amount || 0), 0),
-    pendingMints: rows.filter((mint) => !mint.confirmed).length,
+    pendingMints: rows.filter(tokenEventIsPending).length,
     pendingSupply: rows
-      .filter((mint) => !mint.confirmed)
+      .filter(tokenEventIsPending)
       .reduce((total, mint) => total + Number(mint.amount || 0), 0),
   };
 }
@@ -37448,7 +37522,7 @@ function workMintRowsWithinPendingCap(mints) {
   let pendingSupply = 0;
 
   for (const mint of sortWorkMintsForPendingCap(
-    rows.filter((item) => !item.confirmed),
+    rows.filter(tokenEventIsPending),
   )) {
     const amount = Number(mint.amount || 0);
     if (confirmedSupply + pendingSupply + amount > WORK_TOKEN_MAX_SUPPLY) {
@@ -37459,7 +37533,8 @@ function workMintRowsWithinPendingCap(mints) {
     acceptedPending.push(mint);
   }
 
-  return [...confirmed, ...acceptedPending];
+  const terminalHistory = rows.filter((mint) => mint.confirmed !== true && !tokenEventIsPending(mint));
+  return [...confirmed, ...acceptedPending, ...terminalHistory];
 }
 
 function workTokenStateWithMintSupplyCounters(state) {
@@ -37477,7 +37552,7 @@ function workTokenStateWithMintSupplyCounters(state) {
   const totals = workMintSupplyTotals(cappedMints);
   const exactSupply = (confirmed) =>
     cappedMints
-      .filter((mint) => mint?.confirmed === confirmed)
+      .filter((mint) => confirmed ? mint?.confirmed === true : tokenEventIsPending(mint))
       .reduce((total, mint) => {
         const amount = tokenLedgerAmountFromRecord(
           WORK_TOKEN_ID,
@@ -38289,7 +38364,7 @@ function workTokenStateWithDeltaTransactions(
   );
   const exactMintSupply = (confirmed) =>
     sortedMints
-      .filter((mint) => mint.confirmed === confirmed)
+      .filter((mint) => confirmed ? mint.confirmed === true : tokenEventIsPending(mint))
       .reduce((total, mint) => {
         const amount = ledgerAmountFromRecord(mint);
         if (amount === null) {
@@ -38393,10 +38468,10 @@ function workTokenStateWithDeltaTransactions(
       holders: holders.length,
       invalidEvents: invalidEvents.filter((event) => event.confirmed).length,
       pendingMints: mintSupplyTotals.pendingMints,
-      pendingTransfers: sortedTransfers.filter((transfer) => !transfer.confirmed)
+      pendingTransfers: sortedTransfers.filter(tokenEventIsPending)
         .length,
       pendingTokens: (Array.isArray(state.tokens) ? state.tokens : []).filter(
-        (token) => !token.confirmed,
+        tokenEventIsPending,
       ).length,
     },
     tokens,
@@ -39223,7 +39298,7 @@ async function liveWorkTokenState(network, cachedWorkTokenState, options = {}) {
   const mintSupplyTotals = workMintSupplyTotals(mergedMints);
   const exactMintSupply = (confirmed) =>
     mergedMints
-      .filter((mint) => mint.confirmed === confirmed)
+      .filter((mint) => confirmed ? mint.confirmed === true : tokenEventIsPending(mint))
       .reduce((total, mint) => {
         const amount = tokenLedgerAmountFromRecord(
           WORK_TOKEN_ID,
@@ -42226,7 +42301,7 @@ function tokenPayloadWithCurrentWorkActiveListingPolicy(
     currentListings.filter(
       (listing) =>
         listingTokenId(listing) === WORK_TOKEN_ID &&
-        listing?.confirmed !== true,
+        tokenEventIsPending(listing),
     ).length;
   const workLowestAskExact = canonicalWorkQ16SummaryUnitPriceDescriptor(
     workMarketSummary?.lowestAskPricePerTokenExact,
@@ -42322,7 +42397,7 @@ function tokenPayloadWithCurrentWorkActiveListingPolicy(
     pendingOpenCounts.length > 0 &&
     pendingOpenCounts.every((count) => count !== null)
       ? pendingOpenCounts.reduce((total, count) => total + count, 0)
-      : currentListings.filter((listing) => listing?.confirmed !== true).length;
+      : currentListings.filter(tokenEventIsPending).length;
   const collectionHasMore =
     cutoverPayload?.collectionHasMore &&
     typeof cutoverPayload.collectionHasMore === "object" &&
@@ -46845,7 +46920,7 @@ function bondSummaryPayloadFromLedger(ledger, config) {
       confirmedTransfers: confirmedTransfers.length,
       holders: (tokenState?.holders ?? []).length,
       pendingBondActions: (tokenState?.mints ?? []).filter(
-        (mint) => !mint.confirmed && mint.tokenId === config.tokenId,
+        (mint) => tokenEventIsPending(mint) && mint.tokenId === config.tokenId,
       ).length,
       pendingSupply,
     },
@@ -50921,6 +50996,11 @@ function boostAddress(value) {
   return String(value ?? "").trim();
 }
 
+function boostAddressKey(value) {
+  const address = boostAddress(value);
+  return /^(?:bc1|tb1|bcrt1)/iu.test(address) ? address.toLowerCase() : address;
+}
+
 function boostSignalSats(item) {
   return Math.max(
     0,
@@ -51175,6 +51255,7 @@ function boostOwnershipState(items) {
     const next = {
       listing: null,
       ownerAddress: "",
+      hidden: false,
     };
     states.set(txid, next);
     return next;
@@ -51198,7 +51279,7 @@ function boostOwnershipState(items) {
   };
 
   const ensureFollowState = (followerAddress) => {
-    const followerKey = boostAddress(followerAddress).toLowerCase();
+    const followerKey = boostAddressKey(followerAddress);
     if (!followerKey) {
       return null;
     }
@@ -51221,7 +51302,7 @@ function boostOwnershipState(items) {
       const followerAddress = boostAddress(item?.authorAddress ?? item?.actor);
       const targetAddress = boostFollowTargetAddress(item);
       const followerState = ensureFollowState(followerAddress);
-      const targetKey = targetAddress.toLowerCase();
+      const targetKey = boostAddressKey(targetAddress);
       if (followerState && targetKey) {
         followerState.set(targetKey, {
           following: kind === "boost-follow",
@@ -51256,7 +51337,7 @@ function boostOwnershipState(items) {
         ),
       );
       if (address && profileId) {
-        profiles.set(address.toLowerCase(), {
+        profiles.set(boostAddressKey(address), {
           address,
           id: profileId,
           image:
@@ -51311,7 +51392,14 @@ function boostOwnershipState(items) {
       continue;
     }
 
+    if (kind === "boost-hide") {
+      state.hidden = true;
+      state.listing = null;
+      continue;
+    }
+
     if (kind === "boost-list" || kind === "boost-seal") {
+      if (item.listingActive === false) continue;
       const priceSats = boostPriceSats(item);
       state.listing = priceSats > 0
         ? {
@@ -51427,6 +51515,9 @@ function boostFeedItemFromEvent(
 
   return {
     actionType,
+    validationScope: item?.validationScope,
+    stateTransitionVerified: item?.stateTransitionVerified === true,
+    boostAuthority: item?.boostAuthority,
     eventId: item?.eventId,
     actionCount:
       Number(counter.likes ?? 0) +
@@ -51523,8 +51614,7 @@ function boostFeedItemWithGraph(
   if (!feedItem) {
     return null;
   }
-  const authorKey = boostAddress(sourceItem?.authorAddress ?? sourceItem?.actor)
-    .toLowerCase();
+  const authorKey = boostAddressKey(sourceItem?.authorAddress ?? sourceItem?.actor);
   return {
     ...feedItem,
     followerCount: followersByTarget.get(authorKey)?.size ?? 0,
@@ -51534,11 +51624,11 @@ function boostFeedItemWithGraph(
 }
 
 function boostProfileSourceAuthorKey(item) {
-  return boostAddress(item?.authorAddress ?? item?.actor).toLowerCase();
+  return boostAddressKey(item?.authorAddress ?? item?.actor);
 }
 
 function boostProfileSourceOwnerKey(item, state, feedItem) {
-  return boostAddress(
+  return boostAddressKey(
     state?.ownerAddress ??
       feedItem?.currentOwnerAddress ??
       item?.currentOwnerAddress ??
@@ -51546,7 +51636,7 @@ function boostProfileSourceOwnerKey(item, state, feedItem) {
       item?.newOwnerAddress ??
       item?.buyerAddress ??
       item?.recipientAddress,
-  ).toLowerCase();
+  );
 }
 
 function boostProfileSourceIds(item, profileState) {
@@ -51577,7 +51667,7 @@ function boostProfileSubjectForQuery(
   if (!query) {
     return null;
   }
-  const queryKey = query.toLowerCase();
+  const queryKey = boostLooksLikeAddress(query) ? boostAddressKey(query) : query.toLowerCase();
   const queryId = boostLooksLikeAddress(query) ? "" : normalizePowId(query);
   let address = "";
   let profileState = null;
@@ -51599,7 +51689,7 @@ function boostProfileSubjectForQuery(
   }
 
   const adoptAddress = (value) => {
-    if (!address && boostAddress(value).toLowerCase() === queryKey) {
+    if (!address && boostAddressKey(value) === queryKey) {
       address = boostAddress(value);
     }
   };
@@ -51644,7 +51734,7 @@ function boostProfileSubjectForQuery(
     address = query;
   }
 
-  const addressKey = address.toLowerCase();
+  const addressKey = boostAddressKey(address);
   profileState = profileState ?? profiles.get(addressKey) ?? null;
   const id = boostDisplayName(profileState?.id, profileState?.profileId, queryId);
   return {
@@ -51825,7 +51915,7 @@ async function boostFeedPayload(network, searchParams, fresh = false) {
       searchParams.get("address") ??
       "",
   );
-  const viewerKey = viewerAddress.toLowerCase();
+  const viewerKey = boostAddressKey(viewerAddress);
   const query = String(
     searchParams.get("q") ?? searchParams.get("search") ?? "",
   )
@@ -51855,8 +51945,14 @@ async function boostFeedPayload(network, searchParams, fresh = false) {
       ])
     : [null, null];
   const btcUsd = btcUsdFromQuote(quote) || numericValue(workFloor?.btcUsd);
-  const sourceItems = indexedPayload.items.filter((item) => item?.valid !== false &&
-    (item?.confirmed !== false || (includePending && item?.status === "pending")));
+  const candidateItems = indexedPayload.items.filter((item) =>
+    item?.confirmed !== false || (includePending && item?.status === "pending"));
+  const transactionAuthority = await proofIndexBoostAuthorityWitnesses(network, indexedPayload);
+  if (!Array.isArray(transactionAuthority?.registryActivity)) {
+    throw boostProjectionError("Complete historical Boost registry authority is unavailable.");
+  }
+  const authority = validateBoostAuthority(candidateItems, transactionAuthority);
+  const sourceItems = authority.items;
   const usesWorkValuation = sourceItems.some((item) => Boolean(boostWorkSignalSubatoms(item)));
   if (usesWorkValuation) assertBoostValuationCheckpoint(indexedPayload, workFloor);
   const {
@@ -51892,15 +51988,15 @@ async function boostFeedPayload(network, searchParams, fresh = false) {
         return false;
       }
       const state = states.get(boostPostTxid(item));
+      if (state?.hidden) return false;
       // A sale ticket belongs to the original post, not each reply/reboost
       // referencing it. Discovery returns each original asset exactly once.
       if (listingsOnly && (!state?.listing || item?.confirmed === false ||
           kind !== "boost-post" || boostPostTxid(item) !== boostHexTxid(item?.txid))) return false;
       const profileState = profiles.get(
-        boostAddress(item?.authorAddress ?? item?.actor).toLowerCase(),
+        boostAddressKey(item?.authorAddress ?? item?.actor),
       );
-      const authorKey = boostAddress(item?.authorAddress ?? item?.actor)
-        .toLowerCase();
+      const authorKey = boostAddressKey(item?.authorAddress ?? item?.actor);
       if (
         !listingsOnly && !profileSubject &&
         view === "following" &&
@@ -51916,7 +52012,7 @@ async function boostFeedPayload(network, searchParams, fresh = false) {
           item,
           states.get(boostPostTxid(item)),
           profiles.get(
-            boostAddress(item?.authorAddress ?? item?.actor).toLowerCase(),
+            boostAddressKey(item?.authorAddress ?? item?.actor),
           ),
           counts,
           network,
@@ -51964,6 +52060,7 @@ async function boostFeedPayload(network, searchParams, fresh = false) {
   return {
     complete: true,
     provenance: indexedPayload.provenance,
+    authority: { model: authority.model, complete: true, outcomes: authority.outcomes },
     snapshotId: indexedPayload.snapshotId,
     indexedThroughBlockHash: indexedPayload.indexedThroughBlockHash,
     hasMore: page.hasMore,
@@ -53988,10 +54085,10 @@ async function standaloneBondSummaryPayload(network, fresh = false, config) {
       holders: state.holders.length,
       invalidEvents: (state.invalidEvents ?? []).filter((event) => event.confirmed)
         .length,
-      pendingMints: state.mints.filter((mint) => !mint.confirmed).length,
-      pendingTransfers: state.transfers.filter((transfer) => !transfer.confirmed)
+      pendingMints: state.mints.filter(tokenEventIsPending).length,
+      pendingTransfers: state.transfers.filter(tokenEventIsPending)
         .length,
-      pendingTokens: state.tokens.filter((token) => !token.confirmed).length,
+      pendingTokens: state.tokens.filter(tokenEventIsPending).length,
       registries: registryAddress ? 1 : 0,
       transactions: activity.length,
     },
@@ -60665,6 +60762,10 @@ function mailEventHistoryItemNeedsActorHydration(item, address, network) {
 async function mailPayloadWithIndexedEventOverlay(payload, address, network) {
   if (
     !payload ||
+    // The complete primary reader includes canonical payload fallbacks and
+    // preserves exact message bytes. A bounded confirmed overlay adds no
+    // inventory and can discard recipient output positions during merging.
+    payload.complete === true ||
     network !== "livenet" ||
     !proofIndexReadFeatureEnabled("event-history,events")
   ) {
@@ -69972,7 +70073,7 @@ async function tokenVerifierDeterministicInvalidReason(
         .filter((mint) => mint?.confirmed === true)
         .reduce((total, mint) => total + Number(mint.amount), 0);
       const pendingSupply = acceptedMints
-        .filter((mint) => mint?.confirmed !== true)
+        .filter(tokenEventIsPending)
         .reduce((total, mint) => total + Number(mint.amount), 0);
       if (
         Number.isSafeInteger(maxSupply) &&

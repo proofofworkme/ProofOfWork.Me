@@ -1,0 +1,878 @@
+{
+  "version": 1,
+  "capturedAt": "2026-09-09T01:32:19.254540+00:00",
+  "status": "partial-verification-not-a-release-attestation",
+  "auditBaselineCommit": "40c7fa0",
+  "approvalCheckpointCommit": "a80c58c",
+  "productionTransitionGate": "closed",
+  "productionMutations": [],
+  "checks": [
+    {
+      "command": "npm run check:work-precision-v2",
+      "exitCode": 0,
+      "receipt": "/tmp/pow-audit6-implementation/work-precision-v2.txt",
+      "sha256": "7256a644b113370859eaa5dbee570f1222dd9cff960f65be65e16c2064a364bb"
+    },
+    {
+      "command": "npm run check:bond-exact-arithmetic",
+      "exitCode": 0,
+      "receipt": "/tmp/pow-audit6-implementation/bond-exact-arithmetic.txt",
+      "sha256": "5b54a06cdf81ee5b53f914610d0b5ef080bd61ad0091ed0170dcdb466be60ece"
+    },
+    {
+      "command": "npm run check:work-amo-v8",
+      "exitCode": 0,
+      "receipt": "/tmp/pow-audit6-implementation/work-amo-v8.txt",
+      "sha256": "494050706e18e034fb653fb843a67c9f27ef84bd451d935fdfd15a2137bfa014"
+    },
+    {
+      "command": "npm run check:api-truth",
+      "exitCode": 0,
+      "receipt": "/tmp/pow-audit6-implementation/api-truth.txt",
+      "sha256": "417775c69522d448c0e0c98c3080d29f7a070b3fd12cd911ae65a27f02dac327",
+      "qualification": "Completed before independent final registry-encoder review; fresh registry strengthening will require its own final-source checks."
+    },
+    {
+      "command": "npm run check:hardening",
+      "exitCode": 0,
+      "receipt": "/tmp/pow-audit6-implementation/hardening.txt",
+      "sha256": "4e7fb56c3c35c651904090ec103c4681b07b9a377cdf12add556b9a7b9983d83",
+      "qualification": "Completed before independent final registry-encoder review; fresh registry strengthening will require its own final-source checks."
+    },
+    {
+      "command": "npm run check:server-globals",
+      "exitCode": 0,
+      "receipt": "/tmp/pow-audit6-implementation/server-globals.txt",
+      "sha256": "941b4d32fbb160e1b3efbeb2bfa8106f15f533969fc4b230f30c8e3b0d40975a",
+      "qualification": "Completed before independent final registry-encoder review; fresh registry strengthening will require its own final-source checks."
+    },
+    {
+      "command": "npm run check:index-recovery-behavior",
+      "exitCode": 0,
+      "receipt": "/tmp/pow-audit6-implementation/index-recovery-behavior-final.txt",
+      "sha256": "ef1bc2ee6baff54e3a22997458cfbc414d0af5354257457ead3aae55e0486fb6",
+      "qualification": "Completed before independent final registry-encoder review; fresh registry strengthening will require its own final-source checks."
+    },
+    {
+      "command": "npm run check:audit6-work-readiness",
+      "exitCode": 0,
+      "receipt": "/tmp/pow-audit6-implementation/audit6-work-readiness.txt",
+      "sha256": "45301ed032a646ab92b97c603dc4e20a01c5f243bd23c684ab72ef17c36a57ea",
+      "qualification": "Completed before independent final registry-encoder review; fresh registry strengthening will require its own final-source checks."
+    }
+  ],
+  "nodeBackedCandidateChecks": {
+    "boost-live-candidate-result.json": {
+      "receipt": "/tmp/pow-audit6-implementation/backend/boost-live-candidate-result.json",
+      "sha256": "d0ff69f7cef90ef9c812cc31c11ab8c82618739f396efebf69a46e1d37d4c0f8",
+      "result": {
+        "checkpoint": {
+          "network": "livenet",
+          "indexedThroughBlock": 966128,
+          "indexedThroughBlockHash": "000000000000000000006fc6869fb4f05e94d8a78ddd64c1be8710389554308c",
+          "snapshotId": "11642f69d5cb758d550573b8"
+        },
+        "rows": 3,
+        "registryRows": 1,
+        "outcomes": [
+          {
+            "txid": "ec52602d518517480b37b93cebb88dbecaf752b38ffafc3bc76eb8dca5b3a793",
+            "protocolVout": 1,
+            "recordOrdinal": 0,
+            "accepted": true
+          },
+          {
+            "txid": "b7348e6c40b4327120282cc828cf6ee6a5e4ff5f4bc13da88f45e9e7a251012c",
+            "protocolVout": 1,
+            "recordOrdinal": 0,
+            "accepted": true
+          },
+          {
+            "txid": "0c887ed6f7dbe415a2bfd88c1bdcb0c5c1681fee339d64bba644e703c8c759c5",
+            "protocolVout": 1,
+            "recordOrdinal": 0,
+            "accepted": true
+          }
+        ],
+        "signals": [
+          {
+            "txid": "ec52602d518517480b37b93cebb88dbecaf752b38ffafc3bc76eb8dca5b3a793",
+            "proofSignalSats": 546,
+            "workSignalSubatoms": "0"
+          },
+          {
+            "txid": "b7348e6c40b4327120282cc828cf6ee6a5e4ff5f4bc13da88f45e9e7a251012c",
+            "proofSignalSats": 546,
+            "workSignalSubatoms": "1000000000"
+          },
+          {
+            "txid": "0c887ed6f7dbe415a2bfd88c1bdcb0c5c1681fee339d64bba644e703c8c759c5",
+            "proofSignalSats": 546,
+            "workSignalSubatoms": "10000000000"
+          }
+        ]
+      }
+    },
+    "mail-candidate-parity-final.json": {
+      "receipt": "/tmp/pow-audit6-implementation/backend/mail-candidate-parity-final.json",
+      "sha256": "853ca437737b5c5aa676224230892adc5388c06a0f5177ddf8ee630ccfdc1eb8",
+      "result": {
+        "oldStatus": 200,
+        "oldMs": 8021,
+        "candidateMs": 41,
+        "pagination": {
+          "model": "address-mail-complete-keyset-v1",
+          "pages": 2,
+          "events": 30
+        },
+        "membership": [
+          {
+            "folder": "inboxMessages",
+            "old": 22,
+            "candidate": 22,
+            "equal": true
+          },
+          {
+            "folder": "sentMessages",
+            "old": 11,
+            "candidate": 11,
+            "equal": true
+          }
+        ],
+        "semanticDifferences": [],
+        "addedRecipientPositions": 35,
+        "candidateMessagePositions": 32,
+        "welcomeHtml": {
+          "bytes": 1018,
+          "sha256": "f05b31a5f4dfabff5fb0ffe3bef1a03de4a8f5c562694609114ae6d352e9caad",
+          "finalNewline": true
+        },
+        "evidenceSha256": "f30a1842336d8009a4bb4102f104ea3e12664ffb8601d845897b361b376396d4"
+      }
+    }
+  },
+  "productionObservation": {
+    "node": {
+      "at": "2026-09-09T00:55:33.014537+00:00",
+      "release": "f34268758527260caf110d78458d63daf71a9e5c",
+      "filesystems": [
+        {
+          "path": "/",
+          "totalBytes": 105089261568,
+          "freeBytes": 81292341248,
+          "availableBytes": 75906854912,
+          "usedBytes": 23796920320,
+          "totalInodes": 6553600,
+          "freeInodes": 6187535,
+          "availableInodes": 6187535
+        },
+        {
+          "path": "/data",
+          "totalBytes": 1764768071680,
+          "freeBytes": 467248590848,
+          "availableBytes": 377527816192,
+          "usedBytes": 1297519480832,
+          "totalInodes": 109502464,
+          "freeInodes": 109475077,
+          "availableInodes": 109475077
+        }
+      ],
+      "databaseSizes": [
+        {
+          "datname": "proof_indexer",
+          "bytes": "23595916311"
+        },
+        {
+          "datname": "postgres",
+          "bytes": "7748631"
+        },
+        {
+          "datname": "template1",
+          "bytes": "7748631"
+        },
+        {
+          "datname": "template0",
+          "bytes": "7520783"
+        }
+      ],
+      "wal": [
+        {
+          "files": 5,
+          "bytes": "83886080"
+        }
+      ],
+      "slots": [
+        {
+          "slot_name": "pg_receivewal_service",
+          "slot_type": "physical",
+          "active": true,
+          "wal_status": "reserved",
+          "safe_wal_size": "17193279576",
+          "retained_bytes": "3366824"
+        }
+      ],
+      "activeQueries": [],
+      "longTransactions": [],
+      "core": {
+        "blocks": 966128,
+        "headers": 966128,
+        "bestblockhash": "000000000000000000006fc6869fb4f05e94d8a78ddd64c1be8710389554308c",
+        "initialblockdownload": false,
+        "pruned": false,
+        "warnings": []
+      },
+      "healthHttpStatus": 200,
+      "receiptSha256": "90d7a224b05ce113619b06b2811841bbc39e7e90a57a3e2e62f297ed36ccd85b"
+    },
+    "ui": {
+      "at": "2026-09-09T00:55:27.885778+00:00",
+      "filesystems": [
+        {
+          "path": "/",
+          "totalBytes": 39973924864,
+          "freeBytes": 19576700928,
+          "availableBytes": 17892507648,
+          "usedBytes": 20397223936,
+          "totalInodes": 2427136,
+          "freeInodes": 2355725,
+          "availableInodes": 2355725
+        }
+      ],
+      "releaseManifest": {
+        "errorType": "JSONDecodeError"
+      },
+      "receiptSha256": "dbfb6048eb6ca04fa808c85a7d4a5547a4043ab7fa89248a42cbe9d830c30de1"
+    }
+  },
+  "browserChecks": {
+    "timeline": "One Timeline link in left action panel; none in profile copy. Screenshot retained locally.",
+    "credit375": "documentWidth360 at viewport375; no horizontal overflow. Final disconnected copy prompts wallet connection without claiming zero.",
+    "infinityFloor": "Floor selected; label left437.015625 is inside SVG left394.5; screenshot retained locally.",
+    "home": "Ellipsis present; original transaction source link unchanged.",
+    "qualification": "Local UI using production read API for normal views and a separate isolated HTTP fixture for failure states. No wallet connected/signing. Playwright runner file not executed; manual Chrome checks are separate. No complete candidate-backend integration claim.",
+    "creditFailureRetry": "Manual Chrome via isolated local HTTP fixture: both cold and retained history failures show unavailable, Retry then successful empty response shows No holders/No mints.",
+    "coldIds": "Delayed registry response: Loading registry, disabled Register ID, connect wallet for owned/pending IDs, verifying records; no false empty claims.",
+    "disconnectedInbox": "Connect your wallet to view mail; no No Inbox messages claim.",
+    "workHigh": "Exact current Q8 displayed identically in floor and chart High; numeric-only historical values explicitly approximate."
+  },
+  "remainingGates": [
+    "integrated release checks and final build at exact candidate commit",
+    "complete current-node reconciliation before shipping",
+    "session-independent UI recovery including new-asset continuity",
+    "systemd recovery certification on isolated host resources",
+    "no-outage node route/writer handoff and rollback proof",
+    "named cleanup candidates still require non-use and retained-recovery proof"
+  ],
+  "uiCandidate": {
+    "utc": "2026-09-09T01:29:39.513044+00:00",
+    "checkout": "/tmp/proofofwork-audit6-remediation",
+    "status": "UI implementation and single clean build complete; parent owns hygiene, commit, deployment and production verification",
+    "files": {
+      "src/App.tsx": {
+        "bytes": 1782953,
+        "sha256": "a7b3be6ccfb48599a8fd69b4415d1fbdec0c04b3e88855eed6130ecb4edd0c12"
+      },
+      "src/styles.css": {
+        "bytes": 174502,
+        "sha256": "07109828105cdbe19d45dc8ef71483071e218f753b1b5e6993dacad641817021"
+      },
+      "src/shared/api/canonicalReadAuthority.ts": {
+        "bytes": 4730,
+        "sha256": "0880c6794e059a81e2cf8581d9b21af83298be246f05482b5b1916ce3381b2df"
+      },
+      "scripts/check-audit6-ui-lifecycle.mjs": {
+        "bytes": 15123,
+        "sha256": "602b777ffc6c3dcf06b5f4c22c6ee3eb364260805ebad5dd27fca90b8aba0b71"
+      },
+      "scripts/check-audit6-ui-authority.mjs": {
+        "bytes": 14516,
+        "sha256": "b976c1f2b9fb0894253b94a032b66a1cdc8659799c51090ef4a873fe8d88eafc"
+      },
+      "scripts/check-audit6-ui-display.mjs": {
+        "bytes": 13130,
+        "sha256": "e126a8e8a3a4fdc559bd981a41e5bd33c597221839ad73b5fbd7e9ca8412dc74"
+      },
+      "tests/browser/audit6-read-state.spec.mjs": {
+        "bytes": 4442,
+        "sha256": "07e0ae107288876372340b2f3c2b0efe75271c5daf8b5a15ded722a40653766c"
+      },
+      "scripts/check-ui-contract.mjs": {
+        "bytes": 166051,
+        "sha256": "226f253a041c7e2322c5b323338211122abc3a2f4e0d16055f98eb6a9dca2469"
+      },
+      "scripts/check-live-data-contract.mjs": {
+        "bytes": 212123,
+        "sha256": "b2f23e1afc36b11248c88378bc293233489661659471013a3ff799520dc6576b"
+      },
+      "scripts/check-surface-read-state.mjs": {
+        "bytes": 7742,
+        "sha256": "427b8fb8e619e6d5c2272074ed692d24fedaff152ab6ad62f0c630c76bd2e1e0"
+      }
+    },
+    "tests": {
+      "npm run check:audit6-ui": {
+        "exit": 0,
+        "output": "/tmp/pow-ui-final-suite.txt",
+        "results": [
+          {
+            "ok": true,
+            "coverage": [
+              "Desktop latest target owns success/error/loading; superseded read aborted",
+              "Log current-query reference and unified page request ownership",
+              "Log 15-second effect keeps verified tx query and does not submit edited text",
+              "Log distinct protocol records survive; pending rematerialization keeps stable key",
+              "Wallet old UTXO results cannot restore spent outputs in either read lane",
+              "Mail rejects prior account/network/workspace/wallet generation after await",
+              "Same-block book and explicit fresh read recheck volatile outpoint authority",
+              "Credit failed history remains unavailable/last verified; same-count revision reloads",
+              "Complete book aggregate deadline and caller cancellation release timer and never accept a partial book"
+            ]
+          },
+          {
+            "ok": true,
+            "negativeChecks": 65,
+            "coverage": [
+              "complete registry contraction accepts fresh fenced canonical replacement",
+              "partial/mismatched/missing/stale authority refused",
+              "new canonical bond/Growth decreases accepted exactly",
+              "older read cannot restore prior branch",
+              "timestamps are not used as authority",
+              "WORK branch replacement preserves declaration fail-closed boundary",
+              "response network is never manufactured from the request",
+              "Log ID resolution cannot bypass full-registry contraction authority",
+              "AMO exact summary appears before a deferred complete book; book failure never promotes action/reservation state"
+            ]
+          },
+          {
+            "ok": true,
+            "coverage": [
+              "Standalone and embedded Browser network changes invalidate old page completion",
+              "Bond floor and very large supply/backing labels fit reserved SVG gutter",
+              "AMO network value status formatter retains every Q8 digit",
+              "Credit/WORK/bond balance notes distinguish disconnected, pending read, unavailable, and verified zero",
+              "Raw Boost Log wire validation is distinct from verified state transition",
+              "WORK chart extrema and point labels retain Q8 digits below floating-point resolution; historical-only and USD labels qualify approximation",
+              "Bond Floor/Backing extrema and point labels retain Q8 differences without formatting float geometry as exact history"
+            ]
+          }
+        ]
+      },
+      "npm run check:ui": {
+        "exit": 0,
+        "output": "/tmp/pow-ui-contract-final-result.txt"
+      },
+      "npm run check:live-data": {
+        "status": "passed",
+        "output": "/tmp/pow-ui-live-data-final-result.txt",
+        "exit": 0
+      },
+      "git diff --check": {
+        "exit": 0,
+        "scope": "owned UI files checked after clean build"
+      },
+      "npm run build": {
+        "exit": 0,
+        "cleanOutputDirectory": true,
+        "overlappingBuilds": false,
+        "output": "/tmp/pow-ui-build-clean-final-result.txt"
+      },
+      "tests/browser/audit6-read-state.spec.mjs": {
+        "status": "not executed by ui_audit; root owns browser"
+      },
+      "node scripts/check-audit6-ui-display.mjs": {
+        "exit": 0,
+        "output": "/tmp/pow-ui-display-result.json",
+        "result": {
+          "ok": true,
+          "coverage": [
+            "Standalone and embedded Browser network changes invalidate old page completion",
+            "Bond floor and very large supply/backing labels fit reserved SVG gutter",
+            "AMO network value status formatter retains every Q8 digit",
+            "Credit/WORK/bond balance notes distinguish disconnected, pending read, unavailable, and verified zero",
+            "Raw Boost Log wire validation is distinct from verified state transition",
+            "WORK chart extrema and point labels retain Q8 digits below floating-point resolution; historical-only and USD labels qualify approximation",
+            "Bond Floor/Backing extrema and point labels retain Q8 differences without formatting float geometry as exact history",
+            "ID empty-state rendering requires a settled verified registry and owned/pending emptiness requires a connected account"
+          ]
+        }
+      }
+    },
+    "authorityLimits": [
+      "Fresh provenance and count/checkpoint consistency are required for canonical state contraction; timestamps are not authority.",
+      "Coherent AMO summary preview does not acquire fresh replacement authority and never publishes partial action/reservation state.",
+      "Historical numeric-only chart points, derived axes and USD conversions are approximate; authoritative supplied Q8 labels and Q16 wallet balances retain exact text.",
+      "Protocol arithmetic, signing and fresh preflight functions were not changed."
+    ],
+    "backendIndependentReview": {
+      "probe": "/tmp/pow-ui-boost-review-probes.json",
+      "findingsSentTo": "root and math_checks",
+      "findings": [
+        "A valid pre-Boost WORK registry fee was rejected as a signal recipient; backend agent reports exact fee reservation and real-wire regression added.",
+        "Ticket retirement had multiplicative event/asset/spend scans; backend agent replaced with sorted spends and outpoint lookup.",
+        "Duplicate original-asset txid creations are ambiguous under documented txid asset identity; backend agent reports fail-closed coverage added."
+      ],
+      "trustBoundary": "Actor previous-output script trusts private Core-enriched canonicalBlockScan evidence; current txid, wire outputs and input outpoint are bound. This is not independently replaying the previous transaction."
+    },
+    "productionMutationsByUiAgent": false,
+    "commitsByUiAgent": false,
+    "historicalAuditFixturesModified": false,
+    "sourceChangesSincePrebuildReceipt": [],
+    "buildArtifacts": {
+      "dist/assets/App-Z89mfc_3.js": {
+        "bytes": 772450,
+        "sha256": "f94528f965ea339de9b5190c5757820fd982dea90d3082bc17f46f4d9916e8d8"
+      }
+    },
+    "remainingQualification": [
+      "The new mocked browser spec was not run by this agent; parent manual browser receipts are separate.",
+      "Historic numeric-only chart points, derived axes and USD overlays remain explicitly approximate.",
+      "The large shared App bundle remains a build size warning; this change improves read latency and correctness but does not split that bundle."
+    ]
+  },
+  "backendCandidate": {
+    "createdAt": "2026-09-09T01:25:37.931355+00:00",
+    "status": "backend-source-frozen-awaiting-root-full-recovery-and-release-gates",
+    "tests": {
+      "eventAuthorityAndLifecycle": {
+        "passed": 19,
+        "failed": 0,
+        "receipt": "event-authority-regressions-final.tap"
+      },
+      "boostIntegration": {
+        "passed": 12,
+        "failed": 0,
+        "receipt": "boost-regressions-final.tap"
+      },
+      "mailPagination": {
+        "passed": 5,
+        "failed": 0,
+        "receipt": "mail-pagination-regressions-final.tap"
+      },
+      "syntax": "passed",
+      "gitDiffCheck": "passed"
+    },
+    "liveBoostReader": {
+      "ok": true,
+      "durationMs": 3267,
+      "checkpoint": {
+        "height": 966131,
+        "hash": "00000000000000000000907935322a4072a882cca19bc883f2deae529cb993cb",
+        "snapshotId": "a1ea54d3b1efee2bca194e5d",
+        "time": "2026-09-09T01:18:55.000Z"
+      },
+      "historyCount": 3,
+      "witnessCount": 3,
+      "registryActivityCount": 1,
+      "ticketSpendCount": 0,
+      "outcomes": [
+        {
+          "txid": "ec52602d518517480b37b93cebb88dbecaf752b38ffafc3bc76eb8dca5b3a793",
+          "protocolVout": 1,
+          "recordOrdinal": 0,
+          "accepted": true
+        },
+        {
+          "txid": "b7348e6c40b4327120282cc828cf6ee6a5e4ff5f4bc13da88f45e9e7a251012c",
+          "protocolVout": 1,
+          "recordOrdinal": 0,
+          "accepted": true
+        },
+        {
+          "txid": "0c887ed6f7dbe415a2bfd88c1bdcb0c5c1681fee339d64bba644e703c8c759c5",
+          "protocolVout": 1,
+          "recordOrdinal": 0,
+          "accepted": true
+        }
+      ],
+      "items": [
+        {
+          "txid": "ec52602d518517480b37b93cebb88dbecaf752b38ffafc3bc76eb8dca5b3a793",
+          "proofSignalSats": 546,
+          "workSignalSubatoms": "0",
+          "authorAddress": "1KNkUBREnfno2BeV7QsBf8XCWZN6YFfxPH",
+          "stateTransitionVerified": true
+        },
+        {
+          "txid": "b7348e6c40b4327120282cc828cf6ee6a5e4ff5f4bc13da88f45e9e7a251012c",
+          "proofSignalSats": 546,
+          "workSignalSubatoms": "1000000000",
+          "authorAddress": "bc1p0uxp0axptr8rg9dndgtlwxn00j4hq8m88kg80tqd0t6045putwhq5ca7ed",
+          "stateTransitionVerified": true
+        },
+        {
+          "txid": "0c887ed6f7dbe415a2bfd88c1bdcb0c5c1681fee339d64bba644e703c8c759c5",
+          "proofSignalSats": 546,
+          "workSignalSubatoms": "10000000000",
+          "authorAddress": "19JE7LS6TtQ4uSxu6ivJVZRiJyXXe8qEG3",
+          "stateTransitionVerified": true
+        }
+      ]
+    },
+    "mailParityReceipt": "mail-candidate-parity-final.json",
+    "productionMutations": false,
+    "limits": [
+      "No new full canonical ledger replay or script/UTXO replay. First-input previous-output script is trusted private Core canonicalBlockScan enrichment; current outpoints, outputs and carriers are wire-bound.",
+      "Boost accepted WORK uses canonical accepted replay outcome, exact physical position and amount; pre-activation indexed forms remain supported. Raw Log is wire-shape-only and does not mark an unevaluated state transition rejected. Growth remains its documented shape-valid accounting cohort.",
+      "Complete mailbox means exhaustion of indexed mail events inside one repeatable-read read-only transaction. It is not a new complete Core transaction inventory audit. Pending mail enrichments retain their separate best-effort contract.",
+      "No schema or protocol migration and no raw history rewrite. Existing normalized social participants/refs need a scoped rematerialization only if historic follow/unfollow records exist; current complete Boost inventory has 3 posts and no such rows. Existing caches/snapshots need ordinary projection refresh after rollout, not ledger arithmetic rewrite.",
+      "Two otherwise accepted original asset carriers with one txid make the Boost authority projection fail closed because the existing protocol has only txid asset identity. No arbitrary winner is introduced.",
+      "Ticket expiry uses canonical checkpoint block time. All future sale paths have bounded deterministic fixtures; current live history has no Boost sales.",
+      "The first actual-reader shadow failed from a harness-only bitcoinjs CJS/ESM ECC singleton mismatch; corrected harness matches production ESM. Failed receipt retained.",
+      "No commit, deploy, restart, signing, database mutation or production cleanup was performed by this subtask. Root owns hygiene and final deployment gates."
+    ],
+    "sourceSha256": {
+      "server/boost-authority.mjs": "278c55229db80afb9a3c4d20878579e1d0453c89bd423b181b76a52d7e2b6b4c",
+      "server/db/boost-authority-reader.mjs": "4710a0673fdb74e53248a86ecb7c2c8cbfe4735d9a4a39e0de848b30280cae27",
+      "server/address-mail-pagination.mjs": "ed9c53b94cb199a906dc4936aaa92a190d5ac106fa570512952f736c95c46bc0",
+      "server/token-event-lifecycle.mjs": "04543f217470a3ab840c7427c82a311a6bbb5c1518c44ffdf56b2f780ac5141b",
+      "server/proof-index-event-relations.mjs": "c8575a10d9b72d30809268e97d24bc54cc08614340f23abde5fd5929ba30690f",
+      "scripts/check-event-authority-regressions.mjs": "5311477e00de148cb59e4cc8ae81bf798eda940b61d1f0f1ad0441a922f04258",
+      "scripts/check-boost-regressions.mjs": "d74625dcff20a25be7d0454d511af542468f78b8a3b30179047f087785423382",
+      "scripts/check-mail-pagination-regressions.mjs": "f89e7c709330307b3a345201fa6ed8eace3ea13d505da86f1af19ad281324a4a"
+    }
+  },
+  "registryReview": "Independent review found legacy full parity resolver can omit a later valid post-activation PWID carrier. Current source strengthening is moving full-record authority to an exact accepted-index MVCC read with Core fences; legacy behavior remains historical. End-to-end H6-05 release gate remains closed.",
+  "liveSummaryBudgetIncident": {
+    "observedAt": "2026-09-09T01:38:25Z",
+    "fullNodeHeight": 966134,
+    "canonicalScanHeight": 966134,
+    "lastGoodSummaryHeight": 966131,
+    "lastGoodSnapshotId": "a1ea54d3b1efee2bca194e5d",
+    "compactCandidateBytes": 16803750,
+    "workerCompactBudgetBytes": 16777216,
+    "lastGoodSqlTextBytes": 17231973,
+    "apiSqlTextBudgetBytes": 18874368,
+    "amoHttpStatus": 503,
+    "workerAutomaticRestarts": 4,
+    "cause": "deterministic canonical summary compact storage budget exceeded",
+    "productionChangesByThisImplementation": false,
+    "recoveryStatus": "bounded same-code worker recovery under preparation; independent recovery gate remains closed",
+    "componentSqlTextBytes": {
+      "summaryPayloads": 17212902,
+      "marketplaceSummary": 5811249,
+      "marketplaceSummary.token": 5219965,
+      "workSummary": 5406775,
+      "workSummary.token": 4819477,
+      "tokenSummary": 5219849,
+      "tokenSummary.listings": 4318975
+    },
+    "receipt": "/tmp/pow-audit6-implementation/ops/amo-budget-incident.json",
+    "limitations": "Captured last-good payload component sizes, not a stored failed candidate. SQL text and compact JSON byte measures differ. API and worker currently both configure compact16MiB/SQL18MiB. No budget or service changes made."
+  },
+  "browserFontQualification": "Initial Vite geometry observations used fallback fonts because the worktree dependency symlink resolved outside its serving allowlist. Recheck Credit and Infinity with local dependency copy or built preview before final visual acceptance.",
+  "finalMvccApplicationChecks": {
+    "at": "2026-09-09T01:43:22.550461+00:00",
+    "indexRecoveryBehavior": {
+      "passed": 504,
+      "total": 504,
+      "exit": 0,
+      "receipt": "/tmp/pow-audit6-implementation/index-recovery-behavior-final-mvcc.txt"
+    },
+    "registry": {
+      "exit": 0,
+      "fixtureGroups": 8
+    },
+    "eventAuthority": {
+      "exit": 0,
+      "checks": 19
+    },
+    "mailPagination": {
+      "exit": 0,
+      "checks": 5
+    },
+    "apiTruth": {
+      "exit": 0
+    },
+    "readinessDiagnostics": {
+      "exit": 0
+    },
+    "hygiene": {
+      "exit": 0,
+      "receipt": "/tmp/pow-audit6-implementation/hygiene-application-check.txt"
+    }
+  },
+  "registryStrengthening": {
+    "createdAt": "2026-09-09T01:40:57.676131+00:00",
+    "scope": "H6-05 registry canonical replacement authority correction; independent readiness diagnostic review",
+    "changes": [
+      "Fresh registry uses complete accepted raw-bound indexed state in one REPEATABLE READ READ ONLY client; complete scan and exact canonical height/hash required.",
+      "Materialized owner/receiver/PGP/registration position/last mutation must match complete accepted lifecycle fold from the same snapshot.",
+      "Core checks checkpoint before/after and every candidate sale-ticket UTXO including mempool; indexed spent flags do not suppress candidates before Core reconciliation.",
+      "Fresh Core membership filters pending indexed candidates from every collection; candidate membership must remain stable across the read. Pending completeness remains explicitly best effort within indexed candidates.",
+      "Only the new private MVCC/Core observation can produce full-record public authority. Historical all-height parity resolver remains unchanged and cannot attest post-activation canonical semantics.",
+      "Raw Log/Boost and token math changes from previous handoff remain unchanged."
+    ],
+    "counterexample": {
+      "scope": "Actual legacy resolver and actual raw evaluatePwid+aggregateClaim, both using canonical valid r2 parser and exact fee allocator. Map copying and outer block context isolated. Not a full raw block replay.",
+      "txOutputs": [
+        {
+          "vout": 0,
+          "registryProofs": 1000
+        },
+        {
+          "vout": 1,
+          "id": "first-id"
+        },
+        {
+          "vout": 2,
+          "registryProofs": 1000
+        },
+        {
+          "vout": 3,
+          "id": "second-id"
+        }
+      ],
+      "freshRecords": [
+        "first-id"
+      ],
+      "rawOutcomes": [
+        {
+          "protocolVout": 1,
+          "valid": true,
+          "reasonCode": "",
+          "id": "first-id"
+        },
+        {
+          "protocolVout": 3,
+          "valid": true,
+          "reasonCode": "",
+          "id": "second-id"
+        }
+      ],
+      "rawClosingRecords": [
+        "first-id",
+        "second-id"
+      ],
+      "canonicalPhysicalFeeAssignments": [
+        {
+          "protocolVout": 1,
+          "accepted": true,
+          "claimedVouts": [
+            0
+          ]
+        },
+        {
+          "protocolVout": 3,
+          "accepted": true,
+          "claimedVouts": [
+            0,
+            2
+          ]
+        }
+      ],
+      "sourceLine": "idRegistryStateFromTransactions firstIdProtocolOutputIndex vs evaluatePwid aggregateClaim record.position.protocolVout"
+    },
+    "verification": {
+      "fixtureGroupsPassed": 8,
+      "fixtureGroupsFailed": 0,
+      "fixtureReceipt": "registry-provenance-strengthened.tap",
+      "priorCapturedRegistryLifecycleParity": {
+        "records": 505,
+        "activity": 535,
+        "passed": true
+      },
+      "nodeShadow": {
+        "ok": true,
+        "candidateMs": 819,
+        "checkpoint": {
+          "height": 966134,
+          "hash": "00000000000000000000719ab943c1575bc44272bbd035f72fad2f4a03016548"
+        },
+        "provenance": {
+          "contract": "proof-of-work-canonical-registry-v1",
+          "network": "livenet",
+          "surface": "registry",
+          "ready": true,
+          "coherent": true,
+          "served": "exact-tip",
+          "indexedThroughBlock": 966134,
+          "indexedThroughBlockHash": "00000000000000000000719ab943c1575bc44272bbd035f72fad2f4a03016548",
+          "tipHeight": 966134,
+          "tipHash": "00000000000000000000719ab943c1575bc44272bbd035f72fad2f4a03016548",
+          "snapshotId": "40483a7d33db64ada779244e81490019d190e83b66e822bbbccaef1785aa6112",
+          "completeCollections": {
+            "records": true
+          },
+          "authoritySource": "complete-indexed-canonical-scan+core-fence",
+          "pendingAuthority": "best-effort-core-membership-filtered-indexed-candidates",
+          "generatedAt": "2026-09-09T01:38:51.271Z"
+        },
+        "stats": {
+          "confirmed": 505,
+          "confirmedSales": 4,
+          "confirmedSalesVolumeSats": 22000,
+          "activeListings": 6,
+          "listingCount": 6,
+          "listings": 6,
+          "pending": 0,
+          "pendingChanges": 0,
+          "pendingRecords": 0,
+          "pendingSales": 0,
+          "pendingSalesVolumeSats": 0,
+          "sales": 4,
+          "salesVolumeSats": 22000,
+          "total": 505,
+          "transactions": 535
+        },
+        "collectionCounts": {
+          "listings": 6,
+          "records": 505,
+          "sales": 4,
+          "activity": 535,
+          "pendingEvents": 0
+        },
+        "listingEvidence": {
+          "anchoredListingCount": 8,
+          "checkedOutpointsSha256": "bee546d3b2853b0f671235af92c8d448517a636fc8a608598c9409e28bcd823f",
+          "checkpoint": {
+            "blockHash": "00000000000000000000719ab943c1575bc44272bbd035f72fad2f4a03016548",
+            "height": 966134
+          },
+          "includeMempool": true,
+          "inputListingCount": 8,
+          "legacyUnanchoredListingCount": 0,
+          "model": "proof-registry-core-gettxout-v1",
+          "outputListingCount": 6,
+          "spentListingCount": 2,
+          "unspentListingCount": 6
+        },
+        "indexedObservation": {
+          "model": "proof-registry-indexed-mvcc-v1",
+          "checkpoint": {
+            "height": 966134,
+            "blockHash": "00000000000000000000719ab943c1575bc44272bbd035f72fad2f4a03016548"
+          },
+          "complete": true,
+          "consistencyOk": true,
+          "snapshotId": "7300765c31691ee2512d3907",
+          "scanStatus": "block-scan-current",
+          "tipHeight": 966134,
+          "recordCount": 505
+        },
+        "parity": {
+          "oldStatus": 200,
+          "oldMs": 1891,
+          "oldRecords": 505,
+          "sameRecords": true,
+          "sameListings": true,
+          "finalCoreCheckpointUnchanged": true
+        },
+        "rpcCalls": [
+          {
+            "method": "getblockchaininfo",
+            "durationMs": 20
+          },
+          {
+            "method": "getrawmempool",
+            "durationMs": 33
+          },
+          {
+            "method": "gettxout",
+            "durationMs": 3
+          },
+          {
+            "method": "gettxout",
+            "durationMs": 3
+          },
+          {
+            "method": "gettxout",
+            "durationMs": 2
+          },
+          {
+            "method": "gettxout",
+            "durationMs": 1
+          },
+          {
+            "method": "gettxout",
+            "durationMs": 1
+          },
+          {
+            "method": "gettxout",
+            "durationMs": 3
+          },
+          {
+            "method": "gettxout",
+            "durationMs": 2
+          },
+          {
+            "method": "gettxout",
+            "durationMs": 1
+          },
+          {
+            "method": "getrawmempool",
+            "durationMs": 30
+          },
+          {
+            "method": "getblockchaininfo",
+            "durationMs": 2
+          },
+          {
+            "method": "getblockchaininfo",
+            "durationMs": 2
+          }
+        ]
+      },
+      "gitDiffCheck": "passed",
+      "fullRecoverySuite": "requires rerun after dependency replacement; root owns"
+    },
+    "readinessDiagnosticReview": {
+      "admissionWeakeningFound": false,
+      "sweepReturnOrThrowWeakeningFound": false,
+      "notes": "Reason code qualifies separately verified declaration, while original admission/activation fields and predicate results are unchanged. Phase timings redact raw SQL/RPC errors."
+    },
+    "limits": [
+      "Indexed accepted-event authority plus Core fencing; not a new independent full-chain replay.",
+      "Pending means indexed registry candidates observed in Core, not the entire mempool or instant discovery of every new registration.",
+      "Node comparison validates current 505 records and 8 candidate tickets (2 spent/6 unspent); general interleaved-carrier protection uses bounded fixtures.",
+      "Initial node shadow failed to parse a harness-only nested-function extraction; no DB/RPC read occurred. Failure evidence retained.",
+      "No production publication, restart, database mutation, cleanup, commit or deployment performed by this subtask.",
+      "Live WORK/AMO canonical-summary size incident is handled separately by root and other agents; registry success is not an application-wide health claim."
+    ],
+    "sourceSha256": {
+      "server/registry-provenance.mjs": "2a51cfb2baf6c5128ade722b4bd8450e38e17e0e7cbd0db0ea8bab908e8f27b0",
+      "server/registry-provenance.test.mjs": "eebfba9f0f2d74bec016508b5f50d1f306e6417c7a15eecd6f3e39f69e84806a",
+      "server/db/registry-observation-reader.mjs": "a6dd2f7fc0845002a6818c905ed949157ad8208afec5f9814ea1388f35241b9e"
+    }
+  },
+  "summaryWorkerOnlyBudgetFixtures": {
+    "utc": "2026-09-09T01:41:46.743Z",
+    "scope": "Shared helper and exact-source writer storage-size branch; temporary synthetic fixtures; no changes to repository or production. Full-contract negative tests retained in pow-ui-summary-budget-review.json.",
+    "effectiveBudgets": {
+      "api": {
+        "compact": 16777216,
+        "sql": 18874368
+      },
+      "worker17": {
+        "compact": 17825792,
+        "sql": 18874368
+      },
+      "worker20WithExplicitSql18": {
+        "compact": 20971520,
+        "sql": 20971520
+      }
+    },
+    "measured": {
+      "compactBytes": 16803750,
+      "sqlBytes": 17231973,
+      "worker17CompactHeadroom": 1022042,
+      "unchangedApiSqlHeadroom": 1642395
+    },
+    "checks": [
+      "17MiB worker retains same18MiB SQL eligibility as16MiB API",
+      "20MiB worker silently raises explicit18MiB SQL to20MiB; current API then differs",
+      "observed compact bytes accepted unchanged at17MiB",
+      "17MiB exact boundary accepts, +1 refuses",
+      "measured stored SQLtext fits unchanged API18MiB"
+    ],
+    "recommendation": "If root chooses a worker-only temporary incident recovery,17MiB compact plus existing explicit18MiB SQL is the narrower compatible setting. Keep API reader unchanged and verify newly stored JSONB text remains<=18MiB and same-tip authoritative readiness recovers. Retain rollback/config receipt. This preserves all data; durable compaction remains separate.",
+    "sourcePointers": {
+      "budget": "server/canonical-summary-budget.mjs",
+      "writer": "scripts/backfill-proof-indexer.mjs:15626",
+      "workerChildInheritsEnvironment": "scripts/run-proof-indexer-worker.mjs:5263",
+      "readerSql": "server/db/proof-index-reader.mjs:3372",
+      "readerReadiness": "server/db/proof-index-reader.mjs:6042",
+      "service": "deploy/proofofwork-indexer-worker.service:52",
+      "api": "deploy/proofofwork-api-proof-index.conf:38"
+    }
+  }
+}

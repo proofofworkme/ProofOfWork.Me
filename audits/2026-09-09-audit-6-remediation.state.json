@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "status": "local-implementation-in-progress",
+  "status": "live-summary-budget-incident-confirmed-preparation-continues",
   "auditBaselineCommit": "40c7fa0",
   "branch": "audit6-remediation-2026-09-09",
   "worktree": "/tmp/proofofwork-audit6-remediation",
@@ -17,14 +17,42 @@
   ],
   "packageStatus": {
     "1-event-authority-completeness": "in-progress",
-    "2-exact-financial-status-display": "in-progress",
-    "3-response-ordering": "in-progress",
-    "4-readiness-operations": "pending",
-    "5-speed-data-handling": "pending",
+    "2-exact-financial-status-display": "ui-candidate-verified-not-deployed",
+    "3-response-ordering": "ui-candidate-verified-not-deployed",
+    "4-readiness-operations": "live-16MiB-summary-budget-failure-confirmed-recovery-gated",
+    "5-speed-data-handling": "bounded-mail-and-amo-preview-candidates-tested",
     "6-storage-recovery": "in-progress",
-    "7-ui": "in-progress",
-    "8-verification": "pending"
+    "7-ui": "candidate-build-and-browser-checks-passed-not-deployed",
+    "8-verification": "in-progress"
   },
-  "verificationReceipts": [],
-  "implementationCommits": []
+  "verificationReceipts": [
+    "audits/2026-09-09-audit-6-remediation.verification.json"
+  ],
+  "implementationCommits": [],
+  "approvalCheckpointCommit": "a80c58c",
+  "remainingGates": [
+    "integrated release checks and final build at exact candidate commit",
+    "complete current-node reconciliation before shipping",
+    "session-independent UI recovery including new-asset continuity",
+    "systemd recovery certification on isolated host resources",
+    "no-outage node route/writer handoff and rollback proof",
+    "named cleanup candidates still require non-use and retained-recovery proof"
+  ],
+  "checkpointAt": "2026-09-09T01:41:23.646756+00:00",
+  "incident": {
+    "observedAt": "2026-09-09T01:38:25Z",
+    "fullNodeHeight": 966134,
+    "canonicalScanHeight": 966134,
+    "lastGoodSummaryHeight": 966131,
+    "lastGoodSnapshotId": "a1ea54d3b1efee2bca194e5d",
+    "compactCandidateBytes": 16803750,
+    "workerCompactBudgetBytes": 16777216,
+    "lastGoodSqlTextBytes": 17231973,
+    "apiSqlTextBudgetBytes": 18874368,
+    "amoHttpStatus": 503,
+    "workerAutomaticRestarts": 4,
+    "cause": "deterministic canonical summary compact storage budget exceeded",
+    "productionChangesByThisImplementation": false,
+    "recoveryStatus": "bounded same-code worker recovery under preparation; independent recovery gate remains closed"
+  }
 }

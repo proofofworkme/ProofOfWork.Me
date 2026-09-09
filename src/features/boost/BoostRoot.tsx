@@ -1617,6 +1617,12 @@ export default function BoostRoot({
                 <span>Get ID</span>
               </span>
             </a>
+            <a
+              className="secondary link-button"
+              href={boostRouteHref("/", { boost: "1" })}
+            >
+              Timeline
+            </a>
           </div>
 
           <section className="boost-action-panel">
@@ -1838,12 +1844,6 @@ export default function BoostRoot({
                   </div>
                 )}
                 <div className="boost-profile-copy">
-                  <a
-                    className="secondary small link-button"
-                    href={boostRouteHref("/", { boost: "1" })}
-                  >
-                    Timeline
-                  </a>
                   <h2>{profileSubjectDisplay(payload)}</h2>
                   <p>{profileSubjectHandle(payload) || profileRouteValue}</p>
                   <div className="boost-profile-stats">

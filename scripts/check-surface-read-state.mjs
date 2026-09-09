@@ -58,6 +58,7 @@ const env = {
   infinityRefreshInFlightRef: { current: null }, infinityRefreshTokenIdRef: { current: "" }, infinityRefreshInFlightFreshRef: { current: false },
   setBusyForWorkspace() {}, setStatusForWorkspace() {}, nextProofApiReadAttempt: () => 1,
   fetchBondSummary: async () => snapshot, fetchIdRegistryState: () => registry.promise, fetchBtcUsdPrice: async () => undefined,
+  infinitySummaryRegresses: () => false, // This fixture starts without a retained canonical snapshot.
   applyInfinitySummary: (value) => { applied.push(value); return value; }, applyTokenState: (value) => value,
   tokenStateScopeKey: () => "livenet:global:POWB", tokenStateWithCurrentCompleteBondListings: () => book.promise,
   marketplaceWorkspaceIsCurrent: () => false, applyRegistryState() {}, setTokenSelectedId() {}, setTokenDetailTarget() {}, setTokenBtcUsd() {},

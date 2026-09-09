@@ -4595,6 +4595,63 @@ surface: pinned system file in Computer Files and public Desktop
 open behavior: Browser by txid
 ```
 
+## Audit 6 Complete Registry Observation Contract
+
+The audit 6 candidate adds `proof-of-work-canonical-registry-v1` provenance to
+fresh full registry reads from one read-only repeatable-read database transaction.
+The complete current scan, canonical block row, accepted registry lifecycle and
+returned record state must agree at the exact Core height and hash. Core is
+checked before and after the observation; active listing tickets are filtered by
+current Core outpoints, and pending records are filtered by fenced mempool
+membership. Database waits and statement durations are bounded; a failed or
+incomplete read has no complete-registry authority. This is a candidate
+implementation, not a production deployment receipt.
+
+The historical Electrum/Core parity builder remains unchanged. It is not given
+new complete-current-registry authority: its legacy resolver can omit a later
+valid interleaved PWID carrier after the canonical per-record activation. The
+candidate reads the existing accepted current lifecycle without changing that
+historical protocol boundary.
+
+The response binds network, height, block hash, and an observation content digest
+to `ready`, `coherent`, and `served: exact-tip`. Only the full `records` collection
+is explicitly marked complete, with a matching total count and no continuation.
+The digest includes the returned collections so a same-block mempool change is a
+different observation. Pending state remains a best-effort fenced observation;
+the digest is not consensus or an independent cryptographic proof of completeness.
+
+Other indexed reads and compact summaries do not inherit complete-record
+authority merely because they have a checkpoint or a smaller array. A counts-only
+projection explicitly removes complete-record authority when it omits records. A client
+encountering an unqualified contraction must obtain a fresh complete observation
+or retain the prior display with an explicit unavailable/retained qualification.
+The separate canonical-summary contract continues to describe snapshot-coherent
+aggregate values. Neither contract changes replay, fees, balances, or signing.
+
+The candidate also qualifies V8 readiness failures without changing admission:
+when declaration evidence is independently verified but the combined readiness
+status is unavailable, the public reason distinguishes an unavailable exact-tip
+sweep, an unavailable migration read, or an incomplete migration. All original
+activation, migration, and write-admission booleans remain unchanged; diagnostics
+retain the original admission reason. This improves diagnosis of H5-06 and does
+not claim that intermittent readiness failures have been eliminated.
+
+The exact-readiness sweep also returns diagnostics for its before-probe,
+migration-read, and after-probe durations, observation time, before/after
+checkpoints, and the failed or changed stage. SQL/RPC message text is excluded;
+only bounded error codes are exposed. The observation introduces no extra
+queries and never supplies authority or changes the sweep's success/null/error
+result. Correlate these fields with captured failed requests before choosing a
+readiness performance fix; a changed checkpoint remains a correct refusal.
+
+Pending WORK market address discovery filters exact PWT carrier script bytes
+before strict raw verification. Ordinary payments and unrelated Mail carriers do
+not generate false WORK-recovery errors. Recognizable malformed PWT carriers still
+reach the same strict verifier and retain their failure diagnostics.
+
+The approved implementation and closed production-transition gate are tracked in
+[the remediation handoff](audits/2026-09-09-audit-6-remediation.md).
+
 ## Boost Observations In Growth
 
 The local Growth integration adds a `boost` observation object to

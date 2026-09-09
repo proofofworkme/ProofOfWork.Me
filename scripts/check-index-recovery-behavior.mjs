@@ -3,6 +3,7 @@ import { createHash, timingSafeEqual } from "node:crypto";
 import { EventEmitter } from "node:events";
 import { readFileSync } from "node:fs";
 import vm from "node:vm";
+import { tokenEventIsPending } from "../server/token-event-lifecycle.mjs";
 import * as ecc from "@bitcoinerlab/secp256k1";
 import * as bitcoin from "bitcoinjs-lib";
 import ts from "typescript";
@@ -1227,6 +1228,7 @@ function isolatedFunction(path, name, globals = {}) {
   };
   const context = vm.createContext({
     Buffer,
+    tokenEventIsPending,
     createHash,
     URLSearchParams,
     APPLY_WORK_ATOMIC_MIGRATION: false,
@@ -9523,6 +9525,17 @@ check("fresh registry enumerates every PWID carrier with distinct physical fees"
     ],
   });
 
+  // Preserve the historical resolver cutoff. Fresh canonical registry reads
+  // now use accepted indexed per-carrier outcomes instead of attesting this
+  // legacy resolver as a post-activation raw replay.
+  const interleavedLegacy = idRegistryStateFromTransactions(
+    [{ blockHeight: 960_500, txid: "f".repeat(64), vin: [], vout: [
+      payment(1_000), carrier("pwid1:r2:first-id"),
+      payment(1_000), carrier("pwid1:r2:second-id"),
+    ] }], registryAddress, "livenet",
+  );
+  assert.deepEqual(Array.from(interleavedLegacy.records, (record) => record.id), ["first-id"]);
+
   const distinct = idRegistryStateFromTransactions(
     [transaction([payment(1_000), payment(1_000)])],
     registryAddress,
@@ -10390,8 +10403,8 @@ check("fresh registry activity exposes one exact enriched ID display contract", 
   );
   assert.match(
     strictPublicRegistrySource,
-    /options\.fresh === true[\s\S]*internalRegistryParityPayload\(network\)[\s\S]*indexedRegistryPayload\(network\)[\s\S]*if \(!indexedPayload\)[\s\S]*internalRegistryParityPayload\(network\)[\s\S]*strictCoreRegistryListingReconciliation\(indexedPayload, network\)/u,
-    "fresh and indexed-null livenet paths must use the fenced direct crawl while indexed state uses strict Core anchors",
+    /options\.fresh === true[\s\S]*freshCanonicalRegistryPayload\(network\)[\s\S]*indexedRegistryPayload\(network\)[\s\S]*if \(!indexedPayload\)[\s\S]*freshCanonicalRegistryPayload\(network\)[\s\S]*strictCoreRegistryListingReconciliation\(indexedPayload, network\)/u,
+    "fresh and indexed-null livenet paths must use the complete MVCC/Core-fenced registry while indexed state uses strict Core anchors",
   );
   assert.doesNotMatch(
     strictPublicRegistrySource,

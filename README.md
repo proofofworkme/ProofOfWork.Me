@@ -67,6 +67,7 @@ Production app roles:
 - `log.proofofwork.me` is the standalone public ProofOfWork Computer log for tx-backed ProofOfWork actions.
 - `growth.proofofwork.me` is the standalone public growth dashboard comparing modeled ProofOfWork Computer network value with real confirmed chain value in proofs and USD.
 - The root landing page can feature public on-chain social proof, with testimonial links pointing directly to their ProofOfWork transactions.
+- Abbreviated on-chain testimonials mark omitted text with an ellipsis; the linked transaction remains the complete source.
 - The landing page links to the current public YouTube overview video.
 
 Every public app header and footer should expose the current public surfaces: Home, IDs, Computer, Desktop, Browser, Boost, AMO, Credit, Wallet, WORK, Infinity, Inception, Log, and Growth. Public social links should include X, YouTube, and GitHub.
@@ -560,11 +561,23 @@ Rules to preserve:
 - A wallet that owns multiple confirmed IDs can sign a local Boost display intent for the ID it wants to present. Publishing `pwb1:profile` makes that display choice chain-readable without mutating the canonical ID registry.
 - The Boost UI has two top-level timeline tabs: For You shows all visible confirmed Boosts, while Following shows visible confirmed Boosts from addresses the connected wallet actively follows. Both tabs can rank confirmed posts by attached value, newest, or oldest and can scope value by hour, day, week, or all time. Total signal is the proof-equivalent value of direct proof signal plus attached WORK at the current floor; proof signal, WORK signal, and total USD value remain visible as separate lanes.
 - Boost profile pages are not timeline filters. A `profile=` route resolves one address or confirmed ID into a person profile and exposes tabs for that person's authored boosts/reboosts, authored replies, currently owned or purchased boosts, liked boosts, and expanded replies to that person's original boosts. For You and Following remain home-timeline views only.
+- The Timeline navigation button belongs in Boost's left action panel with Post From Mail and Get ID, including when viewing a profile.
 - Boost uses ProofFrame cards instead of mutable social-preview frames. A ProofFrame renders from indexed `pwb1:` state, Files metadata, AMO listing state, profile/owner addresses, proof/WORK signal, and txids.
 - Every original post broadcast opens a Twitter/X share intent with the post text and mempool.space tx link. Every Boost feed row also exposes a share link.
 - Authors can hide their own Boost from default app/profile indexing with `pwb1:hide`. This is a visibility tombstone, not deletion from ProofOfWork.
 - Confirmed ProofOfWork history is canonical. Pending Boost records are visibility only.
 - Wallet signing stays local; the API reads, indexes, verifies, and broadcasts already-signed transactions only.
+
+The audit 6 candidate additionally binds the Boost ownership/payment projection
+to canonical wire transaction witnesses and the Boost receiver at each event's
+historical ID position. Paid actions must pay that receiver; current-owner
+transfers and sale-ticket settlement require their corresponding authority.
+Author hides remain visibility tombstones. Rejected attempts remain inspectable
+as per-position projection outcomes rather than being deleted from raw history.
+Raw event parser validity is only wire-shape validation; the validated feed's
+authority outcome determines whether an ownership/payment transition is accepted.
+Growth's separate shape-valid observation counts do not acquire new economic
+authority or alter the WORK floor through this correction.
 
 ## Run
 

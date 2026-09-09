@@ -28,7 +28,14 @@ export function registryCountsProjection(payload) {
   };
   const metadataKeys = ["consistency", "indexedAt", "indexedThroughBlock", "indexedThroughBlockHash",
     "ledgerGeneratedAt", "network", "provenance", "registryAddress", "snapshotId", "source", "stats"];
-  return { ...Object.fromEntries(metadataKeys.filter((key) => key in payload).map((key) => [key, payload[key]])), registryCounts };
+  const result = { ...Object.fromEntries(metadataKeys.filter((key) => key in payload).map((key) => [key, payload[key]])), registryCounts };
+  if (result.provenance?.completeCollections) {
+    result.provenance = {
+      ...result.provenance,
+      completeCollections: { ...result.provenance.completeCollections, records: false },
+    };
+  }
+  return result;
 }
 
 export function withTokenDirectoryQualification(payload) {

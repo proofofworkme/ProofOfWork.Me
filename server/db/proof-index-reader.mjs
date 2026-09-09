@@ -1,7 +1,11 @@
+import { readCompleteRegistryObservation } from "./registry-observation-reader.mjs";
+import { tokenEventIsPending } from "../token-event-lifecycle.mjs";
 import { createHash } from "node:crypto";
 import { compareCanonicalUtf8 } from "../canonical-order.mjs";
 import { decodeCanonicalOpReturnOutput } from "../canonical-op-return.mjs";
 import { readBoostGrowthObservation } from "./boost-growth-reader.mjs";
+import { readBoostAuthorityWitnesses } from "./boost-authority-reader.mjs";
+import { readCompleteAddressMailRows } from "../address-mail-pagination.mjs";
 import {
   canonicalSummarySnapshotSqlTextMaxBytes,
 } from "../canonical-summary-budget.mjs";
@@ -18953,7 +18957,7 @@ export async function proofIndexTokenMintStatsPayload(
       ) {
         throw new Error("Proof index confirmed mint supply is inexact.");
       }
-    } else {
+    } else if (tokenEventIsPending(mint)) {
       pendingMints += 1;
       pendingSupply += amount;
       const mintTxid = normalizedTxid(mint.txid);
@@ -19280,7 +19284,7 @@ async function tokenStateWithMintEventOverlay(pool, network, scope, payload, sna
   }
 
   const confirmedMints = mints.filter((mint) => mint.confirmed);
-  const pendingMints = mints.filter((mint) => !mint.confirmed);
+  const pendingMints = mints.filter(tokenEventIsPending);
   const scopedBondTokenId = exactBondTokenIdForMintOverlay(
     scope,
     payload,
@@ -20676,6 +20680,9 @@ function normalizedBondTitle(payload, row = {}, bondTag) {
 }
 
 function normalizeEventPayload(payload, row = {}) {
+  if (normalizedLowerText(row.protocol ?? payload?.protocol) === "pwb1" || normalizedLowerText(row.kind ?? payload?.kind).startsWith("boost-")) {
+    return { ...payload, validationScope: "wire-shape-only", stateTransitionVerified: false, authorityEndpoint: "/api/v1/boost" };
+  }
   const bondTag = bondTagForEventPayload(payload, row);
   if (!bondTag) {
     return payload;
@@ -21045,7 +21052,7 @@ function salesStats(sales) {
     if (sale?.confirmed) {
       confirmedSales += 1;
       confirmedSalesVolumeSats += salePriceSats(sale);
-    } else {
+    } else if (tokenEventIsPending(sale)) {
       pendingSales += 1;
       pendingSalesVolumeSats += salePriceSats(sale);
     }
@@ -24574,9 +24581,9 @@ function tokenStateStats(payload, tokens, mints, transfers, invalidEvents) {
     confirmedTokens: tokens.filter((item) => item?.confirmed).length,
     holders: Array.isArray(payload?.holders) ? payload.holders.length : 0,
     invalidEvents: invalidEvents.filter((item) => item?.confirmed).length,
-    pendingMints: mints.filter((item) => !item?.confirmed).length,
-    pendingTransfers: transfers.filter((item) => !item?.confirmed).length,
-    pendingTokens: tokens.filter((item) => !item?.confirmed).length,
+    pendingMints: mints.filter(tokenEventIsPending).length,
+    pendingTransfers: transfers.filter(tokenEventIsPending).length,
+    pendingTokens: tokens.filter(tokenEventIsPending).length,
     registries: new Set(
       tokens.map((token) => token?.registryAddress).filter(Boolean),
     ).size,
@@ -30628,7 +30635,7 @@ async function proofIndexTokenPayloadFromCurrentTables(pool, network, scope) {
       } else {
         current.confirmedSupply += Number(mint.amount ?? 0);
       }
-    } else {
+    } else if (tokenEventIsPending(mint)) {
       current.pendingMints += 1;
       if (isWorkTokenId(mint.tokenId)) {
         const storageModel = workStorageModels.get(mint.tokenId);
@@ -30795,7 +30802,7 @@ async function proofIndexTokenPayloadFromCurrentTables(pool, network, scope) {
           "0",
         ),
         mints
-          .filter((mint) => !mint.confirmed)
+          .filter(tokenEventIsPending)
           .reduce(
             (total, mint) => addIntegerTexts(total, mint.amount),
             "0",
@@ -30808,7 +30815,7 @@ async function proofIndexTokenPayloadFromCurrentTables(pool, network, scope) {
             0,
           ),
           mints
-            .filter((mint) => !mint.confirmed)
+            .filter(tokenEventIsPending)
             .reduce((total, mint) => total + Number(mint.amount ?? 0), 0),
         )
       : null;
@@ -31293,7 +31300,7 @@ async function scopedTokenStateFromAllPayload(pool, network, scope, allPayload) 
     : "";
   const pendingWorkUnits = workScoped
     ? mints
-        .filter((mint) => !mint?.confirmed)
+        .filter(tokenEventIsPending)
         .reduce(
           (total, mint) =>
             addAtomicStrings(
@@ -31337,14 +31344,14 @@ async function scopedTokenStateFromAllPayload(pool, network, scope, allPayload) 
       ? {
           pendingSupply: bondScoped
         ? mints
-            .filter((mint) => !mint?.confirmed)
+            .filter(tokenEventIsPending)
             .reduce(
               (total, mint) => addIntegerTexts(total, mint?.amount),
               "0",
             )
         : genericScoped
           ? mints
-              .filter((mint) => !mint?.confirmed)
+              .filter(tokenEventIsPending)
               .reduce((total, mint) => total + Number(mint?.amount ?? 0), 0)
           : null,
         }
@@ -34636,11 +34643,9 @@ async function currentProofIndexRegistryPayload(pool, network, options = {}) {
   const listings = Array.isArray(eventState?.listings)
     ? eventState.listings
     : [];
-  const unspentListings = await indexedUnspentIdRegistryListings(
-    pool,
-    network,
-    listings,
-  );
+  const unspentListings = options.skipIndexedListingSpendFilter === true
+    ? listings
+    : await indexedUnspentIdRegistryListings(pool, network, listings);
   const pendingEvents = Array.isArray(eventState?.pendingEvents)
     ? eventState.pendingEvents
     : [];
@@ -35582,6 +35587,13 @@ export async function proofIndexIdRegistryAuditStream(
   });
   assertIdRegistryAuditFinalFence(initial.fence, final.fence);
   return initial;
+}
+
+export async function proofIndexCompleteRegistryObservation(network, options = {}) {
+  return readCompleteRegistryObservation(proofIndexPool(), network, options, {
+    loadScan: latestProofIndexScanMetadata,
+    loadPayload: currentProofIndexRegistryPayload,
+  });
 }
 
 export async function proofIndexRegistryPayload(network, options = {}) {
@@ -37818,12 +37830,12 @@ function subjectOnlyMailBody(value) {
 function mailMemoFromEvent(row, payload) {
   const payloadBody = String(
     payload.body ?? payload.message ?? payload.memo ?? "",
-  ).trim();
+  );
   if (payloadBody) {
     return payloadBody;
   }
 
-  const storedBody = String(row.body_text ?? "").trim();
+  const storedBody = String(row.body_text ?? "");
   if (storedBody && !subjectOnlyMailBody(storedBody)) {
     return storedBody;
   }
@@ -38138,6 +38150,13 @@ function canonicalMailAttachedCreditsFromRow(row, recipientAddresses) {
 
 function addressMailRowPayloads(row, address, network) {
   const payload = normalizeEventPayload(canonicalEventPayload(row.payload), row);
+  const identity = {
+    ...(row.event_id !== undefined ? { eventId: row.event_id } : {}),
+    ...(row.block_height !== undefined ? { blockHeight: row.block_height } : {}),
+    ...(row.block_index !== undefined ? { blockIndex: row.block_index } : {}),
+    ...(row.op_return_vout !== undefined ? { protocolVout: row.op_return_vout } : {}),
+    ...(row.record_ordinal !== undefined ? { recordOrdinal: row.record_ordinal } : {}),
+  };
   const targetAddress = normalizedAddress(address);
   const targetKey = normalizedAddressKey(targetAddress);
   const actor =
@@ -38190,6 +38209,7 @@ function addressMailRowPayloads(row, address, network) {
     items.push({
       folder: "sent",
       message: {
+        ...identity,
         amountSats: totalAmountSats,
         attachedCredits:
           attachedCredits.length > 0 ? attachedCredits : undefined,
@@ -38232,6 +38252,7 @@ function addressMailRowPayloads(row, address, network) {
     items.push({
       folder: "inbox",
       message: {
+        ...identity,
         amountSats:
           targetRecipientAmountSats ||
           positiveNumber(targetRecipient?.amountSats) ||
@@ -38396,7 +38417,24 @@ export async function proofIndexAddressMailPayload(network, address) {
   const addressCandidates = [
     ...new Set([targetAddress, targetAddress.toLowerCase()].filter(Boolean)),
   ];
-  const rowsResult = await pool.query(
+  let acquisitionExpired = false; let acquireTimer;
+  const acquisition = pool.connect().then((client) => {
+    if (!acquisitionExpired) return client;
+    client.release(); return null;
+  });
+  let client;
+  try {
+    client = await Promise.race([acquisition, new Promise((resolve) => {
+      acquireTimer = setTimeout(() => { acquisitionExpired = true; resolve(null); }, 1000);
+    })]);
+  } finally { clearTimeout(acquireTimer); }
+  if (!client) throw Object.assign(new Error("Indexed mailbox is busy; retry shortly."), { statusCode: 503 });
+  let transactionOpen = false;
+  try {
+    await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY"); transactionOpen = true;
+    await client.query("SET LOCAL statement_timeout = '5000ms'");
+    const inventory = await readCompleteAddressMailRows(async (cursor, limit) => {
+      const page = await client.query(
     `
       WITH candidate_events AS (
         SELECT DISTINCT e.event_id
@@ -38444,11 +38482,14 @@ export async function proofIndexAddressMailPayload(network, address) {
           AND e.valid = true
           AND e.kind = ANY($3::text[])
           AND e.status IN ('pending', 'confirmed', 'dropped', 'orphaned')
+          AND ($5::timestamptz IS NULL OR (
+            COALESCE(e.event_time, e.block_time, e.created_at), e.txid, e.event_id
+          ) < ($5::timestamptz, $6::text, $7::bigint))
         ORDER BY
           COALESCE(e.event_time, e.block_time, e.created_at) DESC,
           e.txid DESC,
           e.event_id DESC
-        LIMIT 1000
+        LIMIT $8
       ),
       candidate_mail_transactions AS (
         SELECT DISTINCT network, txid
@@ -38514,7 +38555,11 @@ export async function proofIndexAddressMailPayload(network, address) {
         e.event_time,
         e.block_time,
         e.created_at,
+        to_char(COALESCE(e.event_time, e.block_time, e.created_at) AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS effective_time_cursor,
         e.block_height,
+        e.block_index,
+        e.op_return_vout,
+        e.record_ordinal,
         e.txid,
         e.event_id,
         m.subject,
@@ -38538,7 +38583,7 @@ export async function proofIndexAddressMailPayload(network, address) {
           '[]'::jsonb
         ) AS participants
       FROM proof_indexer.events e
-      JOIN proof_indexer.mail_items m
+      LEFT JOIN proof_indexer.mail_items m
         ON m.network = e.network
        AND m.txid = e.txid
       LEFT JOIN proof_indexer.event_participants ep
@@ -38560,6 +38605,9 @@ export async function proofIndexAddressMailPayload(network, address) {
         e.block_time,
         e.created_at,
         e.block_height,
+        e.block_index,
+        e.op_return_vout,
+        e.record_ordinal,
         e.txid,
         e.event_id,
         m.subject,
@@ -38572,10 +38620,13 @@ export async function proofIndexAddressMailPayload(network, address) {
         COALESCE(e.event_time, e.block_time, e.created_at) DESC,
         e.txid DESC,
         e.event_id DESC
-      LIMIT 1000
     `,
-    [network, addressCandidates, ADDRESS_MAIL_EVENT_KINDS, WORK_TOKEN_ID],
-  );
+        [network, addressCandidates, ADDRESS_MAIL_EVENT_KINDS, WORK_TOKEN_ID,
+          cursor?.time ?? null, cursor?.txid ?? "", cursor?.eventId ?? "0", limit],
+      );
+      return page.rows;
+    });
+    const rowsResult = { rows: inventory.rows };
 
   const inboxMessages = [];
   const sentMessages = [];
@@ -38601,7 +38652,7 @@ export async function proofIndexAddressMailPayload(network, address) {
   );
   if (droppedWitnesses.length > 0) {
     const txids = droppedWitnesses.map((witness) => witness.txid);
-    const droppedResult = await pool.query(
+    const droppedResult = await client.query(
       `
         SELECT txid, first_seen_at, last_seen_at, dropped_at
         FROM proof_indexer.transactions
@@ -38637,7 +38688,11 @@ export async function proofIndexAddressMailPayload(network, address) {
   const dedupedInboxMessages = dedupeMailProjectionMessages(inboxMessages);
   const dedupedSentMessages = dedupeMailProjectionMessages(sentMessages);
 
+  await client.query("COMMIT"); transactionOpen = false;
   return {
+    complete: true,
+    hasMore: false,
+    pagination: { model: "address-mail-complete-keyset-v1", pages: inventory.pages, events: inventory.eventCount },
     address: targetAddress,
     inboxMessages: dedupedInboxMessages,
     indexedAt: new Date().toISOString(),
@@ -38651,7 +38706,7 @@ export async function proofIndexAddressMailPayload(network, address) {
       incoming: dedupedInboxMessages.filter((message) => !message.confirmed)
         .length,
       ...(droppedOutboxWitnesses > 0 ? { droppedOutboxWitnesses } : {}),
-      indexedEvents: rowsResult.rows.length,
+      indexedEvents: inventory.eventCount,
       scanFailed: false,
       scannedTransactions: 0,
       sent: dedupedSentMessages.filter(
@@ -38662,6 +38717,17 @@ export async function proofIndexAddressMailPayload(network, address) {
       ).length,
     },
   };
+  } finally {
+    if (transactionOpen) await client.query("ROLLBACK").catch(() => {});
+    client.release();
+  }
+}
+
+export async function proofIndexBoostAuthorityWitnesses(network, history) {
+  return readBoostAuthorityWitnesses(proofIndexPool(), network, history, strictEventHistoryLedgerSnapshot,
+    async (client, selectedNetwork) => acceptedCurrentIdRegistryActivity(
+      await currentIdRegistryEventState(client, selectedNetwork), [], [],
+    ).filter((item) => normalizedLowerText(item.id) === "boost"));
 }
 
 export async function proofIndexEventHistoryPayload(network, searchParams) {

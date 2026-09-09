@@ -59,7 +59,8 @@
       "audits/2026-09-08-production-health-data-event-storage-audit-6.repro.mjs",
       "audits/2026-09-08-production-health-data-event-storage-audit-6.ordered-repro.mjs",
       "audits/2026-09-09-audit-6-remediation.md",
-      "audits/2026-09-09-audit-6-remediation.state.json"
+      "audits/2026-09-09-audit-6-remediation.state.json",
+      "audits/2026-09-09-audit-6-remediation.verification.json"
     ],
     "staged-or-future-protocol-notes": [
       "CHAIN_CONTENT.md",
@@ -78,7 +79,9 @@
       "output/historical/2026-05-13/proofofwork-computer-agent-adoption-model.md"
     ],
     "support-notes": [
-      "test-api/README.md"
+      "test-api/README.md",
+      "deploy/audit6/README.md",
+      "deploy/audit6/node-no-outage-design.md"
     ]
   },
   "safeCleanupPaths": [

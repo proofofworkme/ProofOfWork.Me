@@ -171,6 +171,7 @@ import {
   explorerAddressUrl,
   explorerTxUrl,
 } from "./shared/bitcoin/networks";
+import { canonicalReadEvidence, canonicalReadIsOlder, hasCanonicalReadAuthority, hasCanonicalSummaryCheckpoint, hasCanonicalWorkFloorAuthority, type CanonicalReadEvidence } from "./shared/api/canonicalReadAuthority";
 import { registryAddressForNetwork } from "./shared/protocol/idRegistry";
 import { MAX_DATA_CARRIER_BYTES } from "./shared/bitcoin/protocolLimits";
 import { activityHistoryCacheKey } from "./shared/activity/logHistoryCache";
@@ -1198,6 +1199,13 @@ type TokenMarketplaceSummaryStats = {
 };
 
 type MarketplaceSummaryReadState = {
+  summaryMetrics?: {
+    floorQ8: string;
+    networkValueQ8: string;
+    blockHeight: number;
+    snapshotId: string;
+    creditDefinitions?: number;
+  };
   indexedAt?: string;
   message: string;
   retryable?: boolean;
@@ -1233,6 +1241,13 @@ type PowActivityItem = {
   attachedCredits?: MailAttachedCredit[];
   blockHeight?: number;
   confirmed: boolean;
+  protocol?: string;
+  protocolVout?: number;
+  recordOrdinal?: number;
+  eventId?: number;
+  validationScope?: "wire-shape-only" | "canonical-state-transition";
+  stateTransitionVerified?: boolean;
+  authorityEndpoint?: string;
   counterparty?: string;
   createdAt: string;
   creditAmountMoved?: number;
@@ -1554,7 +1569,7 @@ type ChainedMintBuildResult = {
   psbtHex: string;
 };
 
-type PowRegistryApiResponse = {
+type PowRegistryApiResponse = CanonicalReadEvidence & {
   summaryOnly?: boolean;
   collectionHasMore?: { listings?: boolean };
   totalCounts?: { listings?: number | null };
@@ -1570,6 +1585,7 @@ type PowRegistryApiResponse = {
 };
 
 type PowRegistryState = {
+  canonicalRead?: CanonicalReadEvidence;
   activity: PowActivityItem[];
   listings: PowIdListing[];
   pendingEvents: PowIdPendingEvent[];
@@ -1655,6 +1671,7 @@ type PowPaginatedApiResponse<T> = {
 };
 
 type PowMailApiResponse = {
+  complete?: boolean;
   inboxMessages?: InboxMessage[];
   sentMessages?: SentMessage[];
 };
@@ -1690,6 +1707,7 @@ const MAX_REGISTRY_TX_PAGES = 100;
 const MAX_TOKEN_HISTORY_PAGES = 100;
 const DATA_PAGE_SIZE = 25;
 const TOKEN_HISTORY_PAGE_SIZE = 200;
+const TOKEN_LISTING_BOOK_DEADLINE_MS = 90_000;
 const TOKEN_GRID_PAGE_SIZE = 24;
 const ACTIVITY_FEED_PAGE_SIZE = 50;
 const GROWTH_EVENT_PAGE_SIZE = 12;
@@ -2068,6 +2086,7 @@ type GrowthActualNetworkValue = {
 };
 
 type WorkFloorQuote = {
+  canonicalRead?: CanonicalReadEvidence;
   actualValue?: GrowthActualNetworkValue;
   baseNetworkValueQ8?: string;
   btcUsd?: number;
@@ -2303,7 +2322,8 @@ type WorkFloorPoint = {
 
 type WorkFloorChartUnit = "sats" | "usd";
 
-type WorkFloorApiResponse = {
+type WorkFloorApiResponse = CanonicalReadEvidence & {
+  readAuthority?: CanonicalReadEvidence;
   actualValue?: Partial<GrowthActualNetworkValue>;
   baseNetworkValueQ8?: string;
   btcUsd?: number;
@@ -2345,7 +2365,7 @@ type WorkFloorApiResponse = {
   workNetworkValueAccountingModel?: string;
 };
 
-type WorkSummaryApiResponse = {
+type WorkSummaryApiResponse = CanonicalReadEvidence & {
   floor?: WorkFloorApiResponse;
   indexedAt?: string;
   network?: BitcoinNetwork;
@@ -2389,6 +2409,7 @@ type GrowthSummaryCounts = {
 };
 
 type GrowthSummarySnapshot = {
+  canonicalRead?: CanonicalReadEvidence;
   boost: BoostGrowthObservation;
   actualValue: GrowthActualNetworkValue;
   btcUsd?: number;
@@ -2403,7 +2424,7 @@ type GrowthSummarySnapshot = {
   workFloor?: WorkFloorQuote;
 };
 
-type GrowthSummaryApiResponse = {
+type GrowthSummaryApiResponse = CanonicalReadEvidence & {
   boost?: unknown;
   indexedThroughBlock?: number;
   indexedThroughBlockHash?: string;
@@ -2430,7 +2451,7 @@ type MarketplaceSummarySnapshot = {
   workFloor: WorkFloorQuote;
 };
 
-type MarketplaceSummaryApiResponse = {
+type MarketplaceSummaryApiResponse = CanonicalReadEvidence & {
   indexedAt?: string;
   network?: BitcoinNetwork;
   registry?: PowRegistryApiResponse;
@@ -2521,6 +2542,7 @@ type InfinitySummaryStats = {
 };
 
 type InfinitySummarySnapshot = {
+  canonicalRead?: CanonicalReadEvidence;
   actualValue: InfinityActualValue;
   chartPoints: InfinityBondChartPoint[];
   floorQ8?: string;
@@ -2537,7 +2559,7 @@ type InfinitySummarySnapshot = {
   tokenId: string;
 };
 
-type InfinitySummaryApiResponse = {
+type InfinitySummaryApiResponse = CanonicalReadEvidence & {
   actualValue?: Partial<InfinityActualValue>;
   chartPoints?: Array<Partial<InfinityBondChartPoint>>;
   floorQ8?: string;
@@ -13137,6 +13159,13 @@ async function fetchRegistryTransactions(
   return annotateBlockOrder(txs, targetNetwork);
 }
 
+function inboxMessageMatchesAccount(message: InboxMessage, address: string, network: BitcoinNetwork) {
+  return Boolean(address) && message.network === network && (
+    samePaymentAddress(message.to, address) ||
+    (message.recipients ?? []).some((recipient) => samePaymentAddress(recipient.address, address))
+  );
+}
+
 function inboxMessagesFromTransactions(
   txs: Array<Record<string, unknown>>,
   targetAddress: string,
@@ -13263,12 +13292,17 @@ async function fetchAddressMail(
   targetAddress: string,
   targetNetwork: BitcoinNetwork,
   fresh = false,
+  signal?: AbortSignal,
 ) {
   const suffix = fresh ? "?fresh=1" : "";
   const payload = await fetchProofApiJson<PowMailApiResponse>(
     `/api/v1/address/${encodeURIComponent(targetAddress)}/mail${suffix}`,
     targetNetwork,
+    { signal },
   );
+  if (payload.complete === false || !Array.isArray(payload.inboxMessages) || !Array.isArray(payload.sentMessages)) {
+    throw new Error("Mailbox response is incomplete. Refresh to verify all address mail.");
+  }
   return {
     inboxMessages: Array.isArray(payload.inboxMessages)
       ? payload.inboxMessages
@@ -13893,6 +13927,19 @@ function marketplaceSummaryMetric(
   return typeof value === "number" ? value.toLocaleString() : value;
 }
 
+function marketplaceSummaryPreview(snapshot: MarketplaceSummarySnapshot) {
+  const read = snapshot.workFloor?.canonicalRead;
+  if (!hasCanonicalSummaryCheckpoint(read, "marketplace-summary")) return undefined;
+  const floorQ8 = exactIntegerText(snapshot.workFloor?.floorQ8 ?? snapshot.workFloor?.actualValue?.floorQ8);
+  const networkValueQ8 = exactIntegerText(workFloorQuoteLiveValueQ8(snapshot.workFloor));
+  if (!floorQ8 || !networkValueQ8 || !read?.indexedThroughBlock || !read.snapshotId) return undefined;
+  const creditDefinitions = snapshot.token.totalCounts?.tokens;
+  return {
+    floorQ8, networkValueQ8, blockHeight: read.indexedThroughBlock, snapshotId: read.snapshotId,
+    creditDefinitions: Number.isSafeInteger(creditDefinitions) && Number(creditDefinitions) >= 0 ? Number(creditDefinitions) : undefined,
+  };
+}
+
 function MarketplaceSummaryReadStatus({
   busy,
   onRetry,
@@ -13934,6 +13981,11 @@ function MarketplaceSummaryReadStatus({
           {readState.message}
           {indexedAt}
         </span>
+        {readState.summaryMetrics ? <p className="field-note" data-role="amo-summary-preview">
+          Summary at block {readState.summaryMetrics.blockHeight.toLocaleString()}: live network value {formatExactQ8(readState.summaryMetrics.networkValueQ8)} proofs; WORK floor {formatExactQ8(readState.summaryMetrics.floorQ8)} proofs / WORK.
+          {readState.summaryMetrics.creditDefinitions !== undefined ? ` ${readState.summaryMetrics.creditDefinitions.toLocaleString()} credit definitions.` : ""}
+          {" "}Listing availability and actions still require the complete current book.
+        </p> : null}
       </div>
       {(readState.status === "unavailable" ||
         readState.status === "last-verified") &&
@@ -15138,11 +15190,7 @@ function idListingsFromTransactions(
     .listings;
 }
 
-async function fetchIdRegistry(
-  targetNetwork: BitcoinNetwork,
-): Promise<PowIdRecord[]> {
-  return (await fetchIdRegistryState(targetNetwork)).records;
-}
+let canonicalReadSequence = 0;
 
 async function fetchIdRegistryState(
   targetNetwork: BitcoinNetwork,
@@ -15160,26 +15208,23 @@ async function fetchIdRegistryState(
     };
   }
 
+  const readSequence = ++canonicalReadSequence;
   const basePath = summary ? "/api/v1/registry-summary" : "/api/v1/registry";
   const path = fresh ? `${basePath}?fresh=1` : basePath;
   const payload = await fetchProofApiJson<PowRegistryApiResponse>(
     path,
     targetNetwork,
   );
-  return {
-    activity: Array.isArray(payload.activity) ? payload.activity : [],
-    listings: Array.isArray(payload.listings) ? payload.listings : [],
-    pendingEvents: Array.isArray(payload.pendingEvents)
-      ? payload.pendingEvents
-      : [],
-    records: Array.isArray(payload.records) ? payload.records : [],
-    sales: Array.isArray(payload.sales) ? payload.sales : [],
-  };
+  if (payload.network !== undefined && payload.network !== targetNetwork) {
+    throw new Error("ID registry response belongs to a different network.");
+  }
+  return normalizeRegistryApiState({ ...payload, readSequence, freshRead: fresh && !summary });
 }
 
 async function fetchIdRecordState(
   targetNetwork: BitcoinNetwork,
   id: string,
+  signal?: AbortSignal,
 ): Promise<PowRegistryState & { record?: PowIdRecord | null }> {
   const normalizedId = normalizePowId(id);
   if (!normalizedId) {
@@ -15190,6 +15235,7 @@ async function fetchIdRecordState(
   const payload = await fetchProofApiJson<PowRegistryApiResponse>(
     `/api/v1/ids/${encodeURIComponent(normalizedId)}?${params.toString()}`,
     targetNetwork,
+    { signal },
   );
   const state = normalizeRegistryApiState(payload);
   const payloadRecord =
@@ -15254,6 +15300,7 @@ async function fetchGlobalActivityHistoryPage(
     pageSize?: number;
     query?: string;
     snapshotId?: string;
+    signal?: AbortSignal;
   } = {},
 ): Promise<PowPaginatedApiResponse<PowActivityItem>> {
   const params = new URLSearchParams();
@@ -15271,7 +15318,7 @@ async function fetchGlobalActivityHistoryPage(
 
   const payload = await fetchProofApiJson<
     PowPaginatedApiResponse<PowActivityItem>
-  >(`/api/v1/log-history?${params.toString()}`, targetNetwork);
+  >(`/api/v1/log-history?${params.toString()}`, targetNetwork, { signal: options.signal });
   return {
     ...payload,
     items: Array.isArray(payload.items) ? payload.items : [],
@@ -15282,6 +15329,7 @@ function normalizeRegistryApiState(
   payload: PowRegistryApiResponse | undefined,
 ): PowRegistryState {
   return {
+    canonicalRead: payload ? canonicalReadEvidence(payload) : undefined,
     activity: Array.isArray(payload?.activity) ? payload.activity : [],
     listings: Array.isArray(payload?.listings) ? payload.listings : [],
     pendingEvents: Array.isArray(payload?.pendingEvents)
@@ -16283,6 +16331,7 @@ async function fetchTokenHistoryPage<T>(
     query?: string;
     projection?: "display-v1";
     tokenScope?: string;
+    signal?: AbortSignal;
   } = {},
 ): Promise<PowPaginatedApiResponse<T>> {
   const params = new URLSearchParams();
@@ -16311,12 +16360,12 @@ async function fetchTokenHistoryPage<T>(
   const payload = await fetchProofApiJson<PowPaginatedApiResponse<T>>(
     `/api/v1/token-history?${params.toString()}`,
     targetNetwork,
+    { signal: options.signal },
   );
   if (
-    !Array.isArray(payload.items) &&
-    typeof (payload as { error?: unknown }).error === "string"
+    !Array.isArray(payload.items)
   ) {
-    throw new Error(String((payload as { error: string }).error));
+    throw new Error(String((payload as { error?: string }).error || "History response is incomplete."));
   }
   const rawItems = Array.isArray(payload.items) ? payload.items : [];
   const tokenMarketActivityHistoryKind =
@@ -16381,217 +16430,233 @@ async function fetchCompleteTokenListings(
     address?: string;
     fresh?: boolean;
     tokenScope?: string;
+    signal?: AbortSignal;
   } = {},
 ): Promise<CompleteTokenListingHistory> {
-  const listings: PowTokenListing[] = [];
-  const listingIds = new Set<string>();
-  const seenCursors = new Set<string>();
-  let cursor = "";
-  let expectedIndexedAt = "";
-  let expectedIndexedThroughBlock = 0;
-  let expectedIndexedThroughBlockHash = "";
-  let expectedSnapshotId = "";
-  let expectedTotalCount = -1;
-  let expectedAuthorityFingerprint = "";
-  let expectedProjectionFingerprint = "";
-  let expectedItemProjectionFingerprint = "";
+  const controller = new AbortController();
+  const abort = () => controller.abort(options.signal?.reason);
+  options.signal?.addEventListener("abort", abort, { once: true });
+  if (options.signal?.aborted) abort();
+  const deadline = globalThis.setTimeout(() => controller.abort(
+    new Error("Complete sale-ticket book verification exceeded its 90-second deadline."),
+  ), TOKEN_LISTING_BOOK_DEADLINE_MS);
+  try {
+    controller.signal.throwIfAborted();
+    const listings: PowTokenListing[] = [];
+    const listingIds = new Set<string>();
+    const seenCursors = new Set<string>();
+    let cursor = "";
+    let expectedIndexedAt = "";
+    let expectedIndexedThroughBlock = 0;
+    let expectedIndexedThroughBlockHash = "";
+    let expectedSnapshotId = "";
+    let expectedTotalCount = -1;
+    let expectedAuthorityFingerprint = "";
+    let expectedProjectionFingerprint = "";
+    let expectedItemProjectionFingerprint = "";
 
-  for (let pageIndex = 0; pageIndex < MAX_TOKEN_HISTORY_PAGES; pageIndex += 1) {
-    const page = await fetchTokenHistoryPage<PowTokenListing>(
-      targetNetwork,
-      "listings",
-      {
-        address: options.address,
-        projection: "display-v1",
-        cursor: cursor || undefined,
-        fresh: options.fresh,
-        pageSize: TOKEN_HISTORY_PAGE_SIZE,
-        tokenScope: options.tokenScope,
-      },
-    );
-    const pageIndexedAt = String(page.indexedAt ?? "").trim();
-    const pageIndexedThroughBlock = Number(page.indexedThroughBlock);
-    const pageIndexedThroughBlockHash = String(
-      page.indexedThroughBlockHash ?? "",
-    )
-      .trim()
-      .toLowerCase();
-    const pageSnapshotId = String(page.snapshotId ?? "").trim();
-    const pageTotalCount = Number(page.totalCount);
-    const pageItems = page.items ?? [];
-    const pageStart = Number(page.start);
-    const pageEnd = Number(page.end);
-    const pageLimit = Number(page.limit);
-    const pageNumber = Number(page.page);
-    const pageCount = Number(page.pageCount);
-    const nextCursor = String(page.nextCursor ?? "").trim();
-    const authority = page.listingAuthority;
-    const authorityHeight = Number(authority?.checkpoint?.height);
-    const authorityHash = String(authority?.checkpoint?.blockHash ?? "")
-      .trim()
-      .toLowerCase();
-    const authorityDigest = String(
-      authority?.checkedOutpointsSha256 ?? "",
-    )
-      .trim()
-      .toLowerCase();
-    const authorityCheckedCount = Number(authority?.checkedListingCount);
-    const authorityInputCount = Number(authority?.inputListingCount);
-    const authorityOutputCount = Number(authority?.outputListingCount);
-    const authoritySpentCount = Number(authority?.spentListingCount);
-    const authorityUnspentCount = Number(authority?.unspentListingCount);
-    const projection = page.listingProjection;
-    const projectionActiveCount = Number(projection?.activeListingCount);
-    const projectionCoreUnspentCount = Number(
-      projection?.coreUnspentListingCount,
-    );
-    const projectionExcludedCount = Number(
-      projection?.excludedByProtocolCount,
-    );
-    const projectionDigest = String(projection?.membershipSha256 ?? "")
-      .trim()
-      .toLowerCase();
-    const broadUnfilteredBook =
-      !options.address?.trim() && !options.tokenScope?.trim();
-    if (
-      !pageIndexedAt ||
-      !Number.isFinite(Date.parse(pageIndexedAt)) ||
-      !Number.isSafeInteger(pageIndexedThroughBlock) ||
-      pageIndexedThroughBlock < 1 ||
-      !/^[0-9a-f]{64}$/u.test(pageIndexedThroughBlockHash) ||
-      !/^[0-9a-f]{64}$/u.test(pageSnapshotId) ||
-      !Number.isSafeInteger(pageTotalCount) ||
-      pageTotalCount < 0 ||
-      page.kind !== "listings" ||
-      page.network !== targetNetwork ||
-      page.source !==
-        "proof-indexer-complete-core-reconciled-token-listings" ||
-      String(page.cursor ?? "") !== cursor ||
-      !Number.isSafeInteger(pageStart) ||
-      pageStart !== listings.length ||
-      !Number.isSafeInteger(pageEnd) ||
-      pageEnd !== pageStart + pageItems.length ||
-      pageEnd > pageTotalCount ||
-      pageLimit !== TOKEN_HISTORY_PAGE_SIZE ||
-      pageNumber !== Math.floor(pageStart / pageLimit) ||
-      pageCount !==
-        Math.max(1, Math.ceil(pageTotalCount / TOKEN_HISTORY_PAGE_SIZE)) ||
-      page.hasMore !== (pageEnd < pageTotalCount) ||
-      Boolean(nextCursor) !== page.hasMore ||
-      authority?.model !== "proof-token-market-core-gettxout-v1" ||
-      authority?.includeMempool !== true ||
-      authorityHeight !== pageIndexedThroughBlock ||
-      authorityHash !== pageIndexedThroughBlockHash ||
-      !/^[0-9a-f]{64}$/u.test(authorityDigest) ||
-      !Number.isSafeInteger(authorityCheckedCount) ||
-      !Number.isSafeInteger(authorityInputCount) ||
-      !Number.isSafeInteger(authorityOutputCount) ||
-      !Number.isSafeInteger(authoritySpentCount) ||
-      !Number.isSafeInteger(authorityUnspentCount) ||
-      authorityCheckedCount < 0 ||
-      authorityInputCount !== authorityCheckedCount ||
-      authoritySpentCount < 0 ||
-      authorityUnspentCount < 0 ||
-      authorityOutputCount !== authorityUnspentCount ||
-      authoritySpentCount + authorityUnspentCount !== authorityCheckedCount ||
-      projection?.model !== "proof-token-market-cutover-after-core-v1" ||
-      !/^[0-9a-f]{64}$/u.test(projectionDigest) ||
-      !Number.isSafeInteger(projectionActiveCount) ||
-      !Number.isSafeInteger(projectionCoreUnspentCount) ||
-      !Number.isSafeInteger(projectionExcludedCount) ||
-      projectionActiveCount < 0 ||
-      projectionCoreUnspentCount !== authorityUnspentCount ||
-      projectionExcludedCount < 0 ||
-      projectionActiveCount + projectionExcludedCount !==
-        projectionCoreUnspentCount ||
-      pageTotalCount > projectionActiveCount ||
-      (broadUnfilteredBook && pageTotalCount !== projectionActiveCount) ||
-      pageItems.some(
-        (listing) =>
-          listing.network !== targetNetwork || listing.confirmed !== true,
+    for (let pageIndex = 0; pageIndex < MAX_TOKEN_HISTORY_PAGES; pageIndex += 1) {
+      const page = await fetchTokenHistoryPage<PowTokenListing>(
+        targetNetwork,
+        "listings",
+        {
+          address: options.address,
+          signal: controller.signal,
+          projection: "display-v1",
+          cursor: cursor || undefined,
+          fresh: options.fresh,
+          pageSize: TOKEN_HISTORY_PAGE_SIZE,
+          tokenScope: options.tokenScope,
+        },
+      );
+      controller.signal.throwIfAborted();
+      const pageIndexedAt = String(page.indexedAt ?? "").trim();
+      const pageIndexedThroughBlock = Number(page.indexedThroughBlock);
+      const pageIndexedThroughBlockHash = String(
+        page.indexedThroughBlockHash ?? "",
       )
-    ) {
-      throw new Error(
-        "The complete credit listing book lacks exact checkpoint evidence.",
-      );
-    }
-    const itemProjectionFingerprint = listingDisplayProjectionFingerprint(page);
-    const authorityFingerprint = JSON.stringify({
-      checkedListingCount: authorityCheckedCount,
-      checkedOutpointsSha256: authorityDigest,
-      checkpointBlockHash: authorityHash,
-      checkpointHeight: authorityHeight,
-      inputListingCount: authorityInputCount,
-      outputListingCount: authorityOutputCount,
-      spentListingCount: authoritySpentCount,
-      unspentListingCount: authorityUnspentCount,
-    });
-    const projectionFingerprint = JSON.stringify({
-      activeListingCount: projectionActiveCount,
-      coreUnspentListingCount: projectionCoreUnspentCount,
-      excludedByProtocolCount: projectionExcludedCount,
-      membershipSha256: projectionDigest,
-    });
-    if (pageIndex === 0) {
-      expectedIndexedAt = pageIndexedAt;
-      expectedIndexedThroughBlock = pageIndexedThroughBlock;
-      expectedIndexedThroughBlockHash = pageIndexedThroughBlockHash;
-      expectedSnapshotId = pageSnapshotId;
-      expectedTotalCount = pageTotalCount;
-      expectedAuthorityFingerprint = authorityFingerprint;
-      expectedProjectionFingerprint = projectionFingerprint;
-      expectedItemProjectionFingerprint = itemProjectionFingerprint;
-    } else if (
-      pageIndexedAt !== expectedIndexedAt ||
-      pageIndexedThroughBlock !== expectedIndexedThroughBlock ||
-      pageIndexedThroughBlockHash !== expectedIndexedThroughBlockHash ||
-      pageSnapshotId !== expectedSnapshotId ||
-      pageTotalCount !== expectedTotalCount ||
-      authorityFingerprint !== expectedAuthorityFingerprint ||
-      projectionFingerprint !== expectedProjectionFingerprint ||
-      itemProjectionFingerprint !== expectedItemProjectionFingerprint
-    ) {
-      throw new Error(
-        "The complete credit listing book changed checkpoints while paging.",
-      );
-    }
-
-    for (const listing of pageItems) {
-      const listingId = String(listing.listingId ?? "")
         .trim()
         .toLowerCase();
-      if (!/^[0-9a-f]{64}$/u.test(listingId) || listingIds.has(listingId)) {
+      const pageSnapshotId = String(page.snapshotId ?? "").trim();
+      const pageTotalCount = Number(page.totalCount);
+      const pageItems = page.items ?? [];
+      const pageStart = Number(page.start);
+      const pageEnd = Number(page.end);
+      const pageLimit = Number(page.limit);
+      const pageNumber = Number(page.page);
+      const pageCount = Number(page.pageCount);
+      const nextCursor = String(page.nextCursor ?? "").trim();
+      const authority = page.listingAuthority;
+      const authorityHeight = Number(authority?.checkpoint?.height);
+      const authorityHash = String(authority?.checkpoint?.blockHash ?? "")
+        .trim()
+        .toLowerCase();
+      const authorityDigest = String(
+        authority?.checkedOutpointsSha256 ?? "",
+      )
+        .trim()
+        .toLowerCase();
+      const authorityCheckedCount = Number(authority?.checkedListingCount);
+      const authorityInputCount = Number(authority?.inputListingCount);
+      const authorityOutputCount = Number(authority?.outputListingCount);
+      const authoritySpentCount = Number(authority?.spentListingCount);
+      const authorityUnspentCount = Number(authority?.unspentListingCount);
+      const projection = page.listingProjection;
+      const projectionActiveCount = Number(projection?.activeListingCount);
+      const projectionCoreUnspentCount = Number(
+        projection?.coreUnspentListingCount,
+      );
+      const projectionExcludedCount = Number(
+        projection?.excludedByProtocolCount,
+      );
+      const projectionDigest = String(projection?.membershipSha256 ?? "")
+        .trim()
+        .toLowerCase();
+      const broadUnfilteredBook =
+        !options.address?.trim() && !options.tokenScope?.trim();
+      if (
+        !pageIndexedAt ||
+        !Number.isFinite(Date.parse(pageIndexedAt)) ||
+        !Number.isSafeInteger(pageIndexedThroughBlock) ||
+        pageIndexedThroughBlock < 1 ||
+        !/^[0-9a-f]{64}$/u.test(pageIndexedThroughBlockHash) ||
+        !/^[0-9a-f]{64}$/u.test(pageSnapshotId) ||
+        !Number.isSafeInteger(pageTotalCount) ||
+        pageTotalCount < 0 ||
+        page.kind !== "listings" ||
+        page.network !== targetNetwork ||
+        page.source !==
+          "proof-indexer-complete-core-reconciled-token-listings" ||
+        String(page.cursor ?? "") !== cursor ||
+        !Number.isSafeInteger(pageStart) ||
+        pageStart !== listings.length ||
+        !Number.isSafeInteger(pageEnd) ||
+        pageEnd !== pageStart + pageItems.length ||
+        pageEnd > pageTotalCount ||
+        pageLimit !== TOKEN_HISTORY_PAGE_SIZE ||
+        pageNumber !== Math.floor(pageStart / pageLimit) ||
+        pageCount !==
+          Math.max(1, Math.ceil(pageTotalCount / TOKEN_HISTORY_PAGE_SIZE)) ||
+        page.hasMore !== (pageEnd < pageTotalCount) ||
+        Boolean(nextCursor) !== page.hasMore ||
+        authority?.model !== "proof-token-market-core-gettxout-v1" ||
+        authority?.includeMempool !== true ||
+        authorityHeight !== pageIndexedThroughBlock ||
+        authorityHash !== pageIndexedThroughBlockHash ||
+        !/^[0-9a-f]{64}$/u.test(authorityDigest) ||
+        !Number.isSafeInteger(authorityCheckedCount) ||
+        !Number.isSafeInteger(authorityInputCount) ||
+        !Number.isSafeInteger(authorityOutputCount) ||
+        !Number.isSafeInteger(authoritySpentCount) ||
+        !Number.isSafeInteger(authorityUnspentCount) ||
+        authorityCheckedCount < 0 ||
+        authorityInputCount !== authorityCheckedCount ||
+        authoritySpentCount < 0 ||
+        authorityUnspentCount < 0 ||
+        authorityOutputCount !== authorityUnspentCount ||
+        authoritySpentCount + authorityUnspentCount !== authorityCheckedCount ||
+        projection?.model !== "proof-token-market-cutover-after-core-v1" ||
+        !/^[0-9a-f]{64}$/u.test(projectionDigest) ||
+        !Number.isSafeInteger(projectionActiveCount) ||
+        !Number.isSafeInteger(projectionCoreUnspentCount) ||
+        !Number.isSafeInteger(projectionExcludedCount) ||
+        projectionActiveCount < 0 ||
+        projectionCoreUnspentCount !== authorityUnspentCount ||
+        projectionExcludedCount < 0 ||
+        projectionActiveCount + projectionExcludedCount !==
+          projectionCoreUnspentCount ||
+        pageTotalCount > projectionActiveCount ||
+        (broadUnfilteredBook && pageTotalCount !== projectionActiveCount) ||
+        pageItems.some(
+          (listing) =>
+            listing.network !== targetNetwork || listing.confirmed !== true,
+        )
+      ) {
         throw new Error(
-          "The complete credit listing book returned an invalid or repeated listing.",
+          "The complete credit listing book lacks exact checkpoint evidence.",
         );
       }
-      listingIds.add(listingId);
-      listings.push(listing);
+      const itemProjectionFingerprint = listingDisplayProjectionFingerprint(page);
+      const authorityFingerprint = JSON.stringify({
+        checkedListingCount: authorityCheckedCount,
+        checkedOutpointsSha256: authorityDigest,
+        checkpointBlockHash: authorityHash,
+        checkpointHeight: authorityHeight,
+        inputListingCount: authorityInputCount,
+        outputListingCount: authorityOutputCount,
+        spentListingCount: authoritySpentCount,
+        unspentListingCount: authorityUnspentCount,
+      });
+      const projectionFingerprint = JSON.stringify({
+        activeListingCount: projectionActiveCount,
+        coreUnspentListingCount: projectionCoreUnspentCount,
+        excludedByProtocolCount: projectionExcludedCount,
+        membershipSha256: projectionDigest,
+      });
+      if (pageIndex === 0) {
+        expectedIndexedAt = pageIndexedAt;
+        expectedIndexedThroughBlock = pageIndexedThroughBlock;
+        expectedIndexedThroughBlockHash = pageIndexedThroughBlockHash;
+        expectedSnapshotId = pageSnapshotId;
+        expectedTotalCount = pageTotalCount;
+        expectedAuthorityFingerprint = authorityFingerprint;
+        expectedProjectionFingerprint = projectionFingerprint;
+        expectedItemProjectionFingerprint = itemProjectionFingerprint;
+      } else if (
+        pageIndexedAt !== expectedIndexedAt ||
+        pageIndexedThroughBlock !== expectedIndexedThroughBlock ||
+        pageIndexedThroughBlockHash !== expectedIndexedThroughBlockHash ||
+        pageSnapshotId !== expectedSnapshotId ||
+        pageTotalCount !== expectedTotalCount ||
+        authorityFingerprint !== expectedAuthorityFingerprint ||
+        projectionFingerprint !== expectedProjectionFingerprint ||
+        itemProjectionFingerprint !== expectedItemProjectionFingerprint
+      ) {
+        throw new Error(
+          "The complete credit listing book changed checkpoints while paging.",
+        );
+      }
+
+      for (const listing of pageItems) {
+        const listingId = String(listing.listingId ?? "")
+          .trim()
+          .toLowerCase();
+        if (!/^[0-9a-f]{64}$/u.test(listingId) || listingIds.has(listingId)) {
+          throw new Error(
+            "The complete credit listing book returned an invalid or repeated listing.",
+          );
+        }
+        listingIds.add(listingId);
+        listings.push(listing);
+      }
+
+      if (!nextCursor) {
+        if (listings.length !== expectedTotalCount) {
+          throw new Error(
+            `The complete credit listing book returned ${listings.length} of ${expectedTotalCount} listings.`,
+          );
+        }
+        return {
+          indexedAt: expectedIndexedAt,
+          indexedThroughBlock: expectedIndexedThroughBlock,
+          indexedThroughBlockHash: expectedIndexedThroughBlockHash,
+          items: listings,
+          snapshotId: expectedSnapshotId,
+          totalCount: expectedTotalCount,
+        };
+      }
+      if (seenCursors.has(nextCursor)) {
+        throw new Error("The complete credit listing cursor repeated.");
+      }
+      seenCursors.add(nextCursor);
+      cursor = nextCursor;
     }
 
-    if (!nextCursor) {
-      if (listings.length !== expectedTotalCount) {
-        throw new Error(
-          `The complete credit listing book returned ${listings.length} of ${expectedTotalCount} listings.`,
-        );
-      }
-      return {
-        indexedAt: expectedIndexedAt,
-        indexedThroughBlock: expectedIndexedThroughBlock,
-        indexedThroughBlockHash: expectedIndexedThroughBlockHash,
-        items: listings,
-        snapshotId: expectedSnapshotId,
-        totalCount: expectedTotalCount,
-      };
-    }
-    if (seenCursors.has(nextCursor)) {
-      throw new Error("The complete credit listing cursor repeated.");
-    }
-    seenCursors.add(nextCursor);
-    cursor = nextCursor;
+    throw new Error("The complete credit listing book exceeded its page limit.");
+  } finally {
+    globalThis.clearTimeout(deadline);
+    options.signal?.removeEventListener("abort", abort);
   }
-
-  throw new Error("The complete credit listing book exceeded its page limit.");
 }
 
 function completeTokenListingHistoryMatchesState(
@@ -17184,6 +17249,9 @@ function normalizeWorkFloorQuote(
   payload: WorkFloorApiResponse,
   targetNetwork: BitcoinNetwork = payload.network ?? "livenet",
 ): WorkFloorQuote {
+  if (payload.network !== undefined && payload.network !== targetNetwork) {
+    throw new Error("WORK quote response belongs to a different network.");
+  }
   const stats =
     payload.stats && typeof payload.stats === "object"
       ? Object.fromEntries(
@@ -17197,6 +17265,7 @@ function normalizeWorkFloorQuote(
     ? normalizeGrowthActualValue(payload.actualValue)
     : undefined;
   const quote: WorkFloorQuote = {
+    canonicalRead: payload.readAuthority ?? canonicalReadEvidence(payload),
     actualValue,
     baseNetworkValueQ8:
       exactIntegerText(payload.baseNetworkValueQ8) || undefined,
@@ -17556,7 +17625,7 @@ function planWorkFloorQuoteTransition(
     boundaryEvidenceRegressed,
     incomingBoundaryObserved,
     safetyBoundQuote,
-    valueRegressed: workFloorQuoteRegresses(safetyBoundQuote, current),
+    valueRegressed: workFloorQuoteRegresses(safetyBoundQuote, current) && !hasCanonicalWorkFloorAuthority(safetyBoundQuote.canonicalRead),
     v8BoundaryNeedsFailClosedRetention:
       boundaryWasLatched || incomingBoundaryObserved,
   };
@@ -17915,11 +17984,12 @@ async function fetchWorkFloorQuote(
   targetNetwork: BitcoinNetwork,
   fresh = false,
 ): Promise<WorkFloorQuote | undefined> {
+  const readSequence = ++canonicalReadSequence;
   const payload = await fetchProofApiJson<WorkFloorApiResponse>(
     fresh ? "/api/v1/work-floor?fresh=1" : "/api/v1/work-floor",
     targetNetwork,
   );
-  return normalizeWorkFloorQuote(payload, targetNetwork);
+  return normalizeWorkFloorQuote({ ...payload, readSequence, freshRead: fresh }, targetNetwork);
 }
 
 async function fetchWorkSummary(
@@ -17930,10 +18000,14 @@ async function fetchWorkSummary(
   if (fresh) {
     params.set("fresh", "1");
   }
+  const readSequence = ++canonicalReadSequence;
   const payload = await fetchProofApiJson<WorkSummaryApiResponse>(
     `/api/v1/work-summary?${params.toString()}`,
     targetNetwork,
   );
+  if (payload.network !== undefined && payload.network !== targetNetwork) {
+    throw new Error("WORK summary response belongs to a different network.");
+  }
   const token = normalizeTokenApiState(payload.token);
   const hasWorkDefinition = token.tokens.some(
     (item) =>
@@ -17945,7 +18019,7 @@ async function fetchWorkSummary(
 
   return {
     floor: payload.floor
-      ? normalizeWorkFloorQuote(payload.floor, targetNetwork)
+      ? normalizeWorkFloorQuote({ ...payload.floor, readAuthority: canonicalReadEvidence({ ...payload.floor, provenance: payload.provenance, network: payload.network, readSequence, freshRead: fresh }) }, targetNetwork)
       : undefined,
     indexedAt:
       typeof payload.indexedAt === "string"
@@ -17962,11 +18036,15 @@ async function fetchMarketplaceSummary(
   if (fresh) {
     params.set("fresh", "1");
   }
+  const readSequence = ++canonicalReadSequence;
   const payload = await fetchProofApiJson<MarketplaceSummaryApiResponse>(
     `/api/v1/marketplace-summary?${params.toString()}`,
     "livenet",
   );
 
+  if (payload.network !== undefined && payload.network !== "livenet") {
+    throw new Error("AMO summary response belongs to a different network.");
+  }
   if (
     !payload.registry ||
     typeof payload.registry !== "object" ||
@@ -17989,7 +18067,7 @@ async function fetchMarketplaceSummary(
     indexedAt: payload.indexedAt,
     registry: normalizeRegistryApiState(payload.registry),
     token: normalizeTokenApiState(payload.token),
-    workFloor: normalizeWorkFloorQuote(payload.workFloor),
+    workFloor: normalizeWorkFloorQuote({ ...payload.workFloor, readAuthority: canonicalReadEvidence({ ...payload.workFloor, provenance: payload.provenance, network: payload.network, readSequence, freshRead: fresh }) }, "livenet"),
   };
 }
 
@@ -18204,9 +18282,25 @@ function normalizeInfinitySummary(
   payload: InfinitySummaryApiResponse,
   config: BondUiConfig = INFINITY_BOND_UI,
 ): InfinitySummarySnapshot {
+  if (payload.network !== undefined && payload.network !== "livenet") {
+    throw new Error("Bond summary response belongs to a different network.");
+  }
+  if (payload.provenance && (
+    !payload.stats || !exactIntegerText(payload.stats.confirmedSupply) ||
+    !exactIntegerText(payload.stats.pendingSupply) ||
+    !exactIntegerText(payload.networkValueQ8) || !exactIntegerText(payload.floorQ8) ||
+    !payload.actualValue || payload.actualValue.networkValueQ8 !== payload.networkValueQ8 ||
+    payload.actualValue.floorQ8 !== payload.floorQ8 ||
+    !Array.isArray(payload.token?.tokens) ||
+    !payload.token.tokens.some((item) => item.tokenId === config.tokenId) ||
+    payload.tokenId !== config.tokenId
+  )) {
+    throw new Error("Canonical bond summary is incomplete or its exact amount aliases disagree.");
+  }
   const actualValue = normalizeInfinityActualValue(payload.actualValue);
   const token = normalizeTokenApiState(payload.token);
   return {
+    canonicalRead: canonicalReadEvidence(payload),
     actualValue,
     chartPoints: Array.isArray(payload.chartPoints)
       ? payload.chartPoints
@@ -18255,19 +18349,23 @@ async function fetchBondSummary(
   fresh = false,
   signal?: AbortSignal,
 ): Promise<InfinitySummarySnapshot> {
+  const readSequence = ++canonicalReadSequence;
   const payload = await fetchProofApiJson<InfinitySummaryApiResponse>(
     fresh ? `${config.summaryPath}?fresh=1` : config.summaryPath,
     "livenet",
     { signal },
   );
-  return normalizeInfinitySummary(payload, config);
+  return normalizeInfinitySummary({ ...payload, readSequence, freshRead: fresh }, config);
 }
 
 function normalizeGrowthSummary(
   payload: GrowthSummaryApiResponse,
 ): GrowthSummarySnapshot {
+  if (payload.network !== undefined && payload.network !== "livenet") {
+    throw new Error("Growth summary response belongs to a different network.");
+  }
   const workFloor = payload.workFloor
-    ? normalizeWorkFloorQuote(payload.workFloor)
+    ? normalizeWorkFloorQuote({ ...payload.workFloor, readAuthority: canonicalReadEvidence({ ...payload.workFloor, provenance: payload.provenance, network: payload.network, readSequence: payload.readSequence, freshRead: payload.freshRead }) }, "livenet")
     : undefined;
   const actualValue = normalizeGrowthActualValue(
     payload.actualValue ?? workFloor?.actualValue,
@@ -18279,6 +18377,7 @@ function normalizeGrowthSummary(
   }
 
   return {
+    canonicalRead: canonicalReadEvidence(payload),
     actualValue,
     boost: normalizeBoostGrowth(payload.boost, {
       blockHeight: payload.indexedThroughBlock,
@@ -18323,6 +18422,7 @@ async function fetchGrowthSummary(
   snapshot: GrowthSummarySnapshot;
   token: PowTokenState;
 }> {
+  const readSequence = ++canonicalReadSequence;
   const payload = await fetchProofApiJson<GrowthSummaryApiResponse>(
     fresh ? "/api/v1/growth-summary?fresh=1" : "/api/v1/growth-summary",
     "livenet",
@@ -18333,7 +18433,7 @@ async function fetchGrowthSummary(
       ? payload.activity.activity
       : [],
     registry: normalizeRegistryApiState(payload.registry),
-    snapshot: normalizeGrowthSummary(payload),
+    snapshot: normalizeGrowthSummary({ ...payload, readSequence, freshRead: fresh }),
     token: normalizeTokenApiState(payload.token),
   };
 }
@@ -20782,6 +20882,7 @@ export default function App() {
   const [desktopMail, setDesktopMail] = useState<MailMessage[]>([]);
   const [desktopSelectedKey, setDesktopSelectedKey] = useState("");
   const [activityQuery, setActivityQuery] = useState("");
+  const [tokenReadRevision, setTokenReadRevision] = useState(0);
   const [activityProfile, setActivityProfile] = useState<
     DesktopProfile | undefined
   >();
@@ -20794,9 +20895,17 @@ export default function App() {
   >();
   const [activityLoading, setActivityLoading] = useState(false);
   const activitySearchGenerationRef = useRef(0);
+  const activityQueryRef = useRef(activityQuery);
+  activityQueryRef.current = activityQuery;
+  const activityRequestControllerRef = useRef<AbortController>();
+  const desktopRequestGenerationRef = useRef(0);
+  const desktopRequestControllerRef = useRef<AbortController>();
+  const mailRefreshGenerationRef = useRef(0);
   const [desktopLoading, setDesktopLoading] = useState(false);
   const [savedDraft, setSavedDraft] = useState<DraftMessage | undefined>();
   const [inbox, setInbox] = useState<InboxMessage[]>([]);
+  const [mailboxLoaded, setMailboxLoaded] = useState(false);
+  const [registryReadState, setRegistryReadState] = useState({ loaded: false, loading: true, error: "" });
   const [activeFolder, setActiveFolder] = useState<Folder>(() => {
     const queryFolder =
       !landingMode &&
@@ -21168,6 +21277,8 @@ export default function App() {
     useRef<CompleteTokenListingHistory | undefined>();
   const completeMarketplaceListingHistoryInFlightRef =
     useRef<Promise<CompleteTokenListingHistory> | null>(null);
+  const completeMarketplaceListingHistoryFreshRef = useRef(false);
+  const completeMarketplaceListingHistoryControllerRef = useRef<AbortController>();
   const infinityRefreshInFlightRef =
     useRef<Promise<InfinitySummarySnapshot | undefined> | null>(null);
   const infinityRefreshInFlightFreshRef = useRef(false);
@@ -21188,6 +21299,8 @@ export default function App() {
   const marketplaceWorkspaceIsCurrent = () =>
     marketplaceMode || activeFolderRef.current === "marketplace";
   const walletSyncGenerationRef = useRef(0);
+  const walletReadScopeRef = useRef({ address, network });
+  walletReadScopeRef.current = { address, network };
   const acceptedWorkFloorQuoteRef = useRef<WorkFloorQuote | undefined>();
   const workV8DeclarationBoundaryLatchRef = useRef(false);
   const acceptedGrowthSummaryRef = useRef<GrowthSummarySnapshot | undefined>();
@@ -21211,6 +21324,18 @@ export default function App() {
   );
   const activityProfileRef = useRef<DesktopProfile | undefined>(undefined);
   const backupInputRef = useRef<HTMLInputElement>(null);
+  useEffect(() => () => {
+    desktopRequestGenerationRef.current += 1;
+    desktopRequestControllerRef.current?.abort();
+    activitySearchGenerationRef.current += 1;
+    activityRequestControllerRef.current?.abort();
+    mailRefreshGenerationRef.current += 1;
+    completeMarketplaceListingHistoryControllerRef.current?.abort();
+    setDesktopLoading(false);
+    setActivityLoading(false);
+    setRefreshing(false);
+    setCheckingBroadcasts(false);
+  }, [activeWorkspaceStatusKey, network]);
 
   function showLastGoodReadWarning(
     workspaceKey: string,
@@ -21304,12 +21429,15 @@ export default function App() {
     allowRegression = false,
   ) {
     const current = acceptedRegistryStateRef.current;
-    if (!allowRegression && registryStateRegresses(state, current)) {
-      return current;
+    if (current && canonicalReadIsOlder(state.canonicalRead, current.canonicalRead)) return current;
+    if (!allowRegression && registryStateRegresses(state, current) &&
+        !hasCanonicalReadAuthority(state.canonicalRead, "registry", state.records.length)) {
+      throw new Error("ID registry contraction lacks a complete current canonical read. Retaining last verified registry; refresh to verify the current branch.");
     }
 
     const accepted = { ...state, activity };
     acceptedRegistryStateRef.current = accepted;
+    setRegistryReadState({ loaded: true, loading: false, error: "" });
     setIdRegistry(accepted.records);
     setIdListings(accepted.listings);
     setIdPendingEvents(accepted.pendingEvents);
@@ -21319,6 +21447,7 @@ export default function App() {
   }
 
   function renderTokenState(state: PowTokenState, scopeKey: string) {
+    setTokenReadRevision((revision) => revision + 1);
     setTokenDefinitions(state.tokens);
     setTokenHolders(state.holders);
     setTokenMints(state.mints);
@@ -21409,18 +21538,25 @@ export default function App() {
   async function currentCompleteGlobalTokenListings(
     state: PowTokenState,
     fresh = false,
-  ) {
-    const retained = completeMarketplaceListingHistoryRef.current;
-    if (
-      retained &&
-      completeTokenListingHistoryMatchesCheckpoint(retained, state)
-    ) {
-      return retained;
+  ): Promise<CompleteTokenListingHistory> {
+    const requestWorkspaceKey = activeWorkspaceStatusKeyRef.current;
+    // Core/mempool spends can change at the same block. Only coalesce an
+    // in-flight read; never reuse a completed book as current spend authority.
+    if (fresh && completeMarketplaceListingHistoryInFlightRef.current &&
+        !completeMarketplaceListingHistoryFreshRef.current) {
+      await completeMarketplaceListingHistoryInFlightRef.current.catch(() => undefined);
+      if (activeWorkspaceStatusKeyRef.current !== requestWorkspaceKey) {
+        throw new Error("Sale-ticket book refresh was canceled after leaving its workspace.");
+      }
+      return currentCompleteGlobalTokenListings(state, true);
     }
-
-    let request = completeMarketplaceListingHistoryInFlightRef.current;
+    let request = completeMarketplaceListingHistoryControllerRef.current?.signal.aborted
+      ? null : completeMarketplaceListingHistoryInFlightRef.current;
     if (!request) {
-      request = fetchCompleteTokenListings("livenet", { fresh });
+      completeMarketplaceListingHistoryFreshRef.current = fresh;
+      const controller = new AbortController();
+      completeMarketplaceListingHistoryControllerRef.current = controller;
+      request = fetchCompleteTokenListings("livenet", { fresh, signal: controller.signal });
       completeMarketplaceListingHistoryInFlightRef.current = request;
     }
     try {
@@ -21484,6 +21620,7 @@ export default function App() {
     }
 
     const current = acceptedWorkFloorQuoteRef.current;
+    if (canonicalReadIsOlder(quote.canonicalRead, current?.canonicalRead)) return current;
     const boundaryWasLatched =
       workV8DeclarationBoundaryLatchRef.current;
     const transition = planWorkFloorQuoteTransition(
@@ -21558,8 +21695,10 @@ export default function App() {
 
   function applyGrowthSummary(snapshot: GrowthSummarySnapshot) {
     const current = acceptedGrowthSummaryRef.current;
-    if (growthSummaryRegresses(snapshot, current)) {
-      return current;
+    if (canonicalReadIsOlder(snapshot.canonicalRead, current?.canonicalRead)) return current;
+    if (growthSummaryRegresses(snapshot, current) &&
+        !hasCanonicalReadAuthority(snapshot.canonicalRead, "growth-summary")) {
+      throw new Error("Growth summary changed canonical totals without current branch authority. Showing last verified metrics.");
     }
 
     acceptedGrowthSummaryRef.current = snapshot;
@@ -21569,8 +21708,11 @@ export default function App() {
 
   function applyInfinitySummary(snapshot: InfinitySummarySnapshot) {
     const current = acceptedBondSummariesRef.current.get(snapshot.tokenId);
-    if (infinitySummaryRegresses(snapshot, current)) {
-      return current;
+    if (canonicalReadIsOlder(snapshot.canonicalRead, current?.canonicalRead)) return current;
+    const surface = snapshot.tokenId === INCB_TOKEN_ID ? "inception-summary" : "infinity-summary";
+    if (infinitySummaryRegresses(snapshot, current) &&
+        !hasCanonicalReadAuthority(snapshot.canonicalRead, surface)) {
+      throw new Error("Bond summary changed canonical totals without current branch authority. Showing last verified metrics.");
     }
 
     acceptedBondSummariesRef.current.set(snapshot.tokenId, snapshot);
@@ -21599,6 +21741,7 @@ export default function App() {
 
   useEffect(() => {
     acceptedRegistryStateRef.current = {
+      canonicalRead: acceptedRegistryStateRef.current?.canonicalRead,
       activity: idActivity,
       listings: idListings,
       pendingEvents: idPendingEvents,
@@ -21732,16 +21875,16 @@ export default function App() {
   const inboxMailAll = useMemo<MailMessage[]>(
     () =>
       inbox
-        .filter((message) => message.confirmed)
+        .filter((message) => inboxMessageMatchesAccount(message, address, network) && message.confirmed)
         .map((message) => ({ ...message, folder: "inbox" })),
-    [inbox],
+    [inbox, address, network],
   );
   const incomingMailAll = useMemo<MailMessage[]>(
     () =>
       inbox
-        .filter((message) => !message.confirmed)
+        .filter((message) => inboxMessageMatchesAccount(message, address, network) && !message.confirmed)
         .map((message) => ({ ...message, folder: "incoming" })),
-    [inbox],
+    [inbox, address, network],
   );
   const sentForAccount = useMemo(
     () =>
@@ -24094,17 +24237,19 @@ export default function App() {
     }
 
     let cancelled = false;
+    let requestGeneration = 0;
     const loadAccountUtxos = () => {
+      const generation = ++requestGeneration;
       fetchUtxos(address, network)
         .then((utxos) => {
-          if (!cancelled) {
+          if (!cancelled && generation === requestGeneration) {
             setAccountUtxos(utxos);
             setAccountUtxosLoaded(true);
             setAccountUtxosError("");
           }
         })
         .catch((error) => {
-          if (!cancelled) {
+          if (!cancelled && generation === requestGeneration) {
             setAccountUtxosError(
               errorMessage(error, "Wallet UTXOs are unavailable."),
             );
@@ -24112,14 +24257,14 @@ export default function App() {
         });
       fetchAddressApiUtxos(address, network)
         .then((utxos) => {
-          if (!cancelled) {
+          if (!cancelled && generation === requestGeneration) {
             setAccountChainUtxos(utxos);
             setAccountChainUtxosLoaded(true);
             setAccountChainUtxosError("");
           }
         })
         .catch((error) => {
-          if (!cancelled) {
+          if (!cancelled && generation === requestGeneration) {
             setAccountChainUtxosError(
               errorMessage(error, "Full-node wallet UTXOs are unavailable."),
             );
@@ -24731,19 +24876,23 @@ export default function App() {
           return;
         }
 
-        const currentPageIndex = activityHistoryPageRef.current?.page ?? 0;
-        await loadLogHistoryPage(currentPageIndex, true);
+        const currentPage = activityHistoryPageRef.current;
+        const currentPageIndex = currentPage?.page ?? 0;
+        const currentQuery = activityQueryRef.current.trim();
         const currentProfile = activityProfileRef.current;
-        if (!cancelled && currentProfile) {
-          void loadActivityTarget(currentProfile.query);
-        }
+        const resolvedQuery = currentProfile?.query === currentQuery
+          ? currentProfile.address : currentQuery;
+        // Typing is not a verified search. Only refresh the matching accepted page.
+        if (String(currentPage?.query ?? "").trim().toLowerCase() !== resolvedQuery.toLowerCase()) return;
+        await loadLogHistoryPage(currentPageIndex, true, resolvedQuery);
 
         if (fresh) {
           window.clearTimeout(settleTimer);
           settleTimer = window.setTimeout(() => {
             if (!cancelled && document.visibilityState === "visible") {
               void loadLogHead(true, false);
-              void loadLogHistoryPage(currentPageIndex, true);
+              const page = activityHistoryPageRef.current;
+              void loadLogHistoryPage(page?.page ?? 0, true, page?.query ?? "");
             }
           }, BACKGROUND_FRESH_REFRESH_DELAY_MS);
         }
@@ -25023,10 +25172,10 @@ export default function App() {
 
     let cancelled = false;
     const timeout = window.setTimeout(() => {
-      fetchIdRegistry(network)
-        .then((records) => {
+      fetchIdRegistryState(network)
+        .then((state) => {
           if (!cancelled) {
-            setIdRegistry(records);
+            applyRegistryState(state);
           }
         })
         .catch(() => undefined);
@@ -25161,6 +25310,7 @@ export default function App() {
       setAddress(nextAddress);
       setNetwork(nextNetwork);
       setInbox([]);
+      setMailboxLoaded(false);
       setChainSent([]);
       setSelectedKey("");
       setComposeOpen(false);
@@ -25294,6 +25444,7 @@ export default function App() {
         }
         const { inboxMessages, sentMessages } = mailState;
         setInbox(inboxMessages);
+        setMailboxLoaded(true);
         setChainSent(sentMessages);
         setSelectedKey(selectedInboundKey("inbox", inboxMessages));
         setStatus({
@@ -25859,11 +26010,7 @@ export default function App() {
 
       try {
         const latestState = await fetchIdRegistryState(network);
-        setIdRegistry(latestState.records);
-        setIdListings(latestState.listings);
-        setIdPendingEvents(latestState.pendingEvents);
-        setIdSales(latestState.sales);
-        setIdActivity(latestState.activity);
+        applyRegistryState(latestState);
         setContacts((current) => {
           const nextContacts = refreshRegistryContactsFromRecords(
             current,
@@ -26010,10 +26157,17 @@ export default function App() {
 
   async function loadDesktopTarget(target = desktopQuery) {
     const requestWorkspaceKey = activeWorkspaceStatusKeyRef.current;
+    const generation = ++desktopRequestGenerationRef.current;
+    desktopRequestControllerRef.current?.abort();
+    const controller = new AbortController();
+    desktopRequestControllerRef.current = controller;
     const requestIsActive = () =>
-      activeWorkspaceStatusKeyRef.current === requestWorkspaceKey;
+      activeWorkspaceStatusKeyRef.current === requestWorkspaceKey &&
+      generation === desktopRequestGenerationRef.current &&
+      walletReadScopeRef.current.network === network;
     const query = target.trim();
     if (!query) {
+      setDesktopLoading(false);
       setStatusForWorkspace(requestWorkspaceKey, {
         tone: "bad",
         text: "Enter a ProofOfWork address or confirmed ProofOfWork ID.",
@@ -26035,7 +26189,7 @@ export default function App() {
         registryAddress,
       );
       if (resolved.isId || resolved.error) {
-        const state = await fetchIdRecordState(network, query);
+        const state = await fetchIdRecordState(network, query, controller.signal);
         resolved = resolveRecipientInput(
           query,
           network,
@@ -26044,6 +26198,7 @@ export default function App() {
         );
       }
 
+      if (!requestIsActive()) return;
       if (resolved.error || !resolved.paymentAddress) {
         setStatusForWorkspace(requestWorkspaceKey, {
           tone: "bad",
@@ -26054,7 +26209,7 @@ export default function App() {
         return;
       }
 
-      const mailState = await fetchAddressMail(resolved.paymentAddress, network);
+      const mailState = await fetchAddressMail(resolved.paymentAddress, network, false, controller.signal);
       const { inboxMessages, sentMessages } = mailState;
       const publicMail = fileSurfaceMessages(
         publicDesktopMail(inboxMessages, sentMessages),
@@ -26087,16 +26242,27 @@ export default function App() {
         text: `${profile.label} desktop loaded. ${files.length.toLocaleString()} public file${files.length === 1 ? "" : "s"}.`,
       });
     } catch (error) {
+      if (!requestIsActive()) return;
       setStatusForWorkspace(requestWorkspaceKey, {
         tone: "bad",
         text: errorMessage(error, "Desktop search failed."),
       });
     } finally {
-      setDesktopLoading(false);
+      if (requestIsActive()) setDesktopLoading(false);
     }
   }
 
+  function changeDesktopQuery(query: string) {
+    desktopRequestGenerationRef.current += 1;
+    desktopRequestControllerRef.current?.abort();
+    setDesktopLoading(false);
+    setDesktopQuery(query);
+  }
+
   function clearDesktop() {
+    desktopRequestGenerationRef.current += 1;
+    desktopRequestControllerRef.current?.abort();
+    setDesktopLoading(false);
     setDesktopProfile(undefined);
     setDesktopMail([]);
     setDesktopSelectedKey("");
@@ -26183,10 +26349,18 @@ export default function App() {
   async function loadLogHistoryPage(
     pageIndex = 0,
     silent = true,
-    query = activityQuery,
+    query = activityQueryRef.current,
     options: { snapshotId?: string } = {},
   ) {
     const requestWorkspaceKey = activeWorkspaceStatusKeyRef.current;
+    const generation = ++activitySearchGenerationRef.current;
+    activityRequestControllerRef.current?.abort();
+    const controller = new AbortController();
+    activityRequestControllerRef.current = controller;
+    const requestIsActive = () =>
+      generation === activitySearchGenerationRef.current &&
+      activeWorkspaceStatusKeyRef.current === requestWorkspaceKey &&
+      walletReadScopeRef.current.network === network;
     const readSource = "log-history";
     const readAttempt = nextProofApiReadAttempt();
     const cacheKey = activityHistoryCacheKey({
@@ -26200,9 +26374,7 @@ export default function App() {
       return undefined;
     }
 
-    if (!silent) {
-      setActivityLoading(true);
-    }
+    setActivityLoading(true);
 
     try {
       const page = await fetchGlobalActivityHistoryPage(network, {
@@ -26210,7 +26382,9 @@ export default function App() {
         pageSize: ACTIVITY_FEED_PAGE_SIZE,
         query,
         snapshotId: options.snapshotId,
+        signal: controller.signal,
       });
+      if (!requestIsActive()) return undefined;
       clearLastGoodReadWarning(
         requestWorkspaceKey,
         readSource,
@@ -26218,6 +26392,7 @@ export default function App() {
       );
       return acceptActivityHistoryPage(cacheKey, page);
     } catch (error) {
+      if (!requestIsActive()) return undefined;
       const cachedPage = activityHistoryPagesRef.current.get(cacheKey);
       const retainedLastGood =
         Boolean(cachedPage) &&
@@ -26241,26 +26416,31 @@ export default function App() {
       }
       return undefined;
     } finally {
-      if (!silent) {
-        setActivityLoading(false);
-      }
+      if (requestIsActive()) setActivityLoading(false);
     }
   }
 
   async function refreshLogSurface(silent = true, fresh = false) {
     const head = await loadLogHead(silent, fresh);
-    await loadLogHistoryPage(0, true);
+    const page = activityHistoryPageRef.current;
+    const profile = activityProfileRef.current;
+    const query = activityQueryRef.current.trim();
+    await loadLogHistoryPage(page?.page ?? 0, true, profile?.query === query ? profile.address : query);
     return head;
   }
 
   async function loadActivityTarget(target = activityQuery) {
     const requestWorkspaceKey = activeWorkspaceStatusKeyRef.current;
     const generation = ++activitySearchGenerationRef.current;
+    activityRequestControllerRef.current?.abort();
+    const controller = new AbortController();
+    activityRequestControllerRef.current = controller;
     const readSource = "log-search";
     const readAttempt = nextProofApiReadAttempt();
     const requestIsActive = () =>
       activeWorkspaceStatusKeyRef.current === requestWorkspaceKey &&
-      generation === activitySearchGenerationRef.current;
+      generation === activitySearchGenerationRef.current &&
+      walletReadScopeRef.current.network === network;
     const query = target.trim();
     let cacheKey = "";
     let cachedSearchProfile: DesktopProfile | undefined;
@@ -26268,11 +26448,17 @@ export default function App() {
     if (!query) {
       setActivityProfile(undefined);
       setActivityMail([]);
-      await loadLogHistoryPage(0, true, "");
-      setStatusForWorkspace(requestWorkspaceKey, {
-        tone: "idle",
-        text: "Log search cleared.",
-      });
+      const clearedPage = loadLogHistoryPage(0, true, "");
+      const clearGeneration = activitySearchGenerationRef.current;
+      await clearedPage;
+      if (clearGeneration === activitySearchGenerationRef.current &&
+          requestWorkspaceKey === activeWorkspaceStatusKeyRef.current &&
+          walletReadScopeRef.current.network === network) {
+        setStatusForWorkspace(requestWorkspaceKey, {
+          tone: "idle",
+          text: "Log search cleared.",
+        });
+      }
       return;
     }
 
@@ -26297,6 +26483,7 @@ export default function App() {
           pageIndex: 0,
           pageSize: ACTIVITY_FEED_PAGE_SIZE,
           query: normalizedTxid,
+          signal: controller.signal,
         });
         if (!requestIsActive()) {
           return;
@@ -26325,10 +26512,8 @@ export default function App() {
       );
       if (resolved.isId || resolved.error) {
         const state = await fetchIdRegistryState(network);
-        setIdRegistry(state.records);
-        setIdListings(state.listings);
-        setIdPendingEvents(state.pendingEvents);
-        setIdSales(state.sales);
+        if (!requestIsActive()) return;
+        applyRegistryState(state);
         resolved = resolveRecipientInput(
           query,
           network,
@@ -26370,6 +26555,7 @@ export default function App() {
         pageIndex: 0,
         pageSize: ACTIVITY_FEED_PAGE_SIZE,
         query: resolved.paymentAddress,
+        signal: controller.signal,
       });
       if (!requestIsActive()) {
         return;
@@ -26435,6 +26621,8 @@ export default function App() {
 
   function changeActivityQuery(query: string) {
     activitySearchGenerationRef.current += 1;
+    activityRequestControllerRef.current?.abort();
+    activityQueryRef.current = query;
     setActivityLoading(false);
     setActivityQuery(query);
     setStatusForWorkspace(activeWorkspaceStatusKeyRef.current, {
@@ -26444,6 +26632,8 @@ export default function App() {
 
   function clearActivity() {
     activitySearchGenerationRef.current += 1;
+    activityRequestControllerRef.current?.abort();
+    activityQueryRef.current = "";
     setActivityLoading(false);
     setActivityQuery("");
     setActivityProfile(undefined);
@@ -26524,18 +26714,24 @@ export default function App() {
           fetchMarketplaceSummary(fresh),
           fetchBtcUsdPrice(fresh).catch(() => undefined),
         ]);
+        if (!requestIsActive()) return undefined;
+        const summaryMetrics = marketplaceSummaryPreview(snapshot);
+        if (summaryMetrics && !canonicalReadIsOlder(snapshot.workFloor?.canonicalRead, acceptedWorkFloorQuoteRef.current?.canonicalRead)) {
+          setMarketplaceSummaryReadState((current) => ({
+            indexedAt: snapshot.indexedAt,
+            summaryMetrics,
+            message: "Canonical summary verified. Complete listing book is still being checked; current availability is not yet verified.",
+            status: marketplaceSummaryHasVerifiedData(current) ? "last-verified" : "loading",
+          }));
+        }
         const completeTokenState = await tokenStateWithCurrentCompleteMarketplaceListings(
           snapshot.token,
           fresh,
-        ).catch((error) => {
-          console.error(
-            `Complete AMO listing hydration deferred: ${errorMessage(
-              error,
-              "checkpoint unavailable",
-            )}`,
-          );
-          return snapshot.token;
-        });
+        );
+        if (!requestIsActive()) return undefined;
+        if (completeTokenState.listingBookComplete !== true) {
+          throw new Error("Complete current AMO listing book is unavailable. Summary metrics do not establish listing availability.");
+        }
         const marketplaceTokenScopeKey = tokenStateScopeKey({
           network: "livenet",
           tokenScope: "",
@@ -26653,7 +26849,7 @@ export default function App() {
           );
         }
         if (!silent) {
-          const floorText = ` WORK floor ${bondProofAmountDisplay(
+          const floorText = ` Live network value ${bondProofAmountDisplay(
             workFloorQuoteLiveValue(acceptedWorkFloor),
             workFloorQuoteLiveValueQ8(acceptedWorkFloor),
           )} proofs.`;
@@ -26675,8 +26871,9 @@ export default function App() {
               label: "ProofOfWork AMO",
             })
           : "";
-        setMarketplaceSummaryReadState(
-          lastGoodSnapshot
+        setMarketplaceSummaryReadState((current) => ({
+          summaryMetrics: current.summaryMetrics,
+          ...(lastGoodSnapshot
             ? {
                 indexedAt: lastGoodSnapshot.indexedAt,
                 message:
@@ -26690,8 +26887,8 @@ export default function App() {
                   "The canonical AMO summary could not be verified. No market totals are being reported.",
                 ),
                 status: "unavailable",
-              },
-        );
+              }),
+        }));
         if (fresh && requestIsActive() && lastGoodWorkFloor) {
           const structuredStatus = proofApiLastGoodReadStatus(error, {
             indexedAt: lastGoodWorkFloor.indexedAt,
@@ -26790,7 +26987,10 @@ export default function App() {
           fetchIdRegistryState("livenet", fresh, true).catch(() => undefined),
           fetchBtcUsdPrice(fresh).catch(() => undefined),
         ]);
-        const snapshot = await fetchBondSummary(config, fresh);
+        let snapshot = await fetchBondSummary(config, fresh);
+        if (!fresh && infinitySummaryRegresses(snapshot, acceptedBondSummariesRef.current.get(config.tokenId))) {
+          snapshot = await fetchBondSummary(config, true);
+        }
         const summarySnapshot = applyInfinitySummary(snapshot) ?? snapshot;
         applyTokenState(summarySnapshot.token, {
           scopeKey: tokenStateScopeKey({
@@ -27371,7 +27571,7 @@ export default function App() {
         if (tokenState) {
           const floorText =
             includeWorkFloor && floorQuote
-              ? ` WORK floor ${Math.round(floorQuote.networkValueSats).toLocaleString()} proofs.`
+              ? ` Live network value ${bondProofAmountDisplay(workFloorQuoteLiveValue(floorQuote), workFloorQuoteLiveValueQ8(floorQuote))} proofs.`
               : "";
           setStatusForWorkspace(
             requestWorkspaceKey,
@@ -27384,7 +27584,7 @@ export default function App() {
                 }
               : {
                   tone: "good",
-                  text: `${usedIndexedFallback ? "Credit market loaded from indexed state." : "Credit market loaded."} ${tokenState.tokens.length.toLocaleString()} credit${tokenState.tokens.length === 1 ? "" : "s"}, ${tokenState.listings.length.toLocaleString()} listing${tokenState.listings.length === 1 ? "" : "s"}, ${tokenState.sales.length.toLocaleString()} sale${tokenState.sales.length === 1 ? "" : "s"}.${floorText}`,
+                  text: `${usedIndexedFallback ? "Credit market loaded from indexed state." : "Credit market loaded."} ${tokenState.tokens.length.toLocaleString()} credit${tokenState.tokens.length === 1 ? "" : "s"}, ${tokenState.listings.length.toLocaleString()} listing${tokenState.listings.length === 1 ? "" : "s"}, ${tokenState.sales.length.toLocaleString()} sale${tokenState.sales.length === 1 ? "" : "s"} in the loaded preview.${floorText}`,
                 },
           );
         } else {
@@ -27435,12 +27635,14 @@ export default function App() {
         fetchGrowthSummary(fresh),
         fetchBtcUsdPrice(fresh).catch(() => undefined),
       ]);
-      const { activity, registry: registryState, snapshot, token: tokenState } =
-        summaryPayload;
-      applyRegistryState(
-        registryState,
-        activity.length > 0 ? activity : registryState.activity,
-      );
+      let currentPayload = summaryPayload;
+      if (!fresh && growthSummaryRegresses(currentPayload.snapshot, acceptedGrowthSummaryRef.current)) {
+        currentPayload = await fetchGrowthSummary(true);
+      }
+      const { snapshot, token: tokenState } = currentPayload;
+      // Compact Growth omits registry history. Its aggregate authority does not
+      // replace the separate complete ID collection.
+
       applyTokenState(tokenState, {
         scopeKey: tokenStateScopeKey({
           network: "livenet",
@@ -27556,6 +27758,7 @@ export default function App() {
   function clearWalletSession() {
     setAddress("");
     setInbox([]);
+    setMailboxLoaded(false);
     setChainSent([]);
     setSavedDraft(undefined);
     setSelectedKey("");
@@ -27627,6 +27830,7 @@ export default function App() {
 
       setAddress(firstAddress);
       setInbox([]);
+      setMailboxLoaded(false);
       setChainSent([]);
       setSelectedKey("");
       if (
@@ -27777,6 +27981,7 @@ export default function App() {
         }
         const { inboxMessages, sentMessages } = mailState;
         setInbox(inboxMessages);
+        setMailboxLoaded(true);
         setChainSent(sentMessages);
         setSelectedKey(selectedInboundKey("inbox", inboxMessages));
         setStatus({
@@ -27833,6 +28038,7 @@ export default function App() {
     if (!window.unisat?.switchChain && !window.unisat?.switchNetwork) {
       setNetwork(nextNetwork);
       setInbox([]);
+      setMailboxLoaded(false);
       setChainSent([]);
       setSelectedKey("");
       setStatus({
@@ -27865,6 +28071,7 @@ export default function App() {
       setNetwork(activeWalletNetwork);
       setAddress(nextAddress);
       setInbox([]);
+      setMailboxLoaded(false);
       setChainSent([]);
       setSelectedKey("");
 
@@ -27882,6 +28089,7 @@ export default function App() {
       );
       const { inboxMessages, sentMessages } = mailState;
       setInbox(inboxMessages);
+      setMailboxLoaded(true);
       setChainSent(sentMessages);
       setSelectedKey(selectedInboundKey("inbox", inboxMessages));
       setStatus({
@@ -27966,6 +28174,7 @@ export default function App() {
     }
 
     const refreshPromise = (async () => {
+      setRegistryReadState((current) => ({ ...current, loading: true, error: "" }));
       const readSource = "registry";
       const readAttempt = nextProofApiReadAttempt();
       if (!silent) {
@@ -27988,7 +28197,11 @@ export default function App() {
         !marketplaceMode &&
         activeFolder !== "marketplace";
       try {
-        const state = await fetchIdRegistryState(network, fresh, useSummary);
+        let state = await fetchIdRegistryState(network, fresh, useSummary);
+        if (registryStateRegresses(state, acceptedRegistryStateRef.current) &&
+            !hasCanonicalReadAuthority(state.canonicalRead, "registry", state.records.length)) {
+          state = await fetchIdRegistryState(network, true, false);
+        }
         if (marketplaceWorkspaceIsCurrent()) {
           return acceptedRegistryStateRef.current;
         }
@@ -28044,6 +28257,7 @@ export default function App() {
         }
         return acceptedState;
       } catch (error) {
+        setRegistryReadState((current) => ({ ...current, loading: false, error: errorMessage(error, "ID registry is unavailable.") }));
         const retainedLastGood =
           fresh &&
           verifiedRegistryReadRef.current &&
@@ -28059,6 +28273,7 @@ export default function App() {
         }
         return undefined;
       } finally {
+        setRegistryReadState((current) => ({ ...current, loading: false }));
         idRefreshInFlightRef.current = null;
         idRefreshInFlightFreshRef.current = false;
         if (!silent) {
@@ -29373,10 +29588,7 @@ export default function App() {
     if (!isValidBitcoinAddress(receiveInput, network)) {
       const latestState = await fetchIdRegistryState(network);
       latestRegistry = latestState.records;
-      setIdRegistry(latestState.records);
-      setIdListings(latestState.listings);
-      setIdPendingEvents(latestState.pendingEvents);
-      setIdSales(latestState.sales);
+      applyRegistryState(latestState);
       resolvedReceive = resolveRecipientInput(
         receiveInput,
         network,
@@ -29444,10 +29656,7 @@ export default function App() {
     ) {
       const latestState = await fetchIdRegistryState(network);
       latestRegistry = latestState.records;
-      setIdRegistry(latestState.records);
-      setIdListings(latestState.listings);
-      setIdPendingEvents(latestState.pendingEvents);
-      setIdSales(latestState.sales);
+      applyRegistryState(latestState);
       resolvedOwner = resolvePowIdOwnerInput(
         idTransferOwnerAddress,
         network,
@@ -29613,8 +29822,8 @@ export default function App() {
           return;
         }
 
-        const records = await fetchIdRegistry(network);
-        setIdRegistry(records);
+        const state = await fetchIdRegistryState(network);
+        const records = applyRegistryState(state).records;
         resolvedRecipients = resolveRecipientInputs(
           recipientInput,
           network,
@@ -29665,10 +29874,7 @@ export default function App() {
       let reservedOutpoints: PowIdSpentOutpoint[] = [];
       if (registryAddress) {
         const latestState = await fetchIdRegistryState(network);
-        setIdRegistry(latestState.records);
-        setIdListings(latestState.listings);
-        setIdPendingEvents(latestState.pendingEvents);
-        setIdSales(latestState.sales);
+        applyRegistryState(latestState);
         reservedOutpoints = activeListingAnchorOutpointsForAddress(
           latestState.listings,
           address,
@@ -30073,11 +30279,7 @@ export default function App() {
     try {
       if (infinityBondRecipientInput) {
         const latestState = await fetchIdRegistryState("livenet", true, true);
-        setIdRegistry(latestState.records);
-        setIdListings(latestState.listings);
-        setIdPendingEvents(latestState.pendingEvents);
-        setIdSales(latestState.sales);
-        setIdActivity(latestState.activity);
+        applyRegistryState(latestState);
         resolvedRecipient = resolveRecipientInput(
           infinityBondRecipientInput,
           "livenet",
@@ -30419,6 +30621,15 @@ export default function App() {
       return;
     }
 
+    const generation = ++mailRefreshGenerationRef.current;
+    const walletGeneration = walletSyncGenerationRef.current;
+    const requestWorkspaceKey = activeWorkspaceStatusKeyRef.current;
+    const requestIsActive = () =>
+      generation === mailRefreshGenerationRef.current &&
+      walletGeneration === walletSyncGenerationRef.current &&
+      walletReadScopeRef.current.address === address &&
+      walletReadScopeRef.current.network === network &&
+      activeWorkspaceStatusKeyRef.current === requestWorkspaceKey;
     setBusy(true);
     setRefreshing(true);
     setCheckingBroadcasts(true);
@@ -30429,6 +30640,7 @@ export default function App() {
 
     try {
       const mailState = await fetchAddressMail(address, network, true);
+      if (!requestIsActive()) return;
       const { inboxMessages, sentMessages } = mailState;
       const targets = broadcastTargetsFor(
         address,
@@ -30439,11 +30651,13 @@ export default function App() {
       const summary = targets.length
         ? await checkBroadcastTargets(targets)
         : undefined;
+      if (!requestIsActive()) return;
       const checkedSentMessages = summary
         ? applyBroadcastCheckResults(sentMessages, summary)
         : sentMessages;
 
       setInbox(inboxMessages);
+      setMailboxLoaded(true);
       setChainSent(checkedSentMessages);
       if (summary) {
         setAllSent((current) => applyBroadcastCheckResults(current, summary));
@@ -30462,11 +30676,14 @@ export default function App() {
         }.`,
       });
     } catch (error) {
+      if (!requestIsActive()) return;
       setStatus({ tone: "bad", text: errorMessage(error, "Refresh failed.") });
     } finally {
-      setCheckingBroadcasts(false);
-      setRefreshing(false);
-      setBusy(false);
+      if (generation === mailRefreshGenerationRef.current) {
+        setCheckingBroadcasts(false);
+        setRefreshing(false);
+        setBusyForWorkspace(requestWorkspaceKey, false);
+      }
     }
   }
 
@@ -32771,6 +32988,7 @@ export default function App() {
   if (idLaunchMode) {
     return (
       <IdLaunchApp
+        registryReadState={registryReadState}
         accountStats={connectedAccountStats}
         address={address}
         busy={busy}
@@ -32947,7 +33165,7 @@ export default function App() {
         preparingTransferUtxos={tokenAction === "split-transfer"}
         proofBalanceError={accountUtxosError || connectedWalletReservationsError}
         proofBalanceLoaded={accountUtxosLoaded && connectedWalletReservationsReady}
-        creditBalancesReady={!address || accountAllTokenLaneClean}
+        creditBalancesReady={Boolean(address) && accountAllTokenLaneClean && !accountTokenLaneStatuses.all.loading}
         creditBalancesError={accountTokenLaneStatuses.all.error}
         proofBalanceSats={connectedWalletProofFundingContext.confirmedBalanceSats}
         proofProtectedSats={connectedWalletProofFundingContext.protectedSats}
@@ -33015,6 +33233,7 @@ export default function App() {
         bondWorkAttachmentVisible={bondWorkAttachmentVisible}
         bondWorkBalanceError={bondWorkBalanceError}
         bondWorkBalanceLoaded={bondWorkBalanceLoaded}
+        walletBalanceReadStatuses={accountTokenLaneStatuses}
         bondWorkBalanceLoading={bondWorkBalanceLoading}
         bondWorkSpendableBalance={workAttachmentSpendableBalance}
         bondWorkSpendableAtoms={workAttachmentSpendableAtoms.toString()}
@@ -33151,10 +33370,12 @@ export default function App() {
         tokenDetailTarget={effectiveTokenDetailTarget}
         tokenIndexAddress={tokenIndexAddressForNetwork("livenet")}
         ledgerLoading={tokenLedgerLoading}
+        historyRevision={tokenReadRevision}
         tokenListings={tokenListings}
         tokenSales={tokenSales}
         tokens={dashboardTokenDefinitions}
         walletBalances={accountWalletBalances}
+        walletBalanceReadStatuses={accountTokenLaneStatuses}
         workFloorLoading={workFloorLoading}
         workFloorQuote={workFloorQuote}
         workFloorLastGoodStatus={workFloorLastGoodStatus}
@@ -33183,7 +33404,7 @@ export default function App() {
         messages={desktopMail}
         profile={desktopProfile}
         selectedKey={desktopSelectedKey}
-        setDesktopQuery={setDesktopQuery}
+        setDesktopQuery={changeDesktopQuery}
         setFileFilter={setFileFilter}
         setSortMode={setSortMode}
         sortMode={sortMode}
@@ -33778,6 +33999,7 @@ export default function App() {
 
         {activeFolder === "ids" ? (
           <IdsWorkspace
+            registryReadState={registryReadState}
             address={address}
             busy={busy}
             canRegister={canRegisterId}
@@ -33928,7 +34150,7 @@ export default function App() {
             preparingTransferUtxos={tokenAction === "split-transfer"}
             proofBalanceError={accountUtxosError || connectedWalletReservationsError}
             proofBalanceLoaded={accountUtxosLoaded && connectedWalletReservationsReady}
-        creditBalancesReady={!address || accountAllTokenLaneClean}
+        creditBalancesReady={Boolean(address) && accountAllTokenLaneClean && !accountTokenLaneStatuses.all.loading}
         creditBalancesError={accountTokenLaneStatuses.all.error}
             proofBalanceSats={
               connectedWalletProofFundingContext.confirmedBalanceSats
@@ -34043,11 +34265,13 @@ export default function App() {
             }
             tokenIndexAddress={tokenIndexAddressForNetwork("livenet")}
             ledgerLoading={tokenLedgerLoading}
+        historyRevision={tokenReadRevision}
             tokenListings={tokenListings}
             tokenSales={tokenSales}
             tokens={orderedTokenDefinitions.filter((token) => !isBondTokenDefinition(token))}
             ledgerError={tokenDataError}
             walletBalances={accountWalletBalances}
+        walletBalanceReadStatuses={accountTokenLaneStatuses}
             workFloorLoading={workFloorLoading}
             workFloorQuote={workFloorQuote}
             workFloorLastGoodStatus={workFloorLastGoodStatus}
@@ -34076,6 +34300,7 @@ export default function App() {
             bondWorkAttachmentVisible={bondWorkAttachmentVisible}
             bondWorkBalanceError={bondWorkBalanceError}
             bondWorkBalanceLoaded={bondWorkBalanceLoaded}
+        walletBalanceReadStatuses={accountTokenLaneStatuses}
             bondWorkBalanceLoading={bondWorkBalanceLoading}
             bondWorkSpendableBalance={workAttachmentSpendableBalance}
             bondWorkSpendableAtoms={workAttachmentSpendableAtoms.toString()}
@@ -34149,7 +34374,7 @@ export default function App() {
             messages={desktopMail}
             profile={desktopProfile}
             selectedKey={desktopSelectedKey}
-            setDesktopQuery={setDesktopQuery}
+            setDesktopQuery={changeDesktopQuery}
             setFileFilter={setFileFilter}
             setSortMode={setSortMode}
             sortMode={sortMode}
@@ -34313,6 +34538,9 @@ export default function App() {
                 />
               ) : (
                 <MessageList
+                  connected={Boolean(address)}
+                  mailboxLoaded={mailboxLoaded}
+                  loading={refreshInProgress}
                   activeKey={selectedMessage ? mailKey(selectedMessage) : ""}
                   activeNetwork={network}
                   activeFolder={activeFolder}
@@ -35218,7 +35446,13 @@ function BrowserApp({
               />
             </label>
             <div className="browser-form-row">
-              <BrowserNetworkTabs network={network} onChange={setNetwork} />
+              <BrowserNetworkTabs network={network} onChange={(nextNetwork) => {
+                loadGenerationRef.current += 1;
+                setLoading(false);
+                setPage(undefined);
+                setNetwork(nextNetwork);
+                setStatus({ tone: "idle", text: "Network selected. Load a txid to verify its HTML." });
+              }} />
               <button className="primary" disabled={loading} type="submit">
                 <span className="button-content">
                   <Search size={16} />
@@ -35555,7 +35789,13 @@ function BrowserWorkspace({
             />
           </label>
           <div className="browser-form-row">
-            <BrowserNetworkTabs network={network} onChange={setNetwork} />
+            <BrowserNetworkTabs network={network} onChange={(nextNetwork) => {
+                loadGenerationRef.current += 1;
+                setLoading(false);
+                setPage(undefined);
+                setNetwork(nextNetwork);
+                setStatus({ tone: "idle", text: "Network selected. Load a txid to verify its HTML." });
+              }} />
             <button className="primary" disabled={loading} type="submit">
               <span className="button-content">
                 <Search size={16} />
@@ -35793,6 +36033,7 @@ function DesktopApp({
       <AppHeader
         accountStats={accountStats}
         network={activeNetwork}
+        busy={busy}
         onRefresh={onRefresh}
         subtitle="Public file search"
         title="ProofOfWork Desktop"
@@ -35868,6 +36109,7 @@ function ActivityApp({
         onNetworkChange={onNetworkChange}
         onRefresh={onRefresh}
         subtitle="ProofOfWork Computer log"
+        busy={busy}
         title="ProofOfWork Log"
       />
 
@@ -35901,11 +36143,13 @@ function ActivityApp({
 }
 
 function activityKey(item: PowActivityItem) {
-  if (item.kind === "token-listing-closed" && item.txid) {
-    return `${item.kind}-${item.network}-${item.txid}`;
+  const position = [item.protocolVout, item.recordOrdinal];
+  if (position.every((value) => Number.isSafeInteger(value) && Number(value) >= 0)) {
+    return [item.network, item.txid, item.kind, ...position].join(":");
   }
-
-  return `${item.kind}-${item.network}-${item.txid}-${item.listingId ?? ""}-${item.id ?? ""}`;
+  // Historical/synthetic records may predate protocol positions. Avoid volatile
+  // database event IDs; retain their stable chain/entity identity.
+  return [item.network, item.txid, item.kind, item.listingId ?? "", item.id ?? "", item.tokenId ?? "", item.utxo ?? ""].join(":");
 }
 
 function activityKindDisplay(kind: string) {
@@ -36148,8 +36392,9 @@ function ActivityWorkspace({
           <div>
             <h3>{title}</h3>
             <p>
-              Confirmed records are canonical. Pending records are visible until
-              they confirm or disappear.
+              Confirmation establishes chain inclusion. Protocol state also
+              depends on each application's validation. Pending records remain
+              visible until they confirm or disappear.
             </p>
             {resultsVerified && (indexedAt || indexedThroughBlock) ? (
               <p>
@@ -36210,7 +36455,10 @@ function ActivityFeed({
     <div className="activity-feed">
       {items.map((item) => {
         const key = activityKey(item);
-        const tags = Array.isArray(item.tags) ? item.tags : [];
+        const wireShapeOnly = item.validationScope === "wire-shape-only";
+        const tags = (Array.isArray(item.tags) ? item.tags : []).map((tag) =>
+          wireShapeOnly && typeof tag === "string" && tag.toLowerCase() === "valid" ? "Wire format valid" : tag,
+        );
         const title =
           item.id
             ? `${item.id}@proofofwork.me`
@@ -36226,6 +36474,11 @@ function ActivityFeed({
                 <h4>{title}</h4>
                 <strong>{summary}</strong>
                 {item.id ? <p>{item.description}</p> : null}
+                {wireShapeOnly ? <p className="field-note" role="note">
+                  Wire format check only. Ownership, payment and state transition
+                  have not been evaluated in this Log record.
+                  {item.authorityEndpoint === "/api/v1/boost" ? <> {" "}<a href={proofApiUrl("/api/v1/boost", item.network)} target="_blank" rel="noreferrer">View Boost validation</a></> : null}
+                </p> : null}
                 {item.detail ? (
                   <span className="activity-detail">{item.detail}</span>
                 ) : null}
@@ -36373,6 +36626,7 @@ type TokenWalletAppProps = {
 
 type InfinityAppProps = {
   accountStats?: AppHeaderAccountStat[];
+  walletBalanceReadStatuses?: AccountTokenLaneStatuses;
   address: string;
   balances: PowTokenWalletBalance[];
   bondAmount: number;
@@ -36444,6 +36698,7 @@ type InfinityAppProps = {
 
 function InfinityApp({
   accountStats = [],
+  walletBalanceReadStatuses,
   address,
   balances,
   bondAmount,
@@ -36630,42 +36885,25 @@ function InfinityApp({
   const infinityChartSupplyValues = infinityChartPoints
     .map((point) => exactIntegerBigInt(point.confirmedSupply))
     .filter((value): value is bigint => value !== null && value >= 0n);
-  const infinityChartNumericValues =
-    infinityChartMetric === "supply"
-      ? []
-      : infinityChartPoints.map((point) =>
-          infinityBondChartNumericValue(point, infinityChartMetric),
-        );
+  const infinityChartExtrema = infinityChartMetric === "supply"
+    ? undefined
+    : infinityBondPriceExtrema(infinityChartPoints, infinityChartMetric);
   const infinityChartMinLabel =
     infinityChartMetric === "supply"
       ? `${formatExactInteger(
           infinityChartSupplyValues.length
-            ? infinityChartSupplyValues.reduce((minimum, value) =>
-                value < minimum ? value : minimum,
-              )
+            ? infinityChartSupplyValues.reduce((minimum, value) => value < minimum ? value : minimum)
             : 0n,
         )} ${bondConfig.ticker}`
-      : infinityBondAxisLabel(
-          infinityChartNumericValues.length
-            ? Math.min(...infinityChartNumericValues)
-            : 0,
-          infinityChartMetric,
-        );
+      : infinityBondPointPriceLabel(infinityChartExtrema?.minimum, infinityChartMetric);
   const infinityChartMaxLabel =
     infinityChartMetric === "supply"
       ? `${formatExactInteger(
           infinityChartSupplyValues.length
-            ? infinityChartSupplyValues.reduce((maximum, value) =>
-                value > maximum ? value : maximum,
-              )
+            ? infinityChartSupplyValues.reduce((maximum, value) => value > maximum ? value : maximum)
             : 0n,
         )} ${bondConfig.ticker}`
-      : infinityBondAxisLabel(
-          infinityChartNumericValues.length
-            ? Math.max(...infinityChartNumericValues)
-            : 0,
-          infinityChartMetric,
-        );
+      : infinityBondPointPriceLabel(infinityChartExtrema?.maximum, infinityChartMetric);
   const recipientText = bondRecipient.trim()
     ? bondRecipientResolution.error
       ? bondRecipientResolution.error
@@ -36987,13 +37225,13 @@ function InfinityApp({
                     value={bondWorkAmount}
                   />
                   <span className="field-note" id="bond-work-balance-note">
-                    {bondWorkBalanceLoaded
+                    {!address ? "Connect your wallet to verify the WORK balance." : bondWorkBalanceLoaded
                       ? `${tokenAmountDisplay(
                           { ticker: WORK_TOKEN_TICKER, tokenId: WORK_TOKEN_ID },
                           bondWorkSpendableBalance,
                           undefined,
                           bondWorkSpendableAtoms,
-                        )} spendable WORK${bondWorkBalanceError ? " from the last verified balance" : ""}.`
+                        )} spendable WORK${bondWorkBalanceError ? " from the last verified balance; current spendability is unavailable" : bondWorkBalanceLoading ? " from the last verified balance; current spendability is being verified" : ""}.`
                       : bondWorkBalanceLoading
                         ? "Loading the confirmed WORK balance."
                         : bondWorkBalanceError
@@ -37059,6 +37297,8 @@ function InfinityApp({
 
         <span className="workspace-anchor" id="bond-wallet" />
         <TokenWalletWorkspace
+          creditBalancesReady={Boolean(walletBalanceReadStatuses?.[bondConfig.folder === "inception" ? "incb" : "powb"]?.loaded && !walletBalanceReadStatuses?.[bondConfig.folder === "inception" ? "incb" : "powb"]?.loading && !walletBalanceReadStatuses?.[bondConfig.folder === "inception" ? "incb" : "powb"]?.error)}
+          creditBalancesError={walletBalanceReadStatuses?.[bondConfig.folder === "inception" ? "incb" : "powb"]?.error ?? ""}
           address={address}
           balances={balances}
           btcUsd={btcUsd}
@@ -38196,13 +38436,13 @@ function TokenWalletWorkspace({
         <div className="id-launch-stats token-stats-row">
           <div>
             <span>{walletCopy.ownedLabel}</span>
-            <strong>{creditBalancesReady ? confirmedTokenCount.toLocaleString() : creditBalancesError ? "Unavailable" : "Loading"}</strong>
+            <strong>{!address ? "Connect wallet" : creditBalancesReady ? confirmedTokenCount.toLocaleString() : creditBalancesError ? "Unavailable" : "Loading"}</strong>
           </div>
           {showProofBalance ? (
             <div>
               <span>Spendable proofs</span>
               <strong>
-                {proofBalanceError
+                {!address ? "Connect wallet" : proofBalanceError
                   ? "Unavailable"
                   : proofBalanceLoaded
                     ? `${proofSpendableSats.toLocaleString()} proofs`
@@ -38212,7 +38452,7 @@ function TokenWalletWorkspace({
           ) : null}
           <div>
             <span>Movements seen</span>
-            <strong>{creditBalancesReady ? walletMovements.length.toLocaleString() : creditBalancesError ? "Unavailable" : "Loading"}</strong>
+            <strong>{!address ? "Connect wallet" : creditBalancesReady ? walletMovements.length.toLocaleString() : creditBalancesError ? "Unavailable" : "Loading"}</strong>
           </div>
           <div>
             <span>Mutation fee</span>
@@ -38319,7 +38559,7 @@ function TokenWalletWorkspace({
                         {balance.token.ticker}
                       </strong>
                       <small>
-                        spendable
+                        {creditBalancesReady ? "spendable" : creditBalancesError ? "Last verified · current spendability unavailable" : "Last verified · checking spendability"}
                         {balanceNotes.length
                           ? ` · ${balanceNotes.join(" · ")}`
                           : ""}
@@ -38332,8 +38572,8 @@ function TokenWalletWorkspace({
           ) : (
             <div className="empty-state">
               <Wallet size={28} />
-              <h3>{creditBalancesError ? "Credit balances unavailable" : !creditBalancesReady ? "Loading credit balances" : walletCopy.noBalanceTitle}</h3>
-              <p>{creditBalancesError || (!creditBalancesReady ? "Verifying confirmed balances and reservations…" : walletCopy.noBalanceBody)}</p>
+              <h3>{!address ? "Connect wallet to view balances" : creditBalancesError ? "Credit balances unavailable" : !creditBalancesReady ? "Loading credit balances" : walletCopy.noBalanceTitle}</h3>
+              <p>{!address ? "Connect UniSat to verify this address's balances and reservations." : creditBalancesError || (!creditBalancesReady ? "Verifying confirmed balances and reservations…" : walletCopy.noBalanceBody)}</p>
             </div>
           )}
         </section>
@@ -39085,6 +39325,7 @@ type TokenAppProps = {
   hasUnisat: boolean;
   ledgerError?: string;
   ledgerLoading?: boolean;
+  historyRevision?: number;
   network: BitcoinNetwork;
   holders: PowTokenHolder[];
   mintBytes: number;
@@ -39123,6 +39364,7 @@ type TokenAppProps = {
   tokenSales: PowTokenSale[];
   tokens: PowTokenDefinition[];
   walletBalances?: PowTokenWalletBalance[];
+  walletBalanceReadStatuses?: AccountTokenLaneStatuses;
   workFloorLoading: boolean;
   workFloorQuote?: WorkFloorQuote;
   workFloorLastGoodStatus?: string;
@@ -39190,6 +39432,22 @@ function TokenApp({
   );
 }
 
+function tokenConfirmedBalanceNote(
+  address: string,
+  token: PowTokenDefinition | undefined,
+  balance: ExactIntegerValue,
+  balanceSubatoms: string | undefined,
+  statuses: AccountTokenLaneStatuses | undefined,
+) {
+  if (!address) return "Connect your wallet to verify your confirmed balance.";
+  if (!token) return "Choose a credit to verify your confirmed balance.";
+  const lane = isWorkToken(token) ? "work" : token.tokenId === POWB_TOKEN_ID ? "powb" : token.tokenId === INCB_TOKEN_ID ? "incb" : "all";
+  const status = statuses?.[lane];
+  if (status?.error) return "Your confirmed balance is unavailable. Refresh to verify it.";
+  if (!status?.loaded || status.loading) return "Verifying your confirmed balance.";
+  return `Your confirmed balance is ${tokenAmountDisplay(token, balance, undefined, balanceSubatoms)} ${token.ticker}.`;
+}
+
 function TokenWorkspace({
   address,
   busy,
@@ -39218,6 +39476,7 @@ function TokenWorkspace({
   holders,
   ledgerError = "",
   ledgerLoading = false,
+  historyRevision = 0,
   mintBytes,
   network,
   mintAssistantCompleted,
@@ -39257,6 +39516,7 @@ function TokenWorkspace({
   tokenSales,
   tokens,
   walletBalances = [],
+  walletBalanceReadStatuses,
   workFloorLoading,
   workFloorQuote,
   workFloorLastGoodStatus = "",
@@ -39288,6 +39548,9 @@ function TokenWorkspace({
     | undefined
   >();
   const [remoteMintPageLoading, setRemoteMintPageLoading] = useState(false);
+  const [historyRetry, setHistoryRetry] = useState(0);
+  const [remoteMintError, setRemoteMintError] = useState({ key: "", message: "" });
+  const [remoteHolderError, setRemoteHolderError] = useState({ key: "", message: "" });
   const [remoteHolderPage, setRemoteHolderPage] = useState<
     | {
         key: string;
@@ -39332,6 +39595,8 @@ function TokenWorkspace({
       : undefined;
   const activeRemoteMintPage =
     remoteMintPage?.key === mintHistoryKey ? remoteMintPage.page : undefined;
+  const holderReadError = remoteHolderError.key === holderHistoryKey ? remoteHolderError.message : "";
+  const mintReadError = remoteMintError.key === mintHistoryKey ? remoteMintError.message : "";
   useEffect(() => {
     setHolderPageIndex(0);
   }, [holderHistoryToken?.tokenId, holderQuery]);
@@ -39346,27 +39611,31 @@ function TokenWorkspace({
       !needsRemotePage
     ) {
       setRemoteHolderPage(undefined);
+      setRemoteHolderError({ key: "", message: "" });
       setRemoteHolderPageLoading(false);
       return;
     }
 
     let cancelled = false;
+    const controller = new AbortController();
     setRemoteHolderPageLoading(true);
+    setRemoteHolderError({ key: holderHistoryKey, message: "" });
     void fetchTokenHistoryPage<PowTokenHolder>(network, "holders", {
       fresh: true,
       pageIndex: holderPageIndex,
       pageSize: TOKEN_LIST_PREVIEW_COUNT,
       query: holderQuery,
       tokenScope: holderHistoryToken.tokenId,
+      signal: controller.signal,
     })
       .then((page) => {
         if (!cancelled) {
           setRemoteHolderPage({ key: holderHistoryKey, page });
         }
       })
-      .catch(() => {
+      .catch((error) => {
         if (!cancelled) {
-          setRemoteHolderPage(undefined);
+          setRemoteHolderError({ key: holderHistoryKey, message: errorMessage(error, "Holder history is unavailable.") });
         }
       })
       .finally(() => {
@@ -39377,8 +39646,11 @@ function TokenWorkspace({
 
     return () => {
       cancelled = true;
+      controller.abort();
     };
   }, [
+    historyRevision,
+    historyRetry,
     holderHistoryKey,
     holderHistoryLocalCount,
     holderHistoryToken?.tokenId,
@@ -39390,30 +39662,38 @@ function TokenWorkspace({
   useEffect(() => {
     if (!mintHistoryToken?.tokenId || network !== "livenet") {
       setRemoteMintPage(undefined);
+      setRemoteMintError({ key: "", message: "" });
+      setRemoteMintPageLoading(false);
       return;
     }
 
     if (mintHistoryTotalHint <= mintHistoryLocalCount) {
       setRemoteMintPage(undefined);
+      setRemoteMintError({ key: "", message: "" });
+      setRemoteMintPageLoading(false);
       return;
     }
 
     let cancelled = false;
+    const controller = new AbortController();
     setRemoteMintPageLoading(true);
+    setRemoteMintError({ key: mintHistoryKey, message: "" });
     void fetchTokenHistoryPage<PowTokenMint>(network, "mints", {
+      fresh: true,
       pageIndex: mintPageIndex,
       pageSize: TOKEN_LIST_PREVIEW_COUNT,
       query: mintQuery,
       tokenScope: mintHistoryToken.tokenId,
+      signal: controller.signal,
     })
       .then((page) => {
         if (!cancelled) {
           setRemoteMintPage({ key: mintHistoryKey, page });
         }
       })
-      .catch(() => {
+      .catch((error) => {
         if (!cancelled) {
-          setRemoteMintPage(undefined);
+          setRemoteMintError({ key: mintHistoryKey, message: errorMessage(error, "Mint history is unavailable.") });
         }
       })
       .finally(() => {
@@ -39424,8 +39704,11 @@ function TokenWorkspace({
 
     return () => {
       cancelled = true;
+      controller.abort();
     };
   }, [
+    historyRevision,
+    historyRetry,
     mintHistoryKey,
     mintHistoryLocalCount,
     mintHistoryToken?.tokenId,
@@ -39725,14 +40008,8 @@ function TokenWorkspace({
   const workCreditMinerFeeFlowSats =
     workFloorQuote?.actualValue?.creditMinerFeeFlowSats ?? 0;
   const workFloorChartPoints = workFloorQuote?.chartPoints ?? [];
-  const workFloorMinSats =
-    workFloorChartPoints.length > 0
-      ? Math.min(...workFloorChartPoints.map((point) => point.floorSats))
-      : 0;
-  const workFloorMaxSats =
-    workFloorChartPoints.length > 0
-      ? Math.max(...workFloorChartPoints.map((point) => point.floorSats))
-      : 0;
+  const { minimum: workFloorMinimum, maximum: workFloorMaximum } =
+    workFloorChartExtrema(workFloorChartPoints);
   const detailMatchingHolders = detailHolders.filter((holder) =>
     tokenHolderMatchesSearch(holder, holderQuery),
   );
@@ -40363,7 +40640,12 @@ function TokenWorkspace({
     loadingRemotePage = false,
   ) => (
     <div className="id-record-list">
-      {visibleHolders.length === 0 ? (
+      {holderReadError ? <div className="empty-state" role="status">
+        <h3>{activeRemoteHolderPage ? "Last verified holders" : "Holder history unavailable"}</h3>
+        <p>{holderReadError}</p>
+        <button className="secondary small" type="button" onClick={() => setHistoryRetry((value) => value + 1)}>Retry</button>
+      </div> : null}
+      {visibleHolders.length === 0 && holderReadError ? null : visibleHolders.length === 0 ? (
         <div className="empty-state">
           <h3>
             {loadingRemotePage
@@ -40416,7 +40698,12 @@ function TokenWorkspace({
     loadingRemotePage = false,
   ) => (
     <div className="activity-feed">
-      {visibleMints.length === 0 ? (
+      {mintReadError ? <div className="empty-state" role="status">
+        <h3>{activeRemoteMintPage ? "Last verified mints" : "Mint history unavailable"}</h3>
+        <p>{mintReadError}</p>
+        <button className="secondary small" type="button" onClick={() => setHistoryRetry((value) => value + 1)}>Retry</button>
+      </div> : null}
+      {visibleMints.length === 0 && mintReadError ? null : visibleMints.length === 0 ? (
         <div className="empty-state">
           <h3>
             {loadingRemotePage
@@ -40886,7 +41173,7 @@ function TokenWorkspace({
                           <span>
                             Low{" "}
                             {workFloorPriceLabel(
-                              workFloorMinSats,
+                              workFloorMinimum,
                               btcUsd,
                               workFloorChartUnit,
                             )}
@@ -40894,7 +41181,7 @@ function TokenWorkspace({
                           <span>
                             High{" "}
                             {workFloorPriceLabel(
-                              workFloorMaxSats,
+                              workFloorMaximum,
                               btcUsd,
                               workFloorChartUnit,
                             )}
@@ -41105,9 +41392,7 @@ function TokenWorkspace({
                     {tokenUsd(detailMintUsd)} per mint at the current USD quote
                     estimate. Paid to{" "}
                     {shortAddress(detailToken.registryAddress)}.
-                    {address
-                      ? ` Your confirmed balance is ${tokenAmountDisplay(detailToken, detailHolderBalance, undefined, detailHolderBalanceAtoms)} ${detailToken.ticker}.`
-                      : ""}
+                    {" "}{tokenConfirmedBalanceNote(address, detailToken, detailHolderBalance, detailHolderBalanceAtoms, walletBalanceReadStatuses)}
                   </p>
                   <div className="token-payment-lane">
                     <div>
@@ -41573,16 +41858,7 @@ function TokenWorkspace({
               {selectedToken
                 ? shortAddress(selectedToken.registryAddress)
                 : "the credit registry"}{" "}
-              on each mint. Your confirmed balance is{" "}
-              {selectedToken
-                ? tokenAmountDisplay(
-                    selectedToken,
-                    holderBalance,
-                    undefined,
-                    holderBalanceAtoms,
-                  )
-                : "0"}{" "}
-              {selectedToken?.ticker ?? ""}.
+              on each mint. {tokenConfirmedBalanceNote(address, selectedToken, holderBalance, holderBalanceAtoms, walletBalanceReadStatuses)}
             </p>
             <FeeRateControl feeRate={feeRate} setFeeRate={setFeeRate} />
             <div className="token-action-footer">
@@ -42998,7 +43274,9 @@ function GrowthLineChart({
           cy={yFor(point.sats)}
           key={`actual-${point.label}-${index}`}
           r={index === visibleActualPoints.length - 1 ? 6 : 4}
-        />
+        >
+          <title>{`${point.label} · ${point.satsQ8 ? `${formatExactQ8(point.satsQ8)} proofs` : `≈ ${growthSats(point.sats)} (approximate historical value)`}`}</title>
+        </circle>
       ))}
     </svg>
   );
@@ -43012,16 +43290,41 @@ function workFloorChartValue(
   return unit === "usd" ? satsToUsd(point.floorSats, btcUsd) : point.floorSats;
 }
 
+function workFloorChartExtrema(points: WorkFloorPoint[]) {
+  let minimum: WorkFloorPoint | undefined;
+  let maximum: WorkFloorPoint | undefined;
+  const compare = (left: WorkFloorPoint, right: WorkFloorPoint) => {
+    const leftQ8 = exactIntegerBigInt(left.floorQ8);
+    const rightQ8 = exactIntegerBigInt(right.floorQ8);
+    if (leftQ8 !== null && rightQ8 !== null) {
+      return leftQ8 < rightQ8 ? -1 : leftQ8 > rightQ8 ? 1 : 0;
+    }
+    return left.floorSats - right.floorSats;
+  };
+  for (const point of points) {
+    if (!Number.isFinite(point.floorSats) || point.floorSats < 0) continue;
+    const hasExact = exactIntegerBigInt(point.floorQ8) !== null;
+    if (!minimum || compare(point, minimum) < 0 ||
+        (compare(point, minimum) === 0 && hasExact && !minimum.floorQ8)) minimum = point;
+    if (!maximum || compare(point, maximum) > 0 ||
+        (compare(point, maximum) === 0 && hasExact && !maximum.floorQ8)) maximum = point;
+  }
+  return { minimum, maximum };
+}
+
 function workFloorPriceLabel(
-  floorSats: number,
+  point: WorkFloorPoint | undefined,
   btcUsd: number,
   unit: WorkFloorChartUnit,
 ) {
+  if (!point) return "Unavailable";
   if (unit === "usd") {
-    return `${tokenUsd(satsToUsd(floorSats, btcUsd))} / WORK`;
+    return `≈ ${tokenUsd(satsToUsd(point.floorSats, btcUsd))} / WORK`;
   }
-
-  return `${tokenSatsPerUnit(floorSats)} proofs / WORK`;
+  const floorQ8 = exactIntegerText(point.floorQ8);
+  return floorQ8
+    ? `${formatExactQ8(floorQ8)} proofs / WORK`
+    : `≈ ${tokenSatsPerUnit(point.floorSats)} proofs / WORK (approximate historical value)`;
 }
 
 function workFloorAxisPriceLabel(value: number, unit: WorkFloorChartUnit) {
@@ -43128,8 +43431,10 @@ function compactWorkFloorChartPoints(points: WorkFloorPoint[]) {
     if (
       previous &&
       Math.abs(previous.years - point.years) < 0.000000001 &&
-      Math.abs(previous.floorSats - point.floorSats) < 0.000000001
+      Math.abs(previous.floorSats - point.floorSats) < 0.000000001 &&
+      (!previous.floorQ8 || !point.floorQ8 || previous.floorQ8 === point.floorQ8)
     ) {
+      if (point.floorQ8 && !previous.floorQ8) compacted[compacted.length - 1] = point;
       continue;
     }
 
@@ -43217,6 +43522,7 @@ function WorkFloorChart({
         yScale.mode === "logarithmic" ? " on a logarithmic scale" : ""
       }`}
     >
+      <desc>Chart coordinates and axes are approximate. Point details preserve exact Q8 proofs when supplied; numeric-only historical values are approximate.</desc>
       <rect
         className="growth-chart-bg"
         x="0"
@@ -43248,7 +43554,7 @@ function WorkFloorChart({
             y={yFor(tick) + 4}
             textAnchor="end"
           >
-            {workFloorChartAxisPriceLabel(tick, unit)}
+            ≈ {workFloorChartAxisPriceLabel(tick, unit)}
           </text>
         </g>
       ))}
@@ -43289,7 +43595,9 @@ function WorkFloorChart({
           cy={yFor(pointValue(point))}
           key={`${point.label}-${index}`}
           r={index === visiblePoints.length - 1 ? 5.5 : 3.5}
-        />
+        >
+          <title>{`${workFloorTimeLabel(point)} · ${workFloorPriceLabel(point, btcUsd, unit)}`}</title>
+        </circle>
       ))}
     </svg>
   );
@@ -43368,15 +43676,56 @@ function infinityBondChartNumericValue(
   return bondDecimalNumber(point.networkValueSats, point.networkValueQ8);
 }
 
+function infinityBondPointQ8(
+  point: InfinityBondChartPoint,
+  metric: Exclude<InfinityBondChartMetric, "supply">,
+) {
+  const q8 = exactIntegerBigInt(metric === "floor" ? point.floorQ8 : point.networkValueQ8);
+  const value = metric === "floor" ? point.floorSats : point.networkValueSats;
+  // Numeric-only legacy points are geometry, not evidence of exact Q8 digits.
+  return q8 ?? (typeof value === "string" ? bondDecimalQ8(value) : null);
+}
+
+function infinityBondPriceExtrema(
+  points: InfinityBondChartPoint[],
+  metric: Exclude<InfinityBondChartMetric, "supply">,
+) {
+  let minimum: InfinityBondChartPoint | undefined;
+  let maximum: InfinityBondChartPoint | undefined;
+  const compare = (left: InfinityBondChartPoint, right: InfinityBondChartPoint) => {
+    const l = infinityBondPointQ8(left, metric), r = infinityBondPointQ8(right, metric);
+    return l !== null && r !== null ? (l < r ? -1 : l > r ? 1 : 0)
+      : infinityBondChartNumericValue(left, metric) - infinityBondChartNumericValue(right, metric);
+  };
+  for (const point of points) {
+    const value = infinityBondChartNumericValue(point, metric);
+    if (!Number.isFinite(value) || value < 0) continue;
+    const exact = infinityBondPointQ8(point, metric) !== null;
+    if (!minimum || compare(point, minimum) < 0 || (compare(point, minimum) === 0 && exact && infinityBondPointQ8(minimum, metric) === null)) minimum = point;
+    if (!maximum || compare(point, maximum) > 0 || (compare(point, maximum) === 0 && exact && infinityBondPointQ8(maximum, metric) === null)) maximum = point;
+  }
+  return { minimum, maximum };
+}
+
+function infinityBondPointPriceLabel(
+  point: InfinityBondChartPoint | undefined,
+  metric: Exclude<InfinityBondChartMetric, "supply">,
+) {
+  if (!point) return "Unavailable";
+  const q8 = infinityBondPointQ8(point, metric);
+  return q8 !== null ? `${formatExactQ8(q8)} proofs`
+    : `${infinityBondAxisLabel(infinityBondChartNumericValue(point, metric), metric)} (approximate historical value)`;
+}
+
 function infinityBondAxisLabel(
   value: number,
   metric: Exclude<InfinityBondChartMetric, "supply">,
 ) {
   if (metric === "floor") {
-    return value > 0 ? `${tokenSatsPerUnit(value)} proofs` : "0 proofs";
+    return value > 0 ? `≈ ${tokenSatsPerUnit(value)} proofs` : "≈ 0 proofs";
   }
 
-  return `${growthCompactNumber(value, 1)} proofs`;
+  return `≈ ${growthCompactNumber(value, 1)} proofs`;
 }
 
 function compactExactBondSupply(value: bigint, exactRange: bigint) {
@@ -43486,11 +43835,11 @@ function InfinityBondChart({
 
   const width = 920;
   const height = 260;
-  const padLeft = 106;
+  let padLeft = 106;
   const padRight = 24;
   const padTop = 28;
   const padBottom = 52;
-  const plotWidth = width - padLeft - padRight;
+  let plotWidth = width - padLeft - padRight;
   const plotHeight = height - padTop - padBottom;
   const minTime = Math.min(...visiblePoints.map(infinityBondPointTimeMs));
   const maxTime = Math.max(...visiblePoints.map(infinityBondPointTimeMs));
@@ -43567,6 +43916,10 @@ function InfinityBondChart({
       y: yForNumeric(tick),
     }));
   }
+  // Axis font is at most 12 SVG units; reserve 8 units per character,
+  // including fractional floor tick labels, then compute horizontal geometry.
+  padLeft = Math.max(106, Math.max(...yTicks.map((tick) => tick.label.length)) * 8 + 24);
+  plotWidth = width - padLeft - padRight;
   const firstPoint = visiblePoints[0];
   const middlePoint = visiblePoints[Math.floor((visiblePoints.length - 1) / 2)];
   const latestPoint = visiblePoints[visiblePoints.length - 1];
@@ -43662,7 +44015,9 @@ function InfinityBondChart({
           cy={yForPoint(point)}
           key={`${point.txid}-${point.bondActions}-${index}`}
           r={index === visiblePoints.length - 1 ? 5.5 : 3.5}
-        />
+        >
+          <title>{`${infinityBondTimeLabel(point)} · ${metric === "supply" ? `${formatExactInteger(point.confirmedSupply)} ${bondConfig.ticker}` : infinityBondPointPriceLabel(point, metric)}`}</title>
+        </circle>
       ))}
     </svg>
   );
@@ -44565,7 +44920,7 @@ function GrowthWorkspace({
             <span>
               <i className="actual" /> Real now
             </span>
-            <strong>{growthSats(authoritativeNetworkValueSats)}</strong>
+            <strong>{bondProofAmountDisplay(authoritativeNetworkValueSats, authoritativeNetworkValueQ8)} proofs</strong>
             <small>
               {growthUsdForSats(authoritativeNetworkValueSats)} from confirmed events
             </small>
@@ -44579,6 +44934,7 @@ function GrowthWorkspace({
           </div>
         </div>
         <GrowthLineChart actualPoints={authoritativeActualPoints} modelRows={modelChartRows} />
+        <p className="field-note">Chart axes and modeled values are approximate. Point details preserve exact proofs when the source supplies Q8 values; earlier numeric-only history remains approximate.</p>
       </section>
 
       <section
@@ -44839,7 +45195,23 @@ function GrowthWorkspace({
   );
 }
 
+function registryEmptyState(
+  readState: { loaded: boolean; loading: boolean; error: string },
+  address: string,
+  scope: "registry" | "owned" | "pending",
+) {
+  if (scope !== "registry" && !address) {
+    return scope === "owned" ? "Connect a wallet to see your IDs." : "Connect a wallet to see pending ID transfers.";
+  }
+  if (readState.error) return "Current registry unavailable. Refresh to verify these records.";
+  if (readState.loading) return "Verifying registry records…";
+  if (!readState.loaded) return "Registry has not been verified. Refresh to load these records.";
+  return scope === "registry" ? "No registry records found yet."
+    : scope === "owned" ? "No IDs for this wallet yet." : "No in-flight ID transfers for this wallet.";
+}
+
 function IdLaunchApp({
+  registryReadState,
   accountStats = [],
   address,
   busy,
@@ -44864,6 +45236,7 @@ function IdLaunchApp({
   submit,
   onRefresh,
 }: {
+  registryReadState: { loaded: boolean; loading: boolean; error: string };
   accountStats?: AppHeaderAccountStat[];
   address: string;
   busy: boolean;
@@ -44974,20 +45347,23 @@ function IdLaunchApp({
 
           <div className="id-launch-stats" aria-label="Registry stats">
             <div>
-              <strong>{confirmedRecords.length.toLocaleString()}</strong>
+              <strong>{registryReadState.loaded ? confirmedRecords.length.toLocaleString() : "—"}</strong>
               <span>Confirmed IDs</span>
             </div>
             <div>
-              <strong>{pendingRecords.length.toLocaleString()}</strong>
+              <strong>{registryReadState.loaded ? pendingRecords.length.toLocaleString() : "—"}</strong>
               <span>Pending IDs</span>
             </div>
             <div>
-              <strong>{uniqueRegistryRecords.length.toLocaleString()}</strong>
+              <strong>{registryReadState.loaded ? uniqueRegistryRecords.length.toLocaleString() : "—"}</strong>
               <span>Visible records</span>
             </div>
           </div>
         </div>
 
+        {(!registryReadState.loaded || registryReadState.loading || registryReadState.error) ? <p className="field-note" role="status">
+          {registryReadState.loaded ? "Last verified registry. " : ""}{registryEmptyState(registryReadState, address, "registry")}
+        </p> : null}
         <div className="id-launch-grid">
           <form
             className="id-launch-card id-claim-card"
@@ -45154,11 +45530,7 @@ function IdLaunchApp({
               <IdRecordList
                 records={ownedIds}
                 allowVerification
-                empty={
-                  address
-                    ? "No IDs for this wallet yet."
-                    : "Connect UniSat to see your IDs."
-                }
+                empty={registryEmptyState(registryReadState, address, "owned")}
                 searchPlaceholder="Search your IDs"
               />
             </section>
@@ -45188,7 +45560,7 @@ function IdLaunchApp({
           </div>
           <IdRecordList
             records={uniqueRegistryRecords}
-            empty="No registry records found yet."
+            empty={registryEmptyState(registryReadState, address, "registry")}
             initialLimit={12}
           />
         </section>
@@ -48462,14 +48834,8 @@ function TokenMarketplacePanel({
     workRelicRows.length,
   ]);
   const workFloorChartPoints = workFloorQuote?.chartPoints ?? [];
-  const workFloorMinSats =
-    workFloorChartPoints.length > 0
-      ? Math.min(...workFloorChartPoints.map((point) => point.floorSats))
-      : 0;
-  const workFloorMaxSats =
-    workFloorChartPoints.length > 0
-      ? Math.max(...workFloorChartPoints.map((point) => point.floorSats))
-      : 0;
+  const { minimum: workFloorMinimum, maximum: workFloorMaximum } =
+    workFloorChartExtrema(workFloorChartPoints);
   const selectedMarketChartPoints =
     selectedMarketToken && !selectedMarketTokenIsWork
       ? tokenMarketPricePointsFor(
@@ -48712,7 +49078,7 @@ function TokenMarketplacePanel({
                       <span>
                         Low{" "}
                         {workFloorPriceLabel(
-                          workFloorMinSats,
+                          workFloorMinimum,
                           btcUsd,
                           workFloorChartUnit,
                         )}
@@ -48720,7 +49086,7 @@ function TokenMarketplacePanel({
                       <span>
                         High{" "}
                         {workFloorPriceLabel(
-                          workFloorMaxSats,
+                          workFloorMaximum,
                           btcUsd,
                           workFloorChartUnit,
                         )}
@@ -51889,6 +52255,7 @@ function ContactsWorkspace({
 }
 
 function IdsWorkspace({
+  registryReadState,
   address,
   busy,
   canRegister,
@@ -51925,6 +52292,7 @@ function IdsWorkspace({
   submitUpdate,
   submit,
 }: {
+  registryReadState: { loaded: boolean; loading: boolean; error: string };
   address: string;
   busy: boolean;
   canRegister: boolean;
@@ -52014,7 +52382,9 @@ function IdsWorkspace({
           <h2>ProofOfWork IDs</h2>
           <span>
             {registryAddress
-              ? `${registryRecords.length} total registry record${registryRecords.length === 1 ? "" : "s"} · ${ownedIds.length} yours`
+              ? !registryReadState.loaded
+                ? registryReadState.error ? "Registry unavailable" : "Loading registry"
+                : `${registryRecords.length} total registry record${registryRecords.length === 1 ? "" : "s"}${address ? ` · ${ownedIds.length} yours` : " · connect wallet to view your IDs"}${registryReadState.error ? " · Last verified" : registryReadState.loading ? " · refreshing" : ""}`
               : `No registry configured for ${networkLabel(network)}`}
           </span>
         </div>
@@ -52031,6 +52401,7 @@ function IdsWorkspace({
         </button>
       </div>
 
+      {registryReadState.error ? <p className="field-note bad" role="status">{registryReadState.error}</p> : null}
       <div className="ids-content">
         <form className="id-card" onSubmit={submit}>
           <div className="id-card-head">
@@ -52111,7 +52482,7 @@ function IdsWorkspace({
             bytes
           </div>
 
-          <button className="primary" disabled={busy} type="submit">
+          <button className="primary" disabled={busy || !canRegister} type="submit">
             <span className="button-content">
               <AtSign size={16} />
               <span>{busy ? "Registering" : "Register ID"}</span>
@@ -52352,7 +52723,7 @@ function IdsWorkspace({
             records={ownedIds}
             allowVerification
             contacts={contacts}
-            empty="No IDs for this wallet yet."
+            empty={registryEmptyState(registryReadState, address, "owned")}
             onAddContact={onAddContact}
             searchPlaceholder="Search your IDs"
           />
@@ -52374,11 +52745,7 @@ function IdsWorkspace({
           <PendingIdEventList
             address={address}
             events={walletPendingEvents}
-            empty={
-              address
-                ? "No in-flight ID transfers for this wallet."
-                : "Connect a wallet to see pending ID transfers."
-            }
+            empty={registryEmptyState(registryReadState, address, "pending")}
           />
         </section>
 
@@ -52400,7 +52767,7 @@ function IdsWorkspace({
             contacts={contacts}
             empty={
               registryAddress
-                ? "No registry records found yet."
+                ? registryEmptyState(registryReadState, address, "registry")
                 : "Registry address is not configured for this network."
             }
             initialLimit={24}
@@ -53179,6 +53546,9 @@ function IdRecordList({
 }
 
 function MessageList({
+  connected,
+  mailboxLoaded,
+  loading,
   activeKey,
   activeFolder,
   activeNetwork,
@@ -53188,6 +53558,9 @@ function MessageList({
   onOpenInbox,
   onSelect,
 }: {
+  connected: boolean;
+  mailboxLoaded: boolean;
+  loading: boolean;
   activeKey: string;
   activeFolder: Folder;
   activeNetwork: BitcoinNetwork;
@@ -53215,6 +53588,7 @@ function MessageList({
         <Send size={26} />
       );
     const emptyTitle =
+      !connected ? "Connect your wallet to view mail" : !mailboxLoaded ? loading ? "Loading mailbox" : "Mailbox not verified" :
       activeFolder === "inbox"
         ? "No Inbox messages"
         : activeFolder === "incoming"
@@ -53229,6 +53603,7 @@ function MessageList({
                   ? "No messages here yet"
                   : "No Sent messages";
     const emptyCopy =
+      !connected ? "Connect UniSat to load the mailbox for your address." : !mailboxLoaded ? loading ? "Checking the current address and network." : "Refresh to verify the mailbox. An unread mailbox is not an empty mailbox." :
       activeFolder === "inbox"
         ? "Confirmed received mail will land here after the next scan."
         : activeFolder === "incoming"

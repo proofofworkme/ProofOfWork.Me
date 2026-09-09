@@ -268,6 +268,31 @@ Behavior:
 
 ## Refresh
 
+The audit 6 candidate binds asynchronous reads to the current account, network,
+workspace, query, and request generation. An older completion cannot replace a
+newer result, clear its loading state, or force a different mailbox folder.
+Desktop target changes, Browser network changes, Wallet UTXO refreshes, and Log
+page/search refreshes follow the same rule. Log's periodic refresh reads the
+current query instead of the query captured when the page mounted.
+
+Cold, disconnected, failed, and retained states must stay distinct from a
+verified empty collection or zero balance. Credit holder and mint history errors
+offer Retry and do not render an empty-history claim. Inbox and Incoming filter
+messages to the current account and network before deciding whether they are
+empty. Confirmed balances require their corresponding account read to succeed;
+retained balances remain qualified and do not authorize signing.
+
+Address mail in the candidate exhausts bounded keyset pages inside a consistent
+read-only database transaction. A deadline or failed page rejects the whole read;
+it never marks a partial mailbox complete. Confirmed self-send, attachment, body,
+and recipient rules above remain unchanged. Historical pending and dropped
+witnesses retain their status; they never become confirmed state by omission.
+
+Log identities use transaction, protocol/kind, and physical record position.
+An internal database event ID can change when a pending record is rematerialized
+and is not by itself durable identity. Separate same-transaction protocol records
+must remain visible separately.
+
 Refresh is a single on-demand sync action for the connected account.
 
 Behavior:

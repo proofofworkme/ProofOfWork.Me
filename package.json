@@ -98,7 +98,12 @@
     "check:audit5-node-attestor": "python3 -I -B scripts/check-audit5-node-attestor.py",
     "check:audit5-ops-installer": "python3 -I -B scripts/check-audit5-ops-installer.py",
     "check:audit5-candidate-probe": "node scripts/check-audit5-candidate-probe.mjs",
-    "check:send-prep-fixtures": "node scripts/check-send-prep-fixtures.mjs"
+    "check:send-prep-fixtures": "node scripts/check-send-prep-fixtures.mjs",
+    "check:audit6-registry": "node --test server/registry-provenance.test.mjs",
+    "check:audit6-work-readiness": "node --test server/work-readiness-diagnostics.test.mjs && node scripts/check-audit6-work-recovery.mjs",
+    "check:audit6-event-authority": "node scripts/check-event-authority-regressions.mjs",
+    "check:audit6-mail": "node scripts/check-mail-pagination-regressions.mjs",
+    "check:audit6-ui": "node scripts/check-audit6-ui-lifecycle.mjs && node scripts/check-audit6-ui-authority.mjs && node scripts/check-audit6-ui-display.mjs"
   },
   "dependencies": {
     "@bitcoinerlab/secp256k1": "^1.2.0",

@@ -205,6 +205,12 @@ export function proofIndexEventParticipantsForItem(item, context = {}) {
   add(source.counterparty, "counterparty");
   add(source.senderAddress, "sender");
   add(source.authorAddress, "author", source.authorId);
+  // A graph target is a participant even when an unfollow has no payment to it.
+  if (source.protocol === "pwb1" || String(source.kind ?? "").startsWith("boost-")) {
+    add(source.followerAddress, "follower");
+    add(source.targetAddress, "target", source.targetId);
+    add(source.followedAddress, "target", source.followedId);
+  }
   add(source.recipientAddress, "recipient");
   add(source.ownerAddress, "owner", source.id);
   add(source.currentOwnerAddress, "owner", source.currentOwnerId);
@@ -264,6 +270,11 @@ export function proofIndexEventRefsForItem(item) {
   add("listing-id", source.listingId);
   add("boost-txid", source.boostTxid);
   add("target-txid", source.targetTxid);
+  if (source.protocol === "pwb1" || String(source.kind ?? "").startsWith("boost-")) {
+    add("target-address", source.targetAddress ?? source.followedAddress);
+    add("follower-address", source.followerAddress);
+    add("powid", source.targetId ?? source.followedId);
+  }
   add("parent-txid", source.parentTxid);
   add("closed-txid", source.closedTxid);
   add("seal-txid", source.sealTxid);

@@ -454,7 +454,7 @@ export function LandingApp({
           <div>
             <span className="landing-kicker">On-chain testimonial</span>
             <blockquote>
-              "Truth above all else. We will not yield to foolish yet powerful
+              "Truth above all else. … We will not yield to foolish yet powerful
               tyrants for the true power resides with us. We need only converge
               on the truth."
             </blockquote>

@@ -4,8 +4,13 @@ import { test } from "node:test";
 import vm from "node:vm";
 import ts from "typescript";
 import * as projection from "../server/boost-projection.mjs";
+import { validateBoostAuthority } from "../server/boost-authority.mjs";
+import { WORK_TOKEN_ID, WORK_SUBATOM_PROJECTION_MODEL } from "../server/work-units.mjs";
 import { decimalValueToQ8, formatWorkSubatoms, q8ToCanonicalDecimal, q8ToNumber, WORK_SUBATOM_UNIT_SCALE } from "../server/work-units.mjs";
 
+const owner = "bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4";
+const buyer = "1BoatSLRHtKNngkdXEeobR76b53LETtpyT";
+const viewer = "1KNkUBREnfno2BeV7QsBf8XCWZN6YFfxPH";
 const apiSource = await readFile(new URL("../server/proof-api.mjs", import.meta.url), "utf8");
 function definition(name) {
   // Match the existing isolated-function regression harness without building
@@ -25,8 +30,9 @@ const boostSource = apiSource.slice(apiSource.indexOf("const BOOST_VISIBLE_EVENT
 const txid = (id) => id.toString(16).padStart(64, "0");
 const event = (id, kind = "boost-post", fields = {}) => ({
   eventId: id, txid: txid(id), kind, protocol: "pwb1", confirmed: true, valid: true,
+  blockHash: "a".repeat(64), payload: `pwb1:fixture:${id}`,
   status: "confirmed", blockHeight: 965000, blockIndex: id, protocolVout: 1, recordOrdinal: 0,
-  authorAddress: "owner", proofSignalSats: 546,
+  authorAddress: owner, proofSignalSats: 546,
   createdAt: new Date(Date.UTC(2026, 8, 1) + id * 1000).toISOString(), text: `post ${id}`, ...fields,
 });
 function reader(events, mutate = (page) => page) {
@@ -50,6 +56,21 @@ function reader(events, mutate = (page) => page) {
 }
 function server(readPage, overrides = {}) {
   const context = vm.createContext({ console, URLSearchParams, ...projection,
+    validateBoostAuthority,
+    proofIndexBoostAuthorityWitnesses: async (_network, history) => {
+      const witnesses = new Map();
+      for (const item of history.items) {
+        const actor = item.authorAddress;
+        const outputs = [{ vout: 0, address: item.kind === "boost-post" ? actor : "registry", valueSats: "546" }];
+        if (item.kind === "boost-follow") { item.protocolVout = 2; outputs.push({ vout: 1, address: item.targetAddress, valueSats: "546" }); }
+        if (item.kind === "boost-list") {
+          item.saleAuthorization = { version: "pwb-sale-v1", boostTxid: item.boostTxid ?? item.targetTxid, sellerAddress: actor, priceSats: item.priceSats, nonce: "fixture", anchorSigHashType: 0x83, anchorType: "sale-ticket-v1", anchorVout: 2, saleTicketVout: 2, anchorValueSats: 546, saleTicketValueSats: 546, anchorScriptPubKey: "51" };
+          outputs.push({ vout: 1, address: "", valueSats: "0" }, { vout: 2, address: actor, valueSats: "546", script: "51" });
+        }
+        witnesses.set(item.txid, { actor, blockHeight: item.blockHeight, blockIndex: item.blockIndex, blockHash: item.blockHash, carriers: new Map([[item.protocolVout, item.payload]]), outputs, inputs: [], workTransfers: item.workSignalSubatoms ? [{ tokenId: WORK_TOKEN_ID, fromAddress: actor, recipientAddress: actor, amountSubatoms: item.workSignalSubatoms, amountStorageModel: WORK_SUBATOM_PROJECTION_MODEL }] : [] });
+      }
+      return { witnesses, ticketSpends: [], registryActivity: [{ id: "boost", kind: "id-register", confirmed: true, valid: true, blockHeight: 964000, blockIndex: 0, protocolVout: 1, recordOrdinal: 0, receiveAddress: "registry" }] };
+    },
     decimalValueToQ8, formatWorkSubatoms, q8ToCanonicalDecimal, q8ToNumber,
     WORK_SUBATOM_UNIT_SCALE, WORK_TOKEN_MAX_SUPPLY: 21_000_000,
     proofIndexReadFeatureEnabled: () => true, proofIndexEventHistoryPayload: readPage,
@@ -87,26 +108,26 @@ test("complete projection handles 250+ actions, 125 posts, old listings and cano
   const posts = Array.from({ length: 125 }, (_, i) => event(i + 1));
   const actions = Array.from({ length: 120 }, (_, i) => event(i + 126, "boost-like", { targetTxid: txid(1) }));
   const events = [...posts, ...actions,
-    event(246, "boost-list", { targetTxid: txid(2), priceSats: 1000, sellerAddress: "owner" }),
-    event(247, "boost-list", { targetTxid: txid(1), priceSats: 2000, sellerAddress: "owner" }),
-    event(248, "boost-transfer", { targetTxid: txid(1), newOwnerAddress: "buyer", createdAt: "2026-08-01T00:00:00.000Z" }),
-    event(249, "boost-follow", { authorAddress: "viewer", targetAddress: "owner" }),
-    event(250, "boost-unfollow", { authorAddress: "viewer", targetAddress: "owner", createdAt: "2026-08-01T00:00:00.000Z" }),
+    event(246, "boost-list", { targetTxid: txid(2), priceSats: 1000, sellerAddress: owner }),
+    event(247, "boost-list", { targetTxid: txid(1), priceSats: 2000, sellerAddress: owner }),
+    event(248, "boost-transfer", { targetTxid: txid(1), newOwnerAddress: buyer, createdAt: "2026-08-01T00:00:00.000Z" }),
+    event(249, "boost-follow", { authorAddress: viewer, targetAddress: owner }),
+    event(250, "boost-unfollow", { authorAddress: viewer, targetAddress: owner, createdAt: "2026-08-01T00:00:00.000Z" }),
     event(251, "boost-transfer", { targetTxid: txid(2), newOwnerAddress: "pending-buyer", confirmed: false, status: "pending" }),
     event(252, "boost-list", { targetTxid: txid(3), priceSats: 9000, valid: false }),
   ];
   const pages = reader(events); const api = server(pages.read);
-  const first = await api.boostFeedPayload("livenet", new URLSearchParams("limit=100&sort=oldest&viewer=viewer"));
+  const first = await api.boostFeedPayload("livenet", new URLSearchParams({limit:"100",sort:"oldest",viewer}));
   assert.equal(first.totalCount, 125);
   assert.equal(first.items.length, 100);
   assert.equal(first.provenance.eventCount, 251);
   assert.equal(first.provenance.pages, 2);
   assert.equal(first.signalStats.totalSignalQ8, (125n * 546n * 100_000_000n).toString());
   assert.equal(first.items[0].likeCount, 120);
-  assert.equal(first.items[0].currentOwnerAddress, "buyer");
+  assert.equal(first.items[0].currentOwnerAddress, buyer);
   assert.equal(first.items[0].listing, null);
   assert.equal(first.graph.followingCount, 0);
-  const second = await api.boostFeedPayload("livenet", new URLSearchParams({ limit: "100", sort: "oldest", viewer: "viewer", cursor: first.nextCursor }));
+  const second = await api.boostFeedPayload("livenet", new URLSearchParams({ limit: "100", sort: "oldest", viewer: viewer, cursor: first.nextCursor }));
   assert.equal(second.items.length, 25);
   assert.equal(second.hasMore, false);
   assert.equal(new Set([...first.items, ...second.items].map((item) => item.eventId)).size, 125);
@@ -115,9 +136,9 @@ test("complete projection handles 250+ actions, 125 posts, old listings and cano
   assert.equal(listings.complete, true);
   assert.equal(listings.mode, "listings");
   assert.deepEqual(Array.from(listings.items, (item) => item.txid), [txid(2)]);
-  assert.equal(listings.items[0].currentOwnerAddress, "owner");
+  assert.equal(listings.items[0].currentOwnerAddress, owner);
   const pending = await api.boostFeedPayload("livenet", new URLSearchParams("pending=1&sort=oldest"));
-  assert.equal(pending.items[1].currentOwnerAddress, "owner", "pending transfers must not mutate canonical ownership");
+  assert.equal(pending.items[1].currentOwnerAddress, owner, "pending transfers must not mutate canonical ownership");
   const searched = await api.boostFeedPayload("livenet", new URLSearchParams("q=post+125"));
   assert.equal(searched.items[0].txid, txid(125));
   const searchedTxid = await api.boostFeedPayload("livenet", new URLSearchParams({ q: txid(125) }));
@@ -139,9 +160,23 @@ test("history cursor changes, duplicate rows and broken exhaustion fail closed",
   }).read), /fence conflict/u);
 });
 
+test("authorized hide suppresses default, profile and AMO indexes while raw history remains", async () => {
+  const events = [event(1), event(2, "boost-list", { targetTxid: txid(1), priceSats: 1000, sellerAddress: owner }), event(3, "boost-hide", { targetTxid: txid(1) })];
+  const api = server(reader(events).read);
+  for (const query of ["", "profile=owner", "listings=1"]) {
+    const result = await api.boostFeedPayload("livenet", new URLSearchParams(query));
+    assert.equal(result.items.length, 0);
+    assert.equal(result.authority.outcomes.length, 3);
+    assert.equal(result.authority.outcomes.at(-1).accepted, true);
+  }
+  assert.equal(events.length, 3);
+  const attacker = server(reader([event(1), event(2, "boost-hide", { targetTxid: txid(1), authorAddress: "attacker" })]).read);
+  assert.equal((await attacker.boostFeedPayload("livenet", new URLSearchParams())).items.length, 1);
+});
+
 test("complete AMO discovery has no 100-post cap and emits each original ticket once", async () => {
   const posts = Array.from({ length: 125 }, (_, i) => event(i + 1));
-  const listings = posts.map((post, i) => event(i + 126, "boost-list", { boostTxid: post.txid, priceSats: 1000, sellerAddress: "owner" }));
+  const listings = posts.map((post, i) => event(i + 126, "boost-list", { boostTxid: post.txid, priceSats: 1000, sellerAddress: owner }));
   const events = [...posts, ...listings,
     event(251, "boost-reply", { targetTxid: txid(1) }),
     event(252, "boost-reboost", { targetTxid: txid(1) }),
@@ -238,4 +273,16 @@ test("server exact signal rejects malformed or conflicting provided Q8 instead o
   assert.throws(() => projection.boostExactQ8("100000000", "2"), /disagree/u);
   assert.equal(projection.boostExactQ8("100000001", "1.00000001"), 100000001n);
   assert.equal(projection.boostExactQ8(undefined, "0.00000001"), 1n);
+});
+
+test("Boost graph keeps Base58 identity case and canonicalizes only Bech32", async () => {
+  const graph = server(reader([]).read).boostOwnershipState([
+    event(1, "boost-follow", { authorAddress: buyer, targetAddress: owner.toUpperCase() }),
+  ]);
+  assert.equal(graph.followingByFollower.get(buyer)?.has(owner), true);
+  assert.equal(graph.followingByFollower.has(buyer.toLowerCase()), false);
+  const feed = await server(reader([event(1)]).read).boostFeedPayload("livenet", new URLSearchParams());
+  assert.equal(feed.items[0].validationScope, "canonical-state-transition");
+  assert.equal(feed.items[0].stateTransitionVerified, true);
+  assert.equal(feed.authority.outcomes[0].accepted, true);
 });

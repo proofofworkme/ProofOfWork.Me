@@ -94,3 +94,120 @@ exclusive writer handoff must be established before any node transition.
 
 No deployment or cleanup command is authorized merely by appearing in an older
 runbook. The user's no-outage and recovery conditions govern this implementation.
+
+## Local verification checkpoint
+
+Partial results and source-receipt hashes are saved in
+[verification evidence](2026-09-09-audit-6-remediation.verification.json). This is
+not a release attestation. Integrated tests and the final build remain open.
+
+- Existing WORK Q16 precision, bond exact-arithmetic, and V8 protocol/admission
+  regressions passed. New registry observation and readiness-diagnostic fixtures
+  passed; all write-admission bits stay fail-closed.
+- The candidate Boost authority projection accepted all three current posts from
+  node-backed wire/index evidence at block 966128, preserving direct proof and
+  exact attached WORK amounts. This covers current posts, not nonexistent live
+  adversarial transfers or sales; separate adversarial fixtures cover those cases.
+- A read-only mailbox shadow matched 22 inbox and 11 sent/outbox records with
+  zero semantic differences after correcting whitespace preservation. Added
+  output and event-position metadata is intentional. Its primary database read
+  timing is not comparable to the full production API's pending/Core enrichment.
+- Manual candidate browser checks verified Timeline placement, the Home excerpt,
+  Credit width at 375 pixels, and Infinity Floor label bounds. Credit's
+  disconnected-balance copy was found during review and is being corrected.
+- Fresh read-only operations evidence confirmed the current API, worker, Core,
+  Electrs, PostgreSQL, WAL receiver, and Caddy remained running. UI disk use was
+  54%, node root 24%, and node `/data` 78%. Existing warning findings remain open.
+
+Deployment review found a new release-safety condition: new HTML delivered just
+before rollback can still request candidate assets after prior HTML is restored.
+The original two-root rollback does not guarantee those assets remain available.
+A separately attested recovery root with prior HTML and the union of immutable
+assets is being developed without altering the original prior root. Fault tests
+and independent systemd recovery remain required. The node route/writer handoff
+is separately unproven. No production transition or cleanup has occurred.
+
+## UI implementation checkpoint
+
+The UI source has passed one non-overlapping clean TypeScript/Vite build and
+its lifecycle, authority, display, UI-contract and live-data checks. Browser
+checks in connected Chrome cover the Timeline move, Home excerpt, Credit at
+375 pixels, exact WORK High label, cold-ID qualification and disconnected Inbox.
+An isolated local HTTP fixture exercised both cold and retained Credit history
+503s followed by Retry and successful empty responses. The new Playwright test
+file is retained but its runner was not executed; these are separate manual
+Chrome observations. No wallet was connected and no signing was performed.
+
+The UI checkpoint covers H6-04, H6-06 through H6-10, and H6-12 through H6-19,
+plus the qualified-state/chart parts of H5-02. H6-05's client guard is tested,
+but end-to-end authority remains gated: independent review found the existing
+legacy full-parity resolver can omit a later valid post-activation PWID carrier.
+The backend correction is being bound to the current accepted registry under a
+read-only consistent transaction and full-node fences. Historical resolver
+behavior is preserved. A successful UI build does not resolve this backend gate.
+
+The final backend event/lifecycle checks passed 19/19, Boost integration 12/12,
+and complete-mail pagination 5/5. The actual complete Boost reader accepted all
+three live posts at block 966131 in 3.267 seconds with unchanged exact amounts.
+The 504/504 recovery suite, API-truth, hardening and free-identifier checks passed
+before the later registry strengthening. Those receipts remain historical
+verification; the changed registry path requires a new final-source pass.
+
+AMO can now display qualified exact summary metrics while its full listing book
+is loading. This preview never supplies reservation or action authority. A
+failed or incomplete book remains unavailable. Exact Q8 point labels are kept
+for WORK and both bonds; older numeric-only history, graph axes and USD overlays
+are explicitly approximate. The shared App bundle remains a size warning.
+
+Production application source, configuration, services and data remain unchanged.
+No named production cleanup candidate has been deleted. UI recovery tests and
+the narrower node route/worker recovery adapter are still under verification.
+
+## Live summary-publication incident, 2026-09-09 01:38 UTC
+
+The user's AMO and WORK messages were independently reproduced. Core, Electrs
+and the canonical scan reached block 966134, while all eight published summary
+components remained at 966131, snapshot `a1ea54d3b1efee2bca194e5d`. The worker
+repeatedly rejected a 16,803,750-byte compact snapshot against its 16,777,216-byte
+budget; systemd had automatically restarted it four times. AMO returned 503.
+This is a deterministic summary-publication budget failure. Earlier healthy
+observations in this log do not describe the incident state. The disks are not
+full (UI 54%, node root 24%, node data 78%).
+
+The last-good stored SQL JSON text occupies 17,231,973 bytes, below the API's
+18 MiB SQL-text cap. Both current API and worker use compact16MiB/SQL18MiB.
+Listing arrays account for 4,318,975 SQL-text bytes in tokenSummary and repeat
+in the marketplace and WORK summaries. These component sizes are measurements
+of the last-good snapshot, not the failed candidate. No records were deleted,
+truncated or rewritten. Exact-value witnesses and canonical history must remain
+complete in any correction.
+
+A bounded same-code worker budget correction is under review. It must first
+prove compatibility with the serving API and independent worker recovery;
+changing only the worker's cap must not silently publish an unreadable snapshot.
+The existing API must keep serving and action admission must continue its live
+checks. No production configuration or service change has been made. This is a
+continuation of the readiness/publication finding, not a duplicate audit item.
+
+The strengthened fresh-registry read matched all 505 current records, 535
+accepted activity rows and all six Core-unspent returned tickets at block
+966134 in a bounded read-only shadow (819 ms candidate read). Two additional
+stored candidate tickets were correctly filtered as Core-spent. This observation
+does not itself restore summary publication or certify a deployment.
+
+Visual-check qualification: initial local Vite geometry checks used fallback
+fonts because dependency files were outside Vite's allowed symlink root. The
+worktree now has its own dependency copy; Credit and Infinity geometry must be
+rechecked with the intended fonts before final visual acceptance.
+
+## Application source verification checkpoint
+
+The final MVCC registry candidate subsequently passed the complete 504/504
+index-recovery behavior suite. This supersedes the earlier registry test gap.
+The current-node registry shadow and source regressions establish the candidate
+read contract; production rollout and a fresh release-bound reconciliation remain
+separate gates. SOUL and the ID/marketplace protocol documents were reviewed:
+no fee, replay cutoff, confirmed ownership, exact arithmetic or local-signing
+rule changes are required. README, infrastructure and mailbox documentation
+describe the candidate behavior. Historical audits and generated release assets
+are preserved. Local hygiene removed only allowlisted Vite caches and build output.
