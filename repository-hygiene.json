@@ -57,7 +57,9 @@
       "audits/2026-09-08-production-health-data-event-storage-audit-6.md",
       "audits/2026-09-08-production-health-data-event-storage-audit-6.evidence.json",
       "audits/2026-09-08-production-health-data-event-storage-audit-6.repro.mjs",
-      "audits/2026-09-08-production-health-data-event-storage-audit-6.ordered-repro.mjs"
+      "audits/2026-09-08-production-health-data-event-storage-audit-6.ordered-repro.mjs",
+      "audits/2026-09-09-audit-6-remediation.md",
+      "audits/2026-09-09-audit-6-remediation.state.json"
     ],
     "staged-or-future-protocol-notes": [
       "CHAIN_CONTENT.md",
