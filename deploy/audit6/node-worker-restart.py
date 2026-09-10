@@ -215,9 +215,14 @@ class SystemdWorker:
                                  '--manifest-sha256', self.job['verifierManifestSha256']],
                                 input=json.dumps(request), capture_output=True, text=True,
                                 timeout=600 if phase == 'first-complete-cycle' else 60)
-        require(result.returncode == 0 and len(result.stdout) <= 1024 * 1024, 'Worker retirement/readiness verifier failed')
+        detail = (result.stdout or result.stderr).strip()
+        if len(detail) > 700:
+            detail = detail[:700]
+        require(result.returncode == 0 and len(result.stdout) <= 1024 * 1024,
+                'Worker retirement/readiness verifier failed: ' + detail)
         record = json.loads(result.stdout)
-        require(record.get('passed') is True and record.get('phase') == phase, 'Worker verification gate did not pass')
+        require(record.get('passed') is True and record.get('phase') == phase,
+                'Worker verification gate did not pass: ' + detail)
         return record
 
     def restore_override(self):
