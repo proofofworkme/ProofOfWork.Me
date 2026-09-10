@@ -160,6 +160,17 @@ class SystemdWorker:
         require(properties(UNIT, ['WorkingDirectory'])['WorkingDirectory'] == expected['sourceRoot'], 'Running worker source path differs')
         return pid, Path('/sys/fs/cgroup') / value['ControlGroup'].lstrip('/')
 
+    def wait_for_attested_process(self, seconds=15):
+        deadline = time.monotonic() + seconds
+        last_error = None
+        while True:
+            try:
+                return self.verify_process()
+            except RuntimeError as error:
+                last_error = error
+                require(time.monotonic() < deadline, str(last_error))
+                time.sleep(.1)
+
     def hold_restart(self):
         if HOLD.exists():
             require(safe(HOLD).read_bytes() == b'[Service]\nRestart=no\n', 'Unknown restart hold')
@@ -295,7 +306,7 @@ def run(job, path, manager):
         job['phase'] = 'candidate-starting'
         save(path, job)
         systemctl('start', UNIT)
-        manager.verify_process()  # This adapter deliberately runs identical code.
+        manager.wait_for_attested_process()  # This adapter deliberately runs identical code.
         job['candidateVerification'] = manager.verifier('first-complete-cycle', before)
         manager.clear_hold()
         job.update(phase='committed', completedAt=time.time())
