@@ -1027,10 +1027,11 @@
     ]
   },
   "sourceCheckpoint": {
-    "commit": "6acfe0b",
+    "commit": "cfd12a6",
     "pushed": true,
     "branch": "audit6-remediation-2026-09-09",
-    "productionDeployed": false
+    "productionDeployed": false,
+    "previousImplementationCommit": "6acfe0b"
   },
   "finalGateReview": {
     "capturedAt": "2026-09-10T03:05:00.000Z",
@@ -1068,8 +1069,22 @@
       "passedChecks": 6,
       "scope": "disposable PostgreSQL 16, repository pool, child transaction rollback, SIGSTOP retirement boundary, checkpoint/session fail-closed checks"
     },
+    "freshLiveGateSample": {
+      "capturedAt": "2026-09-10T03:19:41.459Z",
+      "coreTip": 966298,
+      "indexTip": 966298,
+      "indexComplete": true,
+      "lastSummaryHeight": 966131,
+      "workerRelease": "f34268758527260caf110d78458d63daf71a9e5c",
+      "workerCompactBudgetBytes": 16777216,
+      "workerState": "failed-retrying",
+      "workerOk": false,
+      "workSummaryStatus": 503,
+      "marketplaceSummaryStatus": 503,
+      "summaryErrorCode": "CANONICAL_SUMMARY_UNAVAILABLE",
+      "productionMutationsByThisImplementation": false
+    },
     "remainingGates": [
-      "final hygiene, exact-commit commit/push",
       "fresh exact-tip full-node/API/DB reconciliation",
       "parallel read route and exclusive writer/drain handoff with rollback proof",
       "live manager-owned worker recovery and first exact-tip cycle",

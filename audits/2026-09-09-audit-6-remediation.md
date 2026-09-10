@@ -216,11 +216,12 @@ are preserved. Local hygiene removed only allowlisted Vite caches and build outp
 
 ## Source checkpoint and measured incident recovery candidate
 
-Application implementation commit `6acfe0b` was committed with hygiene hooks and
-pushed to `origin/audit6-remediation-2026-09-09`. It includes the clearly gated
-deployment design notes, but does not install or deploy recovery controllers.
-The remaining controller/test files are local work in progress. The interruption
-for assistant usage occurred before any production transition.
+Application implementation baseline commit `6acfe0b` was committed with hygiene
+hooks and pushed to `origin/audit6-remediation-2026-09-09`. The completed
+candidate, including the evidence-preserving deployment/recovery safeguards and
+isolated certifications, is commit `cfd12a6`, also pushed to that branch. It does
+not install or deploy recovery controllers in production. The interruption for
+assistant usage occurred before any production transition.
 
 A read-only execution of the unchanged production summary writer calculation
 at stable Core/scan block 966134 passed all 23 ledger checks. Its publication
@@ -271,9 +272,20 @@ metadata writer against database `audit6_safeguards`; the live 5432 cluster was
 not used. These fixtures prove manager/session-independent recovery mechanics,
 not a production transition.
 
+The fresh read-only production sample at 2026-09-10T03:19Z found Core, Electrum,
+and the index at exact tip 966298 with the canonical index complete, but the
+live worker remained release `f34268758527260caf110d78458d63daf71a9e5c` at the
+16 MiB compact cap. Its last successful summary was block 966131; the worker was
+`failed-retrying` and both exact-tip WORK and marketplace summary reads returned
+the existing `CANONICAL_SUMMARY_UNAVAILABLE` 503. This is the recorded live
+incident gate, not a candidate verification result.
+
 Production source, configuration, services, database, routes, deployment
 pointers, wallets, and cleanup candidates remain unchanged. The remaining gates
-are a final exact-commit push, fresh full-node/API/DB reconciliation, a
-parallel-read route plus exclusive-writer/drain handoff with rollback proof, and
-only then phased production deployment and external smoke verification. If any
-of those gates fails, preserve this checkpoint and do not alter production.
+are fresh exact-commit full-node/API/DB reconciliation after recovery, a
+parallel-read route plus exclusive-writer/drain handoff with rollback proof,
+manager-owned live worker recovery and first exact-tip cycle, and only then
+phased production deployment and external smoke verification. Because the live
+exact-tip gate and no-outage route/writer gate are not green, this checkpoint
+stops before production. If any later gate fails, preserve it and do not alter
+production.

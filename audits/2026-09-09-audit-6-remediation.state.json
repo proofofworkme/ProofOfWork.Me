@@ -29,8 +29,10 @@
     "audits/2026-09-09-audit-6-remediation.verification.json"
   ],
   "implementationCommits": [
-    "6acfe0b"
+    "6acfe0b",
+    "cfd12a6"
   ],
+  "candidateCheckpointCommit": "cfd12a6",
   "approvalCheckpointCommit": "a80c58c",
   "remainingGates": [
     "final hygiene, integrated release checks, commit and push at the exact candidate source",
@@ -40,7 +42,7 @@
     "live worker incident recovery with the manager-owned verifier and first exact-tip cycle",
     "named cleanup candidates still require non-use and retained-recovery proof"
   ],
-  "checkpointAt": "2026-09-10T03:05:00.000Z",
+  "checkpointAt": "2026-09-10T03:19:41.459Z",
   "incident": {
     "observedAt": "2026-09-09T01:38:25Z",
     "fullNodeHeight": 966134,
@@ -55,7 +57,22 @@
     "workerAutomaticRestarts": 4,
     "cause": "deterministic canonical summary compact storage budget exceeded",
     "productionChangesByThisImplementation": false,
-    "recoveryStatus": "actual unchanged writer shadow fits17/18MiB; isolated manager and PostgreSQL retirement certification passed; live recovery not run",
+    "recoveryStatus": "actual unchanged writer shadow fits17/18MiB; isolated manager and PostgreSQL retirement certification passed; live worker remains on 16MiB and exact-tip summary reads are 503; no live recovery or production transition run",
+    "freshLiveGateSample": {
+      "at": "2026-09-10T03:19:41.459Z",
+      "coreTip": 966298,
+      "indexTip": 966298,
+      "indexComplete": true,
+      "lastSummaryHeight": 966131,
+      "workerRelease": "f34268758527260caf110d78458d63daf71a9e5c",
+      "workerCompactBudgetBytes": 16777216,
+      "workerState": "failed-retrying",
+      "workerOk": false,
+      "workSummaryStatus": 503,
+      "marketplaceSummaryStatus": 503,
+      "summaryErrorCode": "CANONICAL_SUMMARY_UNAVAILABLE",
+      "productionMutationsByThisImplementation": false
+    },
     "actualCandidateSqlTextBytes": 17660681,
     "actualCandidateCompactBytes": 16803746,
     "shadowLedgerChecksPassed": 23,
