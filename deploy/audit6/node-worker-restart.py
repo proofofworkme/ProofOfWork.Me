@@ -236,6 +236,17 @@ class SystemdWorker:
                 'Worker verification gate did not pass: ' + detail)
         return record
 
+    def wait_for_preflight(self, seconds=120):
+        deadline = time.monotonic() + seconds
+        last_error = None
+        while True:
+            try:
+                return self.verifier('before-freeze')
+            except RuntimeError as error:
+                last_error = error
+                require(time.monotonic() < deadline, str(last_error))
+                time.sleep(.5)
+
     def restore_override(self):
         expected = self.job['candidateOverride'].encode()
         prior = self.job['priorOverride']
@@ -286,11 +297,13 @@ def run(job, path, manager):
     if job['phase'] != 'prepared':
         recover(job, path, manager)
         return
-    job['preflight'] = manager.verifier('before-freeze')
+    job['preflight'] = manager.wait_for_preflight()
     job['phase'] = 'armed'
     save(path, job)  # Durable before changing any manager state.
     manager.hold_restart()
     try:
+        job['preflight'] = manager.wait_for_preflight(seconds=30)
+        save(path, job)
         pid, group = manager.freeze()
         before = manager.verifier('frozen')
         job.update(phase='frozen', before=before)
