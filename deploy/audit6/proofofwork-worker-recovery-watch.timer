@@ -1,0 +1,11 @@
+[Unit]
+Description=Independently resume unfinished ProofOfWork worker recovery
+
+[Timer]
+OnBootSec=10s
+OnUnitInactiveSec=5s
+AccuracySec=1s
+Unit=proofofwork-worker-recovery-watch.service
+
+[Install]
+WantedBy=timers.target

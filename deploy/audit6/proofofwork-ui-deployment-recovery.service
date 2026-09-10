@@ -1,0 +1,32 @@
+[Unit]
+Description=Recover incomplete ProofOfWork UI publication transactions
+After=caddy.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 -I /usr/local/lib/proofofwork-deployment/ui-deployment.py recover-all
+TimeoutStartSec=10min
+TimeoutStopSec=30s
+KillMode=control-group
+UMask=0077
+StateDirectory=proofofwork-ui-deployments
+StateDirectoryMode=0700
+NoNewPrivileges=true
+# Must observe the same /var/tmp candidate as the publishing service.
+PrivateTmp=false
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+# The exchange must rename /var/www itself. Bind-mounting that directory
+# would violate the publisher no-nested-mount contract; grant its parent.
+ReadWritePaths=/var /run/proofofwork-ui
+ReadOnlyPaths=/var/log /var/cache
+CapabilityBoundingSet=
+AmbientCapabilities=
+ProtectControlGroups=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+LimitCORE=0
+TasksMax=128
+MemoryMax=2G

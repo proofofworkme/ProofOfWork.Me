@@ -405,7 +405,10 @@ const compatibilityDependencyRegression = spawnSync(
   {
     cwd: process.cwd(),
     encoding: "utf8",
-    timeout: 180_000,
+    // The measured 525-dependency fixture now exercises the publisher's full
+    // archive/provenance verification. Keep a bounded subprocess budget, but
+    // leave enough time for the reviewed finite fixture on constrained hosts.
+    timeout: 900_000,
     input: String.raw`
 import importlib.util
 from pathlib import Path

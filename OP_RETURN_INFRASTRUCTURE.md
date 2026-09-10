@@ -4649,6 +4649,11 @@ before strict raw verification. Ordinary payments and unrelated Mail carriers do
 not generate false WORK-recovery errors. Recognizable malformed PWT carriers still
 reach the same strict verifier and retain their failure diagnostics.
 
+Summary-publication refusals describe an unavailable exact-tip summary, and a
+registry snapshot mismatch describes the checkpoint disagreement. Neither error
+assumes the canonical scan is behind Core; summary publication can fail while
+the scan is at tip. Existing error codes and all admission predicates are unchanged.
+
 The approved implementation and closed production-transition gate are tracked in
 [the remediation handoff](audits/2026-09-09-audit-6-remediation.md).
 

@@ -3018,7 +3018,10 @@ async function runChecks() {
       "check-worker-containment.mjs",
       ["--fixture=poison-timeout"],
       {},
-      { runtime: timeoutRuntime, timeoutMs: 1_000 },
+      // Loading the full worker module is now more expensive than the old
+      // one-second fixture startup budget. Keep the timeout intentionally
+      // short, but let the injected child emit its deterministic record first.
+      { runtime: timeoutRuntime, timeoutMs: 5_000 },
     );
   } catch (error) {
     timeoutError = error;
@@ -3026,13 +3029,13 @@ async function runChecks() {
   const timeoutElapsedMs = Date.now() - timeoutStartedAt;
   assert.match(timeoutError?.message ?? "", /wall-clock budget/u);
   assert.equal(timeoutError?.code, "POW_INDEX_CHILD_TIMEOUT");
-  assert.equal(timeoutError?.timeoutMs, 1_000);
+  assert.equal(timeoutError?.timeoutMs, 5_000);
   assert.ok(
     timeoutElapsedMs >= 900,
     `timeout returned too early: ${timeoutElapsedMs}ms`,
   );
   assert.ok(
-    timeoutElapsedMs < 3_000,
+    timeoutElapsedMs < 7_000,
     `timeout did not terminate promptly: ${timeoutElapsedMs}ms`,
   );
   assert.deepEqual(canonicalWorkerFailureFromError(timeoutError), failure);

@@ -1,0 +1,14 @@
+[Unit]
+Description=Isolated Audit 6 deployment certification aggregate resource envelope
+
+[Slice]
+CPUQuota=25%
+MemoryHigh=384M
+MemoryMax=512M
+MemorySwapMax=0
+TasksMax=256
+IOWeight=10
+IOReadBandwidthMax=/tmp 10485760
+IOWriteBandwidthMax=/tmp 5242880
+IOReadBandwidthMax=/var/tmp 10485760
+IOWriteBandwidthMax=/var/tmp 5242880

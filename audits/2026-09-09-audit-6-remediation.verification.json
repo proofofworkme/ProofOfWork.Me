@@ -874,5 +874,206 @@
       "service": "deploy/proofofwork-indexer-worker.service:52",
       "api": "deploy/proofofwork-api-proof-index.conf:38"
     }
+  },
+  "actualCandidateBudgetShadow": {
+    "at": "2026-09-09T01:45:24.370Z",
+    "scope": "Current release canonical summary writer calculation, stopped before INSERT; READ ONLY transaction; one internal canonical-summary builder request; exact PostgreSQL JSONB text size",
+    "ok": true,
+    "coreBefore": {
+      "height": 966134,
+      "hash": "00000000000000000000719ab943c1575bc44272bbd035f72fad2f4a03016548"
+    },
+    "scanBefore": {
+      "snapshot_id": "7300765c31691ee2512d3907",
+      "indexed_through_block": 966134,
+      "block_hash": "00000000000000000000719ab943c1575bc44272bbd035f72fad2f4a03016548"
+    },
+    "writerSha256": "9006dc3f4a7aaa8d57917615b78b06b850c8561b3d3fd98740b379acc67f6741",
+    "candidate": {
+      "snapshotId": "3b34b648e3946abf511a0212",
+      "height": 966134,
+      "hash": "00000000000000000000719ab943c1575bc44272bbd035f72fad2f4a03016548",
+      "compactBytes": 16803746,
+      "compact_bytes": 16803746,
+      "sql_text_bytes": 17660681,
+      "sha256": "a9c7993866c911722b895f386221c423be19ec5d9fcac0e9a49acd48b25cb633",
+      "keys": [
+        "checks",
+        "generatedAt",
+        "indexedThroughBlock",
+        "indexedThroughBlockHash",
+        "metrics",
+        "missingLogEvents",
+        "network",
+        "ok",
+        "snapshotId",
+        "sourceHashes",
+        "status",
+        "summaryPayloads",
+        "summaryPayloadsIndexedAt",
+        "summaryRefresh",
+        "totals",
+        "workAmountStorageModel",
+        "workSufficientState"
+      ],
+      "workNetworkValueQ8": "838757623963559142078714414",
+      "workSufficientState": {
+        "amountStorageModel": "work-subatoms-v2",
+        "closingStateCommitment": {
+          "model": "canonical-work-amo-sufficient-state-sha256-v1",
+          "payloadBytes": 2519035,
+          "sha256": "1f198c6ab9a74de09d72d32af8603ae0ca4dbe3b5ddf656599ac2e0d07c56544"
+        },
+        "decimals": 16,
+        "indexedThroughBlock": 966134,
+        "indexedThroughBlockHash": "00000000000000000000719ab943c1575bc44272bbd035f72fad2f4a03016548",
+        "model": "canonical-work-q16-transition-checkpoint-v1",
+        "precisionModel": "canonical-work-subatoms-v2",
+        "tokenStateCommitment": {
+          "model": "canonical-work-amo-payload-sha256-v1",
+          "payloadBytes": 1640026,
+          "sha256": "3fc578a3296ff41a8e15b75d35180d8510472e00adc1d94451a1586924cd1a96"
+        },
+        "transitionModel": "canonical-work-amo-full-position-block-sequencer-v4",
+        "unitScale": "10000000000000000",
+        "workTokenStateModel": "canonical-work-token-state-subatoms-v3"
+      },
+      "consistency": true,
+      "status": "green",
+      "checkCount": 23,
+      "failedChecks": []
+    },
+    "scanAfter": {
+      "snapshot_id": "7300765c31691ee2512d3907",
+      "indexed_through_block": 966134,
+      "block_hash": "00000000000000000000719ab943c1575bc44272bbd035f72fad2f4a03016548"
+    },
+    "coreAfter": {
+      "height": 966134,
+      "hash": "00000000000000000000719ab943c1575bc44272bbd035f72fad2f4a03016548"
+    },
+    "sameCore": true,
+    "sameScan": true,
+    "candidateMatchesFence": true,
+    "compact17Headroom": 1022046,
+    "sql18Headroom": 1213687,
+    "sqlOverhead": 856935,
+    "elapsedMs": 21191,
+    "queries": [
+      {
+        "elapsedMs": 11,
+        "rows": 1
+      },
+      {
+        "elapsedMs": 151,
+        "rows": 1
+      },
+      {
+        "elapsedMs": 1,
+        "rows": 1
+      },
+      {
+        "elapsedMs": 0,
+        "rows": 1
+      },
+      {
+        "elapsedMs": 0,
+        "rows": 1
+      },
+      {
+        "elapsedMs": 972,
+        "rows": 1
+      },
+      {
+        "elapsedMs": 271,
+        "rows": 25470
+      },
+      {
+        "elapsedMs": 6,
+        "rows": 1
+      },
+      {
+        "elapsedMs": 1,
+        "rows": 1
+      },
+      {
+        "elapsedMs": 44,
+        "rows": 1
+      },
+      {
+        "elapsedMs": 173,
+        "rows": 25470
+      },
+      {
+        "elapsedMs": 0,
+        "rows": 1
+      },
+      {
+        "elapsedMs": 0,
+        "rows": 1
+      },
+      {
+        "elapsedMs": 39,
+        "rows": 1
+      },
+      {
+        "elapsedMs": 229,
+        "rows": 1
+      },
+      {
+        "elapsedMs": 8,
+        "rows": 1
+      }
+    ]
+  },
+  "sourceCheckpoint": {
+    "commit": "6acfe0b",
+    "pushed": true,
+    "branch": "audit6-remediation-2026-09-09",
+    "productionDeployed": false
+  },
+  "finalGateReview": {
+    "capturedAt": "2026-09-10T03:05:00.000Z",
+    "status": "candidate-gates-passed-production-transition-closed",
+    "productionMutations": [],
+    "localRecovery": {
+      "command": "timeout 1200s python3 -u scripts/check-audit6-deployment.py --jobs=3",
+      "passedCases": 18,
+      "failedCases": 0,
+      "scope": "session-independent UI deployment recovery, retained assets, publisher/HTTP faults, kill boundaries, rollback idempotence"
+    },
+    "hostSystemd": {
+      "harnessUnit": "pow-audit6-certify-audit6cert20260913.service",
+      "slice": "powaudit6certifyaudit6cert20260913.slice",
+      "receipt": "/tmp/pow-audit6-systemd-receipt-audit6cert20260913/receipt.json",
+      "receiptSha256": "81be4e53c57ca1fba8b21899f232a57646f7b4c85bbdf431be1c8e6267e92666",
+      "passed": true,
+      "cases": ["kill-armed", "freeze-child-refusal", "kill-frozen", "kill-retired", "kill-candidate", "failed-candidate"],
+      "resourceEnvelope": {
+        "cpu.max": "25000 100000",
+        "memory.high": "402653184",
+        "memory.max": "536870912",
+        "memory.swap.max": "0",
+        "pids.max": "256",
+        "io.max": "9:1 rbps=10485760 wbps=5242880 riops=max wiops=max"
+      },
+      "controllerSha256": "5e89e4a038e4f65350e6394eda6e9d9f84c58067fecb43eeffa1798184d16cc1",
+      "harnessSha256": "160eed30b29756a70e8735d9bcec3c5c976debc4bc1c2efc8fbe88cc1a4de099"
+    },
+    "postgresqlFixture": {
+      "passed": true,
+      "serverVersion": "160015",
+      "port": 55435,
+      "database": "audit6_safeguards",
+      "passedChecks": 6,
+      "scope": "disposable PostgreSQL 16, repository pool, child transaction rollback, SIGSTOP retirement boundary, checkpoint/session fail-closed checks"
+    },
+    "remainingGates": [
+      "final hygiene, exact-commit commit/push",
+      "fresh exact-tip full-node/API/DB reconciliation",
+      "parallel read route and exclusive writer/drain handoff with rollback proof",
+      "live manager-owned worker recovery and first exact-tip cycle",
+      "phased production smoke and cleanup review"
+    ]
   }
 }

@@ -25116,7 +25116,7 @@ async function strictCoreRegistryListingReconciliation(
     (payloadHeight !== initialTip.height || payloadHash !== initialTip.blockHash)
   ) {
     throw registryAuthorityUnavailable(
-      "The indexed registry checkpoint is catching up to Bitcoin Core.",
+      "The registry snapshot does not match the current Bitcoin Core checkpoint.",
       {
         coreBlockHash: initialTip.blockHash,
         coreHeight: initialTip.height,
@@ -76221,7 +76221,7 @@ async function handleRequest(request, response) {
         errorResponse(
           response,
           503,
-          "The canonical ProofOfWork summary snapshot is catching up.",
+          "The exact-tip canonical ProofOfWork summary is temporarily unavailable.",
           { code: "CANONICAL_SUMMARY_UNAVAILABLE", ...gate },
         );
         return;

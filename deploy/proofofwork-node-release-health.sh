@@ -74,9 +74,12 @@ while IFS= read -r -d '' tree_record; do
         exit 2
       fi
       file_mode="$(/usr/bin/stat --format=%a -- "${live_path}")"
+      # Git/publisher classification is metadata, not this verifier's ability
+      # to execute a file owned by the application user. CAP_DAC_READ_SEARCH
+      # deliberately does not grant execute access to root for a 0750 file.
       if ((8#${file_mode} & 07022)) ||
-        [[ "${tracked_mode}" == "100755" && ! -x "${live_path}" ]] ||
-        [[ "${tracked_mode}" == "100644" && -x "${live_path}" ]]; then
+        { [[ "${tracked_mode}" == "100755" ]] && ! ((8#${file_mode} & 0111)); } ||
+        { [[ "${tracked_mode}" == "100644" ]] && ((8#${file_mode} & 0111)); }; then
         echo "CRITICAL live node tracked mode is unsafe or differs from Git: ${tracked_path}" >&2
         exit 2
       fi

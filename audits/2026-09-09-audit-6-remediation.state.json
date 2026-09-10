@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "status": "live-summary-budget-incident-confirmed-preparation-continues",
+  "status": "candidate-local-and-host-verified-live-incident-production-closed",
   "auditBaselineCommit": "40c7fa0",
   "branch": "audit6-remediation-2026-09-09",
   "worktree": "/tmp/proofofwork-audit6-remediation",
@@ -16,29 +16,31 @@
     "fresh full-node reconciliation before shipping"
   ],
   "packageStatus": {
-    "1-event-authority-completeness": "in-progress",
+    "1-event-authority-completeness": "candidate-verified",
     "2-exact-financial-status-display": "ui-candidate-verified-not-deployed",
     "3-response-ordering": "ui-candidate-verified-not-deployed",
     "4-readiness-operations": "live-16MiB-summary-budget-failure-confirmed-recovery-gated",
     "5-speed-data-handling": "bounded-mail-and-amo-preview-candidates-tested",
-    "6-storage-recovery": "in-progress",
+    "6-storage-recovery": "isolated-systemd-and-postgresql-certified-no-production-cleanup",
     "7-ui": "candidate-build-and-browser-checks-passed-not-deployed",
-    "8-verification": "in-progress"
+    "8-verification": "local-and-isolated-host-gates-passed-live-transition-open"
   },
   "verificationReceipts": [
     "audits/2026-09-09-audit-6-remediation.verification.json"
   ],
-  "implementationCommits": [],
+  "implementationCommits": [
+    "6acfe0b"
+  ],
   "approvalCheckpointCommit": "a80c58c",
   "remainingGates": [
-    "integrated release checks and final build at exact candidate commit",
+    "final hygiene, integrated release checks, commit and push at the exact candidate source",
     "complete current-node reconciliation before shipping",
     "session-independent UI recovery including new-asset continuity",
-    "systemd recovery certification on isolated host resources",
-    "no-outage node route/writer handoff and rollback proof",
+    "no-outage node route/writer handoff, drain and rollback proof",
+    "live worker incident recovery with the manager-owned verifier and first exact-tip cycle",
     "named cleanup candidates still require non-use and retained-recovery proof"
   ],
-  "checkpointAt": "2026-09-09T01:41:23.646756+00:00",
+  "checkpointAt": "2026-09-10T03:05:00.000Z",
   "incident": {
     "observedAt": "2026-09-09T01:38:25Z",
     "fullNodeHeight": 966134,
@@ -53,6 +55,12 @@
     "workerAutomaticRestarts": 4,
     "cause": "deterministic canonical summary compact storage budget exceeded",
     "productionChangesByThisImplementation": false,
-    "recoveryStatus": "bounded same-code worker recovery under preparation; independent recovery gate remains closed"
-  }
+    "recoveryStatus": "actual unchanged writer shadow fits17/18MiB; isolated manager and PostgreSQL retirement certification passed; live recovery not run",
+    "actualCandidateSqlTextBytes": 17660681,
+    "actualCandidateCompactBytes": 16803746,
+    "shadowLedgerChecksPassed": 23,
+    "proposedCompactBudgetBytes": 17825792,
+    "proposedSqlTextBudgetBytes": 18874368
+  },
+  "remoteBranch": "origin/audit6-remediation-2026-09-09"
 }

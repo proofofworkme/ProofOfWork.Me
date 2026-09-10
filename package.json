@@ -103,7 +103,8 @@
     "check:audit6-work-readiness": "node --test server/work-readiness-diagnostics.test.mjs && node scripts/check-audit6-work-recovery.mjs",
     "check:audit6-event-authority": "node scripts/check-event-authority-regressions.mjs",
     "check:audit6-mail": "node scripts/check-mail-pagination-regressions.mjs",
-    "check:audit6-ui": "node scripts/check-audit6-ui-lifecycle.mjs && node scripts/check-audit6-ui-authority.mjs && node scripts/check-audit6-ui-display.mjs"
+    "check:audit6-ui": "node scripts/check-audit6-ui-lifecycle.mjs && node scripts/check-audit6-ui-authority.mjs && node scripts/check-audit6-ui-display.mjs",
+    "check:audit6-deployment": "python3 -B scripts/check-audit6-deployment.py && python3 -B scripts/check-audit6-deployment-modes.py"
   },
   "dependencies": {
     "@bitcoinerlab/secp256k1": "^1.2.0",

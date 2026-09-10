@@ -71,9 +71,10 @@ The production transition gate is **closed**. Existing UI exchange handles ordin
 errors with a shell trap, but post-publication smoke failure and abrupt termination
 need durable recovery. Existing node checkout exchange explicitly stops services;
 the WireGuard proxy also depends on the API unit and targets port 8081. That method
-does not satisfy this approval. A persistent UI controller is being prepared and
-fault-tested locally. Node route switching, drain, cache/schema compatibility, and
-exclusive writer handoff must be established before any node transition.
+does not satisfy this approval. Candidate UI recovery and worker retirement are now
+fault-tested locally and on isolated host resources. Node route switching, drain,
+cache/schema compatibility, and exclusive writer handoff must still be established
+before any node transition.
 
 ## Resume procedure
 
@@ -161,7 +162,8 @@ are explicitly approximate. The shared App bundle remains a size warning.
 
 Production application source, configuration, services and data remain unchanged.
 No named production cleanup candidate has been deleted. UI recovery tests and
-the narrower node route/worker recovery adapter are still under verification.
+the narrower node worker recovery adapter have passed their isolated certification;
+the live worker incident and no-outage route/writer transition remain closed gates.
 
 ## Live summary-publication incident, 2026-09-09 01:38 UTC
 
@@ -211,3 +213,67 @@ no fee, replay cutoff, confirmed ownership, exact arithmetic or local-signing
 rule changes are required. README, infrastructure and mailbox documentation
 describe the candidate behavior. Historical audits and generated release assets
 are preserved. Local hygiene removed only allowlisted Vite caches and build output.
+
+## Source checkpoint and measured incident recovery candidate
+
+Application implementation commit `6acfe0b` was committed with hygiene hooks and
+pushed to `origin/audit6-remediation-2026-09-09`. It includes the clearly gated
+deployment design notes, but does not install or deploy recovery controllers.
+The remaining controller/test files are local work in progress. The interruption
+for assistant usage occurred before any production transition.
+
+A read-only execution of the unchanged production summary writer calculation
+at stable Core/scan block 966134 passed all 23 ledger checks. Its publication
+boundary was replaced by capture before INSERT, within an explicit READ ONLY
+transaction; mutation statements were refused. Runtime was 21.191 seconds.
+The actual candidate measured 16,803,746 compact bytes and 17,660,681 PostgreSQL
+JSONB text bytes. This measurement supersedes using the last-good snapshot size
+as an estimate. The candidate fits a bounded 17 MiB compact worker limit and
+the unchanged 18 MiB API SQL-text limit, with margins of 1,022,046 and 1,213,687
+bytes respectively. No record or exact-value witness was removed.
+
+The existing API uses the SQL-text bound and does not reapply the compact writer
+limit. Matching SQL bounds is required, but compact17MiB alone cannot prove
+future SQL18MiB fit: the writer currently lacks a separate SQL-text insertion
+guard. Continued growth therefore needs explicit budget monitoring and a later
+bounded storage/read-contract correction. The current measured candidate is
+compatible; actual first live publication still requires full-node, API and
+reader-budget verification. Production remains unchanged pending independently
+managed worker recovery and fault certification.
+
+## Final candidate and host verification checkpoint, 2026-09-10
+
+The candidate source and its recovery safeguards passed the final local gates in
+the `audit6-remediation-2026-09-09` worktree. The 18-case deployment recovery
+suite passed with three workers, including retained candidate assets, publisher
+exit, post-publication HTTP failure, every kill boundary, idempotent restoration,
+and successful commit/recovery ordering. UI operations, worker containment,
+event authority, complete mail pagination, registry MVCC, WORK readiness,
+precision, exact bond arithmetic, API truth, hardening, live-data, client-read
+containment, read projections, Boost, ID, growth, and build checks passed. The
+temporary fixture caches created by Python checks remain cleanup-only artifacts;
+no production cleanup candidate was touched.
+
+The approved host certification was run as detached root-managed fixture
+`pow-audit6-certify-audit6cert20260913.service` in capped slice
+`powaudit6certifyaudit6cert20260913.slice`. Its retained receipt is
+`/tmp/pow-audit6-systemd-receipt-audit6cert20260913/receipt.json`, SHA-256
+`81be4e53c57ca1fba8b21899f232a57646f7b4c85bbdf431be1c8e6267e92666`. All six
+scenarios passed, with continuous synthetic API probes; the effective limits
+were 25% CPU, 384 MiB high/512 MiB hard memory, no swap, 256 tasks, and md1
+bandwidth caps of 10 MiB/s read and 5 MiB/s write. The verifier explicitly
+accepts this host's RAID1 aggregate because the kernel exposes the cgroup I/O
+limit at md1 and still refuses other ambiguous multi-slave topologies.
+
+The real PostgreSQL 16 fixture also passed all six transaction/session
+retirement checks on disposable port 55435, using the candidate launcher and
+metadata writer against database `audit6_safeguards`; the live 5432 cluster was
+not used. These fixtures prove manager/session-independent recovery mechanics,
+not a production transition.
+
+Production source, configuration, services, database, routes, deployment
+pointers, wallets, and cleanup candidates remain unchanged. The remaining gates
+are a final exact-commit push, fresh full-node/API/DB reconciliation, a
+parallel-read route plus exclusive-writer/drain handoff with rollback proof, and
+only then phased production deployment and external smoke verification. If any
+of those gates fails, preserve this checkpoint and do not alter production.

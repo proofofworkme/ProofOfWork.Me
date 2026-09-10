@@ -1,0 +1,20 @@
+[Unit]
+Description=Resume unfinished ProofOfWork worker recovery jobs
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 -I /usr/local/lib/proofofwork-deployment/node-worker-restart.py watch
+TimeoutStartSec=30s
+StateDirectory=proofofwork-worker-recovery
+StateDirectoryMode=0700
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectControlGroups=true
+ReadWritePaths=/var/lib/proofofwork-worker-recovery
+MemoryMax=64M
+TasksMax=16
+CapabilityBoundingSet=

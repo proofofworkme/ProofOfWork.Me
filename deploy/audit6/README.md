@@ -13,7 +13,8 @@ Production paths are fixed. Test overrides require both `--test-only` and a
 private canonical JSON configuration with every mutable root under `/tmp`.
 
 The root-owned durable job progresses through `prepared`, `armed`,
-`published-awaiting-smoke`, then `committed`. Every state file is fsynced and
+`prepublishing-union`, `preserving-original`, then returns to `armed` for the
+publisher and continues through `published-awaiting-smoke` to `committed`. Every state file is fsynced and
 atomically replaced, including the parent directory. The existing publisher
 performs the actual `RENAME_EXCHANGE`. Its `status=published` marker is **not**
 the new controller's commit point: live provenance and HTTP byte checks must
@@ -27,19 +28,28 @@ candidate, so cached clients work across forward publication. Same-URL content
 or mode conflicts are refused. The original prior root/archive stay untouched.
 A receipt alone cannot bypass this computed resource-continuity gate.
 
+Before invoking the publisher, the controller atomically serves the separately
+attested union root with the exact existing HTML. It preserves the untouched
+original at `proofofwork-www-pre-original-<release-hash>` and verifies every union
+file over HTTP. The publisher therefore treats the union as its prior root.
+The serving sequence is original, union, candidate, and union on rollback.
+Even the publisher's synchronous EXIT trap restores all candidate resources;
+it cannot temporarily return to an original root missing new assets. The
+controller supplies an exact retained-root classification for the untouched
+original. Preparation and arming require all existing roots to be classified,
+with at most seven existing classifications to leave the publisher's eighth
+slot for that original.
+
 A failure or a fresh process finding an unfinished armed publication identifies
-all three exact inodes, verifies original evidence and the prepared continuity
-root, then atomically serves that separately attested rollback root. It preserves
-the untouched original under the retained prior name and the rejected candidate
-under its staged name. A browser that received candidate HTML just before
-rollback can still retrieve its candidate JS/CSS afterward. Recovery verifies
-both original evidence and the complete served prior/candidate resource closure
-over HTTP. Unknown identities, changed helper/controller bytes, conflicting
-resources or failed proof refuse guessed restoration. Kills after original-root
-preservation, continuity exchange or displaced-root preservation resume from
-durable identities. Even an armed operation that died before publication uses
-the continuity root: an `armed` journal alone cannot prove whether a publisher's
-own trap briefly served and then restored the candidate.
+all three exact inodes and verifies original and union evidence. Recovery
+atomically serves the union if needed, preserves the untouched original at its
+distinct path, and returns the rejected candidate to its staged name. It then
+verifies the complete old/new resource set over HTTP. Unknown identities,
+changed helper/controller bytes, conflicting resources or failed proof refuse
+guessed restoration. Kills around either live exchange or either preservation
+rename resume from durable identities. A prepared job created by an earlier
+publication model requires explicit review; the controller does not guess its
+recovery layout.
 
 A `prepared` job never gets published by the recovery timer. A `committed` job
 is not rolled back by a later watchdog pass. The controller pins its own hash,
@@ -111,8 +121,11 @@ recovery OS processes. It covers kill before exchange; kill after the actual
 publisher exchange; kill after publication; failed post-publication HTTP; kill
 after rollback exchange; kill after durable commit; successful commit; pending
 preparation; helper/gate drift; candidate HTML/asset requests crossing rollback; resource
-conflicts; missing continuity proofs; both additional root-preservation kill
-boundaries; and supervision file contracts. The injected
+conflicts; missing continuity proofs; the prepublication union exchange and
+original-preservation kill boundaries; unclassified rollback refusal; and
+supervision file contracts. A continuous HTTP probe verifies candidate assets
+through a real publisher EXIT-trap failure, including a pause after the trap
+returns and before controller recovery verification. The injected
 post-exchange pause intercepts the publisher's `record` call, which occurs only
 after its real exchange. It does not replace the exchange algorithm.
 
@@ -183,17 +196,19 @@ systemd-run --unit=pow-audit6-certify-<unique> --collect \
 
 After that command returns, disconnect the launching session and reconnect to
 read the result. Do not use `--wait` or tie the harness to a login shell. Read
-`receipt.json`, the three per-case JSON receipts, and the bounded journal for
-the harness. Success requires three passing scenarios, matching hashes of the
+`receipt.json`, the six per-case JSON receipts, and the bounded journal for
+the harness. Success requires six passing scenarios, matching hashes of the
 reviewed source/helpers/units, untouched retained prior inode and manifest, the
 separately attested served rollback inode, all 45 prior/candidate fixture static
 files verified through HTTP, and a fresh recovery invocation
 for killed processes. The independent timer case additionally confirms that
 the deployment test unit was stopped and the timer's invocation restored it.
 
-The cases are actual MainPID SIGKILL after the publisher exchange, an incorrect
-HTTP response after successful publication, and SIGKILL of the full deployment
-unit followed by disabling its own restart so the independent timer must act.
+The cases are actual MainPID SIGKILL after the union exchange, after preserving
+the untouched original, and after the publisher exchange; a publisher EXIT-trap
+failure with continuous candidate-asset requests; an incorrect HTTP response
+after successful publication; and SIGKILL of the full deployment unit followed
+by disabling its own restart so the independent timer must act.
 The test reads service properties from the tracked production unit files and
 preserves sandbox/restart/kill/resource settings; only entrypoints, dependencies,
 state paths and writable roots are adapted to isolated fixtures. The generated
@@ -215,7 +230,9 @@ behavior. Those limits must remain explicit in the production gate review.
 under the existing shared deployment lock and protects the candidate root,
 source checkout/runtime, original prior root/archive, separately attested
 recovery root/archive, and archive checksum/provenance sidecars. It also
-protects the current serving root/archive and durable journals. Missing or
+protects the current serving root/archive, shared lock, durable journals, and
+each explicitly retained rollback root and its manifest-bound archive family.
+The distinct untouched-original path remains protected after union publication. Missing or
 ambiguous original identities, changed original manifests and unknown journal
 states refuse all cleanup. Candidate paths intersecting either a protected
 ancestor or descendant are refused.

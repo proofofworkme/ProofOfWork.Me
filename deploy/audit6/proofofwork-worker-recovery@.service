@@ -1,0 +1,40 @@
+[Unit]
+Description=ProofOfWork worker budget recovery %i
+After=network-online.target postgresql@16-main.service
+Requires=proofofwork-worker-recovery-watch.timer
+
+[Service]
+Type=exec
+ExecStart=/usr/bin/python3 -I /usr/local/lib/proofofwork-deployment/node-worker-restart.py run --job %i
+Restart=on-failure
+RestartSec=5s
+RuntimeMaxSec=15min
+TimeoutStopSec=30s
+KillMode=control-group
+StateDirectory=proofofwork-worker-recovery
+StateDirectoryMode=0700
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectKernelTunables=true
+# cgroup.freeze/cgroup.kill are the reviewed retirement boundary. This unit
+# requires write access to the existing worker cgroup, never the API cgroup.
+ProtectControlGroups=false
+ReadWritePaths=/var/lib/proofofwork-worker-recovery /etc/systemd/system /run/systemd/system
+MemoryMax=512M
+TasksMax=64
+CPUQuota=25%
+# Read attested powadmin-owned source and bind the actual API/worker process
+# environment, cwd and listener descriptors without widening file permissions.
+# The host fixture must prove these cross-UID reads under this exact bound.
+CapabilityBoundingSet=CAP_DAC_READ_SEARCH CAP_SYS_PTRACE
+RestrictSUIDSGID=true
+LockPersonality=true
+
+[Install]
+WantedBy=multi-user.target

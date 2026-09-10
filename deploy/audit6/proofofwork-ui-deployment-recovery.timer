@@ -1,0 +1,11 @@
+[Unit]
+Description=Independent recovery watch for incomplete ProofOfWork UI publication
+
+[Timer]
+OnBootSec=10s
+OnUnitInactiveSec=10s
+AccuracySec=1s
+Unit=proofofwork-ui-deployment-recovery.service
+
+[Install]
+WantedBy=timers.target
