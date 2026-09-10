@@ -126,9 +126,10 @@ class SystemdWorker:
         identity = self.job['identity']
         require(source_digest(identity['runtime'], identity['runtimeOwner']) == identity['runtimeSha256'], 'Worker runtime changed')
         require(source_digest(identity['sourceFile'], identity['sourceOwner']) == identity['sourceSha256'], 'Worker source changed')
-        require(command(['/usr/bin/git', '-C', identity['sourceRoot'], 'rev-parse', 'HEAD']) == identity['sourceCommit'],
+        git = ['/usr/bin/git', '-c', 'safe.directory=' + identity['sourceRoot'], '-C', identity['sourceRoot']]
+        require(command([*git, 'rev-parse', 'HEAD']) == identity['sourceCommit'],
                 'Worker source commit changed')
-        command(['/usr/bin/git', '-C', identity['sourceRoot'], 'diff', '--quiet', 'HEAD', '--', 'server', 'scripts'])
+        command([*git, 'diff', '--quiet', 'HEAD', '--', 'server', 'scripts'])
         # Pin every prior unit fragment/drop-in, not an inferred tracked template.
         for path, expected in identity['unitFiles'].items():
             require(Path(path) not in {OVERRIDE, HOLD}, 'Adapter overrides must be attested separately')

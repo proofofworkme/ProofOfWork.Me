@@ -416,8 +416,9 @@ async function run() {
     insist(!path.isAbsolute(relative) && !relative.split('/').includes('..'), 'Invalid source-relative path');
     checkedFile(path.join(manifest.source.root, relative), digest, manifest.source.owner, 8 * 1024 * 1024);
   }
-  insist(command('/usr/bin/git', ['-C', manifest.source.root, 'rev-parse', 'HEAD']) === manifest.source.commit &&
-    command('/usr/bin/git', ['-C', manifest.source.root, 'status', '--porcelain', '--untracked-files=no']) === '',
+  const git = ['-c', `safe.directory=${manifest.source.root}`, '-C', manifest.source.root];
+  insist(command('/usr/bin/git', [...git, 'rev-parse', 'HEAD']) === manifest.source.commit &&
+    command('/usr/bin/git', [...git, 'status', '--porcelain', '--untracked-files=no']) === '',
   'Running release differs from the prepared clean commit');
   const raw = fs.readFileSync(0); insist(raw.length <= 1024 * 1024, 'Oversized verifier request'); const request = JSON.parse(raw);
   const hardBudgetMs = request.phase === 'first-complete-cycle' ? 585000 : 50000;
