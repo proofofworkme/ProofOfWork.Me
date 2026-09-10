@@ -374,6 +374,13 @@ export async function verifyPhase(manifest, request, dependencies) {
       'Rebuild the read-only candidate size receipt at the new Core checkpoint');
     insist(observation.workerProcess.compactBytes === PRIOR_COMPACT_LIMIT && observation.workerProcess.sqlTextBytes === SQL_LIMIT,
       'Original worker budget baseline changed');
+    insist(observation.workerProcess.frozen === false && observation.workerProcess.pids.length === 1 &&
+      observation.workerProcess.pids[0] === observation.workerProcess.pid,
+    'Worker process group is not quiescent');
+    insist(observation.db.sessions.length > 0 && observation.db.sessions.every(row =>
+      row.application_name === 'proof-indexer-worker' && row.state === 'idle' && row.xact_start === null &&
+      row.wait_event_type === 'Client' && row.wait_event === 'ClientRead'),
+    'Worker sessions are not idle outside transactions');
     insist(observation.db.summary?.sqlTextBytes > 0 && observation.db.summary.sqlTextBytes <= SQL_LIMIT,
       'Existing stored summary is already unreadable by the API');
     insist(observation.apiBaseline?.status === 503 && observation.apiBaseline.errorCode === 'CANONICAL_SUMMARY_UNAVAILABLE',

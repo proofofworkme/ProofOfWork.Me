@@ -45,6 +45,8 @@ function observation() {
     pending: { model: 'canonical-work-q16-pending-rebuild-v2', network: 'livenet', ready: true, generatedAt: time(-2000),
       canonicalTip: tip, membershipSnapshot: membership, projection: { commitmentSha256: projectionHash } },
     durable: { worker, scan: ['scan', tip.height, hash], summary: ['new', tip.height, hash], pending: ['witness'] } };
+  db.sessions = [{ application_name: 'proof-indexer-worker', state: 'idle', xact_start: null,
+    wait_event_type: 'Client', wait_event: 'ClientRead' }];
   return { coreBefore: tip, coreAfter: tip, db,
     workerProcess: { pid: 22, pids: [22], frozen: false, compactBytes: 17825792, sqlTextBytes: 18874368 },
     readiness: { ready: true, pendingReady: true, failureActive: false, tipHeight: tip.height, tipHash: hash },
@@ -155,6 +157,12 @@ test('before-freeze recognizes only the current measured incident, not health or
   await assert.rejects(verifyPhase(manifest, request, { ...dependencies, candidate: { ...tip, height: tip.height - 1 } }));
   value.apiBaseline.status = 200;
   await assert.rejects(verifyPhase(manifest, request, dependencies));
+  const nonquiescent = observation(); nonquiescent.workerProcess.pids.push(23);
+  nonquiescent.apiBaseline = { status: 503, errorCode: 'CANONICAL_SUMMARY_UNAVAILABLE' };
+  await assert.rejects(verifyPhase(manifest, request, { ...dependencies, observe: async () => nonquiescent }));
+  const activeSession = observation(); activeSession.apiBaseline = { status: 503, errorCode: 'CANONICAL_SUMMARY_UNAVAILABLE' };
+  activeSession.db.sessions[0].state = 'active';
+  await assert.rejects(verifyPhase(manifest, request, { ...dependencies, observe: async () => activeSession }));
 });
 
 test('armed rollback accepts the durable preflight only when retirement was impossible, and never claims healthy', async () => {
