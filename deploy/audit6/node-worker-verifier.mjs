@@ -17,6 +17,7 @@ const WORKER_UNIT = 'proofofwork-indexer-worker.service';
 const SQL_LIMIT = 18 * 1024 * 1024;
 const COMPACT_LIMIT = 17 * 1024 * 1024;
 const PRIOR_COMPACT_LIMIT = 16 * 1024 * 1024;
+const API_READ_TIMEOUT_MS = 20_000;
 export function insist(condition, message) { if (!condition) throw new Error(message); }
 export function sha256(value) { return createHash('sha256').update(value).digest('hex'); }
 export function stableJson(value) {
@@ -356,7 +357,8 @@ export function pendingBinding(db, beforeMempool, afterMempool) {
 }
 
 async function apiRead(base, endpoint) {
-  const result = await readJson(`${base}/api/v1/${endpoint}?compact=1&fresh=1&network=livenet`);
+  const result = await readJson(`${base}/api/v1/${endpoint}?compact=1&fresh=1&network=livenet`,
+    { timeoutMs: API_READ_TIMEOUT_MS });
   const body = result.body; const floor = body.floor ?? body.workFloor;
   return { endpoint, status: result.status, elapsedMs: result.elapsedMs, height: body.indexedThroughBlock,
     hash: body.indexedThroughBlockHash, snapshotId: body.snapshotId, ready: body.workAmoV8?.ready === true,
