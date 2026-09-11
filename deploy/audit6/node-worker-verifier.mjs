@@ -365,7 +365,9 @@ async function apiRead(base, endpoint) {
 }
 
 export async function verifyPhase(manifest, request, dependencies) {
-  insist(PHASES.has(request?.phase) && request.baselineMode === 'incident-existing-unhealthy' &&
+  const baselineMode = request?.baselineMode;
+  insist(PHASES.has(request?.phase) &&
+    ['incident-existing-unhealthy', 'incident-existing-recovered'].includes(baselineMode) &&
     Number.isFinite(request.preparedAt) && request.preparedAt > 0, 'Unknown phase/baseline request');
   const observation = await dependencies.observe(request.phase);
   insist(equal(observation.coreBefore, observation.coreAfter), 'Core advanced during verification');
@@ -383,9 +385,24 @@ export async function verifyPhase(manifest, request, dependencies) {
     'Worker sessions are not idle outside transactions');
     insist(observation.db.summary?.sqlTextBytes > 0 && observation.db.summary.sqlTextBytes <= SQL_LIMIT,
       'Existing stored summary is already unreadable by the API');
-    insist(observation.apiBaseline?.status === 503 && observation.apiBaseline.errorCode === 'CANONICAL_SUMMARY_UNAVAILABLE',
-      'The live API failure does not match this incident');
-    return { passed: true, phase: request.phase, healthy: false, candidate: dependencies.candidate, ...observation };
+    if (baselineMode === 'incident-existing-unhealthy') {
+      insist(observation.apiBaseline?.status === 503 && observation.apiBaseline.errorCode === 'CANONICAL_SUMMARY_UNAVAILABLE',
+        'The live API failure does not match this incident');
+    } else {
+      const summary = observation.db.summary;
+      const api = observation.apiBaseline;
+      insist(summary?.height === dependencies.candidate.height && summary.hash === dependencies.candidate.hash &&
+        summary.snapshotId === dependencies.candidate.snapshotId && summary.ok === true && summary.status === 'green' &&
+        summary.sqlTextBytes > 0 && summary.sqlTextBytes <= SQL_LIMIT,
+      'Recovered canonical summary is not the pinned exact candidate');
+      insist(api?.status === 200 && api.height === dependencies.candidate.height &&
+        api.hash === dependencies.candidate.hash && api.snapshotId === dependencies.candidate.snapshotId &&
+        api.ready === true && api.protocolWritesEnabled === true &&
+        api.workNetworkValueQ8 === summary.exactAliases?.[0],
+      'Recovered API response is not the pinned exact candidate');
+    }
+    return { passed: true, phase: request.phase, healthy: baselineMode === 'incident-existing-recovered',
+      candidate: dependencies.candidate, ...observation };
   }
   if (request.phase === 'frozen') assertFrozen(observation);
   if (request.phase === 'retired') assertRetired(request.before, observation);

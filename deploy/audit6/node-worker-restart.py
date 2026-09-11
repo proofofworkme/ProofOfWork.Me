@@ -357,7 +357,8 @@ def main():
     require(job['phase'] in TERMINAL | {'prepared', 'armed', 'frozen', 'retiring', 'candidate-starting'}, 'Unknown worker recovery phase')
     require(job['candidateOverride'].encode() == candidate_bytes(job['compactMaxBytes'], job['sqlTextMaxBytes']),
             'Only the two existing bounded summary budgets may change')
-    require(job['baselineMode'] in {'healthy', 'incident-existing-unhealthy'}, 'Baseline health must be explicit')
+    require(job['baselineMode'] in {'healthy', 'incident-existing-unhealthy', 'incident-existing-recovered'},
+            'Baseline health must be explicit')
     unit = 'proofofwork-worker-recovery@' + args.job + '.service'
     own = properties(unit, ['MainPID', 'KillMode', 'Restart'])
     require(own == {'MainPID': str(os.getpid()), 'KillMode': 'control-group', 'Restart': 'on-failure'},

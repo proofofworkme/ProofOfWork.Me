@@ -165,6 +165,26 @@ test('before-freeze recognizes only the current measured incident, not health or
   await assert.rejects(verifyPhase(manifest, request, { ...dependencies, observe: async () => activeSession }));
 });
 
+test('before-freeze accepts an already-published exact candidate only with a matching healthy API', async () => {
+  const value = observation(); value.workerProcess.compactBytes = 16777216;
+  value.apiBaseline = { status: 200, ...tip, snapshotId: 'new', ready: true,
+    protocolWritesEnabled: true, workNetworkValueQ8: value.db.summary.exactAliases[0] };
+  const request = { phase: 'before-freeze', baselineMode: 'incident-existing-recovered', preparedAt: now / 1000 };
+  const dependencies = { candidate: { ...tip, snapshotId: 'new' }, observe: async () => value };
+  const result = await verifyPhase(manifest, request, dependencies);
+  assert.equal(result.passed, true); assert.equal(result.healthy, true);
+  for (const mutate of [v => { v.apiBaseline.snapshotId = 'old'; },
+    v => { v.apiBaseline.protocolWritesEnabled = false; }, v => { v.apiBaseline.workNetworkValueQ8 = '1'; },
+    v => { v.db.summary.hash = 'd'.repeat(64); }, v => { v.db.summary.snapshotId = 'old'; }]) {
+    const value = observation(); value.workerProcess.compactBytes = 16777216;
+    value.apiBaseline = { status: 200, ...tip, snapshotId: 'new', ready: true,
+      protocolWritesEnabled: true, workNetworkValueQ8: value.db.summary.exactAliases[0] };
+    mutate(value);
+    await assert.rejects(verifyPhase(manifest, request, { ...dependencies, observe: async () => value }));
+  }
+  await assert.rejects(verifyPhase(manifest, { ...request, baselineMode: 'healthy' }, dependencies));
+});
+
 test('armed rollback accepts the durable preflight only when retirement was impossible, and never claims healthy', async () => {
   const before = frozen(); before.phase = 'before-freeze';
   const value = clone(before); value.workerProcess.frozen = false;
