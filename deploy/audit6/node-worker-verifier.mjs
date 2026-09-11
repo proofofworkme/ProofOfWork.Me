@@ -18,6 +18,11 @@ const SQL_LIMIT = 18 * 1024 * 1024;
 const COMPACT_LIMIT = 17 * 1024 * 1024;
 const PRIOR_COMPACT_LIMIT = 16 * 1024 * 1024;
 const API_READ_TIMEOUT_MS = 20_000;
+export const RECOVERED_BASELINE = Object.freeze({
+  height: 966422,
+  hash: '000000000000000000010da66b7afc846a49da548abf44478eee0974adc7e38a',
+  snapshotId: '9fc107ed9b255da4b7ebc90c',
+});
 export function insist(condition, message) { if (!condition) throw new Error(message); }
 export function sha256(value) { return createHash('sha256').update(value).digest('hex'); }
 export function stableJson(value) {
@@ -393,15 +398,15 @@ export async function verifyPhase(manifest, request, dependencies) {
     } else {
       const summary = observation.db.summary;
       const api = observation.apiBaseline;
-      insist(summary?.height === dependencies.candidate.height && summary.hash === dependencies.candidate.hash &&
-        summary.snapshotId === dependencies.candidate.snapshotId && summary.ok === true && summary.status === 'green' &&
+      insist(summary?.height === RECOVERED_BASELINE.height && summary.hash === RECOVERED_BASELINE.hash &&
+        summary.snapshotId === RECOVERED_BASELINE.snapshotId && summary.ok === true && summary.status === 'green' &&
         summary.sqlTextBytes > 0 && summary.sqlTextBytes <= SQL_LIMIT,
-      'Recovered canonical summary is not the pinned exact candidate');
-      insist(api?.status === 200 && api.height === dependencies.candidate.height &&
-        api.hash === dependencies.candidate.hash && api.snapshotId === dependencies.candidate.snapshotId &&
+      'Recovered canonical summary is not the approved 966422 baseline');
+      insist(api?.status === 200 && api.height === RECOVERED_BASELINE.height &&
+        api.hash === RECOVERED_BASELINE.hash && api.snapshotId === RECOVERED_BASELINE.snapshotId &&
         api.ready === true && api.protocolWritesEnabled === true &&
         api.workNetworkValueQ8 === summary.exactAliases?.[0],
-      'Recovered API response is not the pinned exact candidate');
+      'Recovered API response is not the approved 966422 baseline');
     }
     return { passed: true, phase: request.phase, healthy: baselineMode === 'incident-existing-recovered',
       candidate: dependencies.candidate, ...observation };

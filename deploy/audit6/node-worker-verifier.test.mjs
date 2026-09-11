@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { MODEL, SUMMARY_KEYS, validateManifest, validateCandidate, sha256, canonicalMempool,
-  pendingBinding, assertFrozen, assertRetired, assertCurrentSummary, assertCompleted, verifyPhase } from './node-worker-verifier.mjs';
+  pendingBinding, assertFrozen, assertRetired, assertCurrentSummary, assertCompleted, verifyPhase,
+  RECOVERED_BASELINE } from './node-worker-verifier.mjs';
 
 const hash = 'a'.repeat(64);
 const txid = 'b'.repeat(64);
@@ -167,17 +168,19 @@ test('before-freeze recognizes only the current measured incident, not health or
 
 test('before-freeze accepts an already-published exact candidate only with a matching healthy API', async () => {
   const value = observation(); value.workerProcess.compactBytes = 16777216;
-  value.apiBaseline = { status: 200, ...tip, snapshotId: 'new', ready: true,
+  value.db.summary = { ...value.db.summary, ...RECOVERED_BASELINE };
+  value.apiBaseline = { status: 200, ...RECOVERED_BASELINE, ready: true,
     protocolWritesEnabled: true, workNetworkValueQ8: value.db.summary.exactAliases[0] };
   const request = { phase: 'before-freeze', baselineMode: 'incident-existing-recovered', preparedAt: now / 1000 };
-  const dependencies = { candidate: { ...tip, snapshotId: 'new' }, observe: async () => value };
+  const dependencies = { candidate: tip, observe: async () => value };
   const result = await verifyPhase(manifest, request, dependencies);
   assert.equal(result.passed, true); assert.equal(result.healthy, true);
   for (const mutate of [v => { v.apiBaseline.snapshotId = 'old'; },
     v => { v.apiBaseline.protocolWritesEnabled = false; }, v => { v.apiBaseline.workNetworkValueQ8 = '1'; },
     v => { v.db.summary.hash = 'd'.repeat(64); }, v => { v.db.summary.snapshotId = 'old'; }]) {
     const value = observation(); value.workerProcess.compactBytes = 16777216;
-    value.apiBaseline = { status: 200, ...tip, snapshotId: 'new', ready: true,
+    value.db.summary = { ...value.db.summary, ...RECOVERED_BASELINE };
+    value.apiBaseline = { status: 200, ...RECOVERED_BASELINE, ready: true,
       protocolWritesEnabled: true, workNetworkValueQ8: value.db.summary.exactAliases[0] };
     mutate(value);
     await assert.rejects(verifyPhase(manifest, request, { ...dependencies, observe: async () => value }));
