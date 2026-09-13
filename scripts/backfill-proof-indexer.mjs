@@ -1582,6 +1582,8 @@ const INCB_ISSUANCE_ACCOUNTING_MODEL =
 const INCB_VALUE_SNAPSHOT_MODEL = "canonical-summary-h-minus-one-v1";
 const INCB_NETWORK_VALUE_ACCOUNTING_MODEL =
   "fixed-incb-issuance-plus-market-flow-v1";
+const INCB_MISSING_ATOMIC_METADATA_REPAIR_REASON =
+  "Canonical INCB bond projection rejected: INCB exact atomic issuance metadata is incomplete or noncanonical.";
 const LIVENET_INCB_HISTORICAL_BASELINE = Object.freeze({
   acceptedMints: 46,
   attachedWorkIssuanceUnits: "224847713398420540",
@@ -31318,11 +31320,168 @@ async function repairWorkMintMinterAttribution(client) {
   };
 }
 
-async function canonicalIncbIssuanceRepairTarget(txid) {
-  const expectation = CANONICAL_INCB_ISSUANCE_REPAIR_EXPECTATIONS.get(txid);
-  if (!expectation) {
+async function canonicalIncbStoredMissingMetadataFault(client, txid) {
+  const result = await client.query(
+    `
+      SELECT
+        invalid_event.event_id,
+        invalid_event.block_height,
+        invalid_event.block_index,
+        invalid_event.payload,
+        invalid_event.status,
+        invalid_event.valid,
+        invalid_event.validation_errors,
+        transaction_row.block_hash,
+        transaction_row.status AS transaction_status,
+        bond_event.event_id AS bond_event_id
+      FROM proof_indexer.events invalid_event
+      JOIN proof_indexer.transactions transaction_row
+        ON transaction_row.network = invalid_event.network
+       AND transaction_row.txid = invalid_event.txid
+      JOIN proof_indexer.blocks canonical_block
+        ON canonical_block.network = transaction_row.network
+       AND canonical_block.block_hash = transaction_row.block_hash
+       AND canonical_block.height = transaction_row.block_height
+       AND canonical_block.canonical = true
+      JOIN proof_indexer.events bond_event
+        ON bond_event.network = invalid_event.network
+       AND bond_event.txid = invalid_event.txid
+       AND bond_event.protocol = 'pwm1'
+       AND bond_event.kind = $4
+       AND bond_event.status = 'confirmed'
+       AND bond_event.valid = true
+      WHERE invalid_event.network = $1
+        AND invalid_event.txid = $2
+        AND invalid_event.protocol = 'pwt1'
+        AND invalid_event.kind = 'token-event-invalid'
+        AND invalid_event.status = 'confirmed'
+        AND invalid_event.valid = false
+        AND lower(COALESCE(invalid_event.payload->>'tokenId', '')) = $3
+        AND lower(COALESCE(invalid_event.payload->>'sourceKind', '')) = $4
+        AND lower(COALESCE(invalid_event.payload->>'attemptedKind', '')) =
+          'token-mint'
+        AND COALESCE(
+          NULLIF(invalid_event.payload->>'validationReason', ''),
+          NULLIF(invalid_event.payload->>'invalidReason', ''),
+          array_to_string(invalid_event.validation_errors, ' | '),
+          ''
+        ) = $5
+      ORDER BY invalid_event.event_id ASC
+    `,
+    [
+      NETWORK,
+      txid,
+      INCB_TOKEN_ID,
+      INCEPTION_BOND_KIND,
+      INCB_MISSING_ATOMIC_METADATA_REPAIR_REASON,
+    ],
+  );
+  if (result.rows.length !== 1) {
+    return null;
+  }
+  return result.rows[0];
+}
+
+function canonicalIncbRepairExpectationFromMint({
+  attachedCredits,
+  bondRecipient,
+  mintItem,
+}) {
+  const attachedWorkQuantity = canonicalIncbAttachedWorkQuantity(mintItem);
+  if (!attachedWorkQuantity) {
+    throw new Error("Canonical INCB repair mint has no exact WORK quantity.");
+  }
+  const attachedWorkAmountSubatoms = BigInt(
+    attachedWorkQuantity.amountSubatoms,
+  );
+  const attachedCredit =
+    attachedWorkAmountSubatoms > 0n
+      ? objectValue(Array.isArray(attachedCredits) ? attachedCredits[0] : null)
+      : null;
+  if (attachedWorkAmountSubatoms > 0n) {
+    if (!attachedCredit) {
+      throw new Error(
+        "Canonical INCB repair mint has attached WORK but no bound bond attachment.",
+      );
+    }
+  } else if (Array.isArray(attachedCredits) && attachedCredits.length > 0) {
     throw new Error(
-      `Canonical INCB issuance repair has no pinned full-node oracle for ${txid}.`,
+      "Canonical INCB repair mint is proof-only but the bond row carries attached WORK.",
+    );
+  }
+  return {
+    recipientAddress: String(bondRecipient.address ?? "").trim(),
+    recipientAmountSats: canonicalIntegerText(bondRecipient.amountSats, {
+      positive: true,
+    }),
+    recipientVout: Number(bondRecipient.vout),
+    workAttachmentAmount: canonicalIntegerText(mintItem.attachedWorkAmount, {
+      allowZero: true,
+    }),
+    workAttachmentAmountAtoms: canonicalIntegerText(
+      mintItem.attachedWorkAmountAtoms,
+      { allowZero: true },
+    ),
+    workAttachmentAmountSubatoms:
+      attachedWorkAmountSubatoms.toString(),
+    workAttachmentProtocolVout: attachedCredit
+      ? Number(attachedCredit.protocolVout)
+      : null,
+    workAttachmentRecipientAddress: attachedCredit
+      ? String(attachedCredit.recipientAddress ?? "").trim()
+      : "",
+    workAttachmentTokenId: attachedCredit
+      ? String(attachedCredit.tokenId ?? "").trim().toLowerCase()
+      : WORK_TOKEN_ID,
+  };
+}
+
+function canonicalIncbRepairAttachmentMatches(target, attachedCredits) {
+  const expected = target.repairExpectation;
+  const credits = Array.isArray(attachedCredits) ? attachedCredits : [];
+  const attachedSubatoms = BigInt(
+    expected.workAttachmentAmountSubatoms ?? "0",
+  );
+  if (attachedSubatoms === 0n) {
+    return credits.length === 0;
+  }
+  if (credits.length !== 1) {
+    return false;
+  }
+  const [credit] = credits;
+  const creditAmountAtoms =
+    canonicalIntegerText(credit?.amountAtoms, { allowZero: true }) ||
+    canonicalIntegerText(credit?.legacyAmountAtoms, { allowZero: true }) ||
+    canonicalIntegerText(credit?.amount, { allowZero: true });
+  return (
+    String(credit?.tokenId ?? "").trim().toLowerCase() === WORK_TOKEN_ID &&
+    String(credit?.recipientAddress ?? "").trim() ===
+      expected.workAttachmentRecipientAddress &&
+    Number(credit?.protocolVout) === expected.workAttachmentProtocolVout &&
+    (
+      creditAmountAtoms === expected.workAttachmentAmountAtoms ||
+      creditAmountAtoms === expected.workAttachmentAmount
+    )
+  );
+}
+
+async function canonicalIncbIssuanceRepairTarget(client, txid) {
+  const expectation = CANONICAL_INCB_ISSUANCE_REPAIR_EXPECTATIONS.get(txid);
+  const storedFault = expectation
+    ? null
+    : await canonicalIncbStoredMissingMetadataFault(client, txid);
+  if (!expectation && !storedFault) {
+    throw new Error(
+      `Canonical INCB issuance repair target ${txid} has no pinned oracle and is not the exact stored missing-metadata fault.`,
+    );
+  }
+  if (!expectation) {
+    console.error(
+      JSON.stringify({
+        eventId: storedFault.event_id,
+        phase: "repair-incb-issuance-stored-fault",
+        txid,
+      }),
     );
   }
   const raw = await rawTransactionFromCore(txid);
@@ -31350,8 +31509,9 @@ async function canonicalIncbIssuanceRepairTarget(txid) {
     );
   }
   if (
-    height !== expectation.blockHeight ||
-    blockHash !== expectation.blockHash
+    expectation &&
+    (height !== expectation.blockHeight ||
+      blockHash !== expectation.blockHash)
   ) {
     throw new Error(
       `Canonical INCB issuance repair ${txid} does not match its pinned block ${expectation.blockHeight}:${expectation.blockHash}.`,
@@ -31365,7 +31525,7 @@ async function canonicalIncbIssuanceRepairTarget(txid) {
       `Canonical INCB issuance repair transaction ${txid} is absent from block ${blockHash}.`,
     );
   }
-  if (blockIndex !== expectation.blockIndex) {
+  if (expectation && blockIndex !== expectation.blockIndex) {
     throw new Error(
       `Canonical INCB issuance repair ${txid} moved from pinned block index ${expectation.blockIndex} to ${blockIndex}.`,
     );
@@ -31414,12 +31574,18 @@ async function canonicalIncbIssuanceRepairTarget(txid) {
   const bondRecipients = Array.isArray(mailItem?.recipients)
     ? mailItem.recipients
     : [];
+  if (bondRecipients.length !== 1) {
+    throw new Error(
+      `Canonical INCB issuance repair ${txid} has no unique bond recipient payment.`,
+    );
+  }
+  const [bondRecipient] = bondRecipients;
   if (
-    bondRecipients.length !== 1 ||
-    String(bondRecipients[0]?.address ?? "").trim() !==
+    expectation &&
+    (String(bondRecipient?.address ?? "").trim() !==
       expectation.recipientAddress ||
-    Number(bondRecipients[0]?.amountSats) !== expectation.recipientAmountSats ||
-    Number(bondRecipients[0]?.vout) !== expectation.recipientVout
+      Number(bondRecipient?.amountSats) !== expectation.recipientAmountSats ||
+      Number(bondRecipient?.vout) !== expectation.recipientVout)
   ) {
     throw new Error(
       `Canonical INCB issuance repair ${txid} does not match its pinned bond recipient payment.`,
@@ -31429,38 +31595,11 @@ async function canonicalIncbIssuanceRepairTarget(txid) {
     (item) =>
       String(item?.kind ?? "").trim().toLowerCase() === "token-transfer" &&
       String(item?.tokenId ?? "").trim().toLowerCase() ===
-        expectation.workAttachmentTokenId,
+        WORK_TOKEN_ID,
   );
-  if (
-    workAttachmentItems.length !== 1 ||
-    Number(workAttachmentItems[0]?.amount) !== expectation.workAttachmentAmount ||
-    Number(workAttachmentItems[0]?.protocolVout) !==
-      expectation.workAttachmentProtocolVout ||
-    String(workAttachmentItems[0]?.recipientAddress ?? "").trim() !==
-      expectation.workAttachmentRecipientAddress
-  ) {
-    throw new Error(
-      `Canonical INCB issuance repair ${txid} does not match its pinned WORK attachment transfer.`,
-    );
-  }
-  const [workAttachmentItem] = workAttachmentItems;
   const attachedCredits = Array.isArray(bondItem?.attachedCredits)
     ? bondItem.attachedCredits
     : [];
-  if (
-    attachedCredits.length !== 1 ||
-    Number(attachedCredits[0]?.amount) !== expectation.workAttachmentAmount ||
-    Number(attachedCredits[0]?.protocolVout) !==
-      expectation.workAttachmentProtocolVout ||
-    String(attachedCredits[0]?.recipientAddress ?? "").trim() !==
-      expectation.workAttachmentRecipientAddress ||
-    String(attachedCredits[0]?.tokenId ?? "").trim().toLowerCase() !==
-      expectation.workAttachmentTokenId
-  ) {
-    throw new Error(
-      `Canonical INCB issuance verifier did not bind the exact WORK attachment to the bond event for ${txid}.`,
-    );
-  }
   const mintItems = preparedItems
     .filter(
       (item) =>
@@ -31480,16 +31619,85 @@ async function canonicalIncbIssuanceRepairTarget(txid) {
     );
   }
   const [mintItem] = mintItems;
+  const repairExpectation = canonicalIncbRepairExpectationFromMint({
+    attachedCredits,
+    bondRecipient,
+    mintItem,
+  });
+  if (
+    expectation &&
+    (
+      repairExpectation.recipientAddress !== expectation.recipientAddress ||
+      Number(repairExpectation.recipientAmountSats) !==
+        expectation.recipientAmountSats ||
+      Number(repairExpectation.recipientVout) !== expectation.recipientVout ||
+      Number(repairExpectation.workAttachmentAmount) !==
+        expectation.workAttachmentAmount ||
+      Number(repairExpectation.workAttachmentProtocolVout) !==
+        expectation.workAttachmentProtocolVout ||
+      repairExpectation.workAttachmentRecipientAddress !==
+        expectation.workAttachmentRecipientAddress ||
+      repairExpectation.workAttachmentTokenId !==
+        expectation.workAttachmentTokenId
+    )
+  ) {
+    throw new Error(
+      `Canonical INCB issuance repair ${txid} does not match its pinned recipient or attachment metadata.`,
+    );
+  }
+  const expectedAttachedSubatoms = BigInt(
+    repairExpectation.workAttachmentAmountSubatoms,
+  );
+  if (
+    expectedAttachedSubatoms > 0n &&
+    (
+      workAttachmentItems.length !== 1 ||
+      String(workAttachmentItems[0]?.recipientAddress ?? "").trim() !==
+        repairExpectation.workAttachmentRecipientAddress ||
+      Number(workAttachmentItems[0]?.protocolVout) !==
+        repairExpectation.workAttachmentProtocolVout ||
+      ![
+        repairExpectation.workAttachmentAmountAtoms,
+        repairExpectation.workAttachmentAmount,
+      ].includes(
+        canonicalIntegerText(
+          workAttachmentItems[0]?.amountAtoms ??
+            workAttachmentItems[0]?.legacyAmountAtoms ??
+            workAttachmentItems[0]?.amount,
+          { allowZero: true },
+        ),
+      )
+    )
+  ) {
+    throw new Error(
+      `Canonical INCB issuance repair ${txid} does not match its exact WORK attachment transfer.`,
+    );
+  }
+  if (expectedAttachedSubatoms === 0n && workAttachmentItems.length > 0) {
+    throw new Error(
+      `Canonical INCB issuance repair ${txid} found unexpected WORK attachment transfers.`,
+    );
+  }
+  const workAttachmentItem = workAttachmentItems[0] ?? null;
   if (
     String(mintItem?.minterAddress ?? "").trim() !==
-      expectation.recipientAddress ||
+      repairExpectation.recipientAddress ||
     String(mintItem?.bondRecipientAddress ?? "").trim() !==
-      expectation.recipientAddress ||
-    String(mintItem?.minterAddress ?? "").trim() !==
-      String(workAttachmentItem?.recipientAddress ?? "").trim() ||
+      repairExpectation.recipientAddress ||
+    (
+      workAttachmentItem &&
+      String(mintItem?.minterAddress ?? "").trim() !==
+        String(workAttachmentItem?.recipientAddress ?? "").trim()
+    ) ||
     Number(mintItem?.bondRecipientAmountSats) !==
-      expectation.recipientAmountSats ||
-    Number(mintItem?.bondRecipientVout) !== expectation.recipientVout
+      Number(repairExpectation.recipientAmountSats) ||
+    Number(mintItem?.bondRecipientVout) !==
+      repairExpectation.recipientVout ||
+    Number(mintItem?.issuanceValueSnapshotBlockHeight) !== height - 1 ||
+    String(mintItem?.issuanceValueSnapshotBlockHash ?? "")
+      .trim()
+      .toLowerCase() !==
+      String(block?.previousblockhash ?? "").trim().toLowerCase()
   ) {
     throw new Error(
       `Canonical INCB issuance verifier did not bind the mint recipient to the bond payment and WORK attachment for ${txid}.`,
@@ -31499,64 +31707,85 @@ async function canonicalIncbIssuanceRepairTarget(txid) {
     Number.isFinite(Number(actual)) &&
     Math.abs(Number(actual) - expected) <= tolerance;
   if (
-    String(mintItem.issuanceCheckpointMode ?? "") !==
-      "bond-transaction-provenance" ||
-    Number(mintItem.issuanceCheckpointBlockHeight) !== expectation.blockHeight ||
-    String(mintItem.issuanceCheckpointBlockHash ?? "")
-      .trim()
-      .toLowerCase() !== expectation.blockHash ||
-    Number(mintItem.issuanceCheckpointBlockIndex) !== expectation.blockIndex ||
-    String(mintItem.issuanceValueSnapshotId ?? "").trim() !==
-      expectation.issuanceValueSnapshotId ||
-    Number(mintItem.issuanceValueSnapshotBlockHeight) !==
-      expectation.issuanceValueSnapshotBlockHeight ||
-    String(mintItem.issuanceValueSnapshotBlockHash ?? "")
-      .trim()
-      .toLowerCase() !== expectation.issuanceValueSnapshotBlockHash ||
-    String(mintItem.issuanceValueSnapshotCanonicalSummaryHash ?? "")
-      .trim()
-      .toLowerCase() !==
-      expectation.issuanceValueSnapshotCanonicalSummaryHash ||
-    String(mintItem.issuanceValueSnapshotMode ?? "") !==
-      expectation.issuanceValueSnapshotMode ||
-    String(mintItem.issuanceValueSnapshotModel ?? "") !==
-      expectation.issuanceValueSnapshotModel ||
-    new Date(mintItem.issuanceValueSnapshotGeneratedAt).toISOString() !==
-      expectation.issuanceValueSnapshotGeneratedAt ||
-    !closeTo(
-      mintItem.issuanceValueSnapshotWorkNetworkValueSats,
-      expectation.issuanceValueSnapshotWorkNetworkValueSats,
-    ) ||
-    Number(mintItem.attachedWorkAmount) !== expectation.attachedWorkAmount ||
-    Number(mintItem.attachedWorkIssuanceUnits) !==
-      expectation.attachedWorkIssuanceUnits ||
-    !closeTo(
-      mintItem.attachedWorkLiveFloorAtSendSats,
-      expectation.attachedWorkLiveFloorAtSendSats,
-      1e-9,
-    ) ||
-    !closeTo(
-      mintItem.attachedWorkLiveValueAtSendSats,
-      expectation.attachedWorkLiveValueAtSendSats,
-    ) ||
-    Number(mintItem.directProofIssuanceUnits) !==
-      expectation.directProofIssuanceUnits ||
-    Number(mintItem.confirmedIssuanceUnits) !==
-      expectation.confirmedIssuanceUnits ||
-    Number(mintItem.amount) !== expectation.confirmedIssuanceUnits ||
-    !closeTo(
-      mintItem.issuanceNetworkValueSats,
-      expectation.issuanceNetworkValueSats,
-    ) ||
-    !closeTo(
-      mintItem.issuanceFloorSats,
-      expectation.issuanceFloorSats,
-      1e-12,
-    ) ||
-    !closeTo(mintItem.issuanceDustSats, expectation.issuanceDustSats)
+    expectation &&
+    (
+      String(mintItem.issuanceCheckpointMode ?? "") !==
+        "bond-transaction-provenance" ||
+      Number(mintItem.issuanceCheckpointBlockHeight) !==
+        expectation.blockHeight ||
+      String(mintItem.issuanceCheckpointBlockHash ?? "")
+        .trim()
+        .toLowerCase() !== expectation.blockHash ||
+      Number(mintItem.issuanceCheckpointBlockIndex) !==
+        expectation.blockIndex ||
+      String(mintItem.issuanceValueSnapshotId ?? "").trim() !==
+        expectation.issuanceValueSnapshotId ||
+      Number(mintItem.issuanceValueSnapshotBlockHeight) !==
+        expectation.issuanceValueSnapshotBlockHeight ||
+      String(mintItem.issuanceValueSnapshotBlockHash ?? "")
+        .trim()
+        .toLowerCase() !== expectation.issuanceValueSnapshotBlockHash ||
+      String(mintItem.issuanceValueSnapshotCanonicalSummaryHash ?? "")
+        .trim()
+        .toLowerCase() !==
+        expectation.issuanceValueSnapshotCanonicalSummaryHash ||
+      String(mintItem.issuanceValueSnapshotMode ?? "") !==
+        expectation.issuanceValueSnapshotMode ||
+      String(mintItem.issuanceValueSnapshotModel ?? "") !==
+        expectation.issuanceValueSnapshotModel ||
+      new Date(mintItem.issuanceValueSnapshotGeneratedAt).toISOString() !==
+        expectation.issuanceValueSnapshotGeneratedAt ||
+      !closeTo(
+        mintItem.issuanceValueSnapshotWorkNetworkValueSats,
+        expectation.issuanceValueSnapshotWorkNetworkValueSats,
+      ) ||
+      Number(mintItem.attachedWorkAmount) !== expectation.attachedWorkAmount ||
+      Number(mintItem.attachedWorkIssuanceUnits) !==
+        expectation.attachedWorkIssuanceUnits ||
+      !closeTo(
+        mintItem.attachedWorkLiveFloorAtSendSats,
+        expectation.attachedWorkLiveFloorAtSendSats,
+        1e-9,
+      ) ||
+      !closeTo(
+        mintItem.attachedWorkLiveValueAtSendSats,
+        expectation.attachedWorkLiveValueAtSendSats,
+      ) ||
+      Number(mintItem.directProofIssuanceUnits) !==
+        expectation.directProofIssuanceUnits ||
+      Number(mintItem.confirmedIssuanceUnits) !==
+        expectation.confirmedIssuanceUnits ||
+      Number(mintItem.amount) !== expectation.confirmedIssuanceUnits ||
+      !closeTo(
+        mintItem.issuanceNetworkValueSats,
+        expectation.issuanceNetworkValueSats,
+      ) ||
+      !closeTo(
+        mintItem.issuanceFloorSats,
+        expectation.issuanceFloorSats,
+        1e-12,
+      ) ||
+      !closeTo(mintItem.issuanceDustSats, expectation.issuanceDustSats)
+    )
   ) {
     throw new Error(
       `Canonical INCB issuance verifier disagrees with the pinned pre-bond oracle for ${txid}.`,
+    );
+  }
+  if (
+    !expectation &&
+    (
+      String(mintItem.issuanceCheckpointMode ?? "") !==
+        "bond-transaction-provenance" ||
+      Number(mintItem.issuanceCheckpointBlockHeight) !== height ||
+      String(mintItem.issuanceCheckpointBlockHash ?? "")
+        .trim()
+        .toLowerCase() !== blockHash ||
+      Number(mintItem.issuanceCheckpointBlockIndex) !== blockIndex
+    )
+  ) {
+    throw new Error(
+      `Canonical INCB issuance verifier did not bind ${txid} to its current Core block position.`,
     );
   }
   const issuanceUnits = mintItems.reduce(
@@ -31576,7 +31805,10 @@ async function canonicalIncbIssuanceRepairTarget(txid) {
     issuanceUnits,
     bondItem,
     mintItems,
-    oracle: expectation,
+    oracle: expectation ?? {
+      source: "stored-missing-atomic-metadata-fault",
+    },
+    repairExpectation,
     txid,
   };
 }
@@ -31845,7 +32077,7 @@ function verifiedCanonicalIncbValueSnapshotFingerprints(rows, bindings) {
 async function repairCanonicalIncbIssuance(client) {
   const targets = [];
   for (const txid of REPAIR_INCB_ISSUANCE_TXIDS) {
-    targets.push(await canonicalIncbIssuanceRepairTarget(txid));
+    targets.push(await canonicalIncbIssuanceRepairTarget(client, txid));
   }
   targets.sort(
     (left, right) =>
@@ -31952,13 +32184,42 @@ async function repairCanonicalIncbIssuance(client) {
       `,
       [NETWORK, targetTxids, INCB_TOKEN_ID],
     );
+    const existingInvalidEvents = await client.query(
+      `
+        SELECT event_id, txid, payload
+        FROM proof_indexer.events
+        WHERE network = $1
+          AND txid = ANY($2::text[])
+          AND protocol = 'pwt1'
+          AND kind = 'token-event-invalid'
+          AND status = 'confirmed'
+          AND valid = false
+          AND lower(COALESCE(payload->>'tokenId', '')) = $3
+          AND lower(COALESCE(payload->>'sourceKind', '')) = $4
+          AND lower(COALESCE(payload->>'attemptedKind', '')) = 'token-mint'
+          AND COALESCE(
+            NULLIF(payload->>'validationReason', ''),
+            NULLIF(payload->>'invalidReason', ''),
+            array_to_string(validation_errors, ' | '),
+            ''
+          ) = $5
+        FOR UPDATE
+      `,
+      [
+        NETWORK,
+        targetTxids,
+        INCB_TOKEN_ID,
+        INCEPTION_BOND_KIND,
+        INCB_MISSING_ATOMIC_METADATA_REPAIR_REASON,
+      ],
+    );
     const expectedRows = targets.reduce(
       (total, target) => total + target.mintItems.length,
       0,
     );
-    if (existingEvents.rows.length !== expectedRows) {
+    if (existingEvents.rows.length + existingInvalidEvents.rows.length !== expectedRows) {
       throw new Error(
-        `INCB issuance repair expected ${expectedRows} stored mint rows but found ${existingEvents.rows.length}.`,
+        `INCB issuance repair expected ${expectedRows} stored mint/fault rows but found ${existingEvents.rows.length + existingInvalidEvents.rows.length}.`,
       );
     }
     const existingEventByTxid = new Map();
@@ -31971,7 +32232,36 @@ async function repairCanonicalIncbIssuance(client) {
       }
       existingEventByTxid.set(txid, row);
     }
-    const beforeTargetIssuance = existingEvents.rows.reduce((total, row) => {
+    const existingInvalidEventByTxid = new Map();
+    for (const row of existingInvalidEvents.rows) {
+      const txid = String(row?.txid ?? "").trim().toLowerCase();
+      if (!txid || existingInvalidEventByTxid.has(txid)) {
+        throw new Error(
+          `INCB issuance repair requires exactly one stored invalid row per target transaction; duplicate ${txid || "unknown"}.`,
+        );
+      }
+      if (existingEventByTxid.has(txid)) {
+        throw new Error(
+          `INCB issuance repair refuses mixed valid/invalid mint rows for ${txid}.`,
+        );
+      }
+      existingInvalidEventByTxid.set(txid, row);
+    }
+    for (const target of targets) {
+      if (
+        !existingEventByTxid.has(target.txid) &&
+        !existingInvalidEventByTxid.has(target.txid)
+      ) {
+        throw new Error(
+          `INCB issuance repair has no locked mint or stored fault row for ${target.txid}.`,
+        );
+      }
+    }
+    const beforeTargetRows = [
+      ...existingEvents.rows,
+      ...existingInvalidEvents.rows,
+    ];
+    const beforeTargetIssuance = beforeTargetRows.reduce((total, row) => {
       const amountText = canonicalIntegerText(row?.payload?.amount, {
         positive: true,
       });
@@ -32011,7 +32301,7 @@ async function repairCanonicalIncbIssuance(client) {
       const attachedCredits = Array.isArray(target?.bondItem?.attachedCredits)
         ? target.bondItem.attachedCredits
         : [];
-      if (!existingBond || attachedCredits.length === 0) {
+      if (!existingBond || !canonicalIncbRepairAttachmentMatches(target, attachedCredits)) {
         throw new Error(
           `INCB issuance repair has no canonical attachment-bound bond row for ${target.txid}.`,
         );
@@ -32062,52 +32352,54 @@ async function repairCanonicalIncbIssuance(client) {
           );
         }
         const existingEvent = existingEventByTxid.get(target.txid);
-        if (!existingEvent) {
+        const existingInvalidEvent = existingInvalidEventByTxid.get(
+          target.txid,
+        );
+        if (existingInvalidEvent) {
+          await client.query(
+            `
+              DELETE FROM proof_indexer.event_participants
+              WHERE event_id = $1
+            `,
+            [existingInvalidEvent.event_id],
+          );
+          await client.query(
+            `
+              DELETE FROM proof_indexer.event_refs
+              WHERE event_id = $1
+            `,
+            [existingInvalidEvent.event_id],
+          );
+          await client.query(
+            `
+              DELETE FROM proof_indexer.events
+              WHERE network = $1
+                AND event_id = $2
+                AND txid = $3
+                AND protocol = 'pwt1'
+                AND kind = 'token-event-invalid'
+                AND lower(COALESCE(payload->>'tokenId', '')) = $4
+            `,
+            [
+              NETWORK,
+              existingInvalidEvent.event_id,
+              target.txid,
+              INCB_TOKEN_ID,
+            ],
+          );
+        } else if (!existingEvent) {
           throw new Error(
-            `INCB issuance repair has no locked mint row for ${target.txid}.`,
+            `INCB issuance repair has no locked mint or invalid row for ${target.txid}.`,
           );
         }
-        const normalizedMint = normalizedEventItem(
+        const upsert = await upsertEvent(
+          client,
+          sourceLabelForProtocolItem(integrityItem),
           integrityItem,
-          "token-mint",
-          "confirmed",
         );
-        const updated = await client.query(
-          `
-            UPDATE proof_indexer.events
-            SET
-              status = 'confirmed',
-              valid = true,
-              validation_errors = ARRAY[]::text[],
-              amount_sats = 0,
-              data_bytes = COALESCE($4, data_bytes),
-              payload = (
-                payload
-                  - 'attachedWorkFloorAtConfirmationSats'
-                  - 'attachedWorkLiveValueAtConfirmationSats'
-                  - 'issuanceFixedAtConfirmation'
-                  - 'issuanceCheckpointWorkNetworkValueSats'
-              ) || $5::jsonb
-            WHERE network = $1
-              AND event_id = $2
-              AND txid = $3
-              AND protocol = 'pwt1'
-              AND kind = 'token-mint'
-              AND lower(COALESCE(payload->>'tokenId', '')) = $6
-            RETURNING event_id
-          `,
-          [
-            NETWORK,
-            existingEvent.event_id,
-            target.txid,
-            numberOrNull(normalizedMint?.dataBytes),
-            JSON.stringify(normalizedMint),
-            INCB_TOKEN_ID,
-          ],
-        );
-        if (updated.rowCount !== 1) {
+        if (upsert.skipped) {
           throw new Error(
-            `INCB issuance repair could not update the locked mint row for ${target.txid}.`,
+            `INCB issuance repair skipped canonical mint upsert for ${target.txid}.`,
           );
         }
       }
@@ -32138,16 +32430,7 @@ async function repairCanonicalIncbIssuance(client) {
           !target ||
           row?.status !== "confirmed" ||
           row?.valid !== true ||
-          attachedCredits.length !== 1 ||
-          Number(attachedCredits[0]?.amount) !==
-            target.oracle.workAttachmentAmount ||
-          Number(attachedCredits[0]?.protocolVout) !==
-            target.oracle.workAttachmentProtocolVout ||
-          String(attachedCredits[0]?.recipientAddress ?? "").trim() !==
-            target.oracle.workAttachmentRecipientAddress ||
-          String(attachedCredits[0]?.tokenId ?? "")
-            .trim()
-            .toLowerCase() !== target.oracle.workAttachmentTokenId
+          !canonicalIncbRepairAttachmentMatches(target, attachedCredits)
         );
       })
     ) {
@@ -32191,13 +32474,13 @@ async function repairCanonicalIncbIssuance(client) {
             row?.valid !== true ||
             !canonicalIncbIssuanceMintProjection(row?.payload) ||
             String(row?.payload?.minterAddress ?? "").trim() !==
-              target.oracle.recipientAddress ||
+              target.repairExpectation.recipientAddress ||
             String(row?.payload?.bondRecipientAddress ?? "").trim() !==
-              target.oracle.recipientAddress ||
+              target.repairExpectation.recipientAddress ||
             Number(row?.payload?.bondRecipientAmountSats) !==
-              target.oracle.recipientAmountSats ||
+              Number(target.repairExpectation.recipientAmountSats) ||
             Number(row?.payload?.bondRecipientVout) !==
-              target.oracle.recipientVout
+              target.repairExpectation.recipientVout
           );
         },
       )
