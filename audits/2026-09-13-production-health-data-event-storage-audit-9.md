@@ -942,6 +942,64 @@ Production sync finding before commit/deploy:
   checkouts with `chmod --recursive go-w /opt/proofofwork-api`; final deployment
   must leave the live checkout exact, detached, and non-group-writable.
 
-Final commit, push, exact production deployment, H9-06 production parity, and
-local/git/production sync verification are pending in this addendum until the
-approved repair commit is published and deployed.
+Post-deploy repair results:
+
+- The H9 code/config/docs/audit repair was committed as
+  `008a5c776bb5ac767d7d696377837c4170979f89` and pushed to
+  `origin/growth-all-products-2026-09-05`.
+- The node VPS was deployed from the exact pushed commit with the live checkout
+  detached at `008a5c776bb5ac767d7d696377837c4170979f89`, tree
+  `f2b27fa497ac8e2d40764b0f51e3c10d99ea25ef`, and runtime SHA256
+  `9bb36545a39fec8b393a17024cb94dcfb4b068cf10323a9f676b8ec5cf7eb3a2`.
+  The published node release archive was
+  `proofofwork-node-release-008a5c7-20260913T213731Z.tgz`, SHA256
+  `5f36ef427e16933c5cf2cac41b3af3da19ba6bbc0995d0c196c72849b8f8f57c`.
+- Production node services verified active after deploy:
+  `proofofwork-api`, `proofofwork-indexer-worker`,
+  `proofofwork-api-wg.socket`, and `proofofwork-api-wg.service`.
+- Node disk remained healthy after the deploy: `/` at `26%` used and `/data`
+  at `73%` used. The production `/health` readiness response later returned
+  `ok:true`, `ready:true`, full-node/electrum/header height `966877`,
+  indexed-through block `966877`, lag `0`, worker proof ready, and pending
+  unresolved counts `0`.
+- `scripts/check-proof-indexer-parity.mjs` ran on the deployed node against
+  `http://127.0.0.1:8081` and exited `0`. Compact evidence: `ok:true`,
+  indexed-through block `966876`, snapshot `4d92b8715a367318d9b502bf`,
+  `errorCount:0`, and the expected non-failing warning labels
+  `work-amo-v5-migration` and `work-amo-v5-usd-quote-head`. H9-06's default
+  summary-floor coverage was green with public activity `25569`, supplemental
+  activity `1`, confirmed events `25567`, and expected pending activity `2`.
+- Post-deploy `POW_API_BASE=https://computer.proofofwork.me npm run
+  audit:ledger` passed, snapshot `7e7d11b193e50cf4f4b46a16`, value
+  `8387576239642319265.81121031` proofs.
+- Post-deploy `POW_API_BASE=https://computer.proofofwork.me npm run
+  check:marketplace-regressions` passed on rerun for ID lookup, V2
+  cutover/invalid state, POWB sealed listing, WORK listing lifecycle, wallet
+  scopes, and targeted WORK transfers. The first post-deploy attempt hit a
+  transient `CANONICAL_INDEX_CATCHING_UP` window and failed only the strict
+  `10s` exact-history latency ceiling; the exact read later returned and the
+  rerun passed. Several exact/fresh wallet and history reads still took
+  `15s-43s`, so speed/data handling remains the highest-value follow-up.
+- H9-09 release-health criticals were cleared: `/opt/proofofwork-api/backups/`
+  no longer exists inside the live checkout, tracked file modes were normalized,
+  and the cache-prune unit exits cleanly. Release-health still reports the
+  existing warning `opt_checkouts=24` because `/opt` contains more node release
+  checkouts than the bounded inventory allows. No checkout pruning or release
+  evidence deletion was approved or performed in this repair.
+- UI VPS read-only verification found Caddy active and `/` at `59%` used. The
+  live UI release remains
+  `57bb25106fef1d6367fb214711955bba532e88ba`; no frontend/build inputs changed
+  between that commit and the H9 repair commit, so served UI bytes are not
+  expected to differ. A strict UI provenance redeploy was intentionally not
+  performed because `/var/backups/proofofwork-ui/rollback-roots` already
+  contains retained rollback roots that require separate classification before
+  another publish under the documented runbook.
+
+Remaining approval boundary after H9 repair:
+
+- Approve a separate retention-classification pass before pruning the existing
+  node release checkouts (`opt_checkouts=24`) or UI rollback roots. None were
+  deleted here.
+- Approve a separate speed/data-handling repair for exact history, wallet, and
+  marketplace reads. Correctness and math gates pass, but production latency is
+  still too high for the desired product bar.
