@@ -70,6 +70,21 @@
   gap: 10px;
 }
 
+.boost-shell-instrument .boost-sidebar > :is(.primary, .secondary, .link-button),
+.boost-shell-instrument .boost-compose-panel > :is(.primary, .secondary, .link-button),
+.boost-shell-instrument .boost-profile-filter > .secondary,
+.boost-shell-instrument .boost-action-panel > :is(.primary, .secondary) {
+  display: flex;
+  justify-content: flex-start;
+  text-align: left;
+  width: 100%;
+}
+
+.boost-shell-instrument .boost-sidebar .button-content {
+  justify-content: flex-start;
+  width: 100%;
+}
+
 .boost-shell-instrument .boost-compose-panel .primary,
 .boost-shell-instrument .boost-compose-panel .secondary {
   border-radius: 12px;
@@ -88,7 +103,7 @@
 .boost-shell-instrument .boost-action-panel-head > strong,
 .boost-shell-instrument .boost-rail-head > strong {
   font-family: var(--font-display);
-  letter-spacing: -0.015em;
+  letter-spacing: 0;
 }
 
 .boost-shell-instrument .boost-search,
@@ -109,6 +124,11 @@
 .boost-shell-instrument .boost-profile-head {
   backdrop-filter: blur(16px);
   background: color-mix(in srgb, var(--surface-raised) 91%, transparent);
+}
+
+.boost-shell-instrument .boost-profile-head {
+  grid-template-rows: 96px auto auto;
+  overflow: hidden;
 }
 
 .boost-shell-instrument .boost-timeline-tabs button,
@@ -151,11 +171,38 @@
     radial-gradient(circle at 20% 40%, rgba(240, 201, 106, 0.26), transparent 34%),
     linear-gradient(135deg, #322914, #19231d 70%, #0e0f0c);
   background-size: 24px 24px, 24px 24px, auto, auto;
+  min-height: 0;
 }
 
 .boost-shell-instrument .boost-profile-avatar,
 .boost-shell-instrument .boost-avatar {
   border-radius: 12px;
+}
+
+.boost-shell-instrument .boost-profile-main {
+  align-items: center;
+  background: color-mix(in srgb, var(--surface-raised) 97%, transparent);
+  gap: 12px;
+  grid-template-columns: 72px minmax(0, 1fr) auto;
+  padding-block: 14px 12px;
+  position: relative;
+  z-index: 1;
+}
+
+.boost-shell-instrument .boost-profile-avatar {
+  height: 72px;
+  margin-top: 0;
+  width: 72px;
+}
+
+.boost-shell-instrument .boost-profile-copy {
+  align-self: center;
+}
+
+.boost-shell-instrument .boost-profile-copy h2,
+.boost-shell-instrument .boost-profile-copy p {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .boost-shell-instrument .boost-profile-tabs {
