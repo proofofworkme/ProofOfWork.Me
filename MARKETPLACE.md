@@ -305,45 +305,35 @@ hash
 `0000000000000000000094195957f498f894c92f5d5f75ff5b9c9afc749a6811`,
 block time `2026-07-26T00:17:29.000Z`, and activates at height `959621`.
 
-The cutover has one exact evidence-bound pre-unit relic:
+The cutover has one exact evidence-bound pre-unit invalid audit row:
 
 ```text
-model = canonical-work-amo-v5-pre-unit-relic-v1
 listingId = 4e9cedced2252cd183608dc9176415a913c4f6aa5e8307a732179a2240b6feb1
 blockHeight = 959241
 blockTransactionIndex = 2601
 protocolVout = 1
 recordOrdinal = 0
 blockHash = 000000000000000000007933e0dc73604a52057ba18de7b9463b65d9433dd0fe
+reasonCode = work-market-v2-canonical-oracle-unavailable
 authorizationVersion = pwt-sale-v3
 amountAtoms = 1600
 priceSats = 1500479
 saleTicketOutpoint = 4e9cedced2252cd183608dc9176415a913c4f6aa5e8307a732179a2240b6feb1:2
 ```
 
-After activation this listing is non-reserving, cannot be sealed or bought,
-and appears once as a read-only closed relic attributed to the V5 declaration.
-It is outside the height-959061 refund snapshot and therefore has
-`refundEligible:false`. Its original confirmed row remains immutable replay
-evidence.
+After activation this listing is non-reserving, cannot be sealed or bought, and
+does not appear as a closed relic attributed to the V5 declaration. It is
+outside the height-959061 refund snapshot and therefore has
+`refundEligible:false`. Its original confirmed invalid row remains immutable
+replay evidence, and the related pre-unit seal attempt remains invalid audit
+history with the same reason.
 
-This projection is not authorized by txid or height alone. The reader must
-prove one exact valid listing event, its canonical transaction/block/position,
-the identical stored and raw `pwt1` payload, exact authorization, 1,251 data
-bytes, 3,890-proof miner fee, 546-proof registry payment, exact sale-ticket
-output/script, the V1 and V5 declarations, and zero valid seals. The sale-ticket
-outpoint is the terminal authority: one canonical spend retires the relic, and
-a matching valid close may corroborate that spend. A close without that spend,
-a pointer-only or pending spend, a duplicate, or any field mismatch fails
-closed. Invalid events and spends of other outputs cannot close it.
-
-Token state suppresses the legacy reservation even when this proof is
-temporarily unavailable, but it never manufactures a relic from incomplete
-evidence. Exact active-listing queries then return an authoritative terminal
-empty result instead of falling back to a stale snapshot. Closed-listing and
-market-log projection occurs inside the canonical relational set before
-counting, ordering, cursoring, `LIMIT`, or `OFFSET`, so every page has the same
-single evidence-bound history.
+The invalid history is not authorized by txid or height alone. The reader must
+prove the exact confirmed invalid event, canonical transaction/block/position,
+authorization, amount, price, and reason. Token state suppresses the legacy
+reservation, while active-listing, closed-listing, and market-log exact queries
+return authoritative terminal empty results instead of falling back to a stale
+snapshot or manufacturing declaration-derived history.
 
 Height `959620` is the one immutable legacy H-1 bootstrap. Before activation
 replay, the Computer captured one closed-shape
@@ -370,6 +360,7 @@ protocolVout = 1
 recordOrdinal = 0
 blockHash = 000000000000000000005a63a2c00834b92746ab0658c9f0c98aeb509724e8f9
 reasonCode = work-market-v4-version-required
+rawInvalidHistoryReasonCode = work-market-v2-canonical-oracle-unavailable
 ```
 
 It is confirmed audit history but not a valid WORK marketplace event. It
@@ -384,17 +375,20 @@ projection reconciles them as an opaque legacy-bootstrap basis:
 legacyBootstrapMarketplaceCarrySats = 546
 legacyBootstrapSats = 546 * 5 = 2730
 legacyBootstrapGrowthValueQ8 = 273000000000
-legacyBootstrapCreditFixedSats = 546 + 2216 = 2762
-legacyBootstrapCreditFixedQ8 = 276200000000
+legacyBootstrapRawCreditFixedSats = 546 + 2216 = 2762
+legacyBootstrapRawCreditFixedQ8 = 276200000000
+legacyBootstrapCreditFixedSats = legacyBootstrapRawCreditFixedSats - legacyBootstrapCreditFixedOverlapSats
+legacyBootstrapCreditFixedQ8 = legacyBootstrapRawCreditFixedQ8 - legacyBootstrapCreditFixedOverlapQ8
 ```
 
 The outward `tokenMarketplaceFeeSats`, `marketplaceFeeSats`,
 `marketplaceMutationFeeSats`, `marketplaceFlowSats`, and `marketplaceSats`
 aliases are valid-only and therefore exclude the 546-proof carry. The raw
 committed transition N, base-state preimage, frozen values, Q8 commitments, and
-chart history remain byte-for-byte authoritative. The API exposes the carry
-separately with its exact `workAmoV5LegacyBootstrap` evidence so consumers can
-prove both the valid-only projection and the unchanged committed basis.
+chart history remain byte-for-byte authoritative. The API exposes the raw
+carry, effective carry, and overlap separately with exact
+`workAmoV5LegacyBootstrap` evidence so consumers can prove both the valid-only
+projection and the unchanged committed basis.
 
 Reconciliation fails closed unless the relational event, transaction,
 canonical block, exact position, invalid disposition, reason, 546-proof

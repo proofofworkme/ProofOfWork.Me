@@ -1404,31 +1404,23 @@ Forced broadcast admission bypasses status reuse, settled replay reuse, and
 replay-read singleflight, so every governed write performs a fresh fail-closed
 check.
 
-AMO V5 also applies one closed, exact relational projection for pre-unit
-listing
+AMO V5 preserves one exact confirmed invalid audit row for pre-unit listing
 `4e9cedced2252cd183608dc9176415a913c4f6aa5e8307a732179a2240b6feb1`.
-The projection is permitted only by
-`canonical-work-amo-v5-pre-unit-relic-v1` evidence: singleton confirmed valid
-event and raw record, exact height `959241`, block transaction index `2601`,
-protocol output `1`, ordinal `0`, canonical block hash
+The invalid history is permitted only by singleton confirmed invalid event
+evidence: exact height `959241`, block transaction index `2601`, protocol
+output `1`, ordinal `0`, canonical block hash
 `000000000000000000007933e0dc73604a52057ba18de7b9463b65d9433dd0fe`,
-exact payload/authorization/data/fee/registry/ticket facts, one exact V1
-declaration, and the exact V5 declaration including block time
-`2026-07-26T00:17:29.000Z`. The sale-ticket authority is output `2`; only its
-one canonical spend is terminal. A matching valid close may corroborate that
-spend, but a close without the spend, a pending or noncanonical spend, a stale
-`spent_by_txid` pointer, duplicate evidence, or any mismatch withholds the
-relic. An invalid event or a spend of output `3` is irrelevant.
+reason `work-market-v2-canonical-oracle-unavailable`, authorization
+`pwt-sale-v3`, amount `1600` atoms, price `1500479` proofs, and
+`refundEligible:false`. The related pre-unit seal attempt remains invalid audit
+history with the same reason.
 
 The original row stays in raw audit storage. Public state always removes its
-reservation after the activation boundary, adds the closed relic only when the
-exact proof is complete and unspent, and never synthesizes an invalid event.
-Relational `closedListings` and `market-log` transform the exact row before
-metadata count, canonical ordering, and SQL pagination. `listings` always
-excludes it. Exact queries for either the listing txid or V5 declaration txid
-are authoritative: they return the one projected close where applicable, or a
-terminal empty page when the proof is withheld, and cannot fall back to an
-older embedded snapshot.
+reservation after the activation boundary and never synthesizes a closed relic,
+valid close, seal, buy, refund, or declaration-derived history. Relational
+`listings`, `closedListings`, and `market-log` exact queries for either the
+listing txid or V5 declaration txid are authoritative terminal empty pages and
+cannot fall back to an older embedded snapshot.
 
 `work_amo_block_transitions` stores every immutable activation-through-tip
 opening and closing sufficient state, event-set commitment, replay descriptor,
@@ -1459,7 +1451,9 @@ uses model `canonical-work-amo-v5-legacy-bootstrap-carry-v1` and txid
 height `959311`, block transaction index `2552`, protocol output `1`, ordinal
 `0`, canonical block hash
 `000000000000000000005a63a2c00834b92746ab0658c9f0c98aeb509724e8f9`,
-and invalid reason `work-market-v4-version-required`. The proof-index reader
+raw invalid-history reason `work-market-v2-canonical-oracle-unavailable`, and
+legacy reconciliation reason `work-market-v4-version-required`. The
+proof-index reader
 must find exactly one matching confirmed invalid event joined to its canonical
 transaction and block, prove the 546-proof mutation payment, the 2,216-proof
 transaction miner fee, and no active listing reservation, and reject every
@@ -1474,16 +1468,19 @@ legacy-bootstrap reconciliation:
 legacyBootstrapMarketplaceCarrySats = 546
 legacyBootstrapSats = 2730
 legacyBootstrapGrowthValueQ8 = 273000000000
-legacyBootstrapCreditFixedSats = 2762
-legacyBootstrapCreditFixedQ8 = 276200000000
+legacyBootstrapRawCreditFixedSats = 2762
+legacyBootstrapRawCreditFixedQ8 = 276200000000
+legacyBootstrapCreditFixedSats = legacyBootstrapRawCreditFixedSats - legacyBootstrapCreditFixedOverlapSats
+legacyBootstrapCreditFixedQ8 = legacyBootstrapRawCreditFixedQ8 - legacyBootstrapCreditFixedOverlapQ8
 ```
 
 Here, `2730 = 546 * 5` is the exact legacy Growth component and
-`2762 = 546 + 2216` is the exact fixed-flow residual. The raw committed
+`2762 = 546 + 2216` is the exact raw fixed-flow residual. The raw committed
 transition N, base-state preimage, frozen values, Q8 commitments, and chart
 history stay unchanged. Summary projection publishes valid-only marketplace
 aliases with the 546 proofs removed, preserves the committed base vector as
-explicit evidence, and exposes the exact `workAmoV5LegacyBootstrap` proof.
+explicit evidence, and exposes raw/effective/overlap fields through the exact
+`workAmoV5LegacyBootstrap` proof.
 Credit frozen-value consistency must prove:
 
 ```text

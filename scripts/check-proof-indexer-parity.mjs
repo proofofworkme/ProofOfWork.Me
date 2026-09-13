@@ -1237,6 +1237,12 @@ try {
     ? ledger.missingLogEvents
     : [];
   const metricActivityItems = numberValue(metrics.activityItems);
+  const metricPublicLogActivityItems = numberValue(
+    metrics.publicLogActivityItems,
+  );
+  const metricSupplementalActivityItems = numberValue(
+    metrics.supplementalActivityItems,
+  );
   const confirmedComputerActions = numberValue(metrics.confirmedComputerActions);
   const confirmedTokens = numberValue(metrics.confirmedTokens);
   let canonicalActivityPayload = null;
@@ -1263,8 +1269,18 @@ try {
   const canonicalPendingActivityItems = canonicalActivityRows.filter(
     (item) => activityItemStatus(item) === "pending",
   ).length;
+  const hasPublicLogActivityMetric =
+    metrics.publicLogActivityItems !== null &&
+    metrics.publicLogActivityItems !== undefined &&
+    Number.isFinite(Number(metrics.publicLogActivityItems));
+  const summaryFloorActivityItems = hasPublicLogActivityMetric
+    ? metricPublicLogActivityItems
+    : metricSupplementalActivityItems > 0 &&
+        metricActivityItems >= metricSupplementalActivityItems
+      ? metricActivityItems - metricSupplementalActivityItems
+      : metricActivityItems;
   const canonicalActivityItemCount =
-    canonicalActivityRows.length || metricActivityItems;
+    canonicalActivityRows.length || summaryFloorActivityItems;
   const canonicalActivityTxids = uniqueActivityTxids(canonicalActivityRows);
   const canonicalActivityTxidCount =
     canonicalActivityTxids.size || rowNumber(counts, "canonical_activity_txids");
@@ -1276,7 +1292,7 @@ try {
   const expectedPendingActivityItems =
     pendingActivityCoverageExact
       ? canonicalPendingActivityItems
-      : Math.max(0, metricActivityItems - confirmedComputerActions);
+      : Math.max(0, summaryFloorActivityItems - confirmedComputerActions);
   const snapshotPendingPublicActivityEvents = pendingActivityCoverageExact
     ? await countSnapshotPendingPublicActivityEvents(
         pool,
@@ -1524,6 +1540,9 @@ try {
       confirmedEvents: rowNumber(counts, "events_confirmed_valid"),
       expectedConfirmedActivityItems,
       expectedPendingActivityItems,
+      metricActivityItems,
+      metricPublicLogActivityItems,
+      metricSupplementalActivityItems,
       pendingAllEvents: rowNumber(counts, "events_pending_valid"),
       pendingCoverageMode: pendingActivityCoverageExact
         ? "fresh-log-exact"
@@ -1532,6 +1551,7 @@ try {
       pendingSnapshotIndexedAt: pendingActivityCoverageExact
         ? canonicalActivityPayload?.indexedAt ?? null
         : null,
+      summaryFloorActivityItems,
     },
   );
   check(

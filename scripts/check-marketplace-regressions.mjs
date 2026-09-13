@@ -41,6 +41,8 @@ const WORK_MARKET_V3_AUTH_VERSION = "pwt-sale-v3";
 const WORK_MARKET_V4_AUTH_VERSION = "pwt-sale-v4";
 const WORK_MARKET_V4_ORACLE_MODEL =
   "canonical-work-market-confirmation-floor-v1";
+const WORK_MARKET_V2_ORACLE_UNAVAILABLE_REASON_CODE =
+  "work-market-v2-canonical-oracle-unavailable";
 const WORK_AMO_V5_AUTH_VERSION = "pwt-sale-v5";
 const WORK_AMO_V5_DECLARATION_TXID =
   "54d7a367a3998ce1327ee89d983a25c80ce34b96d9811807df215a8694aead36";
@@ -54,8 +56,24 @@ const WORK_AMO_V5_ALLOWED_FACE_USD_CENTS = [2_000, 5_000, 10_000];
 const WORK_AMO_V5_MAX_QUOTE_AGE_BLOCKS = 144;
 const WORK_AMO_V5_PRE_V1_RELIC_LISTING_TX =
   "4e9cedced2252cd183608dc9176415a913c4f6aa5e8307a732179a2240b6feb1";
+const WORK_AMO_V5_PRE_V1_RELIC_SEAL_TX =
+  "8d5dd9599d8a372a6f68833cc844a7610120041ba3412baff62a21d74e5c8ad0";
+const WORK_AMO_V5_PRE_V1_RELIC_HEIGHT = 959_241;
+const WORK_AMO_V5_PRE_V1_RELIC_BLOCK_INDEX = 2_601;
+const WORK_AMO_V5_PRE_V1_RELIC_PROTOCOL_VOUT = 1;
+const WORK_AMO_V5_PRE_V1_RELIC_RECORD_ORDINAL = 0;
+const WORK_AMO_V5_PRE_V1_RELIC_AMOUNT_ATOMS = "1600";
+const WORK_AMO_V5_PRE_V1_RELIC_PRICE_SATS = 1_500_479;
 const WORK_AMO_V5_POST_V1_INVALID_LISTING_TX =
   "5eb0a876603a7551653806b932533dc27a884631a581caa2e36dcf129b8278e8";
+const WORK_AMO_V5_POST_V1_INVALID_HEIGHT = 959_311;
+const WORK_AMO_V5_POST_V1_INVALID_BLOCK_INDEX = 2_552;
+const WORK_AMO_V5_POST_V1_INVALID_PROTOCOL_VOUT = 1;
+const WORK_AMO_V5_POST_V1_INVALID_RECORD_ORDINAL = 0;
+const WORK_AMO_V5_POST_V1_INVALID_AMOUNT_ATOMS = "1000";
+const WORK_AMO_V5_POST_V1_INVALID_PRICE_SATS = 1_031_143;
+const WORK_AMO_V5_POST_V1_INVALID_REGISTRY_PAYMENT_SATS = 546;
+const WORK_AMO_V5_POST_V1_INVALID_MINER_FEE_SATS = 2_216;
 const WORK_AMO_V5_MODELS = {
   amountModel: "canonical-confirmed-position-derived-work-amount-v1",
   bondTransitionModel: "canonical-compute-then-bond-v1",
@@ -903,14 +921,15 @@ function listingById(items, listingId) {
   );
 }
 
-function assertReportedPowbSealedListing(payload, label) {
+function assertReportedPowbListing(payload, label) {
   const listing = listingById(payload?.listings, REPORTED_POWB_SEALED_LISTING_TX);
   if (!listing) {
     throw new Error(
-      `${label} is missing reported sealed POWB listing ${REPORTED_POWB_SEALED_LISTING_TX}`,
+      `${label} is missing reported POWB listing ${REPORTED_POWB_SEALED_LISTING_TX}`,
     );
   }
   const status = String(listing.status ?? "").toLowerCase();
+  const saleAuthorization = listing.saleAuthorization ?? {};
   assert(
     listing.confirmed === true &&
       listing.valid === true &&
@@ -920,15 +939,31 @@ function assertReportedPowbSealedListing(payload, label) {
       String(listing.amount ?? "") === "2000000" &&
       Number(listing.priceSats) === 2_000_000 &&
       ["active", "sealing"].includes(status) &&
-      tokenListingHasConfirmedSeal(listing) &&
       String(listing.sealTxid ?? "").toLowerCase() === REPORTED_POWB_SEAL_TX &&
-      String(listing.saleAuthorization?.version ?? "") === "pwt-sale-v1" &&
-      String(listing.saleAuthorization?.anchorType ?? "") ===
-        "sale-ticket-v1" &&
-      String(listing.saleAuthorization?.anchorTxid ?? "").toLowerCase() ===
-        REPORTED_POWB_SEALED_LISTING_TX &&
-      Number(listing.saleAuthorization?.anchorValueSats) === 546,
-    `${label} changed reported sealed POWB listing terms or sale-ticket seal metadata`,
+      String(saleAuthorization.version ?? "") === "pwt-sale-v1" &&
+      String(saleAuthorization.anchorType ?? "") === "sale-ticket-v1" &&
+      ["", REPORTED_POWB_SEALED_LISTING_TX].includes(
+        String(saleAuthorization.anchorTxid ?? "").toLowerCase(),
+      ) &&
+      Number(saleAuthorization.anchorVout) === 2 &&
+      Number(saleAuthorization.anchorValueSats) === 546,
+    `${label} changed reported POWB listing terms or sale-ticket metadata`,
+  );
+}
+
+async function assertReportedPowbListingHistory() {
+  const powbListingHistory = await tokenHistoryForAsset(
+    POWB_TOKEN_ID,
+    "listings",
+    {
+      fresh: 1,
+      limit: 5,
+      q: REPORTED_POWB_SEALED_LISTING_TX,
+    },
+  );
+  assertReportedPowbListing(
+    { listings: powbListingHistory.items },
+    "Fresh POWB listing history",
   );
 }
 
@@ -2066,38 +2101,79 @@ async function assertWorkAmoV5CutoverContract({
     "/api/v1/token?asset=WORK",
   );
 
-  const relicHistory = await tokenHistory("closed-listings", {
+  const preUnitInvalidHistory = await tokenHistory("invalid-events", {
     fresh: 1,
     q: WORK_AMO_V5_PRE_V1_RELIC_LISTING_TX,
   });
-  const relic = listingById(
-    relicHistory.items,
-    WORK_AMO_V5_PRE_V1_RELIC_LISTING_TX,
+  const preUnitInvalid = (preUnitInvalidHistory.items ?? []).find(
+    (item) =>
+      String(item?.txid ?? "").toLowerCase() ===
+      WORK_AMO_V5_PRE_V1_RELIC_LISTING_TX,
   );
   assert(
-    relic?.confirmed === true &&
-      relic?.relic === true &&
-      relic?.refundEligible === false &&
-      String(relic?.closedTxid ?? relic?.txid ?? "").toLowerCase() ===
-        WORK_AMO_V5_DECLARATION_TXID &&
-      ["disabled", "closed"].includes(String(relic?.status ?? "")),
-    `${WORK_AMO_V5_PRE_V1_RELIC_LISTING_TX} is not preserved as a non-reserving pre-unit relic`,
+    preUnitInvalid?.confirmed === true &&
+      preUnitInvalid?.valid === false &&
+      preUnitInvalid?.refundEligible === false &&
+      String(preUnitInvalid?.reasonCode ?? preUnitInvalid?.reason ?? "") ===
+        WORK_MARKET_V2_ORACLE_UNAVAILABLE_REASON_CODE &&
+      String(preUnitInvalid?.attemptedKind ?? "") === "list" &&
+      String(preUnitInvalid?.tokenId ?? "").toLowerCase() === WORK_TOKEN_ID &&
+      String(preUnitInvalid?.amountAtoms ?? "") ===
+        WORK_AMO_V5_PRE_V1_RELIC_AMOUNT_ATOMS &&
+      Number(preUnitInvalid?.priceSats) ===
+        WORK_AMO_V5_PRE_V1_RELIC_PRICE_SATS &&
+      Number(preUnitInvalid?.blockHeight) ===
+        WORK_AMO_V5_PRE_V1_RELIC_HEIGHT &&
+      Number(preUnitInvalid?.blockIndex) ===
+        WORK_AMO_V5_PRE_V1_RELIC_BLOCK_INDEX &&
+      Number(preUnitInvalid?.protocolVout) ===
+        WORK_AMO_V5_PRE_V1_RELIC_PROTOCOL_VOUT &&
+      Number(preUnitInvalid?.recordOrdinal) ===
+        WORK_AMO_V5_PRE_V1_RELIC_RECORD_ORDINAL &&
+      String(preUnitInvalid?.saleAuthorization?.version ?? "") ===
+        WORK_MARKET_V3_AUTH_VERSION,
+    `${WORK_AMO_V5_PRE_V1_RELIC_LISTING_TX} is not preserved as exact confirmed-invalid pre-unit audit history`,
+  );
+  const preUnitInvalidSeal = (preUnitInvalidHistory.items ?? []).find(
+    (item) =>
+      String(item?.txid ?? "").toLowerCase() ===
+        WORK_AMO_V5_PRE_V1_RELIC_SEAL_TX &&
+      String(item?.listingId ?? "").toLowerCase() ===
+        WORK_AMO_V5_PRE_V1_RELIC_LISTING_TX,
+  );
+  assert(
+    preUnitInvalidSeal?.confirmed === true &&
+      preUnitInvalidSeal?.valid === false &&
+      preUnitInvalidSeal?.refundEligible === false &&
+      String(
+        preUnitInvalidSeal?.reasonCode ?? preUnitInvalidSeal?.reason ?? "",
+      ) === WORK_MARKET_V2_ORACLE_UNAVAILABLE_REASON_CODE &&
+      String(preUnitInvalidSeal?.attemptedKind ?? "") === "seal",
+    `${WORK_AMO_V5_PRE_V1_RELIC_SEAL_TX} is not preserved as invalid pre-unit seal audit history`,
   );
 
-  const relicByDeclaration = await tokenHistory("closed-listings", {
+  const closedRelicHistory = await tokenHistory("closed-listings", {
+    fresh: 1,
+    q: WORK_AMO_V5_PRE_V1_RELIC_LISTING_TX,
+  });
+  assert(
+    !listingById(
+      closedRelicHistory.items,
+      WORK_AMO_V5_PRE_V1_RELIC_LISTING_TX,
+    ),
+    `${WORK_AMO_V5_PRE_V1_RELIC_LISTING_TX} leaked into exact WORK closed-listing history`,
+  );
+
+  const closedRelicByDeclaration = await tokenHistory("closed-listings", {
     fresh: 1,
     q: WORK_AMO_V5_DECLARATION_TXID,
   });
-  const declarationRelic = listingById(
-    relicByDeclaration.items,
-    WORK_AMO_V5_PRE_V1_RELIC_LISTING_TX,
-  );
   assert(
-    declarationRelic?.relic === true &&
-      String(
-        declarationRelic?.closedTxid ?? declarationRelic?.txid ?? "",
-      ).toLowerCase() === WORK_AMO_V5_DECLARATION_TXID,
-    `${WORK_AMO_V5_DECLARATION_TXID} does not resolve the pre-unit closed relic`,
+    !listingById(
+      closedRelicByDeclaration.items,
+      WORK_AMO_V5_PRE_V1_RELIC_LISTING_TX,
+    ),
+    `${WORK_AMO_V5_DECLARATION_TXID} synthesized a pre-unit WORK closed relic`,
   );
 
   for (const query of [
@@ -2117,9 +2193,8 @@ async function assertWorkAmoV5CutoverContract({
           WORK_AMO_V5_DECLARATION_TXID,
     );
     assert(
-      marketRelic?.closedListing?.relic === true &&
-        marketRelic?.closedListing?.refundEligible === false,
-      `${query} does not resolve the pre-unit relic in WORK market-log`,
+      !marketRelic,
+      `${query} synthesized a pre-unit relic in WORK market-log`,
     );
   }
 
@@ -2144,10 +2219,8 @@ async function assertWorkAmoV5CutoverContract({
     WORK_AMO_V5_PRE_V1_RELIC_LISTING_TX,
   );
   assert(
-    broadRelic?.relic === true &&
-      String(broadRelic?.closedTxid ?? broadRelic?.txid ?? "").toLowerCase() ===
-        WORK_AMO_V5_DECLARATION_TXID,
-    `${WORK_AMO_V5_PRE_V1_RELIC_LISTING_TX} is absent from broad relational closed history`,
+    !broadRelic,
+    `${WORK_AMO_V5_PRE_V1_RELIC_LISTING_TX} leaked into broad relational closed history`,
   );
 
   const invalidHistory = await tokenHistory("invalid-events", {
@@ -2162,10 +2235,27 @@ async function assertWorkAmoV5CutoverContract({
   assert(
     invalid?.confirmed === true &&
       invalid?.valid === false &&
-      invalid?.relic === false &&
+      invalid?.relic !== true &&
       invalid?.refundEligible === false &&
       String(invalid?.reasonCode ?? invalid?.reason ?? "") ===
-        "work-market-v4-version-required",
+        WORK_MARKET_V2_ORACLE_UNAVAILABLE_REASON_CODE &&
+      String(invalid?.attemptedKind ?? "") === "list" &&
+      String(invalid?.amountAtoms ?? "") ===
+        WORK_AMO_V5_POST_V1_INVALID_AMOUNT_ATOMS &&
+      Number(invalid?.priceSats) ===
+        WORK_AMO_V5_POST_V1_INVALID_PRICE_SATS &&
+      Number(invalid?.blockHeight) ===
+        WORK_AMO_V5_POST_V1_INVALID_HEIGHT &&
+      Number(invalid?.blockIndex) ===
+        WORK_AMO_V5_POST_V1_INVALID_BLOCK_INDEX &&
+      Number(invalid?.protocolVout) ===
+        WORK_AMO_V5_POST_V1_INVALID_PROTOCOL_VOUT &&
+      Number(invalid?.recordOrdinal) ===
+        WORK_AMO_V5_POST_V1_INVALID_RECORD_ORDINAL &&
+      Number(invalid?.auditRegistryPaymentSats) ===
+        WORK_AMO_V5_POST_V1_INVALID_REGISTRY_PAYMENT_SATS &&
+      Number(invalid?.auditMinerFeeSats) ===
+        WORK_AMO_V5_POST_V1_INVALID_MINER_FEE_SATS,
     `${WORK_AMO_V5_POST_V1_INVALID_LISTING_TX} is not preserved as post-V1 invalid audit history`,
   );
   assert(
@@ -2221,6 +2311,10 @@ async function runFastMarketplaceRegressionGate() {
       cutoverToken,
       "/api/v1/token?asset=WORK",
     );
+  });
+
+  await step("reported POWB listing history", async () => {
+    await assertReportedPowbListingHistory();
   });
 
   await step("first confirmed WORK AMO V6 listing lifecycle", async () => {
@@ -2461,10 +2555,6 @@ async function runFastMarketplaceRegressionGate() {
       "Marketplace summary",
       marketplaceSummary,
     );
-    assertReportedPowbSealedListing(
-      marketplaceSummary.token,
-      "Marketplace summary",
-    );
     const v6Status = workAmoV6StatusFromPayload(
       marketplaceSummary,
       marketplaceSummary.token,
@@ -2506,7 +2596,7 @@ async function runFastMarketplaceRegressionGate() {
   });
 
   console.log(
-    `Marketplace fast regression checks passed for ${API_BASE}: ID lookup, V2 cutover/relic state, listing lifecycle, wallet scopes, and targeted WORK transfers.`,
+    `Marketplace fast regression checks passed for ${API_BASE}: ID lookup, V2 cutover/invalid state, POWB sealed listing, WORK listing lifecycle, wallet scopes, and targeted WORK transfers.`,
   );
 }
 
@@ -3238,7 +3328,7 @@ assertActiveWorkListingsUseCanonicalVersion(
   "Marketplace summary",
   marketplaceSummary,
 );
-assertReportedPowbSealedListing(marketplaceSummary.token, "Marketplace summary");
+await assertReportedPowbListingHistory();
 assertCoreTokenListingAuthority(marketplaceSummary.token, "Marketplace summary");
 for (const txid of REPORTED_OTC_UNSEALED_LISTING_TXS) {
   const item = listingById(marketplaceSummary.token?.listings, txid);
@@ -3302,10 +3392,6 @@ assertActiveWorkListingsUseCanonicalVersion(
   marketplaceFreshSummary.token,
   "Fresh Marketplace summary",
   marketplaceFreshSummary,
-);
-assertReportedPowbSealedListing(
-  marketplaceFreshSummary.token,
-  "Fresh Marketplace summary",
 );
 assertCoreTokenListingAuthority(
   marketplaceFreshSummary.token,

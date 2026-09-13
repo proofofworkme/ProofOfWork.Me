@@ -51,6 +51,10 @@ const INCB_TOKEN_ID =
   "3cb25745f937f2b4e5508e5400189fe8fe679cd8e84bfa1e9176d70c9761f15d";
 const INCB_NETWORK_VALUE_ACCOUNTING_MODEL =
   "fixed-incb-issuance-plus-market-flow-v1";
+const VALUE_Q8_SCALE = 100_000_000n;
+const WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_RAW_CREDIT_FIXED_SATS =
+  WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_MUTATION_SATS +
+  WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_MINER_FEE_SATS;
 const MAX_LEDGER_TIP_LAG_BLOCKS = Number(
   process.env.MAX_LEDGER_TIP_LAG_BLOCKS ?? 6,
 );
@@ -218,6 +222,13 @@ function expect(name, condition) {
 function numberValue(value) {
   const number = Number(value);
   return Number.isFinite(number) ? number : 0;
+}
+
+function q8TextFromSats(value) {
+  if (!Number.isSafeInteger(value)) {
+    return "";
+  }
+  return String(BigInt(value) * VALUE_Q8_SCALE);
 }
 
 function numbersAgree(left, right) {
@@ -829,6 +840,14 @@ const creditMinerFeeFlowSats = numberValue(actualValue.creditMinerFeeFlowSats);
 const legacyBootstrapCreditFixedSats = numberValue(
   actualValue.legacyBootstrapCreditFixedSats,
 );
+const legacyBootstrapRawCreditFixedSats = numberValue(
+  actualValue.legacyBootstrapRawCreditFixedSats,
+);
+const legacyBootstrapCreditFixedOverlapSats = numberValue(
+  actualValue.legacyBootstrapCreditFixedOverlapSats,
+);
+const legacyBootstrapEffectiveCreditFixedSats =
+  legacyBootstrapRawCreditFixedSats - legacyBootstrapCreditFixedOverlapSats;
 const postActivationCreditFixedSats = numberValue(
   actualValue.postActivationCreditFixedSats,
 );
@@ -916,9 +935,35 @@ expect(
       WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_MINER_FEE_SATS &&
     Number(actualValue.legacyBootstrapMarketplaceCarrySats) ===
       WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_MUTATION_SATS &&
+    Number(legacyBootstrapEvidence.creditFixedSats) ===
+      WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_RAW_CREDIT_FIXED_SATS &&
+    String(legacyBootstrapEvidence.creditFixedQ8 ?? "") ===
+      q8TextFromSats(
+        WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_RAW_CREDIT_FIXED_SATS,
+      ) &&
+    Number(legacyBootstrapEvidence.effectiveCreditFixedSats) ===
+      legacyBootstrapEffectiveCreditFixedSats &&
+    String(legacyBootstrapEvidence.effectiveCreditFixedQ8 ?? "") ===
+      q8TextFromSats(legacyBootstrapEffectiveCreditFixedSats) &&
+    Number(legacyBootstrapEvidence.creditFixedOverlapSats) ===
+      legacyBootstrapCreditFixedOverlapSats &&
+    String(legacyBootstrapEvidence.creditFixedOverlapQ8 ?? "") ===
+      q8TextFromSats(legacyBootstrapCreditFixedOverlapSats) &&
+    legacyBootstrapRawCreditFixedSats ===
+      WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_RAW_CREDIT_FIXED_SATS &&
+    String(actualValue.legacyBootstrapRawCreditFixedQ8 ?? "") ===
+      q8TextFromSats(
+        WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_RAW_CREDIT_FIXED_SATS,
+      ) &&
+    legacyBootstrapCreditFixedOverlapSats >= 0 &&
+    String(actualValue.legacyBootstrapCreditFixedOverlapQ8 ?? "") ===
+      q8TextFromSats(legacyBootstrapCreditFixedOverlapSats) &&
     legacyBootstrapCreditFixedSats ===
-      WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_MUTATION_SATS +
-        WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_MINER_FEE_SATS,
+      legacyBootstrapEffectiveCreditFixedSats &&
+    String(actualValue.legacyBootstrapCreditFixedQ8 ?? "") ===
+      q8TextFromSats(legacyBootstrapEffectiveCreditFixedSats) &&
+    legacyBootstrapCreditFixedSats + legacyBootstrapCreditFixedOverlapSats ===
+      legacyBootstrapRawCreditFixedSats,
 );
 expect(
   "credit live value is the active network value",
