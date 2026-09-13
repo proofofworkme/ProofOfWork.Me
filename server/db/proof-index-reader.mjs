@@ -237,6 +237,7 @@ import {
   INCB_RANGE_REPLAY_EXACT_MINT_LEGACY_SNAPSHOT_MODE,
   INCB_RANGE_REPLAY_WITNESS_MANIFEST_MODEL,
   canonicalIncbReplaySha256,
+  incbRangeReplayWitnessBindingFields,
   incbRangeReplayWitnessMetaKey,
   incbReplayRawSnapshotFingerprint,
   incbReplaySnapshotFingerprint,
@@ -26259,10 +26260,8 @@ function canonicalVerifierIncbInvalidDispositionFromRow(row, canonicalBlocks) {
 const PWT_RANGE_REPLAY_VERIFIER_BINDING_MODEL =
   "proof-indexer-pwt-range-replay-verifier-binding-v1";
 
-function canonicalIncbReplayReaderBinding(rebuild, network) {
-  const source = objectRecord(rebuild);
-  const binding = objectRecord(source.verifierBinding);
-  const verification = objectRecord(source.incbRangeReplayVerification);
+function canonicalIncbReplayBindingDescriptor(value, network) {
+  const binding = objectRecord(value);
   const bindingId = normalizedLowerText(binding.bindingId);
   const rangeReplayFromHeight = Number(binding.rangeReplayFromHeight);
   const witnessCount = Number(binding.witnessCount);
@@ -26275,40 +26274,13 @@ function canonicalIncbReplayReaderBinding(rebuild, network) {
   const expectedMetaKey = /^[0-9a-f]{64}$/u.test(bindingId)
     ? incbRangeReplayWitnessMetaKey(network, bindingId)
     : "";
-  const activeReplay =
-    source.status === "active" &&
-    source.active === true &&
-    source.complete === false &&
-    source.completedAt == null &&
-    source.incbRangeReplayVerification == null;
-  const completedReplay =
-    source.status === "complete" &&
-    source.active === false &&
-    source.complete === true &&
-    Number.isFinite(Date.parse(String(source.completedAt ?? ""))) &&
-    verification.verified === true &&
-    verification.accountingModel === INCB_ISSUANCE_ACCOUNTING_MODEL &&
-    Number(verification.rangeReplayFromHeight) === rangeReplayFromHeight &&
-    normalizedLowerText(verification.witnessSetHash) === witnessSetHash &&
-    Number(verification.witnessCount) === witnessCount &&
-    Number(verification.witnessPreserveCount) === witnessPreserveCount &&
-    Number(verification.consumedPreserveCount) === witnessPreserveCount &&
-    Number(verification.rederivedWitnessCount) ===
-      witnessCount - witnessPreserveCount &&
-    Number(verification.witnessedThroughBlock) === witnessedThroughBlock &&
-    normalizedLowerText(verification.witnessedThroughBlockHash) ===
-      witnessedThroughBlockHash;
   if (
-    source.mode !== "pwt-range-replay" ||
-    source.network !== network ||
-    (!activeReplay && !completedReplay) ||
     binding.model !== PWT_RANGE_REPLAY_VERIFIER_BINDING_MODEL ||
     binding.network !== network ||
     !/^[0-9a-f]{64}$/u.test(bindingId) ||
     !Number.isFinite(Date.parse(String(binding.createdAt ?? ""))) ||
     !Number.isSafeInteger(rangeReplayFromHeight) ||
     rangeReplayFromHeight <= 1 ||
-    Number(source.rangeReplayFromHeight) !== rangeReplayFromHeight ||
     binding.witnessModel !== INCB_RANGE_REPLAY_WITNESS_MANIFEST_MODEL ||
     !/^[0-9a-f]{64}$/u.test(witnessSetHash) ||
     !Number.isSafeInteger(witnessCount) ||
@@ -26339,12 +26311,178 @@ function canonicalIncbReplayReaderBinding(rebuild, network) {
   };
 }
 
+function canonicalIncbReplayReaderBinding(rebuild, network) {
+  const source = objectRecord(rebuild);
+  const verification = objectRecord(source.incbRangeReplayVerification);
+  const binding = canonicalIncbReplayBindingDescriptor(
+    source.verifierBinding,
+    network,
+  );
+  const rangeReplayFromHeight = Number(source.rangeReplayFromHeight);
+  const witnessCount = Number(binding?.witnessCount);
+  const witnessPreserveCount = Number(binding?.witnessPreserveCount);
+  const witnessedThroughBlock = Number(binding?.witnessedThroughBlock);
+  const witnessSetHash = normalizedLowerText(binding?.witnessSetHash);
+  const witnessedThroughBlockHash = normalizedLowerText(
+    binding?.witnessedThroughBlockHash,
+  );
+  const bindingId = normalizedLowerText(binding?.bindingId);
+  const activeReplay =
+    source.status === "active" &&
+    source.active === true &&
+    source.complete === false &&
+    source.completedAt == null &&
+    source.incbRangeReplayVerification == null;
+  const completedReplay =
+    source.status === "complete" &&
+    source.active === false &&
+    source.complete === true &&
+    Number.isFinite(Date.parse(String(source.completedAt ?? ""))) &&
+    verification.verified === true &&
+    verification.accountingModel === INCB_ISSUANCE_ACCOUNTING_MODEL &&
+    Number(verification.rangeReplayFromHeight) === rangeReplayFromHeight &&
+    normalizedLowerText(verification.witnessSetHash) === witnessSetHash &&
+    Number(verification.witnessCount) === witnessCount &&
+    Number(verification.witnessPreserveCount) === witnessPreserveCount &&
+    Number(verification.consumedPreserveCount) === witnessPreserveCount &&
+    Number(verification.rederivedWitnessCount) ===
+      witnessCount - witnessPreserveCount &&
+    Number(verification.witnessedThroughBlock) === witnessedThroughBlock &&
+    normalizedLowerText(verification.witnessedThroughBlockHash) ===
+      witnessedThroughBlockHash;
+  if (
+    source.mode !== "pwt-range-replay" ||
+    source.network !== network ||
+    (!activeReplay && !completedReplay) ||
+    !binding ||
+    !/^[0-9a-f]{64}$/u.test(bindingId) ||
+    !Number.isSafeInteger(rangeReplayFromHeight) ||
+    rangeReplayFromHeight <= 1 ||
+    Number(source.rangeReplayFromHeight) !== rangeReplayFromHeight ||
+    !Number.isSafeInteger(witnessCount) ||
+    witnessCount < 0 ||
+    !Number.isSafeInteger(witnessPreserveCount) ||
+    witnessPreserveCount < 0 ||
+    witnessPreserveCount > witnessCount ||
+    !Number.isSafeInteger(witnessedThroughBlock) ||
+    witnessedThroughBlock < rangeReplayFromHeight - 1 ||
+    !/^[0-9a-f]{64}$/u.test(witnessedThroughBlockHash)
+  ) {
+    return null;
+  }
+  return binding;
+}
+
 async function canonicalIncbReplayManifestRow(client, metaKey) {
   const result = await client.query(
     `SELECT value FROM proof_indexer.meta WHERE key = $1 LIMIT 1`,
     [metaKey],
   );
   return result.rows[0]?.value ?? null;
+}
+
+function canonicalIncbReplayBindingFromManifest(manifest, network) {
+  const verified = verifyIncbRangeReplayWitnessManifest(manifest, {
+    network,
+  });
+  const metaKey = incbRangeReplayWitnessMetaKey(
+    network,
+    verified.bindingId,
+  );
+  return canonicalIncbReplayBindingDescriptor(
+    {
+      bindingId: verified.bindingId,
+      createdAt: verified.createdAt,
+      model: PWT_RANGE_REPLAY_VERIFIER_BINDING_MODEL,
+      network,
+      rangeReplayFromHeight: verified.rangeReplayFromHeight,
+      ...incbRangeReplayWitnessBindingFields(verified, metaKey),
+    },
+    network,
+  );
+}
+
+async function canonicalIncbReplayManifestBinding(
+  client,
+  network,
+  binding,
+) {
+  const requested = canonicalIncbReplayBindingDescriptor(binding, network);
+  if (!requested) {
+    return null;
+  }
+  const manifest = verifyIncbRangeReplayWitnessManifest(
+    await canonicalIncbReplayManifestRow(
+      client,
+      requested.witnessSetMetaKey,
+    ),
+    {
+      bindingId: requested.bindingId,
+      count: requested.witnessCount,
+      hash: requested.witnessSetHash,
+      metaKey: requested.witnessSetMetaKey,
+      network,
+      preserveCount: requested.witnessPreserveCount,
+      rangeReplayFromHeight: requested.rangeReplayFromHeight,
+      throughHash: requested.witnessedThroughBlockHash,
+      throughHeight: requested.witnessedThroughBlock,
+    },
+  );
+  const manifestBinding = canonicalIncbReplayBindingFromManifest(
+    manifest,
+    network,
+  );
+  if (
+    canonicalIncbReplaySha256(manifestBinding) !==
+    canonicalIncbReplaySha256(requested)
+  ) {
+    throw new Error(
+      "The immutable INCB witness manifest does not match the requested replay binding.",
+    );
+  }
+  return { binding: manifestBinding, manifest };
+}
+
+async function canonicalIncbReplayReaderBindingForRequest(
+  client,
+  network,
+  rebuild,
+  requestedReplayBinding = null,
+) {
+  const currentBinding = canonicalIncbReplayReaderBinding(rebuild, network);
+  const requestedBinding = canonicalIncbReplayBindingDescriptor(
+    requestedReplayBinding,
+    network,
+  );
+  const binding = requestedBinding ?? currentBinding;
+  if (!binding) {
+    return { binding: null, manifest: null };
+  }
+  if (
+    currentBinding &&
+    canonicalIncbReplaySha256(currentBinding) ===
+      canonicalIncbReplaySha256(binding)
+  ) {
+    const manifest = verifyIncbRangeReplayWitnessManifest(
+      await canonicalIncbReplayManifestRow(
+        client,
+        binding.witnessSetMetaKey,
+      ),
+      {
+        bindingId: binding.bindingId,
+        count: binding.witnessCount,
+        hash: binding.witnessSetHash,
+        metaKey: binding.witnessSetMetaKey,
+        network,
+        preserveCount: binding.witnessPreserveCount,
+        rangeReplayFromHeight: binding.rangeReplayFromHeight,
+        throughHash: binding.witnessedThroughBlockHash,
+        throughHeight: binding.witnessedThroughBlock,
+      },
+    );
+    return { binding: currentBinding, manifest };
+  }
+  return canonicalIncbReplayManifestBinding(client, network, binding);
 }
 
 async function canonicalIncbReplaySnapshotRows(client, network, snapshotIds) {
@@ -26742,9 +26880,121 @@ function canonicalIncbReplayWitnessFaultPayload({
   };
 }
 
+export async function proofIndexCanonicalIncbReplayBindingPayload(
+  network,
+  requestedBindingId,
+  indexedThroughBlock = 0,
+) {
+  const pool = proofIndexPool();
+  const bindingId = normalizedLowerText(requestedBindingId);
+  const requestedHeight = Number(indexedThroughBlock);
+  if (
+    !pool ||
+    network !== "livenet" ||
+    !/^[0-9a-f]{64}$/u.test(bindingId) ||
+    !Number.isSafeInteger(requestedHeight) ||
+    requestedHeight < 0
+  ) {
+    return null;
+  }
+
+  const client = await pool.connect();
+  let transactionOpen = false;
+  try {
+    await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
+    transactionOpen = true;
+    const stateMeta = await canonicalStateMetaFromPool(client, network);
+    const rebuild = objectRecord(stateMeta.rebuild);
+    const metaKey = incbRangeReplayWitnessMetaKey(network, bindingId);
+    const manifest = verifyIncbRangeReplayWitnessManifest(
+      await canonicalIncbReplayManifestRow(client, metaKey),
+      { bindingId, metaKey, network },
+    );
+    const binding = canonicalIncbReplayBindingFromManifest(manifest, network);
+    const coverageHeight = requestedHeight || binding.witnessedThroughBlock;
+    const throughBlock = await client.query(
+      `
+        SELECT height, block_hash
+        FROM proof_indexer.blocks
+        WHERE network = $1
+          AND height = $2
+          AND canonical = true
+        LIMIT 1
+      `,
+      [network, binding.witnessedThroughBlock],
+    );
+    const throughHash = normalizedLowerText(throughBlock.rows[0]?.block_hash);
+    const currentFromHeight = Number(rebuild.fromHeight);
+    if (
+      stateMeta.fault?.active === true ||
+      rebuild.network !== network ||
+      !Number.isSafeInteger(currentFromHeight) ||
+      currentFromHeight <= 0 ||
+      currentFromHeight > binding.rangeReplayFromHeight ||
+      Number(rebuild.indexedThroughBlock) < coverageHeight ||
+      Number(throughBlock.rows[0]?.height) !==
+        binding.witnessedThroughBlock ||
+      throughHash !== binding.witnessedThroughBlockHash
+    ) {
+      const fault = canonicalTransactionFault(
+        network,
+        "INCB_REPLAY_BINDING_UNCOVERED",
+        "The immutable INCB replay binding is not covered by the current canonical chain.",
+        { bindingId, requestedHeight },
+      );
+      await client.query("COMMIT");
+      transactionOpen = false;
+      return {
+        binding: null,
+        fault,
+        network,
+        rebuild,
+        replayBindingVerified: false,
+      };
+    }
+    await client.query("COMMIT");
+    transactionOpen = false;
+    return {
+      binding,
+      fault: null,
+      manifest: {
+        count: manifest.count,
+        preserveCount: manifest.preserveCount,
+        rangeReplayFromHeight: manifest.rangeReplayFromHeight,
+        throughHash: manifest.throughHash,
+        throughHeight: manifest.throughHeight,
+      },
+      network,
+      rebuild,
+      replayBindingVerified: true,
+      source: INCB_RANGE_REPLAY_BOUND_WITNESS_SOURCE,
+    };
+  } catch (error) {
+    if (transactionOpen) {
+      await client.query("ROLLBACK").catch(() => {});
+      transactionOpen = false;
+    }
+    return {
+      binding: null,
+      fault: canonicalTransactionFault(
+        network,
+        "INCB_REPLAY_BINDING_UNAVAILABLE",
+        error?.message ?? String(error),
+        { bindingId, requestedHeight },
+      ),
+      network,
+      rebuild: null,
+      replayBindingVerified: false,
+    };
+  } finally {
+    client.release();
+  }
+}
+
 export async function proofIndexCanonicalInceptionMintWitnessesPayload(
   network,
   indexedThroughBlock,
+  requestedReplayBinding = null,
 ) {
   const pool = proofIndexPool();
   const requestedHeight = Number(indexedThroughBlock);
@@ -26767,8 +27017,14 @@ export async function proofIndexCanonicalInceptionMintWitnessesPayload(
     transactionOpen = true;
     const stateMeta = await canonicalStateMetaFromPool(client, network);
     rebuild = objectRecord(stateMeta.rebuild);
-    const replayBinding = canonicalIncbReplayReaderBinding(rebuild, network);
-    rangeReplayFromHeight = Number(rebuild.rangeReplayFromHeight);
+    const initialBinding = await canonicalIncbReplayReaderBindingForRequest(
+      client,
+      network,
+      rebuild,
+      requestedReplayBinding,
+    );
+    const replayBinding = initialBinding.binding;
+    rangeReplayFromHeight = Number(replayBinding?.rangeReplayFromHeight);
     const fromHeight = Number(rebuild.fromHeight);
     const upperHeight = Math.min(
       requestedHeight,
@@ -26786,23 +27042,7 @@ export async function proofIndexCanonicalInceptionMintWitnessesPayload(
       error.code = "INCB_BOUND_WITNESS_REPLAY_INACTIVE";
       throw error;
     }
-    const manifest = verifyIncbRangeReplayWitnessManifest(
-      await canonicalIncbReplayManifestRow(
-        client,
-        replayBinding.witnessSetMetaKey,
-      ),
-      {
-        bindingId: replayBinding.bindingId,
-        count: replayBinding.witnessCount,
-        hash: replayBinding.witnessSetHash,
-        metaKey: replayBinding.witnessSetMetaKey,
-        network,
-        preserveCount: replayBinding.witnessPreserveCount,
-        rangeReplayFromHeight,
-        throughHash: replayBinding.witnessedThroughBlockHash,
-        throughHeight: replayBinding.witnessedThroughBlock,
-      },
-    );
+    const manifest = initialBinding.manifest;
 
     const checkpointResult = await client.query(
     `
@@ -26941,29 +27181,15 @@ export async function proofIndexCanonicalInceptionMintWitnessesPayload(
 
     const confirmedStateMeta = await canonicalStateMetaFromPool(client, network);
     const confirmedRebuild = objectRecord(confirmedStateMeta.rebuild);
-    const confirmedBinding = canonicalIncbReplayReaderBinding(
-      confirmedRebuild,
-      network,
-    );
-    const confirmedManifest = confirmedBinding
-      ? verifyIncbRangeReplayWitnessManifest(
-          await canonicalIncbReplayManifestRow(
-            client,
-            confirmedBinding.witnessSetMetaKey,
-          ),
-          {
-            bindingId: confirmedBinding.bindingId,
-            count: confirmedBinding.witnessCount,
-            hash: confirmedBinding.witnessSetHash,
-            metaKey: confirmedBinding.witnessSetMetaKey,
-            network,
-            preserveCount: confirmedBinding.witnessPreserveCount,
-            rangeReplayFromHeight,
-            throughHash: confirmedBinding.witnessedThroughBlockHash,
-            throughHeight: confirmedBinding.witnessedThroughBlock,
-          },
-        )
-      : null;
+    const confirmedBindingSource =
+      await canonicalIncbReplayReaderBindingForRequest(
+        client,
+        network,
+        confirmedRebuild,
+        replayBinding,
+      );
+    const confirmedBinding = confirmedBindingSource.binding;
+    const confirmedManifest = confirmedBindingSource.manifest;
     if (
       confirmedStateMeta.fault?.active === true ||
       !confirmedBinding ||
@@ -27055,29 +27281,15 @@ export async function proofIndexCanonicalInceptionMintWitnessesPayload(
     transactionOpen = true;
     const finalStateMeta = await canonicalStateMetaFromPool(client, network);
     const finalRebuild = objectRecord(finalStateMeta.rebuild);
-    const finalBinding = canonicalIncbReplayReaderBinding(
-      finalRebuild,
-      network,
-    );
-    const finalManifest = finalBinding
-      ? verifyIncbRangeReplayWitnessManifest(
-          await canonicalIncbReplayManifestRow(
-            client,
-            finalBinding.witnessSetMetaKey,
-          ),
-          {
-            bindingId: finalBinding.bindingId,
-            count: finalBinding.witnessCount,
-            hash: finalBinding.witnessSetHash,
-            metaKey: finalBinding.witnessSetMetaKey,
-            network,
-            preserveCount: finalBinding.witnessPreserveCount,
-            rangeReplayFromHeight,
-            throughHash: finalBinding.witnessedThroughBlockHash,
-            throughHeight: finalBinding.witnessedThroughBlock,
-          },
-        )
-      : null;
+    const finalBindingSource =
+      await canonicalIncbReplayReaderBindingForRequest(
+        client,
+        network,
+        finalRebuild,
+        replayBinding,
+      );
+    const finalBinding = finalBindingSource.binding;
+    const finalManifest = finalBindingSource.manifest;
     const finalSnapshotRows = await canonicalIncbReplaySnapshotRows(
       client,
       network,
@@ -27116,6 +27328,8 @@ export async function proofIndexCanonicalInceptionMintWitnessesPayload(
       network,
       rangeReplayFromHeight,
       rebuild: finalRebuild,
+      replayBindingVerified: true,
+      replayVerifierBinding: finalBinding,
       source: INCB_RANGE_REPLAY_BOUND_WITNESS_SOURCE,
       witnessCount: manifest.count,
       witnessPreserveCount: manifest.preserveCount,
@@ -40160,6 +40374,18 @@ export async function proofIndexCanonicalSummaryLedgerPayload(
     requiredIndexedThroughBlock !== 0 || requestedHash.length > 0;
   const exactStatusRequested =
     exactCheckpointRequested && options?.exactStatus === true;
+  const requestedReplayBinding =
+    options?.replayVerifierBinding ?? options?.replayBinding ?? null;
+  const exactReplayBinding = exactCheckpointRequested && requestedReplayBinding
+    ? canonicalIncbReplayBindingDescriptor(
+        requestedReplayBinding,
+        network,
+      )
+    : null;
+  const exactReplayHistoricalCheckpoint =
+    exactReplayBinding &&
+    requestedHeight >= exactReplayBinding.rangeReplayFromHeight - 1 &&
+    requestedHeight < exactReplayBinding.witnessedThroughBlock;
   const exactStatusResult = (
     status,
     exactSnapshot = null,
@@ -40210,7 +40436,13 @@ export async function proofIndexCanonicalSummaryLedgerPayload(
       `
     : "";
   const modernWorkValueFilter = exactCheckpointRequested
-    ? "payload->>'workAmountStorageModel' = $4"
+    ? `(
+          payload->>'workAmountStorageModel' = $4
+          OR (
+            $4 = '${WORK_ATOMIC_PROJECTION_MODEL}'
+            AND COALESCE(payload->>'workAmountStorageModel', '') = ''
+          )
+        )`
     : "payload->>'workAmountStorageModel' = $2";
   const legacyExactWorkValueFilter = exactCheckpointRequested
     ? `
@@ -40416,28 +40648,55 @@ export async function proofIndexCanonicalSummaryLedgerPayload(
     `,
     checkpointParams,
   );
-  const snapshot = result.rows[0];
+  const resultRows = result.rows;
   const matchingSnapshotCount = Number(
-    snapshot?.matching_snapshot_count ?? result.rows.length,
+    resultRows[0]?.matching_snapshot_count ?? resultRows.length,
   );
-  if (!snapshot) {
+  if (resultRows.length === 0) {
     return exactStatusResult("missing");
   }
   if (
     exactCheckpointRequested &&
     (!Number.isSafeInteger(matchingSnapshotCount) ||
-      matchingSnapshotCount !== result.rows.length)
+      matchingSnapshotCount !== resultRows.length)
   ) {
     return exactStatusResult(
       "incomplete",
       null,
       Number.isSafeInteger(matchingSnapshotCount)
         ? matchingSnapshotCount
-        : result.rows.length,
+        : resultRows.length,
     );
   }
 
-  const bindings = result.rows.map((row) =>
+  let candidateRows = resultRows;
+  if (exactReplayHistoricalCheckpoint && resultRows.length > 1) {
+    const replayCreatedAtMs = Date.parse(exactReplayBinding.createdAt);
+    const replayRows = resultRows
+      .map((row) => ({
+        generatedAtMs: Date.parse(row?.generated_at),
+        row,
+      }))
+      .filter(
+        ({ generatedAtMs }) =>
+          Number.isFinite(generatedAtMs) &&
+          generatedAtMs >= replayCreatedAtMs,
+      );
+    const earliestReplayGeneratedAtMs = Math.min(
+      ...replayRows.map(({ generatedAtMs }) => generatedAtMs),
+    );
+    if (Number.isFinite(earliestReplayGeneratedAtMs)) {
+      candidateRows = replayRows
+        .filter(
+          ({ generatedAtMs }) =>
+            generatedAtMs === earliestReplayGeneratedAtMs,
+        )
+        .map(({ row }) => row);
+    }
+  }
+
+  const snapshot = candidateRows[0];
+  const bindings = candidateRows.map((row) =>
     canonicalSummaryLedgerRowBinding(
       row,
       exactCheckpointRequested ? requestedHeight : 0,

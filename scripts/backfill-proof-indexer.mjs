@@ -1272,6 +1272,14 @@ function assertCanonicalRebuildConfiguration() {
       "--repair-incb-issuance requires POW_INDEX_REPAIR_INCB_ISSUANCE_TXIDS with at least one transaction id",
     );
   }
+  if (
+    REPAIR_INCB_ISSUANCE_ONLY &&
+    REPAIR_INCB_ISSUANCE_TXIDS.length !== 46
+  ) {
+    throw new Error(
+      "--repair-incb-issuance requires the complete pinned 46-mint historical INCB issuance set.",
+    );
+  }
   if (PREPARE_CANONICAL_REBUILD_ONLY && !CANONICAL_REBUILD) {
     throw new Error(
       "--prepare-canonical-rebuild requires POW_INDEX_BACKFILL_CANONICAL_REBUILD=1",
@@ -1595,52 +1603,106 @@ const LIVENET_INCB_HISTORICAL_BASELINE = Object.freeze({
 });
 const WORK_TRANSFER_VALUE_PROJECTION_MODEL =
   "canonical-work-transfer-value-projection-v1";
-const CANONICAL_INCB_ISSUANCE_REPAIR_EXPECTATIONS = new Map([
-  [
-    "dd743fb69c519200cc190627219ba34ca2e63e6893e600b73e9aee8d4dac8fa4",
-    {
-      attachedWorkAmount: 3_644_060,
-      attachedWorkIssuanceUnits: 1_421_798_915,
-      attachedWorkLiveFloorAtSendQ8: "39016890930",
-      attachedWorkLiveFloorAtSendSats: 390.168909301053,
-      attachedWorkLiveValueAtSendQ8: "142179891562759519",
-      attachedWorkLiveValueAtSendSats: 1_421_798_915.6275952,
-      blockHash:
-        "000000000000000000016ea78b0d57a7979de3542518c8690a1e5a808e691cc5",
-      blockHeight: 957_950,
-      blockIndex: 382,
-      confirmedIssuanceUnits: 1_421_799_461,
-      directProofIssuanceUnits: 546,
-      issuanceDustQ8: "62759519",
-      issuanceDustSats: 0.6275952,
-      issuanceFloorQ8: "100000000",
-      issuanceFloorSats: 1.0000000004414091,
-      issuanceNetworkValueQ8: "142179946162759519",
-      issuanceNetworkValueSats: 1_421_799_461.6275952,
-      issuanceValueSnapshotBlockHash:
-        "00000000000000000001bda6bfa328f15edf597bfc364e02da42ea92a518a15e",
-      issuanceValueSnapshotBlockHeight: 957_949,
-      issuanceValueSnapshotCanonicalSummaryHash:
-        "4f00b3494afb46ef88990948784a0ba8f2a22856615a39e15c3131f0ec979bdc",
-      issuanceValueSnapshotGeneratedAt: "2026-07-14T03:03:04.765Z",
-      issuanceValueSnapshotId: "b8e77cd30cbed6855977c514",
-      issuanceValueSnapshotMode: "canonical-summary-refresh",
-      issuanceValueSnapshotModel: INCB_VALUE_SNAPSHOT_MODEL,
-      issuanceValueSnapshotWorkNetworkValueQ8:
-        "819354709532211300",
-      issuanceValueSnapshotWorkNetworkValueSats:
-        8_193_547_095.322113,
-      recipientAddress: "1BPVvi1GK4QkfqFMU4jHGjsQjyGwjJJJ7x",
-      recipientAmountSats: 546,
-      recipientVout: 0,
-      workAttachmentAmount: 3_644_060,
-      workAttachmentProtocolVout: 3,
-      workAttachmentRecipientAddress:
-        "1BPVvi1GK4QkfqFMU4jHGjsQjyGwjJJJ7x",
-      workAttachmentTokenId: WORK_TOKEN_ID,
-    },
-  ],
+const CANONICAL_INCB_ISSUANCE_REPAIR_EXPECTATION_ROWS = Object.freeze([
+  ["dd743fb69c519200cc190627219ba34ca2e63e6893e600b73e9aee8d4dac8fa4","000000000000000000016ea78b0d57a7979de3542518c8690a1e5a808e691cc5",957950,382,"1BPVvi1GK4QkfqFMU4jHGjsQjyGwjJJJ7x","546",0,"3644060","","1421798915","1421799461","546","00000000000000000001bda6bfa328f15edf597bfc364e02da42ea92a518a15e",957949,"4f00b3494afb46ef88990948784a0ba8f2a22856615a39e15c3131f0ec979bdc","2026-07-14T03:03:04.765Z","b8e77cd30cbed6855977c514"],
+  ["d8b3760f694ec6dda316d93867d61ca39a1f105bed406110dbe28f5d0f56ce21","00000000000000000000db5329facae5d3bdd11f7d2e9df4bdcdda580069afa9",958007,1079,"1BPVvi1GK4QkfqFMU4jHGjsQjyGwjJJJ7x","546",0,"3644060","","1710515007","1710515553","546","00000000000000000000a9c98064bcf92b25b7c43576c8479befdcb17dfb85cd",958006,"d7f1a96de47d257ef7de314ab54525225a9fdaa62a68b7595484f1a8f5cfa7cc","2026-07-14T13:05:51.725Z","c8b800384da576c962ae82a5"],
+  ["f0bdfa72ae7b7219a89ca59f6a5325bdd0b8c14bc6bd0ec95a3861805d4ca307","0000000000000000000203db4faddbccc50e32d060cb07e537044f4cfa65772c",958027,1181,"1BPVvi1GK4QkfqFMU4jHGjsQjyGwjJJJ7x","546",0,"3644060","","2491835283","2491835829","546","00000000000000000000a9fe6d9322426b4e388a4a720c847d6a6440475ef45c",958026,"f95c39661a051bf3124ea44ece8a7efb1ec70ca17c5f00084a1aeef1b365187c","2026-07-14T15:05:28.470Z","f92c69962c409d55ba1b103c"],
+  ["4120c578a2ecf9ced5227474efe5d79e8681dadb1fe83f887a7196fb7004edf4","000000000000000000013c09b49cc6cf6b561397ad8693220e24e545dac62c9f",958041,1808,"1BPVvi1GK4QkfqFMU4jHGjsQjyGwjJJJ7x","546",0,"3644060","","3439395641","3439396187","546","000000000000000000008f5d62e5bbd839aac36275d469ea863e907f10750d0d",958040,"67b2753c50f2a176dc1963dbe39eb6d7bf946cb3af1541195410c7abeb2f0762","2026-07-14T18:06:56.389Z","40cd14abee715e4b9074a474"],
+  ["92cc27e005325037aadb09e40f638612db97a31aba380bb02cb35b09656ff1f5","00000000000000000000727f670831efcfa0e64cdab0969739c516d38cc8e4ab",958050,208,"1BPVvi1GK4QkfqFMU4jHGjsQjyGwjJJJ7x","546",0,"3644060","","4843290591","4843291137","546","000000000000000000006a74441d12065d89a1eaa82ac466b08cc20f6b3a9294",958049,"046317a31eb9104044bb93b2ed95ed6969b38cc6b5d9466085d37e7dc0386c11","2026-07-14T19:02:01.528Z","b5d36ee98bcbef4fc7a54aed"],
+  ["3325ebc39165bb4c38f078dc936c4c98a420d2e7f7875738e49d123c0e233801","000000000000000000023661c999d6edc8461280f1940681fef04520247df4dd",958073,1895,"bc1q9cxyzlx8e8dyq5ueyckss8fndtdp4ydmvqz874","1000",0,"0","","0","1000","1000","000000000000000000018a04384c3a2117f9f77bdec63d4bb862994e874dad90",958072,"1b520de960095a8bcd78ffdeff005f7d3e18b8ea66d2afbfaa0cd581ef03868a","2026-07-14T22:30:09.335Z","efbf9a05058307f1fb35802a"],
+  ["bb4a05ad31a9ed0adb82c106a6b74bdc6403f1f83744bb73eac3a758c4dff648","0000000000000000000133aea4d5dbbe86ce51d9c66cf14b1f82b1714ff84341",958076,1429,"1BPVvi1GK4QkfqFMU4jHGjsQjyGwjJJJ7x","546",0,"3644060","","6950387472","6950388018","546","00000000000000000001cdda4021a164a0051b248b8b24c4ee1530bad5a1e245",958075,"31d864ac850e372c5b97dfffe21f0ad97609b7d162cb43533f3314d775ad5516","2026-07-15T00:03:57.466Z","80e84ace387f63fa1c34aa22"],
+  ["76af8386ac03c5d84b992205ff1dc37e6f950d5272402a0a77d752b894edb2b4","00000000000000000000fe7971f856932968b49eefb7fc9768e125775e56fb22",958087,2136,"1BPVvi1GK4QkfqFMU4jHGjsQjyGwjJJJ7x","546",0,"3644060","","10157183427","10157183973","546","00000000000000000000e199249fccdbfe4e89d53275322a1d38feee24fd83da",958086,"808e31a8137705b758f3971274f5ede98d669e3d1cc46b36ab0ce94070ed7062","2026-07-15T02:57:03.057Z","dca7e548d87d04940c1635ee"],
+  ["a8cc79c0225f05c336385e941f2aa0748f5937599d75e5b6a9696f2bb2c89545","00000000000000000000fe7971f856932968b49eefb7fc9768e125775e56fb22",958087,2242,"1447TsdXtFSnVrWawSamyyQKPDNW4ALtBT","546",0,"4128000","","11506082004","11506082550","546","00000000000000000000e199249fccdbfe4e89d53275322a1d38feee24fd83da",958086,"808e31a8137705b758f3971274f5ede98d669e3d1cc46b36ab0ce94070ed7062","2026-07-15T02:57:03.057Z","dca7e548d87d04940c1635ee"],
+  ["26e6205879822b797fe1dce3691610f97834df8f88cf4c54efc72f0c82c508d5","00000000000000000000fe7971f856932968b49eefb7fc9768e125775e56fb22",958087,2243,"1F1p9UEHuH5KTFR7Zsx93Khdrqhj6t5nFv","546",0,"1832000","","5106381354","5106381900","546","00000000000000000000e199249fccdbfe4e89d53275322a1d38feee24fd83da",958086,"808e31a8137705b758f3971274f5ede98d669e3d1cc46b36ab0ce94070ed7062","2026-07-15T02:57:03.057Z","dca7e548d87d04940c1635ee"],
+  ["1fe39e1739060f11f7e653c790d8559e4a41443e3ca6448c1e8e579482b4a359","000000000000000000000981593cf41e02bd342d7d6e7beef04cac31be0f723c",958135,2438,"1F1p9UEHuH5KTFR7Zsx93Khdrqhj6t5nFv","546",0,"1832000","","12330756301","12330756847","546","0000000000000000000184f95ac1dd48438f11b79708e91d58eeb4a71b745e44",958134,"c248b486c9a71b99614ae5863075b8c6f185ca83ef7510649ea7d212c7e6aaa7","2026-07-15T09:19:10.632Z","7b937a7a603b1332d22b06e1"],
+  ["107b69879c529423a7f442118408bc8a3e60ae824b97ea7d3f73ab84483b2e04","000000000000000000000981593cf41e02bd342d7d6e7beef04cac31be0f723c",958135,2835,"1447TsdXtFSnVrWawSamyyQKPDNW4ALtBT","546",0,"4128000","","27784586251","27784586797","546","0000000000000000000184f95ac1dd48438f11b79708e91d58eeb4a71b745e44",958134,"c248b486c9a71b99614ae5863075b8c6f185ca83ef7510649ea7d212c7e6aaa7","2026-07-15T09:19:10.632Z","7b937a7a603b1332d22b06e1"],
+  ["55a7de911b36ec6f1b08657a0088923875a46dff683576c3688065d6305537de","000000000000000000000981593cf41e02bd342d7d6e7beef04cac31be0f723c",958135,2836,"1BPVvi1GK4QkfqFMU4jHGjsQjyGwjJJJ7x","546",0,"3644060","","24527301205","24527301751","546","0000000000000000000184f95ac1dd48438f11b79708e91d58eeb4a71b745e44",958134,"c248b486c9a71b99614ae5863075b8c6f185ca83ef7510649ea7d212c7e6aaa7","2026-07-15T09:19:10.632Z","7b937a7a603b1332d22b06e1"],
+  ["60d7fae095805449f552a6af56fead22edd6ad3ca96839b24c4339f7fbc71561","00000000000000000000390a27e2c8b5441f7bf94b2c6228c6453d8a6d5933fc",958137,3701,"1F1p9UEHuH5KTFR7Zsx93Khdrqhj6t5nFv","546",0,"1832000","","32037270461","32037271007","546","000000000000000000011ff4f08cb3f9ac87ea1a7a9c1830d41ede65bcff44be",958136,"afb94995de490527835d1127b9b65900fea187dd4719975393923501083e6386","2026-07-15T09:40:15.309Z","94f8316c91af164ebf92c179"],
+  ["3126cbf3cb66ed6381a5e7c7fda7339e4d46b7f9101a26970e578e46416b1fff","00000000000000000000390a27e2c8b5441f7bf94b2c6228c6453d8a6d5933fc",958137,3702,"1447TsdXtFSnVrWawSamyyQKPDNW4ALtBT","546",0,"4128000","","72188784096","72188784642","546","000000000000000000011ff4f08cb3f9ac87ea1a7a9c1830d41ede65bcff44be",958136,"afb94995de490527835d1127b9b65900fea187dd4719975393923501083e6386","2026-07-15T09:40:15.309Z","94f8316c91af164ebf92c179"],
+  ["f79a48bbbe1cccd6ea776b023fa168971ca6f42afc1f62f4f481fcb9e9db5e3b","000000000000000000013ef66f368e9f418da730611f5ddaea4ef23a8c30414d",958138,997,"1BPVvi1GK4QkfqFMU4jHGjsQjyGwjJJJ7x","546",0,"3644060","","131153671615","131153672161","546","00000000000000000000390a27e2c8b5441f7bf94b2c6228c6453d8a6d5933fc",958137,"8a2dcb52c4fe9570e9e072ca007c983bf6e93dd70f3f3082cdfe5e6a09818901","2026-07-15T10:54:02.077Z","9a7831112b60da8ba8a6d5d1"],
+  ["c7c3746cebc763ef65cff0537d5f29084d15879c0276011fe743d8f61b7dca7b","00000000000000000000392802408e87b37fa729257c9d012ee085fc1438e4ec",958182,267,"1447TsdXtFSnVrWawSamyyQKPDNW4ALtBT","546",0,"4128000","","248522359556","248522360102","546","0000000000000000000039c67a4c8285a109cd3b89faa063f44b1837dd8b3cbd",958181,"b0c65de7243604d7786561063f72b0c85960ff23124a373ecf1dd347dcc35ff1","2026-07-15T18:01:37.474Z","2aab25ca991f1d53895b5cb2"],
+  ["d8a429ba4720e8554cc8e51a28e1eb6af552d0a2962915b54d23c0a21c878a5a","00000000000000000000392802408e87b37fa729257c9d012ee085fc1438e4ec",958182,268,"1F1p9UEHuH5KTFR7Zsx93Khdrqhj6t5nFv","546",0,"1832000","","110293837865","110293838411","546","0000000000000000000039c67a4c8285a109cd3b89faa063f44b1837dd8b3cbd",958181,"b0c65de7243604d7786561063f72b0c85960ff23124a373ecf1dd347dcc35ff1","2026-07-15T18:01:37.474Z","2aab25ca991f1d53895b5cb2"],
+  ["c86f6317dc1e6d868accd17f9e88d1a25312d8b645ea9c57aa94a5ddd08f81d6","00000000000000000000392802408e87b37fa729257c9d012ee085fc1438e4ec",958182,269,"1BPVvi1GK4QkfqFMU4jHGjsQjyGwjJJJ7x","546",0,"3644060","","219387206774","219387207320","546","0000000000000000000039c67a4c8285a109cd3b89faa063f44b1837dd8b3cbd",958181,"b0c65de7243604d7786561063f72b0c85960ff23124a373ecf1dd347dcc35ff1","2026-07-15T18:01:37.474Z","2aab25ca991f1d53895b5cb2"],
+  ["14b1f07c467e58b5595c10b666ef8de1d4a769fe9e29edd0150b61c906179c0a","000000000000000000008f66788f667a2bbe0fff4f7d078dbf12982161f73441",958184,3211,"1BPVvi1GK4QkfqFMU4jHGjsQjyGwjJJJ7x","546",0,"3644060","","652954459127","652954459673","546","0000000000000000000168620e6c990086891c38d9e570d1ecfa3c0133355a06",958183,"fdf21a65e99aa2ce90e20526c9767d6a1859f499bf341471a3e262b3c659bfeb","2026-07-15T18:12:11.718Z","a5a3faedaa796de67db5dee2"],
+  ["7ccab05a6bbc0beb4eee3ef8d707dc9aec8362f326e5932855e0caf91c942992","000000000000000000008f66788f667a2bbe0fff4f7d078dbf12982161f73441",958184,3212,"1447TsdXtFSnVrWawSamyyQKPDNW4ALtBT","546",0,"4128000","","739668393846","739668394392","546","0000000000000000000168620e6c990086891c38d9e570d1ecfa3c0133355a06",958183,"fdf21a65e99aa2ce90e20526c9767d6a1859f499bf341471a3e262b3c659bfeb","2026-07-15T18:12:11.718Z","a5a3faedaa796de67db5dee2"],
+  ["eb61ae1f4eb501a70f5abf8e4b380d678840f3024c9c907173bd206a1118c21f","000000000000000000008f66788f667a2bbe0fff4f7d078dbf12982161f73441",958184,3275,"1F1p9UEHuH5KTFR7Zsx93Khdrqhj6t5nFv","546",0,"1832000","","328263686416","328263686962","546","0000000000000000000168620e6c990086891c38d9e570d1ecfa3c0133355a06",958183,"fdf21a65e99aa2ce90e20526c9767d6a1859f499bf341471a3e262b3c659bfeb","2026-07-15T18:12:11.718Z","a5a3faedaa796de67db5dee2"],
+  ["aac284594cf6381f72e86672a02f7d3e67093624dacb9857ca891479450b82a9","00000000000000000001e2e515801772af6c66e04e6962840a6c4e55a14e7f87",958186,130,"1F1p9UEHuH5KTFR7Zsx93Khdrqhj6t5nFv","546",0,"1832000","","1041084654636","1041084655182","546","00000000000000000001d6ff996aeb651ca62f13e47b1de815f152c18febf2a1",958185,"6acbc298218e64d707bc607da409b4676d89e314209fa03d7427ab75b82c16ab","2026-07-15T18:19:58.719Z","34f3d816786f7e8f2f81b505"],
+  ["77c3b6af2637c4f146f7799fcae977a86a334d92a292e4fc5615163df77250c5","0000000000000000000157976425b0a5e3d6d0ee8358611e957486873f862f85",958197,1863,"1447TsdXtFSnVrWawSamyyQKPDNW4ALtBT","546",0,"4128000","","3330294750215","3330294750761","546","000000000000000000009c6cae5edf2187ec681b47969ac79d07f1f713fea460",958196,"2d76510da97e2703c76896eaa774e8fdf8e0cd040d49f0d2443e871b675ae475","2026-07-15T20:40:11.158Z","e59bf41d4ced5cb965cb0cb6"],
+  ["875cd28607cc38608ebec93dcabb2b9ee25ab8425308dd03cc0b4532e05dbe13","0000000000000000000157976425b0a5e3d6d0ee8358611e957486873f862f85",958197,2014,"1BPVvi1GK4QkfqFMU4jHGjsQjyGwjJJJ7x","546",0,"3644060","","2939872550259","2939872550805","546","000000000000000000009c6cae5edf2187ec681b47969ac79d07f1f713fea460",958196,"2d76510da97e2703c76896eaa774e8fdf8e0cd040d49f0d2443e871b675ae475","2026-07-15T20:40:11.158Z","e59bf41d4ced5cb965cb0cb6"],
+  ["bfcf2077576ad89379ab430087ed705c2a168b9cda05b428bfa0d2c892ae5ff0","00000000000000000001526fc301bdef4af73f42fd4043cc0ae28b34c972ed47",958306,1752,"1F1p9UEHuH5KTFR7Zsx93Khdrqhj6t5nFv","546",0,"1832000","","4361731931163","4361731931709","546","000000000000000000009ec36eb9aed09af1854961cfface4a9c638ac6513a45",958305,"0b97a06061ac274e0053468a8e4b4966dc9cc7296de799c27aade742f7c3b1ad","2026-07-16T17:18:23.255Z","88598ea2c4cd03c3641c9493"],
+  ["71b03ae9d9dc6437d66675eb6062181c6871a35b322b408dfd2af5c407f74a73","00000000000000000001526fc301bdef4af73f42fd4043cc0ae28b34c972ed47",958306,1754,"1447TsdXtFSnVrWawSamyyQKPDNW4ALtBT","546",0,"3988000","","9494861867619","9494861868165","546","000000000000000000009ec36eb9aed09af1854961cfface4a9c638ac6513a45",958305,"0b97a06061ac274e0053468a8e4b4966dc9cc7296de799c27aade742f7c3b1ad","2026-07-16T17:18:23.255Z","88598ea2c4cd03c3641c9493"],
+  ["697d282ce2d0b57d7c17b91a907c4dcf1a5327b0b02eebf19963611d8e63322d","00000000000000000000898fe84429d825209602577438c69f34ed5e8b1b945e",958307,2571,"1BPVvi1GK4QkfqFMU4jHGjsQjyGwjJJJ7x","546",0,"3574060","","21356669036445","21356669036991","546","00000000000000000001526fc301bdef4af73f42fd4043cc0ae28b34c972ed47",958306,"4d404962b0c78aed45b52997ffaee97829572b6b836de98d68591cec9805db60","2026-07-16T17:21:35.910Z","0d013316972dea627a571cfa"],
+  ["9b26423ad444fb06e9d09ee76b8517b671b7e7bd3966f1ec2927824f6f6f6d1d","0000000000000000000219abfd02a114ff403924ac9941b846de0d907e3a7941",958316,972,"1F1p9UEHuH5KTFR7Zsx93Khdrqhj6t5nFv","546",0,"1832000","","21394459546783","21394459547329","546","000000000000000000006ae6af7b8ab259ca07a8616d41807987a9c7f33c86ac",958315,"2317deadfc66aa75038f24cc73082b7f35c31016bbf66d8548e7dfcfba324c10","2026-07-16T19:42:32.075Z","8ff476fff4f2fb14373a34e3"],
+  ["8d7e70d5fdc77f729270c88b69516bdf3c473c643aec7beb3f828e1f7e1b32dc","0000000000000000000219abfd02a114ff403924ac9941b846de0d907e3a7941",958316,2389,"1BPVvi1GK4QkfqFMU4jHGjsQjyGwjJJJ7x","546",0,"3574060","","41738581925642","41738581926188","546","000000000000000000006ae6af7b8ab259ca07a8616d41807987a9c7f33c86ac",958315,"2317deadfc66aa75038f24cc73082b7f35c31016bbf66d8548e7dfcfba324c10","2026-07-16T19:42:32.075Z","8ff476fff4f2fb14373a34e3"],
+  ["c9c9f4e382f598aa39b3be57adc8fe1defeb80e5216387d3af6b0948da232aff","00000000000000000001db52a4485f7d1a1784b7ba6c5b93db1b20449ac2628b",958383,2421,"bc1pxhs9y9ryqnhm05lyv794f6upzk0mtu2zct5w2hgc2vm3d58pvcqspptre0","1000",0,"100000","10000000000000","3053294346666","3053294347666","1000","00000000000000000000d1f42ef7b68ae4c1dd7a7ba10244b606f9a65a3e50cb",958382,"7273ddf0d40f19f5dc6484d0387f64db0b700d46244634cf8298bdfb389dd2e5","2026-07-19T15:32:38.810Z","9187c976328d4ad6c1cc1b30"],
+  ["e08080c1d86f0770dd6ebbabd98a9e066dc6043b548af7ecb7912fbbdfad4d50","000000000000000000022e062fe6236b71722b7ade5079d5c45e73a5561252e1",958429,1476,"18xvbj6mpPpYYjWibcqsXdV7SCwBQNrqMW","1000",0,"70000","7000000000000","2199349292107","2199349293107","1000","000000000000000000020787a43232bbfd5783861c0249ca0472293bb0eea641",958428,"b80f6f6b81f0b7d6e9960fb7cce6dd2ffd16e8d023df66be108619f2ba3dd995","2026-07-19T15:33:11.912Z","6c0d5c24f35b37139bead9ff"],
+  ["45b226453dde5b4d61a6a036af299d11ebfdeb65054bf26438ebc6ebebbf00c3","000000000000000000022e062fe6236b71722b7ade5079d5c45e73a5561252e1",958429,1483,"1Pg9E4EHHMxQ6WgEWEVzbWhaKf3UdZKXD9","1000",0,"115000","11500000000000","3613216694176","3613216695176","1000","000000000000000000020787a43232bbfd5783861c0249ca0472293bb0eea641",958428,"b80f6f6b81f0b7d6e9960fb7cce6dd2ffd16e8d023df66be108619f2ba3dd995","2026-07-19T15:33:11.912Z","6c0d5c24f35b37139bead9ff"],
+  ["e1ecc4b4be95a6771801d516380eb20a0f8e3c0b2fb1045599a57d5a68fa1698","000000000000000000021fb7871138c76c262471fe3b178e8829d62cbf167ae8",958432,1653,"1447TsdXtFSnVrWawSamyyQKPDNW4ALtBT","546",0,"3988000","398800000000000","132042020972444","132042020972990","546","0000000000000000000108134886191cca47cb3db5df607c7c5aa9a02e957b3f",958431,"ee30116c172a1e33014d225aefe0d06ecf0f0c3ee57a13a983b8e868e1f87e3c","2026-07-19T15:33:38.569Z","c0cc2df08b40a04e03fee8e1"],
+  ["28606aa25332a74c2efc61e61ee0b3f784f5fb9fa4b21a521e8fc319ad426f0a","00000000000000000001cd7e13e0e386dec23fd8b39b494e5a18079cd8932255",958509,1169,"1BPVvi1GK4QkfqFMU4jHGjsQjyGwjJJJ7x","546",0,"3574460","357446000000000","260051646671466","260051646672012","546","000000000000000000015ded838b22e468c38ec2ccdd0aa5619434431d1ceab0",958508,"93f619f8e6f4614996e9d93cecf0a726957cebc250a512435e5d1ebf28103cf6","2026-07-19T15:34:12.158Z","28bcfb94e3572f9099112e6c"],
+  ["6b17b8151847e8e333cf6e59962a5fe49774c4bc985b949a825a2c771a25a412","00000000000000000002203f56d22486c5b2a9cf661e2c631d09857ddc7aace6",958512,570,"1BPVvi1GK4QkfqFMU4jHGjsQjyGwjJJJ7x","546",0,"3574460","357446000000000","546672840003351","546672840003897","546","00000000000000000000478268c0a19692a6dd8af43ced08ccb30a68c61f0d99",958511,"1dfe66082fa81ec2553a0c00136c030bc0ed6204feebfcb8c1319090b27d015c","2026-07-19T15:34:39.340Z","755d057b4161358725012b6f"],
+  ["1b06e5dd3d060de0d3e7faefac4b2957feaa48667914c876cf36325c1ff795c0","0000000000000000000143622124bb238a609c2816fa625d1a60b2d37b2682fe",958514,563,"1BPVvi1GK4QkfqFMU4jHGjsQjyGwjJJJ7x","546",0,"3574060","357406000000000","1165154603145832","1165154603146378","546","000000000000000000004a78636c0749568ac8cc01a34818ce6df1d5f624bc41",958513,"f5b39a332c14672f3de145a1fb2ad13710535ef49bef58ee0c1d933dd5bc9355","2026-07-19T15:35:06.811Z","ebfca7f3f79b479dbd2d0f43"],
+  ["6276e2de587bf7429b679cb3ae7e6c7034bb6e9af22aab05f7fac794e2c6d49d","00000000000000000001335d9a28f33d7067f396a567f93d58c5b57910e5bdfb",958517,1253,"1BPVvi1GK4QkfqFMU4jHGjsQjyGwjJJJ7x","546",0,"3574460","357446000000000","2518100335871218","2518100335871764","546","0000000000000000000150178e859efccdf76a85769e6e8a4872ecf9c0e4064d",958516,"f7992a51529c5144559fc53f9e7875ceea65b9b26a9c570701dae38f86ae8bca","2026-07-19T15:35:34.239Z","8037251c8887a49009047864"],
+  ["14d973a95dd64a62d302cd95f6cc317bc333d71640d71d8a89c0908d5a16e645","00000000000000000001335d9a28f33d7067f396a567f93d58c5b57910e5bdfb",958517,1257,"1BPVvi1GK4QkfqFMU4jHGjsQjyGwjJJJ7x","546",0,"3574460","357446000000000","2518100335871218","2518100335871764","546","0000000000000000000150178e859efccdf76a85769e6e8a4872ecf9c0e4064d",958516,"f7992a51529c5144559fc53f9e7875ceea65b9b26a9c570701dae38f86ae8bca","2026-07-19T15:35:34.239Z","8037251c8887a49009047864"],
+  ["62f1a62fdf984c3c50b067cfed806023ad61d4fabd62087ecdd891554f5b51d6","0000000000000000000124119a72f9994a7e3a5a724a9826cb178ed2646639f6",958590,1945,"1BPVvi1GK4QkfqFMU4jHGjsQjyGwjJJJ7x","546",0,"3574460","357446000000000","8666834018816172","8666834018816718","546","000000000000000000015dcb819f73faf10256fd7c10c5aa35c5de9a4e839838",958589,"213a6dac1c0822fca9e8c32dda6ce500ac354f6dbebd349e967b5b1ca238be85","2026-07-19T15:36:13.412Z","266a4929fa33e9ea7199501a"],
+  ["d88c5a66dc0b06827e95469335ad689acd48d2f5b63f6d981a088f7cfd313c53","000000000000000000003abe58f9ac12253e83f17c38845d2db480ef16e05a27",958796,84,"1BPVvi1GK4QkfqFMU4jHGjsQjyGwjJJJ7x","546",0,"3574060","357406000000000","19495697267613473","19495697267614019","546","000000000000000000013c4e5c713c43915df2e6519854673823f878b9490d70",958795,"926eeb4d7bb31d7dd2fa709bf1f9006c81d08b32f1dd94af4f280c1d526b4e2e","2026-07-20T00:01:56.084Z","35bf2b05cd91025920df228c"],
+  ["e19517ac5d225c97aa9b307bea8ab0b6316da3b765f71f9a99a6e21cfdd9d5b8","000000000000000000003abe58f9ac12253e83f17c38845d2db480ef16e05a27",958796,1849,"1F1p9UEHuH5KTFR7Zsx93Khdrqhj6t5nFv","546",0,"1832000","183200000000000","9993149917535767","9993149917536313","546","000000000000000000013c4e5c713c43915df2e6519854673823f878b9490d70",958795,"926eeb4d7bb31d7dd2fa709bf1f9006c81d08b32f1dd94af4f280c1d526b4e2e","2026-07-20T00:01:56.084Z","35bf2b05cd91025920df228c"],
+  ["483861d6761c7b01fd6dac7622ee594f4b0c9d49a5c6ceddd1e96a37f1b241d5","000000000000000000003abe58f9ac12253e83f17c38845d2db480ef16e05a27",958796,1850,"1447TsdXtFSnVrWawSamyyQKPDNW4ALtBT","546",0,"3988000","398800000000000","21753647309570217","21753647309570763","546","000000000000000000013c4e5c713c43915df2e6519854673823f878b9490d70",958795,"926eeb4d7bb31d7dd2fa709bf1f9006c81d08b32f1dd94af4f280c1d526b4e2e","2026-07-20T00:01:56.084Z","35bf2b05cd91025920df228c"],
+  ["55ef9d73a0aa171e84c31efecea8b87d2fda3afd9e03c5d6bc1caa557f1c0f15","00000000000000000000344f01cc1c31c2b5d50caf71995c59a9e0a8491b9f8a",958943,3815,"1F1p9UEHuH5KTFR7Zsx93Khdrqhj6t5nFv","546",0,"1831999.99999999","183199999999999","44885319228645802","44885319228646348","546","00000000000000000001db008b84a6003fc8715fec09137608ca880f8305739e",958942,"e1839d47c99125abdfc29be6ba937256d7d24c228ccf9c9d3a95f627b522c844","2026-07-21T00:28:39.002Z","895dbf988e2f77fc89c1757c"],
+  ["81f17523ccd858217351444a8d6ab1dec152eb24a04251c14f8db4ff7ddfc29d","00000000000000000000344f01cc1c31c2b5d50caf71995c59a9e0a8491b9f8a",958943,3816,"1447TsdXtFSnVrWawSamyyQKPDNW4ALtBT","546",0,"3988000","398800000000000","97708871770655260","97708871770655806","546","00000000000000000001db008b84a6003fc8715fec09137608ca880f8305739e",958942,"e1839d47c99125abdfc29be6ba937256d7d24c228ccf9c9d3a95f627b522c844","2026-07-21T00:28:39.002Z","895dbf988e2f77fc89c1757c"],
+  ["a22d5e3c5f9325360f23d79c277ce3fee5f27a0d4d180a60054caaaf1312884b","00000000000000000000296088f006957c756fa7a1d6f9da3af2a647d7a36996",959004,1781,"bc1pxhs9y9ryqnhm05lyv794f6upzk0mtu2zct5w2hgc2vm3d58pvcqspptre0","1000",0,"190000","19000000000000","15086901947269402","15086901947270402","1000","00000000000000000001f4414c40239e52a17a5a217dd201c34e68b84e4e753f",959003,"9a4699b98f79ced53f029dc51ffc7a46d9705747b89792a0b45d7358ece09dc6","2026-07-21T12:09:56.887Z","7ab9dad4300df08edf54e80f"],
 ]);
+const CANONICAL_INCB_ISSUANCE_REPAIR_EXPECTATIONS = new Map(
+  CANONICAL_INCB_ISSUANCE_REPAIR_EXPECTATION_ROWS.map(
+    ([
+      txid,
+      blockHash,
+      blockHeight,
+      blockIndex,
+      recipientAddress,
+      recipientAmountSats,
+      recipientVout,
+      attachedWorkAmount,
+      attachedWorkAmountAtoms,
+      attachedWorkIssuanceUnits,
+      confirmedIssuanceUnits,
+      directProofIssuanceUnits,
+      issuanceValueSnapshotBlockHash,
+      issuanceValueSnapshotBlockHeight,
+      issuanceValueSnapshotCanonicalSummaryHash,
+      issuanceValueSnapshotGeneratedAt,
+      issuanceValueSnapshotId,
+    ]) => [
+      txid,
+      Object.freeze({
+        attachedWorkAmount,
+        ...(attachedWorkAmountAtoms ? { attachedWorkAmountAtoms } : {}),
+        attachedWorkIssuanceUnits,
+        blockHash,
+        blockHeight,
+        blockIndex,
+        confirmedIssuanceUnits,
+        directProofIssuanceUnits,
+        issuanceValueSnapshotBlockHash,
+        issuanceValueSnapshotBlockHeight,
+        issuanceValueSnapshotCanonicalSummaryHash,
+        issuanceValueSnapshotGeneratedAt,
+        issuanceValueSnapshotId,
+        issuanceValueSnapshotMode: "canonical-summary-refresh",
+        issuanceValueSnapshotModel: INCB_VALUE_SNAPSHOT_MODEL,
+        recipientAddress,
+        recipientAmountSats,
+        recipientVout,
+      }),
+    ],
+  ),
+);
+const CANONICAL_INCB_ISSUANCE_PINNED_VALUE_SNAPSHOT_IDS = Object.freeze(
+  new Set([
+    "35bf2b05cd91025920df228c",
+    "895dbf988e2f77fc89c1757c",
+    "7ab9dad4300df08edf54e80f",
+  ]),
+);
 // Immutable Bitcoin Core facts for the supervised July 2026 INCB range
 // replay. These are transaction facts only. Valid exact V2 issuance is held
 // byte-for-byte by the immutable witness manifest; only explicit rederive
@@ -1841,6 +1903,16 @@ async function canonicalPwtRangeReplayRuntime(client) {
   }
   const state = assertCanonicalPwtRangeReplayState(rebuild);
   if (state !== "active") {
+    if (REPAIR_INCB_ISSUANCE_ONLY) {
+      const verifierBinding =
+        await activateCanonicalIncbRepairReplayBinding(client, rebuild);
+      return {
+        active: false,
+        rebuild,
+        state,
+        verifierBinding,
+      };
+    }
     return { active: false, rebuild, state };
   }
   await assertCanonicalWorkAtomicSource(
@@ -2348,6 +2420,112 @@ function activatePwtRangeReplayVerifierBinding(rebuild) {
       "PWT range replay is missing its canonical verifier database binding.",
     );
   }
+  ACTIVE_PWT_RANGE_REPLAY_VERIFIER_BINDING = binding;
+  return binding;
+}
+
+function pwtRangeReplayVerifierBindingFromWitnessManifest(manifest) {
+  const verified = verifyIncbRangeReplayWitnessManifest(manifest, {
+    network: NETWORK,
+  });
+  const metaKey = incbRangeReplayWitnessMetaKey(
+    NETWORK,
+    verified.bindingId,
+  );
+  return {
+    bindingId: verified.bindingId,
+    createdAt: verified.createdAt,
+    model: PWT_RANGE_REPLAY_VERIFIER_BINDING_MODEL,
+    network: NETWORK,
+    rangeReplayFromHeight: verified.rangeReplayFromHeight,
+    ...incbRangeReplayWitnessBindingFields(verified, metaKey),
+  };
+}
+
+async function canonicalIncbRepairReplayBinding(client, rebuild) {
+  const source = objectValue(rebuild);
+  const result = await client.query(
+    `
+      SELECT key, value
+      FROM proof_indexer.meta
+      WHERE key LIKE $1
+      ORDER BY key ASC
+    `,
+    [`canonical:incb-range-replay-witness:${NETWORK}:%`],
+  );
+  const candidates = [];
+  for (const row of result.rows) {
+    try {
+      const binding = pwtRangeReplayVerifierBindingFromWitnessManifest(
+        row.value,
+      );
+      if (
+        binding.rangeReplayFromHeight ===
+          CANONICAL_INCB_PWT_RANGE_REPLAY_FROM_HEIGHT &&
+        binding.witnessCount > 0 &&
+        binding.witnessSetMetaKey === String(row.key ?? "")
+      ) {
+        candidates.push(binding);
+      }
+    } catch (error) {
+      console.error(
+        JSON.stringify({
+          error: error?.message ?? String(error),
+          phase: "repair-incb-replay-binding-candidate-rejected",
+          witnessMetaKey: row.key,
+        }),
+      );
+    }
+  }
+  if (candidates.length !== 1) {
+    throw new Error(
+      `INCB issuance repair expected one immutable replay witness manifest but found ${candidates.length}.`,
+    );
+  }
+  const [binding] = candidates;
+  const currentFromHeight = Number(source.fromHeight);
+  if (
+    source.network !== NETWORK ||
+    !Number.isSafeInteger(currentFromHeight) ||
+    currentFromHeight <= 0 ||
+    currentFromHeight > binding.rangeReplayFromHeight ||
+    Number(source.indexedThroughBlock) < binding.witnessedThroughBlock
+  ) {
+    throw new Error(
+      "INCB issuance repair replay binding is not covered by the current canonical rebuild.",
+    );
+  }
+  const blockResult = await client.query(
+    `
+      SELECT height, block_hash
+      FROM proof_indexer.blocks
+      WHERE network = $1
+        AND height = $2
+        AND canonical = true
+      LIMIT 1
+    `,
+    [NETWORK, binding.witnessedThroughBlock],
+  );
+  if (
+    Number(blockResult.rows[0]?.height) !==
+      binding.witnessedThroughBlock ||
+    String(blockResult.rows[0]?.block_hash ?? "").trim().toLowerCase() !==
+      binding.witnessedThroughBlockHash
+  ) {
+    throw new Error(
+      "INCB issuance repair replay binding witnessed-through block is not canonical.",
+    );
+  }
+  return binding;
+}
+
+async function activateCanonicalIncbRepairReplayBinding(client, rebuild) {
+  if (!explicitLoopbackApiBaseConfigured()) {
+    throw new Error(
+      "INCB issuance repair requires an explicit loopback POW_API_BASE so replay-bound verifier requests cannot use a public API.",
+    );
+  }
+  const binding = await canonicalIncbRepairReplayBinding(client, rebuild);
   ACTIVE_PWT_RANGE_REPLAY_VERIFIER_BINDING = binding;
   return binding;
 }
@@ -31327,68 +31505,6 @@ async function repairWorkMintMinterAttribution(client) {
   };
 }
 
-async function canonicalIncbStoredMissingMetadataFault(client, txid) {
-  const result = await client.query(
-    `
-      SELECT
-        invalid_event.event_id,
-        invalid_event.block_height,
-        invalid_event.block_index,
-        invalid_event.payload,
-        invalid_event.status,
-        invalid_event.valid,
-        invalid_event.validation_errors,
-        transaction_row.block_hash,
-        transaction_row.status AS transaction_status,
-        bond_event.event_id AS bond_event_id
-      FROM proof_indexer.events invalid_event
-      JOIN proof_indexer.transactions transaction_row
-        ON transaction_row.network = invalid_event.network
-       AND transaction_row.txid = invalid_event.txid
-      JOIN proof_indexer.blocks canonical_block
-        ON canonical_block.network = transaction_row.network
-       AND canonical_block.block_hash = transaction_row.block_hash
-       AND canonical_block.height = transaction_row.block_height
-       AND canonical_block.canonical = true
-      JOIN proof_indexer.events bond_event
-        ON bond_event.network = invalid_event.network
-       AND bond_event.txid = invalid_event.txid
-       AND bond_event.protocol = 'pwm1'
-       AND bond_event.kind = $4
-       AND bond_event.status = 'confirmed'
-       AND bond_event.valid = true
-      WHERE invalid_event.network = $1
-        AND invalid_event.txid = $2
-        AND invalid_event.protocol = 'pwt1'
-        AND invalid_event.kind = 'token-event-invalid'
-        AND invalid_event.status = 'confirmed'
-        AND invalid_event.valid = false
-        AND lower(COALESCE(invalid_event.payload->>'tokenId', '')) = $3
-        AND lower(COALESCE(invalid_event.payload->>'sourceKind', '')) = $4
-        AND lower(COALESCE(invalid_event.payload->>'attemptedKind', '')) =
-          'token-mint'
-        AND COALESCE(
-          NULLIF(invalid_event.payload->>'validationReason', ''),
-          NULLIF(invalid_event.payload->>'invalidReason', ''),
-          array_to_string(invalid_event.validation_errors, ' | '),
-          ''
-        ) = $5
-      ORDER BY invalid_event.event_id ASC
-    `,
-    [
-      NETWORK,
-      txid,
-      INCB_TOKEN_ID,
-      INCEPTION_BOND_KIND,
-      INCB_MISSING_ATOMIC_METADATA_REPAIR_REASON,
-    ],
-  );
-  if (result.rows.length !== 1) {
-    return null;
-  }
-  return result.rows[0];
-}
-
 function canonicalIncbRepairExpectationFromMint({
   attachedCredits,
   bondRecipient,
@@ -31472,23 +31588,23 @@ function canonicalIncbRepairAttachmentMatches(target, attachedCredits) {
   );
 }
 
+function canonicalIncbRepairIntegerEquals(actual, expected, options = {}) {
+  const actualText = canonicalIntegerText(actual, options);
+  const expectedText = canonicalIntegerText(expected, options);
+  return Boolean(actualText && expectedText && actualText === expectedText);
+}
+
+function canonicalIncbRepairOptionalTextEquals(actual, expected) {
+  return expected === undefined || expected === null || expected === ""
+    ? true
+    : String(actual ?? "").trim() === String(expected).trim();
+}
+
 async function canonicalIncbIssuanceRepairTarget(client, txid) {
   const expectation = CANONICAL_INCB_ISSUANCE_REPAIR_EXPECTATIONS.get(txid);
-  const storedFault = expectation
-    ? null
-    : await canonicalIncbStoredMissingMetadataFault(client, txid);
-  if (!expectation && !storedFault) {
-    throw new Error(
-      `Canonical INCB issuance repair target ${txid} has no pinned oracle and is not the exact stored missing-metadata fault.`,
-    );
-  }
   if (!expectation) {
-    console.error(
-      JSON.stringify({
-        eventId: storedFault.event_id,
-        phase: "repair-incb-issuance-stored-fault",
-        txid,
-      }),
+    throw new Error(
+      `Canonical INCB issuance repair target ${txid} has no pinned historical oracle.`,
     );
   }
   const raw = await rawTransactionFromCore(txid);
@@ -31588,11 +31704,14 @@ async function canonicalIncbIssuanceRepairTarget(client, txid) {
   }
   const [bondRecipient] = bondRecipients;
   if (
-    expectation &&
-    (String(bondRecipient?.address ?? "").trim() !==
+    String(bondRecipient?.address ?? "").trim() !==
       expectation.recipientAddress ||
-      Number(bondRecipient?.amountSats) !== expectation.recipientAmountSats ||
-      Number(bondRecipient?.vout) !== expectation.recipientVout)
+    !canonicalIncbRepairIntegerEquals(
+      bondRecipient?.amountSats,
+      expectation.recipientAmountSats,
+      { positive: true },
+    ) ||
+    Number(bondRecipient?.vout) !== expectation.recipientVout
   ) {
     throw new Error(
       `Canonical INCB issuance repair ${txid} does not match its pinned bond recipient payment.`,
@@ -31631,22 +31750,22 @@ async function canonicalIncbIssuanceRepairTarget(client, txid) {
     bondRecipient,
     mintItem,
   });
+  const attachmentAmountMatches = expectation.attachedWorkAmountAtoms
+    ? repairExpectation.workAttachmentAmountAtoms ===
+      expectation.attachedWorkAmountAtoms
+    : canonicalIncbRepairIntegerEquals(
+        repairExpectation.workAttachmentAmount,
+        expectation.attachedWorkAmount,
+      );
   if (
-    expectation &&
-    (
-      repairExpectation.recipientAddress !== expectation.recipientAddress ||
-      Number(repairExpectation.recipientAmountSats) !==
-        expectation.recipientAmountSats ||
-      Number(repairExpectation.recipientVout) !== expectation.recipientVout ||
-      Number(repairExpectation.workAttachmentAmount) !==
-        expectation.workAttachmentAmount ||
-      Number(repairExpectation.workAttachmentProtocolVout) !==
-        expectation.workAttachmentProtocolVout ||
-      repairExpectation.workAttachmentRecipientAddress !==
-        expectation.workAttachmentRecipientAddress ||
-      repairExpectation.workAttachmentTokenId !==
-        expectation.workAttachmentTokenId
-    )
+    repairExpectation.recipientAddress !== expectation.recipientAddress ||
+    !canonicalIncbRepairIntegerEquals(
+      repairExpectation.recipientAmountSats,
+      expectation.recipientAmountSats,
+      { positive: true },
+    ) ||
+    Number(repairExpectation.recipientVout) !== expectation.recipientVout ||
+    !attachmentAmountMatches
   ) {
     throw new Error(
       `Canonical INCB issuance repair ${txid} does not match its pinned recipient or attachment metadata.`,
@@ -31710,82 +31829,88 @@ async function canonicalIncbIssuanceRepairTarget(client, txid) {
       `Canonical INCB issuance verifier did not bind the mint recipient to the bond payment and WORK attachment for ${txid}.`,
     );
   }
-  const closeTo = (actual, expected, tolerance = 1e-6) =>
-    Number.isFinite(Number(actual)) &&
-    Math.abs(Number(actual) - expected) <= tolerance;
   if (
-    expectation &&
-    (
-      String(mintItem.issuanceCheckpointMode ?? "") !==
+    String(mintItem.issuanceCheckpointMode ?? "") !==
         "bond-transaction-provenance" ||
-      Number(mintItem.issuanceCheckpointBlockHeight) !==
+    Number(mintItem.issuanceCheckpointBlockHeight) !==
         expectation.blockHeight ||
-      String(mintItem.issuanceCheckpointBlockHash ?? "")
+    String(mintItem.issuanceCheckpointBlockHash ?? "")
         .trim()
         .toLowerCase() !== expectation.blockHash ||
-      Number(mintItem.issuanceCheckpointBlockIndex) !==
+    Number(mintItem.issuanceCheckpointBlockIndex) !==
         expectation.blockIndex ||
-      String(mintItem.issuanceValueSnapshotId ?? "").trim() !==
+    String(mintItem.issuanceValueSnapshotId ?? "").trim() !==
         expectation.issuanceValueSnapshotId ||
-      Number(mintItem.issuanceValueSnapshotBlockHeight) !==
+    Number(mintItem.issuanceValueSnapshotBlockHeight) !==
         expectation.issuanceValueSnapshotBlockHeight ||
-      String(mintItem.issuanceValueSnapshotBlockHash ?? "")
+    String(mintItem.issuanceValueSnapshotBlockHash ?? "")
         .trim()
         .toLowerCase() !== expectation.issuanceValueSnapshotBlockHash ||
-      String(mintItem.issuanceValueSnapshotCanonicalSummaryHash ?? "")
+    String(mintItem.issuanceValueSnapshotCanonicalSummaryHash ?? "")
         .trim()
         .toLowerCase() !==
         expectation.issuanceValueSnapshotCanonicalSummaryHash ||
-      String(mintItem.issuanceValueSnapshotMode ?? "") !==
+    String(mintItem.issuanceValueSnapshotMode ?? "") !==
         expectation.issuanceValueSnapshotMode ||
-      String(mintItem.issuanceValueSnapshotModel ?? "") !==
+    String(mintItem.issuanceValueSnapshotModel ?? "") !==
         expectation.issuanceValueSnapshotModel ||
-      new Date(mintItem.issuanceValueSnapshotGeneratedAt).toISOString() !==
+    new Date(mintItem.issuanceValueSnapshotGeneratedAt).toISOString() !==
         expectation.issuanceValueSnapshotGeneratedAt ||
-      !closeTo(
-        mintItem.issuanceValueSnapshotWorkNetworkValueSats,
-        expectation.issuanceValueSnapshotWorkNetworkValueSats,
-      ) ||
-      String(mintItem.issuanceValueSnapshotWorkNetworkValueQ8 ?? "") !==
-        expectation.issuanceValueSnapshotWorkNetworkValueQ8 ||
-      Number(mintItem.attachedWorkAmount) !== expectation.attachedWorkAmount ||
-      Number(mintItem.attachedWorkIssuanceUnits) !==
-        expectation.attachedWorkIssuanceUnits ||
-      String(mintItem.attachedWorkLiveFloorAtSendQ8 ?? "") !==
-        expectation.attachedWorkLiveFloorAtSendQ8 ||
-      String(mintItem.attachedWorkLiveValueAtSendQ8 ?? "") !==
-        expectation.attachedWorkLiveValueAtSendQ8 ||
-      Number(mintItem.directProofIssuanceUnits) !==
-        expectation.directProofIssuanceUnits ||
-      Number(mintItem.confirmedIssuanceUnits) !==
-        expectation.confirmedIssuanceUnits ||
-      Number(mintItem.amount) !== expectation.confirmedIssuanceUnits ||
-      String(mintItem.issuanceNetworkValueQ8 ?? "") !==
-        expectation.issuanceNetworkValueQ8 ||
-      String(mintItem.issuanceFloorQ8 ?? "") !==
-        expectation.issuanceFloorQ8 ||
-      String(mintItem.issuanceDustQ8 ?? "") !==
-        expectation.issuanceDustQ8
+    !canonicalIncbRepairOptionalTextEquals(
+      mintItem.issuanceValueSnapshotWorkNetworkValueQ8,
+      expectation.issuanceValueSnapshotWorkNetworkValueQ8,
+    ) ||
+    (
+      expectation.attachedWorkAmountAtoms
+        ? String(mintItem.attachedWorkAmountAtoms ?? "") !==
+          expectation.attachedWorkAmountAtoms
+        : !canonicalIncbRepairIntegerEquals(
+            mintItem.attachedWorkAmount,
+            expectation.attachedWorkAmount,
+          )
+    ) ||
+    !canonicalIncbRepairIntegerEquals(
+      mintItem.attachedWorkIssuanceUnits,
+      expectation.attachedWorkIssuanceUnits,
+    ) ||
+    !canonicalIncbRepairOptionalTextEquals(
+      mintItem.attachedWorkLiveFloorAtSendQ8,
+      expectation.attachedWorkLiveFloorAtSendQ8,
+    ) ||
+    !canonicalIncbRepairOptionalTextEquals(
+      mintItem.attachedWorkLiveValueAtSendQ8,
+      expectation.attachedWorkLiveValueAtSendQ8,
+    ) ||
+    !canonicalIncbRepairIntegerEquals(
+      mintItem.directProofIssuanceUnits,
+      expectation.directProofIssuanceUnits,
+      { positive: true },
+    ) ||
+    !canonicalIncbRepairIntegerEquals(
+      mintItem.confirmedIssuanceUnits,
+      expectation.confirmedIssuanceUnits,
+      { positive: true },
+    ) ||
+    !canonicalIncbRepairIntegerEquals(
+      mintItem.amount,
+      expectation.confirmedIssuanceUnits,
+      { positive: true },
+    ) ||
+    !canonicalIncbRepairOptionalTextEquals(
+      mintItem.issuanceNetworkValueQ8,
+      expectation.issuanceNetworkValueQ8,
+    ) ||
+    !canonicalIncbRepairOptionalTextEquals(
+      mintItem.issuanceFloorQ8,
+      expectation.issuanceFloorQ8,
+    ) ||
+    !canonicalIncbRepairOptionalTextEquals(
+      mintItem.issuanceDustQ8,
+      expectation.issuanceDustQ8,
     )
   ) {
     throw new Error(
       `Canonical INCB issuance verifier disagrees with the pinned pre-bond oracle for ${txid}.`,
-    );
-  }
-  if (
-    !expectation &&
-    (
-      String(mintItem.issuanceCheckpointMode ?? "") !==
-        "bond-transaction-provenance" ||
-      Number(mintItem.issuanceCheckpointBlockHeight) !== height ||
-      String(mintItem.issuanceCheckpointBlockHash ?? "")
-        .trim()
-        .toLowerCase() !== blockHash ||
-      Number(mintItem.issuanceCheckpointBlockIndex) !== blockIndex
-    )
-  ) {
-    throw new Error(
-      `Canonical INCB issuance verifier did not bind ${txid} to its current Core block position.`,
     );
   }
   const issuanceUnits = mintItems.reduce(
@@ -31873,6 +31998,153 @@ function canonicalIncbValueSnapshotBindings(targets) {
     }
   }
   return bindings;
+}
+
+function canonicalIncbHistoricalMintAggregate(rows, parentBondEvents) {
+  let attachedWorkIssuanceUnits = 0n;
+  let confirmedSupply = 0n;
+  let directProofIssuanceUnits = 0n;
+  let networkValueQ8 = 0n;
+  const txids = new Set();
+  for (const row of rows) {
+    const txid = String(row?.txid ?? row?.payload?.txid ?? "")
+      .trim()
+      .toLowerCase();
+    if (
+      !CANONICAL_INCB_ISSUANCE_REPAIR_EXPECTATIONS.has(txid) ||
+      txids.has(txid)
+    ) {
+      throw new Error(
+        `INCB issuance repair found an unexpected or duplicate confirmed mint ${txid || "unknown"}.`,
+      );
+    }
+    txids.add(txid);
+    const payload = objectValue(row?.payload);
+    const invalidReason = incbIssuanceMetadataInvalidReason(payload);
+    if (invalidReason) {
+      throw new Error(
+        `INCB issuance repair aggregate rejected ${txid}: ${invalidReason}`,
+      );
+    }
+    const binding = canonicalIncbValueSnapshotBinding(payload);
+    const projection = canonicalIncbIssuanceQ8Projection({
+      attachedWorkAmountAtoms: payload.attachedWorkAmountAtoms,
+      attachedWorkAmountDecimals: payload.attachedWorkAmountDecimals,
+      attachedWorkAmountPrecisionModel:
+        payload.attachedWorkAmountPrecisionModel,
+      attachedWorkAmountStorageModel: payload.attachedWorkAmountStorageModel,
+      attachedWorkAmountSubatoms: payload.attachedWorkAmountSubatoms,
+      attachedWorkAmountUnitScale: payload.attachedWorkAmountUnitScale,
+      attachedWorkAmountVersion: payload.attachedWorkAmountVersion,
+      directProofIssuanceUnits: payload.directProofIssuanceUnits,
+      workNetworkValueQ8: binding.workNetworkValueQ8,
+    });
+    const amountText = canonicalIntegerText(payload.amount, {
+      positive: true,
+    });
+    const attachedText = canonicalIntegerText(
+      payload.attachedWorkIssuanceUnits,
+    );
+    const confirmedText = canonicalIntegerText(
+      payload.confirmedIssuanceUnits,
+      { positive: true },
+    );
+    const directText = canonicalIntegerText(payload.directProofIssuanceUnits, {
+      positive: true,
+    });
+    if (
+      projection.attachedWorkIssuanceUnits !== attachedText ||
+      projection.confirmedIssuanceUnits !== confirmedText ||
+      projection.confirmedIssuanceUnits !== amountText ||
+      projection.issuanceNetworkValueQ8 !==
+        String(payload.issuanceNetworkValueQ8 ?? "") ||
+      projection.issuanceDustQ8 !== String(payload.issuanceDustQ8 ?? "")
+    ) {
+      throw new Error(
+        `INCB issuance repair aggregate rejected ${txid}: persisted projection does not equal locked H-1 calculation.`,
+      );
+    }
+    attachedWorkIssuanceUnits += BigInt(projection.attachedWorkIssuanceUnits);
+    confirmedSupply += BigInt(projection.confirmedIssuanceUnits);
+    directProofIssuanceUnits += BigInt(directText);
+    networkValueQ8 += BigInt(projection.issuanceNetworkValueQ8);
+  }
+  return {
+    acceptedMints: txids.size,
+    attachedWorkIssuanceUnits: attachedWorkIssuanceUnits.toString(),
+    confirmedSupply: confirmedSupply.toString(),
+    directProofIssuanceUnits: directProofIssuanceUnits.toString(),
+    issuanceDustQ8: (
+      networkValueQ8 -
+      confirmedSupply * VALUE_Q8_SCALE
+    ).toString(),
+    networkValueQ8: networkValueQ8.toString(),
+    parentBondEvents: Number(parentBondEvents),
+  };
+}
+
+function assertCanonicalIncbHistoricalBaselineAggregate(aggregate) {
+  const mismatches = [];
+  for (const [key, expected] of Object.entries(
+    LIVENET_INCB_HISTORICAL_BASELINE,
+  )) {
+    const actual = aggregate[key];
+    if (String(actual) !== String(expected)) {
+      mismatches.push({ actual: String(actual), expected: String(expected), key });
+    }
+  }
+  if (mismatches.length > 0) {
+    throw new Error(
+      `INCB issuance repair refused to commit a non-baseline aggregate: ${JSON.stringify(mismatches)}`,
+    );
+  }
+  return aggregate;
+}
+
+async function verifiedCanonicalIncbHistoricalBaselineAggregate(client) {
+  const [parentRows, mintRows] = await Promise.all([
+    client.query(
+      `
+        SELECT count(*)::int AS count
+        FROM proof_indexer.events e
+        LEFT JOIN proof_indexer.transactions t
+          ON t.network = e.network
+         AND t.txid = e.txid
+        WHERE e.network = $1
+          AND e.protocol = 'pwm1'
+          AND e.kind = $2
+          AND e.valid = true
+          AND COALESCE(t.status, e.status) = 'confirmed'
+      `,
+      [NETWORK, INCEPTION_BOND_KIND],
+    ),
+    client.query(
+      `
+        SELECT e.txid, e.payload
+        FROM proof_indexer.events e
+        LEFT JOIN proof_indexer.transactions t
+          ON t.network = e.network
+         AND t.txid = e.txid
+        WHERE e.network = $1
+          AND e.protocol = 'pwt1'
+          AND e.kind = 'token-mint'
+          AND e.valid = true
+          AND COALESCE(t.status, e.status) = 'confirmed'
+          AND lower(COALESCE(e.payload->>'tokenId', '')) = $2
+          AND lower(COALESCE(e.payload->>'sourceKind', '')) = $3
+          AND e.payload->>'issuanceAccountingModel' = $4
+        ORDER BY e.block_height ASC, e.block_index ASC, e.event_id ASC
+        FOR UPDATE OF e
+      `,
+      [NETWORK, INCB_TOKEN_ID, INCEPTION_BOND_KIND, INCB_ISSUANCE_ACCOUNTING_MODEL],
+    ),
+  ]);
+  return assertCanonicalIncbHistoricalBaselineAggregate(
+    canonicalIncbHistoricalMintAggregate(
+      mintRows.rows,
+      Number(parentRows.rows[0]?.count ?? 0),
+    ),
+  );
 }
 
 async function lockedCanonicalIncbValueSnapshots(client, snapshotIds) {
@@ -32026,16 +32298,47 @@ function canonicalIncbValueSnapshotFingerprint(row) {
   });
 }
 
-function verifiedCanonicalIncbValueSnapshotFingerprints(rows, bindings) {
-  if (rows.length !== bindings.size) {
+function canonicalIncbPinnedValueSnapshotFingerprint(snapshotId, binding) {
+  if (
+    !CANONICAL_INCB_ISSUANCE_PINNED_VALUE_SNAPSHOT_IDS.has(snapshotId)
+  ) {
     throw new Error(
-      `INCB issuance repair expected ${bindings.size} locked value snapshots but found ${rows.length}.`,
+      `INCB issuance repair cannot use an unrecognized missing value snapshot ${snapshotId}.`,
     );
   }
-  const fingerprints = new Map();
+  return JSON.stringify({
+    ...binding,
+    missingLedgerSnapshotRow: true,
+    source: "pinned-post-replay-h-minus-one-witness-v1",
+  });
+}
+
+function verifiedCanonicalIncbValueSnapshotFingerprints(rows, bindings) {
+  const rowsBySnapshotId = new Map();
   for (const row of rows) {
     const snapshotId = String(row?.snapshot_id ?? "");
-    const binding = bindings.get(snapshotId);
+    if (!bindings.has(snapshotId)) {
+      throw new Error(
+        `INCB issuance repair found unexpected locked value snapshot ${snapshotId || "unknown"}.`,
+      );
+    }
+    if (rowsBySnapshotId.has(snapshotId)) {
+      throw new Error(
+        `INCB issuance repair found duplicate locked value snapshot ${snapshotId}.`,
+      );
+    }
+    rowsBySnapshotId.set(snapshotId, row);
+  }
+  const fingerprints = new Map();
+  for (const [snapshotId, binding] of bindings) {
+    const row = rowsBySnapshotId.get(snapshotId);
+    if (!row) {
+      fingerprints.set(
+        snapshotId,
+        canonicalIncbPinnedValueSnapshotFingerprint(snapshotId, binding),
+      );
+      continue;
+    }
     const generatedAt = new Date(row?.generated_at).toISOString();
     const workNetworkValue =
       lockedCanonicalIncbSnapshotWorkNetworkValueQ8(row);
@@ -32723,6 +33026,8 @@ async function repairCanonicalIncbIssuance(client) {
         "INCB issuance repair changed a locked issuance value snapshot.",
       );
     }
+    const historicalBaseline =
+      await verifiedCanonicalIncbHistoricalBaselineAggregate(client);
 
     // This is intentionally the final operation before COMMIT. Prove both the
     // current canonical block hash and the target's exact transaction index
@@ -32770,7 +33075,7 @@ async function repairCanonicalIncbIssuance(client) {
       },
       holders: replay.holders,
       invalidatedSnapshots: invalidated.rowCount,
-      latestPreservedBlockScanSnapshot: {
+        latestPreservedBlockScanSnapshot: {
         indexedThroughBlock: Number(
           preservedAfter.rows[0]?.indexed_through_block ?? 0,
         ),
@@ -32779,6 +33084,7 @@ async function repairCanonicalIncbIssuance(client) {
       preservedBlockScanSnapshots: preservedAfterIds.length,
       preservedIssuanceValueSnapshotIds: valueSnapshotIds,
       preservedIssuanceValueSnapshots: valueSnapshotIds.length,
+      historicalBaseline,
       issuanceAccountingModel: INCB_ISSUANCE_ACCOUNTING_MODEL,
       mintedSupply: mintedSupply.toString(),
       targetIssuanceUnits: expectedIssuance.toString(),

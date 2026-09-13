@@ -277,6 +277,7 @@ import {
   proofIndexAddressMailPayload,
   proofIndexActiveCreditListingAnchorMatches,
   proofIndexCanonicalActivityPayload,
+  proofIndexCanonicalIncbReplayBindingPayload,
   proofIndexCanonicalInceptionMintWitnessesPayload,
   proofIndexCanonicalHistoricalWorkListingScopes,
   proofIndexCanonicalCheckpointPayload,
@@ -29030,6 +29031,172 @@ function canonicalBoundInceptionWitnessSet(
     : null;
 }
 
+const CANONICAL_INCB_POST_REPLAY_HISTORICAL_CHECKPOINTS = Object.freeze(
+  new Map(
+    [
+      [
+        "d88c5a66dc0b06827e95469335ad689acd48d2f5b63f6d981a088f7cfd313c53",
+        {
+          blockHash:
+            "000000000000000000003abe58f9ac12253e83f17c38845d2db480ef16e05a27",
+          blockHeight: 958_796,
+          blockIndex: 84,
+          previousBlockHash:
+            "000000000000000000013c4e5c713c43915df2e6519854673823f878b9490d70",
+          valueSnapshotBlockHash:
+            "000000000000000000013c4e5c713c43915df2e6519854673823f878b9490d70",
+          valueSnapshotBlockHeight: 958_795,
+          valueSnapshotCanonicalSummaryHash:
+            "926eeb4d7bb31d7dd2fa709bf1f9006c81d08b32f1dd94af4f280c1d526b4e2e",
+          valueSnapshotGeneratedAt: "2026-07-20T00:01:56.084Z",
+          valueSnapshotId: "35bf2b05cd91025920df228c",
+          workNetworkValueQ8: "11455029927306283270792106",
+        },
+      ],
+      [
+        "e19517ac5d225c97aa9b307bea8ab0b6316da3b765f71f9a99a6e21cfdd9d5b8",
+        {
+          blockHash:
+            "000000000000000000003abe58f9ac12253e83f17c38845d2db480ef16e05a27",
+          blockHeight: 958_796,
+          blockIndex: 1_849,
+          previousBlockHash:
+            "000000000000000000013c4e5c713c43915df2e6519854673823f878b9490d70",
+          valueSnapshotBlockHash:
+            "000000000000000000013c4e5c713c43915df2e6519854673823f878b9490d70",
+          valueSnapshotBlockHeight: 958_795,
+          valueSnapshotCanonicalSummaryHash:
+            "926eeb4d7bb31d7dd2fa709bf1f9006c81d08b32f1dd94af4f280c1d526b4e2e",
+          valueSnapshotGeneratedAt: "2026-07-20T00:01:56.084Z",
+          valueSnapshotId: "35bf2b05cd91025920df228c",
+          workNetworkValueQ8: "11455029927306283270792106",
+        },
+      ],
+      [
+        "483861d6761c7b01fd6dac7622ee594f4b0c9d49a5c6ceddd1e96a37f1b241d5",
+        {
+          blockHash:
+            "000000000000000000003abe58f9ac12253e83f17c38845d2db480ef16e05a27",
+          blockHeight: 958_796,
+          blockIndex: 1_850,
+          previousBlockHash:
+            "000000000000000000013c4e5c713c43915df2e6519854673823f878b9490d70",
+          valueSnapshotBlockHash:
+            "000000000000000000013c4e5c713c43915df2e6519854673823f878b9490d70",
+          valueSnapshotBlockHeight: 958_795,
+          valueSnapshotCanonicalSummaryHash:
+            "926eeb4d7bb31d7dd2fa709bf1f9006c81d08b32f1dd94af4f280c1d526b4e2e",
+          valueSnapshotGeneratedAt: "2026-07-20T00:01:56.084Z",
+          valueSnapshotId: "35bf2b05cd91025920df228c",
+          workNetworkValueQ8: "11455029927306283270792106",
+        },
+      ],
+      [
+        "55ef9d73a0aa171e84c31efecea8b87d2fda3afd9e03c5d6bc1caa557f1c0f15",
+        {
+          blockHash:
+            "00000000000000000000344f01cc1c31c2b5d50caf71995c59a9e0a8491b9f8a",
+          blockHeight: 958_943,
+          blockIndex: 3_815,
+          previousBlockHash:
+            "00000000000000000001db008b84a6003fc8715fec09137608ca880f8305739e",
+          valueSnapshotBlockHash:
+            "00000000000000000001db008b84a6003fc8715fec09137608ca880f8305739e",
+          valueSnapshotBlockHeight: 958_942,
+          valueSnapshotCanonicalSummaryHash:
+            "e1839d47c99125abdfc29be6ba937256d7d24c228ccf9c9d3a95f627b522c844",
+          valueSnapshotGeneratedAt: "2026-07-21T00:28:39.002Z",
+          valueSnapshotId: "895dbf988e2f77fc89c1757c",
+          workNetworkValueQ8: "51451512216242740129116282",
+        },
+      ],
+      [
+        "81f17523ccd858217351444a8d6ab1dec152eb24a04251c14f8db4ff7ddfc29d",
+        {
+          blockHash:
+            "00000000000000000000344f01cc1c31c2b5d50caf71995c59a9e0a8491b9f8a",
+          blockHeight: 958_943,
+          blockIndex: 3_816,
+          previousBlockHash:
+            "00000000000000000001db008b84a6003fc8715fec09137608ca880f8305739e",
+          valueSnapshotBlockHash:
+            "00000000000000000001db008b84a6003fc8715fec09137608ca880f8305739e",
+          valueSnapshotBlockHeight: 958_942,
+          valueSnapshotCanonicalSummaryHash:
+            "e1839d47c99125abdfc29be6ba937256d7d24c228ccf9c9d3a95f627b522c844",
+          valueSnapshotGeneratedAt: "2026-07-21T00:28:39.002Z",
+          valueSnapshotId: "895dbf988e2f77fc89c1757c",
+          workNetworkValueQ8: "51451512216242740129116282",
+        },
+      ],
+      [
+        "a22d5e3c5f9325360f23d79c277ce3fee5f27a0d4d180a60054caaaf1312884b",
+        {
+          blockHash:
+            "00000000000000000000296088f006957c756fa7a1d6f9da3af2a647d7a36996",
+          blockHeight: 959_004,
+          blockIndex: 1_781,
+          previousBlockHash:
+            "00000000000000000001f4414c40239e52a17a5a217dd201c34e68b84e4e753f",
+          valueSnapshotBlockHash:
+            "00000000000000000001f4414c40239e52a17a5a217dd201c34e68b84e4e753f",
+          valueSnapshotBlockHeight: 959_003,
+          valueSnapshotCanonicalSummaryHash:
+            "9a4699b98f79ced53f029dc51ffc7a46d9705747b89792a0b45d7358ece09dc6",
+          valueSnapshotGeneratedAt: "2026-07-21T12:09:56.887Z",
+          valueSnapshotId: "7ab9dad4300df08edf54e80f",
+          workNetworkValueQ8: "166749968890872348336582465",
+        },
+      ],
+    ].map(([txid, checkpoint]) => [
+      txid,
+      Object.freeze({
+        ...checkpoint,
+        mode: "bond-transaction-provenance",
+        valueSnapshotMode: "canonical-summary-refresh",
+        valueSnapshotModel: INCEPTION_VALUE_SNAPSHOT_MODEL,
+        workNetworkValueSats: q8ToCanonicalDecimal(
+          BigInt(checkpoint.workNetworkValueQ8),
+        ),
+      }),
+    ]),
+  ),
+);
+
+function canonicalPostReplayHistoricalInceptionCheckpoint(
+  bond,
+  knownPreviousBlockHashes,
+) {
+  const txid = String(bond?.txid ?? "").trim().toLowerCase();
+  const checkpoint =
+    CANONICAL_INCB_POST_REPLAY_HISTORICAL_CHECKPOINTS.get(txid);
+  if (!checkpoint) {
+    return null;
+  }
+  const bondBlockHash = String(bond?.blockHash ?? "").trim().toLowerCase();
+  const knownPreviousBlockHash =
+    knownPreviousBlockHashes instanceof Map
+      ? String(knownPreviousBlockHashes.get(bondBlockHash) ?? "")
+          .trim()
+          .toLowerCase()
+      : "";
+  if (
+    bond?.confirmed !== true ||
+    bondBlockHash !== checkpoint.blockHash ||
+    Number(bond?.blockHeight) !== checkpoint.blockHeight ||
+    Number(bond?.blockIndex) !== checkpoint.blockIndex ||
+    (
+      knownPreviousBlockHash &&
+      knownPreviousBlockHash !== checkpoint.previousBlockHash
+    )
+  ) {
+    throw inceptionValueSnapshotUnavailableError(bond, {
+      reason: "post-replay-historical-witness-mismatch",
+    });
+  }
+  return checkpoint;
+}
+
 async function canonicalInceptionIssuanceOptions(
   network,
   activity,
@@ -29133,6 +29300,14 @@ async function canonicalInceptionIssuanceOptions(
           return [txid, witnessSet.checkpoint];
         }
       }
+      const postReplayHistoricalCheckpoint =
+        canonicalPostReplayHistoricalInceptionCheckpoint(
+          bond,
+          knownPreviousBlockHashes,
+        );
+      if (postReplayHistoricalCheckpoint) {
+        return [txid, postReplayHistoricalCheckpoint];
+      }
       const checkpointSource = await cachedInternalVerifierState(
         `incb-value-snapshot-source:${network}:h${Number(bond?.blockHeight)}:${bondBlockHash}${replayBindingCacheKey}`,
         async () => {
@@ -29150,6 +29325,7 @@ async function canonicalInceptionIssuanceOptions(
             network,
             Number(bond.blockHeight) - 1,
             previousBlockHash,
+            { replayVerifierBinding: replayBinding },
           );
           return { previousBlockHash, snapshot };
         },
@@ -62813,9 +62989,31 @@ async function loadCanonicalVerifierContextFromCheckpoint(
       prior?.rebuild,
       network,
     );
+    let bindingCovered =
+      ["active", "complete"].includes(priorReplayState) &&
+      canonicalPwtReplayVerifierBindingsEqual(priorBinding, replayBinding);
+    if (!bindingCovered && !priorBinding) {
+      const historicalBinding =
+        await proofIndexCanonicalIncbReplayBindingPayload(
+          network,
+          replayBinding.bindingId,
+          priorHeight,
+        );
+      const manifestBinding =
+        historicalBinding?.replayBindingVerified === true &&
+        !historicalBinding?.fault?.active
+          ? canonicalPwtReplayVerifierBindingDescriptor(
+              historicalBinding.binding,
+              network,
+            )
+          : null;
+      bindingCovered = canonicalPwtReplayVerifierBindingsEqual(
+        manifestBinding,
+        replayBinding,
+      );
+    }
     if (
-      !["active", "complete"].includes(priorReplayState) ||
-      !canonicalPwtReplayVerifierBindingsEqual(priorBinding, replayBinding)
+      !bindingCovered
     ) {
       throw internalReplayVerifierBindingError(
         "The canonical verifier context does not match the authenticated range-replay database binding.",
@@ -66582,28 +66780,45 @@ async function completeTokenVerifierState(
   let boundWitnessDispositions = [];
   if (scope === INCB_TOKEN_ID && replayVerifierBinding) {
     const priorHeight = requiredBlockHeight - 1;
+    const preRangeWitnessHeight =
+      requiredBlockHeight < replayVerifierBinding.rangeReplayFromHeight
+        ? requiredBlockHeight
+        : priorHeight;
+    const preRangeWitnessHash =
+      preRangeWitnessHeight === requiredBlockHeight
+        ? context.blockHash
+        : context.previousBlockHash;
     const witnessPayload =
       await proofIndexCanonicalInceptionMintWitnessesPayload(
         network,
-        priorHeight,
+        preRangeWitnessHeight,
+        replayVerifierBinding,
       );
     const witnessReplayState = canonicalInternalPwtRangeReplayState(
       witnessPayload?.rebuild,
       network,
     );
-    const witnessBinding = canonicalInternalReplayVerifierBinding(
-      witnessPayload?.rebuild,
-      network,
-    );
+    const witnessBinding =
+      canonicalPwtReplayVerifierBindingDescriptor(
+        witnessPayload?.replayVerifierBinding,
+        network,
+      ) ||
+      canonicalInternalReplayVerifierBinding(
+        witnessPayload?.rebuild,
+        network,
+      );
+    const witnessBindingVerified =
+      witnessPayload?.replayBindingVerified === true ||
+      ["active", "complete"].includes(witnessReplayState);
     const witnessEnvelope = canonicalBoundInceptionWitnessEnvelope(
       witnessPayload,
       replayVerifierBinding,
       network,
-      priorHeight,
-      context.previousBlockHash,
+      preRangeWitnessHeight,
+      preRangeWitnessHash,
     );
     if (
-      !["active", "complete"].includes(witnessReplayState) ||
+      !witnessBindingVerified ||
       !canonicalPwtReplayVerifierBindingsEqual(
         witnessBinding,
         replayVerifierBinding,
@@ -71972,11 +72187,33 @@ async function internalReplayVerifierBinding(network, requestedBindingId = "") {
   const replayActive = replayState === "active";
   const replayComplete = replayState === "complete";
   if (requested) {
-    if (!/^[0-9a-f]{64}$/u.test(requested) || !binding) {
+    if (!/^[0-9a-f]{64}$/u.test(requested)) {
       throw internalReplayVerifierBindingError(
         "The internal verifier is not connected to the requested replay database.",
         { requestedBindingId: requested || null },
       );
+    }
+    if (!binding) {
+      const historicalBinding =
+        await proofIndexCanonicalIncbReplayBindingPayload(
+          network,
+          requested,
+        );
+      const manifestBinding =
+        historicalBinding?.replayBindingVerified === true &&
+        !historicalBinding?.fault?.active
+          ? canonicalPwtReplayVerifierBindingDescriptor(
+              historicalBinding.binding,
+              network,
+            )
+          : null;
+      if (!manifestBinding) {
+        throw internalReplayVerifierBindingError(
+          "The internal verifier is not connected to the requested replay database.",
+          { requestedBindingId: requested || null },
+        );
+      }
+      return manifestBinding;
     }
     const expectedBytes = Buffer.from(binding.bindingId, "hex");
     const requestedBytes = Buffer.from(requested, "hex");

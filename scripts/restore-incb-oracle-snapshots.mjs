@@ -7,13 +7,19 @@ import { pathToFileURL } from "node:url";
 
 import { q8TextFromDecimal } from "../server/bond-units.mjs";
 import { createProofIndexPool } from "../server/db/postgres.mjs";
-import { incbReplayRawSnapshotFingerprint } from
+import {
+  incbReplayRawSnapshotFingerprint,
+  incbReplaySnapshotFingerprint,
+  normalizeIncbReplaySnapshotDescriptor,
+} from
   "../server/incb-range-replay-witness.mjs";
 
 export const RESTORE_INCB_ORACLE_SNAPSHOTS_MODEL =
   "proof-indexer-incb-oracle-snapshot-selective-restore-v1";
 export const RESTORE_INCB_ORACLE_SNAPSHOTS_ARTIFACT_SHA256 =
   "4bdc01059114110396bdf666b68dd24d2c074c4c48e382b18a0f3a61849430bd";
+export const RESTORE_INCB_REPLAY_ORACLE_SNAPSHOTS_ARTIFACT_SHA256 =
+  "5904aa89f5791c6973c44fc934e6fd0d552404c59bc434d34a6d68c2a7a323c3";
 export const RESTORE_INCB_ORACLE_SNAPSHOTS_APPLY_ENV =
   "POW_RESTORE_INCB_ORACLE_SNAPSHOTS_APPLY";
 export const RESTORE_INCB_ORACLE_SNAPSHOTS_DATABASE_ENV =
@@ -40,6 +46,55 @@ export const EXPECTED_INCB_ORACLE_SNAPSHOT_IDS = Object.freeze([
   "f92c69962c409d55ba1b103c",
 ]);
 
+export const EXPECTED_INCB_REPLAY_ORACLE_SNAPSHOT_IDS = Object.freeze([
+  "266a4929fa33e9ea7199501a",
+  "28bcfb94e3572f9099112e6c",
+  "6c0d5c24f35b37139bead9ff",
+  "755d057b4161358725012b6f",
+  "8037251c8887a49009047864",
+  "9187c976328d4ad6c1cc1b30",
+  "c0cc2df08b40a04e03fee8e1",
+  "ebfca7f3f79b479dbd2d0f43",
+]);
+
+const EXPECTED_INCB_REPLAY_ORACLE_ROW_SHA256S = Object.freeze({
+  "266a4929fa33e9ea7199501a":
+    "dd741afac19471491ae7dba8f8f6f836ca643691dd4ce5dcb07003e54a54ba6c",
+  "28bcfb94e3572f9099112e6c":
+    "024133f60d2d921a1db70dbed351b22fa8716a1bd1c844dd0f7836df6e91c935",
+  "6c0d5c24f35b37139bead9ff":
+    "17b34fc3f0b1e280ffcaa3cc0171e6bf4fe4542438a11d4274f81cf3594d12ac",
+  "755d057b4161358725012b6f":
+    "bf24dbdc7236e039c310e0725c223634e7b9dc179b00bc82e55ce8188dc34978",
+  "8037251c8887a49009047864":
+    "7751ed516d594ca7839d93976063ec51f9a742f3376cddbcf79e73c50811a63f",
+  "9187c976328d4ad6c1cc1b30":
+    "9daacc5d5382c75af1c20545d6465b10267c8a1b5d12aed632253d116bdb4359",
+  "c0cc2df08b40a04e03fee8e1":
+    "93d32e16ac616e3a7baedf00acc0730e6ddd8f7065852a9bc1e23606b1c177c3",
+  "ebfca7f3f79b479dbd2d0f43":
+    "b62542417fbe99cb3f110ef6c94535c82a9dbe5beb8510475ccbef1c754a2dcd",
+});
+
+const EXPECTED_INCB_REPLAY_ORACLE_SNAPSHOT_FINGERPRINTS = Object.freeze({
+  "266a4929fa33e9ea7199501a":
+    "b78405936861343c7f2fa8dc6c4aa9c0b2b52d6ce79a73d30a847f3700dfcc2c",
+  "28bcfb94e3572f9099112e6c":
+    "99eab882f7dff7fba1088e1225a8035185bf38387b5734ea70d3fb1f9072b485",
+  "6c0d5c24f35b37139bead9ff":
+    "7d15d131c17360373783e9b727ae053c8cbbaf3061c7c5f1c50e0339bcfcebe5",
+  "755d057b4161358725012b6f":
+    "25bbf7c4fe6700394c3c5d687d5f49aa80d510b73bfacfdebce03304faf241cf",
+  "8037251c8887a49009047864":
+    "9f06d0286cfa04d0189a66ba39769a28e56a1d5d796b9057a2af92b65dc2978a",
+  "9187c976328d4ad6c1cc1b30":
+    "40d037cc3800e770e2ede5bb37239aa363de54097c31163053205e2f821412a5",
+  "c0cc2df08b40a04e03fee8e1":
+    "876008570fc2baaa8ff9554942baa24d5b77822a3321343f9b44dcfc9f866d43",
+  "ebfca7f3f79b479dbd2d0f43":
+    "65e659c1a70d044b3e3f9d74cf44ecdac31e11faf4681d8a913256b6b2e741b4",
+});
+
 const NETWORK = "livenet";
 const INCB_TOKEN_ID =
   "3cb25745f937f2b4e5508e5400189fe8fe679cd8e84bfa1e9176d70c9761f15d";
@@ -51,6 +106,8 @@ const EXPECTED_ALL_REFERENCE_ID_COUNT = 29;
 const LEGACY_WORK_VALUE_MODE = "locked-bound-legacy-work-value-v1";
 const WORK_NETWORK_VALUE_ACCOUNTING_MODEL =
   "canonical-exact-work-network-q8-v1";
+const LEGACY_SCOPE = "legacy-precutoff";
+const REPLAY_SCOPE = "range-replay";
 const LEGACY_WORK_VALUE_MODEL_PATHS = Object.freeze([
   ["totals", "workNetworkValueAccountingModel"],
   [
@@ -689,8 +746,40 @@ function legacyWorkValueEvidenceSql(payloadExpression) {
   `;
 }
 
-function exactLegacyEvidenceEntries(row, key, expectedLength) {
-  const evidence = plainObject(row.exactLegacyWorkValueEvidence);
+function candidateAuditRowSha256Sql(alias = "candidate") {
+  return `
+    encode(
+      sha256(convert_to(to_jsonb(${alias})::text, 'UTF8')),
+      'hex'
+    )
+  `;
+}
+
+function exactReplayWorkValueEvidenceSql(payloadExpression) {
+  const evidenceEntry = (path) => {
+    const jsonPath = `{${path.join(",")}}`;
+    return `
+      jsonb_build_object(
+        'type',
+        jsonb_typeof(${payloadExpression} #> '${jsonPath}'),
+        'text',
+        ${payloadExpression} #>> '${jsonPath}'
+      )
+    `;
+  };
+  const evidenceArray = (paths) =>
+    `jsonb_build_array(${paths.map(evidenceEntry).join(",")})`;
+  return `
+    jsonb_build_object(
+      'models',
+      ${evidenceArray(LEGACY_WORK_VALUE_MODEL_PATHS)},
+      'q8',
+      ${evidenceArray(LEGACY_WORK_VALUE_Q8_PATHS)}
+    )
+  `;
+}
+
+function exactEvidenceEntries(evidence, row, key, expectedLength) {
   if (!evidence) return null;
   const entries = evidence[key];
   if (!Array.isArray(entries) || entries.length !== expectedLength) {
@@ -714,6 +803,24 @@ function exactLegacyEvidenceEntries(row, key, expectedLength) {
         : String(object.type),
     };
   });
+}
+
+function exactLegacyEvidenceEntries(row, key, expectedLength) {
+  return exactEvidenceEntries(
+    plainObject(row.exactLegacyWorkValueEvidence),
+    row,
+    key,
+    expectedLength,
+  );
+}
+
+function exactReplayEvidenceEntries(row, key, expectedLength) {
+  return exactEvidenceEntries(
+    plainObject(row.exactReplayWorkValueEvidence),
+    row,
+    key,
+    expectedLength,
+  );
 }
 
 function exactLegacyWorkNetworkValueQ8(row, binding) {
@@ -823,6 +930,53 @@ function exactLegacyWorkNetworkValueQ8(row, binding) {
     mode: LEGACY_WORK_VALUE_MODE,
     valueQ8: binding.workNetworkValueQ8,
   };
+}
+
+function exactReplayWorkNetworkValueQ8(row) {
+  const snapshotId = row.snapshotId ?? row.snapshot_id ?? "unknown";
+  const modelEntries = exactReplayEvidenceEntries(
+    row,
+    "models",
+    LEGACY_WORK_VALUE_MODEL_PATHS.length,
+  );
+  if (
+    !modelEntries ||
+    modelEntries.some(
+      ({ text, type }) =>
+        type !== "string" || text !== WORK_NETWORK_VALUE_ACCOUNTING_MODEL,
+    )
+  ) {
+    throw new Error(
+      `Replay snapshot ${snapshotId} does not carry exact WORK Q8 accounting markers.`,
+    );
+  }
+  const q8Entries = exactReplayEvidenceEntries(
+    row,
+    "q8",
+    LEGACY_WORK_VALUE_Q8_PATHS.length,
+  );
+  if (!q8Entries) {
+    throw new Error(`Replay snapshot ${snapshotId} has no exact Q8 evidence.`);
+  }
+  const values = q8Entries.map(({ text, type }) => {
+    if (
+      (type !== "number" && type !== "string") ||
+      text === null
+    ) {
+      throw new Error(
+        `Replay snapshot ${snapshotId} has malformed exact Q8 evidence.`,
+      );
+    }
+    return canonicalPositiveIntegerText(
+      text,
+      `replay snapshot ${snapshotId} Q8`,
+    );
+  });
+  const [first] = values;
+  if (!first || values.some((value) => value !== first)) {
+    throw new Error(`Replay snapshot ${snapshotId} has divergent Q8 aliases.`);
+  }
+  return first;
 }
 
 export function verifyIncbOracleSnapshotRow(row, binding) {
@@ -938,6 +1092,148 @@ export function verifyIncbOracleSnapshotRow(row, binding) {
   };
 }
 
+export function verifyIncbReplayOracleSnapshotRow(
+  row,
+  {
+    expectedRowSha256s =
+      EXPECTED_INCB_REPLAY_ORACLE_ROW_SHA256S,
+    expectedSnapshotFingerprints =
+      EXPECTED_INCB_REPLAY_ORACLE_SNAPSHOT_FINGERPRINTS,
+  } = {},
+) {
+  if (!plainObject(row)) {
+    throw new Error("Replay snapshot row is required.");
+  }
+  const snapshotId = canonicalSnapshotId(
+    row.snapshotId ?? row.snapshot_id,
+    "replay snapshot id",
+  );
+  if (row.network !== NETWORK) {
+    throw new Error(`Replay snapshot ${snapshotId} has the wrong network.`);
+  }
+  const expectedRowSha256 = expectedRowSha256s[snapshotId];
+  const expectedSnapshotFingerprint = expectedSnapshotFingerprints[snapshotId];
+  if (!expectedRowSha256 || !expectedSnapshotFingerprint) {
+    throw new Error(`Replay snapshot ${snapshotId} is not pinned.`);
+  }
+  if (
+    canonicalHash(row.auditRowSha256, `replay snapshot ${snapshotId} row hash`) !==
+      expectedRowSha256
+  ) {
+    throw new Error(
+      `Replay snapshot ${snapshotId} does not match prior audit row evidence.`,
+    );
+  }
+  const sourceHashes = plainObject(row.sourceHashes ?? row.source_hashes);
+  const consistency = plainObject(row.consistency);
+  const payload = plainObject(row.payload);
+  const workFloor = plainObject(payload?.summaryPayloads?.workFloor);
+  const summaryRefresh = plainObject(payload?.summaryRefresh);
+  if (
+    !sourceHashes ||
+    !consistency ||
+    !payload ||
+    !workFloor ||
+    !summaryRefresh
+  ) {
+    throw new Error(`Replay snapshot ${snapshotId} is missing nested state.`);
+  }
+  const generatedAt = canonicalTimestamp(
+    row.generatedAt ?? row.generated_at,
+    `replay snapshot ${snapshotId} generatedAt`,
+  );
+  const indexedThroughBlock = canonicalSafeInteger(
+    row.indexedThroughBlock ?? row.indexed_through_block,
+    `replay snapshot ${snapshotId} indexed height`,
+    { positive: true },
+  );
+  const blockHashes = [
+    sourceHashes.blockScan,
+    payload.indexedThroughBlockHash,
+    summaryRefresh.indexedThroughBlockHash,
+    workFloor.indexedThroughBlockHash,
+  ].map((value, index) =>
+    canonicalHash(
+      value,
+      `replay snapshot ${snapshotId} block hash ${index + 1}`,
+    )
+  );
+  const nestedHeights = [
+    payload.indexedThroughBlock,
+    summaryRefresh.indexedThroughBlock,
+    workFloor.indexedThroughBlock,
+  ].map((value, index) =>
+    canonicalSafeInteger(
+      value,
+      `replay snapshot ${snapshotId} nested height ${index + 1}`,
+      { positive: true },
+    )
+  );
+  const payloadGeneratedAt = canonicalTimestamp(
+    payload.generatedAt,
+    `replay snapshot ${snapshotId} payload generatedAt`,
+  );
+  if (
+    consistency.ok !== true ||
+    String(consistency.status ?? payload.status ?? "") !== "green" ||
+    payload.ok !== true ||
+    payload.status !== "green" ||
+    payload.network !== NETWORK ||
+    workFloor.network !== NETWORK ||
+    summaryRefresh.mode !== INCB_VALUE_SNAPSHOT_MODE ||
+    payload.snapshotId !== snapshotId ||
+    workFloor.snapshotId !== snapshotId ||
+    payloadGeneratedAt !== generatedAt ||
+    nestedHeights.some((height) => height !== indexedThroughBlock) ||
+    blockHashes.some((hash) => hash !== blockHashes[0])
+  ) {
+    throw new Error(
+      `Replay snapshot ${snapshotId} does not match its locked green H-1 shape.`,
+    );
+  }
+  const descriptor = normalizeIncbReplaySnapshotDescriptor({
+    canonicalSummaryHash: canonicalHash(
+      sourceHashes.canonicalSummary,
+      `replay snapshot ${snapshotId} canonical summary hash`,
+    ),
+    consistencyOk: true,
+    consistencyStatus: "green",
+    generatedAt,
+    indexedThroughBlock,
+    payloadBlockHash: blockHashes[1],
+    payloadSnapshotId: snapshotId,
+    rawSnapshotFingerprint: incbReplayRawSnapshotFingerprint({
+      consistencyJson: row.rawConsistencyJson,
+      generatedAt,
+      indexedThroughBlock,
+      metricsJson: row.rawMetricsJson,
+      payloadJson: row.rawPayloadJson,
+      snapshotId,
+      sourceHashesJson: row.rawSourceHashesJson,
+    }),
+    snapshotId,
+    sourceBlockHash: blockHashes[0],
+    summaryRefreshBlockHash: blockHashes[2],
+    summaryRefreshMode: INCB_VALUE_SNAPSHOT_MODE,
+    workFloorBlockHash: blockHashes[3],
+    workFloorHeight: indexedThroughBlock,
+    workFloorSnapshotId: snapshotId,
+    workNetworkValueMode: WORK_NETWORK_VALUE_ACCOUNTING_MODEL,
+    workNetworkValueQ8: exactReplayWorkNetworkValueQ8(row),
+  });
+  const snapshotFingerprint = incbReplaySnapshotFingerprint(descriptor);
+  if (snapshotFingerprint !== expectedSnapshotFingerprint) {
+    throw new Error(
+      `Replay snapshot ${snapshotId} does not match the locked replay witness fingerprint.`,
+    );
+  }
+  return {
+    ...descriptor,
+    auditRowSha256: expectedRowSha256,
+    snapshotFingerprint,
+  };
+}
+
 function rawRowFingerprint(row) {
   return incbReplayRawSnapshotFingerprint({
     consistencyJson: row.rawConsistencyJson,
@@ -955,18 +1251,26 @@ async function canonicalizeCandidateJson(client, row) {
     `
       WITH candidate AS (
         SELECT
+          $5::text AS network,
+          $6::text AS snapshot_id,
+          $7::timestamptz AS generated_at,
+          $8::integer AS indexed_through_block,
           $1::jsonb AS source_hashes,
           $2::jsonb AS metrics,
           $3::jsonb AS consistency,
           $4::jsonb AS payload
       )
       SELECT
+        ${candidateAuditRowSha256Sql("candidate")}
+          AS audit_row_sha256,
         source_hashes::text AS source_hashes_json,
         metrics::text AS metrics_json,
         consistency::text AS consistency_json,
         payload::text AS payload_json,
         ${legacyWorkValueEvidenceSql("payload")}
-          AS legacy_work_value_evidence
+          AS legacy_work_value_evidence,
+        ${exactReplayWorkValueEvidenceSql("payload")}
+          AS replay_work_value_evidence
       FROM candidate
     `,
     [
@@ -974,13 +1278,20 @@ async function canonicalizeCandidateJson(client, row) {
       row.rawMetricsJson,
       row.rawConsistencyJson,
       row.rawPayloadJson,
+      row.network,
+      row.snapshotId,
+      row.generatedAt,
+      row.indexedThroughBlock,
     ],
   );
   const canonical = normalized.rows[0] ?? {};
   return {
     ...row,
+    auditRowSha256: String(canonical.audit_row_sha256 ?? ""),
     exactLegacyWorkValueEvidence:
       canonical.legacy_work_value_evidence,
+    exactReplayWorkValueEvidence:
+      canonical.replay_work_value_evidence,
     rawConsistencyJson: String(canonical.consistency_json ?? ""),
     rawMetricsJson: String(canonical.metrics_json ?? ""),
     rawPayloadJson: String(canonical.payload_json ?? ""),
@@ -1101,15 +1412,19 @@ const SNAPSHOT_ROWS_SQL = `
     metrics,
     consistency,
     payload,
+    encode(sha256(convert_to(to_jsonb(snapshot)::text, 'UTF8')), 'hex')
+      AS audit_row_sha256,
     ${legacyWorkValueEvidenceSql("payload")}
       AS legacy_work_value_evidence,
+    ${exactReplayWorkValueEvidenceSql("payload")}
+      AS replay_work_value_evidence,
     source_hashes::text AS raw_source_hashes_json,
     metrics::text AS raw_metrics_json,
     consistency::text AS raw_consistency_json,
     payload::text AS raw_payload_json
-  FROM proof_indexer.ledger_snapshots
-  WHERE network = $1
-    AND snapshot_id = ANY($2::text[])
+  FROM proof_indexer.ledger_snapshots snapshot
+  WHERE snapshot.network = $1
+    AND snapshot.snapshot_id = ANY($2::text[])
   ORDER BY snapshot_id
   FOR UPDATE
 `;
@@ -1125,6 +1440,7 @@ const CANONICAL_RECOVERY_META_SQL = `
 function storedSnapshotRow(row) {
   return {
     consistency: row.consistency,
+    auditRowSha256: String(row.audit_row_sha256 ?? ""),
     generatedAt: canonicalTimestamp(
       row.generated_at,
       `stored snapshot ${row.snapshot_id} generated_at`,
@@ -1134,6 +1450,7 @@ function storedSnapshotRow(row) {
     network: row.network,
     payload: row.payload,
     exactLegacyWorkValueEvidence: row.legacy_work_value_evidence,
+    exactReplayWorkValueEvidence: row.replay_work_value_evidence,
     rawConsistencyJson: String(row.raw_consistency_json ?? ""),
     rawMetricsJson: String(row.raw_metrics_json ?? ""),
     rawPayloadJson: String(row.raw_payload_json ?? ""),
@@ -1280,6 +1597,35 @@ export function classifyIncbOracleRecoveryState({
   return "already-applied";
 }
 
+export function classifyIncbReplayOracleRecoveryState({
+  actualRowSha256s,
+  existingSnapshotIds,
+  expectedRowSha256s =
+    EXPECTED_INCB_REPLAY_ORACLE_ROW_SHA256S,
+  expectedSnapshotIds =
+    EXPECTED_INCB_REPLAY_ORACLE_SNAPSHOT_IDS,
+}) {
+  const expected = [...expectedSnapshotIds].sort();
+  const existing = sortedUnique(existingSnapshotIds);
+  if (existing.length === 0) return "first-apply";
+  if (!sameStringArray(existing, expected)) {
+    throw new Error(
+      "Replay recovery state is partial or mixed; only fully absent or fully identical is allowed.",
+    );
+  }
+  for (const snapshotId of expected) {
+    if (
+      actualRowSha256s.get(snapshotId) !==
+        expectedRowSha256s[snapshotId]
+    ) {
+      throw new Error(
+        `Existing replay snapshot ${snapshotId} is not byte-identical to prior audit evidence.`,
+      );
+    }
+  }
+  return "already-applied";
+}
+
 async function referenceCoverage(client) {
   const result = await client.query(REFERENCE_COVERAGE_SQL, [
     NETWORK,
@@ -1294,10 +1640,13 @@ async function referenceCoverage(client) {
   };
 }
 
-async function readStoredSnapshots(client) {
+async function readStoredSnapshots(
+  client,
+  expectedSnapshotIds = EXPECTED_INCB_ORACLE_SNAPSHOT_IDS,
+) {
   const result = await client.query(SNAPSHOT_ROWS_SQL, [
     NETWORK,
-    EXPECTED_INCB_ORACLE_SNAPSHOT_IDS,
+    expectedSnapshotIds,
   ]);
   return result.rows.map(storedSnapshotRow);
 }
@@ -1549,6 +1898,199 @@ export async function restoreIncbOracleSnapshots({
   }
 }
 
+export async function restoreIncbReplayOracleSnapshots({
+  apply = false,
+  artifactPath,
+  artifactSha256,
+  expectedArtifactSha256 =
+    RESTORE_INCB_REPLAY_ORACLE_SNAPSHOTS_ARTIFACT_SHA256,
+  expectedRowSha256s =
+    EXPECTED_INCB_REPLAY_ORACLE_ROW_SHA256S,
+  expectedSnapshotFingerprints =
+    EXPECTED_INCB_REPLAY_ORACLE_SNAPSHOT_FINGERPRINTS,
+  expectedSnapshotIds =
+    EXPECTED_INCB_REPLAY_ORACLE_SNAPSHOT_IDS,
+  pool: suppliedPool,
+}) {
+  const databaseUrl = suppliedPool
+    ? ""
+    : requiredIncbOracleRestoreDatabaseUrl();
+  const artifact = await loadIncbOracleSnapshotArtifact(
+    artifactPath,
+    artifactSha256,
+    {
+      expectedArtifactSha256,
+      expectedSnapshotIds,
+    },
+  );
+  const pool = suppliedPool ?? createProofIndexPool({
+    connectionString: databaseUrl,
+    env: {
+      ...process.env,
+      POW_INDEX_DB_APP_NAME: "restore-incb-replay-oracle-snapshots",
+      POW_INDEX_DB_POOL_MAX: "1",
+    },
+  });
+  const ownsPool = !suppliedPool;
+  let client = null;
+  let transactionOpen = false;
+  try {
+    client = await pool.connect();
+    await client.query("BEGIN ISOLATION LEVEL SERIALIZABLE");
+    transactionOpen = true;
+    await client.query("SET LOCAL lock_timeout = '10s'");
+    await client.query("SET LOCAL statement_timeout = '15min'");
+    await client.query(
+      "SELECT pg_advisory_xact_lock(hashtextextended($1, 0))",
+      [`${ADVISORY_LOCK_KEY}:range-replay`],
+    );
+    await client.query(`
+      LOCK TABLE
+        proof_indexer.blocks,
+        proof_indexer.ledger_snapshots,
+        proof_indexer.meta
+      IN SHARE ROW EXCLUSIVE MODE
+    `);
+    const canonicalRecoveryMeta =
+      await readCanonicalRecoveryMetaState(client);
+
+    const candidates = new Map();
+    const verifiedRowSha256s = new Map();
+    const verifiedSnapshotFingerprints = new Map();
+    for (const snapshotId of expectedSnapshotIds) {
+      const rawCandidate = artifact.rows.get(snapshotId);
+      const candidate = await canonicalizeCandidateJson(client, rawCandidate);
+      const verified = verifyIncbReplayOracleSnapshotRow(candidate, {
+        expectedRowSha256s,
+        expectedSnapshotFingerprints,
+      });
+      candidates.set(snapshotId, candidate);
+      verifiedRowSha256s.set(snapshotId, verified.auditRowSha256);
+      verifiedSnapshotFingerprints.set(
+        snapshotId,
+        verified.snapshotFingerprint,
+      );
+    }
+
+    const storedBefore = await readStoredSnapshots(
+      client,
+      expectedSnapshotIds,
+    );
+    const actualRowSha256s = new Map();
+    for (const row of storedBefore) {
+      const verified = verifyIncbReplayOracleSnapshotRow(row, {
+        expectedRowSha256s,
+        expectedSnapshotFingerprints,
+      });
+      actualRowSha256s.set(row.snapshotId, verified.auditRowSha256);
+    }
+    const state = classifyIncbReplayOracleRecoveryState({
+      actualRowSha256s,
+      existingSnapshotIds: storedBefore.map((row) => row.snapshotId),
+      expectedRowSha256s,
+      expectedSnapshotIds,
+    });
+
+    let inserted = 0;
+    if (apply && state === "first-apply") {
+      for (const snapshotId of expectedSnapshotIds) {
+        await insertSnapshot(client, candidates.get(snapshotId));
+        inserted += 1;
+      }
+    }
+    if (!apply) {
+      await client.query("ROLLBACK");
+      transactionOpen = false;
+      return {
+        apply: false,
+        artifact: {
+          bytes: artifact.bytes,
+          path: artifact.path,
+          rows: artifact.rows.size,
+          sha256: artifact.sha256,
+        },
+        committed: false,
+        canonicalRecoveryMeta,
+        expectedSnapshotIds,
+        inserted: 0,
+        model: RESTORE_INCB_ORACLE_SNAPSHOTS_MODEL,
+        ok: true,
+        rowSha256s: [...verifiedRowSha256s]
+          .map(([snapshotId, sha256]) => ({ sha256, snapshotId })),
+        scope: REPLAY_SCOPE,
+        snapshotFingerprints: [...verifiedSnapshotFingerprints]
+          .map(([snapshotId, sha256]) => ({ sha256, snapshotId })),
+        state,
+        wouldInsert: state === "first-apply"
+          ? expectedSnapshotIds.length
+          : 0,
+      };
+    }
+
+    const storedAfter = await readStoredSnapshots(
+      client,
+      expectedSnapshotIds,
+    );
+    if (storedAfter.length !== expectedSnapshotIds.length) {
+      throw new Error(
+        "Replay restore did not leave all exact replay snapshot rows.",
+      );
+    }
+    for (const row of storedAfter) {
+      const verified = verifyIncbReplayOracleSnapshotRow(row, {
+        expectedRowSha256s,
+        expectedSnapshotFingerprints,
+      });
+      if (
+        verified.auditRowSha256 !== verifiedRowSha256s.get(row.snapshotId) ||
+        verified.snapshotFingerprint !==
+          verifiedSnapshotFingerprints.get(row.snapshotId)
+      ) {
+        throw new Error(
+          `Stored replay snapshot ${row.snapshotId} changed from the pinned artifact evidence.`,
+        );
+      }
+    }
+    await client.query("COMMIT");
+    transactionOpen = false;
+    return {
+      apply: true,
+      artifact: {
+        bytes: artifact.bytes,
+        path: artifact.path,
+        rows: artifact.rows.size,
+        sha256: artifact.sha256,
+      },
+      committed: true,
+      canonicalRecoveryMeta,
+      expectedSnapshotIds,
+      inserted,
+      model: RESTORE_INCB_ORACLE_SNAPSHOTS_MODEL,
+      ok: true,
+      rowSha256s: [...verifiedRowSha256s]
+        .map(([snapshotId, sha256]) => ({ sha256, snapshotId })),
+      scope: REPLAY_SCOPE,
+      snapshotFingerprints: [...verifiedSnapshotFingerprints]
+        .map(([snapshotId, sha256]) => ({ sha256, snapshotId })),
+      state,
+      wouldInsert: 0,
+    };
+  } catch (error) {
+    if (transactionOpen && client) {
+      try {
+        await client.query("ROLLBACK");
+      } catch (rollbackError) {
+        error.message =
+          `${error.message}; rollback failed: ${rollbackError.message}`;
+      }
+    }
+    throw error;
+  } finally {
+    if (client) client.release();
+    if (ownsPool) await pool.end();
+  }
+}
+
 export function parseRestoreIncbOracleSnapshotArgs(
   argv = process.argv.slice(2),
   env = process.env,
@@ -1556,6 +2098,7 @@ export function parseRestoreIncbOracleSnapshotArgs(
   let apply = false;
   let artifactPath = "";
   let artifactSha256 = "";
+  let scope = LEGACY_SCOPE;
   for (let index = 0; index < argv.length; index += 1) {
     const argument = argv[index];
     if (argument === "--apply") {
@@ -1570,6 +2113,13 @@ export function parseRestoreIncbOracleSnapshotArgs(
       else artifactSha256 = value;
       continue;
     }
+    if (argument === "--scope") {
+      const value = String(argv[index + 1] ?? "").trim();
+      if (!value) throw new Error("--scope requires a value.");
+      index += 1;
+      scope = value;
+      continue;
+    }
     if (argument.startsWith("--artifact=")) {
       artifactPath = argument.slice("--artifact=".length);
       continue;
@@ -1578,7 +2128,16 @@ export function parseRestoreIncbOracleSnapshotArgs(
       artifactSha256 = argument.slice("--sha256=".length);
       continue;
     }
+    if (argument.startsWith("--scope=")) {
+      scope = argument.slice("--scope=".length);
+      continue;
+    }
     throw new Error(`Unknown recovery argument: ${argument}`);
+  }
+  if (![LEGACY_SCOPE, REPLAY_SCOPE].includes(scope)) {
+    throw new Error(
+      `--scope must be ${LEGACY_SCOPE} or ${REPLAY_SCOPE}.`,
+    );
   }
   if (!artifactPath || !artifactSha256) {
     throw new Error("--artifact and --sha256 are both required.");
@@ -1602,12 +2161,15 @@ export function parseRestoreIncbOracleSnapshotArgs(
     apply,
     artifactPath,
     artifactSha256,
+    scope,
   };
 }
 
 async function main() {
   const args = parseRestoreIncbOracleSnapshotArgs();
-  const result = await restoreIncbOracleSnapshots(args);
+  const result = args.scope === REPLAY_SCOPE
+    ? await restoreIncbReplayOracleSnapshots(args)
+    : await restoreIncbOracleSnapshots(args);
   process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
 }
 

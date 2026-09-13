@@ -59,7 +59,8 @@
       "audits/2026-09-08-production-health-data-event-storage-audit-6.repro.mjs",
       "audits/2026-09-08-production-health-data-event-storage-audit-6.ordered-repro.mjs",
       "audits/2026-09-11-production-health-data-event-storage-audit-7.md",
-      "audits/2026-09-12-production-health-data-event-storage-audit-8.md"
+      "audits/2026-09-12-production-health-data-event-storage-audit-8.md",
+      "audits/2026-09-13-incb-production-canonical-repair.md"
     ],
     "staged-or-future-protocol-notes": [
       "CHAIN_CONTENT.md",

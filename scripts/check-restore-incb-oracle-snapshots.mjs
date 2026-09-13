@@ -11,16 +11,25 @@ import { join } from "node:path";
 
 import { q8TextFromDecimal } from "../server/bond-units.mjs";
 import {
+  incbReplayRawSnapshotFingerprint,
+  incbReplaySnapshotFingerprint,
+  normalizeIncbReplaySnapshotDescriptor,
+} from "../server/incb-range-replay-witness.mjs";
+import {
   EXPECTED_INCB_ORACLE_SNAPSHOT_IDS,
+  EXPECTED_INCB_REPLAY_ORACLE_SNAPSHOT_IDS,
+  classifyIncbReplayOracleRecoveryState,
   classifyIncbOracleRecoveryState,
   loadIncbOracleSnapshotArtifact,
   parseIncbOracleArtifactLine,
   parseRestoreIncbOracleSnapshotArgs,
   requiredIncbOracleRestoreDatabaseUrl,
   rawTopLevelJsonFields,
+  restoreIncbReplayOracleSnapshots,
   restoreIncbOracleSnapshots,
   verifiedCanonicalRecoveryMetaState,
   verifiedLegacyIncbSnapshotBindings,
+  verifyIncbReplayOracleSnapshotRow,
   verifyIncbOracleSnapshotRow,
 } from "./restore-incb-oracle-snapshots.mjs";
 
@@ -144,6 +153,68 @@ function artifactRow(binding, decimalValue) {
   };
 }
 
+function replayArtifactRow(binding, q8Value) {
+  const decimalValue = `${q8Value.slice(0, -8) || "0"}.${q8Value.slice(-8)}`;
+  return {
+    consistency: {
+      ok: true,
+      status: "green",
+    },
+    generated_at: binding.generatedAt,
+    indexed_through_block: binding.blockHeight,
+    metrics: {
+      eventCount: binding.blockHeight,
+    },
+    network: NETWORK,
+    payload: {
+      generatedAt: binding.generatedAt,
+      indexedThroughBlock: binding.blockHeight,
+      indexedThroughBlockHash: binding.blockHash,
+      network: NETWORK,
+      ok: true,
+      snapshotId: binding.snapshotId,
+      status: "green",
+      summaryPayloads: {
+        workFloor: {
+          actualValue: {
+            liveNetworkValueQ8: q8Value,
+            liveNetworkValueSats: decimalValue,
+            liveTotalQ8: q8Value,
+            networkValueQ8: q8Value,
+            totalQ8: q8Value,
+            workNetworkValueAccountingModel:
+              "canonical-exact-work-network-q8-v1",
+          },
+          indexedThroughBlock: binding.blockHeight,
+          indexedThroughBlockHash: binding.blockHash,
+          liveNetworkValueQ8: q8Value,
+          liveNetworkValueSats: decimalValue,
+          network: NETWORK,
+          networkValueQ8: q8Value,
+          snapshotId: binding.snapshotId,
+          workNetworkValueAccountingModel:
+            "canonical-exact-work-network-q8-v1",
+        },
+      },
+      summaryRefresh: {
+        indexedThroughBlock: binding.blockHeight,
+        indexedThroughBlockHash: binding.blockHash,
+        mode: SNAPSHOT_MODE,
+      },
+      totals: {
+        workNetworkValueAccountingModel:
+          "canonical-exact-work-network-q8-v1",
+        workNetworkValueQ8: q8Value,
+      },
+    },
+    snapshot_id: binding.snapshotId,
+    source_hashes: {
+      blockScan: binding.blockHash,
+      canonicalSummary: binding.canonicalSummaryHash,
+    },
+  };
+}
+
 function clone(value) {
   return JSON.parse(JSON.stringify(value));
 }
@@ -183,6 +254,53 @@ function canonicalArtifactLine(row) {
 
 function parsedArtifactRow(row) {
   return parseIncbOracleArtifactLine(canonicalArtifactLine(row));
+}
+
+function parsedReplayArtifactRow(row, auditRowSha256) {
+  const candidate = parseIncbOracleArtifactLine(
+    canonicalArtifactLine(row),
+    { expectedSnapshotIds: EXPECTED_INCB_REPLAY_ORACLE_SNAPSHOT_IDS },
+  );
+  candidate.auditRowSha256 = auditRowSha256;
+  candidate.exactReplayWorkValueEvidence =
+    exactReplayWorkValueEvidence(candidate.payload);
+  return candidate;
+}
+
+function replaySnapshotFingerprintForCandidate(row) {
+  const payload = row.payload;
+  const q8 =
+    payload.summaryPayloads.workFloor.actualValue.networkValueQ8;
+  const descriptor = normalizeIncbReplaySnapshotDescriptor({
+    canonicalSummaryHash: row.sourceHashes.canonicalSummary,
+    consistencyOk: true,
+    consistencyStatus: "green",
+    generatedAt: row.generatedAt,
+    indexedThroughBlock: row.indexedThroughBlock,
+    payloadBlockHash: payload.indexedThroughBlockHash,
+    payloadSnapshotId: row.snapshotId,
+    rawSnapshotFingerprint: incbReplayRawSnapshotFingerprint({
+      consistencyJson: row.rawConsistencyJson,
+      generatedAt: row.generatedAt,
+      indexedThroughBlock: row.indexedThroughBlock,
+      metricsJson: row.rawMetricsJson,
+      payloadJson: row.rawPayloadJson,
+      snapshotId: row.snapshotId,
+      sourceHashesJson: row.rawSourceHashesJson,
+    }),
+    snapshotId: row.snapshotId,
+    sourceBlockHash: row.sourceHashes.blockScan,
+    summaryRefreshBlockHash:
+      payload.summaryRefresh.indexedThroughBlockHash,
+    summaryRefreshMode: SNAPSHOT_MODE,
+    workFloorBlockHash:
+      payload.summaryPayloads.workFloor.indexedThroughBlockHash,
+    workFloorHeight: row.indexedThroughBlock,
+    workFloorSnapshotId: row.snapshotId,
+    workNetworkValueMode: "canonical-exact-work-network-q8-v1",
+    workNetworkValueQ8: q8,
+  });
+  return incbReplaySnapshotFingerprint(descriptor);
 }
 
 function exactLegacyWorkValueEvidence(payload) {
@@ -251,11 +369,27 @@ function exactLegacyWorkValueEvidence(payload) {
   };
 }
 
+function exactReplayWorkValueEvidence(payload) {
+  const legacy = exactLegacyWorkValueEvidence(payload);
+  return {
+    models: legacy.models,
+    q8: legacy.q8,
+  };
+}
+
 function databaseRow(row) {
   const payload = JSON.parse(row.rawPayloadJson);
+  const auditRowSha256 = row.auditRowSha256 ?? sha256([
+    row.network,
+    row.snapshotId,
+    new Date(row.generatedAt).toISOString(),
+    row.indexedThroughBlock,
+  ].join(":"));
   return {
+    audit_row_sha256: auditRowSha256,
     consistency: JSON.parse(row.rawConsistencyJson),
     legacy_work_value_evidence: exactLegacyWorkValueEvidence(payload),
+    replay_work_value_evidence: exactReplayWorkValueEvidence(payload),
     // node-postgres returns `timestamptz` columns as Date objects. Keep the
     // fake faithful so the post-insert verifier exercises millisecond
     // preservation instead of seeing the artifact's original ISO string.
@@ -365,11 +499,14 @@ class FakeRecoveryClient {
       return {
         rowCount: 1,
         rows: [{
+          audit_row_sha256: sha256(parameters.slice(4, 8).join(":")),
           consistency_json: JSON.stringify(JSON.parse(parameters[2])),
           legacy_work_value_evidence:
             exactLegacyWorkValueEvidence(payload),
           metrics_json: JSON.stringify(JSON.parse(parameters[1])),
           payload_json: JSON.stringify(payload),
+          replay_work_value_evidence:
+            exactReplayWorkValueEvidence(payload),
           source_hashes_json: JSON.stringify(JSON.parse(parameters[0])),
         }],
       };
@@ -700,6 +837,103 @@ try {
     );
   });
 
+  const replayIds = EXPECTED_INCB_REPLAY_ORACLE_SNAPSHOT_IDS.slice(0, 2);
+  const replayFixtures = replayIds.map((snapshotId, index) => {
+    const fixture = bindingFixture(snapshotId, index + 40);
+    const q8 = `${123_456_789 + index}00000000`;
+    const artifact = replayArtifactRow(fixture.binding, q8);
+    const parsed = parsedReplayArtifactRow(
+      artifact,
+      sha256([
+        NETWORK,
+        snapshotId,
+        fixture.binding.generatedAt,
+        fixture.binding.blockHeight,
+      ].join(":")),
+    );
+    return {
+      artifact,
+      parsed,
+      rowSha256: parsed.auditRowSha256,
+      snapshotFingerprint: replaySnapshotFingerprintForCandidate(parsed),
+    };
+  });
+  const replayArtifactLines = replayFixtures.map((fixture) =>
+    canonicalArtifactLine(fixture.artifact)
+  );
+  const replayArtifactText = `${replayArtifactLines.join("\n")}\n`;
+  const replayArtifactSha256 = sha256(replayArtifactText);
+  const replayArtifactPath = join(
+    tempDirectory,
+    "incb-replay-oracle-snapshots.jsonl",
+  );
+  const replayExpectedRowSha256s = Object.fromEntries(
+    replayFixtures.map((fixture) => [
+      fixture.parsed.snapshotId,
+      fixture.rowSha256,
+    ]),
+  );
+  const replayExpectedSnapshotFingerprints = Object.fromEntries(
+    replayFixtures.map((fixture) => [
+      fixture.parsed.snapshotId,
+      fixture.snapshotFingerprint,
+    ]),
+  );
+  await writeFile(replayArtifactPath, replayArtifactText, {
+    flag: "wx",
+    mode: 0o600,
+  });
+
+  check("range-replay rows match pinned audit and witness evidence", () => {
+    for (const fixture of replayFixtures) {
+      const verified = verifyIncbReplayOracleSnapshotRow(
+        fixture.parsed,
+        {
+          expectedRowSha256s: replayExpectedRowSha256s,
+          expectedSnapshotFingerprints:
+            replayExpectedSnapshotFingerprints,
+        },
+      );
+      assert.equal(verified.auditRowSha256, fixture.rowSha256);
+      assert.equal(
+        verified.snapshotFingerprint,
+        fixture.snapshotFingerprint,
+      );
+    }
+  });
+
+  check("range-replay classifier accepts absent and exact states only", () => {
+    assert.equal(
+      classifyIncbReplayOracleRecoveryState({
+        actualRowSha256s: new Map(),
+        existingSnapshotIds: [],
+        expectedRowSha256s: replayExpectedRowSha256s,
+        expectedSnapshotIds: replayIds,
+      }),
+      "first-apply",
+    );
+    assert.equal(
+      classifyIncbReplayOracleRecoveryState({
+        actualRowSha256s: new Map(
+          Object.entries(replayExpectedRowSha256s),
+        ),
+        existingSnapshotIds: replayIds,
+        expectedRowSha256s: replayExpectedRowSha256s,
+        expectedSnapshotIds: replayIds,
+      }),
+      "already-applied",
+    );
+    assert.throws(
+      () => classifyIncbReplayOracleRecoveryState({
+        actualRowSha256s: new Map(),
+        existingSnapshotIds: [replayIds[0]],
+        expectedRowSha256s: replayExpectedRowSha256s,
+        expectedSnapshotIds: replayIds,
+      }),
+      /partial or mixed/u,
+    );
+  });
+
   check("canonical recovery metadata accepts only safe inactive state", () => {
     assert.deepEqual(
       verifiedCanonicalRecoveryMetaState([]),
@@ -860,6 +1094,44 @@ try {
     );
     assert.ok(client.log.includes("ROLLBACK"));
     assert.ok(!client.log.includes("COMMIT"));
+  });
+
+  await checkAsync("range-replay dry run verifies and rolls back", async () => {
+    const client = new FakeRecoveryClient([]);
+    const result = await restoreIncbReplayOracleSnapshots({
+      apply: false,
+      artifactPath: replayArtifactPath,
+      artifactSha256: replayArtifactSha256,
+      expectedArtifactSha256: replayArtifactSha256,
+      expectedRowSha256s: replayExpectedRowSha256s,
+      expectedSnapshotFingerprints: replayExpectedSnapshotFingerprints,
+      expectedSnapshotIds: replayIds,
+      pool: new FakeRecoveryPool(client),
+    });
+    assert.equal(result.scope, "range-replay");
+    assert.equal(result.state, "first-apply");
+    assert.equal(result.wouldInsert, replayIds.length);
+    assert.equal(client.snapshots.size, 0);
+    assert.ok(client.log.includes("ROLLBACK"));
+    assert.ok(!client.log.includes("COMMIT"));
+  });
+
+  await checkAsync("range-replay apply inserts exact rows once", async () => {
+    const client = new FakeRecoveryClient([]);
+    const result = await restoreIncbReplayOracleSnapshots({
+      apply: true,
+      artifactPath: replayArtifactPath,
+      artifactSha256: replayArtifactSha256,
+      expectedArtifactSha256: replayArtifactSha256,
+      expectedRowSha256s: replayExpectedRowSha256s,
+      expectedSnapshotFingerprints: replayExpectedSnapshotFingerprints,
+      expectedSnapshotIds: replayIds,
+      pool: new FakeRecoveryPool(client),
+    });
+    assert.equal(result.committed, true);
+    assert.equal(result.inserted, replayIds.length);
+    assert.equal(client.snapshots.size, replayIds.length);
+    assert.ok(client.log.includes("COMMIT"));
   });
 
   await checkAsync("verification error after BEGIN rolls back", async () => {

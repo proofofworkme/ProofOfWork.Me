@@ -35323,6 +35323,7 @@ check("bound post-cutoff INCB witnesses preserve exact Q8 or rederive live H-1",
         previousHashes.get(String(bond?.blockHash ?? "")) ?? "",
       canonicalInceptionValueSnapshotCheckpoint: (payload) =>
         payload?.checkpoint ?? null,
+      canonicalPostReplayHistoricalInceptionCheckpoint: () => null,
       canonicalPwtReplayVerifierBindingCacheKey,
       canonicalPwtReplayVerifierBindingDescriptor,
       canonicalStoredInceptionWitnessSet: () => null,
@@ -35624,6 +35625,7 @@ check("range-replay cutoff keeps live H-1 and binding-separated verifier caches"
       canonicalInceptionPreviousBlockHash: async () => c9PreviousBlockHash,
       canonicalInceptionValueSnapshotCheckpoint: (snapshot) =>
         snapshot?.checkpoint ?? null,
+      canonicalPostReplayHistoricalInceptionCheckpoint: () => null,
       canonicalPwtReplayVerifierBindingCacheKey,
       canonicalPwtReplayVerifierBindingDescriptor,
       canonicalStoredInceptionWitnessSet: () => ({
@@ -35742,7 +35744,17 @@ check("range-replay cutoff keeps live H-1 and binding-separated verifier caches"
   );
   assert.match(
     completeTokenVerifierSource,
-    /proofIndexCanonicalInceptionMintWitnessesPayload\([\s\S]*canonicalBoundInceptionWitnessEnvelope\([\s\S]*context\.previousBlockHash/u,
+    /const preRangeWitnessHeight =[\s\S]*requiredBlockHeight < replayVerifierBinding\.rangeReplayFromHeight[\s\S]*\? requiredBlockHeight[\s\S]*: priorHeight/u,
+    "pre-range INCB witness reads must include the target block so accepted historical mint witnesses are available",
+  );
+  assert.match(
+    completeTokenVerifierSource,
+    /const preRangeWitnessHash =[\s\S]*preRangeWitnessHeight === requiredBlockHeight[\s\S]*\? context\.blockHash[\s\S]*: context\.previousBlockHash/u,
+    "pre-range witness envelopes bind their coverage checkpoint to the block they include",
+  );
+  assert.match(
+    completeTokenVerifierSource,
+    /proofIndexCanonicalInceptionMintWitnessesPayload\([\s\S]*preRangeWitnessHeight[\s\S]*canonicalBoundInceptionWitnessEnvelope\([\s\S]*preRangeWitnessHeight[\s\S]*preRangeWitnessHash/u,
   );
   assert.match(
     completeTokenVerifierSource,
@@ -35767,6 +35779,187 @@ check("range-replay cutoff keeps live H-1 and binding-separated verifier caches"
   assert.match(
     issuanceOptionsSource,
     /incb-value-snapshot-source:[\s\S]*replayBindingCacheKey/u,
+  );
+});
+
+check("post-replay historical INCB checkpoints pin late H-1 evidence", async () => {
+  const source = fileSource(API_PATH);
+  for (const [needle, label] of [
+    [
+      "d88c5a66dc0b06827e95469335ad689acd48d2f5b63f6d981a088f7cfd313c53",
+      "first late post-replay INCB mint",
+    ],
+    ["35bf2b05cd91025920df228c", "July 20 H-1 snapshot"],
+    ["11455029927306283270792106", "July 20 WORK Q8 value"],
+    ["895dbf988e2f77fc89c1757c", "July 21 early H-1 snapshot"],
+    ["7ab9dad4300df08edf54e80f", "July 21 late H-1 snapshot"],
+    ["post-replay-historical-witness-mismatch", "fail-closed mismatch"],
+  ]) {
+    assert.ok(source.includes(needle), `${label} is not pinned`);
+  }
+
+  const txid =
+    "d88c5a66dc0b06827e95469335ad689acd48d2f5b63f6d981a088f7cfd313c53";
+  const blockHash =
+    "000000000000000000003abe58f9ac12253e83f17c38845d2db480ef16e05a27";
+  const previousBlockHash =
+    "000000000000000000013c4e5c713c43915df2e6519854673823f878b9490d70";
+  const checkpoint = Object.freeze({
+    blockHash,
+    blockHeight: 958_796,
+    blockIndex: 84,
+    mode: "bond-transaction-provenance",
+    previousBlockHash,
+    valueSnapshotBlockHash: previousBlockHash,
+    valueSnapshotBlockHeight: 958_795,
+    valueSnapshotCanonicalSummaryHash:
+      "926eeb4d7bb31d7dd2fa709bf1f9006c81d08b32f1dd94af4f280c1d526b4e2e",
+    valueSnapshotGeneratedAt: "2026-07-20T00:01:56.084Z",
+    valueSnapshotId: "35bf2b05cd91025920df228c",
+    valueSnapshotMode: "canonical-summary-refresh",
+    valueSnapshotModel: "canonical-summary-h-minus-one-v1",
+    workNetworkValueQ8: "11455029927306283270792106",
+    workNetworkValueSats: "114550299273062832.70792106",
+  });
+  const canonicalPostReplayHistoricalInceptionCheckpoint = isolatedFunction(
+    API_PATH,
+    "canonicalPostReplayHistoricalInceptionCheckpoint",
+    {
+      CANONICAL_INCB_POST_REPLAY_HISTORICAL_CHECKPOINTS: new Map([
+        [txid, checkpoint],
+      ]),
+      inceptionValueSnapshotUnavailableError: (_bond, details = {}) =>
+        Object.assign(new Error(details.reason ?? "snapshot unavailable"), {
+          details,
+        }),
+    },
+  );
+  const bond = {
+    blockHash,
+    blockHeight: 958_796,
+    blockIndex: 84,
+    confirmed: true,
+    kind: "inception-bond",
+    txid,
+  };
+  assert.strictEqual(
+    canonicalPostReplayHistoricalInceptionCheckpoint(bond, new Map()),
+    checkpoint,
+  );
+  assert.throws(
+    () =>
+      canonicalPostReplayHistoricalInceptionCheckpoint(
+        { ...bond, blockIndex: 85 },
+        new Map(),
+      ),
+    (error) =>
+      error?.details?.reason ===
+      "post-replay-historical-witness-mismatch",
+  );
+
+  let summaryReads = 0;
+  const canonicalInceptionIssuanceOptions = isolatedFunction(
+    API_PATH,
+    "canonicalInceptionIssuanceOptions",
+    {
+      canonicalInceptionPreviousBlockHash: async () => previousBlockHash,
+      canonicalInceptionValueSnapshotCheckpoint: () => null,
+      canonicalPostReplayHistoricalInceptionCheckpoint,
+      canonicalPwtReplayVerifierBindingCacheKey: () => "",
+      canonicalPwtReplayVerifierBindingDescriptor: () => null,
+      cachedInternalVerifierState: async (_key, loader) => loader(),
+      inceptionValueSnapshotUnavailableError: (_bond, details = {}) =>
+        Object.assign(new Error(details.reason ?? "snapshot unavailable"), {
+          details,
+        }),
+      isInceptionBondActivityItem: (item) =>
+        item?.kind === "inception-bond",
+      proofIndexCanonicalSummaryLedgerPayload: async () => {
+        summaryReads += 1;
+        throw new Error("late historical checkpoint must be pinned");
+      },
+    },
+  );
+  const options = await canonicalInceptionIssuanceOptions(
+    "livenet",
+    [bond],
+  );
+  assert.equal(summaryReads, 0);
+  assert.strictEqual(options.preBondCheckpoint(bond), checkpoint);
+});
+
+check("INCB production repair pins every historical mint and forbids stored-mint oracle fallback", () => {
+  const source = fileSource(BACKFILL_PATH);
+  const rowsMatch =
+    /const CANONICAL_INCB_ISSUANCE_REPAIR_EXPECTATION_ROWS = Object\.freeze\(\[([\s\S]*?)\]\);/u.exec(
+      source,
+    );
+  assert.ok(rowsMatch, "repair must keep an explicit historical mint manifest");
+  const rows = [...rowsMatch[1].matchAll(/^  (\[[^\n]+\]),$/gmu)].map(
+    ([, row]) => JSON.parse(row),
+  );
+  assert.equal(rows.length, 46);
+  assert.equal(new Set(rows.map((row) => row[0])).size, 46);
+  const totals = rows.reduce(
+    (accumulator, row) => {
+      accumulator.attached += BigInt(row[9]);
+      accumulator.supply += BigInt(row[10]);
+      accumulator.direct += BigInt(row[11]);
+      return accumulator;
+    },
+    { attached: 0n, direct: 0n, supply: 0n },
+  );
+  assert.equal(totals.direct.toString(), "27386");
+  assert.equal(totals.attached.toString(), "224847713398420540");
+  assert.equal(totals.supply.toString(), "224847713398447926");
+  assert.match(
+    source,
+    /--repair-incb-issuance requires the complete pinned 46-mint historical INCB issuance set/u,
+  );
+  for (const snapshotId of [
+    "35bf2b05cd91025920df228c",
+    "895dbf988e2f77fc89c1757c",
+    "7ab9dad4300df08edf54e80f",
+  ]) {
+    assert.match(
+      source,
+      new RegExp(`CANONICAL_INCB_ISSUANCE_PINNED_VALUE_SNAPSHOT_IDS[\\s\\S]*${snapshotId}`, "u"),
+      `late post-replay snapshot ${snapshotId} must be pinned`,
+    );
+  }
+  assert.match(
+    source,
+    /pinned-post-replay-h-minus-one-witness-v1/u,
+    "late post-replay witnesses must be distinguished from database-locked snapshot rows",
+  );
+  assert.doesNotMatch(source, /canonicalIncbStoredConfirmedMint/u);
+  assert.doesNotMatch(source, /repair-incb-issuance-stored-mint/u);
+
+  const targetSource = topLevelFunctionSource(
+    BACKFILL_PATH,
+    "canonicalIncbIssuanceRepairTarget",
+  );
+  assert.match(targetSource, /has no pinned historical oracle/u);
+  assert.match(targetSource, /canonicalIncbRepairIntegerEquals/u);
+  assert.doesNotMatch(
+    targetSource,
+    /Number\(mintItem\.(?:attachedWorkIssuanceUnits|confirmedIssuanceUnits|directProofIssuanceUnits|amount)\)/u,
+    "historical INCB unit checks must stay BigInt/string-safe",
+  );
+
+  const aggregateSource = topLevelFunctionSource(
+    BACKFILL_PATH,
+    "assertCanonicalIncbHistoricalBaselineAggregate",
+  );
+  assert.match(aggregateSource, /LIVENET_INCB_HISTORICAL_BASELINE/u);
+  const repairSource = topLevelFunctionSource(
+    BACKFILL_PATH,
+    "repairCanonicalIncbIssuance",
+  );
+  assert.match(
+    repairSource,
+    /verifiedCanonicalIncbHistoricalBaselineAggregate/u,
+    "production repair must hard-gate the full INCB aggregate before COMMIT",
   );
 });
 
@@ -35892,6 +36085,7 @@ check("internal replay verifier rejects a missing or different database binding"
     API_PATH,
     "internalReplayVerifierBindingError",
   );
+  let historicalBindingPayload = null;
   const internalReplayVerifierBinding = isolatedFunction(
     API_PATH,
     "internalReplayVerifierBinding",
@@ -35899,7 +36093,14 @@ check("internal replay verifier rejects a missing or different database binding"
       Buffer,
       canonicalInternalPwtRangeReplayState,
       canonicalInternalReplayVerifierBinding,
+      canonicalPwtReplayVerifierBindingDescriptor:
+        isolatedFunction(
+          API_PATH,
+          "canonicalPwtReplayVerifierBindingDescriptor",
+        ),
       internalReplayVerifierBindingError,
+      proofIndexCanonicalIncbReplayBindingPayload: async () =>
+        historicalBindingPayload,
       proofIndexCanonicalStateMetaPayload: async () => ({ rebuild }),
       timingSafeEqual,
     },
@@ -35967,7 +36168,27 @@ check("internal replay verifier rejects a missing or different database binding"
   await rejection(
     internalReplayVerifierBinding("livenet", bindingId),
     (error) => /not connected to the requested replay database/u.test(error.message),
-    "a production API without clone metadata must reject the clone binding",
+    "a production API without replay metadata or immutable manifest proof must reject the clone binding",
+  );
+  historicalBindingPayload = {
+    binding: accepted,
+    fault: null,
+    replayBindingVerified: true,
+  };
+  assert.equal(
+    (await internalReplayVerifierBinding("livenet", bindingId)).bindingId,
+    bindingId,
+    "an immutable manifest-proven replay binding remains usable after canonical rebuild metadata moves on",
+  );
+  historicalBindingPayload = {
+    binding: { ...accepted, bindingId: "b".repeat(64) },
+    fault: null,
+    replayBindingVerified: true,
+  };
+  await rejection(
+    internalReplayVerifierBinding("livenet", bindingId),
+    (error) => /not connected to the requested replay database/u.test(error.message),
+    "a different manifest binding must not satisfy the requested replay database",
   );
 });
 
@@ -36092,6 +36313,24 @@ check("completed replay remains readable through the immutable witness certifica
         "canonical-incb-range-replay-witness-set-v1",
       PWT_RANGE_REPLAY_VERIFIER_BINDING_MODEL:
         "proof-indexer-pwt-range-replay-verifier-binding-v1",
+      canonicalIncbReplayBindingDescriptor:
+        isolatedFunction(
+          READER_PATH,
+          "canonicalIncbReplayBindingDescriptor",
+          {
+            INCB_RANGE_REPLAY_WITNESS_MANIFEST_MODEL:
+              "canonical-incb-range-replay-witness-set-v1",
+            PWT_RANGE_REPLAY_VERIFIER_BINDING_MODEL:
+              "proof-indexer-pwt-range-replay-verifier-binding-v1",
+            incbRangeReplayWitnessMetaKey,
+            normalizedLowerText: (value) =>
+              String(value ?? "").trim().toLowerCase(),
+            objectRecord: (value) =>
+              value && typeof value === "object" && !Array.isArray(value)
+                ? value
+                : {},
+          },
+        ),
       incbRangeReplayWitnessMetaKey,
       normalizedLowerText: (value) => String(value ?? "").trim().toLowerCase(),
       objectRecord: (value) =>
@@ -36304,6 +36543,24 @@ check("active range replay is fail-closed to one block-scan source", async () =>
   const accepted = await boundRuntime({});
   assert.equal(accepted.active, true);
   assert.equal(accepted.verifierBinding.bindingId, "f".repeat(64));
+
+  const repairRuntime = isolatedFunction(
+    BACKFILL_PATH,
+    "canonicalPwtRangeReplayRuntime",
+    {
+      ...globals,
+      REPAIR_INCB_ISSUANCE_ONLY: true,
+      SOURCES: [{ blockScan: true, label: "block-scan" }],
+      activateCanonicalIncbRepairReplayBinding: async () => ({
+        bindingId: "i".repeat(64),
+      }),
+      assertCanonicalPwtRangeReplayState: () => "complete",
+    },
+  );
+  const repairAccepted = await repairRuntime({});
+  assert.equal(repairAccepted.active, false);
+  assert.equal(repairAccepted.state, "complete");
+  assert.equal(repairAccepted.verifierBinding.bindingId, "i".repeat(64));
 
   const hybridRuntime = isolatedFunction(
     BACKFILL_PATH,
@@ -41308,6 +41565,7 @@ check("same-block Inception checkpoints share one H-1 source but bind per bond",
         valueSnapshotBlockHash: previousBlockHash,
         valueSnapshotId: value.snapshotId,
       }),
+      canonicalPostReplayHistoricalInceptionCheckpoint: () => null,
       inceptionValueSnapshotUnavailableError: () =>
         new Error("unexpected unavailable H-1 snapshot"),
       isInceptionBondActivityItem: (item) =>
@@ -83856,6 +84114,21 @@ check("canonical summary persistence is compact and storage-budgeted", async () 
     canonicalReadSource,
     /\$4 = '\$\{WORK_ATOMIC_PROJECTION_MODEL\}'[\s\S]*payload->>'workAmountStorageModel' = \$4/u,
     "exact legacy decimal checkpoint reads must only admit the pre-Q16 storage model",
+  );
+  assert.match(
+    canonicalReadSource,
+    /payload->>'workAmountStorageModel' = \$4[\s\S]*\$4 = '\$\{WORK_ATOMIC_PROJECTION_MODEL\}'[\s\S]*COALESCE\(payload->>'workAmountStorageModel', ''\) = ''/u,
+    "exact H-1 reads must admit markerless historical Q8 summary rows only under the atomic WORK model",
+  );
+  assert.match(
+    canonicalReadSource,
+    /exactReplayHistoricalCheckpoint[\s\S]*replayCreatedAtMs[\s\S]*generatedAtMs >= replayCreatedAtMs[\s\S]*earliestReplayGeneratedAtMs/u,
+    "replay-bound H-1 reads must select the earliest binding-era historical row before checking agreement",
+  );
+  assert.match(
+    topLevelFunctionSource(API_PATH, "canonicalInceptionIssuanceOptions"),
+    /proofIndexCanonicalSummaryLedgerPayload\([\s\S]*Number\(bond\.blockHeight\) - 1[\s\S]*previousBlockHash[\s\S]*replayVerifierBinding: replayBinding/u,
+    "INCB replay verifier reads must pass the authenticated replay binding to exact H-1 summary lookup",
   );
   assert.doesNotMatch(
     canonicalReadSource,
