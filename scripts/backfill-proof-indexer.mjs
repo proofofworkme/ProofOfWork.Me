@@ -1601,7 +1601,9 @@ const CANONICAL_INCB_ISSUANCE_REPAIR_EXPECTATIONS = new Map([
     {
       attachedWorkAmount: 3_644_060,
       attachedWorkIssuanceUnits: 1_421_798_915,
+      attachedWorkLiveFloorAtSendQ8: "39016890930",
       attachedWorkLiveFloorAtSendSats: 390.168909301053,
+      attachedWorkLiveValueAtSendQ8: "142179891562759519",
       attachedWorkLiveValueAtSendSats: 1_421_798_915.6275952,
       blockHash:
         "000000000000000000016ea78b0d57a7979de3542518c8690a1e5a808e691cc5",
@@ -1609,8 +1611,11 @@ const CANONICAL_INCB_ISSUANCE_REPAIR_EXPECTATIONS = new Map([
       blockIndex: 382,
       confirmedIssuanceUnits: 1_421_799_461,
       directProofIssuanceUnits: 546,
+      issuanceDustQ8: "62759519",
       issuanceDustSats: 0.6275952,
+      issuanceFloorQ8: "100000000",
       issuanceFloorSats: 1.0000000004414091,
+      issuanceNetworkValueQ8: "142179946162759519",
       issuanceNetworkValueSats: 1_421_799_461.6275952,
       issuanceValueSnapshotBlockHash:
         "00000000000000000001bda6bfa328f15edf597bfc364e02da42ea92a518a15e",
@@ -1621,6 +1626,8 @@ const CANONICAL_INCB_ISSUANCE_REPAIR_EXPECTATIONS = new Map([
       issuanceValueSnapshotId: "b8e77cd30cbed6855977c514",
       issuanceValueSnapshotMode: "canonical-summary-refresh",
       issuanceValueSnapshotModel: INCB_VALUE_SNAPSHOT_MODEL,
+      issuanceValueSnapshotWorkNetworkValueQ8:
+        "819354709532211300",
       issuanceValueSnapshotWorkNetworkValueSats:
         8_193_547_095.322113,
       recipientAddress: "1BPVvi1GK4QkfqFMU4jHGjsQjyGwjJJJ7x",
@@ -31739,33 +31746,26 @@ async function canonicalIncbIssuanceRepairTarget(client, txid) {
         mintItem.issuanceValueSnapshotWorkNetworkValueSats,
         expectation.issuanceValueSnapshotWorkNetworkValueSats,
       ) ||
+      String(mintItem.issuanceValueSnapshotWorkNetworkValueQ8 ?? "") !==
+        expectation.issuanceValueSnapshotWorkNetworkValueQ8 ||
       Number(mintItem.attachedWorkAmount) !== expectation.attachedWorkAmount ||
       Number(mintItem.attachedWorkIssuanceUnits) !==
         expectation.attachedWorkIssuanceUnits ||
-      !closeTo(
-        mintItem.attachedWorkLiveFloorAtSendSats,
-        expectation.attachedWorkLiveFloorAtSendSats,
-        1e-9,
-      ) ||
-      !closeTo(
-        mintItem.attachedWorkLiveValueAtSendSats,
-        expectation.attachedWorkLiveValueAtSendSats,
-      ) ||
+      String(mintItem.attachedWorkLiveFloorAtSendQ8 ?? "") !==
+        expectation.attachedWorkLiveFloorAtSendQ8 ||
+      String(mintItem.attachedWorkLiveValueAtSendQ8 ?? "") !==
+        expectation.attachedWorkLiveValueAtSendQ8 ||
       Number(mintItem.directProofIssuanceUnits) !==
         expectation.directProofIssuanceUnits ||
       Number(mintItem.confirmedIssuanceUnits) !==
         expectation.confirmedIssuanceUnits ||
       Number(mintItem.amount) !== expectation.confirmedIssuanceUnits ||
-      !closeTo(
-        mintItem.issuanceNetworkValueSats,
-        expectation.issuanceNetworkValueSats,
-      ) ||
-      !closeTo(
-        mintItem.issuanceFloorSats,
-        expectation.issuanceFloorSats,
-        1e-12,
-      ) ||
-      !closeTo(mintItem.issuanceDustSats, expectation.issuanceDustSats)
+      String(mintItem.issuanceNetworkValueQ8 ?? "") !==
+        expectation.issuanceNetworkValueQ8 ||
+      String(mintItem.issuanceFloorQ8 ?? "") !==
+        expectation.issuanceFloorQ8 ||
+      String(mintItem.issuanceDustQ8 ?? "") !==
+        expectation.issuanceDustQ8
     )
   ) {
     throw new Error(
