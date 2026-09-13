@@ -31983,10 +31983,11 @@ function lockedCanonicalIncbSnapshotWorkNetworkValueQ8(row) {
 
   // Locked pre-marker rows are immutable issuance witnesses. Their exception
   // is snapshot-id bound and read under a table lock. Interpret the stored
-  // JSON decimal text directly, never a JavaScript Number, and require it to
-  // agree with any transitional stored Q8 alias plus the mint's exact Q8.
+  // JSON decimal text returned by PostgreSQL directly, never a JavaScript
+  // Number, and require it to agree with any transitional stored Q8 alias plus
+  // the mint's exact Q8.
   const legacyDecimalQ8 =
-    row?.work_network_value_sats_type === "string" &&
+    ["number", "string"].includes(row?.work_network_value_sats_type) &&
     typeof row?.work_network_value_sats_text === "string"
       ? q8TextFromDecimal(row.work_network_value_sats_text.trim())
       : "";

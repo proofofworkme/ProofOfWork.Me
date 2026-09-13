@@ -2985,6 +2985,7 @@ expectAll(
     /issuanceValueSnapshotId:\s*"b8e77cd30cbed6855977c514"/,
     /issuanceValueSnapshotCanonicalSummaryHash:[\s\S]*?"4f00b3494afb46ef88990948784a0ba8f2a22856615a39e15c3131f0ec979bdc"/,
     /issuanceValueSnapshotWorkNetworkValueSats:[\s\S]*?8_193_547_095\.322113/,
+    /\["number", "string"\]\.includes\(row\?\.work_network_value_sats_type\)/,
     /async function canonicalIncbIssuanceRepairTarget\(/,
     /async function repairCanonicalIncbIssuance\(/,
     /await client\.query\("BEGIN"\)/,
