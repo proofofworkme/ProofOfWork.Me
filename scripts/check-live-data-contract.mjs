@@ -234,6 +234,11 @@ const marketplaceMutationEqualitySource = sourceSliceBetween(
   /addCheck\(\s*"marketplace-mutation-fees-counted"/,
   /addCheck\(\s*"work-amo-v5-legacy-bootstrap-carry-proven"/,
 );
+const marketplaceMutationFeeHelperSource = sourceSliceBetween(
+  server,
+  /function marketplaceMutationFeesCountedOk/,
+  /function activityKindHasDedicatedGrowthBucket/,
+);
 const q16MempoolBackfillSource = sourceSliceBetween(
   proofIndexerBackfill,
   /async function backfillMempoolScanSource/,
@@ -664,7 +669,9 @@ expectAll("worker child processes and pending cleanup have strict wall-clock bud
   /const PENDING_STATUS_BUDGET_MS = Number\([\s\S]*?15_000/,
   /const PENDING_STATUS_CONCURRENCY = Math\.min\([\s\S]*?5/,
   /const BACKFILL_CHILD_TIMEOUT_MS = Math\.min\([\s\S]*?15 \* 60_000[\s\S]*?4 \* 60_000/,
-  /function runScript\([\s\S]*?child\.kill\("SIGTERM"\)[\s\S]*?child\.kill\("SIGKILL"\)[\s\S]*?wall-clock budget/,
+  /function runScript\([\s\S]*?wall-clock budget/,
+  /function runScript\([\s\S]*?child\.kill\("SIGTERM"\)/,
+  /function runScript\([\s\S]*?child\.kill\("SIGKILL"\)/,
   /const deadlineMs = Date\.now\(\) \+ PENDING_STATUS_BUDGET_MS[\s\S]*?await Promise\.all\([\s\S]*?PENDING_STATUS_CONCURRENCY/,
   /runScript\("backfill-proof-indexer\.mjs"[\s\S]*?timeoutMs: BACKFILL_CHILD_TIMEOUT_MS/,
   /runScript\("check-proof-indexer-parity\.mjs"[\s\S]*?timeoutMs: PARITY_CHILD_TIMEOUT_MS/,
@@ -690,7 +697,7 @@ expectAll(
 );
 expectAll("production worker pins confirmed-first and liveness budgets", proofIndexerWorkerService, [
   /POW_INDEX_WORKER_BACKFILL_SOURCES=block-scan,mempool-scan/,
-  /POW_INDEX_BACKFILL_BLOCK_SCAN_MAX_BLOCKS=250/,
+  /POW_INDEX_BACKFILL_BLOCK_SCAN_MAX_BLOCKS=200/,
   /POW_INDEX_BACKFILL_BLOCK_SCAN_MAX_TXIDS=250/,
   /POW_INDEX_WORKER_BACKFILL_STORE_CANONICAL_SUMMARY_SNAPSHOT=1/,
   /POW_INDEX_MEMPOOL_SCAN_MAX_PROTOCOL_TXIDS=5/,
@@ -814,12 +821,15 @@ expectAll("hot worker summary publication is canonical, conservative, and health
   /function tokenTablePayloadHasConservedBalances\([\s\S]*?!tokenIds\.has\(tokenId\)[\s\S]*?minted === held[\s\S]*?mintedSupply === heldSupply/,
   /async function tokenStatePayloadAtCanonicalCheckpoint\([\s\S]*?canonical_blocks AS[\s\S]*?checkpoint_block\.canonical = true[\s\S]*?GREATEST\(latest_scan\.height, canonical_blocks\.height\) AS scan_height[\s\S]*?token_event\.protocol = 'pwt1'[\s\S]*?token_event\.kind LIKE 'token-%'[\s\S]*?token_event\.status = 'confirmed'[\s\S]*?indexedThroughBlock: checkpointHeight[\s\S]*?indexedThroughBlockHash: normalizedCheckpointHash/,
   /proofIndexCanonicalSummaryTokenTablePayload\([\s\S]*?checkpointRelationalPayload[\s\S]*?tokenStatePayloadAtCanonicalCheckpoint\([\s\S]*?payloadWithCurrentWorkPrecisionReadPolicy\([\s\S]*?checkpointRelationalPayload/,
+  /proofIndexCanonicalSummaryTokenTablePayload\([\s\S]*?payloadWithCurrentWorkMarketListingReadPolicy\([\s\S]*?activatedPayload[\s\S]*?applyWorkMarketV2CutoverToTokenState\([\s\S]*?heightScopedListingPayload/,
   /proofIndexLogHistoryPayload\([\s\S]*?currentRelational[\s\S]*?proofIndexCanonicalActivityPayload\(network, \{[\s\S]*?snapshotId: pagination\.snapshotId[\s\S]*?totalCount:\s*rowNumber\(canonicalPage, "totalCount"\)[\s\S]*?snapshotTotalCount/,
   /payloadWithCanonicalWorkLifecyclePositions\([\s\S]*?expectationKeys\.has\(key\)[\s\S]*?return true[\s\S]*?closedLifecycleListingKeys[\s\S]*?tokenListingsWithoutClosedEvents\([\s\S]*?payload\.listings[\s\S]*?closedListings[\s\S]*?closedLifecycleListingKeys\.has[\s\S]*?positionedListings/,
   /currentProofIndexTokenTablePayloadForLedger\([\s\S]*?options\.exactHeight[\s\S]*?proofIndexPayloadIndexedThroughBlock\(payload\) !== exactHeight/,
   /indexedActivityStateForCanonicalLedger\([\s\S]*?options\.exactHeight[\s\S]*?proofIndexPayloadIndexedThroughBlock\(payload\) !== exactHeight/,
   /indexedRegistryStateForCanonicalLedger\([\s\S]*?options\.exactHeight[\s\S]*?proofIndexPayloadIndexedThroughBlock\(payload\) !== exactHeight/,
-  /summarySnapshotIds[\s\S]*?value !== snapshotId/,
+  /const snapshotIdsAligned =[\s\S]*?summarySnapshotIds\.every\(\(value\) => value === snapshotId\)/,
+  /const checkpointHashesAligned = summaryCheckpointHashes\.every\([\s\S]*?latestIndexedThroughBlockHash/,
+  /phase: "canonical-summary-refresh-guard"/,
   /summaryRefresh: _canonicalSummaryRefresh[\s\S]*?legacyBasePayload/,
   /const workSufficientState = exactWorkState\.required[\s\S]*?canonicalSummarySnapshotPayload\(\{[\s\S]*?workSufficientState/,
   /mode: "canonical-summary-refresh"/,
@@ -836,6 +846,9 @@ expectAll("hot worker summary publication is canonical, conservative, and health
   /function summarySnapshotCoversCanonicalReadModels\([\s\S]*?summaryIndexedThroughBlock === indexedThroughBlock[\s\S]*?indexedThroughBlock === scanTipHeight[\s\S]*?summaryBlockHash === scanBlockHash/,
   /confirmed_events AS \([\s\S]*?confirmed_event_max_block/,
   /readModelsOk &&[\s\S]*?summarySnapshotOk/,
+]);
+expectAll("authoritative current active token listings evict stale closed projections", server, [
+  /function tokenStateWithAuthoritativeCurrentListings\([\s\S]*?const authoritativeActiveListingKeys = new Set\([\s\S]*?const closedListings = mergeTokenStateItemsByKey\([\s\S]*?\.filter\([\s\S]*?!authoritativeActiveListingKeys\.has\(tokenListingItemKey\(listing\)\)/,
 ]);
 expectAll("ordinary ledger snapshot retention is height-deduplicated and bounded by rows and logical bytes", ledgerSnapshotRetentionSource, [
   /canonicalSummaryLogicalByteBudget =/,
@@ -929,7 +942,11 @@ expectAll("ledger snapshot retention has deterministic finite defaults and publi
   /POW_INDEX_LEDGER_CANONICAL_SUMMARY_RETENTION[\s\S]*?4_096/,
   /POW_INDEX_LEDGER_CANONICAL_SUMMARY_LOGICAL_BYTE_BUDGET[\s\S]*?2 \* 1024 \* 1024 \* 1024/,
   /POW_INDEX_LEDGER_SCAN_SNAPSHOT_RETENTION[\s\S]*?20_000/,
-  /const snapshotRetention = await pruneLedgerSnapshots\(client\)/,
+  /POW_INDEX_PRUNE_LEDGER_SNAPSHOTS_AFTER_SUMMARY \?\? "1"/,
+  /const snapshotRetention = PRUNE_LEDGER_SNAPSHOTS_AFTER_CANONICAL_SUMMARY[\s\S]*\? await pruneLedgerSnapshots\(client\)[\s\S]*skipped: true[\s\S]*reason: "disabled-by-env"/,
+  /const CANONICAL_SUMMARY_ONLY_BACKFILL = Boolean\([\s\S]*SOURCE_FILTER\.has\("canonical-summary"\)[\s\S]*SOURCES\.length === 0/,
+  /!CANONICAL_SUMMARY_ONLY_BACKFILL[\s\S]*repairConfirmedWorkTransferParticipants/,
+  /!CANONICAL_SUMMARY_ONLY_BACKFILL[\s\S]*repairWorkMintMinterAttribution\(client\)[\s\S]*backfillScopedTokenHolders\(client\)/,
 ]);
 expectAll("the production database role has finite temp-file safeguards", proofIndexDbRoleLimits, [
   /ALTER ROLE proof_indexer IN DATABASE proof_indexer[\s\S]*?SET temp_file_limit = '1GB'/,
@@ -1026,6 +1043,11 @@ expectAll("confirmed verifier context is shared per block without eviction by to
   /canonicalPwtReplayVerifierBindingCacheKey\(replayBinding, network\)/,
   /`canonical-context:\$\{network\}:h\$\{height\}:\$\{previousBlockHash\}:\$\{blockHash\}\$\{replayBindingCacheKey\}`/,
   /cachedInternalVerifierState\([\s\S]*?loadCanonicalVerifierContextFromCheckpoint\([\s\S]*?network,[\s\S]*?height,[\s\S]*?blockHash,[\s\S]*?previousBlockHash/,
+]);
+expectAll("missing exact Inception H-1 snapshots are not cached during recovery", server, [
+  /key\.startsWith\("incb-value-snapshot-source:"\)/,
+  /!value\.snapshot/,
+  /entry\.expiresAt = exactInceptionSnapshotUnavailable[\s\S]*?\? 0[\s\S]*?: Date\.now\(\) \+ INTERNAL_VERIFIER_STATE_TTL_MS/,
 ]);
 expectAll("confirmed block scan bootstraps explicitly and checkpoints canonical hashes", blockScanCheckpointSource + blockScanSource, [
   /POW_INDEX_BACKFILL_BLOCK_SCAN_FROM_HEIGHT/,
@@ -1294,6 +1316,13 @@ expectAll("ordered credit verifier classifies supply-saturated pending mints", s
   /confirmedSupply \+ pendingSupply \+ parsed\.amount > maxSupply/,
   /mint exceeds max supply:[\s\S]*?confirmed[\s\S]*?pending[\s\S]*?requested/,
 ]);
+expectAll("credit balance recovery can be scoped without dropping pending deltas", proofIndexerBackfill, [
+  /POW_INDEX_REBUILD_CREDIT_BALANCE_TOKEN_IDS/,
+  /parseCreditBalanceReplayTokenIds/,
+  /preservePendingDeltas:\s*REBUILD_CREDIT_BALANCE_PRESERVE_PENDING_DELTAS/,
+  /tokenIds:\s*REBUILD_CREDIT_BALANCE_TOKEN_IDS/,
+  /scopeTokenIds:\s*REBUILD_CREDIT_BALANCE_TOKEN_IDS/,
+]);
 const pendingWorkSupplyCapVerifierSource = sourceSliceBetween(
   server,
   /function pendingWorkMintFromHydratedTransaction/,
@@ -1544,7 +1573,7 @@ expectAll("server canonical summaries require hash-bound database snapshots", se
 expectAll("stable Log reads stay pinned to one authenticated last-good snapshot", server, [
   /async function stableCanonicalLogSummaryPayload[\s\S]*?summaryPayloadWithCanonicalProvenance\([\s\S]*?activitySummaryPayload\(network,\s*false\)[\s\S]*?"log-summary"/,
   /async function stableProofIndexLogPayload[\s\S]*?proofIndexCanonicalActivityPayload\(network,\s*\{[\s\S]*?snapshotId:\s*summarySnapshotId/,
-  /async function stableProofIndexLogPayload[\s\S]*?pageSnapshotTotal !== summaryTotal[\s\S]*?verifyStableLogCheckpointAfterRead\(summary,\s*network,\s*"log"\)/,
+  /async function stableProofIndexLogPayload[\s\S]*?publicLogTotalCountFromSummary\([\s\S]*?pageSnapshotTotal !== publicSummaryTotal[\s\S]*?verifyStableLogCheckpointAfterRead\(summary,\s*network,\s*"log"\)/,
   /async function stableProofIndexLogHistoryPayload[\s\S]*?boundSearchParams\.set\("snapshot",\s*summarySnapshotId\)[\s\S]*?proofIndexLogHistoryPayload\([\s\S]*?\{\s*currentRelational:\s*true\s*\}/,
   /CANONICAL_LOG_HISTORY_STABLE_SNAPSHOT_MISMATCH/,
   /CANONICAL_LOG_EXACT_QUERY_OUTSIDE_SNAPSHOT/,
@@ -2000,7 +2029,7 @@ expectAll(
     proofIndexerBackfill +
     proofIndexerWorkerService,
   [
-    /sourceLabels: \["block-scan"\][\s\S]*?storeCanonicalSummarySnapshot: "0"/,
+    /sourceLabels: \["block-scan"\][\s\S]*?storeCanonicalSummarySnapshot: String\([\s\S]*?storeCanonicalSummarySnapshot \?\? ""[\s\S]*?\)/,
     /kind: "best-effort-pending"[\s\S]*?sourceLabels: \["mempool-scan"\][\s\S]*?storeCanonicalSummarySnapshot: "0"/,
     /runCanonicalBeforePending\([\s\S]*?runBackfillPhase\(backfillPhases\[0\]\)[\s\S]*?publishCanonicalSummaryAtConfirmedCheckpoint\(\)[\s\S]*?runBackfillPhase\(backfillPhases\[1\]\)/,
     /POW_INDEX_BACKFILL_CANONICAL_SUMMARY_REQUIRED_HASH:[\s\S]*?POW_INDEX_BACKFILL_CANONICAL_SUMMARY_REQUIRED_HEIGHT:/,
@@ -2511,7 +2540,7 @@ expectAll(
   "the active V8 order book admits only V8 listings while prior versions remain history",
   proofIndexReader,
   [
-    /async function currentWorkMarketAuthorizationVersionsAtSnapshot[\s\S]*?return \[WORK_AMO_V8_AUTH_VERSION\]/,
+    /async function currentWorkMarketAuthorizationVersionsAtSnapshot[\s\S]*?const precisionHeightReached[\s\S]*?const precisionBoundaryReached[\s\S]*?return \[WORK_AMO_V8_AUTH_VERSION\]/,
   ],
 );
 expectAll(
@@ -2555,15 +2584,22 @@ expectAll("AMO token projection preserves pre-unit listings only as nonrefundabl
 ]);
 expectAll(
   "AMO V5 activation consumes one immutable independently captured H-1 seed",
-  `${workAmoV5SeedEvidence}\n${server}\n${proofIndexerBackfill}\n${workAmoV5Migration}\n${proofIndexerSchema}`,
+  `${workAmoV5SeedEvidence}\n${server}\n${proofIndexerBackfill}\n${workAmoV5Migration}\n${proofIndexerSchema}\n${proofIndexReader}`,
   [
     /canonical-work-amo-v5-h-minus-one-seed-evidence-v1/,
     /export function canonicalWorkAmoV5HMinusOneSeedEvidence\(/,
     /export function validatedWorkAmoV5HMinusOneSeedEvidence\(/,
+    /export async function proofIndexWorkAmoV5HMinusOneSeedEvidence\(/,
     /async function workAmoV5HMinusOneSeedEvidencePayload\(/,
     /\/api\/v1\/internal\/work-amo-v5-seed-evidence/,
+    /const movements = workAmoV5HistoricalMovements\([\s\S]*?amountStorageModel[\s\S]*?amountSubatoms[\s\S]*?amountAtoms/,
     /BEGIN ISOLATION LEVEL SERIALIZABLE/,
     /async function captureWorkAmoV5HMinusOneSeedEvidence\(/,
+    /existingBeforeProduce[\s\S]*storedWorkAmoV5HMinusOneSeedEvidenceRows\(client, ""\)[\s\S]*workAmoV5HMinusOneSeedEvidenceFromStoredRow[\s\S]*readJson\(/,
+    /proofIndexWorkAmoV5HMinusOneSeedEvidence\(network,[\s\S]*blockHeight: priorHeight[\s\S]*seedEvidence\.seedSufficientState[\s\S]*seedEvidence\.commitments\.sufficientState/,
+    /source:\s*"pinned-h-minus-one-seed-evidence"/,
+    /persistedActivationSeed\.source ===[\s\S]*"pinned-h-minus-one-seed-evidence"[\s\S]*persistedActivationSeedVerified: true/,
+    /FROM proof_indexer\.transactions transaction_row[\s\S]*JOIN proof_indexer\.blocks block_row[\s\S]*block_row\.canonical = true[\s\S]*transaction_row\.block_height > \$2/,
     /await captureWorkAmoV5HMinusOneSeedEvidence\(client,[\s\S]*?await verifiedWorkAmoV5BlockTransition\(/,
     /amoSeedCanonicalSummary/,
     /validatedWorkAmoV5HMinusOneSeedEvidence\(evidenceRow\.payload\)/,
@@ -3021,6 +3057,8 @@ expectAll("backfill writes both mail bond families as projections", proofIndexer
 
 expectAll("all confirmed token state rows must be searchable in Log", server, [
   /function tokenStateLogExpectations\(tokenState\)/,
+  /const activeListingKeys = new Set\([\s\S]*?tokenState\?\.listings[\s\S]*?activeListingKeys\.has\(`\$\{tokenId\}:\$\{listingId\}`\)[\s\S]*?continue/,
+  /const closedTxid = listing\?\.closedTxid;[\s\S]*?!closedTxid/,
   /function activityCoverageByTxidKind\(activity\)/,
   /kind:\s*"token-transfer"/,
   /kind:\s*"token-listing-sealed"/,
@@ -3073,7 +3111,9 @@ expectAll("AMO V5 legacy bootstrap carry is exact and separately reconciled", le
   /const legacyBootstrapCarryFields = new Set\(\[[\s\S]*?"tokenMarketplaceFeeSats"[\s\S]*?"tokenTransferFlowSats"[\s\S]*?\]\)/,
   /committed !== valid \+ expectedCarry/,
   /committedBaseNetworkValueQ8 !==\s*finalValidBaseNetworkValueQ8 \+ legacyBootstrapGrowthValueQ8/,
-  /legacyBaselineCreditFixedQ8 =\s*validCreditFixedQ8 \+ legacyBootstrapCreditFixedQ8/,
+  /legacyBootstrapEffectiveCreditFixedQ8 =[\s\S]*?legacyBootstrapCreditRemainderQ8[\s\S]*?legacyBootstrapCreditFixedQ8/,
+  /legacyBootstrapCreditFixedOverlapQ8 =\s*legacyBootstrapCreditFixedQ8 - legacyBootstrapEffectiveCreditFixedQ8/,
+  /legacyBaselineCreditFixedQ8 =\s*validCreditFixedQ8 \+ legacyBootstrapEffectiveCreditFixedQ8/,
   /postActivationCreditFixedQ8 =[\s\S]*?committedCreditFixedQ8 >= legacyBaselineCreditFixedQ8[\s\S]*?committedCreditFixedQ8 - legacyBaselineCreditFixedQ8/,
   /publishedCreditFixedQ8Matches[\s\S]*?publishedValidCreditFixedQ8 === validCreditFixedQ8[\s\S]*?publishedValidCreditFixedQ8 === legacyBaselineCreditFixedQ8[\s\S]*?publishedValidCreditFixedQ8 === committedCreditFixedQ8/,
   /const baseState = reconciliation\.validBaseState/,
@@ -3095,17 +3135,18 @@ expectAll("credit frozen value proves valid flows plus the explicit legacy carry
   /flows\.reduce\([\s\S]*?BigInt\(legacyCreditFixedQ8\)/,
   /BigInt\(legacyCreditFixedQ8\) \+[\s\S]*?BigInt\(postActivationCreditFixedQ8\)/,
 ]);
-expectAll("marketplace consistency keeps strict valid-only equality", marketplaceMutationEqualitySource, [
+expectAll("marketplace consistency counts confirmed valid fees with exact legacy carry handling", marketplaceMutationEqualitySource + marketplaceMutationFeeHelperSource, [
   /numbersAgree\(marketplaceFeeSats, marketplaceMutationFeeSats\)/,
-  /numbersAgree\(\s*confirmedMarketplaceMutationFeeSats,\s*marketplaceMutationFeeSats,?\s*\)/,
-  /numbersAgree\([\s\S]*?confirmedMarketplaceMutationFeeSats,[\s\S]*?marketplaceMutationFeeSats \+[\s\S]*?legacyBootstrapMarketplaceCarrySats/,
+  /marketplaceMutationFeesCountedOk\([\s\S]*?marketplaceMutationFeeSats,[\s\S]*?confirmedMarketplaceMutationFeeSats,[\s\S]*?legacyBootstrapMarketplaceCarrySats/,
+  /function marketplaceMutationFeesCountedOk[\s\S]*?numbersAgree\(marketplaceMutationFeeSats, confirmedMarketplaceMutationFeeSats\)[\s\S]*?legacyBootstrapMarketplaceCarrySats <= 0[\s\S]*?confirmedMarketplaceMutationFeeSats \+[\s\S]*?legacyBootstrapMarketplaceCarrySats/,
 ]);
 expect(
-  "marketplace fee equality permits only the exact proven legacy bootstrap carry",
-  (marketplaceMutationEqualitySource.match(/legacyBootstrapMarketplaceCarrySats/gu) ?? [])
-    .length === 2 &&
+  "marketplace fee equality permits already-counted or exact proven legacy bootstrap carry",
+  /function marketplaceMutationFeesCountedOk[\s\S]*?return true;[\s\S]*?return false;[\s\S]*?return numbersAgree/u.test(
+    marketplaceMutationFeeHelperSource,
+  ) &&
     !/WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_MUTATION_SATS/u.test(
-      marketplaceMutationEqualitySource,
+      marketplaceMutationEqualitySource + marketplaceMutationFeeHelperSource,
     ),
 );
 

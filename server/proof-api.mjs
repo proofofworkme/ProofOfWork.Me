@@ -279,6 +279,7 @@ import {
   proofIndexCanonicalActivityPayload,
   proofIndexCanonicalInceptionMintWitnessesPayload,
   proofIndexCanonicalHistoricalWorkListingScopes,
+  proofIndexCanonicalCheckpointPayload,
   proofIndexCanonicalSummaryTokenTablePayload,
   proofIndexCanonicalWorkListingById,
   proofIndexCanonicalSummaryLedgerPayload,
@@ -316,6 +317,7 @@ import {
   proofIndexWalletTokenOverlayPayload,
   proofIndexWorkAmoBlockTransition,
   proofIndexWorkAmoGenericTokenStatePreimage,
+  proofIndexWorkAmoV5HMinusOneSeedEvidence,
   proofIndexWorkAmoLegacyBootstrapCarryEvidence,
   proofIndexWorkAmoRelationalTokenStateEvidence,
   proofIndexWorkAmoV8RelationalTokenStateEvidence,
@@ -652,6 +654,17 @@ const LEDGER_SUMMARY_FRESH_WAIT_MS = Number(
 const SUMMARY_PROOF_INDEX_READ_WAIT_MS = Number(
   process.env.SUMMARY_PROOF_INDEX_READ_WAIT_MS ??
     Math.max(WORK_FLOOR_FRESH_WAIT_MS, 45_000),
+);
+const SUMMARY_EXACT_CHECKPOINT_PROOF_INDEX_READ_WAIT_MS = Math.min(
+  600_000,
+  Math.max(
+    SUMMARY_PROOF_INDEX_READ_WAIT_MS,
+    Number(
+      process.env.SUMMARY_EXACT_CHECKPOINT_PROOF_INDEX_READ_WAIT_MS ??
+        process.env.POW_INDEX_CANONICAL_SUMMARY_REFRESH_TIMEOUT_MS ??
+        600_000,
+    ) || 600_000,
+  ),
 );
 const INDEXED_FALLBACK_BACKGROUND_REFRESH = /^(?:1|true|yes)$/iu.test(
   String(process.env.INDEXED_FALLBACK_BACKGROUND_REFRESH ?? ""),
@@ -15839,6 +15852,16 @@ function decodedOpReturnMessages(vout) {
     .filter(Boolean);
 }
 
+function decodedOpReturnMessageEntries(vout) {
+  return (Array.isArray(vout) ? vout : []).flatMap((output, protocolVout) =>
+    decodedOpReturnMessages([output]).map((message, recordOrdinal) => ({
+      message,
+      protocolVout,
+      recordOrdinal,
+    })),
+  );
+}
+
 function decodedProtocolMessages(vout, prefix) {
   return decodedOpReturnMessages(vout).filter((message) =>
     message.startsWith(prefix),
@@ -16022,10 +16045,32 @@ function attachmentFromAccumulator(accumulator) {
 }
 
 function extractProtocolMemo(vout) {
-  return parseWorkAmoV5PwmMessages(
-    decodedOpReturnMessages(vout),
+  const entries = decodedOpReturnMessageEntries(vout);
+  const parsed = parseWorkAmoV5PwmMessages(
+    entries.map((entry) => entry.message),
     { maxAttachmentBytes: MAX_ATTACHMENT_BYTES },
   );
+  if (!parsed) {
+    return null;
+  }
+  const positionedEntry =
+    entries.find((entry) =>
+      entry.message.startsWith(`${PROTOCOL_PREFIX}m:`),
+    ) ??
+    entries.find((entry) =>
+      entry.message.startsWith(`${PROTOCOL_PREFIX}r:`),
+    ) ??
+    entries.find((entry) =>
+      entry.message.startsWith(`${PROTOCOL_PREFIX}a:`),
+    ) ??
+    entries.find((entry) =>
+      entry.message.startsWith(`${PROTOCOL_PREFIX}s:`),
+    ) ??
+    entries.find((entry) => entry.message.startsWith(PROTOCOL_PREFIX));
+  return {
+    ...parsed,
+    ...canonicalEventIdentityDetails(positionedEntry),
+  };
 }
 
 function workMarketV4DeclarationRegistryPaymentSats(vout) {
@@ -21432,12 +21477,31 @@ function tokenStateFromTransactions(
         unitScale: _unitScale,
         ...definition
       } = token;
+      const replayPosition = {};
+      const replayBlockHash = String(definition.blockHash ?? "")
+        .trim()
+        .toLowerCase();
+      if (/^[0-9a-f]{64}$/u.test(replayBlockHash)) {
+        replayPosition.blockHash = replayBlockHash;
+      }
+      for (const [field, minimum] of [
+        ["blockHeight", 1],
+        ["blockIndex", 0],
+        ["protocolVout", 0],
+        ["recordOrdinal", 0],
+      ]) {
+        const value = Number(definition[field]);
+        if (Number.isSafeInteger(value) && value >= minimum) {
+          replayPosition[field] = value;
+        }
+      }
       return {
         ...definition,
         ...canonicalWorkTokenDefinition(
           network,
           workAmountStorageModel,
         ),
+        ...replayPosition,
       };
     });
   const creationSats = tokens.reduce(
@@ -26232,6 +26296,7 @@ function mailActivityItemFromTransaction(tx, network) {
       : compactText(protocolMessage.memo, 120) || "No message body";
 
   return {
+    ...canonicalEventIdentityDetails(protocolMessage),
     amountSats,
     actor,
     attachedCredits:
@@ -27753,6 +27818,29 @@ function currentBlockRejectedInceptionAttachmentDispositions(
   if (legacyMintsByTxid.size === 0) {
     return [];
   }
+  const bondEventIdentityDetails = (bond) => {
+    const details = {};
+    for (const key of [
+      "_powEventIndex",
+      "eventKeyVout",
+      "protocolVout",
+      "recordOrdinal",
+      "eventId",
+    ]) {
+      const rawValue = bond?.[key];
+      const value = Number(rawValue);
+      if (
+        rawValue !== undefined &&
+        rawValue !== null &&
+        rawValue !== "" &&
+        Number.isSafeInteger(value) &&
+        value >= 0
+      ) {
+        details[key] = value;
+      }
+    }
+    return details;
+  };
 
   return (Array.isArray(activity) ? activity : []).flatMap((bond) => {
     const txid = String(bond?.txid ?? "").trim().toLowerCase();
@@ -27839,6 +27927,7 @@ function currentBlockRejectedInceptionAttachmentDispositions(
       return [];
     }
     return [{
+      ...bondEventIdentityDetails(bond),
       attemptedKind: "token-mint",
       blockHash: currentBlockHash,
       blockHeight: currentBlockHeight,
@@ -29248,6 +29337,36 @@ function inceptionMintsWithLiveIssuance(
       bond,
     ]),
   );
+  const bondEventIdentityDetails = (bond) => {
+    const details = {};
+    for (const key of [
+      "_powEventIndex",
+      "eventKeyVout",
+      "protocolVout",
+      "recordOrdinal",
+      "eventId",
+    ]) {
+      const rawValue = bond?.[key];
+      const value = Number(rawValue);
+      if (
+        rawValue !== undefined &&
+        rawValue !== null &&
+        rawValue !== "" &&
+        Number.isSafeInteger(value) &&
+        value >= 0
+      ) {
+        details[key] = value;
+      }
+    }
+    return details;
+  };
+  const mintWithBondEventIdentity = (mint, bond) => {
+    const identity = bondEventIdentityDetails(bond);
+    const alreadyBound = Object.entries(identity).every(
+      ([key, value]) => Number(mint?.[key]) === value,
+    );
+    return alreadyBound ? mint : { ...mint, ...identity };
+  };
 
   return mints.map((seedMint) => {
     let mint = seedMint;
@@ -29364,11 +29483,12 @@ function inceptionMintsWithLiveIssuance(
       ) {
         return {
           ...mint,
+          ...bondEventIdentityDetails(bond),
           issuanceValueSnapshotModel: "",
           validationMode: "canonical-incb-value-snapshot-mismatch",
         };
       }
-      return mint;
+      return mintWithBondEventIdentity(mint, bond);
     }
     if (
       options.legacyBondTxids instanceof Set &&
@@ -29467,6 +29587,7 @@ function inceptionMintsWithLiveIssuance(
     const confirmedIssuanceUnitsText = confirmedIssuanceUnits.toString();
     return {
       ...mint,
+      ...bondEventIdentityDetails(bond),
       amount: confirmedIssuanceUnitsText,
       amountSats: 0,
       attachedWorkAmount,
@@ -30453,6 +30574,7 @@ function tokenActivityItemsFromState(state, indexAddress) {
         numericValue(listing.liveNetworkValueSats) ||
         TOKEN_MIN_MUTATION_PRICE_SATS + numericValue(listing.minerFeeSats),
       marketplaceMutationFeeSats: TOKEN_MIN_MUTATION_PRICE_SATS,
+      ...canonicalMinerFeeDetailsFromActivity(listing),
       minerFeeSats: numericValue(listing.minerFeeSats),
       network: listing.network,
       ...(listing?.relic === true ? { relic: true } : {}),
@@ -30692,6 +30814,11 @@ function tokenActivityItemsFromState(state, indexAddress) {
           (height) => height >= WORK_AMO_V5_ACTIVATION_HEIGHT,
         ) ||
         (listing.closedConfirmed === true && !knownPreAmoV5Close);
+      const canonicalCloseMinerFeeSats =
+        listing.closedMinerFeeCanonical === true
+          ? presentNonNegativeNumber(listing, "closedCanonicalMinerFeeSats") ??
+            presentNonNegativeNumber(listing, "closedMinerFeeSats")
+          : null;
       return {
         ...canonicalEventIdentityDetails({
           protocolVout: listing.closedProtocolVout,
@@ -30728,6 +30855,13 @@ function tokenActivityItemsFromState(state, indexAddress) {
           TOKEN_MIN_MUTATION_PRICE_SATS +
             numericValue(listing.closedMinerFeeSats),
         marketplaceMutationFeeSats: TOKEN_MIN_MUTATION_PRICE_SATS,
+        ...(canonicalCloseMinerFeeSats !== null
+          ? {
+              canonicalMinerFeeCovered: true,
+              canonicalMinerFeeSats: canonicalCloseMinerFeeSats,
+              minerFeeSource: String(listing.closedMinerFeeSource ?? ""),
+            }
+          : {}),
         minerFeeSats: numericValue(listing.closedMinerFeeSats),
         network: listing.network,
         participants: [
@@ -35089,19 +35223,49 @@ function scopedTokenPayloadFromState(tokenState, scope) {
     return tokenState;
   }
 
-  const sourceTokens = (tokenState.tokens ?? []).filter((token) =>
+  const allTokens = Array.isArray(tokenState.tokens) ? tokenState.tokens : [];
+  const sourceTokens = allTokens.filter((token) =>
     tokenMatchesScope(token, normalizedScope),
   );
   const workScoped =
     sourceTokens.length === 1 &&
     isWorkTokenId(sourceTokens[0]?.tokenId);
+  const stateIsScopedWorkPayload =
+    workScoped &&
+    allTokens.length === 1 &&
+    tokenMatchesScope(allTokens[0], normalizedScope);
+  const sourceTokenIds = new Set(sourceTokens.map((token) => token.tokenId));
+  const matchesSourceToken = (item) => sourceTokenIds.has(item?.tokenId);
+  const sourceClosedListings = (tokenState.closedListings ?? []).filter(
+    matchesSourceToken,
+  );
+  const sourceListings = (tokenState.listings ?? []).filter(matchesSourceToken);
+  const sourceInvalidEvents = (tokenState.invalidEvents ?? []).filter(
+    matchesSourceToken,
+  );
+  const sourceMints = (tokenState.mints ?? []).filter(matchesSourceToken);
+  const sourceSales = (tokenState.sales ?? []).filter(matchesSourceToken);
+  const sourceTransfers = (tokenState.transfers ?? []).filter(matchesSourceToken);
+  const scopedWorkRecordsUseSubatoms =
+    workScoped &&
+    [
+      ...sourceTokens,
+      ...sourceMints,
+      ...sourceSales,
+      ...sourceTransfers,
+    ].some((item) => workRecordUsesSubatoms(item));
   const workAmountStorageModel =
     workScoped &&
     (
-      tokenState?.amountStorageModel ===
-        WORK_SUBATOM_PROJECTION_MODEL ||
-      tokenState?.precisionModel === WORK_PRECISION_V2_MODEL ||
-      workRecordUsesSubatoms(sourceTokens[0])
+      (
+        stateIsScopedWorkPayload &&
+        (
+          tokenState?.amountStorageModel ===
+            WORK_SUBATOM_PROJECTION_MODEL ||
+          tokenState?.precisionModel === WORK_PRECISION_V2_MODEL
+        )
+      ) ||
+      scopedWorkRecordsUseSubatoms
     )
       ? WORK_SUBATOM_PROJECTION_MODEL
       : WORK_ATOMIC_PROJECTION_MODEL;
@@ -35128,16 +35292,12 @@ function scopedTokenPayloadFromState(tokenState, scope) {
       ),
     };
   });
-  const scopedTokenIds = new Set(tokens.map((token) => token.tokenId));
-  const matchesScopedToken = (item) => scopedTokenIds.has(item?.tokenId);
-  const closedListings = (tokenState.closedListings ?? []).filter(
-    matchesScopedToken,
-  );
-  const listings = (tokenState.listings ?? []).filter(matchesScopedToken);
-  const invalidEvents = (tokenState.invalidEvents ?? []).filter(matchesScopedToken);
-  const mints = (tokenState.mints ?? []).filter(matchesScopedToken);
-  const sales = (tokenState.sales ?? []).filter(matchesScopedToken);
-  const transfers = (tokenState.transfers ?? []).filter(matchesScopedToken);
+  const closedListings = sourceClosedListings;
+  const listings = sourceListings;
+  const invalidEvents = sourceInvalidEvents;
+  const mints = sourceMints;
+  const sales = sourceSales;
+  const transfers = sourceTransfers;
   const summaries = workScoped
     ? new Map()
     : tokenAggregateSummaries({
@@ -35327,6 +35487,10 @@ function scopedTokenPayloadFromState(tokenState, scope) {
           confirmedSupplyAtoms: _confirmedSupplyAtoms,
           confirmedSupplySubatoms: _confirmedSupplySubatoms,
           decimals: _decimals,
+          maxSupplyAtoms: _maxSupplyAtoms,
+          maxSupplySubatoms: _maxSupplySubatoms,
+          mintAmountAtoms: _mintAmountAtoms,
+          mintAmountSubatoms: _mintAmountSubatoms,
           pendingSupplyAtoms: _pendingSupplyAtoms,
           pendingSupplySubatoms: _pendingSupplySubatoms,
           precisionModel: _precisionModel,
@@ -39983,6 +40147,11 @@ function tokenStateWithAuthoritativeCurrentListings(tokenState, currentState) {
         listing,
       ),
     );
+  const authoritativeActiveListingKeys = new Set(
+    authoritativeListings
+      .map((listing) => tokenListingItemKey(listing))
+      .filter(Boolean),
+  );
   const unscopedListings = (
     Array.isArray(tokenState.listings) ? tokenState.listings : []
   ).filter(
@@ -39994,6 +40163,9 @@ function tokenStateWithAuthoritativeCurrentListings(tokenState, currentState) {
     currentState.closedListings,
     tokenClosedListingItemKey,
     mergeTokenListingRecord,
+  ).filter(
+    (listing) =>
+      !authoritativeActiveListingKeys.has(tokenListingItemKey(listing)),
   );
 
   return applyWorkMarketV2CutoverToTokenState(tokenStateWithPendingStats({
@@ -45094,12 +45266,29 @@ async function ledgerWithReplayedCreditNetworkValues(
       Number(tokenState?.indexedThroughBlock) || 0,
       Number(workTokenState?.indexedThroughBlock) || 0,
     ) || baseMetrics.indexedThroughBlock;
+  const publicLogActivity = Array.isArray(existingActivity)
+    ? existingActivity
+    : [];
+  const publicLogConfirmedComputerActions = publicLogActivity.filter(
+    (item) => item?.confirmed && item?.valid !== false,
+  ).length;
   const metrics = {
     ...baseMetrics,
     indexedThroughBlock,
+    publicLogActivityItems: publicLogActivity.length,
+    publicLogConfirmedComputerActions,
     sourceTipHeight: Number.isSafeInteger(sourceTipHeight)
       ? sourceTipHeight
       : undefined,
+    supplementalActivityItems: Math.max(
+      0,
+      Number(baseMetrics.activityItems) - publicLogActivity.length,
+    ),
+    supplementalConfirmedComputerActions: Math.max(
+      0,
+      Number(baseMetrics.confirmedComputerActions) -
+        publicLogConfirmedComputerActions,
+    ),
     tipLagBlocks:
       Number.isSafeInteger(sourceTipHeight) && indexedThroughBlock
         ? Math.max(0, sourceTipHeight - indexedThroughBlock)
@@ -45337,6 +45526,15 @@ function ledgerTokenStateForScope(ledger, scope) {
 function tokenStateLogExpectations(tokenState) {
   const expectations = [];
   const seenSealTxids = new Set();
+  const activeListingKeys = new Set(
+    (tokenState?.listings ?? [])
+      .map((listing) => {
+        const listingId = String(listing?.listingId ?? "").toLowerCase();
+        const tokenId = String(listing?.tokenId ?? "").toLowerCase();
+        return listingId && tokenId ? `${tokenId}:${listingId}` : "";
+      })
+      .filter(Boolean),
+  );
   const add = (item) => {
     const txid = String(item?.txid ?? "").toLowerCase();
     if (!item?.kind || !/^[0-9a-f]{64}$/u.test(txid)) {
@@ -45444,7 +45642,16 @@ function tokenStateLogExpectations(tokenState) {
   for (const listing of (tokenState?.closedListings ?? []).filter(
     (item) => item?.relic !== true,
   )) {
-    const closedTxid = listing?.closedTxid || listing?.listingId;
+    const listingId = String(listing?.listingId ?? "").toLowerCase();
+    const tokenId = String(listing?.tokenId ?? "").toLowerCase();
+    if (
+      listingId &&
+      tokenId &&
+      activeListingKeys.has(`${tokenId}:${listingId}`)
+    ) {
+      continue;
+    }
+    const closedTxid = listing?.closedTxid;
     if (
       !listing?.closedConfirmed ||
       !closedTxid ||
@@ -45542,14 +45749,36 @@ function canonicalActivityCountCoverage(metrics, sourceHashes) {
   const ledgerConfirmedActivityCount = numericValue(
     metrics?.confirmedComputerActions,
   );
+  const exactMetricValue = (value) => {
+    const number = Number(value);
+    return Number.isFinite(number) && number >= 0 ? number : null;
+  };
+  const publicLogActivityCount =
+    exactMetricValue(metrics?.publicLogActivityItems) ??
+    ledgerActivityCount;
+  const publicLogConfirmedActivityCount =
+    exactMetricValue(metrics?.publicLogConfirmedComputerActions) ??
+    ledgerConfirmedActivityCount;
   return {
     canonicalActivityCount,
     canonicalConfirmedActivityCount,
     ledgerActivityCount,
     ledgerConfirmedActivityCount,
+    publicLogActivityCount,
+    publicLogConfirmedActivityCount,
+    supplementalActivityCount: Math.max(
+      0,
+      ledgerActivityCount - publicLogActivityCount,
+    ),
+    supplementalConfirmedActivityCount: Math.max(
+      0,
+      ledgerConfirmedActivityCount - publicLogConfirmedActivityCount,
+    ),
     ok:
-      ledgerActivityCount === canonicalActivityCount &&
-      ledgerConfirmedActivityCount === canonicalConfirmedActivityCount,
+      publicLogActivityCount === canonicalActivityCount &&
+      publicLogConfirmedActivityCount === canonicalConfirmedActivityCount &&
+      ledgerActivityCount >= publicLogActivityCount &&
+      ledgerConfirmedActivityCount >= publicLogConfirmedActivityCount,
   };
 }
 
@@ -45951,14 +46180,42 @@ function ledgerSnapshotChecks({
   );
   const exactCreditFrozenComponents =
     exactCreditFrozenValueComponentsAgree(workFloor?.actualValue);
+  const workFloorFinite = workFloorPayloadHasFiniteNetworkValue(workFloor);
+  const growthSummaryFinite =
+    growthSummaryPayloadHasFiniteNetworkValue(growthSummary);
   addCheck(
     "network-values-finite",
     network !== "livenet" ||
-      (workFloorPayloadHasFiniteNetworkValue(workFloor) &&
-        growthSummaryPayloadHasFiniteNetworkValue(growthSummary)),
+      (workFloorFinite && growthSummaryFinite),
     {
       growthActualValueSats: growthActualValue,
+      growthSummaryFinite,
       growthWorkFloorValueSats: growthFloorValue,
+      hasCreditMinerFeeAccounting:
+        workFloor?.actualValue?.creditMinerFeeAccountingModel ===
+        CREDIT_MINER_FEE_ACCOUNTING_MODEL,
+      hasVerifiedCreditMinerFeeCoverage: Boolean(
+        verifiedCanonicalMinerFeeCoverage(
+          workFloor?.actualValue?.creditMinerFeeCoverage,
+        ),
+      ),
+      creditMinerFeeCoverageComplete: Boolean(
+        workFloor?.actualValue?.creditMinerFeeCoverageComplete,
+      ),
+      creditMinerFeeCoverageInputVerified: Boolean(
+        workFloor?.actualValue?.creditMinerFeeCoverageInputVerified,
+      ),
+      creditMinerFeeMissingCanonicalEvents:
+        workFloor?.actualValue?.creditMinerFeeMissingCanonicalEvents ?? null,
+      ...(Array.isArray(
+        workFloor?.actualValue?.creditMinerFeeMissingCanonicalSample,
+      )
+        ? {
+            creditMinerFeeMissingCanonicalSample:
+              workFloor.actualValue.creditMinerFeeMissingCanonicalSample,
+          }
+        : {}),
+      workFloorFinite,
       workActualValueSats: workActualValue,
       workNetworkValueSats: workNetworkValue,
     },
@@ -45978,18 +46235,22 @@ function ledgerSnapshotChecks({
   addCheck(
     "marketplace-mutation-fees-counted",
     numbersAgree(marketplaceFeeSats, marketplaceMutationFeeSats) &&
-      (numbersAgree(
-        confirmedMarketplaceMutationFeeSats,
+      marketplaceMutationFeesCountedOk(
         marketplaceMutationFeeSats,
-      ) ||
-        numbersAgree(
-          confirmedMarketplaceMutationFeeSats,
-          marketplaceMutationFeeSats +
-            legacyBootstrapMarketplaceCarrySats,
-        )),
+        confirmedMarketplaceMutationFeeSats,
+        legacyBootstrapMarketplaceCarrySats,
+      ),
     {
       confirmedMarketplaceMutationFeeSats,
       legacyBootstrapMarketplaceCarrySats,
+      legacyBootstrapCarryAccountingMode:
+        legacyBootstrapMarketplaceCarrySats > 0 &&
+        numbersAgree(
+          marketplaceMutationFeeSats,
+          confirmedMarketplaceMutationFeeSats,
+        )
+          ? "confirmed-activity-includes-carry"
+          : "confirmed-activity-excludes-carry",
       marketplaceFeeSats,
       marketplaceMutationFeeSats,
     },
@@ -46978,8 +47239,32 @@ async function ledgerConsistencyPayloadWithCurrentSummaries(
     },
     {
       details: {
+        creditMinerFeeCoverageComplete: Boolean(
+          workFloor?.actualValue?.creditMinerFeeCoverageComplete,
+        ),
+        creditMinerFeeCoverageInputVerified: Boolean(
+          workFloor?.actualValue?.creditMinerFeeCoverageInputVerified,
+        ),
+        creditMinerFeeMissingCanonicalEvents:
+          workFloor?.actualValue?.creditMinerFeeMissingCanonicalEvents ?? null,
+        ...(Array.isArray(
+          workFloor?.actualValue?.creditMinerFeeMissingCanonicalSample,
+        )
+          ? {
+              creditMinerFeeMissingCanonicalSample:
+                workFloor.actualValue.creditMinerFeeMissingCanonicalSample,
+            }
+          : {}),
         growthActualValueSats: growthActualValue,
         growthWorkFloorValueSats: growthFloorValue,
+        hasCreditMinerFeeAccounting:
+          workFloor?.actualValue?.creditMinerFeeAccountingModel ===
+          CREDIT_MINER_FEE_ACCOUNTING_MODEL,
+        hasVerifiedCreditMinerFeeCoverage: Boolean(
+          verifiedCanonicalMinerFeeCoverage(
+            workFloor?.actualValue?.creditMinerFeeCoverage,
+          ),
+        ),
         workActualValueSats: workActualValue,
         workNetworkValueSats: workNetworkValue,
       },
@@ -48628,6 +48913,17 @@ async function currentProofIndexTokenTablePayloadForLedger(
     return null;
   }
 
+  const exactHeight = Number(options.exactHeight);
+  const exactHash = String(options.exactHash ?? "")
+    .trim()
+    .toLowerCase();
+  const exactCheckpointRequested =
+    Number.isSafeInteger(exactHeight) &&
+    exactHeight > 0 &&
+    /^[0-9a-f]{64}$/u.test(exactHash);
+  const exactCheckpointReadWaitMs = exactCheckpointRequested
+    ? SUMMARY_EXACT_CHECKPOINT_PROOF_INDEX_READ_WAIT_MS
+    : SUMMARY_PROOF_INDEX_READ_WAIT_MS;
   const bootstrapPayload = await payloadWithFallbackAfterMs(
     proofIndexCanonicalSummaryTokenTablePayload(network, {
       exactHash: options.exactHash,
@@ -48639,7 +48935,7 @@ async function currentProofIndexTokenTablePayloadForLedger(
         return null;
       }),
     null,
-    SUMMARY_PROOF_INDEX_READ_WAIT_MS,
+    exactCheckpointReadWaitMs,
   );
   const payload =
     bootstrapPayload ??
@@ -48668,10 +48964,6 @@ async function currentProofIndexTokenTablePayloadForLedger(
   ) {
     return null;
   }
-  const exactHeight = Number(options.exactHeight);
-  const exactHash = String(options.exactHash ?? "")
-    .trim()
-    .toLowerCase();
   if (Number.isSafeInteger(exactHeight) && exactHeight > 0) {
     if (
       proofIndexPayloadIndexedThroughBlock(payload) !== exactHeight ||
@@ -48717,6 +49009,18 @@ function tokenTablePayloadHasConservedBalances(payload) {
       .map((token) => [
         String(token.tokenId).trim().toLowerCase(),
         workRecordUsesSubatoms(token) ||
+        mints.some(
+          (mint) =>
+            String(mint?.tokenId ?? "").trim().toLowerCase() ===
+              String(token.tokenId).trim().toLowerCase() &&
+            workRecordUsesSubatoms(mint),
+        ) ||
+        holders.some(
+          (holder) =>
+            String(holder?.tokenId ?? "").trim().toLowerCase() ===
+              String(token.tokenId).trim().toLowerCase() &&
+            workRecordUsesSubatoms(holder),
+        ) ||
         (
           tokens.length === 1 &&
           (
@@ -49078,7 +49382,7 @@ async function buildIndexedCanonicalLedgerPayload(
     },
   );
   const tokenState = derivedTokenState;
-  const ledgerTokenTableState = tokenStateWithAuthoritativeCurrentListings(
+  let ledgerTokenTableState = tokenStateWithAuthoritativeCurrentListings(
     mergeTokenPayloadWithCanonicalFloor(
       tokenState,
       currentTokenTableState,
@@ -49086,6 +49390,52 @@ async function buildIndexedCanonicalLedgerPayload(
     ),
     currentTokenTableState,
   );
+  if (
+    ledgerTokenTableState &&
+    expectedWorkAmountStorageModel === WORK_ATOMIC_PROJECTION_MODEL
+  ) {
+    const historicalWorkTokenState = scopedTokenPayloadFromState(
+      tokenState,
+      WORK_TOKEN_ID,
+    );
+    const authoritativeWorkListingState = scopedTokenPayloadFromState(
+      ledgerTokenTableState,
+      WORK_TOKEN_ID,
+    );
+    const listingToken = Array.isArray(authoritativeWorkListingState?.tokens)
+      ? authoritativeWorkListingState.tokens.find((token) =>
+          isWorkTokenId(token?.tokenId),
+        )
+      : null;
+    const listingCountFields = [
+      "confirmedOpenListings",
+      "openListings",
+      "pendingOpenListings",
+    ];
+    const listingCounts = Object.fromEntries(
+      listingCountFields
+        .filter((key) => listingToken?.[key] !== undefined)
+        .map((key) => [key, listingToken[key]]),
+    );
+    const historicalWorkWithCurrentListings = {
+      ...historicalWorkTokenState,
+      closedListings: authoritativeWorkListingState?.closedListings ?? [],
+      listings: authoritativeWorkListingState?.listings ?? [],
+      tokens: (Array.isArray(historicalWorkTokenState?.tokens)
+        ? historicalWorkTokenState.tokens
+        : []
+      ).map((token) =>
+        isWorkTokenId(token?.tokenId)
+          ? { ...token, ...listingCounts }
+          : token,
+      ),
+    };
+    ledgerTokenTableState = tokenStateWithExactScopedTokenReplacement(
+      ledgerTokenTableState,
+      historicalWorkWithCurrentListings,
+      WORK_TOKEN_ID,
+    );
+  }
   const indexedWorkTokenState = ledgerTokenTableState
     ? scopedTokenPayloadFromState(ledgerTokenTableState, WORK_TOKEN_ID)
     : null;
@@ -49137,6 +49487,12 @@ async function buildIndexedCanonicalLedgerPayload(
     seedAddresses,
     activityState,
   );
+  const publicLogActivityItems = Array.isArray(activityState?.activity)
+    ? activityState.activity.length
+    : 0;
+  const publicLogConfirmedComputerActions = (
+    Array.isArray(activityState?.activity) ? activityState.activity : []
+  ).filter((item) => item?.confirmed && item?.valid !== false).length;
   const baseActivity = dedupeActivityItems([
     ...(Array.isArray(activityState?.activity) ? activityState.activity : []),
     ...(Array.isArray(seededMailActivityState?.activity)
@@ -49199,6 +49555,7 @@ async function buildIndexedCanonicalLedgerPayload(
         numericValue(activityState?.stats?.addresses),
         numericValue(seededMailActivityState?.stats?.addresses),
       ),
+      confirmed: publicLogConfirmedComputerActions,
       registry: Array.isArray(registryState?.activity)
         ? registryState.activity.length
         : undefined,
@@ -49259,6 +49616,7 @@ async function buildIndexedCanonicalLedgerPayload(
         numericValue(activityState?.stats?.addresses),
         numericValue(seededMailActivityState?.stats?.addresses),
       ),
+      confirmed: publicLogConfirmedComputerActions,
       registry: Array.isArray(registryState?.activity)
         ? registryState.activity.length
         : undefined,
@@ -49311,9 +49669,20 @@ async function buildIndexedCanonicalLedgerPayload(
   const metrics = {
     ...baseMetrics,
     indexedThroughBlock,
+    publicLogActivityItems,
+    publicLogConfirmedComputerActions,
     sourceTipHeight: Number.isSafeInteger(sourceTipHeight)
       ? sourceTipHeight
       : undefined,
+    supplementalActivityItems: Math.max(
+      0,
+      Number(baseMetrics.activityItems) - publicLogActivityItems,
+    ),
+    supplementalConfirmedComputerActions: Math.max(
+      0,
+      Number(baseMetrics.confirmedComputerActions) -
+        publicLogConfirmedComputerActions,
+    ),
     tipLagBlocks:
       Number.isSafeInteger(sourceTipHeight) && indexedThroughBlock
         ? Math.max(0, sourceTipHeight - indexedThroughBlock)
@@ -50313,6 +50682,38 @@ function logHistoryReadRequiresFullSummaryTotal(requestedKind, eligibility) {
   );
 }
 
+function exactLogCountValue(value) {
+  const number = Number(value);
+  return Number.isSafeInteger(number) && number >= 0 ? number : null;
+}
+
+function publicLogTotalCountFromSummary(summary, fallbackTotal) {
+  const fallback = exactLogCountValue(fallbackTotal) ?? 0;
+  const check = (Array.isArray(summary?.consistency?.checks)
+    ? summary.consistency.checks
+    : []
+  ).find((item) => item?.name === "canonical-activity-count-matches-public-log");
+  const details = check?.details && typeof check.details === "object"
+    ? check.details
+    : {};
+  const publicCount = exactLogCountValue(details.publicLogActivityCount);
+  const canonicalCount = exactLogCountValue(details.canonicalActivityCount);
+  const ledgerCount = exactLogCountValue(details.ledgerActivityCount);
+  const supplementalCount = exactLogCountValue(details.supplementalActivityCount);
+  if (
+    check?.ok === true &&
+    publicCount !== null &&
+    canonicalCount === publicCount &&
+    ledgerCount !== null &&
+    ledgerCount >= publicCount &&
+    (supplementalCount === null ||
+      supplementalCount === ledgerCount - publicCount)
+  ) {
+    return publicCount;
+  }
+  return fallback;
+}
+
 async function stableCanonicalLogSummaryPayload(network, surface) {
   const summary = await summaryPayloadWithCanonicalProvenance(
     await activitySummaryPayload(network, false),
@@ -50368,6 +50769,10 @@ async function stableProofIndexLogPayload(network) {
   const summaryTotal = Number(
     summary.totalCount ?? summary.stats?.total ?? summary.activity?.length ?? 0,
   );
+  const publicSummaryTotal = publicLogTotalCountFromSummary(
+    summary,
+    summaryTotal,
+  );
   const summaryPending = Number(summary.stats?.pending ?? -1);
   const page = await proofIndexCanonicalActivityPayload(network, {
     snapshotId: summarySnapshotId,
@@ -50391,9 +50796,9 @@ async function stableProofIndexLogPayload(network) {
     summaryTotal < 0 ||
     pageHeight !== summaryHeight ||
     pageSnapshotId !== summarySnapshotId ||
-    pageTotal !== summaryTotal ||
-    pageSnapshotTotal !== summaryTotal ||
-    activity.length !== summaryTotal ||
+    pageTotal !== publicSummaryTotal ||
+    pageSnapshotTotal !== publicSummaryTotal ||
+    activity.length !== publicSummaryTotal ||
     (summaryPending >= 0 && pagePending !== summaryPending) ||
     !canonicalMinerFeeCoverage ||
     (summaryLatestEventBlock > 0 &&
@@ -50410,6 +50815,7 @@ async function stableProofIndexLogPayload(network) {
       pageSnapshotId: pageSnapshotId || null,
       pageSnapshotTotal,
       pageTotal,
+      publicSummaryTotal,
       summaryHeight,
       summaryLatestEventBlock: summaryLatestEventBlock || null,
       summaryPending,
@@ -50446,7 +50852,7 @@ async function stableProofIndexLogPayload(network) {
       latestEventBlock: pageLatestEventBlock || undefined,
     },
     summaryOnly: false,
-    totalCount: summaryTotal,
+    totalCount: publicSummaryTotal,
   };
 }
 
@@ -50468,6 +50874,10 @@ async function stableProofIndexLogHistoryPayload(
   const summaryHeight = proofIndexPayloadIndexedThroughBlock(summary);
   const summaryTotal = Number(
     summary.totalCount ?? summary.stats?.total ?? summary.activity?.length ?? 0,
+  );
+  const publicSummaryTotal = publicLogTotalCountFromSummary(
+    summary,
+    summaryTotal,
   );
   const requestedSnapshotId = String(
     eligibility.pagination.snapshotId ?? "",
@@ -50511,7 +50921,7 @@ async function stableProofIndexLogHistoryPayload(
     (exactQueryTxid && (pageHeight <= 0 || pageHeight > summaryHeight)) ||
     (!requestedKind &&
       !eligibility.pagination.query &&
-      Number(page.totalCount ?? -1) !== summaryTotal)
+      Number(page.totalCount ?? -1) !== publicSummaryTotal)
   ) {
     const error = freshDataUnavailableError(
       "Stable Log history page does not match its authenticated canonical summary snapshot.",
@@ -50521,6 +50931,7 @@ async function stableProofIndexLogHistoryPayload(
       pageHeight: pageHeight || null,
       pageSnapshotId: pageSnapshotId || null,
       pageTotal: Number(page.totalCount ?? -1),
+      publicSummaryTotal,
       summaryHeight,
       summarySnapshotId,
       summaryTotal,
@@ -50694,6 +51105,10 @@ async function freshProofIndexLogHistoryPayload(network, kind, searchParams) {
   const summaryTotal = Number(
     summary.totalCount ?? summary.stats?.total ?? summary.activity?.length ?? 0,
   );
+  const publicSummaryTotal = publicLogTotalCountFromSummary(
+    summary,
+    summaryTotal,
+  );
   const fullSummaryRead = logHistoryReadRequiresFullSummaryTotal(
     requestedKind,
     eligibility,
@@ -50703,7 +51118,7 @@ async function freshProofIndexLogHistoryPayload(network, kind, searchParams) {
     pageHeight !== summaryHeight ||
     !pageSnapshotId ||
     pageSnapshotId !== summarySnapshotId ||
-    (fullSummaryRead && pageSnapshotTotal !== summaryTotal)
+    (fullSummaryRead && pageSnapshotTotal !== publicSummaryTotal)
   ) {
     const error = freshDataUnavailableError(
       "Fresh Log history does not match the exact canonical Log summary.",
@@ -50714,6 +51129,7 @@ async function freshProofIndexLogHistoryPayload(network, kind, searchParams) {
       pageSnapshotId: pageSnapshotId || null,
       pageSnapshotTotal,
       pageTotal,
+      publicSummaryTotal,
       requestedKind: requestedKind || null,
       summaryHeight: summaryHeight || null,
       summarySnapshotId: summarySnapshotId || null,
@@ -50792,6 +51208,10 @@ async function freshProofIndexLogPayload(network) {
   const summaryTotal = Number(
     summary.totalCount ?? summary.stats?.total ?? summary.activity?.length ?? 0,
   );
+  const publicSummaryTotal = publicLogTotalCountFromSummary(
+    summary,
+    summaryTotal,
+  );
   const summaryPending = Number(summary.stats?.pending ?? -1);
   if (!summarySnapshotId || summaryHeight <= 0 || summaryTotal < 0) {
     const error = freshDataUnavailableError(
@@ -50829,9 +51249,9 @@ async function freshProofIndexLogPayload(network) {
     pageHeight !== summaryHeight ||
     !pageSnapshotId ||
     pageSnapshotId !== summarySnapshotId ||
-    pageTotal !== summaryTotal ||
-    pageSnapshotTotal !== summaryTotal ||
-    activity.length !== summaryTotal ||
+    pageTotal !== publicSummaryTotal ||
+    pageSnapshotTotal !== publicSummaryTotal ||
+    activity.length !== publicSummaryTotal ||
     (summaryPending >= 0 && pagePending !== summaryPending) ||
     !canonicalMinerFeeCoverage ||
     (summaryLatestEventBlock > 0 &&
@@ -50848,6 +51268,7 @@ async function freshProofIndexLogPayload(network) {
       pageSnapshotId: pageSnapshotId || null,
       pageSnapshotTotal,
       pageTotal,
+      publicSummaryTotal,
       canonicalMinerFeeCoverage:
         page?.canonicalMinerFeeCoverage ??
         page?.stats?.canonicalMinerFeeCoverage ??
@@ -50889,7 +51310,7 @@ async function freshProofIndexLogPayload(network) {
     source: page.source,
     stats,
     summaryOnly: false,
-    totalCount: summaryTotal,
+    totalCount: publicSummaryTotal,
   };
 }
 
@@ -56359,6 +56780,24 @@ function marketplaceMutationPaymentFlowSats(
   );
 }
 
+function marketplaceMutationFeesCountedOk(
+  marketplaceMutationFeeSats,
+  confirmedMarketplaceMutationFeeSats,
+  legacyBootstrapMarketplaceCarrySats,
+) {
+  if (numbersAgree(marketplaceMutationFeeSats, confirmedMarketplaceMutationFeeSats)) {
+    return true;
+  }
+  if (legacyBootstrapMarketplaceCarrySats <= 0) {
+    return false;
+  }
+  return numbersAgree(
+    marketplaceMutationFeeSats,
+    confirmedMarketplaceMutationFeeSats +
+      legacyBootstrapMarketplaceCarrySats,
+  );
+}
+
 function activityKindHasDedicatedGrowthBucket(item) {
   if (isBrowserActivityItem(item) || isBondActivityItem(item)) {
     return true;
@@ -57340,6 +57779,28 @@ function creditNetworkValueMetrics({
 
   const activityByRecord = new Map();
   const activityByTxid = new Map();
+  const shouldReplaceCreditReplayActivity = (current, incoming) => {
+    if (!current) {
+      return true;
+    }
+    if (
+      incoming?.canonicalMinerFeeCovered === true &&
+      current?.canonicalMinerFeeCovered !== true
+    ) {
+      return true;
+    }
+    if (
+      current?.canonicalMinerFeeCovered === true &&
+      incoming?.canonicalMinerFeeCovered !== true
+    ) {
+      return false;
+    }
+    return (
+      numericValue(incoming?.minerFeeSats) > numericValue(current?.minerFeeSats) ||
+      numericValue(incoming?.frozenNetworkValueSats) >
+        numericValue(current?.frozenNetworkValueSats)
+    );
+  };
   const addTokenActivity = (item) => {
     const txid = String(item?.txid ?? "").toLowerCase();
     const createdMs = creditValueEventMs(item);
@@ -57355,22 +57816,11 @@ function creditNetworkValueMetrics({
       return;
     }
     const current = activityByRecord.get(recordIdentity);
-    if (
-      !current ||
-      numericValue(item?.minerFeeSats) > numericValue(current?.minerFeeSats) ||
-      numericValue(item?.frozenNetworkValueSats) >
-        numericValue(current?.frozenNetworkValueSats)
-    ) {
+    if (shouldReplaceCreditReplayActivity(current, item)) {
       activityByRecord.set(recordIdentity, item);
     }
     const currentTxActivity = activityByTxid.get(txid);
-    if (
-      !currentTxActivity ||
-      numericValue(item?.minerFeeSats) >
-        numericValue(currentTxActivity?.minerFeeSats) ||
-      numericValue(item?.frozenNetworkValueSats) >
-        numericValue(currentTxActivity?.frozenNetworkValueSats)
-    ) {
+    if (shouldReplaceCreditReplayActivity(currentTxActivity, item)) {
       activityByTxid.set(txid, item);
     }
   };
@@ -57557,6 +58007,8 @@ function creditNetworkValueMetrics({
   const eventDetails = [];
   let cumulativeFrozenCreditValueQ8 = 0n;
   const countedMinerFeeTxids = new Set();
+  let missingCanonicalMinerFeeEvents = 0;
+  const missingCanonicalMinerFeeSample = [];
   const replayEvents = assertUniqueCreditValueReplayPositions([
     ...movementEvents,
     ...mutationEvents,
@@ -57609,6 +58061,14 @@ function creditNetworkValueMetrics({
       canonicalTransactionMinerFeeSats === null
     ) {
       canonicalReplayFeesComplete = false;
+      missingCanonicalMinerFeeEvents += 1;
+      if (missingCanonicalMinerFeeSample.length < 8) {
+        missingCanonicalMinerFeeSample.push({
+          kind: event.kind,
+          recordIdentity: event.movementIdentity,
+          txid: event.txid,
+        });
+      }
     }
     const transactionMinerFee = proofFlow(canonicalTransactionMinerFeeSats);
     const minerFee = countedMinerFeeTxids.has(event.txid)
@@ -57780,6 +58240,14 @@ function creditNetworkValueMetrics({
 
   return {
     ...minerFeeAccounting(),
+    creditMinerFeeCoverageComplete: Boolean(
+      verifiedMinerFeeCoverage && canonicalReplayFeesComplete,
+    ),
+    creditMinerFeeCoverageInputVerified: Boolean(verifiedMinerFeeCoverage),
+    creditMinerFeeMissingCanonicalEvents: missingCanonicalMinerFeeEvents,
+    ...(missingCanonicalMinerFeeSample.length > 0
+      ? { creditMinerFeeMissingCanonicalSample: missingCanonicalMinerFeeSample }
+      : {}),
     creditEventFrozenValueSats,
     creditEventFrozenValueQ8: creditEventFrozenValueQ8.toString(),
     creditEventLiveValueSats,
@@ -57896,6 +58364,56 @@ function tokenStateWithScopedTokenOverride(tokenState, scopedState, tokenId) {
     ),
   };
   return tokenStateWithPendingStats(merged);
+}
+
+function tokenStateWithExactScopedTokenReplacement(
+  tokenState,
+  scopedState,
+  tokenId,
+) {
+  if (!scopedState || !tokenId) {
+    return tokenState;
+  }
+
+  const normalizedTokenId = normalizeTokenScope(tokenId);
+  const scopedItemsFrom = (items) =>
+    (Array.isArray(items) ? items : []).filter(
+      (item) => normalizeTokenScope(item?.tokenId) === normalizedTokenId,
+    );
+  const scopedTokens = scopedItemsFrom(scopedState.tokens);
+  if (scopedTokens.length === 0) {
+    return tokenState;
+  }
+
+  const unscopedItemsFrom = (items) =>
+    (Array.isArray(items) ? items : []).filter(
+      (item) => normalizeTokenScope(item?.tokenId) !== normalizedTokenId,
+    );
+  const replaceScopedItems = (globalItems, scopedItems) => [
+    ...unscopedItemsFrom(globalItems),
+    ...scopedItemsFrom(scopedItems),
+  ];
+
+  return tokenStateWithPendingStats({
+    ...tokenState,
+    closedListings: replaceScopedItems(
+      tokenState?.closedListings,
+      scopedState.closedListings,
+    ),
+    holders: replaceScopedItems(tokenState?.holders, scopedState.holders),
+    invalidEvents: replaceScopedItems(
+      tokenState?.invalidEvents,
+      scopedState.invalidEvents,
+    ),
+    listings: replaceScopedItems(tokenState?.listings, scopedState.listings),
+    mints: replaceScopedItems(tokenState?.mints, scopedState.mints),
+    sales: replaceScopedItems(tokenState?.sales, scopedState.sales),
+    tokens: replaceScopedItems(tokenState?.tokens, scopedState.tokens),
+    transfers: replaceScopedItems(
+      tokenState?.transfers,
+      scopedState.transfers,
+    ),
+  });
 }
 
 function tokenMarketRecordTokenId(item) {
@@ -58638,6 +59156,20 @@ function growthActualNetworkValue(
           creditMinerFeeAccountingModel:
             creditValue.creditMinerFeeAccountingModel,
           creditMinerFeeCoverage: creditValue.creditMinerFeeCoverage,
+        }
+      : {}),
+    creditMinerFeeCoverageComplete: Boolean(
+      creditValue.creditMinerFeeCoverageComplete,
+    ),
+    creditMinerFeeCoverageInputVerified: Boolean(
+      creditValue.creditMinerFeeCoverageInputVerified,
+    ),
+    creditMinerFeeMissingCanonicalEvents:
+      creditValue.creditMinerFeeMissingCanonicalEvents ?? null,
+    ...(Array.isArray(creditValue.creditMinerFeeMissingCanonicalSample)
+      ? {
+          creditMinerFeeMissingCanonicalSample:
+            creditValue.creditMinerFeeMissingCanonicalSample,
         }
       : {}),
     creditMinerFeeFlowSats: creditValue.creditMinerFeeFlowSats,
@@ -62004,7 +62536,15 @@ async function cachedInternalVerifierState(key, loader) {
   const promise = Promise.resolve()
     .then(loader)
     .then((value) => {
-      entry.expiresAt = Date.now() + INTERNAL_VERIFIER_STATE_TTL_MS;
+      const exactInceptionSnapshotUnavailable =
+        key.startsWith("incb-value-snapshot-source:") &&
+        value &&
+        typeof value === "object" &&
+        !Array.isArray(value) &&
+        !value.snapshot;
+      entry.expiresAt = exactInceptionSnapshotUnavailable
+        ? 0
+        : Date.now() + INTERNAL_VERIFIER_STATE_TTL_MS;
       entry.settled = true;
       return value;
     });
@@ -62289,6 +62829,76 @@ async function canonicalVerifierContextFromCheckpoint(
         replayBinding,
       ),
   );
+}
+
+async function canonicalVerifierCurrentBlockContextFromCheckpoint(
+  network,
+  requiredBlockHeight,
+  expectedBlockHash,
+  expectedPreviousBlockHash,
+) {
+  const height = Number(requiredBlockHeight);
+  if (!Number.isSafeInteger(height) || height <= 0) {
+    throw new Error("Canonical verifier requires a positive block height.");
+  }
+  const blockHash = String(expectedBlockHash ?? "").trim().toLowerCase();
+  const previousBlockHash = String(expectedPreviousBlockHash ?? "")
+    .trim()
+    .toLowerCase();
+  if (
+    !/^[0-9a-f]{64}$/u.test(blockHash) ||
+    !/^[0-9a-f]{64}$/u.test(previousBlockHash)
+  ) {
+    throw new Error(
+      "Canonical verifier requires exact current and previous block hashes.",
+    );
+  }
+  const priorHeight = height - 1;
+  const prior = await proofIndexCanonicalCheckpointPayload(
+    network,
+    priorHeight,
+  );
+  const checkpointHash = String(prior?.checkpointHash ?? "")
+    .trim()
+    .toLowerCase();
+  if (
+    Number(prior?.indexedThroughBlock) !== priorHeight ||
+    !/^[0-9a-f]{64}$/u.test(checkpointHash) ||
+    checkpointHash !== previousBlockHash ||
+    prior?.fault?.active === true
+  ) {
+    throw new Error(
+      `Canonical verifier DB coverage is not authoritative through block ${priorHeight}.`,
+    );
+  }
+  const canonicalHashResponse = await bitcoinRpc("getblockhash", [priorHeight]);
+  const canonicalHash = String(
+    canonicalHashResponse?.ok ? canonicalHashResponse.result : "",
+  )
+    .trim()
+    .toLowerCase();
+  if (canonicalHash !== checkpointHash) {
+    throw new Error(
+      `Canonical verifier checkpoint ${priorHeight} no longer matches Bitcoin Core.`,
+    );
+  }
+  const current = await canonicalVerifierCurrentBlock(
+    network,
+    height,
+    checkpointHash,
+    blockHash,
+  );
+  return {
+    blockHash: current.blockHash,
+    blockHeaderHex: current.blockHeaderHex,
+    blockTransactions: current.blockTransactions,
+    canonicalCoverage: true,
+    coverageHeight: height,
+    indexedThroughBlock: height,
+    previousBlockHash: checkpointHash,
+    priorInvalidEvents: [],
+    transactions: current.transactions,
+  };
 }
 
 async function canonicalTokenListingScopeEvidenceFromCore(
@@ -63269,6 +63879,14 @@ function workAmoV5LegacyBootstrapReconciliation(
         excludedCarryFields.push(field);
       } else if (committed === published) {
         includedCarryCandidates.push(field);
+      } else if (committed > published + expectedCarry) {
+        const postActivationDelta =
+          committed - published - expectedCarry;
+        valid = committed - expectedCarry;
+        excludedCarryFields.push(field);
+        postActivationBaseCarryFields.push(field);
+        postActivationBaseCarryQ8 +=
+          postActivationDelta * GROWTH_VALUE_MULTIPLE * VALUE_Q8_SCALE;
       } else {
         return invalid(`legacy-bootstrap-base-field-diverged:${field}`, {
           committed: committed.toString(),
@@ -63393,8 +64011,20 @@ function workAmoV5LegacyBootstrapReconciliation(
       : null;
   const validCreditFixedQ8 = validCreditFixedSats * VALUE_Q8_SCALE;
   const legacyBootstrapCreditFixedQ8 = BigInt(evidence.creditFixedQ8);
+  const legacyBootstrapCreditRemainderQ8 =
+    committedCreditFixedQ8 !== null
+      ? committedCreditFixedQ8 - validCreditFixedQ8
+      : null;
+  const legacyBootstrapEffectiveCreditFixedQ8 =
+    legacyBootstrapCreditRemainderQ8 !== null &&
+    legacyBootstrapCreditRemainderQ8 >= 0n &&
+    legacyBootstrapCreditRemainderQ8 < legacyBootstrapCreditFixedQ8
+      ? legacyBootstrapCreditRemainderQ8
+      : legacyBootstrapCreditFixedQ8;
+  const legacyBootstrapCreditFixedOverlapQ8 =
+    legacyBootstrapCreditFixedQ8 - legacyBootstrapEffectiveCreditFixedQ8;
   const legacyBaselineCreditFixedQ8 =
-    validCreditFixedQ8 + legacyBootstrapCreditFixedQ8;
+    validCreditFixedQ8 + legacyBootstrapEffectiveCreditFixedQ8;
   const postActivationCreditFixedQ8 =
     committedCreditFixedQ8 !== null &&
     committedCreditFixedQ8 >= legacyBaselineCreditFixedQ8
@@ -63404,9 +64034,13 @@ function workAmoV5LegacyBootstrapReconciliation(
     !publishedValidCreditFixedQ8Present ||
     publishedValidCreditFixedQ8 === validCreditFixedQ8 ||
     publishedValidCreditFixedQ8 === legacyBaselineCreditFixedQ8 ||
+    publishedValidCreditFixedQ8 ===
+      validCreditFixedQ8 + legacyBootstrapCreditFixedQ8 ||
     publishedValidCreditFixedQ8 === committedCreditFixedQ8;
   if (
     committedCreditFixedQ8 === null ||
+    legacyBootstrapCreditRemainderQ8 === null ||
+    legacyBootstrapCreditRemainderQ8 < 0n ||
     postActivationCreditFixedQ8 === null ||
     !publishedCreditFixedQ8Matches ||
     committedCreditFixedQ8 !==
@@ -63420,6 +64054,12 @@ function workAmoV5LegacyBootstrapReconciliation(
           legacyBaselineCreditFixedQ8.toString(),
         legacyBootstrapCreditFixedQ8:
           legacyBootstrapCreditFixedQ8.toString(),
+        legacyBootstrapCreditFixedOverlapQ8:
+          legacyBootstrapCreditFixedOverlapQ8.toString(),
+        legacyBootstrapCreditRemainderQ8:
+          legacyBootstrapCreditRemainderQ8?.toString() ?? null,
+        legacyBootstrapEffectiveCreditFixedQ8:
+          legacyBootstrapEffectiveCreditFixedQ8.toString(),
         postActivationCreditFixedQ8:
           postActivationCreditFixedQ8?.toString() ?? null,
         publishedValidCreditFixedQ8:
@@ -63448,6 +64088,15 @@ function workAmoV5LegacyBootstrapReconciliation(
     baseCarryMode: legacyBootstrapBaseCarryMode,
     committedBaseState: committedState,
     committedCreditFixedQ8: committedCreditFixedQ8.toString(),
+    creditFixedOverlapQ8: legacyBootstrapCreditFixedOverlapQ8.toString(),
+    creditFixedOverlapSats: Number(
+      legacyBootstrapCreditFixedOverlapQ8 / VALUE_Q8_SCALE,
+    ),
+    effectiveCreditFixedQ8:
+      legacyBootstrapEffectiveCreditFixedQ8.toString(),
+    effectiveCreditFixedSats: Number(
+      legacyBootstrapEffectiveCreditFixedQ8 / VALUE_Q8_SCALE,
+    ),
     postActivationBaseCarryFields,
     postActivationBaseCarryQ8: postActivationBaseCarryQ8.toString(),
     publishedBaseNetworkValueQ8:
@@ -63465,7 +64114,10 @@ function workAmoV5LegacyBootstrapReconciliation(
   return {
     committedBaseState,
     legacyBootstrap,
-    legacyBootstrapCreditFixedQ8,
+    legacyBootstrapCreditFixedQ8:
+      legacyBootstrapEffectiveCreditFixedQ8,
+    legacyBootstrapRawCreditFixedQ8: legacyBootstrapCreditFixedQ8,
+    legacyBootstrapCreditFixedOverlapQ8,
     legacyBootstrapGrowthValueQ8,
     postActivationCreditFixedQ8,
     valid: true,
@@ -63605,6 +64257,36 @@ function workAmoV5ClosingSummaryProjection(
       q8ToNumber(fieldValueQ8),
     ]),
   );
+  const legacyBootstrap = reconciliation.legacyBootstrap ?? {};
+  const legacyBootstrapQ8 = (candidate) => {
+    if (typeof candidate === "bigint") {
+      return candidate;
+    }
+    const text = String(candidate ?? "").trim();
+    return /^[0-9]+$/u.test(text) ? BigInt(text) : null;
+  };
+  const legacyBootstrapCreditFixedQ8 =
+    legacyBootstrapQ8(reconciliation.legacyBootstrapCreditFixedQ8) ?? 0n;
+  const legacyBootstrapRawCreditFixedQ8 =
+    legacyBootstrapQ8(reconciliation.legacyBootstrapRawCreditFixedQ8) ??
+    legacyBootstrapQ8(legacyBootstrap.creditFixedQ8) ??
+    legacyBootstrapCreditFixedQ8;
+  const legacyBootstrapCreditFixedOverlapQ8 =
+    legacyBootstrapQ8(reconciliation.legacyBootstrapCreditFixedOverlapQ8) ??
+    legacyBootstrapQ8(legacyBootstrap.creditFixedOverlapQ8) ??
+    legacyBootstrapRawCreditFixedQ8 - legacyBootstrapCreditFixedQ8;
+  const legacyBootstrapCreditFixedSats = Number(
+    legacyBootstrap.effectiveCreditFixedSats ??
+      legacyBootstrapCreditFixedQ8 / VALUE_Q8_SCALE,
+  );
+  const legacyBootstrapCreditFixedOverlapSats = Number(
+    legacyBootstrap.creditFixedOverlapSats ??
+      legacyBootstrapCreditFixedOverlapQ8 / VALUE_Q8_SCALE,
+  );
+  const legacyBootstrapRawCreditFixedSats = Number(
+    legacyBootstrap.creditFixedSats ??
+      legacyBootstrapRawCreditFixedQ8 / VALUE_Q8_SCALE,
+  );
   const flowFields = {
     ...numberState,
     marketplaceFeeSats: Number(marketplaceFee),
@@ -63612,20 +64294,23 @@ function workAmoV5ClosingSummaryProjection(
     marketplaceMutationFeeSats: Number(marketplaceFee),
     marketplaceSaleVolumeSats: Number(marketplaceSaleVolume),
     marketplaceVolumeSats: Number(marketplaceSaleVolume),
-    legacyBootstrapCreditFixedQ8:
-      reconciliation.legacyBootstrapCreditFixedQ8.toString(),
-    legacyBootstrapCreditFixedSats:
-      reconciliation.legacyBootstrap.creditFixedSats,
+    legacyBootstrapCreditFixedQ8: legacyBootstrapCreditFixedQ8.toString(),
+    legacyBootstrapCreditFixedSats,
+    legacyBootstrapCreditFixedOverlapQ8:
+      legacyBootstrapCreditFixedOverlapQ8.toString(),
+    legacyBootstrapCreditFixedOverlapSats,
     legacyBootstrapFlowSats:
-      reconciliation.legacyBootstrap.marketplaceMutationFeeSats,
+      legacyBootstrap.marketplaceMutationFeeSats,
     legacyBootstrapGrowthValueQ8:
       reconciliation.legacyBootstrapGrowthValueQ8.toString(),
     legacyBootstrapMarketplaceCarrySats:
-      reconciliation.legacyBootstrap.marketplaceMutationFeeSats,
-    legacyBootstrapSats:
-      reconciliation.legacyBootstrap.growthValueSats,
+      legacyBootstrap.marketplaceMutationFeeSats,
+    legacyBootstrapRawCreditFixedQ8:
+      legacyBootstrapRawCreditFixedQ8.toString(),
+    legacyBootstrapRawCreditFixedSats,
+    legacyBootstrapSats: legacyBootstrap.growthValueSats,
     legacyBootstrapTokenMarketplaceFeeSats:
-      reconciliation.legacyBootstrap.marketplaceMutationFeeSats,
+      legacyBootstrap.marketplaceMutationFeeSats,
     postActivationCreditFixedQ8:
       (reconciliation.postActivationCreditFixedQ8 ?? 0n).toString(),
     postActivationCreditFixedSats: Number(
@@ -64255,6 +64940,21 @@ async function workAmoV5OpeningAccumulatorState(
       workProjectionCommitment,
       workStateCommitment,
     };
+    if (
+      persistedActivationSeed.source ===
+      "pinned-h-minus-one-seed-evidence"
+    ) {
+      return {
+        genericState,
+        idState,
+        persistedActivationSeedVerified: true,
+        state: validation.state,
+        summary: null,
+        tokenState: workState,
+        workProjection,
+        workState,
+      };
+    }
   }
   const [
     summary,
@@ -64379,8 +65079,23 @@ async function workAmoV5OpeningAccumulatorState(
   ) {
     throw new Error("Canonical AMO opening base vector does not match H-1.");
   }
-  const movements = workAmoV5HistoricalMovements(tokenState, priorHeight).map(
-    ({ amountAtoms, identity }) => ({ amountAtoms, identity }),
+  const movements = workAmoV5HistoricalMovements(
+    tokenState,
+    priorHeight,
+  ).map(
+    ({
+      amountAtoms,
+      amountStorageModel,
+      amountSubatoms,
+      identity,
+    }) => ({
+      ...(amountStorageModel === undefined
+        ? {}
+        : { amountStorageModel }),
+      ...(amountSubatoms === undefined ? {} : { amountSubatoms }),
+      ...(amountAtoms === undefined ? {} : { amountAtoms }),
+      identity,
+    }),
   );
   const openingGenericState =
     normalizeWorkAmoV5RawGenericState(
@@ -64671,6 +65386,9 @@ function workAmoV5RecordPositionKey(record) {
   );
 }
 
+let cachedWorkAmoV6ReplayInputs = null;
+let cachedWorkAmoV8ReplayInputs = null;
+
 async function workAmoV6ReplayInputsForBlock(
   _records,
   requiredBlockHeight,
@@ -64683,6 +65401,12 @@ async function workAmoV6ReplayInputsForBlock(
       referenceBlockWitnesses: [],
       workAmoV6: null,
     };
+  }
+  if (
+    cachedWorkAmoV6ReplayInputs?.activationHeight ===
+    WORK_AMO_V6_ACTIVATION_HEIGHT
+  ) {
+    return cachedWorkAmoV6ReplayInputs.value;
   }
   const canonicalDeclarationHashResult = await bitcoinRpc(
     "getblockhash",
@@ -64721,12 +65445,17 @@ async function workAmoV6ReplayInputsForBlock(
       "Canonical AMO V6 declaration migration evidence is unavailable.",
     );
   }
-  return {
+  const value = {
     referenceBlockWitnesses: [],
     workAmoV6: {
       activationHeight: WORK_AMO_V6_ACTIVATION_HEIGHT,
     },
   };
+  cachedWorkAmoV6ReplayInputs = {
+    activationHeight: WORK_AMO_V6_ACTIVATION_HEIGHT,
+    value,
+  };
+  return value;
 }
 
 function workAmoV8OpeningStateFromLegacy(legacyState) {
@@ -64767,6 +65496,29 @@ async function workAmoV8ReplayInputsForBlock(
   }
   const configuredDeclaration =
     configuredWorkAmoV8Declaration();
+  const configuredActivationHeight = Number(
+    configuredDeclaration?.activationHeight,
+  );
+  if (
+    Number.isSafeInteger(configuredActivationHeight) &&
+    configuredActivationHeight >= 2 &&
+    requiredBlockHeight < configuredActivationHeight
+  ) {
+    return { workAmoV8: null };
+  }
+  const cacheKey = [
+    configuredDeclaration?.txid,
+    configuredDeclaration?.blockHash,
+    configuredDeclaration?.activationHeight,
+    configuredDeclaration?.memoSha256,
+  ].join(":");
+  if (
+    cachedWorkAmoV8ReplayInputs?.cacheKey === cacheKey &&
+    Number.isSafeInteger(cachedWorkAmoV8ReplayInputs.activationHeight) &&
+    requiredBlockHeight >= cachedWorkAmoV8ReplayInputs.activationHeight
+  ) {
+    return cachedWorkAmoV8ReplayInputs.value;
+  }
   const latch =
     await proofIndexWorkAmoV8ActivationLatch(
       "livenet",
@@ -64821,12 +65573,18 @@ async function workAmoV8ReplayInputsForBlock(
       "Canonical AMO V8 activation and Q16 migration evidence is unavailable.",
     );
   }
-  return {
+  const value = {
     workAmoV8: {
       activationHeight,
       amountStorageModel: WORK_SUBATOM_PROJECTION_MODEL,
     },
   };
+  cachedWorkAmoV8ReplayInputs = {
+    activationHeight,
+    cacheKey,
+    value,
+  };
+  return value;
 }
 
 async function completeWorkAmoV5BlockProjection(
@@ -64878,6 +65636,24 @@ async function completeWorkAmoV5BlockProjection(
         workProjection: stored.payload.seedWorkProjection,
         workState: stored.payload.seedTokenState,
       };
+    } else {
+      const seedEvidence =
+        await proofIndexWorkAmoV5HMinusOneSeedEvidence(network, {
+          blockHash: previousBlockHash,
+          blockHeight: priorHeight,
+        });
+      if (seedEvidence) {
+        persistedActivationSeed = {
+          genericState: seedEvidence.seedGenericTokenState,
+          idState: seedEvidence.seedIdState,
+          source: "pinned-h-minus-one-seed-evidence",
+          state: seedEvidence.seedSufficientState,
+          stateCommitment:
+            seedEvidence.commitments.sufficientState,
+          workProjection: seedEvidence.seedWorkProjection,
+          workState: seedEvidence.seedTokenState,
+        };
+      }
     }
   }
   let opening = await workAmoV5OpeningAccumulatorState(
@@ -65310,7 +66086,7 @@ async function workAmoV5BlockVerifierPayload(
     throw error;
   }
   pruneInternalVerifierStateCache(requiredBlockHeight);
-  const context = await canonicalVerifierContextFromCheckpoint(
+  const context = await canonicalVerifierCurrentBlockContextFromCheckpoint(
     network,
     requiredBlockHeight,
     requiredBlockHash,
@@ -65781,7 +66557,7 @@ async function completeTokenVerifierState(
       );
     return {
       ...tokenStateFromTransactions(
-        [],
+        context.transactions,
         new Map([[WORK_TOKEN_DEFAULT_REGISTRY_ADDRESS, context.transactions]]),
         indexAddress,
         network,
@@ -67089,34 +67865,56 @@ function pendingWorkVerifierStageCollapseExactLegacyInvalidSibling(items) {
     const preV5 =
       Number.isSafeInteger(Number(first?.blockHeight)) &&
       Number(first.blockHeight) < WORK_AMO_V5_ACTIVATION_HEIGHT;
+    const verifierRejected = (item) =>
+      item?.reason ===
+        "The canonical first-party verifier rejected this protocol event." &&
+      Array.isArray(item?.validationErrors) &&
+      item.validationErrors.length === 1 &&
+      item.validationErrors[0] ===
+        "The canonical first-party verifier rejected this protocol event.";
+    const listingSpecific = (item) =>
+      ["token-listing-invalid", "token-listing-sealed-invalid"].includes(
+        item?.kind,
+      ) &&
+      /^[0-9a-f]{64}$/u.test(String(item?.listingId ?? "")) &&
+      verifierRejected(item) &&
+      ["pwt-sale-v1", "pwt-sale-v2"].includes(
+        String(item?.saleAuthorization?.version ?? ""),
+      );
+    const mintSpecific = (item) =>
+      item?.kind === "token-mint-invalid" &&
+      verifierRejected(item) &&
+      /^[1-9][0-9]*$/u.test(String(item?.amountAtoms ?? ""));
     const specificRows = group.filter(
-      (item) =>
-        ["token-listing-invalid", "token-listing-sealed-invalid"].includes(
-          item?.kind,
-        ) &&
-        /^[0-9a-f]{64}$/u.test(String(item?.listingId ?? "")) &&
-        item?.reason ===
-          "The canonical first-party verifier rejected this protocol event." &&
-        Array.isArray(item?.validationErrors) &&
-        item.validationErrors.length === 1 &&
-        item.validationErrors[0] ===
-          "The canonical first-party verifier rejected this protocol event." &&
-        ["pwt-sale-v1", "pwt-sale-v2"].includes(
-          String(item?.saleAuthorization?.version ?? ""),
-        ),
+      (item) => listingSpecific(item) || mintSpecific(item),
     );
     const specific = specificRows.length === 1 ? specificRows[0] : null;
     const genericRows = group.filter((item) => item !== specific);
-    const genericOk =
-      Boolean(specific) &&
-      genericRows.length > 0 &&
-      genericRows.every(
-      (item) =>
-        item?.kind === "token-event-invalid" &&
-        item?.reason === "no-valid-token-event" &&
-        Array.isArray(item?.validationErrors) &&
-        item.validationErrors.length === 1 &&
-        item.validationErrors[0] === "no-valid-token-event" &&
+    const genericMatchesSpecific = (item) => {
+      if (
+        item?.kind !== "token-event-invalid" ||
+        item?.reason !== "no-valid-token-event" ||
+        !Array.isArray(item?.validationErrors) ||
+        item.validationErrors.length !== 1 ||
+        item.validationErrors[0] !== "no-valid-token-event"
+      ) {
+        return false;
+      }
+      if (mintSpecific(specific)) {
+        return (
+          String(item?.attemptedKind ?? "").trim().toLowerCase() === "mint" &&
+          (
+            item?.listingId === undefined ||
+            item?.listingId === null ||
+            item?.listingId === ""
+          ) &&
+          (
+            item?.saleAuthorization === undefined ||
+            item?.saleAuthorization === null
+          )
+        );
+      }
+      return (
         (
           item?.listingId === undefined ||
           item?.listingId === null ||
@@ -67128,8 +67926,13 @@ function pendingWorkVerifierStageCollapseExactLegacyInvalidSibling(items) {
           item?.saleAuthorization === null ||
           String(item.saleAuthorization?.version ?? "") ===
             String(specific.saleAuthorization?.version ?? "")
-        ),
-    );
+        )
+      );
+    };
+    const genericOk =
+      Boolean(specific) &&
+      genericRows.length > 0 &&
+      genericRows.every(genericMatchesSpecific);
     if (aligned && preV5 && specific && genericOk) {
       collapsed.push(specific);
     } else {
@@ -67520,13 +68323,20 @@ async function pendingWorkVerifierStageConfirmedTransitionCommitment(
   return tokenStateCommitment;
 }
 
+function proofIndexTokenStateTablesSource(source) {
+  return String(source ?? "")
+    .split("+")
+    .map((part) => part.trim())
+    .includes("proof-indexer-token-state-tables");
+}
+
 function pendingWorkVerifierStageConfirmedBase(
   payload,
   tip,
   tokenStateCommitment,
 ) {
   if (
-    payload?.source !== "proof-indexer-token-state-tables" ||
+    !proofIndexTokenStateTablesSource(payload?.source) ||
     payload?.network !== "livenet" ||
     Number(payload.indexedThroughBlock) !== tip.height ||
     String(payload.indexedThroughBlockHash ?? "") !== tip.blockHash ||
@@ -77019,6 +77829,7 @@ async function handleRequest(request, response) {
       const pendingWorkMarketFastPage =
         tokenScope === WORK_TOKEN_ID &&
         network === "livenet" &&
+        !exactProofIndexHistoryRead &&
         (exactProofIndexTxids.length > 0 || addressScopedMarketHistory)
           ? await pendingWorkMarketHistoryPage(
               network,

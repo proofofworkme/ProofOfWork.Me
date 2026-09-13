@@ -948,6 +948,33 @@ const VERIFY_WORK_ATOMS_POST_BOOTSTRAP_ONLY = process.argv.includes(
 const REBUILD_CREDIT_BALANCES_ONLY = process.argv.includes(
   "--rebuild-credit-balances",
 );
+function parseCreditBalanceReplayTokenIds(value, label) {
+  const raw = String(value ?? "").trim();
+  if (!raw) {
+    return [];
+  }
+  const tokenIds = raw
+    .split(",")
+    .map((tokenId) => tokenId.trim().toLowerCase())
+    .filter(Boolean);
+  const invalid = tokenIds.find((tokenId) => !/^[0-9a-f]{64}$/u.test(tokenId));
+  if (invalid) {
+    throw new Error(`${label} contains invalid token id ${invalid}.`);
+  }
+  return [...new Set(tokenIds)].sort();
+}
+const REBUILD_CREDIT_BALANCE_TOKEN_IDS =
+  parseCreditBalanceReplayTokenIds(
+    process.env.POW_INDEX_REBUILD_CREDIT_BALANCE_TOKEN_IDS,
+    "POW_INDEX_REBUILD_CREDIT_BALANCE_TOKEN_IDS",
+  );
+const REBUILD_CREDIT_BALANCE_PRESERVE_PENDING_DELTAS =
+  /^(?:1|true|yes)$/iu.test(
+    String(
+      process.env.POW_INDEX_REBUILD_CREDIT_BALANCE_PRESERVE_PENDING_DELTAS ??
+        "",
+    ),
+  );
 const APPLY_WORK_ATOMIC_MIGRATION = /^(?:1|true|yes)$/iu.test(
   String(process.env.POW_INDEX_WORK_ATOMIC_MIGRATION_APPLY ?? ""),
 );
@@ -1472,6 +1499,13 @@ const PENDING_ONLY_BACKFILL = pendingOnlyBackfillMode({
   storeCanonicalSummarySnapshot: STORE_CANONICAL_SUMMARY_SNAPSHOT,
   storeLedgerSnapshot: STORE_LEDGER_SNAPSHOT,
 });
+const CANONICAL_SUMMARY_ONLY_BACKFILL = Boolean(
+  STORE_CANONICAL_SUMMARY_SNAPSHOT &&
+    !STORE_LEDGER_SNAPSHOT &&
+    SOURCE_FILTER.size === 1 &&
+    SOURCE_FILTER.has("canonical-summary") &&
+    SOURCES.length === 0,
+);
 
 const LEDGER_CANONICAL_SUMMARY_RETENTION = Math.max(
   512,
@@ -1507,6 +1541,12 @@ const LEDGER_SCAN_SNAPSHOT_RETENTION = Math.max(
     ),
   ),
 );
+const PRUNE_LEDGER_SNAPSHOTS_AFTER_CANONICAL_SUMMARY =
+  !/^(?:0|false|no|off)$/iu.test(
+    String(
+      process.env.POW_INDEX_PRUNE_LEDGER_SNAPSHOTS_AFTER_SUMMARY ?? "1",
+    ),
+  );
 const WORK_TOKEN_MAX_SUPPLY = 21_000_000;
 const WORK_TOKEN_MINT_AMOUNT = 1_000;
 const WORK_TOKEN_MAX_SUPPLY_ATOMS = (
@@ -6657,6 +6697,20 @@ function pendingVerifierRequestTimeoutMs(options = {}, nowMs = Date.now()) {
 async function canonicalRecoveryItemsForTx(tx, messages, options = {}) {
   const txid = String(tx?.txid ?? "").trim().toLowerCase();
   const pendingTransaction = Number(tx?.height ?? 0) <= 0;
+  const confirmedVerifierRequestTimeoutMs = () => {
+    const configured = Number(
+      options?.confirmedVerifierTimeoutMs ??
+        globalThis.process?.env?.POW_INDEX_CONFIRMED_VERIFIER_TIMEOUT_MS ??
+        120_000,
+    );
+    return Math.min(
+      5 * 60_000,
+      Math.max(
+        30_000,
+        Math.floor(Number.isFinite(configured) ? configured : 120_000),
+      ),
+    );
+  };
   const pendingEnvelopeCanStandAlone =
     pendingTransaction &&
     messages.some((message) => message?.prefix === "pwm1:");
@@ -6678,7 +6732,7 @@ async function canonicalRecoveryItemsForTx(tx, messages, options = {}) {
     try {
       const verifierTimeoutMs = pendingTransaction
         ? pendingVerifierRequestTimeoutMs(options)
-        : 30_000;
+        : confirmedVerifierRequestTimeoutMs();
       if (verifierTimeoutMs === 0) {
         throw new Error(
           `Pending verifier headroom is exhausted before ${spec.label} for ${txid}.`,
@@ -16447,12 +16501,25 @@ function canonicalSummaryCoverage(summaryPayloads = {}) {
     : 0;
 }
 
-function canonicalSummaryAccountingModelsCurrent(summaryPayloads = {}) {
+function canonicalSummaryAccountingModelsCurrent(summaryPayloads = {}, options = {}) {
   const q8Scale = 100_000_000n;
   const summaryCoverage = canonicalSummaryCoverage(summaryPayloads);
-  const q16Active =
-    WORK_AMO_V8_DECLARATION_PINS_CONFIGURED &&
-    summaryCoverage >= WORK_AMO_V8_CONFIGURED_ACTIVATION_HEIGHT;
+  const requestedWorkAmountStorageModel = String(
+    options.workAmountStorageModel ?? "",
+  ).trim();
+  if (
+    requestedWorkAmountStorageModel &&
+    ![
+      WORK_ATOMIC_PROJECTION_MODEL,
+      WORK_SUBATOM_PROJECTION_MODEL,
+    ].includes(requestedWorkAmountStorageModel)
+  ) {
+    return false;
+  }
+  const q16Active = requestedWorkAmountStorageModel
+    ? requestedWorkAmountStorageModel === WORK_SUBATOM_PROJECTION_MODEL
+    : WORK_AMO_V8_DECLARATION_PINS_CONFIGURED &&
+      summaryCoverage >= WORK_AMO_V8_CONFIGURED_ACTIVATION_HEIGHT;
   const expectedWorkStorageModel = q16Active
     ? WORK_SUBATOM_PROJECTION_MODEL
     : WORK_ATOMIC_PROJECTION_MODEL;
@@ -16805,9 +16872,15 @@ function canonicalSummaryAccountingModelsCurrent(summaryPayloads = {}) {
     inceptionActual?.confirmedIssuanceUnits,
     { positive: true },
   );
+  const confirmedIssuanceUnitsZeroAllowed = exactInteger(
+    inceptionActual?.confirmedIssuanceUnits,
+  );
   const directProofIssuanceUnits = exactInteger(
     inceptionActual?.directProofIssuanceUnits,
     { positive: true },
+  );
+  const directProofIssuanceUnitsZeroAllowed = exactInteger(
+    inceptionActual?.directProofIssuanceUnits,
   );
   const attachedWorkIssuanceUnits = exactInteger(
     inceptionActual?.attachedWorkIssuanceUnits,
@@ -16871,6 +16944,9 @@ function canonicalSummaryAccountingModelsCurrent(summaryPayloads = {}) {
   const inceptionConfirmedSupply = exactInteger(
     summaryPayloads?.inceptionSummary?.stats?.confirmedSupply,
     { positive: true },
+  );
+  const inceptionConfirmedSupplyZeroAllowed = exactInteger(
+    summaryPayloads?.inceptionSummary?.stats?.confirmedSupply,
   );
   const inceptionBondSaleVolumeSats = exactInteger(
     inceptionActual?.bondSaleVolumeSats,
@@ -16944,6 +17020,53 @@ function canonicalSummaryAccountingModelsCurrent(summaryPayloads = {}) {
       "networkValueQ8",
       "networkValueSats",
     );
+  const zeroInceptionQ8Values = [
+    attachedWorkLiveValueAtSendQ8,
+    issuanceNetworkValueQ8,
+    issuanceDustQ8,
+    issuanceFloorQ8,
+    issuanceValueSnapshotWorkNetworkValueQ8,
+    inceptionNetworkValueQ8,
+    inceptionLiveNetworkValueQ8,
+    inceptionFrozenNetworkValueQ8,
+    inceptionFloorQ8,
+    inceptionLiveFloorQ8,
+    inceptionFrozenFloorQ8,
+    topLevelInceptionNetworkValueQ8,
+  ];
+  const zeroInceptionUnitsAndFlows = [
+    confirmedIssuanceUnitsZeroAllowed,
+    directProofIssuanceUnitsZeroAllowed,
+    attachedWorkIssuanceUnits,
+    attachedWorkAmountUnits,
+    inceptionConfirmedSupplyZeroAllowed,
+    inceptionBondSaleVolumeSats,
+    inceptionBondTransferFeeSats,
+    inceptionBondMarketplaceMutationFeeSats,
+  ];
+  const inceptionZeroIssuanceCurrent =
+    inceptionActual?.attachmentAccountingModel ===
+      INCB_ISSUANCE_ACCOUNTING_MODEL &&
+    inceptionActual?.issuanceAccountingModel ===
+      INCB_ISSUANCE_ACCOUNTING_MODEL &&
+    inceptionActual?.issuanceCheckpointMode ===
+      "bond-transaction-provenance" &&
+    Number.isSafeInteger(confirmedInceptionMints) &&
+    confirmedInceptionMints === 0 &&
+    inceptionActual?.attachedWorkAmountStorageModel ===
+      expectedWorkStorageModel &&
+    Number(inceptionActual?.attachedWorkAmountDecimals) ===
+      expectedWorkDecimals &&
+    String(inceptionActual?.attachedWorkAmountUnitScale ?? "") ===
+      expectedWorkUnitScaleText &&
+    (
+      !q16Active ||
+      inceptionActual?.attachedWorkAmountPrecisionModel ===
+        WORK_PRECISION_V2_MODEL
+    ) &&
+    zeroInceptionQ8Values.every((value) => value === 0n) &&
+    zeroInceptionUnitsAndFlows.every((value) => value === 0n) &&
+    exactInceptionAliasesCurrent;
   const attachedWorkIssuanceDustQ8 =
     attachedWorkLiveValueAtSendQ8 !== null &&
     attachedWorkIssuanceUnits !== null
@@ -17055,8 +17178,13 @@ function canonicalSummaryAccountingModelsCurrent(summaryPayloads = {}) {
     inceptionConfirmedSupply > 0n
       ? inceptionNetworkValueQ8 / inceptionConfirmedSupply
       : null;
-  const inceptionNetworkValueCurrent =
+  const inceptionZeroNetworkValueCurrent =
+    inceptionZeroIssuanceCurrent &&
     inceptionActual?.networkValueAccountingModel ===
+      INCB_NETWORK_VALUE_ACCOUNTING_MODEL;
+  const inceptionNetworkValueCurrent =
+    inceptionZeroNetworkValueCurrent ||
+    (inceptionActual?.networkValueAccountingModel ===
       INCB_NETWORK_VALUE_ACCOUNTING_MODEL &&
     inceptionConfirmedSupply !== null &&
     inceptionConfirmedSupply === confirmedIssuanceUnits &&
@@ -17073,7 +17201,7 @@ function canonicalSummaryAccountingModelsCurrent(summaryPayloads = {}) {
     expectedInceptionFloorQ8 !== null &&
     inceptionFloorQ8 === expectedInceptionFloorQ8 &&
     inceptionLiveFloorQ8 === expectedInceptionFloorQ8 &&
-    inceptionFrozenFloorQ8 === expectedInceptionFloorQ8;
+    inceptionFrozenFloorQ8 === expectedInceptionFloorQ8);
   return (
     exactWorkNetworkValue !== null &&
     String(
@@ -17081,7 +17209,7 @@ function canonicalSummaryAccountingModelsCurrent(summaryPayloads = {}) {
         ?.creditMinerFeeAccountingModel ?? "",
     ) === "canonical-unique-tx-input-output-v1" &&
     workTransferProjectionCurrent &&
-    inceptionIssuanceCurrent &&
+    (inceptionZeroIssuanceCurrent || inceptionIssuanceCurrent) &&
     inceptionNetworkValueCurrent &&
     coverage?.complete === true &&
     coverage?.source ===
@@ -17341,9 +17469,31 @@ function canonicalSummaryRefreshCanDefer(error) {
     error?.name === "AbortError" ||
     /operation was aborted/iu.test(errorText) ||
     (statusCode === 503 &&
-      /(?:not exactly at the Bitcoin Core tip|tip changed during canonical summary construction|canonical summary.*(?:timed out|catching up))/iu.test(
+      /(?:not exactly at the Bitcoin Core tip|tip changed during canonical summary construction|canonical summary.*(?:timed out|catching up)|canonical AMO transition token state is not relationally complete|exact conserved token balances are unavailable)/iu.test(
         errorText,
       ))
+  );
+}
+
+function canonicalSummaryRefreshNotAtTip(error) {
+  const statusCode = Number(error?.statusCode ?? 0);
+  const errorText = [error?.message, error?.responseText]
+    .filter(Boolean)
+    .join(" ");
+  return (
+    statusCode === 503 &&
+    /not exactly at the Bitcoin Core tip/iu.test(errorText)
+  );
+}
+
+function canonicalSummaryRefreshCatchupDependency(error) {
+  const statusCode = Number(error?.statusCode ?? 0);
+  const errorText = [error?.message, error?.responseText]
+    .filter(Boolean)
+    .join(" ");
+  return (
+    statusCode === 503 &&
+    /exact conserved token balances are unavailable/iu.test(errorText)
   );
 }
 
@@ -18059,7 +18209,9 @@ async function storeCanonicalSummarySnapshot(client, options = {}) {
     previousIndexedThroughBlockHash === latestIndexedThroughBlockHash &&
     previousStorageEligible &&
     previousWorkState.ready &&
-    canonicalSummaryAccountingModelsCurrent(previousPayload?.summaryPayloads) &&
+    canonicalSummaryAccountingModelsCurrent(previousPayload?.summaryPayloads, {
+      workAmountStorageModel,
+    }) &&
     publicLogFingerprintsMatch(
       currentPublicLogFingerprint,
       previousPublicLogFingerprint,
@@ -18097,14 +18249,51 @@ async function storeCanonicalSummarySnapshot(client, options = {}) {
       },
     );
   } catch (error) {
+    const notAtTip = canonicalSummaryRefreshNotAtTip(error);
+    const catchupDependency =
+      canonicalSummaryRefreshCatchupDependency(error);
+    let catchupDependencyBehindTip = false;
+    if (!checkpointRequired && catchupDependency) {
+      const nodeTipHeight = Number(await bitcoinRpc("getblockcount"));
+      catchupDependencyBehindTip =
+        Number.isSafeInteger(nodeTipHeight) &&
+        nodeTipHeight > latestIndexedHeight;
+    }
+    const coldRefreshCanDefer =
+      notAtTip || catchupDependencyBehindTip;
     if (
       checkpointRequired ||
-      !previousPayload ||
-      !previousStorageEligible ||
-      !previousWorkState.ready ||
+      (
+        !coldRefreshCanDefer &&
+        (
+          !previousPayload ||
+          !previousStorageEligible ||
+          !previousWorkState.ready
+        )
+      ) ||
       !canonicalSummaryRefreshCanDefer(error)
     ) {
       throw error;
+    }
+    if (!previousPayload || !previousStorageEligible || !previousWorkState.ready) {
+      console.error(
+        JSON.stringify({
+          error: error?.message ?? String(error),
+          indexedThroughBlock: latestIndexedHeight,
+          latestIndexedHeight,
+          phase: "canonical-summary-refresh",
+          reason: "canonical-summary-deferred-until-tip",
+          retryingNextCycle: true,
+        }),
+      );
+      return {
+        indexedThroughBlock: latestIndexedHeight,
+        indexedThroughBlockHash: latestIndexedThroughBlockHash,
+        latestIndexedHeight,
+        reason: "canonical-summary-deferred-until-tip",
+        skipped: true,
+        snapshotId: null,
+      };
     }
     console.error(
       JSON.stringify({
@@ -18165,26 +18354,67 @@ async function storeCanonicalSummarySnapshot(client, options = {}) {
       .toLowerCase(),
   );
   const logSummary = objectPayload(summaryPayloads.logSummary);
-  const logSummaryTotal = Number(
-    logSummary?.totalCount ?? logSummary?.stats?.total ?? -1,
+  const publicLogCountDetails = objectPayload(
+    (Array.isArray(ledger?.checks) ? ledger.checks : []).find(
+      (check) => check?.name === "canonical-activity-count-matches-public-log",
+    )?.details,
   );
-  const logSummaryPending = Number(logSummary?.stats?.pending ?? -1);
+  const publicLogActivityCount = Number(
+    publicLogCountDetails?.publicLogActivityCount,
+  );
+  const publicLogConfirmedActivityCount = Number(
+    publicLogCountDetails?.publicLogConfirmedActivityCount,
+  );
+  const logSummaryTotal = Number(
+    Number.isSafeInteger(publicLogActivityCount)
+      ? publicLogActivityCount
+      : (logSummary?.totalCount ?? logSummary?.stats?.total ?? -1),
+  );
+  const logSummaryPending = Number(
+    Number.isSafeInteger(publicLogActivityCount) &&
+      Number.isSafeInteger(publicLogConfirmedActivityCount)
+      ? Math.max(0, publicLogActivityCount - publicLogConfirmedActivityCount)
+      : (logSummary?.stats?.pending ?? -1),
+  );
+  const publicLogFingerprintStable = publicLogFingerprintsMatch(
+    currentPublicLogFingerprint,
+    finalPublicLogFingerprint,
+  );
+  const accountingModelsCurrent =
+    canonicalSummaryAccountingModelsCurrent(summaryPayloads, {
+      workAmountStorageModel,
+    });
+  const snapshotIdsAligned =
+    Boolean(snapshotId) &&
+    String(ledger.snapshotId ?? "").trim() === snapshotId &&
+    summarySnapshotIds.every((value) => value === snapshotId);
+  const checkpointHashesAligned = summaryCheckpointHashes.every(
+    (value) => value === latestIndexedThroughBlockHash,
+  );
   if (
     indexedThroughBlock !== latestIndexedHeight ||
-    !publicLogFingerprintsMatch(
-      currentPublicLogFingerprint,
-      finalPublicLogFingerprint,
-    ) ||
+    !publicLogFingerprintStable ||
     logSummaryTotal !== finalPublicLogFingerprint.count ||
     logSummaryPending !== finalPublicLogFingerprint.pending ||
-    !canonicalSummaryAccountingModelsCurrent(summaryPayloads) ||
-    !snapshotId ||
-    String(ledger.snapshotId ?? "").trim() !== snapshotId ||
-    summarySnapshotIds.some((value) => value !== snapshotId) ||
-    summaryCheckpointHashes.some(
-      (value) => value !== latestIndexedThroughBlockHash,
-    )
+    !accountingModelsCurrent ||
+    !snapshotIdsAligned ||
+    !checkpointHashesAligned
   ) {
+    console.error(
+      JSON.stringify({
+        accountingModelsCurrent,
+        checkpointHashesAligned,
+        finalPublicLogCount: finalPublicLogFingerprint.count,
+        finalPublicLogPending: finalPublicLogFingerprint.pending,
+        indexedThroughBlock,
+        latestIndexedHeight,
+        logSummaryPending,
+        logSummaryTotal,
+        phase: "canonical-summary-refresh-guard",
+        publicLogFingerprintStable,
+        snapshotIdsAligned,
+      }),
+    );
     throw new Error(
       `Canonical summary refresh is not one exact snapshot through block ${latestIndexedHeight}`,
     );
@@ -18374,7 +18604,12 @@ async function storeCanonicalSummarySnapshot(client, options = {}) {
       `Canonical summary ${snapshotId} is immutable and cannot be repaired in place.`,
     );
   }
-  const snapshotRetention = await pruneLedgerSnapshots(client);
+  const snapshotRetention = PRUNE_LEDGER_SNAPSHOTS_AFTER_CANONICAL_SUMMARY
+    ? await pruneLedgerSnapshots(client)
+    : {
+        skipped: true,
+        reason: "disabled-by-env",
+      };
   return {
     indexedThroughBlock,
     indexedThroughBlockHash: latestIndexedThroughBlockHash,
@@ -21699,6 +21934,15 @@ function exactStoredWorkAmoV5HMinusOneSeedEvidenceRow(
   );
 }
 
+function workAmoV5HMinusOneSeedEvidenceFromStoredRow(row) {
+  const evidence =
+    validatedWorkAmoV5HMinusOneSeedEvidence(row?.payload);
+  return evidence &&
+    exactStoredWorkAmoV5HMinusOneSeedEvidenceRow(row, evidence)
+    ? evidence
+    : null;
+}
+
 async function storedWorkAmoV5HMinusOneSeedEvidenceRows(
   client,
   snapshotId,
@@ -21766,10 +22010,15 @@ async function assertWorkAmoV5HMinusOneCaptureCheckpoint(
         ) AS later_block_count,
         (
           SELECT count(*)::integer
-          FROM proof_indexer.transactions
-          WHERE network = $1
-            AND status = 'confirmed'
-            AND block_height > $2
+          FROM proof_indexer.transactions transaction_row
+          JOIN proof_indexer.blocks block_row
+            ON block_row.network = transaction_row.network
+           AND block_row.canonical = true
+           AND block_row.height = transaction_row.block_height
+           AND lower(block_row.block_hash) = lower(transaction_row.block_hash)
+          WHERE transaction_row.network = $1
+            AND transaction_row.status = 'confirmed'
+            AND transaction_row.block_height > $2
         ) AS later_transaction_count,
         (
           SELECT count(*)::integer
@@ -21860,6 +22109,28 @@ async function captureWorkAmoV5HMinusOneSeedEvidence(
       blockHash: normalizedBlockHash,
       blockHeight,
     });
+    const existingBeforeProduce =
+      await storedWorkAmoV5HMinusOneSeedEvidenceRows(client, "");
+    if (existingBeforeProduce.length > 0) {
+      const existingEvidence =
+        existingBeforeProduce.length === 1
+          ? workAmoV5HMinusOneSeedEvidenceFromStoredRow(
+              existingBeforeProduce[0],
+            )
+          : null;
+      if (
+        !existingEvidence ||
+        existingEvidence.indexedThroughBlock !== blockHeight ||
+        existingEvidence.indexedThroughBlockHash !==
+          normalizedBlockHash
+      ) {
+        throw new Error(
+          "Canonical AMO V5 H-1 seed evidence conflicts with an existing immutable row.",
+        );
+      }
+      await client.query("COMMIT");
+      return existingEvidence;
+    }
     const payload = await readJson(
       endpoint("/api/v1/internal/work-amo-v5-seed-evidence"),
       {
@@ -25670,6 +25941,31 @@ async function exactWorkQ16PendingEmptyParent(client, { lock = false } = {}) {
               OR transaction.raw_tx ? 'pendingWorkMintResolvedInvalid'
               OR transaction.raw_tx ? 'pendingProtocolResolvedInvalid'
             )
+            AND (
+              jsonb_typeof(
+                transaction.raw_tx->'pendingWorkMintAttemptCount'
+              ) = 'number'
+              AND jsonb_typeof(
+                transaction.raw_tx->'pendingWorkMintInspectionVersion'
+              ) = 'number'
+              AND jsonb_typeof(
+                transaction.raw_tx->'pendingWorkMintRecoveryNeeded'
+              ) = 'boolean'
+              AND jsonb_typeof(
+                transaction.raw_tx->'pendingWorkMintResolvedInvalid'
+              ) = 'boolean'
+              AND jsonb_typeof(
+                transaction.raw_tx->'pendingProtocolResolvedInvalid'
+              ) = 'boolean'
+              AND transaction.raw_tx->>'pendingWorkMintAttemptCount' = '0'
+              AND transaction.raw_tx->>'pendingWorkMintInspectionVersion' = '1'
+              AND transaction.raw_tx->>'pendingWorkMintRecoveryNeeded' =
+                'false'
+              AND transaction.raw_tx->>'pendingWorkMintResolvedInvalid' =
+                'false'
+              AND transaction.raw_tx->>'pendingProtocolResolvedInvalid'
+                IN ('false', 'true')
+            ) IS NOT TRUE
         ) AS recovery_count,
         (
           SELECT count(*)::integer
@@ -34212,7 +34508,11 @@ try {
       try {
         await seedCanonicalBondDefinitions(client, { required: true });
         const replay =
-          await rebuildConfirmedCreditBalancesFromCanonicalEvents(client);
+          await rebuildConfirmedCreditBalancesFromCanonicalEvents(client, {
+            preservePendingDeltas:
+              REBUILD_CREDIT_BALANCE_PRESERVE_PENDING_DELTAS,
+            tokenIds: REBUILD_CREDIT_BALANCE_TOKEN_IDS,
+          });
         await client.query("COMMIT");
         console.log(
           JSON.stringify(
@@ -34220,7 +34520,10 @@ try {
               canonicalCreditBalanceReplay: true,
               network: NETWORK,
               ok: true,
+              preservedPendingDeltas:
+                REBUILD_CREDIT_BALANCE_PRESERVE_PENDING_DELTAS,
               replay,
+              scopeTokenIds: REBUILD_CREDIT_BALANCE_TOKEN_IDS,
             },
             null,
             2,
@@ -34420,14 +34723,19 @@ try {
           ),
         );
       } else {
-        if (!REPAIR_WORK_PARTICIPANTS_ONLY) {
+        if (
+          !REPAIR_WORK_PARTICIPANTS_ONLY &&
+          !CANONICAL_SUMMARY_ONLY_BACKFILL
+        ) {
           for (const source of SOURCES) {
             results.push(await backfillSource(client, source));
           }
           results.push(await repairMailParticipants(client));
           results.push(await repairConfirmedListingSealMetadata(client));
         }
-        results.push(await repairConfirmedWorkTransferParticipants(client));
+        if (!CANONICAL_SUMMARY_ONLY_BACKFILL) {
+          results.push(await repairConfirmedWorkTransferParticipants(client));
+        }
         if (REPAIR_WORK_PARTICIPANTS_ONLY) {
           console.log(
             JSON.stringify(
@@ -34444,8 +34752,10 @@ try {
           );
           process.exitCode = 0;
         } else {
-          results.push(await repairWorkMintMinterAttribution(client));
-          results.push(await backfillScopedTokenHolders(client));
+          if (!CANONICAL_SUMMARY_ONLY_BACKFILL) {
+            results.push(await repairWorkMintMinterAttribution(client));
+            results.push(await backfillScopedTokenHolders(client));
+          }
           const snapshot = STORE_LEDGER_SNAPSHOT
             ? await storeLedgerSnapshot(client)
             : null;
@@ -34465,6 +34775,7 @@ try {
                 ok: true,
                 results,
                 canonicalSummarySnapshot,
+                canonicalSummaryOnly: CANONICAL_SUMMARY_ONLY_BACKFILL,
                 snapshotId: snapshot?.snapshotId ?? null,
                 storeCanonicalSummarySnapshot:
                   STORE_CANONICAL_SUMMARY_SNAPSHOT,

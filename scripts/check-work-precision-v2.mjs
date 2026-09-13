@@ -1997,6 +1997,11 @@ assert.match(
   /UPDATE proof_indexer\.credit_listings listing[\s\S]*listing\.status IN \('active', 'sealing'\)[\s\S]*IN \('pwt-sale-v1', 'pwt-sale-v2'\)/u,
   "migration must close only stale historical V1/V2 status projections outside the canonical V8 relic set",
 );
+assert.match(
+  migration,
+  /preUnitRelicAlreadyResolved[\s\S]*proof_indexer\.credit_listings listing[\s\S]*proof_indexer\.events invalid_event[\s\S]*work-market-v2-canonical-oracle-unavailable[\s\S]*listing_rows\) === 0[\s\S]*invalid_event_rows\) ===\s*1/u,
+  "migration must accept only the exact confirmed-invalid pre-unit relic absence as an idempotent cutover",
+);
 assert.match(migration, /DELETE FROM proof_indexer\.events event/u);
 assert.match(
   migration,
@@ -2007,6 +2012,26 @@ assert.match(
   migration,
   /UPDATE proof_indexer\.credit_listings listing[\s\S]*amount = listing\.amount \* \$3::numeric[\s\S]*'legacyAmountAtoms'[\s\S]*listing_tx\.block_height < \$2/u,
   "every retained preactivation listing row must carry an exact Q8-to-Q16 amount conversion witness",
+);
+assert.match(
+  migration,
+  /const completedMarker = \{[\s\S]*status: "complete"[\s\S]*const existingCompleteMarker =[\s\S]*workPrecisionV2MarkerMatches\(existingMarker, completedMarker\)[\s\S]*const transactionMarker = existingCompleteMarker \?\? completedMarker/u,
+  "migration must be able to recover mutable Q16 storage from an already-present exact immutable marker",
+);
+assert.match(
+  migration,
+  /const lockedDeclarationBlockResult = await client\.query[\s\S]*height = \$1[\s\S]*const aheadTipStorageRecoveryReady =[\s\S]*Boolean\(existingCompleteMarker\)[\s\S]*lockedDeclarationBlockHash === pins\.declarationBlockHash/u,
+  "ahead-of-boundary storage recovery must prove the declaration block while reusing only an exact immutable marker",
+);
+assert.match(
+  migration,
+  /UPDATE proof_indexer\.meta[\s\S]*WHERE key = 'canonical:rebuild'[\s\S]*value->>'status' = 'active'[\s\S]*value->>'indexedThroughBlock'[\s\S]*END >= \$1/u,
+  "ahead-of-boundary storage recovery must rewind only an active canonical rebuild checkpoint",
+);
+assert.doesNotMatch(
+  migration,
+  /WORK precision marker exists while canonical storage is still Q8/u,
+  "an exact immutable marker must not deadlock canonical Q8-to-Q16 storage recovery",
 );
 assert.match(
   migration,

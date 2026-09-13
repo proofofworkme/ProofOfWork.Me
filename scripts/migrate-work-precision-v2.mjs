@@ -12,8 +12,12 @@ import {
   WORK_AMO_V5_DECLARATION_MIN_PAYMENT_SATS,
   WORK_AMO_V5_DECLARATION_REGISTRY_ADDRESS,
   WORK_AMO_V5_PRE_UNIT_RELIC_AMOUNT_ATOMS,
+  WORK_AMO_V5_PRE_UNIT_RELIC_BLOCK_HEIGHT,
+  WORK_AMO_V5_PRE_UNIT_RELIC_BLOCK_INDEX,
   WORK_AMO_V5_PRE_UNIT_RELIC_LISTING_TXID,
   WORK_AMO_V5_PRE_UNIT_RELIC_PRICE_SATS,
+  WORK_AMO_V5_PRE_UNIT_RELIC_PROTOCOL_VOUT,
+  WORK_AMO_V5_PRE_UNIT_RELIC_RECORD_ORDINAL,
   WORK_AMO_V5_PRE_UNIT_RELIC_SELLER_ADDRESS,
 } from "../server/work-amo-v5.mjs";
 import {
@@ -1886,10 +1890,16 @@ export async function runWorkPrecisionV2Migration(
     updatedAt: markerTimestamp,
     version: WORK_AMO_V8_AUTH_VERSION,
   };
+  const completedMarker = {
+    ...marker,
+    completedAt: markerTimestamp,
+    status: "complete",
+    updatedAt: markerTimestamp,
+  };
   if (initialPrecision === "q16") {
     if (
       !existingMarker ||
-      !workPrecisionV2MarkerMatches(existingMarker, marker)
+      !workPrecisionV2MarkerMatches(existingMarker, completedMarker)
     ) {
       throw new Error(
         "WORK Q16 storage does not bind the exact configured activation-opening migration marker.",
@@ -1989,19 +1999,17 @@ export async function runWorkPrecisionV2Migration(
       "WORK definition is neither exact historical Q8 nor canonical Q16.",
     );
   }
-  if (existingMarker) {
+  const existingCompleteMarker =
+    existingMarker &&
+    workPrecisionV2MarkerMatches(existingMarker, completedMarker)
+      ? existingMarker
+      : null;
+  if (existingMarker && !existingCompleteMarker) {
     throw new Error(
-      "WORK precision marker exists while canonical storage is still Q8.",
+      "WORK precision marker exists while canonical Q8 storage recovery cannot verify the exact configured migration marker.",
     );
   }
-  const transactionMarker = apply
-    ? marker
-    : {
-        ...marker,
-        completedAt: markerTimestamp,
-        status: "complete",
-        updatedAt: markerTimestamp,
-      };
+  const transactionMarker = existingCompleteMarker ?? completedMarker;
 
   await client.query("BEGIN ISOLATION LEVEL SERIALIZABLE");
   try {
@@ -2082,6 +2090,31 @@ export async function runWorkPrecisionV2Migration(
       `,
     );
     const lockedIndexTip = lockedIndexTipResult.rows[0];
+    const lockedDeclarationBlockResult = await client.query(
+      `
+        SELECT block_hash
+        FROM proof_indexer.blocks
+        WHERE network = 'livenet'
+          AND canonical = true
+          AND height = $1
+        LIMIT 2
+      `,
+      [pins.declarationHeight],
+    );
+    const lockedDeclarationBlockHash = normalizedLower(
+      lockedDeclarationBlockResult.rows[0]?.block_hash,
+    );
+    const boundaryTipReady =
+      lockedIndexTipResult.rows.length === 1 &&
+      Number(lockedIndexTip?.height) === pins.declarationHeight &&
+      normalizedLower(lockedIndexTip?.block_hash) ===
+        pins.declarationBlockHash;
+    const aheadTipStorageRecoveryReady =
+      Boolean(existingCompleteMarker) &&
+      lockedIndexTipResult.rows.length === 1 &&
+      Number(lockedIndexTip?.height) >= pins.declarationHeight &&
+      lockedDeclarationBlockResult.rows.length === 1 &&
+      lockedDeclarationBlockHash === pins.declarationBlockHash;
     if (
       stableJson(lockedDeclarationEvidence) !==
         stableJson(declarationEvidence) ||
@@ -2090,10 +2123,7 @@ export async function runWorkPrecisionV2Migration(
       lockedCoreTip.height !== coreTip.height ||
       lockedCoreTip.hash !== coreTip.hash ||
       lockedActivationBlockHash !== activationBlockHash ||
-      lockedIndexTipResult.rows.length !== 1 ||
-      Number(lockedIndexTip?.height) !== pins.declarationHeight ||
-      normalizedLower(lockedIndexTip?.block_hash) !==
-        pins.declarationBlockHash
+      (!boundaryTipReady && !aheadTipStorageRecoveryReady)
     ) {
       throw new Error(
         "WORK precision migration evidence, activation opening, or exact index/Core tip changed after transactional locks.",
@@ -2318,6 +2348,35 @@ export async function runWorkPrecisionV2Migration(
     );
     await client.query(
       `
+        UPDATE proof_indexer.meta
+        SET
+          value = value || jsonb_build_object(
+            'active', true,
+            'complete', false,
+            'indexedThroughBlock', $2::integer,
+            'indexedThroughBlockHash', $3::text,
+            'status', 'active',
+            'updatedAt', to_jsonb(now())
+          ),
+          updated_at = now()
+        WHERE key = 'canonical:rebuild'
+          AND value->>'network' = 'livenet'
+          AND value->>'status' = 'active'
+          AND CASE
+            WHEN COALESCE(value->>'indexedThroughBlock', '') ~
+              '^[0-9]+$'
+            THEN (value->>'indexedThroughBlock')::integer
+            ELSE 0
+          END >= $1
+      `,
+      [
+        pins.activationHeight,
+        pins.declarationHeight,
+        pins.declarationBlockHash,
+      ],
+    );
+    await client.query(
+      `
         DELETE FROM proof_indexer.credit_balances
         WHERE network = 'livenet' AND token_id = $1
       `,
@@ -2353,9 +2412,52 @@ export async function runWorkPrecisionV2Migration(
       ],
     );
     if (preUnitRelicUpdate.rowCount !== 1) {
-      throw new Error(
-        "WORK V8 precision migration did not close the exact nonrefundable V5 pre-unit relic.",
+      const preUnitRelicAlreadyResolved = await client.query(
+        `
+          SELECT
+            count(listing.listing_id)::integer AS listing_rows,
+            count(invalid_event.event_id)::integer AS invalid_event_rows
+          FROM (VALUES (1)) AS seed(n)
+          LEFT JOIN proof_indexer.credit_listings listing
+            ON listing.network = 'livenet'
+           AND listing.token_id = $1
+           AND listing.listing_id = $2
+          LEFT JOIN proof_indexer.events invalid_event
+            ON invalid_event.network = 'livenet'
+           AND invalid_event.txid = $2
+           AND invalid_event.kind = 'token-event-invalid'
+           AND invalid_event.status = 'confirmed'
+           AND invalid_event.valid = false
+           AND invalid_event.block_height = $3
+           AND invalid_event.block_index = $4
+           AND invalid_event.op_return_vout = $5
+           AND invalid_event.record_ordinal = $6
+           AND invalid_event.payload->>'listingId' = $2
+           AND lower(invalid_event.payload->>'tokenId') = $1
+           AND invalid_event.payload->>'attemptedKind' = 'list'
+           AND COALESCE(
+             NULLIF(invalid_event.payload->>'reasonCode', ''),
+             NULLIF(invalid_event.payload->>'reason', '')
+           ) = 'work-market-v2-canonical-oracle-unavailable'
+        `,
+        [
+          WORK_TOKEN_ID,
+          WORK_AMO_V5_PRE_UNIT_RELIC_LISTING_TXID,
+          WORK_AMO_V5_PRE_UNIT_RELIC_BLOCK_HEIGHT,
+          WORK_AMO_V5_PRE_UNIT_RELIC_BLOCK_INDEX,
+          WORK_AMO_V5_PRE_UNIT_RELIC_PROTOCOL_VOUT,
+          WORK_AMO_V5_PRE_UNIT_RELIC_RECORD_ORDINAL,
+        ],
       );
+      const resolved =
+        Number(preUnitRelicAlreadyResolved.rows[0]?.listing_rows) === 0 &&
+        Number(preUnitRelicAlreadyResolved.rows[0]?.invalid_event_rows) ===
+          1;
+      if (!resolved) {
+        throw new Error(
+          "WORK V8 precision migration did not close the exact nonrefundable V5 pre-unit relic.",
+        );
+      }
     }
     await client.query(
       `
@@ -2605,7 +2707,10 @@ export async function runWorkPrecisionV2Migration(
       applied: apply,
       ...(apply ? {} : { declarationEvidence }),
       legacyListingConservation,
-      marker: apply ? storedMarkerResult.rows[0].value : marker,
+      marker:
+        apply || existingCompleteMarker
+          ? storedMarkerResult.rows[0].value
+          : marker,
       precision: apply ? "q16" : "q8",
       schema,
       status: apply ? "complete" : "ready-to-apply",

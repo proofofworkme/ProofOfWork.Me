@@ -239,6 +239,45 @@ function workPrecisionBoundaryFixture({
   };
 }
 
+function emitFixtureFailure(options) {
+  const line = JSON.stringify({
+    ...fixtureFailureRecord(options),
+  });
+  // Node 22 can report the asynchronous stream callback before a child pipe
+  // has actually delivered its final chunk. This fixture models a fatal
+  // worker record, so make the process-boundary write synchronous.
+  writeSync(process.stderr.fd, `${line}\n`);
+}
+
+if (fixtureMode === "poison-exit") {
+  emitFixtureFailure();
+  process.exit(7);
+} else if (fixtureMode === "transient-exit") {
+  emitFixtureFailure({ transient: true });
+  process.exit(8);
+} else if (fixtureMode === "poison-timeout") {
+  emitFixtureFailure();
+  const timer = setInterval(() => {}, 1_000);
+  process.once("SIGTERM", () => {
+    clearInterval(timer);
+    process.exit(0);
+  });
+  await delay(2_147_483_647);
+} else if (fixtureMode === "wait-for-stop") {
+  const timer = setInterval(() => {}, 1_000);
+  process.once("SIGTERM", () => {
+    clearInterval(timer);
+    process.exit(0);
+  });
+  await delay(2_147_483_647);
+} else if (fixtureMode === "ignore-term") {
+  setInterval(() => {}, 1_000);
+  process.on("SIGTERM", () => {});
+  await delay(2_147_483_647);
+} else if (fixtureMode) {
+  throw new Error(`Unknown fixture mode: ${fixtureMode}`);
+}
+
 const v8CoreDeclarationVerifier = topLevelFunctionSource(
   "exactWorkAmoV8CoreDeclarationEvidence",
 );
@@ -253,35 +292,7 @@ assert.doesNotMatch(
   "the V8 latch must not select the subject-position PWM aggregate",
 );
 
-function emitFixtureFailure(options) {
-  const line = JSON.stringify({
-    ...fixtureFailureRecord(options),
-  });
-  // Node 22 can report the asynchronous stream callback before a child pipe
-  // has actually delivered its final chunk. This fixture models a fatal
-  // worker record, so make the process-boundary write synchronous.
-  writeSync(process.stderr.fd, `${line}\n`);
-}
-
-if (fixtureMode === "poison-exit") {
-  await emitFixtureFailure();
-  process.exitCode = 7;
-} else if (fixtureMode === "transient-exit") {
-  await emitFixtureFailure({ transient: true });
-  process.exitCode = 8;
-} else if (fixtureMode === "poison-timeout") {
-  await emitFixtureFailure();
-  const timer = setInterval(() => {}, 1_000);
-  process.once("SIGTERM", () => clearInterval(timer));
-} else if (fixtureMode === "wait-for-stop") {
-  const timer = setInterval(() => {}, 1_000);
-  process.once("SIGTERM", () => clearInterval(timer));
-} else if (fixtureMode === "ignore-term") {
-  setInterval(() => {}, 1_000);
-  process.on("SIGTERM", () => {});
-} else {
-  await runChecks();
-}
+await runChecks();
 
 async function runChecks() {
   const workerSource = readFileSync(WORKER_PATH, "utf8");
@@ -2449,7 +2460,7 @@ async function runChecks() {
         canonicalBarrier: true,
         kind: "confirmed",
         sourceLabels: ["block-scan"],
-        storeCanonicalSummarySnapshot: "0",
+        storeCanonicalSummarySnapshot: "1",
       },
       {
         canonicalBarrier: false,

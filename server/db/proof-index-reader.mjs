@@ -2345,14 +2345,20 @@ async function currentWorkMarketAuthorizationVersionsAtSnapshot(
     ).catch(() => null);
   const precisionPins =
     configuredPrecisionPins ?? precisionLatch?.pins ?? null;
-  const precisionBoundaryReached =
-    precisionLatch?.reached === true ||
+  const precisionHeightReached =
+    precisionPins &&
     (
-      precisionPins &&
+      Number(snapshotHeight) === 0 ||
       (
-        Number(snapshotHeight) === 0 ||
+        Number.isSafeInteger(Number(snapshotHeight)) &&
         Number(snapshotHeight) >= precisionPins.activationHeight
       )
+    );
+  const precisionBoundaryReached =
+    precisionHeightReached &&
+    (
+      precisionLatch?.reached === true ||
+      Number(snapshotHeight) >= precisionPins.activationHeight
     );
   if (precisionBoundaryReached) {
     if (
@@ -8922,7 +8928,8 @@ export async function proofIndexWorkAmoV8ActivationLatch(
       marker,
       selfContainedPins,
       { network },
-    ) &&
+    );
+  const definitionReady =
     definitionModel === WORK_SUBATOM_PROJECTION_MODEL;
   const configuredPinsMatch =
     !pins ||
@@ -8940,7 +8947,8 @@ export async function proofIndexWorkAmoV8ActivationLatch(
     /^[0-9a-f]{64}$/u.test(firstObservedTipHash);
   return reached
     ? {
-      ...value,
+        ...value,
+        definitionReady,
         markerReady,
         pins: selfContainedPins,
         firstObservedTipHash,
@@ -9886,6 +9894,295 @@ function exactWorkAmoV5PreUnitRelicPayloadAuthorizations(payload) {
   );
 }
 
+function canonicalWorkAmoV5PreUnitRelicAuthorization() {
+  return {
+    amountAtoms: WORK_AMO_V5_PRE_UNIT_RELIC_AMOUNT_ATOMS,
+    anchorScriptPubKey: WORK_AMO_V5_PRE_UNIT_RELIC_ANCHOR_SCRIPT_PUBKEY,
+    anchorSigHashType: 0x83,
+    anchorType: "sale-ticket-v1",
+    anchorValueSats: WORK_AMO_V5_PRE_UNIT_RELIC_TICKET_VALUE_SATS,
+    anchorVout: WORK_AMO_V5_PRE_UNIT_RELIC_TICKET_VOUT,
+    buyerAddress: "",
+    expiresAt: "",
+    network: "livenet",
+    nonce: WORK_AMO_V5_PRE_UNIT_RELIC_NONCE,
+    minimumPriceSats: String(
+      WORK_AMO_V5_PRE_UNIT_RELIC_MINIMUM_PRICE_SATS,
+    ),
+    oracleBlockHash: WORK_AMO_V5_PRE_UNIT_RELIC_ORACLE_BLOCK_HASH,
+    oracleBlockHeight: WORK_AMO_V5_PRE_UNIT_RELIC_ORACLE_BLOCK_HEIGHT,
+    oracleModel: WORK_AMO_V5_PRE_UNIT_RELIC_ORACLE_MODEL,
+    oracleNetworkValueQ8:
+      WORK_AMO_V5_PRE_UNIT_RELIC_ORACLE_NETWORK_VALUE_Q8,
+    priceSats: WORK_AMO_V5_PRE_UNIT_RELIC_PRICE_SATS,
+    registryAddress: WORK_AMO_V5_PRE_UNIT_RELIC_REGISTRY_ADDRESS,
+    sellerAddress: WORK_AMO_V5_PRE_UNIT_RELIC_SELLER_ADDRESS,
+    sellerPublicKey: WORK_AMO_V5_PRE_UNIT_RELIC_SELLER_PUBLIC_KEY,
+    ticker: "WORK",
+    tokenId: WORK_TOKEN_ID,
+    version: WORK_AMO_V5_PRE_UNIT_RELIC_AUTH_VERSION,
+    anchorSignature: "",
+    anchorTxid: "",
+  };
+}
+
+function canonicalWorkAmoV5PreUnitRelicRawPayloadText() {
+  return `pwt1:list5:${Buffer.from(
+    JSON.stringify(canonicalWorkAmoV5PreUnitRelicAuthorization()),
+    "utf8",
+  ).toString("base64url")}`;
+}
+
+function workAmoV5PreUnitRelicPayloadFromRawText(payloadText) {
+  const rawPayload = String(payloadText ?? "");
+  const expectedRawPayload = canonicalWorkAmoV5PreUnitRelicRawPayloadText();
+  const prefix = "pwt1:list5:";
+  if (
+    rawPayload !== expectedRawPayload ||
+    !rawPayload.startsWith(prefix)
+  ) {
+    return null;
+  }
+  const saleAuthorization = decodeWorkAmoV5CanonicalBase64UrlJsonObject(
+    rawPayload.slice(prefix.length),
+  );
+  if (!exactWorkAmoV5PreUnitRelicAuthorization(saleAuthorization)) {
+    return null;
+  }
+  return {
+    _powEventIndex: WORK_AMO_V5_PRE_UNIT_RELIC_RECORD_ORDINAL,
+    amount: formatWorkAtoms(WORK_AMO_V5_PRE_UNIT_RELIC_AMOUNT_ATOMS),
+    amountAtoms: WORK_AMO_V5_PRE_UNIT_RELIC_AMOUNT_ATOMS,
+    amountSats: WORK_AMO_V5_PRE_UNIT_RELIC_TICKET_VALUE_SATS,
+    amountStorageModel: WORK_LEGACY_ATOMIC_PROJECTION_MODEL,
+    blockHash: WORK_AMO_V5_PRE_UNIT_RELIC_BLOCK_HASH,
+    blockHeight: WORK_AMO_V5_PRE_UNIT_RELIC_BLOCK_HEIGHT,
+    blockIndex: WORK_AMO_V5_PRE_UNIT_RELIC_BLOCK_INDEX,
+    blockTime: WORK_AMO_V5_PRE_UNIT_RELIC_BLOCK_TIME,
+    canonicalMinerFeeCovered: true,
+    canonicalMinerFeeSats: WORK_AMO_V5_PRE_UNIT_RELIC_MINER_FEE_SATS,
+    canonicalVerifier: "/api/v1/internal/token-verifier",
+    confirmed: true,
+    createdAt: WORK_AMO_V5_PRE_UNIT_RELIC_BLOCK_TIME,
+    dataBytes: WORK_AMO_V5_PRE_UNIT_RELIC_DATA_BYTES,
+    decimals: WORK_DECIMALS,
+    dropped: false,
+    indexedFrom: "token-listings",
+    kind: "token-listing",
+    listingId: WORK_AMO_V5_PRE_UNIT_RELIC_LISTING_TXID,
+    minerFeeSats: WORK_AMO_V5_PRE_UNIT_RELIC_MINER_FEE_SATS,
+    minerFeeSource: "proof-indexer-normalized-input-output-totals",
+    network: "livenet",
+    participants: [WORK_AMO_V5_PRE_UNIT_RELIC_SELLER_ADDRESS],
+    payload: rawPayload,
+    priceSats: WORK_AMO_V5_PRE_UNIT_RELIC_PRICE_SATS,
+    protocol: "pwt1",
+    protocolVout: WORK_AMO_V5_PRE_UNIT_RELIC_PROTOCOL_VOUT,
+    recipients: [
+      {
+        address: WORK_AMO_V5_PRE_UNIT_RELIC_REGISTRY_ADDRESS,
+        amountSats: String(WORK_AMO_V5_PRE_UNIT_RELIC_TICKET_VALUE_SATS),
+        vout: 0,
+      },
+    ],
+    registryAddress: WORK_AMO_V5_PRE_UNIT_RELIC_REGISTRY_ADDRESS,
+    saleAuthorization,
+    saleTicketTxid: WORK_AMO_V5_PRE_UNIT_RELIC_LISTING_TXID,
+    saleTicketValueSats: String(
+      WORK_AMO_V5_PRE_UNIT_RELIC_TICKET_VALUE_SATS,
+    ),
+    saleTicketVout: WORK_AMO_V5_PRE_UNIT_RELIC_TICKET_VOUT,
+    sellerAddress: WORK_AMO_V5_PRE_UNIT_RELIC_SELLER_ADDRESS,
+    senderAddress: WORK_AMO_V5_PRE_UNIT_RELIC_SELLER_ADDRESS,
+    status: "confirmed",
+    ticker: "WORK",
+    timestamp: WORK_AMO_V5_PRE_UNIT_RELIC_BLOCK_TIME,
+    tokenId: WORK_TOKEN_ID,
+    txid: WORK_AMO_V5_PRE_UNIT_RELIC_LISTING_TXID,
+    unitScale: WORK_UNIT_SCALE_TEXT,
+    valid: true,
+    validationMode: "canonical-first-party-state",
+  };
+}
+
+function workAmoV5PreUnitRelicRawEvidenceSyntheticRow(row) {
+  const integer = (value, minimum = 0) => {
+    if (value === undefined || value === null || value === "") {
+      return null;
+    }
+    const parsed = Number(value);
+    return Number.isSafeInteger(parsed) && parsed >= minimum ? parsed : null;
+  };
+  const text = (value) => String(value ?? "").trim();
+  const lower = (value) => text(value).toLowerCase();
+  const payload = workAmoV5PreUnitRelicPayloadFromRawText(
+    row?.record_payload_text,
+  );
+  const precisionMarker = objectRecord(row?.precision_migration_marker);
+  const precisionPins = normalizedWorkAmoV6ExpectedPins(precisionMarker);
+  const q16Definition =
+    workDefinitionStorageModel({
+      max_supply: row?.definition_max_supply,
+      metadata: row?.definition_metadata,
+      mint_amount: row?.definition_mint_amount,
+    }) === WORK_SUBATOM_PROJECTION_MODEL;
+  const precisionMarkerReady = Boolean(
+    precisionPins &&
+      sharedWorkPrecisionV2MarkerReady(
+        precisionMarker,
+        precisionPins,
+        { network: "livenet" },
+      ),
+  );
+  const precisionMigrationObserved =
+    row?.precision_migration_marker !== undefined &&
+      row?.precision_migration_marker !== null ||
+    q16Definition;
+  if (
+    !payload ||
+    precisionMigrationObserved && (!precisionMarkerReady || !q16Definition) ||
+    integer(row?.raw_audit_event_count) !== 1 ||
+    integer(row?.raw_invalid_event_count) !== 1 ||
+    integer(row?.raw_event_id, 1) === null ||
+    lower(row?.network) !== "livenet" ||
+    lower(row?.event_txid) !== WORK_AMO_V5_PRE_UNIT_RELIC_LISTING_TXID ||
+    lower(row?.transaction_status) !== "confirmed" ||
+    row?.canonical_block !== true ||
+    lower(row?.block_hash) !== WORK_AMO_V5_PRE_UNIT_RELIC_BLOCK_HASH ||
+    integer(row?.transaction_block_height, 1) !==
+      WORK_AMO_V5_PRE_UNIT_RELIC_BLOCK_HEIGHT ||
+    integer(row?.transaction_block_index) !==
+      WORK_AMO_V5_PRE_UNIT_RELIC_BLOCK_INDEX ||
+    dateIso(row?.block_time) !== WORK_AMO_V5_PRE_UNIT_RELIC_BLOCK_TIME ||
+    integer(row?.transaction_fee_sats) !==
+      WORK_AMO_V5_PRE_UNIT_RELIC_MINER_FEE_SATS ||
+    lower(row?.record_protocol) !== "pwt1" ||
+    integer(row?.record_vout) !==
+      WORK_AMO_V5_PRE_UNIT_RELIC_PROTOCOL_VOUT ||
+    integer(row?.record_output_index) !==
+      WORK_AMO_V5_PRE_UNIT_RELIC_RECORD_ORDINAL ||
+    integer(row?.record_data_bytes) !==
+      WORK_AMO_V5_PRE_UNIT_RELIC_DATA_BYTES ||
+    text(row?.anchor_address) !==
+      WORK_AMO_V5_PRE_UNIT_RELIC_SELLER_ADDRESS ||
+    lower(row?.anchor_scriptpubkey) !==
+      WORK_AMO_V5_PRE_UNIT_RELIC_ANCHOR_SCRIPT_PUBKEY ||
+    integer(row?.anchor_value_sats) !==
+      WORK_AMO_V5_PRE_UNIT_RELIC_TICKET_VALUE_SATS ||
+    text(row?.definition_registry_address) !==
+      WORK_AMO_V5_PRE_UNIT_RELIC_REGISTRY_ADDRESS ||
+    lower(row?.token_id) !== WORK_TOKEN_ID ||
+    text(row?.ticker).toUpperCase() !== "WORK"
+  ) {
+    return null;
+  }
+
+  const postPrecisionMigration = precisionMarkerReady && q16Definition;
+  const listingPayload = postPrecisionMigration
+    ? {
+        ...payload,
+        legacyAmountAtoms: WORK_AMO_V5_PRE_UNIT_RELIC_AMOUNT_ATOMS,
+        legacyAmountStorageModel: WORK_LEGACY_ATOMIC_PROJECTION_MODEL,
+        precisionMigrationModel: WORK_PRECISION_V2_MIGRATION_MODEL,
+      }
+    : payload;
+  return {
+    anchor_address: row.anchor_address,
+    anchor_scriptpubkey: row.anchor_scriptpubkey,
+    anchor_value_sats: row.anchor_value_sats,
+    amount_atoms: postPrecisionMigration
+      ? legacyWorkAtomsToSubatoms(WORK_AMO_V5_PRE_UNIT_RELIC_AMOUNT_ATOMS)
+      : WORK_AMO_V5_PRE_UNIT_RELIC_AMOUNT_ATOMS,
+    block_hash: row.block_hash,
+    block_height: WORK_AMO_V5_PRE_UNIT_RELIC_BLOCK_HEIGHT,
+    block_index: WORK_AMO_V5_PRE_UNIT_RELIC_BLOCK_INDEX,
+    block_time: row.block_time,
+    canonical_block: row.canonical_block,
+    canonical_close_closed_count: row.canonical_close_closed_count,
+    canonical_close_count: row.canonical_close_count,
+    canonical_close_sale_count: row.canonical_close_sale_count,
+    canonical_close_txid: row.canonical_close_txid,
+    canonical_spend_count: row.canonical_spend_count,
+    canonical_spend_txid: row.canonical_spend_txid,
+    definition_max_supply: row.definition_max_supply,
+    definition_metadata: row.definition_metadata,
+    definition_mint_amount: row.definition_mint_amount,
+    definition_registry_address: row.definition_registry_address,
+    event_amount_sats: String(WORK_AMO_V5_PRE_UNIT_RELIC_TICKET_VALUE_SATS),
+    event_data_bytes: row.record_data_bytes,
+    event_id: integer(row.raw_event_id, 1),
+    event_raw_payload: row.record_payload_text,
+    event_status: "confirmed",
+    event_txid: WORK_AMO_V5_PRE_UNIT_RELIC_LISTING_TXID,
+    event_valid: true,
+    kind: "token-listing",
+    listing_event_count: 1,
+    listing_event_payload: payload,
+    listing_id: WORK_AMO_V5_PRE_UNIT_RELIC_LISTING_TXID,
+    listing_payload_matches_event: !postPrecisionMigration,
+    listing_row_payload: listingPayload,
+    listing_status: postPrecisionMigration ? "dropped" : "active",
+    network: "livenet",
+    output_spent_by_txid: row.output_spent_by_txid,
+    pending_ticket_spend_count: row.pending_ticket_spend_count,
+    precision_migration_marker: row.precision_migration_marker,
+    price_sats: String(WORK_AMO_V5_PRE_UNIT_RELIC_PRICE_SATS),
+    protocol: "pwt1",
+    protocol_vout: WORK_AMO_V5_PRE_UNIT_RELIC_PROTOCOL_VOUT,
+    record_data_bytes: row.record_data_bytes,
+    record_output_index: WORK_AMO_V5_PRE_UNIT_RELIC_RECORD_ORDINAL,
+    record_payload_text: row.record_payload_text,
+    record_protocol: "pwt1",
+    record_vout: WORK_AMO_V5_PRE_UNIT_RELIC_PROTOCOL_VOUT,
+    record_ordinal: WORK_AMO_V5_PRE_UNIT_RELIC_RECORD_ORDINAL,
+    registry_payment_count: row.registry_payment_count,
+    registry_payment_sats: row.registry_payment_sats,
+    registry_payment_vout: row.registry_payment_vout,
+    sale_ticket_txid: WORK_AMO_V5_PRE_UNIT_RELIC_LISTING_TXID,
+    sale_ticket_value_sats: String(
+      WORK_AMO_V5_PRE_UNIT_RELIC_TICKET_VALUE_SATS,
+    ),
+    sale_ticket_vout: WORK_AMO_V5_PRE_UNIT_RELIC_TICKET_VOUT,
+    seller_address: WORK_AMO_V5_PRE_UNIT_RELIC_SELLER_ADDRESS,
+    ticker: "WORK",
+    token_id: WORK_TOKEN_ID,
+    transaction_block_height: WORK_AMO_V5_PRE_UNIT_RELIC_BLOCK_HEIGHT,
+    transaction_block_index: WORK_AMO_V5_PRE_UNIT_RELIC_BLOCK_INDEX,
+    transaction_fee_sats: row.transaction_fee_sats,
+    transaction_status: "confirmed",
+    valid_seal_count: row.valid_seal_count,
+    v1_declaration_count: row.v1_declaration_count,
+  };
+}
+
+export function workAmoV5PreUnitRelicEvidenceFromRawRows(
+  rows,
+  activation = null,
+) {
+  const incomplete = (reason) => ({
+    complete: false,
+    model: WORK_AMO_V5_PRE_UNIT_RELIC_MODEL,
+    reason,
+  });
+  const sourceRows = Array.isArray(rows) ? rows : [];
+  if (sourceRows.length !== 1) {
+    return incomplete("pre-unit-relic-raw-cardinality");
+  }
+  const syntheticRow = workAmoV5PreUnitRelicRawEvidenceSyntheticRow(
+    sourceRows[0],
+  );
+  if (!syntheticRow) {
+    return incomplete("pre-unit-relic-raw-evidence-mismatch");
+  }
+  const evidence = workAmoV5PreUnitRelicEvidenceFromRows(
+    [syntheticRow],
+    activation,
+  );
+  return evidence.complete === true
+    ? evidence
+    : incomplete(evidence.reason || "pre-unit-relic-raw-normalization-failed");
+}
+
 function canonicalWorkAmoJson(value) {
   if (Array.isArray(value)) {
     return `[${value.map(canonicalWorkAmoJson).join(",")}]`;
@@ -10212,6 +10509,8 @@ export function workAmoV5PreUnitRelicEvidenceFromRows(
       blockHash,
       blockHeight,
       blockIndex,
+      canonicalMinerFeeCovered: true,
+      canonicalMinerFeeSats: WORK_AMO_V5_PRE_UNIT_RELIC_MINER_FEE_SATS,
       confirmed: true,
       createdAt: blockTime,
       decimals: WORK_DECIMALS,
@@ -10220,6 +10519,7 @@ export function workAmoV5PreUnitRelicEvidenceFromRows(
       marketplaceMutationFeeSats:
         WORK_AMO_V5_PRE_UNIT_RELIC_TICKET_VALUE_SATS,
       minerFeeSats: WORK_AMO_V5_PRE_UNIT_RELIC_MINER_FEE_SATS,
+      minerFeeSource: "proof-indexer-normalized-input-output-totals",
       minimumPriceSats: WORK_AMO_V5_PRE_UNIT_RELIC_MINIMUM_PRICE_SATS,
       network: "livenet",
       priceSats: WORK_AMO_V5_PRE_UNIT_RELIC_PRICE_SATS,
@@ -10533,7 +10833,261 @@ export async function proofIndexWorkAmoV5PreUnitRelicEvidence(
     network,
     indexedThroughBlock,
   );
-  return workAmoV5PreUnitRelicEvidenceFromRows(result.rows, activation);
+  const relationalEvidence = workAmoV5PreUnitRelicEvidenceFromRows(
+    result.rows,
+    activation,
+  );
+  if (relationalEvidence.complete === true || result.rows.length !== 0) {
+    return relationalEvidence;
+  }
+
+  const rawResult = await pool.query(
+    `
+      SELECT
+        relic_tx.network,
+        relic_tx.txid AS event_txid,
+        relic_tx.status AS transaction_status,
+        relic_tx.block_hash,
+        relic_tx.block_height AS transaction_block_height,
+        relic_tx.block_index AS transaction_block_index,
+        relic_tx.block_time,
+        relic_tx.fee_sats::text AS transaction_fee_sats,
+        relic_block.canonical AS canonical_block,
+        relic_record.protocol AS record_protocol,
+        relic_record.vout AS record_vout,
+        relic_record.output_index AS record_output_index,
+        relic_record.payload_text AS record_payload_text,
+        relic_record.data_bytes AS record_data_bytes,
+        listing_anchor.address AS anchor_address,
+        listing_anchor.scriptpubkey AS anchor_scriptpubkey,
+        listing_anchor.value_sats::text AS anchor_value_sats,
+        listing_anchor.spent_by_txid AS output_spent_by_txid,
+        definition.ticker,
+        definition.registry_address AS definition_registry_address,
+        definition.max_supply::text AS definition_max_supply,
+        definition.mint_amount::text AS definition_mint_amount,
+        definition.metadata AS definition_metadata,
+        precision_migration.value AS precision_migration_marker,
+        raw_audit.raw_audit_event_count,
+        raw_audit.raw_invalid_event_count,
+        raw_audit.raw_event_id,
+        (
+          SELECT count(*)::integer
+          FROM proof_indexer.events seal_event
+          JOIN proof_indexer.transactions seal_tx
+            ON seal_tx.network = seal_event.network
+           AND seal_tx.txid = seal_event.txid
+           AND seal_tx.status = 'confirmed'
+           AND seal_tx.block_height = seal_event.block_height
+           AND seal_tx.block_index = seal_event.block_index
+          JOIN proof_indexer.blocks seal_block
+            ON seal_block.network = seal_tx.network
+           AND seal_block.block_hash = seal_tx.block_hash
+           AND seal_block.height = seal_tx.block_height
+           AND seal_block.canonical = true
+          WHERE seal_event.network = relic_tx.network
+            AND seal_event.valid = true
+            AND seal_event.status = 'confirmed'
+            AND seal_event.protocol = 'pwt1'
+            AND seal_event.kind = 'token-listing-sealed'
+            AND lower(seal_event.payload->>'listingId') = relic_tx.txid
+        ) AS valid_seal_count,
+        (
+          SELECT count(*)::integer
+          FROM proof_indexer.tx_outputs registry_output
+          WHERE registry_output.network = relic_tx.network
+            AND registry_output.txid = relic_tx.txid
+            AND registry_output.address = $3
+            AND registry_output.value_sats = $4
+        ) AS registry_payment_count,
+        (
+          SELECT COALESCE(sum(registry_output.value_sats), 0)::text
+          FROM proof_indexer.tx_outputs registry_output
+          WHERE registry_output.network = relic_tx.network
+            AND registry_output.txid = relic_tx.txid
+            AND registry_output.address = $3
+        ) AS registry_payment_sats,
+        (
+          SELECT min(registry_output.vout)
+          FROM proof_indexer.tx_outputs registry_output
+          WHERE registry_output.network = relic_tx.network
+            AND registry_output.txid = relic_tx.txid
+            AND registry_output.address = $3
+        ) AS registry_payment_vout,
+        (
+          SELECT count(*)::integer
+          FROM proof_indexer.tx_inputs spend_input
+          JOIN proof_indexer.transactions spend_tx
+            ON spend_tx.network = spend_input.network
+           AND spend_tx.txid = spend_input.txid
+           AND spend_tx.status = 'confirmed'
+          JOIN proof_indexer.blocks spend_block
+            ON spend_block.network = spend_tx.network
+           AND spend_block.block_hash = spend_tx.block_hash
+           AND spend_block.height = spend_tx.block_height
+           AND spend_block.canonical = true
+          WHERE spend_input.network = relic_tx.network
+            AND spend_input.prev_txid = relic_tx.txid
+            AND spend_input.prev_vout = $9
+        ) AS canonical_spend_count,
+        (
+          SELECT min(spend_tx.txid)
+          FROM proof_indexer.tx_inputs spend_input
+          JOIN proof_indexer.transactions spend_tx
+            ON spend_tx.network = spend_input.network
+           AND spend_tx.txid = spend_input.txid
+           AND spend_tx.status = 'confirmed'
+          JOIN proof_indexer.blocks spend_block
+            ON spend_block.network = spend_tx.network
+           AND spend_block.block_hash = spend_tx.block_hash
+           AND spend_block.height = spend_tx.block_height
+           AND spend_block.canonical = true
+          WHERE spend_input.network = relic_tx.network
+            AND spend_input.prev_txid = relic_tx.txid
+            AND spend_input.prev_vout = $9
+        ) AS canonical_spend_txid,
+        (
+          SELECT count(*)::integer
+          FROM proof_indexer.tx_inputs spend_input
+          LEFT JOIN proof_indexer.transactions spend_tx
+            ON spend_tx.network = spend_input.network
+           AND spend_tx.txid = spend_input.txid
+          LEFT JOIN proof_indexer.blocks spend_block
+            ON spend_block.network = spend_tx.network
+           AND spend_block.block_hash = spend_tx.block_hash
+           AND spend_block.height = spend_tx.block_height
+           AND spend_block.canonical = true
+          WHERE spend_input.network = relic_tx.network
+            AND spend_input.prev_txid = relic_tx.txid
+            AND spend_input.prev_vout = $9
+            AND (
+              spend_tx.status IS DISTINCT FROM 'confirmed'
+              OR spend_block.block_hash IS NULL
+            )
+        ) AS pending_ticket_spend_count,
+        canonical_close.canonical_close_count,
+        canonical_close.canonical_close_sale_count,
+        canonical_close.canonical_close_closed_count,
+        canonical_close.canonical_close_txid,
+        (
+          SELECT count(*)::integer
+          FROM proof_indexer.transactions v1_declaration_tx
+          JOIN proof_indexer.blocks v1_declaration_block
+            ON v1_declaration_block.network = v1_declaration_tx.network
+           AND v1_declaration_block.block_hash =
+             v1_declaration_tx.block_hash
+           AND v1_declaration_block.height =
+             v1_declaration_tx.block_height
+           AND v1_declaration_block.canonical = true
+          WHERE v1_declaration_tx.network = relic_tx.network
+            AND v1_declaration_tx.txid = $6
+            AND v1_declaration_tx.status = 'confirmed'
+            AND v1_declaration_tx.block_height = $7
+            AND lower(v1_declaration_tx.block_hash) = $8
+            AND v1_declaration_tx.block_index = $10
+        ) AS v1_declaration_count,
+        $5::text AS token_id
+      FROM proof_indexer.transactions relic_tx
+      JOIN proof_indexer.blocks relic_block
+        ON relic_block.network = relic_tx.network
+       AND relic_block.block_hash = relic_tx.block_hash
+       AND relic_block.height = relic_tx.block_height
+       AND relic_block.canonical = true
+      JOIN proof_indexer.op_returns relic_record
+        ON relic_record.network = relic_tx.network
+       AND relic_record.txid = relic_tx.txid
+       AND relic_record.vout = $11
+       AND relic_record.output_index = $12
+      JOIN proof_indexer.tx_outputs listing_anchor
+        ON listing_anchor.network = relic_tx.network
+       AND listing_anchor.txid = relic_tx.txid
+       AND listing_anchor.vout = $9
+       AND listing_anchor.value_sats = $4
+      JOIN proof_indexer.credit_definitions definition
+        ON definition.network = relic_tx.network
+       AND definition.token_id = $5
+      LEFT JOIN proof_indexer.meta precision_migration
+        ON precision_migration.key = $13
+      LEFT JOIN LATERAL (
+        SELECT
+          count(*)::integer AS raw_audit_event_count,
+          count(*) FILTER (
+            WHERE raw_event.kind = 'token-event-invalid'
+              AND raw_event.valid = false
+          )::integer AS raw_invalid_event_count,
+          min(raw_event.event_id)::integer AS raw_event_id
+        FROM proof_indexer.events raw_event
+        WHERE raw_event.network = relic_tx.network
+          AND raw_event.txid = relic_tx.txid
+          AND raw_event.protocol = 'pwt1'
+          AND raw_event.status = 'confirmed'
+          AND raw_event.block_height = relic_tx.block_height
+          AND raw_event.block_index = relic_tx.block_index
+          AND raw_event.op_return_vout = relic_record.vout
+          AND raw_event.record_ordinal = relic_record.output_index
+      ) raw_audit ON true
+      LEFT JOIN LATERAL (
+        SELECT
+          count(DISTINCT close_event.txid)::integer AS
+            canonical_close_count,
+          count(*) FILTER (
+            WHERE close_event.kind = 'token-sale'
+          )::integer AS canonical_close_sale_count,
+          count(*) FILTER (
+            WHERE close_event.kind = 'token-listing-closed'
+          )::integer AS canonical_close_closed_count,
+          min(close_event.txid) AS canonical_close_txid
+        FROM proof_indexer.events close_event
+        JOIN proof_indexer.transactions close_tx
+          ON close_tx.network = close_event.network
+         AND close_tx.txid = close_event.txid
+         AND close_tx.status = 'confirmed'
+         AND close_tx.block_height = close_event.block_height
+         AND close_tx.block_index = close_event.block_index
+        JOIN proof_indexer.blocks close_block
+          ON close_block.network = close_tx.network
+         AND close_block.block_hash = close_tx.block_hash
+         AND close_block.height = close_tx.block_height
+         AND close_block.canonical = true
+        WHERE close_event.network = relic_tx.network
+          AND close_event.valid = true
+          AND close_event.status = 'confirmed'
+          AND close_event.protocol = 'pwt1'
+          AND close_event.kind =
+            ANY(ARRAY['token-listing-closed','token-sale']::text[])
+          AND lower(close_event.payload->>'listingId') = relic_tx.txid
+      ) canonical_close ON true
+      WHERE relic_tx.network = $1
+        AND relic_tx.txid = $2
+        AND relic_tx.status = 'confirmed'
+        AND relic_tx.block_height = $14
+        AND relic_tx.block_index = $15
+        AND lower(relic_tx.block_hash) = $16
+      LIMIT 2
+    `,
+    [
+      network,
+      WORK_AMO_V5_PRE_UNIT_RELIC_LISTING_TXID,
+      WORK_AMO_V5_PRE_UNIT_RELIC_REGISTRY_ADDRESS,
+      WORK_AMO_V5_PRE_UNIT_RELIC_TICKET_VALUE_SATS,
+      WORK_TOKEN_ID,
+      WORK_AMO_V1_DECLARATION_TXID,
+      WORK_AMO_V5_V1_DECLARATION_HEIGHT,
+      WORK_AMO_V5_V1_DECLARATION_BLOCK_HASH,
+      WORK_AMO_V5_PRE_UNIT_RELIC_TICKET_VOUT,
+      WORK_AMO_V5_V1_DECLARATION_BLOCK_INDEX,
+      WORK_AMO_V5_PRE_UNIT_RELIC_PROTOCOL_VOUT,
+      WORK_AMO_V5_PRE_UNIT_RELIC_RECORD_ORDINAL,
+      WORK_PRECISION_V2_MIGRATION_META_KEY,
+      WORK_AMO_V5_PRE_UNIT_RELIC_BLOCK_HEIGHT,
+      WORK_AMO_V5_PRE_UNIT_RELIC_BLOCK_INDEX,
+      WORK_AMO_V5_PRE_UNIT_RELIC_BLOCK_HASH,
+    ],
+  );
+  return workAmoV5PreUnitRelicEvidenceFromRawRows(
+    rawResult.rows,
+    activation,
+  );
 }
 
 async function assertCurrentAmoV5CanonicalPositionUniqueness(pool, network) {
@@ -12586,6 +13140,139 @@ function proofIndexWorkAmoSeedEvidenceReadiness(
       summaryHash: evidence.canonicalSummary.canonicalSummaryHash,
     },
   };
+}
+
+function proofIndexWorkAmoV5SeedEvidenceMetrics(evidence) {
+  return {
+    complete: true,
+    genericHolderCount:
+      evidence.seedGenericTokenState.holders.length,
+    genericListingCount:
+      evidence.seedGenericTokenState.listings.length,
+    genericTokenCount:
+      evidence.seedGenericTokenState.tokens.length,
+    idCount: evidence.seedIdState.records.length,
+    workHolderCount: evidence.seedTokenState.holders.length,
+    workListingCount: evidence.seedTokenState.listings.length,
+  };
+}
+
+function proofIndexWorkAmoV5SeedEvidenceRowMatches(row, evidence) {
+  const sourceHashes =
+    row?.source_hashes &&
+    typeof row.source_hashes === "object" &&
+    !Array.isArray(row.source_hashes)
+      ? row.source_hashes
+      : {};
+  const metrics =
+    row?.metrics &&
+    typeof row.metrics === "object" &&
+    !Array.isArray(row.metrics)
+      ? row.metrics
+      : {};
+  const consistency =
+    row?.consistency &&
+    typeof row.consistency === "object" &&
+    !Array.isArray(row.consistency)
+      ? row.consistency
+      : {};
+  const expectedMetrics =
+    proofIndexWorkAmoV5SeedEvidenceMetrics(evidence);
+  return (
+    Object.keys(sourceHashes).sort().join(",") ===
+      "amoSeedBlock,amoSeedCanonicalSummary,amoSeedEvidence" &&
+    Object.keys(metrics).sort().join(",") ===
+      "complete,genericHolderCount,genericListingCount,genericTokenCount,idCount,workHolderCount,workListingCount" &&
+    Object.keys(consistency).sort().join(",") === "ok,status" &&
+    row?.snapshot_id === evidence.snapshotId &&
+    Number(row?.indexed_through_block) ===
+      evidence.indexedThroughBlock &&
+    sourceHashes.amoSeedBlock ===
+      evidence.indexedThroughBlockHash &&
+    sourceHashes.amoSeedCanonicalSummary ===
+      evidence.canonicalSummary.canonicalSummaryHash &&
+    sourceHashes.amoSeedEvidence ===
+      evidence.evidenceCommitment.sha256 &&
+    consistency.ok === true &&
+    consistency.status ===
+      WORK_AMO_V5_H_MINUS_ONE_SEED_EVIDENCE_STATUS &&
+    Object.entries(expectedMetrics).every(
+      ([key, value]) => metrics[key] === value,
+    )
+  );
+}
+
+export async function proofIndexWorkAmoV5HMinusOneSeedEvidence(
+  network,
+  {
+    blockHash,
+    blockHeight,
+  } = {},
+) {
+  const pool = proofIndexPool();
+  const normalizedNetwork = String(network ?? "").trim().toLowerCase();
+  const requiredBlockHeight = Number(blockHeight);
+  const requiredBlockHash = String(blockHash ?? "").trim().toLowerCase();
+  if (
+    !pool ||
+    normalizedNetwork !== "livenet" ||
+    requiredBlockHeight !== WORK_AMO_V5_ACTIVATION_HEIGHT - 1 ||
+    requiredBlockHash !== WORK_AMO_V5_DECLARATION_BLOCK_HASH
+  ) {
+    return null;
+  }
+  const result = await pool.query(
+    `
+      SELECT
+        snapshot.snapshot_id,
+        snapshot.indexed_through_block,
+        snapshot.source_hashes,
+        snapshot.metrics,
+        snapshot.consistency,
+        snapshot.payload,
+        (
+          SELECT EXISTS (
+            SELECT 1
+            FROM proof_indexer.blocks seed_block
+            WHERE seed_block.network = snapshot.network
+              AND seed_block.height = $2
+              AND lower(seed_block.block_hash) = $3
+              AND seed_block.canonical = true
+          )
+        ) AS seed_block_exact
+      FROM proof_indexer.ledger_snapshots snapshot
+      WHERE snapshot.network = $1
+        AND snapshot.payload->>'model' = $4
+      ORDER BY snapshot.snapshot_id ASC
+    `,
+    [
+      normalizedNetwork,
+      requiredBlockHeight,
+      requiredBlockHash,
+      WORK_AMO_V5_H_MINUS_ONE_SEED_EVIDENCE_MODEL,
+    ],
+  );
+  if (
+    result.rows.length !== 1 ||
+    result.rows[0]?.seed_block_exact !== true
+  ) {
+    return null;
+  }
+  const evidence = validatedWorkAmoV5HMinusOneSeedEvidence(
+    result.rows[0].payload,
+  );
+  if (
+    !evidence ||
+    evidence.indexedThroughBlock !== requiredBlockHeight ||
+    evidence.indexedThroughBlockHash !== requiredBlockHash ||
+    !proofIndexWorkAmoV5SeedEvidenceRowMatches(
+      result.rows[0],
+      evidence,
+    )
+  ) {
+    return null;
+  }
+  return evidence;
 }
 
 export async function proofIndexWorkAmoReplayReadiness(
@@ -22668,6 +23355,7 @@ export async function proofIndexTokenListingCloseOutspendPayload(
         spend_tx.block_index,
         spend_tx.block_time,
         spend_tx.block_height,
+        spend_tx.fee_sats,
         spend_tx.txid,
         spend_input.vin
       FROM proof_indexer.tx_inputs spend_input
@@ -22701,12 +23389,14 @@ export async function proofIndexTokenListingCloseOutspendPayload(
   const blockHash = normalizedLowerText(spenderRow?.block_hash);
   const blockHeight = exactInteger(spenderRow?.block_height, 1);
   const blockIndex = exactInteger(spenderRow?.block_index);
+  const minerFeeSats = exactInteger(spenderRow?.fee_sats);
   if (
     !/^[0-9a-f]{64}$/u.test(closeTxid) ||
     vin === null ||
     !/^[0-9a-f]{64}$/u.test(blockHash) ||
     blockHeight === null ||
-    blockIndex === null
+    blockIndex === null ||
+    minerFeeSats === null
   ) {
     return null;
   }
@@ -22964,6 +23654,9 @@ export async function proofIndexTokenListingCloseOutspendPayload(
       : canonicalDelist
         ? "delisted"
         : "closed",
+    closedMinerFeeCanonical: true,
+    closedMinerFeeSats: minerFeeSats,
+    closedMinerFeeSource: "proof-indexer-canonical-outpoint-spend",
     spent: true,
     status: {
       block_height: blockHeight,
@@ -26449,7 +27142,7 @@ export async function proofIndexCanonicalInceptionMintWitnessesPayload(
   }
 }
 
-export async function proofIndexCanonicalTransactionsPayload(
+export async function proofIndexCanonicalCheckpointPayload(
   network,
   indexedThroughBlock,
 ) {
@@ -26561,9 +27254,42 @@ export async function proofIndexCanonicalTransactionsPayload(
       indexedThroughBlock: 0,
       invalidEvents: [],
       rebuild,
-      transactions: [],
     };
   }
+  if (fault?.active) {
+    return {
+      checkpointHash,
+      fault,
+      indexedThroughBlock: actualHeight,
+      rebuild,
+    };
+  }
+
+  return {
+    checkpointHash,
+    fault,
+    indexedThroughBlock: actualHeight,
+    rebuild,
+  };
+}
+
+export async function proofIndexCanonicalTransactionsPayload(
+  network,
+  indexedThroughBlock,
+) {
+  const checkpointPayload = await proofIndexCanonicalCheckpointPayload(
+    network,
+    indexedThroughBlock,
+  );
+  if (!checkpointPayload) {
+    return null;
+  }
+  const {
+    checkpointHash,
+    fault,
+    indexedThroughBlock: actualHeight,
+    rebuild,
+  } = checkpointPayload;
   if (fault?.active) {
     return {
       checkpointHash,
@@ -26575,6 +27301,10 @@ export async function proofIndexCanonicalTransactionsPayload(
     };
   }
 
+  const pool = proofIndexPool();
+  if (!pool) {
+    return null;
+  }
   const fromHeight = Number(rebuild?.fromHeight);
   const bootstrapHeight = Number(rebuild?.bootstrapHeight);
   const bootstrapHash = String(rebuild?.bootstrapHash ?? "").toLowerCase();
@@ -28809,6 +29539,7 @@ async function proofIndexTokenListingsFromTables(pool, network, scope) {
         canonical_spend.block_height AS canonical_spend_block_height,
         canonical_spend.block_index AS canonical_spend_block_index,
         canonical_spend.block_time AS canonical_spend_block_time,
+        canonical_spend.fee_sats AS canonical_spend_fee_sats,
         CASE
           WHEN close_tx.status = 'confirmed' THEN close_tx.block_time
           ELSE NULL
@@ -28849,7 +29580,8 @@ async function proofIndexTokenListingsFromTables(pool, network, scope) {
           spend_tx.block_hash,
           spend_tx.block_height,
           spend_tx.block_index,
-          spend_tx.block_time
+          spend_tx.block_time,
+          spend_tx.fee_sats
         FROM proof_indexer.tx_inputs spend_input
         JOIN proof_indexer.transactions spend_tx
           ON spend_tx.network = spend_input.network
@@ -29163,6 +29895,10 @@ async function proofIndexTokenListingsFromTables(pool, network, scope) {
       const canonicalSaleEvent = Boolean(canonicalSaleEvidence);
       const canonicalSaleBuyerAddress =
         canonicalSaleEvidence?.buyerAddress ?? "";
+      const canonicalSpendMinerFeeSats = exactCloseInteger(
+        row.canonical_spend_fee_sats,
+        0,
+      );
       const closedListing = {
         ...listing,
         buyerAddress: canonicalSaleEvent
@@ -29186,9 +29922,15 @@ async function proofIndexTokenListingsFromTables(pool, network, scope) {
         closedDataBytes: undefined,
         closedFrozenNetworkValueSats: undefined,
         closedLiveNetworkValueSats: undefined,
-        closedMinerFeeCanonical: false,
-        closedMinerFeeSats: undefined,
-        closedMinerFeeSource: undefined,
+        closedMinerFeeCanonical: canonicalSpendMinerFeeSats !== null,
+        closedMinerFeeSats:
+          canonicalSpendMinerFeeSats !== null
+            ? canonicalSpendMinerFeeSats
+            : undefined,
+        closedMinerFeeSource:
+          canonicalSpendMinerFeeSats !== null
+            ? "proof-indexer-canonical-outpoint-spend"
+            : undefined,
         saleAt: canonicalSaleEvent ? saleAt : undefined,
         saleBlockHash: canonicalSaleEvent ? saleBlockHash : undefined,
         saleBlockHeight: canonicalSaleEvent ? saleBlockHeight : undefined,
@@ -29660,6 +30402,7 @@ function tokenInvalidEventFromRow(row) {
     proofPaymentSats: 0,
     registryAddress,
     registryMutationFeeSats: 0,
+    refundEligible: payload.refundEligible === true,
     recordOrdinal:
       row?.record_ordinal !== undefined && row?.record_ordinal !== null
         ? Number(row.record_ordinal)
@@ -30110,6 +30853,9 @@ async function payloadWithCanonicalWorkLifecyclePositions(
     ) {
       return true;
     }
+    if (canonicalWorkCutoverRelicListing(listing)) {
+      return true;
+    }
     const listingId = normalizedLowerText(listing?.listingId);
     if (!addExpectation("listing", listingId, listingId)) {
       return false;
@@ -30324,6 +31070,9 @@ async function payloadWithCanonicalWorkLifecyclePositions(
     ) {
       return listing;
     }
+    if (canonicalWorkCutoverRelicListing(listing)) {
+      return listing;
+    }
     const listingId = normalizedLowerText(listing.listingId);
     const opening = positions.get(
       canonicalWorkLifecycleExpectationKey(
@@ -30467,6 +31216,9 @@ function assertCanonicalIncbCurrentProjection(tokens, mints, holders, context) {
     (holder) =>
       String(holder?.tokenId ?? "").trim().toLowerCase() === INCB_TOKEN_ID,
   );
+  if (confirmedMints.length === 0 && incbHolders.length === 0) {
+    return;
+  }
   const confirmedMintSupply = confirmedMints.reduce((total, mint) => {
     const issuanceFault = incbIssuanceMetadataFault(
       mint,
@@ -31054,12 +31806,12 @@ export async function proofIndexCanonicalSummaryTokenTablePayload(
       network,
       precisionPayload,
     );
-  const currentV8Payload = applyWorkAmoV6PublicListingReadPolicy(
+  const heightScopedListingPayload = await payloadWithCurrentWorkMarketListingReadPolicy(
+    network,
     activatedPayload,
-    [WORK_AMO_V8_AUTH_VERSION],
   );
   const legacyCutoverPayload = applyWorkMarketV2CutoverToTokenState(
-    currentV8Payload,
+    heightScopedListingPayload,
   );
   const projectedResult = workPrecisionV2ProjectCurrentPayload(
     applyWorkAmoV5CutoverToTokenState(
@@ -39053,6 +39805,128 @@ function canonicalSnapshotQ8Text(value, { positive = false } = {}) {
   return canonicalIntegerText(value, { allowZero: !positive });
 }
 
+function canonicalSummaryLedgerEvidenceEntries(value) {
+  return Array.isArray(value)
+    ? value.map((entry) =>
+        entry && typeof entry === "object" && !Array.isArray(entry)
+          ? {
+              text: entry.text === null || entry.text === undefined
+                ? null
+                : String(entry.text),
+              type: entry.type === null || entry.type === undefined
+                ? null
+                : String(entry.type),
+            }
+          : null
+      )
+    : [];
+}
+
+function canonicalLegacySummaryLedgerWorkValue(snapshot) {
+  const modelMarkerPresent = canonicalSummaryLedgerEvidenceEntries(
+    snapshot?.legacy_work_value_models,
+  ).some((entry) => {
+    if (!entry) return true;
+    if (entry.type === null && entry.text === null) return false;
+    if (entry.type !== "string" || entry.text === null) return true;
+    return entry.text.trim().length > 0;
+  });
+  if (modelMarkerPresent) {
+    return null;
+  }
+
+  const decimalValues = canonicalSummaryLedgerEvidenceEntries(
+    snapshot?.legacy_work_value_decimals,
+  )
+    .filter((entry) => entry?.type !== null || entry?.text !== null)
+    .map((entry) => {
+      if (
+        !entry ||
+        (entry.type !== "number" && entry.type !== "string") ||
+        entry.text === null
+      ) {
+        return "";
+      }
+      return q8TextFromDecimal(entry.text);
+    });
+  if (decimalValues.length === 0 || decimalValues.some((value) => !value)) {
+    return null;
+  }
+  const workNetworkValueQ8 = decimalValues[0];
+  if (decimalValues.some((value) => value !== workNetworkValueQ8)) {
+    return null;
+  }
+
+  const q8Values = canonicalSummaryLedgerEvidenceEntries(
+    snapshot?.legacy_work_value_q8,
+  )
+    .filter((entry) => entry?.type !== null || entry?.text !== null)
+    .map((entry) =>
+      !entry || (entry.type !== "number" && entry.type !== "string") ||
+        entry.text === null
+        ? ""
+        : canonicalSnapshotQ8Text(entry.text, { positive: true })
+    );
+  if (q8Values.some((value) => value !== workNetworkValueQ8)) {
+    return null;
+  }
+
+  return {
+    workNetworkValueQ8,
+    workNetworkValueSats: decimalTextFromQ8(workNetworkValueQ8),
+  };
+}
+
+function canonicalWorkFloorFromLegacySummary(workFloor, workValue) {
+  const floor =
+    workFloor && typeof workFloor === "object" && !Array.isArray(workFloor)
+      ? workFloor
+      : {};
+  const actual =
+    floor.actualValue &&
+    typeof floor.actualValue === "object" &&
+    !Array.isArray(floor.actualValue)
+      ? floor.actualValue
+      : {};
+  const live = BigInt(workValue.workNetworkValueQ8);
+  const floorQ8 = live / 21_000_000n;
+  const liveSats = workValue.workNetworkValueSats;
+  const floorSats = decimalTextFromQ8(floorQ8.toString());
+  const exactAliases = {
+    baseNetworkValueQ8: workValue.workNetworkValueQ8,
+    baseNetworkValueSats: liveSats,
+    baseTotalQ8: workValue.workNetworkValueQ8,
+    baseTotalSats: liveSats,
+    floorQ8: floorQ8.toString(),
+    floorSats,
+    frozenFloorQ8: floorQ8.toString(),
+    frozenFloorSats: floorSats,
+    frozenNetworkValueQ8: workValue.workNetworkValueQ8,
+    frozenNetworkValueSats: liveSats,
+    frozenTotalQ8: workValue.workNetworkValueQ8,
+    frozenTotalSats: liveSats,
+    liveFloorQ8: floorQ8.toString(),
+    liveFloorSats: floorSats,
+    liveNetworkValueQ8: workValue.workNetworkValueQ8,
+    liveNetworkValueSats: liveSats,
+    liveTotalQ8: workValue.workNetworkValueQ8,
+    liveTotalSats: liveSats,
+    networkValueQ8: workValue.workNetworkValueQ8,
+    networkValueSats: liveSats,
+    totalQ8: workValue.workNetworkValueQ8,
+    totalSats: liveSats,
+    workNetworkValueAccountingModel: WORK_NETWORK_VALUE_ACCOUNTING_MODEL,
+  };
+  return {
+    ...floor,
+    ...exactAliases,
+    actualValue: {
+      ...actual,
+      ...exactAliases,
+    },
+  };
+}
+
 function canonicalSummaryLedgerRowBinding(
   snapshot,
   requestedHeight = 0,
@@ -39154,26 +40028,54 @@ function canonicalSummaryLedgerRowBinding(
     snapshot.work_actual_live_total_q8,
   ].map((value) => canonicalSnapshotQ8Text(value, { positive: true }));
   const workNetworkValueQ8 = q8Aliases[0] ?? "";
+  const currentQ8Binding =
+    workFloor &&
+    workNetworkValueQ8 &&
+    q8Aliases.every((value) => value && value === workNetworkValueQ8) &&
+    snapshot.totals_work_network_value_model ===
+      WORK_NETWORK_VALUE_ACCOUNTING_MODEL &&
+    snapshot.work_floor_network_value_model ===
+      WORK_NETWORK_VALUE_ACCOUNTING_MODEL &&
+    snapshot.work_actual_network_value_model ===
+      WORK_NETWORK_VALUE_ACCOUNTING_MODEL &&
+    workFloor.workNetworkValueAccountingModel ===
+      WORK_NETWORK_VALUE_ACCOUNTING_MODEL &&
+    actualValue.workNetworkValueAccountingModel ===
+      WORK_NETWORK_VALUE_ACCOUNTING_MODEL
+      ? {
+          workFloor,
+          workNetworkValueAccountingModel:
+            WORK_NETWORK_VALUE_ACCOUNTING_MODEL,
+          workNetworkValueQ8,
+          workNetworkValueSats: decimalTextFromQ8(workNetworkValueQ8),
+        }
+      : null;
+  const legacyWorkValue = currentQ8Binding
+    ? null
+    : canonicalLegacySummaryLedgerWorkValue(snapshot);
+  const valueBinding = currentQ8Binding ??
+    (legacyWorkValue
+      ? {
+          workFloor: canonicalWorkFloorFromLegacySummary(
+            workFloor,
+            legacyWorkValue,
+          ),
+          workNetworkValueAccountingModel:
+            WORK_NETWORK_VALUE_ACCOUNTING_MODEL,
+          workNetworkValueQ8: legacyWorkValue.workNetworkValueQ8,
+          workNetworkValueSats: legacyWorkValue.workNetworkValueSats,
+        }
+      : null);
+  if (!valueBinding) {
+    return null;
+  }
   if (
     !workFloor ||
-    !workNetworkValueQ8 ||
-    q8Aliases.some(
-      (value) => !value || value !== workNetworkValueQ8,
-    ) ||
-    snapshot.totals_work_network_value_model !==
-      WORK_NETWORK_VALUE_ACCOUNTING_MODEL ||
-    snapshot.work_floor_network_value_model !==
-      WORK_NETWORK_VALUE_ACCOUNTING_MODEL ||
-    snapshot.work_actual_network_value_model !==
-      WORK_NETWORK_VALUE_ACCOUNTING_MODEL ||
-    workFloor.workNetworkValueAccountingModel !==
-      WORK_NETWORK_VALUE_ACCOUNTING_MODEL ||
-    actualValue.workNetworkValueAccountingModel !==
-      WORK_NETWORK_VALUE_ACCOUNTING_MODEL
+    !valueBinding.workNetworkValueQ8 ||
+    !valueBinding.workNetworkValueSats
   ) {
     return null;
   }
-  const workNetworkValueSats = decimalTextFromQ8(workNetworkValueQ8);
   const frozenNetworkValueQ8Aliases = [
     snapshot.work_floor_frozen_network_value_q8,
     snapshot.work_actual_frozen_network_value_q8,
@@ -39192,29 +40094,34 @@ function canonicalSummaryLedgerRowBinding(
   const frozenNetworkValueSats = frozenNetworkValueQ8
     ? decimalTextFromQ8(frozenNetworkValueQ8)
     : null;
+  const normalizedFrozenNetworkValueQ8 =
+    frozenNetworkValueQ8 || valueBinding.workNetworkValueQ8;
+  const normalizedFrozenNetworkValueSats =
+    frozenNetworkValueSats || valueBinding.workNetworkValueSats;
 
   return {
-    actualTotalSats: workNetworkValueSats,
+    actualTotalSats: valueBinding.workNetworkValueSats,
     canonicalSummaryHash,
     creditMinerFeeAccountingModel: String(
-      actualValue.creditMinerFeeAccountingModel ?? "",
+      valueBinding.workFloor?.actualValue?.creditMinerFeeAccountingModel ?? "",
     ),
-    declaredNetworkValueSats: workNetworkValueSats,
-    frozenNetworkValueQ8: frozenNetworkValueQ8 || null,
-    frozenNetworkValueSats,
-    growthActualValueQ8: workNetworkValueQ8,
-    growthActualValueSats: workNetworkValueSats,
-    growthWorkFloorValueQ8: workNetworkValueQ8,
-    growthWorkFloorValueSats: workNetworkValueSats,
+    declaredNetworkValueSats: valueBinding.workNetworkValueSats,
+    frozenNetworkValueQ8: normalizedFrozenNetworkValueQ8,
+    frozenNetworkValueSats: normalizedFrozenNetworkValueSats,
+    growthActualValueQ8: valueBinding.workNetworkValueQ8,
+    growthActualValueSats: valueBinding.workNetworkValueSats,
+    growthWorkFloorValueQ8: valueBinding.workNetworkValueQ8,
+    growthWorkFloorValueSats: valueBinding.workNetworkValueSats,
     indexedThroughBlock,
     indexedThroughBlockHash,
-    liveNetworkValueSats: workNetworkValueSats,
-    workActualValueQ8: workNetworkValueQ8,
-    workActualValueSats: workNetworkValueSats,
-    workFloor,
-    workNetworkValueAccountingModel: WORK_NETWORK_VALUE_ACCOUNTING_MODEL,
-    workNetworkValueQ8,
-    workNetworkValueSats,
+    liveNetworkValueSats: valueBinding.workNetworkValueSats,
+    workActualValueQ8: valueBinding.workNetworkValueQ8,
+    workActualValueSats: valueBinding.workNetworkValueSats,
+    workFloor: valueBinding.workFloor,
+    workNetworkValueAccountingModel:
+      valueBinding.workNetworkValueAccountingModel,
+    workNetworkValueQ8: valueBinding.workNetworkValueQ8,
+    workNetworkValueSats: valueBinding.workNetworkValueSats,
   };
 }
 
@@ -39302,9 +40209,49 @@ export async function proofIndexCanonicalSummaryLedgerPayload(
         AND lower(COALESCE(payload->'summaryPayloads'->'workFloor'->>'indexedThroughBlockHash', '')) = $3
       `
     : "";
-  const workAmountStorageFilter = exactCheckpointRequested
-    ? "AND payload->>'workAmountStorageModel' = $4"
-    : "AND payload->>'workAmountStorageModel' = $2";
+  const modernWorkValueFilter = exactCheckpointRequested
+    ? "payload->>'workAmountStorageModel' = $4"
+    : "payload->>'workAmountStorageModel' = $2";
+  const legacyExactWorkValueFilter = exactCheckpointRequested
+    ? `
+          OR (
+            (
+              COALESCE(payload->>'workAmountStorageModel', '') = ''
+              OR (
+                $4 = '${WORK_ATOMIC_PROJECTION_MODEL}'
+                AND payload->>'workAmountStorageModel' = $4
+              )
+            )
+            AND COALESCE(payload->'totals'->>'workNetworkValueAccountingModel', '') = ''
+            AND COALESCE(payload->'summaryPayloads'->'workFloor'->>'workNetworkValueAccountingModel', '') = ''
+            AND COALESCE(payload->'summaryPayloads'->'workFloor'->'actualValue'->>'workNetworkValueAccountingModel', '') = ''
+            AND (
+              payload #>> '{summaryPayloads,workFloor,liveNetworkValueSats}' IS NOT NULL
+              OR payload #>> '{summaryPayloads,workFloor,actualValue,liveNetworkValueSats}' IS NOT NULL
+              OR payload #>> '{summaryPayloads,workFloor,actualValue,liveTotalSats}' IS NOT NULL
+              OR payload #>> '{summaryPayloads,workFloor,actualValue,totalSats}' IS NOT NULL
+            )
+          )
+        `
+    : "";
+  const workValueEligibilityFilter = `
+        AND (
+          (
+            ${modernWorkValueFilter}
+            AND payload->'totals'->>'workNetworkValueAccountingModel' = 'canonical-exact-work-network-q8-v1'
+            AND payload->'summaryPayloads'->'workFloor'->>'workNetworkValueAccountingModel' = 'canonical-exact-work-network-q8-v1'
+            AND payload->'summaryPayloads'->'workFloor'->'actualValue'->>'workNetworkValueAccountingModel' = 'canonical-exact-work-network-q8-v1'
+            AND payload->'totals'->>'workNetworkValueQ8' ~ '^[1-9][0-9]*$'
+            AND payload->'summaryPayloads'->'workFloor'->>'networkValueQ8' = payload->'totals'->>'workNetworkValueQ8'
+            AND payload->'summaryPayloads'->'workFloor'->>'liveNetworkValueQ8' = payload->'totals'->>'workNetworkValueQ8'
+            AND payload->'summaryPayloads'->'workFloor'->'actualValue'->>'networkValueQ8' = payload->'totals'->>'workNetworkValueQ8'
+            AND payload->'summaryPayloads'->'workFloor'->'actualValue'->>'liveNetworkValueQ8' = payload->'totals'->>'workNetworkValueQ8'
+            AND payload->'summaryPayloads'->'workFloor'->'actualValue'->>'totalQ8' = payload->'totals'->>'workNetworkValueQ8'
+            AND payload->'summaryPayloads'->'workFloor'->'actualValue'->>'liveTotalQ8' = payload->'totals'->>'workNetworkValueQ8'
+          )
+          ${legacyExactWorkValueFilter}
+        )
+      `;
   // Exact H-1 reads must prove agreement across the complete eligible row
   // set. A numeric cap could hide a disagreeing older row behind the limit.
   const checkpointLimit = exactCheckpointRequested ? "" : "LIMIT 1";
@@ -39368,6 +40315,68 @@ export async function proofIndexCanonicalSummaryLedgerPayload(
         payload->'summaryPayloads'->'workFloor'->'actualValue'->>'frozenTotalQ8' AS work_actual_frozen_total_q8,
         payload->'summaryPayloads'->'workSummary'->>'indexedThroughBlock' AS work_summary_height,
         payload->'summaryPayloads'->'workSummary'->'floor'->>'indexedThroughBlock' AS work_summary_floor_height,
+        jsonb_build_array(
+          jsonb_build_object(
+            'type', jsonb_typeof(payload #> '{totals,workNetworkValueAccountingModel}'),
+            'text', payload #>> '{totals,workNetworkValueAccountingModel}'
+          ),
+          jsonb_build_object(
+            'type', jsonb_typeof(payload #> '{summaryPayloads,workFloor,workNetworkValueAccountingModel}'),
+            'text', payload #>> '{summaryPayloads,workFloor,workNetworkValueAccountingModel}'
+          ),
+          jsonb_build_object(
+            'type', jsonb_typeof(payload #> '{summaryPayloads,workFloor,actualValue,workNetworkValueAccountingModel}'),
+            'text', payload #>> '{summaryPayloads,workFloor,actualValue,workNetworkValueAccountingModel}'
+          )
+        ) AS legacy_work_value_models,
+        jsonb_build_array(
+          jsonb_build_object(
+            'type', jsonb_typeof(payload #> '{summaryPayloads,workFloor,liveNetworkValueSats}'),
+            'text', payload #>> '{summaryPayloads,workFloor,liveNetworkValueSats}'
+          ),
+          jsonb_build_object(
+            'type', jsonb_typeof(payload #> '{summaryPayloads,workFloor,actualValue,liveNetworkValueSats}'),
+            'text', payload #>> '{summaryPayloads,workFloor,actualValue,liveNetworkValueSats}'
+          ),
+          jsonb_build_object(
+            'type', jsonb_typeof(payload #> '{summaryPayloads,workFloor,actualValue,liveTotalSats}'),
+            'text', payload #>> '{summaryPayloads,workFloor,actualValue,liveTotalSats}'
+          ),
+          jsonb_build_object(
+            'type', jsonb_typeof(payload #> '{summaryPayloads,workFloor,actualValue,totalSats}'),
+            'text', payload #>> '{summaryPayloads,workFloor,actualValue,totalSats}'
+          )
+        ) AS legacy_work_value_decimals,
+        jsonb_build_array(
+          jsonb_build_object(
+            'type', jsonb_typeof(payload #> '{totals,workNetworkValueQ8}'),
+            'text', payload #>> '{totals,workNetworkValueQ8}'
+          ),
+          jsonb_build_object(
+            'type', jsonb_typeof(payload #> '{summaryPayloads,workFloor,networkValueQ8}'),
+            'text', payload #>> '{summaryPayloads,workFloor,networkValueQ8}'
+          ),
+          jsonb_build_object(
+            'type', jsonb_typeof(payload #> '{summaryPayloads,workFloor,liveNetworkValueQ8}'),
+            'text', payload #>> '{summaryPayloads,workFloor,liveNetworkValueQ8}'
+          ),
+          jsonb_build_object(
+            'type', jsonb_typeof(payload #> '{summaryPayloads,workFloor,actualValue,networkValueQ8}'),
+            'text', payload #>> '{summaryPayloads,workFloor,actualValue,networkValueQ8}'
+          ),
+          jsonb_build_object(
+            'type', jsonb_typeof(payload #> '{summaryPayloads,workFloor,actualValue,liveNetworkValueQ8}'),
+            'text', payload #>> '{summaryPayloads,workFloor,actualValue,liveNetworkValueQ8}'
+          ),
+          jsonb_build_object(
+            'type', jsonb_typeof(payload #> '{summaryPayloads,workFloor,actualValue,totalQ8}'),
+            'text', payload #>> '{summaryPayloads,workFloor,actualValue,totalQ8}'
+          ),
+          jsonb_build_object(
+            'type', jsonb_typeof(payload #> '{summaryPayloads,workFloor,actualValue,liveTotalQ8}'),
+            'text', payload #>> '{summaryPayloads,workFloor,actualValue,liveTotalQ8}'
+          )
+        ) AS legacy_work_value_q8,
         payload->'totals' AS totals
       FROM proof_indexer.ledger_snapshots snapshot
       WHERE network = $1
@@ -39375,19 +40384,9 @@ export async function proofIndexCanonicalSummaryLedgerPayload(
         AND COALESCE(consistency->>'ok', payload->>'ok', 'false') = 'true'
         AND COALESCE(consistency->>'status', payload->>'status', '') = 'green'
         AND payload->'summaryRefresh'->>'mode' = 'canonical-summary-refresh'
-        AND payload->'totals'->>'workNetworkValueAccountingModel' = 'canonical-exact-work-network-q8-v1'
-        AND payload->'summaryPayloads'->'workFloor'->>'workNetworkValueAccountingModel' = 'canonical-exact-work-network-q8-v1'
-        AND payload->'summaryPayloads'->'workFloor'->'actualValue'->>'workNetworkValueAccountingModel' = 'canonical-exact-work-network-q8-v1'
-        AND payload->'totals'->>'workNetworkValueQ8' ~ '^[1-9][0-9]*$'
-        AND payload->'summaryPayloads'->'workFloor'->>'networkValueQ8' = payload->'totals'->>'workNetworkValueQ8'
-        AND payload->'summaryPayloads'->'workFloor'->>'liveNetworkValueQ8' = payload->'totals'->>'workNetworkValueQ8'
-        AND payload->'summaryPayloads'->'workFloor'->'actualValue'->>'networkValueQ8' = payload->'totals'->>'workNetworkValueQ8'
-        AND payload->'summaryPayloads'->'workFloor'->'actualValue'->>'liveNetworkValueQ8' = payload->'totals'->>'workNetworkValueQ8'
-        AND payload->'summaryPayloads'->'workFloor'->'actualValue'->>'totalQ8' = payload->'totals'->>'workNetworkValueQ8'
-        AND payload->'summaryPayloads'->'workFloor'->'actualValue'->>'liveTotalQ8' = payload->'totals'->>'workNetworkValueQ8'
+        ${workValueEligibilityFilter}
         AND source_hashes ? 'canonicalSummary'
         AND payload ? 'summaryPayloads'
-        ${workAmountStorageFilter}
         ${checkpointFilter}
         AND jsonb_typeof(payload->'summaryPayloads'->'growthSummary') = 'object'
         AND jsonb_typeof(payload->'summaryPayloads'->'inceptionSummary') = 'object'
@@ -40262,7 +41261,8 @@ export async function proofIndexCreditListingsPayload(
         canonical_spend.block_hash AS canonical_spend_block_hash,
         canonical_spend.block_height AS canonical_spend_block_height,
         canonical_spend.block_index AS canonical_spend_block_index,
-        canonical_spend.block_time AS canonical_spend_block_time
+        canonical_spend.block_time AS canonical_spend_block_time,
+        canonical_spend.fee_sats AS canonical_spend_fee_sats
       FROM proof_indexer.credit_listings cl
       LEFT JOIN proof_indexer.credit_definitions cd
         ON cd.network = cl.network
@@ -40288,7 +41288,8 @@ export async function proofIndexCreditListingsPayload(
           spend_tx.block_hash,
           spend_tx.block_height,
           spend_tx.block_index,
-          spend_tx.block_time
+          spend_tx.block_time,
+          spend_tx.fee_sats
         FROM proof_indexer.tx_inputs spend_input
         JOIN proof_indexer.transactions spend_tx
           ON spend_tx.network = spend_input.network
@@ -41055,6 +42056,10 @@ export async function proofIndexCreditListingsPayload(
           : null,
         1,
       );
+      const canonicalSpendMinerFeeSats =
+        closedByCanonicalOutpointSpend
+          ? exactLifecycleInteger(row.canonical_spend_fee_sats, 0)
+          : null;
       const saleCandidate =
         matchingCloseEvent &&
         normalizedLowerText(closePayload.kind) === "token-sale";
@@ -41145,6 +42150,19 @@ export async function proofIndexCreditListingsPayload(
             : ["dropped", "orphaned"].includes(rowStatus)
               ? rowStatus
               : "active";
+      const closeLifecycleMinerFeeSats =
+        matchingCloseEvent &&
+        closeLifecycle.closedMinerFeeCanonical === true
+          ? exactLifecycleInteger(closeLifecycle.closedMinerFeeSats, 0)
+          : null;
+      const closedMinerFeeSats =
+        closeLifecycleMinerFeeSats ?? canonicalSpendMinerFeeSats;
+      const closedMinerFeeSource =
+        closeLifecycleMinerFeeSats !== null
+          ? closeLifecycle.closedMinerFeeSource
+          : canonicalSpendMinerFeeSats !== null
+            ? "proof-indexer-canonical-outpoint-spend"
+            : undefined;
       const canonicalCloseProvenancePatch =
         closedByCanonicalOutpointSpend
           ? {
@@ -41184,15 +42202,9 @@ export async function proofIndexCreditListingsPayload(
               closedLiveNetworkValueSats: matchingCloseEvent
                 ? closeLifecycle.closedLiveNetworkValueSats
                 : undefined,
-              closedMinerFeeCanonical:
-                matchingCloseEvent &&
-                closeLifecycle.closedMinerFeeCanonical === true,
-              closedMinerFeeSats: matchingCloseEvent
-                ? closeLifecycle.closedMinerFeeSats
-                : undefined,
-              closedMinerFeeSource: matchingCloseEvent
-                ? closeLifecycle.closedMinerFeeSource
-                : undefined,
+              closedMinerFeeCanonical: closedMinerFeeSats !== null,
+              closedMinerFeeSats: closedMinerFeeSats ?? undefined,
+              closedMinerFeeSource,
               closedProtocolVout: matchingCloseEvent
                 ? closeLifecycle.closedProtocolVout
                 : undefined,

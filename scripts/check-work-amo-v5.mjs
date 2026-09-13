@@ -130,6 +130,7 @@ import {
 import {
   workAmoV5GenericTokenStatePreimageFromRows,
   workAmoV5PreUnitRelicEvidenceFromRows,
+  workAmoV5PreUnitRelicEvidenceFromRawRows,
 } from "../server/db/proof-index-reader.mjs";
 import {
   normalizeWorkAmoV5RawGenericState,
@@ -253,6 +254,8 @@ const exactPreUnitPayload = {
   blockHeight: WORK_AMO_V5_PRE_UNIT_RELIC_BLOCK_HEIGHT,
   blockIndex: WORK_AMO_V5_PRE_UNIT_RELIC_BLOCK_INDEX,
   blockTime: WORK_AMO_V5_PRE_UNIT_RELIC_BLOCK_TIME,
+  canonicalMinerFeeCovered: true,
+  canonicalMinerFeeSats: WORK_AMO_V5_PRE_UNIT_RELIC_MINER_FEE_SATS,
   canonicalVerifier: "/api/v1/internal/token-verifier",
   confirmed: true,
   createdAt: WORK_AMO_V5_PRE_UNIT_RELIC_BLOCK_TIME,
@@ -263,6 +266,7 @@ const exactPreUnitPayload = {
   kind: "token-listing",
   listingId: WORK_AMO_V5_PRE_UNIT_RELIC_LISTING_TXID,
   minerFeeSats: WORK_AMO_V5_PRE_UNIT_RELIC_MINER_FEE_SATS,
+  minerFeeSource: "proof-indexer-normalized-input-output-totals",
   network: "livenet",
   participants: [WORK_AMO_V5_PRE_UNIT_RELIC_SELLER_ADDRESS],
   payload: exactPreUnitRawPayload,
@@ -382,6 +386,89 @@ assert.equal(exactPreUnitRelicEvidence.eventId, 3_120_772);
 assert.equal(
   exactPreUnitRelicEvidence.model,
   WORK_AMO_V5_PRE_UNIT_RELIC_MODEL,
+);
+assert.equal(
+  exactPreUnitRelicEvidence.listing.canonicalMinerFeeCovered,
+  true,
+);
+assert.equal(
+  exactPreUnitRelicEvidence.listing.canonicalMinerFeeSats,
+  WORK_AMO_V5_PRE_UNIT_RELIC_MINER_FEE_SATS,
+);
+assert.equal(
+  exactPreUnitRelicEvidence.listing.minerFeeSource,
+  "proof-indexer-normalized-input-output-totals",
+);
+const exactPreUnitRawRelicRow = () => ({
+  anchor_address: WORK_AMO_V5_PRE_UNIT_RELIC_SELLER_ADDRESS,
+  anchor_scriptpubkey: WORK_AMO_V5_PRE_UNIT_RELIC_ANCHOR_SCRIPT_PUBKEY,
+  anchor_value_sats: String(WORK_AMO_V5_PRE_UNIT_RELIC_TICKET_VALUE_SATS),
+  block_hash: WORK_AMO_V5_PRE_UNIT_RELIC_BLOCK_HASH,
+  block_time: WORK_AMO_V5_PRE_UNIT_RELIC_BLOCK_TIME,
+  canonical_block: true,
+  canonical_close_closed_count: 0,
+  canonical_close_count: 0,
+  canonical_close_sale_count: 0,
+  canonical_close_txid: null,
+  canonical_spend_count: 0,
+  canonical_spend_txid: null,
+  definition_registry_address:
+    WORK_AMO_V5_PRE_UNIT_RELIC_REGISTRY_ADDRESS,
+  event_txid: WORK_AMO_V5_PRE_UNIT_RELIC_LISTING_TXID,
+  network: "livenet",
+  output_spent_by_txid: null,
+  pending_ticket_spend_count: 0,
+  raw_audit_event_count: 1,
+  raw_event_id: 3_120_772,
+  raw_invalid_event_count: 1,
+  record_data_bytes: WORK_AMO_V5_PRE_UNIT_RELIC_DATA_BYTES,
+  record_output_index: WORK_AMO_V5_PRE_UNIT_RELIC_RECORD_ORDINAL,
+  record_payload_text: exactPreUnitRawPayload,
+  record_protocol: "pwt1",
+  record_vout: WORK_AMO_V5_PRE_UNIT_RELIC_PROTOCOL_VOUT,
+  registry_payment_count: 1,
+  registry_payment_sats: String(WORK_AMO_V5_PRE_UNIT_RELIC_TICKET_VALUE_SATS),
+  registry_payment_vout: 0,
+  ticker: "WORK",
+  token_id: WORK_TOKEN_ID,
+  transaction_block_height: WORK_AMO_V5_PRE_UNIT_RELIC_BLOCK_HEIGHT,
+  transaction_block_index: WORK_AMO_V5_PRE_UNIT_RELIC_BLOCK_INDEX,
+  transaction_fee_sats: String(WORK_AMO_V5_PRE_UNIT_RELIC_MINER_FEE_SATS),
+  transaction_status: "confirmed",
+  valid_seal_count: 0,
+  v1_declaration_count: 1,
+});
+const exactPreUnitRawRelicEvidence =
+  workAmoV5PreUnitRelicEvidenceFromRawRows(
+    [exactPreUnitRawRelicRow()],
+    exactAmoActivation,
+  );
+assert.equal(exactPreUnitRawRelicEvidence.complete, true);
+assert.equal(exactPreUnitRawRelicEvidence.disposition, "relic");
+assert.equal(exactPreUnitRawRelicEvidence.terminal, false);
+assert.equal(
+  exactPreUnitRawRelicEvidence.listing.listingId,
+  WORK_AMO_V5_PRE_UNIT_RELIC_LISTING_TXID,
+);
+assert.equal(
+  exactPreUnitRawRelicEvidence.listing.saleAuthorization.version,
+  WORK_AMO_V5_PRE_UNIT_RELIC_AUTH_VERSION,
+);
+assert.equal(
+  exactPreUnitRawRelicEvidence.listing.canonicalMinerFeeCovered,
+  true,
+);
+assert.equal(
+  exactPreUnitRawRelicEvidence.listing.canonicalMinerFeeSats,
+  WORK_AMO_V5_PRE_UNIT_RELIC_MINER_FEE_SATS,
+);
+assert.equal(
+  workAmoV5PreUnitRelicEvidenceFromRawRows(
+    [{ ...exactPreUnitRawRelicRow(), raw_audit_event_count: 2 }],
+    exactAmoActivation,
+  ).complete,
+  false,
+  "Raw pre-unit relic recovery must remain singleton-bound",
 );
 assert.equal(
   workAmoV5PreUnitRelicEvidenceIsExact(exactPreUnitRelicEvidence),

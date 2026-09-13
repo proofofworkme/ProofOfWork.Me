@@ -602,6 +602,7 @@ function blockReplayInputsFixture({
       },
       proofIndexWorkAmoV8ActivationLatch: async () => latch,
     },
+    "let cachedWorkAmoV8ReplayInputs = null;",
   ).workAmoV8ReplayInputsForBlock;
   return {
     discoveryOptions: () => discoveryOptions,

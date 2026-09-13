@@ -316,6 +316,7 @@ const WORK_AMO_V8_PENDING_MEMPOOL_DOMAIN =
   "ProofOfWork.Me/WORK-Q16-PENDING-MEMPOOL/v1";
 const WORK_AMO_V8_PENDING_PROJECTION_DOMAIN_PREFIX =
   "ProofOfWork.Me/WORK-Q16-PENDING-";
+const CANONICAL_REBUILD_META_KEY = "canonical:rebuild";
 const WORK_Q16_PENDING_VERIFIER_STAGE_MAX_TXIDS = 512;
 const WORK_Q16_PENDING_VERIFIER_STAGE_REQUEST_MODEL =
   "canonical-work-q16-pending-verifier-stage-request-v2";
@@ -989,8 +990,29 @@ export function workerWorkAmoV8ActivationLatchReady(
   );
 }
 
+export function workerActiveCanonicalRebuildBelowActivation({
+  canonicalRebuild,
+  declarationConfig,
+  tipHeight,
+} = {}) {
+  const rebuild = objectRecord(canonicalRebuild);
+  const config = objectRecord(declarationConfig);
+  const canonicalTipHeight = Number.isSafeInteger(Number(tipHeight))
+    ? Number(tipHeight)
+    : 0;
+  const activationHeight = Number(config.activationHeight);
+  return Boolean(
+    rebuild.status === "active" &&
+      rebuild.complete !== true &&
+      config.configured === true &&
+      Number.isSafeInteger(activationHeight) &&
+      canonicalTipHeight < activationHeight
+  );
+}
+
 export function workerWorkPrecisionEra({
   activationLatch,
+  canonicalRebuild,
   declarationConfig,
   definition,
   marker,
@@ -999,26 +1021,45 @@ export function workerWorkPrecisionEra({
   tipHeight,
 } = {}) {
   const config = objectRecord(declarationConfig);
+  const rebuild = objectRecord(canonicalRebuild);
   const row = objectRecord(definition);
   const metadata = objectRecord(row.metadata);
-  const observed = Math.max(
-    Number.isSafeInteger(Number(observedHeight))
-      ? Number(observedHeight)
-      : 0,
-    Number.isSafeInteger(Number(tipHeight)) ? Number(tipHeight) : 0,
-  );
+  const canonicalTipHeight = Number.isSafeInteger(Number(tipHeight))
+    ? Number(tipHeight)
+    : 0;
+  const observedBlockHeight = Number.isSafeInteger(Number(observedHeight))
+    ? Number(observedHeight)
+    : 0;
+  const activeCanonicalRebuild =
+    rebuild.status === "active" && rebuild.complete !== true;
+  const activeCanonicalRebuildBelowActivation =
+    workerActiveCanonicalRebuildBelowActivation({
+      canonicalRebuild: rebuild,
+      declarationConfig: config,
+      tipHeight: canonicalTipHeight,
+    });
+  const observed = activeCanonicalRebuild
+    ? canonicalTipHeight
+    : Math.max(observedBlockHeight, canonicalTipHeight);
   const boundaryReached =
     config.configured === true &&
     Number.isSafeInteger(Number(config.activationHeight)) &&
     observed >= Number(config.activationHeight);
-  const q16StatePresent =
+  const q16MetadataPresent =
     Object.keys(objectRecord(activationLatch)).length > 0 ||
-    Object.keys(objectRecord(marker)).length > 0 ||
+    Object.keys(objectRecord(marker)).length > 0;
+  const q16DefinitionPresent =
     metadata.amountStorageModel === WORK_SUBATOM_PROJECTION_MODEL ||
     metadata.precisionModel === WORK_PRECISION_V2_MODEL ||
     String(row.max_supply ?? "") === WORK_Q16_MAX_SUPPLY ||
     String(row.mint_amount ?? "") === WORK_Q16_MINT_AMOUNT;
-  return q16Latched || boundaryReached || q16StatePresent
+  const q16StatePresent =
+    q16DefinitionPresent ||
+    (q16MetadataPresent && !activeCanonicalRebuildBelowActivation);
+  const latchedQ16 =
+    q16Latched === true &&
+    (!activeCanonicalRebuildBelowActivation || q16StatePresent);
+  return latchedQ16 || boundaryReached || q16StatePresent
     ? WORK_PRECISION_Q16_ERA
     : WORK_PRECISION_Q8_ERA;
 }
@@ -1051,6 +1092,12 @@ async function readWorkerWorkPrecisionState(pool) {
           LIMIT 1
         ) AS activation_latch,
         (
+          SELECT value
+          FROM proof_indexer.meta
+          WHERE key = $5
+          LIMIT 1
+        ) AS canonical_rebuild,
+        (
           SELECT COALESCE(max(height), 0)::integer
           FROM proof_indexer.blocks
           WHERE network = $1 AND canonical = true
@@ -1066,11 +1113,13 @@ async function readWorkerWorkPrecisionState(pool) {
       WORK_TOKEN_ID,
       WORK_PRECISION_V2_MIGRATION_META_KEY,
       WORK_AMO_V8_ACTIVATION_LATCH_META_KEY,
+      CANONICAL_REBUILD_META_KEY,
     ],
   );
   const row = result.rows[0] ?? {};
   return {
     activationLatch: objectRecord(row.activation_latch),
+    canonicalRebuild: objectRecord(row.canonical_rebuild),
     definition: objectRecord(row.definition),
     marker: objectRecord(row.migration_marker),
     observedHeight: Number(row.observed_height ?? 0),
@@ -1107,6 +1156,7 @@ async function assertWorkAtomicProjectionReady(
   if (Object.keys(state.definition).length === 0) {
     const missingDefinitionEra = workerWorkPrecisionEra({
       activationLatch: state.activationLatch,
+      canonicalRebuild: state.canonicalRebuild,
       declarationConfig,
       definition: state.definition,
       marker: state.marker,
@@ -1135,6 +1185,7 @@ async function assertWorkAtomicProjectionReady(
   }
   const era = workerWorkPrecisionEra({
     activationLatch: state.activationLatch,
+    canonicalRebuild: state.canonicalRebuild,
     declarationConfig,
     definition: state.definition,
     marker: state.marker,
@@ -1144,14 +1195,21 @@ async function assertWorkAtomicProjectionReady(
   });
   const metadata = objectRecord(state.definition.metadata);
   if (era === WORK_PRECISION_Q8_ERA) {
+    const futurePrecisionMetadataAllowed =
+      workerActiveCanonicalRebuildBelowActivation({
+        canonicalRebuild: state.canonicalRebuild,
+        declarationConfig,
+        tipHeight: state.tipHeight,
+      });
     if (
       String(state.definition.max_supply ?? "") !== WORK_Q8_MAX_SUPPLY ||
       String(state.definition.mint_amount ?? "") !== WORK_Q8_MINT_AMOUNT ||
       metadata.amountStorageModel !== WORK_ATOMIC_PROJECTION_MODEL ||
       Number(metadata.decimals) !== WORK_DECIMALS ||
       String(metadata.unitScale ?? "") !== WORK_UNIT_SCALE_TEXT ||
-      Object.keys(state.marker).length > 0 ||
-      Object.keys(state.activationLatch).length > 0
+      ((Object.keys(state.marker).length > 0 ||
+        Object.keys(state.activationLatch).length > 0) &&
+        !futurePrecisionMetadataAllowed)
     ) {
       throw new Error(
         "Proof index worker is paused until the exact pre-activation WORK Q8 projection is restored.",
@@ -5216,7 +5274,9 @@ export function workerBackfillPhasePlan(
       canonicalBarrier: true,
       kind: "confirmed",
       sourceLabels: ["block-scan"],
-      storeCanonicalSummarySnapshot: "0",
+      storeCanonicalSummarySnapshot: String(
+        storeCanonicalSummarySnapshot ?? "",
+      ),
     },
     {
       canonicalBarrier: false,
@@ -5245,6 +5305,7 @@ export function runScript(
     let forceKillTimer;
     let timeout;
     let settled = false;
+    let childClose = null;
     let observedCanonicalFailure = null;
     const wallClockBudgetMs = Math.max(
       1,
@@ -5255,6 +5316,8 @@ export function runScript(
       Number(forceKillGraceMs) || CHILD_STOP_GRACE_MS,
     );
     const lineBuffers = new Map();
+    const outputStreams = new Set();
+    const closedOutputStreams = new Set();
     const child = spawn(
       process.execPath,
       [path.join(repoRoot, "scripts", scriptName), ...args],
@@ -5283,52 +5346,23 @@ export function runScript(
       }
       callback(value);
     };
-    const observeOutput = (stream, destination, label) => {
-      if (!stream) {
-        return;
-      }
-      lineBuffers.set(label, "");
-      stream.on("data", (chunk) => {
-        if (!destination.write(chunk)) {
-          stream.pause();
-          destination.once("drain", () => stream.resume());
-        }
-        const combined = `${lineBuffers.get(label) ?? ""}${chunk.toString("utf8")}`;
-        const lines = combined.split(/\r?\n/u);
-        lineBuffers.set(
-          label,
-          lines.pop()?.slice(-CHILD_LINE_BUFFER_CHARS) ?? "",
-        );
-        for (const line of lines) {
-          const failure = canonicalWorkerFailureFromLine(line);
-          if (failure) {
-            observedCanonicalFailure = failure;
-          }
-        }
-      });
-    };
-    observeOutput(child.stdout, process.stdout, "stdout");
-    observeOutput(child.stderr, process.stderr, "stderr");
-    timeout = setTimeout(() => {
-      timedOut = true;
-      child.kill("SIGTERM");
-      forceKillTimer = setTimeout(
-        () => child.kill("SIGKILL"),
-        forceKillAfterMs,
-      );
-      forceKillTimer.unref?.();
-    }, wallClockBudgetMs);
-    timeout.unref?.();
-    child.on("error", (error) => {
-      finish(reject, runtime?.stopping ? workerStoppingError() : error);
-    });
-    child.on("close", (code, signal) => {
+    const drainBufferedFailures = () => {
       for (const bufferedLine of lineBuffers.values()) {
         const failure = canonicalWorkerFailureFromLine(bufferedLine);
         if (failure) {
           observedCanonicalFailure = failure;
         }
       }
+    };
+    const finalizeChildClose = () => {
+      if (
+        !childClose ||
+        [...outputStreams].some((label) => !closedOutputStreams.has(label))
+      ) {
+        return;
+      }
+      drainBufferedFailures();
+      const { code, signal } = childClose;
       if (runtime?.stopping) {
         finish(reject, workerStoppingError());
         return;
@@ -5352,6 +5386,58 @@ export function runScript(
       );
       error.workerFailure = observedCanonicalFailure;
       finish(reject, error);
+    };
+    const observeOutput = (stream, destination, label) => {
+      if (!stream) {
+        return;
+      }
+      outputStreams.add(label);
+      lineBuffers.set(label, "");
+      stream.on("data", (chunk) => {
+        if (!destination.write(chunk)) {
+          stream.pause();
+          destination.once("drain", () => stream.resume());
+        }
+        const combined = `${lineBuffers.get(label) ?? ""}${chunk.toString("utf8")}`;
+        const lines = combined.split(/\r?\n/u);
+        lineBuffers.set(
+          label,
+          lines.pop()?.slice(-CHILD_LINE_BUFFER_CHARS) ?? "",
+        );
+        for (const line of lines) {
+          const failure = canonicalWorkerFailureFromLine(line);
+          if (failure) {
+            observedCanonicalFailure = failure;
+          }
+        }
+      });
+      stream.on("end", () => {
+        closedOutputStreams.add(label);
+        finalizeChildClose();
+      });
+      stream.on("close", () => {
+        closedOutputStreams.add(label);
+        finalizeChildClose();
+      });
+    };
+    observeOutput(child.stdout, process.stdout, "stdout");
+    observeOutput(child.stderr, process.stderr, "stderr");
+    timeout = setTimeout(() => {
+      timedOut = true;
+      child.kill("SIGTERM");
+      forceKillTimer = setTimeout(
+        () => child.kill("SIGKILL"),
+        forceKillAfterMs,
+      );
+      forceKillTimer.unref?.();
+    }, wallClockBudgetMs);
+    timeout.unref?.();
+    child.on("error", (error) => {
+      finish(reject, runtime?.stopping ? workerStoppingError() : error);
+    });
+    child.on("close", (code, signal) => {
+      childClose = { code, signal };
+      finalizeChildClose();
     });
   });
 }

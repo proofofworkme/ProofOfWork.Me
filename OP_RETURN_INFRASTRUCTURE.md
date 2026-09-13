@@ -472,7 +472,10 @@ catch-up, the isolated pending-only child raises the protocol-txid limit to at
 most 250 and the cooperative scan budget to at most 540 seconds. The ordinary
 five-txid and 30-second scan remain the inherited hot pending defaults; the
 continuous worker applies the larger budget only to the fail-closed pending-Q16
-witness child after confirmed replay has already caught up. Production separately pins
+witness child after confirmed replay has already caught up. Production pins the
+confirmed block-scan chunk to 200 blocks so exact replay completes inside the
+15-minute child watchdog instead of converting near-complete chunks into retry
+cycles. Production separately pins
 `POW_INDEX_WORKER_PENDING_WITNESS_MAX_AGE_MS=600000` for the API and worker;
 their parsers clamp that witness age to no more than ten minutes. The block
 scanner uses local
@@ -1011,9 +1014,9 @@ Generic, unstructured failures are not contained: three consecutive failed
 cycles still make the process exit so systemd exposes and recovers the fault.
 SIGTERM/SIGINT stops the active child and cancels retries before shutdown. The
 block/mempool child has a
-240-second wall-clock watchdog, followed by `SIGTERM` and a five-second
+900-second wall-clock watchdog, followed by `SIGTERM` and a five-second
 `SIGKILL` grace period, so a wedged child cannot freeze the confirmed loop.
-Each hot-loop child has a hard 250-block cap and a block-boundary target of 250
+Each hot-loop child has a hard 200-block cap and a block-boundary target of 250
 discovered protocol transaction ids. The scanner preflights the next block and
 defers it when adding that whole block would cross the target. Because the
 checkpoint is atomic per Bitcoin block, the first block in a cycle is always

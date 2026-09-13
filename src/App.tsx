@@ -269,7 +269,7 @@ type TokenAction =
   | "transfer";
 const INITIAL_COMPUTER_STATUS: WorkspaceStatus = {
   tone: "idle",
-  text: "ProofOfWork Computer ready. Connect UniSat to load account data.",
+  text: "ProofOfWork Computer verifying canonical data. Connect UniSat to load account data.",
 };
 
 function txStatusLink(txid: string, network: BitcoinNetwork) {
@@ -11612,6 +11612,25 @@ function accountTokenLaneHasCleanAuthority(
   }
   const lane = accountTokenLaneForDefinition(token);
   return Boolean(lane && statuses[lane].loaded && !statuses[lane].error);
+}
+
+function accountTokenLaneReadyForAction(
+  token: PowTokenDefinition,
+  statuses: AccountTokenLaneStatuses,
+) {
+  const lane = accountTokenLaneForDefinition(token);
+  if (lane) {
+    return statuses[lane].loaded && !statuses[lane].error;
+  }
+  return statuses.all.loaded && !statuses.all.error;
+}
+
+function accountTokenLaneErrorForDefinition(
+  token: PowTokenDefinition,
+  statuses: AccountTokenLaneStatuses,
+) {
+  const lane = accountTokenLaneForDefinition(token);
+  return (lane ? statuses[lane].error : "") || statuses.all.error;
 }
 
 function tokenReservedBalanceFor(
@@ -22998,6 +23017,18 @@ export default function App() {
   const walletTransferIsBond = Boolean(
     walletTransferToken && isBondTokenDefinition(walletTransferToken),
   );
+  const walletTransferBalanceReady = walletTransferToken
+    ? accountTokenLaneReadyForAction(
+        walletTransferToken,
+        accountTokenLaneStatuses,
+      )
+    : !address;
+  const walletTransferBalanceError = walletTransferToken
+    ? accountTokenLaneErrorForDefinition(
+        walletTransferToken,
+        accountTokenLaneStatuses,
+      )
+    : "";
   const walletTransferUsesExactUnits = Boolean(walletTransferToken);
   const walletTransferBalanceAtoms =
     walletTransferUsesExactUnits && walletTransferToken
@@ -23667,27 +23698,30 @@ export default function App() {
         ? "Select a credit balance to transfer."
         : !walletTransferToken.registryAddress
           ? "The selected credit registry is unavailable."
-          : !tokenTransferRecipientAddress
-            ? "Enter a recipient address."
-            : !tokenTransferRecipientValid
-              ? "Enter a valid mainnet recipient address."
-              : !tokenTransferInput ||
-                  tokenTransferAmountUnits === null ||
-                  tokenTransferAmountUnits <= 0n
-                ? "Enter a positive transfer amount."
-                : tokenTransferAmountUnits > walletSpendableTokenAtoms
-                  ? `Amount exceeds ${tokenTransferAvailableLabel} available after reservations and pending outgoing transfers.`
-                  : tokenTransferWorkPaused
-                    ? `WORK transfers are paused${tokenTransferWorkPauseReason ? ` (${tokenTransferWorkPauseReason})` : ""}.`
-                    : !tokenTransferPayload
-                      ? "The transfer payload could not be encoded under the current protocol."
-                      : tokenTransferBytes > MAX_DATA_CARRIER_BYTES
-                        ? "Transfer OP_RETURN data is over 100 KB."
-                        : busy
-                          ? tokenAction === "transfer"
-                            ? "Transfer is already in progress."
-                            : "Another wallet action is already in progress."
-                          : "";
+          : !walletTransferBalanceReady
+            ? walletTransferBalanceError ||
+              "Verified wallet credit balance is unavailable."
+            : !tokenTransferRecipientAddress
+              ? "Enter a recipient address."
+              : !tokenTransferRecipientValid
+                ? "Enter a valid mainnet recipient address."
+                : !tokenTransferInput ||
+                    tokenTransferAmountUnits === null ||
+                    tokenTransferAmountUnits <= 0n
+                  ? "Enter a positive transfer amount."
+                  : tokenTransferAmountUnits > walletSpendableTokenAtoms
+                    ? `Amount exceeds ${tokenTransferAvailableLabel} available after reservations and pending outgoing transfers.`
+                    : tokenTransferWorkPaused
+                      ? `WORK transfers are paused${tokenTransferWorkPauseReason ? ` (${tokenTransferWorkPauseReason})` : ""}.`
+                      : !tokenTransferPayload
+                        ? "The transfer payload could not be encoded under the current protocol."
+                        : tokenTransferBytes > MAX_DATA_CARRIER_BYTES
+                          ? "Transfer OP_RETURN data is over 100 KB."
+                          : busy
+                            ? tokenAction === "transfer"
+                              ? "Transfer is already in progress."
+                              : "Another wallet action is already in progress."
+                            : "";
   const tokenListInput = walletTransferToken
     ? tokenAmountInput(walletTransferToken, tokenListAmount)
     : null;
@@ -23717,11 +23751,13 @@ export default function App() {
       workAmoListingFreshPreflightReady &&
       (Boolean(workAmoEstimateForFace(workFloorQuote, tokenListFaceProofs)) ||
         workV8CanAttemptFreshPreflight(workFloorQuote)) &&
+      walletTransferBalanceReady &&
       walletSpendableTokenAtoms > 0n,
   );
   const genericListInputReady = Boolean(
     walletTransferToken &&
       !isWorkToken(walletTransferToken) &&
+      walletTransferBalanceReady &&
       tokenListInput &&
       normalizedTokenListAmountUnits !== null &&
       normalizedTokenListAmountUnits <= walletSpendableTokenAtoms &&
@@ -23804,6 +23840,7 @@ export default function App() {
       address &&
       network === "livenet" &&
       walletTransferToken &&
+      walletTransferBalanceReady &&
       walletTransferToken.registryAddress &&
       tokenTransferPayload &&
       tokenTransferRecipientValid &&
@@ -32986,6 +33023,8 @@ export default function App() {
         submitTransfer={transferToken}
         transferAmount={tokenTransferAmount}
         transferBalance={walletSpendableTokenBalance}
+        transferBalanceError={walletTransferBalanceError}
+        transferBalanceReady={!address || walletTransferBalanceReady}
         transferBytes={tokenTransferBytes}
         transferDisabledReason={tokenTransferDisabledReason}
         transferFundingReadiness={tokenTransferFundingReadiness}
@@ -33065,6 +33104,8 @@ export default function App() {
         transfers={activeBondTransfers}
         transferAmount={tokenTransferAmount}
         transferBalance={walletSpendableTokenBalance}
+        transferBalanceError={walletTransferBalanceError}
+        transferBalanceReady={!address || walletTransferBalanceReady}
         transferBytes={tokenTransferBytes}
         transferDisabledReason={tokenTransferDisabledReason}
         transferRecipient={tokenTransferRecipient}
@@ -33970,6 +34011,8 @@ export default function App() {
             tokenSales={tokenSales}
             transferAmount={tokenTransferAmount}
             transferBalance={walletSpendableTokenBalance}
+            transferBalanceError={walletTransferBalanceError}
+            transferBalanceReady={!address || walletTransferBalanceReady}
             transferBytes={tokenTransferBytes}
             transferDisabledReason={tokenTransferDisabledReason}
             transferFundingReadiness={tokenTransferFundingReadiness}
@@ -34126,6 +34169,8 @@ export default function App() {
             transfers={activeBondTransfers}
             transferAmount={tokenTransferAmount}
             transferBalance={walletSpendableTokenBalance}
+            transferBalanceError={walletTransferBalanceError}
+            transferBalanceReady={!address || walletTransferBalanceReady}
             transferBytes={tokenTransferBytes}
             transferDisabledReason={tokenTransferDisabledReason}
             transferRecipient={tokenTransferRecipient}
@@ -36360,6 +36405,8 @@ type TokenWalletAppProps = {
   tokenSales: PowTokenSale[];
   transferAmount: string;
   transferBalance: ExactIntegerValue;
+  transferBalanceError?: string;
+  transferBalanceReady?: boolean;
   transferBytes: number;
   transferDisabledReason?: string;
   transferRecipient: string;
@@ -36435,6 +36482,8 @@ type InfinityAppProps = {
   transfers: PowTokenTransfer[];
   transferAmount: string;
   transferBalance: ExactIntegerValue;
+  transferBalanceError?: string;
+  transferBalanceReady?: boolean;
   transferBytes: number;
   transferDisabledReason?: string;
   transferRecipient: string;
@@ -36506,6 +36555,8 @@ function InfinityApp({
   transfers,
   transferAmount,
   transferBalance,
+  transferBalanceError,
+  transferBalanceReady,
   transferBytes,
   transferDisabledReason,
   transferRecipient,
@@ -37091,6 +37142,8 @@ function InfinityApp({
           tokenSales={sales}
           transferAmount={transferAmount}
           transferBalance={transferBalance}
+          transferBalanceError={transferBalanceError}
+          transferBalanceReady={transferBalanceReady}
           transferBytes={transferBytes}
           transferDisabledReason={transferDisabledReason}
           transferRecipient={transferRecipient}
@@ -37234,6 +37287,8 @@ function TokenWalletApp({
   tokenSales,
   transferAmount,
   transferBalance,
+  transferBalanceError,
+  transferBalanceReady,
   transferBytes,
   transferDisabledReason,
   transferFundingReadiness,
@@ -37323,6 +37378,8 @@ function TokenWalletApp({
         tokenSales={tokenSales}
         transferAmount={transferAmount}
         transferBalance={transferBalance}
+        transferBalanceError={transferBalanceError}
+        transferBalanceReady={transferBalanceReady}
         transferBytes={transferBytes}
         transferDisabledReason={transferDisabledReason}
         transferFundingReadiness={transferFundingReadiness}
@@ -37494,6 +37551,8 @@ function TokenWalletWorkspace({
   tokenSales,
   transferAmount,
   transferBalance,
+  transferBalanceError = "",
+  transferBalanceReady = true,
   transferBytes,
   transferDisabledReason = "",
   transferFundingReadiness,
@@ -37537,6 +37596,8 @@ function TokenWalletWorkspace({
   | "tokenSales"
   | "transferAmount"
   | "transferBalance"
+  | "transferBalanceError"
+  | "transferBalanceReady"
   | "transferBytes"
   | "transferDisabledReason"
   | "transferRecipient"
@@ -37878,6 +37939,16 @@ function TokenWalletWorkspace({
     selectedListToken && isWorkToken(selectedListToken)
       ? selectedWalletSpendableBalanceAtoms
       : undefined;
+  const transferBalanceLabel = transferBalanceReady
+    ? `${tokenAmountDisplay(
+        transferToken ?? {},
+        transferBalance,
+        undefined,
+        transferBalanceAtoms,
+      )} ${transferToken?.ticker ?? "TOKEN"}`
+    : transferBalanceError
+      ? "Unavailable"
+      : "Loading";
   const listSpendableBalanceAtoms = selectedWalletSpendableBalanceAtoms;
   const parsedListAmount = selectedListToken
     ? tokenAmountInput(selectedListToken, listAmount)
@@ -38415,15 +38486,7 @@ function TokenWalletWorkspace({
             <div className="id-launch-stats token-stats-row">
               <div>
                 <span>Spendable</span>
-                <strong>
-                  {tokenAmountDisplay(
-                    transferToken ?? {},
-                    transferBalance,
-                    undefined,
-                    transferBalanceAtoms,
-                  )}{" "}
-                  {transferToken?.ticker ?? "TOKEN"}
-                </strong>
+                <strong>{transferBalanceLabel}</strong>
               </div>
               <div>
                 <span>Registry fee</span>
