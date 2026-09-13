@@ -845,7 +845,7 @@ expect(
       logRoute,
     ) &&
     /activityHistoryPayload/u.test(logRoute) &&
-    /pageSnapshotTotal !== summaryTotal/u.test(server) &&
+    /pageSnapshotTotal !== publicSummaryTotal/u.test(server) &&
     /boundSearchParams\.set\("snapshot", summarySnapshotId\)/u.test(
       server,
     ) &&
@@ -865,8 +865,8 @@ expect(
     /proofIndexCanonicalActivityPayload\(network, \{[\s\S]*?snapshotId: summarySnapshotId/u.test(
       server,
     ) &&
-    /pageSnapshotTotal !== summaryTotal/u.test(server) &&
-    /activity\.length !== summaryTotal/u.test(server) &&
+    /pageSnapshotTotal !== publicSummaryTotal/u.test(server) &&
+    /activity\.length !== publicSummaryTotal/u.test(server) &&
     /pagePending !== summaryPending/u.test(server) &&
     /verifiedCanonicalMinerFeeCoverage/u.test(server) &&
     /verifiedFreshLogCheckpointAfterRead\(summary, network, "log"\)/u.test(

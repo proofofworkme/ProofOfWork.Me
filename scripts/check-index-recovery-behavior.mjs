@@ -17671,6 +17671,7 @@ check("stored canonical summaries require component and public Log count checks"
     "eligibleCanonicalSummarySnapshotPayload",
     {
       canonicalSummaryAccountingModelsCurrent: () => true,
+      canonicalSummaryIncbHistoricalBaselineCurrent: () => true,
       canonicalSummarySnapshotStorageEligible: () => true,
       canonicalSummaryCoverage: () => 957_641,
       exactSummarySnapshotTotalsCurrent: () => true,
@@ -17727,6 +17728,91 @@ check("stored canonical summaries require component and public Log count checks"
     /canonical-activity-count-matches-public-log/u,
   );
   assert.match(snapshotReadSource, /check_item->>'ok'[\s\S]*'true'/u);
+});
+
+check("stored canonical summaries reject false-zero historical INCB issuance", () => {
+  const baseline = {
+    acceptedMints: 46,
+    attachedWorkIssuanceUnits: "224847713398420540",
+    confirmedSupply: "224847713398447926",
+    directProofIssuanceUnits: "27386",
+    issuanceDustQ8: "2193582060",
+    networkValueQ8: "22484771339844794793582060",
+    parentBondEvents: 47,
+  };
+  const canonicalSummaryIncbHistoricalBaselineCurrent = isolatedFunction(
+    BACKFILL_PATH,
+    "canonicalSummaryIncbHistoricalBaselineCurrent",
+    {
+      LIVENET_INCB_HISTORICAL_BASELINE: baseline,
+      NETWORK: "livenet",
+      canonicalIntegerText: (value) => {
+        const text = String(value ?? "").trim();
+        return /^\d+$/u.test(text) ? BigInt(text).toString() : "";
+      },
+      numberOrNull: (value) => {
+        const number = Number(value);
+        return Number.isFinite(number) ? number : null;
+      },
+      objectPayload: (value) =>
+        value && typeof value === "object" && !Array.isArray(value)
+          ? value
+          : null,
+    },
+  );
+  const falseZero = {
+    checks: [
+      {
+        details: { loggedParents: 47, seeded: 47 },
+        name: "seeded-inception-bonds-logged",
+        ok: true,
+      },
+      {
+        details: {
+          confirmedSupply: "0",
+          directProofIssuanceUnits: "0",
+          issuanceNetworkValueQ8: "0",
+          loggedParents: 47,
+          seededParents: 47,
+        },
+        name: "inception-historical-issuance-baseline",
+        ok: false,
+      },
+    ],
+    network: "livenet",
+    summaryPayloads: {
+      inceptionSummary: {
+        actualValue: {
+          attachedWorkIssuanceUnits: "0",
+          directProofIssuanceUnits: "0",
+          issuanceDustQ8: "0",
+          issuanceNetworkValueQ8: "0",
+        },
+        stats: { confirmedSupply: "0" },
+        token: { stats: { confirmedMints: 0 } },
+      },
+    },
+  };
+  assert.equal(
+    canonicalSummaryIncbHistoricalBaselineCurrent(falseZero),
+    false,
+  );
+  const restored = structuredClone(falseZero);
+  restored.checks[1].ok = true;
+  restored.summaryPayloads.inceptionSummary.actualValue = {
+    attachedWorkIssuanceUnits: baseline.attachedWorkIssuanceUnits,
+    directProofIssuanceUnits: baseline.directProofIssuanceUnits,
+    issuanceDustQ8: baseline.issuanceDustQ8,
+    issuanceNetworkValueQ8: baseline.networkValueQ8,
+  };
+  restored.summaryPayloads.inceptionSummary.stats.confirmedSupply =
+    baseline.confirmedSupply;
+  restored.summaryPayloads.inceptionSummary.token.stats.confirmedMints =
+    baseline.acceptedMints;
+  assert.equal(
+    canonicalSummaryIncbHistoricalBaselineCurrent(restored),
+    true,
+  );
 });
 
 check("current snapshot readers require atomic WORK markers while pinned history bypasses them", async () => {
@@ -17968,6 +18054,14 @@ check("ledger consistency requires fixed Inception issuance plus market flow", (
     /checkNames\.has\("inception-fixed-value-reconciles"\)/u,
   );
   assert.match(
+    snapshotChecksSource,
+    /"inception-historical-issuance-baseline"/u,
+  );
+  assert.match(
+    currentLedgerSource,
+    /checkNames\.has\("inception-historical-issuance-baseline"\)/u,
+  );
+  assert.match(
     currentLedgerSource,
     /checkNames\.has\("work-amo-v5-legacy-bootstrap-carry-proven"\)/u,
   );
@@ -18011,6 +18105,12 @@ check("ledger consistency counts AMO bootstrap carry on the ledger side", () => 
         }
         return String(value);
       },
+      canonicalNonNegativeIntegerText: (value, options = {}) => {
+        if (value === undefined || value === null || value === "") {
+          return options.allowZero ? "0" : "";
+        }
+        return /^\d+$/u.test(String(value)) ? String(value) : "";
+      },
       confirmedActivityFlowSats: () => 428_610,
       CREDIT_MINER_FEE_ACCOUNTING_MODEL,
       decimalTextFromQ8: (value) => String(BigInt(value) / 100_000_000n),
@@ -18019,6 +18119,15 @@ check("ledger consistency counts AMO bootstrap carry on the ledger side", () => 
       growthSummaryPayloadHasFiniteNetworkValue: () => true,
       INCB_TOKEN_ID,
       INCEPTION_NETWORK_VALUE_ACCOUNTING_MODEL,
+      LIVENET_INCB_HISTORICAL_BASELINE: {
+        acceptedMints: 46,
+        attachedWorkIssuanceUnits: "224847713398420540",
+        confirmedSupply: "224847713398447926",
+        directProofIssuanceUnits: "27386",
+        issuanceDustQ8: "2193582060",
+        networkValueQ8: "22484771339844794793582060",
+        parentBondEvents: 47,
+      },
       inceptionIssuanceMetadataFromMints: () => ({
         canonicalMints: 0,
         complete: true,
@@ -42657,6 +42766,60 @@ check("confirmed INCB metadata is fully bound to its recipient and block", () =>
     incbIssuanceMetadataFault(productionPayload, productionRow),
     "",
     "exact Q8 metadata must remain authoritative when float subtraction loses production-scale dust",
+  );
+  const exactIncbVerifierItemsFromState = isolatedFunction(
+    API_PATH,
+    "tokenVerifierItemsFromState",
+    {
+      canonicalInceptionMintMetadata: (item) =>
+        item?.issuanceAccountingModel ===
+        "canonical-pre-bond-live-network-value-v2"
+          ? {
+              attachedWorkAmountAtoms: (
+                BigInt(String(item.attachedWorkAmount)) * 100_000_000n
+              ).toString(),
+              attachedWorkAmountDecimals: 8,
+              attachedWorkAmountStorageModel: "work-atoms-v1",
+              attachedWorkAmountUnitScale: "100000000",
+              attachedWorkAmountVersion: "send2",
+            }
+          : {},
+    },
+  );
+  const {
+    attachedWorkAmountAtoms: _missingProductionAtoms,
+    attachedWorkAmountStorageModel: _missingProductionStorage,
+    ...productionVerifierSource
+  } = productionPayload;
+  const [productionVerifierMint] = exactIncbVerifierItemsFromState(
+    {
+      mints: [
+        {
+          ...productionVerifierSource,
+          confirmed: true,
+          protocol: "",
+          protocolVout: 2,
+          recordOrdinal: 0,
+          validationMode: "canonical-incb-bond-projection",
+        },
+      ],
+    },
+    productionTxid,
+    { requireConfirmed: true, requiredBlockHeight: 958_432 },
+  );
+  assert.equal(productionVerifierMint.protocol, "pwt1");
+  assert.equal(
+    productionVerifierMint.attachedWorkAmountAtoms,
+    "398800000000000",
+    "the internal verifier must publish canonical atoms before the worker persistence gate rechecks exact Q8 issuance",
+  );
+  assert.equal(
+    productionVerifierMint.attachedWorkAmountStorageModel,
+    "work-atoms-v1",
+  );
+  assert.equal(
+    productionVerifierMint.attachedWorkAmountUnitScale,
+    "100000000",
   );
   const hugeSnapshotNetworkValueQ8 = 10n ** 321n + 12_345_678n;
   const hugeIssuanceNetworkValueQ8 =

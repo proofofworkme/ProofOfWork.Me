@@ -1305,6 +1305,15 @@ const CANONICAL_INCB_PWT_RANGE_REPLAY_TARGETS = Object.freeze([
 ]);
 const INCEPTION_NETWORK_VALUE_ACCOUNTING_MODEL =
   "fixed-incb-issuance-plus-market-flow-v1";
+const LIVENET_INCB_HISTORICAL_BASELINE = Object.freeze({
+  acceptedMints: 46,
+  attachedWorkIssuanceUnits: "224847713398420540",
+  confirmedSupply: "224847713398447926",
+  directProofIssuanceUnits: "27386",
+  issuanceDustQ8: "2193582060",
+  networkValueQ8: "22484771339844794793582060",
+  parentBondEvents: 47,
+});
 const INCEPTION_ATTACHMENT_ACCOUNTING_MODEL =
   INCEPTION_ISSUANCE_ACCOUNTING_MODEL;
 const INCEPTION_WORK_MOVEMENT_ORACLE_MODEL =
@@ -43918,6 +43927,7 @@ function ledgerPayloadHasCurrentChecks(payload) {
     checkNames.has("seeded-infinity-bonds-logged") &&
     checkNames.has("inception-live-issuance-matches-incb-supply") &&
     checkNames.has("inception-fixed-value-reconciles") &&
+    checkNames.has("inception-historical-issuance-baseline") &&
     checkNames.has("infinity-bond-flow-matches-powb-supply") &&
     checkNames.has("ledger-covers-node-tip")
   );
@@ -46397,6 +46407,12 @@ function ledgerSnapshotChecks({
   const seededInceptionBondFlowSats = seededConfirmedMail
     .filter(isInceptionBondActivityItem)
     .reduce((total, item) => total + activityAmountSats(item), 0);
+  const seededInceptionBondCount = seededConfirmedMail.filter(
+    isInceptionBondActivityItem,
+  ).length;
+  const loggedInceptionBondItems = (activity ?? []).filter(
+    (item) => item?.confirmed && isInceptionBondActivityItem(item),
+  );
   const loggedInceptionBondFlowSats = (activity ?? [])
     .filter((item) => item?.confirmed && isInceptionBondActivityItem(item))
     .reduce((total, item) => total + activityAmountSats(item), 0);
@@ -46417,8 +46433,86 @@ function ledgerSnapshotChecks({
     {
       loggedFlowSats: loggedInceptionBondFlowSats,
       missing: missingSeededInceptionBondEvents.length,
-      seeded: seededConfirmedMail.filter(isInceptionBondActivityItem).length,
+      seeded: seededInceptionBondCount,
       seededFlowSats: seededInceptionBondFlowSats,
+    },
+  );
+  const loggedInceptionBondCount = loggedInceptionBondItems.length;
+  const livenetInceptionParentCount = Math.max(
+    seededInceptionBondCount,
+    loggedInceptionBondCount,
+  );
+  const livenetIncbBaselineRequiresExact =
+    livenetInceptionParentCount ===
+    LIVENET_INCB_HISTORICAL_BASELINE.parentBondEvents;
+  const livenetIncbBaselineValueOk = (actual, expected) => {
+    const text = canonicalNonNegativeIntegerText(actual, {
+      allowZero: true,
+    });
+    if (!text) {
+      return false;
+    }
+    if (livenetIncbBaselineRequiresExact) {
+      return text === expected;
+    }
+    return BigInt(text) >= BigInt(expected);
+  };
+  const livenetIncbBaselineReached =
+    livenetInceptionParentCount >=
+    LIVENET_INCB_HISTORICAL_BASELINE.parentBondEvents;
+  const livenetIncbBaselineOk =
+    network !== "livenet" ||
+    livenetInceptionParentCount === 0 ||
+    !livenetIncbBaselineReached ||
+    (inceptionIssuance.complete &&
+      inceptionIssuance.canonicalMints >=
+        LIVENET_INCB_HISTORICAL_BASELINE.acceptedMints &&
+      inceptionIssuance.confirmedMints >=
+        LIVENET_INCB_HISTORICAL_BASELINE.acceptedMints &&
+      livenetIncbBaselineValueOk(
+        inceptionIssuance.directProofIssuanceUnits,
+        LIVENET_INCB_HISTORICAL_BASELINE.directProofIssuanceUnits,
+      ) &&
+      livenetIncbBaselineValueOk(
+        inceptionIssuance.attachedWorkIssuanceUnits,
+        LIVENET_INCB_HISTORICAL_BASELINE.attachedWorkIssuanceUnits,
+      ) &&
+      livenetIncbBaselineValueOk(
+        incbConfirmedSupply,
+        LIVENET_INCB_HISTORICAL_BASELINE.confirmedSupply,
+      ) &&
+      livenetIncbBaselineValueOk(
+        inceptionIssuance.issuanceNetworkValueQ8,
+        LIVENET_INCB_HISTORICAL_BASELINE.networkValueQ8,
+      ) &&
+      livenetIncbBaselineValueOk(
+        inceptionIssuance.issuanceDustQ8,
+        LIVENET_INCB_HISTORICAL_BASELINE.issuanceDustQ8,
+      ));
+  addCheck(
+    "inception-historical-issuance-baseline",
+    livenetIncbBaselineOk,
+    {
+      acceptedMints:
+        LIVENET_INCB_HISTORICAL_BASELINE.acceptedMints,
+      attachedWorkIssuanceUnits:
+        inceptionIssuance.attachedWorkIssuanceUnits,
+      confirmedSupply: incbConfirmedSupply,
+      directProofIssuanceUnits:
+        inceptionIssuance.directProofIssuanceUnits,
+      expected:
+        livenetInceptionParentCount >=
+        LIVENET_INCB_HISTORICAL_BASELINE.parentBondEvents
+          ? LIVENET_INCB_HISTORICAL_BASELINE
+          : null,
+      exactRequired: livenetIncbBaselineRequiresExact,
+      issuanceDustQ8: inceptionIssuance.issuanceDustQ8,
+      issuanceNetworkValueQ8:
+        inceptionIssuance.issuanceNetworkValueQ8,
+      loggedParents: loggedInceptionBondCount,
+      parentBondEvents:
+        LIVENET_INCB_HISTORICAL_BASELINE.parentBondEvents,
+      seededParents: seededInceptionBondCount,
     },
   );
   addCheck(
@@ -49911,6 +50005,7 @@ async function internalCanonicalSummaryPayload(network, options = {}) {
     {
       exactHash: before.tipHash,
       exactHeight: before.indexedThroughBlock,
+      replayVerifierBinding: options.replayVerifierBinding,
     },
   );
   if (
@@ -66917,8 +67012,23 @@ function tokenVerifierItemsFromState(state, txid, options = {}) {
     if (!item || typeof item !== "object") {
       return;
     }
+    const inceptionAccountingModel =
+      typeof INCEPTION_ISSUANCE_ACCOUNTING_MODEL === "string"
+        ? INCEPTION_ISSUANCE_ACCOUNTING_MODEL
+        : "canonical-pre-bond-live-network-value-v2";
+    const inceptionMintMetadata =
+      kind === "token-mint" &&
+      String(item?.issuanceAccountingModel ?? "") ===
+        inceptionAccountingModel &&
+      typeof canonicalInceptionMintMetadata === "function"
+        ? canonicalInceptionMintMetadata(item)
+        : {};
+    const verifierItem = {
+      ...item,
+      ...inceptionMintMetadata,
+    };
     const position = canonicalVerifierItemPosition(
-      item,
+      verifierItem,
       {
         blockHashField,
         blockHeightField,
@@ -66931,14 +67041,14 @@ function tokenVerifierItemsFromState(state, txid, options = {}) {
     );
     const canonicalBondMintWithoutProtocol =
       kind === "token-mint" &&
-      !String(item?.protocol ?? "").trim() &&
+      !String(verifierItem?.protocol ?? "").trim() &&
       /^canonical-(?:powb|incb)-bond-projection$/u.test(
-        String(item?.validationMode ?? "").trim(),
+        String(verifierItem?.validationMode ?? "").trim(),
       ) &&
-      String(item?.sourceBondTxid ?? "").trim().toLowerCase() ===
+      String(verifierItem?.sourceBondTxid ?? "").trim().toLowerCase() ===
         normalizedTxid;
     items.push({
-      ...item,
+      ...verifierItem,
       ...(canonicalBondMintWithoutProtocol ? { protocol: "pwt1" } : {}),
       ...position,
       kind,
@@ -77042,6 +77152,7 @@ async function handleRequest(request, response) {
         : await internalCanonicalSummaryPayload(network, {
             checkpointHash,
             checkpointHeight,
+            replayVerifierBinding,
           });
       jsonResponse(
         response,

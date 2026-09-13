@@ -1582,6 +1582,15 @@ const INCB_ISSUANCE_ACCOUNTING_MODEL =
 const INCB_VALUE_SNAPSHOT_MODEL = "canonical-summary-h-minus-one-v1";
 const INCB_NETWORK_VALUE_ACCOUNTING_MODEL =
   "fixed-incb-issuance-plus-market-flow-v1";
+const LIVENET_INCB_HISTORICAL_BASELINE = Object.freeze({
+  acceptedMints: 46,
+  attachedWorkIssuanceUnits: "224847713398420540",
+  confirmedSupply: "224847713398447926",
+  directProofIssuanceUnits: "27386",
+  issuanceDustQ8: "2193582060",
+  networkValueQ8: "22484771339844794793582060",
+  parentBondEvents: 47,
+});
 const WORK_TRANSFER_VALUE_PROJECTION_MODEL =
   "canonical-work-transfer-value-projection-v1";
 const CANONICAL_INCB_ISSUANCE_REPAIR_EXPECTATIONS = new Map([
@@ -15313,6 +15322,79 @@ function exactSummarySnapshotTotalsCurrent(payload) {
   );
 }
 
+function canonicalSummaryIncbHistoricalBaselineCurrent(payload) {
+  const item = objectPayload(payload);
+  if (!item || String(item.network ?? NETWORK) !== "livenet") {
+    return true;
+  }
+  const checks = Array.isArray(item.checks) ? item.checks : [];
+  const checkByName = (name) =>
+    checks.find((check) => check?.name === name);
+  const seededCheck = checkByName("seeded-inception-bonds-logged");
+  const baselineCheck = checkByName(
+    "inception-historical-issuance-baseline",
+  );
+  const parentCount = Math.max(
+    numberOrNull(seededCheck?.details?.seeded) ?? 0,
+    numberOrNull(seededCheck?.details?.loggedParents) ?? 0,
+    numberOrNull(baselineCheck?.details?.seededParents) ?? 0,
+    numberOrNull(baselineCheck?.details?.loggedParents) ?? 0,
+  );
+  if (parentCount <= 0) {
+    return true;
+  }
+  const exactRequired =
+    parentCount === LIVENET_INCB_HISTORICAL_BASELINE.parentBondEvents;
+  const integerValueOk = (actual, expected) => {
+    const text = canonicalIntegerText(actual);
+    if (!text) {
+      return false;
+    }
+    return exactRequired
+      ? text === expected
+      : BigInt(text) >= BigInt(expected);
+  };
+  const inceptionSummary = objectPayload(
+    item.summaryPayloads?.inceptionSummary,
+  );
+  const inceptionActual = objectPayload(inceptionSummary?.actualValue);
+  const confirmedMints = numberOrNull(
+    inceptionSummary?.token?.stats?.confirmedMints,
+  );
+  if (parentCount < LIVENET_INCB_HISTORICAL_BASELINE.parentBondEvents) {
+    return (
+      Number.isSafeInteger(confirmedMints) &&
+      confirmedMints > 0 &&
+      integerValueOk(inceptionSummary?.stats?.confirmedSupply, "1")
+    );
+  }
+  return (
+    baselineCheck?.ok === true &&
+    Number.isSafeInteger(confirmedMints) &&
+    confirmedMints >= LIVENET_INCB_HISTORICAL_BASELINE.acceptedMints &&
+    integerValueOk(
+      inceptionActual?.directProofIssuanceUnits,
+      LIVENET_INCB_HISTORICAL_BASELINE.directProofIssuanceUnits,
+    ) &&
+    integerValueOk(
+      inceptionActual?.attachedWorkIssuanceUnits,
+      LIVENET_INCB_HISTORICAL_BASELINE.attachedWorkIssuanceUnits,
+    ) &&
+    integerValueOk(
+      inceptionSummary?.stats?.confirmedSupply,
+      LIVENET_INCB_HISTORICAL_BASELINE.confirmedSupply,
+    ) &&
+    integerValueOk(
+      inceptionActual?.issuanceNetworkValueQ8,
+      LIVENET_INCB_HISTORICAL_BASELINE.networkValueQ8,
+    ) &&
+    integerValueOk(
+      inceptionActual?.issuanceDustQ8,
+      LIVENET_INCB_HISTORICAL_BASELINE.issuanceDustQ8,
+    )
+  );
+}
+
 function objectPayload(value) {
   return value && typeof value === "object" && !Array.isArray(value)
     ? value
@@ -17261,6 +17343,7 @@ function eligibleCanonicalSummarySnapshotPayload(payload) {
       /^[0-9a-f]{64}$/u.test(String(item.sourceHashes?.canonicalSummary ?? "")) &&
       canonicalSummaryCoverage(item.summaryPayloads) > 0 &&
       canonicalSummaryAccountingModelsCurrent(item.summaryPayloads) &&
+      canonicalSummaryIncbHistoricalBaselineCurrent(item) &&
       exactSummarySnapshotTotalsCurrent(item),
   );
 }
