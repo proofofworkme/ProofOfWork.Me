@@ -9,6 +9,7 @@ import {
 import { Buffer } from "buffer";
 import {
   ArrowUpRight,
+  Clock,
   Heart,
   MessageCircle,
   RefreshCw,
@@ -1619,6 +1620,18 @@ export default function BoostRoot({
             </a>
           </div>
 
+          {isProfileView ? (
+            <a
+              className="secondary link-button boost-profile-timeline-link"
+              href={boostRouteHref("/", { boost: "1" })}
+            >
+              <span className="button-content">
+                <Clock size={16} />
+                <span>Timeline</span>
+              </span>
+            </a>
+          ) : null}
+
           <section className="boost-action-panel">
             <div className="boost-action-panel-head">
               <strong>Identity</strong>
@@ -1838,12 +1851,6 @@ export default function BoostRoot({
                   </div>
                 )}
                 <div className="boost-profile-copy">
-                  <a
-                    className="secondary small link-button"
-                    href={boostRouteHref("/", { boost: "1" })}
-                  >
-                    Timeline
-                  </a>
                   <h2>{profileSubjectDisplay(payload)}</h2>
                   <p>{profileSubjectHandle(payload) || profileRouteValue}</p>
                   <div className="boost-profile-stats">

@@ -660,6 +660,24 @@ expect(
     /params\.set\("view", timelineMode\)/u.test(boostRoot) &&
     /profileTabs\?: Record<BoostProfileTab, number>/u.test(boostProtocol),
 );
+const boostSidebarSource = boostRoot.slice(
+  boostRoot.indexOf("<aside"),
+  boostRoot.indexOf("</aside>"),
+);
+const boostProfileHeadSource = boostRoot.slice(
+  boostRoot.indexOf('className="boost-profile-head"'),
+  boostRoot.indexOf('className="boost-profile-tabs"'),
+);
+expect(
+  "Boost profile timeline navigation lives in the left rail",
+  /boost-profile-timeline-link/u.test(boostSidebarSource) &&
+    /href=\{boostRouteHref\("\/", \{ boost: "1" \}\)\}/u.test(
+      boostSidebarSource,
+    ) &&
+    /<Clock size=\{16\} \/>/u.test(boostSidebarSource) &&
+    /<span>Timeline<\/span>/u.test(boostSidebarSource) &&
+    !/Timeline/u.test(boostProfileHeadSource),
+);
 const transferTokenSource = app.slice(
   app.indexOf("async function transferToken"),
   app.indexOf("async function listToken"),
