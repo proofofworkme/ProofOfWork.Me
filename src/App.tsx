@@ -13800,19 +13800,19 @@ function tokenMarketplaceCanonicalCounts({
         (scopedTotalCountsAreSafe
           ? optionalMarketplaceCount(state.totalCounts?.listings)
           : undefined)
-      : networkOpenListings ??
-        optionalMarketplaceCount(state.totalCounts?.listings) ??
-        optionalMarketplaceCount(summaryStats?.openListings)) ??
+      : optionalMarketplaceCount(state.totalCounts?.listings) ??
+        optionalMarketplaceCount(summaryStats?.openListings) ??
+        networkOpenListings) ??
     targetListings.length;
   const authoritativePendingListings = scopedToken
     ? optionalMarketplaceCount(scopedToken.pendingOpenListings)
-    : networkPendingListings ??
-      optionalMarketplaceCount(summaryStats?.pendingOpenListings);
+    : optionalMarketplaceCount(summaryStats?.pendingOpenListings) ??
+      networkPendingListings;
   const confirmedListings =
     (scopedToken
       ? optionalMarketplaceCount(scopedToken.confirmedOpenListings)
-      : networkConfirmedListings ??
-        optionalMarketplaceCount(summaryStats?.confirmedOpenListings)) ??
+      : optionalMarketplaceCount(summaryStats?.confirmedOpenListings) ??
+        networkConfirmedListings) ??
     (authoritativePendingListings !== undefined
       ? Math.max(0, openListings - authoritativePendingListings)
       : listingBookComplete
@@ -13836,9 +13836,9 @@ function tokenMarketplaceCanonicalCounts({
         (scopedTokenOwnsAllConfirmedSales
           ? optionalMarketplaceCount(summaryStats?.confirmedSales)
           : undefined)
-      : networkConfirmedSales ??
-        topLevelConfirmedSalesFromTotal ??
-        optionalMarketplaceCount(summaryStats?.confirmedSales)) ??
+      : topLevelConfirmedSalesFromTotal ??
+        optionalMarketplaceCount(summaryStats?.confirmedSales) ??
+        networkConfirmedSales) ??
     previewMarketStats.confirmedSales;
   const pendingSales =
     (scopedToken
@@ -13846,8 +13846,8 @@ function tokenMarketplaceCanonicalCounts({
         (scopedPendingSummaryIsSafe
           ? optionalMarketplaceCount(summaryStats?.pendingSales)
           : undefined)
-      : networkPendingSales ??
-        optionalMarketplaceCount(summaryStats?.pendingSales)) ??
+      : optionalMarketplaceCount(summaryStats?.pendingSales) ??
+        networkPendingSales) ??
     previewMarketStats.pendingSales;
   const buyableListings =
     scopedToken && isWorkToken(scopedToken)

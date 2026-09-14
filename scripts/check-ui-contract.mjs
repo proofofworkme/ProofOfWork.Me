@@ -3688,7 +3688,13 @@ expect(
     /function tokenMarketplaceStatusText/.test(app) &&
     /state\.listingAuthority\?\.buyableCandidateCount/.test(app) &&
     /state\.totalCounts\?\.tokens/.test(app) &&
+    /: optionalMarketplaceCount\(state\.totalCounts\?\.listings\) \?\?\s*optionalMarketplaceCount\(summaryStats\?\.openListings\) \?\?\s*networkOpenListings/.test(
+      app,
+    ) &&
     /topLevelConfirmedSalesFromTotal/.test(app) &&
+    /: topLevelConfirmedSalesFromTotal \?\?\s*optionalMarketplaceCount\(summaryStats\?\.confirmedSales\) \?\?\s*networkConfirmedSales/.test(
+      app,
+    ) &&
     /marketplaceStatusIsGenericTokenRefresh/.test(app) &&
     /tokenMarketplaceStatusText\(\{[\s\S]*state: acceptedTokenState/.test(
       refreshMarketplaceSummaryBlock,

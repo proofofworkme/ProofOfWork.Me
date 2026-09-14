@@ -2237,6 +2237,77 @@ test("AMO status uses canonical counts when compact previews are partial", async
   await assertNoDocumentOverflow(page, "partial-preview AMO status");
 });
 
+test("AMO status prefers total counts over complete per-token sums when unscoped", async ({
+  page,
+}) => {
+  const extraCreditToken = tokenDefinition({
+    registryAddress: "bc1qdrainmarketstatustest0000000000000000000000",
+    ticker: "DRAIN",
+    tokenId: fixtureTxid(88_000),
+  });
+  await installApiFixtures(page, {
+    countedAmo: true,
+    marketplaceSummaryTransform: (summary) => ({
+      ...summary,
+      token: {
+        ...summary.token,
+        collectionHasMore: {
+          ...summary.token.collectionHasMore,
+          listings: true,
+          sales: true,
+        },
+        hasMore: true,
+        listings: summary.token.listings.slice(0, 2),
+        sales: [RESPONSIVE_AMO_ACTIVITY_ITEMS["market-sales"][0].sale],
+        stats: {
+          ...summary.token.stats,
+          confirmedOpenListings: AMO_LISTING_COUNT + 2,
+          openListings: AMO_LISTING_COUNT + 2,
+        },
+        summaryOnly: true,
+        tokens: [
+          ...summary.token.tokens,
+          {
+            ...extraCreditToken,
+            confirmedOpenListings: 1,
+            openListings: 1,
+            pendingOpenListings: 0,
+          },
+        ],
+        totalCounts: {
+          ...summary.token.totalCounts,
+          listings: AMO_LISTING_COUNT + 2,
+          sales: AMO_SALE_COUNT,
+          tokens: 2,
+        },
+      },
+    }),
+  });
+  await page.setViewportSize({ height: VIEWPORT_HEIGHT, width: 390 });
+  await openFixtureRoute(
+    page,
+    surfaceUrl(MARKETPLACE_BASE_URL, "/?marketplace=1"),
+    "unscoped AMO canonical totals",
+  );
+  await page.getByRole("button", { name: "Refresh" }).first().click();
+  const status = page.locator(".app-status-row").first();
+  await expect(status).toContainText("Credit market loaded");
+  await expect(status).toContainText("2 confirmed credits");
+  await expect(status).toContainText(
+    `${(AMO_LISTING_COUNT + 2).toLocaleString()} open listings`,
+  );
+  await expect(status).toContainText(
+    `${AMO_SALE_COUNT.toLocaleString()} confirmed sales`,
+  );
+  await expect(status).toContainText("0 pending listings");
+  await expect(status).not.toContainText(
+    `${(AMO_LISTING_COUNT + 1).toLocaleString()} open listings`,
+  );
+  await expect(status).not.toContainText("2 listings");
+  await expect(status).not.toContainText("1 confirmed sale");
+  await assertNoDocumentOverflow(page, "unscoped AMO canonical totals");
+});
+
 test("AMO history exposes authoritative totals and rejects incomplete or mismatched previews", async ({
   page,
 }) => {
