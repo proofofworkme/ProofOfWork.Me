@@ -1249,3 +1249,90 @@ Final non-actions:
 - No wallet, signing, chain, raw node, production data, storage retention, WAL,
   rollback-root, release-evidence, recovery-material, or backup deletion was
   performed.
+
+## Addendum 2026-09-14T05:09:58Z - approved node release checkout cleanup
+
+User-approved scope:
+
+- Remove only obsolete node release checkout directories under `/opt` so the
+  node release-health inventory no longer warns about excessive retained
+  checkouts.
+- Preserve live production, current rollback evidence, the historical verifier
+  root, managed release archives, checksums, provenance files, database data,
+  chain data, WAL archives, backups, release evidence, and recovery material.
+- Commit, push, deploy the audit-log record, and verify local, GitHub, and
+  production sync afterward.
+
+Production cleanup performed:
+
+- Live production remained `/opt/proofofwork-api` at commit
+  `538ccdb371975313e1c6256b6ffab45a77068544` during the cleanup.
+- Removed `22` obsolete direct-child `/opt/proofofwork-api-stage-*` checkout
+  copies after verifying each removal target was a directory, not a symlink,
+  not the live path, and not referenced by running process `cwd`, `root`, or
+  `exe` links.
+- Reclaimed approximately `4.5G` of root filesystem space from expendable
+  checkout copies only.
+- Did not remove any file under
+  `/data/proofofwork-release-backups/managed`; release archives, `.sha256`
+  checksum files, and `.provenance` files remain durable audit evidence.
+
+Removed `/opt` checkout copies:
+
+- `/opt/proofofwork-api-stage-0f3efbd6909c-20260901T041016Z`
+- `/opt/proofofwork-api-stage-339ba3a71ba5-20260904T154740Z`
+- `/opt/proofofwork-api-stage-39d5454e77f3-20260908T121810Z`
+- `/opt/proofofwork-api-stage-42af4c69e248-20260904T062603Z`
+- `/opt/proofofwork-api-stage-432c01581e5e-20260904T174541Z`
+- `/opt/proofofwork-api-stage-4b8d84093c94-20260902T013326Z`
+- `/opt/proofofwork-api-stage-5a74ca8f9876-20260905T175921Z`
+- `/opt/proofofwork-api-stage-5d1069e00e5a-20260901T125457Z`
+- `/opt/proofofwork-api-stage-5de1b0c59015-20260831T074908Z`
+- `/opt/proofofwork-api-stage-6a7d5c12e403-20260905T050928Z`
+- `/opt/proofofwork-api-stage-7e97478bac65-20260905T014751Z`
+- `/opt/proofofwork-api-stage-86d7c544e82d-20260904T162941Z`
+- `/opt/proofofwork-api-stage-89736d9d42f7-20260902T220921Z`
+- `/opt/proofofwork-api-stage-96d3f8935592-20260903T023228Z`
+- `/opt/proofofwork-api-stage-b035a6791676-20260904T151707Z`
+- `/opt/proofofwork-api-stage-b76a4f56aff2-20260903T033208Z`
+- `/opt/proofofwork-api-stage-c2396ce9c3ea-20260902T004751Z`
+- `/opt/proofofwork-api-stage-ca8de7ef58b7-20260904T185317Z`
+- `/opt/proofofwork-api-stage-d13e9cad67e9-20260901T230220Z`
+- `/opt/proofofwork-api-stage-da4bef0a3380-20260901T035509Z`
+- `/opt/proofofwork-api-stage-ec97e1817dd8-20260901T022632Z`
+- `/opt/proofofwork-api-stage-f34268758527-20260908T125052Z`
+
+Preserved `/opt` roots before the audit-log deployment:
+
+- `/opt/proofofwork-api`
+- `/opt/proofofwork-api-stage-10795467c328-20260914T015628Z`
+- `/opt/proofofwork-api-stage-2ddefac163d5-20260905T180603Z`
+- `/opt/proofofwork-api-stage-538ccdb-20260914T043258Z`
+- `/opt/proofofwork-api-stage-b245c2e-20260914T041150Z`
+- `/opt/proofofwork-api-stage-be715e9-20260914T035650Z`
+- `/opt/proofofwork-api-stage-ea66f95-20260914T040840Z`
+- `/opt/proofofwork-api-stage-f23c24fd97a9-20260914T012344Z`
+
+The inventory was intentionally reduced to `8` roots before the audit-log
+deployment because the retained-root publish flow creates one new rollback root
+for the previous live checkout. The expected post-deploy inventory therefore
+remains within the documented bounded inventory of `9`.
+
+Post-cleanup checks before audit-log deployment:
+
+- Node release health:
+  `live_commit=538ccdb371975313e1c6256b6ffab45a77068544`,
+  `archives=22`, `verified=22`, `unverified=0`, `legacy_absolute=0`,
+  `provenance=22`, `current_provenance=1`, `opt_checkouts=8`.
+- Disk health: `/` and `/opt` showed `73G` available (`23%` used);
+  `/data` showed `400G` available (`75%` used).
+- Public API health at `https://computer.proofofwork.me/api/v1/health`
+  remained ready with node/index/API exact at block `966916`, `lagBlocks=0`,
+  summary snapshot `e3952d9be92e19a1686808ab`, worker healthy, and disk
+  checks healthy.
+
+Non-actions:
+
+- No backend, indexer, UI, database, wallet, signing, chain, node config, WAL,
+  archive, backup, rollback evidence, release evidence, or recovery material
+  was changed by this cleanup.
