@@ -665,11 +665,6 @@ Log -> /?log=1
 Growth -> /?growth=1
 ```
 
-`nft.proofofwork.me` is a compatibility hostname for the default Computer
-build; there is no separate NFT route or build switch. Deploy its static root
-from the same exact generic Computer build as `computer.proofofwork.me` so it
-cannot drift into an untracked legacy release.
-
 To build a landing-page-only deployment for `proofofwork.me`:
 
 ```bash

@@ -3673,11 +3673,11 @@ a claim that the build itself was reproducible.
 
 Immediately after publication, run the following from a host outside the UI
 VPS. It checksum-verifies the retained archive, requires the active and adjacent
-provenance to be byte-equal, and byte-compares every archived regular file --
-including the retained prior dependency closure -- with its HTTPS response on
-all 15 canonical surface hostnames. It separately checks each hostname root and
-the apex-to-`www` redirect. Do not classify the rollback root or release scratch
-as removable until this is green.
+provenance to be byte-equal, and byte-compares every archived regular file for
+the public surfaces -- including the retained prior dependency closure -- with
+its HTTPS response on all 14 canonical public surface hostnames. It separately
+checks each public hostname root and the apex-to-`www` redirect. Do not classify
+the rollback root or release scratch as removable until this is green.
 
 ```bash
 set -Eeuo pipefail
@@ -3719,7 +3719,6 @@ hosts = {
     "infinity": "infinity.proofofwork.me",
     "landing": "www.proofofwork.me",
     "marketplace": "amo.proofofwork.me",
-    "nft": "nft.proofofwork.me",
     "token": "credit.proofofwork.me",
     "wallet": "wallet.proofofwork.me",
     "work": "work.proofofwork.me",
@@ -3734,6 +3733,8 @@ with tarfile.open(archive, "r:gz") as release:
         if not member.isfile() or len(parts) < 3 or parts[0] != "surfaces":
             raise SystemExit(f"unexpected archive member: {member.name}")
         surface = parts[1]
+        if surface == "nft":
+            continue
         if surface not in hosts:
             raise SystemExit(f"unexpected archive surface: {surface}")
         relative = "/".join(parts[2:])
@@ -3857,11 +3858,12 @@ itself prove deterministic build derivation from that source. Directory modes
 are independently safety-validated; they are not part of the archive-to-live
 surface digest comparison. The 15-minute verifier runs `verify-rollback` and
 rehashes every active root and retained archive evidence, accepting strict v3
-or the one-time strict legacy record. The `nft`
-hostname is a compatibility alias, not an independent build:
-its file count and mode-sensitive tree SHA-256 must exactly equal generic
-Computer during both record and verify. Do not label a legacy, mixed-commit, or
-partially served UI as commit-bound; redeploy or deliberately retire divergence.
+or the one-time strict legacy record. The internal `nft`
+compatibility root is not a public hostname; when a release or rollback
+manifest includes it, its file count and mode-sensitive tree SHA-256 must
+exactly equal generic Computer during both record and verify. Do not label a
+legacy, mixed-commit, or partially served UI as commit-bound; redeploy or
+deliberately retire divergence.
 
 If a pre-existing active manifest is invalid or describes bytes other than the
 current live surfaces, preserve it before the legacy bootstrap. This is an

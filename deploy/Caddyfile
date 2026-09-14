@@ -186,7 +186,6 @@ http://amo.proofofwork.me,
 http://marketplace.proofofwork.me,
 http://growth.proofofwork.me,
 http://log.proofofwork.me,
-http://nft.proofofwork.me,
 http://credit.proofofwork.me,
 http://token.proofofwork.me,
 http://tokens.proofofwork.me,
@@ -242,19 +241,6 @@ growth.proofofwork.me {
 
 log.proofofwork.me {
 	import common_activity_app
-}
-
-(common_nft_app) {
-	import common_static_policy
-	handle {
-		root * /var/www/proofofwork-nft
-		try_files {path} /index.html
-		file_server
-	}
-}
-
-nft.proofofwork.me {
-	import common_nft_app
 }
 
 (common_token_app) {
