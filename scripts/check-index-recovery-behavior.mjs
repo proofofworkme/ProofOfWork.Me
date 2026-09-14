@@ -60655,6 +60655,135 @@ check("WORK replay counts one canonical miner fee without collapsing same-tx mov
   );
 });
 
+check("WORK sale close mutation fee is counted once in credit replay", () => {
+  const numericValue = (value, fallback = 0) => {
+    const number = Number(value);
+    return Number.isFinite(number) ? number : fallback;
+  };
+  const presentNonNegativeNumber = isolatedFunction(
+    API_PATH,
+    "presentNonNegativeNumber",
+  );
+  const creditReplayTransactionMinerFeeSats = isolatedFunction(
+    API_PATH,
+    "creditReplayTransactionMinerFeeSats",
+    { presentNonNegativeNumber },
+  );
+  const creditMovementIdentity = isolatedFunction(
+    API_PATH,
+    "creditMovementIdentity",
+    { numericValue },
+  );
+  const verifiedCanonicalMinerFeeCoverage = isolatedFunction(
+    API_PATH,
+    "verifiedCanonicalMinerFeeCoverage",
+  );
+  const compareCreditValueReplayEvents = (left, right) =>
+    left.createdMs - right.createdMs ||
+    left.order - right.order ||
+    String(left.txid ?? "").localeCompare(String(right.txid ?? ""));
+  const creditNetworkValueMetrics = isolatedFunction(
+    API_PATH,
+    "creditNetworkValueMetrics",
+    {
+      CREDIT_MINER_FEE_ACCOUNTING_MODEL:
+        "canonical-unique-tx-input-output-v1",
+      TOKEN_MARKETPLACE_MUTATION_KINDS: new Set([
+        "token-listing",
+        "token-listing-sealed",
+        "token-listing-closed",
+      ]),
+      TOKEN_MIN_MUTATION_PRICE_SATS: 546,
+      canonicalInceptionWorkMovementOracleByIdentity: () => new Map(),
+      canonicalTokenSaleLedgerAmount: (_tokenId, sale) =>
+        BigInt(sale.amountSubatoms ?? "0"),
+      compareCreditValueReplayEvents,
+      creditMovementIdentity,
+      creditReplayTransactionMinerFeeSats,
+      creditValueEventMs: (item) => Number(item?.createdMs),
+      isTokenActivityItem: (item) =>
+        String(item?.kind ?? "").startsWith("token-"),
+      numericValue,
+      tokenCanUseCreditNetworkFloor: () => true,
+      verifiedCanonicalMinerFeeCoverage,
+    },
+  );
+  const tokenId = WORK_TOKEN_ID;
+  const txid = "9".repeat(64);
+  const sale = {
+    amountSubatoms: "749030366",
+    blockHeight: WORK_AMO_V5_ACTIVATION_HEIGHT + 6_297,
+    blockIndex: 1_850,
+    canonicalMinerFeeCovered: true,
+    canonicalMinerFeeSats: 1_222,
+    confirmed: true,
+    createdMs: 100,
+    kind: "token-sale",
+    minerFeeSats: 1_222,
+    priceSats: 25_000,
+    protocolVout: 2,
+    recordOrdinal: 0,
+    tokenId,
+    txid,
+  };
+  const close = {
+    amountSats: 546,
+    blockHeight: sale.blockHeight,
+    blockIndex: sale.blockIndex,
+    canonicalMinerFeeCovered: true,
+    canonicalMinerFeeSats: 1_222,
+    confirmed: true,
+    createdMs: 100,
+    kind: "token-listing-closed",
+    marketplaceMutationFeeSats: 546,
+    minerFeeSats: 1_222,
+    protocolVout: 2,
+    recordOrdinal: 1,
+    tokenId,
+    txid,
+  };
+  const metrics = creditNetworkValueMetrics({
+    baseValueAt: () => 1_000_000,
+    canonicalMinerFeeCoverage: {
+      complete: true,
+      confirmedEvents: 2,
+      confirmedTransactions: 1,
+      coveredConfirmedEvents: 2,
+      coveredConfirmedTransactions: 1,
+      missingConfirmedEvents: 0,
+      missingConfirmedTransactions: 0,
+      missingConfirmedTxids: [],
+      source: "proof-indexer-normalized-input-output-totals",
+    },
+    confirmedActivity: [sale, close],
+    cutoffMs: 200,
+    includeEvents: true,
+    tokenDefinitions: [
+      { maxSupply: 21_000_000, ticker: "WORK", tokenId },
+    ],
+    tokenSales: [sale],
+  });
+
+  assert.equal(metrics.events.length, 2);
+  assert.equal(metrics.creditSalePaymentFlowSats, 25_000);
+  assert.equal(metrics.creditMarketplaceMutationFlowSats, 546);
+  assert.equal(metrics.creditMinerFeeFlowSats, 1_222);
+  assert.equal(
+    metrics.events.reduce(
+      (total, event) => total + event.marketplaceMutationFeeSats,
+      0,
+    ),
+    546,
+    "the sale movement and canonical close record must not both carry 546",
+  );
+  assert.ok(
+    Math.abs(
+      metrics.creditEventFrozenValueSats -
+        (metrics.creditMovementFrozenValueSats + 25_000 + 546 + 1_222),
+    ) < 1e-9,
+  );
+});
+
 check("Inception-bound WORK movements freeze once at each bond's own H-1 live oracle", () => {
   const WORK_TOKEN_ID =
     "d4e5ebf11d104d6a63fb74e42094364b25a5f7199a09e5c0e71408972466a8b8";

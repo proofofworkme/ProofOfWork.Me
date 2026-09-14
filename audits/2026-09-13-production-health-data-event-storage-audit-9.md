@@ -1102,3 +1102,85 @@ Non-actions in this addendum:
   retention logic was changed.
 - No production service was stopped or restarted during the frontend repair
   verification.
+
+## Approved Canonical Summary Publication Repair Addendum
+
+Scope approved by operator:
+
+- Repair canonical summary publication after AMO, WORK, Wallet, Credit, Growth,
+  Log, and Computer surfaces reported exact-tip summary unavailability.
+- Identify the exact post-`966897` event/component causing the AMO
+  legacy-bootstrap credit reconciliation divergence.
+- Make the minimum backend/indexer/test/audit-log change required to preserve
+  exact, full-node-verifiable math.
+- Back up PostgreSQL before production changes, restart only affected
+  API/indexer worker services if required, regenerate canonical summary
+  snapshots, commit, push, deploy, and verify production sync.
+- Do not alter wallets, signing, chain data, raw node data, unrelated UI,
+  storage retention, backups, WAL archives, rollback roots, release evidence,
+  recovery material, or unrelated production data.
+
+Read-only production evidence before repair:
+
+- Public AMO, WORK, and consistency reads failed closed with
+  `CANONICAL_SUMMARY_UNAVAILABLE`.
+- Full node and canonical scan checkpoint were at block `966904` with hash
+  `00000000000000000001eab4a57a98a637472ce16ce7ae50533e5feb9d0dd697`.
+- Latest eligible canonical-summary refresh snapshot was block `966897`,
+  snapshot `bc67357819c249798616fe20`, hash
+  `780a5e98212cd96c0d494a482767aa887c63a3461c28d51184e2b3a1343840b5`.
+- `proofofwork-indexer-worker` was active but `failed-escalating`; the child
+  backfill failed on `/api/v1/internal/canonical-summary` HTTP `503`.
+- The exact fail-closed reason was
+  `legacy-bootstrap-credit-value-diverged`, with
+  `committedCreditFixedQ8=4164278500000000`,
+  `validCreditFixedQ8=4164286900000000`, and
+  `legacyBootstrapCreditRemainderQ8=-8400000000`.
+- Relational confirmed events first advanced past the last-good summary at
+  block `966898`. That block contained WORK sale tx
+  `d9bcb5e967bc8be6cb15627748ecacc62acc8f792bbd62d07316427a718a4ca3`
+  with a derived `token-listing-closed` row, and WORK listing tx
+  `96b9f2731bb91d644b3682d5c38c6491f78fc7965a9ff9aaab84031446404b6d`.
+- Core-derived transaction fees for that block were `1222` proofs for the sale
+  tx and `794` proofs for the listing tx.
+- The AMO transition credit delta from block `966897` to `966898` was exactly
+  `28108` proofs:
+  `25000` sale price + `1222` sale miner fee + `546` close mutation fee +
+  `546` listing mutation fee + `794` listing miner fee.
+- The summary-side credit replay advanced by `28654` proofs, exactly one extra
+  `546` proof marketplace mutation payment. The generic credit replay was
+  assigning a default `546` marketplace mutation fee to the sale movement while
+  also counting the canonical `token-listing-closed` mutation row for the same
+  transaction.
+
+Repair:
+
+- Updated `server/proof-api.mjs` so `creditNetworkValueMetrics` counts a
+  token-sale marketplace mutation fee only when the sale source carries an
+  explicit `marketplaceMutationFeeSats`; otherwise the canonical
+  `token-listing-closed` row owns that mutation payment exactly once.
+- Added a production-shaped regression to
+  `scripts/check-index-recovery-behavior.mjs` proving one WORK sale plus its
+  same-transaction derived close produces one `546` marketplace mutation fee,
+  not two.
+
+Local verification before production change:
+
+- `npm run check:live-data`: passed.
+- `npm run check:api-truth`: passed.
+- `npm run check:ui`: passed.
+- `npm run check:index-recovery-behavior`: passed, `517/517` behavior checks.
+- `npm run check:work-amo-v8`: passed.
+- `npm run check:work-amo-v5`: passed.
+- `npm run check:work-precision`: passed.
+- `npm run check:worker-containment`: passed.
+- `npm run check:hardening`: passed.
+- `npm run build`: passed. Vite retained the existing large-chunk warning.
+
+Pre-deploy non-actions:
+
+- No production files were changed before the PostgreSQL backup step.
+- No production services were stopped or restarted before the deployment step.
+- No database rows were inserted, updated, or deleted during diagnosis.
+- No storage, backups, WAL archives, rollback roots, release evidence, or
+  recovery material were deleted or moved.

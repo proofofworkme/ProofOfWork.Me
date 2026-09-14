@@ -58356,8 +58356,7 @@ function creditNetworkValueMetrics({
         : proofFlow(event.registryMutationFeeSats);
     const marketplaceMutationFee =
       event.kind === "sale"
-        ? proofFlow(event.source?.marketplaceMutationFeeSats) ||
-          BigInt(TOKEN_MIN_MUTATION_PRICE_SATS)
+        ? proofFlow(event.source?.marketplaceMutationFeeSats)
         : proofFlow(event.marketplaceMutationFeeSats);
     const salePayment =
       event.kind === "sale" ? proofFlow(event.source?.priceSats) : 0n;
