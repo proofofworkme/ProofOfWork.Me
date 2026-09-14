@@ -1192,3 +1192,60 @@ Pre-deploy non-actions:
 - No database rows were inserted, updated, or deleted during diagnosis.
 - No storage, backups, WAL archives, rollback roots, release evidence, or
   recovery material were deleted or moved.
+
+Production repair and verification:
+
+- Created the pre-change PostgreSQL logical backup at
+  `/data/proofofwork-postgres-backups/logical/proof_indexer-20260914T034044Z-pre-be715e9.dumpset`.
+  Backup checksums were recorded in that backup directory; no retention or
+  cleanup action was run.
+- Final deployed source is commit
+  `ea66f9502709939b75e46949f649583ab18d533b`, after intermediate repairs
+  `be715e95b9983941f2b3c9067576a3bf19b717c0` and
+  `b245c2e7be8566ca99b3303fc3cf27b2abd82ce6` proved the remaining replay
+  mirror path.
+- Final accounting invariant: token-sale projection may carry a display
+  `marketplaceMutationFeeSats`, but credit replay must ignore sale-level
+  mutation fees. Canonical `token-listing-closed`, `token-listing`, and
+  `token-listing-sealed` rows own marketplace mutation payments exactly once.
+- Production health recovered to exact tip with `lagBlocks=0`. Verified healthy
+  snapshots included block `966909` snapshot `398b7bd1ec4e7e5069e187ac`, block
+  `966911` snapshot `14fb97b506001b40394ce5fe`, and block `966913` snapshot
+  `9dcc9f0936cbd34b702a906e`.
+- `https://work.proofofwork.me/api/v1/work-floor?network=livenet&fresh=1`
+  returned block `966913`, snapshot `9dcc9f0936cbd34b702a906e`, and exact
+  `networkValueSats=8387576239647223792.78260041` with
+  `actualValue.creditFixedQ8=4164278500000000`.
+- Production `audit:ledger` passed against `https://work.proofofwork.me`,
+  snapshot `33d14faa87e6ba8141346a61`, value
+  `8387576239647223792.78260041` proofs.
+- Production `check:marketplace-regressions` passed against
+  `https://computer.proofofwork.me`: ID lookup, V2 cutover/invalid state, POWB
+  sealed listing, WORK listing lifecycle, wallet scopes, targeted WORK
+  transfers, and marketplace active-book contract.
+- Production `audit:surfaces` passed all `13` checked hosts, including AMO,
+  WORK, Wallet, Credit, Growth, Log, and Computer API probes.
+- Production `check:credit-mint-regressions` passed against
+  `https://credit.proofofwork.me`: POW `1,525,100/10,101,010` confirmed and
+  WORK `21,000,000/21,000,000` confirmed, both with `0` pending.
+- Production DB-backed `indexer:parity`, run on the VPS with the same canonical
+  summary size budget as the deployed services, passed `102` checks with zero
+  error failures at block `966913`, snapshot
+  `9dcc9f0936cbd34b702a906e`. The only remaining warning failures were the
+  already-disabled AMO V5 migration and USD quote-head readiness checks.
+- Production DB-backed `audit:computer-events` passed `49` checks with zero
+  failures on the VPS loopback API.
+
+Observed transient exact-tip behavior:
+
+- During production verification, new blocks caused short expected `503`
+  windows such as `CANONICAL_SUMMARY_TIP_CHANGED`,
+  `REGISTRY_AUTHORITY_UNAVAILABLE`, and `CANONICAL_WALLET_INDEX_UNAVAILABLE`.
+  Retry-aware gates recovered after the worker published the next exact-tip
+  snapshot. These were not the previous block-`966897` stuck summary failure.
+
+Final non-actions:
+
+- No wallet, signing, chain, raw node, production data, storage retention, WAL,
+  rollback-root, release-evidence, recovery-material, or backup deletion was
+  performed.
