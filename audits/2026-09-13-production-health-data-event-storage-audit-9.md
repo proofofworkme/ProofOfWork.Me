@@ -1003,3 +1003,102 @@ Remaining approval boundary after H9 repair:
 - Approve a separate speed/data-handling repair for exact history, wallet, and
   marketplace reads. Correctness and math gates pass, but production latency is
   still too high for the desired product bar.
+
+## Approved AMO Status-Count Frontend Repair Addendum
+
+Scope approved by operator:
+
+- Repair only the AMO/Credit/WORK frontend status-count bug reported from the
+  `amo.proofofwork.me` green status bar.
+- Preserve backend/indexer/database/math/event logic, chain data, production
+  data, wallets, node configuration, storage retention, backups, recovery
+  material, and unrelated page/style behavior.
+
+Continuity:
+
+- This follows the prior H6-18 class, "AMO refresh banner uses the wrong
+  quantity and sales scope", without duplicating it as a new backend/indexer
+  issue. The current evidence shows canonical fields are present; the visible
+  bug was frontend status text choosing compact preview array lengths.
+
+Root cause:
+
+- `src/App.tsx` status text used token/listing/sale array lengths from compact
+  AMO/token payloads. Those arrays can be bounded previews when
+  `summaryOnly:true`, `hasMore:true`, or `collectionHasMore.*:true`, so they
+  are not cardinality authority.
+- The status path also missed selected-token fields and
+  `listingAuthority.buyableCandidateCount`, causing selected WORK status to
+  inherit global preview counts instead of the scoped canonical WORK counts.
+
+Live read-only evidence at `2026-09-14T00:14:27Z`:
+
+- Fresh AMO summary from `amo.proofofwork.me` was at indexed block `966888`.
+  Its compact preview carried `238` token rows, `706` listing rows, and `40`
+  sale rows, while canonical `totalCounts` reported `238` tokens, `743`
+  listings, and `76` sales.
+- The same AMO payload declared `summaryOnly:true`, `hasMore:true`,
+  `collectionHasMore.listings:true`, and `collectionHasMore.sales:true`, so the
+  preview rows cannot be used as complete counts.
+- Selected WORK fields in the AMO payload reported `741` open WORK listings,
+  `741` confirmed open WORK listings, `0` pending WORK listings, `76`
+  confirmed WORK sales, and `0` pending WORK sales.
+- `listingAuthority` reported `buyableCandidateCount:703`,
+  `checkedListingCount:743`, and `unspentListingCount:743`.
+- Fresh global token state from `computer.proofofwork.me` at block `966888`
+  agreed on `238` credits, `743` open listings, `76` confirmed sales, and `0`
+  pending sales.
+- Fresh WORK token summary from `work.proofofwork.me` at block `966888`
+  reported scoped `totalCounts.listings:741`, `totalCounts.sales:76`, and
+  `totalCounts.holders:356`, while its compact arrays again exposed only
+  `705` listing rows and `40` sale rows.
+
+Repair:
+
+- Added a shared `tokenMarketplaceStatusText`/`tokenMarketplaceCanonicalCounts`
+  path in `src/App.tsx` that prefers scoped token fields, canonical
+  `totalCounts`, canonical `stats`, and WORK `listingAuthority` buyable counts
+  before falling back to preview rows.
+- Preserved selected-token wording: selected WORK/credit routes render
+  `<ticker> market loaded...`; unscoped credit status renders
+  `Credit market loaded...`.
+- Updated AMO/WORK/Credit refresh status selection in standalone and embedded
+  contexts, including the active AMO tab status handoff.
+- Added focused UI contract and Playwright coverage proving partial compact
+  previews do not control AMO status counts.
+- Updated the mail-compose AMO fixture evidence so complete listing hydration
+  tests still represent the current display-projection contract.
+- Updated deterministic AMO and Computer 390px snapshots only for the approved
+  status-copy change.
+
+Local verification:
+
+- `npm run check:ui`: passed.
+- `npm run build`: passed. Vite retained the existing large-chunk warning.
+- Focused browser subset against `http://127.0.0.1:4174`: `5` tests passed,
+  covering partial AMO previews, AMO order-book counts, standalone INCB
+  preview clearing, mobile AMO status, and representative mobile snapshots.
+- Full browser UI suite against `http://127.0.0.1:4174`: `68` tests passed.
+
+Production read-only verification before any UI publish:
+
+- `POW_API_BASE=https://computer.proofofwork.me npm run
+  check:marketplace-regressions`: passed for ID lookup, V2
+  cutover/invalid state, POWB sealed listing, WORK listing lifecycle, wallet
+  scopes, targeted WORK transfers, and marketplace summary active-book
+  contract.
+- UI host storage health remained above the documented floor: `/` at `66%`
+  used with `13,132,247,040` bytes free.
+- Active UI provenance verified release
+  `4ce5f70c6538-20260913T224020Z` at commit
+  `4ce5f70c653871122d79a312862ef9922b637db5`.
+- Six existing complete-root UI rollback roots were fingerprinted by the
+  read-only retained-root helper. No rollback root, release archive, backup,
+  recovery material, WAL archive, or production data was deleted or moved.
+
+Non-actions in this addendum:
+
+- No backend, indexer, database, math, event, chain, wallet, node, or storage
+  retention logic was changed.
+- No production service was stopped or restarted during the frontend repair
+  verification.

@@ -1056,6 +1056,7 @@ type PowTokenState = {
   indexedThroughBlock?: number;
   indexedThroughBlockHash?: string;
   invalidEvents: PowTokenInvalidEvent[];
+  listingAuthority?: PowTokenListingAuthorityEvidence;
   listingBookComplete?: boolean;
   listings: PowTokenListing[];
   mints: PowTokenMint[];
@@ -1085,8 +1086,12 @@ type PowTokenCollectionKey =
 
 type PowTokenSummaryStats = {
   [key: string]: unknown;
+  activeListings?: number;
+  confirmedOpenListings?: number;
   confirmedSales?: number;
   confirmedSalesVolumeSats?: number;
+  openListings?: number;
+  pendingOpenListings?: number;
   pendingSales?: number;
   pendingSalesVolumeSats?: number;
   sales?: number;
@@ -1104,6 +1109,7 @@ type PowTokenSummaryMetadata = Pick<
   | "indexedAt"
   | "indexedThroughBlock"
   | "indexedThroughBlockHash"
+  | "listingAuthority"
   | "listingBookComplete"
   | "pendingSupplyAtoms"
   | "pendingSupplySubatoms"
@@ -1111,6 +1117,7 @@ type PowTokenSummaryMetadata = Pick<
   | "snapshotId"
   | "source"
   | "stats"
+  | "summaryOnly"
   | "totalCounts"
   | "unitScale"
 >;
@@ -1604,6 +1611,7 @@ type PowActivityApiResponse = {
 };
 
 type PowTokenListingAuthorityEvidence = {
+  buyableCandidateCount?: number;
   checkedListingCount?: number;
   checkedOutpointsSha256?: string;
   checkpoint?: {
@@ -10026,6 +10034,7 @@ function tokenSummaryMetadata(
     | "indexedAt"
     | "indexedThroughBlock"
     | "indexedThroughBlockHash"
+    | "listingAuthority"
     | "listingBookComplete"
     | "pendingSupplyAtoms"
     | "pendingSupplySubatoms"
@@ -10033,6 +10042,7 @@ function tokenSummaryMetadata(
     | "snapshotId"
     | "source"
     | "stats"
+    | "summaryOnly"
     | "totalCounts"
     | "unitScale"
   >,
@@ -10049,6 +10059,9 @@ function tokenSummaryMetadata(
     indexedAt: state.indexedAt,
     indexedThroughBlock: state.indexedThroughBlock,
     indexedThroughBlockHash: state.indexedThroughBlockHash,
+    listingAuthority: state.listingAuthority
+      ? { ...state.listingAuthority }
+      : undefined,
     listingBookComplete: state.listingBookComplete === true,
     pendingSupplyAtoms: state.pendingSupplyAtoms,
     pendingSupplySubatoms: state.pendingSupplySubatoms,
@@ -10056,6 +10069,7 @@ function tokenSummaryMetadata(
     snapshotId: state.snapshotId,
     source: state.source,
     stats: state.stats ? { ...state.stats } : undefined,
+    summaryOnly: state.summaryOnly === true,
     totalCounts: state.totalCounts ? { ...state.totalCounts } : undefined,
     unitScale: state.unitScale,
   };
@@ -13642,6 +13656,7 @@ function tokenHasConfirmedMarketplaceSales(token: PowTokenDefinition) {
 }
 
 type TokenMarketplaceMetricKey =
+  | "openListings"
   | "confirmedOpenListings"
   | "pendingOpenListings"
   | "confirmedSales"
@@ -13657,6 +13672,237 @@ function summedTokenMarketplaceMetric(
   return counts.length > 0 && counts.every((count) => count !== undefined)
     ? counts.reduce((total, count) => total + (count ?? 0), 0)
     : undefined;
+}
+
+type TokenMarketplaceCountState = Pick<
+  PowTokenState,
+  | "collectionHasMore"
+  | "hasMore"
+  | "listingAuthority"
+  | "listingBookComplete"
+  | "listings"
+  | "sales"
+  | "stats"
+  | "summaryOnly"
+  | "totalCounts"
+  | "tokens"
+>;
+
+type TokenMarketplaceCanonicalCounts = {
+  buyableListings?: number;
+  confirmedCredits: number;
+  confirmedListings: number;
+  confirmedSales: number;
+  openListings: number;
+  pendingListings: number;
+  pendingSales: number;
+  scopedToken?: PowTokenDefinition;
+};
+
+function tokenMarketplaceCollectionIsComplete(
+  state: TokenMarketplaceCountState,
+  key: PowTokenCollectionKey,
+) {
+  if (key === "listings" && state.listingBookComplete === true) {
+    return true;
+  }
+  return (
+    state.summaryOnly !== true &&
+    state.hasMore !== true &&
+    state.collectionHasMore?.[key] !== true
+  );
+}
+
+function tokenMarketplaceCanonicalCounts({
+  network,
+  state,
+  token,
+  tokenScope = "",
+}: {
+  network: BitcoinNetwork;
+  state: TokenMarketplaceCountState;
+  token?: PowTokenDefinition;
+  tokenScope?: string;
+}): TokenMarketplaceCanonicalCounts {
+  const networkCreditTokens = state.tokens.filter(
+    (candidate) =>
+      candidate.network === network && !isBondTokenDefinition(candidate),
+  );
+  const scopedToken =
+    token ??
+    (tokenScope.trim()
+      ? networkCreditTokens.find((candidate) =>
+          tokenScopeMatchesToken(candidate, tokenScope),
+        )
+      : undefined);
+  const targetTokens = scopedToken ? [scopedToken] : networkCreditTokens;
+  const targetTokenIds = new Set(targetTokens.map((candidate) => candidate.tokenId));
+  const targetListings = state.listings.filter(
+    (listing) =>
+      listing.network === network &&
+      targetTokenIds.has(listing.tokenId),
+  );
+  const targetSales = state.sales.filter(
+    (sale) =>
+      sale.network === network &&
+      targetTokenIds.has(sale.tokenId),
+  );
+  const previewMarketStats = marketplaceStatsFromSales(targetSales);
+  const listingBookComplete = tokenMarketplaceCollectionIsComplete(
+    state,
+    "listings",
+  );
+  const previewConfirmedListings = targetListings.filter(
+    (listing) => listing.confirmed,
+  ).length;
+  const previewPendingListings =
+    targetListings.length - previewConfirmedListings;
+  const summaryStats = state.stats;
+  const topLevelPendingSales = optionalMarketplaceCount(
+    summaryStats?.pendingSales,
+  );
+  const topLevelTotalSales = optionalMarketplaceCount(state.totalCounts?.sales);
+  const topLevelConfirmedSalesFromTotal =
+    topLevelTotalSales === undefined
+      ? undefined
+      : Math.max(0, topLevelTotalSales - (topLevelPendingSales ?? 0));
+  const allNetworkTokens = state.tokens.filter(
+    (candidate) => candidate.network === network,
+  );
+  const confirmedSaleTokenIds = allNetworkTokens
+    .filter(tokenHasConfirmedMarketplaceSales)
+    .map((candidate) => candidate.tokenId);
+  const scopedTokenOwnsAllConfirmedSales =
+    Boolean(scopedToken?.tokenId) &&
+    confirmedSaleTokenIds.length === 1 &&
+    confirmedSaleTokenIds[0] === scopedToken?.tokenId;
+  const scopedTopLevelSummaryIsSafe =
+    allNetworkTokens.length === 1 || state.tokens.length === targetTokens.length;
+  const scopedPendingSummaryIsSafe =
+    scopedTopLevelSummaryIsSafe || topLevelPendingSales === 0;
+  const networkOpenListings = scopedToken
+    ? undefined
+    : summedTokenMarketplaceMetric(targetTokens, "openListings");
+  const networkConfirmedListings = scopedToken
+    ? undefined
+    : summedTokenMarketplaceMetric(targetTokens, "confirmedOpenListings");
+  const networkPendingListings = scopedToken
+    ? undefined
+    : summedTokenMarketplaceMetric(targetTokens, "pendingOpenListings");
+  const scopedTotalCountsAreSafe =
+    Boolean(scopedToken) && state.tokens.length === 1;
+  const confirmedCredits =
+    optionalMarketplaceCount(state.totalCounts?.tokens) ??
+    networkCreditTokens.filter((candidate) => candidate.confirmed).length;
+  const openListings =
+    (scopedToken
+      ? optionalMarketplaceCount(scopedToken.openListings) ??
+        (scopedTotalCountsAreSafe
+          ? optionalMarketplaceCount(state.totalCounts?.listings)
+          : undefined)
+      : networkOpenListings ??
+        optionalMarketplaceCount(state.totalCounts?.listings) ??
+        optionalMarketplaceCount(summaryStats?.openListings)) ??
+    targetListings.length;
+  const authoritativePendingListings = scopedToken
+    ? optionalMarketplaceCount(scopedToken.pendingOpenListings)
+    : networkPendingListings ??
+      optionalMarketplaceCount(summaryStats?.pendingOpenListings);
+  const confirmedListings =
+    (scopedToken
+      ? optionalMarketplaceCount(scopedToken.confirmedOpenListings)
+      : networkConfirmedListings ??
+        optionalMarketplaceCount(summaryStats?.confirmedOpenListings)) ??
+    (authoritativePendingListings !== undefined
+      ? Math.max(0, openListings - authoritativePendingListings)
+      : listingBookComplete
+        ? previewConfirmedListings
+        : previewConfirmedListings);
+  const pendingListings =
+    authoritativePendingListings ??
+    Math.max(0, openListings - confirmedListings);
+  const networkConfirmedSales = scopedToken
+    ? undefined
+    : summedTokenMarketplaceMetric(targetTokens, "confirmedSales");
+  const networkPendingSales = scopedToken
+    ? undefined
+    : summedTokenMarketplaceMetric(targetTokens, "pendingSales");
+  const confirmedSales =
+    (scopedToken
+      ? optionalMarketplaceCount(scopedToken.confirmedSales) ??
+        (scopedTotalCountsAreSafe
+          ? topLevelConfirmedSalesFromTotal
+          : undefined) ??
+        (scopedTokenOwnsAllConfirmedSales
+          ? optionalMarketplaceCount(summaryStats?.confirmedSales)
+          : undefined)
+      : networkConfirmedSales ??
+        topLevelConfirmedSalesFromTotal ??
+        optionalMarketplaceCount(summaryStats?.confirmedSales)) ??
+    previewMarketStats.confirmedSales;
+  const pendingSales =
+    (scopedToken
+      ? optionalMarketplaceCount(scopedToken.pendingSales) ??
+        (scopedPendingSummaryIsSafe
+          ? optionalMarketplaceCount(summaryStats?.pendingSales)
+          : undefined)
+      : networkPendingSales ??
+        optionalMarketplaceCount(summaryStats?.pendingSales)) ??
+    previewMarketStats.pendingSales;
+  const buyableListings =
+    scopedToken && isWorkToken(scopedToken)
+      ? optionalMarketplaceCount(state.listingAuthority?.buyableCandidateCount) ??
+        targetListings.filter(tokenListingHasConfirmedSaleTicketSeal).length
+      : undefined;
+
+  return {
+    buyableListings,
+    confirmedCredits,
+    confirmedListings,
+    confirmedSales,
+    openListings,
+    pendingListings,
+    pendingSales,
+    scopedToken,
+  };
+}
+
+function tokenMarketplaceStatusText({
+  network,
+  state,
+  token,
+  tokenScope = "",
+  workFloorQuote,
+}: {
+  network: BitcoinNetwork;
+  state: TokenMarketplaceCountState;
+  token?: PowTokenDefinition;
+  tokenScope?: string;
+  workFloorQuote?: WorkFloorQuote;
+}) {
+  const counts = tokenMarketplaceCanonicalCounts({
+    network,
+    state,
+    token,
+    tokenScope,
+  });
+  const floorText = workFloorQuote
+    ? ` WORK floor ${bondProofAmountDisplay(
+        workFloorQuoteLiveValue(workFloorQuote),
+        workFloorQuoteLiveValueQ8(workFloorQuote),
+      )} proofs.`
+    : "";
+
+  if (counts.scopedToken) {
+    const ticker = counts.scopedToken.ticker || "Credit";
+    const buyableText =
+      counts.buyableListings === undefined
+        ? ""
+        : `, ${counts.buyableListings.toLocaleString()} buyable listing${counts.buyableListings === 1 ? "" : "s"}`;
+    return `${ticker} market loaded. ${counts.openListings.toLocaleString()} open record${counts.openListings === 1 ? "" : "s"}${buyableText}, ${counts.confirmedSales.toLocaleString()} confirmed sale${counts.confirmedSales === 1 ? "" : "s"}, ${counts.pendingListings.toLocaleString()} pending listing${counts.pendingListings === 1 ? "" : "s"}.${floorText}`;
+  }
+
+  return `Credit market loaded. ${counts.confirmedCredits.toLocaleString()} confirmed credit${counts.confirmedCredits === 1 ? "" : "s"}, ${counts.openListings.toLocaleString()} open listing${counts.openListings === 1 ? "" : "s"}, ${counts.confirmedSales.toLocaleString()} confirmed sale${counts.confirmedSales === 1 ? "" : "s"}, ${counts.pendingListings.toLocaleString()} pending listing${counts.pendingListings === 1 ? "" : "s"}.${floorText}`;
 }
 
 function tokenMarketplaceSummaryStats({
@@ -13781,6 +14027,9 @@ function tokenMarketplaceSummaryStats({
   const previewBuyableListings = networkListings.filter(
     tokenListingHasConfirmedSaleTicketSeal,
   ).length;
+  const buyableListings =
+    optionalMarketplaceCount(summary?.listingAuthority?.buyableCandidateCount) ??
+    previewBuyableListings;
   const completeBookConfirmedListings = listingBookComplete
     ? previewConfirmedListings
     : undefined;
@@ -13831,7 +14080,7 @@ function tokenMarketplaceSummaryStats({
     if (isWorkToken(scopedToken)) {
       scopedStats.push({
         label: "Buyable Listings",
-        value: previewBuyableListings,
+        value: buyableListings,
       });
     }
     scopedStats.push(
@@ -15780,6 +16029,10 @@ function normalizeTokenApiState(
           };
         })
       : [],
+    listingAuthority:
+      payload?.listingAuthority && typeof payload.listingAuthority === "object"
+        ? { ...payload.listingAuthority }
+        : undefined,
     listings: Array.isArray(payload?.listings) ? payload.listings : [],
     mints: Array.isArray(payload?.mints)
       ? payload.mints.map(normalizeTokenAmountRecord)
@@ -26489,6 +26742,21 @@ export default function App() {
     setStatus({ tone: "idle", text: "Log cleared." });
   }
 
+  function currentTokenMarketplaceStatusScope() {
+    if (workTokenMode || activeFolderRef.current === "work") {
+      return WORK_TOKEN_ID;
+    }
+    if (
+      marketplaceMode ||
+      tokenMode ||
+      activeFolderRef.current === "marketplace" ||
+      activeFolderRef.current === "token"
+    ) {
+      return tokenRouteTarget();
+    }
+    return "";
+  }
+
   async function refreshMarketplaceSummary(
     silent = false,
     fresh = false,
@@ -26690,13 +26958,14 @@ export default function App() {
           );
         }
         if (!silent) {
-          const floorText = ` WORK floor ${bondProofAmountDisplay(
-            workFloorQuoteLiveValue(acceptedWorkFloor),
-            workFloorQuoteLiveValueQ8(acceptedWorkFloor),
-          )} proofs.`;
           setStatusForWorkspace(requestWorkspaceKey, {
             tone: "good",
-            text: `AMO loaded. ${acceptedTokenState.tokens.length.toLocaleString()} credit${acceptedTokenState.tokens.length === 1 ? "" : "s"}, ${acceptedTokenState.listings.length.toLocaleString()} listing${acceptedTokenState.listings.length === 1 ? "" : "s"}.${floorText}`,
+            text: tokenMarketplaceStatusText({
+              network: "livenet",
+              state: acceptedTokenState,
+              tokenScope: currentTokenMarketplaceStatusScope(),
+              workFloorQuote: acceptedWorkFloor,
+            }),
           });
         }
         return acceptedSnapshot;
@@ -27406,10 +27675,6 @@ export default function App() {
 
       if (!silent) {
         if (tokenState) {
-          const floorText =
-            includeWorkFloor && floorQuote
-              ? ` WORK floor ${Math.round(floorQuote.networkValueSats).toLocaleString()} proofs.`
-              : "";
           setStatusForWorkspace(
             requestWorkspaceKey,
             usedIndexedFallback
@@ -27421,7 +27686,13 @@ export default function App() {
                 }
               : {
                   tone: "good",
-                  text: `${usedIndexedFallback ? "Credit market loaded from indexed state." : "Credit market loaded."} ${tokenState.tokens.length.toLocaleString()} credit${tokenState.tokens.length === 1 ? "" : "s"}, ${tokenState.listings.length.toLocaleString()} listing${tokenState.listings.length === 1 ? "" : "s"}, ${tokenState.sales.length.toLocaleString()} sale${tokenState.sales.length === 1 ? "" : "s"}.${floorText}`,
+                  text: tokenMarketplaceStatusText({
+                    network,
+                    state: tokenState,
+                    tokenScope: currentTokenMarketplaceStatusScope(),
+                    workFloorQuote:
+                      includeWorkFloor && floorQuote ? floorQuote : undefined,
+                  }),
                 },
           );
         } else {
@@ -46825,6 +47096,10 @@ function marketplaceStatusIsTokenScoped(text: string) {
   return /(?:Credit index|credit market|WORK floor)/iu.test(text);
 }
 
+function marketplaceStatusIsGenericTokenRefresh(text: string) {
+  return /^(?:AMO loaded|Credit market loaded)\./u.test(text.trim());
+}
+
 function marketplaceStatusIsBondScoped(text: string) {
   return /(?:bond|POWB|INCB|Infinity|Inception)/iu.test(text);
 }
@@ -46874,7 +47149,8 @@ function marketplaceStatusForTab({
     active === "tokens" &&
     (marketplaceStatusIsIdScoped(status.text) ||
       marketplaceStatusIsBoostScoped(status.text) ||
-      marketplaceStatusIsBondScoped(status.text))
+      marketplaceStatusIsBondScoped(status.text) ||
+      marketplaceStatusIsGenericTokenRefresh(status.text))
   ) {
     return tokenSummary;
   }
@@ -50673,14 +50949,28 @@ function MarketplaceApp({
     tokenScope: selectedTokenMarketId,
     tokens: creditTokens,
   });
-  const sealedTokenListings = creditTokenListings.filter(
-    tokenListingHasSaleTicketSeal,
-  );
   const listingBookComplete = tokenSummary.listingBookComplete === true;
-  const confirmedTokenCount = creditTokens.filter((token) => token.confirmed).length;
   const marketplaceSummaryVerified = marketplaceSummaryHasVerifiedData(
     marketplaceSummaryReadState,
   );
+  const tokenStatusState: TokenMarketplaceCountState = {
+    collectionHasMore: tokenSummary.collectionHasMore,
+    hasMore: tokenSummary.hasMore,
+    listingAuthority: tokenSummary.listingAuthority,
+    listingBookComplete: tokenSummary.listingBookComplete,
+    listings: creditTokenListings,
+    sales: creditTokenSales,
+    stats: tokenSummary.stats,
+    summaryOnly: tokenSummary.summaryOnly,
+    totalCounts: tokenSummary.totalCounts,
+    tokens: creditTokens,
+  };
+  const creditMarketStatusText = tokenMarketplaceStatusText({
+    network: "livenet",
+    state: tokenStatusState,
+    token: selectedTokenMarket,
+    tokenScope: selectedTokenMarketId,
+  });
   const tokenMarketRouteUnavailable =
     marketplaceSummaryVerified &&
     Boolean(selectedTokenMarketId.trim()) &&
@@ -50712,9 +51002,9 @@ function MarketplaceApp({
     },
     status,
     tokenSummary: {
-      tone: listingBookComplete ? "good" : "idle",
-      text: listingBookComplete
-        ? `Credit market loaded. ${confirmedTokenCount.toLocaleString()} confirmed credit${confirmedTokenCount === 1 ? "" : "s"}, ${creditTokenListings.length.toLocaleString()} open listing${creditTokenListings.length === 1 ? "" : "s"}, ${sealedTokenListings.length.toLocaleString()} sealed or sealing.`
+      tone: marketplaceSummaryVerified || listingBookComplete ? "good" : "idle",
+      text: marketplaceSummaryVerified || listingBookComplete
+        ? creditMarketStatusText
         : `Credit market preview loaded. Verifying all ${Number(tokenSummary.totalCounts?.listings ?? creditTokenListings.length).toLocaleString()} Core-reconciled sale tickets before reporting the book as complete.`,
     },
   });

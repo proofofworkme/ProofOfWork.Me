@@ -3671,10 +3671,30 @@ expect(
       tokenMarketplaceSummaryStatsBlock,
     ) &&
     /previewBuyableListings/.test(tokenMarketplaceSummaryStatsBlock) &&
+    /summary\?\.listingAuthority\?\.buyableCandidateCount/.test(
+      tokenMarketplaceSummaryStatsBlock,
+    ) &&
     /label: "Open Records"/.test(tokenMarketplaceSummaryStatsBlock) &&
     /label: "Buyable Listings"/.test(tokenMarketplaceSummaryStatsBlock) &&
     /label: "Pending Listings"/.test(tokenMarketplaceSummaryStatsBlock) &&
     !/label: "Active Listings"/.test(tokenMarketplaceSummaryStatsBlock),
+);
+expect(
+  "Marketplace status uses canonical token counts instead of compact preview lengths",
+  /buyableCandidateCount\?: number/.test(app) &&
+    /listingAuthority\?: PowTokenListingAuthorityEvidence/.test(app) &&
+    /type TokenMarketplaceCountState = Pick/.test(app) &&
+    /function tokenMarketplaceCanonicalCounts/.test(app) &&
+    /function tokenMarketplaceStatusText/.test(app) &&
+    /state\.listingAuthority\?\.buyableCandidateCount/.test(app) &&
+    /state\.totalCounts\?\.tokens/.test(app) &&
+    /topLevelConfirmedSalesFromTotal/.test(app) &&
+    /marketplaceStatusIsGenericTokenRefresh/.test(app) &&
+    /tokenMarketplaceStatusText\(\{[\s\S]*state: acceptedTokenState/.test(
+      refreshMarketplaceSummaryBlock,
+    ) &&
+    /tokenMarketplaceStatusText\(\{[\s\S]*state: tokenState/.test(app) &&
+    /tokenMarketplaceStatusText\(\{[\s\S]*token: selectedTokenMarket/.test(app),
 );
 expect(
   "Marketplace token rows prefer authoritative listing counts",

@@ -426,6 +426,7 @@ const WORK_FLOOR = {
 const AMO_LISTING_COUNT = 512;
 const AMO_SEALED_COUNT = 505;
 const AMO_UNSEALED_COUNT = AMO_LISTING_COUNT - AMO_SEALED_COUNT;
+const AMO_SALE_COUNT = AMO_UNSEALED_COUNT;
 const AMO_SELLER = "1BPVvi1GK4QkfqFMU4jHGjsQjyGwjJJJ7x";
 const AMO_LONG_BUYER =
   "bc1p0uxp0axptr8rg9dndgtlwxn00j4hq8m88kg80tqd0t6045putwhq5ca7ed";
@@ -576,18 +577,44 @@ async function installApiFixtures(
   const fixtureTokenState = countedAmo
     ? {
         ...TOKEN_STATE,
+        collectionHasMore: {
+          listings: false,
+          sales: false,
+          tokens: false,
+        },
+        listingAuthority: {
+          buyableCandidateCount: AMO_SEALED_COUNT,
+          checkedListingCount: AMO_LISTING_COUNT,
+          includeMempool: true,
+          model: "proof-token-market-core-gettxout-v1",
+          outputListingCount: AMO_LISTING_COUNT,
+          unspentListingCount: AMO_LISTING_COUNT,
+        },
         listings: RESPONSIVE_AMO_LISTINGS,
+        stats: {
+          confirmedOpenListings: AMO_LISTING_COUNT,
+          confirmedSales: AMO_SALE_COUNT,
+          openListings: AMO_LISTING_COUNT,
+          pendingOpenListings: 0,
+          pendingSales: 0,
+        },
         tokens: TOKENS.map((token) =>
           token.tokenId === WORK_TOKEN_ID
             ? {
                 ...token,
                 confirmedOpenListings: AMO_LISTING_COUNT,
+                confirmedSales: AMO_SALE_COUNT,
                 openListings: AMO_LISTING_COUNT,
                 pendingOpenListings: 0,
+                pendingSales: 0,
               }
             : token,
         ),
-        totalCounts: { listings: AMO_LISTING_COUNT },
+        totalCounts: {
+          listings: AMO_LISTING_COUNT,
+          sales: AMO_SALE_COUNT,
+          tokens: 1,
+        },
       }
     : TOKEN_STATE;
   // Match HTTP API reads only. A broader `/api/` glob would also intercept
@@ -2136,7 +2163,16 @@ test("mobile navigation, exact metrics, counted AMO tabs, status, and sort remai
       );
       await page.getByRole("button", { name: "Refresh" }).first().click();
       await expect(page.locator(".app-status-row").first()).toContainText(
-        "Credit market loaded",
+        "WORK market loaded",
+      );
+      await expect(page.locator(".app-status-row").first()).toContainText(
+        `${AMO_LISTING_COUNT.toLocaleString()} open records`,
+      );
+      await expect(page.locator(".app-status-row").first()).toContainText(
+        `${AMO_SEALED_COUNT.toLocaleString()} buyable listings`,
+      );
+      await expect(page.locator(".app-status-row").first()).toContainText(
+        `${AMO_SALE_COUNT.toLocaleString()} confirmed sales`,
       );
       await assertTopbarGeometry(page, label, width);
       await assertMobileDomainNav(page, label);
@@ -2148,6 +2184,57 @@ test("mobile navigation, exact metrics, counted AMO tabs, status, and sort remai
       await assertNoDocumentOverflow(page, label);
     });
   }
+});
+
+test("AMO status uses canonical counts when compact previews are partial", async ({
+  page,
+}) => {
+  await installApiFixtures(page, {
+    countedAmo: true,
+    marketplaceSummaryTransform: (summary) => ({
+      ...summary,
+      token: {
+        ...summary.token,
+        collectionHasMore: {
+          ...summary.token.collectionHasMore,
+          listings: true,
+          sales: true,
+        },
+        hasMore: true,
+        listings: summary.token.listings.slice(0, 2),
+        sales: [RESPONSIVE_AMO_ACTIVITY_ITEMS["market-sales"][0].sale],
+        summaryOnly: true,
+      },
+    }),
+  });
+  await page.setViewportSize({ height: VIEWPORT_HEIGHT, width: 390 });
+  await openFixtureRoute(
+    page,
+    surfaceUrl(
+      MARKETPLACE_BASE_URL,
+      `/?marketplace=1&asset=${WORK_TOKEN_ID}`,
+    ),
+    "partial-preview AMO status",
+  );
+  await page.getByRole("button", { name: "Refresh" }).first().click();
+  const status = page.locator(".app-status-row").first();
+  await expect(status).toContainText("WORK market loaded");
+  await expect(status).toContainText(
+    `${AMO_LISTING_COUNT.toLocaleString()} open records`,
+  );
+  await expect(status).toContainText(
+    `${AMO_SEALED_COUNT.toLocaleString()} buyable listings`,
+  );
+  await expect(status).toContainText(
+    `${AMO_SALE_COUNT.toLocaleString()} confirmed sales`,
+  );
+  await expect(status).toContainText("0 pending listings");
+  await expect(status).not.toContainText("2 listings");
+  await expect(status).not.toContainText("1 confirmed sale");
+  await expect(
+    page.locator('[aria-label="WORK credit AMO stats"]'),
+  ).toContainText(AMO_SEALED_COUNT.toLocaleString());
+  await assertNoDocumentOverflow(page, "partial-preview AMO status");
 });
 
 test("AMO history exposes authoritative totals and rejects incomplete or mismatched previews", async ({

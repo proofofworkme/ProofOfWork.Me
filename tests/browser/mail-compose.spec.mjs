@@ -83,6 +83,12 @@ function v8AmoListing({
     createdAt,
     dataBytes: 994,
     decimals: 16,
+    displayEvidence: {
+      fullDetailPath: `/api/v1/token-history?kind=listings&projection=full&q=${listingId}&listingId=${listingId}`,
+      fullRecordSha256: HASH,
+      model: "proof-token-listing-display-v1",
+      omittedFields: [],
+    },
     ...(includeFrozenTerms
       ? {
           frozenTerms: {
@@ -217,6 +223,11 @@ function completeListingHistoryPage({
     indexedThroughBlock: LISTING_CHECKPOINT_HEIGHT,
     indexedThroughBlockHash: HASH,
     items,
+    itemProjection: {
+      fullMembershipSha256: HASH,
+      fullSourceSha256: HASH,
+      model: "proof-token-listing-display-v1",
+    },
     kind: "listings",
     limit: TOKEN_HISTORY_PAGE_SIZE,
     listingAuthority: {
