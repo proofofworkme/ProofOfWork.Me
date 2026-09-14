@@ -1155,10 +1155,10 @@ Read-only production evidence before repair:
 
 Repair:
 
-- Updated `server/proof-api.mjs` so `creditNetworkValueMetrics` counts a
-  token-sale marketplace mutation fee only when the sale source carries an
-  explicit `marketplaceMutationFeeSats`; otherwise the canonical
-  `token-listing-closed` row owns that mutation payment exactly once.
+- Updated `server/proof-api.mjs` so `creditNetworkValueMetrics` treats
+  token-sale replay rows as sale-price and movement records only. Canonical
+  `token-listing-closed`, `token-listing`, and `token-listing-sealed`
+  mutation rows own marketplace mutation payments exactly once.
 - The first production retry proved the same fallback also existed in
   `growthActualLiveTotalSatsAtProvider`, the replay provider used by the
   legacy-bootstrap reconciliation. The repair now removes the synthetic
@@ -1167,9 +1167,10 @@ Repair:
   `scripts/check-index-recovery-behavior.mjs` proving one WORK sale plus its
   same-transaction derived close produces one `546` marketplace mutation fee,
   not two.
-- Added a second provider-level regression proving live-total replay uses the
-  same once-only accounting, so AMO legacy-bootstrap reconciliation cannot
-  drift from the detailed credit metrics path.
+- Added a second provider-level regression proving live-total replay ignores
+  sale-level display/projection mutation fields and uses the same once-only
+  accounting, so AMO legacy-bootstrap reconciliation cannot drift from the
+  detailed credit metrics path.
 
 Local verification before production change:
 

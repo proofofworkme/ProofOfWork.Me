@@ -60719,6 +60719,7 @@ check("WORK sale close mutation fee is counted once in credit replay", () => {
     confirmed: true,
     createdMs: 100,
     kind: "token-sale",
+    marketplaceMutationFeeSats: 546,
     minerFeeSats: 1_222,
     priceSats: 25_000,
     protocolVout: 2,
@@ -60774,7 +60775,7 @@ check("WORK sale close mutation fee is counted once in credit replay", () => {
       0,
     ),
     546,
-    "the sale movement and canonical close record must not both carry 546",
+    "the sale movement's display mutation fee and canonical close record must not both carry 546",
   );
   assert.ok(
     Math.abs(
@@ -60849,6 +60850,7 @@ check("WORK sale close mutation fee is counted once in live-total replay", () =>
     confirmed: true,
     createdMs: 100,
     kind: "token-sale",
+    marketplaceMutationFeeSats: 546,
     minerFeeSats: 1_222,
     priceSats: 25_000,
     protocolVout: 2,
@@ -60902,7 +60904,7 @@ check("WORK sale close mutation fee is counted once in live-total replay", () =>
 
   assert.ok(
     Math.abs(totalAt(200) - expectedTotal) < 0.00000001,
-    "live-total replay must leave the same-tx sale movement without a synthetic 546-proof mutation",
+    "live-total replay must leave the same-tx sale movement without a display/projection 546-proof mutation",
   );
 });
 

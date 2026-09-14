@@ -58355,9 +58355,7 @@ function creditNetworkValueMetrics({
         ? proofFlow(event.source?.paidSats)
         : proofFlow(event.registryMutationFeeSats);
     const marketplaceMutationFee =
-      event.kind === "sale"
-        ? proofFlow(event.source?.marketplaceMutationFeeSats)
-        : proofFlow(event.marketplaceMutationFeeSats);
+      event.kind === "sale" ? 0n : proofFlow(event.marketplaceMutationFeeSats);
     const salePayment =
       event.kind === "sale" ? proofFlow(event.source?.priceSats) : 0n;
     const fixedEventFlow =
@@ -59832,7 +59830,7 @@ function growthActualLiveTotalSatsAtProvider(
           : proofFlowBigInt(event.registryMutationFeeSats);
       const marketplaceMutationFeeSats =
         event.kind === "sale"
-          ? proofFlowBigInt(event.source?.marketplaceMutationFeeSats)
+          ? 0n
           : proofFlowBigInt(event.marketplaceMutationFeeSats);
       const salePaymentSats =
         event.kind === "sale"
