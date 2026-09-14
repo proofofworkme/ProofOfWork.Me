@@ -60784,6 +60784,128 @@ check("WORK sale close mutation fee is counted once in credit replay", () => {
   );
 });
 
+check("WORK sale close mutation fee is counted once in live-total replay", () => {
+  const numericValue = (value, fallback = 0) => {
+    const number = Number(value);
+    return Number.isFinite(number) ? number : fallback;
+  };
+  const presentNonNegativeNumber = isolatedFunction(
+    API_PATH,
+    "presentNonNegativeNumber",
+  );
+  const creditReplayTransactionMinerFeeSats = isolatedFunction(
+    API_PATH,
+    "creditReplayTransactionMinerFeeSats",
+    { presentNonNegativeNumber },
+  );
+  const canonicalReplayTimeline = isolatedFunction(
+    API_PATH,
+    "canonicalReplayTimeline",
+  );
+  const canonicalReplayPrefixLengthAtMs = isolatedFunction(
+    API_PATH,
+    "canonicalReplayPrefixLengthAtMs",
+  );
+  const growthActualLiveTotalSatsAtProvider = isolatedFunction(
+    API_PATH,
+    "growthActualLiveTotalSatsAtProvider",
+    {
+      TOKEN_MARKETPLACE_MUTATION_KINDS: new Set([
+        "token-listing",
+        "token-listing-sealed",
+        "token-listing-closed",
+      ]),
+      TOKEN_MIN_MUTATION_PRICE_SATS: 546,
+      canonicalInceptionWorkMovementOracleByIdentity: () => new Map(),
+      canonicalReplayPrefixLengthAtMs,
+      canonicalReplayTimeline,
+      canonicalTokenSaleLedgerAmount: (_tokenId, sale) =>
+        BigInt(sale.amountSubatoms ?? "0"),
+      compareCreditValueReplayEvents: (left, right) =>
+        left.createdMs - right.createdMs ||
+        left.order - right.order ||
+        String(left.txid ?? "").localeCompare(String(right.txid ?? "")),
+      creditReplayTransactionMinerFeeSats,
+      creditValueEventMs: (item) => Number(item?.createdMs),
+      growthActualBaseNetworkValueAtProvider: () => () => 1_000_000,
+      growthActualBaseNetworkValueBeforeCanonicalItemProvider:
+        (_collections, provider) => (_source, createdMs) =>
+          provider(createdMs - 1),
+      isTokenActivityItem: (item) =>
+        String(item?.kind ?? "").startsWith("token-"),
+      numericValue,
+      tokenCanUseCreditNetworkFloor: (token) =>
+        token?.tokenId === WORK_TOKEN_ID,
+    },
+  );
+  const txid = "8".repeat(64);
+  const amountSubatoms = WORK_SUBATOM_UNIT_SCALE;
+  const sale = {
+    amountSubatoms: amountSubatoms.toString(),
+    blockHeight: WORK_AMO_V5_ACTIVATION_HEIGHT + 6_297,
+    blockIndex: 1_850,
+    canonicalMinerFeeCovered: true,
+    canonicalMinerFeeSats: 1_222,
+    confirmed: true,
+    createdMs: 100,
+    kind: "token-sale",
+    minerFeeSats: 1_222,
+    priceSats: 25_000,
+    protocolVout: 2,
+    recordOrdinal: 0,
+    tokenId: WORK_TOKEN_ID,
+    txid,
+  };
+  const close = {
+    amountSats: 546,
+    blockHeight: sale.blockHeight,
+    blockIndex: sale.blockIndex,
+    canonicalMinerFeeCovered: true,
+    canonicalMinerFeeSats: 1_222,
+    confirmed: true,
+    createdMs: 100,
+    kind: "token-listing-closed",
+    marketplaceMutationFeeSats: 546,
+    minerFeeSats: 1_222,
+    protocolVout: 2,
+    recordOrdinal: 1,
+    tokenId: WORK_TOKEN_ID,
+    txid,
+  };
+  const totalAt = growthActualLiveTotalSatsAtProvider(
+    [],
+    [sale, close],
+    [],
+    [
+      {
+        maxSupply: WORK_TOKEN_MAX_SUPPLY,
+        ticker: "WORK",
+        tokenId: WORK_TOKEN_ID,
+      },
+    ],
+    [],
+    [],
+    [sale],
+  );
+  const baseQ8 = 1_000_000n * VALUE_Q8_SCALE;
+  const fixedFlowQ8 = (25_000n + 1_222n + 546n) * VALUE_Q8_SCALE;
+  const creditValueAtConfirmQ8 =
+    (amountSubatoms * baseQ8) /
+    (BigInt(WORK_TOKEN_MAX_SUPPLY) * WORK_SUBATOM_UNIT_SCALE);
+  const frozenCreditQ8 = creditValueAtConfirmQ8 + fixedFlowQ8;
+  const liveMovementQ8 =
+    ((baseQ8 + frozenCreditQ8) * amountSubatoms) /
+    (BigInt(WORK_TOKEN_MAX_SUPPLY) * WORK_SUBATOM_UNIT_SCALE);
+  const expectedTotal = Number(
+    baseQ8 + fixedFlowQ8 + liveMovementQ8,
+  ) / Number(VALUE_Q8_SCALE);
+
+  assert.ok(
+    Math.abs(totalAt(200) - expectedTotal) < 0.00000001,
+    "live-total replay must leave the same-tx sale movement without a synthetic 546-proof mutation",
+  );
+});
+
 check("Inception-bound WORK movements freeze once at each bond's own H-1 live oracle", () => {
   const WORK_TOKEN_ID =
     "d4e5ebf11d104d6a63fb74e42094364b25a5f7199a09e5c0e71408972466a8b8";

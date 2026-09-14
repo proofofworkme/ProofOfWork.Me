@@ -1159,10 +1159,17 @@ Repair:
   token-sale marketplace mutation fee only when the sale source carries an
   explicit `marketplaceMutationFeeSats`; otherwise the canonical
   `token-listing-closed` row owns that mutation payment exactly once.
+- The first production retry proved the same fallback also existed in
+  `growthActualLiveTotalSatsAtProvider`, the replay provider used by the
+  legacy-bootstrap reconciliation. The repair now removes the synthetic
+  sale-level `546` fee from that mirror path too.
 - Added a production-shaped regression to
   `scripts/check-index-recovery-behavior.mjs` proving one WORK sale plus its
   same-transaction derived close produces one `546` marketplace mutation fee,
   not two.
+- Added a second provider-level regression proving live-total replay uses the
+  same once-only accounting, so AMO legacy-bootstrap reconciliation cannot
+  drift from the detailed credit metrics path.
 
 Local verification before production change:
 

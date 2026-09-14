@@ -59832,8 +59832,7 @@ function growthActualLiveTotalSatsAtProvider(
           : proofFlowBigInt(event.registryMutationFeeSats);
       const marketplaceMutationFeeSats =
         event.kind === "sale"
-          ? proofFlowBigInt(event.source?.marketplaceMutationFeeSats) ||
-            BigInt(TOKEN_MIN_MUTATION_PRICE_SATS)
+          ? proofFlowBigInt(event.source?.marketplaceMutationFeeSats)
           : proofFlowBigInt(event.marketplaceMutationFeeSats);
       const salePaymentSats =
         event.kind === "sale"
