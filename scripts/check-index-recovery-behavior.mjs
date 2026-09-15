@@ -48065,6 +48065,49 @@ check("unknown aggregated PWM emits one invalid audit event", () => {
   assert.match(items[0].reason, /Malformed or unknown aggregated PWM/u);
 });
 
+check("malformed WORK sale-ticket listings persist as invalid events", () => {
+  const invalidProtocolItem = isolatedFunction(
+    BACKFILL_PATH,
+    "invalidProtocolItem",
+  );
+  const tokenListingItemFromTicket = isolatedFunction(
+    BACKFILL_PATH,
+    "tokenListingItemFromTicket",
+    {
+      baseProtocolItem: (tx, _message, kind) => ({
+        amountSats: "546",
+        kind,
+        protocol: "pwt1",
+        senderAddress: "bc1pseller",
+        txid: tx.txid,
+      }),
+      invalidProtocolItem,
+      isHexTxid: (value) => /^[0-9a-f]{64}$/u.test(String(value)),
+    },
+  );
+  const sourceLabelForProtocolItem = isolatedFunction(
+    BACKFILL_PATH,
+    "sourceLabelForProtocolItem",
+  );
+  const txid = "7".repeat(64);
+  const item = tokenListingItemFromTicket(
+    { txid },
+    { prefix: "pwt1:", text: "pwt1:list5:fixture" },
+    {
+      amount: "1.123456789",
+      priceSats: "1000",
+      sellerAddress: "bc1pseller",
+      tokenId: WORK_TOKEN_ID,
+    },
+  );
+  assert.equal(item.valid, false);
+  assert.equal(item.kind, "token-listing-invalid");
+  assert.equal(item.reasonCode, "malformed-work-listing-amount");
+  assert.match(item.reason, /Malformed WORK sale-ticket listing amount/u);
+  assert.match(item.amountParseError, /at most 8 places/u);
+  assert.equal(sourceLabelForProtocolItem(item), "token-invalid-events");
+});
+
 check("bond companions mint each family recipient without double-counting value", () => {
   const powbTokenId = "a".repeat(64);
   const incbTokenId = "b".repeat(64);

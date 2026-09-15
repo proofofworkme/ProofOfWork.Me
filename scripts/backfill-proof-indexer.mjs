@@ -4228,7 +4228,7 @@ function tokenListingItemFromTicket(tx, message, ticket) {
   if (!isHexTxid(tokenId)) {
     return null;
   }
-  return workProjectionItem({
+  const item = {
     ...base,
     amount: String(ticket?.amount ?? ticket?.quantity ?? ticket?.units ?? 0),
     amountAtoms: ticket?.amountAtoms,
@@ -4247,7 +4247,26 @@ function tokenListingItemFromTicket(tx, message, ticket) {
     sellerAddress:
       ticket?.sellerAddress ?? ticket?.seller ?? base.senderAddress ?? "",
     tokenId,
-  }, { strict: false });
+  };
+  if (!isWorkTokenId(tokenId)) {
+    return workProjectionItem(item, { strict: false });
+  }
+  try {
+    return workProjectionItem(item);
+  } catch (error) {
+    const parseError = String(error?.message ?? error).trim();
+    return invalidProtocolItem(
+      {
+        ...item,
+        amountParseError: parseError,
+        reasonCode: "malformed-work-listing-amount",
+      },
+      [
+        "Malformed WORK sale-ticket listing amount.",
+        parseError,
+      ].filter(Boolean).join(" "),
+    );
+  }
 }
 
 function workUsdQuoteItemFromMessage(tx, message) {
