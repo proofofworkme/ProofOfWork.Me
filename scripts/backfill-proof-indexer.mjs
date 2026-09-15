@@ -23717,6 +23717,11 @@ export function bindPreparedTransactionsToWorkAmoV5Replay(
         recordOrdinal: position.position.recordOrdinal,
         txid,
         valid,
+        ...(replay.rawCandidate === true &&
+        typeof item?.payload === "string" &&
+        item.payload
+          ? { payload: item.payload }
+          : {}),
         workAmoV5ReplayOutcome: {
           kind: outcome.kind,
           reasonCode,
