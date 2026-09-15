@@ -48227,41 +48227,46 @@ check("AMO replay drops duplicate stale invalid listing siblings", () => {
     txid,
     valid: true,
   };
-  const staleInvalidSibling = {
-    ...validListing,
-    kind: "token-listing-invalid",
-    reason: "stale raw parser sibling",
-    valid: false,
-  };
-  const [bound] = bind(
-    [{ items: [validListing, staleInvalidSibling], txid }],
-    {
-      replayRecords: [{
-        outcome: {
-          kind: workAmoV5ConsensusEventKind("pwt1", true),
-          reasonCode: "",
-          valid: true,
-        },
-        output: {
-          projection: {
-            ...validListing,
-            position,
-            protocol: "pwt1",
-            txid,
+  for (const staleKind of [
+    "token-listing-invalid",
+    "token-listing-sealed-invalid",
+  ]) {
+    const staleInvalidSibling = {
+      ...validListing,
+      kind: staleKind,
+      reason: "stale raw parser sibling",
+      valid: false,
+    };
+    const [bound] = bind(
+      [{ items: [validListing, staleInvalidSibling], txid }],
+      {
+        replayRecords: [{
+          outcome: {
+            kind: workAmoV5ConsensusEventKind("pwt1", true),
+            reasonCode: "",
             valid: true,
           },
-        },
-        position,
-        protocol: "pwt1",
-        rawCandidate: true,
-        rawWitness: { fixture: "duplicate-invalid-listing-sibling" },
-        txid,
-      }],
-    },
-  );
-  assert.equal(bound.items.length, 1);
-  assert.equal(bound.items[0].kind, "token-listing");
-  assert.equal(bound.items[0]._workAmoV5ReplayBound, true);
+          output: {
+            projection: {
+              ...validListing,
+              position,
+              protocol: "pwt1",
+              txid,
+              valid: true,
+            },
+          },
+          position,
+          protocol: "pwt1",
+          rawCandidate: true,
+          rawWitness: { fixture: "duplicate-invalid-listing-sibling" },
+          txid,
+        }],
+      },
+    );
+    assert.equal(bound.items.length, 1);
+    assert.equal(bound.items[0].kind, "token-listing");
+    assert.equal(bound.items[0]._workAmoV5ReplayBound, true);
+  }
 });
 
 check("bond companions mint each family recipient without double-counting value", () => {

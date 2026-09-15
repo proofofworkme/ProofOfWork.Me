@@ -23588,7 +23588,10 @@ export function bindPreparedTransactionsToWorkAmoV5Replay(
         protocol === "pwt1" &&
         itemTxid === txid &&
         item?.valid === false &&
-        normalizedLowerText(item?.kind) === "token-listing-invalid"
+        [
+          "token-listing-invalid",
+          "token-listing-sealed-invalid",
+        ].includes(normalizedLowerText(item?.kind))
       ) {
         return null;
       }
