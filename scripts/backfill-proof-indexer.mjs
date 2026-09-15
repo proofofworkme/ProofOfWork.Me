@@ -4248,6 +4248,20 @@ function tokenListingItemFromTicket(tx, message, ticket) {
       ticket?.sellerAddress ?? ticket?.seller ?? base.senderAddress ?? "",
     tokenId,
   };
+  const governedWorkSaleTicket =
+    isWorkTokenId(tokenId) &&
+    [
+      WORK_AMO_V6_AUTH_VERSION,
+      WORK_AMO_V8_AUTH_VERSION,
+    ].includes(normalizedLowerText(ticket?.version));
+  if (governedWorkSaleTicket) {
+    const {
+      amount: _amount,
+      amountAtoms: _amountAtoms,
+      ...governedItem
+    } = item;
+    return governedItem;
+  }
   if (!isWorkTokenId(tokenId)) {
     return workProjectionItem(item, { strict: false });
   }

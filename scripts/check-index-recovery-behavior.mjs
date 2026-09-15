@@ -48108,6 +48108,54 @@ check("malformed WORK sale-ticket listings persist as invalid events", () => {
   assert.equal(sourceLabelForProtocolItem(item), "token-invalid-events");
 });
 
+check("governed WORK sale-ticket listings defer amount to AMO replay", () => {
+  const tokenListingItemFromTicket = isolatedFunction(
+    BACKFILL_PATH,
+    "tokenListingItemFromTicket",
+    {
+      WORK_AMO_V6_AUTH_VERSION,
+      WORK_AMO_V8_AUTH_VERSION,
+      baseProtocolItem: (tx, _message, kind) => ({
+        amountSats: "546",
+        blockHash: "6".repeat(64),
+        blockHeight: 962104,
+        blockIndex: 567,
+        confirmed: true,
+        kind,
+        protocol: "pwt1",
+        protocolVout: 1,
+        recordOrdinal: 0,
+        senderAddress: "bc1pseller",
+        txid: tx.txid,
+      }),
+      isHexTxid: (value) => /^[0-9a-f]{64}$/u.test(String(value)),
+      isWorkTokenId: (value) => value === WORK_TOKEN_ID,
+      normalizedLowerText: (value) =>
+        String(value ?? "").trim().toLowerCase(),
+      workProjectionItem: () => {
+        throw new Error("governed sale tickets must be replay-bound");
+      },
+    },
+  );
+  const txid = "8".repeat(64);
+  const saleAuthorization = {
+    tokenId: WORK_TOKEN_ID,
+    unitFaceProofs: 25_000,
+    version: WORK_AMO_V8_AUTH_VERSION,
+  };
+  const item = tokenListingItemFromTicket(
+    { txid },
+    { prefix: "pwt1:", text: "pwt1:list5:fixture", voutIndex: 1 },
+    saleAuthorization,
+  );
+  assert.equal(item.kind, "token-listing");
+  assert.equal(item.txid, txid);
+  assert.equal(item.tokenId, WORK_TOKEN_ID);
+  assert.equal(item.saleAuthorization, saleAuthorization);
+  assert.equal(item.amount, undefined);
+  assert.equal(item.amountAtoms, undefined);
+});
+
 check("bond companions mint each family recipient without double-counting value", () => {
   const powbTokenId = "a".repeat(64);
   const incbTokenId = "b".repeat(64);
