@@ -48156,6 +48156,113 @@ check("governed WORK sale-ticket listings defer amount to AMO replay", () => {
   assert.equal(item.amountAtoms, undefined);
 });
 
+check("AMO replay drops duplicate stale invalid listing siblings", () => {
+  const position = {
+    blockHash: "9".repeat(64),
+    blockHeight: 962104,
+    blockTransactionIndex: 567,
+    protocolVout: 1,
+    recordOrdinal: 0,
+  };
+  const positionKey = (value) => {
+    const source = value?.position ?? value ?? {};
+    const normalized = {
+      blockHash: String(source.blockHash ?? ""),
+      blockHeight: Number(source.blockHeight),
+      blockTransactionIndex: Number(
+        source.blockTransactionIndex ?? source.blockIndex,
+      ),
+      protocolVout: Number(source.protocolVout),
+      recordOrdinal: Number(source.recordOrdinal),
+    };
+    return {
+      key: [
+        normalized.blockHeight,
+        normalized.blockTransactionIndex,
+        normalized.protocolVout,
+        normalized.recordOrdinal,
+      ].join(":"),
+      position: normalized,
+    };
+  };
+  const bind = isolatedFunction(
+    BACKFILL_PATH,
+    "bindPreparedTransactionsToWorkAmoV5Replay",
+    {
+      canonicalProtocolItemForPostgres: (item) => item,
+      invalidProtocolItem: isolatedFunction(
+        BACKFILL_PATH,
+        "invalidProtocolItem",
+      ),
+      isHexTxid: (value) => /^[0-9a-f]{64}$/u.test(value),
+      normalizedLowerText: (value) =>
+        String(value ?? "").trim().toLowerCase(),
+      objectValue,
+      sourceLabelForProtocolItem: isolatedFunction(
+        BACKFILL_PATH,
+        "sourceLabelForProtocolItem",
+      ),
+      workAmoFrozenTermsFromItem: () => null,
+      workAmoV5ConsensusEventKind,
+      workAmoV5PwidRegistryAttribution: () => null,
+      workAmoV5ReplayFrozenTerms: () => null,
+      workAmoV5ReplayPositionKey: positionKey,
+      workAmoV5ReplayProjectionFromOutput: (output) =>
+        output?.projection ?? {},
+      workAmoV6ReplayListingMaterialization: () => null,
+    },
+  );
+  const txid = "9".repeat(64);
+  const validListing = {
+    amount: "1",
+    blockHash: position.blockHash,
+    blockHeight: position.blockHeight,
+    blockIndex: position.blockTransactionIndex,
+    kind: "token-listing",
+    protocol: "pwt1",
+    protocolVout: position.protocolVout,
+    recordOrdinal: position.recordOrdinal,
+    tokenId: WORK_TOKEN_ID,
+    txid,
+    valid: true,
+  };
+  const staleInvalidSibling = {
+    ...validListing,
+    kind: "token-listing-invalid",
+    reason: "stale raw parser sibling",
+    valid: false,
+  };
+  const [bound] = bind(
+    [{ items: [validListing, staleInvalidSibling], txid }],
+    {
+      replayRecords: [{
+        outcome: {
+          kind: workAmoV5ConsensusEventKind("pwt1", true),
+          reasonCode: "",
+          valid: true,
+        },
+        output: {
+          projection: {
+            ...validListing,
+            position,
+            protocol: "pwt1",
+            txid,
+            valid: true,
+          },
+        },
+        position,
+        protocol: "pwt1",
+        rawCandidate: true,
+        rawWitness: { fixture: "duplicate-invalid-listing-sibling" },
+        txid,
+      }],
+    },
+  );
+  assert.equal(bound.items.length, 1);
+  assert.equal(bound.items[0].kind, "token-listing");
+  assert.equal(bound.items[0]._workAmoV5ReplayBound, true);
+});
+
 check("bond companions mint each family recipient without double-counting value", () => {
   const powbTokenId = "a".repeat(64);
   const incbTokenId = "b".repeat(64);

@@ -23546,6 +23546,17 @@ export function bindPreparedTransactionsToWorkAmoV5Replay(
       const position = workAmoV5ReplayPositionKey(item);
       const itemTxid = normalizedLowerText(item?.txid);
       if (
+        position &&
+        preparedPositions.has(position.key) &&
+        !replayByPosition.has(position.key) &&
+        protocol === "pwt1" &&
+        itemTxid === txid &&
+        item?.valid === false &&
+        normalizedLowerText(item?.kind) === "token-listing-invalid"
+      ) {
+        return null;
+      }
+      if (
         !position ||
         preparedPositions.has(position.key) ||
         !isHexTxid(txid) ||
@@ -23778,7 +23789,7 @@ export function bindPreparedTransactionsToWorkAmoV5Replay(
             sourceLabel: sourceLabelForProtocolItem(nextItem),
           }
         : nextItem;
-    });
+    }).filter(Boolean);
   }
   if (replayByPosition.size !== 0) {
     throw new Error(
