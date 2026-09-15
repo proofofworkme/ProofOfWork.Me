@@ -23219,6 +23219,31 @@ function workAmoV5ReplayFrozenTerms(output) {
   return null;
 }
 
+function workAmoV5RawPayloadForPreparedPosition(prepared, position) {
+  if (
+    typeof canonicalRawProtocolRecordSetFromTransaction !== "function" ||
+    !prepared?.rawTx ||
+    !position ||
+    Number(position.recordOrdinal) !== 0
+  ) {
+    return "";
+  }
+  try {
+    const rawRecordSet = canonicalRawProtocolRecordSetFromTransaction(
+      prepared.rawTx,
+    );
+    const rawRecord = rawRecordSet.records.find(
+      (record) =>
+        Number(record?.protocolVout) ===
+          Number(position.protocolVout) &&
+        Number(record?.recordOrdinal) === 0,
+    );
+    return String(rawRecord?.message ?? "");
+  } catch {
+    return "";
+  }
+}
+
 function workAmoV6ReplayListingMaterialization({
   item,
   output,
@@ -23698,8 +23723,14 @@ export function bindPreparedTransactionsToWorkAmoV5Replay(
             projection: semanticProjection,
             txid,
             valid,
-          })
+        })
         : null;
+      const replayRawPayload = replay.rawCandidate === true
+        ? workAmoV5RawPayloadForPreparedPosition(
+            prepared,
+            position.position,
+          )
+        : "";
       let nextItem = {
         ...item,
         ...semanticProjection,
@@ -23717,10 +23748,8 @@ export function bindPreparedTransactionsToWorkAmoV5Replay(
         recordOrdinal: position.position.recordOrdinal,
         txid,
         valid,
-        ...(replay.rawCandidate === true &&
-        typeof item?.payload === "string" &&
-        item.payload
-          ? { payload: item.payload }
+        ...(replay.rawCandidate === true
+          ? { payload: replayRawPayload || item?.payload || "" }
           : {}),
         workAmoV5ReplayOutcome: {
           kind: outcome.kind,

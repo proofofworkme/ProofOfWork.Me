@@ -1812,6 +1812,7 @@ function isolatedFunction(path, name, globals = {}) {
           bindPreparedTransactionsToWorkAmoV5Replay: [
             "canonicalReplayParentTime",
             "canonicalProtocolItemForPostgres",
+            "workAmoV5RawPayloadForPreparedPosition",
             "workAmoV5PwidRegistryAttribution",
           ],
           workAmoV5PwidRegistryAttribution: [
