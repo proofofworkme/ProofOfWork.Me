@@ -828,6 +828,22 @@ const CANONICAL_INCB_PWT_RANGE_REPLAY_FROM_HEIGHT = 958_383;
 const CANONICAL_REBUILD = /^(?:1|true|yes)$/iu.test(
   String(process.env.POW_INDEX_BACKFILL_CANONICAL_REBUILD ?? ""),
 );
+const CANONICAL_SHALLOW_REORG_RECOVERY =
+  !/^(?:0|false|no|off)$/iu.test(
+    String(process.env.POW_INDEX_CANONICAL_SHALLOW_REORG_RECOVERY ?? "1"),
+  );
+const CANONICAL_SHALLOW_REORG_RECOVERY_MAX_DEPTH = Math.max(
+  1,
+  Math.min(
+    144,
+    Math.floor(
+      Number(
+        process.env.POW_INDEX_CANONICAL_SHALLOW_REORG_RECOVERY_MAX_DEPTH ??
+          144,
+      ) || 144,
+    ),
+  ),
+);
 const MEMPOOL_SCAN_MAX_TXIDS = Number(
   process.env.POW_INDEX_MEMPOOL_SCAN_MAX_TXIDS ?? 500,
 );
@@ -21675,6 +21691,411 @@ async function storeCanonicalReorgFault(client, details) {
   return fault;
 }
 
+function canonicalReorgBlockHash(value) {
+  const blockHash = String(value ?? "").trim().toLowerCase();
+  return /^[0-9a-f]{64}$/u.test(blockHash) ? blockHash : "";
+}
+
+function canonicalReorgBlockHeight(value) {
+  const height = Number(value);
+  return Number.isSafeInteger(height) && height >= 0 ? height : null;
+}
+
+function canonicalReorgMutationCount(result) {
+  const count = Number(result?.rowCount ?? result?.rows?.length ?? 0);
+  return Number.isSafeInteger(count) && count >= 0 ? count : 0;
+}
+
+function canonicalShallowReorgSearchStartHeight(fault, checkpoint) {
+  const checkpointHeight = canonicalReorgBlockHeight(checkpoint?.height);
+  if (checkpointHeight !== null) {
+    return checkpointHeight;
+  }
+  const faultHeight = canonicalReorgBlockHeight(
+    fault?.height ?? fault?.checkpointHeight,
+  );
+  if (faultHeight === null) {
+    return null;
+  }
+  return String(fault?.phase ?? "") === "before-block"
+    ? Math.max(0, faultHeight - 1)
+    : faultHeight;
+}
+
+async function canonicalShallowReorgAncestor(
+  client,
+  { maxDepth, startHeight },
+) {
+  const upperHeight = canonicalReorgBlockHeight(startHeight);
+  const depth = Number(maxDepth);
+  if (
+    upperHeight === null ||
+    !Number.isSafeInteger(depth) ||
+    depth < 1
+  ) {
+    return null;
+  }
+  const lowerHeight = Math.max(0, upperHeight - depth);
+  const result = await client.query(
+    `
+      SELECT height, lower(block_hash) AS block_hash
+      FROM proof_indexer.blocks
+      WHERE network = $1
+        AND canonical = true
+        AND height BETWEEN $2 AND $3
+      ORDER BY height DESC, indexed_at DESC, block_hash DESC
+    `,
+    [NETWORK, lowerHeight, upperHeight],
+  );
+  for (const row of result.rows ?? []) {
+    const height = canonicalReorgBlockHeight(row?.height);
+    const blockHash = canonicalReorgBlockHash(row?.block_hash);
+    if (height === null || !blockHash) {
+      continue;
+    }
+    const canonicalHash = canonicalReorgBlockHash(
+      await bitcoinRpc("getblockhash", [height]),
+    );
+    if (canonicalHash && canonicalHash === blockHash) {
+      return { blockHash, height };
+    }
+  }
+  return null;
+}
+
+async function canonicalConfirmedEventsAfterReorgAncestor(
+  client,
+  ancestor,
+) {
+  const result = await client.query(
+    `
+      SELECT
+        count(*)::integer AS confirmed_event_count,
+        max(
+          COALESCE(event.block_height, transaction.block_height)
+        ) AS max_block_height
+      FROM proof_indexer.events event
+      JOIN proof_indexer.transactions transaction
+        ON transaction.network = event.network
+       AND transaction.txid = event.txid
+      WHERE event.network = $1
+        AND event.status = 'confirmed'
+        AND (
+          COALESCE(event.block_height, transaction.block_height, 0) > $2
+          OR (
+            COALESCE(event.block_height, transaction.block_height, 0) = $2
+            AND lower(COALESCE(transaction.block_hash, '')) <> $3
+          )
+        )
+    `,
+    [NETWORK, ancestor.height, ancestor.blockHash],
+  );
+  const count = Number(result.rows[0]?.confirmed_event_count ?? 0);
+  const maxBlockHeight = Number(result.rows[0]?.max_block_height ?? 0);
+  return {
+    count: Number.isSafeInteger(count) && count > 0 ? count : 0,
+    maxBlockHeight:
+      Number.isSafeInteger(maxBlockHeight) && maxBlockHeight > 0
+        ? maxBlockHeight
+        : null,
+  };
+}
+
+async function recoverCanonicalShallowReorgFault(
+  client,
+  { fault, rebuild } = {},
+) {
+  if (
+    !CANONICAL_SHALLOW_REORG_RECOVERY ||
+    fault?.network !== NETWORK ||
+    fault?.active !== true ||
+    fault?.type !== "reorg"
+  ) {
+    return null;
+  }
+  if (
+    typeof activePwtRangeReplay === "function" &&
+    activePwtRangeReplay(rebuild)
+  ) {
+    return null;
+  }
+  const checkpoint = await latestBlockScanCheckpoint(client, {
+    useStoredCheckpoint: true,
+  });
+  const startHeight = canonicalShallowReorgSearchStartHeight(fault, checkpoint);
+  const tipHeight = Number(await bitcoinRpc("getblockcount"));
+  if (
+    startHeight === null ||
+    !Number.isSafeInteger(tipHeight) ||
+    tipHeight < startHeight
+  ) {
+    return null;
+  }
+  const ancestor = await canonicalShallowReorgAncestor(client, {
+    maxDepth: CANONICAL_SHALLOW_REORG_RECOVERY_MAX_DEPTH,
+    startHeight,
+  });
+  if (!ancestor) {
+    return null;
+  }
+  const eventTail = await canonicalConfirmedEventsAfterReorgAncestor(
+    client,
+    ancestor,
+  );
+  if (eventTail.count > 0) {
+    return null;
+  }
+
+  await client.query("BEGIN");
+  try {
+    await client.query("SET LOCAL lock_timeout = '10s'");
+    const lockedCheckpoint = await latestBlockScanCheckpoint(client, {
+      useStoredCheckpoint: true,
+    });
+    const lockedStartHeight = canonicalShallowReorgSearchStartHeight(
+      fault,
+      lockedCheckpoint,
+    );
+    if (lockedStartHeight !== startHeight) {
+      throw new Error(
+        "Canonical shallow reorg checkpoint changed before recovery commit.",
+      );
+    }
+    const lockedAncestor = await canonicalShallowReorgAncestor(client, {
+      maxDepth: CANONICAL_SHALLOW_REORG_RECOVERY_MAX_DEPTH,
+      startHeight: lockedStartHeight,
+    });
+    if (
+      lockedAncestor?.height !== ancestor.height ||
+      lockedAncestor?.blockHash !== ancestor.blockHash
+    ) {
+      throw new Error(
+        "Canonical shallow reorg ancestor changed before recovery commit.",
+      );
+    }
+    const lockedEventTail =
+      await canonicalConfirmedEventsAfterReorgAncestor(client, ancestor);
+    if (lockedEventTail.count > 0) {
+      throw new Error(
+        `Canonical shallow reorg tail contains ${lockedEventTail.count} confirmed protocol events; supervised rebuild is required.`,
+      );
+    }
+    const unlinkedSpends = await client.query(
+      `
+        WITH confirmed_tail_transactions AS MATERIALIZED (
+          SELECT txid
+          FROM proof_indexer.transactions
+          WHERE network = $1
+            AND status = 'confirmed'
+            AND (
+              block_height > $2
+              OR (
+                block_height = $2
+                AND lower(COALESCE(block_hash, '')) <> $3
+              )
+            )
+        ),
+        tail_inputs AS MATERIALIZED (
+          SELECT input.txid, input.vin, input.prev_txid, input.prev_vout
+          FROM proof_indexer.tx_inputs input
+          JOIN confirmed_tail_transactions tail
+            ON tail.txid = input.txid
+          WHERE input.network = $1
+            AND input.prev_txid IS NOT NULL
+            AND input.prev_vout IS NOT NULL
+        )
+        UPDATE proof_indexer.tx_outputs output
+        SET spent_by_txid = NULL,
+            spent_by_vin = NULL,
+            spent_at = NULL
+        FROM tail_inputs input
+        WHERE output.network = $1
+          AND output.txid = input.prev_txid
+          AND output.vout = input.prev_vout
+          AND lower(COALESCE(output.spent_by_txid, '')) = input.txid
+          AND output.spent_by_vin IS NOT DISTINCT FROM input.vin
+      `,
+      [NETWORK, ancestor.height, ancestor.blockHash],
+    );
+    const orphanedTransactions = await client.query(
+      `
+        UPDATE proof_indexer.transactions
+        SET status = 'orphaned',
+            dropped_at = COALESCE(dropped_at, now()),
+            dropped_reason = 'canonical-shallow-reorg',
+            updated_at = now()
+        WHERE network = $1
+          AND status = 'confirmed'
+          AND (
+            block_height > $2
+            OR (
+              block_height = $2
+              AND lower(COALESCE(block_hash, '')) <> $3
+            )
+          )
+      `,
+      [NETWORK, ancestor.height, ancestor.blockHash],
+    );
+    const deletedTransitions = await client.query(
+      `
+        DELETE FROM proof_indexer.work_amo_block_transitions
+        WHERE network = $1
+          AND (
+            block_height > $2
+            OR (
+              block_height = $2
+              AND lower(block_hash) <> $3
+            )
+          )
+      `,
+      [NETWORK, ancestor.height, ancestor.blockHash],
+    );
+    const orphanedBlocks = await client.query(
+      `
+        UPDATE proof_indexer.blocks
+        SET canonical = false,
+            indexed_at = now()
+        WHERE network = $1
+          AND canonical = true
+          AND (
+            height > $2
+            OR (
+              height = $2
+              AND lower(block_hash) <> $3
+            )
+          )
+      `,
+      [NETWORK, ancestor.height, ancestor.blockHash],
+    );
+    const deletedSnapshots = await client.query(
+      `
+        DELETE FROM proof_indexer.ledger_snapshots snapshot
+        WHERE snapshot.network = $1
+          AND snapshot.indexed_through_block IS NOT NULL
+          AND (
+            snapshot.indexed_through_block > $2
+            OR (
+              snapshot.indexed_through_block = $2
+              AND COALESCE(
+                NULLIF(lower(snapshot.payload->>'indexedThroughBlockHash'), ''),
+                NULLIF(lower(snapshot.payload->>'blockHash'), ''),
+                NULLIF(lower(snapshot.source_hashes->>'blockScan'), ''),
+                NULLIF(lower(snapshot.source_hashes->>'canonicalSummary'), '')
+              ) IS NOT NULL
+              AND COALESCE(
+                NULLIF(lower(snapshot.payload->>'indexedThroughBlockHash'), ''),
+                NULLIF(lower(snapshot.payload->>'blockHash'), ''),
+                NULLIF(lower(snapshot.source_hashes->>'blockScan'), ''),
+                NULLIF(lower(snapshot.source_hashes->>'canonicalSummary'), '')
+              ) <> $3
+            )
+          )
+          AND COALESCE(snapshot.payload->>'model', '') <>
+            'canonical-work-amo-v5-h-minus-one-seed-evidence-v1'
+          AND NOT EXISTS (
+            SELECT 1
+            FROM (
+              SELECT protected_snapshot.snapshot_id
+              FROM proof_indexer.meta migration
+              CROSS JOIN LATERAL (
+                VALUES
+                  (
+                    migration.value->'replayEvidence'->'seed'
+                      ->'snapshotIds'
+                  ),
+                  (
+                    migration.value->'replayEvidence'->'closing'
+                      ->'snapshotIds'
+                  )
+              ) snapshot_group(snapshot_ids)
+              CROSS JOIN LATERAL jsonb_array_elements_text(
+                CASE
+                  WHEN jsonb_typeof(snapshot_group.snapshot_ids) = 'array'
+                  THEN snapshot_group.snapshot_ids
+                  ELSE '[]'::jsonb
+                END
+              ) protected_snapshot(snapshot_id)
+              WHERE migration.key = 'workAmoV5Migration:' || $1
+                AND migration.value->>'network' = $1
+                AND migration.value->>'model' =
+                  'canonical-work-amo-v5-migration-v2'
+                AND migration.value->>'status' = 'complete'
+                AND migration.value->'replayEvidence'->>'complete' = 'true'
+                AND COALESCE(protected_snapshot.snapshot_id, '') <> ''
+              UNION
+              SELECT
+                seed_evidence.payload->'canonicalSummary'->>'snapshotId'
+              FROM proof_indexer.ledger_snapshots seed_evidence
+              WHERE seed_evidence.network = $1
+                AND seed_evidence.payload->>'model' =
+                  'canonical-work-amo-v5-h-minus-one-seed-evidence-v1'
+                AND COALESCE(
+                  seed_evidence.payload->'canonicalSummary'->>'snapshotId',
+                  ''
+                ) <> ''
+            ) work_amo_v5_protected
+            WHERE work_amo_v5_protected.snapshot_id =
+              snapshot.snapshot_id
+          )
+      `,
+      [NETWORK, ancestor.height, ancestor.blockHash],
+    );
+    const rebuildSource =
+      rebuild?.network === NETWORK &&
+      ["active", "complete", "fault"].includes(String(rebuild?.status ?? ""))
+        ? rebuild
+        : null;
+    let recoveredRebuild = null;
+    if (rebuildSource) {
+      const { fault: _fault, ...cleanRebuild } = rebuildSource;
+      recoveredRebuild = canonicalRebuildCheckpointValue(cleanRebuild, {
+        blockHash: ancestor.blockHash,
+        complete: false,
+        height: ancestor.height,
+      });
+      await storeProofIndexerMeta(
+        client,
+        CANONICAL_REBUILD_META_KEY,
+        recoveredRebuild,
+      );
+    }
+    await client.query(`DELETE FROM proof_indexer.meta WHERE key = $1`, [
+      CANONICAL_FAULT_META_KEY,
+    ]);
+    await client.query(`DELETE FROM proof_indexer.meta WHERE key = $1`, [
+      `mempoolScan:${NETWORK}`,
+    ]);
+    await storeBlockScanSnapshot(client, {
+      complete: false,
+      indexed: 0,
+      indexedThroughBlock: ancestor.height,
+      indexedThroughBlockHash: ancestor.blockHash,
+      protocolTxids: 0,
+      rebuild: recoveredRebuild,
+      scannedBlocks: 0,
+      skipped: 0,
+      stopReason: "canonical-shallow-reorg-recovery",
+      tipHeight,
+    });
+    await client.query("COMMIT");
+    return {
+      ancestorHeight: ancestor.height,
+      ancestorHash: ancestor.blockHash,
+      checkpointHeight: checkpoint.height,
+      deletedSnapshots: canonicalReorgMutationCount(deletedSnapshots),
+      deletedTransitions: canonicalReorgMutationCount(deletedTransitions),
+      detachedBlocks: Math.max(0, checkpoint.height - ancestor.height),
+      orphanedBlocks: canonicalReorgMutationCount(orphanedBlocks),
+      orphanedTransactions: canonicalReorgMutationCount(orphanedTransactions),
+      recovered: true,
+      unlinkedSpends: canonicalReorgMutationCount(unlinkedSpends),
+    };
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  }
+}
+
 function canonicalRebuildCheckpointValue(
   rebuild,
   { blockHash, complete, height },
@@ -23878,14 +24299,39 @@ async function backfillBlockScanSource(client, source) {
   const canonicalRebuildState = CANONICAL_REBUILD
     ? await prepareCanonicalRebuild(client)
     : null;
-  const storedRebuild = canonicalRebuildState?.value ??
+  let storedRebuild = canonicalRebuildState?.value ??
     (await proofIndexerMetaValue(client, CANONICAL_REBUILD_META_KEY));
-  const storedPwtRangeReplayState =
+  let storedPwtRangeReplayState =
     assertCanonicalPwtRangeReplayState(storedRebuild);
-  const storedFault = await proofIndexerMetaValue(
+  let storedFault = await proofIndexerMetaValue(
     client,
     CANONICAL_FAULT_META_KEY,
   );
+  if (storedFault?.network === NETWORK && storedFault?.active === true) {
+    const shallowRecovery = await recoverCanonicalShallowReorgFault(client, {
+      fault: storedFault,
+      rebuild: storedRebuild,
+    });
+    if (shallowRecovery?.recovered === true) {
+      console.error(
+        JSON.stringify({
+          ...shallowRecovery,
+          phase: "canonical-shallow-reorg-recovery",
+          source: source.label,
+        }),
+      );
+      storedRebuild = await proofIndexerMetaValue(
+        client,
+        CANONICAL_REBUILD_META_KEY,
+      );
+      storedPwtRangeReplayState =
+        assertCanonicalPwtRangeReplayState(storedRebuild);
+      storedFault = await proofIndexerMetaValue(
+        client,
+        CANONICAL_FAULT_META_KEY,
+      );
+    }
+  }
   if (storedFault?.network === NETWORK && storedFault?.active === true) {
     throw new Error(
       "Canonical indexing is faulted; run a new supervised canonical rebuild.",

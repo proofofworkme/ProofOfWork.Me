@@ -26955,7 +26955,7 @@ check("every ledger snapshot deletion preserves immutable AMO V5 seed dependenci
   visit(sourceFile);
   assert.equal(
     snapshotDeleteQueries.length,
-    5,
+    6,
     "every ledger snapshot deletion path must be reviewed",
   );
   for (const query of snapshotDeleteQueries) {
@@ -44069,6 +44069,285 @@ check("canonical rebuild reset and hashed bootstrap are one transaction", async 
   assert.equal(snapshot.complete, false);
   assert.equal(snapshot.indexedThroughBlock, 99);
   assert.equal(snapshot.indexedThroughBlockHash, bootstrapHash);
+});
+
+check("shallow reorg recovery rewinds a protocol-empty detached tail", async () => {
+  const calls = [];
+  const checkpointHash = "f".repeat(64);
+  const ancestorHash = "a".repeat(64);
+  const coreHashes = new Map([
+    [100, ancestorHash],
+    [101, "b".repeat(64)],
+    [102, "c".repeat(64)],
+  ]);
+  const latestBlockScanCheckpoint = async () => ({
+    blockHash: checkpointHash,
+    height: 102,
+  });
+  const bitcoinRpc = async (method, params = []) => {
+    if (method === "getblockcount") return 105;
+    if (method === "getblockhash") return coreHashes.get(Number(params[0]));
+    throw new Error(`unexpected Core request ${method}`);
+  };
+  const canonicalReorgBlockHash = isolatedFunction(
+    BACKFILL_PATH,
+    "canonicalReorgBlockHash",
+  );
+  const canonicalReorgBlockHeight = isolatedFunction(
+    BACKFILL_PATH,
+    "canonicalReorgBlockHeight",
+  );
+  const canonicalReorgMutationCount = isolatedFunction(
+    BACKFILL_PATH,
+    "canonicalReorgMutationCount",
+  );
+  const canonicalShallowReorgSearchStartHeight = isolatedFunction(
+    BACKFILL_PATH,
+    "canonicalShallowReorgSearchStartHeight",
+    { canonicalReorgBlockHeight },
+  );
+  const canonicalShallowReorgAncestor = isolatedFunction(
+    BACKFILL_PATH,
+    "canonicalShallowReorgAncestor",
+    {
+      NETWORK: "livenet",
+      bitcoinRpc,
+      canonicalReorgBlockHash,
+      canonicalReorgBlockHeight,
+    },
+  );
+  const canonicalConfirmedEventsAfterReorgAncestor = isolatedFunction(
+    BACKFILL_PATH,
+    "canonicalConfirmedEventsAfterReorgAncestor",
+    { NETWORK: "livenet" },
+  );
+  const storedMeta = [];
+  const snapshots = [];
+  const recoverCanonicalShallowReorgFault = isolatedFunction(
+    BACKFILL_PATH,
+    "recoverCanonicalShallowReorgFault",
+    {
+      CANONICAL_FAULT_META_KEY: "canonical:fault",
+      CANONICAL_REBUILD_META_KEY: "canonical:rebuild",
+      CANONICAL_SHALLOW_REORG_RECOVERY: true,
+      CANONICAL_SHALLOW_REORG_RECOVERY_MAX_DEPTH: 6,
+      NETWORK: "livenet",
+      bitcoinRpc,
+      canonicalConfirmedEventsAfterReorgAncestor,
+      canonicalRebuildCheckpointValue: (rebuild, next) => ({
+        ...rebuild,
+        active: !next.complete,
+        complete: next.complete,
+        indexedThroughBlock: next.height,
+        indexedThroughBlockHash: next.blockHash,
+        status: next.complete ? "complete" : "active",
+      }),
+      canonicalReorgMutationCount,
+      canonicalShallowReorgAncestor,
+      canonicalShallowReorgSearchStartHeight,
+      latestBlockScanCheckpoint,
+      storeBlockScanSnapshot: async (_client, payload) => {
+        snapshots.push(payload);
+      },
+      storeProofIndexerMeta: async (_client, key, value) => {
+        storedMeta.push({ key, value });
+      },
+    },
+  );
+  const client = {
+    async query(sql, params = []) {
+      const statement = String(sql).trim();
+      calls.push({ params: Array.from(params), sql: statement });
+      if (statement === "BEGIN" || statement === "COMMIT" || statement === "ROLLBACK") {
+        return { rows: [] };
+      }
+      if (statement.startsWith("SET LOCAL")) {
+        return { rows: [] };
+      }
+      if (statement.includes("SELECT height, lower(block_hash) AS block_hash")) {
+        return {
+          rows: [
+            { block_hash: checkpointHash, height: 102 },
+            { block_hash: "e".repeat(64), height: 101 },
+            { block_hash: ancestorHash, height: 100 },
+          ],
+        };
+      }
+      if (statement.includes("confirmed_event_count")) {
+        return {
+          rows: [{ confirmed_event_count: 0, max_block_height: null }],
+        };
+      }
+      if (statement.includes("UPDATE proof_indexer.tx_outputs")) {
+        return { rows: [], rowCount: 1 };
+      }
+      if (statement.includes("UPDATE proof_indexer.transactions")) {
+        return { rows: [], rowCount: 2 };
+      }
+      if (statement.includes("DELETE FROM proof_indexer.work_amo_block_transitions")) {
+        return { rows: [], rowCount: 2 };
+      }
+      if (statement.includes("UPDATE proof_indexer.blocks")) {
+        return { rows: [], rowCount: 2 };
+      }
+      if (statement.includes("DELETE FROM proof_indexer.ledger_snapshots")) {
+        return { rows: [], rowCount: 3 };
+      }
+      if (statement.includes("DELETE FROM proof_indexer.meta")) {
+        return { rows: [], rowCount: 1 };
+      }
+      throw new Error(`unexpected SQL ${statement}`);
+    },
+  };
+
+  const result = await recoverCanonicalShallowReorgFault(client, {
+    fault: {
+      active: true,
+      height: 102,
+      network: "livenet",
+      phase: "checkpoint",
+      type: "reorg",
+    },
+    rebuild: {
+      active: false,
+      complete: true,
+      indexedThroughBlock: 102,
+      indexedThroughBlockHash: checkpointHash,
+      network: "livenet",
+      status: "complete",
+    },
+  });
+
+  assert.equal(result.recovered, true);
+  assert.equal(result.ancestorHeight, 100);
+  assert.equal(result.ancestorHash, ancestorHash);
+  assert.equal(result.detachedBlocks, 2);
+  assert.equal(result.orphanedTransactions, 2);
+  assert.equal(result.unlinkedSpends, 1);
+  assert.equal(result.deletedTransitions, 2);
+  assert.equal(result.orphanedBlocks, 2);
+  assert.equal(result.deletedSnapshots, 3);
+  assert.deepEqual(
+    calls.filter((call) => /^(?:BEGIN|COMMIT|ROLLBACK)$/u.test(call.sql))
+      .map((call) => call.sql),
+    ["BEGIN", "COMMIT"],
+  );
+  assert.equal(storedMeta.length, 1);
+  assert.equal(storedMeta[0].key, "canonical:rebuild");
+  assert.equal(storedMeta[0].value.status, "active");
+  assert.equal(storedMeta[0].value.indexedThroughBlock, 100);
+  assert.equal(snapshots.length, 1);
+  assert.equal(snapshots[0].indexedThroughBlock, 100);
+  assert.equal(snapshots[0].indexedThroughBlockHash, ancestorHash);
+  assert.equal(snapshots[0].stopReason, "canonical-shallow-reorg-recovery");
+  assert.ok(
+    calls.some((call) =>
+      call.sql.includes("DELETE FROM proof_indexer.ledger_snapshots"),
+    ),
+    "recovery must invalidate hash-bound snapshots beyond the ancestor",
+  );
+});
+
+check("shallow reorg recovery refuses protocol-bearing tails", async () => {
+  const calls = [];
+  const checkpointHash = "f".repeat(64);
+  const ancestorHash = "a".repeat(64);
+  const latestBlockScanCheckpoint = async () => ({
+    blockHash: checkpointHash,
+    height: 102,
+  });
+  const bitcoinRpc = async (method, params = []) => {
+    if (method === "getblockcount") return 105;
+    if (method === "getblockhash" && Number(params[0]) === 100) {
+      return ancestorHash;
+    }
+    return "b".repeat(64);
+  };
+  const canonicalReorgBlockHash = isolatedFunction(
+    BACKFILL_PATH,
+    "canonicalReorgBlockHash",
+  );
+  const canonicalReorgBlockHeight = isolatedFunction(
+    BACKFILL_PATH,
+    "canonicalReorgBlockHeight",
+  );
+  const canonicalReorgMutationCount = isolatedFunction(
+    BACKFILL_PATH,
+    "canonicalReorgMutationCount",
+  );
+  const canonicalShallowReorgSearchStartHeight = isolatedFunction(
+    BACKFILL_PATH,
+    "canonicalShallowReorgSearchStartHeight",
+    { canonicalReorgBlockHeight },
+  );
+  const canonicalShallowReorgAncestor = isolatedFunction(
+    BACKFILL_PATH,
+    "canonicalShallowReorgAncestor",
+    {
+      NETWORK: "livenet",
+      bitcoinRpc,
+      canonicalReorgBlockHash,
+      canonicalReorgBlockHeight,
+    },
+  );
+  const canonicalConfirmedEventsAfterReorgAncestor = isolatedFunction(
+    BACKFILL_PATH,
+    "canonicalConfirmedEventsAfterReorgAncestor",
+    { NETWORK: "livenet" },
+  );
+  const recoverCanonicalShallowReorgFault = isolatedFunction(
+    BACKFILL_PATH,
+    "recoverCanonicalShallowReorgFault",
+    {
+      CANONICAL_SHALLOW_REORG_RECOVERY: true,
+      CANONICAL_SHALLOW_REORG_RECOVERY_MAX_DEPTH: 6,
+      NETWORK: "livenet",
+      bitcoinRpc,
+      canonicalConfirmedEventsAfterReorgAncestor,
+      canonicalReorgMutationCount,
+      canonicalShallowReorgAncestor,
+      canonicalShallowReorgSearchStartHeight,
+      latestBlockScanCheckpoint,
+    },
+  );
+  const client = {
+    async query(sql, params = []) {
+      const statement = String(sql).trim();
+      calls.push({ params: Array.from(params), sql: statement });
+      if (statement.includes("SELECT height, lower(block_hash) AS block_hash")) {
+        return {
+          rows: [
+            { block_hash: checkpointHash, height: 102 },
+            { block_hash: "d".repeat(64), height: 101 },
+            { block_hash: ancestorHash, height: 100 },
+          ],
+        };
+      }
+      if (statement.includes("confirmed_event_count")) {
+        return {
+          rows: [{ confirmed_event_count: 1, max_block_height: 101 }],
+        };
+      }
+      throw new Error(`unexpected mutation SQL ${statement}`);
+    },
+  };
+
+  const result = await recoverCanonicalShallowReorgFault(client, {
+    fault: {
+      active: true,
+      height: 102,
+      network: "livenet",
+      phase: "checkpoint",
+      type: "reorg",
+    },
+  });
+
+  assert.equal(result, null);
+  assert.equal(calls.some((call) => call.sql === "BEGIN"), false);
+  assert.equal(
+    calls.some((call) => /^UPDATE |^DELETE /u.test(call.sql)),
+    false,
+  );
 });
 
 check("resumed rebuilds reject a non-atomic canonical WORK definition", async () => {

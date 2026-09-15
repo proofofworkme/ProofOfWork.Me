@@ -732,9 +732,21 @@ rewinding only the checkpoint or layering corrected event keys over stale ones:
    credit ledger in one transaction and is safe to retry; restart the worker to
    publish the exact-tip summaries afterward.
 
-Stored block hashes detect a reorganization; they do not provide automatic
-projection rollback. If the stored checkpoint hash no longer matches Bitcoin
-Core, the worker must stop and health must remain red. Operators must then:
+Stored block hashes detect a reorganization. The worker may self-heal only a
+bounded, protocol-empty detached tail: `canonical:fault` must be an active reorg
+fault, the last common ancestor must be within
+`POW_INDEX_CANONICAL_SHALLOW_REORG_RECOVERY_MAX_DEPTH` blocks (default `144`),
+and there must be zero confirmed protocol event rows after that ancestor. That
+path unlinks spends created by orphaned tail transactions, marks those
+transactions `orphaned`, deletes tail AMO block transitions, marks detached
+blocks non-canonical, invalidates replaceable snapshots beyond the ancestor,
+clears the fault, writes a fresh ancestor block-scan checkpoint, and resumes
+forward scanning. It is enabled by default and can be disabled with
+`POW_INDEX_CANONICAL_SHALLOW_REORG_RECOVERY=0`.
+
+If any guard fails, including a protocol-bearing detached tail, missing bounded
+ancestor, active PWT range replay, or checkpoint-ahead-of-tip condition, the
+worker must stop and health must remain red. Operators must then:
 
 1. Stop the worker and API so detached projections are not served as current.
 2. Identify the last common ancestor with Bitcoin Core and take a database
