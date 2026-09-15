@@ -23544,14 +23544,26 @@ export function bindPreparedTransactionsToWorkAmoV5Replay(
         return entry;
       }
       const position = workAmoV5ReplayPositionKey(item);
+      const itemTxid = normalizedLowerText(item?.txid);
       if (
         !position ||
         preparedPositions.has(position.key) ||
         !isHexTxid(txid) ||
-        normalizedLowerText(item?.txid) !== txid
+        itemTxid !== txid
       ) {
+        const reasons = [
+          !position ? "missing-position" : "",
+          position && preparedPositions.has(position.key)
+            ? "duplicate-position"
+            : "",
+          !isHexTxid(txid) ? "invalid-transaction-txid" : "",
+          itemTxid !== txid ? "item-txid-mismatch" : "",
+        ].filter(Boolean);
         throw new Error(
-          `Canonical AMO prepared-item binding is invalid at ${position?.key ?? "unknown"}.`,
+          `Canonical AMO prepared-item binding is invalid at ${position?.key ?? "unknown"} ` +
+            `(${reasons.join(",") || "unknown"}; txid=${txid || "unknown"}; ` +
+            `itemTxid=${itemTxid || "unknown"}; protocol=${protocol || "unknown"}; ` +
+            `kind=${normalizedLowerText(item?.kind) || "unknown"}).`,
         );
       }
       const replay = replayByPosition.get(position.key);
