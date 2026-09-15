@@ -14965,7 +14965,18 @@ async function upsertProjection(
     const workProjectionModel = isWorkTokenId(projectedItem.tokenId)
       ? await currentWorkProjectionModel(client, { refresh: true })
       : "";
-    if (isWorkTokenId(projectedItem.tokenId) && !workProjectionModel) {
+    const itemListingProjectionModel =
+      projectedItem.amountStorageModel === WORK_SUBATOM_PROJECTION_MODEL ||
+      (
+        projectedItem.amountSubatoms !== undefined &&
+        projectedItem.amountSubatoms !== null &&
+        projectedItem.amountSubatoms !== ""
+      )
+        ? WORK_SUBATOM_PROJECTION_MODEL
+        : "";
+    const listingProjectionModel =
+      itemListingProjectionModel || workProjectionModel;
+    if (isWorkTokenId(projectedItem.tokenId) && !listingProjectionModel) {
       throw new Error(
         "WORK listing projection cannot update without one exact active Q8 or Q16 model.",
       );
@@ -14975,7 +14986,7 @@ async function upsertProjection(
       projectedStatus,
     );
     const storedListingAmount =
-      workProjectionModel === WORK_SUBATOM_PROJECTION_MODEL
+      listingProjectionModel === WORK_SUBATOM_PROJECTION_MODEL
         ? workAmountSubatomsFromRecord(projectedItem, {
             allowLegacy: true,
             allowZero: false,
@@ -14985,14 +14996,14 @@ async function upsertProjection(
                 ? WORK_SUBATOM_PROJECTION_MODEL
                 : WORK_ATOMIC_PROJECTION_MODEL,
           })
-        : workProjectionModel === WORK_ATOMIC_PROJECTION_MODEL
+        : listingProjectionModel === WORK_ATOMIC_PROJECTION_MODEL
           ? workBalanceAtoms(projectedItem, [
               "amountAtoms",
               "amount",
             ])
           : String(projectedItem.amount ?? 0);
     const projectedPayload =
-      workProjectionModel === WORK_SUBATOM_PROJECTION_MODEL
+      listingProjectionModel === WORK_SUBATOM_PROJECTION_MODEL
         ? withWorkSubatomPrecisionMetadata({
             ...baseProjectedPayload,
             ...(projectedItem.amountStorageModel ===
