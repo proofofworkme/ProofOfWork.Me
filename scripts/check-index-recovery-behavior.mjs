@@ -42357,6 +42357,129 @@ check("complete canonical token replay publishes conserved balances", async () =
   );
 });
 
+check("canonical Q8 WORK replay accepts exact subatom transfer amounts", async () => {
+  const workDefinitionProjectionState = isolatedFunction(
+    BACKFILL_PATH,
+    "workDefinitionProjectionState",
+    {
+      WORK_TOKEN_MAX_SUPPLY_ATOMS:
+        WORK_TOKEN_MAX_SUPPLY_ATOMS.toString(),
+      WORK_TOKEN_MINT_AMOUNT_ATOMS:
+        WORK_TOKEN_MINT_AMOUNT_ATOMS.toString(),
+    },
+  );
+  const rebuildConfirmedCreditBalancesFromCanonicalEvents = isolatedFunction(
+    BACKFILL_PATH,
+    "rebuildConfirmedCreditBalancesFromCanonicalEvents",
+    {
+      NETWORK: "livenet",
+      assertCanonicalWorkProjection: async () => ({
+        model: WORK_ATOMIC_PROJECTION_MODEL,
+        state: "q8",
+      }),
+      workDefinitionProjectionState,
+    },
+  );
+  const clientFor = (amountSubatoms, writes = []) => ({
+    async query(sql, params = []) {
+      const text = String(sql);
+      if (text.includes("FROM proof_indexer.credit_definitions")) {
+        return {
+          rows: [{
+            confirmed: true,
+            created_height: 100,
+            max_supply: WORK_TOKEN_MAX_SUPPLY_ATOMS.toString(),
+            metadata: {
+              amountStorageModel: WORK_ATOMIC_PROJECTION_MODEL,
+              blockIndex: 0,
+              decimals: WORK_DECIMALS,
+              unitScale: WORK_UNIT_SCALE_TEXT,
+            },
+            mint_amount: WORK_TOKEN_MINT_AMOUNT_ATOMS.toString(),
+            ticker: "WORK",
+            token_id: WORK_TOKEN_ID,
+          }],
+        };
+      }
+      if (text.includes("FROM proof_indexer.events")) {
+        return {
+          rows: [
+            {
+              canonical_block_height: 101,
+              event_id: 1,
+              kind: "token-mint",
+              payload: {
+                _powEventIndex: 0,
+                amountAtoms: "10",
+                amountStorageModel: WORK_ATOMIC_PROJECTION_MODEL,
+                blockIndex: 0,
+                decimals: WORK_DECIMALS,
+                minterAddress: "alice",
+                tokenId: WORK_TOKEN_ID,
+                unitScale: WORK_UNIT_SCALE_TEXT,
+              },
+              txid: "1".repeat(64),
+            },
+            {
+              canonical_block_height: 102,
+              event_id: 2,
+              kind: "token-transfer",
+              payload: {
+                _powEventIndex: 0,
+                amountStorageModel: WORK_SUBATOM_PROJECTION_MODEL,
+                amountSubatoms,
+                blockIndex: 0,
+                decimals: WORK_SUBATOM_DECIMALS,
+                precisionModel: WORK_PRECISION_V2_MODEL,
+                recipientAddress: "bob",
+                senderAddress: "alice",
+                tokenId: WORK_TOKEN_ID,
+                transferVersion: "send3",
+                unitScale: WORK_SUBATOM_UNIT_SCALE_TEXT,
+              },
+              txid: "2".repeat(64),
+            },
+          ].reverse(),
+        };
+      }
+      if (text.includes("sum(confirmed_balance)")) {
+        return {
+          rows: [{
+            confirmed_supply: "10",
+            token_id: WORK_TOKEN_ID,
+          }],
+        };
+      }
+      writes.push({ params: Array.from(params), sql: text });
+      return { rows: [] };
+    },
+  });
+  const writes = [];
+  const result = await rebuildConfirmedCreditBalancesFromCanonicalEvents(
+    clientFor((3n * WORK_SUBATOM_CONVERSION_FACTOR).toString(), writes),
+  );
+  assert.deepEqual(
+    { holders: result.holders, tokens: result.tokens },
+    { holders: 2, tokens: 1 },
+  );
+  const inserts = writes.filter((write) =>
+    write.sql.includes("INSERT INTO proof_indexer.credit_balances"),
+  );
+  assert.deepEqual(
+    inserts.map((write) => [write.params[2], write.params[3]]),
+    [
+      ["alice", "7"],
+      ["bob", "3"],
+    ],
+  );
+  await rejection(
+    rebuildConfirmedCreditBalancesFromCanonicalEvents(clientFor("1")),
+    (error) => /rejects fractional work-subatoms-v2 amount/u.test(
+      error.message,
+    ),
+  );
+});
+
 check("scoped canonical token replay preserves pending deltas", async () => {
   const tokenId = "5".repeat(64);
   const writes = [];

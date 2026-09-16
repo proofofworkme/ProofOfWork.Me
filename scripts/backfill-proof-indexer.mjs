@@ -7808,6 +7808,34 @@ async function rebuildConfirmedCreditBalancesFromCanonicalEvents(
     }
     return address;
   };
+  const workQ8ReplayAmount = (payload, eventLabel) => {
+    const storageModel = String(payload.amountStorageModel ?? "").trim();
+    if (!storageModel || storageModel === WORK_ATOMIC_PROJECTION_MODEL) {
+      return BigInt(
+        workAmountAtomsFromRecord({
+          ...payload,
+          amountStorageModel: WORK_ATOMIC_PROJECTION_MODEL,
+        }),
+      );
+    }
+    if (storageModel === WORK_SUBATOM_PROJECTION_MODEL) {
+      const subatoms = BigInt(
+        workAmountSubatomsFromRecord(payload, {
+          allowLegacy: false,
+          sourceModel: WORK_SUBATOM_PROJECTION_MODEL,
+        }),
+      );
+      if (subatoms % WORK_SUBATOM_CONVERSION_FACTOR !== 0n) {
+        throw new Error(
+          `Canonical Q8 WORK replay rejects fractional ${storageModel} amount at ${eventLabel}.`,
+        );
+      }
+      return subatoms / WORK_SUBATOM_CONVERSION_FACTOR;
+    }
+    throw new Error(
+      `Canonical Q8 WORK replay rejects ${storageModel} at ${eventLabel}.`,
+    );
+  };
   const activeWorkProjection = await assertCanonicalWorkProjection(
     client,
     "Canonical credit replay",
@@ -8354,20 +8382,7 @@ async function rebuildConfirmedCreditBalancesFromCanonicalEvents(
     let amount;
     if (isWorkTokenId(tokenId)) {
       if (activeWorkProjection.state === WORK_PROJECTION_STATE_Q8) {
-        if (
-          payload.amountStorageModel &&
-          payload.amountStorageModel !== WORK_ATOMIC_PROJECTION_MODEL
-        ) {
-          throw new Error(
-            `Canonical Q8 WORK replay rejects ${payload.amountStorageModel} at ${eventLabel}.`,
-          );
-        }
-        amount = BigInt(
-          workAmountAtomsFromRecord({
-            ...payload,
-            amountStorageModel: WORK_ATOMIC_PROJECTION_MODEL,
-          }),
-        );
+        amount = workQ8ReplayAmount(payload, eventLabel);
       } else {
         const preactivation =
           position.blockHeight < workPrecisionV2ActivationHeight;
