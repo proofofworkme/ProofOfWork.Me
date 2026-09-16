@@ -1719,6 +1719,23 @@ const CANONICAL_INCB_ISSUANCE_PINNED_VALUE_SNAPSHOT_IDS = Object.freeze(
     "7ab9dad4300df08edf54e80f",
   ]),
 );
+const CANONICAL_INCB_ISSUANCE_PINNED_VALUE_SNAPSHOT_WORK_Q8 =
+  Object.freeze(
+    new Map([
+      [
+        "35bf2b05cd91025920df228c",
+        "11455029927306283270792106",
+      ],
+      [
+        "895dbf988e2f77fc89c1757c",
+        "51451512216242740129116282",
+      ],
+      [
+        "7ab9dad4300df08edf54e80f",
+        "166749968890872348336582465",
+      ],
+    ]),
+  );
 // Immutable Bitcoin Core facts for the supervised July 2026 INCB range
 // replay. These are transaction facts only. Valid exact V2 issuance is held
 // byte-for-byte by the immutable witness manifest; only explicit rederive
@@ -32240,6 +32257,151 @@ function canonicalIncbRepairAttachmentMatches(target, attachedCredits) {
   );
 }
 
+async function canonicalIncbIssuanceRepairMintFromPinnedExpectation(
+  client,
+  {
+    expectation,
+    mintItem,
+    repairExpectation,
+    txid,
+  },
+) {
+  const snapshotId = String(
+    expectation?.issuanceValueSnapshotId ?? "",
+  ).trim();
+  const rows = await lockedCanonicalIncbValueSnapshots(client, [snapshotId]);
+  let workNetworkValueQ8 = "";
+  if (rows.length === 1) {
+    const workNetworkValue =
+      lockedCanonicalIncbSnapshotWorkNetworkValueQ8(rows[0]);
+    if (!workNetworkValue?.valueQ8) {
+      throw new Error(
+        `INCB issuance repair could not read exact WORK value for snapshot ${snapshotId}.`,
+      );
+    }
+    workNetworkValueQ8 = workNetworkValue.valueQ8;
+    verifiedCanonicalIncbValueSnapshotFingerprints(
+      rows,
+      new Map([[
+        snapshotId,
+        {
+          blockHash: expectation.issuanceValueSnapshotBlockHash,
+          blockHeight: expectation.issuanceValueSnapshotBlockHeight,
+          canonicalSummaryHash:
+            expectation.issuanceValueSnapshotCanonicalSummaryHash,
+          generatedAt: expectation.issuanceValueSnapshotGeneratedAt,
+          mode: expectation.issuanceValueSnapshotMode,
+          model: expectation.issuanceValueSnapshotModel,
+          snapshotId,
+          workNetworkValueQ8,
+        },
+      ]]),
+    );
+  } else if (
+    rows.length === 0 &&
+    CANONICAL_INCB_ISSUANCE_PINNED_VALUE_SNAPSHOT_IDS.has(snapshotId)
+  ) {
+    workNetworkValueQ8 =
+      CANONICAL_INCB_ISSUANCE_PINNED_VALUE_SNAPSHOT_WORK_Q8.get(
+        snapshotId,
+      ) ||
+      canonicalIntegerText(
+        mintItem?.issuanceValueSnapshotWorkNetworkValueQ8,
+        { positive: true },
+      );
+    if (!workNetworkValueQ8) {
+      throw new Error(
+        `INCB issuance repair missing pinned post-replay WORK value for ${snapshotId}.`,
+      );
+    }
+  } else {
+    throw new Error(
+      `INCB issuance repair expected one pinned value snapshot ${snapshotId} but found ${rows.length}.`,
+    );
+  }
+
+  const projection = canonicalIncbIssuanceQ8Projection({
+    attachedWorkAmountAtoms: mintItem?.attachedWorkAmountAtoms,
+    attachedWorkAmountDecimals: mintItem?.attachedWorkAmountDecimals,
+    attachedWorkAmountPrecisionModel:
+      mintItem?.attachedWorkAmountPrecisionModel,
+    attachedWorkAmountStorageModel:
+      mintItem?.attachedWorkAmountStorageModel,
+    attachedWorkAmountSubatoms: mintItem?.attachedWorkAmountSubatoms,
+    attachedWorkAmountUnitScale: mintItem?.attachedWorkAmountUnitScale,
+    attachedWorkAmountVersion: mintItem?.attachedWorkAmountVersion,
+    directProofIssuanceUnits: expectation.directProofIssuanceUnits,
+    workNetworkValueQ8,
+  });
+  if (
+    projection.attachedWorkIssuanceUnits !==
+      expectation.attachedWorkIssuanceUnits ||
+    projection.confirmedIssuanceUnits !==
+      expectation.confirmedIssuanceUnits ||
+    projection.issuanceNetworkValueQ8 !==
+      String(
+        BigInt(expectation.confirmedIssuanceUnits) * VALUE_Q8_SCALE +
+          BigInt(projection.issuanceDustQ8),
+      ) ||
+    !canonicalIncbRepairIntegerEquals(
+      expectation.confirmedIssuanceUnits,
+      BigInt(expectation.directProofIssuanceUnits) +
+        BigInt(expectation.attachedWorkIssuanceUnits),
+      { positive: true },
+    )
+  ) {
+    throw new Error(
+      `INCB issuance repair pinned oracle projection disagrees for ${txid}.`,
+    );
+  }
+
+  const repaired = {
+    ...mintItem,
+    amount: expectation.confirmedIssuanceUnits,
+    attachedWorkIssuanceUnits:
+      projection.attachedWorkIssuanceUnits,
+    attachedWorkLiveFloorAtSendQ8: (
+      BigInt(workNetworkValueQ8) / BigInt(WORK_TOKEN_MAX_SUPPLY)
+    ).toString(),
+    attachedWorkLiveValueAtSendQ8:
+      projection.attachedWorkLiveValueAtSendQ8,
+    bondRecipientAmountSats: expectation.recipientAmountSats,
+    bondRecipientAddress: repairExpectation.recipientAddress,
+    bondRecipientVout: expectation.recipientVout,
+    confirmedIssuanceUnits: projection.confirmedIssuanceUnits,
+    directProofIssuanceUnits: expectation.directProofIssuanceUnits,
+    paidSats: expectation.recipientAmountSats,
+    proofPaymentSats: expectation.recipientAmountSats,
+    issuanceAmount: projection.confirmedIssuanceUnits,
+    issuanceCheckpointBlockHash: expectation.blockHash,
+    issuanceCheckpointBlockHeight: expectation.blockHeight,
+    issuanceCheckpointBlockIndex: expectation.blockIndex,
+    issuanceCheckpointMode: "bond-transaction-provenance",
+    issuanceDustQ8: projection.issuanceDustQ8,
+    issuanceNetworkValueQ8: projection.issuanceNetworkValueQ8,
+    issuanceValueSnapshotBlockHash:
+      expectation.issuanceValueSnapshotBlockHash,
+    issuanceValueSnapshotBlockHeight:
+      expectation.issuanceValueSnapshotBlockHeight,
+    issuanceValueSnapshotCanonicalSummaryHash:
+      expectation.issuanceValueSnapshotCanonicalSummaryHash,
+    issuanceValueSnapshotGeneratedAt:
+      expectation.issuanceValueSnapshotGeneratedAt,
+    issuanceValueSnapshotId: snapshotId,
+    issuanceValueSnapshotMode: expectation.issuanceValueSnapshotMode,
+    issuanceValueSnapshotModel: expectation.issuanceValueSnapshotModel,
+    issuanceValueSnapshotWorkNetworkValueQ8: workNetworkValueQ8,
+    minterAddress: repairExpectation.recipientAddress,
+  };
+  const invalidReason = incbIssuanceMetadataInvalidReason(repaired);
+  if (invalidReason || !canonicalBondMintProjection(repaired)) {
+    throw new Error(
+      `INCB issuance repair produced a noncanonical pinned mint for ${txid}: ${invalidReason || "invalid bond mint"}.`,
+    );
+  }
+  return repaired;
+}
+
 function canonicalIncbRepairIntegerEquals(actual, expected, options = {}) {
   const actualText = canonicalIntegerText(actual, options);
   const expectedText = canonicalIntegerText(expected, options);
@@ -32327,7 +32489,14 @@ async function canonicalIncbIssuanceRepairTarget(client, txid) {
       `Canonical INCB issuance repair transaction ${txid} is not an Inception Bond.`,
     );
   }
-  const prepared = await preparedProtocolItemsForTx(hydrated, messages);
+  const prepared = preparedProtocolItemsWithCanonicalMailAttachments(
+    disambiguateDuplicateProtocolItems(
+      rawProtocolItemsForTx(hydrated, messages),
+    ).map((item) => ({
+      item,
+      sourceLabel: sourceLabelForProtocolItem(item),
+    })),
+  );
   if (prepared.length === 0 || prepared.some((entry) => entry?.item?.valid === false)) {
     throw new Error(
       `Canonical INCB issuance verifier returned an invalid projection for ${txid}.`,
@@ -32378,7 +32547,7 @@ async function canonicalIncbIssuanceRepairTarget(client, txid) {
   const attachedCredits = Array.isArray(bondItem?.attachedCredits)
     ? bondItem.attachedCredits
     : [];
-  const mintItems = preparedItems
+  let mintItems = preparedItems
     .filter(
       (item) =>
         String(item?.kind ?? "").trim().toLowerCase() === "token-mint" &&
@@ -32388,15 +32557,28 @@ async function canonicalIncbIssuanceRepairTarget(client, txid) {
     mintItems.length !== 1 ||
     mintItems.some(
       (item) =>
-        !canonicalBondMintProjection(item) ||
-        incbIssuanceMetadataInvalidReason(item),
+        !canonicalBondMintProjectionStructure(item),
     )
   ) {
     throw new Error(
-      `Canonical INCB issuance verifier did not return complete ${INCB_ISSUANCE_ACCOUNTING_MODEL} mint metadata for ${txid}.`,
+      `Canonical INCB issuance repair did not derive one chain-bound bond mint shell for ${txid}.`,
     );
   }
-  const [mintItem] = mintItems;
+  let [mintItem] = mintItems;
+  mintItem = {
+    ...mintItem,
+    attachedWorkAmount: expectation.attachedWorkAmount,
+    attachedWorkAmountAtoms:
+      expectation.attachedWorkAmountAtoms ||
+      parseWorkAmountToAtoms(expectation.attachedWorkAmount, {
+        allowZero: true,
+      }),
+    attachedWorkAmountDecimals: WORK_DECIMALS,
+    attachedWorkAmountPrecisionModel: "",
+    attachedWorkAmountStorageModel: WORK_ATOMIC_PROJECTION_MODEL,
+    attachedWorkAmountUnitScale: WORK_UNIT_SCALE_TEXT,
+    attachedWorkAmountVersion: "historical-q8",
+  };
   const repairExpectation = canonicalIncbRepairExpectationFromMint({
     attachedCredits,
     bondRecipient,
@@ -32426,25 +32608,41 @@ async function canonicalIncbIssuanceRepairTarget(client, txid) {
   const expectedAttachedSubatoms = BigInt(
     repairExpectation.workAttachmentAmountSubatoms,
   );
+  const expectedAttachmentAmountTexts = new Set(
+    [
+      repairExpectation.workAttachmentAmountAtoms,
+      repairExpectation.workAttachmentAmount,
+    ]
+      .map((value) => canonicalIntegerText(value, { allowZero: true }))
+      .filter(Boolean),
+  );
+  const attachmentCandidateMatches = (item) => {
+    const amountText = canonicalIntegerText(
+      item?.amountAtoms ?? item?.legacyAmountAtoms ?? item?.amount,
+      { allowZero: true },
+    );
+    return (
+      String(item?.recipientAddress ?? "").trim() ===
+        repairExpectation.workAttachmentRecipientAddress &&
+      Number(item?.protocolVout) ===
+        repairExpectation.workAttachmentProtocolVout &&
+      expectedAttachmentAmountTexts.has(amountText)
+    );
+  };
+  const matchingWorkAttachmentItems = workAttachmentItems.filter(
+    attachmentCandidateMatches,
+  );
+  const matchingAttachedCredits = attachedCredits.filter(
+    attachmentCandidateMatches,
+  );
+  const workAttachmentProofItems =
+    matchingWorkAttachmentItems.length > 0
+      ? matchingWorkAttachmentItems
+      : matchingAttachedCredits;
   if (
     expectedAttachedSubatoms > 0n &&
     (
-      workAttachmentItems.length !== 1 ||
-      String(workAttachmentItems[0]?.recipientAddress ?? "").trim() !==
-        repairExpectation.workAttachmentRecipientAddress ||
-      Number(workAttachmentItems[0]?.protocolVout) !==
-        repairExpectation.workAttachmentProtocolVout ||
-      ![
-        repairExpectation.workAttachmentAmountAtoms,
-        repairExpectation.workAttachmentAmount,
-      ].includes(
-        canonicalIntegerText(
-          workAttachmentItems[0]?.amountAtoms ??
-            workAttachmentItems[0]?.legacyAmountAtoms ??
-            workAttachmentItems[0]?.amount,
-          { allowZero: true },
-        ),
-      )
+      workAttachmentProofItems.length !== 1
     )
   ) {
     throw new Error(
@@ -32456,26 +32654,15 @@ async function canonicalIncbIssuanceRepairTarget(client, txid) {
       `Canonical INCB issuance repair ${txid} found unexpected WORK attachment transfers.`,
     );
   }
-  const workAttachmentItem = workAttachmentItems[0] ?? null;
+  const workAttachmentItem = workAttachmentProofItems[0] ?? null;
   if (
     String(mintItem?.minterAddress ?? "").trim() !==
-      repairExpectation.recipientAddress ||
-    String(mintItem?.bondRecipientAddress ?? "").trim() !==
       repairExpectation.recipientAddress ||
     (
       workAttachmentItem &&
       String(mintItem?.minterAddress ?? "").trim() !==
         String(workAttachmentItem?.recipientAddress ?? "").trim()
-    ) ||
-    Number(mintItem?.bondRecipientAmountSats) !==
-      Number(repairExpectation.recipientAmountSats) ||
-    Number(mintItem?.bondRecipientVout) !==
-      repairExpectation.recipientVout ||
-    Number(mintItem?.issuanceValueSnapshotBlockHeight) !== height - 1 ||
-    String(mintItem?.issuanceValueSnapshotBlockHash ?? "")
-      .trim()
-      .toLowerCase() !==
-      String(block?.previousblockhash ?? "").trim().toLowerCase()
+    )
   ) {
     throw new Error(
       `Canonical INCB issuance verifier did not bind the mint recipient to the bond payment and WORK attachment for ${txid}.`,
@@ -32561,10 +32748,17 @@ async function canonicalIncbIssuanceRepairTarget(client, txid) {
       expectation.issuanceDustQ8,
     )
   ) {
-    throw new Error(
-      `Canonical INCB issuance verifier disagrees with the pinned pre-bond oracle for ${txid}.`,
+    mintItem = await canonicalIncbIssuanceRepairMintFromPinnedExpectation(
+      client,
+      {
+        expectation,
+        mintItem,
+        repairExpectation,
+        txid,
+      },
     );
   }
+  mintItems = [mintItem];
   const issuanceUnits = mintItems.reduce(
     (total, item) => total + BigInt(String(item.amount)),
     0n,

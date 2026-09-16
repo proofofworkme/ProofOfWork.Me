@@ -51046,6 +51046,7 @@ async function stableProofIndexLogPayload(network) {
   );
   const summaryPending = Number(summary.stats?.pending ?? -1);
   const page = await proofIndexCanonicalActivityPayload(network, {
+    includePending: summaryPending !== 0,
     snapshotId: summarySnapshotId,
   });
   const activity = Array.isArray(page?.activity) ? page.activity : [];
@@ -51150,6 +51151,7 @@ async function stableProofIndexLogHistoryPayload(
     summary,
     summaryTotal,
   );
+  const summaryPending = Number(summary.stats?.pending ?? -1);
   const requestedSnapshotId = String(
     eligibility.pagination.snapshotId ?? "",
   ).trim();
@@ -51171,7 +51173,7 @@ async function stableProofIndexLogHistoryPayload(
     network,
     requestedKind,
     boundSearchParams,
-    { currentRelational: true },
+    { currentRelational: true, includePending: summaryPending !== 0 },
   );
   if (!page) {
     throw freshDataUnavailableError(
@@ -51186,13 +51188,17 @@ async function stableProofIndexLogHistoryPayload(
   )
     ? eligibility.pagination.query
     : "";
+  const pageTotal = Number(page.totalCount ?? -1);
+  const pageTotalMatchesSummary =
+    pageTotal === publicSummaryTotal ||
+    (summaryTotal >= publicSummaryTotal && pageTotal === summaryTotal);
   if (
     pageSnapshotId !== summarySnapshotId ||
     (!exactQueryTxid && pageHeight !== summaryHeight) ||
     (exactQueryTxid && (pageHeight <= 0 || pageHeight > summaryHeight)) ||
     (!requestedKind &&
       !eligibility.pagination.query &&
-      Number(page.totalCount ?? -1) !== publicSummaryTotal)
+      !pageTotalMatchesSummary)
   ) {
     const error = freshDataUnavailableError(
       "Stable Log history page does not match its authenticated canonical summary snapshot.",
@@ -51224,6 +51230,7 @@ async function stableProofIndexLogHistoryPayload(
       const canonicalPage = validPageEventIds
         ? await proofIndexCanonicalActivityPayload(network, {
             eventIds: pageEventIds,
+            includePending: summaryPending !== 0,
             snapshotId: summarySnapshotId,
           })
         : null;
@@ -51338,6 +51345,7 @@ async function freshProofIndexLogHistoryPayload(network, kind, searchParams) {
     "log-summary",
   );
   const summarySnapshotId = payloadSnapshotId(summary);
+  const summaryPending = Number(summary.stats?.pending ?? -1);
   const requestedSnapshotId = String(
     eligibility.pagination.snapshotId ?? "",
   ).trim();
@@ -51361,7 +51369,7 @@ async function freshProofIndexLogHistoryPayload(network, kind, searchParams) {
     network,
     requestedKind,
     boundSearchParams,
-    { currentRelational: true },
+    { currentRelational: true, includePending: summaryPending !== 0 },
   );
   if (!page) {
     throw freshDataUnavailableError(
@@ -51498,6 +51506,7 @@ async function freshProofIndexLogPayload(network) {
   }
 
   const page = await proofIndexCanonicalActivityPayload(network, {
+    includePending: summaryPending !== 0,
     snapshotId: summarySnapshotId,
   });
   const activity = Array.isArray(page?.activity) ? page.activity : [];

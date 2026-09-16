@@ -23687,10 +23687,13 @@ export async function proofIndexLogHistoryPayload(
     requestedKind,
     searchParams,
   );
+  const includePending = options.includePending !== false;
   const conditions = [
     "e.network = $1",
     "e.valid = true",
-    "e.status IN ('confirmed', 'pending')",
+    includePending
+      ? "e.status IN ('confirmed', 'pending')"
+      : "e.status = 'confirmed'",
     "e.kind = ANY($2::text[])",
     "(e.kind NOT LIKE 'token-%' OR e.protocol = 'pwt1')",
   ];
@@ -23762,10 +23765,14 @@ export async function proofIndexLogHistoryPayload(
           AND e.block_height > 0
           AND e.block_height <= ${snapshotHeightParam}
         )
+        ${includePending
+          ? `
         OR (
           e.status = 'pending'
           ${pendingLogSnapshotTimeSql(snapshotTimeParam)}
         )
+        `
+          : ""}
       )
     `);
     const whereClause = conditions.join(" AND ");
@@ -24001,14 +24008,19 @@ export async function proofIndexLogHistoryPayload(
           AND e.block_height > 0
           AND e.block_height <= ${snapshotHeightParam}
         )
+        ${includePending
+          ? `
         OR (
           e.status = 'pending'
           ${pendingLogSnapshotTimeSql(snapshotTimeParam)}
         )
+        `
+          : ""}
       )
     `);
     if (!requestedKind && !pagination.query && pagination.snapshotId) {
       const canonicalPage = await proofIndexCanonicalActivityPayload(network, {
+        includePending,
         snapshotId: pagination.snapshotId,
       });
       const canonicalItems = Array.isArray(canonicalPage?.activity)
@@ -24077,7 +24089,9 @@ export async function proofIndexLogHistoryPayload(
               FROM proof_indexer.events e
               WHERE e.network = $1
                 AND e.valid = true
-                AND e.status IN ('confirmed', 'pending')
+                AND ${includePending
+                  ? "e.status IN ('confirmed', 'pending')"
+                  : "e.status = 'confirmed'"}
                 AND e.kind = ANY($2::text[])
                 AND (
                   e.kind NOT LIKE 'token-%'
@@ -24090,10 +24104,14 @@ export async function proofIndexLogHistoryPayload(
                     AND e.block_height > 0
                     AND e.block_height <= $3
                   )
+                  ${includePending
+                    ? `
                   OR (
                     e.status = 'pending'
                     ${pendingLogSnapshotTimeSql("$4")}
                   )
+                  `
+                    : ""}
                 )
             `,
             [
@@ -36677,6 +36695,7 @@ export async function proofIndexCanonicalActivityPayload(
   }
 
   const requestedSnapshotId = String(options.snapshotId ?? "").trim();
+  const includePending = options.includePending !== false;
   if (
     requestedSnapshotId &&
     (requestedSnapshotId.length > 128 || /\s/u.test(requestedSnapshotId))
@@ -36739,10 +36758,14 @@ export async function proofIndexCanonicalActivityPayload(
               AND e.block_height > 0
               AND e.block_height <= ${snapshotHeightParam}
             )
+            ${includePending
+              ? `
             OR (
               e.status = 'pending'
               ${pendingLogSnapshotTimeSql(snapshotTimeParam)}
             )
+            `
+              : ""}
           )
       `
     : "";
@@ -36777,7 +36800,9 @@ export async function proofIndexCanonicalActivityPayload(
         FROM proof_indexer.events e
         WHERE e.network = $1
           AND e.valid = true
-          AND e.status IN ('confirmed', 'pending')
+          AND ${includePending
+            ? "e.status IN ('confirmed', 'pending')"
+            : "e.status = 'confirmed'"}
           AND e.kind = ANY($2::text[])
           AND (
             e.kind NOT LIKE 'token-%'
