@@ -34474,6 +34474,175 @@ check("already-at-tip range replay certifies from its active metadata", async ()
   assert.deepEqual(statements, ["BEGIN", "COMMIT"]);
 });
 
+check("Q16 activation deferral requires exact active Q8 handoff evidence", async () => {
+  const latchKey = "workAmoV8ActivationLatch:livenet";
+  const parentKey = "workQ16PendingRebuild:livenet";
+  const values = new Map([
+    [latchKey, { ready: true }],
+    [parentKey, { ready: true }],
+  ]);
+  const canonicalWorkQ16ActivationDefersRebuildCreditReplay =
+    isolatedFunction(
+      BACKFILL_PATH,
+      "canonicalWorkQ16ActivationDefersRebuildCreditReplay",
+      {
+        CANONICAL_REBUILD: true,
+        NETWORK: "livenet",
+        WORK_AMO_V8_ACTIVATION_LATCH_META_KEY: latchKey,
+        WORK_AMO_V8_CONFIGURED_ACTIVATION_HEIGHT: 102,
+        WORK_AMO_V8_DECLARATION_PINS_CONFIGURED: true,
+        WORK_PROJECTION_STATE_Q8: "q8",
+        WORK_Q16_PENDING_REBUILD_META_KEY: parentKey,
+        activePwtRangeReplay: () => false,
+        canonicalWorkQ16PendingParentWitness: (value) => {
+          if (value?.ready !== true) {
+            throw new Error("invalid parent witness");
+          }
+          return value;
+        },
+        currentWorkPrecisionV2Marker: async () => ({ activationHeight: 102 }),
+        currentWorkProjectionState: async () => "q8",
+        exactWorkAmoV8ActivationLatch: (value) => value?.ready === true,
+      },
+    );
+  const rebuild = {
+    active: true,
+    complete: false,
+    network: "livenet",
+    status: "active",
+  };
+  const client = {
+    async query() {
+      return {
+        rows: [...values.entries()].map(([key, value]) => ({ key, value })),
+      };
+    },
+  };
+
+  assert.equal(
+    await canonicalWorkQ16ActivationDefersRebuildCreditReplay(client, {
+      height: 102,
+      rebuild,
+    }),
+    true,
+  );
+  values.delete(parentKey);
+  assert.equal(
+    await canonicalWorkQ16ActivationDefersRebuildCreditReplay(client, {
+      height: 102,
+      rebuild,
+    }),
+    false,
+  );
+});
+
+check("canonical block scan defers Q8 credit replay at Q16 activation", async () => {
+  const hashes = {
+    101: "1".repeat(64),
+    102: "2".repeat(64),
+  };
+  const activeRebuild = {
+    active: true,
+    complete: false,
+    indexedThroughBlock: 101,
+    indexedThroughBlockHash: hashes[101],
+    network: "livenet",
+    status: "active",
+  };
+  let rebuildState = activeRebuild;
+  const snapshots = [];
+  const storedMeta = [];
+  const checkpointValue = isolatedFunction(
+    BACKFILL_PATH,
+    "canonicalRebuildCheckpointValue",
+    { canonicalPwtRangeReplayState: () => null },
+  );
+  const backfillBlockScanSource = isolatedFunction(
+    BACKFILL_PATH,
+    "backfillBlockScanSource",
+    {
+      BITCOIN_RPC_URL: "http://core.invalid",
+      BLOCK_SCAN_MAX_BLOCKS: 0,
+      BLOCK_SCAN_MAX_TXIDS: Number.POSITIVE_INFINITY,
+      CANONICAL_FAULT_META_KEY: "canonical:fault",
+      CANONICAL_REBUILD: true,
+      CANONICAL_REBUILD_META_KEY: "canonical:rebuild",
+      NETWORK: "livenet",
+      assertCanonicalBlockEnvelope: () => {},
+      bitcoinRpc: async (method, params = []) => {
+        if (method === "getblockcount") return 102;
+        if (method === "getblockhash") return hashes[Number(params[0])];
+        if (method === "getblock") {
+          return {
+            hash: hashes[102],
+            height: 102,
+            nTx: 0,
+            previousblockhash: hashes[101],
+            time: 1_700_000_102,
+            tx: [],
+          };
+        }
+        throw new Error(`unexpected RPC method ${method}`);
+      },
+      canonicalRebuildCheckpointValue: checkpointValue,
+      canonicalWorkQ16ActivationDefersRebuildCreditReplay: async (
+        _client,
+        options,
+      ) => options.height === 102 && options.rebuild === activeRebuild,
+      latestBlockScanCheckpoint: async () => ({
+        blockHash: hashes[101],
+        height: 101,
+      }),
+      persistCanonicalBlock: async () => {},
+      persistCanonicalListingOutpointSpendsFromBlock: async () => ({
+        inputs: 0,
+        transactions: 0,
+      }),
+      prepareCanonicalRebuild: async () => null,
+      proofIndexerMetaValue: async (_client, key) =>
+        key === "canonical:rebuild" ? rebuildState : null,
+      protocolMessagesFromTx: () => [],
+      rebuildConfirmedCreditBalancesFromCanonicalEvents: async () => {
+        throw new Error("Q8 balance replay must stay deferred");
+      },
+      seedCanonicalBondDefinitions: async () => {
+        throw new Error("bond seeding must stay deferred");
+      },
+      storeBlockScanSnapshot: async (_client, payload) => {
+        snapshots.push(payload);
+      },
+      storeProofIndexerMeta: async (_client, key, value) => {
+        assert.equal(key, "canonical:rebuild");
+        storedMeta.push(value);
+        rebuildState = value;
+      },
+      verifyCanonicalIncbPwtRangeReplayProjection: async () => {
+        throw new Error("completion certificate must stay deferred");
+      },
+    },
+  );
+  const client = {
+    async query() {
+      return { rows: [] };
+    },
+  };
+
+  const result = await backfillBlockScanSource(client, {
+    label: "block-scan",
+  });
+  assert.equal(result.complete, true);
+  assert.equal(result.indexedThroughBlock, 102);
+  assert.equal(storedMeta.length, 1);
+  assert.equal(storedMeta[0].status, "active");
+  assert.equal(storedMeta[0].active, true);
+  assert.equal(storedMeta[0].complete, false);
+  assert.equal(storedMeta[0].indexedThroughBlock, 102);
+  assert.equal(storedMeta[0].indexedThroughBlockHash, hashes[102]);
+  assert.equal(snapshots.length, 1);
+  assert.equal(snapshots[0].complete, true);
+  assert.deepEqual(snapshots[0].rebuild, storedMeta[0]);
+});
+
 check("bound range replay accepts only exact pre-range INCB mint witnesses", async () => {
   const INCEPTION_ISSUANCE_ACCOUNTING_MODEL =
     "canonical-pre-bond-live-network-value-v2";

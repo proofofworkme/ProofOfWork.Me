@@ -24408,6 +24408,71 @@ async function storeBlockScanSnapshot(client, payload) {
   return snapshotId;
 }
 
+async function canonicalWorkQ16ActivationDefersRebuildCreditReplay(
+  client,
+  { height, rebuild } = {},
+) {
+  const indexedHeight = Number(height);
+  if (
+    !CANONICAL_REBUILD ||
+    !WORK_AMO_V8_DECLARATION_PINS_CONFIGURED ||
+    rebuild?.network !== NETWORK ||
+    rebuild?.status !== "active" ||
+    rebuild?.active !== true ||
+    rebuild?.complete !== false ||
+    activePwtRangeReplay(rebuild) ||
+    !Number.isSafeInteger(indexedHeight) ||
+    indexedHeight < WORK_AMO_V8_CONFIGURED_ACTIVATION_HEIGHT
+  ) {
+    return false;
+  }
+  const workProjectionState = await currentWorkProjectionState(client, {
+    refresh: true,
+  });
+  if (workProjectionState !== WORK_PROJECTION_STATE_Q8) {
+    return false;
+  }
+  const marker = await currentWorkPrecisionV2Marker(client);
+  const activationHeight = Number(marker?.activationHeight);
+  if (
+    !marker ||
+    !Number.isSafeInteger(activationHeight) ||
+    activationHeight !== WORK_AMO_V8_CONFIGURED_ACTIVATION_HEIGHT ||
+    indexedHeight < activationHeight
+  ) {
+    return false;
+  }
+  const evidenceResult = await client.query(
+    `
+      SELECT key, value
+      FROM proof_indexer.meta
+      WHERE key = ANY($1::text[])
+    `,
+    [[
+      WORK_AMO_V8_ACTIVATION_LATCH_META_KEY,
+      WORK_Q16_PENDING_REBUILD_META_KEY,
+    ]],
+  );
+  const values = new Map(
+    evidenceResult.rows.map((row) => [String(row.key), row.value]),
+  );
+  if (
+    !exactWorkAmoV8ActivationLatch(
+      values.get(WORK_AMO_V8_ACTIVATION_LATCH_META_KEY),
+    )
+  ) {
+    return false;
+  }
+  try {
+    canonicalWorkQ16PendingParentWitness(
+      values.get(WORK_Q16_PENDING_REBUILD_META_KEY),
+    );
+  } catch {
+    return false;
+  }
+  return true;
+}
+
 async function backfillBlockScanSource(client, source) {
   if (!BITCOIN_RPC_URL) {
     throw new Error(
@@ -24503,32 +24568,43 @@ async function backfillBlockScanSource(client, source) {
   }
   if (!Number.isSafeInteger(tipHeight) || tipHeight <= latestIndexedHeight) {
     if (canonicalRebuild?.status === "active") {
+      const deferQ16CreditReplay = Boolean(
+        typeof canonicalWorkQ16ActivationDefersRebuildCreditReplay ===
+          "function" &&
+          await canonicalWorkQ16ActivationDefersRebuildCreditReplay(client, {
+            height: latestIndexedHeight,
+            rebuild: canonicalRebuild,
+          }),
+      );
       const completedRebuildBase = canonicalRebuildCheckpointValue(
         canonicalRebuild,
         {
           blockHash: indexedThroughBlockHash,
-          complete: true,
+          complete: !deferQ16CreditReplay,
           height: latestIndexedHeight,
         },
       );
       await client.query("BEGIN");
       try {
-        await seedCanonicalBondDefinitions(client, { required: true });
-        await rebuildConfirmedCreditBalancesFromCanonicalEvents(client);
-        const incbRangeReplayVerification =
-          await verifyCanonicalIncbPwtRangeReplayProjection(
-            client,
-            // The completion verifier must consume the still-active replay
-            // binding. A provisional complete tuple is intentionally invalid
-            // until the returned certificate is attached below.
-            canonicalRebuild,
-          );
-        const completedRebuild = incbRangeReplayVerification
-          ? {
-              ...completedRebuildBase,
-              incbRangeReplayVerification,
-            }
-          : completedRebuildBase;
+        let completedRebuild = completedRebuildBase;
+        if (!deferQ16CreditReplay) {
+          await seedCanonicalBondDefinitions(client, { required: true });
+          await rebuildConfirmedCreditBalancesFromCanonicalEvents(client);
+          const incbRangeReplayVerification =
+            await verifyCanonicalIncbPwtRangeReplayProjection(
+              client,
+              // The completion verifier must consume the still-active replay
+              // binding. A provisional complete tuple is intentionally invalid
+              // until the returned certificate is attached below.
+              canonicalRebuild,
+            );
+          completedRebuild = incbRangeReplayVerification
+            ? {
+                ...completedRebuildBase,
+                incbRangeReplayVerification,
+              }
+            : completedRebuildBase;
+        }
         await storeProofIndexerMeta(
           client,
           CANONICAL_REBUILD_META_KEY,
@@ -24848,18 +24924,30 @@ async function backfillBlockScanSource(client, source) {
           : height >= lastHeight
             ? "block-limit"
             : "";
+      const deferQ16CreditReplay = Boolean(
+        nextComplete &&
+          canonicalRebuild &&
+          typeof canonicalWorkQ16ActivationDefersRebuildCreditReplay ===
+            "function" &&
+          await canonicalWorkQ16ActivationDefersRebuildCreditReplay(client, {
+            height,
+            rebuild: canonicalRebuild,
+          }),
+      );
       const nextRebuild = canonicalRebuildCheckpointValue(canonicalRebuild, {
         blockHash: nextIndexedThroughBlockHash,
-        complete: nextComplete,
+        complete: nextComplete && !deferQ16CreditReplay,
         height,
       });
       let completedIncbRangeReplayVerification = null;
       if (nextComplete) {
-        if (canonicalRebuild) {
+        if (canonicalRebuild && !deferQ16CreditReplay) {
           await seedCanonicalBondDefinitions(client, { required: true });
         }
-        await rebuildConfirmedCreditBalancesFromCanonicalEvents(client);
-        if (!completedPwtRangeReplay) {
+        if (!deferQ16CreditReplay) {
+          await rebuildConfirmedCreditBalancesFromCanonicalEvents(client);
+        }
+        if (!deferQ16CreditReplay && !completedPwtRangeReplay) {
           completedIncbRangeReplayVerification =
             await verifyCanonicalIncbPwtRangeReplayProjection(
               client,
