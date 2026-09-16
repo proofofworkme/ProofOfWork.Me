@@ -24414,7 +24414,6 @@ async function canonicalWorkQ16ActivationDefersRebuildCreditReplay(
 ) {
   const indexedHeight = Number(height);
   if (
-    !CANONICAL_REBUILD ||
     !WORK_AMO_V8_DECLARATION_PINS_CONFIGURED ||
     rebuild?.network !== NETWORK ||
     rebuild?.status !== "active" ||

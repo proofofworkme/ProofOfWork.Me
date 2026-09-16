@@ -34486,7 +34486,7 @@ check("Q16 activation deferral requires exact active Q8 handoff evidence", async
       BACKFILL_PATH,
       "canonicalWorkQ16ActivationDefersRebuildCreditReplay",
       {
-        CANONICAL_REBUILD: true,
+        CANONICAL_REBUILD: false,
         NETWORK: "livenet",
         WORK_AMO_V8_ACTIVATION_LATCH_META_KEY: latchKey,
         WORK_AMO_V8_CONFIGURED_ACTIVATION_HEIGHT: 102,
