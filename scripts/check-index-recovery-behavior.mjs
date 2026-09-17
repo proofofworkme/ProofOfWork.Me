@@ -21882,6 +21882,50 @@ check("an explicit supervised block replay owns its starting height", async () =
   assert.equal(checkpoint.blockHash, "");
 });
 
+check("the index worker strips supervised replay env from normal children", () => {
+  const workerBackfillChildEnv = isolatedFunction(
+    WORKER_PATH,
+    "workerBackfillChildEnv",
+  );
+  const env = workerBackfillChildEnv(
+    {
+      PATH: "/usr/bin",
+      POW_INDEX_BACKFILL_BLOCK_SCAN_FROM_HEIGHT: "958383",
+      POW_INDEX_BACKFILL_BLOCK_SCAN_MAX_BLOCKS: "200",
+      POW_INDEX_BACKFILL_CANONICAL_REBUILD: "1",
+      POW_INDEX_BACKFILL_CANONICAL_SUMMARY_REQUIRED_HASH:
+        "0".repeat(64),
+      POW_INDEX_BACKFILL_CANONICAL_SUMMARY_REQUIRED_HEIGHT: "967143",
+      POW_INDEX_BACKFILL_PENDING_ONLY: "1",
+      POW_INDEX_REPAIR_CANONICAL_EVENT_PARENT_METADATA_APPLY: "1",
+      POW_INDEX_REPAIR_ID_TXIDS: "f".repeat(64),
+    },
+    {
+      POW_INDEX_BACKFILL_PENDING_ONLY: "0",
+      POW_INDEX_BACKFILL_SOURCES: "block-scan",
+    },
+  );
+  assert.equal(env.PATH, "/usr/bin");
+  assert.equal(env.POW_INDEX_BACKFILL_BLOCK_SCAN_MAX_BLOCKS, "200");
+  assert.equal(env.POW_INDEX_BACKFILL_PENDING_ONLY, "0");
+  assert.equal(env.POW_INDEX_BACKFILL_SOURCES, "block-scan");
+  assert.equal(env.POW_INDEX_BACKFILL_BLOCK_SCAN_FROM_HEIGHT, undefined);
+  assert.equal(env.POW_INDEX_BACKFILL_CANONICAL_REBUILD, undefined);
+  assert.equal(
+    env.POW_INDEX_BACKFILL_CANONICAL_SUMMARY_REQUIRED_HEIGHT,
+    undefined,
+  );
+  assert.equal(
+    env.POW_INDEX_BACKFILL_CANONICAL_SUMMARY_REQUIRED_HASH,
+    undefined,
+  );
+  assert.equal(
+    env.POW_INDEX_REPAIR_CANONICAL_EVENT_PARENT_METADATA_APPLY,
+    undefined,
+  );
+  assert.equal(env.POW_INDEX_REPAIR_ID_TXIDS, undefined);
+});
+
 check("a timed-out worker child is terminated and reported failed", async () => {
   const cancelledTimers = new Set();
   let nextTimer = 0;
@@ -21917,6 +21961,10 @@ check("a timed-out worker child is terminated and reported failed", async () => 
       repoRoot: "/tmp/recovery-fixture",
       setTimeout: fakeSetTimeout,
       spawn: () => child,
+      workerBackfillChildEnv: (baseEnv, overrides) => ({
+        ...baseEnv,
+        ...overrides,
+      }),
     },
   );
   await rejection(

@@ -712,6 +712,18 @@ expectAll("production worker pins confirmed-first and liveness budgets", proofIn
   /POW_INDEX_WORKER_BACKFILL_TIMEOUT_MS=900000/,
   /POW_INDEX_WORKER_PARITY_TIMEOUT_MS=120000/,
 ]);
+expect(
+  "production worker service must not pin supervised replay start height",
+  !/POW_INDEX_BACKFILL_BLOCK_SCAN_FROM_HEIGHT/u.test(
+    proofIndexerWorkerService,
+  ),
+);
+expectAll("index worker strips supervised replay env from child backfills", proofIndexerWorker, [
+  /function workerBackfillChildEnv\([\s\S]*?POW_INDEX_BACKFILL_BLOCK_SCAN_FROM_HEIGHT[\s\S]*?POW_INDEX_BACKFILL_CANONICAL_REBUILD[\s\S]*?POW_INDEX_REPAIR_ID_TXIDS/,
+  /if \(!overrideKeys\.has\(key\)\) \{[\s\S]*?delete env\[key\]/,
+  /const childEnv = workerBackfillChildEnv\(process\.env, envOverrides\)/,
+  /env: childEnv/,
+]);
 const canonicalSummaryRefreshTimeoutMs = serviceEnvironmentNumber(
   "POW_INDEX_CANONICAL_SUMMARY_REFRESH_TIMEOUT_MS",
 );

@@ -513,7 +513,10 @@ relational projections, then set
 `POW_INDEX_BACKFILL_BLOCK_SCAN_FROM_HEIGHT=<intentional-start-height>` for the
 first supervised block-scan replay. Remove that bootstrap variable immediately
 after the first hashed checkpoint is stored; leaving it set would replay from
-the same height every cycle. Record the chosen height, its Bitcoin Core block
+the same height every cycle. Never place this variable in the always-on worker
+service or drop-ins; the worker strips supervised replay and repair variables
+before spawning ordinary child backfills so routine tip catch-up resumes from
+the stored hashed checkpoint. Record the chosen height, its Bitcoin Core block
 hash, and the verification evidence in the deployment notes. A missing RPC URL,
 incomplete block, missing checkpoint hash, or unresolved canonical verifier
 result is a failed scan, not permission to advance coverage.

@@ -5287,6 +5287,48 @@ export function workerBackfillPhasePlan(
   ];
 }
 
+export function workerBackfillChildEnv(baseEnv = process.env, envOverrides = {}) {
+  const overrides = envOverrides && typeof envOverrides === "object"
+    ? envOverrides
+    : {};
+  const env = {
+    ...(baseEnv && typeof baseEnv === "object" ? baseEnv : {}),
+    ...overrides,
+  };
+  const overrideKeys = new Set(Object.keys(overrides));
+  const supervisedOnlyKeys = [
+    "POW_INDEX_BACKFILL_BLOCK_SCAN_FROM_HEIGHT",
+    "POW_INDEX_BACKFILL_CANONICAL_REBUILD",
+    "POW_INDEX_BACKFILL_CANONICAL_SUMMARY_REQUIRED_HASH",
+    "POW_INDEX_BACKFILL_CANONICAL_SUMMARY_REQUIRED_HEIGHT",
+    "POW_INDEX_BACKFILL_PENDING_CHILD_TIMEOUT_MS",
+    "POW_INDEX_BACKFILL_PENDING_ONLY",
+    "POW_INDEX_BACKFILL_SOURCES",
+    "POW_INDEX_BACKFILL_STORE_CANONICAL_SUMMARY_SNAPSHOT",
+    "POW_INDEX_BACKFILL_STORE_LEDGER_SNAPSHOT",
+    "POW_INDEX_REBUILD_CREDIT_BALANCE_PRESERVE_PENDING_DELTAS",
+    "POW_INDEX_REBUILD_CREDIT_BALANCE_TOKEN_IDS",
+    "POW_INDEX_REPAIR_CANONICAL_EVENT_PARENT_METADATA_APPLY",
+    "POW_INDEX_REPAIR_CANONICAL_ID_AMOUNT_PROJECTION_APPLY",
+    "POW_INDEX_REPAIR_CANONICAL_MAIL_PROJECTION",
+    "POW_INDEX_REPAIR_CANONICAL_TXIDS",
+    "POW_INDEX_REPAIR_EVENT_RELATIONS",
+    "POW_INDEX_REPAIR_ID_TXIDS",
+    "POW_INDEX_REPAIR_INCB_ISSUANCE_TXIDS",
+    "POW_INDEX_REPAIR_MINT_MINTERS",
+    "POW_INDEX_REPAIR_MINT_MINTERS_LIMIT",
+    "POW_INDEX_REPAIR_WORK_PARTICIPANTS",
+    "POW_INDEX_REPAIR_WORK_PARTICIPANTS_LIMIT",
+    "POW_INDEX_REPAIR_WORK_PARTICIPANTS_TXIDS",
+  ];
+  for (const key of supervisedOnlyKeys) {
+    if (!overrideKeys.has(key)) {
+      delete env[key];
+    }
+  }
+  return env;
+}
+
 export function runScript(
   scriptName,
   args = [],
@@ -5318,12 +5360,13 @@ export function runScript(
     const lineBuffers = new Map();
     const outputStreams = new Set();
     const closedOutputStreams = new Set();
+    const childEnv = workerBackfillChildEnv(process.env, envOverrides);
     const child = spawn(
       process.execPath,
       [path.join(repoRoot, "scripts", scriptName), ...args],
       {
         cwd: repoRoot,
-        env: { ...process.env, ...envOverrides },
+        env: childEnv,
         stdio: ["inherit", "pipe", "pipe"],
       },
     );
