@@ -9520,9 +9520,9 @@ export async function proofIndexCanonicalWorkListingById(
         listing.seller_address,
         listing.amount::text AS amount_units,
         listing.price_sats::text AS price_sats,
-        listing.sale_ticket_txid,
-        listing.sale_ticket_vout,
-        listing.sale_ticket_value_sats::text AS sale_ticket_value_sats,
+        effective_sale_ticket.sale_ticket_txid,
+        effective_sale_ticket.sale_ticket_vout,
+        effective_sale_ticket.sale_ticket_value_sats::text AS sale_ticket_value_sats,
         listing_anchor.address AS anchor_address,
         listing_anchor.scriptpubkey AS anchor_scriptpubkey,
         listing_anchor.value_sats::text AS anchor_value_sats,
@@ -9567,14 +9567,12 @@ export async function proofIndexCanonicalWorkListingById(
          listing.payload->'listingAuthorization'->>'version',
          ''
        ))
+      ${canonicalCreditListingEffectiveSaleTicketJoinSql("listing", "listing_event.payload")}
       JOIN proof_indexer.tx_outputs listing_anchor
         ON listing_anchor.network = listing.network
-       AND listing_anchor.txid = COALESCE(
-         NULLIF(lower(listing.sale_ticket_txid), ''),
-         listing.listing_id
-       )
-       AND listing_anchor.vout = listing.sale_ticket_vout
-       AND listing_anchor.value_sats = listing.sale_ticket_value_sats
+       AND listing_anchor.txid = effective_sale_ticket.sale_ticket_txid
+       AND listing_anchor.vout = effective_sale_ticket.sale_ticket_vout
+       AND listing_anchor.value_sats = effective_sale_ticket.sale_ticket_value_sats
        AND listing_anchor.spent_by_txid IS NULL
       WHERE listing.network = $1
         AND listing.listing_id = $2
@@ -15468,6 +15466,67 @@ function canonicalCreditListingAlias(value) {
   return alias;
 }
 
+function canonicalCreditListingEffectiveSaleTicketJoinSql(
+  listingAlias = "cl",
+  eventPayloadSql = "NULL::jsonb",
+) {
+  const alias = canonicalCreditListingAlias(listingAlias);
+  const payload = `${alias}.payload`;
+  const eventPayload = `(${eventPayloadSql})`;
+  const textFields = [
+    `NULLIF(lower(${alias}.sale_ticket_txid), '')`,
+    `NULLIF(lower((${payload})->'saleAuthorization'->>'anchorTxid'), '')`,
+    `NULLIF(lower((${payload})->'listingAuthorization'->>'anchorTxid'), '')`,
+    `NULLIF(lower((${payload})->>'saleTicketTxid'), '')`,
+    `NULLIF(lower(${eventPayload}->'saleAuthorization'->>'anchorTxid'), '')`,
+    `NULLIF(lower(${eventPayload}->'listingAuthorization'->>'anchorTxid'), '')`,
+    `NULLIF(lower(${eventPayload}->>'saleTicketTxid'), '')`,
+    `lower(${alias}.listing_id)`,
+  ];
+  const integerFields = [
+    `${alias}.sale_ticket_vout`,
+    `(${payload})->'saleAuthorization'->>'anchorVout'`,
+    `(${payload})->'listingAuthorization'->>'anchorVout'`,
+    `(${payload})->>'saleTicketVout'`,
+    `${eventPayload}->'saleAuthorization'->>'anchorVout'`,
+    `${eventPayload}->'listingAuthorization'->>'anchorVout'`,
+    `${eventPayload}->>'saleTicketVout'`,
+  ];
+  const bigintFields = [
+    `NULLIF(${alias}.sale_ticket_value_sats, 0)`,
+    `(${payload})->'saleAuthorization'->>'anchorValueSats'`,
+    `(${payload})->'listingAuthorization'->>'anchorValueSats'`,
+    `(${payload})->>'saleTicketValueSats'`,
+    `${eventPayload}->'saleAuthorization'->>'anchorValueSats'`,
+    `${eventPayload}->'listingAuthorization'->>'anchorValueSats'`,
+    `${eventPayload}->>'saleTicketValueSats'`,
+  ];
+  const numericInteger = (expression) => `CASE
+        WHEN COALESCE(${expression}, '') ~ '^[0-9]+$'
+          THEN (${expression})::integer
+        ELSE NULL
+      END`;
+  const numericBigint = (expression) => `CASE
+        WHEN COALESCE(${expression}, '') ~ '^[0-9]+$'
+          THEN (${expression})::bigint
+        ELSE NULL
+      END`;
+  return `LEFT JOIN LATERAL (
+    SELECT
+      COALESCE(${textFields.join(", ")}) AS sale_ticket_txid,
+      COALESCE(
+        ${integerFields
+          .map((field, index) => (index === 0 ? field : numericInteger(field)))
+          .join(",\n        ")}
+      ) AS sale_ticket_vout,
+      COALESCE(
+        ${bigintFields
+          .map((field, index) => (index === 0 ? field : numericBigint(field)))
+          .join(",\n        ")}
+      ) AS sale_ticket_value_sats
+  ) effective_sale_ticket ON true`;
+}
+
 function tokenListingActiveLifecycleSql(listingAlias = "cl") {
   const alias = canonicalCreditListingAlias(listingAlias);
   return `(
@@ -15695,6 +15754,7 @@ function canonicalTokenListingEventJoinSql(listingAlias = "cl") {
   const alias = canonicalCreditListingAlias(listingAlias);
   return `LEFT JOIN LATERAL (
     SELECT
+      canonical_listing_event_row.payload AS listing_event_payload,
       canonical_listing_event_row.status AS listing_event_status,
       canonical_listing_tx.block_hash AS listing_event_block_hash,
       canonical_listing_event_row.block_height AS listing_event_block_height,
@@ -15948,7 +16008,8 @@ function tokenListingEffectiveSaleTicketTxid(
   sealTxid,
 ) {
   const raw = String(
-    row?.sale_ticket_txid ??
+    row?.effective_sale_ticket_txid ??
+      row?.sale_ticket_txid ??
       payload?.saleTicketTxid ??
       saleAuthorization?.saleTicketTxid ??
       saleAuthorization?.anchorTxid ??
@@ -29324,11 +29385,17 @@ function tokenListingFromCreditListingRow(row, network) {
       sealTxid,
     ),
     saleTicketValueSats:
+      rowNumber(row, "effective_sale_ticket_value_sats") ||
       rowNumber(row, "sale_ticket_value_sats") ||
       rowNumber(payload, "saleTicketValueSats") ||
-      rowNumber(saleAuthorization, "saleTicketValueSats"),
+      rowNumber(saleAuthorization, "saleTicketValueSats") ||
+      rowNumber(saleAuthorization, "anchorValueSats"),
     saleTicketVout:
-      row?.sale_ticket_vout ?? payload.saleTicketVout ?? saleAuthorization.saleTicketVout,
+      row?.effective_sale_ticket_vout ??
+      row?.sale_ticket_vout ??
+      payload.saleTicketVout ??
+      saleAuthorization.saleTicketVout ??
+      saleAuthorization.anchorVout,
     ...sealEvidencePatch,
     ...(sealBlockHash ? { sealBlockHash } : {}),
     ...(sealBlockHeight !== null ? { sealBlockHeight } : {}),
@@ -29721,6 +29788,9 @@ async function proofIndexTokenListingsFromTables(pool, network, scope) {
         cl.sale_ticket_txid,
         cl.sale_ticket_vout,
         cl.sale_ticket_value_sats,
+        effective_sale_ticket.sale_ticket_txid AS effective_sale_ticket_txid,
+        effective_sale_ticket.sale_ticket_vout AS effective_sale_ticket_vout,
+        effective_sale_ticket.sale_ticket_value_sats::text AS effective_sale_ticket_value_sats,
         cl.seal_txid,
         cl.close_txid,
         cl.payload,
@@ -29731,6 +29801,7 @@ async function proofIndexTokenListingsFromTables(pool, network, scope) {
         listing_tx.block_time AS listing_block_time,
         listing_tx.status AS listing_tx_status,
         canonical_listing_event.listing_event_status,
+        canonical_listing_event.listing_event_payload,
         canonical_listing_event.listing_event_block_hash,
         canonical_listing_event.listing_event_block_height,
         canonical_listing_event.listing_event_block_index,
@@ -29801,6 +29872,7 @@ async function proofIndexTokenListingsFromTables(pool, network, scope) {
         ON listing_tx.network = cl.network
        AND listing_tx.txid = cl.listing_id
       ${canonicalTokenListingEventJoinSql("cl")}
+      ${canonicalCreditListingEffectiveSaleTicketJoinSql("cl", "canonical_listing_event.listing_event_payload")}
       LEFT JOIN proof_indexer.transactions seal_tx
         ON seal_tx.network = cl.network
        AND seal_tx.txid = cl.seal_txid
@@ -29825,10 +29897,8 @@ async function proofIndexTokenListingsFromTables(pool, network, scope) {
          AND spend_block.height = spend_tx.block_height
          AND spend_block.canonical = true
         WHERE spend_input.network = cl.network
-          AND spend_input.prev_txid = lower(
-            COALESCE(NULLIF(cl.sale_ticket_txid, ''), cl.listing_id)
-          )
-          AND spend_input.prev_vout = cl.sale_ticket_vout
+          AND spend_input.prev_txid = effective_sale_ticket.sale_ticket_txid
+          AND spend_input.prev_vout = effective_sale_ticket.sale_ticket_vout
         ORDER BY
           spend_tx.block_height ASC,
           spend_tx.txid ASC,
@@ -32880,6 +32950,9 @@ export async function proofIndexWalletTokenOverlayPayload(
         cl.sale_ticket_txid,
         cl.sale_ticket_vout,
         cl.sale_ticket_value_sats,
+        effective_sale_ticket.sale_ticket_txid AS effective_sale_ticket_txid,
+        effective_sale_ticket.sale_ticket_vout AS effective_sale_ticket_vout,
+        effective_sale_ticket.sale_ticket_value_sats::text AS effective_sale_ticket_value_sats,
         cl.seal_txid,
         cl.close_txid,
         cl.payload,
@@ -32890,6 +32963,7 @@ export async function proofIndexWalletTokenOverlayPayload(
         listing_tx.block_time AS listing_block_time,
         listing_tx.status AS listing_tx_status,
         canonical_listing_event.listing_event_status,
+        canonical_listing_event.listing_event_payload,
         canonical_listing_event.listing_event_block_hash,
         canonical_listing_event.listing_event_block_height,
         canonical_listing_event.listing_event_block_index,
@@ -32917,6 +32991,7 @@ export async function proofIndexWalletTokenOverlayPayload(
         ON listing_tx.network = cl.network
        AND listing_tx.txid = cl.listing_id
       ${canonicalTokenListingEventJoinSql("cl")}
+      ${canonicalCreditListingEffectiveSaleTicketJoinSql("cl", "canonical_listing_event.listing_event_payload")}
       LEFT JOIN proof_indexer.transactions seal_tx
         ON seal_tx.network = cl.network
        AND seal_tx.txid = cl.seal_txid
@@ -32964,6 +33039,9 @@ export async function proofIndexWalletTokenOverlayPayload(
         cl.sale_ticket_txid,
         cl.sale_ticket_vout,
         cl.sale_ticket_value_sats,
+        effective_sale_ticket.sale_ticket_txid AS effective_sale_ticket_txid,
+        effective_sale_ticket.sale_ticket_vout AS effective_sale_ticket_vout,
+        effective_sale_ticket.sale_ticket_value_sats::text AS effective_sale_ticket_value_sats,
         cl.seal_txid,
         cl.close_txid,
         cl.payload,
@@ -32974,6 +33052,7 @@ export async function proofIndexWalletTokenOverlayPayload(
         listing_tx.block_time AS listing_block_time,
         listing_tx.status AS listing_tx_status,
         canonical_listing_event.listing_event_status,
+        canonical_listing_event.listing_event_payload,
         canonical_listing_event.listing_event_block_hash,
         canonical_listing_event.listing_event_block_height,
         canonical_listing_event.listing_event_block_index,
@@ -33012,6 +33091,7 @@ export async function proofIndexWalletTokenOverlayPayload(
         ON listing_tx.network = cl.network
        AND listing_tx.txid = cl.listing_id
       ${canonicalTokenListingEventJoinSql("cl")}
+      ${canonicalCreditListingEffectiveSaleTicketJoinSql("cl", "canonical_listing_event.listing_event_payload")}
       LEFT JOIN proof_indexer.transactions seal_tx
         ON seal_tx.network = cl.network
        AND seal_tx.txid = cl.seal_txid
@@ -33035,10 +33115,8 @@ export async function proofIndexWalletTokenOverlayPayload(
          AND spend_block.height = spend_tx.block_height
          AND spend_block.canonical = true
         WHERE spend_input.network = cl.network
-          AND spend_input.prev_txid = lower(
-            COALESCE(NULLIF(cl.sale_ticket_txid, ''), cl.listing_id)
-          )
-          AND spend_input.prev_vout = cl.sale_ticket_vout
+          AND spend_input.prev_txid = effective_sale_ticket.sale_ticket_txid
+          AND spend_input.prev_vout = effective_sale_ticket.sale_ticket_vout
         ORDER BY
           spend_tx.block_height ASC,
           spend_tx.txid ASC,
@@ -36800,9 +36878,8 @@ export async function proofIndexCanonicalActivityPayload(
         FROM proof_indexer.events e
         WHERE e.network = $1
           AND e.valid = true
-          AND ${includePending
-            ? "e.status IN ('confirmed', 'pending')"
-            : "e.status = 'confirmed'"}
+          AND e.status IN ('confirmed', 'pending')
+          ${includePending ? "" : "AND e.status = 'confirmed'"}
           AND e.kind = ANY($2::text[])
           AND (
             e.kind NOT LIKE 'token-%'
@@ -41509,6 +41586,9 @@ export async function proofIndexCreditListingsPayload(
         cl.sale_ticket_txid,
         cl.sale_ticket_vout,
         cl.sale_ticket_value_sats,
+        effective_sale_ticket.sale_ticket_txid AS effective_sale_ticket_txid,
+        effective_sale_ticket.sale_ticket_vout AS effective_sale_ticket_vout,
+        effective_sale_ticket.sale_ticket_value_sats::text AS effective_sale_ticket_value_sats,
         cl.seal_txid,
         cl.close_txid,
         cl.payload,
@@ -41520,6 +41600,7 @@ export async function proofIndexCreditListingsPayload(
         listing_tx.block_time AS listing_block_time,
         listing_tx.status AS listing_tx_status,
         canonical_listing_event.listing_event_status,
+        canonical_listing_event.listing_event_payload,
         canonical_listing_event.listing_event_block_hash,
         canonical_listing_event.listing_event_block_height,
         canonical_listing_event.listing_event_block_index,
@@ -41555,6 +41636,7 @@ export async function proofIndexCreditListingsPayload(
         ON listing_tx.network = cl.network
        AND listing_tx.txid = cl.listing_id
       ${canonicalTokenListingEventJoinSql("cl")}
+      ${canonicalCreditListingEffectiveSaleTicketJoinSql("cl", "canonical_listing_event.listing_event_payload")}
       LEFT JOIN proof_indexer.transactions seal_tx
         ON seal_tx.network = cl.network
        AND seal_tx.txid = cl.seal_txid
@@ -41585,10 +41667,8 @@ export async function proofIndexCreditListingsPayload(
          AND spend_block.height = spend_tx.block_height
          AND spend_block.canonical = true
         WHERE spend_input.network = cl.network
-          AND spend_input.prev_txid = lower(
-            COALESCE(NULLIF(cl.sale_ticket_txid, ''), cl.listing_id)
-          )
-          AND spend_input.prev_vout = cl.sale_ticket_vout
+          AND spend_input.prev_txid = effective_sale_ticket.sale_ticket_txid
+          AND spend_input.prev_vout = effective_sale_ticket.sale_ticket_vout
         ORDER BY
           spend_tx.block_height ASC,
           spend_tx.txid ASC,

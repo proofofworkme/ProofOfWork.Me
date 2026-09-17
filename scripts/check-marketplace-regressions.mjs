@@ -215,6 +215,10 @@ const REPORTED_RECENT_WAITING_FOR_SEAL_SEAL_TX =
   "d6c78c4ffad8e9b17324b19f5baee023e91cce63e8e05fd4677280023b022c12";
 const REPORTED_CONFIRMED_SEALABLE_LISTING_TX =
   "d7fe42285c4edd02592608cbd887ad7a8a2b78e085de05296e352fcc1e2166a9";
+const REPORTED_AMO_V8_ANCHOR_REPAIR_LISTING_TX =
+  "ab69e378903e9c411a0a034890021ec7c16517b6f026dcb90f7ba926a1319a5c";
+const REPORTED_AMO_V8_ANCHOR_REPAIR_SEAL_TX =
+  "ff6c159aade058836bfcdbf8910d062b7b0b8101b8ca04cb38f64883ccdd7b26";
 const REPORTED_DROPPED_LISTING_TX =
   "658bca245e97ccfa0055ba6237e309fa2fa089316c9287c8952c8af6f59a050a";
 const REPORTED_SPENT_SEAL_LISTING_TX =
@@ -918,6 +922,50 @@ function listingById(items, listingId) {
   const needle = String(listingId ?? "").toLowerCase();
   return (items ?? []).find(
     (item) => String(item?.listingId ?? "").toLowerCase() === needle,
+  );
+}
+
+async function assertReportedAmoV8AnchorRepairListing() {
+  const history = await tokenHistory("listings", {
+    fresh: 1,
+    q: REPORTED_AMO_V8_ANCHOR_REPAIR_LISTING_TX,
+  });
+  const listing = listingById(
+    history.items,
+    REPORTED_AMO_V8_ANCHOR_REPAIR_LISTING_TX,
+  );
+  const saleAuthorization =
+    listing?.saleAuthorization &&
+    typeof listing.saleAuthorization === "object" &&
+    !Array.isArray(listing.saleAuthorization)
+      ? listing.saleAuthorization
+      : {};
+  assert(
+    listing,
+    `${REPORTED_AMO_V8_ANCHOR_REPAIR_LISTING_TX} is missing from active WORK listings`,
+  );
+  assert(
+    listing.confirmed === true &&
+      listing.valid === true &&
+      String(listing.tokenId ?? "").toLowerCase() === WORK_TOKEN_ID &&
+      String(listing.saleTicketTxid ?? "").toLowerCase() ===
+        REPORTED_AMO_V8_ANCHOR_REPAIR_LISTING_TX &&
+      Number(listing.saleTicketVout) === 2 &&
+      Number(listing.saleTicketValueSats) === 546 &&
+      listing.sealConfirmed === true &&
+      String(listing.sealTxid ?? "").toLowerCase() ===
+        REPORTED_AMO_V8_ANCHOR_REPAIR_SEAL_TX,
+    `${REPORTED_AMO_V8_ANCHOR_REPAIR_LISTING_TX} lost canonical sale-ticket or seal metadata`,
+  );
+  assert(
+    String(saleAuthorization.version ?? "").toLowerCase() ===
+      WORK_AMO_V8_AUTH_VERSION &&
+      String(saleAuthorization.anchorTxid ?? "").toLowerCase() ===
+        REPORTED_AMO_V8_ANCHOR_REPAIR_LISTING_TX &&
+      Number(saleAuthorization.anchorVout) === 2 &&
+      Number(saleAuthorization.anchorValueSats) === 546 &&
+      String(saleAuthorization.anchorSignature ?? "").length > 20,
+    `${REPORTED_AMO_V8_ANCHOR_REPAIR_LISTING_TX} lost its signed V8 sale authorization`,
   );
 }
 
@@ -2311,6 +2359,10 @@ async function runFastMarketplaceRegressionGate() {
       cutoverToken,
       "/api/v1/token?asset=WORK",
     );
+  });
+
+  await step("reported WORK AMO V8 sale-ticket anchor repair", async () => {
+    await assertReportedAmoV8AnchorRepairListing();
   });
 
   await step("reported POWB listing history", async () => {

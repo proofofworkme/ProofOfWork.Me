@@ -800,6 +800,15 @@ sale-ticket, seal, and close txids; they return an empty terminal result only
 when the database contains explicit terminal evidence, otherwise canonical
 recovery remains eligible. Exact 64-character searches never fall through to a
 broad history replay.
+If confirmed marketplace projections lose their stored sale-ticket anchor or
+protocol byte count, operators may run `node scripts/backfill-proof-indexer.mjs
+--repair-marketplace-projections` with the production proof-index environment.
+That bounded repair re-derives `credit_listings.sale_ticket_*` from the
+confirmed listing event's `saleAuthorization`/`listingAuthorization`, refreshes
+confirmed seal metadata from the seal event, and fills zero `pwt1`
+`events.data_bytes` from the matching `op_returns` carrier. It must not invent
+listing anchors from seal transactions or constants; the complete
+Core-reconciled listing route remains the public active-book authority.
 Fresh wallet credit state uses the exact relational token projection with a
 dedicated 10-second production wait, clamped between 5 and 15 seconds. A timed
 out or unprovable read still returns `CANONICAL_INDEX_UNAVAILABLE`; it never

@@ -631,6 +631,9 @@ const CANONICAL_EVENT_PARENT_METADATA_REPAIR_TARGETS = Object.freeze([
 const REPAIR_CANONICAL_ID_AMOUNT_PROJECTION_ONLY = process.argv.includes(
   "--repair-canonical-id-amount-projection",
 );
+const REPAIR_MARKETPLACE_PROJECTIONS_ONLY = process.argv.includes(
+  "--repair-marketplace-projections",
+);
 const APPLY_CANONICAL_ID_AMOUNT_PROJECTION_REPAIR = /^(?:1|true|yes)$/iu.test(
   String(
     process.env.POW_INDEX_REPAIR_CANONICAL_ID_AMOUNT_PROJECTION_APPLY ?? "",
@@ -1057,6 +1060,9 @@ function assertCanonicalRebuildConfiguration() {
   const repairCanonicalIdAmountProjectionOnly =
     typeof REPAIR_CANONICAL_ID_AMOUNT_PROJECTION_ONLY !== "undefined" &&
     REPAIR_CANONICAL_ID_AMOUNT_PROJECTION_ONLY;
+  const repairMarketplaceProjectionsOnly =
+    typeof REPAIR_MARKETPLACE_PROJECTIONS_ONLY !== "undefined" &&
+    REPAIR_MARKETPLACE_PROJECTIONS_ONLY;
   const applyCanonicalIdAmountProjectionRepair =
     typeof APPLY_CANONICAL_ID_AMOUNT_PROJECTION_REPAIR !== "undefined" &&
     APPLY_CANONICAL_ID_AMOUNT_PROJECTION_REPAIR;
@@ -1073,6 +1079,7 @@ function assertCanonicalRebuildConfiguration() {
     repairEventRelationsOnly,
     repairCanonicalEventParentMetadataOnly,
     repairCanonicalIdAmountProjectionOnly,
+    repairMarketplaceProjectionsOnly,
     repairCanonicalMailProjectionOnly,
     REPAIR_WORK_PARTICIPANTS_ONLY,
     rebuildCreditBalancesOnly,
@@ -1128,6 +1135,11 @@ function assertCanonicalRebuildConfiguration() {
   ) {
     throw new Error(
       "--repair-canonical-id-amount-projection requires NETWORK=livenet, canonical rebuild mode off, and BITCOIN_RPC_URL.",
+    );
+  }
+  if (repairMarketplaceProjectionsOnly && CANONICAL_REBUILD) {
+    throw new Error(
+      "--repair-marketplace-projections requires canonical rebuild mode off.",
     );
   }
   if (MIGRATE_WORK_ATOMS_ONLY && !APPLY_WORK_ATOMIC_MIGRATION) {
@@ -1492,6 +1504,9 @@ function pendingOnlyBackfillMaintenanceMode() {
   const repairCanonicalIdAmountProjectionOnly =
     typeof REPAIR_CANONICAL_ID_AMOUNT_PROJECTION_ONLY !== "undefined" &&
     REPAIR_CANONICAL_ID_AMOUNT_PROJECTION_ONLY;
+  const repairMarketplaceProjectionsOnly =
+    typeof REPAIR_MARKETPLACE_PROJECTIONS_ONLY !== "undefined" &&
+    REPAIR_MARKETPLACE_PROJECTIONS_ONLY;
   return (
     HYDRATE_TRANSACTION_DETAILS_ONLY ||
     PREPARE_CANONICAL_REBUILD_ONLY ||
@@ -1502,6 +1517,7 @@ function pendingOnlyBackfillMaintenanceMode() {
     repairEventRelationsOnly ||
     repairCanonicalEventParentMetadataOnly ||
     repairCanonicalIdAmountProjectionOnly ||
+    repairMarketplaceProjectionsOnly ||
     repairCanonicalMailProjectionOnly ||
     REPAIR_WORK_PARTICIPANTS ||
     REPAIR_MINT_MINTERS ||
@@ -1916,6 +1932,9 @@ async function canonicalPwtRangeReplayRuntime(client) {
   const repairCanonicalIdAmountProjectionOnly =
     typeof REPAIR_CANONICAL_ID_AMOUNT_PROJECTION_ONLY !== "undefined" &&
     REPAIR_CANONICAL_ID_AMOUNT_PROJECTION_ONLY;
+  const repairMarketplaceProjectionsOnly =
+    typeof REPAIR_MARKETPLACE_PROJECTIONS_ONLY !== "undefined" &&
+    REPAIR_MARKETPLACE_PROJECTIONS_ONLY;
   const rebuild = await proofIndexerMetaValue(
     client,
     CANONICAL_REBUILD_META_KEY,
@@ -1968,6 +1987,7 @@ async function canonicalPwtRangeReplayRuntime(client) {
     repairEventRelationsOnly ||
     repairCanonicalEventParentMetadataOnly ||
     repairCanonicalIdAmountProjectionOnly ||
+    repairMarketplaceProjectionsOnly ||
     repairCanonicalMailProjectionOnly ||
     REPAIR_WORK_PARTICIPANTS_ONLY ||
     DB_SUMMARY_REPAIR ||
@@ -31955,8 +31975,193 @@ async function repairMailParticipants(client) {
   }
 }
 
-async function repairConfirmedListingSealMetadata(client) {
+async function repairConfirmedProtocolEventDataBytes(client) {
   const result = await client.query(
+    `
+      WITH carrier_bytes AS (
+        SELECT
+          e.event_id,
+          COALESCE(
+            NULLIF(carrier.data_bytes, 0),
+            NULLIF(octet_length(convert_to(COALESCE(e.raw_payload, ''), 'UTF8')), 0)
+          ) AS data_bytes
+        FROM proof_indexer.events e
+        LEFT JOIN proof_indexer.op_returns carrier
+          ON carrier.network = e.network
+         AND carrier.txid = e.txid
+         AND carrier.vout = e.op_return_vout
+         AND carrier.output_index = 0
+        WHERE e.network = $1
+          AND e.protocol = 'pwt1'
+          AND e.status = 'confirmed'
+          AND e.valid = true
+          AND COALESCE(e.data_bytes, 0) <= 0
+          AND COALESCE(
+            NULLIF(carrier.data_bytes, 0),
+            NULLIF(octet_length(convert_to(COALESCE(e.raw_payload, ''), 'UTF8')), 0)
+          ) > 0
+      ),
+      updated AS (
+        UPDATE proof_indexer.events e
+        SET
+          data_bytes = carrier_bytes.data_bytes,
+          payload = e.payload || jsonb_build_object(
+            'dataBytes', carrier_bytes.data_bytes
+          ),
+          updated_at = now()
+        FROM carrier_bytes
+        WHERE e.event_id = carrier_bytes.event_id
+        RETURNING e.event_id
+      )
+      SELECT count(*)::integer AS updated_count
+      FROM updated
+    `,
+    [NETWORK],
+  );
+  return {
+    indexed: Number(result.rows[0]?.updated_count ?? 0),
+    skipped: 0,
+    source: "repair-confirmed-protocol-event-data-bytes",
+  };
+}
+
+async function repairConfirmedListingSealMetadata(client) {
+  const anchorResult = await client.query(
+    `
+      WITH canonical_listings AS (
+        SELECT DISTINCT ON (lower(e.txid))
+          lower(e.txid) AS listing_id,
+          lower(COALESCE(
+            NULLIF(e.payload->'saleAuthorization'->>'anchorTxid', ''),
+            NULLIF(e.payload->'listingAuthorization'->>'anchorTxid', ''),
+            NULLIF(e.payload->>'saleTicketTxid', ''),
+            e.txid
+          )) AS anchor_txid,
+          COALESCE(
+            CASE
+              WHEN e.payload->'saleAuthorization'->>'anchorVout' ~ '^[0-9]+$'
+                THEN (e.payload->'saleAuthorization'->>'anchorVout')::integer
+              ELSE NULL
+            END,
+            CASE
+              WHEN e.payload->'listingAuthorization'->>'anchorVout' ~ '^[0-9]+$'
+                THEN (e.payload->'listingAuthorization'->>'anchorVout')::integer
+              ELSE NULL
+            END,
+            CASE
+              WHEN e.payload->>'saleTicketVout' ~ '^[0-9]+$'
+                THEN (e.payload->>'saleTicketVout')::integer
+              ELSE NULL
+            END
+          ) AS anchor_vout,
+          COALESCE(
+            CASE
+              WHEN e.payload->'saleAuthorization'->>'anchorValueSats' ~ '^[0-9]+$'
+                THEN (e.payload->'saleAuthorization'->>'anchorValueSats')::bigint
+              ELSE NULL
+            END,
+            CASE
+              WHEN e.payload->'listingAuthorization'->>'anchorValueSats' ~ '^[0-9]+$'
+                THEN (e.payload->'listingAuthorization'->>'anchorValueSats')::bigint
+              ELSE NULL
+            END,
+            CASE
+              WHEN e.payload->>'saleTicketValueSats' ~ '^[0-9]+$'
+                THEN (e.payload->>'saleTicketValueSats')::bigint
+              ELSE NULL
+            END
+          ) AS anchor_value_sats,
+          COALESCE(
+            NULLIF(carrier.data_bytes, 0),
+            NULLIF(e.data_bytes, 0),
+            NULLIF(octet_length(convert_to(COALESCE(e.raw_payload, ''), 'UTF8')), 0)
+          ) AS listing_data_bytes,
+          e.payload
+        FROM proof_indexer.events e
+        JOIN proof_indexer.transactions listing_tx
+          ON listing_tx.network = e.network
+         AND listing_tx.txid = e.txid
+         AND listing_tx.status = 'confirmed'
+         AND listing_tx.block_height = e.block_height
+         AND listing_tx.block_index = e.block_index
+        JOIN proof_indexer.blocks listing_block
+          ON listing_block.network = listing_tx.network
+         AND listing_block.block_hash = listing_tx.block_hash
+         AND listing_block.height = listing_tx.block_height
+         AND listing_block.canonical = true
+        LEFT JOIN proof_indexer.op_returns carrier
+          ON carrier.network = e.network
+         AND carrier.txid = e.txid
+         AND carrier.vout = e.op_return_vout
+         AND carrier.output_index = 0
+        WHERE e.network = $1
+          AND e.protocol = 'pwt1'
+          AND e.kind = 'token-listing'
+          AND e.status = 'confirmed'
+          AND e.valid = true
+          AND e.block_height IS NOT NULL
+          AND e.block_index IS NOT NULL
+          AND e.op_return_vout IS NOT NULL
+          AND e.record_ordinal >= 0
+          AND e.txid ~ '^[0-9a-fA-F]{64}$'
+        ORDER BY
+          lower(e.txid),
+          e.block_height DESC,
+          e.block_index DESC,
+          e.op_return_vout DESC,
+          e.record_ordinal DESC
+      ),
+      repaired AS (
+        UPDATE proof_indexer.credit_listings cl
+        SET
+          sale_ticket_txid = CASE
+            WHEN COALESCE(NULLIF(cl.sale_ticket_txid, ''), '') = ''
+              OR lower(cl.sale_ticket_txid) = lower(COALESCE(NULLIF(cl.seal_txid, ''), ''))
+              THEN canonical.anchor_txid
+            ELSE lower(cl.sale_ticket_txid)
+          END,
+          sale_ticket_vout = COALESCE(
+            cl.sale_ticket_vout,
+            canonical.anchor_vout
+          ),
+          sale_ticket_value_sats = COALESCE(
+            NULLIF(cl.sale_ticket_value_sats, 0),
+            canonical.anchor_value_sats
+          ),
+          payload = cl.payload || jsonb_strip_nulls(
+            jsonb_build_object(
+              'dataBytes', canonical.listing_data_bytes,
+              'saleAuthorization', canonical.payload->'saleAuthorization',
+              'saleTicketTxid', canonical.anchor_txid,
+              'saleTicketValueSats', canonical.anchor_value_sats,
+              'saleTicketVout', canonical.anchor_vout
+            )
+          ),
+          updated_at = now()
+        FROM canonical_listings canonical
+        WHERE cl.network = $1
+          AND lower(cl.listing_id) = canonical.listing_id
+          AND canonical.anchor_txid ~ '^[0-9a-f]{64}$'
+          AND canonical.anchor_vout IS NOT NULL
+          AND canonical.anchor_value_sats IS NOT NULL
+          AND (
+            COALESCE(NULLIF(cl.sale_ticket_txid, ''), '') = ''
+            OR lower(cl.sale_ticket_txid) = lower(COALESCE(NULLIF(cl.seal_txid, ''), ''))
+            OR cl.sale_ticket_vout IS NULL
+            OR cl.sale_ticket_value_sats IS NULL
+            OR cl.sale_ticket_value_sats = 0
+            OR COALESCE(cl.payload->>'saleTicketTxid', '') <> canonical.anchor_txid
+            OR COALESCE(cl.payload->>'saleTicketVout', '') <> canonical.anchor_vout::text
+            OR COALESCE(cl.payload->>'saleTicketValueSats', '') <> canonical.anchor_value_sats::text
+          )
+        RETURNING cl.listing_id
+      )
+      SELECT count(*)::integer AS updated_count
+      FROM repaired
+    `,
+    [NETWORK],
+  );
+  const sealResult = await client.query(
     `
       WITH confirmed_seals AS (
         SELECT DISTINCT ON (lower(e.payload->>'listingId'))
@@ -31966,6 +32171,11 @@ async function repairConfirmedListingSealMetadata(client) {
           e.block_index AS seal_block_index,
           e.op_return_vout AS seal_protocol_vout,
           e.record_ordinal AS seal_record_ordinal,
+          COALESCE(
+            NULLIF(carrier.data_bytes, 0),
+            NULLIF(e.data_bytes, 0),
+            NULLIF(octet_length(convert_to(COALESCE(e.raw_payload, ''), 'UTF8')), 0)
+          ) AS seal_data_bytes,
           e.payload
         FROM proof_indexer.events e
         JOIN proof_indexer.transactions seal_tx
@@ -31979,6 +32189,11 @@ async function repairConfirmedListingSealMetadata(client) {
          AND seal_block.block_hash = seal_tx.block_hash
          AND seal_block.height = seal_tx.block_height
          AND seal_block.canonical = true
+        LEFT JOIN proof_indexer.op_returns carrier
+          ON carrier.network = e.network
+         AND carrier.txid = e.txid
+         AND carrier.vout = e.op_return_vout
+         AND carrier.output_index = 0
         WHERE e.network = $1
           AND e.protocol = 'pwt1'
           AND e.kind = 'token-listing-sealed'
@@ -31998,29 +32213,6 @@ async function repairConfirmedListingSealMetadata(client) {
       )
       UPDATE proof_indexer.credit_listings cl
       SET
-        sale_ticket_txid = CASE
-          WHEN cl.sale_ticket_txid IS NULL OR cl.sale_ticket_txid = seals.seal_txid
-            THEN seals.listing_id
-          ELSE cl.sale_ticket_txid
-        END,
-        sale_ticket_vout = COALESCE(
-          cl.sale_ticket_vout,
-          CASE
-            WHEN seals.payload->>'saleTicketVout' ~ '^[0-9]+$'
-              THEN (seals.payload->>'saleTicketVout')::integer
-            ELSE NULL
-          END,
-          2
-        ),
-        sale_ticket_value_sats = COALESCE(
-          cl.sale_ticket_value_sats,
-          CASE
-            WHEN seals.payload->>'saleTicketValueSats' ~ '^[0-9]+$'
-              THEN (seals.payload->>'saleTicketValueSats')::bigint
-            ELSE NULL
-          END,
-          546
-        ),
         seal_txid = seals.seal_txid,
         payload = cl.payload || jsonb_strip_nulls(
           jsonb_build_object(
@@ -32029,11 +32221,7 @@ async function repairConfirmedListingSealMetadata(client) {
             'sealBlockHeight', seals.seal_block_height,
             'sealBlockIndex', seals.seal_block_index,
             'sealConfirmed', true,
-            'sealDataBytes', CASE
-              WHEN seals.payload->>'sealDataBytes' ~ '^[0-9]+$'
-                THEN (seals.payload->>'sealDataBytes')::integer
-              ELSE NULL
-            END,
+            'sealDataBytes', seals.seal_data_bytes,
             'sealMinerFeeSats', CASE
               WHEN seals.payload->>'sealMinerFeeSats' ~ '^[0-9]+$'
                 THEN (seals.payload->>'sealMinerFeeSats')::bigint
@@ -32052,13 +32240,18 @@ async function repairConfirmedListingSealMetadata(client) {
           COALESCE(cl.seal_txid, '') <> seals.seal_txid
           OR COALESCE(cl.payload->>'sealTxid', '') <> seals.seal_txid
           OR cl.payload->>'sealConfirmed' IS DISTINCT FROM 'true'
+          OR COALESCE(cl.payload->>'sealDataBytes', '') <> COALESCE(seals.seal_data_bytes::text, '')
         )
       RETURNING cl.listing_id
     `,
     [NETWORK],
   );
+  const anchorUpdated = Number(anchorResult.rows[0]?.updated_count ?? 0);
+  const sealUpdated = sealResult.rows.length;
   return {
-    indexed: result.rows.length,
+    anchorUpdated,
+    indexed: anchorUpdated + sealUpdated,
+    sealUpdated,
     skipped: 0,
     source: "repair-listing-seal-metadata",
   };
@@ -36131,6 +36324,24 @@ try {
           2,
         ),
       );
+    } else if (REPAIR_MARKETPLACE_PROJECTIONS_ONLY) {
+      const results = [
+        await repairConfirmedProtocolEventDataBytes(client),
+        await repairConfirmedListingSealMetadata(client),
+      ];
+      console.log(
+        JSON.stringify(
+          {
+            apiBase: API_BASE,
+            marketplaceProjectionRepair: true,
+            network: NETWORK,
+            ok: true,
+            results,
+          },
+          null,
+          2,
+        ),
+      );
     } else if (REPAIR_EVENT_RELATIONS_ONLY) {
       const repair = await repairCanonicalEventRelations(client);
       console.log(
@@ -36250,6 +36461,7 @@ try {
             results.push(await backfillSource(client, source));
           }
           results.push(await repairMailParticipants(client));
+          results.push(await repairConfirmedProtocolEventDataBytes(client));
           results.push(await repairConfirmedListingSealMetadata(client));
         }
         if (!CANONICAL_SUMMARY_ONLY_BACKFILL) {

@@ -1338,6 +1338,11 @@ and the UI withholds definitive search and empty-book claims. Market-log rows
 remain lifecycle history and cannot manufacture active inventory. Wallet-owned
 listing hydration uses the same complete cursor contract.
 
+Confirmed V8 WORK listing witnesses recover their sale-ticket anchor from the
+original confirmed listing event and verify that exact outpoint against Core.
+Seal metadata can publish seller terms, but it cannot replace the listing
+event as anchor authority.
+
 ## June 27 Sealed Summary Hardening
 
 The final audit follow-up tightened one more sale-ticket edge case: a valid

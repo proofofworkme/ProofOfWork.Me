@@ -51173,7 +51173,7 @@ async function stableProofIndexLogHistoryPayload(
     network,
     requestedKind,
     boundSearchParams,
-    { currentRelational: true, includePending: summaryPending !== 0 },
+    { currentRelational: true },
   );
   if (!page) {
     throw freshDataUnavailableError(
