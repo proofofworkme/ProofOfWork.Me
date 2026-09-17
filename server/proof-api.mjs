@@ -78084,9 +78084,12 @@ async function handleRequest(request, response) {
               requireCurrent: freshRead,
             },
           )
-        : await tokenSummaryPayload(network, tokenScope, freshRead, {
-            recoveryAddresses,
-          });
+        : await deduplicatedSummaryRead(
+            `token-summary:${network}:${tokenScope}:${freshRead ? "fresh" : "cached"}`,
+            () => tokenSummaryPayload(network, tokenScope, freshRead, {
+              recoveryAddresses,
+            }),
+          );
       const compactSummary =
         !walletScoped && compactRead
           ? withTokenDirectoryQualification(compactTokenSummaryPayload(rawTokenSummary, tokenScope, {
@@ -78397,7 +78400,10 @@ async function handleRequest(request, response) {
           return;
         }
       }
-      const rawWorkSummary = await workSummaryPayload(network, freshRead);
+      const rawWorkSummary = await deduplicatedSummaryRead(
+        `work-summary:${network}:${freshRead ? "fresh" : "cached"}`,
+        () => workSummaryPayload(network, freshRead),
+      );
       const workSummary = compactRead
         ? compactWorkSummaryPayload(rawWorkSummary)
         : rawWorkSummary;
@@ -78420,8 +78426,10 @@ async function handleRequest(request, response) {
 
     if (url.pathname === "/api/v1/marketplace-summary") {
       const compactRead = booleanSearchParam(url.searchParams, "compact");
-      const rawMarketplaceSummary =
-        await marketplaceSummaryPayload(network, freshRead);
+      const rawMarketplaceSummary = await deduplicatedSummaryRead(
+        `marketplace-summary:${network}:${freshRead ? "fresh" : "cached"}`,
+        () => marketplaceSummaryPayload(network, freshRead),
+      );
       const marketplaceSummary = compactRead
         ? compactMarketplaceSummaryReadPayload(rawMarketplaceSummary)
         : rawMarketplaceSummary;
@@ -78870,8 +78878,36 @@ async function handleRequest(request, response) {
 }
 
 const server = http.createServer((request, response) => {
+  const startedAt = Date.now();
+  response.once("finish", () => {
+    const elapsedMs = Date.now() - startedAt;
+    const route = new URL(request.url ?? "/", "http://localhost").pathname;
+    const contentLength = Number(response.getHeader("content-length"));
+    console.log(JSON.stringify({
+      event: "http-response-observation",
+      method: request.method ?? "GET",
+      route,
+      status: response.statusCode,
+      elapsedMs,
+      payloadBytes: Number.isSafeInteger(contentLength) ? contentLength : null,
+      slow: elapsedMs >= 10000,
+    }));
+  });
   void handleRequest(request, response);
 });
+
+const IN_FLIGHT_SUMMARY_READS = new Map();
+async function deduplicatedSummaryRead(key, producer) {
+  const existing = IN_FLIGHT_SUMMARY_READS.get(key);
+  if (existing) return existing;
+  const promise = Promise.resolve().then(producer).finally(() => {
+    if (IN_FLIGHT_SUMMARY_READS.get(key) === promise) {
+      IN_FLIGHT_SUMMARY_READS.delete(key);
+    }
+  });
+  IN_FLIGHT_SUMMARY_READS.set(key, promise);
+  return promise;
+}
 server.headersTimeout = HTTP_HEADERS_TIMEOUT_MS;
 server.requestTimeout = HTTP_REQUEST_TIMEOUT_MS;
 

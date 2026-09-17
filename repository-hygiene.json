@@ -63,7 +63,8 @@
       "audits/2026-09-13-incb-production-canonical-repair.md",
       "audits/2026-09-13-production-health-data-event-storage-audit-9.md",
       "audits/2026-09-14-production-health-data-event-storage-audit-10.md",
-      "audits/2026-09-15-production-reaudit-persistence-audit-11.md"
+      "audits/2026-09-15-production-reaudit-persistence-audit-11.md",
+      "audits/2026-09-17-production-comprehensive-health-data-integrity-audit-12.md"
     ],
     "staged-or-future-protocol-notes": [
       "CHAIN_CONTENT.md",

@@ -1,5 +1,7 @@
 #!/usr/bin/env node
 
+import fs from "node:fs";
+
 const DEFAULT_TIMEOUT_MS = 20_000;
 const API_BASE = String(
   process.env.POW_API_BASE || "https://computer.proofofwork.me",
@@ -14,10 +16,14 @@ const JSON_OUTPUT =
 const PAGE_ONLY =
   process.argv.includes("--page-only") ||
   process.env.POW_SURFACE_AUDIT_PAGE_ONLY === "1";
+const SURFACE_ARG = process.argv.find((value) => value.startsWith("--surface="));
+const RESUME_ARG = process.argv.find((value) => value.startsWith("--resume-file="));
+const SELECTED_SURFACE = SURFACE_ARG ? SURFACE_ARG.slice("--surface=".length) : "";
+const RESUME_FILE = RESUME_ARG ? RESUME_ARG.slice("--resume-file=".length) : "";
 const USER_AGENT = "ProofOfWork.Me read-only surface audit/1.0";
 
 function usage() {
-  console.log(`Usage: node scripts/audit-production-surfaces.mjs [--json] [--page-only] [--timeout-ms=20000]
+  console.log(`Usage: node scripts/audit-production-surfaces.mjs [--json] [--page-only] [--timeout-ms=20000] [--surface=key] [--resume-file=path]
 
 Read-only production surface audit in canonical host order.
 
@@ -26,7 +32,11 @@ Environment:
   POW_SURFACE_AUDIT_FRESH=1
   POW_SURFACE_AUDIT_JSON=1
   POW_SURFACE_AUDIT_PAGE_ONLY=1
-  POW_SURFACE_AUDIT_TIMEOUT_MS=20000`);
+  POW_SURFACE_AUDIT_TIMEOUT_MS=20000
+
+--surface runs one named surface (for example --surface=computer).
+--resume-file writes completed per-surface results after each surface so an
+interrupted audit can resume without repeating completed surfaces.`);
 }
 
 if (process.argv.includes("--help") || process.argv.includes("-h")) {
@@ -575,14 +585,53 @@ async function runSurface(surface) {
 }
 
 const startedAt = new Date();
-const results = [];
-for (const surface of SURFACES) {
-  results.push(await runSurface(surface));
+const selectedSurfaces = SELECTED_SURFACE
+  ? SURFACES.filter((surface) => surface.key === SELECTED_SURFACE)
+  : SURFACES;
+if (SELECTED_SURFACE && selectedSurfaces.length === 0) {
+  console.error(`Unknown surface: ${SELECTED_SURFACE}`);
+  process.exitCode = 2;
+}
+let results = [];
+if (RESUME_FILE) {
+  try {
+    const prior = JSON.parse(fs.readFileSync(RESUME_FILE, "utf8"));
+    results = Array.isArray(prior.results) ? prior.results : [];
+  } catch {
+    results = [];
+  }
+}
+const completed = new Set(results.map((result) => result.key));
+for (const surface of selectedSurfaces) {
+  if (completed.has(surface.key)) {
+    console.error(`resume skip ${surface.title}`);
+    continue;
+  }
+  console.error(`audit start ${surface.title}`);
+  const result = await runSurface(surface);
+  results.push(result);
+  console.error(`audit ${result.ok ? "complete" : "failed"} ${surface.title}`);
+  if (RESUME_FILE) {
+    const checkpoint = {
+      apiBase: API_BASE,
+      finishedAt: new Date().toISOString(),
+      fresh: FRESH,
+      pageOnly: PAGE_ONLY,
+      results,
+      startedAt: startedAt.toISOString(),
+      timeoutMs: timeoutMs(),
+    };
+    const temporary = `${RESUME_FILE}.tmp`;
+    fs.writeFileSync(temporary, `${JSON.stringify(checkpoint, null, 2)}\n`);
+    fs.renameSync(temporary, RESUME_FILE);
+  }
 }
 
 const failed = results.filter((result) => !result.ok);
 const payload = {
   apiBase: API_BASE,
+  complete: results.length === selectedSurfaces.length &&
+    selectedSurfaces.every((surface) => results.some((result) => result.key === surface.key)),
   finishedAt: new Date().toISOString(),
   fresh: FRESH,
   ok: failed.length === 0,
