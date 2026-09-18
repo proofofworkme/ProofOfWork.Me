@@ -4,6 +4,16 @@ The ProofOfWork Computer: local-first, agent-readable identity, mail, files,
 pages, AMO markets, credits, wallet transfers, bonds, logs, and growth records
 written to ProofOfWork OP_RETURN outputs and signed locally with UniSat.
 
+## License
+
+The ProofOfWork.Me source code is released under the [MIT License](LICENSE),
+copyright © 2026 PROOFOFWORKME. The license permits reuse, modification,
+distribution, and commercial use subject to its notice requirements.
+
+The ProofOfWork.Me and ProofOfWork names, logos, official domains, and official
+network identity are not granted by the MIT License. See
+[`TRADEMARKS.md`](TRADEMARKS.md) for the project’s identity guidelines.
+
 ## For Agents
 
 Before modifying ProofOfWork.Me, read `SOUL.md`.

@@ -365,3 +365,279 @@ Any code, configuration, data repair, WAL-slot reset, database maintenance,
 service restart, deployment, backup movement/deletion, cache cleanup, log
 rotation change, release archive deletion, or infrastructure change remains
 approval-gated. No such action was taken during this audit.
+
+---
+
+## Independent read-only follow-up — 2026-09-17, 17:32 UTC onward
+
+This dated follow-up preserves the earlier entries above. It supersedes their
+current-health conclusions where the deeper checks below disagree. **Overall
+result: degraded; comprehensive integrity is not proven.** Green public health
+and consistency endpoints do not imply complete relational or rendering parity.
+The user authorized this audit-log update only. No production data, ledger,
+protocol record, service configuration, backup, cache, or historical evidence was
+modified; no restart, deployment, commit, push, or production cleanup occurred.
+
+### Scope and provenance
+
+Read SOUL, README, PROOFOFWORK_IDS, MARKETPLACE, OP_RETURN_INFRASTRUCTURE,
+MAIL_ORGANIZATION, and REPOSITORY_HYGIENE; reviewed prior audit findings and repair
+records, including audits 6–12, before opening findings. Rechecked the existing
+issue classes below instead of treating each larger count as a new issue.
+
+Systems: UI `77.42.91.106`; node/API/indexer/PostgreSQL `65.108.122.87`.
+Checked filesystem/inodes, CPU/memory, RAID, services/timers, database catalog and
+relational invariants, Core chain/index/mempool state, worker/API health, backup
+logs and retention inventories, public API/surface probes, and browser smoke
+renders. Remote SQL was read-only and bounded. Secret environment values were
+passed privately to existing deployed audit scripts, never printed.
+
+Local HEAD: `96b9b582f101f103bbf59cede4727e2c7a2ce372`; deployed API:
+`8223f1dd338beaa71509332b511271be3e93f22a`; UI manifest:
+`62fded8008f9bd70e6b392a570f9b777389a5b2b`.
+Preexisting changes to package.json, repository-hygiene.json,
+scripts/audit-production-surfaces.mjs, server/proof-api.mjs, this untracked audit,
+and scripts/check-production-observability.mjs were preserved. Local checks use
+Node 22.23.2; deployed audits use Node 24.18.0. Local source tests are not proof
+that the deployed revisions contain the same behavior.
+
+### Health, capacity, and recurrence risk
+
+| System | Observation | Assessment |
+| --- | --- | --- |
+| UI root | 39,973,924,864 total; 24,782,127,104 used; 13,507,604,480 available bytes; 65%; inodes 4% | 12.58 GiB free, only 2.58 GiB above 10 GiB floor and 0.58 GiB above 12 GiB warning |
+| UI CPU/RAM | 2 CPUs, load .12/.05/.01; sample 99–100% idle; 3,410,853,888 bytes available RAM of 4,005,457,920; no swap | No sampled CPU/RAM pressure |
+| UI retained backups | 20,586,196,992 bytes; rollback roots 3,349,958,656; rollbacks 6,440,357,888; releases 3,700,789,248 | Dominant capacity pressure; failed dry-run retention unit does not reclaim anything |
+| UI logs/temp/live roots | logs 662,712,320; `/var/tmp` 429,801,472; `/var/www` 398,589,952 bytes | Temp includes historical Q16/V7 root and preactivation archive; age alone does not authorize removal |
+| Node root | 27%; 73,436,536,832 bytes available; inodes 6% | Adequate current root space |
+| Node `/data` | 78%; 380,775,608,320 bytes available; inodes 1% | Existing capacity warning persists |
+| Node CPU/RAM | 32 CPUs; load 1.86/2.93/3.62; sample 97–100% idle; 116,361,441,280 bytes RAM available; 616,038,400 swap used | No sampled acute pressure; swap allocation alone is not current thrashing |
+| Node RAID | Both arrays `[UU]` | No degraded mirror reported |
+| PostgreSQL | database 29,363,797,015 bytes; transitions 27,964,719,104; snapshots 827,924,480 | Transition history dominates database growth |
+
+UI Caddy is active and scheduled release provenance verified. Nine retained
+rollback roots and accumulation of archives can consume the remaining deployment
+headroom again. A single sample cannot establish days-to-full. Record daily byte
+deltas, enforce a pre-deploy peak-space budget (old live + new staged + archive +
+rollback + logs), and approve a manifest-based retention plan before the next
+large release. The application database is on the node in this architecture;
+the UI disk pressure observed here is retained releases/backups, not that live DB.
+
+Node inventory: Core 975,920,676,864 allocated bytes; Electrs 63,827,218,432;
+PostgreSQL backup tree 156,227,538,944; tablespaces 28,792,815,616; audit-5 restore
+22,132,215,808; safeguard 11,271,983,104; older restore 2,281,152,512;
+other application backups 14,639,370,240; release backups 11,416,141,824;
+recovery 3,910,983,680; live cache 82,739,200; mempool storage 1,354,031,104.
+These are inventories, not approved deletion lists. Recovery evidence, restore
+fixtures, and rollback records require ownership/dependency review first.
+
+### Core, indexer, database, and backup integrity
+
+Core was fully synchronized at height 967444/hash
+`0000000000000000000093a409c5b13020e64a58b80f037e3f3ebb758fa01e72`,
+headers equal, verification progress 1, IBD false, unpruned, warnings empty.
+Txindex, coinstats, and basic filter indexes matched. `verifychain` level 3 over
+the last six blocks passed; this is not a fresh validation of the entire chain.
+API snapshot `99a960d2cbd7638c66a19a4e` and worker matched 967444, worker reported
+zero unresolved/error/deferred work and readiness queue zero. Core, Electrs,
+PostgreSQL, API, and worker were active. Process activity alone does not prove
+Electrs independently serves every address correctly.
+
+DB catalogs reported zero invalid/unready indexes, unvalidated constraints,
+waiting locks, or deadlocks. No orphan participants/references, invalid finite
+balance values, or negative balances were found. PostgreSQL page checksums are
+off: a NULL checksum-failure counter cannot certify absence of physical damage.
+No full page/index scan, isolated current-backup restore, or complete independent
+chain reindex was performed. Cumulative temp_bytes 1,414,991,246,998 is historical
+query traffic, not resident disk usage. Application role/database setting remains
+`temp_file_limit=1GB`, `log_temp_files=256MB`.
+
+**H10-01 / A11-04 / H12-01 persists:** WAL slot inactive/lost, observed gap
+268,848,663,120 bytes (~250.4 GiB). Receiver retries a missing segment every five
+seconds (`000000010000007C00000008`). An active receiver service is not a working
+PITR chain. Logical backup logs show successful jobs and the latest dump set is
+20260917T031851Z (15,081,467,904 bytes); this does not repair the broken WAL lane.
+Backup tree: logical 95,668,785,152; physical 36,487,340,032; recovery evidence
+10,225,852,416; H7 recovery 13,175,431,168 bytes. Prior restore evidence remains
+historical; present off-host recoverability and current restore completeness are
+unproven. Approve a fresh base-backup/WAL repair and isolated restore verification.
+
+**H10-03 release-health persists with a changed cause:** all 35 archives verified
+and current provenance count is 1, but `opt_checkouts=22` exceeds 9. The earlier
+`.git/index` permission issue is resolved (mode 644). Classify checkout history
+before any cleanup. Storage-health and release-health node units remain failed.
+
+### Complete relational population checks and discrepancies
+
+Deployed computer-events audit failed; deployed parity audit had 102 checks,
+95 passing, five error failures and two historical V5 readiness warnings.
+Population: 25,723 transaction rows (25,473 confirmed, 179 pending, 71 dropped),
+26,327 events, 25,813 valid confirmed events, 238 credit definitions, 405 balance
+rows, 1,120 listings, 505 confirmed ID records, 616 mail rows, 125,632 participant
+rows and 55,769 references. Canonical activity coverage, credit definitions,
+status payload consistency, and the tested transaction/history/search regressions
+passed. Counts are checkpoint-specific, not immutable global totals.
+
+- **H9-03 evidence-completeness regression:** four confirmed external-spend rows
+  from `canonical-listing-outpoint-scan` lack raw transaction/canonical proof.
+  They have no event dependencies, so no missing valid-event raw transaction was
+  found. Rows were updated 2026-09-15T18:22:43.424998Z. Txids:
+  `8601e0b83423e9f51aeb128b7d401d211828df9c623db7e55b5eb6b6332df9cf`
+  (966878), `939366d09f6af994dae3a5b848c490fdd7524c95e3e6db30d55e585df0a4d76c`
+  (966199), `4ca4fa5b03f871ee90863cf283696c692db7287ef672f8d815bc0ecf9695f212`
+  (966498), `4c079144b315ca08a846e7e7af3d37f5c96419a94f06af8384dc73e1ca307359`
+  (962992). Impact: incomplete independently replayable spend evidence. Proposed
+  correction: fetch and verify Core block/transaction proofs, repair projection
+  fields only after approval, and prevent incomplete confirmed inserts.
+- **Prior event-metadata repair has regressed:** 1,745 valid confirmed events
+  disagree with parent metadata: all 905 token-listing and 840 token-listing-sealed
+  events have NULL block_time/event_time; block positions match their parents.
+  Impact: event chronology/rendering and evidence parity, not demonstrated balance
+  corruption. Reconstruct timestamps from verified parent blocks; fix the writer
+  and enforce metadata parity transactionally after approval.
+- **Participant semantic drift:** 45 extra tuples, no missing tuples; expected
+  125,587 versus 125,632 stored. Sample extras associate registry address
+  `1638Vn6KtmK8p5r4oGvAXq9nmZb1emU1DV`. Extra-set SHA256
+  `7910ecb110197ec85886e87efb8226d0fe15d33ca08a664736952a5198c5bef6`.
+  Impact: address/search attribution can include spurious relations. Compare
+  writer and current canonical participant extractor; approve deterministic
+  projection rebuild only after reviewing exact tuple changes.
+- **H9-04 remains unresolved:** exactly one missing INCB ticker reference for
+  invalid event 4079924, transaction
+  `b00b9451bded7d2b7d339556ad2dc5d375e5b52ad877a1d3e2b29149dfc72ccf`.
+  This affects invalid-event discoverability, not valid token issuance.
+- **H9-05 mail projection drift expanded:** all 616 expected mail rows exist,
+  without extra/missing/duplicate rows, but 46 differ in `attachedCredits` only.
+  Mismatch-set SHA256
+  `818317e1454be50cb3b841305d40124746430a58df2dc7fbf1e25ff2189036ab`.
+  Impact: attachment display/replay consistency. Compare exact integer credit
+  fields and render normalization before approving a projection-only repair.
+
+Shared transaction positions were inspected: 78 groups include legitimate
+sale/derived-close events and invalid historical aliases. Position sharing alone
+is not evidence of duplicate accounting. No claim is made that each shared group
+received a fresh independent canonical replay.
+
+### Math verification and display consistency
+
+Independent SQL integer arithmetic checked all 905 V8 terms: face/price 25,000;
+amount = floor(25,000 × 21,000,000 × 10^16 × 10^8 / N_before);
+minimum price = ceil(amount × N / (21,000,000 × 10^16 × 10^8));
+N_after = N_before + bond. No discrepancy was found.
+
+All 7,824 transition rows, heights 959621–967444, were consecutive and hash
+contiguous with complete/fee-once/invalid-zero/block-atomic flags true. One state
+hash boundary at 960601 preserves value and corresponds to the documented Q16
+activation; it is not classified as corruption. This checks stored witnesses
+and continuity, not independent replay of all underlying transactions.
+
+WORK: 357 rows sum to 210000000000000000000000 subatoms, pending delta zero.
+POWB: 11 rows sum to 630496569; INCB: seven rows sum to 224847713398447926.
+All 405 balance rows passed nonnegative, finite integer validation. Across all
+46 confirmed valid INCB mints, issuance amount equals floor(issuance Q8/10^8)
+and issuance Q8 equals proof × 10^8 + attached-WORK live-value Q8.
+
+**New precise storage/display discrepancy:** 39 of those 46 INCB records retain
+an `issuanceNetworkValueSats` decimal alias inconsistent with the corresponding
+exact Q8 value. Example transaction
+`875cd28607cc38608ebec93dcabb2b9ee25ab8425308dd03cc0b4532e05dbe13`:
+Q8 `293987255080509083181` means `2939872550805.09083181`, whereas stored decimal
+alias is `2950699258666.0571579`. Source inspection shows API normalization paths
+prefer Q8, so this does **not** establish that every public screen displays the
+wrong amount. It does establish inconsistent stored representations, potentially
+connected to the 46 attached-credit projection differences. Recommended fix:
+derive all decimal aliases exclusively from immutable exact integers, test every
+consumer, and approve narrowly scoped projection normalization; never rewrite
+canonical issuance or historical economic terms merely to align displays.
+
+Eleven targeted local checks passed: work precision v1/v2, exact bond arithmetic,
+canonical order, V8 AMO, INCB replay witness, INCB oracle restoration fixtures,
+API truth, UI static checks, and Boost regression suite. `check:live-data` failed
+a static source-shape expectation around the preexisting marketplace observability
+wrapper. That is a test/source disagreement, not demonstrated production math
+failure. Historical Boost audit-6 synthetic repro still demonstrates H6-01 owner
+authorization and H6-02 unfollow-target relation gaps in local source; its fixed
+line references are historical. Production has ten valid Boost events and no
+unfollow/hide event exercising those paths; deployed equivalence was not proven.
+
+### Mempool, APIs, and rendering
+
+Core initially had 81,493 mempool transactions (41,060,126 serialized bytes;
+230,277,960 usage under 2 GB limit), no unbroadcast transactions. Comparing the
+179 indexed pending txids to two Core snapshots across block 967445 found one
+absent in both. Core confirmed it in that block, and a subsequent DB read showed
+`confirmed`, height 967445: transaction
+`529f5f02437a7c22b3fa6ae0e4af02d88f409bd6868f7b95aae207ce9b59ba98`.
+This was normal convergence, not a persistent ghost. Nonconfirmed block-metadata
+and event payload/relational status parity checks passed. Visibility remains
+best-effort; this is not a proof that every possible mempool action is ingested.
+
+The previously dirty aggregate surface runner completed in ~172 seconds this
+time, checking 13 hosts and four assets per host. Thus **H12-07 did not reproduce
+with this local modified runner**, without claiming a deployed tooling fix.
+Fresh reads remain slow (H10-05/H12-06): AMO 18.151s, WORK 12.668s, Wallet 12.604s,
+Credit 8.998s, other probes roughly 5–9s. The 19,580,786-byte canonical payload
+continues the known size-budget concern. Logs still show accepted fallback
+without current coverage and rejected scoped books (830 versus 790); this is the
+known 40-row historical/coverage class, not newly proven financial divergence.
+
+Browser smoke checks covered 14 hosts including Boost, each at 1440 and 390 px:
+all initial documents 200, no observed page exceptions, 5xx responses, or horizontal
+overflow during the short initial window. Many data panels were still loading;
+these checks are not complete per-object or wallet-authenticated rendering tests.
+
+Strict deployed ID audit returned HTTP 503 from the internal registry-audit
+endpoint. The separately bounded cross-ledger audit expired after 240 seconds
+while retrying CANONICAL_SUMMARY_TIP_CHANGED/CANONICAL_SUMMARY_UNAVAILABLE. These
+are unresolved evidence/availability gaps, not successful strict ID or full
+cross-ledger proofs. No claim of universal math correctness is justified.
+
+### Follow-up priorities and approval boundary
+
+1. Repair and restore-test the lost WAL chain; establish verifiable off-host RPO.
+2. Review UI release retention and peak deployment budget; measure node database
+   and backup growth. Retire only artifacts proven independent of live/recovery
+   needs, with explicit approval. No production items were removed here.
+3. Preserve exact mismatch sets; fix metadata/raw-evidence/participant/reference/
+   mail writers and deterministic projections after approved review. Re-run all
+   102 parity checks against one immutable checkpoint before calling integrity
+   green. Keep invalid historical events discoverable.
+4. Reconcile INCB exact/decimal aliases across DB/API/UI without changing economic
+   values; rerun strict ID and cross-ledger audits with bounded per-stage evidence.
+5. Resolve prior Boost defects, large payloads, fallback coverage and slow reads;
+   add checkpoint-bound rendering tests with confirmed/pending/reorg fixtures.
+
+No current finding authorizes deleting backups, resetting slots, rewriting rows,
+changing protocol math, or deploying fixes. CPU, memory, network usage, and disk
+are point-in-time measurements; provider transfer quotas and future growth were
+not established. Full physical DB verification and exhaustive chain-to-browser
+coverage remain follow-up work, not implied passes.
+
+### Evidence receipts and final hygiene review
+
+Raw read-only receipts are in `/tmp/pow-audit-20260917-followup/` on the audit workspace; this temporary directory is not durable backup storage. The findings, populations, representative txids and mismatch-set hashes above are preserved in this log. File hashes below allow comparison if receipts are retained; hashes alone do not preserve their contents.
+
+| Receipt | SHA256 |
+| --- | --- |
+| node-host.txt | `b831879fa89cb96a9a0fb906d1b5ba8c6d15dcc5618569076e5440e328916b47` |
+| ui-host.txt | `35c9cdff1429bdca67d56166df0078eff676bf36ce508a26087a056140f322f6` |
+| node-core-backup.txt | `ad0b2382c5ea57dedb270d892401915cd7c2fa8eccc842cdac794287c727c947` |
+| node-logs.txt | `d9dca0c8630766ff3664b923d97f9afc56dd6ae8f5b442e95ffbb253d5e6c8ca` |
+| db-health.txt | `b4f787c5f4e2346e01c124ca76fd1b1395f57672b6feb2342a85777193e3ea0d` |
+| computer-events.json | `89978e1526c8448dbf930d08e10cd58d59de644403c03a7efdc29e0e3cb08593` |
+| parity.json | `daa6402736c3228c56a33f607fa723136e7645c07a30a405a6484d2813c80bdf` |
+| math-sql.txt | `092a5dcba0ea2db66e0190c2d155dce9989899ea5405e8b38432edfcfec942ba` |
+| projection-diagnosis.txt | `1f9a119bc5b4c2b56df5f8d45cc18c95b5f24a4947b5193cb12306e8ac144827` |
+| mempool-core.json | `0c102eae4cfdd49308a2fe0825e6b17ea5e138d61b9b0854b87c2997db6e507c` |
+| pending-recheck.json | `44a2494c533084d31e1f6c5e3f4a2e5c0495f3a8cc9033a9b6a6116592f6f5fd` |
+| pending-db-recheck.txt | `a63414e66a43fe0629677e2eba85741747048b42b96d4e1781cbcfeafab0dd4a` |
+| surfaces.json | `00a4ecfc597d574581705469ef42d75850a565c950bb568b5f7558b7ec3a8403` |
+| render.json | `d38bde886f40b82f40543f931d0047537e9fb8d7ac14408461204238bc273ea7` |
+| ids.stderr | `9213496962c9bd20d4121012a9e00e20a6901170a11f8ea078736b33fc0841d5` |
+| ledger.txt | `16f528efbf7c655bbc5340b5d4e2ee7cc5263df639a2d754947d79126a827262` |
+| local-checks.json | `35ed1aae46cb03a0ed10f18c82e4b5c039ec609594710f568606f721f7f4ebcc` |
+| boost-repro.json | `ffaababff3712ea81806c7982dba5ae29f41a5228538a954dff13148571c9b71` |
+
+Mandatory `npm run hygiene:fix` found no allowlisted rebuildable state and removed nothing; `npm run hygiene:check` passed. Reviewed canonical-document impact, note classifications, generated-artifact policy, ignored files, git status and diff whitespace. This audit changes no protocol/product behavior and requires no canonical-document or SOUL rewrite. All preexisting code/config changes remain outside this audit’s edits. No staging or commit was performed.
+
+Final extended mobile render checks waited 30 seconds on AMO, Inception, Computer and Growth. All documents returned 200, with no observed page exceptions or 5xx responses. AMO still showed loading placeholders after 31.9 seconds, confirming the existing slow/freshness-read usability issue; this was not counted as a fully loaded rendering pass. Inception displayed issued supply 224,847,713,398,447,926 matching the checked DB balance total. Computer was unauthenticated, so account mail rendering remains untested. Extended-render receipt SHA256: `41d269d593992fa8d8a31ab3be70bd8bd14ebc6a71109152d85b39bee93fe949`. Audit closed 2026-09-17 17:43 UTC.
