@@ -1217,15 +1217,21 @@ weekly run is started after the host returns. The tracked daily logical service 
 directory containing the custom-format `proof_indexer` dump, a
 `pg_dumpall --globals-only` role archive, and verified SHA-256 manifest. It
 serializes timer and manual invocations through an owner-controlled lock in the
-canonical logical-backup root. Cleanup is bound to the device/inode of the
-temporary set created by that invocation, so an overlapping or same-second
-invocation can never remove another dump in progress. It keeps 7 sets under
-`/data/proofofwork-postgres-backups/logical`; globals may
+canonical logical-backup root. The capacity guard reserves 100 GiB by default,
+plus the current database size with 10% and 1 GiB overhead, before starting a dump.
+A five-second guard terminates the new dump if free space crosses the reserve or
+the dump exceeds that measured budget. `--check-capacity` verifies the preflight
+without creating a backup. Failed partial sets are preserved and named in logs.
+The seven-newest-set target produces review candidates rather than automatic
+removal: older complete sets and old partial sets can still be recovery or audit
+evidence. This makes dependency review and capacity monitoring mandatory; the
+guard will refuse a future backup before spending the live-data reserve.
+Backups remain under `/data/proofofwork-postgres-backups/logical`; globals may
 contain password hashes and must remain `postgres`-only and encrypted before
 any off-host copy. Take the first physical and logical backups, restore the
 latest logical dump into a disposable scratch database, validate representative
-counts, and drop the scratch database before treating either timer as
-operational. Restore globals before the database on a clean cluster. Enabling
+counts, and stop the isolated cluster before treating either timer as
+operational. Preserve its evidence until a separately reviewed cleanup. Restore globals before the database on a clean cluster. Enabling
 PostgreSQL data checksums remains a separate maintenance operation because it
 requires a clean database shutdown. Local physical and logical copies protect
 against database/root-volume failures, but an encrypted off-host copy is still

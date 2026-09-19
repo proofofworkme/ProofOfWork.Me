@@ -914,3 +914,67 @@ The isolated cluster was stopped; its complete 29 GiB tree and evidence are reta
 This proves logical data/schema restoration and the newly restored pages, not
 production physical-page integrity, role/grant recovery, off-host recovery or PITR.
 The separate cross-ledger audit remains running under a 15-minute bound.
+
+### Recovery and verification continuation — 2026-09-19 16:03 UTC
+
+The cross-ledger consistency harness passed on production application `07929dd`,
+snapshot `e630a123880e85edc0f74622`, exact value
+`8387599195488655889.93453643` proofs. This is the existing cross-ledger comparison,
+not a new independent genesis replay. The strict ID audit remains incomplete:
+at 15:44:34 its final index scan refused a changed checkpoint; at 15:52:36 its
+Core/Electrum final fence refused changed chain/history. A separate coverage
+request returned HTTP 200 (879,894 bytes), which does not turn either full audit
+into a pass. No fence was weakened and no result was labelled resolved.
+
+The same-host physical backup/PITR exercise passed at 16:03:29 UTC. Source:
+`/data/proofofwork-postgres-backups/physical/16-main/2026-09-19T044045Z.backup`;
+external manifest SHA256
+`d8c37cd1ed5b61bbc058376a8d520cab84dde04da00be4f24a418c1c43e33198`.
+The controller copied and hashed 190 complete 16 MiB WAL segments, verified all
+backup files and required WAL using `pg_verifybackup`, and found no tablespace
+DDL in the replay interval. PostgreSQL replayed to the named recovery marker
+`audit17_20260919T155128Z`, exactly LSN `BD/8325A2D8`. The marker and WAL switch add
+operational WAL records; no application rows or economic history were changed.
+The restored database had 25,809 transactions, 26,414 events, zero invalid indexes,
+all four repaired raw rows, and zero missing confirmed-event timestamps.
+
+Recovery used a private Unix socket at port 55433, no TCP listener, and a private
+copy of tablespace 486390. Systemd made live database/tablespace paths inaccessible,
+made the rest of the filesystem read-only, and allowed writes only inside the new
+job. CPU, memory, runtime and minimum-free-space limits bounded the exercise.
+The isolated cluster was stopped after verification. Complete data and evidence
+remain at `/data/proofofwork-audit17-pitr-20260919T155550Z`; this is **not** a cleanup
+candidate. The live cluster has page checksums disabled: this exercise verifies
+backup manifest checksums and recovery, not live physical-page checksums or
+independent off-host disaster recovery.
+
+Refused attempts are preserved: the first required WAL segments were bundled
+inside the base backup; the second exposed Python tar streaming's handling of
+concatenated gzip members; the third passed backup verification but raced an
+asynchronous PostgreSQL startup status check. None wrote to production database
+paths. A narrowly pinned controller resumed the same verified private cluster
+with a proper readiness wait. PostgreSQL had consumed its private tablespace map,
+so the resume proof checked the preserved original and resulting private symlink.
+Controllers, original configurations, all three logs, resume log and receipt are
+retained. Regression checks cover archive traversal, special members and the
+empty-first-member gzip case. The final general controller now waits for readiness.
+
+The scheduled logical-backup writer still had no capacity guard and removed old
+sets/partials solely by count/age. Within the existing storage recommendation,
+the reviewed replacement now reserves 100 GiB plus a measured dump budget,
+terminates a new dump that crosses its budget/reserve, and preserves older or
+failed sets as explicitly named review candidates. Local executable fixtures
+passed low-space refusal, successful creation, runtime termination and preservation
+of old backup/evidence directories. Installation and production capacity verification
+are the next step; this paragraph does not yet claim the new writer is deployed.
+The seven-set target is a review threshold, so unreviewed retained material can
+still exhaust backup headroom and cause a guarded backup refusal. No existing
+backup, restored database, historical log or audit evidence was deleted.
+
+Boost authority work is still in progress locally; no new Boost deployment or
+H6-01 closure is claimed at this recovery checkpoint. Marketplace anchor/seal/buy
+proofs, comprehensive ID replay, off-host recovery and broader performance work
+remain outstanding. PostgreSQL recovery design follows its version-16
+[continuous archiving](https://www.postgresql.org/docs/16/continuous-archiving.html)
+and [backup verification](https://www.postgresql.org/docs/16/app-pgverifybackup.html)
+documentation, including the risk of replaying absolute tablespace paths.

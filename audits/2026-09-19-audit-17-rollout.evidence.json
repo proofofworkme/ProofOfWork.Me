@@ -213,5 +213,68 @@
       "blocks": 3665732,
       "badChecksums": 0
     }
+  },
+  "physicalRecovery": {
+    "events": 26414,
+    "paused": true,
+    "socket": "/data/proofofwork-audit17-pitr-20260919T155550Z/socket",
+    "replayLsn": "BD/8325A2D8",
+    "inRecovery": true,
+    "tablespaces": [
+      {
+        "oid": "1663",
+        "path": ""
+      },
+      {
+        "oid": "1664",
+        "path": ""
+      },
+      {
+        "oid": "486390",
+        "path": "/data/proofofwork-audit17-pitr-20260919T155550Z/tablespaces/486390"
+      }
+    ],
+    "transactions": 25809,
+    "dataDirectory": "/data/proofofwork-audit17-pitr-20260919T155550Z/cluster",
+    "invalidIndexes": 0,
+    "listenAddresses": "",
+    "repairedRawRows": 4,
+    "missingConfirmedEventTimes": 0,
+    "target": {
+      "targetName": "audit17_20260919T155128Z",
+      "targetLsn": "BD/8325A2D8",
+      "targetWal": "00000001000000BD00000083",
+      "switchLsn": "BD/8325A2F0",
+      "manifestSha256": "d8c37cd1ed5b61bbc058376a8d520cab84dde04da00be4f24a418c1c43e33198",
+      "controllerSha256": "4356e33929669663fb7b743e5e1a0297c60e30e3ac7b0029a8e934145d7a821b",
+      "at": "2026-09-19T15:51:28.889550+00:00",
+      "scope": "isolated physical backup verification and named restore point recovery; no application-row changes",
+      "attemptAt": "2026-09-19T15:55:50.953482+00:00"
+    },
+    "verifiedAt": "2026-09-19T16:03:29.073260+00:00",
+    "walSegments": 190,
+    "baseManifestVerified": true,
+    "scope": "isolated same-host physical recovery; no off-host certification"
+  },
+  "ledgerAudit": {
+    "result": "passed",
+    "snapshotId": "e630a123880e85edc0f74622",
+    "valueProofs": "8387599195488655889.93453643",
+    "log": "/var/log/proofofwork-audit17-ledger.log",
+    "qualification": "Existing cross-ledger consistency harness, not independent genesis replay"
+  },
+  "strictIdAudit": {
+    "result": "incomplete",
+    "attempts": [
+      {
+        "log": "/var/log/proofofwork-audit17-ids.log",
+        "reason": "index scan not pinned to exact current checkpoint"
+      },
+      {
+        "log": "/var/log/proofofwork-audit17-ids-attempt2.log",
+        "reason": "Core checkpoint or Electrum history changed during coverage"
+      }
+    ],
+    "diagnosticCoverageHttp200Bytes": 879894
   }
 }
