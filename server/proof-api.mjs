@@ -53260,6 +53260,20 @@ async function cachedWorkFloorPayload(network, fresh = false) {
   );
 }
 
+// Share only an in-flight response for the same network and freshness mode.
+// Settlement evicts the promise; later reads run every canonical check again.
+async function workFloorResponsePayload(network, fresh = false) {
+  return deduplicatedSummaryRead(
+    `work-floor:${network}:${fresh ? "fresh" : "current"}`,
+    async () => withWorkMarketplaceV4Metadata(
+      await summaryPayloadWithCanonicalProvenance(
+        await cachedWorkFloorPayload(network, fresh), network, fresh, "work-floor",
+      ),
+      network,
+    ),
+  );
+}
+
 async function fastLivenetWorkSummaryPayload(network) {
   const ledger = await existingCurrentCanonicalLedgerPayloadWithinMs(
     network,
@@ -78437,37 +78451,12 @@ async function handleRequest(request, response) {
     }
 
     if (url.pathname === "/api/v1/work-floor") {
-      if (freshRead) {
-        jsonResponse(
-          response,
-          200,
-          await withWorkMarketplaceV4Metadata(
-            await summaryPayloadWithCanonicalProvenance(
-              await cachedWorkFloorPayload(network, true),
-              network,
-              true,
-              "work-floor",
-            ),
-            network,
-          ),
-          FRESH_READ_CACHE_CONTROL,
-        );
-      } else {
-        jsonResponse(
-          response,
-          200,
-          await withWorkMarketplaceV4Metadata(
-            await summaryPayloadWithCanonicalProvenance(
-              await cachedWorkFloorPayload(network, false),
-              network,
-              false,
-              "work-floor",
-            ),
-            network,
-          ),
-          READ_CACHE_CONTROL,
-        );
-      }
+      jsonResponse(
+        response,
+        200,
+        await workFloorResponsePayload(network, freshRead),
+        freshRead ? FRESH_READ_CACHE_CONTROL : READ_CACHE_CONTROL,
+      );
       return;
     }
 
