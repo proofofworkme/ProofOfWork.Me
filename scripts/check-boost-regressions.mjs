@@ -4,6 +4,7 @@ import { test } from "node:test";
 import vm from "node:vm";
 import ts from "typescript";
 import * as projection from "../server/boost-projection.mjs";
+import { verifiedBoostTicketClosures } from "../server/boost-marketplace-proof.mjs";
 import { decimalValueToQ8, formatWorkSubatoms, q8ToCanonicalDecimal, q8ToNumber, WORK_SUBATOM_UNIT_SCALE } from "../server/work-units.mjs";
 
 const apiSource = await readFile(new URL("../server/proof-api.mjs", import.meta.url), "utf8");
@@ -27,13 +28,16 @@ const event = (id, kind = "boost-post", fields = {}) => ({
   eventId: id, txid: txid(id), kind, protocol: "pwb1", confirmed: true, valid: true,
   status: "confirmed", blockHeight: 965000, blockIndex: id, protocolVout: 1, recordOrdinal: 0,
   authorAddress: "owner", proofSignalSats: 546,
+  recipients: [{ address: "registry", vout: 0, amountSats: "546" }, { address: fields.targetAddress ?? "owner", vout: 2, amountSats: "546" }],
   createdAt: new Date(Date.UTC(2026, 8, 1) + id * 1000).toISOString(), text: `post ${id}`, ...fields,
 });
 function reader(events, mutate = (page) => page) {
   const calls = [];
   const read = async (network, params) => {
     const offset = Number(params.get("cursor")?.replace("fixture-", "") ?? 0);
-    const filtered = events.filter((item) => params.get("status") === "all" || item.confirmed);
+    const registry = [event(900001, "id-register", { protocol: "pwid1", id: "boost", receiveAddress: "registry", blockHeight: 964000 })];
+    const inventory = params.get("protocol") === "pwid1" ? registry : events;
+    const filtered = inventory.filter((item) => params.get("status") === "all" || item.confirmed);
     const ordered = [...filtered].sort((a, b) => b.eventId - a.eventId);
     const items = ordered.slice(offset, offset + 200);
     const end = offset + items.length;
@@ -49,7 +53,7 @@ function reader(events, mutate = (page) => page) {
   return { read, calls };
 }
 function server(readPage, overrides = {}) {
-  const context = vm.createContext({ console, URLSearchParams, ...projection,
+  const context = vm.createContext({ console, URLSearchParams, ...projection, verifiedBoostTicketClosures,
     decimalValueToQ8, formatWorkSubatoms, q8ToCanonicalDecimal, q8ToNumber,
     WORK_SUBATOM_UNIT_SCALE, WORK_TOKEN_MAX_SUPPLY: 21_000_000,
     proofIndexReadFeatureEnabled: () => true, proofIndexEventHistoryPayload: readPage,
@@ -59,6 +63,7 @@ function server(readPage, overrides = {}) {
     errorSummary: (error) => error.message,
     payloadIndexedThroughBlockHash: (payload) => payload?.indexedThroughBlockHash ?? "",
     numericValue: (value) => Number(value) || 0,
+    isValidBitcoinAddress: value => Boolean(value),
     boundedInteger: (value, fallback, min, max) => value === null ? fallback : Math.min(max, Math.max(min, Math.trunc(Number(value)) || fallback)),
     dateIso: (value, fallback) => new Date(value ?? fallback).toISOString(),
     normalizePowId: (value) => String(value).toLowerCase().replace(/@proofofwork\.me$/u, ""),
@@ -66,7 +71,7 @@ function server(readPage, overrides = {}) {
     ...overrides,
   });
   vm.runInContext([definition("BOOST_EVENT_KINDS"), definition("canonicalNonNegativeIntegerText"), definition("workSubatomsValueAtNetworkQ8"), boostSource,
-    "this.api = { boostFeedPayload, boostOwnershipState, compareBoostFeedItems, boostProfileSignalStats, boostWorkSignalValue };"].join("\n"), context);
+    "this.api = { boostCanonicalMarketTransaction, boostFeedPayload, boostOwnershipState, compareBoostFeedItems, boostProfileSignalStats, boostWorkSignalValue };"].join("\n"), context);
   return context.api;
 }
 
@@ -155,13 +160,13 @@ test("complete AMO discovery has no 100-post cap and emits each original ticket 
 });
 
 test("feed continuation rejects changed filters, valuation or history", async () => {
-  const events = Array.from({ length: 101 }, (_, i) => event(i + 1));
+  const events = Array.from({ length: 101 }, (_, i) => event(i + 1, "boost-post", { workSignalSubatoms: "10000000000000000" }));
   const api = server(reader(events).read);
   const first = await api.boostFeedPayload("livenet", new URLSearchParams("limit=100"));
   await assert.rejects(api.boostFeedPayload("livenet", new URLSearchParams({ cursor: first.nextCursor, sort: "oldest" })), /changed/u);
   const changed = server(reader([...events, event(102)]).read);
   await assert.rejects(changed.boostFeedPayload("livenet", new URLSearchParams({ cursor: first.nextCursor })), /changed/u);
-  const changedFloor = server(reader(events).read, { cachedWorkFloorPayload: async () => ({ networkValueQ8: "2100000000000001" }) });
+  const changedFloor = server(reader(events).read, { cachedWorkFloorPayload: async () => ({ networkValueQ8: "2100000000000001", snapshotId: "fixture-snapshot", indexedThroughBlock: 965000, indexedThroughBlockHash: "a".repeat(64) }) });
   await assert.rejects(changedFloor.boostFeedPayload("livenet", new URLSearchParams({ cursor: first.nextCursor })), /changed/u);
   assert.throws(() => projection.decodeBoostFeedCursor("bad"), /cursor/u);
 });
@@ -262,4 +267,202 @@ test("direct ownership transfers reject outsiders, missing actors and unknown pa
   }
   assert.equal(api.boostOwnershipState([original, transfer(2, "owner")]).states.get(txid(1)).ownerAddress, "buyer");
   assert.equal(api.boostOwnershipState([transfer(2, "owner", txid(99))]).states.get(txid(99)).ownerAddress, "");
+});
+
+
+test("Base58 address identity remains exact across graph, profile and ownership views", async () => {
+  const owner = "1KNkUBREnfno2BeV7QsBf8XCWZN6YFfxPH";
+  const impostor = owner.toLowerCase();
+  const events = [event(1, "boost-post", { authorAddress: owner }),
+    event(2, "boost-post", { authorAddress: impostor }),
+    event(3, "boost-follow", { authorAddress: "viewer", targetAddress: owner }),
+    event(4, "boost-unfollow", { authorAddress: "Viewer", targetAddress: owner }),
+  ];
+  const api = server(reader(events).read);
+  const state = api.boostOwnershipState(events);
+  assert.equal(state.followingByFollower.get("viewer").has(owner), true);
+  assert.equal(state.followersByTarget.has(impostor), false);
+  const page = await api.boostFeedPayload("livenet", new URLSearchParams("viewer=viewer&view=following"));
+  assert.equal(page.items.find(item => item.txid === txid(1)).viewerFollowsAuthor, true);
+  const profile = await api.boostFeedPayload("livenet", new URLSearchParams({ profile: owner }));
+  assert.deepEqual(Array.from(profile.items, item => item.txid), [txid(1)]);
+});
+
+test("only the confirmed original author can hide an asset; tombstones preserve ownership and history", async () => {
+  const original = event(1);
+  for (const sender of ["outsider", "Owner", "buyer", ""]) {
+    const events = [original, event(2, "boost-transfer", { targetTxid: txid(1), newOwnerAddress: "buyer" }),
+      event(3, "boost-hide", { targetTxid: txid(1), authorAddress: sender })];
+    const api = server(reader(events).read);
+    assert.equal((await api.boostFeedPayload("livenet", new URLSearchParams())).totalCount, 1);
+  }
+  for (const confirmed of [true, false]) {
+    const events = [original, event(2, "boost-hide", { targetTxid: txid(1), confirmed, status: confirmed ? "confirmed" : "pending" })];
+    const api = server(reader(events).read);
+    const page = await api.boostFeedPayload("livenet", new URLSearchParams("pending=1"));
+    assert.equal(page.totalCount, confirmed ? 0 : 1);
+    assert.equal(page.provenance.eventCount, 2);
+    assert.equal(api.boostOwnershipState(events).states.get(txid(1)).ownerAddress, "owner");
+  }
+  const events = [event(1, "boost-reboost", { targetTxid: txid(99), authorAddress: "outsider" }),
+    event(2, "boost-transfer", { targetTxid: txid(99), authorAddress: "outsider", newOwnerAddress: "thief" })];
+  assert.equal(server(reader(events).read).boostOwnershipState(events).states.get(txid(99)).ownerAddress, "");
+});
+
+
+test("paid actions require the historical receiver and distinct exact output accounting", () => {
+  const registration = event(1, "id-register", { id: "boost", receiveAddress: "registry", blockHeight: 964000 });
+  const update = event(10, "id-update", { id: "boost", receiveAddress: "new-registry" });
+  const action = (id, address, amount = "546") => event(id, "boost-like", { recipients: [{ address, amountSats: amount, vout: 0 }] });
+  const qualified = projection.qualifyBoostPaidActions([
+    action(2, "registry"), action(3, "Registry"), action(4, "outsider", "10000000"),
+    action(11, "registry"), action(12, "new-registry"), action(13, "new-registry", "545"),
+  ], [registration, update]);
+  assert.deepEqual(qualified.accepted.map(item => item.eventId), [2, 12]);
+  assert.equal(qualified.rejected.length, 4);
+  const follow = event(5, "boost-follow", { targetAddress: "registry", recipients: [{ address: "registry", amountSats: "546", vout: 0 }] });
+  assert.equal(projection.qualifyBoostPaidActions([follow], [registration]).accepted.length, 0);
+  follow.recipients.push({ address: "registry", amountSats: "546", vout: 2 });
+  assert.equal(projection.qualifyBoostPaidActions([follow], [registration]).accepted.length, 1);
+  follow.recipients[1].vout = 0;
+  assert.equal(projection.qualifyBoostPaidActions([follow], [registration]).accepted.length, 0);
+  assert.equal(projection.qualifyBoostPaidActions([action(2, "registry")], []).accepted.length, 0);
+  assert.throws(() => projection.qualifyBoostPaidActions([action(2, "registry")], [{ ...registration, blockIndex: undefined }]), /exact chain position/u);
+});
+
+test("listing mutations require the exact owner and preserve original ticket identity and price", () => {
+  const api = server(reader([]).read);
+  const original = event(1);
+  const list = event(2, "boost-list", { targetTxid: txid(1), sellerAddress: "owner", priceSats: "1000" });
+  for (const actor of ["outsider", "Owner", ""]) {
+    const state = api.boostOwnershipState([original, { ...list, authorAddress: actor }]);
+    assert.equal(state.states.get(txid(1)).listing, null);
+  }
+  for (const priceSats of ["1.1", "1e3", "9007199254740993", "2100000000000001", "0", "01"]) {
+    assert.equal(api.boostOwnershipState([original, { ...list, priceSats }]).states.get(txid(1)).listing, null);
+  }
+  const seal = event(3, "boost-seal", { listingId: txid(2), targetTxid: txid(1), sellerAddress: "owner", priceSats: "1000" });
+  assert.equal(api.boostOwnershipState([original, list, seal]).states.get(txid(1)).listing.listingTxid, txid(2));
+  const delist = event(4, "boost-delist", { listingId: txid(2), targetTxid: txid(2) });
+  assert.equal(api.boostOwnershipState([original, list, { ...delist, authorAddress: "outsider" }]).states.get(txid(1)).listing.listingTxid, txid(2));
+  assert.equal(api.boostOwnershipState([original, list, delist], new Set(["4"])).states.get(txid(1)).listing, null);
+});
+
+test("purchases require Core-bound ticket spend, wire terms and separate exact consideration", async () => {
+  const bitcoin = await import("bitcoinjs-lib");
+  const seller = "1KNkUBREnfno2BeV7QsBf8XCWZN6YFfxPH";
+  const buyer = "18xvbj6mpPpYYjWibcqsXdV7SCwBQNrqMW";
+  const registry = "1MwPXzhsU5gknikrfWipBAnndruTNhGskU";
+  const script = value => Buffer.from(bitcoin.address.toOutputScript(value)).toString("hex");
+  const output = (value, amount) => ({ scriptpubkey: script(value), scriptpubkey_address: value, value: amount });
+  const opReturn = text => ({ scriptpubkey: Buffer.from(bitcoin.script.compile([bitcoin.opcodes.OP_RETURN, Buffer.from(text)])).toString("hex"), value: 0 });
+  const terms = { version: "pwb-sale-v1", anchorType: "sale-ticket-v1", anchorVout: 2, saleTicketVout: 2,
+    anchorSigHashType: 0x83, anchorValueSats: 546, saleTicketValueSats: 546,
+    anchorScriptPubKey: script(seller), boostTxid: txid(1), priceSats: 1000, sellerAddress: seller };
+  const original = event(1, "boost-post", { authorAddress: seller });
+  const list = event(2, "boost-list", { authorAddress: seller, senderAddress: seller,
+    targetTxid: txid(1), sellerAddress: seller, priceSats: "1000" });
+  const buy = event(3, "boost-buy", { listingId: txid(2), targetTxid: txid(2), buyerAddress: buyer,
+    protocolVout: 2, applicationBoostRegistryReceiver: registry });
+  const listTx = { vin: [{ prevout: output(seller, 10000) }], vout: [output(registry, 546),
+    opReturn("pwb1:list5:" + Buffer.from(JSON.stringify(terms)).toString("base64url")), output(seller, 546)] };
+  const buyTx = { status: { block_time: 1_800_000_000 }, vin: [
+    { txid: txid(99), vout: 0, prevout: output(buyer, 10000) },
+    { txid: txid(2), vout: 2, prevout: output(seller, 546) }],
+    vout: [output(registry, 546), output(seller, 1546), opReturn(`pwb1:buy5:${txid(2)}:${buyer}`)] };
+  const proof = async (changedList = listTx, changedBuy = buyTx, changedEvent = buy) => verifiedBoostTicketClosures(
+    [original, list, changedEvent], async item => item.kind === "boost-list" ? changedList : changedBuy);
+  const verified = await proof(); assert.equal(verified.has("3"), true);
+  const api = server(reader([]).read);
+  assert.equal(api.boostOwnershipState([original, list, buy]).states.get(txid(1)).ownerAddress, seller);
+  assert.equal(api.boostOwnershipState([original, list, buy], verified).states.get(txid(1)).ownerAddress, buyer);
+  for (const mutate of [
+    tx => { tx.vin[1].txid = txid(88); },
+    tx => { tx.vin[1].prevout.value = 545; },
+    tx => { tx.vout[1].value = 1545; },
+    tx => { tx.vout[0].value = 545; },
+    tx => { tx.vout[2] = opReturn(`pwb1:buy5:${txid(2)}:${seller}`); },
+  ]) {
+    const changed = structuredClone(buyTx); mutate(changed);
+    assert.equal((await proof(listTx, changed)).size, 0);
+  }
+  const forgedList = structuredClone(listTx); forgedList.vout[2] = output(buyer, 546);
+  assert.equal((await proof(forgedList)).size, 0);
+  assert.equal((await proof(listTx, buyTx, { ...buy, confirmed: false })).size, 0);
+  await assert.rejects(verifiedBoostTicketClosures([list, buy], async () => null), /unavailable/u);
+  const delist = event(4, "boost-delist", { listingId: txid(2), targetTxid: txid(2), senderAddress: seller,
+    authorAddress: seller, applicationBoostRegistryReceiver: registry });
+  const delistTx = { vin: [{ txid: txid(2), vout: 2, prevout: output(seller, 546) }],
+    vout: [output(registry, 546), opReturn(`pwb1:delist5:${txid(2)}`)] };
+  const verifiedDelist = await verifiedBoostTicketClosures([list, delist], async item => item.kind === "boost-list" ? listTx : delistTx);
+  assert.equal(verifiedDelist.has("4"), true);
+  assert.equal(api.boostOwnershipState([original, list, delist], verifiedDelist).states.get(txid(1)).listing, null);
+  delistTx.vin[0].txid = txid(99);
+  assert.equal((await verifiedBoostTicketClosures([list, delist], async item => item.kind === "boost-list" ? listTx : delistTx)).size, 0);
+
+});
+
+
+test("market Core adapter fences block hash, height, transaction position and raw-byte hydration", async () => {
+  const item = event(2, "boost-list", { blockHash: "a".repeat(64) });
+  const tx = { txid: item.txid, status: { confirmed: true, block_hash: item.blockHash } };
+  const block = { hash: item.blockHash, height: item.blockHeight, tx: [txid(99), txid(98), item.txid] };
+  const apiFor = (change = {}) => {
+    let hashes = 0;
+    return server(reader([]).read, {
+      bitcoinRpc: async (method) => method === "getblockhash"
+        ? { ok: true, result: ++hashes === 2 && change.reorg ? "b".repeat(64) : item.blockHash }
+        : { ok: true, result: { ...block, ...change.block } },
+      fetchTransactionFromBitcoinRpc: async (id, network, options) => {
+        assert.equal(options.includeRawHex, true); assert.equal(options.requireCanonicalPrevouts, true);
+        assert.equal(options.bypassCache, true); assert.equal(options.cacheResult, false);
+        return { ...tx, ...change.tx };
+      },
+    });
+  };
+  assert.equal((await apiFor().boostCanonicalMarketTransaction("livenet", item)).txid, item.txid);
+  for (const change of [{ reorg: true }, { block: { height: 1 } }, { block: { tx: [] } }, { tx: { status: { confirmed: false } } }]) {
+    await assert.rejects(apiFor(change).boostCanonicalMarketTransaction("livenet", item), /could not bind/u);
+  }
+  await assert.rejects(apiFor().boostCanonicalMarketTransaction("livenet", { ...item, blockIndex: undefined }), /exact confirmed position/u);
+});
+
+
+test("invalid direct-transfer destinations do not clear a valid owner or listing", () => {
+  const api = server(reader([]).read, { isValidBitcoinAddress: () => false });
+  const items = [event(1), event(2, "boost-list", { targetTxid: txid(1), sellerAddress: "owner", priceSats: "1000" }),
+    event(3, "boost-transfer", { targetTxid: txid(1), newOwnerAddress: "not-an-address" })];
+  const state = api.boostOwnershipState(items).states.get(txid(1));
+  assert.equal(state.ownerAddress, "owner");
+  assert.equal(state.listing.listingTxid, txid(2));
+});
+
+
+test("saved legacy profile intents preserve exact embedded address ownership", async () => {
+  const encoding = await importTs("../src/shared/utils/encoding.ts", { '"bitcoinjs-lib"': JSON.stringify(import.meta.resolve("bitcoinjs-lib")), '"buffer"': '"node:buffer"' });
+  const mod = await import(await importTs("../src/features/boost/boostProtocol.ts", { '"../../shared/utils/encoding"': JSON.stringify(encoding) }));
+  const owner = "1KNkUBREnfno2BeV7QsBf8XCWZN6YFfxPH";
+  const intent = { address: owner, network: "livenet", id: "owner", signature: "fixture" };
+  const originalWindow = globalThis.window;
+  try {
+    globalThis.window = { localStorage: { getItem: () => JSON.stringify({ [`livenet:${owner.toLowerCase()}`]: intent }) } };
+    assert.equal(mod.loadBoostIdentityIntent(owner, "livenet").address, owner);
+    assert.equal(mod.loadBoostIdentityIntent(owner.toLowerCase(), "livenet"), undefined);
+    assert.equal(mod.loadBoostIdentityIntent(owner, "testnet"), undefined);
+    assert.equal(mod.idsOwnedByAddress([{ id: "owner", ownerAddress: owner, confirmed: true }], owner.toLowerCase(), "livenet").length, 0);
+  } finally {
+    if (originalWindow === undefined) delete globalThis.window;
+    else globalThis.window = originalWindow;
+  }
+});
+
+
+test("proof-only Boost reads do not start an unused WORK valuation query", async () => {
+  const api = server(reader([event(1)]).read, {
+    cachedWorkFloorPayload: async () => assert.fail("unused WORK valuation must not run"),
+  });
+  const page = await api.boostFeedPayload("livenet", new URLSearchParams());
+  assert.equal(page.totalCount, 1);
+  assert.equal(page.valuationProvenance.used, false);
+  assert.equal(page.signalStats.totalSignalQ8, "54600000000");
 });

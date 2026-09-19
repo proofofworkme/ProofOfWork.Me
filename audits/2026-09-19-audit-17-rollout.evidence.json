@@ -264,7 +264,7 @@
     "qualification": "Existing cross-ledger consistency harness, not independent genesis replay"
   },
   "strictIdAudit": {
-    "result": "incomplete",
+    "result": "passed-on-third-attempt",
     "attempts": [
       {
         "log": "/var/log/proofofwork-audit17-ids.log",
@@ -275,6 +275,138 @@
         "reason": "Core checkpoint or Electrum history changed during coverage"
       }
     ],
-    "diagnosticCoverageHttp200Bytes": 879894
+    "diagnosticCoverageHttp200Bytes": 879894,
+    "log": "/var/log/proofofwork-audit17-ids-attempt3.log",
+    "logSha256": "d216feca433a865b5a441b7e78bf00f4f378caf475ec7849869917167777f56c",
+    "coveredTransactions": 586,
+    "confirmedRegistryTransactions": 562,
+    "pendingRegistryTransactions": 24,
+    "lifecycleEvents": 535,
+    "activeListings": 6,
+    "canonicalSales": 4,
+    "registrationAttempts": 546,
+    "confirmedWinners": 505,
+    "pendingCandidates": 22,
+    "historicalRefundCandidates": 17,
+    "pendingWatchlist": 2,
+    "qualification": "Exact Core-ordered ID lifecycle replay and fences passed; earlier refused attempts retained."
+  },
+  "backupGuardDeployment": {
+    "commit": "2924415",
+    "installedSha256": "1728a2d7047a5a9a0804ef2fa7db83cbff2ff2e21dfe0dc23048217651093a9e",
+    "evidence": "/data/proofofwork-audit17-backup-guard-20260919T160647Z",
+    "availableBytes": 342807744512,
+    "reserveBytes": 107374182400,
+    "maximumDumpBytes": 34722895180,
+    "productionCapacityCheck": "passed",
+    "newBackupCreated": false
+  },
+  "boostAuthorityCorePredeployment": {
+    "at": "2026-09-19T16:14:41.909Z",
+    "snapshot": "e7ca4406bf6aae97ad84d98a",
+    "proofs": [
+      {
+        "txid": "8d48127f2e2015e7366d141947b6c679c710b963549ebac78ae1479a2c429c3b",
+        "blockHash": "000000000000000000015b51eee284c382dbd29b794fa1b88effccd8ae665efd",
+        "blockHeight": 967363,
+        "blockIndex": 967,
+        "protocolVout": 1,
+        "rawHexSha256": "cce50862f50a9c8da56aaceabdcefdfd495da4d88ddd00eddb8cc4256ad8bde7",
+        "paymentOutputs": 1
+      },
+      {
+        "txid": "c7f1f361d5066b56b3af144b369d199278aaada25d657550e31fdb255c3938c8",
+        "blockHash": "00000000000000000000abbe43800f03791755051e2fd9bed7ae05378977c6af",
+        "blockHeight": 967362,
+        "blockIndex": 618,
+        "protocolVout": 1,
+        "rawHexSha256": "6dc71a1da67fb429fc43df089cb1c1e833c53492fbd98d6c645d74899e27ef0a",
+        "paymentOutputs": 1
+      },
+      {
+        "txid": "f6b5b003a696281377fe3f8705e77c8643d2f2b7775f69407cfaf8b0df9ae183",
+        "blockHash": "00000000000000000001b69ce93da24d0c7f319aa31713aec3da8cfbd54b6313",
+        "blockHeight": 967134,
+        "blockIndex": 1623,
+        "protocolVout": 2,
+        "rawHexSha256": "a0f3c541ce95082c0aec08192de609b9e357bb633bacee9aa754c17bc711ffd9",
+        "paymentOutputs": 2
+      },
+      {
+        "txid": "8ae8a348b6fec39e465b4d215d9b1c24ab286db7ff15db6077f3703db7685ca7",
+        "blockHash": "000000000000000000009f1302fc733e4bcf194fa9be215a901b752a89b0ad5d",
+        "blockHeight": 967038,
+        "blockIndex": 3782,
+        "protocolVout": 1,
+        "rawHexSha256": "01f838154b280b4499325dce091b141832b1d019868da04800d625c7ebc40810",
+        "paymentOutputs": 1
+      },
+      {
+        "txid": "b543324e6399f8647a7d802f4e9d786ff4b4e1f43d80fdafb1486c69e9ae96ac",
+        "blockHash": "000000000000000000007cc8af5b9fd1df7c648f4454afe115e090e6ad9ad3e1",
+        "blockHeight": 967033,
+        "blockIndex": 1281,
+        "protocolVout": 2,
+        "rawHexSha256": "3866810edc5636ead1bb930841be31ef4dc702e64054c6fcb38d8aec15e7e0fe",
+        "paymentOutputs": 2
+      },
+      {
+        "txid": "a86316b36db231640863b58377900af410e629e7254fa037256f7e0d013f9c74",
+        "blockHash": "000000000000000000016b46ff3db8327c0853740a406a363d0c7712dbd894dc",
+        "blockHeight": 967032,
+        "blockIndex": 1193,
+        "protocolVout": 1,
+        "rawHexSha256": "d5b265bf581a54cf075ed872bf7bce8732609387956cba02fba7e007d74a8072",
+        "paymentOutputs": 1
+      },
+      {
+        "txid": "afcd7df9999d598ff5d426b731f4daca99f28ddc83ce62925242ff59128dc637",
+        "blockHash": "00000000000000000000441492de4b10278548fe504fa12c1d60065795692d1c",
+        "blockHeight": 967027,
+        "blockIndex": 2877,
+        "protocolVout": 1,
+        "rawHexSha256": "761102b21891e7dd277591efc005e2fc8d87f750bd0a4491d84e6724c32363d4",
+        "paymentOutputs": 1
+      },
+      {
+        "txid": "0c887ed6f7dbe415a2bfd88c1bdcb0c5c1681fee339d64bba644e703c8c759c5",
+        "blockHash": "0000000000000000000064eec4c13e9086f7ef3b9211d4b94c3ac84b78f7b89b",
+        "blockHeight": 965601,
+        "blockIndex": 2769,
+        "protocolVout": 1,
+        "rawHexSha256": "0f262745dbf202675bc1fd37dff8cb597061c6702afa677391653bf71ffaddbe",
+        "paymentOutputs": 1
+      },
+      {
+        "txid": "b7348e6c40b4327120282cc828cf6ee6a5e4ff5f4bc13da88f45e9e7a251012c",
+        "blockHash": "00000000000000000001aac3149e56d0328dcf2d53517f9af71b7f8463694854",
+        "blockHeight": 965089,
+        "blockIndex": 613,
+        "protocolVout": 1,
+        "rawHexSha256": "c541e2c107a3540018d0615ee6e675bf13f3d72da883b834c408e0c56a1e7bb7",
+        "paymentOutputs": 1
+      },
+      {
+        "txid": "ec52602d518517480b37b93cebb88dbecaf752b38ffafc3bc76eb8dca5b3a793",
+        "blockHash": "000000000000000000022dc343c0f57689b27a9ff5968882cb62b52f4ae17eed",
+        "blockHeight": 964513,
+        "blockIndex": 400,
+        "protocolVout": 1,
+        "rawHexSha256": "385d83f82f31e069e7c4c8929d81d3f43188e6514af3d8ce1a54a272af41402c",
+        "paymentOutputs": 1
+      },
+      {
+        "txid": "5e0a510f788fa0626f36a69b9ed2e7a73a81ebbaef82ca1eee0f09ea4ad41363",
+        "blockHash": "000000000000000000012eb5fe28a7106c81f82065dfdab4e0590d6bf859b42e",
+        "blockHeight": 964502,
+        "blockIndex": 1076,
+        "protocolVout": 1,
+        "rawHexSha256": "015f2b69c99dd34616d328d8d82d0a49938ceb0ac786e301701c55ba8f378782",
+        "paymentOutputs": 1
+      }
+    ],
+    "accepted": 10,
+    "rejected": [],
+    "qualification": "All 10 current Boost events and historical receiver registration bound to Core bytes, outputs and chain positions; no live sale lifecycle exists."
   }
 }

@@ -382,14 +382,21 @@ function profileIntentMap() {
 }
 
 function profileIntentKey(address: string, network: BitcoinNetwork) {
-  return `${network}:${address.trim().toLowerCase()}`;
+  return `${network}:${address.trim()}`;
 }
 
 export function loadBoostIdentityIntent(
   address: string,
   network: BitcoinNetwork,
 ) {
-  return profileIntentMap()[profileIntentKey(address, network)];
+  const intents = profileIntentMap();
+  const key = profileIntentKey(address, network);
+  // Preserve old saved intents only when their embedded identity is exact.
+  // A lowercased legacy key alone cannot establish ownership of a Base58 address.
+  for (const candidate of [intents[key], intents[`${network}:${address.trim().toLowerCase()}`]]) {
+    if (candidate?.address === address.trim() && candidate.network === network) return candidate;
+  }
+  return undefined;
 }
 
 export function saveBoostIdentityIntent(intent: BoostIdentityIntent) {
@@ -411,7 +418,7 @@ export function idsOwnedByAddress(
   address: string,
   network: BitcoinNetwork,
 ) {
-  const normalizedAddress = address.trim().toLowerCase();
+  const normalizedAddress = address.trim();
   if (!normalizedAddress) {
     return [];
   }
@@ -420,7 +427,7 @@ export function idsOwnedByAddress(
       (record) =>
         record.confirmed !== false &&
         normalizeBoostId(record.id) &&
-        record.ownerAddress.trim().toLowerCase() === normalizedAddress &&
+        record.ownerAddress.trim() === normalizedAddress &&
         (!record.network || record.network === network),
     )
     .sort((left, right) =>

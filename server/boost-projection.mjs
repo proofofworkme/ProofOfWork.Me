@@ -158,3 +158,91 @@ export function paginateBoostEntries(entries, { limit, cursor, fingerprint, snap
   const hasMore = end < entries.length;
   return { items, hasMore, nextCursor: hasMore ? `boost-feed-v1.${Buffer.from(JSON.stringify({ fingerprint, offset: end, snapshotId })).toString("base64url")}` : "", start: offset, end };
 }
+
+const BOOST_PAID_KINDS = new Set([
+  "boost-like", "boost-reply", "boost-reboost", "boost-follow", "boost-unfollow",
+  "boost-transfer", "boost-list", "boost-seal", "boost-delist", "boost-buy",
+]);
+
+export function boostNeedsRegistryHistory(items) {
+  return items.some(item => item?.valid !== false && BOOST_PAID_KINDS.has(item?.kind));
+}
+
+export async function readBoostRegistryHistory(network, readPage, checkpoint) {
+  const history = await readCompleteBoostHistory(network, (network, params) => {
+    const registryParams = new URLSearchParams(params);
+    registryParams.set("protocol", "pwid1");
+    registryParams.set("refType", "powid");
+    registryParams.set("ref", "boost");
+    return readPage(network, registryParams);
+  }, { snapshotId: checkpoint.snapshotId });
+  if (history.indexedThroughBlock !== checkpoint.indexedThroughBlock ||
+      history.indexedThroughBlockHash !== checkpoint.indexedThroughBlockHash) {
+    throw boostProjectionError("Boost registry history and social events disagree on their checkpoint.", 409);
+  }
+  return history;
+}
+
+function boostPhysicalPosition(item) {
+  const position = [item.blockHeight, item.blockIndex, item.protocolVout, item.recordOrdinal];
+  if (position.some((value, i) => !Number.isSafeInteger(value) || value < (i === 0 ? 1 : 0))) {
+    throw boostProjectionError("Boost authority history is missing an exact chain position.");
+  }
+  return position;
+}
+
+function boostPositionBefore(left, right) {
+  const l = boostPhysicalPosition(left), r = boostPhysicalPosition(right);
+  for (let i = 0; i < l.length; i++) if (l[i] !== r[i]) return l[i] < r[i];
+  return false;
+}
+
+function boostExactPayments(item) {
+  const payments = new Map(), outputs = new Set();
+  if (!Array.isArray(item.recipients)) return null;
+  for (const output of item.recipients) {
+    const amount = String(output?.amountSats ?? "");
+    if (!Number.isSafeInteger(output?.vout) || output.vout < 0 || outputs.has(output.vout) ||
+        typeof output.address !== "string" || !output.address || !/^(?:0|[1-9]\d*)$/u.test(amount) ||
+        BigInt(amount) > 2_100_000_000_000_000n) return null;
+    outputs.add(output.vout);
+    payments.set(output.address, (payments.get(output.address) ?? 0n) + BigInt(amount));
+  }
+  return payments;
+}
+
+// This qualifies application projections only. Raw events and consensus replay
+// outcomes are retained unchanged; a generic accepted carrier is not proof that
+// its payment reached the historical Boost receiver.
+export function qualifyBoostPaidActions(items, registryItems) {
+  const receivers = [];
+  for (const item of [...registryItems].sort(compareBoostCanonicalEvents)) {
+    if (item.confirmed !== true || item.valid !== true) continue;
+    if (item.id !== "boost") throw boostProjectionError("Boost registry history contains an unrelated accepted ID.");
+    if (!["id-register", "id-update", "id-transfer", "id-buy"].includes(item.kind)) continue;
+    boostPhysicalPosition(item);
+    const receiver = item.receiveAddress ?? item.currentReceiveAddress;
+    if (typeof receiver !== "string" || !receiver.trim()) {
+      throw boostProjectionError("Historical Boost receiver is unavailable.");
+    }
+    receivers.push({ item, receiver: receiver.trim() });
+  }
+  const accepted = [], rejected = [];
+  for (const item of items) {
+    if (!BOOST_PAID_KINDS.has(item.kind)) { accepted.push(item); continue; }
+    let receiver = "";
+    for (const entry of receivers) {
+      if (item.confirmed === false || boostPositionBefore(entry.item, item)) receiver = entry.receiver;
+      else break;
+    }
+    const payments = boostExactPayments(item);
+    const target = String(item.targetAddress ?? item.followedAddress ?? "").trim();
+    const registryDue = item.kind === "boost-follow" && target === receiver ? 1092n : 546n;
+    const reason = !receiver ? "missing-confirmed-boost-receiver" : !payments ? "unverifiable-payment-outputs" :
+      (payments.get(receiver) ?? 0n) < registryDue ? "boost-registry-payment-missing" :
+      item.kind === "boost-follow" && (!target || (payments.get(target) ?? 0n) < 546n) ? "follow-target-payment-missing" : "";
+    if (reason) rejected.push({ eventId: item.eventId, txid: item.txid, reason });
+    else accepted.push({ ...item, applicationBoostRegistryReceiver: receiver });
+  }
+  return { accepted, rejected };
+}

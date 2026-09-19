@@ -195,7 +195,7 @@ function boostAuthorId(item: BoostFeedItem) {
 }
 
 function boostAuthorAddressKey(item: BoostFeedItem) {
-  return boostAuthorAddress(item).toLowerCase();
+  return boostAuthorAddress(item);
 }
 
 function boostTotalSignalQ8(item: BoostFeedItem) {
@@ -236,8 +236,8 @@ function authorLabel(
   const activeWalletOwnsPost =
     activeIdentity &&
     activeAddress &&
-    item.authorAddress.trim().toLowerCase() ===
-      activeAddress.trim().toLowerCase();
+    item.authorAddress.trim() ===
+      activeAddress.trim();
   if (activeWalletOwnsPost) {
     return `${activeIdentity.id}@proofofwork.me`;
   }
@@ -436,11 +436,11 @@ function BoostPost({
   const connectedOwner =
     activeAddress &&
     ownerAddress &&
-      activeAddress.trim().toLowerCase() === ownerAddress.trim().toLowerCase();
+      activeAddress.trim() === ownerAddress.trim();
   const connectedAuthor =
     activeAddress &&
     authorAddress &&
-    activeAddress.trim().toLowerCase() === authorAddress.toLowerCase();
+    activeAddress.trim() === authorAddress;
   const actionsLocked = Boolean(actionBusy);
   const followAction: BoostFollowAction = item.viewerFollowsAuthor
     ? "unfollow"
@@ -677,11 +677,11 @@ export default function BoostRoot({
   // rows. Filtering a loaded page again can hide valid canonical matches.
   const visibleItems = items;
   const suggestedProfiles = useMemo(() => {
-    const activeAddress = address.trim().toLowerCase();
+    const activeAddress = address.trim();
     const byAddress = new Map<string, BoostFeedItem>();
     for (const item of items) {
       const authorAddress = boostAuthorAddress(item);
-      const key = authorAddress.toLowerCase();
+      const key = authorAddress;
       if (!key || key === activeAddress || item.viewerFollowsAuthor) {
         continue;
       }
@@ -703,8 +703,8 @@ export default function BoostRoot({
   const profileSelfView = Boolean(
     address.trim() &&
     profileSubjectAddress.trim() &&
-      address.trim().toLowerCase() ===
-        profileSubjectAddress.trim().toLowerCase(),
+      address.trim() ===
+        profileSubjectAddress.trim(),
   );
   const profileFollowAction: BoostFollowAction = profileSubject?.viewerFollowsProfile
     ? "unfollow"
@@ -944,7 +944,7 @@ export default function BoostRoot({
     }
     if (
       address &&
-      targetAddress.trim().toLowerCase() === address.trim().toLowerCase()
+      targetAddress.trim() === address.trim()
     ) {
       setStatus({ tone: "bad", text: "Choose another Boost profile to follow." });
       return;
@@ -1052,8 +1052,8 @@ export default function BoostRoot({
       const ready = await ensureBoostWriterReady();
       const ownerAddress = boostOwnerAddress(listingTarget);
       if (
-        ownerAddress.trim().toLowerCase() !==
-        ready.walletAddress.trim().toLowerCase()
+        ownerAddress.trim() !==
+        ready.walletAddress.trim()
       ) {
         throw new Error("Only the current Boost owner can list this Boost.");
       }

@@ -30,6 +30,7 @@ import {
   tokenListingDisplayProjection,
   withTokenDirectoryQualification,
 } from "./read-projections.mjs";
+import { verifiedBoostTicketClosures } from "./boost-marketplace-proof.mjs";
 import { createBoostGrowthObservationLoader, withBoostGrowthObservation } from "./boost-growth.mjs";
 import {
   assertBoostValuationCheckpoint,
@@ -41,6 +42,9 @@ import {
   decodeBoostFeedCursor,
   paginateBoostEntries,
   readCompleteBoostHistory,
+  boostNeedsRegistryHistory,
+  readBoostRegistryHistory,
+  qualifyBoostPaidActions,
 } from "./boost-projection.mjs";
 import {
   electrumAddressHistoryCoverage,
@@ -51845,24 +51849,19 @@ function boostFollowTargetId(item) {
 }
 
 function boostPriceSats(item) {
-  return Math.max(
-    0,
-    numericValue(
-      item?.priceSats ??
-        item?.salePriceSats ??
-        item?.listingPriceSats ??
-        item?.priceProofs ??
-        0,
-    ),
-  );
+  const text = String(item?.priceSats ?? item?.salePriceSats ?? item?.listingPriceSats ?? item?.priceProofs ?? "");
+  if (!/^[1-9]\d*$/u.test(text)) return 0;
+  const exact = BigInt(text);
+  return exact <= 2_100_000_000_000_000n ? Number(exact) : 0;
 }
 
-function boostOwnershipState(items) {
+function boostOwnershipState(items, verifiedClosures = new Set(), network = "livenet") {
   const states = new Map();
+  const listingAssets = new Map();
   const counts = new Map();
   const followStates = new Map();
   const profiles = new Map();
-  const ordered = items.filter((item) => item?.confirmed !== false)
+  const ordered = items.filter((item) => item?.confirmed === true)
     .sort(compareBoostCanonicalEvents);
 
   const ensureState = (txid) => {
@@ -51876,6 +51875,8 @@ function boostOwnershipState(items) {
     const next = {
       listing: null,
       ownerAddress: "",
+      authorAddress: "",
+      hidden: false,
     };
     states.set(txid, next);
     return next;
@@ -51899,7 +51900,7 @@ function boostOwnershipState(items) {
   };
 
   const ensureFollowState = (followerAddress) => {
-    const followerKey = boostAddress(followerAddress).toLowerCase();
+    const followerKey = boostAddress(followerAddress);
     if (!followerKey) {
       return null;
     }
@@ -51922,7 +51923,7 @@ function boostOwnershipState(items) {
       const followerAddress = boostAddress(item?.authorAddress ?? item?.actor);
       const targetAddress = boostFollowTargetAddress(item);
       const followerState = ensureFollowState(followerAddress);
-      const targetKey = targetAddress.toLowerCase();
+      const targetKey = targetAddress;
       if (followerState && targetKey) {
         followerState.set(targetKey, {
           following: kind === "boost-follow",
@@ -51957,7 +51958,7 @@ function boostOwnershipState(items) {
         ),
       );
       if (address && profileId) {
-        profiles.set(address.toLowerCase(), {
+        profiles.set(address, {
           address,
           id: profileId,
           image:
@@ -51999,35 +52000,49 @@ function boostOwnershipState(items) {
       }
     }
 
-    const boostTxid = boostPostTxid(item);
+    const referencedListing = boostHexTxid(item?.listingId ?? item?.listingTxid ?? item?.targetTxid);
+    const boostTxid = ["boost-seal", "boost-delist", "boost-buy"].includes(kind)
+      ? listingAssets.get(referencedListing) ?? ""
+      : boostPostTxid(item);
     const state = ensureState(boostTxid);
     if (!state) {
       continue;
     }
 
     if (BOOST_VISIBLE_EVENT_KINDS.has(kind)) {
-      state.ownerAddress ||= boostAddress(
-        item?.currentOwnerAddress ?? item?.authorAddress ?? item?.actor,
-      );
+      // Reboosts reference another asset; they cannot establish its author or owner.
+      if (boostTxid === boostHexTxid(item?.txid)) {
+        state.authorAddress ||= boostAddress(item?.authorAddress ?? item?.actor);
+        state.ownerAddress ||= state.authorAddress;
+      }
+      continue;
+    }
+
+    if (kind === "boost-hide") {
+      const sender = boostAddress(item?.senderAddress ?? item?.authorAddress ?? item?.actor);
+      if (state.authorAddress && sender === state.authorAddress) state.hidden = true;
       continue;
     }
 
     if (kind === "boost-list" || kind === "boost-seal") {
+      const sender = boostAddress(item?.senderAddress ?? item?.authorAddress ?? item?.actor);
+      const seller = boostAddress(item?.sellerAddress ?? item?.saleAuthorization?.sellerAddress);
+      if (!state.ownerAddress || sender !== state.ownerAddress || seller !== state.ownerAddress) continue;
+      if (kind === "boost-seal" && state.listing?.listingTxid !== referencedListing) continue;
       const priceSats = boostPriceSats(item);
-      state.listing = priceSats > 0
-        ? {
-            listingTxid: boostHexTxid(item?.listingTxid ?? item?.txid),
-            priceSats,
-            sellerAddress: boostAddress(
-              item?.sellerAddress ?? item?.currentOwnerAddress ?? item?.actor,
-            ),
-          }
-        : state.listing;
+      if (priceSats > 0) {
+        const listingTxid = kind === "boost-seal" ? referencedListing : boostHexTxid(item?.txid);
+        if (!listingTxid) continue;
+        if (kind === "boost-seal" && priceSats !== state.listing.priceSats) continue;
+        state.listing = { listingTxid, priceSats, sellerAddress: seller };
+        listingAssets.set(listingTxid, boostTxid);
+      }
       continue;
     }
 
     if (kind === "boost-delist") {
-      state.listing = null;
+      const sender = boostAddress(item?.senderAddress ?? item?.authorAddress ?? item?.actor);
+      if (verifiedClosures.has(String(item.eventId)) && state.ownerAddress && sender === state.ownerAddress && state.listing?.listingTxid === referencedListing) state.listing = null;
       continue;
     }
 
@@ -52035,6 +52050,7 @@ function boostOwnershipState(items) {
       // A parsed transfer is not proof of ownership. Only the canonical
       // current owner can originate a direct transfer; never infer its actor
       // from currentOwnerAddress, which is the recipient on transfer records.
+      if (kind === "boost-buy" && (!verifiedClosures.has(String(item.eventId)) || !state.listing || state.listing.listingTxid !== referencedListing)) continue;
       if (kind === "boost-transfer") {
         const sender = boostAddress(
           item?.senderAddress ?? item?.authorAddress ?? item?.actor,
@@ -52043,14 +52059,16 @@ function boostOwnershipState(items) {
           continue;
         }
       }
-      state.listing = null;
-      state.ownerAddress = boostAddress(
+      const recipient = boostAddress(
         item?.newOwnerAddress ??
           item?.buyerAddress ??
           item?.recipientAddress ??
           item?.to ??
           item?.currentOwnerAddress,
-      ) || state.ownerAddress;
+      );
+      if (!isValidBitcoinAddress(recipient, network)) continue;
+      state.listing = null;
+      state.ownerAddress = recipient;
     }
   }
 
@@ -52235,8 +52253,7 @@ function boostFeedItemWithGraph(
   if (!feedItem) {
     return null;
   }
-  const authorKey = boostAddress(sourceItem?.authorAddress ?? sourceItem?.actor)
-    .toLowerCase();
+  const authorKey = boostAddress(sourceItem?.authorAddress ?? sourceItem?.actor);
   return {
     ...feedItem,
     followerCount: followersByTarget.get(authorKey)?.size ?? 0,
@@ -52246,7 +52263,7 @@ function boostFeedItemWithGraph(
 }
 
 function boostProfileSourceAuthorKey(item) {
-  return boostAddress(item?.authorAddress ?? item?.actor).toLowerCase();
+  return boostAddress(item?.authorAddress ?? item?.actor);
 }
 
 function boostProfileSourceOwnerKey(item, state, feedItem) {
@@ -52258,7 +52275,7 @@ function boostProfileSourceOwnerKey(item, state, feedItem) {
       item?.newOwnerAddress ??
       item?.buyerAddress ??
       item?.recipientAddress,
-  ).toLowerCase();
+  );
 }
 
 function boostProfileSourceIds(item, profileState) {
@@ -52289,7 +52306,7 @@ function boostProfileSubjectForQuery(
   if (!query) {
     return null;
   }
-  const queryKey = query.toLowerCase();
+  const queryKey = query;
   const queryId = boostLooksLikeAddress(query) ? "" : normalizePowId(query);
   let address = "";
   let profileState = null;
@@ -52311,7 +52328,7 @@ function boostProfileSubjectForQuery(
   }
 
   const adoptAddress = (value) => {
-    if (!address && boostAddress(value).toLowerCase() === queryKey) {
+    if (!address && boostAddress(value) === queryKey) {
       address = boostAddress(value);
     }
   };
@@ -52356,7 +52373,7 @@ function boostProfileSubjectForQuery(
     address = query;
   }
 
-  const addressKey = address.toLowerCase();
+  const addressKey = address;
   profileState = profileState ?? profiles.get(addressKey) ?? null;
   const id = boostDisplayName(profileState?.id, profileState?.profileId, queryId);
   return {
@@ -52519,6 +52536,31 @@ function boostProfileSignalStats(entries) {
   };
 }
 
+async function boostCanonicalMarketTransaction(network, item) {
+  if (item.confirmed !== true || !Number.isSafeInteger(item.blockHeight) || item.blockHeight < 1 ||
+      !Number.isSafeInteger(item.blockIndex) || item.blockIndex < 0) {
+    throw boostProjectionError("Boost market event has no exact confirmed position.");
+  }
+  const hashBefore = await bitcoinRpc("getblockhash", [item.blockHeight]);
+  if (!hashBefore?.ok || hashBefore.result !== item.blockHash) {
+    throw boostProjectionError("Boost market checkpoint is no longer canonical.", 409);
+  }
+  const [transaction, block] = await Promise.all([
+    fetchTransactionFromBitcoinRpc(item.txid, network, {
+      bypassCache: true, cacheResult: false, includeRawHex: true, requireCanonicalPrevouts: true,
+    }),
+    bitcoinRpc("getblock", [item.blockHash, 1]),
+  ]);
+  const hashAfter = await bitcoinRpc("getblockhash", [item.blockHeight]);
+  if (!transaction?.status?.confirmed || transaction.status.block_hash !== item.blockHash ||
+      transaction.txid !== item.txid || !block?.ok || block.result?.hash !== item.blockHash ||
+      block.result?.height !== item.blockHeight || block.result?.tx?.[item.blockIndex] !== item.txid ||
+      !hashAfter?.ok || hashAfter.result !== item.blockHash) {
+    throw boostProjectionError("Core could not bind the Boost market transaction and chain position.");
+  }
+  return transaction;
+}
+
 async function boostFeedPayload(network, searchParams, fresh = false) {
   const listingsOnly = /^(?:1|true)$/iu.test(searchParams.get("listings") ?? "");
   const cursor = decodeBoostFeedCursor(searchParams.get("cursor"));
@@ -52537,7 +52579,7 @@ async function boostFeedPayload(network, searchParams, fresh = false) {
       searchParams.get("address") ??
       "",
   );
-  const viewerKey = viewerAddress.toLowerCase();
+  const viewerKey = viewerAddress;
   const query = String(
     searchParams.get("q") ?? searchParams.get("search") ?? "",
   )
@@ -52552,24 +52594,30 @@ async function boostFeedPayload(network, searchParams, fresh = false) {
     snapshotId: cursor?.snapshotId ?? "",
   });
 
+  const rawSourceItems = indexedPayload.items.filter((item) => item?.valid !== false &&
+    (item?.confirmed !== false || (includePending && item?.status === "pending")));
+  const registryHistory = boostNeedsRegistryHistory(rawSourceItems)
+    ? await readBoostRegistryHistory(network, proofIndexEventHistoryPayload, indexedPayload)
+    : null;
+  const qualification = qualifyBoostPaidActions(rawSourceItems, registryHistory?.items ?? []);
+  const sourceItems = qualification.accepted;
+  const usesWorkValuation = sourceItems.some((item) => Boolean(boostWorkSignalSubatoms(item)));
+
   const [quote, workFloor] = network === "livenet"
     ? await Promise.all([
         btcUsdPricePayload(network, { fresh }).catch((error) => {
           console.error(`Boost BTC/USD overlay failed: ${errorSummary(error)}`);
           return null;
         }),
-        cachedWorkFloorPayload(network, fresh).catch((error) => {
+        usesWorkValuation ? cachedWorkFloorPayload(network, fresh).catch((error) => {
           console.error(
             `Boost WORK floor overlay failed: ${errorSummary(error)}`,
           );
           return null;
-        }),
+        }) : Promise.resolve(null),
       ])
     : [null, null];
   const btcUsd = btcUsdFromQuote(quote) || numericValue(workFloor?.btcUsd);
-  const sourceItems = indexedPayload.items.filter((item) => item?.valid !== false &&
-    (item?.confirmed !== false || (includePending && item?.status === "pending")));
-  const usesWorkValuation = sourceItems.some((item) => Boolean(boostWorkSignalSubatoms(item)));
   if (usesWorkValuation) assertBoostValuationCheckpoint(indexedPayload, workFloor);
   const {
     counts,
@@ -52577,7 +52625,9 @@ async function boostFeedPayload(network, searchParams, fresh = false) {
     followingByFollower,
     profiles,
     states,
-  } = boostOwnershipState(sourceItems);
+  } = boostOwnershipState(sourceItems, await verifiedBoostTicketClosures(
+    sourceItems, item => boostCanonicalMarketTransaction(network, item),
+  ), network);
   const viewerFollowing =
     viewerKey && followingByFollower.get(viewerKey)
       ? followingByFollower.get(viewerKey)
@@ -52604,15 +52654,15 @@ async function boostFeedPayload(network, searchParams, fresh = false) {
         return false;
       }
       const state = states.get(boostPostTxid(item));
+      if (!listingsOnly && state?.hidden) return false;
       // A sale ticket belongs to the original post, not each reply/reboost
       // referencing it. Discovery returns each original asset exactly once.
       if (listingsOnly && (!state?.listing || item?.confirmed === false ||
           kind !== "boost-post" || boostPostTxid(item) !== boostHexTxid(item?.txid))) return false;
       const profileState = profiles.get(
-        boostAddress(item?.authorAddress ?? item?.actor).toLowerCase(),
+        boostAddress(item?.authorAddress ?? item?.actor),
       );
-      const authorKey = boostAddress(item?.authorAddress ?? item?.actor)
-        .toLowerCase();
+      const authorKey = boostAddress(item?.authorAddress ?? item?.actor);
       if (
         !listingsOnly && !profileSubject &&
         view === "following" &&
@@ -52628,7 +52678,7 @@ async function boostFeedPayload(network, searchParams, fresh = false) {
           item,
           states.get(boostPostTxid(item)),
           profiles.get(
-            boostAddress(item?.authorAddress ?? item?.actor).toLowerCase(),
+            boostAddress(item?.authorAddress ?? item?.actor),
           ),
           counts,
           network,
@@ -52652,7 +52702,7 @@ async function boostFeedPayload(network, searchParams, fresh = false) {
   ).sort((left, right) => compareBoostFeedItems(sort)(left.feedItem, right.feedItem));
 
   const fingerprint = boostProjectionFingerprint({
-    provenance: indexedPayload.provenance, sort, view, profile, profileTab,
+    provenance: { ...indexedPayload.provenance, applicationRejectedEvents: qualification.rejected, registryHistory: registryHistory?.provenance ?? null }, sort, view, profile, profileTab,
     valueWindow, viewerAddress, query, includePending,
     // Bind ordering to exact valuation as well as event history. A changed
     // WORK floor must restart pagination rather than duplicate/omit posts.
@@ -52675,7 +52725,7 @@ async function boostFeedPayload(network, searchParams, fresh = false) {
     : null;
   return {
     complete: true,
-    provenance: indexedPayload.provenance,
+    provenance: { ...indexedPayload.provenance, applicationRejectedEvents: qualification.rejected, registryHistory: registryHistory?.provenance ?? null },
     snapshotId: indexedPayload.snapshotId,
     indexedThroughBlockHash: indexedPayload.indexedThroughBlockHash,
     hasMore: page.hasMore,

@@ -4465,13 +4465,13 @@ function boostRegistryFeePaid(item) {
 }
 
 function boostPaymentToAddressSats(item, address) {
-  const targetAddress = normalizedLowerText(address);
+  const targetAddress = normalizedText(address);
   if (!targetAddress) {
     return 0n;
   }
   return (Array.isArray(item?.recipients) ? item.recipients : []).reduce(
     (sum, recipient) => {
-      if (normalizedLowerText(recipient?.address) !== targetAddress) {
+      if (normalizedText(recipient?.address) !== targetAddress) {
         return sum;
       }
       const amount = String(recipient?.amountSats ?? "").trim();
@@ -4510,11 +4510,11 @@ function validBoostFollowItem(item, targetAddress) {
 }
 
 function boostSelfSend(base, senderAddress) {
-  const sender = normalizedLowerText(senderAddress);
+  const sender = normalizedText(senderAddress);
   return Boolean(
     sender &&
       (Array.isArray(base?.recipients) ? base.recipients : []).some(
-        (recipient) => normalizedLowerText(recipient?.address) === sender,
+        (recipient) => normalizedText(recipient?.address) === sender,
       ),
   );
 }

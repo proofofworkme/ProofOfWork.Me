@@ -320,6 +320,26 @@ Rules to preserve:
 - Confirmed ProofOfWork history is canonical. Pending Boost records are only visibility.
 - Wallet signing stays local.
 
+Boost application projections qualify paid actions against the confirmed Boost
+receiver at each event's physical chain position. Registry and follow-target
+payments use exact integer amounts; when both recipients are the same address,
+the two fees cannot reuse the same proofs. Base58 address identity remains case
+sensitive in the parser, API, social graph, wallet controls and saved profile
+intent lookup. A legacy saved intent remains readable only when its embedded
+address and network match exactly.
+
+A generic accepted `pwb1` carrier alone does not authorize an ownership change.
+Direct transfers require the current owner and a valid destination. Listings and
+seals require the current owner, exact seller and price; seals retain the
+original listing identity. Purchases and delistings additionally require Core raw
+transaction and canonical-position evidence for the original seller-owned ticket
+and its actual spend. Purchases must pay the declared price plus the returned
+anchor, preserve buyer restrictions and expiry, and pay the registry separately.
+Unverifiable Core evidence makes the application read unavailable rather than
+inventing successful ownership. Original authors alone can hide their records;
+visibility tombstones do not delete history or transfer ownership. These checks
+qualify application projections without rewriting consensus carrier outcomes.
+
 ## Future Metaprotocol
 
 Everything below this point is future planning. It must not silently change Phase 1 behavior.

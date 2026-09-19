@@ -978,3 +978,67 @@ remain outstanding. PostgreSQL recovery design follows its version-16
 [continuous archiving](https://www.postgresql.org/docs/16/continuous-archiving.html)
 and [backup verification](https://www.postgresql.org/docs/16/app-pgverifybackup.html)
 documentation, including the risk of replaying absolute tablespace paths.
+
+Continuation: the backup safeguard from commit `2924415` was installed at
+16:06:47 UTC after exact old/new SHA checks and an inactive-backup-service check.
+Both candidate and installed `--check-capacity` passed: 342,807,744,512 available
+bytes; 107,374,182,400 reserved bytes; 34,722,895,180 maximum dump bytes.
+Installed SHA256 `1728a2d7047a5a9a0804ef2fa7db83cbff2ff2e21dfe0dc23048217651093a9e`.
+Before/after scripts, both preflight logs and receipt are retained at
+`/data/proofofwork-audit17-backup-guard-20260919T160647Z`. Main and the working
+branch were fast-forwarded/pushed to `2924415`. The full creation path was tested
+with process/filesystem fixtures; a new production dump was not created by this
+installation. No backup or production service restart was needed.
+
+The third strict ID audit **passed**, with bounded retries enabled and all original
+fences unchanged. Coverage: 586 transactions (562 confirmed registry transactions,
+24 pending), 535 lifecycle events, six active listings, four canonical sales,
+546 registration attempts, 505 confirmed winners and 22 pending candidates.
+Canonical lifecycle parity was verified against exact Core-ordered chain replay.
+The 17 historical refund candidates match the already documented population in
+Audits 2/5/10; they are not newly assigned duplicate findings or automatically
+executed refunds. Two pending duplicate candidates remain a watchlist, not
+confirmed ownership or refund history. Full log and its SHA256 are referenced
+in the rollout evidence. This supersedes the earlier incomplete result while
+preserving both failed consistency-fence attempts. All six authority/application
+services checked afterward remained active.
+
+### H6-01 / H6-02 Boost authority continuation — candidate, not yet deployed
+
+Candidate application changes now resolve the historical confirmed Boost receiver
+at the same indexed checkpoint, compare exact chain positions, and allocate exact
+integer registry/follow fees without double counting. Wrong receivers, missing
+outputs, duplicate output indices and insufficient amounts are excluded from the
+application projection with explicit provenance reasons; raw accepted carriers
+remain unchanged. Base58 addresses stay case-sensitive across parser, graph,
+profile and wallet controls. Legacy saved intents are preserved only when their
+embedded address/network match exactly.
+
+Current-owner checks now cover listings/seals, preserve listing identity and price,
+and require a valid direct-transfer destination. A reboost cannot establish
+ownership of an unknown parent. Author-only hide tombstones affect social
+visibility without deleting evidence or changing ownership. Confirmed purchase
+and delist projections require Core-bound original ticket and spend transactions;
+purchases additionally prove exact integer seller consideration, returned anchor,
+separate registry allocation, declared buyer restriction and block-time expiry.
+Core failures fail the read rather than silently fabricating ownership. No live
+Boost sale lifecycle exists in the observed population, so sale verification is
+covered by adversarial fixtures and remains untested through a connected wallet.
+H6-01 is not labelled fully closed before candidate/production verification.
+
+A read-only Core probe independently verified all ten current Boost events and the
+`boost` ID registration against raw transaction bytes, payment amounts/scripts,
+canonical block hashes and transaction positions. All ten existing events passed
+the historical-receiver qualifier; none were removed. Receipt:
+`/home/powadmin/audit17-boost-authority-core-20260919.json`, reproduced in rollout
+evidence. The first probe required ECC initialization for Taproot output decoding;
+its corrected read-only run passed. Proof-only feed reads no longer start an
+unused WORK valuation query; WORK-bearing reads retain the exact valuation fence.
+
+Local adversarial coverage includes fee receiver updates, case collisions,
+duplicate and shared payment outputs, unauthorized visibility/listing mutations,
+wrong ticket spends, underpayment, altered buyer payloads, pending purchases,
+Core reorg/position mismatch, invalid destinations, preserved legacy intents and
+skipping unused valuation work. TypeScript, server-global, live-data and relevant
+recovery checks accompany the candidate. Release and production verification are
+still required; no new deployment is implied by this entry.
