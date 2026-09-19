@@ -1153,3 +1153,21 @@ and unknown/truncated measurement coverage without adding API request load.
 Its initial thresholds and visibility limits are documented in infrastructure.
 Node-only candidate staging, real Core compatibility/performance and production
 verification remain required; UI artifacts are unchanged by this candidate.
+
+The node-only `005a4e582f5887c51865fbedc757d4597be9df4b` release is deployed,
+production-verified, merged and pushed. UI remains on verified `6eb4a1e`.
+Candidate and production full-node probes passed at 967724 / hash
+`000000000000000000008e99ea96c19e2274ebf5be81db1138f5cf4d736fb55c`, including
+871 independently checked anchors. Authority service identities were unchanged;
+rollback and timer restoration receipts are preserved. All six new tests passed
+on production Node 24 in the isolated checkout.
+
+A separate same-tip, 200-output transport benchmark returned identical output
+SHA256 across alternating old/new runs: 200 individual requests took 89/93ms;
+seven batches took 15/20ms. This proves reduced RPC overhead, **not** a solved
+full-book latency issue: isolated listing pages still took roughly 6–7 seconds.
+The deployed response helper now exposes real byte counts. The new journal-only
+monitor is enabled, with installation evidence under
+`/data/proofofwork-audit17-api-observation-005a4e5`; its first warning correctly
+reported slow responses and older missing-size observations still inside the
+10-minute window. No alert threshold was weakened to produce a green result.

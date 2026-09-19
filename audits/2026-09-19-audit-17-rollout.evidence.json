@@ -2728,5 +2728,464 @@
         "warnings": []
       }
     }
+  },
+  "batchRelease": {
+    "commit": "005a4e582f5887c51865fbedc757d4597be9df4b",
+    "releaseId": "005a4e582f58-20260919T165018Z",
+    "uiUnchangedCommit": "6eb4a1e07131fc0b27d381dda52986f9d1bf3398",
+    "production": {
+      "format": "audit5-candidate-http-core-v1",
+      "startedAt": "2026-09-19T16:57:36.845Z",
+      "base": "http://127.0.0.1:8081",
+      "limits": {
+        "pages": 32,
+        "rows": 2000,
+        "totalBytes": 201326592,
+        "httpRequests": 128,
+        "coreRequests": 2300,
+        "milliseconds": 600000
+      },
+      "result": {
+        "counts": {
+          "model": "proof-registry-counts-v1",
+          "complete": true,
+          "confirmedCount": 505,
+          "pendingCount": 22,
+          "totalCount": 527
+        },
+        "directory": {
+          "count": 238,
+          "definitionSha256": "d978ecd52b5f9e17f44d91812c0fc0e170c483411092e834748aeb73bb861d2a",
+          "workSupplySubatoms": "210000000000000000000000"
+        },
+        "book": {
+          "listings": 871,
+          "fullRowsSha256": "bb093565001acda97c54dc8019a30ccf5f15f068795b247ecce44a361cf3cc2f",
+          "savedRowBytes": 15339680,
+          "sourceDigestQualification": "Bound to full-route snapshot; excluded historical source rows are not independently replayed.",
+          "independentCoreAnchors": 871,
+          "independentCoreSha256": "26ae36a1bd25218043a12698f3ea844ef3a4a511fecf1784aef9b2646f575f29"
+        },
+        "wallet": {
+          "address": "19JE7LS6TtQ4uSxu6ivJVZRiJyXXe8qEG3",
+          "utxos": 131,
+          "confirmedProofs": "71951",
+          "pendingProofs": "0",
+          "reservedProofs": "67704",
+          "availableProofs": "4247",
+          "protectedCount": 124,
+          "availableCount": 7,
+          "confirmedWORKSubatoms": "10000000000000000",
+          "reservedWORKSubatoms": "79631403166",
+          "remainingWORKSubatoms": "9999920368596834",
+          "confirmedListingCount": 124,
+          "pendingListingCount": 0,
+          "pendingTicketWitnesses": [],
+          "pendingTicketWitnessSha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+          "pendingQualification": "Each pending ticket was unconfirmed and unspent in Core with includeMempool=true when checked; no atomic mempool snapshot or confirmed WORK amount is implied.",
+          "qualification": "Public API inventory checked against current Core; wallet-provider exclusions, whole-chain address completeness, and transaction construction/signing are not proven."
+        },
+        "bonds": {
+          "POWB": {
+            "supply": "630496569",
+            "networkValueQ8": "63050148300000000",
+            "floorQ8": "100000779"
+          },
+          "INCB": {
+            "supply": "224847713398447926",
+            "networkValueQ8": "22484771339844794793582060",
+            "floorQ8": "100000000"
+          }
+        },
+        "boost": {
+          "events": 10,
+          "visibleRecords": 6,
+          "activeListings": 0,
+          "proofSignalQ8": "218400000000",
+          "totalSignalQ8": "279586684003065267936",
+          "workSubatoms": "70000011000000000",
+          "listingQualification": "Complete active discovery compared to complete feed annotations; no independent lifecycle reducer replay.",
+          "rawCarrierSamples": 6
+        },
+        "core": {
+          "height": 967724,
+          "hash": "000000000000000000008e99ea96c19e2274ebf5be81db1138f5cf4d736fb55c",
+          "mempoolSequenceBefore": 13007022,
+          "mempoolSequenceAfter": 13008127,
+          "mempoolSequenceStable": false
+        },
+        "qualification": "Current confirmed inventories and sampled raw carriers; no exhaustive historical replay, atomic mempool snapshot, or signing proof. Prior604/238 counts are historical baselines, never expected current counts."
+      },
+      "ok": true,
+      "finishedAt": "2026-09-19T17:00:08.083Z"
+    },
+    "productionReceiptSha256": "9725f7177dcaadb3e1a9392958232b82582b7476ed18b6ab53aeababb75d9ec5",
+    "productionReceiptPath": "/home/powadmin/audit17-production-core-005a4e5/receipt.json",
+    "shadow": {
+      "format": "audit5-candidate-http-core-v1",
+      "startedAt": "2026-09-19T16:52:56.314Z",
+      "base": "http://127.0.0.1:18081",
+      "limits": {
+        "pages": 32,
+        "rows": 2000,
+        "totalBytes": 201326592,
+        "httpRequests": 128,
+        "coreRequests": 2300,
+        "milliseconds": 600000
+      },
+      "result": {
+        "counts": {
+          "model": "proof-registry-counts-v1",
+          "complete": true,
+          "confirmedCount": 505,
+          "pendingCount": 22,
+          "totalCount": 527
+        },
+        "directory": {
+          "count": 238,
+          "definitionSha256": "d978ecd52b5f9e17f44d91812c0fc0e170c483411092e834748aeb73bb861d2a",
+          "workSupplySubatoms": "210000000000000000000000"
+        },
+        "book": {
+          "listings": 871,
+          "fullRowsSha256": "bb093565001acda97c54dc8019a30ccf5f15f068795b247ecce44a361cf3cc2f",
+          "savedRowBytes": 15339680,
+          "sourceDigestQualification": "Bound to full-route snapshot; excluded historical source rows are not independently replayed.",
+          "independentCoreAnchors": 871,
+          "independentCoreSha256": "26ae36a1bd25218043a12698f3ea844ef3a4a511fecf1784aef9b2646f575f29"
+        },
+        "wallet": {
+          "address": "19JE7LS6TtQ4uSxu6ivJVZRiJyXXe8qEG3",
+          "utxos": 131,
+          "confirmedProofs": "71951",
+          "pendingProofs": "0",
+          "reservedProofs": "67704",
+          "availableProofs": "4247",
+          "protectedCount": 124,
+          "availableCount": 7,
+          "confirmedWORKSubatoms": "10000000000000000",
+          "reservedWORKSubatoms": "79631403166",
+          "remainingWORKSubatoms": "9999920368596834",
+          "confirmedListingCount": 124,
+          "pendingListingCount": 0,
+          "pendingTicketWitnesses": [],
+          "pendingTicketWitnessSha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+          "pendingQualification": "Each pending ticket was unconfirmed and unspent in Core with includeMempool=true when checked; no atomic mempool snapshot or confirmed WORK amount is implied.",
+          "qualification": "Public API inventory checked against current Core; wallet-provider exclusions, whole-chain address completeness, and transaction construction/signing are not proven."
+        },
+        "bonds": {
+          "POWB": {
+            "supply": "630496569",
+            "networkValueQ8": "63050148300000000",
+            "floorQ8": "100000779"
+          },
+          "INCB": {
+            "supply": "224847713398447926",
+            "networkValueQ8": "22484771339844794793582060",
+            "floorQ8": "100000000"
+          }
+        },
+        "boost": {
+          "events": 10,
+          "visibleRecords": 6,
+          "activeListings": 0,
+          "proofSignalQ8": "218400000000",
+          "totalSignalQ8": "279586684003065267936",
+          "workSubatoms": "70000011000000000",
+          "listingQualification": "Complete active discovery compared to complete feed annotations; no independent lifecycle reducer replay.",
+          "rawCarrierSamples": 6
+        },
+        "core": {
+          "height": 967724,
+          "hash": "000000000000000000008e99ea96c19e2274ebf5be81db1138f5cf4d736fb55c",
+          "mempoolSequenceBefore": 13005257,
+          "mempoolSequenceAfter": 13006345,
+          "mempoolSequenceStable": false
+        },
+        "qualification": "Current confirmed inventories and sampled raw carriers; no exhaustive historical replay, atomic mempool snapshot, or signing proof. Prior604/238 counts are historical baselines, never expected current counts."
+      },
+      "ok": true,
+      "finishedAt": "2026-09-19T16:55:44.189Z"
+    },
+    "nodeAfter": {
+      "at": "2026-09-19T16:56:48.960306+00:00",
+      "units": {
+        "proofofwork-api-wg.socket": {
+          "LoadState": "loaded",
+          "ActiveState": "active",
+          "UnitFileState": "enabled"
+        },
+        "proofofwork-api-wg.service": {
+          "MainPID": "2002919",
+          "LoadState": "loaded",
+          "ActiveState": "active",
+          "UnitFileState": "static"
+        },
+        "proofofwork-api.service": {
+          "MainPID": "2002839",
+          "LoadState": "loaded",
+          "ActiveState": "active",
+          "UnitFileState": "enabled"
+        },
+        "proofofwork-indexer-worker.service": {
+          "MainPID": "2002850",
+          "LoadState": "loaded",
+          "ActiveState": "active",
+          "UnitFileState": "enabled"
+        },
+        "bitcoind.service": {
+          "MainPID": "1324302",
+          "LoadState": "loaded",
+          "ActiveState": "active",
+          "UnitFileState": "enabled"
+        },
+        "electrs.service": {
+          "MainPID": "1324320",
+          "LoadState": "loaded",
+          "ActiveState": "active",
+          "UnitFileState": "enabled"
+        },
+        "postgresql@16-main.service": {
+          "MainPID": "1324240",
+          "LoadState": "loaded",
+          "ActiveState": "active",
+          "UnitFileState": "enabled-runtime"
+        },
+        "pg_receivewal@16-main.service": {
+          "MainPID": "1649219",
+          "LoadState": "loaded",
+          "ActiveState": "active",
+          "UnitFileState": "enabled"
+        }
+      },
+      "health": {
+        "available": true,
+        "backend": "electrum",
+        "checks": {
+          "addressIndex": {
+            "canary": {
+              "confirmedSats": 0,
+              "scripthash": "8f52010f55361085b1806ee106632dd610d3a6587284138d06065d584bab8d21",
+              "unconfirmedSats": 0
+            },
+            "error": "",
+            "ok": true,
+            "source": "electrum://172.27.0.1:50001",
+            "timedOut": false
+          },
+          "backend": {
+            "ok": true,
+            "timedOut": false
+          },
+          "database": {
+            "canonicalMetaOk": true,
+            "ok": true,
+            "required": true,
+            "timedOut": false
+          },
+          "disk": {
+            "cache": {
+              "availableBytes": 342216605696,
+              "maxUsedPercent": 90,
+              "minFreeBytes": 5368709120,
+              "ok": true,
+              "path": "/data/proofofwork-api-cache",
+              "probePath": "/data/proofofwork-api-cache",
+              "totalBytes": 1764768071680,
+              "usedPercent": 80.60840904888872
+            },
+            "ok": true,
+            "root": {
+              "availableBytes": 71955259392,
+              "maxUsedPercent": 90,
+              "minFreeBytes": 5368709120,
+              "ok": true,
+              "path": "/",
+              "probePath": "/",
+              "totalBytes": 105089261568,
+              "usedPercent": 31.52938909420352
+            }
+          },
+          "electrum": {
+            "configured": true,
+            "error": "",
+            "headerHash": "000000000000000000008e99ea96c19e2274ebf5be81db1138f5cf4d736fb55c",
+            "headerHeight": 967724,
+            "ok": true,
+            "timedOut": false,
+            "atTip": true
+          },
+          "index": {
+            "aheadBlocks": 0,
+            "checkpointHash": "000000000000000000008e99ea96c19e2274ebf5be81db1138f5cf4d736fb55c",
+            "complete": true,
+            "canonicalState": {
+              "fault": {},
+              "ok": true,
+              "rebuild": {
+                "active": false,
+                "status": "complete",
+                "network": "livenet",
+                "complete": true,
+                "startedAt": "2026-09-15T18:22:43.424Z",
+                "updatedAt": "2026-09-19T16:50:16.072Z",
+                "fromHeight": 948000,
+                "completedAt": "2026-09-19T16:50:16.072Z",
+                "bootstrapHash": "000000000000000000004238bec59ce46cd5b28982efe2b90071a51168d67986",
+                "bootstrapHeight": 947999,
+                "indexedThroughBlock": 967724,
+                "indexedThroughBlockHash": "000000000000000000008e99ea96c19e2274ebf5be81db1138f5cf4d736fb55c",
+                "transactionNormalization": "canonical-raw-tx-only"
+              }
+            },
+            "checkpointCanonical": true,
+            "canonicalCheckpointHash": "000000000000000000008e99ea96c19e2274ebf5be81db1138f5cf4d736fb55c",
+            "indexedThroughBlock": 967724,
+            "lagBlocks": 0,
+            "available": true,
+            "ok": true,
+            "readModels": {
+              "confirmedIds": {
+                "count": 505,
+                "maxBlock": 965011
+              },
+              "confirmedTransfers": {
+                "count": 230,
+                "maxBlock": 967383
+              },
+              "confirmedEvents": {
+                "count": 26224,
+                "maxBlock": 967709
+              }
+            },
+            "summarySnapshot": {
+              "blockHash": "000000000000000000008e99ea96c19e2274ebf5be81db1138f5cf4d736fb55c",
+              "coverageByKey": {
+                "growthSummary": 967724,
+                "inceptionSummary": 967724,
+                "infinitySummary": 967724,
+                "logSummary": 967724,
+                "marketplaceSummary": 967724,
+                "tokenSummary": 967724,
+                "workFloor": 967724,
+                "workSummary": 967724
+              },
+              "eligible": true,
+              "generatedAt": "2026-09-19T16:52:32.117Z",
+              "indexedAt": "2026-09-19T16:52:32.117Z",
+              "indexedThroughBlock": 967724,
+              "payloadBytes": 20316066,
+              "snapshotId": "565d5ec643008dbf7772b58e",
+              "ok": true
+            },
+            "scanTipHeight": 967724,
+            "stopReason": ""
+          },
+          "node": {
+            "bestBlockHash": "000000000000000000008e99ea96c19e2274ebf5be81db1138f5cf4d736fb55c",
+            "chain": "main",
+            "headers": 967724,
+            "initialBlockDownload": false,
+            "ok": true,
+            "pruned": false,
+            "tipHeight": 967724,
+            "txindexHeight": 967724,
+            "txindexSynced": true,
+            "verificationProgress": 1
+          },
+          "worker": {
+            "ageMs": 39162,
+            "containment": {
+              "active": false,
+              "checkpointHash": "000000000000000000008e99ea96c19e2274ebf5be81db1138f5cf4d736fb55c",
+              "checkpointHeight": 967724,
+              "failingBlockHeight": null,
+              "fingerprint": "",
+              "network": "livenet",
+              "nextRetryAt": null,
+              "reason": "canonical-scan-success",
+              "repeatCount": 0,
+              "txid": ""
+            },
+            "consecutiveFailures": 0,
+            "error": "",
+            "lastSuccessAt": "2026-09-19T16:56:09.754Z",
+            "maxAgeMs": 600000,
+            "ok": true,
+            "proofReady": true,
+            "proofSource": "current-confirmed-replay",
+            "pendingEvents": {
+              "globalUnresolved": 0,
+              "model": "bounded-best-effort-pending-event-health-v1",
+              "ok": true,
+              "q16PendingUnresolved": 0,
+              "required": true,
+              "scope": "all-observed-pending-protocol-events",
+              "status": {
+                "checked": 25,
+                "deferred": 0,
+                "errors": 0,
+                "ok": true,
+                "q16ParentDeferred": 0,
+                "staleCandidates": 25,
+                "unavailable": false,
+                "unavailableValid": true
+              }
+            },
+            "phase": "canonical-phase-complete"
+          }
+        },
+        "indexedAt": "2026-09-19T16:56:48.916Z",
+        "indexedThroughBlock": 967724,
+        "lagBlocks": 0,
+        "mempoolBase": "http://127.0.0.1:8080",
+        "ok": true,
+        "ready": true,
+        "service": "proofofwork-op-return-api",
+        "tipHeight": 967724,
+        "mode": "readiness"
+      },
+      "attestation": [
+        "005a4e582f5887c51865fbedc757d4597be9df4b",
+        "fc17904cf51ba10e04d400aaab896f9e38690a07",
+        "6618",
+        "194846071",
+        "96f5fe12fc57ea802cb4a638826b7297694ccc7fdb24f470467c922cb771823f"
+      ]
+    },
+    "transportBenchmark": {
+      "ok": true,
+      "outputs": 200,
+      "coreHeight": 967724,
+      "coreHash": "000000000000000000008e99ea96c19e2274ebf5be81db1138f5cf4d736fb55c",
+      "results": [
+        {
+          "mode": "single",
+          "requests": 200,
+          "elapsedMs": 89,
+          "outputSha256": "ab79d7f98eb78b8b00b9114327468a8a062e883ea7529b8c7546c3810b65c0f1"
+        },
+        {
+          "mode": "batch",
+          "requests": 7,
+          "elapsedMs": 15,
+          "outputSha256": "ab79d7f98eb78b8b00b9114327468a8a062e883ea7529b8c7546c3810b65c0f1"
+        },
+        {
+          "mode": "batch",
+          "requests": 7,
+          "elapsedMs": 20,
+          "outputSha256": "ab79d7f98eb78b8b00b9114327468a8a062e883ea7529b8c7546c3810b65c0f1"
+        },
+        {
+          "mode": "single",
+          "requests": 200,
+          "elapsedMs": 93,
+          "outputSha256": "ab79d7f98eb78b8b00b9114327468a8a062e883ea7529b8c7546c3810b65c0f1"
+        }
+      ],
+      "qualification": "Transport-only measurement; no claim about SQL, rendering, atomic mempool state or full endpoint latency."
+    },
+    "mergedAndPushed": true
   }
 }
