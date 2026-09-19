@@ -1042,3 +1042,98 @@ Core reorg/position mismatch, invalid destinations, preserved legacy intents and
 skipping unused valuation work. TypeScript, server-global, live-data and relevant
 recovery checks accompany the candidate. Release and production verification are
 still required; no new deployment is implied by this entry.
+
+Boost release preservation plan: the UI has 12,924,653,568 bytes available and
+nine queued historical roots. The exact preservation candidate is
+`proofofwork-www-pre-4515c3bc3421-20260913T070757Z` (1,163 entries,
+411,714,627 regular-file bytes), manifest SHA256
+`a218dd6e4b55a740f12cdb7d63559066f174c5e5e8257645e8a2afb2a90d9816`,
+tree SHA256 `eef49256e82c4c797faa65d6731153b2aa7c7b8cf03c8764b31b426d07a5b2ce`.
+It contains release `2ddefac163d5-20260905T204437Z`. The pinned controller checks
+service/process/mount independence, compares a complete-root archive, copies the
+release archive and provenance, and then moves the unchanged root to
+`/var/backups/proofofwork-ui/recovery-evidence/audit17-boost-20260919`.
+This is preservation, not deletion, and creates one queue slot without claiming
+to reclaim storage. The 10 GiB production reserve remains mandatory.
+
+### Boost rollout continuation and growth monitoring
+
+The `6eb4a1e07131fc0b27d381dda52986f9d1bf3398` candidate passed its isolated,
+read-only full-node comparison at height 967721. This checked 871 listing anchors,
+505 confirmed / 22 pending IDs, 238 credit definitions, the fixture wallet's
+71,951 confirmed proofs (67,704 reserved, 4,247 available), bond exact aliases,
+and ten Boost events / six visible records. The mempool sequence changed; no
+atomic pending-state claim is made. The first shadow launch was refused because
+PrivateTmp hid its launcher; the corrected launch verified read-only pool settings.
+The first UI extraction's directory permissions were refused before staging;
+archive-declared modes were restored on the fresh candidate only.
+
+The first node cutover refused a still-draining database session before exchange,
+then restored the existing application and timers. A tested 15-second bounded
+connection-drain retry bound the original failure receipt and both runtime
+attestations. It completed without changing Core, Electrs, PostgreSQL or WAL
+receiver service identities. The previous release remains intact. UI publication
+also completed with all eight prior queued roots retained plus the new rollback
+root. Its release archive is 185,246,540 bytes, SHA256
+`641d7ea865ec15f11523ed8265c407f77a1117e9e6afdc4b1b3bb694cd1a130a`.
+Fresh production Core and public-file verification are recorded separately below.
+The first production probe hit a checkpoint-transition 503 as Core advanced to
+967722; its failed receipt is retained, not relabelled a pass.
+
+Hourly read-only storage forecasting is installed on both hosts. It reads existing
+one/seven-day observations, preserves integer byte arithmetic, warns within seven
+days of the configured reserve, and flags a day or less as critical. Missing
+history is explicit. Tests cover missing/short history, bursts, declines and
+reserve boundaries. The UI's initial run flagged only 868,564,992 bytes above the
+10 GiB reserve, with roughly 1.9 GB net consumption over the prior day. Audit and
+deployment activity contributes to this rate; it is not a steady-state forecast.
+The node had 342,646,861,824 bytes free on /data. Measurements and failed-unit
+status are local alerts, not proof of external notification delivery. PrivateTmp
+initially hid deployment scratch from the allocation inventory; a read-only bind
+corrected that observation gap, with both unit versions retained.
+
+Exact prospective UI scratch cleanup candidates (not yet removed):
+`/var/tmp/proofofwork-deploy/proofofwork-ui-source-6eb4a1e07131-20260919T161919Z.tgz`
+(90,387,925 bytes, SHA256
+`8a5059a98737ac278fac59fdff5a7681886dad8aa9401bafcaf9d81a0f233ca4`) and
+`/var/tmp/proofofwork-deploy/proofofwork-ui-surfaces-6eb4a1e07131-20260919T161919Z.tgz`
+(182,184,861 bytes, SHA256
+`96967fc6b246a1466bfc2a1711c7db81ef7dccd7d20bb3a75245d5a04e85d830`).
+These are this audit's uploaded transport copies. Removal is conditional on
+completed publication, independent exact copies on the node, retained build and
+release evidence, deployment-lock ownership, and no live process/config/mount
+reference. Extracted source checkouts, final release archives, rollback roots,
+restore trees and historical evidence are excluded. No age-based cleanup is
+approved by this classification.
+
+Production verification completed at Core height 967722 / hash
+`0000000000000000000131a03cdb86ba46e6d262054784ff48cd04dd3106ae14`.
+All 871 current listing anchors and the other bounded candidate invariants passed
+again on the live API. Public HTTPS verification passed 687 SHA256/size checks
+across fourteen domains (201,498,727 bytes, 13.226 seconds). Boost browser rendering
+showed six records, no active listings, 2,184 proof signal and 7.0000011 WORK signal.
+Release `6eb4a1e` is merged into main and both main/implementation branch are pushed.
+No connected-wallet signing or live Boost sale lifecycle was exercised.
+
+The read-only Computer event audit passed with no failures or warnings:
+25,809 transaction rows, 26,414 event rows, zero confirmed missing raw transactions,
+zero missing canonical blocks, zero confirmed events lacking their confirmed/raw
+transaction parent, 56,100 refs and 125,873 participants. All ten named historical
+transaction cases had expected event/log coverage. This cross-check does not
+replace independent genesis replay. Summary latency remains material: the
+concurrent audit measured marketplace 23.214s, ledger 14.469s and WORK floor
+13.592s. The first launcher failed before any query because its helper was hidden
+by PrivateTmp; the corrected run explicitly verified read-only pool settings.
+Complete results and log hash are included in rollout evidence.
+
+The two documented duplicate transport archives were removed after their exact
+bytes were verified under `/data/proofofwork-audit17-ui-upload-copies-6eb4a1e`.
+The cleanup held the deployment lock, verified the published archive, rejected
+live descriptors/commands/config references and preserved before/after evidence at
+`/var/backups/proofofwork-ui/recovery-evidence/audit17-transport-cleanup-6eb4a1e`.
+UI available space afterward was 11,877,875,712 bytes. The capacity concern remains
+open: this recovered only duplicate transport space, not historical recovery data.
+The hourly forecast and allocation checks are deployed; external alert delivery,
+off-host database recovery, whole-history independent replay, full Boost seal
+cryptography/buyability and connected-wallet lifecycle coverage remain incomplete.
+No issue is declared universally resolved on the strength of fixture-only tests.

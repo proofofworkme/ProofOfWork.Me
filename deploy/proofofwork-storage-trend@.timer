@@ -1,0 +1,12 @@
+[Unit]
+Description=Forecast ProofOfWork %i storage every hour
+
+[Timer]
+OnCalendar=hourly
+RandomizedDelaySec=300s
+FixedRandomDelay=true
+Persistent=true
+Unit=proofofwork-storage-trend@%i.service
+
+[Install]
+WantedBy=timers.target

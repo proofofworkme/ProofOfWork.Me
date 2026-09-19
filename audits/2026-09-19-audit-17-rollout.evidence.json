@@ -408,5 +408,2325 @@
     "accepted": 10,
     "rejected": [],
     "qualification": "All 10 current Boost events and historical receiver registration bound to Core bytes, outputs and chain positions; no live sale lifecycle exists."
+  },
+  "boostRelease": {
+    "commit": "6eb4a1e07131fc0b27d381dda52986f9d1bf3398",
+    "releaseId": "6eb4a1e07131-20260919T161919Z",
+    "production": {
+      "format": "audit5-candidate-http-core-v1",
+      "startedAt": "2026-09-19T16:37:07.130Z",
+      "base": "http://127.0.0.1:8081",
+      "limits": {
+        "pages": 32,
+        "rows": 2000,
+        "totalBytes": 201326592,
+        "httpRequests": 128,
+        "coreRequests": 2300,
+        "milliseconds": 600000
+      },
+      "result": {
+        "counts": {
+          "model": "proof-registry-counts-v1",
+          "complete": true,
+          "confirmedCount": 505,
+          "pendingCount": 22,
+          "totalCount": 527
+        },
+        "directory": {
+          "count": 238,
+          "definitionSha256": "d978ecd52b5f9e17f44d91812c0fc0e170c483411092e834748aeb73bb861d2a",
+          "workSupplySubatoms": "210000000000000000000000"
+        },
+        "book": {
+          "listings": 871,
+          "fullRowsSha256": "bb093565001acda97c54dc8019a30ccf5f15f068795b247ecce44a361cf3cc2f",
+          "savedRowBytes": 15339680,
+          "sourceDigestQualification": "Bound to full-route snapshot; excluded historical source rows are not independently replayed.",
+          "independentCoreAnchors": 871,
+          "independentCoreSha256": "26ae36a1bd25218043a12698f3ea844ef3a4a511fecf1784aef9b2646f575f29"
+        },
+        "wallet": {
+          "address": "19JE7LS6TtQ4uSxu6ivJVZRiJyXXe8qEG3",
+          "utxos": 131,
+          "confirmedProofs": "71951",
+          "pendingProofs": "0",
+          "reservedProofs": "67704",
+          "availableProofs": "4247",
+          "protectedCount": 124,
+          "availableCount": 7,
+          "confirmedWORKSubatoms": "10000000000000000",
+          "reservedWORKSubatoms": "79631403166",
+          "remainingWORKSubatoms": "9999920368596834",
+          "confirmedListingCount": 124,
+          "pendingListingCount": 0,
+          "pendingTicketWitnesses": [],
+          "pendingTicketWitnessSha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+          "pendingQualification": "Each pending ticket was unconfirmed and unspent in Core with includeMempool=true when checked; no atomic mempool snapshot or confirmed WORK amount is implied.",
+          "qualification": "Public API inventory checked against current Core; wallet-provider exclusions, whole-chain address completeness, and transaction construction/signing are not proven."
+        },
+        "bonds": {
+          "POWB": {
+            "supply": "630496569",
+            "networkValueQ8": "63050148300000000",
+            "floorQ8": "100000779"
+          },
+          "INCB": {
+            "supply": "224847713398447926",
+            "networkValueQ8": "22484771339844794793582060",
+            "floorQ8": "100000000"
+          }
+        },
+        "boost": {
+          "events": 10,
+          "visibleRecords": 6,
+          "activeListings": 0,
+          "proofSignalQ8": "218400000000",
+          "totalSignalQ8": "279586684003065267936",
+          "workSubatoms": "70000011000000000",
+          "listingQualification": "Complete active discovery compared to complete feed annotations; no independent lifecycle reducer replay.",
+          "rawCarrierSamples": 6
+        },
+        "core": {
+          "height": 967722,
+          "hash": "0000000000000000000131a03cdb86ba46e6d262054784ff48cd04dd3106ae14",
+          "mempoolSequenceBefore": 12991303,
+          "mempoolSequenceAfter": 12992145,
+          "mempoolSequenceStable": false
+        },
+        "qualification": "Current confirmed inventories and sampled raw carriers; no exhaustive historical replay, atomic mempool snapshot, or signing proof. Prior604/238 counts are historical baselines, never expected current counts."
+      },
+      "ok": true,
+      "finishedAt": "2026-09-19T16:40:16.115Z"
+    },
+    "productionReceiptSha256": "38da5ab3a5e4c600a9ce2118df7fbe0f0dd17028d161a891491a2efb0f9487b9",
+    "productionReceiptPath": "/home/powadmin/audit17-production-core-6eb4a1e-attempt2/receipt.json",
+    "shadow": {
+      "format": "audit5-candidate-http-core-v1",
+      "startedAt": "2026-09-19T16:29:04.568Z",
+      "base": "http://127.0.0.1:18081",
+      "limits": {
+        "pages": 32,
+        "rows": 2000,
+        "totalBytes": 201326592,
+        "httpRequests": 128,
+        "coreRequests": 2300,
+        "milliseconds": 600000
+      },
+      "result": {
+        "counts": {
+          "model": "proof-registry-counts-v1",
+          "complete": true,
+          "confirmedCount": 505,
+          "pendingCount": 22,
+          "totalCount": 527
+        },
+        "directory": {
+          "count": 238,
+          "definitionSha256": "d978ecd52b5f9e17f44d91812c0fc0e170c483411092e834748aeb73bb861d2a",
+          "workSupplySubatoms": "210000000000000000000000"
+        },
+        "book": {
+          "listings": 871,
+          "fullRowsSha256": "bb093565001acda97c54dc8019a30ccf5f15f068795b247ecce44a361cf3cc2f",
+          "savedRowBytes": 15339680,
+          "sourceDigestQualification": "Bound to full-route snapshot; excluded historical source rows are not independently replayed.",
+          "independentCoreAnchors": 871,
+          "independentCoreSha256": "26ae36a1bd25218043a12698f3ea844ef3a4a511fecf1784aef9b2646f575f29"
+        },
+        "wallet": {
+          "address": "19JE7LS6TtQ4uSxu6ivJVZRiJyXXe8qEG3",
+          "utxos": 131,
+          "confirmedProofs": "71951",
+          "pendingProofs": "0",
+          "reservedProofs": "67704",
+          "availableProofs": "4247",
+          "protectedCount": 124,
+          "availableCount": 7,
+          "confirmedWORKSubatoms": "10000000000000000",
+          "reservedWORKSubatoms": "79631403166",
+          "remainingWORKSubatoms": "9999920368596834",
+          "confirmedListingCount": 124,
+          "pendingListingCount": 0,
+          "pendingTicketWitnesses": [],
+          "pendingTicketWitnessSha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+          "pendingQualification": "Each pending ticket was unconfirmed and unspent in Core with includeMempool=true when checked; no atomic mempool snapshot or confirmed WORK amount is implied.",
+          "qualification": "Public API inventory checked against current Core; wallet-provider exclusions, whole-chain address completeness, and transaction construction/signing are not proven."
+        },
+        "bonds": {
+          "POWB": {
+            "supply": "630496569",
+            "networkValueQ8": "63050148300000000",
+            "floorQ8": "100000779"
+          },
+          "INCB": {
+            "supply": "224847713398447926",
+            "networkValueQ8": "22484771339844794793582060",
+            "floorQ8": "100000000"
+          }
+        },
+        "boost": {
+          "events": 10,
+          "visibleRecords": 6,
+          "activeListings": 0,
+          "proofSignalQ8": "218400000000",
+          "totalSignalQ8": "279586684003065267936",
+          "workSubatoms": "70000011000000000",
+          "listingQualification": "Complete active discovery compared to complete feed annotations; no independent lifecycle reducer replay.",
+          "rawCarrierSamples": 6
+        },
+        "core": {
+          "height": 967721,
+          "hash": "00000000000000000001295374de9ad9cd5471f5beb52ea7c0ce26658491b954",
+          "mempoolSequenceBefore": 12984275,
+          "mempoolSequenceAfter": 12985134,
+          "mempoolSequenceStable": false
+        },
+        "qualification": "Current confirmed inventories and sampled raw carriers; no exhaustive historical replay, atomic mempool snapshot, or signing proof. Prior604/238 counts are historical baselines, never expected current counts."
+      },
+      "ok": true,
+      "finishedAt": "2026-09-19T16:31:55.706Z"
+    },
+    "uiHTTP": {
+      "ok": true,
+      "release": "6eb4a1e07131-20260919T161919Z",
+      "surfaces": 14,
+      "requests": 687,
+      "bytes": 201498727,
+      "elapsedSeconds": 13.226
+    },
+    "uiHTTPReceiptSha256": "d67165589585b40434dcd2739fc6cca7aa93a3a0953793f08432d91a4ee3b833",
+    "uiArchiveSha256": "641d7ea865ec15f11523ed8265c407f77a1117e9e6afdc4b1b3bb694cd1a130a",
+    "nodeAfter": {
+      "at": "2026-09-19T16:34:01.287172+00:00",
+      "units": {
+        "proofofwork-api-wg.socket": {
+          "LoadState": "loaded",
+          "ActiveState": "active",
+          "UnitFileState": "enabled"
+        },
+        "proofofwork-api-wg.service": {
+          "MainPID": "1981747",
+          "LoadState": "loaded",
+          "ActiveState": "active",
+          "UnitFileState": "static"
+        },
+        "proofofwork-api.service": {
+          "MainPID": "1981632",
+          "LoadState": "loaded",
+          "ActiveState": "active",
+          "UnitFileState": "enabled"
+        },
+        "proofofwork-indexer-worker.service": {
+          "MainPID": "1981644",
+          "LoadState": "loaded",
+          "ActiveState": "active",
+          "UnitFileState": "enabled"
+        },
+        "bitcoind.service": {
+          "MainPID": "1324302",
+          "LoadState": "loaded",
+          "ActiveState": "active",
+          "UnitFileState": "enabled"
+        },
+        "electrs.service": {
+          "MainPID": "1324320",
+          "LoadState": "loaded",
+          "ActiveState": "active",
+          "UnitFileState": "enabled"
+        },
+        "postgresql@16-main.service": {
+          "MainPID": "1324240",
+          "LoadState": "loaded",
+          "ActiveState": "active",
+          "UnitFileState": "enabled-runtime"
+        },
+        "pg_receivewal@16-main.service": {
+          "MainPID": "1649219",
+          "LoadState": "loaded",
+          "ActiveState": "active",
+          "UnitFileState": "enabled"
+        }
+      },
+      "health": {
+        "available": true,
+        "backend": "electrum",
+        "checks": {
+          "addressIndex": {
+            "canary": {
+              "confirmedSats": 0,
+              "scripthash": "8f52010f55361085b1806ee106632dd610d3a6587284138d06065d584bab8d21",
+              "unconfirmedSats": 0
+            },
+            "error": "",
+            "ok": true,
+            "source": "electrum://172.27.0.1:50001",
+            "timedOut": false
+          },
+          "backend": {
+            "ok": true,
+            "timedOut": false
+          },
+          "database": {
+            "canonicalMetaOk": true,
+            "ok": true,
+            "required": true,
+            "timedOut": false
+          },
+          "disk": {
+            "cache": {
+              "availableBytes": 342685638656,
+              "maxUsedPercent": 90,
+              "minFreeBytes": 5368709120,
+              "ok": true,
+              "path": "/data/proofofwork-api-cache",
+              "probePath": "/data/proofofwork-api-cache",
+              "totalBytes": 1764768071680,
+              "usedPercent": 80.5818314510997
+            },
+            "ok": true,
+            "root": {
+              "availableBytes": 72559865856,
+              "maxUsedPercent": 90,
+              "minFreeBytes": 5368709120,
+              "ok": true,
+              "path": "/",
+              "probePath": "/",
+              "totalBytes": 105089261568,
+              "usedPercent": 30.954062505188734
+            }
+          },
+          "electrum": {
+            "configured": true,
+            "error": "",
+            "headerHash": "00000000000000000001295374de9ad9cd5471f5beb52ea7c0ce26658491b954",
+            "headerHeight": 967721,
+            "ok": true,
+            "timedOut": false,
+            "atTip": true
+          },
+          "index": {
+            "aheadBlocks": 0,
+            "checkpointHash": "00000000000000000001295374de9ad9cd5471f5beb52ea7c0ce26658491b954",
+            "complete": true,
+            "canonicalState": {
+              "fault": {},
+              "ok": true,
+              "rebuild": {
+                "active": false,
+                "status": "complete",
+                "network": "livenet",
+                "complete": true,
+                "startedAt": "2026-09-15T18:22:43.424Z",
+                "updatedAt": "2026-09-19T15:52:02.898Z",
+                "fromHeight": 948000,
+                "completedAt": "2026-09-19T15:52:02.898Z",
+                "bootstrapHash": "000000000000000000004238bec59ce46cd5b28982efe2b90071a51168d67986",
+                "bootstrapHeight": 947999,
+                "indexedThroughBlock": 967721,
+                "indexedThroughBlockHash": "00000000000000000001295374de9ad9cd5471f5beb52ea7c0ce26658491b954",
+                "transactionNormalization": "canonical-raw-tx-only"
+              }
+            },
+            "checkpointCanonical": true,
+            "canonicalCheckpointHash": "00000000000000000001295374de9ad9cd5471f5beb52ea7c0ce26658491b954",
+            "indexedThroughBlock": 967721,
+            "lagBlocks": 0,
+            "available": true,
+            "ok": true,
+            "readModels": {
+              "confirmedIds": {
+                "count": 505,
+                "maxBlock": 965011
+              },
+              "confirmedTransfers": {
+                "count": 230,
+                "maxBlock": 967383
+              },
+              "confirmedEvents": {
+                "count": 26224,
+                "maxBlock": 967709
+              }
+            },
+            "summarySnapshot": {
+              "blockHash": "00000000000000000001295374de9ad9cd5471f5beb52ea7c0ce26658491b954",
+              "coverageByKey": {
+                "growthSummary": 967721,
+                "inceptionSummary": 967721,
+                "infinitySummary": 967721,
+                "logSummary": 967721,
+                "marketplaceSummary": 967721,
+                "tokenSummary": 967721,
+                "workFloor": 967721,
+                "workSummary": 967721
+              },
+              "eligible": true,
+              "generatedAt": "2026-09-19T16:26:29.859Z",
+              "indexedAt": "2026-09-19T16:26:29.859Z",
+              "indexedThroughBlock": 967721,
+              "payloadBytes": 20316066,
+              "snapshotId": "e7ca4406bf6aae97ad84d98a",
+              "ok": true
+            },
+            "scanTipHeight": 967721,
+            "stopReason": ""
+          },
+          "node": {
+            "bestBlockHash": "00000000000000000001295374de9ad9cd5471f5beb52ea7c0ce26658491b954",
+            "chain": "main",
+            "headers": 967721,
+            "initialBlockDownload": false,
+            "ok": true,
+            "pruned": false,
+            "tipHeight": 967721,
+            "txindexHeight": 967721,
+            "txindexSynced": true,
+            "verificationProgress": 1
+          },
+          "worker": {
+            "ageMs": 67487,
+            "containment": {
+              "active": false,
+              "checkpointHash": "00000000000000000001295374de9ad9cd5471f5beb52ea7c0ce26658491b954",
+              "checkpointHeight": 967721,
+              "failingBlockHeight": null,
+              "fingerprint": "",
+              "network": "livenet",
+              "nextRetryAt": null,
+              "reason": "canonical-scan-success",
+              "repeatCount": 0,
+              "txid": ""
+            },
+            "consecutiveFailures": 0,
+            "error": "",
+            "lastSuccessAt": "2026-09-19T16:32:53.750Z",
+            "maxAgeMs": 600000,
+            "ok": true,
+            "proofReady": true,
+            "proofSource": "last-success-confirmed-replay",
+            "pendingEvents": {
+              "globalUnresolved": 0,
+              "model": "bounded-best-effort-pending-event-health-v1",
+              "ok": true,
+              "q16PendingUnresolved": 0,
+              "required": true,
+              "scope": "all-observed-pending-protocol-events",
+              "status": {
+                "checked": 25,
+                "deferred": 0,
+                "errors": 0,
+                "ok": true,
+                "q16ParentDeferred": 0,
+                "staleCandidates": 25,
+                "unavailable": false,
+                "unavailableValid": true
+              }
+            },
+            "phase": "running"
+          }
+        },
+        "indexedAt": "2026-09-19T16:34:01.237Z",
+        "indexedThroughBlock": 967721,
+        "lagBlocks": 0,
+        "mempoolBase": "http://127.0.0.1:8080",
+        "ok": true,
+        "ready": true,
+        "service": "proofofwork-op-return-api",
+        "tipHeight": 967721,
+        "mode": "readiness"
+      },
+      "attestation": [
+        "6eb4a1e07131fc0b27d381dda52986f9d1bf3398",
+        "a77f1562fb5b42fcc8c7e45e109853e720742cfb",
+        "6597",
+        "194702281",
+        "386a9abb411074c2f2a3aa5207a1a6ffd5e7c4901e08b3cd4591c4ee6fcb91f8"
+      ]
+    },
+    "transportCleanup": {
+      "removed": [
+        "/var/tmp/proofofwork-deploy/proofofwork-ui-source-6eb4a1e07131-20260919T161919Z.tgz",
+        "/var/tmp/proofofwork-deploy/proofofwork-ui-surfaces-6eb4a1e07131-20260919T161919Z.tgz"
+      ],
+      "freeBytes": 11877875712,
+      "evidence": "/var/backups/proofofwork-ui/recovery-evidence/audit17-transport-cleanup-6eb4a1e",
+      "protected": "All release archives, source checkouts, rollback roots, logs and recovery evidence retained"
+    },
+    "mergedAndPushed": true,
+    "eventAudit": {
+      "logSha256": "24bea44cf532ead47756087acfe7027e96935e8b01089a650cfe9e9c0fa879eb",
+      "path": "/var/log/proofofwork-audit17-events-6eb4a1e-attempt2.log",
+      "result": {
+        "apiBase": "http://127.0.0.1:8081",
+        "checks": [
+          {
+            "details": {
+              "service": "proofofwork-op-return-api",
+              "tipHeight": 967722
+            },
+            "name": "api-health-ok",
+            "ok": true,
+            "severity": "error"
+          },
+          {
+            "details": {
+              "snapshotId": "07d0f23bcd15c27038175439",
+              "status": "green"
+            },
+            "name": "ledger-green",
+            "ok": true,
+            "severity": "error"
+          },
+          {
+            "details": {
+              "indexedThroughBlock": 967722,
+              "maxTipLagBlocks": 0,
+              "sourceTipHeight": 967722,
+              "tipLagBlocks": 0
+            },
+            "name": "ledger-covers-node-tip",
+            "ok": true,
+            "severity": "error"
+          },
+          {
+            "details": {
+              "missing": 0
+            },
+            "name": "ledger-has-no-missing-log-events",
+            "ok": true,
+            "severity": "error"
+          },
+          {
+            "details": {
+              "checks": [
+                "canonical-activity-count-matches-public-log",
+                "computer-event-flow-excludes-marketplace",
+                "credit-frozen-value-includes-event-components",
+                "credit-live-value-is-active-network-value",
+                "growth-actual-total",
+                "growth-work-floor-total",
+                "inception-fixed-value-reconciles",
+                "inception-historical-issuance-baseline",
+                "inception-live-issuance-matches-incb-supply",
+                "infinity-bond-flow-matches-powb-supply",
+                "ledger-covers-node-tip",
+                "livenet-confirmed-history-present",
+                "marketplace-mutation-fees-counted",
+                "marketplace-value-includes-mutation-fees",
+                "network-values-finite",
+                "seeded-inception-bonds-logged",
+                "seeded-infinity-bonds-logged",
+                "seeded-mail-events-logged",
+                "token-components-cover-confirmed-activity",
+                "token-definitions-cover-confirmed-mints",
+                "token-events-logged",
+                "token-sales-logged",
+                "work-amo-v5-legacy-bootstrap-carry-proven",
+                "work-floor-actual-total"
+              ]
+            },
+            "name": "ledger-has-required-log-coverage-checks",
+            "ok": true,
+            "severity": "error"
+          },
+          {
+            "details": {
+              "confirmedCanonicalActionTxids": 25229,
+              "confirmedComputerActions": 25886,
+              "transactionsConfirmed": 25546
+            },
+            "name": "db-confirmed-transactions-cover-canonical-action-txids",
+            "ok": true,
+            "severity": "error"
+          },
+          {
+            "details": {
+              "canonicalConfirmedActivity": 25886,
+              "eventsConfirmedCanonicalActivity": 25886,
+              "eventsConfirmedPwtInvalidAudit": 270,
+              "eventsConfirmedValid": 25886
+            },
+            "name": "db-events-cover-ledger-confirmed-activity",
+            "ok": true,
+            "severity": "error"
+          },
+          {
+            "details": {
+              "missing": 0
+            },
+            "name": "all-confirmed-events-have-transaction-row",
+            "ok": true,
+            "severity": "error"
+          },
+          {
+            "details": {
+              "mismatched": 0
+            },
+            "name": "all-confirmed-events-join-confirmed-transaction",
+            "ok": true,
+            "severity": "error"
+          },
+          {
+            "details": {
+              "missing": 0
+            },
+            "name": "all-confirmed-events-have-raw-transaction-or-payload",
+            "ok": true,
+            "severity": "error"
+          },
+          {
+            "details": {
+              "missing": 0
+            },
+            "name": "all-confirmed-transactions-have-raw-transaction",
+            "ok": true,
+            "severity": "error"
+          },
+          {
+            "details": {
+              "eventParticipants": 125873,
+              "eventRefs": 56100
+            },
+            "name": "event-search-index-populated",
+            "ok": true,
+            "severity": "error"
+          },
+          {
+            "details": {
+              "hours": 72,
+              "missing": 0
+            },
+            "name": "recent-confirmed-transactions-have-block-metadata",
+            "ok": true,
+            "severity": "error"
+          },
+          {
+            "details": {
+              "missing": 0,
+              "sourceGaps": []
+            },
+            "name": "all-confirmed-transactions-have-block-metadata",
+            "ok": true,
+            "severity": "error"
+          },
+          {
+            "details": {
+              "opReturns": 25669
+            },
+            "name": "op-return-table-populated",
+            "ok": true,
+            "severity": "warning"
+          },
+          {
+            "details": {
+              "growthActualValueSats": "8387599195488655889.93453643",
+              "growthWorkFloorSats": "8387599195488655889.93453643",
+              "workNetworkValueSats": "8387599195488655889.93453643"
+            },
+            "name": "work-growth-network-value-match",
+            "ok": true,
+            "severity": "error"
+          },
+          {
+            "details": {
+              "marketplaceWorkNetworkValueSats": "8387599195488655889.93453643",
+              "workNetworkValueSats": "8387599195488655889.93453643"
+            },
+            "name": "marketplace-work-network-value-match",
+            "ok": true,
+            "severity": "error"
+          },
+          {
+            "details": {
+              "confirmedBondActions": 46,
+              "confirmedIssuanceUnits": "224847713398447926",
+              "issuanceAccountingModel": "canonical-pre-bond-live-network-value-v2",
+              "networkValueSats": "224847713398447947.9358206",
+              "registryId": "inception@proofofwork.me",
+              "ticker": "INCB"
+            },
+            "name": "inception-launch-ready",
+            "ok": true,
+            "severity": "error"
+          },
+          {
+            "details": {
+              "confirmedBondActions": 467,
+              "networkValueSats": "630501483"
+            },
+            "name": "infinity-nonzero",
+            "ok": true,
+            "severity": "error"
+          },
+          {
+            "details": {
+              "blockHeight": 956317,
+              "dbEvents": [
+                {
+                  "kind": "token-listing-closed",
+                  "valid": true,
+                  "status": "confirmed",
+                  "protocol": "pwt1"
+                },
+                {
+                  "kind": "token-sale",
+                  "valid": true,
+                  "status": "confirmed",
+                  "protocol": "pwt1"
+                }
+              ],
+              "dbSource": "canonical-block-scan",
+              "dbStatus": "confirmed",
+              "hasRawTx": true,
+              "historyElapsedMs": 1441,
+              "historyHasExpectedEvent": true,
+              "historyHasTx": true,
+              "historyTotalCount": 1,
+              "label": "reported WORK buy 8429",
+              "logElapsedMs": 4983,
+              "logHasExpectedEvent": true,
+              "logHasTx": true,
+              "expectedEventKind": null,
+              "expectedProtocol": null,
+              "expectedValid": true,
+              "txid": "8429e3984c8dcedbb982ccbcbfe3a314f3dcc8cbfd63fe81d4e45a3483187491"
+            },
+            "name": "reported-tx-db-reported WORK buy 8429",
+            "ok": true,
+            "severity": "error"
+          },
+          {
+            "details": {
+              "blockHeight": 956317,
+              "dbEvents": [
+                {
+                  "kind": "token-listing-closed",
+                  "valid": true,
+                  "status": "confirmed",
+                  "protocol": "pwt1"
+                },
+                {
+                  "kind": "token-sale",
+                  "valid": true,
+                  "status": "confirmed",
+                  "protocol": "pwt1"
+                }
+              ],
+              "dbSource": "canonical-block-scan",
+              "dbStatus": "confirmed",
+              "hasRawTx": true,
+              "historyElapsedMs": 1441,
+              "historyHasExpectedEvent": true,
+              "historyHasTx": true,
+              "historyTotalCount": 1,
+              "label": "reported WORK buy 8429",
+              "logElapsedMs": 4983,
+              "logHasExpectedEvent": true,
+              "logHasTx": true,
+              "expectedEventKind": null,
+              "expectedProtocol": null,
+              "expectedValid": true,
+              "txid": "8429e3984c8dcedbb982ccbcbfe3a314f3dcc8cbfd63fe81d4e45a3483187491"
+            },
+            "name": "reported-tx-log-reported WORK buy 8429",
+            "ok": true,
+            "severity": "error"
+          },
+          {
+            "details": {
+              "blockHeight": 956317,
+              "dbEvents": [
+                {
+                  "kind": "token-listing-closed",
+                  "valid": true,
+                  "status": "confirmed",
+                  "protocol": "pwt1"
+                },
+                {
+                  "kind": "token-sale",
+                  "valid": true,
+                  "status": "confirmed",
+                  "protocol": "pwt1"
+                }
+              ],
+              "dbSource": "canonical-block-scan",
+              "dbStatus": "confirmed",
+              "hasRawTx": true,
+              "historyElapsedMs": 1441,
+              "historyHasExpectedEvent": true,
+              "historyHasTx": true,
+              "historyTotalCount": 1,
+              "label": "reported WORK buy 8429",
+              "logElapsedMs": 4983,
+              "logHasExpectedEvent": true,
+              "logHasTx": true,
+              "expectedEventKind": null,
+              "expectedProtocol": null,
+              "expectedValid": true,
+              "txid": "8429e3984c8dcedbb982ccbcbfe3a314f3dcc8cbfd63fe81d4e45a3483187491"
+            },
+            "name": "reported-tx-history-reported WORK buy 8429",
+            "ok": true,
+            "severity": "error"
+          },
+          {
+            "details": {
+              "blockHeight": 956319,
+              "dbEvents": [
+                {
+                  "kind": "token-event-invalid",
+                  "valid": false,
+                  "status": "confirmed",
+                  "protocol": "pwt1"
+                }
+              ],
+              "dbSource": "canonical-block-scan",
+              "dbStatus": "confirmed",
+              "hasRawTx": true,
+              "historyElapsedMs": 2586,
+              "historyHasExpectedEvent": true,
+              "historyHasTx": true,
+              "historyTotalCount": 1,
+              "label": "reported WORK buy 5dcd",
+              "logElapsedMs": 3921,
+              "logHasExpectedEvent": true,
+              "logHasTx": false,
+              "expectedEventKind": "token-event-invalid",
+              "expectedProtocol": "pwt1",
+              "expectedValid": false,
+              "txid": "5dcdd8d4181e6166d90912c54ccb47047c69441099194a5cd102dacb57efe8cf"
+            },
+            "name": "reported-tx-db-reported WORK buy 5dcd",
+            "ok": true,
+            "severity": "error"
+          },
+          {
+            "details": {
+              "blockHeight": 956319,
+              "dbEvents": [
+                {
+                  "kind": "token-event-invalid",
+                  "valid": false,
+                  "status": "confirmed",
+                  "protocol": "pwt1"
+                }
+              ],
+              "dbSource": "canonical-block-scan",
+              "dbStatus": "confirmed",
+              "hasRawTx": true,
+              "historyElapsedMs": 2586,
+              "historyHasExpectedEvent": true,
+              "historyHasTx": true,
+              "historyTotalCount": 1,
+              "label": "reported WORK buy 5dcd",
+              "logElapsedMs": 3921,
+              "logHasExpectedEvent": true,
+              "logHasTx": false,
+              "expectedEventKind": "token-event-invalid",
+              "expectedProtocol": "pwt1",
+              "expectedValid": false,
+              "txid": "5dcdd8d4181e6166d90912c54ccb47047c69441099194a5cd102dacb57efe8cf"
+            },
+            "name": "reported-tx-log-reported WORK buy 5dcd",
+            "ok": true,
+            "severity": "error"
+          },
+          {
+            "details": {
+              "blockHeight": 956319,
+              "dbEvents": [
+                {
+                  "kind": "token-event-invalid",
+                  "valid": false,
+                  "status": "confirmed",
+                  "protocol": "pwt1"
+                }
+              ],
+              "dbSource": "canonical-block-scan",
+              "dbStatus": "confirmed",
+              "hasRawTx": true,
+              "historyElapsedMs": 2586,
+              "historyHasExpectedEvent": true,
+              "historyHasTx": true,
+              "historyTotalCount": 1,
+              "label": "reported WORK buy 5dcd",
+              "logElapsedMs": 3921,
+              "logHasExpectedEvent": true,
+              "logHasTx": false,
+              "expectedEventKind": "token-event-invalid",
+              "expectedProtocol": "pwt1",
+              "expectedValid": false,
+              "txid": "5dcdd8d4181e6166d90912c54ccb47047c69441099194a5cd102dacb57efe8cf"
+            },
+            "name": "reported-tx-history-reported WORK buy 5dcd",
+            "ok": true,
+            "severity": "error"
+          },
+          {
+            "details": {
+              "blockHeight": 956335,
+              "dbEvents": [
+                {
+                  "kind": "token-listing-closed",
+                  "valid": true,
+                  "status": "confirmed",
+                  "protocol": "pwt1"
+                },
+                {
+                  "kind": "token-sale",
+                  "valid": true,
+                  "status": "confirmed",
+                  "protocol": "pwt1"
+                }
+              ],
+              "dbSource": "canonical-block-scan",
+              "dbStatus": "confirmed",
+              "hasRawTx": true,
+              "historyElapsedMs": 1931,
+              "historyHasExpectedEvent": true,
+              "historyHasTx": true,
+              "historyTotalCount": 1,
+              "label": "reported WORK buy d946",
+              "logElapsedMs": 5200,
+              "logHasExpectedEvent": true,
+              "logHasTx": true,
+              "expectedEventKind": null,
+              "expectedProtocol": null,
+              "expectedValid": true,
+              "txid": "d946eea2face8675fbaf463dffef28d75df52d451c4694a3e6bc11298e43cd85"
+            },
+            "name": "reported-tx-db-reported WORK buy d946",
+            "ok": true,
+            "severity": "error"
+          },
+          {
+            "details": {
+              "blockHeight": 956335,
+              "dbEvents": [
+                {
+                  "kind": "token-listing-closed",
+                  "valid": true,
+                  "status": "confirmed",
+                  "protocol": "pwt1"
+                },
+                {
+                  "kind": "token-sale",
+                  "valid": true,
+                  "status": "confirmed",
+                  "protocol": "pwt1"
+                }
+              ],
+              "dbSource": "canonical-block-scan",
+              "dbStatus": "confirmed",
+              "hasRawTx": true,
+              "historyElapsedMs": 1931,
+              "historyHasExpectedEvent": true,
+              "historyHasTx": true,
+              "historyTotalCount": 1,
+              "label": "reported WORK buy d946",
+              "logElapsedMs": 5200,
+              "logHasExpectedEvent": true,
+              "logHasTx": true,
+              "expectedEventKind": null,
+              "expectedProtocol": null,
+              "expectedValid": true,
+              "txid": "d946eea2face8675fbaf463dffef28d75df52d451c4694a3e6bc11298e43cd85"
+            },
+            "name": "reported-tx-log-reported WORK buy d946",
+            "ok": true,
+            "severity": "error"
+          },
+          {
+            "details": {
+              "blockHeight": 956335,
+              "dbEvents": [
+                {
+                  "kind": "token-listing-closed",
+                  "valid": true,
+                  "status": "confirmed",
+                  "protocol": "pwt1"
+                },
+                {
+                  "kind": "token-sale",
+                  "valid": true,
+                  "status": "confirmed",
+                  "protocol": "pwt1"
+                }
+              ],
+              "dbSource": "canonical-block-scan",
+              "dbStatus": "confirmed",
+              "hasRawTx": true,
+              "historyElapsedMs": 1931,
+              "historyHasExpectedEvent": true,
+              "historyHasTx": true,
+              "historyTotalCount": 1,
+              "label": "reported WORK buy d946",
+              "logElapsedMs": 5200,
+              "logHasExpectedEvent": true,
+              "logHasTx": true,
+              "expectedEventKind": null,
+              "expectedProtocol": null,
+              "expectedValid": true,
+              "txid": "d946eea2face8675fbaf463dffef28d75df52d451c4694a3e6bc11298e43cd85"
+            },
+            "name": "reported-tx-history-reported WORK buy d946",
+            "ok": true,
+            "severity": "error"
+          },
+          {
+            "details": {
+              "blockHeight": 956326,
+              "dbEvents": [
+                {
+                  "kind": "token-event-invalid",
+                  "valid": false,
+                  "status": "confirmed",
+                  "protocol": "pwt1"
+                }
+              ],
+              "dbSource": "canonical-block-scan",
+              "dbStatus": "confirmed",
+              "hasRawTx": true,
+              "historyElapsedMs": 1946,
+              "historyHasExpectedEvent": true,
+              "historyHasTx": true,
+              "historyTotalCount": 1,
+              "label": "reported WORK buy 4e59",
+              "logElapsedMs": 5021,
+              "logHasExpectedEvent": true,
+              "logHasTx": false,
+              "expectedEventKind": "token-event-invalid",
+              "expectedProtocol": "pwt1",
+              "expectedValid": false,
+              "txid": "4e599fd0064642b864e8b9c7152b16b50a49fcea8c108f042d8df9294a2fb93d"
+            },
+            "name": "reported-tx-db-reported WORK buy 4e59",
+            "ok": true,
+            "severity": "error"
+          },
+          {
+            "details": {
+              "blockHeight": 956326,
+              "dbEvents": [
+                {
+                  "kind": "token-event-invalid",
+                  "valid": false,
+                  "status": "confirmed",
+                  "protocol": "pwt1"
+                }
+              ],
+              "dbSource": "canonical-block-scan",
+              "dbStatus": "confirmed",
+              "hasRawTx": true,
+              "historyElapsedMs": 1946,
+              "historyHasExpectedEvent": true,
+              "historyHasTx": true,
+              "historyTotalCount": 1,
+              "label": "reported WORK buy 4e59",
+              "logElapsedMs": 5021,
+              "logHasExpectedEvent": true,
+              "logHasTx": false,
+              "expectedEventKind": "token-event-invalid",
+              "expectedProtocol": "pwt1",
+              "expectedValid": false,
+              "txid": "4e599fd0064642b864e8b9c7152b16b50a49fcea8c108f042d8df9294a2fb93d"
+            },
+            "name": "reported-tx-log-reported WORK buy 4e59",
+            "ok": true,
+            "severity": "error"
+          },
+          {
+            "details": {
+              "blockHeight": 956326,
+              "dbEvents": [
+                {
+                  "kind": "token-event-invalid",
+                  "valid": false,
+                  "status": "confirmed",
+                  "protocol": "pwt1"
+                }
+              ],
+              "dbSource": "canonical-block-scan",
+              "dbStatus": "confirmed",
+              "hasRawTx": true,
+              "historyElapsedMs": 1946,
+              "historyHasExpectedEvent": true,
+              "historyHasTx": true,
+              "historyTotalCount": 1,
+              "label": "reported WORK buy 4e59",
+              "logElapsedMs": 5021,
+              "logHasExpectedEvent": true,
+              "logHasTx": false,
+              "expectedEventKind": "token-event-invalid",
+              "expectedProtocol": "pwt1",
+              "expectedValid": false,
+              "txid": "4e599fd0064642b864e8b9c7152b16b50a49fcea8c108f042d8df9294a2fb93d"
+            },
+            "name": "reported-tx-history-reported WORK buy 4e59",
+            "ok": true,
+            "severity": "error"
+          },
+          {
+            "details": {
+              "blockHeight": 956318,
+              "dbEvents": [
+                {
+                  "kind": "token-listing-closed",
+                  "valid": true,
+                  "status": "confirmed",
+                  "protocol": "pwt1"
+                },
+                {
+                  "kind": "token-sale",
+                  "valid": true,
+                  "status": "confirmed",
+                  "protocol": "pwt1"
+                }
+              ],
+              "dbSource": "canonical-block-scan",
+              "dbStatus": "confirmed",
+              "hasRawTx": true,
+              "historyElapsedMs": 1816,
+              "historyHasExpectedEvent": true,
+              "historyHasTx": true,
+              "historyTotalCount": 1,
+              "label": "reported WORK buy 2e57",
+              "logElapsedMs": 5291,
+              "logHasExpectedEvent": true,
+              "logHasTx": true,
+              "expectedEventKind": null,
+              "expectedProtocol": null,
+              "expectedValid": true,
+              "txid": "2e577dd95c75b326cafc3c281c8e7330bf62097b779b9ac873302bb4be744a13"
+            },
+            "name": "reported-tx-db-reported WORK buy 2e57",
+            "ok": true,
+            "severity": "error"
+          },
+          {
+            "details": {
+              "blockHeight": 956318,
+              "dbEvents": [
+                {
+                  "kind": "token-listing-closed",
+                  "valid": true,
+                  "status": "confirmed",
+                  "protocol": "pwt1"
+                },
+                {
+                  "kind": "token-sale",
+                  "valid": true,
+                  "status": "confirmed",
+                  "protocol": "pwt1"
+                }
+              ],
+              "dbSource": "canonical-block-scan",
+              "dbStatus": "confirmed",
+              "hasRawTx": true,
+              "historyElapsedMs": 1816,
+              "historyHasExpectedEvent": true,
+              "historyHasTx": true,
+              "historyTotalCount": 1,
+              "label": "reported WORK buy 2e57",
+              "logElapsedMs": 5291,
+              "logHasExpectedEvent": true,
+              "logHasTx": true,
+              "expectedEventKind": null,
+              "expectedProtocol": null,
+              "expectedValid": true,
+              "txid": "2e577dd95c75b326cafc3c281c8e7330bf62097b779b9ac873302bb4be744a13"
+            },
+            "name": "reported-tx-log-reported WORK buy 2e57",
+            "ok": true,
+            "severity": "error"
+          },
+          {
+            "details": {
+              "blockHeight": 956318,
+              "dbEvents": [
+                {
+                  "kind": "token-listing-closed",
+                  "valid": true,
+                  "status": "confirmed",
+                  "protocol": "pwt1"
+                },
+                {
+                  "kind": "token-sale",
+                  "valid": true,
+                  "status": "confirmed",
+                  "protocol": "pwt1"
+                }
+              ],
+              "dbSource": "canonical-block-scan",
+              "dbStatus": "confirmed",
+              "hasRawTx": true,
+              "historyElapsedMs": 1816,
+              "historyHasExpectedEvent": true,
+              "historyHasTx": true,
+              "historyTotalCount": 1,
+              "label": "reported WORK buy 2e57",
+              "logElapsedMs": 5291,
+              "logHasExpectedEvent": true,
+              "logHasTx": true,
+              "expectedEventKind": null,
+              "expectedProtocol": null,
+              "expectedValid": true,
+              "txid": "2e577dd95c75b326cafc3c281c8e7330bf62097b779b9ac873302bb4be744a13"
+            },
+            "name": "reported-tx-history-reported WORK buy 2e57",
+            "ok": true,
+            "severity": "error"
+          },
+          {
+            "details": {
+              "blockHeight": 955618,
+              "dbEvents": [
+                {
+                  "kind": "token-event-invalid",
+                  "valid": false,
+                  "status": "confirmed",
+                  "protocol": "pwt1"
+                }
+              ],
+              "dbSource": "canonical-block-scan",
+              "dbStatus": "confirmed",
+              "hasRawTx": true,
+              "historyElapsedMs": 2213,
+              "historyHasExpectedEvent": true,
+              "historyHasTx": true,
+              "historyTotalCount": 1,
+              "label": "Carbonz reported WORK buy",
+              "logElapsedMs": 5128,
+              "logHasExpectedEvent": true,
+              "logHasTx": false,
+              "expectedEventKind": "token-event-invalid",
+              "expectedProtocol": "pwt1",
+              "expectedValid": false,
+              "txid": "7ddf760aaae819aab74a4cc5523016350e11b5888c4950acd97a7660533ba47b"
+            },
+            "name": "reported-tx-db-Carbonz reported WORK buy",
+            "ok": true,
+            "severity": "error"
+          },
+          {
+            "details": {
+              "blockHeight": 955618,
+              "dbEvents": [
+                {
+                  "kind": "token-event-invalid",
+                  "valid": false,
+                  "status": "confirmed",
+                  "protocol": "pwt1"
+                }
+              ],
+              "dbSource": "canonical-block-scan",
+              "dbStatus": "confirmed",
+              "hasRawTx": true,
+              "historyElapsedMs": 2213,
+              "historyHasExpectedEvent": true,
+              "historyHasTx": true,
+              "historyTotalCount": 1,
+              "label": "Carbonz reported WORK buy",
+              "logElapsedMs": 5128,
+              "logHasExpectedEvent": true,
+              "logHasTx": false,
+              "expectedEventKind": "token-event-invalid",
+              "expectedProtocol": "pwt1",
+              "expectedValid": false,
+              "txid": "7ddf760aaae819aab74a4cc5523016350e11b5888c4950acd97a7660533ba47b"
+            },
+            "name": "reported-tx-log-Carbonz reported WORK buy",
+            "ok": true,
+            "severity": "error"
+          },
+          {
+            "details": {
+              "blockHeight": 955618,
+              "dbEvents": [
+                {
+                  "kind": "token-event-invalid",
+                  "valid": false,
+                  "status": "confirmed",
+                  "protocol": "pwt1"
+                }
+              ],
+              "dbSource": "canonical-block-scan",
+              "dbStatus": "confirmed",
+              "hasRawTx": true,
+              "historyElapsedMs": 2213,
+              "historyHasExpectedEvent": true,
+              "historyHasTx": true,
+              "historyTotalCount": 1,
+              "label": "Carbonz reported WORK buy",
+              "logElapsedMs": 5128,
+              "logHasExpectedEvent": true,
+              "logHasTx": false,
+              "expectedEventKind": "token-event-invalid",
+              "expectedProtocol": "pwt1",
+              "expectedValid": false,
+              "txid": "7ddf760aaae819aab74a4cc5523016350e11b5888c4950acd97a7660533ba47b"
+            },
+            "name": "reported-tx-history-Carbonz reported WORK buy",
+            "ok": true,
+            "severity": "error"
+          },
+          {
+            "details": {
+              "blockHeight": 955792,
+              "dbEvents": [
+                {
+                  "kind": "token-transfer",
+                  "valid": true,
+                  "status": "confirmed",
+                  "protocol": "pwt1"
+                }
+              ],
+              "dbSource": "canonical-block-scan",
+              "dbStatus": "confirmed",
+              "hasRawTx": true,
+              "historyElapsedMs": 2819,
+              "historyHasExpectedEvent": true,
+              "historyHasTx": true,
+              "historyTotalCount": 1,
+              "label": "Carbonz delayed WORK transfer",
+              "logElapsedMs": 5565,
+              "logHasExpectedEvent": true,
+              "logHasTx": true,
+              "expectedEventKind": null,
+              "expectedProtocol": null,
+              "expectedValid": true,
+              "txid": "c90f95cdd45892f76af89686dea7c1c35ec070148e5a74c947f174e244ef44db"
+            },
+            "name": "reported-tx-db-Carbonz delayed WORK transfer",
+            "ok": true,
+            "severity": "error"
+          },
+          {
+            "details": {
+              "blockHeight": 955792,
+              "dbEvents": [
+                {
+                  "kind": "token-transfer",
+                  "valid": true,
+                  "status": "confirmed",
+                  "protocol": "pwt1"
+                }
+              ],
+              "dbSource": "canonical-block-scan",
+              "dbStatus": "confirmed",
+              "hasRawTx": true,
+              "historyElapsedMs": 2819,
+              "historyHasExpectedEvent": true,
+              "historyHasTx": true,
+              "historyTotalCount": 1,
+              "label": "Carbonz delayed WORK transfer",
+              "logElapsedMs": 5565,
+              "logHasExpectedEvent": true,
+              "logHasTx": true,
+              "expectedEventKind": null,
+              "expectedProtocol": null,
+              "expectedValid": true,
+              "txid": "c90f95cdd45892f76af89686dea7c1c35ec070148e5a74c947f174e244ef44db"
+            },
+            "name": "reported-tx-log-Carbonz delayed WORK transfer",
+            "ok": true,
+            "severity": "error"
+          },
+          {
+            "details": {
+              "blockHeight": 955792,
+              "dbEvents": [
+                {
+                  "kind": "token-transfer",
+                  "valid": true,
+                  "status": "confirmed",
+                  "protocol": "pwt1"
+                }
+              ],
+              "dbSource": "canonical-block-scan",
+              "dbStatus": "confirmed",
+              "hasRawTx": true,
+              "historyElapsedMs": 2819,
+              "historyHasExpectedEvent": true,
+              "historyHasTx": true,
+              "historyTotalCount": 1,
+              "label": "Carbonz delayed WORK transfer",
+              "logElapsedMs": 5565,
+              "logHasExpectedEvent": true,
+              "logHasTx": true,
+              "expectedEventKind": null,
+              "expectedProtocol": null,
+              "expectedValid": true,
+              "txid": "c90f95cdd45892f76af89686dea7c1c35ec070148e5a74c947f174e244ef44db"
+            },
+            "name": "reported-tx-history-Carbonz delayed WORK transfer",
+            "ok": true,
+            "severity": "error"
+          },
+          {
+            "details": {
+              "blockHeight": 956107,
+              "dbEvents": [
+                {
+                  "kind": "token-transfer",
+                  "valid": true,
+                  "status": "confirmed",
+                  "protocol": "pwt1"
+                }
+              ],
+              "dbSource": "canonical-block-scan",
+              "dbStatus": "confirmed",
+              "hasRawTx": true,
+              "historyElapsedMs": 2109,
+              "historyHasExpectedEvent": true,
+              "historyHasTx": true,
+              "historyTotalCount": 1,
+              "label": "Carbonz POWB transfer",
+              "logElapsedMs": 7672,
+              "logHasExpectedEvent": true,
+              "logHasTx": true,
+              "expectedEventKind": null,
+              "expectedProtocol": null,
+              "expectedValid": true,
+              "txid": "18c7dba7ebe06727e2f37bf0d4885a2aadbf42aff56743936e8e076e2c691100"
+            },
+            "name": "reported-tx-db-Carbonz POWB transfer",
+            "ok": true,
+            "severity": "error"
+          },
+          {
+            "details": {
+              "blockHeight": 956107,
+              "dbEvents": [
+                {
+                  "kind": "token-transfer",
+                  "valid": true,
+                  "status": "confirmed",
+                  "protocol": "pwt1"
+                }
+              ],
+              "dbSource": "canonical-block-scan",
+              "dbStatus": "confirmed",
+              "hasRawTx": true,
+              "historyElapsedMs": 2109,
+              "historyHasExpectedEvent": true,
+              "historyHasTx": true,
+              "historyTotalCount": 1,
+              "label": "Carbonz POWB transfer",
+              "logElapsedMs": 7672,
+              "logHasExpectedEvent": true,
+              "logHasTx": true,
+              "expectedEventKind": null,
+              "expectedProtocol": null,
+              "expectedValid": true,
+              "txid": "18c7dba7ebe06727e2f37bf0d4885a2aadbf42aff56743936e8e076e2c691100"
+            },
+            "name": "reported-tx-log-Carbonz POWB transfer",
+            "ok": true,
+            "severity": "error"
+          },
+          {
+            "details": {
+              "blockHeight": 956107,
+              "dbEvents": [
+                {
+                  "kind": "token-transfer",
+                  "valid": true,
+                  "status": "confirmed",
+                  "protocol": "pwt1"
+                }
+              ],
+              "dbSource": "canonical-block-scan",
+              "dbStatus": "confirmed",
+              "hasRawTx": true,
+              "historyElapsedMs": 2109,
+              "historyHasExpectedEvent": true,
+              "historyHasTx": true,
+              "historyTotalCount": 1,
+              "label": "Carbonz POWB transfer",
+              "logElapsedMs": 7672,
+              "logHasExpectedEvent": true,
+              "logHasTx": true,
+              "expectedEventKind": null,
+              "expectedProtocol": null,
+              "expectedValid": true,
+              "txid": "18c7dba7ebe06727e2f37bf0d4885a2aadbf42aff56743936e8e076e2c691100"
+            },
+            "name": "reported-tx-history-Carbonz POWB transfer",
+            "ok": true,
+            "severity": "error"
+          },
+          {
+            "details": {
+              "blockHeight": 955267,
+              "dbEvents": [
+                {
+                  "kind": "token-listing",
+                  "valid": true,
+                  "status": "confirmed",
+                  "protocol": "pwt1"
+                }
+              ],
+              "dbSource": "canonical-block-scan",
+              "dbStatus": "confirmed",
+              "hasRawTx": true,
+              "historyElapsedMs": 1992,
+              "historyHasExpectedEvent": true,
+              "historyHasTx": true,
+              "historyTotalCount": 1,
+              "label": "Gullish POWB listing",
+              "logElapsedMs": 5372,
+              "logHasExpectedEvent": true,
+              "logHasTx": true,
+              "expectedEventKind": null,
+              "expectedProtocol": null,
+              "expectedValid": true,
+              "txid": "dcac1665798675b7817a973fa990283bc9de2c77cc374361e8cb956a5f2daa46"
+            },
+            "name": "reported-tx-db-Gullish POWB listing",
+            "ok": true,
+            "severity": "error"
+          },
+          {
+            "details": {
+              "blockHeight": 955267,
+              "dbEvents": [
+                {
+                  "kind": "token-listing",
+                  "valid": true,
+                  "status": "confirmed",
+                  "protocol": "pwt1"
+                }
+              ],
+              "dbSource": "canonical-block-scan",
+              "dbStatus": "confirmed",
+              "hasRawTx": true,
+              "historyElapsedMs": 1992,
+              "historyHasExpectedEvent": true,
+              "historyHasTx": true,
+              "historyTotalCount": 1,
+              "label": "Gullish POWB listing",
+              "logElapsedMs": 5372,
+              "logHasExpectedEvent": true,
+              "logHasTx": true,
+              "expectedEventKind": null,
+              "expectedProtocol": null,
+              "expectedValid": true,
+              "txid": "dcac1665798675b7817a973fa990283bc9de2c77cc374361e8cb956a5f2daa46"
+            },
+            "name": "reported-tx-log-Gullish POWB listing",
+            "ok": true,
+            "severity": "error"
+          },
+          {
+            "details": {
+              "blockHeight": 955267,
+              "dbEvents": [
+                {
+                  "kind": "token-listing",
+                  "valid": true,
+                  "status": "confirmed",
+                  "protocol": "pwt1"
+                }
+              ],
+              "dbSource": "canonical-block-scan",
+              "dbStatus": "confirmed",
+              "hasRawTx": true,
+              "historyElapsedMs": 1992,
+              "historyHasExpectedEvent": true,
+              "historyHasTx": true,
+              "historyTotalCount": 1,
+              "label": "Gullish POWB listing",
+              "logElapsedMs": 5372,
+              "logHasExpectedEvent": true,
+              "logHasTx": true,
+              "expectedEventKind": null,
+              "expectedProtocol": null,
+              "expectedValid": true,
+              "txid": "dcac1665798675b7817a973fa990283bc9de2c77cc374361e8cb956a5f2daa46"
+            },
+            "name": "reported-tx-history-Gullish POWB listing",
+            "ok": true,
+            "severity": "error"
+          },
+          {
+            "details": {
+              "blockHeight": 950255,
+              "dbEvents": [
+                {
+                  "kind": "token-listing",
+                  "valid": true,
+                  "status": "confirmed",
+                  "protocol": "pwt1"
+                }
+              ],
+              "dbSource": "canonical-block-scan",
+              "dbStatus": "confirmed",
+              "hasRawTx": true,
+              "historyElapsedMs": 4617,
+              "historyHasExpectedEvent": true,
+              "historyHasTx": true,
+              "historyTotalCount": 1,
+              "label": "spent seal listing closure",
+              "logElapsedMs": 5080,
+              "logHasExpectedEvent": true,
+              "logHasTx": true,
+              "expectedEventKind": null,
+              "expectedProtocol": null,
+              "expectedValid": true,
+              "txid": "df5740ebf1260f04906479ec1f23a1fd64d112f368be4a056a0a4b55cff838a1"
+            },
+            "name": "reported-tx-db-spent seal listing closure",
+            "ok": true,
+            "severity": "error"
+          },
+          {
+            "details": {
+              "blockHeight": 950255,
+              "dbEvents": [
+                {
+                  "kind": "token-listing",
+                  "valid": true,
+                  "status": "confirmed",
+                  "protocol": "pwt1"
+                }
+              ],
+              "dbSource": "canonical-block-scan",
+              "dbStatus": "confirmed",
+              "hasRawTx": true,
+              "historyElapsedMs": 4617,
+              "historyHasExpectedEvent": true,
+              "historyHasTx": true,
+              "historyTotalCount": 1,
+              "label": "spent seal listing closure",
+              "logElapsedMs": 5080,
+              "logHasExpectedEvent": true,
+              "logHasTx": true,
+              "expectedEventKind": null,
+              "expectedProtocol": null,
+              "expectedValid": true,
+              "txid": "df5740ebf1260f04906479ec1f23a1fd64d112f368be4a056a0a4b55cff838a1"
+            },
+            "name": "reported-tx-log-spent seal listing closure",
+            "ok": true,
+            "severity": "error"
+          },
+          {
+            "details": {
+              "blockHeight": 950255,
+              "dbEvents": [
+                {
+                  "kind": "token-listing",
+                  "valid": true,
+                  "status": "confirmed",
+                  "protocol": "pwt1"
+                }
+              ],
+              "dbSource": "canonical-block-scan",
+              "dbStatus": "confirmed",
+              "hasRawTx": true,
+              "historyElapsedMs": 4617,
+              "historyHasExpectedEvent": true,
+              "historyHasTx": true,
+              "historyTotalCount": 1,
+              "label": "spent seal listing closure",
+              "logElapsedMs": 5080,
+              "logHasExpectedEvent": true,
+              "logHasTx": true,
+              "expectedEventKind": null,
+              "expectedProtocol": null,
+              "expectedValid": true,
+              "txid": "df5740ebf1260f04906479ec1f23a1fd64d112f368be4a056a0a4b55cff838a1"
+            },
+            "name": "reported-tx-history-spent seal listing closure",
+            "ok": true,
+            "severity": "error"
+          }
+        ],
+        "database": {
+          "transactions_total": "25809",
+          "transactions_confirmed": "25546",
+          "transactions_pending": "192",
+          "transactions_dropped": "71",
+          "confirmed_transactions_missing_raw": "0",
+          "confirmed_transactions_missing_block": "0",
+          "recent_confirmed_transactions_missing_block": "0",
+          "events_total": "26414",
+          "events_confirmed_valid": "25886",
+          "events_confirmed_pwt_invalid_audit": "270",
+          "events_confirmed_canonical_activity": "25886",
+          "confirmed_canonical_action_txids": "25229",
+          "confirmed_events_missing_transaction": "0",
+          "confirmed_events_without_confirmed_transaction": "0",
+          "confirmed_events_missing_raw_transaction": "0",
+          "event_refs": "56100",
+          "event_participants": "125873",
+          "credit_definitions_confirmed": "238",
+          "credit_balances": "405",
+          "credit_listings": "1160",
+          "id_records": "505",
+          "confirmed_mail_items": "616",
+          "op_returns": "25669",
+          "latest_snapshot_id": "07d0f23bcd15c27038175439",
+          "latest_snapshot_block": 967722,
+          "latest_snapshot_generated_at": "2026-09-19T16:42:26.012Z"
+        },
+        "endpointTimings": {
+          "health": 2254,
+          "inceptionSummary": 9229,
+          "infinitySummary": 9227,
+          "ledgerConsistency": 14469,
+          "marketplaceSummary": 23214,
+          "workFloor": 13592,
+          "growthSummary": 9226
+        },
+        "eventKinds": [
+          {
+            "protocol": "pwb1",
+            "kind": "boost-follow",
+            "status": "confirmed",
+            "valid": true,
+            "count": 2,
+            "amount_sats": "2184",
+            "min_block_height": 967033,
+            "max_block_height": 967134
+          },
+          {
+            "protocol": "pwb1",
+            "kind": "boost-post",
+            "status": "confirmed",
+            "valid": true,
+            "count": 4,
+            "amount_sats": "2184",
+            "min_block_height": 964513,
+            "max_block_height": 967038
+          },
+          {
+            "protocol": "pwb1",
+            "kind": "boost-profile",
+            "status": "confirmed",
+            "valid": true,
+            "count": 2,
+            "amount_sats": "1092",
+            "min_block_height": 967027,
+            "max_block_height": 967032
+          },
+          {
+            "protocol": "pwb1",
+            "kind": "boost-reboost",
+            "status": "confirmed",
+            "valid": true,
+            "count": 1,
+            "amount_sats": "546",
+            "min_block_height": 967362,
+            "max_block_height": 967362
+          },
+          {
+            "protocol": "pwb1",
+            "kind": "boost-reply",
+            "status": "confirmed",
+            "valid": true,
+            "count": 1,
+            "amount_sats": "546",
+            "min_block_height": 967363,
+            "max_block_height": 967363
+          },
+          {
+            "protocol": "pwid1",
+            "kind": "id-buy",
+            "status": "confirmed",
+            "valid": true,
+            "count": 5,
+            "amount_sats": "2730",
+            "min_block_height": 948935,
+            "max_block_height": 957408
+          },
+          {
+            "protocol": "pwid1",
+            "kind": "id-buy2-invalid",
+            "status": "confirmed",
+            "valid": false,
+            "count": 1,
+            "amount_sats": "1546",
+            "min_block_height": 948935,
+            "max_block_height": 948935
+          },
+          {
+            "protocol": "pwid1",
+            "kind": "id-event-invalid",
+            "status": "confirmed",
+            "valid": false,
+            "count": 17,
+            "amount_sats": "0",
+            "min_block_height": 948418,
+            "max_block_height": 948954
+          },
+          {
+            "protocol": "pwid1",
+            "kind": "id-list",
+            "status": "confirmed",
+            "valid": true,
+            "count": 14,
+            "amount_sats": "7644",
+            "min_block_height": 948926,
+            "max_block_height": 965474
+          },
+          {
+            "protocol": "pwid1",
+            "kind": "id-list2-invalid",
+            "status": "confirmed",
+            "valid": false,
+            "count": 1,
+            "amount_sats": "546",
+            "min_block_height": 948926,
+            "max_block_height": 948926
+          },
+          {
+            "protocol": "pwid1",
+            "kind": "id-list3-invalid",
+            "status": "confirmed",
+            "valid": false,
+            "count": 1,
+            "amount_sats": "546",
+            "min_block_height": 948961,
+            "max_block_height": 948961
+          },
+          {
+            "protocol": "pwid1",
+            "kind": "id-register",
+            "status": "confirmed",
+            "valid": true,
+            "count": 505,
+            "amount_sats": "505000",
+            "min_block_height": 948376,
+            "max_block_height": 965011
+          },
+          {
+            "protocol": "pwid1",
+            "kind": "id-register",
+            "status": "pending",
+            "valid": true,
+            "count": 22,
+            "amount_sats": "22000",
+            "min_block_height": null,
+            "max_block_height": null
+          },
+          {
+            "protocol": "pwid1",
+            "kind": "id-seal",
+            "status": "confirmed",
+            "valid": true,
+            "count": 8,
+            "amount_sats": "4368",
+            "min_block_height": 949029,
+            "max_block_height": 956619
+          },
+          {
+            "protocol": "pwid1",
+            "kind": "id-transfer",
+            "status": "confirmed",
+            "valid": true,
+            "count": 2,
+            "amount_sats": "1092",
+            "min_block_height": 948854,
+            "max_block_height": 948855
+          },
+          {
+            "protocol": "pwid1",
+            "kind": "id-update",
+            "status": "confirmed",
+            "valid": true,
+            "count": 1,
+            "amount_sats": "546",
+            "min_block_height": 948866,
+            "max_block_height": 948866
+          },
+          {
+            "protocol": "pwm1",
+            "kind": "file",
+            "status": "confirmed",
+            "valid": true,
+            "count": 6,
+            "amount_sats": "3276",
+            "min_block_height": 948286,
+            "max_block_height": 967038
+          },
+          {
+            "protocol": "pwm1",
+            "kind": "inception-bond",
+            "status": "confirmed",
+            "valid": true,
+            "count": 47,
+            "amount_sats": "27932",
+            "min_block_height": 957950,
+            "max_block_height": 963782
+          },
+          {
+            "protocol": "pwm1",
+            "kind": "infinity-bond",
+            "status": "confirmed",
+            "valid": true,
+            "count": 467,
+            "amount_sats": "630496569",
+            "min_block_height": 952284,
+            "max_block_height": 965205
+          },
+          {
+            "protocol": "pwm1",
+            "kind": "mail",
+            "status": "confirmed",
+            "valid": true,
+            "count": 77,
+            "amount_sats": "1475682",
+            "min_block_height": 948283,
+            "max_block_height": 965601
+          },
+          {
+            "protocol": "pwm1",
+            "kind": "reply",
+            "status": "confirmed",
+            "valid": true,
+            "count": 19,
+            "amount_sats": "12794",
+            "min_block_height": 948418,
+            "max_block_height": 962976
+          },
+          {
+            "protocol": "pwt1",
+            "kind": "token-create",
+            "status": "confirmed",
+            "valid": true,
+            "count": 236,
+            "amount_sats": "128856",
+            "min_block_height": 949449,
+            "max_block_height": 952213
+          },
+          {
+            "protocol": "pwt1",
+            "kind": "token-event-invalid",
+            "status": "confirmed",
+            "valid": false,
+            "count": 270,
+            "amount_sats": "0",
+            "min_block_height": 949475,
+            "max_block_height": 963782
+          },
+          {
+            "protocol": "pwt1",
+            "kind": "token-event-invalid",
+            "status": "pending",
+            "valid": false,
+            "count": 162,
+            "amount_sats": "0",
+            "min_block_height": null,
+            "max_block_height": null
+          },
+          {
+            "protocol": "pwt1",
+            "kind": "token-listing",
+            "status": "confirmed",
+            "valid": true,
+            "count": 1160,
+            "amount_sats": "633360",
+            "min_block_height": 950246,
+            "max_block_height": 967709
+          },
+          {
+            "protocol": "pwt1",
+            "kind": "token-listing-closed",
+            "status": "confirmed",
+            "valid": true,
+            "count": 127,
+            "amount_sats": "69342",
+            "min_block_height": 950474,
+            "max_block_height": 967596
+          },
+          {
+            "protocol": "pwt1",
+            "kind": "token-listing-invalid",
+            "status": "confirmed",
+            "valid": false,
+            "count": 13,
+            "amount_sats": "7098",
+            "min_block_height": 951651,
+            "max_block_height": 958985
+          },
+          {
+            "protocol": "pwt1",
+            "kind": "token-listing-sealed",
+            "status": "confirmed",
+            "valid": true,
+            "count": 1015,
+            "amount_sats": "554190",
+            "min_block_height": 950255,
+            "max_block_height": 967709
+          },
+          {
+            "protocol": "pwt1",
+            "kind": "token-listing-sealed",
+            "status": "pending",
+            "valid": true,
+            "count": 5,
+            "amount_sats": "2730",
+            "min_block_height": null,
+            "max_block_height": null
+          },
+          {
+            "protocol": "pwt1",
+            "kind": "token-listing-sealed-invalid",
+            "status": "confirmed",
+            "valid": false,
+            "count": 23,
+            "amount_sats": "6006",
+            "min_block_height": 952047,
+            "max_block_height": 966959
+          },
+          {
+            "protocol": "pwt1",
+            "kind": "token-mint",
+            "status": "confirmed",
+            "valid": true,
+            "count": 21875,
+            "amount_sats": "23545075",
+            "min_block_height": 949463,
+            "max_block_height": 965205
+          },
+          {
+            "protocol": "pwt1",
+            "kind": "token-mint",
+            "status": "pending",
+            "valid": true,
+            "count": 1,
+            "amount_sats": "555",
+            "min_block_height": null,
+            "max_block_height": null
+          },
+          {
+            "protocol": "pwt1",
+            "kind": "token-mint-invalid",
+            "status": "confirmed",
+            "valid": false,
+            "count": 12,
+            "amount_sats": "546",
+            "min_block_height": 949912,
+            "max_block_height": 967445
+          },
+          {
+            "protocol": "pwt1",
+            "kind": "token-sale",
+            "status": "confirmed",
+            "valid": true,
+            "count": 82,
+            "amount_sats": "9553286",
+            "min_block_height": 950474,
+            "max_block_height": 967596
+          },
+          {
+            "protocol": "pwt1",
+            "kind": "token-transfer",
+            "status": "confirmed",
+            "valid": true,
+            "count": 230,
+            "amount_sats": "124488",
+            "min_block_height": 950161,
+            "max_block_height": 967383
+          }
+        ],
+        "failures": [],
+        "freshHistoryReads": false,
+        "ledger": {
+          "generatedAt": "2026-09-19T16:38:23.837Z",
+          "indexedThroughBlock": 967722,
+          "missingLogEvents": 0,
+          "networkValueSats": 8387599195488656000,
+          "snapshotId": "07d0f23bcd15c27038175439",
+          "sourceTipHeight": 967722,
+          "status": "green",
+          "tipLagBlocks": 0
+        },
+        "network": "livenet",
+        "ok": true,
+        "reportedTxs": [
+          {
+            "blockHeight": 956317,
+            "dbEvents": [
+              {
+                "kind": "token-listing-closed",
+                "valid": true,
+                "status": "confirmed",
+                "protocol": "pwt1"
+              },
+              {
+                "kind": "token-sale",
+                "valid": true,
+                "status": "confirmed",
+                "protocol": "pwt1"
+              }
+            ],
+            "dbSource": "canonical-block-scan",
+            "dbStatus": "confirmed",
+            "hasRawTx": true,
+            "historyElapsedMs": 1441,
+            "historyHasExpectedEvent": true,
+            "historyHasTx": true,
+            "historyTotalCount": 1,
+            "label": "reported WORK buy 8429",
+            "logElapsedMs": 4983,
+            "logHasExpectedEvent": true,
+            "logHasTx": true,
+            "expectedEventKind": null,
+            "expectedProtocol": null,
+            "expectedValid": true,
+            "txid": "8429e3984c8dcedbb982ccbcbfe3a314f3dcc8cbfd63fe81d4e45a3483187491"
+          },
+          {
+            "blockHeight": 956319,
+            "dbEvents": [
+              {
+                "kind": "token-event-invalid",
+                "valid": false,
+                "status": "confirmed",
+                "protocol": "pwt1"
+              }
+            ],
+            "dbSource": "canonical-block-scan",
+            "dbStatus": "confirmed",
+            "hasRawTx": true,
+            "historyElapsedMs": 2586,
+            "historyHasExpectedEvent": true,
+            "historyHasTx": true,
+            "historyTotalCount": 1,
+            "label": "reported WORK buy 5dcd",
+            "logElapsedMs": 3921,
+            "logHasExpectedEvent": true,
+            "logHasTx": false,
+            "expectedEventKind": "token-event-invalid",
+            "expectedProtocol": "pwt1",
+            "expectedValid": false,
+            "txid": "5dcdd8d4181e6166d90912c54ccb47047c69441099194a5cd102dacb57efe8cf"
+          },
+          {
+            "blockHeight": 956335,
+            "dbEvents": [
+              {
+                "kind": "token-listing-closed",
+                "valid": true,
+                "status": "confirmed",
+                "protocol": "pwt1"
+              },
+              {
+                "kind": "token-sale",
+                "valid": true,
+                "status": "confirmed",
+                "protocol": "pwt1"
+              }
+            ],
+            "dbSource": "canonical-block-scan",
+            "dbStatus": "confirmed",
+            "hasRawTx": true,
+            "historyElapsedMs": 1931,
+            "historyHasExpectedEvent": true,
+            "historyHasTx": true,
+            "historyTotalCount": 1,
+            "label": "reported WORK buy d946",
+            "logElapsedMs": 5200,
+            "logHasExpectedEvent": true,
+            "logHasTx": true,
+            "expectedEventKind": null,
+            "expectedProtocol": null,
+            "expectedValid": true,
+            "txid": "d946eea2face8675fbaf463dffef28d75df52d451c4694a3e6bc11298e43cd85"
+          },
+          {
+            "blockHeight": 956326,
+            "dbEvents": [
+              {
+                "kind": "token-event-invalid",
+                "valid": false,
+                "status": "confirmed",
+                "protocol": "pwt1"
+              }
+            ],
+            "dbSource": "canonical-block-scan",
+            "dbStatus": "confirmed",
+            "hasRawTx": true,
+            "historyElapsedMs": 1946,
+            "historyHasExpectedEvent": true,
+            "historyHasTx": true,
+            "historyTotalCount": 1,
+            "label": "reported WORK buy 4e59",
+            "logElapsedMs": 5021,
+            "logHasExpectedEvent": true,
+            "logHasTx": false,
+            "expectedEventKind": "token-event-invalid",
+            "expectedProtocol": "pwt1",
+            "expectedValid": false,
+            "txid": "4e599fd0064642b864e8b9c7152b16b50a49fcea8c108f042d8df9294a2fb93d"
+          },
+          {
+            "blockHeight": 956318,
+            "dbEvents": [
+              {
+                "kind": "token-listing-closed",
+                "valid": true,
+                "status": "confirmed",
+                "protocol": "pwt1"
+              },
+              {
+                "kind": "token-sale",
+                "valid": true,
+                "status": "confirmed",
+                "protocol": "pwt1"
+              }
+            ],
+            "dbSource": "canonical-block-scan",
+            "dbStatus": "confirmed",
+            "hasRawTx": true,
+            "historyElapsedMs": 1816,
+            "historyHasExpectedEvent": true,
+            "historyHasTx": true,
+            "historyTotalCount": 1,
+            "label": "reported WORK buy 2e57",
+            "logElapsedMs": 5291,
+            "logHasExpectedEvent": true,
+            "logHasTx": true,
+            "expectedEventKind": null,
+            "expectedProtocol": null,
+            "expectedValid": true,
+            "txid": "2e577dd95c75b326cafc3c281c8e7330bf62097b779b9ac873302bb4be744a13"
+          },
+          {
+            "blockHeight": 955618,
+            "dbEvents": [
+              {
+                "kind": "token-event-invalid",
+                "valid": false,
+                "status": "confirmed",
+                "protocol": "pwt1"
+              }
+            ],
+            "dbSource": "canonical-block-scan",
+            "dbStatus": "confirmed",
+            "hasRawTx": true,
+            "historyElapsedMs": 2213,
+            "historyHasExpectedEvent": true,
+            "historyHasTx": true,
+            "historyTotalCount": 1,
+            "label": "Carbonz reported WORK buy",
+            "logElapsedMs": 5128,
+            "logHasExpectedEvent": true,
+            "logHasTx": false,
+            "expectedEventKind": "token-event-invalid",
+            "expectedProtocol": "pwt1",
+            "expectedValid": false,
+            "txid": "7ddf760aaae819aab74a4cc5523016350e11b5888c4950acd97a7660533ba47b"
+          },
+          {
+            "blockHeight": 955792,
+            "dbEvents": [
+              {
+                "kind": "token-transfer",
+                "valid": true,
+                "status": "confirmed",
+                "protocol": "pwt1"
+              }
+            ],
+            "dbSource": "canonical-block-scan",
+            "dbStatus": "confirmed",
+            "hasRawTx": true,
+            "historyElapsedMs": 2819,
+            "historyHasExpectedEvent": true,
+            "historyHasTx": true,
+            "historyTotalCount": 1,
+            "label": "Carbonz delayed WORK transfer",
+            "logElapsedMs": 5565,
+            "logHasExpectedEvent": true,
+            "logHasTx": true,
+            "expectedEventKind": null,
+            "expectedProtocol": null,
+            "expectedValid": true,
+            "txid": "c90f95cdd45892f76af89686dea7c1c35ec070148e5a74c947f174e244ef44db"
+          },
+          {
+            "blockHeight": 956107,
+            "dbEvents": [
+              {
+                "kind": "token-transfer",
+                "valid": true,
+                "status": "confirmed",
+                "protocol": "pwt1"
+              }
+            ],
+            "dbSource": "canonical-block-scan",
+            "dbStatus": "confirmed",
+            "hasRawTx": true,
+            "historyElapsedMs": 2109,
+            "historyHasExpectedEvent": true,
+            "historyHasTx": true,
+            "historyTotalCount": 1,
+            "label": "Carbonz POWB transfer",
+            "logElapsedMs": 7672,
+            "logHasExpectedEvent": true,
+            "logHasTx": true,
+            "expectedEventKind": null,
+            "expectedProtocol": null,
+            "expectedValid": true,
+            "txid": "18c7dba7ebe06727e2f37bf0d4885a2aadbf42aff56743936e8e076e2c691100"
+          },
+          {
+            "blockHeight": 955267,
+            "dbEvents": [
+              {
+                "kind": "token-listing",
+                "valid": true,
+                "status": "confirmed",
+                "protocol": "pwt1"
+              }
+            ],
+            "dbSource": "canonical-block-scan",
+            "dbStatus": "confirmed",
+            "hasRawTx": true,
+            "historyElapsedMs": 1992,
+            "historyHasExpectedEvent": true,
+            "historyHasTx": true,
+            "historyTotalCount": 1,
+            "label": "Gullish POWB listing",
+            "logElapsedMs": 5372,
+            "logHasExpectedEvent": true,
+            "logHasTx": true,
+            "expectedEventKind": null,
+            "expectedProtocol": null,
+            "expectedValid": true,
+            "txid": "dcac1665798675b7817a973fa990283bc9de2c77cc374361e8cb956a5f2daa46"
+          },
+          {
+            "blockHeight": 950255,
+            "dbEvents": [
+              {
+                "kind": "token-listing",
+                "valid": true,
+                "status": "confirmed",
+                "protocol": "pwt1"
+              }
+            ],
+            "dbSource": "canonical-block-scan",
+            "dbStatus": "confirmed",
+            "hasRawTx": true,
+            "historyElapsedMs": 4617,
+            "historyHasExpectedEvent": true,
+            "historyHasTx": true,
+            "historyTotalCount": 1,
+            "label": "spent seal listing closure",
+            "logElapsedMs": 5080,
+            "logHasExpectedEvent": true,
+            "logHasTx": true,
+            "expectedEventKind": null,
+            "expectedProtocol": null,
+            "expectedValid": true,
+            "txid": "df5740ebf1260f04906479ec1f23a1fd64d112f368be4a056a0a4b55cff838a1"
+          }
+        ],
+        "warnings": []
+      }
+    }
   }
 }

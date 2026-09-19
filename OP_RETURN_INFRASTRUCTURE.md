@@ -1096,6 +1096,21 @@ mount and exits nonzero for warning or critical state, leaving the failed unit
 and journal evidence visible to host monitoring. A missing or unexpectedly
 nested `/data` mount is critical. The check is read-only and never prunes data.
 
+The supplementary `proofofwork-storage-trend@ui.timer` or
+`proofofwork-storage-trend@node.timer` runs hourly on the corresponding host.
+Install `deploy/proofofwork-storage-trend.py` as
+`/usr/local/sbin/proofofwork-storage-trend` with its template service/timer.
+It reads existing storage-health journal observations and forecasts time to the
+same 10 GiB root / 100 GiB data reserve using the larger net consumption rate
+over one or seven days. It warns within seven days and is critical within one;
+missing historical coverage is explicitly unknown and exits nonzero. These are
+historical estimates, not guarantees against sudden growth. Bounded allocation
+measurements separately identify backup, database tablespace, cache, deployment
+and log usage; shared blocks mean these figures must not be summed. No measured
+path is thereby approved for cleanup. The service has a read-only filesystem,
+resource limits and no pruning operation. Alerts are local journal/failed-unit
+signals; external notification delivery is not implied by installation.
+
 PostgreSQL recovery uses two independent layers. Bind
 `/data/proofofwork-postgres-backups/physical` onto
 `/var/backups/postgresql` with the tracked mount unit, then enable Ubuntu's

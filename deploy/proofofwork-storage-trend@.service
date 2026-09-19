@@ -1,0 +1,27 @@
+[Unit]
+Description=Forecast ProofOfWork %i storage reserve consumption
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 -I /usr/local/sbin/proofofwork-storage-trend %i
+TimeoutStartSec=180s
+MemoryMax=128M
+CPUQuota=20%
+Nice=15
+IOWeight=10
+NoNewPrivileges=true
+PrivateTmp=true
+BindReadOnlyPaths=-/var/tmp/proofofwork-deploy
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectControlGroups=true
+ProtectKernelLogs=true
+ProtectKernelModules=true
+ProtectKernelTunables=true
+CapabilityBoundingSet=CAP_DAC_READ_SEARCH
+AmbientCapabilities=
+RestrictSUIDSGID=true
+LockPersonality=true
+RestrictRealtime=true
+SystemCallArchitectures=native
