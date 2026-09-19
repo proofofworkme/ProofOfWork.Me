@@ -399,6 +399,37 @@ function BoostAvatar({ item }: { item: BoostFeedItem }) {
   );
 }
 
+const BOOST_MEDIA_MAX_CONCURRENT = 4;
+let boostMediaActive = 0;
+const boostMediaQueue: Array<{
+  resolve: (release: () => void) => void;
+  reject: (reason?: unknown) => void;
+  signal: AbortSignal;
+}> = [];
+
+function pumpBoostMediaQueue() {
+  while (boostMediaActive < BOOST_MEDIA_MAX_CONCURRENT && boostMediaQueue.length) {
+    const next = boostMediaQueue.shift();
+    if (!next || next.signal.aborted) {
+      next?.reject(next.signal.reason);
+      continue;
+    }
+    boostMediaActive += 1;
+    next.resolve(() => {
+      boostMediaActive = Math.max(0, boostMediaActive - 1);
+      pumpBoostMediaQueue();
+    });
+  }
+}
+
+function acquireBoostMediaSlot(signal: AbortSignal) {
+  if (signal.aborted) return Promise.reject(signal.reason);
+  return new Promise<() => void>((resolve, reject) => {
+    boostMediaQueue.push({ resolve, reject, signal });
+    pumpBoostMediaQueue();
+  });
+}
+
 function boostMediaUrl(attachment: { data?: string; mime?: string }) {
   if (!attachment.data || !attachment.mime) return "";
   const base64 = attachment.data.replace(/-/g, "+").replace(/_/g, "/");
@@ -410,25 +441,33 @@ function BoostMedia({ item, network }: { item: BoostFeedItem; network: BitcoinNe
   const [mediaError, setMediaError] = useState(false);
 
   useEffect(() => {
-    let cancelled = false;
+    const controller = new AbortController();
     setMediaUrl(item.media?.url ?? "");
     setMediaError(false);
     if (!item.media || !/^(?:image|video)\//iu.test(item.media.mime ?? "") || item.media.url) {
-      return () => { cancelled = true; };
+      return () => controller.abort();
     }
-    void fetchProofApiJson<{ attachment?: { data?: string; mime?: string } }>(
-      `/api/v1/tx/${encodeURIComponent(item.boostTxid || item.txid)}`,
-      network,
-    ).then((payload) => {
-      if (!cancelled) {
-        const url = boostMediaUrl(payload.attachment ?? {});
-        if (url) setMediaUrl(url);
-        else setMediaError(true);
-      }
-    }).catch(() => {
-      if (!cancelled) setMediaError(true);
-    });
-    return () => { cancelled = true; };
+    void acquireBoostMediaSlot(controller.signal)
+      .then(async (release) => {
+        try {
+          const payload = await fetchProofApiJson<{ attachment?: { data?: string; mime?: string } }>(
+            `/api/v1/tx/${encodeURIComponent(item.boostTxid || item.txid)}`,
+            network,
+            { signal: controller.signal, timeoutMs: 30_000 },
+          );
+          if (!controller.signal.aborted) {
+            const url = boostMediaUrl(payload.attachment ?? {});
+            if (url) setMediaUrl(url);
+            else setMediaError(true);
+          }
+        } catch {
+          if (!controller.signal.aborted) setMediaError(true);
+        } finally {
+          release();
+        }
+      })
+      .catch(() => undefined);
+    return () => controller.abort();
   }, [item.boostTxid, item.media?.url, item.media?.mime, item.txid, network]);
 
   if (!mediaUrl || mediaError) return null;
