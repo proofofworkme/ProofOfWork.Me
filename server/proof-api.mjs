@@ -31,6 +31,7 @@ import {
   withTokenDirectoryQualification,
 } from "./read-projections.mjs";
 import { verifiedBoostTicketClosures } from "./boost-marketplace-proof.mjs";
+import { readCoreOutpointBatches } from "./core-outpoint-batches.mjs";
 import { createBoostGrowthObservationLoader, withBoostGrowthObservation } from "./boost-growth.mjs";
 import {
   assertBoostValuationCheckpoint,
@@ -8152,6 +8153,27 @@ async function bitcoinRpc(method, params) {
     return null;
   }
   return bitcoinRpcDispatch(method, params);
+}
+
+async function bitcoinRpcGetTxOutBatch(outpoints) {
+  if (!BITCOIN_RPC_URL || !BITCOIN_RPC_USER || !BITCOIN_RPC_PASSWORD) {
+    throw new Error("Core outpoint batch configuration is unavailable.");
+  }
+  return readCoreOutpointBatches(outpoints, async (requests) => {
+    const response = await fetch(BITCOIN_RPC_URL, {
+      body: JSON.stringify(requests), method: "POST",
+      headers: { Authorization: `Basic ${Buffer.from(`${BITCOIN_RPC_USER}:${BITCOIN_RPC_PASSWORD}`).toString("base64")}`, "Content-Type": "application/json" },
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (!response.ok || !response.body) throw new Error("Core outpoint batch transport failed.");
+    const chunks = []; let bytes = 0;
+    for await (const chunk of response.body) {
+      bytes += chunk.length;
+      if (bytes > 1024 * 1024) throw new Error("Core outpoint batch response budget exceeded.");
+      chunks.push(chunk);
+    }
+    return JSON.parse(Buffer.concat(chunks).toString("utf8"));
+  });
 }
 
 async function bitcoinRpcOutspendPayload(txid, vout, network) {
@@ -18962,17 +18984,19 @@ async function strictCoreTokenListingReconciliation(
       );
     }
 
+    let outpointResponses;
+    try {
+      outpointResponses = await bitcoinRpcGetTxOutBatch(anchored.map(({ anchor }) => anchor));
+    } catch (error) {
+      throw tokenListingAuthorityUnavailable("Bitcoin Core outpoint batch is unavailable.", { reason: errorSummary(error) });
+    }
     const attempted = await mapWithConcurrency(
       anchored,
       Math.min(4, Math.max(1, TX_FETCH_CONCURRENCY)),
-      async ({ anchor, authorization, key, listing }) => {
+      async ({ anchor, authorization, key, listing }, responseIndex) => {
         let response;
         try {
-          response = await bitcoinRpc("gettxout", [
-            anchor.txid,
-            anchor.vout,
-            true,
-          ]);
+          response = outpointResponses[responseIndex];
         } catch (error) {
           throw tokenListingAuthorityUnavailable(
             `Bitcoin Core gettxout failed for token listing anchor ${key}.`,

@@ -1111,6 +1111,23 @@ path is thereby approved for cleanup. The service has a read-only filesystem,
 resource limits and no pruning operation. Alerts are local journal/failed-unit
 signals; external notification delivery is not implied by installation.
 
+`proofofwork-api-observation-health.timer` supplements readiness with a bounded
+ten-minute journal summary every five minutes. Its Python controller is installed
+as `/usr/local/sbin/proofofwork-api-observation-health`. It warns on at least 5%
+server errors across 20 responses, 10-second p95 across five responses, or an
+8 MiB response; 15% errors or 30-second p95 is critical. Missing byte measurements
+and missing/truncated observation coverage remain explicit. Measurements cover
+finished GET responses, not signing, browser rendering or complete-book hydration.
+No extra application requests are generated. Response helpers retain exact UTF-8
+Content-Length for these observations. Alerts remain local service/journal state.
+
+Complete token-listing Core reconciliation transports `gettxout` requests in
+batches of at most 32, with mempool spends included, unique response identities,
+a 1 MiB response bound and no acceptance of incomplete/error envelopes. This is
+a transport optimization: every output still passes the existing exact value,
+script, confirmation and before/after canonical-tip checks. A batch is not an
+atomic mempool snapshot. Failed evidence never becomes an empty or spent result.
+
 PostgreSQL recovery uses two independent layers. Bind
 `/data/proofofwork-postgres-backups/physical` onto
 `/var/backups/postgresql` with the tracked mount unit, then enable Ubuntu's

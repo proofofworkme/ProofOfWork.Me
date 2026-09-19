@@ -16,13 +16,15 @@ export function writeJsonBody(
   cacheControl = "no-store",
   cacheStatus = "",
 ) {
+  // writeHead-only headers are sent but are not retained by getHeader(). Keep
+  // this value available to the response observer, using UTF-8 byte length.
+  response.setHeader("Content-Length", Buffer.byteLength(body));
   response.writeHead(statusCode, {
     "Access-Control-Allow-Headers":
       "Accept, Authorization, Cache-Control, Content-Type",
     "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
     "Access-Control-Allow-Origin": CORS_ORIGIN,
     "Cache-Control": cacheControl,
-    "Content-Length": Buffer.byteLength(body),
     "Content-Type": "application/json; charset=utf-8",
     ...(cacheStatus ? { "X-PoW-Cache": cacheStatus } : {}),
   });

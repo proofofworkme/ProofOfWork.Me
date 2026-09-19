@@ -1,0 +1,21 @@
+[Unit]
+Description=Check ProofOfWork API latency, errors and response size
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 -I /usr/local/sbin/proofofwork-api-observation-health
+TimeoutStartSec=30s
+MemoryMax=128M
+CPUQuota=20%
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectControlGroups=true
+ProtectKernelLogs=true
+ProtectKernelModules=true
+ProtectKernelTunables=true
+CapabilityBoundingSet=CAP_DAC_READ_SEARCH
+RestrictSUIDSGID=true
+LockPersonality=true

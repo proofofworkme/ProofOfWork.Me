@@ -1137,3 +1137,19 @@ The hourly forecast and allocation checks are deployed; external alert delivery,
 off-host database recovery, whole-history independent replay, full Boost seal
 cryptography/buyability and connected-wallet lifecycle coverage remain incomplete.
 No issue is declared universally resolved on the strength of fixture-only tests.
+
+### Performance/observation continuation — candidate, not yet deployed
+
+Full-book reads still took several seconds per page, and response observations
+reported `payloadBytes: null` because Node writeHead-only headers were not retained
+for getHeader. The next candidate retains exact UTF-8 Content-Length and batches
+Core outpoint requests in groups of 32, reducing 871 transport calls to 28 while
+preserving every existing output and chain-transition check. No settled-result
+cache or stale projection is introduced. Tests reject duplicate/missing/reordered
+identity errors, RPC errors, malformed/oversized responses and invalid outpoints;
+all 528 recovery checks pass with unchanged economic reconciliation invariants.
+An additive journal-only monitor evaluates latency, server errors, response size
+and unknown/truncated measurement coverage without adding API request load.
+Its initial thresholds and visibility limits are documented in infrastructure.
+Node-only candidate staging, real Core compatibility/performance and production
+verification remain required; UI artifacts are unchanged by this candidate.

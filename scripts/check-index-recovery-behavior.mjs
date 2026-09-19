@@ -10846,6 +10846,9 @@ check("token listing buyability is fenced by exact stable-tip Core evidence", as
     {
       TX_FETCH_CONCURRENCY: 4,
       bitcoinRpc: (...args) => rpcImplementation(...args),
+      bitcoinRpcGetTxOutBatch: (outpoints) => Promise.all(outpoints.map(
+        ({ txid, vout }) => rpcImplementation("gettxout", [txid, vout, true]),
+      )),
       compareCanonicalUtf8,
       errorSummary: (value) => String(value?.message ?? value ?? ""),
       exactBitcoinRpcOutputSats,
