@@ -933,18 +933,35 @@ try {
   const multiRollbackDryRun = spawnSync("/usr/bin/bash", [fixturePath, uiRoot, "5", "--dry-run"], {
     encoding: "utf8", env: multiRollbackEnvironment,
   });
-  assert.equal(multiRollbackDryRun.status, 1, multiRollbackDryRun.stderr);
+  assert.equal(multiRollbackDryRun.status, 0, multiRollbackDryRun.stderr);
   assert.match(multiRollbackDryRun.stderr, /WARNING multiple complete-root UI rollbacks/u);
   assert.match(multiRollbackDryRun.stdout, /release_retention mode=dry-run/u);
   const multiRollbackApply = spawnSync("/usr/bin/bash", [fixturePath, uiRoot, "5", "--apply"], {
     encoding: "utf8", env: multiRollbackEnvironment,
   });
-  assert.equal(multiRollbackApply.status, 2, multiRollbackApply.stderr);
-  assert.match(multiRollbackApply.stderr, /Refusing retention with more than one/u);
-  for (const archive of verifiedUiArchives) {
-    assert.ok(existsSync(archive));
-    assert.ok(existsSync(`${archive}.sha256`));
+  assert.equal(multiRollbackApply.status, 0, multiRollbackApply.stderr);
+  assert.match(multiRollbackApply.stderr, /Multiple complete-root UI rollbacks were validated/u);
+  for (const archive of [
+    verifiedUiArchives[0],
+    verifiedUiArchives[1],
+    ...verifiedUiArchives.slice(3),
+  ]) {
+    assert.equal(existsSync(archive), true);
+    assert.equal(existsSync(`${archive}.sha256`), true);
   }
+  for (const archive of [verifiedUiArchives[2]]) {
+    assert.equal(existsSync(archive), false);
+    assert.equal(existsSync(`${archive}.sha256`), false);
+  }
+  // Restore the fixture archive pruned by the apply-path test before the
+  // later fail-closed discovery tests, which assert their own evidence set.
+  createArchive({
+    root: uiRoot,
+    kind: "ui",
+    label: "verified-2",
+    age: 2,
+    sidecarTarget: "basename",
+  });
   assert.equal(readFileSync(join(secondRollback, ".proofofwork-ui-release"), "utf8"), rollbackUiManifest);
   rmSync(secondRollback, { recursive: true });
   const failedRollbackDiscoveryResult = spawnSync(

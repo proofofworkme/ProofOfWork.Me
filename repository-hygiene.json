@@ -67,7 +67,8 @@
       "audits/2026-09-17-production-comprehensive-health-data-integrity-audit-12.md",
       "audits/2026-09-18-production-comprehensive-health-data-integrity-audit-13.md",
       "audits/2026-09-19-ordered-application-surface-audit-14.md",
-      "audits/2026-09-19-production-recovery-and-verification-audit-15.md"
+      "audits/2026-09-19-production-recovery-and-verification-audit-15.md",
+      "audits/2026-09-19-production-comprehensive-health-data-integrity-audit-16.md"
     ],
     "staged-or-future-protocol-notes": [
       "CHAIN_CONTENT.md",
