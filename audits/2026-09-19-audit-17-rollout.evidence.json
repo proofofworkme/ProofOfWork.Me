@@ -1,0 +1,217 @@
+{
+  "applicationCommit": "07929dd3c6e422fa1955c6cbf07007330eca0519",
+  "releaseId": "07929dd3c6e4-20260919T145727Z",
+  "productionCoreReceiptSha256": "27e716d25751152700280701862af9e54c479bd6dbf3a22ea33ec2a95a401424",
+  "productionCoreReceiptPath": "/home/powadmin/audit17-production-core-07929dd/receipt.json",
+  "productionCoreVerification": {
+    "format": "audit5-candidate-http-core-v1",
+    "startedAt": "2026-09-19T15:15:11.828Z",
+    "base": "http://127.0.0.1:8081",
+    "limits": {
+      "pages": 32,
+      "rows": 2000,
+      "totalBytes": 201326592,
+      "httpRequests": 128,
+      "coreRequests": 2300,
+      "milliseconds": 600000
+    },
+    "result": {
+      "counts": {
+        "model": "proof-registry-counts-v1",
+        "complete": true,
+        "confirmedCount": 505,
+        "pendingCount": 22,
+        "totalCount": 527
+      },
+      "directory": {
+        "count": 238,
+        "definitionSha256": "d978ecd52b5f9e17f44d91812c0fc0e170c483411092e834748aeb73bb861d2a",
+        "workSupplySubatoms": "210000000000000000000000"
+      },
+      "book": {
+        "listings": 871,
+        "fullRowsSha256": "bb093565001acda97c54dc8019a30ccf5f15f068795b247ecce44a361cf3cc2f",
+        "savedRowBytes": 15339680,
+        "sourceDigestQualification": "Bound to full-route snapshot; excluded historical source rows are not independently replayed.",
+        "independentCoreAnchors": 871,
+        "independentCoreSha256": "26ae36a1bd25218043a12698f3ea844ef3a4a511fecf1784aef9b2646f575f29"
+      },
+      "wallet": {
+        "address": "19JE7LS6TtQ4uSxu6ivJVZRiJyXXe8qEG3",
+        "utxos": 131,
+        "confirmedProofs": "71951",
+        "pendingProofs": "0",
+        "reservedProofs": "67704",
+        "availableProofs": "4247",
+        "protectedCount": 124,
+        "availableCount": 7,
+        "confirmedWORKSubatoms": "10000000000000000",
+        "reservedWORKSubatoms": "79631403166",
+        "remainingWORKSubatoms": "9999920368596834",
+        "confirmedListingCount": 124,
+        "pendingListingCount": 0,
+        "pendingTicketWitnesses": [],
+        "pendingTicketWitnessSha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+        "pendingQualification": "Each pending ticket was unconfirmed and unspent in Core with includeMempool=true when checked; no atomic mempool snapshot or confirmed WORK amount is implied.",
+        "qualification": "Public API inventory checked against current Core; wallet-provider exclusions, whole-chain address completeness, and transaction construction/signing are not proven."
+      },
+      "bonds": {
+        "POWB": {
+          "supply": "630496569",
+          "networkValueQ8": "63050148300000000",
+          "floorQ8": "100000779"
+        },
+        "INCB": {
+          "supply": "224847713398447926",
+          "networkValueQ8": "22484771339844794793582060",
+          "floorQ8": "100000000"
+        }
+      },
+      "boost": {
+        "events": 10,
+        "visibleRecords": 6,
+        "activeListings": 0,
+        "proofSignalQ8": "218400000000",
+        "totalSignalQ8": "279586684003065267936",
+        "workSubatoms": "70000011000000000",
+        "listingQualification": "Complete active discovery compared to complete feed annotations; no independent lifecycle reducer replay.",
+        "rawCarrierSamples": 6
+      },
+      "core": {
+        "height": 967718,
+        "hash": "0000000000000000000003af5f7061717353616c9b31385767c392488e24debd",
+        "mempoolSequenceBefore": 12948011,
+        "mempoolSequenceAfter": 12948773,
+        "mempoolSequenceStable": false
+      },
+      "qualification": "Current confirmed inventories and sampled raw carriers; no exhaustive historical replay, atomic mempool snapshot, or signing proof. Prior604/238 counts are historical baselines, never expected current counts."
+    },
+    "ok": true,
+    "finishedAt": "2026-09-19T15:17:52.630Z"
+  },
+  "uiHttpVerification": {
+    "ok": true,
+    "release": "07929dd3c6e4-20260919T145727Z",
+    "surfaces": 14,
+    "requests": 687,
+    "bytes": 201495479,
+    "elapsedSeconds": 14.371
+  },
+  "uiHttpReceiptSha256": "154fcda6c8d897acf2307311c7c65392134625761b9e88799af97707b01ac29e",
+  "controllers": {
+    "deploy/audit17/restore-logical.sh": "39920298b7640c0bd39c7ea326fe4c8df640f76b982b0abd8a26483d2d448e9a",
+    "deploy/audit17/repair-incb-aliases.py": "50de3fb71e4539c6c896809a36b15310f4a86155d131ab7ff4728cc9e819badc",
+    "deploy/audit17/run-production-audit.py": "3c81d672a9611aa343ede6a7987f5b669f339781de809f7190f8c560253dcca5",
+    "deploy/audit17/preserve-ui-rollback.sh": "7249897d2c6c18a1e1378d4ef9cf281a8379e78f2660318990542ead8018ce47",
+    "deploy/audit17/repair-relations-mail.py": "b4c16eb33392209e9698ef03f70df82b5d06a6a3b6e3b22d409ee245fb7c07a5",
+    "deploy/audit17/repair-event-times.py": "513070db7fefd7bf8e84bd2cf74aa107696df9cf0a01ce9f4ea709e8348f1317",
+    "deploy/audit17/repair-aux-raw.py": "89eaebdaf5d8b62184259960527a6b8bc360f7b607347a9de7d63e467953b832",
+    "deploy/audit17/publish-node.py": "210d7e3f99e77e3c8b1895ac2f2b37640c160637e6ee6e8c3a061355d851ee9b",
+    "deploy/audit17/verify-ui-http.py": "42393e61924c742b4cde9e4233573d8a7f28038b6c2e6fe676681bd54f1f8128",
+    "deploy/audit17/publish-ui.sh": "44eff1837455714faf5e89f7074bce371009702b890e9904e0f12829691f847c",
+    "deploy/audit17/plan-relations-mail.mjs": "ba158d4aa5edb51ff51a2a545e8adb4e8f957f34488b0963d8d691b2db93abe7"
+  },
+  "projectionRepairs": {
+    "rawEvidence": {
+      "rows": 4,
+      "root": "/data/proofofwork-audit17-aux-raw-20260919T153200Z"
+    },
+    "eventTimes": {
+      "receipt": {
+        "blocks": 385,
+        "mode": "apply",
+        "ok": true,
+        "remainingMissing": 0,
+        "rows": 1816
+      },
+      "root": "/data/proofofwork-audit17-event-times-20260919T154000Z"
+    },
+    "incbAliases": {
+      "receipt": {
+        "changedAliases": 197,
+        "exactEconomicFieldsUnchanged": true,
+        "mode": "apply",
+        "ok": true,
+        "rows": 40
+      },
+      "root": "/data/proofofwork-audit17-incb-aliases-20260919T154600Z"
+    },
+    "relationsMail": {
+      "receipt": {
+        "addedParticipants": 2,
+        "addedRefs": 3,
+        "mailMessages": 46,
+        "mode": "apply",
+        "ok": true,
+        "removedParticipants": 45,
+        "sourceEventsUnchanged": true
+      },
+      "root": "/data/proofofwork-audit17-relations-mail-20260919T155300Z"
+    },
+    "populationAfter": {
+      "ok": true,
+      "eventCount": 26414,
+      "parity": {
+        "eventCount": 26414,
+        "model": "canonical-proof-index-rendered-event-relation-parity-v1",
+        "participants": {
+          "expectedCount": 125873,
+          "extraCount": 0,
+          "extraSample": [],
+          "extraSha256": "641452c7cff117b9e8016e4391646154610a9e2a64867001eb3e30b393b8dc1b",
+          "missingCount": 0,
+          "missingSample": [],
+          "missingSha256": "3ff2332982c443b7c901632e38609f041448c7378aa69d6daff334783879cd15",
+          "observedCount": 125873,
+          "ready": true
+        },
+        "ready": true,
+        "refs": {
+          "expectedCount": 56100,
+          "extraCount": 0,
+          "extraSample": [],
+          "extraSha256": "94905f2f93cda18c4da8dcd8488dccb44b082bf0648c36b9adbff26b0fdce1c4",
+          "missingCount": 0,
+          "missingSample": [],
+          "missingSha256": "77a73418cb4dd05cbb5cbb567fd1c1e49b3e4d5479df14cddc39fc30aa0c3231",
+          "observedCount": 56100,
+          "ready": true
+        },
+        "statusCounts": {
+          "confirmed": 26224,
+          "pending": 190
+        }
+      },
+      "mailChanges": 0,
+      "targetEvents": 0,
+      "planSha256": "c81cc915aaf250c4d9f4fa3e4f634b4b0abe544f69b07f12d94f4487a5198f5e"
+    }
+  },
+  "recovery": {
+    "logicalRestoreUnit": "proofofwork-audit17-restore-attempt2.service",
+    "status": "logical-restore-passed",
+    "root": "/data/proofofwork-audit17-restore-20260919T152000Z",
+    "pitr": "not-yet-run",
+    "logicalEvidence": {
+      "port": "55432",
+      "events": 26385,
+      "socket": "/data/proofofwork-audit17-restore-20260919T152000Z/socket",
+      "database": "proof_indexer",
+      "transitions": 8034,
+      "transactions": 25780,
+      "dataDirectory": "/data/proofofwork-audit17-restore-20260919T152000Z/cluster",
+      "databaseBytes": 30006664215,
+      "creditBalances": 405,
+      "invalidIndexes": 0,
+      "ledgerSnapshots": 19790,
+      "listenAddresses": "",
+      "creditDefinitions": 238,
+      "unvalidatedConstraints": 0
+    },
+    "pageChecksums": {
+      "files": 1464,
+      "blocks": 3665732,
+      "badChecksums": 0
+    }
+  }
+}

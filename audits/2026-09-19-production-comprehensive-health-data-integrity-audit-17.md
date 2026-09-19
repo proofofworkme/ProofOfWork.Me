@@ -661,3 +661,256 @@ and an empty allowlisted `node_modules/.vite-temp` directory (0 bytes).
 `hygiene:check` and `git diff --check` passed. SOUL and canonical product/protocol
 docs were reviewed; operational writer invariants were added to
 `OP_RETURN_INFRASTRUCTURE.md`. No tracked or production artifact was deleted.
+
+## Rollout continuation — 2026-09-19
+
+Authorization remains the user's comprehensive implementation approval. The first
+implementation commit is `07929dd3c6e422fa1955c6cbf07007330eca0519`; origin/main
+still points to its parent. Production node is `8223f1dd338beaa71509332b511271be3e93f22a`,
+UI is `84a9871040db0e500a8b7f8cc16fec78c5e669c9`; the source deltas were reviewed.
+At 14:56 UTC node APIs/worker were active, Core height 967717. UI rollback
+verification passed, with 14,132,371,456 bytes free.
+
+Exact preservation candidate (no deletion):
+`/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-2ddefac163d5-20260905T204437Z`.
+It contains release `6a7d5c12e403-20260905T050937Z`, 1,133 entries and
+410,942,217 regular-file bytes. Manifest SHA256
+`2e75546ca7b21ff7b8a1d96d1a891c9bdc9e97dfa74b451f58dd4519c790a1ec`;
+complete-tree SHA256
+`a4458c5747136f0f692e648c7199378ad748ef3c23017f7ed2d53e4122939d34`.
+The reviewed script `deploy/audit17/preserve-ui-rollback.sh` checks live references,
+mounts, capacity, complete-tree and archive provenance under the deployment lock.
+It then preserves independent release-evidence copies and a compared complete-root
+archive in `/var/backups/proofofwork-ui/recovery-evidence/audit17-20260919`, moves
+only that historical root into the same protected directory, and verifies its
+unchanged fingerprint. No bytes are deleted and recovery remains reversible.
+The original release archive also remains in place. Execution results follow.
+
+Preservation execution passed: complete root and release evidence retained under
+`recovery-evidence/audit17-20260919`, unchanged fingerprints, no deletion. UI free
+space afterward: 13,585,604,608 bytes. The exact application commit was
+fast-forward merged and pushed to main. Isolated builds produced 14 surfaces plus
+NFT alias. Staging preserved 525 prior assets (43,897,249 bytes), deduplicated
+179,717,632 bytes, and left 13,169,442,816 bytes free before source receipt.
+
+Node candidate source/dependencies were independently attested under Node24.18.0:
+commit `07929dd3c6e422fa1955c6cbf07007330eca0519`, tree
+`5ca993c7816b20c3b914e4421bdbdabf49673c5f`, runtime SHA256
+`641de0f01428b19ae5d9baaa5ff66b59700c84570713808da929d0be751e19b3`.
+The production-runtime tests passed (528 recovery checks, Boost and exact V8/bond
+checks). A private shadow used a verified read-only DB connection and separate
+cache. Its bounded Core comparison passed at height 967717/hash
+`0000000000000000000196123a22f78b2c8f2e40e87bf27bc85215131ce77e1a`:
+505 confirmed/22 pending IDs, 238 definitions, 871 independently checked unspent
+listing anchors, and wallet fixture 131 UTXOs/71,951 confirmed proofs with
+67,704 reserved and 4,247 available. Exact WORK supply, POWB/INCB totals and six
+Boost raw carriers passed. Mempool sequence changed; no atomic pending-state or
+whole-chain address completeness claim. Full raw receipts remain on the node at
+`/home/powadmin/audit17-shadow-core-07929dd`.
+
+Reviewed cutover controllers are `deploy/audit17/publish-ui.sh` and
+`deploy/audit17/publish-node.py`. Node cutover holds only previously active
+maintenance/recovery timers, keeps Core/Electrs/Postgres/WAL receiver unchanged,
+requires no checkout process/listener or other application DB session, and
+preserves the prior checkout at the exact release-bound stage path. An ambiguous
+exchange leaves services stopped for inspection; a verified exchange followed by
+failure rolls back to the attested old checkout. Publication results follow.
+
+The first node cutover attempt refused before exchange: the controller accessed
+MainPID on an inactive socket unit, which has no such property. Its recovery path
+restarted the original applications and restored all held timers. Live remained
+`8223f1dd338beaa71509332b511271be3e93f22a`. The failed receipt remains in
+`/data/proofofwork-audit17-cutover-07929dd3c6e4-20260919T145727Z`. The controller now
+handles inactive socket units explicitly; fixtures cover absent/zero/nonzero PID,
+active and failed states. Attempt2 uses a fresh evidence directory. No prior
+failure evidence is overwritten.
+
+Attempt2 also refused before exchange: the stopped transient shadow unit had
+already unloaded, and `systemctl stop` returned an error for the absent unit.
+Applications had not been stopped in that attempt. Recovery restored the held
+timers. Its separate `-attempt2` receipt and controller log are preserved.
+Attempt3 handles both loaded and already-absent shadow units. The actual cutover
+control flow passed five isolated fixtures: success with absent/present shadow,
+pre-exchange DB-session refusal, post-exchange readiness failure with rollback,
+and ambiguous exchange with services held for inspection. Controller SHA256:
+`210d7e3f99e77e3c8b1895ac2f2b37640c160637e6ee6e8c3a061355d851ee9b`.
+
+UI publication completed for release `07929dd3c6e4-20260919T145727Z` with verified
+archive SHA256 `88f1830dcd726d508cfcfd0bd0d1c8fff86d21c23cae884d1efdbbf31aa56cd8`.
+The prior live root is preserved in the rollback queue; earlier protected roots
+remain independently recoverable. Free space after publication was 12,927,619,072
+bytes (67% filesystem usage). Public HTTPS verification compared all 687 requested
+release files and root pages across 14 domains with the archive: 201,495,479 bytes,
+14.371 seconds, all hashes matched. This establishes serving integrity, not every
+interactive flow or protocol's correctness.
+
+Attempt3 completed successfully: both VPS application releases now resolve to
+`07929dd3c6e422fa1955c6cbf07007330eca0519`. Core, Electrs, Postgres and WAL-receiver
+unit state/PIDs were unchanged; application services recovered ready with zero
+block lag, and all previously active held timers were restored. Before/exchange/
+archive/after/timer receipts remain under the `-attempt3` directory.
+
+Post-deployment production HTTP/Core probe passed from 15:15:11 to 15:17:52 UTC,
+at height 967718/hash
+`0000000000000000000003af5f7061717353616c9b31385767c392488e24debd`.
+It independently rechecked all 871 open listing anchors, 238 definitions, exact
+WORK supply and bond totals, 505 confirmed/22 pending IDs and the wallet fixture.
+Inventory and math results matched the candidate proof. Mempool sequence changed
+12948011→12948773; pending visibility remains qualified. Machine-readable summary
+and receipt hashes: `2026-09-19-audit-17-rollout.evidence.json`.
+
+Browser verification on the deployed Computer loaded Log, showed a no-match ID
+search as zero results without background overwrites, and returned exactly one
+confirmed action for transaction
+`ffcbac4d6de8281467e56306c36f752954973d3400e0c578f018db4ef0d06614`.
+No browser warning/error was captured during this check. This exercises H6-15's
+changed behavior without claiming exhaustive scheduling-race coverage.
+
+Fresh logical recovery exercise: exact source
+`proof_indexer-20260919T031850Z.dumpset`, dump 15,890,347,429 bytes,
+SHA256 `cc465d73c1465eac4a11065b174d2733710abf11d18d4e62e10a9ceae60fa262`.
+Controller `deploy/audit17/restore-logical.sh` uses a private socket/no TCP listener,
+2 GiB memory/one CPU/low I/O priority, 80 GiB job ceiling and 100 GiB free-space
+floor. It restores neither production roles/grants nor production tablespaces.
+The initial launch could not traverse the private deployment directory as
+postgres and exited before opening a backup or database. The unchanged controller
+was installed in a postgres-readable root-owned location, tested readable, and
+relaunched as `proofofwork-audit17-restore-attempt2`. Its newly created private job
+is `/data/proofofwork-audit17-restore-20260919T152000Z`. Results remain pending;
+this is not yet a completed restore or PITR claim.
+
+H9-03 repair preparation: all four exact txids listed above still lack raw evidence
+and have zero event dependencies. Core verbosity-2 records matched every stored
+input/output, fee, block position, block timestamp, version, locktime, vsize and
+weight. Raw transaction IDs were independently recomputed from serialized bytes,
+excluding witness as required. The initial read-only plan rejected `NULL` versus
+empty-string scriptSig representations; source normalization confirms these both
+represent an empty script. No amount, address or nonempty script differed.
+Reviewed controller `deploy/audit17/repair-aux-raw.py` normalizes only that comparison.
+Plan SHA256 `0c73e3b3f2f903d95b6f7a4c46ecf97c511649566c464ce9de73161d158c9da3`;
+protected before/plan evidence is at
+`/data/proofofwork-audit17-aux-raw-20260919T153200Z`.
+The exact guarded SQL passed a production transaction-rollback check and verified
+all original rows unchanged. Committed application is limited to raw_tx/raw_hex/
+updated_at for those four rows, after repeating Core proofs. Full before/after,
+Core records and guarded rollback SQL are retained before commit. No canonical
+scan marker is invented; normalized inputs/outputs and all economic data stay
+unchanged. Application results follow.
+
+H9-03 application passed at 15:22:43 UTC: exactly four records restored. The
+independent after-check recomputed all four txids and proved normalized input/
+output rows, event dependencies and every other transaction field unchanged.
+`receipt.json`, `after.json`, Core proofs, `apply.sql`, and `rollback.sql` remain in
+the protected repair directory. Live health afterward was ready, zero block lag,
+zero consecutive worker failures, Core/Electrs/index at 967718. This closes the
+four-row raw-evidence gap observed by Audit 17; future writer persistence still
+requires ongoing regression checks.
+
+Timestamp repair plan covers exactly the previously observed 1,816 valid confirmed
+listing/seal events across 385 canonical blocks. Core independently proved every
+parent transaction's position and block timestamp, and each stored parent matched.
+No conflicting non-null timestamp was accepted. Complete compressed Core block
+responses, before metadata and full-row/invariant SHA256 hashes are preserved at
+`/data/proofofwork-audit17-event-times-20260919T154000Z`. Plan SHA256:
+`169d906f31238ccec7ed5d6b7457f08687bbbdb1098e40a4e9837965ae823399`.
+Controller `deploy/audit17/repair-event-times.py` fills only null block_time and
+event_time; payloads, amounts, statuses, identities and economic records are
+protected by exact full-row guards and unchanged-field hashes. Apply requires a
+successful forward/reverse transaction-rollback test and re-verifies canonical
+block hashes. No timestamp repair has been claimed complete at this checkpoint.
+
+Timestamp forward/reverse rollback validation passed, followed by committed
+application and independent after-check: 1,816 rows repaired across 385 Core-proven
+blocks, zero valid confirmed events still missing block_time/event_time.
+Every unchanged-field SHA256 matched. `after.json`, `receipt.json`, and guarded
+`rollback.sql` remain in the timestamp evidence directory. A fresh complete query
+also found zero confirmed transactions lacking both raw JSON and raw hex, closing
+the measured H9-03 population gap.
+
+INCB alias preparation independently checked all 46 valid confirmed mints: Core
+raw bytes/txids, canonical block position, bond recipient/payment, integer issuance
+quotient/remainder and exact proof-plus-WORK value identity. The 39 previously
+reported issuance/dust discrepancies remain; checking all five writer-normalized
+aliases also finds the same representation defect in two fields of transaction
+`3325ebc39165bb4c38f078dc936c4c98a420d2e7f7875738e49d123c0e233801`:
+attached-work floor alias 1923.61884231 versus Q8-derived 1907.31899061, and snapshot
+network alias 40395995688.62459796 versus 40053698802.89271. This extends the existing
+alias issue to 40 rows, not a new economic-issuance finding. Planned changes: 197
+decimal aliases; all Q8 integers, issued quantities, ownership and accounting
+remain identical. Core inclusion and the existing exact integer fields are proven;
+this exercise does not independently replay historical WORK valuations.
+Plan SHA256 `364f3a8b93b849b826aa6d69b06199d6bc5f2e315a31df7cd1865b5fadb49b12`;
+evidence directory `/data/proofofwork-audit17-incb-aliases-20260919T154600Z`.
+Both forward and guarded reverse SQL passed a rolled-back production transaction,
+and all original rows remained unchanged. Apply results follow.
+
+INCB alias application passed: 197 decimal fields across 40 events normalized;
+all exact economic fields and other event content matched their invariant hashes.
+The five alias fields alone, plus updated_at, were eligible to change. Before/
+after, Core receipts and guarded rollback SQL remain in the protected alias
+repair directory. Browser WORK refresh now visibly reports “WORK live network
+value 8,387,599,195,488,655,889.93453643 proofs”; its separate floor remains
+399,409,485,499.45980428 proofs/WORK. This production check verifies H6-18's label
+correction, without claiming independent whole-history valuation replay.
+
+A fresh read-only canonical-extractor snapshot covered 26,414 events. Existing
+participant drift has the identical 45-extra-row hash
+`7910ecb110197ec85886e87efb8226d0fe15d33ca08a664736952a5198c5bef6`.
+The newly deployed follow-target extractor requires two historical participants
+and two PowID references; the previously missing invalid-INCB ticker reference
+also remains. All 46 Mail differences are confined to attachedCredits metadata:
+legacy registryAddress/paidSats fields absent from the canonical attachment form.
+Credit IDs, exact quantities, units, recipient addresses and transfer positions
+match. This is presentation/search attribution normalization, not transfer or fee
+history deletion; the source transfer events remain intact.
+The current upsertEvent replaces relations from the returned canonical event,
+and all Mail writers project the canonical event payload; writer-first review
+passed. Planned exact delta: remove 45 obsolete relation tuples, add two follow
+participants/three references, and normalize 46 Mail message projections.
+All 49 affected source events are confirmed; full-row guards prohibit source event
+changes. Plan SHA256 `fa2ae7d30907f6a60056571bd4967cd4df9b4946d414a7c7888c9c02f15fcac4`
+is pinned in `deploy/audit17/repair-relations-mail.py`; protected evidence is at
+`/data/proofofwork-audit17-relations-mail-20260919T155300Z`. Core proofs and exact
+forward/reverse rollback validation are required before apply.
+
+Mail-plan qualification: inspection of all 46 deltas found 45 metadata-trimming
+cases and one absent-versus-empty attachedCredits list, on
+`3325ebc39165bb4c38f078dc936c4c98a420d2e7f7875738e49d123c0e233801`.
+The first proof controller safely refused before any write because it required
+that field to exist. A fresh version treats only absence and an empty list as
+semantically equivalent; it still rejects any quantity, recipient or other credit
+field change. No missing economic transfer was inferred or introduced. This
+clarifies the earlier broad description of all 46 as legacy-field removal.
+
+All 49 source-event Core proofs passed. The relation/Mail forward-and-reverse
+transaction test passed, including exact restored Mail row hashes. Committed
+application removed exactly 45 obsolete participants, added two follow-target
+participants and three references, and normalized exactly 46 Mail messages.
+Every source-event hash remained unchanged. A separate population-wide snapshot
+then found exact parity over 26,414 events: 125,873 participants and 56,100 refs,
+zero missing/extra tuples, and zero Mail projection differences. This closes the
+measured H9-04/H9-05, participant drift and H6-02 historical relation gaps; it does
+not certify all future ingestion or pending/reorg paths. Both before and after
+populations, Core proofs, rollback SQL and receipts remain in the protected roots.
+
+Operational checkpoint: reviewed deployment/repair controllers and mathematical
+boundary tests are retained with this rollout evidence. Cutover tests cover
+success and restoration/ambiguous-exchange failures; repair tests cover witness
+versus non-witness txids, malformed lengths, exact monetary bounds, very large Q8
+decimal formatting and SQL quoting. Production repairs additionally executed their
+real guarded SQL under rollback before application. Repository hygiene removed no
+allowlisted state; checks and diff whitespace validation passed. Canonical docs,
+SOUL, classified evidence and cleanup boundaries were reviewed; only the operating
+infrastructure documentation required a current-state update. No retained backup,
+rollback root or audit evidence was deleted. The logical restore and broader
+ledger/ID/PITR/security/performance work remain open at this commit checkpoint.
+
+Logical restore completed successfully at 15:38:28 UTC (20m34s CPU; 2 GiB memory
+peak; zero swap). Restored database: 30,006,664,215 bytes, 25,780 transactions,
+26,385 events, 238 credit definitions, 405 balances, 19,790 ledger snapshots and
+8,034 transitions. Invalid indexes and unvalidated constraints: zero. Offline
+checksum scan examined 1,464 files/3,665,732 blocks with **zero bad checksums**.
+The isolated cluster was stopped; its complete 29 GiB tree and evidence are retained.
+This proves logical data/schema restoration and the newly restored pages, not
+production physical-page integrity, role/grant recovery, off-host recovery or PITR.
+The separate cross-ledger audit remains running under a 15-minute bound.

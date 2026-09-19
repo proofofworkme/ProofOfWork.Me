@@ -4177,9 +4177,12 @@ The Audit 17 writer hardening preserves raw transaction evidence when a rebuild
 invalidates `canonicalBlockScan`; invalidating a scan marker must not erase the
 transaction bytes. Confirmed event writes inherit the persisted parent transaction
 time, and INCB decimal display aliases derive from their exact Q8 integers without
-changing issuance. These source changes require deployment and production
-verification before the historical discrepancies can be closed. Implementation
-status and unresolved checks remain in the Audit 17 append-only record.
+changing issuance. Commit `07929dd3c6e422fa1955c6cbf07007330eca0519` was deployed to both VPS
+environments and verified against Core on 2026-09-19. Historical repairs still
+require separate before/after evidence; deployment alone does not close them.
+The bounded controllers in `deploy/audit17/` preserve release rollback roots and
+require Core proofs and transaction-rollback checks before projection repairs.
+Implementation status and unresolved checks remain in the Audit 17 append-only record.
 
 For math-touching releases, the local and production gates must prove exact
 arithmetic before deployment and again after deployment. Protocol math is a
