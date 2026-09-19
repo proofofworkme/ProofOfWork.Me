@@ -1895,7 +1895,7 @@ expectAll("marketplace summary and tabs keep confirmed sealed inventory canonica
   /async function currentProofIndexMarketplaceSummaryFallbackPayload\([\s\S]*?currentProofIndexSummarySnapshotFallbackPayload\([\s\S]*?"marketplaceSummary"[\s\S]*?"marketplace-summary"[\s\S]*?workFloorWithSummaryMarketOverlay\([\s\S]*?indexedPayload\.workFloor[\s\S]*?marketplaceSummaryPayloadWithIndexedMarketOverlay/,
   /async function marketplaceSummaryFastFallbackPayload\([\s\S]*?currentProofIndexMarketplaceSummaryFallbackPayload\(network,\s*false,\s*\{[\s\S]*?fast:\s*true/,
   /if \(fresh\) \{[\s\S]*?refreshMarketplaceSummaryPayloadCache\(network,\s*true\)[\s\S]*?summaryPayloadHasFiniteNetworkValue\([\s\S]*?"marketplaceSummary"[\s\S]*?refreshed[\s\S]*?return refreshed[\s\S]*?throw freshDataUnavailableError\([\s\S]*?"Fresh marketplace summary is unavailable\."/,
-  /url\.pathname === "\/api\/v1\/marketplace-summary"[\s\S]*?await marketplaceSummaryPayload\(network,\s*freshRead\)/,
+  /url\.pathname === "\/api\/v1\/marketplace-summary"[\s\S]*?await deduplicatedSummaryRead\(\s*`marketplace-summary:\$\{network\}:\$\{freshRead \? "fresh" : "cached"\}`,[\s\S]*?\(\) => marketplaceSummaryPayload\(network,\s*freshRead\)/,
   /const sealedListings = marketListings\.filter\(\s*tokenListingHasConfirmedSaleTicketSeal,\s*\)/,
   /const unsealedListings = marketListings\.filter\(\s*\(listing\) => !tokenListingHasConfirmedSaleTicketSeal\(listing\),\s*\)/,
   /tokenMarketHistoryRefreshNonce[\s\S]*?fresh:\s*tokenMarketHistoryRefreshNonce > 0/,

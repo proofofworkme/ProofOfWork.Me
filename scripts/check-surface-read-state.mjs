@@ -76,3 +76,43 @@ const settled = await pending;
 assert.equal(settled.token.listingBookComplete, true);
 assert.equal(settled.actualValue.floorQ8, snapshot.actualValue.floorQ8);
 console.log(JSON.stringify({ ok: true, coverage: ["qualified-counts", "complete-directory", "wallet-reservation-readiness", "listing-full-evidence-binding", "bond-summary-before-book"] }));
+
+// H6-15: a background request from an older render must use the live query,
+// and a late response must not replace a newer search or page.
+let logDeclaration;
+function visitLog(node) {
+  if (ts.isFunctionDeclaration(node) && node.name?.text === "loadLogHistoryPage") logDeclaration = node;
+  ts.forEachChild(node, visitLog);
+}
+visitLog(ast);
+assert.ok(logDeclaration);
+const logRequests = []; const logAccepted = [];
+const logEnv = {
+  activityProfileRef: { current: undefined }, activityQueryRef: { current: "tx-current" },
+  activityHistoryGenerationRef: { current: 0 }, activitySearchGenerationRef: { current: 0 },
+  activeWorkspaceStatusKeyRef: { current: "log" }, network: "livenet", ACTIVITY_FEED_PAGE_SIZE: 50,
+  nextProofApiReadAttempt: () => 1, activityHistoryCacheKey: JSON.stringify,
+  fetchGlobalActivityHistoryPage: (_network, params) => { const d = deferred(); logRequests.push({ ...d, params }); return d.promise; },
+  clearLastGoodReadWarning() {}, acceptActivityHistoryPage: (_key, page) => { logAccepted.push(page); return page; },
+  activityHistoryPagesRef: { current: new Map() }, isTransientProofApiReadError: () => false,
+  showLastGoodReadWarning: () => false, setActivityHistoryPage() {}, setStatusForWorkspace() {},
+  setActivityLoading() {}, errorMessage: String,
+};
+const logLoad = new Function(...Object.keys(logEnv), `${transpile(logDeclaration.getText(ast))};return loadLogHistoryPage`)(...Object.values(logEnv));
+const oldPage = logLoad(0);
+assert.equal(logRequests[0].params.query, "tx-current");
+const newPage = logLoad(1);
+logRequests[1].resolve({ page: 1 }); await newPage;
+logRequests[0].resolve({ page: 0 }); await oldPage;
+assert.deepEqual(logAccepted, [{ page: 1 }]);
+const beforeSearch = logLoad(0);
+logEnv.activitySearchGenerationRef.current++;
+logRequests[2].resolve({ page: 0, obsolete: true }); await beforeSearch;
+assert.equal(logAccepted.length, 1);
+logEnv.activityQueryRef.current = "new-query";
+const newQuery = logLoad(0);
+assert.equal(logRequests[3].params.query, "new-query");
+logEnv.activeWorkspaceStatusKeyRef.current = "wallet";
+logRequests[3].resolve({ page: 0, wrongWorkspace: true }); await newQuery;
+assert.equal(logAccepted.length, 1);
+console.log(JSON.stringify({ ok: true, coverage: ["log-live-query", "log-latest-page-wins", "log-search-fence", "log-workspace-fence"] }));

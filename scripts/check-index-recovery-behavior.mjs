@@ -1251,6 +1251,7 @@ function isolatedFunction(path, name, globals = {}) {
       warn() {},
     },
     canonicalPostgresSafeJsonValue,
+    INCB_TOKEN_ID,
     rowsWithCanonicalTransferFees,
     WORK_ATOMIC_PROJECTION_MODEL,
     WORK_DECIMALS,
@@ -1653,6 +1654,9 @@ function isolatedFunction(path, name, globals = {}) {
           canonicalTokenListingEventJoinSql: [
             "canonicalCreditListingAlias",
           ],
+          canonicalCreditListingEffectiveSaleTicketJoinSql: [
+            "canonicalCreditListingAlias",
+          ],
           canonicalTokenSealAuthorizationMatchesListing: [
             "canonicalWorkAmoJson",
           ],
@@ -1676,6 +1680,7 @@ function isolatedFunction(path, name, globals = {}) {
           ],
           idLifecycleStateFromItems: ["idRegistryActivityDisplayItem"],
           proofIndexCreditListingsPayload: [
+            "canonicalCreditListingEffectiveSaleTicketJoinSql",
             "canonicalTokenListingEventJoinSql",
             "canonicalTokenSealAuthorizationMatchesListing",
             "recordWithoutWorkAmountAliases",
@@ -1691,6 +1696,7 @@ function isolatedFunction(path, name, globals = {}) {
             "workListingAmountProjection",
           ],
           proofIndexCanonicalWorkListingById: [
+            "canonicalCreditListingEffectiveSaleTicketJoinSql",
             "workAmountProjectionMetadataForAmount",
             "workListingAmountProjection",
           ],
@@ -1701,6 +1707,7 @@ function isolatedFunction(path, name, globals = {}) {
             "canonicalTokenDefinitionCreationEventJoinSql",
           ],
           proofIndexTokenListingsFromTables: [
+            "canonicalCreditListingEffectiveSaleTicketJoinSql",
             "activeTokenListingFromCreditListingRow",
             "canonicalTokenSaleEvidenceForListing",
             "canonicalTokenListingEventJoinSql",
@@ -1709,6 +1716,7 @@ function isolatedFunction(path, name, globals = {}) {
             "workListingAmountProjection",
           ],
           proofIndexWalletTokenOverlayPayload: [
+            "canonicalCreditListingEffectiveSaleTicketJoinSql",
             "activeTokenListingFromCreditListingRow",
             "canonicalTokenListingEventJoinSql",
             "tokenListingActiveLifecycleSql",
@@ -6927,7 +6935,7 @@ check(
     );
     assert.match(
       lifecycleQuery.sql,
-      /spend_input\.prev_txid = lower\([\s\S]*sale_ticket_txid[\s\S]*spend_input\.prev_vout = cl\.sale_ticket_vout/u,
+      /spend_input\.prev_txid = effective_sale_ticket\.sale_ticket_txid[\s\S]*spend_input\.prev_vout = effective_sale_ticket\.sale_ticket_vout/u,
     );
     assert.doesNotMatch(
       topLevelFunctionSource(
@@ -15715,7 +15723,7 @@ check("wallet index overlay binds every WORK and bond holder to a canonical defi
   );
   assert.match(
     walletCanonicalSpendListingQuery.text,
-    /spend_tx\.status = 'confirmed'[\s\S]*spend_block\.canonical = true[\s\S]*spend_input\.prev_txid = lower\(\s*COALESCE\(NULLIF\(cl\.sale_ticket_txid, ''\), cl\.listing_id\)\s*\)[\s\S]*spend_input\.prev_vout = cl\.sale_ticket_vout/u,
+    /spend_tx\.status = 'confirmed'[\s\S]*spend_block\.canonical = true[\s\S]*spend_input\.prev_txid = effective_sale_ticket\.sale_ticket_txid[\s\S]*spend_input\.prev_vout = effective_sale_ticket\.sale_ticket_vout/u,
     "wallet-scoped closed listings must include bare canonical sale-ticket spends",
   );
   assert.ok(legacySealQuery);
@@ -33123,7 +33131,7 @@ check("confirmed event replay repairs stale pending payload status", async () =>
     "normalizedEventItem",
     {
       bondTagForKind: () => null,
-      itemTime: (item) => item.createdAt,
+      itemTime: isolatedFunction(BACKFILL_PATH, "itemTime"),
     },
   );
   const stableEventKey = isolatedFunction(BACKFILL_PATH, "stableEventKey", {
@@ -33170,7 +33178,7 @@ check("confirmed event replay repairs stale pending payload status", async () =>
     dataBytes: () => 0,
     eventKind: (item) => item.kind,
     itemStatus,
-    itemTime: (item) => item.createdAt,
+    itemTime: isolatedFunction(BACKFILL_PATH, "itemTime"),
     itemTxid: (item) => item.txid,
     normalizedEventItem,
     numberOrNull: (value) => Number.isFinite(Number(value))
@@ -33187,6 +33195,7 @@ check("confirmed event replay repairs stale pending payload status", async () =>
     upsertTransaction: async () => ({
       blockHeight: 958_076,
       blockIndex: 1,
+      blockTime: "2026-07-14T23:25:00.000Z",
       confirmed: true,
     }),
     workMarketV2EventIsActionBound: () => true,
@@ -33213,6 +33222,17 @@ check("confirmed event replay repairs stale pending payload status", async () =>
   assert.equal(projected[0].item.status, "confirmed");
   assert.equal(projected[0].item.confirmed, true);
   assert.equal(projected[0].item.dropped, false);
+  for (const createdAt of [undefined, "2026-09-19T14:00:00.000Z"]) {
+    await upsertEvent(client, "address-mail", {
+      blockHeight: 958_076, blockIndex: 1, confirmed: true, createdAt,
+      kind: "inception-bond", protocolVout: 0, txid,
+    });
+    const write = eventWrites.at(-1);
+    assert.equal(write.params[11], "2026-07-14T23:25:00.000Z");
+    assert.equal(write.params[12], "2026-07-14T23:25:00.000Z");
+    assert.equal(storedPayload.createdAt, "2026-07-14T23:25:00.000Z");
+  }
+
 });
 
 check("synthetic bond definitions are not indexed as Bitcoin transactions", () => {
@@ -44389,6 +44409,8 @@ check("canonical rebuild reset and hashed bootstrap are one transaction", async 
     /DELETE FROM proof_indexer\.(?:tx_inputs|tx_outputs|op_returns)/u,
   );
   assert.match(sql, /UPDATE proof_indexer\.blocks[\s\S]*canonical = false/u);
+  assert.match(sql, /SET raw_tx = raw_tx - 'canonicalBlockScan'/u);
+  assert.doesNotMatch(sql, /SET raw_tx = NULL/u);
   const eventDelete = calls.find((call) =>
     call.sql?.includes("DELETE FROM proof_indexer.events"),
   );
@@ -84026,7 +84048,7 @@ check("terminal listing rows require exact close identity before sale activity",
   assert.equal(mismatchedSaleTerms.sales.length, 0);
   assert.match(
     tableSql,
-    /FROM proof_indexer\.tx_inputs spend_input[\s\S]*spend_tx\.status = 'confirmed'[\s\S]*spend_block\.canonical = true[\s\S]*spend_input\.prev_txid = lower\(\s*COALESCE\(\s*NULLIF\(cl\.sale_ticket_txid, ''\), cl\.listing_id\s*\)\s*\)[\s\S]*spend_input\.prev_vout = cl\.sale_ticket_vout/u,
+    /FROM proof_indexer\.tx_inputs spend_input[\s\S]*spend_tx\.status = 'confirmed'[\s\S]*spend_block\.canonical = true[\s\S]*spend_input\.prev_txid = effective_sale_ticket\.sale_ticket_txid[\s\S]*spend_input\.prev_vout = effective_sale_ticket\.sale_ticket_vout/u,
     "governed WORK table-state SQL must admit exact canonical spender B without requiring a lifecycle record",
   );
   assert.doesNotMatch(
@@ -85211,6 +85233,21 @@ check("canonical summary persistence is compact and storage-budgeted", async () 
     /!exactCheckpointRequested\s*&&\s*requiredWorkAmountStorageModel/u,
     "exact Q16 checkpoint reads must reject legacy, oversized, or malformed rows",
   );
+});
+
+check("INCB decimal aliases derive only from exact integers without mutating issuance", () => {
+  const project = isolatedFunction(BACKFILL_PATH, "canonicalProtocolItemForPostgres");
+  const original = { tokenId: INCB_TOKEN_ID, valid: true, amount: "2939872550805",
+    attachedWorkLiveValueAtSendQ8: "293987255080509083181",
+    attachedWorkLiveValueAtSendSats: "2950699258666.0571579",
+    issuanceDustQ8: "9083181", issuanceDustSats: "0.0571579" };
+  const projected = project(original);
+  assert.equal(projected.attachedWorkLiveValueAtSendSats, "2939872550805.09083181");
+  assert.equal(projected.issuanceDustSats, "0.09083181");
+  assert.equal(projected.amount, original.amount);
+  assert.equal(projected.attachedWorkLiveValueAtSendQ8, original.attachedWorkLiveValueAtSendQ8);
+  assert.equal(original.issuanceDustSats, "0.0571579");
+  assert.throws(() => project({ ...original, issuanceDustQ8: "not-an-integer" }), /Invalid exact INCB/);
 });
 
 let failures = 0;

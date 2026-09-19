@@ -239,3 +239,27 @@ test("server exact signal rejects malformed or conflicting provided Q8 instead o
   assert.equal(projection.boostExactQ8("100000001", "1.00000001"), 100000001n);
   assert.equal(projection.boostExactQ8(undefined, "0.00000001"), 1n);
 });
+
+test("follow and unfollow retain independent target address and ID relations", async () => {
+  const { proofIndexEventParticipantsForItem, proofIndexEventRefsForItem } = await import("../server/proof-index-event-relations.mjs");
+  for (const kind of ["boost-follow", "boost-unfollow"]) {
+    const item = { kind, authorAddress: "actor", targetAddress: "target", targetId: "target-id", recipients: [{ address: "registry", amountSats: "546" }] };
+    assert.ok(proofIndexEventParticipantsForItem(item).some(row => row.address === "target" && row.role === "follow-target" && row.powid === "target-id"));
+    assert.ok(proofIndexEventRefsForItem(item).some(row => row.refType === "powid" && row.refValue === "target-id"));
+  }
+});
+
+test("direct ownership transfers reject outsiders, missing actors and unknown parents", () => {
+  const api = server(reader([]).read);
+  const original = event(1);
+  const transfer = (id, sender, target = txid(1)) => event(id, "boost-transfer", {
+    targetTxid: target, senderAddress: sender, authorAddress: undefined,
+    currentOwnerAddress: "buyer",
+  });
+  for (const sender of ["outsider", "", "Owner"]) {
+    const state = api.boostOwnershipState([original, transfer(2, sender)]);
+    assert.equal(state.states.get(txid(1)).ownerAddress, "owner");
+  }
+  assert.equal(api.boostOwnershipState([original, transfer(2, "owner")]).states.get(txid(1)).ownerAddress, "buyer");
+  assert.equal(api.boostOwnershipState([transfer(2, "owner", txid(99))]).states.get(txid(99)).ownerAddress, "");
+});

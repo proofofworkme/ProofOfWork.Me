@@ -209,6 +209,9 @@ export function proofIndexEventParticipantsForItem(item, context = {}) {
   add(source.ownerAddress, "owner", source.id);
   add(source.currentOwnerAddress, "owner", source.currentOwnerId);
   add(source.targetOwnerAddress, "target-owner", source.targetOwnerId);
+  if (["boost-follow", "boost-unfollow"].includes(source.kind)) {
+    add(source.targetAddress, "follow-target", source.targetId);
+  }
   add(source.receiveAddress, "receiver", source.id);
   add(source.sellerAddress, "seller");
   add(source.buyerAddress, "buyer");
@@ -256,6 +259,9 @@ export function proofIndexEventRefsForItem(item) {
     }
   };
   add("powid", source.id);
+  if (["boost-follow", "boost-unfollow"].includes(source.kind)) {
+    add("powid", source.targetId);
+  }
   add("powid", authorization.id);
   add("token-id", source.tokenId);
   add("token-id", authorization.tokenId);

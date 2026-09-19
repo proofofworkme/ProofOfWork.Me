@@ -1,0 +1,636 @@
+{
+  "audit": "17",
+  "date": "2026-09-19",
+  "sourceCommit": "7e55a36",
+  "productionMutations": false,
+  "priorAuditFiles": [
+    {
+      "path": "audits/2026-08-23-read-only-health-data-event-ui-audit.md",
+      "sha256": "5c92ac28243e87f5e3e2c25e7ba6e369e0130ea0230be9bce564e12086536701"
+    },
+    {
+      "path": "audits/2026-08-28-production-health-data-event-audit.md",
+      "sha256": "7ee40a9fca1a9360b2736ac1972b80f8d623f062bcedd551bc8821b055a4ce46"
+    },
+    {
+      "path": "audits/2026-08-30-production-health-data-event-storage-audit.md",
+      "sha256": "88548c5323662839173712cde591321b0e24c6bf6e8ee284eade67049a206bf2"
+    },
+    {
+      "path": "audits/2026-08-31-postgresql-retention-remediation-2c.md",
+      "sha256": "ad4dfba841530e6bdf3ffc032854e4c9381a4cc7f2a1626425c2788672a49d29"
+    },
+    {
+      "path": "audits/2026-08-31-postgresql-retention-remediation-2e.md",
+      "sha256": "1810c4cc1b8cd7896f10246d69ea4c84d22af6eccdc2e0ebda2dfc50cac24c6f"
+    },
+    {
+      "path": "audits/2026-08-31-production-health-data-event-storage-audit-2.md",
+      "sha256": "cc212146eeb0e9fc484dabd35ad054ffbda1cb56a4a659593223f375e8929b01"
+    },
+    {
+      "path": "audits/2026-08-31-storage-retention-node-manifest.md",
+      "sha256": "5f84a595fbb8a7a6e9e0e589a23731d4cf4b7cb6f4ba9c9b2dee36c5454b68c0"
+    },
+    {
+      "path": "audits/2026-08-31-storage-retention-ui-manifest.md",
+      "sha256": "cdda257b3eccbc04d5527003a794c960f74c004511f344fe7ca79100be83dde4"
+    },
+    {
+      "path": "audits/2026-09-01-production-health-data-event-storage-audit-3.md",
+      "sha256": "2fb5216f172b85a5409db8ed7710e2280e9b30741181b30c423a9dcdea4fbae4"
+    },
+    {
+      "path": "audits/2026-09-02-production-health-data-event-storage-audit-4.md",
+      "sha256": "3cd97f64c6e0c1f1964da7eeed0ede3eba471e2f9319289029df83e38d41acfe"
+    },
+    {
+      "path": "audits/2026-09-03-read-only-ui-ux-audit.md",
+      "sha256": "3f489f373db196ea0f5866916b1cecfc8d3c7a92c7432630ef9d581167393156"
+    },
+    {
+      "path": "audits/2026-09-04-amo-indexer-recovery.md",
+      "sha256": "2ab2a1aea74240c493ee31a800a303c54e93ada9e383169cdc74fd1297da5ca5"
+    },
+    {
+      "path": "audits/2026-09-05-all-product-growth-release.md",
+      "sha256": "47474f2b5118da2be1f65f236acf618bff580a5877498ae59a31602019c86108"
+    },
+    {
+      "path": "audits/2026-09-05-production-health-data-event-storage-audit-5.evidence.json",
+      "sha256": "0508ef0e777033f5ce7a7722ab87efe669594de3d5ad49e127b9b430254942c9"
+    },
+    {
+      "path": "audits/2026-09-05-production-health-data-event-storage-audit-5.md",
+      "sha256": "58b3ae29ed8af0b9a38aae1387e7f5616ac1ed503798ed5b3aefb7349eb6566b"
+    },
+    {
+      "path": "audits/2026-09-08-production-health-data-event-storage-audit-6.evidence.json",
+      "sha256": "6c98c650d26afb84706f56320fc2d928ae977dfce5e20149da13eecf31f25086"
+    },
+    {
+      "path": "audits/2026-09-08-production-health-data-event-storage-audit-6.md",
+      "sha256": "a6550612dce0d602e770540d2fd3492120e3b5c39dcb251c8333534fdd9bbbb8"
+    },
+    {
+      "path": "audits/2026-09-08-production-health-data-event-storage-audit-6.ordered-repro.mjs",
+      "sha256": "e31fe2e1c5334a85d5aa9661d18b24a524f80b74192c79d4d4c92127a426a6ea"
+    },
+    {
+      "path": "audits/2026-09-08-production-health-data-event-storage-audit-6.repro.mjs",
+      "sha256": "a61b33b104de3dbc0480e371540e9e23ba17a44a65845d4748e55d8d976ef198"
+    },
+    {
+      "path": "audits/2026-09-11-production-health-data-event-storage-audit-7.md",
+      "sha256": "d8013882ce85ae50f2c469d742faf4d0a67e4a46e957cf7ca6b37d49833287ce"
+    },
+    {
+      "path": "audits/2026-09-12-production-health-data-event-storage-audit-8.md",
+      "sha256": "4bc0a70297b936edf90a99393603661978e0569ee146ed7da089be2e2599e7e2"
+    },
+    {
+      "path": "audits/2026-09-13-incb-production-canonical-repair.md",
+      "sha256": "c5c3060b218312db214e9881475ec401ec9734760ed83e8339a03a21591c7e65"
+    },
+    {
+      "path": "audits/2026-09-13-production-health-data-event-storage-audit-9.md",
+      "sha256": "41277aeb34dc14a6971055d69704223a9e6469b8c6bd436513e382f0c14cac5e"
+    },
+    {
+      "path": "audits/2026-09-14-production-health-data-event-storage-audit-10.md",
+      "sha256": "e73d4dc4cfb25b0d80dbc6ba8badf5b5a03ea7f8de538986f5debcfaa81bd6d7"
+    },
+    {
+      "path": "audits/2026-09-15-production-reaudit-persistence-audit-11.md",
+      "sha256": "762742c4cf461c5d4de0b6c7b30b24ce71ab0b1126e79352f7bc3540b3ae8be8"
+    },
+    {
+      "path": "audits/2026-09-17-production-comprehensive-health-data-integrity-audit-12.md",
+      "sha256": "405f058a549ae9cac725b086dcfddc7a5967d6a5ae6e98fbf903f7a9a2c1b629"
+    },
+    {
+      "path": "audits/2026-09-18-production-comprehensive-health-data-integrity-audit-13.md",
+      "sha256": "f874e89b65c55d0ace19993968697a489cde0d4e8f1a0334dd04bb083f69c502"
+    },
+    {
+      "path": "audits/2026-09-19-ordered-application-surface-audit-14.md",
+      "sha256": "112538692e789bf21b626c02e27fc2341bfe47838aba0496dda3f4d0317f05c8"
+    },
+    {
+      "path": "audits/2026-09-19-production-comprehensive-health-data-integrity-audit-16.md",
+      "sha256": "cb148d778f9c33a61fd8b431e4ef324da1edc98718e08629bbf168c352c57bb4"
+    },
+    {
+      "path": "audits/2026-09-19-production-recovery-and-verification-audit-15.md",
+      "sha256": "85022367fdcfc0a2d8f2d5e3a8c18647c048a212e0bf58b48351ac98a33ff6dc"
+    }
+  ],
+  "localCheckReceipts": [
+    {
+      "name": "pow-audit17-check-api-truth.log",
+      "sha256": "417775c69522d448c0e0c98c3080d29f7a070b3fd12cd911ae65a27f02dac327",
+      "output": "\n> proofofwork-me@0.1.0 check:api-truth\n> node scripts/check-api-truth-contract.mjs\n\nWORK AMO V8 gate regressions passed: pending decision normalization, aggregate transfer admission, persistent Q16 replay, next-block liveness, and canonical declaration discovery.\nAPI truth contract check passed.\n"
+    },
+    {
+      "name": "pow-audit17-check-bond-exact-arithmetic.log",
+      "sha256": "5b54a06cdf81ee5b53f914610d0b5ef080bd61ad0091ed0170dcdb466be60ece",
+      "output": "\n> proofofwork-me@0.1.0 check:bond-exact-arithmetic\n> node scripts/check-bond-exact-arithmetic.mjs\n\nBond exact-arithmetic contract checks passed.\n"
+    },
+    {
+      "name": "pow-audit17-check-canonical-order.log",
+      "sha256": "c05a7a85684bcd95cd1c7d83a7e403471f9ba7d4a0fb1eeafedb0b544577a0a8",
+      "output": "\n> proofofwork-me@0.1.0 check:canonical-order\n> node scripts/check-canonical-order.mjs\n\nCanonical UTF-8 ordering checks passed.\n"
+    },
+    {
+      "name": "pow-audit17-check-hardening.log",
+      "sha256": "4e7fb56c3c35c651904090ec103c4681b07b9a377cdf12add556b9a7b9983d83",
+      "output": "\n> proofofwork-me@0.1.0 check:hardening\n> node scripts/check-hardening-contract.mjs\n\nHardening contract checks passed.\n"
+    },
+    {
+      "name": "pow-audit17-check-live-data.log",
+      "sha256": "d8ecbf9280af957c797c7c426d89605ae22b4aee25a048c30af3b52e08bb33a6",
+      "output": "\n> proofofwork-me@0.1.0 check:live-data\n> node scripts/check-live-data-contract.mjs\n\nLive data contract failed:\n- marketplace summary and tabs keep confirmed sealed inventory canonical: /url\\.pathname === \"\\/api\\/v1\\/marketplace-summary\"[\\s\\S]*?await marketplaceSummaryPayload\\(network,\\s*freshRead\\)/\n"
+    },
+    {
+      "name": "pow-audit17-check-node-ops.log",
+      "sha256": "1a557aafccf304788e062913a8efd6dad212ad591b118d86e9dfadfa92611c96",
+      "output": "\n> proofofwork-me@0.1.0 check:node-ops\n> node scripts/check-node-ops-contract.mjs\n\nNode operations contract checks passed.\n"
+    },
+    {
+      "name": "pow-audit17-check-surface-read-state.log",
+      "sha256": "5d8c97bc49ec515ae4dab648a3dc41edd8cde3f55d4688a26a492028e02d43bb",
+      "output": "\n> proofofwork-me@0.1.0 check:surface-read-state\n> node scripts/check-surface-read-state.mjs\n\n{\"ok\":true,\"coverage\":[\"qualified-counts\",\"complete-directory\",\"wallet-reservation-readiness\",\"listing-full-evidence-binding\",\"bond-summary-before-book\"]}\n"
+    },
+    {
+      "name": "pow-audit17-check-ui-ops.log",
+      "sha256": "867ba0f0ea9e3964895f4671a1492bd8be6eb573da5321694c2b60d9f3e3e3b5",
+      "output": "\n> proofofwork-me@0.1.0 check:ui-ops\n> node scripts/check-ui-ops-contract.mjs\n\nUI candidate regression: measured527332 and limit1048576 accepted;1048577 rejected by both parsers\nUI dependency regression: 525 dependencies accepted by stager and publisher\nUI dependency regression: 1024 dependencies accepted by stager and publisher\nUI dependency regression: 1025 dependencies rejected by stager and publisher\n"
+    },
+    {
+      "name": "pow-audit17-check-ui.log",
+      "sha256": "a1b6a72ad3aa48c75291cc5682fc612c0789615343aca0e78e5db2d8d1d0e404",
+      "output": "\n> proofofwork-me@0.1.0 check:ui\n> node scripts/check-ui-contract.mjs\n\nUI contract check passed.\n"
+    },
+    {
+      "name": "pow-audit17-check-work-amo-v8.log",
+      "sha256": "494050706e18e034fb653fb843a67c9f27ef84bd451d935fdfd15a2137bfa014",
+      "output": "\n> proofofwork-me@0.1.0 check:work-amo-v8\n> node scripts/check-work-amo-v8.mjs && node scripts/check-work-amo-v8-gates.mjs\n\n{\n  \"allowedFaceProofs\": [\n    25000\n  ],\n  \"amountField\": \"unitAmountSubatoms\",\n  \"declarationPayloadBytes\": 5586,\n  \"declarationPayloadSha256\": \"0ef1432816fb93480b02a5302ce1c074d38f84a38e01150d57cf1df87d68024d\",\n  \"legacyV6AmountAtoms\": \"10\",\n  \"migratedV6AmountSubatoms\": \"1000000000\",\n  \"networkValueScale\": \"Q8\",\n  \"ordering\": \"block-height,transaction-index,protocol-vout,record-ordinal\",\n  \"precisionModel\": \"work-subatoms-v2\",\n  \"status\": \"ok\",\n  \"subatomsPerWork\": \"10000000000000000\",\n  \"version\": \"pwt-sale-v8\"\n}\nWORK AMO V8 gate regressions passed: pending decision normalization, aggregate transfer admission, persistent Q16 replay, next-block liveness, and canonical declaration discovery.\n"
+    },
+    {
+      "name": "pow-audit17-check-work-precision-v2.log",
+      "sha256": "7256a644b113370859eaa5dbee570f1222dd9cff960f65be65e16c2064a364bb",
+      "output": "\n> proofofwork-me@0.1.0 check:work-precision-v2\n> node scripts/check-work-precision-v2.mjs\n\nWORK Precision Protocol V2 contract: global Q16 units, immutable Q8 conversion, V8 pricing, cutover, metadata and cross-plane wiring pass.\n"
+    },
+    {
+      "name": "pow-audit17-check-work-precision.log",
+      "sha256": "79ea9a417cc94653891bcf921a1b3137aca7c6387013898a8797e0783e72c8e7",
+      "output": "\n> proofofwork-me@0.1.0 check:work-precision\n> node scripts/check-work-precision-contract.mjs\n\n{\"checks\":131,\"model\":\"work-atoms-v1\",\"ok\":true,\"tokenId\":\"d4e5ebf11d104d6a63fb74e42094364b25a5f7199a09e5c0e71408972466a8b8\",\"unitScale\":\"100000000\"}\n"
+    },
+    {
+      "name": "pow-audit17-check-worker-containment.log",
+      "sha256": "6dbada9d8d889ec57055e3e2f96e1669f11cd6ad2b93cef4a34df2f63187a443",
+      "output": "\n> proofofwork-me@0.1.0 check:worker-containment\n> node scripts/check-worker-containment.mjs\n\n{\"error\":\"Canonical protocol transaction bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb input 0 has an invalid outpoint\",\"errorName\":\"CanonicalTransactionContentInvariantError\",\"failureClass\":\"CanonicalTransactionContentInvariantError\",\"failureCode\":\"POW_CANONICAL_TX_CONTENT_INVARIANT\",\"height\":958432,\"phase\":\"block-scan-verification\",\"txid\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\"}\n{\"error\":\"Verifier request returned HTTP 503\",\"errorName\":\"AbortError\",\"statusCode\":503,\"height\":958432,\"phase\":\"block-scan-verification\",\"txid\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\"}\n{\"error\":\"Canonical protocol transaction bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb input 0 has an invalid outpoint\",\"errorName\":\"CanonicalTransactionContentInvariantError\",\"failureClass\":\"CanonicalTransactionContentInvariantError\",\"failureCode\":\"POW_CANONICAL_TX_CONTENT_INVARIANT\",\"height\":958432,\"phase\":\"block-scan-verification\",\"txid\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\"}\n{\"authoritativeCheckpoint\":true,\"canonicalBeforePending\":true,\"childNonzeroAndTimeout\":true,\"deterministicDomainOnly\":true,\"circuitActivation\":\"contained-retry\",\"genericEscalation\":true,\"pendingOnlySourceBoundary\":true,\"pendingStatusBeforeWitness\":true,\"pendingWitnessExact\":true,\"pendingWatchdogReturnsControl\":true,\"progressReset\":true,\"rateLimitedAlert\":true,\"sigtermStopsChildWithoutRespawn\":true,\"workerContainment\":true,\"workPrecisionCoreTipHash\":true,\"workPrecisionEraLatch\":true,\"workPrecisionFullRelationalParity\":true,\"workPrecisionTransitionSnapshotEnvelope\":true}\n"
+    },
+    {
+      "name": "pow-audit17-ids.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "output": ""
+    },
+    {
+      "name": "pow-audit17-ledger-recheck.log",
+      "sha256": "7ef92a0a57be3256d741b6f4bbcc3b9388a4b793718fb3c10fc6a753cc4fe977",
+      "output": "\n> proofofwork-me@0.1.0 audit:ledger\n> node scripts/audit-ledger-consistency.mjs\n\nfile:///home/sixer/ProofOfWork.Me/scripts/audit-ledger-consistency.mjs:157\n      throw new Error(`${path} timed out after ${AUDIT_REQUEST_TIMEOUT_MS}ms`);\n            ^\n\nError: /api/v1/token-history?asset=d4e5ebf11d104d6a63fb74e42094364b25a5f7199a09e5c0e71408972466a8b8&kind=listings&q=d0697f88d7648ac4221af34d17d3e8c55852b917f820100d9029143085b29a13&fresh=1 timed out after 45000ms\n    at requestJson (file:///home/sixer/ProofOfWork.Me/scripts/audit-ledger-consistency.mjs:157:13)\n    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)\n    at async waitForCanonicalConvergence (file:///home/sixer/ProofOfWork.Me/scripts/marketplace-canonical-convergence.mjs:296:21)\n    at async waitForCanonicalConvergenceWithinBudget (file:///home/sixer/ProofOfWork.Me/scripts/marketplace-canonical-convergence.mjs:376:12)\n    at async readJsonPaths (file:///home/sixer/ProofOfWork.Me/scripts/audit-ledger-consistency.mjs:200:19)\n    at async file:///home/sixer/ProofOfWork.Me/scripts/audit-ledger-consistency.mjs:483:3\n\nNode.js v22.23.2\nnpm notice\nnpm notice New major version of npm available! 10.9.8 -> 12.0.2\nnpm notice Changelog: https://github.com/npm/cli/releases/tag/v12.0.2\nnpm notice To update run: npm install -g npm@12.0.2\nnpm notice\n"
+    },
+    {
+      "name": "pow-audit17-ledger.log",
+      "sha256": "18e67e968ccdbee077247cf42e7c6ffdf755538a712a99535fdc28809059c3dc",
+      "output": "\n> proofofwork-me@0.1.0 audit:ledger\n> node scripts/audit-ledger-consistency.mjs\n\nfile:///home/sixer/ProofOfWork.Me/scripts/audit-ledger-consistency.mjs:170\n    throw new MarketplaceRegressionHttpError(\n          ^\n\nMarketplaceRegressionHttpError: https://work.proofofwork.me/health?network=livenet returned HTTP 503\n    at requestJson (file:///home/sixer/ProofOfWork.Me/scripts/audit-ledger-consistency.mjs:170:11)\n    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)\n    at async waitForCanonicalConvergence (file:///home/sixer/ProofOfWork.Me/scripts/marketplace-canonical-convergence.mjs:296:21)\n    at async waitForCanonicalConvergenceWithinBudget (file:///home/sixer/ProofOfWork.Me/scripts/marketplace-canonical-convergence.mjs:376:12)\n    at async readJsonPaths (file:///home/sixer/ProofOfWork.Me/scripts/audit-ledger-consistency.mjs:200:19)\n    at async readStableCrossLedgerBatch (file:///home/sixer/ProofOfWork.Me/scripts/audit-ledger-consistency.mjs:376:9)\n    at async file:///home/sixer/ProofOfWork.Me/scripts/audit-ledger-consistency.mjs:460:5 {\n  code: '',\n  responsePayload: {\n    available: true,\n    backend: 'electrum',\n    checks: {\n      addressIndex: {\n        canary: {\n          confirmedSats: 0,\n          scripthash: '8f52010f55361085b1806ee106632dd610d3a6587284138d06065d584bab8d21',\n          unconfirmedSats: 0\n        },\n        error: '',\n        ok: true,\n        source: 'electrum://172.27.0.1:50001',\n        timedOut: false\n      },\n      backend: { ok: true, timedOut: false },\n      database: {\n        canonicalMetaOk: true,\n        ok: true,\n        required: true,\n        timedOut: false\n      },\n      disk: {\n        cache: {\n          availableBytes: 409351319552,\n          maxUsedPercent: 90,\n          minFreeBytes: 5368709120,\n          ok: true,\n          path: '/data/proofofwork-api-cache',\n          probePath: '/data/proofofwork-api-cache',\n          totalBytes: 1764768071680,\n          usedPercent: 76.80424265822583\n        },\n        ok: true,\n        root: {\n          availableBytes: 73294192640,\n          maxUsedPercent: 90,\n          minFreeBytes: 5368709120,\n          ok: true,\n          path: '/',\n          probePath: '/',\n          totalBytes: 105089261568,\n          usedPercent: 30.255297690360493\n        }\n      },\n      electrum: {\n        configured: true,\n        error: '',\n        headerHash: '00000000000000000001b86486d4e16ceb11cf13adae717b83a9b45f59b72f8e',\n        headerHeight: 967673,\n        ok: true,\n        timedOut: false,\n        atTip: true\n      },\n      index: {\n        aheadBlocks: 0,\n        checkpointHash: '00000000000000000001b86486d4e16ceb11cf13adae717b83a9b45f59b72f8e',\n        complete: true,\n        canonicalState: {\n          fault: {},\n          ok: true,\n          rebuild: {\n            active: false,\n            status: 'complete',\n            network: 'livenet',\n            complete: true,\n            startedAt: '2026-09-15T18:22:43.424Z',\n            updatedAt: '2026-09-19T06:31:58.259Z',\n            fromHeight: 948000,\n            completedAt: '2026-09-19T06:31:58.259Z',\n            bootstrapHash: '000000000000000000004238bec59ce46cd5b28982efe2b90071a51168d67986',\n            bootstrapHeight: 947999,\n            indexedThroughBlock: 967673,\n            indexedThroughBlockHash: '00000000000000000001b86486d4e16ceb11cf13adae717b83a9b45f59b72f8e',\n            transactionNormalization: 'canonical-raw-tx-only'\n          }\n        },\n        checkpointCanonical: true,\n        canonicalCheckpointHash: '00000000000000000001b86486d4e16ceb11cf13adae717b83a9b45f59b72f8e',\n        indexedThroughBlock: 967673,\n        lagBlocks: 0,\n        available: true,\n        ok: false,\n        readModels: {\n          confirmedIds: { count: 505, maxBlock: 965011 },\n          confirmedTransfers: { count: 230, maxBlock: 967383 },\n          confirmedEvents: { count: 26209, maxBlock: 967621 }\n        },\n        summarySnapshot: {\n          blockHash: '00000000000000000001b86486d4e16ceb11cf13adae717b83a9b45f59b72f8e',\n          coverageByKey: {\n            growthSummary: 967673,\n            inceptionSummary: 967673,\n            infinitySummary: 967673,\n            logSummary: 967673,\n            marketplaceSummary: 967673,\n            tokenSummary: 967673,\n            workFloor: 967673,\n            workSummary: 967673\n          },\n          eligible: true,\n          generatedAt: '2026-09-19T06:32:16.267Z',\n          indexedAt: '2026-09-19T06:32:16.267Z',\n          indexedThroughBlock: 967673,\n          payloadBytes: 20093997,\n          snapshotId: '95cf7845a6e485c49cf97c31',\n          ok: true\n        },\n        scanTipHeight: 967673,\n        stopReason: ''\n      },\n      node: {\n        bestBlockHash: '00000000000000000001b86486d4e16ceb11cf13adae717b83a9b45f59b72f8e',\n        chain: 'main',\n        headers: 967673,\n        initialBlockDownload: false,\n        ok: true,\n        pruned: false,\n        tipHeight: 967673,\n        txindexHeight: 967673,\n        txindexSynced: true,\n        verificationProgress: 1\n      },\n      worker: {\n        ageMs: 86298,\n        containment: {\n          active: false,\n          checkpointHash: '00000000000000000000d724ef92ac051f906ca000c1bac2356c6dde3de04b13',\n          checkpointHeight: 967672,\n          failingBlockHeight: null,\n          fingerprint: '',\n          network: 'livenet',\n          nextRetryAt: null,\n          reason: 'canonical-scan-success',\n          repeatCount: 0,\n          txid: ''\n        },\n        consecutiveFailures: 0,\n        error: '',\n        lastSuccessAt: '2026-09-19T06:31:14.589Z',\n        maxAgeMs: 600000,\n        ok: false,\n        proofReady: false,\n        proofSource: 'last-success-confirmed-replay',\n        pendingEvents: {\n          globalUnresolved: 0,\n          model: 'bounded-best-effort-pending-event-health-v1',\n          ok: true,\n          q16PendingUnresolved: 0,\n          required: true,\n          scope: 'all-observed-pending-protocol-events',\n          status: {\n            checked: 0,\n            deferred: 0,\n            errors: 0,\n            ok: true,\n            q16ParentDeferred: 0,\n            staleCandidates: 0,\n            unavailable: false,\n            unavailableValid: true\n          }\n        },\n        phase: 'running'\n      }\n    },\n    indexedAt: '2026-09-19T06:32:40.887Z',\n    indexedThroughBlock: 967673,\n    lagBlocks: 0,\n    mempoolBase: 'http://127.0.0.1:8080',\n    ok: false,\n    ready: false,\n    service: 'proofofwork-op-return-api',\n    tipHeight: 967673,\n    mode: 'readiness'\n  },\n  serverMessage: '',\n  statusCode: 503,\n  url: 'https://work.proofofwork.me/health?network=livenet'\n}\n\nNode.js v22.23.2\n"
+    },
+    {
+      "name": "pow-audit17-mail.log",
+      "sha256": "d09c54a05730e6ab190da785b3c48535e275c9fd769b92fa868c4f2062748235",
+      "output": "\n> proofofwork-me@0.1.0 check:mail-regressions\n> node scripts/check-mail-regressions.mjs\n\n{\n  \"apiBase\": \"https://computer.proofofwork.me\",\n  \"network\": \"livenet\",\n  \"ok\": true,\n  \"registry\": {\n    \"records\": 527,\n    \"source\": \"proof-indexer-current-id-events+proof-indexer-confirmed-id-records\"\n  },\n  \"historyResults\": [\n    {\n      \"label\": \"otc@proofofwork.me self-send\",\n      \"eventHistoryCount\": 7,\n      \"logHistoryCount\": 1,\n      \"txid\": \"64dcddd3bc035ad57e021f302f021fac5c135c20dcfeffb487ba6b23317d155e\"\n    },\n    {\n      \"label\": \"otc@proofofwork.me latest POWB self-send\",\n      \"eventHistoryCount\": 7,\n      \"logHistoryCount\": 1,\n      \"txid\": \"e54e68d1e567ab6158100d27a6fe357950d19248336af90fd4e7ed068f650b46\"\n    }\n  ],\n  \"results\": [\n    {\n      \"label\": \"carbonz@proofofwork.me\",\n      \"inbox\": 27,\n      \"indexedEvents\": 58,\n      \"scanFailed\": false,\n      \"sent\": 32,\n      \"source\": \"proof-indexer-mail\",\n      \"total\": 59\n    },\n    {\n      \"label\": \"gullish@proofofwork.me contact mail sender\",\n      \"inbox\": 186,\n      \"indexedEvents\": 190,\n      \"scanFailed\": false,\n      \"sent\": 184,\n      \"source\": \"proof-indexer-mail\",\n      \"total\": 370\n    },\n    {\n      \"label\": \"gullish contact mail recipient\",\n      \"inbox\": 33,\n      \"indexedEvents\": 81,\n      \"scanFailed\": false,\n      \"sent\": 68,\n      \"source\": \"proof-indexer-mail\",\n      \"total\": 101\n    },\n    {\n      \"label\": \"armyofyouth@proofofwork.me\",\n      \"inbox\": 22,\n      \"indexedEvents\": 30,\n      \"scanFailed\": false,\n      \"sent\": 10,\n      \"source\": \"proof-indexer-mail+historical-dropped-mail-witness+proof-indexer-event-mail-overlay\",\n      \"total\": 33\n    },\n    {\n      \"label\": \"pinoratiko@proofofwork.me\",\n      \"inbox\": 78,\n      \"indexedEvents\": 159,\n      \"scanFailed\": false,\n      \"sent\": 81,\n      \"source\": \"proof-indexer-mail\",\n      \"total\": 159\n    },\n    {\n      \"label\": \"otc@proofofwork.me self-send\",\n      \"inbox\": 29,\n      \"indexedEvents\": 30,\n      \"scanFailed\": false,\n      \"sent\": 29,\n      \"source\": \"proof-indexer-mail\",\n      \"total\": 58\n    },\n    {\n      \"label\": \"otc@proofofwork.me latest POWB self-send\",\n      \"inbox\": 29,\n      \"indexedEvents\": 30,\n      \"scanFailed\": false,\n      \"sent\": 29,\n      \"source\": \"proof-indexer-mail\",\n      \"total\": 58\n    },\n    {\n      \"label\": \"desktop public file sender\",\n      \"inbox\": 1,\n      \"indexedEvents\": 2,\n      \"scanFailed\": false,\n      \"sent\": 1,\n      \"source\": \"proof-indexer-mail\",\n      \"total\": 2\n    }\n  ]\n}\n"
+    },
+    {
+      "name": "pow-audit17-parity.log",
+      "sha256": "e06c7b257ca7786bfc046ee6a0dbecb3b367d803306f9d4b1393dc6e3a9c7d9e",
+      "output": "{\"attempt\":0,\"delayMs\":1000,\"error\":\"This operation was aborted\",\"retrying\":true,\"url\":\"http://127.0.0.1:8081/api/v1/internal/registry-parity?network=livenet\"}\n"
+    }
+  ],
+  "surfaceAudit": {
+    "apiBase": "https://computer.proofofwork.me",
+    "complete": true,
+    "finishedAt": "2026-09-19T06:35:38.826Z",
+    "fresh": true,
+    "ok": true,
+    "pageOnly": false,
+    "results": [
+      {
+        "html": {
+          "assets": {
+            "checked": 4,
+            "modules": 1,
+            "modulepreloads": 2,
+            "stylesheets": 1
+          },
+          "contentType": "text/html; charset=utf-8",
+          "elapsedMs": 1034,
+          "ok": true,
+          "status": 200,
+          "title": "ProofOfWork.Me",
+          "url": "https://www.proofofwork.me/"
+        },
+        "key": "home",
+        "ok": true,
+        "probes": [
+          {
+            "label": "registry summary",
+            "elapsedMs": 4849,
+            "ok": true,
+            "status": 200,
+            "url": "https://computer.proofofwork.me/api/v1/registry-summary?network=livenet&fresh=1"
+          }
+        ],
+        "title": "proofofwork.me"
+      },
+      {
+        "html": {
+          "assets": {
+            "checked": 4,
+            "modules": 1,
+            "modulepreloads": 2,
+            "stylesheets": 1
+          },
+          "contentType": "text/html; charset=utf-8",
+          "elapsedMs": 420,
+          "ok": true,
+          "status": 200,
+          "title": "ProofOfWork.Me",
+          "url": "https://id.proofofwork.me/"
+        },
+        "key": "id",
+        "ok": true,
+        "probes": [
+          {
+            "label": "ids summary",
+            "elapsedMs": 4619,
+            "ok": true,
+            "status": 200,
+            "url": "https://computer.proofofwork.me/api/v1/ids-summary?network=livenet&fresh=1"
+          }
+        ],
+        "title": "id.proofofwork.me"
+      },
+      {
+        "html": {
+          "assets": {
+            "checked": 4,
+            "modules": 1,
+            "modulepreloads": 2,
+            "stylesheets": 1
+          },
+          "contentType": "text/html; charset=utf-8",
+          "elapsedMs": 417,
+          "ok": true,
+          "status": 200,
+          "title": "ProofOfWork.Me",
+          "url": "https://desktop.proofofwork.me/"
+        },
+        "key": "desktop",
+        "ok": true,
+        "probes": [
+          {
+            "label": "log summary",
+            "elapsedMs": 6217,
+            "ok": true,
+            "status": 200,
+            "url": "https://computer.proofofwork.me/api/v1/log-summary?network=livenet&fresh=1"
+          }
+        ],
+        "title": "desktop.proofofwork.me"
+      },
+      {
+        "html": {
+          "assets": {
+            "checked": 4,
+            "modules": 1,
+            "modulepreloads": 2,
+            "stylesheets": 1
+          },
+          "contentType": "text/html; charset=utf-8",
+          "elapsedMs": 470,
+          "ok": true,
+          "status": 200,
+          "title": "ProofOfWork.Me",
+          "url": "https://browser.proofofwork.me/"
+        },
+        "key": "browser",
+        "ok": true,
+        "probes": [
+          {
+            "label": "activity summary",
+            "elapsedMs": 6659,
+            "ok": true,
+            "status": 200,
+            "url": "https://computer.proofofwork.me/api/v1/activity-summary?network=livenet&fresh=1"
+          }
+        ],
+        "title": "browser.proofofwork.me"
+      },
+      {
+        "html": {
+          "assets": {
+            "checked": 4,
+            "modules": 1,
+            "modulepreloads": 2,
+            "stylesheets": 1
+          },
+          "contentType": "text/html; charset=utf-8",
+          "elapsedMs": 609,
+          "ok": true,
+          "status": 200,
+          "title": "ProofOfWork.Me",
+          "url": "https://amo.proofofwork.me/"
+        },
+        "key": "amo",
+        "ok": true,
+        "probes": [
+          {
+            "label": "marketplace summary",
+            "elapsedMs": 17240,
+            "ok": true,
+            "status": 200,
+            "url": "https://computer.proofofwork.me/api/v1/marketplace-summary?network=livenet&compact=1&fresh=1"
+          }
+        ],
+        "title": "amo.proofofwork.me"
+      },
+      {
+        "html": {
+          "assets": {
+            "checked": 4,
+            "modules": 1,
+            "modulepreloads": 2,
+            "stylesheets": 1
+          },
+          "contentType": "text/html; charset=utf-8",
+          "elapsedMs": 541,
+          "ok": true,
+          "status": 200,
+          "title": "ProofOfWork.Me",
+          "url": "https://credit.proofofwork.me/"
+        },
+        "key": "credit",
+        "ok": true,
+        "probes": [
+          {
+            "label": "token summary",
+            "elapsedMs": 8394,
+            "ok": true,
+            "status": 200,
+            "url": "https://computer.proofofwork.me/api/v1/token-summary?network=livenet&compact=1&fresh=1"
+          }
+        ],
+        "title": "credit.proofofwork.me"
+      },
+      {
+        "html": {
+          "assets": {
+            "checked": 4,
+            "modules": 1,
+            "modulepreloads": 2,
+            "stylesheets": 1
+          },
+          "contentType": "text/html; charset=utf-8",
+          "elapsedMs": 523,
+          "ok": true,
+          "status": 200,
+          "title": "ProofOfWork.Me",
+          "url": "https://wallet.proofofwork.me/"
+        },
+        "key": "wallet",
+        "ok": true,
+        "probes": [
+          {
+            "label": "WORK token",
+            "elapsedMs": 12801,
+            "ok": true,
+            "status": 200,
+            "url": "https://computer.proofofwork.me/api/v1/token?network=livenet&asset=WORK&fresh=1"
+          }
+        ],
+        "title": "wallet.proofofwork.me"
+      },
+      {
+        "html": {
+          "assets": {
+            "checked": 4,
+            "modules": 1,
+            "modulepreloads": 2,
+            "stylesheets": 1
+          },
+          "contentType": "text/html; charset=utf-8",
+          "elapsedMs": 615,
+          "ok": true,
+          "status": 200,
+          "title": "ProofOfWork.Me",
+          "url": "https://work.proofofwork.me/"
+        },
+        "key": "work",
+        "ok": true,
+        "probes": [
+          {
+            "label": "work summary",
+            "elapsedMs": 14093,
+            "ok": true,
+            "status": 200,
+            "url": "https://computer.proofofwork.me/api/v1/work-summary?network=livenet&compact=1&fresh=1"
+          },
+          {
+            "label": "work floor",
+            "elapsedMs": 7354,
+            "ok": true,
+            "status": 200,
+            "url": "https://computer.proofofwork.me/api/v1/work-floor?network=livenet&fresh=1"
+          }
+        ],
+        "title": "work.proofofwork.me"
+      },
+      {
+        "html": {
+          "assets": {
+            "checked": 4,
+            "modules": 1,
+            "modulepreloads": 2,
+            "stylesheets": 1
+          },
+          "contentType": "text/html; charset=utf-8",
+          "elapsedMs": 472,
+          "ok": true,
+          "status": 200,
+          "title": "ProofOfWork.Me",
+          "url": "https://infinity.proofofwork.me/"
+        },
+        "key": "infinity",
+        "ok": true,
+        "probes": [
+          {
+            "label": "infinity summary",
+            "elapsedMs": 6059,
+            "ok": true,
+            "status": 200,
+            "url": "https://computer.proofofwork.me/api/v1/infinity-summary?network=livenet&fresh=1"
+          }
+        ],
+        "title": "infinity.proofofwork.me"
+      },
+      {
+        "html": {
+          "assets": {
+            "checked": 4,
+            "modules": 1,
+            "modulepreloads": 2,
+            "stylesheets": 1
+          },
+          "contentType": "text/html; charset=utf-8",
+          "elapsedMs": 595,
+          "ok": true,
+          "status": 200,
+          "title": "ProofOfWork.Me",
+          "url": "https://inception.proofofwork.me/"
+        },
+        "key": "inception",
+        "ok": true,
+        "probes": [
+          {
+            "label": "inception summary",
+            "elapsedMs": 5594,
+            "ok": true,
+            "status": 200,
+            "url": "https://computer.proofofwork.me/api/v1/inception-summary?network=livenet&fresh=1"
+          }
+        ],
+        "title": "inception.proofofwork.me"
+      },
+      {
+        "html": {
+          "assets": {
+            "checked": 4,
+            "modules": 1,
+            "modulepreloads": 2,
+            "stylesheets": 1
+          },
+          "contentType": "text/html; charset=utf-8",
+          "elapsedMs": 606,
+          "ok": true,
+          "status": 200,
+          "title": "ProofOfWork.Me",
+          "url": "https://log.proofofwork.me/"
+        },
+        "key": "log",
+        "ok": true,
+        "probes": [
+          {
+            "label": "log summary",
+            "elapsedMs": 6350,
+            "ok": true,
+            "status": 200,
+            "url": "https://computer.proofofwork.me/api/v1/log-summary?network=livenet&fresh=1"
+          }
+        ],
+        "title": "log.proofofwork.me"
+      },
+      {
+        "html": {
+          "assets": {
+            "checked": 4,
+            "modules": 1,
+            "modulepreloads": 2,
+            "stylesheets": 1
+          },
+          "contentType": "text/html; charset=utf-8",
+          "elapsedMs": 612,
+          "ok": true,
+          "status": 200,
+          "title": "ProofOfWork.Me",
+          "url": "https://growth.proofofwork.me/"
+        },
+        "key": "growth",
+        "ok": true,
+        "probes": [
+          {
+            "label": "growth summary",
+            "elapsedMs": 7373,
+            "ok": true,
+            "status": 200,
+            "url": "https://computer.proofofwork.me/api/v1/growth-summary?network=livenet&fresh=1"
+          }
+        ],
+        "title": "growth.proofofwork.me"
+      },
+      {
+        "html": {
+          "assets": {
+            "checked": 4,
+            "modules": 1,
+            "modulepreloads": 2,
+            "stylesheets": 1
+          },
+          "contentType": "text/html; charset=utf-8",
+          "elapsedMs": 203,
+          "ok": true,
+          "status": 200,
+          "title": "ProofOfWork.Me",
+          "url": "https://computer.proofofwork.me/"
+        },
+        "key": "computer",
+        "ok": true,
+        "probes": [
+          {
+            "label": "health",
+            "elapsedMs": 1739,
+            "ok": true,
+            "status": 200,
+            "url": "https://computer.proofofwork.me/health?network=livenet"
+          },
+          {
+            "label": "consistency",
+            "elapsedMs": 7886,
+            "ok": true,
+            "status": 200,
+            "url": "https://computer.proofofwork.me/api/v1/consistency?network=livenet&fresh=1"
+          }
+        ],
+        "title": "computer.proofofwork.me"
+      }
+    ],
+    "startedAt": "2026-09-19T06:33:23.543Z",
+    "timeoutMs": 30000
+  },
+  "focusedParity": {
+    "eventCount": 26402,
+    "participants": {
+      "expected": 125817,
+      "observed": 125862,
+      "extra": 45,
+      "missing": 0,
+      "extraSha256": "7910ecb110197ec85886e87efb8226d0fe15d33ca08a664736952a5198c5bef6"
+    },
+    "refs": {
+      "expected": 56065,
+      "observed": 56064,
+      "missing": 1,
+      "extra": 0
+    },
+    "mail": {
+      "expected": 616,
+      "observed": 616,
+      "missing": 0,
+      "extra": 0,
+      "duplicates": 0,
+      "mismatched": 46,
+      "mismatchedSha256": "818317e1454be50cb3b841305d40124746430a58df2dc7fbf1e25ff2189036ab"
+    }
+  },
+  "limitations": "Receipts are partial; SSH observations and independent calculation outputs are transcribed in report, not a retained full raw transcript. Full parity/ID/ledger audit did not complete successfully."
+}

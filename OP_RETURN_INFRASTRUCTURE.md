@@ -4173,6 +4173,14 @@ PostgreSQL tables are derived read models for speed; stale rows, stale zeros,
 and unclosed sale-ticket projections must be repaired or bypassed when they
 disagree with confirmed chain state.
 
+The Audit 17 writer hardening preserves raw transaction evidence when a rebuild
+invalidates `canonicalBlockScan`; invalidating a scan marker must not erase the
+transaction bytes. Confirmed event writes inherit the persisted parent transaction
+time, and INCB decimal display aliases derive from their exact Q8 integers without
+changing issuance. These source changes require deployment and production
+verification before the historical discrepancies can be closed. Implementation
+status and unresolved checks remain in the Audit 17 append-only record.
+
 For math-touching releases, the local and production gates must prove exact
 arithmetic before deployment and again after deployment. Protocol math is a
 hard on-chain function, not presentation logic: balances, supply, floors,

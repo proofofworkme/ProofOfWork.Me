@@ -52032,6 +52032,17 @@ function boostOwnershipState(items) {
     }
 
     if (kind === "boost-transfer" || kind === "boost-buy") {
+      // A parsed transfer is not proof of ownership. Only the canonical
+      // current owner can originate a direct transfer; never infer its actor
+      // from currentOwnerAddress, which is the recipient on transfer records.
+      if (kind === "boost-transfer") {
+        const sender = boostAddress(
+          item?.senderAddress ?? item?.authorAddress ?? item?.actor,
+        );
+        if (!state.ownerAddress || sender !== state.ownerAddress) {
+          continue;
+        }
+      }
       state.listing = null;
       state.ownerAddress = boostAddress(
         item?.newOwnerAddress ??

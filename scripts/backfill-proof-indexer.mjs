@@ -4715,6 +4715,7 @@ function boostItemFromMessage(tx, message) {
     const item = {
       ...base,
       action: "transfer",
+      authorAddress: sender,
       boostTxid: targetTxid,
       currentOwnerAddress: newOwnerAddress,
       kind: "boost-transfer",
@@ -5280,6 +5281,26 @@ function canonicalTextStorageInvalidItem(item) {
 }
 
 function canonicalProtocolItemForPostgres(item) {
+  if (item?.tokenId === INCB_TOKEN_ID && item?.valid !== false) {
+    const aliases = {};
+    for (const name of [
+      "attachedWorkLiveFloorAtSend",
+      "attachedWorkLiveValueAtSend",
+      "issuanceDust",
+      "issuanceNetworkValue",
+      "issuanceValueSnapshotWorkNetworkValue",
+    ]) {
+      const exact = item[`${name}Q8`];
+      if (exact !== undefined && exact !== null) {
+        const decimal = decimalTextFromQ8(exact);
+        if (!decimal || decimal.startsWith("-")) {
+          throw new Error(`Invalid exact INCB ${name}Q8 projection.`);
+        }
+        aliases[`${name}Sats`] = decimal;
+      }
+    }
+    item = { ...item, ...aliases };
+  }
   if (!canonicalTextStorageInvalidItem(item)) {
     return item;
   }
@@ -12830,10 +12851,8 @@ async function persistCanonicalListingOutpointSpendsFromBlock(
               THEN proof_indexer.transactions.source
             ELSE EXCLUDED.source
           END,
-          raw_tx = COALESCE(
-            proof_indexer.transactions.raw_tx,
-            EXCLUDED.raw_tx
-          ),
+          raw_tx = COALESCE(proof_indexer.transactions.raw_tx, '{}'::jsonb)
+            || EXCLUDED.raw_tx,
           updated_at = now()
       `,
       [
@@ -13355,7 +13374,7 @@ async function upsertTransaction(
           ELSE COALESCE(proof_indexer.transactions.raw_tx, EXCLUDED.raw_tx)
         END,
         updated_at = now()
-      RETURNING status, block_height, block_index
+      RETURNING status, block_height, block_index, block_time
     `,
     [
       NETWORK,
@@ -13375,6 +13394,7 @@ async function upsertTransaction(
     ? {
         blockHeight: Number(row.block_height),
         blockIndex: Number(row.block_index),
+        blockTime: row.block_time,
         confirmed: row.status === "confirmed",
       }
     : null;
@@ -13542,7 +13562,7 @@ async function upsertEvent(client, sourceLabel, item) {
     sourceLabel,
     txid,
   });
-  const eventTime = itemTime(indexedInput);
+  let eventTime = itemTime(indexedInput);
   const pendingProtocolVout = Number(indexedInput?.protocolVout);
   const pendingRecordOrdinal = Number(indexedInput?.recordOrdinal);
   let legacyPendingEventKey = "";
@@ -13582,6 +13602,15 @@ async function upsertEvent(client, sourceLabel, item) {
   );
   if (status !== "confirmed" && persistedTransaction?.confirmed === true) {
     return { canonicalConfirmed: true, skipped: true };
+  }
+  if (status === "confirmed" && persistedTransaction?.confirmed === true) {
+    const parentTime = itemTime({ blockTime: persistedTransaction.blockTime });
+    if (parentTime) {
+      eventTime = parentTime;
+      indexedInput.blockTime = parentTime;
+      indexedInput.createdAt = parentTime;
+      indexedInput.timestamp = parentTime;
+    }
   }
   const confirmedProtocolPosition =
     status === "confirmed" && governedProtocol
@@ -20680,7 +20709,7 @@ async function prepareCanonicalRebuild(client) {
     await client.query(
       `
         UPDATE proof_indexer.transactions
-        SET raw_tx = NULL, updated_at = now()
+        SET raw_tx = raw_tx - 'canonicalBlockScan', updated_at = now()
         WHERE network = $1
           AND raw_tx ? 'canonicalBlockScan'
       `,
@@ -32592,7 +32621,7 @@ async function canonicalIncbIssuanceRepairMintFromPinnedExpectation(
       `INCB issuance repair produced a noncanonical pinned mint for ${txid}: ${invalidReason || "invalid bond mint"}.`,
     );
   }
-  return repaired;
+  return canonicalProtocolItemForPostgres(repaired);
 }
 
 function canonicalIncbRepairIntegerEquals(actual, expected, options = {}) {

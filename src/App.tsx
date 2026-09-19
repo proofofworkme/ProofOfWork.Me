@@ -13887,7 +13887,7 @@ function tokenMarketplaceStatusText({
     tokenScope,
   });
   const floorText = workFloorQuote
-    ? ` WORK floor ${bondProofAmountDisplay(
+    ? ` WORK live network value ${bondProofAmountDisplay(
         workFloorQuoteLiveValue(workFloorQuote),
         workFloorQuoteLiveValueQ8(workFloorQuote),
       )} proofs.`
@@ -21054,6 +21054,8 @@ export default function App() {
   const [desktopMail, setDesktopMail] = useState<MailMessage[]>([]);
   const [desktopSelectedKey, setDesktopSelectedKey] = useState("");
   const [activityQuery, setActivityQuery] = useState("");
+  const activityQueryRef = useRef(activityQuery);
+  activityQueryRef.current = activityQuery;
   const [activityProfile, setActivityProfile] = useState<
     DesktopProfile | undefined
   >();
@@ -21066,6 +21068,7 @@ export default function App() {
   >();
   const [activityLoading, setActivityLoading] = useState(false);
   const activitySearchGenerationRef = useRef(0);
+  const activityHistoryGenerationRef = useRef(0);
   const [desktopLoading, setDesktopLoading] = useState(false);
   const [savedDraft, setSavedDraft] = useState<DraftMessage | undefined>();
   const [inbox, setInbox] = useState<InboxMessage[]>([]);
@@ -25024,7 +25027,7 @@ export default function App() {
         const currentPageIndex = activityHistoryPageRef.current?.page ?? 0;
         await loadLogHistoryPage(currentPageIndex, true);
         const currentProfile = activityProfileRef.current;
-        if (!cancelled && currentProfile) {
+        if (!cancelled && currentProfile && currentProfile.query === activityQueryRef.current) {
           void loadActivityTarget(currentProfile.query);
         }
 
@@ -26473,11 +26476,21 @@ export default function App() {
   async function loadLogHistoryPage(
     pageIndex = 0,
     silent = true,
-    query = activityQuery,
+    query = activityProfileRef.current?.query === activityQueryRef.current
+      ? activityProfileRef.current.address
+      : activityQueryRef.current,
     options: { snapshotId?: string } = {},
   ) {
     const requestWorkspaceKey = activeWorkspaceStatusKeyRef.current;
     const readSource = "log-history";
+    const generation = ++activityHistoryGenerationRef.current;
+    const searchGeneration = activitySearchGenerationRef.current;
+    const requestedInput = activityQueryRef.current;
+    const requestIsActive = () =>
+      activeWorkspaceStatusKeyRef.current === requestWorkspaceKey &&
+      generation === activityHistoryGenerationRef.current &&
+      searchGeneration === activitySearchGenerationRef.current &&
+      requestedInput === activityQueryRef.current;
     const readAttempt = nextProofApiReadAttempt();
     const cacheKey = activityHistoryCacheKey({
       kind: "history",
@@ -26501,6 +26514,7 @@ export default function App() {
         query,
         snapshotId: options.snapshotId,
       });
+      if (!requestIsActive()) return undefined;
       clearLastGoodReadWarning(
         requestWorkspaceKey,
         readSource,
@@ -26509,6 +26523,7 @@ export default function App() {
       return acceptActivityHistoryPage(cacheKey, page);
     } catch (error) {
       const cachedPage = activityHistoryPagesRef.current.get(cacheKey);
+      if (!requestIsActive()) return undefined;
       const retainedLastGood =
         Boolean(cachedPage) &&
         isTransientProofApiReadError(error) &&
@@ -26531,7 +26546,7 @@ export default function App() {
       }
       return undefined;
     } finally {
-      if (!silent) {
+      if (!silent && requestIsActive()) {
         setActivityLoading(false);
       }
     }
@@ -26545,6 +26560,7 @@ export default function App() {
 
   async function loadActivityTarget(target = activityQuery) {
     const requestWorkspaceKey = activeWorkspaceStatusKeyRef.current;
+    activityHistoryGenerationRef.current += 1;
     const generation = ++activitySearchGenerationRef.current;
     const readSource = "log-search";
     const readAttempt = nextProofApiReadAttempt();
@@ -26725,6 +26741,8 @@ export default function App() {
 
   function changeActivityQuery(query: string) {
     activitySearchGenerationRef.current += 1;
+    activityHistoryGenerationRef.current += 1;
+    activityQueryRef.current = query;
     setActivityLoading(false);
     setActivityQuery(query);
     setStatusForWorkspace(activeWorkspaceStatusKeyRef.current, {
@@ -26734,6 +26752,8 @@ export default function App() {
 
   function clearActivity() {
     activitySearchGenerationRef.current += 1;
+    activityHistoryGenerationRef.current += 1;
+    activityQueryRef.current = "";
     setActivityLoading(false);
     setActivityQuery("");
     setActivityProfile(undefined);
