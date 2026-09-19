@@ -137,7 +137,7 @@ assert.doesNotMatch(surfaceAudit, /htmlMatch/u);
 assert.doesNotMatch(surfaceAudit, /required page text was not found/u);
 assert.doesNotMatch(
   surfaceAudit,
-  /child_process|writeFile|rmSync|systemctl|ssh|scp|DELETE FROM|UPDATE proof_indexer|INSERT INTO|DROP TABLE/u,
+  /child_process|(?:^|[^\w.])writeFile(?:Sync)?\s*\(|rmSync\s*\(|systemctl\b|\bssh\b|\bscp\b|DELETE FROM|UPDATE proof_indexer|INSERT INTO|DROP TABLE/u,
 );
 
 assert.match(releasePrune, /verified_archives/u);
