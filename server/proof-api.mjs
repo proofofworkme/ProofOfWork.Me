@@ -62855,11 +62855,13 @@ async function txPayload(txid, network) {
   }
 
   const confirmed = transactionConfirmed(tx);
+  const attachment = extractProtocolMemo(tx.vout)?.attachment;
   return {
     confirmed,
     indexedAt: new Date().toISOString(),
     network,
     status: confirmed ? "confirmed" : "pending",
+    ...(attachment ? { attachment } : {}),
     tx,
     txid,
   };

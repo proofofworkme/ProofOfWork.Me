@@ -399,6 +399,85 @@ function BoostAvatar({ item }: { item: BoostFeedItem }) {
   );
 }
 
+const BOOST_MEDIA_MAX_CONCURRENT = 4;
+let boostMediaActive = 0;
+const boostMediaQueue: Array<{
+  resolve: (release: () => void) => void;
+  reject: (reason?: unknown) => void;
+  signal: AbortSignal;
+}> = [];
+
+function pumpBoostMediaQueue() {
+  while (boostMediaActive < BOOST_MEDIA_MAX_CONCURRENT && boostMediaQueue.length) {
+    const next = boostMediaQueue.shift();
+    if (!next || next.signal.aborted) {
+      next?.reject(next.signal.reason);
+      continue;
+    }
+    boostMediaActive += 1;
+    next.resolve(() => {
+      boostMediaActive = Math.max(0, boostMediaActive - 1);
+      pumpBoostMediaQueue();
+    });
+  }
+}
+
+function acquireBoostMediaSlot(signal: AbortSignal) {
+  if (signal.aborted) return Promise.reject(signal.reason);
+  return new Promise<() => void>((resolve, reject) => {
+    boostMediaQueue.push({ resolve, reject, signal });
+    pumpBoostMediaQueue();
+  });
+}
+
+function boostMediaUrl(attachment: { data?: string; mime?: string }) {
+  if (!attachment.data || !attachment.mime) return "";
+  const base64 = attachment.data.replace(/-/g, "+").replace(/_/g, "/");
+  return `data:${attachment.mime};base64,${base64.padEnd(Math.ceil(base64.length / 4) * 4, "=")}`;
+}
+
+function BoostMedia({ item, network }: { item: BoostFeedItem; network: BitcoinNetwork }) {
+  const [mediaUrl, setMediaUrl] = useState(item.media?.url ?? "");
+  const [mediaError, setMediaError] = useState(false);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    setMediaUrl(item.media?.url ?? "");
+    setMediaError(false);
+    if (!item.media || !/^(?:image|video)\//iu.test(item.media.mime ?? "") || item.media.url) {
+      return () => controller.abort();
+    }
+    void acquireBoostMediaSlot(controller.signal)
+      .then(async (release) => {
+        try {
+          const payload = await fetchProofApiJson<{ attachment?: { data?: string; mime?: string } }>(
+            `/api/v1/tx/${encodeURIComponent(item.boostTxid || item.txid)}`,
+            network,
+            { signal: controller.signal, timeoutMs: 30_000 },
+          );
+          if (!controller.signal.aborted) {
+            const url = boostMediaUrl(payload.attachment ?? {});
+            if (url) setMediaUrl(url);
+            else setMediaError(true);
+          }
+        } catch {
+          if (!controller.signal.aborted) setMediaError(true);
+        } finally {
+          release();
+        }
+      })
+      .catch(() => undefined);
+    return () => controller.abort();
+  }, [item.boostTxid, item.media?.url, item.media?.mime, item.txid, network]);
+
+  if (!mediaUrl || mediaError) return null;
+  return item.media?.mime?.toLowerCase().startsWith("video/") ? (
+    <video className="boost-post-media" controls preload="metadata" src={mediaUrl} />
+  ) : (
+    <img className="boost-post-media" alt={item.media?.name || "Boost media"} loading="lazy" src={mediaUrl} />
+  );
+}
+
 function BoostPost({
   actionBusy,
   activeAddress,
@@ -489,6 +568,10 @@ function BoostPost({
         </div>
 
         {item.text ? <p className="boost-post-text">{item.text}</p> : null}
+
+        {item.media?.mime && /^(?:image|video)\//iu.test(item.media.mime) ? (
+          <BoostMedia item={item} network={network} />
+        ) : null}
 
         <a
           className="boost-proof-frame"
