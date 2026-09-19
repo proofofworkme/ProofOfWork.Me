@@ -52489,7 +52489,10 @@ function boostProfileEntriesByTab(entries, sourceItems, subject, states, profile
     if (authored && kind === "boost-reply") {
       authoredReplies.push(entry);
     }
-    if (subject.addressKey && ownerKey === subject.addressKey && !authored) {
+    // Replies/reboosts may reference an owned asset without being that asset.
+    // Count the original asset once, never another author's social action.
+    if (subject.addressKey && ownerKey === subject.addressKey && !authored &&
+        boostPostTxid(sourceItem) === boostHexTxid(sourceItem?.txid)) {
       purchased.push(entry);
     }
   }

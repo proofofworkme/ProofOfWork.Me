@@ -516,3 +516,20 @@ test("proof-only Boost reads do not start an unused WORK valuation query", async
   assert.equal(page.valuationProvenance.used, false);
   assert.equal(page.signalStats.totalSignalQ8, "54600000000");
 });
+
+test("profile acquired assets exclude other authors' replies and reboosts of the same asset", async () => {
+  const owner = "1KNkUBREnfno2BeV7QsBf8XCWZN6YFfxPH";
+  const buyer = "18xvbj6mpPpYYjWibcqsXdV7SCwBQNrqMW";
+  const original = event(1, "boost-post", { authorAddress: owner });
+  const actions = [event(2, "boost-reboost", { authorAddress: buyer, targetTxid: txid(1) }),
+    event(3, "boost-reply", { authorAddress: buyer, targetTxid: txid(1) })];
+  const before = await server(reader([original, ...actions]).read).boostFeedPayload("livenet", new URLSearchParams({ profile: owner, profileTab: "purchased" }));
+  assert.equal(before.profileSubject.purchasedCount, 0);
+  assert.equal(before.profileTabs.purchased, 0);
+  assert.equal(before.items.length, 0);
+  const transfer = event(4, "boost-transfer", { authorAddress: owner, targetTxid: txid(1), newOwnerAddress: buyer });
+  const after = await server(reader([original, ...actions, transfer]).read).boostFeedPayload("livenet", new URLSearchParams({ profile: buyer, profileTab: "purchased" }));
+  assert.equal(after.profileSubject.purchasedCount, 1);
+  assert.equal(after.profileTabs.purchased, 1);
+  assert.deepEqual(Array.from(after.items, item => item.txid), [txid(1)]);
+});

@@ -1189,3 +1189,33 @@ the candidate. Regression cases cover forged names, follower/target confusion,
 pending IDs, transferred IDs, address case and checkpoint completeness. Candidate
 and production verification are still required; this does not close full seal
 cryptography, unspent-ticket discovery or connected-wallet lifecycle coverage.
+
+Identity release `85ce5651ad4b1403913371a21b42d9bec0941855` passed candidate
+and production full-node checks at 967724 / the canonical hash recorded above,
+including all 871 market anchors and the exact wallet/bond checks. Both complete
+Boost responses commit to all 505 confirmed ID owners with owner-map SHA256
+`4c4f59c0838eb884c19e453d8e21b42130e3654fedb0cde878f39d1c86c536eb`.
+All 24 identity/Boost regressions passed on local and production Node runtimes;
+528 recovery checks, globals and live-data checks passed before deployment.
+The release is merged and pushed. Rollback and authority-service identities are
+preserved under `/data/proofofwork-audit17-cutover-85ce5651ad4b-20260919T170643Z`.
+Browser checks resolved carbonz and armyofyouth to their confirmed profiles,
+with one and two authored records respectively; no signing was performed.
+
+The first observation window wholly after the batching release reported zero
+unknown response sizes across all observed routes. It still warned about
+13.7–14.3 second p95 floor/internal-summary reads and a 19,338,115-byte internal
+summary. Retained database timings cover cumulative history since August 3;
+they identify profiling candidates, not measured regression attribution.
+UI free space rechecked at 11,876,700,160 bytes; capacity remains open.
+
+### H6-01 profile acquired-assets follow-up — candidate, not yet deployed
+
+The browser check exposed a related projection defect: carbonz displayed one
+Purchased item even though the complete Boost history has no purchase. Another
+author's reboost referenced carbonz's own original post and was counted as an
+acquired asset. The correction counts only original asset records, preserving
+social actions, authorship and ownership. A regression proves that replies and
+reboosts add no acquired assets, while a qualifying direct transfer contributes
+exactly its original asset once. All 25 Boost tests pass. This is an application
+projection correction; no canonical event or database repair is involved.

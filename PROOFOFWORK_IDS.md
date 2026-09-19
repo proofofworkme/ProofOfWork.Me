@@ -350,6 +350,10 @@ Profile routes resolve IDs through this confirmed map, never through arbitrary
 display names or the actor of a follow event targeting that ID. Address identity,
 original authorship and asset ownership remain unchanged.
 
+The acquired-assets profile view counts original owned assets from other authors.
+Another author's reply or reboost referencing an owned asset is a social action,
+not an additional acquired asset, and must not inflate that view or its count.
+
 ## Future Metaprotocol
 
 Everything below this point is future planning. It must not silently change Phase 1 behavior.
