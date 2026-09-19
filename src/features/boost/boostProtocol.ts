@@ -56,10 +56,12 @@ export type BoostFeedItem = {
   } | null;
   listingPriceSats?: number;
   media?: {
+    data?: string;
     mime?: string;
     name?: string;
     sha256?: string;
     size?: number;
+    url?: string;
   };
   proofSignalSats: number;
   proofSignalQ8?: string;

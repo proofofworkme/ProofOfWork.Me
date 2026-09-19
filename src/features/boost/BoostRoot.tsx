@@ -399,6 +399,46 @@ function BoostAvatar({ item }: { item: BoostFeedItem }) {
   );
 }
 
+function boostMediaUrl(attachment: { data?: string; mime?: string }) {
+  if (!attachment.data || !attachment.mime) return "";
+  const base64 = attachment.data.replace(/-/g, "+").replace(/_/g, "/");
+  return `data:${attachment.mime};base64,${base64.padEnd(Math.ceil(base64.length / 4) * 4, "=")}`;
+}
+
+function BoostMedia({ item, network }: { item: BoostFeedItem; network: BitcoinNetwork }) {
+  const [mediaUrl, setMediaUrl] = useState(item.media?.url ?? "");
+  const [mediaError, setMediaError] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    setMediaUrl(item.media?.url ?? "");
+    setMediaError(false);
+    if (!item.media || !/^(?:image|video)\//iu.test(item.media.mime ?? "") || item.media.url) {
+      return () => { cancelled = true; };
+    }
+    void fetchProofApiJson<{ attachment?: { data?: string; mime?: string } }>(
+      `/api/v1/tx/${encodeURIComponent(item.boostTxid || item.txid)}`,
+      network,
+    ).then((payload) => {
+      if (!cancelled) {
+        const url = boostMediaUrl(payload.attachment ?? {});
+        if (url) setMediaUrl(url);
+        else setMediaError(true);
+      }
+    }).catch(() => {
+      if (!cancelled) setMediaError(true);
+    });
+    return () => { cancelled = true; };
+  }, [item.boostTxid, item.media?.url, item.media?.mime, item.txid, network]);
+
+  if (!mediaUrl || mediaError) return null;
+  return item.media?.mime?.toLowerCase().startsWith("video/") ? (
+    <video className="boost-post-media" controls preload="metadata" src={mediaUrl} />
+  ) : (
+    <img className="boost-post-media" alt={item.media?.name || "Boost media"} loading="lazy" src={mediaUrl} />
+  );
+}
+
 function BoostPost({
   actionBusy,
   activeAddress,
@@ -489,6 +529,10 @@ function BoostPost({
         </div>
 
         {item.text ? <p className="boost-post-text">{item.text}</p> : null}
+
+        {item.media?.mime && /^(?:image|video)\//iu.test(item.media.mime) ? (
+          <BoostMedia item={item} network={network} />
+        ) : null}
 
         <a
           className="boost-proof-frame"

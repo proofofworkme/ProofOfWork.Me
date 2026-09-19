@@ -3080,6 +3080,14 @@ select {
   white-space: pre-wrap;
 }
 
+.boost-post-media {
+  display: block;
+  max-height: 520px;
+  max-width: 100%;
+  object-fit: contain;
+  width: 100%;
+}
+
 .boost-media-pill {
   align-items: center;
   background: var(--surface-soft);
