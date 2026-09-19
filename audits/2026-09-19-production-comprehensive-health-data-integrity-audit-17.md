@@ -1171,3 +1171,21 @@ monitor is enabled, with installation evidence under
 `/data/proofofwork-audit17-api-observation-005a4e5`; its first warning correctly
 reported slow responses and older missing-size observations still inside the
 10-minute window. No alert threshold was weakened to produce a green result.
+
+### Boost identity continuation — candidate, not yet deployed
+
+The unresolved H6-01 identity review found that profile carriers could claim an
+ID without binding it to the current confirmed owner; profile lookup also treated
+arbitrary display names as ID aliases and could choose a follower when resolving
+the followed ID. No live impersonation was observed. The candidate qualifies
+display metadata and profile routing against the complete confirmed registry at
+the same canonical block, retaining raw history and address/asset authority.
+It explicitly permits independent registry/event snapshot IDs and records both
+plus an owner-map digest. Missing or inconsistent evidence fails the read.
+
+The previously Core-verified 967724 production sample contains ten Boost events
+and 505 confirmed registry owners; all ten retain their existing ID claims under
+the candidate. Regression cases cover forged names, follower/target confusion,
+pending IDs, transferred IDs, address case and checkpoint completeness. Candidate
+and production verification are still required; this does not close full seal
+cryptography, unspent-ticket discovery or connected-wallet lifecycle coverage.

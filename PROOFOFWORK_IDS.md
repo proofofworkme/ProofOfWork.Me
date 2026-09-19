@@ -340,6 +340,16 @@ inventing successful ownership. Original authors alone can hide their records;
 visibility tombstones do not delete history or transfer ownership. These checks
 qualify application projections without rewriting consensus carrier outcomes.
 
+Boost display ID claims must match the current confirmed registry owner at the
+same canonical height and block hash as the event projection. Registry scans and
+event snapshots have independent identifiers; provenance records both and a
+deterministic digest of the confirmed owner map. Pending registrations cannot
+authorize a display handle. After a confirmed ID transfer, an old address's raw
+historical claim remains preserved but is no longer displayed as its current ID.
+Profile routes resolve IDs through this confirmed map, never through arbitrary
+display names or the actor of a follow event targeting that ID. Address identity,
+original authorship and asset ownership remain unchanged.
+
 ## Future Metaprotocol
 
 Everything below this point is future planning. It must not silently change Phase 1 behavior.

@@ -246,3 +246,54 @@ export function qualifyBoostPaidActions(items, registryItems) {
   }
   return { accepted, rejected };
 }
+
+export function boostHasIdentityClaims(items) {
+  return items.some(item => [item.profileId, item.authorId, item.currentOwnerId,
+    item.targetId, item.followedId, item.profile?.id, item.profile?.profileId, item.profile?.handle]
+    .some(value => typeof value === "string" && value.trim()));
+}
+
+// ID handles are current display identities, never authority over an address or
+// an asset. Preserve raw claims in event history; qualify only application copies.
+export function qualifyBoostIdentityClaims(items, registry, checkpoint, normalizeId) {
+  // Current registry scans and event-ledger snapshots have separate identifiers.
+  // Their shared canonical block, plus the identity-content digest, is the fence.
+  if (!registry || registry.network !== checkpoint.network || !registry.snapshotId || !checkpoint.snapshotId ||
+      registry.indexedThroughBlock !== checkpoint.indexedThroughBlock ||
+      registry.indexedThroughBlockHash !== checkpoint.indexedThroughBlockHash ||
+      !Array.isArray(registry.records) || registry.collectionHasMore?.records === true ||
+      registry.stats?.total !== registry.records.length) {
+    throw boostProjectionError("Boost display identities require a complete registry at the same checkpoint.", 409);
+  }
+  const owners = new Map();
+  for (const record of registry.records) {
+    if (typeof record.confirmed !== "boolean") throw boostProjectionError("Unqualified Boost identity confirmation state.");
+    if (!record.confirmed) continue;
+    const id = normalizeId(String(record.id ?? "")), owner = String(record.ownerAddress ?? "").trim();
+    if (!id || !owner || owners.has(id)) throw boostProjectionError("Ambiguous confirmed Boost identity.");
+    owners.set(id, owner);
+  }
+  const rejected = [];
+  const qualified = items.map(item => {
+    const copy = { ...item };
+    const author = String(item.authorAddress ?? item.actor ?? "").trim();
+    const target = String(item.targetAddress ?? item.followedAddress ?? "").trim();
+    function qualify(object, field, address, label = field) {
+      if (object[field] == null || object[field] === "") return;
+      const id = normalizeId(String(object[field]));
+      if (!address || owners.get(id) !== address) {
+        delete object[field];
+        rejected.push({ eventId: item.eventId, field: label, id, reason: "not-current-confirmed-id-owner" });
+      }
+    }
+    for (const field of ["profileId", "authorId"]) qualify(copy, field, author);
+    qualify(copy, "currentOwnerId", String(item.currentOwnerAddress ?? "").trim());
+    for (const field of ["targetId", "followedId"]) qualify(copy, field, target);
+    if (item.profile && typeof item.profile === "object" && !Array.isArray(item.profile)) {
+      copy.profile = { ...item.profile };
+      for (const field of ["id", "profileId", "handle"]) qualify(copy.profile, field, author, `profile.${field}`);
+    }
+    return copy;
+  });
+  return { items: qualified, owners, rejected, registrySnapshotId: registry.snapshotId };
+}

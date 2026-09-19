@@ -57,6 +57,7 @@ function server(readPage, overrides = {}) {
     decimalValueToQ8, formatWorkSubatoms, q8ToCanonicalDecimal, q8ToNumber,
     WORK_SUBATOM_UNIT_SCALE, WORK_TOKEN_MAX_SUPPLY: 21_000_000,
     proofIndexReadFeatureEnabled: () => true, proofIndexEventHistoryPayload: readPage,
+    registryAddressForNetwork: () => "id-registry",
     btcUsdPricePayload: async () => ({ btcUsd: 1 }), cachedWorkFloorPayload: async () => ({ networkValueQ8: "2100000000000000", snapshotId: "fixture-snapshot", indexedThroughBlock: 965000, indexedThroughBlockHash: "a".repeat(64) }),
     btcUsdFromQuote: (quote) => quote?.btcUsd ?? 0,
     satsToUsdAtBtcUsd: (sats, usd) => sats * usd / 100_000_000,
@@ -86,6 +87,55 @@ test("canonical Boost failures never become successful empty history", async () 
   assert.equal(empty.complete, true);
   assert.equal(empty.totalCount, 0);
   assert.equal(empty.provenance.eventCount, 0);
+});
+
+const identityCheckpoint = { network: "livenet", snapshotId: "fixture-snapshot", indexedThroughBlock: 965000, indexedThroughBlockHash: "a".repeat(64) };
+const identityRegistry = (records) => ({ ...identityCheckpoint, records, stats: { total: records.length } });
+const identityNormalizer = value => String(value).trim().toLowerCase().replace(/^@/u, "").replace(/@proofofwork\.me$/u, "");
+
+test("Boost identity claims require exact current confirmed ownership without rewriting history", () => {
+  const records = [{ id: "alice", ownerAddress: "Owner", confirmed: true }, { id: "pending", ownerAddress: "Owner", confirmed: false }];
+  const raw = [event(1, "boost-post", { authorAddress: "Owner", profileId: "alice" }),
+    event(2, "boost-profile", { authorAddress: "owner", profileId: "alice", profile: { id: "alice", profileId: "alice", name: "Alice" } }),
+    event(3, "boost-post", { authorAddress: "Owner", authorId: "pending" }),
+    event(4, "boost-follow", { authorAddress: "follower", targetAddress: "Owner", targetId: "alice" })];
+  const original = JSON.stringify(raw);
+  const result = projection.qualifyBoostIdentityClaims(raw, identityRegistry(records), identityCheckpoint, identityNormalizer);
+  assert.equal(result.items[0].profileId, "alice");
+  assert.equal(result.items[1].profileId, undefined);
+  assert.equal(result.items[1].profile.id, undefined);
+  assert.equal(result.items[2].authorId, undefined);
+  assert.equal(result.items[3].targetId, "alice");
+  assert.equal(JSON.stringify(raw), original);
+  const transferred = projection.qualifyBoostIdentityClaims(raw, identityRegistry([{ ...records[0], ownerAddress: "NewOwner" }]), identityCheckpoint, identityNormalizer);
+  assert.equal(transferred.items[0].profileId, undefined);
+  assert.equal(transferred.items[0].authorAddress, "Owner");
+});
+
+test("Boost identity checkpoint and duplicate ownership failures are unavailable, never fabricated labels", () => {
+  const registry = identityRegistry([{ id: "alice", ownerAddress: "owner", confirmed: true }]);
+  assert.equal(projection.qualifyBoostIdentityClaims([], { ...registry, snapshotId: "independent-registry-scan" }, identityCheckpoint, identityNormalizer).registrySnapshotId, "independent-registry-scan");
+  for (const malformed of [{ ...registry, snapshotId: "" }, { ...registry, indexedThroughBlockHash: "b".repeat(64) },
+    { ...registry, collectionHasMore: { records: true } }, { ...registry, stats: { total: 2 } },
+    identityRegistry([...registry.records, ...registry.records]), identityRegistry([{ ...registry.records[0], confirmed: undefined }])]) {
+    assert.throws(() => projection.qualifyBoostIdentityClaims([], malformed, identityCheckpoint, identityNormalizer));
+  }
+});
+
+test("profile routes resolve confirmed owners, not another user's display name or follow actor", async () => {
+  const events = [event(1, "boost-post", { authorAddress: "alice-owner", profileId: "alice" }),
+    event(2, "boost-profile", { authorAddress: "bob-owner", profileId: "bob", profile: { id: "bob", name: "alice@proofofwork.me" } }),
+    event(3, "boost-follow", { authorAddress: "bob-owner", targetAddress: "alice-owner", targetId: "alice" }),
+    event(4, "boost-post", { authorAddress: "bob-owner", profileId: "alice" })];
+  const api = server(reader(events).read, { proofIndexRegistryPayload: async (_network, options) => {
+    assert.equal(options.expectedHeight, identityCheckpoint.indexedThroughBlock);
+    assert.equal(options.expectedHash, identityCheckpoint.indexedThroughBlockHash);
+    return identityRegistry([{ id: "alice", ownerAddress: "alice-owner", confirmed: true }, { id: "bob", ownerAddress: "bob-owner", confirmed: true }]);
+  } });
+  const payload = await api.boostFeedPayload("livenet", new URLSearchParams({ profile: "alice" }));
+  assert.deepEqual(Array.from(payload.items, item => item.txid), [txid(1)]);
+  assert.ok(payload.provenance.applicationRejectedIdentityClaims.some(row => row.eventId === 4));
+  assert.equal(payload.provenance.identityRegistry.confirmedOwnerCount, 2);
 });
 
 test("complete projection handles 250+ actions, 125 posts, old listings and canonical ownership across pages", async () => {

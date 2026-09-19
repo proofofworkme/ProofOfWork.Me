@@ -46,6 +46,8 @@ import {
   boostNeedsRegistryHistory,
   readBoostRegistryHistory,
   qualifyBoostPaidActions,
+  boostHasIdentityClaims,
+  qualifyBoostIdentityClaims,
 } from "./boost-projection.mjs";
 import {
   electrumAddressHistoryCoverage,
@@ -52325,6 +52327,7 @@ function boostProfileSubjectForQuery(
   followersByTarget,
   followingByFollower,
   viewerFollowing,
+  confirmedOwners = undefined,
 ) {
   const query = String(profile ?? "").trim();
   if (!query) {
@@ -52332,18 +52335,17 @@ function boostProfileSubjectForQuery(
   }
   const queryKey = query;
   const queryId = boostLooksLikeAddress(query) ? "" : normalizePowId(query);
-  let address = "";
+  let address = queryId && confirmedOwners ? confirmedOwners.get(queryId) ?? "" : "";
   let profileState = null;
 
   for (const [profileKey, candidate] of profiles) {
     const candidateIds = [
       candidate?.id,
       candidate?.profileId,
-      candidate?.name,
     ].map((value) => normalizePowId(String(value ?? "")));
     if (
-      profileKey === queryKey ||
-      (queryId && candidateIds.includes(queryId))
+      !address && (profileKey === queryKey ||
+      (!confirmedOwners && queryId && candidateIds.includes(queryId)))
     ) {
       address = boostAddress(candidate?.address) || profileKey;
       profileState = candidate;
@@ -52373,7 +52375,7 @@ function boostProfileSubjectForQuery(
     adoptAddress(item?.sellerAddress);
   }
 
-  if (!address && queryId) {
+  if (!address && queryId && !confirmedOwners) {
     for (const item of sourceItems) {
       const authorKey = boostProfileSourceAuthorKey(item);
       const itemProfileState = profiles.get(authorKey);
@@ -52624,7 +52626,24 @@ async function boostFeedPayload(network, searchParams, fresh = false) {
     ? await readBoostRegistryHistory(network, proofIndexEventHistoryPayload, indexedPayload)
     : null;
   const qualification = qualifyBoostPaidActions(rawSourceItems, registryHistory?.items ?? []);
-  const sourceItems = qualification.accepted;
+  const needsIdentities = boostHasIdentityClaims(qualification.accepted) || (profile && !boostLooksLikeAddress(profile));
+  const identityQualification = needsIdentities ? qualifyBoostIdentityClaims(
+    qualification.accepted,
+    await proofIndexRegistryPayload(network, {
+      registryAddress: registryAddressForNetwork(network),
+      expectedHeight: indexedPayload.indexedThroughBlock,
+      expectedHash: indexedPayload.indexedThroughBlockHash,
+    }),
+    indexedPayload, normalizePowId,
+  ) : { items: qualification.accepted, owners: new Map(), rejected: [] };
+  const identityProvenance = needsIdentities ? {
+    model: "boost-current-confirmed-id-owners-v1",
+    snapshotId: indexedPayload.snapshotId,
+    registrySnapshotId: identityQualification.registrySnapshotId,
+    confirmedOwnerCount: identityQualification.owners.size,
+    ownersSha256: boostProjectionFingerprint([...identityQualification.owners].sort(([a], [b]) => compareCanonicalUtf8(a, b))),
+  } : null;
+  const sourceItems = identityQualification.items;
   const usesWorkValuation = sourceItems.some((item) => Boolean(boostWorkSignalSubatoms(item)));
 
   const [quote, workFloor] = network === "livenet"
@@ -52664,6 +52683,7 @@ async function boostFeedPayload(network, searchParams, fresh = false) {
     followersByTarget,
     followingByFollower,
     viewerFollowing,
+    identityQualification.owners,
   );
   const entries = sourceItems
     .filter((item) => {
@@ -52726,7 +52746,7 @@ async function boostFeedPayload(network, searchParams, fresh = false) {
   ).sort((left, right) => compareBoostFeedItems(sort)(left.feedItem, right.feedItem));
 
   const fingerprint = boostProjectionFingerprint({
-    provenance: { ...indexedPayload.provenance, applicationRejectedEvents: qualification.rejected, registryHistory: registryHistory?.provenance ?? null }, sort, view, profile, profileTab,
+    provenance: { ...indexedPayload.provenance, applicationRejectedEvents: qualification.rejected, applicationRejectedIdentityClaims: identityQualification.rejected, identityRegistry: identityProvenance, registryHistory: registryHistory?.provenance ?? null }, sort, view, profile, profileTab,
     valueWindow, viewerAddress, query, includePending,
     // Bind ordering to exact valuation as well as event history. A changed
     // WORK floor must restart pagination rather than duplicate/omit posts.
@@ -52749,7 +52769,7 @@ async function boostFeedPayload(network, searchParams, fresh = false) {
     : null;
   return {
     complete: true,
-    provenance: { ...indexedPayload.provenance, applicationRejectedEvents: qualification.rejected, registryHistory: registryHistory?.provenance ?? null },
+    provenance: { ...indexedPayload.provenance, applicationRejectedEvents: qualification.rejected, applicationRejectedIdentityClaims: identityQualification.rejected, identityRegistry: identityProvenance, registryHistory: registryHistory?.provenance ?? null },
     snapshotId: indexedPayload.snapshotId,
     indexedThroughBlockHash: indexedPayload.indexedThroughBlockHash,
     hasMore: page.hasMore,
