@@ -1251,3 +1251,18 @@ off-host recovery and externally delivered alerts. None is marked resolved by
 these bounded checks. No additional production data repair or cleanup occurred
 during the identity/acquired-assets continuation. Existing protocol, economics,
 issuance, ownership and ledger history were preserved.
+
+### H10-05/H12-06 WORK-floor fanout continuation — candidate, not deployed
+
+The remaining latency review found that the WORK-floor HTTP route duplicated
+its entire floor/provenance/market-metadata pipeline for simultaneous identical
+requests, while other summary routes already coalesced those reads. The candidate
+uses the existing in-flight helper with separate network/freshness keys. Promise
+settlement always removes the entry, including failures; subsequent requests
+repeat the complete canonical pipeline. No completed response is cached by this
+change. Three actual-function tests cover eight simultaneous reads, subsequent
+fresh evaluation, network/freshness isolation and failure propagation/retry.
+All 528 recovery checks, globals and live-data checks pass. The live-data contract
+now follows the checked helper rather than requiring duplicated inline branches.
+Real production/candidate burst measurements and production validation remain
+required before any performance claim or deployment.

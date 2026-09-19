@@ -72,7 +72,8 @@
       "audits/2026-09-19-production-comprehensive-health-data-integrity-audit-17.md",
       "audits/2026-09-19-production-comprehensive-health-data-integrity-audit-17.evidence.json",
       "audits/2026-09-19-audit-17-implementation.evidence.json",
-      "audits/2026-09-19-audit-17-rollout.evidence.json"
+      "audits/2026-09-19-audit-17-rollout.evidence.json",
+      "audits/2026-09-19-audit-17-safe-stop-handoff.md"
     ],
     "staged-or-future-protocol-notes": [
       "CHAIN_CONTENT.md",

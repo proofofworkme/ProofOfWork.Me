@@ -1175,6 +1175,12 @@ their deterministic display order in the API process, instead of sorting the
 wide event payload twice in PostgreSQL. Paginated mint history keeps its
 database ordering and pagination contract.
 
+The public WORK-floor route coalesces only simultaneous responses with identical
+network and freshness mode. The shared operation includes floor loading,
+canonical provenance checks and marketplace metadata checks. Its promise is
+evicted on success or failure; there is no settled-result TTL, failed-result
+cache or bypass of canonical evidence. Fresh and current reads remain separate.
+
 The large-state `proof_indexer.ledger_snapshots` and
 `proof_indexer.work_amo_block_transitions` relations live in the dedicated
 PostgreSQL tablespace `proof_indexer_large_state_v1` at
