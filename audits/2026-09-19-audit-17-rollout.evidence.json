@@ -3881,6 +3881,348 @@
     "productionReceipt": {
       "path": "/home/powadmin/audit17-production-core-85ce565/receipt.json",
       "sha256": "6cc9c0345f6be4fe55d774e6b77b0040cd4d371e1b9c4aa7f66275ba9aa44a96"
+    },
+    "strictIdReplay": {
+      "ok": true,
+      "path": "/var/log/proofofwork-audit17-ids-85ce565.log",
+      "sha256": "c91166e43c7f59940bac692b9b5b18cfda1283d64cf151a3ed3ba9641258e1dc",
+      "summary": "Starting pinned read-only ids audit at 85ce5651ad4b1403913371a21b42d9bec0941855\nProofOfWork ID registry audit\nAddress source: http://127.0.0.1:8081\nRegistry: bc1qfwytlzyr3ym3enz2eutwtjsf9kkf6uqkjydk3e\nFetched transactions: 586\nCovered confirmed registry transactions: 562\nCovered pending registry transactions: 24\nCanonical lifecycle parity: verified against exact Core-ordered chain replay\nLifecycle events: 535\nActive listings: 6\nCanonical sales: 4\nRegistration attempts: 546\nConfirmed winners: 505\nPending candidates: 22\nRefund candidates: 17\nPending watchlist: 2",
+      "qualification": "Historical refund candidates unchanged; no refunds or canonical history altered."
+    }
+  },
+  "boostAcquiredAssetsRelease": {
+    "commit": "1f467cc59f41ed284f89d854ebd943525fe5b525",
+    "releaseId": "1f467cc59f41-20260919T172013Z",
+    "tree": "2b3d6740704c7dd4217b727532ea1494e11872ea",
+    "runtimeSha256": "1a8c3fc688dd49607e22a93a7f595cf4b0eecc6e56978ecf24d062018ec3c524",
+    "bundleSha256": "eb74468b20e82069d3c79d28a7e098629cc1d2aaa27434a56cd0d6e2a2ec31ef",
+    "state": "production-verified",
+    "before": {
+      "path": "/home/powadmin/audit17-profile-assets-before/receipt.json",
+      "sha256": "ee3f72c5e888086b13841f6cf5f0cc2ab0cb671ecc2398411bad46f17edca942",
+      "result": {
+        "format": "audit17-boost-profile-assets-v1",
+        "startedAt": "2026-09-19T17:20:09.873Z",
+        "port": "8081",
+        "profiles": [],
+        "ok": false,
+        "failure": "Expected values to be strictly equal:\n\n1 !== 0\n",
+        "finishedAt": "2026-09-19T17:20:20.853Z",
+        "qualification": "Complete current Boost fixture, Core-confirmed event positions and profile projection; no new full-market, historical protocol replay or signing claim."
+      }
+    },
+    "shadow": {
+      "path": "/home/powadmin/audit17-profile-assets-shadow/receipt.json",
+      "sha256": "d797d19a3023bea13935c2dbd0bbaeb0fc5ae23ed1efe1a4bc232460f3614244",
+      "result": {
+        "format": "audit17-boost-profile-assets-v1",
+        "startedAt": "2026-09-19T17:22:43.655Z",
+        "port": "18081",
+        "profiles": [
+          {
+            "id": "carbonz",
+            "address": "18xvbj6mpPpYYjWibcqsXdV7SCwBQNrqMW",
+            "purchasedCount": 0
+          },
+          {
+            "id": "armyofyouth",
+            "address": "1KNkUBREnfno2BeV7QsBf8XCWZN6YFfxPH",
+            "purchasedCount": 0
+          }
+        ],
+        "checkpoint": {
+          "height": 967724,
+          "hash": "000000000000000000008e99ea96c19e2274ebf5be81db1138f5cf4d736fb55c"
+        },
+        "confirmedBoostEvents": 10,
+        "ownersSha256": "4c4f59c0838eb884c19e453d8e21b42130e3654fedb0cde878f39d1c86c536eb",
+        "ok": true,
+        "finishedAt": "2026-09-19T17:23:02.914Z",
+        "qualification": "Complete current Boost fixture, Core-confirmed event positions and profile projection; no new full-market, historical protocol replay or signing claim."
+      }
+    },
+    "production": {
+      "path": "/home/powadmin/audit17-profile-assets-production/receipt.json",
+      "sha256": "862445d444871497ec49c9eb8e7659248b2f66e811c3560d5a6425866eacccbe",
+      "result": {
+        "format": "audit17-boost-profile-assets-v1",
+        "startedAt": "2026-09-19T17:24:03.229Z",
+        "port": "8081",
+        "profiles": [
+          {
+            "id": "carbonz",
+            "address": "18xvbj6mpPpYYjWibcqsXdV7SCwBQNrqMW",
+            "purchasedCount": 0
+          },
+          {
+            "id": "armyofyouth",
+            "address": "1KNkUBREnfno2BeV7QsBf8XCWZN6YFfxPH",
+            "purchasedCount": 0
+          }
+        ],
+        "checkpoint": {
+          "height": 967724,
+          "hash": "000000000000000000008e99ea96c19e2274ebf5be81db1138f5cf4d736fb55c"
+        },
+        "confirmedBoostEvents": 10,
+        "ownersSha256": "4c4f59c0838eb884c19e453d8e21b42130e3654fedb0cde878f39d1c86c536eb",
+        "ok": true,
+        "finishedAt": "2026-09-19T17:24:28.105Z",
+        "qualification": "Complete current Boost fixture, Core-confirmed event positions and profile projection; no new full-market, historical protocol replay or signing claim."
+      }
+    },
+    "cutoverAfter": {
+      "at": "2026-09-19T17:23:43.699196+00:00",
+      "units": {
+        "proofofwork-api-wg.socket": {
+          "LoadState": "loaded",
+          "ActiveState": "active",
+          "UnitFileState": "enabled"
+        },
+        "proofofwork-api-wg.service": {
+          "MainPID": "2034321",
+          "LoadState": "loaded",
+          "ActiveState": "active",
+          "UnitFileState": "static"
+        },
+        "proofofwork-api.service": {
+          "MainPID": "2034219",
+          "LoadState": "loaded",
+          "ActiveState": "active",
+          "UnitFileState": "enabled"
+        },
+        "proofofwork-indexer-worker.service": {
+          "MainPID": "2034231",
+          "LoadState": "loaded",
+          "ActiveState": "active",
+          "UnitFileState": "enabled"
+        },
+        "bitcoind.service": {
+          "MainPID": "1324302",
+          "LoadState": "loaded",
+          "ActiveState": "active",
+          "UnitFileState": "enabled"
+        },
+        "electrs.service": {
+          "MainPID": "1324320",
+          "LoadState": "loaded",
+          "ActiveState": "active",
+          "UnitFileState": "enabled"
+        },
+        "postgresql@16-main.service": {
+          "MainPID": "1324240",
+          "LoadState": "loaded",
+          "ActiveState": "active",
+          "UnitFileState": "enabled-runtime"
+        },
+        "pg_receivewal@16-main.service": {
+          "MainPID": "1649219",
+          "LoadState": "loaded",
+          "ActiveState": "active",
+          "UnitFileState": "enabled"
+        }
+      },
+      "health": {
+        "available": true,
+        "backend": "electrum",
+        "checks": {
+          "addressIndex": {
+            "canary": {
+              "confirmedSats": 0,
+              "scripthash": "8f52010f55361085b1806ee106632dd610d3a6587284138d06065d584bab8d21",
+              "unconfirmedSats": 0
+            },
+            "error": "",
+            "ok": true,
+            "source": "electrum://172.27.0.1:50001",
+            "timedOut": false
+          },
+          "backend": {
+            "ok": true,
+            "timedOut": false
+          },
+          "database": {
+            "canonicalMetaOk": true,
+            "ok": true,
+            "required": true,
+            "timedOut": false
+          },
+          "disk": {
+            "cache": {
+              "availableBytes": 342004981760,
+              "maxUsedPercent": 90,
+              "minFreeBytes": 5368709120,
+              "ok": true,
+              "path": "/data/proofofwork-api-cache",
+              "probePath": "/data/proofofwork-api-cache",
+              "totalBytes": 1764768071680,
+              "usedPercent": 80.6204006493373
+            },
+            "ok": true,
+            "root": {
+              "availableBytes": 71204089856,
+              "maxUsedPercent": 90,
+              "minFreeBytes": 5368709120,
+              "ok": true,
+              "path": "/",
+              "probePath": "/",
+              "totalBytes": 105089261568,
+              "usedPercent": 32.24418100042882
+            }
+          },
+          "electrum": {
+            "configured": true,
+            "error": "",
+            "headerHash": "000000000000000000008e99ea96c19e2274ebf5be81db1138f5cf4d736fb55c",
+            "headerHeight": 967724,
+            "ok": true,
+            "timedOut": false,
+            "atTip": true
+          },
+          "index": {
+            "aheadBlocks": 0,
+            "checkpointHash": "000000000000000000008e99ea96c19e2274ebf5be81db1138f5cf4d736fb55c",
+            "complete": true,
+            "canonicalState": {
+              "fault": {},
+              "ok": true,
+              "rebuild": {
+                "active": false,
+                "status": "complete",
+                "network": "livenet",
+                "complete": true,
+                "startedAt": "2026-09-15T18:22:43.424Z",
+                "updatedAt": "2026-09-19T16:50:16.072Z",
+                "fromHeight": 948000,
+                "completedAt": "2026-09-19T16:50:16.072Z",
+                "bootstrapHash": "000000000000000000004238bec59ce46cd5b28982efe2b90071a51168d67986",
+                "bootstrapHeight": 947999,
+                "indexedThroughBlock": 967724,
+                "indexedThroughBlockHash": "000000000000000000008e99ea96c19e2274ebf5be81db1138f5cf4d736fb55c",
+                "transactionNormalization": "canonical-raw-tx-only"
+              }
+            },
+            "checkpointCanonical": true,
+            "canonicalCheckpointHash": "000000000000000000008e99ea96c19e2274ebf5be81db1138f5cf4d736fb55c",
+            "indexedThroughBlock": 967724,
+            "lagBlocks": 0,
+            "available": true,
+            "ok": true,
+            "readModels": {
+              "confirmedIds": {
+                "count": 505,
+                "maxBlock": 965011
+              },
+              "confirmedTransfers": {
+                "count": 230,
+                "maxBlock": 967383
+              },
+              "confirmedEvents": {
+                "count": 26224,
+                "maxBlock": 967709
+              }
+            },
+            "summarySnapshot": {
+              "blockHash": "000000000000000000008e99ea96c19e2274ebf5be81db1138f5cf4d736fb55c",
+              "coverageByKey": {
+                "growthSummary": 967724,
+                "inceptionSummary": 967724,
+                "infinitySummary": 967724,
+                "logSummary": 967724,
+                "marketplaceSummary": 967724,
+                "tokenSummary": 967724,
+                "workFloor": 967724,
+                "workSummary": 967724
+              },
+              "eligible": true,
+              "generatedAt": "2026-09-19T17:14:18.916Z",
+              "indexedAt": "2026-09-19T17:14:18.916Z",
+              "indexedThroughBlock": 967724,
+              "payloadBytes": 20316043,
+              "snapshotId": "565d5ec643008dbf7772b58e",
+              "ok": true
+            },
+            "scanTipHeight": 967724,
+            "stopReason": ""
+          },
+          "node": {
+            "bestBlockHash": "000000000000000000008e99ea96c19e2274ebf5be81db1138f5cf4d736fb55c",
+            "chain": "main",
+            "headers": 967724,
+            "initialBlockDownload": false,
+            "ok": true,
+            "pruned": false,
+            "tipHeight": 967724,
+            "txindexHeight": 967724,
+            "txindexSynced": true,
+            "verificationProgress": 1
+          },
+          "worker": {
+            "ageMs": 23698,
+            "containment": {
+              "active": false,
+              "checkpointHash": "000000000000000000008e99ea96c19e2274ebf5be81db1138f5cf4d736fb55c",
+              "checkpointHeight": 967724,
+              "failingBlockHeight": null,
+              "fingerprint": "",
+              "network": "livenet",
+              "nextRetryAt": null,
+              "reason": "canonical-scan-success",
+              "repeatCount": 0,
+              "txid": ""
+            },
+            "consecutiveFailures": 0,
+            "error": "",
+            "lastSuccessAt": "2026-09-19T17:23:19.945Z",
+            "maxAgeMs": 600000,
+            "ok": true,
+            "proofReady": true,
+            "proofSource": "current-confirmed-replay",
+            "pendingEvents": {
+              "globalUnresolved": 0,
+              "model": "bounded-best-effort-pending-event-health-v1",
+              "ok": true,
+              "q16PendingUnresolved": 0,
+              "required": true,
+              "scope": "all-observed-pending-protocol-events",
+              "status": {
+                "checked": 0,
+                "deferred": 0,
+                "errors": 0,
+                "ok": true,
+                "q16ParentDeferred": 0,
+                "staleCandidates": 0,
+                "unavailable": false,
+                "unavailableValid": true
+              }
+            },
+            "phase": "canonical-phase-complete"
+          }
+        },
+        "indexedAt": "2026-09-19T17:23:43.643Z",
+        "indexedThroughBlock": 967724,
+        "lagBlocks": 0,
+        "mempoolBase": "http://127.0.0.1:8080",
+        "ok": true,
+        "ready": true,
+        "service": "proofofwork-op-return-api",
+        "tipHeight": 967724,
+        "mode": "readiness"
+      },
+      "attestation": [
+        "1f467cc59f41ed284f89d854ebd943525fe5b525",
+        "2b3d6740704c7dd4217b727532ea1494e11872ea",
+        "6626",
+        "194937167",
+        "1a8c3fc688dd49607e22a93a7f595cf4b0eecc6e56978ecf24d062018ec3c524"
+      ]
+    },
+    "browser": {
+      "profile": "carbonz",
+      "beforePurchasedCount": 1,
+      "afterExplicitRefreshPurchasedCount": 0,
+      "originalPostCount": 1,
+      "walletSigningExercised": false
     }
   }
 }

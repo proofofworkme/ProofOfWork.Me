@@ -1219,3 +1219,35 @@ social actions, authorship and ownership. A regression proves that replies and
 reboosts add no acquired assets, while a qualifying direct transfer contributes
 exactly its original asset once. All 25 Boost tests pass. This is an application
 projection correction; no canonical event or database repair is involved.
+
+The fresh strict ID audit on `85ce565` passed with 586 fetched transactions,
+562 confirmed and 24 pending registry transactions, 535 lifecycle events,
+505 confirmed winners, 22 pending candidates, six active listings and four
+canonical sales. Exact Core-ordered lifecycle parity passed. The 17 historical
+refund candidates and two pending watch items remain historical findings;
+no refund, ownership or ledger changes were made. The retained log is
+`/var/log/proofofwork-audit17-ids-85ce565.log`, with its hash in rollout evidence.
+
+Acquired-assets release `1f467cc59f41ed284f89d854ebd943525fe5b525` passed all
+25 Boost checks on Node 24. The bounded current-history probe independently
+checked all ten confirmed Boost transactions and their Core block positions.
+The same probe reproduced the production defect before deployment (`1 !== 0`),
+then passed on the isolated candidate with zero acquired assets for both live
+profiles. Receipts retain the complete response/transaction evidence. The prior
+full-market verification remains attached to `85ce565`; it is not relabelled as
+a new exhaustive market or signing test for this profile-only change.
+
+Release `1f467cc` is deployed and its production profile/Core probe passed.
+The browser initially retained its previous in-session response; explicit Refresh
+loaded the new projection and displayed Purchased 0 while preserving the original
+post and exact signal totals. Authority services remained uninterrupted; app units
+and maintenance timers were restored, with rollback retained under
+`/data/proofofwork-audit17-cutover-1f467cc59f41-20260919T172013Z`.
+
+Audit 17 remains open for full-history independent math replay, connected-wallet
+and pending/reorg lifecycle coverage, full Boost seal/unspent-ticket verification,
+remaining latency and summary-size work, durable UI recovery-material retention,
+off-host recovery and externally delivered alerts. None is marked resolved by
+these bounded checks. No additional production data repair or cleanup occurred
+during the identity/acquired-assets continuation. Existing protocol, economics,
+issuance, ownership and ledger history were preserved.
