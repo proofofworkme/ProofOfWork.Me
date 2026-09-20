@@ -238,6 +238,7 @@ try {
   const fixturePath = join(backupTestRoot, "logical-backup-fixture.sh");
   const dumpHelper = join(backupTestRoot, "pg-dump-helper");
   const globalsHelper = join(backupTestRoot, "pg-dumpall-helper");
+  const psqlHelper = join(backupTestRoot, "psql-helper");
   const restoreHelper = join(backupTestRoot, "pg-restore-helper");
   const failingFindHelper = join(backupTestRoot, "find-helper");
   mkdirSync(backupRoot, { mode: 0o700 });
@@ -262,6 +263,10 @@ printf 'fault-injection backup bytes\\n' >"\${output}"
 `;
   writeFileSync(dumpHelper, fileWriter);
   writeFileSync(globalsHelper, fileWriter);
+  writeFileSync(
+    psqlHelper,
+    "#!/usr/bin/env bash\nprintf '1048576\\n'\n",
+  );
   writeFileSync(restoreHelper, "#!/usr/bin/env bash\nexit 0\n");
   writeFileSync(
     failingFindHelper,
@@ -273,6 +278,7 @@ exit 41
   for (const helper of [
     dumpHelper,
     globalsHelper,
+    psqlHelper,
     restoreHelper,
     failingFindHelper,
   ]) {
@@ -285,6 +291,7 @@ exit 41
     )
     .replaceAll("/usr/bin/pg_dumpall", globalsHelper)
     .replaceAll("/usr/bin/pg_dump", dumpHelper)
+    .replaceAll("/usr/bin/psql", psqlHelper)
     .replaceAll("/usr/bin/pg_restore", restoreHelper)
     .replaceAll("/usr/bin/find", failingFindHelper);
   writeFileSync(fixturePath, fixture);
@@ -331,6 +338,7 @@ try {
   const fixturePath = join(overlapTestRoot, "logical-backup-overlap-fixture.sh");
   const dumpHelper = join(overlapTestRoot, "blocking-pg-dump-helper");
   const globalsHelper = join(overlapTestRoot, "pg-dumpall-helper");
+  const psqlHelper = join(overlapTestRoot, "psql-helper");
   const restoreHelper = join(overlapTestRoot, "pg-restore-helper");
   const startedPath = join(overlapTestRoot, "dump-started");
   const releasePath = join(overlapTestRoot, "release-dump");
@@ -380,8 +388,12 @@ done
 printf 'overlap globals bytes\\n' >"\${output}"
 `,
   );
+  writeFileSync(
+    psqlHelper,
+    "#!/usr/bin/env bash\nprintf '1048576\\n'\n",
+  );
   writeFileSync(restoreHelper, "#!/usr/bin/env bash\nexit 0\n");
-  for (const helper of [dumpHelper, globalsHelper, restoreHelper]) {
+  for (const helper of [dumpHelper, globalsHelper, psqlHelper, restoreHelper]) {
     chmodSync(helper, 0o700);
   }
   const fixture = postgresBackup
@@ -395,6 +407,7 @@ printf 'overlap globals bytes\\n' >"\${output}"
     )
     .replaceAll("/usr/bin/pg_dumpall", globalsHelper)
     .replaceAll("/usr/bin/pg_dump", dumpHelper)
+    .replaceAll("/usr/bin/psql", psqlHelper)
     .replaceAll("/usr/bin/pg_restore", restoreHelper);
   writeFileSync(fixturePath, fixture);
   chmodSync(fixturePath, 0o700);

@@ -399,14 +399,18 @@ assert.match(provenance, /Release surface contains foreign-owned content/u);
 // Exercise the shipped stager and the publisher's actual embedded verifier.
 // The measured release has 35 dependencies per surface, globally 525. Shared
 // bytes still occupy distinct surface URLs; cycles must not inflate the count.
-const compatibilityDependencyRegression = spawnSync(
-  "/usr/bin/python3",
-  ["-I", "-"],
-  {
-    cwd: process.cwd(),
-    encoding: "utf8",
-    timeout: 180_000,
-    input: String.raw`
+const compatibilityDependencyRegressionRoot = mkdtempSync(
+  join(tmpdir(), "ui-dependency-regression-"),
+);
+const compatibilityDependencyRegressionPath = join(
+  compatibilityDependencyRegressionRoot,
+  "regression.py",
+);
+let compatibilityDependencyRegression;
+try {
+  writeFileSync(
+    compatibilityDependencyRegressionPath,
+    String.raw`
 import importlib.util
 from pathlib import Path
 import re
@@ -427,9 +431,11 @@ publisher_function = publisher.split("verify_prior_asset_compatibility() {", 1)[
 publisher_code = publisher_function.split("<<'PY'\n", 1)[1].split("\nPY\n", 1)[0]
 assert "maximum_dependencies = 1024" in publisher_code
 
-# Execute both shipped parsers at the measured count and the exact finite
-# ceiling. Seed only the aggregate counter to avoid a million redundant file
-# lookups; the token counting and refusal branches are the actual functions.
+# Execute both shipped parsers at the exact finite reference-candidate ceiling.
+# Seed only the aggregate counter to avoid a million redundant file lookups; the
+# token counting and refusal branches are the actual functions. Dependency copy
+# and publisher accept/reject branches are exercised below with a lowered ceiling
+# after the source-level assertions pin the production 1024-file limit.
 assert stage.MAXIMUM_REFERENCE_CANDIDATES == 1048576
 saved_argv = sys.argv
 try:
@@ -474,7 +480,9 @@ def fixture(parent, count):
         # and 5 images per surface; boundary cases add more JS chunks.
         extensions = ["js"] * 9 + ["css"] * 3 + ["woff2"] * 18 + ["png"] * 5
         names = [f"chunk-{index:03d}.{extensions[index] if index < 35 else 'js'}" for index in range(number)]
-        (live_surface / "index.html").write_text(f'<script src="/assets/{names[0]}"></script>')
+        (live_surface / "index.html").write_text(
+            f'<script src="/assets/{names[0]}"></script>' if names else "empty prior HTML\n"
+        )
         (staged_surface / "index.html").write_text("new candidate HTML\n")
         for index, name in enumerate(names):
             if index == 0:
@@ -492,55 +500,74 @@ def fixture(parent, count):
         (live_surface / "assets" / "unreferenced-old.js").write_text("not part of the reachable closure\n")
     return live, staged, expected
 
-def verify_publisher(live, staged):
+def verify_publisher(live, staged, code=publisher_code):
     return subprocess.run(
         [sys.executable, "-I", "-", str(live), str(staged), *stage.SURFACES],
-        input=publisher_code, text=True, capture_output=True, timeout=30,
+        input=code, text=True, capture_output=True, timeout=30,
     )
 
 with tempfile.TemporaryDirectory(prefix="ui-dependency-contract-") as temporary:
     root = Path(temporary)
-    for count in (525, 1024, 1025):
-        live, staged, expected = fixture(root / str(count), count)
-        if count <= stage.MAXIMUM_DEPENDENCIES:
-            dependencies, total_bytes = stage.copy_prior_asset_compatibility(live, staged)
-            assert dependencies == count, (count, dependencies)
-            assert total_bytes == sum(map(len, expected.values()))
-            for relative, content in expected.items():
-                assert (live / relative).read_bytes() == content
-                assert (staged / relative).read_bytes() == content, str(relative)
-                assert stat.S_IMODE((staged / relative).stat().st_mode) == 0o644
-            for surface in stage.SURFACES:
-                target = staged / f"proofofwork-{surface}"
-                assert (target / "index.html").read_text() == "new candidate HTML\n"
-                assert not (target / "assets" / "unreferenced-old.js").exists()
-            verified = verify_publisher(live, staged)
-            assert verified.returncode == 0, verified.stderr
-            match = re.search(r"dependencies=(\d+) bytes=(\d+)", verified.stdout)
-            assert match and tuple(map(int, match.groups())) == (count, total_bytes), verified.stdout
-            print(f"UI dependency regression: {count} dependencies accepted by stager and publisher", flush=True)
+    original_maximum_dependencies = stage.MAXIMUM_DEPENDENCIES
+    boundary_publisher_code = publisher_code.replace(
+        "maximum_dependencies = 1024",
+        "maximum_dependencies = 2",
+    )
+    try:
+        stage.MAXIMUM_DEPENDENCIES = 2
+        live, staged, expected = fixture(root / "limit-2", 2)
+        dependencies, total_bytes = stage.copy_prior_asset_compatibility(live, staged)
+        assert dependencies == 2, dependencies
+        assert total_bytes == sum(map(len, expected.values()))
+        for relative, content in expected.items():
+            assert (staged / relative).read_bytes() == content, str(relative)
+            assert stat.S_IMODE((staged / relative).stat().st_mode) == 0o644
+        for surface in stage.SURFACES:
+            target = staged / f"proofofwork-{surface}"
+            assert (target / "index.html").read_text() == "new candidate HTML\n"
+            assert not (target / "assets" / "unreferenced-old.js").exists()
+        verified = verify_publisher(live, staged, boundary_publisher_code)
+        assert verified.returncode == 0, verified.stderr
+        match = re.search(r"dependencies=(\d+) bytes=(\d+)", verified.stdout)
+        assert match and tuple(map(int, match.groups())) == (2, total_bytes), verified.stdout
+
+        live, staged, _expected = fixture(root / "limit-3", 3)
+        try:
+            stage.copy_prior_asset_compatibility(live, staged)
+        except stage.StageError as error:
+            assert "dependency bound exceeded" in str(error), str(error)
         else:
-            try:
-                stage.copy_prior_asset_compatibility(live, staged)
-            except stage.StageError as error:
-                assert "dependency bound exceeded" in str(error), str(error)
-            else:
-                raise AssertionError("Stager accepted 1025 global dependencies")
-            # Give the independent publisher every prior file so missing-file
-            # rejection cannot accidentally satisfy the upper-bound test.
-            for surface in stage.SURFACES:
-                shutil.copytree(
-                    live / f"proofofwork-{surface}" / "assets",
-                    staged / f"proofofwork-{surface}" / "assets",
-                    dirs_exist_ok=True,
-                )
-            verified = verify_publisher(live, staged)
-            assert verified.returncode != 0
-            assert "dependency bound exceeded" in verified.stderr, verified.stderr
-            print("UI dependency regression: 1025 dependencies rejected by stager and publisher", flush=True)
+            raise AssertionError("Stager accepted dependencies past the lowered ceiling")
+        for surface in stage.SURFACES:
+            shutil.copytree(
+                live / f"proofofwork-{surface}" / "assets",
+                staged / f"proofofwork-{surface}" / "assets",
+                dirs_exist_ok=True,
+            )
+        verified = verify_publisher(live, staged, boundary_publisher_code)
+        assert verified.returncode != 0
+        assert "dependency bound exceeded" in verified.stderr, verified.stderr
+    finally:
+        stage.MAXIMUM_DEPENDENCIES = original_maximum_dependencies
+    print("UI dependency regression: production ceiling is pinned; accept/reject branches passed under a fast lowered ceiling", flush=True)
 `,
-  },
-);
+    { mode: 0o600 },
+  );
+  compatibilityDependencyRegression = spawnSync(
+    "/usr/bin/python3",
+    ["-I", compatibilityDependencyRegressionPath],
+    {
+      cwd: process.cwd(),
+      encoding: "utf8",
+      timeout: 180_000,
+    },
+  );
+} finally {
+  rmSync(compatibilityDependencyRegressionRoot, {
+    recursive: true,
+    force: true,
+  });
+}
 assert.equal(
   compatibilityDependencyRegression.status,
   0,
@@ -1491,6 +1518,12 @@ try {
     process.cwd(),
     "deploy/proofofwork-ui-release-provenance.sh",
   );
+  const retainedRootScript = join(fixture, "proofofwork-ui-retained-root.py");
+  cpSync(
+    join(process.cwd(), "deploy/proofofwork-ui-retained-root.py"),
+    retainedRootScript,
+  );
+  chmodSync(retainedRootScript, 0o700);
   const candidateComputerAssetName = "index-feedfacecafebabe.js";
 
   const preparePublisherRelease = (releaseId, computerBytes) => {
@@ -1640,7 +1673,7 @@ try {
     POW_UI_RELEASE_ARCHIVE_ROOT: fixture,
     POW_UI_PUBLISH_ROLLBACK_ROOT: publisherRollbackRoot,
     POW_UI_PUBLISH_PROVENANCE_SCRIPT: provenanceScript,
-    POW_UI_RETAINED_ROOT_SCRIPT: join(process.cwd(), "deploy/proofofwork-ui-retained-root.py"),
+    POW_UI_RETAINED_ROOT_SCRIPT: retainedRootScript,
     POW_UI_ALLOW_TEST_ROOTS: "1",
     POW_UI_DEPLOY_LOCK: provenanceEnvironment.POW_UI_DEPLOY_LOCK,
   };

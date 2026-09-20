@@ -806,6 +806,9 @@ const WALLET_SCOPED_TOKEN_CACHE_TTL_MS = Number(
 const WALLET_SCOPED_TOKEN_CACHE_MAX_ENTRIES = Number(
   process.env.WALLET_SCOPED_TOKEN_CACHE_MAX_ENTRIES ?? 300,
 );
+const WALLET_SCOPED_TOKEN_IN_FLIGHT_MAX_ENTRIES = Number(
+  process.env.WALLET_SCOPED_TOKEN_IN_FLIGHT_MAX_ENTRIES ?? 100,
+);
 const WORK_TOKEN_SEAL_RECOVERY_CACHE_TTL_MS = Number(
   process.env.WORK_TOKEN_SEAL_RECOVERY_CACHE_TTL_MS ?? 60_000,
 );
@@ -1500,6 +1503,7 @@ const BACKGROUND_REFRESH_LAST_STARTED = new Map();
 const RESPONSE_CACHE = new Map();
 const EXACT_TIP_TOKEN_CACHE = new Map();
 const WALLET_SCOPED_TOKEN_CACHE = new Map();
+const WALLET_SCOPED_TOKEN_IN_FLIGHT = new Map();
 const WORK_TOKEN_LIVE_SEEN_TXIDS = new Map();
 const WORK_TOKEN_NON_MINT_HISTORY_CACHE = new Map();
 const WORK_TOKEN_PARTICIPANT_RECOVERY_CACHE = new Map();
@@ -41604,6 +41608,39 @@ function rememberWalletScopedTokenPayload(cacheKey, payload, now = Date.now()) {
   return payload;
 }
 
+async function walletScopedTokenSingleFlight(cacheKey, load) {
+  if (
+    !cacheKey ||
+    WALLET_SCOPED_TOKEN_IN_FLIGHT_MAX_ENTRIES <= 0 ||
+    typeof load !== "function"
+  ) {
+    return await load();
+  }
+  const pending = WALLET_SCOPED_TOKEN_IN_FLIGHT.get(cacheKey);
+  if (pending) {
+    return await pending;
+  }
+  while (
+    WALLET_SCOPED_TOKEN_IN_FLIGHT.size >=
+    WALLET_SCOPED_TOKEN_IN_FLIGHT_MAX_ENTRIES
+  ) {
+    const oldestKey = WALLET_SCOPED_TOKEN_IN_FLIGHT.keys().next().value;
+    if (!oldestKey) {
+      break;
+    }
+    WALLET_SCOPED_TOKEN_IN_FLIGHT.delete(oldestKey);
+  }
+  const promise = Promise.resolve()
+    .then(load)
+    .finally(() => {
+      if (WALLET_SCOPED_TOKEN_IN_FLIGHT.get(cacheKey) === promise) {
+        WALLET_SCOPED_TOKEN_IN_FLIGHT.delete(cacheKey);
+      }
+    });
+  WALLET_SCOPED_TOKEN_IN_FLIGHT.set(cacheKey, promise);
+  return await promise;
+}
+
 async function walletScopedTokenPayload(
   network,
   tokenScope = "",
@@ -41641,6 +41678,12 @@ async function walletScopedTokenPayload(
   if (cachedWalletPayload) {
     return cachedWalletPayload;
   }
+  return await walletScopedTokenSingleFlight(walletCacheKey, async () => {
+    const sharedCachedWalletPayload =
+      cachedWalletScopedTokenPayload(walletCacheKey);
+    if (sharedCachedWalletPayload) {
+      return sharedCachedWalletPayload;
+    }
   const withWalletAuthority = (payload) => {
     const normalizedPayload = walletScopedWorkPayloadWithQ16Supply(
       payload,
@@ -41821,6 +41864,7 @@ async function walletScopedTokenPayload(
     walletCacheKey,
     withWalletAuthority(resolvedPayload),
   );
+  });
 }
 
 async function indexedWalletClosedListings(network, tokenScope, addresses) {

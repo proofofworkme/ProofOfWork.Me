@@ -7,6 +7,8 @@ warn_inode_percent="${POW_STORAGE_WARN_INODE_PERCENT:-75}"
 critical_inode_percent="${POW_STORAGE_CRITICAL_INODE_PERCENT:-85}"
 root_min_free_bytes="${POW_STORAGE_ROOT_MIN_FREE_BYTES:-10737418240}"
 data_min_free_bytes="${POW_STORAGE_DATA_MIN_FREE_BYTES:-107374182400}"
+root_warn_free_bytes="${POW_STORAGE_ROOT_WARN_FREE_BYTES:-21474836480}"
+data_warn_free_bytes="${POW_STORAGE_DATA_WARN_FREE_BYTES:-214748364800}"
 
 for value in \
   "${warn_percent}" \
@@ -18,12 +20,24 @@ for value in \
     exit 64
   fi
 done
-for value in "${root_min_free_bytes}" "${data_min_free_bytes}"; do
+for value in \
+  "${root_min_free_bytes}" \
+  "${data_min_free_bytes}" \
+  "${root_warn_free_bytes}" \
+  "${data_warn_free_bytes}"; do
   if [[ ! "${value}" =~ ^[0-9]+$ ]] || ((value < 1)); then
     echo "Storage free-byte thresholds must be positive integers." >&2
     exit 64
   fi
 done
+if ((root_warn_free_bytes <= root_min_free_bytes)); then
+  echo "Root storage free-byte warning must be greater than the minimum." >&2
+  exit 64
+fi
+if ((data_warn_free_bytes <= data_min_free_bytes)); then
+  echo "Data storage free-byte warning must be greater than the minimum." >&2
+  exit 64
+fi
 if ((warn_percent >= critical_percent)); then
   echo "Storage warning percentage must be lower than the critical percentage." >&2
   exit 64
@@ -74,8 +88,10 @@ for target in "${targets[@]}"; do
   fi
 
   minimum_available_bytes="${root_min_free_bytes}"
+  warning_available_bytes="${root_warn_free_bytes}"
   if [[ "${target}" == "/data" ]]; then
     minimum_available_bytes="${data_min_free_bytes}"
+    warning_available_bytes="${data_warn_free_bytes}"
   fi
   printf 'storage target=%s filesystem=%s used_percent=%s inode_used_percent=%s available_bytes=%s available_inodes=%s\n' \
     "${target}" \
@@ -91,7 +107,8 @@ for target in "${targets[@]}"; do
     echo "CRITICAL storage runway breached for ${target}." >&2
     ((criticals += 1))
   elif ((used_percent >= warn_percent)) ||
-    ((inode_used_percent >= warn_inode_percent)); then
+    ((inode_used_percent >= warn_inode_percent)) ||
+    ((available_bytes < warning_available_bytes)); then
     echo "WARNING storage runway is narrowing for ${target}." >&2
     ((warnings += 1))
   fi
