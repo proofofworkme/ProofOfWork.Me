@@ -265,12 +265,37 @@ register_candidate() {
   path_time["${path}"]="${timestamp}"
 }
 
-while IFS= read -r -d '' path; do
-  register_candidate "${path}"
-done < <(find "${www_root}" -mindepth 1 -maxdepth 1 -type d -print0)
-while IFS= read -r -d '' path; do
-  register_candidate "${path}"
-done < <(find "${var_tmp_root}" -mindepth 1 -maxdepth 1 -type d -print0)
+# A process-substitution producer can fail without failing its read loop. Finish
+# and check every discovery scan under the deployment lock before considering
+# any removal, including when a failed scan already emitted valid candidates.
+discovery_dir="$(mktemp --directory --tmpdir="${lock_parent}" '.proofofwork-ui-storage-discovery.XXXXXXXXXX')"
+cleanup_discovery_dir() {
+  if [[ -n "${discovery_dir:-}" ]]; then
+    /usr/bin/rm --recursive --force --one-file-system -- "${discovery_dir}" || true
+  fi
+}
+trap cleanup_discovery_dir EXIT
+inventory_discovery_root() {
+  local root="$1" inventory="$2"
+  # The top-level scan is time bounded, and Bash's 1024-byte file-size blocks
+  # bound each private inventory to 8 MiB even on an unexpectedly crowded root.
+  if ! (
+    ulimit -c 0 || exit 1
+    ulimit -f 8192 || exit 1
+    timeout --signal=TERM --kill-after=5s 60s \
+      find "${root}" -mindepth 1 -maxdepth 1 -type d -print0
+  ) >"${inventory}"; then
+    echo "Refusing retention because UI scratch discovery failed: ${root}" >&2
+    exit 1
+  fi
+}
+inventory_discovery_root "${www_root}" "${discovery_dir}/www.paths"
+inventory_discovery_root "${var_tmp_root}" "${discovery_dir}/var-tmp.paths"
+for inventory in "${discovery_dir}/www.paths" "${discovery_dir}/var-tmp.paths"; do
+  while IFS= read -r -d '' path; do
+    register_candidate "${path}"
+  done <"${inventory}"
+done
 
 classes=(failed stage staging stage-root ui-stage-root var-tmp-ui)
 for class in "${classes[@]}"; do
@@ -295,7 +320,11 @@ for class in "${classes[@]}"; do
   if ((${#rows[@]} == 0)); then
     continue
   fi
-  mapfile -t ordered < <(printf '%s\n' "${rows[@]}" | sort -nr)
+  if ! printf '%s\n' "${rows[@]}" | sort -nr >"${discovery_dir}/ordered"; then
+    echo "Refusing retention because UI scratch candidate ordering failed." >&2
+    exit 1
+  fi
+  mapfile -t ordered <"${discovery_dir}/ordered"
   for index in "${!ordered[@]}"; do
     descriptor="${ordered[${index}]#* }"
     timestamp="${group_time[${descriptor}]}"

@@ -9,6 +9,7 @@ archive_root="${POW_UI_RELEASE_ARCHIVE_ROOT:-/var/backups/proofofwork-ui/release
 rollback_root_parent="${POW_UI_PUBLISH_ROLLBACK_ROOT:-/var/backups/proofofwork-ui/rollback-roots}"
 provenance_script="${POW_UI_PUBLISH_PROVENANCE_SCRIPT:-/usr/local/sbin/proofofwork-ui-release-provenance}"
 retained_root_script="${POW_UI_RETAINED_ROOT_SCRIPT:-/usr/local/sbin/proofofwork-ui-retained-root}"
+capacity_script="${POW_UI_CAPACITY_SCRIPT:-/usr/local/sbin/proofofwork-ui-capacity}"
 deploy_lock="${POW_UI_DEPLOY_LOCK:-/run/proofofwork-ui/deploy.lock}"
 allow_test_roots="${POW_UI_ALLOW_TEST_ROOTS:-}"
 
@@ -68,6 +69,7 @@ if [[ "${allow_test_roots}" != "1" ]] && {
     [[ "${rollback_root_parent}" != "/var/backups/proofofwork-ui/rollback-roots" ]] ||
   [[ "${provenance_script}" != "/usr/local/sbin/proofofwork-ui-release-provenance" ]] ||
   [[ "${retained_root_script}" != "/usr/local/sbin/proofofwork-ui-retained-root" ]] ||
+  [[ "${capacity_script}" != "/usr/local/sbin/proofofwork-ui-capacity" ]] ||
     [[ "${deploy_lock}" != "/run/proofofwork-ui/deploy.lock" ]];
 }; then
   echo "Non-production UI publisher paths require POW_UI_ALLOW_TEST_ROOTS=1." >&2
@@ -193,6 +195,18 @@ if [[ -e "${stage_root}/.proofofwork-ui-release" ||
   echo "Staged UI root must not carry a pre-existing active manifest." >&2
   exit 1
 fi
+if [[ ! -f "${capacity_script}" || -L "${capacity_script}" ||
+  "$(realpath -e -- "${capacity_script}" 2>/dev/null || true)" != "${capacity_script}" ||
+  "$(stat --format=%u -- "${capacity_script}")" != "${EUID}" ]] ||
+  ((8#$(stat --format=%a -- "${capacity_script}") & 07022)); then
+  echo "UI capacity helper must be a canonical owner-controlled regular file." >&2
+  exit 64
+fi
+
+ui_capacity_check() {
+  /usr/bin/python3 -I -B "${capacity_script}" check --path "$1" \
+    --additional-bytes "$2" --additional-inodes "$3" --phase "$4" >&2
+}
 
 www_device="$(stat --format=%d -- "${www_root}")"
 for exchange_path in "${stage_root}" "${rollback_root_parent}"; do
@@ -300,7 +314,12 @@ verify_prior_asset_compatibility() {
   if [[ ! -e "${www_root}/proofofwork-boost" && ! -L "${www_root}/proofofwork-boost" ]]; then
     prior_surfaces=("${legacy_surfaces[@]}")
   fi
-  /usr/bin/python3 -I - "${www_root}" "${stage_root}" "${prior_surfaces[@]}" <<'PY'
+  # Bound the compatibility scan so a large retained rollback tree cannot
+  # hold the deployment lock indefinitely. The manifest-driven checks below
+  # remain authoritative; timeout is a safe failure that leaves production
+  # untouched.
+  timeout --signal=TERM --kill-after=5s 45s \
+    /usr/bin/python3 -I - "${www_root}" "${stage_root}" "${prior_surfaces[@]}" <<'PY'
 import hashlib
 import os
 import re
@@ -624,6 +643,8 @@ if ! flock --exclusive --nonblock "${deploy_lock_fd}"; then
   exit 1
 fi
 
+ui_capacity_check "${www_root}" 131072 8 publisher-admission
+
 # Repeat the growth guard under the shared lock so a lock-aware classifier or
 # publisher cannot race the earlier fail-fast check.
 refuse_existing_rollback_roots
@@ -758,6 +779,7 @@ if [[ -e "${probe_left}" || -L "${probe_left}" || -e "${probe_right}" || -L "${p
   echo "Atomic exchange probe path already exists." >&2
   exit 1
 fi
+ui_capacity_check "${staging_root}" 65536 4 publisher-exchange-probe
 mkdir --mode=0700 -- "${probe_left}" "${probe_right}"
 probe_present=1
 committed=0
@@ -882,6 +904,16 @@ fi
 # exchange. This closes the window in which an out-of-band writer could drift
 # a fully attributed or legacy bytes-only root after the first locked check.
 verify_current_rollback_capability
+
+# Publication will record two manifests and verify the newly active archive.
+# Charge that verification peak before arming the exchange. Later refusals still
+# use the existing allocation-free rollback path, without a capacity guard.
+ui_capacity_check "${archive_root}" 131072 8 publisher-manifest-sidecar
+ui_capacity_check "${www_root}" 131072 8 publisher-manifest-live
+/usr/bin/python3 -I -B "${capacity_script}" check-archive \
+  --path "${TMPDIR:-/tmp}" --archive "${archive}" \
+  --additional-bytes 67108864 --additional-inodes 16 \
+  --phase publisher-before-exchange >&2
 
 if [[ -n "${POW_UI_PUBLISH_TEST_FAIL_BEFORE_EXCHANGE:-}" ]]; then
   echo "Injected failure after candidate verification and before atomic exchange." >&2

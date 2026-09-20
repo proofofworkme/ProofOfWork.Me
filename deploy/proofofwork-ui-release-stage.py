@@ -9,6 +9,8 @@ import ctypes
 import errno
 import fcntl
 import hashlib
+import importlib.machinery
+import importlib.util
 import os
 import re
 import shutil
@@ -72,6 +74,50 @@ CSS_IMPORT_PATTERN = re.compile(
 
 class StageError(RuntimeError):
     pass
+
+
+_capacity_module = None
+
+
+def capacity_helper():
+    """Load only the owner-controlled sibling shipped with this stager."""
+    global _capacity_module
+    if _capacity_module is None:
+        parent = Path(__file__).resolve().parent
+        candidates = (parent / "proofofwork-ui-capacity.py", parent / "proofofwork-ui-capacity")
+        path = next((candidate for candidate in candidates if candidate.exists()), candidates[0])
+        canonical_safe_regular_file(path, "UI capacity helper", os.geteuid())
+        # Production helpers share root-owned /usr/local/sbin. An unprivileged
+        # source checkout can have group-writable repository directories, like
+        # the stager itself; this does not change any capacity policy.
+        if os.geteuid() == 0 and os.environ.get("POW_UI_ALLOW_TEST_ROOTS", "") != "1":
+            canonical_safe_directory(parent, "UI capacity helper parent", 0)
+        loader = importlib.machinery.SourceFileLoader("proofofwork_ui_capacity", str(path))
+        spec = importlib.util.spec_from_loader(loader.name, loader)
+        module = importlib.util.module_from_spec(spec)
+        # Do not create __pycache__ alongside installed production helpers.
+        exec(compile(path.read_bytes(), str(path), "exec"), module.__dict__)
+        _capacity_module = module
+    return _capacity_module
+
+
+def capacity_guard(path: Path, additional_bytes: int, additional_inodes: int, phase: str) -> None:
+    helper = capacity_helper()
+    try:
+        helper.check_capacity(path, additional_bytes, additional_inodes, phase)
+    except (helper.CapacityError, OSError) as error:
+        raise StageError(str(error)) from error
+
+
+def copy_capacity_guard(source: Path, destination_parent: Path, phase: str, extra_entries: int = 0) -> None:
+    helper = capacity_helper()
+    try:
+        bound = helper.tree_bound(source, destination_parent)
+        block = helper.allocation_block(destination_parent)
+    except (helper.CapacityError, OSError) as error:
+        raise StageError(str(error)) from error
+    capacity_guard(destination_parent, bound["additionalBytes"] + extra_entries * helper.entry_bytes(0, block),
+                   bound["additionalInodes"] + extra_entries, phase)
 
 
 class PayloadBudget(TypedDict):
@@ -224,6 +270,8 @@ class CandidateManagedDeduplicator:
                             file_identity(os.stat(name, dir_fd=parent, follow_symlinks=False)) != file_identity(expected)):
                         fail("Managed deduplication file changed before linking.")
                 temporary = f".proofofwork-dedup-{os.urandom(16).hex()}"
+                capacity_guard(self.root, capacity_helper().entry_bytes(0, capacity_helper().allocation_block(self.root)),
+                               1, "stage-dedup-link")
                 created = False
                 try:
                     os.link(source_name, temporary, src_dir_fd=source_parent,
@@ -760,6 +808,9 @@ def ensure_stage_parent_directories(
             if not stat.S_ISDIR(stage_details.st_mode) or stat.S_ISLNK(stage_details.st_mode):
                 fail(f"Staged UI compatibility parent is not a real directory: {stage_cursor}")
             continue
+        capacity_guard(stage_cursor.parent,
+                       capacity_helper().entry_bytes(0, capacity_helper().allocation_block(stage_cursor.parent)),
+                       1, "stage-compatibility-directory")
         os.mkdir(stage_cursor, stat.S_IMODE(live_details.st_mode))
         if os.geteuid() == 0:
             os.chown(stage_cursor, live_details.st_uid, live_details.st_gid)
@@ -773,6 +824,7 @@ def copy_prior_file(
     destination: Path,
     expected_digest: bytes,
 ) -> None:
+    copy_capacity_guard(source, destination.parent, "stage-compatibility-file")
     source_fd = os.open(source, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
     destination_fd: int | None = None
     created_identity: tuple[int, int] | None = None
@@ -1113,6 +1165,10 @@ def main() -> int:
             maximum_payload_bytes,
         )
 
+        # Guard before creating private scratch, then refresh immediately before
+        # every real copy. Do not assume future deduplication or removals reclaim
+        # any bytes; only a new statvfs measurement can observe released space.
+        copy_capacity_guard(www_root, staging_root, "stage-private-root", extra_entries=2)
         temporary_parent = Path(
             tempfile.mkdtemp(
                 prefix=f".proofofwork-ui-stage-{arguments.release_id}.",
@@ -1120,6 +1176,7 @@ def main() -> int:
             )
         )
         candidate = temporary_parent / "candidate"
+        copy_capacity_guard(www_root, temporary_parent, "stage-live-copy")
         run_checked(
             [
                 "/usr/bin/cp",
@@ -1148,6 +1205,7 @@ def main() -> int:
                 shutil.rmtree(destination)
             elif os.path.lexists(destination):
                 fail(f"Copied new managed UI root unexpectedly exists: {destination}")
+            copy_capacity_guard(surfaces_root / surface, candidate, f"stage-incoming-{surface}")
             run_checked(
                 [
                     "/usr/bin/cp",
@@ -1243,6 +1301,9 @@ def main() -> int:
         if os.path.lexists(stage_root):
             fail(f"UI stage root appeared concurrently: {stage_root}")
 
+        capacity_guard(staging_root,
+                       capacity_helper().entry_bytes(0, capacity_helper().allocation_block(staging_root)),
+                       1, "stage-atomic-publication")
         run_checked(["/usr/bin/sync", "--file-system", str(candidate)])
         rename_directory_noreplace(candidate, stage_root)
         # Never remove the release-bound stage after this atomic publication;

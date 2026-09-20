@@ -1105,7 +1105,13 @@ It reads existing storage-health journal observations and forecasts time to the
 same 10 GiB root / 100 GiB data reserve using the larger net consumption rate
 over one or seven days. It warns within seven days and is critical within one;
 missing historical coverage is explicitly unknown and exits nonzero. These are
-historical estimates, not guarantees against sudden growth. Bounded allocation
+historical estimates, not guarantees against sudden growth. The monitor also
+emits `storage-observation-health` and warns if the latest valid five-minute
+producer sample is missing or older than fifteen minutes. It independently
+checks current available bytes against the default UI 12/10 GiB warning/critical
+thresholds, or node 20/10 GiB root and 200/100 GiB data thresholds. A flat
+historical forecast cannot make stale monitoring or low current headroom pass.
+This does not certify timer state or external alert delivery. Bounded allocation
 measurements separately identify backup, database tablespace, cache, deployment
 and log usage; shared blocks mean these figures must not be summed. Known
 allocation classes carry explicit review thresholds and emit
@@ -3170,9 +3176,11 @@ Both scheduled release-prune services run explicitly in `--dry-run` mode and
 remove no archives. An explicitly approved applying run retains and skips
 unverifiable archives, counts only verified pairs toward the keep limit,
 prunes older verified pairs, then exits nonzero so the integrity gap remains
-alert-visible. Applying UI retention refuses more than one complete-root
-rollback. Dry-run can inspect up to nine verified roots, protects each bound
-archive, and exits 1 with a warning when multiple roots remain. It never fabricates a
+alert-visible. Both UI retention modes inspect up to nine verified complete-root
+rollbacks and protect every bound archive. Multiple roots produce a warning;
+the mode still determines whether eligible unprotected archive sets are removed.
+Always pass `--dry-run` for inspection: omitting the mode currently selects
+`--apply`. The scheduled services explicitly pass `--dry-run`. It never fabricates a
 missing checksum after the fact. Restore a missing sidecar only from trusted
 deployment evidence and only after separately proving the archived bytes;
 otherwise keep the archive quarantined for operator review.
@@ -3297,15 +3305,29 @@ before enabling the applying service. Both the applying cleanup and recursive
 provenance verifier are bounded to 30 minutes; the recursive jobs run at nice
 10 with idle I/O and low CPU/I/O weights.
 
-Install `proofofwork-ui-release-stage.py` and
-`proofofwork-ui-release-publish.sh` as root-owned executables, then create the
+The scratch cleaner completes both top-level discovery scans before processing
+any candidate. Each NUL inventory is limited to 8 MiB and sixty seconds under
+the deployment lock; discovery or ordering failure aborts without removing
+candidates. Only that invocation's private discovery files are removed on exit.
+
+Install `proofofwork-ui-capacity.py` before the revised provenance, staging and
+publication helpers. These helpers intentionally fail closed if their shared
+capacity dependency is absent or unsafe. Install all four as root-owned
+executables, then create the
 publisher's exact rollback-parent prerequisite before the first publish:
+
+Before an approved installation, compare each deployed helper with the reviewed
+candidate and reconcile any production differences. The current publisher source
+preserves the 45-second compatibility-scan timeout observed in Audit 19. Do not
+overwrite any additional deployed difference without reviewing it first.
 
 ```bash
 systemctl stop proofofwork-ui-release-provenance.timer \
   proofofwork-ui-release-provenance.service \
   proofofwork-ui-release-prune.timer \
   proofofwork-ui-release-prune.service
+install -o root -g root -m 0755 deploy/proofofwork-ui-capacity.py \
+  /usr/local/sbin/proofofwork-ui-capacity
 install -o root -g root -m 0755 deploy/proofofwork-ui-release-provenance.sh \
   /usr/local/sbin/proofofwork-ui-release-provenance
 install -o root -g root -m 0755 deploy/proofofwork-ui-release-stage.py \
@@ -3328,6 +3350,35 @@ install -d -o root -g root -m 0700 /var/backups/proofofwork-ui/rollback-roots
 install -d -o root -g root -m 0700 /var/tmp/proofofwork-deploy
 systemctl daemon-reload
 ```
+
+The capacity helper uses integer allocation bounds and fresh filesystem
+measurements. Each guarded allocation must leave 10 GiB plus 64 MiB on `/`,
+and at least 128 free inodes after its estimated requirement. A separate
+allocation filesystem such as `/run` needs its own allocation budget plus
+64 MiB, while `/` still retains its reserve. Tree copies charge full logical
+bytes, block rounding, extended attributes and metadata without anticipating
+sparse-file savings, hardlinks, deduplication or future cleanup. Archive
+extraction bounds reject unsafe paths, links, sparse entries and excessive
+entry/byte counts before extraction. There are no reserve/free-space overrides.
+
+Staging rechecks before the live copy, incoming surfaces, compatibility copies,
+deduplication metadata and final stage publication. Provenance bounds its private
+inventory files to 16 MiB with core dumps disabled, and checks scratch extraction
+and manifest allocations. The publisher checks the verification peak before
+exchange; a later refusal still follows its existing rollback path without a
+new capacity prerequisite. These checks do not reserve blocks against unrelated
+writers or intercept manual builds, transfers or archive creation. Gate those
+operations separately, with current bounds for every concurrent copy. The
+recipes below use `check-copy` before archive assembly and `check-pack` before
+tar/gzip; source and payload transfer/extraction also require measured admission
+checks. A successful individual phase is not proof that a whole future release
+will fit. Keep the deployment lock through the reviewed sequence.
+
+The exact Audit 5 controllers under `deploy/audit5/` retain their historical
+helper hashes and approval scope. They intentionally reject revised helper
+bytes; do not weaken those pins or reuse them as current installers. Before any
+approved helper installation, compare the deployed helper with the repository
+and preserve separately reviewed production differences.
 
 Build the 14 primary surfaces from one detached source checkout and copy
 Computer byte-for-byte as the `nft` compatibility alias. Prepare one complete
@@ -3675,9 +3726,14 @@ if [[ ! -d "${archive_root}" || -L "${archive_root}" ||
   echo "The UI archive root must be canonical and owner-controlled." >&2
   exit 1
 fi
+/usr/bin/python3 -I -B /usr/local/sbin/proofofwork-ui-capacity check --path "${deploy_root}" \
+  --additional-bytes 65536 --additional-inodes 4 --phase archive-payload-directory
 archive_payload="$(mktemp -d "${deploy_root}/.archive-${release_id}.XXXXXXXXXX")"
 install -d -o root -g root -m 0700 "${archive_payload}/surfaces"
 for surface in activity browser boost computer desktop growth id inception infinity landing marketplace nft token wallet work; do
+  /usr/bin/python3 -I -B /usr/local/sbin/proofofwork-ui-capacity check-copy \
+    --source "${stage_root}/proofofwork-${surface}" \
+    --path "${archive_payload}/surfaces" --phase "archive-copy-${surface}"
   cp --archive -- "${stage_root}/proofofwork-${surface}" \
     "${archive_payload}/surfaces/${surface}"
 done
@@ -3688,6 +3744,8 @@ for evidence_path in "${archive_path}" "${checksum_path}" "${provenance_path}"; 
     exit 1
   fi
 done
+/usr/bin/python3 -I -B /usr/local/sbin/proofofwork-ui-capacity check-pack \
+  --source "${archive_payload}/surfaces" --path "${archive_root}" --phase managed-archive
 archive_temporary="$(mktemp "${archive_root}/.${archive_name}.archive.XXXXXXXXXX")"
 checksum_temporary="$(mktemp "${archive_root}/.${archive_name}.checksum.XXXXXXXXXX")"
 published_archive=0
@@ -3892,9 +3950,9 @@ Scheduled UI release retention runs in explicit `--dry-run` mode. When two or
 more complete-root rollbacks are preserved, it verifies and protects each
 archive-bound v3 or legacy manifest under the shared deploy lock, up to nine
 roots (eight explicitly retained roots plus the new rollback). It reports a
-warning with exit status 1 and deletes nothing. Applying retention continues
-to refuse more than one rollback root; a future deletion still needs its own
-exact approval. A first controlled publish
+warning and deletes nothing in dry-run mode. Applying retention validates and
+protects the same roots; it does not refuse merely because more than one root
+exists. A future deletion still needs its own exact approval. A first controlled publish
 from a legacy record leaves new v3 provenance live and the honest legacy
 manifest with the complete prior root. Retention fails closed on a missing,
 ambiguous, unsafe, unknown, malformed, or unverified rollback manifest.
@@ -4080,13 +4138,20 @@ for evidence_path in "${archive_path}" "${checksum_path}" "${provenance_path}"; 
   fi
 done
 
+/usr/bin/python3 -I -B /usr/local/sbin/proofofwork-ui-capacity check --path /var/tmp \
+  --additional-bytes 65536 --additional-inodes 4 --phase rollback-payload-directory
 payload_root="$(mktemp --directory /var/tmp/proofofwork-ui-rollback-evidence.XXXXXXXXXX)"
 payload_identity="$(stat --format='%d:%i' -- "${payload_root}")"
 install -d -o root -g root -m 0700 "${payload_root}/surfaces"
 for surface in activity browser boost computer desktop growth id inception infinity landing marketplace nft token wallet work; do
+  /usr/bin/python3 -I -B /usr/local/sbin/proofofwork-ui-capacity check-copy \
+    --source "/var/www/proofofwork-${surface}" \
+    --path "${payload_root}/surfaces" --phase "rollback-copy-${surface}"
   cp --archive -- "/var/www/proofofwork-${surface}" "${payload_root}/surfaces/${surface}"
 done
 
+/usr/bin/python3 -I -B /usr/local/sbin/proofofwork-ui-capacity check-pack \
+  --source "${payload_root}/surfaces" --path "${archive_root}" --phase rollback-archive
 archive_temporary="$(mktemp "${archive_root}/.${archive_name}.archive.XXXXXXXXXX")"
 checksum_temporary="$(mktemp "${archive_root}/.${archive_name}.checksum.XXXXXXXXXX")"
 published_archive=0

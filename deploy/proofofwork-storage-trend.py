@@ -10,6 +10,7 @@ import time
 
 DAY = 86400
 GIB = 1024**3
+MAX_OBSERVATION_AGE_SECONDS = 15 * 60
 PATTERN = re.compile(r'^storage target=(\S+) filesystem=\S+ used_percent=\d+ inode_used_percent=\d+ available_bytes=(\d+) available_inodes=\d+$')
 
 ALLOCATION_POLICIES = {
@@ -94,6 +95,30 @@ def allocation_report(policy, allocated):
     return severity, report
 
 
+def observation_report(samples, now, available, reserve, warning):
+    """A valid long-term forecast does not certify the five-minute producer."""
+    valid = [int(t) for t, b in samples if 0 <= t <= now and b >= 0]
+    latest = max(valid, default=None)
+    age = now - latest if latest is not None else None
+    reasons = []
+    if age is None:
+        reasons.append('no-valid-producer-observation')
+    elif age > MAX_OBSERVATION_AGE_SECONDS:
+        reasons.append('producer-observation-stale')
+    if available < reserve:
+        reasons.append('available-bytes-below-reserve')
+    elif available < warning:
+        reasons.append('available-bytes-below-warning')
+    severity = 2 if available < reserve else 1 if reasons else 0
+    return severity, {'event': 'storage-observation-health',
+                      'status': ('ok', 'warning', 'critical')[severity],
+                      'latestObservationEpoch': latest, 'observationAgeSeconds': age,
+                      'maximumObservationAgeSeconds': MAX_OBSERVATION_AGE_SECONDS,
+                      'availableBytes': available, 'reserveBytes': reserve,
+                      'warningBytes': warning, 'reasons': reasons,
+                      'limitation': 'Producer freshness and default absolute-byte thresholds; not a timer or external alert-delivery certificate.'}
+
+
 def main():
     assert sys.flags.isolated and os.geteuid() == 0 and sys.argv[1:] in (['ui'], ['node'])
     role = sys.argv[1]
@@ -111,15 +136,20 @@ def main():
         match = PATTERN.fullmatch(message) if isinstance(message, str) else None
         if match:
             samples.setdefault(match[1], []).append((int(row['__REALTIME_TIMESTAMP']) // 1000000, int(match[2])))
-    targets = {'/': 10 * 1024**3}
+    targets = {'/': (10 * GIB, (12 if role == 'ui' else 20) * GIB)}
     if role == 'node':
-        targets['/data'] = 100 * 1024**3
+        targets['/data'] = (100 * GIB, 200 * GIB)
     severity = 0
-    for target, reserve in targets.items():
+    for target, (reserve, warning) in targets.items():
         mount = subprocess.check_output(['/usr/bin/findmnt', '-n', '-o', 'TARGET', '--target', target], text=True, timeout=5).strip()
         assert mount == target, 'Expected mount missing: ' + target
         stat = os.statvfs(target)
-        item = forecast(samples.get(target, []), now, stat.f_bavail * stat.f_frsize, reserve)
+        available = stat.f_bavail * stat.f_frsize
+        observed_severity, observed = observation_report(samples.get(target, []), now,
+                                                        available, reserve, warning)
+        print(json.dumps({'role': role, 'target': target, **observed}), flush=True)
+        severity = max(severity, observed_severity)
+        item = forecast(samples.get(target, []), now, available, reserve)
         print(json.dumps({'event': 'storage-growth-forecast', 'role': role, 'target': target,
                           'at': datetime.datetime.now(datetime.timezone.utc).isoformat(), **item}), flush=True)
         severity = max(severity, {'critical': 2, 'warning': 1, 'insufficient-history': 1, 'ok': 0}[item['status']])

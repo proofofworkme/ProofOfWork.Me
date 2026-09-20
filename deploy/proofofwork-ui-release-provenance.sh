@@ -7,6 +7,7 @@ if (($# > 0)); then
 fi
 ui_root="${POW_UI_WWW_ROOT:-/var/www}"
 archive_root="${POW_UI_RELEASE_ARCHIVE_ROOT:-/var/backups/proofofwork-ui/releases}"
+capacity_script="${POW_UI_CAPACITY_SCRIPT:-/usr/local/sbin/proofofwork-ui-capacity}"
 if [[ "${POW_UI_ALLOW_TEST_ROOTS:-}" != "1" ]] && {
   [[ -n "${POW_UI_TEST_FAIL_IGNORED_DISCOVERY_AFTER_OUTPUT:-}" ]] ||
     [[ -n "${POW_UI_TEST_FAIL_SURFACE_DISCOVERY_AFTER_OUTPUT:-}" ]] ||
@@ -15,6 +16,40 @@ if [[ "${POW_UI_ALLOW_TEST_ROOTS:-}" != "1" ]] && {
   echo "UI provenance failure injection requires POW_UI_ALLOW_TEST_ROOTS=1." >&2
   exit 64
 fi
+if [[ "${capacity_script}" != "/usr/local/sbin/proofofwork-ui-capacity" &&
+  "${POW_UI_ALLOW_TEST_ROOTS:-}" != "1" ]]; then
+  echo "Non-production UI capacity helper requires POW_UI_ALLOW_TEST_ROOTS=1." >&2
+  exit 64
+fi
+if [[ ! -f "${capacity_script}" || -L "${capacity_script}" ||
+  "$(realpath -e -- "${capacity_script}" 2>/dev/null || true)" != "${capacity_script}" ||
+  "$(stat --format=%u -- "${capacity_script}")" != "${EUID}" ]] ||
+  ((8#$(stat --format=%a -- "${capacity_script}") & 07022)); then
+  echo "UI capacity helper must be a canonical owner-controlled regular file." >&2
+  exit 64
+fi
+
+ui_capacity_check() {
+  /usr/bin/python3 -I -B "${capacity_script}" check --path "$1" \
+    --additional-bytes "$2" --additional-inodes "$3" --phase "$4" >&2
+}
+
+# Inventory commands may encounter unexpectedly large or damaged trees. Bound
+# each newly created private file as well as charging their concurrent peak.
+write_bounded_inventory() {
+  /usr/bin/python3 -I -B - "$@" <<'PY'
+import resource
+import subprocess
+import sys
+
+limit = 16 * 1024 * 1024
+resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
+resource.setrlimit(resource.RLIMIT_FSIZE, (limit, limit))
+with open(sys.argv[1], 'wb') as output:
+    result = subprocess.run(sys.argv[2:], stdout=output, check=False)
+raise SystemExit(result.returncode if result.returncode >= 0 else 1)
+PY
+}
 if [[ "${ui_root}" != "/var/www" || "${archive_root}" != "/var/backups/proofofwork-ui/releases" ]] &&
   [[ "${POW_UI_ALLOW_TEST_ROOTS:-}" != "1" ]]; then
   if [[ "${POW_UI_RETAINED_ROOT:-}" == "1" &&
@@ -362,9 +397,11 @@ attest_source_checkout() {
     echo "UI source checkout does not match the requested full commit." >&2
     return 1
   fi
+  ui_capacity_check "${lock_parent}" 67108864 8 provenance-source-inventory || return 1
   untracked_inventory="$(mktemp "${lock_parent}/.proofofwork-ui-source-untracked.XXXXXXXXXX")"
-  if ! /usr/bin/git -c safe.directory="${source_checkout}" -C "${source_checkout}" \
-    ls-files --others --exclude-standard --directory -z >"${untracked_inventory}"; then
+  if ! write_bounded_inventory "${untracked_inventory}" \
+    /usr/bin/git -c safe.directory="${source_checkout}" -C "${source_checkout}" \
+    ls-files --others --exclude-standard --directory -z; then
     rm -f -- "${untracked_inventory}"
     echo "UI source untracked-path discovery failed." >&2
     return 1
@@ -382,7 +419,8 @@ attest_source_checkout() {
       printf 'node_modules/partial-output\0'
       false
     else
-      /usr/bin/git -c safe.directory="${source_checkout}" -C "${source_checkout}" \
+      write_bounded_inventory "${ignored_inventory}" \
+        /usr/bin/git -c safe.directory="${source_checkout}" -C "${source_checkout}" \
         ls-files --others --ignored --exclude-standard -z
     fi
   } >"${ignored_inventory}"; then
@@ -404,8 +442,9 @@ attest_source_checkout() {
   fi
 
   tree_inventory="$(mktemp "${lock_parent}/.proofofwork-ui-source-tree.XXXXXXXXXX")"
-  if ! /usr/bin/git -c safe.directory="${source_checkout}" -C "${source_checkout}" \
-    ls-tree -r -z --full-tree "${source_commit}" >"${tree_inventory}"; then
+  if ! write_bounded_inventory "${tree_inventory}" \
+    /usr/bin/git -c safe.directory="${source_checkout}" -C "${source_checkout}" \
+    ls-tree -r -z --full-tree "${source_commit}"; then
     rm -f -- "${tree_inventory}"
     echo "UI source tracked-tree discovery failed." >&2
     return 1
@@ -591,13 +630,14 @@ surface_file_inventory_directory() {
     printf 'index.html\0' >"${inventory}"
     return 1
   fi
-  find "${directory}" -xdev -type f -printf '%P\0' >"${inventory}"
+  write_bounded_inventory "${inventory}" find "${directory}" -xdev -type f -printf '%P\0'
 }
 
 surface_file_count_directory() {
   local directory="$1"
   local inventory
   local -a files=()
+  ui_capacity_check "${lock_parent}" 67108864 8 provenance-surface-inventory || return 1
   if ! inventory="$(mktemp "${lock_parent}/.proofofwork-ui-surface-inventory.XXXXXXXXXX")"; then
     echo "Release surface inventory could not be created: ${directory}" >&2
     return 1
@@ -621,7 +661,9 @@ surface_file_count_directory() {
 
 surface_tree_sha256_directory() {
   local directory="$1"
-  local inventory records relative digest file_mode result fingerprint_status=0
+  local inventory records relative digest file_mode result fingerprint_status=0 record_bytes=0
+  local LC_ALL=C
+  ui_capacity_check "${lock_parent}" 67108864 8 provenance-surface-fingerprint || return 1
   if ! inventory="$(mktemp "${lock_parent}/.proofofwork-ui-surface-inventory.XXXXXXXXXX")"; then
     echo "Release surface inventory could not be created: ${directory}" >&2
     return 1
@@ -655,6 +697,12 @@ surface_tree_sha256_directory() {
       break
     fi
     digest="${digest%% *}"
+    record_bytes=$((record_bytes + ${#relative} + ${#file_mode} + ${#digest} + 8))
+    if ((record_bytes > 16777216)); then
+      echo "Release surface fingerprint exceeds the 16 MiB inventory limit." >&2
+      fingerprint_status=1
+      break
+    fi
     if ! printf '%s\0%s\0%s\n' "${relative}" "${file_mode}" "${digest}" >>"${records}"; then
       echo "Release surface fingerprint record could not be written: ${relative}" >&2
       fingerprint_status=1
@@ -764,6 +812,7 @@ verify_archive_payload() {
     archive_surfaces=("${legacy_surfaces[@]}")
   fi
 
+  ui_capacity_check "${TMPDIR:-/tmp}" 65536 4 provenance-verification-directory || return 1
   if ! extraction_root="$(mktemp --directory "${TMPDIR:-/tmp}/proofofwork-ui-archive.XXXXXX")"; then
     echo "Release archive extraction root could not be created." >&2
     return 1
@@ -838,6 +887,14 @@ verify_archive_payload() {
       seen_archive_entries["${normalized_name}"]=1
     done
 
+    # Recheck the real extraction filesystem immediately before tar writes. The
+    # extra budget covers manifests and bounded inventories while it exists.
+    if ! /usr/bin/python3 -I -B "${capacity_script}" check-archive \
+      --path "${extraction_root}" --archive "${archive}" \
+      --additional-bytes 67108864 --additional-inodes 16 \
+      --phase provenance-archive-extract >&2; then
+      exit 1
+    fi
     if ! LC_ALL=C tar \
       --extract \
       --file "${archive}" \
@@ -977,6 +1034,8 @@ record_rollback_evidence() {
   verify_archive_payload "${archive}" counts digests
 
   recorded_at="$(date --utc +%Y-%m-%dT%H:%M:%SZ)"
+  ui_capacity_check "${ui_root}" 131072 8 provenance-rollback-manifests || return 1
+  ui_capacity_check "${archive_root}" 131072 8 provenance-rollback-sidecar || return 1
   temporary="$(mktemp "${ui_root}/.proofofwork-ui-release.tmp.XXXXXX")"
   provenance_temporary="$(mktemp "${archive_root}/.${archive_name}.provenance.tmp.XXXXXX")"
   trap 'rm -f -- "${temporary:-}" "${provenance_temporary:-}"' EXIT
@@ -1168,6 +1227,8 @@ process_release_manifest() {
   fi
 
   deployed_at="$(date --utc +%Y-%m-%dT%H:%M:%SZ)"
+  ui_capacity_check "${ui_root}" 131072 8 provenance-release-manifests || return 1
+  ui_capacity_check "${archive_root}" 131072 8 provenance-release-sidecar || return 1
   temporary="$(mktemp "${ui_root}/.proofofwork-ui-release.tmp.XXXXXX")"
   provenance_temporary="$(mktemp "${archive_root}/.${archive_name}.provenance.tmp.XXXXXX")"
   trap 'rm -f -- "${temporary:-}" "${provenance_temporary:-}"' EXIT

@@ -2774,3 +2774,101 @@ Receipt root: `/tmp/pow-h19-rollout-2026-09-20/`. These hashes identify preparat
 | `ui/verification-summary.md` | 8404 | `c94eacd65beb4f5d2b2554f47236d07a416ab0e0da13312b713cb4642c531b67` |
 | `ui/evidence-sha256.json` | 16483 | `9368d2ce885d885870ed6f362bf2429a3eaa02853a1ca3d136ac977fa1960a8f` |
 | `ui/post-recheck-apis.json` | 659 | `1f34179c8d03a4dd52e0ca639a1f3ded1c7d3cbf0d6bb4a7aebac52e4f22f399` |
+
+
+## UI capacity remediation preparation — 2026-09-20, local only
+
+### Scope, authority and continuity
+
+This continuation prepares **#3, UI disk protection**, from the original eight-step follow-up. The user said “go for it” after the recommendation to address #3 next and the explicit boundary that broader UI cleanup/storage changes need a concrete scope and approval. Local preventative fixes and tests are complete. Production installation, commit/push and the exact archive removal batch below remain pending approval. The earlier “you can prune” approval concerned normal node derived-summary retention and is not reused for UI archives.
+
+The UI VPS was inspected read-only from **21:42:50 through 22:09:53 UTC**. Local verification continued through **22:11:05 UTC**. No production helper, service configuration, timer, release, database, ledger or protocol record was changed; no cleanup, deployment, restart, signing or broadcast occurred. There is no new full-node or application math conclusion in this storage-only continuation. The prior verified H19-01/H19-04 deployment remains the accounting result; **#1–2 remain complete, #3 is locally prepared, and #4 has not started**.
+
+Reviewed prior Audit 5 capacity/retention restrictions, Audit 16 exact approved archive cleanup, Audit 17 recovery-copy instructions and Audit 18/19 storage findings. Continue **H5-01/H13-01 (H18-02/H18-08)** under their existing IDs. Historical cleanup scopes do not become permission for new candidates. The preceding **215,403 bytes** of this audit remain exact, SHA256 **`13b410439e979375cf14bf0d04477910a92380600f4cd40d37ecbcfc0176cd96`**; the original audit evidence SHA remains **`63c83279344e99372a850eb02881147ea2a3f84afdf8f17431a774344cca5b96`**.
+
+### Fresh capacity and recurrence risk
+
+| UI measurement at 21:42:50 UTC | Result |
+| --- | --- |
+| Root filesystem capacity / used / available | 39,973,924,864 / 26,184,298,496 / **12,105,433,088 B**; 69% used |
+| Available headroom | **11.27 GiB**, below the 12 GiB warning and about 1.27 GiB above the 10 GiB floor |
+| Inodes | 89,229 used of 2,427,136; 2,337,907 available |
+| Entire UI backup area | **19,875,872,768 B**, approximately 18.51 GiB |
+| Managed releases / active rollback roots | 3,896,647,680 / 874,635,264 allocated bytes |
+| Deployment scratch / live static tree | 1,441,026,048 / 412,168,192 allocated bytes |
+| Logs / temporary directory / cache | 624,525,312 / 272,912,384 / 127,266,816 allocated bytes |
+| Caddy | Active, PID 3092586; zero recorded automatic restarts |
+
+Allocation rows overlap; do not sum them as independent reclaimable storage. Historical rollbacks, classifications, recovery evidence, transports and source trees explain much of the backup/scratch footprint and are **not approved cleanup**. This continuation did not reclassify them as disposable. The virtual disk is already partitioned almost entirely; meaningful expansion requires a provider storage/volume change, not merely extending into substantial unused local space.
+
+The five-minute storage-health service correctly warns with exit 1 below 12 GiB. The hourly trend service also warned. The UI archive-retention timer still explicitly uses **`--dry-run`** and reclaims nothing. The separate daily scratch cleaner retains its existing applying, age/marker-limited scope; it was not manually invoked. No external notification hook was found in the inspected monitoring units; local failed-unit/journal status is not proof an operator receives an alert.
+
+**Runbook correction:** the generic release-pruner defaults to `--apply` if its mode is omitted. Both dry-run and apply support up to nine valid complete rollback roots, protect each bound archive and issue a multi-root warning; that warning alone does not cause failure. Earlier contrary prose is historical, not current tool behavior. The current infrastructure runbook is corrected, and inspection examples must always pass `--dry-run`. No retention default or scheduled mode was changed.
+
+### Local fixes prepared and verified
+
+1. Added shared **integer-based UI capacity admission** with a fixed 10 GiB root reserve, an additional 64 MiB allowance and 128-inode headroom. It charges full logical copies, allocation rounding and metadata without relying on deduplication, sparse-file savings, pending deletions or hardlinks. A separate scratch filesystem has its own allocation-plus-64-MiB requirement while the root reserve remains protected. No reserve/free-space overrides were added.
+2. Integrated fresh checks into staging, compatibility copying, candidate publication, provenance extraction and manifest recording. The publisher checks its verification peak before exchange; a post-exchange refusal still restores the prior live root through the existing rollback path. Private provenance inventories are limited to 16 MiB with core dumps disabled. The existing deployed **45-second compatibility-scan timeout** is preserved exactly in repository source: baseline plus that timeout reproduces installed publisher SHA **`5f10c8fb2b1733d24b452c2bfe96c1e32acaed9c8e15798601bcc39cc9757d56`**.
+3. Added read-only `check-copy` and `check-pack` admission commands and runbook examples for manual archive assembly. Install the new root-owned `/usr/local/sbin/proofofwork-ui-capacity` **before** the revised stager, provenance and publisher. Historical Audit 5 helper pins remain unchanged and intentionally reject these new bytes. Do not reuse historical approval controllers as current installers.
+4. Fixed storage trend reporting so old observations or currently low free bytes cannot be hidden behind a healthy long-term forecast. Producer observations missing or older than 900 seconds warn; current default UI/node byte thresholds contribute independently to the exit severity. Existing forecast arithmetic remains unchanged. This is not a certificate of timer health, producer exit success, custom threshold configuration or external alert delivery.
+5. Changed scratch-cleaner discovery to finish and check both inventories before considering deletion. Each scan is capped at 8 MiB and 60 seconds, and ordering failures abort. The existing candidate allowlist, age thresholds, markers and protected-history exclusions are unchanged. Failure cleanup removes only that invocation's fresh private inventory.
+
+These address gaps in the existing disk-recurrence and retention family; they are not new protocol or accounting findings. Per-phase checks do not reserve filesystem blocks against unrelated writers, intercept manual transfers/builds, or guarantee that an entire future release fits. Future source/payload transfer and extraction still need measured peak admission. The current UI reserve risk remains open until the protections are installed and a durable capacity/retention plan is approved.
+
+| Local verification | Result |
+| --- | --- |
+| Shared capacity/stager fixtures | **10 tests passed**; exact integer/one-byte and inode boundaries, separate filesystem reserve, sparse/hardlink accounting, archive limits, copy/pack CLI, growth between phases and unchanged live/source evidence after refusal |
+| Actual publisher/provenance fixtures | **7 cases passed** on final source; refusals before and after exchange, atomic restoration, successful publish, bounded inventories and disabled core dumps |
+| Existing UI operations suite | **Passed**, including 12 failed/partial/oversized discovery and ordering cases with every candidate preserved; final small CLI/core-limit/timeout additions separately passed their focused tests |
+| Historical Audit 5 workflow | **23 tests passed**, preserving historical hash pins and proving the historical loader rejects current unreviewed helper bytes |
+| Storage trend | Focused suite passed; independent **24/24 actual-main cases passed** across both roles and all three filesystem thresholds, exact byte limits and 900/901-second freshness |
+| Source checks and review | Shell/Python/package syntax and diff checks passed; independent capacity/stager/publisher/provenance and runbook review completed |
+
+At **22:02:18 UTC**, the helper was also executed read-only over the real UI filesystem without installation or creating scratch. Available bytes were **12,105,355,264**. The current live-tree copy estimate was **430,485,504 B / 1,118 inodes**; current release extraction was **229,695,488 B / 752 inodes** before the explicit concurrent-inventory allowance. Those individual admissions and the separate `/run` inventory budget passed. This probe preceded only the CLI `check-copy` addition; allocation functions were unchanged and final CLI fixtures passed. It is not a complete future-release peak test.
+
+### Exact proposed cleanup batch — approval required, nothing removed
+
+The existing explicit dry-run verified **17 archives, zero unverified**, and proposed 12 archive sets. The exact reviewed proposal is **35 files**, comprising 12 TGZs, 12 checksum sidecars and 11 provenance sidecars. Logical bytes total **2,216,876,047**; allocated bytes total **2,217,005,056**, approximately **2.06 GiB**. One `10795467c328-20260914T013529Z` archive has no provenance sidecar; do not invent or remove a nonexistent file.
+
+Every table entry is under `/var/backups/proofofwork-ui/releases`, named `proofofwork-ui-release-<release>.tgz`, plus only its existing `.sha256` and `.provenance` sidecars. Exact per-file names, hashes, sidecar content, device/inode/size/timestamps/link counts and allocated blocks are retained in the linked evidence artifact.
+
+| Proposed release | Files | Allocated bytes | TGZ SHA256 |
+| --- | ---: | ---: | --- |
+| `07929dd3c6e4-20260919T145727Z` | 3 | 185,253,888 | `88f1830dcd726d508cfcfd0bd0d1c8fff86d21c23cae884d1efdbbf31aa56cd8` |
+| `84a9871040db-20260918T190233Z` | 3 | 182,108,160 | `a4a696daf7ad881e9e1b18d1ca16c4012df6d67d032e6922b3335dbc211a7449` |
+| `62fded8008f9-20260914T025303Z` | 3 | 182,108,160 | `9c22c63aa35aa41c3d4d53f8a92ca34b92b133dc247a3c9ae42c0224189e03ce` |
+| `10795467c328-20260914T012801Z` | 3 | 185,245,696 | `cff82eaaab61f298f03851cb8e10cf260ed018e54be3925dd17a5d3b0748f8d7` |
+| `10795467c328-20260914T013529Z` | 2 | 185,237,504 | `31846880e5dec8e9cb24c594fcb73ee8b1167bef46da10d7a0c5cc8f5f386e75` |
+| `f23c24fd97a9-20260914T001952Z` | 3 | 185,249,792 | `91375462cccd674b8d3644f78afead18ffe2347966376666531a13ddbeb92d9b` |
+| `4ce5f70c6538-20260913T224020Z` | 3 | 185,229,312 | `1a83d0e13fdb49a6ece531c18d78b8942c771a5e23cf883375129a9458ee3fbf` |
+| `45d4617df4ea-20260913T222338Z` | 3 | 185,225,216 | `dd8621a02b3d5ed25681bbf9eee71fe51e3a4f91878c75d7f16f3222c1b9c7d9` |
+| `57bb25106fef-20260913T073622Z` | 3 | 185,196,544 | `da30020035bc62e078d1f118c54085bec7cbe600ca9fbf8224fe2461d77394cc` |
+| `4515c3bc3421-20260913T070757Z` | 3 | 185,208,832 | `d08e8b385047f8a0f3f7598b7f995adb05933de069265a445e9965a08db8a6b4` |
+| `2ddefac163d5-20260905T204437Z` | 3 | 185,581,568 | `5e05adbf7d905f2dc4d3540ac389484d21ef71241155c7f73559f1e879cbedea` |
+| `6a7d5c12e403-20260905T050937Z` | 3 | 185,360,384 | `3294199efbd9d81b8f203ee2da7e71ae714f749f5ff2f85dc2022bae941ee973` |
+
+The proposal retains **five managed archives**, including all four bound by current live/queued rollback manifests: live **56694a7**, plus rollback contents **0ef9c3b, 132b87f and 6eb4a1e**. The three complete rollback roots themselves remain untouched. A rollback directory's cutover name is not the release contained inside it; the manifest controls that relationship.
+
+The final dependency walk examined **25 canonical root manifests and 664 small manifest/sidecar documents** across **1,587 directories / 20,410 files**, with no skipped/untraversed paths. Ten candidates had no external retained-manifest dependency found. The remaining **2ddefac** and **6a7** archives are referenced by preserved Audit 17 roots, whose separate recovery directories contain independently verified copies of the archive, checksum and provenance. Both recovery instructions explicitly permit ordinary release retention and require restoring those sidecars to the managed archive directory before retained-root rollback verification. Preserve these **entire directories**:
+
+- `/var/backups/proofofwork-ui/recovery-evidence/audit17-boost-20260919`
+- `/var/backups/proofofwork-ui/recovery-evidence/audit17-20260919`
+
+The separate 2ddefac archive hashes to **`5e05adbf7d905f2dc4d3540ac389484d21ef71241155c7f73559f1e879cbedea`**; 6a7 hashes to **`3294199efbd9d81b8f203ee2da7e71ae714f749f5ff2f85dc2022bae941ee973`**. These checks read the independent copies and metadata; they did not extract an archive or replay a restore. All 12 proposed archive identities and all 23 proposed sidecar hashes remained unchanged in the final review.
+
+At the proposal's measured free space of **12,105,302,016 B**, removing exactly this batch would project **14,322,307,072 B**, approximately **13.34 GiB**, before other growth. This is **projected**, not reclaimed capacity. Any later applying operation must reacquire the deployment lock and revalidate the exact file identities/digests, current manifests, protected archives and both independent recovery copies. A changed dependency stops removal; an old dry run is not authority to delete whatever a new generic `--apply` happens to select.
+
+### Remaining approval, storage policy and handoff
+
+The concrete next approval is to **commit/push the tested local operations changes and audit evidence; install the six revised/new UI storage helpers; remove only the exact 35 reviewed managed archive files after fresh locked verification; run production capacity/provenance checks; and append the results**. The six helper destinations are capacity, release-stage, release-provenance, release-publish, storage-prune and storage-trend under `/usr/local/sbin/proofofwork-…`. No application release or Caddy restart is required by this helper update. Node services/data, ledgers, protocol records, migrations, transactions, source transports, logs, caches, rollback roots and recovery directories remain outside that proposed removal scope. This proposal does not enable automatic archive pruning or alter retention policy.
+
+The immediate batch adds roughly two GiB of room; it does not close long-term storage growth. Follow-up must choose a sustainable retention/off-host evidence policy or provider expansion, retain complete verified recovery capability and add a verified operator notification route. Do not delete historical rollback/classification/recovery evidence merely because it dominates allocation. Proceed to original **#4, H19-02/H19-03 transaction-detail correctness**, after the approved #3 rollout; other prior findings retain their existing status.
+
+Repository hygiene was reviewed in an isolated checkout carrying the same approved changes, preserving the original checkout's local cache and unrelated untracked `deploy/audit17/publish-node-work-floor.py`. `npm run hygiene:fix` found **no allowlisted rebuildable state to remove**; `npm run hygiene:check` **passed** on the completed patch. The fresh verification clone initially lacked Git hooks; running the repository's `hooks:install` fixed that setup requirement before the successful check, without bypassing a hook. `SOUL.md` and the canonical protocol/product docs remain accurate; the infrastructure runbook is updated, and this new evidence artifact is classified. No tracked deletion, historical audit rewrite, protocol edit, commit or push forms part of this local preparation.
+
+Compact durable evidence: [UI capacity preparation evidence](2026-09-20-audit-19-ui-capacity.evidence.json), SHA256 **`46cc3cdd5728ed80fc241a22fd01d874ea1e2cafefd9fe8600daac5c0d6abcee`**. It contains the complete proposed 35-file manifest, protected live/rollback bindings, conditional historical recovery dependencies, time-bound host observations, exact source/test hashes and receipt digests. Larger scratch inventories are represented by hashes; `/tmp` is not a permanent archive. Recheck current state before acting.
+
+
+## UI capacity rollout authorization — 2026-09-20
+
+The user explicitly approved **“#3 rollout”** after reviewing the tested safeguards and exact35-file UI archive scope. This authorizes committing/pushing those changes, installing the six UI storage helpers, revalidating and removing only the listed archive copies, production verification and an audit append. Preserve the three rollback roots, all four bound live/rollback archives, both complete Audit17 recovery directories and all protocol/application data. No automatic retention policy, node deployment, application release, migration or transaction is authorized by this continuation. The preceding preparation record remains unchanged; completed actions and receipts will follow below.

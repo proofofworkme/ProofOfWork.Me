@@ -1,0 +1,1773 @@
+{
+  "format": "proofofwork-audit-19-ui-capacity-preparation-v1",
+  "createdAt": "2026-09-20T22:14:09.729060+00:00",
+  "status": "local-tested-production-unchanged-approval-required",
+  "scope": "Original next-step #3: UI disk protection; local ops changes and read-only UI capacity/dependency review. No new full-node, database or application accounting audit.",
+  "authority": {
+    "localImplementation": "User go-for-it after recommendation to prepare UI capacity fixes; production and exact archive deletion remain pending review.",
+    "productionMutation": false,
+    "cleanupPerformed": false,
+    "committed": false,
+    "pushed": false
+  },
+  "baseline": {
+    "repositoryHead": "affdab3cd0f1a7fd5777d44908fd3c66044f0c34",
+    "applicationCommit": "56694a7d6d76de565d4e0a6fce94f880d5308550",
+    "priorAuditBytes": 215403,
+    "priorAuditSha256": "13b410439e979375cf14bf0d04477910a92380600f4cd40d37ecbcfc0176cd96",
+    "originalEvidenceSha256": "63c83279344e99372a850eb02881147ea2a3f84afdf8f17431a774344cca5b96"
+  },
+  "uiHost": "77.42.91.106",
+  "healthInventory": {
+    "at": "2026-09-20T21:42:50.600913+00:00",
+    "df": {
+      "exit": 0,
+      "stdout": "Filesystem       1B-blocks        Used   Available Use% Mounted on\n/dev/sda1      39973924864 26184298496 12105433088  69% /\n",
+      "stderr": ""
+    },
+    "inodes": {
+      "exit": 0,
+      "stdout": "Filesystem      Inodes IUsed   IFree IUse% Mounted on\n/dev/sda1      2427136 89229 2337907    4% /\n",
+      "stderr": ""
+    },
+    "disks": {
+      "exit": 0,
+      "stdout": "{\n   \"blockdevices\": [\n      {\n         \"name\": \"sda\",\n         \"type\": \"disk\",\n         \"size\": 40961572864,\n         \"fstype\": null,\n         \"mountpoints\": [\n             null\n         ],\n         \"children\": [\n            {\n               \"name\": \"sda1\",\n               \"type\": \"part\",\n               \"size\": 40691023360,\n               \"fstype\": \"ext4\",\n               \"mountpoints\": [\n                   \"/\"\n               ]\n            },{\n               \"name\": \"sda14\",\n               \"type\": \"part\",\n               \"size\": 1048576,\n               \"fstype\": null,\n               \"mountpoints\": [\n                   null\n               ]\n            },{\n               \"name\": \"sda15\",\n               \"type\": \"part\",\n               \"size\": 268435456,\n               \"fstype\": \"vfat\",\n               \"mountpoints\": [\n                   \"/boot/efi\"\n               ]\n            }\n         ]\n      },{\n         \"name\": \"sr0\",\n         \"type\": \"rom\",\n         \"size\": 1073741312,\n         \"fstype\": null,\n         \"mountpoints\": [\n             null\n         ]\n      }\n   ]\n}\n",
+      "stderr": ""
+    },
+    "mounts": {
+      "exit": 0,
+      "stdout": "{\n   \"filesystems\": [\n      {\n         \"target\": \"/\",\n         \"source\": \"/dev/sda1\",\n         \"fstype\": \"ext4\",\n         \"options\": \"rw,relatime\"\n      }\n   ]\n}\n",
+      "stderr": ""
+    },
+    "allocations": {
+      "/var/backups/proofofwork-ui": {
+        "exit": 0,
+        "stdout": "19875872768\t/var/backups/proofofwork-ui\n",
+        "stderr": ""
+      },
+      "/var/backups/proofofwork-ui/releases": {
+        "exit": 0,
+        "stdout": "3896647680\t/var/backups/proofofwork-ui/releases\n",
+        "stderr": ""
+      },
+      "/var/backups/proofofwork-ui/rollback-roots": {
+        "exit": 0,
+        "stdout": "874635264\t/var/backups/proofofwork-ui/rollback-roots\n",
+        "stderr": ""
+      },
+      "/var/tmp/proofofwork-deploy": {
+        "exit": 0,
+        "stdout": "1441026048\t/var/tmp/proofofwork-deploy\n",
+        "stderr": ""
+      },
+      "/var/www": {
+        "exit": 0,
+        "stdout": "412168192\t/var/www\n",
+        "stderr": ""
+      },
+      "/var/log": {
+        "exit": 0,
+        "stdout": "624525312\t/var/log\n",
+        "stderr": ""
+      },
+      "/tmp": {
+        "exit": 0,
+        "stdout": "272912384\t/tmp\n",
+        "stderr": ""
+      },
+      "/var/cache": {
+        "exit": 0,
+        "stdout": "127266816\t/var/cache\n",
+        "stderr": ""
+      }
+    },
+    "units": {
+      "exit": 0,
+      "stdout": "MainPID=3092586\nNRestarts=0\nExecMainStatus=0\nExecStart={ path=/usr/bin/caddy ; argv[]=/usr/bin/caddy run --environ --config /etc/caddy/Caddyfile ; ignore_errors=no ; start_time=[n/a] ; stop_time=[n/a] ; pid=0 ; code=(null) ; status=0/0 }\nId=caddy.service\nOnFailure=\nActiveState=active\nSubState=running\nFragmentPath=/usr/lib/systemd/system/caddy.service\nDropInPaths=/etc/systemd/system/caddy.service.d/hardening.conf\n\nMainPID=0\nNRestarts=0\nExecMainStatus=1\nExecStart={ path=/usr/local/sbin/proofofwork-ui-storage-health ; argv[]=/usr/local/sbin/proofofwork-ui-storage-health ; ignore_errors=no ; start_time=[Sun 2026-09-20 21:40:49 UTC] ; stop_time=[Sun 2026-09-20 21:40:49 UTC] ; pid=1098735 ; code=exited ; status=1 }\nId=proofofwork-ui-storage-health.service\nOnFailure=\nActiveState=failed\nSubState=failed\nFragmentPath=/etc/systemd/system/proofofwork-ui-storage-health.service\nDropInPaths=\n\nMainPID=0\nNRestarts=0\nExecMainStatus=0\nExecStart={ path=/usr/local/sbin/proofofwork-ui-storage-prune ; argv[]=/usr/local/sbin/proofofwork-ui-storage-prune --apply ; ignore_errors=no ; start_time=[n/a] ; stop_time=[n/a] ; pid=0 ; code=(null) ; status=0/0 }\nId=proofofwork-ui-storage-prune.service\nOnFailure=\nActiveState=inactive\nSubState=dead\nFragmentPath=/etc/systemd/system/proofofwork-ui-storage-prune.service\nDropInPaths=\n\nMainPID=0\nNRestarts=0\nExecMainStatus=0\nExecStart={ path=/usr/local/sbin/proofofwork-release-prune ; argv[]=/usr/local/sbin/proofofwork-release-prune /var/backups/proofofwork-ui/releases 5 --dry-run ; ignore_errors=no ; start_time=[n/a] ; stop_time=[n/a] ; pid=0 ; code=(null) ; status=0/0 }\nId=proofofwork-ui-release-prune.service\nOnFailure=\nActiveState=inactive\nSubState=dead\nFragmentPath=/etc/systemd/system/proofofwork-ui-release-prune.service\nDropInPaths=\n\nMainPID=0\nNRestarts=0\nExecMainStatus=1\nExecStart={ path=/usr/bin/python3 ; argv[]=/usr/bin/python3 -I /usr/local/sbin/proofofwork-storage-trend ui ; ignore_errors=no ; start_time=[Sun 2026-09-20 21:01:28 UTC] ; stop_time=[Sun 2026-09-20 21:01:45 UTC] ; pid=1094892 ; code=exited ; status=1 }\nId=proofofwork-storage-trend@ui.service\nOnFailure=\nActiveState=failed\nSubState=failed\nFragmentPath=/etc/systemd/system/proofofwork-storage-trend@.service\nDropInPaths=\n\nMainPID=0\nNRestarts=0\nExecMainStatus=0\nExecStart={ path=/usr/local/sbin/proofofwork-ui-release-provenance ; argv[]=/usr/local/sbin/proofofwork-ui-release-provenance verify-rollback ; ignore_errors=no ; start_time=[Sun 2026-09-20 21:30:10 UTC] ; stop_time=[Sun 2026-09-20 21:30:20 UTC] ; pid=1096919 ; code=exited ; status=0 }\nId=proofofwork-ui-release-provenance.service\nOnFailure=\nActiveState=inactive\nSubState=dead\nFragmentPath=/etc/systemd/system/proofofwork-ui-release-provenance.service\nDropInPaths=\n",
+      "stderr": ""
+    },
+    "timers": {
+      "exit": 0,
+      "stdout": "NEXT                            LEFT LAST                             PASSED UNIT                                    ACTIVATES\nSun 2026-09-20 21:45:09 UTC 2min 18s Sun 2026-09-20 21:30:10 UTC   12min ago proofofwork-ui-release-provenance.timer proofofwork-ui-release-provenance.service\nSun 2026-09-20 21:45:23 UTC 2min 33s Sun 2026-09-20 21:40:48 UTC 2min 1s ago proofofwork-ui-storage-health.timer     proofofwork-ui-storage-health.service\nSun 2026-09-20 22:01:27 UTC    18min Sun 2026-09-20 21:01:28 UTC   41min ago proofofwork-storage-trend@ui.timer      proofofwork-storage-trend@ui.service\nMon 2026-09-21 00:10:07 UTC 2h 27min Sun 2026-09-20 00:10:39 UTC     21h ago proofofwork-ui-release-prune.timer      proofofwork-ui-release-prune.service\nMon 2026-09-21 01:18:37 UTC 3h 35min Sun 2026-09-20 01:18:39 UTC     20h ago proofofwork-ui-storage-prune.timer      proofofwork-ui-storage-prune.service\n\n5 timers listed.\n",
+      "stderr": ""
+    },
+    "backupTop": {
+      "exit": 0,
+      "stdout": "412045312\t/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-56694a7d6d76-20260920T180539Z\n231395328\t/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-0ef9c3bee321-20260920T053656Z\n231190528\t/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-132b87faaac7-20260919T174900Z\n874635264\t/var/backups/proofofwork-ui/rollback-roots\n402030592\t/var/backups/proofofwork-ui/classified-rollback-roots/proofofwork-www-pre-89736d9d42f7-20260902T222258Z\n1769963520\t/var/backups/proofofwork-ui/classified-rollback-roots/archives\n402030592\t/var/backups/proofofwork-ui/classified-rollback-roots/proofofwork-www-pre-fb4d08ab973e-20260902T155203Z\n401969152\t/var/backups/proofofwork-ui/classified-rollback-roots/proofofwork-www-pre-116191e1f58d-20260902T015215Z\n402030592\t/var/backups/proofofwork-ui/classified-rollback-roots/proofofwork-www-pre-96d3f8935592-20260903T023514Z\n402583552\t/var/backups/proofofwork-ui/classified-rollback-roots/proofofwork-www-pre-5f3ab07b1ddd-20260902T145844Z\n3780632576\t/var/backups/proofofwork-ui/classified-rollback-roots\n4096\t/var/backups/proofofwork-ui/rollback-root-archives\n12980224\t/var/backups/proofofwork-ui/20260817T1755Z-proof-balance-split/proofofwork-wallet\n12980224\t/var/backups/proofofwork-ui/20260817T1755Z-proof-balance-split/proofofwork-computer\n12980224\t/var/backups/proofofwork-ui/20260817T1755Z-proof-balance-split/proofofwork-marketplace\n38944768\t/var/backups/proofofwork-ui/20260817T1755Z-proof-balance-split\n353902592\t/var/backups/proofofwork-ui/rollback-classifications/proofofwork-www-pre-ec97e1817dd8-20260901T022632Z-20260901T131052Z\n353918976\t/var/backups/proofofwork-ui/rollback-classifications/proofofwork-www-pre-5d1069e00e5a-20260901T130327Z-20260901T231548Z\n354582528\t/var/backups/proofofwork-ui/rollback-classifications/proofofwork-www-pre-c2396ce9c3ea-20260902T005518Z-20260902T022011Z\n353984512\t/var/backups/proofofwork-ui/rollback-classifications/proofofwork-www-pre-d13e9cad67e9-20260901T230747Z-20260902T010431Z\n943300608\t/var/backups/proofofwork-ui/rollback-classifications/proofofwork-www-pre-b76a4f56aff2-20260903T033447Z-20260905T032328Z\n356220928\t/var/backups/proofofwork-ui/rollback-classifications/proofofwork-www-pre-32f39776afb2-20260831T235646Z-20260901T032907Z\n4096\t/var/backups/proofofwork-ui/rollback-classifications/proofofwork-www-pre-c2396ce9c3ea-20260902T005518Z-20260902T021837Z\n1896448\t/var/backups/proofofwork-ui/rollback-classifications/proofofwork-www-pre-6c1b47801671-20260905T020357Z-20260905T051459Z\n2717839360\t/var/backups/proofofwork-ui/rollback-classifications\n151691264\t/var/backups/proofofwork-ui/20260714T045920Z\n118784\t/var/backups/proofofwork-ui/release-tooling/760d36f3762b45cc392ef6c34abc6b61a01b73b7\n122880\t/var/backups/proofofwork-ui/release-tooling\n12976128\t/var/backups/proofofwork-ui/20260817T021417Z-wallet-amo-q16-recovery/proofofwork-computer.before\n12976128\t/var/backups/proofofwork-ui/20260817T021417Z-wallet-amo-q16-recovery/proofofwork-marketplace.before\n12976128\t/var/backups/proofofwork-ui/20260817T021417Z-wallet-amo-q16-recovery/proofofwork-wallet.before\n38932480\t/var/backups/proofofwork-ui/20260817T021417Z-wallet-amo-q16-recovery\n24576\t/var/backups/proofofwork-ui/recovery-evidence/proofofwork-audit17-storage-trend-20260919T163712Z\n12288\t/var/backups/proofofwork-ui/recovery-evidence/audit17-transport-cleanup-6eb4a1e\n12288\t/var/backups/proofofwork-ui/recovery-evidence/proofofwork-audit17-storage-trend-mount-20260919\n609120256\t/var/backups/proofofwork-ui/recovery-evidence/audit17-boost-20260919\n959967232\t/var/backups/proofofwork-ui/recovery-evidence/audit17-20260919\n1569140736\t/var/backups/proofofwork-ui/recovery-evidence\n16384\t/var/backups/proofofwork-ui/incidents/ui-legacy-release-metadata-before-542cd64c1067-20260827T060401Z\n36864\t/var/backups/proofofwork-ui/incidents\n386887680\t/var/backups/proofofwork-ui/rollbacks/proofofwork-www-pre-6ff2fa144acb-20260827T231524Z\n163856384\t/var/backups/proofofwork-ui/rollbacks/345f7eb-20260803T034328Z\n376508416\t/var/backups/proofofwork-ui/rollbacks/proofofwork-www-pre-cdc8f77853d7-20260828T024753Z\n403750912\t/var/backups/proofofwork-ui/rollbacks/proofofwork-www-pre-c2396ce9c3ea-20260902T005518Z\n411070464\t/var/backups/proofofwork-ui/rollbacks/proofofwork-www-pre-32f39776afb2-20260831T235646Z\n376279040\t/var/backups/proofofwork-ui/rollbacks/proofofwork-www-pre-e70f227095ea-20260827T134325Z\n355405824\t/var/backups/proofofwork-ui/rollbacks/c8735e9-20260804T014500Z\n406761472\t/var/backups/proofofwork-ui/rollbacks/proofofwork-www-pre-b76a4f56aff2-20260903T033447Z\n404672512\t/var/backups/proofofwork-ui/rollbacks/proofofwork-www-pre-6c1b47801671-20260905T020357Z\n163868672\t/var/backups/proofofwork-ui/rollbacks/5886608-20260818T175958Z\n376508416\t/var/backups/proofofwork-ui/rollbacks/proofofwork-www-pre-33c12c5a2a42-20260829T010316Z\n355676160\t/var/backups/proofofwork-ui/rollbacks/c8735e9-20260803T232500Z\n401477632\t/var/backups/proofofwork-ui/rollbacks/proofofwork-www-pre-5d1069e00e5a-20260901T130327Z\n401477632\t/var/backups/proofofwork-ui/rollbacks/proofofwork-www-pre-d13e9cad67e9-20260901T230747Z\n163991552\t/var/backups/proofofwork-ui/rollbacks/c8735e9-20260803T232000Z\n401416192\t/var/backups/proofofwork-ui/rollbacks/proofofwork-www-pre-ec97e1817dd8-20260901T022632Z\n163983360\t/var/backups/proofofwork-ui/rollbacks/c8735e9-20260803T203911Z\n387174400\t/var/backups/proofofwork-ui/rollbacks/proofofwork-www-pre-052d54433e9f-20260828T020349Z\n6440357888\t/var/backups/proofofwork-ui/rollbacks\n2269184\t/var/backups/proofofwork-ui/cleanup-evidence/phase2-20260826T014927Z\n164114432\t/var/backups/proofofwork-ui/cleanup-evidence/phase2-20260826T014927Z.erratum-20260826T022638Z\n2142208\t/var/backups/proofofwork-ui/cleanup-evidence/phase2-20260826T014345Z\n168529920\t/var/backups/proofofwork-ui/cleanup-evidence\n151736320\t/var/backups/proofofwork-ui/releases/20260716T201653Z-pre-0e48e49\n3896647680\t/var/backups/proofofwork-ui/releases\n19875872768\t/var/backups/proofofwork-ui\n",
+      "stderr": ""
+    },
+    "scratchTop": {
+      "exit": 0,
+      "stdout": "11751424\t/var/tmp/proofofwork-deploy/proofofwork-ui-source-0ef9c3bee321-20260920T053656Z/public\n29806592\t/var/tmp/proofofwork-deploy/proofofwork-ui-source-0ef9c3bee321-20260920T053656Z/.git\n1736704\t/var/tmp/proofofwork-deploy/proofofwork-ui-source-0ef9c3bee321-20260920T053656Z/output\n1105920\t/var/tmp/proofofwork-deploy/proofofwork-ui-source-0ef9c3bee321-20260920T053656Z/deploy\n569344\t/var/tmp/proofofwork-deploy/proofofwork-ui-source-0ef9c3bee321-20260920T053656Z/tests\n177344512\t/var/tmp/proofofwork-deploy/proofofwork-ui-source-0ef9c3bee321-20260920T053656Z/node_modules\n12288\t/var/tmp/proofofwork-deploy/proofofwork-ui-source-0ef9c3bee321-20260920T053656Z/.cursor\n20480\t/var/tmp/proofofwork-deploy/proofofwork-ui-source-0ef9c3bee321-20260920T053656Z/chained-mint-templates\n4317184\t/var/tmp/proofofwork-deploy/proofofwork-ui-source-0ef9c3bee321-20260920T053656Z/audits\n16384\t/var/tmp/proofofwork-deploy/proofofwork-ui-source-0ef9c3bee321-20260920T053656Z/.githooks\n16384\t/var/tmp/proofofwork-deploy/proofofwork-ui-source-0ef9c3bee321-20260920T053656Z/.github\n7245824\t/var/tmp/proofofwork-deploy/proofofwork-ui-source-0ef9c3bee321-20260920T053656Z/scripts\n2547712\t/var/tmp/proofofwork-deploy/proofofwork-ui-source-0ef9c3bee321-20260920T053656Z/src\n12288\t/var/tmp/proofofwork-deploy/proofofwork-ui-source-0ef9c3bee321-20260920T053656Z/test-api\n4980736\t/var/tmp/proofofwork-deploy/proofofwork-ui-source-0ef9c3bee321-20260920T053656Z/server\n242515968\t/var/tmp/proofofwork-deploy/proofofwork-ui-source-0ef9c3bee321-20260920T053656Z\n8192\t/var/tmp/proofofwork-deploy/audit19-ui-stage-56694a7d6d76-20260920T180539Z/archive-base\n28672\t/var/tmp/proofofwork-deploy/audit19-ui-stage-56694a7d6d76-20260920T180539Z\n203984896\t/var/tmp/proofofwork-deploy/proofofwork-ui-surfaces-0ef9c3bee321-20260920T053656Z/surfaces\n203988992\t/var/tmp/proofofwork-deploy/proofofwork-ui-surfaces-0ef9c3bee321-20260920T053656Z\n36864\t/var/tmp/proofofwork-deploy/audit17-publish-6eb4a1e07131-20260919T161919Z\n28672\t/var/tmp/proofofwork-deploy/audit17-storage-trend\n36864\t/var/tmp/proofofwork-deploy/audit17-publish-07929dd3c6e4-20260919T145727Z\n11751424\t/var/tmp/proofofwork-deploy/proofofwork-ui-source-56694a7d6d76-20260920T180539Z/public\n30134272\t/var/tmp/proofofwork-deploy/proofofwork-ui-source-56694a7d6d76-20260920T180539Z/.git\n1736704\t/var/tmp/proofofwork-deploy/proofofwork-ui-source-56694a7d6d76-20260920T180539Z/output\n1105920\t/var/tmp/proofofwork-deploy/proofofwork-ui-source-56694a7d6d76-20260920T180539Z/deploy\n569344\t/var/tmp/proofofwork-deploy/proofofwork-ui-source-56694a7d6d76-20260920T180539Z/tests\n177344512\t/var/tmp/proofofwork-deploy/proofofwork-ui-source-56694a7d6d76-20260920T180539Z/node_modules\n12288\t/var/tmp/proofofwork-deploy/proofofwork-ui-source-56694a7d6d76-20260920T180539Z/.cursor\n20480\t/var/tmp/proofofwork-deploy/proofofwork-ui-source-56694a7d6d76-20260920T180539Z/chained-mint-templates\n4825088\t/var/tmp/proofofwork-deploy/proofofwork-ui-source-56694a7d6d76-20260920T180539Z/audits\n16384\t/var/tmp/proofofwork-deploy/proofofwork-ui-source-56694a7d6d76-20260920T180539Z/.githooks\n16384\t/var/tmp/proofofwork-deploy/proofofwork-ui-source-56694a7d6d76-20260920T180539Z/.github\n7307264\t/var/tmp/proofofwork-deploy/proofofwork-ui-source-56694a7d6d76-20260920T180539Z/scripts\n2568192\t/var/tmp/proofofwork-deploy/proofofwork-ui-source-56694a7d6d76-20260920T180539Z/src\n12288\t/var/tmp/proofofwork-deploy/proofofwork-ui-source-56694a7d6d76-20260920T180539Z/test-api\n5054464\t/var/tmp/proofofwork-deploy/proofofwork-ui-source-56694a7d6d76-20260920T180539Z/server\n243507200\t/var/tmp/proofofwork-deploy/proofofwork-ui-source-56694a7d6d76-20260920T180539Z\n204107776\t/var/tmp/proofofwork-deploy/proofofwork-ui-surfaces-56694a7d6d76-20260920T180539Z/surfaces\n204111872\t/var/tmp/proofofwork-deploy/proofofwork-ui-surfaces-56694a7d6d76-20260920T180539Z\n1441026048\t/var/tmp/proofofwork-deploy\n",
+      "stderr": ""
+    },
+    "helperHashes": {
+      "proofofwork-ui-storage-prune": "50a6633f5385a87efed7ad8ed7fcc786a13b302b9f4b5dbdbdc929b1f084cf38",
+      "proofofwork-ui-release-stage": "39f17624d0e244382c344e31f5b04b0b58bb8f4e8c7bc9c93d7418bc8ab0f238",
+      "proofofwork-ui-storage-health": "b533b293cf0973bbdfb43ab8f2a6e81a0cf6b329f4d951b81ed54dfa28a7855b",
+      "proofofwork-release-prune": "d4de9574cd0c666d198c4d448e72869c09cdfeacd29cd3e1eb0731f0419f8fb6",
+      "proofofwork-ui-release-provenance.pre-locale-fix-20260820T203800Z": "5ef101069504b1cd6e504698c70c9d4dc605dacca7e58bdaed6e06b2ebffbc99",
+      "proofofwork-ui-release-provenance.boost-legacy-evidence-20260829T002300Z.bak": "c22fe445ed26bdbba610a0d1cf43992e351b204ff84bb746c639c18df16da2e0",
+      "proofofwork-ui-release-publish.boost-legacy-evidence-20260829T002300Z.bak": "83236609cf0dc2478b2f602eb96c6e156a9ccb7aac2f1ed83067c23c249a49a9",
+      "proofofwork-ui-release-stage.boost-f72625e-20260829T001236Z.bak": "cadeb8820b1ae4c88d3233d4c5645fe243e05916c1454612d6e7decc4380055f",
+      "proofofwork-ui-release-publish.boost-f72625e-20260829T001236Z.bak": "1cfc66ccc3f6411c9d2c8c7ab4fb31e06de891d90da0c3b9582bbd7d1b04bc29",
+      "proofofwork-release-prune.boost-release-prune-20260829T003257Z.bak": "0fcf5326f0f650d76d3068bc935a9984fee1d7d2dc8fb601bc85d0f5382ce55c",
+      "proofofwork-ui-release-provenance": "1117642815e1caf02ad5dc5d262419802daf029e6e0b7a04ebff4ac227beddb5",
+      "proofofwork-ui-release-publish": "5f10c8fb2b1733d24b452c2bfe96c1e32acaed9c8e15798601bcc39cc9757d56",
+      "proofofwork-storage-trend": "cfd74a70748c0092a8d1ccbce257af1d219805cff77c0dd66c406212920f9efc",
+      "proofofwork-ui-release-provenance.boost-f72625e-20260829T001236Z.bak": "a8f26e30e2e3173dc5f20a1031082987eb1d90528058ced50a97d5cd932fe3ed"
+    }
+  },
+  "proposedExactArchiveBatch": {
+    "discoveryAt": "2026-09-20T21:42:50.600913+00:00",
+    "mode": "read-only-proposal",
+    "candidates": [
+      {
+        "archive": "proofofwork-ui-release-07929dd3c6e4-20260919T145727Z.tgz",
+        "files": [
+          "proofofwork-ui-release-07929dd3c6e4-20260919T145727Z.tgz",
+          "proofofwork-ui-release-07929dd3c6e4-20260919T145727Z.tgz.sha256",
+          "proofofwork-ui-release-07929dd3c6e4-20260919T145727Z.tgz.provenance"
+        ],
+        "logicalBytes": 185241176,
+        "allocatedBytes": 185253888,
+        "sha256": "88f1830dcd726d508cfcfd0bd0d1c8fff86d21c23cae884d1efdbbf31aa56cd8",
+        "identity": [
+          2049,
+          520663,
+          185238650,
+          1789830251554170523,
+          1789830252365243873,
+          1,
+          361808
+        ],
+        "sidecars": [
+          {
+            "name": "proofofwork-ui-release-07929dd3c6e4-20260919T145727Z.tgz.sha256",
+            "bytes": 123,
+            "sha256": "4e008a2662072737488b3bf9dd8e547194d0d8bae47facf52dfefb079a6afffe",
+            "content": "88f1830dcd726d508cfcfd0bd0d1c8fff86d21c23cae884d1efdbbf31aa56cd8  proofofwork-ui-release-07929dd3c6e4-20260919T145727Z.tgz\n",
+            "identity": [
+              2049,
+              520664,
+              123,
+              1789830252346242155,
+              1789830252365243873,
+              1,
+              8
+            ]
+          },
+          {
+            "name": "proofofwork-ui-release-07929dd3c6e4-20260919T145727Z.tgz.provenance",
+            "bytes": 2403,
+            "sha256": "e8664797603776d65a01e92f13a51a6e83c302eb5d197d40b0671dca62bd7737",
+            "content": "format=proofofwork-ui-release-v3\nrelease_id=07929dd3c6e4-20260919T145727Z\ncommit=07929dd3c6e422fa1955c6cbf07007330eca0519\nsource_tree=5ca993c7816b20c3b914e4421bdbdabf49673c5f\nsource_attestation=detached-recursive-git-tree-v1\nsource_dependency_model=node-modules-recursive-v1\nsource_dependency_entry_count=6118\nsource_dependency_bytes=160954989\nsource_dependency_sha256=74d54e7c58f15d225603104316eab06748209b85c6e2c27f8457ee6967f9b811\ndeployed_at=2026-09-19T15:10:53Z\narchive_name=proofofwork-ui-release-07929dd3c6e4-20260919T145727Z.tgz\narchive_sha256=88f1830dcd726d508cfcfd0bd0d1c8fff86d21c23cae884d1efdbbf31aa56cd8\narchive_payload_model=surfaces-v1\nsurface.activity.file_count=48\nsurface.activity.sha256=ba60d1a084ab3d91d5ee35c3c3d73cdf65a4b21b5eb14fa7ab6e9f7f552f72a6\nsurface.browser.file_count=48\nsurface.browser.sha256=869af1a061bf780f9eb8606d8cd791a512f260987d7b6aace7f5bde907772158\nsurface.boost.file_count=48\nsurface.boost.sha256=7ec06388ca97f57ab609ff3746bbbc5c0ca431a61e0c03e977660c7d2a5f68a6\nsurface.computer.file_count=48\nsurface.computer.sha256=3c5e826b8bfca325486783502f33e144803ce145288d71d0fb6d3b44cf2d1fd7\nsurface.desktop.file_count=48\nsurface.desktop.sha256=f3a4632958ebc7150719cd07d7cb2789d0387dd78dc7061d9a96cbe43df0cd54\nsurface.growth.file_count=48\nsurface.growth.sha256=44fb5163de5191cf02459fff99630c2b8f1b119d132e9fa196ca19ae3e219279\nsurface.id.file_count=48\nsurface.id.sha256=8847eebf87497425ba235baba13382075ee401d2fe1874d7d34885ebc42d3d83\nsurface.inception.file_count=48\nsurface.inception.sha256=8d3badc2b0e7cf9e86d06a33def4a3a26a0325cd0332a134f537e8ada0623c40\nsurface.infinity.file_count=48\nsurface.infinity.sha256=ea624b07011af37064cd6a42daa06d49c76f0f4dca7e0bd33844eaf8bf6a8609\nsurface.landing.file_count=48\nsurface.landing.sha256=f12528f5e974bc2023d0eeaeb309dd4625ec05e2c5e6a9c852985a9be8f0fe2b\nsurface.marketplace.file_count=48\nsurface.marketplace.sha256=4f28973a69f217a88b9c420705c649281609a3ecc28bdd33e245cfcdd2b42f33\nsurface.nft.file_count=48\nsurface.nft.sha256=3c5e826b8bfca325486783502f33e144803ce145288d71d0fb6d3b44cf2d1fd7\nsurface.token.file_count=48\nsurface.token.sha256=aaf6d0ee4f603ae4140b991840d0e62f56016fa793971daafb64168f97dc4a0c\nsurface.wallet.file_count=48\nsurface.wallet.sha256=32b1a5812cb0c23e3d46ec7666c118394cfc027c7fe62f8a8f762e41169a22fa\nsurface.work.file_count=48\nsurface.work.sha256=744427f0ce2c1ec997aed126e35095a37a70099962259ac35589c9d3dd2edd1a\n",
+            "identity": [
+              2049,
+              530595,
+              2403,
+              1789830653688315692,
+              1789830670356807331,
+              1,
+              8
+            ]
+          }
+        ]
+      },
+      {
+        "archive": "proofofwork-ui-release-84a9871040db-20260918T190233Z.tgz",
+        "files": [
+          "proofofwork-ui-release-84a9871040db-20260918T190233Z.tgz",
+          "proofofwork-ui-release-84a9871040db-20260918T190233Z.tgz.sha256",
+          "proofofwork-ui-release-84a9871040db-20260918T190233Z.tgz.provenance"
+        ],
+        "logicalBytes": 182097673,
+        "allocatedBytes": 182108160,
+        "sha256": "a4a696daf7ad881e9e1b18d1ca16c4012df6d67d032e6922b3335dbc211a7449",
+        "identity": [
+          2049,
+          512651,
+          182095147,
+          1789758681832619102,
+          1789758682560684908,
+          1,
+          355664
+        ],
+        "sidecars": [
+          {
+            "name": "proofofwork-ui-release-84a9871040db-20260918T190233Z.tgz.sha256",
+            "bytes": 123,
+            "sha256": "52ddec7427f3e7384ab62f37b9e52a94531699e7cc581bf4b425da898ac725e1",
+            "content": "a4a696daf7ad881e9e1b18d1ca16c4012df6d67d032e6922b3335dbc211a7449  proofofwork-ui-release-84a9871040db-20260918T190233Z.tgz\n",
+            "identity": [
+              2049,
+              513135,
+              123,
+              1789758682543683371,
+              1789758682560684908,
+              1,
+              8
+            ]
+          },
+          {
+            "name": "proofofwork-ui-release-84a9871040db-20260918T190233Z.tgz.provenance",
+            "bytes": 2403,
+            "sha256": "b07cbac88e866abe28285aab160989c937261008b3057abe8cb056b3de191a45",
+            "content": "format=proofofwork-ui-release-v3\nrelease_id=84a9871040db-20260918T190233Z\ncommit=84a9871040db0e500a8b7f8cc16fec78c5e669c9\nsource_tree=80d4befb9969f8a6fdb74ffa23d245d761a0263c\nsource_attestation=detached-recursive-git-tree-v1\nsource_dependency_model=node-modules-recursive-v1\nsource_dependency_entry_count=6118\nsource_dependency_bytes=160954989\nsource_dependency_sha256=74d54e7c58f15d225603104316eab06748209b85c6e2c27f8457ee6967f9b811\ndeployed_at=2026-09-18T19:22:57Z\narchive_name=proofofwork-ui-release-84a9871040db-20260918T190233Z.tgz\narchive_sha256=a4a696daf7ad881e9e1b18d1ca16c4012df6d67d032e6922b3335dbc211a7449\narchive_payload_model=surfaces-v1\nsurface.activity.file_count=43\nsurface.activity.sha256=7c51fe13326f4efce9248843e59c73644b82ffdb72b7cad28c9b76cb885402ad\nsurface.browser.file_count=43\nsurface.browser.sha256=33008fe249b3db6ce848cf3df25a4ce45e43730eac23404fc675adcee587f11a\nsurface.boost.file_count=43\nsurface.boost.sha256=97ce86be5b1b3272d173293d6ddaeadb15d6feeb1a0ef221d41e2d025c1e8e1a\nsurface.computer.file_count=43\nsurface.computer.sha256=14a642cb0a4acd0e5dbc4dfec5e2481c4aecc88f4b12bf4300b8611cdab9c9d3\nsurface.desktop.file_count=43\nsurface.desktop.sha256=d78cf61b7482bf60aee73d13b5e36a6d0e7b383177d14f186674f8bb4e7167bf\nsurface.growth.file_count=43\nsurface.growth.sha256=9a7285bc92cdb627b564437690bee181838e2e3b8ae8c934d09eccfc749884a6\nsurface.id.file_count=43\nsurface.id.sha256=bdf75e3460f803e62427139a03b3fb97d69c416886bc95a69e27381b50f6c9da\nsurface.inception.file_count=43\nsurface.inception.sha256=71f00322972aacc699c391919548b6646ee33d546ca1bfd887c3080e9a7373fc\nsurface.infinity.file_count=43\nsurface.infinity.sha256=38a0dc792bd708e81c8e7478bd04628fdadf94ca5546e5931180add86a2b9605\nsurface.landing.file_count=43\nsurface.landing.sha256=90175812ea0ad9dbfecbfe7b7c72fb7a8d8e53ffdd00ec2010ea69e3561ae51c\nsurface.marketplace.file_count=43\nsurface.marketplace.sha256=de49acbdcf120daeecbf3c34ef9d7c3fcd632cddf744af4b950e869931a456ac\nsurface.nft.file_count=43\nsurface.nft.sha256=14a642cb0a4acd0e5dbc4dfec5e2481c4aecc88f4b12bf4300b8611cdab9c9d3\nsurface.token.file_count=43\nsurface.token.sha256=348c5a11fec4a09945d2b2701999692cbe7c3f94fa6aa0304da4d141f6696970\nsurface.wallet.file_count=43\nsurface.wallet.sha256=c75c60eb79933f336a920a4f308cdfd991d5c71dfea979b60e76df4411087320\nsurface.work.file_count=43\nsurface.work.sha256=5dcefb1068000dc3514702d140ef59bfb37728e4b5055583f2ff10d7d03d0629\n",
+            "identity": [
+              2049,
+              520658,
+              2403,
+              1789759377736220242,
+              1789759395076781165,
+              1,
+              8
+            ]
+          }
+        ]
+      },
+      {
+        "archive": "proofofwork-ui-release-62fded8008f9-20260914T025303Z.tgz",
+        "files": [
+          "proofofwork-ui-release-62fded8008f9-20260914T025303Z.tgz",
+          "proofofwork-ui-release-62fded8008f9-20260914T025303Z.tgz.sha256",
+          "proofofwork-ui-release-62fded8008f9-20260914T025303Z.tgz.provenance"
+        ],
+        "logicalBytes": 182095099,
+        "allocatedBytes": 182108160,
+        "sha256": "9c22c63aa35aa41c3d4d53f8a92ca34b92b133dc247a3c9ae42c0224189e03ce",
+        "identity": [
+          2049,
+          513338,
+          182092573,
+          1789354943426868117,
+          1789354944176935511,
+          1,
+          355664
+        ],
+        "sidecars": [
+          {
+            "name": "proofofwork-ui-release-62fded8008f9-20260914T025303Z.tgz.sha256",
+            "bytes": 123,
+            "sha256": "5090ca53b03911b8163f455fd61a1fe29f3e8a061b5c1be5ca7c49fc8a2bceef",
+            "content": "9c22c63aa35aa41c3d4d53f8a92ca34b92b133dc247a3c9ae42c0224189e03ce  proofofwork-ui-release-62fded8008f9-20260914T025303Z.tgz\n",
+            "identity": [
+              2049,
+              513339,
+              123,
+              1789354944168934793,
+              1789354944176935511,
+              1,
+              8
+            ]
+          },
+          {
+            "name": "proofofwork-ui-release-62fded8008f9-20260914T025303Z.tgz.provenance",
+            "bytes": 2403,
+            "sha256": "0bd1073028332825149efec7ee2a608f1e5e07ebecc2dfe9d83beabb0c4e846d",
+            "content": "format=proofofwork-ui-release-v3\nrelease_id=62fded8008f9-20260914T025303Z\ncommit=62fded8008f9bd70e6b392a570f9b777389a5b2b\nsource_tree=84f7b135f8337219184785f396a0feeab29b0d97\nsource_attestation=detached-recursive-git-tree-v1\nsource_dependency_model=node-modules-recursive-v1\nsource_dependency_entry_count=6118\nsource_dependency_bytes=160954989\nsource_dependency_sha256=74d54e7c58f15d225603104316eab06748209b85c6e2c27f8457ee6967f9b811\ndeployed_at=2026-09-14T03:07:11Z\narchive_name=proofofwork-ui-release-62fded8008f9-20260914T025303Z.tgz\narchive_sha256=9c22c63aa35aa41c3d4d53f8a92ca34b92b133dc247a3c9ae42c0224189e03ce\narchive_payload_model=surfaces-v1\nsurface.activity.file_count=43\nsurface.activity.sha256=7c51fe13326f4efce9248843e59c73644b82ffdb72b7cad28c9b76cb885402ad\nsurface.browser.file_count=43\nsurface.browser.sha256=33008fe249b3db6ce848cf3df25a4ce45e43730eac23404fc675adcee587f11a\nsurface.boost.file_count=43\nsurface.boost.sha256=97ce86be5b1b3272d173293d6ddaeadb15d6feeb1a0ef221d41e2d025c1e8e1a\nsurface.computer.file_count=43\nsurface.computer.sha256=14a642cb0a4acd0e5dbc4dfec5e2481c4aecc88f4b12bf4300b8611cdab9c9d3\nsurface.desktop.file_count=43\nsurface.desktop.sha256=d78cf61b7482bf60aee73d13b5e36a6d0e7b383177d14f186674f8bb4e7167bf\nsurface.growth.file_count=43\nsurface.growth.sha256=9a7285bc92cdb627b564437690bee181838e2e3b8ae8c934d09eccfc749884a6\nsurface.id.file_count=43\nsurface.id.sha256=bdf75e3460f803e62427139a03b3fb97d69c416886bc95a69e27381b50f6c9da\nsurface.inception.file_count=43\nsurface.inception.sha256=71f00322972aacc699c391919548b6646ee33d546ca1bfd887c3080e9a7373fc\nsurface.infinity.file_count=43\nsurface.infinity.sha256=38a0dc792bd708e81c8e7478bd04628fdadf94ca5546e5931180add86a2b9605\nsurface.landing.file_count=43\nsurface.landing.sha256=90175812ea0ad9dbfecbfe7b7c72fb7a8d8e53ffdd00ec2010ea69e3561ae51c\nsurface.marketplace.file_count=43\nsurface.marketplace.sha256=de49acbdcf120daeecbf3c34ef9d7c3fcd632cddf744af4b950e869931a456ac\nsurface.nft.file_count=43\nsurface.nft.sha256=14a642cb0a4acd0e5dbc4dfec5e2481c4aecc88f4b12bf4300b8611cdab9c9d3\nsurface.token.file_count=43\nsurface.token.sha256=348c5a11fec4a09945d2b2701999692cbe7c3f94fa6aa0304da4d141f6696970\nsurface.wallet.file_count=43\nsurface.wallet.sha256=c75c60eb79933f336a920a4f308cdfd991d5c71dfea979b60e76df4411087320\nsurface.work.file_count=43\nsurface.work.sha256=5dcefb1068000dc3514702d140ef59bfb37728e4b5055583f2ff10d7d03d0629\n",
+            "identity": [
+              2049,
+              512650,
+              2403,
+              1789355232009797846,
+              1789355253164698658,
+              1,
+              8
+            ]
+          }
+        ]
+      },
+      {
+        "archive": "proofofwork-ui-release-10795467c328-20260914T012801Z.tgz",
+        "files": [
+          "proofofwork-ui-release-10795467c328-20260914T012801Z.tgz",
+          "proofofwork-ui-release-10795467c328-20260914T012801Z.tgz.sha256",
+          "proofofwork-ui-release-10795467c328-20260914T012801Z.tgz.provenance"
+        ],
+        "logicalBytes": 185234264,
+        "allocatedBytes": 185245696,
+        "sha256": "cff82eaaab61f298f03851cb8e10cf260ed018e54be3925dd17a5d3b0748f8d7",
+        "identity": [
+          2049,
+          519075,
+          185231738,
+          1789350614510084072,
+          1789350615314156283,
+          1,
+          361792
+        ],
+        "sidecars": [
+          {
+            "name": "proofofwork-ui-release-10795467c328-20260914T012801Z.tgz.sha256",
+            "bytes": 123,
+            "sha256": "142f815e523211e2b32740a62591bd5787d5e86a01dd92acbd10a19fff57e3e8",
+            "content": "cff82eaaab61f298f03851cb8e10cf260ed018e54be3925dd17a5d3b0748f8d7  proofofwork-ui-release-10795467c328-20260914T012801Z.tgz\n",
+            "identity": [
+              2049,
+              519076,
+              123,
+              1789350615306155564,
+              1789350615314156283,
+              1,
+              8
+            ]
+          },
+          {
+            "name": "proofofwork-ui-release-10795467c328-20260914T012801Z.tgz.provenance",
+            "bytes": 2403,
+            "sha256": "7f4651f4410e938041c2272ca8596c9a8d66406b3d9fd017ff9d391fa597796a",
+            "content": "format=proofofwork-ui-release-v3\nrelease_id=10795467c328-20260914T012801Z\ncommit=10795467c3283c87028b2f1f33457bb59042963c\nsource_tree=835cef1b741afb61c6a235dffb44209e84e855f4\nsource_attestation=detached-recursive-git-tree-v1\nsource_dependency_model=node-modules-recursive-v1\nsource_dependency_entry_count=6118\nsource_dependency_bytes=160954989\nsource_dependency_sha256=74d54e7c58f15d225603104316eab06748209b85c6e2c27f8457ee6967f9b811\ndeployed_at=2026-09-14T01:54:33Z\narchive_name=proofofwork-ui-release-10795467c328-20260914T012801Z.tgz\narchive_sha256=cff82eaaab61f298f03851cb8e10cf260ed018e54be3925dd17a5d3b0748f8d7\narchive_payload_model=surfaces-v1\nsurface.activity.file_count=48\nsurface.activity.sha256=11ab68a4756c354fd57758f821ce9287ec36e886d3849e9dd9b7af41fbd604a0\nsurface.browser.file_count=48\nsurface.browser.sha256=4b0d82d4ee278544cb2b0194bdd163f927b7b5fba8241f4d5e3f85e6865d9bed\nsurface.boost.file_count=48\nsurface.boost.sha256=2442cda07359baae1b59443289b1fd30604753132df2f5a547aa41ce4e7cb148\nsurface.computer.file_count=48\nsurface.computer.sha256=e42242e16acf83e4c8df2d4df71fa6bce6391ecc5c9a98cf11607cc779c2a077\nsurface.desktop.file_count=48\nsurface.desktop.sha256=4387f0c663ca55276d8843a6dac4a66b1850b31a4cbf0757d1e32689bf99d707\nsurface.growth.file_count=48\nsurface.growth.sha256=1c2923ba829887d2975fbb8480fa04d4a2b01f5feaee9cf5dce80ebf9a273d22\nsurface.id.file_count=48\nsurface.id.sha256=86e57e4b9765cd2742f58f11d3f935f37ac9e12b13c0bcce1284a7b073ec965e\nsurface.inception.file_count=48\nsurface.inception.sha256=c924c43e56d80c7f08a1e8fc54fc1740a14c9bafd1580676a2573bfc3ab70878\nsurface.infinity.file_count=48\nsurface.infinity.sha256=e4fb340b4955d001b603cd980273defaeab8565ecd3a2c65cd8b5a7651baf60b\nsurface.landing.file_count=48\nsurface.landing.sha256=91014ffffea545c905ecf4ff5fdc138823917390d654e46ce3ed10c11780330a\nsurface.marketplace.file_count=48\nsurface.marketplace.sha256=82d554ee2992186de6b0b90ca9fe678024758c294ba7ae1bd58849c92ed6214b\nsurface.nft.file_count=48\nsurface.nft.sha256=e42242e16acf83e4c8df2d4df71fa6bce6391ecc5c9a98cf11607cc779c2a077\nsurface.token.file_count=48\nsurface.token.sha256=407776e04d0565f7bd52904998e99285ea25830464d82b78a15fa2cecf942a01\nsurface.wallet.file_count=48\nsurface.wallet.sha256=67b0d21f8adf8babf1a5a17673c643e841c8b91b53fb2387d7fbf238ab06945b\nsurface.work.file_count=48\nsurface.work.sha256=b5f7846efe4833bc9871f51aedeb1cf35a7167fd27a6a6e5c67485eb3028dce3\n",
+            "identity": [
+              2049,
+              530227,
+              2403,
+              1789350873324332524,
+              1789350891371954015,
+              1,
+              8
+            ]
+          }
+        ]
+      },
+      {
+        "archive": "proofofwork-ui-release-10795467c328-20260914T013529Z.tgz",
+        "files": [
+          "proofofwork-ui-release-10795467c328-20260914T013529Z.tgz",
+          "proofofwork-ui-release-10795467c328-20260914T013529Z.tgz.sha256"
+        ],
+        "logicalBytes": 185230253,
+        "allocatedBytes": 185237504,
+        "sha256": "31846880e5dec8e9cb24c594fcb73ee8b1167bef46da10d7a0c5cc8f5f386e75",
+        "identity": [
+          2049,
+          548667,
+          185230130,
+          1789350015048299909,
+          1789350015735361466,
+          1,
+          361784
+        ],
+        "sidecars": [
+          {
+            "name": "proofofwork-ui-release-10795467c328-20260914T013529Z.tgz.sha256",
+            "bytes": 123,
+            "sha256": "e58d44c02a6910921b7b140f226ea8726a852a0d6d8484198d0bb6fa373d6bfc",
+            "content": "31846880e5dec8e9cb24c594fcb73ee8b1167bef46da10d7a0c5cc8f5f386e75  proofofwork-ui-release-10795467c328-20260914T013529Z.tgz\n",
+            "identity": [
+              2049,
+              548668,
+              123,
+              1789350015727360749,
+              1789350015735361466,
+              1,
+              8
+            ]
+          }
+        ]
+      },
+      {
+        "archive": "proofofwork-ui-release-f23c24fd97a9-20260914T001952Z.tgz",
+        "files": [
+          "proofofwork-ui-release-f23c24fd97a9-20260914T001952Z.tgz",
+          "proofofwork-ui-release-f23c24fd97a9-20260914T001952Z.tgz.sha256",
+          "proofofwork-ui-release-f23c24fd97a9-20260914T001952Z.tgz.provenance"
+        ],
+        "logicalBytes": 185237577,
+        "allocatedBytes": 185249792,
+        "sha256": "91375462cccd674b8d3644f78afead18ffe2347966376666531a13ddbeb92d9b",
+        "identity": [
+          2049,
+          548655,
+          185235051,
+          1789346403271621418,
+          1789346404358720645,
+          1,
+          361800
+        ],
+        "sidecars": [
+          {
+            "name": "proofofwork-ui-release-f23c24fd97a9-20260914T001952Z.tgz.sha256",
+            "bytes": 123,
+            "sha256": "2b52ec5306617f7d49282843b4a25979a6ccb23521ce1c62727ac5081e63d11f",
+            "content": "91375462cccd674b8d3644f78afead18ffe2347966376666531a13ddbeb92d9b  proofofwork-ui-release-f23c24fd97a9-20260914T001952Z.tgz\n",
+            "identity": [
+              2049,
+              548656,
+              123,
+              1789346404348719732,
+              1789346404358720645,
+              1,
+              8
+            ]
+          },
+          {
+            "name": "proofofwork-ui-release-f23c24fd97a9-20260914T001952Z.tgz.provenance",
+            "bytes": 2403,
+            "sha256": "3b740a757f24dcf6190917508753daadb2af723fa4becb5b4eefd635228e5913",
+            "content": "format=proofofwork-ui-release-v3\nrelease_id=f23c24fd97a9-20260914T001952Z\ncommit=f23c24fd97a98a916f48891051185d6ed4ce402f\nsource_tree=1cfa4938045ccb105cc41f8e40f1e6bbb08767fe\nsource_attestation=detached-recursive-git-tree-v1\nsource_dependency_model=node-modules-recursive-v1\nsource_dependency_entry_count=6118\nsource_dependency_bytes=160954989\nsource_dependency_sha256=74d54e7c58f15d225603104316eab06748209b85c6e2c27f8457ee6967f9b811\ndeployed_at=2026-09-14T00:44:08Z\narchive_name=proofofwork-ui-release-f23c24fd97a9-20260914T001952Z.tgz\narchive_sha256=91375462cccd674b8d3644f78afead18ffe2347966376666531a13ddbeb92d9b\narchive_payload_model=surfaces-v1\nsurface.activity.file_count=48\nsurface.activity.sha256=905df1518fdede16644d1758866611075a58bfc9c6fe6083de3d66164dc27809\nsurface.browser.file_count=48\nsurface.browser.sha256=4a6c32d0facc86dcdd9a70afb8cb17c61ced7389298426603ad3e37fb0af85b6\nsurface.boost.file_count=48\nsurface.boost.sha256=7a2421743754ace05c90da6abdf3e5b3403715e972c9e5893ea662eba42ba5f3\nsurface.computer.file_count=48\nsurface.computer.sha256=5a3ccfd0608f7d9289dc584783238bd2cce3d93fdab17a51adb6f831ef2d9995\nsurface.desktop.file_count=48\nsurface.desktop.sha256=2c6ef3a9e14c05b805baea81d361a4f231b5e60452c27ce1fd5553849478d026\nsurface.growth.file_count=48\nsurface.growth.sha256=1dedaf878cf55bfecc09f719f64cba516a1475bb8b006b694e8144b5855d6c6e\nsurface.id.file_count=48\nsurface.id.sha256=0bc4f52dccf447bf1a9107c90d8d5f80db93b226dda87963eaa6fa439c75ee2b\nsurface.inception.file_count=48\nsurface.inception.sha256=f0ed1a2c4e67a5cb802e7bed436ca86b31aafb94feb3e20a44144c8b9cdb31e5\nsurface.infinity.file_count=48\nsurface.infinity.sha256=45581d3475ebd2dda2416a1351a4569daead0e644ac2a66466e11c4cf258062c\nsurface.landing.file_count=48\nsurface.landing.sha256=a8068f1604c1a0d56916215e1fd9074f161aa0af7dcbbfe2e2a3c5bd3dcdb2db\nsurface.marketplace.file_count=48\nsurface.marketplace.sha256=36a3384479a13e86109e30cd8e6ae67f77eaae2a005d78bdcf9c8f432a7a2689\nsurface.nft.file_count=48\nsurface.nft.sha256=5a3ccfd0608f7d9289dc584783238bd2cce3d93fdab17a51adb6f831ef2d9995\nsurface.token.file_count=48\nsurface.token.sha256=56df60b4ee6adc4a73ef93d3e277ae5aad2b384562fdd9bdf7d2691661862b6d\nsurface.wallet.file_count=48\nsurface.wallet.sha256=6dd81cdfbb4e477a6e19048b327ad0a5e25ba4e41af5de92897af3adcfd09ae8\nsurface.work.file_count=48\nsurface.work.sha256=ad2c062664989ee3bfc202ed05a2bce066ea3e99e458c71ac2ac9d995f5f8714\n",
+            "identity": [
+              2049,
+              548657,
+              2403,
+              1789346648987018238,
+              1789346667439698034,
+              1,
+              8
+            ]
+          }
+        ]
+      },
+      {
+        "archive": "proofofwork-ui-release-4ce5f70c6538-20260913T224020Z.tgz",
+        "files": [
+          "proofofwork-ui-release-4ce5f70c6538-20260913T224020Z.tgz",
+          "proofofwork-ui-release-4ce5f70c6538-20260913T224020Z.tgz.sha256",
+          "proofofwork-ui-release-4ce5f70c6538-20260913T224020Z.tgz.provenance"
+        ],
+        "logicalBytes": 185219409,
+        "allocatedBytes": 185229312,
+        "sha256": "1a83d0e13fdb49a6ece531c18d78b8942c771a5e23cf883375129a9458ee3fbf",
+        "identity": [
+          2049,
+          542515,
+          185216883,
+          1789339751397246245,
+          1789339752050304990,
+          1,
+          361760
+        ],
+        "sidecars": [
+          {
+            "name": "proofofwork-ui-release-4ce5f70c6538-20260913T224020Z.tgz.sha256",
+            "bytes": 123,
+            "sha256": "186e4e8bb5997744cad4c614955e6dbfd3012e7948be4a682b237dfded64fb84",
+            "content": "1a83d0e13fdb49a6ece531c18d78b8942c771a5e23cf883375129a9458ee3fbf  proofofwork-ui-release-4ce5f70c6538-20260913T224020Z.tgz\n",
+            "identity": [
+              2049,
+              542543,
+              123,
+              1789339752041304180,
+              1789339752050304990,
+              1,
+              8
+            ]
+          },
+          {
+            "name": "proofofwork-ui-release-4ce5f70c6538-20260913T224020Z.tgz.provenance",
+            "bytes": 2403,
+            "sha256": "d23cf1d5a7b7e6094b8b6adbd0419f931bf8728c156b6fe42c5c6d089093cf8a",
+            "content": "format=proofofwork-ui-release-v3\nrelease_id=4ce5f70c6538-20260913T224020Z\ncommit=4ce5f70c653871122d79a312862ef9922b637db5\nsource_tree=8beb46792cfd9f4e10b4ad739df38f11f0939191\nsource_attestation=detached-recursive-git-tree-v1\nsource_dependency_model=node-modules-recursive-v1\nsource_dependency_entry_count=6118\nsource_dependency_bytes=160954989\nsource_dependency_sha256=74d54e7c58f15d225603104316eab06748209b85c6e2c27f8457ee6967f9b811\ndeployed_at=2026-09-13T22:52:54Z\narchive_name=proofofwork-ui-release-4ce5f70c6538-20260913T224020Z.tgz\narchive_sha256=1a83d0e13fdb49a6ece531c18d78b8942c771a5e23cf883375129a9458ee3fbf\narchive_payload_model=surfaces-v1\nsurface.activity.file_count=49\nsurface.activity.sha256=5873f31e24fd22d4751ecdb8e1e3340455c5ab0ddecaa8fd4408cb02a218eecb\nsurface.browser.file_count=49\nsurface.browser.sha256=7238dd0e282a83b94c41d38510d30666d18cbcb5af461b6c21cbde6b63eabf1e\nsurface.boost.file_count=49\nsurface.boost.sha256=0b73ab37d9325e12716c5bb1ec01b3b26a3cf41bdcd44d1730faf3d8d6b5af92\nsurface.computer.file_count=49\nsurface.computer.sha256=66b71910faa6db87a4c64fbb8881db4723522b2e71f4a5bbe04c71e3f12002c5\nsurface.desktop.file_count=49\nsurface.desktop.sha256=b7092f2ce86ebaa03048a75b64f9c6c1f28791234bbba2c90a01bef66e86419d\nsurface.growth.file_count=49\nsurface.growth.sha256=658919a951651a7102635b242f8adbab92966a639e56b5a7a657a55f5bd0a142\nsurface.id.file_count=49\nsurface.id.sha256=cb224d30c89cc308165f0e419e411bd16c28401050e1f0a481a0227a1fb5b9b2\nsurface.inception.file_count=49\nsurface.inception.sha256=745887b6e4836901590d22e8b56d94338b3471702d91d0df777ac50e4b6b2c9b\nsurface.infinity.file_count=49\nsurface.infinity.sha256=0788329e4ed168ed48a0e3a53a83d75052b2efcd28b7cdf7ccf96a57cee3b25c\nsurface.landing.file_count=49\nsurface.landing.sha256=996f95ef3019d1828d9d62db36a0f1faf4c87522e4c6cf6f5e85b920f29f93d0\nsurface.marketplace.file_count=49\nsurface.marketplace.sha256=300404b2811819e3fdfcce9be1c54bcb8ab6ff1ceb7436bc8b67c424d07eb3aa\nsurface.nft.file_count=49\nsurface.nft.sha256=66b71910faa6db87a4c64fbb8881db4723522b2e71f4a5bbe04c71e3f12002c5\nsurface.token.file_count=49\nsurface.token.sha256=e06bf44df63710f44e04fa6fad724eb530b361acc1bf637b167239693da7a7bf\nsurface.wallet.file_count=49\nsurface.wallet.sha256=224999048428447d72772342edcc1ccf36e2a8ae7a340023c744d2ad7c6b4de5\nsurface.work.file_count=49\nsurface.work.sha256=28d194b3a5e21bb9e6a91ef9f736d67f81e5ee3cee874e9bc53b738ef6d24228\n",
+            "identity": [
+              2049,
+              548648,
+              2403,
+              1789339974255298384,
+              1789339992321924362,
+              1,
+              8
+            ]
+          }
+        ]
+      },
+      {
+        "archive": "proofofwork-ui-release-45d4617df4ea-20260913T222338Z.tgz",
+        "files": [
+          "proofofwork-ui-release-45d4617df4ea-20260913T222338Z.tgz",
+          "proofofwork-ui-release-45d4617df4ea-20260913T222338Z.tgz.sha256",
+          "proofofwork-ui-release-45d4617df4ea-20260913T222338Z.tgz.provenance"
+        ],
+        "logicalBytes": 185213605,
+        "allocatedBytes": 185225216,
+        "sha256": "dd8621a02b3d5ed25681bbf9eee71fe51e3a4f91878c75d7f16f3222c1b9c7d9",
+        "identity": [
+          2049,
+          543277,
+          185211079,
+          1789338709953710374,
+          1789338710667774745,
+          1,
+          361752
+        ],
+        "sidecars": [
+          {
+            "name": "proofofwork-ui-release-45d4617df4ea-20260913T222338Z.tgz.sha256",
+            "bytes": 123,
+            "sha256": "ce644564bd30a3c4c59b93b0584ca599263e252678adce3c479e5dc6d2261f67",
+            "content": "dd8621a02b3d5ed25681bbf9eee71fe51e3a4f91878c75d7f16f3222c1b9c7d9  proofofwork-ui-release-45d4617df4ea-20260913T222338Z.tgz\n",
+            "identity": [
+              2049,
+              543278,
+              123,
+              1789338710659774024,
+              1789338710667774745,
+              1,
+              8
+            ]
+          },
+          {
+            "name": "proofofwork-ui-release-45d4617df4ea-20260913T222338Z.tgz.provenance",
+            "bytes": 2403,
+            "sha256": "c7592cf8ba0c0d9e662951b3c8a22bd62cfe9534fd12bb3db214e4ca6dd63383",
+            "content": "format=proofofwork-ui-release-v3\nrelease_id=45d4617df4ea-20260913T222338Z\ncommit=45d4617df4ea2fb34491c188e7bc85972ca3f20d\nsource_tree=278a271442dc31231f9480c56944070c5377de17\nsource_attestation=detached-recursive-git-tree-v1\nsource_dependency_model=node-modules-recursive-v1\nsource_dependency_entry_count=6118\nsource_dependency_bytes=160954989\nsource_dependency_sha256=74d54e7c58f15d225603104316eab06748209b85c6e2c27f8457ee6967f9b811\ndeployed_at=2026-09-13T22:35:17Z\narchive_name=proofofwork-ui-release-45d4617df4ea-20260913T222338Z.tgz\narchive_sha256=dd8621a02b3d5ed25681bbf9eee71fe51e3a4f91878c75d7f16f3222c1b9c7d9\narchive_payload_model=surfaces-v1\nsurface.activity.file_count=49\nsurface.activity.sha256=e44a37e163cb341cd012c674e8af3005a0d14f3fb840c12eabc664da95599cec\nsurface.browser.file_count=49\nsurface.browser.sha256=e60261acb46224a703e58a8bb886b3131741cf144a8dd2ff49f5f4fe749c7ab4\nsurface.boost.file_count=49\nsurface.boost.sha256=598a9a95614b4b9c48824da780bce0243f1c43a836044b4aba030cac77f6e049\nsurface.computer.file_count=49\nsurface.computer.sha256=ed258a60d05fa14f09700704b2363b16c4e600da73269cd1b5aa97ee19df01fd\nsurface.desktop.file_count=49\nsurface.desktop.sha256=7b6d0f6368f4ceac29b0baecf5dd024f19de63bc7bb42b2704d07007d52c1717\nsurface.growth.file_count=49\nsurface.growth.sha256=f1afbdb49202ab7b1d3eeaba2f2009cc44a1e6704265c9cac8781563980880a9\nsurface.id.file_count=49\nsurface.id.sha256=3d07eaae5b1defe42ba7e872b74a29bcd7691a28a2f333f4a9c17373869cda7f\nsurface.inception.file_count=49\nsurface.inception.sha256=f5270f147860b3b72daf47bc2cb0152ba8b448608537c2f1b7c08e77b1f31dd6\nsurface.infinity.file_count=49\nsurface.infinity.sha256=fdd3cd795862fd858414271976470f590e712789db1824b07acc4526d3e29a6c\nsurface.landing.file_count=49\nsurface.landing.sha256=06be8681a071cd89f04cab8d69de2ffd2cb6cad8946ef52aff96dfb0e03232c6\nsurface.marketplace.file_count=49\nsurface.marketplace.sha256=c5d9425594fc77eff3f50da03694257dd180cf1da87aca36ecc243e3f3e783e7\nsurface.nft.file_count=49\nsurface.nft.sha256=ed258a60d05fa14f09700704b2363b16c4e600da73269cd1b5aa97ee19df01fd\nsurface.token.file_count=49\nsurface.token.sha256=42e348b48f53a366d9cf25b17d105b44ba3c4a1fd13c3eee1e77e3ce8bf6dbaa\nsurface.wallet.file_count=49\nsurface.wallet.sha256=eb8297e9e738a7b30e1fc4281ee6afa9548ab5110748eb177c76a69a8b9520a1\nsurface.work.file_count=49\nsurface.work.sha256=783a1cc50f6f93415f985a15a338856aed708fd2360a67f7299be65ff79f8c8c\n",
+            "identity": [
+              2049,
+              542509,
+              2403,
+              1789338917552396425,
+              1789338934863945001,
+              1,
+              8
+            ]
+          }
+        ]
+      },
+      {
+        "archive": "proofofwork-ui-release-57bb25106fef-20260913T073622Z.tgz",
+        "files": [
+          "proofofwork-ui-release-57bb25106fef-20260913T073622Z.tgz",
+          "proofofwork-ui-release-57bb25106fef-20260913T073622Z.tgz.sha256",
+          "proofofwork-ui-release-57bb25106fef-20260913T073622Z.tgz.provenance"
+        ],
+        "logicalBytes": 185190780,
+        "allocatedBytes": 185196544,
+        "sha256": "da30020035bc62e078d1f118c54085bec7cbe600ca9fbf8224fe2461d77394cc",
+        "identity": [
+          2049,
+          533439,
+          185188254,
+          1789285536725291999,
+          1789285537585369611,
+          1,
+          361696
+        ],
+        "sidecars": [
+          {
+            "name": "proofofwork-ui-release-57bb25106fef-20260913T073622Z.tgz.sha256",
+            "bytes": 123,
+            "sha256": "bc2003859dad7b9b051828c8ac92563836fdc1875d2d9a4ea581aaa9c4289545",
+            "content": "da30020035bc62e078d1f118c54085bec7cbe600ca9fbf8224fe2461d77394cc  proofofwork-ui-release-57bb25106fef-20260913T073622Z.tgz\n",
+            "identity": [
+              2049,
+              533440,
+              123,
+              1789285537578368979,
+              1789285537585369611,
+              1,
+              8
+            ]
+          },
+          {
+            "name": "proofofwork-ui-release-57bb25106fef-20260913T073622Z.tgz.provenance",
+            "bytes": 2403,
+            "sha256": "51a0f8ed3d7a2ff0aba3981f44f04ace3cbe920e7672093b5d6760695e3afd29",
+            "content": "format=proofofwork-ui-release-v3\nrelease_id=57bb25106fef-20260913T073622Z\ncommit=57bb25106fef1d6367fb214711955bba532e88ba\nsource_tree=8d193240745516bd2b91bb6366181efcd971a256\nsource_attestation=detached-recursive-git-tree-v1\nsource_dependency_model=node-modules-recursive-v1\nsource_dependency_entry_count=6118\nsource_dependency_bytes=160954989\nsource_dependency_sha256=74d54e7c58f15d225603104316eab06748209b85c6e2c27f8457ee6967f9b811\ndeployed_at=2026-09-13T07:48:50Z\narchive_name=proofofwork-ui-release-57bb25106fef-20260913T073622Z.tgz\narchive_sha256=da30020035bc62e078d1f118c54085bec7cbe600ca9fbf8224fe2461d77394cc\narchive_payload_model=surfaces-v1\nsurface.activity.file_count=48\nsurface.activity.sha256=41243eb0ef76252cc65fcaed6653eb99cc3d4549bfdd41963d0af183e4bca9c5\nsurface.browser.file_count=48\nsurface.browser.sha256=03cb56849046f3a62f33161957759d4d4357db4add39137024e3ac7f6bbc9f3f\nsurface.boost.file_count=48\nsurface.boost.sha256=19690f7d807cc2812098be0c155739c20f14193d49cddcd90df945abd6b4d929\nsurface.computer.file_count=48\nsurface.computer.sha256=ec5a61790d206b3448fea5f47ed6ebf3ad14cb1fa84ff0fe025b782ef6cd6119\nsurface.desktop.file_count=48\nsurface.desktop.sha256=613080b8345890e116011a090ebba840f1b842abe5e041e9b2533ee278230599\nsurface.growth.file_count=48\nsurface.growth.sha256=737db9c1a2d473c1d0fbf68c6ff2b379be924112beaaf03305bec9fcd463f994\nsurface.id.file_count=48\nsurface.id.sha256=5005bb1cabeae6eec268dab6bfb368e45e728d8607d72d2d4864470610cc9365\nsurface.inception.file_count=48\nsurface.inception.sha256=75c727197f03a4bbd92bba0ec69d87b9e4dd50e416d265d26cbbdea631bc5dd6\nsurface.infinity.file_count=48\nsurface.infinity.sha256=ea072c4a97ad12aa15f439a3422d2087ecf3422f2293f4bea72b0e03fe35cd4a\nsurface.landing.file_count=48\nsurface.landing.sha256=c6f8b9771aec8758eec17c2ac4ce072b79f6638e2b4faa521385df8e4df13fea\nsurface.marketplace.file_count=48\nsurface.marketplace.sha256=8c607fc748ba9b22341d4c5424c552abac37462d8c72ba7ed05dd2e474f45644\nsurface.nft.file_count=48\nsurface.nft.sha256=ec5a61790d206b3448fea5f47ed6ebf3ad14cb1fa84ff0fe025b782ef6cd6119\nsurface.token.file_count=48\nsurface.token.sha256=e5fd6d4009ba70572c281d6f88f9e3ad07ceefcbd9c89be160bc743c8fd08e59\nsurface.wallet.file_count=48\nsurface.wallet.sha256=12040d9dd11fbd31b9520bec12c32892b1d69bf6e77632de60de40fa798afc5f\nsurface.work.file_count=48\nsurface.work.sha256=c88ab8018417046769324ccb39ab73f30286ce95e19f46a236c5f3e7cc1f082d\n",
+            "identity": [
+              2049,
+              530223,
+              2403,
+              1789285730749862360,
+              1789285748327457693,
+              1,
+              8
+            ]
+          }
+        ]
+      },
+      {
+        "archive": "proofofwork-ui-release-4515c3bc3421-20260913T070757Z.tgz",
+        "files": [
+          "proofofwork-ui-release-4515c3bc3421-20260913T070757Z.tgz",
+          "proofofwork-ui-release-4515c3bc3421-20260913T070757Z.tgz.sha256",
+          "proofofwork-ui-release-4515c3bc3421-20260913T070757Z.tgz.provenance"
+        ],
+        "logicalBytes": 185198217,
+        "allocatedBytes": 185208832,
+        "sha256": "d08e8b385047f8a0f3f7598b7f995adb05933de069265a445e9965a08db8a6b4",
+        "identity": [
+          2049,
+          510978,
+          185195691,
+          1789283563934563992,
+          1789283564845646429,
+          1,
+          361720
+        ],
+        "sidecars": [
+          {
+            "name": "proofofwork-ui-release-4515c3bc3421-20260913T070757Z.tgz.sha256",
+            "bytes": 123,
+            "sha256": "6a784cf0b18d8c559699692651ba7a318984fc7399f5dece2487d8f3559da274",
+            "content": "d08e8b385047f8a0f3f7598b7f995adb05933de069265a445e9965a08db8a6b4  proofofwork-ui-release-4515c3bc3421-20260913T070757Z.tgz\n",
+            "identity": [
+              2049,
+              510979,
+              123,
+              1789283564821644257,
+              1789283564845646429,
+              1,
+              8
+            ]
+          },
+          {
+            "name": "proofofwork-ui-release-4515c3bc3421-20260913T070757Z.tgz.provenance",
+            "bytes": 2403,
+            "sha256": "3ebb51ab1d30484c122d4044b3fd3925e941321c004f8e12eb91c05b12f45f50",
+            "content": "format=proofofwork-ui-release-v3\nrelease_id=4515c3bc3421-20260913T070757Z\ncommit=4515c3bc3421c64d1497aae5ec8498183727467c\nsource_tree=a2f7119708ed8088d8cfc49344f724ea13647f7b\nsource_attestation=detached-recursive-git-tree-v1\nsource_dependency_model=node-modules-recursive-v1\nsource_dependency_entry_count=6118\nsource_dependency_bytes=160954989\nsource_dependency_sha256=74d54e7c58f15d225603104316eab06748209b85c6e2c27f8457ee6967f9b811\ndeployed_at=2026-09-13T07:16:59Z\narchive_name=proofofwork-ui-release-4515c3bc3421-20260913T070757Z.tgz\narchive_sha256=d08e8b385047f8a0f3f7598b7f995adb05933de069265a445e9965a08db8a6b4\narchive_payload_model=surfaces-v1\nsurface.activity.file_count=48\nsurface.activity.sha256=50c1997c7838c0f859a98ec5c63eecff44444f56691b3d16d28edba2f296f932\nsurface.browser.file_count=48\nsurface.browser.sha256=fb539fa71a2c6371ce6a4536b9bcb6bbb7390e472f337481e9c5a57c30b287a6\nsurface.boost.file_count=48\nsurface.boost.sha256=e9779a6a5acf33ffd64b012a106fd81181701d9a0178016671138e8d8ff5e04c\nsurface.computer.file_count=48\nsurface.computer.sha256=fcb6128e8f35efc348f4cf1f60a96638e292698af955e662b8b0ced4eb87b4b6\nsurface.desktop.file_count=48\nsurface.desktop.sha256=e5f78d18cc5511e4b9c7ef681ee34782e68c611b9e5d9d3bf74b6abe7af597d1\nsurface.growth.file_count=48\nsurface.growth.sha256=ac8f91991646e93add82cba81a4324c1e242b9d5d601bbd851b44db39c65893e\nsurface.id.file_count=48\nsurface.id.sha256=1cea316d6c876f72104809bba7e848f3d622b105183d6da1167367b80e6313bf\nsurface.inception.file_count=48\nsurface.inception.sha256=185d618ede4e07a89d792ddc89e1ad6eb0e8c7f728dd7896d4b8906802e52cd4\nsurface.infinity.file_count=48\nsurface.infinity.sha256=cbdfc9c2c8e7db43e416fd801328cf389bc2def40a98ecc725a72ecf7c2cf3d6\nsurface.landing.file_count=48\nsurface.landing.sha256=5cdf1b69ee6a0318c4e03e155993ff4930ad62b3b525bead19b351df09b4f944\nsurface.marketplace.file_count=48\nsurface.marketplace.sha256=5e29ddf99adedb9db41a4fbc7ec3db7754653bc64ac58a798a47e9e218a9c330\nsurface.nft.file_count=48\nsurface.nft.sha256=fcb6128e8f35efc348f4cf1f60a96638e292698af955e662b8b0ced4eb87b4b6\nsurface.token.file_count=48\nsurface.token.sha256=b3a04030368b6a36bd2a3fcd49224820be06b73af289a551f26aca07bd357d74\nsurface.wallet.file_count=48\nsurface.wallet.sha256=6ee68740664e612b65391f48ebe51db02e52cc0e4860878019e2d17e41ba96ac\nsurface.work.file_count=48\nsurface.work.sha256=dcf3527e52660fb9bd824c622300ba97d76259d19ff6b68cde22305efda6f95d\n",
+            "identity": [
+              2049,
+              519073,
+              2403,
+              1789283819958548055,
+              1789283839012260194,
+              1,
+              8
+            ]
+          }
+        ]
+      },
+      {
+        "archive": "proofofwork-ui-release-2ddefac163d5-20260905T204437Z.tgz",
+        "files": [
+          "proofofwork-ui-release-2ddefac163d5-20260905T204437Z.tgz",
+          "proofofwork-ui-release-2ddefac163d5-20260905T204437Z.tgz.sha256",
+          "proofofwork-ui-release-2ddefac163d5-20260905T204437Z.tgz.provenance"
+        ],
+        "logicalBytes": 185568850,
+        "allocatedBytes": 185581568,
+        "sha256": "5e05adbf7d905f2dc4d3540ac389484d21ef71241155c7f73559f1e879cbedea",
+        "identity": [
+          2049,
+          529929,
+          185566324,
+          1788642050327558878,
+          1788642051201636077,
+          1,
+          362448
+        ],
+        "sidecars": [
+          {
+            "name": "proofofwork-ui-release-2ddefac163d5-20260905T204437Z.tgz.sha256",
+            "bytes": 123,
+            "sha256": "02889583201e82a64c8743f76006d5e88a8ac4ca791c7afadfb446da31df062f",
+            "content": "5e05adbf7d905f2dc4d3540ac389484d21ef71241155c7f73559f1e879cbedea  proofofwork-ui-release-2ddefac163d5-20260905T204437Z.tgz\n",
+            "identity": [
+              2049,
+              529930,
+              123,
+              1788642051179634133,
+              1788642051201636077,
+              1,
+              8
+            ]
+          },
+          {
+            "name": "proofofwork-ui-release-2ddefac163d5-20260905T204437Z.tgz.provenance",
+            "bytes": 2403,
+            "sha256": "a218dd6e4b55a740f12cdb7d63559066f174c5e5e8257645e8a2afb2a90d9816",
+            "content": "format=proofofwork-ui-release-v3\nrelease_id=2ddefac163d5-20260905T204437Z\ncommit=2ddefac163d583138129c2527e747b11190a0635\nsource_tree=89283688ad79cdcd0a4e04a9532aac8c8af735f2\nsource_attestation=detached-recursive-git-tree-v1\nsource_dependency_model=node-modules-recursive-v1\nsource_dependency_entry_count=6118\nsource_dependency_bytes=160954989\nsource_dependency_sha256=74d54e7c58f15d225603104316eab06748209b85c6e2c27f8457ee6967f9b811\ndeployed_at=2026-09-06T00:23:25Z\narchive_name=proofofwork-ui-release-2ddefac163d5-20260905T204437Z.tgz\narchive_sha256=5e05adbf7d905f2dc4d3540ac389484d21ef71241155c7f73559f1e879cbedea\narchive_payload_model=surfaces-v1\nsurface.activity.file_count=51\nsurface.activity.sha256=505b1229a2e0159123fde666d0ac36850cef1480462475d0a0c81d6824f56e84\nsurface.browser.file_count=51\nsurface.browser.sha256=9a040734de7e4d9b84b038bb20e040fbfb25a81229fb6218bcb07db99609dca3\nsurface.boost.file_count=51\nsurface.boost.sha256=270936bf8b8c6f82852ab416959fc36146ba4010a9f98438c5df0f0e5df7f2d3\nsurface.computer.file_count=51\nsurface.computer.sha256=9ea51c69bf20aeca66faddf3dc458508dee20ae83971867d355b8a5751ce9462\nsurface.desktop.file_count=51\nsurface.desktop.sha256=3cb1f96732c659bfb5271d501c2b8f9418b17ae9784e44ccd0bb237eb2fce57e\nsurface.growth.file_count=51\nsurface.growth.sha256=aa9f5003326adbffcb75130d7b99ad88abce58a751c8adc909a1758c0a7fc53d\nsurface.id.file_count=51\nsurface.id.sha256=a3baffe2f276f133aea84a95608303fbbed2025dec9553d07705bb1a190f618e\nsurface.inception.file_count=51\nsurface.inception.sha256=05b7e66da3c7fcb9adcbecd0d02d67f91da091eeccf903e316f90df92f20d150\nsurface.infinity.file_count=51\nsurface.infinity.sha256=56d01061d26c790b7797c957215ab65018f5f9554b5e829490ac50a4b81c518c\nsurface.landing.file_count=51\nsurface.landing.sha256=f0d9e7fa0bacda7c05b76c43a6f1443d8fa54d94e60441146070c12dc7d2d3e7\nsurface.marketplace.file_count=51\nsurface.marketplace.sha256=228ae346158408e2a6ac318fba6194e18f7d2d7a28c6f473982b18d6550d3a63\nsurface.nft.file_count=51\nsurface.nft.sha256=9ea51c69bf20aeca66faddf3dc458508dee20ae83971867d355b8a5751ce9462\nsurface.token.file_count=51\nsurface.token.sha256=21826db4885705d66a3622cb9f3c3f3acbf21276f155f2ae6de4e58616287057\nsurface.wallet.file_count=51\nsurface.wallet.sha256=c7a597b803b95746494ad61fa0375affd1ef0fdec3e05f291eaf196f0d03d4fe\nsurface.work.file_count=51\nsurface.work.sha256=fd70b3204197dc298513c3d28fcb6084eb8802bdc3c9424e9157f641347dc799\n",
+            "identity": [
+              2049,
+              534943,
+              2403,
+              1788654205466536174,
+              1788654221576920395,
+              1,
+              8
+            ]
+          }
+        ]
+      },
+      {
+        "archive": "proofofwork-ui-release-6a7d5c12e403-20260905T050937Z.tgz",
+        "files": [
+          "proofofwork-ui-release-6a7d5c12e403-20260905T050937Z.tgz",
+          "proofofwork-ui-release-6a7d5c12e403-20260905T050937Z.tgz.sha256",
+          "proofofwork-ui-release-6a7d5c12e403-20260905T050937Z.tgz.provenance"
+        ],
+        "logicalBytes": 185349144,
+        "allocatedBytes": 185360384,
+        "sha256": "3294199efbd9d81b8f203ee2da7e71ae714f749f5ff2f85dc2022bae941ee973",
+        "identity": [
+          2049,
+          529927,
+          185346618,
+          1788587721800800443,
+          1788587722631875160,
+          1,
+          362016
+        ],
+        "sidecars": [
+          {
+            "name": "proofofwork-ui-release-6a7d5c12e403-20260905T050937Z.tgz.sha256",
+            "bytes": 123,
+            "sha256": "0245bcc3d0bcc61d5a335052e24a8e57a060cee76b7ddb9891caad2b0088ad9a",
+            "content": "3294199efbd9d81b8f203ee2da7e71ae714f749f5ff2f85dc2022bae941ee973  proofofwork-ui-release-6a7d5c12e403-20260905T050937Z.tgz\n",
+            "identity": [
+              2049,
+              529928,
+              123,
+              1788587722624874530,
+              1788587722631875160,
+              1,
+              8
+            ]
+          },
+          {
+            "name": "proofofwork-ui-release-6a7d5c12e403-20260905T050937Z.tgz.provenance",
+            "bytes": 2403,
+            "sha256": "2e75546ca7b21ff7b8a1d96d1a891c9bdc9e97dfa74b451f58dd4519c790a1ec",
+            "content": "format=proofofwork-ui-release-v3\nrelease_id=6a7d5c12e403-20260905T050937Z\ncommit=6a7d5c12e403e0ddb6247fa2a6865cb70d623a8e\nsource_tree=bc84d0294fc4fdd9e0dd2b9943f6b330197e1ea7\nsource_attestation=detached-recursive-git-tree-v1\nsource_dependency_model=node-modules-recursive-v1\nsource_dependency_entry_count=6118\nsource_dependency_bytes=160954989\nsource_dependency_sha256=74d54e7c58f15d225603104316eab06748209b85c6e2c27f8457ee6967f9b811\ndeployed_at=2026-09-05T05:57:35Z\narchive_name=proofofwork-ui-release-6a7d5c12e403-20260905T050937Z.tgz\narchive_sha256=3294199efbd9d81b8f203ee2da7e71ae714f749f5ff2f85dc2022bae941ee973\narchive_payload_model=surfaces-v1\nsurface.activity.file_count=49\nsurface.activity.sha256=b2f26dff23c885bbcd1bf0b0d0f7fb4ba2b748074080750894df9ce025f19ede\nsurface.browser.file_count=49\nsurface.browser.sha256=a77f5b9d85cdaafb884ba1f14a7a1daeecdaf33eb07e7e4d38ec0073bb1ef14e\nsurface.boost.file_count=49\nsurface.boost.sha256=b195b35feb0aebef7775b05f44e94342028a74b2943d40ee8649d75f4d929ad3\nsurface.computer.file_count=49\nsurface.computer.sha256=07990c8e0661416f270249643f51723dea24d20e2a3abf657e7ca19977bda27c\nsurface.desktop.file_count=49\nsurface.desktop.sha256=72234bd3748477710c310b5bdfc72b8fc4dc07e63a8ad30483ee73392bef2261\nsurface.growth.file_count=49\nsurface.growth.sha256=9c3e81ae93af130eef142149cad92cb73888b0b906ff8fb836b8362eece135b2\nsurface.id.file_count=49\nsurface.id.sha256=d9202a7a049af8efe75f3765de71fadb14a9b68b9a70946c1c2cc0e4d708728e\nsurface.inception.file_count=49\nsurface.inception.sha256=d9b732ef26752f9672659427842cd15fd7d5cef38acf870aae7adcd1154ec3a5\nsurface.infinity.file_count=49\nsurface.infinity.sha256=74db9c09d2602ee933aa5a482d16b2ed275a7162e2a64c7e1e53a46064d6c4bb\nsurface.landing.file_count=49\nsurface.landing.sha256=449a5783eb2c242d5aa856c15b7c7980a17bb10645e34c8a49f810492cb956fc\nsurface.marketplace.file_count=49\nsurface.marketplace.sha256=038a8c54b689f9373f0f217c0d3598a54b63261da8e0334d001f1416b41c6e91\nsurface.nft.file_count=49\nsurface.nft.sha256=07990c8e0661416f270249643f51723dea24d20e2a3abf657e7ca19977bda27c\nsurface.token.file_count=49\nsurface.token.sha256=aaf971c111dd4109db86f549e76d51f3907c9ca4127b70bb0d0e7182d0d0da96\nsurface.wallet.file_count=49\nsurface.wallet.sha256=a98a76588ecd5d4cc1574419a9e8e5786ba003062da32323cb4827ebaa7d8b78\nsurface.work.file_count=49\nsurface.work.sha256=0ed6a559254aa35f711ff1426163039b2c6ffe89202e29d6dc1cb32b242edd85\n",
+            "identity": [
+              2049,
+              529926,
+              2403,
+              1788587855982863575,
+              1788587871134225662,
+              1,
+              8
+            ]
+          }
+        ]
+      }
+    ],
+    "candidateCount": 12,
+    "totalLogicalBytes": 2216876047,
+    "totalAllocatedBytes": 2217005056,
+    "dryRunSha256": "a12b167c7378450f2dc4b4f8317e4b8511e27154a1c3bdfa83966c781e875d18",
+    "verifiedAt": "2026-09-20T21:49:40.507941+00:00",
+    "protectedArchives": [
+      {
+        "archive": "proofofwork-ui-release-0ef9c3bee321-20260920T053656Z.tgz",
+        "sha256": "192dff161a8587b280624bc0a0685123c7e278d6684c0a06000980fec42bc3cf",
+        "protectedBy": [
+          "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-56694a7d6d76-20260920T180539Z/.proofofwork-ui-release"
+        ]
+      },
+      {
+        "archive": "proofofwork-ui-release-132b87faaac7-20260919T174900Z.tgz",
+        "sha256": "8b096b7b32f57922dd66d2b1443bc04c92a1c049d3fca01575441c04fd07e270",
+        "protectedBy": [
+          "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-0ef9c3bee321-20260920T053656Z/.proofofwork-ui-release"
+        ]
+      },
+      {
+        "archive": "proofofwork-ui-release-56694a7d6d76-20260920T180539Z.tgz",
+        "sha256": "2fafcdaf20f0b8f138bf464b384a9d4f6d25320bd587fb06c70f7d3c562b0a77",
+        "protectedBy": [
+          "/var/www/.proofofwork-ui-release"
+        ]
+      },
+      {
+        "archive": "proofofwork-ui-release-6eb4a1e07131-20260919T161919Z.tgz",
+        "sha256": "641d7ea865ec15f11523ed8265c407f77a1117e9e6afdc4b1b3bb694cd1a130a",
+        "protectedBy": [
+          "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-132b87faaac7-20260919T174900Z/.proofofwork-ui-release"
+        ]
+      }
+    ],
+    "protectedManifests": [
+      {
+        "path": "/var/www/.proofofwork-ui-release",
+        "sha256": "e022f65976b2bd847adc5b923b13ea2c2cd6e7a4a5835610b7fe73333afe39bb",
+        "manifest": {
+          "format": "proofofwork-ui-release-v3",
+          "release_id": "56694a7d6d76-20260920T180539Z",
+          "commit": "56694a7d6d76de565d4e0a6fce94f880d5308550",
+          "source_tree": "980f8ae43a58a84291703737fc9da45d6a5691a5",
+          "source_attestation": "detached-recursive-git-tree-v1",
+          "source_dependency_model": "node-modules-recursive-v1",
+          "source_dependency_entry_count": "6118",
+          "source_dependency_bytes": "160954989",
+          "source_dependency_sha256": "74d54e7c58f15d225603104316eab06748209b85c6e2c27f8457ee6967f9b811",
+          "deployed_at": "2026-09-20T18:40:24Z",
+          "archive_name": "proofofwork-ui-release-56694a7d6d76-20260920T180539Z.tgz",
+          "archive_sha256": "2fafcdaf20f0b8f138bf464b384a9d4f6d25320bd587fb06c70f7d3c562b0a77",
+          "archive_payload_model": "surfaces-v1",
+          "surface.activity.file_count": "48",
+          "surface.activity.sha256": "48f3bc6bd0e927a4091646d76c2048255877e3f354001d4ec865d32e3c2c8745",
+          "surface.browser.file_count": "48",
+          "surface.browser.sha256": "01208471cf6c7966ffb7036b5605cdf7d33736f1e9ea3a870958159294dbc74a",
+          "surface.boost.file_count": "48",
+          "surface.boost.sha256": "a67be39f36a7c22b60fc32f9b3a91d9c94e79e16d2142cd0f1a2ae3b9fbfcaaa",
+          "surface.computer.file_count": "48",
+          "surface.computer.sha256": "5f106cd95caee0a8cb3585a412c47b387b220a9f4d2206538dd0144b68395b7f",
+          "surface.desktop.file_count": "48",
+          "surface.desktop.sha256": "c9151292cef4901707b4c61ad896be36ae75fa3a4f329e8b399246d2acb5ef55",
+          "surface.growth.file_count": "48",
+          "surface.growth.sha256": "edec3e564d4a1088d6186adf2ca4e3d1a78af81c12775b9de2f770f51abb643c",
+          "surface.id.file_count": "48",
+          "surface.id.sha256": "af56431bb97a2edd23a09f35b947416f8f25cb4c305850cc296c06be2b00c01d",
+          "surface.inception.file_count": "48",
+          "surface.inception.sha256": "ca5d9cadeb6bf46fbc0a2fc1f94b2bc58a3ab073f0e4fa7dc0cdee821881381c",
+          "surface.infinity.file_count": "48",
+          "surface.infinity.sha256": "e30a9df86806ddf6309b835dc7ea6985ede69c9072c7b6eb5b75741fb766da35",
+          "surface.landing.file_count": "48",
+          "surface.landing.sha256": "851d25ea328a85f8be83b0349205c57c0e068aad87b4e5259fff2d53013ca6d1",
+          "surface.marketplace.file_count": "48",
+          "surface.marketplace.sha256": "8af8fdaf8fc41eeac86f5a0b9d3d50f5a6f26dc3cbc59a28bed3055a34d48f00",
+          "surface.nft.file_count": "48",
+          "surface.nft.sha256": "5f106cd95caee0a8cb3585a412c47b387b220a9f4d2206538dd0144b68395b7f",
+          "surface.token.file_count": "48",
+          "surface.token.sha256": "9542d4aad89d6600e45b0a1e4c6866cb44b73f652c55413ef830e92c1aa77895",
+          "surface.wallet.file_count": "48",
+          "surface.wallet.sha256": "02b2a18cfe1a291cbf7a8a20be29daad210c229981df8430452a4d3875c18e03",
+          "surface.work.file_count": "48",
+          "surface.work.sha256": "8370166438788831b18b01ce9a76d391bcd7a9753f0f5acb096df539dc5010be"
+        }
+      },
+      {
+        "path": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-0ef9c3bee321-20260920T053656Z/.proofofwork-ui-release",
+        "sha256": "3b6646a47ff115a2235e9f13544b59a8ebb7bebc3ab011a794bc95886ce81e55",
+        "manifest": {
+          "format": "proofofwork-ui-release-v3",
+          "release_id": "132b87faaac7-20260919T174900Z",
+          "commit": "132b87faaac729352b8a30d42d737c20cb9c45c9",
+          "source_tree": "c05c457654c18f3d56135c87e42e694a0e163126",
+          "source_attestation": "detached-recursive-git-tree-v1",
+          "source_dependency_model": "node-modules-recursive-v1",
+          "source_dependency_entry_count": "6135",
+          "source_dependency_bytes": "160978990",
+          "source_dependency_sha256": "36eeed34e905f5b13792be4c2fe576c64a74d57ea92d0ce3a3152c0165283d7e",
+          "deployed_at": "2026-09-19T20:07:58Z",
+          "archive_name": "proofofwork-ui-release-132b87faaac7-20260919T174900Z.tgz",
+          "archive_sha256": "8b096b7b32f57922dd66d2b1443bc04c92a1c049d3fca01575441c04fd07e270",
+          "archive_payload_model": "surfaces-v1",
+          "surface.activity.file_count": "49",
+          "surface.activity.sha256": "ab53cc7477fe8ae66f952058eb5b2a9be5ced30d38c8249620e3b3d903873daa",
+          "surface.browser.file_count": "49",
+          "surface.browser.sha256": "b607fac0bc496a1f419bbfdfff7e9998793a1b62f053b386e215799c70a49686",
+          "surface.boost.file_count": "49",
+          "surface.boost.sha256": "a39dc0cfacd78f1212452678078d550e5ed005c4c9105b3636d6663c13195ae0",
+          "surface.computer.file_count": "49",
+          "surface.computer.sha256": "581e6a43b8ff61a8736f320f4372c0038958afe7d6e429244b8bf23241776f6f",
+          "surface.desktop.file_count": "49",
+          "surface.desktop.sha256": "02d46913bb418e1553054e8e61f4af05535a425cfcdaf7c152ac59af87735a29",
+          "surface.growth.file_count": "49",
+          "surface.growth.sha256": "ef4d0d3b152efbe15cb657fbe20f3bb09f25b7c08017a2162a74cfddd58aaa12",
+          "surface.id.file_count": "49",
+          "surface.id.sha256": "7f087a9b7f0f93e3badedba2927a91c0cbc98b8895cc0714a26ad10414dae325",
+          "surface.inception.file_count": "49",
+          "surface.inception.sha256": "18ac21ca21bfa7920761ae1530dc8f7dfaeb6ac68df3381f761115f3c03aa552",
+          "surface.infinity.file_count": "49",
+          "surface.infinity.sha256": "8de3758da34f810c616a60cb39878330ad573db74d2ba176b6f2a45294ddc4db",
+          "surface.landing.file_count": "49",
+          "surface.landing.sha256": "cc0613f54cb4d1631c837fc1be9e86a84f9a2a5ac18eb43eb4cced24e80b5250",
+          "surface.marketplace.file_count": "49",
+          "surface.marketplace.sha256": "02f0f62cc40c99d9f41cb1c9a5b4dec37dcc1fa736d30ffc4b8b815e131344f1",
+          "surface.nft.file_count": "49",
+          "surface.nft.sha256": "581e6a43b8ff61a8736f320f4372c0038958afe7d6e429244b8bf23241776f6f",
+          "surface.token.file_count": "49",
+          "surface.token.sha256": "fb000d6bf9eb7c536055f0aeef067a7b3173104c2dec956ec6bb405068acf728",
+          "surface.wallet.file_count": "49",
+          "surface.wallet.sha256": "d5181de6428a4a6b46061b3e454311d037a902cb42306b0d8e0982e989a9f116",
+          "surface.work.file_count": "49",
+          "surface.work.sha256": "770e801486b65e7b415c5614ebcb5dab06f8aa3fde2e56ca886282c3899662eb"
+        }
+      },
+      {
+        "path": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-132b87faaac7-20260919T174900Z/.proofofwork-ui-release",
+        "sha256": "3aff94b05959d1700cdb0c3b0cc6facf1aa61009a4d8adf540e6c05e758baf69",
+        "manifest": {
+          "format": "proofofwork-ui-release-v3",
+          "release_id": "6eb4a1e07131-20260919T161919Z",
+          "commit": "6eb4a1e07131fc0b27d381dda52986f9d1bf3398",
+          "source_tree": "a77f1562fb5b42fcc8c7e45e109853e720742cfb",
+          "source_attestation": "detached-recursive-git-tree-v1",
+          "source_dependency_model": "node-modules-recursive-v1",
+          "source_dependency_entry_count": "6118",
+          "source_dependency_bytes": "160954989",
+          "source_dependency_sha256": "74d54e7c58f15d225603104316eab06748209b85c6e2c27f8457ee6967f9b811",
+          "deployed_at": "2026-09-19T16:39:05Z",
+          "archive_name": "proofofwork-ui-release-6eb4a1e07131-20260919T161919Z.tgz",
+          "archive_sha256": "641d7ea865ec15f11523ed8265c407f77a1117e9e6afdc4b1b3bb694cd1a130a",
+          "archive_payload_model": "surfaces-v1",
+          "surface.activity.file_count": "48",
+          "surface.activity.sha256": "fd8a0c5ea90a54286f466688f87ec802f1f0136d2529a85c2c989fe930abb75f",
+          "surface.browser.file_count": "48",
+          "surface.browser.sha256": "ad52d315ba25058b4f36d0917a4d858ab6378abe0cef4414734616075b3ade14",
+          "surface.boost.file_count": "48",
+          "surface.boost.sha256": "0d590b2d03aec7424fa64f4e1c79fe433de86f0805f292e6cb803b84d7e9fcc4",
+          "surface.computer.file_count": "48",
+          "surface.computer.sha256": "d3ca65d326e9ff24e805d5adef5cddeb18a4431b2af7ea48b6a4cf88b786aa28",
+          "surface.desktop.file_count": "48",
+          "surface.desktop.sha256": "b51ff8beebdf3d28df0d64582cbafe8a0089ce8948d4a4a853ecac698c30e396",
+          "surface.growth.file_count": "48",
+          "surface.growth.sha256": "e4935f7a7323ba25d710e81ae91851cba2524ddaf82b06b92465d5e3e4f19fbe",
+          "surface.id.file_count": "48",
+          "surface.id.sha256": "53227e4771a6691fd527b21e61c7f91b1128964669984ccb18cfdf724876a053",
+          "surface.inception.file_count": "48",
+          "surface.inception.sha256": "d95e2bb618c24c876429b58452756b7a2c7121d5530ed7eced2f5ead078dae78",
+          "surface.infinity.file_count": "48",
+          "surface.infinity.sha256": "28fed136b03ca41ada10f2e240df3e4962a03b1c370e2c0b13732ad8188f6cc9",
+          "surface.landing.file_count": "48",
+          "surface.landing.sha256": "42a0e484ac912a6ea328adf8c463a88cd5db4cfbfbbfee7095dc8dff99db9977",
+          "surface.marketplace.file_count": "48",
+          "surface.marketplace.sha256": "432968a41d766e37185146d16109c8f1e9f52e990649e2660607ed60c44906c7",
+          "surface.nft.file_count": "48",
+          "surface.nft.sha256": "d3ca65d326e9ff24e805d5adef5cddeb18a4431b2af7ea48b6a4cf88b786aa28",
+          "surface.token.file_count": "48",
+          "surface.token.sha256": "473063d54cef6f2ea467b961c5df2c4fd5bef03a79f1a2e87a9dbc480e55f195",
+          "surface.wallet.file_count": "48",
+          "surface.wallet.sha256": "dca259150314af155fc28881d5f7d432115cdff8ab47675ecd28f1fde28a4605",
+          "surface.work.file_count": "48",
+          "surface.work.sha256": "7245b06c7e84cdc32542aa57a45b77e2766cc65015129a433f3a6091ac588332"
+        }
+      },
+      {
+        "path": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-56694a7d6d76-20260920T180539Z/.proofofwork-ui-release",
+        "sha256": "81b950544647aa3e7c9a78702c2746175ede5df88c36ec3fa4a7e1f5ab46a1c5",
+        "manifest": {
+          "format": "proofofwork-ui-release-v3",
+          "release_id": "0ef9c3bee321-20260920T053656Z",
+          "commit": "0ef9c3bee3212a4cb0ae6efe7abbb6a75be72ffa",
+          "source_tree": "95fdce0489308a9d8b2d241ec21f4eacd5d136af",
+          "source_attestation": "detached-recursive-git-tree-v1",
+          "source_dependency_model": "node-modules-recursive-v1",
+          "source_dependency_entry_count": "6118",
+          "source_dependency_bytes": "160954989",
+          "source_dependency_sha256": "74d54e7c58f15d225603104316eab06748209b85c6e2c27f8457ee6967f9b811",
+          "deployed_at": "2026-09-20T05:52:03Z",
+          "archive_name": "proofofwork-ui-release-0ef9c3bee321-20260920T053656Z.tgz",
+          "archive_sha256": "192dff161a8587b280624bc0a0685123c7e278d6684c0a06000980fec42bc3cf",
+          "archive_payload_model": "surfaces-v1",
+          "surface.activity.file_count": "48",
+          "surface.activity.sha256": "35d05e88bfc2dab38c175a8706dda0bcf330a43c1a6cb79a325cdf3488abcb3b",
+          "surface.browser.file_count": "48",
+          "surface.browser.sha256": "3194b5be51235baa1c1aec5319c78f8a604ba9468d1fc7ea309331694758e4bf",
+          "surface.boost.file_count": "48",
+          "surface.boost.sha256": "6320682dd48793a4cd29e9664508c47feb83b334975c4213d2b89076ba8222c3",
+          "surface.computer.file_count": "48",
+          "surface.computer.sha256": "6763a0171f12c2404a4ea1cdc7aaa1ee09db79c80c73407a15ba4ffb1b993b51",
+          "surface.desktop.file_count": "48",
+          "surface.desktop.sha256": "f840646cc63f1bd4993863fdcd4675ed0a5d3c5d1f419a7bd5e6ab57dfa75f42",
+          "surface.growth.file_count": "48",
+          "surface.growth.sha256": "287e335c85f12b916952b49cf94e3754c54fce4b85e12e3e19d588d8293c8819",
+          "surface.id.file_count": "48",
+          "surface.id.sha256": "1b3fccdbd7e3fb3e81ecc7b07d315b99a492327b0d1977e520ac9fde546a5962",
+          "surface.inception.file_count": "48",
+          "surface.inception.sha256": "a488b09c91c3ec19cc5c7267b48642bc80efd737a50f4acba5f0e49d95edad07",
+          "surface.infinity.file_count": "48",
+          "surface.infinity.sha256": "3c05231854869861975caba80a8fe31937d4ed0f7bde201656856f73315a190d",
+          "surface.landing.file_count": "48",
+          "surface.landing.sha256": "18c2a27a0663fb2a632d2c84be7b27ca6ae51abb60173b75407209402f7c472e",
+          "surface.marketplace.file_count": "48",
+          "surface.marketplace.sha256": "b8511ceadf76c91fa6d802608d0cc0057b16e694ecee01decf4f44e839c5ed8d",
+          "surface.nft.file_count": "48",
+          "surface.nft.sha256": "6763a0171f12c2404a4ea1cdc7aaa1ee09db79c80c73407a15ba4ffb1b993b51",
+          "surface.token.file_count": "48",
+          "surface.token.sha256": "8b292609a7c4a9c2ff3133fecb07ef7ce317ceff1daeeed189cf5150a41e7be6",
+          "surface.wallet.file_count": "48",
+          "surface.wallet.sha256": "64d3befb7fb3d2e53511508912bacdb7aaa3021f6be6c7c21679361f50ade6f7",
+          "surface.work.file_count": "48",
+          "surface.work.sha256": "109a5cddaa338acc934f84f000c4e3debd1c094c4dc54a330d68e793b18049d7"
+        }
+      }
+    ],
+    "status": "reviewed-candidates-not-deletion-authorization",
+    "availableBytesBefore": 12105302016,
+    "projectedAvailableBytesAfter": 14322307072,
+    "existingArchiveCount": 17,
+    "retainedArchiveCount": 5
+  },
+  "retainedDependencyReview": {
+    "at": "2026-09-20T22:10:43.137136+00:00",
+    "status": "conditional-candidate-scope-reviewed-no-deletion",
+    "readOnly": true,
+    "backupInventoryAt": "2026-09-20T22:09:53.840496+00:00",
+    "canonicalRootManifests": 25,
+    "manifestAndSidecarDocuments": 664,
+    "visitedDirectories": 1587,
+    "visitedFiles": 20410,
+    "smallDocumentBytesRead": 3028375,
+    "skippedOrUntraversed": 0,
+    "candidateSets": 12,
+    "candidateFiles": 35,
+    "candidateLogicalBytes": 2216876047,
+    "candidateAllocatedBytes": 2217005056,
+    "candidateIdentitiesAndSidecarHashesUnchanged": true,
+    "noExternalManifestReferencesFoundFor": 10,
+    "externalReferencesWithPreservedIndependentRecoveryCopies": [
+      {
+        "directory": "/var/backups/proofofwork-ui/recovery-evidence/audit17-boost-20260919",
+        "archive": "/var/backups/proofofwork-ui/recovery-evidence/audit17-boost-20260919/proofofwork-ui-release-2ddefac163d5-20260905T204437Z.tgz",
+        "archiveBytes": 185566324,
+        "archiveSha256": "5e05adbf7d905f2dc4d3540ac389484d21ef71241155c7f73559f1e879cbedea",
+        "archiveDigestVerifiedAt": "2026-09-20T22:02:18.988595+00:00",
+        "checksumSidecarSha256": "02889583201e82a64c8743f76006d5e88a8ac4ca791c7afadfb446da31df062f",
+        "provenanceSha256": "a218dd6e4b55a740f12cdb7d63559066f174c5e5e8257645e8a2afb2a90d9816",
+        "retainedRootManifest": "/var/backups/proofofwork-ui/recovery-evidence/audit17-boost-20260919/proofofwork-www-pre-4515c3bc3421-20260913T070757Z/.proofofwork-ui-release",
+        "retainedRootManifestSha256": "a218dd6e4b55a740f12cdb7d63559066f174c5e5e8257645e8a2afb2a90d9816",
+        "recoveryInstructionsSha256": "cba60a6aae28349f2bab02b28f6e832930f1b0e63f89ad9bd702291e9bab9f0a",
+        "recoveryInstructionExcerpts": [
+          "Release archive, checksum and provenance have independent copies here so future ordinary release retention cannot remove the only recovery evidence.",
+          "Restore archive sidecars from this directory if absent from releases, then run retained-root verify-rollback before use.",
+          "Do not delete this directory through automated retention."
+        ]
+      },
+      {
+        "directory": "/var/backups/proofofwork-ui/recovery-evidence/audit17-20260919",
+        "archive": "/var/backups/proofofwork-ui/recovery-evidence/audit17-20260919/proofofwork-ui-release-6a7d5c12e403-20260905T050937Z.tgz",
+        "archiveBytes": 185346618,
+        "archiveSha256": "3294199efbd9d81b8f203ee2da7e71ae714f749f5ff2f85dc2022bae941ee973",
+        "archiveDigestVerifiedAt": "2026-09-20T22:08:50.311107+00:00",
+        "checksumSidecarSha256": "0245bcc3d0bcc61d5a335052e24a8e57a060cee76b7ddb9891caad2b0088ad9a",
+        "provenanceSha256": "2e75546ca7b21ff7b8a1d96d1a891c9bdc9e97dfa74b451f58dd4519c790a1ec",
+        "retainedRootManifest": "/var/backups/proofofwork-ui/recovery-evidence/audit17-20260919/proofofwork-www-pre-2ddefac163d5-20260905T204437Z/.proofofwork-ui-release",
+        "retainedRootManifestSha256": "2e75546ca7b21ff7b8a1d96d1a891c9bdc9e97dfa74b451f58dd4519c790a1ec",
+        "recoveryInstructionsSha256": "cba60a6aae28349f2bab02b28f6e832930f1b0e63f89ad9bd702291e9bab9f0a",
+        "recoveryInstructionExcerpts": [
+          "Release archive, checksum and provenance have independent copies here so future ordinary release retention cannot remove the only recovery evidence.",
+          "Restore archive sidecars from this directory if absent from releases, then run retained-root verify-rollback before use.",
+          "Do not delete this directory through automated retention."
+        ]
+      }
+    ],
+    "candidateReferenceSummary": [
+      {
+        "archive": "proofofwork-ui-release-07929dd3c6e4-20260919T145727Z.tgz",
+        "externalReferencePaths": [],
+        "preservedCopyPaths": []
+      },
+      {
+        "archive": "proofofwork-ui-release-84a9871040db-20260918T190233Z.tgz",
+        "externalReferencePaths": [],
+        "preservedCopyPaths": []
+      },
+      {
+        "archive": "proofofwork-ui-release-62fded8008f9-20260914T025303Z.tgz",
+        "externalReferencePaths": [],
+        "preservedCopyPaths": []
+      },
+      {
+        "archive": "proofofwork-ui-release-10795467c328-20260914T012801Z.tgz",
+        "externalReferencePaths": [],
+        "preservedCopyPaths": []
+      },
+      {
+        "archive": "proofofwork-ui-release-10795467c328-20260914T013529Z.tgz",
+        "externalReferencePaths": [],
+        "preservedCopyPaths": []
+      },
+      {
+        "archive": "proofofwork-ui-release-f23c24fd97a9-20260914T001952Z.tgz",
+        "externalReferencePaths": [],
+        "preservedCopyPaths": []
+      },
+      {
+        "archive": "proofofwork-ui-release-4ce5f70c6538-20260913T224020Z.tgz",
+        "externalReferencePaths": [],
+        "preservedCopyPaths": []
+      },
+      {
+        "archive": "proofofwork-ui-release-45d4617df4ea-20260913T222338Z.tgz",
+        "externalReferencePaths": [],
+        "preservedCopyPaths": []
+      },
+      {
+        "archive": "proofofwork-ui-release-57bb25106fef-20260913T073622Z.tgz",
+        "externalReferencePaths": [],
+        "preservedCopyPaths": []
+      },
+      {
+        "archive": "proofofwork-ui-release-4515c3bc3421-20260913T070757Z.tgz",
+        "externalReferencePaths": [],
+        "preservedCopyPaths": []
+      },
+      {
+        "archive": "proofofwork-ui-release-2ddefac163d5-20260905T204437Z.tgz",
+        "externalReferencePaths": [
+          "/var/backups/proofofwork-ui/recovery-evidence/audit17-boost-20260919/proofofwork-ui-release-2ddefac163d5-20260905T204437Z.tgz.provenance",
+          "/var/backups/proofofwork-ui/recovery-evidence/audit17-boost-20260919/proofofwork-ui-release-2ddefac163d5-20260905T204437Z.tgz.sha256",
+          "/var/backups/proofofwork-ui/recovery-evidence/audit17-boost-20260919/proofofwork-www-pre-4515c3bc3421-20260913T070757Z/.proofofwork-ui-release"
+        ],
+        "preservedCopyPaths": [
+          "/var/backups/proofofwork-ui/recovery-evidence/audit17-boost-20260919/proofofwork-ui-release-2ddefac163d5-20260905T204437Z.tgz"
+        ]
+      },
+      {
+        "archive": "proofofwork-ui-release-6a7d5c12e403-20260905T050937Z.tgz",
+        "externalReferencePaths": [
+          "/var/backups/proofofwork-ui/recovery-evidence/audit17-20260919/proofofwork-ui-release-6a7d5c12e403-20260905T050937Z.tgz.provenance",
+          "/var/backups/proofofwork-ui/recovery-evidence/audit17-20260919/proofofwork-ui-release-6a7d5c12e403-20260905T050937Z.tgz.sha256",
+          "/var/backups/proofofwork-ui/recovery-evidence/audit17-20260919/proofofwork-www-pre-2ddefac163d5-20260905T204437Z/.proofofwork-ui-release"
+        ],
+        "preservedCopyPaths": [
+          "/var/backups/proofofwork-ui/recovery-evidence/audit17-20260919/proofofwork-ui-release-6a7d5c12e403-20260905T050937Z.tgz"
+        ]
+      }
+    ],
+    "applyTimeConditions": [
+      "Obtain explicit approval for the exact 12 sets/35 paths; the existing proposal is not deletion authorization.",
+      "Hold the shared UI deployment lock; recheck exact file identities and hashes, current live/queued-root archive bindings, and this wider retained-manifest dependency map immediately before removal.",
+      "Preserve both recovery-evidence directories, complete roots, complete-root archives, copied release archives, checksums, provenance, recovery instructions and audit receipts. Reverify both independent release archive digests before removing their release-directory duplicates.",
+      "Retain all five noncandidate release archives and the four live/queued-root bound archives; do not invoke an unrestricted prune if its current candidate list differs from the approved 35 paths.",
+      "Record exact removed paths/digests and before/after filesystem available bytes; do not promise allocated-byte recovery until measured."
+    ],
+    "limitations": [
+      "Read exported/on-disk manifests and recovery instructions throughout the backup area; archive bodies were not extracted or searched for additional embedded-only manifests.",
+      "One185346618-byte independent recovery archive was freshly rehashed; the185566324-byte counterpart uses the parent's22:02 live digest plus unchanged fresh identity and sidecar/manifest bindings.",
+      "No restore replay, historical-root reclassification, remote write, deletion or production configuration change performed."
+    ],
+    "evidence": [
+      {
+        "path": "/tmp/pow-h19-ui-capacity-2026-09-20/review/backup-manifest-dependencies.json",
+        "bytes": 400241,
+        "sha256": "3c91d6628235857a3bc90cf04f3c76662f42c410919bcbd69347e720f4fb165a"
+      },
+      {
+        "path": "/tmp/pow-h19-ui-capacity-2026-09-20/review/read-backup-manifest-dependencies.py",
+        "bytes": 3660,
+        "sha256": "443a6eefa20a1c6588e689e9b29da548c52948ab54ec639424ef6cbcd2e34310"
+      },
+      {
+        "path": "/tmp/pow-h19-ui-capacity-2026-09-20/review/preserved-6a7-archive-check.json",
+        "bytes": 738,
+        "sha256": "255a6e3a65b197ace7999092b2daedf6df5c9bef84015f7b9baf62fe5d4b33e3"
+      },
+      {
+        "path": "/tmp/pow-h19-ui-capacity-2026-09-20/live-capacity-helper-probe.json",
+        "bytes": 7734,
+        "sha256": "e004753e32a8b566f869c2ca547e427ae228189cc246498d216f99a224569e8d"
+      },
+      {
+        "path": "/tmp/pow-h19-ui-capacity-2026-09-20/exact-archive-review.json",
+        "bytes": 61206,
+        "sha256": "f38b2dda819b94994d884c626eceedbf40b48387b26cc2affc721196cfe45930"
+      }
+    ]
+  },
+  "readOnlyCapacityProbe": {
+    "at": "2026-09-20T22:02:18.988595+00:00",
+    "readOnly": true,
+    "helperSha256": "0bda86b33c3c2f2b02c76066451dc749c8ae5549949407b09203c0a9a97763ff",
+    "liveCopyBound": {
+      "additionalBytes": 430485504,
+      "additionalInodes": 1118,
+      "archiveUpperBoundBytes": 416370688
+    },
+    "liveCopyCheck": {
+      "status": "sufficient",
+      "phase": "read-only-live-copy",
+      "allocationPath": "/var/tmp/proofofwork-deploy",
+      "additionalBytes": 430485504,
+      "additionalInodes": 1118,
+      "rootReserveBytes": 10737418240,
+      "growthReserveBytes": 67108864,
+      "checks": [
+        {
+          "path": "/",
+          "availableBytes": 12105355264,
+          "requiredBytes": 11235012608,
+          "availableInodes": 2337907,
+          "requiredInodes": 1246
+        }
+      ]
+    },
+    "archiveExtractionBound": {
+      "additionalBytes": 229695488,
+      "additionalInodes": 752
+    },
+    "archiveExtractionCheck": {
+      "status": "sufficient",
+      "phase": "read-only-current-archive",
+      "allocationPath": "/tmp",
+      "additionalBytes": 296804352,
+      "additionalInodes": 768,
+      "rootReserveBytes": 10737418240,
+      "growthReserveBytes": 67108864,
+      "checks": [
+        {
+          "path": "/",
+          "availableBytes": 12105355264,
+          "requiredBytes": 11101331456,
+          "availableInodes": 2337907,
+          "requiredInodes": 896
+        }
+      ]
+    },
+    "runtimeInventoryCheck": {
+      "status": "sufficient",
+      "phase": "read-only-runtime-inventory",
+      "allocationPath": "/run/proofofwork-ui",
+      "additionalBytes": 67108864,
+      "additionalInodes": 8,
+      "rootReserveBytes": 10737418240,
+      "growthReserveBytes": 67108864,
+      "checks": [
+        {
+          "path": "/",
+          "availableBytes": 12105355264,
+          "requiredBytes": 10804527104,
+          "availableInodes": 2337907,
+          "requiredInodes": 128
+        },
+        {
+          "path": "/run/proofofwork-ui",
+          "availableBytes": 399650816,
+          "requiredBytes": 134217728,
+          "availableInodes": 488203,
+          "requiredInodes": 136
+        }
+      ]
+    },
+    "preservedAudit17RecoveryEntries": [
+      {
+        "path": "/var/backups/proofofwork-ui/recovery-evidence/audit17-boost-20260919/RECOVERY.txt",
+        "type": "file",
+        "bytes": 759,
+        "inode": 766485,
+        "linkCount": 1,
+        "sha256": "cba60a6aae28349f2bab02b28f6e832930f1b0e63f89ad9bd702291e9bab9f0a"
+      },
+      {
+        "path": "/var/backups/proofofwork-ui/recovery-evidence/audit17-boost-20260919/after.json",
+        "type": "file",
+        "bytes": 416,
+        "inode": 766484,
+        "linkCount": 1,
+        "sha256": "9be714b543c12c52188c5e8f1a65f9e1412214fe29fe7df1a47e6b9fc00884bd"
+      },
+      {
+        "path": "/var/backups/proofofwork-ui/recovery-evidence/audit17-boost-20260919/before.json",
+        "type": "file",
+        "bytes": 390,
+        "inode": 766477,
+        "linkCount": 1,
+        "sha256": "da0c7d0067a281a06c11a18b7499f37b3b9a639b2ae0a71fb7dbe92da668a28a"
+      },
+      {
+        "path": "/var/backups/proofofwork-ui/recovery-evidence/audit17-boost-20260919/complete-root.tgz",
+        "type": "file",
+        "bytes": 192381183,
+        "inode": 766481,
+        "linkCount": 1,
+        "sha256": "e93c4ddb295225babe1ee1971b65167e3080f258043da460d5f42e3fbd564f93"
+      },
+      {
+        "path": "/var/backups/proofofwork-ui/recovery-evidence/audit17-boost-20260919/complete-root.tgz.sha256",
+        "type": "file",
+        "bytes": 84,
+        "inode": 766482,
+        "linkCount": 1,
+        "sha256": "7164efbf45cab82e5487b734f56cb07d31f03250635c7ef96b4d147b1afc10ac",
+        "content": "e93c4ddb295225babe1ee1971b65167e3080f258043da460d5f42e3fbd564f93  complete-root.tgz\n"
+      },
+      {
+        "path": "/var/backups/proofofwork-ui/recovery-evidence/audit17-boost-20260919/pre-move.json",
+        "type": "file",
+        "bytes": 390,
+        "inode": 766483,
+        "linkCount": 1,
+        "sha256": "da0c7d0067a281a06c11a18b7499f37b3b9a639b2ae0a71fb7dbe92da668a28a"
+      },
+      {
+        "path": "/var/backups/proofofwork-ui/recovery-evidence/audit17-boost-20260919/proofofwork-ui-release-2ddefac163d5-20260905T204437Z.tgz",
+        "type": "file",
+        "bytes": 185566324,
+        "inode": 766478,
+        "linkCount": 1,
+        "sha256": "5e05adbf7d905f2dc4d3540ac389484d21ef71241155c7f73559f1e879cbedea"
+      },
+      {
+        "path": "/var/backups/proofofwork-ui/recovery-evidence/audit17-boost-20260919/proofofwork-ui-release-2ddefac163d5-20260905T204437Z.tgz.provenance",
+        "type": "file",
+        "bytes": 2403,
+        "inode": 766480,
+        "linkCount": 1,
+        "sha256": "a218dd6e4b55a740f12cdb7d63559066f174c5e5e8257645e8a2afb2a90d9816",
+        "content": "format=proofofwork-ui-release-v3\nrelease_id=2ddefac163d5-20260905T204437Z\ncommit=2ddefac163d583138129c2527e747b11190a0635\nsource_tree=89283688ad79cdcd0a4e04a9532aac8c8af735f2\nsource_attestation=detached-recursive-git-tree-v1\nsource_dependency_model=node-modules-recursive-v1\nsource_dependency_entry_count=6118\nsource_dependency_bytes=160954989\nsource_dependency_sha256=74d54e7c58f15d225603104316eab06748209b85c6e2c27f8457ee6967f9b811\ndeployed_at=2026-09-06T00:23:25Z\narchive_name=proofofwork-ui-release-2ddefac163d5-20260905T204437Z.tgz\narchive_sha256=5e05adbf7d905f2dc4d3540ac389484d21ef71241155c7f73559f1e879cbedea\narchive_payload_model=surfaces-v1\nsurface.activity.file_count=51\nsurface.activity.sha256=505b1229a2e0159123fde666d0ac36850cef1480462475d0a0c81d6824f56e84\nsurface.browser.file_count=51\nsurface.browser.sha256=9a040734de7e4d9b84b038bb20e040fbfb25a81229fb6218bcb07db99609dca3\nsurface.boost.file_count=51\nsurface.boost.sha256=270936bf8b8c6f82852ab416959fc36146ba4010a9f98438c5df0f0e5df7f2d3\nsurface.computer.file_count=51\nsurface.computer.sha256=9ea51c69bf20aeca66faddf3dc458508dee20ae83971867d355b8a5751ce9462\nsurface.desktop.file_count=51\nsurface.desktop.sha256=3cb1f96732c659bfb5271d501c2b8f9418b17ae9784e44ccd0bb237eb2fce57e\nsurface.growth.file_count=51\nsurface.growth.sha256=aa9f5003326adbffcb75130d7b99ad88abce58a751c8adc909a1758c0a7fc53d\nsurface.id.file_count=51\nsurface.id.sha256=a3baffe2f276f133aea84a95608303fbbed2025dec9553d07705bb1a190f618e\nsurface.inception.file_count=51\nsurface.inception.sha256=05b7e66da3c7fcb9adcbecd0d02d67f91da091eeccf903e316f90df92f20d150\nsurface.infinity.file_count=51\nsurface.infinity.sha256=56d01061d26c790b7797c957215ab65018f5f9554b5e829490ac50a4b81c518c\nsurface.landing.file_count=51\nsurface.landing.sha256=f0d9e7fa0bacda7c05b76c43a6f1443d8fa54d94e60441146070c12dc7d2d3e7\nsurface.marketplace.file_count=51\nsurface.marketplace.sha256=228ae346158408e2a6ac318fba6194e18f7d2d7a28c6f473982b18d6550d3a63\nsurface.nft.file_count=51\nsurface.nft.sha256=9ea51c69bf20aeca66faddf3dc458508dee20ae83971867d355b8a5751ce9462\nsurface.token.file_count=51\nsurface.token.sha256=21826db4885705d66a3622cb9f3c3f3acbf21276f155f2ae6de4e58616287057\nsurface.wallet.file_count=51\nsurface.wallet.sha256=c7a597b803b95746494ad61fa0375affd1ef0fdec3e05f291eaf196f0d03d4fe\nsurface.work.file_count=51\nsurface.work.sha256=fd70b3204197dc298513c3d28fcb6084eb8802bdc3c9424e9157f641347dc799\n"
+      },
+      {
+        "path": "/var/backups/proofofwork-ui/recovery-evidence/audit17-boost-20260919/proofofwork-ui-release-2ddefac163d5-20260905T204437Z.tgz.sha256",
+        "type": "file",
+        "bytes": 123,
+        "inode": 766479,
+        "linkCount": 1,
+        "sha256": "02889583201e82a64c8743f76006d5e88a8ac4ca791c7afadfb446da31df062f",
+        "content": "5e05adbf7d905f2dc4d3540ac389484d21ef71241155c7f73559f1e879cbedea  proofofwork-ui-release-2ddefac163d5-20260905T204437Z.tgz\n"
+      },
+      {
+        "path": "/var/backups/proofofwork-ui/recovery-evidence/audit17-boost-20260919/proofofwork-www-pre-4515c3bc3421-20260913T070757Z",
+        "type": "directory",
+        "bytes": 4096,
+        "inode": 532485,
+        "linkCount": 33
+      }
+    ]
+  },
+  "capacityProbeQualification": "The read-only probe used helper SHA0bda86... before the CLI-only check-copy addition. Allocation functions were unchanged; final CLI and helper fixtures passed separately. It measures individual operations, not the combined peak of an entire future release.",
+  "independentTrendChecks": {
+    "verifiedAt": "2026-09-20T21:57:39.105099+00:00",
+    "status": "pass",
+    "passed": 24,
+    "sourcePath": "/home/sixer/ProofOfWork.Me/deploy/proofofwork-storage-trend.py",
+    "sourceSha256": "c1e4db6184c2d136cd5468e8136546e3d48cee4e07d72e931281270b0351f0ff",
+    "testSha256": "acfcc555678c6936f7260a97b63bbb05a3909c0660a94b4d6eff11c610754145",
+    "scope": "Actual main with mocked journal, statvfs, mount and allocation IO; no production access or mutations. Covers both roles, all three mount/threshold combinations, exact reserve/warning boundaries, 900/901-second freshness, future-only fresh samples.",
+    "results": [
+      {
+        "role": "ui",
+        "target": "/",
+        "case": "absolute-byte-boundary",
+        "availableBytes": 12884901888,
+        "expectedExit": 0,
+        "actualExit": 0
+      },
+      {
+        "role": "ui",
+        "target": "/",
+        "case": "absolute-byte-boundary",
+        "availableBytes": 12884901887,
+        "expectedExit": 1,
+        "actualExit": 1
+      },
+      {
+        "role": "ui",
+        "target": "/",
+        "case": "absolute-byte-boundary",
+        "availableBytes": 10737418240,
+        "expectedExit": 1,
+        "actualExit": 1
+      },
+      {
+        "role": "ui",
+        "target": "/",
+        "case": "absolute-byte-boundary",
+        "availableBytes": 10737418239,
+        "expectedExit": 2,
+        "actualExit": 2
+      },
+      {
+        "role": "ui",
+        "target": "/",
+        "case": "producer-age-boundary",
+        "sampleAgeSeconds": 900,
+        "expectedExit": 0,
+        "actualExit": 0
+      },
+      {
+        "role": "ui",
+        "target": "/",
+        "case": "producer-age-boundary",
+        "sampleAgeSeconds": 901,
+        "expectedExit": 1,
+        "actualExit": 1
+      },
+      {
+        "role": "ui",
+        "target": "/",
+        "case": "producer-age-boundary",
+        "sampleAgeSeconds": 300,
+        "expectedExit": 0,
+        "actualExit": 0
+      },
+      {
+        "role": "ui",
+        "target": "/",
+        "case": "producer-age-boundary",
+        "sampleAgeSeconds": -1,
+        "expectedExit": 1,
+        "actualExit": 1
+      },
+      {
+        "role": "node",
+        "target": "/",
+        "case": "absolute-byte-boundary",
+        "availableBytes": 21474836480,
+        "expectedExit": 0,
+        "actualExit": 0
+      },
+      {
+        "role": "node",
+        "target": "/",
+        "case": "absolute-byte-boundary",
+        "availableBytes": 21474836479,
+        "expectedExit": 1,
+        "actualExit": 1
+      },
+      {
+        "role": "node",
+        "target": "/",
+        "case": "absolute-byte-boundary",
+        "availableBytes": 10737418240,
+        "expectedExit": 1,
+        "actualExit": 1
+      },
+      {
+        "role": "node",
+        "target": "/",
+        "case": "absolute-byte-boundary",
+        "availableBytes": 10737418239,
+        "expectedExit": 2,
+        "actualExit": 2
+      },
+      {
+        "role": "node",
+        "target": "/",
+        "case": "producer-age-boundary",
+        "sampleAgeSeconds": 900,
+        "expectedExit": 0,
+        "actualExit": 0
+      },
+      {
+        "role": "node",
+        "target": "/",
+        "case": "producer-age-boundary",
+        "sampleAgeSeconds": 901,
+        "expectedExit": 1,
+        "actualExit": 1
+      },
+      {
+        "role": "node",
+        "target": "/",
+        "case": "producer-age-boundary",
+        "sampleAgeSeconds": 300,
+        "expectedExit": 0,
+        "actualExit": 0
+      },
+      {
+        "role": "node",
+        "target": "/",
+        "case": "producer-age-boundary",
+        "sampleAgeSeconds": -1,
+        "expectedExit": 1,
+        "actualExit": 1
+      },
+      {
+        "role": "node",
+        "target": "/data",
+        "case": "absolute-byte-boundary",
+        "availableBytes": 214748364800,
+        "expectedExit": 0,
+        "actualExit": 0
+      },
+      {
+        "role": "node",
+        "target": "/data",
+        "case": "absolute-byte-boundary",
+        "availableBytes": 214748364799,
+        "expectedExit": 1,
+        "actualExit": 1
+      },
+      {
+        "role": "node",
+        "target": "/data",
+        "case": "absolute-byte-boundary",
+        "availableBytes": 107374182400,
+        "expectedExit": 1,
+        "actualExit": 1
+      },
+      {
+        "role": "node",
+        "target": "/data",
+        "case": "absolute-byte-boundary",
+        "availableBytes": 107374182399,
+        "expectedExit": 2,
+        "actualExit": 2
+      },
+      {
+        "role": "node",
+        "target": "/data",
+        "case": "producer-age-boundary",
+        "sampleAgeSeconds": 900,
+        "expectedExit": 0,
+        "actualExit": 0
+      },
+      {
+        "role": "node",
+        "target": "/data",
+        "case": "producer-age-boundary",
+        "sampleAgeSeconds": 901,
+        "expectedExit": 1,
+        "actualExit": 1
+      },
+      {
+        "role": "node",
+        "target": "/data",
+        "case": "producer-age-boundary",
+        "sampleAgeSeconds": 300,
+        "expectedExit": 0,
+        "actualExit": 0
+      },
+      {
+        "role": "node",
+        "target": "/data",
+        "case": "producer-age-boundary",
+        "sampleAgeSeconds": -1,
+        "expectedExit": 1,
+        "actualExit": 1
+      }
+    ]
+  },
+  "localTestResults": {
+    "recordedAt": "2026-09-20T22:03:56.806314+00:00",
+    "scope": "local fixtures only; no production operations",
+    "tests": [
+      {
+        "command": "python3 -B scripts/check-ui-capacity.py",
+        "exitCode": 0,
+        "tests": 10,
+        "log": "helper-stager.log",
+        "coverageNote": "Includes actual CLI check-copy/check-pack parse and branch execution with private statvfs fixture: exact2**60+7 additional bytes, additional inodes, threshold success, one-byte-short refusal, source preserved."
+      },
+      {
+        "command": "python3 -B scripts/check-audit5-ui-workflow.py",
+        "exitCode": 0,
+        "tests": 23,
+        "log": "audit5-workflow.log"
+      },
+      {
+        "command": "node scripts/check-ui-ops-contract.mjs",
+        "exitCode": 0,
+        "toolSessionId": 62680,
+        "log": "ui-ops-contract.log",
+        "logNote": "Exact stdout chunks assembled from tool transcript; completed before the separate RLIMIT_CORE=0 shell-only follow-up tested by UI agent."
+      }
+    ],
+    "files": [
+      {
+        "path": "deploy/proofofwork-ui-capacity.py",
+        "bytes": 12013,
+        "sha256": "fa5ff3e3ad9ce1f4f20c76b234d5e6342f7aca4034453004817c7c10b0e330b2"
+      },
+      {
+        "path": "deploy/proofofwork-ui-release-stage.py",
+        "bytes": 57662,
+        "sha256": "115a18d186bf40ed6493940224f2b4ce71987e4c8d6061f02c4b23b03a21f95f"
+      },
+      {
+        "path": "scripts/check-ui-capacity.py",
+        "bytes": 14544,
+        "sha256": "cccee0ddd37d306136aaad086a89a18a4aab0a5f67eb868f50c5abcf800cadf7"
+      },
+      {
+        "path": "scripts/check-audit5-ui-workflow.py",
+        "bytes": 21717,
+        "sha256": "a8a874b66d0592ca9a3dc3f9b0689109ee2a692be7a2b48fe1ec81d147611965"
+      }
+    ],
+    "lastChange": "Added read-only check-copy command and CLI boundary tests; UIops not repeated because shell/stager implementation unchanged."
+  },
+  "finalShellBoundaryChecks": {
+    "checkedAt": "2026-09-20T22:11:05.025538+00:00",
+    "exitCode": 0,
+    "checksPassed": 7,
+    "sourceSha256": {
+      "deploy/proofofwork-ui-release-publish.sh": "40ec9cd67a63895e147b324fff4faa61946e614efeb0a9378dbec19ab29cd0b8",
+      "deploy/proofofwork-ui-release-provenance.sh": "4251896b34a30f40230daf152f2536e3b08ada042e77307f3108ef6914116efc",
+      "deploy/proofofwork-ui-capacity.py": "fa5ff3e3ad9ce1f4f20c76b234d5e6342f7aca4034453004817c7c10b0e330b2",
+      "scripts/check-ui-capacity-boundaries.py": "0ebf5ccdfb7ae0640a7636a0a246691693cfcc64804fc6b07c8e21691f879624"
+    },
+    "log": "/tmp/pow-h19-ui-capacity-2026-09-20/tests/ui-capacity-boundaries.log",
+    "logSha256": "b23292ac22a8532b575c68a1134163e447af6a6cc9c5c8d185acdae5484140d4",
+    "productionAccess": false,
+    "productionMutation": false,
+    "sourceHashesMatchBeforeAndAfter": true
+  },
+  "sourceFiles": [
+    {
+      "path": "OP_RETURN_INFRASTRUCTURE.md",
+      "bytes": 314532,
+      "sha256": "40202564866eff31b73ca695ab85b7caed2526936142a4bb492f08b5097f398c"
+    },
+    {
+      "path": "deploy/proofofwork-storage-trend.py",
+      "bytes": 9436,
+      "sha256": "c1e4db6184c2d136cd5468e8136546e3d48cee4e07d72e931281270b0351f0ff"
+    },
+    {
+      "path": "deploy/proofofwork-ui-release-provenance.sh",
+      "bytes": 65158,
+      "sha256": "4251896b34a30f40230daf152f2536e3b08ada042e77307f3108ef6914116efc"
+    },
+    {
+      "path": "deploy/proofofwork-ui-release-publish.sh",
+      "bytes": 37451,
+      "sha256": "40ec9cd67a63895e147b324fff4faa61946e614efeb0a9378dbec19ab29cd0b8"
+    },
+    {
+      "path": "deploy/proofofwork-ui-release-stage.py",
+      "bytes": 57662,
+      "sha256": "115a18d186bf40ed6493940224f2b4ce71987e4c8d6061f02c4b23b03a21f95f"
+    },
+    {
+      "path": "deploy/proofofwork-ui-storage-prune.sh",
+      "bytes": 13796,
+      "sha256": "f4d11abc904098bc88b91f0946e23cc2d0ab4681993d80bf239ba1969894c29e"
+    },
+    {
+      "path": "package.json",
+      "bytes": 8645,
+      "sha256": "f4ff717167f2955141e2c921b6af0ea51173f757235557ebd354012a391d67c6"
+    },
+    {
+      "path": "repository-hygiene.json",
+      "bytes": 7326,
+      "sha256": "3254ef80c14d83d71d0b9e361bac69da51d05a1111a8c9240697895b2ee4afbe"
+    },
+    {
+      "path": "scripts/check-audit5-ui-workflow.py",
+      "bytes": 21717,
+      "sha256": "a8a874b66d0592ca9a3dc3f9b0689109ee2a692be7a2b48fe1ec81d147611965"
+    },
+    {
+      "path": "scripts/check-storage-trend.py",
+      "bytes": 4432,
+      "sha256": "54b16274da78c8119a5b9912dac8c9285f9194d6be4c5e3c22e1fe936e9a2927"
+    },
+    {
+      "path": "scripts/check-ui-ops-contract.mjs",
+      "bytes": 102289,
+      "sha256": "993f6df008c191c99e4809a79210201a428179f41a7b8e71e76c4851ca041483"
+    },
+    {
+      "path": "deploy/proofofwork-ui-capacity.py",
+      "bytes": 12013,
+      "sha256": "fa5ff3e3ad9ce1f4f20c76b234d5e6342f7aca4034453004817c7c10b0e330b2"
+    },
+    {
+      "path": "scripts/check-ui-capacity.py",
+      "bytes": 14544,
+      "sha256": "cccee0ddd37d306136aaad086a89a18a4aab0a5f67eb868f50c5abcf800cadf7"
+    },
+    {
+      "path": "scripts/check-ui-capacity-boundaries.py",
+      "bytes": 9290,
+      "sha256": "0ebf5ccdfb7ae0640a7636a0a246691693cfcc64804fc6b07c8e21691f879624"
+    }
+  ],
+  "receiptRoot": "/tmp/pow-h19-ui-capacity-2026-09-20",
+  "receipts": [
+    {
+      "path": "initial-inventory.json",
+      "bytes": 41382,
+      "sha256": "e744552337c9324bbb3b2293168852bbf55c42ad98185834c4ca96d27a9b76b2"
+    },
+    {
+      "path": "release-prune-dry-run.log",
+      "bytes": 4663,
+      "sha256": "a12b167c7378450f2dc4b4f8317e4b8511e27154a1c3bdfa83966c781e875d18"
+    },
+    {
+      "path": "archive-candidate-inventory.json",
+      "bytes": 5061,
+      "sha256": "59414631da85b60fe6cdaf8690e6c9a59c77c50f71e5d28b53ae5ed1ad29d5a3"
+    },
+    {
+      "path": "archive-dependencies.json",
+      "bytes": 73253,
+      "sha256": "8df6aeb1be15dbc22c665b20d1669700d2ede0da93b8b9d3125a0d991eb29b8b"
+    },
+    {
+      "path": "exact-archive-review.json",
+      "bytes": 61206,
+      "sha256": "f38b2dda819b94994d884c626eceedbf40b48387b26cc2affc721196cfe45930"
+    },
+    {
+      "path": "live-capacity-helper-probe.json",
+      "bytes": 7734,
+      "sha256": "e004753e32a8b566f869c2ca547e427ae228189cc246498d216f99a224569e8d"
+    },
+    {
+      "path": "review/backup-manifest-dependencies.json",
+      "bytes": 400241,
+      "sha256": "3c91d6628235857a3bc90cf04f3c76662f42c410919bcbd69347e720f4fb165a"
+    },
+    {
+      "path": "review/conditional-archive-scope-review.json",
+      "bytes": 9168,
+      "sha256": "883a3f477977923f0d17c608913e1d46f9784ac220a95313bf6176c917b52328"
+    },
+    {
+      "path": "review/preserved-6a7-archive-check.json",
+      "bytes": 738,
+      "sha256": "255a6e3a65b197ace7999092b2daedf6df5c9bef84015f7b9baf62fe5d4b33e3"
+    },
+    {
+      "path": "review/check-trend-main-boundaries.py",
+      "bytes": 3876,
+      "sha256": "acfcc555678c6936f7260a97b63bbb05a3909c0660a94b4d6eff11c610754145"
+    },
+    {
+      "path": "review/trend-main-boundaries-result.json",
+      "bytes": 4877,
+      "sha256": "8cab518020e90ec94736cbedaf13482893d853943964f240a15e1e3296a20fb6"
+    },
+    {
+      "path": "review/review-summary.md",
+      "bytes": 3350,
+      "sha256": "6f8b172d72fafd1d22458ee78078b923632a2e164d4994a212271c88e932f493"
+    },
+    {
+      "path": "tests/helper-stager.log",
+      "bytes": 1629,
+      "sha256": "ec9b8313876bf75cda916bae73df5c18d4049ee93a27dc9ca57d924fc386f29a"
+    },
+    {
+      "path": "tests/audit5-workflow.log",
+      "bytes": 3221,
+      "sha256": "d13117b98c9d65641068c0a69ccd8200285b641acbccf914ff4b9587cb974d99"
+    },
+    {
+      "path": "tests/ui-ops-contract.log",
+      "bytes": 352,
+      "sha256": "b480e31b5261bfb46704ee755b67c7f2b350e83c97980416aafd2afd52841076"
+    },
+    {
+      "path": "tests/ui-capacity-boundaries.log",
+      "bytes": 669,
+      "sha256": "b23292ac22a8532b575c68a1134163e447af6a6cc9c5c8d185acdae5484140d4"
+    },
+    {
+      "path": "tests/ui-capacity-boundaries-source.json",
+      "bytes": 842,
+      "sha256": "e5414657dcf84851353d4e61425eed64bd573c2cf43a6cd34271dbf1d143b4b6"
+    },
+    {
+      "path": "tests/math-capacity-results.json",
+      "bytes": 1822,
+      "sha256": "33f969e62b014e06ad487abd5e97ac9d4c14312d426b68b567c4d8167a864c69"
+    },
+    {
+      "path": "tests/root-storage-trend.log",
+      "bytes": 149,
+      "sha256": "3a81f618402cfbd39f1644cdc340d81b912e72b2aedf5488622d768968624dbf"
+    },
+    {
+      "path": "tests/hygiene-fix.log",
+      "bytes": 141,
+      "sha256": "fb44bc081ea22069e5f4b902f9c06bafa235d46d283b584ccc0e5c1a00c78b1a"
+    },
+    {
+      "path": "tests/hygiene-fix-final.log",
+      "bytes": 141,
+      "sha256": "fb44bc081ea22069e5f4b902f9c06bafa235d46d283b584ccc0e5c1a00c78b1a"
+    },
+    {
+      "path": "tests/hygiene-check-before-hook-setup.log",
+      "bytes": 173,
+      "sha256": "151702a5942f8f8a640e8d0e434baa346c50cb22489f8291bb5eedf878e35f56"
+    },
+    {
+      "path": "tests/hygiene-check-final.log",
+      "bytes": 134,
+      "sha256": "c501942de5d3c65c2445bb7178083e0794cc7491a71a7ba3a354acef2a10a8bb"
+    }
+  ],
+  "limitations": [
+    "No production safeguards installed and no storage reclaimed.",
+    "Current free space remains below the12GiB warning threshold; projected cleanup headroom is not measured reclaimed capacity.",
+    "No new restore replay, off-host backup, provider resize, external alert delivery or automatic archive retention policy.",
+    "Fresh locked exact identities, hashes, dependencies and preserved recovery copies must pass again before any separately approved removal.",
+    "Historical audits, ledgers, raw protocol records and original evidence remain unchanged."
+  ],
+  "repositoryHygiene": {
+    "isolatedCheckout": "/tmp/pow-h19-ui-capacity-2026-09-20/hygiene-checkout",
+    "hygieneFix": "pass; no allowlisted rebuildable state found",
+    "hygieneCheck": "pass",
+    "initialSetup": "Fresh clone initially lacked hooks; npm run hooks:install activated repository hooks and the full check then passed. No bypass.",
+    "originalCheckoutCachesAndUnrelatedUntrackedFilePreserved": true
+  }
+}

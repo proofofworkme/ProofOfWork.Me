@@ -7,6 +7,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  readdirSync,
   rmSync,
   statSync,
   symlinkSync,
@@ -843,6 +844,71 @@ try {
   assert.equal(mountedTree.status, 1, mountedTree.stderr);
   assert.match(mountedTree.stderr, /nested mount/u);
 
+  const discoveryBin = join(fixture, "discovery-bin");
+  mkdirSync(discoveryBin, { mode: 0o700 });
+  writeFileSync(join(discoveryBin, "find"), `#!/usr/bin/env bash
+set -Eeuo pipefail
+if [[ "$1" == "\${POW_TEST_DISCOVERY_FAILURE_ROOT:-}" && "$2" == "-mindepth" ]]; then
+  if [[ -n "\${POW_TEST_DISCOVERY_PARTIAL_PATH:-}" ]]; then
+    printf '%s\\0' "\${POW_TEST_DISCOVERY_PARTIAL_PATH}"
+  fi
+  if [[ "\${POW_TEST_DISCOVERY_OVERSIZED:-}" == "1" ]]; then
+    /usr/bin/python3 -I -c 'import sys; sys.stdout.buffer.write(b"x" * (9 * 1024 * 1024))'
+  fi
+  echo 'fixture discovery I/O failure' >&2
+  exit 42
+fi
+exec /usr/bin/find "$@"
+`, { mode: 0o700 });
+  writeFileSync(join(discoveryBin, "sort"), `#!/usr/bin/env bash
+set -Eeuo pipefail
+if [[ "\${POW_TEST_DISCOVERY_SORT_FAILURE:-}" == "1" ]]; then
+  echo 'fixture ordering I/O failure' >&2
+  exit 42
+fi
+exec /usr/bin/sort "$@"
+`, { mode: 0o700 });
+  const candidatesBeforeFailure = [
+    rollback, previous, pre, oldFailed, newestFailed, oldStage, freshStage,
+    oldStaging, oldStageRoot, oldUiStageRoot, oldVarTmp, freshVarTmp,
+    unmarkedOldStage,
+  ];
+  for (const mode of ["--dry-run", "--apply"]) {
+    for (const failure of [
+      { name: "first root", root: www },
+      { name: "second root", root: varTmp },
+      { name: "partial first root", root: www, partial: oldStage },
+      { name: "partial second root", root: varTmp, partial: oldVarTmp },
+      { name: "oversized second root", root: varTmp, oversized: true },
+      { name: "candidate ordering", sort: true },
+    ]) {
+      const failureResult = run(
+        "deploy/proofofwork-ui-storage-prune.sh",
+        [mode],
+        {
+          ...cleanupEnvironment,
+          PATH: `${discoveryBin}:${process.env.PATH}`,
+          POW_TEST_DISCOVERY_FAILURE_ROOT: failure.root ?? "",
+          POW_TEST_DISCOVERY_PARTIAL_PATH: failure.partial ?? "",
+          POW_TEST_DISCOVERY_OVERSIZED: failure.oversized ? "1" : "",
+          POW_TEST_DISCOVERY_SORT_FAILURE: failure.sort ? "1" : "",
+        },
+      );
+      assert.notEqual(failureResult.status, 0, `${mode}: ${failure.name} must abort`);
+      assert.match(failureResult.stderr,
+        failure.sort ? /candidate ordering failed/u : /UI scratch discovery failed/u);
+      assert.doesNotMatch(failureResult.stdout, /(?:would_)?pruned? group=|ui_storage_prune/u);
+      for (const candidate of candidatesBeforeFailure) {
+        assert.ok(existsSync(candidate), `${mode}: ${failure.name} removed ${candidate}`);
+        assert.equal(readFileSync(join(candidate, "evidence.txt"), "utf8"), basename(candidate));
+      }
+      assert.equal(readdirSync(fixture).filter(name =>
+        name.startsWith(".proofofwork-ui-storage-discovery.")).length, 0,
+      "Only the fresh private discovery inventory should be removed after failure");
+    }
+  }
+  process.stdout.write("UI scratch retention: 12 discovery, size-limit and ordering failure cases preserved every candidate\n");
+
   const dryRun = run(
     "deploy/proofofwork-ui-storage-prune.sh",
     ["--dry-run"],
@@ -1116,6 +1182,7 @@ try {
     POW_UI_WWW_ROOT: www,
     POW_UI_RELEASE_ARCHIVE_ROOT: fixture,
     POW_UI_ALLOW_TEST_ROOTS: "1",
+    POW_UI_CAPACITY_SCRIPT: join(process.cwd(), "deploy/proofofwork-ui-capacity.py"),
     POW_UI_DEPLOY_LOCK: join(fixture, "ui-deploy.lock"),
   };
   const productionShapedInjection = run(
@@ -1675,6 +1742,7 @@ try {
     POW_UI_PUBLISH_PROVENANCE_SCRIPT: provenanceScript,
     POW_UI_RETAINED_ROOT_SCRIPT: retainedRootScript,
     POW_UI_ALLOW_TEST_ROOTS: "1",
+    POW_UI_CAPACITY_SCRIPT: provenanceEnvironment.POW_UI_CAPACITY_SCRIPT,
     POW_UI_DEPLOY_LOCK: provenanceEnvironment.POW_UI_DEPLOY_LOCK,
   };
   const publisherArguments = (releaseId, prepared) => [

@@ -7,11 +7,13 @@ import json
 import os
 from pathlib import Path
 import shutil
+import stat
 import subprocess
 import sys
 import tarfile
 import tempfile
 import unittest
+from types import SimpleNamespace
 from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -210,10 +212,14 @@ class CapacityTests(unittest.TestCase):
         self.assertIn('free >= floor + reserve + required', script)
         self.assertNotIn('live + unique + metadata + largest', script)
 
-    def test_separate_tooling_pins_match_exact_helpers_and_keep_app_provenance(self):
+    def test_historical_tooling_pins_match_reviewed_helpers_and_keep_app_provenance(self):
         script = (ROOT / 'deploy/audit5/ui-publish-candidate.sh').read_text()
-        stage_sha = hashlib.sha256((ROOT / 'deploy/proofofwork-ui-release-stage.py').read_bytes()).hexdigest()
-        publisher_sha = hashlib.sha256((ROOT / 'deploy/proofofwork-ui-release-publish.sh').read_bytes()).hexdigest()
+        # Audit5 is an exact historical approval, not a floating deployment
+        # entrypoint. Keep its reviewed bytes/pins intact when current helpers
+        # acquire new safety boundaries; current staging behavior is exercised
+        # separately below and by check-ui-capacity.py.
+        stage_sha = '39f17624d0e244382c344e31f5b04b0b58bb8f4e8c7bc9c93d7418bc8ab0f238'
+        publisher_sha = '8846f6c6d3a8793fe83387e4d6fc317b87ef293b7961e2cd593490fd1bbd5024'
         self.assertEqual(capacity.EXPECTED_STAGER_SHA256, stage_sha)
         self.assertIn('stage:' + stage_sha, script)
         self.assertIn('publish:' + publisher_sha, script)
@@ -221,6 +227,30 @@ class CapacityTests(unittest.TestCase):
         self.assertIn('"$source/deploy/proofofwork-ui-retained-root.py"', script)
         self.assertLess(script.index('flock --exclusive'), script.index('stage:' + stage_sha))
         self.assertIn('$(git -C "$source" rev-parse HEAD) == "$commit"', script)
+
+    def test_historical_phase_model_refuses_current_unreviewed_stager_bytes(self):
+        # Execute the historical loader's actual digest guard with temporary
+        # files and mocked root metadata. No old Git objects are required.
+        source = self.root / 'installed-stager'
+        source.write_bytes((ROOT / 'deploy/proofofwork-ui-release-stage.py').read_bytes())
+        lock = self.root / 'deploy.lock'
+        lock.touch()
+        actual_fstat = os.fstat
+        def root_stat(value):
+            fields = list(value)
+            fields[0] = stat.S_IFREG | 0o644
+            fields[4] = 0
+            return os.stat_result(fields)
+        def mapped_path(value):
+            return lock if str(value) == '/run/proofofwork-ui/deploy.lock' else source
+        with lock.open('rb') as held, mock.patch.object(capacity, 'Path', side_effect=mapped_path), \
+                mock.patch.object(capacity.os, 'geteuid', return_value=0), \
+                mock.patch.object(capacity.sys, 'flags', SimpleNamespace(isolated=True)), \
+                mock.patch.object(Path, 'lstat', return_value=root_stat(actual_fstat(held.fileno()))), \
+                mock.patch.object(capacity.os, 'fstat', side_effect=lambda descriptor: root_stat(actual_fstat(descriptor))), \
+                mock.patch.dict(os.environ, {'POW_UI_DEPLOY_LOCK_FD': str(held.fileno())}):
+            with self.assertRaisesRegex(ValueError, 'differs from the reviewed phase model'):
+                capacity.locked_installed_stager()
 
     def test_portable_archive_dereferences_candidate_links_and_fits_bound(self):
         stage = self.root / 'stage'; stage.mkdir()
