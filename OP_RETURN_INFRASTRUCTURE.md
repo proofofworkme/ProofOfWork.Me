@@ -1090,8 +1090,9 @@ Install `proofofwork-node-storage-health.sh` as executable
 `/usr/local/sbin/proofofwork-node-storage-health`, then install and enable its
 service and timer on the node host. Every five minutes it checks both `/` and
 the mandatory separate `/data` mount. Block and inode use warn at 75% and fail
-critically at 85%; the node additionally requires at least 10 GiB free on `/`
-and 100 GiB free on `/data`. The service emits one bounded structured line per
+critically at 85%; the node additionally warns below 20 GiB free on `/` or
+200 GiB free on `/data`, and fails critically below 10 GiB free on `/` or
+100 GiB free on `/data`. The service emits one bounded structured line per
 mount and exits nonzero for warning or critical state, leaving the failed unit
 and journal evidence visible to host monitoring. A missing or unexpectedly
 nested `/data` mount is critical. The check is read-only and never prunes data.
@@ -1106,10 +1107,13 @@ over one or seven days. It warns within seven days and is critical within one;
 missing historical coverage is explicitly unknown and exits nonzero. These are
 historical estimates, not guarantees against sudden growth. Bounded allocation
 measurements separately identify backup, database tablespace, cache, deployment
-and log usage; shared blocks mean these figures must not be summed. No measured
-path is thereby approved for cleanup. The service has a read-only filesystem,
-resource limits and no pruning operation. Alerts are local journal/failed-unit
-signals; external notification delivery is not implied by installation.
+and log usage; shared blocks mean these figures must not be summed. Known
+allocation classes carry explicit review thresholds and emit
+`cleanupApproved: false`; a `reviewRequired` allocation is a capacity triage
+signal, not cleanup authorization. No measured path is thereby approved for
+cleanup. The service has a read-only filesystem, resource limits and no pruning
+operation. Alerts are local journal/failed-unit signals; external notification
+delivery is not implied by installation.
 
 `proofofwork-api-observation-health.timer` supplements readiness with a bounded
 ten-minute journal summary every five minutes. Its Python controller is installed

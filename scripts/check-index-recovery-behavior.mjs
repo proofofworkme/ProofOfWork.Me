@@ -12013,6 +12013,58 @@ check("token send preflight retries transient canonical reads only", async () =>
   );
 });
 
+check("wallet-scoped token reads share identical in-flight loads without retaining failures", async () => {
+  const inFlight = new Map();
+  const walletScopedTokenSingleFlight = isolatedFunction(
+    API_PATH,
+    "walletScopedTokenSingleFlight",
+    {
+      WALLET_SCOPED_TOKEN_IN_FLIGHT: inFlight,
+      WALLET_SCOPED_TOKEN_IN_FLIGHT_MAX_ENTRIES: 4,
+    },
+  );
+  let resolveFirst;
+  const firstBarrier = new Promise((resolve) => {
+    resolveFirst = resolve;
+  });
+  let loads = 0;
+  const first = walletScopedTokenSingleFlight("same-wallet", async () => {
+    loads += 1;
+    await firstBarrier;
+    return { ok: true };
+  });
+  const second = walletScopedTokenSingleFlight("same-wallet", async () => {
+    loads += 1;
+    return { ok: false };
+  });
+  await Promise.resolve();
+  assert.equal(loads, 1);
+  assert.equal(inFlight.size, 1);
+  resolveFirst();
+  const [firstResult, secondResult] = await Promise.all([first, second]);
+  assert.strictEqual(firstResult, secondResult);
+  assert.deepEqual(firstResult, { ok: true });
+  assert.equal(inFlight.size, 0);
+
+  let failures = 0;
+  await rejection(
+    walletScopedTokenSingleFlight("retry-wallet", async () => {
+      failures += 1;
+      throw new Error("retry me");
+    }),
+    (error) => /retry me/u.test(String(error?.message)),
+  );
+  await rejection(
+    walletScopedTokenSingleFlight("retry-wallet", async () => {
+      failures += 1;
+      throw new Error("retry me");
+    }),
+    (error) => /retry me/u.test(String(error?.message)),
+  );
+  assert.equal(failures, 2);
+  assert.equal(inFlight.size, 0);
+});
+
 check("fresh wallet token reads require authoritative wallet overlay coverage", async () => {
   const blockHash = "7".repeat(64);
   const exactGate = {
@@ -12028,6 +12080,7 @@ check("fresh wallet token reads require authoritative wallet overlay coverage", 
   const walletScopedTokenCacheStubs = {
     cachedWalletScopedTokenPayload: () => null,
     rememberWalletScopedTokenPayload: (_cacheKey, payload) => payload,
+    walletScopedTokenSingleFlight: async (_cacheKey, load) => await load(),
     walletScopedTokenCacheKey: () => "",
   };
   const walletScopedTokenPayload = isolatedFunction(

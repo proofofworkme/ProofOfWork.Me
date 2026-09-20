@@ -9,7 +9,35 @@ import sys
 import time
 
 DAY = 86400
+GIB = 1024**3
 PATTERN = re.compile(r'^storage target=(\S+) filesystem=\S+ used_percent=\d+ inode_used_percent=\d+ available_bytes=(\d+) available_inodes=\d+$')
+
+ALLOCATION_POLICIES = {
+    'ui': [
+        {'path': '/var/backups/proofofwork-ui', 'reviewBytes': 16 * GIB, 'criticalBytes': 32 * GIB,
+         'label': 'ui-release-and-rollback-evidence'},
+        {'path': '/var/tmp/proofofwork-deploy', 'reviewBytes': 1 * GIB, 'criticalBytes': 8 * GIB,
+         'label': 'ui-deploy-scratch'},
+        {'path': '/var/www', 'reviewBytes': 4 * GIB, 'criticalBytes': 16 * GIB,
+         'label': 'ui-live-and-staged-surfaces'},
+        {'path': '/var/log', 'reviewBytes': 2 * GIB, 'criticalBytes': 8 * GIB,
+         'label': 'system-and-application-logs'},
+    ],
+    'node': [
+        {'path': '/data/proofofwork-postgres-backups', 'reviewBytes': 128 * GIB, 'criticalBytes': 256 * GIB,
+         'label': 'node-postgres-backups'},
+        {'path': '/data/proofofwork-postgres-tablespaces', 'reviewBytes': 256 * GIB, 'criticalBytes': 512 * GIB,
+         'label': 'node-postgres-tablespaces'},
+        {'path': '/data/proofofwork-api-cache', 'reviewBytes': 32 * GIB, 'criticalBytes': 96 * GIB,
+         'label': 'node-api-cache'},
+        {'path': '/data/proofofwork-backups', 'reviewBytes': 64 * GIB, 'criticalBytes': 128 * GIB,
+         'label': 'node-general-backups'},
+        {'path': '/data/proofofwork-release-backups', 'reviewBytes': 8 * GIB, 'criticalBytes': 32 * GIB,
+         'label': 'node-release-backups'},
+        {'path': '/var/log', 'reviewBytes': 2 * GIB, 'criticalBytes': 8 * GIB,
+         'label': 'system-and-application-logs'},
+    ],
+}
 
 
 def forecast(samples, now, available, reserve):
@@ -39,6 +67,31 @@ def forecast(samples, now, available, reserve):
             'headroomBytes': runway, 'netConsumptionBytesPerDay': rate if windows else None,
             'secondsToReserve': seconds, 'windows': windows,
             'limitation': 'Net historical consumption; sudden growth and future backup bursts can exceed this estimate.'}
+
+
+def allocation_report(policy, allocated):
+    review = int(policy.get('reviewBytes') or 0)
+    critical = int(policy.get('criticalBytes') or 0)
+    status = 'measured'
+    severity = 0
+    if critical and allocated >= critical:
+        status = 'critical-review'
+        severity = 2
+    elif review and allocated >= review:
+        status = 'review'
+        severity = 1
+    report = {'event': 'storage-allocation', 'path': policy['path'],
+              'label': policy.get('label', 'unclassified'), 'allocatedBytes': allocated,
+              'status': status, 'cleanupApproved': False}
+    if review:
+        report['reviewBytes'] = review
+    if critical:
+        report['criticalBytes'] = critical
+    if severity:
+        report['reviewRequired'] = True
+        report['reason'] = 'allocation-threshold-crossed'
+        report['note'] = 'Review dependencies before any cleanup; this measurement alone does not approve deletion.'
+    return severity, report
 
 
 def main():
@@ -72,19 +125,24 @@ def main():
         severity = max(severity, {'critical': 2, 'warning': 1, 'insufficient-history': 1, 'ok': 0}[item['status']])
     # Attribute current allocation separately. Values must not be summed: hard
     # links and recovery copies may share blocks. No path is a cleanup candidate.
-    paths = ['/var/backups/proofofwork-ui', '/var/tmp/proofofwork-deploy', '/var/www', '/var/log'] if role == 'ui' else [
-        '/data/proofofwork-postgres-backups', '/data/proofofwork-postgres-tablespaces',
-        '/data/proofofwork-api-cache', '/var/log']
-    for path in paths:
+    for policy in ALLOCATION_POLICIES[role]:
+        path = policy['path']
         if not os.path.isdir(path):
-            print(json.dumps({'event': 'storage-allocation', 'path': path, 'status': 'absent'}), flush=True)
+            print(json.dumps({'event': 'storage-allocation', 'path': path,
+                              'label': policy.get('label', 'unclassified'),
+                              'status': 'absent', 'cleanupApproved': False}), flush=True)
             continue
         try:
             measured = subprocess.run(['/usr/bin/du', '--one-file-system', '--summarize', '--block-size=1', path], capture_output=True, timeout=30, check=True)
             allocated = int(measured.stdout.split()[0])
-            print(json.dumps({'event': 'storage-allocation', 'path': path, 'allocatedBytes': allocated, 'status': 'measured'}), flush=True)
+            allocation_severity, report = allocation_report(policy, allocated)
+            print(json.dumps(report), flush=True)
+            severity = max(severity, allocation_severity)
         except (subprocess.SubprocessError, ValueError):
-            print(json.dumps({'event': 'storage-allocation', 'path': path, 'status': 'incomplete'}), flush=True)
+            print(json.dumps({'event': 'storage-allocation', 'path': path,
+                              'label': policy.get('label', 'unclassified'),
+                              'status': 'incomplete', 'cleanupApproved': False,
+                              'reviewRequired': True}), flush=True)
             severity = max(severity, 1)
     return severity
 

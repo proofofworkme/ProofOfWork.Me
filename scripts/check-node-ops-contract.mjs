@@ -251,8 +251,15 @@ assert.match(storageHealth, /POW_STORAGE_WARN_PERCENT:-75/u);
 assert.match(storageHealth, /POW_STORAGE_CRITICAL_PERCENT:-85/u);
 assert.match(storageHealth, /POW_STORAGE_ROOT_MIN_FREE_BYTES:-10737418240/u);
 assert.match(storageHealth, /POW_STORAGE_DATA_MIN_FREE_BYTES:-107374182400/u);
+assert.match(storageHealth, /POW_STORAGE_ROOT_WARN_FREE_BYTES:-21474836480/u);
+assert.match(storageHealth, /POW_STORAGE_DATA_WARN_FREE_BYTES:-214748364800/u);
+assert.match(storageHealth, /available_bytes < warning_available_bytes/u);
 assert.match(storageHealthService, /^Requisite=data\.mount$/mu);
 assert.match(storageHealthService, /^After=data\.mount$/mu);
+assert.match(
+  storageHealthService,
+  /^Environment=POW_STORAGE_DATA_WARN_FREE_BYTES=214748364800$/mu,
+);
 assert.match(storageHealthService, /^TimeoutStartSec=30s$/mu);
 assert.doesNotMatch(storageHealthService, /RequiresMountsFor/u);
 assert.match(storageHealthService, /ProtectSystem=strict/u);

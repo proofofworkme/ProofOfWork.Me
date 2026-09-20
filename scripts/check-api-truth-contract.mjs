@@ -817,6 +817,9 @@ expect(
     /const freshWalletIndexUnavailable = \(\) => \{[\s\S]*?CANONICAL_WALLET_INDEX_UNAVAILABLE[\s\S]*?requiredSource: "proof-indexer-wallet-token-overlay"/u.test(
       walletScopedTokenRead,
     ) &&
+    /return await walletScopedTokenSingleFlight\(walletCacheKey,[\s\S]*?cachedWalletScopedTokenPayload\(walletCacheKey\)/u.test(
+      walletScopedTokenRead,
+    ) &&
     /const authoritativeOverlay =[\s\S]*?walletScopedPayloadUsesAuthoritativeOverlay\(walletPayload\)[\s\S]*?if \(requireCurrent && !authoritativeOverlay\) \{[\s\S]*?throw freshWalletIndexUnavailable\(\)/u.test(
       walletScopedTokenRead,
     ) &&

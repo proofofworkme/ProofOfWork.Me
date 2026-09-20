@@ -1266,3 +1266,14 @@ All 528 recovery checks, globals and live-data checks pass. The live-data contra
 now follows the checked helper rather than requiring duplicated inline branches.
 Real production/candidate burst measurements and production validation remain
 required before any performance claim or deployment.
+
+### User-requested safe stop — 2026-09-19
+
+The user requested stopping to conserve weekly usage and resuming with a cheaper
+model. Production remains on verified node `1f467cc` and UI `6eb4a1e`. The local
+`589bc71` WORK-floor candidate was not deployed or pushed. Its temporary shadow
+service is stopped; production API, worker, Core, Electrs, PostgreSQL and WAL
+receiver remain active with unchanged identities. Warm measurements completed
+before shutdown and are retained for review, not claimed as a speedup. Off-host
+encryption/transfer/restore did not start. Detailed state and exact resume paths
+are in `2026-09-19-audit-17-safe-stop-handoff.md`. Do not resume automatically.
