@@ -2872,3 +2872,94 @@ Compact durable evidence: [UI capacity preparation evidence](2026-09-20-audit-19
 ## UI capacity rollout authorization — 2026-09-20
 
 The user explicitly approved **“#3 rollout”** after reviewing the tested safeguards and exact35-file UI archive scope. This authorizes committing/pushing those changes, installing the six UI storage helpers, revalidating and removing only the listed archive copies, production verification and an audit append. Preserve the three rollback roots, all four bound live/rollback archives, both complete Audit17 recovery directories and all protocol/application data. No automatic retention policy, node deployment, application release, migration or transaction is authorized by this continuation. The preceding preparation record remains unchanged; completed actions and receipts will follow below.
+
+## UI capacity rollout completed — 2026-09-20
+
+### Approved scope and result
+
+**The approved #3 rollout is complete.** Source commit **`af8c4bdc10f1082f3982595fc92888799b907de7`** was committed and pushed with repository hooks and hygiene enabled. Six UI storage helpers were installed on **77.42.91.106** at **22:30:30 UTC**, and the exact approved **35 managed archive files** were removed at **22:31:45–22:31:46 UTC**. Production verification finished with the narrowly scoped retention recheck at **22:39:53 UTC**. This supersedes the preparation section's pending-approval and projected-capacity status without rewriting that historical section.
+
+The live application release remains **`56694a7d6d76de565d4e0a6fce94f880d5308550`**. There was no application publish, Caddy restart, node deployment, service/unit configuration change, migration, protocol or ledger edit, database repair, transaction broadcast, or cleanup beyond the approved batch. The existing archive-retention timer remains explicitly **`--dry-run`**. The separate scratch-cleaner timer retains its previous age/marker-limited applying policy and was not manually invoked.
+
+The original eight-step handoff now reads: **#1–2 remain complete from their earlier production verification; the approved #3 safeguards and exact cleanup are complete; #4, H19-02/H19-03 transaction-detail correctness, has not started.** Sustainable capacity/retention and external notification delivery remain follow-up work under the existing storage findings, not a claim that all disk recurrence risk is closed.
+
+### Installed safeguards and preservation
+
+The six installed files under `/usr/local/sbin` are root-owned, mode `0755`, and match the committed source exactly:
+
+| Helper | Installed SHA256 |
+| --- | --- |
+| `proofofwork-ui-capacity` | `fa5ff3e3ad9ce1f4f20c76b234d5e6342f7aca4034453004817c7c10b0e330b2` |
+| `proofofwork-ui-release-stage` | `115a18d186bf40ed6493940224f2b4ce71987e4c8d6061f02c4b23b03a21f95f` |
+| `proofofwork-ui-release-provenance` | `4251896b34a30f40230daf152f2536e3b08ada042e77307f3108ef6914116efc` |
+| `proofofwork-ui-release-publish` | `40ec9cd67a63895e147b324fff4faa61946e614efeb0a9378dbec19ab29cd0b8` |
+| `proofofwork-ui-storage-prune` | `f4d11abc904098bc88b91f0946e23cc2d0ab4681993d80bf239ba1969894c29e` |
+| `proofofwork-storage-trend` | `c1e4db6184c2d136cd5468e8136546e3d48cee4e07d72e931281270b0351f0ff` |
+
+The shared capacity dependency was installed first. All five pre-existing helpers were durably backed up before replacement, preserving their hashes, owners and modes; capacity is the new sixth helper. Installation used atomic file replacement under the deployment lock and completed without rollback or partial failure. The fixed **10 GiB root reserve**, **64 MiB allowance**, integer allocation accounting, inode checks, separate-filesystem checks, guarded release phases, stale-observation detection and bounded scratch discovery are now installed. The existing deployed publisher's 45-second compatibility timeout is preserved. These checks do not reserve blocks against unrelated writers, intercept unguarded manual transfers, or certify the aggregate peak of an unmeasured future release.
+
+The unchanged generic release-pruner SHA256 is **`d4de9574cd0c666d198c4d448e72869c09cdfeacd29cd3e1eb0731f0419f8fb6`**; the unchanged storage-health helper is **`b533b293cf0973bbdfb43ab8f2a6e81a0cf6b329f4d951b81ed54dfa28a7855b`**. Policies for all eleven inspected units and enabled/active states for all five timers matched the baseline before and after verification.
+
+### Exact cleanup and measured capacity
+
+Fresh locked preflight at **22:29:41 UTC** passed against the reviewed identities and hashes, all seventeen managed archives, **664 dependency documents**, the broader **50-archive** dependency inventory, four protected live/rollback manifests, and both independent historical recovery sets. The applying controller repeated dependency checks and wrote durable per-file intent/completion records. It removed exactly the twelve TGZs, twelve checksum sidecars and eleven provenance sidecars listed in the preceding approved proposal: **35 files, 2,216,876,047 logical bytes and 2,217,005,056 allocated bytes (about 2.06 GiB)**. No generic apply operation was substituted for that exact manifest.
+
+| Measurement | Before exact removal | Immediately after removal | Final host sample |
+| --- | ---: | ---: | ---: |
+| Timestamp, UTC | 22:31:45.306671 | 22:31:46.500399 | 22:37:19.168774 |
+| Available bytes | 12,103,790,592 | 14,320,758,784 | **14,312,263,680** |
+| Available GiB | 11.27 | 13.34 | **13.33** |
+| Available inodes | 2,337,875 | 2,337,907 | 2,337,906 |
+| Root utilization | Earlier preparation sample: 69% | — | **63%** |
+
+The observed immediate available-byte gain was **2,216,968,192 B**. Its 36,864-byte difference from removed allocated bytes is consistent with the new durable cleanup receipts; concurrent allocation means this is a measured net gain, not a promise that available bytes stay constant. Final root capacity/used bytes were **39,973,924,864 / 23,977,467,904 B**.
+
+**Five managed archives remain**, including all four live/queued-root bindings. Three additional legacy TGZs, all three complete rollback roots, both Audit 17 independent historical recovery directories, and retained dependency records remain preserved. Post-cleanup checks confirmed unchanged protected manifest identities/hashes and unchanged retained dependency inventory. The two historical recovery archive copies remain independently hash-verified; this operation did not rehearse a physical restore. An independent receipt review passed **85 checks**, including all 35 exact identities, 70 alternating intent/completion events, retained dependencies and installed/backup helper hashes.
+
+Durable production evidence, including the original five helper backups, uploaded pinned controllers, installation receipts and exact removal journal, is stored under:
+
+`/var/backups/proofofwork-ui/recovery-evidence/audit19-ui-capacity-20260920T221745Z`
+
+The `installer/old/`, `installer/intent.json`, `installer/progress.jsonl`, `installer/result.json`, `cleanup/intent.json`, `cleanup/operations.jsonl` and `cleanup/result.json` records must be preserved as historical recovery/audit evidence. Their content and hashes are included or identified in the linked rollout evidence.
+
+### Production verification and qualifications
+
+| Check | Result |
+| --- | --- |
+| Installed helper bytes, ownership and modes | All six match approved source; original five backups verified |
+| New capacity CLI on real UI filesystem | Passed; available bytes exceed reserve/allowance and inode requirements |
+| Current live root and all three complete rollback roots | Four full provenance checks passed with the newly installed helper; protected manifests unchanged |
+| Current storage-health helper | Exit 0, disk 63%, inode usage 4% |
+| Normally scheduled storage-health run | **22:35:32 UTC, exit 0**; previous low-space warning cleared |
+| Caddy | Same PID **3092586**, invocation/start identity unchanged, zero recorded automatic restarts, configuration unchanged |
+| Caddy warning/error journal, rollout start through final sample | Read succeeded with no entries |
+| Public pages, sequential HTTP GETs | **14/14 HTTP 200 and 14/14 exact HTML matches** against baseline, 22:32:40–22:32:47 UTC; Home (`www`), ID, Desktop, Browser, Boost, AMO, Credit, Wallet, Work, Infinity, Inception, Log, Growth, Computer last |
+| Retention after exact removal | Explicit `5 --dry-run`, exit 0, **five verified / zero unverified**, no deletion candidates |
+
+The original combined verification receipt is preserved exactly with **33/34 checks passing** and SHA256 **`0f19b36d9d8dda012f2bd0da6df91cc9ee03c5b4ba445d2864db8cdb100d413e`**. Its only failed check was the verifier's stderr classification of retention output: the command itself exited 0, but the allowlist omitted two valid historical absolute-checksum notices for retained **a6d1d77** and **132b87f** archives. A separate narrow classifier verified the pinned names, exact checksum bytes, hashes and canonical absolute paths. **Thirteen focused classifier fixtures passed**, including rejection of unknown/duplicate notices, changed or missing sidecars, incorrect paths/digests, nonzero exit, unverified archives and applying commands. The fresh locked retention-only recheck at **22:39:46–22:39:53 UTC** passed with current sidecars checked before/after. Neither the failed original receipt nor the historical sidecars were rewritten or normalized. This was a verification-harness false negative, not a production integrity failure.
+
+The new trend helper completed in the foreground with **exit 1**, correctly retaining allocation-review warnings: backup/evidence area **17,659,990,016 B (about 16.45 GiB)** exceeds its 16 GiB review threshold, and deployment scratch **1,441,026,048 B (about 1.34 GiB)** exceeds its 1 GiB review threshold. Its producer observation was fresh (**134 seconds**, below 900), available bytes exceeded the 12 GiB warning level, and forecast status was `ok`. The one-day net-consumption estimate of zero reflects net freed space; it is not proof of zero future growth. Logs measured **625,086,464 B** and the live tree **412,168,192 B**, below their review thresholds. These allocations overlap other storage categories and must not be summed as reclaimable space.
+
+At the final sample the hourly trend systemd unit still recorded its earlier **22:01** warning run; it had not yet demonstrated a scheduled run with the new bytes. Foreground verification proves the new helper executed, not external alert delivery or a later timer outcome. No warning was hidden with `reset-failed` or a policy change.
+
+This storage rollout made **no new canonical-chain, accounting, database-integrity or protocol-math conclusion**. The previous H19-01/H19-04 node-backed production verification remains authoritative. Public HTML equality is a narrow availability/content-preservation check, not a new JavaScript rendering, connected-wallet, API or event-reconciliation audit.
+
+### Tests, continuity and remaining work
+
+The already-recorded helper tests remain the source-validation record for commit `af8c4bd`. Additional rollout-specific verification passed: **7 actual installer replacement-primitive fixtures**, **22 exact-cleanup controller fixtures**, **13 retention-classifier fixtures**, and the **85-check independent post-cleanup receipt review**. The seven installer fixtures exercised the imported replacement primitive in local temporary directories, not an end-to-end production rollback rehearsal.
+
+Continue the existing **H5-01/H13-01 (H18-02/H18-08)** storage family rather than creating duplicate findings. Immediate installed safeguards and the approved exact batch are resolved; the remaining operational priorities are:
+
+1. Agree a sustainable, dependency-aware retention/off-host evidence policy or provider capacity expansion. Current automatic archive retention remains dry-run. Preserve verified recovery capability and historical evidence.
+2. Review the still-large backup and deployment-scratch allocations before proposing any additional exact cleanup; allocation thresholds alone never establish disposability.
+3. Configure and verify an operator notification route for capacity, producer freshness, failed services and growth warnings. No delivery certificate is established by this rollout.
+4. Measure peak allocation before subsequent release transport/extraction/build work, including concurrent writers and all retained rollback requirements.
+5. Address original **#4, H19-02/H19-03**, under a separately described and approved implementation scope. No such fixes were included here.
+
+Additional deletion, retention changes, provider changes, alert configuration, application fixes, migration, deployment or transaction activity require the applicable separate approval. No further action is needed to complete this approved #3 installation/cleanup/verification scope.
+
+The preceding **232,151 bytes** of Audit 19 remain exact, SHA256 **`a12b580e70346bc3cfd8b315845efb9014776716aa51a3e6daa95312a01ebb49`**. Original Audit 19 evidence and UI capacity preparation evidence remain unchanged at their previously recorded hashes. The unrelated untracked `deploy/audit17/publish-node-work-floor.py` is excluded and preserved. The new artifact is classified as protected audit evidence; no tracked file was deleted.
+
+Final repository hygiene was run in the isolated checkout carrying these exact audit additions: `npm run hygiene:fix` found no allowlisted rebuildable state to remove, and `npm run hygiene:check` passed with hooks enabled. `SOUL.md`, the canonical protocol/product docs, the updated infrastructure runbook, classified notes, generated-artifact declarations, cleanup allowlist, Git status and final diff were reviewed; no further semantic edits or cleanup were required. Original-checkout cache and unrelated local work remain preserved.
+
+Durable rollout evidence: [UI capacity rollout evidence](2026-09-20-audit-19-ui-capacity-rollout.evidence.json), SHA256 **`c523967791b897bda4bf01c2398a46516c745a906ad81f2005f8f60977a5d8fa`**. It preserves exact original receipts, baseline/after comparisons, test receipts and controller/classifier source with individual byte hashes, plus prior-artifact linkage. Embedded historical controllers are evidence, not authorization to rerun cleanup. Scratch paths under `/tmp` are not a permanent evidence store.
