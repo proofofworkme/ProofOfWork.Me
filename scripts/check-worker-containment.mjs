@@ -2666,6 +2666,94 @@ async function runChecks() {
     );
     assert.equal(supervisedOptions.timeoutMs, 180_000);
   }
+  {
+    const retryLogs = [];
+    const runPendingOnlyBackfillPass = isolatedBackfillFunction(
+      "runPendingOnlyBackfillPass",
+      {
+        BACKFILL_PROCESS_STARTED_AT_MS: 1_000,
+        Date: { now: () => 11_000 },
+        PENDING_ONLY_CHILD_TIMEOUT_MS: 90_000,
+        PENDING_ONLY_PERSISTENCE_HEADROOM_MS: 9_000,
+        PENDING_ONLY_WITNESS_RETRY_LIMIT: 2,
+        console: {
+          error(line) {
+            retryLogs.push(JSON.parse(line));
+          },
+        },
+      },
+    );
+    let calls = 0;
+    const results = await runPendingOnlyBackfillPass(
+      {},
+      [{ label: "mempool-scan" }],
+      async () => {
+        calls += 1;
+        return calls === 1
+          ? {
+              q16PendingRequired: true,
+              q16PendingUnresolved: 1,
+              q16PendingWitnessReady: false,
+              source: "mempool-scan",
+              stopReason: "",
+              unresolved: 1,
+            }
+          : {
+              q16PendingRequired: true,
+              q16PendingUnresolved: 0,
+              q16PendingWitnessReady: true,
+              source: "mempool-scan",
+              stopReason: "",
+              unresolved: 0,
+            };
+      },
+    );
+    assert.equal(calls, 2);
+    assert.equal(results.length, 1);
+    assert.equal(results[0].q16PendingWitnessReady, true);
+    assert.equal(retryLogs.length, 1);
+    assert.equal(retryLogs[0].phase, "pending-only-q16-witness-retry");
+    assert.equal(retryLogs[0].attempt, 1);
+    assert.equal(retryLogs[0].attempts, 3);
+    assert.equal(
+      retryLogs[0].q16PendingUnresolved,
+      1,
+      "the retry log must preserve the failed attempt health counters",
+    );
+
+    let exhaustedCalls = 0;
+    const exhaustedPass = isolatedBackfillFunction(
+      "runPendingOnlyBackfillPass",
+      {
+        BACKFILL_PROCESS_STARTED_AT_MS: 1_000,
+        Date: { now: () => 11_000 },
+        PENDING_ONLY_CHILD_TIMEOUT_MS: 90_000,
+        PENDING_ONLY_PERSISTENCE_HEADROOM_MS: 9_000,
+        PENDING_ONLY_WITNESS_RETRY_LIMIT: 1,
+        console: { error() {} },
+      },
+    );
+    await assert.rejects(
+      () =>
+        exhaustedPass(
+          {},
+          [{ label: "mempool-scan" }],
+          async () => {
+            exhaustedCalls += 1;
+            return {
+              q16PendingRequired: true,
+              q16PendingUnresolved: 1,
+              q16PendingWitnessReady: false,
+              source: "mempool-scan",
+              stopReason: "",
+              unresolved: 1,
+            };
+          },
+        ),
+      /Pending-only WORK Q16 pass did not atomically publish/u,
+    );
+    assert.equal(exhaustedCalls, 2);
+  }
   assert.equal(pendingBackfillChildTimeoutMs(null), 10_000);
   assert.equal(pendingBackfillChildTimeoutMs("invalid"), 10_000);
   assert.equal(pendingBackfillChildTimeoutMs("1000"), 5_000);
@@ -2787,6 +2875,9 @@ async function runChecks() {
   );
   const runPendingOnlyBackfillPass = isolatedBackfillFunction(
     "runPendingOnlyBackfillPass",
+    {
+      PENDING_ONLY_WITNESS_RETRY_LIMIT: 2,
+    },
   );
   const pendingSourceCalls = [];
   const pendingSource = { label: "mempool-scan", mempoolScan: true };
