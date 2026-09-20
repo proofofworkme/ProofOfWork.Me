@@ -254,6 +254,9 @@ function broadcastAdmissionFixture({
       signedWorkMarketplaceWriteActions: async () => actions,
       workAmoV8BroadcastDecision,
       workAmoV8Metadata: async () => readyMetadata,
+      // These fixtures isolate transaction-shape admission. Exact replay capacity
+      // and the real broadcast call path are exercised by check-h19-work-capacity-admission.mjs.
+      assertCanonicalWorkTransferCapacity: async () => {},
     },
   );
   const transaction = (

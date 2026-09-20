@@ -323,6 +323,7 @@ import {
   proofIndexValueSummaryPayload,
   proofIndexTokenSnapshotPayload,
   proofIndexWalletTokenOverlayPayload,
+  proofIndexWorkWalletCapacities,
   proofIndexWorkAmoBlockTransition,
   proofIndexWorkAmoGenericTokenStatePreimage,
   proofIndexWorkAmoV5HMinusOneSeedEvidence,
@@ -3560,7 +3561,7 @@ async function proofIndexWalletScopedTokenPayloadForRead(
       return null;
     }
   }
-  const payload = walletScopedTokenPayloadFromOverlay(
+  let payload = walletScopedTokenPayloadFromOverlay(
     await walletOverlayWithCanonicalWorkSupply(overlay, network),
     network,
     tokenScope,
@@ -3572,7 +3573,59 @@ async function proofIndexWalletScopedTokenPayloadForRead(
     );
     return null;
   }
+  payload = await walletPayloadWithCanonicalWorkCapacities(
+    payload,
+    network,
+    recoveryAddresses,
+  );
   return payload;
+}
+
+async function walletPayloadWithCanonicalWorkCapacities(payload, network, addresses) {
+  if (
+    network !== "livenet" ||
+    !(payload?.tokens ?? []).some(
+      (token) => isWorkTokenId(token?.tokenId) && workRecordUsesSubatoms(token),
+    )
+  ) {
+    return payload;
+  }
+  const capacities = await proofIndexWorkWalletCapacities(network, {
+    addresses,
+    blockHeight: payload.indexedThroughBlock,
+    blockHash: payload.indexedThroughBlockHash,
+  });
+  if (!Array.isArray(capacities) || capacities.length === 0) {
+    throw canonicalWorkCapacityUnavailable();
+  }
+  // The visible holder and replay capacity must refer to the same exact state.
+  // Core-spent tickets may leave the market view while replay still reserves them.
+  for (const capacity of capacities) {
+    const holders = (payload.holders ?? []).filter(
+      (holder) => isWorkTokenId(holder?.tokenId) &&
+        holder.address === capacity.address,
+    );
+    if (
+      holders.length > 1 ||
+      (holders.length === 0 ? "0" : holders[0].balanceSubatoms) !==
+        capacity.confirmedBalanceSubatoms
+    ) {
+      throw canonicalWorkCapacityUnavailable();
+    }
+  }
+  return { ...payload, canonicalWorkCapacities: capacities };
+}
+
+function canonicalWorkCapacityUnavailable() {
+  const error = new Error(
+    "Exact canonical WORK transfer capacity is temporarily unavailable.",
+  );
+  error.statusCode = 503;
+  error.details = {
+    code: "CANONICAL_WORK_CAPACITY_UNAVAILABLE",
+    reasonCode: "canonical-work-capacity-unavailable",
+  };
+  return error;
 }
 
 function mergeTokenStateItemsByKey(
@@ -11470,6 +11523,7 @@ async function tokenReadResponsePayload(payload, network, tokenScope, options = 
     }
     responsePayload = authorityBoundPayload;
   }
+  assertCanonicalCreditAggregateResponse(responsePayload, network);
   return scope === WORK_TOKEN_ID
     ? tokenPayloadWithCurrentWorkActiveListingPolicy(responsePayload, network)
     : responsePayload;
@@ -12478,10 +12532,12 @@ function workAmoV8SignedMutationShape(txHex, network) {
         return [];
       }
       return [{
+        amountSubatoms: parsed.amountSubatoms,
         amountVersion:
           parsed.amountVersion ?? "legacy-whole",
         canonicalParsed: true,
         protocolVout,
+        recipientAddress: parsed.recipientAddress,
       }];
     },
   );
@@ -12743,6 +12799,105 @@ function workAmoV8ActiveMutationDecision(
       };
 }
 
+function assertCanonicalWorkTransferAmounts(capacity, transfers, senderAddress) {
+  let remaining = BigInt(capacity.transferableBalanceSubatoms);
+  for (const transfer of [...transfers].sort(
+    (left, right) => left.protocolVout - right.protocolVout,
+  )) {
+    const text = transfer.amountSubatoms;
+    if (typeof text !== "string" || !/^[1-9][0-9]*$/u.test(text)) {
+      throw canonicalWorkCapacityUnavailable();
+    }
+    const amount = BigInt(text);
+    if (amount > remaining) {
+      const error = new Error(
+        "WORK transfer exceeds the capacity available under canonical replay reservations.",
+      );
+      error.statusCode = 400;
+      error.details = {
+        code: "CANONICAL_WORK_CAPACITY_EXCEEDED",
+        reasonCode: "canonical-work-capacity-exceeded",
+        amountSubatoms: text,
+        transferableBalanceSubatoms: remaining.toString(),
+        reservedBalanceSubatoms: capacity.reservedBalanceSubatoms,
+        indexedThroughBlock: capacity.indexedThroughBlock,
+        indexedThroughBlockHash: capacity.indexedThroughBlockHash,
+        protocolVout: transfer.protocolVout,
+      };
+      throw error;
+    }
+    // Replay checks capacity even for self sends, then applies a net zero delta.
+    if (transfer.recipientAddress !== senderAddress) {
+      remaining -= amount;
+    }
+  }
+}
+
+async function assertCanonicalWorkTransferCapacity(txHex, network, transfers) {
+  if (transfers.length === 0) {
+    return;
+  }
+  const gate = await canonicalPublicReadGate(network, { force: true });
+  if (gate?.ready !== true || gate.atTip !== true) {
+    throw canonicalWorkCapacityUnavailable();
+  }
+  const inputs = signedTransactionInputOutpoints(txHex);
+  if (inputs.length === 0 || inputs.length > 128) {
+    throw canonicalWorkCapacityUnavailable();
+  }
+  // Raw replay uses the first address-bearing input, skipping addressless
+  // scripts. Resolve parents from Core, including txid-bound raw bytes.
+  let senderAddress = "";
+  for (const input of inputs) {
+    const previous = await fetchTransactionFromBitcoinRpc(input.txid, network, {
+      bypassCache: true,
+      includePrevouts: false,
+      includeRawHex: true,
+      requireCanonicalPrevouts: true,
+    });
+    if (!previous?.vout?.[input.vout]) {
+      throw canonicalWorkCapacityUnavailable();
+    }
+    const scriptHex = previous.vout[input.vout].scriptpubkey;
+    if (typeof scriptHex !== "string" || scriptHex.length % 2 !== 0 ||
+        !/^[0-9a-f]*$/iu.test(scriptHex)) {
+      throw canonicalWorkCapacityUnavailable();
+    }
+    try {
+      senderAddress = bitcoin.address.fromOutputScript(
+        Buffer.from(scriptHex, "hex"), bitcoin.networks.bitcoin,
+      );
+    } catch {
+      senderAddress = "";
+    }
+    if (senderAddress) break;
+  }
+  if (!senderAddress || !isValidBitcoinAddress(senderAddress, network)) {
+    throw canonicalWorkCapacityUnavailable();
+  }
+  const capacities = await proofIndexWorkWalletCapacities(network, {
+    addresses: [senderAddress],
+    blockHeight: gate.indexedThroughBlock,
+    blockHash: gate.canonicalHash,
+  });
+  if (
+    !Array.isArray(capacities) || capacities.length !== 1 ||
+    capacities[0].address !== senderAddress
+  ) {
+    throw canonicalWorkCapacityUnavailable();
+  }
+  assertCanonicalWorkTransferAmounts(capacities[0], transfers, senderAddress);
+  const tip = exactCoreTipFromBlockchainInfo(
+    await bitcoinRpc("getblockchaininfo", []),
+  );
+  if (
+    tip?.height !== gate.indexedThroughBlock ||
+    tip?.blockHash !== gate.canonicalHash
+  ) {
+    throw canonicalWorkCapacityUnavailable();
+  }
+}
+
 async function assertWorkMarketplaceBroadcastAllowed(
   txHex,
   network,
@@ -12976,6 +13131,11 @@ async function assertWorkMarketplaceBroadcastAllowed(
         };
         throw error;
       }
+      await assertCanonicalWorkTransferCapacity(
+        txHex,
+        network,
+        workTransferActions,
+      );
       return;
     }
     if (
@@ -20292,16 +20452,6 @@ function tokenStateWithCreditNetworkValueDetails(state, creditValue) {
       creditEventFrozenValueSats: numericValue(
         creditValue?.creditEventFrozenValueSats,
       ),
-      ...(canonicalIntegerText(creditValue?.creditEventFrozenValueQ8, {
-        allowZero: true,
-      })
-        ? {
-            creditEventFrozenValueQ8: canonicalIntegerText(
-              creditValue.creditEventFrozenValueQ8,
-              { allowZero: true },
-            ),
-          }
-        : {}),
       creditEventLiveValueSats: numericValue(
         creditValue?.creditEventLiveValueSats,
       ),
@@ -20312,16 +20462,6 @@ function tokenStateWithCreditNetworkValueDetails(state, creditValue) {
       creditMovementFrozenValueSats: numericValue(
         creditValue?.creditMovementFrozenValueSats,
       ),
-      ...(canonicalIntegerText(creditValue?.creditMovementFrozenValueQ8, {
-        allowZero: true,
-      })
-        ? {
-            creditMovementFrozenValueQ8: canonicalIntegerText(
-              creditValue.creditMovementFrozenValueQ8,
-              { allowZero: true },
-            ),
-          }
-        : {}),
       creditMovementLiveValueSats: numericValue(
         creditValue?.creditMovementLiveValueSats,
       ),
@@ -20341,8 +20481,224 @@ function tokenStateWithCreditNetworkValueDetails(state, creditValue) {
       creditSalePaymentFlowSats: numericValue(
         creditValue?.creditSalePaymentFlowSats,
       ),
+      ...Object.fromEntries(
+        [
+          "creditEventFrozenValueQ8",
+          "creditEventLiveValueQ8",
+          "creditFrozenNetworkValueQ8",
+          "creditLiveNetworkValueQ8",
+          "creditMovementFrozenValueQ8",
+          "creditMovementLiveValueQ8",
+          "creditNetworkValueQ8",
+        ]
+          .map((field) => [
+            field,
+            canonicalIntegerText(creditValue?.[field], { allowZero: true }),
+          ])
+          .filter(([, value]) => value !== ""),
+      ),
     },
   });
+}
+
+function canonicalClosingCreditAggregatePrefixes() {
+  return [
+    "creditEventFrozenValue",
+    "creditEventLiveValue",
+    "creditFrozenNetworkValue",
+    "creditLiveNetworkValue",
+    "creditMovementFrozenValue",
+    "creditMovementLiveValue",
+    "creditNetworkValue",
+    "creditFixed",
+    "legacyBootstrapCreditFixed",
+    "postActivationCreditFixed",
+  ];
+}
+
+function tokenStateWithVerifiedClosingCreditAggregates(state, workFloor) {
+  if (!state || !workFloor?.workAmoV5Transition) {
+    return state;
+  }
+  const stats = { ...(state.stats ?? {}) };
+  for (const prefix of canonicalClosingCreditAggregatePrefixes()) {
+    const valueQ8 = canonicalIntegerText(
+      workFloor.actualValue?.[`${prefix}Q8`],
+      { allowZero: true },
+    );
+    if (!valueQ8) {
+      throw freshDataUnavailableError(
+        `The verified closing credit aggregate ${prefix}Q8 is unavailable.`,
+      );
+    }
+    Object.assign(stats, workAmoV5ExactValueAliases(prefix, BigInt(valueQ8)));
+  }
+  // The closing accumulator is authoritative for aggregates only. Preserve
+  // event records and their independently reconstructed historical valuations.
+  return { ...state, stats };
+}
+
+function canonicalClosingCreditAggregateConsistency(
+  tokenState,
+  workTokenState,
+  workFloor,
+) {
+  const mismatches = [];
+  const actualValue = workFloor?.actualValue ?? {};
+  const planes = [
+    ["tokenState", tokenState],
+    ["workTokenState", workTokenState],
+  ];
+  for (const prefix of canonicalClosingCreditAggregatePrefixes()) {
+    const valueQ8 = canonicalIntegerText(actualValue[`${prefix}Q8`], {
+      allowZero: true,
+    });
+    if (!valueQ8) {
+      mismatches.push({ field: `${prefix}Q8`, plane: "workFloor" });
+      continue;
+    }
+    const exact = decimalTextFromQ8(valueQ8);
+    for (const suffix of ["Sats", "SatsExact"]) {
+      const field = `${prefix}${suffix}`;
+      if (actualValue[field] != null && String(actualValue[field]) !== exact) {
+        mismatches.push({ actual: actualValue[field], expected: exact, field, plane: "workFloor" });
+      }
+    }
+    for (const [plane, state] of planes) {
+      for (const [field, expected] of [
+        [`${prefix}Q8`, valueQ8],
+        [`${prefix}Sats`, exact],
+        [`${prefix}SatsExact`, exact],
+        [`${prefix}SatsApproximate`, Number(exact)],
+      ]) {
+        if (state?.stats?.[field] !== expected) {
+          mismatches.push({
+            actual: state?.stats?.[field] ?? null,
+            expected,
+            field,
+            plane,
+          });
+        }
+      }
+    }
+  }
+  return { mismatches, ok: mismatches.length === 0 };
+}
+
+function assertCanonicalCreditAggregateResponse(payload, network) {
+  if (network !== "livenet" || !payload) {
+    return;
+  }
+  const workFloor = payload.floor ?? payload.workFloor;
+  for (const [plane, candidate] of [
+    ["root", payload],
+    ["token", payload.token],
+  ]) {
+    const stats = candidate?.stats;
+    if (!stats || ![
+      "creditEventFrozenValueQ8",
+      "creditEventLiveValueSats",
+      "creditNetworkValueSats",
+    ].some((field) => stats[field] != null)) {
+      continue;
+    }
+    const checks = [
+      ...(Array.isArray(candidate.consistency?.checks) ? candidate.consistency.checks : []),
+      ...(candidate !== payload && Array.isArray(payload.consistency?.checks)
+        ? payload.consistency.checks : []),
+    ];
+    const closingChecks = checks.filter(
+      (check) => check?.name === "token-credit-aggregates-match-verified-closing-state",
+    );
+    const closingCheck = closingChecks[0];
+    const proof = closingCheck?.details;
+    const transition = workFloor?.workAmoV5Transition;
+    const expected = transition ? workFloor.actualValue : proof?.aggregates;
+    const mismatches = [];
+    if (transition || closingCheck) {
+      const height = Number(candidate.indexedThroughBlock ?? payload.indexedThroughBlock);
+      const hash = payloadIndexedThroughBlockHash(candidate) || payloadIndexedThroughBlockHash(payload);
+      const proofHeight = Number(transition?.blockHeight ?? proof?.blockHeight);
+      const proofHash = transition?.blockHash ?? proof?.blockHash;
+      if (
+        !Number.isSafeInteger(height) || height < 1 ||
+        !/^[0-9a-f]{64}$/u.test(hash) ||
+        proofHeight !== height || proofHash !== hash ||
+        closingChecks.some((check) => check.ok !== true ||
+          Number(check.details?.blockHeight) !== height || check.details?.blockHash !== hash)
+      ) {
+        mismatches.push({ field: "closingAggregateCheckpoint", plane });
+      }
+      if (closingCheck) {
+        // A matching floor cannot hide a contradictory stored consistency
+        // proof, including a second proof carried by the parent summary.
+        for (const check of closingChecks) {
+          for (const prefix of canonicalClosingCreditAggregatePrefixes()) {
+            const field = `${prefix}Q8`;
+            const expectedQ8 = canonicalIntegerText(expected?.[field]);
+            const proofQ8 = canonicalIntegerText(check.details?.aggregates?.[field]);
+            if (!expectedQ8 || !proofQ8 || proofQ8 !== expectedQ8) {
+              mismatches.push({
+                actual: check.details?.aggregates?.[field] ?? null,
+                expected: expectedQ8 || null,
+                field,
+                plane: "closingCheck",
+              });
+            }
+          }
+        }
+        mismatches.push(...canonicalClosingCreditAggregateConsistency(
+          candidate,
+          candidate,
+          { actualValue: expected },
+        ).mismatches);
+      }
+    }
+    if (!closingCheck) {
+      // Older snapshots did not record a checkpoint-bound aggregate check.
+      // Detect their demonstrated same-response contradiction without inventing
+      // exact live values from floating-point compatibility fields.
+      const legacySources = [
+        ...(transition ? [workFloor.actualValue] : []),
+        ...[
+          "credit-frozen-value-includes-event-components",
+          "credit-live-value-is-active-network-value",
+        ].map((name) => checks.find((check) => check?.name === name)?.details),
+      ];
+      for (const details of legacySources) {
+        for (const field of [
+          "creditEventFrozenValueQ8",
+          "creditMovementFrozenValueQ8",
+          "creditEventLiveValueQ8",
+          "creditLiveNetworkValueQ8",
+          "creditNetworkValueQ8",
+        ]) {
+          if (details?.[field] != null && stats[field] != null &&
+            (!canonicalIntegerText(details[field]) ||
+              canonicalIntegerText(details[field]) !== canonicalIntegerText(stats[field]))) {
+            mismatches.push({ field, plane });
+          }
+        }
+        for (const field of [
+          "creditEventLiveValueSats",
+          "creditLiveNetworkValueSats",
+          "creditNetworkValueSats",
+        ]) {
+          if (details?.[field] != null && stats[field] != null &&
+            Number(details[field]) !== Number(stats[field])) {
+            mismatches.push({ field, plane });
+          }
+        }
+      }
+    }
+    if (mismatches.length > 0) {
+      const error = freshDataUnavailableError(
+        "Credit aggregate statistics do not match their canonical summary checkpoint.",
+      );
+      error.details = { code: "CANONICAL_CREDIT_AGGREGATE_MISMATCH", mismatches };
+      throw error;
+    }
+  }
 }
 
 async function spendableTokenListingsPayload(payload, network) {
@@ -41421,14 +41777,18 @@ async function walletScopedTokenSummaryPayload(
   const scope = normalizeTokenScope(tokenScope);
   const requireCurrent =
     options.requireCurrent === true && network === "livenet";
+  const checkedSummary = (payload) => {
+    const summary = compactTokenSummaryPayload(payload, scope);
+    assertCanonicalCreditAggregateResponse(summary, network);
+    return summary;
+  };
   if (!scope || scope === WORK_TOKEN_ID || requireCurrent) {
-    return compactTokenSummaryPayload(
+    return checkedSummary(
       await walletScopedTokenPayload(network, scope, recoveryAddresses, {
         allowLastGood: options.allowLastGood === true,
         canonicalReadGate: options.canonicalReadGate,
         requireCurrent,
       }),
-      scope,
     );
   }
   const addressScopedPayload = await proofIndexWalletScopedTokenPayloadForRead(
@@ -41444,7 +41804,7 @@ async function walletScopedTokenSummaryPayload(
       scope,
       recoveryAddresses,
     );
-    return compactTokenSummaryPayload(indexedPayload, scope);
+    return checkedSummary(indexedPayload);
   }
   let payload = null;
   if (
@@ -41537,7 +41897,7 @@ async function walletScopedTokenSummaryPayload(
     );
   }
 
-  return compactTokenSummaryPayload(scopedPayload, scope);
+  return checkedSummary(scopedPayload);
 }
 
 function walletScopedTokenCacheKey(
@@ -44922,6 +45282,7 @@ function ledgerWithProofIndexScanFloor(ledger, scan, tipHeight) {
     sourceHashes: floored.sourceHashes,
     tokenState: floored.tokenState,
     workFloor: floored.workFloor,
+    workTokenState: floored.workTokenState,
   });
   const result = {
     ...floored,
@@ -45598,6 +45959,7 @@ async function ledgerWithReplayedCreditNetworkValues(
     sourceHashes,
     tokenState,
     workFloor,
+    workTokenState,
   });
   const summaryLedger = {
     ...replayed,
@@ -46177,6 +46539,7 @@ function ledgerSnapshotChecks({
   sourceHashes,
   tokenState,
   workFloor,
+  workTokenState,
 }) {
   const checks = [];
   const missingLogEvents = [];
@@ -46584,16 +46947,56 @@ function ledgerSnapshotChecks({
       creditSalePaymentFlowSats,
     },
   );
+  const creditLiveQ8Fields = [
+    "creditNetworkValueQ8",
+    "creditLiveNetworkValueQ8",
+    "creditEventLiveValueQ8",
+  ];
+  const hasCreditLiveQ8 = creditLiveQ8Fields.some(
+    (field) => workFloor?.actualValue?.[field] != null,
+  );
+  const creditLiveQ8 = creditLiveQ8Fields.map((field) =>
+    canonicalIntegerText(workFloor?.actualValue?.[field], { allowZero: true }),
+  );
   addCheck(
     "credit-live-value-is-active-network-value",
-    numbersAgree(creditNetworkValueSats, creditLiveNetworkValueSats) &&
+    (hasCreditLiveQ8
+      ? creditLiveQ8.every((value) => value !== "" && value === creditLiveQ8[0])
+      : true) &&
+      numbersAgree(creditNetworkValueSats, creditLiveNetworkValueSats) &&
       numbersAgree(creditNetworkValueSats, creditEventLiveValueSats),
     {
       creditEventLiveValueSats,
       creditLiveNetworkValueSats,
       creditNetworkValueSats,
+      ...(hasCreditLiveQ8
+        ? Object.fromEntries(
+            creditLiveQ8Fields.map((field, index) => [field, creditLiveQ8[index]]),
+          )
+        : {}),
     },
   );
+  if (workFloor?.workAmoV5Transition) {
+    const aggregateConsistency = canonicalClosingCreditAggregateConsistency(
+      tokenState,
+      workTokenState,
+      workFloor,
+    );
+    addCheck(
+      "token-credit-aggregates-match-verified-closing-state",
+      aggregateConsistency.ok,
+      {
+        aggregates: Object.fromEntries(
+          canonicalClosingCreditAggregatePrefixes().map((prefix) => [
+            `${prefix}Q8`, workFloor.actualValue?.[`${prefix}Q8`],
+          ]),
+        ),
+        blockHash: workFloor.workAmoV5Transition.blockHash,
+        blockHeight: workFloor.workAmoV5Transition.blockHeight,
+        mismatches: aggregateConsistency.mismatches,
+      },
+    );
+  }
 
   const activityByTxidKind = activityCoverageByTxidKind(activity);
 
@@ -46955,6 +47358,7 @@ async function summaryPayloadWithCanonicalProvenance(
       `${surface} has no canonical summary payload.`,
     );
   }
+  assertCanonicalCreditAggregateResponse(payload, network);
 
   const requiredComponents = summaryPayloadRequiredComponents(payload, surface);
   const componentSnapshotIds = Object.fromEntries(
@@ -49927,11 +50331,11 @@ async function buildIndexedCanonicalLedgerPayload(
     tokenTransfers: ledgerTokenState.transfers ?? [],
   });
   markTiming("credit-value");
-  const valuedTokenState = tokenStateWithCreditNetworkValueDetails(
+  let valuedTokenState = tokenStateWithCreditNetworkValueDetails(
     ledgerTokenState,
     creditValueDetails,
   );
-  const valuedWorkTokenState = tokenStateWithCreditNetworkValueDetails(
+  let valuedWorkTokenState = tokenStateWithCreditNetworkValueDetails(
     baseWorkTokenState,
     creditValueDetails,
   );
@@ -49993,6 +50397,14 @@ async function buildIndexedCanonicalLedgerPayload(
     network,
     exactHeight,
     exactHash,
+  );
+  valuedTokenState = tokenStateWithVerifiedClosingCreditAggregates(
+    valuedTokenState,
+    workFloor,
+  );
+  valuedWorkTokenState = tokenStateWithVerifiedClosingCreditAggregates(
+    valuedWorkTokenState,
+    workFloor,
   );
   markTiming("market-overlay");
   const baseMetrics = ledgerMetricsFromState({
@@ -50084,6 +50496,7 @@ async function buildIndexedCanonicalLedgerPayload(
     sourceHashes,
     tokenState: valuedTokenState,
     workFloor,
+    workTokenState: valuedWorkTokenState,
   });
   const summaryLedger = {
     ...ledger,
@@ -50667,6 +51080,7 @@ async function buildCanonicalLedgerPayload(network, fresh = false) {
     sourceHashes,
     tokenState: ledgerTokenState,
     workFloor,
+    workTokenState: valuedWorkTokenState,
   });
   const summaryLedger = {
     ...ledger,

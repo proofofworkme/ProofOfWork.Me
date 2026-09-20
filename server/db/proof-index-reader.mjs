@@ -3,6 +3,12 @@ import { compareCanonicalUtf8 } from "../canonical-order.mjs";
 import { decodeCanonicalOpReturnOutput } from "../canonical-op-return.mjs";
 import { readBoostGrowthObservation } from "./boost-growth-reader.mjs";
 import {
+  createCanonicalWorkWalletCapacityReader,
+} from "../work-wallet-capacity.mjs";
+export {
+  canonicalWorkWalletCapacitiesFromTransition,
+} from "../work-wallet-capacity.mjs";
+import {
   canonicalSummarySnapshotSqlTextMaxBytes,
 } from "../canonical-summary-budget.mjs";
 import {
@@ -11698,6 +11704,46 @@ export async function proofIndexWorkAmoBlockTransition(
           row.work_token_state_model ?? null,
       }
     : null;
+}
+
+const readCanonicalWorkWalletCapacities = createCanonicalWorkWalletCapacityReader({
+  async readCheckpoint({ network, blockHeight, blockHash }) {
+    const pool = proofIndexPool();
+    if (!pool) return null;
+    const result = await pool.query(`
+      /* canonical_work_wallet_capacity_checkpoint */
+      SELECT transition.network,
+        transition.block_height AS "blockHeight",
+        transition.block_hash AS "blockHash",
+        transition.closing_state_sha256 AS "closingStateSha256",
+        transition.closing_state_payload_bytes AS "closingStatePayloadBytes",
+        transition.payload->'closingSufficientState'->'tokenStateCommitment'
+          AS "tokenStateCommitment"
+      FROM proof_indexer.work_amo_block_transitions transition
+      JOIN proof_indexer.blocks block
+        ON block.network = transition.network
+       AND block.height = transition.block_height
+       AND block.block_hash = transition.block_hash
+       AND block.previous_block_hash = transition.previous_block_hash
+       AND block.canonical = true
+      WHERE transition.network = $1 AND transition.block_height = $2
+        AND transition.block_hash = $3
+        AND transition.model = $4
+        AND transition.work_token_state_model = $5
+        AND transition.state_commitment_model = $6
+        AND transition.block_atomic = true AND transition.fee_once = true
+        AND transition.invalid_zero = true AND transition.complete = true
+      LIMIT 2
+    `, [network, blockHeight, blockHash, WORK_AMO_V8_BLOCK_SEQUENCER_MODEL,
+      WORK_AMO_V8_TOKEN_STATE_PREIMAGE_MODEL, WORK_AMO_V5_STATE_COMMITMENT_MODEL]);
+    return result.rows.length === 1 ? result.rows[0] : null;
+  },
+  readTransition: ({ network, blockHeight, blockHash }) =>
+    proofIndexWorkAmoBlockTransition(network, blockHeight, blockHash),
+});
+
+export async function proofIndexWorkWalletCapacities(network, options = {}) {
+  return readCanonicalWorkWalletCapacities(network, options);
 }
 
 export function workAmoV5LegacyBootstrapCarryEvidenceFromRows(rows) {

@@ -29,6 +29,7 @@
     "build:bond-hard-price-declaration": "node scripts/build-bond-hard-price-declaration.mjs",
     "prepare:bond-hard-price-declaration": "node scripts/prepare-bond-hard-price-declaration.mjs",
     "check:work-amo-v8": "node scripts/check-work-amo-v8.mjs && node scripts/check-work-amo-v8-gates.mjs",
+    "check:audit19-accounting": "node server/canonical-credit-aggregates.test.mjs && node server/work-wallet-capacity.test.mjs && node scripts/check-h19-work-capacity-admission.mjs && node scripts/check-h19-work-capacity-client.mjs",
     "check:work-amo-v8-peak": "node --expose-gc scripts/check-work-amo-v8-peak.mjs",
     "check:work-amo-v8-peak:full": "node --expose-gc scripts/check-work-amo-v8-peak.mjs --full",
     "migrate:work-market-v2-cutover": "node scripts/migrate-work-market-v2-cutover.mjs",

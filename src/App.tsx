@@ -1,3 +1,4 @@
+import { canonicalWorkCapacityAddress, requireCanonicalWorkCapacity, type CanonicalWorkCapacity } from "./shared/work/canonicalWorkCapacity";
 import { assertCompleteTokenDirectory, assertCompleteIdReservations, walletReservationsReady, listingDisplayProjectionFingerprint } from "./shared/api/surfaceReadState";
 import {
   ChangeEvent,
@@ -1042,6 +1043,7 @@ type PowTokenHolder = {
 };
 
 type PowTokenState = {
+  canonicalWorkCapacities?: CanonicalWorkCapacity[];
   amountStorageModel?: string;
   closedListings: PowTokenClosedListing[];
   collectionHasMore?: Partial<Record<PowTokenCollectionKey, boolean>>;
@@ -1100,6 +1102,7 @@ type PowTokenSummaryStats = {
 
 type PowTokenSummaryMetadata = Pick<
   PowTokenState,
+  | "canonicalWorkCapacities"
   | "amountStorageModel"
   | "collectionHasMore"
   | "confirmedSupplyAtoms"
@@ -1174,7 +1177,16 @@ type PowTokenSupplyState = Pick<
   | "unitScale"
 >;
 
+type PowTokenSpendabilityState = Pick<
+  PowTokenState,
+  "closedListings" | "holders" | "listings" | "sales" | "transfers" |
+  "canonicalWorkCapacities" | "indexedThroughBlock" | "indexedThroughBlockHash" |
+  "amountStorageModel" | "precisionModel"
+>;
+
 type PowTokenWalletBalance = {
+  canonicalWorkState?: PowTokenSpendabilityState;
+  canonicalWorkCapacityError?: string;
   confirmedBalance: ExactIntegerValue;
   confirmedBalanceAtoms?: string;
   confirmedBalanceSubatoms?: string;
@@ -1594,10 +1606,7 @@ type PowTokenApiResponse = Partial<PowTokenState> & {
   walletScoped?: boolean;
 };
 
-type PowTokenWalletPreflightState = Pick<
-  PowTokenState,
-  "closedListings" | "holders" | "listings" | "sales" | "transfers"
-> & {
+type PowTokenWalletPreflightState = PowTokenSpendabilityState & {
   source: string;
   walletScoped: boolean;
 };
@@ -8791,8 +8800,9 @@ function tokenAmountValueFromUnits(
 
 function tokenAmountDisplayFromUnits(
   token: PowTokenDefinition,
-  units: bigint,
+  units: bigint | null,
 ) {
+  if (units === null) return "Unavailable";
   return tokenAmountDisplay(
     token,
     tokenAmountValueFromUnits(token, units),
@@ -8806,21 +8816,22 @@ function tokenWalletBalanceUnitSummary(
   listings: PowTokenListing[],
   ownerAddress: string,
 ) {
+  const canonicalSpendability = tokenRequiresCanonicalWorkCapacity(balance.token, balance.canonicalWorkState)
+    ? tokenWalletCanonicalWorkSpendability(balance, listings, ownerAddress)
+    : undefined;
   const confirmedUnits =
     tokenWalletBalanceAmountUnits(balance, "confirmedBalance") ?? 0n;
   const pendingIncomingUnits =
     tokenWalletBalanceAmountUnits(balance, "pendingIncoming") ?? 0n;
   const pendingOutgoingUnits =
+    canonicalSpendability?.pendingOutgoingSubatoms ??
     tokenWalletBalanceAmountUnits(balance, "pendingOutgoing") ?? 0n;
   const listedUnits = tokenWalletBalanceReservedUnits(
     balance,
     listings,
     ownerAddress,
   );
-  const spendableUnits = [
-    confirmedUnits - pendingOutgoingUnits - listedUnits,
-    0n,
-  ].reduce((maximum, value) => (value > maximum ? value : maximum));
+  const spendableUnits = tokenWalletBalanceSpendableUnits(balance, listings, ownerAddress);
 
   return {
     confirmedUnits,
@@ -8833,7 +8844,7 @@ function tokenWalletBalanceUnitSummary(
 
 function tokenWalletBalanceUnitDisplay(
   balance: PowTokenWalletBalance,
-  units: bigint,
+  units: bigint | null,
 ) {
   return `${tokenAmountDisplayFromUnits(balance.token, units)} ${balance.token.ticker}`;
 }
@@ -10025,6 +10036,7 @@ function emptyTokenState(): PowTokenState {
 function tokenSummaryMetadata(
   state: Pick<
     PowTokenState,
+    | "canonicalWorkCapacities"
     | "amountStorageModel"
     | "collectionHasMore"
     | "confirmedSupplyAtoms"
@@ -10048,6 +10060,7 @@ function tokenSummaryMetadata(
   >,
 ): PowTokenSummaryMetadata {
   return {
+    canonicalWorkCapacities: state.canonicalWorkCapacities,
     amountStorageModel: state.amountStorageModel,
     collectionHasMore: state.collectionHasMore
       ? { ...state.collectionHasMore }
@@ -11189,16 +11202,23 @@ function tokenWalletBalancesFor(
   transfers: PowTokenTransfer[],
   sales: PowTokenSale[] = [],
   holders: PowTokenHolder[] = [],
+  state?: PowTokenSummaryMetadata & Partial<Pick<PowTokenState, "listings" | "closedListings">>,
 ): PowTokenWalletBalance[] {
   if (!walletAddress) {
     return [];
   }
 
-  const normalizedWalletAddress = walletAddress.trim().toLowerCase();
   return tokens
     .map((token) => {
+      const canonicalWork = tokenRequiresCanonicalWorkCapacity(token, state);
+      const normalizedParticipant = canonicalWork
+        ? canonicalWorkCapacityAddress
+        : (value: string) => value.trim().toLowerCase();
+      const normalizedWalletAddress = normalizedParticipant(walletAddress);
       const holderBaseline = holders.find((holder) => {
-        const holderAddress = String(holder.address ?? "").trim().toLowerCase();
+        const holderAddress = canonicalWork
+          ? String(holder.address ?? "")
+          : normalizedParticipant(String(holder.address ?? ""));
         if (holderAddress !== normalizedWalletAddress) {
           return false;
         }
@@ -11219,7 +11239,7 @@ function tokenWalletBalancesFor(
       // A compact wallet summary may contain recent sales without the complete
       // issuance ledger. Never turn that partial history into a wallet total.
       const canReplayConfirmedBalance =
-        !hasHolderBaseline && hasConfirmedReplayBase;
+        !canonicalWork && !hasHolderBaseline && hasConfirmedReplayBase;
       if (isWorkToken(token)) {
         let confirmedBalanceAtoms =
           holderBaseline &&
@@ -11237,7 +11257,7 @@ function tokenWalletBalancesFor(
         for (const mint of mints) {
           if (
             mint.tokenId !== token.tokenId ||
-            String(mint.minterAddress ?? "").trim().toLowerCase() !==
+            normalizedParticipant(String(mint.minterAddress ?? "")) !==
               normalizedWalletAddress
           ) {
             continue;
@@ -11272,10 +11292,12 @@ function tokenWalletBalancesFor(
             continue;
           }
           const sender =
-            String(transfer.senderAddress ?? "").trim().toLowerCase() ===
+            normalizedParticipant(String(transfer.senderAddress ?? "")) ===
             normalizedWalletAddress;
           const recipient =
-            String(transfer.recipientAddress ?? "").trim().toLowerCase() ===
+            (canonicalWork
+              ? String(transfer.recipientAddress ?? "")
+              : normalizedParticipant(String(transfer.recipientAddress ?? ""))) ===
             normalizedWalletAddress;
           if (transfer.confirmed) {
             if (canReplayConfirmedBalance) {
@@ -11309,10 +11331,10 @@ function tokenWalletBalancesFor(
             continue;
           }
           const seller =
-            String(sale.sellerAddress ?? "").trim().toLowerCase() ===
+            normalizedParticipant(String(sale.sellerAddress ?? "")) ===
             normalizedWalletAddress;
           const buyer =
-            String(sale.buyerAddress ?? "").trim().toLowerCase() ===
+            normalizedParticipant(String(sale.buyerAddress ?? "")) ===
             normalizedWalletAddress;
           if (sale.confirmed) {
             if (canReplayConfirmedBalance) {
@@ -11336,7 +11358,29 @@ function tokenWalletBalancesFor(
         if (confirmedBalanceAtoms < 0n) {
           confirmedBalanceAtoms = 0n;
         }
+        const canonicalWorkState: PowTokenSpendabilityState | undefined =
+          tokenRequiresCanonicalWorkCapacity(token, state)
+            ? {
+                ...state,
+                closedListings: state?.closedListings ?? [],
+                holders,
+                listings: state?.listings ?? [],
+                sales,
+                transfers,
+              }
+            : undefined;
+        let canonicalWorkCapacityError: string | undefined;
+        if (canonicalWorkState) {
+          try {
+            const spendability = tokenSpendabilityForWallet(walletAddress, token, canonicalWorkState);
+            pendingOutgoingAtoms = BigInt(spendability.pendingOutgoingSubatoms!);
+          } catch (error) {
+            canonicalWorkCapacityError = error instanceof Error ? error.message : "Canonical WORK capacity is unavailable.";
+          }
+        }
         return {
+          canonicalWorkState,
+          canonicalWorkCapacityError,
           confirmedBalance: workNumberFromAtoms(confirmedBalanceAtoms),
           confirmedBalanceSubatoms: confirmedBalanceAtoms.toString(),
           pendingIncoming: workNumberFromAtoms(pendingIncomingAtoms),
@@ -11353,7 +11397,7 @@ function tokenWalletBalancesFor(
       for (const mint of mints) {
         if (
           mint.tokenId !== token.tokenId ||
-          String(mint.minterAddress ?? "").trim().toLowerCase() !==
+          normalizedParticipant(String(mint.minterAddress ?? "")) !==
             normalizedWalletAddress
         ) {
           continue;
@@ -11384,13 +11428,13 @@ function tokenWalletBalancesFor(
         if (transfer.confirmed) {
           if (canReplayConfirmedBalance) {
             if (
-              String(transfer.senderAddress ?? "").trim().toLowerCase() ===
+              normalizedParticipant(String(transfer.senderAddress ?? "")) ===
               normalizedWalletAddress
             ) {
               confirmedBalance -= amount;
             }
             if (
-              String(transfer.recipientAddress ?? "").trim().toLowerCase() ===
+              normalizedParticipant(String(transfer.recipientAddress ?? "")) ===
               normalizedWalletAddress
             ) {
               confirmedBalance += amount;
@@ -11400,13 +11444,13 @@ function tokenWalletBalancesFor(
         }
 
         if (
-          String(transfer.senderAddress ?? "").trim().toLowerCase() ===
+          normalizedParticipant(String(transfer.senderAddress ?? "")) ===
           normalizedWalletAddress
         ) {
           pendingOutgoing += amount;
         }
         if (
-          String(transfer.recipientAddress ?? "").trim().toLowerCase() ===
+          normalizedParticipant(String(transfer.recipientAddress ?? "")) ===
           normalizedWalletAddress
         ) {
           pendingIncoming += amount;
@@ -11425,13 +11469,13 @@ function tokenWalletBalancesFor(
         if (sale.confirmed) {
           if (canReplayConfirmedBalance) {
             if (
-              String(sale.sellerAddress ?? "").trim().toLowerCase() ===
+              normalizedParticipant(String(sale.sellerAddress ?? "")) ===
               normalizedWalletAddress
             ) {
               confirmedBalance -= amount;
             }
             if (
-              String(sale.buyerAddress ?? "").trim().toLowerCase() ===
+              normalizedParticipant(String(sale.buyerAddress ?? "")) ===
               normalizedWalletAddress
             ) {
               confirmedBalance += amount;
@@ -11441,13 +11485,13 @@ function tokenWalletBalancesFor(
         }
 
         if (
-          String(sale.sellerAddress ?? "").trim().toLowerCase() ===
+          normalizedParticipant(String(sale.sellerAddress ?? "")) ===
           normalizedWalletAddress
         ) {
           pendingOutgoing += amount;
         }
         if (
-          String(sale.buyerAddress ?? "").trim().toLowerCase() ===
+          normalizedParticipant(String(sale.buyerAddress ?? "")) ===
           normalizedWalletAddress
         ) {
           pendingIncoming += amount;
@@ -11700,6 +11744,9 @@ function tokenWalletBalanceReservedUnits(
   listings: PowTokenListing[],
   ownerAddress: string,
 ) {
+  if (tokenRequiresCanonicalWorkCapacity(balance.token, balance.canonicalWorkState)) {
+    return tokenWalletCanonicalWorkSpendability(balance, listings, ownerAddress)?.reservedBalanceSubatoms ?? null;
+  }
   return tokenReservedBalanceAtomsFor(
     listings,
     balance.token.tokenId,
@@ -11712,6 +11759,9 @@ function tokenWalletBalanceSpendableUnits(
   listings: PowTokenListing[],
   ownerAddress: string,
 ) {
+  if (tokenRequiresCanonicalWorkCapacity(balance.token, balance.canonicalWorkState)) {
+    return tokenWalletCanonicalWorkSpendability(balance, listings, ownerAddress)?.spendableBalanceSubatoms ?? null;
+  }
   const confirmedUnits =
     tokenWalletBalanceAmountUnits(balance, "confirmedBalance") ?? 0n;
   const pendingOutgoingUnits =
@@ -11721,21 +11771,51 @@ function tokenWalletBalanceSpendableUnits(
     listings,
     ownerAddress,
   );
+  if (reservedUnits === null) return null;
   return [
     confirmedUnits - pendingOutgoingUnits - reservedUnits,
     0n,
   ].reduce((maximum, value) => (value > maximum ? value : maximum));
 }
 
+function tokenRequiresCanonicalWorkCapacity(
+  token: PowTokenDefinition,
+  state?: Pick<PowTokenState, "amountStorageModel" | "precisionModel">,
+) {
+  return isWorkToken(token) && (
+    token.amountStorageModel === WORK_TOKEN_AMOUNT_STORAGE_MODEL ||
+    token.precisionModel === WORK_TOKEN_PRECISION_MODEL ||
+    state?.amountStorageModel === WORK_TOKEN_AMOUNT_STORAGE_MODEL ||
+    state?.precisionModel === WORK_TOKEN_PRECISION_MODEL
+  );
+}
+
+function tokenWalletCanonicalWorkSpendability(
+  balance: PowTokenWalletBalance,
+  listings: PowTokenListing[],
+  ownerAddress: string,
+) {
+  if (!balance.canonicalWorkState || balance.canonicalWorkCapacityError) return null;
+  try {
+    const result = tokenSpendabilityForWallet(ownerAddress, balance.token, balance.canonicalWorkState, listings);
+    return {
+      pendingOutgoingSubatoms: BigInt(result.pendingOutgoingSubatoms!),
+      reservedBalanceSubatoms: BigInt(result.reservedBalanceSubatoms!),
+      spendableBalanceSubatoms: BigInt(result.spendableBalanceSubatoms!),
+    };
+  } catch {
+    return null;
+  }
+}
+
 function tokenTransferSpendabilityKey(transfer: PowTokenTransfer) {
   const txid = String(transfer.txid ?? "").trim().toLowerCase();
   const tokenId = String(transfer.tokenId ?? "").trim().toLowerCase();
-  const senderAddress = String(transfer.senderAddress ?? "")
-    .trim()
-    .toLowerCase();
-  const recipientAddress = String(transfer.recipientAddress ?? "")
-    .trim()
-    .toLowerCase();
+  const exactAddressKeys = transfer.amountSubatoms !== undefined;
+  const sender = String(transfer.senderAddress ?? "").trim();
+  const recipient = String(transfer.recipientAddress ?? "").trim();
+  const senderAddress = exactAddressKeys ? sender : sender.toLowerCase();
+  const recipientAddress = exactAddressKeys ? recipient : recipient.toLowerCase();
   const amountAtoms = tokenRecordAmountAtoms(
     transfer,
     transfer.amount,
@@ -11808,22 +11888,24 @@ function tokenTransfersWithPreservedLocalPending(
 function tokenSpendabilityForWallet(
   walletAddress: string,
   token: PowTokenDefinition,
-  state: Pick<
-    PowTokenState,
-    "closedListings" | "holders" | "listings" | "sales" | "transfers"
-  >,
+  state: PowTokenSpendabilityState,
   localListings: PowTokenListing[] = [],
   localClosedListings: PowTokenClosedListing[] = [],
   localTransfers: PowTokenTransfer[] = [],
   localSales: PowTokenSale[] = [],
 ) {
-  const normalizedWalletAddress = walletAddress.trim().toLowerCase();
-  const holder = state.holders.find(
+  const canonicalWork = tokenRequiresCanonicalWorkCapacity(token, state);
+  const normalizedAddress = canonicalWork
+    ? canonicalWorkCapacityAddress
+    : (value: string) => value.trim().toLowerCase();
+  const normalizedWalletAddress = normalizedAddress(walletAddress);
+  const matchingHolders = state.holders.filter(
     (item) =>
-      String(item.address ?? "").trim().toLowerCase() ===
+      (canonicalWork ? String(item.address ?? "") : normalizedAddress(String(item.address ?? ""))) ===
         normalizedWalletAddress &&
       tokenHolderMatchesDefinition(item, token, [token]),
   );
+  const holder = matchingHolders[0];
   const work = isWorkToken(token);
   const bond = isBondTokenDefinition(token);
   const exactUnits = true;
@@ -11842,7 +11924,7 @@ function tokenSpendabilityForWallet(
       ? confirmedBalanceAtoms?.toString() ?? ""
       : Number(holder?.balance);
   if (
-    !holder ||
+    !holder || (canonicalWork && matchingHolders.length !== 1) ||
     (exactUnits
       ? confirmedBalanceAtoms === null
       : !Number.isSafeInteger(confirmedBalance)) ||
@@ -11854,6 +11936,20 @@ function tokenSpendabilityForWallet(
       `The ProofOfWork index could not verify your ${token.ticker} balance. No transaction was created.`,
     );
   }
+
+  const canonicalCapacity = canonicalWork
+    ? requireCanonicalWorkCapacity(state.canonicalWorkCapacities, {
+        address: walletAddress,
+        network: token.network,
+        tokenId: token.tokenId,
+        indexedThroughBlock: state.indexedThroughBlock,
+        indexedThroughBlockHash: state.indexedThroughBlockHash,
+        confirmedBalanceSubatoms: confirmedBalanceAtoms!,
+      })
+    : undefined;
+  const isSelfTransfer = (transfer: PowTokenTransfer) => canonicalCapacity
+    ? normalizedAddress(transfer.senderAddress) === transfer.recipientAddress.trim()
+    : normalizedAddress(transfer.recipientAddress) === normalizedWalletAddress;
 
   const closedListingsByKey = new Map<string, PowTokenClosedListing>();
   for (const listing of [...state.closedListings, ...localClosedListings]) {
@@ -11883,27 +11979,63 @@ function tokenSpendabilityForWallet(
     ),
     pendingClosedListings,
   );
-  const reservedBalance = tokenReservedBalanceFor(
+  let reservedBalance = tokenReservedBalanceFor(
     activeListings,
     token.tokenId,
     walletAddress,
   );
-  const reservedBalanceAtoms = exactUnits
+  let reservedBalanceAtoms = exactUnits
     ? tokenReservedBalanceAtomsFor(
         activeListings,
         token.tokenId,
         walletAddress,
       )
     : null;
+  if (canonicalCapacity) {
+    // Core ticket availability does not release canonical WORK reservations.
+    // Only additional pending listings need a local hold beyond this receipt.
+    let localReserved = 0n;
+    for (const listing of activeListings) {
+      if (listing.tokenId !== token.tokenId ||
+          normalizedAddress(listing.sellerAddress) !== normalizedWalletAddress ||
+          canonicalCapacity.reservations.has(listing.listingId) ||
+          listing.confirmed || !tokenListingHasSpendableSaleTicketAnchor(listing) ||
+          tokenListingIsExpired(listing)) continue;
+      const amount = tokenRecordAmountAtoms(listing, String(listing.amount), listing.amountAtoms, listing.amountSubatoms);
+      if (amount === null || amount <= 0n) {
+        throw new Error("A pending WORK reservation could not be verified. Refresh the wallet before spending WORK.");
+      }
+      localReserved += amount;
+    }
+    reservedBalanceAtoms = canonicalCapacity.reserved + localReserved;
+    reservedBalance = workNumberFromAtoms(reservedBalanceAtoms);
+  }
   const activeListingIds = new Set(
     activeListings
       .filter(
         (listing) =>
           listing.tokenId === token.tokenId &&
-          listing.sellerAddress === walletAddress,
+          normalizedAddress(listing.sellerAddress) === normalizedWalletAddress,
       )
       .map((listing) => listing.listingId),
   );
+  for (const listingId of canonicalCapacity?.reservations.keys() ?? []) {
+    activeListingIds.add(listingId);
+  }
+
+  if (canonicalCapacity) {
+    // Validate before deduplication: an unreadable local debit must not vanish
+    // merely because it cannot form the transfer deduplication key.
+    for (const transfer of [...state.transfers, ...localTransfers]) {
+      if (transfer.tokenId !== token.tokenId || transfer.confirmed ||
+          normalizedAddress(transfer.senderAddress) !== normalizedWalletAddress ||
+          isSelfTransfer(transfer)) continue;
+      const amount = tokenRecordAmountAtoms(transfer, transfer.amount, transfer.amountAtoms, transfer.amountSubatoms);
+      if (!transfer.txid || amount === null || amount <= 0n) {
+        throw new Error("A pending WORK transfer could not be verified. Refresh the wallet before spending WORK.");
+      }
+    }
+  }
 
   const pendingDirectTransferRows = mergeTokenTransfersForSpendability(
     state.transfers,
@@ -11913,9 +12045,8 @@ function tokenSpendabilityForWallet(
       (transfer) =>
         transfer.tokenId === token.tokenId &&
         !transfer.confirmed &&
-        transfer.senderAddress.trim().toLowerCase() === normalizedWalletAddress &&
-        transfer.recipientAddress.trim().toLowerCase() !==
-          normalizedWalletAddress,
+        normalizedAddress(transfer.senderAddress) === normalizedWalletAddress &&
+        !isSelfTransfer(transfer),
     );
   const pendingDirectTransfers = pendingDirectTransferRows.reduce(
     (total, transfer) => total + exactIntegerNumber(transfer.amount),
@@ -11929,6 +12060,9 @@ function tokenSpendabilityForWallet(
           transfer.amountAtoms,
           transfer.amountSubatoms,
         );
+        if (canonicalCapacity && (amountAtoms === null || amountAtoms <= 0n)) {
+          throw new Error("A pending WORK transfer could not be verified. Refresh the wallet before spending WORK.");
+        }
         return amountAtoms === null ? total : total + amountAtoms;
       }, 0n)
     : null;
@@ -11947,7 +12081,7 @@ function tokenSpendabilityForWallet(
   const uncoveredPendingSaleRows = [...salesByKey.values()].filter(
       (sale) =>
         !sale.confirmed &&
-        sale.sellerAddress.trim().toLowerCase() === normalizedWalletAddress &&
+        normalizedAddress(sale.sellerAddress) === normalizedWalletAddress &&
         !activeListingIds.has(sale.listingId),
     );
   const uncoveredPendingSales = uncoveredPendingSaleRows.reduce(
@@ -11962,6 +12096,9 @@ function tokenSpendabilityForWallet(
           sale.amountAtoms,
           sale.amountSubatoms,
         );
+        if (canonicalCapacity && (amountAtoms === null || amountAtoms <= 0n)) {
+          throw new Error("A pending WORK sale could not be verified. Refresh the wallet before spending WORK.");
+        }
         return amountAtoms === null ? total : total + amountAtoms;
       }, 0n)
     : null;
@@ -11993,9 +12130,11 @@ function tokenSpendabilityForWallet(
       ? confirmedBalanceAtoms?.toString()
       : undefined,
     pendingOutgoing:
-      bond && pendingOutgoingAtoms !== null
-        ? pendingOutgoingAtoms.toString()
-        : pendingOutgoing,
+      work && pendingOutgoingAtoms !== null
+        ? workNumberFromAtoms(pendingOutgoingAtoms)
+        : bond && pendingOutgoingAtoms !== null
+          ? pendingOutgoingAtoms.toString()
+          : pendingOutgoing,
     pendingOutgoingAtoms: pendingOutgoingAtoms?.toString(),
     pendingOutgoingSubatoms: work
       ? pendingOutgoingAtoms?.toString()
@@ -15895,6 +16034,7 @@ function normalizeTokenApiState(
       )
     : undefined;
   return sanitizedTokenState({
+    canonicalWorkCapacities: payload?.canonicalWorkCapacities,
     amountStorageModel: q16WorkState
       ? WORK_TOKEN_AMOUNT_STORAGE_MODEL
       : payload?.amountStorageModel,
@@ -16183,6 +16323,11 @@ async function fetchFreshWalletTokenPreflightState(
         );
       }
       return {
+        canonicalWorkCapacities: payload.canonicalWorkCapacities,
+        indexedThroughBlock: payload.indexedThroughBlock,
+        indexedThroughBlockHash: payload.indexedThroughBlockHash,
+        amountStorageModel: payload.amountStorageModel,
+        precisionModel: payload.precisionModel,
         closedListings: Array.isArray(payload.closedListings)
           ? normalizeTokenListingRecords(payload.closedListings)
           : [],
@@ -16222,6 +16367,25 @@ async function fetchFreshWalletWorkState(
     WORK_TOKEN_ID,
     onRetry,
   );
+}
+
+async function requireFreshWorkCapacityBeforeBroadcast(
+  walletAddress: string,
+  token: PowTokenDefinition,
+  amountSubatoms: bigint,
+  localListings: PowTokenListing[],
+  localClosedListings: PowTokenClosedListing[],
+  localTransfers: PowTokenTransfer[],
+  localSales: PowTokenSale[],
+) {
+  const state = await fetchFreshWalletTokenPreflightState(walletAddress, token.tokenId);
+  const spendability = tokenSpendabilityForWallet(
+    walletAddress, token, state, localListings, localClosedListings, localTransfers, localSales,
+  );
+  const available = exactIntegerBigInt(spendability.spendableBalanceSubatoms);
+  if (available === null || amountSubatoms <= 0n || amountSubatoms > available) {
+    throw new Error("WORK capacity changed while signing. No transaction was broadcast. Refresh the wallet and try again.");
+  }
 }
 
 function mergeListingAnchorOutpoints(
@@ -22276,7 +22440,9 @@ export default function App() {
       ? accountTokenLaneStatuses.work.loading
       : accountTokenLaneStatuses.work.loading ||
         accountTokenLaneStatuses.all.loading);
-  const bondWorkBalanceError = bondWorkBalanceHasCleanLane
+  const bondWorkBalanceError = bondWorkBalanceHasCleanLane && !workAttachmentPreviewSpendability
+    ? "Canonical WORK capacity is unavailable. Refresh the wallet before spending WORK."
+    : bondWorkBalanceHasCleanLane
     ? ""
     : inceptionWorkBalanceRequired
       ? accountTokenLaneStatuses.work.error
@@ -22287,8 +22453,7 @@ export default function App() {
     network,
     workAttachmentSpendableAtoms > 0n,
   );
-  const mailWorkAttachmentRequested =
-    messageWorkAttachmentAllowed && messageWorkAmountAtoms > 0n;
+  const mailWorkAttachmentRequested = messageWorkAmountAtoms > 0n;
   const mailWorkFloorHydrationRequired = mailWorkAttachmentRequested;
   const mailWorkAdmissionMode = workWriteModeForQuote(workFloorQuote);
   const mailWorkWriteMode = workWriteModeForDraftPayload(workFloorQuote);
@@ -22307,8 +22472,8 @@ export default function App() {
     !workWriteActionCanAttemptFreshPreflight(workFloorQuote);
   const mailWorkPauseReason = workWritePauseReason(workFloorQuote);
   const workAttachmentVisible =
-    messageWorkAttachmentAllowed &&
-    (workAttachmentSpendableAtoms > 0n || messageWorkAmountAtoms > 0n);
+    (messageWorkAttachmentAllowed && workAttachmentSpendableAtoms > 0n) ||
+    messageWorkAmountAtoms > 0n;
   const messageWorkRecipientAddresses = useMemo(() => {
     const addresses: string[] = [];
     const addRecipient = (recipientItem: RecipientResolution) => {
@@ -22378,11 +22543,11 @@ export default function App() {
         !accountTokenLaneStatuses.all.error));
   const mailWorkWalletAuthorityError =
     mailWorkAttachmentRequested &&
-    !accountWorkSpendabilityState &&
+    !workAttachmentPreviewSpendability &&
     !mailWorkWalletAuthorityLoading
       ? accountTokenLaneStatuses.work.error ||
         accountTokenLaneStatuses.all.error ||
-        "Verified spendable WORK is unavailable."
+        "Canonical WORK capacity is unavailable. Refresh the wallet before spending WORK."
       : "";
   const mailWorkBalanceInsufficient =
     mailWorkAttachmentRequested &&
@@ -22843,10 +23008,14 @@ export default function App() {
         tokenTransfers,
         tokenSales,
         tokenHolders,
+        { ...tokenSummary, listings: tokenListings, closedListings: tokenClosedListings },
       ),
     [
       address,
       dashboardTokenDefinitions,
+      tokenSummary,
+      tokenListings,
+      tokenClosedListings,
       tokenHolders,
       tokenMints,
       tokenSales,
@@ -22918,6 +23087,7 @@ export default function App() {
         accountTokenState.transfers,
         accountTokenState.sales,
         accountTokenState.holders,
+        accountTokenState,
       ),
     [accountTokenState, address],
   );
@@ -22930,6 +23100,7 @@ export default function App() {
         accountWorkTokenState.transfers,
         accountWorkTokenState.sales,
         accountWorkTokenState.holders,
+        accountWorkTokenState,
       ),
     [accountWorkTokenState, address],
   );
@@ -22942,6 +23113,7 @@ export default function App() {
         accountPowbTokenState.transfers,
         accountPowbTokenState.sales,
         accountPowbTokenState.holders,
+        accountPowbTokenState,
       ),
     [accountPowbTokenState, address],
   );
@@ -22954,6 +23126,7 @@ export default function App() {
         accountIncbTokenState.transfers,
         accountIncbTokenState.sales,
         accountIncbTokenState.holders,
+        accountIncbTokenState,
       ),
     [accountIncbTokenState, address],
   );
@@ -23273,52 +23446,26 @@ export default function App() {
   const walletTransferIsBond = Boolean(
     walletTransferToken && isBondTokenDefinition(walletTransferToken),
   );
+  const walletCanonicalWorkUnavailable = Boolean(
+    walletTransferToken && tokenRequiresCanonicalWorkCapacity(walletTransferToken, walletTransferBalanceRow?.canonicalWorkState) &&
+    (!walletTransferBalanceRow || tokenWalletCanonicalWorkSpendability(walletTransferBalanceRow, walletReservationListings, address) === null),
+  );
   const walletTransferBalanceReady = walletTransferToken
-    ? accountTokenLaneReadyForAction(
+    ? !walletCanonicalWorkUnavailable && accountTokenLaneReadyForAction(
         walletTransferToken,
         accountTokenLaneStatuses,
       )
     : !address;
-  const walletTransferBalanceError = walletTransferToken
+  const walletTransferBalanceError = walletCanonicalWorkUnavailable
+    ? walletTransferBalanceRow?.canonicalWorkCapacityError || "Canonical WORK capacity is unavailable. Refresh the wallet before spending WORK."
+    : walletTransferToken
     ? accountTokenLaneErrorForDefinition(
         walletTransferToken,
         accountTokenLaneStatuses,
       )
     : "";
-  const walletTransferUsesExactUnits = Boolean(walletTransferToken);
-  const walletTransferBalanceAtoms =
-    walletTransferUsesExactUnits && walletTransferToken
-    ? tokenRecordAmountAtoms(
-        walletTransferToken,
-        walletTransferBalance,
-        walletTransferBalanceRow?.confirmedBalanceAtoms,
-        walletTransferBalanceRow?.confirmedBalanceSubatoms,
-      ) ?? 0n
-    : 0n;
-  const walletPendingTokenAtoms =
-    walletTransferUsesExactUnits && walletTransferToken
-    ? tokenRecordAmountAtoms(
-        walletTransferToken,
-        walletPendingTokenBalance,
-        walletTransferBalanceRow?.pendingOutgoingAtoms,
-        walletTransferBalanceRow?.pendingOutgoingSubatoms,
-      ) ?? 0n
-    : 0n;
-  const walletReservedTokenAtoms =
-    walletTransferUsesExactUnits && walletTransferToken
-      ? tokenReservedBalanceAtomsFor(
-          walletReservationListings,
-          walletTransferToken.tokenId,
-          address,
-        )
-      : 0n;
-  const walletSpendableTokenAtoms = walletTransferUsesExactUnits
-    ? [
-        walletTransferBalanceAtoms -
-          walletReservedTokenAtoms -
-          walletPendingTokenAtoms,
-        0n,
-      ].reduce((maximum, value) => (value > maximum ? value : maximum))
+  const walletSpendableTokenAtoms = walletTransferBalanceRow
+    ? tokenWalletBalanceSpendableUnits(walletTransferBalanceRow, walletReservationListings, address) ?? 0n
     : 0n;
   const walletSpendableTokenBalance = walletTransferIsWork
     ? workNumberFromAtoms(walletSpendableTokenAtoms)
@@ -23660,8 +23807,8 @@ export default function App() {
                 balance,
                 summary.spendableUnits,
               )}`,
-              summary.listedUnits > 0n
-                ? `listed ${tokenWalletBalanceUnitDisplay(
+              summary.listedUnits !== null && summary.listedUnits > 0n
+                ? `${tokenRequiresCanonicalWorkCapacity(balance.token, balance.canonicalWorkState) ? "reserved" : "listed"} ${tokenWalletBalanceUnitDisplay(
                     balance,
                     summary.listedUnits,
                   )}`
@@ -23708,7 +23855,7 @@ export default function App() {
             : `${creditSummaries.length.toLocaleString()} credits`,
       });
       const listedCreditSummaries = creditSummaries.filter(
-        ({ summary }) => summary.listedUnits > 0n,
+        ({ summary }) => summary.listedUnits !== null && summary.listedUnits > 0n,
       );
       if (listedCreditSummaries.length > 0) {
         stats.push({
@@ -23718,7 +23865,9 @@ export default function App() {
               tokenWalletBalanceUnitDisplay(balance, summary.listedUnits),
             )
             .join(" · "),
-          label: "listed credit",
+          label: listedCreditSummaries.some(({ balance }) => tokenRequiresCanonicalWorkCapacity(balance.token, balance.canonicalWorkState))
+            ? "reserved credit"
+            : "listed credit",
           tone: "pending",
           value:
             listedCreditSummaries.length === 1
@@ -30215,6 +30364,10 @@ export default function App() {
         beforeBroadcast: preparedWorkAttachmentMode
           ? async () => {
               await freshWorkWriteMode(preparedWorkAttachmentMode);
+              await requireFreshWorkCapacityBeforeBroadcast(
+                address, WORK_TOKEN_DEFINITION, workAttachmentAtoms * BigInt(mailRecipients.length),
+                tokenListings, tokenClosedListings, tokenTransfers, tokenSales,
+              );
             }
           : undefined,
         inputCount: paymentPsbt.inputCount,
@@ -30594,6 +30747,10 @@ export default function App() {
         beforeBroadcast: preparedBondWorkMode
           ? async () => {
               await freshWorkWriteMode(preparedBondWorkMode);
+              await requireFreshWorkCapacityBeforeBroadcast(
+                address, WORK_TOKEN_DEFINITION, workAtomsToAttach,
+                tokenListings, tokenClosedListings, tokenTransfers, tokenSales,
+              );
             }
           : undefined,
         inputCount: paymentPsbt.inputCount,
@@ -31521,6 +31678,10 @@ export default function App() {
           isWorkToken(token) && preparedWorkMode
             ? async () => {
                 await freshWorkWriteMode(preparedWorkMode);
+                await requireFreshWorkCapacityBeforeBroadcast(
+                  actionAddress, token, attemptedAmountUnits,
+                  tokenListings, tokenClosedListings, tokenTransfers, tokenSales,
+                );
               }
             : undefined,
         inputCount: paymentPsbt.inputCount,
@@ -34712,7 +34873,7 @@ export default function App() {
                   submit={sendOpReturn}
                   workAmount={messageWorkAmount}
                   workAttachmentTotalAtoms={workAttachmentTotalAtoms.toString()}
-                  workSpendableAtoms={workAttachmentSpendableAtoms.toString()}
+                  workSpendableAtoms={workAttachmentPreviewSpendability?.spendableBalanceSubatoms}
                   workVisible={workAttachmentVisible}
                 />
               ) : activeFolder === "drafts" ? (
@@ -34770,7 +34931,7 @@ export default function App() {
                   submit={sendOpReturn}
                   workAmount={messageWorkAmount}
                   workAttachmentTotalAtoms={workAttachmentTotalAtoms.toString()}
-                  workSpendableAtoms={workAttachmentSpendableAtoms.toString()}
+                  workSpendableAtoms={workAttachmentPreviewSpendability?.spendableBalanceSubatoms}
                   workVisible={workAttachmentVisible}
                 />
               ) : selectedMessage ? (
@@ -37329,18 +37490,18 @@ function InfinityApp({
                     value={bondWorkAmount}
                   />
                   <span className="field-note" id="bond-work-balance-note">
-                    {bondWorkBalanceLoaded
+                    {bondWorkBalanceError
+                      ? "The WORK balance preview is temporarily unavailable."
+                      : bondWorkBalanceLoaded
                       ? `${tokenAmountDisplay(
                           { ticker: WORK_TOKEN_TICKER, tokenId: WORK_TOKEN_ID },
                           bondWorkSpendableBalance,
                           undefined,
                           bondWorkSpendableAtoms,
-                        )} spendable WORK${bondWorkBalanceError ? " from the last verified balance" : ""}.`
+                        )} spendable WORK.`
                       : bondWorkBalanceLoading
                         ? "Loading the confirmed WORK balance."
-                        : bondWorkBalanceError
-                          ? "The WORK balance preview is temporarily unavailable."
-                          : "Waiting for the confirmed WORK balance."}{" "}
+                        : "Waiting for the confirmed WORK balance."}{" "}
                     A fresh spendability check runs before signing.
                   </span>
                 </label>
@@ -38224,7 +38385,7 @@ function TokenWalletWorkspace({
           selectedWalletBalance,
           listings,
           address,
-        ).toString()
+        )?.toString()
       : undefined;
   const transferBalanceAtoms =
     selectedListToken && isWorkToken(selectedListToken)
@@ -38621,10 +38782,7 @@ function TokenWalletWorkspace({
                     "pendingIncoming",
                   ) ?? 0n;
                 const pendingOutgoingUnits =
-                  tokenWalletBalanceAmountUnits(
-                    balance,
-                    "pendingOutgoing",
-                  ) ?? 0n;
+                  tokenWalletBalanceUnitSummary(balance, listings, address).pendingOutgoingUnits;
                 const reservedUnits = tokenWalletBalanceReservedUnits(
                   balance,
                   listings,
@@ -38636,11 +38794,12 @@ function TokenWalletWorkspace({
                   address,
                 );
                 const balanceNotes = [
+                  spendableUnits === null ? "Canonical WORK capacity unavailable" : "",
                   `${tokenAmountDisplayFromUnits(
                     balance.token,
                     confirmedUnits,
                   )} confirmed`,
-                  reservedUnits > 0n
+                  reservedUnits !== null && reservedUnits > 0n
                     ? `${tokenAmountDisplayFromUnits(
                         balance.token,
                         reservedUnits,
@@ -54640,7 +54799,7 @@ function ComposePane({
   submit: (event: FormEvent<HTMLFormElement>) => void;
   workAmount: string;
   workAttachmentTotalAtoms: string;
-  workSpendableAtoms: string;
+  workSpendableAtoms: string | undefined;
   workVisible: boolean;
 }) {
   const recipientTokens = splitRecipientInputs(socialMode ? sender : recipient);
@@ -54880,9 +55039,9 @@ function ComposePane({
           </label>
           <div className="field-note good">
             Spendable WORK:{" "}
-            {formatWorkAmount(
-              workAtomsFromIntegerString(workSpendableAtoms) ?? 0n,
-            )}
+            {workSpendableAtoms === undefined
+              ? "Unavailable"
+              : formatWorkAmount(workAtomsFromIntegerString(workSpendableAtoms) ?? 0n)}
             {(workAtomsFromIntegerString(workAttachmentTotalAtoms) ?? 0n) > 0n
               ? ` · Total: ${formatWorkAmount(
                   workAtomsFromIntegerString(workAttachmentTotalAtoms) ?? 0n,

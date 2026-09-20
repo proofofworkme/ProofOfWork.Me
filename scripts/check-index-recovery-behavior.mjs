@@ -1579,6 +1579,29 @@ function isolatedFunction(path, name, globals = {}) {
         walletScopedTokenPayload: [
           "walletScopedPayloadUsesAuthoritativeOverlay",
         ],
+        proofIndexWalletScopedTokenPayloadForRead: [
+          "walletPayloadWithCanonicalWorkCapacities",
+        ],
+        walletPayloadWithCanonicalWorkCapacities: [
+          "canonicalWorkCapacityUnavailable",
+        ],
+        tokenReadResponsePayload: ["assertCanonicalCreditAggregateResponse"],
+        walletScopedTokenSummaryPayload: ["assertCanonicalCreditAggregateResponse"],
+        summaryPayloadWithCanonicalProvenance: ["assertCanonicalCreditAggregateResponse"],
+        assertCanonicalCreditAggregateResponse: [
+          "canonicalClosingCreditAggregateConsistency",
+          "payloadIndexedThroughBlockHash",
+        ],
+        canonicalClosingCreditAggregateConsistency: ["canonicalClosingCreditAggregatePrefixes"],
+        ledgerSnapshotChecks: [
+          "canonicalClosingCreditAggregateConsistency",
+          "canonicalClosingCreditAggregatePrefixes",
+        ],
+        buildIndexedCanonicalLedgerPayload: ["tokenStateWithVerifiedClosingCreditAggregates"],
+        tokenStateWithVerifiedClosingCreditAggregates: [
+          "canonicalClosingCreditAggregatePrefixes",
+          "workAmoV5ExactValueAliases",
+        ],
         walletScopedPayloadUsesAuthoritativeOverlay: [
           "walletTokenOverlayHasExactCheckpoint",
         ],
@@ -2024,9 +2047,16 @@ function isolatedTypeScriptFunction(path, name, globals = {}) {
     exactIntegerBigInt: frontendExactIntegerBigInt,
     exactIntegerNumber: frontendExactIntegerNumber,
     isBondTokenDefinition: frontendIsBondTokenDefinition,
+    isWorkToken: frontendIsWorkToken,
+    WORK_TOKEN_AMOUNT_STORAGE_MODEL: WORK_SUBATOM_PROJECTION_MODEL,
+    WORK_TOKEN_PRECISION_MODEL: WORK_PRECISION_V2_MODEL,
     ...globals,
   });
-  const definition = topLevelFunctionSource(path, name);
+  const dependencies = path.href === APP_PATH.href &&
+    ["tokenSpendabilityForWallet", "tokenWalletBalancesFor"].includes(name)
+    ? ["tokenRequiresCanonicalWorkCapacity"] : [];
+  const definition = [...dependencies, name]
+    .map((functionName) => topLevelFunctionSource(path, functionName)).join("\n");
   const transpiled = ts.transpileModule(definition, {
     compilerOptions: {
       module: ts.ModuleKind.None,
@@ -2219,6 +2249,11 @@ check("authoritative wallet definitions bind global WORK supply before normaliza
     walletOverlayWithCanonicalWorkSupply: bind,
     walletScopedTokenPayloadFromOverlay: fromOverlay,
     walletTokenPayloadMissingDefinitions: () => [],
+    proofIndexWorkWalletCapacities: async (_network, options) => {
+      assert.equal(options.blockHeight, checkpoint.indexedThroughBlock);
+      assert.equal(options.blockHash, checkpoint.indexedThroughBlockHash);
+      return [{ address: "wallet", confirmedBalanceSubatoms: "10000000000000000" }];
+    },
   });
   const before = JSON.stringify({ overlay, published });
   for (const scope of ["", WORK_TOKEN_ID]) {
