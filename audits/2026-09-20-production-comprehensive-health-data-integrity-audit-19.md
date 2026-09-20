@@ -2564,3 +2564,213 @@ Validation logs are local scratch evidence in `/tmp/pow-h19-fixes-2026-09-20/`; 
 | `hygiene.log` | 134 | `c501942de5d3c65c2445bb7178083e0794cc7491a71a7ba3a354acef2a10a8bb` |
 
 **Preserved pre-existing work:** `repository-hygiene.json` remains 7,264 B / `fb37a4d130e36c98836e9993cf6381d40f6ac2a667d4b39c0fa9e8ffb89c373d`; `deploy/audit17/publish-node-work-floor.py` remains 7,659 B / `95ad97f0f55b0dda7170c18614e7d92dbd0e77db36403b0d605d449b473d95d2`. The original audit evidence hash is recorded above. No production access, deployment, restart, cleanup, staging, commit or push occurred in this local implementation follow-up.
+
+## Authorized H19-01/H19-04 production rollout — 2026-09-20
+
+**Disposition at 18:49 UTC:** the approved H19-01 and H19-04 corrections are committed, pushed, deployed and production-verified within the scope below. The application is operational, but the broader audit is **not an all-clear**: H9-01 is reopened, H9-03 retains its known qualification, H19-02/H19-03 remain unresolved, and storage/readiness/latency risks continue under their existing IDs.
+
+### Scope, authorization and audit continuity
+
+The user explicitly approved committing, pushing and deploying the tested H19-01/H19-04 fixes, necessary application restarts, normal current-summary generation and production verification. When the existing derived-summary retention budget was shown to be nearly full, the user separately replied **“you can prune”** to the narrow routine derived-summary retention question. That approval covers the existing protected canonical-summary retention policy; it does not authorize a database migration, balance/reservation change, ledger repair, protocol-history rewrite, wallet signing, transaction broadcast or unrelated storage deletion.
+
+This dated follow-up updates the deployment status of **H19-01** and **H19-04**. Their earlier audit descriptions and the local-only implementation record above remain historical evidence. No duplicate finding ID is created. All other unresolved findings retain their prior status unless an explicit result below says otherwise.
+
+The exact pre-append Audit 19 prefix is **175,953 bytes**, SHA256 **`32e43091a28d317d8e87b475264755373b8fa438e98563b1dc00b95dbaf78546`**. The existing evidence JSON remains **330,727 bytes**, SHA256 **`63c83279344e99372a850eb02881147ea2a3f84afdf8f17431a774344cca5b96`**. This append preserves the earlier record by adding a dated follow-up; the preceding bytes remain the required continuity anchor. New rollout receipts are identified below rather than replacing the original evidence.
+
+### Source release and commit hygiene
+
+The reviewed accounting changes and Audit 19 records were committed as **`56694a7d6d76de565d4e0a6fce94f880d5308550`**, tree **`980f8ae43a58a84291703737fc9da45d6a5691a5`**, titled **“Fix canonical credit aggregates and WORK wallet capacity”**, from baseline **`0ef9c3bee3212a4cb0ae6efe7abbb6a75be72ffa`**. The commit was pushed and the main workspace was aligned to it. The author/committer is the repository's configured identity, and the commit contains `Documentation-Impact: updated` and `Repository-Hygiene: reviewed` trailers.
+
+The commit was assembled in an isolated `git clone --no-hardlinks` checkout under `/tmp/pow-h19-rollout-2026-09-20/commit-checkout`. Exactly the 17 reviewed files were copied byte-for-byte and staged. The repository's `.githooks` remained enabled. `hygiene:fix`, `hygiene:check`, the pre-commit hygiene review and staged whitespace review passed; the isolated checkout had **zero pre-existing allowlisted cleanup candidates** and no cleanup was performed. The original workspace's existing local state was preserved. The 17-file inventory and file hashes are recorded in `commit-staged-receipt.json`.
+
+The pre-existing untracked `deploy/audit17/publish-node-work-floor.py` was excluded from the commit and deployment. It remains **7,659 bytes**, SHA256 **`95ad97f0f55b0dda7170c18614e7d92dbd0e77db36403b0d605d449b473d95d2`**. That older hardcoded deployment script was not used.
+
+The staged node release was attested using the installed deployment workflow and fixed production Node runtime. All **28 named accounting tests** and the standalone API admission assertions passed on the staged node candidate. This repeats the focused accounting checks on the candidate; it does not relabel the earlier local 529-check behavior run as a new full production test.
+
+| Artifact | Identity |
+| --- | --- |
+| Node release | `56694a7d6d76-20260920T180605Z` |
+| Node source bundle SHA256 | `7567cc80b1aedad839aeac900d0ff5562b6b93be527053f90fd80a9ee1b418b0` |
+| Node candidate/rollback path | `/opt/proofofwork-api-stage-56694a7d6d76-20260920T180605Z` held the candidate before exchange and holds the preserved old `0ef9c3b` checkout afterward; the new release is live at `/opt/proofofwork-api`. |
+| Node staged attestation | 6,642 entries; 195,659,036 bytes; runtime SHA256 `ffc4e240ca0dee9092b39cb236bd6d7dd69880d6a313d91d63a08f9763dd9c0f` |
+| UI release | `56694a7d6d76-20260920T180539Z` |
+| UI source bundle | 91,349,873 bytes; SHA256 `a33f932ef8b7c7383d29b78f0234c53a17e6c6fc0bc15581370372585262e1a9` |
+| UI surfaces bundle | 182,228,300 bytes; SHA256 `072bec1d030ec320c7be59be4f0cb70c573018d6d10f983591ab85bc4d2295c5` |
+| Complete UI release archive | 185,266,279 bytes; SHA256 `2fafcdaf20f0b8f138bf464b384a9d4f6d25320bd587fb06c70f7d3c562b0a77` |
+
+### Preservation and capacity checks before cutover
+
+The UI candidate contains all 15 managed surfaces, unchanged passthrough content and the prior release's reachable asset compatibility closure. Computer/NFT equality and candidate archive provenance passed. The installed publisher was pinned at SHA256 `5f10c8fb2b1733d24b452c2bfe96c1e32acaed9c8e15798601bcc39cc9757d56`; comparison with the reviewed repository helper found only an existing 45-second compatibility-scan timeout and explanatory comments. No installed helper was replaced.
+
+The UI staging controller retained the incoming bundles, source checkout, extracted surfaces, release archive, rollback roots and all partial evidence. It did not publish, restart services or delete existing files. It created the archive directly from the complete candidate rather than allocating a second large archive-payload copy. The receipt records **zero deleted paths**. Both existing rollback roots were independently fingerprinted and passed intact to the publication plan:
+
+- `proofofwork-www-pre-0ef9c3bee321-20260920T053656Z`.
+- `proofofwork-www-pre-132b87faaac7-20260919T174900Z`.
+
+Repeated storage gates charged conservative allocation bounds without crediting cleanup, hardlink savings or deduplication. They required a **10 GiB available-space floor plus 64 MiB growth reserve**, including the later publisher's verification allocation. The staging receipt began at **18:11:47 UTC**; its final `ready-for-publisher-verification` gate later recorded **12,109,389,824 bytes (11.28 GiB)** available and a remaining private verification bound of **240,295,936 bytes**. Individual gate timestamps were not recorded, so the receipt start time must not be attributed to the final allocation measurement. This is a staging measurement, not the final post-release free-space reading. The UI still has limited reserve above its 10 GiB operating floor; this rollout does not resolve the previously recorded capacity risks.
+
+The node's mandatory checkout attestation initially found one pre-existing writable Git metadata file: `/opt/proofofwork-api/.git/index`, mode `0664`. At **18:22:17 UTC**, the deployment operator restricted it to `0600` so the unchanged old checkout could pass the required attestation. Its **50,650 bytes** remained identical, SHA256 **`3a4b3f8a21d45cc25f5b2d642196d111cdbdd359e9001fab36af6295bd6206aa`**. This was a Git metadata permission change; no source bytes, production records or history were edited by that action.
+
+At **18:11:35 UTC**, a read-only call to the staged capacity reader successfully executed the new PostgreSQL SELECT and full existing trusted transition verification against the live database. Core checkpoint **967875**, hash **`00000000000000000001080233ca932a01bf1f69e033cb0e0935ffef12f419d7`**, returned the affected wallet's **143** canonical reservations:
+
+| Candidate capacity field | Exact Q16 subatoms |
+| --- | ---: |
+| Confirmed | `999980000000000` |
+| Reserved | `89507365978` |
+| Transferable | `999890492634022` |
+
+The canonical token-state commitment was model `canonical-work-amo-payload-sha256-v1`, **2,109,650 bytes**, SHA256 **`abf894b6a9aec3ea551cfcc1fe5f296f6d714cd320def8b22b464dbe03d34aac`**. The single measured call completed in about **923 ms**. This proves that the staged reader ran successfully against that live checkpoint; it is not a load benchmark or proof that the public API/UI already served the release.
+
+### Derived-summary retention and ordinary maintenance boundaries
+
+The read-only retention assessment used the deployed pruning predicates. The initial complete predicate/size query reached the enforced 30-second statement timeout and was canceled. The bounded predicate query and separate size query completed at **18:12:29/18:12:57 UTC**; all 104 unprotected canonical summary IDs, heights and timestamps agreed between them. This is two matching observations, not one atomic full-size certificate.
+
+There were **130 canonical summaries and 19,878 scan snapshots**, **20,008 snapshots in total**. The 104 unprotected canonical summaries occupied **2,145,875,035 logical JSONB-text bytes**, leaving only **1,608,613 bytes** under the existing **2 GiB** logical budget. There were no then-current deletion candidates, unsafe heights, detached/same-height candidates or row-budget candidates. A new summary comparable to the latest **20,753,779-byte** summary would exceed that budget and make the oldest unprotected summary eligible. This is logical payload size; deletion does not imply that PostgreSQL immediately returns the same number of filesystem bytes.
+
+The existing routine retains protected referenced evidence and applies its canonical-height safety guard. The user authorized that narrow existing derived-summary pruning after this condition was explained. The rollout does not broaden retention policy or change persistent worker configuration. The first controlled worker pass nevertheless uses the supported invocation-only `POW_INDEX_PRUNE_LEDGER_SNAPSHOTS_AFTER_SUMMARY=0`, enabling a separate proof that the first corrected summary was inserted without rewriting or removing prior snapshot rows. Restoring the original normal worker then resumes the approved existing retention policy. The final receipts distinguish those two intervals below. No snapshot removals were observed during the one-shot or first-ready inventory intervals. The later 18:43:50 sample did observe one approved derived-summary removal, described below; the restored routine policy remains enabled.
+
+A normal worker pass also invokes existing projection-maintenance functions, so no-prune alone is not sufficient evidence of untouched historical rows. A bounded read-only preflight at **18:18:35 UTC**, using matching deployed function hashes, found **zero** confirmed data-byte repair candidates, **zero** listing-anchor repair candidates and **zero** listing-seal repair candidates. For Mail, 616 events required 1,260 participant aliases and exactly 1,260 were present: **zero deletion, insertion or `powid` update candidates**. The runtime's holder-maintenance flag was `0`; WORK participant/minter repair flags were unset and the ordinary worker strips these supervised-only flags from children. These are point-in-time checks of the named maintenance functions, not a claim that every normal ingestion write is globally append-only.
+
+### Controlled deployment and production verification
+
+The node cutover completed successfully at **18:35:10 UTC**. It waited with the old application serving from **18:23:10 UTC**, secured previously unsummarized Core checkpoint **967877** at **18:33:55.735 UTC**, exchanged the attested checkouts at **18:34:00.192 UTC**, and started the new API at **18:34:00.219 UTC**. The ordinary no-prune worker pass ran for **55.068 seconds**, completing at **18:34:55.394 UTC**. Readiness was true with zero lag at **18:35:09.987 UTC**. No rollback was needed. These receipts are retained on the node under `/data/proofofwork-audit19-cutover-56694a7d6d76-20260920T180605Z` and locally under `node-receipts/`. The roughly 4.5-second exchange interval is measured from the controller's secured-checkpoint log to its API-start log, not an external continuous HTTP availability measurement.
+
+The reviewed node controller waited for a new Core block while the old API and worker continued serving, stopped the old worker, and required a checkpoint not already summarized by the old release. It inventoried prior snapshot IDs, `xmin`, height and summary/block hashes before exchanging the complete attested checkout. It paused relevant application/maintenance scheduling, rechecked service inactivity after timer stop, drained application database sessions, and verified Core, Electrs, PostgreSQL and WAL receiver process identities separately. API startup's shared cache path was fixed and checked for age-eligible temporary files before restart.
+
+The exchange used the installed atomic helper. A normal bounded worker `--once` ran with the original environment and only summary pruning disabled. A fresh checkpoint prevents deliberate same-checkpoint repair; inventory comparison verifies a new summary ID and unchanged prior snapshot `xmin`. The original normal worker was then restored with approved routine retention. A second inventory recorded any removed derived summaries and rejected prior-row rewrites or removal outside the canonical-summary scope. Both the cutover and ready checkpoints were checked against Core. Any uncertain forward or rollback exchange leaves services/timers unresumed until both checkout identities are known; the rollback path verifies both roots.
+
+| Production result | Verified result |
+| --- | --- |
+| Node exact live commit/tree/runtime and application uptime | Live attestation matches commit/tree/runtime above. API and worker restarted; Core/Electrs/PostgreSQL/WAL did not. Protected archive publication passed: **90,396,601 bytes**, SHA256 `9d088c22042e9003c8a42ee8dbf58e7d7a9d8140cb076f69f11661b89daf19c5`. |
+| New ordinary summary | Canonical summary **`55ab0c3df8b8a0debf44c5db`**, height **967877**, hash **`0000000000000000000130b4c4b48fe72bf694f86084cfa369deb94899b2c866`**, generated **18:34:24.165 UTC**; all eight required summary keys cover that checkpoint. |
+| First no-prune snapshot preservation | **20,009 → 20,011** rows. New scan snapshot `1dd8d27088d6ec32cd0fab6e` and canonical summary `55ab0c3df8b8a0debf44c5db`; **zero prior IDs removed or updated**, using ID/`xmin` comparison. |
+| Restored worker retention | Post-ready inventory: **zero prior summaries removed, zero prior snapshot rows rewritten**. Normal approved pruning is enabled; this result is a bounded observation, not a disabled-retention claim. No temporary or permanent worker configuration change. |
+| Core/Electrs/PostgreSQL/WAL services | All four authority-service PID/state records match preflight. Core, Electrs, indexer and txindex agree at **967877** and its canonical hash; no initial download, no pruning mode, zero lag, worker idle/proof-ready and no unresolved observed pending events. |
+| UI complete-root publication | All **15 managed surfaces** published by complete-root exchange at **18:40:24 UTC**, exact approved commit/tree, archive provenance byte-equal and verified. Manifest SHA256 **`e022f65976b2bd847adc5b923b13ea2c2cd6e7a4a5835610b7fe73333afe39bb`**. Previous root retained as `proofofwork-www-pre-56694a7d6d76-20260920T180539Z`; all three rollback roots remain. Caddy was not restarted. |
+| UI final space and inodes | At **18:49:17 UTC**, **12,106,440,704 B available (11.28 GiB)**, **13,790,633,984 B filesystem-free**, total **39,973,924,864 B**. Available inodes **2,337,907 / 2,427,136**. Available-space margin above the 10 GiB floor is **1,369,022,464 B (1.28 GiB)**. |
+| Node final space/database health | Final node sample at **18:43:50 UTC**: root **69,747,011,584 B available (64.96 GiB)**; `/data` **440,028,925,952 B (409.81 GiB)**. PostgreSQL **31,306,439,703 B (29.16 GiB)**; largest relation `work_amo_block_transitions` **29,912,629,248 B**. No invalid/not-ready indexes, waiting locks or cumulative deadlocks observed. Checksums remain off; no new physical-page integrity claim. |
+| H19-01 public/API math | **348/348** read-only checks pass at 967877 for WORK summary, WORK token and Credit summary; independent BigInt reconstruction, stored commitment rehash and bracketing Core hash checks agree. Exact fields are listed below. |
+| H19-04 wallet/API/frontend math | At 967877, the live receipt and separately read canonical transition agree on **all 143 reservation IDs/amounts**. Actual frontend functions calculate **`0.0999890492634022 WORK`**, with **zero additional pending outgoing subatoms** for the observed wallet. Full existing boundary validation and Core binding pass. Deployed UI artifact/render checks are separately recorded below. |
+| Public surface/asset/API smoke | All **14 ordered public surfaces** rendered in Chromium, Computer last. **672/672 external archive files** matched exact bytes (48 duplicate NFT files excluded); **184/184 captured HTML/rendered asset bodies** matched approved build bytes. Home's initial registry 503 recovered on a fresh context; AMO completed its bounded follow-up in **46.588 s**. See qualified observations below. |
+| Final repository/audit verification | The exact original Audit 19 prefix, evidence JSON and excluded script hashes were verified unchanged. The final isolated-checkout `hygiene:fix` removed **zero paths**; `hygiene:check` and whitespace review passed. Semantic review retained existing SOUL, protocol/product documentation, classified evidence and generated artifacts. This follow-up changes only the audit by appending results. Its commit identity is recorded by Git; deployed application source remains **56694a7**, and the audit-only follow-up requires no redeployment. |
+
+The three H19-01 public responses returned HTTP 200 and shared the new summary ID and Core-bound checkpoint. Independent verification at **18:36:44 UTC** reconstructed the eight primary credit aggregate Q8 fields from the immutable same-height sufficient state; the two carry fields were checked for exact fixed-flow reconciliation across API proof/floor/statistics. The sufficient-state commitment was **2,520,963 bytes**, SHA256 **`d3a0d1cfd96d073e6a8705a32708a217054ebdc2116b664863f92e4bca33adac`**; 21,307 recorded movement entries were present.
+
+| Canonical aggregate | Exact Q8 value |
+| --- | ---: |
+| Event/frozen credit value | `103731127226109176156137879` |
+| Event/live credit value | `838762214502555077956660935` |
+| Movement/frozen credit value | `103731127221891972156137879` |
+| Movement/live credit value | `838762214498337873956660935` |
+| Fixed credit value | `4217204000000000` |
+| Full live network value | `838762214843018138826228612` |
+| Live WORK floor | `39941057849667530420` |
+
+The matching frozen/live network aliases and `creditNetworkValueQ8` were checked rather than substituted for a separate formula. Rehashing the sufficient state and matching Core membership does not constitute a new genesis replay or a new valuation of every historical event.
+
+H19-04's public wallet response, SHA256 **`99408f0cce308e56775a02173b45bdf7367053dde470a3a06eff2915167a7538`**, was captured at the same 967877 checkpoint. Actual frontend functions passed at **18:36:39 UTC**. Independent raw canonical transition verification completed at **18:38:42 UTC** and passed the existing full boundary validation and canonical Core hash check. The commitment remains **2,109,650 bytes / `abf894b6a9aec3ea551cfcc1fe5f296f6d714cd320def8b22b464dbe03d34aac`**. All **143** reservations match, including **105 active** reservations totaling **65,722,187,250 subatoms** and **38 closed** reservations totaling **23,785,178,728 subatoms**. Their canonical sum is **89,507,365,978 subatoms**; confirmed **999,980,000,000,000** minus reserved gives **999,890,492,634,022**, displayed by the actual frontend helper as **0.0999890492634022 WORK**. The reservation-ID/amount digest is **`475f681b7ff83284a0a2dd96f9b2d70c57867ece50f1102803fc885258af5b85`**. This proves the affected confirmed wallet capacity at that checkpoint without releasing closed-ticket reservations or relying only on response self-consistency.
+
+Production verification uses read-only calls, exact integer arithmetic and the actual frontend functions against captured API responses. It must not be described as a connected wallet, signed transaction, transaction broadcast or end-to-end mined transfer. The initial CUA browser was unavailable; the approved installed Playwright/Chromium fallback completed the ordered rendered surface checks without downloading a browser. Chromium **149.0.7827.55** rendered the 14 ordered surfaces in fresh unauthenticated contexts, with screenshot and text evidence, then rechecked Home and AMO. No connected wallet, signing or private account action was exercised. HTML/asset/API checks and local component/function checks remain distinct from browser render evidence. This release verification is not another full historical transaction sweep or physical PostgreSQL page-checksum audit.
+
+H19-01's live aggregate/API verification and H19-04's live API/raw-transition/frontend-function reconciliation pass at 967877. Exact deployed UI artifact checks and ordered browser rendering now pass within their bounded scopes. **H19-01 and H19-04 are production-verified and closed for the specific corrected discrepancies.** This does not close the broader non-green gates, latency/availability family, H19-02/H19-03, connected-wallet coverage or remaining historical verification limitations.
+
+### Final capacity, retention and read-path reliability
+
+The final UI sample confirms the exact active release/provenance and all three protected rollback roots. Caddy remained active at its existing PID with **zero restarts** and **zero sampled warning/error-priority records**. UI memory available was **3,383,316,480 / 4,005,457,920 bytes**, with no swap; one-second CPU busy was **0.5%** and load **0.084 / 0.151 / 0.171**. These are point samples. The **11.28 GiB** available disk space leaves only **1.28 GiB** above the 10 GiB operating floor, reduced by the intentionally retained release/source/staging evidence. Continue **H5-01/H13-01**: another large release/backup peak must pass the same allocation/reserve checks. No transport bundle, prior release, backup or rollback root was removed to create this release.
+
+The node's final **18:43:50 UTC** sample remained ready at Core/Electrs/indexer/txindex height **967877**, zero lag, matching canonical hash, worker proof-ready and zero unresolved observed pending events. Available memory was **114,329,378,816 / 134,125,752,320 bytes (106.48 / 124.91 GiB)**; one-second CPU busy **6.348%**, iowait **0%**, and load **4.53 / 3.15 / 2.73** across **32 CPUs**. Authority-service PIDs remained equal to pre-cutover, and API/WireGuard API/worker PIDs remained equal to first-ready with zero subsequent restarts. PostgreSQL checks were bounded health/inventory queries; checksums are disabled and this rollout did not run a physical-page checksum audit or a new restore/PITR exercise.
+
+Snapshot retention has three distinct observations:
+
+1. Before cutover **20,009** rows; after the first no-prune pass **20,011** rows: two new rows, every prior snapshot ID/`xmin` unchanged.
+2. At first readiness, still **20,011** rows: no prior removal or rewrite.
+3. At **18:43:50 UTC**, **20,010** rows: existing normal retention had removed exactly one pre-cutover **unprotected derived canonical summary**, **`d090ccf0dc54d6963a0b89d1`**, height **967767**, under the user's explicit pruning approval. No surviving pre-cutover snapshot changed `xmin`. All **27 currently protected IDs present at baseline** remained with original `xmin`.
+
+Five protection-query references were absent from both inventories; they are documented historical exceptions rather than rollout losses: the three approved absent INCB witnesses already noted in Audit 19 and the V5 migration seed/closing references recorded in Audit 5. The new summary **`55ab0c3df8b8a0debf44c5db`** was ordinarily refreshed at **18:35:26.755 UTC**, after its first publication/first-ready capture, changing its new-row `xmin` to `2535033`. It was **not a pre-cutover historical row**. No claimed reclaimed disk bytes are inferred from the single logical row deletion.
+
+Logs prevent an error-free or fully healthy read-path claim. The untruncated API/worker journal sample **18:33:50–18:43:50 UTC** had no warning/error-priority records, but **171 message matches** were emitted at priority 6: **115** raw-RPC admission-queue-full messages, **19** API pending-hydration failures, **7** worker disappeared-mempool-transaction messages, **14** local address-history 404s plus **14 duplicate HTML-title fragments**, **1** registry-summary unresolved-transaction failure and **1** 2,500-ms listing-lifecycle enrichment timeout. These categories are not 171 independent incidents. They overlap the live read checks and do not establish causation by H19 code changes. Record them under the existing **H5-06/H10-05/H12-06/H18 availability/latency family**, which remains open.
+
+Browser evidence is consistent with that limitation. All 14 main documents returned 200 with no JavaScript page exceptions and no desktop horizontal overflow at the sampled 1,440-pixel viewport. Home's initial registry request returned 503; a fresh browser context later returned current registry data with no console error. AMO's first capture was still loading; its follow-up reached Ready with canonical/proof gates and the full WORK market after **46.588 seconds**, completing **18:48:15.520 UTC**, with zero JavaScript/console/API errors in that follow-up. Slow eventual recovery does not meet a low-latency guarantee. Some other captures did not reach network-idle within their bounded observation; no blanket completed-hydration or all-interactions claim is made. Home's third-party YouTube embed was deliberately blocked by the first-party-only read-only harness; its blocked-request record is not an application failure. Browser and Desktop disconnected shell rendering does not replace the separately captured public chain-content API checks. Screenshots/text/module/API receipts are retained. All 14 screenshots were visually inspected. **Thirteen representative API endpoints plus the affected authoritative fresh wallet endpoint** have successful HTTP 200 receipts. The original historical-transaction receipt had an audit-harness metadata collision (`status:confirmed` overwrote numeric HTTP status); it was preserved, and a separate **18:47:12.998 UTC** GET correctly recorded **200 / confirmed / no-store**. This is not an application failure. Browser guest landing and historical transaction API were checked without repeating the earlier complete 1,018-byte content reconstruction. Infinity/Inception retained explicit verified-preview/incomplete-book notices at roughly 17 seconds; their full books were not awaited. Growth's Boost detail remained “observations being prepared” in the sample and was not diagnosed as a new regression. The exact-byte external sweep covered 201,578,456 bytes with at most two concurrent GETs, including compatibility assets; the duplicate NFT alias's 48 files were excluded from network fetching and verified server-side against Computer. Desktop guest context, one viewport and no connected wallet are explicit limits.
+
+### Broader read gates: H9-01 reopened under its original ID
+
+The broad marketplace gate is **not green**. It passed fast ID lookup and the WORK Marketplace V2 contract, then exited **1** on **“WORK AMO V5 cutover and write gate”**: exact fresh WORK `closed-listings` history returned listing **`4e9cedced2252cd183608dc9176415a913c4f6aa5e8307a732179a2240b6feb1`**. The request returned HTTP 200 in **39,670 ms**. The preceding exact invalid-attempt and invalid-seal preservation assertions passed. Later marketplace stages did not run and are not counted as passed.
+
+This reopens **H9-01**, not a new H19 finding. Audit 9's approved repair (lines 884–892) explicitly preserved this attempted listing as confirmed-invalid evidence while requiring exact active, closed-listing and market-log reads to remain terminal-empty. The later Audit 9, Audit 10 and Audit 18 records report marketplace gate passes. The present result is therefore a regression of that recorded read contract rather than merely the longstanding non-failing V5 migration warnings.
+
+Pre-H19 evidence already demonstrates conflicting read models. The original Audit 19 stable WORK response at **967837**, snapshot **`258048b156bc24b3fc8eb723`**, contains this relic in `closedListings[203]` as `valid:true`, `status:disabled`, `relic:true`, reason `work-amo-v5-pre-unit-relic`, closed by declaration txid **`54d7a367a3998ce1327ee89d983a25c80ce34b96d9811807df215a8694aead36`**. The same response preserves the invalid attempted listing separately. Its **76,607,356-byte** body SHA256 **`217d9993f1e6824f9a6972d8061d8f3cd0c83ebdc583cd05e8f438016b3c6452`** matches the original committed evidence inventory. Fresh 967838 and ordered 967846 captures omit the closed relic while retaining the invalid history; absence from those compact/scoped responses alone does not prove a terminal exact-history result.
+
+Function-level source comparison between **0ef9c3b** and **56694a7** shows the entire token-history route, history resolver, value/witness wrappers, DB history SQL/mapper and pre-unit relic evidence reader are byte-identical. The complete marketplace gate and V5 protocol module are also unchanged. The conflicting projection therefore predates these accounting patches, and no direct H19 causality is demonstrated. The exact same queried route was not captured immediately before deployment, so this is not a controlled same-route A/B proof and does not exclude indirect timing/fallback effects.
+
+Impact is the historical membership/rendering discrepancy and a failed broad gate. No new canonical balance corruption, released reservation, active buyable relic or transaction broadcast was established; the specific H19-01 aggregate and H19-04 capacity proofs remain separate passing results. Follow-up requires a narrowly reviewed reconciliation of the relic evidence/relational/fallback paths with the canonical invalid attempt and the prior terminal-empty contract, plus a failing-route regression fixture. Preserve the invalid records and chain evidence; do not rewrite historical rows or weaken the gate as part of this rollout. The **39.67-second** read is also an observation in the existing latency family, not a new latency issue ID.
+
+The other broad results reported by the rollout operator are **ledger PASS**, **Mail PASS**, and **99/102 parity checks passing**: one known **H9-03** four-auxiliary-transaction canonical scan-marker qualification error and two existing non-failing V5 warnings. Snapshot/read checks passed. The `read-gates.json`, ledger/Mail logs and compact parity receipt are hashed below. The application must not be described as universally green solely because the two approved accounting corrections verify.
+
+### Rollout actions, remaining authority and follow-up
+
+Completed rollout actions: approved source commit/push; node/UI candidate creation; one Git metadata mode restriction preserving bytes; atomic node checkout exchange; API/worker restart; one ordinary no-prune indexing/summary pass; restoration of original worker/timers; node archive/provenance publication; live aggregate and affected-wallet verification. No rollback or snapshot removal occurred in the measured node cutover intervals. The complete UI root was subsequently published without a Caddy restart, exact external/module bytes and ordered renders were verified, final host capacity was sampled, and the existing worker later pruned one approved unprotected derived summary. No manual cleanup, migration, canonical balance/reservation repair, signing, broadcast or rollback was performed.
+
+No migration, canonical reservation release, balance rewrite, signing or transaction broadcast is required by these accounting fixes. Any additional historical repair, protocol change, unrelated retention expansion or removal of backups/releases/evidence still requires its own explicit authorization. Existing historical findings outside this rollout remain tracked under their original IDs. Retain the UI capacity follow-up: preserve the live/rollback/restore dependencies, measure release and database growth, and revalidate any future cleanup candidates against current state before removal.
+
+Priority follow-up remains:
+
+1. Address the existing readiness/latency family with bounded reproduction of RPC queue saturation, pending hydration and slow exact history/AMO loads; preserve fail-closed semantics and distinguish dependency failure from true absence.
+2. Repair/reconcile reopened **H9-01** under its original ID, using the exact historical txid and unchanged baseline evidence; separately resolve the existing **H9-03** auxiliary canonical-proof marker qualification without fabricating scan evidence.
+3. Maintain the UI disk reserve and node backup/database growth forecasts. Retain complete live/rollback/restore dependencies; any additional cleanup or policy expansion requires a specifically reviewed scope.
+4. Continue **H19-02/H19-03** transaction-detail absence/cache correctness work and the previously uncompleted physical-integrity, off-host restore and connected-wallet verification. This rollout does not supersede those findings.
+
+The receipts below bind preparation, deployment and completed verification results. The parent audit's original evidence is unchanged. Scratch paths are operational evidence locations, not guaranteed permanent archives; essential results and digests are therefore included here; operators should preserve the referenced detailed receipts in the approved durable evidence locations and rerun relevant checks rather than assume `/tmp` survives.
+
+### Rollout receipt hashes
+
+Receipt root: `/tmp/pow-h19-rollout-2026-09-20/`. These hashes identify preparation, the final reviewed controller, node/math verification, publication, browser/API observations and final capacity samples.
+
+| Receipt | Bytes | SHA256 |
+| --- | ---: | --- |
+| `cutover-node.py` | 12174 | `cd30f5904fd5233ef4c3c89f1572fe66f7c7182169653eb3b75a34d11b083c95` |
+| `stage-ui.py` | 17771 | `8698fbb78201cece034f4293c905758af952bd1ff07777819e084af7fab5aa4f` |
+| `node-accounting-tests.log` | 3620 | `6c987b04afe56d146fece1cb51f71a30f3c5b6c5bcfe044184f019543fa57a9f` |
+| `commit-staged-receipt.json` | 4943 | `2212ccd5795dcd40d6bea0495251a98baace46fe073d891493c02bc28351c1da` |
+| `commit-hygiene-fix.log` | 141 | `fb44bc081ea22069e5f4b902f9c06bafa235d46d283b584ccc0e5c1a00c78b1a` |
+| `commit-hygiene-check.log` | 134 | `c501942de5d3c65c2445bb7178083e0794cc7491a71a7ba3a354acef2a10a8bb` |
+| `commit-precommit-review.log` | 199 | `85eec056306d666bc73f51ecf169732646bdead90aea3acdec5a2cc40079c9a7` |
+| `node-stage.log` | 921 | `2cd9c536c6c0b3973c07d36fb87618a4c016297612991d668b8331b9df6af91f` |
+| `node-candidate-capacity.json` | 24082 | `be028990b31c42f3651a64930a12a6314964468e1ddbb48d8f1baad6fcfcd791` |
+| `ui-stage-receipt.json` | 4974 | `37c8935e4eeac6ed89bc9b019eb5aeb6d664761ec0e71a8dff43ec5cc69dab4d` |
+| `ui-candidate-provenance.log` | 206 | `aea288806ff1ec710a252fd6fc35e6ac260648806411392a58ad8a5e91ab606c` |
+| `h19-01/retention-combined-result.json` | 45122 | `d7951f812734c2405bbf5186e3f3ce71f2b7d341331d82ef12fbe62bb6eaa6a9` |
+| `h19-01/maintenance-preflight-result.json` | 1505 | `e4b4865b455790e7843bd459b4cbbed6d64d5c35abb1736d8dd5c5f9c5ba3ef5` |
+| `node-git-index-permission-receipt.json` | 365 | `de528daf15619c12844e43decf05df9f978573d99ecf5cbbac3b79b6fff969a8` |
+| `node-receipts/exchange.json` | 234 | `ecbd306cfc558ffa2afee0fd1b6476483ad8963df11d9bea95f417fe7c422ef6` |
+| `node-receipts/snapshot-preservation.json` | 523 | `90910638dc4a631a6a261fa48b3a35ac75c910b4b5222b2dc0df3a59816df1dc` |
+| `node-receipts/after-ready-retention.json` | 154 | `1e25140e3a992bb6490556a5ea77a282da70171e0cdc385478254131c167d576` |
+| `node-receipts/after.json` | 7453 | `f56d901f6809019061ac297b22140eb30cab92e8732aaabed89513a60759ae5c` |
+| `node-receipts/worker-once.log` | 13435 | `a8ec385d6415239d6eed655e82cea6d989f74e714f893a029bc9442e08d097d9` |
+| `node-receipts/snapshots-before.json` | 2989352 | `7597752b88966a6df5d15d91ef98ac508b134db8d81bdcb5e4b8e9dbf6285a7c` |
+| `node-receipts/snapshots-after-oneshot.json` | 2989712 | `11b6780c89b03e48a7326fe408b1abe4016a04a6b6e8e19143df5fb0fb671b85` |
+| `node-receipts/snapshots-after-ready.json` | 2989712 | `11b6780c89b03e48a7326fe408b1abe4016a04a6b6e8e19143df5fb0fb671b85` |
+| `node-cutover.log` | 564 | `c12767a6fd5d65ee1c6d088a29316f6d2cbedef4e05c167413fc17dc518078fa` |
+| `node-release-publication.log` | 333 | `0a458dcbd6ac122d7113bc93e245f8b0e50f5c83be7042b42fd1e6775d12cec7` |
+| `h19-01/postdeploy-1835/verification.json` | 9118 | `81cea793c75044db55a47e6dc4f5edec5cfa27949a99163b09028ac7b30f43a4` |
+| `h19-01/postdeploy-1835/wallet-verification.json` | 1717 | `07bd93d1aa9c7d55e26e4bf451da01d14b4984170c3cf1c1446bde4317c5dac6` |
+| `ui/post-wallet-verification.json` | 1186 | `457f4d249658a78515920fc08264423b43a6d68c972b429c118097b49dc145ca` |
+| `h9-01/adjudication.json` | 3988 | `c3fc8bf2d02b1747a113ee2e527aae8915956c951324a1e5a2dad489c970c065` |
+| `h9-01/source-comparison.json` | 4072 | `7b6b3416dd708cb269f0fce369ba03bea748e8c5e745318a959ded920807331f` |
+| `node-receipts/read-gate-marketplace.log` | 4153 | `5252681303376d96b1b0283275a07e2e38b7b6411248c3fcb43a4dfa1cc71a6f` |
+| `node-receipts/read-gates.json` | 734 | `dd5f127dada8d94e5371f57be7fca042ebebc164318387a5c79fb2a2ae4d3d1a` |
+| `node-receipts/read-gate-ledger.log` | 137 | `96b5a5800d60b0a43faf7a6d5923b1d1adac0817887166fea78e8cafdf1c6c12` |
+| `node-receipts/read-gate-mail.log` | 2496 | `35e6f939e95a6e8c85fe1bc758ff77a819ebc3490418a2509c051e3b8b577423` |
+| `indexer-parity-summary.json` | 777 | `250ed4e47f3c6eadc77bfdfa929910ec049fc66bbfd523ce12693ec10e73168f` |
+| `ui-publish.log` | 3687 | `82a9503301c45db9c0018b3e5dbe9f2bc702438b9c65961bc9cafe5d8d8affa4` |
+| `final-ui-sample.json` | 3784 | `def6622cc7fd8b8bdf6e5d6d72b8e22e5c328cd4631f24ce21db4175b82790c3` |
+| `h19-01/final-node-sample-summary.json` | 25496 | `630f115cebb55ec70a9806d6e9901bbf35905bdb490c1022415623ac5d1e319c` |
+| `h19-01/final-node-evidence-manifest.json` | 1900 | `73046409cfdff0797ba756e52f31738d97e56e5b8a46c61ad5f38c39e67095ad` |
+| `h19-01/final-journal-adjudicated.json` | 3560 | `53e48ca99dfe3f40bcc5dc74f47c265e3affa1485d4a095abbb3726cd8bddad4` |
+| `ui/post-render-results.json` | 82142 | `59142683ce63ddffb4056a49528e8b63a9cff53d99dd730d40a108fbc14d2d39` |
+| `ui/post-followup-render-results.json` | 17227 | `6ff8156b2bcb07a89567331e4f7f80ca43cefb7f94773620a96ce9e76064e399` |
+| `ui/post-build-parity.json` | 28102 | `75ac366074ced9661e5d37f299ab3c7740ae0e540c98cfe7fc74c713ceff7de3` |
+| `ui/post-external-archive.json` | 439530 | `670ab7232ff95f2e24cd4904c4a98e81290d377192e607815d50b1a73855b752` |
+| `ui/post-apis.json` | 16401 | `25863389a9cb2ac2bbb06033d45411f6924b9c2565b6865b4bcc28ec2a7ac362` |
+| `ui/verification-summary.md` | 8404 | `c94eacd65beb4f5d2b2554f47236d07a416ab0e0da13312b713cb4642c531b67` |
+| `ui/evidence-sha256.json` | 16483 | `9368d2ce885d885870ed6f362bf2429a3eaa02853a1ca3d136ac977fa1960a8f` |
+| `ui/post-recheck-apis.json` | 659 | `1f34179c8d03a4dd52e0ca639a1f3ded1c7d3cbf0d6bb4a7aebac52e4f22f399` |
