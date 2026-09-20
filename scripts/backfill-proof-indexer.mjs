@@ -893,6 +893,18 @@ const PENDING_ONLY_CHILD_TIMEOUT_MS = Math.min(
 );
 const PENDING_ONLY_VERIFIER_MAX_MS = 30_000;
 const PENDING_ONLY_PERSISTENCE_HEADROOM_MS = 9_000;
+const configuredPendingOnlyWitnessRetries = Math.floor(
+  Number(process.env.POW_INDEX_BACKFILL_PENDING_WITNESS_RETRIES),
+);
+const PENDING_ONLY_WITNESS_RETRY_LIMIT = Math.min(
+  5,
+  Math.max(
+    0,
+    Number.isSafeInteger(configuredPendingOnlyWitnessRetries)
+      ? configuredPendingOnlyWitnessRetries
+      : 2,
+  ),
+);
 const MEMPOOL_SCAN_SEEN_LIMIT = Number(
   process.env.POW_INDEX_MEMPOOL_SCAN_SEEN_LIMIT ?? 10_000,
 );
@@ -1474,13 +1486,36 @@ async function runPendingOnlyBackfillPass(
 ) {
   const results = [];
   for (const source of sources) {
-    const result = await runSource(client, source);
-    if (
-      result?.q16PendingRequired === true &&
-      result?.q16PendingWitnessReady !== true
-    ) {
-      throw new Error(
-        "Pending-only WORK Q16 pass did not atomically publish one complete ready witness.",
+    const attempts = PENDING_ONLY_WITNESS_RETRY_LIMIT + 1;
+    let result = null;
+    for (let attempt = 0; attempt < attempts; attempt += 1) {
+      result = await runSource(client, source);
+      const pendingWitnessReady =
+        result?.q16PendingRequired !== true ||
+        result?.q16PendingWitnessReady === true;
+      if (pendingWitnessReady) {
+        break;
+      }
+      const remainingHeadroomMs =
+        PENDING_ONLY_CHILD_TIMEOUT_MS -
+        (Date.now() - BACKFILL_PROCESS_STARTED_AT_MS) -
+        PENDING_ONLY_PERSISTENCE_HEADROOM_MS;
+      if (attempt + 1 >= attempts || remainingHeadroomMs < 1_000) {
+        throw new Error(
+          "Pending-only WORK Q16 pass did not atomically publish one complete ready witness.",
+        );
+      }
+      console.error(
+        JSON.stringify({
+          attempt: attempt + 1,
+          attempts,
+          phase: "pending-only-q16-witness-retry",
+          q16PendingUnresolved: Number(result?.q16PendingUnresolved ?? 0),
+          remainingHeadroomMs,
+          source: String(source?.label ?? ""),
+          stopReason: String(result?.stopReason ?? ""),
+          unresolved: Number(result?.unresolved ?? 0),
+        }),
       );
     }
     results.push(result);
