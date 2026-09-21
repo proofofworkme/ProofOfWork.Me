@@ -4525,11 +4525,20 @@ function validBoostRegistryItem(item) {
       );
 }
 
+function validBoostSocialItem(item) {
+  return boostRegistryFeePaid(item)
+    ? { ...item, valid: true }
+    : invalidProtocolItem(
+        item,
+        "Boost social actions require at least 546 proofs before the OP_RETURN.",
+      );
+}
+
 function validBoostFollowItem(item, targetAddress) {
   if (!boostRegistryFeePaid(item)) {
     return invalidProtocolItem(
       item,
-      "Boost follow actions require the 546-proof registry fee.",
+      "Boost follow actions require at least 546 proofs before the OP_RETURN.",
     );
   }
   if (
@@ -4563,6 +4572,9 @@ function boostPostItemFromJson(tx, message, action, post) {
   const sender = senderAddressFromTx(tx);
   const text = boostText(post?.text ?? post?.body ?? post?.message);
   const media = boostMediaPointer(post?.media ?? post?.attachment);
+  const quoteTxid = boostTxidText(
+    post?.quoteTxid ?? post?.quotedTxid ?? post?.quoteTargetTxid,
+  );
   const parentTxid =
     action === "reply" ? boostTxidText(String(message.text).split(":")[2]) : "";
   const item = {
@@ -4575,6 +4587,7 @@ function boostPostItemFromJson(tx, message, action, post) {
     media: media ?? undefined,
     parentTxid: parentTxid || undefined,
     proofSignalSats: boostSignalSats(base, action === "reply"),
+    quoteTxid: quoteTxid || undefined,
     registryFeeSats: action === "reply" ? BOOST_ACTION_REGISTRY_FEE_SATS : 0,
     signalSats: boostSignalSats(base, action === "reply"),
     tags: ["Boost", action === "reply" ? "Reply" : "Post"],
@@ -4601,7 +4614,7 @@ function boostPostItemFromJson(tx, message, action, post) {
     return invalidProtocolItem(item, "Boost replies require a target txid.");
   }
   return action === "reply"
-    ? validBoostRegistryItem(item)
+    ? validBoostSocialItem(item)
     : { ...item, valid: true };
 }
 
@@ -4741,7 +4754,7 @@ function boostItemFromMessage(tx, message) {
       title: `Boost ${normalizedAction}`,
     };
     return targetTxid
-      ? [paidAction ? validBoostRegistryItem(item) : { ...item, valid: true }]
+      ? [paidAction ? validBoostSocialItem(item) : { ...item, valid: true }]
       : [invalidProtocolItem(item, "Boost action target txid is malformed.")];
   }
 

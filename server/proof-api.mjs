@@ -52266,6 +52266,8 @@ function boostEventSearchText(item, state, profileState) {
     item?.txid,
     item?.boostTxid,
     item?.targetTxid,
+    item?.quoteTxid,
+    item?.quotedTxid,
     item?.text,
     item?.memo,
     item?.detail,
@@ -52310,6 +52312,12 @@ function boostTargetTxid(item) {
   );
 }
 
+function boostQuoteTxid(item) {
+  return boostHexTxid(
+    item?.quoteTxid ?? item?.quotedTxid ?? item?.quoteTargetTxid ?? "",
+  );
+}
+
 function boostOriginalPostForReboost(item, postsByTxid) {
   const kind = String(item?.kind ?? "").trim().toLowerCase();
   if (kind !== "boost-reboost") {
@@ -52349,6 +52357,7 @@ function boostPriceSats(item) {
 
 function boostOwnershipState(items, verifiedClosures = new Set(), network = "livenet") {
   const states = new Map();
+  const actionOwners = new Map();
   const listingAssets = new Map();
   const counts = new Map();
   const followStates = new Map();
@@ -52409,6 +52418,14 @@ function boostOwnershipState(items, verifiedClosures = new Set(), network = "liv
     const kind = String(item?.kind ?? "").trim().toLowerCase();
     if (!BOOST_INDEX_EVENT_KINDS.has(kind) || item?.valid === false) {
       continue;
+    }
+
+    if (["boost-like", "boost-reply", "boost-reboost"].includes(kind)) {
+      const targetState = ensureState(boostTargetTxid(item));
+      const owner = boostAddress(targetState?.ownerAddress);
+      if (owner) {
+        actionOwners.set(String(item.eventId ?? item.txid), owner);
+      }
     }
 
     if (kind === "boost-follow" || kind === "boost-unfollow") {
@@ -52564,6 +52581,17 @@ function boostOwnershipState(items, verifiedClosures = new Set(), network = "liv
     }
   }
 
+  // Pending social actions are visibility only. Route their payment check to
+  // the current confirmed owner without allowing pending transfers to mutate
+  // canonical ownership.
+  for (const item of items) {
+    if (item?.confirmed !== false || item?.valid === false) continue;
+    const kind = String(item?.kind ?? "").trim().toLowerCase();
+    if (!["boost-like", "boost-reply", "boost-reboost"].includes(kind)) continue;
+    const owner = boostAddress(states.get(boostTargetTxid(item))?.ownerAddress);
+    if (owner) actionOwners.set(String(item.eventId ?? item.txid), owner);
+  }
+
   const followingByFollower = new Map();
   const followersByTarget = new Map();
   for (const [followerKey, targets] of followStates) {
@@ -52582,6 +52610,7 @@ function boostOwnershipState(items, verifiedClosures = new Set(), network = "liv
 
   return {
     counts,
+    actionOwners,
     followersByTarget,
     followingByFollower,
     profiles,
@@ -52600,6 +52629,9 @@ function boostFeedItemFromEvent(
   reboostedPostItem = null,
   reboostedPostState = null,
   reboostedPostProfileState = null,
+  quotedPostItem = null,
+  quotedPostState = null,
+  quotedPostProfileState = null,
 ) {
   const kind = String(item?.kind ?? "").trim().toLowerCase();
   const txid = boostHexTxid(item?.txid);
@@ -52609,6 +52641,7 @@ function boostFeedItemFromEvent(
 
   const boostTxid = boostPostTxid(item) || txid;
   const targetTxid = boostTargetTxid(item);
+  const quoteTxid = boostQuoteTxid(item);
   const createdAt = dateIso(
     item?.createdAt ?? item?.confirmedAt ?? item?.indexedAt,
     new Date(),
@@ -52624,6 +52657,17 @@ function boostFeedItemFromEvent(
         reboostedPostItem,
         reboostedPostState,
         reboostedPostProfileState,
+        counts,
+        network,
+        btcUsd,
+        workFloor,
+      )
+    : null;
+  const quotedPost = quotedPostItem
+    ? boostFeedItemFromEvent(
+        quotedPostItem,
+        quotedPostState,
+        quotedPostProfileState,
         counts,
         network,
         btcUsd,
@@ -52710,6 +52754,8 @@ function boostFeedItemFromEvent(
         : 0,
     reboostCount: Number(counter.reboosts ?? 0),
     reboostedPost: reboostedPost || undefined,
+    quotedPost: quotedPost || undefined,
+    quoteTxid: quoteTxid || undefined,
     replyCount: Number(counter.replies ?? 0),
     signalSats: totalSignalSats,
     signalUsd: totalSignalUsd,
@@ -52736,6 +52782,24 @@ function boostFeedItemFromEvent(
   };
 }
 
+function boostViewerActions(items, viewerAddress) {
+  const actions = new Map();
+  const viewer = boostAddress(viewerAddress);
+  if (!viewer) return actions;
+  for (const item of items) {
+    const actor = boostAddress(item?.authorAddress ?? item?.actor);
+    if (actor !== viewer) continue;
+    const kind = String(item?.kind ?? "").trim().toLowerCase();
+    const target = boostTargetTxid(item);
+    if (!target) continue;
+    const current = actions.get(target) ?? {};
+    if (kind === "boost-like") current.liked = true;
+    if (kind === "boost-reboost") current.reboosted = true;
+    actions.set(target, current);
+  }
+  return actions;
+}
+
 function compareBoostFeedItems(sortMode) {
   return (left, right) => {
     if (sortMode === "oldest") {
@@ -52758,16 +52822,20 @@ function boostFeedItemWithGraph(
   followersByTarget,
   followingByFollower,
   viewerFollowing,
+  viewerActions = new Map(),
 ) {
   if (!feedItem) {
     return null;
   }
   const authorKey = boostAddress(sourceItem?.authorAddress ?? sourceItem?.actor);
+  const viewerAction = viewerActions.get(feedItem.boostTxid) ?? {};
   return {
     ...feedItem,
     followerCount: followersByTarget.get(authorKey)?.size ?? 0,
     followingCount: followingByFollower.get(authorKey)?.size ?? 0,
     viewerFollowsAuthor: viewerFollowing.has(authorKey),
+    viewerLiked: viewerAction.liked === true,
+    viewerReboosted: viewerAction.reboosted === true,
   };
 }
 
@@ -53111,7 +53179,16 @@ async function boostFeedPayload(network, searchParams, fresh = false) {
   const registryHistory = boostNeedsRegistryHistory(rawSourceItems)
     ? await readBoostRegistryHistory(network, proofIndexEventHistoryPayload, indexedPayload)
     : null;
-  const qualification = qualifyBoostPaidActions(rawSourceItems, registryHistory?.items ?? []);
+  const rawVerifiedClosures = await verifiedBoostTicketClosures(
+    rawSourceItems,
+    item => boostCanonicalMarketTransaction(network, item),
+  );
+  const rawOwnership = boostOwnershipState(rawSourceItems, rawVerifiedClosures, network);
+  const qualification = qualifyBoostPaidActions(
+    rawSourceItems,
+    registryHistory?.items ?? [],
+    rawOwnership.actionOwners,
+  );
   const needsIdentities = boostHasIdentityClaims(qualification.accepted) || (profile && !boostLooksLikeAddress(profile));
   const identityQualification = needsIdentities ? qualifyBoostIdentityClaims(
     qualification.accepted,
@@ -53154,9 +53231,8 @@ async function boostFeedPayload(network, searchParams, fresh = false) {
     followingByFollower,
     profiles,
     states,
-  } = boostOwnershipState(sourceItems, await verifiedBoostTicketClosures(
-    sourceItems, item => boostCanonicalMarketTransaction(network, item),
-  ), network);
+  } = boostOwnershipState(sourceItems, rawVerifiedClosures, network);
+  const viewerActions = boostViewerActions(sourceItems, viewerAddress);
   const originalPostsByTxid = new Map(
     sourceItems
       .filter((item) => String(item?.kind ?? "").trim().toLowerCase() === "boost-post")
@@ -53227,6 +53303,12 @@ async function boostFeedPayload(network, searchParams, fresh = false) {
       const originalProfileState = originalPost
         ? profiles.get(boostAddress(originalPost?.authorAddress ?? originalPost?.actor))
         : null;
+      const quotedPost = boostQuoteTxid(item)
+        ? originalPostsByTxid.get(boostQuoteTxid(item)) ?? null
+        : null;
+      const quotedPostProfileState = quotedPost
+        ? profiles.get(boostAddress(quotedPost?.authorAddress ?? quotedPost?.actor))
+        : null;
       const feedItem = boostFeedItemWithGraph(
         boostFeedItemFromEvent(
           item,
@@ -53241,11 +53323,15 @@ async function boostFeedPayload(network, searchParams, fresh = false) {
           originalPost,
           originalPost ? states.get(boostPostTxid(originalPost)) : null,
           originalProfileState,
+          quotedPost,
+          quotedPost ? states.get(boostPostTxid(quotedPost)) : null,
+          quotedPostProfileState,
         ),
         item,
         followersByTarget,
         followingByFollower,
         viewerFollowing,
+        viewerActions,
       );
       return feedItem ? { feedItem, sourceItem: item } : null;
     })

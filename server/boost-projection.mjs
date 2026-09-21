@@ -164,7 +164,17 @@ const BOOST_PAID_KINDS = new Set([
   "boost-transfer", "boost-list", "boost-seal", "boost-delist", "boost-buy",
 ]);
 
+const BOOST_REGISTRY_FEE_KINDS = new Set([
+  "boost-transfer", "boost-list", "boost-seal", "boost-delist", "boost-buy",
+]);
+
+const BOOST_OWNER_PAYMENT_KINDS = new Set([
+  "boost-like", "boost-reply", "boost-reboost", "boost-follow", "boost-unfollow",
+]);
+
 export function boostNeedsRegistryHistory(items) {
+  // Keep the receiver scan available for replaying legacy social actions that
+  // paid the registry before the current-owner payment lane was introduced.
   return items.some(item => item?.valid !== false && BOOST_PAID_KINDS.has(item?.kind));
 }
 
@@ -214,7 +224,7 @@ function boostExactPayments(item) {
 // This qualifies application projections only. Raw events and consensus replay
 // outcomes are retained unchanged; a generic accepted carrier is not proof that
 // its payment reached the historical Boost receiver.
-export function qualifyBoostPaidActions(items, registryItems) {
+export function qualifyBoostPaidActions(items, registryItems, ownerByEvent = new Map()) {
   const receivers = [];
   for (const item of [...registryItems].sort(compareBoostCanonicalEvents)) {
     if (item.confirmed !== true || item.valid !== true) continue;
@@ -230,19 +240,55 @@ export function qualifyBoostPaidActions(items, registryItems) {
   const accepted = [], rejected = [];
   for (const item of items) {
     if (!BOOST_PAID_KINDS.has(item.kind)) { accepted.push(item); continue; }
-    let receiver = "";
+    let registryReceiver = "";
+    // Resolve the historical receiver for every paid action so legacy
+    // registry-paid social records remain replayable. New social writers are
+    // accepted through ownerReceiver instead; registry mutations still
+    // require this receiver directly below.
     for (const entry of receivers) {
-      if (item.confirmed === false || boostPositionBefore(entry.item, item)) receiver = entry.receiver;
+      if (item.confirmed === false || boostPositionBefore(entry.item, item)) registryReceiver = entry.receiver;
       else break;
     }
     const payments = boostExactPayments(item);
     const target = String(item.targetAddress ?? item.followedAddress ?? "").trim();
-    const registryDue = item.kind === "boost-follow" && target === receiver ? 1092n : 546n;
-    const reason = !receiver ? "missing-confirmed-boost-receiver" : !payments ? "unverifiable-payment-outputs" :
-      (payments.get(receiver) ?? 0n) < registryDue ? "boost-registry-payment-missing" :
-      item.kind === "boost-follow" && (!target || (payments.get(target) ?? 0n) < 546n) ? "follow-target-payment-missing" : "";
+    const ownerReceiver = BOOST_OWNER_PAYMENT_KINDS.has(item.kind)
+      ? (item.kind === "boost-follow" || item.kind === "boost-unfollow"
+        ? target
+        : String(ownerByEvent.get(String(item.eventId ?? item.txid)) ?? "").trim())
+      : "";
+    const directOwnerPayment = ownerReceiver && payments
+      ? (payments.get(ownerReceiver) ?? 0n) >= 546n
+      : false;
+    // Existing confirmed events used the original registry-fee lane. Preserve
+    // them as replayable history while all new writers use the owner lane.
+    const registryPayment = registryReceiver && payments
+      ? (payments.get(registryReceiver) ?? 0n) >= 546n
+      : false;
+    const legacySocialPayment = BOOST_OWNER_PAYMENT_KINDS.has(item.kind)
+      ? item.kind === "boost-follow"
+        ? Boolean(registryReceiver && payments && target) &&
+          (target === registryReceiver
+            ? (payments.get(registryReceiver) ?? 0n) >= 1092n
+            : registryPayment && (payments.get(target) ?? 0n) >= 546n)
+        : registryPayment
+      : false;
+    const acceptedRegistryPayment = BOOST_REGISTRY_FEE_KINDS.has(item.kind)
+      ? registryPayment
+      : legacySocialPayment;
+    const reason = !payments ? "unverifiable-payment-outputs" :
+      BOOST_OWNER_PAYMENT_KINDS.has(item.kind)
+        ? (!directOwnerPayment && !legacySocialPayment
+          ? (ownerReceiver ? "boost-owner-payment-missing" : "missing-confirmed-boost-owner")
+          : "")
+        : (!registryReceiver ? "missing-confirmed-boost-receiver" : !registryPayment
+          ? "boost-registry-payment-missing"
+          : "");
     if (reason) rejected.push({ eventId: item.eventId, txid: item.txid, reason });
-    else accepted.push({ ...item, applicationBoostRegistryReceiver: receiver });
+    else accepted.push({
+      ...item,
+      ...(acceptedRegistryPayment ? { applicationBoostRegistryReceiver: registryReceiver } : {}),
+      ...(ownerReceiver && directOwnerPayment ? { applicationBoostOwnerReceiver: ownerReceiver } : {}),
+    });
   }
   return { accepted, rejected };
 }

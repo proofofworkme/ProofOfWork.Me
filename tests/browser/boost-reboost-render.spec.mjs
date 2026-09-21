@@ -75,4 +75,24 @@ test("reboost renders the original post instead of the target txid", async ({ pa
   await expect(page.getByTestId("reboosted-post")).toContainText("Incredible feat by armyofyouth@proofofwork.me!");
   await expect(page.locator(".boost-post")).toContainText("reboosted");
   await expect(page.locator(".boost-post")).not.toContainText(`reboost ${ORIGINAL_TXID}`);
+
+  await page.getByRole("button", { name: "What's happening?", exact: true }).click();
+  await expect(page.getByRole("dialog", { name: "What’s happening?" })).toBeVisible();
+  await expect(page.getByRole("dialog", { name: "What’s happening?" }).locator("textarea")).toBeVisible();
+  await page.keyboard.press("Escape");
+
+  const reboostMenuButton = page.locator(".boost-reboost-action > button").first();
+  await reboostMenuButton.click();
+  await expect(page.getByRole("menuitem", { name: "Reboost" })).toBeVisible();
+  await expect(page.getByRole("menuitem", { name: "Quote" })).toBeVisible();
+  await page.getByRole("menuitem", { name: "Quote" }).click();
+  await expect(page.getByRole("dialog", { name: "Add a comment" })).toBeVisible();
+  await expect(page.getByTestId("quoted-post")).toContainText("Quoted Boost");
+  await page.keyboard.press("Escape");
+
+  await page.getByTestId("boost-post").first().press("Enter");
+  await expect(page.getByRole("dialog", { name: "Boost detail" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Post your reply" })).toBeVisible();
+  await page.getByRole("button", { name: "Post your reply" }).click();
+  await expect(page.getByRole("dialog", { name: "Replying to Boost" })).toBeVisible();
 });

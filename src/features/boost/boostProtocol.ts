@@ -67,6 +67,8 @@ export type BoostFeedItem = {
   proofSignalQ8?: string;
   proofSignalSatsExact?: string;
   proofSignalUsd?: number;
+  quotedPost?: BoostFeedItem;
+  quoteTxid?: string;
   reboostedPost?: BoostFeedItem;
   replyCount?: number;
   reboostCount?: number;
@@ -82,6 +84,8 @@ export type BoostFeedItem = {
   totalSignalUsd?: number;
   txid: string;
   viewerFollowsAuthor?: boolean;
+  viewerLiked?: boolean;
+  viewerReboosted?: boolean;
   workSignal?: string;
   workSignalSubatoms?: string;
   workSignalUsd?: number;
@@ -231,6 +235,36 @@ export function buildBoostActionPayload(action: BoostPaidAction, targetTxid: str
   return `${BOOST_PROTOCOL_PREFIX}${action}:${txid}`;
 }
 
+export function buildBoostPostPayload({
+  message,
+  proofSignalSats = 0,
+  quoteTxid,
+}: {
+  message: string;
+  proofSignalSats?: number;
+  quoteTxid?: string;
+}) {
+  const text = boostPostText(message);
+  if (!text) {
+    throw new Error("Enter a Boost post.");
+  }
+  const signalSats = Math.floor(proofSignalSats);
+  if (!Number.isSafeInteger(signalSats) || signalSats < 0) {
+    throw new Error("Boost proof signal must be a non-negative whole number.");
+  }
+  const normalizedQuoteTxid = quoteTxid ? normalizeBoostTxid(quoteTxid) : "";
+  if (quoteTxid && !normalizedQuoteTxid) {
+    throw new Error("Boost quote target txid is invalid.");
+  }
+  const post = {
+    v: 1,
+    text,
+    ...(signalSats > 0 ? { proofSignalSats: signalSats } : {}),
+    ...(normalizedQuoteTxid ? { quoteTxid: normalizedQuoteTxid } : {}),
+  };
+  return `${BOOST_PROTOCOL_PREFIX}post:${encodeTextBase64Url(JSON.stringify(post))}`;
+}
+
 export function buildBoostFollowPayload(
   action: BoostFollowAction,
   { targetAddress, targetId }: BoostFollowTarget,
@@ -269,6 +303,21 @@ export function buildBoostReplyPayload({
     throw new Error("Enter a Boost reply.");
   }
   return `${BOOST_PROTOCOL_PREFIX}reply:${txid}:${encodeTextBase64Url(JSON.stringify(post))}`;
+}
+
+export function buildBoostTransferPayload(
+  boostTxid: string,
+  newOwnerAddress: string,
+) {
+  const txid = normalizeBoostTxid(boostTxid);
+  const address = newOwnerAddress.trim();
+  if (!txid) {
+    throw new Error("Boost transfer target txid is invalid.");
+  }
+  if (!address) {
+    throw new Error("Enter a new Boost owner address or ID.");
+  }
+  return `${BOOST_PROTOCOL_PREFIX}t:${txid}:${address}`;
 }
 
 export function boostSaleAuthorizationDraft({

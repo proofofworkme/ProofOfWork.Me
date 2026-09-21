@@ -9,9 +9,11 @@ import {
 import { Buffer } from "buffer";
 import {
   ArrowUpRight,
+  ArrowLeft,
   Clock,
   Heart,
   MessageCircle,
+  Quote,
   RefreshCw,
   Repeat2,
   Search,
@@ -27,9 +29,7 @@ import {
   Zap,
 } from "lucide-react";
 import {
-  COMPUTER_APP_URL,
   ID_APP_URL,
-  LOCAL_COMPUTER_APP_URL,
   LOCAL_ID_APP_URL,
   LOCAL_MARKETPLACE_APP_URL,
   MARKETPLACE_APP_URL,
@@ -68,8 +68,10 @@ import {
   buildBoostActionPayload,
   buildBoostFollowPayload,
   buildBoostListingPayload,
+  buildBoostPostPayload,
   buildBoostProfilePayload,
   buildBoostReplyPayload,
+  buildBoostTransferPayload,
   idsOwnedByAddress,
   loadBoostIdentityIntent,
   normalizeBoostId,
@@ -106,13 +108,22 @@ type BoostActionBusy =
   | "like"
   | "list"
   | "profile"
+  | "post"
   | "reboost"
   | "reply"
+  | "transfer"
   | "unfollow";
 
 type RegistryApiPayload = {
   record?: PowIdRecordLike | null;
   records?: PowIdRecordLike[];
+};
+
+type BoostOptimisticAction = {
+  likeDelta?: number;
+  liked?: boolean;
+  reboostDelta?: number;
+  reboosted?: boolean;
 };
 
 type BoostRootProps = {
@@ -549,6 +560,38 @@ function ReboostedPost({
   );
 }
 
+function QuotedPost({
+  network,
+  post,
+}: {
+  network: BitcoinNetwork;
+  post?: BoostFeedItem;
+}) {
+  if (!post) return null;
+  return (
+    <div className="boost-quoted-post" data-testid="quoted-post">
+      <div className="boost-quoted-post-head">
+        <Quote aria-hidden="true" size={15} />
+        <span>Quoted Boost</span>
+      </div>
+      <strong>{authorLabel(post, undefined, "")}</strong>
+      <span className="boost-quoted-post-handle">
+        @{boostAuthorId(post) || shortAddress(post.authorAddress)}
+      </span>
+      {post.text ? <p>{post.text}</p> : null}
+      <a
+        className="boost-proof-frame"
+        href={explorerTxUrl(post.txid, network)}
+        rel="noreferrer"
+        target="_blank"
+      >
+        <span>Open quoted ProofFrame</span>
+        <ArrowUpRight aria-hidden="true" size={14} />
+      </a>
+    </div>
+  );
+}
+
 function BoostPost({
   actionBusy,
   activeAddress,
@@ -558,8 +601,13 @@ function BoostPost({
   onFollow,
   onLike,
   onList,
+  onOpen,
   onReboost,
+  onReboostMenu,
+  onQuote,
   onReply,
+  onTransfer,
+  reboostMenuOpen,
 }: {
   actionBusy: BoostActionBusy;
   activeAddress: string;
@@ -569,8 +617,13 @@ function BoostPost({
   onFollow: (action: BoostFollowAction, item: BoostFeedItem) => void;
   onLike: (item: BoostFeedItem) => void;
   onList: (item: BoostFeedItem) => void;
+  onOpen: (item: BoostFeedItem) => void;
   onReboost: (item: BoostFeedItem) => void;
+  onReboostMenu: (item: BoostFeedItem) => void;
+  onQuote: (item: BoostFeedItem) => void;
   onReply: (item: BoostFeedItem) => void;
+  onTransfer: (item: BoostFeedItem) => void;
+  reboostMenuOpen: boolean;
 }) {
   const txHref = explorerTxUrl(item.txid, network);
   const shareHref = boostShareUrl(item, network);
@@ -597,9 +650,26 @@ function BoostPost({
     ? "unfollow"
     : "follow";
   const FollowIcon = followAction === "follow" ? UserPlus : UserMinus;
+  const likeActive = item.viewerLiked === true;
+  const reboostActive = item.viewerReboosted === true;
 
   return (
-    <article className="boost-post">
+    <article
+      className="boost-post"
+      data-testid="boost-post"
+      onClick={(event) => {
+        const target = event.target as HTMLElement;
+        if (target.closest("a,button,input,textarea,select")) return;
+        onOpen(item);
+      }}
+      onKeyDown={(event) => {
+        if ((event.key === "Enter" || event.key === " ") && event.target === event.currentTarget) {
+          event.preventDefault();
+          onOpen(item);
+        }
+      }}
+      tabIndex={0}
+    >
       <BoostAvatar item={item} />
       <div className="boost-post-body">
         <div className="boost-post-head">
@@ -627,8 +697,8 @@ function BoostPost({
                 title={
                   followAction === "follow"
                     ? "Follow with proof signal"
-                    : "Unfollow with Boost registry fee"
-                }
+                    : "Unfollow with proof signal"
+                  }
                 type="button"
               >
                 <span className="button-content">
@@ -668,6 +738,7 @@ function BoostPost({
             </a>
           </>
         )}
+        {!isReboost ? <QuotedPost network={network} post={item.quotedPost} /> : null}
 
         <div className="boost-signal-row">
           <span>Total USD {formatUsd(boostTotalSignalUsd(item))}</span>
@@ -697,10 +768,11 @@ function BoostPost({
             </span>
           </button>
           <button
-            className="secondary small"
-            disabled={actionsLocked}
+            aria-pressed={likeActive}
+            className={likeActive ? "secondary small is-active" : "secondary small"}
+            disabled={actionsLocked || likeActive}
             onClick={() => onLike(item)}
-            title="Like with 546-proof Boost action"
+            title={likeActive ? "Liked" : "Like with 546-proof Boost action"}
             type="button"
           >
             <span className="button-content">
@@ -708,18 +780,33 @@ function BoostPost({
               <span>{item.likeCount ?? 0}</span>
             </span>
           </button>
-          <button
-            className="secondary small"
-            disabled={actionsLocked}
-            onClick={() => onReboost(item)}
-            title="Reboost with 546-proof Boost action"
-            type="button"
-          >
-            <span className="button-content">
-              <Repeat2 size={15} />
-              <span>{item.reboostCount ?? 0}</span>
-            </span>
-          </button>
+          <div className="boost-reboost-action">
+            <button
+              aria-expanded={reboostMenuOpen}
+              aria-haspopup="menu"
+              aria-pressed={reboostActive}
+              className={reboostActive ? "secondary small is-active" : "secondary small"}
+              disabled={actionsLocked || reboostActive}
+              onClick={() => onReboostMenu(item)}
+              title={reboostActive ? "Reboosted" : "Reboost with 546-proof Boost action"}
+              type="button"
+            >
+              <span className="button-content">
+                <Repeat2 size={15} />
+                <span>{item.reboostCount ?? 0}</span>
+              </span>
+            </button>
+            {reboostMenuOpen ? (
+              <div className="boost-reboost-menu" role="menu">
+                <button onClick={() => onReboost(item)} role="menuitem" type="button">
+                  <Repeat2 size={14} /> Reboost
+                </button>
+                <button onClick={() => onQuote(item)} role="menuitem" type="button">
+                  <Quote size={14} /> Quote
+                </button>
+              </div>
+            ) : null}
+          </div>
           {listing ? (
             <a
               className="secondary small link-button"
@@ -731,16 +818,32 @@ function BoostPost({
               </span>
             </a>
           ) : connectedOwner ? (
+            <>
+              <button
+                className="secondary small"
+                disabled={actionsLocked}
+                onClick={() => onList(item)}
+                title="List this Boost in AMO"
+                type="button"
+              >
+                <span className="button-content">
+                  <Tag size={15} />
+                  <span>List</span>
+                </span>
+              </button>
+            </>
+          ) : null}
+          {connectedOwner ? (
             <button
               className="secondary small"
               disabled={actionsLocked}
-              onClick={() => onList(item)}
-              title="List this Boost in AMO"
+              onClick={() => onTransfer(item)}
+              title="Transfer this Boost"
               type="button"
             >
               <span className="button-content">
-                <Tag size={15} />
-                <span>List</span>
+                <Send size={15} />
+                <span>Transfer</span>
               </span>
             </button>
           ) : null}
@@ -803,8 +906,17 @@ export default function BoostRoot({
   const [activeIdentity, setActiveIdentity] = useState<
     BoostIdentityIntent | undefined
   >();
+  const [directPostOpen, setDirectPostOpen] = useState(false);
+  const [expandedItem, setExpandedItem] = useState<BoostFeedItem | undefined>();
+  const [postText, setPostText] = useState("");
+  const [postSignalSats, setPostSignalSats] = useState(546);
   const [replyTarget, setReplyTarget] = useState<BoostFeedItem | undefined>();
   const [replyText, setReplyText] = useState("");
+  const [reboostMenuTarget, setReboostMenuTarget] = useState<BoostFeedItem | undefined>();
+  const [transferTarget, setTransferTarget] = useState<BoostFeedItem | undefined>();
+  const [transferRecipient, setTransferRecipient] = useState("");
+  const [quoteTarget, setQuoteTarget] = useState<BoostFeedItem | undefined>();
+  const [optimisticActions, setOptimisticActions] = useState<Record<string, BoostOptimisticAction>>({});
   const [listingTarget, setListingTarget] = useState<
     BoostFeedItem | undefined
   >();
@@ -837,7 +949,21 @@ export default function BoostRoot({
   );
   // The indexed query covers complete history and fields absent from display
   // rows. Filtering a loaded page again can hide valid canonical matches.
-  const visibleItems = items;
+  const visibleItems = useMemo(
+    () =>
+      items.map((item) => {
+        const optimistic = optimisticActions[boostItemTxid(item)];
+        if (!optimistic) return item;
+        return {
+          ...item,
+          likeCount: Math.max(0, Number(item.likeCount ?? 0) + Number(optimistic.likeDelta ?? 0)),
+          reboostCount: Math.max(0, Number(item.reboostCount ?? 0) + Number(optimistic.reboostDelta ?? 0)),
+          viewerLiked: optimistic.liked ?? item.viewerLiked,
+          viewerReboosted: optimistic.reboosted ?? item.viewerReboosted,
+        };
+      }),
+    [items, optimisticActions],
+  );
   const suggestedProfiles = useMemo(() => {
     const activeAddress = address.trim();
     const byAddress = new Map<string, BoostFeedItem>();
@@ -859,6 +985,20 @@ export default function BoostRoot({
   }, [address, items]);
   const topSignalItems = useMemo(() => visibleItems.slice(0, 3), [visibleItems]);
   const isProfileView = Boolean(profileRouteValue.trim());
+  const expandedReplies = useMemo(
+    () =>
+      expandedItem
+        ? visibleItems.filter(
+            (item) =>
+              item.kind === "boost-reply" &&
+              item.targetTxid === boostItemTxid(expandedItem),
+          )
+        : [],
+    [expandedItem, visibleItems],
+  );
+  const modalOpen = Boolean(
+    directPostOpen || expandedItem || replyTarget,
+  );
   const profileSubject = payload?.profileSubject;
   const profileSubjectAddress = profileSubject?.address ?? "";
   const profileSubjectId = normalizeBoostId(profileSubject?.id ?? "");
@@ -958,7 +1098,7 @@ export default function BoostRoot({
     setStatus({ tone: "idle", text: "Wallet disconnected." });
   }
 
-  async function ensureBoostWriterReady() {
+  async function ensureBoostWriterReady(requiresRegistry = true) {
     if (!window.unisat) {
       setHasUnisat(false);
       throw new Error("Install UniSat before signing Boost actions.");
@@ -976,13 +1116,15 @@ export default function BoostRoot({
     await ensureWalletNetwork(window.unisat, "livenet", writerAddress);
     setNetwork("livenet");
     let registryAddress = boostRegistryAddress;
-    if (!registryAddress) {
-      registryAddress = await loadBoostRegistryAndIds(writerAddress);
-    }
-    if (!registryAddress) {
-      throw new Error(
-        "boost@proofofwork.me does not have a confirmed receiver yet.",
-      );
+    if (requiresRegistry) {
+      if (!registryAddress) {
+        registryAddress = await loadBoostRegistryAndIds(writerAddress);
+      }
+      if (!registryAddress) {
+        throw new Error(
+          "boost@proofofwork.me does not have a confirmed receiver yet.",
+        );
+      }
     }
     return { registryAddress, walletAddress: writerAddress };
   }
@@ -1001,7 +1143,7 @@ export default function BoostRoot({
     postProtocolPayments?: Array<{ address: string; amountSats: number }>;
     protocolPayload: string;
     walletAddress: string;
-  }) {
+  }): Promise<boolean> {
     setActionBusy(action);
     setStatus({ tone: "idle", text: `Preparing ${paymentLabel}...` });
     try {
@@ -1027,7 +1169,7 @@ export default function BoostRoot({
         })
       ) {
         setStatus({ tone: "idle", text: "Boost transaction canceled." });
-        return;
+        return false;
       }
       await assertActiveWalletAddress(window.unisat!, walletAddress);
       setStatus({
@@ -1054,12 +1196,14 @@ export default function BoostRoot({
         text: `${paymentLabel} broadcast: ${shortAddress(broadcast.txid)}.`,
         tone: "good",
       });
-      void refresh();
+      void refresh(false, true, false);
+      return true;
     } catch (error) {
       setStatus({
         tone: "bad",
         text: error instanceof Error ? error.message : `${paymentLabel} failed.`,
       });
+      return false;
     } finally {
       setActionBusy("");
     }
@@ -1071,22 +1215,54 @@ export default function BoostRoot({
       setStatus({ tone: "bad", text: "Boost action target is missing." });
       return;
     }
+    if (action === "like" && item.viewerLiked) {
+      setStatus({ tone: "idle", text: "This Boost is already liked by this wallet." });
+      return;
+    }
+    if (action === "reboost" && item.viewerReboosted) {
+      setStatus({ tone: "idle", text: "This Boost is already reboosted by this wallet." });
+      return;
+    }
+    const ownerAddress = boostOwnerAddress(item);
+    if (!ownerAddress || !isValidBitcoinAddress(ownerAddress, "livenet")) {
+      setStatus({ tone: "bad", text: "The confirmed current Boost owner is unavailable." });
+      return;
+    }
     const label = action === "like" ? "Boost like" : "Boost reboost";
+    setOptimisticActions((current) => ({
+      ...current,
+      [targetTxid]: {
+        ...current[targetTxid],
+        ...(action === "like" ? { likeDelta: 1, liked: true } : { reboostDelta: 1, reboosted: true }),
+      },
+    }));
     try {
-      const ready = await ensureBoostWriterReady();
-      await broadcastBoostPayload({
+      const ready = await ensureBoostWriterReady(false);
+      const sent = await broadcastBoostPayload({
         action,
         paymentLabel: label,
         payments: [
           {
-            address: ready.registryAddress,
+            address: ownerAddress,
             amountSats: BOOST_ACTION_REGISTRY_FEE_SATS,
           },
         ],
         protocolPayload: buildBoostActionPayload(action, targetTxid),
         walletAddress: ready.walletAddress,
       });
+      if (!sent) {
+        setOptimisticActions((current) => {
+          const next = { ...current };
+          delete next[targetTxid];
+          return next;
+        });
+      }
     } catch (error) {
+      setOptimisticActions((current) => {
+        const next = { ...current };
+        delete next[targetTxid];
+        return next;
+      });
       setStatus({
         tone: "bad",
         text: error instanceof Error ? error.message : `${label} failed.`,
@@ -1112,23 +1288,15 @@ export default function BoostRoot({
       return;
     }
     try {
-      const ready = await ensureBoostWriterReady();
+      const ready = await ensureBoostWriterReady(false);
       await broadcastBoostPayload({
         action,
         paymentLabel: label,
         payments: [
           {
-            address: ready.registryAddress,
+            address: targetAddress,
             amountSats: BOOST_ACTION_REGISTRY_FEE_SATS,
           },
-          ...(action === "follow"
-            ? [
-                {
-                  address: targetAddress,
-                  amountSats: BOOST_ACTION_REGISTRY_FEE_SATS,
-                },
-              ]
-            : []),
         ],
         protocolPayload: buildBoostFollowPayload(action, {
           targetAddress,
@@ -1178,13 +1346,17 @@ export default function BoostRoot({
       return;
     }
     try {
-      const ready = await ensureBoostWriterReady();
-      await broadcastBoostPayload({
+      const ownerAddress = boostOwnerAddress(replyTarget);
+      if (!ownerAddress || !isValidBitcoinAddress(ownerAddress, "livenet")) {
+        throw new Error("The confirmed current Boost owner is unavailable.");
+      }
+      const ready = await ensureBoostWriterReady(false);
+      const sent = await broadcastBoostPayload({
         action: "reply",
         paymentLabel: "Boost reply",
         payments: [
           {
-            address: ready.registryAddress,
+            address: ownerAddress,
             amountSats: BOOST_ACTION_REGISTRY_FEE_SATS,
           },
         ],
@@ -1195,12 +1367,101 @@ export default function BoostRoot({
         }),
         walletAddress: ready.walletAddress,
       });
-      setReplyTarget(undefined);
-      setReplyText("");
+      if (sent) {
+        setReplyTarget(undefined);
+        setReplyText("");
+      }
     } catch (error) {
       setStatus({
         tone: "bad",
         text: error instanceof Error ? error.message : "Boost reply failed.",
+      });
+    }
+  }
+
+  async function resolveBoostTransferRecipient(value: string) {
+    const input = value.trim();
+    if (isValidBitcoinAddress(input, "livenet")) {
+      return input;
+    }
+    const payload = await fetchProofApiJson<RegistryApiPayload>(
+      "/api/v1/registry?fresh=1",
+      "livenet",
+    );
+    const id = normalizeBoostId(input);
+    const record = (payload.records ?? []).find(
+      (candidate) =>
+        candidate.confirmed !== false && normalizeBoostId(candidate.id) === id,
+    );
+    if (!record?.ownerAddress || !isValidBitcoinAddress(record.ownerAddress, "livenet")) {
+      throw new Error("Enter a valid mainnet address or confirmed ProofOfWork ID.");
+    }
+    return record.ownerAddress;
+  }
+
+  async function publishBoostPost(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const signalSats = Math.floor(postSignalSats);
+    if (!Number.isSafeInteger(signalSats) || signalSats < 1) {
+      setStatus({ tone: "bad", text: "A Boost post needs at least 1 proof of direct signal." });
+      return;
+    }
+    try {
+      const ready = await ensureBoostWriterReady(false);
+      const protocolPayload = buildBoostPostPayload({
+        message: postText,
+        proofSignalSats: signalSats,
+        quoteTxid: quoteTarget ? boostItemTxid(quoteTarget) : undefined,
+      });
+      const sent = await broadcastBoostPayload({
+        action: "post",
+        paymentLabel: quoteTarget ? "Boost quote" : "Boost post",
+        payments: [{ address: ready.walletAddress, amountSats: signalSats }],
+        protocolPayload,
+        walletAddress: ready.walletAddress,
+      });
+      if (sent) {
+        setDirectPostOpen(false);
+        setQuoteTarget(undefined);
+        setPostText("");
+        setPostSignalSats(546);
+      }
+    } catch (error) {
+      setStatus({
+        tone: "bad",
+        text: error instanceof Error ? error.message : "Boost post failed.",
+      });
+    }
+  }
+
+  async function publishBoostTransfer(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!transferTarget) return;
+    try {
+      const ready = await ensureBoostWriterReady(true);
+      const ownerAddress = boostOwnerAddress(transferTarget);
+      if (ownerAddress !== ready.walletAddress) {
+        throw new Error("Only the current confirmed Boost owner can transfer it.");
+      }
+      const recipient = await resolveBoostTransferRecipient(transferRecipient);
+      if (recipient === ready.walletAddress) {
+        throw new Error("Choose a different Boost owner.");
+      }
+      const sent = await broadcastBoostPayload({
+        action: "transfer",
+        paymentLabel: "Boost transfer",
+        payments: [{ address: ready.registryAddress, amountSats: BOOST_ACTION_REGISTRY_FEE_SATS }],
+        protocolPayload: buildBoostTransferPayload(boostItemTxid(transferTarget), recipient),
+        walletAddress: ready.walletAddress,
+      });
+      if (sent) {
+        setTransferTarget(undefined);
+        setTransferRecipient("");
+      }
+    } catch (error) {
+      setStatus({
+        tone: "bad",
+        text: error instanceof Error ? error.message : "Boost transfer failed.",
       });
     }
   }
@@ -1241,7 +1502,7 @@ export default function BoostRoot({
       if (dataCarrierBytesForPayload(protocolPayload) > 100_000) {
         throw new Error("Boost listing OP_RETURN is over 100 KB.");
       }
-      await broadcastBoostPayload({
+      const sent = await broadcastBoostPayload({
         action: "list",
         paymentLabel: "Boost listing",
         payments: [
@@ -1259,8 +1520,10 @@ export default function BoostRoot({
         protocolPayload,
         walletAddress: ready.walletAddress,
       });
-      setListingTarget(undefined);
-      setListingPriceSats(DEFAULT_LIST_PRICE_SATS);
+      if (sent) {
+        setListingTarget(undefined);
+        setListingPriceSats(DEFAULT_LIST_PRICE_SATS);
+      }
     } catch (error) {
       setStatus({
         tone: "bad",
@@ -1334,7 +1597,7 @@ export default function BoostRoot({
       return;
     }
     try {
-      const ready = await ensureBoostWriterReady();
+      const ready = await ensureBoostWriterReady(false);
       await broadcastBoostPayload({
         action: "profile",
         paymentLabel: "Boost profile",
@@ -1358,12 +1621,12 @@ export default function BoostRoot({
     }
   }
 
-  const refresh = async (append = false, fresh = false) => {
+  const refresh = async (append = false, fresh = false, announce = true) => {
     if (currentReadScope.current !== readScope) return;
     const request = readLifecycle.current.begin();
     const ownsRequest = () => request.current() && currentReadScope.current === readScope;
     setBusy(true);
-    setStatus({ tone: "idle", text: "Refreshing Boost..." });
+    if (announce) setStatus({ tone: "idle", text: "Refreshing Boost..." });
     try {
       const params = new URLSearchParams({
         limit: "50",
@@ -1416,16 +1679,20 @@ export default function BoostRoot({
       const total = Number(
         nextPayload.totalCount ?? nextPayload.items?.length ?? 0,
       );
-      setStatus({
-        tone: "good",
-        text: `Boost indexed ${total.toLocaleString()} record${total === 1 ? "" : "s"}.`,
-      });
+      if (announce) {
+        setStatus({
+          tone: "good",
+          text: `Boost indexed ${total.toLocaleString()} record${total === 1 ? "" : "s"}.`,
+        });
+      }
     } catch (error) {
       if (!ownsRequest()) return;
-      setStatus({
-        tone: "bad",
-        text: error instanceof Error ? error.message : "Boost refresh failed.",
-      });
+      if (announce) {
+        setStatus({
+          tone: "bad",
+          text: error instanceof Error ? error.message : "Boost refresh failed.",
+        });
+      }
     } finally {
       if (ownsRequest()) setBusy(false);
     }
@@ -1581,6 +1848,52 @@ export default function BoostRoot({
   }, [toolsOpen]);
 
   useEffect(() => {
+    if (!modalOpen) return;
+    const dialog = boostSurfaceRef.current?.querySelector<HTMLElement>(
+      ".boost-modal[role='dialog']",
+    );
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const focusableSelector =
+      "button:not([disabled]), a[href], input:not([disabled]), textarea:not([disabled]), select:not([disabled])";
+    const focusFrame = window.requestAnimationFrame(() =>
+      dialog?.querySelector<HTMLElement>(focusableSelector)?.focus(),
+    );
+    const handleKeyDown = (event: globalThis.KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        setDirectPostOpen(false);
+        setExpandedItem(undefined);
+        setReplyTarget(undefined);
+        setTransferTarget(undefined);
+        setQuoteTarget(undefined);
+        setReplyText("");
+        return;
+      }
+      if (event.key !== "Tab" || !dialog) return;
+      const focusable = Array.from(
+        dialog.querySelectorAll<HTMLElement>(focusableSelector),
+      ).filter((element) => element.getClientRects().length > 0);
+      if (focusable.length === 0) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.cancelAnimationFrame(focusFrame);
+      window.removeEventListener("keydown", handleKeyDown);
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [modalOpen]);
+
+  useEffect(() => {
     const surface = boostSurfaceRef.current;
     if (!surface) {
       return;
@@ -1683,6 +1996,66 @@ export default function BoostRoot({
     }
   }
 
+  function openBoostComposer(quote?: BoostFeedItem) {
+    setQuoteTarget(quote);
+    setPostText("");
+    setPostSignalSats(546);
+    setDirectPostOpen(true);
+  }
+
+  function renderBoostPost(item: BoostFeedItem) {
+    return (
+      <BoostPost
+        actionBusy={actionBusy}
+        activeAddress={address}
+        activeIdentity={activeIdentity}
+        item={item}
+        key={item.eventId ?? `${item.kind}-${item.txid}`}
+        network={network}
+        onFollow={(followAction, boostItem) =>
+          void publishFollowAction(followAction, boostItem)
+        }
+        onLike={(boostItem) => void publishPaidAction("like", boostItem)}
+        onList={(boostItem) => {
+          setListingTarget(boostItem);
+          openToolsForCompactSurface();
+        }}
+        onOpen={(boostItem) => {
+          setReboostMenuTarget(undefined);
+          setExpandedItem(boostItem);
+        }}
+        onReboost={(boostItem) => {
+          setReboostMenuTarget(undefined);
+          void publishPaidAction("reboost", boostItem);
+        }}
+        onReboostMenu={(boostItem) =>
+          setReboostMenuTarget((current) =>
+            current && boostItemTxid(current) === boostItemTxid(boostItem)
+              ? undefined
+              : boostItem,
+          )
+        }
+        onQuote={(boostItem) => {
+          setReboostMenuTarget(undefined);
+          openBoostComposer(boostItem);
+        }}
+        onReply={(boostItem) => {
+          setReplyTarget(boostItem);
+          setReplyText("");
+        }}
+        onTransfer={(boostItem) => {
+          setTransferTarget(boostItem);
+          setTransferRecipient("");
+          openToolsForCompactSurface();
+        }}
+        reboostMenuOpen={
+          reboostMenuTarget !== undefined &&
+          boostItemTxid(reboostMenuTarget) === boostItemTxid(item)
+        }
+      />
+    );
+  }
+
   return (
     <div
       className={
@@ -1757,19 +2130,20 @@ export default function BoostRoot({
               >
                 <span className="button-content">
                   <Zap size={16} />
-                  <span>Post From Mail</span>
+                  <span>Post a Boost</span>
                 </span>
               </button>
             ) : (
-              <a
-                className="primary link-button"
-                href={appHref(COMPUTER_APP_URL, LOCAL_COMPUTER_APP_URL)}
+              <button
+                className="primary"
+                onClick={() => openBoostComposer()}
+                type="button"
               >
                 <span className="button-content">
                   <Zap size={16} />
-                  <span>Post From Mail</span>
+                  <span>Post a Boost</span>
                 </span>
-              </a>
+              </button>
             )}
             <a
               className="secondary link-button"
@@ -1869,41 +2243,6 @@ export default function BoostRoot({
             )}
           </section>
 
-          {replyTarget ? (
-            <form className="boost-action-panel" onSubmit={publishReply}>
-              <div className="boost-action-panel-head">
-                <strong>Reply</strong>
-                <button
-                  aria-label="Close reply"
-                  className="secondary small"
-                  onClick={() => setReplyTarget(undefined)}
-                  type="button"
-                >
-                  <X size={15} />
-                </button>
-              </div>
-              <textarea
-                maxLength={140}
-                onChange={(event) => setReplyText(event.target.value)}
-                placeholder="Reply"
-                value={replyText}
-              />
-              <div className="counter">
-                {boostPostText(replyText).length.toLocaleString()} / 140
-              </div>
-              <button
-                className="primary"
-                disabled={Boolean(actionBusy) || !replyText.trim()}
-                type="submit"
-              >
-                <span className="button-content">
-                  <Send size={15} />
-                  <span>{actionBusy === "reply" ? "Replying" : "Reply"}</span>
-                </span>
-              </button>
-            </form>
-          ) : null}
-
           {listingTarget ? (
             <form className="boost-action-panel" onSubmit={publishListing}>
               <div className="boost-action-panel-head">
@@ -1947,6 +2286,44 @@ export default function BoostRoot({
                 <span className="button-content">
                   <Tag size={15} />
                   <span>{actionBusy === "list" ? "Listing" : "List"}</span>
+                </span>
+              </button>
+            </form>
+          ) : null}
+
+          {transferTarget ? (
+            <form className="boost-action-panel" onSubmit={publishBoostTransfer}>
+              <div className="boost-action-panel-head">
+                <strong>Transfer Boost</strong>
+                <button
+                  aria-label="Close Boost transfer"
+                  className="secondary small"
+                  onClick={() => setTransferTarget(undefined)}
+                  type="button"
+                >
+                  <X size={15} />
+                </button>
+              </div>
+              <p className="field-note">
+                The current owner signs the transfer. The Boost registry receives 546 proofs.
+              </p>
+              <label>
+                New owner address or ID
+                <input
+                  autoComplete="off"
+                  onChange={(event) => setTransferRecipient(event.target.value)}
+                  placeholder="bc1… or name@proofofwork.me"
+                  value={transferRecipient}
+                />
+              </label>
+              <button
+                className="primary"
+                disabled={Boolean(actionBusy) || !transferRecipient.trim()}
+                type="submit"
+              >
+                <span className="button-content">
+                  <Send size={15} />
+                  <span>{actionBusy === "transfer" ? "Transferring" : "Transfer"}</span>
                 </span>
               </button>
             </form>
@@ -2114,12 +2491,13 @@ export default function BoostRoot({
                     What's happening?
                   </button>
                 ) : (
-                  <a
+                  <button
                     className="boost-composer-prompt"
-                    href={appHref(COMPUTER_APP_URL, LOCAL_COMPUTER_APP_URL)}
+                    onClick={() => openBoostComposer()}
+                    type="button"
                   >
                     What's happening?
-                  </a>
+                  </button>
                 )}
               </div>
             </div>
@@ -2187,34 +2565,7 @@ export default function BoostRoot({
             tabIndex={0}
           >
             {visibleItems.length > 0 ? (
-              visibleItems.map((item) => (
-                <BoostPost
-                  actionBusy={actionBusy}
-                  activeAddress={address}
-                  activeIdentity={activeIdentity}
-                  item={item}
-                  key={item.eventId ?? `${item.kind}-${item.txid}`}
-                  network={network}
-                  onFollow={(followAction, boostItem) =>
-                    void publishFollowAction(followAction, boostItem)
-                  }
-                  onLike={(boostItem) =>
-                    void publishPaidAction("like", boostItem)
-                  }
-                  onList={(boostItem) => {
-                    setListingTarget(boostItem);
-                    openToolsForCompactSurface();
-                  }}
-                  onReboost={(boostItem) =>
-                    void publishPaidAction("reboost", boostItem)
-                  }
-                  onReply={(boostItem) => {
-                    setReplyTarget(boostItem);
-                    setReplyText("");
-                    openToolsForCompactSurface();
-                  }}
-                />
-              ))
+              visibleItems.map((item) => renderBoostPost(item))
             ) : (
               <div className="boost-empty">
                 <Zap size={28} />
@@ -2347,6 +2698,187 @@ export default function BoostRoot({
           ) : null}
         </aside>
       </div>
+
+      {modalOpen ? (
+        <div className="boost-modal-backdrop">
+          <button
+            aria-label="Close Boost dialog"
+            className="boost-modal-dismiss"
+            onClick={() => {
+              setDirectPostOpen(false);
+              setExpandedItem(undefined);
+              setReplyTarget(undefined);
+              setQuoteTarget(undefined);
+            }}
+            type="button"
+          />
+          {directPostOpen ? (
+            <section
+              aria-labelledby="boost-post-dialog-title"
+              aria-modal="true"
+              className="boost-modal"
+              role="dialog"
+            >
+              <div className="boost-modal-head">
+                <div>
+                  <span>{quoteTarget ? "Quote" : "New Boost"}</span>
+                  <strong id="boost-post-dialog-title">
+                    {quoteTarget ? "Add a comment" : "What’s happening?"}
+                  </strong>
+                </div>
+                <button
+                  aria-label="Close Boost composer"
+                  className="secondary small"
+                  onClick={() => {
+                    setDirectPostOpen(false);
+                    setQuoteTarget(undefined);
+                  }}
+                  type="button"
+                >
+                  <X size={16} />
+                </button>
+              </div>
+              {quoteTarget ? (
+                <QuotedPost network={network} post={quoteTarget} />
+              ) : null}
+              <form onSubmit={publishBoostPost}>
+                <textarea
+                  autoFocus
+                  maxLength={140}
+                  onChange={(event) => setPostText(event.target.value)}
+                  placeholder="Share a proof-backed thought"
+                  value={postText}
+                />
+                <div className="boost-modal-form-row">
+                  <span className="counter">
+                    {boostPostText(postText).length.toLocaleString()} / 140
+                  </span>
+                  <label>
+                    Direct signal
+                    <input
+                      min={1}
+                      onChange={(event) => setPostSignalSats(Number(event.target.value))}
+                      step={1}
+                      type="number"
+                      value={postSignalSats}
+                    />
+                  </label>
+                </div>
+                <button
+                  className="primary"
+                  disabled={Boolean(actionBusy) || !postText.trim() || !address}
+                  type="submit"
+                >
+                  <span className="button-content">
+                    {actionBusy === "post" ? <RefreshCw className="refresh-spin" size={16} /> : <Send size={16} />}
+                    <span>{actionBusy === "post" ? "Posting…" : quoteTarget ? "Quote" : "Post"}</span>
+                  </span>
+                </button>
+              </form>
+            </section>
+          ) : replyTarget ? (
+            <section
+              aria-labelledby="boost-reply-dialog-title"
+              aria-modal="true"
+              className="boost-modal"
+              role="dialog"
+            >
+              <div className="boost-modal-head">
+                <div>
+                  <span>Reply</span>
+                  <strong id="boost-reply-dialog-title">Replying to Boost</strong>
+                </div>
+                <button
+                  aria-label="Close reply composer"
+                  className="secondary small"
+                  onClick={() => setReplyTarget(undefined)}
+                  type="button"
+                >
+                  <X size={16} />
+                </button>
+              </div>
+              <QuotedPost network={network} post={replyTarget} />
+              <form onSubmit={publishReply}>
+                <textarea
+                  autoFocus
+                  maxLength={140}
+                  onChange={(event) => setReplyText(event.target.value)}
+                  placeholder="Reply with a proof-backed thought"
+                  value={replyText}
+                />
+                <div className="counter">
+                  {boostPostText(replyText).length.toLocaleString()} / 140
+                </div>
+                <button
+                  className="primary"
+                  disabled={Boolean(actionBusy) || !replyText.trim() || !address}
+                  type="submit"
+                >
+                  <span className="button-content">
+                    {actionBusy === "reply" ? <RefreshCw className="refresh-spin" size={16} /> : <Send size={16} />}
+                    <span>{actionBusy === "reply" ? "Replying…" : "Reply"}</span>
+                  </span>
+                </button>
+              </form>
+            </section>
+          ) : expandedItem ? (
+            <section
+              aria-labelledby="boost-detail-dialog-title"
+              aria-modal="true"
+              className="boost-modal boost-detail-modal"
+              role="dialog"
+            >
+              <div className="boost-modal-head">
+                <div>
+                  <span>Post</span>
+                  <strong id="boost-detail-dialog-title">Boost detail</strong>
+                </div>
+                <button
+                  aria-label="Close Boost detail"
+                  className="secondary small"
+                  onClick={() => setExpandedItem(undefined)}
+                  type="button"
+                >
+                  <ArrowLeft size={16} />
+                  <span>Back</span>
+                </button>
+              </div>
+              {renderBoostPost(expandedItem)}
+              <div className="boost-detail-replies">
+                <div className="boost-detail-replies-head">
+                  <strong>Replies</strong>
+                  <span>{expandedReplies.length}</span>
+                </div>
+                {expandedReplies.length > 0 ? (
+                  expandedReplies.map((reply) => (
+                    <article className="boost-detail-reply" key={reply.eventId ?? reply.txid}>
+                      <strong>{authorLabel(reply, activeIdentity, address)}</strong>
+                      <span>{formatDate(reply.createdAt)}</span>
+                      <p>{reply.text}</p>
+                    </article>
+                  ))
+                ) : (
+                  <p className="field-note">Replies will appear here after the canonical feed refreshes.</p>
+                )}
+              </div>
+              <button
+                className="primary"
+                onClick={() => {
+                  setReplyTarget(expandedItem);
+                  setReplyText("");
+                  setExpandedItem(undefined);
+                }}
+                type="button"
+              >
+                <span className="button-content">
+                  <MessageCircle size={16} />
+                  <span>Post your reply</span>
+                </span>
+              </button>
+            </section>
+          ) : null}
+        </div>
+      ) : null}
 
       {embedded ? null : <SocialFooter compact />}
     </div>

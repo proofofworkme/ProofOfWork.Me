@@ -283,6 +283,254 @@
   transform: translateY(-1px);
 }
 
+.boost-shell-instrument .boost-post {
+  cursor: pointer;
+}
+
+.boost-shell-instrument .boost-post:focus-visible {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 24%, transparent);
+  outline: 0;
+}
+
+.boost-shell-instrument .boost-post .boost-actions,
+.boost-shell-instrument .boost-post .boost-signal-row,
+.boost-shell-instrument .boost-post .boost-proof-frame,
+.boost-shell-instrument .boost-post .boost-quoted-post,
+.boost-shell-instrument .boost-post .boost-reboosted-post {
+  cursor: default;
+}
+
+.boost-shell-instrument .boost-reboost-action {
+  position: relative;
+}
+
+.boost-shell-instrument .boost-actions .is-active {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--accent-strong);
+}
+
+.boost-shell-instrument .boost-reboost-menu {
+  background: var(--surface-raised);
+  border: 1px solid var(--border-interactive);
+  border-radius: 10px;
+  box-shadow: var(--shadow-lg);
+  display: grid;
+  gap: 4px;
+  min-width: 142px;
+  padding: 6px;
+  position: absolute;
+  right: 0;
+  top: calc(100% + 6px);
+  z-index: 8;
+}
+
+.boost-shell-instrument .boost-reboost-menu button {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  border-radius: 7px;
+  color: var(--text);
+  display: flex;
+  gap: 8px;
+  justify-content: flex-start;
+  padding: 9px 10px;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.boost-shell-instrument .boost-reboost-menu button:hover,
+.boost-shell-instrument .boost-reboost-menu button:focus-visible {
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+  outline: 0;
+}
+
+.boost-shell-instrument .boost-quoted-post {
+  background: color-mix(in srgb, var(--surface-soft) 84%, transparent);
+  border: 1px solid color-mix(in srgb, var(--border-interactive) 76%, var(--border));
+  border-radius: 10px;
+  display: grid;
+  gap: 5px;
+  padding: 11px 12px;
+}
+
+.boost-shell-instrument .boost-quoted-post-head {
+  align-items: center;
+  color: var(--accent-strong);
+  display: flex;
+  font-size: 0.72rem;
+  font-weight: 800;
+  gap: 6px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.boost-shell-instrument .boost-quoted-post-handle {
+  color: var(--text-muted);
+  font-size: 0.8rem;
+}
+
+.boost-shell-instrument .boost-quoted-post p {
+  margin: 3px 0 5px;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.boost-shell-instrument .boost-quoted-post .boost-proof-frame {
+  align-items: center;
+  display: flex;
+  gap: 6px;
+  justify-content: space-between;
+  padding: 8px 10px;
+}
+
+.boost-modal-backdrop {
+  align-items: center;
+  background: rgba(5, 7, 6, 0.78);
+  display: flex;
+  inset: 0;
+  justify-content: center;
+  padding: 20px;
+  position: fixed;
+  z-index: 140;
+}
+
+.boost-modal-dismiss {
+  background: transparent;
+  border: 0;
+  cursor: default;
+  inset: 0;
+  padding: 0;
+  position: absolute;
+}
+
+.boost-modal {
+  background: var(--surface-raised);
+  border: 1px solid var(--border-interactive);
+  border-radius: 16px;
+  box-shadow: var(--shadow-lg);
+  display: grid;
+  gap: 16px;
+  max-height: min(720px, calc(100dvh - 40px));
+  max-width: 620px;
+  overflow: auto;
+  padding: 20px;
+  position: relative;
+  width: min(100%, 620px);
+  z-index: 1;
+}
+
+.boost-modal > form {
+  display: grid;
+  gap: 12px;
+}
+
+.boost-modal-head {
+  align-items: start;
+  display: flex;
+  gap: 14px;
+  justify-content: space-between;
+}
+
+.boost-modal-head > div {
+  display: grid;
+  gap: 4px;
+}
+
+.boost-modal-head span {
+  color: var(--accent-strong);
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.boost-modal-head strong {
+  font-family: var(--font-display);
+  font-size: 1.2rem;
+}
+
+.boost-modal textarea {
+  min-height: 132px;
+  resize: vertical;
+}
+
+.boost-modal-form-row {
+  align-items: end;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  justify-content: space-between;
+}
+
+.boost-modal-form-row label {
+  align-items: center;
+  color: var(--text-muted);
+  display: flex;
+  font-size: 0.82rem;
+  gap: 8px;
+}
+
+.boost-modal-form-row input {
+  max-width: 130px;
+}
+
+.boost-modal .counter {
+  color: var(--text-muted);
+  font-size: 0.78rem;
+}
+
+.boost-detail-modal {
+  max-width: 760px;
+  width: min(100%, 760px);
+}
+
+.boost-detail-modal > .boost-post {
+  box-shadow: none;
+  cursor: default;
+  transform: none;
+}
+
+.boost-detail-replies {
+  border-top: 1px solid var(--border);
+  display: grid;
+  gap: 10px;
+  padding-top: 14px;
+}
+
+.boost-detail-replies-head {
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
+}
+
+.boost-detail-replies-head span {
+  color: var(--text-muted);
+  font-size: 0.8rem;
+}
+
+.boost-detail-reply {
+  background: var(--surface-soft);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  display: grid;
+  gap: 5px;
+  padding: 11px 12px;
+}
+
+.boost-detail-reply > span {
+  color: var(--text-muted);
+  font-size: 0.78rem;
+}
+
+.boost-detail-reply p {
+  margin: 2px 0 0;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
 .boost-shell-instrument .boost-reboosted-post {
   background: color-mix(in srgb, var(--surface-raised) 92%, transparent);
   border-color: color-mix(in srgb, var(--accent) 18%, var(--border));

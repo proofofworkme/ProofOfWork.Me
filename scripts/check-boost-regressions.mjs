@@ -206,6 +206,80 @@ test("reboost projection carries the canonical original post for retweet-style r
   assert.equal(item.reboostCount, 1);
 });
 
+test("new social actions qualify against the confirmed current owner without a registry fee", () => {
+  const registration = event(900001, "id-register", {
+    id: "boost",
+    receiveAddress: "registry",
+    blockHeight: 964000,
+  });
+  const original = event(1, "boost-post", { authorAddress: "owner" });
+  const transfer = event(2, "boost-transfer", {
+    authorAddress: "owner",
+    senderAddress: "owner",
+    targetTxid: original.txid,
+    newOwnerAddress: "buyer",
+  });
+  const like = event(3, "boost-like", {
+    authorAddress: "actor",
+    targetTxid: original.txid,
+    recipients: [{ address: "buyer", vout: 0, amountSats: "546" }],
+  });
+  const follow = event(4, "boost-follow", {
+    authorAddress: "actor",
+    targetAddress: "buyer",
+    recipients: [{ address: "buyer", vout: 0, amountSats: "546" }],
+  });
+  const owners = new Map([[String(like.eventId), "buyer"]]);
+  const qualified = projection.qualifyBoostPaidActions(
+    [transfer, like, follow],
+    [registration],
+    owners,
+  );
+  assert.deepEqual(qualified.rejected, []);
+  assert.equal(qualified.accepted.find((item) => item.txid === like.txid).applicationBoostOwnerReceiver, "buyer");
+  assert.equal(qualified.accepted.find((item) => item.txid === like.txid).applicationBoostRegistryReceiver, undefined);
+  assert.equal(qualified.accepted.find((item) => item.txid === follow.txid).applicationBoostOwnerReceiver, "buyer");
+});
+
+test("confirmed ownership routes engagement, quote rendering, and viewer action state", async () => {
+  const quoted = event(1, "boost-post", {
+    authorAddress: "quoted-author",
+    text: "quoted proof-backed thought",
+  });
+  const original = event(2, "boost-post", {
+    authorAddress: "owner",
+    quoteTxid: quoted.txid,
+    text: "my quoted Boost",
+  });
+  const transfer = event(3, "boost-transfer", {
+    authorAddress: "owner",
+    senderAddress: "owner",
+    targetTxid: original.txid,
+    newOwnerAddress: "buyer",
+  });
+  const like = event(4, "boost-like", {
+    authorAddress: "viewer",
+    targetTxid: original.txid,
+    recipients: [{ address: "buyer", vout: 0, amountSats: "546" }],
+  });
+  const reboost = event(5, "boost-reboost", {
+    authorAddress: "viewer",
+    targetTxid: original.txid,
+    recipients: [{ address: "buyer", vout: 0, amountSats: "546" }],
+  });
+  const payload = await server(reader([quoted, original, transfer, like, reboost]).read)
+    .boostFeedPayload("livenet", new URLSearchParams({ sort: "oldest", viewer: "viewer" }));
+  const item = payload.items.find((candidate) => candidate.txid === original.txid);
+  assert.ok(item);
+  assert.equal(item.currentOwnerAddress, "buyer");
+  assert.equal(item.likeCount, 1);
+  assert.equal(item.reboostCount, 1);
+  assert.equal(item.viewerLiked, true);
+  assert.equal(item.viewerReboosted, true);
+  assert.equal(item.quotedPost?.txid, quoted.txid);
+  assert.equal(item.quotedPost?.text, quoted.text);
+});
+
 test("history cursor changes, duplicate rows and broken exhaustion fail closed", async () => {
   const events = Array.from({ length: 201 }, (_, i) => event(i + 1));
   for (const mutate of [
@@ -397,9 +471,9 @@ test("paid actions require the historical receiver and distinct exact output acc
   ], [registration, update]);
   assert.deepEqual(qualified.accepted.map(item => item.eventId), [2, 12]);
   assert.equal(qualified.rejected.length, 4);
-  const follow = event(5, "boost-follow", { targetAddress: "registry", recipients: [{ address: "registry", amountSats: "546", vout: 0 }] });
+  const follow = event(5, "boost-follow", { targetAddress: "target", recipients: [{ address: "registry", amountSats: "546", vout: 0 }] });
   assert.equal(projection.qualifyBoostPaidActions([follow], [registration]).accepted.length, 0);
-  follow.recipients.push({ address: "registry", amountSats: "546", vout: 2 });
+  follow.recipients.push({ address: "target", amountSats: "546", vout: 2 });
   assert.equal(projection.qualifyBoostPaidActions([follow], [registration]).accepted.length, 1);
   follow.recipients[1].vout = 0;
   assert.equal(projection.qualifyBoostPaidActions([follow], [registration]).accepted.length, 0);
@@ -531,6 +605,17 @@ test("saved legacy profile intents preserve exact embedded address ownership", a
     if (originalWindow === undefined) delete globalThis.window;
     else globalThis.window = originalWindow;
   }
+});
+
+test("Boost composers encode quote posts and direct owner transfers", async () => {
+  const encoding = await importTs("../src/shared/utils/encoding.ts", { '"bitcoinjs-lib"': JSON.stringify(import.meta.resolve("bitcoinjs-lib")), '"buffer"': '"node:buffer"' });
+  const mod = await import(await importTs("../src/features/boost/boostProtocol.ts", { '"../../shared/utils/encoding"': JSON.stringify(encoding) }));
+  const quotedTxid = "a".repeat(64);
+  const postPayload = mod.buildBoostPostPayload({ message: "quoted proof", proofSignalSats: 546, quoteTxid: quotedTxid });
+  const decoded = JSON.parse(Buffer.from(postPayload.slice("pwb1:post:".length), "base64url").toString("utf8"));
+  assert.deepEqual(decoded, { v: 1, text: "quoted proof", proofSignalSats: 546, quoteTxid: quotedTxid });
+  assert.equal(mod.buildBoostTransferPayload(quotedTxid, "bc1qrecipient"), `pwb1:t:${quotedTxid}:bc1qrecipient`);
+  assert.throws(() => mod.buildBoostPostPayload({ message: "" }), /Enter a Boost post/u);
 });
 
 

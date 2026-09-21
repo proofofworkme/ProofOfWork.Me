@@ -689,7 +689,7 @@ expect(
     /valueRank: totalSignalSats/u.test(boostFeedItem) &&
     /cachedWorkFloorPayload\(network, fresh\)/u.test(boostFeedPayloadSource) &&
     /boostOriginalPostForReboost\(item, originalPostsByTxid\)/u.test(boostFeedPayloadSource) &&
-    /workFloor,\s+originalPost,\s+originalPost \? states\.get\(boostPostTxid\(originalPost\)\) : null,\s+originalProfileState,\s+\)\s*,/u.test(boostFeedPayloadSource),
+    /workFloor,\s+originalPost,\s+originalPost \? states\.get\(boostPostTxid\(originalPost\)\) : null,\s+originalProfileState,\s+quotedPost,\s+quotedPost \? states\.get\(boostPostTxid\(quotedPost\)\) : null,\s+quotedPostProfileState,\s+\)\s*,/u.test(boostFeedPayloadSource),
 );
 expect(
   "Boost profile routes project person activity instead of filtering timeline tabs",
