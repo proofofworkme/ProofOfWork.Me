@@ -316,8 +316,9 @@ function boostAmoHref(boostTxid?: string) {
 }
 
 function boostShareUrl(item: BoostFeedItem, network: BitcoinNetwork) {
-  const postText = item.text.trim();
-  const txLink = explorerTxUrl(item.txid, network);
+  const sharedPost = item.reboostedPost ?? item;
+  const postText = sharedPost.text.trim();
+  const txLink = explorerTxUrl(sharedPost.txid, network);
   const text = [postText, txLink, "$WORK $POWB $INCB"]
     .filter(Boolean)
     .join("\n");
@@ -478,6 +479,76 @@ function BoostMedia({ item, network }: { item: BoostFeedItem; network: BitcoinNe
   );
 }
 
+function ReboostedPost({
+  network,
+  post,
+}: {
+  network: BitcoinNetwork;
+  post?: BoostFeedItem;
+}) {
+  if (!post) {
+    return (
+      <div className="boost-reboosted-post boost-reboosted-post-missing" data-testid="reboosted-post">
+        <Repeat2 aria-hidden="true" size={16} />
+        <div>
+          <strong>Original post unavailable</strong>
+          <span>The canonical Boost history has not exposed the referenced post yet.</span>
+        </div>
+      </div>
+    );
+  }
+
+  const txHref = explorerTxUrl(post.txid, network);
+  const profileValue = boostProfileRouteValue(post);
+
+  return (
+    <div className="boost-reboosted-post" data-testid="reboosted-post">
+      <div className="boost-reboosted-label">
+        <Repeat2 aria-hidden="true" size={15} />
+        <span>Reboosted post</span>
+      </div>
+      <div className="boost-reboosted-post-grid">
+        <BoostAvatar item={post} />
+        <div className="boost-reboosted-post-body">
+          <div className="boost-reboosted-post-author-line">
+            {profileValue ? (
+              <a className="boost-author" href={boostProfileHref(profileValue)}>
+                {authorLabel(post, undefined, "")}
+              </a>
+            ) : (
+              <span className="boost-author">
+                {authorLabel(post, undefined, "")}
+              </span>
+            )}
+            <span>@{boostAuthorId(post) || shortAddress(post.authorAddress)}</span>
+            <span>{formatDate(post.createdAt)}</span>
+          </div>
+          {post.text ? <p className="boost-post-text">{post.text}</p> : null}
+          {post.media?.mime && /^(?:image|video)\//iu.test(post.media.mime) ? (
+            <BoostMedia item={post} network={network} />
+          ) : null}
+          <a
+            className="boost-proof-frame"
+            href={txHref}
+            rel="noreferrer"
+            target="_blank"
+          >
+            <div>
+              <span>Original ProofFrame</span>
+              <strong>{post.media?.name ?? "Boost proof record"}</strong>
+            </div>
+            <p>
+              {post.media?.mime
+                ? `${post.media.mime} · ${shortAddress(post.media.sha256 ?? post.boostTxid ?? post.txid)}`
+                : `pwb1 · ${shortAddress(post.boostTxid || post.txid)} · Owner ${ownerLabel(post)}`}
+            </p>
+          </a>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function BoostPost({
   actionBusy,
   activeAddress,
@@ -505,6 +576,7 @@ function BoostPost({
   const shareHref = boostShareUrl(item, network);
   const profileValue = boostProfileRouteValue(item);
   const boostTxid = boostItemTxid(item);
+  const isReboost = item.kind === "boost-reboost";
   const listing = boostListingForItem(item);
   const ownerAddress = boostOwnerAddress(item);
   const authorAddress = boostAuthorAddress(item);
@@ -541,6 +613,7 @@ function BoostPost({
                 {authorLabel(item, activeIdentity, activeAddress)}
               </span>
             )}
+            {isReboost ? <span className="boost-post-action">reboosted</span> : null}
             <span>@{authorId || shortAddress(authorAddress)}</span>
             <span>{formatDate(item.createdAt)}</span>
           </div>
@@ -567,28 +640,34 @@ function BoostPost({
           </div>
         </div>
 
-        {item.text ? <p className="boost-post-text">{item.text}</p> : null}
+        {isReboost ? (
+          <ReboostedPost network={network} post={item.reboostedPost} />
+        ) : (
+          <>
+            {item.text ? <p className="boost-post-text">{item.text}</p> : null}
 
-        {item.media?.mime && /^(?:image|video)\//iu.test(item.media.mime) ? (
-          <BoostMedia item={item} network={network} />
-        ) : null}
+            {item.media?.mime && /^(?:image|video)\//iu.test(item.media.mime) ? (
+              <BoostMedia item={item} network={network} />
+            ) : null}
 
-        <a
-          className="boost-proof-frame"
-          href={txHref}
-          rel="noreferrer"
-          target="_blank"
-        >
-          <div>
-            <span>ProofFrame</span>
-            <strong>{item.media?.name ?? "Boost proof record"}</strong>
-          </div>
-          <p>
-            {item.media?.mime
-              ? `${item.media.mime} · ${shortAddress(item.media.sha256 ?? boostTxid)}`
-              : `pwb1 · ${shortAddress(boostTxid || item.txid)} · Owner ${ownerLabel(item)}`}
-          </p>
-        </a>
+            <a
+              className="boost-proof-frame"
+              href={txHref}
+              rel="noreferrer"
+              target="_blank"
+            >
+              <div>
+                <span>ProofFrame</span>
+                <strong>{item.media?.name ?? "Boost proof record"}</strong>
+              </div>
+              <p>
+                {item.media?.mime
+                  ? `${item.media.mime} · ${shortAddress(item.media.sha256 ?? boostTxid)}`
+                  : `pwb1 · ${shortAddress(boostTxid || item.txid)} · Owner ${ownerLabel(item)}`}
+              </p>
+            </a>
+          </>
+        )}
 
         <div className="boost-signal-row">
           <span>Total USD {formatUsd(boostTotalSignalUsd(item))}</span>

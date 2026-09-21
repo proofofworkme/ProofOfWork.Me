@@ -67,6 +67,7 @@ export type BoostFeedItem = {
   proofSignalQ8?: string;
   proofSignalSatsExact?: string;
   proofSignalUsd?: number;
+  reboostedPost?: BoostFeedItem;
   replyCount?: number;
   reboostCount?: number;
   likeCount?: number;

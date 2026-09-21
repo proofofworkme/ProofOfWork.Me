@@ -179,6 +179,33 @@ test("complete projection handles 250+ actions, 125 posts, old listings and cano
   assert.equal(searchedTxid.items[0].txid, txid(125));
 });
 
+test("reboost projection carries the canonical original post for retweet-style rendering", async () => {
+  const original = event(1, "boost-post", {
+    authorAddress: "original-author",
+    text: "the original post survives the reboost",
+    media: { mime: "image/jpeg", name: "original.jpg", sha256: "a".repeat(64), size: 1234 },
+  });
+  const reboost = event(2, "boost-reboost", {
+    authorAddress: "rebooster",
+    targetTxid: original.txid,
+    text: `reboost ${original.txid}`,
+  });
+  const payload = await server(reader([original, reboost]).read).boostFeedPayload(
+    "livenet",
+    new URLSearchParams("sort=oldest"),
+  );
+  const item = payload.items.find((candidate) => candidate.txid === reboost.txid);
+  assert.ok(item);
+  assert.equal(item.kind, "boost-reboost");
+  assert.equal(item.text, "");
+  assert.equal(item.targetTxid, original.txid);
+  assert.equal(item.reboostedPost?.txid, original.txid);
+  assert.equal(item.reboostedPost?.authorAddress, original.authorAddress);
+  assert.equal(item.reboostedPost?.text, original.text);
+  assert.equal(item.reboostedPost?.media?.name, "original.jpg");
+  assert.equal(item.reboostCount, 1);
+});
+
 test("history cursor changes, duplicate rows and broken exhaustion fail closed", async () => {
   const events = Array.from({ length: 201 }, (_, i) => event(i + 1));
   for (const mutate of [

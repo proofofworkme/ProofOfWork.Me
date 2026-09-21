@@ -52310,6 +52310,14 @@ function boostTargetTxid(item) {
   );
 }
 
+function boostOriginalPostForReboost(item, postsByTxid) {
+  const kind = String(item?.kind ?? "").trim().toLowerCase();
+  if (kind !== "boost-reboost") {
+    return null;
+  }
+  return postsByTxid.get(boostTargetTxid(item)) ?? null;
+}
+
 function boostFollowTargetAddress(item) {
   return boostAddress(
     item?.targetAddress ??
@@ -52589,6 +52597,9 @@ function boostFeedItemFromEvent(
   network,
   btcUsd,
   workFloor,
+  reboostedPostItem = null,
+  reboostedPostState = null,
+  reboostedPostProfileState = null,
 ) {
   const kind = String(item?.kind ?? "").trim().toLowerCase();
   const txid = boostHexTxid(item?.txid);
@@ -52608,7 +52619,20 @@ function boostFeedItemFromEvent(
     state?.ownerAddress ?? item?.currentOwnerAddress ?? item?.authorAddress,
   );
   const authorAddress = boostAddress(item?.authorAddress ?? item?.actor);
-  const text = String(item?.text ?? item?.memo ?? item?.detail ?? "").trim();
+  const reboostedPost = reboostedPostItem
+    ? boostFeedItemFromEvent(
+        reboostedPostItem,
+        reboostedPostState,
+        reboostedPostProfileState,
+        counts,
+        network,
+        btcUsd,
+        workFloor,
+      )
+    : null;
+  const text = kind === "boost-reboost"
+    ? ""
+    : String(item?.text ?? item?.memo ?? item?.detail ?? "").trim();
   const media = Array.isArray(item?.media)
     ? item.media[0]
     : typeof item?.media === "object" && item.media
@@ -52685,6 +52709,7 @@ function boostFeedItemFromEvent(
         ? Number(satsToUsdAtBtcUsd(proofSignalSats, btcUsd).toFixed(6))
         : 0,
     reboostCount: Number(counter.reboosts ?? 0),
+    reboostedPost: reboostedPost || undefined,
     replyCount: Number(counter.replies ?? 0),
     signalSats: totalSignalSats,
     signalUsd: totalSignalUsd,
@@ -53132,6 +53157,12 @@ async function boostFeedPayload(network, searchParams, fresh = false) {
   } = boostOwnershipState(sourceItems, await verifiedBoostTicketClosures(
     sourceItems, item => boostCanonicalMarketTransaction(network, item),
   ), network);
+  const originalPostsByTxid = new Map(
+    sourceItems
+      .filter((item) => String(item?.kind ?? "").trim().toLowerCase() === "boost-post")
+      .map((item) => [boostHexTxid(item?.txid), item])
+      .filter(([txid]) => Boolean(txid)),
+  );
   const viewerFollowing =
     viewerKey && followingByFollower.get(viewerKey)
       ? followingByFollower.get(viewerKey)
@@ -53167,6 +53198,10 @@ async function boostFeedPayload(network, searchParams, fresh = false) {
       const profileState = profiles.get(
         boostAddress(item?.authorAddress ?? item?.actor),
       );
+      const originalPost = boostOriginalPostForReboost(item, originalPostsByTxid);
+      const originalProfileState = originalPost
+        ? profiles.get(boostAddress(originalPost?.authorAddress ?? originalPost?.actor))
+        : null;
       const authorKey = boostAddress(item?.authorAddress ?? item?.actor);
       if (
         !listingsOnly && !profileSubject &&
@@ -53175,9 +53210,23 @@ async function boostFeedPayload(network, searchParams, fresh = false) {
       ) {
         return false;
       }
-      return listingsOnly || !query || boostEventSearchText(item, state, profileState).includes(query);
+      const searchText = [
+        boostEventSearchText(item, state, profileState),
+        originalPost
+          ? boostEventSearchText(
+              originalPost,
+              states.get(boostPostTxid(originalPost)),
+              originalProfileState,
+            )
+          : "",
+      ].join(" ");
+      return listingsOnly || !query || searchText.includes(query);
     })
     .map((item) => {
+      const originalPost = boostOriginalPostForReboost(item, originalPostsByTxid);
+      const originalProfileState = originalPost
+        ? profiles.get(boostAddress(originalPost?.authorAddress ?? originalPost?.actor))
+        : null;
       const feedItem = boostFeedItemWithGraph(
         boostFeedItemFromEvent(
           item,
@@ -53189,6 +53238,9 @@ async function boostFeedPayload(network, searchParams, fresh = false) {
           network,
           btcUsd,
           workFloor,
+          originalPost,
+          originalPost ? states.get(boostPostTxid(originalPost)) : null,
+          originalProfileState,
         ),
         item,
         followersByTarget,
