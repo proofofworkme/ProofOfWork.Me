@@ -15,6 +15,47 @@
   width: 100%;
 }
 
+/* Standalone Boost follows the page-scroll model used by social timelines:
+   the document owns vertical scrolling while the surrounding chrome stays
+   sticky. Embedded Boost keeps its host workspace scroll contract. */
+.boost-public-app.mail-app {
+  display: block;
+  height: auto;
+  min-height: 100dvh;
+  overflow: visible;
+}
+
+.boost-public-app.mail-app > .boost-shell,
+.boost-public-app.mail-app .boost-shell-instrument {
+  align-items: start;
+  min-height: 0;
+  overflow: visible;
+}
+
+.boost-public-app.mail-app > .boost-shell > .boost-feed-panel {
+  display: block;
+  overflow: visible;
+}
+
+.boost-public-app.mail-app > .boost-shell > .boost-sidebar:not(.is-open),
+.boost-public-app.mail-app > .boost-shell > .boost-right-rail {
+  align-self: start;
+  overflow: visible;
+  position: sticky;
+  top: calc(var(--topbar-height) + 44px + var(--status-row-height));
+}
+
+.boost-public-app.mail-app .boost-timeline-head,
+.boost-public-app.mail-app .boost-profile-head {
+  top: calc(var(--topbar-height) + 44px + var(--status-row-height));
+}
+
+.boost-public-app.mail-app .boost-feed {
+  min-height: 0;
+  overflow: visible;
+  scrollbar-gutter: auto;
+}
+
 .boost-shell-instrument .boost-sidebar,
 .boost-shell-instrument .boost-right-rail {
   background: color-mix(in srgb, var(--surface-raised) 96%, transparent);
