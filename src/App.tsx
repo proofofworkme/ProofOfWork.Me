@@ -1187,6 +1187,7 @@ type PowTokenSpendabilityState = Pick<
 type PowTokenWalletBalance = {
   canonicalWorkState?: PowTokenSpendabilityState;
   canonicalWorkCapacityError?: string;
+  pendingWorkListingAmountUnknown?: boolean;
   confirmedBalance: ExactIntegerValue;
   confirmedBalanceAtoms?: string;
   confirmedBalanceSubatoms?: string;
@@ -9489,6 +9490,16 @@ function tokenListingHasSpendableSaleTicketAnchor(listing: PowTokenListing) {
   );
 }
 
+function workListingAmountDeferredUntilConfirmation(listing: PowTokenListing) {
+  return (
+    isWorkToken(listing) &&
+    listing.confirmed !== true &&
+    (listing.estimate?.estimateOnly === true ||
+      listing.workAmoEstimate?.estimateOnly === true ||
+      isWorkAmoV8Authorization(listing.saleAuthorization.version))
+  );
+}
+
 function tokenListingHasConfirmedSaleTicketSeal(listing: PowTokenListing) {
   return (
     listing.sealConfirmed === true &&
@@ -11370,10 +11381,14 @@ function tokenWalletBalancesFor(
               }
             : undefined;
         let canonicalWorkCapacityError: string | undefined;
+        let pendingWorkListingAmountUnknown = false;
         if (canonicalWorkState) {
           try {
             const spendability = tokenSpendabilityForWallet(walletAddress, token, canonicalWorkState);
             pendingOutgoingAtoms = BigInt(spendability.pendingOutgoingSubatoms!);
+            pendingWorkListingAmountUnknown = Boolean(
+              spendability.pendingWorkListingAmountUnknown,
+            );
           } catch (error) {
             canonicalWorkCapacityError = error instanceof Error ? error.message : "Canonical WORK capacity is unavailable.";
           }
@@ -11381,6 +11396,7 @@ function tokenWalletBalancesFor(
         return {
           canonicalWorkState,
           canonicalWorkCapacityError,
+          pendingWorkListingAmountUnknown,
           confirmedBalance: workNumberFromAtoms(confirmedBalanceAtoms),
           confirmedBalanceSubatoms: confirmedBalanceAtoms.toString(),
           pendingIncoming: workNumberFromAtoms(pendingIncomingAtoms),
@@ -11799,6 +11815,9 @@ function tokenWalletCanonicalWorkSpendability(
   try {
     const result = tokenSpendabilityForWallet(ownerAddress, balance.token, balance.canonicalWorkState, listings);
     return {
+      pendingWorkListingAmountUnknown: Boolean(
+        result.pendingWorkListingAmountUnknown,
+      ),
       pendingOutgoingSubatoms: BigInt(result.pendingOutgoingSubatoms!),
       reservedBalanceSubatoms: BigInt(result.reservedBalanceSubatoms!),
       spendableBalanceSubatoms: BigInt(result.spendableBalanceSubatoms!),
@@ -11990,7 +12009,8 @@ function tokenSpendabilityForWallet(
         token.tokenId,
         walletAddress,
       )
-    : null;
+      : null;
+  let pendingWorkListingAmountUnknown = false;
   if (canonicalCapacity) {
     // Core ticket availability does not release canonical WORK reservations.
     // Only additional pending listings need a local hold beyond this receipt.
@@ -12003,6 +12023,10 @@ function tokenSpendabilityForWallet(
           tokenListingIsExpired(listing)) continue;
       const amount = tokenRecordAmountAtoms(listing, String(listing.amount), listing.amountAtoms, listing.amountSubatoms);
       if (amount === null || amount <= 0n) {
+        if (workListingAmountDeferredUntilConfirmation(listing)) {
+          pendingWorkListingAmountUnknown = true;
+          continue;
+        }
         throw new Error("A pending WORK reservation could not be verified. Refresh the wallet before spending WORK.");
       }
       localReserved += amount;
@@ -12109,7 +12133,7 @@ function tokenSpendabilityForWallet(
     uncoveredPendingSaleAtoms !== null
       ? pendingDirectTransferAtoms + uncoveredPendingSaleAtoms
       : null;
-  const spendableBalanceAtoms =
+  const calculatedSpendableBalanceAtoms =
     exactUnits &&
     confirmedBalanceAtoms !== null &&
     reservedBalanceAtoms !== null &&
@@ -12121,6 +12145,12 @@ function tokenSpendabilityForWallet(
           0n,
         ].reduce((maximum, value) => (value > maximum ? value : maximum))
       : null;
+  // V8 fixes the exact WORK amount at confirmation. Until then, a pending
+  // listing may reserve an unknown amount, so fail closed for spending without
+  // poisoning the whole wallet capacity receipt.
+  const spendableBalanceAtoms = pendingWorkListingAmountUnknown
+    ? 0n
+    : calculatedSpendableBalanceAtoms;
 
   return {
     activeListings,
@@ -12139,6 +12169,7 @@ function tokenSpendabilityForWallet(
     pendingOutgoingSubatoms: work
       ? pendingOutgoingAtoms?.toString()
       : undefined,
+    pendingWorkListingAmountUnknown,
     reservedBalance:
       bond && reservedBalanceAtoms !== null
         ? reservedBalanceAtoms.toString()
@@ -38795,6 +38826,9 @@ function TokenWalletWorkspace({
                 );
                 const balanceNotes = [
                   spendableUnits === null ? "Canonical WORK capacity unavailable" : "",
+                  balance.pendingWorkListingAmountUnknown
+                    ? "pending listing amount awaits confirmation"
+                    : "",
                   `${tokenAmountDisplayFromUnits(
                     balance.token,
                     confirmedUnits,
@@ -39220,6 +39254,14 @@ function TokenWalletWorkspace({
                 <strong>{TOKEN_LISTING_ANCHOR_VALUE_SATS.toLocaleString()} proofs</strong>
               </div>
             </div>
+            {selectedListTokenIsWork &&
+            selectedWalletBalance?.pendingWorkListingAmountUnknown ? (
+              <p className="field-note">
+                A pending WORK listing has not reached its confirmation point,
+                so its exact amount is not final yet. Additional WORK spending
+                stays paused until that listing confirms or drops.
+              </p>
+            ) : null}
             <FeeRateControl feeRate={feeRate} setFeeRate={setFeeRate} />
             <button className="primary" disabled={!canList || listing} type="submit">
               <span className="button-content">
