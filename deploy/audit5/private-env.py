@@ -25,13 +25,14 @@ LIVE = '/opt/proofofwork-api'
 RELEASE = re.compile(r'[0-9a-f]{12}-[0-9]{8}T[0-9]{6}Z\Z')
 ENV_KEY = re.compile(rb'[A-Za-z_][A-Za-z0-9_]*\Z')
 MAX_ENV = 4 * 1024 * 1024
-PROBE_RELEASE = '661e576453ca-20260922T025214Z'
-PROBE_COMMIT = '661e576453caddbd622c5c6255d1de0001bf4804'
-PROBE_TREE = 'ddb2f6892b448c85334d48a25271b6b4e93b0676'
-PROBE_SCRIPT_SHA256 = '84c1d113f57dfc4f5631a11dfce62e5c9f4b0c381f42afa40912a4fe58e8fb4c'
-PROBE_OUTPUT_ROOT = '/data/proofofwork-audit5-probe-' + PROBE_RELEASE + '-retry1'
+PROBE_RELEASE = '35d21493757d-20260922T033203Z'
+PROBE_COMMIT = '35d21493757d439b87d22cec6bb6d06f0466d31a'
+PROBE_TREE = 'd78b780d7f943065abbdefc9aba256e564debc75'
+PROBE_SCRIPT_SHA256 = 'acbbd45c0a4b99712ffd31f91221477d63dc1ef3e1cdbe1833f5af6f3fdf9763'
+PROBE_SCRIPT_COPY = '/data/proofofwork-audit5-probe-' + PROBE_RELEASE + '-retry2.mjs'
+PROBE_OUTPUT_ROOT = '/data/proofofwork-audit5-probe-' + PROBE_RELEASE + '-retry2'
 PROBE_OUTPUT = PROBE_OUTPUT_ROOT + '/attempt'
-PROBE_OUTPUT_METADATA = 'probe-output-retry1.json'
+PROBE_OUTPUT_METADATA = 'probe-output-retry2.json'
 PROBE_MAX_OUTPUT_BYTES = 192 * 1024**2
 PROBE_MIN_FREE_BYTES = 1024**3 + PROBE_MAX_OUTPUT_BYTES
 AUX_TXID = '4c079144b315ca08a846e7e7af3d37f5c96419a94f06af8384dc73e1ca307359'
@@ -262,12 +263,14 @@ def prepare_probe_output(release, account):
     check_root_dir('/data', 0o755)
     capacity = os.statvfs('/data')
     require(capacity.f_bavail * capacity.f_frsize >= PROBE_MIN_FREE_BYTES and capacity.f_favail >= 512)
+    probe_account = pwd.getpwnam('bitcoin')
+    require(probe_account.pw_uid > 0 and probe_account.pw_gid > 0)
     os.mkdir(PROBE_OUTPUT_ROOT, 0o700)
-    os.chown(PROBE_OUTPUT_ROOT, account.pw_uid, account.pw_gid)
+    os.chown(PROBE_OUTPUT_ROOT, probe_account.pw_uid, probe_account.pw_gid)
     info = os.lstat(PROBE_OUTPUT_ROOT)
     exclusive_write(directory + '/' + PROBE_OUTPUT_METADATA, json.dumps({
         'path': PROBE_OUTPUT_ROOT, 'dev': info.st_dev, 'inode': info.st_ino,
-        'uid': account.pw_uid, 'gid': account.pw_gid,
+        'uid': probe_account.pw_uid, 'gid': probe_account.pw_gid,
     }).encode())
     fsync_dir(PROBE_OUTPUT_ROOT)
     fsync_dir(directory)
@@ -283,7 +286,7 @@ def launch_plan(mode, original, release, gate=None, api_port=18081):
                      'repair-atoms', 'gate', 'candidate-probe'))
     require(api_port in (18081, 8081))
     require(mode != 'candidate-probe' or (release == PROBE_RELEASE and api_port == 18081))
-    # The probe uses only loopback HTTP and a fixed sudo-allowlisted Core CLI.
+    # The probe runs as bitcoin and invokes only fixed read-only Core methods.
     # Do not give it the captured API environment or any service credentials.
     env = {} if mode == 'candidate-probe' else scrub_lifecycle(original)
     # Retain ordinary memory bounds but reject inherited runtime code loaders.
@@ -316,7 +319,8 @@ def launch_plan(mode, original, release, gate=None, api_port=18081):
         env[b'POW_INDEX_WORK_ATOMIC_EVENT_REPAIR_APPLY'] = b'1'
         command = ['scripts/backfill-proof-indexer.mjs', '--repair-work-atomic-events']
     elif mode == 'candidate-probe':
-        command = ['deploy/audit5/probe-candidate.mjs', '--run', '--output', PROBE_OUTPUT,
+        env[b'PWD'] = b'/data'
+        command = [PROBE_SCRIPT_COPY, '--run', '--output', PROBE_OUTPUT,
                    '--api-port', '18081']
     else:
         require(gate in GATES or gate in SEQUENCED_GATES)
@@ -412,23 +416,49 @@ def verify_probe_candidate(candidate, release, account):
     script = candidate + '/deploy/audit5/probe-candidate.mjs'
     details = os.lstat(script)
     require(stat.S_ISREG(details.st_mode) and details.st_uid == account.pw_uid and
-            not details.st_mode & 0o022 and os.path.realpath(script) == script and details.st_nlink == 1)
+            not details.st_mode & 0o022 and os.path.realpath(script) == script and details.st_nlink == 1 and
+            details.st_size <= 262144)
     descriptor = os.open(script, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC)
     try:
         opened = os.fstat(descriptor)
-        require((opened.st_dev, opened.st_ino, opened.st_size) ==
-                (details.st_dev, details.st_ino, details.st_size))
+        identity = (details.st_dev, details.st_ino, details.st_size, details.st_mtime_ns, details.st_ctime_ns)
+        require((opened.st_dev, opened.st_ino, opened.st_size, opened.st_mtime_ns, opened.st_ctime_ns) == identity)
         digest = hashlib.sha256()
+        chunks = []
         while True:
             chunk = os.read(descriptor, 1024 * 1024)
             if not chunk:
                 break
             digest.update(chunk)
+            chunks.append(chunk)
+        final = os.fstat(descriptor)
         require(digest.hexdigest() == PROBE_SCRIPT_SHA256 and
-                (os.fstat(descriptor).st_dev, os.fstat(descriptor).st_ino,
-                 os.fstat(descriptor).st_size) == (details.st_dev, details.st_ino, details.st_size))
+                (final.st_dev, final.st_ino, final.st_size, final.st_mtime_ns, final.st_ctime_ns) == identity)
+        publish_probe_script(b''.join(chunks))
     finally:
         os.close(descriptor)
+
+
+def publish_probe_script(blob):
+    check_root_dir('/data', 0o755)
+    require(len(blob) <= 262144 and hashlib.sha256(blob).hexdigest() == PROBE_SCRIPT_SHA256)
+    descriptor = os.open(PROBE_SCRIPT_COPY, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_CLOEXEC, 0o444)
+    try:
+        os.fchown(descriptor, 0, 0)
+        os.fchmod(descriptor, 0o444)
+        remaining = memoryview(blob)
+        while remaining:
+            written = os.write(descriptor, remaining)
+            require(written > 0)
+            remaining = remaining[written:]
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
+    fsync_dir('/data')
+    info = os.lstat(PROBE_SCRIPT_COPY)
+    require(stat.S_ISREG(info.st_mode) and info.st_uid == 0 and info.st_gid == 0 and
+            stat.S_IMODE(info.st_mode) == 0o444 and info.st_nlink == 1 and
+            info.st_size == len(blob) and os.path.realpath(PROBE_SCRIPT_COPY) == PROBE_SCRIPT_COPY)
 
 
 def verify_probe_output(directory, account):
@@ -454,9 +484,12 @@ def launch(args, account):
     blob = private_read(directory + '/' + source + '.environ')
     require(hashlib.sha256(blob).hexdigest() == manifest['processes'][source]['environmentSha256'])
     candidate = safe_candidate(args.release_id, account)
+    runtime_account = account
     if args.mode == 'candidate-probe':
         verify_probe_candidate(candidate, args.release_id, account)
-        verify_probe_output(directory, account)
+        runtime_account = pwd.getpwnam('bitcoin')
+        require(runtime_account.pw_uid > 0 and runtime_account.pw_gid > 0)
+        verify_probe_output(directory, runtime_account)
     node_info = os.stat(NODE)
     require(stat.S_ISREG(node_info.st_mode) and node_info.st_uid == 0 and not node_info.st_mode & 0o022
             and os.path.realpath(NODE) == NODE)
@@ -488,19 +521,20 @@ def launch(args, account):
         cache = os.lstat('/data/proofofwork-api-cache')
         require(stat.S_ISDIR(cache.st_mode) and cache.st_uid == account.pw_uid and cache.st_gid == account.pw_gid
                 and not cache.st_mode & 0o022 and os.path.realpath('/data/proofofwork-api-cache') == '/data/proofofwork-api-cache')
-    os.chdir(candidate)
+    os.chdir('/data' if args.mode == 'candidate-probe' else candidate)
     os.umask(0o027)
     require(ctypes.CDLL(None, use_errno=True).prctl(38, 1, 0, 0, 0) == 0)  # PR_SET_NO_NEW_PRIVS
     os.setgroups([])
-    os.setgid(account.pw_gid)
-    os.setuid(account.pw_uid)
-    require(os.getuid() == account.pw_uid and os.geteuid() == account.pw_uid
-            and os.getgid() == account.pw_gid and os.getegid() == account.pw_gid and os.getgroups() == [])
+    os.setgid(runtime_account.pw_gid)
+    os.setuid(runtime_account.pw_uid)
+    require(os.getuid() == runtime_account.pw_uid and os.geteuid() == runtime_account.pw_uid
+            and os.getgid() == runtime_account.pw_gid and os.getegid() == runtime_account.pw_gid and os.getgroups() == [])
     status = dict(line.split(':', 1) for line in pathlib.Path('/proc/self/status').read_text().splitlines() if ':' in line)
     require(status['NoNewPrivs'].strip() == '1' and
             all(int(status[key].strip(), 16) == 0 for key in ('CapEff', 'CapPrm', 'CapInh', 'CapAmb')))
     print(json.dumps({'ok': True, 'operation': 'exec', 'mode': args.mode, 'source': source,
-                      'releaseId': args.release_id, 'uid': os.getuid(), 'gid': os.getgid(), 'cwd': candidate, 'node': NODE}), flush=True)
+                      'releaseId': args.release_id, 'uid': os.getuid(), 'gid': os.getgid(),
+                      'cwd': '/data' if args.mode == 'candidate-probe' else candidate, 'node': NODE}), flush=True)
     if args.mode == 'gate' and args.gate in SEQUENCED_GATES:
         return run_fixed_sequence(command, candidate, env)
     os.execve(NODE, [NODE, *command], env)

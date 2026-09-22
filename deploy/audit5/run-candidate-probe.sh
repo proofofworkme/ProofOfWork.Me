@@ -7,20 +7,20 @@ unset TAR_OPTIONS GZIP BASH_ENV ENV CDPATH NODE_OPTIONS LD_PRELOAD LD_LIBRARY_PA
 
 [[ $# == 0 && $EUID == 0 ]]
 
-release='661e576453ca-20260922T025214Z'
-commit='661e576453caddbd622c5c6255d1de0001bf4804'
-tree='ddb2f6892b448c85334d48a25271b6b4e93b0676'
+release='35d21493757d-20260922T033203Z'
+commit='35d21493757d439b87d22cec6bb6d06f0466d31a'
+tree='d78b780d7f943065abbdefc9aba256e564debc75'
 previous_live='68b16f6530494171561170ffac78ad26cdf17a5e'
-probe_sha256='84c1d113f57dfc4f5631a11dfce62e5c9f4b0c381f42afa40912a4fe58e8fb4c'
-private_env_sha256='b32b9c3d0338366ca4c63553a264262cc2d54005085131a710e01cac8d07289c'
+probe_sha256='acbbd45c0a4b99712ffd31f91221477d63dc1ef3e1cdbe1833f5af6f3fdf9763'
+private_env_sha256='b74aa853b13b1126ca82d89209888e21f6dfb4aae59ef15d5572f66ca9047574'
 shadow_sha256='48da4605178d43d1cfbf7b33aeb45c1a64e9474913d8e51d1513904dd8d4bf4d'
-tools="/var/tmp/proofofwork-deploy/audit5-probe-${release}-retry1"
+tools="/var/tmp/proofofwork-deploy/audit5-probe-${release}-retry2"
 private_env="${tools}/private-env.py"
 shadow_entry="${tools}/shadow-entry.mjs"
 candidate="/opt/proofofwork-api-stage-${release}"
 live='/opt/proofofwork-api'
 runroot="/run/proofofwork-audit5-${release}"
-output="/data/proofofwork-audit5-probe-${release}-retry1/attempt"
+output="/data/proofofwork-audit5-probe-${release}-retry2/attempt"
 shadow_unit="proofofwork-audit5-shadow-${release}"
 probe_unit="proofofwork-audit5-probe-${release}"
 shadow_started=0
@@ -108,11 +108,11 @@ receipt="${output}/receipt.json"
 if [[ ! -f "$receipt" || -L "$receipt" ]]; then
   refuse candidate_probe_receipt_missing
 fi
-powadmin_uid="$(id -u powadmin)"
-powadmin_gid="$(id -g powadmin)"
+bitcoin_uid="$(id -u bitcoin)"
+bitcoin_gid="$(id -g bitcoin)"
 [[ -d "$output" && ! -L "$output" && "$(realpath -e "$output")" == "$output" ]] || refuse unsafe_probe_output
-[[ "$(stat -c '%u:%g:%a' "$output")" == "${powadmin_uid}:${powadmin_gid}:700" ]] || refuse unsafe_probe_output
-[[ "$(stat -c '%u:%g:%a:%h' "$receipt")" == "${powadmin_uid}:${powadmin_gid}:600:1" ]] || refuse unsafe_probe_receipt
+[[ "$(stat -c '%u:%g:%a' "$output")" == "${bitcoin_uid}:${bitcoin_gid}:700" ]] || refuse unsafe_probe_output
+[[ "$(stat -c '%u:%g:%a:%h' "$receipt")" == "${bitcoin_uid}:${bitcoin_gid}:600:1" ]] || refuse unsafe_probe_receipt
 (( $(stat -c '%s' "$receipt") <= 1048576 )) || refuse probe_receipt_oversize
 
 if ((probe_status != 0)); then

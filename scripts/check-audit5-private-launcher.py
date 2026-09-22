@@ -90,10 +90,12 @@ class PrivateLauncherTests(unittest.TestCase):
         release = module.PROBE_RELEASE
         original = {**BASE, b'API_KEY': b'synthetic-secret', b'POW_INDEX_DATABASE_URL': b'private-database-url'}
         env, command = module.launch_plan('candidate-probe', original, release)
-        self.assertEqual(command, ['deploy/audit5/probe-candidate.mjs', '--run', '--output',
+        self.assertEqual(command, [module.PROBE_SCRIPT_COPY, '--run', '--output',
                                    module.PROBE_OUTPUT, '--api-port', '18081'])
         self.assertEqual(module.PROBE_OUTPUT, module.PROBE_OUTPUT_ROOT + '/attempt')
-        self.assertTrue(module.PROBE_OUTPUT_ROOT.endswith('-retry1'))
+        self.assertTrue(module.PROBE_OUTPUT_ROOT.endswith('-retry2'))
+        self.assertTrue(module.PROBE_SCRIPT_COPY.endswith('-retry2.mjs'))
+        self.assertEqual(env[b'PWD'], b'/data')
         self.assertNotIn(b'API_KEY', env)
         self.assertNotIn(b'POW_INDEX_DATABASE_URL', env)
         self.assertEqual(env[b'HOST'] if b'HOST' in env else None, None)
@@ -110,7 +112,9 @@ class PrivateLauncherTests(unittest.TestCase):
         self.assertIn(f"tree='{module.PROBE_TREE}'", runner)
         self.assertIn(f"probe_sha256='{module.PROBE_SCRIPT_SHA256}'", runner)
         self.assertIn(f"private_env_sha256='{launcher_hash}'", runner)
-        self.assertIn('output="/data/proofofwork-audit5-probe-${release}-retry1/attempt"', runner)
+        self.assertIn('output="/data/proofofwork-audit5-probe-${release}-retry2/attempt"', runner)
+        self.assertIn('bitcoin_uid="$(id -u bitcoin)"', runner)
+        self.assertIn('PROBE_SCRIPT_COPY', (ROOT / 'deploy/audit5/private-env.py').read_text())
         self.assertIn('systemctl stop "$shadow_unit"', runner)
         self.assertNotIn('systemctl stop proofofwork-api.service', runner)
         self.assertNotIn('systemctl stop proofofwork-indexer-worker.service', runner)
