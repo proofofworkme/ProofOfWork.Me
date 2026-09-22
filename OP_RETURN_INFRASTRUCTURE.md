@@ -3268,6 +3268,14 @@ process call shape and adds a regression check; it is not release-eligible
 until a new candidate commit is pinned, staged, and passes a separately named
 bounded retry.
 
+The corrected candidate is release-pinned as
+`dbfc3f2614a1-20260922T034136Z` (commit
+`dbfc3f2614a1a2a215ba56482a416712b1e45faf`, tree
+`62d74dc88b194c97c37d8d49287864055caf8a6d`). Its separately named retry3
+evidence path is
+`/data/proofofwork-audit5-probe-dbfc3f2614a1-20260922T034136Z-retry3/attempt`;
+the previous failed receipts and paths remain immutable evidence.
+
 The candidate runner verifies the staged checkout, probe-script digest, and
 root-private helper digests; starts only the reviewed read-only shadow API on
 loopback; and invokes the probe through the protected launcher with a minimal
