@@ -92,6 +92,8 @@ class PrivateLauncherTests(unittest.TestCase):
         env, command = module.launch_plan('candidate-probe', original, release)
         self.assertEqual(command, ['deploy/audit5/probe-candidate.mjs', '--run', '--output',
                                    module.PROBE_OUTPUT, '--api-port', '18081'])
+        self.assertEqual(module.PROBE_OUTPUT, module.PROBE_OUTPUT_ROOT + '/attempt')
+        self.assertTrue(module.PROBE_OUTPUT_ROOT.endswith('-retry1'))
         self.assertNotIn(b'API_KEY', env)
         self.assertNotIn(b'POW_INDEX_DATABASE_URL', env)
         self.assertEqual(env[b'HOST'] if b'HOST' in env else None, None)
@@ -99,6 +101,19 @@ class PrivateLauncherTests(unittest.TestCase):
         for bad_release, bad_port in ((RELEASE, 18081), (release, 8081)):
             with self.assertRaises(module.Refused):
                 module.launch_plan('candidate-probe', original, bad_release, api_port=bad_port)
+
+    def test_candidate_runner_is_bound_to_the_reviewed_helpers_and_retry_path(self):
+        runner = (ROOT / 'deploy/audit5/run-candidate-probe.sh').read_text()
+        launcher_hash = hashlib.sha256((ROOT / 'deploy/audit5/private-env.py').read_bytes()).hexdigest()
+        self.assertIn(f"release='{module.PROBE_RELEASE}'", runner)
+        self.assertIn(f"commit='{module.PROBE_COMMIT}'", runner)
+        self.assertIn(f"tree='{module.PROBE_TREE}'", runner)
+        self.assertIn(f"probe_sha256='{module.PROBE_SCRIPT_SHA256}'", runner)
+        self.assertIn(f"private_env_sha256='{launcher_hash}'", runner)
+        self.assertIn('output="/data/proofofwork-audit5-probe-${release}-retry1/attempt"', runner)
+        self.assertIn('systemctl stop "$shadow_unit"', runner)
+        self.assertNotIn('systemctl stop proofofwork-api.service', runner)
+        self.assertNotIn('systemctl stop proofofwork-indexer-worker.service', runner)
 
     def test_inherited_runtime_code_loaders_are_refused(self):
         for overrides in ({b'NODE_OPTIONS': b'--import=/tmp/arbitrary.mjs'}, {b'LD_PRELOAD': b'/tmp/evil.so'}):

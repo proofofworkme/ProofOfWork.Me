@@ -29,7 +29,9 @@ PROBE_RELEASE = '661e576453ca-20260922T025214Z'
 PROBE_COMMIT = '661e576453caddbd622c5c6255d1de0001bf4804'
 PROBE_TREE = 'ddb2f6892b448c85334d48a25271b6b4e93b0676'
 PROBE_SCRIPT_SHA256 = '84c1d113f57dfc4f5631a11dfce62e5c9f4b0c381f42afa40912a4fe58e8fb4c'
-PROBE_OUTPUT = '/data/proofofwork-audit5-probe-' + PROBE_RELEASE
+PROBE_OUTPUT_ROOT = '/data/proofofwork-audit5-probe-' + PROBE_RELEASE + '-retry1'
+PROBE_OUTPUT = PROBE_OUTPUT_ROOT + '/attempt'
+PROBE_OUTPUT_METADATA = 'probe-output-retry1.json'
 PROBE_MAX_OUTPUT_BYTES = 192 * 1024**2
 PROBE_MIN_FREE_BYTES = 1024**3 + PROBE_MAX_OUTPUT_BYTES
 AUX_TXID = '4c079144b315ca08a846e7e7af3d37f5c96419a94f06af8384dc73e1ca307359'
@@ -260,18 +262,19 @@ def prepare_probe_output(release, account):
     check_root_dir('/data', 0o755)
     capacity = os.statvfs('/data')
     require(capacity.f_bavail * capacity.f_frsize >= PROBE_MIN_FREE_BYTES and capacity.f_favail >= 512)
-    os.mkdir(PROBE_OUTPUT, 0o700)
-    os.chown(PROBE_OUTPUT, account.pw_uid, account.pw_gid)
-    info = os.lstat(PROBE_OUTPUT)
-    exclusive_write(directory + '/probe-output.json', json.dumps({
-        'path': PROBE_OUTPUT, 'dev': info.st_dev, 'inode': info.st_ino,
+    os.mkdir(PROBE_OUTPUT_ROOT, 0o700)
+    os.chown(PROBE_OUTPUT_ROOT, account.pw_uid, account.pw_gid)
+    info = os.lstat(PROBE_OUTPUT_ROOT)
+    exclusive_write(directory + '/' + PROBE_OUTPUT_METADATA, json.dumps({
+        'path': PROBE_OUTPUT_ROOT, 'dev': info.st_dev, 'inode': info.st_ino,
         'uid': account.pw_uid, 'gid': account.pw_gid,
     }).encode())
-    fsync_dir(PROBE_OUTPUT)
+    fsync_dir(PROBE_OUTPUT_ROOT)
     fsync_dir(directory)
     fsync_dir('/data')
     print(json.dumps({'ok': True, 'operation': 'prepare-probe-output', 'releaseId': release,
-                      'output': PROBE_OUTPUT, 'maxBytes': PROBE_MAX_OUTPUT_BYTES}))
+                      'outputRoot': PROBE_OUTPUT_ROOT, 'output': PROBE_OUTPUT,
+                      'maxBytes': PROBE_MAX_OUTPUT_BYTES}))
 
 
 def launch_plan(mode, original, release, gate=None, api_port=18081):
@@ -429,13 +432,14 @@ def verify_probe_candidate(candidate, release, account):
 
 
 def verify_probe_output(directory, account):
-    identity = json.loads(private_read(directory + '/probe-output.json', 4096))
-    info = os.lstat(PROBE_OUTPUT)
-    require(identity == {'path': PROBE_OUTPUT, 'dev': info.st_dev, 'inode': info.st_ino,
+    identity = json.loads(private_read(directory + '/' + PROBE_OUTPUT_METADATA, 4096))
+    info = os.lstat(PROBE_OUTPUT_ROOT)
+    require(identity == {'path': PROBE_OUTPUT_ROOT, 'dev': info.st_dev, 'inode': info.st_ino,
                          'uid': account.pw_uid, 'gid': account.pw_gid}
             and stat.S_ISDIR(info.st_mode) and info.st_uid == account.pw_uid and
             info.st_gid == account.pw_gid and stat.S_IMODE(info.st_mode) == 0o700 and
-            os.path.realpath(PROBE_OUTPUT) == PROBE_OUTPUT and not os.listdir(PROBE_OUTPUT))
+            os.path.realpath(PROBE_OUTPUT_ROOT) == PROBE_OUTPUT_ROOT and not os.listdir(PROBE_OUTPUT_ROOT)
+            and not os.path.lexists(PROBE_OUTPUT))
 
 
 def launch(args, account):

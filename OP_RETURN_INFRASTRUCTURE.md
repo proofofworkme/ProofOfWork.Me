@@ -3253,8 +3253,9 @@ Audit 5 helpers. It pins the staged checkout commit, tree, and probe-script
 digest; starts only the reviewed read-only shadow API on loopback; and invokes
 the probe through the protected launcher with a minimal environment rather
 than captured service credentials. The probe is limited to the fixed local
-HTTP API and allowlisted read-only Core methods. Its bounded receipt is kept
-under `/data/proofofwork-audit5-probe-661e576453ca-20260922T025214Z`; the
+HTTP API and allowlisted read-only Core methods. Its bounded retry receipt is
+kept under `/data/proofofwork-audit5-probe-661e576453ca-20260922T025214Z-retry1/attempt`;
+the first reserved, receipt-free attempt remains preserved separately. The
 runner stops only its uniquely named shadow unit and verifies that the existing
 API and indexer remain active. It does not switch checkouts, stop production,
 write application databases, or delete prior release/evidence paths. This

@@ -12,15 +12,15 @@ commit='661e576453caddbd622c5c6255d1de0001bf4804'
 tree='ddb2f6892b448c85334d48a25271b6b4e93b0676'
 previous_live='68b16f6530494171561170ffac78ad26cdf17a5e'
 probe_sha256='84c1d113f57dfc4f5631a11dfce62e5c9f4b0c381f42afa40912a4fe58e8fb4c'
-private_env_sha256='e196f5e2155043e924d743e6aa01eb1d68cea75766ef2334b00551f5afe7eb90'
+private_env_sha256='b32b9c3d0338366ca4c63553a264262cc2d54005085131a710e01cac8d07289c'
 shadow_sha256='48da4605178d43d1cfbf7b33aeb45c1a64e9474913d8e51d1513904dd8d4bf4d'
-tools="/var/tmp/proofofwork-deploy/audit5-probe-${release}"
+tools="/var/tmp/proofofwork-deploy/audit5-probe-${release}-retry1"
 private_env="${tools}/private-env.py"
 shadow_entry="${tools}/shadow-entry.mjs"
 candidate="/opt/proofofwork-api-stage-${release}"
 live='/opt/proofofwork-api'
 runroot="/run/proofofwork-audit5-${release}"
-output="/data/proofofwork-audit5-probe-${release}"
+output="/data/proofofwork-audit5-probe-${release}-retry1/attempt"
 shadow_unit="proofofwork-audit5-shadow-${release}"
 probe_unit="proofofwork-audit5-probe-${release}"
 shadow_started=0
@@ -110,6 +110,8 @@ if [[ ! -f "$receipt" || -L "$receipt" ]]; then
 fi
 powadmin_uid="$(id -u powadmin)"
 powadmin_gid="$(id -g powadmin)"
+[[ -d "$output" && ! -L "$output" && "$(realpath -e "$output")" == "$output" ]] || refuse unsafe_probe_output
+[[ "$(stat -c '%u:%g:%a' "$output")" == "${powadmin_uid}:${powadmin_gid}:700" ]] || refuse unsafe_probe_output
 [[ "$(stat -c '%u:%g:%a:%h' "$receipt")" == "${powadmin_uid}:${powadmin_gid}:600:1" ]] || refuse unsafe_probe_receipt
 (( $(stat -c '%s' "$receipt") <= 1048576 )) || refuse probe_receipt_oversize
 
