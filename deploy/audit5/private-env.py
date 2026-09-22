@@ -25,6 +25,13 @@ LIVE = '/opt/proofofwork-api'
 RELEASE = re.compile(r'[0-9a-f]{12}-[0-9]{8}T[0-9]{6}Z\Z')
 ENV_KEY = re.compile(rb'[A-Za-z_][A-Za-z0-9_]*\Z')
 MAX_ENV = 4 * 1024 * 1024
+PROBE_RELEASE = '661e576453ca-20260922T025214Z'
+PROBE_COMMIT = '661e576453caddbd622c5c6255d1de0001bf4804'
+PROBE_TREE = 'ddb2f6892b448c85334d48a25271b6b4e93b0676'
+PROBE_SCRIPT_SHA256 = '84c1d113f57dfc4f5631a11dfce62e5c9f4b0c381f42afa40912a4fe58e8fb4c'
+PROBE_OUTPUT = '/data/proofofwork-audit5-probe-' + PROBE_RELEASE
+PROBE_MAX_OUTPUT_BYTES = 192 * 1024**2
+PROBE_MIN_FREE_BYTES = 1024**3 + PROBE_MAX_OUTPUT_BYTES
 AUX_TXID = '4c079144b315ca08a846e7e7af3d37f5c96419a94f06af8384dc73e1ca307359'
 EVENTS = {
     3607561: '6ac53aca33541d60d6d58af03d4c27d09bbeaab3e3c016ee10d270aad578957c',
@@ -37,7 +44,6 @@ UNITS = {
 }
 GATES = {
     'check:node-ops': ['scripts/check-node-ops-contract.mjs'],
-    'check:index-recovery-behavior': ['scripts/check-index-recovery-behavior.mjs'],
     'check:work-precision': ['scripts/check-work-precision-contract.mjs'],
     'check:work-precision-v2': ['scripts/check-work-precision-v2.mjs'],
     'check:bond-exact-arithmetic': ['scripts/check-bond-exact-arithmetic.mjs'],
@@ -59,6 +65,14 @@ GATES = {
     'check:marketplace-regressions:full': ['scripts/check-marketplace-regressions.mjs'],
     'check:mail-regressions': ['scripts/check-mail-regressions.mjs'],
     'check:work-participant-regression': ['scripts/check-work-participant-regression.mjs'],
+}
+# The package script deliberately runs both commands. Keep each argv fixed and
+# execute them in order without a shell, stopping immediately on failure.
+SEQUENCED_GATES = {
+    'check:index-recovery-behavior': [
+        ['--test', 'server/db/canonical-transfer-fee.test.mjs'],
+        ['scripts/check-index-recovery-behavior.mjs'],
+    ],
 }
 SHADOW_SWITCHES = (
     'ENABLE_STARTUP_EXPENSIVE_PREWARM', 'ENABLE_GLOBAL_ACTIVITY_CRAWL',
@@ -237,11 +251,38 @@ def prepare_shadow_cache(release, account):
     print(json.dumps({'ok': True, 'operation': 'prepare-shadow-cache', 'releaseId': release, 'cache': cache}))
 
 
+def prepare_probe_output(release, account):
+    require(release == PROBE_RELEASE)
+    directory = runroot(release)
+    check_root_dir(directory)
+    manifest = json.loads(private_read(directory + '/capture.json'))
+    require(manifest['format'] == 'private-audit5-environments-v1' and manifest['releaseId'] == release)
+    check_root_dir('/data', 0o755)
+    capacity = os.statvfs('/data')
+    require(capacity.f_bavail * capacity.f_frsize >= PROBE_MIN_FREE_BYTES and capacity.f_favail >= 512)
+    os.mkdir(PROBE_OUTPUT, 0o700)
+    os.chown(PROBE_OUTPUT, account.pw_uid, account.pw_gid)
+    info = os.lstat(PROBE_OUTPUT)
+    exclusive_write(directory + '/probe-output.json', json.dumps({
+        'path': PROBE_OUTPUT, 'dev': info.st_dev, 'inode': info.st_ino,
+        'uid': account.pw_uid, 'gid': account.pw_gid,
+    }).encode())
+    fsync_dir(PROBE_OUTPUT)
+    fsync_dir(directory)
+    fsync_dir('/data')
+    print(json.dumps({'ok': True, 'operation': 'prepare-probe-output', 'releaseId': release,
+                      'output': PROBE_OUTPUT, 'maxBytes': PROBE_MAX_OUTPUT_BYTES}))
+
+
 def launch_plan(mode, original, release, gate=None, api_port=18081):
     runroot(release)
-    require(mode in ('readonly-shadow', 'bootstrap-api', 'bootstrap-worker', 'repair-canonical', 'repair-atoms', 'gate'))
+    require(mode in ('readonly-shadow', 'bootstrap-api', 'bootstrap-worker', 'repair-canonical',
+                     'repair-atoms', 'gate', 'candidate-probe'))
     require(api_port in (18081, 8081))
-    env = scrub_lifecycle(original)
+    require(mode != 'candidate-probe' or (release == PROBE_RELEASE and api_port == 18081))
+    # The probe uses only loopback HTTP and a fixed sudo-allowlisted Core CLI.
+    # Do not give it the captured API environment or any service credentials.
+    env = {} if mode == 'candidate-probe' else scrub_lifecycle(original)
     # Retain ordinary memory bounds but reject inherited runtime code loaders.
     require(all(re.fullmatch(rb'--(?:max-old-space-size|max-semi-space-size|stack-size)=[1-9][0-9]*', option)
                 for option in env.get(b'NODE_OPTIONS', b'').split())
@@ -271,9 +312,12 @@ def launch_plan(mode, original, release, gate=None, api_port=18081):
     elif mode == 'repair-atoms':
         env[b'POW_INDEX_WORK_ATOMIC_EVENT_REPAIR_APPLY'] = b'1'
         command = ['scripts/backfill-proof-indexer.mjs', '--repair-work-atomic-events']
+    elif mode == 'candidate-probe':
+        command = ['deploy/audit5/probe-candidate.mjs', '--run', '--output', PROBE_OUTPUT,
+                   '--api-port', '18081']
     else:
-        require(gate in GATES)
-        command = GATES[gate]
+        require(gate in GATES or gate in SEQUENCED_GATES)
+        command = GATES[gate] if gate in GATES else SEQUENCED_GATES[gate]
         env[b'POW_API_BASE'] = ('http://127.0.0.1:' + str(api_port)).encode()
         env[b'POW_NETWORK'] = b'livenet'
         if gate == 'check:marketplace-regressions:full':
@@ -291,6 +335,17 @@ def launch_plan(mode, original, release, gate=None, api_port=18081):
         if gate in ('audit:ledger', 'audit:computer-events'):
             env[b'MAX_LEDGER_TIP_LAG_BLOCKS'] = b'0'
     return env, command
+
+
+def run_fixed_sequence(commands, cwd, env):
+    require(isinstance(commands, list) and len(commands) > 0 and
+            all(isinstance(argv, list) and len(argv) > 0 and
+                all(isinstance(argument, str) for argument in argv) for argv in commands))
+    for argv in commands:
+        result = subprocess.run([NODE, *argv], cwd=cwd, env=env, stdin=subprocess.DEVNULL, check=False)
+        if result.returncode != 0:
+            return result.returncode if result.returncode > 0 else min(255, 128 - result.returncode)
+    return 0
 
 
 def validate_repair_evidence(blob, expected_sha):
@@ -334,16 +389,70 @@ def safe_candidate(release, account):
     return candidate
 
 
+def verify_probe_candidate(candidate, release, account):
+    require(release == PROBE_RELEASE)
+    environment = {'PATH': '/usr/bin:/bin', 'LC_ALL': 'C', 'GIT_OPTIONAL_LOCKS': '0',
+                   'GIT_CONFIG_NOSYSTEM': '1', 'GIT_CONFIG_GLOBAL': '/dev/null'}
+
+    def git(*arguments):
+        result = subprocess.run(['/usr/bin/git', '-c', f'safe.directory={candidate}', '-C', candidate,
+                                 *arguments], stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+                               stderr=subprocess.DEVNULL, timeout=10, env=environment, check=False)
+        return result
+
+    head = git('rev-parse', '--verify', 'HEAD^{commit}')
+    tree = git('rev-parse', '--verify', 'HEAD^{tree}')
+    detached = git('symbolic-ref', '--quiet', 'HEAD')
+    require(head.returncode == 0 and head.stdout.strip().decode('ascii') == PROBE_COMMIT and
+            tree.returncode == 0 and tree.stdout.strip().decode('ascii') == PROBE_TREE and
+            detached.returncode == 1)
+    script = candidate + '/deploy/audit5/probe-candidate.mjs'
+    details = os.lstat(script)
+    require(stat.S_ISREG(details.st_mode) and details.st_uid == account.pw_uid and
+            not details.st_mode & 0o022 and os.path.realpath(script) == script and details.st_nlink == 1)
+    descriptor = os.open(script, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC)
+    try:
+        opened = os.fstat(descriptor)
+        require((opened.st_dev, opened.st_ino, opened.st_size) ==
+                (details.st_dev, details.st_ino, details.st_size))
+        digest = hashlib.sha256()
+        while True:
+            chunk = os.read(descriptor, 1024 * 1024)
+            if not chunk:
+                break
+            digest.update(chunk)
+        require(digest.hexdigest() == PROBE_SCRIPT_SHA256 and
+                (os.fstat(descriptor).st_dev, os.fstat(descriptor).st_ino,
+                 os.fstat(descriptor).st_size) == (details.st_dev, details.st_ino, details.st_size))
+    finally:
+        os.close(descriptor)
+
+
+def verify_probe_output(directory, account):
+    identity = json.loads(private_read(directory + '/probe-output.json', 4096))
+    info = os.lstat(PROBE_OUTPUT)
+    require(identity == {'path': PROBE_OUTPUT, 'dev': info.st_dev, 'inode': info.st_ino,
+                         'uid': account.pw_uid, 'gid': account.pw_gid}
+            and stat.S_ISDIR(info.st_mode) and info.st_uid == account.pw_uid and
+            info.st_gid == account.pw_gid and stat.S_IMODE(info.st_mode) == 0o700 and
+            os.path.realpath(PROBE_OUTPUT) == PROBE_OUTPUT and not os.listdir(PROBE_OUTPUT))
+
+
 def launch(args, account):
     directory = runroot(args.release_id)
     check_root_dir(directory)
     manifest = json.loads(private_read(directory + '/capture.json'))
     require(manifest['format'] == 'private-audit5-environments-v1' and manifest['releaseId'] == args.release_id)
-    source = args.source if args.mode == 'gate' else ('api' if args.mode in ('readonly-shadow', 'bootstrap-api') else 'worker')
+    source = args.source if args.mode == 'gate' else ('api' if args.mode in
+                                                       ('readonly-shadow', 'bootstrap-api', 'candidate-probe')
+                                                       else 'worker')
     require(source in UNITS)
     blob = private_read(directory + '/' + source + '.environ')
     require(hashlib.sha256(blob).hexdigest() == manifest['processes'][source]['environmentSha256'])
     candidate = safe_candidate(args.release_id, account)
+    if args.mode == 'candidate-probe':
+        verify_probe_candidate(candidate, args.release_id, account)
+        verify_probe_output(directory, account)
     node_info = os.stat(NODE)
     require(stat.S_ISREG(node_info.st_mode) and node_info.st_uid == 0 and not node_info.st_mode & 0o022
             and os.path.realpath(NODE) == NODE)
@@ -388,6 +497,8 @@ def launch(args, account):
             all(int(status[key].strip(), 16) == 0 for key in ('CapEff', 'CapPrm', 'CapInh', 'CapAmb')))
     print(json.dumps({'ok': True, 'operation': 'exec', 'mode': args.mode, 'source': source,
                       'releaseId': args.release_id, 'uid': os.getuid(), 'gid': os.getgid(), 'cwd': candidate, 'node': NODE}), flush=True)
+    if args.mode == 'gate' and args.gate in SEQUENCED_GATES:
+        return run_fixed_sequence(command, candidate, env)
     os.execve(NODE, [NODE, *command], env)
 
 
@@ -397,11 +508,14 @@ def main():
     for name in ('capture', 'prepare-shadow-cache'):
         command = commands.add_parser(name)
         command.add_argument('--release-id', required=True)
+    command = commands.add_parser('prepare-probe-output')
+    command.add_argument('--release-id', required=True)
     command = commands.add_parser('launch')
     command.add_argument('--release-id', required=True)
-    command.add_argument('--mode', required=True, choices=('readonly-shadow', 'bootstrap-api', 'bootstrap-worker', 'repair-canonical', 'repair-atoms', 'gate'))
+    command.add_argument('--mode', required=True, choices=('readonly-shadow', 'bootstrap-api', 'bootstrap-worker',
+                                                            'repair-canonical', 'repair-atoms', 'gate', 'candidate-probe'))
     command.add_argument('--source', choices=('api', 'worker'), default='worker')
-    command.add_argument('--gate', choices=tuple(GATES))
+    command.add_argument('--gate', choices=tuple(GATES) + tuple(SEQUENCED_GATES))
     command.add_argument('--api-port', type=int, choices=(8081, 18081), default=18081)
     command.add_argument('--repair-before-sha256')
     args = parser.parse_args()
@@ -417,8 +531,10 @@ def main():
             capture(args.release_id, account)
         elif args.operation == 'prepare-shadow-cache':
             prepare_shadow_cache(args.release_id, account)
+        elif args.operation == 'prepare-probe-output':
+            prepare_probe_output(args.release_id, account)
         else:
-            launch(args, account)
+            return launch(args, account) or 0
     except Exception:
         # Exceptions can contain private connection/environment values.
         print('private_environment_helper status=refused (private details suppressed)', file=sys.stderr)

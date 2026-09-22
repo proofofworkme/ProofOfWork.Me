@@ -38,4 +38,5 @@ if (python.status !== 0) {
 process.stdout.write(python.stderr);
 console.log(JSON.stringify({ ok: true, databaseConnections: 0,
   coverage: ['capture-identity-fences', 'private-env-preservation', 'fixed-repair-scope', 'fixed-gate-argv',
-    'actual-pool-and-pg-options-precedence', 'read-only-settings', 'expected-database', 'primary-group-semantics'] }));
+    'fixed-sequenced-gate-argv', 'candidate-probe-fixed-scope', 'actual-pool-and-pg-options-precedence', 'read-only-settings',
+    'expected-database', 'primary-group-semantics'] }));

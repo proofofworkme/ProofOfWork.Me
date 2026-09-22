@@ -86,6 +86,20 @@ class PrivateLauncherTests(unittest.TestCase):
         self.assertNotIn(b'JOURNAL_STREAM', env)
         self.assertEqual(original[b'ENABLE_STARTUP_EXPENSIVE_PREWARM'], b'1')
 
+    def test_candidate_probe_has_fixed_release_port_command_and_no_captured_secrets(self):
+        release = module.PROBE_RELEASE
+        original = {**BASE, b'API_KEY': b'synthetic-secret', b'POW_INDEX_DATABASE_URL': b'private-database-url'}
+        env, command = module.launch_plan('candidate-probe', original, release)
+        self.assertEqual(command, ['deploy/audit5/probe-candidate.mjs', '--run', '--output',
+                                   module.PROBE_OUTPUT, '--api-port', '18081'])
+        self.assertNotIn(b'API_KEY', env)
+        self.assertNotIn(b'POW_INDEX_DATABASE_URL', env)
+        self.assertEqual(env[b'HOST'] if b'HOST' in env else None, None)
+        self.assertEqual(env[b'PORT'] if b'PORT' in env else None, None)
+        for bad_release, bad_port in ((RELEASE, 18081), (release, 8081)):
+            with self.assertRaises(module.Refused):
+                module.launch_plan('candidate-probe', original, bad_release, api_port=bad_port)
+
     def test_inherited_runtime_code_loaders_are_refused(self):
         for overrides in ({b'NODE_OPTIONS': b'--import=/tmp/arbitrary.mjs'}, {b'LD_PRELOAD': b'/tmp/evil.so'}):
             with self.assertRaises(module.Refused):
@@ -120,6 +134,21 @@ class PrivateLauncherTests(unittest.TestCase):
         with self.assertRaises(module.Refused):
             module.launch_plan('gate', BASE, RELEASE, 'audit:ids', 443)
 
+    def test_compound_gate_uses_only_fixed_argv_and_stops_on_first_failure(self):
+        expected = [
+            ['--test', 'server/db/canonical-transfer-fee.test.mjs'],
+            ['scripts/check-index-recovery-behavior.mjs'],
+        ]
+        env, commands = module.launch_plan('gate', BASE, RELEASE, 'check:index-recovery-behavior')
+        self.assertEqual(commands, expected)
+        self.assertEqual(env[b'POW_API_BASE'], b'http://127.0.0.1:18081')
+        with patch.object(module.subprocess, 'run', side_effect=[
+                module.subprocess.CompletedProcess([], 0), module.subprocess.CompletedProcess([], 7)]) as run:
+            self.assertEqual(module.run_fixed_sequence(commands, '/candidate', env), 7)
+        self.assertEqual(run.call_count, 2)
+        self.assertEqual(run.call_args_list[0].args[0], [module.NODE, *expected[0]])
+        self.assertEqual(run.call_args_list[1].args[0], [module.NODE, *expected[1]])
+
     def test_all_gate_commands_match_current_package_scripts_and_existing_files(self):
         scripts = json.loads((ROOT / 'package.json').read_text())['scripts']
         for name, argv in module.GATES.items():
@@ -132,6 +161,12 @@ class PrivateLauncherTests(unittest.TestCase):
                 self.assertEqual(shlex.split(scripts[name]), ['node', *argv], name)
             entry = next(argument for argument in argv if argument.endswith('.mjs'))
             self.assertTrue((ROOT / entry).is_file(), name)
+        for name, sequence in module.SEQUENCED_GATES.items():
+            commands = [shlex.split(command.strip()) for command in scripts[name].split('&&')]
+            self.assertEqual(commands, [['node', *argv] for argv in sequence], name)
+            entries = [argument for argv in sequence for argument in argv if argument.endswith('.mjs')]
+            self.assertTrue(entries)
+            self.assertTrue(all((ROOT / entry).is_file() for entry in entries), name)
         parity_source = (ROOT / 'scripts/check-proof-indexer-parity.mjs').read_text()
         self.assertIn('process.env.POW_INDEX_PARITY_STRICT', parity_source)
 
