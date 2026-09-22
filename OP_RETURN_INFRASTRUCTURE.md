@@ -3289,6 +3289,16 @@ and verify that each post includes its base proof and every owner-paid
 increment represented by a visible reply or reboost. The verifier does not
 claim an independent lifecycle replay of likes or other omitted source events.
 
+The next candidate is bound to release
+`a4d2548f55b0-20260922T040224Z` (commit
+`a4d2548f55b08c03a590a10e150f70c2f74ad758`, tree
+`6faf073fa2ad9d017cd5a28a226bbbc86c755dbe`). Its new retry4 attempt must use
+`/data/proofofwork-audit5-probe-a4d2548f55b0-20260922T040224Z-retry4/attempt`;
+retry3 and all earlier receipts remain immutable. Retry4 is the first gate for
+the corrected action-signal projection and reboost-parent checks. No production
+switch is permitted unless this separately named retry passes and the live
+checkout/services still satisfy the pinned precondition.
+
 The candidate runner verifies the staged checkout, probe-script digest, and
 root-private helper digests; starts only the reviewed read-only shadow API on
 loopback; and invokes the probe through the protected launcher with a minimal
