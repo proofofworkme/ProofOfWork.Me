@@ -3152,6 +3152,13 @@ bits, no non-ignored untracked paths, and no ignored paths outside
 `chmod --recursive go-w /opt/proofofwork-api`; if a tracked executable bit still
 differs from Git, replace it with a fresh detached checkout instead of guessing.
 
+Release health checks inspect stored execute bits with the same `0111` mask as
+the publisher, rather than shell `-x` access checks. The health service retains
+only `CAP_DAC_READ_SEARCH`: it can read private runtime-owned hooks without
+being allowed to execute them. That observer restriction must not be reported
+as a changed Git mode, and does not justify loosening checkout permissions or
+granting the service `CAP_DAC_OVERRIDE`.
+
 Managed UI and node release archives have dedicated allowlisted retention
 directories. A canonical checksum sidecar contains exactly one
 `<64 lowercase hex><two spaces><archive basename>` line. Retention accepts the

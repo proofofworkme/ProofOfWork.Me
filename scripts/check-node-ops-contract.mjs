@@ -1211,12 +1211,16 @@ try {
     join(liveCheckout, "nested", "tracked.txt"),
     "canonical tracked bytes\n",
   );
+  const privateHook = join(liveCheckout, "nested", "private-hook");
+  writeFileSync(privateHook, "#!/bin/sh\nexit 0\n", { mode: 0o750 });
+  chmodSync(privateHook, 0o750);
   runChecked("/usr/bin/git", [
     "-C",
     liveCheckout,
     "add",
     ".gitignore",
     "nested/tracked.txt",
+    "nested/private-hook",
   ]);
   runChecked("/usr/bin/git", [
     "-C",
@@ -1378,6 +1382,11 @@ try {
 
   // The staged tar deliberately contains different tracked bytes. Publication
   // must construct from the attested live checkout instead of copying them.
+  // The owner cannot execute this file, although its stored executable marker
+  // matches the publisher's Git-mode proof. This reproduces observer access
+  // differing from stored mode without requiring privileged capability tests.
+  chmodSync(privateHook, 0o654);
+  assert.equal(spawnSync("/usr/bin/bash", ["-c", '[[ -x "$1" ]]', "--", privateHook]).status, 1);
   const matchingRelease = createReleaseArchive("trusted-live", true);
   const matchingResult = spawnSync(
     "/usr/bin/bash",
@@ -1447,6 +1456,16 @@ try {
   });
   assert.equal(healthy.status, 0, healthy.stderr);
   assert.match(healthy.stdout, /current_provenance=1/u);
+
+  for (const mode of [0o644, 0o774]) {
+    chmodSync(privateHook, mode);
+    const rejectedMode = spawnSync("/usr/bin/bash", [healthFixturePath], {
+      encoding: "utf8",
+    });
+    assert.equal(rejectedMode.status, 2, rejectedMode.stderr);
+    assert.match(rejectedMode.stderr, /tracked mode is unsafe or differs from Git/u);
+  }
+  chmodSync(privateHook, 0o654);
 
   writeFileSync(runtimeFile, "export const runtime = 'drift';\n");
   const runtimeDrift = spawnSync("/usr/bin/bash", [healthFixturePath], {
