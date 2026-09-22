@@ -3333,6 +3333,75 @@ Retry6 must pass the wallet-route checkpoint contract, complete listing
 authority, and Boost action/reboost checks before any production release
 exchange.
 
+On 2026-09-22, retry6 passed at Core height `968091`, hash
+`00000000000000000001a9690637e05c0a683a1f5fe3452e69b4d8a04a846674`.
+Its immutable receipt SHA256 is
+`d3af60844e02df1b295911b18ae202c0ca28c3d0ebba7958aae7e05ccd841c0f`.
+This was the bounded candidate gate, not a whole-chain replay or a wallet
+signing/broadcast test. The approved production exchange subsequently placed
+commit `a1e1f9b1c18d8e5ca6721afe8f12ff3fe88e47f8` at the live API path,
+with runtime SHA256
+`85ffcdb9e4dd4beb073ff194b79b8331ab812ee714671e3bf3515a326edc080d`.
+The managed API archive is
+`proofofwork-node-release-a1e1f9b-20260922T041933Z.tgz`, SHA256
+`d8011e595aa202148c7fe9e257a32e86e2e46a2a1ed7aaaf04e48b19414bb428`.
+The first cutover attempt restored the old checkout automatically when the
+publisher rejected a twelve-character archive commit component: its naming
+contract requires the exact seven-character prefix as a delimited component.
+The successful separately named receipt directory is
+`/data/proofofwork-boost-cutover-a1e1f9b1c18d-20260922T041933Z-retry2`.
+Both attempts remain evidence. Core, electrs, PostgreSQL, and WAL streaming
+were not restarted; application timers were restored to their prior state.
+The installed release-health fix from `6329e3641c9637905904469a323fe1c8b529869a`
+verified all 47 API archives and the new live runtime. Its pre-existing warning
+about 40 retained `/opt` checkouts remains; preserving history is not a reason
+to suppress that warning or weaken retention checks.
+
+The matching UI published successfully as release
+`6c5e7b5a3d03-20260922T042824Z`, source commit
+`6c5e7b5a3d038a66baa830822f4521fdcc849031`, archive SHA256
+`4f1900e81a4afecbdfcb4b12b0af2f6659b616cb4d3845bb4b8198ee726aa304`.
+Its application source matches the gated API candidate; subsequent commits
+before the UI build changed candidate-runner pins and documentation, not the
+application runtime. The canonical publisher preserved all six retained
+rollback roots and added the prior live root at
+`/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-6c5e7b5a3d03-20260922T042824Z`.
+Candidate, failed/successful publication, cleanup, and HTTP verification
+receipts are retained under
+`/var/tmp/proofofwork-deploy/boost-resume-6c5e7b5a3d03-20260922T0525`.
+
+The first UI publication stopped before exchange because an earlier recovery
+relocation had removed the `132b87faaac7-20260919T174900Z` archive still bound
+by retained rollback root `proofofwork-www-pre-0ef9c3bee321-20260920T053656Z`.
+That exact archive and its original checksum/provenance were restored from
+verified recovery copies; archive SHA256 remains
+`8b096b7b32f57922dd66d2b1443bc04c92a1c049d3fca01575441c04fd07e270`.
+Rollback directory names identify the release that replaced their contents,
+not necessarily the release recorded inside them. Always resolve archive
+dependencies from every retained root's manifest before relocating an archive.
+To recover the necessary space, only the redundant staging transport
+`proofofwork-ui-source-68b16f653049-20260922T005601Z.tgz` was removed after
+verifying its byte-identical local copy in
+`/tmp/proofofwork-ui-release.e6yt2vPVop/`; SHA256 is
+`de4a7cd8d0fd8c5b34b450b15947b63a186a13a4ba8668a0224f1df5dfa157cc`.
+No managed release archive, remaining rollback root, or receipt was deleted
+during this correction, and storage reserves were not overridden.
+
+Post-publication HTTP verification matched 722 responses (202,447,850 bytes)
+to the release archive across 14 serving surfaces and four redirect hosts,
+including prior compatibility assets. The managed NFT artifact has no active
+Caddy hostname and is covered by archive/root verification, not an invented
+public route. The shared production audit passed all 13 configured app/API
+checks; Boost was checked separately against its public API and live browser.
+Browser checks verified embedded reboost content and its historical
+546-proof action signal, direct posting and selectable fee controls, shared
+fee selection across like/reboost/reply review dialogs, expanded replies, and
+document-level scrolling on timeline and profile. Public readiness recovered
+to HTTP 200 with zero lag at height `968106` after intervening new blocks.
+These checks did not sign or broadcast a paid mainnet transaction; ownership
+transitions and owner-directed exact signal attribution are additionally
+covered by the regression fixtures and bounded candidate receipt.
+
 The candidate runner verifies the staged checkout, probe-script digest, and
 root-private helper digests; starts only the reviewed read-only shadow API on
 loopback; and invokes the probe through the protected launcher with a minimal

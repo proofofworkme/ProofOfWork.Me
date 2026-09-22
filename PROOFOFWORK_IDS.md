@@ -304,7 +304,7 @@ Rules to preserve:
 
 - Boost and replies are capped at 140 user-visible characters.
 - Original posts are self-sends to the author's own ProofOfWork address. They require miner fee only unless the author chooses to attach proof or WORK signal.
-- Mail compose owns original posting through the Boost ticker. Attachments/media use the existing Files path; Boost records store proof metadata and pointers, not duplicate bytes.
+- Originals can be published through Mail's Boost ticker or the standalone Boost “What's happening?” composer. Attachments/media use the existing Files path; Boost records store proof metadata and pointers, not duplicate bytes.
 - Every address can have a Boost profile shell. Confirmed PowIDs provide the preferred display identity, and profile picture/banner choices come from confirmed Files on that address.
 - `pwb1:like`, `pwb1:reply`, and `pwb1:reboost` are paid product actions. The current writer sends 546 proofs directly to the target Boost's confirmed current owner; each confirmed owner-directed payment is added to that original Boost's proof signal. Miner fee rate is a separate selectable transaction setting.
 - `pwb1:follow` and `pwb1:unfollow` are paid social-graph actions. The current writer sends 546 proofs to the addressed profile target. The latest confirmed follow/unfollow event for a follower-address plus target-address pair determines the active edge.
