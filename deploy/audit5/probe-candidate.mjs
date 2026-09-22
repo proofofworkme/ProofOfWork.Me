@@ -2,6 +2,7 @@
 // No credentials, DB writes, signing, repair, replay or production configuration.
 import { createHash } from 'node:crypto';
 import { execFile } from 'node:child_process';
+import { userInfo } from 'node:os';
 import { promisify } from 'node:util';
 import { gzipSync } from 'node:zlib';
 import { mkdir, realpath, writeFile } from 'node:fs/promises';
@@ -21,6 +22,8 @@ const MAX_BYTES = 192 * 1024 * 1024;
 const MAX_HTTP = 128;
 const MAX_CORE = 2300;
 const MAX_MS = 600_000;
+const CORE_METHODS = ['getblockchaininfo', 'getrawmempool', 'gettxout', 'getrawtransaction'];
+const CORE_CLI = '/usr/local/bin/bitcoin-cli';
 const spawn = promisify(execFile);
 
 export function requireFact(ok, code) {
@@ -84,6 +87,11 @@ const units = (value) => integer(typeof value === 'number' && Number.isSafeInteg
 export function apiBase(port) {
   requireFact(['18081', '8081'].includes(String(port)), 'NONPRIVATE_API_PORT');
   return `http://127.0.0.1:${port}`;
+}
+export function coreCliInvocation(method, args = []) {
+  requireFact(CORE_METHODS.includes(method) && Array.isArray(args) && args.every((value) => typeof value === 'string'),
+    'CORE_REQUEST_BUDGET_OR_METHOD');
+  return [CORE_CLI, '-conf=/etc/bitcoin/bitcoin.conf', method, ...args];
 }
 function unique(rows, key) {
   const keys = rows.map((row) => String(row[key] ?? ''));
@@ -517,10 +525,10 @@ function ioFor(outputDirectory, receipts, base) {
       } finally { clearTimeout(timer); }
     },
     async core(method, args = []) {
-      requireFact(['getblockchaininfo', 'getrawmempool', 'gettxout', 'getrawtransaction'].includes(method) && ++coreCalls <= MAX_CORE,
+      requireFact(CORE_METHODS.includes(method) && ++coreCalls <= MAX_CORE,
         'CORE_REQUEST_BUDGET_OR_METHOD');
-      const { stdout } = await spawn('/usr/bin/sudo', ['-n', '-u', 'bitcoin', '/usr/local/bin/bitcoin-cli',
-        '-conf=/etc/bitcoin/bitcoin.conf', method, ...args], { timeout: Math.min(15_000, remaining()), maxBuffer: MAX_BODY,
+      const { stdout } = await spawn(...coreCliInvocation(method, args),
+        { timeout: Math.min(15_000, remaining()), maxBuffer: MAX_BODY,
         encoding: 'utf8', env: { PATH: '/usr/local/bin:/usr/bin:/bin', LANG: 'C.UTF-8' } });
       const raw = Buffer.from(stdout);
       totalBytes += raw.length;
@@ -533,6 +541,7 @@ function ioFor(outputDirectory, receipts, base) {
 
 async function main() {
   requireFact(process.version === 'v24.18.0', 'PINNED_NODE_24_REQUIRED');
+  requireFact(userInfo().username === 'bitcoin', 'BITCOIN_USER_REQUIRED');
   const args = process.argv.slice(2);
   requireFact(args.length === 5 && args[0] === '--run' && args[1] === '--output' && args[3] === '--api-port',
     'USAGE_--run_--output_FRESH_ABSOLUTE_DIRECTORY_--api-port_18081_OR_8081');

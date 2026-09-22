@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { readFile } from 'node:fs/promises';
-import { apiBase, canonicalJson, compareCandidate, decimalQ8, decodeCoreCliPayload, digest, FIXTURE, integer, inventory, listingCommitmentRecord,
+import { apiBase, canonicalJson, compareCandidate, coreCliInvocation, decimalQ8, decodeCoreCliPayload, digest, FIXTURE, integer, inventory, listingCommitmentRecord,
   verifyBonds, verifyBookPair, verifyBoost, verifyCounts, verifyDirectory, verifyWallet,
   verifyWalletListingScopes } from '../deploy/audit5/probe-candidate.mjs';
 import { registryCountsProjection, tokenDirectoryProjection, tokenListingDisplayProjection } from '../server/read-projections.mjs';
@@ -78,6 +78,14 @@ test('exact parsing and numeric loopback port admission', () => {
   assert.equal(apiBase('8081'), 'http://127.0.0.1:8081');
   assert.equal(apiBase('18081'), 'http://127.0.0.1:18081');
   for (const bad of ['443', '18081/path', 'https://example.com']) assert.throws(() => apiBase(bad));
+});
+test('Core invocation is direct, read-only, and restricted to fixed methods', () => {
+  assert.deepEqual(coreCliInvocation('getblockchaininfo'), ['/usr/local/bin/bitcoin-cli',
+    '-conf=/etc/bitcoin/bitcoin.conf', 'getblockchaininfo']);
+  assert.deepEqual(coreCliInvocation('gettxout', ['a'.repeat(64), '0', 'true']), ['/usr/local/bin/bitcoin-cli',
+    '-conf=/etc/bitcoin/bitcoin.conf', 'gettxout', 'a'.repeat(64), '0', 'true']);
+  assert.throws(() => coreCliInvocation('sendtoaddress', ['dummy', '1']), /CORE_REQUEST_BUDGET_OR_METHOD/u);
+  assert.throws(() => coreCliInvocation('gettxout', ['a'.repeat(64), 0, 'true']), /CORE_REQUEST_BUDGET_OR_METHOD/u);
 });
 test('successful gettxout CLI null differs from malformed or empty other RPC output', () => {
   for (const empty of ['', ' \n\t', 'null\n']) assert.equal(decodeCoreCliPayload('gettxout', empty), null);
