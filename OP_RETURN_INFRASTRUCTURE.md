@@ -3274,7 +3274,20 @@ The corrected candidate is release-pinned as
 `62d74dc88b194c97c37d8d49287864055caf8a6d`). Its separately named retry3
 evidence path is
 `/data/proofofwork-audit5-probe-dbfc3f2614a1-20260922T034136Z-retry3/attempt`;
-the previous failed receipts and paths remain immutable evidence.
+the previous failed receipts and paths remain immutable evidence. Retry3
+completed the bounded Core/API reads and failed at `BOOST_EXACT_SIGNAL_CHANGED`.
+The candidate verifier incorrectly compared a post's current projected signal
+to only its source/base proof, omitting confirmed owner-paid interactions already
+included in that post. The receipt also records the linked legacy reboost as a
+546-sat registry payment: it is a historical action signal, not revenue for the
+current owner, and must not be added to the original post's owner-earned total.
+The corrected projection keeps the two concepts distinct: show the historical
+event's `Action signal 546 proofs`, while only verified owner-directed payments
+increase the original Boost signal. Future candidates must validate each
+reboost's embedded original post against that post's current projected signal,
+and verify that each post includes its base proof and every owner-paid
+increment represented by a visible reply or reboost. The verifier does not
+claim an independent lifecycle replay of likes or other omitted source events.
 
 The candidate runner verifies the staged checkout, probe-script digest, and
 root-private helper digests; starts only the reviewed read-only shadow API on

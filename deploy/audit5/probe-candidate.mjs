@@ -248,24 +248,61 @@ export function verifyBoost(feed, events, listings, floor) {
   const visible = valid.filter((row) => ['boost-post', 'boost-reply', 'boost-reboost'].includes(row.kind));
   equal(unique(feed.rows, 'eventId').sort(), unique(visible, 'eventId').sort(), 'BOOST_VISIBLE_EVENT_INVENTORY_CHANGED');
   const source = new Map(visible.map((row) => [String(row.eventId), row]));
+  const targetTxid = (row) => String(row?.targetTxid ?? row?.boostTxid ?? row?.parentTxid ?? row?.replyToTxid ?? '');
   const exactNetwork = integer(floor.liveNetworkValueQ8 ?? floor.actualValue?.liveNetworkValueQ8 ?? floor.networkValueQ8 ?? floor.actualValue?.networkValueQ8);
   let proofTotal = 0n;
   let total = 0n;
   let workTotal = 0n;
   let previous;
+  const postBaseProof = new Map();
+  const visibleOwnerSignal = new Map();
   for (const row of feed.rows) {
     const original = source.get(String(row.eventId));
-    const proof = decimalQ8(original.proofSignalSats ?? original.signalSats ?? original.amountSats ?? original.proofs ?? 0);
+    const socialAction = ['boost-like', 'boost-reply', 'boost-reboost'].includes(original.kind);
+    const baseProof = socialAction ? 0n : decimalQ8(original.proofSignalSats ?? original.signalSats ?? original.amountSats ?? original.proofs ?? 0);
     const work = integer(String(original.workSignalSubatoms ?? original.workSignalAtoms ?? original.workSignal ?? '0') || '0');
     const workValue = work * exactNetwork / WORK_CAP;
+    const expectedActionSignal = socialAction
+      ? integer(original.applicationBoostOwnerPaymentSats ?? original.amountSats ?? '0') * 100000000n
+      : 0n;
+    const actualProof = integer(row.proofSignalQ8);
+    const actionSignal = integer(row.actionSignalQ8 ?? '0');
+    const ownerIncrement = integer(row.signalIncrementQ8 ?? '0');
+    const exactActionSignal = decimalQ8(row.actionSignalSatsExact ?? '0');
+    const exactOwnerIncrement = decimalQ8(row.signalIncrementSatsExact ?? '0');
     requireFact(row.confirmed === true && row.txid === original.txid && row.kind === original.kind, 'BOOST_EVENT_BINDING');
-    requireFact(integer(row.proofSignalQ8) === proof && decimalQ8(row.proofSignalSatsExact) === proof &&
+    requireFact(actualProof >= baseProof && (!socialAction || actualProof === 0n) &&
+      decimalQ8(row.proofSignalSatsExact) === actualProof &&
       integer(row.workSignalValueQ8) === workValue && decimalQ8(row.workSignalValueSatsExact) === workValue &&
-      integer(row.totalSignalQ8) === proof + workValue && decimalQ8(row.totalSignalSatsExact) === proof + workValue &&
-      integer(row.workSignalSubatoms || '0') === work, 'BOOST_EXACT_SIGNAL_CHANGED');
-    requireFact(previous === undefined || previous >= proof + workValue, 'BOOST_Q8_ORDER_CHANGED');
-    previous = proof + workValue;
-    proofTotal += proof; total += proof + workValue; workTotal += work;
+      integer(row.totalSignalQ8) === actualProof + workValue && decimalQ8(row.totalSignalSatsExact) === actualProof + workValue &&
+      integer(row.workSignalSubatoms || '0') === work && actionSignal === expectedActionSignal &&
+      exactActionSignal === actionSignal && ownerIncrement <= actionSignal && exactOwnerIncrement === ownerIncrement,
+    'BOOST_EXACT_SIGNAL_CHANGED');
+    if (socialAction && ownerIncrement > 0n) {
+      const target = targetTxid(original);
+      requireFact(HASH.test(target), 'BOOST_ACTION_TARGET_MISSING');
+      visibleOwnerSignal.set(target, (visibleOwnerSignal.get(target) ?? 0n) + ownerIncrement);
+    }
+    requireFact(previous === undefined || previous >= actualProof + workValue, 'BOOST_Q8_ORDER_CHANGED');
+    previous = actualProof + workValue;
+    if (original.kind === 'boost-post') postBaseProof.set(original.txid, baseProof);
+    proofTotal += actualProof; total += actualProof + workValue; workTotal += work;
+  }
+  for (const row of feed.rows) {
+    if (row.kind === 'boost-post') {
+      const base = postBaseProof.get(row.txid) ?? 0n;
+      const visibleIncrements = visibleOwnerSignal.get(row.txid) ?? 0n;
+      requireFact(integer(row.proofSignalQ8) >= base + visibleIncrements, 'BOOST_OWNER_SIGNAL_NOT_AGGREGATED');
+    }
+    if (row.kind === 'boost-reboost') {
+      const original = source.get(String(row.eventId));
+      const target = targetTxid(original);
+      const post = feed.rows.find((candidate) => candidate.kind === 'boost-post' && candidate.txid === target);
+      requireFact(post && row.reboostedPost?.txid === target &&
+        row.reboostedPost.proofSignalQ8 === post.proofSignalQ8 &&
+        row.reboostedPost.totalSignalQ8 === post.totalSignalQ8,
+      'BOOST_REBOOST_ORIGINAL_SIGNAL_CHANGED');
+    }
   }
   const stats = feed.first.signalStats;
   requireFact(integer(stats.proofSignalQ8) === proofTotal && integer(stats.totalSignalQ8) === total &&
@@ -288,7 +325,7 @@ export function verifyBoost(feed, events, listings, floor) {
   }
   return { events: events.rows.length, visibleRecords: feed.rows.length, activeListings: listings.items.length,
     proofSignalQ8: proofTotal.toString(), totalSignalQ8: total.toString(), workSubatoms: workTotal.toString(),
-    listingQualification: 'Complete active discovery compared to complete feed annotations; no independent lifecycle reducer replay.' };
+    listingQualification: 'Complete active discovery compared to complete feed annotations; current-owner increments and reboost parent signals are checked, but no independent lifecycle reducer replay.' };
 }
 
 export function verifyBonds(directory, infinity, inception) {

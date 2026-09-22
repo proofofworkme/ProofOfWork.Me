@@ -38,6 +38,9 @@ export type BoostProfile = {
 export type BoostFeedItem = {
   eventId?: string | number;
   actionCount?: number;
+  actionSignalSats?: number;
+  actionSignalQ8?: string;
+  actionSignalSatsExact?: string;
   authorAddress: string;
   authorDisplay?: string;
   authorId?: string;

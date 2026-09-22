@@ -650,6 +650,11 @@ function BoostPost({
     item.signalIncrementSatsExact,
     item.signalIncrementSats ?? 0,
   );
+  const actionSignalQ8 = boostSignalQ8(
+    item.actionSignalQ8,
+    item.actionSignalSatsExact,
+    item.actionSignalSats ?? 0,
+  );
   const workSignalValueQ8 = boostWorkSignalValueQ8(item);
   const workSignalSubatoms = boostWorkSignalSubatoms(item);
   const connectedOwner =
@@ -760,6 +765,8 @@ function BoostPost({
           <span>Proof {formatBoostSignal(boostProofSignalQ8(item))}</span>
           {signalIncrementQ8 > 0n ? (
             <span>Added {formatBoostSignal(signalIncrementQ8)} to original Boost signal</span>
+          ) : actionSignalQ8 > 0n ? (
+            <span>Action signal {formatBoostSignal(actionSignalQ8)}</span>
           ) : null}
           {workSignalSubatoms > 0n ? (
             <span>

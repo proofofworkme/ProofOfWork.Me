@@ -39,18 +39,29 @@ function book() {
     itemProjection: { model: 'proof-token-listing-display-v1', fullMembershipSha256: membership, fullSourceSha256: source } }, rows: shown, pages: 1 } };
 }
 const decimal = (n) => `${n / 100000000n}.${String(n % 100000000n).padStart(8, '0')}`;
-function boosts() {
+function boosts({ ownerPaid = true } = {}) {
   const proof = 9007199254740993n;
   const work = 210000000000000000000000n;
-  const events = [{ eventId: '1', txid: h(4), kind: 'boost-post', confirmed: true, valid: true, proofSignalSats: decimal(proof), workSignalSubatoms: work.toString() },
-    { eventId: '2', txid: h(5), kind: 'boost-reply', confirmed: true, valid: true, proofSignalSats: '546' }];
-  const values = [proof + 1n, 54600000000n];
-  const feedRows = events.map((event, i) => ({ ...event, boostTxid: event.txid, currentOwnerAddress: FIXTURE, listing: i === 0 ? { txid: h(6) } : null,
-    proofSignalQ8: (i ? 54600000000n : proof).toString(), proofSignalSatsExact: event.proofSignalSats,
+  const action = 54600000000n;
+  const parentSignal = proof + (ownerPaid ? action : 0n);
+  const events = [
+    { eventId: '1', txid: h(4), kind: 'boost-post', confirmed: true, valid: true,
+      proofSignalSats: decimal(proof), workSignalSubatoms: work.toString() },
+    { eventId: '2', txid: h(5), kind: 'boost-reboost', confirmed: true, valid: true,
+      proofSignalSats: '0', amountSats: '546', ...(ownerPaid ? { applicationBoostOwnerPaymentSats: '546' } : {}), targetTxid: h(4) },
+  ];
+  const values = [parentSignal + 1n, 0n];
+  const feedRows = events.map((event, i) => ({ ...event, boostTxid: event.kind === 'boost-post' ? event.txid : h(4),
+    currentOwnerAddress: FIXTURE, listing: i === 0 ? { txid: h(6) } : null,
+    proofSignalQ8: (i ? 0n : parentSignal).toString(),
+    proofSignalSatsExact: decimal(i ? 0n : parentSignal),
+    ...(i ? { actionSignalQ8: action.toString(), actionSignalSatsExact: '546',
+      ...(ownerPaid ? { signalIncrementQ8: action.toString(), signalIncrementSatsExact: '546' } : {}) } : {}),
     workSignalSubatoms: i ? '' : work.toString(), workSignalValueQ8: i ? '0' : '1', workSignalValueSatsExact: i ? '0' : '0.00000001',
     totalSignalQ8: values[i].toString(), totalSignalSatsExact: decimal(values[i]) }));
+  feedRows[1].reboostedPost = { ...feedRows[0] };
   const first = { ...cp, complete: true, mode: 'timeline', source: 'proof-indexer-events', totalCount: 2,
-    signalStats: { proofSignalQ8: (proof + 54600000000n).toString(), proofSignalSatsExact: decimal(proof + 54600000000n),
+    signalStats: { proofSignalQ8: parentSignal.toString(), proofSignalSatsExact: decimal(parentSignal),
       totalSignalQ8: (values[0] + values[1]).toString(), totalSignalSatsExact: decimal(values[0] + values[1]), workSignalSubatoms: work.toString() },
     valuationProvenance: { used: true, ...cp, networkValue: { networkValueQ8: '1' } },
     provenance: { ...cp, model: 'boost-complete-events-v1', eventCount: 2, totalCount: 2, maxEventId: 2, maxUpdatedAt: cp.indexedAt },
@@ -173,10 +184,15 @@ test('Boost exact signals and aggregate preserve adjacent above-safe values, sou
     (x) => { x.feed.first.signalStats.totalSignalQ8 = '0'; },
     (x) => { x.feed.first.valuationProvenance.snapshotId = 'wrong'; },
     (x) => { x.feed.first.provenance.maxEventId++; },
+    (x) => { x.feed.rows[1].actionSignalQ8 = '54600000001'; },
+    (x) => { x.feed.rows[1].reboostedPost.totalSignalQ8 = '0'; },
     (x) => { x.listings.items = []; x.listings.totalCount = 0; },
     (x) => { x.feed.rows.reverse(); }]) {
     const x = clone(b); mutate(x); assert.throws(() => verifyBoost(x.feed, x.events, x.listings, x.floor));
   }
+  const historicRegistryPaid = boosts({ ownerPaid: false });
+  assert.equal(verifyBoost(historicRegistryPaid.feed, historicRegistryPaid.events,
+    historicRegistryPaid.listings, historicRegistryPaid.floor).proofSignalQ8, '9007199254740993');
 });
 test('bond exact quotient and fixed issuance dust identities reject one-subunit drift', () => {
   const { infinity, inception } = bonds();

@@ -4,6 +4,7 @@ const ORIGINAL_TXID = "8ae8a348b6fec39e465b4d215d9b1c24ab286db7ff15db6077f3703db
 const REBOOST_TXID = "c7f1f361d5066b56b3af144b369d199278aaada25d657550e31fdb255c3938c8";
 
 test("reboost renders the original post instead of the target txid", async ({ page }) => {
+  let ownerPaid = false;
   await page.route("**/api/v1/**", async (route) => {
     if (route.request().method() !== "GET") return route.abort("blockedbyclient");
     const url = new URL(route.request().url());
@@ -25,9 +26,14 @@ test("reboost renders the original post instead of the target txid", async ({ pa
             likeCount: 0,
             proofSignalSats: 0,
             proofSignalQ8: "0",
-            signalIncrementSats: 546,
-            signalIncrementQ8: "54600000000",
-            signalIncrementSatsExact: "546",
+            actionSignalSats: 546,
+            actionSignalQ8: "54600000000",
+            actionSignalSatsExact: "546",
+            ...(ownerPaid ? {
+              signalIncrementSats: 546,
+              signalIncrementQ8: "54600000000",
+              signalIncrementSatsExact: "546",
+            } : {}),
             reboostCount: 1,
             reboostedPost: {
               authorAddress: "original-author",
@@ -79,8 +85,14 @@ test("reboost renders the original post instead of the target txid", async ({ pa
   await expect(page.getByTestId("reboosted-post")).toContainText("Original Boost signal");
   await expect(page.getByTestId("reboosted-post")).toContainText("1,092 proofs");
   await expect(page.locator(".boost-post")).toContainText("reboosted");
-  await expect(page.locator(".boost-post")).toContainText("Added 546 proofs to original Boost signal");
+  await expect(page.locator(".boost-post")).toContainText("Action signal 546 proofs");
+  await expect(page.locator(".boost-post")).not.toContainText("Added 546 proofs to original Boost signal");
   await expect(page.locator(".boost-post")).not.toContainText(`reboost ${ORIGINAL_TXID}`);
+
+  ownerPaid = true;
+  await page.reload();
+  await expect(page.locator(".boost-post")).toContainText("Added 546 proofs to original Boost signal");
+  await expect(page.locator(".boost-post")).not.toContainText("Action signal 546 proofs");
 
   await page.getByRole("button", { name: "What's happening?", exact: true }).click();
   await expect(page.getByRole("dialog", { name: "What’s happening?" })).toBeVisible();
