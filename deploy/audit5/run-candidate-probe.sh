@@ -7,20 +7,20 @@ unset TAR_OPTIONS GZIP BASH_ENV ENV CDPATH NODE_OPTIONS LD_PRELOAD LD_LIBRARY_PA
 
 [[ $# == 0 && $EUID == 0 ]]
 
-release='a1e1f9b1c18d-20260922T041329Z'
+release='a1e1f9b1c18d-20260922T041933Z'
 commit='a1e1f9b1c18d8e5ca6721afe8f12ff3fe88e47f8'
 tree='d0d18e00072042ca7d6c5594f11a4bd551a21b1a'
 previous_live='68b16f6530494171561170ffac78ad26cdf17a5e'
 probe_sha256='a489c06ca040a5ad4476c73e4992b5ce2b6c70ae5c25419d1f968bce4ace5c40'
-private_env_sha256='76bafb45802e274e580029efbdb9f67fc8cf7e3d65b30d41627d4d910b6cf856'
+private_env_sha256='99cbe9cd118c63b08480efd28c2ae7c059b5204daef8db08b896a38fc791d515'
 shadow_sha256='48da4605178d43d1cfbf7b33aeb45c1a64e9474913d8e51d1513904dd8d4bf4d'
-tools="/var/tmp/proofofwork-deploy/audit5-probe-${release}-retry5"
+tools="/var/tmp/proofofwork-deploy/audit5-probe-${release}-retry6"
 private_env="${tools}/private-env.py"
 shadow_entry="${tools}/shadow-entry.mjs"
 candidate="/opt/proofofwork-api-stage-${release}"
 live='/opt/proofofwork-api'
 runroot="/run/proofofwork-audit5-${release}"
-output="/data/proofofwork-audit5-probe-${release}-retry5/attempt"
+output="/data/proofofwork-audit5-probe-${release}-retry6/attempt"
 shadow_unit="proofofwork-audit5-shadow-${release}"
 probe_unit="proofofwork-audit5-probe-${release}"
 shadow_started=0

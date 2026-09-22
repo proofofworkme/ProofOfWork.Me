@@ -3305,14 +3305,26 @@ and all earlier evidence remain immutable. No production switch is permitted
 unless a new, separately named retry passes and the live checkout/services
 still satisfy the pinned precondition.
 
-The wallet-checkpoint correction is bound to release
+The wallet-checkpoint correction was bound to release
 `a1e1f9b1c18d-20260922T041329Z` (commit
 `a1e1f9b1c18d8e5ca6721afe8f12ff3fe88e47f8`, tree
-`d0d18e00072042ca7d6c5594f11a4bd551a21b1a`). Its separate retry5 attempt path
-is `/data/proofofwork-audit5-probe-a1e1f9b1c18d-20260922T041329Z-retry5/attempt`;
-retry4 and earlier attempts remain preserved. Retry5 must pass both the wallet
-route's declared checkpoint contract and the Boost action/reboost checks before
-any production release exchange.
+`d0d18e00072042ca7d6c5594f11a4bd551a21b1a`). Its retry5 evidence remains at
+`/data/proofofwork-audit5-probe-a1e1f9b1c18d-20260922T041329Z-retry5/attempt`.
+After 13 bounded requests, retry5 received `CANDIDATE_HTTP_503` on a later full
+token-listings page. The saved successful pages were bound to height 968089;
+Core then advanced to 968090 while the full listing authority was being
+reconciled, so the API correctly withheld a mixed-checkpoint result. The
+production API and indexer stayed active, and the indexer subsequently caught
+up to 968090. Retry5 and all earlier attempts remain immutable evidence.
+
+The retry6 runner is bound to the same verified source commit under fresh
+release `a1e1f9b1c18d-20260922T041933Z` (tree
+`d0d18e00072042ca7d6c5594f11a4bd551a21b1a`), with a separate stage, capture,
+shadow cache, and output path at
+`/data/proofofwork-audit5-probe-a1e1f9b1c18d-20260922T041933Z-retry6/attempt`.
+Retry6 must pass the wallet-route checkpoint contract, complete listing
+authority, and Boost action/reboost checks before any production release
+exchange.
 
 The candidate runner verifies the staged checkout, probe-script digest, and
 root-private helper digests; starts only the reviewed read-only shadow API on
