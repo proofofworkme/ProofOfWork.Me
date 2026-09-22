@@ -287,7 +287,12 @@ export function qualifyBoostPaidActions(items, registryItems, ownerByEvent = new
     else accepted.push({
       ...item,
       ...(acceptedRegistryPayment ? { applicationBoostRegistryReceiver: registryReceiver } : {}),
-      ...(ownerReceiver && directOwnerPayment ? { applicationBoostOwnerReceiver: ownerReceiver } : {}),
+      ...(ownerReceiver && directOwnerPayment
+        ? {
+            applicationBoostOwnerPaymentSats: (payments.get(ownerReceiver) ?? 0n).toString(),
+            applicationBoostOwnerReceiver: ownerReceiver,
+          }
+        : {}),
     });
   }
   return { accepted, rejected };

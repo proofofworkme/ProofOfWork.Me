@@ -1,7 +1,7 @@
 import { encodeTextBase64Url } from "../../shared/utils/encoding";
 import type { BitcoinNetwork } from "../../shared/bitcoin/networks";
 
-export const BOOST_ACTION_REGISTRY_FEE_SATS = 546;
+export const BOOST_ACTION_PAYMENT_SATS = 546;
 export const BOOST_LISTING_ANCHOR_VALUE_SATS = 546;
 export const BOOST_LISTING_ANCHOR_VOUT = 2;
 export const BOOST_POST_MAX_CHARS = 140;
@@ -67,6 +67,9 @@ export type BoostFeedItem = {
   proofSignalQ8?: string;
   proofSignalSatsExact?: string;
   proofSignalUsd?: number;
+  signalIncrementSats?: number;
+  signalIncrementQ8?: string;
+  signalIncrementSatsExact?: string;
   quotedPost?: BoostFeedItem;
   quoteTxid?: string;
   reboostedPost?: BoostFeedItem;

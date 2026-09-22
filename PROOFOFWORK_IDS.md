@@ -306,10 +306,9 @@ Rules to preserve:
 - Original posts are self-sends to the author's own ProofOfWork address. They require miner fee only unless the author chooses to attach proof or WORK signal.
 - Mail compose owns original posting through the Boost ticker. Attachments/media use the existing Files path; Boost records store proof metadata and pointers, not duplicate bytes.
 - Every address can have a Boost profile shell. Confirmed PowIDs provide the preferred display identity, and profile picture/banner choices come from confirmed Files on that address.
-- `pwb1:like`, `pwb1:reply`, and `pwb1:reboost` are paid product actions. Each pays 546 proofs to `boost@proofofwork.me` plus any extra proof or WORK signal.
-- `pwb1:follow` and `pwb1:unfollow` are paid social-graph actions. A follow pays 546 proofs to `boost@proofofwork.me` and at least 546 proofs to the followed profile address. An unfollow pays only the 546-proof Boost registry fee. The latest confirmed follow/unfollow event for a follower-address plus target-address pair determines the active edge.
-- Paid Boost action writers must stay disabled until `boost@proofofwork.me` has a confirmed receiver. The public Boost feed and Mail original-post writer do not depend on that registration.
-- Extra signal on likes, replies, and reboosts goes to the current Boost owner, or to the original poster when ownership has not moved.
+- `pwb1:like`, `pwb1:reply`, and `pwb1:reboost` are paid product actions. The current writer sends 546 proofs directly to the target Boost's confirmed current owner; each confirmed owner-directed payment is added to that original Boost's proof signal. Miner fee rate is a separate selectable transaction setting.
+- `pwb1:follow` and `pwb1:unfollow` are paid social-graph actions. The current writer sends 546 proofs to the addressed profile target. The latest confirmed follow/unfollow event for a follower-address plus target-address pair determines the active edge.
+- Likes, replies, reboosts, follows, and unfollows do not require the Boost registry to have a confirmed receiver. Registry payments remain required for direct transfers and listing-sale mutations below; historical registry-paid social actions remain replayable.
 - Likes, reboosts, and replies are disabled until the target Boost record is confirmed.
 - Boost records are assets keyed by the original post txid. Direct transfers and AMO sale-ticket events move ownership without changing the original author.
 - `pwb1:list5`, `pwb1:seal5`, `pwb1:delist5`, `pwb1:buy5`, and `pwb1:t` each pay the 546-proof Boost registry fee to `boost@proofofwork.me`.

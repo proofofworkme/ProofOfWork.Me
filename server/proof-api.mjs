@@ -52123,6 +52123,13 @@ function boostSignalSats(item) {
   );
 }
 
+function boostOwnerSignalSats(item) {
+  const amount = String(item?.applicationBoostOwnerPaymentSats ?? "").trim();
+  if (!/^(?:0|[1-9]\d*)$/u.test(amount)) return 0n;
+  const sats = BigInt(amount);
+  return sats <= 2_100_000_000_000_000n ? sats : 0n;
+}
+
 function boostWorkSignalSubatoms(item) {
   const value = String(
     item?.workSignalSubatoms ?? item?.workSignalAtoms ?? item?.workSignal ?? "",
@@ -52393,6 +52400,7 @@ function boostOwnershipState(items, verifiedClosures = new Set(), network = "liv
     }
     const next = {
       likes: 0,
+      ownerSignalSats: 0n,
       reboosts: 0,
       replies: 0,
     };
@@ -52491,6 +52499,7 @@ function boostOwnershipState(items, verifiedClosures = new Set(), network = "liv
       const counter = ensureCounts(boostTargetTxid(item));
       if (counter) {
         counter.likes += 1;
+        counter.ownerSignalSats += boostOwnerSignalSats(item);
       }
       continue;
     }
@@ -52499,6 +52508,7 @@ function boostOwnershipState(items, verifiedClosures = new Set(), network = "liv
       const counter = ensureCounts(boostTargetTxid(item));
       if (counter) {
         counter.replies += 1;
+        counter.ownerSignalSats += boostOwnerSignalSats(item);
       }
     }
 
@@ -52506,6 +52516,7 @@ function boostOwnershipState(items, verifiedClosures = new Set(), network = "liv
       const counter = ensureCounts(boostTargetTxid(item));
       if (counter) {
         counter.reboosts += 1;
+        counter.ownerSignalSats += boostOwnerSignalSats(item);
       }
     }
 
@@ -52646,7 +52657,6 @@ function boostFeedItemFromEvent(
     item?.createdAt ?? item?.confirmedAt ?? item?.indexedAt,
     new Date(),
   );
-  const proofSignalSats = boostSignalSats(item);
   const counter = counts.get(boostTxid) ?? {};
   const ownerAddress = boostAddress(
     state?.ownerAddress ?? item?.currentOwnerAddress ?? item?.authorAddress,
@@ -52697,8 +52707,19 @@ function boostFeedItemFromEvent(
   const workSignal = boostWorkSignalDisplay(item);
   const workSignalSubatoms = boostWorkSignalSubatoms(item);
   const workSignalValue = boostWorkSignalValue(workSignalSubatoms, workFloor);
-  const proofSignalQ8 = boostExactQ8(undefined,
-    item?.proofSignalSats ?? item?.signalSats ?? item?.amountSats ?? item?.proofs ?? 0);
+  const socialAction = ["boost-like", "boost-reply", "boost-reboost"].includes(kind);
+  const signalIncrementSats = socialAction && item?.confirmed === true
+    ? boostOwnerSignalSats(item)
+    : 0n;
+  const baseProofSignalQ8 = socialAction
+    ? 0n
+    : boostExactQ8(undefined,
+      item?.proofSignalSats ?? item?.signalSats ?? item?.amountSats ?? item?.proofs ?? 0);
+  const accumulatedOwnerSignalQ8 = kind === "boost-post"
+    ? BigInt(counter.ownerSignalSats ?? 0n) * 100_000_000n
+    : 0n;
+  const proofSignalQ8 = baseProofSignalQ8 + accumulatedOwnerSignalQ8;
+  const proofSignalSats = q8ToNumber(proofSignalQ8);
   const totalSignalQ8 =
     proofSignalQ8 + BigInt(workSignalValue.workSignalValueQ8);
   const totalSignalSats = q8ToNumber(totalSignalQ8);
@@ -52752,6 +52773,13 @@ function boostFeedItemFromEvent(
       btcUsd > 0
         ? Number(satsToUsdAtBtcUsd(proofSignalSats, btcUsd).toFixed(6))
         : 0,
+    ...(signalIncrementSats > 0n
+      ? {
+          signalIncrementSats: q8ToNumber(signalIncrementSats * 100_000_000n),
+          signalIncrementQ8: (signalIncrementSats * 100_000_000n).toString(),
+          signalIncrementSatsExact: signalIncrementSats.toString(),
+        }
+      : {}),
     reboostCount: Number(counter.reboosts ?? 0),
     reboostedPost: reboostedPost || undefined,
     quotedPost: quotedPost || undefined,

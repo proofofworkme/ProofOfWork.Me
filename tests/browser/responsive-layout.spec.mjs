@@ -2938,12 +2938,13 @@ test("Boost tools drawer closes and unlocks scrolling above its mobile breakpoin
   await assertNoDocumentOverflow(page, "Boost tools after desktop resize");
 
   await page.setViewportSize({ height: VIEWPORT_HEIGHT, width: 390 });
-  const reply = page.getByTitle("Reply with 546-proof Boost action");
+  const reply = page.getByTitle("Reply and add proof signal to the original Boost");
   await expect(reply, "Boost fixture Reply action is missing").toBeVisible();
   await reply.focus();
   await page.keyboard.press("Enter");
-  const dialog = page.getByRole("dialog", { name: "Boost tools" });
-  await expect(dialog, "Reply did not open compact Boost tools").toBeVisible();
+  const dialog = page.getByRole("dialog", { name: "Replying to Boost" });
+  await expect(dialog, "Reply did not open the reply composer").toBeVisible();
+  await expect(dialog.locator(".fee-control"), "Reply fee selector is missing").toBeVisible();
   await expect
     .poll(() =>
       dialog.evaluate((element) => element.contains(document.activeElement)),
@@ -2951,7 +2952,7 @@ test("Boost tools drawer closes and unlocks scrolling above its mobile breakpoin
     .toBe(true);
   await page.keyboard.press("Escape");
   await expect(dialog).toBeHidden();
-  await expect(reply, "Boost tools did not return focus to Reply").toBeFocused();
+  await expect(reply, "Reply action disappeared after closing its composer").toBeVisible();
   await expect
     .poll(() => page.evaluate(() => document.body.style.overflow))
     .not.toBe("hidden");

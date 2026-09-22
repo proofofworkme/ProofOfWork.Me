@@ -156,7 +156,7 @@ test("complete projection handles 250+ actions, 125 posts, old listings and cano
   assert.equal(first.items.length, 100);
   assert.equal(first.provenance.eventCount, 251);
   assert.equal(first.provenance.pages, 2);
-  assert.equal(first.signalStats.totalSignalQ8, (125n * 546n * 100_000_000n).toString());
+  assert.equal(first.signalStats.totalSignalQ8, ((125n + 120n) * 546n * 100_000_000n).toString());
   assert.equal(first.items[0].likeCount, 120);
   assert.equal(first.items[0].currentOwnerAddress, "buyer");
   assert.equal(first.items[0].listing, null);
@@ -236,9 +236,41 @@ test("new social actions qualify against the confirmed current owner without a r
     owners,
   );
   assert.deepEqual(qualified.rejected, []);
-  assert.equal(qualified.accepted.find((item) => item.txid === like.txid).applicationBoostOwnerReceiver, "buyer");
-  assert.equal(qualified.accepted.find((item) => item.txid === like.txid).applicationBoostRegistryReceiver, undefined);
+  const qualifiedLike = qualified.accepted.find((item) => item.txid === like.txid);
+  assert.equal(qualifiedLike.applicationBoostOwnerReceiver, "buyer");
+  assert.equal(qualifiedLike.applicationBoostOwnerPaymentSats, "546");
+  assert.equal(qualifiedLike.applicationBoostRegistryReceiver, undefined);
   assert.equal(qualified.accepted.find((item) => item.txid === follow.txid).applicationBoostOwnerReceiver, "buyer");
+});
+
+test("social signal follows the original Boost across an ownership transfer", async () => {
+  const original = event(1, "boost-post", { authorAddress: "first-owner" });
+  const reboost = event(2, "boost-reboost", {
+    authorAddress: "actor",
+    targetTxid: original.txid,
+    recipients: [{ address: "first-owner", vout: 0, amountSats: "546" }],
+  });
+  const transfer = event(3, "boost-transfer", {
+    authorAddress: "first-owner",
+    senderAddress: "first-owner",
+    targetTxid: original.txid,
+    newOwnerAddress: "current-owner",
+  });
+  const like = event(4, "boost-like", {
+    authorAddress: "actor",
+    targetTxid: original.txid,
+    recipients: [{ address: "current-owner", vout: 0, amountSats: "546" }],
+  });
+  const payload = await server(reader([original, reboost, transfer, like]).read)
+    .boostFeedPayload("livenet", new URLSearchParams({ sort: "oldest" }));
+  const originalItem = payload.items.find((item) => item.txid === original.txid);
+  const reboostItem = payload.items.find((item) => item.txid === reboost.txid);
+  assert.ok(reboostItem);
+  assert.equal(originalItem.currentOwnerAddress, "current-owner");
+  assert.equal(originalItem.likeCount, 1);
+  assert.equal(originalItem.proofSignalSatsExact, "1638");
+  assert.equal(reboostItem.signalIncrementSatsExact, "546");
+  assert.equal(reboostItem.reboostedPost.proofSignalSatsExact, "1638");
 });
 
 test("confirmed ownership routes engagement, quote rendering, and viewer action state", async () => {
@@ -259,15 +291,24 @@ test("confirmed ownership routes engagement, quote rendering, and viewer action 
   });
   const like = event(4, "boost-like", {
     authorAddress: "viewer",
+    proofSignalSats: 0,
     targetTxid: original.txid,
     recipients: [{ address: "buyer", vout: 0, amountSats: "546" }],
   });
   const reboost = event(5, "boost-reboost", {
     authorAddress: "viewer",
+    proofSignalSats: 0,
     targetTxid: original.txid,
     recipients: [{ address: "buyer", vout: 0, amountSats: "546" }],
   });
-  const payload = await server(reader([quoted, original, transfer, like, reboost]).read)
+  const reply = event(6, "boost-reply", {
+    authorAddress: "viewer",
+    proofSignalSats: 0,
+    targetTxid: original.txid,
+    recipients: [{ address: "buyer", vout: 0, amountSats: "800" }],
+    text: "A proof-backed reply",
+  });
+  const payload = await server(reader([quoted, original, transfer, like, reboost, reply]).read)
     .boostFeedPayload("livenet", new URLSearchParams({ sort: "oldest", viewer: "viewer" }));
   const item = payload.items.find((candidate) => candidate.txid === original.txid);
   assert.ok(item);
@@ -278,6 +319,14 @@ test("confirmed ownership routes engagement, quote rendering, and viewer action 
   assert.equal(item.viewerReboosted, true);
   assert.equal(item.quotedPost?.txid, quoted.txid);
   assert.equal(item.quotedPost?.text, quoted.text);
+  assert.equal(item.proofSignalSatsExact, "2438");
+  assert.equal(item.proofSignalQ8, "243800000000");
+  const reboostItem = payload.items.find((candidate) => candidate.txid === reboost.txid);
+  assert.equal(reboostItem.signalIncrementSatsExact, "546");
+  assert.equal(reboostItem.reboostedPost.proofSignalSatsExact, "2438");
+  const replyItem = payload.items.find((candidate) => candidate.txid === reply.txid);
+  assert.equal(replyItem.signalIncrementSatsExact, "800");
+  assert.equal(payload.signalStats.proofSignalSatsExact, "2984");
 });
 
 test("history cursor changes, duplicate rows and broken exhaustion fail closed", async () => {

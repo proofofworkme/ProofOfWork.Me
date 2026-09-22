@@ -43,6 +43,7 @@ import {
   AppStatusRow,
   type AppStatusState,
 } from "../../shared/components/AppStatusRow";
+import { FeeRateControl } from "../../shared/components/FeeRateControl";
 import { SocialFooter } from "../../shared/components/SocialFooter";
 import { formatDate, shortAddress } from "../../functions";
 import { formatExactDecimal } from "../../exactAmount";
@@ -54,7 +55,7 @@ import {
   workSubatomsFromCanonicalString,
 } from "../../workAmount";
 import {
-  BOOST_ACTION_REGISTRY_FEE_SATS,
+  BOOST_ACTION_PAYMENT_SATS,
   BOOST_LISTING_ANCHOR_VALUE_SATS,
   boostIdentityIntentMessage,
   boostItemTxid,
@@ -113,6 +114,11 @@ type BoostActionBusy =
   | "reply"
   | "transfer"
   | "unfollow";
+
+type PendingBoostPaidAction = {
+  action: BoostPaidAction;
+  item: BoostFeedItem;
+};
 
 type RegistryApiPayload = {
   record?: PowIdRecordLike | null;
@@ -538,6 +544,10 @@ function ReboostedPost({
           {post.media?.mime && /^(?:image|video)\//iu.test(post.media.mime) ? (
             <BoostMedia item={post} network={network} />
           ) : null}
+          <div className="boost-reboosted-signal">
+            <span>Original Boost signal</span>
+            <strong>{formatBoostSignal(boostProofSignalQ8(post))}</strong>
+          </div>
           <a
             className="boost-proof-frame"
             href={txHref}
@@ -635,6 +645,11 @@ function BoostPost({
   const authorAddress = boostAuthorAddress(item);
   const authorId = boostAuthorId(item);
   const totalSignalQ8 = boostTotalSignalQ8(item);
+  const signalIncrementQ8 = boostSignalQ8(
+    item.signalIncrementQ8,
+    item.signalIncrementSatsExact,
+    item.signalIncrementSats ?? 0,
+  );
   const workSignalValueQ8 = boostWorkSignalValueQ8(item);
   const workSignalSubatoms = boostWorkSignalSubatoms(item);
   const connectedOwner =
@@ -743,6 +758,9 @@ function BoostPost({
         <div className="boost-signal-row">
           <span>Total USD {formatUsd(boostTotalSignalUsd(item))}</span>
           <span>Proof {formatBoostSignal(boostProofSignalQ8(item))}</span>
+          {signalIncrementQ8 > 0n ? (
+            <span>Added {formatBoostSignal(signalIncrementQ8)} to original Boost signal</span>
+          ) : null}
           {workSignalSubatoms > 0n ? (
             <span>
               WORK {formatWorkAmount(workSignalSubatoms, true)}{" "}
@@ -759,7 +777,7 @@ function BoostPost({
             className="secondary small"
             disabled={actionsLocked}
             onClick={() => onReply(item)}
-            title="Reply with 546-proof Boost action"
+            title="Reply and add proof signal to the original Boost"
             type="button"
           >
             <span className="button-content">
@@ -772,7 +790,7 @@ function BoostPost({
             className={likeActive ? "secondary small is-active" : "secondary small"}
             disabled={actionsLocked || likeActive}
             onClick={() => onLike(item)}
-            title={likeActive ? "Liked" : "Like with 546-proof Boost action"}
+            title={likeActive ? "Liked" : "Like and add proof signal to the original Boost"}
             type="button"
           >
             <span className="button-content">
@@ -788,7 +806,7 @@ function BoostPost({
               className={reboostActive ? "secondary small is-active" : "secondary small"}
               disabled={actionsLocked || reboostActive}
               onClick={() => onReboostMenu(item)}
-              title={reboostActive ? "Reboosted" : "Reboost with 546-proof Boost action"}
+              title={reboostActive ? "Reboosted" : "Reboost and add proof signal to the original Boost"}
               type="button"
             >
               <span className="button-content">
@@ -912,6 +930,8 @@ export default function BoostRoot({
   const [postSignalSats, setPostSignalSats] = useState(546);
   const [replyTarget, setReplyTarget] = useState<BoostFeedItem | undefined>();
   const [replyText, setReplyText] = useState("");
+  const [pendingPaidAction, setPendingPaidAction] =
+    useState<PendingBoostPaidAction | undefined>();
   const [reboostMenuTarget, setReboostMenuTarget] = useState<BoostFeedItem | undefined>();
   const [transferTarget, setTransferTarget] = useState<BoostFeedItem | undefined>();
   const [transferRecipient, setTransferRecipient] = useState("");
@@ -997,7 +1017,7 @@ export default function BoostRoot({
     [expandedItem, visibleItems],
   );
   const modalOpen = Boolean(
-    directPostOpen || expandedItem || replyTarget,
+    directPostOpen || expandedItem || pendingPaidAction || replyTarget,
   );
   const profileSubject = payload?.profileSubject;
   const profileSubjectAddress = profileSubject?.address ?? "";
@@ -1209,24 +1229,27 @@ export default function BoostRoot({
     }
   }
 
-  async function publishPaidAction(action: BoostPaidAction, item: BoostFeedItem) {
+  async function publishPaidAction(
+    action: BoostPaidAction,
+    item: BoostFeedItem,
+  ): Promise<boolean> {
     const targetTxid = boostItemTxid(item);
     if (!targetTxid) {
       setStatus({ tone: "bad", text: "Boost action target is missing." });
-      return;
+      return false;
     }
     if (action === "like" && item.viewerLiked) {
       setStatus({ tone: "idle", text: "This Boost is already liked by this wallet." });
-      return;
+      return false;
     }
     if (action === "reboost" && item.viewerReboosted) {
       setStatus({ tone: "idle", text: "This Boost is already reboosted by this wallet." });
-      return;
+      return false;
     }
     const ownerAddress = boostOwnerAddress(item);
     if (!ownerAddress || !isValidBitcoinAddress(ownerAddress, "livenet")) {
       setStatus({ tone: "bad", text: "The confirmed current Boost owner is unavailable." });
-      return;
+      return false;
     }
     const label = action === "like" ? "Boost like" : "Boost reboost";
     setOptimisticActions((current) => ({
@@ -1244,7 +1267,7 @@ export default function BoostRoot({
         payments: [
           {
             address: ownerAddress,
-            amountSats: BOOST_ACTION_REGISTRY_FEE_SATS,
+            amountSats: BOOST_ACTION_PAYMENT_SATS,
           },
         ],
         protocolPayload: buildBoostActionPayload(action, targetTxid),
@@ -1257,6 +1280,7 @@ export default function BoostRoot({
           return next;
         });
       }
+      return sent;
     } catch (error) {
       setOptimisticActions((current) => {
         const next = { ...current };
@@ -1267,6 +1291,7 @@ export default function BoostRoot({
         tone: "bad",
         text: error instanceof Error ? error.message : `${label} failed.`,
       });
+      return false;
     }
   }
 
@@ -1295,7 +1320,7 @@ export default function BoostRoot({
         payments: [
           {
             address: targetAddress,
-            amountSats: BOOST_ACTION_REGISTRY_FEE_SATS,
+            amountSats: BOOST_ACTION_PAYMENT_SATS,
           },
         ],
         protocolPayload: buildBoostFollowPayload(action, {
@@ -1357,7 +1382,7 @@ export default function BoostRoot({
         payments: [
           {
             address: ownerAddress,
-            amountSats: BOOST_ACTION_REGISTRY_FEE_SATS,
+            amountSats: BOOST_ACTION_PAYMENT_SATS,
           },
         ],
         protocolPayload: buildBoostReplyPayload({
@@ -1450,7 +1475,7 @@ export default function BoostRoot({
       const sent = await broadcastBoostPayload({
         action: "transfer",
         paymentLabel: "Boost transfer",
-        payments: [{ address: ready.registryAddress, amountSats: BOOST_ACTION_REGISTRY_FEE_SATS }],
+        payments: [{ address: ready.registryAddress, amountSats: BOOST_ACTION_PAYMENT_SATS }],
         protocolPayload: buildBoostTransferPayload(boostItemTxid(transferTarget), recipient),
         walletAddress: ready.walletAddress,
       });
@@ -1508,7 +1533,7 @@ export default function BoostRoot({
         payments: [
           {
             address: ready.registryAddress,
-            amountSats: BOOST_ACTION_REGISTRY_FEE_SATS,
+            amountSats: BOOST_ACTION_PAYMENT_SATS,
           },
         ],
         postProtocolPayments: [
@@ -1604,7 +1629,7 @@ export default function BoostRoot({
         payments: [
           {
             address: ready.walletAddress,
-            amountSats: BOOST_ACTION_REGISTRY_FEE_SATS,
+            amountSats: BOOST_ACTION_PAYMENT_SATS,
           },
         ],
         protocolPayload: buildBoostProfilePayload({
@@ -1864,6 +1889,7 @@ export default function BoostRoot({
         event.preventDefault();
         setDirectPostOpen(false);
         setExpandedItem(undefined);
+        setPendingPaidAction(undefined);
         setReplyTarget(undefined);
         setTransferTarget(undefined);
         setQuoteTarget(undefined);
@@ -2015,7 +2041,9 @@ export default function BoostRoot({
         onFollow={(followAction, boostItem) =>
           void publishFollowAction(followAction, boostItem)
         }
-        onLike={(boostItem) => void publishPaidAction("like", boostItem)}
+        onLike={(boostItem) =>
+          setPendingPaidAction({ action: "like", item: boostItem })
+        }
         onList={(boostItem) => {
           setListingTarget(boostItem);
           openToolsForCompactSurface();
@@ -2026,7 +2054,7 @@ export default function BoostRoot({
         }}
         onReboost={(boostItem) => {
           setReboostMenuTarget(undefined);
-          void publishPaidAction("reboost", boostItem);
+          setPendingPaidAction({ action: "reboost", item: boostItem });
         }}
         onReboostMenu={(boostItem) =>
           setReboostMenuTarget((current) =>
@@ -2268,16 +2296,7 @@ export default function BoostRoot({
                   value={listingPriceSats}
                 />
               </label>
-              <label>
-                Fee sat/vB
-                <input
-                  min={1}
-                  onChange={(event) => setFeeRate(Number(event.target.value))}
-                  step={1}
-                  type="number"
-                  value={feeRate}
-                />
-              </label>
+              <FeeRateControl feeRate={feeRate} setFeeRate={setFeeRate} />
               <button
                 className="primary"
                 disabled={Boolean(actionBusy)}
@@ -2707,6 +2726,7 @@ export default function BoostRoot({
             onClick={() => {
               setDirectPostOpen(false);
               setExpandedItem(undefined);
+              setPendingPaidAction(undefined);
               setReplyTarget(undefined);
               setQuoteTarget(undefined);
             }}
@@ -2764,6 +2784,10 @@ export default function BoostRoot({
                     />
                   </label>
                 </div>
+                <p className="field-note">
+                  Direct signal goes to this Boost. Choose the transaction miner fee rate below.
+                </p>
+                <FeeRateControl feeRate={feeRate} setFeeRate={setFeeRate} />
                 <button
                   className="primary"
                   disabled={Boolean(actionBusy) || !postText.trim() || !address}
@@ -2809,6 +2833,10 @@ export default function BoostRoot({
                 <div className="counter">
                   {boostPostText(replyText).length.toLocaleString()} / 140
                 </div>
+                <p className="field-note">
+                  The 546-proof reply signal goes to the original Boost owner. Select the transaction miner fee rate below.
+                </p>
+                <FeeRateControl feeRate={feeRate} setFeeRate={setFeeRate} />
                 <button
                   className="primary"
                   disabled={Boolean(actionBusy) || !replyText.trim() || !address}
@@ -2820,6 +2848,76 @@ export default function BoostRoot({
                   </span>
                 </button>
               </form>
+            </section>
+          ) : pendingPaidAction ? (
+            <section
+              aria-labelledby="boost-paid-action-dialog-title"
+              aria-modal="true"
+              className="boost-modal"
+              role="dialog"
+            >
+              <div className="boost-modal-head">
+                <div>
+                  <span>Proof signal</span>
+                  <strong id="boost-paid-action-dialog-title">
+                    {pendingPaidAction.action === "like" ? "Like Boost" : "Reboost"}
+                  </strong>
+                </div>
+                <button
+                  aria-label="Close Boost action"
+                  className="secondary small"
+                  onClick={() => setPendingPaidAction(undefined)}
+                  type="button"
+                >
+                  <X size={16} />
+                </button>
+              </div>
+              <QuotedPost
+                network={network}
+                post={pendingPaidAction.item.kind === "boost-reboost"
+                  ? pendingPaidAction.item.reboostedPost ?? pendingPaidAction.item
+                  : pendingPaidAction.item}
+              />
+              <p className="field-note">
+                This action sends {BOOST_ACTION_PAYMENT_SATS.toLocaleString()} proofs to the current owner and adds them to the original Boost signal. Choose the transaction miner fee rate below.
+              </p>
+              <FeeRateControl feeRate={feeRate} setFeeRate={setFeeRate} />
+              <div className="boost-modal-action-row">
+                <button
+                  className="secondary"
+                  onClick={() => setPendingPaidAction(undefined)}
+                  type="button"
+                >
+                  Cancel
+                </button>
+                <button
+                  className="primary"
+                  disabled={Boolean(actionBusy) || !address}
+                  onClick={() => {
+                    const pending = pendingPaidAction;
+                    if (!pending) return;
+                    void publishPaidAction(pending.action, pending.item).then((sent) => {
+                      if (sent) setPendingPaidAction(undefined);
+                    });
+                  }}
+                  type="button"
+                >
+                  <span className="button-content">
+                    {actionBusy === pendingPaidAction.action
+                      ? <RefreshCw className="refresh-spin" size={16} />
+                      : pendingPaidAction.action === "like"
+                        ? <Heart size={16} />
+                        : <Repeat2 size={16} />}
+                    <span>
+                      {actionBusy === pendingPaidAction.action
+                        ? "Signing…"
+                        : pendingPaidAction.action === "like"
+                          ? "Like · 546 proofs"
+                          : "Reboost · 546 proofs"}
+                    </span>
+                  </span>
+                </button>
+              </div>
             </section>
           ) : expandedItem ? (
             <section

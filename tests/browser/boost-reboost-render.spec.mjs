@@ -23,8 +23,11 @@ test("reboost renders the original post instead of the target txid", async ({ pa
             createdAt: "2026-09-05T07:00:00.000Z",
             kind: "boost-reboost",
             likeCount: 0,
-            proofSignalSats: 546,
-            proofSignalQ8: "54600000000",
+            proofSignalSats: 0,
+            proofSignalQ8: "0",
+            signalIncrementSats: 546,
+            signalIncrementQ8: "54600000000",
+            signalIncrementSatsExact: "546",
             reboostCount: 1,
             reboostedPost: {
               authorAddress: "original-author",
@@ -34,16 +37,16 @@ test("reboost renders the original post instead of the target txid", async ({ pa
               createdAt: "2026-09-04T07:00:00.000Z",
               kind: "boost-post",
               media: null,
-              proofSignalSats: 546,
-              proofSignalQ8: "54600000000",
+              proofSignalSats: 1092,
+              proofSignalQ8: "109200000000",
               text: "Incredible feat by armyofyouth@proofofwork.me!",
-              totalSignalQ8: "54600000000",
+              totalSignalQ8: "109200000000",
               txid: ORIGINAL_TXID,
             },
             replyCount: 0,
             targetTxid: ORIGINAL_TXID,
             text: "",
-            totalSignalQ8: "54600000000",
+            totalSignalQ8: "0",
             txid: REBOOST_TXID,
           }],
           totalCount: 1,
@@ -53,10 +56,10 @@ test("reboost renders the original post instead of the target txid", async ({ pa
           end: 1,
           stats: { total: 1, confirmed: 1, pending: 0 },
           signalStats: {
-            totalSignalQ8: "54600000000",
-            proofSignalQ8: "54600000000",
-            proofSignalSatsExact: "546",
-            totalSignalSatsExact: "546",
+            totalSignalQ8: "109200000000",
+            proofSignalQ8: "109200000000",
+            proofSignalSatsExact: "1092",
+            totalSignalSatsExact: "1092",
             totalSignalUsd: 0,
             workSignalSubatoms: "0",
           },
@@ -73,13 +76,28 @@ test("reboost renders the original post instead of the target txid", async ({ pa
   await expect(page.getByTestId("reboosted-post")).toBeVisible();
   await expect(page.getByTestId("reboosted-post")).toContainText("carbonz@proofofwork.me");
   await expect(page.getByTestId("reboosted-post")).toContainText("Incredible feat by armyofyouth@proofofwork.me!");
+  await expect(page.getByTestId("reboosted-post")).toContainText("Original Boost signal");
+  await expect(page.getByTestId("reboosted-post")).toContainText("1,092 proofs");
   await expect(page.locator(".boost-post")).toContainText("reboosted");
+  await expect(page.locator(".boost-post")).toContainText("Added 546 proofs to original Boost signal");
   await expect(page.locator(".boost-post")).not.toContainText(`reboost ${ORIGINAL_TXID}`);
 
   await page.getByRole("button", { name: "What's happening?", exact: true }).click();
   await expect(page.getByRole("dialog", { name: "What’s happening?" })).toBeVisible();
   await expect(page.getByRole("dialog", { name: "What’s happening?" }).locator("textarea")).toBeVisible();
+  const composerFeeControl = page.getByRole("dialog", { name: "What’s happening?" }).locator(".fee-control");
+  await expect(composerFeeControl.getByText("Fee sat/vB")).toBeVisible();
+  await expect(composerFeeControl.locator('input[type="number"]')).toHaveValue("1");
+  await composerFeeControl.getByRole("button", { name: "2 sat" }).click();
+  await expect(composerFeeControl.locator('input[type="number"]')).toHaveValue("2");
   await page.keyboard.press("Escape");
+
+  await page.getByTitle("Like and add proof signal to the original Boost").click();
+  const likeDialog = page.getByRole("dialog", { name: "Like Boost" });
+  await expect(likeDialog).toContainText("546 proofs to the current owner");
+  const likeFeeControl = likeDialog.locator(".fee-control");
+  await expect(likeFeeControl.locator('input[type="number"]')).toHaveValue("2");
+  await likeDialog.getByRole("button", { name: "Cancel" }).click();
 
   const reboostMenuButton = page.locator(".boost-reboost-action > button").first();
   await reboostMenuButton.click();
@@ -87,6 +105,7 @@ test("reboost renders the original post instead of the target txid", async ({ pa
   await expect(page.getByRole("menuitem", { name: "Quote" })).toBeVisible();
   await page.getByRole("menuitem", { name: "Quote" }).click();
   await expect(page.getByRole("dialog", { name: "Add a comment" })).toBeVisible();
+  await expect(page.getByRole("dialog", { name: "Add a comment" }).locator(".fee-control")).toBeVisible();
   await expect(page.getByTestId("quoted-post")).toContainText("Quoted Boost");
   await page.keyboard.press("Escape");
 
@@ -95,4 +114,5 @@ test("reboost renders the original post instead of the target txid", async ({ pa
   await expect(page.getByRole("button", { name: "Post your reply" })).toBeVisible();
   await page.getByRole("button", { name: "Post your reply" }).click();
   await expect(page.getByRole("dialog", { name: "Replying to Boost" })).toBeVisible();
+  await expect(page.getByRole("dialog", { name: "Replying to Boost" }).locator(".fee-control")).toBeVisible();
 });
