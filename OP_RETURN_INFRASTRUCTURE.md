@@ -3254,26 +3254,35 @@ initial reserved output path remains receipt-free; its `retry1` attempt has a
 launcher’s `no_new_privs` setting. Neither attempt changed production. Do not
 rewrite or reuse those paths.
 
-The follow-up candidate gate is bound to release
+The follow-up candidate gate bound to release
 `35d21493757d-20260922T033203Z` (commit
 `35d21493757d439b87d22cec6bb6d06f0466d31a`, tree
-`d78b780d7f943065abbdefc9aba256e564debc75`). It pins the staged checkout,
-probe-script digest, and root-private helper digests; starts only the reviewed
-read-only shadow API on loopback; and invokes the probe through the protected
-launcher with a minimal environment rather than captured service credentials.
-The launcher verifies the staged script digest before copying it to a new,
-root-owned read-only file under `/data`, then runs it as the unprivileged
-`bitcoin` account with `no_new_privs`, no supplementary groups, and no
-capabilities. The probe invokes only fixed read-only Core methods and the
-bounded local HTTP API. Its output is isolated under
+`d78b780d7f943065abbdefc9aba256e564debc75`) is also preserved as historical
+evidence. It started the read-only shadow API successfully, but its retry2
+probe failed before recording a sample: the fixed Core CLI argv vector was
+spread into separate `execFile` parameters instead of passing one argument
+array. The bounded receipt is preserved under
 `/data/proofofwork-audit5-probe-35d21493757d-20260922T033203Z-retry2/attempt`.
-The runner stops only its uniquely named shadow unit and verifies that the
-existing API and indexer remain active. It does not switch checkouts, stop
-production, write application databases, or delete prior release/evidence
-paths. This release-pinned runner is not a generic deployment command; future
-candidates require a separately reviewed binding. The private launcher also
-executes the two commands in the index-recovery package gate as fixed argument
-vectors, sequentially and without a shell, stopping at the first failure.
+Production remained untouched. The current source corrects the Node child
+process call shape and adds a regression check; it is not release-eligible
+until a new candidate commit is pinned, staged, and passes a separately named
+bounded retry.
+
+The candidate runner verifies the staged checkout, probe-script digest, and
+root-private helper digests; starts only the reviewed read-only shadow API on
+loopback; and invokes the probe through the protected launcher with a minimal
+environment rather than captured service credentials. The launcher verifies
+the staged script digest before copying it to a new, root-owned read-only file
+under `/data`, then runs it as the unprivileged `bitcoin` account with
+`no_new_privs`, no supplementary groups, and no capabilities. The probe invokes
+only fixed read-only Core methods and the bounded local HTTP API. The runner
+stops only its uniquely named shadow unit and verifies that the existing API
+and indexer remain active. It does not switch checkouts, stop production, write
+application databases, or delete prior release/evidence paths. This
+release-pinned runner is not a generic deployment command; future candidates
+require a separately reviewed binding. The private launcher also executes the
+two commands in the index-recovery package gate as fixed argument vectors,
+sequentially and without a shell, stopping at the first failure.
 
 After the exact checkout is live and detached, pass the publisher a root-owned,
 non-writable regular request

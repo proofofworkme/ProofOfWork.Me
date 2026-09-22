@@ -93,6 +93,10 @@ export function coreCliInvocation(method, args = []) {
     'CORE_REQUEST_BUDGET_OR_METHOD');
   return [CORE_CLI, '-conf=/etc/bitcoin/bitcoin.conf', method, ...args];
 }
+export function coreCliExecFileInvocation(method, args = [], options = {}) {
+  const [file, ...argv] = coreCliInvocation(method, args);
+  return [file, argv, options];
+}
 function unique(rows, key) {
   const keys = rows.map((row) => String(row[key] ?? ''));
   requireFact(keys.every(Boolean) && new Set(keys).size === keys.length, 'DUPLICATE_OR_MISSING_IDENTITY');
@@ -527,9 +531,9 @@ function ioFor(outputDirectory, receipts, base) {
     async core(method, args = []) {
       requireFact(CORE_METHODS.includes(method) && ++coreCalls <= MAX_CORE,
         'CORE_REQUEST_BUDGET_OR_METHOD');
-      const { stdout } = await spawn(...coreCliInvocation(method, args),
+      const { stdout } = await spawn(...coreCliExecFileInvocation(method, args,
         { timeout: Math.min(15_000, remaining()), maxBuffer: MAX_BODY,
-        encoding: 'utf8', env: { PATH: '/usr/local/bin:/usr/bin:/bin', LANG: 'C.UTF-8' } });
+          encoding: 'utf8', env: { PATH: '/usr/local/bin:/usr/bin:/bin', LANG: 'C.UTF-8' } }));
       const raw = Buffer.from(stdout);
       totalBytes += raw.length;
       requireFact(totalBytes <= MAX_BYTES, 'CORE_BYTE_BUDGET_EXCEEDED');

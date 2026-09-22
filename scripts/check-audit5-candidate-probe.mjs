@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { readFile } from 'node:fs/promises';
-import { apiBase, canonicalJson, compareCandidate, coreCliInvocation, decimalQ8, decodeCoreCliPayload, digest, FIXTURE, integer, inventory, listingCommitmentRecord,
+import { apiBase, canonicalJson, compareCandidate, coreCliExecFileInvocation, coreCliInvocation, decimalQ8, decodeCoreCliPayload, digest, FIXTURE, integer, inventory, listingCommitmentRecord,
   verifyBonds, verifyBookPair, verifyBoost, verifyCounts, verifyDirectory, verifyWallet,
   verifyWalletListingScopes } from '../deploy/audit5/probe-candidate.mjs';
 import { registryCountsProjection, tokenDirectoryProjection, tokenListingDisplayProjection } from '../server/read-projections.mjs';
@@ -84,6 +84,11 @@ test('Core invocation is direct, read-only, and restricted to fixed methods', ()
     '-conf=/etc/bitcoin/bitcoin.conf', 'getblockchaininfo']);
   assert.deepEqual(coreCliInvocation('gettxout', ['a'.repeat(64), '0', 'true']), ['/usr/local/bin/bitcoin-cli',
     '-conf=/etc/bitcoin/bitcoin.conf', 'gettxout', 'a'.repeat(64), '0', 'true']);
+  const options = { timeout: 15_000, encoding: 'utf8' };
+  assert.deepEqual(coreCliExecFileInvocation('getblockchaininfo', [], options), ['/usr/local/bin/bitcoin-cli',
+    ['-conf=/etc/bitcoin/bitcoin.conf', 'getblockchaininfo'], options]);
+  assert.deepEqual(coreCliExecFileInvocation('gettxout', ['a'.repeat(64), '0', 'true'], options),
+    ['/usr/local/bin/bitcoin-cli', ['-conf=/etc/bitcoin/bitcoin.conf', 'gettxout', 'a'.repeat(64), '0', 'true'], options]);
   assert.throws(() => coreCliInvocation('sendtoaddress', ['dummy', '1']), /CORE_REQUEST_BUDGET_OR_METHOD/u);
   assert.throws(() => coreCliInvocation('gettxout', ['a'.repeat(64), 0, 'true']), /CORE_REQUEST_BUDGET_OR_METHOD/u);
 });
