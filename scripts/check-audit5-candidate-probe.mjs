@@ -252,6 +252,22 @@ test('complete orchestration qualifies current smaller inventories and public wa
   assert.equal(result.boost.rawCarrierSamples, 2);
   assert.equal(result.core.mempoolSequenceStable, true);
 });
+test('wallet checkpoint uses matching height when the route omits its block hash', async () => {
+  const missingHash = fakeIO();
+  delete missingHash.wallet.indexedThroughBlockHash;
+  const accepted = await verifyWallet(missingHash, registry, book().full, { blocks: 100, bestblockhash: h(1) });
+  assert.match(accepted.checkpointQualification, /route omits a block hash/u);
+  for (const hash of [h(99), 'not-a-hash']) {
+    const mismatched = fakeIO();
+    mismatched.wallet.indexedThroughBlockHash = hash;
+    await assert.rejects(verifyWallet(mismatched, registry, book().full, { blocks: 100, bestblockhash: h(1) }),
+      /WALLET_SOURCE_CHECKPOINT/u);
+  }
+  const wrongHeight = fakeIO();
+  wrongHeight.wallet.indexedThroughBlock = 99;
+  await assert.rejects(verifyWallet(wrongHeight, registry, book().full, { blocks: 100, bestblockhash: h(1) }),
+    /WALLET_SOURCE_CHECKPOINT/u);
+});
 function pendingWalletFixture() {
   const io = fakeIO();
   io.wallet.listings = clone(io.wallet.listings);

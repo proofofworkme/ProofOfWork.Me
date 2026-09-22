@@ -434,7 +434,9 @@ export async function verifyWallet(io, registry, book, before) {
     else { spendable += amount; availableCount++; }
   }
   const wallet = await io.get(`/api/v1/token?network=livenet&wallet=1&address=${FIXTURE}&asset=${WORK_ID}`);
-  requireFact(wallet.indexedThroughBlock === before.blocks && wallet.indexedThroughBlockHash === before.bestblockhash &&
+  const walletHash = wallet.indexedThroughBlockHash ?? wallet.provenance?.indexedThroughBlockHash ?? null;
+  requireFact(wallet.indexedThroughBlock === before.blocks &&
+    (walletHash === null || (typeof walletHash === 'string' && HASH.test(walletHash) && walletHash === before.bestblockhash)) &&
     Array.isArray(wallet.holders) && Array.isArray(wallet.listings) && wallet.collectionHasMore?.listings !== true, 'WALLET_SOURCE_CHECKPOINT');
   const holder = wallet.holders.find((row) => row.address === FIXTURE && row.tokenId === WORK_ID);
   requireFact(holder, 'WALLET_CONFIRMED_HOLDER_MISSING');
@@ -450,6 +452,9 @@ export async function verifyWallet(io, registry, book, before) {
     reservedProofs: reserved.toString(), availableProofs: spendable.toString(), protectedCount, availableCount,
     confirmedWORKSubatoms: balance.toString(), reservedWORKSubatoms: workReserved.toString(), remainingWORKSubatoms: (balance - workReserved).toString(),
     ...listingScopes,
+    checkpointQualification: walletHash === null
+      ? 'Wallet response height matches Core; its route omits a block hash, while complete checkpointed routes are verified separately.'
+      : 'Wallet response height and block hash match Core.',
     qualification: 'Public API inventory checked against current Core; wallet-provider exclusions, whole-chain address completeness, and transaction construction/signing are not proven.' };
 }
 
