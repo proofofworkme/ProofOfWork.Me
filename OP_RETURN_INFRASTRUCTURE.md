@@ -3305,6 +3305,15 @@ and all earlier evidence remain immutable. No production switch is permitted
 unless a new, separately named retry passes and the live checkout/services
 still satisfy the pinned precondition.
 
+The wallet-checkpoint correction is bound to release
+`a1e1f9b1c18d-20260922T041329Z` (commit
+`a1e1f9b1c18d8e5ca6721afe8f12ff3fe88e47f8`, tree
+`d0d18e00072042ca7d6c5594f11a4bd551a21b1a`). Its separate retry5 attempt path
+is `/data/proofofwork-audit5-probe-a1e1f9b1c18d-20260922T041329Z-retry5/attempt`;
+retry4 and earlier attempts remain preserved. Retry5 must pass both the wallet
+route's declared checkpoint contract and the Boost action/reboost checks before
+any production release exchange.
+
 The candidate runner verifies the staged checkout, probe-script digest, and
 root-private helper digests; starts only the reviewed read-only shadow API on
 loopback; and invokes the probe through the protected launcher with a minimal
