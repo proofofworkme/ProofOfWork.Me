@@ -43,7 +43,7 @@ Mail organization features that are already implemented in the full app:
 - Desktop search for confirmed public attachments by address or confirmed ProofOfWork ID.
 - Browser view for HTML message bodies or verified `text/html` attachments by txid, rendered in a sandboxed iframe.
 - Browser-rendered HTML stays separate from wallet signing.
-- Canonical `Welcome to ProofOfWork.Me.html` system file pinned by txid and shown by default in Files/Desktop.
+- The canonical `Welcome to ProofOfWork.Me.html` system reference is pinned by txid. Files/Desktop may show it only after fetching and verifying its actual chain-backed bytes; label it as a system reference and show an explicit unavailable state when it cannot be verified.
 - Browser-readable HTML message bodies appear in Files/Desktop as derived `.html` files, even when no attachment exists.
 - Browser workspace inside the Computer shell for viewing HTML txids and creating consistent Computer-native page templates.
 - AMO workspace for confirmed ID listings, seals, delistings, and buyer-funded transfers.
@@ -173,7 +173,7 @@ Behavior:
 - Do not require wallet connection for browsing.
 - Do not show local-only metadata such as drafts, folders, favorites, archives, or contacts.
 - Do not show pending Incoming or Outbox transactions as public files.
-- Always include the canonical `Welcome to ProofOfWork.Me.html` system file so every searched address has a starting document. It should open through Browser by txid, not pretend to be a user-owned attachment.
+- A canonical `Welcome to ProofOfWork.Me.html` system reference may be shown only when its actual chain-backed bytes and txid have been fetched and verified. Label it as a system reference; do not synthesize it, attribute it to the searched address, or imply it is present when unavailable. It should open through Browser by txid.
 - Do not expose `Open Message` as a private mailbox action in the public inspector; link to the source transaction instead.
 - Do not show the Computer sidebar, compose tools, wallet controls, inbox/sent folders, or local account state on the public Desktop route.
 

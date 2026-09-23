@@ -1306,14 +1306,19 @@ The June 2026 marketplace fixes preserved these operational invariants:
 - Confirmed sale-ticket spends are active-book truth. When Bitcoin Core RPC is configured, active listing reconciliation uses current UTXO spend state before falling back to slower address-history recovery, so confirmed delistings and buys clear from Marketplace and Wallet while summaries warm.
 - Closed listings, sales, market logs, Growth, and Log derive from the same sale-ticket lifecycle. A delisting should not disappear from logs, and a bought ticket should not stay visible as active in any wallet or marketplace surface.
 
-## June 22 Summary Hardening
+## June 22 Summary Hardening (Historical)
+
+This section records the earlier summary behavior. Compact summary listing
+arrays are now bounded previews, including sealed inventory. Exact active-book
+counts and continuation metadata remain in the summary; complete sealed and
+unsealed tickets come from the cursor-paginated canonical listing route.
 
 The June 22 marketplace fix tightened the split between visible intent,
 pending sealing, and confirmed executable asks:
 
-- Confirmed, unspent, buyable sealed WORK/credit listings must stay present in
-  `/api/v1/marketplace-summary` even when ordinary active-listing previews are
-  capped by recency.
+- At the time of this rollout, confirmed, unspent, buyable sealed WORK/credit
+  listings were kept in `/api/v1/marketplace-summary` beyond the ordinary
+  recency preview. The later bounded-preview contract supersedes that behavior.
 - The public marketplace summary route must return the reconciled sale-ticket
   lifecycle, not a stale compacted proof-index summary snapshot that can hide
   older confirmed sealed inventory.
@@ -1322,9 +1327,9 @@ pending sealing, and confirmed executable asks:
 - Wallet and Marketplace refreshes may preserve locally broadcast pending
   listing/seal overlays until the canonical API sees the same tx or a closure,
   so seller controls do not disappear while the indexer catches up.
-- Regression checks must prove that every confirmed sealed WORK listing present
-  in the full token payload is also present in marketplace summary, and that
-  wallet-scoped listing reads preserve confirmed seal txids.
+- The historical rollout gate proved sealed WORK listing visibility in the
+  summary and wallet-scoped seal metadata. Current gates verify the bounded
+  preview and exact count separately from complete cursor-paginated book parity.
 
 ## August 27 Complete Book Rendering
 
@@ -1343,7 +1348,14 @@ original confirmed listing event and verify that exact outpoint against Core.
 Seal metadata can publish seller terms, but it cannot replace the listing
 event as anchor authority.
 
-## June 27 Sealed Summary Hardening
+## June 27 Sealed Summary Hardening (Historical)
+
+This section records the June 27 production behavior and is retained for
+audit history. Its fresh-summary fallback guidance was superseded: current
+fresh reads must match the exact Core tip or return an explicit unavailable
+response. Stable reads may expose a labeled last-good snapshot. See the
+current summary contract above and the production API read policy in
+`README.md`.
 
 The final audit follow-up tightened one more sale-ticket edge case: a valid
 `seal5` transaction spends the listing sale-ticket anchor, but that spend is
@@ -1359,10 +1371,9 @@ not a close. It publishes the seller's executable terms.
 - `marketplace-summary?fresh=1` should wait for the configured production
   refresh window and, if canonical refresh is still slow, return the reconciled
   fallback rather than a raw stale snapshot, false zero, or 503.
-- The production gate is `POW_API_BASE=https://computer.proofofwork.me npm run
-  check:marketplace-regressions`; it must prove every confirmed sealed WORK
-  listing present in `/api/v1/token?asset=WORK&fresh=1` is also present in
-  `/api/v1/marketplace-summary`.
+- The historical production gate was `POW_API_BASE=https://computer.proofofwork.me npm run
+  check:marketplace-regressions`. Its sealed-in-summary presence requirement was
+  superseded by the bounded preview and full-book cursor contract above.
 
 ## Order Books And Logs
 

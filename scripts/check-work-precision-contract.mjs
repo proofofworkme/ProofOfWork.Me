@@ -193,6 +193,15 @@ const tokenHolderBalanceUnits = isolatedTypeScriptFunction(
   "tokenHolderBalanceUnits",
   { tokenRecordAmountAtoms: frontendTokenRecordAmountAtoms },
 );
+const tokenRequiresCanonicalWorkCapacity = isolatedTypeScriptFunction(
+  appSource,
+  "tokenRequiresCanonicalWorkCapacity",
+  {
+    isWorkToken: frontendIsWorkToken,
+    WORK_TOKEN_AMOUNT_STORAGE_MODEL: "work-subatoms-v2",
+    WORK_TOKEN_PRECISION_MODEL: "canonical-work-subatoms-v2",
+  },
+);
 const compareTokenHolderBalances = isolatedTypeScriptFunction(
   appSource,
   "compareTokenHolderBalances",
@@ -208,6 +217,7 @@ const tokenWalletBalancesFor = isolatedTypeScriptFunction(
     isWorkToken: frontendIsWorkToken,
     tokenRecordAmountAtoms: frontendTokenRecordAmountAtoms,
     tokenHolderMatchesDefinition,
+    tokenRequiresCanonicalWorkCapacity,
     tokenWalletBalanceHasAmount,
     workNumberFromAtoms: (atoms) => Number(atoms) / 100_000_000,
     workRecordAtoms: frontendWorkRecordAtoms,

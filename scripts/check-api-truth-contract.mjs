@@ -679,7 +679,10 @@ expect(
     /const workSignalValue = boostWorkSignalValue\(workSignalSubatoms, workFloor\)/u.test(
       boostFeedItem,
     ) &&
-    /const proofSignalQ8 = boostExactQ8\(undefined,/u.test(
+    /const baseProofSignalQ8 = socialAction[\s\S]*boostExactQ8\(undefined,/u.test(
+      boostFeedItem,
+    ) &&
+    /const proofSignalQ8 = baseProofSignalQ8 \+ accumulatedOwnerSignalQ8/u.test(
       boostFeedItem,
     ) &&
     /proofSignalQ8 \+ BigInt\(workSignalValue\.workSignalValueQ8\)/u.test(

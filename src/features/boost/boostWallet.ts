@@ -14,6 +14,10 @@ import {
 } from "../../shared/bitcoin/networks";
 import { fetchProofApiJson, proofApiUrl } from "../../shared/api/proofApiClient";
 import { MAX_DATA_CARRIER_BYTES } from "../../shared/bitcoin/protocolLimits";
+import {
+  boostPaymentAmountSats,
+  normalizeBoostSpentOutpoint,
+} from "./boostNumeric";
 
 bitcoin.initEccLib(ecc);
 
@@ -444,8 +448,8 @@ function normalizeOutput(
   label: string,
   network: BitcoinNetwork,
 ) {
-  const amountSats = Math.floor(payment.amountSats);
-  if (!Number.isSafeInteger(amountSats) || amountSats < 0) {
+  const amountSats = boostPaymentAmountSats(payment.amountSats);
+  if (amountSats === null) {
     throw new Error(`${label} ${index + 1} has an invalid amount.`);
   }
   if (payment.script) {
@@ -459,16 +463,6 @@ function normalizeOutput(
     amountSats,
     script: scriptForAddress(payment.address, network, `${label} ${index + 1}`),
   };
-}
-
-function normalizeOutpoint(value: BoostSpentOutpoint) {
-  const txid = String(value.txid ?? "").trim().toLowerCase();
-  const vout = Math.floor(Number(value.vout));
-  return /^[0-9a-f]{64}$/u.test(txid) &&
-    Number.isSafeInteger(vout) &&
-    vout >= 0
-    ? `${txid}:${vout}`
-    : "";
 }
 
 export async function buildBoostPaymentPsbt({
@@ -523,9 +517,13 @@ export async function buildBoostPaymentPsbt({
     ...normalizedPayments,
     ...normalizedPostProtocolPayments,
   ].reduce((total, payment) => total + payment.amountSats, 0);
-  const excluded = new Set(
-    excludeOutpoints.map(normalizeOutpoint).filter(Boolean),
+  const normalizedExcludedOutpoints = excludeOutpoints.map(
+    normalizeBoostSpentOutpoint,
   );
+  if (normalizedExcludedOutpoints.some((outpoint) => !outpoint)) {
+    throw new Error("Boost payment exclusions contain an invalid outpoint.");
+  }
+  const excluded = new Set(normalizedExcludedOutpoints);
   const walletUtxos = await fetchUtxos(fromAddress, network);
   const utxos = walletUtxos.filter(
     (utxo) =>
@@ -908,11 +906,11 @@ function uniqueOutpoints(outpoints: Array<BoostSpentOutpoint | null>) {
     if (!outpoint) {
       continue;
     }
-    const key = normalizeOutpoint(outpoint);
+    const key = normalizeBoostSpentOutpoint(outpoint);
     if (key) {
       byKey.set(key, {
         txid: outpoint.txid.toLowerCase(),
-        vout: Math.floor(outpoint.vout),
+        vout: outpoint.vout,
       });
     }
   }

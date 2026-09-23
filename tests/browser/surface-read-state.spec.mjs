@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { normalizeHistoryEventItem } from "../../server/db/proof-index-reader.mjs";
 const HASH = "a".repeat(64);
 const NOW = "2026-09-05T15:00:00.000Z";
 const TOKEN = { tokenId: HASH, txid: HASH, ticker: "AUD", network: "livenet", confirmed: true,
@@ -15,6 +16,41 @@ async function fallback(route) {
   const url = new URL(route.request().url());
   await fulfill(route, { kind: url.searchParams.get("kind"), items: [], records: [], listings: [], pendingEvents: [], activity: [], tokens: [], mints: [], totalCount: 0, page: 0, pageSize: 25, hasMore: false, indexedAt: NOW });
 }
+
+test("Log status normalization separates chain state from semantic tags", () => {
+  const confirmed = normalizeHistoryEventItem({
+    txid: HASH, kind: "boost-like", status: "confirmed", confirmed: false,
+    valid: true, tags: ["Boost", "like", "Confirmed"], createdAt: NOW,
+  }, "livenet");
+  expect(confirmed.confirmationStatus).toBe("confirmed");
+  expect(confirmed.confirmed).toBe(true);
+  expect(confirmed.tags).toEqual(expect.arrayContaining(["Boost", "like", "Confirmed", "Mainnet"]));
+  expect(confirmed.tags.filter((tag) => tag === "Confirmed")).toHaveLength(1);
+
+  const pending = normalizeHistoryEventItem({
+    txid: "b".repeat(64), kind: "id-register", status: "mempool",
+    tags: ["ID registry"], createdAt: NOW,
+  }, "livenet");
+  expect(pending.confirmationStatus).toBe("pending");
+  expect(pending.tags).toEqual(expect.arrayContaining(["ID registry", "Pending"]));
+
+  const unknown = normalizeHistoryEventItem({
+    txid: "c".repeat(64), kind: "id-register", status: "future-state",
+    confirmed: true, createdAt: NOW,
+  }, "livenet");
+  expect(unknown.confirmationStatus).toBe("unknown");
+  expect(unknown.confirmed).toBe(false);
+  expect(unknown.tags).toContain("Status unavailable");
+  expect(unknown.tags).not.toContain("Pending");
+
+  const invalid = normalizeHistoryEventItem({
+    txid: "d".repeat(64), kind: "token-event-invalid", status: "confirmed",
+    valid: false, tags: ["Credit"], createdAt: NOW,
+  }, "livenet");
+  expect(invalid.confirmationStatus).toBe("confirmed");
+  expect(invalid.valid).toBe(false);
+  expect(invalid.tags).toEqual(expect.arrayContaining(["Credit", "Confirmed", "Invalid event"]));
+});
 
 test("Credit waits for its directory and uses exact aggregate supply despite empty mint preview", async ({ page }) => {
   const gate = delayed(); const reads = [];
@@ -145,4 +181,113 @@ test("Boost never reports partial or zero facts while awaiting a matching indexe
   await expect(posts).toContainText("1");
   await expect(totalSignal).toContainText("546 proofs");
   await expect(page.locator(".boost-post")).toContainText("The indexed memo matched this confirmed record.");
+});
+
+test("ID registry shows verifying until a full empty record collection is confirmed", async ({ page }) => {
+  const gate = delayed(); const reads = [];
+  await page.route("**/api/v1/**", async (route) => {
+    const url = new URL(route.request().url()); reads.push(url.pathname);
+    if (url.pathname === "/api/v1/registry") {
+      await gate.promise;
+      return fulfill(route, { records: [], listings: [], pendingEvents: [], sales: [], activity: [], indexedAt: NOW });
+    }
+    return fallback(route);
+  });
+  await page.goto("/?id-launch=1");
+  await expect(page.getByLabel("Registry stats")).toContainText("Verifying…");
+  await expect(page.getByLabel("Registry stats")).not.toContainText("0");
+  await expect(page.locator("#id-registry")).toContainText("Verifying canonical registry");
+  expect(reads).toContain("/api/v1/registry");
+  gate.release();
+  await expect(page.getByLabel("Registry stats")).toContainText("0");
+  await expect(page.locator("#id-registry")).toContainText("No registry records found in the verified snapshot.");
+});
+
+test("ID registry labels a regressing empty refresh as last verified", async ({ page }) => {
+  let fullReads = 0;
+  const record = {
+    id: "verified-audit", ownerAddress: "1BPVvi1GK4QkfqFMU4jHGjsQjyGwjJJJ7x",
+    receiveAddress: "1F1p9UEHuH5KTFR7Zsx93Khdrqhj6t5nFv", txid: "b".repeat(64),
+    network: "livenet", amountSats: 1000, confirmed: true, createdAt: NOW,
+  };
+  await page.route("**/api/v1/**", async (route) => {
+    const url = new URL(route.request().url());
+    if (url.pathname === "/api/v1/registry") {
+      fullReads += 1;
+      return fulfill(route, {
+        records: fullReads === 1 ? [record] : [],
+        listings: [], pendingEvents: [], sales: [], activity: [], indexedAt: NOW,
+      });
+    }
+    return fallback(route);
+  });
+  await page.goto("/?id-launch=1");
+  await expect(page.getByLabel("Registry stats")).toContainText("1");
+  await page.locator("#id-registry").getByRole("button", { name: "Refresh", exact: true }).click();
+  await expect(page.locator(".registry-read-note")).toContainText("last verified registry snapshot");
+  await expect(page.getByLabel("Registry stats")).toContainText("1");
+  await expect(page.locator("#id-registry")).toContainText("verified-audit@proofofwork.me");
+});
+
+test("ID registry labels a malformed first read unavailable instead of empty", async ({ page }) => {
+  await page.route("**/api/v1/**", async (route) => {
+    const url = new URL(route.request().url());
+    if (url.pathname === "/api/v1/registry") {
+      return fulfill(route, { indexedAt: NOW });
+    }
+    return fallback(route);
+  });
+  await page.goto("/?id-launch=1");
+  await expect(page.getByLabel("Registry stats")).toContainText("Unavailable");
+  await expect(page.getByLabel("Registry stats")).not.toContainText("0");
+  await expect(page.locator("#id-registry")).toContainText("Registry unavailable; no zero-count result can be shown.");
+});
+
+test("Desktop merges one self-send file but keeps separate transaction publications", async ({ page }) => {
+  const address = "1BPVvi1GK4QkfqFMU4jHGjsQjyGwjJJJ7x";
+  const txid = "d".repeat(64);
+  const attachment = { data: "cHJvb2Y", mime: "text/plain", name: "shared.txt", sha256: "e".repeat(64), size: 5 };
+  await page.route("**/api/v1/**", async (route) => {
+    const url = new URL(route.request().url());
+    if (url.pathname === `/api/v1/address/${address}/mail`) {
+      return fulfill(route, {
+        inboxMessages: [
+          { amountSats: 546, confirmed: true, createdAt: NOW, from: address, to: address, memo: "Self sent", network: "livenet", replyTo: address, attachment, txid },
+          { amountSats: 546, confirmed: true, createdAt: NOW, from: address, to: address, memo: "Separate publication", network: "livenet", replyTo: address, attachment, txid: "f".repeat(64) },
+        ],
+        sentMessages: [
+          { amountSats: 546, status: "confirmed", createdAt: NOW, from: address, to: address, memo: "Self sent", network: "livenet", replyTo: address, attachment, txid },
+        ],
+      });
+    }
+    return fallback(route);
+  });
+  await page.goto("/?desktop=1");
+  await page.getByPlaceholder("address or user@proofofwork.me").fill(address);
+  await page.getByRole("button", { name: "Open", exact: true }).click();
+  await expect(page.locator(".file-tile")).toHaveCount(2);
+  await expect(page.locator(".file-inspector")).toContainText("Inbox · Sent");
+});
+
+test("Log displays chain status alongside content tags", async ({ page }) => {
+  await page.route("**/api/v1/**", async (route) => {
+    const url = new URL(route.request().url());
+    if (url.pathname === "/api/v1/log-history") {
+      const query = url.searchParams.get("q") || "";
+      return fulfill(route, {
+        kind: "activity", query,
+        items: query ? [{ txid: HASH, kind: "id-register", id: "status-audit", network: "livenet", confirmed: true, confirmationStatus: "confirmed", valid: true, tags: ["Boost", "like"], createdAt: NOW, amountSats: 1000, dataBytes: 32 }] : [],
+        totalCount: query ? 1 : 0, page: 0, pageSize: 50, indexedAt: NOW,
+      });
+    }
+    return fallback(route);
+  });
+  await page.goto("/?log=1");
+  await page.getByPlaceholder("address, user@proofofwork.me, or txid").fill(HASH);
+  await page.getByRole("button", { name: "Search", exact: true }).click();
+  const tags = page.locator(".activity-row .activity-tags");
+  await expect(tags).toContainText("Confirmed");
+  await expect(tags).toContainText("Mainnet");
+  await expect(tags).toContainText("Boost");
+  await expect(tags).toContainText("like");
 });
