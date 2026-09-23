@@ -41537,6 +41537,10 @@ export async function proofIndexCreditListingsPayload(
 
   const requestedScope = tokenScopeKey(tokenId);
   const scope = requestedScope === "all" ? "" : requestedScope;
+  const listingId = String(options.listingId ?? "").trim().toLowerCase();
+  if (listingId && !/^[0-9a-f]{64}$/u.test(listingId)) {
+    throw new TypeError("Exact proof-index listing ID must be a 64-character txid.");
+  }
   const maxRows = boundedInteger(options.limit, 500, 1, 5000);
   const scan = await latestProofIndexScanMetadata(queryable, network);
   const workMarketV4Activation = await verifiedWorkMarketV4Activation(
@@ -41565,10 +41569,11 @@ export async function proofIndexCreditListingsPayload(
       FROM proof_indexer.credit_listings cl
       WHERE cl.network = $1
         AND ($2 = '' OR lower(cl.token_id) = $2)
+        AND ($3 = '' OR cl.listing_id = $3)
         AND ${canonicalWorkMarketV3ListingProjectionSql("cl")}
         AND ${workAmoV6ReadSql}
     `,
-    [network, scope],
+    [network, scope, listingId],
   );
   const totalCount = rowNumber(countResult.rows[0], "total_count");
 
@@ -41676,12 +41681,13 @@ export async function proofIndexCreditListingsPayload(
       ) canonical_spend ON true
       WHERE cl.network = $1
         AND ($2 = '' OR lower(cl.token_id) = $2)
+        AND ($3 = '' OR cl.listing_id = $3)
         AND ${canonicalWorkMarketV3ListingProjectionSql("cl")}
         AND ${workAmoV6ReadSql}
       ORDER BY cl.updated_at DESC, cl.listing_id ASC
-      LIMIT $3
+      LIMIT $4
     `,
-    [network, scope, maxRows],
+    [network, scope, listingId, maxRows],
   );
 
   const closeBindingByListingId = new Map();

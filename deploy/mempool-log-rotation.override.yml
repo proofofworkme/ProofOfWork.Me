@@ -1,0 +1,19 @@
+services:
+  db:
+    logging:
+      driver: json-file
+      options:
+        max-size: "25m"
+        max-file: "4"
+  api:
+    logging:
+      driver: json-file
+      options:
+        max-size: "25m"
+        max-file: "4"
+  web:
+    logging:
+      driver: json-file
+      options:
+        max-size: "25m"
+        max-file: "4"

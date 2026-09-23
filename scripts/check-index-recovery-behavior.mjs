@@ -35,6 +35,7 @@ import {
 } from "../server/canonical-summary-budget.mjs";
 import { compareCanonicalUtf8 } from "../server/canonical-order.mjs";
 import { tokenListingDisplayProjection } from "../server/read-projections.mjs";
+import { tokenListingHistoryQueryScope } from "../server/token-listing-query-scope.mjs";
 import {
   PROOF_INDEX_EVENT_RELATION_PARITY_MODEL,
   proofIndexCanonicalEventRelationParity,
@@ -57501,6 +57502,7 @@ check("token listing history rejects previews and fences relational and Core evi
     },
   );
   let relational;
+  let relationalReadOptions = null;
   let coreDigest = "c".repeat(64);
   let coreHash = "a".repeat(64);
   let coreCalls = 0;
@@ -57543,7 +57545,18 @@ check("token listing history rejects previews and fences relational and Core evi
       },
       mapWithConcurrency: async (items, _limit, mapper) => Promise.all(items.map(mapper)),
       normalizeTokenScope: (value) => String(value ?? "").toLowerCase(),
-      proofIndexCreditListingsPayload: async () => relational,
+      proofIndexCreditListingsPayload: async (_network, _scope, options = {}) => {
+        relationalReadOptions = options;
+        const exactListingId = String(options.listingId ?? "").trim().toLowerCase();
+        if (!exactListingId) {
+          return relational;
+        }
+        const items = (relational?.items ?? []).filter((item) =>
+          String(item?.listingId ?? item?.txid ?? "").trim().toLowerCase() === exactListingId,
+        );
+        return { ...relational, items, totalCount: items.length };
+      },
+      tokenListingHistoryQueryScope,
       proofIndexCanonicalWorkListingById: async (_network, listingId) => {
         witnessCalls.push(listingId);
         return witnesses.get(listingId) ?? null;
@@ -57770,6 +57783,12 @@ check("token listing history rejects previews and fences relational and Core evi
     new URLSearchParams({ limit: "1", q: legacyRefundListing.listingId }),
   );
   assert.equal(exactRelic.totalCount, 0);
+  assert.equal(relationalReadOptions?.listingId, legacyRefundListing.listingId);
+  assert.equal(exactRelic.listingProjection.scope, "exact-listing-id");
+  assert.equal(
+    exactRelic.source,
+    "proof-indexer-exact-core-reconciled-token-listing",
+  );
   assert.deepEqual(exactRelic.items, []);
   assert.equal(exactRelic.listingProjection.excludedByProtocolCount, 1);
   assert.equal(
@@ -57780,18 +57799,25 @@ check("token listing history rejects previews and fences relational and Core evi
   assert.equal(exactRelic.listingAuthority.checkpoint.blockHash, coreHash);
   assert.deepEqual(
     coreCheckedListingIds,
-    lifecycleListings.map((item) => item.listingId),
-    "the cutover relic must remain covered by the complete Core evidence pass",
+    [legacyRefundListing.listingId],
+    "an exact lookup still reconciles the targeted cutover relic against Core",
   );
   assert.deepEqual(
     witnessCalls,
-    [listings[1].listingId],
-    "a missing spent V8 witness must not poison the Core-filtered active result",
+    [],
+    "the exact legacy lookup does not hydrate unrelated V8 listing witnesses",
   );
   const first = await completeTokenListingHistoryPayload(
     "livenet", "work", new URLSearchParams("limit=1"),
   );
   assert.equal(first.totalCount, 2);
+  assert.equal(relationalReadOptions?.listingId, undefined);
+  assert.equal(first.listingProjection.scope, "complete-book");
+  assert.deepEqual(
+    witnessCalls,
+    [listings[1].listingId],
+    "complete-book reads still hydrate the complete V8 witness set",
+  );
   assert.equal(first.items.length, 1);
   assert.equal(first.hasMore, true);
   assert.equal(first.authorityInputListingIds, undefined);
@@ -57802,9 +57828,16 @@ check("token listing history rejects previews and fences relational and Core evi
     "livenet", "work", new URLSearchParams({ limit: "1", listingId: listings[2].listingId }),
   );
   assert.equal(exactIdentity.totalCount, 1);
+  assert.equal(relationalReadOptions?.listingId, listings[2].listingId);
+  assert.equal(exactIdentity.listingProjection.scope, "exact-listing-id");
   assert.equal(exactIdentity.items[0].listingId, listings[2].listingId);
   assert.equal(exactIdentity.hasMore, false);
-  assert.deepEqual(exactIdentity.listingAuthority, first.listingAuthority);
+  assert.equal(exactIdentity.listingAuthority.checkedListingCount, 1);
+  assert.equal(exactIdentity.listingAuthority.inputListingCount, 1);
+  assert.deepEqual(
+    exactIdentity.listingAuthority.checkpoint,
+    first.listingAuthority.checkpoint,
+  );
   const displayFirst = await completeTokenListingHistoryPayload(
     "livenet", "work", new URLSearchParams("limit=1&projection=display-v1"),
   );
@@ -57837,6 +57870,8 @@ check("token listing history rejects previews and fences relational and Core evi
     { includeAuthorityListingIds: true },
   );
   assert.equal(internalAuthority.totalCount, 1);
+  assert.equal(relationalReadOptions?.listingId, undefined);
+  assert.equal(internalAuthority.listingProjection.scope, "complete-book");
   assert.equal(internalAuthority.authorityTokenId, WORK_TOKEN_ID);
   assert.deepEqual(
     [...internalAuthority.authorityInputListingIds],
@@ -57856,6 +57891,7 @@ check("token listing history rejects previews and fences relational and Core evi
     new URLSearchParams({ cursor: first.nextCursor, limit: "1" }),
   );
   assert.equal(second.totalCount, 2);
+  assert.equal(relationalReadOptions?.listingId, undefined);
   assert.equal(second.items.length, 1);
   assert.notEqual(second.items[0].listingId, first.items[0].listingId);
   assert.equal(second.hasMore, false);
@@ -57940,7 +57976,7 @@ check("token listing history rejects previews and fences relational and Core evi
     (error) => error?.statusCode === 503,
     "an unspent V8 listing without its canonical witness must fail closed",
   );
-  assert.deepEqual(witnessCalls, [listings[1].listingId, activeV8.listingId]);
+  assert.deepEqual(witnessCalls, [activeV8.listingId]);
   const activeWitness = {
     confirmed: true,
     listingAuthorization: activeV8ListingAuthorization,
@@ -58042,6 +58078,16 @@ check("token listing history rejects previews and fences relational and Core evi
   );
   assert.match(listingReaderSource, /REPEATABLE READ READ ONLY/u);
   assert.match(listingReaderSource, /options\.requireComplete === true/u);
+  assert.equal(
+    [...listingReaderSource.matchAll(/AND \(\$3 = '' OR cl\.listing_id = \$3\)/gu)].length,
+    2,
+    "count and page queries must both apply the exact listing-id scope",
+  );
+  assert.match(listingReaderSource, /\[network, scope, listingId\]/u);
+  assert.match(
+    listingReaderSource,
+    /\[network, scope, listingId, maxRows\]/u,
+  );
 });
 
 check("exact ID API lifecycle feeds every ID marketplace preflight", async () => {

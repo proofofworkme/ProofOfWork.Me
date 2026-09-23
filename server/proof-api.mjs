@@ -24,6 +24,7 @@ import {
   compareCanonicalUtf8,
 } from "./canonical-order.mjs";
 import { createElectrumClient } from "./electrum-client.mjs";
+import { tokenListingHistoryQueryScope } from "./token-listing-query-scope.mjs";
 import {
   registryCountsProjection,
   tokenDirectoryProjection,
@@ -56682,6 +56683,16 @@ async function completeTokenListingHistoryPayload(
     throw error;
   }
   const scope = normalizeTokenScope(tokenScope);
+  const listingQueryScope = tokenListingHistoryQueryScope({
+    listingId: searchParams.get("listingId"),
+    query: request.query,
+    cursor: request.cursorRaw,
+  });
+  const exactListingReadId =
+    listingQueryScope.narrowToExactListing &&
+    options.includeAuthorityListingIds !== true
+      ? listingQueryScope.exactListingId
+      : "";
   const includeAuthorityListingIds =
     options.includeAuthorityListingIds === true &&
     network === "livenet" &&
@@ -56689,6 +56700,7 @@ async function completeTokenListingHistoryPayload(
   const relational = await proofIndexCreditListingsPayload(network, scope, {
     limit: TOKEN_LISTING_LIFECYCLE_MATERIALIZATION_LIMIT,
     requireComplete: true,
+    ...(exactListingReadId ? { listingId: exactListingReadId } : {}),
   });
   const lifecycleCapacity = tokenListingLifecycleCapacityStats(relational);
   logTokenListingLifecycleCapacity(
@@ -56984,6 +56996,7 @@ async function completeTokenListingHistoryPayload(
         authorityListings.length - protocolAuthorityListings.length,
       membershipSha256: protocolMembershipSha256,
       model: "proof-token-market-cutover-after-core-v1",
+      scope: exactListingReadId ? "exact-listing-id" : "complete-book",
     },
     ...(includeAuthorityListingIds
       ? {
@@ -57004,7 +57017,9 @@ async function completeTokenListingHistoryPayload(
       relationalHash,
       sourceSha256,
     }),
-    source: "proof-indexer-complete-core-reconciled-token-listings",
+    source: exactListingReadId
+      ? "proof-indexer-exact-core-reconciled-token-listing"
+      : "proof-indexer-complete-core-reconciled-token-listings",
     start: emitted, totalCount: filtered.length,
   };
 }
