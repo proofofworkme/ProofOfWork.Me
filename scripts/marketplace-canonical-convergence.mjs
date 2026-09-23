@@ -239,6 +239,12 @@ export function isRetryableCanonicalReadError(error) {
   if (error.code === "CANONICAL_INDEX_UNAVAILABLE") {
     return canonicalIndexUnavailableProvesTipCatchUp(details);
   }
+  // Fresh WORK token reads fail closed until their full Core gettxout listing
+  // proof matches the relational checkpoint. Retry only this exact authority
+  // response inside the caller's bounded convergence budget.
+  if (error.code === "CANONICAL_WORK_LISTING_AUTHORITY_UNAVAILABLE") {
+    return details?.requiredSource === "proof-token-market-core-gettxout-v1";
+  }
   if (RETRYABLE_CANONICAL_READ_CODES.has(error.code)) {
     return true;
   }

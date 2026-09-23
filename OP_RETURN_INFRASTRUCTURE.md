@@ -15,6 +15,44 @@ Browser app
 
 The browser still signs locally with UniSat. The API never receives seed phrases, private keys, or unsigned wallet authority.
 
+### Mempool container log bounds
+
+The production mempool Compose project uses persistent `/data/mempool/mysql` and
+`/data/mempool/cache` bind mounts. Its `db`, `api`, and `web` containers use the
+Docker `json-file` log driver with a 25 MiB file limit and four files per
+container. The web container also binds `/data/mempool/nginx-logs` to
+`/var/log/nginx`, so nginx access/error logs do not accumulate in its disposable
+root layer. Apply the tracked
+`deploy/mempool-log-rotation.override.yml` alongside the host's base Compose file
+for every container recreation.
+
+Install `deploy/mempool-nginx-logrotate.conf` as
+`/etc/logrotate.d/proofofwork-mempool-nginx`. The active host `logrotate.timer`
+checks these files daily; the rule rotates when either exceeds 100 MiB, keeps 14
+compressed copies, creates mode-0640 files owned by container uid/gid 1000, and
+asks nginx to reopen both paths. It does not use `copytruncate`, which could lose
+concurrent log writes. On first installation, stop the web container, copy both
+exact log files from the stopped container to `/data/mempool/nginx-logs`, verify
+and record their hashes and sizes, and only then recreate it with the bind mount.
+Run logrotate once after the new container is healthy to move the existing large
+files into retained compressed rotations.
+
+Validate the merged config before applying it, then recreate one service at a
+time and check health after each:
+
+```bash
+docker compose -f /opt/mempool/docker-compose.yml \
+  -f /opt/mempool/proofofwork-log-rotation.override.yml config --quiet
+logrotate -d /etc/logrotate.d/proofofwork-mempool-nginx
+# Recreate db, api, and web sequentially with --no-deps --force-recreate.
+```
+
+This preserves the existing mysql/cache paths and leaves the base Compose file
+intact; omitting the override restores its prior Compose definition. Verify each
+container's `HostConfig.LogConfig`, web nginx-log mount, and health afterward.
+The deployment is manually managed by Docker Compose, without a systemd Compose
+unit, so operators must include the override in later recreations.
+
 ## ProofOfWork Event Database
 
 ProofOfWork runs a ProofOfWork-specific PostgreSQL indexer beside the node/API
@@ -1270,10 +1308,18 @@ plus the current database size with 10% and 1 GiB overhead, before starting a du
 A five-second guard terminates the new dump if free space crosses the reserve or
 the dump exceeds that measured budget. `--check-capacity` verifies the preflight
 without creating a backup. Failed partial sets are preserved and named in logs.
-The seven-newest-set target produces review candidates rather than automatic
-removal: older complete sets and old partial sets can still be recovery or audit
-evidence. This makes dependency review and capacity monitoring mandatory; the
-guard will refuse a future backup before spending the live-data reserve.
+The controller retains the newly completed set as the one logical recovery
+copy. It retires an older set only when its canonical directory, owner and mode,
+exact three-file inventory, checksums, non-empty globals archive, and readable
+restore catalog all verify, and no process has any set file open. It rechecks the
+directory identity immediately before removal. Unverifiable or open sets and
+incomplete temporary sets remain untouched and are logged for review; age alone
+never authorizes deletion. The lock-protected `--retain-existing <verified-basename>`
+mode applies the same checks and pruning while keeping one explicitly named
+already-created set, without running `pg_dump`. Use this only after a fresh restore
+and checksum verification; it allows a proven set to be kept while older verified
+duplicates are retired. This keeps a failed retention check conservative without
+allowing verified daily dumps to accumulate indefinitely.
 Backups remain under `/data/proofofwork-postgres-backups/logical`; globals may
 contain password hashes and must remain `postgres`-only and encrypted before
 any off-host copy. Take the first physical and logical backups, restore the
@@ -4834,6 +4880,7 @@ The credit endpoint:
 - Fresh credit-directory and summary reads verify the stored hash-bound canonical checkpoint against Bitcoin Core instead of rebuilding the shared credit ledger in the request. Scoped wallet/history reads may still use bounded canonical recovery; explicit refresh must converge on current node truth and may not leave a spent sale-ticket visible as active.
 - Public read projections reduce transport without changing admission. `/api/v1/registry-summary?projection=counts-v1` returns qualified complete registration counts and the source checkpoint; pending registration counts exclude pending receiver/owner changes. `/api/v1/token-summary?compact=1` qualifies its complete definition inventory under `directory.model=proof-token-directory-v1`. Adding `projection=directory-v1` preserves every definition and exact aggregate while omitting the eight history previews, truthfully retaining their counts/`collectionHasMore` and setting `listingBookComplete=false`. Histories remain separately retrievable. Credit uses a separate client cache scope from the complete AMO book; neither projection can replace the other. Clients reject an incomplete directory rather than rendering it as empty.
 - Complete token listing history accepts `projection=display-v1`. It omits only the three bulky `workAmoV5ReplayOutput`, `workAmoV5ReplayRawWitness`, and `workAmoV5RawScriptWitness` transport fields, retaining frozen terms and authorizations, a full-record digest and a full-detail retrieval reference. Membership, source, protocol-cutover and Core outpoint digests are computed over full rows before projection; projection choice is cursor-bound. Default/full responses retain all evidence. Display projection does not replace fresh action admission, and same-height mempool outpoint changes invalidate continuation.
+- A no-cursor exact token-listing lookup accepts a 64-character lowercase or uppercase txid through `listingId` or `q`. The reader applies that exact id in both the relational count and page queries, then reconciles the targeted record with current Core evidence. It marks the response `listingProjection.scope=exact-listing-id`; ordinary searches, cursor pages and internal complete-authority reads retain the complete-book scope and all-row Core reconciliation.
 - Fresh reads also remove dropped pending credit/WORK transactions from overlay state after liveness checks, so stale pending transfers, listings, seals, delistings, or buys do not survive after they disappear from mempool views.
 - Wallet-owned credit listing views are derived from the same active and closed listing state as AMO, so a connected seller can inspect confirmed, pending, delisted, and sold listings without a separate stale wallet-only book.
 - Credit UI surfaces show the starting unit price as mint price divided by mint amount, plus estimated USD per credit and per mint from BTC/USD.

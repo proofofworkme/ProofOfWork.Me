@@ -904,6 +904,47 @@ function tokenListingHasConfirmedSeal(item) {
   );
 }
 
+function tokenListingHasConfirmedV1RelicSeal(item, listingId, sealTxid) {
+  const sourceAuthorization = item?.saleAuthorization;
+  const chainBoundAction = item?.actionAuthorization;
+  if (
+    item?.relic !== true ||
+    item?.refundEligible !== true ||
+    item?.sealConfirmed !== true ||
+    String(item?.sealTxid ?? "").toLowerCase() !== sealTxid ||
+    sourceAuthorization?.version !== "pwt-sale-v1" ||
+    sourceAuthorization?.anchorTxid !== "" ||
+    sourceAuthorization?.anchorSignature !== "" ||
+    chainBoundAction?.version !== sourceAuthorization.version ||
+    String(chainBoundAction?.anchorTxid ?? "").toLowerCase() !== listingId ||
+    typeof chainBoundAction?.anchorSignature !== "string" ||
+    chainBoundAction.anchorSignature.length === 0
+  ) {
+    return false;
+  }
+
+  const {
+    anchorTxid: sourceAnchorTxid,
+    anchorSignature: sourceAnchorSignature,
+    ...sourceTerms
+  } = sourceAuthorization;
+  const {
+    anchorTxid: sealedAnchorTxid,
+    anchorSignature: sealedAnchorSignature,
+    ...sealedTerms
+  } = chainBoundAction;
+  return (
+    sourceAnchorTxid === "" &&
+    sourceAnchorSignature === "" &&
+    sealedAnchorTxid.toLowerCase() === listingId &&
+    Object.keys(sourceTerms).length === Object.keys(sealedTerms).length &&
+    Object.entries(sourceTerms).every(
+      ([key, value]) =>
+        Object.hasOwn(sealedTerms, key) && sealedTerms[key] === value,
+    )
+  );
+}
+
 function assertCoreTokenListingAuthority(payload, label) {
   const listings = Array.isArray(payload?.listings) ? payload.listings : [];
   const sealedCount = listings.filter(tokenListingHasConfirmedSeal).length;
@@ -3203,11 +3244,11 @@ for (const txid of [REPORTED_RECENT_WAITING_FOR_SEAL_LISTING_TX]) {
   );
   if (relic) {
     assert(
-      relic.relic === true &&
-        relic.refundEligible === true &&
-        tokenListingHasConfirmedSeal(relic) &&
-        String(relic.sealTxid ?? "").toLowerCase() ===
-          REPORTED_RECENT_WAITING_FOR_SEAL_SEAL_TX,
+      tokenListingHasConfirmedV1RelicSeal(
+        relic,
+        txid,
+        REPORTED_RECENT_WAITING_FOR_SEAL_SEAL_TX,
+      ),
       `${txid} has incomplete projected Carbonz wallet V1 relic data`,
     );
   }

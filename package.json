@@ -42,7 +42,7 @@
     "preview": "vite preview --host 0.0.0.0",
     "check:ui": "node scripts/check-ui-contract.mjs",
     "check:ui:browser": "playwright test --config playwright.ui.config.mjs",
-    "check:hardening": "node scripts/check-hardening-contract.mjs",
+    "check:hardening": "node scripts/check-hardening-contract.mjs && python3 -B scripts/check-backup-capacity.py",
     "check:node-ops": "node scripts/check-node-ops-contract.mjs",
     "check:ui-ops": "node scripts/check-ui-ops-contract.mjs",
     "check:ui-capacity": "python3 -B scripts/check-ui-capacity.py && python3 -B scripts/check-ui-capacity-boundaries.py",
