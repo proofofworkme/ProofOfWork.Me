@@ -27105,18 +27105,27 @@ export default function App() {
           fetchMarketplaceSummary(fresh),
           fetchBtcUsdPrice(fresh).catch(() => undefined),
         ]);
-        const completeTokenState = await tokenStateWithCurrentCompleteMarketplaceListings(
-          snapshot.token,
-          fresh,
-        ).catch((error) => {
-          console.error(
-            `Complete AMO listing hydration deferred: ${errorMessage(
-              error,
-              "checkpoint unavailable",
-            )}`,
+        const completeTokenStatePromise =
+          tokenStateWithCurrentCompleteMarketplaceListings(
+            snapshot.token,
+            fresh,
+          ).then(
+            (state) => state,
+            (error) => {
+              console.error(
+                `Complete AMO listing hydration deferred: ${errorMessage(
+                  error,
+                  "checkpoint unavailable",
+                )}`,
+              );
+              return undefined;
+            },
           );
-          return snapshot.token;
-        });
+        // The coherent root summary contains verified aggregates and an
+        // explicitly incomplete listing preview. Accept it immediately; the
+        // complete, Core-reconciled history is applied below only if this
+        // exact indexed snapshot is still current.
+        const completeTokenState = snapshot.token;
         const marketplaceTokenScopeKey = tokenStateScopeKey({
           network: "livenet",
           tokenScope: "",
@@ -27222,7 +27231,9 @@ export default function App() {
             indexedAt: acceptedSnapshot.indexedAt,
             message: retainsIndexedSnapshot
               ? current.message
-              : "Registry, credit, listing, sale, and WORK state agree in one verified snapshot.",
+              : acceptedTokenState.listingBookComplete === true
+                ? "Registry, credit, listing, sale, and WORK state agree in one verified snapshot."
+                : "Registry, credit counts, and WORK state agree in one verified snapshot. Listing rows are a verified preview while the complete checkpoint-bound Core-reconciled sale-ticket book loads.",
             status: retainsIndexedSnapshot ? "last-verified" : "ready",
           };
         });
@@ -27236,14 +27247,82 @@ export default function App() {
         if (!silent) {
           setStatusForWorkspace(requestWorkspaceKey, {
             tone: "good",
-            text: tokenMarketplaceStatusText({
+            text: `${tokenMarketplaceStatusText({
               network: "livenet",
               state: acceptedTokenState,
               tokenScope: currentTokenMarketplaceStatusScope(),
               workFloorQuote: acceptedWorkFloor,
-            }),
+            })}${acceptedTokenState.listingBookComplete === true ? "" : " Listing rows are a verified preview while full Core-reconciled sale-ticket history loads."}`,
           });
         }
+        void completeTokenStatePromise
+          .then((hydratedTokenState) => {
+            if (!hydratedTokenState) {
+              return;
+            }
+            const currentSnapshot = acceptedMarketplaceSnapshotRef.current;
+            if (
+              !currentSnapshot ||
+              currentSnapshot.indexedAt !== acceptedSnapshot.indexedAt ||
+              currentSnapshot.token.indexedThroughBlock !==
+                acceptedSnapshot.token.indexedThroughBlock ||
+              currentSnapshot.token.indexedThroughBlockHash !==
+                acceptedSnapshot.token.indexedThroughBlockHash
+            ) {
+              return;
+            }
+
+            const hydratedAcceptedTokenState = applyTokenState(
+              hydratedTokenState,
+              { scopeKey: marketplaceTokenScopeKey },
+            );
+            const latestSnapshot = acceptedMarketplaceSnapshotRef.current;
+            if (
+              !latestSnapshot ||
+              latestSnapshot.indexedAt !== acceptedSnapshot.indexedAt ||
+              latestSnapshot.token.indexedThroughBlock !==
+                acceptedSnapshot.token.indexedThroughBlock ||
+              latestSnapshot.token.indexedThroughBlockHash !==
+                acceptedSnapshot.token.indexedThroughBlockHash
+            ) {
+              return;
+            }
+
+            acceptedMarketplaceSnapshotRef.current = {
+              ...latestSnapshot,
+              token: hydratedAcceptedTokenState,
+            };
+            setTokenMarketHistoryRefreshNonce((current) => current + 1);
+            setMarketplaceSummaryReadState((current) =>
+              current.status === "ready" &&
+              current.indexedAt === acceptedSnapshot.indexedAt
+                ? {
+                    ...current,
+                    message:
+                      "Registry, credit, complete Core-reconciled listing and sale history, and WORK state agree at the same verified checkpoint.",
+                  }
+                : current,
+            );
+            if (!silent && requestIsActive()) {
+              setStatusForWorkspace(requestWorkspaceKey, {
+                tone: "good",
+                text: tokenMarketplaceStatusText({
+                  network: "livenet",
+                  state: hydratedAcceptedTokenState,
+                  tokenScope: currentTokenMarketplaceStatusScope(),
+                  workFloorQuote: acceptedWorkFloor,
+                }),
+              });
+            }
+          })
+          .catch((error) => {
+            console.error(
+              `Complete AMO listing hydration deferred: ${errorMessage(
+                error,
+                "checkpoint unavailable",
+              )}`,
+            );
+          });
         return acceptedSnapshot;
       } catch (error) {
         const lastGoodSnapshot = acceptedMarketplaceSnapshotRef.current;
@@ -51434,9 +51513,11 @@ function MarketplaceApp({
     status,
     tokenSummary: {
       tone: marketplaceSummaryVerified || listingBookComplete ? "good" : "idle",
-      text: marketplaceSummaryVerified || listingBookComplete
+      text: listingBookComplete
         ? creditMarketStatusText
-        : `Credit market preview loaded. Verifying all ${Number(tokenSummary.totalCounts?.listings ?? creditTokenListings.length).toLocaleString()} Core-reconciled sale tickets before reporting the book as complete.`,
+        : marketplaceSummaryVerified
+          ? `${creditMarketStatusText} Listing rows are a verified preview while the complete Core-reconciled sale-ticket book loads.`
+          : `Credit market preview loaded. Verifying all ${Number(tokenSummary.totalCounts?.listings ?? creditTokenListings.length).toLocaleString()} Core-reconciled sale tickets before reporting the book as complete.`,
     },
   });
   const visibleScopedStatus: WorkspaceStatus =
@@ -51673,7 +51754,7 @@ function MarketplaceApp({
 
         <MarketplaceTabs
           active={marketplaceTab}
-          bondCount={marketplaceSummaryVerified ? bondListings.length : undefined}
+          bondCount={listingBookComplete ? bondListings.length : undefined}
           boostCount={boostListings.length > 0 || (!boostMarketLoading && !boostMarketError) ? boostListings.length : undefined}
           idCount={marketplaceSummaryVerified ? registryListings.length : undefined}
           onChange={setMarketplaceTab}
@@ -52105,6 +52186,7 @@ function MarketplaceWorkspace({
   const marketplaceSummaryVerified = marketplaceSummaryHasVerifiedData(
     marketplaceSummaryReadState,
   );
+  const listingBookComplete = tokenSummary.listingBookComplete === true;
   const tokenMarketRouteUnavailable =
     marketplaceSummaryVerified &&
     Boolean(selectedTokenMarketId.trim()) &&
@@ -52167,7 +52249,7 @@ function MarketplaceWorkspace({
 
       <MarketplaceTabs
         active={marketplaceTab}
-        bondCount={marketplaceSummaryVerified ? bondListings.length : undefined}
+        bondCount={listingBookComplete ? bondListings.length : undefined}
         boostCount={boostListings.length > 0 || (!boostMarketLoading && !boostMarketError) ? boostListings.length : undefined}
         idCount={marketplaceSummaryVerified ? networkListings.length : undefined}
         onChange={setMarketplaceTab}

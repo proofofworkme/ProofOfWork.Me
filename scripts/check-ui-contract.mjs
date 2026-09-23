@@ -3318,7 +3318,7 @@ expect(
     ),
 );
 expect(
-  "Marketplace hydrates one exact complete listing book before accepting a summary",
+  "Marketplace renders the verified summary first and accepts complete listing history only at the same checkpoint",
   /completeMarketplaceListingHistoryRef\.current/.test(
     currentCompleteGlobalTokenListingsBlock,
   ) &&
@@ -3354,11 +3354,23 @@ expect(
     /listings: history\.totalCount/.test(
       tokenStateWithCompleteTokenListingsBlock,
     ) &&
-    /const completeTokenState = await tokenStateWithCurrentCompleteMarketplaceListings\([\s\S]*snapshot\.token,[\s\S]*fresh,[\s\S]*\)/.test(
+    /const completeTokenStatePromise =[\s\S]*?tokenStateWithCurrentCompleteMarketplaceListings\([\s\S]*?snapshot\.token,[\s\S]*?fresh,[\s\S]*?\)/.test(
+      refreshMarketplaceSummaryBlock,
+    ) &&
+    /const completeTokenState = snapshot\.token;/.test(
       refreshMarketplaceSummaryBlock,
     ) &&
     /const acceptedTokenState = applyTokenState\(completeTokenState/.test(
       refreshMarketplaceSummaryBlock,
+    ) &&
+    /acceptedTokenState\.listingBookComplete === true[\s\S]*Listing rows are a verified preview/.test(
+      refreshMarketplaceSummaryBlock,
+    ) &&
+    /void completeTokenStatePromise[\s\S]*currentSnapshot\.indexedAt !== acceptedSnapshot\.indexedAt[\s\S]*currentSnapshot\.token\.indexedThroughBlock !==[\s\S]*currentSnapshot\.token\.indexedThroughBlockHash !==[\s\S]*applyTokenState\([\s\S]*hydratedTokenState/.test(
+      refreshMarketplaceSummaryBlock,
+    ) &&
+    /bondCount=\{listingBookComplete \? bondListings\.length : undefined\}/.test(
+      app,
     ),
 );
 expect(
