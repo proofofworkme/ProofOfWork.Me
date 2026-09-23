@@ -1,6 +1,6 @@
 # Production Remediation and Verification Audit 22
 
-**Audit date:** September 22, 2026 (local); verification continued through September 23, 2026 02:48 UTC.<br>
+**Audit date:** September 22, 2026 (local); verification continued through September 23, 2026 02:58 UTC.<br>
 **Scope:** approved remediation of open findings from Audits 20–21; local source and browser checks; read-only production API regression checks; host access and release readiness.<br>
 **Base revision:** a18cae48fdf486eca8168a28fdd114c33c3f7dfb.<br>
 **Predecessors:** Audits [20](2026-09-22-production-comprehensive-health-data-integrity-audit-20.md) and [21](2026-09-22-production-comprehensive-health-data-integrity-audit-21.md), with their evidence bundles. The companion [Audit 22 evidence](2026-09-22-production-comprehensive-health-data-integrity-audit-22.evidence.json) records predecessor hashes, checks, post-merge production verification, and release blockers.
@@ -9,7 +9,7 @@
 
 Local remediation is implemented and the relevant deterministic and browser suites pass. The read-only production mail-history regression passed across eight mailbox cases. The live marketplace regression **failed**: the current production API still returned the pre-unit WORK AMO relic in exact closed-listing history (H9-01), and the check took about 39.5 seconds before that assertion. The local source now closes that exact-query path and its 529-case recovery suite passes. It was committed as `365d80f` and merged into `main` as `17b0101` after repository-hygiene CI passed on Node 20, 22, and 24. A post-merge live recheck still returns the relic, confirming the source correction has not reached production.
 
-This is a **partial remediation, not a production completion**. The production VPS addresses were reachable, but the available SSH identities were rejected for both hosts. No production filesystem, configuration, database, service, backup, ledger, or protocol record was changed. There is no deployment workflow in the repository; production release requires host access. Capacity/retention cleanup, restore proof, log rotation, production deployment, and final production verification remain blocked until authorized host access and safe recovery evidence are available. The reviewed source merge is complete; the remaining blockers concern production operations.
+This is a **partial remediation, not a production completion**. The production VPS addresses were reachable, but the available SSH identities were rejected for both hosts. No production filesystem, configuration, database, service, backup, ledger, or protocol record was changed. The repository has no GitHub Actions deployment workflow; it does include guarded host-side UI staging/publication and node publication/exchange tools. Those require authorized host access, exact release artifacts, capacity/rollback proof, and post-deploy attestations. Capacity/retention cleanup, restore proof, log rotation, production deployment, and final production verification remain blocked because host authentication and safe recovery evidence are unavailable. The reviewed source merge is complete; the remaining blockers concern production operations.
 
 ## Systems and surfaces checked
 
@@ -85,7 +85,7 @@ The build and green local tests establish source-level behavior only. They do no
 - The last database dump had checksums and a readable 202-entry TOC but had not been restored. No new restore rehearsal was possible. A checksum/TOC is not a restore proof.
 - Older UI rollback roots and archives, old database dumps, node release archives/checkouts, and log files remain candidates only. No exact production object was re-inventoried, proven safe, or removed. Historical audit evidence and chain-backed transition data remain protected.
 - Read-only SSH to UI 77.42.91.106 and node 65.108.122.87 reached the hosts but failed authentication (Permission denied (publickey,password) on UI; Permission denied (publickey) on node). No interactive/key material was requested or handled.
-- The only repository workflow found is repository-hygiene CI; it does not deploy. Production deployment therefore requires the approved host-side release path, which is inaccessible from this session.
+- The only GitHub Actions workflow found is repository-hygiene CI; it does not deploy. The repository contains guarded host-side tools (`deploy/proofofwork-ui-release-stage.py`, `deploy/proofofwork-ui-release-publish.sh`, `deploy/proofofwork-node-release-publish.sh`, and `deploy/proofofwork-node-release-exchange.py`). They require an authenticated operator on the target host; that access was unavailable here.
 - The live AMO history response latency is a current concern. Optimization must preserve the exact Core-bound listing lifecycle and complete pagination; do not hide the returned relic with a preview-only UI filter.
 
 ## Actions, approval, and next steps
