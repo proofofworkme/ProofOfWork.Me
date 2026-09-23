@@ -563,6 +563,73 @@ function paginated(items = [], totalCount = items.length, authority = {}) {
   };
 }
 
+function completeTokenListingHistoryFixture(
+  listings,
+  {
+    indexedAt = NOW,
+    indexedThroughBlock = 960_220,
+    indexedThroughBlockHash = HASH,
+  } = {},
+) {
+  const items = listings.map((listing) => ({
+    ...listing,
+    displayEvidence: {
+      fullDetailPath: `/api/v1/token-history?kind=listings&projection=full&q=${listing.listingId}&listingId=${listing.listingId}`,
+      fullRecordSha256: "b".repeat(64),
+      model: "proof-token-listing-display-v1",
+      omittedFields: [],
+    },
+  }));
+  const totalCount = items.length;
+  const digest = "c".repeat(64);
+  return {
+    authoritative: true,
+    cursor: "",
+    end: totalCount,
+    hasMore: false,
+    indexedAt,
+    indexedThroughBlock,
+    indexedThroughBlockHash,
+    itemProjection: {
+      fullMembershipSha256: "e".repeat(64),
+      fullSourceSha256: "f".repeat(64),
+      model: "proof-token-listing-display-v1",
+    },
+    items,
+    kind: "listings",
+    limit: 200,
+    listingAuthority: {
+      checkedListingCount: totalCount,
+      checkedOutpointsSha256: digest,
+      checkpoint: {
+        blockHash: indexedThroughBlockHash,
+        height: indexedThroughBlock,
+      },
+      includeMempool: true,
+      inputListingCount: totalCount,
+      model: "proof-token-market-core-gettxout-v1",
+      outputListingCount: totalCount,
+      spentListingCount: 0,
+      unspentListingCount: totalCount,
+    },
+    listingProjection: {
+      activeListingCount: totalCount,
+      coreUnspentListingCount: totalCount,
+      excludedByProtocolCount: 0,
+      membershipSha256: "d".repeat(64),
+      model: "proof-token-market-cutover-after-core-v1",
+    },
+    network: "livenet",
+    nextCursor: "",
+    page: 0,
+    pageCount: 1,
+    snapshotId: indexedThroughBlockHash,
+    source: "proof-indexer-complete-core-reconciled-token-listings",
+    start: 0,
+    totalCount,
+  };
+}
+
 async function installApiFixtures(
   page,
   {
@@ -572,6 +639,9 @@ async function installApiFixtures(
     marketplaceSummaryGate,
     marketplaceSummaryMode = "ready",
     marketplaceSummaryTransform,
+    tokenListingHistoryGate,
+    tokenListingHistoryRequested,
+    tokenListingHistoryResponse,
   } = {},
 ) {
   const fixtureTokenState = countedAmo
@@ -675,43 +745,53 @@ async function installApiFixtures(
       json = WORK_FLOOR;
     } else if (pathname === "/api/v1/token-history") {
       const kind = url.searchParams.get("kind");
-      const activityTotal = countedAmo
-        ? kind === "market-listings"
-          ? AMO_LISTING_COUNT
-          : kind === "market-seals"
-            ? AMO_SEALED_COUNT
-            : kind === "market-sales"
-              ? AMO_UNSEALED_COUNT
-              : 0
-        : 0;
-      if (
-        ["mismatched-kind", "preview"].includes(activityHistoryMode) &&
-        ["market-listings", "market-seals", "market-sales"].includes(kind)
-      ) {
-        const items =
-          kind === "market-listings"
-            ? RESPONSIVE_AMO_ACTIVITY_ITEMS["market-listings"]
-            : [];
-        json =
-          activityHistoryMode === "mismatched-kind"
-            ? paginated(items, 999, {
-                kind: "mints",
-                source: "responsive-mismatched-history-kind",
-              })
-            : paginated(items, items.length, {
-                authoritative: false,
-                complete: false,
-                kind,
-                preview: true,
-                source: "responsive-incomplete-preview",
-              });
+      if (kind === "listings" && tokenListingHistoryGate) {
+        tokenListingHistoryRequested?.();
+        await tokenListingHistoryGate;
+      }
+      if (kind === "listings" && tokenListingHistoryResponse) {
+        json = typeof tokenListingHistoryResponse === "function"
+          ? tokenListingHistoryResponse(url)
+          : tokenListingHistoryResponse;
       } else {
-        const items = countedAmo
-          ? (RESPONSIVE_AMO_ACTIVITY_ITEMS[kind] ?? [])
-          : [];
-        json = paginated(items, activityTotal, {
-          ...(kind?.startsWith("market-") ? { kind } : {}),
-        });
+        const activityTotal = countedAmo
+          ? kind === "market-listings"
+            ? AMO_LISTING_COUNT
+            : kind === "market-seals"
+              ? AMO_SEALED_COUNT
+              : kind === "market-sales"
+                ? AMO_UNSEALED_COUNT
+                : 0
+          : 0;
+        if (
+          ["mismatched-kind", "preview"].includes(activityHistoryMode) &&
+          ["market-listings", "market-seals", "market-sales"].includes(kind)
+        ) {
+          const items =
+            kind === "market-listings"
+              ? RESPONSIVE_AMO_ACTIVITY_ITEMS["market-listings"]
+              : [];
+          json =
+            activityHistoryMode === "mismatched-kind"
+              ? paginated(items, 999, {
+                  kind: "mints",
+                  source: "responsive-mismatched-history-kind",
+                })
+              : paginated(items, items.length, {
+                  authoritative: false,
+                  complete: false,
+                  kind,
+                  preview: true,
+                  source: "responsive-incomplete-preview",
+                });
+        } else {
+          const items = countedAmo
+            ? (RESPONSIVE_AMO_ACTIVITY_ITEMS[kind] ?? [])
+            : [];
+          json = paginated(items, activityTotal, {
+            ...(kind?.startsWith("market-") ? { kind } : {}),
+          });
+        }
       }
     } else if (
       pathname === "/api/v1/token" ||
@@ -2753,6 +2833,250 @@ test("AMO summary moves from loading to ready without presenting placeholder zer
   });
   await expect(verification).toContainText("Ready");
   await expect(loadingMetrics.first()).not.toHaveText("—");
+});
+
+test("AMO renders its verified summary while exact listing pagination continues", async ({
+  page,
+}) => {
+  test.setTimeout(180_000);
+  let releaseListingHistory;
+  const tokenListingHistoryGate = new Promise((resolve) => {
+    releaseListingHistory = resolve;
+  });
+  let listingHistoryRequests = 0;
+  const listing = RESPONSIVE_AMO_LISTINGS[0];
+  const tokenListingHistoryResponse = completeTokenListingHistoryFixture([
+    listing,
+  ]);
+  await installApiFixtures(page, {
+    marketplaceSummaryTransform: (summary) => ({
+      ...summary,
+      token: {
+        ...summary.token,
+        collectionHasMore: { listings: true, sales: false, tokens: false },
+        hasMore: true,
+        indexedThroughBlock: 960_220,
+        indexedThroughBlockHash: HASH,
+        listingAuthority: tokenListingHistoryResponse.listingAuthority,
+        listingBookComplete: false,
+        listings: [listing],
+        stats: {
+          ...summary.token.stats,
+          confirmedOpenListings: 1,
+          confirmedSales: 0,
+          openListings: 1,
+          pendingOpenListings: 0,
+          pendingSales: 0,
+        },
+        totalCounts: {
+          listings: 1,
+          sales: 0,
+          tokens: summary.token.tokens.length,
+        },
+        tokens: summary.token.tokens.map((token) =>
+          token.tokenId === WORK_TOKEN_ID
+            ? {
+                ...token,
+                confirmedOpenListings: 1,
+                confirmedSales: 0,
+                openListings: 1,
+                pendingOpenListings: 0,
+                pendingSales: 0,
+              }
+            : token,
+        ),
+      },
+    }),
+    tokenListingHistoryGate,
+    tokenListingHistoryRequested: () => {
+      listingHistoryRequests += 1;
+    },
+    tokenListingHistoryResponse,
+  });
+  await page.setViewportSize({ height: VIEWPORT_HEIGHT, width: 390 });
+
+  try {
+    await openFixtureRoute(
+      page,
+      surfaceUrl(
+        MARKETPLACE_BASE_URL,
+        `/?marketplace=1&asset=${WORK_TOKEN_ID}`,
+      ),
+      "AMO verified summary during listing pagination",
+    );
+    const verification = page.locator(
+      '.marketplace-summary-read-state[aria-label="AMO summary verification"]',
+    ).first();
+    await expect.poll(() => listingHistoryRequests).toBeGreaterThan(0);
+    await expect(verification).toHaveAttribute("data-state", "ready", {
+      timeout: 30_000,
+    });
+    await expect(verification).toContainText(
+      "Listing rows are a verified preview",
+    );
+    await expect(page.locator(".marketplace-summary-gate")).toHaveCount(0);
+    await expect(
+      page.locator('[aria-label="WORK credit AMO stats"]'),
+    ).toContainText("1");
+    await expect(
+      page.getByRole("status").filter({
+        hasText: "Showing a verified AMO preview while the complete Core-reconciled sale-ticket book loads",
+      }),
+    ).toBeVisible();
+    await expect(page.getByText("No credit listings yet", { exact: true })).toHaveCount(0);
+    await expect(
+      page.getByLabel("AMO asset tabs").getByRole("button", { name: /^Bonds\s+—$/u }),
+    ).toBeVisible();
+
+    releaseListingHistory();
+    await expect(verification).toContainText(
+      "complete Core-reconciled listing and sale history",
+      { timeout: 30_000 },
+    );
+    await expect(
+      page.getByRole("status").filter({
+        hasText: "Showing a verified AMO preview while the complete Core-reconciled sale-ticket book loads",
+      }),
+    ).toHaveCount(0);
+    await expect(
+      page.getByLabel("AMO asset tabs").getByRole("button", { name: /^Bonds\s+0$/u }),
+    ).toBeVisible();
+  } finally {
+    releaseListingHistory();
+  }
+});
+
+test("AMO does not apply listing pages from a superseded summary checkpoint", async ({
+  page,
+}) => {
+  test.setTimeout(180_000);
+  let releaseListingHistory;
+  const tokenListingHistoryGate = new Promise((resolve) => {
+    releaseListingHistory = resolve;
+  });
+  let listingHistoryRequests = 0;
+  const firstListing = RESPONSIVE_AMO_LISTINGS[0];
+  const secondListing = RESPONSIVE_AMO_LISTINGS[1];
+  const firstPage = completeTokenListingHistoryFixture([firstListing]);
+  const freshIndexedAt = "2026-07-23T13:00:00.000Z";
+  const freshBlockHash = "2".repeat(64);
+  const freshPage = completeTokenListingHistoryFixture(
+    [firstListing, secondListing],
+    {
+      indexedAt: freshIndexedAt,
+      indexedThroughBlock: 960_221,
+      indexedThroughBlockHash: freshBlockHash,
+    },
+  );
+  const summaryAtCheckpoint = (
+    summary,
+    { indexedAt, indexedThroughBlock, indexedThroughBlockHash, listings, page },
+  ) => ({
+    ...summary,
+    indexedAt,
+    token: {
+      ...summary.token,
+      collectionHasMore: { listings: true, sales: false, tokens: false },
+      hasMore: true,
+      indexedAt,
+      indexedThroughBlock,
+      indexedThroughBlockHash,
+      listingAuthority: page.listingAuthority,
+      listingBookComplete: false,
+      listings,
+      stats: {
+        ...summary.token.stats,
+        confirmedOpenListings: listings.length,
+        confirmedSales: 0,
+        openListings: listings.length,
+        pendingOpenListings: 0,
+        pendingSales: 0,
+      },
+      totalCounts: {
+        listings: listings.length,
+        sales: 0,
+        tokens: summary.token.tokens.length,
+      },
+      tokens: summary.token.tokens.map((token) =>
+        token.tokenId === WORK_TOKEN_ID
+          ? {
+              ...token,
+              confirmedOpenListings: listings.length,
+              confirmedSales: 0,
+              openListings: listings.length,
+              pendingOpenListings: 0,
+              pendingSales: 0,
+            }
+          : token,
+      ),
+    },
+  });
+  let serveFreshSnapshot = false;
+  await installApiFixtures(page, {
+    marketplaceSummaryTransform: (summary) =>
+      serveFreshSnapshot
+        ? summaryAtCheckpoint(summary, {
+            indexedAt: freshIndexedAt,
+            indexedThroughBlock: 960_221,
+            indexedThroughBlockHash: freshBlockHash,
+            listings: [firstListing, secondListing],
+            page: freshPage,
+          })
+        : summaryAtCheckpoint(summary, {
+            indexedAt: NOW,
+            indexedThroughBlock: 960_220,
+            indexedThroughBlockHash: HASH,
+            listings: [firstListing],
+            page: firstPage,
+          }),
+    tokenListingHistoryGate,
+    tokenListingHistoryRequested: () => {
+      listingHistoryRequests += 1;
+    },
+    tokenListingHistoryResponse: firstPage,
+  });
+  await page.setViewportSize({ height: VIEWPORT_HEIGHT, width: 390 });
+
+  try {
+    await openFixtureRoute(
+      page,
+      surfaceUrl(
+        MARKETPLACE_BASE_URL,
+        `/?marketplace=1&asset=${WORK_TOKEN_ID}`,
+      ),
+      "AMO superseded listing history race",
+    );
+    const verification = page.locator(
+      '.marketplace-summary-read-state[aria-label="AMO summary verification"]',
+    ).first();
+    const openRecordCount = page
+      .locator('[aria-label="WORK credit AMO stats"] > div')
+      .nth(2)
+      .locator("strong");
+    await expect.poll(() => listingHistoryRequests).toBeGreaterThan(0);
+    await expect(verification).toHaveAttribute("data-state", "ready", {
+      timeout: 30_000,
+    });
+    await expect(openRecordCount).toHaveText("1");
+
+    serveFreshSnapshot = true;
+    await page.getByRole("button", { name: "Refresh", exact: true }).first().click();
+    await expect(openRecordCount).toHaveText("2", { timeout: 30_000 });
+    await expect(verification).toContainText(
+      "Listing rows are a verified preview",
+    );
+
+    releaseListingHistory();
+    await expect.poll(() =>
+      verification.locator("div span").innerText(),
+    ).toContain("Listing rows are a verified preview");
+    await expect(openRecordCount).toHaveText("2");
+    await expect(verification).not.toContainText(
+      "complete Core-reconciled listing and sale history",
+    );
+  } finally {
+    releaseListingHistory();
+  }
 });
 
 test("AMO retains labeled last-verified totals when an exact-tip refresh returns 503", async ({
