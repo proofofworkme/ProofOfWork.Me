@@ -20,26 +20,38 @@ The browser still signs locally with UniSat. The API never receives seed phrases
 The production mempool Compose project uses persistent `/data/mempool/mysql` and
 `/data/mempool/cache` bind mounts. Its `db`, `api`, and `web` containers use the
 Docker `json-file` log driver with a 25 MiB file limit and four files per
-container, configured by the tracked
-`deploy/mempool-log-rotation.override.yml`. Apply it alongside the host's base
-Compose file for every container recreation:
+container. The web container also binds `/data/mempool/nginx-logs` to
+`/var/log/nginx`, so nginx access/error logs do not accumulate in its disposable
+root layer. Apply the tracked
+`deploy/mempool-log-rotation.override.yml` alongside the host's base Compose file
+for every container recreation.
+
+Install `deploy/mempool-nginx-logrotate.conf` as
+`/etc/logrotate.d/proofofwork-mempool-nginx`. The active host `logrotate.timer`
+checks these files daily; the rule rotates when either exceeds 100 MiB, keeps 14
+compressed copies, creates mode-0640 files owned by container uid/gid 1000, and
+asks nginx to reopen both paths. It does not use `copytruncate`, which could lose
+concurrent log writes. On first installation, stop the web container, copy both
+exact log files from the stopped container to `/data/mempool/nginx-logs`, verify
+and record their hashes and sizes, and only then recreate it with the bind mount.
+Run logrotate once after the new container is healthy to move the existing large
+files into retained compressed rotations.
+
+Validate the merged config before applying it, then recreate one service at a
+time and check health after each:
 
 ```bash
 docker compose -f /opt/mempool/docker-compose.yml \
   -f /opt/mempool/proofofwork-log-rotation.override.yml config --quiet
-# Recreate one service at a time, checking health after each:
-docker compose -f /opt/mempool/docker-compose.yml \
-  -f /opt/mempool/proofofwork-log-rotation.override.yml \
-  up -d --no-deps --force-recreate db
+logrotate -d /etc/logrotate.d/proofofwork-mempool-nginx
+# Recreate db, api, and web sequentially with --no-deps --force-recreate.
 ```
 
-Repeat the bounded recreate for `api` and `web` only after the preceding
-container is healthy. This changes container logging metadata only; do not remove
-or recreate the named persistent data paths. The existing base Compose file is
-kept intact so rollback consists of recreating from that file alone. Verify each
-container's `HostConfig.LogConfig` and health after applying the override. The
-current deployment is manually managed by Docker Compose, without a systemd
-Compose unit; operators must include the override in later recreations.
+This preserves the existing mysql/cache paths and leaves the base Compose file
+intact; omitting the override restores its prior Compose definition. Verify each
+container's `HostConfig.LogConfig`, web nginx-log mount, and health afterward.
+The deployment is manually managed by Docker Compose, without a systemd Compose
+unit, so operators must include the override in later recreations.
 
 ## ProofOfWork Event Database
 

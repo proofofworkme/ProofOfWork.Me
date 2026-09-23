@@ -37,6 +37,10 @@ const mempoolLogRotation = readFileSync(
   "deploy/mempool-log-rotation.override.yml",
   "utf8",
 );
+const mempoolNginxRotation = readFileSync(
+  "deploy/mempool-nginx-logrotate.conf",
+  "utf8",
+);
 const postgresBackupService = readFileSync(
   "deploy/proofofwork-postgres-logical-backup.service",
   "utf8",
@@ -228,11 +232,20 @@ assert.match(postgresBackup, /pg_restore --list/u);
 assert.match(postgresBackup, /sha256sum/u);
 assert.match(postgresBackup, /\.dumpset/u);
 assert.match(postgresBackup, /keep=1/u);
+assert.match(
+  mempoolLogRotation,
+  /- \/data\/mempool\/nginx-logs:\/var\/log\/nginx/u,
+);
+assert.match(mempoolNginxRotation, /size 100M/u);
+assert.match(mempoolNginxRotation, /rotate 14/u);
+assert.match(mempoolNginxRotation, /create 0640 1000 1000/u);
+assert.match(mempoolNginxRotation, /docker exec mempool-web-1 nginx -s reopen/u);
+assert.doesNotMatch(mempoolNginxRotation, /copytruncate/u);
 for (const service of ["db", "api", "web"]) {
   assert.match(
     mempoolLogRotation,
     new RegExp(
-      `^  ${service}:\n    logging:\n      driver: json-file\n      options:\n        max-size: "25m"\n        max-file: "4"$`,
+      `^  ${service}:[\\s\\S]*?^    logging:\n      driver: json-file\n      options:\n        max-size: "25m"\n        max-file: "4"$`,
       "mu",
     ),
     `Mempool ${service} container must retain bounded Docker json-file logs.`,

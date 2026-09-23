@@ -12,6 +12,8 @@ services:
         max-size: "25m"
         max-file: "4"
   web:
+    volumes:
+      - /data/mempool/nginx-logs:/var/log/nginx
     logging:
       driver: json-file
       options:
