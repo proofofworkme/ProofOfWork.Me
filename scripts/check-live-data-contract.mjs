@@ -2869,7 +2869,7 @@ expectAll("bond-family mail normalization spans DB reads", proofIndexReader, [
   /const BOND_TAGS = \[/,
   /function bondTagForEventPayload\(payload,\s*row = \{\}\)/,
   /function normalizeEventPayload\(payload,\s*row = \{\}\)/,
-  /function normalizeHistoryEventItem\(item,\s*network,\s*\{ publicOnly = false \} = \{\}\)/,
+  /(?:export\s+)?function normalizeHistoryEventItem\(\s*item,\s*network,\s*\{\s*publicOnly = false\s*\}\s*=\s*\{\}\s*,?\s*\)/,
   /function normalizeHistoryEventRows\(rows,\s*network,\s*options = \{\}\)/,
   /function eventKindSqlCondition\(kind,\s*addValue\)/,
   /normalizeHistoryEventItem\(normalizeEventPayload\(item\),\s*network,\s*\{/,

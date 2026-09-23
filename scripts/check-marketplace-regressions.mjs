@@ -6,6 +6,7 @@ import {
   parseWorkAmountToSubatoms,
   WORK_SUBATOM_CONVERSION_FACTOR,
 } from "../server/work-units.mjs";
+import { readCompleteTokenHistoryPages } from "./complete-token-history-pages.mjs";
 import {
   MarketplaceRegressionHttpError,
   createCanonicalConvergenceBudget,
@@ -645,6 +646,22 @@ async function tokenHistoryForAsset(asset, kind, params = {}) {
 
 async function tokenHistory(kind, params = {}) {
   return tokenHistoryForAsset(WORK_TOKEN_ID, kind, params);
+}
+
+async function completeTokenHistory(kind, params = {}, pageSize = 500) {
+  return readCompleteTokenHistoryPages(
+    ({ cursor, snapshotId, limit }) =>
+      tokenHistory(kind, {
+        ...params,
+        limit,
+        ...(cursor ? { cursor, snapshot: snapshotId } : {}),
+      }),
+    {
+      identityOf: (item) => item?.listingId,
+      pageSize,
+      maxPages: 1_000,
+    },
+  );
 }
 
 async function assertReportedJulyPurchaseLifecycle() {
@@ -3466,7 +3483,7 @@ assertActiveWorkListingsUseCanonicalVersion(
   workToken,
   "Fresh WORK token payload",
 );
-const workListingHistory = await tokenHistory("listings", { fresh: 1 });
+const workListingHistory = await completeTokenHistory("listings", { fresh: 1 });
 assertCoreTokenListingAuthority(
   {
     listingAuthority: workListingHistory.listingAuthority,
@@ -3544,17 +3561,6 @@ for (const [label, summary] of [
   ["/api/v1/token-summary?asset=WORK&fresh=1", workTokenSummary],
 ]) {
   const visibleListings = summary?.listings ?? [];
-  const visibleById = new Set(
-    visibleListings.map((listing) =>
-      String(listing?.listingId ?? "").trim().toLowerCase(),
-    ),
-  );
-  for (const listing of confirmedSealedListings) {
-    assert(
-      visibleById.has(String(listing.listingId).toLowerCase()),
-      `${label} dropped confirmed sealed listing ${listing.listingId}`,
-    );
-  }
   assert(
     Number(summary?.totalCounts?.listings) === activeWorkListingCount,
     `${label} reports ${summary?.totalCounts?.listings} total listings, expected ${activeWorkListingCount}`,
@@ -3565,8 +3571,8 @@ for (const [label, summary] of [
     `${label} has an inaccurate listing continuation flag`,
   );
   assert(
-    visibleListings.length <= 40 + confirmedSealedListings.length,
-    `${label} exceeded the bounded ordinary preview plus confirmed sealed inventory`,
+    visibleListings.length <= 40,
+    `${label} exceeded the bounded 40-listing summary preview`,
   );
 }
 assert(
@@ -3597,12 +3603,10 @@ assert(
   "/api/v1/marketplace-summary?fresh=1 returned a WORK listing outside the canonical scoped active book",
 );
 assert(
-  marketplaceSummaryWorkListings.length <=
-    Math.min(
-      activeWorkListingCount,
-      confirmedSealedListings.length + 40,
-    ),
-  `/api/v1/marketplace-summary?fresh=1 exceeded its sealed inventory plus 40-row ordinary preview (${marketplaceSummaryWorkListings.length} visible, ${confirmedSealedListings.length} sealed, ${activeWorkListingCount} canonical)`,
+  marketplaceSummaryWorkListings.length <= 40,
+  "/api/v1/marketplace-summary?fresh=1 exceeded its bounded 40-item WORK preview (" +
+    String(marketplaceSummaryWorkListings.length) +
+    " visible)",
 );
 assert(
   alignedMarketplaceFreshSummary.token?.collectionHasMore?.listings ===
@@ -3641,33 +3645,43 @@ assert(
     ),
   `WORK floor mismatch: work=${workSummary.floor?.floorSats} marketplace=${alignedMarketplaceFreshSummary.workFloor?.floorSats} growth=${growthSummary.workFloor?.floorSats}`,
 );
-const summaryListingsByKey = new Map(
-  (marketplaceFreshSummary.token?.listings ?? []).map((item) => [
-    listingKey(item),
+const completeWorkListingsById = new Map(
+  workListingHistory.items.map((item) => [
+    String(item?.listingId ?? "").trim().toLowerCase(),
     item,
   ]),
 );
 for (const listing of confirmedSealedListings) {
-  const summaryListing = summaryListingsByKey.get(listingKey(listing));
+  const listingId = String(listing?.listingId ?? "").trim().toLowerCase();
+  const completeBookListing = completeWorkListingsById.get(listingId);
   assert(
-    summaryListing,
-    `${listing.listingId} is confirmed sealed in /api/v1/token but missing from marketplace summary`,
+    completeBookListing,
+    listingId + " is missing from complete cursor-paginated WORK listing history",
   );
   assert(
-    tokenListingHasConfirmedSeal(summaryListing),
-    `${listing.listingId} is confirmed sealed in /api/v1/token but marketplace summary dropped its seal metadata`,
-  );
-  assert(
-    String(summaryListing.sealTxid ?? "").toLowerCase() ===
-      String(listing.sealTxid ?? "").toLowerCase(),
-    `${listing.listingId} has mismatched seal txid between /api/v1/token and marketplace summary`,
-  );
-  assert(
-    String(summaryListing.saleAuthorization?.anchorTxid ?? "").toLowerCase() ===
-      String(listing.saleAuthorization?.anchorTxid ?? "").toLowerCase(),
-    `${listing.listingId} has mismatched sale-ticket anchor between /api/v1/token and marketplace summary`,
+    tokenListingHasConfirmedSeal(completeBookListing) &&
+      String(completeBookListing.sealTxid ?? "").toLowerCase() ===
+        String(listing.sealTxid ?? "").toLowerCase() &&
+      String(completeBookListing.saleAuthorization?.anchorTxid ?? "").toLowerCase() ===
+        String(listing.saleAuthorization?.anchorTxid ?? "").toLowerCase(),
+    listingId + " has mismatched confirmed seal or sale-ticket anchor in complete WORK listing history",
   );
 }
+const knownClosedOrInvalidWorkListings = [
+  LISTING_TX,
+  REPORTED_SPENT_SEAL_LISTING_TX,
+  REPORTED_WAITING_FOR_SEAL_LISTING_TX,
+  REPORTED_LATEST_WAITING_FOR_SEAL_LISTING_TX,
+  REPORTED_RECENT_WAITING_FOR_SEAL_LISTING_TX,
+  ...REPORTED_OTC_UNSEALED_LISTING_TXS,
+];
+for (const listingId of knownClosedOrInvalidWorkListings) {
+  assert(
+    !completeWorkListingsById.has(String(listingId).toLowerCase()),
+    String(listingId) + " remained in the complete canonical WORK active book",
+  );
+}
+
 
 const carbonzWalletToken = await getJson("/api/v1/token", {
   network: "livenet",

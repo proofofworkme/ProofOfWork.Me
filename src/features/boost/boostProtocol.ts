@@ -1,5 +1,6 @@
 import { encodeTextBase64Url } from "../../shared/utils/encoding";
 import type { BitcoinNetwork } from "../../shared/bitcoin/networks";
+import { boostListingPriceSats } from "./boostNumeric";
 
 export const BOOST_ACTION_PAYMENT_SATS = 546;
 export const BOOST_LISTING_ANCHOR_VALUE_SATS = 546;
@@ -345,8 +346,8 @@ export function boostSaleAuthorizationDraft({
   if (!normalizedBoostTxid) {
     throw new Error("Boost listing needs a valid Boost txid.");
   }
-  const normalizedPrice = Math.floor(priceSats);
-  if (!Number.isSafeInteger(normalizedPrice) || normalizedPrice < 1) {
+  const normalizedPrice = boostListingPriceSats(priceSats);
+  if (normalizedPrice === null) {
     throw new Error("Boost listing price must be at least 1 proof.");
   }
   return {

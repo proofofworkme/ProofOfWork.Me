@@ -32,6 +32,7 @@ import {
 } from "./read-projections.mjs";
 import { verifiedBoostTicketClosures } from "./boost-marketplace-proof.mjs";
 import { readCoreOutpointBatches } from "./core-outpoint-batches.mjs";
+import { readCompleteEventHistoryPages } from "./event-history-pages.mjs";
 import { createBoostGrowthObservationLoader, withBoostGrowthObservation } from "./boost-growth.mjs";
 import {
   assertBoostValuationCheckpoint,
@@ -14005,19 +14006,24 @@ async function mapWithConcurrency(items, concurrency, mapper) {
   return results;
 }
 
-async function fetchTransaction(txid, network) {
+async function fetchTransaction(txid, network, options = {}) {
   const normalizedTxid = String(txid ?? "").toLowerCase();
   const cacheKey = `${network}:${normalizedTxid}`;
   const cached = TRANSACTION_CACHE.get(cacheKey);
-  if (cached) {
+  if (options.bypassCache !== true && cached) {
     return cached;
   }
 
-  const tx = await fetchJson(`${mempoolBase(network)}/api/tx/${normalizedTxid}`, {
-    signal: AbortSignal.timeout(TX_FETCH_TIMEOUT_MS),
-  });
+  const tx = options.strictAvailability === true
+    ? await fetchTransactionFromBase(mempoolBase(network), normalizedTxid)
+    : await fetchJson(`${mempoolBase(network)}/api/tx/${normalizedTxid}`, {
+        signal: AbortSignal.timeout(TX_FETCH_TIMEOUT_MS),
+      });
+  if (!tx) {
+    return null;
+  }
   cachePendingTokenTransaction(tx, network, "tx");
-  if (transactionConfirmed(tx)) {
+  if (transactionConfirmed(tx) && options.cacheResult !== false) {
     TRANSACTION_CACHE.set(cacheKey, tx);
     if (TRANSACTION_CACHE.size > MAX_TRANSACTION_CACHE_SIZE) {
       TRANSACTION_CACHE.delete(TRANSACTION_CACHE.keys().next().value);
@@ -14047,12 +14053,22 @@ async function fetchTransactionFromPendingSources(
   network,
   options = {},
 ) {
+  let sourceError = null;
   for (const baseUrl of pendingMempoolBases(network)) {
-    const tx = await fetchTransactionFromBase(baseUrl, txid).catch(() => null);
+    let tx = null;
+    try {
+      tx = await fetchTransactionFromBase(baseUrl, txid);
+    } catch (error) {
+      sourceError ??= error;
+    }
     if (tx) {
       cachePendingTokenTransaction(tx, network, "pending-fallback");
       return tx;
     }
+  }
+
+  if (options.strictAvailability === true && sourceError) {
+    throw sourceError;
   }
 
   if (options.markDropped !== false) {
@@ -14088,12 +14104,32 @@ async function fetchTransactionFromBitcoinRpc(txid, network, options = {}) {
 
   const response = await bitcoinRpc("getrawtransaction", [normalizedTxid, true]);
   if (!response) {
+    if (options.strictAvailability === true) {
+      throw transactionLookupUnavailableError(
+        normalizedTxid,
+        network,
+        new Error("Bitcoin Core transaction lookup is not configured."),
+      );
+    }
     return null;
   }
   if (!response.ok || !response.result || typeof response.result !== "object") {
     if (!response.ok) {
       console.error(
         `Bitcoin RPC getrawtransaction failed for ${normalizedTxid}: ${errorSummary(response.error)}`,
+      );
+    }
+    const rpcCode = Number(response?.error?.code);
+    if (
+      options.strictAvailability === true &&
+      !(response && !response.ok && rpcCode === -5)
+    ) {
+      throw transactionLookupUnavailableError(
+        normalizedTxid,
+        network,
+        new Error(
+          `Bitcoin Core returned RPC error ${Number.isFinite(rpcCode) ? rpcCode : "unknown"}.`,
+        ),
       );
     }
     if (options.requireCanonicalPrevouts) {
@@ -14309,7 +14345,63 @@ async function fetchTransactionHexFromBitcoinRpc(txid, network) {
   return /^[0-9a-fA-F]+$/u.test(hex) ? hex : "";
 }
 
-async function fetchTransactionWithSourceFallback(txid, network) {
+async function fetchTransactionWithSourceFallback(txid, network, options = {}) {
+  if (options.strictAvailability === true) {
+    const lookupOptions = {
+      ...options,
+      strictAvailability: true,
+    };
+    const sourceErrors = [];
+    const attempt = async (loader) => {
+      try {
+        return await loader();
+      } catch (error) {
+        sourceErrors.push(error);
+        return null;
+      }
+    };
+
+    const rpcTx = await attempt(() =>
+      fetchTransactionFromBitcoinRpc(txid, network, lookupOptions),
+    );
+    if (rpcTx) {
+      return rpcTx;
+    }
+
+    const electrumTx = await attempt(() =>
+      fetchTransactionFromElectrum(txid, network, lookupOptions),
+    );
+    if (electrumTx) {
+      return electrumTx;
+    }
+
+    const mempoolTx = await attempt(() =>
+      fetchTransaction(txid, network, lookupOptions),
+    );
+    if (mempoolTx) {
+      return mempoolTx;
+    }
+
+    const fallbackTx = await attempt(() =>
+      fetchTransactionFromPendingSources(txid, network, {
+        markDropped: false,
+        strictAvailability: true,
+      }),
+    );
+    if (fallbackTx) {
+      return fallbackTx;
+    }
+
+    if (sourceErrors.length > 0) {
+      throw transactionLookupUnavailableError(
+        txid,
+        network,
+        sourceErrors[0],
+      );
+    }
+    return null;
+  }
+
   const rpcTx = await fetchTransactionFromBitcoinRpc(txid, network).catch(
     () => null,
   );
@@ -14338,6 +14430,19 @@ async function fetchTransactionWithSourceFallback(txid, network) {
   }
 
   throw primaryError ?? new Error(`Transaction lookup failed for ${txid}.`);
+}
+
+function transactionLookupUnavailableError(txid, network, cause) {
+  const error = freshDataUnavailableError(
+    "Transaction detail is temporarily unavailable from canonical sources.",
+  );
+  error.details = {
+    cause: errorSummary(cause),
+    code: "TX_DETAIL_UNAVAILABLE",
+    network,
+    txid: String(txid ?? "").trim().toLowerCase(),
+  };
+  return error;
 }
 
 async function fetchPendingMailTransactionFromFirstParty(txid, network) {
@@ -14404,6 +14509,7 @@ async function fetchTransactionFromElectrum(
   const cacheKey = `${network}:${normalizedTxid}`;
   const cached = TRANSACTION_CACHE.get(cacheKey);
   if (
+    options.bypassCache !== true &&
     cached &&
     (options.includePrevouts === false || transactionInputsHavePrevouts(cached))
   ) {
@@ -14486,7 +14592,7 @@ async function fetchTransactionFromElectrum(
     weight: Number(raw.weight ?? 0),
   };
 
-  if (confirmed) {
+  if (confirmed && options.cacheResult !== false) {
     TRANSACTION_CACHE.set(cacheKey, tx);
     if (TRANSACTION_CACHE.size > MAX_TRANSACTION_CACHE_SIZE) {
       TRANSACTION_CACHE.delete(TRANSACTION_CACHE.keys().next().value);
@@ -34897,37 +35003,32 @@ function tokenSummaryListingActivityMs(listing) {
 
 function tokenSummaryListings(items, limit = SUMMARY_MARKET_LIMIT) {
   const listings = Array.isArray(items) ? items : [];
-  const selected = new Map();
-
-  for (const listing of recentByCreatedAt(listings, limit)) {
-    const key = tokenSummaryListingKey(listing);
-    if (key) {
-      selected.set(key, listing);
-    }
-  }
+  const priority = (left, right) =>
+    Number(tokenListingHasConfirmedSaleTicketSeal(right)) -
+      Number(tokenListingHasConfirmedSaleTicketSeal(left)) ||
+    Number(Boolean(right?.confirmed)) - Number(Boolean(left?.confirmed)) ||
+    tokenSummaryListingActivityMs(right) - tokenSummaryListingActivityMs(left) ||
+    compareCanonicalUtf8(left?.listingId, right?.listingId) ||
+    compareCanonicalUtf8(left?.txid, right?.txid) ||
+    compareCanonicalUtf8(left?.sealTxid, right?.sealTxid);
+  const uniqueListings = new Map();
 
   for (const listing of listings) {
-    // The recent preview already includes ordinary confirmed and pending
-    // listings. Beyond that bounded page, retain only listings whose confirmed
-    // sale-ticket seal makes them immediately buyable; full ordinary listing
-    // history remains available through the paginated relational endpoint.
-    if (!tokenListingHasConfirmedSaleTicketSeal(listing)) {
+    const key = tokenSummaryListingKey(listing);
+    if (!key) {
       continue;
     }
-    const key = tokenSummaryListingKey(listing);
-    if (key) {
-      selected.set(key, listing);
+    const current = uniqueListings.get(key);
+    if (!current || priority(listing, current) < 0) {
+      uniqueListings.set(key, listing);
     }
   }
 
-  return [...selected.values()].sort(
-    (left, right) =>
-      Number(tokenListingHasConfirmedSaleTicketSeal(right)) -
-        Number(tokenListingHasConfirmedSaleTicketSeal(left)) ||
-      Number(Boolean(right?.confirmed)) - Number(Boolean(left?.confirmed)) ||
-      tokenSummaryListingActivityMs(right) - tokenSummaryListingActivityMs(left) ||
-      compareCanonicalUtf8(left?.listingId, right?.listingId),
-  );
+  // Even sealed tickets are only a summary preview. The complete active book
+  // is available through the cursor-paginated canonical listing route.
+  return [...uniqueListings.values()]
+    .sort(priority)
+    .slice(0, Math.max(0, limit));
 }
 
 const TOKEN_SUMMARY_MARKET_PREVIEW_KEYS = [
@@ -62249,9 +62350,14 @@ async function mailPayloadWithIndexedEventOverlay(payload, address, network) {
     limit: String(Math.max(1, MAIL_INDEXED_EVENT_OVERLAY_LIMIT)),
     status: "confirmed",
   });
-  const eventPage = await proofIndexEventHistoryPayload(
+  const eventPage = await readCompleteEventHistoryPages(
     network,
     searchParams,
+    proofIndexEventHistoryPayload,
+    {
+      maxPages: 1_000,
+      pageSize: Math.max(1, Math.min(500, MAIL_INDEXED_EVENT_OVERLAY_LIMIT)),
+    },
   ).catch((error) => {
     console.error(
       `Proof index mail event overlay failed for ${address}: ${errorSummary(error)}`,
@@ -63482,21 +63588,80 @@ function shadowProofIndexTokenHistory(
     });
 }
 
+function transactionDetailStatusFromCanonical(status) {
+  const confirmed = status?.confirmed === true;
+  const blockTime = Date.parse(String(status?.blockTime ?? ""));
+  const mempoolTime = Date.parse(String(status?.mempoolFirstSeenAt ?? ""));
+  return {
+    confirmed,
+    ...(confirmed && status.blockHash ? { block_hash: status.blockHash } : {}),
+    ...(confirmed && Number.isSafeInteger(status.blockHeight)
+      ? { block_height: status.blockHeight }
+      : {}),
+    ...(confirmed && Number.isFinite(blockTime) && blockTime > 0
+      ? { block_time: Math.floor(blockTime / 1000) }
+      : {}),
+    ...(!confirmed && Number.isFinite(mempoolTime) && mempoolTime > 0
+      ? { mempool_time: Math.floor(mempoolTime / 1000) }
+      : {}),
+  };
+}
+
 async function txPayload(txid, network) {
-  const tx = await fetchTransactionWithSourceFallback(txid, network).catch(
-    () => null,
-  );
-  if (!tx) {
-    return {
-      confirmed: false,
-      indexedAt: new Date().toISOString(),
-      network,
-      status: "dropped",
-      tx: null,
-      txid,
-    };
+  let canonicalStatus = null;
+  if (network === "livenet") {
+    canonicalStatus = await bitcoinCoreTxStatusPayload(txid, network);
+    if (canonicalStatus?.absenceProven === true) {
+      return {
+        confirmed: false,
+        indexedAt: new Date().toISOString(),
+        network,
+        status: "dropped",
+        tx: null,
+        txid,
+      };
+    }
+    if (canonicalStatus?.status === "dropped") {
+      throw transactionLookupUnavailableError(
+        txid,
+        network,
+        new Error("Bitcoin Core did not provide a complete absence proof."),
+      );
+    }
   }
 
+  let tx;
+  try {
+    tx = await fetchTransactionWithSourceFallback(txid, network, {
+      bypassCache: canonicalStatus === null,
+      cacheResult: false,
+      strictAvailability: true,
+    });
+  } catch (error) {
+    if (Number(error?.statusCode) === 503) {
+      throw error;
+    }
+    throw transactionLookupUnavailableError(txid, network, error);
+  }
+
+  if (!tx) {
+    throw transactionLookupUnavailableError(
+      txid,
+      network,
+      new Error(
+        canonicalStatus
+          ? "Canonical status exists but transaction content was unavailable."
+          : "Transaction sources did not prove canonical absence.",
+      ),
+    );
+  }
+
+  if (canonicalStatus) {
+    tx = {
+      ...tx,
+      status: transactionDetailStatusFromCanonical(canonicalStatus),
+    };
+  }
   const confirmed = transactionConfirmed(tx);
   const attachment = extractProtocolMemo(tx.vout)?.attachment;
   return {

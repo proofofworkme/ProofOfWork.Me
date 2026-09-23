@@ -1224,6 +1224,16 @@ type MarketplaceSummaryReadState = {
   status: "loading" | "ready" | "unavailable" | "last-verified";
 };
 
+type RegistryReadStatus =
+  | "loading"
+  | "ready"
+  | "unavailable"
+  | "last-verified";
+type RegistryReadState = {
+  network: BitcoinNetwork;
+  status: RegistryReadStatus;
+};
+
 type PowActivityKind =
   | "id-register"
   | "id-update"
@@ -1253,6 +1263,12 @@ type PowActivityItem = {
   attachedCredits?: MailAttachedCredit[];
   blockHeight?: number;
   confirmed: boolean;
+  confirmationStatus?:
+    | "confirmed"
+    | "pending"
+    | "dropped"
+    | "orphaned"
+    | "unknown";
   counterparty?: string;
   createdAt: string;
   creditAmountMoved?: number;
@@ -1279,6 +1295,7 @@ type PowActivityItem = {
   title: string;
   tokenId?: string;
   txid: string;
+  valid?: boolean;
   utxo?: string;
 };
 
@@ -1519,6 +1536,7 @@ type MailMessage =
     });
 type FileSurfaceMessage = MailMessage & {
   attachment: MailAttachment;
+  desktopDirections?: Array<"inbox" | "sent">;
 };
 
 type ProtocolMessage = {
@@ -13546,6 +13564,42 @@ function fileSurfaceMessages(messages: MailMessage[]): FileSurfaceMessage[] {
     );
 }
 
+function desktopFileIdentityKey(
+  message: MailMessage & { attachment?: MailAttachment },
+) {
+  const attachment = message.attachment;
+  if (!attachment) {
+    return mailKey(message);
+  }
+  return JSON.stringify([
+    message.network,
+    message.txid.trim().toLowerCase(),
+    attachment.sha256.trim().toLowerCase(),
+    attachment.size,
+    attachment.mime.trim().toLowerCase(),
+    attachment.name,
+  ]);
+}
+
+function desktopFileSurfaceMessages(
+  messages: MailMessage[],
+): FileSurfaceMessage[] {
+  const files = new Map<string, FileSurfaceMessage>();
+  for (const message of fileSurfaceMessages(messages)) {
+    const key = desktopFileIdentityKey(message);
+    const direction = message.folder === "sent" ? "sent" : "inbox";
+    const existing = files.get(key);
+    if (!existing) {
+      files.set(key, { ...message, desktopDirections: [direction] });
+      continue;
+    }
+    const directions = new Set(existing.desktopDirections ?? []);
+    directions.add(direction);
+    files.set(key, { ...existing, desktopDirections: [...directions] });
+  }
+  return [...files.values()];
+}
+
 function browserTxUrl(txid: string, network: BitcoinNetwork) {
   const params = new URLSearchParams();
   params.set("txid", txid);
@@ -15604,6 +15658,11 @@ async function fetchIdRegistryState(
     path,
     targetNetwork,
   );
+  if (!summary && !Array.isArray(payload.records)) {
+    throw new Error(
+      "The ID registry response did not include a verified record collection.",
+    );
+  }
   return {
     activity: Array.isArray(payload.activity) ? payload.activity : [],
     listings: Array.isArray(payload.listings) ? payload.listings : [],
@@ -21047,6 +21106,10 @@ export default function App() {
   );
   const [chainSent, setChainSent] = useState<SentMessage[]>([]);
   const [idRegistry, setIdRegistry] = useState<PowIdRecord[]>([]);
+  const [registryReadState, setRegistryReadState] = useState<RegistryReadState>({
+    network: "livenet",
+    status: "unavailable",
+  });
   const [idListings, setIdListings] = useState<PowIdListing[]>([]);
   const [idPendingEvents, setIdPendingEvents] = useState<PowIdPendingEvent[]>(
     [],
@@ -21670,7 +21733,10 @@ export default function App() {
   const proofApiReadWarningsRef = useRef<ProofApiReadWarningStore>(new Map());
   const proofApiReadAttemptRef = useRef(0);
   const [, setProofApiReadWarningRevision] = useState(0);
-  const verifiedRegistryReadRef = useRef(false);
+  const verifiedRegistryNetworksRef = useRef(new Set<BitcoinNetwork>());
+  const verifiedRegistrySnapshotsRef = useRef(
+    new Map<BitcoinNetwork, PowIdRecord[]>(),
+  );
   const verifiedActivityReadRef = useRef(false);
   const tokenMintAssistantActiveRef = useRef(false);
   const tokenMintAssistantTimerRef = useRef<number | undefined>(undefined);
@@ -22674,11 +22740,21 @@ export default function App() {
     () => ownedPowIds(idRegistry, address).length,
     [address, idRegistry],
   );
+  const registryReadStatus: RegistryReadStatus = !registryAddress
+    ? "unavailable"
+    : registryReadState.network === network
+      ? registryReadState.status
+      : "loading";
+  const verifiedRegistrySnapshot =
+    registryReadStatus === "ready" || registryReadStatus === "last-verified"
+      ? verifiedRegistrySnapshotsRef.current.get(network)
+      : undefined;
+  const registryDisplayRecords = verifiedRegistrySnapshot ?? [];
   const confirmedIdCount = useMemo(
-    () => idRegistry.filter((record) => record.confirmed).length,
-    [idRegistry],
+    () => registryDisplayRecords.filter((record) => record.confirmed).length,
+    [registryDisplayRecords],
   );
-  const pendingIdCount = idRegistry.length - confirmedIdCount;
+  const pendingIdCount = registryDisplayRecords.length - confirmedIdCount;
   const pendingIdEventCount = useMemo(
     () => idPendingEvents.filter((event) => event.network === network).length,
     [idPendingEvents, network],
@@ -26532,7 +26608,7 @@ export default function App() {
       const publicMail = fileSurfaceMessages(
         publicDesktopMail(inboxMessages, sentMessages),
       );
-      const files = publicMail.filter(hasAttachment);
+      const files = desktopFileSurfaceMessages(publicMail).filter(hasAttachment);
       const profile: DesktopProfile = {
         address: resolved.paymentAddress,
         label: resolved.isId
@@ -26551,7 +26627,7 @@ export default function App() {
       setDesktopQuery(query);
       setDesktopProfile(profile);
       setDesktopMail(publicMail);
-      setDesktopSelectedKey(files[0] ? mailKey(files[0]) : "");
+      setDesktopSelectedKey(files[0] ? desktopFileIdentityKey(files[0]) : "");
       setActiveFolder("desktop");
       setComposeOpen(false);
       setSelectedKey("");
@@ -28414,6 +28490,7 @@ export default function App() {
     const requestIsActive = () =>
       activeWorkspaceStatusKeyRef.current === requestWorkspaceKey;
     if (!registryAddress) {
+      setRegistryReadState({ network, status: "unavailable" });
       setIdRegistry([]);
       setIdListings([]);
       setIdPendingEvents([]);
@@ -28458,7 +28535,7 @@ export default function App() {
               tone: "good",
               text: `ID registry loaded. ${confirmed} confirmed, ${pending} pending, ${state.pendingEvents.length} in flight.`,
             });
-          } else if (!verifiedRegistryReadRef.current) {
+          } else if (!verifiedRegistryNetworksRef.current.has(network)) {
             setStatusForWorkspace(requestWorkspaceKey, {
               tone: "bad",
               text: "ID registry scan failed.",
@@ -28473,6 +28550,12 @@ export default function App() {
       }
     }
 
+    setRegistryReadState({
+      network,
+      status: verifiedRegistryNetworksRef.current.has(network)
+        ? "last-verified"
+        : "loading",
+    });
     const refreshPromise = (async () => {
       const readSource = "registry";
       const readAttempt = nextProofApiReadAttempt();
@@ -28492,6 +28575,8 @@ export default function App() {
         activityMode || growthMode || activeFolder === "log";
       const useSummary =
         silent &&
+        !idLaunchMode &&
+        activeFolder !== "ids" &&
         !shouldLoadComputerLog &&
         !marketplaceMode &&
         activeFolder !== "marketplace";
@@ -28514,8 +28599,34 @@ export default function App() {
             activityLoadFailed = true;
           }
         }
-        const acceptedState = applyRegistryState(state, activity) ?? state;
-        verifiedRegistryReadRef.current = true;
+        const currentRegistryState = acceptedRegistryStateRef.current;
+        const currentRegistryMatchesNetwork =
+          !currentRegistryState?.records.length ||
+          currentRegistryState.records.every(
+            (record) => record.network === network,
+          );
+        const acceptedState = useSummary
+          ? currentRegistryState ?? state
+          : applyRegistryState(
+              state,
+              activity,
+              !currentRegistryMatchesNetwork,
+            ) ?? state;
+        const retainedExistingSnapshot =
+          !useSummary && acceptedState === currentRegistryState;
+        if (!useSummary) {
+          if (!retainedExistingSnapshot) {
+            verifiedRegistrySnapshotsRef.current.set(
+              network,
+              acceptedState.records,
+            );
+          }
+          verifiedRegistryNetworksRef.current.add(network);
+          setRegistryReadState({
+            network,
+            status: retainedExistingSnapshot ? "last-verified" : "ready",
+          });
+        }
         if (fresh) {
           clearLastGoodReadWarning(
             requestWorkspaceKey,
@@ -28523,17 +28634,19 @@ export default function App() {
             readAttempt,
           );
         }
-        setContacts((current) => {
-          const nextContacts = refreshRegistryContactsFromRecords(
-            current,
-            acceptedState.records,
-            network,
-          );
-          if (nextContacts !== current) {
-            saveContacts(nextContacts);
-          }
-          return nextContacts;
-        });
+        if (!useSummary) {
+          setContacts((current) => {
+            const nextContacts = refreshRegistryContactsFromRecords(
+              current,
+              acceptedState.records,
+              network,
+            );
+            if (nextContacts !== current) {
+              saveContacts(nextContacts);
+            }
+            return nextContacts;
+          });
+        }
 
         if (!silent) {
           const confirmed = acceptedState.records.filter(
@@ -28552,13 +28665,23 @@ export default function App() {
         }
         return acceptedState;
       } catch (error) {
+        const hasVerifiedSnapshot =
+          verifiedRegistryNetworksRef.current.has(network);
+        setRegistryReadState({
+          network,
+          status: hasVerifiedSnapshot ? "last-verified" : "unavailable",
+        });
         const retainedLastGood =
           fresh &&
-          verifiedRegistryReadRef.current &&
+          hasVerifiedSnapshot &&
           isTransientProofApiReadError(error) &&
-          showLastGoodReadWarning(requestWorkspaceKey, readSource, readAttempt, error, {
-            label: "ProofOfWork ID registry",
-          });
+          showLastGoodReadWarning(
+            requestWorkspaceKey,
+            readSource,
+            readAttempt,
+            error,
+            { label: "ProofOfWork ID registry" },
+          );
         if (!silent && !retainedLastGood) {
           setStatusForWorkspace(requestWorkspaceKey, {
             tone: "bad",
@@ -33307,9 +33430,10 @@ export default function App() {
           lastRegisteredId?.network === "livenet" ? lastRegisteredId : undefined
         }
         registryAddress={registryAddressForNetwork("livenet")}
-        registryRecords={idRegistry.filter(
+        registryRecords={registryDisplayRecords.filter(
           (record) => record.network === "livenet",
         )}
+        registryReadStatus={registryReadStatus}
         registrationBytes={idRegistrationBytes}
         setFeeRate={setFeeRate}
         setIdName={setIdName}
@@ -33718,7 +33842,9 @@ export default function App() {
           event.preventDefault();
           void loadDesktopTarget();
         }}
-        onSelect={(message) => setDesktopSelectedKey(mailKey(message))}
+        onSelect={(message) =>
+          setDesktopSelectedKey(desktopFileIdentityKey(message))
+        }
       />
     );
   }
@@ -34250,16 +34376,31 @@ export default function App() {
               >
                 <span>Registry Network</span>
                 <strong>
-                  {idRegistry.length > 0
-                    ? idRegistry.length.toLocaleString()
-                    : "…"}
+                  {registryReadStatus === "ready" ||
+                  registryReadStatus === "last-verified"
+                    ? registryDisplayRecords.length.toLocaleString()
+                    : registryReadStatus === "loading"
+                      ? "…"
+                      : "Unavailable"}
                 </strong>
                 <small>
-                  {confirmedIdCount.toLocaleString()} confirmed ·{" "}
-                  {pendingIdCount.toLocaleString()} pending IDs
-                  {pendingIdEventCount
-                    ? ` · ${pendingIdEventCount.toLocaleString()} changes`
-                    : ""}
+                  {registryReadStatus === "ready" ||
+                  registryReadStatus === "last-verified" ? (
+                    <>
+                      {confirmedIdCount.toLocaleString()} confirmed ·{" "}
+                      {pendingIdCount.toLocaleString()} pending IDs
+                      {pendingIdEventCount
+                        ? ` · ${pendingIdEventCount.toLocaleString()} changes`
+                        : ""}
+                      {registryReadStatus === "last-verified"
+                        ? " · last verified snapshot"
+                        : ""}
+                    </>
+                  ) : registryReadStatus === "loading" ? (
+                    "Verifying registry data…"
+                  ) : (
+                    "No verified registry snapshot available"
+                  )}
                 </small>
               </div>
             ) : null}
@@ -34319,7 +34460,8 @@ export default function App() {
             network={network}
             pendingEvents={idPendingEvents}
             registryAddress={registryAddress}
-            registryRecords={idRegistry}
+            registryRecords={registryDisplayRecords}
+            registryReadStatus={registryReadStatus}
             registrationBytes={idRegistrationBytes}
             lastRegisteredId={
               lastRegisteredId?.network === network
@@ -34687,7 +34829,9 @@ export default function App() {
               event.preventDefault();
               void loadDesktopTarget();
             }}
-            onSelect={(message) => setDesktopSelectedKey(mailKey(message))}
+            onSelect={(message) =>
+              setDesktopSelectedKey(desktopFileIdentityKey(message))
+            }
           />
         ) : activeFolder === "browser" ? (
           <BrowserWorkspace activeNetwork={network} />
@@ -36566,9 +36710,13 @@ function ActivityWorkspace({
   const countedItems = useServerPage ? activityPage.items : items;
   const pageCountsOnly = !stats && totalCount > countedItems.length;
   const pendingCount =
-    stats?.pending ?? countedItems.filter((item) => !item.confirmed).length;
+    stats?.pending ?? countedItems.filter((item) =>
+      item.confirmationStatus ? item.confirmationStatus === "pending" : !item.confirmed,
+    ).length;
   const confirmedCount =
-    stats?.confirmed ?? countedItems.filter((item) => item.confirmed).length;
+    stats?.confirmed ?? countedItems.filter((item) =>
+      item.confirmationStatus ? item.confirmationStatus === "confirmed" : item.confirmed,
+    ).length;
   const dataBytes = stats?.dataBytes ?? totalActivityDataBytes(countedItems);
   const visibleItems = activityPage.items;
   const indexedAt = activityHistoryPage?.indexedAt;
@@ -36738,7 +36886,25 @@ function ActivityFeed({
     <div className="activity-feed">
       {items.map((item) => {
         const key = activityKey(item);
-        const tags = Array.isArray(item.tags) ? item.tags : [];
+        const status = item.confirmationStatus ?? (item.confirmed ? "confirmed" : "pending");
+        const statusLabel = {
+          confirmed: "Confirmed",
+          pending: "Pending",
+          dropped: "Dropped",
+          orphaned: "Orphaned",
+          unknown: "Status unavailable",
+        }[status];
+        const networkLabelText = networkLabel(item.network);
+        const systemActivityTags = new Set([
+          "confirmed", "pending", "dropped", "orphaned", "unknown",
+          "status unavailable", "mempool", "unconfirmed", "mainnet",
+          "livenet", "testnet", "testnet3", "testnet4", "invalid event",
+          networkLabelText.toLowerCase(), item.network.toLowerCase(),
+        ]);
+        const tags = (Array.isArray(item.tags) ? item.tags : []).filter(
+          (tag) => !systemActivityTags.has(String(tag).trim().toLowerCase()),
+        );
+        const invalid = item.valid === false || item.kind === "token-event-invalid";
         const title =
           item.id
             ? `${item.id}@proofofwork.me`
@@ -36762,6 +36928,15 @@ function ActivityFeed({
             </div>
 
             <div className="activity-tags">
+              <span
+                className={`activity-chain-status activity-chain-status-${status}`}
+              >
+                {statusLabel}
+              </span>
+              <span className="activity-chain-network">{networkLabelText}</span>
+              {invalid ? (
+                <span className="activity-invalid-event">Invalid event</span>
+              ) : null}
               {tags.map((tag) => (
                 <span key={`${key}-${tag}`}>{tag}</span>
               ))}
@@ -45410,6 +45585,7 @@ function IdLaunchApp({
   lastRegisteredId,
   registryAddress,
   registryRecords,
+  registryReadStatus,
   registrationBytes,
   setFeeRate,
   setIdName,
@@ -45434,6 +45610,7 @@ function IdLaunchApp({
   lastRegisteredId?: PowIdRecord;
   registryAddress: string;
   registryRecords: PowIdRecord[];
+  registryReadStatus: RegistryReadStatus;
   registrationBytes: number;
   setFeeRate: (value: number) => void;
   setIdName: (value: string) => void;
@@ -45452,6 +45629,22 @@ function IdLaunchApp({
   const pendingRecords = uniqueRegistryRecords.filter(
     (record) => !record.confirmed,
   );
+  const registryHasSnapshot =
+    registryReadStatus === "ready" || registryReadStatus === "last-verified";
+  const registryStatValue = (count: number) =>
+    registryHasSnapshot
+      ? count.toLocaleString()
+      : registryReadStatus === "loading"
+        ? "Verifying…"
+        : "Unavailable";
+  const registryReadNote =
+    registryReadStatus === "last-verified"
+      ? "Showing the last verified registry snapshot; refresh is unavailable."
+      : registryReadStatus === "unavailable"
+        ? "The canonical registry could not be verified. No zero-count result is available."
+        : registryReadStatus === "loading"
+          ? "Verifying the canonical registry…"
+          : "";
   const confirmedMatch = normalizedId
     ? confirmedRecords.find((record) => record.id === normalizedId)
     : undefined;
@@ -45529,18 +45722,21 @@ function IdLaunchApp({
 
           <div className="id-launch-stats" aria-label="Registry stats">
             <div>
-              <strong>{confirmedRecords.length.toLocaleString()}</strong>
+              <strong>{registryStatValue(confirmedRecords.length)}</strong>
               <span>Confirmed IDs</span>
             </div>
             <div>
-              <strong>{pendingRecords.length.toLocaleString()}</strong>
+              <strong>{registryStatValue(pendingRecords.length)}</strong>
               <span>Pending IDs</span>
             </div>
             <div>
-              <strong>{uniqueRegistryRecords.length.toLocaleString()}</strong>
+              <strong>{registryStatValue(uniqueRegistryRecords.length)}</strong>
               <span>Visible records</span>
             </div>
           </div>
+          {registryReadNote ? (
+            <p className="registry-read-note">{registryReadNote}</p>
+          ) : null}
         </div>
 
         <div className="id-launch-grid">
@@ -45710,9 +45906,15 @@ function IdLaunchApp({
                 records={ownedIds}
                 allowVerification
                 empty={
-                  address
-                    ? "No IDs for this wallet yet."
-                    : "Connect UniSat to see your IDs."
+                  !address
+                    ? "Connect UniSat to see your IDs."
+                    : registryReadStatus === "ready"
+                      ? "No IDs for this wallet yet."
+                      : registryReadStatus === "last-verified"
+                        ? "No IDs for this wallet in the last verified snapshot."
+                        : registryReadStatus === "loading"
+                          ? "Verifying your IDs against the registry…"
+                          : "Registry unavailable; your IDs could not be verified."
                 }
                 searchPlaceholder="Search your IDs"
               />
@@ -45743,7 +45945,15 @@ function IdLaunchApp({
           </div>
           <IdRecordList
             records={uniqueRegistryRecords}
-            empty="No registry records found yet."
+            empty={
+              registryReadStatus === "ready"
+                ? "No registry records found in the verified snapshot."
+                : registryReadStatus === "last-verified"
+                  ? "No records in the last verified registry snapshot."
+                  : registryReadStatus === "loading"
+                    ? "Verifying canonical registry…"
+                    : "Registry unavailable; no zero-count result can be shown."
+            }
             initialLimit={12}
           />
         </section>
@@ -52481,6 +52691,7 @@ function IdsWorkspace({
   pendingEvents,
   registryAddress,
   registryRecords,
+  registryReadStatus,
   registrationBytes,
   lastRegisteredId,
   canTransfer,
@@ -52517,6 +52728,7 @@ function IdsWorkspace({
   pendingEvents: PowIdPendingEvent[];
   registryAddress: string;
   registryRecords: PowIdRecord[];
+  registryReadStatus: RegistryReadStatus;
   registrationBytes: number;
   lastRegisteredId?: PowIdRecord;
   canTransfer: boolean;
@@ -52587,9 +52799,15 @@ function IdsWorkspace({
         <div>
           <h2>ProofOfWork IDs</h2>
           <span>
-            {registryAddress
-              ? `${registryRecords.length} total registry record${registryRecords.length === 1 ? "" : "s"} · ${ownedIds.length} yours`
-              : `No registry configured for ${networkLabel(network)}`}
+            {!registryAddress
+              ? `No registry configured for ${networkLabel(network)}`
+              : registryReadStatus === "ready"
+                ? `${registryRecords.length} total registry record${registryRecords.length === 1 ? "" : "s"} · ${ownedIds.length} yours`
+                : registryReadStatus === "last-verified"
+                  ? `${registryRecords.length} total registry record${registryRecords.length === 1 ? "" : "s"} · ${ownedIds.length} yours · last verified snapshot`
+                  : registryReadStatus === "loading"
+                    ? "Verifying canonical registry…"
+                    : "Registry unavailable; no verified count"}
           </span>
         </div>
         <button
@@ -52973,9 +53191,15 @@ function IdsWorkspace({
             records={registryRecords}
             contacts={contacts}
             empty={
-              registryAddress
-                ? "No registry records found yet."
-                : "Registry address is not configured for this network."
+              !registryAddress
+                ? "Registry address is not configured for this network."
+                : registryReadStatus === "ready"
+                  ? "No registry records found in the verified snapshot."
+                  : registryReadStatus === "last-verified"
+                    ? "No records in the last verified registry snapshot."
+                    : registryReadStatus === "loading"
+                      ? "Verifying canonical registry…"
+                      : "Registry unavailable; no zero-count result can be shown."
             }
             initialLimit={24}
             onAddContact={onAddContact}
@@ -54016,7 +54240,7 @@ function DesktopWorkspace({
   onSelect: (message: MailMessage) => void;
 }) {
   const fileMessages = sortMessages(
-    fileSurfaceMessages(messages).filter(
+    desktopFileSurfaceMessages(messages).filter(
       (message) =>
         fileFilter === "all" ||
         fileKindForMessage(message) === fileFilter,
@@ -54024,7 +54248,7 @@ function DesktopWorkspace({
     sortMode,
   ).filter(hasAttachment);
   const selectedFile =
-    fileMessages.find((message) => mailKey(message) === selectedKey) ??
+    fileMessages.find((message) => desktopFileIdentityKey(message) === selectedKey) ??
     fileMessages[0];
 
   if (!profile) {
@@ -54177,11 +54401,11 @@ function DesktopWorkspace({
               <FileTile
                 active={
                   selectedFile
-                    ? mailKey(selectedFile) === mailKey(message)
+                    ? desktopFileIdentityKey(selectedFile) === desktopFileIdentityKey(message)
                     : false
                 }
                 activeNetwork={activeNetwork}
-                key={mailKey(message)}
+                key={desktopFileIdentityKey(message)}
                 message={message}
                 onSelect={onSelect}
               />
@@ -54589,7 +54813,7 @@ function FileInspector({
   showWorkSignal = false,
 }: {
   activeNetwork: BitcoinNetwork;
-  message?: MailMessage & { attachment: MailAttachment };
+  message?: FileSurfaceMessage;
   onOpenMessage?: (message: MailMessage) => void;
   showWorkSignal?: boolean;
 }) {
@@ -54672,6 +54896,16 @@ function FileInspector({
           <dt>{isInboundFolder(message.folder) ? "From" : "To"}</dt>
           <dd>{peer}</dd>
         </div>
+        {message.desktopDirections?.length ? (
+          <div>
+            <dt>Mailbox</dt>
+            <dd>
+              {message.desktopDirections
+                .map((direction) => (direction === "inbox" ? "Inbox" : "Sent"))
+                .join(" · ")}
+            </dd>
+          </div>
+        ) : null}
         <div>
           <dt>Value</dt>
           <dd>{message.amountSats.toLocaleString()} proofs</dd>

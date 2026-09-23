@@ -640,7 +640,11 @@ test("invalid direct-transfer destinations do not clear a valid owner or listing
 
 test("saved legacy profile intents preserve exact embedded address ownership", async () => {
   const encoding = await importTs("../src/shared/utils/encoding.ts", { '"bitcoinjs-lib"': JSON.stringify(import.meta.resolve("bitcoinjs-lib")), '"buffer"': '"node:buffer"' });
-  const mod = await import(await importTs("../src/features/boost/boostProtocol.ts", { '"../../shared/utils/encoding"': JSON.stringify(encoding) }));
+  const numeric = await importTs("../src/features/boost/boostNumeric.ts");
+  const mod = await import(await importTs("../src/features/boost/boostProtocol.ts", {
+    '"../../shared/utils/encoding"': JSON.stringify(encoding),
+    '"./boostNumeric"': JSON.stringify(numeric),
+  }));
   const owner = "1KNkUBREnfno2BeV7QsBf8XCWZN6YFfxPH";
   const intent = { address: owner, network: "livenet", id: "owner", signature: "fixture" };
   const originalWindow = globalThis.window;
@@ -658,7 +662,11 @@ test("saved legacy profile intents preserve exact embedded address ownership", a
 
 test("Boost composers encode quote posts and direct owner transfers", async () => {
   const encoding = await importTs("../src/shared/utils/encoding.ts", { '"bitcoinjs-lib"': JSON.stringify(import.meta.resolve("bitcoinjs-lib")), '"buffer"': '"node:buffer"' });
-  const mod = await import(await importTs("../src/features/boost/boostProtocol.ts", { '"../../shared/utils/encoding"': JSON.stringify(encoding) }));
+  const numeric = await importTs("../src/features/boost/boostNumeric.ts");
+  const mod = await import(await importTs("../src/features/boost/boostProtocol.ts", {
+    '"../../shared/utils/encoding"': JSON.stringify(encoding),
+    '"./boostNumeric"': JSON.stringify(numeric),
+  }));
   const quotedTxid = "a".repeat(64);
   const postPayload = mod.buildBoostPostPayload({ message: "quoted proof", proofSignalSats: 546, quoteTxid: quotedTxid });
   const decoded = JSON.parse(Buffer.from(postPayload.slice("pwb1:post:".length), "base64url").toString("utf8"));
@@ -693,4 +701,57 @@ test("profile acquired assets exclude other authors' replies and reboosts of the
   assert.equal(after.profileSubject.purchasedCount, 1);
   assert.equal(after.profileTabs.purchased, 1);
   assert.deepEqual(Array.from(after.items, item => item.txid), [txid(1)]);
+});
+
+
+test("Boost satoshi and outpoint writers reject fractional or unsafe inputs", async () => {
+  const numericUrl = await importTs("../src/features/boost/boostNumeric.ts");
+  const numeric = await import(numericUrl);
+  assert.equal(numeric.boostPaymentAmountSats(0), 0);
+  assert.equal(numeric.boostPaymentAmountSats(Number.MAX_SAFE_INTEGER), Number.MAX_SAFE_INTEGER);
+  for (const value of [0.9, 1.9, Number.MAX_SAFE_INTEGER + 1, "1", null]) {
+    assert.equal(numeric.boostPaymentAmountSats(value), null);
+  }
+  assert.equal(numeric.boostListingPriceSats(1), 1);
+  for (const value of [0, 0.9, 1.9, Number.MAX_SAFE_INTEGER + 1, "2"]) {
+    assert.equal(numeric.boostListingPriceSats(value), null);
+  }
+  const txid = "a".repeat(64);
+  assert.equal(numeric.normalizeBoostSpentOutpoint({ txid: txid.toUpperCase(), vout: 2 }), `${txid}:2`);
+  for (const vout of [1.9, -1, Number.MAX_SAFE_INTEGER + 1, "2"]) {
+    assert.equal(numeric.normalizeBoostSpentOutpoint({ txid, vout }), "");
+  }
+
+  const encoding = await importTs("../src/shared/utils/encoding.ts", {
+    '"bitcoinjs-lib"': JSON.stringify(import.meta.resolve("bitcoinjs-lib")),
+    '"buffer"': '"node:buffer"',
+  });
+  const protocolUrl = await importTs("../src/features/boost/boostProtocol.ts", {
+    '"../../shared/utils/encoding"': JSON.stringify(encoding),
+    '"./boostNumeric"': JSON.stringify(numericUrl),
+  });
+  const protocol = await import(protocolUrl);
+  const authorization = protocol.boostSaleAuthorizationDraft({
+    boostTxid: txid,
+    priceSats: 1,
+    sellerAddress: "owner",
+  });
+  assert.equal(authorization.priceSats, 1);
+  for (const priceSats of [0.9, 1.9, Number.MAX_SAFE_INTEGER + 1]) {
+    assert.throws(() => protocol.boostSaleAuthorizationDraft({
+      boostTxid: txid, priceSats, sellerAddress: "owner",
+    }), /price must be at least 1 proof/u);
+  }
+
+  const walletSource = await readFile(new URL("../src/features/boost/boostWallet.ts", import.meta.url), "utf8");
+  const outputStart = walletSource.indexOf("function normalizeOutput(");
+  const outputEnd = walletSource.indexOf("\n}", outputStart) + 2;
+  const outputNormalizer = walletSource.slice(outputStart, outputEnd);
+  assert.match(outputNormalizer, /boostPaymentAmountSats\(payment\.amountSats\)/u);
+  const paymentBuilder = walletSource.slice(
+    walletSource.indexOf("export async function buildBoostPaymentPsbt("),
+    walletSource.indexOf("\ntype UnsignedTransactionIntent"),
+  );
+  assert.match(paymentBuilder, /excludeOutpoints\.map\(\s*normalizeBoostSpentOutpoint[\s\S]*?some\(\(outpoint\) => !outpoint\)[\s\S]*?throw new Error/u);
+  assert.doesNotMatch(walletSource, /Math\.floor\((?:payment\.amountSats|outpoint\.vout)/u);
 });

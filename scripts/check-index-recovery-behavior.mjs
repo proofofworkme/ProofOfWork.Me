@@ -5347,12 +5347,7 @@ check("stored canonical WORK summaries retain bounded-book totals", async () => 
   assert.deepEqual(payload.consistency, { ok: true });
 });
 
-check("WORK summary previews retain every seal without erasing ordinary totals", () => {
-  const recentByCreatedAtForTest = isolatedFunction(
-    API_PATH,
-    "recentByCreatedAt",
-    { compareCanonicalUtf8 },
-  );
+check("WORK summary previews bound sealed inventory without erasing canonical totals", () => {
   const tokenSummaryListingKeyForTest = isolatedFunction(
     API_PATH,
     "tokenSummaryListingKey",
@@ -5367,7 +5362,6 @@ check("WORK summary previews retain every seal without erasing ordinary totals",
     {
       SUMMARY_MARKET_LIMIT: 40,
       compareCanonicalUtf8,
-      recentByCreatedAt: recentByCreatedAtForTest,
       tokenListingHasConfirmedSaleTicketSeal: (listing) =>
         listing?.sealed === true,
       tokenSummaryListingActivityMs: tokenSummaryListingActivityMsForTest,
@@ -5406,17 +5400,18 @@ check("WORK summary previews retain every seal without erasing ordinary totals",
 
   const preview = tokenSummaryListingsForTest(completeBook, 40);
   assert.equal(completeBook.length, 582);
-  assert.equal(preview.length, 550);
-  assert.equal(preview.filter((item) => item.sealed).length, 543);
-  assert.equal(preview.filter((item) => !item.sealed).length, 7);
+  assert.equal(preview.length, 40);
+  assert.equal(preview.filter((item) => item.sealed).length, 40);
+  assert.equal(preview.filter((item) => !item.sealed).length, 0);
   assert.ok(
-    [...oldSealed, ...recentSealed].every((item) => preview.includes(item)),
-    "every confirmed sealed listing must escape the ordinary preview limit",
+    recentSealed.every((item) => preview.includes(item)),
+    "the newest confirmed sealed tickets lead the bounded preview",
   );
   assert.ok(
     oldUnsealed.every((item) => !preview.includes(item)),
     "older ordinary listings remain available through paginated history",
   );
+  assert.equal(completeBook.length, 582, "previewing must not mutate the canonical input book");
 });
 
 check("token response wrapper applies current WORK listing policy", async () => {
@@ -39852,9 +39847,28 @@ check("mail merges preserve canonical attachments without promoting raw confirme
   assert.equal(preserved.attachedCredits[0].amountAtoms, "1");
   assert.equal(preserved.confirmed, true);
 
+  const addressMailReaderSource = topLevelFunctionSource(
+    READER_PATH,
+    "proofIndexAddressMailPayload",
+  );
+  assert.doesNotMatch(
+    addressMailReaderSource,
+    /LIMIT\s+1000/u,
+    "address-mail history must not silently truncate after 1,000 events",
+  );
+  assert.match(
+    addressMailReaderSource,
+    /historyCoverage:\s*\{[\s\S]*?complete:\s*true[\s\S]*?eventCount:/u,
+    "address-mail history publishes explicit complete indexed coverage",
+  );
   const eventOverlaySource = topLevelFunctionSource(
     API_PATH,
     "mailPayloadWithIndexedEventOverlay",
+  );
+  assert.match(
+    eventOverlaySource,
+    /readCompleteEventHistoryPages\([\s\S]*?proofIndexEventHistoryPayload/u,
+    "supplemental mail recovery must exhaust the snapshot-bound event cursor",
   );
   assert.match(
     eventOverlaySource,
@@ -52185,15 +52199,7 @@ check("credit market log SQL canonicalizes listing lifecycles before pagination"
     },
   );
   const sql = canonicalSql("market-log", "e.network = $1");
-  const relicSql = canonicalSql(
-    "closedListings",
-    "e.network = $1",
-    {
-      amoV5RelicClosedAtSql: "$9",
-      amoV5RelicClosedTxidSql: "$8",
-      amoV5RelicPredicateSql: "e.event_id = $7",
-    },
-  );
+  const relicSql = canonicalSql("closedListings", "e.network = $1");
   const overlaySource = topLevelFunctionSource(
     READER_PATH,
     "proofIndexTokenMarketHistoryOverlayPayload",
@@ -52223,22 +52229,17 @@ check("credit market log SQL canonicalizes listing lifecycles before pagination"
     overlaySource,
     /FROM canonical_market_metadata metadata[\s\S]*LEFT JOIN LATERAL \([\s\S]*FROM canonical_market_events[\s\S]*history_item_confirmed DESC[\s\S]*history_item_txid DESC[\s\S]*history_item_kind_rank ASC[\s\S]*LIMIT \$\$\{limitParam\}[\s\S]*OFFSET \$\$\{offsetParam\}/iu,
   );
-  assert.match(
+  assert.doesNotMatch(
     relicSql,
-    /WHEN \(e\.event_id = \$7\)[\s\S]*THEN 'closed:'[\s\S]*\$8/iu,
+    /work_amo_v5_pre_unit_relic_projection|amoV5RelicPredicateSql/iu,
   );
-  assert.match(
-    relicSql,
-    /WHEN \(e\.event_id = \$7\) THEN \$9::timestamptz[\s\S]*AS event_time[\s\S]*WHEN \(e\.event_id = \$7\) THEN 959621[\s\S]*AS block_height/iu,
-  );
-  assert.match(
-    relicSql,
-    /\(e\.event_id = \$7\) AS work_amo_v5_pre_unit_relic_projection/iu,
-  );
+  assert.match(overlaySource, /if \(amoV5RelicBoundaryReached\)/u);
+  assert.match(overlaySource, /e\.txid <> \$\$/u);
   assert.match(
     overlaySource,
-    /\["closedListings", "market-listings"\]\.includes\(safeKind\)[\s\S]*amoV5RelicProjectable[\s\S]*e\.kind = ANY\(\$2::text\[\]\) OR \$\{amoV5RelicPredicateSql\}/u,
+    /if \(exactAmoV5CutoverQuery\)[\s\S]*conditions\.push\("false"\)/u,
   );
+  assert.doesNotMatch(overlaySource, /amoV5RelicProjectable|amoV5RelicPredicateSql/u);
   assert.match(
     historySource,
     /"market-listings"[\s\S]*"market-seals"[\s\S]*"market-sales"[\s\S]*\.includes\(eligibility\.kind\)[\s\S]*authoritativeEmpty: true/iu,
@@ -52801,6 +52802,16 @@ check("AMO V5 pre-unit relic history is exact, relational, and fail-closed", asy
     },
   );
 
+  assert.equal(
+    mapMarketHistoryItem(
+      exactEvidence.listing,
+      "market-log",
+      { work_amo_v5_pre_unit_relic_projection: true },
+    ),
+    null,
+    "legacy synthetic relic rows must not create market-log state",
+  );
+
   let evidence = exactEvidence;
   let evidenceReads = 0;
   let currentKind = "";
@@ -52833,44 +52844,22 @@ check("AMO V5 pre-unit relic history is exact, relational, and fail-closed", asy
             params: Array.from(params),
             sql: String(sql),
           });
-          const projectRelic =
-            evidenceIsExact(evidence) &&
-            ["closedListings", "market-log"].includes(currentKind);
-          if (projectRelic) {
-            return {
-              rows: [
-                {
-                  block_height: WORK_AMO_V5_ACTIVATION_HEIGHT,
-                  event_time: activationBlockTime,
-                  history_indexed_through_block:
-                    WORK_AMO_V5_ACTIVATION_HEIGHT,
-                  history_query_disposition: null,
-                  history_total_count: 1,
-                  kind: "token-listing",
-                  payload: exactEvidence.listing,
-                  work_amo_v5_pre_unit_relic_projection: true,
-                },
-              ],
-            };
-          }
-          const exactRelicQuery = currentNeedles.some((txid) =>
-            [
-              WORK_AMO_V5_PRE_UNIT_RELIC_LISTING_TXID,
-              WORK_AMO_V5_DECLARATION_TXID,
-            ].includes(txid),
-          );
+          const cutoverTxids = new Set([
+            WORK_AMO_V5_PRE_UNIT_RELIC_LISTING_TXID,
+            WORK_AMO_V5_DECLARATION_TXID,
+          ]);
+          const exactRelicQuery =
+            currentNeedles.length > 0 &&
+            currentNeedles.every((txid) => cutoverTxids.has(txid));
           return {
             rows: [
               {
                 history_indexed_through_block: null,
-                history_query_disposition:
-                  exactRelicQuery
-                    ? evidenceIsExact(evidence) && currentKind === "listings"
-                      ? "terminal-cutover-closed"
-                      : !evidenceIsExact(evidence)
-                        ? "terminal-cutover-withheld"
-                        : null
-                    : null,
+                history_query_disposition: exactRelicQuery
+                  ? evidenceIsExact(evidence)
+                    ? "terminal-cutover-closed"
+                    : "terminal-cutover-withheld"
+                  : null,
                 history_total_count: 0,
               },
             ],
@@ -52960,43 +52949,26 @@ check("AMO V5 pre-unit relic history is exact, relational, and fail-closed", asy
     WORK_AMO_V5_DECLARATION_TXID,
   ]) {
     const closed = await read("closedListings", query);
-    assert.equal(closed.totalCount, 1);
-    assert.equal(closed.items.length, 1);
-    assert.equal(
-      closed.items[0].listingId,
-      WORK_AMO_V5_PRE_UNIT_RELIC_LISTING_TXID,
-    );
-    assert.equal(closed.items[0].txid, WORK_AMO_V5_DECLARATION_TXID);
-    assert.equal(
-      closed.items[0].closedTxid,
-      WORK_AMO_V5_DECLARATION_TXID,
-    );
-    assert.equal(closed.items[0].closedAt, activationBlockTime);
-    assert.equal(closed.items[0].relic, true);
-    assert.equal(closed.items[0].refundEligible, false);
-    assert.equal(
-      closed.items[0].disabledReason,
-      WORK_AMO_V5_PRE_UNIT_RELIC_DISABLED_REASON,
-    );
+    assert.equal(closed.totalCount, 0);
+    assert.deepEqual(closed.items, []);
+    assert.equal(closed.queryDisposition, "terminal-cutover-closed");
 
     const marketLog = await read("market-log", query);
-    assert.equal(marketLog.totalCount, 1);
-    assert.equal(marketLog.items[0].kind, "closed-listing");
-    assert.equal(
-      marketLog.items[0].closedListing.listingId,
-      WORK_AMO_V5_PRE_UNIT_RELIC_LISTING_TXID,
-    );
-    assert.equal(marketLog.items[0].txid, WORK_AMO_V5_DECLARATION_TXID);
+    assert.equal(marketLog.totalCount, 0);
+    assert.deepEqual(marketLog.items, []);
+    assert.equal(marketLog.queryDisposition, "terminal-cutover-closed");
   }
 
   const broadClosed = await read("closedListings", "", {
     authoritativeEmpty: true,
   });
-  assert.equal(broadClosed.totalCount, 1);
-  assert.equal(
-    broadClosed.items[0].listingId,
-    WORK_AMO_V5_PRE_UNIT_RELIC_LISTING_TXID,
-  );
+  assert.equal(broadClosed.totalCount, 0);
+  assert.deepEqual(broadClosed.items, []);
+  const broadMarketLog = await read("market-log", "", {
+    authoritativeEmpty: true,
+  });
+  assert.equal(broadMarketLog.totalCount, 0);
+  assert.deepEqual(broadMarketLog.items, []);
   const broadListings = await read("listings", "", {
     authoritativeEmpty: true,
   });
@@ -53025,18 +52997,25 @@ check("AMO V5 pre-unit relic history is exact, relational, and fail-closed", asy
     "terminal-cutover-closed",
   );
 
-  const projectedCall = canonicalSqlCalls.find(
+  const exactClosedCall = canonicalSqlCalls.find(
     (call) => call.kind === "closedListings",
   );
-  assert.ok(projectedCall);
-  assert.notEqual(projectedCall.options.amoV5RelicPredicateSql, "false");
-  assert.match(
-    projectedCall.options.amoV5RelicPredicateSql,
-    /e\.event_id = \$\d+[\s\S]*e\.block_height = 959241[\s\S]*e\.block_index = 2601[\s\S]*e\.op_return_vout = 1[\s\S]*e\.record_ordinal = 0/u,
+  assert.ok(exactClosedCall);
+  assert.match(exactClosedCall.whereClause, /e\.txid <> \$\d+/u);
+  assert.match(exactClosedCall.whereClause, /AND false/u);
+  assert.ok(
+    canonicalSqlCalls.some(
+      (call) => call.kind === "market-log" && /e\.txid <> \$\d+/u.test(call.whereClause),
+    ),
   );
   assert.ok(
     sqlReads.some((readResult) =>
-      readResult.params.includes(WORK_AMO_V5_DECLARATION_TXID),
+      readResult.params.some(
+        (value) =>
+          value === WORK_AMO_V5_DECLARATION_TXID ||
+          (Array.isArray(value) &&
+            value.includes(WORK_AMO_V5_DECLARATION_TXID)),
+      ),
     ),
   );
 
@@ -82575,7 +82554,7 @@ check("canonical seal SQL remains general while WORK keeps auth equality", () =>
   }
   assert.match(
     historySql,
-    /\(false\)[\s\S]*OR e\.protocol = 'pwt1'/iu,
+    /WHERE TRUE\s+AND e\.protocol = 'pwt1'/iu,
     "ordinary token-market history must reject kind-shaped rows from another protocol",
   );
 });
@@ -83338,6 +83317,7 @@ check("AMO V6 readiness selects exact listing-version SQL arrays", async () => {
     {
       WORK_AMO_V5_ACTIVATION_HEIGHT,
       WORK_AMO_V5_AUTH_VERSION,
+      WORK_AMO_V5_PRE_UNIT_RELIC_LISTING_TXID,
       WORK_AMO_V6_AUTH_VERSION,
       WORK_MARKET_V2_ACTIVATION_HEIGHT,
       WORK_MARKET_V2_AUTH_VERSION,
@@ -83388,12 +83368,12 @@ check("AMO V6 readiness selects exact listing-version SQL arrays", async () => {
   assert.equal(broadPage.totalCount, 0);
   assert.equal(overlayQueries.length, 1);
   assert.deepEqual(
-    Array.from(overlayQueries[0].params[3]),
+    Array.from(overlayQueries[0].params[4]),
     expectedV6Versions,
   );
   assert.match(
     overlayQueries[0].sql,
-    /= ANY\(\$4::text\[\]\)/u,
+    /= ANY\(\$5::text\[\]\)/u,
   );
   assert.match(
     overlayQueries[0].sql,
@@ -85147,12 +85127,8 @@ check("canonical summary persistence is compact and storage-budgeted", async () 
   );
   assert.match(
     tokenSummaryListingsSource,
-    /recentByCreatedAt\(listings, limit\)/u,
-  );
-  assert.match(
-    tokenSummaryListingsSource,
-    /if \(!tokenListingHasConfirmedSaleTicketSeal\(listing\)\) \{[\s\S]*continue/u,
-    "only confirmed buyable sale-ticket listings may escape the ordinary preview limit",
+    /\.sort\(priority\)[\s\S]*?\.slice\(0, Math\.max\(0, limit\)\)/u,
+    "the entire listing summary, including sealed listings, must remain bounded",
   );
   const storeSource = topLevelFunctionSource(
     BACKFILL_PATH,

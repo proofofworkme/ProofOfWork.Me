@@ -17667,44 +17667,12 @@ function tokenMintFromEventPayload(payload, row = {}) {
   };
 }
 
-function tokenHistoryItemFromMarketEventPayload(
-  payload,
-  safeKind,
-  row = {},
-  amoV5RelicEvidence = null,
-) {
-  if (
-    row?.work_amo_v5_pre_unit_relic_projection === true &&
-    workAmoV5PreUnitRelicEvidenceIsExact(amoV5RelicEvidence) &&
-    amoV5RelicEvidence.disposition === "relic"
-  ) {
-    const closedListing = {
-      ...amoV5RelicEvidence.listing,
-      closedAt: amoV5RelicEvidence.activationBlockTime,
-      closedConfirmed: true,
-      closedTxid: WORK_AMO_V5_DECLARATION_TXID,
-      confirmed: true,
-      disabledAtBlockHeight: WORK_AMO_V5_ACTIVATION_HEIGHT,
-      disabledByTxid: WORK_AMO_V5_DECLARATION_TXID,
-      disabledReason: WORK_AMO_V5_PRE_UNIT_RELIC_DISABLED_REASON,
-      kind: "token-listing-closed",
-      originalStatus: amoV5RelicEvidence.listing.status ?? "active",
-      refundEligible: false,
-      relic: true,
-      status: "disabled",
-      txid: WORK_AMO_V5_DECLARATION_TXID,
-    };
-    if (safeKind === "closedListings") {
-      return closedListing;
-    }
-    if (safeKind === "market-log" || safeKind === "market-listings") {
-      return {
-        closedListing,
-        createdAt: closedListing.closedAt,
-        kind: "closed-listing",
-        txid: closedListing.closedTxid,
-      };
-    }
+function tokenHistoryItemFromMarketEventPayload(payload, safeKind, row = {}) {
+  if (row?.work_amo_v5_pre_unit_relic_projection === true) {
+    // A legacy synthetic projection must never turn a pre-unit attempt into
+    // current closed-listing or market-log state. The original chain event and
+    // separately verified relic witness remain available from their evidence
+    // readers; never synthesize a canonical close here.
     return null;
   }
 
@@ -17937,21 +17905,12 @@ function tokenHistoryMarketEventKinds(safeKind) {
   return [];
 }
 
-function tokenHistoryCanonicalMarketEventsSql(
-  safeKind,
-  whereClause,
-  {
-    amoV5RelicClosedAtSql = "NULL",
-    amoV5RelicClosedTxidSql = "''",
-    amoV5RelicPredicateSql = "false",
-  } = {},
-) {
+function tokenHistoryCanonicalMarketEventsSql(safeKind, whereClause) {
   const historicalSealProjection = safeKind === "market-seals";
   const listingKinds =
     "ARRAY['token-listings','token-listing','token-listing-sealed']::text[]";
   const listingCreationKinds =
     "ARRAY['token-listings','token-listing']::text[]";
-  const amoV5Relic = `(${amoV5RelicPredicateSql})`;
   const listingId = `lower(COALESCE(
     NULLIF(e.payload->>'listingId', ''),
     NULLIF(cl_event.listing_id, ''),
@@ -18034,26 +17993,19 @@ function tokenHistoryCanonicalMarketEventsSql(
                       THEN 'closed:' || ${listingId} || ':' || lower(e.txid)
                     ELSE e.kind || ':' || e.event_id::text
                   END`;
-  const canonicalKey = `CASE
-    WHEN ${amoV5Relic}
-      THEN 'closed:' || ${listingId} || ':' || ${amoV5RelicClosedTxidSql}
-    ELSE ${ordinaryCanonicalKey}
-  END`;
+  const canonicalKey = ordinaryCanonicalKey;
   const itemTxid = `CASE
-    WHEN ${amoV5Relic} THEN ${amoV5RelicClosedTxidSql}
     WHEN '${safeKind}' = 'market-seals' THEN lower(e.txid)
     WHEN e.kind = ANY(${listingKinds}) THEN ${listingId}
     ELSE lower(e.txid)
   END`;
   const itemKindRank = `CASE
-    WHEN ${amoV5Relic} THEN 1
     WHEN e.kind = 'token-sale' THEN 0
     WHEN e.kind = 'token-listing-closed' THEN 1
     WHEN e.kind = ANY(${listingKinds}) THEN 2
     ELSE 3
   END`;
   const projectionRank = `CASE
-    WHEN ${amoV5Relic} THEN 1
     WHEN e.kind = ANY(ARRAY['token-listings','token-listing']::text[]) THEN 0
     WHEN e.kind = 'token-listing-sealed' THEN 1
     WHEN e.kind = 'token-listing-closed' THEN 1
@@ -18088,22 +18040,10 @@ function tokenHistoryCanonicalMarketEventsSql(
         e.protocol,
         e.kind,
         e.status,
-        CASE
-          WHEN ${amoV5Relic} THEN ${amoV5RelicClosedAtSql}::timestamptz
-          ELSE e.event_time
-        END AS event_time,
-        CASE
-          WHEN ${amoV5Relic} THEN ${amoV5RelicClosedAtSql}::timestamptz
-          ELSE e.block_time
-        END AS block_time,
-        CASE
-          WHEN ${amoV5Relic} THEN ${amoV5RelicClosedAtSql}::timestamptz
-          ELSE e.created_at
-        END AS created_at,
-        CASE
-          WHEN ${amoV5Relic} THEN ${WORK_AMO_V5_ACTIVATION_HEIGHT}
-          ELSE e.block_height
-        END AS block_height,
+        e.event_time,
+        e.block_time,
+        e.created_at,
+        e.block_height,
         e.block_index,
         e.op_return_vout,
         e.record_ordinal,
@@ -18134,7 +18074,6 @@ function tokenHistoryCanonicalMarketEventsSql(
         canonical_seal_event.seal_event_record_ordinal,
         canonical_seal_event.seal_event_match_count,
         seal_transaction.block_height AS seal_transaction_block_height,
-        ${amoV5Relic} AS work_amo_v5_pre_unit_relic_projection,
         (e.status = 'confirmed') AS history_item_confirmed,
         ${itemTxid} AS history_item_txid,
         ${itemKindRank} AS history_item_kind_rank,
@@ -18142,15 +18081,7 @@ function tokenHistoryCanonicalMarketEventsSql(
           PARTITION BY ${canonicalKey}
           ORDER BY
             ${projectionRank} ASC,
-            COALESCE(
-              CASE
-                WHEN ${amoV5Relic}
-                  THEN ${amoV5RelicClosedAtSql}::timestamptz
-                ELSE e.event_time
-              END,
-              e.block_time,
-              e.created_at
-            ) DESC,
+            COALESCE(e.event_time, e.block_time, e.created_at) DESC,
             (e.status = 'confirmed') DESC,
             e.txid DESC,
             e.event_id DESC
@@ -18231,10 +18162,7 @@ function tokenHistoryCanonicalMarketEventsSql(
         ON cd.network = e.network
        AND cd.token_id = COALESCE(lower(e.payload->>'tokenId'), cl_event.token_id)
       WHERE ${whereClause}
-        AND (
-          ${amoV5Relic}
-          OR e.protocol = 'pwt1'
-        )
+        AND e.protocol = 'pwt1'
     ),
     canonical_market_events AS (
       SELECT *
@@ -21655,31 +21583,86 @@ function historyActivityRichness(item) {
   ].filter(Boolean).length;
 }
 
-function eventKindTitle(kind, confirmed) {
+function historyConfirmationStatus(item) {
+  const explicitStatus = normalizedLowerText(item?.status);
+  if (explicitStatus) {
+    if (explicitStatus === "confirmed") {
+      return "confirmed";
+    }
+    if (["pending", "mempool", "unconfirmed"].includes(explicitStatus)) {
+      return "pending";
+    }
+    if (["dropped", "evicted", "rejected"].includes(explicitStatus)) {
+      return "dropped";
+    }
+    if (["orphaned", "reorged"].includes(explicitStatus)) {
+      return "orphaned";
+    }
+    return "unknown";
+  }
+
+  if (typeof item?.confirmed === "boolean") {
+    return item.confirmed ? "confirmed" : "pending";
+  }
+  return "unknown";
+}
+
+function historyConfirmationLabel(status) {
+  return {
+    confirmed: "Confirmed",
+    pending: "Pending",
+    dropped: "Dropped",
+    orphaned: "Orphaned",
+    unknown: "Status unavailable",
+  }[status] ?? "Status unavailable";
+}
+
+function eventKindTitle(kind, confirmationStatus) {
   const label = String(kind ?? "")
     .split(/[-_]+/u)
     .filter(Boolean)
     .map((part) => `${part.slice(0, 1).toUpperCase()}${part.slice(1)}`)
     .join(" ");
-  return `${label || "ProofOfWork event"} ${confirmed ? "confirmed" : "pending"}`;
+  const state =
+    confirmationStatus === "unknown"
+      ? "status unavailable"
+      : confirmationStatus;
+  return `${label || "ProofOfWork event"} ${state}`;
 }
 
-function safeEventTags(item, network, confirmed) {
+function safeEventTags(item, network, confirmationStatus, kind, valid) {
+  const statusTag = historyConfirmationLabel(confirmationStatus);
+  const networkValue = normalizedText(item?.network) || network;
+  const networkTag = networkValue === "livenet" ? "Mainnet" : networkValue;
+  const systemTags = new Set([
+    "confirmed", "pending", "dropped", "orphaned", "unknown",
+    "status unavailable", "mempool", "unconfirmed", "mainnet", "livenet",
+    "testnet", "testnet3", "testnet4", "invalid event",
+    String(networkValue).toLowerCase(), String(networkTag).toLowerCase(),
+  ]);
   const tags = (Array.isArray(item?.tags) ? item.tags : [])
     .map((tag) => normalizedText(tag))
-    .filter(Boolean);
-  if (tags.length > 0) {
-    return tags;
+    .filter((tag) => tag && !systemTags.has(tag.toLowerCase()));
+  const unique = new Map();
+  for (const tag of tags) {
+    unique.set(tag.toLowerCase(), tag);
   }
-
-  return [
-    confirmed ? "Confirmed" : "Pending",
-    network === "livenet" ? "Mainnet" : network,
-    normalizedText(item?.kind),
-  ].filter(Boolean);
+  if (kind && !unique.has(kind.toLowerCase())) {
+    unique.set(kind.toLowerCase(), normalizedText(kind));
+  }
+  unique.set(statusTag.toLowerCase(), statusTag);
+  unique.set(networkTag.toLowerCase(), networkTag);
+  if (valid === false) {
+    unique.set("invalid event", "Invalid event");
+  }
+  return [...unique.values()];
 }
 
-function normalizeHistoryEventItem(item, network, { publicOnly = false } = {}) {
+export function normalizeHistoryEventItem(
+  item,
+  network,
+  { publicOnly = false } = {},
+) {
   const kind = normalizedLowerText(item?.kind);
   if (
     publicOnly &&
@@ -21693,10 +21676,15 @@ function normalizeHistoryEventItem(item, network, { publicOnly = false } = {}) {
     return null;
   }
 
-  const confirmed =
-    typeof item?.confirmed === "boolean"
-      ? item.confirmed
-      : normalizedLowerText(item?.status) === "confirmed";
+  const confirmationStatus = historyConfirmationStatus(item);
+  const confirmed = confirmationStatus === "confirmed";
+  const valid =
+    item?.valid === false || kind === "token-event-invalid"
+      ? false
+      : typeof item?.valid === "boolean"
+        ? item.valid
+        : undefined;
+  const normalizedNetwork = normalizedText(item?.network) || network;
   const createdAt = dateIso(
     plausibleBitcoinEventTime(
       item?.createdAt,
@@ -21706,7 +21694,8 @@ function normalizeHistoryEventItem(item, network, { publicOnly = false } = {}) {
       item?.indexedAt,
     ),
   );
-  const title = normalizedText(item?.title) || eventKindTitle(kind, confirmed);
+  const title =
+    normalizedText(item?.title) || eventKindTitle(kind, confirmationStatus);
   const description =
     normalizedText(item?.description) ||
     normalizedText(item?.detail) ||
@@ -21715,13 +21704,21 @@ function normalizeHistoryEventItem(item, network, { publicOnly = false } = {}) {
   return {
     ...item,
     confirmed,
+    confirmationStatus,
     createdAt,
     description,
     kind,
-    network: normalizedText(item?.network) || network,
-    tags: safeEventTags(item, network, confirmed),
+    network: normalizedNetwork,
+    tags: safeEventTags(
+      item,
+      normalizedNetwork,
+      confirmationStatus,
+      kind,
+      valid,
+    ),
     title,
     txid,
+    ...(valid === undefined ? {} : { valid }),
   };
 }
 
@@ -23006,7 +23003,7 @@ export async function proofIndexTokenMarketHistoryOverlayPayload(
         snapshotHeight,
       )
     : null;
-  const amoV5RelicProjectable =
+  const amoV5RelicEvidenceExact =
     workAmoV5PreUnitRelicEvidenceIsExact(amoV5RelicEvidence) &&
     amoV5RelicEvidence.disposition === "relic";
   const currentWorkMarketAuthorizationVersions =
@@ -23018,38 +23015,7 @@ export async function proofIndexTokenMarketHistoryOverlayPayload(
         )
       : [];
   const params = [network, eventKinds];
-  let amoV5RelicPredicateSql = "false";
-  let amoV5RelicClosedTxidSql = "''";
-  let amoV5RelicClosedAtSql = "NULL";
-  if (amoV5RelicProjectable) {
-    params.push(
-      WORK_AMO_V5_PRE_UNIT_RELIC_LISTING_TXID,
-      amoV5RelicEvidence.eventId,
-      WORK_AMO_V5_DECLARATION_TXID,
-      amoV5RelicEvidence.activationBlockTime,
-    );
-    const listingIdParam = `$${params.length - 3}`;
-    const eventIdParam = `$${params.length - 2}`;
-    amoV5RelicClosedTxidSql = `$${params.length - 1}`;
-    amoV5RelicClosedAtSql = `$${params.length}`;
-    amoV5RelicPredicateSql = `(
-      e.txid = ${listingIdParam}
-      AND e.event_id = ${eventIdParam}
-      AND e.protocol = 'pwt1'
-      AND e.kind = 'token-listing'
-      AND e.status = 'confirmed'
-      AND e.valid = true
-      AND e.block_height = ${WORK_AMO_V5_PRE_UNIT_RELIC_BLOCK_HEIGHT}
-      AND e.block_index = ${WORK_AMO_V5_PRE_UNIT_RELIC_BLOCK_INDEX}
-      AND e.op_return_vout = ${WORK_AMO_V5_PRE_UNIT_RELIC_PROTOCOL_VOUT}
-      AND e.record_ordinal = ${WORK_AMO_V5_PRE_UNIT_RELIC_RECORD_ORDINAL}
-    )`;
-  }
-  const eventKindCondition =
-    ["closedListings", "market-listings"].includes(safeKind) &&
-    amoV5RelicProjectable
-      ? `(e.kind = ANY($2::text[]) OR ${amoV5RelicPredicateSql})`
-      : "e.kind = ANY($2::text[])";
+  const eventKindCondition = "e.kind = ANY($2::text[])";
   const conditions = [
     "e.network = $1",
     "e.protocol = 'pwt1'",
@@ -23107,11 +23073,9 @@ export async function proofIndexTokenMarketHistoryOverlayPayload(
       )
     )`);
   }
-  if (
-    amoV5RelicBoundaryReached &&
-    safeKind === "market-log" &&
-    !amoV5RelicProjectable
-  ) {
+  if (amoV5RelicBoundaryReached) {
+    // This confirmed-invalid pre-unit attempt remains available from the
+    // invalid-event history surface, never as live/closed marketplace state.
     params.push(WORK_AMO_V5_PRE_UNIT_RELIC_LISTING_TXID);
     conditions.push(`e.txid <> $${params.length}`);
   }
@@ -23162,14 +23126,6 @@ export async function proofIndexTokenMarketHistoryOverlayPayload(
     conditions.push(
       `(
         e.txid = ANY(${param}::text[])
-        ${
-          amoV5RelicProjectable
-            ? `OR (
-          ${amoV5RelicPredicateSql}
-          AND ${amoV5RelicClosedTxidSql} = ANY(${param}::text[])
-        )`
-            : ""
-        }
         ${payloadClauses.length > 0 ? `OR ${payloadClauses.join("\n        OR ")}` : ""}
         OR cl_event.listing_id = ANY(${param}::text[])
         OR cl_event.close_txid = ANY(${param}::text[])
@@ -23269,35 +23225,30 @@ export async function proofIndexTokenMarketHistoryOverlayPayload(
     );
   }
 
-  const whereClause = conditions.join(" AND ");
-  const canonicalMarketEventsSql = tokenHistoryCanonicalMarketEventsSql(
-    safeKind,
-    whereClause,
-    {
-      amoV5RelicClosedAtSql,
-      amoV5RelicClosedTxidSql,
-      amoV5RelicPredicateSql,
-    },
-  );
   const exactAmoV5CutoverQuery =
     amoV5RelicBoundaryReached &&
     pureExactTxidQuery &&
-    txidNeedles.some((txid) =>
+    txidNeedles.length > 0 &&
+    txidNeedles.every((txid) =>
       [
         WORK_AMO_V5_PRE_UNIT_RELIC_LISTING_TXID,
         WORK_AMO_V5_DECLARATION_TXID,
       ].includes(txid),
     );
-  const exactAmoV5CutoverDisposition =
-    exactAmoV5CutoverQuery &&
-    (
-      !amoV5RelicProjectable ||
-      safeKind === "listings"
-    )
-      ? amoV5RelicProjectable
-        ? "terminal-cutover-closed"
-        : "terminal-cutover-withheld"
-      : "";
+  const exactAmoV5CutoverDisposition = exactAmoV5CutoverQuery
+    ? amoV5RelicEvidenceExact
+      ? "terminal-cutover-closed"
+      : "terminal-cutover-withheld"
+    : "";
+  if (exactAmoV5CutoverQuery) {
+    // Exact reads for either cutover identity are terminal-empty by contract.
+    conditions.push("false");
+  }
+  const whereClause = conditions.join(" AND ");
+  const canonicalMarketEventsSql = tokenHistoryCanonicalMarketEventsSql(
+    safeKind,
+    whereClause,
+  );
   const exactQueryDispositionSql = exactQueryTxidsParam
     ? `CASE
         WHEN ${exactAmoV5CutoverDisposition ? "true" : "false"}
@@ -23375,7 +23326,6 @@ export async function proofIndexTokenMarketHistoryOverlayPayload(
         }),
         safeKind,
         row,
-        amoV5RelicEvidence,
       ),
     )
     .filter(Boolean)
@@ -39562,7 +39512,6 @@ export async function proofIndexAddressMailPayload(network, address) {
           COALESCE(e.event_time, e.block_time, e.created_at) DESC,
           e.txid DESC,
           e.event_id DESC
-        LIMIT 1000
       ),
       candidate_mail_transactions AS (
         SELECT DISTINCT network, txid
@@ -39686,7 +39635,6 @@ export async function proofIndexAddressMailPayload(network, address) {
         COALESCE(e.event_time, e.block_time, e.created_at) DESC,
         e.txid DESC,
         e.event_id DESC
-      LIMIT 1000
     `,
     [network, addressCandidates, ADDRESS_MAIL_EVENT_KINDS, WORK_TOKEN_ID],
   );
@@ -39757,6 +39705,11 @@ export async function proofIndexAddressMailPayload(network, address) {
     indexedAt: new Date().toISOString(),
     network,
     sentMessages: dedupedSentMessages,
+    historyCoverage: {
+      complete: true,
+      eventCount: rowsResult.rows.length,
+      model: "proof-index-address-mail-complete-v1",
+    },
     source: droppedOutboxWitnesses > 0
       ? "proof-indexer-mail+historical-dropped-mail-witness"
       : "proof-indexer-mail",
