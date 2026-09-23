@@ -6473,6 +6473,54 @@ const canonicalCatchUpError = new MarketplaceRegressionHttpError(
   },
 );
 assert.equal(isRetryableCanonicalReadError(canonicalCatchUpError), true);
+const workListingAuthorityCatchUpError = new MarketplaceRegressionHttpError(
+  "https://computer.proofofwork.me/api/v1/token?asset=WORK&fresh=1",
+  503,
+  {
+    details: {
+      code: "CANONICAL_WORK_LISTING_AUTHORITY_UNAVAILABLE",
+      requiredSource: "proof-token-market-core-gettxout-v1",
+    },
+    error: "Fresh WORK listing authority is still catching up to Bitcoin Core.",
+  },
+);
+assert.equal(
+  isRetryableCanonicalReadError(workListingAuthorityCatchUpError),
+  true,
+);
+assert.equal(
+  isRetryableCanonicalReadError(
+    new MarketplaceRegressionHttpError(
+      "https://computer.proofofwork.me/api/v1/token?asset=WORK&fresh=1",
+      503,
+      {
+        details: {
+          code: "CANONICAL_WORK_LISTING_AUTHORITY_UNAVAILABLE",
+          requiredSource: "different-authority-model",
+        },
+        error: "Authority is unavailable.",
+      },
+    ),
+  ),
+  false,
+);
+assert.equal(
+  isRetryableCanonicalReadError(
+    new MarketplaceRegressionHttpError(
+      "https://computer.proofofwork.me/api/v1/token?asset=WORK&fresh=1",
+      503,
+      {
+        details: {
+          code: "CANONICAL_WORK_LISTING_AUTHORITY_UNAVAILABLE",
+          fault: { active: true },
+          requiredSource: "proof-token-market-core-gettxout-v1",
+        },
+        error: "Authority is unavailable.",
+      },
+    ),
+  ),
+  false,
+);
 assert.equal(
   isRetryableCanonicalReadError(
     new MarketplaceRegressionHttpError(
