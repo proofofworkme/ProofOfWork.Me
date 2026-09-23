@@ -1,7 +1,7 @@
 {
   "audit": "22",
   "localDate": "2026-09-22",
-  "continuedThroughUtc": "2026-09-23T02:48:39Z",
+  "continuedThroughUtc": "2026-09-23T02:58:35Z",
   "baseRevision": "a18cae48fdf486eca8168a28fdd114c33c3f7dfb",
   "predecessors": [
     {
@@ -34,7 +34,15 @@
     },
     "mutations": 0,
     "productionCleanup": 0,
-    "deploymentWorkflowFound": false
+    "githubActionsDeploymentWorkflowFound": false,
+    "hostSideReleasePublishersFound": [
+      "deploy/proofofwork-ui-release-stage.py",
+      "deploy/proofofwork-ui-release-publish.sh",
+      "deploy/proofofwork-ui-release-provenance.sh",
+      "deploy/proofofwork-node-release-publish.sh",
+      "deploy/proofofwork-node-release-exchange.py"
+    ],
+    "hostSidePublisherAccess": "not available; SSH authentication was denied"
   },
   "checks": [
     {
@@ -172,7 +180,7 @@
     "canonicalTransitionHistory": "untouched",
     "protocolRecordsLedgersRefundsEvidenceKeysSeedMaterial": "untouched"
   },
-  "reportSha256": "a26c4dcdd1d945ce105d23a5928a8dc0be30d8bdf6216dc3b04af870c823bbc2",
+  "reportSha256": "07741d3561488c3aab8091125136ba573662a6db2817b7aebb031cf522b74a69",
   "newFindings": [
     {
       "id": "H22-01",
@@ -197,7 +205,7 @@
       "node22": "passed",
       "node24": "passed"
     },
-    "productionDeployment": "not performed; no deployment workflow or authenticated host path"
+    "productionDeployment": "not performed; guarded host-side publisher tools exist, but SSH authentication and safe recovery proof were unavailable"
   },
   "postMergeLiveVerification": {
     "command": "POW_API_BASE=https://computer.proofofwork.me npm run check:marketplace-regressions",
