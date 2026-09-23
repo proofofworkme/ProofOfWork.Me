@@ -1,7 +1,7 @@
 {
   "audit": "22",
   "localDate": "2026-09-22",
-  "continuedThroughUtc": "2026-09-23T02:23:14Z",
+  "continuedThroughUtc": "2026-09-23T02:48:39Z",
   "baseRevision": "a18cae48fdf486eca8168a28fdd114c33c3f7dfb",
   "predecessors": [
     {
@@ -143,6 +143,14 @@
         }
       ],
       "productionBytesDeleted": 0
+    },
+    {
+      "command": "Post-merge POW_API_BASE=https://computer.proofofwork.me npm run check:marketplace-regressions",
+      "target": "https://computer.proofofwork.me",
+      "result": "failed",
+      "finding": "H9-01 exact WORK closed-listing history returned pre-unit relic 4e9cedced2252cd183608dc9176415a913c4f6aa5e8307a732179a2240b6feb1 after source PR merged",
+      "requestMs": 37401,
+      "gateMs": 39689
     }
   ],
   "priorFindingRecheck": {
@@ -151,7 +159,7 @@
     "H20-04": "local browser regression passes; production deployment pending",
     "H19-02": "local transaction-detail strict-unavailable tests pass; no live fault injection",
     "H19-03": "local fresh-status cache/reorg tests pass; no live fault injection",
-    "H9-01": "still reproduced by live production gate; local code fix tests pass",
+    "H9-01": "post-merge live gate still reproduces exact closed-listing relic leak; source fix is merged but not deployed",
     "H6-03": "complete cursor/snapshot tests pass; live mail regression passes 8 cases",
     "H7-01/H10-07/A11-03": "local summary preview bounded to 40; production verification pending",
     "H5-01/H13-01": "open; Audit 21 host capacity is stale and not refreshed",
@@ -164,7 +172,7 @@
     "canonicalTransitionHistory": "untouched",
     "protocolRecordsLedgersRefundsEvidenceKeysSeedMaterial": "untouched"
   },
-  "reportSha256": "b4870f9d8658ef3e1895d3f83067739ab36000483b1ba59a8e99c0c025dfee79",
+  "reportSha256": "a26c4dcdd1d945ce105d23a5928a8dc0be30d8bdf6216dc3b04af870c823bbc2",
   "newFindings": [
     {
       "id": "H22-01",
@@ -175,5 +183,29 @@
       "correction": "Return TX_DETAIL_UNAVAILABLE unless first-party Core proves absence.",
       "verification": "server/transaction-detail.test.mjs passes 7/7; production deployment pending."
     }
-  ]
+  ],
+  "sourceIntegration": {
+    "sourceCommit": "365d80faddcb6cb13275d2ba606fc18530158c30",
+    "pullRequest": "https://github.com/proofofworkme/ProofOfWork.Me/pull/55",
+    "pullRequestState": "merged",
+    "mergedAtUtc": "2026-09-23T02:46:06Z",
+    "mergeCommit": "17b0101c71f62a07d1b393115040cf6e5268ba73",
+    "mergeTree": "194a87425fe3266a6fd04f4f495813cf0745bcb0",
+    "preMergeExpectedTree": "194a87425fe3266a6fd04f4f495813cf0745bcb0",
+    "repositoryHygieneCi": {
+      "node20": "passed",
+      "node22": "passed",
+      "node24": "passed"
+    },
+    "productionDeployment": "not performed; no deployment workflow or authenticated host path"
+  },
+  "postMergeLiveVerification": {
+    "command": "POW_API_BASE=https://computer.proofofwork.me npm run check:marketplace-regressions",
+    "result": "failed",
+    "finding": "H9-01 exact WORK closed-listing history still returns pre-unit relic 4e9cedced2252cd183608dc9176415a913c4f6aa5e8307a732179a2240b6feb1",
+    "requestMs": 37401,
+    "gateMs": 39689,
+    "productionWrites": 0,
+    "note": "The gate stopped before complete token-history cursor exhaustion and sealed/stale-item reconciliation."
+  }
 }
