@@ -4,7 +4,7 @@
     "dateLocal": "2026-09-23 through 2026-09-24",
     "completedAtUtc": "2026-09-24T05:01:50Z",
     "report": "audits/2026-09-24-production-comprehensive-health-data-integrity-audit-23.md",
-    "reportSha256": "1b2e1bebc5502a8729ff68afb4562983377a625b0234d4785e47a7bc0acab137",
+    "reportSha256": "a387cd397866cd212dc8c40473b6d6ea3ed5cae4084a6e0fd31dde73ca0bbc1c",
     "predecessor": {
       "report": "audits/2026-09-22-production-comprehensive-health-data-integrity-audit-22.md",
       "reportSha256": "07741d3561488c3aab8091125136ba573662a6db2817b7aebb031cf522b74a69",
@@ -1089,7 +1089,7 @@
   "pending": [
     "Verify the September 25 03:18:48 UTC logical-backup service run; if it fails, use the installed predicate label to investigate the exact stage.",
     "Continue UI disk-floor monitoring; the UI VPS had 15,052,853,248 B free and 4.02 GiB above its 10 GiB systemd free-space floor at 04:59:58 UTC.",
-    "Measure transition-table/database growth and performance over a fixed window before planning any replay-safe redesign."
+    "Measure transition-table size at consistent intervals and align each sample with exact Core/indexer heights; the 05:00-to-05:20 size delta is not a stable growth rate. Prototype reduction only on an isolated restore and prove exact full replay before considering migration."
   ],
   "approvalBoundary": "No changes to protocol records, user balances, credits, transactions, ledgers, refunds, chain history, database rows, WAL, keys, seed material, or preserved logical backups.",
   "reviewedHelperScripts": {
@@ -1188,7 +1188,50 @@
         "passed": 31,
         "failed": 0
       },
-      "pending": "Merge the documentation-only Marketplace correction; no production deployment is needed."
+      "pending": "As of 05:15 UTC, merge the documentation-only Marketplace correction; no production deployment was needed."
+    },
+    {
+      "observedAtUtc": "2026-09-24T05:18:15Z",
+      "finding": "H20-02 closure",
+      "result": "Documentation correction merged in PR #63 as ce514230244ad577684c3ec24e7a35b37a6234f8; Node 20/22/24 hygiene checks passed; no production deployment required."
+    },
+    {
+      "observedAtUtc": "2026-09-24T05:20:47.938Z",
+      "finding": "H8-05/H10-02 measured growth checkpoint",
+      "databaseBytes": 33508563991,
+      "transitionRelation": {
+        "name": "proof_indexer.work_amo_block_transitions",
+        "totalBytes": 32103456768,
+        "heapBytes": 5914624,
+        "indexBytes": 2826240,
+        "toastBytes": 32094683136,
+        "statisticsLiveRowsEstimate": 8738,
+        "statisticsDeadRowsEstimate": 0,
+        "exactRowsAtUtc": "2026-09-24T05:22:38.909Z",
+        "exactRows": 8738,
+        "distinctHeights": 8738,
+        "minHeight": 959621,
+        "maxHeight": 968358
+      },
+      "comparison": {
+        "baselineLabel": "about 2026-09-24 05:00 UTC; report has minute precision",
+        "databaseBaselineBytes": 33448877079,
+        "databaseDeltaBytes": 59686912,
+        "transitionBaselineBytes": 32043941888,
+        "transitionDeltaBytes": 59514880,
+        "interpretation": "Real relation-size difference; earlier row count was a PostgreSQL statistics estimate. The interval does not establish a stable growth rate."
+      },
+      "payloadMetadataOnly": {
+        "latestTenOpeningStateBytesEach": 2522140,
+        "latestTenClosingStateBytesEach": 2522140,
+        "aggregateAverageOpeningStateBytes": 2511170,
+        "aggregateAverageClosingStateBytes": 2511172,
+        "aggregateMaximumStateBytes": 2522140,
+        "storedJsonbRead": false
+      },
+      "fullNodeTipResampled": false,
+      "liveDatabaseChanged": false,
+      "recommendation": "Prototype a compact representation on an isolated restore; preserve the immutable live table until full replay and exact commitments prove equivalent."
     }
   ]
 }
