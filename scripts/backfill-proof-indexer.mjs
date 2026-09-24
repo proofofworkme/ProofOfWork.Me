@@ -2937,8 +2937,14 @@ function canonicalScanWorkListingAmountRecord(item, canonicalEventRow) {
   const authorization = objectValue(source.saleAuthorization);
   const present = (value) =>
     value !== undefined && value !== null && value !== "";
+  const opening = source.kind === "token-listing";
+  const sealing = source.kind === "token-listing-sealed";
+  const closing = source.kind === "token-listing-closed";
+  const expectedSourceLabel = closing
+    ? "token-closed-listings"
+    : "token-listings";
   if (
-    source.kind !== "token-listing" ||
+    (!opening && !sealing && !closing) ||
     !isWorkTokenId(source.tokenId) ||
     source.amountStorageModel !== WORK_ATOMIC_PROJECTION_MODEL ||
     !present(source.amountAtoms) ||
@@ -2952,6 +2958,39 @@ function canonicalScanWorkListingAmountRecord(item, canonicalEventRow) {
   const eventAuthorization = objectValue(eventPayload.saleAuthorization);
   const position = canonicalProtocolPosition(source);
   const eventPayloadPosition = canonicalProtocolPosition(eventPayload);
+  const exactSealPosition = (candidate, actionPosition) => Boolean(
+    candidate.sealTxid === candidate.txid &&
+    candidate.sealConfirmed === true &&
+    candidate.listingId !== candidate.txid &&
+    /^[0-9a-f]{64}$/u.test(String(candidate.listingId ?? "")) &&
+    candidate.sealBlockHash === candidate.blockHash &&
+    [
+      ["sealBlockHeight", "blockHeight"],
+      ["sealBlockIndex", "blockIndex"],
+      ["sealProtocolVout", "protocolVout"],
+      ["sealRecordOrdinal", "recordOrdinal"],
+    ].every(([sealField, positionField]) =>
+      present(candidate[sealField]) &&
+      Number(candidate[sealField]) === actionPosition?.[positionField]
+    )
+  );
+  const exactClosePosition = (candidate, actionPosition) => Boolean(
+    candidate.closedTxid === candidate.txid &&
+    candidate.closedConfirmed === true &&
+    candidate.listingId !== candidate.txid &&
+    /^[0-9a-f]{64}$/u.test(String(candidate.listingId ?? "")) &&
+    candidate.closedBlockHash === candidate.blockHash &&
+    (!present(candidate.closeTxid) || candidate.closeTxid === candidate.txid) &&
+    [
+      ["closedBlockHeight", "blockHeight"],
+      ["closedBlockIndex", "blockIndex"],
+      ["closedProtocolVout", "protocolVout"],
+      ["closedRecordOrdinal", "recordOrdinal"],
+    ].every(([closedField, positionField]) =>
+      present(candidate[closedField]) &&
+      Number(candidate[closedField]) === actionPosition?.[positionField]
+    )
+  );
   const exactPosition = Boolean(
     position &&
     eventPayloadPosition &&
@@ -2971,12 +3010,16 @@ function canonicalScanWorkListingAmountRecord(item, canonicalEventRow) {
   );
   if (
     (present(source.protocol) && source.protocol !== "pwt1") ||
-    source.indexedFrom !== "token-listings" ||
+    source.indexedFrom !== expectedSourceLabel ||
     source.network !== NETWORK ||
     source.status !== "confirmed" ||
     source.valid !== true ||
     source.confirmed !== true ||
-    source.listingId !== source.txid ||
+    (opening
+      ? source.listingId !== source.txid
+      : sealing
+        ? !exactSealPosition(source, position)
+        : !exactClosePosition(source, position)) ||
     !/^[0-9a-f]{64}$/u.test(String(source.txid ?? "")) ||
     !/^[0-9a-f]{64}$/u.test(String(source.blockHash ?? "")) ||
     authorization.version !== "pwt-sale-v2" ||
@@ -2998,12 +3041,14 @@ function canonicalScanWorkListingAmountRecord(item, canonicalEventRow) {
     eventPayload.network !== source.network ||
     eventPayload.txid !== source.txid ||
     (present(eventPayload.protocol) && eventPayload.protocol !== "pwt1") ||
-    eventPayload.indexedFrom !== "token-listings" ||
+    eventPayload.indexedFrom !== expectedSourceLabel ||
     eventPayload.kind !== source.kind ||
     eventPayload.status !== "confirmed" ||
     eventPayload.valid !== true ||
     eventPayload.confirmed !== true ||
     eventPayload.listingId !== source.listingId ||
+    (sealing && !exactSealPosition(eventPayload, eventPayloadPosition)) ||
+    (closing && !exactClosePosition(eventPayload, eventPayloadPosition)) ||
     eventPayload.blockHash !== source.blockHash ||
     eventPayload.tokenId !== source.tokenId ||
     eventPayload.amountStorageModel !== WORK_ATOMIC_PROJECTION_MODEL ||
@@ -3011,7 +3056,7 @@ function canonicalScanWorkListingAmountRecord(item, canonicalEventRow) {
     !exactPosition
   ) {
     throw new TypeError(
-      "Confirmed PWT WORK listing has no exact canonical Q8 conversion witness.",
+      "Confirmed PWT WORK listing action has no exact canonical Q8 conversion witness.",
     );
   }
   const amountAtoms = normalizeWorkAtoms(source.amountAtoms);
@@ -3023,7 +3068,7 @@ function canonicalScanWorkListingAmountRecord(item, canonicalEventRow) {
     parseWorkAmountToAtoms(eventPayload.amount) !== amountAtoms
   ) {
     throw new TypeError(
-      "Confirmed PWT WORK listing signed Q8 amount conflicts with its canonical event.",
+      "Confirmed PWT WORK listing action signed Q8 amount conflicts with its canonical event.",
     );
   }
   // Keep signed terms in the event and listing payload; omit the duplicate only while converting units.

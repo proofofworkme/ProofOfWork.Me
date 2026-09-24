@@ -86489,6 +86489,161 @@ check("confirmed scan converts only exact equal Q8 WORK listing aliases", () => 
     () => conversionRecord({ ...listing, amount: "1001" }, canonicalEvent),
     /signed Q8 amount conflicts/u,
   );
+  const sealTxid =
+    "798577990868f3d1efe23df318fb8e5afc5d5e81b4f402325af4dc2f22c25c90";
+  const seal = {
+    ...listing,
+    amount: "100",
+    amountAtoms: "10000000000",
+    blockHash:
+      "00000000000000000000b07a33091542f507a5e7e4895940d70331743b409455",
+    blockHeight: 958_582,
+    blockIndex: 988,
+    kind: "token-listing-sealed",
+    listingId:
+      "0a8066e165028c7949aea863a2836c1ca14ec959651872cd42722752854571cd",
+    saleAuthorization: {
+      ...listing.saleAuthorization,
+      amountAtoms: "10000000000",
+    },
+    sealBlockHash:
+      "00000000000000000000b07a33091542f507a5e7e4895940d70331743b409455",
+    sealBlockHeight: 958_582,
+    sealBlockIndex: 988,
+    sealConfirmed: true,
+    sealProtocolVout: 1,
+    sealRecordOrdinal: 0,
+    sealTxid,
+    txid: sealTxid,
+  };
+  const sealEvent = {
+    ...canonicalEvent,
+    block_height: 958_582,
+    block_index: 988,
+    kind: seal.kind,
+    payload: structuredClone(seal),
+    txid: sealTxid,
+  };
+  const originalSeal = structuredClone(seal);
+  const sealConversion = conversionRecord(seal, sealEvent);
+  assert.equal(
+    workAmountSubatomsFromRecord(sealConversion, {
+      sourceModel: WORK_ATOMIC_PROJECTION_MODEL,
+    }),
+    legacyWorkAtomsToSubatoms("10000000000"),
+  );
+  assert.equal(Object.hasOwn(sealConversion.saleAuthorization, "amountAtoms"), false);
+  assert.deepEqual(seal, originalSeal, "signed seal action remains unchanged");
+  for (const invalidSeal of [
+    { ...seal, sealTxid: "f".repeat(64) },
+    { ...seal, sealConfirmed: false },
+    { ...seal, sealBlockHeight: 958_581 },
+    { ...seal, sealBlockHash: "f".repeat(64) },
+    { ...seal, listingId: sealTxid },
+  ]) {
+    assert.throws(
+      () => conversionRecord(invalidSeal, sealEvent),
+      /no exact canonical Q8 conversion witness/u,
+    );
+  }
+  assert.throws(
+    () => conversionRecord(seal, {
+      ...sealEvent,
+      payload: { ...sealEvent.payload, sealRecordOrdinal: 1 },
+    }),
+    /no exact canonical Q8 conversion witness/u,
+  );
+  assert.throws(
+    () => conversionRecord({
+      ...seal,
+      saleAuthorization: {
+        ...seal.saleAuthorization,
+        amountAtoms: "10000000001",
+      },
+    }, sealEvent),
+    /signed Q8 amount conflicts/u,
+  );
+
+  const closeTxid =
+    "b16deae4ec27ea1f02dafd8cb5f55d6c916db7be17141cfb31c0f6d40590ae7a";
+  const close = {
+    ...listing,
+    amount: "2000",
+    amountAtoms: "200000000000",
+    blockHash:
+      "0000000000000000000071e005da138f6333f0be43f6e8cb53f74a9029ab7e0e",
+    blockHeight: 959_024,
+    blockIndex: 622,
+    closedBlockHash:
+      "0000000000000000000071e005da138f6333f0be43f6e8cb53f74a9029ab7e0e",
+    closedBlockHeight: 959_024,
+    closedBlockIndex: 622,
+    closedConfirmed: true,
+    closedProtocolVout: 2,
+    closedRecordOrdinal: 0,
+    closedTxid: closeTxid,
+    indexedFrom: "token-closed-listings",
+    kind: "token-listing-closed",
+    listingId:
+      "451f5a56e66b26c66b37a155c9ac711074a2ad8a6c91b96735c1c4e0f4fc98ac",
+    protocolVout: 2,
+    saleAuthorization: {
+      ...listing.saleAuthorization,
+      amountAtoms: "200000000000",
+    },
+    txid: closeTxid,
+  };
+  const closeEvent = {
+    ...canonicalEvent,
+    block_height: 959_024,
+    block_index: 622,
+    kind: close.kind,
+    op_return_vout: 2,
+    payload: structuredClone(close),
+    txid: closeTxid,
+  };
+  const originalClose = structuredClone(close);
+  const closeConversion = conversionRecord(close, closeEvent);
+  assert.equal(
+    workAmountSubatomsFromRecord(closeConversion, {
+      sourceModel: WORK_ATOMIC_PROJECTION_MODEL,
+    }),
+    legacyWorkAtomsToSubatoms("200000000000"),
+  );
+  assert.equal(Object.hasOwn(closeConversion.saleAuthorization, "amountAtoms"), false);
+  assert.deepEqual(close, originalClose, "signed close action remains unchanged");
+  for (const invalidClose of [
+    { ...close, closedTxid: "f".repeat(64) },
+    { ...close, closedConfirmed: false },
+    { ...close, closedBlockHeight: 959_023 },
+    { ...close, closedBlockHash: "f".repeat(64) },
+    { ...close, closedProtocolVout: 1 },
+    { ...close, listingId: closeTxid },
+    { ...close, indexedFrom: "token-listings" },
+  ]) {
+    assert.throws(
+      () => conversionRecord(invalidClose, closeEvent),
+      /no exact canonical Q8 conversion witness/u,
+    );
+  }
+  assert.throws(
+    () => conversionRecord(close, {
+      ...closeEvent,
+      payload: { ...closeEvent.payload, closedRecordOrdinal: 1 },
+    }),
+    /no exact canonical Q8 conversion witness/u,
+  );
+  assert.throws(
+    () => conversionRecord({
+      ...close,
+      saleAuthorization: {
+        ...close.saleAuthorization,
+        amountAtoms: "200000000001",
+      },
+    }, closeEvent),
+    /signed Q8 amount conflicts/u,
+  );
+
   const singleAlias = {
     ...listing,
     saleAuthorization: { version: "pwt-sale-v2" },
