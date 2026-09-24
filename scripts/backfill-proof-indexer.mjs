@@ -2865,6 +2865,73 @@ function workProjectionItem(item, options = {}) {
   }
 }
 
+function retainedPwtRangeReplayWorkListingAmountRecord(item) {
+  const source = objectValue(item);
+  if (source.kind !== "token-listing") {
+    return source;
+  }
+  const observed =
+    (source.txid ===
+      "cc15066d4d3902d4dd5864088f75addffc068879e2d1eedfa4f147609574dd92" &&
+      source.blockHeight === 958349 &&
+      source.blockIndex === 642 &&
+      source.blockHash ===
+        "000000000000000000018efd61c3a9f29faa51298c7a9611223861d94dc4b2f1") ||
+    (source.txid ===
+      "9c79f121eb73f079b330950a2890ba2029416e5b75bafadc642623c66fd963f9" &&
+      source.blockHeight === 958351 &&
+      source.blockIndex === 376 &&
+      source.blockHash ===
+        "0000000000000000000037356c655e05cbf5b78ade5a4664fe2b5d9e4dfe7d82");
+  if (!observed) {
+    return source;
+  }
+  const authorization = objectValue(source.saleAuthorization);
+  const present = (value) =>
+    value !== undefined && value !== null && value !== "";
+  if (
+    source.protocol !== "pwt1" ||
+    source.network !== NETWORK ||
+    source.status !== "confirmed" ||
+    source.valid !== true ||
+    source.confirmed !== true ||
+    source.listingId !== source.txid ||
+    source.protocolVout !== 1 ||
+    source.recordOrdinal !== 0 ||
+    !isWorkTokenId(source.tokenId) ||
+    source.amountStorageModel !== WORK_ATOMIC_PROJECTION_MODEL ||
+    authorization.version !== "pwt-sale-v2" ||
+    source.amount !== "1024" ||
+    !present(source.amountAtoms) ||
+    !present(authorization.amountAtoms) ||
+    [
+      source.tokenAmount,
+      source.tokenAmountAtoms,
+      source.tokenAmountSubatoms,
+      source.amountSubatoms,
+      authorization.amount,
+      authorization.amountSubatoms,
+    ].some(present)
+  ) {
+    throw new TypeError(
+      "Retained PWT range replay WORK listing has an unexpected amount shape.",
+    );
+  }
+  const amountAtoms = normalizeWorkAtoms(source.amountAtoms);
+  if (
+    amountAtoms !== "102400000000" ||
+    normalizeWorkAtoms(authorization.amountAtoms) !== amountAtoms
+  ) {
+    throw new TypeError(
+      "Retained PWT range replay WORK listing signed amount conflicts.",
+    );
+  }
+  // The signed term remains in the stored payload; omit its duplicate only for unit conversion.
+  const { amountAtoms: _duplicateAmountAtoms, ...authorizationForConversion } =
+    authorization;
+  return { ...source, saleAuthorization: authorizationForConversion };
+}
+
 function workBalanceAtoms(item, fieldNames, { signed = false } = {}) {
   const source = objectValue(item);
   const atomField = fieldNames.find(
@@ -15003,7 +15070,7 @@ async function upsertProjection(
   sourceLabel,
   item,
   status,
-  { canonicalEventRow = null } = {},
+  { canonicalEventRow = null, retainedPwtRangeReplayMarketplace = false } = {},
 ) {
   const projectionKind = eventKind(item, sourceLabel);
   if (sourceLabel === "work-usd-quotes" && projectionKind === "work-usd-quote") {
@@ -15261,15 +15328,20 @@ async function upsertProjection(
     );
     const storedListingAmount =
       listingProjectionModel === WORK_SUBATOM_PROJECTION_MODEL
-        ? workAmountSubatomsFromRecord(projectedItem, {
-            allowLegacy: true,
-            allowZero: false,
-            sourceModel:
-              projectedItem.amountStorageModel ===
-                WORK_SUBATOM_PROJECTION_MODEL
-                ? WORK_SUBATOM_PROJECTION_MODEL
-                : WORK_ATOMIC_PROJECTION_MODEL,
-          })
+        ? workAmountSubatomsFromRecord(
+            retainedPwtRangeReplayMarketplace
+              ? retainedPwtRangeReplayWorkListingAmountRecord(projectedItem)
+              : projectedItem,
+            {
+              allowLegacy: true,
+              allowZero: false,
+              sourceModel:
+                projectedItem.amountStorageModel ===
+                  WORK_SUBATOM_PROJECTION_MODEL
+                  ? WORK_SUBATOM_PROJECTION_MODEL
+                  : WORK_ATOMIC_PROJECTION_MODEL,
+            },
+          )
         : listingProjectionModel === WORK_ATOMIC_PROJECTION_MODEL
           ? workBalanceAtoms(projectedItem, [
               "amountAtoms",
@@ -21816,6 +21888,7 @@ async function prepareCanonicalPwtRangeReplay(client) {
         sourceLabelForProtocolItem(row.payload),
         row.payload,
         row.status,
+        { retainedPwtRangeReplayMarketplace: true },
       );
     }
     const baseCreditReplay =

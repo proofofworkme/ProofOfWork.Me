@@ -45515,8 +45515,8 @@ check("PWT range replay preserves pre-range issuance oracles while resetting in-
         }
         calls.push({ key, meta: value });
       },
-      upsertProjection: async (_client, source, item) =>
-        calls.push({ item, source }),
+      upsertProjection: async (_client, source, item, _status, options) =>
+        calls.push({ item, options, source }),
       verifyCanonicalIncbPwtRangeReplayCoreFacts: async (targets) => {
         calls.push("verify-core");
         return targets.map(
@@ -45673,6 +45673,13 @@ check("PWT range replay preserves pre-range issuance oracles while resetting in-
   );
   assert.equal(prepared.firstMarketplaceHeight, 950246);
   assert.equal(prepared.pinnedIncbTargets.length, 4);
+  assert.deepEqual(
+    JSON.parse(
+      JSON.stringify(calls.find((call) => call.source === "token-listings")?.options),
+    ),
+    { retainedPwtRangeReplayMarketplace: true },
+    "only retained marketplace reprojection receives the historical alias scope",
+  );
   assert.equal(calls[0].sql, "BEGIN ISOLATION LEVEL SERIALIZABLE");
   assert.equal(calls.at(-1).sql, "COMMIT");
   const sql = calls.filter((call) => call.sql).map((call) => call.sql).join("\n");
@@ -85905,6 +85912,98 @@ check("post-V5 INCB repair dry run binds stored bond and accepted WORK before an
   assert.equal(changedWorkClient.queries.at(-1), "ROLLBACK");
   assert.ok(changedWorkClient.queries.every((query) =>
     !/^(?:DELETE|INSERT|UPDATE|COMMIT|LOCK TABLE)/u.test(query)));
+});
+
+check("retained PWT replay normalizes only two verified equal WORK listing aliases", () => {
+  const conversionRecord = isolatedFunction(
+    BACKFILL_PATH,
+    "retainedPwtRangeReplayWorkListingAmountRecord",
+    {
+      NETWORK: "livenet",
+      WORK_ATOMIC_PROJECTION_MODEL,
+      isWorkTokenId,
+      normalizeWorkAtoms,
+      objectValue: (value) =>
+        value && typeof value === "object" && !Array.isArray(value)
+          ? value
+          : {},
+    },
+  );
+  const observed = [
+    {
+      blockHash:
+        "000000000000000000018efd61c3a9f29faa51298c7a9611223861d94dc4b2f1",
+      blockHeight: 958349,
+      blockIndex: 642,
+      txid: "cc15066d4d3902d4dd5864088f75addffc068879e2d1eedfa4f147609574dd92",
+    },
+    {
+      blockHash:
+        "0000000000000000000037356c655e05cbf5b78ade5a4664fe2b5d9e4dfe7d82",
+      blockHeight: 958351,
+      blockIndex: 376,
+      txid: "9c79f121eb73f079b330950a2890ba2029416e5b75bafadc642623c66fd963f9",
+    },
+  ];
+  for (const identity of observed) {
+    const listing = {
+      ...identity,
+      amount: "1024",
+      amountAtoms: "102400000000",
+      amountStorageModel: WORK_ATOMIC_PROJECTION_MODEL,
+      confirmed: true,
+      kind: "token-listing",
+      listingId: identity.txid,
+      network: "livenet",
+      protocol: "pwt1",
+      protocolVout: 1,
+      recordOrdinal: 0,
+      saleAuthorization: {
+        amountAtoms: "102400000000",
+        nonce: "signed-term-must-survive",
+        version: "pwt-sale-v2",
+      },
+      status: "confirmed",
+      tokenId: WORK_TOKEN_ID,
+      valid: true,
+    };
+    const original = structuredClone(listing);
+    assert.throws(
+      () =>
+        workAmountSubatomsFromRecord(listing, {
+          sourceModel: WORK_ATOMIC_PROJECTION_MODEL,
+        }),
+      /Legacy WORK amount aliases are ambiguous/u,
+    );
+    const conversion = conversionRecord(listing);
+    assert.equal(conversion.amountAtoms, listing.amountAtoms);
+    assert.equal(Object.hasOwn(conversion.saleAuthorization, "amountAtoms"), false);
+    assert.equal(conversion.saleAuthorization.nonce, listing.saleAuthorization.nonce);
+    assert.equal(
+      workAmountSubatomsFromRecord(conversion, {
+        sourceModel: WORK_ATOMIC_PROJECTION_MODEL,
+      }),
+      legacyWorkAtomsToSubatoms("102400000000"),
+    );
+    assert.deepEqual(listing, original, "signed event and listing terms stay unchanged");
+    assert.throws(
+      () =>
+        conversionRecord({
+          ...listing,
+          saleAuthorization: {
+            ...listing.saleAuthorization,
+            amountAtoms: "102400000001",
+          },
+        }),
+      /signed amount conflicts/u,
+    );
+    assert.throws(
+      () => conversionRecord({ ...listing, amountSubatoms: "1" }),
+      /unexpected amount shape/u,
+    );
+    const unrelated = { ...listing, txid: "f".repeat(64) };
+    assert.equal(conversionRecord(unrelated), unrelated);
+  }
 });
 
 let failures = 0;
