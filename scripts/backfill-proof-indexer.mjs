@@ -21027,7 +21027,7 @@ async function pwtRangeReplayProtectedSnapshotState(
     `
       WITH explicit_references AS MATERIALIZED (
         SELECT DISTINCT
-          'snapshot:' || payload->>'issuanceValueSnapshotId' AS reference_id,
+          'snapshot:' || (payload->>'issuanceValueSnapshotId') AS reference_id,
           payload->>'issuanceValueSnapshotId' AS snapshot_id
         FROM proof_indexer.events
         WHERE network = $1
