@@ -223,6 +223,19 @@ function boostAuthorAddress(item: BoostFeedItem) {
   return item.authorAddress.trim();
 }
 
+function sameBoostWalletAddress(left: string, right: string) {
+  const leftAddress = left.trim();
+  const rightAddress = right.trim();
+  if (!leftAddress || !rightAddress) return false;
+  if (leftAddress === rightAddress) return true;
+  try {
+    return Buffer.from(scriptForAddress(leftAddress, "livenet", "Boost address"))
+      .equals(Buffer.from(scriptForAddress(rightAddress, "livenet", "Boost address")));
+  } catch {
+    return false;
+  }
+}
+
 function boostAuthorId(item: BoostFeedItem) {
   return normalizeBoostId(item.authorId || item.profile?.id || "");
 }
@@ -269,8 +282,7 @@ function authorLabel(
   const activeWalletOwnsPost =
     activeIdentity &&
     activeAddress &&
-    item.authorAddress.trim() ===
-      activeAddress.trim();
+    sameBoostWalletAddress(item.authorAddress, activeAddress);
   if (activeWalletOwnsPost) {
     return `${activeIdentity.id}@proofofwork.me`;
   }
@@ -699,14 +711,8 @@ function BoostPost({
   const displayedProofSignalQ8 = isPaidAction ? actionSignalQ8 : boostProofSignalQ8(item);
   const workSignalValueQ8 = boostWorkSignalValueQ8(item);
   const workSignalSubatoms = boostWorkSignalSubatoms(item);
-  const connectedOwner =
-    activeAddress &&
-    ownerAddress &&
-      activeAddress.trim() === ownerAddress.trim();
-  const connectedAuthor =
-    activeAddress &&
-    authorAddress &&
-    activeAddress.trim() === authorAddress;
+  const connectedOwner = sameBoostWalletAddress(activeAddress, ownerAddress);
+  const connectedAuthor = sameBoostWalletAddress(activeAddress, authorAddress);
   const actionsLocked = Boolean(actionBusy);
   const followAction: BoostFollowAction = item.viewerFollowsAuthor
     ? "unfollow"
@@ -1043,7 +1049,7 @@ export default function BoostRoot({
     for (const item of items) {
       const authorAddress = boostAuthorAddress(item);
       const key = authorAddress;
-      if (!key || key === activeAddress || item.viewerFollowsAuthor) {
+      if (!key || sameBoostWalletAddress(key, activeAddress) || item.viewerFollowsAuthor) {
         continue;
       }
       const current = byAddress.get(key);
@@ -1099,12 +1105,7 @@ export default function BoostRoot({
   const profileSubject = payload?.profileSubject;
   const profileSubjectAddress = profileSubject?.address ?? "";
   const profileSubjectId = normalizeBoostId(profileSubject?.id ?? "");
-  const profileSelfView = Boolean(
-    address.trim() &&
-    profileSubjectAddress.trim() &&
-      address.trim() ===
-        profileSubjectAddress.trim(),
-  );
+  const profileSelfView = sameBoostWalletAddress(address, profileSubjectAddress);
   const profileFollowAction: BoostFollowAction = profileSubject?.viewerFollowsProfile
     ? "unfollow"
     : "follow";
@@ -1392,16 +1393,13 @@ export default function BoostRoot({
       setStatus({ tone: "bad", text: "Boost follow target is invalid." });
       return;
     }
-    if (
-      address &&
-      targetAddress.trim() === address.trim()
-    ) {
+    if (sameBoostWalletAddress(targetAddress, address)) {
       setStatus({ tone: "bad", text: "Choose another Boost profile to follow." });
       return;
     }
     try {
       const ready = await ensureBoostWriterReady(false);
-      if (targetAddress.trim() === ready.walletAddress.trim()) {
+      if (sameBoostWalletAddress(targetAddress, ready.walletAddress)) {
         setStatus({ tone: "bad", text: "Choose another Boost profile to follow." });
         return;
       }

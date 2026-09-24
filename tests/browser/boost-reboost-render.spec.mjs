@@ -268,3 +268,63 @@ test("Computer Boost entry buttons open the shared Proof, WORK, and Files compos
   await expect(composer.getByLabel("Proof signal")).toHaveValue("546");
   await expect(page.locator(".compose-pane")).toHaveCount(0);
 });
+
+test("case-equivalent Bech32 own profile never offers Follow", async ({ page }) => {
+  const owner = "bc1qqyqszqgpqyqszqgpqyqszqgpqyqszqgpyfl4f3";
+  const ownerAlias = owner.toUpperCase();
+  await page.addInitScript(({ walletAddress }) => {
+    window.unisat = {
+      getAccounts: async () => [walletAddress],
+      requestAccounts: async () => [walletAddress],
+      getNetwork: async () => "livenet",
+    };
+  }, { walletAddress: owner });
+  await page.route("**/api/v1/**", async (route) => {
+    if (route.request().method() !== "GET") return route.abort("blockedbyclient");
+    const pathname = new URL(route.request().url()).pathname;
+    if (pathname === "/api/v1/boost") {
+      return route.fulfill({ json: {
+        complete: true,
+        network: "livenet",
+        items: [{
+          authorAddress: ownerAlias,
+          boostTxid: ORIGINAL_TXID,
+          confirmed: true,
+          createdAt: "2026-09-05T07:00:00.000Z",
+          kind: "boost-post",
+          proofSignalSats: 546,
+          proofSignalQ8: "54600000000",
+          text: "My own Boost",
+          totalSignalQ8: "54600000000",
+          txid: ORIGINAL_TXID,
+        }],
+        totalCount: 1,
+        hasMore: false,
+        profileSubject: {
+          address: ownerAlias,
+          query: ownerAlias,
+          followerCount: 0,
+          followingCount: 0,
+        },
+        stats: { total: 1, confirmed: 1, pending: 0 },
+        signalStats: {
+          totalSignalQ8: "54600000000", proofSignalQ8: "54600000000",
+          proofSignalSatsExact: "546", totalSignalSatsExact: "546",
+          totalSignalUsd: 0, workSignalSubatoms: "0",
+        },
+      } });
+    }
+    if (pathname === "/api/v1/ids/boost") {
+      return route.fulfill({ json: { record: { receiveAddress: owner } } });
+    }
+    if (pathname === "/api/v1/registry") {
+      return route.fulfill({ json: { records: [], listings: [], stats: { total: 0 } } });
+    }
+    return route.fulfill({ json: {} });
+  });
+  await page.goto(`/?boost=1&profile=${ownerAlias}`);
+  await expect(page.getByTestId("boost-post")).toContainText("My own Boost");
+  await page.getByRole("button", { name: "Connect", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Disconnect UniSat" })).toBeVisible();
+  await expect(page.locator(".boost-follow-button")).toHaveCount(0);
+});

@@ -17905,7 +17905,20 @@ function tokenHistoryMarketEventKinds(safeKind) {
   return [];
 }
 
-function tokenHistoryCanonicalMarketEventsSql(safeKind, whereClause) {
+function tokenHistoryCanonicalMarketEventsSql(
+  safeKind,
+  whereClause,
+  options = {},
+) {
+  const replayHeightParam = String(
+    options.replayCheckpointHeightParam ?? "",
+  );
+  const replaySealTransactionBound = replayHeightParam
+    ? `AND seal_transaction.block_height <= ${replayHeightParam}`
+    : "";
+  const replayCanonicalSealBound = replayHeightParam
+    ? `AND canonical_seal_tx.block_height <= ${replayHeightParam}`
+    : "";
   const historicalSealProjection = safeKind === "market-seals";
   const listingKinds =
     "ARRAY['token-listings','token-listing','token-listing-sealed']::text[]";
@@ -18105,6 +18118,7 @@ function tokenHistoryCanonicalMarketEventsSql(safeKind, whereClause) {
       LEFT JOIN proof_indexer.transactions seal_transaction
         ON seal_transaction.network = cl_event.network
        AND seal_transaction.txid = ${targetSealTxid}
+       ${replaySealTransactionBound}
       LEFT JOIN LATERAL (
         SELECT
           canonical_seal_event_row.payload AS seal_event_payload,
@@ -18125,6 +18139,7 @@ function tokenHistoryCanonicalMarketEventsSql(safeKind, whereClause) {
            canonical_seal_event_row.block_height
          AND canonical_seal_tx.block_index =
            canonical_seal_event_row.block_index
+         ${replayCanonicalSealBound}
         JOIN proof_indexer.blocks canonical_seal_block
           ON canonical_seal_block.network = canonical_seal_tx.network
          AND canonical_seal_block.block_hash = canonical_seal_tx.block_hash
@@ -22974,10 +22989,38 @@ export async function proofIndexTokenMarketHistoryOverlayPayload(
 
   const pagination =
     options.pagination ?? historyPaginationFromSearch(searchParams);
+  const replayCheckpointRequested =
+    Object.hasOwn(options, "replayCheckpointHeight") ||
+    Object.hasOwn(options, "replayCheckpointHash");
+  const replayCheckpoint = replayCheckpointRequested
+    ? {
+        height: Number(options.replayCheckpointHeight),
+        hash: normalizedLowerText(options.replayCheckpointHash),
+      }
+    : null;
+  if (
+    replayCheckpoint &&
+    (
+      !["sales", "closedListings"].includes(safeKind) ||
+      !Number.isSafeInteger(replayCheckpoint.height) ||
+      replayCheckpoint.height < 958_382 ||
+      !/^[0-9a-f]{64}$/u.test(replayCheckpoint.hash) ||
+      pagination.snapshotId ||
+      options.snapshot ||
+      !(await replayRegistryCheckpointMatches(
+        pool,
+        network,
+        replayCheckpoint,
+      ))
+    )
+  ) {
+    return null;
+  }
   const scope = tokenScopeKey(tokenScope);
-  const snapshot =
-    options.snapshot ??
-    (await ledgerSnapshotMetadata(pool, network, pagination.snapshotId));
+  const snapshot = replayCheckpoint
+    ? { indexed_through_block: replayCheckpoint.height }
+    : options.snapshot ??
+      (await ledgerSnapshotMetadata(pool, network, pagination.snapshotId));
   const snapshotHeight = rowNumber(snapshot, "indexed_through_block");
   const workMarketV4Activation = await verifiedWorkMarketV4Activation(
     pool,
@@ -23023,6 +23066,20 @@ export async function proofIndexTokenMarketHistoryOverlayPayload(
     "e.status IN ('confirmed', 'pending')",
     eventKindCondition,
   ];
+  const replayHeightParam = replayCheckpoint
+    ? "$" + (params.push(replayCheckpoint.height), params.length)
+    : "";
+  if (replayCheckpoint) {
+    conditions.push(
+      "e.status = 'confirmed'",
+      "event_tx.status = 'confirmed'",
+      "event_tx.block_height > 0",
+      `event_tx.block_height <= ${replayHeightParam}`,
+      "e.block_height = event_tx.block_height",
+      "e.block_index = event_tx.block_index",
+      "event_block.canonical = true",
+    );
+  }
   if (safeKind === "market-listings") {
     const listingIdSql = `lower(COALESCE(
       NULLIF(e.payload->>'listingId', ''),
@@ -23248,6 +23305,9 @@ export async function proofIndexTokenMarketHistoryOverlayPayload(
   const canonicalMarketEventsSql = tokenHistoryCanonicalMarketEventsSql(
     safeKind,
     whereClause,
+    replayCheckpoint
+      ? { replayCheckpointHeightParam: replayHeightParam }
+      : {},
   );
   const exactQueryDispositionSql = exactQueryTxidsParam
     ? `CASE
@@ -23317,8 +23377,8 @@ export async function proofIndexTokenMarketHistoryOverlayPayload(
   ) {
     return null;
   }
-  const items = rowsResult.rows
-    .filter((row) => row.kind)
+  const sourceRows = rowsResult.rows.filter((row) => row.kind);
+  const items = sourceRows
     .map((row) =>
       tokenHistoryItemFromMarketEventPayload(
         tokenMarketEventRowPayload(row, network, {
@@ -23332,6 +23392,20 @@ export async function proofIndexTokenMarketHistoryOverlayPayload(
     .sort(compareTokenHistoryMarketItems);
   const start = Math.min(pagination.offset, totalCount);
   const end = Math.min(totalCount, start + pagination.limit);
+  if (
+    replayCheckpoint &&
+    (
+      sourceRows.length !== end - start ||
+      items.length !== sourceRows.length ||
+      !(await replayRegistryCheckpointMatches(
+        pool,
+        network,
+        replayCheckpoint,
+      ))
+    )
+  ) {
+    return null;
+  }
   const snapshotId = snapshot?.snapshot_id ?? "";
   const cursor = historyCursor(snapshotId, start);
   const nextCursor = end < totalCount ? historyCursor(snapshotId, end) : "";
@@ -23345,7 +23419,12 @@ export async function proofIndexTokenMarketHistoryOverlayPayload(
     cursor,
     end,
     indexedAt,
-    indexedThroughBlock,
+    indexedThroughBlock: replayCheckpoint
+      ? replayCheckpoint.height
+      : indexedThroughBlock,
+    ...(replayCheckpoint
+      ? { indexedThroughBlockHash: replayCheckpoint.hash }
+      : {}),
     items,
     kind: safeKind,
     limit: pagination.limit,
@@ -32149,6 +32228,103 @@ export async function proofIndexCanonicalSummaryTokenTablePayload(
   );
 }
 
+// Internal canonical-summary replay bridge. The caller must verify the live
+// active replay binding before using this read. The ordinary token reader and
+// its Q16 migration-readiness gate remain unchanged. During the bounded PWT
+// replay, canonical blocks beyond the current scan checkpoint intentionally
+// remain in the database, so global-tip readiness is not an exact-checkpoint
+// proof. Return only the relational table at its hash-bound scan checkpoint;
+// the caller separately proves token conservation and per-address WORK parity
+// against independently reconstructed canonical activity.
+export async function proofIndexReplayCanonicalSummaryTokenTablePayload(
+  network,
+  { activationHeight = 0, exactHash = "", exactHeight = 0 } = {},
+) {
+  const pool = proofIndexPool();
+  const checkpointHeight = Number(exactHeight);
+  const checkpointHash = normalizedLowerText(exactHash);
+  const precisionActivationHeight = Number(activationHeight);
+  if (
+    !pool ||
+    network !== "livenet" ||
+    !Number.isSafeInteger(checkpointHeight) ||
+    checkpointHeight <= 0 ||
+    !Number.isSafeInteger(precisionActivationHeight) ||
+    precisionActivationHeight < 2 ||
+    !/^[0-9a-f]{64}$/u.test(checkpointHash)
+  ) {
+    return null;
+  }
+  const relationalPayload =
+    await proofIndexTokenPayloadFromCurrentTables(pool, network, "all");
+  const checkpointPayload = await tokenStatePayloadAtCanonicalCheckpoint(
+    pool,
+    network,
+    relationalPayload,
+    checkpointHeight,
+    checkpointHash,
+  );
+  if (
+    checkpointPayload?.source !== "proof-indexer-token-state-tables" ||
+    Number(checkpointPayload.indexedThroughBlock) !== checkpointHeight ||
+    normalizedLowerText(checkpointPayload.indexedThroughBlockHash) !==
+      checkpointHash
+  ) {
+    return null;
+  }
+  if (checkpointHeight < precisionActivationHeight) {
+    return checkpointPayload;
+  }
+  const precisionPayload = workPrecisionV2ProjectCurrentPayload(
+    checkpointPayload,
+  );
+  if (
+    !workPrecisionV2CurrentPayloadIsExact(
+      precisionPayload,
+      precisionActivationHeight,
+    )
+  ) {
+    return null;
+  }
+  const activatedPayload = await payloadWithVerifiedWorkMarketV4Activation(
+    pool,
+    network,
+    precisionPayload,
+  );
+  const heightScopedListingPayload =
+    await payloadWithCurrentWorkMarketListingReadPolicy(
+      network,
+      activatedPayload,
+    );
+  const result = await payloadWithCanonicalWorkLifecyclePositions(
+    pool,
+    network,
+    workPrecisionV2ProjectCurrentPayload(
+      applyWorkAmoV5CutoverToTokenState(
+        await payloadWithVerifiedWorkAmoV5Activation(
+          network,
+          applyWorkMarketV2CutoverToTokenState(
+            heightScopedListingPayload,
+          ),
+        ),
+      ),
+    ),
+  );
+  return result?.source === "proof-indexer-token-state-tables" &&
+    Number(result.indexedThroughBlock) === checkpointHeight &&
+    normalizedLowerText(result.indexedThroughBlockHash) === checkpointHash &&
+    !(Array.isArray(result.listings)
+      ? result.listings.some((listing) =>
+          !workListingAuthorizationAllowed(
+            listing,
+            [WORK_AMO_V8_AUTH_VERSION],
+          ),
+        )
+      : false)
+    ? result
+    : null;
+}
+
 export async function proofIndexReadinessEpochCheckpoint(network) {
   const pool = proofIndexPool();
   if (!pool || network !== "livenet") {
@@ -33964,13 +34140,54 @@ function confirmedIdRecordFromRow(row, network) {
   };
 }
 
-async function confirmedIdRecordsFromCurrentTables(pool, network, idLower = "") {
+async function confirmedIdRecordsFromCurrentTables(
+  pool,
+  network,
+  idLower = "",
+  replayCheckpoint = null,
+) {
   const normalizedId = String(idLower ?? "").trim().toLowerCase();
   const params = [network];
   const idCondition = normalizedId ? "AND r.id_lower = $2" : "";
   if (normalizedId) {
     params.push(normalizedId);
   }
+  const replayHeightParam = replayCheckpoint
+    ? "$" + (params.push(replayCheckpoint.height), params.length)
+    : "";
+  const replayRecordSelect = replayCheckpoint
+    ? `,
+        last_event_tx.status AS last_event_status,
+        last_event_tx.block_height AS last_event_block_height,
+        last_event_block.canonical AS last_event_canonical
+      `
+    : "";
+  const replayRecordJoin = replayCheckpoint
+    ? `
+      LEFT JOIN proof_indexer.transactions last_event_tx
+        ON last_event_tx.network = r.network
+       AND last_event_tx.txid = r.last_event_txid
+      LEFT JOIN proof_indexer.blocks last_event_block
+        ON last_event_block.network = last_event_tx.network
+       AND last_event_block.block_hash = last_event_tx.block_hash
+       AND last_event_block.height = last_event_tx.block_height
+       AND last_event_block.canonical = true
+      `
+    : "";
+  const replayRegistrationWhere = replayCheckpoint
+    ? `
+        AND t.block_height > 0
+        AND t.block_height <= ${replayHeightParam}
+        AND EXISTS (
+          SELECT 1
+          FROM proof_indexer.blocks registration_block_at_height
+          WHERE registration_block_at_height.network = t.network
+            AND registration_block_at_height.block_hash = t.block_hash
+            AND registration_block_at_height.height = t.block_height
+            AND registration_block_at_height.canonical = true
+        )
+      `
+    : "";
   const result = await pool.query(
     `
       SELECT
@@ -33998,11 +34215,13 @@ async function confirmedIdRecordsFromCurrentTables(pool, network, idLower = "") 
         registration_event.registration_legacy_block_index,
         registration_event.registration_protocol_vout,
         registration_event.registration_record_ordinal
+        ${replayRecordSelect}
       FROM proof_indexer.id_records r
       JOIN proof_indexer.transactions t
         ON t.network = r.network
        AND t.txid = r.registration_txid
        AND t.status = 'confirmed'
+      ${replayRecordJoin}
       LEFT JOIN LATERAL (
         SELECT
           e.block_height AS registration_block_height,
@@ -34045,6 +34264,7 @@ async function confirmedIdRecordsFromCurrentTables(pool, network, idLower = "") 
       ) registration_event ON true
       WHERE r.network = $1
         ${idCondition}
+        ${replayRegistrationWhere}
       ORDER BY
         COALESCE(r.registered_height, t.block_height) DESC NULLS LAST,
         registration_event.registration_block_index DESC NULLS LAST,
@@ -34055,6 +34275,17 @@ async function confirmedIdRecordsFromCurrentTables(pool, network, idLower = "") 
     `,
     params,
   );
+  if (replayCheckpoint && result.rows.some((row) =>
+    rowNumber(row, "updated_height") > replayCheckpoint.height ||
+    normalizedLowerText(row?.last_event_status) !== "confirmed" ||
+    row?.last_event_canonical !== true ||
+    rowNumber(row, "last_event_block_height") < 1 ||
+    rowNumber(row, "last_event_block_height") > replayCheckpoint.height
+  )) {
+    throw new Error(
+      "Exact replay ID record has a later, missing, or noncanonical last event.",
+    );
+  }
   const records = result.rows.map((row) =>
     confirmedIdRecordFromRow(row, network),
   );
@@ -34804,7 +35035,11 @@ function pendingIdRegistryStateFromActivity(activity, network) {
   };
 }
 
-async function currentIdRegistryEventState(pool, network) {
+async function currentIdRegistryEventState(
+  pool,
+  network,
+  replayCheckpoint = null,
+) {
   const eventKinds = [
     "id-register",
     "id-update",
@@ -34814,6 +35049,19 @@ async function currentIdRegistryEventState(pool, network) {
     "id-delist",
     "id-buy",
   ];
+  const replayEventWhere = replayCheckpoint
+    ? `
+        AND e.status = 'confirmed'
+        AND t.status = 'confirmed'
+        AND t.block_height > 0
+        AND t.block_height <= $3
+        AND canonical_block.canonical = true
+        AND (
+          e.block_height IS NULL
+          OR e.block_height = t.block_height
+        )
+      `
+    : "";
   const result = await pool.query(
     `
       SELECT
@@ -34897,6 +35145,7 @@ async function currentIdRegistryEventState(pool, network) {
             AND e.status = 'pending'
           )
         )
+        ${replayEventWhere}
       ORDER BY
         COALESCE(e.block_height, t.block_height) ASC NULLS LAST,
         e.block_index ASC NULLS LAST,
@@ -34914,7 +35163,9 @@ async function currentIdRegistryEventState(pool, network) {
         END ASC,
         e.event_id ASC
     `,
-    [network, eventKinds],
+    replayCheckpoint
+      ? [network, eventKinds, replayCheckpoint.height]
+      : [network, eventKinds],
   );
   const canonicalItems = assertConfirmedPwidRegistryClaimAllocation(
     result.rows.map((row) => ({
@@ -34947,14 +35198,158 @@ function idRegistryListingAnchorOutpoint(listing) {
     : null;
 }
 
-async function indexedUnspentIdRegistryListings(pool, network, listings) {
+async function indexedUnspentIdRegistryListings(
+  pool,
+  network,
+  listings,
+  replayCheckpoint = null,
+) {
   const sourceListings = Array.isArray(listings) ? listings : [];
   const anchors = sourceListings.flatMap((listing) => {
     const anchor = idRegistryListingAnchorOutpoint(listing);
     return anchor ? [{ anchor_txid: anchor.txid, anchor_vout: anchor.vout }] : [];
   });
+  if (replayCheckpoint && anchors.length !== sourceListings.length) {
+    throw new Error("Exact replay ID listing anchor outpoint is missing.");
+  }
   if (anchors.length === 0) {
     return sourceListings;
+  }
+
+  if (replayCheckpoint) {
+    const requestedAnchors = new Set(
+      anchors.map((anchor) => anchor.anchor_txid + ":" + anchor.anchor_vout),
+    );
+    if (requestedAnchors.size !== anchors.length) {
+      throw new Error("Exact replay ID listing anchors are duplicated.");
+    }
+    const replayResult = await pool.query(
+      `
+        WITH requested(anchor_txid, anchor_vout) AS (
+          SELECT
+            lower(anchor_row.anchor_txid),
+            anchor_row.anchor_vout
+          FROM jsonb_to_recordset($2::jsonb) AS anchor_row (
+            anchor_txid text,
+            anchor_vout integer
+          )
+          WHERE anchor_row.anchor_txid ~ '^[0-9a-fA-F]{64}$'
+            AND anchor_row.anchor_vout IS NOT NULL
+            AND anchor_row.anchor_vout >= 0
+        )
+        SELECT
+          requested.anchor_txid,
+          requested.anchor_vout,
+          anchor_output.txid IS NOT NULL AS anchor_present,
+          anchor_origin_tx.status AS anchor_origin_status,
+          anchor_origin_tx.block_height AS anchor_origin_height,
+          anchor_origin_block.canonical AS anchor_origin_canonical,
+          anchor_output.spent_by_txid AS output_spent_by_txid,
+          pointed_spend_tx.status AS pointed_spend_status,
+          pointed_spend_tx.block_height AS pointed_spend_height,
+          pointed_spend_block.canonical AS pointed_spend_canonical,
+          EXISTS (
+            SELECT 1
+            FROM proof_indexer.tx_inputs pointed_input
+            WHERE pointed_input.network = $1
+              AND pointed_input.txid = anchor_output.spent_by_txid
+              AND lower(pointed_input.prev_txid) = requested.anchor_txid
+              AND pointed_input.prev_vout = requested.anchor_vout
+          ) AS pointed_input_present,
+          EXISTS (
+            SELECT 1
+            FROM proof_indexer.tx_inputs spend_input
+            JOIN proof_indexer.transactions spend_tx
+              ON spend_tx.network = spend_input.network
+             AND spend_tx.txid = spend_input.txid
+             AND spend_tx.status = 'confirmed'
+             AND spend_tx.block_height > 0
+             AND spend_tx.block_height <= $3
+            JOIN proof_indexer.blocks spend_block
+              ON spend_block.network = spend_tx.network
+             AND spend_block.block_hash = spend_tx.block_hash
+             AND spend_block.height = spend_tx.block_height
+             AND spend_block.canonical = true
+            WHERE spend_input.network = $1
+              AND lower(spend_input.prev_txid) = requested.anchor_txid
+              AND spend_input.prev_vout = requested.anchor_vout
+          ) AS spent_by_checkpoint
+        FROM requested
+        LEFT JOIN proof_indexer.tx_outputs anchor_output
+          ON anchor_output.network = $1
+         AND lower(anchor_output.txid) = requested.anchor_txid
+         AND anchor_output.vout = requested.anchor_vout
+        LEFT JOIN proof_indexer.transactions anchor_origin_tx
+          ON anchor_origin_tx.network = $1
+         AND anchor_origin_tx.txid = anchor_output.txid
+        LEFT JOIN proof_indexer.blocks anchor_origin_block
+          ON anchor_origin_block.network = anchor_origin_tx.network
+         AND anchor_origin_block.block_hash = anchor_origin_tx.block_hash
+         AND anchor_origin_block.height = anchor_origin_tx.block_height
+         AND anchor_origin_block.canonical = true
+        LEFT JOIN proof_indexer.transactions pointed_spend_tx
+          ON pointed_spend_tx.network = $1
+         AND pointed_spend_tx.txid = anchor_output.spent_by_txid
+        LEFT JOIN proof_indexer.blocks pointed_spend_block
+          ON pointed_spend_block.network = pointed_spend_tx.network
+         AND pointed_spend_block.block_hash = pointed_spend_tx.block_hash
+         AND pointed_spend_block.height = pointed_spend_tx.block_height
+         AND pointed_spend_block.canonical = true
+      `,
+      [network, JSON.stringify(anchors), replayCheckpoint.height],
+    );
+    const seenAnchors = new Set();
+    const spentAnchors = new Set();
+    for (const row of replayResult.rows) {
+      const txid = normalizedTxid(row?.anchor_txid);
+      const vout = Number(row?.anchor_vout);
+      const key = txid + ":" + vout;
+      if (
+        !txid ||
+        !Number.isSafeInteger(vout) ||
+        vout < 0 ||
+        !requestedAnchors.has(key) ||
+        seenAnchors.has(key) ||
+        row?.anchor_present !== true
+      ) {
+        throw new Error("Exact replay ID listing anchor output is incomplete.");
+      }
+      if (
+        normalizedLowerText(row?.anchor_origin_status) !== "confirmed" ||
+        row?.anchor_origin_canonical !== true ||
+        rowNumber(row, "anchor_origin_height") < 1 ||
+        rowNumber(row, "anchor_origin_height") > replayCheckpoint.height
+      ) {
+        throw new Error(
+          "Exact replay ID listing anchor origin is not canonical at the checkpoint.",
+        );
+      }
+      const pointedHistoricalSpend =
+        normalizedLowerText(row?.pointed_spend_status) === "confirmed" &&
+        row?.pointed_spend_canonical === true &&
+        rowNumber(row, "pointed_spend_height") > 0 &&
+        rowNumber(row, "pointed_spend_height") <= replayCheckpoint.height;
+      if (
+        pointedHistoricalSpend &&
+        (
+          row?.pointed_input_present !== true ||
+          row?.spent_by_checkpoint !== true
+        )
+      ) {
+        throw new Error(
+          "Exact replay ID listing spend pointer lacks canonical input evidence.",
+        );
+      }
+      seenAnchors.add(key);
+      if (row.spent_by_checkpoint === true) spentAnchors.add(key);
+    }
+    if (seenAnchors.size !== requestedAnchors.size) {
+      throw new Error("Exact replay ID listing anchor output is missing.");
+    }
+    return sourceListings.filter((listing) => {
+      const anchor = idRegistryListingAnchorOutpoint(listing);
+      return !anchor || !spentAnchors.has(anchor.txid + ":" + anchor.vout);
+    });
   }
 
   const result = await pool.query(
@@ -35620,12 +36015,79 @@ function acceptedCurrentIdRegistryActivity(
     .sort(compareHistoryItems);
 }
 
+async function replayRegistryCheckpointMatches(
+  pool,
+  network,
+  checkpoint,
+) {
+  const rebuild = (await canonicalStateMetaFromPool(pool, network))?.rebuild;
+  return network === "livenet" &&
+    rebuild?.network === network &&
+    rebuild?.mode === "pwt-range-replay" &&
+    rebuild?.status === "active" &&
+    rebuild?.active === true &&
+    rebuild?.complete === false &&
+    rebuild?.completedAt == null &&
+    rebuild?.incbRangeReplayVerification == null &&
+    Number(rebuild?.rangeReplayFromHeight) === 958_383 &&
+    Number(rebuild?.indexedThroughBlock) === checkpoint.height &&
+    normalizedLowerText(rebuild?.indexedThroughBlockHash) ===
+      checkpoint.hash;
+}
+
 async function currentProofIndexRegistryPayload(pool, network, options = {}) {
+  const replayCheckpointRequested =
+    Object.hasOwn(options, "replayCheckpointHeight") ||
+    Object.hasOwn(options, "replayCheckpointHash");
+  const replayCheckpointHeight = Number(options.replayCheckpointHeight);
+  const replayCheckpointHash = normalizedLowerText(
+    options.replayCheckpointHash,
+  );
+  const replayCheckpoint = replayCheckpointRequested
+    ? {
+        hash: replayCheckpointHash,
+        height: replayCheckpointHeight,
+      }
+    : null;
+  if (
+    replayCheckpoint &&
+    (
+      !Number.isSafeInteger(replayCheckpointHeight) ||
+      replayCheckpointHeight < 958_382 ||
+      !/^[0-9a-f]{64}$/u.test(replayCheckpointHash) ||
+      Number(options.expectedHeight) !== replayCheckpointHeight ||
+      normalizedLowerText(options.expectedHash) !== replayCheckpointHash ||
+      options.allowIncompleteScan !== true ||
+      !(await replayRegistryCheckpointMatches(
+        pool,
+        network,
+        replayCheckpoint,
+      ))
+    )
+  ) {
+    return null;
+  }
   const [confirmedRecords, eventState, scan] = await Promise.all([
-    confirmedIdRecordsFromCurrentTables(pool, network),
-    currentIdRegistryEventState(pool, network),
+    confirmedIdRecordsFromCurrentTables(
+      pool,
+      network,
+      "",
+      replayCheckpoint,
+    ),
+    currentIdRegistryEventState(pool, network, replayCheckpoint),
     latestProofIndexScanMetadata(pool, network),
   ]);
+  if (
+    replayCheckpoint &&
+    (
+      eventState?.pendingRecords?.length > 0 ||
+      eventState?.pendingEvents?.length > 0 ||
+      eventState?.pendingSales?.length > 0 ||
+      eventState?.activity?.some((item) => item?.confirmed !== true)
+    )
+  ) {
+    return null;
+  }
   const scanPayload = objectRecord(scan?.payload);
   const scanBlockHash = normalizedLowerText(
     scanPayload.indexedThroughBlockHash ?? scanPayload.blockHash,
@@ -35686,10 +36148,12 @@ async function currentProofIndexRegistryPayload(pool, network, options = {}) {
     );
     return null;
   }
-  const pendingRecords = (Array.isArray(eventState?.pendingRecords)
-    ? eventState.pendingRecords
-    : []
-  ).filter((record) => !confirmedIds.has(normalizedLowerText(record?.id)));
+  const pendingRecords = replayCheckpoint
+    ? []
+    : (Array.isArray(eventState?.pendingRecords)
+        ? eventState.pendingRecords
+        : []
+      ).filter((record) => !confirmedIds.has(normalizedLowerText(record?.id)));
   const records = [...confirmedRecords, ...pendingRecords];
   const listings = Array.isArray(eventState?.listings)
     ? eventState.listings
@@ -35698,10 +36162,13 @@ async function currentProofIndexRegistryPayload(pool, network, options = {}) {
     pool,
     network,
     listings,
+    replayCheckpoint,
   );
-  const pendingEvents = Array.isArray(eventState?.pendingEvents)
-    ? eventState.pendingEvents
-    : [];
+  const pendingEvents = replayCheckpoint
+    ? []
+    : Array.isArray(eventState?.pendingEvents)
+      ? eventState.pendingEvents
+      : [];
   const activity = acceptedCurrentIdRegistryActivity(
     eventState,
     pendingRecords,
@@ -35738,6 +36205,19 @@ async function currentProofIndexRegistryPayload(pool, network, options = {}) {
     ...confirmedRecords.map((record) => Number(record?.updatedHeight) || 0),
   );
 
+  if (
+    replayCheckpoint &&
+    (
+      indexedThroughBlock !== replayCheckpoint.height ||
+      !(await replayRegistryCheckpointMatches(
+        pool,
+        network,
+        replayCheckpoint,
+      ))
+    )
+  ) {
+    return null;
+  }
   return {
     activity,
     indexedAt,
@@ -36650,7 +37130,13 @@ export async function proofIndexRegistryPayload(network, options = {}) {
 
   const requestedSnapshotId = String(options.snapshotId ?? "").trim();
   const pinnedSnapshotId = normalizedSnapshotId(requestedSnapshotId);
-  if (requestedSnapshotId && !pinnedSnapshotId) {
+  const replayCheckpointRequested =
+    Object.hasOwn(options, "replayCheckpointHeight") ||
+    Object.hasOwn(options, "replayCheckpointHash");
+  if (
+    (requestedSnapshotId && !pinnedSnapshotId) ||
+    (requestedSnapshotId && replayCheckpointRequested)
+  ) {
     return null;
   }
   if (!pinnedSnapshotId) {
@@ -36770,6 +37256,40 @@ export async function proofIndexCanonicalActivityPayload(
 
   const requestedSnapshotId = String(options.snapshotId ?? "").trim();
   const includePending = options.includePending !== false;
+  const replayCheckpointRequested =
+    Object.hasOwn(options, "replayCheckpointHeight") ||
+    Object.hasOwn(options, "replayCheckpointHash");
+  const replayCheckpointHeight = Number(options.replayCheckpointHeight);
+  const replayCheckpointHash = normalizedLowerText(
+    options.replayCheckpointHash,
+  );
+  const replayCheckpointMatches = async () => {
+    const rebuild = (await canonicalStateMetaFromPool(pool, network))?.rebuild;
+    return rebuild?.network === network &&
+      rebuild?.mode === "pwt-range-replay" &&
+      rebuild?.status === "active" &&
+      rebuild?.active === true &&
+      rebuild?.complete === false &&
+      Number(rebuild?.rangeReplayFromHeight) === 958_383 &&
+      Number(rebuild?.indexedThroughBlock) === replayCheckpointHeight &&
+      normalizedLowerText(rebuild?.indexedThroughBlockHash) ===
+        replayCheckpointHash;
+  };
+  if (
+    replayCheckpointRequested &&
+    (
+      network !== "livenet" ||
+      requestedSnapshotId ||
+      Object.hasOwn(options, "eventIds") ||
+      includePending ||
+      !Number.isSafeInteger(replayCheckpointHeight) ||
+      replayCheckpointHeight < 958_382 ||
+      !/^[0-9a-f]{64}$/u.test(replayCheckpointHash) ||
+      !(await replayCheckpointMatches())
+    )
+  ) {
+    return null;
+  }
   if (
     requestedSnapshotId &&
     (requestedSnapshotId.length > 128 || /\s/u.test(requestedSnapshotId))
@@ -36823,6 +37343,9 @@ export async function proofIndexCanonicalActivityPayload(
   const eventIdsParam = membershipRestricted
     ? addQueryParam(requestedEventIds)
     : "";
+  const replayCheckpointHeightParam = replayCheckpointRequested
+    ? addQueryParam(replayCheckpointHeight)
+    : "";
   const snapshotWhere = requestedSnapshotId
     ? `
           AND (
@@ -36845,6 +37368,27 @@ export async function proofIndexCanonicalActivityPayload(
     : "";
   const membershipWhere = membershipRestricted
     ? `AND e.event_id = ANY(${eventIdsParam}::bigint[])`
+    : "";
+  const replayCheckpointWhere = replayCheckpointRequested
+    ? `AND e.status = 'confirmed'
+       AND EXISTS (
+         SELECT 1
+         FROM proof_indexer.transactions replay_tx
+         JOIN proof_indexer.blocks replay_block
+           ON replay_block.network = replay_tx.network
+          AND replay_block.height = replay_tx.block_height
+          AND replay_block.block_hash = replay_tx.block_hash
+          AND replay_block.canonical = true
+         WHERE replay_tx.network = e.network
+           AND replay_tx.txid = e.txid
+           AND replay_tx.status = 'confirmed'
+           AND replay_tx.block_height > 0
+           AND replay_tx.block_height <= ${replayCheckpointHeightParam}
+           AND (
+             e.block_height IS NULL
+             OR e.block_height = replay_tx.block_height
+           )
+       )`
     : "";
   const transactionSnapshotWhere = requestedSnapshotId
     ? `AND transaction_row.updated_at <= ${snapshotTimeParam}::timestamptz`
@@ -36883,6 +37427,7 @@ export async function proofIndexCanonicalActivityPayload(
           )
           ${snapshotWhere}
           ${membershipWhere}
+          ${replayCheckpointWhere}
       ),
       selected_txids AS (
         SELECT DISTINCT network, txid
@@ -37152,9 +37697,10 @@ export async function proofIndexCanonicalActivityPayload(
     `,
     queryParams,
   );
-  const snapshot =
-    boundSnapshot ??
-    (await latestProofIndexScanMetadata(pool, network).catch(() => null));
+  const snapshot = replayCheckpointRequested
+    ? null
+    : boundSnapshot ??
+      (await latestProofIndexScanMetadata(pool, network).catch(() => null));
   const activityRows = await rowsWithCanonicalTransferFees(pool, result.rows, network);
   const items = normalizeHistoryEventRows(activityRows, network);
   if (items.length === 0) {
@@ -37200,11 +37746,19 @@ export async function proofIndexCanonicalActivityPayload(
     source: "proof-indexer-normalized-input-output-totals",
   };
   const latestEventBlock = indexedThroughBlockFromItems(items) ?? 0;
-  const indexedThroughBlock =
-    Math.max(
-      latestEventBlock,
-      rowNumber(snapshot, "indexed_through_block"),
-    ) || undefined;
+  const indexedThroughBlock = replayCheckpointRequested
+    ? replayCheckpointHeight
+    : Math.max(
+        latestEventBlock,
+        rowNumber(snapshot, "indexed_through_block"),
+      ) || undefined;
+  if (
+    replayCheckpointRequested &&
+    (latestEventBlock > replayCheckpointHeight ||
+      !(await replayCheckpointMatches()))
+  ) {
+    return null;
+  }
   const indexedAt = newestDateIso([
     snapshot?.generated_at,
     result.rows[0]?.event_time ??

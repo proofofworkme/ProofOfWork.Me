@@ -499,6 +499,60 @@ test("Following includes the viewer's own boosts and never creates a self-follow
   assert.deepEqual(qualified.rejected.map(row => row.reason), ["boost-self-follow", "boost-self-follow"]);
 });
 
+test("Bech32 case aliases retain own boosts in Following and profile views", async () => {
+  const owner = "bc1qqyqszqgpqyqszqgpqyqszqgpqyqszqgpyfl4f3";
+  const ownerAlias = owner.toUpperCase();
+  const own = event(1, "boost-post", {
+    authorAddress: owner,
+    recipients: [{ address: ownerAlias, amountSats: "546", vout: 0 }],
+  });
+  const api = server(reader([own]).read);
+  const following = await api.boostFeedPayload(
+    "livenet", new URLSearchParams({ viewer: ownerAlias, view: "following" }),
+  );
+  assert.deepEqual(Array.from(following.items, item => item.txid), [own.txid]);
+  const profile = await api.boostFeedPayload(
+    "livenet", new URLSearchParams({ profile: ownerAlias }),
+  );
+  assert.deepEqual(Array.from(profile.items, item => item.txid), [own.txid]);
+});
+
+test("Bech32 case aliases cannot follow themselves and still credit the real target", () => {
+  const owner = "bc1qqyqszqgpqyqszqgpqyqszqgpqyqszqgpyfl4f3";
+  const ownerAlias = owner.toUpperCase();
+  const base58 = "1KNkUBREnfno2BeV7QsBf8XCWZN6YFfxPH";
+  assert.equal(projection.boostAddressIdentityKey(ownerAlias), owner);
+  assert.equal(projection.boostAddressIdentityKey(owner), owner);
+  assert.notEqual(projection.boostAddressIdentityKey(base58), projection.boostAddressIdentityKey(base58.toLowerCase()));
+
+  const registry = event(900001, "id-register", {
+    id: "boost", receiveAddress: "registry", blockHeight: 964000,
+  });
+  const selfFollow = event(1, "boost-follow", {
+    authorAddress: owner,
+    targetAddress: ownerAlias,
+    recipients: [{ address: owner, amountSats: "546", vout: 0 }],
+  });
+  const selfUnfollow = event(2, "boost-unfollow", {
+    authorAddress: ownerAlias,
+    targetAddress: owner,
+    recipients: [{ address: owner, amountSats: "546", vout: 0 }],
+  });
+  const acceptedFollow = event(3, "boost-follow", {
+    authorAddress: base58,
+    targetAddress: ownerAlias,
+    recipients: [{ address: owner, amountSats: "546", vout: 0 }],
+  });
+  const qualified = projection.qualifyBoostPaidActions(
+    [selfFollow, selfUnfollow, acceptedFollow], [registry],
+  );
+  assert.deepEqual(qualified.rejected.map(row => row.reason),
+    ["boost-self-follow", "boost-self-follow"]);
+  assert.deepEqual(qualified.accepted.map(row => row.txid), [acceptedFollow.txid]);
+  assert.equal(qualified.accepted[0].applicationBoostOwnerReceiver, ownerAlias);
+  assert.equal(qualified.accepted[0].applicationBoostOwnerPaymentSats, "546");
+});
+
 test("direct ownership transfers reject outsiders, missing actors and unknown parents", () => {
   const api = server(reader([]).read);
   const original = event(1);

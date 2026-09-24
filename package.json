@@ -70,6 +70,7 @@
     "check:work-precision-v2": "node scripts/check-work-precision-v2.mjs",
     "check:bond-exact-arithmetic": "node scripts/check-bond-exact-arithmetic.mjs",
     "check:incb-range-replay-witness": "node scripts/check-incb-range-replay-witness.mjs",
+    "check:replay-token-table-bridge": "node scripts/check-replay-token-table-bridge.mjs",
     "check:incb-post-v5-repair": "node scripts/check-incb-post-v5-repair.mjs",
     "check:post-v5-incb-h1-import": "node scripts/check-post-v5-incb-h1-import.mjs",
     "check:incb-oracle-snapshot-restore": "node scripts/check-restore-incb-oracle-snapshots.mjs",

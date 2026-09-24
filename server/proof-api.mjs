@@ -37,6 +37,7 @@ import { readCompleteEventHistoryPages } from "./event-history-pages.mjs";
 import { createBoostGrowthObservationLoader, withBoostGrowthObservation } from "./boost-growth.mjs";
 import {
   assertBoostValuationCheckpoint,
+  boostAddressIdentityKey,
   boostExactQ8,
   boostProjectionError,
   boostProjectionFingerprint,
@@ -109,6 +110,10 @@ import {
   workAtomsValueAtFloorQ8,
   workSubatomsValueAtFloorQ8,
 } from "./work-units.mjs";
+import {
+  activeReplayTokenTableBridgeEra,
+  replayTokenTableWorkBridge,
+} from "./replay-token-table-bridge.mjs";
 import {
   applyWorkMarketV2CutoverToTokenState,
   WORK_MARKET_V2_ACTIVATION_HEIGHT,
@@ -294,6 +299,7 @@ import {
   proofIndexCanonicalHistoricalWorkListingScopes,
   proofIndexCanonicalCheckpointPayload,
   proofIndexCanonicalSummaryTokenTablePayload,
+  proofIndexReplayCanonicalSummaryTokenTablePayload,
   proofIndexCanonicalWorkListingById,
   proofIndexCanonicalSummaryLedgerPayload,
   proofIndexCanonicalStateMetaPayload,
@@ -34433,6 +34439,12 @@ async function indexedRegistryPayload(network, options = {}) {
           allowIncompleteScan: true,
           expectedHash: exactHash,
           expectedHeight: exactHeight,
+          ...(options.replayBridgeEra
+            ? {
+                replayCheckpointHash: exactHash,
+                replayCheckpointHeight: exactHeight,
+              }
+            : {}),
         }
       : {}),
     registryAddress,
@@ -48524,7 +48536,15 @@ async function indexedActivityStateForCanonicalLedger(network, options = {}) {
     return null;
   }
 
-  const payload = await proofIndexCanonicalActivityPayload(network).catch(
+  const payload = await proofIndexCanonicalActivityPayload(network, {
+    ...(options.replayBridgeEra
+      ? {
+          includePending: false,
+          replayCheckpointHash: options.exactHash,
+          replayCheckpointHeight: options.exactHeight,
+        }
+      : {}),
+  }).catch(
     (error) => {
       console.error(
         `Proof index canonical activity read failed: ${errorSummary(error)}`,
@@ -48610,6 +48630,7 @@ async function indexedRegistryStateForCanonicalLedger(network, options = {}) {
   const payload = await indexedRegistryPayload(network, {
     exactHash,
     exactHeight,
+    replayBridgeEra: options.replayBridgeEra,
   });
   if (!payload) {
     return null;
@@ -49111,11 +49132,35 @@ function creditSalePriceFromActivityItem(item) {
   return 0;
 }
 
-async function completeTokenMarketOverlayItems(network, scope, kind) {
+async function completeTokenMarketOverlayItems(
+  network,
+  scope,
+  kind,
+  options = {},
+) {
+  const replay = Boolean(options.replayBridgeEra);
+  const checkpointHeight = Number(options.exactHeight);
+  const checkpointHash = String(options.exactHash ?? "")
+    .trim()
+    .toLowerCase();
+  const replayBindingCurrent = async () =>
+    !replay ||
+    (await activeCanonicalSummaryReplayTokenBridgeEra(
+      network,
+      checkpointHeight,
+      checkpointHash,
+      options.workAmoV8ActivationHeight,
+      options.replayVerifierBinding,
+    )) === options.replayBridgeEra;
+  if (replay && !(await replayBindingCurrent())) {
+    throw new Error("Exact replay market overlay binding changed before read.");
+  }
   const items = [];
   const params = new URLSearchParams();
   params.set("limit", "500");
   let cursor = "";
+  let totalCount = null;
+  let complete = false;
   for (let page = 0; page < 20; page += 1) {
     if (cursor) {
       params.set("cursor", cursor);
@@ -49127,6 +49172,13 @@ async function completeTokenMarketOverlayItems(network, scope, kind) {
       scope,
       kind,
       params,
+      replay
+        ? {
+            authoritativeEmpty: true,
+            replayCheckpointHeight: checkpointHeight,
+            replayCheckpointHash: checkpointHash,
+          }
+        : {},
     ).catch((error) => {
       console.error(
         `Proof index token market ${kind} overlay read failed: ${errorSummary(error)}`,
@@ -49134,13 +49186,69 @@ async function completeTokenMarketOverlayItems(network, scope, kind) {
       return null;
     });
     if (!payload) {
+      if (replay) {
+        throw new Error("Exact replay market overlay page is unavailable.");
+      }
       break;
     }
-    items.push(...(Array.isArray(payload.items) ? payload.items : []));
+    const pageItems = Array.isArray(payload.items) ? payload.items : null;
+    if (replay) {
+      const expectedKind = kind === "closed-listings"
+        ? "closedListings"
+        : kind;
+      const pageTotal = Number(payload.totalCount);
+      const pageStart = Number(payload.start);
+      const pageEnd = Number(payload.end);
+      const expectedEnd = Math.min(pageTotal, pageStart + 500);
+      const expectedNextCursor = expectedEnd < pageTotal
+        ? String(expectedEnd)
+        : "";
+      if (
+        payload.kind !== expectedKind ||
+        payload.indexedThroughBlock !== checkpointHeight ||
+        String(payload.indexedThroughBlockHash ?? "")
+          .trim()
+          .toLowerCase() !== checkpointHash ||
+        !Number.isSafeInteger(pageTotal) ||
+        pageTotal < 0 ||
+        (totalCount !== null && pageTotal !== totalCount) ||
+        pageStart !== items.length ||
+        pageEnd !== expectedEnd ||
+        pageItems === null ||
+        pageItems.length !== pageEnd - pageStart ||
+        String(payload.cursor ?? "") !== String(pageStart) ||
+        String(payload.nextCursor ?? "") !== expectedNextCursor ||
+        pageItems.some((item) => {
+          const height = Number(
+            kind === "sales"
+              ? item?.blockHeight
+              : item?.closedBlockHeight ?? item?.blockHeight,
+          );
+          return !Number.isSafeInteger(height) ||
+            height < 1 ||
+            height > checkpointHeight;
+        })
+      ) {
+        throw new Error("Exact replay market overlay page is incomplete.");
+      }
+      totalCount = pageTotal;
+    }
+    items.push(...(pageItems ?? []));
     cursor = String(payload.nextCursor ?? "");
     if (!cursor) {
+      complete = true;
       break;
     }
+  }
+  if (
+    replay &&
+    (
+      !complete ||
+      items.length !== totalCount ||
+      !(await replayBindingCurrent())
+    )
+  ) {
+    throw new Error("Exact replay market overlay did not finish at one binding.");
   }
   return items;
 }
@@ -49268,6 +49376,134 @@ function tokenTransferFromIndexedActivityItem(
   };
 }
 
+function replayBoundedNonWorkOpenListings(
+  listings,
+  sales,
+  closedListings,
+  checkpointHeight,
+) {
+  if (!Number.isSafeInteger(checkpointHeight) || checkpointHeight < 1) {
+    return null;
+  }
+  const keyFor = (item) => {
+    const tokenId = String(item?.tokenId ?? "").trim().toLowerCase();
+    const listingId = String(item?.listingId ?? "").trim().toLowerCase();
+    return /^[0-9a-f]{64}$/u.test(tokenId) &&
+      /^[0-9a-f]{64}$/u.test(listingId)
+      ? tokenId + ":" + listingId
+      : "";
+  };
+  const openingByKey = new Map();
+  for (const listing of listings) {
+    if (String(listing?.tokenId ?? "").trim().toLowerCase() === WORK_TOKEN_ID) {
+      continue;
+    }
+    const key = keyFor(listing);
+    if (!key || openingByKey.has(key)) return null;
+    openingByKey.set(key, listing);
+  }
+  const closingByKey = new Map();
+  for (const item of [...sales, ...closedListings]) {
+    if (String(item?.tokenId ?? "").trim().toLowerCase() === WORK_TOKEN_ID) {
+      continue;
+    }
+    const key = keyFor(item);
+    const txid = String(
+      item?.closedTxid ?? item?.txid ?? "",
+    ).trim().toLowerCase();
+    const height = Number(
+      item?.closedBlockHeight ?? item?.blockHeight,
+    );
+    if (
+      !key ||
+      !openingByKey.has(key) ||
+      !/^[0-9a-f]{64}$/u.test(txid) ||
+      !Number.isSafeInteger(height) ||
+      height < 1 ||
+      height > checkpointHeight ||
+      (closingByKey.has(key) && closingByKey.get(key) !== txid)
+    ) {
+      return null;
+    }
+    closingByKey.set(key, txid);
+  }
+  return listings.filter((listing) => {
+    const tokenId = String(listing?.tokenId ?? "").trim().toLowerCase();
+    return tokenId === WORK_TOKEN_ID ||
+      !closingByKey.has(keyFor(listing));
+  });
+}
+
+function replayBondRegistryAddressesFromExactState(
+  network,
+  registryState,
+  activityState,
+  exactHeight,
+  exactHash,
+) {
+  const height = Number(exactHeight);
+  const hash = String(exactHash ?? "").trim().toLowerCase();
+  if (
+    network !== "livenet" ||
+    !Number.isSafeInteger(height) ||
+    height < 1 ||
+    !/^[0-9a-f]{64}$/u.test(hash) ||
+    registryState?.network !== network ||
+    Number(registryState?.indexedThroughBlock) !== height ||
+    String(registryState?.indexedThroughBlockHash ?? "")
+      .trim()
+      .toLowerCase() !== hash ||
+    !Array.isArray(registryState?.records) ||
+    !Array.isArray(activityState?.activity) ||
+    (Array.isArray(registryState?.pendingEvents) &&
+      registryState.pendingEvents.length > 0)
+  ) {
+    return null;
+  }
+  const addresses = new Map();
+  for (const config of BOND_TOKEN_CONFIGS) {
+    const matches = registryState.records.filter((record) =>
+      normalizePowId(String(record?.id ?? "")) ===
+        normalizePowId(config.registryId)
+    );
+    if (matches.length > 1) return null;
+    const record = matches[0];
+    let address = "";
+    if (record) {
+      const registrationHeight = Number(record.blockHeight);
+      const updatedHeight = Number(record.updatedHeight);
+      const receiveAddress = String(record.receiveAddress ?? "").trim();
+      const ownerAddress = String(record.ownerAddress ?? "").trim();
+      if (
+        record.confirmed !== true ||
+        !/^[0-9a-f]{64}$/u.test(
+          String(record.txid ?? "").trim().toLowerCase(),
+        ) ||
+        !Number.isSafeInteger(registrationHeight) ||
+        registrationHeight < 1 ||
+        registrationHeight > height ||
+        !Number.isSafeInteger(updatedHeight) ||
+        updatedHeight < registrationHeight ||
+        updatedHeight > height ||
+        !isValidBitcoinAddress(ownerAddress, network) ||
+        (receiveAddress &&
+          !isValidBitcoinAddress(receiveAddress, network))
+      ) {
+        return null;
+      }
+      address = receiveAddress || ownerAddress;
+    }
+    const hasConfirmedMint = activityState.activity.some((item) =>
+      item?.kind === "token-mint" &&
+      item?.confirmed === true &&
+      String(item?.tokenId ?? "").trim().toLowerCase() === config.tokenId
+    );
+    if (hasConfirmedMint && !address) return null;
+    addresses.set(config.tokenId, address);
+  }
+  return addresses;
+}
+
 async function tokenValueStateFromIndexedActivity(
   network,
   activityState,
@@ -49287,6 +49523,20 @@ async function tokenValueStateFromIndexedActivity(
       WORK_SUBATOM_PROJECTION_MODEL,
     ].includes(String(model ?? "")),
   ) ?? WORK_ATOMIC_PROJECTION_MODEL;
+  const replayBondRegistryAddresses = options.replayBridgeEra
+    ? replayBondRegistryAddressesFromExactState(
+        network,
+        options.exactRegistryState,
+        activityState,
+        options.exactHeight,
+        options.exactHash,
+      )
+    : null;
+  if (options.replayBridgeEra && !replayBondRegistryAddresses) {
+    throw new Error(
+      "Exact replay bond registry records are unavailable at the checkpoint.",
+    );
+  }
   const tokensById = new Map([
     [
       WORK_TOKEN_ID,
@@ -49298,14 +49548,20 @@ async function tokenValueStateFromIndexedActivity(
     [
       POWB_TOKEN_ID,
       {
-        ...canonicalPowbTokenDefinition(network, ""),
+        ...canonicalPowbTokenDefinition(
+          network,
+          replayBondRegistryAddresses?.get(POWB_TOKEN_ID) ?? "",
+        ),
         confirmed: true,
       },
     ],
     [
       INCB_TOKEN_ID,
       {
-        ...canonicalIncbTokenDefinition(network, ""),
+        ...canonicalIncbTokenDefinition(
+          network,
+          replayBondRegistryAddresses?.get(INCB_TOKEN_ID) ?? "",
+        ),
         confirmed: true,
       },
     ],
@@ -49743,8 +49999,18 @@ async function tokenValueStateFromIndexedActivity(
   }
 
   const [overlaySales, closedListings] = await Promise.all([
-    completeTokenMarketOverlayItems(network, tokenScope, "sales"),
-    completeTokenMarketOverlayItems(network, tokenScope, "closed-listings"),
+    completeTokenMarketOverlayItems(
+      network,
+      tokenScope,
+      "sales",
+      options,
+    ),
+    completeTokenMarketOverlayItems(
+      network,
+      tokenScope,
+      "closed-listings",
+      options,
+    ),
   ]);
   const scopedTokens = [...tokensById.values()].filter((token) =>
     scopeMatches(token.tokenId, token.ticker),
@@ -49765,6 +50031,19 @@ async function tokenValueStateFromIndexedActivity(
     tokenClosedListingItemKey,
     mergeTokenListingRecord,
   );
+  const replayListings = options.replayBridgeEra
+    ? replayBoundedNonWorkOpenListings(
+        scopedListings,
+        scopedSales,
+        scopedClosedListings,
+        Number(options.exactHeight),
+      )
+    : scopedListings;
+  if (!replayListings) {
+    throw new Error(
+      "Exact replay non-WORK listing lifecycle is ambiguous.",
+    );
+  }
   const exactBondScopeId =
     scopedTokens.length === 1 && isBondTokenId(scopedTokens[0]?.tokenId)
       ? scopedTokens[0].tokenId
@@ -49861,7 +50140,7 @@ async function tokenValueStateFromIndexedActivity(
       activityState.indexedThroughBlock ??
       activityState.stats?.indexedThroughBlock ??
       indexedThroughBlockFromItems(activityState.activity),
-    listings: scopedListings,
+    listings: replayListings,
     mints,
     pendingSupply:
       exactWorkScope || exactBondScopeId ? "0" : 0,
@@ -49895,6 +50174,37 @@ async function tokenValueStateFromIndexedActivity(
   };
 }
 
+async function activeCanonicalSummaryReplayTokenBridgeEra(
+  network,
+  exactHeight,
+  exactHash,
+  activationHeight,
+  replayVerifierBinding,
+) {
+  if (!replayVerifierBinding) return "";
+  const canonical = await proofIndexCanonicalStateMetaPayload(network);
+  const rebuild = canonical?.rebuild ?? null;
+  const currentBinding = canonicalInternalReplayVerifierBinding(
+    rebuild,
+    network,
+  );
+  return activeReplayTokenTableBridgeEra({
+    activationHeight,
+    currentBindingMatches: Boolean(
+      currentBinding &&
+      canonicalPwtReplayVerifierBindingsEqual(
+        currentBinding,
+        replayVerifierBinding,
+      )
+    ),
+    exactCheckpointHash: exactHash,
+    exactCheckpointHeight: exactHeight,
+    network,
+    rebuild,
+    replayState: canonicalInternalPwtRangeReplayState(rebuild, network),
+  });
+}
+
 async function currentProofIndexTokenTablePayloadForLedger(
   network,
   label,
@@ -49919,20 +50229,28 @@ async function currentProofIndexTokenTablePayloadForLedger(
     ? SUMMARY_EXACT_CHECKPOINT_PROOF_INDEX_READ_WAIT_MS
     : SUMMARY_PROOF_INDEX_READ_WAIT_MS;
   const bootstrapPayload = await payloadWithFallbackAfterMs(
-    proofIndexCanonicalSummaryTokenTablePayload(network, {
-      exactHash: options.exactHash,
-      exactHeight: options.exactHeight,
-    }).catch((error) => {
-        console.error(
-          `Proof index canonical-summary token bootstrap failed for ${label}: ${errorSummary(error)}`,
-        );
-        return null;
-      }),
+    (options.replayBridgeEra
+      ? proofIndexReplayCanonicalSummaryTokenTablePayload(network, {
+          activationHeight: options.workAmoV8ActivationHeight,
+          exactHash: options.exactHash,
+          exactHeight: options.exactHeight,
+        })
+      : proofIndexCanonicalSummaryTokenTablePayload(network, {
+          exactHash: options.exactHash,
+          exactHeight: options.exactHeight,
+        })).catch((error) => {
+      console.error(
+        "Proof index canonical-summary token bootstrap failed for " +
+          label + ": " + errorSummary(error),
+      );
+      return null;
+    }),
     null,
     exactCheckpointReadWaitMs,
   );
-  const payload =
-    bootstrapPayload ??
+  const payload = options.replayBridgeEra
+    ? bootstrapPayload
+    : bootstrapPayload ??
     await payloadWithFallbackAfterMs(
       proofIndexTokenPayload(
         network,
@@ -50180,11 +50498,47 @@ function tokenTablePayloadHasConservedBalances(payload) {
   );
 }
 
+
+function replayEmptyNonWorkTokenIsConserved(scoped) {
+  const tokens = Array.isArray(scoped?.tokens) ? scoped.tokens : [];
+  const tokenId = String(tokens[0]?.tokenId ?? "").trim().toLowerCase();
+  if (
+    tokens.length !== 1 ||
+    !/^[0-9a-f]{64}$/u.test(tokenId) ||
+    isWorkTokenId(tokenId)
+  ) {
+    return false;
+  }
+  for (const key of [
+    "mints",
+    "holders",
+    "transfers",
+    "sales",
+    "listings",
+    "closedListings",
+  ]) {
+    if (!Array.isArray(scoped?.[key]) || scoped[key].length !== 0) {
+      return false;
+    }
+  }
+  const zeroOrAbsent = (value) =>
+    value === undefined || value === null || value === "" ||
+    canonicalNonNegativeIntegerText(value) === "0";
+  return [
+    scoped?.confirmedSupply,
+    scoped?.pendingSupply,
+    tokens[0]?.confirmedSupply,
+    tokens[0]?.pendingSupply,
+    tokens[0]?.holderCount,
+  ].every(zeroOrAbsent);
+}
+
 async function exactTokenTablePayloadForCanonicalLedger(
   network,
   label,
   exactHeight,
   exactHash,
+  options = {},
 ) {
   const normalizedExactHash = String(exactHash ?? "")
     .trim()
@@ -50201,7 +50555,7 @@ async function exactTokenTablePayloadForCanonicalLedger(
   const payload = await currentProofIndexTokenTablePayloadForLedger(
     network,
     label,
-    { exactHash: normalizedExactHash, exactHeight },
+    { exactHash: normalizedExactHash, exactHeight, ...options },
   );
   if (!payload || !tokenTablePayloadHasConservedBalances(payload)) {
     throw freshDataUnavailableError(
@@ -50306,6 +50660,13 @@ async function buildIndexedCanonicalLedgerPayload(
   const expectedWorkAmountStorageModel = String(
     workPrecisionOptions.workAmountStorageModel ?? "",
   );
+  const replayBridgeEra = await activeCanonicalSummaryReplayTokenBridgeEra(
+    network,
+    exactHeight,
+    exactHash,
+    workPrecisionOptions.workAmoV8ActivationHeight,
+    options.replayVerifierBinding,
+  );
   if (
     ![
       WORK_ATOMIC_PROJECTION_MODEL,
@@ -50325,17 +50686,22 @@ async function buildIndexedCanonicalLedgerPayload(
     timingPreviousAt = now;
   };
 
-  const [
+  let [
     activityState,
     registrySnapshot,
     btcUsdQuote,
     currentTokenTableState,
     currentMarketOverlay,
   ] = await Promise.all([
-    indexedActivityStateForCanonicalLedger(network, { exactHeight }),
+    indexedActivityStateForCanonicalLedger(network, {
+      exactHash,
+      exactHeight,
+      replayBridgeEra,
+    }),
     indexedRegistryStateForCanonicalLedger(network, {
       exactHash,
       exactHeight,
+      replayBridgeEra,
     }),
     payloadWithFallbackAfterMs(
       btcUsdPricePayload(network, { fresh: false }),
@@ -50347,24 +50713,22 @@ async function buildIndexedCanonicalLedgerPayload(
       label,
       exactHeight,
       exactHash,
+      {
+        replayBridgeEra,
+        workAmoV8ActivationHeight:
+          workPrecisionOptions.workAmoV8ActivationHeight,
+      },
     ),
-    indexedTokenMarketSummaryOverlay(network).catch((error) => {
-      console.error(
-        `WORK pre-consistency marketplace overlay failed: ${errorSummary(error)}`,
-      );
-      return null;
-    }),
+    replayBridgeEra
+      ? Promise.resolve(null)
+      : indexedTokenMarketSummaryOverlay(network).catch((error) => {
+          console.error(
+            `WORK pre-consistency marketplace overlay failed: ${errorSummary(error)}`,
+          );
+          return null;
+        }),
   ]);
   markTiming("sources");
-  const tableWorkAmountStorageModel =
-    exactWorkAmountStorageModelFromState(currentTokenTableState);
-  if (
-    tableWorkAmountStorageModel !== expectedWorkAmountStorageModel
-  ) {
-    throw freshDataUnavailableError(
-      `Rejected ${label}: the canonical WORK definition conflicts with the exact replay precision era.`,
-    );
-  }
   const sourceTipHeight = exactHeight;
   const registryState = registrySnapshot;
   const derivedTokenState = await tokenValueStateFromIndexedActivity(
@@ -50373,9 +50737,116 @@ async function buildIndexedCanonicalLedgerPayload(
     "",
     {
       workAmountStorageModel: expectedWorkAmountStorageModel,
+      ...(replayBridgeEra
+        ? {
+            exactHash,
+            exactHeight,
+            exactRegistryState: registrySnapshot,
+            replayBridgeEra,
+            replayVerifierBinding: options.replayVerifierBinding,
+            workAmoV8ActivationHeight:
+              workPrecisionOptions.workAmoV8ActivationHeight,
+          }
+        : {}),
     },
   );
-  const tokenState = derivedTokenState;
+  let tokenState = derivedTokenState;
+  if (replayBridgeEra) {
+    const bridge = replayTokenTableWorkBridge(
+      currentTokenTableState,
+      tokenState,
+      replayBridgeEra,
+      exactHeight,
+    );
+    if (!bridge) {
+      throw freshDataUnavailableError(
+        "Rejected " + label + ": replay WORK token tables do not match independently reconstructed canonical activity.",
+      );
+    }
+    const historicalWorkState = scopedTokenPayloadFromState(
+      tokenState,
+      WORK_TOKEN_ID,
+    );
+    const physicalWorkState = scopedTokenPayloadFromState(
+      currentTokenTableState,
+      WORK_TOKEN_ID,
+    );
+    currentTokenTableState = tokenStateWithExactScopedTokenReplacement(
+      currentTokenTableState,
+      {
+        ...historicalWorkState,
+        closedListings: bridge.historicalClosedListings,
+        holders: replayBridgeEra === WORK_ATOMIC_PROJECTION_MODEL
+          ? bridge.historicalHolders
+          : physicalWorkState.holders,
+        listings: bridge.historicalListings,
+        tokens: historicalWorkState.tokens.map((token) =>
+          replayBridgeEra === WORK_ATOMIC_PROJECTION_MODEL
+            ? {
+                ...token,
+                confirmedSupply: formatWorkAtoms(
+                  bridge.historicalSupplyAtoms,
+                ),
+                confirmedSupplyAtoms: bridge.historicalSupplyAtoms,
+                holderCount: bridge.workHolderCount,
+              }
+            : { ...token, holderCount: bridge.workHolderCount },
+        ),
+      },
+      WORK_TOKEN_ID,
+    );
+    // Retained current tables may contain post-H non-WORK state. Replay takes
+    // only the verified WORK table, and reconstructs every other holder from
+    // the bounded H activity instead of carrying tip-current balances.
+    currentTokenTableState = scopedTokenPayloadFromState(
+      currentTokenTableState,
+      WORK_TOKEN_ID,
+    );
+    if (!tokenTablePayloadHasConservedBalances(currentTokenTableState)) {
+      throw freshDataUnavailableError(
+        "Rejected " + label + ": exact replay WORK table projection is not conserved.",
+      );
+    }
+    const historicalNonWorkHolders = [];
+    for (const token of Array.isArray(tokenState?.tokens)
+      ? tokenState.tokens
+      : []) {
+      if (isWorkTokenId(token?.tokenId)) continue;
+      const scoped = scopedTokenPayloadFromState(
+        tokenState,
+        token.tokenId,
+      );
+      if (
+        !replayEmptyNonWorkTokenIsConserved(scoped) &&
+        !tokenTablePayloadHasConservedBalances(scoped)
+      ) {
+        throw freshDataUnavailableError(
+          "Rejected " + label + ": bounded non-WORK token balances are not conserved.",
+        );
+      }
+      historicalNonWorkHolders.push(
+        ...(Array.isArray(scoped.holders) ? scoped.holders : []),
+      );
+    }
+    tokenState = {
+      ...tokenState,
+      holders: historicalNonWorkHolders,
+      stats: {
+        ...tokenState?.stats,
+        holders: historicalNonWorkHolders.length,
+      },
+    };
+  }
+  const tableWorkAmountStorageModel =
+    exactWorkAmountStorageModelFromState(currentTokenTableState);
+  if (tableWorkAmountStorageModel !== expectedWorkAmountStorageModel) {
+    throw freshDataUnavailableError(
+      "Rejected " + label + ": the canonical WORK definition conflicts with the exact replay precision era.",
+    );
+  }
+  // The replay bridge proves the raw relational listing book first. This
+  // merge then retains its lifecycle and applies the existing V2/V4 listing
+  // cutover policy to the canonical summary.
   let ledgerTokenTableState = tokenStateWithAuthoritativeCurrentListings(
     mergeTokenPayloadWithCanonicalFloor(
       tokenState,
@@ -50791,6 +51262,21 @@ async function buildIndexedCanonicalLedgerPayload(
         : 0,
     }),
   );
+  if (replayBridgeEra) {
+    const stillActiveEra = await activeCanonicalSummaryReplayTokenBridgeEra(
+      network,
+      exactHeight,
+      exactHash,
+      workPrecisionOptions.workAmoV8ActivationHeight,
+      options.replayVerifierBinding,
+    );
+    if (stillActiveEra !== replayBridgeEra) {
+      throw freshDataUnavailableError(
+        "Rejected " + label + ": the active replay checkpoint or verifier binding changed while building the canonical ledger.",
+      );
+    }
+  }
+
   return result;
 }
 
@@ -52353,7 +52839,7 @@ function boostHexTxid(value) {
 }
 
 function boostAddress(value) {
-  return String(value ?? "").trim();
+  return boostAddressIdentityKey(value);
 }
 
 function boostSignalSats(item) {
@@ -53178,7 +53664,7 @@ function boostProfileSubjectForQuery(
   if (!query) {
     return null;
   }
-  const queryKey = query;
+  const queryKey = boostAddress(query);
   const queryId = boostLooksLikeAddress(query) ? "" : normalizePowId(query);
   let address = queryId && confirmedOwners ? confirmedOwners.get(queryId) ?? "" : "";
   let profileState = null;

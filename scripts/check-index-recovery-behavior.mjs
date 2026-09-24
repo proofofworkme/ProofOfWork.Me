@@ -52879,6 +52879,7 @@ check("AMO V5 pre-unit relic history is exact, relational, and fail-closed", asy
       ledgerSnapshotMetadata: async () => {
         throw new Error("an explicit relational snapshot was expected");
       },
+      replayRegistryCheckpointMatches: async () => true,
       proofIndexPool: () => ({
         async query(sql, params) {
           sqlReads.push({
@@ -53007,6 +53008,40 @@ check("AMO V5 pre-unit relic history is exact, relational, and fail-closed", asy
   });
   assert.equal(broadClosed.totalCount, 0);
   assert.deepEqual(broadClosed.items, []);
+  const replayMarketPage = await proofIndexTokenMarketHistoryOverlayPayload(
+    "livenet",
+    WORK_TOKEN_ID,
+    "closedListings",
+    new URLSearchParams({ limit: "20" }),
+    {
+      authoritativeEmpty: true,
+      pagination: paginationFor(""),
+      replayCheckpointHash: "a".repeat(64),
+      replayCheckpointHeight: 958_382,
+    },
+  );
+  assert.equal(replayMarketPage.indexedThroughBlock, 958_382);
+  assert.equal(replayMarketPage.indexedThroughBlockHash, "a".repeat(64));
+  assert.equal(replayMarketPage.totalCount, 0);
+  const replayMarketSql = canonicalSqlCalls.at(-1);
+  assert.equal(replayMarketSql.options.replayCheckpointHeightParam, "$3");
+  for (const required of [
+    "e.status = 'confirmed'",
+    "event_tx.status = 'confirmed'",
+    "event_tx.block_height <= $3",
+    "e.block_height = event_tx.block_height",
+    "e.block_index = event_tx.block_index",
+    "event_block.canonical = true",
+  ]) {
+    assert.ok(replayMarketSql.whereClause.includes(required));
+  }
+  assert.match(
+    topLevelFunctionSource(
+      READER_PATH,
+      "tokenHistoryCanonicalMarketEventsSql",
+    ),
+    /canonical_seal_tx\.block_height <=/u,
+  );
   const broadMarketLog = await read("market-log", "", {
     authoritativeEmpty: true,
   });
@@ -56852,6 +56887,81 @@ check("exact ID lifecycle keeps sealed listings active until a canonical close",
       assert.match(source, required, `${functionName} lacks relational proof`);
     }
   }
+  const replayRecords = isolatedFunction(
+    READER_PATH,
+    "confirmedIdRecordsFromCurrentTables",
+    {
+      confirmedIdRecordFromRow: (row) => ({ id: row.id_lower }),
+      normalizedLowerText: (value) => String(value ?? "").trim().toLowerCase(),
+      rowNumber: (row, key) => Number(row?.[key] ?? 0),
+    },
+  );
+  const replayCheckpoint = { height: 958_382 };
+  const futureRecord = {
+    id_lower: "future-mutated",
+    updated_height: 958_383,
+    last_event_status: "confirmed",
+    last_event_block_height: 958_383,
+    last_event_canonical: true,
+  };
+  await assert.rejects(
+    replayRecords(
+      {
+        async query(sql, params) {
+          assert.match(String(sql), /t\.block_height <= \$2/u);
+          assert.match(
+            String(sql),
+            /registration_block_at_height\.canonical = true/u,
+          );
+          assert.deepEqual(Array.from(params), ["livenet", 958_382]);
+          return { rows: [futureRecord] };
+        },
+      },
+      "livenet",
+      "",
+      replayCheckpoint,
+    ),
+    /later, missing, or noncanonical last event/u,
+    "a retained ID with post-checkpoint mutation must fail closed",
+  );
+  const replayEvents = isolatedFunction(
+    READER_PATH,
+    "currentIdRegistryEventState",
+    {
+      WORK_AMO_V5_ACTIVATION_HEIGHT: 958_383,
+      assertConfirmedPwidRegistryClaimAllocation: (items) => items,
+      idLifecycleStateFromItems: () => ({ activity: [] }),
+      normalizeHistoryEventRows: () => [],
+      pendingIdRegistryStateFromActivity: () => ({
+        pendingRecords: [],
+        pendingEvents: [],
+        pendingSales: [],
+      }),
+    },
+  );
+  await replayEvents(
+    {
+      async query(sql, params) {
+        assert.match(String(sql), /AND t\.block_height <= \$3/u);
+        assert.match(String(sql), /AND canonical_block\.canonical = true/u);
+        assert.match(String(sql), /AND e\.status = 'confirmed'/u);
+        assert.equal(
+          JSON.stringify(params),
+          JSON.stringify([
+            "livenet",
+            [
+              "id-register", "id-update", "id-transfer", "id-list",
+              "id-seal", "id-delist", "id-buy",
+            ],
+            958_382,
+          ]),
+        );
+        return { rows: [] };
+      },
+    },
+    "livenet",
+    replayCheckpoint,
+  );
   const registryHistorySource = topLevelFunctionSource(
     READER_PATH,
     "proofIndexRegistryHistoryPayload",
@@ -56917,6 +57027,8 @@ check("exact ID lifecycle keeps sealed listings active until a canonical close",
         const text = String(value ?? "").trim().toLowerCase();
         return /^[0-9a-f]{64}$/u.test(text) ? text : "";
       },
+      normalizedLowerText: (value) => String(value ?? "").trim().toLowerCase(),
+      rowNumber: (row, key) => Number(row?.[key] ?? 0),
     },
   );
   const spentListingId = "a".repeat(64);
@@ -56958,6 +57070,109 @@ check("exact ID lifecycle keeps sealed listings active until a canonical close",
     [openListingId],
     "current ID registry listings must drop indexed spent sale-ticket anchors",
   );
+  const replayListing = {
+    listingId: openListingId,
+    saleAuthorization: { anchorVout: 2 },
+  };
+  const replayAnchorRow = {
+    anchor_txid: openListingId,
+    anchor_vout: 2,
+    anchor_present: true,
+    anchor_origin_status: "confirmed",
+    anchor_origin_height: 958_382,
+    anchor_origin_canonical: true,
+    output_spent_by_txid: "c".repeat(64),
+    pointed_spend_status: "confirmed",
+    pointed_spend_height: 958_382,
+    pointed_spend_canonical: true,
+    pointed_input_present: true,
+    spent_by_checkpoint: true,
+  };
+  const replayAnchorPool = (row) => ({
+    async query(sql, params) {
+      assert.match(String(sql), /proof_indexer\.tx_inputs pointed_input/u);
+      assert.match(String(sql), /proof_indexer\.blocks anchor_origin_block/u);
+      assert.match(String(sql), /proof_indexer\.blocks spend_block/u);
+      assert.match(String(sql), /spend_tx\.block_height <= \$3/u);
+      assert.equal(
+        JSON.stringify(params),
+        JSON.stringify([
+          "livenet",
+          JSON.stringify([{ anchor_txid: openListingId, anchor_vout: 2 }]),
+          958_382,
+        ]),
+      );
+      return { rows: [row] };
+    },
+  });
+  const replayAnchorCheckpoint = { height: 958_382 };
+  await assert.rejects(
+    indexedUnspentIdRegistryListings(
+      { async query() { throw new Error("missing anchor must not query"); } },
+      "livenet",
+      [{ listingId: openListingId }],
+      replayAnchorCheckpoint,
+    ),
+    /listing anchor outpoint is missing/u,
+    "a replay listing without a valid anchor fails closed",
+  );
+  assert.deepEqual(
+    (await indexedUnspentIdRegistryListings(
+      replayAnchorPool(replayAnchorRow),
+      "livenet",
+      [replayListing],
+      replayAnchorCheckpoint,
+    )).map((listing) => listing.listingId),
+    [],
+    "a canonical input through the checkpoint spends a listing anchor",
+  );
+  await assert.rejects(
+    indexedUnspentIdRegistryListings(
+      replayAnchorPool({
+        ...replayAnchorRow,
+        anchor_origin_height: 958_383,
+      }),
+      "livenet",
+      [replayListing],
+      replayAnchorCheckpoint,
+    ),
+    /anchor origin is not canonical at the checkpoint/u,
+    "a future listing anchor output fails closed",
+  );
+  await assert.rejects(
+    indexedUnspentIdRegistryListings(
+      replayAnchorPool({
+        ...replayAnchorRow,
+        pointed_input_present: false,
+        spent_by_checkpoint: false,
+      }),
+      "livenet",
+      [replayListing],
+      replayAnchorCheckpoint,
+    ),
+    /spend pointer lacks canonical input evidence/u,
+    "a confirmed historical spend pointer with no matching input fails closed",
+  );
+  for (const futureOrPendingPointer of [
+    { pointed_spend_height: 958_383 },
+    { pointed_spend_status: "pending", pointed_spend_canonical: false },
+  ]) {
+    assert.deepEqual(
+      (await indexedUnspentIdRegistryListings(
+        replayAnchorPool({
+          ...replayAnchorRow,
+          ...futureOrPendingPointer,
+          pointed_input_present: true,
+          spent_by_checkpoint: false,
+        }),
+        "livenet",
+        [replayListing],
+        replayAnchorCheckpoint,
+      )).map((listing) => listing.listingId),
+      [openListingId],
+      "future or pending anchor spends remain unspent at the checkpoint",
+    );
+  }
   const listingSpendScanSource = topLevelFunctionSource(
     BACKFILL_PATH,
     "persistCanonicalListingOutpointSpendsFromBlock",
@@ -86004,6 +86219,148 @@ check("retained PWT replay normalizes only two verified equal WORK listing alias
     const unrelated = { ...listing, txid: "f".repeat(64) };
     assert.equal(conversionRecord(unrelated), unrelated);
   }
+});
+
+
+check("bounded replay admits only exact empty non-WORK credit definitions", () => {
+  const emptyConserved = isolatedFunction(
+    API_PATH,
+    "replayEmptyNonWorkTokenIsConserved",
+    { canonicalNonNegativeIntegerText, isWorkTokenId },
+  );
+  const tokenId = "a".repeat(64);
+  const empty = {
+    tokens: [{ tokenId, confirmedSupply: "0", holderCount: 0 }],
+    mints: [], holders: [], transfers: [], sales: [],
+    listings: [], closedListings: [],
+    confirmedSupply: "0", pendingSupply: "0",
+  };
+  assert.equal(emptyConserved(empty), true);
+  assert.equal(emptyConserved({ ...empty, mints: [{ tokenId }] }), false);
+  assert.equal(emptyConserved({ ...empty, holders: [{ tokenId }] }), false);
+  assert.equal(emptyConserved({ ...empty, listings: [{ tokenId }] }), false);
+  assert.equal(emptyConserved({ ...empty, confirmedSupply: "1" }), false);
+  assert.equal(emptyConserved({
+    ...empty,
+    tokens: [{ tokenId, confirmedSupply: "1", holderCount: 0 }],
+  }), false);
+  assert.equal(emptyConserved({
+    ...empty,
+    tokens: [{ tokenId: WORK_TOKEN_ID, confirmedSupply: "0" }],
+  }), false);
+});
+
+check("Exact replay bond registries come from bounded confirmed PWIDs", () => {
+  const incbTokenId =
+    "3cb25745f937f2b4e5508e5400189fe8fe679cd8e84bfa1e9176d70c9761f15d";
+  const powbTokenId =
+    "a3d0bc8528f91dfc52400a885bed7e49235396aa82aa9f95db41be629f1d5562";
+  const inceptionAtH = "16nhWuGM7irqp1yRK3rykz7tPTUeyZZD9a";
+  const infinityAtH = "1H1arP2xpam6MZmHt6k1tB83stqVdH6ANK";
+  const futureReceiver = "1FutureReceiverAddressAfterH";
+  const height = 958_382;
+  const hash = "a".repeat(64);
+  const addressIsValid = (address, network) =>
+    network === "livenet" &&
+    [inceptionAtH, infinityAtH, futureReceiver].includes(address);
+  const fromSnapshot = isolatedFunction(
+    API_PATH,
+    "replayBondRegistryAddressesFromExactState",
+    {
+      BOND_TOKEN_CONFIGS: [
+        { registryId: "infinity@proofofwork.me", tokenId: powbTokenId },
+        { registryId: "inception@proofofwork.me", tokenId: incbTokenId },
+      ],
+      isValidBitcoinAddress: addressIsValid,
+      normalizePowId: (id) => String(id).trim().toLowerCase()
+        .replace(/@proofofwork\.me$/u, ""),
+    },
+  );
+  const registryState = {
+    indexedThroughBlock: height,
+    indexedThroughBlockHash: hash,
+    network: "livenet",
+    records: [
+      {
+        blockHeight: 952_213,
+        confirmed: true,
+        id: "infinity",
+        ownerAddress: infinityAtH,
+        receiveAddress: infinityAtH,
+        txid: "b".repeat(64),
+        updatedHeight: 952_213,
+      },
+      {
+        blockHeight: 957_366,
+        confirmed: true,
+        id: "inception",
+        ownerAddress: inceptionAtH,
+        receiveAddress: inceptionAtH,
+        txid: "c".repeat(64),
+        updatedHeight: 957_366,
+      },
+    ],
+  };
+  const activity = {
+    activity: [{
+      confirmed: true,
+      kind: "token-mint",
+      tokenId: incbTokenId,
+    }],
+  };
+  const addresses = fromSnapshot(
+    "livenet", registryState, activity, height, hash,
+  );
+  assert.equal(addresses.get(incbTokenId), inceptionAtH);
+  assert.equal(addresses.get(powbTokenId), infinityAtH);
+  // A later receiver in the current physical definition is not an H source.
+  const tipDefinition = { registryAddress: futureReceiver };
+  assert.notEqual(addresses.get(incbTokenId), tipDefinition.registryAddress);
+  assert.equal(fromSnapshot("livenet", {
+    ...registryState,
+    records: registryState.records.filter((record) =>
+      record.id !== "inception"),
+  }, activity, height, hash), null);
+  assert.equal(fromSnapshot("livenet", {
+    ...registryState,
+    records: registryState.records.map((record) =>
+      record.id === "inception"
+        ? { ...record, receiveAddress: "invalid" }
+        : record),
+  }, activity, height, hash), null);
+  assert.equal(fromSnapshot("livenet", {
+    ...registryState,
+    records: [...registryState.records, registryState.records[1]],
+  }, activity, height, hash), null);
+  assert.equal(fromSnapshot("livenet", {
+    ...registryState,
+    records: registryState.records.map((record) =>
+      record.id === "inception"
+        ? { ...record, updatedHeight: height + 1 }
+        : record),
+  }, activity, height, hash), null);
+  assert.equal(fromSnapshot("livenet", {
+    ...registryState,
+    indexedThroughBlockHash: "d".repeat(64),
+  }, activity, height, hash), null);
+  assert.equal(fromSnapshot("livenet", {
+    ...registryState,
+    network: "testnet",
+  }, activity, height, hash), null);
+  assert.equal(fromSnapshot("livenet", {
+    ...registryState,
+    records: registryState.records.filter((record) =>
+      record.id !== "inception"),
+  }, { activity: [] }, height, hash).get(incbTokenId), "");
+  const tokenProjection = topLevelFunctionSource(
+    API_PATH, "tokenValueStateFromIndexedActivity",
+  );
+  assert.match(tokenProjection, /replayBondRegistryAddressesFromExactState/u);
+  assert.match(tokenProjection, /replayBondRegistryAddresses\?\.get\(INCB_TOKEN_ID\)/u);
+  assert.match(
+    topLevelFunctionSource(API_PATH, "buildIndexedCanonicalLedgerPayload"),
+    /exactRegistryState: registrySnapshot/u,
+  );
 });
 
 let failures = 0;
