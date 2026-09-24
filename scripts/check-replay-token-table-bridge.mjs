@@ -610,10 +610,17 @@ assert.equal(workMarketV1RefundSnapshotIncludes(excludedListingId), false);
 const refundOriginal = {
   ...listing(refundListingId, 7, 6),
   blockHeight: WORK_MARKET_V2_ACTIVATION_HEIGHT - 13,
+  saleAuthorization: {
+    ...activeOriginal.saleAuthorization,
+    version: "pwt-sale-v2",
+  },
+  sellerAddress:
+    "bc1pczmmh4garm864hj95qye8929a4sa7f5g4fhx2pzw776d3y48m2vszg8ryt",
 };
 const excludedOriginal = {
   ...listing(excludedListingId, 8, 7),
   blockHeight: WORK_MARKET_V2_ACTIVATION_HEIGHT - 12,
+  sellerAddress: "excluded-seller",
 };
 const refundCutover = {
   ...tableListing(refundOriginal, "disabled"),
@@ -673,6 +680,9 @@ for (const mutation of [
   { relic: false },
   { amountSubatoms: "1" },
   { blockIndex: 9 },
+  { sellerAddress: "other-seller" },
+  { saleAuthorization: { ...refundOriginal.saleAuthorization, version: "pwt-sale-v1" } },
+  { sealTxid: "1".repeat(64) },
   { closedBlockHeight: v2Checkpoint },
   { closedTxid: "1".repeat(64) },
 ]) {
@@ -697,6 +707,30 @@ assert.equal(bridge(v2Table, {
     txid: "2".repeat(64),
   }],
 }, WORK_ATOMIC_PROJECTION_MODEL), null);
+for (const [originalMutation, physicalMutation] of [
+  [{ sellerAddress: "wrong-seller" }, { sellerAddress: "wrong-seller" }],
+  [{ blockHeight: 959_048 }, { blockHeight: 959_048 }],
+  [
+    { saleAuthorization: { ...refundOriginal.saleAuthorization, version: "pwt-sale-v1" } },
+    { saleAuthorization: { ...refundCutover.saleAuthorization, version: "pwt-sale-v1" } },
+  ],
+]) {
+  assert.equal(bridge({
+    ...v2Table,
+    closedListings: [
+      v2Table.closedListings[0],
+      { ...refundCutover, ...physicalMutation },
+      excludedCutover,
+    ],
+  }, {
+    ...v2Historical,
+    listings: [
+      ...historical.listings,
+      { ...refundOriginal, ...originalMutation },
+      excludedOriginal,
+    ],
+  }, WORK_ATOMIC_PROJECTION_MODEL), null);
+}
 const canonicalRefundClose = {
   ...refundCutover,
   closedBlockHash: "b".repeat(64),
@@ -707,6 +741,8 @@ const canonicalRefundClose = {
   closedMinerFeeSats: 805,
   closedMinerFeeSource: "proof-indexer-canonical-outpoint-spend",
   closedTxid: "3".repeat(64),
+  closeTxid: "3".repeat(64),
+  closeTransactionBlockHeight: v2Checkpoint - 1,
   closedVin: 0,
 };
 const v2ClosedBridge = bridge({
@@ -729,6 +765,8 @@ for (const mutation of [
   { closedVin: undefined },
   { closedMinerFeeSats: undefined },
   { closedMinerFeeSource: "payload" },
+  { closeTxid: "4".repeat(64) },
+  { closeTransactionBlockHeight: v2Checkpoint - 2 },
 ]) {
   assert.equal(bridge({
     ...v2Table,
@@ -743,7 +781,9 @@ const futureRefundBridge = bridge({
   ...v2Table,
   closedListings: [
     v2Table.closedListings[0],
-    { ...canonicalRefundClose, closedBlockHeight: v2Checkpoint + 1 },
+    { ...canonicalRefundClose,
+      closeTransactionBlockHeight: v2Checkpoint + 1,
+      closedBlockHeight: v2Checkpoint + 1 },
     excludedCutover,
   ],
 }, v2Historical, WORK_ATOMIC_PROJECTION_MODEL);
@@ -752,6 +792,81 @@ assert.equal(futureRefundBridge.historicalClosedListings.length, 1);
 assert.equal(futureRefundBridge.historicalListings.find(
   (item) => item.listingId === refundListingId,
 )?.closedTxid, undefined);
+
+const sealedRefundListingId =
+  "b4cb35b7939be0b28570a69477fd04fd5fdf3cd6d8fd2b726c28bfaab1263aaa";
+const sealedRefundTxid =
+  "7cc5299a0717e3ec3eb58cc65d2a39c819502df819951faec0b74caeb41da7b3";
+const sealedRefundOriginal = {
+  ...listing(sealedRefundListingId, 6, 8),
+  blockHeight: 955_654,
+  sealBlockHash: "b".repeat(64),
+  sealBlockHeight: 955_766,
+  sealBlockIndex: 5,
+  sealConfirmed: true,
+  sealProtocolVout: 1,
+  sealRecordOrdinal: 0,
+  sealTransactionBlockHeight: 955_766,
+  sealTxid: sealedRefundTxid,
+  sellerAddress: "1KhLgiejzFDxzM3AsmXXHCisH3VA7zcSUW",
+};
+const sealedRefundCutover = {
+  ...tableListing(sealedRefundOriginal, "disabled"),
+  closedConfirmed: true,
+  closedTxid: "",
+  disabledAtBlockHeight: WORK_MARKET_V2_ACTIVATION_HEIGHT,
+  disabledByTxid: WORK_MARKET_V2_DECLARATION_TXID,
+  disabledReason: "work-market-v2-cutover",
+  refundEligible: true,
+  relic: true,
+};
+const sealedRefundHistorical = {
+  ...v2Historical,
+  listings: [...v2Historical.listings, sealedRefundOriginal],
+};
+const sealedRefundTable = {
+  ...v2Table,
+  closedListings: [...v2Table.closedListings, sealedRefundCutover],
+};
+const sealedRefundBridge = bridge(
+  sealedRefundTable,
+  sealedRefundHistorical,
+  WORK_ATOMIC_PROJECTION_MODEL,
+);
+assert.ok(sealedRefundBridge);
+assert.equal(sealedRefundBridge.historicalListings.find(
+  (item) => item.listingId === sealedRefundListingId,
+)?.sealTxid, sealedRefundTxid);
+for (const mutation of [
+  { sealTxid: "" },
+  { sealConfirmed: false },
+  { sealBlockHeight: 955_765 },
+]) {
+  assert.equal(bridge({
+    ...sealedRefundTable,
+    closedListings: [
+      ...v2Table.closedListings,
+      { ...sealedRefundCutover, ...mutation },
+    ],
+  }, sealedRefundHistorical, WORK_ATOMIC_PROJECTION_MODEL), null);
+}
+const wrongSealedHeight = {
+  ...sealedRefundOriginal,
+  sealBlockHeight: 955_765,
+  sealTransactionBlockHeight: 955_765,
+};
+assert.equal(bridge({
+  ...sealedRefundTable,
+  closedListings: [
+    ...v2Table.closedListings,
+    { ...sealedRefundCutover,
+      sealBlockHeight: 955_765,
+      sealTransactionBlockHeight: 955_765 },
+  ],
+}, {
+  ...sealedRefundHistorical,
+  listings: [...v2Historical.listings, wrongSealedHeight],
+}, WORK_ATOMIC_PROJECTION_MODEL), null);
 
 const v8ListingId = "f".repeat(64);
 const v8CloseTxid = "1".repeat(64);

@@ -23460,6 +23460,7 @@ async function assertWorkAmoV5HMinusOneCaptureCheckpoint(
     blockHash,
     blockHeight,
   },
+  { existingReplaySeed = null } = {},
 ) {
   const checkpoint = await latestBlockScanCheckpoint(client, {
     useStoredCheckpoint: true,
@@ -23509,6 +23510,14 @@ async function assertWorkAmoV5HMinusOneCaptureCheckpoint(
         ) AS later_event_count,
         (
           SELECT count(*)::integer
+          FROM proof_indexer.events
+          WHERE network = $1
+            AND status = 'confirmed'
+            AND protocol IN ('pwt1', 'pwa1')
+            AND block_height > $2
+        ) AS later_pwt_event_count,
+        (
+          SELECT count(*)::integer
           FROM proof_indexer.work_amo_block_transitions
           WHERE network = $1
         ) AS transition_count
@@ -23521,15 +23530,37 @@ async function assertWorkAmoV5HMinusOneCaptureCheckpoint(
   const rebuildApplies =
     rebuild?.network === NETWORK &&
     ["active", "complete"].includes(rebuild?.status);
+  const replayActive = activePwtRangeReplay(rebuild);
+  const replayBinding = replayActive
+    ? canonicalPwtRangeReplayVerifierBinding(rebuild)
+    : null;
+  const runtimeBinding = ACTIVE_PWT_RANGE_REPLAY_VERIFIER_BINDING;
+  const replaySeedReuse =
+    replayActive &&
+    existingReplaySeed?.indexedThroughBlock === blockHeight &&
+    existingReplaySeed?.indexedThroughBlockHash === blockHash &&
+    rebuild?.fault == null &&
+    Number(rebuild?.rangeReplayFromHeight) ===
+      CANONICAL_INCB_PWT_RANGE_REPLAY_FROM_HEIGHT &&
+    replayBinding !== null &&
+    replayBinding.witnessedThroughBlock >= blockHeight &&
+    runtimeBinding !== null &&
+    canonicalIncbReplaySha256(replayBinding) ===
+      canonicalIncbReplaySha256(runtimeBinding) &&
+    Number(row.later_pwt_event_count) === 0 &&
+    Number(row.transition_count) === 0;
+  const freshCapture =
+    !replayActive &&
+    Number(row.maximum_block_height) === blockHeight &&
+    Number(row.later_block_count) === 0 &&
+    Number(row.later_transaction_count) === 0 &&
+    Number(row.later_event_count) === 0 &&
+    Number(row.transition_count) === 0;
   if (
     checkpoint.height !== blockHeight ||
     checkpoint.blockHash !== blockHash ||
     Number(row.exact_block_count) !== 1 ||
-    Number(row.maximum_block_height) !== blockHeight ||
-    Number(row.later_block_count) !== 0 ||
-    Number(row.later_transaction_count) !== 0 ||
-    Number(row.later_event_count) !== 0 ||
-    Number(row.transition_count) !== 0 ||
+    (!freshCapture && !replaySeedReuse) ||
     (rebuildApplies &&
       (Number(rebuild.indexedThroughBlock) !== blockHeight ||
         String(rebuild.indexedThroughBlockHash ?? "")
@@ -23585,29 +23616,36 @@ async function captureWorkAmoV5HMinusOneSeedEvidence(
         IN SHARE ROW EXCLUSIVE MODE
       `,
     );
-    await assertWorkAmoV5HMinusOneCaptureCheckpoint(client, {
-      blockHash: normalizedBlockHash,
-      blockHeight,
-    });
     const existingBeforeProduce =
       await storedWorkAmoV5HMinusOneSeedEvidenceRows(client, "");
-    if (existingBeforeProduce.length > 0) {
-      const existingEvidence =
-        existingBeforeProduce.length === 1
-          ? workAmoV5HMinusOneSeedEvidenceFromStoredRow(
-              existingBeforeProduce[0],
-            )
-          : null;
-      if (
+    const existingEvidence =
+      existingBeforeProduce.length === 1
+        ? workAmoV5HMinusOneSeedEvidenceFromStoredRow(
+            existingBeforeProduce[0],
+          )
+        : null;
+    if (
+      existingBeforeProduce.length > 0 &&
+      (
         !existingEvidence ||
         existingEvidence.indexedThroughBlock !== blockHeight ||
         existingEvidence.indexedThroughBlockHash !==
           normalizedBlockHash
-      ) {
-        throw new Error(
-          "Canonical AMO V5 H-1 seed evidence conflicts with an existing immutable row.",
-        );
-      }
+      )
+    ) {
+      throw new Error(
+        "Canonical AMO V5 H-1 seed evidence conflicts with an existing immutable row.",
+      );
+    }
+    await assertWorkAmoV5HMinusOneCaptureCheckpoint(
+      client,
+      {
+        blockHash: normalizedBlockHash,
+        blockHeight,
+      },
+      { existingReplaySeed: existingEvidence },
+    );
+    if (existingEvidence) {
       await client.query("COMMIT");
       return existingEvidence;
     }

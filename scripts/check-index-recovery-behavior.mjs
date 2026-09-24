@@ -67563,6 +67563,177 @@ check("AMO readiness survives a pruned canonical seed summary through immutable 
   );
 });
 
+check("AMO V5 immutable seed reuse requires the active exact replay checkpoint", async () => {
+  const blockHeight = WORK_AMO_V5_ACTIVATION_HEIGHT - 1;
+  const blockHash = WORK_AMO_V5_DECLARATION_BLOCK_HASH;
+  const binding = replayVerifierBindingFixture({
+    witnessedThroughBlock: blockHeight + 100,
+  });
+  const existingSeed = {
+    indexedThroughBlock: blockHeight,
+    indexedThroughBlockHash: blockHash,
+  };
+  const rebuild = {
+    active: true,
+    complete: false,
+    fault: null,
+    indexedThroughBlock: blockHeight,
+    indexedThroughBlockHash: blockHash,
+    mode: "pwt-range-replay",
+    network: "livenet",
+    rangeReplayFromHeight:
+      CANONICAL_INCB_PWT_RANGE_REPLAY_FROM_HEIGHT,
+    status: "active",
+    verifierBinding: binding,
+  };
+  const retainedFutureRows = {
+    exact_block_count: 1,
+    later_block_count: 8_725,
+    later_event_count: 58,
+    later_pwt_event_count: 0,
+    later_transaction_count: 2_129,
+    maximum_block_height: blockHeight + 8_725,
+    transition_count: 0,
+  };
+  const checkpoint = { blockHash, height: blockHeight };
+  const seedCheckpoint = { blockHash, blockHeight };
+  const guard = ({
+    marker = rebuild,
+    row = retainedFutureRows,
+    runtimeBinding = binding,
+    storedCheckpoint = checkpoint,
+  } = {}) =>
+    isolatedFunction(
+      BACKFILL_PATH,
+      "assertWorkAmoV5HMinusOneCaptureCheckpoint",
+      {
+        ACTIVE_PWT_RANGE_REPLAY_VERIFIER_BINDING: runtimeBinding,
+        NETWORK: "livenet",
+        activePwtRangeReplay: (value) =>
+          value?.mode === "pwt-range-replay" &&
+          value?.active === true &&
+          value?.status === "active",
+        canonicalPwtRangeReplayVerifierBinding: (value) =>
+          value?.verifierBinding ?? null,
+        latestBlockScanCheckpoint: async () => storedCheckpoint,
+        proofIndexerMetaValue: async () => marker,
+      },
+    );
+  const clientFor = (row) => ({
+    query: async (sql) => {
+      if (!sql.includes("AS later_pwt_event_count")) {
+        return { rows: [] };
+      }
+      assert.match(
+        sql,
+        /protocol IN \('pwt1', 'pwa1'\)[\s\S]*block_height > \$2/u,
+      );
+      return { rows: [row] };
+    },
+  });
+  await guard()(clientFor(retainedFutureRows), seedCheckpoint, {
+    existingReplaySeed: existingSeed,
+  });
+  for (const [name, options, seed] of [
+    ["missing seed", {}, null],
+    ["future PWT event", {
+      row: { ...retainedFutureRows, later_pwt_event_count: 1 },
+    }, existingSeed],
+    ["existing V5 transition", {
+      row: { ...retainedFutureRows, transition_count: 1 },
+    }, existingSeed],
+    ["different runtime binding", {
+      runtimeBinding: replayVerifierBindingFixture({
+        bindingId: "9".repeat(64),
+        witnessedThroughBlock: blockHeight + 100,
+      }),
+    }, existingSeed],
+    ["short witness coverage", {
+      runtimeBinding: replayVerifierBindingFixture({
+        witnessedThroughBlock: blockHeight - 1,
+      }),
+      marker: {
+        ...rebuild,
+        verifierBinding: replayVerifierBindingFixture({
+          witnessedThroughBlock: blockHeight - 1,
+        }),
+      },
+    }, existingSeed],
+    ["wrong H-1 checkpoint", {
+      storedCheckpoint: { blockHash: "e".repeat(64), height: blockHeight },
+    }, existingSeed],
+  ]) {
+    const row = options.row ?? retainedFutureRows;
+    await assert.rejects(
+      guard(options)(clientFor(row), seedCheckpoint, {
+        existingReplaySeed: seed,
+      }),
+      /exact unadvanced checkpoint/u,
+      name,
+    );
+  }
+  const strictRow = {
+    ...retainedFutureRows,
+    later_block_count: 0,
+    later_event_count: 0,
+    later_transaction_count: 0,
+    maximum_block_height: blockHeight,
+  };
+  await guard({ marker: null, row: strictRow, runtimeBinding: null })(
+    clientFor(strictRow),
+    seedCheckpoint,
+  );
+  await assert.rejects(
+    guard({ marker: null, runtimeBinding: null })(
+      clientFor(retainedFutureRows),
+      seedCheckpoint,
+    ),
+    /exact unadvanced checkpoint/u,
+    "fresh capture still rejects retained future rows",
+  );
+
+  const capture = isolatedFunction(
+    BACKFILL_PATH,
+    "captureWorkAmoV5HMinusOneSeedEvidence",
+    {
+      NETWORK: "livenet",
+      WORK_AMO_V5_DECLARATION_BLOCK_HASH: blockHash,
+      assertWorkAmoV5HMinusOneCaptureCheckpoint:
+        guard(),
+      storedWorkAmoV5HMinusOneSeedEvidenceRows: async () => [],
+      readJson: async () => {
+        throw new Error("fresh producer must not run");
+      },
+    },
+  );
+  await assert.rejects(
+    capture(clientFor(retainedFutureRows), seedCheckpoint),
+    /exact unadvanced checkpoint/u,
+    "active replay without an immutable seed fails before the producer",
+  );
+  const reuse = isolatedFunction(
+    BACKFILL_PATH,
+    "captureWorkAmoV5HMinusOneSeedEvidence",
+    {
+      NETWORK: "livenet",
+      WORK_AMO_V5_DECLARATION_BLOCK_HASH: blockHash,
+      assertWorkAmoV5HMinusOneCaptureCheckpoint:
+        guard(),
+      storedWorkAmoV5HMinusOneSeedEvidenceRows: async () => [{}],
+      workAmoV5HMinusOneSeedEvidenceFromStoredRow: () =>
+        existingSeed,
+      readJson: async () => {
+        throw new Error("fresh producer must not run");
+      },
+    },
+  );
+  assert.deepEqual(
+    await reuse(clientFor(retainedFutureRows), seedCheckpoint),
+    existingSeed,
+    "active replay uses the validated immutable seed without recapture",
+  );
+});
+
 check("AMO V5 seed capture precedes replay and immutable evidence cannot be cleaned up", async () => {
   const backfill = fileSource(BACKFILL_PATH);
   const apiRequest = topLevelFunctionSource(API_PATH, "handleRequest");

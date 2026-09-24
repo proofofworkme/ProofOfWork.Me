@@ -3,7 +3,7 @@ import {
   isLegacyWorkMarketListing,
   WORK_MARKET_V2_ACTIVATION_HEIGHT,
   WORK_MARKET_V2_DECLARATION_TXID,
-  workMarketV1RefundSnapshotIncludes,
+  workMarketV1RefundSnapshotEvidence,
 } from "./work-market-v2.mjs";
 import {
   WORK_ATOMIC_PROJECTION_MODEL,
@@ -425,7 +425,8 @@ function exactWorkSalesByListingId(table, historical, model) {
 // outpoint spend still needs its complete independently checked close proof.
 function rawLegacyV2CutoverListing(listing, original, checkpointHeight) {
   const listingId = exactHash(listing?.listingId);
-  const inRefundSnapshot = workMarketV1RefundSnapshotIncludes(listingId);
+  const refundEvidence = workMarketV1RefundSnapshotEvidence(listingId);
+  const inRefundSnapshot = refundEvidence !== null;
   const status = inRefundSnapshot ? "disabled" : "closed";
   const reason = inRefundSnapshot
     ? "work-market-v2-cutover"
@@ -434,6 +435,10 @@ function rawLegacyV2CutoverListing(listing, original, checkpointHeight) {
     checkpointHeight < WORK_MARKET_V2_ACTIVATION_HEIGHT ||
     !isLegacyWorkMarketListing(original) ||
     !isLegacyWorkMarketListing(listing) ||
+    listing?.saleAuthorization?.version !==
+      original?.saleAuthorization?.version ||
+    String(listing?.sellerAddress ?? "") !==
+      String(original?.sellerAddress ?? "") ||
     exactPositionInteger(original?.blockHeight, 1) === null ||
     exactPositionInteger(original?.blockHeight, 1) >=
       WORK_MARKET_V2_ACTIVATION_HEIGHT ||
@@ -450,10 +455,49 @@ function rawLegacyV2CutoverListing(listing, original, checkpointHeight) {
   ) {
     return null;
   }
+  if (refundEvidence) {
+    const historicalSeal = listingSealPosition(original, {
+      historical: true,
+    });
+    const physicalSeal = listingSealPosition(listing);
+    const snapshotHeight = exactPositionInteger(
+      refundEvidence.listingBlockHeight,
+      1,
+    );
+    if (
+      snapshotHeight === null ||
+      snapshotHeight >= WORK_MARKET_V2_ACTIVATION_HEIGHT ||
+      refundEvidence.version !== original.saleAuthorization.version ||
+      refundEvidence.sellerAddress !== original.sellerAddress ||
+      !historicalSeal || !physicalSeal ||
+      (refundEvidence.sealed === true
+        ? !TXID.test(exactHash(refundEvidence.sealTxid)) ||
+          historicalSeal.kind !== "confirmed" ||
+          physicalSeal.kind !== "confirmed" ||
+          historicalSeal.txid !== exactHash(refundEvidence.sealTxid) ||
+          physicalSeal.txid !== historicalSeal.txid ||
+          historicalSeal.blockHeight !== snapshotHeight ||
+          physicalSeal.blockHeight !== snapshotHeight
+        : refundEvidence.sealed !== false ||
+          exactHash(refundEvidence.sealTxid) !== "" ||
+          historicalSeal.kind !== "absent" ||
+          physicalSeal.kind !== "absent" ||
+          exactPositionInteger(original.blockHeight, 1) !== snapshotHeight)
+    ) {
+      return null;
+    }
+  }
   const closedTxid = exactHash(listing?.closedTxid);
   if (TXID.test(closedTxid)) {
     const raw = { ...listing, status: "closed" };
-    return canonicalOutspendClosePosition(raw, original) &&
+    const closeHeight = exactPositionInteger(listing.closedBlockHeight, 1);
+    const transactionHeight = exactPositionInteger(
+      listing.closeTransactionBlockHeight,
+      1,
+    );
+    return exactHash(listing.closeTxid) === closedTxid &&
+      (transactionHeight === null || transactionHeight === closeHeight) &&
+      canonicalOutspendClosePosition(raw, original) &&
       canonicalOutspendCloseFee(raw) !== null
       ? { listing: raw, closed: true }
       : null;
@@ -464,10 +508,13 @@ function rawLegacyV2CutoverListing(listing, original, checkpointHeight) {
     exactHash(listing?.closedBlockHash) ||
     listing?.closedBlockHeight != null ||
     listing?.closedBlockIndex != null ||
+    listing?.closeTransactionBlockHeight != null ||
     listing?.closedVin != null ||
     listing?.closedByCanonicalOutpointSpend === true ||
     listing?.closedMinerFeeCanonical === true ||
-    listing?.closedMinerFeeSats != null
+    listing?.closedMinerFeeSats != null ||
+    listing?.closedCanonicalMinerFeeSats != null ||
+    Boolean(listing?.closedMinerFeeSource)
   ) {
     return null;
   }

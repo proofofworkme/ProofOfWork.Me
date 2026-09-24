@@ -83,6 +83,25 @@ export function workMarketV1RefundSnapshotIncludes(listingId) {
   );
 }
 
+// Return only immutable, primitive evidence needed to compare a replayed
+// legacy listing with the frozen V1 refund snapshot. For sealed entries the
+// snapshot's listingBlockHeight is the seal height; otherwise it is the
+// original listing height.
+export function workMarketV1RefundSnapshotEvidence(listingId) {
+  const entry = WORK_MARKET_V1_REFUND_LISTINGS_BY_ID.get(
+    String(listingId ?? "").trim().toLowerCase(),
+  );
+  return entry
+    ? Object.freeze({
+        listingBlockHeight: entry.listingBlockHeight,
+        sealTxid: entry.sealTxid,
+        sealed: entry.sealed,
+        sellerAddress: entry.sellerAddress,
+        version: entry.version,
+      })
+    : null;
+}
+
 function configuredTxid(value) {
   const txid = String(value ?? "").trim().toLowerCase();
   return TXID_PATTERN.test(txid) ? txid : "";

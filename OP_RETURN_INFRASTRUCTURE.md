@@ -768,10 +768,15 @@ rewinding only the checkpoint or layering corrected event keys over stale ones:
    already applied the pinned V2 legacy-listing refund cutover. During a bounded
    replay, the bridge matches those exact disabled or snapshot-excluded rows
    to their confirmed pre-activation openings and immutable refund-snapshot
-   membership, reconstructs the raw lifecycle at H, and then reapplies the
-   ordinary V2 policy in the summary. A real outpoint spend still needs its
-   exact canonical close position, sale-ticket anchor, and miner fee; a
-   post-H spend cannot close the listing or add its fee at H. Non-WORK holders
+   entries, reconstructs the raw lifecycle at H, and then reapplies the
+   ordinary V2 policy in the summary. Each of the 94 refund entries must match
+   the bounded original seller, signed version, frozen seal transaction, and
+   frozen height. For a sealed entry that height is the selected confirmed
+   seal height; for an unsealed entry it is the opening height. Other confirmed
+   seal attempts do not replace the snapshot-pinned seal. A real outpoint spend
+   still needs its exact canonical close transaction and height, sale-ticket
+   anchor, and miner fee; a post-H spend cannot close the listing or add its
+   fee at H. Non-WORK holders
    are rebuilt from the same bounded mint, transfer, and sale history; an
    unminted credit definition is valid only with zero declared supply and no
    holder, movement, sale, or listing state. After activation,
@@ -1672,6 +1677,18 @@ summary id/hash/network-value Q8 to the completed migration seed, bootstrap
 commitment, and first activation opening state. It neither requires nor
 fabricates the replaceable historical summary row. Duplicate, tampered,
 noncanonical, or marker-divergent evidence fails closed.
+
+A supervised PWT range replay may regenerate a green public summary at H959620
+whose Q8 value and snapshot id differ from the historical summary committed
+inside the immutable V5 seed. This is an accounting discontinuity at the
+protocol boundary: V5 activation still opens from the sole validated
+historical seed, and a different seed would require a new on-chain protocol
+version. At this exact H-1 checkpoint the active, verifier-bound replay may
+reuse that seed only when its stored block-scan hash and replay marker match,
+no later confirmed `pwt1` or `pwa1` events remain, and no V5 transitions
+remain. It does not recapture the seed or bind it to the regenerated summary.
+Ordinary first capture still requires H-1 to be the global canonical tip with
+no later canonical blocks, confirmed transactions, or confirmed events.
 
 One historical invalid WORK listing is already embedded in that immutable
 bootstrap basis and is reconciled without rewriting it. Its complete evidence
