@@ -36973,6 +36973,7 @@ check("active range replay is fail-closed to one block-scan source", async () =>
     rangeReplayFromHeight: 958383,
     status: "active",
   };
+  const reconciliationCalls = [];
   const globals = {
     AUDIT_WORK_ATOMS_ONLY: false,
     BLOCK_SCAN_FROM_HEIGHT: 958383,
@@ -37003,6 +37004,9 @@ check("active range replay is fail-closed to one block-scan source", async () =>
     assertCanonicalPwtRangeReplayState: () => "active",
     legacyCompletedPwtRangeReplayCanBeReprepared: () => false,
     proofIndexerMetaValue: async () => rebuild,
+    reconcileActivePwtRangeReplayBalancesAtCheckpoint: async () => {
+      reconciliationCalls.push("resume");
+    },
   };
   const broadRuntime = isolatedFunction(
     BACKFILL_PATH,
@@ -37044,7 +37048,9 @@ check("active range replay is fail-closed to one block-scan source", async () =>
       SOURCES: [{ blockScan: true, label: "block-scan" }],
     },
   );
+  assert.deepEqual(reconciliationCalls, [], "incompatible modes must not reconcile");
   const accepted = await boundRuntime({});
+  assert.deepEqual(reconciliationCalls, ["resume"]);
   assert.equal(accepted.active, true);
   assert.equal(accepted.verifierBinding.bindingId, "f".repeat(64));
 
@@ -37072,7 +37078,7 @@ check("active range replay is fail-closed to one block-scan source", async () =>
     {
       ...globals,
       SOURCES: [{ blockScan: true, label: "block-scan" }],
-      assertCanonicalWorkAtomicSource: async () => {
+      reconcileActivePwtRangeReplayBalancesAtCheckpoint: async () => {
         throw new Error(
           "Active PWT range replay requires the exact canonical WORK work-atoms-v1 definition.",
         );
@@ -37091,7 +37097,7 @@ check("active range replay is fail-closed to one block-scan source", async () =>
     {
       ...globals,
       SOURCES: [{ blockScan: true, label: "block-scan" }],
-      assertCanonicalWorkAtomicSource: async () => {
+      reconcileActivePwtRangeReplayBalancesAtCheckpoint: async () => {
         throw new Error(
           "Canonical WORK atomic conservation failed: mints 2100000000000000, balances 2099999999999999.",
         );
@@ -37103,6 +37109,124 @@ check("active range replay is fail-closed to one block-scan source", async () =>
     (error) => /atomic conservation failed/u.test(error.message),
     "an active replay resume must recheck event/balance conservation, not only its definition",
   );
+});
+
+check("active range replay reconciles WORK holders only at its exact canonical checkpoint", async () => {
+  const height = 958_581;
+  const hash = "a".repeat(64);
+  const rebuild = {
+    active: true,
+    indexedThroughBlock: height,
+    indexedThroughBlockHash: hash,
+    rangeReplayFromHeight: 958_383,
+    status: "active",
+  };
+  const run = async (options = {}) => {
+    const calls = [];
+    let coreReads = 0;
+    let unsafeSql = "";
+    const client = {
+      async query(sql, params = []) {
+        const statement = String(sql).trim();
+        if (["BEGIN", "COMMIT", "ROLLBACK"].includes(statement)) {
+          calls.push(statement);
+          return { rows: [] };
+        }
+        if (statement.includes("FROM proof_indexer.meta") && statement.includes("FOR UPDATE")) {
+          calls.push("lock-marker");
+          assert.deepEqual(Array.from(params), ["canonical:rebuild"]);
+          return { rows: [{ value: options.lockedMarker ?? rebuild }] };
+        }
+        if (statement.includes("FROM proof_indexer.events e")) {
+          calls.push("check-events");
+          unsafeSql = statement;
+          assert.deepEqual(Array.from(params), ["livenet", WORK_TOKEN_ID, height, 958_383]);
+          return { rows: options.unsafeEvent ? [{ txid: "f".repeat(64) }] : [] };
+        }
+        throw new Error(`Unexpected active replay reconciliation query: ${statement.slice(0, 90)}`);
+      },
+    };
+    const reconcile = isolatedFunction(
+      BACKFILL_PATH,
+      "reconcileActivePwtRangeReplayBalancesAtCheckpoint",
+      {
+        CANONICAL_REBUILD_META_KEY: "canonical:rebuild",
+        NETWORK: "livenet",
+        WORK_TOKEN_ID,
+        assertCanonicalPwtRangeReplayState: (marker) =>
+          marker?.status === "active" ? "active" : null,
+        assertCanonicalWorkAtomicProjection: async () => {
+          calls.push("check-projection");
+        },
+        assertCanonicalWorkAtomicSource: async () => {
+          calls.push("check-conservation");
+          if (options.conservationFails) {
+            throw new Error("Canonical WORK conservation failed after replay");
+          }
+        },
+        bitcoinRpc: async (method, params) => {
+          assert.equal(method, "getblockhash");
+          assert.deepEqual(Array.from(params), [height]);
+          calls.push("check-core");
+          coreReads += 1;
+          return options.coreHashes?.[coreReads - 1] ?? hash;
+        },
+        canonicalJsonText: (value) => JSON.stringify(value),
+        latestBlockScanCheckpoint: async (_, { useStoredCheckpoint }) => {
+          assert.equal(useStoredCheckpoint, true);
+          calls.push("check-stored-checkpoint");
+          return {
+            blockHash: options.storedHash ?? hash,
+            height,
+          };
+        },
+        proofIndexerMetaValue: async () => {
+          calls.push("check-marker-after");
+          return options.markerAfter ?? rebuild;
+        },
+        rebuildConfirmedCreditBalancesFromCanonicalEvents: async (_, replayOptions) => {
+          calls.push("rebuild-work-holders");
+          assert.equal(replayOptions.preservePendingDeltas, true);
+          assert.deepEqual(Array.from(replayOptions.tokenIds), [WORK_TOKEN_ID]);
+        },
+      },
+    );
+    let error = null;
+    try {
+      await reconcile(client, rebuild);
+    } catch (caught) {
+      error = caught;
+    }
+    return { calls, error, unsafeSql };
+  };
+  const successful = await run();
+  assert.equal(successful.error, null);
+  assert.deepEqual(successful.calls, [
+    "check-projection", "BEGIN", "lock-marker", "check-stored-checkpoint",
+    "check-core", "check-events", "rebuild-work-holders", "check-conservation",
+    "check-marker-after", "check-core", "COMMIT",
+  ]);
+  assert.match(successful.unsafeSql, /b\.canonical = true/u);
+  assert.match(successful.unsafeSql, /e\.block_index IS DISTINCT FROM t\.block_index/u);
+  assert.match(successful.unsafeSql, /COALESCE\(e\.block_height, 0\) > \$3/u);
+  assert.match(successful.unsafeSql, /COALESCE\(t\.block_height, 0\) > \$3/u);
+  for (const [options, expected] of [
+    [{ lockedMarker: { ...rebuild, indexedThroughBlock: height - 1 } }, /marker changed/u],
+    [{ storedHash: "b".repeat(64) }, /stored block scan/u],
+    [{ coreHashes: ["b".repeat(64)] }, /disagrees with Core/u],
+    [{ unsafeEvent: true }, /postcheckpoint or noncanonical WORK event/u],
+    [{ conservationFails: true }, /conservation failed/u],
+    [{ markerAfter: { ...rebuild, indexedThroughBlock: height - 1 } }, /changed before commit/u],
+    [{ coreHashes: [hash, "b".repeat(64)] }, /changed before commit/u],
+  ]) {
+    const result = await run(options);
+    assert.match(result.error?.message ?? "", expected);
+    assert.equal(result.calls.at(-1), "ROLLBACK");
+    assert.equal(result.calls.includes("COMMIT"), false);
+    if (!result.calls.includes("rebuild-work-holders")) {
+      assert.equal(result.calls.includes("check-conservation"), false);
+    }
+  }
 });
 
 check("malformed range replay flags cannot disable replay safeguards", () => {

@@ -2025,11 +2025,11 @@ async function canonicalPwtRangeReplayRuntime(client) {
     }
     return { active: false, rebuild, state };
   }
-  await assertCanonicalWorkAtomicSource(
-    client,
-    "Active PWT range replay",
-  );
   if (PREPARE_CANONICAL_PWT_RANGE_REPLAY_ONLY) {
+    await assertCanonicalWorkAtomicSource(
+      client,
+      "Active PWT range replay preparation",
+    );
     return { active: true, preparing: true, rebuild, state };
   }
   const incompatibleMode =
@@ -2065,6 +2065,7 @@ async function canonicalPwtRangeReplayRuntime(client) {
       "Active PWT range replay requires an ordinary block-scan-only pass with POW_INDEX_BACKFILL_SOURCES=block-scan and ledger/general canonical-summary storage disabled.",
     );
   }
+  await reconcileActivePwtRangeReplayBalancesAtCheckpoint(client, rebuild);
   const verifierBinding = activatePwtRangeReplayVerifierBinding(rebuild);
   return {
     active: true,
@@ -2073,6 +2074,139 @@ async function canonicalPwtRangeReplayRuntime(client) {
     state,
     verifierBinding,
   };
+}
+
+async function reconcileActivePwtRangeReplayBalancesAtCheckpoint(
+  client,
+  rebuild,
+) {
+  const checkpointHeight = Number(rebuild?.indexedThroughBlock);
+  const checkpointHash = String(
+    rebuild?.indexedThroughBlockHash ?? "",
+  ).trim().toLowerCase();
+  const rangeFromHeight = Number(rebuild?.rangeReplayFromHeight);
+  if (
+    !Number.isSafeInteger(checkpointHeight) ||
+    !Number.isSafeInteger(rangeFromHeight) ||
+    rangeFromHeight < 1 ||
+    checkpointHeight < rangeFromHeight - 1 ||
+    !/^[0-9a-f]{64}$/u.test(checkpointHash)
+  ) {
+    throw new Error(
+      "Active PWT range replay has no exact hashed balance checkpoint.",
+    );
+  }
+  await assertCanonicalWorkAtomicProjection(
+    client,
+    "Active PWT range replay balance reconciliation",
+  );
+  const expectedMarker = canonicalJsonText(rebuild);
+  await client.query("BEGIN");
+  try {
+    const locked = await client.query(
+      `SELECT value FROM proof_indexer.meta WHERE key = $1 FOR UPDATE`,
+      [CANONICAL_REBUILD_META_KEY],
+    );
+    const lockedMarker = locked.rows[0]?.value;
+    if (
+      assertCanonicalPwtRangeReplayState(lockedMarker) !== "active" ||
+      canonicalJsonText(lockedMarker) !== expectedMarker
+    ) {
+      throw new Error(
+        "Active PWT range replay marker changed before balance reconciliation.",
+      );
+    }
+    const storedCheckpoint = await latestBlockScanCheckpoint(client, {
+      useStoredCheckpoint: true,
+    });
+    if (
+      storedCheckpoint.height !== checkpointHeight ||
+      storedCheckpoint.blockHash !== checkpointHash
+    ) {
+      throw new Error(
+        "Active PWT range replay balance checkpoint disagrees with the stored block scan.",
+      );
+    }
+    const coreCheckpointHash = String(
+      await bitcoinRpc("getblockhash", [checkpointHeight]),
+    ).trim().toLowerCase();
+    if (coreCheckpointHash !== checkpointHash) {
+      throw new Error(
+        "Active PWT range replay balance checkpoint disagrees with Core.",
+      );
+    }
+    const unsafeWorkEvent = await client.query(
+      `
+        SELECT e.txid
+        FROM proof_indexer.events e
+        LEFT JOIN proof_indexer.transactions t
+          ON t.network = e.network
+         AND t.txid = e.txid
+        LEFT JOIN proof_indexer.blocks b
+          ON b.network = t.network
+         AND b.block_hash = t.block_hash
+         AND b.height = t.block_height
+         AND b.canonical = true
+        WHERE e.network = $1
+          AND e.protocol = 'pwt1'
+          AND e.kind LIKE 'token-%'
+          AND e.valid = true
+          AND lower(COALESCE(e.payload->>'tokenId', '')) = $2
+          AND (e.status = 'confirmed' OR t.status = 'confirmed')
+          AND (
+            COALESCE(e.block_height, 0) > $3
+            OR COALESCE(t.block_height, 0) > $3
+            OR (
+              (
+                COALESCE(e.block_height, 0) >= $4
+                OR COALESCE(t.block_height, 0) >= $4
+              )
+              AND (
+                e.status IS DISTINCT FROM 'confirmed'
+                OR t.status IS DISTINCT FROM 'confirmed'
+                OR e.block_height IS DISTINCT FROM t.block_height
+                OR e.block_index IS DISTINCT FROM t.block_index
+                OR b.block_hash IS NULL
+              )
+            )
+          )
+        LIMIT 1
+      `,
+      [NETWORK, WORK_TOKEN_ID, checkpointHeight, rangeFromHeight],
+    );
+    if (unsafeWorkEvent.rows.length > 0) {
+      throw new Error(
+        `Active PWT range replay has a postcheckpoint or noncanonical WORK event ${unsafeWorkEvent.rows[0].txid}.`,
+      );
+    }
+    await rebuildConfirmedCreditBalancesFromCanonicalEvents(client, {
+      preservePendingDeltas: true,
+      tokenIds: [WORK_TOKEN_ID],
+    });
+    await assertCanonicalWorkAtomicSource(
+      client,
+      "Active PWT range replay",
+    );
+    const markerAfter = await proofIndexerMetaValue(
+      client,
+      CANONICAL_REBUILD_META_KEY,
+    );
+    const coreHashAfter = String(
+      await bitcoinRpc("getblockhash", [checkpointHeight]),
+    ).trim().toLowerCase();
+    if (
+      canonicalJsonText(markerAfter) !== expectedMarker ||
+      coreHashAfter !== checkpointHash
+    ) {
+      throw new Error(
+        "Active PWT range replay balance checkpoint changed before commit.",
+      );
+    }
+    await client.query("COMMIT");
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  }
 }
 
 function objectValue(value) {

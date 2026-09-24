@@ -821,7 +821,14 @@ rewinding only the checkpoint or layering corrected event keys over stale ones:
    bonds continue to consume their byte-committed original H-1 row and exact
    mint payload. Do not use the
    normal worker publisher while the replay is partial; a non-tip public summary
-   is expected to fail.
+   is expected to fail. Each bounded pass may commit canonical WORK events and
+   its hashed checkpoint before the derived WORK balances are refreshed. On an
+   active replay resume, the scanner first binds the unchanged marker to the
+   stored block-scan checkpoint and Core hash, rejects postcheckpoint or
+   noncanonical WORK events, then rebuilds only confirmed WORK holder balances
+   from canonical events while preserving pending deltas. Conservation must
+   pass inside the same transaction before the next block is scanned; any
+   mismatch rolls back the balance refresh and stops the replay.
 4. Run one normal worker cycle at tip to rebuild conserved balances and publish
    the exact canonical summary. Completion must consume every manifest entry
    exactly once. Preserved entries must retain the committed mint payload hash,
