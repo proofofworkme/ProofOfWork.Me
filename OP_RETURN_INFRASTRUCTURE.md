@@ -691,9 +691,13 @@ rewinding only the checkpoint or layering corrected event keys over stale ones:
    `pwm1:m:incb` transaction in the bounded canonical range and cross-checks
    that set against the canonical bond events. It asks Core to bind each entry
    to its block position and predecessor, the exact pre-memo recipient output
-   set, direct proofs, memo, and attached WORK atoms. The resulting immutable
-   witness manifest gives every recipient one disposition: preserve an already
-   valid exact-Q8 V2 mint together with its complete green H-1 snapshot row, or
+   set, direct proofs, memo, and the legacy Q8 attached WORK atom subtotal.
+   That manifest subtotal includes historical `send`/`send2` attachments;
+   post-V8 `send3` uses Q16 subatoms and is validated against the raw canonical
+   transaction and activation height without being folded into the Q8 field.
+   The resulting immutable witness manifest gives every recipient one
+   disposition: preserve an already valid exact-Q8 V2 mint together with its
+   complete green H-1 snapshot row, or
    rederive an absent/ambiguous/malformed projection. A multi-recipient bond is
    rederived as one unit if any recipient cannot be preserved. The manifest is
    canonical-JSON hashed, stored under a binding-specific metadata key, and its

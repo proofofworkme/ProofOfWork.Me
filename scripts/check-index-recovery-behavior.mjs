@@ -36657,6 +36657,150 @@ check("completed replay automatically authenticates ordinary internal verifier r
   );
 });
 
+check("bound INCB raw WORK witness accepts canonical post-V8 send3 without changing legacy Q8 atoms", () => {
+  const recipientAddress = "1F1p9UEHuH5KTFR7Zsx93Khdrqhj6t5nFv";
+  const activationHeight = 960_601;
+  const objectRecord = (value) =>
+    value && typeof value === "object" && !Array.isArray(value)
+      ? value
+      : {};
+  const normalizedLowerText = (value) =>
+    String(value ?? "").trim().toLowerCase();
+  const rawMessages = isolatedFunction(
+    READER_PATH,
+    "canonicalIncbReplayRawMessages",
+    { Buffer, objectRecord },
+  );
+  const rawWorkAtoms = isolatedFunction(
+    READER_PATH,
+    "canonicalIncbReplayRawWorkAtoms",
+    {
+      WORK_AMO_V8_TRANSFER_VERSION,
+      WORK_TOKEN_ID,
+      WORK_UNIT_SCALE_TEXT,
+      canonicalIncbReplayRawMessages: rawMessages,
+      canonicalIntegerText,
+      normalizedLowerText,
+      parseWorkAmoV5RawPwtRecord,
+    },
+  );
+  const opReturn = (payload) => ({
+    scriptPubKey: {
+      asm: `OP_RETURN ${Buffer.from(payload, "utf8").toString("hex")}`,
+    },
+  });
+  const rawTx = (...payloads) => ({ vout: payloads.map(opReturn) });
+  const send3 = (amount) =>
+    `pwt1:send3:${WORK_TOKEN_ID}:${amount}:${recipientAddress}`;
+  const postV8 = [
+    [963_782, "10000000000000000"],
+    [968_125, "18000000000000000000000"],
+  ];
+  for (const [height, amountSubatoms] of postV8) {
+    assert.equal(
+      rawWorkAtoms(
+        rawTx(send3(amountSubatoms)),
+        recipientAddress,
+        height,
+        activationHeight,
+      ),
+      "0",
+      "the immutable manifest's Q8 subtotal must exclude Q16 send3",
+    );
+  }
+  assert.equal(
+    rawWorkAtoms(
+      rawTx(send3("1")),
+      recipientAddress,
+      activationHeight,
+      activationHeight,
+    ),
+    "0",
+    "send3 is valid at the exact V8 opening block",
+  );
+  assert.equal(
+    rawWorkAtoms(
+      rawTx(`pwt1:send2:${WORK_TOKEN_ID}:100000000:${recipientAddress}`),
+      recipientAddress,
+      activationHeight - 1,
+      activationHeight,
+    ),
+    "100000000",
+    "pre-V8 send2 must retain its committed Q8 atoms",
+  );
+  for (const [label, payload, height, pin] of [
+    ["pre-activation", send3("1"), activationHeight - 1, activationHeight],
+    ["missing pin", send3("1"), activationHeight, undefined],
+    ["zero", send3("0"), activationHeight, activationHeight],
+    ["leading zero", send3("01"), activationHeight, activationHeight],
+    ["decimal", send3("1.0"), activationHeight, activationHeight],
+    ["amount whitespace", send3(" 1"), activationHeight, activationHeight],
+    ["recipient whitespace", `${send3("1")} `, activationHeight, activationHeight],
+    ["token case alias", send3("1").replace(WORK_TOKEN_ID, WORK_TOKEN_ID.toUpperCase()), activationHeight, activationHeight],
+    ["over supply", send3((BigInt(WORK_TOKEN_MAX_SUPPLY_SUBATOMS) + 1n).toString()), activationHeight, activationHeight],
+    ["extra field", `${send3("1")}:extra`, activationHeight, activationHeight],
+    ["unknown version", `pwt1:send4:${WORK_TOKEN_ID}:1:${recipientAddress}`, activationHeight, activationHeight],
+  ]) {
+    assert.throws(
+      () => rawWorkAtoms(rawTx(payload), recipientAddress, height, pin),
+      /Malformed WORK attachment/u,
+      `${label} attachment must fail closed`,
+    );
+  }
+
+  const verifyBondRows = isolatedFunction(
+    READER_PATH,
+    "verifyCanonicalIncbReplayBondRows",
+    {
+      canonicalCoreValueSats: (value) => Number(value),
+      canonicalIncbReplayRawMessages: rawMessages,
+      canonicalIncbReplayRawWorkAtoms: rawWorkAtoms,
+      configuredWorkPrecisionV2ReaderPins: () => ({
+        activationHeight,
+      }),
+      normalizedLowerText,
+      objectRecord,
+    },
+  );
+  const txid = "e".repeat(64);
+  const blockHash = "a".repeat(64);
+  const previousBlockHash = "b".repeat(64);
+  const blockHeight = 968_125;
+  const blockIndex = 2_041;
+  const bond = {
+    attachedWorkAmountAtoms: "0",
+    blockHash,
+    blockHeight,
+    blockIndex,
+    bondRecipientAddress: recipientAddress,
+    bondRecipientAmountSats: "546",
+    bondRecipientOutputs: [{ amountSats: "546", vout: 0 }],
+    bondRecipientVout: 0,
+    previousBlockHash,
+    txid,
+  };
+  const row = {
+    block_hash: blockHash,
+    block_height: blockHeight,
+    block_index: blockIndex,
+    previous_block_hash: previousBlockHash,
+    raw_tx: {
+      vout: [
+        { scriptPubKey: { address: recipientAddress }, value: 546 },
+        opReturn("pwm1:m:incb"),
+        opReturn(send3("18000000000000000000000")),
+      ],
+    },
+    txid,
+  };
+  assert.doesNotThrow(() => verifyBondRows({ entries: [{ bond }] }, [row]));
+  assert.throws(
+    () => verifyBondRows({ entries: [{ bond: { ...bond, attachedWorkAmountAtoms: "1" } }] }, [row]),
+    /changed canonical position, memo, outputs, or WORK attachment/u,
+    "the immutable legacy Q8 subtotal remains an exact commitment",
+  );
+});
+
 check("completed replay remains readable through the immutable witness certificate", () => {
   const binding = replayVerifierBindingFixture({
     bindingId: "9".repeat(64),

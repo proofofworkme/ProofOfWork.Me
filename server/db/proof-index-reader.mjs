@@ -181,6 +181,7 @@ import {
   decodeWorkAmoV5CanonicalBase64UrlJsonObject,
   isWorkAmoV5LivenetAddress,
   parseWorkAmoV5GenericSaleAuthorization,
+  parseWorkAmoV5RawPwtRecord,
   parseWorkAmoV5RawPwidRecord,
   validateWorkAmoV5FrozenTerms,
   workAmoV5CanonicalPayloadCommitment,
@@ -26893,7 +26894,12 @@ function canonicalIncbReplayRawMessages(rawTx) {
   return messages;
 }
 
-function canonicalIncbReplayRawWorkAtoms(rawTx, recipientAddress) {
+function canonicalIncbReplayRawWorkAtoms(
+  rawTx,
+  recipientAddress,
+  bondBlockHeight,
+  workV8ActivationHeight,
+) {
   let total = 0n;
   for (const message of canonicalIncbReplayRawMessages(rawTx)) {
     const parts = String(message.text ?? "").split(":");
@@ -26902,6 +26908,26 @@ function canonicalIncbReplayRawWorkAtoms(rawTx, recipientAddress) {
       normalizedLowerText(parts[2]) !== WORK_TOKEN_ID ||
       String(parts[4] ?? "").trim() !== recipientAddress
     ) {
+      continue;
+    }
+    if (parts[1] === WORK_AMO_V8_TRANSFER_VERSION) {
+      const transfer = parseWorkAmoV5RawPwtRecord(message.text);
+      if (
+        transfer?.kind !== "send" ||
+        transfer.amountVersion !== WORK_AMO_V8_TRANSFER_VERSION ||
+        transfer.tokenId !== WORK_TOKEN_ID ||
+        transfer.recipientAddress !== recipientAddress ||
+        transfer.amountSubatoms !== parts[3] ||
+        parts[2] !== WORK_TOKEN_ID ||
+        parts[4] !== recipientAddress ||
+        !Number.isSafeInteger(bondBlockHeight) ||
+        !Number.isSafeInteger(workV8ActivationHeight) ||
+        bondBlockHeight < workV8ActivationHeight
+      ) {
+        throw new Error("Malformed WORK attachment in bound INCB raw transaction.");
+      }
+      // The immutable manifest records only the pre-V8 Q8 attachment sum.
+      // The raw send3 still has to satisfy the canonical transfer grammar.
       continue;
     }
     const amount = canonicalIntegerText(parts[3], { allowZero: false });
@@ -26952,6 +26978,8 @@ async function canonicalIncbReplayBondRows(client, network, manifest) {
 }
 
 function verifyCanonicalIncbReplayBondRows(manifest, rows) {
+  const workV8ActivationHeight =
+    configuredWorkPrecisionV2ReaderPins()?.activationHeight;
   const rowsByTxid = new Map(
     rows.map((row) => [normalizedLowerText(row.txid), row]),
   );
@@ -26993,6 +27021,8 @@ function verifyCanonicalIncbReplayBondRows(manifest, rows) {
       canonicalIncbReplayRawWorkAtoms(
         rawTx,
         entry.bond.bondRecipientAddress,
+        entry.bond.blockHeight,
+        workV8ActivationHeight,
       ) !== entry.bond.attachedWorkAmountAtoms
     ) {
       throw new Error(
