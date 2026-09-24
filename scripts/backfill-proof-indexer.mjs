@@ -38,6 +38,10 @@ import {
   proofIndexRenderedMailEvent,
 } from "../server/proof-index-mail-projection.mjs";
 import {
+  POST_V5_INCB_ISSUANCE_REPAIR_TARGETS,
+  validatePostV5IncbRepairProjection,
+} from "../server/incb-post-v5-repair.mjs";
+import {
   INCB_RANGE_REPLAY_EXACT_MINT_LEGACY_SNAPSHOT_MODE,
   INCB_RANGE_REPLAY_WITNESS_MANIFEST_MODEL,
   buildIncbRangeReplayWitnessManifest,
@@ -957,6 +961,12 @@ const REPAIR_CANONICAL_TXIDS_ONLY = process.argv.includes(
 const REPAIR_INCB_ISSUANCE_ONLY = process.argv.includes(
   "--repair-incb-issuance",
 );
+const REPAIR_POST_V5_INCB_ISSUANCE_ONLY = process.argv.includes(
+  "--repair-post-v5-incb-issuance",
+);
+const APPLY_POST_V5_INCB_ISSUANCE_REPAIR = /^(?:1|true|yes)$/iu.test(
+  String(process.env.POW_INDEX_REPAIR_POST_V5_INCB_APPLY ?? ""),
+);
 const REPAIR_CANONICAL_MAIL_PROJECTION_ONLY = process.argv.includes(
   "--repair-canonical-mail-projection",
 );
@@ -1088,6 +1098,7 @@ function assertCanonicalRebuildConfiguration() {
     REPAIR_CANONICAL_TXIDS_ONLY,
     REPAIR_ID_TXIDS_ONLY,
     REPAIR_INCB_ISSUANCE_ONLY,
+    REPAIR_POST_V5_INCB_ISSUANCE_ONLY,
     repairEventRelationsOnly,
     repairCanonicalEventParentMetadataOnly,
     repairCanonicalIdAmountProjectionOnly,
@@ -1185,6 +1196,7 @@ function assertCanonicalRebuildConfiguration() {
       REPAIR_CANONICAL_TXIDS_ONLY ||
       REPAIR_ID_TXIDS_ONLY ||
       REPAIR_INCB_ISSUANCE_ONLY ||
+    REPAIR_POST_V5_INCB_ISSUANCE_ONLY ||
       repairEventRelationsOnly ||
       repairCanonicalEventParentMetadataOnly ||
       repairCanonicalIdAmountProjectionOnly ||
@@ -1244,6 +1256,7 @@ function assertCanonicalRebuildConfiguration() {
       PREPARE_CANONICAL_PWT_RANGE_REPLAY_ONLY ||
       REPAIR_ID_TXIDS_ONLY ||
       REPAIR_INCB_ISSUANCE_ONLY ||
+    REPAIR_POST_V5_INCB_ISSUANCE_ONLY ||
       REPAIR_EVENT_RELATIONS_ONLY ||
       repairCanonicalEventParentMetadataOnly ||
       repairCanonicalIdAmountProjectionOnly ||
@@ -1277,6 +1290,7 @@ function assertCanonicalRebuildConfiguration() {
       PREPARE_CANONICAL_PWT_RANGE_REPLAY_ONLY ||
       REPAIR_CANONICAL_TXIDS_ONLY ||
       REPAIR_INCB_ISSUANCE_ONLY ||
+    REPAIR_POST_V5_INCB_ISSUANCE_ONLY ||
       REPAIR_EVENT_RELATIONS_ONLY ||
       repairCanonicalEventParentMetadataOnly ||
       repairCanonicalIdAmountProjectionOnly)
@@ -1319,6 +1333,14 @@ function assertCanonicalRebuildConfiguration() {
     throw new Error(
       "--repair-incb-issuance requires the complete pinned 46-mint historical INCB issuance set.",
     );
+  }
+  if (APPLY_POST_V5_INCB_ISSUANCE_REPAIR && !REPAIR_POST_V5_INCB_ISSUANCE_ONLY) {
+    throw new Error("POW_INDEX_REPAIR_POST_V5_INCB_APPLY requires --repair-post-v5-incb-issuance.");
+  }
+  if (REPAIR_POST_V5_INCB_ISSUANCE_ONLY &&
+      (NETWORK !== "livenet" || CANONICAL_REBUILD || !BITCOIN_RPC_URL ||
+        !explicitLoopbackApiBaseConfigured())) {
+    throw new Error("Post-V5 INCB repair requires livenet, Bitcoin Core RPC, canonical rebuild off, and an explicit loopback POW_API_BASE.");
   }
   if (PREPARE_CANONICAL_REBUILD_ONLY && !CANONICAL_REBUILD) {
     throw new Error(
@@ -1549,6 +1571,7 @@ function pendingOnlyBackfillMaintenanceMode() {
     REPAIR_ID_TXIDS_ONLY ||
     REPAIR_CANONICAL_TXIDS_ONLY ||
     REPAIR_INCB_ISSUANCE_ONLY ||
+    REPAIR_POST_V5_INCB_ISSUANCE_ONLY ||
     repairEventRelationsOnly ||
     repairCanonicalEventParentMetadataOnly ||
     repairCanonicalIdAmountProjectionOnly ||
@@ -1990,7 +2013,7 @@ async function canonicalPwtRangeReplayRuntime(client) {
   }
   const state = assertCanonicalPwtRangeReplayState(rebuild);
   if (state !== "active") {
-    if (REPAIR_INCB_ISSUANCE_ONLY) {
+    if (REPAIR_INCB_ISSUANCE_ONLY || REPAIR_POST_V5_INCB_ISSUANCE_ONLY) {
       const verifierBinding =
         await activateCanonicalIncbRepairReplayBinding(client, rebuild);
       return {
@@ -2019,6 +2042,7 @@ async function canonicalPwtRangeReplayRuntime(client) {
     REPAIR_CANONICAL_TXIDS_ONLY ||
     REPAIR_ID_TXIDS_ONLY ||
     REPAIR_INCB_ISSUANCE_ONLY ||
+    REPAIR_POST_V5_INCB_ISSUANCE_ONLY ||
     repairEventRelationsOnly ||
     repairCanonicalEventParentMetadataOnly ||
     repairCanonicalIdAmountProjectionOnly ||
@@ -4555,12 +4579,7 @@ function validBoostFollowItem(item, targetAddress) {
 
 function boostSelfSend(base, senderAddress) {
   const sender = normalizedText(senderAddress);
-  return Boolean(
-    sender &&
-      (Array.isArray(base?.recipients) ? base.recipients : []).some(
-        (recipient) => normalizedText(recipient?.address) === sender,
-      ),
-  );
+  return Boolean(sender && boostPaymentToAddressSats(base, sender) > 0n);
 }
 
 function boostPostItemFromJson(tx, message, action, post) {
@@ -4577,6 +4596,14 @@ function boostPostItemFromJson(tx, message, action, post) {
   );
   const parentTxid =
     action === "reply" ? boostTxidText(String(message.text).split(":")[2]) : "";
+  const workSignalDeclared = Object.prototype.hasOwnProperty.call(
+    post ?? {},
+    "workSignalSubatoms",
+  );
+  const workSignalText = typeof post?.workSignalSubatoms === "string"
+    ? post.workSignalSubatoms
+    : "";
+  const workSignalSubatoms = canonicalWorkSubatomsText(workSignalText);
   const item = {
     ...base,
     action,
@@ -4594,10 +4621,14 @@ function boostPostItemFromJson(tx, message, action, post) {
     targetTxid: parentTxid || undefined,
     text,
     title: text ? text.slice(0, 90) : action === "reply" ? "Boost reply" : "Boost post",
-    workSignalSubatoms: canonicalIntegerText(post?.workSignalSubatoms, {
-      positive: true,
-    }) || undefined,
+    workSignalSubatoms: workSignalSubatoms || undefined,
   };
+  if (workSignalDeclared && workSignalText !== "0" && !workSignalSubatoms) {
+    return invalidProtocolItem(
+      item,
+      "Boost WORK signal is not an exact canonical subatom amount.",
+    );
+  }
   if (!text && !media) {
     return invalidProtocolItem(item, "Boost posts require text or media.");
   }
@@ -4607,8 +4638,15 @@ function boostPostItemFromJson(tx, message, action, post) {
       `Boost text exceeds ${BOOST_POST_MAX_CHARS} characters.`,
     );
   }
-  if (action === "post" && !boostSelfSend(base, sender)) {
-    return invalidProtocolItem(item, "Boost original posts must self-send.");
+  if (
+    action === "post" &&
+    !boostSelfSend(base, sender) &&
+    !canonicalWorkSubatomsText(item.workSignalSubatoms)
+  ) {
+    return invalidProtocolItem(
+      item,
+      "Boost original posts require a Proof self-send or an exact WORK self-transfer.",
+    );
   }
   if (action === "reply" && !parentTxid) {
     return invalidProtocolItem(item, "Boost replies require a target txid.");
@@ -7288,7 +7326,14 @@ async function canonicalRecoveryItemsForTx(tx, messages, options = {}) {
     if (usedRawItems.has(index)) {
       return;
     }
-    if (rawItem?.protocol === "pwm1" || rawItem?.protocol === "pwa1") {
+    // The token verifier governs pwt1 records, not companion Boost originals.
+    // Keep independently parsed pwb1 rows so a verified same-tx WORK transfer
+    // can be bound to the original post in the preparation pass below.
+    if (
+      rawItem?.protocol === "pwm1" ||
+      rawItem?.protocol === "pwa1" ||
+      rawItem?.protocol === "pwb1"
+    ) {
       normalizedRecovered.push({
         item: rawItem,
         sourceLabel: sourceLabelForProtocolItem(rawItem),
@@ -7360,10 +7405,17 @@ function preparedProtocolItemsWithCanonicalMailAttachments(
   const prepared = Array.isArray(preparedItems) ? preparedItems : [];
   const canonicalWorkTransfersByTxid = new Map();
   const ambiguousWorkTransferTxids = new Set();
+  const boostOriginalCountsByTxid = new Map();
 
   for (const entry of prepared) {
     const item = entry?.item ?? entry;
     const txid = String(item?.txid ?? "").trim().toLowerCase();
+    if (item?.protocol === "pwb1" && item?.action === "post") {
+      boostOriginalCountsByTxid.set(
+        txid,
+        (boostOriginalCountsByTxid.get(txid) ?? 0) + 1,
+      );
+    }
     const nativeQ16 =
       item?.amountStorageModel === WORK_SUBATOM_PROJECTION_MODEL ||
       item?.transferVersion === WORK_AMO_V8_TRANSFER_VERSION;
@@ -7420,6 +7472,8 @@ function preparedProtocolItemsWithCanonicalMailAttachments(
       precisionModel: WORK_AMO_V8_GLOBAL_PRECISION_MODEL,
       protocolVout,
       recipientAddress,
+      senderAddress: String(item?.senderAddress ?? "").trim(),
+      canonicalVerifier: item?.canonicalVerifier,
       registryAddress: item?.registryAddress,
       ticker: item?.ticker ?? WORK_TOKEN_TICKER,
       tokenId: WORK_TOKEN_ID,
@@ -7433,6 +7487,11 @@ function preparedProtocolItemsWithCanonicalMailAttachments(
     if (existing) {
       if (
         existing.amountSubatoms !== transfer.amountSubatoms ||
+        existing.canonicalVerifier !== transfer.canonicalVerifier ||
+        !sameCanonicalPaymentAddress(
+          existing.senderAddress,
+          transfer.senderAddress,
+        ) ||
         !sameCanonicalPaymentAddress(
           existing.recipientAddress,
           transfer.recipientAddress,
@@ -7448,6 +7507,61 @@ function preparedProtocolItemsWithCanonicalMailAttachments(
 
   return prepared.map((entry) => {
     const item = entry?.item ?? entry;
+    if (item?.protocol === "pwb1" && item?.action === "post") {
+      if (item?.valid === false) return entry;
+      const txid = String(item?.txid ?? "").trim().toLowerCase();
+      const authorAddress = String(item?.authorAddress ?? "").trim();
+      const claimedWork = canonicalWorkSubatomsText(item?.workSignalSubatoms);
+      const proofSelfSend = boostSelfSend(item, authorAddress);
+      if (item?.workSignalSubatoms && !claimedWork) {
+        const invalid = invalidProtocolItem(
+          item,
+          "Boost WORK signal is not an exact canonical subatom amount.",
+        );
+        return entry?.item ? { ...entry, item: invalid } : invalid;
+      }
+      if (!claimedWork && !proofSelfSend) {
+        const invalid = invalidProtocolItem(
+          item,
+          "Boost original posts require a Proof self-send or an exact WORK self-transfer.",
+        );
+        return entry?.item ? { ...entry, item: invalid } : invalid;
+      }
+      if (claimedWork) {
+        const verifiedTransfers = ambiguousWorkTransferTxids.has(txid)
+          ? []
+          : (canonicalWorkTransfersByTxid.get(txid) ?? []).filter(
+              (transfer) =>
+                transfer.canonicalVerifier === "/api/v1/internal/token-verifier" &&
+                transfer.transferVersion === WORK_AMO_V8_TRANSFER_VERSION &&
+                sameCanonicalPaymentAddress(transfer.senderAddress, authorAddress) &&
+                sameCanonicalPaymentAddress(transfer.recipientAddress, authorAddress),
+            );
+        const verifiedSubatoms = verifiedTransfers.reduce(
+          (sum, transfer) => sum + BigInt(transfer.amountSubatoms),
+          0n,
+        );
+        if (
+          boostOriginalCountsByTxid.get(txid) !== 1 ||
+          verifiedSubatoms !== BigInt(claimedWork)
+        ) {
+          const invalid = invalidProtocolItem(
+            item,
+            "Boost WORK signal requires one original and an exact, verified same-transaction WORK self-transfer.",
+          );
+          return entry?.item ? { ...entry, item: invalid } : invalid;
+        }
+        const bound = {
+          ...item,
+          workSignalVerification: "canonical-same-tx-work-self-transfer-v1",
+          workSignalTransferVouts: verifiedTransfers.map(
+            (transfer) => transfer.protocolVout,
+          ),
+        };
+        return entry?.item ? { ...entry, item: bound } : bound;
+      }
+      return entry;
+    }
     if (
       !MAIL_WORK_ATTACHMENT_KINDS.has(String(item?.kind ?? "").toLowerCase())
     ) {
@@ -34241,6 +34355,442 @@ async function repairCanonicalIncbIssuance(client) {
   }
 }
 
+async function canonicalPostV5IncbRepairTarget(target) {
+  const raw = await rawTransactionFromCore(target.txid);
+  if (!raw || Number(raw.confirmations) <= 0 ||
+      String(raw.blockhash ?? "").trim().toLowerCase() !== target.blockHash) {
+    throw new Error(`Post-V5 INCB repair target ${target.txid} is not confirmed in its pinned Core block.`);
+  }
+  const block = await bitcoinRpc("getblock", [target.blockHash, 2]);
+  assertCanonicalBlockEnvelope(block, target.blockHeight, target.blockHash);
+  const canonicalHash = String(await bitcoinRpc("getblockhash", [target.blockHeight]))
+    .trim().toLowerCase();
+  const coreTx = Array.isArray(block.tx) ? block.tx[target.blockIndex] : null;
+  if (canonicalHash !== target.blockHash ||
+      String(coreTx?.txid ?? "").trim().toLowerCase() !== target.txid) {
+    throw new Error(`Post-V5 INCB repair target ${target.txid} does not match its exact Core position.`);
+  }
+  const previousBlockHash = String(block.previousblockhash ?? "").trim().toLowerCase();
+  if (!isHexTxid(previousBlockHash) ||
+      String(await bitcoinRpc("getblockhash", [target.blockHeight - 1])).trim().toLowerCase() !== previousBlockHash) {
+    throw new Error(`Post-V5 INCB repair target ${target.txid} has no canonical H-1 block.`);
+  }
+  const hydrated = await transactionWithInputPrevouts({
+    ...coreTx,
+    _powBlockHash: target.blockHash,
+    _powBlockIndex: target.blockIndex,
+    _powPreviousBlockHash: previousBlockHash,
+    blocktime: block.time,
+    height: target.blockHeight,
+  });
+  assertHydratedProtocolTransaction(hydrated);
+  const messages = protocolMessagesFromTx(hydrated);
+  const parent = aggregatePwmProtocolItem(hydrated, messages);
+  const recipients = Array.isArray(parent?.recipients) ? parent.recipients : [];
+  if (parent?.kind !== INCEPTION_BOND_KIND || recipients.length !== 1) {
+    throw new Error(`Post-V5 INCB repair target ${target.txid} has no unique canonical bond payment.`);
+  }
+  const recovered = (await canonicalRecoveryItemsForTx(hydrated, messages))
+    .map((entry) => entry?.item ?? entry);
+  const mints = recovered.filter((item) =>
+    item?.kind === "token-mint" &&
+    String(item.tokenId ?? "").trim().toLowerCase() === INCB_TOKEN_ID);
+  const bonds = recovered.filter((item) =>
+    item?.kind === INCEPTION_BOND_KIND && item?.txid === target.txid);
+  const workTransfers = recovered.filter((item) =>
+    item?.kind === "token-transfer" &&
+    String(item.tokenId ?? "").trim().toLowerCase() === WORK_TOKEN_ID &&
+    item?.txid === target.txid);
+  if (mints.length !== 1 || bonds.length !== 1 ||
+      recovered.some((item) => item?.kind === "token-event-invalid" &&
+        String(item?.tokenId ?? "").trim().toLowerCase() === INCB_TOKEN_ID)) {
+    throw new Error(`Post-V5 INCB repair verifier did not return one accepted bond and one accepted mint for ${target.txid}.`);
+  }
+  const [mint] = mints;
+  const [bond] = bonds;
+  if (!canonicalBondMintProjection(mint)) {
+    throw new Error(`Post-V5 INCB repair verifier returned a noncanonical mint for ${target.txid}.`);
+  }
+  const witness = validatePostV5IncbRepairProjection({
+    bond,
+    mint,
+    previousBlockHash,
+    recipient: recipients[0],
+    target,
+    tokenId: INCB_TOKEN_ID,
+    workTransfers,
+  });
+  if (String(bond?.authorAddress ?? bond?.senderAddress ?? "").trim() &&
+      String(parent?.authorAddress ?? parent?.senderAddress ?? "").trim() &&
+      String(bond.authorAddress ?? bond.senderAddress).trim() !==
+        String(parent.authorAddress ?? parent.senderAddress).trim()) {
+    throw new Error(`Post-V5 INCB repair target ${target.txid} has a mismatched PWM author.`);
+  }
+  return { ...target, bond, mint, previousBlockHash, recipient: recipients[0], witness, workTransfers };
+}
+
+async function repairCanonicalPostV5IncbIssuance(client) {
+  const targets = [];
+  for (const target of POST_V5_INCB_ISSUANCE_REPAIR_TARGETS) {
+    targets.push(await canonicalPostV5IncbRepairTarget(target));
+  }
+  const targetTxids = targets.map((target) => target.txid);
+  const expectedAddition = targets.reduce(
+    (total, target) => total + BigInt(target.witness.amount), 0n,
+  );
+  const valueSnapshotBindings = canonicalIncbValueSnapshotBindings(
+    targets.map((target) => ({ ...target, mintItems: [target.mint] })),
+  );
+  const snapshotIds = [...valueSnapshotBindings.keys()].sort();
+  await client.query("BEGIN ISOLATION LEVEL SERIALIZABLE");
+  try {
+    if (APPLY_POST_V5_INCB_ISSUANCE_REPAIR) {
+      await client.query(
+        "LOCK TABLE proof_indexer.transactions, proof_indexer.events, proof_indexer.event_participants, proof_indexer.event_refs, proof_indexer.credit_balances, proof_indexer.credit_definitions, proof_indexer.ledger_snapshots IN SHARE ROW EXCLUSIVE MODE",
+      );
+    }
+    const rebuild = await client.query(
+      "SELECT value FROM proof_indexer.meta WHERE key = $1 FOR SHARE",
+      [CANONICAL_REBUILD_META_KEY],
+    );
+    if (rebuild.rows.length !== 1 || rebuild.rows[0]?.value?.complete !== true) {
+      throw new Error("Post-V5 INCB repair requires one completed canonical rebuild marker.");
+    }
+    const rebuildFingerprint = canonicalIncbReplaySha256(rebuild.rows[0].value);
+    const snapshotRows = await lockedCanonicalIncbValueSnapshots(client, snapshotIds);
+    const snapshotFingerprints = verifiedCanonicalIncbValueSnapshotFingerprints(
+      snapshotRows, valueSnapshotBindings,
+    );
+    const transactions = await client.query(
+      `SELECT txid, status, block_hash, block_height, block_index
+       FROM proof_indexer.transactions WHERE network = $1 AND txid = ANY($2::text[])
+       FOR SHARE`,
+      [NETWORK, targetTxids],
+    );
+    if (transactions.rows.length !== targets.length || targets.some((target) => {
+      const row = transactions.rows.find((candidate) => candidate.txid === target.txid);
+      return row?.status !== "confirmed" ||
+        String(row?.block_hash ?? "").trim().toLowerCase() !== target.blockHash ||
+        Number(row?.block_height) !== target.blockHeight ||
+        Number(row?.block_index) !== target.blockIndex;
+    })) {
+      throw new Error("Post-V5 INCB repair stored transactions do not match Bitcoin Core.");
+    }
+    const bonds = await client.query(
+      `SELECT event_id, txid, status, valid, block_hash, block_height, block_index,
+              op_return_vout, record_ordinal, payload
+       FROM proof_indexer.events
+       WHERE network = $1 AND txid = ANY($2::text[])
+         AND protocol = 'pwm1' AND kind = 'inception-bond'
+       FOR UPDATE`,
+      [NETWORK, targetTxids],
+    );
+    if (bonds.rows.length !== targets.length || targets.some((target) => {
+      const row = bonds.rows.find((candidate) => candidate.txid === target.txid);
+      return row?.status !== "confirmed" || row?.valid !== true ||
+        String(row?.block_hash ?? "").trim().toLowerCase() !== target.blockHash ||
+        Number(row?.block_height) !== target.blockHeight ||
+        Number(row?.block_index) !== target.blockIndex ||
+        Number(row?.op_return_vout) !== Number(target.bond.protocolVout) ||
+        Number(row?.record_ordinal) !== Number(target.bond.recordOrdinal);
+    })) {
+      throw new Error("Post-V5 INCB repair has no unique confirmed canonical parent bond per target.");
+    }
+    const workEvents = await client.query(
+      `SELECT txid, status, valid, block_hash, block_height, block_index,
+              op_return_vout, record_ordinal, payload
+       FROM proof_indexer.events
+       WHERE network = $1 AND txid = ANY($2::text[])
+         AND protocol = 'pwt1' AND kind = 'token-transfer'
+         AND lower(COALESCE(payload->>'tokenId', '')) = $3
+       FOR SHARE`,
+      [NETWORK, targetTxids, WORK_TOKEN_ID],
+    );
+    if (workEvents.rows.length !== targets.length || targets.some((target) => {
+      const bondRow = bonds.rows.find((candidate) => candidate.txid === target.txid);
+      const workRow = workEvents.rows.find((candidate) => candidate.txid === target.txid);
+      const recipient = bondRow?.payload?.recipients;
+      const credits = bondRow?.payload?.attachedCredits;
+      const credit = Array.isArray(credits) && credits.length === 1 ? credits[0] : null;
+      const transfer = target.workTransfers[0];
+      const attachment = workRow?.payload?.inceptionAttachment;
+      return !Array.isArray(recipient) || recipient.length !== 1 ||
+        !Array.isArray(credits) || credits.length !== 1 ||
+        String(recipient[0]?.address ?? "").trim() !== target.witness.recipientAddress ||
+        Number(recipient[0]?.vout) !== target.witness.recipientVout ||
+        String(recipient[0]?.amountSats ?? "") !== target.witness.directProofSats ||
+        String(credit?.tokenId ?? "").trim().toLowerCase() !== WORK_TOKEN_ID ||
+        String(credit?.recipientAddress ?? "").trim() !== target.witness.recipientAddress ||
+        String(credit?.amountSubatoms ?? "") !== target.witness.attachedWorkSubatoms ||
+        Number(credit?.protocolVout) !== Number(transfer?.protocolVout) ||
+        workRow?.status !== "confirmed" || workRow?.valid !== true ||
+        String(workRow?.block_hash ?? "").trim().toLowerCase() !== target.blockHash ||
+        Number(workRow?.block_height) !== target.blockHeight ||
+        Number(workRow?.block_index) !== target.blockIndex ||
+        Number(workRow?.op_return_vout) !== Number(transfer?.protocolVout) ||
+        Number(workRow?.record_ordinal) !== Number(transfer?.recordOrdinal) ||
+        String(workRow?.payload?.recipientAddress ?? "").trim() !== target.witness.recipientAddress ||
+        String(workRow?.payload?.amountSubatoms ?? "") !== target.witness.attachedWorkSubatoms ||
+        String(workRow?.payload?.amountStorageModel ?? "") !== WORK_SUBATOM_PROJECTION_MODEL ||
+        String(workRow?.payload?.transferVersion ?? "") !== WORK_AMO_V8_TRANSFER_VERSION ||
+        attachment?.kind !== "token-mint" ||
+        String(attachment?.tokenId ?? "").trim().toLowerCase() !== INCB_TOKEN_ID ||
+        String(attachment?.attachedWorkAmountSubatoms ?? "") !== target.witness.attachedWorkSubatoms ||
+        Number(attachment?.parentPosition?.blockHeight) !== target.blockHeight ||
+        Number(attachment?.parentPosition?.blockTransactionIndex) !== target.blockIndex ||
+        String(attachment?.parentPosition?.blockHash ?? "").trim().toLowerCase() !== target.blockHash;
+    })) {
+      throw new Error("Post-V5 INCB repair stored parent or accepted WORK companion disagrees with the canonical verifier.");
+    }
+    const incbEvents = await client.query(
+      `SELECT event_id, txid, kind, protocol, status, valid, block_hash, block_height,
+              block_index, op_return_vout, record_ordinal, payload
+       FROM proof_indexer.events
+       WHERE network = $1 AND txid = ANY($2::text[])
+         AND protocol = 'pwt1'
+         AND lower(COALESCE(payload->>'tokenId', '')) = $3
+       FOR UPDATE`,
+      [NETWORK, targetTxids, INCB_TOKEN_ID],
+    );
+    if (incbEvents.rows.length !== targets.length * 2 || targets.some((target) => {
+      const rows = incbEvents.rows.filter((row) => row.txid === target.txid);
+      const vouts = rows.map((row) => `${row.op_return_vout}:${row.record_ordinal}`).sort();
+      return rows.length !== 2 ||
+        JSON.stringify(vouts) !== JSON.stringify([
+          `${target.bond.protocolVout}:1`, "3:1",
+        ].sort()) || rows.some((row) =>
+          row.kind !== "token-event-invalid" || row.status !== "confirmed" ||
+          row.valid !== false ||
+          String(row?.payload?.reasonCode ?? "") !== "reserved-bond-credit-namespace" ||
+          String(row?.block_hash ?? "").trim().toLowerCase() !== target.blockHash ||
+          Number(row?.block_height) !== target.blockHeight ||
+          Number(row?.block_index) !== target.blockIndex);
+    })) {
+      throw new Error("Post-V5 INCB repair expected exactly two reserved-namespace invalid aliases per target and no accepted mint.");
+    }
+    const before = await client.query(
+      `SELECT
+          COALESCE((SELECT sum((payload->>'amount')::numeric)
+            FROM proof_indexer.events WHERE network = $1 AND protocol = 'pwt1'
+              AND kind = 'token-mint' AND valid = true AND status = 'confirmed'
+              AND lower(COALESCE(payload->>'tokenId', '')) = $2), 0)::text AS mint_supply,
+          COALESCE((SELECT sum(confirmed_balance)
+            FROM proof_indexer.credit_balances WHERE network = $1 AND token_id = $2), 0)::text AS balance_supply`,
+      [NETWORK, INCB_TOKEN_ID],
+    );
+    const beforeMintSupply = BigInt(before.rows[0]?.mint_supply ?? "0");
+    const beforeBalanceSupply = BigInt(before.rows[0]?.balance_supply ?? "0");
+    if (beforeMintSupply !== beforeBalanceSupply) {
+      throw new Error("Post-V5 INCB repair refuses an already unconserved supply baseline.");
+    }
+    const preflight = {
+      apply: APPLY_POST_V5_INCB_ISSUANCE_REPAIR,
+      beforeSupply: beforeMintSupply.toString(),
+      expectedAfterSupply: (beforeMintSupply + expectedAddition).toString(),
+      hMinusOneSnapshots: snapshotIds,
+      replayMarkerFingerprint: rebuildFingerprint,
+      targets: targets.map((target) => ({
+        txid: target.txid,
+        blockHeight: target.blockHeight,
+        blockHash: target.blockHash,
+        previousBlockHash: target.previousBlockHash,
+        ...target.witness,
+      })),
+    };
+    if (!APPLY_POST_V5_INCB_ISSUANCE_REPAIR) {
+      await client.query("ROLLBACK");
+      return { ...preflight, dryRun: true, changedRows: 0 };
+    }
+    for (const row of incbEvents.rows) {
+      for (const table of ["event_participants", "event_refs"]) {
+        await client.query(`DELETE FROM proof_indexer.${table} WHERE event_id = $1`, [row.event_id]);
+      }
+      const deleted = await client.query(
+        `DELETE FROM proof_indexer.events
+         WHERE network = $1 AND event_id = $2 AND txid = $3 AND protocol = 'pwt1'
+           AND kind = 'token-event-invalid' AND valid = false
+         RETURNING event_id`,
+        [NETWORK, row.event_id, row.txid],
+      );
+      if (deleted.rowCount !== 1) {
+        throw new Error(`Post-V5 INCB repair failed to remove exact invalid alias ${row.event_id}.`);
+      }
+    }
+    for (const target of targets) {
+      const normalized = canonicalProtocolItemForPostgres(target.mint);
+      const integrity = await protocolIntegrityItemForPersistence(client, normalized);
+      if (integrity?.valid === false || !canonicalBondMintProjection(integrity)) {
+        throw new Error(`Post-V5 INCB repair rejected its canonical verifier mint for ${target.txid}.`);
+      }
+      const result = await upsertEvent(client, sourceLabelForProtocolItem(integrity), integrity);
+      if (result.skipped) {
+        throw new Error(`Post-V5 INCB repair skipped the required mint for ${target.txid}.`);
+      }
+    }
+    const replay = await rebuildConfirmedCreditBalancesFromCanonicalEvents(client, {
+      supplyCorrectionMode: "canonical-incb-issuance-repair",
+      supplyCorrectionTokenIds: [INCB_TOKEN_ID],
+      tokenIds: [INCB_TOKEN_ID],
+    });
+    const after = await client.query(
+      `SELECT
+          COALESCE((SELECT sum((payload->>'amount')::numeric)
+            FROM proof_indexer.events WHERE network = $1 AND protocol = 'pwt1'
+              AND kind = 'token-mint' AND valid = true AND status = 'confirmed'
+              AND lower(COALESCE(payload->>'tokenId', '')) = $2), 0)::text AS mint_supply,
+          COALESCE((SELECT sum(confirmed_balance)
+            FROM proof_indexer.credit_balances WHERE network = $1 AND token_id = $2), 0)::text AS balance_supply`,
+      [NETWORK, INCB_TOKEN_ID],
+    );
+    const expectedAfterSupply = beforeMintSupply + expectedAddition;
+    if (BigInt(after.rows[0]?.mint_supply ?? "0") !== expectedAfterSupply ||
+        BigInt(after.rows[0]?.balance_supply ?? "0") !== expectedAfterSupply) {
+      throw new Error("Post-V5 INCB repair failed exact mint-to-balance conservation.");
+    }
+    const repairedRows = await client.query(
+      `SELECT txid, kind, valid, status, payload FROM proof_indexer.events
+       WHERE network = $1 AND txid = ANY($2::text[])
+         AND protocol = 'pwt1'
+         AND lower(COALESCE(payload->>'tokenId', '')) = $3`,
+      [NETWORK, targetTxids, INCB_TOKEN_ID],
+    );
+    if (repairedRows.rows.length !== targets.length || targets.some((target) => {
+      const row = repairedRows.rows.find((candidate) => candidate.txid === target.txid);
+      return row?.kind !== "token-mint" || row?.valid !== true ||
+        row?.status !== "confirmed" ||
+        !canonicalBondMintProjection(row?.payload) ||
+        String(row?.payload?.amount ?? "") !== target.witness.amount ||
+        String(row?.payload?.issuanceNetworkValueQ8 ?? "") !== target.witness.fixedValueQ8;
+    })) {
+      throw new Error("Post-V5 INCB repair did not persist one exact canonical mint per target.");
+    }
+    const scanSnapshotsBefore = await client.query(
+      `SELECT snapshot_id FROM proof_indexer.ledger_snapshots
+       WHERE network = $1 AND indexed_through_block >= $2
+         AND NOT COALESCE(source_hashes ? 'canonicalSummary', false)
+         AND (COALESCE(source_hashes ? 'blockScan', false) OR
+              COALESCE(payload->>'source' = 'proof-indexer-block-scan', false))
+       ORDER BY snapshot_id`,
+      [NETWORK, POST_V5_INCB_ISSUANCE_REPAIR_TARGETS[0].blockHeight],
+    );
+    const invalidatedSnapshots = await client.query(
+      `WITH manifest_locked AS MATERIALIZED (
+         SELECT DISTINCT entry->'snapshot'->>'snapshotId' AS snapshot_id
+         FROM proof_indexer.meta rebuild
+         JOIN proof_indexer.meta witness
+           ON witness.key = rebuild.value->'verifierBinding'->>'witnessSetMetaKey'
+         CROSS JOIN LATERAL jsonb_array_elements(
+           COALESCE(witness.value->'entries', '[]'::jsonb)) entry
+         WHERE rebuild.key = $4 AND rebuild.value->>'network' = $1
+           AND witness.value->>'network' = $1
+           AND witness.value->>'model' = $5
+           AND entry->>'disposition' = 'preserve'
+       )
+       DELETE FROM proof_indexer.ledger_snapshots snapshot
+       WHERE snapshot.network = $1
+         AND snapshot.indexed_through_block >= $2
+         AND NOT (snapshot.snapshot_id = ANY($3::text[]))
+         AND COALESCE(snapshot.payload->>'model', '') <>
+           'canonical-work-amo-v5-h-minus-one-seed-evidence-v1'
+         AND NOT (
+           NOT COALESCE(snapshot.source_hashes ? 'canonicalSummary', false)
+           AND (COALESCE(snapshot.source_hashes ? 'blockScan', false) OR
+                COALESCE(snapshot.payload->>'source' = 'proof-indexer-block-scan', false))
+         )
+         AND NOT EXISTS (SELECT 1 FROM manifest_locked protected
+                         WHERE protected.snapshot_id = snapshot.snapshot_id)
+         AND NOT EXISTS (
+           SELECT 1 FROM proof_indexer.events issued
+           WHERE issued.network = $1 AND issued.protocol = 'pwt1'
+             AND issued.kind = 'token-mint' AND issued.valid = true
+             AND issued.status = 'confirmed'
+             AND lower(COALESCE(issued.payload->>'tokenId', '')) = $6
+             AND issued.payload->>'issuanceValueSnapshotId' = snapshot.snapshot_id
+         )
+         AND NOT EXISTS (
+           SELECT 1 FROM proof_indexer.meta migration
+           CROSS JOIN LATERAL (
+             VALUES (migration.value->'replayEvidence'->'seed'->'snapshotIds'),
+                    (migration.value->'replayEvidence'->'closing'->'snapshotIds')
+           ) snapshot_group(snapshot_ids)
+           CROSS JOIN LATERAL jsonb_array_elements_text(
+             CASE WHEN jsonb_typeof(snapshot_group.snapshot_ids) = 'array'
+                  THEN snapshot_group.snapshot_ids ELSE '[]'::jsonb END
+           ) work_amo_v5_protected(snapshot_id)
+           WHERE migration.key = 'workAmoV5Migration:' || $1
+             AND migration.value->>'network' = $1
+             AND migration.value->>'model' = 'canonical-work-amo-v5-migration-v2'
+             AND migration.value->>'status' = 'complete'
+             AND migration.value->'replayEvidence'->>'complete' = 'true'
+             AND work_amo_v5_protected.snapshot_id = snapshot.snapshot_id
+         )
+         AND NOT EXISTS (
+           SELECT 1 FROM proof_indexer.ledger_snapshots seed_evidence
+           WHERE seed_evidence.network = $1
+             AND seed_evidence.payload->>'model' =
+               'canonical-work-amo-v5-h-minus-one-seed-evidence-v1'
+             AND seed_evidence.payload->'canonicalSummary'->>'snapshotId' = snapshot.snapshot_id
+         )
+       RETURNING snapshot.snapshot_id`,
+      [NETWORK, POST_V5_INCB_ISSUANCE_REPAIR_TARGETS[0].blockHeight,
+        snapshotIds, CANONICAL_REBUILD_META_KEY,
+        INCB_RANGE_REPLAY_WITNESS_MANIFEST_MODEL, INCB_TOKEN_ID],
+    );
+    const scanSnapshotsAfter = await client.query(
+      `SELECT snapshot_id FROM proof_indexer.ledger_snapshots
+       WHERE network = $1 AND indexed_through_block >= $2
+         AND NOT COALESCE(source_hashes ? 'canonicalSummary', false)
+         AND (COALESCE(source_hashes ? 'blockScan', false) OR
+              COALESCE(payload->>'source' = 'proof-indexer-block-scan', false))
+       ORDER BY snapshot_id`,
+      [NETWORK, POST_V5_INCB_ISSUANCE_REPAIR_TARGETS[0].blockHeight],
+    );
+    if (JSON.stringify(scanSnapshotsBefore.rows) !== JSON.stringify(scanSnapshotsAfter.rows)) {
+      throw new Error("Post-V5 INCB repair changed a canonical block-scan checkpoint.");
+    }
+    const snapshotRowsAfter = await lockedCanonicalIncbValueSnapshots(client, snapshotIds);
+    const snapshotFingerprintsAfter = verifiedCanonicalIncbValueSnapshotFingerprints(
+      snapshotRowsAfter, valueSnapshotBindings,
+    );
+    if (snapshotFingerprintsAfter.size !== snapshotFingerprints.size ||
+        [...snapshotFingerprints].some(([id, fingerprint]) =>
+          snapshotFingerprintsAfter.get(id) !== fingerprint)) {
+      throw new Error("Post-V5 INCB repair modified an immutable H-1 value snapshot.");
+    }
+    const rebuildAfter = await client.query(
+      "SELECT value FROM proof_indexer.meta WHERE key = $1 FOR SHARE",
+      [CANONICAL_REBUILD_META_KEY],
+    );
+    if (rebuildAfter.rows.length !== 1 ||
+        canonicalIncbReplaySha256(rebuildAfter.rows[0].value) !== rebuildFingerprint) {
+      throw new Error("Post-V5 INCB repair changed the completed replay marker.");
+    }
+    for (const target of targets) {
+      const blockHash = String(await bitcoinRpc("getblockhash", [target.blockHeight]))
+        .trim().toLowerCase();
+      const block = await bitcoinRpc("getblock", [blockHash, 1]);
+      if (blockHash !== target.blockHash ||
+          String(block?.previousblockhash ?? "").trim().toLowerCase() !== target.previousBlockHash ||
+          String(block?.tx?.[target.blockIndex] ?? "").trim().toLowerCase() !== target.txid) {
+        throw new Error(`Post-V5 INCB repair Core recheck failed for ${target.txid}.`);
+      }
+    }
+    await client.query("COMMIT");
+    return {
+      ...preflight,
+      dryRun: false,
+      changedRows: targets.length,
+      removedInvalidAliases: incbEvents.rows.length,
+      holders: replay.holders,
+      invalidatedSnapshotIds: invalidatedSnapshots.rows.map((row) => row.snapshot_id),
+      cacheInvalidationRequired: invalidatedSnapshots.rowCount > 0,
+    };
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  }
+}
+
 async function canonicalEventParentMetadataRepairCoreTarget(expected) {
   const expectedBlockTime = new Date(
     Number(expected?.blockTimeEpoch) * 1000,
@@ -36463,6 +37013,21 @@ try {
           {
             apiBase: API_BASE,
             canonicalTransactionRepair: true,
+            network: NETWORK,
+            ok: true,
+            repair,
+          },
+          null,
+          2,
+        ),
+      );
+    } else if (REPAIR_POST_V5_INCB_ISSUANCE_ONLY) {
+      const repair = await repairCanonicalPostV5IncbIssuance(client);
+      console.log(
+        JSON.stringify(
+          {
+            apiBase: API_BASE,
+            canonicalPostV5IncbIssuanceRepair: true,
             network: NETWORK,
             ok: true,
             repair,

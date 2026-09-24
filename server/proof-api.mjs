@@ -30223,6 +30223,15 @@ function inceptionMintsWithLiveIssuance(
     const matchedAttachments = attachment.matches.filter(({ recipientAddress }) =>
       samePaymentAddress(recipientAddress, minterAddress),
     );
+    const nativeQ16Attachment =
+      ledger?.workTokenState?.amountStorageModel ===
+        WORK_SUBATOM_PROJECTION_MODEL;
+    if (matchedAttachments.some(({ transfer }) =>
+      (String(transfer?.amountStorageModel ?? "") ===
+        WORK_SUBATOM_PROJECTION_MODEL) !== nativeQ16Attachment
+    )) {
+      return mint;
+    }
     const attachedWorkAmountSubatoms = matchedAttachments.reduce(
       (total, match) => {
         const subatoms = workSubatomsBigIntFromRecord(match, {
@@ -30278,6 +30287,15 @@ function inceptionMintsWithLiveIssuance(
       attachedWorkAmount,
       attachedWorkAmountSubatoms:
         attachedWorkAmountSubatoms.toString(),
+      ...(nativeQ16Attachment
+        ? {
+            attachedWorkAmountDecimals: WORK_SUBATOM_DECIMALS,
+            attachedWorkAmountPrecisionModel: WORK_PRECISION_V2_MODEL,
+            attachedWorkAmountStorageModel: WORK_SUBATOM_PROJECTION_MODEL,
+            attachedWorkAmountUnitScale: WORK_SUBATOM_UNIT_SCALE_TEXT,
+            attachedWorkAmountVersion: TOKEN_SEND_SUBATOMS_ACTION,
+          }
+        : {}),
       ...(attachedWorkAmountSubatoms %
           WORK_SUBATOM_CONVERSION_FACTOR ===
         0n
@@ -52678,7 +52696,7 @@ function boostOwnershipState(items, verifiedClosures = new Set(), network = "liv
       const targetAddress = boostFollowTargetAddress(item);
       const followerState = ensureFollowState(followerAddress);
       const targetKey = targetAddress;
-      if (followerState && targetKey) {
+      if (followerState && targetKey && followerAddress !== targetKey) {
         followerState.set(targetKey, {
           following: kind === "boost-follow",
           targetAddress,
@@ -53557,7 +53575,7 @@ async function boostFeedPayload(network, searchParams, fresh = false) {
       if (
         !listingsOnly && !profileSubject &&
         view === "following" &&
-        (!viewerKey || !authorKey || !viewerFollowing.has(authorKey))
+        (!viewerKey || !authorKey || (authorKey !== viewerKey && !viewerFollowing.has(authorKey)))
       ) {
         return false;
       }
@@ -67724,6 +67742,226 @@ function workAmoV5GenericVerifierStateFromProjection(
   return state;
 }
 
+async function workAmoV5InceptionVerifierStateFromProjection(
+  projection,
+  context,
+  network,
+) {
+  const state = workAmoV5GenericVerifierStateFromProjection(
+    projection,
+    INCB_TOKEN_ID,
+  );
+  const transition = projection?.transition ?? {};
+  const fail = (reason) => {
+    const error = new Error(
+      `The canonical post-V5 Inception mint projection is unavailable: ${reason}.`,
+    );
+    error.statusCode = 503;
+    error.details = {
+      code: "INCEPTION_POST_V5_MINT_PROJECTION_UNAVAILABLE",
+      reason,
+      blockHeight: Number(context?.indexedThroughBlock),
+    };
+    throw error;
+  };
+  const acceptedBondTxids = new Set(
+    (Array.isArray(transition.replayRecords)
+      ? transition.replayRecords
+      : []
+    )
+      .filter((record) =>
+        record?.rawCandidate === true &&
+        record?.protocol === "pwm1" &&
+        record?.outcome?.valid === true &&
+        record?.output?.classification?.kind === INCEPTION_BOND_KIND
+      )
+      .map((record) => String(record.txid ?? "").trim().toLowerCase()),
+  );
+  const bondTransactions = (Array.isArray(context?.transactions)
+    ? context.transactions
+    : []
+  ).filter((tx) =>
+    acceptedBondTxids.has(transactionTxid(tx))
+  );
+  const bonds = mailActivityItemsFromTransactions(
+    bondTransactions,
+    network,
+  ).filter((item) =>
+    item?.confirmed === true &&
+    isInceptionBondActivityItem(item) &&
+    acceptedBondTxids.has(String(item.txid ?? "").trim().toLowerCase())
+  );
+  if (bonds.length !== acceptedBondTxids.size) {
+    fail("accepted PWM bond parents do not match the confirmed transactions");
+  }
+  if (bonds.length === 0) {
+    if (state.mints.length !== 0) {
+      fail("an unbound INCB mint appeared without an accepted bond");
+    }
+    return state;
+  }
+  const registryAddress = String(
+    state.tokens.find((token) => token?.tokenId === INCB_TOKEN_ID)
+      ?.registryAddress ?? "",
+  ).trim();
+  if (!isValidBitcoinAddress(registryAddress, network)) {
+    fail("the confirmed INCB registry is unavailable");
+  }
+  const seedMints = bondMintsFromActivity(
+    bonds,
+    registryAddress,
+    network,
+    INCEPTION_BOND_CONFIG,
+  );
+  if (seedMints.length === 0) {
+    fail("an accepted bond has no recipient mint seed");
+  }
+  const ledger = {
+    activity: bonds,
+    network,
+    tokenState: state,
+    workTokenState: projection.workState,
+  };
+  const issuanceBonds = bonds.map((bond) => {
+    const attachment = inceptionAttachmentMatchesForBond(ledger, bond);
+    if (attachment.unmatchedActions > 0) {
+      fail("a declared WORK attachment did not pass canonical WORK replay");
+    }
+    const acceptedVouts = new Set(
+      attachment.matches.map((match) => Number(match.protocolVout)),
+    );
+    return {
+      ...bond,
+      attachedCredits: (Array.isArray(bond.attachedCredits)
+        ? bond.attachedCredits
+        : []
+      ).filter((credit) =>
+        credit?.tokenId === WORK_TOKEN_ID &&
+        acceptedVouts.has(Number(credit.protocolVout))
+      ),
+    };
+  });
+  const options = await canonicalInceptionIssuanceOptions(
+    network,
+    issuanceBonds,
+    {
+      previousBlockHashByBlockHash: new Map([[
+        String(context?.blockHash ?? "").trim().toLowerCase(),
+        String(context?.previousBlockHash ?? "").trim().toLowerCase(),
+      ]]),
+    },
+  );
+  for (const bond of issuanceBonds) {
+    const checkpoint = options.preBondCheckpoint?.(bond);
+    if (
+      !checkpoint ||
+      String(checkpoint.workNetworkValueQ8 ?? "") !==
+        String(transition.openingNetworkValueQ8 ?? "")
+    ) {
+      fail("the hash-bound H-1 value differs from the AMO block opening value");
+    }
+  }
+  const mintOrdinalByTxid = new Map();
+  const mints = inceptionMintsWithLiveIssuance(
+    seedMints,
+    issuanceBonds,
+    ledger,
+    options,
+  ).map((mint) => {
+    const txid = String(mint.txid ?? "").trim().toLowerCase();
+    const recordOrdinal = (mintOrdinalByTxid.get(txid) ?? 0) + 1;
+    mintOrdinalByTxid.set(txid, recordOrdinal);
+    return {
+      ...mint,
+      ...canonicalInceptionMintMetadata(mint),
+      amountSats: 0,
+      chargesTransactionFee: false,
+      claimsEconomicOutputs: false,
+      derived: true,
+      economicDelta: false,
+      protocol: "pwt1",
+      rawCandidate: false,
+      recordOrdinal,
+    };
+  });
+  const issuance = inceptionIssuanceMetadataFromMints(mints);
+  if (
+    mints.length !== seedMints.length ||
+    issuance.complete !== true ||
+    issuance.confirmedMints !== mints.length
+  ) {
+    fail("the exact H-1 mint quantities are incomplete");
+  }
+  const exactMintTotal = (items) => {
+    let total = 0n;
+    for (const item of items) {
+      const amount = canonicalIntegerText(item?.amount, {
+        allowZero: true,
+      });
+      if (!amount) {
+        fail("a raw or canonical INCB mint amount is not exact");
+      }
+      total += BigInt(amount);
+    }
+    return total;
+  };
+  if (exactMintTotal(state.mints) !== exactMintTotal(mints)) {
+    fail("raw sequencer and canonical INCB issuance totals differ");
+  }
+  const rawAttachmentQ8 = new Map();
+  for (const record of Array.isArray(transition.replayRecords)
+    ? transition.replayRecords
+    : []) {
+    const attachment = record?.output?.projection;
+    if (
+      record?.rawCandidate !== false ||
+      record?.derived !== true ||
+      record?.protocol !== "pwt1" ||
+      record?.outcome?.valid !== true ||
+      attachment?.kind !== "token-mint" ||
+      attachment?.tokenId !== INCB_TOKEN_ID ||
+      !attachment?.workSendPosition
+    ) {
+      continue;
+    }
+    const valueQ8 = canonicalNonNegativeIntegerText(
+      attachment.attachedWorkLiveValueAtSendQ8,
+    );
+    if (!valueQ8) {
+      fail("the accepted WORK attachment lacks its exact raw replay value");
+    }
+    const key = `${record.txid}:${attachment.recipientAddress}`;
+    rawAttachmentQ8.set(
+      key,
+      (BigInt(rawAttachmentQ8.get(key) ?? "0") + BigInt(valueQ8))
+        .toString(),
+    );
+  }
+  const bondsByTxid = new Map(
+    bonds.map((bond) => [String(bond.txid).toLowerCase(), bond]),
+  );
+  for (const mint of mints) {
+    const bond = bondsByTxid.get(String(mint.txid).toLowerCase());
+    const key = `${mint.txid}:${mint.minterAddress}`;
+    if (
+      !bond ||
+      !inceptionMintHasCanonicalBondBinding(mint, bond) ||
+      String(mint.attachedWorkLiveValueAtSendQ8 ?? "") !==
+        (rawAttachmentQ8.get(key) ?? "0")
+    ) {
+      fail("the bond recipient or attached WORK value differs from raw replay");
+    }
+    rawAttachmentQ8.delete(key);
+  }
+  if (rawAttachmentQ8.size !== 0) {
+    fail("a raw WORK attachment has no canonical INCB recipient mint");
+  }
+  return {
+    ...state,
+    mints,
+  };
+}
+
 function workAmoV5IdVerifierStateFromProjection(projection) {
   const transition = projection?.transition ?? {};
   const closing = transition.closingIdState ?? {};
@@ -67842,10 +68080,16 @@ async function completeTokenVerifierState(
     const state =
       scope === WORK_TOKEN_ID
         ? projection.workState
-        : workAmoV5GenericVerifierStateFromProjection(
-            projection,
-            scope,
-          );
+        : scope === INCB_TOKEN_ID
+          ? await workAmoV5InceptionVerifierStateFromProjection(
+              projection,
+              context,
+              network,
+            )
+          : workAmoV5GenericVerifierStateFromProjection(
+              projection,
+              scope,
+            );
     return {
       ...state,
       ...context,

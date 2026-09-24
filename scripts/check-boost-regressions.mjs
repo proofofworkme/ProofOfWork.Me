@@ -385,6 +385,23 @@ test("exact Boost rank and aggregates retain sub-proof differences above floatin
   assert.throws(() => api.boostWorkSignalValue("1", null), /valuation is unavailable/u);
 });
 
+test("WORK-only originals preserve zero Proof and exact WORK value in the read model", async () => {
+  const workOnly = event(1, "boost-post", {
+    proofSignalSats: 0,
+    recipients: [],
+    workSignalSubatoms: "10000000000000000",
+    workSignalVerification: "canonical-same-tx-work-self-transfer-v1",
+  });
+  const page = await server(reader([workOnly]).read).boostFeedPayload("livenet", new URLSearchParams());
+  assert.equal(page.items.length, 1);
+  assert.equal(page.items[0].proofSignalQ8, "0");
+  assert.equal(page.items[0].workSignalSubatoms, "10000000000000000");
+  assert.equal(page.items[0].workSignalValueQ8, "100000000");
+  assert.equal(page.items[0].totalSignalQ8, "100000000");
+  assert.equal(page.signalStats.proofSignalQ8, "0");
+  assert.equal(page.signalStats.totalSignalQ8, "100000000");
+});
+
 test("WORK valuation must bind the same exact checkpoint as complete Boost history", async () => {
   const events = [event(1, "boost-post", { workSignalSubatoms: "10000000000000000" })];
   const floor = { networkValueQ8: "2100000000000000", snapshotId: "fixture-snapshot", indexedThroughBlock: 965000, indexedThroughBlockHash: "a".repeat(64) };
@@ -452,6 +469,31 @@ test("follow and unfollow retain independent target address and ID relations", a
     assert.ok(proofIndexEventParticipantsForItem(item).some(row => row.address === "target" && row.role === "follow-target" && row.powid === "target-id"));
     assert.ok(proofIndexEventRefsForItem(item).some(row => row.refType === "powid" && row.refValue === "target-id"));
   }
+});
+
+test("Following includes the viewer's own boosts and never creates a self-follow edge", async () => {
+  const own = event(1, "boost-post", { authorAddress: "viewer" });
+  const followed = event(2, "boost-post", { authorAddress: "friend" });
+  const stranger = event(3, "boost-post", { authorAddress: "stranger" });
+  const follow = event(4, "boost-follow", { authorAddress: "viewer", targetAddress: "friend" });
+  const selfFollow = event(5, "boost-follow", { authorAddress: "viewer", targetAddress: "viewer" });
+  const events = [own, followed, stranger, follow, selfFollow];
+  const graph = server(reader(events).read).boostOwnershipState(events);
+  assert.equal(graph.followingByFollower.get("viewer")?.has("viewer"), false);
+  assert.equal(graph.followersByTarget.has("viewer"), false);
+  const page = await server(reader(events).read).boostFeedPayload(
+    "livenet", new URLSearchParams("viewer=viewer&view=following&sort=oldest"),
+  );
+  assert.deepEqual(Array.from(page.items, item => item.txid), [own.txid, followed.txid]);
+  assert.equal(page.graph.followingCount, 1);
+  assert.ok(page.provenance.applicationRejectedEvents.some(
+    row => row.txid === selfFollow.txid && row.reason === "boost-self-follow",
+  ));
+  const selfUnfollow = event(6, "boost-unfollow", { authorAddress: "viewer", targetAddress: "viewer" });
+  const qualified = projection.qualifyBoostPaidActions([selfFollow, selfUnfollow], [
+    event(900001, "id-register", { id: "boost", receiveAddress: "registry", blockHeight: 964000 }),
+  ]);
+  assert.deepEqual(qualified.rejected.map(row => row.reason), ["boost-self-follow", "boost-self-follow"]);
 });
 
 test("direct ownership transfers reject outsiders, missing actors and unknown parents", () => {
@@ -671,10 +713,141 @@ test("Boost composers encode quote posts and direct owner transfers", async () =
   const postPayload = mod.buildBoostPostPayload({ message: "quoted proof", proofSignalSats: 546, quoteTxid: quotedTxid });
   const decoded = JSON.parse(Buffer.from(postPayload.slice("pwb1:post:".length), "base64url").toString("utf8"));
   assert.deepEqual(decoded, { v: 1, text: "quoted proof", proofSignalSats: 546, quoteTxid: quotedTxid });
+  const attachment = { mime: "text/plain", name: "proof.txt", sha256: "b".repeat(64), size: 5 };
+  const mediaPayload = mod.buildBoostPostPayload({
+    attachment,
+    message: "",
+    proofSignalSats: 1,
+    workSignalSubatoms: "10000000000000000",
+  });
+  assert.deepEqual(JSON.parse(Buffer.from(mediaPayload.slice("pwb1:post:".length), "base64url").toString("utf8")), {
+    v: 1,
+    text: "",
+    media: { ...attachment, source: "same-tx-pwm1-attachment" },
+    proofSignalSats: 1,
+    workSignalSubatoms: "10000000000000000",
+  });
   assert.equal(mod.buildBoostTransferPayload(quotedTxid, "bc1qrecipient"), `pwb1:t:${quotedTxid}:bc1qrecipient`);
   assert.throws(() => mod.buildBoostPostPayload({ message: "" }), /Enter a Boost post/u);
+  assert.throws(() => mod.buildBoostPostPayload({ message: "exact", proofSignalSats: 1.5 }), /non-negative whole/u);
 });
 
+
+test("Boost WORK signal binds exactly to a canonical same-transaction self-transfer", async () => {
+  const source = await readFile(new URL("../scripts/backfill-proof-indexer.mjs", import.meta.url), "utf8");
+  const start = source.indexOf("function preparedProtocolItemsWithCanonicalMailAttachments(");
+  const end = source.indexOf("\nasync function preparedProtocolItemsForTx(", start);
+  assert.ok(start > 0 && end > start);
+  const workId = "d4e5ebf11d104d6a63fb74e42094364b25a5f7199a09e5c0e71408972466a8b8";
+  const context = vm.createContext({
+    BigInt, Map, Set,
+    WORK_TOKEN_ID: workId,
+    WORK_TOKEN_TICKER: "WORK",
+    WORK_SUBATOM_PROJECTION_MODEL: "work-subatoms-v2",
+    WORK_AMO_V8_TRANSFER_VERSION: "send3",
+    WORK_AMO_V8_GLOBAL_PRECISION_MODEL: "work-subatoms-v2",
+    WORK_ATOM_TO_SUBATOM_SCALE: 100000000n,
+    MAIL_WORK_ATTACHMENT_KINDS: new Set(["mail"]),
+    canonicalWorkAtomsText: () => "",
+    canonicalWorkSubatomsText: (value) => /^[1-9][0-9]*$/u.test(String(value ?? "")) ? String(value) : "",
+    isHexTxid: (value) => /^[0-9a-f]{64}$/u.test(value),
+    withWorkSubatomPrecisionMetadata: (item) => item,
+    formatWorkSubatoms,
+    sameCanonicalPaymentAddress: (left, right) => Boolean(left && right && left === right),
+    compareCanonicalUtf8: (left, right) => Buffer.compare(Buffer.from(left), Buffer.from(right)),
+    boostSelfSend: (item, sender) => (item.recipients ?? []).some((payment) => payment.address === sender),
+    invalidProtocolItem: (item, reason) => ({ ...item, kind: `${item.kind}-invalid`, reason, valid: false }),
+  });
+  vm.runInContext(`${source.slice(start, end)}\nthis.prepare = preparedProtocolItemsWithCanonicalMailAttachments;`, context);
+  const tx = "d".repeat(64);
+  const author = "1AuthorWorkSelfSignal";
+  const post = (overrides = {}) => ({
+    action: "post", authorAddress: author, confirmed: true, kind: "boost-post",
+    protocol: "pwb1", recipients: [], txid: tx, valid: true,
+    workSignalSubatoms: "123", ...overrides,
+  });
+  const transfer = (overrides = {}) => ({
+    amountStorageModel: "work-subatoms-v2", amountSubatoms: "123",
+    canonicalVerifier: "/api/v1/internal/token-verifier", confirmed: true,
+    kind: "token-transfer", protocol: "pwt1", protocolVout: 3,
+    recipientAddress: author, senderAddress: author,
+    tokenId: workId, transferVersion: "send3", txid: tx, valid: true,
+    ...overrides,
+  });
+  const selfSendStart = source.indexOf("function boostSelfSend(");
+  const parserStart = source.indexOf("function boostPostItemFromJson(");
+  const parserEnd = source.indexOf("\nfunction boostItemFromMessage(", parserStart);
+  assert.ok(selfSendStart > 0 && parserStart > selfSendStart && parserEnd > parserStart);
+  const parserContext = vm.createContext({
+    BOOST_ACTION_REGISTRY_FEE_SATS: 546,
+    BOOST_POST_MAX_CHARS: 140,
+    baseProtocolItem: (rawTx, _message, kind) => ({
+      amountSats: "0", kind, recipients: rawTx.payments ?? [], txid: rawTx.txid,
+    }),
+    senderAddressFromTx: () => author,
+    boostText: (value) => String(value ?? "").trim(),
+    boostMediaPointer: () => null,
+    boostTxidText: (value) => /^[0-9a-f]{64}$/u.test(String(value ?? "")) ? String(value) : "",
+    boostSignalSats: () => 0,
+    canonicalIntegerText: (value) => /^[1-9][0-9]*$/u.test(String(value ?? "")) ? String(value) : "",
+    canonicalWorkSubatomsText: (value) => /^[1-9][0-9]*$/u.test(String(value ?? "")) ? String(value) : "",
+    normalizedText: (value) => String(value ?? "").trim(),
+    boostPaymentToAddressSats: (item, sender) => (item.recipients ?? []).reduce(
+      (sum, payment) => sum + (payment.address === sender ? BigInt(payment.amountSats) : 0n), 0n,
+    ),
+    invalidProtocolItem: (item, reason) => ({ ...item, kind: `${item.kind}-invalid`, reason, valid: false }),
+    validBoostSocialItem: (item) => ({ ...item, valid: true }),
+  });
+  vm.runInContext(`${source.slice(selfSendStart, parserEnd)}\nthis.parse = boostPostItemFromJson;`, parserContext);
+  const parsedWorkOnly = parserContext.parse({ txid: tx, payments: [] }, { text: "pwb1:post:fixture" }, "post", {
+    text: "WORK-only post", workSignalSubatoms: "123",
+  });
+  assert.equal(parsedWorkOnly.valid, true);
+  assert.equal(parsedWorkOnly.proofSignalSats, 0);
+  assert.equal(parserContext.parse({ txid: tx, payments: [] }, { text: "pwb1:post:fixture" }, "post", {
+    text: "Unsignalled post",
+  }).valid, false);
+  assert.equal(parserContext.parse({ txid: tx, payments: [{ address: author, amountSats: "0" }] }, { text: "pwb1:post:fixture" }, "post", {
+    text: "Zero Proof post",
+  }).valid, false);
+  for (const workSignalSubatoms of ["bad", "01", "", null, 1, "-1"]) {
+    assert.equal(parserContext.parse({ txid: tx, payments: [{ address: author, amountSats: "546" }] }, { text: "pwb1:post:fixture" }, "post", {
+      text: "Malformed WORK claim", workSignalSubatoms,
+    }).valid, false);
+  }
+  assert.equal(parserContext.parse({ txid: tx, payments: [{ address: author, amountSats: "546" }] }, { text: "pwb1:post:fixture" }, "post", {
+    text: "Proof-only with explicit zero WORK", workSignalSubatoms: "0",
+  }).valid, true);
+  assert.match(source.slice(source.indexOf("rawItems.forEach((rawItem, index) =>", source.indexOf("async function canonicalRecoveryItemsForTx("))), /rawItem\?\.protocol === "pwb1"/u);
+  const prepared = (boost, work) => context.prepare([boost, ...(work ? [work] : [])])[0];
+  const workOnly = prepared(post(), transfer());
+  assert.equal(workOnly.valid, true);
+  assert.equal(workOnly.proofSignalSats, undefined);
+  assert.equal(workOnly.workSignalSubatoms, "123");
+  assert.equal(workOnly.workSignalVerification, "canonical-same-tx-work-self-transfer-v1");
+  assert.deepEqual(Array.from(workOnly.workSignalTransferVouts), [3]);
+  const proofAndWork = prepared(post({ recipients: [{ address: author, amountSats: "546" }], proofSignalSats: 546 }), transfer());
+  assert.equal(proofAndWork.valid, true);
+  assert.equal(proofAndWork.proofSignalSats, 546);
+  const proofOnly = prepared(post({ recipients: [{ address: author, amountSats: "546" }], workSignalSubatoms: undefined }), null);
+  assert.equal(proofOnly.valid, true);
+  assert.equal(proofOnly.workSignalVerification, undefined);
+  for (const invalidTransfer of [
+    null,
+    transfer({ canonicalVerifier: undefined }),
+    transfer({ recipientAddress: "someone-else" }),
+    transfer({ senderAddress: "someone-else" }),
+    transfer({ amountSubatoms: "124" }),
+    transfer({ transferVersion: "send2" }),
+  ]) {
+    assert.equal(prepared(post(), invalidTransfer).valid, false);
+  }
+  const duplicate = context.prepare([post(), post(), transfer()]);
+  assert.equal(duplicate[0].valid, false);
+  assert.equal(duplicate[1].valid, false);
+  const ambiguousTransfer = context.prepare([post(), transfer(), transfer({ canonicalVerifier: undefined })]);
+  assert.equal(ambiguousTransfer[0].valid, false);
+});
 
 test("proof-only Boost reads do not start an unused WORK valuation query", async () => {
   const api = server(reader([event(1)]).read, {

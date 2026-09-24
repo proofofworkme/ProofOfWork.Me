@@ -538,9 +538,19 @@
   white-space: pre-wrap;
 }
 
+.boost-shell-instrument .boost-reboosted-post:not(.boost-reboosted-post-missing) {
+  cursor: pointer;
+}
+
 .boost-shell-instrument .boost-reboosted-post {
   background: color-mix(in srgb, var(--surface-raised) 92%, transparent);
   border-color: color-mix(in srgb, var(--accent) 18%, var(--border));
+}
+
+.boost-open-original {
+  letter-spacing: normal;
+  margin-left: auto;
+  text-transform: none;
 }
 
 .boost-reboosted-signal {

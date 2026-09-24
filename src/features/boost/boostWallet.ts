@@ -472,6 +472,7 @@ export async function buildBoostPaymentPsbt({
   network,
   payments,
   postProtocolPayments = [],
+  postProtocolPayloads = [],
   protocolPayloads,
 }: {
   excludeOutpoints?: BoostSpentOutpoint[];
@@ -480,9 +481,10 @@ export async function buildBoostPaymentPsbt({
   network: BitcoinNetwork;
   payments: BoostPaymentOutput[];
   postProtocolPayments?: BoostPaymentOutput[];
+  postProtocolPayloads?: string[];
   protocolPayloads: string[];
 }): Promise<BoostPaymentPsbt> {
-  if (payments.length === 0) {
+  if (payments.length === 0 && postProtocolPayments.length === 0) {
     throw new Error("Add at least one Boost transaction payment.");
   }
   const selectedNetwork = bitcoinNetwork(network);
@@ -499,6 +501,14 @@ export async function buildBoostPaymentPsbt({
     "Connected wallet",
   );
   const opReturnScripts = protocolPayloads.map(opReturnScriptForPayload);
+  const postProtocolOpReturnScripts = postProtocolPayloads.map(opReturnScriptForPayload);
+  const aggregateDataCarrierBytes = [
+    ...opReturnScripts,
+    ...postProtocolOpReturnScripts,
+  ].reduce((total, script) => total + script.length, 0);
+  if (aggregateDataCarrierBytes > MAX_DATA_CARRIER_BYTES) {
+    throw new Error("Aggregate OP_RETURN data-carrier scripts are over 100 KB.");
+  }
   const fixedOutputVbytes =
     normalizedPayments.reduce(
       (total, payment) => total + outputVbytesForScript(payment.script),
@@ -510,6 +520,10 @@ export async function buildBoostPaymentPsbt({
     ) +
     normalizedPostProtocolPayments.reduce(
       (total, payment) => total + outputVbytesForScript(payment.script),
+      0,
+    ) +
+    postProtocolOpReturnScripts.reduce(
+      (total, script) => total + outputVbytesForScript(script),
       0,
     );
   const changeOutputVbytes = outputVbytesForScript(changeScript);
@@ -587,6 +601,9 @@ export async function buildBoostPaymentPsbt({
       });
     }
   }
+  for (const script of postProtocolOpReturnScripts) {
+    psbt.addOutput({ script, value: 0n });
+  }
   if (selection.changeSats >= DUST_SATS) {
     psbt.addOutput({
       address: fromAddress,
@@ -602,6 +619,7 @@ export async function buildBoostPaymentPsbt({
       normalizedPayments.length +
       opReturnScripts.length +
       normalizedPostProtocolPayments.length +
+      postProtocolOpReturnScripts.length +
       (selection.changeSats >= DUST_SATS ? 1 : 0),
     psbtHex: psbt.toHex(),
     walletInputIndexes: selection.selected.map((_, index) => index),
@@ -801,6 +819,7 @@ async function broadcastRawTransaction(
 }
 
 export async function signAndBroadcastBoostPsbt({
+  beforeBroadcast,
   inputCount,
   network,
   psbtHex,
@@ -808,6 +827,7 @@ export async function signAndBroadcastBoostPsbt({
   signingAddress,
   wallet,
 }: {
+  beforeBroadcast?: () => Promise<void>;
   inputCount: number;
   network: BitcoinNetwork;
   psbtHex: string;
@@ -866,6 +886,7 @@ export async function signAndBroadcastBoostPsbt({
     expectedIntent,
     rawUnsignedTransactionIntent(signedTransaction),
   );
+  await beforeBroadcast?.();
   return broadcastRawTransaction(signedTransaction.toHex(), network);
 }
 

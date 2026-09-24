@@ -174,6 +174,13 @@ import {
 } from "./shared/bitcoin/networks";
 import { registryAddressForNetwork } from "./shared/protocol/idRegistry";
 import { MAX_DATA_CARRIER_BYTES } from "./shared/bitcoin/protocolLimits";
+import {
+  attachmentFromFile,
+  buildAttachmentPayloads,
+  MAX_ATTACHMENT_BYTES,
+  normalizeAttachmentMime,
+  normalizeAttachmentName,
+} from "./shared/protocol/mailAttachment";
 import { activityHistoryCacheKey } from "./shared/activity/logHistoryCache";
 import {
   clearProofApiReadWarning,
@@ -1717,7 +1724,6 @@ const BACKUP_MAX_BYTES = 5 * 1024 * 1024;
 const UNISAT_DOWNLOAD_URL = "https://unisat.io/download";
 const CANONICAL_WELCOME_TXID =
   "8c2fd17b10a6550896035b9f725054d3c6e10c314911808d8f7aaa2955c3015b";
-const MAX_ATTACHMENT_BYTES = 60_000;
 const MAX_ATTACHMENT_PARTS = 1_024;
 const MAX_ATTACHMENT_BASE64URL_BYTES = Math.ceil(
   (MAX_ATTACHMENT_BYTES * 4) / 3,
@@ -4479,47 +4485,6 @@ function fileFilterLabel(filter: FileFilter) {
   }
 
   return filter === "other" ? "Other" : "All files";
-}
-
-function normalizeAttachmentName(name: string) {
-  return name.trim().replace(/\s+/g, " ").slice(0, 120) || "attachment";
-}
-
-function normalizeAttachmentMime(mime: string) {
-  return mime.trim().slice(0, 120) || "application/octet-stream";
-}
-
-async function attachmentFromFile(file: File): Promise<MailAttachment> {
-  if (file.size <= 0) {
-    throw new Error("Attachment is empty.");
-  }
-
-  if (file.size > MAX_ATTACHMENT_BYTES) {
-    throw new Error(
-      `Attachment must be ${formatBytes(MAX_ATTACHMENT_BYTES)} or smaller.`,
-    );
-  }
-
-  const bytes = new Uint8Array(await file.arrayBuffer());
-  return {
-    data: base64UrlEncodeBytes(bytes),
-    mime: normalizeAttachmentMime(file.type),
-    name: normalizeAttachmentName(file.name),
-    sha256: sha256Hex(bytes),
-    size: bytes.byteLength,
-  };
-}
-
-function buildAttachmentPayloads(attachment: MailAttachment) {
-  const metadataPrefix = `${PROTOCOL_PREFIX}a:${encodeTextBase64Url(attachment.mime)}:${encodeTextBase64Url(
-    attachment.name,
-  )}:${attachment.size}:${attachment.sha256}:`;
-  const maxChunkBytes = maxPayloadDataBytes(`${metadataPrefix}999/999:`);
-  const chunks = chunkAscii(attachment.data, Math.max(1, maxChunkBytes));
-
-  return chunks.map(
-    (chunk, index) => `${metadataPrefix}${index}/${chunks.length}:${chunk}`,
-  );
 }
 
 function boostPostText(message: string) {

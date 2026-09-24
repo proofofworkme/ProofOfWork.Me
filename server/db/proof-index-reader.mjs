@@ -3366,7 +3366,7 @@ function canonicalWorkQ16LedgerSnapshotStateWitness(value) {
   };
 }
 
-function canonicalQ16SummarySnapshotSqlEligibility(snapshotAlias) {
+export function canonicalQ16SummarySnapshotSqlEligibility(snapshotAlias) {
   const alias = String(snapshotAlias ?? "");
   if (!/^[a-z_][a-z0-9_]*$/u.test(alias)) {
     throw new Error("Invalid canonical summary snapshot SQL alias.");

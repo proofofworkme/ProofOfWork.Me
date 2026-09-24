@@ -421,6 +421,14 @@ authoritative arithmetic contract; large floating-point display fields cannot
 reject an otherwise exact mint. The canonical H-1 transaction context also
 carries confirmed invalid mint dispositions from its same hashed checkpoint,
 so replay cannot resurrect a historically rejected bond attempt.
+After AMO V5, direct proof issuance and a later accepted WORK attachment have
+separate position-local raw sequencer companions. The scoped INCB verifier
+projects their exact combined issuance per recipient only when the PWM parent
+and each declared WORK send are canonical-valid, the AMO block-opening Q8 value
+agrees with the complete green H-1 summary, and raw mint units match that
+projection. `send3` preserves its Q16 subatoms and precision metadata. A
+block-scan-only H-1 row or a WORK AMO transition alone is not a green summary;
+missing summary evidence and unmatched declared attachments fail closed.
 Insufficient-balance WORK actions are recorded per protocol output even when a
 sibling action succeeds. A malformed current-block Inception attachment is
 converted to a durable invalid mint only when its rejected WORK action, amount,
@@ -3163,6 +3171,64 @@ fingerprint equivalence. Require the first apply to commit 18 rows and resolve
 all 29 references. Repeat the same apply command:
 it must commit with `state: "already-applied"` and `inserted: 0`.
 
+A later post-V5 incident has a separate, closed repair set: the confirmed
+INCB bonds in blocks 963782 and 968125. Their H-1 WORK Q8 values are fixed
+by canonical V8 transitions at 963781 and 968124, but the live H-1 rows are
+block-scan-only and cannot serve as green issuance oracles. Restore exactly
+two **new** compact green summary rows from a verified isolated clone; leave
+the existing scan-only rows untouched. The clone must independently replay
+confirmed history with the corrected verifier, prove both Core H-1/bond hashes,
+complete green summary checks, the same exact H-1 WORK Q8 as the live V8
+transition rows, and full Q16 sufficient-state commitments. Export only the
+eight raw `ledger_snapshots` columns as two NDJSON `row_to_json` lines in
+963781/968124 order. Record an independently checked SHA-256 and a companion
+manifest with model `proof-indexer-post-v5-incb-h1-summary-artifact-v1`,
+`network: "livenet"`, `artifactSha256`, and ordered `snapshots` entries
+containing `height`, `blockHash`, `snapshotId`, and `workNetworkValueQ8`.
+
+Stop index writers and public readers for the joint H-1 import and mint
+repair window. The later H-1 summary already contains the earlier corrected
+INCB issuance from the clone, so public reads must stay closed until both
+mints and derived balances are repaired and parity is green. Take and verify
+a current logical backup. With the production `POW_INDEX_DATABASE_URL` and
+private `BITCOIN_RPC_URL` credentials loaded, run the default rollback-only
+preflight:
+
+```bash
+NETWORK=livenet npm run indexer:import-post-v5-incb-h1 -- \
+  --artifact /absolute/path/post-v5-incb-h1.ndjson \
+  --manifest /absolute/path/post-v5-incb-h1-manifest.json \
+  --sha256 VERIFIED_CLONE_ARTIFACT_SHA256
+```
+
+Require `state: "ready"` and both exact H-1 ids, hashes, Q8 values and
+whole-row digests. The importer rejects a missing or uncertified completed
+958383 PWT replay, active fault, Core mismatch, wrong V8 transition or
+commitment, non-green or incomplete Q16 summary, divergent duplicate, and
+partial import. It runs under a serializable transaction and performs no
+update or delete. Apply only after reviewing the artifact and preflight:
+
+```bash
+NETWORK=livenet POW_IMPORT_POST_V5_INCB_H1_APPLY=1 \
+  npm run indexer:import-post-v5-incb-h1 -- \
+  --artifact /absolute/path/post-v5-incb-h1.ndjson \
+  --manifest /absolute/path/post-v5-incb-h1-manifest.json \
+  --sha256 VERIFIED_CLONE_ARTIFACT_SHA256 --apply
+```
+
+Require exactly two inserts. Repeat dry-run; it must report
+`state: "already-applied"` and `inserted: 0`. Keep public reads closed while
+the bounded post-V5 INCB issuance repair uses an explicit private loopback
+API against the same database. First run
+`node scripts/backfill-proof-indexer.mjs --repair-post-v5-incb-issuance` as
+a dry run, then apply with `POW_INDEX_REPAIR_POST_V5_INCB_APPLY=1`; it must
+replace only the two target transactions' reserved-namespace aliases, leave
+the completed PWT replay certificate intact, and rebuild conserved INCB
+balances. Republish a fresh exact-tip green summary and run the complete
+INCB supply, Growth single-counting, ledger, and public surface parity gates
+before reopening readers or writers. Do not use the historical
+`--prepare-canonical-pwt-range-replay` command for this certified replay.
+
 Future bounded PWT replay preparation must collect the complete protected
 snapshot set after deleting the replay range and before pruning snapshots.
 That set includes every oracle referenced by a retained event, every
@@ -5144,7 +5210,7 @@ pwb1:delist5:<listing-txid>
 pwb1:buy5:<listing-txid>:<new-owner-address>
 ```
 
-Boost is public behind `boost.proofofwork.me`, `/?boost=1`, and `VITE_BOOST_ONLY=1`. The Mail original-post writer, standalone “What’s happening?” composer, and indexer treat `pwb1:` as a canonical governed protocol alongside Mail, IDs, AMO, and credits. Validation keeps posts and replies capped at 140 user-visible characters; a post may include an optional `quoteTxid` in its JSON to render a quote-style Boost. Original posts are self-sends to the author's own address and do not pay the Boost registry fee; they only require miner fee plus any optional proof or WORK signal chosen by the author. Likes, replies, and reboosts pay at least 546 proofs directly to the current Boost owner. Each confirmed owner-directed payment is attributed to the targeted original Boost's proof signal, while the UI separately reports the action's increment. The direct composer, replies, likes, and reboosts expose the shared selectable miner-fee-rate control. Follows and unfollows keep their existing profile-target payment rules. Confirmed `pwb1:t` ownership changes therefore route future likes, replies, and reboosts to the new owner, without retroactively rewriting historical payments. The Boost registry receives its 546-proof mutation fee only for direct Boost transfers and listing-sale mutations (`list5`, `seal5`, `delist5`, and `buy5`); historical registry-paid social actions remain replayable history. The latest confirmed follow/unfollow event for a follower-address plus target-address pair determines the active graph edge used by Following views and profile counts. Transfer writers require the current confirmed owner, accept a raw address or confirmed ProofOfWork ID resolved to its owner address, and keep wallet signing local. Boost media and profile images should be created through the ProofOfWork Files attachment layer; Boost records store file txid/proof/hash/size metadata and render from Files. Addresses are canonical profile actors, confirmed ProofOfWork IDs are preferred display identities, and pending IDs are visible but not routable social identities. A wallet with multiple confirmed IDs chooses its Boost display identity by signing a local intent for one ID; publishing `pwb1:profile` makes that selection chain-readable without mutating the canonical ID registry. Boost records are assets keyed by original post txid; `pwb1:t`, `pwb1:list5`, `pwb1:seal5`, `pwb1:delist5`, and `pwb1:buy5` reuse the AMO sale-ticket model. Owners can start `pwb1:list5` from the Boost feed or from the original Boost Mail item after the post txid exists, and active Boost sale tickets appear in AMO's Boost tab. Boost profile routes are person/profile projections, not home timeline filters: `profile=` resolves one address or confirmed ID and exposes authored boosts/reboosts, authored replies, currently owned or purchased boosts, liked boosts, and expanded replies to that person's original boosts. A confirmed `pwb1:hide` event hides the target record from default app/profile indexes without deleting it from ProofOfWork. Confirmed ProofOfWork history is canonical; pending Boost records are visibility only.
+Boost is public behind `boost.proofofwork.me`, `/?boost=1`, and `VITE_BOOST_ONLY=1`. The Mail original-post writer, standalone “What’s happening?” composer, and indexer treat `pwb1:` as a canonical governed protocol alongside Mail, IDs, AMO, and credits. Validation keeps posts and replies capped at 140 user-visible characters; a post may include an optional `quoteTxid` in its JSON to render a quote-style Boost. Original posts carry self-directed Proof and/or WORK signal to the author's own address and do not pay the Boost registry fee; the standalone writer requires a positive signal plus miner fee and permits Files attachment in the same transaction. WORK-only originals bind their declared exact Q16 signal to a canonical token-verifier-approved same-transaction WORK self-transfer; forged, unmatched, or ambiguous WORK claims are invalid. Likes, replies, and reboosts pay at least 546 proofs directly to the current Boost owner. Each confirmed owner-directed payment is attributed to the targeted original Boost's proof signal, while the UI separately reports the action's increment. The direct composer, replies, likes, and reboosts expose the shared selectable miner-fee-rate control. A follow pays 546 proofs to the followed profile; unfollow keeps its profile-target payment rule. Self-follow is invalid. Confirmed `pwb1:t` ownership changes therefore route future likes, replies, and reboosts to the new owner, without retroactively rewriting historical payments. The Boost registry receives its 546-proof mutation fee only for direct Boost transfers and listing-sale mutations (`list5`, `seal5`, `delist5`, and `buy5`); historical registry-paid social actions remain replayable history. The latest confirmed follow/unfollow event for a follower-address plus target-address pair determines the active graph edge used by Following views and profile counts. Following also includes the connected wallet's own authored Boosts without creating a self-follow edge. Replies and reboosts display their own paid action signal, while canonical feed totals attribute owner-directed payments to the original Boost once. The nested original post opens its original Boost detail from both timeline cards and expanded reboost detail. Transfer writers require the current confirmed owner, accept a raw address or confirmed ProofOfWork ID resolved to its owner address, and keep wallet signing local. Boost media and profile images should be created through the ProofOfWork Files attachment layer; Boost records store file txid/proof/hash/size metadata and render from Files. Addresses are canonical profile actors, confirmed ProofOfWork IDs are preferred display identities, and pending IDs are visible but not routable social identities. A wallet with multiple confirmed IDs chooses its Boost display identity by signing a local intent for one ID; publishing `pwb1:profile` makes that selection chain-readable without mutating the canonical ID registry. Boost records are assets keyed by original post txid; `pwb1:t`, `pwb1:list5`, `pwb1:seal5`, `pwb1:delist5`, and `pwb1:buy5` reuse the AMO sale-ticket model. Owners can start `pwb1:list5` from the Boost feed or from the original Boost Mail item after the post txid exists, and active Boost sale tickets appear in AMO's Boost tab. Boost profile routes are person/profile projections, not home timeline filters: `profile=` resolves one address or confirmed ID and exposes authored boosts/reboosts, authored replies, currently owned or purchased boosts, liked boosts, and expanded replies to that person's original boosts. A confirmed `pwb1:hide` event hides the target record from default app/profile indexes without deleting it from ProofOfWork. Confirmed ProofOfWork history is canonical; pending Boost records are visibility only.
 
 Boost feed reconstruction exhausts the checkpoint-bound `pwb1` event cursor before
 deriving ownership, profiles and signal totals. Canonical unavailability is an
@@ -5178,8 +5244,8 @@ After changing the API or production build, verify:
 - Public Desktop can search a raw address or confirmed ProofOfWork ID and returns only confirmed attachments.
 - Browser can load a txid with HTML in the message body or a verified `text/html` attachment, render it in a sandbox, and reject non-HTML message/attachment data.
 - Boost can load `/api/v1/boost`, rank confirmed `pwb1:` posts by value or time, show For You/all and viewer-scoped Following timelines, show total proof-equivalent signal, direct proof signal, attached WORK signal, and total USD value, expose profile-filtered views, connect UniSat for paid actions/listing/profile intent/following, and provide Twitter/X share links with mempool.space tx URLs.
-- Mail compose can toggle Boost originals, enforce self-send routing, cap text at 140 characters, attach Files-backed media, attach optional WORK signal, and open the Twitter/X share intent after broadcast.
-- Boost writers pay likes, replies, and reboosts directly to the current confirmed Boost owner; each confirmed payment contributes its exact amount to the original Boost's proof signal. Follow/unfollow continue to use their profile-target payment rules. The Boost composer, replies, likes, and reboosts use the shared selectable miner fee-rate control. Only direct transfers and listing-sale mutations pay the 546-proof Boost registry fee. The feed binds each engagement action to the current confirmed owner, so purchases and transfers route future engagement revenue to the new owner without changing confirmed history. AMO reads active Boost sale tickets from the replayed Boost feed state and displays them with the other asset books.
+- Both standalone Boost compose buttons publish originals with positive Proof and/or verified WORK self-transfer signal and Files-backed media in the same transaction. Computer Mail compose retains its positive Proof self-send and optional WORK attachment path. Text remains capped at 140 characters; the Twitter/X share intent opens after broadcast.
+- Boost writers pay likes, replies, and reboosts directly to the current confirmed Boost owner; each confirmed payment contributes its exact amount to the original Boost's proof signal. Follows pay 546 proofs to the followed profile, self-follow is invalid, and unfollows keep the profile-target rule. The Boost composer, replies, likes, and reboosts use the shared selectable miner fee-rate control. Only direct transfers and listing-sale mutations pay the 546-proof Boost registry fee. The feed binds each engagement action to the current confirmed owner, so purchases and transfers route future engagement revenue to the new owner without changing confirmed history. AMO reads active Boost sale tickets from the replayed Boost feed state and displays them with the other asset books.
 - Standalone AMO can list, seal, delist, and buy confirmed IDs through the same registry API.
 - Credit, Wallet, and AMO transaction buttons can load UTXOs, previous transaction hex, and listing-anchor outspends through the first-party API before opening UniSat.
 - Generic funding selection excludes every active ProofOfWork ID and credit listing anchor owned by the connected wallet, even when that listing belongs to a different app or asset scope.

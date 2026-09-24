@@ -275,7 +275,11 @@ export function qualifyBoostPaidActions(items, registryItems, ownerByEvent = new
     const acceptedRegistryPayment = BOOST_REGISTRY_FEE_KINDS.has(item.kind)
       ? registryPayment
       : legacySocialPayment;
-    const reason = !payments ? "unverifiable-payment-outputs" :
+    const actor = String(item.authorAddress ?? item.actor ?? "").trim();
+    const selfFollow = (item.kind === "boost-follow" || item.kind === "boost-unfollow") &&
+      Boolean(actor && target && actor === target);
+    const reason = selfFollow ? "boost-self-follow" :
+      !payments ? "unverifiable-payment-outputs" :
       BOOST_OWNER_PAYMENT_KINDS.has(item.kind)
         ? (!directOwnerPayment && !legacySocialPayment
           ? (ownerReceiver ? "boost-owner-payment-missing" : "missing-confirmed-boost-owner")

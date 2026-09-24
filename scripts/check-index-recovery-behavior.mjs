@@ -238,6 +238,7 @@ import {
   canonicalWorkAmoRelationalTokenStateEvidence,
   classifyWorkAmoV5LegacyRows,
 } from "./migrate-work-amo-v5.mjs";
+import { POST_V5_INCB_ISSUANCE_REPAIR_TARGETS } from "../server/incb-post-v5-repair.mjs";
 import {
   INCB_RANGE_REPLAY_BOUND_WITNESS_SOURCE,
   INCB_RANGE_REPLAY_WITNESS_MANIFEST_MODEL,
@@ -1236,6 +1237,8 @@ function isolatedFunction(path, name, globals = {}) {
     APPLY_WORK_ATOMIC_MIGRATION: false,
     AUDIT_WORK_ATOMS_ONLY: false,
     CANONICAL_REBUILD_META_KEY: "canonical:rebuild",
+    REPAIR_POST_V5_INCB_ISSUANCE_ONLY: false,
+    APPLY_POST_V5_INCB_ISSUANCE_REPAIR: false,
     CANONICAL_OP_RETURN_TEXT_STORAGE_INVALID,
     REQUIRED_CURRENT_SUMMARY_KEYS: [
       "growthSummary",
@@ -27131,7 +27134,7 @@ check("every ledger snapshot deletion preserves immutable AMO V5 seed dependenci
   visit(sourceFile);
   assert.equal(
     snapshotDeleteQueries.length,
-    6,
+    7,
     "every ledger snapshot deletion path must be reviewed",
   );
   for (const query of snapshotDeleteQueries) {
@@ -71181,6 +71184,263 @@ check("AMO V5 raw replay never exposes an invalid token definition to a later mi
   );
 });
 
+check("post-V8 INCB send3 bond fixes exact Q16 issuance and dust", () => {
+  const INCEPTION_VALUE_SNAPSHOT_MODEL =
+    "canonical-summary-h-minus-one-v1";
+  const txid =
+    "ebe60fd108e8830b4741101e6525081387dcf328e81c12fa2b533de0bdbf0d3e";
+  const blockHash = "a".repeat(64);
+  const previousBlockHash = "b".repeat(64);
+  const recipientAddress = "1F1p9UEHuH5KTFR7Zsx93Khdrqhj6t5nFv";
+  const amountSubatoms = "18000000000000000000000";
+  const hMinusOneValueQ8 = "840950469793071163780428513";
+  const bond = {
+    blockHash,
+    blockHeight: 968_125,
+    blockIndex: 2_041,
+    confirmed: true,
+    kind: "inception-bond",
+    recipients: [{ address: recipientAddress, amountSats: 546, vout: 0 }],
+    txid,
+  };
+  const transfer = {
+    amountStorageModel: WORK_SUBATOM_PROJECTION_MODEL,
+    amountSubatoms,
+  };
+  const checkpoint = {
+    blockHash,
+    blockHeight: bond.blockHeight,
+    blockIndex: bond.blockIndex,
+    mode: "bond-transaction-provenance",
+    valueSnapshotBlockHash: previousBlockHash,
+    valueSnapshotBlockHeight: bond.blockHeight - 1,
+    valueSnapshotCanonicalSummaryHash: "c".repeat(64),
+    valueSnapshotGeneratedAt: "2026-09-23T00:00:00.000Z",
+    valueSnapshotId: "exact-green-h-minus-one",
+    valueSnapshotMode: "canonical-summary-refresh",
+    valueSnapshotModel: INCEPTION_VALUE_SNAPSHOT_MODEL,
+    workNetworkValueQ8: hMinusOneValueQ8,
+    workNetworkValueSats: decimalTextFromQ8(hMinusOneValueQ8),
+  };
+  const issue = isolatedFunction(
+    API_PATH,
+    "inceptionMintsWithLiveIssuance",
+    {
+      INCB_TOKEN_ID,
+      INCEPTION_ISSUANCE_ACCOUNTING_MODEL:
+        "canonical-pre-bond-live-network-value-v2",
+      WORK_TOKEN_MAX_SUPPLY,
+      inceptionAttachmentMatchesForBond: () => ({
+        matches: [{
+          ...transfer,
+          recipientAddress,
+          transfer,
+        }],
+        unmatchedActions: 0,
+      }),
+      inceptionIssuanceCheckpoint: () => checkpoint,
+      isInceptionBondActivityItem: (item) => item?.kind === "inception-bond",
+      samePaymentAddress: (left, right) => left === right,
+      canonicalEventOrdinal: (value) => Number.isSafeInteger(Number(value))
+        ? Number(value)
+        : null,
+    },
+  );
+  const [mint] = issue(
+    [{
+      amount: "546",
+      blockHash,
+      blockHeight: bond.blockHeight,
+      blockIndex: bond.blockIndex,
+      confirmed: true,
+      minterAddress: recipientAddress,
+      tokenId: INCB_TOKEN_ID,
+      txid,
+    }],
+    [bond],
+    {
+      network: "livenet",
+      workTokenState: { amountStorageModel: WORK_SUBATOM_PROJECTION_MODEL },
+    },
+  );
+  assert.equal(mint.amount, "720814688394061543");
+  assert.equal(mint.attachedWorkLiveValueAtSendQ8, "72081468839406099752608158");
+  assert.equal(mint.issuanceNetworkValueQ8, "72081468839406154352608158");
+  assert.equal(mint.issuanceDustQ8, "52608158");
+  assert.equal(mint.issuanceValueSnapshotWorkNetworkValueQ8, hMinusOneValueQ8);
+  assert.equal(mint.attachedWorkAmountSubatoms, amountSubatoms);
+  assert.equal(mint.attachedWorkAmountStorageModel, WORK_SUBATOM_PROJECTION_MODEL);
+  assert.equal(mint.attachedWorkAmountVersion, "send3");
+  assert.equal(mint.validationMode, "canonical-incb-bond-projection");
+});
+
+check("post-V5 INCB verifier binds accepted bond and WORK send3 to exact H-1", async () => {
+  const txid = "e".repeat(64);
+  const blockHash = "a".repeat(64);
+  const previousBlockHash = "b".repeat(64);
+  const recipientAddress = "1F1p9UEHuH5KTFR7Zsx93Khdrqhj6t5nFv";
+  const workValueQ8 = "2100000000000000000";
+  const bond = {
+    attachedCredits: [{ protocolVout: 3, recipientAddress, tokenId: WORK_TOKEN_ID }],
+    blockHash,
+    blockHeight: 968_125,
+    blockIndex: 2_041,
+    confirmed: true,
+    kind: "inception-bond",
+    recipients: [{ address: recipientAddress, amountSats: 546, vout: 0 }],
+    txid,
+  };
+  const projection = {
+    transition: {
+      openingNetworkValueQ8: workValueQ8,
+      replayRecords: [{
+        output: { classification: { kind: "inception-bond" } },
+        outcome: { valid: true },
+        protocol: "pwm1",
+        rawCandidate: true,
+        txid,
+      }, {
+        output: { inceptionAttachment: {
+          attachedWorkLiveValueAtSendQ8: "150000000",
+          recipientAddress,
+          tokenId: INCB_TOKEN_ID,
+        } },
+        outcome: { valid: true },
+        protocol: "pwt1",
+        rawCandidate: true,
+        txid,
+      }, {
+        derived: true,
+        output: { projection: {
+          attachedWorkLiveValueAtSendQ8: "150000000",
+          kind: "token-mint",
+          recipientAddress,
+          tokenId: INCB_TOKEN_ID,
+          workSendPosition: { protocolVout: 3 },
+        } },
+        outcome: { valid: true },
+        protocol: "pwt1",
+        rawCandidate: false,
+        txid,
+      }],
+    },
+    workState: { transfers: [{ txid, tokenId: WORK_TOKEN_ID }] },
+  };
+  let parsedTransactionCount = 0;
+  const verifier = isolatedFunction(
+    API_PATH,
+    "workAmoV5InceptionVerifierStateFromProjection",
+    {
+      INCB_TOKEN_ID,
+      INCEPTION_BOND_KIND: "inception-bond",
+      INCEPTION_BOND_CONFIG: { kind: "inception-bond" },
+      WORK_TOKEN_ID,
+      bondMintsFromActivity: () => [{
+        amount: "546",
+        blockHash,
+        blockHeight: bond.blockHeight,
+        blockIndex: bond.blockIndex,
+        confirmed: true,
+        minterAddress: recipientAddress,
+        protocolVout: 1,
+        tokenId: INCB_TOKEN_ID,
+        txid,
+      }],
+      canonicalInceptionIssuanceOptions: async (_network, bonds, options) => {
+        assert.equal(bonds.length, 1);
+        assert.equal(options.previousBlockHashByBlockHash.get(blockHash), previousBlockHash);
+        return { preBondCheckpoint: () => ({ workNetworkValueQ8: workValueQ8 }) };
+      },
+      canonicalInceptionMintMetadata: () => ({
+        attachedWorkAmountStorageModel: WORK_SUBATOM_PROJECTION_MODEL,
+        attachedWorkAmountVersion: "send3",
+      }),
+      canonicalNonNegativeIntegerText: (value) =>
+        typeof value === "string" && /^\d+$/u.test(value) ? value : null,
+      inceptionAttachmentMatchesForBond: (_ledger, candidate) => {
+        const matches = candidate.attachedCredits
+          .filter((credit) => credit.protocolVout === 3)
+          .map((credit) => ({ protocolVout: credit.protocolVout }));
+        return { matches, unmatchedActions: candidate.attachedCredits.length - matches.length };
+      },
+      inceptionIssuanceMetadataFromMints: (mints) => ({
+        complete: mints.every((mint) => mint.validationMode === "canonical-incb-bond-projection"),
+        confirmedMints: mints.length,
+      }),
+      inceptionMintHasCanonicalBondBinding: (mint, candidate) =>
+        mint.txid === candidate.txid && mint.minterAddress === candidate.recipients[0].address,
+      inceptionMintsWithLiveIssuance: (seeds, issuanceBonds) => {
+        const attached = issuanceBonds[0].attachedCredits.length > 0;
+        return [{ ...seeds[0], amount: attached ? "547" : "546",
+          attachedWorkLiveValueAtSendQ8: attached ? "150000000" : "0",
+          sourceBondTxid: txid, validationMode: "canonical-incb-bond-projection" }];
+      },
+      isInceptionBondActivityItem: (item) => item?.kind === "inception-bond",
+      isValidBitcoinAddress: () => true,
+      mailActivityItemsFromTransactions: (txs) => {
+        parsedTransactionCount += txs.length;
+        return txs.map(() => bond);
+      },
+      transactionTxid: (tx) => tx.txid,
+      workAmoV5GenericVerifierStateFromProjection: () => ({
+        mints: bond.attachedCredits.length > 0
+          ? [{ amount: "546" }, { amount: "1" }]
+          : [{ amount: "546" }],
+        tokens: [{ registryAddress: "1638Vn6KtmK8p5r4oGvAXq9nmZb1emU1DV", tokenId: INCB_TOKEN_ID }],
+      }),
+    },
+  );
+  const context = {
+    blockHash,
+    indexedThroughBlock: bond.blockHeight,
+    previousBlockHash,
+    transactions: [{ txid: "f".repeat(64) }, { txid }],
+  };
+  const state = await verifier(projection, context, "livenet");
+  assert.equal(parsedTransactionCount, 1);
+  assert.equal(state.mints.length, 1);
+  assert.equal(state.mints[0].amount, "547");
+  assert.equal(state.mints[0].amountSats, 0);
+  assert.equal(state.mints[0].chargesTransactionFee, false);
+  assert.equal(state.mints[0].claimsEconomicOutputs, false);
+  assert.equal(state.mints[0].economicDelta, false);
+  assert.equal(state.mints[0].validationMode, "canonical-incb-bond-projection");
+  assert.equal(state.mints[0].attachedWorkAmountVersion, "send3");
+  assert.equal(state.mints[0].recordOrdinal, 1);
+  const earlySendProjection = structuredClone(projection);
+  earlySendProjection.transition.replayRecords[1].output = {};
+  earlySendProjection.transition.replayRecords[2]
+    .output.projection.workSendPosition.protocolVout = 0;
+  assert.equal(
+    (await verifier(earlySendProjection, context, "livenet")).mints[0].amount,
+    "547",
+    "a WORK send before the PWM carrier still has a derived INCB companion",
+  );
+  const savedCredits = bond.attachedCredits;
+  bond.attachedCredits = [];
+  const directOnlyProjection = structuredClone(projection);
+  directOnlyProjection.transition.replayRecords = [
+    directOnlyProjection.transition.replayRecords[0],
+  ];
+  directOnlyProjection.workState.transfers = [];
+  assert.equal(
+    (await verifier(directOnlyProjection, context, "livenet")).mints[0].amount,
+    "546",
+    "a valid direct-only bond keeps its exact H-1 mint without a WORK child",
+  );
+  bond.attachedCredits = savedCredits;
+  await assert.rejects(
+    verifier({ ...projection, transition: { ...projection.transition, openingNetworkValueQ8: "1" } },
+      context, "livenet"),
+    /hash-bound H-1 value differs/u,
+  );
+  bond.attachedCredits[0].protocolVout = 4;
+  await assert.rejects(
+    verifier(projection, context, "livenet"),
+    /declared WORK attachment did not pass/u,
+  );
+});
+
 check("AMO V5 opening state releases legacy marketplace reservations", async () => {
   const unknownListingId = "c".repeat(64);
   const v4SaleConflictListingId = "d".repeat(64);
@@ -85499,6 +85759,152 @@ check("INCB decimal aliases derive only from exact integers without mutating iss
   assert.equal(projected.attachedWorkLiveValueAtSendQ8, original.attachedWorkLiveValueAtSendQ8);
   assert.equal(original.issuanceDustSats, "0.0571579");
   assert.throws(() => project({ ...original, issuanceDustQ8: "not-an-integer" }), /Invalid exact INCB/);
+});
+
+
+check("post-V5 INCB repair dry run binds stored bond and accepted WORK before any write", async () => {
+  const targets = POST_V5_INCB_ISSUANCE_REPAIR_TARGETS.map((target, index) => ({
+    ...target,
+    bond: { protocolVout: 1, recordOrdinal: 0 },
+    mint: { txid: target.txid },
+    witness: {
+      amount: String(1000 + index),
+      attachedWorkSubatoms: String(1000000 + index),
+      directProofSats: "546",
+      fixedValueQ8: String(100000000000n + BigInt(index)),
+      recipientAddress: "bond-recipient",
+      recipientVout: 0,
+    },
+    workTransfers: [{ protocolVout: 3, recordOrdinal: 0 }],
+  }));
+  const makeRows = (alterWork = false) => {
+    const transactions = targets.map((target) => ({
+      txid: target.txid,
+      status: "confirmed",
+      block_hash: target.blockHash,
+      block_height: target.blockHeight,
+      block_index: target.blockIndex,
+    }));
+    const bonds = targets.map((target, index) => ({
+      ...transactions[index],
+      event_id: index + 1,
+      valid: true,
+      op_return_vout: 1,
+      record_ordinal: 0,
+      payload: {
+        recipients: [{ address: "bond-recipient", amountSats: 546, vout: 0 }],
+        attachedCredits: [{
+          amountSubatoms: target.witness.attachedWorkSubatoms,
+          protocolVout: 3,
+          recipientAddress: "bond-recipient",
+          tokenId: WORK_TOKEN_ID,
+        }],
+      },
+    }));
+    const work = targets.map((target, index) => ({
+      ...transactions[index],
+      valid: true,
+      op_return_vout: 3,
+      record_ordinal: 0,
+      payload: {
+        amountStorageModel: WORK_SUBATOM_PROJECTION_MODEL,
+        amountSubatoms: alterWork && index === 1
+          ? "999"
+          : target.witness.attachedWorkSubatoms,
+        inceptionAttachment: {
+          attachedWorkAmountSubatoms: target.witness.attachedWorkSubatoms,
+          kind: "token-mint",
+          parentPosition: {
+            blockHash: target.blockHash,
+            blockHeight: target.blockHeight,
+            blockTransactionIndex: target.blockIndex,
+          },
+          tokenId: INCB_TOKEN_ID,
+        },
+        recipientAddress: "bond-recipient",
+        transferVersion: "send3",
+      },
+    }));
+    const invalid = targets.flatMap((target, index) => [1, 3].map((vout) => ({
+      ...transactions[index],
+      event_id: 10 + index * 2 + vout,
+      kind: "token-event-invalid",
+      protocol: "pwt1",
+      valid: false,
+      op_return_vout: vout,
+      record_ordinal: 1,
+      payload: { reasonCode: "reserved-bond-credit-namespace" },
+    })));
+    return { transactions, bonds, work, invalid };
+  };
+  const repair = isolatedFunction(BACKFILL_PATH, "repairCanonicalPostV5IncbIssuance", {
+    APPLY_POST_V5_INCB_ISSUANCE_REPAIR: false,
+    CANONICAL_REBUILD_META_KEY: "canonical:rebuild",
+    INCB_TOKEN_ID,
+    NETWORK: "livenet",
+    POST_V5_INCB_ISSUANCE_REPAIR_TARGETS,
+    WORK_AMO_V8_TRANSFER_VERSION: "send3",
+    WORK_SUBATOM_PROJECTION_MODEL,
+    WORK_TOKEN_ID,
+    canonicalIncbReplaySha256: () => "rebuild-fingerprint",
+    canonicalIncbValueSnapshotBindings: () => new Map([
+      ["h-1-a", {}], ["h-1-b", {}],
+    ]),
+    canonicalPostV5IncbRepairTarget: async (target) =>
+      targets.find((entry) => entry.txid === target.txid),
+    lockedCanonicalIncbValueSnapshots: async () => [],
+    verifiedCanonicalIncbValueSnapshotFingerprints: () => new Map([
+      ["h-1-a", "fingerprint-a"], ["h-1-b", "fingerprint-b"],
+    ]),
+  });
+  const clientFor = (alterWork) => {
+    const rows = makeRows(alterWork);
+    const queries = [];
+    return {
+      queries,
+      async query(sql) {
+        const statement = String(sql).replace(/\s+/gu, " ").trim();
+        queries.push(statement);
+        if (statement.startsWith("BEGIN") || statement === "ROLLBACK") return { rows: [] };
+        if (statement.includes("FROM proof_indexer.meta WHERE key")) {
+          return { rows: [{ value: { complete: true } }] };
+        }
+        if (statement.includes("FROM proof_indexer.transactions WHERE")) {
+          return { rows: rows.transactions };
+        }
+        if (statement.includes("AND protocol = 'pwm1' AND kind = 'inception-bond'")) {
+          return { rows: rows.bonds };
+        }
+        if (statement.includes("AND protocol = 'pwt1' AND kind = 'token-transfer'")) {
+          return { rows: rows.work };
+        }
+        if (statement.includes("kind, protocol, status, valid") && statement.includes("FROM proof_indexer.events")) {
+          return { rows: rows.invalid };
+        }
+        if (statement.includes("AS mint_supply")) {
+          return { rows: [{ mint_supply: "50", balance_supply: "50" }] };
+        }
+        throw new Error(`Unexpected repair query: ${statement.slice(0, 120)}`);
+      },
+    };
+  };
+  const dryRunClient = clientFor(false);
+  const result = await repair(dryRunClient);
+  assert.equal(result.dryRun, true);
+  assert.equal(result.changedRows, 0);
+  assert.equal(result.expectedAfterSupply, "2051");
+  assert.equal(dryRunClient.queries.at(-1), "ROLLBACK");
+  assert.ok(dryRunClient.queries.every((query) =>
+    !/^(?:DELETE|INSERT|UPDATE|COMMIT|LOCK TABLE)/u.test(query)));
+  const changedWorkClient = clientFor(true);
+  await rejection(
+    repair(changedWorkClient),
+    (error) => /stored parent or accepted WORK companion disagrees/u.test(error.message),
+    "a changed stored WORK amount must stop the repair before deletion",
+  );
+  assert.equal(changedWorkClient.queries.at(-1), "ROLLBACK");
+  assert.ok(changedWorkClient.queries.every((query) =>
+    !/^(?:DELETE|INSERT|UPDATE|COMMIT|LOCK TABLE)/u.test(query)));
 });
 
 let failures = 0;
