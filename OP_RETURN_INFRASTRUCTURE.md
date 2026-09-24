@@ -730,8 +730,13 @@ rewinding only the checkpoint or layering corrected event keys over stale ones:
    unbound alias fails closed. The WORK definition row is re-read after
    seeding, after retained definitions are projected, after
    retained balances are conserved, and once more before commit. The active,
-   database-bound range replay may read this exact hash-bound Q16 token table
-   while ordinary readers remain subject to the full precision-readiness gate.
+   database-bound range replay may read only the WORK-scoped exact hash-bound
+   Q16 token table while ordinary readers remain subject to the full
+   precision-readiness gate. Its internal summary reconstructs every non-WORK
+   token, including POWB and INCB, from hash-bound activity at the requested
+   height; it must not require the tip-current all-token projection to conserve
+   supply before certifying a historical checkpoint. Ordinary canonical-summary
+   reads continue to query every token and enforce full-table conservation.
    Its canonical activity read is restricted to confirmed transactions anchored
    in canonical blocks through the active scan checkpoint, requires the same
    replay marker height and hash before and after the read, and never admits

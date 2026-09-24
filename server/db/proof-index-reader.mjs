@@ -32285,8 +32285,14 @@ export async function proofIndexReplayCanonicalSummaryTokenTablePayload(
   ) {
     return null;
   }
-  const relationalPayload =
-    await proofIndexTokenPayloadFromCurrentTables(pool, network, "all");
+  // This bridge supplies WORK tables only. Canonical summaries rebuild every
+  // non-WORK token from the hash-bound historical activity, so an inconsistent
+  // tip-current synthetic bond projection must not block a historical replay.
+  const relationalPayload = await proofIndexTokenPayloadFromCurrentTables(
+    pool,
+    network,
+    WORK_TOKEN_ID,
+  );
   const checkpointPayload = await tokenStatePayloadAtCanonicalCheckpoint(
     pool,
     network,

@@ -828,7 +828,7 @@ expectAll("hot worker summary publication is canonical, conservative, and health
   /async function internalCanonicalSummaryPayload\([\s\S]*?buildIndexedCanonicalLedgerPayload\(/,
   /const before = await exactCanonicalSummaryCheckpoint\([\s\S]*?const after = await exactCanonicalSummaryCheckpoint\(/,
   /exactCanonicalSummaryCheckpoint\([\s\S]*?indexedThroughBlock !== tipHeight[\s\S]*?storedHash !== tipHash/,
-  /buildIndexedCanonicalLedgerPayload\([\s\S]*?indexedActivityStateForCanonicalLedger\(network, \{ exactHeight \}\)[\s\S]*?exactTokenTablePayloadForCanonicalLedger\(/,
+  /buildIndexedCanonicalLedgerPayload\([\s\S]*?indexedActivityStateForCanonicalLedger\(network, \{\s*exactHash,\s*exactHeight,\s*replayBridgeEra,?\s*\}\)[\s\S]*?exactTokenTablePayloadForCanonicalLedger\(/,
   /const PROTOCOL_PREFIXES = \["pwm1:", "pwa1:", "pwid1:", "pwb1:", "pwt1:"\]/,
   /function tokenTablePayloadHasConservedBalances\([\s\S]*?!tokenIds\.has\(tokenId\)[\s\S]*?minted === held[\s\S]*?mintedSupply === heldSupply/,
   /async function tokenStatePayloadAtCanonicalCheckpoint\([\s\S]*?canonical_blocks AS[\s\S]*?checkpoint_block\.canonical = true[\s\S]*?GREATEST\(latest_scan\.height, canonical_blocks\.height\) AS scan_height[\s\S]*?token_event\.protocol = 'pwt1'[\s\S]*?token_event\.kind LIKE 'token-%'[\s\S]*?token_event\.status = 'confirmed'[\s\S]*?indexedThroughBlock: checkpointHeight[\s\S]*?indexedThroughBlockHash: normalizedCheckpointHash/,

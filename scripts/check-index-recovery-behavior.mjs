@@ -31954,6 +31954,45 @@ check("exact canonical summaries require current conserved token balances", asyn
   let precisionOptions = null;
   const listingPolicyHeights = [];
   const cutoverOrder = [];
+  let replayTokenTableScope = "";
+  const replayCanonicalSummaryTokenTablePayload = isolatedFunction(
+    READER_PATH,
+    "proofIndexReplayCanonicalSummaryTokenTablePayload",
+    {
+      proofIndexPool: () => ({}),
+      proofIndexTokenPayloadFromCurrentTables: async (
+        _pool,
+        _network,
+        scope,
+      ) => {
+        replayTokenTableScope = scope;
+        return null;
+      },
+      tokenStatePayloadAtCanonicalCheckpoint: async () => null,
+    },
+  );
+  assert.equal(
+    await replayCanonicalSummaryTokenTablePayload("livenet", {
+      activationHeight: 200,
+      exactHash: bootstrapHash,
+      exactHeight: 102,
+    }),
+    null,
+  );
+  assert.equal(
+    replayTokenTableScope,
+    WORK_TOKEN_ID,
+    "historical PWT replay must validate only WORK tables so inconsistent tip-current INCB state cannot block its H-1 summary",
+  );
+  assert.match(
+    topLevelFunctionSource(
+      READER_PATH,
+      "proofIndexCanonicalSummaryTokenTablePayload",
+    ),
+    /proofIndexTokenPayloadFromCurrentTables\(pool, network, "all"\)/u,
+    "ordinary canonical token reads must retain full-table conservation checks",
+  );
+
   const canonicalSummaryTokenTablePayload = isolatedFunction(
     READER_PATH,
     "proofIndexCanonicalSummaryTokenTablePayload",
