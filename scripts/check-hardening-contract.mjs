@@ -253,10 +253,12 @@ for (const service of ["db", "api", "web"]) {
 }
 assert.match(postgresBackup, /--retain-existing <verified-basename>/u);
 assert.match(postgresBackup, /backup_retention_deleted/u);
+assert.match(postgresBackup, /candidate_verify_reason=restore-catalog/u);
+assert.match(postgresBackup, /predicate=%s/u);
 assert.match(postgresBackup, /sha256sum --check --strict SHA256SUMS/u);
 assert.ok(postgresBackup.includes('[[ "${#checksum_lines[@]}" -eq 2 ]]'));
 assert.ok(postgresBackup.includes(String.raw`(globals\.sql|proof_indexer\.dump)`));
-assert.match(postgresBackup, /pg_restore --list proof_indexer\.dump/u);
+assert.match(postgresBackup, /pg_restore --list "\$\{path\}\/proof_indexer\.dump"/u);
 assert.match(postgresBackup, /fuser --silent/u);
 assert.match(postgresBackup, /rm --recursive --one-file-system/u);
 assert.match(postgresBackup, /backup_root_device/u);
@@ -360,6 +362,52 @@ exit 41
   );
   const newName = completedNames.find((name) => !seededNames.includes(name));
   assert.ok(newName, "fault injection did not leave one new completed dump set");
+  for (const file of ["proof_indexer.dump", "globals.sql", "SHA256SUMS"]) {
+    assert.equal(existsSync(join(backupRoot, newName, file)), true);
+  }
+
+  writeFileSync(restoreHelper, "#!/usr/bin/env bash\nexit 37\n");
+  chmodSync(restoreHelper, 0o700);
+  const diagnosticFixture = postgresBackup
+    .replace(
+      'backup_root="/data/proofofwork-postgres-backups/logical"',
+      `backup_root="${backupRoot}"`,
+    )
+    .replaceAll("/usr/bin/pg_dumpall", globalsHelper)
+    .replaceAll("/usr/bin/pg_dump", dumpHelper)
+    .replaceAll("/usr/bin/psql", psqlHelper)
+    .replaceAll("/usr/bin/pg_restore", restoreHelper);
+  writeFileSync(fixturePath, diagnosticFixture);
+  chmodSync(fixturePath, 0o700);
+  const diagnosticResult = spawnSync(
+    "/usr/bin/bash",
+    [fixturePath, "--retain-existing", newName],
+    {
+      encoding: "utf8",
+    },
+  );
+  assert.notEqual(
+    diagnosticResult.status,
+    0,
+    "a current dump with a failed restore catalog must remain fail-closed",
+  );
+  assert.match(
+    diagnosticResult.stderr,
+    /predicate=restore-catalog/u,
+    "the failed current-backup predicate must be logged",
+  );
+  for (const name of seededNames) {
+    assert.equal(
+      existsSync(join(backupRoot, name)),
+      true,
+      `diagnostic failure removed older backup ${name}`,
+    );
+  }
+  assert.equal(
+    existsSync(join(backupRoot, newName)),
+    true,
+    "restore-catalog failure removed the current completed backup",
+  );
   for (const file of ["proof_indexer.dump", "globals.sql", "SHA256SUMS"]) {
     assert.equal(existsSync(join(backupRoot, newName, file)), true);
   }

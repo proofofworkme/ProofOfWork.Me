@@ -169,23 +169,31 @@ fi
 mapfile -d '' -t backups <"${retention_listing}"
 /usr/bin/rm -f -- "${retention_listing}"
 retention_listing=""
+candidate_verify_reason=""
 verify_complete_backup_set() {
   local path="$1"
   local directory_mode directory_identity directory_device member member_path member_mode fuser_status checksum_line checksum_name mount_status
   local saw_dump=false saw_globals=false checksum_bytes
   local -a members=() checksum_lines=()
+  candidate_verify_reason=directory-path-owner
   [[ -d "${path}" && ! -L "${path}" &&
     "$(/usr/bin/realpath -e -- "${path}" 2>/dev/null || true)" == "${path}" &&
     "$(/usr/bin/stat --format=%u -- "${path}" 2>/dev/null || true)" == "${EUID}" ]] || return 1
-  directory_mode="$(/usr/bin/stat --format=%a -- "${path}")"
+  candidate_verify_reason=directory-mode
+  directory_mode="$(/usr/bin/stat --format=%a -- "${path}" 2>/dev/null)" || return 1
   ((8#${directory_mode} & 07022)) && return 1
-  directory_device="$(/usr/bin/stat --format=%d -- "${path}")"
+  candidate_verify_reason=directory-device
+  directory_device="$(/usr/bin/stat --format=%d -- "${path}" 2>/dev/null)" || return 1
   [[ "${directory_device}" == "${backup_root_device}" ]] || return 1
+  candidate_verify_reason=directory-mountpoint
   mount_status=0
   /usr/bin/mountpoint --quiet -- "${path}" >/dev/null 2>&1 || mount_status=$?
   ((mount_status == 32)) || return 1
-  directory_identity="$(/usr/bin/stat --format='%d:%i' -- "${path}")"
+  candidate_verify_reason=directory-identity
+  directory_identity="$(/usr/bin/stat --format='%d:%i' -- "${path}" 2>/dev/null)" || return 1
+  candidate_verify_reason=member-list-create
   candidate_listing="$(/usr/bin/mktemp --tmpdir="${backup_root}" ".${basename}.candidate.XXXXXX")" || return 1
+  candidate_verify_reason=member-list-enumeration
   if ! /usr/bin/find "${path}" -mindepth 1 -maxdepth 1 -printf '%f\0' >"${candidate_listing}" ||
     ! /usr/bin/sort -z -o "${candidate_listing}" "${candidate_listing}"; then
     /usr/bin/rm -f -- "${candidate_listing}"
@@ -195,52 +203,70 @@ verify_complete_backup_set() {
   mapfile -d '' -t members <"${candidate_listing}"
   /usr/bin/rm -f -- "${candidate_listing}"
   candidate_listing=""
+  candidate_verify_reason=member-inventory
   (("${#members[@]}" == 3)) &&
     [[ "${members[0]:-}" == SHA256SUMS &&
       "${members[1]:-}" == globals.sql &&
       "${members[2]:-}" == proof_indexer.dump ]] || return 1
   for member in "${members[@]}"; do
     member_path="${path}/${member}"
+    candidate_verify_reason="member-file:${member}"
     [[ -f "${member_path}" && ! -L "${member_path}" &&
       "$(/usr/bin/stat --format=%u -- "${member_path}" 2>/dev/null || true)" == "${EUID}" ]] || return 1
-    member_mode="$(/usr/bin/stat --format=%a -- "${member_path}")"
+    candidate_verify_reason="member-mode:${member}"
+    member_mode="$(/usr/bin/stat --format=%a -- "${member_path}" 2>/dev/null)" || return 1
     ((8#${member_mode} & 07022)) && return 1
+    candidate_verify_reason="member-mountpoint:${member}"
     mount_status=0
     /usr/bin/mountpoint --quiet -- "${member_path}" >/dev/null 2>&1 || mount_status=$?
     ((mount_status == 32)) || return 1
   done
+  candidate_verify_reason=checksum-manifest-size
   checksum_bytes="$(/usr/bin/stat --format=%s -- "${path}/SHA256SUMS" 2>/dev/null || true)"
   [[ "${checksum_bytes}" =~ ^[0-9]{1,3}$ ]] && ((checksum_bytes <= 256)) || return 1
+  candidate_verify_reason=checksum-manifest-line-count
   mapfile -t checksum_lines <"${path}/SHA256SUMS"
   [[ "${#checksum_lines[@]}" -eq 2 ]] || return 1
   for checksum_line in "${checksum_lines[@]}"; do
+    candidate_verify_reason=checksum-manifest-format
     [[ "${checksum_line}" =~ ^([0-9a-f]{64})\ \ (globals\.sql|proof_indexer\.dump)$ ]] || return 1
     checksum_name="${BASH_REMATCH[2]}"
     case "${checksum_name}" in
-      globals.sql) [[ "${saw_globals}" == false ]] || return 1; saw_globals=true ;;
-      proof_indexer.dump) [[ "${saw_dump}" == false ]] || return 1; saw_dump=true ;;
+      globals.sql) [[ "${saw_globals}" == false ]] || { candidate_verify_reason=duplicate-globals-checksum; return 1; }; saw_globals=true ;;
+      proof_indexer.dump) [[ "${saw_dump}" == false ]] || { candidate_verify_reason=duplicate-dump-checksum; return 1; }; saw_dump=true ;;
     esac
   done
+  candidate_verify_reason=checksum-manifest-coverage
   [[ "${saw_dump}" == true && "${saw_globals}" == true ]] || return 1
+  candidate_verify_reason=directory-identity-stable
   [[ "$(/usr/bin/stat --format='%d:%i' -- "${path}" 2>/dev/null || true)" == "${directory_identity}" &&
     "$(/usr/bin/realpath -e -- "${path}" 2>/dev/null || true)" == "${path}" ]] || return 1
-  (
-    cd "${path}"
-    /usr/bin/sha256sum --check --strict SHA256SUMS >/dev/null &&
-      /usr/bin/test -s globals.sql &&
-      /usr/bin/pg_restore --list proof_indexer.dump >/dev/null
-  ) || return 1
+  candidate_verify_reason=checksum-validation
+  if ! (cd "${path}" && /usr/bin/sha256sum --check --strict SHA256SUMS >/dev/null); then
+    return 1
+  fi
+  candidate_verify_reason=globals-file-nonempty
+  /usr/bin/test -s "${path}/globals.sql" || return 1
+  candidate_verify_reason=restore-catalog
+  if ! /usr/bin/pg_restore --list "${path}/proof_indexer.dump" >/dev/null; then
+    return 1
+  fi
+  candidate_verify_reason=fuser-unavailable
   [[ -x /usr/bin/fuser ]] || return 1
+  candidate_verify_reason=open-reader-check
   fuser_status=0
   /usr/bin/fuser --silent -- \
     "${path}/proof_indexer.dump" \
     "${path}/globals.sql" \
     "${path}/SHA256SUMS" >/dev/null 2>&1 || fuser_status=$?
   ((fuser_status == 1)) || return 1
-  backup_candidate_bytes="$(/usr/bin/du --summarize --bytes --one-file-system -- "${path}" | /usr/bin/awk '{print $1}')"
-  [[ "${backup_candidate_bytes}" =~ ^[0-9]+$ &&
-    "$(/usr/bin/stat --format='%d:%i' -- "${path}" 2>/dev/null || true)" == "${directory_identity}" ]] || return 1
+  candidate_verify_reason=backup-byte-measurement
+  backup_candidate_bytes="$(/usr/bin/du --summarize --bytes --one-file-system -- "${path}" | /usr/bin/awk '{print $1}')" || return 1
+  [[ "${backup_candidate_bytes}" =~ ^[0-9]+$ ]] || return 1
+  candidate_verify_reason=directory-identity-after-verification
+  [[ "$(/usr/bin/stat --format='%d:%i' -- "${path}" 2>/dev/null || true)" == "${directory_identity}" ]] || return 1
   backup_candidate_identity="${directory_identity}"
+  candidate_verify_reason=verified
 }
 
 retained_current_set=false
@@ -253,7 +279,8 @@ for entry in "${backups[@]}"; do
   candidate="${backup_root}/${name}"
   if [[ "${candidate}" == "${final_set}" ]]; then
     if ! verify_complete_backup_set "${candidate}"; then
-      echo "Requested current logical backup failed retention verification: ${candidate}" >&2
+      printf "Requested current logical backup failed retention verification: candidate=%s predicate=%s\n" \
+        "${candidate}" "${candidate_verify_reason:-unknown}" >&2
       exit 1
     fi
     retained_current_set=true
@@ -262,7 +289,7 @@ for entry in "${backups[@]}"; do
     continue
   fi
   if ! verify_complete_backup_set "${candidate}"; then
-    printf 'backup_retention_review candidate=%s reason=verification-failed action=preserve\n' "${candidate}"
+    printf 'backup_retention_review candidate=%s reason=verification-failed predicate=%s action=preserve\n' "${candidate}" "${candidate_verify_reason:-unknown}"
     continue
   fi
   candidate_bytes="${backup_candidate_bytes}"

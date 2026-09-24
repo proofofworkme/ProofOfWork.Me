@@ -38,11 +38,11 @@ printf 'called' >"${TEST_CALLED}"''')
  result=subprocess.run(['bash',str(script)],env=env,text=True,capture_output=True,timeout=15)
  assert result.returncode==0,result.stderr
  assert (p/'called').exists() and all((backup/f'proof_indexer-202001{day:02d}T000000Z.dumpset/evidence').read_text()=='retain' for day in range(1,9)) and stale.is_dir()
- assert 'reason=verification-failed action=preserve' in result.stdout, result.stdout+'\n'+result.stderr
+ assert 'reason=verification-failed predicate=' in result.stdout, result.stdout+'\n'+result.stderr
  assert 'backup_retention_deleted candidate='+str(verified_old) in result.stdout
  assert not verified_old.exists(), 'a verified older complete backup was not retired'
  assert unsafe.is_dir(), 'retention removed a set whose checksum manifest referenced an external path'
- assert 'backup_retention_review candidate='+str(unsafe)+' reason=verification-failed action=preserve' in result.stdout
+ assert 'backup_retention_review candidate='+str(unsafe)+' reason=verification-failed predicate=checksum-manifest-line-count action=preserve' in result.stdout
  assert len(list(backup.glob('proof_indexer-*.dumpset')))==10
  # Explicit retention can keep the already-restore-proven set without starting a new dump.
  def complete_set(name):

@@ -1,0 +1,1127 @@
+{
+  "audit": {
+    "id": "Audit 23",
+    "dateLocal": "2026-09-23 through 2026-09-24",
+    "completedAtUtc": "2026-09-24T04:50:34Z",
+    "report": "audits/2026-09-24-production-comprehensive-health-data-integrity-audit-23.md",
+    "reportSha256": "71d5c6bf8338993cd423718017e9af57a417d76c8bc8d09007553793f39ff498",
+    "predecessor": {
+      "report": "audits/2026-09-22-production-comprehensive-health-data-integrity-audit-22.md",
+      "reportSha256": "07741d3561488c3aab8091125136ba573662a6db2817b7aebb031cf522b74a69",
+      "evidence": "audits/2026-09-22-production-comprehensive-health-data-integrity-audit-22.evidence.json",
+      "evidenceSha256": "8a5d58cd41f664904d9dc1d5211d46d76d34b9f7c9d5fde0f587c79c91f61ed6"
+    },
+    "scope": "Production remediation closeout; ordered public surface checks; node, indexer, database, API, event, exact math, log, storage, backup and retention verification across UI and Node VPS environments."
+  },
+  "productionRelease": {
+    "releaseId": "1149633c2d1a-20260924T015319Z",
+    "commit": "1149633c2d1a5c62c4a800772daa79683e478796",
+    "tree": "6071ed84ae3cad5a852ef3d4bb0c87c9d1d64e29",
+    "runtimeSha256": "f1dc4a7b4c75eb48482b544cd720bb51d44ab079f5613ab320825f836405e8d4",
+    "previousUiRelease": {
+      "release": "bfc54c826db1-20260923T152920Z",
+      "commit": "bfc54c826db15faa5ac990f2d7c5e03f8d9c04d8",
+      "archiveBytes": 185446159,
+      "archiveSha256": "2bc8ca289406ed236d66b516b29b0fea1934d59c9d681e9c931542c6c263221f",
+      "provenanceSha256": "52d427dce9d98d127a4164d79c28716ff90463e8f3ba01e3f539076eb4ec087a"
+    },
+    "uiRollback": {
+      "release": "b180548cb121-20260923T032423Z",
+      "commit": "b180548cb1211ad9186b036ca6da6f8717d93d26",
+      "archiveBytes": 185426521,
+      "archiveSha256": "d5b5a7d99c20043cd549641f97430aea48e0553c34888e3caf908fd5daf001c0",
+      "provenanceSha256": "b8c6d60e097a6a130c4a3b80a841e7a9b7b712050b6bac6fa3b8ba8a0959da52"
+    }
+  },
+  "productionSurfaces": {
+    "startedAt": "2026-09-24T02:46:30.244Z",
+    "finishedAt": "2026-09-24T02:48:05.364Z",
+    "order": [
+      "home",
+      "id",
+      "desktop",
+      "browser",
+      "boost",
+      "amo",
+      "credit",
+      "wallet",
+      "work",
+      "infinity",
+      "inception",
+      "log",
+      "growth",
+      "computer"
+    ],
+    "pages": [
+      {
+        "key": "home",
+        "host": "proofofwork.me",
+        "htmlStatus": 200,
+        "htmlElapsedMs": 1084,
+        "assetCount": 4,
+        "assetsAll200": true,
+        "ok": true,
+        "probes": [
+          {
+            "label": "registry summary",
+            "status": 200,
+            "elapsedMs": 5532,
+            "ok": true
+          }
+        ]
+      },
+      {
+        "key": "id",
+        "host": "id.proofofwork.me",
+        "htmlStatus": 200,
+        "htmlElapsedMs": 539,
+        "assetCount": 4,
+        "assetsAll200": true,
+        "ok": true,
+        "probes": [
+          {
+            "label": "ids summary",
+            "status": 200,
+            "elapsedMs": 4009,
+            "ok": true
+          }
+        ]
+      },
+      {
+        "key": "desktop",
+        "host": "desktop.proofofwork.me",
+        "htmlStatus": 200,
+        "htmlElapsedMs": 659,
+        "assetCount": 4,
+        "assetsAll200": true,
+        "ok": true,
+        "probes": [
+          {
+            "label": "log summary",
+            "status": 200,
+            "elapsedMs": 2122,
+            "ok": true
+          }
+        ]
+      },
+      {
+        "key": "browser",
+        "host": "browser.proofofwork.me",
+        "htmlStatus": 200,
+        "htmlElapsedMs": 583,
+        "assetCount": 4,
+        "assetsAll200": true,
+        "ok": true,
+        "probes": [
+          {
+            "label": "activity summary",
+            "status": 200,
+            "elapsedMs": 4426,
+            "ok": true
+          }
+        ]
+      },
+      {
+        "key": "boost",
+        "host": "boost.proofofwork.me",
+        "htmlStatus": 200,
+        "htmlElapsedMs": 617,
+        "assetCount": 4,
+        "assetsAll200": true,
+        "ok": false,
+        "probes": []
+      },
+      {
+        "key": "amo",
+        "host": "amo.proofofwork.me",
+        "htmlStatus": 200,
+        "htmlElapsedMs": 424,
+        "assetCount": 4,
+        "assetsAll200": true,
+        "ok": false,
+        "probes": []
+      },
+      {
+        "key": "credit",
+        "host": "credit.proofofwork.me",
+        "htmlStatus": 200,
+        "htmlElapsedMs": 469,
+        "assetCount": 4,
+        "assetsAll200": true,
+        "ok": true,
+        "probes": [
+          {
+            "label": "token summary",
+            "status": 200,
+            "elapsedMs": 6085,
+            "ok": true
+          }
+        ]
+      },
+      {
+        "key": "wallet",
+        "host": "wallet.proofofwork.me",
+        "htmlStatus": 200,
+        "htmlElapsedMs": 568,
+        "assetCount": 4,
+        "assetsAll200": true,
+        "ok": true,
+        "probes": [
+          {
+            "label": "WORK token",
+            "status": 200,
+            "elapsedMs": 12628,
+            "ok": true
+          }
+        ]
+      },
+      {
+        "key": "work",
+        "host": "work.proofofwork.me",
+        "htmlStatus": 200,
+        "htmlElapsedMs": 499,
+        "assetCount": 4,
+        "assetsAll200": true,
+        "ok": true,
+        "probes": [
+          {
+            "label": "work summary",
+            "status": 200,
+            "elapsedMs": 9284,
+            "ok": true
+          },
+          {
+            "label": "work floor",
+            "status": 200,
+            "elapsedMs": 7987,
+            "ok": true
+          }
+        ]
+      },
+      {
+        "key": "infinity",
+        "host": "infinity.proofofwork.me",
+        "htmlStatus": 200,
+        "htmlElapsedMs": 845,
+        "assetCount": 4,
+        "assetsAll200": true,
+        "ok": true,
+        "probes": [
+          {
+            "label": "infinity summary",
+            "status": 200,
+            "elapsedMs": 2869,
+            "ok": true
+          }
+        ]
+      },
+      {
+        "key": "inception",
+        "host": "inception.proofofwork.me",
+        "htmlStatus": 200,
+        "htmlElapsedMs": 445,
+        "assetCount": 4,
+        "assetsAll200": true,
+        "ok": true,
+        "probes": [
+          {
+            "label": "inception summary",
+            "status": 200,
+            "elapsedMs": 5718,
+            "ok": true
+          }
+        ]
+      },
+      {
+        "key": "log",
+        "host": "log.proofofwork.me",
+        "htmlStatus": 200,
+        "htmlElapsedMs": 514,
+        "assetCount": 4,
+        "assetsAll200": true,
+        "ok": true,
+        "probes": [
+          {
+            "label": "log summary",
+            "status": 200,
+            "elapsedMs": 4486,
+            "ok": true
+          }
+        ]
+      },
+      {
+        "key": "growth",
+        "host": "growth.proofofwork.me",
+        "htmlStatus": 200,
+        "htmlElapsedMs": 528,
+        "assetCount": 4,
+        "assetsAll200": true,
+        "ok": true,
+        "probes": [
+          {
+            "label": "growth summary",
+            "status": 200,
+            "elapsedMs": 2299,
+            "ok": true
+          }
+        ]
+      },
+      {
+        "key": "computer",
+        "host": "computer.proofofwork.me",
+        "htmlStatus": 200,
+        "htmlElapsedMs": 130,
+        "assetCount": 4,
+        "assetsAll200": true,
+        "ok": true,
+        "probes": [
+          {
+            "label": "health",
+            "status": 200,
+            "elapsedMs": 546,
+            "ok": true
+          },
+          {
+            "label": "consistency",
+            "status": 200,
+            "elapsedMs": 2587,
+            "ok": true
+          }
+        ]
+      }
+    ],
+    "recoveries": {
+      "boost": {
+        "firstSweep": {
+          "httpStatus": 409,
+          "error": "Boost display identities require a complete registry at the same checkpoint"
+        },
+        "isolatedRetry": {
+          "httpStatus": 200,
+          "durationMs": 2513
+        }
+      },
+      "amo": {
+        "firstSweep": {
+          "httpStatus": 503,
+          "error": "canonical ProofOfWork summary snapshot is catching up"
+        },
+        "isolatedRetry": {
+          "httpStatus": 200,
+          "durationMs": 7623
+        }
+      }
+    }
+  },
+  "chainAndIndex": {
+    "authoritativeSource": "Bitcoin Core full node",
+    "network": "main",
+    "height": 968352,
+    "hash": "000000000000000000000d8a4cf745e5e415d751d53295f67ba8722b9ec4ec0d",
+    "headers": 968352,
+    "verificationProgress": 1,
+    "initialBlockDownload": false,
+    "warnings": [],
+    "txindexHeight": 968352,
+    "coinstatsindexHeight": 968352,
+    "basicBlockFilterHeight": 968352,
+    "apiHealth": "available",
+    "indexerWorker": "active",
+    "consistency": {
+      "observedAtUtc": "2026-09-24T04:37:04Z",
+      "httpStatus": 200,
+      "ok": true,
+      "status": "green",
+      "checksPassed": 25,
+      "checksTotal": 25,
+      "missingLogEvents": [],
+      "indexedHeight": 968352,
+      "indexedHash": "000000000000000000000d8a4cf745e5e415d751d53295f67ba8722b9ec4ec0d"
+    },
+    "mempool": {
+      "transactionCount": 78694,
+      "serializedBytes": 40717321,
+      "usageBytes": 228462160,
+      "unbroadcastTransactions": 0,
+      "pendingObserver": {
+        "checked": 24,
+        "deferred": 0,
+        "errors": 0,
+        "unavailable": false
+      }
+    }
+  },
+  "exactMath": {
+    "unit": "Q8",
+    "integer": "1438911276484420354284284314",
+    "decimal": "14389112764844203542.84284314",
+    "matchingFields": [
+      "Work actual",
+      "Work network",
+      "Growth actual",
+      "Growth Work floor",
+      "Work AMO V5 transition network value"
+    ],
+    "financialConsumersMustUseExactStringsOrIntegers": true,
+    "legacySatsNumberAliasApproximate": "14389112764844204000"
+  },
+  "database": {
+    "name": "proof_indexer",
+    "measuredBytes": 33448877079,
+    "transitionTable": {
+      "name": "work_amo_block_transitions",
+      "bytes": 32043941888,
+      "liveTuples": 8725,
+      "deadTuples": 0
+    },
+    "otherLargeTables": {
+      "ledger_snapshotsBytes": 830275584,
+      "eventsBytes": 156213248,
+      "transactionsBytes": 106561536
+    },
+    "invalidIndexes": 0,
+    "unvalidatedConstraints": 0,
+    "autovacuum": true,
+    "sampledDeadlocks": 0,
+    "liveDataChecksumsEnabled": false
+  },
+  "capacitiesAtUtc": {
+    "ui": {
+      "observedAt": "2026-09-24T04:30:43Z",
+      "totalBytes": 39973924864,
+      "usedBytes": 23262490624,
+      "availableBytes": 15027240960,
+      "usePercent": 61,
+      "systemKeepFreeBytes": 10737418240,
+      "marginAboveFloorBytes": 4289822720,
+      "memoryAvailableBytes": 3373731840,
+      "swapBytes": 0,
+      "caddyActive": true
+    },
+    "node": {
+      "observedAt": "2026-09-24T04:30:44Z",
+      "dataTotalBytes": 1764768071680,
+      "dataUsedBytes": 1298826035200,
+      "dataAvailableBytes": 376221261824,
+      "dataUsePercent": 78,
+      "memoryAvailableBytes": 114132934656,
+      "swapUsedBytes": 338952192,
+      "swapTotalBytes": 17179865088
+    }
+  },
+  "storageAndRetention": {
+    "uiBackupTreeAfterCleanupBytes": 17340497812,
+    "uiReleaseArchiveBytes": 1865963829,
+    "uiCurrentArchive": {
+      "basename": "proofofwork-ui-release-bfc54c826db1-20260923T152920Z.tgz",
+      "bytes": 185446159,
+      "sha256": "2bc8ca289406ed236d66b516b29b0fea1934d59c9d681e9c931542c6c263221f",
+      "provenanceSha256": "52d427dce9d98d127a4164d79c28716ff90463e8f3ba01e3f539076eb4ec087a"
+    },
+    "uiRollbackArchive": {
+      "basename": "proofofwork-ui-release-b180548cb121-20260923T032423Z.tgz",
+      "bytes": 185426521,
+      "sha256": "d5b5a7d99c20043cd549641f97430aea48e0553c34888e3caf908fd5daf001c0",
+      "provenanceSha256": "b8c6d60e097a6a130c4a3b80a841e7a9b7b712050b6bac6fa3b8ba8a0959da52"
+    },
+    "uiRemovedReleaseArchives": {
+      "count": 5,
+      "payloadBytes": 927129145,
+      "treeBytesFreed": 927141812,
+      "candidates": "Validated exact candidate set; candidate basenames were not captured in the durable local transcript. Retained archive hashes and counts are recorded; no claim of per-candidate hash evidence."
+    },
+    "nodeReleasePruneDryRun": {
+      "target": "/data/proofofwork-release-backups/managed",
+      "keep": 3,
+      "summary": [
+        "release_retention mode=dry-run verified_archives=50 unverified_archives=0"
+      ],
+      "candidateCount": 47,
+      "candidateArchiveBytes": 3756634359,
+      "temporaryCandidates": [],
+      "removedCandidates": [
+        {
+          "archive": "proofofwork-node-release-a1e1f9b-20260922T041933Z.tgz",
+          "bytes": 90773420,
+          "sha256": "d8011e595aa202148c7fe9e257a32e86e2e46a2a1ed7aaaf04e48b19414bb428",
+          "provenanceSha256": "ea54cd9be08c74aeb85efcad5420ef162d2e3876102f7d88a1a8b19b5611b544",
+          "commit": "a1e1f9b1c18d8e5ca6721afe8f12ff3fe88e47f8",
+          "tree": "d0d18e00072042ca7d6c5594f11a4bd551a21b1a",
+          "recordedAt": "2026-09-22T05:44:12Z"
+        },
+        {
+          "archive": "proofofwork-node-release-68b16f6-20260922T005601Z.tgz",
+          "bytes": 90690902,
+          "sha256": "2565f9e8283eedf7680f74a81d3e8c0d094aeda2537a07ad0df0bdfbaebaf6a0",
+          "provenanceSha256": "b8571e0b037b9d9ddea69026c1ccacab132fc5eca443572c5c6370bba8cee592",
+          "commit": "68b16f6530494171561170ffac78ad26cdf17a5e",
+          "tree": "118dfcbf7a77656a28334c50c9b34d99d7a2320f",
+          "recordedAt": "2026-09-22T01:13:29Z"
+        },
+        {
+          "archive": "proofofwork-node-release-55a173a-20260921T012038Z.tgz",
+          "bytes": 91012389,
+          "sha256": "38d4dbbe87fed3ba8aa7c1b308922a976d315ef4c634f4b67c38d2f78b38b631",
+          "provenanceSha256": "175d9dce6d083984c27584456a370c2493ebd0b98507beca2cd2432061cace31",
+          "commit": "55a173a3672ca582e1477841423ad5940720c9eb",
+          "tree": "9a1bc415d5abb289b3d26af779278d0447cff610",
+          "recordedAt": "2026-09-21T01:26:44Z"
+        },
+        {
+          "archive": "proofofwork-node-release-56694a7-20260920T180605Z.tgz",
+          "bytes": 90396601,
+          "sha256": "9d088c22042e9003c8a42ee8dbf58e7d7a9d8140cb076f69f11661b89daf19c5",
+          "provenanceSha256": "79701c359fe37ea07783c6f7faefad0c00bf4e4d1d86c5a50e12660566f2aabc",
+          "commit": "56694a7d6d76de565d4e0a6fce94f880d5308550",
+          "tree": "980f8ae43a58a84291703737fc9da45d6a5691a5",
+          "recordedAt": "2026-09-20T18:36:29Z"
+        },
+        {
+          "archive": "proofofwork-node-release-0ef9c3b-20260920T050317Z.tgz",
+          "bytes": 90304786,
+          "sha256": "be72b34d873692de2a7282b862dc68db888ffee269b7ca04c35824fadf93ad58",
+          "provenanceSha256": "b4a07a70bce476b8e529d5f5235ef9a1e6b45899f586099efa0fcc129db0e776",
+          "commit": "0ef9c3bee3212a4cb0ae6efe7abbb6a75be72ffa",
+          "tree": "95fdce0489308a9d8b2d241ec21f4eacd5d136af",
+          "recordedAt": "2026-09-20T05:04:43Z"
+        },
+        {
+          "archive": "proofofwork-node-release-4a5999a-20260920T043445Z.tgz",
+          "bytes": 90059478,
+          "sha256": "fd755712d34a0c8534bb84a73065dd61e41e6b86cad56786a830d9002a2a800f",
+          "provenanceSha256": "f0c79a341a3d5fe1cc74417330342f3dff2bf0730cf58f71d0dc30edfa8377a5",
+          "commit": "4a5999a1e2b50d4a8202c28f55e635698f7a8cd6",
+          "tree": "394aa705c6d42e9695807100bab706aac75f94d0",
+          "recordedAt": "2026-09-20T04:40:05Z"
+        },
+        {
+          "archive": "proofofwork-node-release-a6d1d77-20260919T225900Z.tgz",
+          "bytes": 89890681,
+          "sha256": "53984cb8c2722edf024184a42ae9026d87e01811e2b38a76a2d2bd05bafa0c4f",
+          "provenanceSha256": "2536026873efc400d5365942cf36d8c0bd69de31758017e07c8aac6b10ddcacd",
+          "commit": "a6d1d77eb0eb2a92a4912010905ce218546d11ca",
+          "tree": "8efe8c0d216dd10fc00ba52216609453865853e6",
+          "recordedAt": "2026-09-19T23:11:34Z"
+        },
+        {
+          "archive": "proofofwork-node-release-1f467cc-20260919T172013Z.tgz",
+          "bytes": 89936074,
+          "sha256": "8a4b7485361469071b6b0259f7641b14c300a1dcedd15dae3bb094de66fc6330",
+          "provenanceSha256": "2c90e5f7d1f8c136d14468c1186343782381c2592b808e852b1a7bba8655b600",
+          "commit": "1f467cc59f41ed284f89d854ebd943525fe5b525",
+          "tree": "2b3d6740704c7dd4217b727532ea1494e11872ea",
+          "recordedAt": "2026-09-19T17:23:36Z"
+        },
+        {
+          "archive": "proofofwork-node-release-85ce565-20260919T170643Z.tgz",
+          "bytes": 90161817,
+          "sha256": "77a3f87fbf97db6e59253100807b91625c6b31682002e732a38c5cc1c5d15ccc",
+          "provenanceSha256": "0bffd5651b90992bcb1a6127dbe5464223a28da02e09b1f113ee2c59b4bfb7af",
+          "commit": "85ce5651ad4b1403913371a21b42d9bec0941855",
+          "tree": "86b9fd3a11bca89dbc6664b168ca3a911667042b",
+          "recordedAt": "2026-09-19T17:12:06Z"
+        },
+        {
+          "archive": "proofofwork-node-release-005a4e5-20260919T165018Z.tgz",
+          "bytes": 89765266,
+          "sha256": "2cf95bc351d82dcf7f5b7794c8b633356cac3f93b6e7e296c68133a36eff2598",
+          "provenanceSha256": "2973e05fe6a5b9b9d31f6e10c2c35f3555d023b2c65fd7bd6b6f01d935aab6a2",
+          "commit": "005a4e582f5887c51865fbedc757d4597be9df4b",
+          "tree": "fc17904cf51ba10e04d400aaab896f9e38690a07",
+          "recordedAt": "2026-09-19T16:56:41Z"
+        },
+        {
+          "archive": "proofofwork-node-release-6eb4a1e-20260919T161919Z.tgz",
+          "bytes": 89823311,
+          "sha256": "756809655dffe1227a6cd79c7fd37522cf855ffa9656a9f5d5062c0e773b3873",
+          "provenanceSha256": "42be2b104585bf5b45badc32bc6887086d5aa37c88ce2b7e9c81ecbd8f94e421",
+          "commit": "6eb4a1e07131fc0b27d381dda52986f9d1bf3398",
+          "tree": "a77f1562fb5b42fcc8c7e45e109853e720742cfb",
+          "recordedAt": "2026-09-19T16:33:53Z"
+        },
+        {
+          "archive": "proofofwork-node-release-07929dd-20260919T145727Z.tgz",
+          "bytes": 90047165,
+          "sha256": "89b3d7dd98e43d3fedba4cfabc15b5a8a4eda711de0279623be4177030befa53",
+          "provenanceSha256": "4f74fb12e57862182fb5f6ce4402156e64983a384f3078031354ca2e7ac74d5e",
+          "commit": "07929dd3c6e422fa1955c6cbf07007330eca0519",
+          "tree": "5ca993c7816b20c3b914e4421bdbdabf49673c5f",
+          "recordedAt": "2026-09-19T15:14:25Z"
+        },
+        {
+          "archive": "proofofwork-node-release-8223f1d-20260917T025055Z.tgz",
+          "bytes": 98041345,
+          "sha256": "e8f3f9a786b1d40d0f4b009bf1f791963f410f8ced6ce9db47712cb8874debb5",
+          "provenanceSha256": "88d5318c6b600ffeec219047fae203b2ae27cc5fcabce749dcc8c9ac39b831ec",
+          "commit": "8223f1dd338beaa71509332b511271be3e93f22a",
+          "tree": "a13d745189b57322b6cddb8d44a9a73e14c36022",
+          "recordedAt": "2026-09-17T03:13:20Z"
+        },
+        {
+          "archive": "proofofwork-node-release-8952d9f-20260916T050418Z.tgz",
+          "bytes": 62155672,
+          "sha256": "ac5cec52ce4543411209935ef736587e6225890b4c6be585eb087d985c5d8d15",
+          "provenanceSha256": "4a1eb71c2f257e7a3dbcf3c4f72f93a25fcc6fd52dda2ea346b414f1b149cc54",
+          "commit": "8952d9ffcdfcc5f826f6280d22a40a9fd3322722",
+          "tree": "3ab433d8065d5861e32dc9770ce4f44a252d0f1e",
+          "recordedAt": "2026-09-16T05:05:32Z"
+        },
+        {
+          "archive": "proofofwork-node-release-ca732ca-20260916T045505Z.tgz",
+          "bytes": 62109967,
+          "sha256": "dfdb915a3e1f7e01ea2accb434455081e0968f479c7ef7ef569ce19ef1b8ffdb",
+          "provenanceSha256": "a8f74978c6c562c322d16c35808aab504aaf839f1f0cd48645c17cc1942240d2",
+          "commit": "ca732ca632e9033d2769533b2c5e9b4ea8e9a188",
+          "tree": "68373840f58a5ed6530960b897657b88cf5b49ac",
+          "recordedAt": "2026-09-16T04:58:28Z"
+        },
+        {
+          "archive": "proofofwork-node-release-598f107-20260916T044007Z.tgz",
+          "bytes": 61900979,
+          "sha256": "094068ec559aeeb85018bbd8b17f646cbd26b1124e6563140b58d93d733b81bb",
+          "provenanceSha256": "73ea3cb258eee82543cbdce7b7857e2acdbf35f9cd006e78ba301560c0107b81",
+          "commit": "598f107814611f2000c021a5519c56aa90522f24",
+          "tree": "fbe53d1c67c178145b73752af5a17fab008311e8",
+          "recordedAt": "2026-09-16T04:41:18Z"
+        },
+        {
+          "archive": "proofofwork-node-release-67b8405-20260915T231439Z.tgz",
+          "bytes": 61898642,
+          "sha256": "dcd924625dd1b202222289fd53be3100742bc2696f40ed1d41aca179827ebbe0",
+          "provenanceSha256": "4614eeaac4beb238f881912f5f34036d8000fab5baa11cf1abfbfddf2452d561",
+          "commit": "67b840519c99e98e48dba8e8a0998716ae620333",
+          "tree": "b71f63cb265802ef65681dbfb4d210f21e3ae08e",
+          "recordedAt": "2026-09-15T23:17:56Z"
+        },
+        {
+          "archive": "proofofwork-node-release-0f39169-20260915T224428Z.tgz",
+          "bytes": 61844398,
+          "sha256": "002f1dcc5c9fff90e4fba8547c0b6d9eae40df348be1d8828e3fefe47df907cb",
+          "provenanceSha256": "480f99822ffc6c58976e63c0a5456f692a6bcb874aa0e28a993aea3099b55657",
+          "commit": "0f3916907cb8b88de11c42be5173e58eeb306777",
+          "tree": "ef9bffa2ab27c031aaae355a680a24e1fa2942dd",
+          "recordedAt": "2026-09-15T22:49:00Z"
+        },
+        {
+          "archive": "proofofwork-node-release-cecd919-20260915T223845Z.tgz",
+          "bytes": 61416034,
+          "sha256": "c6befd6d15605e2a92f811b1eecbf457c820ee4a742c006f9b6b6c4fc9c151d4",
+          "provenanceSha256": "de1cca385a66f4eefe8ded32b5417662c286ba2bd5da41b518cef3002c6b7659",
+          "commit": "cecd9191533f31b1d3b6cece6d7b9aa05f8bfd46",
+          "tree": "ef9cf2572409243a426d97102be740e3d0f7c77d",
+          "recordedAt": "2026-09-15T22:40:05Z"
+        },
+        {
+          "archive": "proofofwork-node-release-bcec136-20260915T223536Z.tgz",
+          "bytes": 61772584,
+          "sha256": "a140f3980f4b87dbb5c8282e5ba9bc675ac52ba3a594505fab194828c26cf671",
+          "provenanceSha256": "2f3d376aa0d941a3d8cbbbf37f415e4bccf60604162d512f424e4952a5feec6b",
+          "commit": "bcec136e63fdc7529a5fd9d6f1c7c33c1c61d8a8",
+          "tree": "6e76074e5b1db3946b21824a2aab05f251777dbc",
+          "recordedAt": "2026-09-15T22:36:56Z"
+        },
+        {
+          "archive": "proofofwork-node-release-9dc0600-20260915T223216Z.tgz",
+          "bytes": 61892848,
+          "sha256": "9d6d0e7e7073dbe1321626308788df2e532e664546595bbbf266e03d1f5fea41",
+          "provenanceSha256": "adb2f56b04d2bf6d9feb402501f05ccdfff90d0be29c4c601931ac2c16fb9bb0",
+          "commit": "9dc0600e40dcc68486b48f863027fd7c1a80d3dd",
+          "tree": "700c5a3827168e183f676b60b833ae69fab2e74f",
+          "recordedAt": "2026-09-15T22:33:44Z"
+        },
+        {
+          "archive": "proofofwork-node-release-8c3259b-20260915T222854Z.tgz",
+          "bytes": 61771881,
+          "sha256": "f2c7d0241e13d2d01cd984814c8df552fa87278a578fc772ebcf7c1826617fc1",
+          "provenanceSha256": "c3cc2b49da59c8f3ee8e4d905c3c7ed69e5b5d7b7cd5f0c65180abf065446c6c",
+          "commit": "8c3259be2c3dbfd2613bfad95fa1f01c350dfed6",
+          "tree": "3dde966bc5eecfb4572a016a542da7f86c2ed0f4",
+          "recordedAt": "2026-09-15T22:30:21Z"
+        },
+        {
+          "archive": "proofofwork-node-release-0b4745f-20260915T222339Z.tgz",
+          "bytes": 61766337,
+          "sha256": "7ddab77558e92914b96f685f1fe6a94569a346c4d5a519c7be8e35492fcf08cb",
+          "provenanceSha256": "5569744ce8cdcabf1b4cf482ffe6aed5810b70136a7a82f3c951fbe67079d4e2",
+          "commit": "0b4745fa39ce75413867e32628ef82a01b79349a",
+          "tree": "c9dfef810bfdeb2a2aea1692f5671137e7827362",
+          "recordedAt": "2026-09-15T22:24:58Z"
+        },
+        {
+          "archive": "proofofwork-node-release-083e449-20260915T221419Z.tgz",
+          "bytes": 61647703,
+          "sha256": "5377ce47fb44f56d7a1eb08a885ee2646c039fd2bda1d2219ea73f995cb96c25",
+          "provenanceSha256": "5525990e112c18324aaa939b32beb9bd6e079c3b7dbbeb51da520cda99d8a42f",
+          "commit": "083e449d4e308a4678acf4759a9ef154a6a11248",
+          "tree": "74f8e58f4fef7d34a179103aa5cfc5a426303738",
+          "recordedAt": "2026-09-15T22:18:52Z"
+        },
+        {
+          "archive": "proofofwork-node-release-03ab8d1-20260914T051142Z.tgz",
+          "bytes": 89349899,
+          "sha256": "4f48de0df8baa75c2854104566e3e1e12d6a6381654128415d288b1ee57d58cc",
+          "provenanceSha256": "52f7d9ecd1cedca968a2c58c4c334f81b677b81de0590ce2a978a1ab5f5f507d",
+          "commit": "03ab8d1d98d14d29387721051e398761fcac453e",
+          "tree": "40c54144f20264bff7ffc9f81cb5652a3eb00084",
+          "recordedAt": "2026-09-14T05:14:25Z"
+        },
+        {
+          "archive": "proofofwork-node-release-538ccdb-20260914T043258Z.tgz",
+          "bytes": 70173087,
+          "sha256": "31f435095caab7faa13ba4a9380f8b95fbe6248d47eda8bb8d09ee7f408777fd",
+          "provenanceSha256": "6ea6cfd2eb8fede017968bbd332111b9624ea55a72264098468b42cc0cc1a638",
+          "commit": "538ccdb371975313e1c6256b6ffab45a77068544",
+          "tree": "6f9e01b127bf380600dd7d2a862fe207be701fda",
+          "recordedAt": "2026-09-14T04:33:44Z"
+        },
+        {
+          "archive": "proofofwork-node-release-ea66f95-20260914T040840Z.tgz",
+          "bytes": 68822806,
+          "sha256": "083b8c7b1f4bc4b9229ab7215cb699ffb605fa38ab6a426231012ce24b078f17",
+          "provenanceSha256": "50f6e13725a9ea393827e43d5fcf52cb32801c309f47af593d37c6f8252b0fe0",
+          "commit": "ea66f9502709939b75e46949f649583ab18d533b",
+          "tree": "93b479d073df5aeded74f564b3112b37b23eb678",
+          "recordedAt": "2026-09-14T04:06:30Z"
+        },
+        {
+          "archive": "proofofwork-node-release-b245c2e-20260914T041150Z.tgz",
+          "bytes": 68829042,
+          "sha256": "2e0180a889e8921900d28d727f0140104616eaeb64e1cdc2330cc7253272dff1",
+          "provenanceSha256": "0faced8854d2b0093a4421bb93a59ccf2c21d2e5173e4073d4650d21dd4643b8",
+          "commit": "b245c2e7be8566ca99b3303fc3cf27b2abd82ce6",
+          "tree": "42ee407ab2ae2f9910babf0fa2c00a3356911445",
+          "recordedAt": "2026-09-14T04:02:25Z"
+        },
+        {
+          "archive": "proofofwork-node-release-be715e9-20260914T035650Z.tgz",
+          "bytes": 68815978,
+          "sha256": "d5e3bf3024ca1aebc2ecad5143974e29026ef501e1280962f7270538b2066722",
+          "provenanceSha256": "b89f5185bfa9f7ffd112b4a435dcb6ac361216b6fbad6bdf155c055620d504dd",
+          "commit": "be715e95b9983941f2b3c9067576a3bf19b717c0",
+          "tree": "e736e6c838e6f4d3e56767f997926e512b0b24ca",
+          "recordedAt": "2026-09-14T03:56:46Z"
+        },
+        {
+          "archive": "proofofwork-node-release-1079546-10795467c328-20260914T015628Z.tgz",
+          "bytes": 89359644,
+          "sha256": "de291ab4414dc1fb1ef67ba0ff9dae86a227b726b626661b099c479fcc64d32c",
+          "provenanceSha256": "89c53f3137e357c17fbdd479c920eeac059dc83c762043b05b0d8eae5954c6d4",
+          "commit": "10795467c3283c87028b2f1f33457bb59042963c",
+          "tree": "835cef1b741afb61c6a235dffb44209e84e855f4",
+          "recordedAt": "2026-09-14T02:00:17Z"
+        },
+        {
+          "archive": "proofofwork-node-release-f23c24f-f23c24fd97a9-20260914T012344Z.tgz",
+          "bytes": 89360538,
+          "sha256": "faaed478fdfce61eb446c94afed73d710de183faca216ee314bf2d12a493441a",
+          "provenanceSha256": "e4fe270a10952265618b14431f82d078dbbac66624a628ad2d7717384b2bef2b",
+          "commit": "f23c24fd97a98a916f48891051185d6ed4ce402f",
+          "tree": "1cfa4938045ccb105cc41f8e40f1e6bbb08767fe",
+          "recordedAt": "2026-09-14T01:27:16Z"
+        },
+        {
+          "archive": "proofofwork-node-release-582dc80-20260913T215908Z.tgz",
+          "bytes": 89225178,
+          "sha256": "173abdbae107ce218efecd3ca2e6ddaa8dee0f99d6ebc8dbbb75df44e2edf0be",
+          "provenanceSha256": "627f2a33c172d973ea79a400b8a7948586fb8c7d59170de623c6d05803e1068e",
+          "commit": "582dc80ce4a54d38757ec73bce0af1526344119b",
+          "tree": "c8a482c3e3f1be2c49c5f6a6ec08dfce6582cf6f",
+          "recordedAt": "2026-09-13T21:59:17Z"
+        },
+        {
+          "archive": "proofofwork-node-release-008a5c7-20260913T213731Z.tgz",
+          "bytes": 89212669,
+          "sha256": "5f36ef427e16933c5cf2cac41b3af3da19ba6bbc0995d0c196c72849b8f8f57c",
+          "provenanceSha256": "e941a358e6167716cf2d6a1c4220d7a994b52ad40939ed0f528460faf2405ea8",
+          "commit": "008a5c776bb5ac767d7d696377837c4170979f89",
+          "tree": "f2b27fa497ac8e2d40764b0f51e3c10d99ea25ef",
+          "recordedAt": "2026-09-13T21:37:40Z"
+        },
+        {
+          "archive": "proofofwork-node-release-f342687-20260908T125052Z.tgz",
+          "bytes": 87821183,
+          "sha256": "cd6b2074abee9b43e8c94a448d25f60b907ef4533a9d79d7c856842241152166",
+          "provenanceSha256": "030c21c8542475ce48c53b64279e8cb9802295aed2680b03a4cccf516cc1a878",
+          "commit": "f34268758527260caf110d78458d63daf71a9e5c",
+          "tree": "200baf09f994eedb866cf73783a2991799940732",
+          "recordedAt": "2026-09-08T13:00:53Z"
+        },
+        {
+          "archive": "proofofwork-node-release-39d5454-20260908T121810Z.tgz",
+          "bytes": 87800313,
+          "sha256": "7b5d400565301fd3f96a206af22bc3b186669d674d0a08381579c0708dcef9c4",
+          "provenanceSha256": "e965d9d88a0e5b6a4c54b5d28ad6354d516dd1aae22697bc426af711cc905e72",
+          "commit": "39d5454e77f3274a2cd5bef51a76b0f45a579377",
+          "tree": "7c568baefd803e87f6e7d8f114679693bd2729e1",
+          "recordedAt": "2026-09-08T12:40:11Z"
+        },
+        {
+          "archive": "proofofwork-node-release-2ddefac-20260905T180603Z.tgz",
+          "bytes": 87296146,
+          "sha256": "41a7f3addc0f09f0168c51894f0e9d9f5108e29ac649cdb4276135dbb5aae6ac",
+          "provenanceSha256": "8927f5f7302217b4b0b0b012536dea6b40cede909aaeb22736c80cc9ae6159a0",
+          "commit": "2ddefac163d583138129c2527e747b11190a0635",
+          "tree": "89283688ad79cdcd0a4e04a9532aac8c8af735f2",
+          "recordedAt": "2026-09-06T00:19:22Z"
+        },
+        {
+          "archive": "proofofwork-node-release-6a7d5c1-20260905T050928Z.tgz",
+          "bytes": 86598725,
+          "sha256": "317aaedd4d344a72153cdbdefe9a6b1f905163358efe4782bb4b65b3a7356e39",
+          "provenanceSha256": "bfe39532468765788c5d24d1fa0dbfa778cf94df9aeb81e2d55f20b10e0419b7",
+          "commit": "6a7d5c12e403e0ddb6247fa2a6865cb70d623a8e",
+          "tree": "bc84d0294fc4fdd9e0dd2b9943f6b330197e1ea7",
+          "recordedAt": "2026-09-05T05:13:32Z"
+        },
+        {
+          "archive": "proofofwork-node-release-7e97478-7e97478bac65-20260905T014751Z.tgz",
+          "bytes": 92224015,
+          "sha256": "cf5ee20b529f794798f0b693371fe9ddd3441b4c1651e748e116a966f68e9c3f",
+          "provenanceSha256": "8f866cd04a9db76adb1938121f2defdc24aac593b5193a1b04cce610ce7ba021",
+          "commit": "7e97478bac6595e29cf4c6f566b3ef7f14b0db3a",
+          "tree": "93e2de29b22ddd12425bc9b74e531eb36a1128c9",
+          "recordedAt": "2026-09-05T01:51:46Z"
+        },
+        {
+          "archive": "proofofwork-node-release-ca8de7e-ca8de7ef58b7-20260904T185317Z.tgz",
+          "bytes": 91851630,
+          "sha256": "8dcdaa5f3f1f5a5b101de2f3ef8c3ff3903aa6f78acce2bd98b5a537652447d3",
+          "provenanceSha256": "1f0645e4dafcc171f7b619d835ab766e0daddd243e53581e31c6c438e82cfe81",
+          "commit": "ca8de7ef58b741840612ae3d457b36b8c43f6639",
+          "tree": "43d5d2bc93c933ccea66f5dd4ed756b9859636a1",
+          "recordedAt": "2026-09-04T18:57:20Z"
+        },
+        {
+          "archive": "proofofwork-node-release-432c015-432c01581e5e-20260904T174541Z.tgz",
+          "bytes": 88724736,
+          "sha256": "f977f5aa7e3a6f2ccff286866e337ec2e495f51de7d8fe4f9f44407b774a084c",
+          "provenanceSha256": "5c7ce31c312e34d21d0a21db0ff45500691524cd6d3abdc4f4e6504787cb8029",
+          "commit": "432c01581e5e2987e26a3190be2817c7bddc6470",
+          "tree": "93dcac92a51a927c07f40dfc8522dbd880678172",
+          "recordedAt": "2026-09-04T17:48:59Z"
+        },
+        {
+          "archive": "proofofwork-node-release-86d7c54-20260904T162941Z.tgz",
+          "bytes": 73456992,
+          "sha256": "9895e5d056cd625546694422fd4472a418e190d1961499eee8bcb64fdb942451",
+          "provenanceSha256": "1ad13d05ce3dc940bae802deca432952969a98b1b39b9a0e571a09a8915a3a23",
+          "commit": "86d7c544e82dee6bcd52efb72d8fde807a1bfe14",
+          "tree": "d6a8a01b511597185461bee9975b6946ee8a92f4",
+          "recordedAt": "2026-09-04T16:35:29Z"
+        },
+        {
+          "archive": "proofofwork-node-release-339ba3a-20260904T154740Z.tgz",
+          "bytes": 80718898,
+          "sha256": "4bc18861f6a7463621106ba22a8f48d66b5083f749ec34eac5d4edd99c7e1742",
+          "provenanceSha256": "010c8ca7f4ef0b910739a6b03bddb929ac947a394393326c107622cfe7cfa92f",
+          "commit": "339ba3a71ba5f36cb64f4f7c52e01c4a0385fe90",
+          "tree": "4369a862d59420ba084b988059f5070c72a592c7",
+          "recordedAt": "2026-09-04T15:52:36Z"
+        },
+        {
+          "archive": "proofofwork-node-release-b035a67-20260904T151707Z.tgz",
+          "bytes": 80710636,
+          "sha256": "f095d0941efaedb6412d4765c374423314a918623f866e98ce8a8b2eef85ad12",
+          "provenanceSha256": "145e499b195deb0bb6611e2cd3d052ed8da0982cac55d103c66b43fd235a6dc8",
+          "commit": "b035a679167681c2e67f84ff1c062f183c4dd355",
+          "tree": "f579b54f8744cc1ad4ab717d0e7ceb8b073d0acb",
+          "recordedAt": "2026-09-04T15:25:39Z"
+        },
+        {
+          "archive": "proofofwork-node-release-42af4c6-42af4c69e248-20260904T062603Z.tgz",
+          "bytes": 73410097,
+          "sha256": "11bb495f62156fae31f7ff339c1ea33d7e116afed112434e2061a9818eb9b456",
+          "provenanceSha256": "9b1912fac42c2e794ef9fa68f844440b3d34d88a62f32c57d58354d78f309610",
+          "commit": "42af4c69e2487f9e5b50cbccfd0ae32d255d55ca",
+          "tree": "c403123162ca2cc4b29d39ab4e88b542ddd796f7",
+          "recordedAt": "2026-09-04T06:28:30Z"
+        },
+        {
+          "archive": "proofofwork-node-release-b76a4f5-b76a4f56aff2-20260903T033208Z.tgz",
+          "bytes": 80696866,
+          "sha256": "9010f0dc107e9e6703121398060cee7c6f92333a073ee95e1df35846bb5b8f7a",
+          "provenanceSha256": "77ce6503ba9bc78eb810b54f023ddc3c540ee75fece7f8389a0505f0a5dddaff",
+          "commit": "b76a4f56aff20b93a029fcc53f03ea37b680cdac",
+          "tree": "9529d76565f46cdefc3d6bfdcfed257bbb337c9d",
+          "recordedAt": "2026-09-03T03:32:40Z"
+        },
+        {
+          "archive": "proofofwork-node-release-96d3f89-20260903T023228Z.tgz",
+          "bytes": 80689941,
+          "sha256": "469a8a9c2f8f0c34d657ae1bfffb1aeb7e02e6cf3d5c9f6c7da8f4a79324ae31",
+          "provenanceSha256": "c8756e74e87828365ac3d0b93285a609f5fad025cba150ab1fd42227a83d72e3",
+          "commit": "96d3f8935592ca1948fe3d485e6e3a8614216f44",
+          "tree": "b2dcfe667d6a5a7e2a182ed1521cdf381ebc2476",
+          "recordedAt": "2026-09-03T02:34:02Z"
+        },
+        {
+          "archive": "proofofwork-node-release-89736d9-89736d9d42f7-20260902T220921Z.tgz",
+          "bytes": 80405060,
+          "sha256": "3b0e04e151f9374f9ff36bc6bd28819608024a4aa597a868fff5c6af7f768784",
+          "provenanceSha256": "b584456c650bc6806b622ff49ab6a8afdec6c43e2e9d9cfdd364acdcd7c06f13",
+          "commit": "89736d9d42f7421e0337bcfa26ed45a895f14873",
+          "tree": "0f15cc6b18556324c7777f14db4105fa07327d71",
+          "recordedAt": "2026-09-02T22:15:02Z"
+        }
+      ],
+      "retainedReleaseArchives": [
+        {
+          "archive": "proofofwork-node-release-1149633-20260924T015319Z.tgz",
+          "bytes": 91827379,
+          "sha256": "c1943ec9615f8211ddb53dd1f5d88ba05ea9b3a78eacdb4c6e3211af323b08bc",
+          "provenanceSha256": "3f6036fbc30853919fbc94793e3649be5dae6779eaedea89decaa89a65f2fb16",
+          "commit": "1149633c2d1a5c62c4a800772daa79683e478796",
+          "tree": "6071ed84ae3cad5a852ef3d4bb0c87c9d1d64e29",
+          "recordedAt": "2026-09-24T02:08:20Z"
+        },
+        {
+          "archive": "proofofwork-node-release-5882758-20260923T213800Z.tgz",
+          "bytes": 91495036,
+          "sha256": "24f331963009e44bced329caf3e69d74efce5b4a0664dcdca73ca99fec849fe5",
+          "provenanceSha256": "71d434ba1faf83737a404ffb08da4cc9ca67d673b63c614b7e1f3859750aaaaa",
+          "commit": "58827586d1a313c6210c3ce599dd46269eeddebc",
+          "tree": "c47c4cde389ccdb81628289984728e42d9500a6d",
+          "recordedAt": "2026-09-23T22:08:41Z"
+        },
+        {
+          "archive": "proofofwork-node-release-b180548-20260923T032423Z.tgz",
+          "bytes": 91472056,
+          "sha256": "f1ddc655c6f463d9ab8605675834b23510db0befed670c7115afb6dfa4d67124",
+          "provenanceSha256": "4da8c70abdd1886982fc8d7da4ab1cd92b71df83f7a38bced551006acfd623c8",
+          "commit": "b180548cb1211ad9186b036ca6da6f8717d93d26",
+          "tree": "f26c04ab312931754579ac1b1f5b584b5cf7bccb",
+          "recordedAt": "2026-09-23T05:11:52Z"
+        }
+      ],
+      "postApply": {
+        "removedArchivesAndSidecars": 47,
+        "allCandidatesAbsent": true,
+        "activeAndRollbackProvenanceChecks": true,
+        "nodeManagedDirectoryAfterBytes": 7081943676,
+        "parentReleaseBackupTreeAfterBytes": 9013993689
+      }
+    },
+    "otherNodeBackupTrees": {
+      "postgresBackupRootBytes": 92493431771,
+      "logicalBackupRootBytes": 17570940420,
+      "proofOfWorkBackupsBytes": 14639370240,
+      "releaseBackupsBytes": 9016766464
+    },
+    "logicalBackupService": {
+      "unit": "proofofwork-postgres-logical-backup.service",
+      "startUtc": "2026-09-24T03:18:51Z",
+      "exitUtc": "2026-09-24T03:34:00Z",
+      "result": "exit-code",
+      "exitStatus": 1,
+      "error": "Requested current logical backup failed retention verification",
+      "cpuTime": "12m13.751s",
+      "memoryPeakBytes": 14516711424,
+      "nextTimerUtc": "2026-09-25T03:18:48Z",
+      "currentSet": {
+        "path": "/data/proofofwork-postgres-backups/logical/proof_indexer-20260924T031852Z.dumpset",
+        "dumpBytes": 17570939120,
+        "dumpSha256": "3fc3ff4c6a3a081f60e7172f2ba7defe352596bff34c944388c48dc1abc61351",
+        "globalsBytes": 1137,
+        "globalsSha256": "08b24264aaf7e5a237de60276e4fa24b6aa6997c5fb2ab243751cd34f84b65f7",
+        "manifestValid": true,
+        "checksumCheckPassed": true,
+        "restoreCatalogPassed": true,
+        "currentSetRestoreTested": true,
+        "exactMembersAndMetadataPassedOnRerecheck": true,
+        "canonicalPathSameDeviceAndNotMountpoint": true,
+        "noOpenReadersOnRerecheck": true,
+        "scriptRoot": "deploy/proofofwork-postgres-logical-backup.sh",
+        "failedPredicateKnown": false,
+        "retentionRerunAttempted": true,
+        "retentionRerunPassed": true,
+        "retentionExitStatus": 0,
+        "retainedSetDirectoryBytes": 17570940420,
+        "isolatedRestore": {
+          "status": "passed",
+          "postgresMajorVersion": 16,
+          "networkListening": false,
+          "restoredDatabaseBytes": 33120918551,
+          "sampledRowCounts": {
+            "work_amo_block_transitions": 8725,
+            "events": 26506,
+            "transactions": 25897,
+            "ledger_snapshots": 20213
+          },
+          "pgAmcheckPassed": true,
+          "pgChecksumsCheckPassed": true,
+          "temporaryClusterRemoved": true
+        },
+        "localScriptSha256": "69b21f035274c271225213e08c3b4676204ca70d9223556a2317c34a0264da09",
+        "installedScriptSha256": "69b21f035274c271225213e08c3b4676204ca70d9223556a2317c34a0264da09",
+        "predicateDiagnosticsStatus": "installed and exercised; SHA-256 matches reviewed source",
+        "preChangeInstalledScriptSha256": "3ef93ecd1a7c927f8e430697d447bcb7688d772716c7d7bbf2000b0953f88838",
+        "installedVerifierRetentionCheck": {
+          "passed": true,
+          "output": "backup_retention_kept current set; verified_sha256=true; restore_catalog=true",
+          "noBackupSetDeleted": true
+        }
+      },
+      "previousSet": {
+        "path": "/data/proofofwork-postgres-backups/logical/proof_indexer-20260923T031853Z.dumpset",
+        "dumpBytes": 17252507567,
+        "dumpSha256": "8c739fdc07f574f20957ddb6281010091619372458e67e5103b0adb567dbc783",
+        "globalsSha256": "b21838ff6804b7ec6003fc327985044aa95dfa9ec0b4b768dbd2cea2f6fc6ace",
+        "restoreVerificationPassedPreviously": true,
+        "preserved": false,
+        "deletedByGuardedRetention": true,
+        "setBytes": 17252508867,
+        "retentionChecksumAndCatalogPassed": true
+      },
+      "cleanup": "Temporary isolated restore cluster removed. Guarded retention removed only the older September 23 logical dump after current restore proof and current/prior checksum/catalog validation; the September 24 dump remains. No live database rows, WAL, or protocol data changed.",
+      "cpuTimeNanoseconds": 733751638000,
+      "serviceStateAfterInstall": {
+        "activeState": "failed",
+        "subState": "failed",
+        "mainPid": 0,
+        "nextTimerUtc": "2026-09-25T03:18:48Z",
+        "failureStateWasNotReset": true
+      },
+      "rollbackHelper": {
+        "path": "/root/proofofwork-postgres-logical-backup.audit23-pre-diagnostics",
+        "sha256": "3ef93ecd1a7c927f8e430697d447bcb7688d772716c7d7bbf2000b0953f88838",
+        "owner": "root:root",
+        "mode": "0600",
+        "byteIdenticalToPreviousHelper": true
+      }
+    }
+  },
+  "mempoolLogRotation": {
+    "containers": [
+      "db",
+      "api",
+      "web"
+    ],
+    "maxSize": "25 MiB",
+    "maxFiles": 4,
+    "previousApiLog": {
+      "bytes": 12292439,
+      "sha256": "904b1bfb1d73a0677d779f2c80ca3aad10d6aef5c991b54578c013b36c0f1728"
+    },
+    "previousDbLog": {
+      "bytes": 23734,
+      "sha256": "f9a8f310126911e68cfbc371fd086cb257e55ad54db9efafd142e2c60ec14591"
+    },
+    "archivedAt": "/data/proofofwork-audit23-mempool-log-rotation-20260924T023000Z"
+  },
+  "priorFindings": {
+    "H9_01": "Resolved; all 904 WORK listings passed cursor-complete production regression.",
+    "H20_01": "Resolved; db/api/web capped 25 MiB x 4; previous api/db logs hashed and preserved.",
+    "H23_03": "Resolved; exact Q8 totals equal canonical transition commitment.",
+    "H6_03": "Partially verified; eight mailbox histories pass, all-address completeness remains qualified.",
+    "H5_02_H20_03_H20_04": "Local browser regressions passed; all surfaces/assets return 200; authenticated-session and live fault injection not performed.",
+    "H19_02_H19_03_H22_01": "Corrected API deployed; local failure-path tests passed; production provider/reorg injection not performed.",
+    "H7_01_H10_07_A11_03": "Open performance/availability follow-up; summary ~5.57MB; fresh wallet/AMO reads ~7-13s; initial readiness failures recovered.",
+    "H5_01_H13_01": "Improved after safe archive cleanup; UI has ~4 GiB above 10GiB reserve; report-only retention and capacity alerts remain follow-up.",
+    "H8_05_H10_02": "Open; database 33.45GB, transition table 32.04GB, PostgreSQL backup tree 109.67GB."
+  },
+  "newFindings": {
+    "H23_04": {
+      "severity": "low",
+      "issue": "Tracked Node release-prune helper lacked the production fail-closed guard for multiple UI rollback roots.",
+      "initialInstalledSha256": "227d0a0261dc80e3144111f1ae9ff269109a87be0743c24f690cc5d7a5e71879",
+      "initialTrackedSha256": "d4de9574cd0c666d198c4d448e72869c09cd3e1eb0731f0419f8fb6",
+      "resolvedTrackedSha256": "227d0a0261dc80e3144111f1ae9ff269109a87be0743c24f690cc5d7a5e71879",
+      "installedStillMatches": true,
+      "contractCheck": "npm run check:node-ops passed after the guard update",
+      "status": "Resolved in source and regression test; production already had the matching guard.",
+      "fix": "Refuse apply when multiple complete UI rollback roots exist; make the multi-root dry-run visibly nonzero."
+    },
+    "H23_05": {
+      "severity": "medium",
+      "issue": "Scheduled PostgreSQL logical-backup service exited 1 during current-set verification, but logged no predicate. Dump later passed an isolated restore and guarded retention.",
+      "impact": "The current dump is now the latest proven recovery point. The scheduled job’s original failed predicate remains unknown and could recur.",
+      "recommendedAction": "Verify the September 25 scheduled run; investigate the now-reported predicate if it recurs.",
+      "status": "Current dump restored; integrity and guarded retention passed. Predicate diagnostics are installed and the retention-only check passed. Original scheduled failure remains unexplained; next scheduled run remains pending."
+    }
+  },
+  "actionsTaken": [
+    "Deployed and production-verified API release 1149633c2d1a.",
+    "Bound Mempool JSON logs to 25 MiB x 4 for db/api/web while preserving old api/db log bytes and hashes.",
+    "Removed five verified obsolete UI release archives and paired sidecars; preserved current and rollback roots.",
+    "Removed 47 verified obsolete Node release archives and sidecars; preserved active, immediate rollback, and third recent release.",
+    "Rechecked exact chain checkpoint, event/log consistency, Q8 math, all fourteen pages in requested order, database health, service health, and current VPS capacities.",
+    "Preserved both logical dump sets after discovering backup service failure.",
+    "Reconciled deploy/proofofwork-release-prune.sh with the already-installed production SHA and updated the multi-rollback regression; npm run check:node-ops passed.",
+    "Restored the September 24 logical dump to an isolated PostgreSQL 16 cluster with network listening disabled; pg_amcheck and pg_checksums passed; removed the temporary cluster.",
+    "Reran guarded logical-backup retention after restore proof; retained the September 24 set and removed the verified September 23 set only after current/prior checksum and restore-catalog validation.",
+    "Refreshed the full-node, txindex, coinstatsindex, block-filter index, public health, and consistency checkpoints at height 968352; all 25 consistency checks passed.",
+    "Added predicate-level PostgreSQL logical-backup verification diagnostics and a fixture asserting restore-catalog failure is logged while old backups are preserved; npm run check:hardening passed.",
+    "Installed the reviewed backup verifier on the Node VPS with matching SHA-256; preserved the previous helper byte-for-byte as a root-private rollback; retention-only verification kept the current set without deletion."
+  ],
+  "pending": [
+    "Verify the September 25 03:18:48 UTC logical-backup service run; if it fails, use the installed predicate label to investigate the exact stage.",
+    "Continue UI disk-floor monitoring; the UI VPS had about 4.00 GiB above its 10 GiB systemd free-space floor at 04:30 UTC.",
+    "Measure transition-table/database growth and performance over a fixed window before planning any replay-safe redesign."
+  ],
+  "approvalBoundary": "No changes to protocol records, user balances, credits, transactions, ledgers, refunds, chain history, database rows, WAL, keys, seed material, or preserved logical backups.",
+  "reviewedHelperScripts": {
+    "deploy/audit23/attest-node-stage.py": "da44d20b9d53b7f23487c33aca22f1df8691d8713152938f74874fd50f053cb9",
+    "deploy/audit23/prune-node-stages.py": "1671927f74a228075122d4ad178ef850cbfb8bab363ac4f8e56e93241362996c",
+    "deploy/audit23/publish-node-1149633c2d1a-20260924T015319Z.py": "9ad9672934e9409b089f34b3b34c7bb3091f13a282c950d3562db42f19a479cc",
+    "deploy/audit23/rotate-mempool-container-logs.py": "ef9386edffe75b6c827e86ec672d4c486788386ddff26463820c2b4a578afb49",
+    "deploy/proofofwork-postgres-logical-backup.sh": "69b21f035274c271225213e08c3b4676204ca70d9223556a2317c34a0264da09"
+  },
+  "verificationChecks": [
+    {
+      "command": "npm run hygiene:fix",
+      "result": "passed; no allowlisted rebuildable state found"
+    },
+    {
+      "command": "npm run hygiene:check",
+      "result": "passed"
+    },
+    {
+      "command": "npm run check:hardening",
+      "result": "passed"
+    },
+    {
+      "command": "npm run check:node-ops",
+      "result": "passed after the guard update"
+    },
+    {
+      "command": "npm run check:ui-ops",
+      "result": "passed after the shared helper update"
+    },
+    {
+      "command": "npm run check:ui-capacity",
+      "result": "passed; 10 tests"
+    },
+    {
+      "command": "npm run check:production-observability",
+      "result": "passed; ok=true, zero alerts at 2026-09-24T03:48:02Z"
+    },
+    {
+      "command": "git diff --check",
+      "result": "passed"
+    },
+    {
+      "command": "Isolated restore of September 24 logical dump",
+      "result": "passed; 33,120,918,551 B restored; expected sampled row counts; pg_amcheck and pg_checksums --check passed; temporary cluster removed"
+    },
+    {
+      "command": "Guarded --retain-existing verification",
+      "result": "passed; current and prior checksums/catalogs verified; older September 23 set removed; current September 24 set retained"
+    },
+    {
+      "command": "Live production health and consistency",
+      "result": "HTTP 200; full node and all three node indexes at 968352; API zero lag; consistency green 25/25 with no failed checks"
+    },
+    {
+      "command": "npm run check:hardening",
+      "result": "passed after adding predicate-level backup-verifier diagnostics; fixture confirms restore-catalog failure is logged and prior backup sets remain preserved"
+    },
+    {
+      "command": "Production backup-verifier installation",
+      "result": "passed; installed SHA-256 69b21f035274c271225213e08c3b4676204ca70d9223556a2317c34a0264da09 matches reviewed source; prior helper preserved at root-private rollback path"
+    },
+    {
+      "command": "Production installed helper --retain-existing check",
+      "result": "passed; current restore-tested backup kept, checksum and restore catalog verified, no set deleted; backup unit remained stopped with MainPID 0"
+    }
+  ]
+}

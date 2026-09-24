@@ -304,11 +304,15 @@ if [[ "${release_kind}" == "ui" ]]; then
   rollback_discovery_file=""
   trap - EXIT
   if ((${#rollback_roots[@]} > 1)); then
+    if [[ "${mode}" == "--apply" ]]; then
+      echo "Refusing retention with more than one complete-root UI rollback." >&2
+      exit 2
+    fi
     if ((${#rollback_roots[@]} > 9)); then
       echo "Refusing dry-run retention beyond nine complete-root UI rollbacks." >&2
       exit 2
     fi
-    echo "WARNING multiple complete-root UI rollbacks are retained; each root will remain protected while release retention is evaluated." >&2
+    echo "WARNING multiple complete-root UI rollbacks are retained; archive deletion remains disabled pending exact classification." >&2
     multiple_rollback_warning=1
   fi
   for rollback_checkout in "${rollback_roots[@]}"; do
@@ -585,5 +589,5 @@ if ((unverified_count > 0)); then
   exit 2
 fi
 if ((multiple_rollback_warning)); then
-  echo "Multiple complete-root UI rollbacks were validated and excluded from release deletion." >&2
+  exit 1
 fi
