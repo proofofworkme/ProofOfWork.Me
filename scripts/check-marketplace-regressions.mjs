@@ -5,6 +5,7 @@ import {
   parseWorkAmountToAtoms,
   parseWorkAmountToSubatoms,
   WORK_SUBATOM_CONVERSION_FACTOR,
+  q8IntegerTextsAgree,
 } from "../server/work-units.mjs";
 import { readCompleteTokenHistoryPages } from "./complete-token-history-pages.mjs";
 import {
@@ -3661,29 +3662,20 @@ assert(
   `summary snapshot mismatch: work=${workSummary.snapshotId ?? "none"} marketplace=${alignedMarketplaceFreshSummary.snapshotId ?? "none"} token=${workTokenSummary.snapshotId ?? "none"} growth=${growthSummary.snapshotId ?? "none"}`,
 );
 assert(
-  numbersAgree(
-    workSummary.floor?.networkValueSats,
-    alignedMarketplaceFreshSummary.workFloor?.networkValueSats,
-  ) &&
-    numbersAgree(
-      workSummary.floor?.networkValueSats,
-      growthSummary.workFloor?.networkValueSats,
-    ) &&
-    numbersAgree(
-      workSummary.floor?.networkValueSats,
-      growthSummary.actualValue?.totalSats,
-    ),
+  q8IntegerTextsAgree(
+    workSummary.floor?.networkValueQ8,
+    alignedMarketplaceFreshSummary.workFloor?.networkValueQ8,
+    growthSummary.workFloor?.networkValueQ8,
+    growthSummary.actualValue?.totalQ8,
+  ),
   `summary network value mismatch: work=${workSummary.floor?.networkValueSats} marketplace=${alignedMarketplaceFreshSummary.workFloor?.networkValueSats} growthFloor=${growthSummary.workFloor?.networkValueSats} growth=${growthSummary.actualValue?.totalSats}`,
 );
 assert(
-  numbersAgree(
-    workSummary.floor?.floorSats,
-    alignedMarketplaceFreshSummary.workFloor?.floorSats,
-  ) &&
-    numbersAgree(
-      workSummary.floor?.floorSats,
-      growthSummary.workFloor?.floorSats,
-    ),
+  q8IntegerTextsAgree(
+    workSummary.floor?.floorQ8,
+    alignedMarketplaceFreshSummary.workFloor?.floorQ8,
+    growthSummary.workFloor?.floorQ8,
+  ),
   `WORK floor mismatch: work=${workSummary.floor?.floorSats} marketplace=${alignedMarketplaceFreshSummary.workFloor?.floorSats} growth=${growthSummary.workFloor?.floorSats}`,
 );
 const completeWorkListingsById = new Map(

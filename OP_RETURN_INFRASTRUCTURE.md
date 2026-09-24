@@ -5170,6 +5170,7 @@ After changing the API or production build, verify:
 - `/health` returns `service: proofofwork-op-return-api`.
 - `/health` is the exact-tip readiness contract; `/health/live` reports the separately labeled availability contract. Both must traverse the private WireGuard API path through Caddy.
 - `/api/v1/consistency?network=livenet` is green, has no `missingLogEvents`, and includes the seeded mail, seeded Infinity Bond, seeded Inception Bond, and INCB live-issuance/supply checks.
+- Consistency reconciliation compares canonical Q8 integer strings. `totals.*Q8` and `totals.*SatsExact` are the exact string values. Existing numeric `totals.*Sats` and `metrics.networkValueSats` fields remain compatibility/display aliases and must not be used for exact reconciliation; their approximate twins are grouped under `totalsApproximate`. A matching snapshot ID alone does not replace the exact-value check.
 - ID registry count matches the node-backed API and includes pending records when visible.
 - `tokens@proofofwork.me` resolves to the expected credit index address.
 - Duplicate/pending IDs cannot be routed.

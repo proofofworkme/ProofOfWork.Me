@@ -90,6 +90,7 @@ import {
   WORK_UNIT_SCALE,
   WORK_UNIT_SCALE_TEXT,
   WORK_VALUE_Q8_SCALE as VALUE_Q8_SCALE,
+  canonicalQ8IntegerText,
   decimalValueToQ8,
   formatWorkAtoms,
   formatWorkAtomsAmo,
@@ -97,6 +98,8 @@ import {
   isWorkTokenId,
   parseWorkAmountToAtoms,
   parseWorkAmountToSubatoms,
+  q8IntegerTextsAgree,
+  q8SatsDecimalText,
   q8ToCanonicalDecimal,
   q8ToNumber,
   withWorkPrecisionMetadata,
@@ -46708,11 +46711,17 @@ function ledgerSnapshotChecks({
     },
   );
 
-  const workNetworkValue = numericValue(workFloor?.networkValueSats);
-  const workActualValue = numericValue(workFloor?.actualValue?.totalSats);
-  const growthActualValue = numericValue(growthSummary?.actualValue?.totalSats);
-  const growthFloorValue = numericValue(
-    growthSummary?.workFloor?.networkValueSats,
+  const workNetworkValueQ8 = canonicalQ8IntegerText(
+    workFloor?.networkValueQ8,
+  );
+  const workActualValueQ8 = canonicalQ8IntegerText(
+    workFloor?.actualValue?.totalQ8,
+  );
+  const growthActualValueQ8 = canonicalQ8IntegerText(
+    growthSummary?.actualValue?.totalQ8,
+  );
+  const growthFloorValueQ8 = canonicalQ8IntegerText(
+    growthSummary?.workFloor?.networkValueQ8,
   );
   const confirmedActivity = (activity ?? []).filter((item) => item?.confirmed);
   const incbTokenState = scopedTokenPayloadFromState(tokenState, INCB_TOKEN_ID);
@@ -46913,9 +46922,13 @@ function ledgerSnapshotChecks({
     network !== "livenet" ||
       (workFloorFinite && growthSummaryFinite),
     {
-      growthActualValueSats: growthActualValue,
+      growthActualValueQ8: growthActualValueQ8 || null,
+      growthActualValueSatsExact:
+        q8SatsDecimalText(growthActualValueQ8) || null,
       growthSummaryFinite,
-      growthWorkFloorValueSats: growthFloorValue,
+      growthWorkFloorValueQ8: growthFloorValueQ8 || null,
+      growthWorkFloorValueSatsExact:
+        q8SatsDecimalText(growthFloorValueQ8) || null,
       hasCreditMinerFeeAccounting:
         workFloor?.actualValue?.creditMinerFeeAccountingModel ===
         CREDIT_MINER_FEE_ACCOUNTING_MODEL,
@@ -46941,22 +46954,45 @@ function ledgerSnapshotChecks({
           }
         : {}),
       workFloorFinite,
-      workActualValueSats: workActualValue,
-      workNetworkValueSats: workNetworkValue,
+      workActualValueQ8: workActualValueQ8 || null,
+      workActualValueSatsExact:
+        q8SatsDecimalText(workActualValueQ8) || null,
+      workNetworkValueQ8: workNetworkValueQ8 || null,
+      workNetworkValueSatsExact:
+        q8SatsDecimalText(workNetworkValueQ8) || null,
     },
   );
-  addCheck("work-floor-actual-total", numbersAgree(workNetworkValue, workActualValue), {
-    actualValueSats: workActualValue,
-    networkValueSats: workNetworkValue,
-  });
-  addCheck("growth-actual-total", numbersAgree(workNetworkValue, growthActualValue), {
-    growthValueSats: growthActualValue,
-    workValueSats: workNetworkValue,
-  });
-  addCheck("growth-work-floor-total", numbersAgree(workNetworkValue, growthFloorValue), {
-    growthWorkFloorSats: growthFloorValue,
-    workValueSats: workNetworkValue,
-  });
+  addCheck(
+    "work-floor-actual-total",
+    q8IntegerTextsAgree(workNetworkValueQ8, workActualValueQ8),
+    {
+      actualValueQ8: workActualValueQ8 || null,
+      actualValueSatsExact: q8SatsDecimalText(workActualValueQ8) || null,
+      networkValueQ8: workNetworkValueQ8 || null,
+      networkValueSatsExact: q8SatsDecimalText(workNetworkValueQ8) || null,
+    },
+  );
+  addCheck(
+    "growth-actual-total",
+    q8IntegerTextsAgree(workNetworkValueQ8, growthActualValueQ8),
+    {
+      growthValueQ8: growthActualValueQ8 || null,
+      growthValueSatsExact: q8SatsDecimalText(growthActualValueQ8) || null,
+      workValueQ8: workNetworkValueQ8 || null,
+      workValueSatsExact: q8SatsDecimalText(workNetworkValueQ8) || null,
+    },
+  );
+  addCheck(
+    "growth-work-floor-total",
+    q8IntegerTextsAgree(workNetworkValueQ8, growthFloorValueQ8),
+    {
+      growthWorkFloorQ8: growthFloorValueQ8 || null,
+      growthWorkFloorSatsExact:
+        q8SatsDecimalText(growthFloorValueQ8) || null,
+      workValueQ8: workNetworkValueQ8 || null,
+      workValueSatsExact: q8SatsDecimalText(workNetworkValueQ8) || null,
+    },
+  );
   addCheck(
     "marketplace-mutation-fees-counted",
     numbersAgree(marketplaceFeeSats, marketplaceMutationFeeSats) &&
@@ -47968,6 +48004,18 @@ function bondSummaryPayloadFromLedger(ledger, config) {
 
 function ledgerConsistencyPayloadFromLedger(ledger) {
   const growthSummary = ledger.growthSummary;
+  const workNetworkValueQ8 = canonicalQ8IntegerText(
+    ledger.workFloor?.networkValueQ8,
+  );
+  const workActualValueQ8 = canonicalQ8IntegerText(
+    ledger.workFloor?.actualValue?.totalQ8,
+  );
+  const growthActualValueQ8 = canonicalQ8IntegerText(
+    growthSummary?.actualValue?.totalQ8,
+  );
+  const growthFloorValueQ8 = canonicalQ8IntegerText(
+    growthSummary?.workFloor?.networkValueQ8,
+  );
   return {
     checks: ledger.consistency.checks,
     generatedAt: ledger.generatedAt,
@@ -47975,7 +48023,14 @@ function ledgerConsistencyPayloadFromLedger(ledger) {
     ...(payloadIndexedThroughBlockHash(ledger)
       ? { indexedThroughBlockHash: payloadIndexedThroughBlockHash(ledger) }
       : {}),
-    metrics: ledger.metrics,
+    metrics: {
+      ...ledger.metrics,
+      networkValueQ8: workNetworkValueQ8 || null,
+      networkValueSatsApproximate: numericValue(
+        ledger.metrics?.networkValueSats ?? ledger.workFloor?.networkValueSats,
+      ),
+      networkValueSatsExact: q8SatsDecimalText(workNetworkValueQ8) || null,
+    },
     missingLogEvents: ledger.consistency.missingLogEvents,
     network: ledger.network,
     ok: ledger.consistency.ok,
@@ -47983,6 +48038,30 @@ function ledgerConsistencyPayloadFromLedger(ledger) {
     sourceHashes: ledger.sourceHashes,
     status: ledger.consistency.status,
     totals: {
+      growthActualValueQ8: growthActualValueQ8 || null,
+      growthActualValueSats: numericValue(growthSummary?.actualValue?.totalSats),
+      growthActualValueSatsExact:
+        q8SatsDecimalText(growthActualValueQ8) || null,
+      growthWorkFloorValueQ8: growthFloorValueQ8 || null,
+      growthWorkFloorValueSats: numericValue(
+        growthSummary?.workFloor?.networkValueSats,
+      ),
+      growthWorkFloorValueSatsExact:
+        q8SatsDecimalText(growthFloorValueQ8) || null,
+      workActualValueQ8: workActualValueQ8 || null,
+      workActualValueSats: numericValue(
+        ledger.workFloor?.actualValue?.totalSats,
+      ),
+      workActualValueSatsExact:
+        q8SatsDecimalText(workActualValueQ8) || null,
+      workNetworkValueAccountingModel:
+        ledger.workFloor?.workNetworkValueAccountingModel ?? null,
+      workNetworkValueQ8: workNetworkValueQ8 || null,
+      workNetworkValueSats: numericValue(ledger.workFloor?.networkValueSats),
+      workNetworkValueSatsExact:
+        q8SatsDecimalText(workNetworkValueQ8) || null,
+    },
+    totalsApproximate: {
       growthActualValueSats: numericValue(growthSummary?.actualValue?.totalSats),
       growthWorkFloorValueSats: numericValue(
         growthSummary?.workFloor?.networkValueSats,
@@ -48073,6 +48152,16 @@ async function ledgerConsistencyPayloadWithCurrentSummaries(
   const growthFloorValue = numericValue(
     growthSummary?.workFloor?.networkValueSats,
   );
+  const workNetworkValueQ8 = canonicalQ8IntegerText(workFloor.networkValueQ8);
+  const workActualValueQ8 = canonicalQ8IntegerText(
+    workFloor.actualValue?.totalQ8,
+  );
+  const growthActualValueQ8 = canonicalQ8IntegerText(
+    growthSummary?.actualValue?.totalQ8,
+  );
+  const growthFloorValueQ8 = canonicalQ8IntegerText(
+    growthSummary?.workFloor?.networkValueQ8,
+  );
   const updatedChecks = replaceLedgerConsistencyChecks(payload.checks, [
     {
       details: {
@@ -48105,8 +48194,12 @@ async function ledgerConsistencyPayloadWithCurrentSummaries(
                 workFloor.actualValue.creditMinerFeeMissingCanonicalSample,
             }
           : {}),
-        growthActualValueSats: growthActualValue,
-        growthWorkFloorValueSats: growthFloorValue,
+        growthActualValueQ8: growthActualValueQ8 || null,
+        growthActualValueSatsExact:
+          q8SatsDecimalText(growthActualValueQ8) || null,
+        growthWorkFloorValueQ8: growthFloorValueQ8 || null,
+        growthWorkFloorValueSatsExact:
+          q8SatsDecimalText(growthFloorValueQ8) || null,
         hasCreditMinerFeeAccounting:
           workFloor?.actualValue?.creditMinerFeeAccountingModel ===
           CREDIT_MINER_FEE_ACCOUNTING_MODEL,
@@ -48115,8 +48208,12 @@ async function ledgerConsistencyPayloadWithCurrentSummaries(
             workFloor?.actualValue?.creditMinerFeeCoverage,
           ),
         ),
-        workActualValueSats: workActualValue,
-        workNetworkValueSats: workNetworkValue,
+        workActualValueQ8: workActualValueQ8 || null,
+        workActualValueSatsExact:
+          q8SatsDecimalText(workActualValueQ8) || null,
+        workNetworkValueQ8: workNetworkValueQ8 || null,
+        workNetworkValueSatsExact:
+          q8SatsDecimalText(workNetworkValueQ8) || null,
       },
       name: "network-values-finite",
       ok:
@@ -48125,27 +48222,34 @@ async function ledgerConsistencyPayloadWithCurrentSummaries(
     },
     {
       details: {
-        actualValueSats: workActualValue,
-        networkValueSats: workNetworkValue,
+        actualValueQ8: workActualValueQ8 || null,
+        actualValueSatsExact: q8SatsDecimalText(workActualValueQ8) || null,
+        networkValueQ8: workNetworkValueQ8 || null,
+        networkValueSatsExact: q8SatsDecimalText(workNetworkValueQ8) || null,
       },
       name: "work-floor-actual-total",
-      ok: numbersAgree(workNetworkValue, workActualValue),
+      ok: q8IntegerTextsAgree(workNetworkValueQ8, workActualValueQ8),
     },
     {
       details: {
-        growthValueSats: growthActualValue,
-        workValueSats: workNetworkValue,
+        growthValueQ8: growthActualValueQ8 || null,
+        growthValueSatsExact: q8SatsDecimalText(growthActualValueQ8) || null,
+        workValueQ8: workNetworkValueQ8 || null,
+        workValueSatsExact: q8SatsDecimalText(workNetworkValueQ8) || null,
       },
       name: "growth-actual-total",
-      ok: numbersAgree(workNetworkValue, growthActualValue),
+      ok: q8IntegerTextsAgree(workNetworkValueQ8, growthActualValueQ8),
     },
     {
       details: {
-        growthWorkFloorSats: growthFloorValue,
-        workValueSats: workNetworkValue,
+        growthWorkFloorQ8: growthFloorValueQ8 || null,
+        growthWorkFloorSatsExact:
+          q8SatsDecimalText(growthFloorValueQ8) || null,
+        workValueQ8: workNetworkValueQ8 || null,
+        workValueSatsExact: q8SatsDecimalText(workNetworkValueQ8) || null,
       },
       name: "growth-work-floor-total",
-      ok: numbersAgree(workNetworkValue, growthFloorValue),
+      ok: q8IntegerTextsAgree(workNetworkValueQ8, growthFloorValueQ8),
     },
   ]);
   const ok = updatedChecks.every((check) => check?.ok === true);
@@ -48160,7 +48264,10 @@ async function ledgerConsistencyPayloadWithCurrentSummaries(
     metrics: {
       ...(payload.metrics ?? {}),
       indexedThroughBlock,
+      networkValueQ8: workNetworkValueQ8 || null,
       networkValueSats: workNetworkValue,
+      networkValueSatsApproximate: workNetworkValue,
+      networkValueSatsExact: q8SatsDecimalText(workNetworkValueQ8) || null,
       sourceTipHeight,
       tipLagBlocks,
     },
@@ -48171,7 +48278,26 @@ async function ledgerConsistencyPayloadWithCurrentSummaries(
       payload.snapshotId,
     status: ok ? "green" : "red",
     totals: {
-      ...(payload.totals ?? {}),
+      growthActualValueQ8: growthActualValueQ8 || null,
+      growthActualValueSats: growthActualValue,
+      growthActualValueSatsExact:
+        q8SatsDecimalText(growthActualValueQ8) || null,
+      growthWorkFloorValueQ8: growthFloorValueQ8 || null,
+      growthWorkFloorValueSats: growthFloorValue,
+      growthWorkFloorValueSatsExact:
+        q8SatsDecimalText(growthFloorValueQ8) || null,
+      workActualValueQ8: workActualValueQ8 || null,
+      workActualValueSats: workActualValue,
+      workActualValueSatsExact:
+        q8SatsDecimalText(workActualValueQ8) || null,
+      workNetworkValueAccountingModel:
+        workFloor.workNetworkValueAccountingModel ?? null,
+      workNetworkValueQ8: workNetworkValueQ8 || null,
+      workNetworkValueSats: workNetworkValue,
+      workNetworkValueSatsExact:
+        q8SatsDecimalText(workNetworkValueQ8) || null,
+    },
+    totalsApproximate: {
       growthActualValueSats: growthActualValue,
       growthWorkFloorValueSats: growthFloorValue,
       workActualValueSats: workActualValue,

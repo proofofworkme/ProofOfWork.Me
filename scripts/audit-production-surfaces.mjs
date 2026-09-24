@@ -109,6 +109,18 @@ const SURFACES = [
     ],
   },
   {
+    key: "boost",
+    title: "boost.proofofwork.me",
+    url: "https://boost.proofofwork.me/",
+    probes: [
+      {
+        label: "boost feed",
+        url: apiUrl("/api/v1/boost?network=livenet&limit=1"),
+        validate: validateIndexedJson,
+      },
+    ],
+  },
+  {
     key: "amo",
     title: "amo.proofofwork.me",
     url: "https://amo.proofofwork.me/",

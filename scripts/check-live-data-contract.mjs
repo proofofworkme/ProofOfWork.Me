@@ -2804,6 +2804,20 @@ expectAll("consistency endpoint guards the public invariant", server, [
   /url\.pathname === "\/api\/v1\/ledger-consistency"/,
 ]);
 
+expectAll("WORK and Growth consistency reconciliation uses exact Q8 values", server, [
+  /q8IntegerTextsAgree\(workNetworkValueQ8, workActualValueQ8\)/,
+  /q8IntegerTextsAgree\(workNetworkValueQ8, growthActualValueQ8\)/,
+  /q8IntegerTextsAgree\(workNetworkValueQ8, growthFloorValueQ8\)/,
+  /workNetworkValueQ8:\s*workNetworkValueQ8/,
+  /workNetworkValueSatsExact:\s*q8SatsDecimalText\(workNetworkValueQ8\)/,
+  /totalsApproximate:/,
+]);
+expectAll("backfill chooses consistency snapshots by exact Q8", proofIndexerBackfill, [
+  /function ledgerConsistencyValue\(payload\)[\s\S]*?totals\?\.workNetworkValueQ8/,
+  /candidateValue > baseValue\)/,
+  /canonicalNonNegativeQ8Text/,
+]);
+
 expectAll("seeded mail coverage guards confirmed Computer message value", server, [
   /async function buildSeededMailActivityPayload[\s\S]*?return await fetchAddressTransactions\(address,\s*network\);[\s\S]*?fetchAddressTransactionsViaMempoolPagination\(/,
   /const seededConfirmedMail = \(seededMailActivityState\?\.activity \?\? \[\]\)\.filter/,

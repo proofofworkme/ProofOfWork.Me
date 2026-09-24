@@ -109,6 +109,7 @@ for (const host of [
   "id.proofofwork.me",
   "desktop.proofofwork.me",
   "browser.proofofwork.me",
+  "boost.proofofwork.me",
   "amo.proofofwork.me",
   "credit.proofofwork.me",
   "wallet.proofofwork.me",
