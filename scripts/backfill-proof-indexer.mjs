@@ -7406,6 +7406,7 @@ function preparedProtocolItemsWithCanonicalMailAttachments(
   const canonicalWorkTransfersByTxid = new Map();
   const ambiguousWorkTransferTxids = new Set();
   const boostOriginalCountsByTxid = new Map();
+  const verifiedMailAttachmentsByTxid = new Map();
 
   for (const entry of prepared) {
     const item = entry?.item ?? entry;
@@ -7415,6 +7416,17 @@ function preparedProtocolItemsWithCanonicalMailAttachments(
         txid,
         (boostOriginalCountsByTxid.get(txid) ?? 0) + 1,
       );
+    }
+    if (item?.protocol === "pwm1" && item?.valid !== false &&
+        typeof item?.confirmed === "boolean" && item?.attachment) {
+      const attachment = item.attachment;
+      const bytes = decodedBase64UrlBytes(attachment.data);
+      if (bytes && bytes.byteLength === attachment.size &&
+          createHash("sha256").update(bytes).digest("hex") === attachment.sha256) {
+        const attachments = verifiedMailAttachmentsByTxid.get(txid) ?? [];
+        attachments.push({ ...attachment, confirmed: item.confirmed });
+        verifiedMailAttachmentsByTxid.set(txid, attachments);
+      }
     }
     const nativeQ16 =
       item?.amountStorageModel === WORK_SUBATOM_PROJECTION_MODEL ||
@@ -7513,6 +7525,25 @@ function preparedProtocolItemsWithCanonicalMailAttachments(
       const authorAddress = String(item?.authorAddress ?? "").trim();
       const claimedWork = canonicalWorkSubatomsText(item?.workSignalSubatoms);
       const proofSelfSend = boostSelfSend(item, authorAddress);
+      if (item?.media?.source === "same-tx-pwm1-attachment") {
+        const media = item.media;
+        const attachments = (verifiedMailAttachmentsByTxid.get(txid) ?? [])
+          .filter((attachment) => attachment.confirmed === item.confirmed);
+        if (!/^[0-9a-f]{64}$/u.test(String(media.sha256 ?? "")) ||
+            !Number.isSafeInteger(media.size) || media.size < 1 ||
+            !String(media.mime ?? "").trim() || !String(media.name ?? "").trim() ||
+            attachments.length !== 1 ||
+            attachments[0].sha256 !== media.sha256 ||
+            attachments[0].size !== media.size ||
+            attachments[0].mime !== media.mime ||
+            attachments[0].name !== media.name) {
+          const invalid = invalidProtocolItem(
+            item,
+            "Boost media pointer does not match one verified same-transaction PWM attachment.",
+          );
+          return entry?.item ? { ...entry, item: invalid } : invalid;
+        }
+      }
       if (item?.workSignalSubatoms && !claimedWork) {
         const invalid = invalidProtocolItem(
           item,

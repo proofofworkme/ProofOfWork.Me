@@ -53010,6 +53010,7 @@ function boostFeedItemFromEvent(
           name: String(media.name ?? media.filename ?? "").trim(),
           sha256: String(media.sha256 ?? media.hash ?? "").trim(),
           size: numericValue(media.size),
+          source: String(media.source ?? "").trim(),
         }
       : null,
     network,

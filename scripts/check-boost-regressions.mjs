@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { test } from "node:test";
 import vm from "node:vm";
@@ -183,7 +184,8 @@ test("reboost projection carries the canonical original post for retweet-style r
   const original = event(1, "boost-post", {
     authorAddress: "original-author",
     text: "the original post survives the reboost",
-    media: { mime: "image/jpeg", name: "original.jpg", sha256: "a".repeat(64), size: 1234 },
+    media: { mime: "image/jpeg", name: "original.jpg", sha256: "a".repeat(64), size: 1234,
+      source: "same-tx-pwm1-attachment" },
   });
   const reboost = event(2, "boost-reboost", {
     authorAddress: "rebooster",
@@ -203,6 +205,7 @@ test("reboost projection carries the canonical original post for retweet-style r
   assert.equal(item.reboostedPost?.authorAddress, original.authorAddress);
   assert.equal(item.reboostedPost?.text, original.text);
   assert.equal(item.reboostedPost?.media?.name, "original.jpg");
+  assert.equal(item.reboostedPost?.media?.source, "same-tx-pwm1-attachment");
   assert.equal(item.reboostCount, 1);
 });
 
@@ -740,7 +743,9 @@ test("Boost WORK signal binds exactly to a canonical same-transaction self-trans
   assert.ok(start > 0 && end > start);
   const workId = "d4e5ebf11d104d6a63fb74e42094364b25a5f7199a09e5c0e71408972466a8b8";
   const context = vm.createContext({
-    BigInt, Map, Set,
+    BigInt, Map, Set, createHash,
+    decodedBase64UrlBytes: (data) => /^[A-Za-z0-9_-]*$/u.test(String(data ?? ""))
+      ? Buffer.from(data, "base64url") : null,
     WORK_TOKEN_ID: workId,
     WORK_TOKEN_TICKER: "WORK",
     WORK_SUBATOM_PROJECTION_MODEL: "work-subatoms-v2",
@@ -847,6 +852,63 @@ test("Boost WORK signal binds exactly to a canonical same-transaction self-trans
   assert.equal(duplicate[1].valid, false);
   const ambiguousTransfer = context.prepare([post(), transfer(), transfer({ canonicalVerifier: undefined })]);
   assert.equal(ambiguousTransfer[0].valid, false);
+
+  const bytes = Buffer.from("verified Boost image bytes");
+  const media = {
+    mime: "image/png", name: "proof.png", size: bytes.length,
+    sha256: createHash("sha256").update(bytes).digest("hex"),
+    source: "same-tx-pwm1-attachment",
+  };
+  const mail = (overrides = {}) => ({
+    protocol: "pwm1", confirmed: true, txid: tx, valid: true,
+    attachment: { ...media, data: bytes.toString("base64url") },
+    ...overrides,
+  });
+  const mediaPost = (overrides = {}) => post({
+    recipients: [{ address: author, amountSats: "546" }],
+    workSignalSubatoms: undefined, media, ...overrides,
+  });
+  const preparedMedia = (boost, pwm) => context.prepare([boost, ...(pwm ? [pwm] : [])])[0];
+  assert.equal(preparedMedia(mediaPost(), mail()).valid, true);
+  assert.equal(preparedMedia(mediaPost(), null).valid, false);
+  assert.equal(preparedMedia(mediaPost(), mail({ confirmed: false })).valid, false);
+  assert.equal(preparedMedia(mediaPost({ confirmed: false }), mail({ confirmed: false })).valid, true,
+    "pending media is byte-verified before confirmation");
+  assert.equal(preparedMedia(mediaPost(), mail({ txid: "e".repeat(64) })).valid, false);
+  assert.equal(preparedMedia(mediaPost(), mail({ attachment: { ...mail().attachment, data: "dGFtcGVyZWQ" } })).valid, false);
+  for (const field of ["sha256", "size", "mime", "name"]) {
+    const changed = { ...media, [field]: field === "size" ? media.size + 1 : "mismatch" };
+    assert.equal(preparedMedia(mediaPost({ media: changed }), mail()).valid, false, field);
+  }
+  assert.equal(preparedMedia(mediaPost({ media: { txid: "e".repeat(64) } }), null).valid, true,
+    "legacy external media pointers retain their prior behavior");
+});
+
+test("Boost client renders same-tx media only when verified attachment bytes match its pointer", async () => {
+  const encodingUrl = await importTs("../src/shared/utils/encoding.ts", {
+    '"bitcoinjs-lib"': JSON.stringify(import.meta.resolve("bitcoinjs-lib")),
+    '"buffer"': '"node:buffer"',
+  });
+  const mediaUrl = await importTs("../src/features/boost/boostMedia.ts", {
+    '"../../shared/utils/encoding"': JSON.stringify(encodingUrl),
+  });
+  const { boostMediaUrl } = await import(mediaUrl);
+  const bytes = Buffer.from("verified image data");
+  const pointer = {
+    mime: "image/png", name: "proof.png", size: bytes.length,
+    sha256: createHash("sha256").update(bytes).digest("hex"),
+    source: "same-tx-pwm1-attachment",
+  };
+  const attachment = { ...pointer, data: bytes.toString("base64url") };
+  assert.match(boostMediaUrl(pointer, attachment), /^data:image\/png;base64,/u);
+  assert.equal(boostMediaUrl(pointer, undefined), "");
+  for (const field of ["sha256", "size", "mime", "name"]) {
+    const changed = { ...attachment, [field]: field === "size" ? bytes.length + 1 : "mismatch" };
+    assert.equal(boostMediaUrl(pointer, changed), "", field);
+  }
+  assert.equal(boostMediaUrl(pointer, { ...attachment, data: Buffer.from("tampered").toString("base64url") }), "");
+  assert.equal(boostMediaUrl({ mime: "image/png" }, attachment).startsWith("data:image/png"), true,
+    "legacy external media keeps its prior rendering behavior");
 });
 
 test("proof-only Boost reads do not start an unused WORK valuation query", async () => {

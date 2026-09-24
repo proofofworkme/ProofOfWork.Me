@@ -66,6 +66,7 @@ export type BoostFeedItem = {
     name?: string;
     sha256?: string;
     size?: number;
+    source?: string;
     url?: string;
   };
   proofSignalSats: number;

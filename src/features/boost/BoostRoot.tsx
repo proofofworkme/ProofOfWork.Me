@@ -56,6 +56,7 @@ import { formatBytes, formatDate, shortAddress } from "../../functions";
 import { formatExactDecimal } from "../../exactAmount";
 import { boostSignalQ8, formatBoostSignal } from "./boostAmounts";
 import { createBoostReadLifecycle } from "./boostReadLifecycle";
+import { boostMediaUrl } from "./boostMedia";
 import {
   BOOST_WORK_MUTATION_PROOFS,
   BOOST_WORK_REGISTRY_ADDRESS,
@@ -463,33 +464,32 @@ function acquireBoostMediaSlot(signal: AbortSignal) {
   });
 }
 
-function boostMediaUrl(attachment: { data?: string; mime?: string }) {
-  if (!attachment.data || !attachment.mime) return "";
-  const base64 = attachment.data.replace(/-/g, "+").replace(/_/g, "/");
-  return `data:${attachment.mime};base64,${base64.padEnd(Math.ceil(base64.length / 4) * 4, "=")}`;
-}
-
 function BoostMedia({ item, network }: { item: BoostFeedItem; network: BitcoinNetwork }) {
-  const [mediaUrl, setMediaUrl] = useState(item.media?.url ?? "");
+  const [mediaUrl, setMediaUrl] = useState(
+    item.media?.source === "same-tx-pwm1-attachment" ? "" : item.media?.url ?? "",
+  );
   const [mediaError, setMediaError] = useState(false);
 
   useEffect(() => {
     const controller = new AbortController();
-    setMediaUrl(item.media?.url ?? "");
+    setMediaUrl(item.media?.source === "same-tx-pwm1-attachment" ? "" : item.media?.url ?? "");
     setMediaError(false);
-    if (!item.media || !/^(?:image|video)\//iu.test(item.media.mime ?? "") || item.media.url) {
+    if (!item.media || !/^(?:image|video)\//iu.test(item.media.mime ?? "") ||
+        (item.media.url && item.media.source !== "same-tx-pwm1-attachment")) {
       return () => controller.abort();
     }
     void acquireBoostMediaSlot(controller.signal)
       .then(async (release) => {
         try {
-          const payload = await fetchProofApiJson<{ attachment?: { data?: string; mime?: string } }>(
+          const payload = await fetchProofApiJson<{ attachment?: {
+            data?: string; mime?: string; name?: string; sha256?: string; size?: number;
+          } }>(
             `/api/v1/tx/${encodeURIComponent(item.boostTxid || item.txid)}`,
             network,
             { signal: controller.signal, timeoutMs: 30_000 },
           );
           if (!controller.signal.aborted) {
-            const url = boostMediaUrl(payload.attachment ?? {});
+            const url = boostMediaUrl(item.media, payload.attachment);
             if (url) setMediaUrl(url);
             else setMediaError(true);
           }
@@ -501,7 +501,8 @@ function BoostMedia({ item, network }: { item: BoostFeedItem; network: BitcoinNe
       })
       .catch(() => undefined);
     return () => controller.abort();
-  }, [item.boostTxid, item.media?.url, item.media?.mime, item.txid, network]);
+  }, [item.boostTxid, item.media?.url, item.media?.mime, item.media?.name,
+    item.media?.sha256, item.media?.size, item.media?.source, item.txid, network]);
 
   if (!mediaUrl || mediaError) return null;
   return item.media?.mime?.toLowerCase().startsWith("video/") ? (
