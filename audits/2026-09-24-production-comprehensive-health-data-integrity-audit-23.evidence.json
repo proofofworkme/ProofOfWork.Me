@@ -2,16 +2,27 @@
   "audit": {
     "id": "Audit 23",
     "dateLocal": "2026-09-23 through 2026-09-24",
-    "completedAtUtc": "2026-09-24T04:50:34Z",
+    "completedAtUtc": "2026-09-24T05:01:50Z",
     "report": "audits/2026-09-24-production-comprehensive-health-data-integrity-audit-23.md",
-    "reportSha256": "71d5c6bf8338993cd423718017e9af57a417d76c8bc8d09007553793f39ff498",
+    "reportSha256": "540202a3b598ef65793109e408df79382ef516b947a8ed095926217254521373",
     "predecessor": {
       "report": "audits/2026-09-22-production-comprehensive-health-data-integrity-audit-22.md",
       "reportSha256": "07741d3561488c3aab8091125136ba573662a6db2817b7aebb031cf522b74a69",
       "evidence": "audits/2026-09-22-production-comprehensive-health-data-integrity-audit-22.evidence.json",
       "evidenceSha256": "8a5d58cd41f664904d9dc1d5211d46d76d34b9f7c9d5fde0f587c79c91f61ed6"
     },
-    "scope": "Production remediation closeout; ordered public surface checks; node, indexer, database, API, event, exact math, log, storage, backup and retention verification across UI and Node VPS environments."
+    "scope": "Production remediation closeout; ordered public surface checks; node, indexer, database, API, event, exact math, log, storage, backup and retention verification across UI and Node VPS environments.",
+    "pullRequest": {
+      "url": "https://github.com/proofofworkme/ProofOfWork.Me/pull/61",
+      "headCommit": "5eb7d358c1de24f4dbb46159ba02b2280d41b934",
+      "mergeCommit": "10fde0afaf7868a2fc757839701544b18265ea55",
+      "mergedAtUtc": "2026-09-24T04:56:59Z",
+      "repositoryHygieneChecks": {
+        "node20": "passed on rerun after transient ENOTEMPTY cleanup failure",
+        "node22": "passed",
+        "node24": "passed"
+      }
+    }
   },
   "productionRelease": {
     "releaseId": "1149633c2d1a-20260924T015319Z",
@@ -316,27 +327,38 @@
   "chainAndIndex": {
     "authoritativeSource": "Bitcoin Core full node",
     "network": "main",
-    "height": 968352,
-    "hash": "000000000000000000000d8a4cf745e5e415d751d53295f67ba8722b9ec4ec0d",
-    "headers": 968352,
+    "height": 968357,
+    "hash": "00000000000000000001071f7488710642a0a1533f91e649c8bff6d8296003ff",
+    "headers": 968357,
     "verificationProgress": 1,
     "initialBlockDownload": false,
     "warnings": [],
-    "txindexHeight": 968352,
-    "coinstatsindexHeight": 968352,
-    "basicBlockFilterHeight": 968352,
-    "apiHealth": "available",
-    "indexerWorker": "active",
+    "txindexHeight": 968357,
+    "coinstatsindexHeight": 968357,
+    "basicBlockFilterHeight": 968357,
+    "apiHealth": "ready",
+    "indexerWorker": "proof-ready",
     "consistency": {
-      "observedAtUtc": "2026-09-24T04:37:04Z",
+      "observedAtUtc": "2026-09-24T05:01:50Z",
       "httpStatus": 200,
       "ok": true,
       "status": "green",
       "checksPassed": 25,
       "checksTotal": 25,
       "missingLogEvents": [],
-      "indexedHeight": 968352,
-      "indexedHash": "000000000000000000000d8a4cf745e5e415d751d53295f67ba8722b9ec4ec0d"
+      "indexedHeight": 968357,
+      "indexedHash": "00000000000000000001071f7488710642a0a1533f91e649c8bff6d8296003ff",
+      "activityReconciliation": {
+        "canonicalActivityCount": 26015,
+        "publicLogActivityCount": 26015,
+        "ledgerActivityCount": 26016,
+        "supplementalActivityCount": 1,
+        "supplementalConfirmedActivityCount": 0,
+        "canonicalConfirmedActivityCount": 25993,
+        "publicLogConfirmedActivityCount": 25993,
+        "ledgerConfirmedActivityCount": 25993,
+        "ok": true
+      }
     },
     "mempool": {
       "transactionCount": 78694,
@@ -349,6 +371,14 @@
         "errors": 0,
         "unavailable": false
       }
+    },
+    "readinessRecovery": {
+      "http503ObservedDuringTipAdvance": true,
+      "recoveredHttpStatus": 200,
+      "recoveredAtUtc": "2026-09-24T05:01:21.788Z",
+      "height": 968357,
+      "lagBlocks": 0,
+      "priorFindingFamily": "H7-01/A11-03 checkpoint-convergence readiness"
     }
   },
   "exactMath": {
@@ -387,24 +417,24 @@
   },
   "capacitiesAtUtc": {
     "ui": {
-      "observedAt": "2026-09-24T04:30:43Z",
+      "observedAt": "2026-09-24T04:59:58Z",
       "totalBytes": 39973924864,
-      "usedBytes": 23262490624,
-      "availableBytes": 15027240960,
+      "usedBytes": 23236878336,
+      "availableBytes": 15052853248,
       "usePercent": 61,
       "systemKeepFreeBytes": 10737418240,
-      "marginAboveFloorBytes": 4289822720,
-      "memoryAvailableBytes": 3373731840,
+      "marginAboveFloorBytes": 4315435008,
+      "memoryAvailableBytes": 3375349760,
       "swapBytes": 0,
       "caddyActive": true
     },
     "node": {
-      "observedAt": "2026-09-24T04:30:44Z",
+      "observedAt": "2026-09-24T05:00:00Z",
       "dataTotalBytes": 1764768071680,
-      "dataUsedBytes": 1298826035200,
-      "dataAvailableBytes": 376221261824,
+      "dataUsedBytes": 1298928689152,
+      "dataAvailableBytes": 376118607872,
       "dataUsePercent": 78,
-      "memoryAvailableBytes": 114132934656,
+      "memoryAvailableBytes": 115932999680,
       "swapUsedBytes": 338952192,
       "swapTotalBytes": 17179865088
     }
@@ -1015,7 +1045,7 @@
     "H6_03": "Partially verified; eight mailbox histories pass, all-address completeness remains qualified.",
     "H5_02_H20_03_H20_04": "Local browser regressions passed; all surfaces/assets return 200; authenticated-session and live fault injection not performed.",
     "H19_02_H19_03_H22_01": "Corrected API deployed; local failure-path tests passed; production provider/reorg injection not performed.",
-    "H7_01_H10_07_A11_03": "Open performance/availability follow-up; summary ~5.57MB; fresh wallet/AMO reads ~7-13s; initial readiness failures recovered.",
+    "H7_01_H10_07_A11_03": "Open performance/availability follow-up; summary ~5.57MB, fresh wallet/marketplace reads ~5\u201313s. A final 503 during advancement to block 968357 recovered to ready/zero lag at the same tip; same prior fail-closed convergence family.",
     "H5_01_H13_01": "Improved after safe archive cleanup; UI has ~4 GiB above 10GiB reserve; report-only retention and capacity alerts remain follow-up.",
     "H8_05_H10_02": "Open; database 33.45GB, transition table 32.04GB, PostgreSQL backup tree 109.67GB."
   },
@@ -1034,9 +1064,9 @@
     "H23_05": {
       "severity": "medium",
       "issue": "Scheduled PostgreSQL logical-backup service exited 1 during current-set verification, but logged no predicate. Dump later passed an isolated restore and guarded retention.",
-      "impact": "The current dump is now the latest proven recovery point. The scheduled job’s original failed predicate remains unknown and could recur.",
+      "impact": "The current dump is now the latest proven recovery point. The scheduled job\u2019s original failed predicate remains unknown and could recur.",
       "recommendedAction": "Verify the September 25 scheduled run; investigate the now-reported predicate if it recurs.",
-      "status": "Current dump restored; integrity and guarded retention passed. Predicate diagnostics are installed and the retention-only check passed. Original scheduled failure remains unexplained; next scheduled run remains pending."
+      "status": "Current dump restored; integrity and guarded retention passed. Predicate diagnostics installed and retention-only check passed. Original scheduled failure unexplained; next scheduled run pending."
     }
   },
   "actionsTaken": [
@@ -1051,11 +1081,14 @@
     "Reran guarded logical-backup retention after restore proof; retained the September 24 set and removed the verified September 23 set only after current/prior checksum and restore-catalog validation.",
     "Refreshed the full-node, txindex, coinstatsindex, block-filter index, public health, and consistency checkpoints at height 968352; all 25 consistency checks passed.",
     "Added predicate-level PostgreSQL logical-backup verification diagnostics and a fixture asserting restore-catalog failure is logged while old backups are preserved; npm run check:hardening passed.",
-    "Installed the reviewed backup verifier on the Node VPS with matching SHA-256; preserved the previous helper byte-for-byte as a root-private rollback; retention-only verification kept the current set without deletion."
+    "Installed the reviewed backup verifier on the Node VPS with matching SHA-256; preserved the previous helper byte-for-byte as a root-private rollback; retention-only verification kept the current set without deletion.",
+    "After PR #61 merged, rechecked Bitcoin Core and all three full-node indexes at height 968357; API health recovered to HTTP 200/ready at the same hash and zero lag, and consistency passed 25/25.",
+    "Recorded one brief fail-closed API 503 during the final tip advance, followed by recovery to ready/zero lag; classified it under the already reported H7-01/A11-03 convergence family.",
+    "Merged PR #61 as 10fde0afaf7868a2fc757839701544b18265ea55 after Node 20 rerun and Node 22/24 repository-hygiene checks passed."
   ],
   "pending": [
     "Verify the September 25 03:18:48 UTC logical-backup service run; if it fails, use the installed predicate label to investigate the exact stage.",
-    "Continue UI disk-floor monitoring; the UI VPS had about 4.00 GiB above its 10 GiB systemd free-space floor at 04:30 UTC.",
+    "Continue UI disk-floor monitoring; the UI VPS had 15,052,853,248 B free and 4.02 GiB above its 10 GiB systemd free-space floor at 04:59:58 UTC.",
     "Measure transition-table/database growth and performance over a fixed window before planning any replay-safe redesign."
   ],
   "approvalBoundary": "No changes to protocol records, user balances, credits, transactions, ledgers, refunds, chain history, database rows, WAL, keys, seed material, or preserved logical backups.",
@@ -1122,6 +1155,18 @@
     {
       "command": "Production installed helper --retain-existing check",
       "result": "passed; current restore-tested backup kept, checksum and restore catalog verified, no set deleted; backup unit remained stopped with MainPID 0"
+    },
+    {
+      "command": "Post-merge full-node/API checkpoint",
+      "result": "Bitcoin Core, txindex, coinstatsindex and block-filter index all at height 968357/hash 00000000000000000001071f7488710642a0a1533f91e649c8bff6d8296003ff; API available and ready at zero lag; consistency HTTP 200, 25/25 passing"
+    },
+    {
+      "command": "Post-merge application capacity",
+      "result": "UI VPS 61% used with 15,052,853,248 B free and 4,315,435,008 B above the 10 GiB reserve; Node /data 78% used with 376,118,607,872 B free"
+    },
+    {
+      "command": "PR #61 CI and merge",
+      "result": "Node 20/22/24 hygiene checks passed; merged 2026-09-24T04:56:59Z as 10fde0afaf7868a2fc757839701544b18265ea55"
     }
   ]
 }
