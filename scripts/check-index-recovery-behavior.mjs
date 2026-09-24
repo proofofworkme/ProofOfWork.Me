@@ -86366,6 +86366,136 @@ check("retained PWT replay normalizes only two verified equal WORK listing alias
 });
 
 
+check("confirmed scan converts only exact equal Q8 WORK listing aliases", () => {
+  const canonicalPosition = isolatedFunction(
+    BACKFILL_PATH,
+    "canonicalProtocolPosition",
+    { WORK_AMO_V5_ACTIVATION_HEIGHT: 959_621 },
+  );
+  const conversionRecord = isolatedFunction(
+    BACKFILL_PATH,
+    "canonicalScanWorkListingAmountRecord",
+    {
+      NETWORK: "livenet",
+      WORK_ATOMIC_PROJECTION_MODEL,
+      canonicalProtocolPosition: canonicalPosition,
+      isWorkTokenId,
+      normalizeWorkAtoms,
+      objectValue: (value) =>
+        value && typeof value === "object" && !Array.isArray(value)
+          ? value
+          : {},
+      parseWorkAmountToAtoms,
+    },
+  );
+  const listing = {
+    amount: "1000",
+    amountAtoms: "100000000000",
+    amountStorageModel: WORK_ATOMIC_PROJECTION_MODEL,
+    blockHash:
+      "000000000000000000021fb7871138c76c262471fe3b178e8829d62cbf167ae8",
+    blockHeight: 958_432,
+    blockIndex: 1297,
+    confirmed: true,
+    indexedFrom: "token-listings",
+    kind: "token-listing",
+    listingId: "23582dc74c1b52afa59f6d6a73fea384fb48305e68942d303ea79b7ac4bff56e",
+    network: "livenet",
+    protocolVout: 1,
+    recordOrdinal: 0,
+    saleAuthorization: {
+      amountAtoms: "100000000000",
+      nonce: "signed-term-must-survive",
+      version: "pwt-sale-v2",
+    },
+    status: "confirmed",
+    tokenId: WORK_TOKEN_ID,
+    txid: "23582dc74c1b52afa59f6d6a73fea384fb48305e68942d303ea79b7ac4bff56e",
+    valid: true,
+  };
+  const canonicalEvent = {
+    block_height: 958_432,
+    block_index: 1297,
+    kind: "token-listing",
+    network: "livenet",
+    op_return_vout: 1,
+    payload: structuredClone(listing),
+    protocol: "pwt1",
+    record_ordinal: 0,
+    status: "confirmed",
+    txid: listing.txid,
+    valid: true,
+  };
+  const originalListing = structuredClone(listing);
+  const originalEvent = structuredClone(canonicalEvent);
+  assert.throws(
+    () => workAmountSubatomsFromRecord(listing, {
+      sourceModel: WORK_ATOMIC_PROJECTION_MODEL,
+    }),
+    /Legacy WORK amount aliases are ambiguous/u,
+  );
+  const conversion = conversionRecord(listing, canonicalEvent);
+  assert.equal(conversion.amountAtoms, listing.amountAtoms);
+  assert.equal(Object.hasOwn(conversion.saleAuthorization, "amountAtoms"), false);
+  assert.equal(conversion.saleAuthorization.nonce, listing.saleAuthorization.nonce);
+  assert.equal(
+    workAmountSubatomsFromRecord(conversion, {
+      sourceModel: WORK_ATOMIC_PROJECTION_MODEL,
+    }),
+    legacyWorkAtomsToSubatoms(listing.amountAtoms),
+  );
+  assert.deepEqual(listing, originalListing, "signed source listing remains unchanged");
+  assert.deepEqual(canonicalEvent, originalEvent, "canonical event remains unchanged");
+  assert.throws(
+    () => conversionRecord(listing, null),
+    /no exact canonical Q8 conversion witness/u,
+  );
+  for (const event of [
+    { ...canonicalEvent, status: "pending" },
+    { ...canonicalEvent, protocol: "pwm1" },
+    { ...canonicalEvent, block_index: 1298 },
+    { ...canonicalEvent, op_return_vout: null },
+    { ...canonicalEvent, payload: { ...canonicalEvent.payload, recordOrdinal: null } },
+    { ...canonicalEvent, payload: { ...canonicalEvent.payload, blockHash: "f".repeat(64) } },
+  ]) {
+    assert.throws(
+      () => conversionRecord(listing, event),
+      /no exact canonical Q8 conversion witness/u,
+    );
+  }
+  assert.throws(
+    () => conversionRecord({ ...listing, indexedFrom: "token-sales" }, canonicalEvent),
+    /no exact canonical Q8 conversion witness/u,
+  );
+  assert.throws(
+    () => conversionRecord({ ...listing, protocol: "pwm1" }, canonicalEvent),
+    /no exact canonical Q8 conversion witness/u,
+  );
+  assert.throws(
+    () => conversionRecord({ ...listing, tokenAmountAtoms: listing.amountAtoms }, canonicalEvent),
+    /no exact canonical Q8 conversion witness/u,
+  );
+  assert.throws(
+    () => conversionRecord({
+      ...listing,
+      saleAuthorization: {
+        ...listing.saleAuthorization,
+        amountAtoms: "100000000001",
+      },
+    }, canonicalEvent),
+    /signed Q8 amount conflicts/u,
+  );
+  assert.throws(
+    () => conversionRecord({ ...listing, amount: "1001" }, canonicalEvent),
+    /signed Q8 amount conflicts/u,
+  );
+  const singleAlias = {
+    ...listing,
+    saleAuthorization: { version: "pwt-sale-v2" },
+  };
+  assert.equal(conversionRecord(singleAlias, canonicalEvent), singleAlias);
+});
+
 check("bounded replay admits only exact empty non-WORK credit definitions", () => {
   const emptyConserved = isolatedFunction(
     API_PATH,

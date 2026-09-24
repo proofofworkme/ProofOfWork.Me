@@ -721,7 +721,12 @@ rewinding only the checkpoint or layering corrected event keys over stale ones:
    the transaction. After clearing derived credit tables, WORK is reseeded in
    the already verified physical storage model: `work-atoms-v1` on a Q8 database,
    or `work-subatoms-v2` when the immutable V8 precision migration marker
-   is present. The September production clone uses the latter. That row is
+   is present. The September production clone uses the latter. During the
+   bounded scan, an accepted confirmed Q8 `pwt-sale-v2` WORK listing may repeat
+   the same exact atom amount in its event and signed sale terms. Its canonical
+   event position and both amounts must agree before a temporary single-alias
+   view converts that amount to Q16 storage; the event and signed terms remain
+   intact. A conflicting or unbound alias fails closed. That row is
    re-read after seeding, after retained definitions are projected, after
    retained balances are conserved, and once more before commit. The active,
    database-bound range replay may read this exact hash-bound Q16 token table

@@ -2932,6 +2932,106 @@ function retainedPwtRangeReplayWorkListingAmountRecord(item) {
   return { ...source, saleAuthorization: authorizationForConversion };
 }
 
+function canonicalScanWorkListingAmountRecord(item, canonicalEventRow) {
+  const source = objectValue(item);
+  const authorization = objectValue(source.saleAuthorization);
+  const present = (value) =>
+    value !== undefined && value !== null && value !== "";
+  if (
+    source.kind !== "token-listing" ||
+    !isWorkTokenId(source.tokenId) ||
+    source.amountStorageModel !== WORK_ATOMIC_PROJECTION_MODEL ||
+    !present(source.amountAtoms) ||
+    !present(authorization.amountAtoms)
+  ) {
+    return source;
+  }
+
+  const event = objectValue(canonicalEventRow);
+  const eventPayload = objectValue(event.payload);
+  const eventAuthorization = objectValue(eventPayload.saleAuthorization);
+  const position = canonicalProtocolPosition(source);
+  const eventPayloadPosition = canonicalProtocolPosition(eventPayload);
+  const exactPosition = Boolean(
+    position &&
+    eventPayloadPosition &&
+    present(source.recordOrdinal) &&
+    present(eventPayload.recordOrdinal) &&
+    [
+      ["blockHeight", "block_height"],
+      ["blockIndex", "block_index"],
+      ["protocolVout", "op_return_vout"],
+      ["recordOrdinal", "record_ordinal"],
+    ].every(([itemField, eventField]) =>
+      event[eventField] !== undefined &&
+      event[eventField] !== null &&
+      Number(event[eventField]) === position[itemField] &&
+      eventPayloadPosition[itemField] === position[itemField]
+    )
+  );
+  if (
+    (present(source.protocol) && source.protocol !== "pwt1") ||
+    source.indexedFrom !== "token-listings" ||
+    source.network !== NETWORK ||
+    source.status !== "confirmed" ||
+    source.valid !== true ||
+    source.confirmed !== true ||
+    source.listingId !== source.txid ||
+    !/^[0-9a-f]{64}$/u.test(String(source.txid ?? "")) ||
+    !/^[0-9a-f]{64}$/u.test(String(source.blockHash ?? "")) ||
+    authorization.version !== "pwt-sale-v2" ||
+    !present(source.amount) ||
+    [
+      source.tokenAmount,
+      source.tokenAmountAtoms,
+      source.tokenAmountSubatoms,
+      source.amountSubatoms,
+      authorization.amount,
+      authorization.amountSubatoms,
+    ].some(present) ||
+    event.network !== source.network ||
+    event.txid !== source.txid ||
+    event.protocol !== "pwt1" ||
+    event.kind !== source.kind ||
+    event.status !== "confirmed" ||
+    event.valid !== true ||
+    eventPayload.network !== source.network ||
+    eventPayload.txid !== source.txid ||
+    (present(eventPayload.protocol) && eventPayload.protocol !== "pwt1") ||
+    eventPayload.indexedFrom !== "token-listings" ||
+    eventPayload.kind !== source.kind ||
+    eventPayload.status !== "confirmed" ||
+    eventPayload.valid !== true ||
+    eventPayload.confirmed !== true ||
+    eventPayload.listingId !== source.listingId ||
+    eventPayload.blockHash !== source.blockHash ||
+    eventPayload.tokenId !== source.tokenId ||
+    eventPayload.amountStorageModel !== WORK_ATOMIC_PROJECTION_MODEL ||
+    eventAuthorization.version !== authorization.version ||
+    !exactPosition
+  ) {
+    throw new TypeError(
+      "Confirmed PWT WORK listing has no exact canonical Q8 conversion witness.",
+    );
+  }
+  const amountAtoms = normalizeWorkAtoms(source.amountAtoms);
+  if (
+    normalizeWorkAtoms(authorization.amountAtoms) !== amountAtoms ||
+    normalizeWorkAtoms(eventPayload.amountAtoms) !== amountAtoms ||
+    normalizeWorkAtoms(eventAuthorization.amountAtoms) !== amountAtoms ||
+    parseWorkAmountToAtoms(source.amount) !== amountAtoms ||
+    parseWorkAmountToAtoms(eventPayload.amount) !== amountAtoms
+  ) {
+    throw new TypeError(
+      "Confirmed PWT WORK listing signed Q8 amount conflicts with its canonical event.",
+    );
+  }
+  // Keep signed terms in the event and listing payload; omit the duplicate only while converting units.
+  const { amountAtoms: _duplicateAmountAtoms, ...authorizationForConversion } =
+    authorization;
+  return { ...source, saleAuthorization: authorizationForConversion };
+}
+
 function workBalanceAtoms(item, fieldNames, { signed = false } = {}) {
   const source = objectValue(item);
   const atomField = fieldNames.find(
@@ -14098,6 +14198,10 @@ async function upsertEvent(client, sourceLabel, item) {
         amount_sats::text,
         data_bytes,
         event_time,
+        block_height,
+        block_index,
+        op_return_vout,
+        record_ordinal,
         payload
     `,
     [
@@ -15331,7 +15435,12 @@ async function upsertProjection(
         ? workAmountSubatomsFromRecord(
             retainedPwtRangeReplayMarketplace
               ? retainedPwtRangeReplayWorkListingAmountRecord(projectedItem)
-              : projectedItem,
+              : canonicalEventRow
+                ? canonicalScanWorkListingAmountRecord(
+                    projectedItem,
+                    canonicalEventRow,
+                  )
+                : projectedItem,
             {
               allowLegacy: true,
               allowZero: false,
