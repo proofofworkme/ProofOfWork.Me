@@ -1,6 +1,6 @@
 # Production Remediation and Verification Audit 23
 
-**Audit date:** September 23–24, 2026 local; verification continued through September 24, 2026 04:50 UTC.
+**Audit date:** September 23–24, 2026 local; verification continued through September 24, 2026 05:01 UTC.
 **Scope:** post-release verification of the ProofOfWork application and both VPS environments; ordered public-surface sweep; full-node, indexer, database, API, event, math, logging, backup, storage and retention checks; exact approved release-archive cleanup.
 **Predecessor:** [Production Remediation and Verification Audit 22](2026-09-22-production-comprehensive-health-data-integrity-audit-22.md). Its report SHA-256 is 07741d3561488c3aab8091125136ba573662a6db2817b7aebb031cf522b74a69; its evidence SHA-256 is 8a5d58cd41f664904d9dc1d5211d46d76d34b9f7c9d5fde0f587c79c91f61ed6.
 **Production API revision:** release 1149633c2d1a-20260924T015319Z; commit 1149633c2d1a5c62c4a800772daa79683e478796; tree 6071ed84ae3cad5a852ef3d4bb0c87c9d1d64e29.
@@ -8,9 +8,9 @@
 
 ## Result
 
-The deployed API, indexer and Bitcoin Core were synchronized at block 968352, with the same block hash. A refreshed production health probe returned HTTP 200, available=true, and zero index lag; the live consistency endpoint passed all 25 checks at that checkpoint. Exact Q8 values matched across Work/Growth totals and the transition commitment. The 14 ordered application pages and their four assets each returned HTTP 200. Boost and AMO had transient fail-closed readiness responses during the first sweep and passed isolated retries.
+The deployed API, indexer and Bitcoin Core were synchronized at block 968357, with the same block hash. A post-merge production health retry returned HTTP 200, ready, and zero lag; the live consistency endpoint passed all 25 checks at that checkpoint. Exact Q8 values matched across Work/Growth totals and the transition commitment. The 14 ordered application pages and their four assets each returned HTTP 200. Boost and AMO had transient fail-closed readiness responses during the first sweep and passed isolated retries.
 
-The audit found no new canonical data mismatch, missing log event, or math discrepancy. Capacity and storage have improved, but growth/availability risks remain: the UI filesystem has about 4.00 GiB above its 10 GiB systemd free-space floor, the 32.04 GB WORK transition table dominates a 33.45 GB PostgreSQL database, and the September 24 scheduled logical-backup service exited 1 during retention verification. The new dump has since passed an isolated restore and integrity checks; the guarded retention verifier then passed and safely removed the older logical dump. The reason the scheduled invocation failed remains unknown, and the next scheduled run still needs observation. Fresh wallet/marketplace summary reads remain slow.
+The audit found no new canonical data mismatch, missing confirmed log event, or math discrepancy. Capacity and storage have improved, but growth/availability risks remain: the UI filesystem has about 4.00 GiB above its 10 GiB systemd free-space floor, the 32.04 GB WORK transition table dominates a 33.45 GB PostgreSQL database, and the September 24 scheduled logical-backup service exited 1 during retention verification. The new dump has since passed an isolated restore and integrity checks; the guarded retention verifier then passed and safely removed the older logical dump. A post-merge health probe briefly returned 503 during the next-block convergence window, then recovered to ready/zero lag at height 968357; this is a recurrence of the previously documented fail-closed readiness family. The reason the scheduled backup invocation failed remains unknown, and the September 25 run still needs observation. Fresh wallet/marketplace summary reads remain slow.
 
 During this approved remediation, old verified UI and Node software-release archives were removed only after active-release and rollback protections, archive checksums, and exact candidate sets were proven. The active UI rollback root, Node API rollback archive, database backups, chain data, ledgers, protocol records and historical evidence remain intact. The scheduled retention services remain in report-only mode; this audit did not authorize future unattended deletion.
 
@@ -39,28 +39,32 @@ All page probes ran in the requested order, with Computer last. The first sweep�
 
 ## Full-node and synchronization verification
 
-Bitcoin Core’s direct RPC check reported main chain height and headers 968352, verification progress 1.0, initial block download false, and no warnings. The authoritative tip hash was:
+Bitcoin Core’s direct RPC check at 05:01:06 UTC reported main chain height and headers 968357, verification progress 1.0, initial block download false, and no warnings. The authoritative tip hash was:
 
-000000000000000000000d8a4cf745e5e415d751d53295f67ba8722b9ec4ec0d
+00000000000000000001071f7488710642a0a1533f91e649c8bff6d8296003ff
 
-At 04:33 UTC, txindex, coinstatsindex, and basic block filter index were all synced to 968352. Refreshed production health returned HTTP 200 and available=true; its Electrum and canonical index checkpoints matched the full node at height 968352 with zero lag. The consistency endpoint then returned HTTP 200 with all 25/25 checks passing; its ledger-covers-node-tip check reported indexed height 968352, zero lag, and no failures. The indexer-worker systemd service was active.
+Txindex, coinstatsindex, and the basic block filter index were all synced to 968357. Production health returned HTTP 200 at 05:01:21 UTC with available=true; Electrum and canonical index checkpoints matched Core at the same height/hash, with zero lag. The worker was proof-ready with zero consecutive failures; the pending-event observer reported 24 checked, zero deferred, zero errors and unavailable=false. Consistency returned HTTP 200 at 968357 with 25/25 checks passing and the ledger covering the node tip at zero lag.
 
-The full node’s Mempool snapshot held 78,694 transactions, 40,717,321 serialized bytes, 228,462,160 bytes of usage, and zero unbroadcast transactions. Pending mempool visibility remains best-effort.
+The activity reconciliation reported 26,015 canonical and public-log activity rows versus 26,016 ledger rows: one supplemental row is pending and unconfirmed; all 25,993 confirmed activity rows match. The reconciliation check passed.
 
-Bitcoin Core, PostgreSQL, WAL receive, API, and indexer-worker services were active. Earlier API and indexer error-priority journal counts were zero for the preceding hour. Caddy was active with no error-priority entries in the preceding 30 minutes.
+A health probe just before the successful retry briefly returned HTTP 503 while the chain advanced, then recovered to HTTP 200/ready at zero lag. This repeats the previously documented fail-closed checkpoint-convergence behavior; it did not show a canonical data mismatch.
+
+The full node’s 04:33 UTC Mempool snapshot held 78,694 transactions, 40,717,321 serialized bytes, 228,462,160 bytes of usage, and zero unbroadcast transactions. Pending Mempool visibility remains best-effort.
+
+Bitcoin Core, PostgreSQL, WAL receive, API and indexer-worker services were active. The logical-backup oneshot was not running (MainPID 0) and remained in failed state from its earlier September 24 scheduled run; its next timer is September 25 03:18:48 UTC. Caddy was active at the final UI sample.
 
 ## Health, capacity, database and retention
 
 | System | Result |
 |---|---|
-| UI VPS root filesystem | 39,973,924,864 B total; 23,262,117,888 B used; 15,027,613,696 B available; 61% reported use at 03:43:56 UTC. With SystemKeepFree=10 GiB, margin above the floor was 4,290,195,456 B, about 4.00 GiB. |
-| UI memory/CPU | 3,399,946,240 B memory available; no swap configured. Load was 0.00/0.00/0.00 at the earlier sample. Caddy remained active; the fresh 30-minute error-priority journal query contained one sshd connection-reset entry and no Caddy error. |
+| UI VPS root filesystem | 39,973,924,864 B total; 23,236,878,336 B used; 15,052,853,248 B available; 61% use at 04:59:58 UTC. With SystemKeepFree=10 GiB, margin above the floor was 4,315,435,008 B, about 4.02 GiB. |
+| UI memory/CPU | 3,375,349,760 B memory available; no swap configured. Load was 0.10/0.07/0.02 at 04:59:58 UTC. Caddy active; earlier sampled journal query contained one sshd connection reset and no Caddy error. |
 | UI backups | After approved archive cleanup, /var/backups/proofofwork-ui occupied 17,340,497,812 B; releases occupied 1,865,963,829 B. One complete rollback root remained and validated. Other rollback classifications and recovery evidence were preserved. |
-| Node VPS data filesystem | 1,764,768,071,680 B total; 376,221,261,824 B available at 04:30 UTC; 78% reported use after isolated-restore cleanup and guarded logical-backup retention. |
-| Node memory/CPU | 114,132,934,656 B memory available; swap use was previously 338,952,192 B of 16 GiB; load was 2.73/3.70/3.17 at 04:30 UTC. |
+| Node VPS data filesystem | 1,764,768,071,680 B total; 1,298,928,689,152 B used; 376,118,607,872 B available at 05:00 UTC; 78% use after verified retention. |
+| Node memory/CPU | 115,932,999,680 B memory available at 05:00 UTC; swap use was 338,952,192 B at the earlier sample. |
 | PostgreSQL | proof_indexer measured 33,448,877,079 B. work_amo_block_transitions was 32,043,941,888 B with 8,725 live and zero dead tuples; about 95.8% of the database. ledger_snapshots was 830,275,584 B; events 156,213,248 B; transactions 106,561,536 B. |
 | PostgreSQL health | Zero invalid indexes, zero unvalidated constraints, autovacuum on, and zero cumulative database deadlocks at the sampled query. Live data checksums are disabled; treat this as a planned maintenance hardening item. |
-| Node backup trees | /data/proofofwork-postgres-backups measured 109,672,697,856 B; /data/proofofwork-backups 14,639,370,240 B; /data/proofofwork-release-backups 9,016,766,464 B. Database backups were not pruned. |
+| Node backup trees | After guarded pruning, /data/proofofwork-postgres-backups measured 92,493,431,771 B, including one 17,570,940,420 B current logical set; /data/proofofwork-backups 14,639,370,240 B; /data/proofofwork-release-backups 9,016,766,464 B. Physical backups and WAL were preserved. |
 | Node release archives | A validated apply run removed 47 unreferenced archives totalling 3,756,634,359 B. Fifty verified archives were examined; zero were unverified. The active release, immediate rollback and one additional recent release remain. |
 | Logs | Node journald was near its configured 1 GiB cap with a 10 GiB keep-free floor and seven-day retention. UI journald was below its 1 GiB cap. Caddy and API/indexer error checks were clean for the sampled windows. |
 
@@ -102,9 +106,9 @@ The production marketplace regression passed all 904 WORK listing records throug
 | H6-03, mail history pagination/truncation | Eight live mailbox histories passed; keep all-address completeness qualified. |
 | H5-02, H20-03, H20-04, cold ID false-zero, duplicate Desktop self-send tile, missing Log confirmation | Local browser regressions passed and the deployed UI release is active; all 14 pages/assets load. No authenticated user-session or live fault-injection test was performed in this pass. |
 | H19-02, H19-03, H22-01, transaction outage/mempool/reorg status labeling | Corrected API source is deployed and local failure-path tests passed. Production provider failure/reorg injection was not performed. |
-| H7-01, H10-07, A11-03, summary size and latency | Improved from the previous 32 MB summary to about 5.57 MB. Fresh wallet/marketplace reads still take about 5–13 seconds; Boost/AMO and worker readiness briefly failed closed during checkpoint convergence. Open performance/availability follow-up. |
-| H5-01, H13-01, UI capacity/retention | Improved after verified cleanup: 15.00 GB free and 3.97 GiB above the 10 GiB floor. The 17.34 GB UI backup tree and report-only future retention leave recurrence risk; continue capacity alerts and exact cleanup review. |
-| H8-05, H10-02, backups/database growth | Open. Database is 33.45 GB with the transition table accounting for 32.04 GB; PostgreSQL backup storage is 92.06 GB. Recent restore verification passed, but live table/storage growth needs a measured trend and staged redesign. |
+| H7-01, H10-07, A11-03, summary size and latency | Improved from the previous 32 MB summary to about 5.57 MB. Fresh wallet/marketplace reads still take about 5–13 seconds. Readiness briefly failed closed during checkpoint convergence in the first sweep and once more during the final block advance, recovering to ready at zero lag. Same prior availability family; performance/availability follow-up remains open. |
+| H5-01, H13-01, UI capacity/retention | Improved after verified cleanup: 15.05 GB free and 4.02 GiB above the 10 GiB floor. The 17.34 GB UI backup tree and report-only future retention leave recurrence risk; continue capacity alerts and exact cleanup review. |
+| H8-05, H10-02, backups/database growth | Open. Database is 33.45 GB with the transition table accounting for 32.04 GB; PostgreSQL backup storage is 92.49 GB. Recent restore verification passed, but live table/storage growth needs a measured trend and staged redesign. |
 
 ## New findings and closeout actions
 
@@ -136,14 +140,15 @@ The production marketplace regression passed all 904 WORK listing records throug
 | `npm run check:production-observability` | Passed at 03:48 UTC; health endpoint returned `ok=true`, zero alerts. |
 | Isolated September 24 PostgreSQL restore | Passed; 33,120,918,551 B restored, expected sampled row counts, pg_amcheck and checksum verification passed; temporary cluster removed. |
 | Guarded logical-backup retention rerun | Passed; current checksum/catalog and prior checksum/catalog validated, prior set removed, current set retained. |
-| Refreshed public production health and consistency | HTTP 200; index lag 0 at height 968352; green 25/25 checks; full-node checkpoint/hash matched. |
+| Refreshed public production health and consistency | HTTP 200; index lag 0 at height 968357; green 25/25 checks; full-node checkpoint/hash matched. |
 | Installed backup verifier | SHA-256 matches reviewed source; prior helper hash retained in root-private rollback; no service restart; retention-only check kept current backup. |
+| PR #61 merge | Rebased to main as 10fde0afaf7868a2fc757839701544b18265ea55; repository-hygiene Node 20/22/24 checks passed. |
 | `git diff --check` | Passed. |
 
 The remaining backup issue is operational, not a failed restore or manual retention check: the September 24 scheduled service rejected its completed set without naming the predicate. The dump has since been restored and passed the installed guarded retention verifier. Future failures will include a predicate label; the original failure remains unexplained, and the September 25 scheduled run must pass before the backup cycle is declared healthy.
 
 ## Actions and approval boundaries
 
-Production changes in this audit were limited to the approved API release already deployed, Mempool log rotation, verified software-release archive cleanup, guarded removal of the older logical backup after the new backup passed a full isolated restore, and installation of the diagnostic-only backup verifier. Its previous helper is preserved byte-for-byte as a root-private rollback. The Node release-retention guard was reconciled in source and tests with its already-installed production behavior. No protocol records, addresses, balances, credits, transactions, ledgers, refunds, keys, seeds, chain history, live PostgreSQL rows, WAL, Caddy data, or unclassified recovery evidence were altered.
+Production changes in this audit were limited to the approved API release already deployed, Mempool log rotation, verified software-release archive cleanup, guarded removal of the older logical backup after the new backup passed a full isolated restore, and installation of the diagnostic-only backup verifier. Its previous helper is preserved byte-for-byte as a root-private rollback. The Node release-retention guard was reconciled in source and tests with its already-installed production behavior. The remediation and Audit 23 were merged through PR #61 (merge commit 10fde0afaf7868a2fc757839701544b18265ea55); the Node 20/22/24 repository-hygiene CI matrix passed. No protocol records, addresses, balances, credits, transactions, ledgers, refunds, keys, seeds, chain history, live PostgreSQL rows, WAL, Caddy data, or unclassified recovery evidence were altered.
 
 No additional deletion was performed for items whose liveness or evidence purpose was not proven. The H23-04 tracked helper/test change is included in this closeout scope and has passed its focused contract check. The September 23 logical dump was removed only after the September 24 dump passed isolated restore, pg_amcheck, checksum validation, and the guarded current/prior retention checks. Any future cleanup of remaining UI rollback/recovery categories, Node backups or unclassified stages requires an exact candidate inventory and proof that the latest restorable backup and immediate rollback remain available. The scheduled September 24 job still failed without identifying its predicate; monitor the September 25 run before calling scheduled backup operations fully resolved.
