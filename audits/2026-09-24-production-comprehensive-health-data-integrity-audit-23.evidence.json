@@ -4,7 +4,7 @@
     "dateLocal": "2026-09-23 through 2026-09-24",
     "completedAtUtc": "2026-09-24T05:01:50Z",
     "report": "audits/2026-09-24-production-comprehensive-health-data-integrity-audit-23.md",
-    "reportSha256": "540202a3b598ef65793109e408df79382ef516b947a8ed095926217254521373",
+    "reportSha256": "1b2e1bebc5502a8729ff68afb4562983377a625b0234d4785e47a7bc0acab137",
     "predecessor": {
       "report": "audits/2026-09-22-production-comprehensive-health-data-integrity-audit-22.md",
       "reportSha256": "07741d3561488c3aab8091125136ba573662a6db2817b7aebb031cf522b74a69",
@@ -1167,6 +1167,28 @@
     {
       "command": "PR #61 CI and merge",
       "result": "Node 20/22/24 hygiene checks passed; merged 2026-09-24T04:56:59Z as 10fde0afaf7868a2fc757839701544b18265ea55"
+    }
+  ],
+  "remediationFollowUps": [
+    {
+      "observedAtUtc": "2026-09-24T05:15:21Z",
+      "finding": "H20-02",
+      "result": "Corrected the remaining stale Marketplace text: seal5 publishes the seller ticket signature and does not spend the listing anchor; historical projection and exact-tip freshness rules are explicit.",
+      "scope": "Documentation only; no production service or protocol state changed.",
+      "sources": [
+        "MARKETPLACE.md",
+        "server/bond-hard-price-declaration.mjs",
+        "README.md"
+      ],
+      "fractionalWriterRecheck": {
+        "finding": "H6-01",
+        "fixCommit": "365d80faddcb6cb13275d2ba606fc18530158c30",
+        "includedInProductionReleaseCommit": "1149633c2d1a5c62c4a800772daa79683e478796",
+        "testCommand": "npm run check:boost-regressions",
+        "passed": 31,
+        "failed": 0
+      },
+      "pending": "Merge the documentation-only Marketplace correction; no production deployment is needed."
     }
   ]
 }
