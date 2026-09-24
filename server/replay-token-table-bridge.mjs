@@ -1,5 +1,11 @@
 import { WORK_AMO_V8_AUTH_VERSION } from "./work-amo-v8.mjs";
 import {
+  isLegacyWorkMarketListing,
+  WORK_MARKET_V2_ACTIVATION_HEIGHT,
+  WORK_MARKET_V2_DECLARATION_TXID,
+  workMarketV1RefundSnapshotIncludes,
+} from "./work-market-v2.mjs";
+import {
   WORK_ATOMIC_PROJECTION_MODEL,
   WORK_SUBATOM_CONVERSION_FACTOR,
   WORK_SUBATOM_PROJECTION_MODEL,
@@ -413,6 +419,64 @@ function exactWorkSalesByListingId(table, historical, model) {
   return matchedSaleByListingId;
 }
 
+// The physical reader applies the pinned V2 refund cutover to legacy rows at
+// the current tip. Undo only that policy label for the bounded activity check;
+// the canonical summary reapplies the cutover after this bridge. An actual
+// outpoint spend still needs its complete independently checked close proof.
+function rawLegacyV2CutoverListing(listing, original, checkpointHeight) {
+  const listingId = exactHash(listing?.listingId);
+  const inRefundSnapshot = workMarketV1RefundSnapshotIncludes(listingId);
+  const status = inRefundSnapshot ? "disabled" : "closed";
+  const reason = inRefundSnapshot
+    ? "work-market-v2-cutover"
+    : "work-market-v1-refund-snapshot-excluded";
+  if (
+    checkpointHeight < WORK_MARKET_V2_ACTIVATION_HEIGHT ||
+    !isLegacyWorkMarketListing(original) ||
+    !isLegacyWorkMarketListing(listing) ||
+    exactPositionInteger(original?.blockHeight, 1) === null ||
+    exactPositionInteger(original?.blockHeight, 1) >=
+      WORK_MARKET_V2_ACTIVATION_HEIGHT ||
+    listing?.status !== status ||
+    listing?.disabledReason !== reason ||
+    exactPositionInteger(listing?.disabledAtBlockHeight, 1) !==
+      WORK_MARKET_V2_ACTIVATION_HEIGHT ||
+    exactHash(listing?.disabledByTxid) !==
+      WORK_MARKET_V2_DECLARATION_TXID ||
+    listing?.confirmed !== true ||
+    listing?.closedConfirmed !== true ||
+    listing?.relic !== inRefundSnapshot ||
+    listing?.refundEligible !== inRefundSnapshot
+  ) {
+    return null;
+  }
+  const closedTxid = exactHash(listing?.closedTxid);
+  if (TXID.test(closedTxid)) {
+    const raw = { ...listing, status: "closed" };
+    return canonicalOutspendClosePosition(raw, original) &&
+      canonicalOutspendCloseFee(raw) !== null
+      ? { listing: raw, closed: true }
+      : null;
+  }
+  if (
+    closedTxid ||
+    exactHash(listing?.closeTxid) ||
+    exactHash(listing?.closedBlockHash) ||
+    listing?.closedBlockHeight != null ||
+    listing?.closedBlockIndex != null ||
+    listing?.closedVin != null ||
+    listing?.closedByCanonicalOutpointSpend === true ||
+    listing?.closedMinerFeeCanonical === true ||
+    listing?.closedMinerFeeSats != null
+  ) {
+    return null;
+  }
+  return {
+    listing: { ...listing, closedConfirmed: false, status: "active" },
+    closed: false,
+  };
+}
+
 function canonicalOutspendClosePosition(listing, original) {
   const authorization = original?.saleAuthorization ?? {};
   const expectedAnchorTxid = exactHash(
@@ -688,11 +752,21 @@ function historicalWorkListingLifecycle(
   const currentClosedListings = workItems(table?.closedListings);
   const seen = new Set();
   let historicalCloseCount = 0;
-  const project = (listing, closed) => {
-    const listingId = exactHash(listing?.listingId);
+  const project = (current, physicallyClosed) => {
+    const listingId = exactHash(current?.listingId);
     const original = originalById.get(listingId);
     const matchedSaleTxid = matchedSaleByListingId.get(listingId);
     const historicalClose = historicalClosedById.get(listingId);
+    const v2Cutover = [
+      "work-market-v2-cutover",
+      "work-market-v1-refund-snapshot-excluded",
+    ].includes(current?.disabledReason);
+    const rawCutover = v2Cutover && physicallyClosed
+      ? rawLegacyV2CutoverListing(current, original, checkpointHeight)
+      : null;
+    if (v2Cutover && !rawCutover) return null;
+    const listing = rawCutover?.listing ?? current;
+    const closed = rawCutover?.closed ?? physicallyClosed;
     const openingPosition = originalListingPosition(
       listing,
       original,

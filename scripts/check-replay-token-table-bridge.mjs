@@ -3,6 +3,11 @@
 import assert from "node:assert/strict";
 import { WORK_AMO_V8_AUTH_VERSION } from "../server/work-amo-v8.mjs";
 import {
+  WORK_MARKET_V2_ACTIVATION_HEIGHT,
+  WORK_MARKET_V2_DECLARATION_TXID,
+  workMarketV1RefundSnapshotIncludes,
+} from "../server/work-market-v2.mjs";
+import {
   activeReplayTokenTableBridgeEra,
   replayTokenTableWorkBridge,
 } from "../server/replay-token-table-bridge.mjs";
@@ -592,6 +597,161 @@ for (const mutation of [
     ],
   }, futureHistorical, WORK_ATOMIC_PROJECTION_MODEL), null);
 }
+
+// The physical tip has already applied the V2 refund policy. The bridge
+// checks the pinned policy row against the bounded opening and returns the
+// raw lifecycle; the final summary applies V2 at its own checkpoint.
+const v2Checkpoint = 959_620;
+const refundListingId =
+  "d9ebbed6cf79275d91ca0caf8770ef783681cce917b69a63a9cf8af45f485a10";
+const excludedListingId = "6".repeat(64);
+assert.equal(workMarketV1RefundSnapshotIncludes(refundListingId), true);
+assert.equal(workMarketV1RefundSnapshotIncludes(excludedListingId), false);
+const refundOriginal = {
+  ...listing(refundListingId, 7, 6),
+  blockHeight: WORK_MARKET_V2_ACTIVATION_HEIGHT - 13,
+};
+const excludedOriginal = {
+  ...listing(excludedListingId, 8, 7),
+  blockHeight: WORK_MARKET_V2_ACTIVATION_HEIGHT - 12,
+};
+const refundCutover = {
+  ...tableListing(refundOriginal, "disabled"),
+  closedConfirmed: true,
+  closedTxid: "",
+  disabledAtBlockHeight: WORK_MARKET_V2_ACTIVATION_HEIGHT,
+  disabledByTxid: WORK_MARKET_V2_DECLARATION_TXID,
+  disabledReason: "work-market-v2-cutover",
+  refundEligible: true,
+  relic: true,
+};
+const excludedCutover = {
+  ...tableListing(excludedOriginal, "closed"),
+  closedConfirmed: true,
+  closedTxid: "",
+  disabledAtBlockHeight: WORK_MARKET_V2_ACTIVATION_HEIGHT,
+  disabledByTxid: WORK_MARKET_V2_DECLARATION_TXID,
+  disabledReason: "work-market-v1-refund-snapshot-excluded",
+  refundEligible: false,
+  relic: false,
+};
+const v2Historical = {
+  ...historical,
+  indexedThroughBlock: v2Checkpoint,
+  listings: [...historical.listings, refundOriginal, excludedOriginal],
+};
+const v2Table = {
+  ...table,
+  closedListings: [
+    ...table.closedListings,
+    refundCutover,
+    excludedCutover,
+  ],
+};
+const v2Bridge = bridge(
+  v2Table,
+  v2Historical,
+  WORK_ATOMIC_PROJECTION_MODEL,
+);
+assert.ok(v2Bridge);
+assert.equal(v2Bridge.historicalClosedListings.length, 1);
+for (const original of [refundOriginal, excludedOriginal]) {
+  const atCheckpoint = v2Bridge.historicalListings.find(
+    (item) => item.listingId === original.listingId,
+  );
+  assert.equal(atCheckpoint?.status, "active");
+  assert.equal(atCheckpoint?.amountAtoms, original.amountAtoms);
+  assert.equal(atCheckpoint?.blockHeight, original.blockHeight);
+  assert.equal(atCheckpoint?.disabledReason, undefined);
+  assert.equal(atCheckpoint?.closedConfirmed, undefined);
+}
+for (const mutation of [
+  { disabledAtBlockHeight: WORK_MARKET_V2_ACTIVATION_HEIGHT + 1 },
+  { disabledByTxid: "1".repeat(64) },
+  { disabledReason: "arbitrary-cutover" },
+  { refundEligible: false },
+  { relic: false },
+  { amountSubatoms: "1" },
+  { blockIndex: 9 },
+  { closedBlockHeight: v2Checkpoint },
+  { closedTxid: "1".repeat(64) },
+]) {
+  assert.equal(bridge({
+    ...v2Table,
+    closedListings: [
+      v2Table.closedListings[0],
+      { ...refundCutover, ...mutation },
+      excludedCutover,
+    ],
+  }, v2Historical, WORK_ATOMIC_PROJECTION_MODEL), null);
+}
+assert.equal(bridge({
+  ...v2Table,
+  listings: [...v2Table.listings, refundCutover],
+}, v2Historical, WORK_ATOMIC_PROJECTION_MODEL), null);
+assert.equal(bridge(v2Table, {
+  ...v2Historical,
+  listings: [...v2Historical.listings, {
+    ...refundOriginal,
+    listingId: "2".repeat(64),
+    txid: "2".repeat(64),
+  }],
+}, WORK_ATOMIC_PROJECTION_MODEL), null);
+const canonicalRefundClose = {
+  ...refundCutover,
+  closedBlockHash: "b".repeat(64),
+  closedBlockHeight: v2Checkpoint - 1,
+  closedBlockIndex: 7,
+  closedByCanonicalOutpointSpend: true,
+  closedMinerFeeCanonical: true,
+  closedMinerFeeSats: 805,
+  closedMinerFeeSource: "proof-indexer-canonical-outpoint-spend",
+  closedTxid: "3".repeat(64),
+  closedVin: 0,
+};
+const v2ClosedBridge = bridge({
+  ...v2Table,
+  closedListings: [
+    v2Table.closedListings[0],
+    canonicalRefundClose,
+    excludedCutover,
+  ],
+}, v2Historical, WORK_ATOMIC_PROJECTION_MODEL);
+assert.ok(v2ClosedBridge);
+const v2ClosedAtCheckpoint = v2ClosedBridge.historicalClosedListings.find(
+  (item) => item.listingId === refundListingId,
+);
+assert.equal(v2ClosedAtCheckpoint?.status, "closed");
+assert.equal(v2ClosedAtCheckpoint?.closedMinerFeeSats, 805);
+assert.equal(v2ClosedAtCheckpoint?.disabledReason, undefined);
+for (const mutation of [
+  { closedByCanonicalOutpointSpend: false },
+  { closedVin: undefined },
+  { closedMinerFeeSats: undefined },
+  { closedMinerFeeSource: "payload" },
+]) {
+  assert.equal(bridge({
+    ...v2Table,
+    closedListings: [
+      v2Table.closedListings[0],
+      { ...canonicalRefundClose, ...mutation },
+      excludedCutover,
+    ],
+  }, v2Historical, WORK_ATOMIC_PROJECTION_MODEL), null);
+}
+const futureRefundBridge = bridge({
+  ...v2Table,
+  closedListings: [
+    v2Table.closedListings[0],
+    { ...canonicalRefundClose, closedBlockHeight: v2Checkpoint + 1 },
+    excludedCutover,
+  ],
+}, v2Historical, WORK_ATOMIC_PROJECTION_MODEL);
+assert.ok(futureRefundBridge);
+assert.equal(futureRefundBridge.historicalClosedListings.length, 1);
+assert.equal(futureRefundBridge.historicalListings.find(
+  (item) => item.listingId === refundListingId,
+)?.closedTxid, undefined);
 
 const v8ListingId = "f".repeat(64);
 const v8CloseTxid = "1".repeat(64);

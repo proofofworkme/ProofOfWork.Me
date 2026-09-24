@@ -764,10 +764,17 @@ rewinding only the checkpoint or layering corrected event keys over stale ones:
    height, and exact closures through that height. Later confirmed or pending
    seals and closes never become historical state. Eventless pre-H WORK
    outpoint closures retain only their verified canonical spender fee and source;
-   later closures contribute no fee at H. Non-WORK holders are rebuilt
-   from the same bounded mint, transfer, and sale history; an unminted credit
-   definition is valid only with zero declared supply and no holder, movement,
-   sale, or listing state. After activation,
+   later closures contribute no fee at H. The tip-current relational book has
+   already applied the pinned V2 legacy-listing refund cutover. During a bounded
+   replay, the bridge matches those exact disabled or snapshot-excluded rows
+   to their confirmed pre-activation openings and immutable refund-snapshot
+   membership, reconstructs the raw lifecycle at H, and then reapplies the
+   ordinary V2 policy in the summary. A real outpoint spend still needs its
+   exact canonical close position, sale-ticket anchor, and miner fee; a
+   post-H spend cannot close the listing or add its fee at H. Non-WORK holders
+   are rebuilt from the same bounded mint, transfer, and sale history; an
+   unminted credit definition is valid only with zero declared supply and no
+   holder, movement, sale, or listing state. After activation,
    it proves Q16 mint, holder, and all confirmed sale parity at each intermediate
    checkpoint. Active and closed V8-authorized listings must match canonical
    openings and closures under the deterministic V8 listing read policy,
