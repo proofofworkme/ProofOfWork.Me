@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import { createProofIndexPool } from "../server/db/postgres.mjs";
+import { q8IntegerTextsAgree } from "../server/work-units.mjs";
 
 const DEFAULT_API_BASE = "https://computer.proofofwork.me";
 const API_BASE = String(process.env.POW_API_BASE ?? DEFAULT_API_BASE).replace(
@@ -470,8 +471,11 @@ try {
     ),
     check(
       "work-growth-network-value-match",
-      numbersAgree(workFloor?.networkValueSats, growth?.actualValue?.totalSats, 0.01) &&
-        numbersAgree(workFloor?.networkValueSats, growth?.workFloor?.networkValueSats, 0.01),
+      q8IntegerTextsAgree(
+        workFloor?.networkValueQ8,
+        growth?.actualValue?.totalQ8,
+        growth?.workFloor?.networkValueQ8,
+      ),
       {
         growthActualValueSats: growth?.actualValue?.totalSats ?? null,
         growthWorkFloorSats: growth?.workFloor?.networkValueSats ?? null,
@@ -480,7 +484,10 @@ try {
     ),
     check(
       "marketplace-work-network-value-match",
-      numbersAgree(workFloor?.networkValueSats, marketplace?.workFloor?.networkValueSats, 0.01),
+      q8IntegerTextsAgree(
+        workFloor?.networkValueQ8,
+        marketplace?.workFloor?.networkValueQ8,
+      ),
       {
         marketplaceWorkNetworkValueSats:
           marketplace?.workFloor?.networkValueSats ?? null,

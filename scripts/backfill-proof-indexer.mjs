@@ -16169,12 +16169,32 @@ function canonicalSummarySnapshotStorageEligible(payload) {
 }
 
 function summaryPayloadValue(payload) {
-  return finiteSummaryNumber(
-    payload?.actualValue?.totalSats ??
-      payload?.floor?.actualValue?.totalSats ??
-      payload?.workFloor?.actualValue?.totalSats ??
-      payload?.networkValueSats,
+  const exactQ8 = canonicalNonNegativeQ8Text(
+    payload?.actualValue?.totalQ8 ??
+      payload?.floor?.actualValue?.totalQ8 ??
+      payload?.workFloor?.actualValue?.totalQ8 ??
+      payload?.networkValueQ8 ??
+      payload?.floor?.networkValueQ8 ??
+      payload?.workFloor?.networkValueQ8,
   );
+  if (exactQ8) {
+    return BigInt(exactQ8);
+  }
+
+  const exactSats =
+    payload?.actualValue?.totalSats ??
+    payload?.floor?.actualValue?.totalSats ??
+    payload?.workFloor?.actualValue?.totalSats ??
+    payload?.networkValueSats ??
+    payload?.floor?.networkValueSats ??
+    payload?.workFloor?.networkValueSats;
+  if (
+    typeof exactSats !== "string" ||
+    !/^[+]?(?:0|[1-9][0-9]*)(?:\.[0-9]{1,8})?$/u.test(exactSats.trim())
+  ) {
+    return null;
+  }
+  return decimalValueToQ8(exactSats);
 }
 
 function summaryPayloadFreshnessMs(payload) {
@@ -16220,10 +16240,10 @@ function strongerSummaryPayload(basePayload, candidatePayload) {
   if (candidateValue === null) {
     return base;
   }
-  if (baseValue === null || candidateValue > baseValue + 0.0001) {
+  if (baseValue === null || candidateValue > baseValue) {
     return candidate;
   }
-  if (Math.abs(candidateValue - baseValue) <= 0.0001) {
+  if (candidateValue === baseValue) {
     const baseBtcUsd = summaryPayloadBtcUsd(base);
     const candidateBtcUsd = summaryPayloadBtcUsd(candidate);
     if (
@@ -16254,11 +16274,13 @@ function strongerSummaryPayloads(basePayloads, candidatePayloads) {
 }
 
 function ledgerConsistencyValue(payload) {
-  return finiteSummaryNumber(
-    payload?.totals?.workNetworkValueSats ??
-      payload?.totals?.workActualValueSats ??
-      payload?.totals?.growthActualValueSats,
+  const q8 = canonicalNonNegativeQ8Text(
+    payload?.totals?.workNetworkValueQ8 ??
+      payload?.totals?.workActualValueQ8 ??
+      payload?.totals?.growthActualValueQ8,
+    { positive: true },
   );
+  return q8 ? BigInt(q8) : null;
 }
 
 function strongerLedgerConsistencyPayload(basePayload, candidatePayload) {
@@ -16283,7 +16305,7 @@ function strongerLedgerConsistencyPayload(basePayload, candidatePayload) {
   if (candidateValue === null) {
     return base;
   }
-  if (baseValue === null || candidateValue > baseValue + 0.0001) {
+  if (baseValue === null || candidateValue > baseValue) {
     return candidate;
   }
   const baseGeneratedAt = Date.parse(base.generatedAt ?? "");

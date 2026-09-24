@@ -4,6 +4,7 @@ import {
   WORK_SUBATOM_DECIMALS,
   WORK_SUBATOM_PROJECTION_MODEL,
   WORK_SUBATOM_UNIT_SCALE_TEXT,
+  q8IntegerTextsAgree,
 } from "../server/work-units.mjs";
 import {
   WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_BLOCK_HASH,
@@ -551,7 +552,10 @@ expect(
 expect(
   "WORK and Growth share snapshot id",
   (workFloor.snapshotId && workFloor.snapshotId === growthSummary.snapshotId) ||
-    (numbersAgree(workFloor.networkValueSats, growthSummary.actualValue?.totalSats) &&
+    (q8IntegerTextsAgree(
+      workFloor.networkValueQ8,
+      growthSummary.actualValue?.totalQ8,
+    ) &&
       numberValue(workFloor.indexedThroughBlock) > 0 &&
       numberValue(workFloor.indexedThroughBlock) ===
         numberValue(growthSummary.indexedThroughBlock)),
@@ -559,10 +563,10 @@ expect(
 expect(
   "consistency and WORK share snapshot id",
   (consistency.snapshotId && consistency.snapshotId === workFloor.snapshotId) ||
-    (numbersAgree(
-      workFloor.networkValueSats,
+    (q8IntegerTextsAgree(
+      workFloor.networkValueQ8,
       consistency.checks?.find((check) => check?.name === "network-values-finite")
-        ?.details?.workNetworkValueSats,
+        ?.details?.workNetworkValueQ8,
     ) &&
       numberValue(workFloor.indexedThroughBlock) > 0 &&
       consistencyIndexedThroughBlock - numberValue(workFloor.indexedThroughBlock) <=
@@ -570,15 +574,24 @@ expect(
 );
 expect(
   "WORK network value equals WORK actual value",
-  numbersAgree(workFloor.networkValueSats, workFloor.actualValue?.totalSats),
+  q8IntegerTextsAgree(
+    workFloor.networkValueQ8,
+    workFloor.actualValue?.totalQ8,
+  ),
 );
 expect(
   "WORK network value equals Growth actual value",
-  numbersAgree(workFloor.networkValueSats, growthSummary.actualValue?.totalSats),
+  q8IntegerTextsAgree(
+    workFloor.networkValueQ8,
+    growthSummary.actualValue?.totalQ8,
+  ),
 );
 expect(
   "WORK network value equals Growth workFloor value",
-  numbersAgree(workFloor.networkValueSats, growthSummary.workFloor?.networkValueSats),
+  q8IntegerTextsAgree(
+    workFloor.networkValueQ8,
+    growthSummary.workFloor?.networkValueQ8,
+  ),
 );
 const liveBtcUsd = numberValue(workFloor.btcUsd);
 const priceEndpointBtcUsd = numberValue(btcUsdPrice.usd ?? btcUsdPrice.USD);

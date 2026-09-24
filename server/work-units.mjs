@@ -640,6 +640,27 @@ export function q8ToCanonicalDecimal(value) {
     .replace(/0+$/u, "")}`;
 }
 
+export function canonicalQ8IntegerText(value) {
+  if (typeof value !== "string") {
+    return "";
+  }
+  const text = value.trim();
+  return /^(?:0|[1-9][0-9]*)$/u.test(text) ? text : "";
+}
+
+export function q8IntegerTextsAgree(...values) {
+  if (values.length < 2) {
+    return false;
+  }
+  const canonical = values.map(canonicalQ8IntegerText);
+  return Boolean(canonical[0]) && canonical.every((value) => value === canonical[0]);
+}
+
+export function q8SatsDecimalText(value) {
+  const canonical = canonicalQ8IntegerText(value);
+  return canonical ? q8ToCanonicalDecimal(BigInt(canonical)) : "";
+}
+
 export function q8ToNumber(value) {
   return Number(q8ToCanonicalDecimal(value));
 }

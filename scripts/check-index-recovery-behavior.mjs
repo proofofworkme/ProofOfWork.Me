@@ -78,6 +78,9 @@ import {
   parseSignedWorkAmountToAtoms,
   parseWorkAmountToAtoms,
   parseWorkAmountToSubatoms,
+  canonicalQ8IntegerText,
+  q8IntegerTextsAgree,
+  q8SatsDecimalText,
   validateWorkPrecisionMetadata,
   withWorkPrecisionMetadata,
   withWorkSubatomPrecisionMetadata,
@@ -18195,6 +18198,9 @@ check("ledger consistency counts AMO bootstrap carry on the ledger side", () => 
       activityCoverageByTxidKind: () => new Map(),
       BOND_VALUE_Q8_SCALE: 100_000_000n,
       canonicalActivityCountCoverage: () => ({ ok: true }),
+      canonicalQ8IntegerText,
+      q8IntegerTextsAgree,
+      q8SatsDecimalText,
       canonicalIntegerText: (value, options = {}) => {
         if (value === undefined || value === null || value === "") {
           return options.allowZero ? "0" : null;
@@ -18263,11 +18269,15 @@ check("ledger consistency counts AMO bootstrap carry on the ledger side", () => 
       workFloorPayloadHasFiniteNetworkValue: () => true,
     },
   );
+  const exactQ8 = "1438911276484413066246628916";
   const payload = {
     activity: [{ amountSats: 428_610, confirmed: true, kind: "token-listing" }],
     growthSummary: {
-      actualValue: { totalSats: 10_000 },
-      workFloor: { networkValueSats: 10_000 },
+      actualValue: { totalQ8: exactQ8, totalSats: 10_000 },
+      workFloor: {
+        networkValueQ8: exactQ8,
+        networkValueSats: 10_000,
+      },
     },
     metrics: {
       activityItems: 1,
@@ -18296,9 +18306,11 @@ check("ledger consistency counts AMO bootstrap carry on the ledger side", () => 
         marketplaceMutationFeeSats: 429_156,
         marketplaceSaleVolumeSats: 0,
         marketplaceSats: 2_145_780,
+        totalQ8: exactQ8,
         totalSats: 10_000,
         workAmoV5LegacyBootstrap: { complete: true },
       },
+      networkValueQ8: exactQ8,
       networkValueSats: 10_000,
     },
   };
@@ -18307,6 +18319,26 @@ check("ledger consistency counts AMO bootstrap carry on the ledger side", () => 
     checks.checks.find((item) => item.name === "marketplace-mutation-fees-counted")
       ?.ok,
     true,
+  );
+  assert.equal(
+    checks.checks.find((item) => item.name === "work-floor-actual-total")?.ok,
+    true,
+  );
+
+  const exactMismatch = structuredClone(payload);
+  exactMismatch.workFloor.actualValue.totalQ8 =
+    "1438911276484413066246628915";
+  assert.equal(
+    Number(exactMismatch.workFloor.actualValue.totalQ8),
+    Number(exactQ8),
+    "the one-Q8-unit difference is invisible after Number conversion",
+  );
+  assert.equal(
+    ledgerSnapshotChecks(exactMismatch).checks.find(
+      (item) => item.name === "work-floor-actual-total",
+    )?.ok,
+    false,
+    "the canonical consistency check must reject a one-Q8-unit discrepancy",
   );
 
   const reversed = structuredClone(payload);
@@ -59444,6 +59476,112 @@ check("Inception H-1 oracle accepts agreeing versioned exact green summaries", a
     await readCanonicalSummary("livenet", height, blockHash),
     null,
     "a divergent 129th exact version must fail closed instead of hiding behind a cap",
+  );
+});
+
+check("public consistency exposes exact Q8 totals above Number precision", () => {
+  const exactQ8 = "1438911276484413066246628916";
+  const exactSats = "14389112764844130662.46628916";
+  const payloadFromLedger = isolatedFunction(
+    API_PATH,
+    "ledgerConsistencyPayloadFromLedger",
+    {
+      canonicalQ8IntegerText,
+      numericValue: (value) => Number(value) || 0,
+      payloadIndexedThroughBlockHash: () => "a".repeat(64),
+      q8SatsDecimalText,
+    },
+  );
+  const value = {
+    consistency: { checks: [], missingLogEvents: [], ok: true, status: "green" },
+    generatedAt: "2026-09-24T01:20:11.967Z",
+    growthSummary: {
+      actualValue: { totalQ8: exactQ8, totalSats: exactSats },
+      workFloor: { networkValueQ8: exactQ8, networkValueSats: exactSats },
+    },
+    metrics: { indexedThroughBlock: 968335 },
+    network: "livenet",
+    snapshotId: "exact-consistency-snapshot",
+    sourceHashes: {},
+    workFloor: {
+      actualValue: { totalQ8: exactQ8, totalSats: exactSats },
+      networkValueQ8: exactQ8,
+      networkValueSats: 14389112764844130000,
+      workNetworkValueAccountingModel: "canonical-exact-work-network-q8-v1",
+    },
+  };
+  const payload = payloadFromLedger(value);
+  assert.equal(payload.totals.workNetworkValueQ8, exactQ8);
+  assert.equal(payload.totals.workNetworkValueSats, 14389112764844130000);
+  assert.equal(payload.totals.workNetworkValueSatsExact, exactSats);
+  assert.equal(payload.totals.growthActualValueQ8, exactQ8);
+  assert.equal(payload.totals.growthActualValueSatsExact, exactSats);
+  assert.equal(payload.totalsApproximate.workNetworkValueSats, 14389112764844130000);
+  assert.equal(typeof payload.totals.workNetworkValueSats, "number");
+});
+
+check("backfill summary selection compares exact Q8 values", () => {
+  const exactQ8 = "1438911276484413066246628916";
+  const exactSummaryValue = isolatedFunction(
+    BACKFILL_PATH,
+    "summaryPayloadValue",
+    {
+      canonicalNonNegativeQ8Text: (value) =>
+        typeof value === "string" && /^(?:0|[1-9][0-9]*)$/u.test(value)
+          ? value
+          : "",
+      decimalValueToQ8,
+    },
+  );
+  const chooseSummary = isolatedFunction(
+    BACKFILL_PATH,
+    "strongerSummaryPayload",
+    {
+      objectPayload: (value) =>
+        value && typeof value === "object" && !Array.isArray(value) ? value : null,
+      summaryPayloadBtcUsd: () => null,
+      summaryPayloadFreshnessMs: (value) =>
+        Date.parse(value?.generatedAt ?? "") || 0,
+      summaryPayloadSnapshotId: (value) => value?.snapshotId ?? null,
+      summaryPayloadValue: exactSummaryValue,
+    },
+  );
+  const base = {
+    actualValue: {
+      totalQ8: exactQ8,
+      totalSats: "14389112764844130662.46628916",
+    },
+    generatedAt: "2026-09-24T03:00:00.000Z",
+    snapshotId: "same-canonical-snapshot",
+  };
+  const oneQ8Lower = {
+    actualValue: {
+      totalQ8: (BigInt(exactQ8) - 1n).toString(),
+      totalSats: "14389112764844130662.46628915",
+    },
+    generatedAt: "2026-09-24T04:00:00.000Z",
+    snapshotId: "same-canonical-snapshot",
+  };
+  assert.equal(exactSummaryValue(base), BigInt(exactQ8));
+  assert.equal(
+    exactSummaryValue({ networkValueSats: "14389112764844130662.46628916" }),
+    BigInt(exactQ8),
+    "an exact decimal string can recover canonical Q8 when an older snapshot lacks its integer alias",
+  );
+  assert.equal(
+    exactSummaryValue({ networkValueSats: "1.000000001" }),
+    null,
+    "a decimal with precision beyond Q8 must not be silently truncated",
+  );
+  assert.equal(
+    Number(base.actualValue.totalSats),
+    Number(oneQ8Lower.actualValue.totalSats),
+    "the one-Q8-unit difference disappears in Number at this magnitude",
+  );
+  assert.equal(
+    chooseSummary(base, oneQ8Lower),
+    base,
+    "a fresher summary with a lower exact Q8 value cannot replace the stronger value",
   );
 });
 

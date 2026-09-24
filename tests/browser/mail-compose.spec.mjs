@@ -307,19 +307,50 @@ function staleInvalidListingEvent() {
 
 function authoritativeWorkState({ repairedV8Listing = false } = {}) {
   const listing = repairedV8Listing ? v8AmoListing() : undefined;
+  const balanceSubatoms = repairedV8Listing
+    ? "20000000000000000"
+    : "1000000000000000000";
+  const reservedSubatoms = listing?.amountSubatoms ?? "0";
+  const commitment = {
+    model: "canonical-work-amo-payload-sha256-v1",
+    payloadBytes: 1,
+    sha256: "5".repeat(64),
+  };
   return {
     amountStorageModel: WORK_STORAGE_MODEL,
     authoritativeWallet: true,
+    canonicalWorkCapacities: [
+      {
+        address: SENDER,
+        confirmedBalanceSubatoms: balanceSubatoms,
+        indexedThroughBlock: LISTING_CHECKPOINT_HEIGHT,
+        indexedThroughBlockHash: HASH,
+        model: "canonical-work-wallet-capacity-v1",
+        network: "livenet",
+        reservations: listing
+          ? [{
+              amountSubatoms: listing.amountSubatoms,
+              listingId: listing.listingId,
+            }]
+          : [],
+        reservedBalanceSubatoms: reservedSubatoms,
+        tokenId: WORK_TOKEN_ID,
+        tokenStateCommitment: commitment,
+        transferableBalanceSubatoms: (
+          BigInt(balanceSubatoms) - BigInt(reservedSubatoms)
+        ).toString(),
+      },
+    ],
     closedListings: [],
+    indexedThroughBlock: LISTING_CHECKPOINT_HEIGHT,
+    indexedThroughBlockHash: HASH,
     confirmedSupplySubatoms: "10000000000000000000",
     creationSats: 1_000,
     decimals: 16,
     holders: [
       {
         address: SENDER,
-        balanceSubatoms: repairedV8Listing
-          ? "20000000000000000"
-          : "1000000000000000000",
+        balanceSubatoms,
         pendingDeltaSubatoms: "0",
         ticker: "WORK",
         tokenId: WORK_TOKEN_ID,
@@ -1246,7 +1277,7 @@ test("AMO keeps a labeled preview when complete listing evidence disagrees with 
   ).toHaveCount(1);
 
   await page
-    .getByRole("button", { name: /Bonds 0/u })
+    .getByRole("button", { name: "Bonds —" })
     .click();
   await expect(page.locator(".app-status-row.status.idle")).toBeVisible();
   await expect(page.locator(".app-status-row.status.good")).toHaveCount(0);
