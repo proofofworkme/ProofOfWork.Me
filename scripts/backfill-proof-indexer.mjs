@@ -2065,6 +2065,14 @@ async function canonicalPwtRangeReplayRuntime(client) {
       "Active PWT range replay requires an ordinary block-scan-only pass with POW_INDEX_BACKFILL_SOURCES=block-scan and ledger/general canonical-summary storage disabled.",
     );
   }
+  if (
+    Number.isSafeInteger(BLOCK_SCAN_FROM_HEIGHT) &&
+    BLOCK_SCAN_FROM_HEIGHT > 0
+  ) {
+    throw new Error(
+      "Active PWT range replay must resume from its stored hashed checkpoint; unset POW_INDEX_BACKFILL_BLOCK_SCAN_FROM_HEIGHT after preparation.",
+    );
+  }
   await reconcileActivePwtRangeReplayBalancesAtCheckpoint(client, rebuild);
   const verifierBinding = activatePwtRangeReplayVerifierBinding(rebuild);
   return {

@@ -36976,7 +36976,7 @@ check("active range replay is fail-closed to one block-scan source", async () =>
   const reconciliationCalls = [];
   const globals = {
     AUDIT_WORK_ATOMS_ONLY: false,
-    BLOCK_SCAN_FROM_HEIGHT: 958383,
+    BLOCK_SCAN_FROM_HEIGHT: 0,
     CANONICAL_REBUILD: false,
     CANONICAL_REBUILD_META_KEY: "canonical:rebuild",
     DB_SUMMARY_REPAIR: false,
@@ -37039,6 +37039,36 @@ check("active range replay is fail-closed to one block-scan source", async () =>
     (error) => /block-scan-only pass/u.test(error.message),
     "general ledger storage must remain disabled during active replay",
   );
+
+  const overrideRuntime = isolatedFunction(
+    BACKFILL_PATH,
+    "canonicalPwtRangeReplayRuntime",
+    {
+      ...globals,
+      BLOCK_SCAN_FROM_HEIGHT: 958383,
+      SOURCES: [{ blockScan: true, label: "block-scan" }],
+    },
+  );
+  await rejection(
+    overrideRuntime({}),
+    (error) => /unset POW_INDEX_BACKFILL_BLOCK_SCAN_FROM_HEIGHT/u.test(error.message),
+    "active replay must not restart from an explicit scan height after its stored checkpoint advances",
+  );
+  assert.deepEqual(reconciliationCalls, [], "scan-height override must fail before reconciliation");
+
+  const prepareRuntime = isolatedFunction(
+    BACKFILL_PATH,
+    "canonicalPwtRangeReplayRuntime",
+    {
+      ...globals,
+      BLOCK_SCAN_FROM_HEIGHT: 958383,
+      PREPARE_CANONICAL_PWT_RANGE_REPLAY_ONLY: true,
+      SOURCES: [{ blockScan: true, label: "block-scan" }],
+    },
+  );
+  const preparing = await prepareRuntime({});
+  assert.equal(preparing.preparing, true);
+  assert.deepEqual(reconciliationCalls, [], "preparation must not reconcile balances");
 
   const boundRuntime = isolatedFunction(
     BACKFILL_PATH,
