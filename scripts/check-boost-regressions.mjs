@@ -716,6 +716,13 @@ test("Boost composers encode quote posts and direct owner transfers", async () =
   const postPayload = mod.buildBoostPostPayload({ message: "quoted proof", proofSignalSats: 546, quoteTxid: quotedTxid });
   const decoded = JSON.parse(Buffer.from(postPayload.slice("pwb1:post:".length), "base64url").toString("utf8"));
   assert.deepEqual(decoded, { v: 1, text: "quoted proof", proofSignalSats: 546, quoteTxid: quotedTxid });
+  const workOnly = mod.buildBoostPostPayload({
+    message: "WORK-only proof", proofSignalSats: 0,
+    workSignalSubatoms: "10000000000000000",
+  });
+  assert.deepEqual(JSON.parse(Buffer.from(workOnly.slice("pwb1:post:".length), "base64url").toString("utf8")), {
+    v: 1, text: "WORK-only proof", workSignalSubatoms: "10000000000000000",
+  });
   const attachment = { mime: "text/plain", name: "proof.txt", sha256: "b".repeat(64), size: 5 };
   const mediaPayload = mod.buildBoostPostPayload({
     attachment,

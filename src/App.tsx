@@ -26298,15 +26298,6 @@ export default function App() {
     setComposeOpen(true);
   }
 
-  function composeBoostPost() {
-    composeNew();
-    setSocialMode(true);
-    setRecipient(address);
-    setCcRecipient("");
-    setReplyParentTxid(undefined);
-    setActiveFolder("inbox");
-  }
-
   function discardDraft() {
     if (address) {
       clearDraft(address, network);
@@ -34884,7 +34875,6 @@ export default function App() {
             embedded
             initialAddress={address}
             initialNetwork={network}
-            onComposeBoost={composeBoostPost}
           />
         ) : activeFolder === "log" ? (
           <ActivityWorkspace

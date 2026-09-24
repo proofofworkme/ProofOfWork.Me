@@ -209,3 +209,62 @@ test("reply shows its paid action signal without adding it to feed totals", asyn
   await expect(page.locator(".boost-post-head-actions")).toContainText("Action signal 546 proofs");
   await expect(page.locator(".boost-signal-row")).toContainText("Proof 546 proofs");
 });
+
+
+test("Computer Boost entry buttons open the shared Proof, WORK, and Files composer", async ({ page }) => {
+  await page.route("**/api/v1/**", async (route) => {
+    if (route.request().method() !== "GET") return route.abort("blockedbyclient");
+    const pathname = new URL(route.request().url()).pathname;
+    if (pathname === "/api/v1/boost") {
+      return route.fulfill({ json: {
+        complete: true,
+        network: "livenet",
+        items: [],
+        totalCount: 0,
+        hasMore: false,
+        stats: { total: 0, confirmed: 0, pending: 0 },
+        signalStats: {
+          totalSignalQ8: "0", proofSignalQ8: "0", proofSignalSatsExact: "0",
+          totalSignalSatsExact: "0", totalSignalUsd: 0, workSignalSubatoms: "0",
+        },
+      } });
+    }
+    if (pathname.includes("registry") || pathname.startsWith("/api/v1/id/")) {
+      return route.fulfill({ json: { records: [], listings: [], stats: { total: 0 } } });
+    }
+    return route.fulfill({ json: {} });
+  });
+  await page.goto("/?folder=boost");
+  await expect(page.locator(".boost-embedded-app")).toBeVisible();
+  const openAndCheck = async (buttonName) => {
+    await page.getByRole("button", { name: buttonName, exact: true }).click();
+    const composer = page.getByRole("dialog", { name: "What’s happening?" });
+    await expect(composer).toBeVisible();
+    await expect(composer.getByLabel("Proof signal")).toHaveAttribute("min", "0");
+    await expect(composer.getByText("WORK signal", { exact: true })).toBeVisible();
+    await expect(composer.getByText("Attach file")).toBeVisible();
+    await expect(composer).toContainText("Add Proof, WORK, or both.");
+    const bounds = await composer.boundingBox();
+    const viewport = page.viewportSize();
+    expect(bounds).not.toBeNull();
+    expect(bounds.x).toBeGreaterThanOrEqual(0);
+    expect(bounds.y).toBeGreaterThanOrEqual(0);
+    expect(bounds.x + bounds.width).toBeLessThanOrEqual(viewport.width);
+    expect(bounds.y + bounds.height).toBeLessThanOrEqual(viewport.height);
+    return composer;
+  };
+  let composer = await openAndCheck("Post a Boost");
+  await composer.getByLabel("Proof signal").fill("0");
+  await composer.getByLabel("WORK signal").fill("1");
+  await composer.locator('input[type="file"]').setInputFiles({
+    name: "work-proof.txt",
+    mimeType: "text/plain",
+    buffer: Buffer.from("WORK-only Boost attachment"),
+  });
+  await expect(composer).toContainText("work-proof.txt");
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("dialog", { name: "What’s happening?" })).toHaveCount(0);
+  composer = await openAndCheck("What's happening?");
+  await expect(composer.getByLabel("Proof signal")).toHaveValue("546");
+  await expect(page.locator(".compose-pane")).toHaveCount(0);
+});
