@@ -819,8 +819,10 @@ rewinding only the checkpoint or layering corrected event keys over stale ones:
    Bond. That mandatory barrier supplies the historical oracle for any rederive
    disposition and cannot be disabled by the storage flag; manifest-preserved
    bonds continue to consume their byte-committed original H-1 row and exact
-   mint payload. Do not use the
-   normal worker publisher while the replay is partial; a non-tip public summary
+   mint payload. Its replay-bound Log fingerprint counts only confirmed public
+   activity with a canonical parent through that H-1 block; retained later
+   confirmed and pending activity remains outside that historical count. Do not
+   use the normal worker publisher while the replay is partial; a non-tip public summary
    is expected to fail. Each bounded pass may commit canonical WORK events and
    its hashed checkpoint before the derived WORK balances are refreshed. On an
    active replay resume, the scanner first binds the unchanged marker to the

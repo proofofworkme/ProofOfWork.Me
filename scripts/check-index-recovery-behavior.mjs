@@ -25963,6 +25963,126 @@ check("same-height pending membership versions the canonical Log snapshot", asyn
   );
 });
 
+check("active replay fingerprints only canonical confirmed Log rows through its exact H-1 checkpoint", async () => {
+  const checkpointHeight = 958_795;
+  const checkpointHash = "a".repeat(64);
+  const row = (eventId, kind, status, blockHeight, parentHeight, options = {}) => ({
+    block_height: blockHeight,
+    block_time: status === "confirmed" ? "2026-09-24T00:00:00.000Z" : null,
+    created_at: "2026-09-24T00:00:00.000Z",
+    event_id: String(eventId),
+    event_time: "2026-09-24T00:00:00.000Z",
+    kind,
+    parentCanonical: options.parentCanonical !== false,
+    parentHeight,
+    parentStatus: options.parentStatus ?? "confirmed",
+    payload_hash: String(eventId).padStart(32, "0"),
+    protocol: options.protocol ?? (kind.startsWith("token-") ? "pwt1" : "pwm1"),
+    status,
+    txid: String(eventId).padStart(64, "0"),
+    valid: true,
+  });
+  const inventory = [
+    row(1, "mail", "confirmed", checkpointHeight, checkpointHeight),
+    row(2, "mail", "confirmed", checkpointHeight + 1, checkpointHeight + 1),
+    row(3, "id-register", "pending", null, null),
+    row(4, "mail", "confirmed", checkpointHeight, checkpointHeight, {
+      parentCanonical: false,
+    }),
+    row(5, "token-mint", "confirmed", checkpointHeight, checkpointHeight, {
+      protocol: "pwm1",
+    }),
+    row(6, "mail", "confirmed", null, checkpointHeight),
+  ];
+  const fingerprint = isolatedFunction(
+    BACKFILL_PATH,
+    "publicLogRelationalFingerprint",
+    {
+      NETWORK: "livenet",
+      PUBLIC_LOG_EVENT_KINDS: new Set(["mail", "id-register", "token-mint"]),
+      createHash,
+    },
+  );
+  const fingerprintsMatch = isolatedFunction(
+    BACKFILL_PATH,
+    "publicLogFingerprintsMatch",
+  );
+  let replaySql = "";
+  let replayParams = null;
+  const client = {
+    async query(sql, params) {
+      if (params.length === 2) {
+        assert.doesNotMatch(String(sql), /replay_tx/u);
+        return { rows: inventory };
+      }
+      replaySql = String(sql);
+      replayParams = params;
+      return {
+        rows: inventory.filter((item) =>
+          item.status === "confirmed" &&
+          (!item.kind.startsWith("token-") || item.protocol === "pwt1") &&
+          item.parentCanonical &&
+          item.parentStatus === "confirmed" &&
+          item.parentHeight > 0 &&
+          item.parentHeight <= checkpointHeight &&
+          (item.block_height === null || item.block_height === item.parentHeight)
+        ),
+      };
+    },
+  };
+  const ordinary = await fingerprint(client);
+  const bounded = await fingerprint(client, {
+    replayCheckpoint: { height: checkpointHeight, blockHash: checkpointHash },
+  });
+  assert.equal(ordinary.count, 6);
+  assert.equal(ordinary.pending, 1);
+  assert.equal(ordinary.contract, "proof-index-public-log-fingerprint-v1");
+  assert.equal(bounded.count, 2);
+  assert.equal(bounded.pending, 0);
+  assert.equal(bounded.contract, "proof-index-public-log-fingerprint-replay-v1");
+  assert.equal(bounded.checkpointHeight, checkpointHeight);
+  assert.equal(bounded.checkpointHash, checkpointHash);
+  assert.deepEqual(JSON.parse(JSON.stringify(replayParams)), [
+    "livenet", ["mail", "id-register", "token-mint"], checkpointHeight,
+  ]);
+  assert.match(replaySql, /e\.status = 'confirmed'/u);
+  assert.match(replaySql, /e\.kind NOT LIKE 'token-%' OR e\.protocol = 'pwt1'/u);
+  assert.match(replaySql, /replay_tx\.status = 'confirmed'/u);
+  assert.match(replaySql, /replay_tx\.block_height <= \$3/u);
+  assert.match(replaySql, /replay_block\.canonical = true/u);
+  assert.match(replaySql, /e\.block_height IS NULL[\s\S]*e\.block_height = replay_tx\.block_height/u);
+  inventory[1].payload_hash = "f".repeat(32);
+  inventory[2].payload_hash = "e".repeat(32);
+  const boundedAfterFutureAndPending = await fingerprint(client, {
+    replayCheckpoint: { height: checkpointHeight, blockHash: checkpointHash },
+  });
+  assert.deepEqual(boundedAfterFutureAndPending, bounded);
+  assert.notEqual((await fingerprint(client)).hash, ordinary.hash);
+  assert.equal(fingerprintsMatch(bounded, boundedAfterFutureAndPending), true);
+  assert.equal(fingerprintsMatch(ordinary, ordinary), true);
+  assert.equal(fingerprintsMatch(bounded, ordinary), false);
+  assert.equal(fingerprintsMatch(bounded, {
+    ...bounded,
+    checkpointHash: "b".repeat(64),
+  }), false);
+  assert.notEqual(
+    (await fingerprint(client, {
+      replayCheckpoint: {
+        height: checkpointHeight,
+        blockHash: "b".repeat(64),
+      },
+    })).hash,
+    bounded.hash,
+  );
+  await rejection(
+    fingerprint(client, {
+      replayCheckpoint: { height: checkpointHeight, blockHash: "" },
+    }),
+    (error) => /exact hashed checkpoint/u.test(error.message),
+    "replay Log fingerprint must refuse an unbound checkpoint",
+  );
+});
+
 check("confirmed worker phase keeps canonical summary publication enabled", () => {
   const workerBackfillPhasePlan = isolatedFunction(
     WORKER_PATH,
@@ -26468,12 +26588,13 @@ check("the hot worker publishes a fresh canonical summary with conservative cove
     "workFloor",
     "workSummary",
   ];
-  const publicLogFingerprint = {
+  let publicLogFingerprint = {
     contract: "proof-index-public-log-fingerprint-v1",
     count: 2,
     hash: "f".repeat(64),
     pending: 0,
   };
+  let replayLogFingerprint = null;
   const workTokenId =
     "d4e5ebf11d104d6a63fb74e42094364b25a5f7199a09e5c0e71408972466a8b8";
   const checkpointHash = "a".repeat(64);
@@ -26719,7 +26840,10 @@ check("the hot worker publishes a fresh canonical summary with conservative cove
       numberOrNull,
       objectPayload,
       objectValue,
-      publicLogRelationalFingerprint: async () => publicLogFingerprint,
+      publicLogRelationalFingerprint: async (_client, options) =>
+        options?.replayCheckpoint
+          ? replayLogFingerprint ?? publicLogFingerprint
+          : publicLogFingerprint,
       publicLogFingerprintsMatch: (left, right) =>
         left?.hash === right?.hash &&
         left?.count === right?.count &&
@@ -26761,6 +26885,7 @@ check("the hot worker publishes a fresh canonical summary with conservative cove
       },
       storedEligibleCanonicalSummarySnapshotPayload: async () =>
         previousPayload,
+      storedExactEligibleCanonicalSummarySnapshotPayload: async () => null,
       storedLedgerSnapshotPayload: async (_client, snapshotId) => ({
         activityPayload: { marker: `derived-${snapshotId}` },
       }),
@@ -26768,7 +26893,8 @@ check("the hot worker publishes a fresh canonical summary with conservative cove
       summaryPayloadsWithAlignedWorkFloor: (payload) => payload,
       summarySnapshotTotals: (payloads) =>
         exactSummaryTotalsFixture(payloads.workFloor.networkValueQ8),
-      unpagedEndpoint: (pathname) => ({ pathname }),
+      unpagedEndpoint: (pathname) =>
+        new URL(`http://127.0.0.1:8081${pathname}`),
     },
   );
   const result = await storeCanonicalSummarySnapshot({
@@ -26933,6 +27059,47 @@ check("the hot worker publishes a fresh canonical summary with conservative cove
   assert.equal(currentResult.reason, "already-current");
   assert.equal(currentResult.snapshotId, "full-101-current-models");
   assert.equal(inserted.length, 3);
+
+  publicLogFingerprint = {
+    ...publicLogFingerprint,
+    count: 3,
+    hash: "e".repeat(64),
+    pending: 1,
+  };
+  replayLogFingerprint = {
+    checkpointHash,
+    checkpointHeight: 101,
+    contract: "proof-index-public-log-fingerprint-replay-v1",
+    count: 2,
+    hash: "d".repeat(64),
+    pending: 0,
+  };
+  const requiredCheckpoint = { blockHash: checkpointHash, height: 101 };
+  await rejection(
+    storeCanonicalSummarySnapshot({
+      async query() {
+        throw new Error("A mismatched Log count must not write a summary");
+      },
+    }, { requiredCheckpoint }),
+    (error) => /not one exact snapshot/u.test(error.message),
+    "a historical Log count must reject tip-wide pending and future membership",
+  );
+  const replaySnapshot = await storeCanonicalSummarySnapshot({
+    async query(sql, params) {
+      inserted.push({ params: Array.from(params), sql: String(sql) });
+      return { rows: [{ snapshot_id: String(params[1]) }] };
+    },
+  }, {
+    replayCheckpoint: true,
+    requiredCheckpoint,
+  });
+  assert.equal(replaySnapshot.skipped, false);
+  const replayStored = JSON.parse(inserted.at(-1).params[7]);
+  assert.deepEqual(
+    replayStored.summaryRefresh.publicLogFingerprint,
+    replayLogFingerprint,
+  );
+  assert.equal(inserted.length, 4);
 });
 
 check("ledger snapshot retention preserves pinned issuance oracles", async () => {
@@ -29612,6 +29779,7 @@ check("an Inception summary barrier is exact and cannot defer", async () => {
   let exactStoredCheckpoint = null;
   let requestedUrl = null;
   let requestCount = 0;
+  const fingerprintOptions = [];
   const storeCanonicalSummarySnapshot = isolatedFunction(
     BACKFILL_PATH,
     "storeCanonicalSummarySnapshot",
@@ -29646,7 +29814,10 @@ check("an Inception summary barrier is exact and cannot defer", async () => {
           ? value
           : null,
       publicLogFingerprintsMatch: () => true,
-      publicLogRelationalFingerprint: async () => ({ hash: "f".repeat(64) }),
+      publicLogRelationalFingerprint: async (_client, options) => {
+        fingerprintOptions.push(options);
+        return { hash: "f".repeat(64) };
+      },
       readJson: async (url) => {
         requestCount += 1;
         requestedUrl = url;
@@ -29704,11 +29875,30 @@ check("an Inception summary barrier is exact and cannot defer", async () => {
     "A required H-1 summary silently deferred to an older snapshot",
   );
   assert.equal(requestCount, 1);
+  assert.deepEqual(JSON.parse(JSON.stringify(fingerprintOptions)), [{}]);
   assert.equal(requestedUrl.searchParams.get("checkpointHeight"), "101");
   assert.equal(
     requestedUrl.searchParams.get("checkpointHash"),
     checkpointHash,
   );
+
+  await rejection(
+    storeCanonicalSummarySnapshot(
+      { async query() { return { rows: [] }; } },
+      {
+        replayCheckpoint: true,
+        requiredCheckpoint: {
+          blockHash: checkpointHash,
+          height: 101,
+        },
+      },
+    ),
+    (error) => error?.name === "AbortError",
+    "An active replay H-1 summary must not defer to an older snapshot",
+  );
+  assert.deepEqual(JSON.parse(JSON.stringify(fingerprintOptions.at(-1))), {
+    replayCheckpoint: { blockHash: checkpointHash, height: 101 },
+  });
 
   await rejection(
     storeCanonicalSummarySnapshot(

@@ -18259,7 +18259,25 @@ function eligibleCanonicalSummarySnapshotPayload(payload) {
   );
 }
 
-async function publicLogRelationalFingerprint(client) {
+async function publicLogRelationalFingerprint(client, options = {}) {
+  const replayCheckpoint = options.replayCheckpoint ?? null;
+  const replayCheckpointRequested = replayCheckpoint !== null;
+  const replayCheckpointHeight = Number(replayCheckpoint?.height);
+  const replayCheckpointHash = String(
+    replayCheckpoint?.blockHash ?? "",
+  ).trim().toLowerCase();
+  if (
+    replayCheckpointRequested &&
+    (
+      !Number.isSafeInteger(replayCheckpointHeight) ||
+      replayCheckpointHeight < 1 ||
+      !/^[0-9a-f]{64}$/u.test(replayCheckpointHash)
+    )
+  ) {
+    throw new Error(
+      "Replay Log fingerprint requires one exact hashed checkpoint.",
+    );
+  }
   const result = await client.query(
     `
       SELECT
@@ -18279,11 +18297,40 @@ async function publicLogRelationalFingerprint(client) {
         AND e.valid = true
         AND e.status IN ('confirmed', 'pending')
         AND e.kind = ANY($2::text[])
+        ${replayCheckpointRequested
+          ? `AND e.status = 'confirmed'
+             AND (e.kind NOT LIKE 'token-%' OR e.protocol = 'pwt1')
+             AND EXISTS (
+               SELECT 1
+               FROM proof_indexer.transactions replay_tx
+               JOIN proof_indexer.blocks replay_block
+                 ON replay_block.network = replay_tx.network
+                AND replay_block.height = replay_tx.block_height
+                AND replay_block.block_hash = replay_tx.block_hash
+                AND replay_block.canonical = true
+               WHERE replay_tx.network = e.network
+                 AND replay_tx.txid = e.txid
+                 AND replay_tx.status = 'confirmed'
+                 AND replay_tx.block_height > 0
+                 AND replay_tx.block_height <= $3
+                 AND (
+                   e.block_height IS NULL
+                   OR e.block_height = replay_tx.block_height
+                 )
+             )`
+          : ""}
       ORDER BY e.event_id ASC
     `,
-    [NETWORK, [...PUBLIC_LOG_EVENT_KINDS]],
+    replayCheckpointRequested
+      ? [NETWORK, [...PUBLIC_LOG_EVENT_KINDS], replayCheckpointHeight]
+      : [NETWORK, [...PUBLIC_LOG_EVENT_KINDS]],
   );
   const hash = createHash("sha256");
+  if (replayCheckpointRequested) {
+    hash.update(
+      `replay-checkpoint:${replayCheckpointHeight}:${replayCheckpointHash}\n`,
+    );
+  }
   let pending = 0;
   for (const row of result.rows) {
     if (row.status === "pending") {
@@ -18307,19 +18354,35 @@ async function publicLogRelationalFingerprint(client) {
     hash.update("\n");
   }
   return {
-    contract: "proof-index-public-log-fingerprint-v1",
+    contract: replayCheckpointRequested
+      ? "proof-index-public-log-fingerprint-replay-v1"
+      : "proof-index-public-log-fingerprint-v1",
     count: result.rows.length,
     hash: hash.digest("hex"),
     pending,
+    ...(replayCheckpointRequested
+      ? {
+          checkpointHeight: replayCheckpointHeight,
+          checkpointHash: replayCheckpointHash,
+        }
+      : {}),
   };
 }
 
 function publicLogFingerprintsMatch(left, right) {
+  const replay =
+    left?.contract === "proof-index-public-log-fingerprint-replay-v1";
   return Boolean(
-    left?.contract === "proof-index-public-log-fingerprint-v1" &&
+    (replay || left?.contract === "proof-index-public-log-fingerprint-v1") &&
       right?.contract === left.contract &&
       Number(right.count) === Number(left.count) &&
       Number(right.pending) === Number(left.pending) &&
+      (!replay || (
+        Number.isSafeInteger(Number(left.checkpointHeight)) &&
+        Number(right.checkpointHeight) === Number(left.checkpointHeight) &&
+        /^[0-9a-f]{64}$/u.test(String(left.checkpointHash ?? "")) &&
+        right.checkpointHash === left.checkpointHash
+      )) &&
       /^[0-9a-f]{64}$/u.test(String(left.hash ?? "")) &&
       right.hash === left.hash,
   );
@@ -19183,8 +19246,22 @@ async function storeCanonicalSummarySnapshot(client, options = {}) {
   )
     .trim()
     .toLowerCase();
+  if (options.replayCheckpoint === true && !checkpointRequired) {
+    throw new Error(
+      "Replay Log fingerprint requires a mandatory exact H-1 summary checkpoint.",
+    );
+  }
+  const publicLogFingerprintOptions = options.replayCheckpoint === true
+    ? {
+        replayCheckpoint: {
+          blockHash: requiredCheckpointHash,
+          height: requiredCheckpointHeight,
+        },
+      }
+    : {};
   const currentPublicLogFingerprint = await publicLogRelationalFingerprint(
     client,
+    publicLogFingerprintOptions,
   );
   const previousPublicLogFingerprint = objectPayload(
     previousPayload?.summaryRefresh?.publicLogFingerprint,
@@ -19336,7 +19413,10 @@ async function storeCanonicalSummarySnapshot(client, options = {}) {
   const summaryPayloads = summaryPayloadsWithAlignedWorkFloor(
     canonicalBundle?.summaryPayloads,
   );
-  const finalPublicLogFingerprint = await publicLogRelationalFingerprint(client);
+  const finalPublicLogFingerprint = await publicLogRelationalFingerprint(
+    client,
+    publicLogFingerprintOptions,
+  );
   const indexedThroughBlock = canonicalSummaryCoverage(summaryPayloads);
   const snapshotId = String(canonicalBundle?.snapshotId ?? "").trim();
   const summarySnapshotIds = REQUIRED_CURRENT_SUMMARY_KEYS.map((key) =>
@@ -25392,6 +25472,7 @@ async function backfillBlockScanSource(client, source) {
       }
       const barrier = await storeCanonicalSummarySnapshot(client, {
         requiredCheckpoint,
+        replayCheckpoint: activePwtRangeReplay(canonicalRebuild),
       });
       if (
         Number(barrier?.indexedThroughBlock) !== requiredCheckpoint.height ||
@@ -25429,6 +25510,7 @@ async function backfillBlockScanSource(client, source) {
       }
       const barrier = await storeCanonicalSummarySnapshot(client, {
         requiredCheckpoint,
+        replayCheckpoint: activePwtRangeReplay(canonicalRebuild),
       });
       if (
         Number(barrier?.indexedThroughBlock) !== requiredCheckpoint.height ||
