@@ -36436,6 +36436,103 @@ check("post-replay historical INCB checkpoints pin late H-1 evidence", async () 
   );
   assert.equal(summaryReads, 0);
   assert.strictEqual(options.preBondCheckpoint(bond), checkpoint);
+
+  const replayBonds = [
+    [
+      "d88c5a66dc0b06827e95469335ad689acd48d2f5b63f6d981a088f7cfd313c53",
+      84,
+    ],
+    [
+      "e19517ac5d225c97aa9b307bea8ab0b6316da3b765f71f9a99a6e21cfdd9d5b8",
+      1_849,
+    ],
+    [
+      "483861d6761c7b01fd6dac7622ee594f4b0c9d49a5c6ceddd1e96a37f1b241d5",
+      1_850,
+    ],
+  ].map(([replayTxid, blockIndex]) => ({
+    ...bond,
+    blockIndex,
+    txid: replayTxid,
+  }));
+  const replayBinding = {
+    rangeReplayFromHeight: 958_383,
+    witnessedThroughBlock: 968_345,
+  };
+  const activeSummary = {
+    ...checkpoint,
+    valueSnapshotCanonicalSummaryHash: "b".repeat(64),
+    valueSnapshotId: "e7d612807f253f6b10c3e93d",
+    workNetworkValueQ8: "10974202976117919074235206",
+  };
+  const replayCache = new Map();
+  let pinnedFallbackReads = 0;
+  let activeSummaryReads = 0;
+  const activeReplayOptions = isolatedFunction(
+    API_PATH,
+    "canonicalInceptionIssuanceOptions",
+    {
+      canonicalBoundInceptionWitnessSet: (_bond, dispositions, priorHash) => {
+        assert.equal(dispositions.length, 3);
+        assert.equal(priorHash, previousBlockHash);
+        return { disposition: "rederive" };
+      },
+      canonicalInceptionPreviousBlockHash: async () => previousBlockHash,
+      canonicalInceptionValueSnapshotCheckpoint: (snapshot, candidate) => ({
+        ...snapshot.checkpoint,
+        blockIndex: candidate.blockIndex,
+      }),
+      canonicalPostReplayHistoricalInceptionCheckpoint: () => {
+        pinnedFallbackReads += 1;
+        return checkpoint;
+      },
+      canonicalPwtReplayVerifierBindingCacheKey: () => ":active-replay",
+      canonicalPwtReplayVerifierBindingDescriptor: (binding) =>
+        binding ?? null,
+      cachedInternalVerifierState: async (key, loader) => {
+        if (!replayCache.has(key)) {
+          replayCache.set(key, Promise.resolve().then(loader));
+        }
+        return replayCache.get(key);
+      },
+      inceptionValueSnapshotUnavailableError: (_bond, details = {}) =>
+        Object.assign(new Error(details.reason ?? "snapshot unavailable"), {
+          details,
+        }),
+      isInceptionBondActivityItem: (item) =>
+        item?.kind === "inception-bond",
+      proofIndexCanonicalSummaryLedgerPayload: async (
+        _network,
+        height,
+        hash,
+        options,
+      ) => {
+        assert.equal(height, 958_795);
+        assert.equal(hash, previousBlockHash);
+        assert.equal(options.replayVerifierBinding, replayBinding);
+        activeSummaryReads += 1;
+        return { checkpoint: activeSummary };
+      },
+    },
+  );
+  const rederived = await activeReplayOptions("livenet", replayBonds, {
+    boundWitnessDispositions: replayBonds.map((candidate) => ({
+      txid: candidate.txid,
+    })),
+    replayVerifierBinding: replayBinding,
+  });
+  assert.equal(pinnedFallbackReads, 0);
+  assert.equal(activeSummaryReads, 1);
+  for (const replayBond of replayBonds) {
+    assert.equal(
+      rederived.preBondCheckpoint(replayBond).valueSnapshotId,
+      activeSummary.valueSnapshotId,
+    );
+    assert.equal(
+      rederived.preBondCheckpoint(replayBond).workNetworkValueQ8,
+      activeSummary.workNetworkValueQ8,
+    );
+  }
 });
 
 check("INCB production repair pins every historical mint and forbids stored-mint oracle fallback", () => {

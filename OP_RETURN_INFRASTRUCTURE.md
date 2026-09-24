@@ -821,9 +821,11 @@ rewinding only the checkpoint or layering corrected event keys over stale ones:
    bonds continue to consume their byte-committed original H-1 row and exact
    mint payload. Its replay-bound Log fingerprint counts only confirmed public
    activity with a canonical parent through that H-1 block; retained later
-   confirmed and pending activity remains outside that historical count. Do not
-   use the normal worker publisher while the replay is partial; a non-tip public summary
-   is expected to fail. Each bounded pass may commit canonical WORK events and
+   confirmed and pending activity remains outside that historical count.
+   A bound `rederive` witness uses this newly verified H-1 snapshot before
+   any historical fallback checkpoint for the same bond transaction. Do not
+   use the normal worker publisher while the replay is partial; a non-tip
+   public summary is expected to fail. Each bounded pass may commit canonical WORK events and
    its hashed checkpoint before the derived WORK balances are refreshed. On an
    active replay resume, the scanner first binds the unchanged marker to the
    stored block-scan checkpoint and Core hash, rejects postcheckpoint or
@@ -837,7 +839,9 @@ rewinding only the checkpoint or layering corrected event keys over stale ones:
    snapshot identity, canonical-summary hash, generated time, exact Q8 value,
    and raw row fingerprint. Rederived entries must end as either one canonical
    exact-Q8 mint bound to the forced green H-1 row or one unambiguous canonical
-   invalid disposition. No rejected sibling alias may remain. The completion
+   invalid disposition. A verified bound rederive bypasses older pinned
+   post-replay H-1 checkpoint values; those pins remain historical fallback
+   outside the bound rederive. No rejected sibling alias may remain. The completion
    certificate repeats the witness hash, counts, range tip, and per-entry
    results; once certified, the replay cannot be prepared again. The pinned
    July 2026 incident targets additionally require one valid bond, one exact

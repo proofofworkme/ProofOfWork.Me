@@ -29777,6 +29777,7 @@ async function canonicalInceptionIssuanceOptions(
         storedWitnessSetsByTxid.set(txid, witnessSet);
         return [txid, witnessSet.checkpoint];
       }
+      let boundRederive = false;
       if (
         replayBinding &&
         Number.isSafeInteger(bondBlockHeight) &&
@@ -29805,12 +29806,14 @@ async function canonicalInceptionIssuanceOptions(
           storedWitnessSetsByTxid.set(txid, witnessSet);
           return [txid, witnessSet.checkpoint];
         }
+        boundRederive = witnessSet.disposition === "rederive";
       }
-      const postReplayHistoricalCheckpoint =
-        canonicalPostReplayHistoricalInceptionCheckpoint(
-          bond,
-          knownPreviousBlockHashes,
-        );
+      const postReplayHistoricalCheckpoint = boundRederive
+        ? null
+        : canonicalPostReplayHistoricalInceptionCheckpoint(
+            bond,
+            knownPreviousBlockHashes,
+          );
       if (postReplayHistoricalCheckpoint) {
         return [txid, postReplayHistoricalCheckpoint];
       }
