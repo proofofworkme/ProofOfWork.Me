@@ -3331,15 +3331,28 @@ NETWORK=livenet POW_IMPORT_POST_V5_INCB_H1_APPLY=1 \
 ```
 
 Require exactly two inserts. Repeat dry-run; it must report
-`state: "already-applied"` and `inserted: 0`. Keep public reads closed while
+`state: "already-applied"` and `inserted: 0`. The post-V5 repair command
+independently requires a certified completed 958383 PWT range replay,
+its bound immutable witness manifest, no active canonical fault, and both
+imported full H-1 summary rows. It also requires each target's exact
+canonical index block and verifies the persisted mint position and H-1
+provenance against the Core-derived mint before committing. It refuses the
+older pinned missing-row fallback used by historical INCB repair. Keep public reads closed while
 the bounded post-V5 INCB issuance repair uses an explicit private loopback
 API against the same database. First run
 `node scripts/backfill-proof-indexer.mjs --repair-post-v5-incb-issuance` as
 a dry run, then apply with `POW_INDEX_REPAIR_POST_V5_INCB_APPLY=1`; it must
 replace only the two target transactions' reserved-namespace aliases, leave
 the completed PWT replay certificate intact, and rebuild conserved INCB
-balances. Republish a fresh exact-tip green summary and run the complete
-INCB supply, Growth single-counting, ledger, and public surface parity gates
+balances. The repair inventories every unprotected snapshot at or after the
+first target bond and deletes only recognized, replaceable canonical summaries;
+an unknown snapshot shape aborts the transaction. It keeps scan checkpoints,
+imported H-1 oracles, witness and migration evidence, every event-referenced
+issuance oracle, and confirmed WORK marketplace action oracles. The scoped
+balance replay does not enrich unrelated invalid INCB mint
+attempts. Record the exact invalidated summary ids, then republish a fresh
+exact-tip green summary and run the complete INCB supply, Growth
+single-counting, ledger, and public surface parity gates
 before reopening readers or writers. Do not use the historical
 `--prepare-canonical-pwt-range-replay` command for this certified replay.
 

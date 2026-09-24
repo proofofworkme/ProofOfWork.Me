@@ -41,6 +41,7 @@ import {
   POST_V5_INCB_ISSUANCE_REPAIR_TARGETS,
   validatePostV5IncbRepairProjection,
 } from "../server/incb-post-v5-repair.mjs";
+import { verifiedCanonicalRecoveryMetaState } from "./restore-incb-oracle-snapshots.mjs";
 import {
   INCB_RANGE_REPLAY_EXACT_MINT_LEGACY_SNAPSHOT_MODE,
   INCB_RANGE_REPLAY_WITNESS_MANIFEST_MODEL,
@@ -8384,6 +8385,14 @@ async function rebuildConfirmedCreditBalancesFromCanonicalEvents(
     }
   }
   const supplyCorrectionSet = new Set(supplyCorrectionTokenIds);
+  const skipInvalidBondAliasEnrichment =
+    options.skipInvalidBondAliasEnrichment === true;
+  if (skipInvalidBondAliasEnrichment &&
+      (supplyCorrectionMode !== "canonical-incb-issuance-repair" ||
+       !scopedReplay || requestedTokenIds.length !== 1 ||
+       requestedTokenIds[0] !== INCB_TOKEN_ID)) {
+    throw new Error("Invalid bond alias enrichment may be skipped only for scoped INCB issuance repair.");
+  }
   const integerAmount = (value, label) => {
     if (typeof value === "bigint") {
       if (value > 0n) return value;
@@ -8536,8 +8545,8 @@ async function rebuildConfirmedCreditBalancesFromCanonicalEvents(
     )?.[0] ?? "",
   };
   if (
-    bondDefinitionsForInvalidRepair.INCB ||
-    bondDefinitionsForInvalidRepair.POWB
+    !skipInvalidBondAliasEnrichment &&
+    (bondDefinitionsForInvalidRepair.INCB || bondDefinitionsForInvalidRepair.POWB)
   ) {
     await client.query(
       `
@@ -34966,18 +34975,49 @@ async function repairCanonicalPostV5IncbIssuance(client) {
   try {
     if (APPLY_POST_V5_INCB_ISSUANCE_REPAIR) {
       await client.query(
-        "LOCK TABLE proof_indexer.transactions, proof_indexer.events, proof_indexer.event_participants, proof_indexer.event_refs, proof_indexer.credit_balances, proof_indexer.credit_definitions, proof_indexer.ledger_snapshots IN SHARE ROW EXCLUSIVE MODE",
+        "LOCK TABLE proof_indexer.transactions, proof_indexer.events, proof_indexer.blocks, proof_indexer.meta, proof_indexer.event_participants, proof_indexer.event_refs, proof_indexer.credit_balances, proof_indexer.credit_definitions, proof_indexer.ledger_snapshots IN SHARE ROW EXCLUSIVE MODE",
       );
     }
-    const rebuild = await client.query(
-      "SELECT value FROM proof_indexer.meta WHERE key = $1 FOR SHARE",
-      [CANONICAL_REBUILD_META_KEY],
+    const recoveryRows = await client.query(
+      "SELECT key, value FROM proof_indexer.meta WHERE key = ANY($1::text[]) ORDER BY key FOR SHARE",
+      [[CANONICAL_REBUILD_META_KEY, CANONICAL_FAULT_META_KEY]],
     );
-    if (rebuild.rows.length !== 1 || rebuild.rows[0]?.value?.complete !== true) {
-      throw new Error("Post-V5 INCB repair requires one completed canonical rebuild marker.");
+    const recovery = verifiedCanonicalRecoveryMetaState(recoveryRows.rows);
+    const rebuild = recoveryRows.rows.find((row) => row.key === CANONICAL_REBUILD_META_KEY)?.value;
+    if (recovery.rebuild !== "certified-complete-pwt-range-replay" ||
+        canonicalPwtRangeReplayState(rebuild) !== "complete" ||
+        Number(rebuild.rangeReplayFromHeight) !== CANONICAL_INCB_PWT_RANGE_REPLAY_FROM_HEIGHT ||
+        Number(rebuild.indexedThroughBlock) < POST_V5_INCB_ISSUANCE_REPAIR_TARGETS.at(-1).blockHeight) {
+      throw new Error("Post-V5 INCB repair requires the certified completed 958383 PWT replay covering both bonds.");
     }
-    const rebuildFingerprint = canonicalIncbReplaySha256(rebuild.rows[0].value);
+    const binding = canonicalPwtRangeReplayVerifierBinding(rebuild);
+    if (!binding) {
+      throw new Error("Post-V5 INCB repair has no completed replay verifier binding.");
+    }
+    const witnessRows = await client.query(
+      "SELECT value FROM proof_indexer.meta WHERE key = $1 FOR SHARE",
+      [binding.witnessSetMetaKey],
+    );
+    if (witnessRows.rows.length !== 1) {
+      throw new Error("Post-V5 INCB repair requires one immutable replay witness manifest.");
+    }
+    verifyIncbRangeReplayWitnessManifest(witnessRows.rows[0].value, {
+      bindingId: binding.bindingId,
+      count: binding.witnessCount,
+      hash: binding.witnessSetHash,
+      metaKey: binding.witnessSetMetaKey,
+      network: NETWORK,
+      preserveCount: binding.witnessPreserveCount,
+      rangeReplayFromHeight: binding.rangeReplayFromHeight,
+      throughHash: binding.witnessedThroughBlockHash,
+      throughHeight: binding.witnessedThroughBlock,
+    });
+    const rebuildFingerprint = canonicalIncbReplaySha256(rebuild);
     const snapshotRows = await lockedCanonicalIncbValueSnapshots(client, snapshotIds);
+    if (snapshotIds.length !== POST_V5_INCB_ISSUANCE_REPAIR_TARGETS.length ||
+        snapshotRows.length !== snapshotIds.length) {
+      throw new Error("Post-V5 INCB repair requires both imported full H-1 summary rows.");
+    }
     const snapshotFingerprints = verifiedCanonicalIncbValueSnapshotFingerprints(
       snapshotRows, valueSnapshotBindings,
     );
@@ -34996,9 +35036,26 @@ async function repairCanonicalPostV5IncbIssuance(client) {
     })) {
       throw new Error("Post-V5 INCB repair stored transactions do not match Bitcoin Core.");
     }
+    const canonicalBlocks = await client.query(
+      `SELECT height, block_hash FROM proof_indexer.blocks
+       WHERE network = $1 AND height = ANY($2::integer[]) AND canonical = true
+       FOR SHARE`,
+      [NETWORK, targets.map((target) => target.blockHeight)],
+    );
+    if (canonicalBlocks.rows.length !== targets.length || targets.some((target) => {
+      const rows = canonicalBlocks.rows.filter((row) => Number(row.height) === target.blockHeight);
+      return rows.length !== 1 ||
+        String(rows[0]?.block_hash ?? "").trim().toLowerCase() !== target.blockHash;
+    })) {
+      throw new Error("Post-V5 INCB repair requires one matching canonical index block per target.");
+    }
     const bonds = await client.query(
-      `SELECT event_id, txid, status, valid, block_hash, block_height, block_index,
-              op_return_vout, record_ordinal, payload
+      `SELECT event_id, txid, status, valid,
+              (SELECT canonical_transaction.block_hash
+               FROM proof_indexer.transactions canonical_transaction
+               WHERE canonical_transaction.network = proof_indexer.events.network
+                 AND canonical_transaction.txid = proof_indexer.events.txid) AS block_hash,
+              block_height, block_index, op_return_vout, record_ordinal, payload
        FROM proof_indexer.events
        WHERE network = $1 AND txid = ANY($2::text[])
          AND protocol = 'pwm1' AND kind = 'inception-bond'
@@ -35017,8 +35074,12 @@ async function repairCanonicalPostV5IncbIssuance(client) {
       throw new Error("Post-V5 INCB repair has no unique confirmed canonical parent bond per target.");
     }
     const workEvents = await client.query(
-      `SELECT txid, status, valid, block_hash, block_height, block_index,
-              op_return_vout, record_ordinal, payload
+      `SELECT txid, status, valid,
+              (SELECT canonical_transaction.block_hash
+               FROM proof_indexer.transactions canonical_transaction
+               WHERE canonical_transaction.network = proof_indexer.events.network
+                 AND canonical_transaction.txid = proof_indexer.events.txid) AS block_hash,
+              block_height, block_index, op_return_vout, record_ordinal, payload
        FROM proof_indexer.events
        WHERE network = $1 AND txid = ANY($2::text[])
          AND protocol = 'pwt1' AND kind = 'token-transfer'
@@ -35063,8 +35124,12 @@ async function repairCanonicalPostV5IncbIssuance(client) {
       throw new Error("Post-V5 INCB repair stored parent or accepted WORK companion disagrees with the canonical verifier.");
     }
     const incbEvents = await client.query(
-      `SELECT event_id, txid, kind, protocol, status, valid, block_hash, block_height,
-              block_index, op_return_vout, record_ordinal, payload
+      `SELECT event_id, txid, kind, protocol, status, valid,
+              (SELECT canonical_transaction.block_hash
+               FROM proof_indexer.transactions canonical_transaction
+               WHERE canonical_transaction.network = proof_indexer.events.network
+                 AND canonical_transaction.txid = proof_indexer.events.txid) AS block_hash,
+              block_height, block_index, op_return_vout, record_ordinal, payload
        FROM proof_indexer.events
        WHERE network = $1 AND txid = ANY($2::text[])
          AND protocol = 'pwt1'
@@ -35149,6 +35214,7 @@ async function repairCanonicalPostV5IncbIssuance(client) {
     }
     const replay = await rebuildConfirmedCreditBalancesFromCanonicalEvents(client, {
       supplyCorrectionMode: "canonical-incb-issuance-repair",
+      skipInvalidBondAliasEnrichment: true,
       supplyCorrectionTokenIds: [INCB_TOKEN_ID],
       tokenIds: [INCB_TOKEN_ID],
     });
@@ -35168,21 +35234,50 @@ async function repairCanonicalPostV5IncbIssuance(client) {
       throw new Error("Post-V5 INCB repair failed exact mint-to-balance conservation.");
     }
     const repairedRows = await client.query(
-      `SELECT txid, kind, valid, status, payload FROM proof_indexer.events
+      `SELECT txid, kind, valid, status,
+              (SELECT canonical_transaction.block_hash
+               FROM proof_indexer.transactions canonical_transaction
+               WHERE canonical_transaction.network = proof_indexer.events.network
+                 AND canonical_transaction.txid = proof_indexer.events.txid) AS block_hash,
+              block_height, block_index, op_return_vout, record_ordinal, payload
+       FROM proof_indexer.events
        WHERE network = $1 AND txid = ANY($2::text[])
          AND protocol = 'pwt1'
          AND lower(COALESCE(payload->>'tokenId', '')) = $3`,
       [NETWORK, targetTxids, INCB_TOKEN_ID],
     );
+    const pinnedMintFields = [
+      "sourceBondTxid", "minterAddress", "amount",
+      "issuanceCheckpointMode", "issuanceValueSnapshotId",
+      "issuanceValueSnapshotBlockHash", "issuanceValueSnapshotCanonicalSummaryHash",
+      "issuanceValueSnapshotGeneratedAt", "issuanceValueSnapshotMode",
+      "issuanceValueSnapshotModel", "issuanceValueSnapshotWorkNetworkValueQ8",
+      "issuanceNetworkValueQ8",
+    ];
     if (repairedRows.rows.length !== targets.length || targets.some((target) => {
       const row = repairedRows.rows.find((candidate) => candidate.txid === target.txid);
+      const actual = row?.payload;
+      const expected = target.mint;
       return row?.kind !== "token-mint" || row?.valid !== true ||
         row?.status !== "confirmed" ||
-        !canonicalBondMintProjection(row?.payload) ||
-        String(row?.payload?.amount ?? "") !== target.witness.amount ||
-        String(row?.payload?.issuanceNetworkValueQ8 ?? "") !== target.witness.fixedValueQ8;
+        String(row?.block_hash ?? "").trim().toLowerCase() !== target.blockHash ||
+        Number(row?.block_height) !== target.blockHeight ||
+        Number(row?.block_index) !== target.blockIndex ||
+        Number(row?.op_return_vout) !== Number(expected?.protocolVout) ||
+        Number(row?.record_ordinal) !== Number(expected?.recordOrdinal) ||
+        !canonicalBondMintProjection(actual) ||
+        pinnedMintFields.some((field) =>
+          String(actual?.[field] ?? "").trim() !== String(expected?.[field] ?? "").trim()) ||
+        Number(actual?.issuanceCheckpointBlockHeight) !== target.blockHeight ||
+        String(actual?.issuanceCheckpointBlockHash ?? "").trim().toLowerCase() !== target.blockHash ||
+        Number(actual?.issuanceCheckpointBlockIndex) !== target.blockIndex ||
+        Number(actual?.issuanceValueSnapshotBlockHeight) !== target.blockHeight - 1 ||
+        String(actual?.issuanceValueSnapshotBlockHash ?? "").trim().toLowerCase() !==
+          target.previousBlockHash ||
+        String(actual?.amount ?? "") !== target.witness.amount ||
+        String(actual?.issuanceNetworkValueQ8 ?? "") !== target.witness.fixedValueQ8;
     })) {
-      throw new Error("Post-V5 INCB repair did not persist one exact canonical mint per target.");
+      throw new Error("Post-V5 INCB repair did not persist one exact canonical mint and H-1 provenance per target.");
     }
     const scanSnapshotsBefore = await client.query(
       `SELECT snapshot_id FROM proof_indexer.ledger_snapshots
@@ -35193,7 +35288,10 @@ async function repairCanonicalPostV5IncbIssuance(client) {
        ORDER BY snapshot_id`,
       [NETWORK, POST_V5_INCB_ISSUANCE_REPAIR_TARGETS[0].blockHeight],
     );
-    const invalidatedSnapshots = await client.query(
+    // The repair changes derived totals from the first bond onward. Select the
+    // complete unprotected set under the snapshot table lock, then refuse any
+    // row that is not a replaceable canonical summary before deleting by ID.
+    const unprotectedSnapshots = await client.query(
       `WITH manifest_locked AS MATERIALIZED (
          SELECT DISTINCT entry->'snapshot'->>'snapshotId' AS snapshot_id
          FROM proof_indexer.meta rebuild
@@ -35205,8 +35303,106 @@ async function repairCanonicalPostV5IncbIssuance(client) {
            AND witness.value->>'network' = $1
            AND witness.value->>'model' = $5
            AND entry->>'disposition' = 'preserve'
+       ), work_market_oracles AS MATERIALIZED (
+         SELECT DISTINCT oracle_snapshot.snapshot_id
+         FROM proof_indexer.events action_event
+         JOIN proof_indexer.transactions action_transaction
+           ON action_transaction.network = action_event.network
+          AND action_transaction.txid = action_event.txid
+          AND action_transaction.status = 'confirmed'
+         JOIN proof_indexer.blocks action_block
+           ON action_block.network = action_transaction.network
+          AND action_block.block_hash = action_transaction.block_hash
+          AND action_block.height = action_transaction.block_height
+          AND action_block.canonical = true
+         CROSS JOIN LATERAL (
+           VALUES (
+             action_event.payload->'saleAuthorization'->>'oracleBlockHeight',
+             action_event.payload->'saleAuthorization'->>'oracleBlockHash'
+           ), (
+             CASE WHEN action_event.payload->'saleAuthorization'->>'version' = $8
+               THEN action_event.payload->'workMarketPricing'->>'confirmationOracleBlockHeight'
+               ELSE NULL END,
+             CASE WHEN action_event.payload->'saleAuthorization'->>'version' = $8
+               THEN action_event.payload->'workMarketPricing'->>'confirmationOracleBlockHash'
+               ELSE NULL END
+           )
+         ) oracle_reference(block_height, block_hash)
+         JOIN proof_indexer.ledger_snapshots oracle_snapshot
+           ON oracle_snapshot.network = action_event.network
+          AND oracle_snapshot.indexed_through_block =
+            CASE WHEN oracle_reference.block_height ~ '^[1-9][0-9]*$'
+              THEN oracle_reference.block_height::integer ELSE NULL END
+          AND lower(COALESCE(oracle_snapshot.source_hashes->>'blockScan', '')) =
+            lower(oracle_reference.block_hash)
+          AND lower(COALESCE(oracle_snapshot.payload->>'indexedThroughBlockHash', '')) =
+            lower(oracle_reference.block_hash)
+          AND oracle_snapshot.source_hashes ? 'canonicalSummary'
+          AND oracle_snapshot.payload->'summaryRefresh'->>'mode' =
+            'canonical-summary-refresh'
+         WHERE action_event.network = $1
+           AND oracle_snapshot.indexed_through_block >= $2
+           AND action_event.status = 'confirmed'
+           AND (action_event.valid = true OR
+                action_event.payload->'saleAuthorization'->>'version' = $8)
+           AND action_event.kind IN (
+             'token-listing', 'token-listing-sealed', 'token-sale', 'token-event-invalid'
+           )
+           AND (action_event.kind <> 'token-event-invalid' OR
+                lower(COALESCE(action_event.payload->>'attemptedKind', '')) IN (
+                  'list', 'seal', 'buy', 'token-listing', 'token-listing-sealed', 'token-sale'
+                ))
+           AND action_event.payload->'saleAuthorization'->>'version' = ANY($6::text[])
+           AND lower(action_event.payload->'saleAuthorization'->>'tokenId') = $7
+           AND oracle_reference.block_height ~ '^[1-9][0-9]*$'
+           AND oracle_reference.block_hash ~ '^[0-9a-fA-F]{64}$'
        )
-       DELETE FROM proof_indexer.ledger_snapshots snapshot
+       SELECT snapshot.snapshot_id, snapshot.indexed_through_block,
+              snapshot.source_hashes,
+              snapshot.payload->>'model' AS payload_model,
+              snapshot.payload->>'snapshotId' AS payload_snapshot_id,
+              snapshot.payload->>'indexedThroughBlock' AS payload_indexed_through_block,
+              jsonb_typeof(snapshot.payload->'summaryPayloads') AS summary_payloads_type,
+              (SELECT count(*)::integer FROM proof_indexer.blocks authority
+               WHERE authority.network = snapshot.network
+                 AND authority.height = snapshot.indexed_through_block
+                 AND authority.canonical = true) AS canonical_block_count,
+              EXISTS (SELECT 1 FROM proof_indexer.blocks authority
+                      WHERE authority.network = snapshot.network
+                        AND authority.height = snapshot.indexed_through_block
+                        AND authority.canonical = true
+                        AND lower(authority.block_hash) =
+                          lower(snapshot.source_hashes->>'blockScan')) AS canonical_hash_match,
+              COALESCE((
+                snapshot.payload->>'workAmountStorageModel' = 'work-subatoms-v2'
+                AND snapshot.payload->'summaryRefresh'->>'mode' = 'canonical-summary-refresh'
+                AND snapshot.payload->'summaryRefresh'->>'indexedThroughBlock' =
+                  snapshot.indexed_through_block::text
+                AND snapshot.payload->>'status' = 'green'
+                AND snapshot.payload->>'ok' = 'true'
+                AND snapshot.consistency->>'status' = 'green'
+                AND snapshot.consistency->>'ok' = 'true'
+                AND snapshot.payload->'sourceHashes' = snapshot.source_hashes
+                AND snapshot.payload->>'indexedThroughBlockHash' =
+                  snapshot.source_hashes->>'blockScan'
+                AND snapshot.payload->'summaryRefresh'->>'indexedThroughBlockHash' =
+                  snapshot.payload->>'indexedThroughBlockHash'
+                AND snapshot.payload->'totals'->>'workNetworkValueAccountingModel' =
+                  'canonical-exact-work-network-q8-v1'
+                AND snapshot.payload->'summaryPayloads'->'workFloor'->>'workNetworkValueAccountingModel' =
+                  'canonical-exact-work-network-q8-v1'
+                AND snapshot.payload->'summaryPayloads'->'workFloor'->'actualValue'->>'workNetworkValueAccountingModel' =
+                  'canonical-exact-work-network-q8-v1'
+                AND jsonb_typeof(snapshot.payload->'summaryPayloads'->'growthSummary') = 'object'
+                AND jsonb_typeof(snapshot.payload->'summaryPayloads'->'inceptionSummary') = 'object'
+                AND jsonb_typeof(snapshot.payload->'summaryPayloads'->'infinitySummary') = 'object'
+                AND jsonb_typeof(snapshot.payload->'summaryPayloads'->'logSummary') = 'object'
+                AND jsonb_typeof(snapshot.payload->'summaryPayloads'->'marketplaceSummary') = 'object'
+                AND jsonb_typeof(snapshot.payload->'summaryPayloads'->'tokenSummary') = 'object'
+                AND jsonb_typeof(snapshot.payload->'summaryPayloads'->'workFloor') = 'object'
+                AND jsonb_typeof(snapshot.payload->'summaryPayloads'->'workSummary') = 'object'
+              ), false) AS replaceable_summary
+       FROM proof_indexer.ledger_snapshots snapshot
        WHERE snapshot.network = $1
          AND snapshot.indexed_through_block >= $2
          AND NOT (snapshot.snapshot_id = ANY($3::text[]))
@@ -35219,12 +35415,11 @@ async function repairCanonicalPostV5IncbIssuance(client) {
          )
          AND NOT EXISTS (SELECT 1 FROM manifest_locked protected
                          WHERE protected.snapshot_id = snapshot.snapshot_id)
+         AND NOT EXISTS (SELECT 1 FROM work_market_oracles protected
+                         WHERE protected.snapshot_id = snapshot.snapshot_id)
          AND NOT EXISTS (
            SELECT 1 FROM proof_indexer.events issued
-           WHERE issued.network = $1 AND issued.protocol = 'pwt1'
-             AND issued.kind = 'token-mint' AND issued.valid = true
-             AND issued.status = 'confirmed'
-             AND lower(COALESCE(issued.payload->>'tokenId', '')) = $6
+           WHERE issued.network = $1
              AND issued.payload->>'issuanceValueSnapshotId' = snapshot.snapshot_id
          )
          AND NOT EXISTS (
@@ -35251,11 +35446,58 @@ async function repairCanonicalPostV5IncbIssuance(client) {
                'canonical-work-amo-v5-h-minus-one-seed-evidence-v1'
              AND seed_evidence.payload->'canonicalSummary'->>'snapshotId' = snapshot.snapshot_id
          )
-       RETURNING snapshot.snapshot_id`,
+       ORDER BY snapshot.snapshot_id`,
       [NETWORK, POST_V5_INCB_ISSUANCE_REPAIR_TARGETS[0].blockHeight,
         snapshotIds, CANONICAL_REBUILD_META_KEY,
-        INCB_RANGE_REPLAY_WITNESS_MANIFEST_MODEL, INCB_TOKEN_ID],
+        INCB_RANGE_REPLAY_WITNESS_MANIFEST_MODEL,
+        [WORK_MARKET_V2_AUTH_VERSION, WORK_MARKET_V4_AUTH_VERSION,
+          WORK_AMO_V5_AUTH_VERSION], WORK_TOKEN_ID,
+        WORK_MARKET_V4_AUTH_VERSION],
     );
+    const invalidatedSnapshotIds = [];
+    for (const row of unprotectedSnapshots.rows) {
+      const id = String(row?.snapshot_id ?? "");
+      const height = Number(row?.indexed_through_block);
+      const sourceHashes = row?.source_hashes;
+      if (!id || row?.payload_model || row?.payload_snapshot_id !== id ||
+          !Number.isSafeInteger(height) ||
+          Number(row?.payload_indexed_through_block) !== height ||
+          row?.summary_payloads_type !== "object" ||
+          Number(row?.canonical_block_count) !== 1 ||
+          row?.canonical_hash_match !== true ||
+          row?.replaceable_summary !== true ||
+          !isHexTxid(sourceHashes?.canonicalSummary) ||
+          !isHexTxid(sourceHashes?.blockScan)) {
+        throw new Error(`Post-V5 INCB repair found an unrecognized unprotected snapshot shape at ${id || "unknown"}.`);
+      }
+      invalidatedSnapshotIds.push(id);
+    }
+    if (new Set(invalidatedSnapshotIds).size !== invalidatedSnapshotIds.length) {
+      throw new Error("Post-V5 INCB repair found duplicate replaceable summary identities.");
+    }
+    const invalidatedSnapshots = invalidatedSnapshotIds.length > 0
+      ? await client.query(
+        `DELETE FROM proof_indexer.ledger_snapshots
+         WHERE network = $1 AND snapshot_id = ANY($2::text[])
+           AND indexed_through_block >= $3
+           AND COALESCE(payload->>'model', '') = ''
+           AND payload->>'snapshotId' = snapshot_id
+           AND COALESCE(source_hashes ? 'canonicalSummary', false)
+           AND COALESCE(source_hashes ? 'blockScan', false)
+           AND jsonb_typeof(payload->'summaryPayloads') = 'object'
+           AND payload->'summaryRefresh'->>'mode' = 'canonical-summary-refresh'
+           AND payload->>'status' = 'green' AND payload->>'ok' = 'true'
+           AND consistency->>'status' = 'green' AND consistency->>'ok' = 'true'
+         RETURNING snapshot_id`,
+        [NETWORK, invalidatedSnapshotIds,
+          POST_V5_INCB_ISSUANCE_REPAIR_TARGETS[0].blockHeight],
+      )
+      : { rows: [], rowCount: 0 };
+    if (invalidatedSnapshots.rowCount !== invalidatedSnapshotIds.length ||
+        JSON.stringify(invalidatedSnapshots.rows.map((row) => row.snapshot_id).sort()) !==
+          JSON.stringify(invalidatedSnapshotIds)) {
+      throw new Error("Post-V5 INCB repair did not invalidate exactly its reviewed derived summaries.");
+    }
     const scanSnapshotsAfter = await client.query(
       `SELECT snapshot_id FROM proof_indexer.ledger_snapshots
        WHERE network = $1 AND indexed_through_block >= $2

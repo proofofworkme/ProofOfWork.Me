@@ -27304,7 +27304,28 @@ check("every ledger snapshot deletion preserves immutable AMO V5 seed dependenci
     7,
     "every ledger snapshot deletion path must be reviewed",
   );
-  for (const query of snapshotDeleteQueries) {
+  const exactIdDeletes = snapshotDeleteQueries.filter((query) =>
+    /snapshot_id = ANY\(\$2::text\[\]\)/u.test(query) &&
+    /jsonb_typeof\(payload->'summaryPayloads'\) = 'object'/u.test(query));
+  assert.equal(exactIdDeletes.length, 1,
+    "the post-V5 repair may delete only pre-reviewed summary ids");
+  const postV5RepairSource = source.slice(
+    source.indexOf("async function repairCanonicalPostV5IncbIssuance"),
+    source.indexOf("async function canonicalEventParentMetadataRepairCoreTarget"),
+  );
+  for (const pattern of [
+    /WITH manifest_locked AS MATERIALIZED/u,
+    /workAmoV5Migration:/u,
+    /replayEvidence'->'seed'[\s\S]*->'snapshotIds'/u,
+    /replayEvidence'->'closing'[\s\S]*->'snapshotIds'/u,
+    /canonical-work-amo-v5-h-minus-one-seed-evidence-v1/u,
+    /seed_evidence\.payload->'canonicalSummary'->>'snapshotId'/u,
+    /unrecognized unprotected snapshot shape/u,
+  ]) {
+    assert.match(postV5RepairSource, pattern);
+  }
+  for (const query of snapshotDeleteQueries.filter((candidate) =>
+    !exactIdDeletes.includes(candidate))) {
     assert.match(query, /workAmoV5Migration:/u);
     assert.match(
       query,
@@ -86744,7 +86765,31 @@ check("post-V5 INCB repair dry run binds stored bond and accepted WORK before an
   const targets = POST_V5_INCB_ISSUANCE_REPAIR_TARGETS.map((target, index) => ({
     ...target,
     bond: { protocolVout: 1, recordOrdinal: 0 },
-    mint: { txid: target.txid },
+    mint: {
+      txid: target.txid,
+      blockHash: target.blockHash,
+      blockHeight: target.blockHeight,
+      blockIndex: target.blockIndex,
+      protocolVout: 1,
+      recordOrdinal: 1,
+      sourceBondTxid: target.txid,
+      minterAddress: "bond-recipient",
+      amount: String(1000 + index),
+      issuanceCheckpointMode: "bond-transaction-provenance",
+      issuanceCheckpointBlockHash: target.blockHash,
+      issuanceCheckpointBlockHeight: target.blockHeight,
+      issuanceCheckpointBlockIndex: target.blockIndex,
+      issuanceValueSnapshotId: index === 0 ? "h-1-a" : "h-1-b",
+      issuanceValueSnapshotBlockHash: "a".repeat(64),
+      issuanceValueSnapshotBlockHeight: target.blockHeight - 1,
+      issuanceValueSnapshotCanonicalSummaryHash: "b".repeat(64),
+      issuanceValueSnapshotGeneratedAt: `2026-09-24T00:00:0${index}Z`,
+      issuanceValueSnapshotMode: "canonical-summary-refresh",
+      issuanceValueSnapshotModel: "canonical-summary-snapshot-v1",
+      issuanceValueSnapshotWorkNetworkValueQ8: "123456789",
+      issuanceNetworkValueQ8: String(100000000000n + BigInt(index)),
+    },
+    previousBlockHash: "a".repeat(64),
     witness: {
       amount: String(1000 + index),
       attachedWorkSubatoms: String(1000000 + index),
@@ -86762,6 +86807,10 @@ check("post-V5 INCB repair dry run binds stored bond and accepted WORK before an
       block_hash: target.blockHash,
       block_height: target.blockHeight,
       block_index: target.blockIndex,
+    }));
+    const canonicalBlocks = targets.map((target) => ({
+      height: target.blockHeight,
+      block_hash: target.blockHash,
     }));
     const bonds = targets.map((target, index) => ({
       ...transactions[index],
@@ -86813,14 +86862,37 @@ check("post-V5 INCB repair dry run binds stored bond and accepted WORK before an
       record_ordinal: 1,
       payload: { reasonCode: "reserved-bond-credit-namespace" },
     })));
-    return { transactions, bonds, work, invalid };
+    return { transactions, canonicalBlocks, bonds, work, invalid };
   };
-  const repair = isolatedFunction(BACKFILL_PATH, "repairCanonicalPostV5IncbIssuance", {
-    APPLY_POST_V5_INCB_ISSUANCE_REPAIR: false,
+  const certifiedMarker = {
+    active: false,
+    complete: true,
+    indexedThroughBlock: 968345,
+    mode: "pwt-range-replay",
+    rangeReplayFromHeight: 958383,
+    status: "complete",
+    verifierBinding: {
+      bindingId: "binding-id",
+      rangeReplayFromHeight: 958383,
+      witnessCount: 18,
+      witnessPreserveCount: 10,
+      witnessSetHash: "witness-hash",
+      witnessSetMetaKey: "witness-key",
+      witnessedThroughBlock: 968345,
+      witnessedThroughBlockHash: "witness-tip-hash",
+    },
+  };
+  const repairDependencies = {
+    CANONICAL_FAULT_META_KEY: "canonical:fault",
+    CANONICAL_INCB_PWT_RANGE_REPLAY_FROM_HEIGHT: 958383,
     CANONICAL_REBUILD_META_KEY: "canonical:rebuild",
     INCB_TOKEN_ID,
+    INCB_RANGE_REPLAY_WITNESS_MANIFEST_MODEL,
     NETWORK: "livenet",
     POST_V5_INCB_ISSUANCE_REPAIR_TARGETS,
+    WORK_AMO_V5_AUTH_VERSION,
+    WORK_MARKET_V2_AUTH_VERSION: "pwt-sale-v3",
+    WORK_MARKET_V4_AUTH_VERSION: "pwt-sale-v4",
     WORK_AMO_V8_TRANSFER_VERSION: "send3",
     WORK_SUBATOM_PROJECTION_MODEL,
     WORK_TOKEN_ID,
@@ -86830,25 +86902,64 @@ check("post-V5 INCB repair dry run binds stored bond and accepted WORK before an
     ]),
     canonicalPostV5IncbRepairTarget: async (target) =>
       targets.find((entry) => entry.txid === target.txid),
-    lockedCanonicalIncbValueSnapshots: async () => [],
+    canonicalPwtRangeReplayState: (marker) =>
+      marker?.mode === "pwt-range-replay" && marker?.status === "complete" &&
+      marker?.complete === true ? "complete" : null,
+    canonicalPwtRangeReplayVerifierBinding: (marker) => marker?.verifierBinding ?? null,
+    lockedCanonicalIncbValueSnapshots: async (client) => client.snapshotRows,
+    verifiedCanonicalRecoveryMetaState: (rows) => {
+      if (rows.some((row) => row.key === "canonical:fault" && row.value?.active)) {
+        throw new Error("active canonical fault");
+      }
+      const marker = rows.find((row) => row.key === "canonical:rebuild")?.value;
+      return { rebuild: marker?.mode === "pwt-range-replay" &&
+        marker?.status === "complete" && marker?.complete === true
+        ? "certified-complete-pwt-range-replay" : "absent" };
+    },
     verifiedCanonicalIncbValueSnapshotFingerprints: () => new Map([
       ["h-1-a", "fingerprint-a"], ["h-1-b", "fingerprint-b"],
     ]),
+    verifyIncbRangeReplayWitnessManifest: (manifest, expected) => {
+      if (manifest?.bindingId !== expected.bindingId ||
+          manifest?.hash !== expected.hash) {
+        throw new Error("replay witness manifest mismatch");
+      }
+      return manifest;
+    },
+  };
+  const repair = isolatedFunction(BACKFILL_PATH, "repairCanonicalPostV5IncbIssuance", {
+    ...repairDependencies, APPLY_POST_V5_INCB_ISSUANCE_REPAIR: false,
   });
-  const clientFor = (alterWork) => {
+  const clientFor = (alterWork, {
+    faultActive = false,
+    manifest = { bindingId: "binding-id", hash: "witness-hash" },
+    marker = certifiedMarker,
+    snapshotRows = [{ snapshot_id: "h-1-a" }, { snapshot_id: "h-1-b" }],
+    wrongTargetBlock = false,
+  } = {}) => {
     const rows = makeRows(alterWork);
     const queries = [];
     return {
       queries,
+      snapshotRows,
       async query(sql) {
         const statement = String(sql).replace(/\s+/gu, " ").trim();
         queries.push(statement);
         if (statement.startsWith("BEGIN") || statement === "ROLLBACK") return { rows: [] };
-        if (statement.includes("FROM proof_indexer.meta WHERE key")) {
-          return { rows: [{ value: { complete: true } }] };
+        if (statement.includes("FROM proof_indexer.meta WHERE key = ANY")) {
+          return { rows: [
+            { key: "canonical:rebuild", value: marker },
+            ...(faultActive ? [{ key: "canonical:fault", value: { active: true } }] : []),
+          ] };
+        }
+        if (statement.includes("FROM proof_indexer.meta WHERE key = $1 FOR SHARE")) {
+          return { rows: [{ value: manifest }] };
         }
         if (statement.includes("FROM proof_indexer.transactions WHERE")) {
           return { rows: rows.transactions };
+        }
+        if (statement.startsWith("SELECT height, block_hash FROM proof_indexer.blocks")) {
+          return { rows: wrongTargetBlock ? rows.canonicalBlocks.slice(0, 1) : rows.canonicalBlocks };
         }
         if (statement.includes("AND protocol = 'pwm1' AND kind = 'inception-bond'")) {
           return { rows: rows.bonds };
@@ -86883,6 +86994,193 @@ check("post-V5 INCB repair dry run binds stored bond and accepted WORK before an
   assert.equal(changedWorkClient.queries.at(-1), "ROLLBACK");
   assert.ok(changedWorkClient.queries.every((query) =>
     !/^(?:DELETE|INSERT|UPDATE|COMMIT|LOCK TABLE)/u.test(query)));
+  for (const [label, options, pattern] of [
+    ["incomplete replay", { marker: { complete: true } }, /certified completed 958383 PWT replay/u],
+    ["active fault", { faultActive: true }, /active canonical fault/u],
+    ["missing H-1 row", { snapshotRows: [{ snapshot_id: "h-1-a" }] }, /both imported full H-1 summary rows/u],
+    ["mismatched manifest", { manifest: { bindingId: "wrong", hash: "witness-hash" } }, /replay witness manifest mismatch/u],
+    ["missing canonical target block", { wrongTargetBlock: true }, /one matching canonical index block per target/u],
+  ]) {
+    const rejectedClient = clientFor(false, options);
+    await rejection(repair(rejectedClient), (error) => pattern.test(error.message), label);
+    assert.equal(rejectedClient.queries.at(-1), "ROLLBACK", label);
+    assert.ok(rejectedClient.queries.every((query) =>
+      !/^(?:DELETE|INSERT|UPDATE|COMMIT|LOCK TABLE)/u.test(query)), label);
+  }
+  const applyRepair = isolatedFunction(BACKFILL_PATH, "repairCanonicalPostV5IncbIssuance", {
+    ...repairDependencies,
+    APPLY_POST_V5_INCB_ISSUANCE_REPAIR: true,
+    bitcoinRpc: async (method, args) => {
+      if (method === "getblockhash") {
+        return targets.find((target) => target.blockHeight === args[0])?.blockHash;
+      }
+      if (method === "getblock") {
+        const target = targets.find((entry) => entry.blockHash === args[0]);
+        const tx = [];
+        tx[target.blockIndex] = target.txid;
+        return { previousblockhash: target.previousBlockHash, tx };
+      }
+      throw new Error(`Unexpected Core call ${method}`);
+    },
+    canonicalBondMintProjection: () => true,
+    canonicalProtocolItemForPostgres: (item) => item,
+    isHexTxid: (value) => /^[0-9a-f]{64}$/u.test(String(value ?? "")),
+    protocolIntegrityItemForPersistence: async (_client, item) => item,
+    rebuildConfirmedCreditBalancesFromCanonicalEvents: async (client, options) => {
+      client.replayOptions = options;
+      return { holders: 2 };
+    },
+    sourceLabelForProtocolItem: () => "token-mints",
+    upsertEvent: async (client, _source, item) => {
+      const payload = { ...item };
+      if (client.mutateMintProvenance) {
+        payload.issuanceValueSnapshotCanonicalSummaryHash = "e".repeat(64);
+      }
+      client.mints.push({ txid: item.txid, kind: "token-mint", valid: true,
+        status: "confirmed", block_hash: item.blockHash,
+        block_height: item.blockHeight, block_index: item.blockIndex,
+        op_return_vout: item.protocolVout, record_ordinal: item.recordOrdinal,
+        payload });
+      return { skipped: false };
+    },
+  });
+  const replaceableSummary = (id, height) => ({
+    snapshot_id: id,
+    indexed_through_block: height,
+    source_hashes: { canonicalSummary: "b".repeat(64), blockScan: "c".repeat(64) },
+    payload_model: "",
+    payload_snapshot_id: id,
+    payload_indexed_through_block: String(height),
+    summary_payloads_type: "object",
+    replaceable_summary: true,
+    canonical_block_count: 1,
+    canonical_hash_match: true,
+  });
+  const applyClientFor = ({ unknownSnapshot = false, nonGreenSummary = false,
+    wrongCanonicalBlock = false, wrongTargetBlock = false,
+    mutateMintProvenance = false, partialDelete = false } = {}) => {
+    const rows = makeRows(false);
+    const queries = [];
+    const summaryRows = [
+      replaceableSummary("summary-a", 968200),
+      replaceableSummary("summary-b", 968345),
+      ...(unknownSnapshot ? [{ ...replaceableSummary("immutable-unknown", 968300),
+        payload_model: "unexpected-evidence-v1" }] : []),
+      ...(nonGreenSummary ? [{ ...replaceableSummary("non-green", 968300),
+        replaceable_summary: false }] : []),
+      ...(wrongCanonicalBlock ? [{ ...replaceableSummary("wrong-block", 968300),
+        canonical_hash_match: false }] : []),
+    ];
+    let supplyReads = 0;
+    return {
+      queries,
+      mints: [],
+      mutateMintProvenance,
+      snapshotRows: [{ snapshot_id: "h-1-a" }, { snapshot_id: "h-1-b" }],
+      async query(sql, parameters = []) {
+        const statement = String(sql).replace(/\s+/gu, " ").trim();
+        queries.push(statement);
+        if (statement.startsWith("BEGIN") || statement.startsWith("LOCK TABLE") ||
+            statement === "ROLLBACK" || statement === "COMMIT") return { rows: [] };
+        if (statement.includes("FROM proof_indexer.meta WHERE key = ANY")) {
+          return { rows: [{ key: "canonical:rebuild", value: certifiedMarker }] };
+        }
+        if (statement.includes("FROM proof_indexer.meta WHERE key = $1 FOR SHARE")) {
+          return { rows: [{ value: parameters[0] === "witness-key"
+            ? { bindingId: "binding-id", hash: "witness-hash" } : certifiedMarker }] };
+        }
+        if (statement.includes("FROM proof_indexer.transactions WHERE")) return { rows: rows.transactions };
+        if (statement.startsWith("SELECT height, block_hash FROM proof_indexer.blocks")) {
+          return { rows: wrongTargetBlock ? [{ ...rows.canonicalBlocks[0], block_hash: "d".repeat(64) }]
+            .concat(rows.canonicalBlocks.slice(1)) : rows.canonicalBlocks };
+        }
+        if (statement.includes("AND protocol = 'pwm1' AND kind = 'inception-bond'")) return { rows: rows.bonds };
+        if (statement.includes("AND protocol = 'pwt1' AND kind = 'token-transfer'")) return { rows: rows.work };
+        if (statement.includes("kind, protocol, status, valid") && statement.includes("FROM proof_indexer.events")) return { rows: rows.invalid };
+        if (statement.includes("AS mint_supply")) {
+          supplyReads += 1;
+          return { rows: [{ mint_supply: supplyReads === 1 ? "50" : "2051",
+            balance_supply: supplyReads === 1 ? "50" : "2051" }] };
+        }
+        if (statement.startsWith("DELETE FROM proof_indexer.event_participants") ||
+            statement.startsWith("DELETE FROM proof_indexer.event_refs")) return { rows: [], rowCount: 1 };
+        if (statement.startsWith("DELETE FROM proof_indexer.events")) {
+          return { rows: [{ event_id: parameters[1] }], rowCount: 1 };
+        }
+        if (statement.startsWith("SELECT txid, kind, valid, status,")) {
+          return { rows: this.mints };
+        }
+        if (statement.startsWith("SELECT snapshot_id FROM proof_indexer.ledger_snapshots")) {
+          return { rows: [{ snapshot_id: "scan-checkpoint" }] };
+        }
+        if (statement.startsWith("WITH manifest_locked AS MATERIALIZED")) {
+          return { rows: summaryRows };
+        }
+        if (statement.startsWith("DELETE FROM proof_indexer.ledger_snapshots")) {
+          assert.equal(parameters[0], "livenet");
+          assert.equal(JSON.stringify(parameters[1]),
+            JSON.stringify(["summary-a", "summary-b"]));
+          assert.equal(parameters[2], POST_V5_INCB_ISSUANCE_REPAIR_TARGETS[0].blockHeight);
+          const expected = partialDelete ? summaryRows.slice(0, 1) : summaryRows;
+          return { rows: expected.map((row) => ({ snapshot_id: row.snapshot_id })),
+            rowCount: expected.length };
+        }
+        throw new Error(`Unexpected apply repair query: ${statement.slice(0, 120)}`);
+      },
+    };
+  };
+  const appliedClient = applyClientFor();
+  const applied = await applyRepair(appliedClient);
+  assert.equal(applied.changedRows, 2);
+  assert.equal(applied.removedInvalidAliases, 4);
+  assert.equal(JSON.stringify(appliedClient.mints.map((row) => row.txid).sort()),
+    JSON.stringify(targets.map((target) => target.txid).sort()));
+  assert.equal(JSON.stringify(applied.invalidatedSnapshotIds),
+    JSON.stringify(["summary-a", "summary-b"]));
+  assert.equal(JSON.stringify(appliedClient.replayOptions), JSON.stringify({
+    supplyCorrectionMode: "canonical-incb-issuance-repair",
+    skipInvalidBondAliasEnrichment: true,
+    supplyCorrectionTokenIds: [INCB_TOKEN_ID], tokenIds: [INCB_TOKEN_ID],
+  }));
+  assert.equal(appliedClient.queries.at(-1), "COMMIT");
+  const eventHashReads = appliedClient.queries.filter((query) =>
+    query.includes("FROM proof_indexer.events") && query.includes("AS block_hash"));
+  assert.equal(eventHashReads.length, 4);
+  assert.ok(eventHashReads.every((query) =>
+    query.includes("FROM proof_indexer.transactions canonical_transaction") &&
+    query.includes("canonical_transaction.network = proof_indexer.events.network") &&
+    query.includes("canonical_transaction.txid = proof_indexer.events.txid")));
+  const tableLock = appliedClient.queries.find((query) => query.startsWith("LOCK TABLE"));
+  assert.match(tableLock, /proof_indexer\.meta/u);
+  assert.match(tableLock, /proof_indexer\.blocks/u);
+  assert.equal(appliedClient.queries.filter((query) =>
+    query.startsWith("DELETE FROM proof_indexer.ledger_snapshots")).length, 1);
+  const protectedSelection = appliedClient.queries.find((query) =>
+    query.startsWith("WITH manifest_locked AS MATERIALIZED"));
+  assert.match(protectedSelection, /work_market_oracles AS MATERIALIZED/u);
+  assert.match(protectedSelection, /action_block\.canonical = true/u);
+  assert.match(protectedSelection, /canonical_block_count/u);
+  assert.match(protectedSelection, /canonical_hash_match/u);
+  assert.match(protectedSelection, /issued\.payload->>'issuanceValueSnapshotId'/u);
+  assert.doesNotMatch(protectedSelection, /issued\.kind = 'token-mint'/u);
+  for (const [label, options, pattern] of [
+    ["unknown immutable snapshot", { unknownSnapshot: true }, /unrecognized unprotected snapshot shape/u],
+    ["non-green summary", { nonGreenSummary: true }, /unrecognized unprotected snapshot shape/u],
+    ["wrong canonical block", { wrongCanonicalBlock: true }, /unrecognized unprotected snapshot shape/u],
+    ["wrong target canonical block", { wrongTargetBlock: true }, /one matching canonical index block per target/u],
+    ["altered persisted mint H-1 provenance", { mutateMintProvenance: true }, /exact canonical mint and H-1 provenance/u],
+    ["short snapshot deletion", { partialDelete: true }, /exactly its reviewed derived summaries/u],
+  ]) {
+    const rejectedClient = applyClientFor(options);
+    await rejection(applyRepair(rejectedClient), (error) => pattern.test(error.message), label);
+    assert.equal(rejectedClient.queries.at(-1), "ROLLBACK", label);
+    if (options.unknownSnapshot || options.nonGreenSummary || options.wrongCanonicalBlock ||
+        options.wrongTargetBlock || options.mutateMintProvenance) {
+      assert.ok(rejectedClient.queries.every((query) =>
+        !query.startsWith("DELETE FROM proof_indexer.ledger_snapshots")), label);
+    }
+  }
+
 });
 
 check("retained PWT replay normalizes only two verified equal WORK listing aliases", () => {
