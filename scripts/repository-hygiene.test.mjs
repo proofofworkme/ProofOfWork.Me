@@ -223,7 +223,14 @@ function cli(root, ...args) {
 
 function createFixture(t, { withObsoleteFile = false } = {}) {
   const root = mkdtempSync(join(tmpdir(), 'repository-hygiene-test-'));
-  t.after(() => rmSync(root, { recursive: true, force: true }));
+  // Node 20 can observe a transient ENOTEMPTY while removing Git objects.
+  // Keep fixture cleanup mandatory, with a bounded retry for that race.
+  t.after(() => rmSync(root, {
+    recursive: true,
+    force: true,
+    maxRetries: 10,
+    retryDelay: 100,
+  }));
 
   git(root, 'init', '-q');
   git(root, 'config', 'user.name', 'Repository Hygiene Test');
