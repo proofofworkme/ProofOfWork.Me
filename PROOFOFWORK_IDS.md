@@ -303,26 +303,27 @@ pwb1:buy5:<listing-txid>:<new-owner-address>
 Rules to preserve:
 
 - Boost and replies are capped at 140 user-visible characters.
-- Original posts are self-sends to the author's own ProofOfWork address. They require miner fee only unless the author chooses to attach proof or WORK signal.
-- Originals can be published through Mail's Boost ticker or the standalone Boost “What's happening?” composer. Attachments/media use the existing Files path; Boost records store proof metadata and pointers, not duplicate bytes.
+- Original posts carry Proof and/or WORK signal to the author's own ProofOfWork address. The standalone composer requires a positive signal and supports a WORK-only post through a canonical same-transaction `pwt1:send3` self-transfer. Authors pay the miner fee and the WORK mutation fee when applicable.
+- Originals can be published through Mail's Boost ticker or either standalone Boost compose button. The standalone buttons open the same Proof/WORK composer with a Files attachment in the same transaction. Computer Mail compose retains its positive Proof self-send rule and optional WORK attachment. Boost records store file proof metadata and pointers, not duplicate bytes.
 - Every address can have a Boost profile shell. Confirmed PowIDs provide the preferred display identity, and profile picture/banner choices come from confirmed Files on that address.
 - `pwb1:like`, `pwb1:reply`, and `pwb1:reboost` are paid product actions. The current writer sends 546 proofs directly to the target Boost's confirmed current owner; each confirmed owner-directed payment is added to that original Boost's proof signal. Miner fee rate is a separate selectable transaction setting.
-- `pwb1:follow` and `pwb1:unfollow` are paid social-graph actions. The current writer sends 546 proofs to the addressed profile target. The latest confirmed follow/unfollow event for a follower-address plus target-address pair determines the active edge.
+- `pwb1:follow` and `pwb1:unfollow` are paid social-graph actions. The current writer sends 546 proofs to the addressed profile target, never to the Boost registry for a new follow. Self-follow and self-unfollow are invalid. The latest confirmed follow/unfollow event for a follower-address plus target-address pair determines the active edge.
 - Likes, replies, reboosts, follows, and unfollows do not require the Boost registry to have a confirmed receiver. Registry payments remain required for direct transfers and listing-sale mutations below; historical registry-paid social actions remain replayable.
 - Likes, reboosts, and replies are disabled until the target Boost record is confirmed.
 - Boost records are assets keyed by the original post txid. Direct transfers and AMO sale-ticket events move ownership without changing the original author.
 - `pwb1:list5`, `pwb1:seal5`, `pwb1:delist5`, `pwb1:buy5`, and `pwb1:t` each pay the 546-proof Boost registry fee to `boost@proofofwork.me`.
 - A post-time sale price can only queue a later listing/seal after the post txid exists. JSON price metadata alone is not buyable.
-- Boost timeline tabs are social views over confirmed `pwb1:` records: For You shows all visible confirmed Boosts; Following shows visible confirmed Boosts from addresses actively followed by the connected wallet.
+- Boost timeline tabs are social views over confirmed `pwb1:` records: For You shows all visible confirmed Boosts; Following shows the connected wallet's own authored Boosts and visible confirmed Boosts from addresses it actively follows without creating a self-follow edge. Reply and reboost cards show their own paid action signal, and the nested original opens the original Boost detail.
 - Boost profile routes are person views, not timeline filters. A `profile=` route resolves one address or confirmed ID and then shows profile-specific tabs for authored boosts/reboosts, authored replies, currently owned or purchased boosts, liked boosts, and expanded replies to that person's original boosts.
 - Authors can hide their own Boost from default app/profile indexing with `pwb1:hide`. This is a visibility tombstone, not deletion from ProofOfWork.
 - Confirmed ProofOfWork history is canonical. Pending Boost records are only visibility.
 - Wallet signing stays local.
 
-Boost application projections qualify paid actions against the confirmed Boost
-receiver at each event's physical chain position. Registry and follow-target
-payments use exact integer amounts; when both recipients are the same address,
-the two fees cannot reuse the same proofs. Base58 address identity remains case
+Boost application projections qualify each paid action at its physical chain
+position: social actions use the original's confirmed owner or the addressed
+profile target, while asset mutations use the confirmed Boost registry receiver.
+Payments use exact integer amounts. Historical registry-paid social events stay
+replayable under their original payment rules. Base58 address identity remains case
 sensitive in the parser, API, social graph, wallet controls and saved profile
 intent lookup. A legacy saved intent remains readable only when its embedded
 address and network match exactly.

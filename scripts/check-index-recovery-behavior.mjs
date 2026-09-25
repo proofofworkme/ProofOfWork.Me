@@ -238,6 +238,7 @@ import {
   canonicalWorkAmoRelationalTokenStateEvidence,
   classifyWorkAmoV5LegacyRows,
 } from "./migrate-work-amo-v5.mjs";
+import { POST_V5_INCB_ISSUANCE_REPAIR_TARGETS } from "../server/incb-post-v5-repair.mjs";
 import {
   INCB_RANGE_REPLAY_BOUND_WITNESS_SOURCE,
   INCB_RANGE_REPLAY_WITNESS_MANIFEST_MODEL,
@@ -1236,6 +1237,8 @@ function isolatedFunction(path, name, globals = {}) {
     APPLY_WORK_ATOMIC_MIGRATION: false,
     AUDIT_WORK_ATOMS_ONLY: false,
     CANONICAL_REBUILD_META_KEY: "canonical:rebuild",
+    REPAIR_POST_V5_INCB_ISSUANCE_ONLY: false,
+    APPLY_POST_V5_INCB_ISSUANCE_REPAIR: false,
     CANONICAL_OP_RETURN_TEXT_STORAGE_INVALID,
     REQUIRED_CURRENT_SUMMARY_KEYS: [
       "growthSummary",
@@ -25960,6 +25963,126 @@ check("same-height pending membership versions the canonical Log snapshot", asyn
   );
 });
 
+check("active replay fingerprints only canonical confirmed Log rows through its exact H-1 checkpoint", async () => {
+  const checkpointHeight = 958_795;
+  const checkpointHash = "a".repeat(64);
+  const row = (eventId, kind, status, blockHeight, parentHeight, options = {}) => ({
+    block_height: blockHeight,
+    block_time: status === "confirmed" ? "2026-09-24T00:00:00.000Z" : null,
+    created_at: "2026-09-24T00:00:00.000Z",
+    event_id: String(eventId),
+    event_time: "2026-09-24T00:00:00.000Z",
+    kind,
+    parentCanonical: options.parentCanonical !== false,
+    parentHeight,
+    parentStatus: options.parentStatus ?? "confirmed",
+    payload_hash: String(eventId).padStart(32, "0"),
+    protocol: options.protocol ?? (kind.startsWith("token-") ? "pwt1" : "pwm1"),
+    status,
+    txid: String(eventId).padStart(64, "0"),
+    valid: true,
+  });
+  const inventory = [
+    row(1, "mail", "confirmed", checkpointHeight, checkpointHeight),
+    row(2, "mail", "confirmed", checkpointHeight + 1, checkpointHeight + 1),
+    row(3, "id-register", "pending", null, null),
+    row(4, "mail", "confirmed", checkpointHeight, checkpointHeight, {
+      parentCanonical: false,
+    }),
+    row(5, "token-mint", "confirmed", checkpointHeight, checkpointHeight, {
+      protocol: "pwm1",
+    }),
+    row(6, "mail", "confirmed", null, checkpointHeight),
+  ];
+  const fingerprint = isolatedFunction(
+    BACKFILL_PATH,
+    "publicLogRelationalFingerprint",
+    {
+      NETWORK: "livenet",
+      PUBLIC_LOG_EVENT_KINDS: new Set(["mail", "id-register", "token-mint"]),
+      createHash,
+    },
+  );
+  const fingerprintsMatch = isolatedFunction(
+    BACKFILL_PATH,
+    "publicLogFingerprintsMatch",
+  );
+  let replaySql = "";
+  let replayParams = null;
+  const client = {
+    async query(sql, params) {
+      if (params.length === 2) {
+        assert.doesNotMatch(String(sql), /replay_tx/u);
+        return { rows: inventory };
+      }
+      replaySql = String(sql);
+      replayParams = params;
+      return {
+        rows: inventory.filter((item) =>
+          item.status === "confirmed" &&
+          (!item.kind.startsWith("token-") || item.protocol === "pwt1") &&
+          item.parentCanonical &&
+          item.parentStatus === "confirmed" &&
+          item.parentHeight > 0 &&
+          item.parentHeight <= checkpointHeight &&
+          (item.block_height === null || item.block_height === item.parentHeight)
+        ),
+      };
+    },
+  };
+  const ordinary = await fingerprint(client);
+  const bounded = await fingerprint(client, {
+    replayCheckpoint: { height: checkpointHeight, blockHash: checkpointHash },
+  });
+  assert.equal(ordinary.count, 6);
+  assert.equal(ordinary.pending, 1);
+  assert.equal(ordinary.contract, "proof-index-public-log-fingerprint-v1");
+  assert.equal(bounded.count, 2);
+  assert.equal(bounded.pending, 0);
+  assert.equal(bounded.contract, "proof-index-public-log-fingerprint-replay-v1");
+  assert.equal(bounded.checkpointHeight, checkpointHeight);
+  assert.equal(bounded.checkpointHash, checkpointHash);
+  assert.deepEqual(JSON.parse(JSON.stringify(replayParams)), [
+    "livenet", ["mail", "id-register", "token-mint"], checkpointHeight,
+  ]);
+  assert.match(replaySql, /e\.status = 'confirmed'/u);
+  assert.match(replaySql, /e\.kind NOT LIKE 'token-%' OR e\.protocol = 'pwt1'/u);
+  assert.match(replaySql, /replay_tx\.status = 'confirmed'/u);
+  assert.match(replaySql, /replay_tx\.block_height <= \$3/u);
+  assert.match(replaySql, /replay_block\.canonical = true/u);
+  assert.match(replaySql, /e\.block_height IS NULL[\s\S]*e\.block_height = replay_tx\.block_height/u);
+  inventory[1].payload_hash = "f".repeat(32);
+  inventory[2].payload_hash = "e".repeat(32);
+  const boundedAfterFutureAndPending = await fingerprint(client, {
+    replayCheckpoint: { height: checkpointHeight, blockHash: checkpointHash },
+  });
+  assert.deepEqual(boundedAfterFutureAndPending, bounded);
+  assert.notEqual((await fingerprint(client)).hash, ordinary.hash);
+  assert.equal(fingerprintsMatch(bounded, boundedAfterFutureAndPending), true);
+  assert.equal(fingerprintsMatch(ordinary, ordinary), true);
+  assert.equal(fingerprintsMatch(bounded, ordinary), false);
+  assert.equal(fingerprintsMatch(bounded, {
+    ...bounded,
+    checkpointHash: "b".repeat(64),
+  }), false);
+  assert.notEqual(
+    (await fingerprint(client, {
+      replayCheckpoint: {
+        height: checkpointHeight,
+        blockHash: "b".repeat(64),
+      },
+    })).hash,
+    bounded.hash,
+  );
+  await rejection(
+    fingerprint(client, {
+      replayCheckpoint: { height: checkpointHeight, blockHash: "" },
+    }),
+    (error) => /exact hashed checkpoint/u.test(error.message),
+    "replay Log fingerprint must refuse an unbound checkpoint",
+  );
+});
+
 check("confirmed worker phase keeps canonical summary publication enabled", () => {
   const workerBackfillPhasePlan = isolatedFunction(
     WORKER_PATH,
@@ -26465,12 +26588,13 @@ check("the hot worker publishes a fresh canonical summary with conservative cove
     "workFloor",
     "workSummary",
   ];
-  const publicLogFingerprint = {
+  let publicLogFingerprint = {
     contract: "proof-index-public-log-fingerprint-v1",
     count: 2,
     hash: "f".repeat(64),
     pending: 0,
   };
+  let replayLogFingerprint = null;
   const workTokenId =
     "d4e5ebf11d104d6a63fb74e42094364b25a5f7199a09e5c0e71408972466a8b8";
   const checkpointHash = "a".repeat(64);
@@ -26716,7 +26840,10 @@ check("the hot worker publishes a fresh canonical summary with conservative cove
       numberOrNull,
       objectPayload,
       objectValue,
-      publicLogRelationalFingerprint: async () => publicLogFingerprint,
+      publicLogRelationalFingerprint: async (_client, options) =>
+        options?.replayCheckpoint
+          ? replayLogFingerprint ?? publicLogFingerprint
+          : publicLogFingerprint,
       publicLogFingerprintsMatch: (left, right) =>
         left?.hash === right?.hash &&
         left?.count === right?.count &&
@@ -26758,6 +26885,7 @@ check("the hot worker publishes a fresh canonical summary with conservative cove
       },
       storedEligibleCanonicalSummarySnapshotPayload: async () =>
         previousPayload,
+      storedExactEligibleCanonicalSummarySnapshotPayload: async () => null,
       storedLedgerSnapshotPayload: async (_client, snapshotId) => ({
         activityPayload: { marker: `derived-${snapshotId}` },
       }),
@@ -26765,7 +26893,8 @@ check("the hot worker publishes a fresh canonical summary with conservative cove
       summaryPayloadsWithAlignedWorkFloor: (payload) => payload,
       summarySnapshotTotals: (payloads) =>
         exactSummaryTotalsFixture(payloads.workFloor.networkValueQ8),
-      unpagedEndpoint: (pathname) => ({ pathname }),
+      unpagedEndpoint: (pathname) =>
+        new URL(`http://127.0.0.1:8081${pathname}`),
     },
   );
   const result = await storeCanonicalSummarySnapshot({
@@ -26930,6 +27059,47 @@ check("the hot worker publishes a fresh canonical summary with conservative cove
   assert.equal(currentResult.reason, "already-current");
   assert.equal(currentResult.snapshotId, "full-101-current-models");
   assert.equal(inserted.length, 3);
+
+  publicLogFingerprint = {
+    ...publicLogFingerprint,
+    count: 3,
+    hash: "e".repeat(64),
+    pending: 1,
+  };
+  replayLogFingerprint = {
+    checkpointHash,
+    checkpointHeight: 101,
+    contract: "proof-index-public-log-fingerprint-replay-v1",
+    count: 2,
+    hash: "d".repeat(64),
+    pending: 0,
+  };
+  const requiredCheckpoint = { blockHash: checkpointHash, height: 101 };
+  await rejection(
+    storeCanonicalSummarySnapshot({
+      async query() {
+        throw new Error("A mismatched Log count must not write a summary");
+      },
+    }, { requiredCheckpoint }),
+    (error) => /not one exact snapshot/u.test(error.message),
+    "a historical Log count must reject tip-wide pending and future membership",
+  );
+  const replaySnapshot = await storeCanonicalSummarySnapshot({
+    async query(sql, params) {
+      inserted.push({ params: Array.from(params), sql: String(sql) });
+      return { rows: [{ snapshot_id: String(params[1]) }] };
+    },
+  }, {
+    replayCheckpoint: true,
+    requiredCheckpoint,
+  });
+  assert.equal(replaySnapshot.skipped, false);
+  const replayStored = JSON.parse(inserted.at(-1).params[7]);
+  assert.deepEqual(
+    replayStored.summaryRefresh.publicLogFingerprint,
+    replayLogFingerprint,
+  );
+  assert.equal(inserted.length, 4);
 });
 
 check("ledger snapshot retention preserves pinned issuance oracles", async () => {
@@ -27131,10 +27301,31 @@ check("every ledger snapshot deletion preserves immutable AMO V5 seed dependenci
   visit(sourceFile);
   assert.equal(
     snapshotDeleteQueries.length,
-    6,
+    7,
     "every ledger snapshot deletion path must be reviewed",
   );
-  for (const query of snapshotDeleteQueries) {
+  const exactIdDeletes = snapshotDeleteQueries.filter((query) =>
+    /snapshot_id = ANY\(\$2::text\[\]\)/u.test(query) &&
+    /jsonb_typeof\(payload->'summaryPayloads'\) = 'object'/u.test(query));
+  assert.equal(exactIdDeletes.length, 1,
+    "the post-V5 repair may delete only pre-reviewed summary ids");
+  const postV5RepairSource = source.slice(
+    source.indexOf("async function repairCanonicalPostV5IncbIssuance"),
+    source.indexOf("async function canonicalEventParentMetadataRepairCoreTarget"),
+  );
+  for (const pattern of [
+    /WITH manifest_locked AS MATERIALIZED/u,
+    /workAmoV5Migration:/u,
+    /replayEvidence'->'seed'[\s\S]*->'snapshotIds'/u,
+    /replayEvidence'->'closing'[\s\S]*->'snapshotIds'/u,
+    /canonical-work-amo-v5-h-minus-one-seed-evidence-v1/u,
+    /seed_evidence\.payload->'canonicalSummary'->>'snapshotId'/u,
+    /unrecognized unprotected snapshot shape/u,
+  ]) {
+    assert.match(postV5RepairSource, pattern);
+  }
+  for (const query of snapshotDeleteQueries.filter((candidate) =>
+    !exactIdDeletes.includes(candidate))) {
     assert.match(query, /workAmoV5Migration:/u);
     assert.match(
       query,
@@ -29609,6 +29800,7 @@ check("an Inception summary barrier is exact and cannot defer", async () => {
   let exactStoredCheckpoint = null;
   let requestedUrl = null;
   let requestCount = 0;
+  const fingerprintOptions = [];
   const storeCanonicalSummarySnapshot = isolatedFunction(
     BACKFILL_PATH,
     "storeCanonicalSummarySnapshot",
@@ -29643,7 +29835,10 @@ check("an Inception summary barrier is exact and cannot defer", async () => {
           ? value
           : null,
       publicLogFingerprintsMatch: () => true,
-      publicLogRelationalFingerprint: async () => ({ hash: "f".repeat(64) }),
+      publicLogRelationalFingerprint: async (_client, options) => {
+        fingerprintOptions.push(options);
+        return { hash: "f".repeat(64) };
+      },
       readJson: async (url) => {
         requestCount += 1;
         requestedUrl = url;
@@ -29701,11 +29896,30 @@ check("an Inception summary barrier is exact and cannot defer", async () => {
     "A required H-1 summary silently deferred to an older snapshot",
   );
   assert.equal(requestCount, 1);
+  assert.deepEqual(JSON.parse(JSON.stringify(fingerprintOptions)), [{}]);
   assert.equal(requestedUrl.searchParams.get("checkpointHeight"), "101");
   assert.equal(
     requestedUrl.searchParams.get("checkpointHash"),
     checkpointHash,
   );
+
+  await rejection(
+    storeCanonicalSummarySnapshot(
+      { async query() { return { rows: [] }; } },
+      {
+        replayCheckpoint: true,
+        requiredCheckpoint: {
+          blockHash: checkpointHash,
+          height: 101,
+        },
+      },
+    ),
+    (error) => error?.name === "AbortError",
+    "An active replay H-1 summary must not defer to an older snapshot",
+  );
+  assert.deepEqual(JSON.parse(JSON.stringify(fingerprintOptions.at(-1))), {
+    replayCheckpoint: { blockHash: checkpointHash, height: 101 },
+  });
 
   await rejection(
     storeCanonicalSummarySnapshot(
@@ -31740,6 +31954,45 @@ check("exact canonical summaries require current conserved token balances", asyn
   let precisionOptions = null;
   const listingPolicyHeights = [];
   const cutoverOrder = [];
+  let replayTokenTableScope = "";
+  const replayCanonicalSummaryTokenTablePayload = isolatedFunction(
+    READER_PATH,
+    "proofIndexReplayCanonicalSummaryTokenTablePayload",
+    {
+      proofIndexPool: () => ({}),
+      proofIndexTokenPayloadFromCurrentTables: async (
+        _pool,
+        _network,
+        scope,
+      ) => {
+        replayTokenTableScope = scope;
+        return null;
+      },
+      tokenStatePayloadAtCanonicalCheckpoint: async () => null,
+    },
+  );
+  assert.equal(
+    await replayCanonicalSummaryTokenTablePayload("livenet", {
+      activationHeight: 200,
+      exactHash: bootstrapHash,
+      exactHeight: 102,
+    }),
+    null,
+  );
+  assert.equal(
+    replayTokenTableScope,
+    WORK_TOKEN_ID,
+    "historical PWT replay must validate only WORK tables so inconsistent tip-current INCB state cannot block its H-1 summary",
+  );
+  assert.match(
+    topLevelFunctionSource(
+      READER_PATH,
+      "proofIndexCanonicalSummaryTokenTablePayload",
+    ),
+    /proofIndexTokenPayloadFromCurrentTables\(pool, network, "all"\)/u,
+    "ordinary canonical token reads must retain full-table conservation checks",
+  );
+
   const canonicalSummaryTokenTablePayload = isolatedFunction(
     READER_PATH,
     "proofIndexCanonicalSummaryTokenTablePayload",
@@ -36243,6 +36496,103 @@ check("post-replay historical INCB checkpoints pin late H-1 evidence", async () 
   );
   assert.equal(summaryReads, 0);
   assert.strictEqual(options.preBondCheckpoint(bond), checkpoint);
+
+  const replayBonds = [
+    [
+      "d88c5a66dc0b06827e95469335ad689acd48d2f5b63f6d981a088f7cfd313c53",
+      84,
+    ],
+    [
+      "e19517ac5d225c97aa9b307bea8ab0b6316da3b765f71f9a99a6e21cfdd9d5b8",
+      1_849,
+    ],
+    [
+      "483861d6761c7b01fd6dac7622ee594f4b0c9d49a5c6ceddd1e96a37f1b241d5",
+      1_850,
+    ],
+  ].map(([replayTxid, blockIndex]) => ({
+    ...bond,
+    blockIndex,
+    txid: replayTxid,
+  }));
+  const replayBinding = {
+    rangeReplayFromHeight: 958_383,
+    witnessedThroughBlock: 968_345,
+  };
+  const activeSummary = {
+    ...checkpoint,
+    valueSnapshotCanonicalSummaryHash: "b".repeat(64),
+    valueSnapshotId: "e7d612807f253f6b10c3e93d",
+    workNetworkValueQ8: "10974202976117919074235206",
+  };
+  const replayCache = new Map();
+  let pinnedFallbackReads = 0;
+  let activeSummaryReads = 0;
+  const activeReplayOptions = isolatedFunction(
+    API_PATH,
+    "canonicalInceptionIssuanceOptions",
+    {
+      canonicalBoundInceptionWitnessSet: (_bond, dispositions, priorHash) => {
+        assert.equal(dispositions.length, 3);
+        assert.equal(priorHash, previousBlockHash);
+        return { disposition: "rederive" };
+      },
+      canonicalInceptionPreviousBlockHash: async () => previousBlockHash,
+      canonicalInceptionValueSnapshotCheckpoint: (snapshot, candidate) => ({
+        ...snapshot.checkpoint,
+        blockIndex: candidate.blockIndex,
+      }),
+      canonicalPostReplayHistoricalInceptionCheckpoint: () => {
+        pinnedFallbackReads += 1;
+        return checkpoint;
+      },
+      canonicalPwtReplayVerifierBindingCacheKey: () => ":active-replay",
+      canonicalPwtReplayVerifierBindingDescriptor: (binding) =>
+        binding ?? null,
+      cachedInternalVerifierState: async (key, loader) => {
+        if (!replayCache.has(key)) {
+          replayCache.set(key, Promise.resolve().then(loader));
+        }
+        return replayCache.get(key);
+      },
+      inceptionValueSnapshotUnavailableError: (_bond, details = {}) =>
+        Object.assign(new Error(details.reason ?? "snapshot unavailable"), {
+          details,
+        }),
+      isInceptionBondActivityItem: (item) =>
+        item?.kind === "inception-bond",
+      proofIndexCanonicalSummaryLedgerPayload: async (
+        _network,
+        height,
+        hash,
+        options,
+      ) => {
+        assert.equal(height, 958_795);
+        assert.equal(hash, previousBlockHash);
+        assert.equal(options.replayVerifierBinding, replayBinding);
+        activeSummaryReads += 1;
+        return { checkpoint: activeSummary };
+      },
+    },
+  );
+  const rederived = await activeReplayOptions("livenet", replayBonds, {
+    boundWitnessDispositions: replayBonds.map((candidate) => ({
+      txid: candidate.txid,
+    })),
+    replayVerifierBinding: replayBinding,
+  });
+  assert.equal(pinnedFallbackReads, 0);
+  assert.equal(activeSummaryReads, 1);
+  for (const replayBond of replayBonds) {
+    assert.equal(
+      rederived.preBondCheckpoint(replayBond).valueSnapshotId,
+      activeSummary.valueSnapshotId,
+    );
+    assert.equal(
+      rederived.preBondCheckpoint(replayBond).workNetworkValueQ8,
+      activeSummary.workNetworkValueQ8,
+    );
+  }
 });
 
 check("INCB production repair pins every historical mint and forbids stored-mint oracle fallback", () => {
@@ -36654,6 +37004,150 @@ check("completed replay automatically authenticates ordinary internal verifier r
   );
 });
 
+check("bound INCB raw WORK witness accepts canonical post-V8 send3 without changing legacy Q8 atoms", () => {
+  const recipientAddress = "1F1p9UEHuH5KTFR7Zsx93Khdrqhj6t5nFv";
+  const activationHeight = 960_601;
+  const objectRecord = (value) =>
+    value && typeof value === "object" && !Array.isArray(value)
+      ? value
+      : {};
+  const normalizedLowerText = (value) =>
+    String(value ?? "").trim().toLowerCase();
+  const rawMessages = isolatedFunction(
+    READER_PATH,
+    "canonicalIncbReplayRawMessages",
+    { Buffer, objectRecord },
+  );
+  const rawWorkAtoms = isolatedFunction(
+    READER_PATH,
+    "canonicalIncbReplayRawWorkAtoms",
+    {
+      WORK_AMO_V8_TRANSFER_VERSION,
+      WORK_TOKEN_ID,
+      WORK_UNIT_SCALE_TEXT,
+      canonicalIncbReplayRawMessages: rawMessages,
+      canonicalIntegerText,
+      normalizedLowerText,
+      parseWorkAmoV5RawPwtRecord,
+    },
+  );
+  const opReturn = (payload) => ({
+    scriptPubKey: {
+      asm: `OP_RETURN ${Buffer.from(payload, "utf8").toString("hex")}`,
+    },
+  });
+  const rawTx = (...payloads) => ({ vout: payloads.map(opReturn) });
+  const send3 = (amount) =>
+    `pwt1:send3:${WORK_TOKEN_ID}:${amount}:${recipientAddress}`;
+  const postV8 = [
+    [963_782, "10000000000000000"],
+    [968_125, "18000000000000000000000"],
+  ];
+  for (const [height, amountSubatoms] of postV8) {
+    assert.equal(
+      rawWorkAtoms(
+        rawTx(send3(amountSubatoms)),
+        recipientAddress,
+        height,
+        activationHeight,
+      ),
+      "0",
+      "the immutable manifest's Q8 subtotal must exclude Q16 send3",
+    );
+  }
+  assert.equal(
+    rawWorkAtoms(
+      rawTx(send3("1")),
+      recipientAddress,
+      activationHeight,
+      activationHeight,
+    ),
+    "0",
+    "send3 is valid at the exact V8 opening block",
+  );
+  assert.equal(
+    rawWorkAtoms(
+      rawTx(`pwt1:send2:${WORK_TOKEN_ID}:100000000:${recipientAddress}`),
+      recipientAddress,
+      activationHeight - 1,
+      activationHeight,
+    ),
+    "100000000",
+    "pre-V8 send2 must retain its committed Q8 atoms",
+  );
+  for (const [label, payload, height, pin] of [
+    ["pre-activation", send3("1"), activationHeight - 1, activationHeight],
+    ["missing pin", send3("1"), activationHeight, undefined],
+    ["zero", send3("0"), activationHeight, activationHeight],
+    ["leading zero", send3("01"), activationHeight, activationHeight],
+    ["decimal", send3("1.0"), activationHeight, activationHeight],
+    ["amount whitespace", send3(" 1"), activationHeight, activationHeight],
+    ["recipient whitespace", `${send3("1")} `, activationHeight, activationHeight],
+    ["token case alias", send3("1").replace(WORK_TOKEN_ID, WORK_TOKEN_ID.toUpperCase()), activationHeight, activationHeight],
+    ["over supply", send3((BigInt(WORK_TOKEN_MAX_SUPPLY_SUBATOMS) + 1n).toString()), activationHeight, activationHeight],
+    ["extra field", `${send3("1")}:extra`, activationHeight, activationHeight],
+    ["unknown version", `pwt1:send4:${WORK_TOKEN_ID}:1:${recipientAddress}`, activationHeight, activationHeight],
+  ]) {
+    assert.throws(
+      () => rawWorkAtoms(rawTx(payload), recipientAddress, height, pin),
+      /Malformed WORK attachment/u,
+      `${label} attachment must fail closed`,
+    );
+  }
+
+  const verifyBondRows = isolatedFunction(
+    READER_PATH,
+    "verifyCanonicalIncbReplayBondRows",
+    {
+      canonicalCoreValueSats: (value) => Number(value),
+      canonicalIncbReplayRawMessages: rawMessages,
+      canonicalIncbReplayRawWorkAtoms: rawWorkAtoms,
+      configuredWorkPrecisionV2ReaderPins: () => ({
+        activationHeight,
+      }),
+      normalizedLowerText,
+      objectRecord,
+    },
+  );
+  const txid = "e".repeat(64);
+  const blockHash = "a".repeat(64);
+  const previousBlockHash = "b".repeat(64);
+  const blockHeight = 968_125;
+  const blockIndex = 2_041;
+  const bond = {
+    attachedWorkAmountAtoms: "0",
+    blockHash,
+    blockHeight,
+    blockIndex,
+    bondRecipientAddress: recipientAddress,
+    bondRecipientAmountSats: "546",
+    bondRecipientOutputs: [{ amountSats: "546", vout: 0 }],
+    bondRecipientVout: 0,
+    previousBlockHash,
+    txid,
+  };
+  const row = {
+    block_hash: blockHash,
+    block_height: blockHeight,
+    block_index: blockIndex,
+    previous_block_hash: previousBlockHash,
+    raw_tx: {
+      vout: [
+        { scriptPubKey: { address: recipientAddress }, value: 546 },
+        opReturn("pwm1:m:incb"),
+        opReturn(send3("18000000000000000000000")),
+      ],
+    },
+    txid,
+  };
+  assert.doesNotThrow(() => verifyBondRows({ entries: [{ bond }] }, [row]));
+  assert.throws(
+    () => verifyBondRows({ entries: [{ bond: { ...bond, attachedWorkAmountAtoms: "1" } }] }, [row]),
+    /changed canonical position, memo, outputs, or WORK attachment/u,
+    "the immutable legacy Q8 subtotal remains an exact commitment",
+  );
+});
+
 check("completed replay remains readable through the immutable witness certificate", () => {
   const binding = replayVerifierBindingFixture({
     bindingId: "9".repeat(64),
@@ -36826,9 +37320,10 @@ check("active range replay is fail-closed to one block-scan source", async () =>
     rangeReplayFromHeight: 958383,
     status: "active",
   };
+  const reconciliationCalls = [];
   const globals = {
     AUDIT_WORK_ATOMS_ONLY: false,
-    BLOCK_SCAN_FROM_HEIGHT: 958383,
+    BLOCK_SCAN_FROM_HEIGHT: 0,
     CANONICAL_REBUILD: false,
     CANONICAL_REBUILD_META_KEY: "canonical:rebuild",
     DB_SUMMARY_REPAIR: false,
@@ -36856,6 +37351,9 @@ check("active range replay is fail-closed to one block-scan source", async () =>
     assertCanonicalPwtRangeReplayState: () => "active",
     legacyCompletedPwtRangeReplayCanBeReprepared: () => false,
     proofIndexerMetaValue: async () => rebuild,
+    reconcileActivePwtRangeReplayBalancesAtCheckpoint: async () => {
+      reconciliationCalls.push("resume");
+    },
   };
   const broadRuntime = isolatedFunction(
     BACKFILL_PATH,
@@ -36889,6 +37387,36 @@ check("active range replay is fail-closed to one block-scan source", async () =>
     "general ledger storage must remain disabled during active replay",
   );
 
+  const overrideRuntime = isolatedFunction(
+    BACKFILL_PATH,
+    "canonicalPwtRangeReplayRuntime",
+    {
+      ...globals,
+      BLOCK_SCAN_FROM_HEIGHT: 958383,
+      SOURCES: [{ blockScan: true, label: "block-scan" }],
+    },
+  );
+  await rejection(
+    overrideRuntime({}),
+    (error) => /unset POW_INDEX_BACKFILL_BLOCK_SCAN_FROM_HEIGHT/u.test(error.message),
+    "active replay must not restart from an explicit scan height after its stored checkpoint advances",
+  );
+  assert.deepEqual(reconciliationCalls, [], "scan-height override must fail before reconciliation");
+
+  const prepareRuntime = isolatedFunction(
+    BACKFILL_PATH,
+    "canonicalPwtRangeReplayRuntime",
+    {
+      ...globals,
+      BLOCK_SCAN_FROM_HEIGHT: 958383,
+      PREPARE_CANONICAL_PWT_RANGE_REPLAY_ONLY: true,
+      SOURCES: [{ blockScan: true, label: "block-scan" }],
+    },
+  );
+  const preparing = await prepareRuntime({});
+  assert.equal(preparing.preparing, true);
+  assert.deepEqual(reconciliationCalls, [], "preparation must not reconcile balances");
+
   const boundRuntime = isolatedFunction(
     BACKFILL_PATH,
     "canonicalPwtRangeReplayRuntime",
@@ -36897,7 +37425,9 @@ check("active range replay is fail-closed to one block-scan source", async () =>
       SOURCES: [{ blockScan: true, label: "block-scan" }],
     },
   );
+  assert.deepEqual(reconciliationCalls, [], "incompatible modes must not reconcile");
   const accepted = await boundRuntime({});
+  assert.deepEqual(reconciliationCalls, ["resume"]);
   assert.equal(accepted.active, true);
   assert.equal(accepted.verifierBinding.bindingId, "f".repeat(64));
 
@@ -36925,7 +37455,7 @@ check("active range replay is fail-closed to one block-scan source", async () =>
     {
       ...globals,
       SOURCES: [{ blockScan: true, label: "block-scan" }],
-      assertCanonicalWorkAtomicSource: async () => {
+      reconcileActivePwtRangeReplayBalancesAtCheckpoint: async () => {
         throw new Error(
           "Active PWT range replay requires the exact canonical WORK work-atoms-v1 definition.",
         );
@@ -36944,7 +37474,7 @@ check("active range replay is fail-closed to one block-scan source", async () =>
     {
       ...globals,
       SOURCES: [{ blockScan: true, label: "block-scan" }],
-      assertCanonicalWorkAtomicSource: async () => {
+      reconcileActivePwtRangeReplayBalancesAtCheckpoint: async () => {
         throw new Error(
           "Canonical WORK atomic conservation failed: mints 2100000000000000, balances 2099999999999999.",
         );
@@ -36956,6 +37486,124 @@ check("active range replay is fail-closed to one block-scan source", async () =>
     (error) => /atomic conservation failed/u.test(error.message),
     "an active replay resume must recheck event/balance conservation, not only its definition",
   );
+});
+
+check("active range replay reconciles WORK holders only at its exact canonical checkpoint", async () => {
+  const height = 958_581;
+  const hash = "a".repeat(64);
+  const rebuild = {
+    active: true,
+    indexedThroughBlock: height,
+    indexedThroughBlockHash: hash,
+    rangeReplayFromHeight: 958_383,
+    status: "active",
+  };
+  const run = async (options = {}) => {
+    const calls = [];
+    let coreReads = 0;
+    let unsafeSql = "";
+    const client = {
+      async query(sql, params = []) {
+        const statement = String(sql).trim();
+        if (["BEGIN", "COMMIT", "ROLLBACK"].includes(statement)) {
+          calls.push(statement);
+          return { rows: [] };
+        }
+        if (statement.includes("FROM proof_indexer.meta") && statement.includes("FOR UPDATE")) {
+          calls.push("lock-marker");
+          assert.deepEqual(Array.from(params), ["canonical:rebuild"]);
+          return { rows: [{ value: options.lockedMarker ?? rebuild }] };
+        }
+        if (statement.includes("FROM proof_indexer.events e")) {
+          calls.push("check-events");
+          unsafeSql = statement;
+          assert.deepEqual(Array.from(params), ["livenet", WORK_TOKEN_ID, height, 958_383]);
+          return { rows: options.unsafeEvent ? [{ txid: "f".repeat(64) }] : [] };
+        }
+        throw new Error(`Unexpected active replay reconciliation query: ${statement.slice(0, 90)}`);
+      },
+    };
+    const reconcile = isolatedFunction(
+      BACKFILL_PATH,
+      "reconcileActivePwtRangeReplayBalancesAtCheckpoint",
+      {
+        CANONICAL_REBUILD_META_KEY: "canonical:rebuild",
+        NETWORK: "livenet",
+        WORK_TOKEN_ID,
+        assertCanonicalPwtRangeReplayState: (marker) =>
+          marker?.status === "active" ? "active" : null,
+        assertCanonicalWorkAtomicProjection: async () => {
+          calls.push("check-projection");
+        },
+        assertCanonicalWorkAtomicSource: async () => {
+          calls.push("check-conservation");
+          if (options.conservationFails) {
+            throw new Error("Canonical WORK conservation failed after replay");
+          }
+        },
+        bitcoinRpc: async (method, params) => {
+          assert.equal(method, "getblockhash");
+          assert.deepEqual(Array.from(params), [height]);
+          calls.push("check-core");
+          coreReads += 1;
+          return options.coreHashes?.[coreReads - 1] ?? hash;
+        },
+        canonicalJsonText: (value) => JSON.stringify(value),
+        latestBlockScanCheckpoint: async (_, { useStoredCheckpoint }) => {
+          assert.equal(useStoredCheckpoint, true);
+          calls.push("check-stored-checkpoint");
+          return {
+            blockHash: options.storedHash ?? hash,
+            height,
+          };
+        },
+        proofIndexerMetaValue: async () => {
+          calls.push("check-marker-after");
+          return options.markerAfter ?? rebuild;
+        },
+        rebuildConfirmedCreditBalancesFromCanonicalEvents: async (_, replayOptions) => {
+          calls.push("rebuild-work-holders");
+          assert.equal(replayOptions.preservePendingDeltas, true);
+          assert.deepEqual(Array.from(replayOptions.tokenIds), [WORK_TOKEN_ID]);
+        },
+      },
+    );
+    let error = null;
+    try {
+      await reconcile(client, rebuild);
+    } catch (caught) {
+      error = caught;
+    }
+    return { calls, error, unsafeSql };
+  };
+  const successful = await run();
+  assert.equal(successful.error, null);
+  assert.deepEqual(successful.calls, [
+    "check-projection", "BEGIN", "lock-marker", "check-stored-checkpoint",
+    "check-core", "check-events", "rebuild-work-holders", "check-conservation",
+    "check-marker-after", "check-core", "COMMIT",
+  ]);
+  assert.match(successful.unsafeSql, /b\.canonical = true/u);
+  assert.match(successful.unsafeSql, /e\.block_index IS DISTINCT FROM t\.block_index/u);
+  assert.match(successful.unsafeSql, /COALESCE\(e\.block_height, 0\) > \$3/u);
+  assert.match(successful.unsafeSql, /COALESCE\(t\.block_height, 0\) > \$3/u);
+  for (const [options, expected] of [
+    [{ lockedMarker: { ...rebuild, indexedThroughBlock: height - 1 } }, /marker changed/u],
+    [{ storedHash: "b".repeat(64) }, /stored block scan/u],
+    [{ coreHashes: ["b".repeat(64)] }, /disagrees with Core/u],
+    [{ unsafeEvent: true }, /postcheckpoint or noncanonical WORK event/u],
+    [{ conservationFails: true }, /conservation failed/u],
+    [{ markerAfter: { ...rebuild, indexedThroughBlock: height - 1 } }, /changed before commit/u],
+    [{ coreHashes: [hash, "b".repeat(64)] }, /changed before commit/u],
+  ]) {
+    const result = await run(options);
+    assert.match(result.error?.message ?? "", expected);
+    assert.equal(result.calls.at(-1), "ROLLBACK");
+    assert.equal(result.calls.includes("COMMIT"), false);
+    if (!result.calls.includes("rebuild-work-holders")) {
+      assert.equal(result.calls.includes("check-conservation"), false);
+    }
+  }
 });
 
 check("malformed range replay flags cannot disable replay safeguards", () => {
@@ -45512,8 +46160,8 @@ check("PWT range replay preserves pre-range issuance oracles while resetting in-
         }
         calls.push({ key, meta: value });
       },
-      upsertProjection: async (_client, source, item) =>
-        calls.push({ item, source }),
+      upsertProjection: async (_client, source, item, _status, options) =>
+        calls.push({ item, options, source }),
       verifyCanonicalIncbPwtRangeReplayCoreFacts: async (targets) => {
         calls.push("verify-core");
         return targets.map(
@@ -45670,6 +46318,13 @@ check("PWT range replay preserves pre-range issuance oracles while resetting in-
   );
   assert.equal(prepared.firstMarketplaceHeight, 950246);
   assert.equal(prepared.pinnedIncbTargets.length, 4);
+  assert.deepEqual(
+    JSON.parse(
+      JSON.stringify(calls.find((call) => call.source === "token-listings")?.options),
+    ),
+    { retainedPwtRangeReplayMarketplace: true },
+    "only retained marketplace reprojection receives the historical alias scope",
+  );
   assert.equal(calls[0].sql, "BEGIN ISOLATION LEVEL SERIALIZABLE");
   assert.equal(calls.at(-1).sql, "COMMIT");
   const sql = calls.filter((call) => call.sql).map((call) => call.sql).join("\n");
@@ -52869,6 +53524,7 @@ check("AMO V5 pre-unit relic history is exact, relational, and fail-closed", asy
       ledgerSnapshotMetadata: async () => {
         throw new Error("an explicit relational snapshot was expected");
       },
+      replayRegistryCheckpointMatches: async () => true,
       proofIndexPool: () => ({
         async query(sql, params) {
           sqlReads.push({
@@ -52997,6 +53653,40 @@ check("AMO V5 pre-unit relic history is exact, relational, and fail-closed", asy
   });
   assert.equal(broadClosed.totalCount, 0);
   assert.deepEqual(broadClosed.items, []);
+  const replayMarketPage = await proofIndexTokenMarketHistoryOverlayPayload(
+    "livenet",
+    WORK_TOKEN_ID,
+    "closedListings",
+    new URLSearchParams({ limit: "20" }),
+    {
+      authoritativeEmpty: true,
+      pagination: paginationFor(""),
+      replayCheckpointHash: "a".repeat(64),
+      replayCheckpointHeight: 958_382,
+    },
+  );
+  assert.equal(replayMarketPage.indexedThroughBlock, 958_382);
+  assert.equal(replayMarketPage.indexedThroughBlockHash, "a".repeat(64));
+  assert.equal(replayMarketPage.totalCount, 0);
+  const replayMarketSql = canonicalSqlCalls.at(-1);
+  assert.equal(replayMarketSql.options.replayCheckpointHeightParam, "$3");
+  for (const required of [
+    "e.status = 'confirmed'",
+    "event_tx.status = 'confirmed'",
+    "event_tx.block_height <= $3",
+    "e.block_height = event_tx.block_height",
+    "e.block_index = event_tx.block_index",
+    "event_block.canonical = true",
+  ]) {
+    assert.ok(replayMarketSql.whereClause.includes(required));
+  }
+  assert.match(
+    topLevelFunctionSource(
+      READER_PATH,
+      "tokenHistoryCanonicalMarketEventsSql",
+    ),
+    /canonical_seal_tx\.block_height <=/u,
+  );
   const broadMarketLog = await read("market-log", "", {
     authoritativeEmpty: true,
   });
@@ -56842,6 +57532,81 @@ check("exact ID lifecycle keeps sealed listings active until a canonical close",
       assert.match(source, required, `${functionName} lacks relational proof`);
     }
   }
+  const replayRecords = isolatedFunction(
+    READER_PATH,
+    "confirmedIdRecordsFromCurrentTables",
+    {
+      confirmedIdRecordFromRow: (row) => ({ id: row.id_lower }),
+      normalizedLowerText: (value) => String(value ?? "").trim().toLowerCase(),
+      rowNumber: (row, key) => Number(row?.[key] ?? 0),
+    },
+  );
+  const replayCheckpoint = { height: 958_382 };
+  const futureRecord = {
+    id_lower: "future-mutated",
+    updated_height: 958_383,
+    last_event_status: "confirmed",
+    last_event_block_height: 958_383,
+    last_event_canonical: true,
+  };
+  await assert.rejects(
+    replayRecords(
+      {
+        async query(sql, params) {
+          assert.match(String(sql), /t\.block_height <= \$2/u);
+          assert.match(
+            String(sql),
+            /registration_block_at_height\.canonical = true/u,
+          );
+          assert.deepEqual(Array.from(params), ["livenet", 958_382]);
+          return { rows: [futureRecord] };
+        },
+      },
+      "livenet",
+      "",
+      replayCheckpoint,
+    ),
+    /later, missing, or noncanonical last event/u,
+    "a retained ID with post-checkpoint mutation must fail closed",
+  );
+  const replayEvents = isolatedFunction(
+    READER_PATH,
+    "currentIdRegistryEventState",
+    {
+      WORK_AMO_V5_ACTIVATION_HEIGHT: 958_383,
+      assertConfirmedPwidRegistryClaimAllocation: (items) => items,
+      idLifecycleStateFromItems: () => ({ activity: [] }),
+      normalizeHistoryEventRows: () => [],
+      pendingIdRegistryStateFromActivity: () => ({
+        pendingRecords: [],
+        pendingEvents: [],
+        pendingSales: [],
+      }),
+    },
+  );
+  await replayEvents(
+    {
+      async query(sql, params) {
+        assert.match(String(sql), /AND t\.block_height <= \$3/u);
+        assert.match(String(sql), /AND canonical_block\.canonical = true/u);
+        assert.match(String(sql), /AND e\.status = 'confirmed'/u);
+        assert.equal(
+          JSON.stringify(params),
+          JSON.stringify([
+            "livenet",
+            [
+              "id-register", "id-update", "id-transfer", "id-list",
+              "id-seal", "id-delist", "id-buy",
+            ],
+            958_382,
+          ]),
+        );
+        return { rows: [] };
+      },
+    },
+    "livenet",
+    replayCheckpoint,
+  );
   const registryHistorySource = topLevelFunctionSource(
     READER_PATH,
     "proofIndexRegistryHistoryPayload",
@@ -56907,6 +57672,8 @@ check("exact ID lifecycle keeps sealed listings active until a canonical close",
         const text = String(value ?? "").trim().toLowerCase();
         return /^[0-9a-f]{64}$/u.test(text) ? text : "";
       },
+      normalizedLowerText: (value) => String(value ?? "").trim().toLowerCase(),
+      rowNumber: (row, key) => Number(row?.[key] ?? 0),
     },
   );
   const spentListingId = "a".repeat(64);
@@ -56948,6 +57715,109 @@ check("exact ID lifecycle keeps sealed listings active until a canonical close",
     [openListingId],
     "current ID registry listings must drop indexed spent sale-ticket anchors",
   );
+  const replayListing = {
+    listingId: openListingId,
+    saleAuthorization: { anchorVout: 2 },
+  };
+  const replayAnchorRow = {
+    anchor_txid: openListingId,
+    anchor_vout: 2,
+    anchor_present: true,
+    anchor_origin_status: "confirmed",
+    anchor_origin_height: 958_382,
+    anchor_origin_canonical: true,
+    output_spent_by_txid: "c".repeat(64),
+    pointed_spend_status: "confirmed",
+    pointed_spend_height: 958_382,
+    pointed_spend_canonical: true,
+    pointed_input_present: true,
+    spent_by_checkpoint: true,
+  };
+  const replayAnchorPool = (row) => ({
+    async query(sql, params) {
+      assert.match(String(sql), /proof_indexer\.tx_inputs pointed_input/u);
+      assert.match(String(sql), /proof_indexer\.blocks anchor_origin_block/u);
+      assert.match(String(sql), /proof_indexer\.blocks spend_block/u);
+      assert.match(String(sql), /spend_tx\.block_height <= \$3/u);
+      assert.equal(
+        JSON.stringify(params),
+        JSON.stringify([
+          "livenet",
+          JSON.stringify([{ anchor_txid: openListingId, anchor_vout: 2 }]),
+          958_382,
+        ]),
+      );
+      return { rows: [row] };
+    },
+  });
+  const replayAnchorCheckpoint = { height: 958_382 };
+  await assert.rejects(
+    indexedUnspentIdRegistryListings(
+      { async query() { throw new Error("missing anchor must not query"); } },
+      "livenet",
+      [{ listingId: openListingId }],
+      replayAnchorCheckpoint,
+    ),
+    /listing anchor outpoint is missing/u,
+    "a replay listing without a valid anchor fails closed",
+  );
+  assert.deepEqual(
+    (await indexedUnspentIdRegistryListings(
+      replayAnchorPool(replayAnchorRow),
+      "livenet",
+      [replayListing],
+      replayAnchorCheckpoint,
+    )).map((listing) => listing.listingId),
+    [],
+    "a canonical input through the checkpoint spends a listing anchor",
+  );
+  await assert.rejects(
+    indexedUnspentIdRegistryListings(
+      replayAnchorPool({
+        ...replayAnchorRow,
+        anchor_origin_height: 958_383,
+      }),
+      "livenet",
+      [replayListing],
+      replayAnchorCheckpoint,
+    ),
+    /anchor origin is not canonical at the checkpoint/u,
+    "a future listing anchor output fails closed",
+  );
+  await assert.rejects(
+    indexedUnspentIdRegistryListings(
+      replayAnchorPool({
+        ...replayAnchorRow,
+        pointed_input_present: false,
+        spent_by_checkpoint: false,
+      }),
+      "livenet",
+      [replayListing],
+      replayAnchorCheckpoint,
+    ),
+    /spend pointer lacks canonical input evidence/u,
+    "a confirmed historical spend pointer with no matching input fails closed",
+  );
+  for (const futureOrPendingPointer of [
+    { pointed_spend_height: 958_383 },
+    { pointed_spend_status: "pending", pointed_spend_canonical: false },
+  ]) {
+    assert.deepEqual(
+      (await indexedUnspentIdRegistryListings(
+        replayAnchorPool({
+          ...replayAnchorRow,
+          ...futureOrPendingPointer,
+          pointed_input_present: true,
+          spent_by_checkpoint: false,
+        }),
+        "livenet",
+        [replayListing],
+        replayAnchorCheckpoint,
+      )).map((listing) => listing.listingId),
+      [openListingId],
+      "future or pending anchor spends remain unspent at the checkpoint",
+    );
+  }
   const listingSpendScanSource = topLevelFunctionSource(
     BACKFILL_PATH,
     "persistCanonicalListingOutpointSpendsFromBlock",
@@ -66753,6 +67623,177 @@ check("AMO readiness survives a pruned canonical seed summary through immutable 
   );
 });
 
+check("AMO V5 immutable seed reuse requires the active exact replay checkpoint", async () => {
+  const blockHeight = WORK_AMO_V5_ACTIVATION_HEIGHT - 1;
+  const blockHash = WORK_AMO_V5_DECLARATION_BLOCK_HASH;
+  const binding = replayVerifierBindingFixture({
+    witnessedThroughBlock: blockHeight + 100,
+  });
+  const existingSeed = {
+    indexedThroughBlock: blockHeight,
+    indexedThroughBlockHash: blockHash,
+  };
+  const rebuild = {
+    active: true,
+    complete: false,
+    fault: null,
+    indexedThroughBlock: blockHeight,
+    indexedThroughBlockHash: blockHash,
+    mode: "pwt-range-replay",
+    network: "livenet",
+    rangeReplayFromHeight:
+      CANONICAL_INCB_PWT_RANGE_REPLAY_FROM_HEIGHT,
+    status: "active",
+    verifierBinding: binding,
+  };
+  const retainedFutureRows = {
+    exact_block_count: 1,
+    later_block_count: 8_725,
+    later_event_count: 58,
+    later_pwt_event_count: 0,
+    later_transaction_count: 2_129,
+    maximum_block_height: blockHeight + 8_725,
+    transition_count: 0,
+  };
+  const checkpoint = { blockHash, height: blockHeight };
+  const seedCheckpoint = { blockHash, blockHeight };
+  const guard = ({
+    marker = rebuild,
+    row = retainedFutureRows,
+    runtimeBinding = binding,
+    storedCheckpoint = checkpoint,
+  } = {}) =>
+    isolatedFunction(
+      BACKFILL_PATH,
+      "assertWorkAmoV5HMinusOneCaptureCheckpoint",
+      {
+        ACTIVE_PWT_RANGE_REPLAY_VERIFIER_BINDING: runtimeBinding,
+        NETWORK: "livenet",
+        activePwtRangeReplay: (value) =>
+          value?.mode === "pwt-range-replay" &&
+          value?.active === true &&
+          value?.status === "active",
+        canonicalPwtRangeReplayVerifierBinding: (value) =>
+          value?.verifierBinding ?? null,
+        latestBlockScanCheckpoint: async () => storedCheckpoint,
+        proofIndexerMetaValue: async () => marker,
+      },
+    );
+  const clientFor = (row) => ({
+    query: async (sql) => {
+      if (!sql.includes("AS later_pwt_event_count")) {
+        return { rows: [] };
+      }
+      assert.match(
+        sql,
+        /protocol IN \('pwt1', 'pwa1'\)[\s\S]*block_height > \$2/u,
+      );
+      return { rows: [row] };
+    },
+  });
+  await guard()(clientFor(retainedFutureRows), seedCheckpoint, {
+    existingReplaySeed: existingSeed,
+  });
+  for (const [name, options, seed] of [
+    ["missing seed", {}, null],
+    ["future PWT event", {
+      row: { ...retainedFutureRows, later_pwt_event_count: 1 },
+    }, existingSeed],
+    ["existing V5 transition", {
+      row: { ...retainedFutureRows, transition_count: 1 },
+    }, existingSeed],
+    ["different runtime binding", {
+      runtimeBinding: replayVerifierBindingFixture({
+        bindingId: "9".repeat(64),
+        witnessedThroughBlock: blockHeight + 100,
+      }),
+    }, existingSeed],
+    ["short witness coverage", {
+      runtimeBinding: replayVerifierBindingFixture({
+        witnessedThroughBlock: blockHeight - 1,
+      }),
+      marker: {
+        ...rebuild,
+        verifierBinding: replayVerifierBindingFixture({
+          witnessedThroughBlock: blockHeight - 1,
+        }),
+      },
+    }, existingSeed],
+    ["wrong H-1 checkpoint", {
+      storedCheckpoint: { blockHash: "e".repeat(64), height: blockHeight },
+    }, existingSeed],
+  ]) {
+    const row = options.row ?? retainedFutureRows;
+    await assert.rejects(
+      guard(options)(clientFor(row), seedCheckpoint, {
+        existingReplaySeed: seed,
+      }),
+      /exact unadvanced checkpoint/u,
+      name,
+    );
+  }
+  const strictRow = {
+    ...retainedFutureRows,
+    later_block_count: 0,
+    later_event_count: 0,
+    later_transaction_count: 0,
+    maximum_block_height: blockHeight,
+  };
+  await guard({ marker: null, row: strictRow, runtimeBinding: null })(
+    clientFor(strictRow),
+    seedCheckpoint,
+  );
+  await assert.rejects(
+    guard({ marker: null, runtimeBinding: null })(
+      clientFor(retainedFutureRows),
+      seedCheckpoint,
+    ),
+    /exact unadvanced checkpoint/u,
+    "fresh capture still rejects retained future rows",
+  );
+
+  const capture = isolatedFunction(
+    BACKFILL_PATH,
+    "captureWorkAmoV5HMinusOneSeedEvidence",
+    {
+      NETWORK: "livenet",
+      WORK_AMO_V5_DECLARATION_BLOCK_HASH: blockHash,
+      assertWorkAmoV5HMinusOneCaptureCheckpoint:
+        guard(),
+      storedWorkAmoV5HMinusOneSeedEvidenceRows: async () => [],
+      readJson: async () => {
+        throw new Error("fresh producer must not run");
+      },
+    },
+  );
+  await assert.rejects(
+    capture(clientFor(retainedFutureRows), seedCheckpoint),
+    /exact unadvanced checkpoint/u,
+    "active replay without an immutable seed fails before the producer",
+  );
+  const reuse = isolatedFunction(
+    BACKFILL_PATH,
+    "captureWorkAmoV5HMinusOneSeedEvidence",
+    {
+      NETWORK: "livenet",
+      WORK_AMO_V5_DECLARATION_BLOCK_HASH: blockHash,
+      assertWorkAmoV5HMinusOneCaptureCheckpoint:
+        guard(),
+      storedWorkAmoV5HMinusOneSeedEvidenceRows: async () => [{}],
+      workAmoV5HMinusOneSeedEvidenceFromStoredRow: () =>
+        existingSeed,
+      readJson: async () => {
+        throw new Error("fresh producer must not run");
+      },
+    },
+  );
+  assert.deepEqual(
+    await reuse(clientFor(retainedFutureRows), seedCheckpoint),
+    existingSeed,
+    "active replay uses the validated immutable seed without recapture",
+  );
+});
+
 check("AMO V5 seed capture precedes replay and immutable evidence cannot be cleaned up", async () => {
   const backfill = fileSource(BACKFILL_PATH);
   const apiRequest = topLevelFunctionSource(API_PATH, "handleRequest");
@@ -71178,6 +72219,263 @@ check("AMO V5 raw replay never exposes an invalid token definition to a later mi
   assert.equal(
     tokenItems[0].reasonCode,
     "work-amo-v5-generic-registry-payment-unavailable",
+  );
+});
+
+check("post-V8 INCB send3 bond fixes exact Q16 issuance and dust", () => {
+  const INCEPTION_VALUE_SNAPSHOT_MODEL =
+    "canonical-summary-h-minus-one-v1";
+  const txid =
+    "ebe60fd108e8830b4741101e6525081387dcf328e81c12fa2b533de0bdbf0d3e";
+  const blockHash = "a".repeat(64);
+  const previousBlockHash = "b".repeat(64);
+  const recipientAddress = "1F1p9UEHuH5KTFR7Zsx93Khdrqhj6t5nFv";
+  const amountSubatoms = "18000000000000000000000";
+  const hMinusOneValueQ8 = "840950469793071163780428513";
+  const bond = {
+    blockHash,
+    blockHeight: 968_125,
+    blockIndex: 2_041,
+    confirmed: true,
+    kind: "inception-bond",
+    recipients: [{ address: recipientAddress, amountSats: 546, vout: 0 }],
+    txid,
+  };
+  const transfer = {
+    amountStorageModel: WORK_SUBATOM_PROJECTION_MODEL,
+    amountSubatoms,
+  };
+  const checkpoint = {
+    blockHash,
+    blockHeight: bond.blockHeight,
+    blockIndex: bond.blockIndex,
+    mode: "bond-transaction-provenance",
+    valueSnapshotBlockHash: previousBlockHash,
+    valueSnapshotBlockHeight: bond.blockHeight - 1,
+    valueSnapshotCanonicalSummaryHash: "c".repeat(64),
+    valueSnapshotGeneratedAt: "2026-09-23T00:00:00.000Z",
+    valueSnapshotId: "exact-green-h-minus-one",
+    valueSnapshotMode: "canonical-summary-refresh",
+    valueSnapshotModel: INCEPTION_VALUE_SNAPSHOT_MODEL,
+    workNetworkValueQ8: hMinusOneValueQ8,
+    workNetworkValueSats: decimalTextFromQ8(hMinusOneValueQ8),
+  };
+  const issue = isolatedFunction(
+    API_PATH,
+    "inceptionMintsWithLiveIssuance",
+    {
+      INCB_TOKEN_ID,
+      INCEPTION_ISSUANCE_ACCOUNTING_MODEL:
+        "canonical-pre-bond-live-network-value-v2",
+      WORK_TOKEN_MAX_SUPPLY,
+      inceptionAttachmentMatchesForBond: () => ({
+        matches: [{
+          ...transfer,
+          recipientAddress,
+          transfer,
+        }],
+        unmatchedActions: 0,
+      }),
+      inceptionIssuanceCheckpoint: () => checkpoint,
+      isInceptionBondActivityItem: (item) => item?.kind === "inception-bond",
+      samePaymentAddress: (left, right) => left === right,
+      canonicalEventOrdinal: (value) => Number.isSafeInteger(Number(value))
+        ? Number(value)
+        : null,
+    },
+  );
+  const [mint] = issue(
+    [{
+      amount: "546",
+      blockHash,
+      blockHeight: bond.blockHeight,
+      blockIndex: bond.blockIndex,
+      confirmed: true,
+      minterAddress: recipientAddress,
+      tokenId: INCB_TOKEN_ID,
+      txid,
+    }],
+    [bond],
+    {
+      network: "livenet",
+      workTokenState: { amountStorageModel: WORK_SUBATOM_PROJECTION_MODEL },
+    },
+  );
+  assert.equal(mint.amount, "720814688394061543");
+  assert.equal(mint.attachedWorkLiveValueAtSendQ8, "72081468839406099752608158");
+  assert.equal(mint.issuanceNetworkValueQ8, "72081468839406154352608158");
+  assert.equal(mint.issuanceDustQ8, "52608158");
+  assert.equal(mint.issuanceValueSnapshotWorkNetworkValueQ8, hMinusOneValueQ8);
+  assert.equal(mint.attachedWorkAmountSubatoms, amountSubatoms);
+  assert.equal(mint.attachedWorkAmountStorageModel, WORK_SUBATOM_PROJECTION_MODEL);
+  assert.equal(mint.attachedWorkAmountVersion, "send3");
+  assert.equal(mint.validationMode, "canonical-incb-bond-projection");
+});
+
+check("post-V5 INCB verifier binds accepted bond and WORK send3 to exact H-1", async () => {
+  const txid = "e".repeat(64);
+  const blockHash = "a".repeat(64);
+  const previousBlockHash = "b".repeat(64);
+  const recipientAddress = "1F1p9UEHuH5KTFR7Zsx93Khdrqhj6t5nFv";
+  const workValueQ8 = "2100000000000000000";
+  const bond = {
+    attachedCredits: [{ protocolVout: 3, recipientAddress, tokenId: WORK_TOKEN_ID }],
+    blockHash,
+    blockHeight: 968_125,
+    blockIndex: 2_041,
+    confirmed: true,
+    kind: "inception-bond",
+    recipients: [{ address: recipientAddress, amountSats: 546, vout: 0 }],
+    txid,
+  };
+  const projection = {
+    transition: {
+      openingNetworkValueQ8: workValueQ8,
+      replayRecords: [{
+        output: { classification: { kind: "inception-bond" } },
+        outcome: { valid: true },
+        protocol: "pwm1",
+        rawCandidate: true,
+        txid,
+      }, {
+        output: { inceptionAttachment: {
+          attachedWorkLiveValueAtSendQ8: "150000000",
+          recipientAddress,
+          tokenId: INCB_TOKEN_ID,
+        } },
+        outcome: { valid: true },
+        protocol: "pwt1",
+        rawCandidate: true,
+        txid,
+      }, {
+        derived: true,
+        output: { projection: {
+          attachedWorkLiveValueAtSendQ8: "150000000",
+          kind: "token-mint",
+          recipientAddress,
+          tokenId: INCB_TOKEN_ID,
+          workSendPosition: { protocolVout: 3 },
+        } },
+        outcome: { valid: true },
+        protocol: "pwt1",
+        rawCandidate: false,
+        txid,
+      }],
+    },
+    workState: { transfers: [{ txid, tokenId: WORK_TOKEN_ID }] },
+  };
+  let parsedTransactionCount = 0;
+  const verifier = isolatedFunction(
+    API_PATH,
+    "workAmoV5InceptionVerifierStateFromProjection",
+    {
+      INCB_TOKEN_ID,
+      INCEPTION_BOND_KIND: "inception-bond",
+      INCEPTION_BOND_CONFIG: { kind: "inception-bond" },
+      WORK_TOKEN_ID,
+      bondMintsFromActivity: () => [{
+        amount: "546",
+        blockHash,
+        blockHeight: bond.blockHeight,
+        blockIndex: bond.blockIndex,
+        confirmed: true,
+        minterAddress: recipientAddress,
+        protocolVout: 1,
+        tokenId: INCB_TOKEN_ID,
+        txid,
+      }],
+      canonicalInceptionIssuanceOptions: async (_network, bonds, options) => {
+        assert.equal(bonds.length, 1);
+        assert.equal(options.previousBlockHashByBlockHash.get(blockHash), previousBlockHash);
+        return { preBondCheckpoint: () => ({ workNetworkValueQ8: workValueQ8 }) };
+      },
+      canonicalInceptionMintMetadata: () => ({
+        attachedWorkAmountStorageModel: WORK_SUBATOM_PROJECTION_MODEL,
+        attachedWorkAmountVersion: "send3",
+      }),
+      canonicalNonNegativeIntegerText: (value) =>
+        typeof value === "string" && /^\d+$/u.test(value) ? value : null,
+      inceptionAttachmentMatchesForBond: (_ledger, candidate) => {
+        const matches = candidate.attachedCredits
+          .filter((credit) => credit.protocolVout === 3)
+          .map((credit) => ({ protocolVout: credit.protocolVout }));
+        return { matches, unmatchedActions: candidate.attachedCredits.length - matches.length };
+      },
+      inceptionIssuanceMetadataFromMints: (mints) => ({
+        complete: mints.every((mint) => mint.validationMode === "canonical-incb-bond-projection"),
+        confirmedMints: mints.length,
+      }),
+      inceptionMintHasCanonicalBondBinding: (mint, candidate) =>
+        mint.txid === candidate.txid && mint.minterAddress === candidate.recipients[0].address,
+      inceptionMintsWithLiveIssuance: (seeds, issuanceBonds) => {
+        const attached = issuanceBonds[0].attachedCredits.length > 0;
+        return [{ ...seeds[0], amount: attached ? "547" : "546",
+          attachedWorkLiveValueAtSendQ8: attached ? "150000000" : "0",
+          sourceBondTxid: txid, validationMode: "canonical-incb-bond-projection" }];
+      },
+      isInceptionBondActivityItem: (item) => item?.kind === "inception-bond",
+      isValidBitcoinAddress: () => true,
+      mailActivityItemsFromTransactions: (txs) => {
+        parsedTransactionCount += txs.length;
+        return txs.map(() => bond);
+      },
+      transactionTxid: (tx) => tx.txid,
+      workAmoV5GenericVerifierStateFromProjection: () => ({
+        mints: bond.attachedCredits.length > 0
+          ? [{ amount: "546" }, { amount: "1" }]
+          : [{ amount: "546" }],
+        tokens: [{ registryAddress: "1638Vn6KtmK8p5r4oGvAXq9nmZb1emU1DV", tokenId: INCB_TOKEN_ID }],
+      }),
+    },
+  );
+  const context = {
+    blockHash,
+    indexedThroughBlock: bond.blockHeight,
+    previousBlockHash,
+    transactions: [{ txid: "f".repeat(64) }, { txid }],
+  };
+  const state = await verifier(projection, context, "livenet");
+  assert.equal(parsedTransactionCount, 1);
+  assert.equal(state.mints.length, 1);
+  assert.equal(state.mints[0].amount, "547");
+  assert.equal(state.mints[0].amountSats, 0);
+  assert.equal(state.mints[0].chargesTransactionFee, false);
+  assert.equal(state.mints[0].claimsEconomicOutputs, false);
+  assert.equal(state.mints[0].economicDelta, false);
+  assert.equal(state.mints[0].validationMode, "canonical-incb-bond-projection");
+  assert.equal(state.mints[0].attachedWorkAmountVersion, "send3");
+  assert.equal(state.mints[0].recordOrdinal, 1);
+  const earlySendProjection = structuredClone(projection);
+  earlySendProjection.transition.replayRecords[1].output = {};
+  earlySendProjection.transition.replayRecords[2]
+    .output.projection.workSendPosition.protocolVout = 0;
+  assert.equal(
+    (await verifier(earlySendProjection, context, "livenet")).mints[0].amount,
+    "547",
+    "a WORK send before the PWM carrier still has a derived INCB companion",
+  );
+  const savedCredits = bond.attachedCredits;
+  bond.attachedCredits = [];
+  const directOnlyProjection = structuredClone(projection);
+  directOnlyProjection.transition.replayRecords = [
+    directOnlyProjection.transition.replayRecords[0],
+  ];
+  directOnlyProjection.workState.transfers = [];
+  assert.equal(
+    (await verifier(directOnlyProjection, context, "livenet")).mints[0].amount,
+    "546",
+    "a valid direct-only bond keeps its exact H-1 mint without a WORK child",
+  );
+  bond.attachedCredits = savedCredits;
+  await assert.rejects(
+    verifier({ ...projection, transition: { ...projection.transition, openingNetworkValueQ8: "1" } },
+      context, "livenet"),
+    /hash-bound H-1 value differs/u,
+  );
+  bond.attachedCredits[0].protocolVout = 4;
+  await assert.rejects(
+    verifier(projection, context, "livenet"),
+    /declared WORK attachment did not pass/u,
   );
 });
 
@@ -85499,6 +86797,948 @@ check("INCB decimal aliases derive only from exact integers without mutating iss
   assert.equal(projected.attachedWorkLiveValueAtSendQ8, original.attachedWorkLiveValueAtSendQ8);
   assert.equal(original.issuanceDustSats, "0.0571579");
   assert.throws(() => project({ ...original, issuanceDustQ8: "not-an-integer" }), /Invalid exact INCB/);
+});
+
+
+check("post-V5 INCB repair dry run binds stored bond and accepted WORK before any write", async () => {
+  const targets = POST_V5_INCB_ISSUANCE_REPAIR_TARGETS.map((target, index) => ({
+    ...target,
+    bond: { protocolVout: 1, recordOrdinal: 0 },
+    mint: {
+      txid: target.txid,
+      blockHash: target.blockHash,
+      blockHeight: target.blockHeight,
+      blockIndex: target.blockIndex,
+      protocolVout: 1,
+      recordOrdinal: 1,
+      sourceBondTxid: target.txid,
+      minterAddress: "bond-recipient",
+      amount: String(1000 + index),
+      issuanceCheckpointMode: "bond-transaction-provenance",
+      issuanceCheckpointBlockHash: target.blockHash,
+      issuanceCheckpointBlockHeight: target.blockHeight,
+      issuanceCheckpointBlockIndex: target.blockIndex,
+      issuanceValueSnapshotId: index === 0 ? "h-1-a" : "h-1-b",
+      issuanceValueSnapshotBlockHash: "a".repeat(64),
+      issuanceValueSnapshotBlockHeight: target.blockHeight - 1,
+      issuanceValueSnapshotCanonicalSummaryHash: "b".repeat(64),
+      issuanceValueSnapshotGeneratedAt: `2026-09-24T00:00:0${index}Z`,
+      issuanceValueSnapshotMode: "canonical-summary-refresh",
+      issuanceValueSnapshotModel: "canonical-summary-snapshot-v1",
+      issuanceValueSnapshotWorkNetworkValueQ8: "123456789",
+      issuanceNetworkValueQ8: String(100000000000n + BigInt(index)),
+    },
+    previousBlockHash: "a".repeat(64),
+    witness: {
+      amount: String(1000 + index),
+      attachedWorkSubatoms: String(1000000 + index),
+      directProofSats: "546",
+      fixedValueQ8: String(100000000000n + BigInt(index)),
+      recipientAddress: "bond-recipient",
+      recipientVout: 0,
+    },
+    workTransfers: [{ protocolVout: 3, recordOrdinal: 0 }],
+  }));
+  const makeRows = (alterWork = false) => {
+    const transactions = targets.map((target) => ({
+      txid: target.txid,
+      status: "confirmed",
+      block_hash: target.blockHash,
+      block_height: target.blockHeight,
+      block_index: target.blockIndex,
+    }));
+    const canonicalBlocks = targets.map((target) => ({
+      height: target.blockHeight,
+      block_hash: target.blockHash,
+    }));
+    const bonds = targets.map((target, index) => ({
+      ...transactions[index],
+      event_id: index + 1,
+      valid: true,
+      op_return_vout: 1,
+      record_ordinal: 0,
+      payload: {
+        recipients: [{ address: "bond-recipient", amountSats: 546, vout: 0 }],
+        attachedCredits: [{
+          amountSubatoms: target.witness.attachedWorkSubatoms,
+          protocolVout: 3,
+          recipientAddress: "bond-recipient",
+          tokenId: WORK_TOKEN_ID,
+        }],
+      },
+    }));
+    const work = targets.map((target, index) => ({
+      ...transactions[index],
+      valid: true,
+      op_return_vout: 3,
+      record_ordinal: 0,
+      payload: {
+        amountStorageModel: WORK_SUBATOM_PROJECTION_MODEL,
+        amountSubatoms: alterWork && index === 1
+          ? "999"
+          : target.witness.attachedWorkSubatoms,
+        inceptionAttachment: {
+          attachedWorkAmountSubatoms: target.witness.attachedWorkSubatoms,
+          kind: "token-mint",
+          parentPosition: {
+            blockHash: target.blockHash,
+            blockHeight: target.blockHeight,
+            blockTransactionIndex: target.blockIndex,
+          },
+          tokenId: INCB_TOKEN_ID,
+        },
+        recipientAddress: "bond-recipient",
+        transferVersion: "send3",
+      },
+    }));
+    const invalid = targets.flatMap((target, index) => [1, 3].map((vout) => ({
+      ...transactions[index],
+      event_id: 10 + index * 2 + vout,
+      kind: "token-event-invalid",
+      protocol: "pwt1",
+      valid: false,
+      op_return_vout: vout,
+      record_ordinal: 1,
+      payload: { reasonCode: "reserved-bond-credit-namespace" },
+    })));
+    return { transactions, canonicalBlocks, bonds, work, invalid };
+  };
+  const certifiedMarker = {
+    active: false,
+    complete: true,
+    indexedThroughBlock: 968345,
+    mode: "pwt-range-replay",
+    rangeReplayFromHeight: 958383,
+    status: "complete",
+    verifierBinding: {
+      bindingId: "binding-id",
+      rangeReplayFromHeight: 958383,
+      witnessCount: 18,
+      witnessPreserveCount: 10,
+      witnessSetHash: "witness-hash",
+      witnessSetMetaKey: "witness-key",
+      witnessedThroughBlock: 968345,
+      witnessedThroughBlockHash: "witness-tip-hash",
+    },
+  };
+  const repairDependencies = {
+    CANONICAL_FAULT_META_KEY: "canonical:fault",
+    CANONICAL_INCB_PWT_RANGE_REPLAY_FROM_HEIGHT: 958383,
+    CANONICAL_REBUILD_META_KEY: "canonical:rebuild",
+    INCB_TOKEN_ID,
+    INCB_RANGE_REPLAY_WITNESS_MANIFEST_MODEL,
+    NETWORK: "livenet",
+    POST_V5_INCB_ISSUANCE_REPAIR_TARGETS,
+    WORK_AMO_V5_AUTH_VERSION,
+    WORK_MARKET_V2_AUTH_VERSION: "pwt-sale-v3",
+    WORK_MARKET_V4_AUTH_VERSION: "pwt-sale-v4",
+    WORK_AMO_V8_TRANSFER_VERSION: "send3",
+    WORK_SUBATOM_PROJECTION_MODEL,
+    WORK_TOKEN_ID,
+    canonicalIncbReplaySha256: () => "rebuild-fingerprint",
+    canonicalIncbValueSnapshotBindings: () => new Map([
+      ["h-1-a", {}], ["h-1-b", {}],
+    ]),
+    canonicalPostV5IncbRepairTarget: async (target) =>
+      targets.find((entry) => entry.txid === target.txid),
+    canonicalPwtRangeReplayState: (marker) =>
+      marker?.mode === "pwt-range-replay" && marker?.status === "complete" &&
+      marker?.complete === true ? "complete" : null,
+    canonicalPwtRangeReplayVerifierBinding: (marker) => marker?.verifierBinding ?? null,
+    lockedCanonicalIncbValueSnapshots: async (client) => client.snapshotRows,
+    verifiedCanonicalRecoveryMetaState: (rows) => {
+      if (rows.some((row) => row.key === "canonical:fault" && row.value?.active)) {
+        throw new Error("active canonical fault");
+      }
+      const marker = rows.find((row) => row.key === "canonical:rebuild")?.value;
+      return { rebuild: marker?.mode === "pwt-range-replay" &&
+        marker?.status === "complete" && marker?.complete === true
+        ? "certified-complete-pwt-range-replay" : "absent" };
+    },
+    verifiedCanonicalIncbValueSnapshotFingerprints: () => new Map([
+      ["h-1-a", "fingerprint-a"], ["h-1-b", "fingerprint-b"],
+    ]),
+    verifyIncbRangeReplayWitnessManifest: (manifest, expected) => {
+      if (manifest?.bindingId !== expected.bindingId ||
+          manifest?.hash !== expected.hash) {
+        throw new Error("replay witness manifest mismatch");
+      }
+      return manifest;
+    },
+  };
+  const repair = isolatedFunction(BACKFILL_PATH, "repairCanonicalPostV5IncbIssuance", {
+    ...repairDependencies, APPLY_POST_V5_INCB_ISSUANCE_REPAIR: false,
+  });
+  const clientFor = (alterWork, {
+    faultActive = false,
+    manifest = { bindingId: "binding-id", hash: "witness-hash" },
+    marker = certifiedMarker,
+    snapshotRows = [{ snapshot_id: "h-1-a" }, { snapshot_id: "h-1-b" }],
+    wrongTargetBlock = false,
+  } = {}) => {
+    const rows = makeRows(alterWork);
+    const queries = [];
+    return {
+      queries,
+      snapshotRows,
+      async query(sql) {
+        const statement = String(sql).replace(/\s+/gu, " ").trim();
+        queries.push(statement);
+        if (statement.startsWith("BEGIN") || statement === "ROLLBACK") return { rows: [] };
+        if (statement.includes("FROM proof_indexer.meta WHERE key = ANY")) {
+          return { rows: [
+            { key: "canonical:rebuild", value: marker },
+            ...(faultActive ? [{ key: "canonical:fault", value: { active: true } }] : []),
+          ] };
+        }
+        if (statement.includes("FROM proof_indexer.meta WHERE key = $1 FOR SHARE")) {
+          return { rows: [{ value: manifest }] };
+        }
+        if (statement.includes("FROM proof_indexer.transactions WHERE")) {
+          return { rows: rows.transactions };
+        }
+        if (statement.startsWith("SELECT height, block_hash FROM proof_indexer.blocks")) {
+          return { rows: wrongTargetBlock ? rows.canonicalBlocks.slice(0, 1) : rows.canonicalBlocks };
+        }
+        if (statement.includes("AND protocol = 'pwm1' AND kind = 'inception-bond'")) {
+          return { rows: rows.bonds };
+        }
+        if (statement.includes("AND protocol = 'pwt1' AND kind = 'token-transfer'")) {
+          return { rows: rows.work };
+        }
+        if (statement.includes("kind, protocol, status, valid") && statement.includes("FROM proof_indexer.events")) {
+          return { rows: rows.invalid };
+        }
+        if (statement.includes("AS mint_supply")) {
+          return { rows: [{ mint_supply: "50", balance_supply: "50" }] };
+        }
+        throw new Error(`Unexpected repair query: ${statement.slice(0, 120)}`);
+      },
+    };
+  };
+  const dryRunClient = clientFor(false);
+  const result = await repair(dryRunClient);
+  assert.equal(result.dryRun, true);
+  assert.equal(result.changedRows, 0);
+  assert.equal(result.expectedAfterSupply, "2051");
+  assert.equal(dryRunClient.queries.at(-1), "ROLLBACK");
+  assert.ok(dryRunClient.queries.every((query) =>
+    !/^(?:DELETE|INSERT|UPDATE|COMMIT|LOCK TABLE)/u.test(query)));
+  const changedWorkClient = clientFor(true);
+  await rejection(
+    repair(changedWorkClient),
+    (error) => /stored parent or accepted WORK companion disagrees/u.test(error.message),
+    "a changed stored WORK amount must stop the repair before deletion",
+  );
+  assert.equal(changedWorkClient.queries.at(-1), "ROLLBACK");
+  assert.ok(changedWorkClient.queries.every((query) =>
+    !/^(?:DELETE|INSERT|UPDATE|COMMIT|LOCK TABLE)/u.test(query)));
+  for (const [label, options, pattern] of [
+    ["incomplete replay", { marker: { complete: true } }, /certified completed 958383 PWT replay/u],
+    ["active fault", { faultActive: true }, /active canonical fault/u],
+    ["missing H-1 row", { snapshotRows: [{ snapshot_id: "h-1-a" }] }, /both imported full H-1 summary rows/u],
+    ["mismatched manifest", { manifest: { bindingId: "wrong", hash: "witness-hash" } }, /replay witness manifest mismatch/u],
+    ["missing canonical target block", { wrongTargetBlock: true }, /one matching canonical index block per target/u],
+  ]) {
+    const rejectedClient = clientFor(false, options);
+    await rejection(repair(rejectedClient), (error) => pattern.test(error.message), label);
+    assert.equal(rejectedClient.queries.at(-1), "ROLLBACK", label);
+    assert.ok(rejectedClient.queries.every((query) =>
+      !/^(?:DELETE|INSERT|UPDATE|COMMIT|LOCK TABLE)/u.test(query)), label);
+  }
+  const applyRepair = isolatedFunction(BACKFILL_PATH, "repairCanonicalPostV5IncbIssuance", {
+    ...repairDependencies,
+    APPLY_POST_V5_INCB_ISSUANCE_REPAIR: true,
+    bitcoinRpc: async (method, args) => {
+      if (method === "getblockhash") {
+        return targets.find((target) => target.blockHeight === args[0])?.blockHash;
+      }
+      if (method === "getblock") {
+        const target = targets.find((entry) => entry.blockHash === args[0]);
+        const tx = [];
+        tx[target.blockIndex] = target.txid;
+        return { previousblockhash: target.previousBlockHash, tx };
+      }
+      throw new Error(`Unexpected Core call ${method}`);
+    },
+    canonicalBondMintProjection: () => true,
+    canonicalProtocolItemForPostgres: (item) => item,
+    isHexTxid: (value) => /^[0-9a-f]{64}$/u.test(String(value ?? "")),
+    protocolIntegrityItemForPersistence: async (_client, item) => item,
+    rebuildConfirmedCreditBalancesFromCanonicalEvents: async (client, options) => {
+      client.replayOptions = options;
+      return { holders: 2 };
+    },
+    sourceLabelForProtocolItem: () => "token-mints",
+    upsertEvent: async (client, _source, item) => {
+      const payload = { ...item };
+      if (client.mutateMintProvenance) {
+        payload.issuanceValueSnapshotCanonicalSummaryHash = "e".repeat(64);
+      }
+      client.mints.push({ txid: item.txid, kind: "token-mint", valid: true,
+        status: "confirmed", block_hash: item.blockHash,
+        block_height: item.blockHeight, block_index: item.blockIndex,
+        op_return_vout: item.protocolVout, record_ordinal: item.recordOrdinal,
+        payload });
+      return { skipped: false };
+    },
+  });
+  const replaceableSummary = (id, height) => ({
+    snapshot_id: id,
+    indexed_through_block: height,
+    source_hashes: { canonicalSummary: "b".repeat(64), blockScan: "c".repeat(64) },
+    payload_model: "",
+    payload_snapshot_id: id,
+    payload_indexed_through_block: String(height),
+    summary_payloads_type: "object",
+    replaceable_summary: true,
+    canonical_block_count: 1,
+    canonical_hash_match: true,
+  });
+  const applyClientFor = ({ unknownSnapshot = false, nonGreenSummary = false,
+    wrongCanonicalBlock = false, wrongTargetBlock = false,
+    mutateMintProvenance = false, partialDelete = false } = {}) => {
+    const rows = makeRows(false);
+    const queries = [];
+    const summaryRows = [
+      replaceableSummary("summary-a", 968200),
+      replaceableSummary("summary-b", 968345),
+      ...(unknownSnapshot ? [{ ...replaceableSummary("immutable-unknown", 968300),
+        payload_model: "unexpected-evidence-v1" }] : []),
+      ...(nonGreenSummary ? [{ ...replaceableSummary("non-green", 968300),
+        replaceable_summary: false }] : []),
+      ...(wrongCanonicalBlock ? [{ ...replaceableSummary("wrong-block", 968300),
+        canonical_hash_match: false }] : []),
+    ];
+    let supplyReads = 0;
+    return {
+      queries,
+      mints: [],
+      mutateMintProvenance,
+      snapshotRows: [{ snapshot_id: "h-1-a" }, { snapshot_id: "h-1-b" }],
+      async query(sql, parameters = []) {
+        const statement = String(sql).replace(/\s+/gu, " ").trim();
+        queries.push(statement);
+        if (statement.startsWith("BEGIN") || statement.startsWith("LOCK TABLE") ||
+            statement === "ROLLBACK" || statement === "COMMIT") return { rows: [] };
+        if (statement.includes("FROM proof_indexer.meta WHERE key = ANY")) {
+          return { rows: [{ key: "canonical:rebuild", value: certifiedMarker }] };
+        }
+        if (statement.includes("FROM proof_indexer.meta WHERE key = $1 FOR SHARE")) {
+          return { rows: [{ value: parameters[0] === "witness-key"
+            ? { bindingId: "binding-id", hash: "witness-hash" } : certifiedMarker }] };
+        }
+        if (statement.includes("FROM proof_indexer.transactions WHERE")) return { rows: rows.transactions };
+        if (statement.startsWith("SELECT height, block_hash FROM proof_indexer.blocks")) {
+          return { rows: wrongTargetBlock ? [{ ...rows.canonicalBlocks[0], block_hash: "d".repeat(64) }]
+            .concat(rows.canonicalBlocks.slice(1)) : rows.canonicalBlocks };
+        }
+        if (statement.includes("AND protocol = 'pwm1' AND kind = 'inception-bond'")) return { rows: rows.bonds };
+        if (statement.includes("AND protocol = 'pwt1' AND kind = 'token-transfer'")) return { rows: rows.work };
+        if (statement.includes("kind, protocol, status, valid") && statement.includes("FROM proof_indexer.events")) return { rows: rows.invalid };
+        if (statement.includes("AS mint_supply")) {
+          supplyReads += 1;
+          return { rows: [{ mint_supply: supplyReads === 1 ? "50" : "2051",
+            balance_supply: supplyReads === 1 ? "50" : "2051" }] };
+        }
+        if (statement.startsWith("DELETE FROM proof_indexer.event_participants") ||
+            statement.startsWith("DELETE FROM proof_indexer.event_refs")) return { rows: [], rowCount: 1 };
+        if (statement.startsWith("DELETE FROM proof_indexer.events")) {
+          return { rows: [{ event_id: parameters[1] }], rowCount: 1 };
+        }
+        if (statement.startsWith("SELECT txid, kind, valid, status,")) {
+          return { rows: this.mints };
+        }
+        if (statement.startsWith("SELECT snapshot_id FROM proof_indexer.ledger_snapshots")) {
+          return { rows: [{ snapshot_id: "scan-checkpoint" }] };
+        }
+        if (statement.startsWith("WITH manifest_locked AS MATERIALIZED")) {
+          return { rows: summaryRows };
+        }
+        if (statement.startsWith("DELETE FROM proof_indexer.ledger_snapshots")) {
+          assert.equal(parameters[0], "livenet");
+          assert.equal(JSON.stringify(parameters[1]),
+            JSON.stringify(["summary-a", "summary-b"]));
+          assert.equal(parameters[2], POST_V5_INCB_ISSUANCE_REPAIR_TARGETS[0].blockHeight);
+          const expected = partialDelete ? summaryRows.slice(0, 1) : summaryRows;
+          return { rows: expected.map((row) => ({ snapshot_id: row.snapshot_id })),
+            rowCount: expected.length };
+        }
+        throw new Error(`Unexpected apply repair query: ${statement.slice(0, 120)}`);
+      },
+    };
+  };
+  const appliedClient = applyClientFor();
+  const applied = await applyRepair(appliedClient);
+  assert.equal(applied.changedRows, 2);
+  assert.equal(applied.removedInvalidAliases, 4);
+  assert.equal(JSON.stringify(appliedClient.mints.map((row) => row.txid).sort()),
+    JSON.stringify(targets.map((target) => target.txid).sort()));
+  assert.equal(JSON.stringify(applied.invalidatedSnapshotIds),
+    JSON.stringify(["summary-a", "summary-b"]));
+  assert.equal(JSON.stringify(appliedClient.replayOptions), JSON.stringify({
+    supplyCorrectionMode: "canonical-incb-issuance-repair",
+    skipInvalidBondAliasEnrichment: true,
+    supplyCorrectionTokenIds: [INCB_TOKEN_ID], tokenIds: [INCB_TOKEN_ID],
+  }));
+  assert.equal(appliedClient.queries.at(-1), "COMMIT");
+  const eventHashReads = appliedClient.queries.filter((query) =>
+    query.includes("FROM proof_indexer.events") && query.includes("AS block_hash"));
+  assert.equal(eventHashReads.length, 4);
+  assert.ok(eventHashReads.every((query) =>
+    query.includes("FROM proof_indexer.transactions canonical_transaction") &&
+    query.includes("canonical_transaction.network = proof_indexer.events.network") &&
+    query.includes("canonical_transaction.txid = proof_indexer.events.txid")));
+  const tableLock = appliedClient.queries.find((query) => query.startsWith("LOCK TABLE"));
+  assert.match(tableLock, /proof_indexer\.meta/u);
+  assert.match(tableLock, /proof_indexer\.blocks/u);
+  assert.equal(appliedClient.queries.filter((query) =>
+    query.startsWith("DELETE FROM proof_indexer.ledger_snapshots")).length, 1);
+  const protectedSelection = appliedClient.queries.find((query) =>
+    query.startsWith("WITH manifest_locked AS MATERIALIZED"));
+  assert.match(protectedSelection, /work_market_oracles AS MATERIALIZED/u);
+  assert.match(protectedSelection, /action_block\.canonical = true/u);
+  assert.match(protectedSelection, /canonical_block_count/u);
+  assert.match(protectedSelection, /canonical_hash_match/u);
+  assert.match(protectedSelection, /issued\.payload->>'issuanceValueSnapshotId'/u);
+  assert.doesNotMatch(protectedSelection, /issued\.kind = 'token-mint'/u);
+  for (const [label, options, pattern] of [
+    ["unknown immutable snapshot", { unknownSnapshot: true }, /unrecognized unprotected snapshot shape/u],
+    ["non-green summary", { nonGreenSummary: true }, /unrecognized unprotected snapshot shape/u],
+    ["wrong canonical block", { wrongCanonicalBlock: true }, /unrecognized unprotected snapshot shape/u],
+    ["wrong target canonical block", { wrongTargetBlock: true }, /one matching canonical index block per target/u],
+    ["altered persisted mint H-1 provenance", { mutateMintProvenance: true }, /exact canonical mint and H-1 provenance/u],
+    ["short snapshot deletion", { partialDelete: true }, /exactly its reviewed derived summaries/u],
+  ]) {
+    const rejectedClient = applyClientFor(options);
+    await rejection(applyRepair(rejectedClient), (error) => pattern.test(error.message), label);
+    assert.equal(rejectedClient.queries.at(-1), "ROLLBACK", label);
+    if (options.unknownSnapshot || options.nonGreenSummary || options.wrongCanonicalBlock ||
+        options.wrongTargetBlock || options.mutateMintProvenance) {
+      assert.ok(rejectedClient.queries.every((query) =>
+        !query.startsWith("DELETE FROM proof_indexer.ledger_snapshots")), label);
+    }
+  }
+
+});
+
+check("retained PWT replay normalizes only two verified equal WORK listing aliases", () => {
+  const conversionRecord = isolatedFunction(
+    BACKFILL_PATH,
+    "retainedPwtRangeReplayWorkListingAmountRecord",
+    {
+      NETWORK: "livenet",
+      WORK_ATOMIC_PROJECTION_MODEL,
+      isWorkTokenId,
+      normalizeWorkAtoms,
+      objectValue: (value) =>
+        value && typeof value === "object" && !Array.isArray(value)
+          ? value
+          : {},
+    },
+  );
+  const observed = [
+    {
+      blockHash:
+        "000000000000000000018efd61c3a9f29faa51298c7a9611223861d94dc4b2f1",
+      blockHeight: 958349,
+      blockIndex: 642,
+      txid: "cc15066d4d3902d4dd5864088f75addffc068879e2d1eedfa4f147609574dd92",
+    },
+    {
+      blockHash:
+        "0000000000000000000037356c655e05cbf5b78ade5a4664fe2b5d9e4dfe7d82",
+      blockHeight: 958351,
+      blockIndex: 376,
+      txid: "9c79f121eb73f079b330950a2890ba2029416e5b75bafadc642623c66fd963f9",
+    },
+  ];
+  for (const identity of observed) {
+    const listing = {
+      ...identity,
+      amount: "1024",
+      amountAtoms: "102400000000",
+      amountStorageModel: WORK_ATOMIC_PROJECTION_MODEL,
+      confirmed: true,
+      kind: "token-listing",
+      listingId: identity.txid,
+      network: "livenet",
+      protocol: "pwt1",
+      protocolVout: 1,
+      recordOrdinal: 0,
+      saleAuthorization: {
+        amountAtoms: "102400000000",
+        nonce: "signed-term-must-survive",
+        version: "pwt-sale-v2",
+      },
+      status: "confirmed",
+      tokenId: WORK_TOKEN_ID,
+      valid: true,
+    };
+    const original = structuredClone(listing);
+    assert.throws(
+      () =>
+        workAmountSubatomsFromRecord(listing, {
+          sourceModel: WORK_ATOMIC_PROJECTION_MODEL,
+        }),
+      /Legacy WORK amount aliases are ambiguous/u,
+    );
+    const conversion = conversionRecord(listing);
+    assert.equal(conversion.amountAtoms, listing.amountAtoms);
+    assert.equal(Object.hasOwn(conversion.saleAuthorization, "amountAtoms"), false);
+    assert.equal(conversion.saleAuthorization.nonce, listing.saleAuthorization.nonce);
+    assert.equal(
+      workAmountSubatomsFromRecord(conversion, {
+        sourceModel: WORK_ATOMIC_PROJECTION_MODEL,
+      }),
+      legacyWorkAtomsToSubatoms("102400000000"),
+    );
+    assert.deepEqual(listing, original, "signed event and listing terms stay unchanged");
+    assert.throws(
+      () =>
+        conversionRecord({
+          ...listing,
+          saleAuthorization: {
+            ...listing.saleAuthorization,
+            amountAtoms: "102400000001",
+          },
+        }),
+      /signed amount conflicts/u,
+    );
+    assert.throws(
+      () => conversionRecord({ ...listing, amountSubatoms: "1" }),
+      /unexpected amount shape/u,
+    );
+    const unrelated = { ...listing, txid: "f".repeat(64) };
+    assert.equal(conversionRecord(unrelated), unrelated);
+  }
+});
+
+
+check("confirmed scan converts only exact equal Q8 WORK listing aliases", () => {
+  const canonicalPosition = isolatedFunction(
+    BACKFILL_PATH,
+    "canonicalProtocolPosition",
+    { WORK_AMO_V5_ACTIVATION_HEIGHT: 959_621 },
+  );
+  const conversionRecord = isolatedFunction(
+    BACKFILL_PATH,
+    "canonicalScanWorkListingAmountRecord",
+    {
+      NETWORK: "livenet",
+      WORK_ATOMIC_PROJECTION_MODEL,
+      canonicalProtocolPosition: canonicalPosition,
+      isWorkTokenId,
+      normalizeWorkAtoms,
+      objectValue: (value) =>
+        value && typeof value === "object" && !Array.isArray(value)
+          ? value
+          : {},
+      parseWorkAmountToAtoms,
+    },
+  );
+  const listing = {
+    amount: "1000",
+    amountAtoms: "100000000000",
+    amountStorageModel: WORK_ATOMIC_PROJECTION_MODEL,
+    blockHash:
+      "000000000000000000021fb7871138c76c262471fe3b178e8829d62cbf167ae8",
+    blockHeight: 958_432,
+    blockIndex: 1297,
+    confirmed: true,
+    indexedFrom: "token-listings",
+    kind: "token-listing",
+    listingId: "23582dc74c1b52afa59f6d6a73fea384fb48305e68942d303ea79b7ac4bff56e",
+    network: "livenet",
+    protocolVout: 1,
+    recordOrdinal: 0,
+    saleAuthorization: {
+      amountAtoms: "100000000000",
+      nonce: "signed-term-must-survive",
+      version: "pwt-sale-v2",
+    },
+    status: "confirmed",
+    tokenId: WORK_TOKEN_ID,
+    txid: "23582dc74c1b52afa59f6d6a73fea384fb48305e68942d303ea79b7ac4bff56e",
+    valid: true,
+  };
+  const canonicalEvent = {
+    block_height: 958_432,
+    block_index: 1297,
+    kind: "token-listing",
+    network: "livenet",
+    op_return_vout: 1,
+    payload: structuredClone(listing),
+    protocol: "pwt1",
+    record_ordinal: 0,
+    status: "confirmed",
+    txid: listing.txid,
+    valid: true,
+  };
+  const originalListing = structuredClone(listing);
+  const originalEvent = structuredClone(canonicalEvent);
+  assert.throws(
+    () => workAmountSubatomsFromRecord(listing, {
+      sourceModel: WORK_ATOMIC_PROJECTION_MODEL,
+    }),
+    /Legacy WORK amount aliases are ambiguous/u,
+  );
+  const conversion = conversionRecord(listing, canonicalEvent);
+  assert.equal(conversion.amountAtoms, listing.amountAtoms);
+  assert.equal(Object.hasOwn(conversion.saleAuthorization, "amountAtoms"), false);
+  assert.equal(conversion.saleAuthorization.nonce, listing.saleAuthorization.nonce);
+  assert.equal(
+    workAmountSubatomsFromRecord(conversion, {
+      sourceModel: WORK_ATOMIC_PROJECTION_MODEL,
+    }),
+    legacyWorkAtomsToSubatoms(listing.amountAtoms),
+  );
+  assert.deepEqual(listing, originalListing, "signed source listing remains unchanged");
+  assert.deepEqual(canonicalEvent, originalEvent, "canonical event remains unchanged");
+  assert.throws(
+    () => conversionRecord(listing, null),
+    /no exact canonical Q8 conversion witness/u,
+  );
+  for (const event of [
+    { ...canonicalEvent, status: "pending" },
+    { ...canonicalEvent, protocol: "pwm1" },
+    { ...canonicalEvent, block_index: 1298 },
+    { ...canonicalEvent, op_return_vout: null },
+    { ...canonicalEvent, payload: { ...canonicalEvent.payload, recordOrdinal: null } },
+    { ...canonicalEvent, payload: { ...canonicalEvent.payload, blockHash: "f".repeat(64) } },
+  ]) {
+    assert.throws(
+      () => conversionRecord(listing, event),
+      /no exact canonical Q8 conversion witness/u,
+    );
+  }
+  assert.throws(
+    () => conversionRecord({ ...listing, indexedFrom: "token-sales" }, canonicalEvent),
+    /no exact canonical Q8 conversion witness/u,
+  );
+  assert.throws(
+    () => conversionRecord({ ...listing, protocol: "pwm1" }, canonicalEvent),
+    /no exact canonical Q8 conversion witness/u,
+  );
+  assert.throws(
+    () => conversionRecord({ ...listing, tokenAmountAtoms: listing.amountAtoms }, canonicalEvent),
+    /no exact canonical Q8 conversion witness/u,
+  );
+  assert.throws(
+    () => conversionRecord({
+      ...listing,
+      saleAuthorization: {
+        ...listing.saleAuthorization,
+        amountAtoms: "100000000001",
+      },
+    }, canonicalEvent),
+    /signed Q8 amount conflicts/u,
+  );
+  assert.throws(
+    () => conversionRecord({ ...listing, amount: "1001" }, canonicalEvent),
+    /signed Q8 amount conflicts/u,
+  );
+  const sealTxid =
+    "798577990868f3d1efe23df318fb8e5afc5d5e81b4f402325af4dc2f22c25c90";
+  const seal = {
+    ...listing,
+    amount: "100",
+    amountAtoms: "10000000000",
+    blockHash:
+      "00000000000000000000b07a33091542f507a5e7e4895940d70331743b409455",
+    blockHeight: 958_582,
+    blockIndex: 988,
+    kind: "token-listing-sealed",
+    listingId:
+      "0a8066e165028c7949aea863a2836c1ca14ec959651872cd42722752854571cd",
+    saleAuthorization: {
+      ...listing.saleAuthorization,
+      amountAtoms: "10000000000",
+    },
+    sealBlockHash:
+      "00000000000000000000b07a33091542f507a5e7e4895940d70331743b409455",
+    sealBlockHeight: 958_582,
+    sealBlockIndex: 988,
+    sealConfirmed: true,
+    sealProtocolVout: 1,
+    sealRecordOrdinal: 0,
+    sealTxid,
+    txid: sealTxid,
+  };
+  const sealEvent = {
+    ...canonicalEvent,
+    block_height: 958_582,
+    block_index: 988,
+    kind: seal.kind,
+    payload: structuredClone(seal),
+    txid: sealTxid,
+  };
+  const originalSeal = structuredClone(seal);
+  const sealConversion = conversionRecord(seal, sealEvent);
+  assert.equal(
+    workAmountSubatomsFromRecord(sealConversion, {
+      sourceModel: WORK_ATOMIC_PROJECTION_MODEL,
+    }),
+    legacyWorkAtomsToSubatoms("10000000000"),
+  );
+  assert.equal(Object.hasOwn(sealConversion.saleAuthorization, "amountAtoms"), false);
+  assert.deepEqual(seal, originalSeal, "signed seal action remains unchanged");
+  for (const invalidSeal of [
+    { ...seal, sealTxid: "f".repeat(64) },
+    { ...seal, sealConfirmed: false },
+    { ...seal, sealBlockHeight: 958_581 },
+    { ...seal, sealBlockHash: "f".repeat(64) },
+    { ...seal, listingId: sealTxid },
+  ]) {
+    assert.throws(
+      () => conversionRecord(invalidSeal, sealEvent),
+      /no exact canonical Q8 conversion witness/u,
+    );
+  }
+  assert.throws(
+    () => conversionRecord(seal, {
+      ...sealEvent,
+      payload: { ...sealEvent.payload, sealRecordOrdinal: 1 },
+    }),
+    /no exact canonical Q8 conversion witness/u,
+  );
+  assert.throws(
+    () => conversionRecord({
+      ...seal,
+      saleAuthorization: {
+        ...seal.saleAuthorization,
+        amountAtoms: "10000000001",
+      },
+    }, sealEvent),
+    /signed Q8 amount conflicts/u,
+  );
+
+  const closeTxid =
+    "b16deae4ec27ea1f02dafd8cb5f55d6c916db7be17141cfb31c0f6d40590ae7a";
+  const close = {
+    ...listing,
+    amount: "2000",
+    amountAtoms: "200000000000",
+    blockHash:
+      "0000000000000000000071e005da138f6333f0be43f6e8cb53f74a9029ab7e0e",
+    blockHeight: 959_024,
+    blockIndex: 622,
+    closedBlockHash:
+      "0000000000000000000071e005da138f6333f0be43f6e8cb53f74a9029ab7e0e",
+    closedBlockHeight: 959_024,
+    closedBlockIndex: 622,
+    closedConfirmed: true,
+    closedProtocolVout: 2,
+    closedRecordOrdinal: 0,
+    closedTxid: closeTxid,
+    indexedFrom: "token-closed-listings",
+    kind: "token-listing-closed",
+    listingId:
+      "451f5a56e66b26c66b37a155c9ac711074a2ad8a6c91b96735c1c4e0f4fc98ac",
+    protocolVout: 2,
+    saleAuthorization: {
+      ...listing.saleAuthorization,
+      amountAtoms: "200000000000",
+    },
+    txid: closeTxid,
+  };
+  const closeEvent = {
+    ...canonicalEvent,
+    block_height: 959_024,
+    block_index: 622,
+    kind: close.kind,
+    op_return_vout: 2,
+    payload: structuredClone(close),
+    txid: closeTxid,
+  };
+  const originalClose = structuredClone(close);
+  const closeConversion = conversionRecord(close, closeEvent);
+  assert.equal(
+    workAmountSubatomsFromRecord(closeConversion, {
+      sourceModel: WORK_ATOMIC_PROJECTION_MODEL,
+    }),
+    legacyWorkAtomsToSubatoms("200000000000"),
+  );
+  assert.equal(Object.hasOwn(closeConversion.saleAuthorization, "amountAtoms"), false);
+  assert.deepEqual(close, originalClose, "signed close action remains unchanged");
+  for (const invalidClose of [
+    { ...close, closedTxid: "f".repeat(64) },
+    { ...close, closedConfirmed: false },
+    { ...close, closedBlockHeight: 959_023 },
+    { ...close, closedBlockHash: "f".repeat(64) },
+    { ...close, closedProtocolVout: 1 },
+    { ...close, listingId: closeTxid },
+    { ...close, indexedFrom: "token-listings" },
+  ]) {
+    assert.throws(
+      () => conversionRecord(invalidClose, closeEvent),
+      /no exact canonical Q8 conversion witness/u,
+    );
+  }
+  assert.throws(
+    () => conversionRecord(close, {
+      ...closeEvent,
+      payload: { ...closeEvent.payload, closedRecordOrdinal: 1 },
+    }),
+    /no exact canonical Q8 conversion witness/u,
+  );
+  assert.throws(
+    () => conversionRecord({
+      ...close,
+      saleAuthorization: {
+        ...close.saleAuthorization,
+        amountAtoms: "200000000001",
+      },
+    }, closeEvent),
+    /signed Q8 amount conflicts/u,
+  );
+
+  const singleAlias = {
+    ...listing,
+    saleAuthorization: { version: "pwt-sale-v2" },
+  };
+  assert.equal(conversionRecord(singleAlias, canonicalEvent), singleAlias);
+});
+
+check("bounded replay admits only exact empty non-WORK credit definitions", () => {
+  const emptyConserved = isolatedFunction(
+    API_PATH,
+    "replayEmptyNonWorkTokenIsConserved",
+    { canonicalNonNegativeIntegerText, isWorkTokenId },
+  );
+  const tokenId = "a".repeat(64);
+  const empty = {
+    tokens: [{ tokenId, confirmedSupply: "0", holderCount: 0 }],
+    mints: [], holders: [], transfers: [], sales: [],
+    listings: [], closedListings: [],
+    confirmedSupply: "0", pendingSupply: "0",
+  };
+  assert.equal(emptyConserved(empty), true);
+  assert.equal(emptyConserved({ ...empty, mints: [{ tokenId }] }), false);
+  assert.equal(emptyConserved({ ...empty, holders: [{ tokenId }] }), false);
+  assert.equal(emptyConserved({ ...empty, listings: [{ tokenId }] }), false);
+  assert.equal(emptyConserved({ ...empty, confirmedSupply: "1" }), false);
+  assert.equal(emptyConserved({
+    ...empty,
+    tokens: [{ tokenId, confirmedSupply: "1", holderCount: 0 }],
+  }), false);
+  assert.equal(emptyConserved({
+    ...empty,
+    tokens: [{ tokenId: WORK_TOKEN_ID, confirmedSupply: "0" }],
+  }), false);
+});
+
+check("Exact replay bond registries come from bounded confirmed PWIDs", () => {
+  const incbTokenId =
+    "3cb25745f937f2b4e5508e5400189fe8fe679cd8e84bfa1e9176d70c9761f15d";
+  const powbTokenId =
+    "a3d0bc8528f91dfc52400a885bed7e49235396aa82aa9f95db41be629f1d5562";
+  const inceptionAtH = "16nhWuGM7irqp1yRK3rykz7tPTUeyZZD9a";
+  const infinityAtH = "1H1arP2xpam6MZmHt6k1tB83stqVdH6ANK";
+  const futureReceiver = "1FutureReceiverAddressAfterH";
+  const height = 958_382;
+  const hash = "a".repeat(64);
+  const addressIsValid = (address, network) =>
+    network === "livenet" &&
+    [inceptionAtH, infinityAtH, futureReceiver].includes(address);
+  const fromSnapshot = isolatedFunction(
+    API_PATH,
+    "replayBondRegistryAddressesFromExactState",
+    {
+      BOND_TOKEN_CONFIGS: [
+        { registryId: "infinity@proofofwork.me", tokenId: powbTokenId },
+        { registryId: "inception@proofofwork.me", tokenId: incbTokenId },
+      ],
+      isValidBitcoinAddress: addressIsValid,
+      normalizePowId: (id) => String(id).trim().toLowerCase()
+        .replace(/@proofofwork\.me$/u, ""),
+    },
+  );
+  const registryState = {
+    indexedThroughBlock: height,
+    indexedThroughBlockHash: hash,
+    network: "livenet",
+    records: [
+      {
+        blockHeight: 952_213,
+        confirmed: true,
+        id: "infinity",
+        ownerAddress: infinityAtH,
+        receiveAddress: infinityAtH,
+        txid: "b".repeat(64),
+        updatedHeight: 952_213,
+      },
+      {
+        blockHeight: 957_366,
+        confirmed: true,
+        id: "inception",
+        ownerAddress: inceptionAtH,
+        receiveAddress: inceptionAtH,
+        txid: "c".repeat(64),
+        updatedHeight: 957_366,
+      },
+    ],
+  };
+  const activity = {
+    activity: [{
+      confirmed: true,
+      kind: "token-mint",
+      tokenId: incbTokenId,
+    }],
+  };
+  const addresses = fromSnapshot(
+    "livenet", registryState, activity, height, hash,
+  );
+  assert.equal(addresses.get(incbTokenId), inceptionAtH);
+  assert.equal(addresses.get(powbTokenId), infinityAtH);
+  // A later receiver in the current physical definition is not an H source.
+  const tipDefinition = { registryAddress: futureReceiver };
+  assert.notEqual(addresses.get(incbTokenId), tipDefinition.registryAddress);
+  assert.equal(fromSnapshot("livenet", {
+    ...registryState,
+    records: registryState.records.filter((record) =>
+      record.id !== "inception"),
+  }, activity, height, hash), null);
+  assert.equal(fromSnapshot("livenet", {
+    ...registryState,
+    records: registryState.records.map((record) =>
+      record.id === "inception"
+        ? { ...record, receiveAddress: "invalid" }
+        : record),
+  }, activity, height, hash), null);
+  assert.equal(fromSnapshot("livenet", {
+    ...registryState,
+    records: [...registryState.records, registryState.records[1]],
+  }, activity, height, hash), null);
+  assert.equal(fromSnapshot("livenet", {
+    ...registryState,
+    records: registryState.records.map((record) =>
+      record.id === "inception"
+        ? { ...record, updatedHeight: height + 1 }
+        : record),
+  }, activity, height, hash), null);
+  assert.equal(fromSnapshot("livenet", {
+    ...registryState,
+    indexedThroughBlockHash: "d".repeat(64),
+  }, activity, height, hash), null);
+  assert.equal(fromSnapshot("livenet", {
+    ...registryState,
+    network: "testnet",
+  }, activity, height, hash), null);
+  assert.equal(fromSnapshot("livenet", {
+    ...registryState,
+    records: registryState.records.filter((record) =>
+      record.id !== "inception"),
+  }, { activity: [] }, height, hash).get(incbTokenId), "");
+  const tokenProjection = topLevelFunctionSource(
+    API_PATH, "tokenValueStateFromIndexedActivity",
+  );
+  assert.match(tokenProjection, /replayBondRegistryAddressesFromExactState/u);
+  assert.match(tokenProjection, /replayBondRegistryAddresses\?\.get\(INCB_TOKEN_ID\)/u);
+  assert.match(
+    topLevelFunctionSource(API_PATH, "buildIndexedCanonicalLedgerPayload"),
+    /exactRegistryState: registrySnapshot/u,
+  );
 });
 
 let failures = 0;

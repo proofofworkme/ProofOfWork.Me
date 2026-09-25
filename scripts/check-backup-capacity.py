@@ -13,8 +13,13 @@ printf 'fixture dump' >"${output}"
 printf 'called' >"${TEST_CALLED}"''')
  globals=command('pg_dumpall', '''for arg in "$@"; do case "$arg" in --file=*) printf 'fixture globals' >"${arg#--file=}";; esac; done''')
  restore=command('pg_restore','exit 0')
+ fuser=command('fuser', '''[[ "${1:-}" == --silent ]] || exit 2
+shift
+[[ "$#" -gt 0 && "${1:-}" != -- ]] || exit 2
+for path in "$@"; do [[ -f "$path" ]] || exit 2; done
+exit 1''')
  text=source.replace('backup_root="/data/proofofwork-postgres-backups/logical"','backup_root="'+str(backup)+'"')
- for original,replacement in [('df',df),('psql',sql),('pg_dump',dump),('pg_dumpall',globals),('pg_restore',restore)]:
+ for original,replacement in [('df',df),('psql',sql),('pg_dump',dump),('pg_dumpall',globals),('pg_restore',restore),('fuser',fuser)]:
   text=text.replace('/usr/bin/'+original+' ',replacement+' ').replace('/usr/bin/'+original+' \\\n',replacement+' \\\n')
  script=p/'backup.sh';script.write_text(text)
  env={**os.environ,'TEST_AVAILABLE':'1000','TEST_CALLED':str(p/'called'),'POW_POSTGRES_BACKUP_MIN_FREE_BYTES':'10737418240'}

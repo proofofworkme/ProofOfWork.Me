@@ -1,5 +1,6 @@
 import { encodeTextBase64Url } from "../../shared/utils/encoding";
 import type { BitcoinNetwork } from "../../shared/bitcoin/networks";
+import type { MailAttachment } from "../../shared/protocol/mailAttachment";
 import { boostListingPriceSats } from "./boostNumeric";
 
 export const BOOST_ACTION_PAYMENT_SATS = 546;
@@ -65,6 +66,7 @@ export type BoostFeedItem = {
     name?: string;
     sha256?: string;
     size?: number;
+    source?: string;
     url?: string;
   };
   proofSignalSats: number;
@@ -243,19 +245,23 @@ export function buildBoostActionPayload(action: BoostPaidAction, targetTxid: str
 }
 
 export function buildBoostPostPayload({
+  attachment,
   message,
   proofSignalSats = 0,
   quoteTxid,
+  workSignalSubatoms = "0",
 }: {
+  attachment?: MailAttachment;
   message: string;
   proofSignalSats?: number;
   quoteTxid?: string;
+  workSignalSubatoms?: string;
 }) {
   const text = boostPostText(message);
-  if (!text) {
-    throw new Error("Enter a Boost post.");
+  if (!text && !attachment) {
+    throw new Error("Enter a Boost post or attach a file.");
   }
-  const signalSats = Math.floor(proofSignalSats);
+  const signalSats = proofSignalSats;
   if (!Number.isSafeInteger(signalSats) || signalSats < 0) {
     throw new Error("Boost proof signal must be a non-negative whole number.");
   }
@@ -263,10 +269,25 @@ export function buildBoostPostPayload({
   if (quoteTxid && !normalizedQuoteTxid) {
     throw new Error("Boost quote target txid is invalid.");
   }
+  if (!/^(?:0|[1-9]\d*)$/u.test(workSignalSubatoms)) {
+    throw new Error("Boost WORK signal must use exact non-negative subatoms.");
+  }
   const post = {
     v: 1,
     text,
+    ...(attachment
+      ? {
+          media: {
+            mime: attachment.mime,
+            name: attachment.name,
+            sha256: attachment.sha256,
+            size: attachment.size,
+            source: "same-tx-pwm1-attachment",
+          },
+        }
+      : {}),
     ...(signalSats > 0 ? { proofSignalSats: signalSats } : {}),
+    ...(BigInt(workSignalSubatoms) > 0n ? { workSignalSubatoms } : {}),
     ...(normalizedQuoteTxid ? { quoteTxid: normalizedQuoteTxid } : {}),
   };
   return `${BOOST_PROTOCOL_PREFIX}post:${encodeTextBase64Url(JSON.stringify(post))}`;

@@ -2,6 +2,20 @@ import { createHash } from "node:crypto";
 
 const Q8 = 100_000_000n;
 
+// Bech32 has two case representations for one output script. Keep Base58
+// spelling exact: changing its case changes or invalidates the address.
+export function boostAddressIdentityKey(value) {
+  const address = String(value ?? "").trim();
+  const lower = address.toLowerCase();
+  if (
+    (address === lower || address === address.toUpperCase()) &&
+    /^(?:bc1|tb1|bcrt1)[qpzry9x8gf2tvdw0s3jn54khce6mua7l]{6,}$/u.test(lower)
+  ) {
+    return lower;
+  }
+  return address;
+}
+
 export function boostProjectionError(message, statusCode = 503) {
   const error = new Error(message);
   error.statusCode = statusCode;
@@ -216,7 +230,8 @@ function boostExactPayments(item) {
         typeof output.address !== "string" || !output.address || !/^(?:0|[1-9]\d*)$/u.test(amount) ||
         BigInt(amount) > 2_100_000_000_000_000n) return null;
     outputs.add(output.vout);
-    payments.set(output.address, (payments.get(output.address) ?? 0n) + BigInt(amount));
+    const key = boostAddressIdentityKey(output.address);
+    payments.set(key, (payments.get(key) ?? 0n) + BigInt(amount));
   }
   return payments;
 }
@@ -257,25 +272,30 @@ export function qualifyBoostPaidActions(items, registryItems, ownerByEvent = new
         : String(ownerByEvent.get(String(item.eventId ?? item.txid)) ?? "").trim())
       : "";
     const directOwnerPayment = ownerReceiver && payments
-      ? (payments.get(ownerReceiver) ?? 0n) >= 546n
+      ? (payments.get(boostAddressIdentityKey(ownerReceiver)) ?? 0n) >= 546n
       : false;
     // Existing confirmed events used the original registry-fee lane. Preserve
     // them as replayable history while all new writers use the owner lane.
     const registryPayment = registryReceiver && payments
-      ? (payments.get(registryReceiver) ?? 0n) >= 546n
+      ? (payments.get(boostAddressIdentityKey(registryReceiver)) ?? 0n) >= 546n
       : false;
     const legacySocialPayment = BOOST_OWNER_PAYMENT_KINDS.has(item.kind)
       ? item.kind === "boost-follow"
         ? Boolean(registryReceiver && payments && target) &&
-          (target === registryReceiver
-            ? (payments.get(registryReceiver) ?? 0n) >= 1092n
-            : registryPayment && (payments.get(target) ?? 0n) >= 546n)
+          (boostAddressIdentityKey(target) === boostAddressIdentityKey(registryReceiver)
+            ? (payments.get(boostAddressIdentityKey(registryReceiver)) ?? 0n) >= 1092n
+            : registryPayment && (payments.get(boostAddressIdentityKey(target)) ?? 0n) >= 546n)
         : registryPayment
       : false;
     const acceptedRegistryPayment = BOOST_REGISTRY_FEE_KINDS.has(item.kind)
       ? registryPayment
       : legacySocialPayment;
-    const reason = !payments ? "unverifiable-payment-outputs" :
+    const actor = String(item.authorAddress ?? item.actor ?? "").trim();
+    const selfFollow = (item.kind === "boost-follow" || item.kind === "boost-unfollow") &&
+      Boolean(actor && target &&
+        boostAddressIdentityKey(actor) === boostAddressIdentityKey(target));
+    const reason = selfFollow ? "boost-self-follow" :
+      !payments ? "unverifiable-payment-outputs" :
       BOOST_OWNER_PAYMENT_KINDS.has(item.kind)
         ? (!directOwnerPayment && !legacySocialPayment
           ? (ownerReceiver ? "boost-owner-payment-missing" : "missing-confirmed-boost-owner")
@@ -289,7 +309,7 @@ export function qualifyBoostPaidActions(items, registryItems, ownerByEvent = new
       ...(acceptedRegistryPayment ? { applicationBoostRegistryReceiver: registryReceiver } : {}),
       ...(ownerReceiver && directOwnerPayment
         ? {
-            applicationBoostOwnerPaymentSats: (payments.get(ownerReceiver) ?? 0n).toString(),
+            applicationBoostOwnerPaymentSats: (payments.get(boostAddressIdentityKey(ownerReceiver)) ?? 0n).toString(),
             applicationBoostOwnerReceiver: ownerReceiver,
           }
         : {}),

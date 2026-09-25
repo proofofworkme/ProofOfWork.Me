@@ -15,7 +15,7 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, join, resolve } from 'node:path';
+import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 import { cleanCandidate } from './repository-hygiene.mjs';
@@ -221,9 +221,56 @@ function cli(root, ...args) {
   return run(process.execPath, [CLI_PATH, ...args], root);
 }
 
+function removeFixtureRoot(root, originalIdentity) {
+  const fixtureParent = resolve(tmpdir());
+  if (dirname(root) !== fixtureParent ||
+      !/^repository-hygiene-test-[A-Za-z0-9]{6}$/u.test(basename(root))) {
+    throw new Error(`Refusing to remove an unexpected hygiene fixture path: ${root}`);
+  }
+  try {
+    rmSync(root, {
+      recursive: true,
+      force: true,
+      maxRetries: 10,
+      retryDelay: 100,
+    });
+    return;
+  } catch (error) {
+    if (error?.code !== 'ENOTEMPTY') throw error;
+    // Node 20 can report ENOTEMPTY after a recursive pass over this Git
+    // fixture tree. Retry only this exact mkdtemp root using
+    // the system remover, and keep teardown failure visible if it persists.
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      const remaining = lstatSync(root, { throwIfNoEntry: false });
+      if (!remaining) return;
+      if (!remaining.isDirectory() || remaining.isSymbolicLink() ||
+          remaining.dev !== originalIdentity.dev ||
+          remaining.ino !== originalIdentity.ino) {
+        throw new Error(`Hygiene fixture identity changed before cleanup: ${root}`, {
+          cause: error,
+        });
+      }
+      const result = spawnSync('rm', ['-rf', '--', root], {
+        encoding: 'utf8',
+        timeout: 5000,
+      });
+      if (!lstatSync(root, { throwIfNoEntry: false })) return;
+      if (result.error || result.status !== 0) {
+        throw new Error(`Hygiene fixture cleanup command failed: ${result.stderr || result.error?.message || result.status}`, {
+          cause: error,
+        });
+      }
+    }
+    throw new Error(`Hygiene fixture remained after bounded cleanup: ${root}`, {
+      cause: error,
+    });
+  }
+}
+
 function createFixture(t, { withObsoleteFile = false } = {}) {
   const root = mkdtempSync(join(tmpdir(), 'repository-hygiene-test-'));
-  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const originalIdentity = lstatSync(root);
+  t.after(() => removeFixtureRoot(root, originalIdentity));
 
   git(root, 'init', '-q');
   git(root, 'config', 'user.name', 'Repository Hygiene Test');

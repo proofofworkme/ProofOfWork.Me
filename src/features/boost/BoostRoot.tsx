@@ -13,6 +13,7 @@ import {
   Clock,
   Heart,
   MessageCircle,
+  Paperclip,
   Quote,
   RefreshCw,
   Repeat2,
@@ -37,6 +38,12 @@ import {
 import { appHref } from "../../app/routeRegistry";
 import { fetchProofApiJson } from "../../shared/api/proofApiClient";
 import { explorerTxUrl } from "../../shared/bitcoin/networks";
+import {
+  attachmentFromFile,
+  buildAttachmentPayloads,
+  MAX_ATTACHMENT_BYTES,
+  type MailAttachment,
+} from "../../shared/protocol/mailAttachment";
 import type { BitcoinNetwork } from "../../shared/bitcoin/networks";
 import { AppHeader } from "../../shared/components/AppHeader";
 import {
@@ -45,10 +52,18 @@ import {
 } from "../../shared/components/AppStatusRow";
 import { FeeRateControl } from "../../shared/components/FeeRateControl";
 import { SocialFooter } from "../../shared/components/SocialFooter";
-import { formatDate, shortAddress } from "../../functions";
+import { formatBytes, formatDate, shortAddress } from "../../functions";
 import { formatExactDecimal } from "../../exactAmount";
 import { boostSignalQ8, formatBoostSignal } from "./boostAmounts";
 import { createBoostReadLifecycle } from "./boostReadLifecycle";
+import { boostMediaUrl } from "./boostMedia";
+import {
+  BOOST_WORK_MUTATION_PROOFS,
+  BOOST_WORK_REGISTRY_ADDRESS,
+  buildBoostWorkSendPayload,
+  fetchBoostWorkCapacity,
+  requireBoostWorkWriteAdmission,
+} from "./boostWorkComposer";
 import {
   formatWorkAmount,
   workAtomsFromDecimal,
@@ -95,6 +110,7 @@ import {
   isValidBitcoinAddress,
   scriptForAddress,
   signAndBroadcastBoostPsbt,
+  type BoostSpentOutpoint,
 } from "./boostWallet";
 import "./boost.css";
 
@@ -207,6 +223,19 @@ function boostAuthorAddress(item: BoostFeedItem) {
   return item.authorAddress.trim();
 }
 
+function sameBoostWalletAddress(left: string, right: string) {
+  const leftAddress = left.trim();
+  const rightAddress = right.trim();
+  if (!leftAddress || !rightAddress) return false;
+  if (leftAddress === rightAddress) return true;
+  try {
+    return Buffer.from(scriptForAddress(leftAddress, "livenet", "Boost address"))
+      .equals(Buffer.from(scriptForAddress(rightAddress, "livenet", "Boost address")));
+  } catch {
+    return false;
+  }
+}
+
 function boostAuthorId(item: BoostFeedItem) {
   return normalizeBoostId(item.authorId || item.profile?.id || "");
 }
@@ -253,8 +282,7 @@ function authorLabel(
   const activeWalletOwnsPost =
     activeIdentity &&
     activeAddress &&
-    item.authorAddress.trim() ===
-      activeAddress.trim();
+    sameBoostWalletAddress(item.authorAddress, activeAddress);
   if (activeWalletOwnsPost) {
     return `${activeIdentity.id}@proofofwork.me`;
   }
@@ -448,33 +476,32 @@ function acquireBoostMediaSlot(signal: AbortSignal) {
   });
 }
 
-function boostMediaUrl(attachment: { data?: string; mime?: string }) {
-  if (!attachment.data || !attachment.mime) return "";
-  const base64 = attachment.data.replace(/-/g, "+").replace(/_/g, "/");
-  return `data:${attachment.mime};base64,${base64.padEnd(Math.ceil(base64.length / 4) * 4, "=")}`;
-}
-
 function BoostMedia({ item, network }: { item: BoostFeedItem; network: BitcoinNetwork }) {
-  const [mediaUrl, setMediaUrl] = useState(item.media?.url ?? "");
+  const [mediaUrl, setMediaUrl] = useState(
+    item.media?.source === "same-tx-pwm1-attachment" ? "" : item.media?.url ?? "",
+  );
   const [mediaError, setMediaError] = useState(false);
 
   useEffect(() => {
     const controller = new AbortController();
-    setMediaUrl(item.media?.url ?? "");
+    setMediaUrl(item.media?.source === "same-tx-pwm1-attachment" ? "" : item.media?.url ?? "");
     setMediaError(false);
-    if (!item.media || !/^(?:image|video)\//iu.test(item.media.mime ?? "") || item.media.url) {
+    if (!item.media || !/^(?:image|video)\//iu.test(item.media.mime ?? "") ||
+        (item.media.url && item.media.source !== "same-tx-pwm1-attachment")) {
       return () => controller.abort();
     }
     void acquireBoostMediaSlot(controller.signal)
       .then(async (release) => {
         try {
-          const payload = await fetchProofApiJson<{ attachment?: { data?: string; mime?: string } }>(
+          const payload = await fetchProofApiJson<{ attachment?: {
+            data?: string; mime?: string; name?: string; sha256?: string; size?: number;
+          } }>(
             `/api/v1/tx/${encodeURIComponent(item.boostTxid || item.txid)}`,
             network,
             { signal: controller.signal, timeoutMs: 30_000 },
           );
           if (!controller.signal.aborted) {
-            const url = boostMediaUrl(payload.attachment ?? {});
+            const url = boostMediaUrl(item.media, payload.attachment);
             if (url) setMediaUrl(url);
             else setMediaError(true);
           }
@@ -486,7 +513,8 @@ function BoostMedia({ item, network }: { item: BoostFeedItem; network: BitcoinNe
       })
       .catch(() => undefined);
     return () => controller.abort();
-  }, [item.boostTxid, item.media?.url, item.media?.mime, item.txid, network]);
+  }, [item.boostTxid, item.media?.url, item.media?.mime, item.media?.name,
+    item.media?.sha256, item.media?.size, item.media?.source, item.txid, network]);
 
   if (!mediaUrl || mediaError) return null;
   return item.media?.mime?.toLowerCase().startsWith("video/") ? (
@@ -498,9 +526,11 @@ function BoostMedia({ item, network }: { item: BoostFeedItem; network: BitcoinNe
 
 function ReboostedPost({
   network,
+  onOpenOriginal,
   post,
 }: {
   network: BitcoinNetwork;
+  onOpenOriginal: (post: BoostFeedItem) => void;
   post?: BoostFeedItem;
 }) {
   if (!post) {
@@ -519,10 +549,29 @@ function ReboostedPost({
   const profileValue = boostProfileRouteValue(post);
 
   return (
-    <div className="boost-reboosted-post" data-testid="reboosted-post">
+    <div
+      className="boost-reboosted-post"
+      data-testid="reboosted-post"
+      onClick={(event) => {
+        const target = event.target as HTMLElement;
+        if (target.closest("a,button,input,textarea,select")) return;
+        event.stopPropagation();
+        onOpenOriginal(post);
+      }}
+    >
       <div className="boost-reboosted-label">
         <Repeat2 aria-hidden="true" size={15} />
         <span>Reboosted post</span>
+        <button
+          className="secondary small boost-open-original"
+          onClick={(event) => {
+            event.stopPropagation();
+            onOpenOriginal(post);
+          }}
+          type="button"
+        >
+          Open original Boost
+        </button>
       </div>
       <div className="boost-reboosted-post-grid">
         <BoostAvatar item={post} />
@@ -612,6 +661,7 @@ function BoostPost({
   onLike,
   onList,
   onOpen,
+  onOpenOriginal,
   onReboost,
   onReboostMenu,
   onQuote,
@@ -628,6 +678,7 @@ function BoostPost({
   onLike: (item: BoostFeedItem) => void;
   onList: (item: BoostFeedItem) => void;
   onOpen: (item: BoostFeedItem) => void;
+  onOpenOriginal: (item: BoostFeedItem) => void;
   onReboost: (item: BoostFeedItem) => void;
   onReboostMenu: (item: BoostFeedItem) => void;
   onQuote: (item: BoostFeedItem) => void;
@@ -655,16 +706,13 @@ function BoostPost({
     item.actionSignalSatsExact,
     item.actionSignalSats ?? 0,
   );
+  const isPaidAction = item.kind === "boost-reboost" || item.kind === "boost-reply";
+  const displayedSignalQ8 = isPaidAction ? actionSignalQ8 : totalSignalQ8;
+  const displayedProofSignalQ8 = isPaidAction ? actionSignalQ8 : boostProofSignalQ8(item);
   const workSignalValueQ8 = boostWorkSignalValueQ8(item);
   const workSignalSubatoms = boostWorkSignalSubatoms(item);
-  const connectedOwner =
-    activeAddress &&
-    ownerAddress &&
-      activeAddress.trim() === ownerAddress.trim();
-  const connectedAuthor =
-    activeAddress &&
-    authorAddress &&
-    activeAddress.trim() === authorAddress;
+  const connectedOwner = sameBoostWalletAddress(activeAddress, ownerAddress);
+  const connectedAuthor = sameBoostWalletAddress(activeAddress, authorAddress);
   const actionsLocked = Boolean(actionBusy);
   const followAction: BoostFollowAction = item.viewerFollowsAuthor
     ? "unfollow"
@@ -708,7 +756,7 @@ function BoostPost({
             <span>{formatDate(item.createdAt)}</span>
           </div>
           <div className="boost-post-head-actions">
-            <strong>{formatBoostSignal(totalSignalQ8)}</strong>
+            <strong>{isPaidAction ? "Action signal " : ""}{formatBoostSignal(displayedSignalQ8)}</strong>
             {!connectedAuthor && authorAddress ? (
               <button
                 className="secondary small boost-follow-button"
@@ -731,7 +779,7 @@ function BoostPost({
         </div>
 
         {isReboost ? (
-          <ReboostedPost network={network} post={item.reboostedPost} />
+          <ReboostedPost network={network} onOpenOriginal={onOpenOriginal} post={item.reboostedPost} />
         ) : (
           <>
             {item.text ? <p className="boost-post-text">{item.text}</p> : null}
@@ -762,7 +810,7 @@ function BoostPost({
 
         <div className="boost-signal-row">
           <span>Total USD {formatUsd(boostTotalSignalUsd(item))}</span>
-          <span>Proof {formatBoostSignal(boostProofSignalQ8(item))}</span>
+          <span>Proof {formatBoostSignal(displayedProofSignalQ8)}</span>
           {signalIncrementQ8 > 0n ? (
             <span>Added {formatBoostSignal(signalIncrementQ8)} to original Boost signal</span>
           ) : actionSignalQ8 > 0n ? (
@@ -935,6 +983,10 @@ export default function BoostRoot({
   const [expandedItem, setExpandedItem] = useState<BoostFeedItem | undefined>();
   const [postText, setPostText] = useState("");
   const [postSignalSats, setPostSignalSats] = useState(546);
+  const [postWorkAmount, setPostWorkAmount] = useState("0");
+  const [postWorkSpendable, setPostWorkSpendable] = useState<bigint | undefined>();
+  const [postWorkStatus, setPostWorkStatus] = useState("");
+  const [postAttachment, setPostAttachment] = useState<MailAttachment | undefined>();
   const [replyTarget, setReplyTarget] = useState<BoostFeedItem | undefined>();
   const [replyText, setReplyText] = useState("");
   const [pendingPaidAction, setPendingPaidAction] =
@@ -997,7 +1049,7 @@ export default function BoostRoot({
     for (const item of items) {
       const authorAddress = boostAuthorAddress(item);
       const key = authorAddress;
-      if (!key || key === activeAddress || item.viewerFollowsAuthor) {
+      if (!key || sameBoostWalletAddress(key, activeAddress) || item.viewerFollowsAuthor) {
         continue;
       }
       const current = byAddress.get(key);
@@ -1026,15 +1078,34 @@ export default function BoostRoot({
   const modalOpen = Boolean(
     directPostOpen || expandedItem || pendingPaidAction || replyTarget,
   );
+  const postWorkSubatoms = workAtomsFromDecimal(postWorkAmount);
+  useEffect(() => {
+    if (!directPostOpen || !address.trim()) {
+      setPostWorkSpendable(undefined);
+      setPostWorkStatus(address ? "" : "Connect UniSat to check spendable WORK.");
+      return;
+    }
+    let active = true;
+    setPostWorkSpendable(undefined);
+    setPostWorkStatus("Checking spendable WORK...");
+    void fetchBoostWorkCapacity(address).then(
+      (capacity) => {
+        if (!active) return;
+        setPostWorkSpendable(capacity.spendableSubatoms);
+        setPostWorkStatus("");
+      },
+      (error) => {
+        if (!active) return;
+        setPostWorkSpendable(undefined);
+        setPostWorkStatus(error instanceof Error ? error.message : "Spendable WORK is unavailable.");
+      },
+    );
+    return () => { active = false; };
+  }, [address, directPostOpen]);
   const profileSubject = payload?.profileSubject;
   const profileSubjectAddress = profileSubject?.address ?? "";
   const profileSubjectId = normalizeBoostId(profileSubject?.id ?? "");
-  const profileSelfView = Boolean(
-    address.trim() &&
-    profileSubjectAddress.trim() &&
-      address.trim() ===
-        profileSubjectAddress.trim(),
-  );
+  const profileSelfView = sameBoostWalletAddress(address, profileSubjectAddress);
   const profileFollowAction: BoostFollowAction = profileSubject?.viewerFollowsProfile
     ? "unfollow"
     : "follow";
@@ -1158,16 +1229,24 @@ export default function BoostRoot({
 
   async function broadcastBoostPayload({
     action,
+    additionalProtocolPayloads = [],
+    beforeBroadcast,
+    extraExcludedOutpoints = [],
     paymentLabel,
     payments,
     postProtocolPayments,
+    postProtocolPayloads = [],
     protocolPayload,
     walletAddress,
   }: {
     action: BoostActionBusy;
+    additionalProtocolPayloads?: string[];
+    beforeBroadcast?: () => Promise<void>;
+    extraExcludedOutpoints?: BoostSpentOutpoint[];
     paymentLabel: string;
     payments: Array<{ address: string; amountSats: number }>;
     postProtocolPayments?: Array<{ address: string; amountSats: number }>;
+    postProtocolPayloads?: string[];
     protocolPayload: string;
     walletAddress: string;
   }): Promise<boolean> {
@@ -1177,7 +1256,7 @@ export default function BoostRoot({
       const reservedOutpoints = await fetchReservedAmoAnchorOutpoints(
         walletAddress,
         "livenet",
-        boostListingAnchorOutpoints(items),
+        [...boostListingAnchorOutpoints(items), ...extraExcludedOutpoints],
       );
       const paymentPsbt = await buildBoostPaymentPsbt({
         excludeOutpoints: reservedOutpoints,
@@ -1186,7 +1265,8 @@ export default function BoostRoot({
         network: "livenet",
         payments,
         postProtocolPayments,
-        protocolPayloads: [protocolPayload],
+        postProtocolPayloads,
+        protocolPayloads: [protocolPayload, ...additionalProtocolPayloads],
       });
       if (
         !confirmDustFeeAbsorption({
@@ -1204,6 +1284,7 @@ export default function BoostRoot({
         text: `Waiting for UniSat signature. Fee estimate: ${paymentPsbt.feeSats.toLocaleString()} proofs.`,
       });
       const broadcast = await signAndBroadcastBoostPsbt({
+        beforeBroadcast,
         inputCount: paymentPsbt.inputCount,
         network: "livenet",
         psbtHex: paymentPsbt.psbtHex,
@@ -1312,15 +1393,16 @@ export default function BoostRoot({
       setStatus({ tone: "bad", text: "Boost follow target is invalid." });
       return;
     }
-    if (
-      address &&
-      targetAddress.trim() === address.trim()
-    ) {
+    if (sameBoostWalletAddress(targetAddress, address)) {
       setStatus({ tone: "bad", text: "Choose another Boost profile to follow." });
       return;
     }
     try {
       const ready = await ensureBoostWriterReady(false);
+      if (sameBoostWalletAddress(targetAddress, ready.walletAddress)) {
+        setStatus({ tone: "bad", text: "Choose another Boost profile to follow." });
+        return;
+      }
       await broadcastBoostPayload({
         action,
         paymentLabel: label,
@@ -1433,22 +1515,67 @@ export default function BoostRoot({
 
   async function publishBoostPost(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const signalSats = Math.floor(postSignalSats);
-    if (!Number.isSafeInteger(signalSats) || signalSats < 1) {
-      setStatus({ tone: "bad", text: "A Boost post needs at least 1 proof of direct signal." });
+    const signalSats = postSignalSats;
+    const workSubatoms = workAtomsFromDecimal(postWorkAmount);
+    if (!Number.isSafeInteger(signalSats) || signalSats < 0) {
+      setStatus({ tone: "bad", text: "Enter a non-negative whole Proof signal amount." });
+      return;
+    }
+    if (workSubatoms === null) {
+      setStatus({ tone: "bad", text: "Enter a WORK amount using up to 16 decimal places, or 0 for no WORK signal." });
+      return;
+    }
+    if (signalSats === 0 && workSubatoms === 0n) {
+      setStatus({ tone: "bad", text: "Add Proof or WORK signal to publish a Boost." });
       return;
     }
     try {
       const ready = await ensureBoostWriterReady(false);
+      const workCapacity = workSubatoms > 0n
+        ? await fetchBoostWorkCapacity(ready.walletAddress)
+        : undefined;
+      if (workCapacity && workSubatoms > workCapacity.spendableSubatoms) {
+        throw new Error(`Attach up to ${formatWorkAmount(workCapacity.spendableSubatoms)} spendable WORK.`);
+      }
+      if (workCapacity) await requireBoostWorkWriteAdmission();
       const protocolPayload = buildBoostPostPayload({
+        attachment: postAttachment,
         message: postText,
         proofSignalSats: signalSats,
         quoteTxid: quoteTarget ? boostItemTxid(quoteTarget) : undefined,
+        workSignalSubatoms: workSubatoms.toString(),
       });
+      const attachmentPayloads = postAttachment
+        ? buildAttachmentPayloads(postAttachment)
+        : [];
+      const workPayload = workSubatoms > 0n
+        ? buildBoostWorkSendPayload(workSubatoms, ready.walletAddress)
+        : "";
       const sent = await broadcastBoostPayload({
         action: "post",
+        additionalProtocolPayloads: [
+          `pwm1:m:${postText}`,
+          ...attachmentPayloads,
+        ],
+        beforeBroadcast: workPayload
+          ? async () => {
+              await assertActiveWalletAddress(window.unisat!, ready.walletAddress);
+              const latest = await fetchBoostWorkCapacity(ready.walletAddress);
+              if (workSubatoms > latest.spendableSubatoms) {
+                throw new Error("WORK capacity changed while signing. No transaction was broadcast.");
+              }
+              await requireBoostWorkWriteAdmission();
+            }
+          : undefined,
+        extraExcludedOutpoints: workCapacity?.anchorOutpoints,
         paymentLabel: quoteTarget ? "Boost quote" : "Boost post",
-        payments: [{ address: ready.walletAddress, amountSats: signalSats }],
+        payments: signalSats > 0
+          ? [{ address: ready.walletAddress, amountSats: signalSats }]
+          : [],
+        postProtocolPayments: workPayload
+          ? [{ address: BOOST_WORK_REGISTRY_ADDRESS, amountSats: BOOST_WORK_MUTATION_PROOFS }]
+          : undefined,
+        postProtocolPayloads: workPayload ? [workPayload] : [],
         protocolPayload,
         walletAddress: ready.walletAddress,
       });
@@ -1457,6 +1584,8 @@ export default function BoostRoot({
         setQuoteTarget(undefined);
         setPostText("");
         setPostSignalSats(546);
+        setPostWorkAmount("0");
+        setPostAttachment(undefined);
       }
     } catch (error) {
       setStatus({
@@ -2033,6 +2162,8 @@ export default function BoostRoot({
     setQuoteTarget(quote);
     setPostText("");
     setPostSignalSats(546);
+    setPostWorkAmount("0");
+    setPostAttachment(undefined);
     setDirectPostOpen(true);
   }
 
@@ -2058,6 +2189,10 @@ export default function BoostRoot({
         onOpen={(boostItem) => {
           setReboostMenuTarget(undefined);
           setExpandedItem(boostItem);
+        }}
+        onOpenOriginal={(originalPost) => {
+          setReboostMenuTarget(undefined);
+          setExpandedItem(originalPost);
         }}
         onReboost={(boostItem) => {
           setReboostMenuTarget(undefined);
@@ -2781,23 +2916,89 @@ export default function BoostRoot({
                     {boostPostText(postText).length.toLocaleString()} / 140
                   </span>
                   <label>
-                    Direct signal
+                    Proof signal
                     <input
-                      min={1}
+                      min={0}
                       onChange={(event) => setPostSignalSats(Number(event.target.value))}
                       step={1}
                       type="number"
                       value={postSignalSats}
                     />
                   </label>
+                  <label>
+                    WORK signal
+                    <input
+                      inputMode="decimal"
+                      min="0"
+                      onChange={(event) => setPostWorkAmount(event.target.value)}
+                      step="0.0000000000000001"
+                      type="text"
+                      value={postWorkAmount}
+                    />
+                  </label>
                 </div>
+                <p className={postWorkStatus ? "field-note bad" : "field-note"}>
+                  {postWorkStatus ||
+                    `Spendable WORK: ${postWorkSpendable === undefined
+                      ? "Unavailable"
+                      : formatWorkAmount(postWorkSpendable)}`}
+                </p>
+                <div className="boost-post-attachment">
+                  <label className="attachment-picker">
+                    <input
+                      className="file-input"
+                      onChange={(event) => {
+                        const file = event.currentTarget.files?.[0];
+                        event.currentTarget.value = "";
+                        if (!file) return;
+                        void attachmentFromFile(file).then(
+                          setPostAttachment,
+                          (error) => setStatus({
+                            tone: "bad",
+                            text: error instanceof Error ? error.message : "Boost attachment could not be read.",
+                          }),
+                        );
+                      }}
+                      type="file"
+                    />
+                    <span className="button-content">
+                      <Paperclip size={16} />
+                      <span>{postAttachment ? "Replace attachment" : "Attach file"}</span>
+                    </span>
+                  </label>
+                  <span>One file, {formatBytes(MAX_ATTACHMENT_BYTES)} max before encoding.</span>
+                </div>
+                {postAttachment ? (
+                  <div className="boost-post-attachment-selected">
+                    <span>{postAttachment.name} · {formatBytes(postAttachment.size)}</span>
+                    <button
+                      aria-label="Remove Boost attachment"
+                      className="secondary small"
+                      onClick={() => setPostAttachment(undefined)}
+                      type="button"
+                    >
+                      <X size={15} />
+                    </button>
+                  </div>
+                ) : null}
                 <p className="field-note">
-                  Direct signal goes to this Boost. Choose the transaction miner fee rate below.
+                  Add Proof, WORK, or both. Proof signal is a self-send; WORK signal is a verified same-transaction WORK self-transfer. Files can be attached in that transaction. Choose the miner fee rate below.
                 </p>
                 <FeeRateControl feeRate={feeRate} setFeeRate={setFeeRate} />
                 <button
                   className="primary"
-                  disabled={Boolean(actionBusy) || !postText.trim() || !address}
+                  disabled={
+                    Boolean(actionBusy) ||
+                    (!postText.trim() && !postAttachment) ||
+                    !address ||
+                    !Number.isSafeInteger(postSignalSats) ||
+                    postSignalSats < 0 ||
+                    postWorkSubatoms === null ||
+                    (postSignalSats === 0 && postWorkSubatoms === 0n) ||
+                    (postWorkSubatoms > 0n &&
+                      (postWorkSpendable === undefined ||
+                        postWorkSubatoms > postWorkSpendable))
+                  }
                   type="submit"
                 >
                   <span className="button-content">

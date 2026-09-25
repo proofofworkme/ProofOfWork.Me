@@ -614,15 +614,13 @@ expect(
     /function boostWorkSignalValueQ8/u.test(boostRoot) &&
     /function boostWorkSignalSubatoms/u.test(boostRoot) &&
     /function formatWorkSignal/u.test(boostRoot) &&
-    /<strong>\{formatBoostSignal\(totalSignalQ8\)\}<\/strong>/u.test(
-      boostRoot,
-    ) &&
+    /const displayedSignalQ8 = isPaidAction \? actionSignalQ8 : totalSignalQ8/u.test(boostRoot) &&
+    /<strong>\{isPaidAction \? "Action signal " : ""\}\{formatBoostSignal\(displayedSignalQ8\)\}<\/strong>/u.test(boostRoot) &&
     /Total USD \{formatUsd\(boostTotalSignalUsd\(item\)\)\}/u.test(
       boostRoot,
     ) &&
-    /Proof \{formatBoostSignal\(boostProofSignalQ8\(item\)\)\}/u.test(
-      boostRoot,
-    ) &&
+    /const displayedProofSignalQ8 = isPaidAction \? actionSignalQ8 : boostProofSignalQ8\(item\)/u.test(boostRoot) &&
+    /Proof \{formatBoostSignal\(displayedProofSignalQ8\)\}/u.test(boostRoot) &&
     /WORK \{formatWorkAmount\(workSignalSubatoms, true\)\}\{" "\}[\s\S]*formatBoostSignal\(workSignalValueQ8\)/u.test(
       boostRoot,
     ) &&

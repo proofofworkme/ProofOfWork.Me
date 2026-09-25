@@ -255,7 +255,7 @@ verify_complete_backup_set() {
   [[ -x /usr/bin/fuser ]] || return 1
   candidate_verify_reason=open-reader-check
   fuser_status=0
-  /usr/bin/fuser --silent -- \
+  /usr/bin/fuser --silent \
     "${path}/proof_indexer.dump" \
     "${path}/globals.sql" \
     "${path}/SHA256SUMS" >/dev/null 2>&1 || fuser_status=$?
