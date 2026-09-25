@@ -3915,7 +3915,10 @@ sizes, timestamps and allocated blocks must remain stable through the read-only
 inspection. The gate checks its largest phase against fresh free space while
 preserving the 10 GiB floor plus 64 MiB reserve. This does not preapprove later
 archive or source-upload capacity: those gates still use the completed candidate,
-the actual compressed archive allocation and the source's allocated size.
+the actual compressed archive allocation and the source's allocated size. The
+phase collector loads only its exact reviewed stager hash; refresh that pin only
+after reviewing the stager's copy ordering and rerunning the phase-bound tests.
+Historical publisher approval pins remain unchanged.
 
 The node stager accepts a SHA256-bound Git bundle and an exact clean commit,
 installs dependencies with lifecycle scripts disabled, and reuses the unchanged

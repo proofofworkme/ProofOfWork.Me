@@ -14,7 +14,10 @@ import stat
 import types
 
 SURFACES = 'activity boost browser computer desktop growth id inception infinity landing marketplace nft token wallet work'.split()
-EXPECTED_STAGER_SHA256 = '39f17624d0e244382c344e31f5b04b0b58bb8f4e8c7bc9c93d7418bc8ab0f238'
+# Reviewed current stager from Audit 19. The historical Audit 5 publisher below
+# remains pinned to its original helper; the live phase-bound collector must load
+# the current stager whose guarded copy operations it is bounding.
+EXPECTED_STAGER_SHA256 = '115a18d186bf40ed6493940224f2b4ce71987e4c8d6061f02c4b23b03a21f95f'
 
 
 def rounded(size, block):
