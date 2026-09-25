@@ -60202,6 +60202,36 @@ function tokenStateWithExactScopedTokenReplacement(
     return tokenState;
   }
 
+  const baseTokens = Array.isArray(tokenState?.tokens)
+    ? tokenState.tokens
+    : [];
+  const replacesEntireWorkTokenState =
+    normalizedTokenId === normalizeTokenScope(WORK_TOKEN_ID) &&
+    scopedTokens.length === 1 &&
+    baseTokens.length === 1 &&
+    normalizeTokenScope(baseTokens[0]?.tokenId) === normalizedTokenId;
+  const workPrecisionFields = [
+    "amountStorageModel",
+    "confirmedSupply",
+    "confirmedSupplyAtoms",
+    "confirmedSupplySubatoms",
+    "decimals",
+    "maxSupplyAtoms",
+    "maxSupplySubatoms",
+    "mintAmountAtoms",
+    "mintAmountSubatoms",
+    "pendingSupply",
+    "pendingSupplyAtoms",
+    "pendingSupplySubatoms",
+    "precisionModel",
+    "unitScale",
+  ];
+  const exactWorkPrecisionMetadata = replacesEntireWorkTokenState
+    ? Object.fromEntries(
+        workPrecisionFields.map((field) => [field, scopedState[field]]),
+      )
+    : {};
+
   const unscopedItemsFrom = (items) =>
     (Array.isArray(items) ? items : []).filter(
       (item) => normalizeTokenScope(item?.tokenId) !== normalizedTokenId,
@@ -60213,6 +60243,7 @@ function tokenStateWithExactScopedTokenReplacement(
 
   return tokenStateWithPendingStats({
     ...tokenState,
+    ...exactWorkPrecisionMetadata,
     closedListings: replaceScopedItems(
       tokenState?.closedListings,
       scopedState.closedListings,
