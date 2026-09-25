@@ -1426,8 +1426,11 @@ without creating a backup. Failed partial sets are preserved and named in logs.
 The controller retains the newly completed set as the one logical recovery
 copy. It retires an older set only when its canonical directory, owner and mode,
 exact three-file inventory, checksums, non-empty globals archive, and readable
-restore catalog all verify, and no process has any set file open. It rechecks the
-directory identity immediately before removal. Unverifiable or open sets and
+restore catalog all verify, and no process has any set file open. The open-reader
+probe passes validated absolute member paths directly to `fuser --silent`; do not
+insert an end-of-options `--`, which production PSmisc treats as an empty file list
+and rejects. It rechecks the directory identity immediately before removal.
+Unverifiable or open sets and
 incomplete temporary sets remain untouched and are logged for review; age alone
 never authorizes deletion. The lock-protected `--retain-existing <verified-basename>`
 mode applies the same checks and pruning while keeping one explicitly named
