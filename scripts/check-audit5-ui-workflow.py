@@ -214,23 +214,25 @@ class CapacityTests(unittest.TestCase):
 
     def test_historical_tooling_pins_match_reviewed_helpers_and_keep_app_provenance(self):
         script = (ROOT / 'deploy/audit5/ui-publish-candidate.sh').read_text()
-        # Audit5 is an exact historical approval, not a floating deployment
-        # entrypoint. Keep its reviewed bytes/pins intact when current helpers
-        # acquire new safety boundaries; current staging behavior is exercised
-        # separately below and by check-ui-capacity.py.
-        stage_sha = '39f17624d0e244382c344e31f5b04b0b58bb8f4e8c7bc9c93d7418bc8ab0f238'
+        # Keep the historical publisher's approval bytes fixed. The phase-bound
+        # capacity collector separately pins the current, Audit-19-reviewed
+        # stager whose guarded operations it measures.
+        historical_stage_sha = '39f17624d0e244382c344e31f5b04b0b58bb8f4e8c7bc9c93d7418bc8ab0f238'
+        current_stage_sha = '115a18d186bf40ed6493940224f2b4ce71987e4c8d6061f02c4b23b03a21f95f'
         publisher_sha = '8846f6c6d3a8793fe83387e4d6fc317b87ef293b7961e2cd593490fd1bbd5024'
-        self.assertEqual(capacity.EXPECTED_STAGER_SHA256, stage_sha)
-        self.assertIn('stage:' + stage_sha, script)
+        self.assertEqual(capacity.EXPECTED_STAGER_SHA256, current_stage_sha)
+        self.assertEqual(hashlib.sha256((ROOT / 'deploy/proofofwork-ui-release-stage.py').read_bytes()).hexdigest(), current_stage_sha)
+        self.assertIn('stage:' + historical_stage_sha, script)
         self.assertIn('publish:' + publisher_sha, script)
         self.assertIn('"$source/deploy/proofofwork-ui-release-provenance.sh"', script)
         self.assertIn('"$source/deploy/proofofwork-ui-retained-root.py"', script)
-        self.assertLess(script.index('flock --exclusive'), script.index('stage:' + stage_sha))
+        self.assertLess(script.index('flock --exclusive'), script.index('stage:' + historical_stage_sha))
         self.assertIn('$(git -C "$source" rev-parse HEAD) == "$commit"', script)
 
-    def test_historical_phase_model_refuses_current_unreviewed_stager_bytes(self):
-        # Execute the historical loader's actual digest guard with temporary
-        # files and mocked root metadata. No old Git objects are required.
+    def test_phase_model_accepts_reviewed_current_stager_and_refuses_drift(self):
+        # Execute the live loader's actual digest guard with temporary files and
+        # mocked root metadata. The current stager is accepted; even byte drift
+        # is refused. No old Git objects are required.
         source = self.root / 'installed-stager'
         source.write_bytes((ROOT / 'deploy/proofofwork-ui-release-stage.py').read_bytes())
         lock = self.root / 'deploy.lock'
@@ -243,14 +245,19 @@ class CapacityTests(unittest.TestCase):
             return os.stat_result(fields)
         def mapped_path(value):
             return lock if str(value) == '/run/proofofwork-ui/deploy.lock' else source
-        with lock.open('rb') as held, mock.patch.object(capacity, 'Path', side_effect=mapped_path), \
-                mock.patch.object(capacity.os, 'geteuid', return_value=0), \
-                mock.patch.object(capacity.sys, 'flags', SimpleNamespace(isolated=True)), \
-                mock.patch.object(Path, 'lstat', return_value=root_stat(actual_fstat(held.fileno()))), \
-                mock.patch.object(capacity.os, 'fstat', side_effect=lambda descriptor: root_stat(actual_fstat(descriptor))), \
-                mock.patch.dict(os.environ, {'POW_UI_DEPLOY_LOCK_FD': str(held.fileno())}):
-            with self.assertRaisesRegex(ValueError, 'differs from the reviewed phase model'):
-                capacity.locked_installed_stager()
+        def load_installed():
+            with lock.open('rb') as held, mock.patch.object(capacity, 'Path', side_effect=mapped_path), \
+                    mock.patch.object(capacity.os, 'geteuid', return_value=0), \
+                    mock.patch.object(capacity.sys, 'flags', SimpleNamespace(isolated=True)), \
+                    mock.patch.object(Path, 'lstat', return_value=root_stat(actual_fstat(held.fileno()))), \
+                    mock.patch.object(capacity.os, 'fstat', side_effect=lambda descriptor: root_stat(actual_fstat(descriptor))), \
+                    mock.patch.dict(os.environ, {'POW_UI_DEPLOY_LOCK_FD': str(held.fileno())}):
+                return capacity.locked_installed_stager()
+
+        self.assertEqual(load_installed().SURFACES, stager.SURFACES)
+        source.write_bytes(source.read_bytes() + b'\n# unreviewed drift\n')
+        with self.assertRaisesRegex(ValueError, 'differs from the reviewed phase model'):
+            load_installed()
 
     def test_portable_archive_dereferences_candidate_links_and_fits_bound(self):
         stage = self.root / 'stage'; stage.mkdir()
