@@ -31199,6 +31199,41 @@ function canonicalWorkCutoverRelicListing(listing) {
   );
 }
 
+function canonicalWorkV1RefundSnapshotExcludedListing(listing) {
+  const closePositionFields = [
+    "closedBlockHash",
+    "closedBlockHeight",
+    "closedBlockIndex",
+    "closedProtocolVout",
+    "closedRecordOrdinal",
+    "closeTransactionBlockHeight",
+  ];
+  return (
+    listing?.confirmed === true &&
+    listing?.closedConfirmed === true &&
+    listing?.closedByCanonicalOutpointSpend !== true &&
+    listing?.relic === false &&
+    listing?.refundEligible === false &&
+    normalizedLowerText(listing?.status) === "closed" &&
+    Number(listing?.disabledAtBlockHeight) ===
+      WORK_MARKET_V2_ACTIVATION_HEIGHT &&
+    normalizedLowerText(listing?.disabledByTxid) ===
+      WORK_MARKET_V2_DECLARATION_TXID &&
+    normalizedLowerText(listing?.disabledReason) ===
+      "work-market-v1-refund-snapshot-excluded" &&
+    !normalizedLowerText(listing?.closedTxid) &&
+    !normalizedLowerText(listing?.closeTxid) &&
+    !normalizedLowerText(listing?.saleTxid) &&
+    !listing?.canonicalSaleEvidence &&
+    closePositionFields.every(
+      (field) =>
+        listing?.[field] === undefined ||
+        listing?.[field] === null ||
+        listing?.[field] === "",
+    )
+  );
+}
+
 async function payloadWithCanonicalWorkLifecyclePositions(
   pool,
   network,
@@ -31277,6 +31312,7 @@ async function payloadWithCanonicalWorkLifecyclePositions(
       closed &&
       listing?.closedConfirmed === true &&
       !canonicalOutpointSpendClose(listing) &&
+      !canonicalWorkV1RefundSnapshotExcludedListing(listing) &&
       !canonicalWorkCutoverRelicListing(listing) &&
       !addExpectation("close", listing?.closedTxid, listingId)
     ) {
@@ -31515,6 +31551,7 @@ async function payloadWithCanonicalWorkLifecyclePositions(
       closed &&
       listing.closedConfirmed === true &&
       !canonicalOutpointSpendClose(listing) &&
+      !canonicalWorkV1RefundSnapshotExcludedListing(listing) &&
       !canonicalWorkCutoverRelicListing(listing)
     ) {
       const close = positions.get(

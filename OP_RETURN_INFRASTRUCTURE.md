@@ -774,7 +774,11 @@ rewinding only the checkpoint or layering corrected event keys over stale ones:
    replay, the bridge matches those exact disabled or snapshot-excluded rows
    to their confirmed pre-activation openings and immutable refund-snapshot
    entries, reconstructs the raw lifecycle at H, and then reapplies the
-   ordinary V2 policy in the summary. Each of the 94 refund entries must match
+   ordinary V2 policy in the summary. The exact non-refundable
+   `work-market-v1-refund-snapshot-excluded` marker retains a hash-bound
+   opening position but has no synthetic close transaction or close position;
+   only that complete marker may omit the close-event join. Each of the 94
+   refund entries must match
    the bounded original seller, signed version, frozen seal transaction, and
    frozen height. For a sealed entry that height is the selected confirmed
    seal height; for an unsealed entry it is the opening height. Other confirmed

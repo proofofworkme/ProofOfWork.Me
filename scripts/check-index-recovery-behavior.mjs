@@ -30466,6 +30466,15 @@ check("canonical WORK lifecycle state rebinds unique relational event positions"
       validTxid,
     },
   );
+  const canonicalWorkV1RefundSnapshotExcludedListing = isolatedFunction(
+    READER_PATH,
+    "canonicalWorkV1RefundSnapshotExcludedListing",
+    {
+      WORK_MARKET_V2_ACTIVATION_HEIGHT,
+      WORK_MARKET_V2_DECLARATION_TXID,
+      normalizedLowerText,
+    },
+  );
   const payloadWithCanonicalWorkLifecyclePositions = isolatedFunction(
     READER_PATH,
     "payloadWithCanonicalWorkLifecyclePositions",
@@ -30478,6 +30487,7 @@ check("canonical WORK lifecycle state rebinds unique relational event positions"
       WORK_TOKEN_ID,
       TOKEN_SALE_AUTH_VERSION: "pwt-sale-v1",
       canonicalWorkCutoverRelicListing,
+      canonicalWorkV1RefundSnapshotExcludedListing,
       canonicalWorkLifecycleExpectationKey,
       canonicalWorkLifecyclePositionFromRow,
       isWorkTokenId,
@@ -30517,6 +30527,7 @@ check("canonical WORK lifecycle state rebinds unique relational event positions"
   const outpointSpendTxid = "9".repeat(64);
   const pendingListingId = "6".repeat(64);
   const pendingCloseTxid = "7".repeat(64);
+  const snapshotExcludedListingId = "8".repeat(64);
   const payload = {
     closedListings: [
       {
@@ -30581,6 +30592,20 @@ check("canonical WORK lifecycle state rebinds unique relational event positions"
         status: "sealing",
         tokenId: WORK_TOKEN_ID,
       },
+      {
+        closedConfirmed: true,
+        closedTxid: "",
+        closeTxid: "",
+        confirmed: true,
+        disabledAtBlockHeight: WORK_MARKET_V2_ACTIVATION_HEIGHT,
+        disabledByTxid: WORK_MARKET_V2_DECLARATION_TXID,
+        disabledReason: "work-market-v1-refund-snapshot-excluded",
+        listingId: snapshotExcludedListingId,
+        refundEligible: false,
+        relic: false,
+        status: "closed",
+        tokenId: WORK_TOKEN_ID,
+      },
     ],
     listings: [
       {
@@ -30623,6 +30648,10 @@ check("canonical WORK lifecycle state rebinds unique relational event positions"
           pendingListingId,
           { block: "6", height: 950_006, index: 106, vout: 6 },
         ],
+        [
+          snapshotExcludedListingId,
+          { block: "a", height: 950_007, index: 107, vout: 7 },
+        ],
       ]);
       let rows = roles.map((role, index) => ({
         block_hash: (
@@ -30659,6 +30688,7 @@ check("canonical WORK lifecycle state rebinds unique relational event positions"
     "seal",
     "close",
     "listing",
+    "listing",
   ]);
   assert.deepEqual(Array.from(capturedQuery.params[2]), [
     pendingListingId,
@@ -30666,6 +30696,7 @@ check("canonical WORK lifecycle state rebinds unique relational event positions"
     sealTxid,
     closeTxid,
     outpointListingId,
+    snapshotExcludedListingId,
   ]);
   assert.equal(capturedQuery.params[4], WORK_TOKEN_ID);
   assert.match(capturedQuery.sql, /event_block\.canonical = true/u);
@@ -30746,6 +30777,38 @@ check("canonical WORK lifecycle state rebinds unique relational event positions"
     "6".repeat(64),
     "a pending close sibling can share the active listing's opening position",
   );
+  assert.equal(
+    positioned.closedListings[4].blockHash,
+    "a".repeat(64),
+    "the snapshot-excluded legacy listing still binds its original opening position",
+  );
+  assert.equal(
+    positioned.closedListings[4].closedTxid,
+    "",
+    "the synthetic V2 exclusion marker does not invent a close transaction",
+  );
+  const snapshotExcluded = payload.closedListings[4];
+  assert.equal(
+    canonicalWorkV1RefundSnapshotExcludedListing(snapshotExcluded),
+    true,
+  );
+  for (const mutation of [
+    { disabledByTxid: "0".repeat(64) },
+    { disabledReason: "other-cutover" },
+    { refundEligible: true },
+    { relic: true },
+    { closedTxid: "1".repeat(64) },
+    { closedBlockHeight: 950_007 },
+  ]) {
+    assert.equal(
+      canonicalWorkV1RefundSnapshotExcludedListing({
+        ...snapshotExcluded,
+        ...mutation,
+      }),
+      false,
+      "only the exact synthetic snapshot-excluded marker skips a close event",
+    );
+  }
   const pendingWorkVerifierStageCanonicalOutpointClose = isolatedFunction(
     API_PATH,
     "pendingWorkVerifierStageCanonicalOutpointClose",
