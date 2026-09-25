@@ -1291,6 +1291,18 @@ a transport optimization: every output still passes the existing exact value,
 script, confirmation and before/after canonical-tip checks. A batch is not an
 atomic mempool snapshot. Failed evidence never becomes an empty or spent result.
 
+Production retention override (2026-09-25): At explicit operator direction,
+keep only `/data/proofofwork-postgres-backups/logical/proof_indexer-20260924T031852Z.dumpset`
+as the PostgreSQL database restore set. If it is unusable, rebuild the derived
+index from the synchronized, unpruned full node. The
+`pg_basebackup@16-main.timer`, `pg_compresswal@16-main.timer`,
+`pg_receivewal@16-main.service`, and
+`proofofwork-postgres-logical-backup.timer` are disabled under this scoped
+policy; do not create another database restore set or re-enable these units
+without a later operator decision. Application release rollback directories
+are retained separately. The standard setup below is superseded by this
+production-specific retention override for this node.
+
 PostgreSQL recovery uses two independent layers. Bind
 `/data/proofofwork-postgres-backups/physical` onto
 `/var/backups/postgresql` with the tracked mount unit, then enable Ubuntu's

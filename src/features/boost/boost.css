@@ -623,6 +623,11 @@
   font-variant-numeric: tabular-nums;
 }
 
+.boost-shell-instrument .boost-rail-stats > span {
+  min-inline-size: 0;
+  overflow-wrap: anywhere;
+}
+
 .boost-shell-instrument .boost-rail-list a,
 .boost-shell-instrument .boost-rail-list button {
   border-bottom: 1px solid color-mix(in srgb, var(--border) 68%, transparent);
