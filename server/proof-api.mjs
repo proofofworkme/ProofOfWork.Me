@@ -36213,6 +36213,31 @@ function scopedTokenPayloadFromState(tokenState, scope) {
         return state;
       })()
     : tokenState;
+  const canonicalTokens = workScoped
+    ? tokens.map((token) => {
+        const {
+          confirmedSupplyAtoms: _confirmedSupplyAtoms,
+          confirmedSupplySubatoms: _confirmedSupplySubatoms,
+          pendingSupplyAtoms: _pendingSupplyAtoms,
+          pendingSupplySubatoms: _pendingSupplySubatoms,
+          ...definition
+        } = token;
+        return {
+          ...definition,
+          confirmedSupply,
+          pendingSupply,
+          ...(workAmountStorageModel === WORK_SUBATOM_PROJECTION_MODEL
+            ? {
+                confirmedSupplySubatoms: confirmedWorkSupply.toString(),
+                pendingSupplySubatoms: pendingWorkSupply.toString(),
+              }
+            : {
+                confirmedSupplyAtoms: confirmedWorkSupply.toString(),
+                pendingSupplyAtoms: pendingWorkSupply.toString(),
+              }),
+        };
+      })
+    : tokens;
 
   return tokenPayloadWithScopedHolderIdentity({
     ...scopedBaseState,
@@ -36243,7 +36268,7 @@ function scopedTokenPayloadFromState(tokenState, scope) {
     mints,
     pendingSupply,
     sales,
-    tokens,
+    tokens: canonicalTokens,
     transfers,
     stats: {
       ...(tokenState.stats ?? {}),
@@ -36254,7 +36279,7 @@ function scopedTokenPayloadFromState(tokenState, scope) {
         .reduce((total, sale) => total + numericValue(sale.priceSats), 0),
       confirmedTransfers: transfers.filter((transfer) => transfer.confirmed)
         .length,
-      confirmedTokens: tokens.filter((token) => token.confirmed).length,
+      confirmedTokens: canonicalTokens.filter((token) => token.confirmed).length,
       creationSats,
       holders: holders.length,
       invalidEvents: invalidEvents.filter((event) => event.confirmed).length,

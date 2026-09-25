@@ -11768,6 +11768,12 @@ check("scoped WORK state infers Q16 from confirmed rows", () => {
       tokens: [{
         amountStorageModel: WORK_ATOMIC_PROJECTION_MODEL,
         confirmed: true,
+        confirmedSupply: "1000",
+        confirmedSupplyAtoms: "100000000000",
+        confirmedSupplySubatoms: q16Amount,
+        pendingSupply: "0",
+        pendingSupplyAtoms: "0",
+        pendingSupplySubatoms: "0",
         ticker: "WORK",
         tokenId: WORK_TOKEN_ID,
       }],
@@ -11783,6 +11789,11 @@ check("scoped WORK state infers Q16 from confirmed rows", () => {
   );
   assert.equal(scoped.confirmedSupplySubatoms, q16Amount);
   assert.equal(scoped.confirmedSupply, "1000");
+  assert.equal(scoped.tokens[0].confirmedSupply, "1000");
+  assert.equal(scoped.tokens[0].confirmedSupplySubatoms, q16Amount);
+  assert.equal(scoped.tokens[0].confirmedSupplyAtoms, undefined);
+  assert.equal(scoped.tokens[0].pendingSupplySubatoms, "0");
+  assert.equal(scoped.tokens[0].pendingSupplyAtoms, undefined);
   assert.equal(
     JSON.stringify(scoped.holders),
     JSON.stringify([{
