@@ -11869,6 +11869,7 @@ check("scoped WORK state infers Q16 from confirmed rows", () => {
     API_PATH,
     "tokenStateWithExactScopedTokenReplacement",
     {
+      WORK_TOKEN_ID,
       normalizeTokenScope: (value) => String(value ?? "").toLowerCase(),
       tokenStateWithPendingStats: (state) => state,
     },
@@ -11958,6 +11959,55 @@ check("scoped WORK state infers Q16 from confirmed rows", () => {
     "exact scoped replacement must remove current WORK transfers from the historical lane",
   );
   assert.equal(replacedMixedScope.listings[0].listingId, "current-listing");
+
+  const replacedWorkOnlyPrecision = tokenStateWithExactScopedTokenReplacement(
+    {
+      amountStorageModel: WORK_SUBATOM_PROJECTION_MODEL,
+      confirmedSupply: "1000",
+      confirmedSupplySubatoms: q16Amount,
+      decimals: WORK_SUBATOM_DECIMALS,
+      maxSupplySubatoms: "210000000000000000000000",
+      mintAmountSubatoms: q16Amount,
+      pendingSupply: "0",
+      pendingSupplySubatoms: "0",
+      precisionModel: WORK_PRECISION_V2_MODEL,
+      unitScale: WORK_SUBATOM_UNIT_SCALE_TEXT,
+      tokens: [{
+        amountStorageModel: WORK_SUBATOM_PROJECTION_MODEL,
+        confirmed: true,
+        tokenId: WORK_TOKEN_ID,
+      }],
+    },
+    {
+      amountStorageModel: WORK_ATOMIC_PROJECTION_MODEL,
+      confirmedSupply: "1000",
+      confirmedSupplyAtoms: historicalAtoms,
+      decimals: WORK_DECIMALS,
+      pendingSupply: "0",
+      pendingSupplyAtoms: "0",
+      unitScale: WORK_UNIT_SCALE_TEXT,
+      tokens: [{
+        amountStorageModel: WORK_ATOMIC_PROJECTION_MODEL,
+        confirmed: true,
+        decimals: WORK_DECIMALS,
+        tokenId: WORK_TOKEN_ID,
+        unitScale: WORK_UNIT_SCALE_TEXT,
+      }],
+    },
+    WORK_TOKEN_ID,
+  );
+  assert.equal(
+    replacedWorkOnlyPrecision.amountStorageModel,
+    WORK_ATOMIC_PROJECTION_MODEL,
+  );
+  assert.equal(
+    exactWorkAmountStorageModelFromState(replacedWorkOnlyPrecision),
+    WORK_ATOMIC_PROJECTION_MODEL,
+  );
+  assert.equal(replacedWorkOnlyPrecision.confirmedSupplyAtoms, historicalAtoms);
+  assert.equal(replacedWorkOnlyPrecision.confirmedSupplySubatoms, undefined);
+  assert.equal(replacedWorkOnlyPrecision.maxSupplySubatoms, undefined);
+  assert.equal(replacedWorkOnlyPrecision.precisionModel, undefined);
 });
 
 check("WORK mint progress stays below 100 until max supply confirms", () => {
