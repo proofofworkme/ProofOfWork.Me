@@ -112,10 +112,12 @@ test("Desktop rejects pending IDs via one current ID lookup without scanning the
 
 test("Log search waits for matching results and counts returned pending rows outside the global head", async ({ page }) => {
   const gate = delayed();
+  const historyQueries = [];
   await page.route("**/api/v1/**", async (route) => {
     const url = new URL(route.request().url());
     if (url.pathname === "/api/v1/log-history") {
       const query = url.searchParams.get("q") || "";
+      historyQueries.push(query);
       if (query === HASH) {
         await gate.promise;
         return fulfill(route, { kind: "activity", query, items: [{ txid: HASH, kind: "id-register", id: "auditpending", network: "livenet", confirmed: false, createdAt: NOW, amountSats: 1000, dataBytes: 32 }], totalCount: 1, page: 0, pageSize: 50, indexedAt: NOW });
@@ -136,8 +138,11 @@ test("Log search waits for matching results and counts returned pending rows out
   await expect(stats.nth(1)).toContainText("0Confirmed");
   await expect(stats.nth(2)).toContainText("1Pending");
   await expect(page.locator(".activity-feed")).toContainText("auditpending@proofofwork.me");
-  await page.getByPlaceholder("address, user@proofofwork.me, or txid").fill("b".repeat(64));
+  const unsubmittedQuery = "b".repeat(64);
+  await page.getByPlaceholder("address, user@proofofwork.me, or txid").fill(unsubmittedQuery);
   await expect(page.getByRole("heading", { name: "Search to verify this query", exact: true })).toBeVisible();
+  await page.waitForTimeout(1_100);
+  expect(historyQueries).not.toContain(unsubmittedQuery);
   await expect(page.locator(".activity-feed")).toHaveCount(0);
 });
 

@@ -1284,12 +1284,16 @@ delivery is not implied by installation.
 `proofofwork-api-observation-health.timer` supplements readiness with a bounded
 ten-minute journal summary every five minutes. Its Python controller is installed
 as `/usr/local/sbin/proofofwork-api-observation-health`. It warns on at least 5%
-server errors across 20 responses, 10-second p95 across five responses, or an
-8 MiB response; 15% errors or 30-second p95 is critical. Missing byte measurements
-and missing/truncated observation coverage remain explicit. Measurements cover
-finished GET responses, not signing, browser rendering or complete-book hydration.
-No extra application requests are generated. Response helpers retain exact UTF-8
-Content-Length for these observations. Alerts remain local service/journal state.
+server errors across 20 completed responses, 10-second p95 across five completed
+responses, or an 8 MiB response; 15% errors or 30-second p95 is critical. Missing
+byte measurements and missing/truncated observation coverage remain explicit. A
+response closed before `finish` is measured separately as an interrupted read;
+three or more interrupted reads with a 10-second p95 trigger a performance warning.
+Partial body size remains unknown, and an interrupted response is not mislabeled
+as a server error. These measurements do not cover browser rendering or complete-
+book hydration. No extra application requests are generated. Response helpers
+retain exact UTF-8 `Content-Length` for completed responses. Alerts remain local
+service/journal state.
 
 Complete token-listing Core reconciliation transports `gettxout` requests in
 batches of at most 32, with mempool spends included, unique response identities,
@@ -1339,10 +1343,14 @@ evidence. This is a PostgreSQL restart, not a reload-only change.
 Install `proofofwork-postgres-query-health.sh` as executable
 `/usr/local/sbin/proofofwork-postgres-query-health`, then install and enable its
 service and timer. Its five-minute `pg_stat_activity` sample is aggregate-only:
-it logs cluster-wide client connections plus database-scoped active sessions,
-oldest active age, identical-query fanout, lock waiters and oldest lock-wait
-age, and idle or aborted-in-transaction sessions plus the oldest transaction
-age without logging query text or parameters. Fanout of 4, an active query aged
+it logs cluster-wide client connections plus database-scoped application
+sessions, oldest active age, identical-query fanout, lock waiters and oldest
+lock-wait age, and idle or aborted-in-transaction sessions plus the oldest
+transaction age without logging query text or parameters. Sessions whose
+application name starts with `pg_dump` are reported separately with active count
+and age, and excluded from application query-age and fanout thresholds. They
+remain included in cluster connection, lock-wait, and idle-transaction checks;
+the backup timer and restore validation remain independent. Fanout of 4, an active query aged
 20 seconds, 70 cluster client connections, a lock wait aged 5 seconds, or an
 idle transaction aged 5 seconds is warning state. Fanout of 8, an active query
 aged 60 seconds, 90 cluster client connections, a lock wait aged 20 seconds, or
@@ -1464,7 +1472,16 @@ latest logical dump into a disposable scratch database, validate representative
 counts, and stop the isolated cluster before treating either timer as
 operational. Preserve its evidence until a separately reviewed cleanup. Restore globals before the database on a clean cluster. Enabling
 PostgreSQL data checksums remains a separate maintenance operation because it
-requires a clean database shutdown. Local physical and logical copies protect
+requires a clean database shutdown.
+
+Audit 26 uses deploy/audit26/restore-logical.sh for the exact verified
+2026-09-26 logical dumpset. The helper pins the dump size (18,294,636,601
+bytes), both files in SHA256SUMS, a private Unix socket with no TCP listener,
+no production tablespaces, no role/grant restore, and an 80 GiB scratch ceiling.
+It requires at least 100 GiB free on /data plus that ceiling and 10 GiB free on
+root. Run it only in a newly documented job directory; it retains the complete
+restore receipt by default. Any later removal must identify the exact isolated
+cluster path and preserve the compact validation evidence first. Local physical and logical copies protect
 against database/root-volume failures, but an encrypted off-host copy is still
 required for independent disaster recovery.
 

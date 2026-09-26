@@ -9,12 +9,14 @@ import {
   Mail,
   MessageSquareQuote,
   Monitor,
+  Play,
   RefreshCw,
   TrendingUp,
   Users,
   Wallet,
   Zap,
 } from "lucide-react";
+import { useState } from "react";
 import {
   BOOST_APP_URL,
   BROWSER_APP_URL,
@@ -228,6 +230,7 @@ export function LandingApp({
   registryWarning?: string;
   onRefresh: () => void;
 }) {
+  const [videoLoaded, setVideoLoaded] = useState(false);
 
   return (
     <main className="landing-app">
@@ -436,14 +439,25 @@ export function LandingApp({
             </a>
           </div>
           <div className="landing-video-frame">
-            <iframe
-              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-              allowFullScreen
-              loading="lazy"
-              referrerPolicy="strict-origin-when-cross-origin"
-              src={LANDING_VIDEO_EMBED_URL}
-              title="ProofOfWork.Me ProofOfWork Computer overview"
-            />
+            {videoLoaded ? (
+              <iframe
+                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                allowFullScreen
+                referrerPolicy="strict-origin-when-cross-origin"
+                src={LANDING_VIDEO_EMBED_URL}
+                title="ProofOfWork.Me ProofOfWork Computer overview"
+              />
+            ) : (
+              <button
+                aria-label="Load the ProofOfWork Computer overview video from YouTube"
+                className="landing-video-load"
+                onClick={() => setVideoLoaded(true)}
+                type="button"
+              >
+                <Play aria-hidden="true" fill="currentColor" size={22} />
+                <span>Load video from YouTube</span>
+              </button>
+            )}
           </div>
         </section>
 

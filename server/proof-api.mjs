@@ -80759,6 +80759,20 @@ const server = http.createServer((request, response) => {
       slow: elapsedMs >= 10000,
     }));
   });
+  response.once("close", () => {
+    if (response.writableFinished) return;
+    const elapsedMs = Date.now() - startedAt;
+    const route = new URL(request.url ?? "/", "http://localhost").pathname;
+    console.log(JSON.stringify({
+      event: "http-response-interrupted-observation",
+      method: request.method ?? "GET",
+      route,
+      status: response.statusCode,
+      elapsedMs,
+      payloadBytes: null,
+      headersSent: response.headersSent,
+    }));
+  });
   void handleRequest(request, response);
 });
 

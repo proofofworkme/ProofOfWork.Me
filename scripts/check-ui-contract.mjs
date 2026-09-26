@@ -1997,7 +1997,7 @@ const walletRecoverableV3WorkRelicsSource =
   )?.[0] ?? "";
 const walletV3RelicRecoveryBlock =
   tokenWalletWorkspaceBlock.match(
-    /\{walletRecoverableV3WorkRelics\.length \? \([\s\S]*?\) : null\}/,
+    /\{walletConnected && walletRecoverableV3WorkRelics\.length \? \([\s\S]*?\) : null\}/,
   )?.[0] ?? "";
 expect(
   "WORK legacy sale tickets remain replayable while V6 owns current AMO writes",
@@ -3167,6 +3167,10 @@ const currentCompleteGlobalTokenListingsBlock =
   app.match(
     /async function currentCompleteGlobalTokenListings[\s\S]*?async function tokenStateWithCurrentCompleteMarketplaceListings/,
   )?.[0] ?? "";
+const tokenStateWithCompleteTokenBondListingsBlock =
+  app.match(
+    /function tokenStateWithCompleteTokenBondListings[\s\S]*?async function tokenStateWithCurrentCompleteBondListings/,
+  )?.[0] ?? "";
 const tokenStateWithCurrentCompleteBondListingsBlock =
   app.match(
     /async function tokenStateWithCurrentCompleteBondListings[\s\S]*?function applyWorkFloorQuote/,
@@ -3230,6 +3234,9 @@ const marketplaceAppBlock =
     ?.[0] ?? "";
 const refreshInfinityBlock =
   app.match(/async function refreshInfinity[\s\S]*?async function refreshToken\(/)
+    ?.[0] ?? "";
+const loadCompleteTokenListingBookBlock =
+  app.match(/async function loadCompleteTokenListingBook[\s\S]*?function applyWorkFloorQuote/)
     ?.[0] ?? "";
 const fetchWalletOwnedTokenListingsBlock =
   app.match(
@@ -3299,13 +3306,10 @@ expect(
     /listings\.length !== expectedTotalCount/.test(
       fetchCompleteTokenListingsBlock,
     ) &&
-    /state\.indexedThroughBlock === history\.indexedThroughBlock/.test(
+    /state\.indexedAt === history\.indexedAt/.test(
       completeTokenListingHistoryMatchesStateBlock,
     ) &&
-    /state\.indexedThroughBlockHash === history\.indexedThroughBlockHash/.test(
-      completeTokenListingHistoryMatchesStateBlock,
-    ) &&
-    /return completeTokenListingHistoryMatchesCheckpoint\(history, state\);/.test(
+    /completeTokenListingHistoryMatchesCheckpoint\(history, state\)/.test(
       completeTokenListingHistoryMatchesStateBlock,
     ) &&
     !/declaredListingCount === history\.totalCount/.test(
@@ -3316,61 +3320,42 @@ expect(
     ),
 );
 expect(
-  "Marketplace renders the verified summary first and accepts complete listing history only at the same checkpoint",
-  /completeMarketplaceListingHistoryRef\.current/.test(
-    currentCompleteGlobalTokenListingsBlock,
+  "Marketplace summary loads first and full listing history is requested on demand",
+  /const retainedListingHistory =\s*completeMarketplaceListingHistoryRef\.current/.test(
+    refreshMarketplaceSummaryBlock,
   ) &&
-    /completeMarketplaceListingHistoryInFlightRef\.current/.test(
-      currentCompleteGlobalTokenListingsBlock,
+    /completeTokenListingHistoryMatchesState\(\s*retainedListingHistory,\s*snapshot\.token,?\s*\)/.test(
+      refreshMarketplaceSummaryBlock,
     ) &&
-    /fetchCompleteTokenListings\("livenet", \{ fresh \}\)/.test(
-      currentCompleteGlobalTokenListingsBlock,
+    /tokenStateWithCompleteTokenListings\(\s*snapshot\.token,\s*retainedListingHistory,?\s*\)/.test(
+      refreshMarketplaceSummaryBlock,
     ) &&
-    /completeTokenListingHistoryMatchesCheckpoint\(retained, state\)/.test(
-      currentCompleteGlobalTokenListingsBlock,
-    ) &&
-    /const history = await currentCompleteGlobalTokenListings\(state, fresh\)/.test(
-      tokenStateWithCurrentCompleteMarketplaceListingsBlock,
-    ) &&
+    !/fetchCompleteTokenListings/.test(refreshMarketplaceSummaryBlock) &&
+    /onClick=\{onLoadCompleteListingBook\}/.test(tokenMarketplacePanelBlock) &&
+    /async function loadCompleteTokenListingBook\(/.test(app) &&
     /completeTokenListingHistoryMatchesState\(history, state\)/.test(
       tokenStateWithCurrentCompleteMarketplaceListingsBlock,
     ) &&
-    /tokenStateWithCompleteTokenListings\(state, history\)/.test(
-      tokenStateWithCurrentCompleteMarketplaceListingsBlock,
+    /listingBookComplete: true/.test(tokenStateWithCompleteTokenListingsBlock) &&
+    /bondCount=\{listingBookComplete \? bondListings\.length : undefined\}/.test(app),
+);
+expect(
+  "Completed listing history stays bound to exact indexed and canonical snapshots",
+  /state\.indexedAt === history\.indexedAt/.test(
+    completeTokenListingHistoryMatchesStateBlock,
+  ) &&
+    /completeTokenListingHistoryMatchesCheckpoint\(history, state\)/.test(
+      completeTokenListingHistoryMatchesStateBlock,
     ) &&
-    /applyPendingTokenListingSeals\(history\.items\)/.test(
-      tokenStateWithCompleteTokenListingsBlock,
+    /completeTokenListingHistoryMatchesState\(retained, state\)/.test(
+      currentCompleteGlobalTokenListingsBlock,
     ) &&
-    /listing\.confirmed === false && tokenListingShouldSurviveRefresh\(listing\)/.test(
-      tokenStateWithCompleteTokenListingsBlock,
-    ) &&
-    /listings: false/.test(tokenStateWithCompleteTokenListingsBlock) &&
-    /listingBookComplete: true/.test(
-      tokenStateWithCompleteTokenListingsBlock,
-    ) &&
-    (app.match(/listingBookComplete:\s*true/g)?.length ?? 0) === 1 &&
-    /listings: history\.totalCount/.test(
-      tokenStateWithCompleteTokenListingsBlock,
-    ) &&
-    /const completeTokenStatePromise =[\s\S]*?tokenStateWithCurrentCompleteMarketplaceListings\([\s\S]*?snapshot\.token,[\s\S]*?fresh,[\s\S]*?\)/.test(
-      refreshMarketplaceSummaryBlock,
-    ) &&
-    /const completeTokenState = snapshot\.token;/.test(
-      refreshMarketplaceSummaryBlock,
-    ) &&
-    /const acceptedTokenState = applyTokenState\(completeTokenState/.test(
-      refreshMarketplaceSummaryBlock,
-    ) &&
-    /acceptedTokenState\.listingBookComplete === true[\s\S]*Listing rows are a verified preview/.test(
-      refreshMarketplaceSummaryBlock,
-    ) &&
-    /void completeTokenStatePromise[\s\S]*currentSnapshot\.indexedAt !== acceptedSnapshot\.indexedAt[\s\S]*currentSnapshot\.token\.indexedThroughBlock !==[\s\S]*currentSnapshot\.token\.indexedThroughBlockHash !==[\s\S]*applyTokenState\([\s\S]*hydratedTokenState/.test(
-      refreshMarketplaceSummaryBlock,
-    ) &&
-    /bondCount=\{listingBookComplete \? bondListings\.length : undefined\}/.test(
-      app,
+    /pageIndexedAt !== expectedIndexedAt/.test(fetchCompleteTokenListingsBlock) &&
+    /pageIndexedThroughBlockHash !== expectedIndexedThroughBlockHash/.test(
+      fetchCompleteTokenListingsBlock,
     ),
 );
+
 expect(
   "Marketplace preflights every canonical summary lane before one atomic display commit",
   /boundaryEvidenceRegressed[\s\S]*valueRegressed:\s*workFloorQuoteRegresses/.test(
@@ -3428,13 +3413,13 @@ expect(
   /const listingBookPreviewIncomplete = summary\.listingBookComplete !== true;/.test(
     tokenMarketplacePanelBlock,
   ) &&
-    /listingBookPreviewIncomplete \? \([\s\S]*Showing a verified AMO preview while the complete[\s\S]*Core-reconciled sale-ticket book loads[\s\S]*Search and empty-state claims remain incomplete/.test(
+    /listingBookPreviewIncomplete \? \([\s\S]*Showing a verified AMO preview[\s\S]*Search and empty-state claims remain incomplete until the full[\s\S]*checkpoint-bound book is verified/.test(
       tokenMarketplacePanelBlock,
     ) &&
     /networkListings\.length\.toLocaleString\(\)[\s\S]*credit tickets visible;[\s\S]*declaredListingCount\.toLocaleString\(\)[\s\S]*total credit and bond tickets declared/.test(
       tokenMarketplacePanelBlock,
     ) &&
-    /tokenMarketLoading[\s\S]*\? "Loading credit sale tickets"[\s\S]*: listingBookPreviewIncomplete[\s\S]*\? "Loading complete credit sale tickets"[\s\S]*: tokenListingSearchQuery/.test(
+    /tokenMarketLoading[\s\S]*\? "Loading credit sale tickets"[\s\S]*: listingBookPreviewIncomplete[\s\S]*\? "Complete credit history not loaded"[\s\S]*: tokenListingSearchQuery/.test(
       tokenMarketplacePanelBlock,
     ) &&
     /: listingBookPreviewIncomplete[\s\S]*\? "The verified preview is incomplete, so search and empty-state claims are withheld until the checkpoint-bound sale-ticket book is complete\."[\s\S]*: tokenListingSearchQuery/.test(
@@ -3444,51 +3429,39 @@ expect(
       ?.length ?? 0) >= 2,
 );
 expect(
-  "Bond marketplace inherits exact-book completeness and withholds definitive inventory claims",
-  /listingSummary: PowTokenSummaryMetadata;/.test(
+  "Bond market shows preview counts until the user requests the exact listing book",
+  /const listingBookPreviewIncomplete =\s*listingSummary\.listingBookComplete !== true;/.test(
     infinityBondMarketPanelBlock,
   ) &&
-    /const listingBookPreviewIncomplete =\s*listingSummary\.listingBookComplete !== true;/.test(
+    /`Complete \${bondConfig\.ticker} history not loaded`/.test(
       infinityBondMarketPanelBlock,
     ) &&
-    /marketListings\.length\.toLocaleString\(\)[\s\S]*bondConfig\.ticker[\s\S]*tickets visible;[\s\S]*declaredListingCount\.toLocaleString\(\)[\s\S]*total credit and bond tickets declared/.test(
+    /onClick=\{\(\) => onLoadCompleteListingBook\(bondConfig\.tokenId\)\}/.test(
       infinityBondMarketPanelBlock,
     ) &&
-    /listingBookPreviewIncomplete[\s\S]*`Loading complete \$\{bondConfig\.ticker\} sale tickets`[\s\S]*: marketListings\.length/.test(
-      infinityBondMarketPanelBlock,
-    ) &&
-    /listingBookPreviewIncomplete[\s\S]*empty-state claims are withheld until the checkpoint-bound sale-ticket book is complete\.[\s\S]*: marketListings\.length/.test(
-      infinityBondMarketPanelBlock,
-    ) &&
-    /listingSummary: PowTokenSummaryMetadata;/.test(
-      bondMarketplacePanelBlock,
-    ) &&
-    /listingSummary=\{listingSummary\}/.test(bondMarketplacePanelBlock) &&
-    (app.match(/<BondMarketplacePanel[\s\S]*?listingSummary=\{tokenSummary\}/g)
-      ?.length ?? 0) >= 2 &&
-    /const listingBookComplete = tokenSummary\.listingBookComplete === true;/.test(
+    /Bond market preview loaded\. Complete Core-reconciled sale-ticket history is available on request; inventory remains a preview until verified\./.test(
       marketplaceAppBlock,
     ) &&
-    /bondSummary: \{[\s\S]*tone: listingBookComplete \? "good" : "idle"[\s\S]*Bond market preview loaded\. Verifying the complete Core-reconciled sale-ticket book before reporting bond inventory as complete\./.test(
-      marketplaceAppBlock,
+    !/tokenStateWithCurrentCompleteBondListings/.test(refreshInfinityBlock) &&
+    /listingBookComplete =\s*acceptedTokenState\.listingBookComplete === true/.test(
+      refreshInfinityBlock,
     ),
 );
+
 expect(
-  "Bond and wallet summaries filter the shared exact global book before reporting completeness",
-  /const scope = tokenScope\.trim\(\)\.toLowerCase\(\);[\s\S]*\/\^\[0-9a-f\]\{64\}\$\/u\.test\(scope\)/.test(
-      tokenStateWithCurrentCompleteBondListingsBlock,
-    ) &&
-    /const globalHistory = await currentCompleteGlobalTokenListings\(state, fresh\)/.test(
-      tokenStateWithCurrentCompleteBondListingsBlock,
-    ) &&
+  "Bond and wallet listings derive from the shared exact global book",
+  /const globalHistory = await currentCompleteGlobalTokenListings\([\s\S]*state,[\s\S]*fresh,[\s\S]*onVerifiedPage/.test(
+    tokenStateWithCurrentCompleteBondListingsBlock,
+  ) &&
     /globalHistory\.items\.filter\([\s\S]*listing\.tokenId === scope/.test(
-      tokenStateWithCurrentCompleteBondListingsBlock,
+      tokenStateWithCompleteTokenBondListingsBlock,
     ) &&
-    /\.\.\.globalHistory,[\s\S]*items,[\s\S]*totalCount: items\.length/.test(
-      tokenStateWithCurrentCompleteBondListingsBlock,
+    /totalCount: items\.length/.test(tokenStateWithCompleteTokenBondListingsBlock) &&
+    /!completeTokenListingHistoryMatchesState\(history, state\)/.test(
+      currentCompleteGlobalTokenListingsBlock,
     ) &&
-    /completeTokenListingHistoryMatchesState\(history, state\)/.test(
-      tokenStateWithCurrentCompleteBondListingsBlock,
+    /!completeTokenListingHistoryMatchesState\(history, state\)/.test(
+      tokenStateWithCompleteTokenBondListingsBlock,
     ) &&
     /await currentCompleteGlobalTokenListings\(state, fresh\)/.test(
       fetchWalletOwnedTokenListingsBlock,
@@ -3496,19 +3469,15 @@ expect(
     /listing\.network === "livenet"[\s\S]*listing\.tokenId === tokenScope[\s\S]*listing\.sellerAddress === walletAddress/.test(
       fetchWalletOwnedTokenListingsBlock,
     ) &&
-    /tokenStateWithCurrentCompleteBondListings\([\s\S]*snapshot\.token,[\s\S]*config\.tokenId,[\s\S]*fresh,[\s\S]*\)/.test(
-      refreshInfinityBlock,
+    /tokenStateWithCurrentCompleteBondListings\([\s\S]*targetSnapshot\.token,[\s\S]*bondConfig\.tokenId,[\s\S]*acceptVerifiedProgress/.test(
+      loadCompleteTokenListingBookBlock,
     ) &&
-    /const snapshotWithCompleteListings = \{ \.\.\.snapshot, token: tokenState \};[\s\S]*applyInfinitySummary\(snapshotWithCompleteListings\)/.test(
-      refreshInfinityBlock,
+    /tokenStateWithCurrentCompleteMarketplaceListings\([\s\S]*targetSnapshot\.token,[\s\S]*acceptVerifiedProgress/.test(
+      loadCompleteTokenListingBookBlock,
     ) &&
-    /const listingBookComplete =\s*acceptedTokenState\.listingBookComplete === true;[\s\S]*tone: listingBookComplete \? "good" : "idle"[\s\S]*summary loaded\. Verifying the complete Core-reconciled/.test(
-      refreshInfinityBlock,
-    ) &&
-    /listingSummary=\{listingSummary\}/.test(infinityAppBlock) &&
-    (app.match(/<InfinityApp[\s\S]*?listingSummary=\{tokenSummary\}/g)?.length ??
-      0) >= 2,
+    /listingSummary=\{listingSummary\}/.test(infinityAppBlock),
 );
+
 expect(
   "Marketplace credit history keeps one canonical page during refresh",
   /const tokenMarketLogViewKey = \[[\s\S]*TOKEN_LIST_PREVIEW_COUNT,[\s\S]*\]\.join\(":"\)/.test(
