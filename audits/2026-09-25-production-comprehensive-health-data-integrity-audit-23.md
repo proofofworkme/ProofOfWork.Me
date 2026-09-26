@@ -471,3 +471,54 @@ The first local run against production returned `ok=true` at snapshot `1ebf8e50e
 - Local `npm run indexer:parity` could not run from the workstation checkout because no production database URL is present; the compact parity output must be verified from the node environment after deployment.
 
 **Status update for H23-02/H23-04/H23-05/H23-06:** logical-backup verification is now proven by a fresh Sep 26 retained dumpset; summary routes have a checked stale-versus-slow readiness monitor ready for deployment; `indexer:parity` now emits compact failure buckets in source but still needs a production-environment run after the node release.
+
+## Final production deployment and verification receipt
+
+**Execution time:** 2026-09-26 01:43-02:07 UTC.
+
+**Repository state:** the audit-remediation commits were pushed to `origin/main`:
+
+- `e6ed84e348cd856670474b0cc86922d3943a50a6` - `Finish production audit remediation`
+- `7b47a0cacfece5cade42ddd96ef2cba926cddc03` - `Fix summary route health runtime compatibility`
+
+**Node production deployment:** the node API was deployed from commit `7b47a0cacfece5cade42ddd96ef2cba926cddc03`. The successful cutover receipt is `/data/proofofwork-audit23-cutover-7b47a0cacfec-20260926T0152Z`; an earlier attempted cutover at `/data/proofofwork-audit23-cutover-7b47a0cacfec-20260926T0148Z` rolled back before activation because the staged checkout had a root-owned `.git/index`.
+
+**Node release-health proof:** `sudo /opt/proofofwork-api/deploy/proofofwork-node-release-health.sh` passed with live commit `7b47a0cacfece5cade42ddd96ef2cba926cddc03`, live tree `d4bd2c0540f45ac768086cee10060b08fd672e2c`, runtime SHA-256 `2a8344dbd2ca0ca29396b8b562164c2fc37a9710d1af011595693b5161397b3f`, `archives=4`, `verified=4`, `unverified=0`, `legacy_absolute=0`, `provenance=4`, `current_provenance=1`, and `opt_checkouts=3`. The non-sudo run cannot see `/data/proofofwork-release-backups/managed` and reports a false archive failure.
+
+**Production services:** `proofofwork-api`, `proofofwork-indexer-worker`, `proofofwork-summary-route-health.timer`, `proofofwork-postgres-logical-backup.timer`, `proofofwork-api-wg.socket`, and `proofofwork-api-wg.service` were all active at the final service check.
+
+**UI retention:** `proofofwork-ui-release-prune.service` remains an apply-mode oneshot and completed successfully after deployment. The latest journal receipt at `2026-09-26 01:43:53 UTC` recorded `release_retention mode=apply verified_archives=2 unverified_archives=0`.
+
+**Logical backup:** `proofofwork-postgres-logical-backup.service` last completed successfully at `2026-09-26 01:31:17 UTC`, triggered by the active timer. The retained verified dumpset is still the Sep 26 proof run documented above.
+
+**Summary-route cache proof:** immediate repeated production reads returned HTTP 200 with response-cache behavior enabled:
+
+| Route | First read | Second read |
+| --- | --- | --- |
+| `/api/v1/work-summary?network=livenet&compact=1` | `X-PoW-Cache: MISS` | `X-PoW-Cache: HIT` |
+| `/api/v1/marketplace-summary?network=livenet&compact=1` | `X-PoW-Cache: MISS` | `X-PoW-Cache: HIT` |
+
+**Production health gates after deploy:**
+
+- `npm run check:production-observability` passed at `2026-09-26T02:06:55.484Z` with `alertCount=0`.
+- `npm run check:summary-route-readiness` passed at `2026-09-26T02:07:02.844Z`, snapshot `40f199db530429b35a8e953a`, height `968620`, hash `00000000000000000001b325cb2bddc9b2a2a7012405c3d6cb60f28398be9228`, `activeInvariantFailures=0`, and `staleReadiness=0`. The only warning was slow-but-correct `work-summary` latency at `5066ms`; `marketplace-summary` was `1505ms`.
+- WORK AMO V8 readiness matched across health, `work-summary`, and `marketplace-summary` at the same checkpoint. Declaration txid `f90e1faf572ef8253ca5959731b9d9e99c74bced4397380059878936712bee7a` remained `evidenceComplete=true`, `coreVerified=true`, `indexVerified=true`, and `configuredPinsMatch=true`.
+
+**Current production `indexer:parity` result:** after rerunning with the deployed proof-index runtime flags and internal verifier token sourced without printing secrets, `indexer:parity` still exits 1 at snapshot `40f199db530429b35a8e953a`, height `968620`. The compact failure summary now separates known historical V5 warnings from active projection invariants:
+
+- Active invariant failures: 2.
+- Known historical WORK AMO V5 warnings: 2 (`work-amo-v5-migration` with `migration-not-complete`, and `work-amo-v5-usd-quote-head` with no quote head).
+- Other warnings: 0.
+
+Active projection gaps:
+
+| Failure | Details |
+| --- | --- |
+| `confirmed-transactions-have-canonical-block-proof` | 4 confirmed transaction rows have canonical block height/hash/time and join a canonical block, but their `raw_tx.canonicalBlockScan` marker is absent. Txids: `4c079144b315ca08a846e7e7af3d37f5c96419a94f06af8384dc73e1ca307359`, `939366d09f6af994dae3a5b848c490fdd7524c95e3e6db30d55e585df0a4d76c`, `4ca4fa5b03f871ee90863cf283696c692db7287ef672f8d815bc0ecf9695f212`, `8601e0b83423e9f51aeb128b7d401d211828df9c623db7e55b5eb6b6332df9cf`. |
+| `rendered-event-reference-semantic-parity` | Event `4256606`, txid `ebe60fd108e8830b4741101e6525081387dcf328e81c12fa2b533de0bdbf0d3e`, confirmed invalid token event at height `968125`, has token-id ref `3cb25745f937f2b4e5508e5400189fe8fe679cd8e84bfa1e9176d70c9761f15d` but is missing rendered ticker ref `INCB`. |
+
+Read-only diagnostics found that the token-state tables are populated and current under the deployed runtime environment: 238 credit definitions, 425 credit balances, 1,210 credit listings, 25,348 `pwt1` events, current token payload source `proof-indexer-token-state-tables`, indexedThroughBlock `968620`, 238 tokens, 916 active listings, 208 closed listings, and 86 sales. WORK AMO V8 migration readiness was `ready=true`, `active=true`, `parityReady=true`, `pendingReady=true`, `replayReady=true`, and `exactTipReady=true` at the same tip.
+
+**Approval boundary:** no production database row was repaired during this final pass. The remaining parity failures are derived proof-index projection gaps, not observed canonical-chain corruption, but closing them requires explicit approval for a bounded production database repair that mutates only the four transaction `canonicalBlockScan` markers and the one missing `INCB` event ref after first-party Core verification.
+
+**Status update for the recommended follow-up list:** items 1, 2, 3, 4, 5, 6, and 7 are implemented, deployed, committed, pushed, and production-verified as far as possible without mutating derived production index rows. The only remaining non-green gate is full `indexer:parity`, blocked on the bounded derived-index repair approval described above.
