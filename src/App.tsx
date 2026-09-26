@@ -6,6 +6,8 @@ import {
   FormEvent,
   MouseEvent,
   ReactNode,
+  lazy,
+  Suspense,
   useCallback,
   useEffect,
   useMemo,
@@ -221,9 +223,6 @@ import {
   tokenRouteTarget,
   tokenUsd,
 } from "./functions";
-import BoostRoot from "./features/boost/BoostRoot";
-import BoostGrowthDetails from "./features/growth/BoostGrowthDetails";
-import GrowthModelDetails from "./features/growth/GrowthModelDetails";
 import {
   normalizeBoostGrowth,
   type BoostGrowthObservation,
@@ -248,6 +247,14 @@ import {
   type BoostFeedPayload,
   type BoostMarketplaceListing,
 } from "./features/boost/boostProtocol";
+
+const BoostRoot = lazy(() => import("./features/boost/BoostRoot"));
+const BoostGrowthDetails = lazy(
+  () => import("./features/growth/BoostGrowthDetails"),
+);
+const GrowthModelDetails = lazy(
+  () => import("./features/growth/GrowthModelDetails"),
+);
 
 bitcoin.initEccLib(ecc);
 
@@ -277,7 +284,7 @@ type TokenAction =
   | "transfer";
 const INITIAL_COMPUTER_STATUS: WorkspaceStatus = {
   tone: "idle",
-  text: "ProofOfWork Computer verifying canonical data. Connect UniSat to load account data.",
+  text: "ProofOfWork Computer verifying public data. Connect UniSat for account balances and spendable proofs.",
 };
 
 function txStatusLink(txid: string, network: BitcoinNetwork) {
@@ -1237,7 +1244,12 @@ type RegistryReadStatus =
   | "unavailable"
   | "last-verified";
 type RegistryReadState = {
+  indexedAt?: string;
+  indexedThroughBlock?: number;
+  indexedThroughBlockHash?: string;
   network: BitcoinNetwork;
+  pendingEventCount?: number;
+  summaryOnly?: boolean;
   status: RegistryReadStatus;
 };
 
@@ -1602,9 +1614,23 @@ type ChainedMintBuildResult = {
 type PowRegistryApiResponse = {
   summaryOnly?: boolean;
   collectionHasMore?: { listings?: boolean };
-  totalCounts?: { listings?: number | null };
-  activity?: PowActivityItem[];
   indexedAt?: string;
+  indexedThroughBlock?: number;
+  indexedThroughBlockHash?: string;
+  network?: BitcoinNetwork;
+  registryAddress?: string;
+  source?: string;
+  stats?: {
+    confirmed?: number;
+    pendingChanges?: number;
+    pendingRecords?: number;
+    total?: number;
+  };
+  totalCounts?: {
+    listings?: number | null;
+    pendingEvents?: number | null;
+  };
+  activity?: PowActivityItem[];
   listings?: PowIdListing[];
   pendingEvents?: PowIdPendingEvent[];
   record?: PowIdRecord | null;
@@ -1620,6 +1646,13 @@ type PowRegistryState = {
   pendingEvents: PowIdPendingEvent[];
   records: PowIdRecord[];
   sales: PowIdMarketplaceSale[];
+  verifiedOverview?: {
+    indexedAt: string;
+    indexedThroughBlock: number;
+    indexedThroughBlockHash: string;
+    pendingEventCount: number;
+    totalRecords: number;
+  };
 };
 
 type PowTokenApiResponse = Partial<PowTokenState> & {
@@ -15628,14 +15661,63 @@ async function fetchIdRegistryState(
       "The ID registry response did not include a verified record collection.",
     );
   }
+  const records = Array.isArray(payload.records) ? payload.records : [];
+  let verifiedOverview: PowRegistryState["verifiedOverview"];
+  if (summary) {
+    const totalRecords = Number(payload.stats?.total);
+    const confirmedRecords = Number(payload.stats?.confirmed);
+    const pendingRecords = Number(payload.stats?.pendingRecords);
+    const pendingEventCount = Number(
+      payload.totalCounts?.pendingEvents ?? payload.stats?.pendingChanges,
+    );
+    const indexedThroughBlock = Number(payload.indexedThroughBlock);
+    const indexedThroughBlockHash = String(
+      payload.indexedThroughBlockHash ?? "",
+    ).trim().toLowerCase();
+    const indexedAt = String(payload.indexedAt ?? "").trim();
+    const actualConfirmedRecords = records.filter(
+      (record) => record.confirmed,
+    ).length;
+    if (
+      payload.network !== targetNetwork ||
+      String(payload.registryAddress ?? "").trim().toLowerCase() !==
+        registryAddress.toLowerCase() ||
+      !String(payload.source ?? "").trim() ||
+      !indexedAt ||
+      !Number.isFinite(Date.parse(indexedAt)) ||
+      !Number.isSafeInteger(indexedThroughBlock) ||
+      indexedThroughBlock < 1 ||
+      !/^[0-9a-f]{64}$/u.test(indexedThroughBlockHash) ||
+      !Number.isSafeInteger(totalRecords) ||
+      totalRecords !== records.length ||
+      !Number.isSafeInteger(confirmedRecords) ||
+      confirmedRecords !== actualConfirmedRecords ||
+      !Number.isSafeInteger(pendingRecords) ||
+      pendingRecords !== totalRecords - actualConfirmedRecords ||
+      !Number.isSafeInteger(pendingEventCount) ||
+      pendingEventCount < 0
+    ) {
+      throw new Error(
+        "The ID registry summary did not include a complete hash-bound record snapshot.",
+      );
+    }
+    verifiedOverview = {
+      indexedAt,
+      indexedThroughBlock,
+      indexedThroughBlockHash,
+      pendingEventCount,
+      totalRecords,
+    };
+  }
   return {
     activity: Array.isArray(payload.activity) ? payload.activity : [],
     listings: Array.isArray(payload.listings) ? payload.listings : [],
     pendingEvents: Array.isArray(payload.pendingEvents)
       ? payload.pendingEvents
       : [],
-    records: Array.isArray(payload.records) ? payload.records : [],
+    records,
     sales: Array.isArray(payload.sales) ? payload.sales : [],
+    ...(verifiedOverview ? { verifiedOverview } : {}),
   };
 }
 
@@ -16866,11 +16948,16 @@ type CompleteTokenListingHistory = {
   totalCount: number;
 };
 
+type TokenListingHistoryProgress = CompleteTokenListingHistory & {
+  complete: boolean;
+};
+
 async function fetchCompleteTokenListings(
   targetNetwork: BitcoinNetwork,
   options: {
     address?: string;
     fresh?: boolean;
+    onVerifiedPage?: (progress: TokenListingHistoryProgress) => void;
     tokenScope?: string;
   } = {},
 ): Promise<CompleteTokenListingHistory> {
@@ -17066,7 +17153,7 @@ async function fetchCompleteTokenListings(
           `The complete credit listing book returned ${listings.length} of ${expectedTotalCount} listings.`,
         );
       }
-      return {
+      const completeHistory = {
         indexedAt: expectedIndexedAt,
         indexedThroughBlock: expectedIndexedThroughBlock,
         indexedThroughBlockHash: expectedIndexedThroughBlockHash,
@@ -17074,11 +17161,22 @@ async function fetchCompleteTokenListings(
         snapshotId: expectedSnapshotId,
         totalCount: expectedTotalCount,
       };
+      options.onVerifiedPage?.({ ...completeHistory, complete: true });
+      return completeHistory;
     }
     if (seenCursors.has(nextCursor)) {
       throw new Error("The complete credit listing cursor repeated.");
     }
     seenCursors.add(nextCursor);
+    options.onVerifiedPage?.({
+      indexedAt: expectedIndexedAt,
+      indexedThroughBlock: expectedIndexedThroughBlock,
+      indexedThroughBlockHash: expectedIndexedThroughBlockHash,
+      items: [...listings],
+      snapshotId: expectedSnapshotId,
+      totalCount: expectedTotalCount,
+      complete: false,
+    });
     cursor = nextCursor;
   }
 
@@ -17089,7 +17187,11 @@ function completeTokenListingHistoryMatchesState(
   history: CompleteTokenListingHistory,
   state: PowTokenState,
 ) {
-  return completeTokenListingHistoryMatchesCheckpoint(history, state);
+  return (
+    typeof state.indexedAt === "string" &&
+    state.indexedAt === history.indexedAt &&
+    completeTokenListingHistoryMatchesCheckpoint(history, state)
+  );
 }
 
 function completeTokenListingHistoryMatchesCheckpoint(
@@ -17137,6 +17239,40 @@ function tokenStateWithCompleteTokenListings(
     totalCounts: {
       ...(state.totalCounts ?? {}),
       listings: history.totalCount,
+    },
+  };
+}
+
+function tokenStateWithTokenListingHistoryProgress(
+  state: PowTokenState,
+  listings: PowTokenListing[],
+  totalCount: number,
+  complete: boolean,
+) {
+  const localUnconfirmed = state.listings.filter(
+    (listing) =>
+      listing.confirmed === false && tokenListingShouldSurviveRefresh(listing),
+  );
+  const visibleListings = activeTokenListingsExcludingClosed(
+    mergeTokenListingGroups(
+      applyPendingTokenListingSeals(listings),
+      localUnconfirmed,
+    ),
+    state.closedListings,
+  );
+  const collectionHasMore = {
+    ...(state.collectionHasMore ?? {}),
+    listings: !complete,
+  };
+  return {
+    ...state,
+    collectionHasMore,
+    hasMore: Object.values(collectionHasMore).some(Boolean),
+    listingBookComplete: complete,
+    listings: visibleListings,
+    totalCounts: {
+      ...(state.totalCounts ?? {}),
+      listings: totalCount,
     },
   };
 }
@@ -21122,6 +21258,10 @@ export default function App() {
   const [tokenDataLoadedScopeKey, setTokenDataLoadedScopeKey] = useState("");
   const [tokenDataError, setTokenDataError] = useState("");
   const [marketplaceDataLoading, setMarketplaceDataLoading] = useState(false);
+  const [completeListingBookLoading, setCompleteListingBookLoading] =
+    useState(false);
+  const [completeListingBookError, setCompleteListingBookError] =
+    useState("");
   const [marketplaceSummaryReadState, setMarketplaceSummaryReadState] =
     useState<MarketplaceSummaryReadState>({
       message:
@@ -21666,6 +21806,7 @@ export default function App() {
     useRef<CompleteTokenListingHistory | undefined>();
   const completeMarketplaceListingHistoryInFlightRef =
     useRef<Promise<CompleteTokenListingHistory> | null>(null);
+  const completeListingBookLoadInFlightRef = useRef<Promise<void> | null>(null);
   const infinityRefreshInFlightRef =
     useRef<Promise<InfinitySummarySnapshot | undefined> | null>(null);
   const infinityRefreshInFlightFreshRef = useRef(false);
@@ -21910,25 +22051,29 @@ export default function App() {
   async function currentCompleteGlobalTokenListings(
     state: PowTokenState,
     fresh = false,
+    onVerifiedPage?: (progress: TokenListingHistoryProgress) => void,
   ) {
     const retained = completeMarketplaceListingHistoryRef.current;
     if (
       retained &&
-      completeTokenListingHistoryMatchesCheckpoint(retained, state)
+      completeTokenListingHistoryMatchesState(retained, state)
     ) {
       return retained;
     }
 
     let request = completeMarketplaceListingHistoryInFlightRef.current;
     if (!request) {
-      request = fetchCompleteTokenListings("livenet", { fresh });
+      request = fetchCompleteTokenListings("livenet", {
+        fresh,
+        onVerifiedPage,
+      });
       completeMarketplaceListingHistoryInFlightRef.current = request;
     }
     try {
       const history = await request;
-      if (!completeTokenListingHistoryMatchesCheckpoint(history, state)) {
+      if (!completeTokenListingHistoryMatchesState(history, state)) {
         throw new Error(
-          "The complete sale-ticket book is awaiting the summary checkpoint.",
+          "The complete sale-ticket book is awaiting the exact indexed summary snapshot.",
         );
       }
       completeMarketplaceListingHistoryRef.current = history;
@@ -21943,8 +22088,13 @@ export default function App() {
   async function tokenStateWithCurrentCompleteMarketplaceListings(
     state: PowTokenState,
     fresh = false,
+    onVerifiedPage?: (progress: TokenListingHistoryProgress) => void,
   ) {
-    const history = await currentCompleteGlobalTokenListings(state, fresh);
+    const history = await currentCompleteGlobalTokenListings(
+      state,
+      fresh,
+      onVerifiedPage,
+    );
     if (!completeTokenListingHistoryMatchesState(history, state)) {
       throw new Error(
         "The complete credit listing book does not match the AMO summary checkpoint.",
@@ -21953,16 +22103,15 @@ export default function App() {
     return tokenStateWithCompleteTokenListings(state, history);
   }
 
-  async function tokenStateWithCurrentCompleteBondListings(
+  function tokenStateWithCompleteTokenBondListings(
     state: PowTokenState,
     tokenScope: string,
-    fresh = false,
+    globalHistory: CompleteTokenListingHistory,
   ) {
     const scope = tokenScope.trim().toLowerCase();
     if (!/^[0-9a-f]{64}$/u.test(scope)) {
       throw new Error("The complete bond listing scope is invalid.");
     }
-    const globalHistory = await currentCompleteGlobalTokenListings(state, fresh);
     const items = globalHistory.items.filter(
       (listing) => listing.tokenId === scope,
     );
@@ -21973,10 +22122,253 @@ export default function App() {
     };
     if (!completeTokenListingHistoryMatchesState(history, state)) {
       throw new Error(
-        "The complete bond listing book does not match its summary checkpoint.",
+        "The complete bond listing book does not match its exact indexed summary snapshot.",
       );
     }
     return tokenStateWithCompleteTokenListings(state, history);
+  }
+
+  async function tokenStateWithCurrentCompleteBondListings(
+    state: PowTokenState,
+    tokenScope: string,
+    fresh = false,
+    onVerifiedPage?: (progress: TokenListingHistoryProgress) => void,
+  ) {
+    const globalHistory = await currentCompleteGlobalTokenListings(
+      state,
+      fresh,
+      onVerifiedPage,
+    );
+    return tokenStateWithCompleteTokenBondListings(
+      state,
+      tokenScope,
+      globalHistory,
+    );
+  }
+
+  async function loadCompleteTokenListingBook(tokenScope = "") {
+    const inFlight = completeListingBookLoadInFlightRef.current;
+    if (inFlight) {
+      await inFlight;
+      return;
+    }
+
+    const normalizedScope = tokenScope.trim().toLowerCase();
+    const bondConfig = normalizedScope
+      ? [INFINITY_BOND_UI, INCEPTION_BOND_UI].find(
+          (config) => config.tokenId === normalizedScope,
+        )
+      : undefined;
+    if (normalizedScope && !bondConfig) {
+      setCompleteListingBookError(
+        "The requested bond listing scope is not recognized.",
+      );
+      return;
+    }
+
+    let targetSnapshot = bondConfig
+      ? acceptedBondSummariesRef.current.get(bondConfig.tokenId)
+      : acceptedMarketplaceSnapshotRef.current;
+    if (!targetSnapshot && bondConfig) {
+      await refreshInfinity(true, false, bondConfig);
+      targetSnapshot = acceptedBondSummariesRef.current.get(
+        bondConfig.tokenId,
+      );
+    }
+    if (!targetSnapshot) {
+      setCompleteListingBookError(
+        "Refresh a verified market summary before loading complete sale-ticket history.",
+      );
+      return;
+    }
+    if (targetSnapshot.token.listingBookComplete === true) {
+      setCompleteListingBookError("");
+      return;
+    }
+
+    setCompleteListingBookLoading(true);
+    setCompleteListingBookError("");
+    const requestWorkspaceKey = activeWorkspaceStatusKeyRef.current;
+    const sameAcceptedSnapshot = (
+      currentSnapshot:
+        | MarketplaceSummarySnapshot
+        | InfinitySummarySnapshot
+        | undefined,
+    ) =>
+      Boolean(
+        currentSnapshot &&
+          currentSnapshot.indexedAt === targetSnapshot.indexedAt &&
+          currentSnapshot.token.indexedThroughBlock ===
+            targetSnapshot.token.indexedThroughBlock &&
+          currentSnapshot.token.indexedThroughBlockHash ===
+            targetSnapshot.token.indexedThroughBlockHash,
+      );
+    const acceptVerifiedProgress = (
+      progress: TokenListingHistoryProgress,
+    ) => {
+      const currentSnapshot = bondConfig
+        ? acceptedBondSummariesRef.current.get(bondConfig.tokenId)
+        : acceptedMarketplaceSnapshotRef.current;
+      if (
+        !completeTokenListingHistoryMatchesState(
+          progress,
+          targetSnapshot.token,
+        ) ||
+        !sameAcceptedSnapshot(currentSnapshot)
+      ) {
+        return;
+      }
+      const visibleListings = bondConfig
+        ? progress.items.filter(
+            (listing) => listing.tokenId === bondConfig.tokenId,
+          )
+        : progress.items;
+      const declaredCount = Number(targetSnapshot.token.totalCounts?.listings);
+      const listingCount = Number.isSafeInteger(declaredCount)
+        ? declaredCount
+        : progress.complete
+          ? visibleListings.length
+          : Math.max(visibleListings.length, progress.totalCount);
+      const scopeKey = tokenStateScopeKey({
+        network: "livenet",
+        tokenScope: bondConfig?.tokenId ?? "",
+        walletScoped: false,
+      });
+      const progressState = tokenStateWithTokenListingHistoryProgress(
+        targetSnapshot.token,
+        visibleListings,
+        listingCount,
+        progress.complete,
+      );
+      const acceptedTokenState = applyTokenState(progressState, { scopeKey });
+      if (bondConfig) {
+        const currentBondSnapshot =
+          acceptedBondSummariesRef.current.get(bondConfig.tokenId);
+        if (!currentBondSnapshot) {
+          return;
+        }
+        const acceptedProgressSnapshot = {
+          ...currentBondSnapshot,
+          token: acceptedTokenState,
+        };
+        acceptedBondSummariesRef.current.set(
+          bondConfig.tokenId,
+          acceptedProgressSnapshot,
+        );
+        setInfinitySummary(acceptedProgressSnapshot);
+      } else {
+        const currentMarketplaceSnapshot =
+          acceptedMarketplaceSnapshotRef.current;
+        if (!currentMarketplaceSnapshot) {
+          return;
+        }
+        acceptedMarketplaceSnapshotRef.current = {
+          ...currentMarketplaceSnapshot,
+          token: acceptedTokenState,
+        };
+      }
+    };
+    const promise = (async () => {
+      try {
+        const completeTokenState = bondConfig
+          ? await tokenStateWithCurrentCompleteBondListings(
+              targetSnapshot.token,
+              bondConfig.tokenId,
+              false,
+              acceptVerifiedProgress,
+            )
+          : await tokenStateWithCurrentCompleteMarketplaceListings(
+              targetSnapshot.token,
+              false,
+              acceptVerifiedProgress,
+            );
+        const scopeKey = tokenStateScopeKey({
+          network: "livenet",
+          tokenScope: bondConfig?.tokenId ?? "",
+          walletScoped: false,
+        });
+        let acceptedTokenState: PowTokenState;
+        if (bondConfig) {
+          const currentBondSnapshot =
+            acceptedBondSummariesRef.current.get(bondConfig.tokenId);
+          if (
+            !currentBondSnapshot ||
+            !sameAcceptedSnapshot(currentBondSnapshot)
+          ) {
+            throw new Error(
+              "The verified summary changed while history loaded. Refresh the summary and try again.",
+            );
+          }
+          acceptedTokenState = applyTokenState(completeTokenState, {
+            scopeKey,
+          });
+          const acceptedBondSnapshot = {
+            ...currentBondSnapshot,
+            token: acceptedTokenState,
+          };
+          acceptedBondSummariesRef.current.set(
+            bondConfig.tokenId,
+            acceptedBondSnapshot,
+          );
+          setInfinitySummary(acceptedBondSnapshot);
+        } else {
+          const currentMarketplaceSnapshot =
+            acceptedMarketplaceSnapshotRef.current;
+          if (
+            !currentMarketplaceSnapshot ||
+            !sameAcceptedSnapshot(currentMarketplaceSnapshot)
+          ) {
+            throw new Error(
+              "The verified summary changed while history loaded. Refresh the summary and try again.",
+            );
+          }
+          acceptedTokenState = applyTokenState(completeTokenState, {
+            scopeKey,
+          });
+          acceptedMarketplaceSnapshotRef.current = {
+            ...currentMarketplaceSnapshot,
+            token: acceptedTokenState,
+          };
+          setMarketplaceSummaryReadState({
+            indexedAt: currentMarketplaceSnapshot.indexedAt,
+            message:
+              "Registry, credit, complete Core-reconciled sale-ticket history, and WORK state agree at the same verified checkpoint.",
+            status: "ready",
+          });
+        }
+        setTokenMarketHistoryRefreshNonce((current) => current + 1);
+        if (activeWorkspaceStatusKeyRef.current === requestWorkspaceKey) {
+          setStatusForWorkspace(requestWorkspaceKey, {
+            tone: "good",
+            text: `Complete Core-reconciled sale-ticket history loaded at block ${Number(acceptedTokenState.indexedThroughBlock).toLocaleString()}.`,
+          });
+        }
+      } catch (error) {
+        const message = errorMessage(
+          error,
+          "Complete sale-ticket history could not be verified.",
+        );
+        setCompleteListingBookError(
+          `The verified preview remains visible. ${message}`,
+        );
+        if (activeWorkspaceStatusKeyRef.current === requestWorkspaceKey) {
+          setStatusForWorkspace(requestWorkspaceKey, {
+            tone: "idle",
+            text: "The verified market preview remains available; complete sale-ticket history could not be verified.",
+          });
+        }
+      } finally {
+        setCompleteListingBookLoading(false);
+      }
+    })();
+    completeListingBookLoadInFlightRef.current = promise;
+    try {
+      await promise;
+    } finally {
+      if (completeListingBookLoadInFlightRef.current === promise) {
+        completeListingBookLoadInFlightRef.current = null;
+      }
+    }
   }
 
   function applyWorkFloorQuote(quote: WorkFloorQuote | undefined) {
@@ -22720,10 +23112,16 @@ export default function App() {
     [registryDisplayRecords],
   );
   const pendingIdCount = registryDisplayRecords.length - confirmedIdCount;
-  const pendingIdEventCount = useMemo(
-    () => idPendingEvents.filter((event) => event.network === network).length,
-    [idPendingEvents, network],
-  );
+  const pendingIdEventCount = useMemo(() => {
+    if (
+      registryReadState.network === network &&
+      registryReadState.summaryOnly &&
+      Number.isSafeInteger(registryReadState.pendingEventCount)
+    ) {
+      return registryReadState.pendingEventCount ?? 0;
+    }
+    return idPendingEvents.filter((event) => event.network === network).length;
+  }, [idPendingEvents, network, registryReadState]);
   const walletPendingIdEvents = useMemo(
     () =>
       idPendingEvents.filter(
@@ -25239,25 +25637,50 @@ export default function App() {
         return;
       }
 
+      const historyTarget = activityHistoryRefreshTarget();
+      const searchGeneration = activitySearchGenerationRef.current;
       void (async () => {
         await loadLogHead(true, fresh);
-        if (cancelled) {
+        if (
+          cancelled ||
+          searchGeneration !== activitySearchGenerationRef.current
+        ) {
           return;
         }
 
-        const currentPageIndex = activityHistoryPageRef.current?.page ?? 0;
-        await loadLogHistoryPage(currentPageIndex, true);
-        const currentProfile = activityProfileRef.current;
-        if (!cancelled && currentProfile && currentProfile.query === activityQueryRef.current) {
-          void loadActivityTarget(currentProfile.query);
+        if (historyTarget) {
+          await loadLogHistoryPage(
+            historyTarget.pageIndex,
+            true,
+            historyTarget.query,
+          );
+          const currentProfile = activityProfileRef.current;
+          if (
+            !cancelled &&
+            searchGeneration === activitySearchGenerationRef.current &&
+            currentProfile &&
+            currentProfile.query === activityQueryRef.current
+          ) {
+            void loadActivityTarget(currentProfile.query);
+          }
         }
 
         if (fresh) {
           window.clearTimeout(settleTimer);
           settleTimer = window.setTimeout(() => {
-            if (!cancelled && document.visibilityState === "visible") {
+            if (
+              !cancelled &&
+              document.visibilityState === "visible" &&
+              searchGeneration === activitySearchGenerationRef.current
+            ) {
               void loadLogHead(true, false);
-              void loadLogHistoryPage(currentPageIndex, true);
+              if (historyTarget) {
+                void loadLogHistoryPage(
+                  historyTarget.pageIndex,
+                  true,
+                  historyTarget.query,
+                );
+              }
             }
           }, BACKGROUND_FRESH_REFRESH_DELAY_MS);
         }
@@ -25461,6 +25884,47 @@ export default function App() {
       window.removeEventListener("focus", refreshGrowthMetrics);
     };
   }, [growthMode, network, registryAddress]);
+
+  useEffect(() => {
+    if (
+      landingMode ||
+      idLaunchMode ||
+      desktopRoute ||
+      browserRoute ||
+      marketplaceMode ||
+      tokenMode ||
+      walletMode ||
+      workTokenMode ||
+      activityMode ||
+      infinityMode ||
+      inceptionMode ||
+      growthMode ||
+      activeFolder !== "inbox" ||
+      !registryAddress
+    ) {
+      return;
+    }
+
+    // The Computer sidebar needs only the compact, complete registry overview.
+    // It stays independent of wallet connection and does not load token history.
+    void refreshIds(true, false);
+  }, [
+    activeFolder,
+    activityMode,
+    browserRoute,
+    desktopRoute,
+    growthMode,
+    idLaunchMode,
+    inceptionMode,
+    infinityMode,
+    landingMode,
+    marketplaceMode,
+    network,
+    registryAddress,
+    tokenMode,
+    walletMode,
+    workTokenMode,
+  ]);
 
   useEffect(() => {
     if (!landingMode) {
@@ -26764,9 +27228,42 @@ export default function App() {
     }
   }
 
+  function activityHistoryRefreshTarget():
+    | { pageIndex: number; query: string }
+    | undefined {
+    const input = activityQueryRef.current.trim().toLowerCase();
+    const profile = activityProfileRef.current;
+    const page = activityHistoryPageRef.current;
+    if (profile?.query.trim().toLowerCase() === input) {
+      return {
+        pageIndex: page?.page ?? 0,
+        query: profile.address,
+      };
+    }
+    const pageQuery = String(page?.query ?? "").trim();
+    if (page && pageQuery.toLowerCase() === input) {
+      return { pageIndex: page.page ?? 0, query: pageQuery };
+    }
+    if (!page && !input) {
+      return { pageIndex: 0, query: "" };
+    }
+    return undefined;
+  }
+
   async function refreshLogSurface(silent = true, fresh = false) {
+    const historyTarget = activityHistoryRefreshTarget();
+    const searchGeneration = activitySearchGenerationRef.current;
     const head = await loadLogHead(silent, fresh);
-    await loadLogHistoryPage(0, true);
+    if (searchGeneration !== activitySearchGenerationRef.current) {
+      return head;
+    }
+    if (historyTarget) {
+      await loadLogHistoryPage(
+        historyTarget.pageIndex,
+        true,
+        historyTarget.query,
+      );
+    }
     return head;
   }
 
@@ -27061,27 +27558,23 @@ export default function App() {
           fetchMarketplaceSummary(fresh),
           fetchBtcUsdPrice(fresh).catch(() => undefined),
         ]);
-        const completeTokenStatePromise =
-          tokenStateWithCurrentCompleteMarketplaceListings(
+        // The coherent root summary is sufficient for initial rendering. The
+        // full Core-reconciled listing book is fetched only after an explicit
+        // request from the market surface. Keep that verified book only while
+        // both its canonical tip and indexed snapshot still match.
+        const retainedListingHistory =
+          completeMarketplaceListingHistoryRef.current;
+        const completeTokenState =
+          retainedListingHistory &&
+          completeTokenListingHistoryMatchesState(
+            retainedListingHistory,
             snapshot.token,
-            fresh,
-          ).then(
-            (state) => state,
-            (error) => {
-              console.error(
-                `Complete AMO listing hydration deferred: ${errorMessage(
-                  error,
-                  "checkpoint unavailable",
-                )}`,
-              );
-              return undefined;
-            },
-          );
-        // The coherent root summary contains verified aggregates and an
-        // explicitly incomplete listing preview. Accept it immediately; the
-        // complete, Core-reconciled history is applied below only if this
-        // exact indexed snapshot is still current.
-        const completeTokenState = snapshot.token;
+          )
+            ? tokenStateWithCompleteTokenListings(
+                snapshot.token,
+                retainedListingHistory,
+              )
+            : snapshot.token;
         const marketplaceTokenScopeKey = tokenStateScopeKey({
           network: "livenet",
           tokenScope: "",
@@ -27188,8 +27681,8 @@ export default function App() {
             message: retainsIndexedSnapshot
               ? current.message
               : acceptedTokenState.listingBookComplete === true
-                ? "Registry, credit, listing, sale, and WORK state agree in one verified snapshot."
-                : "Registry, credit counts, and WORK state agree in one verified snapshot. Listing rows are a verified preview while the complete checkpoint-bound Core-reconciled sale-ticket book loads.",
+                ? "Registry, credit, complete Core-reconciled sale-ticket history, and WORK state agree at the same verified checkpoint."
+                : "Registry, credit counts, and WORK state agree in one verified snapshot. Listing rows are a verified preview. Load the complete checkpoint-bound Core-reconciled sale-ticket book when you need full search or inventory.",
             status: retainsIndexedSnapshot ? "last-verified" : "ready",
           };
         });
@@ -27208,77 +27701,9 @@ export default function App() {
               state: acceptedTokenState,
               tokenScope: currentTokenMarketplaceStatusScope(),
               workFloorQuote: acceptedWorkFloor,
-            })}${acceptedTokenState.listingBookComplete === true ? "" : " Listing rows are a verified preview while full Core-reconciled sale-ticket history loads."}`,
+            })}${acceptedTokenState.listingBookComplete === true ? "" : " Listing rows are a verified preview; complete Core-reconciled sale-ticket history is available on request."}`,
           });
         }
-        void completeTokenStatePromise
-          .then((hydratedTokenState) => {
-            if (!hydratedTokenState) {
-              return;
-            }
-            const currentSnapshot = acceptedMarketplaceSnapshotRef.current;
-            if (
-              !currentSnapshot ||
-              currentSnapshot.indexedAt !== acceptedSnapshot.indexedAt ||
-              currentSnapshot.token.indexedThroughBlock !==
-                acceptedSnapshot.token.indexedThroughBlock ||
-              currentSnapshot.token.indexedThroughBlockHash !==
-                acceptedSnapshot.token.indexedThroughBlockHash
-            ) {
-              return;
-            }
-
-            const hydratedAcceptedTokenState = applyTokenState(
-              hydratedTokenState,
-              { scopeKey: marketplaceTokenScopeKey },
-            );
-            const latestSnapshot = acceptedMarketplaceSnapshotRef.current;
-            if (
-              !latestSnapshot ||
-              latestSnapshot.indexedAt !== acceptedSnapshot.indexedAt ||
-              latestSnapshot.token.indexedThroughBlock !==
-                acceptedSnapshot.token.indexedThroughBlock ||
-              latestSnapshot.token.indexedThroughBlockHash !==
-                acceptedSnapshot.token.indexedThroughBlockHash
-            ) {
-              return;
-            }
-
-            acceptedMarketplaceSnapshotRef.current = {
-              ...latestSnapshot,
-              token: hydratedAcceptedTokenState,
-            };
-            setTokenMarketHistoryRefreshNonce((current) => current + 1);
-            setMarketplaceSummaryReadState((current) =>
-              current.status === "ready" &&
-              current.indexedAt === acceptedSnapshot.indexedAt
-                ? {
-                    ...current,
-                    message:
-                      "Registry, credit, complete Core-reconciled listing and sale history, and WORK state agree at the same verified checkpoint.",
-                  }
-                : current,
-            );
-            if (!silent && requestIsActive()) {
-              setStatusForWorkspace(requestWorkspaceKey, {
-                tone: "good",
-                text: tokenMarketplaceStatusText({
-                  network: "livenet",
-                  state: hydratedAcceptedTokenState,
-                  tokenScope: currentTokenMarketplaceStatusScope(),
-                  workFloorQuote: acceptedWorkFloor,
-                }),
-              });
-            }
-          })
-          .catch((error) => {
-            console.error(
-              `Complete AMO listing hydration deferred: ${errorMessage(
-                error,
-                "checkpoint unavailable",
-              )}`,
-            );
-          });
         return acceptedSnapshot;
       } catch (error) {
         const lastGoodSnapshot = acceptedMarketplaceSnapshotRef.current;
@@ -27408,44 +27833,47 @@ export default function App() {
           fetchBtcUsdPrice(fresh).catch(() => undefined),
         ]);
         const snapshot = await fetchBondSummary(config, fresh);
-        const summarySnapshot = applyInfinitySummary(snapshot) ?? snapshot;
-        applyTokenState(summarySnapshot.token, {
-          scopeKey: tokenStateScopeKey({
-            network: "livenet",
-            tokenScope: config.tokenId,
-            walletScoped: false,
-          }),
+        const retainedListingHistory =
+          completeMarketplaceListingHistoryRef.current;
+        const tokenWithRetainedCompleteBook =
+          retainedListingHistory &&
+          completeTokenListingHistoryMatchesState(
+            retainedListingHistory,
+            snapshot.token,
+          )
+            ? tokenStateWithCompleteTokenBondListings(
+                snapshot.token,
+                config.tokenId,
+                retainedListingHistory,
+              )
+            : snapshot.token;
+        const summaryWithRetainedCompleteBook = {
+          ...snapshot,
+          token: tokenWithRetainedCompleteBook,
+        };
+        const summarySnapshot =
+          applyInfinitySummary(summaryWithRetainedCompleteBook) ??
+          summaryWithRetainedCompleteBook;
+        const tokenScopeKey = tokenStateScopeKey({
+          network: "livenet",
+          tokenScope: config.tokenId,
+          walletScoped: false,
         });
-        const tokenState = await tokenStateWithCurrentCompleteBondListings(
-          snapshot.token,
-          config.tokenId,
-          fresh,
-        ).catch((error) => {
-          console.error(
-            `Complete ${config.ticker} listing hydration deferred: ${errorMessage(
-              error,
-              "checkpoint unavailable",
-            )}`,
-          );
-          return snapshot.token;
+        const initialTokenState = applyTokenState(summarySnapshot.token, {
+          scopeKey: tokenScopeKey,
         });
         const [registryState, btcUsdQuote] = await supplementalReads;
-        if (
-          registryState &&
-          !marketplaceWorkspaceIsCurrent()
-        ) {
+        if (registryState && !marketplaceWorkspaceIsCurrent()) {
           applyRegistryState(registryState);
         }
-        const snapshotWithCompleteListings = { ...snapshot, token: tokenState };
+        const snapshotWithSummary = {
+          ...summarySnapshot,
+          token: initialTokenState,
+        };
         const acceptedSnapshot =
-          applyInfinitySummary(snapshotWithCompleteListings) ??
-          snapshotWithCompleteListings;
+          applyInfinitySummary(snapshotWithSummary) ?? snapshotWithSummary;
         const acceptedTokenState = applyTokenState(acceptedSnapshot.token, {
-          scopeKey: tokenStateScopeKey({
-            network: "livenet",
-            tokenScope: config.tokenId,
-            walletScoped: false,
-          }),
+          scopeKey: tokenScopeKey,
         });
         if (requestIsActive()) {
           setTokenSelectedId(config.tokenId);
@@ -27468,7 +27896,7 @@ export default function App() {
             tone: listingBookComplete ? "good" : "idle",
             text: listingBookComplete
               ? `${config.displayName} loaded. ${formatExactInteger(acceptedSnapshot.stats.confirmedSupply)} ${config.ticker} confirmed from ${acceptedSnapshot.stats.confirmedBondActions.toLocaleString()} bond action${acceptedSnapshot.stats.confirmedBondActions === 1 ? "" : "s"}.`
-              : `${config.displayName} summary loaded. Verifying the complete Core-reconciled ${config.ticker} sale-ticket book before reporting bond inventory as complete.`,
+              : `${config.displayName} summary loaded. The verified ${config.ticker} preview is ready. Load complete Core-reconciled sale-ticket history when you need full search or inventory.`,
           });
         }
         return { ...acceptedSnapshot, token: acceptedTokenState };
@@ -27540,6 +27968,9 @@ export default function App() {
     const tokenScope =
       workTokenMode || activeFolder === "work" ? WORK_TOKEN_ID : "";
     const walletScoped = walletMode || activeFolder === "wallet";
+    const walletAddressConnected = Boolean(address.trim());
+    const compactDirectoryRead = !walletScoped || !walletAddressConnected;
+    const walletApiRead = walletScoped && walletAddressConnected;
     const scopeKey = tokenStateScopeKey({
       address: workSummaryRead ? "" : address,
       network,
@@ -27562,6 +27993,9 @@ export default function App() {
         )} confirmed WORK, ${holderCount.toLocaleString()} holder${holderCount === 1 ? "" : "s"}.`;
       }
       if (state.summaryOnly) {
+        if (walletScoped && !walletAddressConnected) {
+          return `Public credit directory loaded. ${state.tokens.filter((token) => !isBondTokenDefinition(token)).length.toLocaleString()} credits. Connect UniSat to verify account balances and spendable proofs.`;
+        }
         return `Credit directory loaded. ${state.tokens.filter((token) => !isBondTokenDefinition(token)).length.toLocaleString()} credits. Holder and mint history load for the selected credit.`;
       }
       return `Credit index loaded. ${state.tokens.length.toLocaleString()} credit${state.tokens.length === 1 ? "" : "s"}, ${state.mints.length.toLocaleString()} mint${state.mints.length === 1 ? "" : "s"}, ${state.transfers.length.toLocaleString()} transfer${state.transfers.length === 1 ? "" : "s"}.`;
@@ -27577,7 +28011,9 @@ export default function App() {
         setBusy(true);
         setStatus({
           tone: "idle",
-          text: "Credit index refresh already in progress...",
+          text: walletScoped && !walletAddressConnected
+            ? "Public credit directory refresh already in progress..."
+            : "Credit index refresh already in progress...",
         });
       }
       try {
@@ -27624,7 +28060,12 @@ export default function App() {
       }
       if (!silent && requestStillActive()) {
         setBusy(true);
-        setStatus({ tone: "idle", text: "Scanning credit index..." });
+        setStatus({
+          tone: "idle",
+          text: walletScoped && !walletAddressConnected
+            ? "Loading public credit directory..."
+            : "Scanning credit index...",
+        });
       }
       try {
         let state: PowTokenState;
@@ -27638,9 +28079,9 @@ export default function App() {
             network,
             fresh,
             tokenScope,
-            !walletScoped,
+            compactDirectoryRead,
             address ? [address] : [],
-            walletScoped,
+            walletApiRead,
           );
         }
         if (marketplaceWorkspaceIsCurrent()) {
@@ -27688,11 +28129,18 @@ export default function App() {
             readAttempt,
           );
         }
-        if (!silent && requestStillActive()) {
-          setStatus({
-            tone: "good",
-            text: tokenLoadStatusText(acceptedState),
-          });
+        if (
+          (!silent || (walletScoped && !walletAddressConnected)) &&
+          requestStillActive()
+        ) {
+          setStatus((currentStatus) =>
+            silent && currentStatus.tone !== "idle"
+              ? currentStatus
+              : {
+                  tone: "good",
+                  text: tokenLoadStatusText(acceptedState),
+                },
+          );
         }
         return acceptedState;
       } catch (error) {
@@ -28661,6 +29109,40 @@ export default function App() {
             network,
             status: retainedExistingSnapshot ? "last-verified" : "ready",
           });
+        } else if (state.verifiedOverview) {
+          const previousVerifiedRecords =
+            verifiedRegistrySnapshotsRef.current.get(network);
+          if (
+            !previousVerifiedRecords ||
+            state.records.length >= previousVerifiedRecords.length
+          ) {
+            verifiedRegistrySnapshotsRef.current.set(network, state.records);
+            verifiedRegistryNetworksRef.current.add(network);
+            setRegistryReadState({
+              indexedAt: state.verifiedOverview.indexedAt,
+              indexedThroughBlock: state.verifiedOverview.indexedThroughBlock,
+              indexedThroughBlockHash:
+                state.verifiedOverview.indexedThroughBlockHash,
+              network,
+              pendingEventCount: state.verifiedOverview.pendingEventCount,
+              summaryOnly: true,
+              status: "ready",
+            });
+          } else {
+            setRegistryReadState((current) => ({
+              ...current,
+              network,
+              status: "last-verified",
+            }));
+          }
+        } else {
+          setRegistryReadState((current) => ({
+            ...current,
+            network,
+            status: verifiedRegistryNetworksRef.current.has(network)
+              ? "last-verified"
+              : "unavailable",
+          }));
         }
         if (fresh) {
           clearLastGoodReadWarning(
@@ -33507,6 +33989,11 @@ export default function App() {
           idMarketplaceAction={idMarketplaceAction}
           managedIdName={managedIdRecord?.id ?? ""}
           marketplaceSummaryReadState={marketplaceSummaryReadState}
+          completeListingBookError={completeListingBookError}
+          completeListingBookLoading={completeListingBookLoading}
+          onLoadCompleteListingBook={() =>
+            void loadCompleteTokenListingBook()
+          }
           network={network}
           onNetworkChange={chooseNetwork}
           publishListing={publishIdListing}
@@ -33626,7 +34113,7 @@ export default function App() {
         preparingTransferUtxos={tokenAction === "split-transfer"}
         proofBalanceError={accountUtxosError || connectedWalletReservationsError}
         proofBalanceLoaded={accountUtxosLoaded && connectedWalletReservationsReady}
-        creditBalancesReady={!address || accountAllTokenLaneClean}
+        creditBalancesReady={Boolean(address) && accountAllTokenLaneClean}
         creditBalancesError={accountTokenLaneStatuses.all.error}
         proofBalanceSats={connectedWalletProofFundingContext.confirmedBalanceSats}
         proofProtectedSats={connectedWalletProofFundingContext.protectedSats}
@@ -33722,6 +34209,11 @@ export default function App() {
         listSpendableBalance={walletSpendableTokenBalance}
         network={network}
         onNetworkChange={chooseNetwork}
+        completeListingBookError={completeListingBookError}
+        completeListingBookLoading={completeListingBookLoading}
+        onLoadCompleteListingBook={(tokenScope) =>
+          void loadCompleteTokenListingBook(tokenScope)
+        }
         onRefresh={() => void refreshInfinity(false, true, standaloneBondConfig)}
         sales={activeBondSales}
         sealListing={sealTokenListing}
@@ -34427,14 +34919,18 @@ export default function App() {
                       {pendingIdEventCount
                         ? ` · ${pendingIdEventCount.toLocaleString()} changes`
                         : ""}
-                      {registryReadStatus === "last-verified"
-                        ? " · last verified snapshot"
-                        : ""}
+                      {registryReadState.summaryOnly &&
+                      registryReadState.network === network &&
+                      registryReadState.indexedThroughBlock
+                        ? ` · verified at block ${registryReadState.indexedThroughBlock.toLocaleString()}`
+                        : registryReadStatus === "last-verified"
+                          ? " · last verified snapshot"
+                          : ""}
                     </>
                   ) : registryReadStatus === "loading" ? (
                     "Verifying registry data…"
                   ) : (
-                    "No verified registry snapshot available"
+                    "No verified public registry snapshot available; wallet connection is separate."
                   )}
                 </small>
               </div>
@@ -34543,6 +35039,11 @@ export default function App() {
             idMarketplaceAction={idMarketplaceAction}
             managedIdName={managedIdName}
             marketplaceSummaryReadState={marketplaceSummaryReadState}
+            completeListingBookError={completeListingBookError}
+            completeListingBookLoading={completeListingBookLoading}
+            onLoadCompleteListingBook={() =>
+              void loadCompleteTokenListingBook()
+            }
             network={network}
             pendingEvents={idPendingEvents}
             publishListing={publishIdListing}
@@ -34629,7 +35130,7 @@ export default function App() {
             preparingTransferUtxos={tokenAction === "split-transfer"}
             proofBalanceError={accountUtxosError || connectedWalletReservationsError}
             proofBalanceLoaded={accountUtxosLoaded && connectedWalletReservationsReady}
-        creditBalancesReady={!address || accountAllTokenLaneClean}
+        creditBalancesReady={Boolean(address) && accountAllTokenLaneClean}
         creditBalancesError={accountTokenLaneStatuses.all.error}
             proofBalanceSats={
               connectedWalletProofFundingContext.confirmedBalanceSats
@@ -34805,6 +35306,11 @@ export default function App() {
             listSpendableBalance={walletSpendableTokenBalance}
             network={network}
             onNetworkChange={chooseNetwork}
+            completeListingBookError={completeListingBookError}
+            completeListingBookLoading={completeListingBookLoading}
+            onLoadCompleteListingBook={(tokenScope) =>
+              void loadCompleteTokenListingBook(tokenScope)
+            }
             onRefresh={() => void refreshInfinity(false, true, activeBondConfig)}
             sales={activeBondSales}
             sealListing={sealTokenListing}
@@ -34871,11 +35377,23 @@ export default function App() {
         ) : activeFolder === "browser" ? (
           <BrowserWorkspace activeNetwork={network} />
         ) : activeFolder === "boost" ? (
-          <BoostRoot
-            embedded
-            initialAddress={address}
-            initialNetwork={network}
-          />
+          <Suspense
+            fallback={
+              <div
+                aria-busy="true"
+                className="boost-public-app boost-embedded-app workspace-code-loading"
+                role="status"
+              >
+                Loading Boost tools…
+              </div>
+            }
+          >
+            <BoostRoot
+              embedded
+              initialAddress={address}
+              initialNetwork={network}
+            />
+          </Suspense>
         ) : activeFolder === "log" ? (
           <ActivityWorkspace
             activeNetwork={network}
@@ -37133,6 +37651,8 @@ type InfinityAppProps = {
   canList: boolean;
   canTransfer: boolean;
   closedListings: PowTokenClosedListing[];
+  completeListingBookError?: string;
+  completeListingBookLoading?: boolean;
   connectWallet: () => Promise<void>;
   delistListing: (listing: PowTokenListing) => void;
   disconnectWallet: () => void;
@@ -37150,6 +37670,7 @@ type InfinityAppProps = {
   listSpendableBalance: ExactIntegerValue;
   network: BitcoinNetwork;
   onNetworkChange: (network: BitcoinNetwork) => void;
+  onLoadCompleteListingBook?: (tokenScope: string) => void;
   onRefresh: () => void;
   sales: PowTokenSale[];
   sealListing: (listing: PowTokenListing) => void;
@@ -37206,6 +37727,8 @@ function InfinityApp({
   canList,
   canTransfer,
   closedListings,
+  completeListingBookError = "",
+  completeListingBookLoading = false,
   connectWallet,
   delistListing,
   disconnectWallet,
@@ -37223,6 +37746,7 @@ function InfinityApp({
   listSpendableBalance,
   network,
   onNetworkChange,
+  onLoadCompleteListingBook,
   onRefresh,
   sales,
   sealListing,
@@ -37432,9 +37956,25 @@ function InfinityApp({
           ]}
         />
         {!summary ? (
-          <section className="id-launch-card" id="bond-overview" role="status">
+          <section
+            className="id-launch-card bond-summary-placeholder"
+            id="bond-overview"
+            role="status"
+          >
             <h2>{bondConfig.displayName}</h2>
-            <p>{status.tone === "bad" ? "Bond summary unavailable. Refresh to retry." : "Verifying confirmed bond supply, floor, and history…"}</p>
+            <p>
+              {status.tone === "bad"
+                ? "Bond summary unavailable. Refresh to retry."
+                : "Verifying confirmed bond supply, floor, and history…"}
+            </p>
+            <div className="bond-summary-skeleton" aria-hidden="true">
+              <div className="bond-summary-skeleton-stats">
+                {Array.from({ length: 6 }, (_, index) => (
+                  <span key={index} />
+                ))}
+              </div>
+              <div className="bond-summary-skeleton-chart" />
+            </div>
           </section>
         ) : <>
         <section className="id-launch-card token-dashboard-card" id="bond-overview">
@@ -37875,6 +38415,9 @@ function InfinityApp({
           listingSummary={listingSummary}
           listings={listings}
           network={network}
+          completeListingBookError={completeListingBookError}
+          completeListingBookLoading={completeListingBookLoading}
+          onLoadCompleteListingBook={onLoadCompleteListingBook}
           sales={sales}
           setFeeRate={setFeeRate}
           summary={summary}
@@ -38108,7 +38651,7 @@ type TokenWalletWorkspaceCopy = Partial<{
 }>;
 
 const DEFAULT_TOKEN_WALLET_WORKSPACE_COPY: Required<TokenWalletWorkspaceCopy> = {
-  balancesDescription: "Credits held by the connected address.",
+  balancesDescription: "Credit balances belong to the connected address; the public directory can load without a wallet.",
   fallbackTicker: "CREDIT",
   listingDescription: "Creates a sale-ticket listing paid to the credit registry.",
   listingFeeDescription: "Used when sealing or closing your credit listings.",
@@ -38324,6 +38867,7 @@ function TokenWalletWorkspace({
   transferFundingReadiness?: TokenTransferFundingReadiness;
 }) {
   const walletCopy = { ...DEFAULT_TOKEN_WALLET_WORKSPACE_COPY, ...copy };
+  const walletConnected = Boolean(address.trim());
   const workTransferMode =
     transferToken && isWorkToken(transferToken)
       ? workWriteModeForDraftPayload(workFloorQuote)
@@ -38631,16 +39175,18 @@ function TokenWalletWorkspace({
     selectedListToken && isWorkToken(selectedListToken)
       ? selectedWalletSpendableBalanceAtoms
       : undefined;
-  const transferBalanceLabel = transferBalanceReady
-    ? `${tokenAmountDisplay(
-        transferToken ?? {},
-        transferBalance,
-        undefined,
-        transferBalanceAtoms,
-      )} ${transferToken?.ticker ?? "TOKEN"}`
-    : transferBalanceError
-      ? "Unavailable"
-      : "Loading";
+  const transferBalanceLabel = !walletConnected
+    ? "Connect UniSat"
+    : transferBalanceReady
+      ? `${tokenAmountDisplay(
+          transferToken ?? {},
+          transferBalance,
+          undefined,
+          transferBalanceAtoms,
+        )} ${transferToken?.ticker ?? "TOKEN"}`
+      : transferBalanceError
+        ? "Unavailable"
+        : "Loading";
   const listSpendableBalanceAtoms = selectedWalletSpendableBalanceAtoms;
   const parsedListAmount = selectedListToken
     ? tokenAmountInput(selectedListToken, listAmount)
@@ -38949,7 +39495,7 @@ function TokenWalletWorkspace({
           </div>
           <div>
             <p>{walletCopy.walletEyebrow}</p>
-            <h2>{address ? shortAddress(address) : "Connect UniSat"}</h2>
+            <h2>{walletConnected ? shortAddress(address) : "Connect UniSat"}</h2>
             <span>
               Confirmed balances are canonical. Pending transfers stay visible
               until ProofOfWork confirms or drops them.
@@ -38959,23 +39505,41 @@ function TokenWalletWorkspace({
         <div className="id-launch-stats token-stats-row">
           <div>
             <span>{walletCopy.ownedLabel}</span>
-            <strong>{creditBalancesReady ? confirmedTokenCount.toLocaleString() : creditBalancesError ? "Unavailable" : "Loading"}</strong>
+            <strong>
+              {!walletConnected
+                ? "Connect UniSat"
+                : creditBalancesReady
+                  ? confirmedTokenCount.toLocaleString()
+                  : creditBalancesError
+                    ? "Unavailable"
+                    : "Loading"}
+            </strong>
           </div>
           {showProofBalance ? (
             <div>
               <span>Spendable proofs</span>
               <strong>
-                {proofBalanceError
-                  ? "Unavailable"
-                  : proofBalanceLoaded
-                    ? `${proofSpendableSats.toLocaleString()} proofs`
-                    : "Loading"}
+                {!walletConnected
+                  ? "Connect UniSat"
+                  : proofBalanceError
+                    ? "Unavailable"
+                    : proofBalanceLoaded
+                      ? `${proofSpendableSats.toLocaleString()} proofs`
+                      : "Loading"}
               </strong>
             </div>
           ) : null}
           <div>
             <span>Movements seen</span>
-            <strong>{creditBalancesReady ? walletMovements.length.toLocaleString() : creditBalancesError ? "Unavailable" : "Loading"}</strong>
+            <strong>
+              {!walletConnected
+                ? "Connect UniSat"
+                : creditBalancesReady
+                  ? walletMovements.length.toLocaleString()
+                  : creditBalancesError
+                    ? "Unavailable"
+                    : "Loading"}
+            </strong>
           </div>
           <div>
             <span>Mutation fee</span>
@@ -39005,10 +39569,14 @@ function TokenWalletWorkspace({
             </div>
             <div>
               <h2>Balances</h2>
-              <p>{walletCopy.balancesDescription}</p>
+              <p>
+                {walletConnected
+                  ? walletCopy.balancesDescription
+                  : "Connect UniSat to view account-specific credit balances, pending activity, and spendable amounts."}
+              </p>
             </div>
           </div>
-          {balances.length ? (
+          {walletConnected && balances.length ? (
             <div className="token-list compact-token-list">
               {balances.map((balance) => {
                 const confirmedUnits =
@@ -39096,8 +39664,20 @@ function TokenWalletWorkspace({
           ) : (
             <div className="empty-state">
               <Wallet size={28} />
-              <h3>{creditBalancesError ? "Credit balances unavailable" : !creditBalancesReady ? "Loading credit balances" : walletCopy.noBalanceTitle}</h3>
-              <p>{creditBalancesError || (!creditBalancesReady ? "Verifying confirmed balances and reservations…" : walletCopy.noBalanceBody)}</p>
+              <h3>
+                {!walletConnected
+                  ? "Connect UniSat to view balances"
+                  : creditBalancesError
+                    ? "Credit balances unavailable"
+                    : !creditBalancesReady
+                      ? "Loading credit balances"
+                      : walletCopy.noBalanceTitle}
+              </h3>
+              <p>
+                {!walletConnected
+                  ? "The public credit directory can load without a wallet; account balances and spendable amounts require a connected address."
+                  : creditBalancesError || (!creditBalancesReady ? "Verifying confirmed balances and reservations…" : walletCopy.noBalanceBody)}
+              </p>
             </div>
           )}
         </section>
@@ -39119,7 +39699,7 @@ function TokenWalletWorkspace({
                 onChange={(event) => setSelectedTokenId(event.target.value)}
                 value={selectedTokenId || balances[0]?.token.tokenId || ""}
               >
-                {balances.length ? (
+                {walletConnected && balances.length ? (
                   balances.map((balance) => (
                     <option key={balance.token.tokenId} value={balance.token.tokenId}>
                       {balance.token.ticker} ·{" "}
@@ -39135,7 +39715,11 @@ function TokenWalletWorkspace({
                     </option>
                   ))
                 ) : (
-                  <option value="">{walletCopy.noBalanceOption}</option>
+                  <option value="">
+                    {walletConnected
+                      ? walletCopy.noBalanceOption
+                      : "Connect UniSat to view balances"}
+                  </option>
                 )}
               </select>
             </label>
@@ -39445,13 +40029,14 @@ function TokenWalletWorkspace({
               <div>
                 <span>Spendable</span>
                 <strong>
-                  {tokenAmountDisplay(
-                    transferToken ?? {},
-                    listSpendableBalance,
-                    undefined,
-                    listSpendableBalanceAtoms,
-                  )}{" "}
-                  {transferToken?.ticker ?? "TOKEN"}
+                  {!walletConnected
+                    ? "Connect UniSat"
+                    : `${tokenAmountDisplay(
+                        transferToken ?? {},
+                        listSpendableBalance,
+                        undefined,
+                        listSpendableBalanceAtoms,
+                      )} ${transferToken?.ticker ?? "TOKEN"}`}
                 </strong>
               </div>
               <div>
@@ -39488,7 +40073,7 @@ function TokenWalletWorkspace({
             </button>
           </form>
 
-          {walletListings.length || walletRecoverableV3WorkRelics.length ? (
+          {walletConnected && (walletListings.length || walletRecoverableV3WorkRelics.length) ? (
             <div className="listing-fee-control token-listing-fee-control">
               <div>
                 <strong>Seal / Delist fee rate</strong>
@@ -39498,7 +40083,7 @@ function TokenWalletWorkspace({
             </div>
           ) : null}
 
-          {walletListings.length ? (
+          {walletConnected && walletListings.length ? (
             <>
               <MarketplaceSortControl
                 onChange={setWalletListingSortMode}
@@ -39679,7 +40264,7 @@ function TokenWalletWorkspace({
             </>
           ) : null}
 
-          {walletRecoverableV3WorkRelics.length ? (
+          {walletConnected && walletRecoverableV3WorkRelics.length ? (
             <div className="token-listing-recovery">
               <p className="field-note">
                 <strong>V3 WORK sale-ticket recovery.</strong> These confirmed
@@ -39744,7 +40329,7 @@ function TokenWalletWorkspace({
             <p>Transfers, trades, and rejected attempts touching the connected address.</p>
           </div>
         </div>
-        {walletMovements.length ? (
+        {walletConnected && walletMovements.length ? (
           <>
             <div className="token-list compact-token-list">
               {walletTransferPage.items.map((movement) => (
@@ -39808,8 +40393,12 @@ function TokenWalletWorkspace({
         ) : (
           <div className="empty-state">
             <Clock size={28} />
-            <h3>No movements yet</h3>
-            <p>{walletCopy.movementsEmptyBody}</p>
+            <h3>{walletConnected ? "No movements yet" : "Connect UniSat to view activity"}</h3>
+            <p>
+              {walletConnected
+                ? walletCopy.movementsEmptyBody
+                : "Confirmed and pending activity is specific to the connected address."}
+            </p>
           </div>
         )}
       </section>
@@ -41236,7 +41825,7 @@ function TokenWorkspace({
       )}
     </div>
   );
-  const workspaceClassName = `id-launch-main token-workspace${compact ? " token-workspace-compact" : ""}`;
+  const workspaceClassName = `id-launch-main token-workspace${compact ? " token-workspace-compact" : ""}${workTokenOnly ? " work-floor-detail-workspace" : ""}`;
   const detailLedgerLoading =
     ledgerLoading &&
     Boolean(detailToken) &&
@@ -41306,6 +41895,14 @@ function TokenWorkspace({
             snapshot arrives.
           </p>
         </section>
+        {detailShowsWorkFloor ? (
+          <div className="work-detail-loading-skeleton" aria-hidden="true">
+            <span />
+            <span />
+            <span />
+            <span />
+          </div>
+        ) : null}
       </section>
     );
   }
@@ -45455,7 +46052,11 @@ function GrowthWorkspace({
             name="Boost"
             note="Social activity and sale-ticket flow, with shared Mail and WORK value counted once."
           >
-            <BoostGrowthDetails observation={boostObservation} />
+            <Suspense
+              fallback={<p className="field-note" role="status">Loading verified Boost detail…</p>}
+            >
+              <BoostGrowthDetails observation={boostObservation} />
+            </Suspense>
             <a className="secondary small growth-boost-link" href={appHref(BOOST_APP_URL, LOCAL_BOOST_APP_URL)}>
               Open Boost
             </a>
@@ -45579,7 +46180,11 @@ function GrowthWorkspace({
         aria-label="Model assumptions"
         id="growth-assumptions"
       >
-        <GrowthModelDetails historical={forecastVersion === "legacy"} />
+        <Suspense
+          fallback={<div className="workspace-code-loading" role="status">Loading model detail…</div>}
+        >
+          <GrowthModelDetails historical={forecastVersion === "legacy"} />
+        </Suspense>
         <article>
           <h3>Blockspace constraint</h3>
           <p>
@@ -47643,10 +48248,13 @@ function InfinityBondMarketPanel({
   busy,
   buyListing,
   closedListings,
+  completeListingBookError = "",
+  completeListingBookLoading = false,
   feeRate,
   listingSummary,
   listings,
   network,
+  onLoadCompleteListingBook,
   sales,
   setFeeRate,
   summary,
@@ -47659,10 +48267,13 @@ function InfinityBondMarketPanel({
   busy: boolean;
   buyListing: (listing: PowTokenListing) => void;
   closedListings: PowTokenClosedListing[];
+  completeListingBookError?: string;
+  completeListingBookLoading?: boolean;
   feeRate: number;
   listingSummary: PowTokenSummaryMetadata;
   listings: PowTokenListing[];
   network: BitcoinNetwork;
+  onLoadCompleteListingBook?: (tokenScope: string) => void;
   sales: PowTokenSale[];
   setFeeRate: (value: number) => void;
   summary?: InfinitySummarySnapshot;
@@ -47784,15 +48395,36 @@ function InfinityBondMarketPanel({
           </div>
         </div>
         {listingBookPreviewIncomplete ? (
-          <p className="field-note" role="status">
-            Showing a verified AMO preview while the complete Core-reconciled
-            sale-ticket book loads
-            {Number.isSafeInteger(declaredListingCount)
-              ? ` (${marketListings.length.toLocaleString()} ${bondConfig.ticker} tickets visible; ${declaredListingCount.toLocaleString()} total credit and bond tickets declared)`
-              : ""}
-            . Search and empty-state claims remain incomplete until the full
-            checkpoint-bound book is available.
-          </p>
+          <>
+            <p className="field-note" role="status">
+              Showing a verified AMO preview
+              {Number.isSafeInteger(declaredListingCount)
+                ? ` (${marketListings.length.toLocaleString()} ${bondConfig.ticker} tickets visible; ${declaredListingCount.toLocaleString()} total credit and bond tickets declared)`
+                : ""}
+              . Search and empty-state claims remain incomplete until the full
+              checkpoint-bound book is verified.
+            </p>
+            {onLoadCompleteListingBook ? (
+              <div className="listing-history-load-controls">
+                <button
+                  aria-busy={completeListingBookLoading}
+                  className="secondary"
+                  disabled={!summary || completeListingBookLoading}
+                  onClick={() => onLoadCompleteListingBook(bondConfig.tokenId)}
+                  type="button"
+                >
+                  {completeListingBookLoading
+                    ? "Verifying sale-ticket history…"
+                    : `Load complete ${bondConfig.ticker} history`}
+                </button>
+                {completeListingBookError ? (
+                  <p className="field-note bad" role="status">
+                    {completeListingBookError}
+                  </p>
+                ) : null}
+              </div>
+            ) : null}
+          </>
         ) : null}
         <div
           className="id-launch-stats token-floor-stats"
@@ -47971,7 +48603,7 @@ function InfinityBondMarketPanel({
             <Wallet size={28} />
             <h3>
               {listingBookPreviewIncomplete
-                ? `Loading complete ${bondConfig.ticker} sale tickets`
+                ? `Complete ${bondConfig.ticker} history not loaded`
                 : marketListings.length
                 ? tokenListingBookFilter === "sealed"
                   ? `No sealed ${bondConfig.ticker} tickets`
@@ -48301,12 +48933,15 @@ function BondMarketplacePanel({
   busy,
   buyListing,
   closedListings,
+  completeListingBookError = "",
+  completeListingBookLoading = false,
   feeRate,
   inceptionSummary,
   infinitySummary,
   listingSummary,
   listings,
   network,
+  onLoadCompleteListingBook,
   sales,
   setFeeRate,
   tokens,
@@ -48316,12 +48951,15 @@ function BondMarketplacePanel({
   busy: boolean;
   buyListing: (listing: PowTokenListing) => void;
   closedListings: PowTokenClosedListing[];
+  completeListingBookError?: string;
+  completeListingBookLoading?: boolean;
   feeRate: number;
   inceptionSummary?: InfinitySummarySnapshot;
   infinitySummary?: InfinitySummarySnapshot;
   listingSummary: PowTokenSummaryMetadata;
   listings: PowTokenListing[];
   network: BitcoinNetwork;
+  onLoadCompleteListingBook?: (tokenScope: string) => void;
   sales: PowTokenSale[];
   setFeeRate: (value: number) => void;
   tokens: PowTokenDefinition[];
@@ -48442,6 +49080,9 @@ function BondMarketplacePanel({
         listingSummary={listingSummary}
         listings={listings}
         network={network}
+        completeListingBookError={completeListingBookError}
+        completeListingBookLoading={completeListingBookLoading}
+        onLoadCompleteListingBook={onLoadCompleteListingBook}
         sales={sales}
         setFeeRate={setFeeRate}
         summary={network === "livenet" ? activeSummary : undefined}
@@ -48545,6 +49186,9 @@ function TokenMarketplacePanel({
   mints,
   marketplaceSummaryReadState,
   network,
+  onLoadCompleteListingBook,
+  completeListingBookLoading = false,
+  completeListingBookError = "",
   onOpenTokenWorkspace,
   onOpenWalletWorkspace,
   onRetryMarketplaceSummary,
@@ -48572,6 +49216,9 @@ function TokenMarketplacePanel({
   mints: PowTokenMint[];
   marketplaceSummaryReadState: MarketplaceSummaryReadState;
   network: BitcoinNetwork;
+  onLoadCompleteListingBook?: () => void;
+  completeListingBookLoading?: boolean;
+  completeListingBookError?: string;
   onOpenTokenWorkspace?: (token?: PowTokenDefinition) => void;
   onOpenWalletWorkspace?: (token?: PowTokenDefinition) => void;
   onRetryMarketplaceSummary: () => void;
@@ -50316,15 +50963,36 @@ function TokenMarketplacePanel({
             </p>
           ) : null}
           {listingBookPreviewIncomplete ? (
-            <p className="field-note" role="status">
-              Showing a verified AMO preview while the complete
-              Core-reconciled sale-ticket book loads
-              {Number.isSafeInteger(declaredListingCount)
-                ? ` (${networkListings.length.toLocaleString()} credit tickets visible; ${declaredListingCount.toLocaleString()} total credit and bond tickets declared)`
-                : ""}
-              . Search and empty-state claims remain incomplete until the full
-              checkpoint-bound book is available.
-            </p>
+            <>
+              <p className="field-note" role="status">
+                Showing a verified AMO preview
+                {Number.isSafeInteger(declaredListingCount)
+                  ? ` (${networkListings.length.toLocaleString()} credit tickets visible; ${declaredListingCount.toLocaleString()} total credit and bond tickets declared)`
+                  : ""}
+                . Search and empty-state claims remain incomplete until the full
+                checkpoint-bound book is verified.
+              </p>
+              {onLoadCompleteListingBook ? (
+                <div className="listing-history-load-controls">
+                  <button
+                    aria-busy={completeListingBookLoading}
+                    className="secondary"
+                    disabled={completeListingBookLoading}
+                    onClick={onLoadCompleteListingBook}
+                    type="button"
+                  >
+                    {completeListingBookLoading
+                      ? "Verifying sale-ticket history…"
+                      : "Load complete sale-ticket history"}
+                  </button>
+                  {completeListingBookError ? (
+                    <p className="field-note bad" role="status">
+                      {completeListingBookError}
+                    </p>
+                  ) : null}
+                </div>
+              ) : null}
+            </>
           ) : null}
           <div className="listing-fee-control token-listing-fee-control">
             <div>
@@ -50696,7 +51364,7 @@ function TokenMarketplacePanel({
                   {tokenMarketLoading
                     ? "Loading credit sale tickets"
                     : listingBookPreviewIncomplete
-                      ? "Loading complete credit sale tickets"
+                      ? "Complete credit history not loaded"
                     : tokenListingSearchQuery
                       ? "No matching sale tickets"
                     : orderBookListings.length
@@ -51235,6 +51903,9 @@ function MarketplaceApp({
   idMarketplaceAction,
   managedIdName,
   marketplaceSummaryReadState,
+  completeListingBookError = "",
+  completeListingBookLoading = false,
+  onLoadCompleteListingBook,
   network,
   onNetworkChange,
   pendingEvents,
@@ -51294,6 +51965,9 @@ function MarketplaceApp({
   idMarketplaceAction: IdMarketplaceAction;
   managedIdName: string;
   marketplaceSummaryReadState: MarketplaceSummaryReadState;
+  completeListingBookError?: string;
+  completeListingBookLoading?: boolean;
+  onLoadCompleteListingBook?: () => void;
   network: BitcoinNetwork;
   onNetworkChange: (network: BitcoinNetwork) => void;
   pendingEvents: PowIdPendingEvent[];
@@ -51451,7 +52125,7 @@ function MarketplaceApp({
       tone: listingBookComplete ? "good" : "idle",
       text: listingBookComplete
         ? `Bond listings loaded in AMO. ${bondListings.length.toLocaleString()} open ticket${bondListings.length === 1 ? "" : "s"}, ${sealedBondListings.length.toLocaleString()} sealed or sealing, ${bondSales.length.toLocaleString()} sale${bondSales.length === 1 ? "" : "s"}.`
-        : "Bond market preview loaded. Verifying the complete Core-reconciled sale-ticket book before reporting bond inventory as complete.",
+        : "Bond market preview loaded. Complete Core-reconciled sale-ticket history is available on request; inventory remains a preview until verified.",
     },
     boostSummary: {
       tone: boostMarketError ? "bad" : boostMarketLoading ? "idle" : "good",
@@ -51471,8 +52145,8 @@ function MarketplaceApp({
       text: listingBookComplete
         ? creditMarketStatusText
         : marketplaceSummaryVerified
-          ? `${creditMarketStatusText} Listing rows are a verified preview while the complete Core-reconciled sale-ticket book loads.`
-          : `Credit market preview loaded. Verifying all ${Number(tokenSummary.totalCounts?.listings ?? creditTokenListings.length).toLocaleString()} Core-reconciled sale tickets before reporting the book as complete.`,
+          ? `${creditMarketStatusText} Listing rows are a verified preview; complete Core-reconciled sale-ticket history is available on request.`
+          : `The credit market summary is not verified yet; no complete-book claim is available.`,
     },
   });
   const visibleScopedStatus: WorkspaceStatus =
@@ -51884,12 +52558,15 @@ function MarketplaceApp({
             busy={busy}
             buyListing={buyTokenListing}
             closedListings={tokenClosedListings}
+            completeListingBookError={completeListingBookError}
+            completeListingBookLoading={completeListingBookLoading}
             feeRate={feeRate}
             inceptionSummary={inceptionSummary}
             infinitySummary={infinitySummary}
             listingSummary={tokenSummary}
             listings={tokenListings}
             network="livenet"
+            onLoadCompleteListingBook={onLoadCompleteListingBook}
             sales={tokenSales}
             setFeeRate={setFeeRate}
             tokens={tokens}
@@ -51911,6 +52588,9 @@ function MarketplaceApp({
             listings={creditTokenListings}
             mints={creditTokenMints}
             marketplaceSummaryReadState={marketplaceSummaryReadState}
+            completeListingBookError={completeListingBookError}
+            completeListingBookLoading={completeListingBookLoading}
+            onLoadCompleteListingBook={onLoadCompleteListingBook}
             network="livenet"
             onRetryMarketplaceSummary={onRetryMarketplaceSummary}
             onSelectedTokenMarketIdChange={setSelectedTokenMarketId}
@@ -51951,6 +52631,9 @@ function MarketplaceWorkspace({
   idMarketplaceAction,
   managedIdName,
   marketplaceSummaryReadState,
+  completeListingBookError = "",
+  completeListingBookLoading = false,
+  onLoadCompleteListingBook,
   network,
   pendingEvents,
   publishListing,
@@ -52006,6 +52689,9 @@ function MarketplaceWorkspace({
   idMarketplaceAction: IdMarketplaceAction;
   managedIdName: string;
   marketplaceSummaryReadState: MarketplaceSummaryReadState;
+  completeListingBookError?: string;
+  completeListingBookLoading?: boolean;
+  onLoadCompleteListingBook?: () => void;
   network: BitcoinNetwork;
   pendingEvents: PowIdPendingEvent[];
   publishListing: () => void;
@@ -52480,12 +53166,15 @@ function MarketplaceWorkspace({
             busy={busy}
             buyListing={buyTokenListing}
             closedListings={tokenClosedListings}
+            completeListingBookError={completeListingBookError}
+            completeListingBookLoading={completeListingBookLoading}
             feeRate={feeRate}
             inceptionSummary={inceptionSummary}
             infinitySummary={infinitySummary}
             listingSummary={tokenSummary}
             listings={tokenListings}
             network={network}
+            onLoadCompleteListingBook={onLoadCompleteListingBook}
             sales={tokenSales}
             setFeeRate={setFeeRate}
             tokens={tokens}
@@ -52515,6 +53204,9 @@ function MarketplaceWorkspace({
             listings={creditTokenListings}
             mints={creditTokenMints}
             marketplaceSummaryReadState={marketplaceSummaryReadState}
+            completeListingBookError={completeListingBookError}
+            completeListingBookLoading={completeListingBookLoading}
+            onLoadCompleteListingBook={onLoadCompleteListingBook}
             network={network}
             onOpenTokenWorkspace={onOpenTokenWorkspace}
             onOpenWalletWorkspace={onOpenWalletWorkspace}

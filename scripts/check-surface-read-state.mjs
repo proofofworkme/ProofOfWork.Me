@@ -41,8 +41,9 @@ for (const patch of [
   { fullDetailPath: "https://untrusted.invalid" },
 ]) assert.throws(() => listingDisplayProjectionFingerprint({ ...projection, items: [{ ...item, displayEvidence: { ...item.displayEvidence, ...patch } }] }));
 // Execute the actual nested refresh function with controlled network promises.
-// The summary must be applied while BOTH the full book and supplemental registry
-// are unresolved. No math or canonical transition implementation is substituted.
+// The compact summary must be applied while supplemental registry data is still
+// pending, without requesting full listing history. No canonical transition
+// implementation is substituted.
 const appSource = await readFile("src/App.tsx", "utf8");
 const ast = ts.createSourceFile("App.tsx", appSource, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
 let declaration;
@@ -50,7 +51,7 @@ function visit(node) { if (ts.isFunctionDeclaration(node) && node.name?.text ===
 visit(ast);
 assert.ok(declaration);
 const deferred = () => { let resolve; const promise = new Promise((done) => { resolve = done; }); return { promise, resolve }; };
-const book = deferred(); const registry = deferred(); const applied = [];
+const registry = deferred(); const applied = []; let completeBookRequested = false;
 const config = { tokenId: "a".repeat(64), ticker: "POWB", displayName: "Infinity Bond" };
 const snapshot = { tokenId: config.tokenId, stats: { confirmedSupply: "9007199254740993", confirmedBondActions: 1 }, token: { listingBookComplete: false }, actualValue: { floorQ8: "1234567890123456789012345" } };
 const env = {
@@ -59,7 +60,11 @@ const env = {
   setBusyForWorkspace() {}, setStatusForWorkspace() {}, nextProofApiReadAttempt: () => 1,
   fetchBondSummary: async () => snapshot, fetchIdRegistryState: () => registry.promise, fetchBtcUsdPrice: async () => undefined,
   applyInfinitySummary: (value) => { applied.push(value); return value; }, applyTokenState: (value) => value,
-  tokenStateScopeKey: () => "livenet:global:POWB", tokenStateWithCurrentCompleteBondListings: () => book.promise,
+  tokenStateScopeKey: () => "livenet:global:POWB",
+  completeMarketplaceListingHistoryRef: { current: null },
+  completeTokenListingHistoryMatchesState: () => false,
+  tokenStateWithCompleteTokenBondListings: (state) => state,
+  tokenStateWithCurrentCompleteBondListings: () => { completeBookRequested = true; return Promise.resolve({ listingBookComplete: true }); },
   marketplaceWorkspaceIsCurrent: () => false, applyRegistryState() {}, setTokenSelectedId() {}, setTokenDetailTarget() {}, setTokenBtcUsd() {},
   clearLastGoodReadWarning() {}, acceptedBondSummariesRef: { current: new Map() }, isTransientProofApiReadError: () => false, showLastGoodReadWarning() {},
   errorMessage: (error) => String(error), formatExactInteger: String,
@@ -71,11 +76,12 @@ assert.equal(applied.length, 1);
 assert.equal(applied[0].stats.confirmedSupply, "9007199254740993");
 assert.equal(applied[0].actualValue.floorQ8, "1234567890123456789012345");
 assert.equal(applied[0].token.listingBookComplete, false);
-book.resolve({ ...snapshot.token, listingBookComplete: true }); registry.resolve(undefined);
+assert.equal(completeBookRequested, false);
+registry.resolve(undefined);
 const settled = await pending;
-assert.equal(settled.token.listingBookComplete, true);
+assert.equal(settled.token.listingBookComplete, false);
 assert.equal(settled.actualValue.floorQ8, snapshot.actualValue.floorQ8);
-console.log(JSON.stringify({ ok: true, coverage: ["qualified-counts", "complete-directory", "wallet-reservation-readiness", "listing-full-evidence-binding", "bond-summary-before-book"] }));
+console.log(JSON.stringify({ ok: true, coverage: ["qualified-counts", "complete-directory", "wallet-reservation-readiness", "listing-full-evidence-binding", "bond-summary-does-not-fetch-full-book"] }));
 
 // H6-15: a background request from an older render must use the live query,
 // and a late response must not replace a newer search or page.

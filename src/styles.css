@@ -3284,6 +3284,16 @@ select {
   padding: 14px;
 }
 
+@media (min-width: 1181px) {
+  .boost-right-rail > .boost-rail-panel:nth-of-type(2) {
+    min-height: 257px;
+  }
+
+  .boost-right-rail > .boost-rail-panel:nth-of-type(3) {
+    min-height: 294px;
+  }
+}
+
 .boost-rail-head {
   align-items: center;
   display: flex;
@@ -3453,6 +3463,39 @@ select {
   display: grid;
   gap: 14px;
   padding: 16px;
+}
+
+.bond-summary-placeholder {
+  min-height: 500px;
+}
+
+.bond-summary-skeleton {
+  display: grid;
+  gap: 14px;
+  grid-template-rows: 116px minmax(230px, 1fr);
+}
+
+.bond-summary-skeleton-stats {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+}
+
+.bond-summary-skeleton-stats span,
+.bond-summary-skeleton-chart {
+  background: var(--surface-soft);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.bond-summary-skeleton-chart {
+  min-height: 230px;
+}
+
+@media (min-width: 861px) {
+  .activity-feed-card {
+    min-height: 395px;
+  }
 }
 
 .activity-feed {
@@ -5711,6 +5754,14 @@ pre {
   width: 100%;
 }
 
+.workspace-code-loading {
+  align-items: center;
+  display: flex;
+  justify-content: center;
+  min-height: 12rem;
+  padding: 24px;
+}
+
 .landing-stats {
   display: grid;
   gap: 12px;
@@ -6570,6 +6621,32 @@ pre {
   width: 100%;
 }
 
+.work-detail-loading-skeleton {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-rows: 270px 108px 580px minmax(600px, 1fr);
+  min-height: 2440px;
+}
+
+.work-detail-loading-skeleton span {
+  background: var(--surface-soft);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.work-detail-loading-skeleton span:first-child,
+.work-detail-loading-skeleton span:nth-child(2) {
+  grid-column: 1 / -1;
+}
+
+.mail-layout.is-token-workspace
+  > .id-launch-main.work-floor-detail-workspace.token-detail-page,
+.token-public-app
+  > .id-launch-main.work-floor-detail-workspace.token-detail-page {
+  min-height: 2857px;
+}
+
 .token-form-grid {
   display: grid;
   gap: 10px;
@@ -7151,6 +7228,16 @@ pre {
 }
 
 @media (max-width: 860px) {
+  .work-detail-loading-skeleton {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: 360px 260px 720px minmax(600px, 1fr);
+  }
+
+  .work-detail-loading-skeleton span:first-child,
+  .work-detail-loading-skeleton span:nth-child(2) {
+    grid-column: auto;
+  }
+
   .token-public-app .id-launch-hero,
   .token-workspace-compact .id-launch-hero,
   .token-public-app .id-launch-grid,
@@ -7213,6 +7300,20 @@ pre {
   .boost-profile-avatar {
     height: 82px;
     width: 82px;
+  }
+}
+
+@media (max-width: 860px) {
+  .bond-summary-placeholder {
+    min-height: 780px;
+  }
+
+  .bond-summary-skeleton {
+    grid-template-rows: 180px minmax(300px, 1fr);
+  }
+
+  .bond-summary-skeleton-stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
@@ -7588,6 +7689,7 @@ pre {
   .mail-layout.is-browser-workspace > .browser-computer-workspace,
   .mail-layout.is-boost-workspace > .boost-embedded-app {
     grid-column: 1 / -1;
+    min-height: calc(100dvh - var(--topbar-height) - var(--status-row-height));
   }
 
   .mail-layout.is-onboarding .reader-pane {

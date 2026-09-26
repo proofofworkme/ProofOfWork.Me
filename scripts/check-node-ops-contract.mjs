@@ -75,6 +75,7 @@ const postgresObservabilitySql = read(
 const postgresQueryHealth = read(
   "deploy/proofofwork-postgres-query-health.sh",
 );
+const proofApi = read("server/proof-api.mjs");
 const postgresQueryHealthService = read(
   "deploy/proofofwork-postgres-query-health.service",
 );
@@ -310,6 +311,11 @@ assert.match(postgresQueryHealth, /query_id::text/u);
 assert.match(postgresQueryHealth, /backend_type = 'client backend'/u);
 assert.match(postgresQueryHealth, /all_client_sessions/u);
 assert.match(postgresQueryHealth, /scoped_sessions/u);
+assert.match(postgresQueryHealth, /application_name/u);
+assert.match(postgresQueryHealth, /backup_sessions[\s\S]*LIKE 'pg_dump%'/u);
+assert.match(postgresQueryHealth, /application_sessions[\s\S]*NOT LIKE 'pg_dump%'/u);
+assert.match(postgresQueryHealth, /postgres_backup client_sessions=/u);
+assert.match(proofApi, /response\.once\("close"[\s\S]*response\.writableFinished[\s\S]*http-response-interrupted-observation/u);
 assert.match(postgresQueryHealth, /POW_POSTGRES_WARN_QUERY_FANOUT:-4/u);
 assert.match(postgresQueryHealth, /POW_POSTGRES_CRITICAL_QUERY_FANOUT:-8/u);
 assert.match(postgresQueryHealth, /POW_POSTGRES_WARN_LOCK_WAIT_SECONDS:-5/u);
@@ -360,7 +366,7 @@ assert.doesNotMatch(
 );
 assert.match(
   postgresQueryHealth,
-  /printf 'postgres database=%s cluster_client_connections=%s active=%s oldest_active_seconds=%s max_same_query_fanout=%s lock_waiters=%s oldest_lock_wait_seconds=%s idle_in_transaction=%s oldest_idle_transaction_seconds=%s/u,
+  /printf 'postgres database=%s cluster_client_connections=%s application_connections=%s active=%s oldest_active_seconds=%s max_same_query_fanout=%s lock_waiters=%s oldest_lock_wait_seconds=%s idle_in_transaction=%s oldest_idle_transaction_seconds=%s/u,
 );
 assert.match(postgresQueryHealthService, /User=postgres/u);
 assert.match(postgresQueryHealthService, /^Requisite=postgresql@16-main\.service$/mu);

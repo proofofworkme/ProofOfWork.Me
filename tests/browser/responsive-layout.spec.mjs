@@ -176,10 +176,23 @@ const TOKEN_STATE = {
 
 const REGISTRY_STATE = {
   activity: [],
+  indexedAt: NOW,
+  indexedThroughBlock: 960_220,
+  indexedThroughBlockHash: HASH,
   listings: [],
+  network: "livenet",
   pendingEvents: [],
   records: [],
+  registryAddress: "bc1qfwytlzyr3ym3enz2eutwtjsf9kkf6uqkjydk3e",
   sales: [],
+  source: "responsive-layout-fixture",
+  stats: {
+    confirmed: 0,
+    pendingChanges: 0,
+    pendingRecords: 0,
+    total: 0,
+  },
+  totalCounts: { pendingEvents: 0 },
 };
 
 // Production-scale exact values make the rendered checks exercise the long
@@ -639,6 +652,7 @@ async function installApiFixtures(
     marketplaceSummaryGate,
     marketplaceSummaryMode = "ready",
     marketplaceSummaryTransform,
+    responseDelayMs = 0,
     tokenListingHistoryGate,
     tokenListingHistoryRequested,
     tokenListingHistoryResponse,
@@ -799,6 +813,7 @@ async function installApiFixtures(
     ) {
       json = {
         ...fixtureTokenState,
+        ...(pathname === "/api/v1/token-summary" ? { summaryOnly: true } : {}),
         directory: { model: "proof-token-directory-v1", complete: true, totalCount: fixtureTokenState.tokens.length },
       };
     } else if (
@@ -844,6 +859,9 @@ async function installApiFixtures(
       json = {};
     }
 
+    if (responseDelayMs > 0) {
+      await new Promise((resolve) => setTimeout(resolve, responseDelayMs));
+    }
     await route.fulfill({
       body: JSON.stringify(json),
       contentType: "application/json",
@@ -2154,6 +2172,79 @@ async function openFixtureRoute(page, href, label) {
   await expect(page.locator("#root"), `${label} root did not render`).not.toBeEmpty();
 }
 
+async function observeLayoutShifts(page) {
+  await page.addInitScript(() => {
+    window.__proofLayoutShifts = [];
+    if (!PerformanceObserver.supportedEntryTypes?.includes("layout-shift")) {
+      return;
+    }
+    const observer = new PerformanceObserver((list) => {
+      window.__proofLayoutShifts.push(
+        ...list.getEntries().map((entry) => ({
+          hadRecentInput: entry.hadRecentInput,
+          startTime: entry.startTime,
+          geometry: (() => {
+            const rect = (selector) => {
+              const node = document.querySelector(selector);
+              if (!node) return null;
+              const box = node.getBoundingClientRect();
+              return { height: box.height, width: box.width, x: box.x, y: box.y };
+            };
+            return {
+              bodyHeight: document.body.scrollHeight,
+              detailRoot: rect(".work-floor-detail-workspace"),
+              documentHeight: document.documentElement.scrollHeight,
+              footer: rect(".app-footer"),
+              market: rect("#credit-detail-market"),
+              overview: rect("#credit-detail-overview"),
+              scrollY: window.scrollY,
+              status: rect(".app-status-row"),
+              viewportHeight: window.innerHeight,
+            };
+          })(),
+          sources: entry.sources?.map((source) => ({
+            className: source.node?.className?.toString?.() ?? "",
+            currentRect: source.currentRect,
+            id: source.node?.id ?? "",
+            previousRect: source.previousRect,
+            tagName: source.node?.tagName ?? "",
+          })),
+          value: entry.value,
+        })),
+      );
+    });
+    observer.observe({ type: "layout-shift", buffered: true });
+  });
+}
+
+async function measuredCumulativeLayoutShift(page) {
+  const entries = await page.evaluate(() => window.__proofLayoutShifts ?? []);
+  let sessionValue = 0;
+  let sessionStart = 0;
+  let previousTime = 0;
+  let maximumSessionValue = 0;
+
+  for (const entry of entries) {
+    if (entry.hadRecentInput) {
+      continue;
+    }
+    if (
+      sessionStart === 0 ||
+      entry.startTime - previousTime >= 1000 ||
+      entry.startTime - sessionStart >= 5000
+    ) {
+      sessionValue = entry.value;
+      sessionStart = entry.startTime;
+    } else {
+      sessionValue += entry.value;
+    }
+    previousTime = entry.startTime;
+    maximumSessionValue = Math.max(maximumSessionValue, sessionValue);
+  }
+
+  return maximumSessionValue;
+}
+
 async function assertMarketplaceGeometry(page, mode, width) {
   const label = `AMO WORK ${mode} at ${width}px`;
   await assertTopbarGeometry(page, label, width);
@@ -2835,7 +2926,7 @@ test("AMO summary moves from loading to ready without presenting placeholder zer
   await expect(loadingMetrics.first()).not.toHaveText("—");
 });
 
-test("AMO renders its verified summary while exact listing pagination continues", async ({
+test("AMO keeps its verified preview idle until complete listing history is requested", async ({
   page,
 }) => {
   test.setTimeout(180_000);
@@ -2855,6 +2946,7 @@ test("AMO renders its verified summary while exact listing pagination continues"
         ...summary.token,
         collectionHasMore: { listings: true, sales: false, tokens: false },
         hasMore: true,
+        indexedAt: NOW,
         indexedThroughBlock: 960_220,
         indexedThroughBlockHash: HASH,
         listingAuthority: tokenListingHistoryResponse.listingAuthority,
@@ -2902,15 +2994,15 @@ test("AMO renders its verified summary while exact listing pagination continues"
         MARKETPLACE_BASE_URL,
         `/?marketplace=1&asset=${WORK_TOKEN_ID}`,
       ),
-      "AMO verified summary during listing pagination",
+      "AMO verified summary before requested listing history",
     );
     const verification = page.locator(
       '.marketplace-summary-read-state[aria-label="AMO summary verification"]',
     ).first();
-    await expect.poll(() => listingHistoryRequests).toBeGreaterThan(0);
     await expect(verification).toHaveAttribute("data-state", "ready", {
       timeout: 30_000,
     });
+    expect(listingHistoryRequests).toBe(0);
     await expect(verification).toContainText(
       "Listing rows are a verified preview",
     );
@@ -2920,7 +3012,7 @@ test("AMO renders its verified summary while exact listing pagination continues"
     ).toContainText("1");
     await expect(
       page.getByRole("status").filter({
-        hasText: "Showing a verified AMO preview while the complete Core-reconciled sale-ticket book loads",
+        hasText: "Showing a verified AMO preview",
       }),
     ).toBeVisible();
     await expect(page.getByText("No credit listings yet", { exact: true })).toHaveCount(0);
@@ -2928,15 +3020,22 @@ test("AMO renders its verified summary while exact listing pagination continues"
       page.getByLabel("AMO asset tabs").getByRole("button", { name: /^Bonds\s+—$/u }),
     ).toBeVisible();
 
+    const loadHistory = page.getByRole("button", {
+      name: "Load complete sale-ticket history",
+    });
+    await loadHistory.click();
+    await expect.poll(() => listingHistoryRequests).toBeGreaterThan(0);
+    await expect(
+      page.getByRole("button", { name: /Verifying sale-ticket history/u }),
+    ).toBeVisible();
+    await expect(verification).toContainText("Listing rows are a verified preview");
     releaseListingHistory();
     await expect(verification).toContainText(
-      "complete Core-reconciled listing and sale history",
+      "complete Core-reconciled sale-ticket history",
       { timeout: 30_000 },
     );
     await expect(
-      page.getByRole("status").filter({
-        hasText: "Showing a verified AMO preview while the complete Core-reconciled sale-ticket book loads",
-      }),
+      page.getByRole("status").filter({ hasText: "Showing a verified AMO preview" }),
     ).toHaveCount(0);
     await expect(
       page.getByLabel("AMO asset tabs").getByRole("button", { name: /^Bonds\s+0$/u }),
@@ -3053,10 +3152,14 @@ test("AMO does not apply listing pages from a superseded summary checkpoint", as
       .locator('[aria-label="WORK credit AMO stats"] > div')
       .nth(2)
       .locator("strong");
-    await expect.poll(() => listingHistoryRequests).toBeGreaterThan(0);
     await expect(verification).toHaveAttribute("data-state", "ready", {
       timeout: 30_000,
     });
+    expect(listingHistoryRequests).toBe(0);
+    await page.getByRole("button", {
+      name: "Load complete sale-ticket history",
+    }).click();
+    await expect.poll(() => listingHistoryRequests).toBeGreaterThan(0);
     await expect(openRecordCount).toHaveText("1");
 
     serveFreshSnapshot = true;
@@ -3493,6 +3596,163 @@ for (const route of COMPUTER_ROUTES) {
     }
   });
 }
+
+test("disconnected Computer shows verified public registry readiness separately from wallet state", async ({ page }) => {
+  await installApiFixtures(page, { responseDelayMs: 80 });
+  const registryRequests = [];
+  page.on("request", (request) => {
+    const url = new URL(request.url());
+    if (url.pathname === "/api/v1/registry-summary" || url.pathname === "/api/v1/registry") {
+      registryRequests.push(url);
+    }
+  });
+  await page.setViewportSize({ height: 900, width: 1440 });
+  await openFixtureRoute(
+    page,
+    surfaceUrl(COMPUTER_BASE_URL, "/?folder=inbox"),
+    "disconnected Computer public registry overview",
+  );
+
+  const registryOverview = page.locator(".registry-network-stat");
+  await expect(registryOverview).toContainText("0 confirmed · 0 pending IDs");
+  await expect(registryOverview).toContainText("verified at block 960,220");
+  await expect(page.locator(".account-box code").first()).toHaveText("Not connected");
+  expect(registryRequests.some((url) => url.pathname === "/api/v1/registry-summary")).toBe(true);
+  expect(registryRequests.some((url) => url.pathname === "/api/v1/registry")).toBe(false);
+});
+
+for (const route of [
+  { label: "Computer", path: "/?folder=wallet" },
+  { label: "standalone", path: "/?wallet=1" },
+]) {
+  test(`disconnected ${route.label} Wallet uses the compact directory and labels account readiness`, async ({ page }) => {
+    await installApiFixtures(page, { responseDelayMs: 100 });
+    const tokenRequests = [];
+    page.on("request", (request) => {
+      const url = new URL(request.url());
+      if (url.pathname === "/api/v1/token" || url.pathname === "/api/v1/token-summary") {
+        tokenRequests.push(url);
+      }
+    });
+    await page.setViewportSize({ height: 900, width: 1440 });
+    await openFixtureRoute(
+      page,
+      surfaceUrl(COMPUTER_BASE_URL, route.path),
+      `disconnected ${route.label} Wallet`,
+    );
+
+    const wallet = page.locator(".token-wallet-workspace");
+    await expect(wallet).toBeVisible();
+    await expect(page.locator(".app-status-row .status-text")).toContainText(
+      "Public credit directory loaded",
+    );
+    const overviewStats = wallet.locator("#wallet-overview .token-stats-row > div");
+    await expect(overviewStats.nth(0)).toContainText("Connect UniSat");
+    await expect(overviewStats.nth(1)).toContainText("Connect UniSat");
+    await expect(overviewStats.nth(2)).toContainText("Connect UniSat");
+    await expect(wallet.locator("#wallet-balances")).toContainText(
+      "Connect UniSat to view balances",
+    );
+    await expect(wallet.locator("#wallet-send .token-stats-row > div").first()).toContainText(
+      "Connect UniSat",
+    );
+    await expect(wallet.locator("#wallet-list .token-stats-row > div").first()).toContainText(
+      "Connect UniSat",
+    );
+    await expect(wallet.locator("#wallet-activity")).toContainText(
+      "Connect UniSat to view activity",
+    );
+
+    const directoryRead = tokenRequests.find(
+      (url) =>
+        url.pathname === "/api/v1/token-summary" &&
+        url.searchParams.get("compact") === "1" &&
+        url.searchParams.get("projection") === "directory-v1",
+    );
+    expect(directoryRead, "Wallet should request the complete compact credit directory").toBeTruthy();
+    expect(directoryRead.searchParams.has("wallet")).toBe(false);
+    expect(directoryRead.searchParams.has("address")).toBe(false);
+    expect(
+      tokenRequests.some((url) => url.pathname === "/api/v1/token"),
+      "disconnected Wallet must not request the full token history",
+    ).toBe(false);
+  });
+}
+
+const CLS_REGRESSION_ROUTES = [
+  { label: "Boost", surface: "Computer", path: "/?folder=boost", ready: ".boost-post" },
+  { label: "Boost", surface: "standalone", path: "/?boost=1", ready: ".boost-post" },
+  { label: "WORK", surface: "Computer", path: "/?folder=work", ready: ".work-floor-metrics-card" },
+  { label: "WORK", surface: "standalone", path: "/?work=1", ready: ".work-floor-metrics-card" },
+  { label: "Infinity", surface: "Computer", path: "/?folder=infinity", ready: "#bond-overview.token-dashboard-card" },
+  { label: "Infinity", surface: "standalone", path: "/?infinity=1", ready: "#bond-overview.token-dashboard-card" },
+  { label: "Inception", surface: "Computer", path: "/?folder=inception", ready: "#bond-overview.token-dashboard-card" },
+  { label: "Inception", surface: "standalone", path: "/?inception=1", ready: "#bond-overview.token-dashboard-card" },
+  { label: "Log", surface: "Computer", path: "/?folder=log", ready: "#log-events" },
+  { label: "Log", surface: "standalone", path: "/?log=1", ready: "#log-events" },
+];
+
+for (const route of CLS_REGRESSION_ROUTES) {
+  for (const viewport of [
+    { label: "desktop", height: 900, width: 1440 },
+    { label: "mobile", height: 844, width: 390 },
+  ]) {
+    test(`${route.surface} ${route.label} ${viewport.label} CLS stays within 0.1`, async ({ page }) => {
+      test.setTimeout(45_000);
+      await installApiFixtures(page, {
+        boostItems: [BOOST_FIXTURE_ITEM],
+        responseDelayMs: 80,
+      });
+      await observeLayoutShifts(page);
+      await page.setViewportSize({ height: viewport.height, width: viewport.width });
+      await openFixtureRoute(
+        page,
+        surfaceUrl(COMPUTER_BASE_URL, route.path),
+        `${route.surface} ${route.label} ${viewport.label}`,
+      );
+      await expect(page.locator(route.ready).first()).toBeVisible({ timeout: 20_000 });
+      await page.waitForTimeout(1_250);
+      const cls = await measuredCumulativeLayoutShift(page);
+      const shiftDetails = cls > 0.1
+        ? await page.evaluate(() => JSON.stringify(window.__proofLayoutShifts))
+        : "";
+      expect(
+        cls,
+        `${route.surface} ${route.label} ${viewport.label} fixture CLS was ${cls.toFixed(3)}${shiftDetails ? `; shifts: ${shiftDetails}` : ""}`,
+      ).toBeLessThanOrEqual(0.1);
+    });
+  }
+}
+
+test("Home video contacts YouTube only after the accessible load action", async ({ page }) => {
+  await installApiFixtures(page);
+  const videoRequests = [];
+  page.on("request", (request) => {
+    const url = new URL(request.url());
+    if (/(^|\.)(youtube\.com|youtube-nocookie\.com|ytimg\.com|googlevideo\.com)$/u.test(url.hostname)) {
+      videoRequests.push(url.href);
+    }
+  });
+  await page.route(
+    /https:\/\/(?:[^/]+\.)?(?:youtube\.com|youtube-nocookie\.com|ytimg\.com|googlevideo\.com)\//u,
+    (route) => route.fulfill({ body: "<html><body></body></html>", contentType: "text/html", status: 200 }),
+  );
+
+  await page.goto("/?landing=1");
+  const loadVideo = page.getByRole("button", {
+    name: "Load the ProofOfWork Computer overview video from YouTube",
+  });
+  await expect(loadVideo).toBeVisible();
+  expect(videoRequests).toEqual([]);
+  await loadVideo.focus();
+  await expect(loadVideo).toBeFocused();
+  await page.keyboard.press("Enter");
+  await expect(page.locator(".landing-video-frame iframe")).toHaveAttribute(
+    "src",
+    "https://www.youtube.com/embed/vJLBCylKMyc",
+  );
+  await expect.poll(() => videoRequests.length).toBeGreaterThan(0);
+});
 
 test("cold AMO Bonds loads selected exact references without visiting standalone Bonds", async ({ page }) => {
   await installApiFixtures(page);

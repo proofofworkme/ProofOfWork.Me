@@ -1188,6 +1188,12 @@ test("AMO order book counts sealed and unsealed V8 listings with exact buyer arb
   await expect(amoUnits).toBeVisible();
   await expect(amoUnits.getByText("No credit listings yet")).toHaveCount(0);
   await expect(
+    amoUnits.getByRole("button", { name: "Load complete sale-ticket history" }),
+  ).toBeVisible();
+  await amoUnits
+    .getByRole("button", { name: "Load complete sale-ticket history" })
+    .click();
+  await expect(
     amoUnits.getByRole("button", { name: "All 2" }),
   ).toContainText("2");
   await expect(
@@ -1260,7 +1266,7 @@ test("AMO keeps a labeled preview when complete listing evidence disagrees with 
   await expect(amoUnits).toBeVisible();
   await expect(
     amoUnits.getByText(
-      /Showing a verified AMO preview while the complete Core-reconciled sale-ticket book loads/u,
+      /Showing a verified AMO preview/u,
     ),
   ).toBeVisible();
   await expect(
@@ -1275,6 +1281,15 @@ test("AMO keeps a labeled preview when complete listing evidence disagrees with 
   await expect(
     amoUnits.locator(".token-market-grid .token-market-row"),
   ).toHaveCount(1);
+  await amoUnits
+    .getByRole("button", { name: "Load complete sale-ticket history" })
+    .click();
+  await expect(
+    amoUnits.locator(".listing-history-load-controls .field-note.bad"),
+  ).toContainText("exact indexed summary snapshot");
+  await expect(
+    amoUnits.getByText(/Showing a verified AMO preview/u),
+  ).toBeVisible();
 
   await page
     .getByRole("button", { name: "Bonds —" })
@@ -1293,7 +1308,7 @@ test("AMO keeps a labeled preview when complete listing evidence disagrees with 
   ).toBeVisible();
   await expect(
     incbBook.getByRole("heading", {
-      name: "Loading complete INCB sale tickets",
+      name: "Complete INCB history not loaded",
     }),
   ).toBeVisible();
   await expect(incbBook.getByText("No INCB sale tickets yet")).toHaveCount(0);
@@ -1316,6 +1331,26 @@ test("AMO treats a zero compact listing array as an incomplete preview when exac
     .filter({ has: page.getByRole("heading", { name: "AMO Units" }) })
     .first();
   await expect(amoUnits).toBeVisible();
+  await expect(
+    amoUnits.getByText(
+      /0 credit tickets visible; 0 total credit and bond tickets declared/u,
+    ),
+  ).toBeVisible();
+  await expect(
+    amoUnits.getByRole("heading", {
+      name: "Complete credit history not loaded",
+    }),
+  ).toBeVisible();
+  await expect(amoUnits.getByText("No credit listings yet")).toHaveCount(0);
+  expect(
+    fixture.requests.some((request) => {
+      const url = new URL(request);
+      return url.pathname === "/api/v1/token-history" && url.searchParams.get("kind") === "listings";
+    }),
+  ).toBe(false);
+  await amoUnits
+    .getByRole("button", { name: "Load complete sale-ticket history" })
+    .click();
   await expect
     .poll(() =>
       fixture.requests.some((request) => {
@@ -1328,18 +1363,11 @@ test("AMO treats a zero compact listing array as an incomplete preview when exac
     )
     .toBe(true);
   await expect(
-    amoUnits.getByText(
-      /0 credit tickets visible; 0 total credit and bond tickets declared/u,
-    ),
-  ).toBeVisible();
-  await expect(
-    amoUnits.getByRole("heading", {
-      name: "Loading complete credit sale tickets",
-    }),
-  ).toBeVisible();
+    amoUnits.locator(".listing-history-load-controls .field-note.bad"),
+  ).toContainText("verified preview remains visible");
   await expect(amoUnits.getByText("No credit listings yet")).toHaveCount(0);
   await expect(page.locator(".app-status-row.status.idle")).toBeVisible();
-  await expect(page.locator(".app-status-row.status.good")).toHaveCount(0);
+  await expect(page.locator(".app-status-row.status.bad")).toHaveCount(0);
 });
 
 test("standalone INCB clears its compact preview after filtering the exact global listing book", async ({
@@ -1355,21 +1383,22 @@ test("standalone INCB clears its compact preview after filtering the exact globa
     .filter({ has: page.getByRole("heading", { name: "INCB Sale Tickets" }) })
     .first();
   await expect(incbBook).toBeVisible();
-  await expect
-    .poll(() =>
-      fixture.requests.some((request) => {
-        const url = new URL(request);
-        return (
-          url.pathname === "/api/v1/token-history" &&
-          url.searchParams.get("kind") === "listings" &&
-          !url.searchParams.has("asset")
-        );
-      }),
-    )
-    .toBe(true);
+  await expect(incbBook.getByText(/Showing a verified AMO preview/u)).toBeVisible();
   await expect(
-    incbBook.getByText(/Showing a verified AMO preview/u),
-  ).toHaveCount(0);
+    incbBook.getByRole("heading", {
+      name: "Complete INCB history not loaded",
+    }),
+  ).toBeVisible();
+  expect(
+    fixture.requests.some((request) => {
+      const url = new URL(request);
+      return url.pathname === "/api/v1/token-history" && url.searchParams.get("kind") === "listings";
+    }),
+  ).toBe(false);
+  await incbBook
+    .getByRole("button", { name: "Load complete INCB history" })
+    .click();
+  await expect(incbBook.getByText(/Showing a verified AMO preview/u)).toHaveCount(0);
   await expect(
     incbBook.getByRole("heading", { name: "No INCB sale tickets yet" }),
   ).toBeVisible();
@@ -1378,6 +1407,8 @@ test("standalone INCB clears its compact preview after filtering the exact globa
   await expect(page.locator(".desktop-route-status.status.good")).toContainText(
     "Inception Bond loaded.",
   );
+  await expect(incbBook.getByText(/Showing a verified AMO preview/u)).toHaveCount(0);
+  await expect(incbBook.getByRole("button", { name: "Load complete INCB history" })).toHaveCount(0);
 });
 
 test("standalone INCB stays idle with a labeled preview on scoped checkpoint and count mismatch", async ({
@@ -1401,13 +1432,20 @@ test("standalone INCB stays idle with a labeled preview on scoped checkpoint and
   ).toBeVisible();
   await expect(
     incbBook.getByRole("heading", {
-      name: "Loading complete INCB sale tickets",
+      name: "Complete INCB history not loaded",
     }),
   ).toBeVisible();
+  await incbBook
+    .getByRole("button", { name: "Load complete INCB history" })
+    .click();
+  await expect(
+    incbBook.locator(".listing-history-load-controls .field-note.bad"),
+  ).toContainText("exact indexed summary snapshot");
+  await expect(incbBook.getByText(/Showing a verified AMO preview/u)).toBeVisible();
 
   await page.getByRole("button", { name: "Refresh" }).first().click();
   await expect(page.locator(".desktop-route-status.status.idle")).toContainText(
-    "Inception Bond summary loaded. Verifying the complete Core-reconciled INCB sale-ticket book before reporting bond inventory as complete.",
+    "Inception Bond summary loaded. The verified INCB preview is ready. Load complete Core-reconciled sale-ticket history when you need full search or inventory.",
   );
   await expect(page.locator(".desktop-route-status.status.good")).toHaveCount(0);
 });

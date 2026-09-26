@@ -57,6 +57,7 @@ metrics="$(/usr/bin/psql \
     WITH all_client_sessions AS (
       SELECT
         datname,
+        application_name,
         state,
         query_start,
         xact_start,
@@ -71,17 +72,36 @@ metrics="$(/usr/bin/psql \
       FROM all_client_sessions
       WHERE datname = current_database()
     ),
+    backup_sessions AS (
+      SELECT *
+      FROM all_client_sessions
+      WHERE lower(COALESCE(application_name, '')) LIKE 'pg_dump%'
+    ),
+    application_sessions AS (
+      SELECT *
+      FROM scoped_sessions
+      WHERE lower(COALESCE(application_name, '')) NOT LIKE 'pg_dump%'
+    ),
     fanout AS (
       SELECT COUNT(*)::bigint AS active_count
-      FROM scoped_sessions
+      FROM application_sessions
       WHERE state = 'active'
       GROUP BY fingerprint
     )
     SELECT
       (SELECT COUNT(*)::bigint FROM all_client_sessions),
-      COUNT(*) FILTER (WHERE state = 'active')::bigint,
+      (SELECT COUNT(*)::bigint FROM backup_sessions),
+      (SELECT COUNT(*) FILTER (WHERE state = 'active')::bigint FROM backup_sessions),
       COALESCE(
-        EXTRACT(EPOCH FROM (clock_timestamp() - MIN(query_start) FILTER (WHERE state = 'active')))::bigint,
+        (SELECT EXTRACT(EPOCH FROM (clock_timestamp() - MIN(query_start)))::bigint
+         FROM backup_sessions WHERE state = 'active'),
+        0
+      ),
+      (SELECT COUNT(*)::bigint FROM application_sessions),
+      (SELECT COUNT(*) FILTER (WHERE state = 'active')::bigint FROM application_sessions),
+      COALESCE(
+        (SELECT EXTRACT(EPOCH FROM (clock_timestamp() - MIN(query_start)))::bigint
+         FROM application_sessions WHERE state = 'active'),
         0
       ),
       COALESCE((SELECT MAX(active_count) FROM fanout), 0),
@@ -106,9 +126,13 @@ metrics="$(/usr/bin/psql \
     FROM scoped_sessions;
   ")"
 
-IFS='|' read -r total_connections active_queries oldest_query_seconds max_same_query lock_waiters oldest_lock_wait_seconds idle_in_transaction oldest_idle_transaction_seconds <<<"${metrics}"
+IFS='|' read -r total_connections backup_sessions backup_active_queries oldest_backup_query_seconds application_connections active_queries oldest_query_seconds max_same_query lock_waiters oldest_lock_wait_seconds idle_in_transaction oldest_idle_transaction_seconds <<<"${metrics}"
 for value in \
   "${total_connections}" \
+  "${backup_sessions}" \
+  "${backup_active_queries}" \
+  "${oldest_backup_query_seconds}" \
+  "${application_connections}" \
   "${active_queries}" \
   "${oldest_query_seconds}" \
   "${max_same_query}" \
@@ -272,9 +296,14 @@ for value in \
   fi
 done
 
-printf 'postgres database=%s cluster_client_connections=%s active=%s oldest_active_seconds=%s max_same_query_fanout=%s lock_waiters=%s oldest_lock_wait_seconds=%s idle_in_transaction=%s oldest_idle_transaction_seconds=%s\n' \
+printf 'postgres_backup client_sessions=%s active=%s oldest_active_seconds=%s application_name_prefix=pg_dump\n' \
+  "${backup_sessions}" \
+  "${backup_active_queries}" \
+  "${oldest_backup_query_seconds}"
+printf 'postgres database=%s cluster_client_connections=%s application_connections=%s active=%s oldest_active_seconds=%s max_same_query_fanout=%s lock_waiters=%s oldest_lock_wait_seconds=%s idle_in_transaction=%s oldest_idle_transaction_seconds=%s\n' \
   "${database}" \
   "${total_connections}" \
+  "${application_connections}" \
   "${active_queries}" \
   "${oldest_query_seconds}" \
   "${max_same_query}" \
