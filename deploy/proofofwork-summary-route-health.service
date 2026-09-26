@@ -1,0 +1,28 @@
+[Unit]
+Description=Check ProofOfWork summary route latency and WORK AMO V8 readiness
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=powadmin
+Group=powadmin
+Environment=POW_SUMMARY_ROUTE_BASE=https://computer.proofofwork.me
+Environment=POW_SUMMARY_ROUTE_NETWORK=livenet
+ExecStart=/usr/bin/node /usr/local/sbin/proofofwork-summary-route-health
+TimeoutStartSec=45s
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectControlGroups=true
+ProtectKernelLogs=true
+ProtectKernelModules=true
+ProtectKernelTunables=true
+CapabilityBoundingSet=
+AmbientCapabilities=
+RestrictSUIDSGID=true
+LockPersonality=true
+RestrictRealtime=true
+SystemCallArchitectures=native

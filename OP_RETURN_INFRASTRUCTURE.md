@@ -1053,6 +1053,9 @@ deploy/proofofwork-postgres-logical-backup.timer
 deploy/proofofwork-postgres-query-health.sh
 deploy/proofofwork-postgres-query-health.service
 deploy/proofofwork-postgres-query-health.timer
+scripts/check-summary-route-readiness.mjs
+deploy/proofofwork-summary-route-health.service
+deploy/proofofwork-summary-route-health.timer
 deploy/proofofwork-release-prune.sh
 deploy/proofofwork-ui-release-prune.service
 deploy/proofofwork-ui-release-prune.timer
@@ -3442,21 +3445,36 @@ root, release-archive, archive-ordering, and stale-temporary discovery are each
 fully materialized and checked before a deletion set is applied; partial or
 failed discovery deletes nothing.
 
-Both scheduled release-prune services run explicitly in `--dry-run` mode and
-remove no archives. An explicitly approved applying run retains and skips
-unverifiable archives, counts only verified pairs toward the keep limit,
-prunes older verified pairs, then exits nonzero so the integrity gap remains
-alert-visible. Both UI retention modes inspect up to nine verified complete-root
-rollbacks and protect every bound archive. Multiple roots produce a warning;
-the mode still determines whether eligible unprotected archive sets are removed.
-Always pass `--dry-run` for inspection: omitting the mode currently selects
-`--apply`. The scheduled services explicitly pass `--dry-run`. It never fabricates a
-missing checksum after the fact. Restore a missing sidecar only from trusted
-deployment evidence and only after separately proving the archived bytes;
-otherwise keep the archive quarantined for operator review.
+The scheduled node release-prune service runs explicitly in `--dry-run` mode
+and removes no archives. The scheduled UI release-prune service applies the
+approved two-archive window for managed UI release archive triplets. Retention
+retains and skips unverifiable archives, counts only verified pairs toward the
+keep limit, prunes older verified pairs, then exits nonzero so an integrity gap
+remains alert-visible. UI retention inspects up to nine verified complete-root
+rollbacks and protects every bound archive. Multiple roots produce a warning in
+`--dry-run`; `--apply` refuses more than one complete-root rollback until the
+extra roots are explicitly classified. Always pass `--dry-run` for inspection:
+omitting the mode currently selects `--apply`. It never fabricates a missing
+checksum after the fact. Restore a
+missing sidecar only from trusted deployment evidence and only after separately
+proving the archived bytes; otherwise keep the archive quarantined for operator
+review.
 Both host-specific retention services are bounded to 30 minutes and run at
 nice 10 with idle I/O and low CPU/I/O weights so recursive checksums cannot
 compete with the serving path indefinitely.
+
+The node VPS also runs `proofofwork-summary-route-health.timer` every five
+minutes. The service executes
+`/usr/bin/node /usr/local/sbin/proofofwork-summary-route-health` as `powadmin`
+and writes compact JSON to the journal. It fetches `/health`,
+`/api/v1/work-summary?network=livenet&compact=1`, and
+`/api/v1/marketplace-summary?network=livenet&compact=1`, then separates
+slow-but-correct latency warnings from stale readiness failures and active
+WORK AMO V8 cross-route invariant failures. A chain tip that has advanced ahead
+of the proof index is reported as `stale-readiness`; route mismatch, malformed
+checkpoint, missing V8 declaration evidence, or divergent V8 metadata is
+reported as an active invariant failure. The checker is read-only and must not
+write protocol, ledger, or database state.
 
 For node releases, install the atomic checkout exchange and release publisher
 as root-owned executables:
@@ -4383,14 +4401,15 @@ extra, duplicated or changed classifications abort publication. Read-only
 roots; it never permits recording new provenance there. No root is moved or
 deleted by this option. Separate classification/move approval remains an
 alternative after the soak; no automatic cleanup or timer may delete a root.
-Scheduled UI release retention runs in explicit `--dry-run` mode. When two or
-more complete-root rollbacks are preserved, it verifies and protects each
-archive-bound v3 or legacy manifest under the shared deploy lock, up to nine
-roots (eight explicitly retained roots plus the new rollback). It reports a
-warning and deletes nothing in dry-run mode. Applying retention validates and
-protects the same roots; it does not refuse merely because more than one root
-exists. A future deletion still needs its own exact approval. A first controlled publish
-from a legacy record leaves new v3 provenance live and the honest legacy
+Scheduled UI release retention applies the approved two-archive window for
+managed release archive triplets. When two or more complete-root rollbacks are
+preserved, it verifies and protects each archive-bound v3 or legacy manifest
+under the shared deploy lock, up to nine roots (eight explicitly retained roots
+plus the new rollback). In dry-run mode it reports a warning for multiple roots;
+in apply mode it refuses more than one complete-root rollback until the extra
+roots are explicitly classified. Complete rollback roots themselves are not
+deleted by this archive-retention service. A first
+controlled publish from a legacy record leaves new v3 provenance live and the honest legacy
 manifest with the complete prior root. Retention fails closed on a missing,
 ambiguous, unsafe, unknown, malformed, or unverified rollback manifest.
 The publisher's transactional verification ends when it reports

@@ -81,6 +81,13 @@ const postgresQueryHealthService = read(
 const postgresQueryHealthTimer = read(
   "deploy/proofofwork-postgres-query-health.timer",
 );
+const summaryRouteHealth = read("scripts/check-summary-route-readiness.mjs");
+const summaryRouteHealthService = read(
+  "deploy/proofofwork-summary-route-health.service",
+);
+const summaryRouteHealthTimer = read(
+  "deploy/proofofwork-summary-route-health.timer",
+);
 const infrastructure = read("OP_RETURN_INFRASTRUCTURE.md");
 const packageJson = read("package.json");
 const surfaceAudit = read("scripts/audit-production-surfaces.mjs");
@@ -368,6 +375,14 @@ assert.match(
 );
 assert.match(postgresQueryHealthService, /ProtectSystem=strict/u);
 assert.match(postgresQueryHealthTimer, /OnCalendar=\*:0\/5/u);
+assert.match(summaryRouteHealthService, /^User=powadmin$/mu);
+assert.match(summaryRouteHealthService, /^ProtectSystem=strict$/mu);
+assert.match(summaryRouteHealthService, /^NoNewPrivileges=true$/mu);
+assert.match(summaryRouteHealthService, /^CapabilityBoundingSet=$/mu);
+assert.match(summaryRouteHealthTimer, /^OnCalendar=\*:0\/5$/mu);
+assert.match(summaryRouteHealth, /WORK_AMO_V8_DECLARATION_TXID/u);
+assert.match(summaryRouteHealth, /work-amo-v8-cross-route-mismatch/u);
+assert.match(summaryRouteHealth, /stale-readiness/u);
 assert.match(
   releasePublish,
   /--upload-pack="\/usr\/bin\/git -c safe\.directory=\$\{checkout\}\/\.git upload-pack"/u,
@@ -378,6 +393,9 @@ for (const requiredPath of [
   "deploy/postgresql-proof-index-tablespace.conf",
   "deploy/proofofwork-node-storage-health.sh",
   "deploy/proofofwork-postgres-query-health.sh",
+  "deploy/proofofwork-summary-route-health.service",
+  "deploy/proofofwork-summary-route-health.timer",
+  "scripts/check-summary-route-readiness.mjs",
   "deploy/proofofwork-node-release-exchange.py",
   "deploy/proofofwork-node-release-publish.sh",
   "deploy/proofofwork-node-release-health.sh",
@@ -577,8 +595,8 @@ try {
   const fixturePath = join(testRoot, "proofofwork-release-prune");
   const fixture = releasePrune
     .replace(
-      "/var/backups/proofofwork-ui/releases:5",
-      `${uiRoot}:5`,
+      "/var/backups/proofofwork-ui/releases:2",
+      `${uiRoot}:2`,
     )
     .replace(
       "/data/proofofwork-release-backups/managed:3",
@@ -938,13 +956,13 @@ try {
     ...process.env, POW_RELEASE_ALLOW_TEST_ROOTS: "1", POW_RELEASE_UI_MANIFEST: uiManifest,
     POW_RELEASE_UI_ROLLBACK_ROOT: uiRollbackRoot, POW_UI_DEPLOY_LOCK: uiDeployLock,
   };
-  const multiRollbackDryRun = spawnSync("/usr/bin/bash", [fixturePath, uiRoot, "5", "--dry-run"], {
+  const multiRollbackDryRun = spawnSync("/usr/bin/bash", [fixturePath, uiRoot, "2", "--dry-run"], {
     encoding: "utf8", env: multiRollbackEnvironment,
   });
   assert.equal(multiRollbackDryRun.status, 1, multiRollbackDryRun.stderr);
   assert.match(multiRollbackDryRun.stderr, /WARNING multiple complete-root UI rollbacks/u);
   assert.match(multiRollbackDryRun.stdout, /release_retention mode=dry-run/u);
-  const multiRollbackApply = spawnSync("/usr/bin/bash", [fixturePath, uiRoot, "5", "--apply"], {
+  const multiRollbackApply = spawnSync("/usr/bin/bash", [fixturePath, uiRoot, "2", "--apply"], {
     encoding: "utf8", env: multiRollbackEnvironment,
   });
   assert.equal(multiRollbackApply.status, 2, multiRollbackApply.stderr);
@@ -962,7 +980,7 @@ try {
   rmSync(secondRollback, { recursive: true });
   const failedRollbackDiscoveryResult = spawnSync(
     "/usr/bin/bash",
-    [failedRollbackDiscoveryFixturePath, uiRoot, "5"],
+    [failedRollbackDiscoveryFixturePath, uiRoot, "2"],
     {
       encoding: "utf8",
       env: {
@@ -993,7 +1011,7 @@ try {
   chmodSync(uiRoot, 0o775);
   const unsafeUiRootResult = spawnSync(
     "/usr/bin/bash",
-    [fixturePath, uiRoot, "5"],
+    [fixturePath, uiRoot, "2"],
     {
       encoding: "utf8",
       env: {
@@ -1019,7 +1037,7 @@ try {
   );
   const malformedRollbackResult = spawnSync(
     "/usr/bin/bash",
-    [fixturePath, uiRoot, "5"],
+    [fixturePath, uiRoot, "2"],
     {
       encoding: "utf8",
       env: {
@@ -1046,7 +1064,7 @@ try {
   );
   const unknownRollbackResult = spawnSync(
     "/usr/bin/bash",
-    [fixturePath, uiRoot, "5"],
+    [fixturePath, uiRoot, "2"],
     {
       encoding: "utf8",
       env: {
@@ -1080,7 +1098,7 @@ try {
       "/usr/bin/bash",
       fixturePath,
       uiRoot,
-      "5",
+      "2",
     ],
     {
       encoding: "utf8",
@@ -1101,7 +1119,7 @@ try {
   }
   const uiResult = spawnSync(
     "/usr/bin/bash",
-    [fixturePath, uiRoot, "5"],
+    [fixturePath, uiRoot, "2"],
     {
       encoding: "utf8",
       env: {
@@ -1114,11 +1132,15 @@ try {
     },
   );
   assert.equal(uiResult.status, 0, uiResult.stderr);
-  assert.equal(existsSync(verifiedUiArchives[0]), true);
-  assert.equal(existsSync(verifiedUiArchives[1]), true);
-  assert.equal(existsSync(verifiedUiArchives[2]), false);
-  for (const archive of verifiedUiArchives.slice(3)) {
+  for (const archive of [
+    verifiedUiArchives[0],
+    verifiedUiArchives[1],
+    ...verifiedUiArchives.slice(6),
+  ]) {
     assert.equal(existsSync(archive), true);
+  }
+  for (const archive of verifiedUiArchives.slice(2, 6)) {
+    assert.equal(existsSync(archive), false);
   }
   assert.match(uiResult.stderr, /active or rollback release archive/u);
   assert.match(uiResult.stderr, /Verified legacy absolute checksum target/u);
@@ -1155,7 +1177,7 @@ try {
   });
   const arbitraryResult = spawnSync(
     "/usr/bin/bash",
-    [fixturePath, uiRoot, "5"],
+    [fixturePath, uiRoot, "2"],
     {
       encoding: "utf8",
       env: {

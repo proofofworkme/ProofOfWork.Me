@@ -233,6 +233,51 @@ function check(results, name, ok, details = {}, severity = "error") {
   results.push({ details, name, ok: Boolean(ok), severity });
 }
 
+function compactCheckFailure(item) {
+  return {
+    name: item.name,
+    severity: item.severity,
+    details: item.details ?? {},
+  };
+}
+
+function isKnownHistoricalWorkAmoV5Warning(item) {
+  return (
+    item?.severity === "warning" &&
+    /^work-amo-v5-(?:canonical-positions|migration|usd-quote-head)$/u.test(
+      String(item?.name ?? ""),
+    )
+  );
+}
+
+function parityFailureSummary(checks) {
+  const failed = checks.filter((item) => !item.ok);
+  const activeInvariantFailures = failed
+    .filter((item) => item.severity === "error")
+    .map(compactCheckFailure);
+  const knownHistoricalWorkAmoV5Warnings = failed
+    .filter(isKnownHistoricalWorkAmoV5Warning)
+    .map(compactCheckFailure);
+  const otherWarnings = failed
+    .filter(
+      (item) =>
+        item.severity === "warning" &&
+        !isKnownHistoricalWorkAmoV5Warning(item),
+    )
+    .map(compactCheckFailure);
+  return {
+    activeInvariantFailureCount: activeInvariantFailures.length,
+    activeInvariantFailures,
+    knownHistoricalWorkAmoV5WarningCount:
+      knownHistoricalWorkAmoV5Warnings.length,
+    knownHistoricalWorkAmoV5Warnings,
+    ok: activeInvariantFailures.length === 0,
+    otherWarningCount: otherWarnings.length,
+    otherWarnings,
+    totalFailedChecks: failed.length,
+  };
+}
+
 function rowNumber(row, key) {
   return numberValue(row?.[key]);
 }
@@ -2597,10 +2642,12 @@ try {
     },
   );
 
+  const failureSummary = parityFailureSummary(checks);
   const failed = checks.filter((item) => item.severity === "error" && !item.ok);
   const output = {
     apiBase: API_BASE,
     checks,
+    compactFailureSummary: failureSummary,
     database: Object.fromEntries(
       Object.entries(counts).map(([key, value]) => [key, rowNumber(counts, key)]),
     ),

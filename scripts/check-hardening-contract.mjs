@@ -49,6 +49,18 @@ const postgresBackupTimer = readFileSync(
   "deploy/proofofwork-postgres-logical-backup.timer",
   "utf8",
 );
+const summaryRouteHealth = readFileSync(
+  "scripts/check-summary-route-readiness.mjs",
+  "utf8",
+);
+const summaryRouteHealthService = readFileSync(
+  "deploy/proofofwork-summary-route-health.service",
+  "utf8",
+);
+const summaryRouteHealthTimer = readFileSync(
+  "deploy/proofofwork-summary-route-health.timer",
+  "utf8",
+);
 const postgresBackupMount = readFileSync(
   "deploy/var-backups-postgresql.mount",
   "utf8",
@@ -562,6 +574,22 @@ assert.match(
   /ReadWritePaths=\/data\/proofofwork-postgres-backups\/logical/u,
 );
 assert.match(postgresBackupTimer, /OnCalendar=\*-\*-\* 03:15:00 UTC/u);
+assert.match(summaryRouteHealthService, /^User=powadmin$/mu);
+assert.match(summaryRouteHealthService, /^Group=powadmin$/mu);
+assert.match(
+  summaryRouteHealthService,
+  /^ExecStart=\/usr\/bin\/node \/usr\/local\/sbin\/proofofwork-summary-route-health$/mu,
+);
+assert.match(summaryRouteHealthService, /^ProtectSystem=strict$/mu);
+assert.match(summaryRouteHealthService, /^ProtectHome=true$/mu);
+assert.match(summaryRouteHealthService, /^CapabilityBoundingSet=$/mu);
+assert.match(summaryRouteHealthService, /^AmbientCapabilities=$/mu);
+assert.match(summaryRouteHealthTimer, /^OnCalendar=\*:0\/5$/mu);
+assert.match(summaryRouteHealthTimer, /^Persistent=true$/mu);
+assert.match(summaryRouteHealth, /WORK_AMO_V8_DECLARATION_TXID/u);
+assert.match(summaryRouteHealth, /activeInvariantFailures/u);
+assert.match(summaryRouteHealth, /staleReadiness/u);
+assert.match(summaryRouteHealth, /route-latency-slow-correct/u);
 assert.match(postgresBasebackupTimer, /Persistent=true/u);
 assert.match(
   releasePrune,

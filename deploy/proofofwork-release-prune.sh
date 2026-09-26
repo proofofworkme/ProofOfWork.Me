@@ -17,7 +17,7 @@ if (($# > 3)); then
   exit 64
 fi
 case "${root}:${keep}" in
-  /var/backups/proofofwork-ui/releases:5)
+  /var/backups/proofofwork-ui/releases:2)
     release_kind="ui"
     ui_manifest="${POW_RELEASE_UI_MANIFEST:-/var/www/.proofofwork-ui-release}"
     ui_rollback_root="${POW_RELEASE_UI_ROLLBACK_ROOT:-/var/backups/proofofwork-ui/rollback-roots}"

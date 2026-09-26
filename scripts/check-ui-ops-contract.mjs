@@ -338,7 +338,7 @@ assert.match(
 );
 
 assert.match(releasePruneService, /^TimeoutStartSec=30m$/mu);
-assert.match(releasePruneService, /^ExecStart=.*\/proofofwork-release-prune \/var\/backups\/proofofwork-ui\/releases 5 --dry-run$/mu);
+assert.match(releasePruneService, /^ExecStart=.*\/proofofwork-release-prune \/var\/backups\/proofofwork-ui\/releases 2 --apply$/mu);
 assert.match(releasePruneService, /^Nice=10$/mu);
 assert.match(releasePruneService, /^IOSchedulingClass=idle$/mu);
 assert.match(releasePruneService, /^CPUWeight=10$/mu);

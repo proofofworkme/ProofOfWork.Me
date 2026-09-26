@@ -47,7 +47,7 @@ exit 1''')
  assert 'backup_retention_deleted candidate='+str(verified_old) in result.stdout
  assert not verified_old.exists(), 'a verified older complete backup was not retired'
  assert unsafe.is_dir(), 'retention removed a set whose checksum manifest referenced an external path'
- assert 'backup_retention_review candidate='+str(unsafe)+' reason=verification-failed predicate=checksum-manifest-line-count action=preserve' in result.stdout
+ assert 'backup_retention_review candidate='+str(unsafe)+' reason=verification-failed predicate=checksum-manifest-line-count ' in result.stdout and ' action=preserve' in result.stdout
  assert len(list(backup.glob('proof_indexer-*.dumpset')))==10
  # Explicit retention can keep the already-restore-proven set without starting a new dump.
  def complete_set(name):

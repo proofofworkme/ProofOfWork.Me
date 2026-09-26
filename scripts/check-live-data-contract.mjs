@@ -10,6 +10,10 @@ const proofIndexMailProjection = readFileSync(
 const proofIndexerBackfill = readFileSync("scripts/backfill-proof-indexer.mjs", "utf8");
 const proofIndexerWorker = readFileSync("scripts/run-proof-indexer-worker.mjs", "utf8");
 const proofIndexerParity = readFileSync("scripts/check-proof-indexer-parity.mjs", "utf8");
+const summaryRouteReadiness = readFileSync(
+  "scripts/check-summary-route-readiness.mjs",
+  "utf8",
+);
 const marketplaceRegressions = readFileSync(
   "scripts/check-marketplace-regressions.mjs",
   "utf8",
@@ -3220,6 +3224,32 @@ expectAll("WORK fresh replay favors correctness over recent-page luck", server, 
   /WORK_TOKEN_CANONICAL_FRESH_WAIT_MS/,
   /WORK_TOKEN_LIVE_HISTORY_MAX_TXS[\s\S]*?WORK_TOKEN_LIVE_DELTA_MAX_TXS/,
   /scope === WORK_TOKEN_ID[\s\S]*?WORK_TOKEN_CANONICAL_FRESH_WAIT_MS[\s\S]*?WORK_FLOOR_FRESH_WAIT_MS/,
+]);
+
+expectAll("summary routes cache only non-fresh canonical payloads", server, [
+  /const workSummaryResponsePayload = async \(\) => \{[\s\S]*?summaryPayloadWithCanonicalProvenance\([\s\S]*?"work-summary"/,
+  /if \(!freshRead\) \{[\s\S]*?cachedJsonResponse\([\s\S]*?`work-summary:\$\{network\}:\$\{compactRead \? "compact" : "full"\}`,[\s\S]*?workSummaryResponsePayload,[\s\S]*?READ_CACHE_CONTROL,[\s\S]*?RESPONSE_CACHE_TTL_MS,[\s\S]*?0,/,
+  /jsonResponse\([\s\S]*?await workSummaryResponsePayload\(\),[\s\S]*?FRESH_READ_CACHE_CONTROL/,
+  /const marketplaceSummaryResponsePayload = async \(\) => \{[\s\S]*?summaryPayloadWithCanonicalProvenance\([\s\S]*?"marketplace-summary"/,
+  /if \(!freshRead\) \{[\s\S]*?cachedJsonResponse\([\s\S]*?`marketplace-summary:\$\{network\}:\$\{compactRead \? "compact" : "full"\}`,[\s\S]*?marketplaceSummaryResponsePayload,[\s\S]*?READ_CACHE_CONTROL,[\s\S]*?RESPONSE_CACHE_TTL_MS,[\s\S]*?0,/,
+  /jsonResponse\([\s\S]*?await marketplaceSummaryResponsePayload\(\),[\s\S]*?FRESH_READ_CACHE_CONTROL/,
+]);
+
+expectAll("indexer parity exposes compact failure buckets", proofIndexerParity, [
+  /function parityFailureSummary\(checks\)/,
+  /knownHistoricalWorkAmoV5Warnings/,
+  /activeInvariantFailures/,
+  /compactFailureSummary: failureSummary/,
+]);
+
+expectAll("summary route readiness separates staleness, latency, and V8 parity", summaryRouteReadiness, [
+  /WORK_AMO_V8_DECLARATION_TXID/,
+  /function pushV8Issues\(issues, work, marketplace\)/,
+  /"stale-readiness"/,
+  /"route-latency-slow-correct"/,
+  /"work-amo-v8-cross-route-mismatch"/,
+  /activeInvariantFailures/,
+  /process\.exitCode = 1/,
 ]);
 
 expectAll("endpoint caches cannot bypass the ledger", server, [

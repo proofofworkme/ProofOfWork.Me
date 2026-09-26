@@ -80238,17 +80238,15 @@ async function handleRequest(request, response) {
           return;
         }
       }
-      const rawWorkSummary = await deduplicatedSummaryRead(
-        `work-summary:${network}:${freshRead ? "fresh" : "cached"}`,
-        () => workSummaryPayload(network, freshRead),
-      );
-      const workSummary = compactRead
-        ? compactWorkSummaryPayload(rawWorkSummary)
-        : rawWorkSummary;
-      jsonResponse(
-        response,
-        200,
-        await withWorkMarketplaceV4Metadata(
+      const workSummaryResponsePayload = async () => {
+        const rawWorkSummary = await deduplicatedSummaryRead(
+          `work-summary:${network}:${freshRead ? "fresh" : "cached"}`,
+          () => workSummaryPayload(network, freshRead),
+        );
+        const workSummary = compactRead
+          ? compactWorkSummaryPayload(rawWorkSummary)
+          : rawWorkSummary;
+        return withWorkMarketplaceV4Metadata(
           await summaryPayloadWithCanonicalProvenance(
             workSummary,
             network,
@@ -80256,25 +80254,39 @@ async function handleRequest(request, response) {
             "work-summary",
           ),
           network,
-        ),
-        freshRead ? FRESH_READ_CACHE_CONTROL : READ_CACHE_CONTROL,
+        );
+      };
+      if (!freshRead) {
+        await cachedJsonResponse(
+          response,
+          `work-summary:${network}:${compactRead ? "compact" : "full"}`,
+          workSummaryResponsePayload,
+          READ_CACHE_CONTROL,
+          RESPONSE_CACHE_TTL_MS,
+          0,
+        );
+        return;
+      }
+      jsonResponse(
+        response,
+        200,
+        await workSummaryResponsePayload(),
+        FRESH_READ_CACHE_CONTROL,
       );
       return;
     }
 
     if (url.pathname === "/api/v1/marketplace-summary") {
       const compactRead = booleanSearchParam(url.searchParams, "compact");
-      const rawMarketplaceSummary = await deduplicatedSummaryRead(
-        `marketplace-summary:${network}:${freshRead ? "fresh" : "cached"}`,
-        () => marketplaceSummaryPayload(network, freshRead),
-      );
-      const marketplaceSummary = compactRead
-        ? compactMarketplaceSummaryReadPayload(rawMarketplaceSummary)
-        : rawMarketplaceSummary;
-      jsonResponse(
-        response,
-        200,
-        await withWorkMarketplaceV4Metadata(
+      const marketplaceSummaryResponsePayload = async () => {
+        const rawMarketplaceSummary = await deduplicatedSummaryRead(
+          `marketplace-summary:${network}:${freshRead ? "fresh" : "cached"}`,
+          () => marketplaceSummaryPayload(network, freshRead),
+        );
+        const marketplaceSummary = compactRead
+          ? compactMarketplaceSummaryReadPayload(rawMarketplaceSummary)
+          : rawMarketplaceSummary;
+        return withWorkMarketplaceV4Metadata(
           await summaryPayloadWithCanonicalProvenance(
             marketplaceSummary,
             network,
@@ -80282,8 +80294,24 @@ async function handleRequest(request, response) {
             "marketplace-summary",
           ),
           network,
-        ),
-        freshRead ? FRESH_READ_CACHE_CONTROL : READ_CACHE_CONTROL,
+        );
+      };
+      if (!freshRead) {
+        await cachedJsonResponse(
+          response,
+          `marketplace-summary:${network}:${compactRead ? "compact" : "full"}`,
+          marketplaceSummaryResponsePayload,
+          READ_CACHE_CONTROL,
+          RESPONSE_CACHE_TTL_MS,
+          0,
+        );
+        return;
+      }
+      jsonResponse(
+        response,
+        200,
+        await marketplaceSummaryResponsePayload(),
+        FRESH_READ_CACHE_CONTROL,
       );
       return;
     }

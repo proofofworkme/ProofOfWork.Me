@@ -58,6 +58,7 @@
     "check:read-projections": "node --test server/read-projections.test.mjs",
     "check:boost-regressions": "node --test scripts/check-boost-regressions.mjs",
   "check:surface-read-state": "node scripts/check-surface-read-state.mjs",
+  "check:summary-route-readiness": "node scripts/check-summary-route-readiness.mjs",
   "check:production-observability": "node scripts/check-production-observability.mjs",
     "check:worker-containment": "node scripts/check-worker-containment.mjs",
     "check:send-prep-regressions": "node scripts/check-send-prep-regressions.mjs",

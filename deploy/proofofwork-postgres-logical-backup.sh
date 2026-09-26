@@ -162,7 +162,7 @@ retention_listing="$(
 )"
 if ! /usr/bin/find "${backup_root}" -maxdepth 1 -mindepth 1 -type d \
   -name 'proof_indexer-*.dumpset' -printf '%T@ %f\0' |
-  /usr/bin/sort -z -nr >"${retention_listing}"; then
+  LC_ALL=C /usr/bin/sort -z -nr >"${retention_listing}"; then
   echo "Unable to enumerate logical backup retention safely." >&2
   exit 1
 fi
@@ -170,12 +170,25 @@ mapfile -d '' -t backups <"${retention_listing}"
 /usr/bin/rm -f -- "${retention_listing}"
 retention_listing=""
 candidate_verify_reason=""
+candidate_member_inventory=""
+describe_candidate_members() {
+  local path="$1"
+  [[ -d "${path}" && ! -L "${path}" ]] || {
+    printf 'unavailable'
+    return 0
+  }
+  /usr/bin/find "${path}" -mindepth 1 -maxdepth 1 \
+    -printf '%f:type=%y,mode=%m,owner=%u,group=%g,size=%s\n' 2>/dev/null |
+    LC_ALL=C /usr/bin/sort |
+    /usr/bin/awk 'BEGIN { first=1 } { if (!first) printf ";"; printf "%s", $0; first=0 } END { if (first) printf "empty" }'
+}
 verify_complete_backup_set() {
   local path="$1"
   local directory_mode directory_identity directory_device member member_path member_mode fuser_status checksum_line checksum_name mount_status
   local saw_dump=false saw_globals=false checksum_bytes
   local -a members=() checksum_lines=()
   candidate_verify_reason=directory-path-owner
+  candidate_member_inventory=""
   [[ -d "${path}" && ! -L "${path}" &&
     "$(/usr/bin/realpath -e -- "${path}" 2>/dev/null || true)" == "${path}" &&
     "$(/usr/bin/stat --format=%u -- "${path}" 2>/dev/null || true)" == "${EUID}" ]] || return 1
@@ -195,7 +208,7 @@ verify_complete_backup_set() {
   candidate_listing="$(/usr/bin/mktemp --tmpdir="${backup_root}" ".${basename}.candidate.XXXXXX")" || return 1
   candidate_verify_reason=member-list-enumeration
   if ! /usr/bin/find "${path}" -mindepth 1 -maxdepth 1 -printf '%f\0' >"${candidate_listing}" ||
-    ! /usr/bin/sort -z -o "${candidate_listing}" "${candidate_listing}"; then
+    ! LC_ALL=C /usr/bin/sort -z -o "${candidate_listing}" "${candidate_listing}"; then
     /usr/bin/rm -f -- "${candidate_listing}"
     candidate_listing=""
     return 1
@@ -203,6 +216,8 @@ verify_complete_backup_set() {
   mapfile -d '' -t members <"${candidate_listing}"
   /usr/bin/rm -f -- "${candidate_listing}"
   candidate_listing=""
+  candidate_member_inventory="$(describe_candidate_members "${path}")"
+  [[ -n "${candidate_member_inventory}" ]] || candidate_member_inventory="empty-or-unreadable"
   candidate_verify_reason=member-inventory
   (("${#members[@]}" == 3)) &&
     [[ "${members[0]:-}" == SHA256SUMS &&
@@ -279,8 +294,8 @@ for entry in "${backups[@]}"; do
   candidate="${backup_root}/${name}"
   if [[ "${candidate}" == "${final_set}" ]]; then
     if ! verify_complete_backup_set "${candidate}"; then
-      printf "Requested current logical backup failed retention verification: candidate=%s predicate=%s\n" \
-        "${candidate}" "${candidate_verify_reason:-unknown}" >&2
+      printf "Requested current logical backup failed retention verification: candidate=%s predicate=%s members=%s\n" \
+        "${candidate}" "${candidate_verify_reason:-unknown}" "${candidate_member_inventory:-unknown}" >&2
       exit 1
     fi
     retained_current_set=true
@@ -289,7 +304,8 @@ for entry in "${backups[@]}"; do
     continue
   fi
   if ! verify_complete_backup_set "${candidate}"; then
-    printf 'backup_retention_review candidate=%s reason=verification-failed predicate=%s action=preserve\n' "${candidate}" "${candidate_verify_reason:-unknown}"
+    printf 'backup_retention_review candidate=%s reason=verification-failed predicate=%s members=%s action=preserve\n' \
+      "${candidate}" "${candidate_verify_reason:-unknown}" "${candidate_member_inventory:-unknown}"
     continue
   fi
   candidate_bytes="${backup_candidate_bytes}"

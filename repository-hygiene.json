@@ -86,7 +86,8 @@
       "audits/2026-09-22-production-comprehensive-health-data-integrity-audit-22.md",
       "audits/2026-09-22-production-comprehensive-health-data-integrity-audit-22.evidence.json",
       "audits/2026-09-24-production-comprehensive-health-data-integrity-audit-23.md",
-      "audits/2026-09-24-production-comprehensive-health-data-integrity-audit-23.evidence.json"
+      "audits/2026-09-24-production-comprehensive-health-data-integrity-audit-23.evidence.json",
+      "audits/2026-09-25-production-comprehensive-health-data-integrity-audit-23.md"
     ],
     "staged-or-future-protocol-notes": [
       "CHAIN_CONTENT.md",

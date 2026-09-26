@@ -1,0 +1,12 @@
+[Unit]
+Description=Run ProofOfWork summary route health checks
+
+[Timer]
+OnCalendar=*:0/5
+RandomizedDelaySec=30s
+FixedRandomDelay=true
+Persistent=true
+Unit=proofofwork-summary-route-health.service
+
+[Install]
+WantedBy=timers.target
