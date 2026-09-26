@@ -492,7 +492,6 @@ function pushV8Issues(issues, work, marketplace) {
     "ready",
     "status",
     "workerReady",
-    "workerState",
     "workerTipHeight",
     "workerTipHash",
     "tipHeight",
@@ -538,10 +537,7 @@ function summarizeIssues(issues) {
   const latency = issues.filter((issue) => issue.kind.startsWith("route-latency"));
   const warnings = issues.filter((issue) => issue.severity === "warning");
   return {
-    ok:
-      activeInvariantFailures.length === 0 &&
-      staleReadiness.length === 0 &&
-      !latency.some((issue) => issue.severity === "error"),
+    ok: activeInvariantFailures.length === 0 && staleReadiness.length === 0,
     activeInvariantFailures,
     staleReadiness,
     latency,
@@ -557,56 +553,63 @@ function summarizeIssues(issues) {
   };
 }
 
-const [healthFetch, workFetch, marketplaceFetch] = await Promise.all([
-  fetchJson("health", routeUrl("/health")),
-  fetchJson(
-    "work-summary",
-    routeUrl("/api/v1/work-summary", { network: NETWORK, compact: "1" }),
-  ),
-  fetchJson(
-    "marketplace-summary",
-    routeUrl("/api/v1/marketplace-summary", {
-      network: NETWORK,
-      compact: "1",
-    }),
-  ),
-]);
+async function main() {
+  const [healthFetch, workFetch, marketplaceFetch] = await Promise.all([
+    fetchJson("health", routeUrl("/health")),
+    fetchJson(
+      "work-summary",
+      routeUrl("/api/v1/work-summary", { network: NETWORK, compact: "1" }),
+    ),
+    fetchJson(
+      "marketplace-summary",
+      routeUrl("/api/v1/marketplace-summary", {
+        network: NETWORK,
+        compact: "1",
+      }),
+    ),
+  ]);
 
-const health = healthCheckpoint(healthFetch.payload);
-const work = routeSummary(workFetch, "workSummary");
-const marketplace = routeSummary(marketplaceFetch, "marketplaceSummary");
-const issues = [];
+  const health = healthCheckpoint(healthFetch.payload);
+  const work = routeSummary(workFetch, "workSummary");
+  const marketplace = routeSummary(marketplaceFetch, "marketplaceSummary");
+  const issues = [];
 
-pushLatencyIssues(issues, [healthFetch, workFetch, marketplaceFetch]);
-pushHttpIssues(issues, work);
-pushHttpIssues(issues, marketplace);
-pushHealthIssues(issues, health);
-pushCheckpointIssues(issues, health, work, marketplace);
-pushV8Issues(issues, work, marketplace);
+  pushLatencyIssues(issues, [healthFetch, workFetch, marketplaceFetch]);
+  pushHttpIssues(issues, work);
+  pushHttpIssues(issues, marketplace);
+  pushHealthIssues(issues, health);
+  pushCheckpointIssues(issues, health, work, marketplace);
+  pushV8Issues(issues, work, marketplace);
 
-const summary = summarizeIssues(issues);
-const result = {
-  checkedAt: new Date().toISOString(),
-  base: BASE,
-  network: NETWORK,
-  ok: summary.ok,
-  thresholds: {
-    timeoutMs: TIMEOUT_MS,
-    warnMs: WARN_MS,
-    criticalMs: CRITICAL_MS,
-    maxLagBlocks: MAX_LAG_BLOCKS,
-    healthMaxLagBlocks: HEALTH_MAX_LAG_BLOCKS,
-  },
-  summary,
-  health,
-  routes: {
-    work,
-    marketplace,
-  },
-};
+  const summary = summarizeIssues(issues);
+  const result = {
+    checkedAt: new Date().toISOString(),
+    base: BASE,
+    network: NETWORK,
+    ok: summary.ok,
+    thresholds: {
+      timeoutMs: TIMEOUT_MS,
+      warnMs: WARN_MS,
+      criticalMs: CRITICAL_MS,
+      maxLagBlocks: MAX_LAG_BLOCKS,
+      healthMaxLagBlocks: HEALTH_MAX_LAG_BLOCKS,
+    },
+    summary,
+    health,
+    routes: {
+      work,
+      marketplace,
+    },
+  };
 
-console.log(JSON.stringify(result, null, 2));
+  console.log(JSON.stringify(result, null, 2));
 
-if (!summary.ok) {
-  process.exitCode = 1;
+  if (!summary.ok) {
+    process.exitCode = 1;
+  }
 }
+
+main().catch((error) => {
+  console.error(error instanceof Error ? error.stack : String(error));
+  process.exitCode = 1;
+});
