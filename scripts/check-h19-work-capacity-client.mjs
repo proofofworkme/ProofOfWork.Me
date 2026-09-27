@@ -19,6 +19,8 @@ async function loadTypeScript(path) {
 const work = await loadTypeScript("src/workAmount.ts");
 const exact = await loadTypeScript("src/exactAmount.ts");
 const capacity = await loadTypeScript("src/shared/work/canonicalWorkCapacity.ts");
+const attachmentSource = readFileSync(new URL("src/shared/protocol/mailAttachment.ts", root), "utf8");
+const MAX_ATTACHMENT_BYTES = Number(attachmentSource.match(/export const MAX_ATTACHMENT_BYTES = ([\d_]+);/u)[1].replaceAll("_", ""));
 const limits = await loadTypeScript("src/shared/bitcoin/protocolLimits.ts");
 const source = readFileSync(new URL("src/App.tsx", root), "utf8");
 const parsed = ts.createSourceFile("App.tsx", source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
@@ -39,7 +41,7 @@ for (const node of parsed.statements) {
 // Execute the actual transitive App functions and constants. No arithmetic,
 // listing merge, normalization, Wallet display or preflight function is mocked.
 function client(entries, overrides = {}) {
-  const context = vm.createContext({ ...work, ...exact, ...capacity, ...limits, ...React, ...appIcons, React, bitcoin, Buffer, URLSearchParams, ...overrides });
+  const context = vm.createContext({ ...work, ...exact, ...capacity, ...limits, ...React, ...appIcons, React, bitcoin, Buffer, URLSearchParams, MAX_ATTACHMENT_BYTES, ...overrides });
   const selected = new Set();
   const ordered = [];
   function visit(name) {
@@ -82,6 +84,8 @@ function fixture() {
     indexedThroughBlock: state.indexedThroughBlock, indexedThroughBlockHash: state.indexedThroughBlockHash,
     confirmedBalanceSubatoms: "999980000000000", reservedBalanceSubatoms: "89507365978",
     transferableBalanceSubatoms: "999890492634022",
+    pendingListingNetworkValueQ8: (25000n * 21000000n * 10000000000000000n * 100000000n / 1000n).toString(),
+    pendingListingReserveSubatoms: "1000",
     reservations: [...audit.activeReservations, ...audit.closedReservations].map(([listingId, amountSubatoms]) => ({ listingId, amountSubatoms })),
     // Structural test envelope, not a claim that the saved public response
     // already contained this new API field or a full commitment preimage.
@@ -262,4 +266,34 @@ test("actual composer renders missing capacity as unavailable while keeping the 
   assert.match(html, /value="0\.1"/u);
   assert.match(html, /disabled="" type="submit"/u);
   assert.match(html, /Canonical WORK capacity is unavailable/u);
+});
+
+
+test("pending V8 zero amounts reserve a canonical bound, keep a second listing possible, and never trust an estimate", () => {
+  const { address, token, state } = fixture();
+  const pending = { ...state.listings[0], confirmed: false, sealConfirmed: false,
+    listingId: "e".repeat(64), amount: 0, amountSubatoms: undefined,
+    createdAt: new Date().toISOString(), estimate: { estimateOnly: true, unitAmountSubatoms: "1" } };
+  const result = app.tokenSpendabilityForWallet(address, token, state, [pending]);
+  assert.equal(result.pendingWorkListingAmountUnknown, false);
+  assert.equal(result.spendableBalanceSubatoms, "999890492633022");
+  assert.ok(BigInt(result.spendableBalanceSubatoms) >= 1000n);
+  state.listings.push(pending);
+  assert.equal(app.tokenSpendabilityForWallet(address, token, state, [pending]).spendableBalanceSubatoms, result.spendableBalanceSubatoms);
+  const second = { ...pending, listingId: "f".repeat(64) };
+  assert.equal(app.tokenSpendabilityForWallet(address, token, state, [second]).spendableBalanceSubatoms, "999890492632022");
+  delete state.canonicalWorkCapacities[0].pendingListingNetworkValueQ8;
+  delete state.canonicalWorkCapacities[0].pendingListingReserveSubatoms;
+  assert.equal(app.tokenSpendabilityForWallet(address, token, state).spendableBalanceSubatoms, "0");
+  const balance = app.tokenWalletBalancesFor(address, [token], [], [], [], state.holders, state)[0];
+  assert.equal(balance.confirmedBalanceSubatoms, "999980000000000");
+  assert.equal(balance.canonicalWorkCapacityError, undefined);
+});
+
+test("malformed pending reservation bounds fail closed", () => {
+  for (const [key, value] of [["pendingListingReserveSubatoms", "999"], ["pendingListingNetworkValueQ8", "0"], ["pendingListingReserveSubatoms", "01"]]) {
+    const { address, token, state } = fixture();
+    state.canonicalWorkCapacities[0][key] = value;
+    assert.throws(() => app.tokenSpendabilityForWallet(address, token, state), /capacity/iu);
+  }
 });

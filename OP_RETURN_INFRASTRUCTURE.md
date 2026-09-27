@@ -3385,7 +3385,14 @@ older pinned missing-row fallback used by historical INCB repair. Keep public re
 the bounded post-V5 INCB issuance repair uses an explicit private loopback
 API against the same database. First run
 `node scripts/backfill-proof-indexer.mjs --repair-post-v5-incb-issuance` as
-a dry run, then apply with `POW_INDEX_REPAIR_POST_V5_INCB_APPLY=1`; it must
+a dry run. For an approval limited to one target, append
+`--repair-post-v5-incb-txid=ebe60fd108e8830b4741101e6525081387dcf328e81c12fa2b533de0bdbf0d3e`
+to both the dry run and apply command. Only an exact member of the closed repair
+set is accepted; target queries, supply addition, and derived-summary
+invalidation begin at that selected bond. The earlier bond is not repaired by
+that invocation. The selected target still requires its full verified H-1
+summary and all existing replay, provenance, and conservation checks.
+Then apply with `POW_INDEX_REPAIR_POST_V5_INCB_APPLY=1`; the default two-target invocation must
 replace only the two target transactions' reserved-namespace aliases, leave
 the completed PWT replay certificate intact, and rebuild conserved INCB
 balances. The repair inventories every unprotected snapshot at or after the

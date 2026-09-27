@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
   POST_V5_INCB_ISSUANCE_REPAIR_TARGETS,
+  selectPostV5IncbRepairTargets,
   validatePostV5IncbRepairProjection,
 } from "../server/incb-post-v5-repair.mjs";
 
@@ -121,5 +122,14 @@ test("post-V5 repair rejects rogue targets, detached or unaccepted WORK, and wro
     const caseValue = fixture();
     mutate(caseValue);
     assert.throws(() => validatePostV5IncbRepairProjection(caseValue), /Post-V5 INCB repair/u);
+  }
+});
+
+
+test("explicit repair target cannot broaden issuance to the earlier bond or arbitrary transactions", () => {
+  assert.deepEqual(selectPostV5IncbRepairTargets([target.txid]), [target]);
+  assert.equal(selectPostV5IncbRepairTargets().length, 2);
+  for (const invalid of [["f".repeat(64)], [target.txid, target.txid], [""], null]) {
+    assert.throws(() => selectPostV5IncbRepairTargets(invalid), /Post-V5 INCB repair/);
   }
 });

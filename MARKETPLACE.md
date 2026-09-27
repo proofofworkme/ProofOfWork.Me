@@ -1137,6 +1137,17 @@ after every protocol record in that transaction and before the next
 transaction. No batch, worker schedule, or database query order may alter the
 result.
 
+Pending V8 wallet holds use the exact 25,000-proof amount derived from the
+same verified canonical closing state as the wallet capacity receipt. Along a
+canonical continuation V8 network value is nondecreasing, so this amount is an
+upper bound on the eventual confirmed reservation. Each distinct pending
+listing holds this bound once; confirmed reservations and pending outgoing
+transfers remain deducted. A missing or inconsistent bound keeps spending
+closed. Estimates and pending payload amount aliases never authorize spending.
+Listing preparation and the final pre-broadcast check both use fresh capacity;
+confirmation still alone freezes the signed intent's terms. A new canonical
+checkpoint, including a reorganization, requires a newly bound capacity read.
+
 Only a confirmed V8 listing may be sealed or purchased after activation.
 Seal and buy must reference its exact frozen V8 position and terms and never
 consult a later network value. A V8 delist may close its own V8 sale ticket;

@@ -12037,6 +12037,14 @@ function tokenSpendabilityForWallet(
           canonicalCapacity.reservations.has(listing.listingId) ||
           listing.confirmed || !tokenListingHasSpendableSaleTicketAnchor(listing) ||
           tokenListingIsExpired(listing)) continue;
+      if (isWorkAmoV8Authorization(listing.saleAuthorization.version)) {
+        if (canonicalCapacity.pendingListingReserve === undefined) {
+          pendingWorkListingAmountUnknown = true;
+        } else {
+          localReserved += canonicalCapacity.pendingListingReserve;
+        }
+        continue;
+      }
       const amount = tokenRecordAmountAtoms(listing, String(listing.amount), listing.amountAtoms, listing.amountSubatoms);
       if (amount === null || amount <= 0n) {
         if (workListingAmountDeferredUntilConfirmation(listing)) {
@@ -12186,6 +12194,7 @@ function tokenSpendabilityForWallet(
       ? pendingOutgoingAtoms?.toString()
       : undefined,
     pendingWorkListingAmountUnknown,
+    pendingListingReserveSubatoms: canonicalCapacity?.pendingListingReserve?.toString(),
     reservedBalance:
       bond && reservedBalanceAtoms !== null
         ? reservedBalanceAtoms.toString()
@@ -16514,13 +16523,17 @@ async function requireFreshWorkCapacityBeforeBroadcast(
   localClosedListings: PowTokenClosedListing[],
   localTransfers: PowTokenTransfer[],
   localSales: PowTokenSale[],
+  pendingListing = false,
 ) {
   const state = await fetchFreshWalletTokenPreflightState(walletAddress, token.tokenId);
   const spendability = tokenSpendabilityForWallet(
     walletAddress, token, state, localListings, localClosedListings, localTransfers, localSales,
   );
   const available = exactIntegerBigInt(spendability.spendableBalanceSubatoms);
-  if (available === null || amountSubatoms <= 0n || amountSubatoms > available) {
+  const required = pendingListing
+    ? exactIntegerBigInt(spendability.pendingListingReserveSubatoms)
+    : amountSubatoms;
+  if (available === null || required === null || required <= 0n || required > available) {
     throw new Error("WORK capacity changed while signing. No transaction was broadcast. Refresh the wallet and try again.");
   }
 }
@@ -25006,17 +25019,19 @@ export default function App() {
     }
 
     let cancelled = false;
+    let requestId = 0;
     const loadAccountUtxos = () => {
+      const currentRequestId = ++requestId;
       fetchUtxos(address, network)
         .then((utxos) => {
-          if (!cancelled) {
+          if (!cancelled && currentRequestId === requestId) {
             setAccountUtxos(utxos);
             setAccountUtxosLoaded(true);
             setAccountUtxosError("");
           }
         })
         .catch((error) => {
-          if (!cancelled) {
+          if (!cancelled && currentRequestId === requestId) {
             setAccountUtxosError(
               errorMessage(error, "Wallet UTXOs are unavailable."),
             );
@@ -25024,14 +25039,14 @@ export default function App() {
         });
       fetchAddressApiUtxos(address, network)
         .then((utxos) => {
-          if (!cancelled) {
+          if (!cancelled && currentRequestId === requestId) {
             setAccountChainUtxos(utxos);
             setAccountChainUtxosLoaded(true);
             setAccountChainUtxosError("");
           }
         })
         .catch((error) => {
-          if (!cancelled) {
+          if (!cancelled && currentRequestId === requestId) {
             setAccountChainUtxosError(
               errorMessage(error, "Full-node wallet UTXOs are unavailable."),
             );
@@ -32569,7 +32584,9 @@ export default function App() {
           : spendability.spendableBalanceAtoms,
       );
       const attemptedAmountUnits = workListing
-        ? workAmoEstimateSubatoms(workEstimate)
+        ? workV8Listing
+          ? exactIntegerBigInt(spendability.pendingListingReserveSubatoms)
+          : workAmoEstimateSubatoms(workEstimate)
         : tokenRecordAmountAtoms(
             token,
             parsedAmount!.amount,
@@ -32740,6 +32757,11 @@ export default function App() {
           workListing && preparedWorkListingMode
             ? async () => {
                 await freshWorkWriteMode(preparedWorkListingMode);
+                await requireFreshWorkCapacityBeforeBroadcast(
+                  actionAddress, token, attemptedAmountUnits,
+                  tokenListings, tokenClosedListings, tokenTransfers, tokenSales,
+                  workV8Listing,
+                );
               }
             : undefined,
         inputCount: paymentPsbt.inputCount,

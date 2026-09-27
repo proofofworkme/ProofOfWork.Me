@@ -39,6 +39,7 @@ import {
 } from "../server/proof-index-mail-projection.mjs";
 import {
   POST_V5_INCB_ISSUANCE_REPAIR_TARGETS,
+  selectPostV5IncbRepairTargets,
   validatePostV5IncbRepairProjection,
 } from "../server/incb-post-v5-repair.mjs";
 import { verifiedCanonicalRecoveryMetaState } from "./restore-incb-oracle-snapshots.mjs";
@@ -34958,9 +34959,9 @@ async function canonicalPostV5IncbRepairTarget(target) {
   return { ...target, bond, mint, previousBlockHash, recipient: recipients[0], witness, workTransfers };
 }
 
-async function repairCanonicalPostV5IncbIssuance(client) {
+async function repairCanonicalPostV5IncbIssuance(client, repairTargets = POST_V5_INCB_ISSUANCE_REPAIR_TARGETS) {
   const targets = [];
-  for (const target of POST_V5_INCB_ISSUANCE_REPAIR_TARGETS) {
+  for (const target of repairTargets) {
     targets.push(await canonicalPostV5IncbRepairTarget(target));
   }
   const targetTxids = targets.map((target) => target.txid);
@@ -34987,8 +34988,8 @@ async function repairCanonicalPostV5IncbIssuance(client) {
     if (recovery.rebuild !== "certified-complete-pwt-range-replay" ||
         canonicalPwtRangeReplayState(rebuild) !== "complete" ||
         Number(rebuild.rangeReplayFromHeight) !== CANONICAL_INCB_PWT_RANGE_REPLAY_FROM_HEIGHT ||
-        Number(rebuild.indexedThroughBlock) < POST_V5_INCB_ISSUANCE_REPAIR_TARGETS.at(-1).blockHeight) {
-      throw new Error("Post-V5 INCB repair requires the certified completed 958383 PWT replay covering both bonds.");
+        Number(rebuild.indexedThroughBlock) < repairTargets.at(-1).blockHeight) {
+      throw new Error("Post-V5 INCB repair requires the certified completed 958383 PWT replay covering the selected bonds.");
     }
     const binding = canonicalPwtRangeReplayVerifierBinding(rebuild);
     if (!binding) {
@@ -35014,9 +35015,9 @@ async function repairCanonicalPostV5IncbIssuance(client) {
     });
     const rebuildFingerprint = canonicalIncbReplaySha256(rebuild);
     const snapshotRows = await lockedCanonicalIncbValueSnapshots(client, snapshotIds);
-    if (snapshotIds.length !== POST_V5_INCB_ISSUANCE_REPAIR_TARGETS.length ||
+    if (snapshotIds.length !== repairTargets.length ||
         snapshotRows.length !== snapshotIds.length) {
-      throw new Error("Post-V5 INCB repair requires both imported full H-1 summary rows.");
+      throw new Error("Post-V5 INCB repair requires an imported full H-1 summary row for each selected bond.");
     }
     const snapshotFingerprints = verifiedCanonicalIncbValueSnapshotFingerprints(
       snapshotRows, valueSnapshotBindings,
@@ -35286,7 +35287,7 @@ async function repairCanonicalPostV5IncbIssuance(client) {
          AND (COALESCE(source_hashes ? 'blockScan', false) OR
               COALESCE(payload->>'source' = 'proof-indexer-block-scan', false))
        ORDER BY snapshot_id`,
-      [NETWORK, POST_V5_INCB_ISSUANCE_REPAIR_TARGETS[0].blockHeight],
+      [NETWORK, repairTargets[0].blockHeight],
     );
     // The repair changes derived totals from the first bond onward. Select the
     // complete unprotected set under the snapshot table lock, then refuse any
@@ -35447,7 +35448,7 @@ async function repairCanonicalPostV5IncbIssuance(client) {
              AND seed_evidence.payload->'canonicalSummary'->>'snapshotId' = snapshot.snapshot_id
          )
        ORDER BY snapshot.snapshot_id`,
-      [NETWORK, POST_V5_INCB_ISSUANCE_REPAIR_TARGETS[0].blockHeight,
+      [NETWORK, repairTargets[0].blockHeight,
         snapshotIds, CANONICAL_REBUILD_META_KEY,
         INCB_RANGE_REPLAY_WITNESS_MANIFEST_MODEL,
         [WORK_MARKET_V2_AUTH_VERSION, WORK_MARKET_V4_AUTH_VERSION,
@@ -35490,7 +35491,7 @@ async function repairCanonicalPostV5IncbIssuance(client) {
            AND consistency->>'status' = 'green' AND consistency->>'ok' = 'true'
          RETURNING snapshot_id`,
         [NETWORK, invalidatedSnapshotIds,
-          POST_V5_INCB_ISSUANCE_REPAIR_TARGETS[0].blockHeight],
+          repairTargets[0].blockHeight],
       )
       : { rows: [], rowCount: 0 };
     if (invalidatedSnapshots.rowCount !== invalidatedSnapshotIds.length ||
@@ -35505,7 +35506,7 @@ async function repairCanonicalPostV5IncbIssuance(client) {
          AND (COALESCE(source_hashes ? 'blockScan', false) OR
               COALESCE(payload->>'source' = 'proof-indexer-block-scan', false))
        ORDER BY snapshot_id`,
-      [NETWORK, POST_V5_INCB_ISSUANCE_REPAIR_TARGETS[0].blockHeight],
+      [NETWORK, repairTargets[0].blockHeight],
     );
     if (JSON.stringify(scanSnapshotsBefore.rows) !== JSON.stringify(scanSnapshotsAfter.rows)) {
       throw new Error("Post-V5 INCB repair changed a canonical block-scan checkpoint.");
@@ -37784,7 +37785,10 @@ try {
         ),
       );
     } else if (REPAIR_POST_V5_INCB_ISSUANCE_ONLY) {
-      const repair = await repairCanonicalPostV5IncbIssuance(client);
+      const repair = await repairCanonicalPostV5IncbIssuance(client, selectPostV5IncbRepairTargets(
+        process.argv.filter((arg) => arg.startsWith("--repair-post-v5-incb-txid="))
+          .map((arg) => arg.slice("--repair-post-v5-incb-txid=".length)),
+      ));
       console.log(
         JSON.stringify(
           {

@@ -129,3 +129,14 @@ export function validatePostV5IncbRepairProjection({
     txid: target.txid,
   });
 }
+
+
+export function selectPostV5IncbRepairTargets(txids = []) {
+  if (!Array.isArray(txids) || txids.length > 1) {
+    throw new Error("Post-V5 INCB repair accepts at most one explicit target.");
+  }
+  if (!txids.length) return POST_V5_INCB_ISSUANCE_REPAIR_TARGETS;
+  const target = POST_V5_INCB_ISSUANCE_REPAIR_TARGETS.find((item) => item.txid === txids[0]);
+  if (!target) throw new Error("Post-V5 INCB repair target is not in the exact approved repair set.");
+  return [target];
+}
