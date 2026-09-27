@@ -1349,8 +1349,12 @@ for active-book cardinality. AMO now hydrates every active credit and bond sale
 ticket from the complete Core-reconciled listing route, follows its opaque
 cursor, and accepts the book only when checkpoint height/hash, snapshot,
 authority/projection evidence, and declared count stay stable across all pages
-and match the summary checkpoint. Until then, the preview is labeled incomplete
-and the UI withholds definitive search and empty-book claims. Market-log rows
+and match the summary checkpoint. AMO loads this complete active inventory
+automatically on entry and refresh for WORK, other credits, POWB, and INCB.
+Until verification completes, the market shows a loading state; a failed read
+shows retry or retains the labeled last verified complete book. Partial rows
+never power market search, sorting, counts, or empty-book claims. Pagination
+limits rendered rows, not searchable inventory. Market-log rows
 remain lifecycle history and cannot manufacture active inventory. Wallet-owned
 listing hydration uses the same complete cursor contract.
 

@@ -122,3 +122,34 @@ logEnv.activeWorkspaceStatusKeyRef.current = "wallet";
 logRequests[3].resolve({ page: 0, wrongWorkspace: true }); await newQuery;
 assert.equal(logAccepted.length, 1);
 console.log(JSON.stringify({ ok: true, coverage: ["log-live-query", "log-latest-page-wins", "log-search-fence", "log-workspace-fence"] }));
+
+// AMO must not accept the compact preview; retry the whole snapshot after a
+// checkpoint transition and reject permanently incomplete reads.
+let amoDeclaration;
+function visitAmo(node) {
+  if (ts.isFunctionDeclaration(node) && node.name?.text === "fetchCompleteMarketplaceSnapshot") amoDeclaration = node;
+  ts.forEachChild(node, visitAmo);
+}
+visitAmo(ast);
+assert.ok(amoDeclaration);
+let attempt = 0;
+const reads = [];
+const complete = { listingBookComplete: true, listings: [{ tokenId: "WORK" }, { tokenId: "POWB" }, { tokenId: "INCB" }] };
+const loadAmo = new Function("fetchMarketplaceSummary", "tokenStateWithCurrentCompleteMarketplaceListings",
+  `${transpile(amoDeclaration.getText(ast))};return fetchCompleteMarketplaceSnapshot`)(
+  async (fresh) => { reads.push(fresh); return { indexedAt: String(++attempt), token: { listingBookComplete: false } }; },
+  async () => { if (attempt === 1) throw new Error("checkpoint changed"); return complete; },
+);
+const amo = await loadAmo(true);
+assert.equal(amo.indexedAt, "2");
+assert.equal(amo.token, complete);
+assert.deepEqual(reads, [true, true]);
+let rejectedReads = 0;
+const rejectAmo = new Function("fetchMarketplaceSummary", "tokenStateWithCurrentCompleteMarketplaceListings",
+  `${transpile(amoDeclaration.getText(ast))};return fetchCompleteMarketplaceSnapshot`)(
+  async () => { rejectedReads += 1; return { token: {} }; },
+  async () => { throw new Error("incomplete inventory"); },
+);
+await assert.rejects(rejectAmo(false), /incomplete inventory/);
+assert.equal(rejectedReads, 3);
+console.log(JSON.stringify({ ok: true, coverage: ["amo-complete-book-before-ready", "amo-checkpoint-restart", "amo-bounded-failure"] }));

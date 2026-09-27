@@ -3320,22 +3320,10 @@ expect(
     ),
 );
 expect(
-  "Marketplace summary loads first and full listing history is requested on demand",
-  /const retainedListingHistory =\s*completeMarketplaceListingHistoryRef\.current/.test(
-    refreshMarketplaceSummaryBlock,
-  ) &&
-    /completeTokenListingHistoryMatchesState\(\s*retainedListingHistory,\s*snapshot\.token,?\s*\)/.test(
-      refreshMarketplaceSummaryBlock,
-    ) &&
-    /tokenStateWithCompleteTokenListings\(\s*snapshot\.token,\s*retainedListingHistory,?\s*\)/.test(
-      refreshMarketplaceSummaryBlock,
-    ) &&
-    !/fetchCompleteTokenListings/.test(refreshMarketplaceSummaryBlock) &&
-    /onClick=\{onLoadCompleteListingBook\}/.test(tokenMarketplacePanelBlock) &&
-    /async function loadCompleteTokenListingBook\(/.test(app) &&
-    /completeTokenListingHistoryMatchesState\(history, state\)/.test(
-      tokenStateWithCurrentCompleteMarketplaceListingsBlock,
-    ) &&
+  "AMO automatically verifies the complete credit and bond book before publishing",
+  /fetchCompleteMarketplaceSnapshot\(fresh\)/.test(refreshMarketplaceSummaryBlock) &&
+    /const completeTokenState = snapshot\.token/.test(refreshMarketplaceSummaryBlock) &&
+    /async function fetchCompleteMarketplaceSnapshot[\s\S]*await tokenStateWithCurrentCompleteMarketplaceListings/.test(app) &&
     /listingBookComplete: true/.test(tokenStateWithCompleteTokenListingsBlock) &&
     /bondCount=\{listingBookComplete \? bondListings\.length : undefined\}/.test(app),
 );
@@ -3429,7 +3417,7 @@ expect(
       ?.length ?? 0) >= 2,
 );
 expect(
-  "Bond market shows preview counts until the user requests the exact listing book",
+  "Bond standalone loading stays separate from automatic complete AMO inventory",
   /const listingBookPreviewIncomplete =\s*listingSummary\.listingBookComplete !== true;/.test(
     infinityBondMarketPanelBlock,
   ) &&
@@ -3439,7 +3427,7 @@ expect(
     /onClick=\{\(\) => onLoadCompleteListingBook\(bondConfig\.tokenId\)\}/.test(
       infinityBondMarketPanelBlock,
     ) &&
-    /Bond market preview loaded\. Complete Core-reconciled sale-ticket history is available on request; inventory remains a preview until verified\./.test(
+    /Loading all bond listings\. Counts will appear when the complete inventory is verified\./.test(
       marketplaceAppBlock,
     ) &&
     !/tokenStateWithCurrentCompleteBondListings/.test(refreshInfinityBlock) &&

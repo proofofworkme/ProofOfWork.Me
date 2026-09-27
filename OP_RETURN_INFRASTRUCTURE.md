@@ -304,8 +304,11 @@ compact marketplace-summary listing array as the whole book. The client binds
 every page to one `indexedAt`, height/hash, snapshot id, declared total, Core
 outpoint digest, and protocol-membership digest, follows only the returned
 opaque cursor, and accepts the result only when its checkpoint and total match
-the summary. While that proof is unavailable, the compact rows are a labeled
-preview: search and empty-book claims remain incomplete. Market-log rows are
+the summary. AMO requests the complete active book automatically before
+publishing its ready state. A changing checkpoint restarts the bounded read;
+failed reads expose retry or retain the last verified complete inventory.
+An explicit refresh rechecks Core-backed inventory even at an unchanged indexed
+snapshot. Compact rows never become searchable full inventory. Market-log rows are
 history and must never be merged into active inventory. Wallet-owned listing
 pagination follows the same cursor and evidence rules.
 `POW_INDEX_READS=token-state` enables default `/api/v1/token`
@@ -5213,7 +5216,7 @@ The credit endpoint:
 - Credit listings reserve the seller's spendable balance, create a 546-proof seller-controlled sale-ticket output, and require the standard 546-proof credit registry mutation payment before OP_RETURN. Buys must spend the seller ticket, pay the seller the listed price plus ticket value, and pay the credit registry mutation fee.
 - Active credit listings are filtered by sale-ticket outspend state. When Bitcoin Core RPC is configured, `gettxout` is the fast spend-state oracle and address-history scans are recovery context. If the ticket output is spent, the listing is closed even when a cached snapshot is otherwise stale; if the spend is a valid `buy5`, the event also appears as a credit sale.
 - Credit listing seals are one-per-active-listing. A valid existing seal blocks duplicate seal attempts, while a newly confirmed listing promotion preserves the original seal and outspend state. Listing books may show pending seal rows as sealing status, but the Sealed tab/count means confirmed and buyable only; pending seals stay in All/Unsealed until confirmation.
-- AMO summary compaction must keep all confirmed, unspent, buyable sealed listings even when the recent active-listing preview is capped. Public summary reads should be verified against the full WORK token payload so every confirmed sealed listing in `/api/v1/token` remains present in `/api/v1/marketplace-summary`.
+- AMO active inventory must include every confirmed, unspent, buyable listing. Compact summary arrays remain bounded previews; the client automatically hydrates and verifies the complete cursor-paginated Core-reconciled book before publishing inventory counts, search, or sorting. Historical sealed-summary preservation is superseded by that complete-book contract.
 - Credit market history merges active listings, closed listings, and settled sales into a paginated `market-log` view ordered by confirmation status, event time, and txid. It is not sorted by price or arbitrage.
 - Confirmed `pwt1` attempts that fail canonical token validation remain indexed as `token-event-invalid` audit rows with their txid, block position, attempted amount, sender, recipient, and reason. They are visible in address-scoped Wallet, Event History, and invalid-event history, but are excluded from the public canonical Log and its action totals. They never mutate balances, supply, valid transfer history, floor, or network value.
 - Fresh credit-directory and summary reads verify the stored hash-bound canonical checkpoint against Bitcoin Core instead of rebuilding the shared credit ledger in the request. Scoped wallet/history reads may still use bounded canonical recovery; explicit refresh must converge on current node truth and may not leave a spent sale-ticket visible as active.
