@@ -1,5 +1,24 @@
 # Approved wallet pending-listing and INCB repair — 2026-09-27
 
+## Completed production status
+
+Both approved fixes are deployed and production-verified. Wallet pending listings
+reserve only their exact conservative capacity, and stale refresh responses cannot
+overwrite newer balances. The target `ebe60fd1…` now appears exactly once in
+public Inception history with `720814688394061543` issued units. Production has
+47 INCB mints and conserved supply `945662401792509469`.
+
+The repair preserved all 46 older mint rows, unrelated canonical history, pending
+deltas, retained snapshots and all 9,203 pre-repair native transition rows.
+Fresh summary consistency passed all 25 checks; final strict live parity passed
+102 checks with zero error-level failures, and the full ledger audit passed.
+Public Inception and wallet verification passed at block 968825, with ready
+zero-lag production health. No user wallet transaction was signed or broadcast.
+
+The following sections retain the implementation, intermediate failures, recovery
+and verification history. Earlier pending-status statements describe those
+stages and are superseded by this completed status.
+
 ## Authorization and scope
 
 The user approved code changes, tests, narrowly scoped production data repair,
@@ -463,3 +482,133 @@ it without rounding. Q16 remains the authoritative quantity. Conflicting,
 noncanonical, fractional, missing-primary and mixed-model fields remain rejected.
 Regression coverage reads both real post-V5 fixtures and round-trips the exact
 projection; no mint payload or issuance amount is rewritten for this fix.
+
+## Reader correction and final repair admission
+
+Reader correction `9d04fd3cf1f69d0f37aae558667e5c2e61eafe86`, tree
+`3109ca01196d5dacb6d7a8219a50e1d2fd48d02f`, passed 550 recovery checks,
+exact accounting, scoped-oracle/post-V5 repair checks, server globals and hygiene.
+PR 82 merged as `6512c77b813177aaac88141f7690ce70c147ba42` after all three CI
+checks passed. Its immutable rehearsal archive SHA-256 is
+`15ebb4c7039ee68209b194b2200060640f95df20b34212faa29892533722441e`.
+The already inventoried production copy then passed all 25 fresh ledger checks
+and published a fresh summary. Ledger receipt SHA-256:
+`780889f8f26504843275b8c3d1bfcbafa1435d7ebf404adce7ad0ffd6904b998`;
+summary publication receipt SHA-256:
+`07f6e79dc2844ea4107f0db09c4185fa3fd00ce15c86a5de1a331ce6373a26e6`.
+No additional rehearsal issuance changes were needed.
+
+Final node release `9d04fd3cf1f6-20260927T094716Z` has runtime SHA-256
+`b964b923cea303ec331581469ac57bc8dd3d1b090218ddf4800a8a5275d206b6`.
+Strict candidate parity passed 102 checks with zero error-level failures.
+The ledger audit initially observed the arrival of block 968822 and failed
+readiness at one-block lag; the unchanged audit passed after convergence.
+Gate hashes: parity
+`0ec28cb22cc55ff09c2e95bdfea7771879885eb717152127e9c7db06ab054158`,
+ledger retry
+`894d56b9e7561ec327e0238afc5f7e3b1d3a2d3ece3ce97c416dab0d7104d5f5`,
+wallet
+`0f84cb2df3b52488a6e85f0ca6b58be7fa01199273bcb0305bb765cb37824bfb`.
+Atomic cutover completed at `2026-09-27T09:52:50Z`, with ready zero-lag health
+at 968822. Evidence remains in
+`/data/proofofwork-incb-guarded-cutover-9d04fd3cf1f6-20260927T094716Z/cutover`.
+
+An initial production maintenance attempt stopped before inventory or any
+database mutation because the helper expected a MainPID property on the
+WireGuard socket unit. Services and timers were restored and readiness verified.
+The corrected helper treats an inactive socket's absent PID as zero, retaining
+the same inactivity requirement. Failed-attempt evidence remains in
+`/data/proofofwork-incb-production-repair-9d04fd3-20260927`; retry evidence uses
+`/data/proofofwork-incb-production-repair-9d04fd3-20260927-retry`.
+
+## Production single-target apply
+
+The corrected maintenance controller validated the retained backup digest,
+stopped application readers/writers and selected timers, and captured production
+at block 968823/hash
+`000000000000000000017ab807def9c15e6e87433d77e0a1fdf0a5850051c90e`.
+Production retains its ordinary completed recovery from 948000/bootstrap 947999;
+the clone replay certificate was not copied into its recovery marker.
+Before inventory SHA-256:
+`d2244dc6294cf35f60608e608f3d377fef6bcf378541b65f491283e72c74e446`.
+The 9,203 native transition rows hash to
+`1a9543bb466a29b8b63929bc853fc6bd18afccd8115829dd32d5aa4a1b2de0d4`.
+
+Production proof import dry-run rolled back; apply inserted one sealed oracle;
+repeat inserted zero. The issuance dry run passed. Apply added exactly one mint
+for `ebe60fd1…`, removed its two invalid reserved-namespace aliases, and
+invalidated 379 recognized derived summaries. Supply changed from
+`224847713398447926` to `945662401792509469`, exactly the target issuance
+`720814688394061543`. Repeat returned `already-applied`, `changedRows: 0`.
+Apply JSON receipt SHA-256:
+`16c420410af3386befbc654ab17df64073ed99f5a2429c14f35e77df048ca127`.
+Repeat JSON receipt SHA-256:
+`baea86abac121877ccc3d0ff00289da3088dc07d3d15d7c82a3081608386fe5f`.
+The recovery-marker fingerprint remains
+`d25e8d3d1eda55853667eb2bff5799ebd6c721688f203432762230997d381eb2`.
+Readers remain closed pending the independent full after-inventory and fresh
+summary checks; these apply receipts alone are not completion evidence.
+
+## Final production verification
+
+The independent full comparison passed. Every older mint and every unrelated
+transaction, event, participant, reference, definition, balance and credit
+listing matched the before-inventory. All 9,203 native transition rows were
+unchanged, as were retained snapshots and pending INCB deltas. The only balance
+increase was the exact target issuance to its canonical recipient. The earlier
+`b00b9451…` bond remained untouched. After inventory SHA-256:
+`1f739463a03117a26e61cb154c54febbae7107f978b4f559c0c3c4bbb0665873`.
+The recovery marker stayed unchanged through repair and fresh-summary publication.
+Normal forward indexing resumed only after those checks passed.
+
+The repaired fresh summary passed all 25 consistency checks, SHA-256
+`7564d81a8e730ecccfab38fc5f2d928aeea26391d8cb11c9a8b5a7594653acc8`.
+Services and timers returned to their exact prior active/inactive states. Core,
+Electrum and PostgreSQL authority processes were preserved. Production reached
+ready, zero-lag height 968825 with no active canonical fault or worker failures.
+The complete controller exited successfully.
+
+Public Inception verification passed on its first attempt: 47 confirmed bond
+actions, 46 attached-WORK actions, exact supply `945662401792509469`, and fixed
+issuance value Q8 `94566240179250949146190218`. The target history contains exactly
+one confirmed mint, amount `720814688394061543`, fixed value Q8
+`72081468839406154352608158`, direct issuance 546, attached issuance
+`720814688394060997`, and H-1 snapshot `a15d16ce2b3bc363ac1ed091` at 968124.
+The public response is coherent, ready, current and green on all 25 checks.
+Public Inception response SHA-256:
+`816752d6371d8e7c33b0486ed210aa38c23a42a231d0d8831f2a8057f6216c74`.
+Public target history response SHA-256:
+`cadccb32a37fe5ff65d1331661d8cb40ec200b0db747a59063731ecf3eda2a5c`.
+
+Final live wallet verification at 968825 confirmed 123 distinct reservations,
+exact summed reserves, confirmed-minus-reserved transferable balance, matching
+checkpoint hashes and conservative pending-listing reserve `364405703` subatoms.
+No signing or broadcasting was used for this verification. Final strict live
+parity passed 102 checks with zero error-level failures, retaining only the two
+preexisting historical V5 warnings. The full ledger audit passed, including
+INCB supply/fixed-value conservation and WORK/Growth value agreement.
+
+Final evidence digests (SHA-256):
+
+- `post-parity.log`: `0adc4e6ef2f04e507b110ed78967b24da6a40011988ac93dd39f8ed4cf3f8f99`.
+
+- `post-ledger.log`: `5c8841f7bce569e48cbcb64734d54795a391e488258780a8f12a4065298ced8d`.
+
+- `wallet-final.json`: `74cf3a05dbbfbd8569b4dce261b8dea46469293bed62f1be590315195fc0d3df`.
+
+- `comparison.json`: `5fe7939195b9fdf8ac36caf68482b614d6d98c7269945056aece5c0e39635b21`.
+
+- `repair-complete.json`: `6403ac8f46113a9031d0d0d50c52d3d59eec75163e8a5dff3bdbf1f7e8b14907`.
+
+- `production-after.json`: `09548bb56bf4960fe84f6d652a899b0fbfdb12b1c5d331890ebfcacfcbfca4ec`.
+
+- `timers-restored.json`: `53366cc21035bd312d89656e86ae89ffb7b22f9318b00c88be4259ccb8accacb`.
+
+- `summary-publish.json`: `07cd155f47e2d4aefd23253cfe9e4fd4c4d80d77bcdbb513c91fb309b388e541`.
+
+All operator receipts remain under
+`/data/proofofwork-incb-production-repair-9d04fd3-20260927-retry`.
+The verified production backup, independent replay proof, original immutable
+witness manifest, failed-attempt evidence and source archives remain retained.
+The UI release remains `b752518bf8b4-20260927T014804Z`; the final node release is
+`9d04fd3cf1f6-20260927T094716Z`. No user wallet transaction was signed or broadcast.
