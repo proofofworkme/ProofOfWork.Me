@@ -57,7 +57,19 @@ assert.equal(await storedScopedIncbOracle(client([]),"livenet",pin),null);
 await assert.rejects(storedScopedIncbOracle(client([wrapper,wrapper]),"livenet",pin));
 await assert.rejects(storedScopedIncbOracle(client([wrapper],[]),"livenet",pin));
 await assert.rejects(storedScopedIncbOracle(client([wrapper],[{...transition,q8:"1"}]),"livenet",pin));
-if (!SCOPED_INCB_ORACLE_PIN) {
+// Disabled admission remains fail-closed even after the production pin is set.
+assert.throws(()=>scopedIncbOracleWrapper(raw,null));
+await assert.rejects(importScopedIncbOracle({pin:null}),/not been approved and pinned/);
+if (SCOPED_INCB_ORACLE_PIN) {
+ assert.equal(Object.isFrozen(SCOPED_INCB_ORACLE_PIN),true);
+ assert.throws(()=>scopedIncbOracleWrapper(raw));
+ const lookups=[];
+ assert.equal(await storedScopedIncbOracle({query:async(sql,args)=>{
+  lookups.push(args);return {rows:[]};
+ }},"livenet"),null);
+ assert.deepEqual(lookups,[["livenet",SCOPED_INCB_ORACLE_PIN.snapshotId]]);
+ assert.notEqual(canonicalSummarySnapshotIdOutsideScopedOracle(SCOPED_INCB_ORACLE_PIN.snapshotId),SCOPED_INCB_ORACLE_PIN.snapshotId);
+} else {
  assert.throws(()=>scopedIncbOracleWrapper(raw));
  await assert.rejects(importScopedIncbOracle(),/not been approved and pinned/);
 }

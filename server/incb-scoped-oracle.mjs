@@ -2,9 +2,24 @@ import { createHash } from "node:crypto";
 import { decimalTextFromQ8 } from "./bond-units.mjs";
 
 export const SCOPED_INCB_ORACLE_MODEL = "canonical-incb-scoped-issuance-oracle-v1";
-// Admission stays disabled until the independent completed replay and exact
-// source row have been reviewed and pinned. No environment override exists.
-export const SCOPED_INCB_ORACLE_PIN = null;
+// Exact independently reviewed completed replay and immutable H-1 source row.
+// Admission still requires the sealed proof in this database; no environment override exists.
+export const SCOPED_INCB_ORACLE_PIN = Object.freeze({
+  "blockHash": "000000000000000000011837b393ac8b60920238da37902390ad8629e76002f6",
+  "bondBlockHash": "0000000000000000000069c13457832a58fd579fe3d654ce239a5a5a8b54400f",
+  "closingStateSha256": "1ba106b2a4636f92a3f4479c1f6b0181448b47e85144640abc99142463f2df8e",
+  "height": 968124,
+  "proofSha256": "09b6440d3eb2b30483e5baae1b21a6511edfd23604d03cbab9e89c587cde00ed",
+  "snapshotId": "a15d16ce2b3bc363ac1ed091",
+  "sourceArchiveSha256": "b423f2de2dd36959e40ac14560749ca70a3070dfa7571b6e64b41a9abe0d7a93",
+  "sourceArtifactSha256": "6e1aaec23312e2f86d70f0fa9cf8aeb9e110123209882be05db100a05004ae25",
+  "sourceCommit": "ac488b093fceacbcfa6aaeb59d04c79bd9359241",
+  "sourceRowSha256": "c367fb109738073cd55d36bc4bebb7a4f8f418f16e935aaf64610b3ddfa67250",
+  "sourceTree": "9f3a02234e48ae73c3055239fc9ef25de2f2df51",
+  "tokenStateSha256": "7d8fc8fbea6d4e2913988ea0c1b6230bd00beddaca00d83ab5cb55b2873da69c",
+  "txid": "ebe60fd108e8830b4741101e6525081387dcf328e81c12fa2b533de0bdbf0d3e",
+  "workNetworkValueQ8": "840950469793071163780428513"
+});
 
 const digest = (text) => createHash("sha256").update(text, "utf8").digest("hex");
 const fail = () => { throw new Error("Scoped INCB oracle does not match the approved independent replay proof."); };

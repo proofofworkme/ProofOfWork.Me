@@ -14076,7 +14076,40 @@ async function reconcileLegacyPendingEventPosition(
   };
 }
 
-async function upsertEvent(client, sourceLabel, item) {
+// A scoped issuance repair adds a projection to an already verified parent.
+// Preserve the complete canonical transaction row, including observation times.
+async function scopedIncbRepairTransaction(client, item, txid, sourceLabel) {
+  const pin = SCOPED_INCB_ORACLE_PIN;
+  if (!pin || txid !== pin.txid || sourceLabel !== "token-mints" ||
+      itemStatus(item) !== "confirmed" || item?.kind !== "token-mint" ||
+      item?.protocol !== "pwt1" || item?.tokenId !== INCB_TOKEN_ID ||
+      Number(item.blockHeight) !== pin.height + 1 || item.blockHash !== pin.bondBlockHash) {
+    throw new Error("Only the pinned scoped INCB repair may reuse a canonical transaction.");
+  }
+  const result = await client.query(
+    `SELECT transaction.status, transaction.block_height, transaction.block_index,
+            transaction.block_time, transaction.block_hash
+     FROM proof_indexer.transactions transaction
+     JOIN proof_indexer.blocks block ON block.network = transaction.network
+       AND block.height = transaction.block_height AND block.block_hash = transaction.block_hash
+       AND block.canonical = true
+     WHERE transaction.network = $1 AND transaction.txid = $2
+       AND transaction.status = 'confirmed' AND transaction.raw_tx ? 'canonicalBlockScan'
+     FOR SHARE OF transaction`,
+    [NETWORK, txid],
+  );
+  const row = result.rows[0];
+  if (result.rows.length !== 1 || row.status !== "confirmed" ||
+      row.block_hash !== pin.bondBlockHash || Number(row.block_height) !== pin.height + 1 ||
+      !Number.isSafeInteger(Number(row.block_index)) || Number(row.block_index) < 0 ||
+      Number(row.block_index) !== Number(item.blockIndex)) {
+    throw new Error("Scoped INCB repair canonical transaction identity differs.");
+  }
+  return { blockHeight: Number(row.block_height), blockIndex: Number(row.block_index),
+    blockTime: row.block_time, confirmed: true };
+}
+
+async function upsertEvent(client, sourceLabel, item, { preserveCanonicalTransaction = false } = {}) {
   item = canonicalProtocolItemForPostgres(item);
   const txid = itemTxid(item);
   const status = itemStatus(item);
@@ -14155,7 +14188,9 @@ async function upsertEvent(client, sourceLabel, item) {
     }
   }
 
-  const persistedTransaction = await upsertTransaction(
+  const persistedTransaction = preserveCanonicalTransaction
+    ? await scopedIncbRepairTransaction(client, indexedInput, txid, sourceLabel)
+    : await upsertTransaction(
     client,
     indexedInput,
     txid,
@@ -20219,6 +20254,59 @@ function canonicalIncbReplaySnapshotDescriptorFromRow(row, binding = null) {
   });
 }
 
+// The immutable legacy witness schema recorded zero Q8 atoms for send3.
+// These two known rederive entries require their exact Q16 companion instead.
+function canonicalIncbReplayPostV5WitnessIsExact(entry, rows) {
+  const target = POST_V5_INCB_ISSUANCE_REPAIR_TARGETS.find((item) => item.txid === entry?.bond?.txid);
+  const witnessBond = entry?.bond;
+  if (!target || entry.disposition !== "rederive" ||
+      entry.reason !== "rederive-rejected-sibling" || witnessBond.attachedWorkAmountAtoms !== "0" ||
+      witnessBond.blockHeight !== target.blockHeight || witnessBond.blockIndex !== target.blockIndex ||
+      witnessBond.blockHash !== target.blockHash || witnessBond.previousBlockHash !== target.previousBlockHash ||
+      !Array.isArray(rows) || rows.length !== 3) return false;
+  if (rows.some((row) => row.txid !== target.txid || row.status !== "confirmed" || row.valid !== true ||
+      row.transaction_status !== "confirmed" || row.transaction_block_hash !== target.blockHash ||
+      Number(row.transaction_block_height) !== target.blockHeight ||
+      Number(row.transaction_block_index) !== target.blockIndex ||
+      Number(row.block_height) !== target.blockHeight || Number(row.block_index) !== target.blockIndex ||
+      Number(row.op_return_vout) !== Number(row.payload?.protocolVout) ||
+      Number(row.record_ordinal) !== Number(row.payload?.recordOrdinal))) return false;
+  const parents = rows.filter((row) => row.protocol === "pwm1" && row.kind === "inception-bond");
+  const mints = rows.filter((row) => row.protocol === "pwt1" && row.kind === "token-mint" && row.payload?.tokenId === INCB_TOKEN_ID);
+  const transfers = rows.filter((row) => row.protocol === "pwt1" && row.kind === "token-transfer" && row.payload?.tokenId === WORK_TOKEN_ID);
+  if (parents.length !== 1 || mints.length !== 1 || transfers.length !== 1 ||
+      parents[0].op_return_vout !== 1 || parents[0].record_ordinal !== 0 ||
+      mints[0].op_return_vout !== 1 || mints[0].record_ordinal !== 1 ||
+      transfers[0].op_return_vout !== 3 || transfers[0].record_ordinal !== 0) return false;
+  const parent = parents[0].payload, mint = mints[0].payload, transfer = transfers[0].payload;
+  const recipients = Array.isArray(parent.recipients) ? parent.recipients : [];
+  const credits = Array.isArray(parent.attachedCredits) ? parent.attachedCredits : [];
+  if (recipients.length !== 1 || credits.length !== 1 ||
+      recipients[0].address !== witnessBond.bondRecipientAddress ||
+      Number(recipients[0].vout) !== witnessBond.bondRecipientVout ||
+      String(recipients[0].amountSats) !== witnessBond.bondRecipientAmountSats ||
+      credits[0].tokenId !== WORK_TOKEN_ID || credits[0].amountSubatoms !== target.attachedWorkSubatoms ||
+      credits[0].recipientAddress !== witnessBond.bondRecipientAddress ||
+      Number(credits[0].protocolVout) !== Number(transfer.protocolVout) ||
+      credits[0].amountStorageModel !== WORK_SUBATOM_PROJECTION_MODEL ||
+      transfer.amountStorageModel !== WORK_SUBATOM_PROJECTION_MODEL || transfer.transferVersion !== "send3" ||
+      mint.attachedWorkAmountStorageModel !== WORK_SUBATOM_PROJECTION_MODEL ||
+      mint.attachedWorkAmountVersion !== "send3" || mint.attachedWorkAmountDecimals !== 16 ||
+      mint.attachedWorkAmountPrecisionModel !== "canonical-work-subatoms-v2" ||
+      mint.attachedWorkAmountAtoms !== (BigInt(target.attachedWorkSubatoms) / 100000000n).toString() ||
+      mint.attachedWorkAmountUnitScale !== "10000000000000000") return false;
+  try {
+    const exact = validatePostV5IncbRepairProjection({
+      bond: parent, mint, previousBlockHash: witnessBond.previousBlockHash,
+      recipient: recipients[0], target, tokenId: INCB_TOKEN_ID, workTransfers: [transfer],
+    });
+    return exact.amount === target.issuanceUnits && exact.fixedValueQ8 === target.fixedValueQ8 &&
+      exact.recipientAddress === witnessBond.bondRecipientAddress && exact.recipientVout === witnessBond.bondRecipientVout;
+  } catch {
+    return false;
+  }
+}
+
 function canonicalIncbReplayMintIsExact(
   mint,
   { bond },
@@ -20844,9 +20932,11 @@ async function canonicalIncbRangeReplayCompletionWitnesses(client, rebuild) {
             e.kind,
             e.status,
             e.valid,
+            e.block_height, e.block_index, e.op_return_vout, e.record_ordinal,
             e.payload,
             t.status AS transaction_status,
             t.block_height AS transaction_block_height,
+            t.block_index AS transaction_block_index,
             lower(t.block_hash) AS transaction_block_hash
           FROM proof_indexer.events e
           JOIN proof_indexer.transactions t
@@ -20997,10 +21087,9 @@ async function canonicalIncbRangeReplayCompletionWitnesses(client, rebuild) {
       const validRederivedMint =
         matchingMints.length === 1 &&
         !rejected &&
-        canonicalIncbReplayMintIsExact(
-          objectValue(matchingMints[0].payload),
-          { bond },
-        );
+        (POST_V5_INCB_ISSUANCE_REPAIR_TARGETS.some((target) => target.txid === bond.txid)
+          ? canonicalIncbReplayPostV5WitnessIsExact(entry, rows)
+          : canonicalIncbReplayMintIsExact(objectValue(matchingMints[0].payload), { bond }));
       const validRejectedDisposition =
         matchingMints.length === 0 && rejectedRows.length === 1;
       if (!validRederivedMint && !validRejectedDisposition) {
@@ -35325,7 +35414,8 @@ async function repairCanonicalPostV5IncbIssuance(client, repairTargets = POST_V5
       if (integrity?.valid === false || !canonicalBondMintProjection(integrity)) {
         throw new Error(`Post-V5 INCB repair rejected its canonical verifier mint for ${target.txid}.`);
       }
-      const result = await upsertEvent(client, sourceLabelForProtocolItem(integrity), integrity);
+      const result = await upsertEvent(client, sourceLabelForProtocolItem(integrity), integrity,
+        { preserveCanonicalTransaction: scopedAdmission });
       if (result.skipped) {
         throw new Error(`Post-V5 INCB repair skipped the required mint for ${target.txid}.`);
       }

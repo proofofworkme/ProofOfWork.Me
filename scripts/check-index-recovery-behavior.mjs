@@ -242,7 +242,7 @@ import {
   canonicalWorkAmoRelationalTokenStateEvidence,
   classifyWorkAmoV5LegacyRows,
 } from "./migrate-work-amo-v5.mjs";
-import { POST_V5_INCB_ISSUANCE_REPAIR_TARGETS } from "../server/incb-post-v5-repair.mjs";
+import { POST_V5_INCB_ISSUANCE_REPAIR_TARGETS, validatePostV5IncbRepairProjection } from "../server/incb-post-v5-repair.mjs";
 import {
   INCB_RANGE_REPLAY_BOUND_WITNESS_SOURCE,
   INCB_RANGE_REPLAY_WITNESS_MANIFEST_MODEL,
@@ -1522,6 +1522,7 @@ function isolatedFunction(path, name, globals = {}) {
     uniqueMarketplaceMutationActivity,
     validTxid,
     canonicalIncbReplayComponents,
+    POST_V5_INCB_ISSUANCE_REPAIR_TARGETS, validatePostV5IncbRepairProjection,
     SCOPED_INCB_ORACLE_PIN, scopedIncbOracleProjectionRows, storedScopedIncbOracle, canonicalSummarySnapshotIdOutsideScopedOracle,
     proofIndexScopedIncbIssuanceOraclePayload: async () => null,
     ...globals,
@@ -1908,6 +1909,7 @@ function isolatedFunction(path, name, globals = {}) {
             "currentWorkProjectionState",
           ],
           workAmoV5CanonicalBlockEventSet: ["canonicalProtocolPosition"],
+          canonicalIncbRangeReplayCompletionWitnesses: ["canonicalIncbReplayPostV5WitnessIsExact"],
           upsertEvent: ["canonicalProtocolItemForPostgres"],
         }
       : {};
@@ -88206,6 +88208,79 @@ check("historical WORK transfers preserve Q8 source units during Q16 reconstruct
   assert.equal(project({...record, amountAtoms: undefined, amountSubatoms: "1", amountStorageModel: WORK_SUBATOM_PROJECTION_MODEL}, token, "livenet", WORK_SUBATOM_PROJECTION_MODEL).amountSubatoms, "1");
   assert.equal(project({...record, amountStorageModel: WORK_SUBATOM_PROJECTION_MODEL}, token, "livenet", WORK_SUBATOM_PROJECTION_MODEL), null);
 });
+
+check("scoped INCB insertion preserves the complete canonical parent transaction", async () => {
+  const target = POST_V5_INCB_ISSUANCE_REPAIR_TARGETS[1];
+  const pin = {txid:target.txid,height:target.blockHeight-1,bondBlockHash:target.blockHash};
+  const item = {...target,kind:"token-mint",protocol:"pwt1",tokenId:INCB_TOKEN_ID,confirmed:true};
+  const parent = {status:"confirmed",block_hash:target.blockHash,block_height:target.blockHeight,
+    block_index:target.blockIndex,block_time:"2026-09-20T00:00:00Z"};
+  const read = isolatedFunction(BACKFILL_PATH,"scopedIncbRepairTransaction",{
+    SCOPED_INCB_ORACLE_PIN:pin,INCB_TOKEN_ID,NETWORK:"livenet",itemStatus:i=>i.confirmed?"confirmed":"pending",
+  });
+  const queries=[];
+  const client={query:async(sql,args)=>{queries.push(sql);assert.deepEqual(Array.from(args),["livenet",target.txid]);return {rows:[parent]};}};
+  const result=await read(client,item,target.txid,"token-mints");
+  assert.equal(result.blockHeight,target.blockHeight);assert.equal(result.blockIndex,target.blockIndex);
+  assert.equal(result.blockTime,parent.block_time);assert.equal(result.confirmed,true);
+  assert.equal(queries.length,1);assert.match(queries[0],/^SELECT /u);
+  assert.match(queries[0],/canonicalBlockScan/u);assert.match(queries[0],/block.canonical = true/u);
+  for(const altered of [{...item,confirmed:false},{...item,blockHash:"a".repeat(64)},
+    {...item,tokenId:WORK_TOKEN_ID},{...item,kind:"token-transfer"}]) {
+    await assert.rejects(read(client,altered,target.txid,"token-mints"));
+  }
+  await assert.rejects(read(client,item,"b".repeat(64),"token-mints"));
+  await assert.rejects(read(client,item,target.txid,"tokens"));
+  for(const rows of [[],[parent,parent],[{...parent,block_index:target.blockIndex+1}],
+    [{...parent,block_hash:"a".repeat(64)}],[{...parent,status:"pending"}]]) {
+    await assert.rejects(read({query:async()=>({rows})},item,target.txid,"token-mints"));
+  }
+  let selected=false;
+  const insert=isolatedFunction(BACKFILL_PATH,"upsertEvent",{
+    canonicalProtocolItemForPostgres:i=>i,eventKind:()=>"token-mint",itemStatus:()=>"confirmed",itemTxid:i=>i.txid,
+    workMarketV2EventIsActionBound:()=>true,workProjectionItem:i=>i,normalizedEventItem:i=>i,
+    normalizedLowerText:String,protocolForItem:()=>"pwt1",PROOF_INDEX_RENDERED_MAIL_KINDS:[],
+    stableEventKey:()=>"mint",stableEventKeyKind:()=>"token-mint",itemTime:()=>parent.block_time,
+    scopedIncbRepairTransaction:async()=>{selected=true;throw new Error("preserved-parent-selected");},
+    upsertTransaction:async()=>{throw new Error("unexpected parent rewrite");},
+  });
+  await assert.rejects(insert(client,"token-mints",item,{preserveCanonicalTransaction:true}),/preserved-parent-selected/u);
+  assert.equal(selected,true);
+});
+
+
+check("post-V5 replay completion verifies exact Q16 companions despite legacy zero-Q8 witnesses", () => {
+  const fixture=JSON.parse(readFileSync(new URL("./fixtures/incb-replay-completion-post-v5.json",import.meta.url)));
+  const valid=isolatedFunction(BACKFILL_PATH,"canonicalIncbReplayPostV5WitnessIsExact",{
+    INCB_TOKEN_ID,WORK_TOKEN_ID,WORK_SUBATOM_PROJECTION_MODEL,
+  });
+  for(const entry of fixture.entries) {
+    const rows=fixture.rows.filter(row=>row.txid===entry.bond.txid);
+    assert.equal(valid(entry,rows),true,entry.bond.txid);
+    for(const mutate of [
+      (e,r)=>{e.disposition="preserve";},
+      (e,r)=>{e.bond.attachedWorkAmountAtoms="1";},
+      (e,r)=>{e.bond.txid="a".repeat(64);},
+      (e,r)=>{e.bond.previousBlockHash="a".repeat(64);},
+      (e,r)=>{r.push(structuredClone(r[0]));},
+      (e,r)=>{r.find(x=>x.kind==="token-transfer").valid=false;},
+      (e,r)=>{r.find(x=>x.kind==="token-transfer").payload.amountSubatoms="1";},
+      (e,r)=>{r.find(x=>x.kind==="token-transfer").payload.transferVersion="send2";},
+      (e,r)=>{r.find(x=>x.kind==="inception-bond").payload.attachedCredits[0].amountSubatoms="1";},
+      (e,r)=>{r.find(x=>x.kind==="token-mint").payload.amount="1";},
+      (e,r)=>{const m=r.find(x=>x.kind==="token-mint").payload;m.issuanceNetworkValueQ8=String(BigInt(m.issuanceNetworkValueQ8)+1n);},
+      (e,r)=>{r.find(x=>x.kind==="token-mint").payload.issuanceValueSnapshotBlockHash="a".repeat(64);},
+      (e,r)=>{r.find(x=>x.kind==="token-mint").payload.attachedWorkAmountDecimals=8;},
+      (e,r)=>{r.find(x=>x.kind==="token-mint").payload.attachedWorkAmountAtoms="0";},
+      (e,r)=>{const t=r.find(x=>x.kind==="token-transfer");t.op_return_vout=99;t.payload.protocolVout=99;r.find(x=>x.kind==="inception-bond").payload.attachedCredits[0].protocolVout=99;},
+      (e,r)=>{r[0].transaction_block_index+=1;},
+    ]) {
+      const changedEntry=structuredClone(entry),changedRows=structuredClone(rows);mutate(changedEntry,changedRows);
+      assert.equal(valid(changedEntry,changedRows),false);
+    }
+  }
+});
+
 
 let failures = 0;
 for (const test of tests) {
