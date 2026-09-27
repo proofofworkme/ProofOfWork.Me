@@ -4318,8 +4318,8 @@ select {
   align-content: start;
 }
 
-.token-market-row dl {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+.id-record.token-market-row dl {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 160px), 1fr));
 }
 
 .token-market-stats {
@@ -8736,10 +8736,8 @@ pre {
   font-variant-numeric: tabular-nums lining-nums;
   max-width: 100%;
   min-width: 0;
-  overflow-x: auto;
-  overflow-wrap: normal;
-  scrollbar-width: thin;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
+  white-space: normal;
   word-break: normal;
 }
 
@@ -9219,4 +9217,24 @@ html
     scroll-behavior: auto !important;
     transition-duration: 0.01ms !important;
   }
+}
+
+/* AMO uses the available page width; exact ticket values wrap within cards. */
+.marketplace-app .id-launch-main {
+  width: 100%;
+  max-width: 1480px;
+}
+.marketplace-app .token-market-grid,
+.marketplace-workspace .token-market-grid {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 360px), 1fr));
+}
+.marketplace-app .proof-metric-display,
+.marketplace-workspace .proof-metric-display {
+  overflow: visible;
+}
+.marketplace-app .proof-metric-display > span,
+.marketplace-workspace .proof-metric-display > span {
+  min-width: 0;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }

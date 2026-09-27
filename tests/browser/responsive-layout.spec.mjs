@@ -155,6 +155,9 @@ const TOKENS = [
 ];
 
 const TOKEN_STATE = {
+  indexedAt: NOW,
+  indexedThroughBlock: 960_220,
+  indexedThroughBlockHash: HASH,
   amountStorageModel: WORK_STORAGE_MODEL,
   authoritativeWallet: false,
   closedListings: [],
@@ -767,6 +770,14 @@ async function installApiFixtures(
         json = typeof tokenListingHistoryResponse === "function"
           ? tokenListingHistoryResponse(url)
           : tokenListingHistoryResponse;
+      } else if (kind === "listings") {
+        const book = completeTokenListingHistoryFixture(fixtureTokenState.listings);
+        const start = Number((url.searchParams.get("cursor") || "fixture-0").split("-")[1]);
+        const end = Math.min(start + 200, book.totalCount);
+        json = { ...book, items: book.items.slice(start, end), start, end,
+          cursor: url.searchParams.get("cursor") || "", page: Math.floor(start / 200),
+          pageCount: Math.max(1, Math.ceil(book.totalCount / 200)),
+          hasMore: end < book.totalCount, nextCursor: end < book.totalCount ? `fixture-${end}` : "" };
       } else {
         const activityTotal = countedAmo
           ? kind === "market-listings"
@@ -1785,12 +1796,9 @@ async function assertMarketplaceWorkExactMetrics(page, label) {
       .locator(".proof-metric-display");
     await expect(value, `${label} ${metricLabel} missing`).toHaveCount(1);
     await expect(value).toContainText(exactText);
-    await assertFragmentOnOneRenderedLine(
-      value,
-      exactText,
-      `${label} ${metricLabel}`,
-      { allowHorizontalScroll: true },
-    );
+    await expect.poll(() => value.evaluate((element) =>
+      element.scrollWidth <= element.clientWidth + 1,
+    ), { message: `${label} ${metricLabel} must fit without a horizontal scrollbar` }).toBe(true);
   }
 }
 
@@ -2408,7 +2416,7 @@ test("AMO status uses canonical counts when compact previews are partial", async
   await assertNoDocumentOverflow(page, "partial-preview AMO status");
 });
 
-test("AMO status prefers total counts over complete per-token sums when unscoped", async ({
+test("AMO status uses the complete reconciled book over summary and per-token estimates when unscoped", async ({
   page,
 }) => {
   const extraCreditToken = tokenDefinition({
@@ -2465,7 +2473,7 @@ test("AMO status prefers total counts over complete per-token sums when unscoped
   await expect(status).toContainText("Credit market loaded");
   await expect(status).toContainText("2 confirmed credits");
   await expect(status).toContainText(
-    `${(AMO_LISTING_COUNT + 2).toLocaleString()} open listings`,
+    `${AMO_LISTING_COUNT.toLocaleString()} open listings`,
   );
   await expect(status).toContainText(
     `${AMO_SALE_COUNT.toLocaleString()} confirmed sales`,
@@ -2616,10 +2624,10 @@ test("AMO 503 responses become unavailable without false zero totals or endless 
       });
       await expect(verification).toContainText("Unavailable");
       await expect(
-        page.getByRole("heading", { name: "AMO summary unavailable" }),
+        page.getByRole("heading", { name: "AMO inventory unavailable" }),
       ).toBeVisible();
       await expect(
-        page.getByRole("heading", { name: "Loading AMO summary" }),
+        page.getByRole("heading", { name: "Loading AMO listings" }),
       ).toHaveCount(0);
 
       if (surface.stats) {
@@ -2674,7 +2682,7 @@ test("AMO 503 responses become unavailable without false zero totals or endless 
         page.locator(`${surface.ready} [aria-label="WORK credit AMO stats"]`),
       ).toContainText(AMO_LISTING_COUNT.toLocaleString());
       await expect(
-        page.getByRole("heading", { name: "AMO summary unavailable" }),
+        page.getByRole("heading", { name: "AMO inventory unavailable" }),
       ).toHaveCount(0);
       await assertNoDocumentOverflow(
         page,
@@ -2926,260 +2934,69 @@ test("AMO summary moves from loading to ready without presenting placeholder zer
   await expect(loadingMetrics.first()).not.toHaveText("—");
 });
 
-test("AMO keeps its verified preview idle until complete listing history is requested", async ({
-  page,
-}) => {
-  test.setTimeout(180_000);
-  let releaseListingHistory;
-  const tokenListingHistoryGate = new Promise((resolve) => {
-    releaseListingHistory = resolve;
-  });
-  let listingHistoryRequests = 0;
-  const listing = RESPONSIVE_AMO_LISTINGS[0];
-  const tokenListingHistoryResponse = completeTokenListingHistoryFixture([
-    listing,
-  ]);
+test("AMO automatically loads all credit and bond tickets before declaring ready", async ({ page }) => {
+  let release;
+  const gate = new Promise((resolve) => { release = resolve; });
+  let requested = 0;
+  const bondRows = [POWB_TOKEN_ID, INCB_TOKEN_ID].map((tokenId, index) => ({
+    ...RESPONSIVE_AMO_LISTINGS[0], tokenId, ticker: index ? "INCB" : "POWB",
+    listingId: String(index + 8).repeat(64), amount: "100", amountAtoms: "10000000000",
+  }));
+  const rows = [...RESPONSIVE_AMO_LISTINGS.slice(0, 199), ...bondRows];
+  const book = completeTokenListingHistoryFixture(rows);
   await installApiFixtures(page, {
-    marketplaceSummaryTransform: (summary) => ({
-      ...summary,
-      token: {
-        ...summary.token,
-        collectionHasMore: { listings: true, sales: false, tokens: false },
-        hasMore: true,
-        indexedAt: NOW,
-        indexedThroughBlock: 960_220,
-        indexedThroughBlockHash: HASH,
-        listingAuthority: tokenListingHistoryResponse.listingAuthority,
-        listingBookComplete: false,
-        listings: [listing],
-        stats: {
-          ...summary.token.stats,
-          confirmedOpenListings: 1,
-          confirmedSales: 0,
-          openListings: 1,
-          pendingOpenListings: 0,
-          pendingSales: 0,
-        },
-        totalCounts: {
-          listings: 1,
-          sales: 0,
-          tokens: summary.token.tokens.length,
-        },
-        tokens: summary.token.tokens.map((token) =>
-          token.tokenId === WORK_TOKEN_ID
-            ? {
-                ...token,
-                confirmedOpenListings: 1,
-                confirmedSales: 0,
-                openListings: 1,
-                pendingOpenListings: 0,
-                pendingSales: 0,
-              }
-            : token,
-        ),
-      },
-    }),
-    tokenListingHistoryGate,
-    tokenListingHistoryRequested: () => {
-      listingHistoryRequests += 1;
+    marketplaceSummaryTransform: (summary) => ({ ...summary, token: { ...summary.token,
+      listings: rows.slice(0, 40), listingBookComplete: false,
+      totalCounts: { ...summary.token.totalCounts, listings: rows.length },
+    } }),
+    tokenListingHistoryGate: gate,
+    tokenListingHistoryRequested: () => { requested += 1; },
+    tokenListingHistoryResponse: (url) => {
+      const start = url.searchParams.has("cursor") ? 200 : 0;
+      const end = Math.min(start + 200, rows.length);
+      return { ...book, items: book.items.slice(start, end), start, end,
+        cursor: start ? "last-page" : "", page: start ? 1 : 0, pageCount: 2,
+        hasMore: end < rows.length, nextCursor: end < rows.length ? "last-page" : "" };
     },
-    tokenListingHistoryResponse,
   });
-  await page.setViewportSize({ height: VIEWPORT_HEIGHT, width: 390 });
-
   try {
-    await openFixtureRoute(
-      page,
-      surfaceUrl(
-        MARKETPLACE_BASE_URL,
-        `/?marketplace=1&asset=${WORK_TOKEN_ID}`,
-      ),
-      "AMO verified summary before requested listing history",
-    );
-    const verification = page.locator(
-      '.marketplace-summary-read-state[aria-label="AMO summary verification"]',
-    ).first();
-    await expect(verification).toHaveAttribute("data-state", "ready", {
-      timeout: 30_000,
-    });
-    expect(listingHistoryRequests).toBe(0);
-    await expect(verification).toContainText(
-      "Listing rows are a verified preview",
-    );
-    await expect(page.locator(".marketplace-summary-gate")).toHaveCount(0);
-    await expect(
-      page.locator('[aria-label="WORK credit AMO stats"]'),
-    ).toContainText("1");
-    await expect(
-      page.getByRole("status").filter({
-        hasText: "Showing a verified AMO preview",
-      }),
-    ).toBeVisible();
-    await expect(page.getByText("No credit listings yet", { exact: true })).toHaveCount(0);
-    await expect(
-      page.getByLabel("AMO asset tabs").getByRole("button", { name: /^Bonds\s+—$/u }),
-    ).toBeVisible();
-
-    const loadHistory = page.getByRole("button", {
-      name: "Load complete sale-ticket history",
-    });
-    await loadHistory.click();
-    await expect.poll(() => listingHistoryRequests).toBeGreaterThan(0);
-    await expect(
-      page.getByRole("button", { name: /Verifying sale-ticket history/u }),
-    ).toBeVisible();
-    await expect(verification).toContainText("Listing rows are a verified preview");
-    releaseListingHistory();
-    await expect(verification).toContainText(
-      "complete Core-reconciled sale-ticket history",
-      { timeout: 30_000 },
-    );
-    await expect(
-      page.getByRole("status").filter({ hasText: "Showing a verified AMO preview" }),
-    ).toHaveCount(0);
-    await expect(
-      page.getByLabel("AMO asset tabs").getByRole("button", { name: /^Bonds\s+0$/u }),
-    ).toBeVisible();
-  } finally {
-    releaseListingHistory();
-  }
+    await page.goto(`/?marketplace=1&asset=${WORK_TOKEN_ID}`);
+    const verification = page.getByLabel("AMO summary verification");
+    await expect.poll(() => requested).toBeGreaterThan(0);
+    await expect(verification).toHaveAttribute("data-state", "loading");
+    await expect(page.getByPlaceholder("Search sale tickets, sellers, txids")).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Load complete sale-ticket history" })).toHaveCount(0);
+    release();
+    await expect(verification).toHaveAttribute("data-state", "ready");
+    expect(requested).toBe(2);
+    for (const width of [390, 1280, 1920]) {
+      await page.setViewportSize({ width, height: 1000 });
+      await expect.poll(() => page.locator("#credit-market-book .token-market-row dd").evaluateAll(
+        (fields) => fields.filter((field) => field.scrollWidth > field.clientWidth + 1).length,
+      )).toBe(0);
+      await assertNoDocumentOverflow(page, `complete AMO inventory at ${width}px`);
+    }
+    const search = page.getByPlaceholder("Search sale tickets, sellers, txids");
+    await search.fill(rows[198].listingId);
+    await expect(page.locator("#credit-market-book")).toContainText("1 of 199");
+    await page.getByLabel("AMO asset tabs").getByRole("button", { name: /^Bonds/u }).click();
+    await expect(page.getByLabel("Bond listing tabs")).toContainText("Inception1");
+    await expect(page.getByLabel("Bond listing tabs")).toContainText("Infinity1");
+    await expect(page.getByLabel("INCB sale-ticket market")).toBeVisible();
+    await page.getByLabel("Bond listing tabs").getByRole("button", { name: /Infinity/u }).click();
+    await expect(page.getByLabel("POWB sale-ticket market")).toBeVisible();
+  } finally { release(); }
 });
 
-test("AMO does not apply listing pages from a superseded summary checkpoint", async ({
-  page,
-}) => {
-  test.setTimeout(180_000);
-  let releaseListingHistory;
-  const tokenListingHistoryGate = new Promise((resolve) => {
-    releaseListingHistory = resolve;
+test("AMO rejects a listing book from a different summary checkpoint", async ({ page }) => {
+  const book = completeTokenListingHistoryFixture([RESPONSIVE_AMO_LISTINGS[0]], {
+    indexedThroughBlock: 960_221, indexedThroughBlockHash: "2".repeat(64),
   });
-  let listingHistoryRequests = 0;
-  const firstListing = RESPONSIVE_AMO_LISTINGS[0];
-  const secondListing = RESPONSIVE_AMO_LISTINGS[1];
-  const firstPage = completeTokenListingHistoryFixture([firstListing]);
-  const freshIndexedAt = "2026-07-23T13:00:00.000Z";
-  const freshBlockHash = "2".repeat(64);
-  const freshPage = completeTokenListingHistoryFixture(
-    [firstListing, secondListing],
-    {
-      indexedAt: freshIndexedAt,
-      indexedThroughBlock: 960_221,
-      indexedThroughBlockHash: freshBlockHash,
-    },
-  );
-  const summaryAtCheckpoint = (
-    summary,
-    { indexedAt, indexedThroughBlock, indexedThroughBlockHash, listings, page },
-  ) => ({
-    ...summary,
-    indexedAt,
-    token: {
-      ...summary.token,
-      collectionHasMore: { listings: true, sales: false, tokens: false },
-      hasMore: true,
-      indexedAt,
-      indexedThroughBlock,
-      indexedThroughBlockHash,
-      listingAuthority: page.listingAuthority,
-      listingBookComplete: false,
-      listings,
-      stats: {
-        ...summary.token.stats,
-        confirmedOpenListings: listings.length,
-        confirmedSales: 0,
-        openListings: listings.length,
-        pendingOpenListings: 0,
-        pendingSales: 0,
-      },
-      totalCounts: {
-        listings: listings.length,
-        sales: 0,
-        tokens: summary.token.tokens.length,
-      },
-      tokens: summary.token.tokens.map((token) =>
-        token.tokenId === WORK_TOKEN_ID
-          ? {
-              ...token,
-              confirmedOpenListings: listings.length,
-              confirmedSales: 0,
-              openListings: listings.length,
-              pendingOpenListings: 0,
-              pendingSales: 0,
-            }
-          : token,
-      ),
-    },
-  });
-  let serveFreshSnapshot = false;
-  await installApiFixtures(page, {
-    marketplaceSummaryTransform: (summary) =>
-      serveFreshSnapshot
-        ? summaryAtCheckpoint(summary, {
-            indexedAt: freshIndexedAt,
-            indexedThroughBlock: 960_221,
-            indexedThroughBlockHash: freshBlockHash,
-            listings: [firstListing, secondListing],
-            page: freshPage,
-          })
-        : summaryAtCheckpoint(summary, {
-            indexedAt: NOW,
-            indexedThroughBlock: 960_220,
-            indexedThroughBlockHash: HASH,
-            listings: [firstListing],
-            page: firstPage,
-          }),
-    tokenListingHistoryGate,
-    tokenListingHistoryRequested: () => {
-      listingHistoryRequests += 1;
-    },
-    tokenListingHistoryResponse: firstPage,
-  });
-  await page.setViewportSize({ height: VIEWPORT_HEIGHT, width: 390 });
-
-  try {
-    await openFixtureRoute(
-      page,
-      surfaceUrl(
-        MARKETPLACE_BASE_URL,
-        `/?marketplace=1&asset=${WORK_TOKEN_ID}`,
-      ),
-      "AMO superseded listing history race",
-    );
-    const verification = page.locator(
-      '.marketplace-summary-read-state[aria-label="AMO summary verification"]',
-    ).first();
-    const openRecordCount = page
-      .locator('[aria-label="WORK credit AMO stats"] > div')
-      .nth(2)
-      .locator("strong");
-    await expect(verification).toHaveAttribute("data-state", "ready", {
-      timeout: 30_000,
-    });
-    expect(listingHistoryRequests).toBe(0);
-    await page.getByRole("button", {
-      name: "Load complete sale-ticket history",
-    }).click();
-    await expect.poll(() => listingHistoryRequests).toBeGreaterThan(0);
-    await expect(openRecordCount).toHaveText("1");
-
-    serveFreshSnapshot = true;
-    await page.getByRole("button", { name: "Refresh", exact: true }).first().click();
-    await expect(openRecordCount).toHaveText("2", { timeout: 30_000 });
-    await expect(verification).toContainText(
-      "Listing rows are a verified preview",
-    );
-
-    releaseListingHistory();
-    await expect.poll(() =>
-      verification.locator("div span").innerText(),
-    ).toContain("Listing rows are a verified preview");
-    await expect(openRecordCount).toHaveText("2");
-    await expect(verification).not.toContainText(
-      "complete Core-reconciled listing and sale history",
-    );
-  } finally {
-    releaseListingHistory();
-  }
+  await installApiFixtures(page, { tokenListingHistoryResponse: book });
+  await page.goto(`/?marketplace=1&asset=${WORK_TOKEN_ID}`);
+  await expect(page.getByLabel("AMO summary verification")).toHaveAttribute("data-state", "unavailable");
+  await expect(page.getByPlaceholder("Search sale tickets, sellers, txids")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Retry", exact: true }).first()).toBeVisible();
 });
 
 test("AMO retains labeled last-verified totals when an exact-tip refresh returns 503", async ({
@@ -3488,7 +3305,9 @@ test("representative mobile routes match deterministic visual snapshots", async 
   await page.setViewportSize({ height: 844, width: 390 });
   await page.emulateMedia({ colorScheme: "dark", reducedMotion: "reduce" });
   const baseUrl = COMPUTER_BASE_URL || MARKETPLACE_BASE_URL;
-  for (const surface of REPRESENTATIVE_ACCESSIBILITY_ROUTES) {
+  for (const surface of REPRESENTATIVE_ACCESSIBILITY_ROUTES.filter((item) =>
+    !process.env.POW_VISUAL_SURFACE || item.label === process.env.POW_VISUAL_SURFACE
+  )) {
     await test.step(surface.label, async () => {
       await openFixtureRoute(
         page,

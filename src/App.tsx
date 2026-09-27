@@ -14467,11 +14467,11 @@ function MarketplaceSummaryGate({
     <section className="id-card marketplace-summary-gate">
       <div className="empty-state">
         <Wallet size={28} />
-        <h3>{unavailable ? "AMO summary unavailable" : "Loading AMO summary"}</h3>
+        <h3>{unavailable ? "AMO inventory unavailable" : "Loading AMO listings"}</h3>
         <p>
           {unavailable
             ? "The canonical registry, credit, listing, sale, and WORK snapshot could not be verified. Totals and empty-book claims are withheld."
-            : "Verifying one coherent AMO snapshot from the ProofOfWork index."}
+            : "Loading and verifying all active credit and bond listings. Search and sorting will cover the complete inventory."}
         </p>
         {unavailable && readState.retryable !== false ? (
           <button
@@ -22068,6 +22068,7 @@ export default function App() {
   ) {
     const retained = completeMarketplaceListingHistoryRef.current;
     if (
+      !fresh &&
       retained &&
       completeTokenListingHistoryMatchesState(retained, state)
     ) {
@@ -27505,6 +27506,24 @@ export default function App() {
     return "";
   }
 
+  async function fetchCompleteMarketplaceSnapshot(fresh: boolean) {
+    // Restart the whole read if the index advances between summary and book.
+    // No partial page is published as searchable market inventory.
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      try {
+        const snapshot = await fetchMarketplaceSummary(fresh);
+        const token = await tokenStateWithCurrentCompleteMarketplaceListings(
+          snapshot.token,
+          fresh,
+        );
+        return { ...snapshot, token };
+      } catch (error) {
+        if (attempt === 2) throw error;
+      }
+    }
+    throw new Error("The complete AMO inventory could not be verified.");
+  }
+
   async function refreshMarketplaceSummary(
     silent = false,
     fresh = false,
@@ -27558,7 +27577,7 @@ export default function App() {
       if (!acceptedMarketplaceSnapshotRef.current) {
         setMarketplaceSummaryReadState({
           message:
-            "Verifying one coherent registry, credit, and WORK snapshot from the ProofOfWork index.",
+            "Loading all credit and bond listings and verifying the AMO snapshot.",
           status: "loading",
         });
       }
@@ -27574,26 +27593,10 @@ export default function App() {
       }
       try {
         const [snapshot, btcUsdQuote] = await Promise.all([
-          fetchMarketplaceSummary(fresh),
+          fetchCompleteMarketplaceSnapshot(fresh),
           fetchBtcUsdPrice(fresh).catch(() => undefined),
         ]);
-        // The coherent root summary is sufficient for initial rendering. The
-        // full Core-reconciled listing book is fetched only after an explicit
-        // request from the market surface. Keep that verified book only while
-        // both its canonical tip and indexed snapshot still match.
-        const retainedListingHistory =
-          completeMarketplaceListingHistoryRef.current;
-        const completeTokenState =
-          retainedListingHistory &&
-          completeTokenListingHistoryMatchesState(
-            retainedListingHistory,
-            snapshot.token,
-          )
-            ? tokenStateWithCompleteTokenListings(
-                snapshot.token,
-                retainedListingHistory,
-              )
-            : snapshot.token;
+        const completeTokenState = snapshot.token;
         const marketplaceTokenScopeKey = tokenStateScopeKey({
           network: "livenet",
           tokenScope: "",
@@ -27700,8 +27703,8 @@ export default function App() {
             message: retainsIndexedSnapshot
               ? current.message
               : acceptedTokenState.listingBookComplete === true
-                ? "Registry, credit, complete Core-reconciled sale-ticket history, and WORK state agree at the same verified checkpoint."
-                : "Registry, credit counts, and WORK state agree in one verified snapshot. Listing rows are a verified preview. Load the complete checkpoint-bound Core-reconciled sale-ticket book when you need full search or inventory.",
+                ? "All active credit and bond listings are loaded and verified with the AMO snapshot."
+                : "Loading all credit and bond listings.",
             status: retainsIndexedSnapshot ? "last-verified" : "ready",
           };
         });
@@ -27720,7 +27723,7 @@ export default function App() {
               state: acceptedTokenState,
               tokenScope: currentTokenMarketplaceStatusScope(),
               workFloorQuote: acceptedWorkFloor,
-            })}${acceptedTokenState.listingBookComplete === true ? "" : " Listing rows are a verified preview; complete Core-reconciled sale-ticket history is available on request."}`,
+            })}${acceptedTokenState.listingBookComplete === true ? "" : " Loading all active listings."}`,
           });
         }
         return acceptedSnapshot;
@@ -33946,12 +33949,9 @@ export default function App() {
       : undefined;
   })();
   const refreshBondMarkets = () => {
-    void refreshTokenMarketData({
-      includeWorkFloor: true,
-      label: "bond AMO",
-    });
-    void refreshInfinity(false, true, INCEPTION_BOND_UI);
-    void refreshInfinity(false, true, INFINITY_BOND_UI);
+    void refreshMarketplaceSummary(false, true);
+    void refreshInfinity(true, true, INCEPTION_BOND_UI);
+    void refreshInfinity(true, true, INFINITY_BOND_UI);
   };
 
   if (idLaunchMode) {
@@ -48953,6 +48953,14 @@ function InfinityBondMarketPanel({
   );
 }
 
+function confirmedBondSaleCount(tokens: PowTokenDefinition[], network: BitcoinNetwork) {
+  const bonds = tokens.filter((token) => token.network === network && BOND_TOKEN_IDS.has(token.tokenId));
+  const counts = bonds.map((token) => optionalMarketplaceCount(token.confirmedSales));
+  return bonds.length === BOND_TOKEN_IDS.size && counts.every((count) => count !== undefined)
+    ? counts.reduce<number>((total, count) => total + count!, 0)
+    : undefined;
+}
+
 function BondMarketplacePanel({
   address,
   btcUsd,
@@ -49026,10 +49034,9 @@ function BondMarketplacePanel({
   const bondListings = listings.filter(
     (listing) => listing.network === network && BOND_TOKEN_IDS.has(listing.tokenId),
   );
-  const bondSales = sales.filter(
-    (sale) => sale.network === network && BOND_TOKEN_IDS.has(sale.tokenId),
-  );
-  const sealedBondListings = bondListings.filter(tokenListingHasSaleTicketSeal);
+  const bondSaleCount = confirmedBondSaleCount(tokens, network);
+  const sealedBondListings = bondListings.filter(tokenListingHasConfirmedSaleTicketSeal);
+  const listingBookComplete = listingSummary.listingBookComplete === true;
   const listingCountFor = (config: BondUiConfig) =>
     bondListings.filter((listing) => listing.tokenId === config.tokenId).length;
   const bondTabOptions = [
@@ -49059,19 +49066,19 @@ function BondMarketplacePanel({
         >
           <div>
             <span>Inception tickets</span>
-            <strong>{listingCountFor(INCEPTION_BOND_UI).toLocaleString()}</strong>
+            <strong>{listingBookComplete ? listingCountFor(INCEPTION_BOND_UI).toLocaleString() : "—"}</strong>
           </div>
           <div>
             <span>Infinity tickets</span>
-            <strong>{listingCountFor(INFINITY_BOND_UI).toLocaleString()}</strong>
+            <strong>{listingBookComplete ? listingCountFor(INFINITY_BOND_UI).toLocaleString() : "—"}</strong>
           </div>
           <div>
             <span>Sealed tickets</span>
-            <strong>{sealedBondListings.length.toLocaleString()}</strong>
+            <strong>{listingBookComplete ? sealedBondListings.length.toLocaleString() : "—"}</strong>
           </div>
           <div>
             <span>Bond sales</span>
-            <strong>{bondSales.length.toLocaleString()}</strong>
+            <strong>{bondSaleCount?.toLocaleString() ?? "—"}</strong>
           </div>
         </div>
         <div className="marketplace-tabs marketplace-bond-tabs" aria-label="Bond listing tabs">
@@ -49083,7 +49090,7 @@ function BondMarketplacePanel({
               type="button"
             >
               <span>{config.displayName.replace(" Bond", "")}</span>
-              <strong>{listingCountFor(config).toLocaleString()}</strong>
+              <strong>{listingBookComplete ? listingCountFor(config).toLocaleString() : "—"}</strong>
             </button>
           ))}
         </div>
@@ -52088,10 +52095,8 @@ function MarketplaceApp({
   const bondListings = tokenListings.filter((listing) =>
     BOND_TOKEN_IDS.has(listing.tokenId),
   );
-  const bondSales = tokenSales.filter((sale) =>
-    BOND_TOKEN_IDS.has(sale.tokenId),
-  );
-  const sealedBondListings = bondListings.filter(tokenListingHasSaleTicketSeal);
+  const bondSaleCount = confirmedBondSaleCount(tokens, "livenet");
+  const sealedBondListings = bondListings.filter(tokenListingHasConfirmedSaleTicketSeal);
   const tokenMarketRows = tokenMarketplaceRowsFor({
     address,
     listingBookComplete: tokenSummary.listingBookComplete === true,
@@ -52150,8 +52155,8 @@ function MarketplaceApp({
     bondSummary: {
       tone: listingBookComplete ? "good" : "idle",
       text: listingBookComplete
-        ? `Bond listings loaded in AMO. ${bondListings.length.toLocaleString()} open ticket${bondListings.length === 1 ? "" : "s"}, ${sealedBondListings.length.toLocaleString()} sealed or sealing, ${bondSales.length.toLocaleString()} sale${bondSales.length === 1 ? "" : "s"}.`
-        : "Bond market preview loaded. Complete Core-reconciled sale-ticket history is available on request; inventory remains a preview until verified.",
+        ? `Bond listings loaded in AMO. ${bondListings.length.toLocaleString()} open ticket${bondListings.length === 1 ? "" : "s"}, ${sealedBondListings.length.toLocaleString()} confirmed sealed tickets.`
+        : "Loading all bond listings. Counts will appear when the complete inventory is verified.",
     },
     boostSummary: {
       tone: boostMarketError ? "bad" : boostMarketLoading ? "idle" : "good",
@@ -52171,7 +52176,7 @@ function MarketplaceApp({
       text: listingBookComplete
         ? creditMarketStatusText
         : marketplaceSummaryVerified
-          ? `${creditMarketStatusText} Listing rows are a verified preview; complete Core-reconciled sale-ticket history is available on request.`
+          ? `${creditMarketStatusText} Loading all active listings.`
           : `The credit market summary is not verified yet; no complete-book claim is available.`,
     },
   });
@@ -52336,7 +52341,7 @@ function MarketplaceApp({
                 <strong>
                   {marketplaceSummaryMetric(
                     marketplaceSummaryReadState,
-                    bondSales.length,
+                    bondSaleCount ?? "—",
                   )}
                 </strong>
                 <span>Bond Sales</span>
@@ -52821,10 +52826,8 @@ function MarketplaceWorkspace({
   const bondListings = tokenListings.filter(
     (listing) => listing.network === network && BOND_TOKEN_IDS.has(listing.tokenId),
   );
-  const bondSales = tokenSales.filter(
-    (sale) => sale.network === network && BOND_TOKEN_IDS.has(sale.tokenId),
-  );
-  const sealedBondListings = bondListings.filter(tokenListingHasSaleTicketSeal);
+  const bondSaleCount = confirmedBondSaleCount(tokens, network);
+  const sealedBondListings = bondListings.filter(tokenListingHasConfirmedSaleTicketSeal);
   const networkTokenCount = creditTokens.filter(
     (token) => token.network === network,
   ).length;
@@ -53162,7 +53165,7 @@ function MarketplaceWorkspace({
               <strong>
                 {marketplaceSummaryMetric(
                   marketplaceSummaryReadState,
-                  bondSales.length,
+                  bondSaleCount ?? "—",
                 )}
               </strong>
               <span>Bond Sales</span>
