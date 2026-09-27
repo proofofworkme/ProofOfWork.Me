@@ -122,7 +122,7 @@ test("reboost renders the original post instead of the target txid", async ({ pa
   });
   await expect(composer).toContainText("proof.txt");
   await page.keyboard.press("Escape");
-  await page.getByRole("button", { name: "What's happening?", exact: true }).click();
+  await page.getByRole("button", { name: "Review Boost", exact: true }).click();
   composer = page.getByRole("dialog", { name: "What’s happening?" });
   await expect(composer).toBeVisible();
   await expect(composer.locator("textarea")).toBeVisible();
@@ -264,7 +264,7 @@ test("Computer Boost entry buttons open the shared Proof, WORK, and Files compos
   await expect(composer).toContainText("work-proof.txt");
   await page.keyboard.press("Escape");
   await expect(page.getByRole("dialog", { name: "What’s happening?" })).toHaveCount(0);
-  composer = await openAndCheck("What's happening?");
+  composer = await openAndCheck("Review Boost");
   await expect(composer.getByLabel("Proof signal")).toHaveValue("546");
   await expect(page.locator(".compose-pane")).toHaveCount(0);
 });

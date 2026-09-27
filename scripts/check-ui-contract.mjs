@@ -592,12 +592,12 @@ const boostProtocol = contents.get("src/features/boost/boostProtocol.ts");
 const exactAmount = contents.get("src/exactAmount.ts");
 const walletUtxoPolicy = contents.get("src/walletUtxos.ts");
 expect(
-  "Boost tools drawer traps focus and closes when its surface exceeds 760px",
+  "Boost tools drawer traps focus and closes when its surface exceeds 1120px",
   /document\.body\.style\.overflow = "hidden"/.test(boostRoot) &&
     /event\.key === "Escape"[\s\S]*setToolsOpen\(false\)/.test(boostRoot) &&
     /event\.key !== "Tab"/.test(boostRoot) &&
     /new ResizeObserver\(closeDesktopDrawer\)/.test(boostRoot) &&
-    /getBoundingClientRect\(\)\.width > 760[\s\S]*setToolsOpen\(false\)/.test(
+    /getBoundingClientRect\(\)\.width > 1120[\s\S]*setToolsOpen\(false\)/.test(
       boostRoot,
     ) &&
     /aria-modal=\{toolsOpen \|\| undefined\}/.test(boostRoot) &&
@@ -615,7 +615,7 @@ expect(
     /function boostWorkSignalSubatoms/u.test(boostRoot) &&
     /function formatWorkSignal/u.test(boostRoot) &&
     /const displayedSignalQ8 = isPaidAction \? actionSignalQ8 : totalSignalQ8/u.test(boostRoot) &&
-    /<strong>\{isPaidAction \? "Action signal " : ""\}\{formatBoostSignal\(displayedSignalQ8\)\}<\/strong>/u.test(boostRoot) &&
+    /<strong>\{isPaidAction \? "Action signal " : ""\}<CompactSignal value=\{displayedSignalQ8\} \/><\/strong>/u.test(boostRoot) && /const exact = formatBoostSignal\(value\)/u.test(boostRoot) && /aria-label=\{exact\} title=\{exact\}/u.test(boostRoot) &&
     /Total USD \{formatUsd\(boostTotalSignalUsd\(item\)\)\}/u.test(
       boostRoot,
     ) &&

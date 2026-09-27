@@ -11,6 +11,8 @@ import {
   ArrowUpRight,
   ArrowLeft,
   Clock,
+  Home,
+  MoreHorizontal,
   Heart,
   MessageCircle,
   Paperclip,
@@ -213,6 +215,17 @@ function formatUsd(value: number | undefined) {
     minimumFractionDigits: 2,
     style: "currency",
   });
+}
+
+function CompactSignal({ value }: { value: bigint }) {
+  const exact = formatBoostSignal(value);
+  const units = [[1_000_000_000_000n, "T"], [1_000_000_000n, "B"], [1_000_000n, "M"], [1_000n, "K"]] as const;
+  const unit = value >= 10_000n * 100_000_000n
+    ? units.find(([scale]) => value >= scale * 100_000_000n) : undefined;
+  const compact = unit
+    ? `${value / (unit[0] * 100_000_000n)}.${(value * 100n / (unit[0] * 100_000_000n) % 100n).toString().padStart(2, "0")}${unit[1]} proofs`
+    : exact;
+  return <span aria-label={exact} title={exact}>{compact}</span>;
 }
 
 function boostOwnerAddress(item: BoostFeedItem) {
@@ -554,7 +567,7 @@ function ReboostedPost({
       data-testid="reboosted-post"
       onClick={(event) => {
         const target = event.target as HTMLElement;
-        if (target.closest("a,button,input,textarea,select")) return;
+        if (target.closest("a,button,input,textarea,select,details,summary")) return;
         event.stopPropagation();
         onOpenOriginal(post);
       }}
@@ -597,6 +610,8 @@ function ReboostedPost({
             <span>Original Boost signal</span>
             <strong>{formatBoostSignal(boostProofSignalQ8(post))}</strong>
           </div>
+          <details className="boost-proof-details">
+            <summary>View original proof</summary>
           <a
             className="boost-proof-frame"
             href={txHref}
@@ -613,6 +628,7 @@ function ReboostedPost({
                 : `pwb1 · ${shortAddress(post.boostTxid || post.txid)} · Owner ${ownerLabel(post)}`}
             </p>
           </a>
+          </details>
         </div>
       </div>
     </div>
@@ -727,7 +743,7 @@ function BoostPost({
       data-testid="boost-post"
       onClick={(event) => {
         const target = event.target as HTMLElement;
-        if (target.closest("a,button,input,textarea,select")) return;
+        if (target.closest("a,button,input,textarea,select,details,summary")) return;
         onOpen(item);
       }}
       onKeyDown={(event) => {
@@ -756,7 +772,7 @@ function BoostPost({
             <span>{formatDate(item.createdAt)}</span>
           </div>
           <div className="boost-post-head-actions">
-            <strong>{isPaidAction ? "Action signal " : ""}{formatBoostSignal(displayedSignalQ8)}</strong>
+            <strong>{isPaidAction ? "Action signal " : ""}<CompactSignal value={displayedSignalQ8} /></strong>
             {!connectedAuthor && authorAddress ? (
               <button
                 className="secondary small boost-follow-button"
@@ -787,7 +803,12 @@ function BoostPost({
             {item.media?.mime && /^(?:image|video)\//iu.test(item.media.mime) ? (
               <BoostMedia item={item} network={network} />
             ) : null}
+          </>
+        )}
+        {!isReboost ? <QuotedPost network={network} post={item.quotedPost} /> : null}
 
+        <details className="boost-proof-details">
+          <summary>View proof <span>{item.confirmed ? "Confirmed" : "Pending"}</span></summary>
             <a
               className="boost-proof-frame"
               href={txHref}
@@ -804,10 +825,6 @@ function BoostPost({
                   : `pwb1 · ${shortAddress(boostTxid || item.txid)} · Owner ${ownerLabel(item)}`}
               </p>
             </a>
-          </>
-        )}
-        {!isReboost ? <QuotedPost network={network} post={item.quotedPost} /> : null}
-
         <div className="boost-signal-row">
           <span>Total USD {formatUsd(boostTotalSignalUsd(item))}</span>
           <span>Proof {formatBoostSignal(displayedProofSignalQ8)}</span>
@@ -827,11 +844,19 @@ function BoostPost({
           <span>{followerLabel(item.followerCount)}</span>
         </div>
 
+          <dl className="boost-proof-record">
+            <dt>Transaction</dt><dd>{item.txid}</dd>
+            <dt>Owner</dt><dd>{ownerAddress}</dd>
+            {item.media?.sha256 ? <><dt>File SHA-256</dt><dd>{item.media.sha256}</dd></> : null}
+          </dl>
+        </details>
+
         <div className="boost-actions">
           <button
             className="secondary small"
             disabled={actionsLocked}
             onClick={() => onReply(item)}
+            aria-label={`Reply, ${item.replyCount ?? 0} replies`}
             title="Reply and add proof signal to the original Boost"
             type="button"
           >
@@ -841,6 +866,7 @@ function BoostPost({
             </span>
           </button>
           <button
+            aria-label={`Like, ${item.likeCount ?? 0} likes`}
             aria-pressed={likeActive}
             className={likeActive ? "secondary small is-active" : "secondary small"}
             disabled={actionsLocked || likeActive}
@@ -855,6 +881,7 @@ function BoostPost({
           </button>
           <div className="boost-reboost-action">
             <button
+              aria-label={`Reboost, ${item.reboostCount ?? 0} reboosts`}
               aria-expanded={reboostMenuOpen}
               aria-haspopup="menu"
               aria-pressed={reboostActive}
@@ -880,6 +907,27 @@ function BoostPost({
               </div>
             ) : null}
           </div>
+          <a
+            className="secondary small link-button"
+            aria-label="Share Boost"
+            href={shareHref}
+            rel="noreferrer"
+            target="_blank"
+          >
+            <span className="button-content">
+              <Share2 size={15} />
+              <span>Share</span>
+            </span>
+          </a>
+          <details className="boost-more-actions" onKeyDown={(event) => {
+            if (event.key === "Escape") {
+              event.stopPropagation();
+              event.currentTarget.open = false;
+              event.currentTarget.querySelector("summary")?.focus();
+            }
+          }}>
+            <summary aria-label="More Boost actions" title="More Boost actions"><MoreHorizontal size={18} /></summary>
+            <div className="boost-more-actions-panel">
           {listing ? (
             <a
               className="secondary small link-button"
@@ -922,17 +970,6 @@ function BoostPost({
           ) : null}
           <a
             className="secondary small link-button"
-            href={shareHref}
-            rel="noreferrer"
-            target="_blank"
-          >
-            <span className="button-content">
-              <Share2 size={15} />
-              <span>Share</span>
-            </span>
-          </a>
-          <a
-            className="secondary small link-button"
             href={txHref}
             rel="noreferrer"
             target="_blank"
@@ -942,6 +979,8 @@ function BoostPost({
               <span>TX</span>
             </span>
           </a>
+            </div>
+          </details>
         </div>
       </div>
     </article>
@@ -2016,7 +2055,7 @@ export default function BoostRoot({
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
     const focusableSelector =
-      "button:not([disabled]), a[href], input:not([disabled]), textarea:not([disabled]), select:not([disabled])";
+      "button:not([disabled]), a[href], input:not([disabled]), textarea:not([disabled]), select:not([disabled]), summary";
     const focusFrame = window.requestAnimationFrame(() =>
       dialog?.querySelector<HTMLElement>(focusableSelector)?.focus(),
     );
@@ -2062,7 +2101,8 @@ export default function BoostRoot({
     }
 
     const closeDesktopDrawer = () => {
-      if (surface.getBoundingClientRect().width > 760) {
+      setDiscoveryOpen(surface.getBoundingClientRect().width > 1120);
+      if (surface.getBoundingClientRect().width > 1120) {
         setToolsOpen(false);
       }
     };
@@ -2075,6 +2115,8 @@ export default function BoostRoot({
       window.removeEventListener("resize", closeDesktopDrawer);
     };
   }, []);
+
+  const [discoveryOpen, setDiscoveryOpen] = useState(false);
 
   const headerSignalStats = useMemo(() => {
     if (payload?.signalStats && searchQuery.trim() === indexedSearchQuery) {
@@ -2153,14 +2195,15 @@ export default function BoostRoot({
 
   function openToolsForCompactSurface() {
     const surfaceWidth = boostSurfaceRef.current?.getBoundingClientRect().width;
-    if ((surfaceWidth ?? window.innerWidth) <= 760) {
+    if ((surfaceWidth ?? window.innerWidth) <= 1120) {
       openTools();
     }
   }
 
   function openBoostComposer(quote?: BoostFeedItem) {
+    setToolsOpen(false);
     setQuoteTarget(quote);
-    setPostText("");
+    if (quote) setPostText("");
     setPostSignalSats(546);
     setPostWorkAmount("0");
     setPostAttachment(undefined);
@@ -2237,7 +2280,7 @@ export default function BoostRoot({
     >
       {embedded ? null : (
         <AppHeader
-          accountStats={accountStats}
+          accountStats={[]}
           address={address}
           busy={busy || Boolean(actionBusy)}
           connectWallet={() => void connectWallet()}
@@ -2251,6 +2294,10 @@ export default function BoostRoot({
         />
       )}
       <AppStatusRow persistent status={status} />
+      <details className="boost-network-stats">
+        <summary>{isProfileView ? "Profile stats" : "Network stats"}</summary>
+        <dl>{accountStats.map((stat) => <div key={stat.label}><dt>{stat.label}</dt><dd title={stat.detail}>{stat.value}</dd></div>)}</dl>
+      </details>
 
       <div
         aria-label={embedded ? undefined : "Boost timeline"}
@@ -2269,6 +2316,13 @@ export default function BoostRoot({
             type="button"
           />
         ) : null}
+        <nav className="boost-compact-nav" aria-label="Boost navigation">
+          <a href={boostRouteHref("/", { boost: "1" })} aria-label="Home" title="Home"><Home size={22} /><span>Home</span></a>
+          <button onClick={openTools} type="button" aria-label="Search and profile tools" title="Search and profile tools"><Search size={22} /><span>Search</span></button>
+          {address ? <a href={boostProfileHref(address)} aria-label="My profile" title="My profile"><UserCircle size={22} /><span>Profile</span></a> :
+            <button onClick={openTools} type="button" aria-label="Connect profile" title="Connect profile"><UserCircle size={22} /><span>Profile</span></button>}
+          <button className="primary" onClick={onComposeBoost ?? (() => openBoostComposer())} type="button" aria-label="Post a Boost" title="Post a Boost"><Zap size={22} /><span>Post</span></button>
+        </nav>
         <aside
           aria-label="Boost tools"
           aria-modal={toolsOpen || undefined}
@@ -2556,12 +2610,16 @@ export default function BoostRoot({
                   <div className="boost-profile-stats">
                     <span>{payload ? followerLabel(profileSubject?.followerCount) : "Followers unavailable"}</span>
                     <span>{payload ? followingLabel(profileSubject?.followingCount) : "Following unavailable"}</span>
-                    <span>{profileSubject ? formatBoostSignal(boostSignalQ8(profileSubject.totalSignalQ8, profileSubject.totalSignalSatsExact, profileSubject.totalSignalSats ?? 0)) : "Unavailable"} signal</span>
+                    <span>{profileSubject ? <CompactSignal value={boostSignalQ8(profileSubject.totalSignalQ8, profileSubject.totalSignalSatsExact, profileSubject.totalSignalSats ?? 0)} /> : "Unavailable"} signal</span>
                     {profileWorkSignalSubatoms > 0n ? (
                       <span>{formatWorkSignal(profileWorkSignalSubatoms)}</span>
                     ) : null}
                   </div>
                 </div>
+                {profileSelfView ? <button className="secondary small boost-profile-edit" onClick={() => {
+                  if ((boostSurfaceRef.current?.getBoundingClientRect().width ?? 0) <= 1120) openTools();
+                  else toolsPanelRef.current?.querySelector<HTMLElement>(".boost-action-panel select, .boost-action-panel button")?.focus();
+                }} type="button">Edit identity</button> : null}
                 {!profileSelfView && profileSubjectAddress ? (
                   <button
                     className="secondary small boost-follow-button"
@@ -2643,13 +2701,16 @@ export default function BoostRoot({
                 >
                   {address ? shortAddress(address).slice(0, 2).toUpperCase() : "Po"}
                 </div>
+                {!onComposeBoost ? <label className="boost-inline-draft">
+                  <textarea aria-label="Boost text" maxLength={140} placeholder="Share a proof-backed thought" rows={2} value={postText} onChange={(event) => setPostText(event.target.value)} />
+                </label> : null}
                 {onComposeBoost ? (
                   <button
                     className="boost-composer-prompt"
                     onClick={onComposeBoost}
                     type="button"
                   >
-                    What's happening?
+                    Review Boost
                   </button>
                 ) : (
                   <button
@@ -2657,9 +2718,10 @@ export default function BoostRoot({
                     onClick={() => openBoostComposer()}
                     type="button"
                   >
-                    What's happening?
+                    Review Boost
                   </button>
                 )}
+                <p className="boost-composer-hint">140 characters · Proof / WORK · Files</p>
               </div>
             </div>
           )}
@@ -2677,6 +2739,16 @@ export default function BoostRoot({
                 <span>Tools</span>
               </span>
             </button>
+            <label className="boost-mobile-filter">Period
+              <select aria-label="Boost value window" value={valueWindow} onChange={(event) => setValueWindow(event.target.value as typeof valueWindow)}>
+                {VALUE_WINDOWS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+              </select>
+            </label>
+            <label className="boost-mobile-filter">Sort
+              <select aria-label="Boost sort" value={sortMode} onChange={(event) => setSortMode(event.target.value as typeof sortMode)}>
+                {SORT_MODES.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+              </select>
+            </label>
             <div className="network-tabs" aria-label="Boost value window">
               {VALUE_WINDOWS.map((option) => (
                 <button
@@ -2750,6 +2822,9 @@ export default function BoostRoot({
         </section>
 
         <aside className="boost-right-rail" aria-label="Boost discovery">
+          <details className="boost-discovery-details" open={discoveryOpen} onToggle={(event) => setDiscoveryOpen(event.currentTarget.open)}>
+          <summary>Explore Boost</summary>
+          <div className="boost-discovery-content">
           <section className="boost-rail-panel">
             <div className="boost-rail-head">
               <strong>{isProfileView ? "Profile Signal" : "Signal Now"}</strong>
@@ -2758,21 +2833,21 @@ export default function BoostRoot({
             <div className="boost-rail-stats">
               <span>
                 <strong>
-                  {payload ? formatBoostSignal(
+                  {payload ? <CompactSignal value={
                     isProfileView
                       ? boostSignalQ8(profileSubject?.totalSignalQ8, profileSubject?.totalSignalSatsExact, profileSubject?.totalSignalSats ?? 0)
-                      : headerSignalStats.totalSignalQ8,
-                  ) : "Unavailable"}
+                      : headerSignalStats.totalSignalQ8
+                  } /> : "Unavailable"}
                 </strong>
                 Total
               </span>
               <span>
                 <strong>
-                  {payload ? formatBoostSignal(
+                  {payload ? <CompactSignal value={
                     isProfileView
                       ? boostSignalQ8(profileSubject?.proofSignalQ8, profileSubject?.proofSignalSatsExact, profileSubject?.proofSignalSats ?? 0)
-                      : headerSignalStats.proofSignalQ8,
-                  ) : "Unavailable"}
+                      : headerSignalStats.proofSignalQ8
+                  } /> : "Unavailable"}
                 </strong>
                 Proof
               </span>
@@ -2802,7 +2877,7 @@ export default function BoostRoot({
                     target="_blank"
                   >
                     <strong>{authorLabel(item, activeIdentity, address)}</strong>
-                    <span>{formatBoostSignal(boostTotalSignalQ8(item))}</span>
+                    <CompactSignal value={boostTotalSignalQ8(item)} />
                   </a>
                 ))
               ) : (
@@ -2827,9 +2902,9 @@ export default function BoostRoot({
                   >
                     <span>
                       <strong>{authorLabel(item, activeIdentity, address)}</strong>
-                      {followerLabel(item.followerCount)}
+                      <small>{followerLabel(item.followerCount)}</small>
                     </span>
-                    <UserPlus size={15} />
+                    <span className="boost-suggestion-follow"><UserPlus size={15} /> Follow</span>
                   </button>
                 ))
               ) : (
@@ -2857,6 +2932,8 @@ export default function BoostRoot({
               </div>
             </section>
           ) : null}
+          </div>
+          </details>
         </aside>
       </div>
 
@@ -2905,6 +2982,7 @@ export default function BoostRoot({
               ) : null}
               <form onSubmit={publishBoostPost}>
                 <textarea
+                  aria-label="Boost text"
                   autoFocus
                   maxLength={140}
                   onChange={(event) => setPostText(event.target.value)}
@@ -2985,6 +3063,13 @@ export default function BoostRoot({
                   Add Proof, WORK, or both. Proof signal is a self-send; WORK signal is a verified same-transaction WORK self-transfer. Files can be attached in that transaction. Choose the miner fee rate below.
                 </p>
                 <FeeRateControl feeRate={feeRate} setFeeRate={setFeeRate} />
+                <details className="boost-composer-preview">
+                  <summary>Preview Boost</summary>
+                  <p>{postText || "Attachment-only Boost"}</p>
+                  {postAttachment ? <span>{postAttachment.name} · {formatBytes(postAttachment.size)}</span> : null}
+                </details>
+                <p className="field-note">Review and sign in your wallet. Original posts have no Boost registry fee. A WORK transfer adds its existing {BOOST_WORK_MUTATION_PROOFS}-proof mutation fee, plus the miner fee.</p>
+                {!address ? <button className="secondary" disabled={Boolean(actionBusy)} onClick={() => void connectWallet()} type="button">Connect to post</button> : null}
                 <button
                   className="primary"
                   disabled={
