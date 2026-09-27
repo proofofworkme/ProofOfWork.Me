@@ -105,11 +105,22 @@ function capacityState(transition, scope) {
   }
   if ((state.reservedSubatoms !== undefined && state.reservedSubatoms !== reserved.toString()) ||
       [...holders.values()].some((holder) => holder.reserved > holder.balance)) return null;
+  // V8 network value is monotone on a canonical continuation. Its closing
+  // value therefore bounds the amount of every not-yet-confirmed 25k face.
+  // This is a local spending hold, never signed or frozen listing terms.
+  const pendingListingNetworkValueQ8 = validation.closingState.networkValueQ8;
+  const maximumSupply = 21000000n * 10000000000000000n;
+  const derivedHold = 25000n * maximumSupply * 100000000n /
+    BigInt(pendingListingNetworkValueQ8);
+  const pendingListingReserveSubatoms = (derivedHold > maximumSupply
+    ? maximumSupply : derivedHold > 0n ? derivedHold : 1n).toString();
+  const pendingListingHold = { pendingListingNetworkValueQ8, pendingListingReserveSubatoms };
   const capacities = new Map();
   for (const [address, holder] of holders) {
     holder.reservations.sort((left, right) =>
       left.listingId < right.listingId ? -1 : left.listingId > right.listingId ? 1 : 0);
     capacities.set(address, {
+      ...pendingListingHold,
       model: CANONICAL_WORK_WALLET_CAPACITY_MODEL,
       network: scope.network,
       address,
@@ -123,12 +134,13 @@ function capacityState(transition, scope) {
       tokenStateCommitment: commitment,
     });
   }
-  return { capacities, commitment, closingStateSha256: envelope.closingStateSha256,
+  return { capacities, commitment, pendingListingHold, closingStateSha256: envelope.closingStateSha256,
     closingStatePayloadBytes: envelope.closingStatePayloadBytes };
 }
 
 function requestedCapacities(state, scope) {
   return scope.addresses.map((address) => structuredClone(state.capacities.get(address) ?? {
+    ...state.pendingListingHold,
     model: CANONICAL_WORK_WALLET_CAPACITY_MODEL,
     network: scope.network,
     address,

@@ -282,3 +282,30 @@ test("raw replay's distinct uppercase Bech32 balance keys never inflate Core-der
   assert.equal(empty.confirmedBalanceSubatoms, "0");
   assert.equal(empty.transferableBalanceSubatoms, "0");
 });
+
+
+test("pending V8 reservation bounds cover every later canonical 25000-proof amount", () => {
+  const supply = 21000000n * 10000000000000000n;
+  const numerator = 25000n * supply * 100000000n;
+  for (const value of [1n, 2100000000000000n, 840950469793071163780428513n, numerator * 2n]) {
+    const transition = fixture();
+    for (const phase of ["opening", "closing"]) {
+      const state = transition.payload[phase + "SufficientState"];
+      state.networkValueQ8 = value.toString();
+      state.creditFixedQ8 = value.toString();
+      const commitment = workAmoV5CanonicalStateCommitment(state);
+      transition[phase + "NetworkValueQ8"] = value.toString();
+      transition[phase + "StateSha256"] = commitment.sha256;
+      transition[phase + "StatePayloadBytes"] = commitment.payloadBytes;
+      transition.payload[phase + "StateCommitment"] = commitment;
+    }
+    const [capacity] = canonicalWorkWalletCapacitiesFromTransition(transition, scope);
+    const hold = BigInt(capacity.pendingListingReserveSubatoms);
+    assert.equal(capacity.pendingListingNetworkValueQ8, value.toString());
+    assert.ok(hold >= 1n && hold <= supply);
+    for (const later of [value, value + 1n, value * 1000n]) {
+      const amount = numerator / later;
+      if (amount > 0n && amount <= supply) assert.ok(amount <= hold);
+    }
+  }
+});

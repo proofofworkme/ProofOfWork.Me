@@ -87148,6 +87148,28 @@ check("post-V5 INCB repair dry run binds stored bond and accepted WORK before an
   assert.equal(dryRunClient.queries.at(-1), "ROLLBACK");
   assert.ok(dryRunClient.queries.every((query) =>
     !/^(?:DELETE|INSERT|UPDATE|COMMIT|LOCK TABLE)/u.test(query)));
+  const singleRepair = isolatedFunction(BACKFILL_PATH, "repairCanonicalPostV5IncbIssuance", {
+    ...repairDependencies, APPLY_POST_V5_INCB_ISSUANCE_REPAIR: false,
+    canonicalIncbValueSnapshotBindings: () => new Map([["h-1-b", {}]]),
+  });
+  const singleClient = clientFor(false, { snapshotRows: [{ snapshot_id: "h-1-b" }] });
+  const allRowsQuery = singleClient.query.bind(singleClient);
+  singleClient.query = async (sql, parameters) => {
+    const result = await allRowsQuery(sql, parameters);
+    if (Array.isArray(parameters?.[1]) && parameters[1].includes(targets[1].txid)) {
+      assert.equal(JSON.stringify(parameters[1]), JSON.stringify([targets[1].txid]));
+      result.rows = result.rows.filter((row) => row.txid === targets[1].txid);
+    } else if (String(sql).includes("SELECT height, block_hash FROM proof_indexer.blocks")) {
+      assert.equal(JSON.stringify(parameters[1]), JSON.stringify([targets[1].blockHeight]));
+      result.rows = result.rows.filter((row) => Number(row.height) === targets[1].blockHeight);
+    }
+    return result;
+  };
+  const singleResult = await singleRepair(singleClient, [POST_V5_INCB_ISSUANCE_REPAIR_TARGETS[1]]);
+  assert.equal(singleResult.targets.length, 1);
+  assert.equal(singleResult.targets[0].txid, targets[1].txid);
+  assert.equal(singleResult.expectedAfterSupply, "1051");
+  assert.equal(singleClient.queries.at(-1), "ROLLBACK");
   const changedWorkClient = clientFor(true);
   await rejection(
     repair(changedWorkClient),
@@ -87160,7 +87182,7 @@ check("post-V5 INCB repair dry run binds stored bond and accepted WORK before an
   for (const [label, options, pattern] of [
     ["incomplete replay", { marker: { complete: true } }, /certified completed 958383 PWT replay/u],
     ["active fault", { faultActive: true }, /active canonical fault/u],
-    ["missing H-1 row", { snapshotRows: [{ snapshot_id: "h-1-a" }] }, /both imported full H-1 summary rows/u],
+    ["missing H-1 row", { snapshotRows: [{ snapshot_id: "h-1-a" }] }, /imported full H-1 summary row for each selected bond/u],
     ["mismatched manifest", { manifest: { bindingId: "wrong", hash: "witness-hash" } }, /replay witness manifest mismatch/u],
     ["missing canonical target block", { wrongTargetBlock: true }, /one matching canonical index block per target/u],
   ]) {

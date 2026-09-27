@@ -8,6 +8,8 @@ export type CanonicalWorkCapacity = {
   confirmedBalanceSubatoms: string;
   reservedBalanceSubatoms: string;
   transferableBalanceSubatoms: string;
+  pendingListingNetworkValueQ8?: string;
+  pendingListingReserveSubatoms?: string;
   reservations: Array<{ listingId: string; amountSubatoms: string }>;
   tokenStateCommitment: { model: string; sha256: string; payloadBytes: number };
 };
@@ -74,7 +76,18 @@ export function requireCanonicalWorkCapacity(
   }
   if (confirmed !== expected.confirmedBalanceSubatoms || reserved !== reservationTotal ||
       reserved > confirmed || confirmed - reserved !== transferable) return unavailable();
+  let pendingListingReserve: bigint | undefined;
+  if (capacity.pendingListingNetworkValueQ8 !== undefined ||
+      capacity.pendingListingReserveSubatoms !== undefined) {
+    const networkValue = units(capacity.pendingListingNetworkValueQ8);
+    if (networkValue <= 0n) return unavailable();
+    const supply = 21000000n * 10000000000000000n;
+    const amount = 25000n * supply * 100000000n / networkValue;
+    const bound = amount > supply ? supply : amount > 0n ? amount : 1n;
+    pendingListingReserve = units(capacity.pendingListingReserveSubatoms);
+    if (pendingListingReserve !== bound) return unavailable();
+  }
   // The server binds this receipt to canonical replay. The client checks its
   // scope and exact arithmetic; it does not re-hash the full token-state preimage.
-  return { confirmed, reserved, transferable, reservations };
+  return { confirmed, reserved, transferable, reservations, pendingListingReserve };
 }

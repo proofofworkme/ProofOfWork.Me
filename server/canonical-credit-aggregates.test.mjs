@@ -9,7 +9,7 @@ import {
   decimalTextFromQ8,
   integerBigInt,
 } from "./bond-units.mjs";
-import { q8ToCanonicalDecimal, q8ToNumber } from "./work-units.mjs";
+import { canonicalQ8IntegerText, q8IntegerTextsAgree, q8SatsDecimalText, q8ToCanonicalDecimal, q8ToNumber } from "./work-units.mjs";
 
 // Execute the actual API functions without starting the server, a database,
 // background workers, or network clients.
@@ -33,6 +33,8 @@ function runtime(names = [], globals = {}) {
     canonicalIntegerText,
     decimalTextFromQ8,
     integerBigInt,
+    canonicalQ8IntegerText,
+    q8IntegerTextsAgree, q8SatsDecimalText,
     q8ToCanonicalDecimal,
     q8ToNumber,
     tokenCanUseCreditNetworkFloor: () => false,
@@ -63,6 +65,7 @@ const aggregateQ8 = {
 function closingFloor() {
   const actualValue = {
     totalSats: "8387622148430181388.26228612",
+    totalQ8: "838762214843018138826228612",
     creditMinerFeeFlowSats: 10175330,
     creditMarketplaceMutationFlowSats: 1253070,
     creditProofPaymentFlowSats: 21000546,
@@ -81,6 +84,7 @@ function closingFloor() {
     indexedThroughBlock: HEIGHT,
     indexedThroughBlockHash: HASH,
     networkValueSats: actualValue.totalSats,
+    networkValueQ8: actualValue.totalQ8,
     snapshotId: "audit19-fixture",
     workAmoV5Transition: { blockHeight: HEIGHT, blockHash: HASH },
   };
@@ -355,6 +359,7 @@ test("actual indexed builder reconciles both token states before metrics, hashes
   const global = ledgerGlobals();
   const api = runtime([
     "buildIndexedCanonicalLedgerPayload", "tokenStateWithCreditNetworkValueDetails",
+    "activeCanonicalSummaryReplayTokenBridgeEra",
     "ledgerSnapshotChecks", "exactCreditFrozenValueComponentsAgree",
   ], {
     ...global,

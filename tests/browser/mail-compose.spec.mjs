@@ -305,9 +305,13 @@ function staleInvalidListingEvent() {
   };
 }
 
-function authoritativeWorkState({ repairedV8Listing = false } = {}) {
-  const listing = repairedV8Listing ? v8AmoListing() : undefined;
-  const balanceSubatoms = repairedV8Listing
+function authoritativeWorkState({ repairedV8Listing = false, pendingV8Listing = false } = {}) {
+  const listing = repairedV8Listing || pendingV8Listing ? v8AmoListing() : undefined;
+  if (pendingV8Listing) {
+    Object.assign(listing, { confirmed: false, sealConfirmed: false, amount: 0,
+      amountSubatoms: undefined, frozenTerms: undefined, createdAt: new Date().toISOString() });
+  }
+  const balanceSubatoms = pendingV8Listing ? "1000000000000000000000" : repairedV8Listing
     ? "20000000000000000"
     : "1000000000000000000";
   const reservedSubatoms = listing?.amountSubatoms ?? "0";
@@ -327,7 +331,9 @@ function authoritativeWorkState({ repairedV8Listing = false } = {}) {
         indexedThroughBlockHash: HASH,
         model: "canonical-work-wallet-capacity-v1",
         network: "livenet",
-        reservations: listing
+        pendingListingNetworkValueQ8: NETWORK_VALUE_Q8,
+        pendingListingReserveSubatoms: "250000000000000000000",
+        reservations: listing?.confirmed
           ? [{
               amountSubatoms: listing.amountSubatoms,
               listingId: listing.listingId,
@@ -564,6 +570,7 @@ async function installApiFixtures(
     listingSummaryMismatch = false,
     mode = "post-v8",
     repairedV8Listing = false,
+    pendingV8Listing = false,
     remoteV8MarketListings = false,
   } = {},
 ) {
@@ -754,7 +761,7 @@ async function installApiFixtures(
         };
         status = 503;
       } else {
-        json = authoritativeWorkState({ repairedV8Listing });
+        json = authoritativeWorkState({ repairedV8Listing, pendingV8Listing });
       }
     } else if (
       pathname === "/api/v1/registry" ||
@@ -1512,4 +1519,28 @@ test("post-V8 mail prepares an exact one-subatom send3", async ({ page }) => {
       payload.startsWith("pwt1:send2:"),
     ),
   ).toBe(false);
+});
+
+
+test("wallet keeps remaining WORK and a second listing available while the first V8 intent is pending", async ({ page }) => {
+  await installWallet(page);
+  await installApiFixtures(page, { pendingV8Listing: true });
+  await openConnectedWallet(page);
+  const form = page.locator("#wallet-list");
+  await expect(form.getByText("75,000.0000000000000000 WORK", { exact: true })).toBeVisible();
+  await expect(form.getByRole("button", { name: "Create 25,000 proofs AMO intent" })).toBeEnabled();
+  await expect(page.getByText(/Additional WORK spending stays paused/)).toHaveCount(0);
+  expect(await page.evaluate(() => window.__mailComposeFixture.signCalls)).toBe(0);
+});
+
+test("Computer Wallet preserves remaining WORK with a pending V8 listing", async ({ page }) => {
+  await installWallet(page);
+  await installApiFixtures(page, { pendingV8Listing: true });
+  await page.goto("/", { waitUntil: "domcontentloaded" });
+  await page.locator(".onboarding-pane").getByRole("button", { name: "Connect UniSat" }).click();
+  await page.locator(".sidebar").getByRole("button", { name: /^Wallet/u }).click();
+  const form = page.locator("#wallet-list");
+  await expect(form.getByText("75,000.0000000000000000 WORK", { exact: true })).toBeVisible();
+  await expect(form.getByRole("button", { name: "Create 25,000 proofs AMO intent" })).toBeEnabled();
+  expect(await page.evaluate(() => window.__mailComposeFixture.signCalls)).toBe(0);
 });
