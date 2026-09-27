@@ -88282,6 +88282,30 @@ check("post-V5 replay completion verifies exact Q16 companions despite legacy ze
 });
 
 
+check("exact Q16 INCB projection round trips with only a lossless Q8 compatibility alias", () => {
+  const exact = isolatedFunction(READER_PATH, "incbExactIssuanceMetadata");
+  const quantity = isolatedFunction(READER_PATH, "canonicalIncbAttachedWorkQuantity");
+  const fixture = JSON.parse(readFileSync(new URL("./fixtures/incb-replay-completion-post-v5.json", import.meta.url)));
+  const rows = fixture.rows.filter(row => row.kind === "token-mint");
+  assert.equal(rows.length, 2);
+  for (const row of rows) {
+    const mint = row.payload;
+    assert.equal(exact(mint).complete, true);
+    const projected = { ...mint, ...exact(mint) };
+    assert.equal(exact(projected).complete, true);
+    assert.equal(exact(projected).issuanceNetworkValueQ8, mint.issuanceNetworkValueQ8);
+    const withoutAlias = { ...mint }; delete withoutAlias.attachedWorkAmountAtoms;
+    assert.equal(exact(withoutAlias).complete, true);
+    for (const alias of ["0", "01", "-1", (BigInt(mint.attachedWorkAmountAtoms) + 1n).toString()]) {
+      assert.equal(quantity({ ...mint, attachedWorkAmountAtoms: alias }), null);
+    }
+    assert.equal(quantity({ ...mint, attachedWorkAmountSubatoms: (BigInt(mint.attachedWorkAmountSubatoms) + 1n).toString() }), null);
+    assert.equal(quantity({ ...mint, attachedWorkAmountSubatoms: "" }), null);
+    assert.equal(quantity({ ...mint, attachedWorkAmountStorageModel: WORK_ATOMIC_PROJECTION_MODEL }), null);
+  }
+});
+
+
 let failures = 0;
 for (const test of tests) {
   try {
