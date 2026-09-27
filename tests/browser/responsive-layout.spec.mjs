@@ -3676,6 +3676,16 @@ for (const route of [
       tokenRequests.some((url) => url.pathname === "/api/v1/token"),
       "disconnected Wallet must not request the full token history",
     ).toBe(false);
+    await page.waitForTimeout(1_300); // exceed the delayed background refresh window
+    expect(
+      tokenRequests.filter(
+        (url) =>
+          url.pathname === "/api/v1/token-summary" &&
+          url.searchParams.get("compact") === "1" &&
+          url.searchParams.get("projection") === "directory-v1",
+      ),
+      "disconnected Wallet should reuse the qualified directory read",
+    ).toHaveLength(1);
   });
 }
 
