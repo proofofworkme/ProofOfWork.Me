@@ -321,19 +321,20 @@ function followerLabel(count: number | undefined) {
   }`;
 }
 
-function followingLabel(count: number | undefined) {
-  const total = Number(count ?? 0);
-  return `${Number.isFinite(total) ? Math.max(0, total).toLocaleString() : "0"} following`;
+function profileSubjectDisplay(payload: BoostFeedPayload | undefined) {
+  const subject = payload?.profileSubject;
+  const displayName = subject?.displayName?.trim();
+  // Shorten the generated full ID only. Preserve an explicit display name.
+  if (displayName && displayName.toLowerCase() !== `${subject?.id}@proofofwork.me`.toLowerCase()) {
+    return displayName;
+  }
+  return subject?.id || (subject?.address ? shortAddress(subject.address) : "Boost profile");
 }
 
-function profileSubjectDisplay(payload: BoostFeedPayload | undefined) {
-  return (
-    payload?.profileSubject?.displayName ||
-    payload?.profileSubject?.id ||
-    payload?.profileSubject?.address ||
-    payload?.profile ||
-    "Boost profile"
-  );
+function profileCount(count: number | undefined) {
+  return count !== undefined && Number.isSafeInteger(count) && count >= 0
+    ? count.toLocaleString()
+    : "—";
 }
 
 function profileSubjectHandle(payload: BoostFeedPayload | undefined) {
@@ -684,6 +685,7 @@ function BoostPost({
   onReply,
   onTransfer,
   reboostMenuOpen,
+  profileAddress,
 }: {
   actionBusy: BoostActionBusy;
   activeAddress: string;
@@ -701,6 +703,7 @@ function BoostPost({
   onReply: (item: BoostFeedItem) => void;
   onTransfer: (item: BoostFeedItem) => void;
   reboostMenuOpen: boolean;
+  profileAddress?: string;
 }) {
   const txHref = explorerTxUrl(item.txid, network);
   const shareHref = boostShareUrl(item, network);
@@ -773,7 +776,7 @@ function BoostPost({
           </div>
           <div className="boost-post-head-actions">
             <strong>{isPaidAction ? "Action signal " : ""}<CompactSignal value={displayedSignalQ8} /></strong>
-            {!connectedAuthor && authorAddress ? (
+            {!connectedAuthor && authorAddress && !sameBoostWalletAddress(authorAddress, profileAddress ?? "") ? (
               <button
                 className="secondary small boost-follow-button"
                 disabled={actionsLocked}
@@ -1047,6 +1050,8 @@ export default function BoostRoot({
   const toolsPanelRef = useRef<HTMLElement>(null);
   const toolsTriggerRef = useRef<HTMLButtonElement>(null);
   const toolsInvokerRef = useRef<HTMLElement | null>(null);
+  const profileSearchRef = useRef<HTMLInputElement>(null);
+  const toolsSearchFocusRef = useRef(false);
   const [status, setStatus] = useState<AppStatusState>({
     tone: "idle",
     text: "",
@@ -1088,7 +1093,8 @@ export default function BoostRoot({
     for (const item of items) {
       const authorAddress = boostAuthorAddress(item);
       const key = authorAddress;
-      if (!key || sameBoostWalletAddress(key, activeAddress) || item.viewerFollowsAuthor) {
+      if (!key || sameBoostWalletAddress(key, activeAddress) || item.viewerFollowsAuthor ||
+          (profileRouteValue.trim() && sameBoostWalletAddress(key, payload?.profileSubject?.address ?? ""))) {
         continue;
       }
       const current = byAddress.get(key);
@@ -1100,7 +1106,7 @@ export default function BoostRoot({
       }
     }
     return [...byAddress.values()].slice(0, 4);
-  }, [address, items]);
+  }, [address, items, profileRouteValue, payload?.profileSubject?.address]);
   const topSignalItems = useMemo(() => visibleItems.slice(0, 3), [visibleItems]);
   const isProfileView = Boolean(profileRouteValue.trim());
   const expandedReplies = useMemo(
@@ -1143,6 +1149,7 @@ export default function BoostRoot({
   }, [address, directPostOpen]);
   const profileSubject = payload?.profileSubject;
   const profileSubjectAddress = profileSubject?.address ?? "";
+  const profileBoostCount = profileSubject?.boostCount ?? payload?.profileTabs?.boosts;
   const profileSubjectId = normalizeBoostId(profileSubject?.id ?? "");
   const profileSelfView = sameBoostWalletAddress(address, profileSubjectAddress);
   const profileFollowAction: BoostFollowAction = profileSubject?.viewerFollowsProfile
@@ -1999,11 +2006,13 @@ export default function BoostRoot({
     const panel = toolsPanelRef.current;
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
-    panel
-      ?.querySelector<HTMLElement>(
-        "button:not([disabled]), a[href], input:not([disabled]), select:not([disabled]), textarea:not([disabled])",
-      )
-      ?.focus();
+    const initialFocus = toolsSearchFocusRef.current
+      ? profileSearchRef.current
+      : panel?.querySelector<HTMLElement>(
+          "button:not([disabled]), a[href], input:not([disabled]), select:not([disabled]), textarea:not([disabled])",
+        );
+    initialFocus?.focus();
+    toolsSearchFocusRef.current = false;
 
     const handleKeyDown = (event: globalThis.KeyboardEvent) => {
       if (event.key === "Escape") {
@@ -2193,6 +2202,15 @@ export default function BoostRoot({
     setToolsOpen(true);
   }
 
+  function openProfileSearch() {
+    if ((boostSurfaceRef.current?.getBoundingClientRect().width ?? window.innerWidth) <= 1120) {
+      toolsSearchFocusRef.current = true;
+      openTools();
+    } else {
+      profileSearchRef.current?.focus();
+    }
+  }
+
   function openToolsForCompactSurface() {
     const surfaceWidth = boostSurfaceRef.current?.getBoundingClientRect().width;
     if ((surfaceWidth ?? window.innerWidth) <= 1120) {
@@ -2216,6 +2234,7 @@ export default function BoostRoot({
         actionBusy={actionBusy}
         activeAddress={address}
         activeIdentity={activeIdentity}
+        profileAddress={isProfileView ? profileSubjectAddress : undefined}
         item={item}
         key={item.eventId ?? `${item.kind}-${item.txid}`}
         network={network}
@@ -2271,11 +2290,10 @@ export default function BoostRoot({
 
   return (
     <div
-      className={
-        embedded
-          ? "boost-public-app boost-embedded-app"
-          : "mail-app boost-public-app"
-      }
+      className={[
+        embedded ? "boost-public-app boost-embedded-app" : "mail-app boost-public-app",
+        isProfileView ? "boost-profile-surface" : "",
+      ].filter(Boolean).join(" ")}
       ref={boostSurfaceRef}
     >
       {embedded ? null : (
@@ -2294,10 +2312,12 @@ export default function BoostRoot({
         />
       )}
       <AppStatusRow persistent status={status} />
-      <details className="boost-network-stats">
-        <summary>{isProfileView ? "Profile stats" : "Network stats"}</summary>
-        <dl>{accountStats.map((stat) => <div key={stat.label}><dt>{stat.label}</dt><dd title={stat.detail}>{stat.value}</dd></div>)}</dl>
-      </details>
+      {!isProfileView ? (
+        <details className="boost-network-stats">
+          <summary>Network stats</summary>
+          <dl>{accountStats.map((stat) => <div key={stat.label}><dt>{stat.label}</dt><dd title={stat.detail}>{stat.value}</dd></div>)}</dl>
+        </details>
+      ) : null}
 
       <div
         aria-label={embedded ? undefined : "Boost timeline"}
@@ -2549,7 +2569,9 @@ export default function BoostRoot({
             <input
               autoComplete="off"
               onChange={(event) => setSearchQuery(event.target.value)}
-              placeholder="Search Boost"
+              aria-label={isProfileView ? "Search this profile" : "Search Boost"}
+              placeholder={isProfileView ? "Search this profile" : "Search Boost"}
+              ref={profileSearchRef}
               value={searchQuery}
             />
           </label>
@@ -2586,6 +2608,19 @@ export default function BoostRoot({
 
         <section className="boost-feed-panel">
           {isProfileView ? (
+            <>
+            <div className="boost-profile-titlebar">
+              <a className="secondary small link-button" href={boostRouteHref("/", { boost: "1" })} aria-label="Back to timeline" title="Back to timeline">
+                <ArrowLeft size={20} />
+              </a>
+              <div className="boost-profile-title">
+                <strong title={profileSubjectDisplay(payload)}>{profileSubjectDisplay(payload)}</strong>
+                <span>{profileCount(profileBoostCount)} {profileBoostCount === 1 ? "Boost" : "Boosts"}</span>
+              </div>
+              <button className="secondary small" onClick={openProfileSearch} type="button" aria-label="Search this profile" title="Search this profile">
+                <Search size={20} />
+              </button>
+            </div>
             <div className="boost-profile-head">
               <div className="boost-profile-cover" />
               <div className="boost-profile-main">
@@ -2607,14 +2642,26 @@ export default function BoostRoot({
                 <div className="boost-profile-copy">
                   <h2>{profileSubjectDisplay(payload)}</h2>
                   <p>{profileSubjectHandle(payload) || profileRouteValue}</p>
-                  <div className="boost-profile-stats">
-                    <span>{payload ? followerLabel(profileSubject?.followerCount) : "Followers unavailable"}</span>
-                    <span>{payload ? followingLabel(profileSubject?.followingCount) : "Following unavailable"}</span>
+                  <div className="boost-profile-stats" aria-label="Profile connections">
+                    <span><strong>{profileCount(profileSubject?.followingCount)}</strong> Following</span>
+                    <span><strong>{profileCount(profileSubject?.followerCount)}</strong> Followers</span>
+                  </div>
+                  <div className="boost-profile-signal" aria-label="Profile signal">
                     <span>{profileSubject ? <CompactSignal value={boostSignalQ8(profileSubject.totalSignalQ8, profileSubject.totalSignalSatsExact, profileSubject.totalSignalSats ?? 0)} /> : "Unavailable"} signal</span>
                     {profileWorkSignalSubatoms > 0n ? (
                       <span>{formatWorkSignal(profileWorkSignalSubatoms)}</span>
                     ) : null}
                   </div>
+                  <details className="boost-profile-identity boost-network-stats">
+                    <summary>Identity & proof details</summary>
+                    <dl>
+                      {profileSubjectId ? <div><dt>ProofOfWork ID</dt><dd>{profileSubjectId}@proofofwork.me</dd></div> : null}
+                      <div><dt>Profile address</dt><dd>{profileSubjectAddress || "Unavailable"}</dd></div>
+                      {accountStats.filter((stat) => stat.label !== "Wallet").map((stat) => (
+                        <div key={stat.label}><dt>{stat.label}</dt><dd title={stat.detail}>{stat.value}</dd></div>
+                      ))}
+                    </dl>
+                  </details>
                 </div>
                 {profileSelfView ? <button className="secondary small boost-profile-edit" onClick={() => {
                   if ((boostSurfaceRef.current?.getBoundingClientRect().width ?? 0) <= 1120) openTools();
@@ -2671,6 +2718,7 @@ export default function BoostRoot({
                 ))}
               </div>
             </div>
+            </>
           ) : (
             <div className="boost-timeline-head">
               <div
@@ -2773,7 +2821,7 @@ export default function BoostRoot({
                 </button>
               ))}
             </div>
-            <button
+            {!isProfileView || embedded ? <button
               className="secondary small"
               disabled={busy}
               onClick={() => void refresh(false, true)}
@@ -2783,7 +2831,7 @@ export default function BoostRoot({
                 <RefreshCw className={busy ? "refresh-spin" : ""} size={15} />
                 <span>{busy ? "Refreshing" : "Refresh"}</span>
               </span>
-            </button>
+            </button> : null}
           </div>
 
           <div
@@ -2908,7 +2956,7 @@ export default function BoostRoot({
                   </button>
                 ))
               ) : (
-                <span>Connect and refresh to find active Boost profiles.</span>
+                <span>{isProfileView ? "No other profile suggestions in this view." : "Connect and refresh to find active Boost profiles."}</span>
               )}
             </div>
           </section>
