@@ -75,3 +75,50 @@ SOUL, ID rules and Mail organization were reviewed: no protocol, fee split,
 signing boundary, or operating-memory change is required. README and MARKETPLACE
 now describe the wallet behavior; OP_RETURN_INFRASTRUCTURE documents the narrowed
 repair invocation. Historical audit evidence is retained.
+
+## Wallet production release
+
+- Code commit `b752518bf8b4e8cb13691d3a09a3ce865c6e0dd0`, tree
+  `44a0443ffcb06ed04f14c4d68213788731631bae`, merged via PR #76 as
+  `6e542b802aac006bab0217f5f7c6282e4230df3c`; all three hygiene CI jobs passed.
+- Node release `b752518bf8b4-20260927T014810Z`, runtime fingerprint
+  `f43470a19b05e937a9b1aed2697beec49e146e31675dc5c26997e81a7626ab04`.
+  Read-only shadow strict parity passed 102 checks with zero active failures;
+  exact ledger audit passed. An initial readiness handoff returned unavailable
+  token reads; a fresh independent readiness audit and repeated strict parity
+  both passed before publication. The first cutover invocation stopped before
+  mutation because its private evidence parent was absent. After creating that
+  parent, atomic publication succeeded, with rollback preserved, services ready
+  and timers restored. Receipt is under
+  `/data/proofofwork-wallet-incb-cutover-b752518bf8b4-20260927T014810Z/cutover`.
+- UI release `b752518bf8b4-20260927T014804Z`, managed archive SHA-256
+  `d85607cb426ee47110f2268e54d8b913bdeece6ffaccbb23c7a2e8ce7193051e`.
+  Publication and provenance verification passed. The prior rollback root
+  `proofofwork-www-pre-c64963f4649f-20260927T001231Z` was fingerprinted and
+  explicitly retained, not deleted. Exact-byte HTTP smoke passed 771 requests
+  across all 14 public UI surfaces, including retained asset closure.
+- Public Wallet fresh response at block 968769 was authoritative and exposed
+  `pendingListingReserveSubatoms=364405703`; the bound matches exact arithmetic
+  from `pendingListingNetworkValueQ8=1440701927434020015221425768`.
+  No wallet was connected to production and no transaction was signed/broadcast.
+
+## INCB continuation
+
+The retained earlier clean clone reached 963781 but rejected its full H-1
+summary because replay WORK tables disagreed with reconstructed historical
+listing lifecycle. Prior diagnostic-only work identified one pinned V5 relic
+and 23 pre-V8 listings absent from the table's lifecycle projection. These
+artifacts are preserved and are not treated as an issuance oracle. A separate
+read-only diagnostic API on port 18889 now captures exact bridge inputs from
+that isolated clone; no production issuance repair has run.
+
+
+The read-only H963781 diagnostic now passes 25/25 ledger checks, with exact
+WORK Q8 `740312837488337373524998649`, matching the pinned native transition.
+The source-unit correction restores all 21,000 WORK mints. Independent bridge
+reconciliation matches 346 holders and full supply `210000000000000000000000`.
+It preserves the exact V5 pre-unit relic and all 23 immutable V8 cutover relics
+without inventing spends. `scripts/fixtures/incb-replay-cutover-963781.json`
+contains compact public-chain witnesses from the read-only clone for regression
+checks; unrelated large transaction payloads are excluded. This diagnostic is
+not yet an imported production issuance oracle. Production INCB is unchanged.

@@ -106,6 +106,7 @@ import {
   withWorkPrecisionMetadata,
   withWorkSubatomPrecisionMetadata,
   workAmountAtomsFromRecord,
+  workAmountStorageModelFromActivity,
   workAmountSubatomsFromRecord,
   workAtomsValueAtFloorQ8,
   workSubatomsValueAtFloorQ8,
@@ -49308,7 +49309,9 @@ function tokenTransferFromIndexedActivityItem(
     amount:
       item?.amount ?? item?.tokenAmount ?? item?.creditAmountMoved ?? amount,
     amountAtoms: item?.amountAtoms ?? item?.tokenAmountAtoms,
-    amountStorageModel: workAmountStorageModel,
+    amountStorageModel: isWorkTokenId(token?.tokenId)
+      ? workAmountStorageModelFromActivity(item, workAmountStorageModel)
+      : workAmountStorageModel,
     amountSubatoms:
       item?.amountSubatoms ??
       item?.tokenAmountSubatoms ??
@@ -49684,7 +49687,9 @@ async function tokenValueStateFromIndexedActivity(
           item?.confirmedIssuanceUnits ??
           fallbackAmount,
         amountAtoms: item?.amountAtoms ?? item?.tokenAmountAtoms,
-        amountStorageModel: requestedWorkAmountStorageModel,
+        amountStorageModel: workAmountStorageModelFromActivity(
+          item, requestedWorkAmountStorageModel,
+        ),
         amountSubatoms:
           item?.amountSubatoms ??
           item?.tokenAmountSubatoms ??
@@ -49800,7 +49805,9 @@ async function tokenValueStateFromIndexedActivity(
           item?.creditAmountMoved ??
           fallbackAmount,
         amountAtoms: item?.amountAtoms ?? item?.tokenAmountAtoms,
-        amountStorageModel: requestedWorkAmountStorageModel,
+        amountStorageModel: workAmountStorageModelFromActivity(
+          item, requestedWorkAmountStorageModel,
+        ),
         amountSubatoms:
           item?.amountSubatoms ??
           item?.tokenAmountSubatoms ??

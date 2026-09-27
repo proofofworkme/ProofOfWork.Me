@@ -3329,6 +3329,17 @@ fingerprint equivalence. Require the first apply to commit 18 rows and resolve
 all 29 references. Repeat the same apply command:
 it must commit with `state: "already-applied"` and `inserted: 0`.
 
+During bound historical summary reconstruction, preserve the activity record's
+source precision before converting its amount to the requested era. Relabeling
+Q8 atom fields as native Q16 silently rejects valid old mints and transfers.
+The internal replay reader also carries the verified immutable V8 migration
+relic set before applying current listing filters. The WORK bridge reconciles
+each relic's original position, seller, price and exact amount against independent
+history, preserves the pinned V5 pre-unit relic, and represents cutover closures
+without inventing outpoint spends. This does not change public read admission,
+confirmed event rows, balances, or migration markers. Missing, duplicate or
+conflicting evidence still aborts the summary.
+
 A later post-V5 incident has a separate, closed repair set: the confirmed
 INCB bonds in blocks 963782 and 968125. Their H-1 WORK Q8 values are fixed
 by canonical V8 transitions at 963781 and 968124, but the live H-1 rows are

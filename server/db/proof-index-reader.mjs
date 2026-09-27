@@ -32359,6 +32359,11 @@ export async function proofIndexReplayCanonicalSummaryTokenTablePayload(
   ) {
     return null;
   }
+  const replayPrecisionMigration = await exactWorkPrecisionV2RelicProjectionContext(pool, network);
+  if (!replayPrecisionMigration) return null;
+  const relicIds = new Set(replayPrecisionMigration.marker.relicCutover.items.map((item) => item.listingId));
+  const replayPrecisionRelicListings = [...(precisionPayload.listings ?? []), ...(precisionPayload.closedListings ?? [])]
+    .filter((listing) => relicIds.has(listing.listingId));
   const activatedPayload = await payloadWithVerifiedWorkMarketV4Activation(
     pool,
     network,
@@ -32394,7 +32399,7 @@ export async function proofIndexReplayCanonicalSummaryTokenTablePayload(
           ),
         )
       : false)
-    ? result
+    ? { ...result, replayPrecisionMigration, replayPrecisionRelicListings }
     : null;
 }
 

@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { WORK_AMO_V8_AUTH_VERSION } from "../server/work-amo-v8.mjs";
 import {
   WORK_MARKET_V2_ACTIVATION_HEIGHT,
@@ -1211,5 +1212,38 @@ assert.equal(bridge({
     sealTransactionBlockHeight: q16Historical.indexedThroughBlock + 2,
   }],
 }, q16Historical, WORK_SUBATOM_PROJECTION_MODEL), null);
+
+const cutoverFixture = JSON.parse(readFileSync(new URL("./fixtures/incb-replay-cutover-963781.json", import.meta.url)));
+const cutoverHistorical = { ...q16Historical, indexedThroughBlock: cutoverFixture.height,
+  listings: [...q16Historical.listings, ...cutoverFixture.originals] };
+const cutoverTable = { ...q16Table,
+  closedListings: [...q16Table.closedListings, cutoverFixture.v5Relic],
+  workAmoV5Activation: cutoverFixture.v5Activation,
+  workAmoV5PreUnitRelicEvidence: cutoverFixture.v5Evidence,
+  replayPrecisionMigration: cutoverFixture.context,
+  replayPrecisionRelicListings: cutoverFixture.tableRelics };
+const cutoverResult = bridge(cutoverTable, cutoverHistorical, WORK_SUBATOM_PROJECTION_MODEL);
+assert.ok(cutoverResult);
+assert.equal(cutoverResult.workSupplySubatoms, q16.workSupplySubatoms);
+assert.equal(cutoverResult.workHolderCount, q16.workHolderCount);
+assert.equal(cutoverResult.historicalListings.length, q16.historicalListings.length);
+assert.equal(cutoverResult.historicalClosedListings.length, q16.historicalClosedListings.length + 24);
+assert.equal(cutoverResult.historicalClosedListings.filter((item) => item.disabledReason === "work-amo-v8-preactivation-relic").length, 23);
+for (const mutate of [
+  (t) => t.replayPrecisionRelicListings.pop(),
+  (t) => t.replayPrecisionRelicListings.push(t.replayPrecisionRelicListings[0]),
+  (t) => { t.replayPrecisionRelicListings[0].amountSubatoms = "1"; },
+  (t) => { t.replayPrecisionRelicListings[0].sellerAddress = "wrong"; },
+  (t) => { t.replayPrecisionRelicListings[0].blockHash = "f".repeat(64); },
+  (t) => { t.replayPrecisionMigration.marker.relicCutover.sha256 = "f".repeat(64); },
+  (t) => { t.replayPrecisionMigration.pins.activationHeight += 1; },
+  (t) => { t.workAmoV5PreUnitRelicEvidence.canonicalSpendCount = 1; },
+  (t) => { t.closedListings.at(-1).refundEligible = true; },
+  (t) => { t.closedListings.at(-1).amountSubatoms = "1"; },
+]) {
+  const changed = structuredClone(cutoverTable); mutate(changed);
+  assert.equal(bridge(changed, cutoverHistorical, WORK_SUBATOM_PROJECTION_MODEL), null);
+}
+assert.equal(bridge(cutoverTable, {...cutoverHistorical, listings: cutoverHistorical.listings.slice(0, -1)}, WORK_SUBATOM_PROJECTION_MODEL), null);
 
 console.log("Replay token-table bridge checks passed.");

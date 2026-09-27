@@ -87,6 +87,7 @@ import {
   workAmountAtomsFromRecord,
   workAmountFields,
   workAmountSubatomsFromRecord,
+  workAmountStorageModelFromActivity,
 } from "../server/work-units.mjs";
 import {
   applyWorkMarketV2CutoverToTokenState,
@@ -1485,6 +1486,7 @@ function isolatedFunction(path, name, globals = {}) {
     tokenSaleAuthorizationLedgerAmount,
     workAmountAtomsFromRecord,
     workAmountSubatomsFromRecord,
+  workAmountStorageModelFromActivity,
     workAtomicProjectionMetadata,
     workAmountProjection,
     workAmoV5RawTransitionChainCommitmentsEqual,
@@ -12144,7 +12146,22 @@ check("wallet-scoped token reads share identical in-flight loads without retaini
   assert.deepEqual(firstResult, { ok: true });
   assert.equal(inFlight.size, 0);
 
-  let failures = 0;
+  check("historical WORK transfers preserve Q8 source units during Q16 reconstruction", () => {
+  const project = isolatedFunction(API_PATH, "tokenTransferFromIndexedActivityItem", {
+    canonicalEventIdentityDetails: () => ({}), canonicalMinerFeeDetailsFromActivity: () => ({}),
+    indexedActivityValue: (item, ...keys) => keys.map((key) => item[key]).find(Boolean) ?? "",
+    creditAmountFromActivityItem: (item) => Number(item.amount),
+  });
+  const token = {tokenId: WORK_TOKEN_ID, ticker: "WORK", amountStorageModel: WORK_SUBATOM_PROJECTION_MODEL};
+  const record = {kind: "token-transfer", tokenId: WORK_TOKEN_ID, amountAtoms: "100000000",
+    amountStorageModel: WORK_ATOMIC_PROJECTION_MODEL, confirmed: true, txid: "a".repeat(64),
+    senderAddress: "sender", recipientAddress: "recipient"};
+  assert.equal(project(record, token, "livenet", WORK_SUBATOM_PROJECTION_MODEL).amountSubatoms, "10000000000000000");
+  assert.equal(project({...record, amountAtoms: undefined, amountSubatoms: "1", amountStorageModel: WORK_SUBATOM_PROJECTION_MODEL}, token, "livenet", WORK_SUBATOM_PROJECTION_MODEL).amountSubatoms, "1");
+  assert.equal(project({...record, amountStorageModel: WORK_SUBATOM_PROJECTION_MODEL}, token, "livenet", WORK_SUBATOM_PROJECTION_MODEL), null);
+});
+
+let failures = 0;
   await rejection(
     walletScopedTokenSingleFlight("retry-wallet", async () => {
       failures += 1;
@@ -73734,6 +73751,7 @@ check("the first V6 listing crosses replay binding into atomic persistence witho
       workAmoV8FrozenTermsMatch,
       workAmountAtomsFromRecord,
       workAmountSubatomsFromRecord,
+  workAmountStorageModelFromActivity,
     },
   );
   const rawMatchesCanonical = isolatedFunction(
