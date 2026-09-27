@@ -1,4 +1,5 @@
-import { WORK_AMO_V8_AUTH_VERSION } from "./work-amo-v8.mjs";
+import { workPrecisionV2MarkerReady } from "./work-precision-v2-marker.mjs";
+import { WORK_AMO_V8_AUTH_VERSION, WORK_AMO_V8_RELIC_CUTOVER_MODEL } from "./work-amo-v8.mjs";
 import {
   isLegacyWorkMarketListing,
   WORK_MARKET_V2_ACTIVATION_HEIGHT,
@@ -6,13 +7,24 @@ import {
   workMarketV1RefundSnapshotEvidence,
 } from "./work-market-v2.mjs";
 import {
+  WORK_AMO_V5_ACTIVATION_HEIGHT,
+  WORK_AMO_V5_DECLARATION_TXID,
+  WORK_AMO_V5_PRE_UNIT_RELIC_DISABLED_REASON,
+  WORK_AMO_V5_PRE_UNIT_RELIC_LISTING_TXID,
+  workAmoV5CutoverActivationIsExact,
+  workAmoV5PreUnitRelicEvidenceIsExact,
+} from "./work-amo-v5.mjs";
+import {
   WORK_ATOMIC_PROJECTION_MODEL,
+  WORK_PRECISION_V2_MODEL,
   WORK_SUBATOM_CONVERSION_FACTOR,
+  WORK_SUBATOM_DECIMALS,
   WORK_SUBATOM_PROJECTION_MODEL,
   WORK_SUBATOM_UNIT_SCALE_TEXT,
   WORK_TOKEN_ID,
   WORK_UNIT_SCALE_TEXT,
   formatWorkAtoms,
+  formatWorkSubatoms,
   normalizeWorkAtoms,
   normalizeWorkSubatoms,
   workSubatomsToLegacyAtoms,
@@ -524,6 +536,122 @@ function rawLegacyV2CutoverListing(listing, original, checkpointHeight) {
   };
 }
 
+function preUnitRelicProjection(table, model, checkpointHeight) {
+  const activation = table?.workAmoV5Activation;
+  const evidence = table?.workAmoV5PreUnitRelicEvidence;
+  const relicId = WORK_AMO_V5_PRE_UNIT_RELIC_LISTING_TXID;
+  const closedRelics = workItems(table?.closedListings).filter(
+    (listing) =>
+      exactHash(listing?.listingId) === relicId &&
+      listing?.disabledReason === WORK_AMO_V5_PRE_UNIT_RELIC_DISABLED_REASON,
+  );
+  const openRelics = workItems(table?.listings).filter(
+    (listing) => exactHash(listing?.listingId) === relicId,
+  );
+  if (closedRelics.length === 0 && openRelics.length === 0) {
+    return evidence?.disposition === "relic" &&
+        Number(checkpointHeight) >= WORK_AMO_V5_ACTIVATION_HEIGHT
+      ? null
+      : { listing: null, listingId: "" };
+  }
+  if (
+    closedRelics.length !== 1 ||
+    openRelics.length !== 0 ||
+    !workAmoV5CutoverActivationIsExact(activation) ||
+    Number(checkpointHeight) < WORK_AMO_V5_ACTIVATION_HEIGHT ||
+    !workAmoV5PreUnitRelicEvidenceIsExact(evidence) ||
+    evidence.disposition !== "relic" ||
+    exactHash(evidence?.listing?.listingId) !== relicId
+  ) {
+    return null;
+  }
+
+  const physical = closedRelics[0];
+  const source = evidence.listing;
+  const atoms = canonicalUnits(
+    source.amountAtoms,
+    WORK_ATOMIC_PROJECTION_MODEL,
+  );
+  const expectedSubatoms = atoms === null
+    ? null
+    : atoms * WORK_SUBATOM_CONVERSION_FACTOR;
+  if (
+    physical?.status !== "disabled" ||
+    physical?.relic !== true ||
+    physical?.refundEligible !== false ||
+    physical?.closedConfirmed !== true ||
+    exactHash(physical?.closedTxid) !== WORK_AMO_V5_DECLARATION_TXID ||
+    physical?.disabledAtBlockHeight !== WORK_AMO_V5_ACTIVATION_HEIGHT ||
+    exactHash(physical?.disabledByTxid) !== WORK_AMO_V5_DECLARATION_TXID ||
+    exactHash(physical?.txid) !== WORK_AMO_V5_DECLARATION_TXID ||
+    physical?.amountStorageModel !== WORK_SUBATOM_PROJECTION_MODEL ||
+    Number(physical?.decimals) !== WORK_SUBATOM_DECIMALS ||
+    String(physical?.unitScale ?? "") !== WORK_SUBATOM_UNIT_SCALE_TEXT ||
+    exactHash(physical?.blockHash) !== exactHash(source.blockHash) ||
+    exactPositionInteger(physical?.blockHeight, 1) !==
+      exactPositionInteger(source.blockHeight, 1) ||
+    exactPositionInteger(physical?.blockIndex, 0) !==
+      exactPositionInteger(source.blockIndex, 0) ||
+    exactPositionInteger(physical?.protocolVout, 0) !==
+      exactPositionInteger(source.protocolVout, 0) ||
+    exactPositionInteger(physical?.recordOrdinal, 0) !==
+      exactPositionInteger(source.recordOrdinal, 0) ||
+    String(physical?.sellerAddress ?? "").trim() !==
+      String(source?.sellerAddress ?? "").trim() ||
+    physical?.saleAuthorization?.version !==
+      source?.saleAuthorization?.version ||
+    atoms === null ||
+    tableWorkMovementUnits(
+      physical,
+      WORK_SUBATOM_PROJECTION_MODEL,
+    ) !== expectedSubatoms ||
+    physical?.closedByCanonicalOutpointSpend === true ||
+    physical?.closedBlockHeight != null ||
+    physical?.closedBlockHash != null ||
+    physical?.closedBlockIndex != null
+  ) {
+    return null;
+  }
+
+  const projectedAmount = model === WORK_SUBATOM_PROJECTION_MODEL
+    ? {
+        amount: formatWorkSubatoms(expectedSubatoms),
+        amountAtoms: undefined,
+        amountStorageModel: WORK_SUBATOM_PROJECTION_MODEL,
+        amountSubatoms: expectedSubatoms.toString(),
+        decimals: WORK_SUBATOM_DECIMALS,
+        precisionModel: WORK_PRECISION_V2_MODEL,
+        unitScale: WORK_SUBATOM_UNIT_SCALE_TEXT,
+      }
+    : {
+        amount: formatWorkAtoms(atoms.toString()),
+        amountStorageModel: WORK_ATOMIC_PROJECTION_MODEL,
+        amountAtoms: atoms.toString(),
+        decimals: 8,
+        unitScale: WORK_UNIT_SCALE_TEXT,
+      };
+  return {
+    listing: {
+      ...source,
+      ...projectedAmount,
+      closedAt: activation.blockTime,
+      closedConfirmed: true,
+      closedTxid: WORK_AMO_V5_DECLARATION_TXID,
+      confirmed: true,
+      disabledAtBlockHeight: WORK_AMO_V5_ACTIVATION_HEIGHT,
+      disabledByTxid: WORK_AMO_V5_DECLARATION_TXID,
+      disabledReason: WORK_AMO_V5_PRE_UNIT_RELIC_DISABLED_REASON,
+      kind: "token-listing-closed",
+      originalStatus: source.status ?? "active",
+      refundEligible: false,
+      relic: true,
+      status: "disabled",
+      txid: WORK_AMO_V5_DECLARATION_TXID,
+    },
+    listingId: relicId,
+  };
+}
+
 function canonicalOutspendClosePosition(listing, original) {
   const authorization = original?.saleAuthorization ?? {};
   const expectedAnchorTxid = exactHash(
@@ -761,12 +889,66 @@ function checkpointListingSeal(
   return projected;
 }
 
+// A bounded replay rebuilds original listing rows but retains the immutable
+// precision migration. Reconcile its exact relic set as policy closures, never
+// as spends, against independently reconstructed openings and amounts.
+function precisionCutoverListings(table, historical, model, checkpointHeight) {
+  const context = table?.replayPrecisionMigration;
+  const candidates = table?.replayPrecisionRelicListings;
+  if (context === undefined && candidates === undefined) return [];
+  const { marker, pins } = context ?? {};
+  if (model !== WORK_SUBATOM_PROJECTION_MODEL || !workPrecisionV2MarkerReady(marker, pins) ||
+      checkpointHeight < pins.activationHeight || !Array.isArray(candidates) ||
+      candidates.length !== marker.relicCutover.count) return null;
+  const originalById = new Map(workItems(historical?.listings).map((item) => [exactHash(item.listingId), item]));
+  const seen = new Set();
+  const projected = [];
+  for (const witness of marker.relicCutover.items) {
+    const matches = candidates.filter((item) => exactHash(item?.listingId) === witness.listingId);
+    if (matches.length !== 1 || seen.has(witness.listingId)) return null;
+    const [listing] = matches;
+    const original = originalById.get(witness.listingId);
+    const position = originalListingPosition(listing, original, null, false);
+    const amount = BigInt(witness.amountAtoms) * WORK_SUBATOM_CONVERSION_FACTOR;
+    if (!original || !position || original.confirmed !== true || listing.confirmed !== true ||
+        position.blockHeight >= pins.activationHeight ||
+        movementUnits(original, model) !== amount || tableWorkMovementUnits(listing, model) !== amount ||
+        String(original.sellerAddress ?? "") !== witness.sellerAddress ||
+        String(listing.sellerAddress ?? "") !== witness.sellerAddress ||
+        String(original.priceSats ?? "") !== witness.priceSats ||
+        String(listing.priceSats ?? "") !== witness.priceSats ||
+        v8ListingAuthorization(original) ||
+        listing.saleAuthorization?.version !== original.saleAuthorization?.version ||
+        workItems(historical?.closedListings).some((item) => exactHash(item.listingId) === witness.listingId) ||
+        workItems(historical?.sales).some((item) => exactHash(item.listingId) === witness.listingId)) return null;
+    const relic = { ...original, ...position, actionable: false, confirmed: true,
+      closedConfirmed: true, closedTxid: "", closeTxid: "", buyerAddress: "",
+      disabledAtBlockHeight: pins.activationHeight, disabledByTxid: pins.declarationTxid,
+      disabledReason: "work-amo-v8-preactivation-relic", relic: true, refundEligible: true,
+      relicCutoverModel: WORK_AMO_V8_RELIC_CUTOVER_MODEL, legacyAmountAtoms: witness.amountAtoms,
+      status: "disabled" };
+    for (const key of ["closedAt", "closedBlockHash", "closedBlockHeight", "closedBlockIndex",
+      "closedProtocolVout", "closedRecordOrdinal", "closedByCanonicalOutpointSpend", "closedVin",
+      "saleTxid", "saleAt", "saleBlockHash", "saleBlockHeight", "saleBlockIndex"]) delete relic[key];
+    seen.add(witness.listingId); projected.push(relic);
+  }
+  return projected;
+}
+
 function historicalWorkListingLifecycle(
   table,
   historical,
   model,
   checkpointHeight,
 ) {
+  const preUnitRelic = preUnitRelicProjection(
+    table,
+    model,
+    checkpointHeight,
+  );
+  if (!preUnitRelic) return null;
+  const precisionRelics = precisionCutoverListings(table, historical, model, checkpointHeight);
+  if (!precisionRelics) return null;
   const originalListings = workItems(historical?.listings);
   const originalById = new Map();
   for (const listing of originalListings) {
@@ -795,8 +977,21 @@ function historicalWorkListingLifecycle(
   );
   if (!matchedSaleByListingId) return null;
 
-  const currentListings = workItems(table?.listings);
-  const currentClosedListings = workItems(table?.closedListings);
+  if (
+    preUnitRelic.listing &&
+    (
+      originalById.has(preUnitRelic.listingId) ||
+      historicalClosedById.has(preUnitRelic.listingId)
+    )
+  ) {
+    return null;
+  }
+  const currentListings = workItems(table?.listings).filter(
+    (listing) => exactHash(listing?.listingId) !== preUnitRelic.listingId,
+  );
+  const currentClosedListings = workItems(table?.closedListings).filter(
+    (listing) => exactHash(listing?.listingId) !== preUnitRelic.listingId,
+  );
   const seen = new Set();
   let historicalCloseCount = 0;
   const project = (current, physicallyClosed) => {
@@ -910,6 +1105,11 @@ function historicalWorkListingLifecycle(
   const closedListings = currentClosedListings.map(
     (listing) => project(listing, true),
   );
+  for (const relic of precisionRelics) {
+    if (seen.has(relic.listingId)) return null;
+    seen.add(relic.listingId);
+    closedListings.push(relic);
+  }
   if (
     listings.some((item) => !item) ||
     closedListings.some((item) => !item) ||
@@ -926,6 +1126,11 @@ function historicalWorkListingLifecycle(
       })
       .map((listing) => exactHash(listing.listingId)),
   );
+  for (const relic of precisionRelics) historicallyClosedIds.add(relic.listingId);
+  if (preUnitRelic.listing) {
+    historicallyClosedIds.add(preUnitRelic.listingId);
+    closedListings.push(preUnitRelic.listing);
+  }
   return {
     closedListings: closedListings.filter(
       (listing) => historicallyClosedIds.has(exactHash(listing.listingId)),

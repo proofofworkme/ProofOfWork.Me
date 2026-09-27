@@ -22,6 +22,7 @@ import {
   validateWorkPrecisionMetadata,
   withWorkSubatomPrecisionMetadata,
   workAmountSubatomsFromRecord,
+  workAmountStorageModelFromActivity,
   workSubatomsToLegacyAtoms,
 } from "../server/work-units.mjs";
 import {
@@ -2048,3 +2049,23 @@ assert.match(migration, /conservation/iu);
 console.log(
   "WORK Precision Protocol V2 contract: global Q16 units, immutable Q8 conversion, V8 pricing, cutover, metadata and cross-plane wiring pass.",
 );
+
+// Historical Q8 fields keep their source model when replay requests Q16.
+for (const record of [
+  { amountAtoms: "100000000000", amountStorageModel: WORK_LEGACY_ATOMIC_PROJECTION_MODEL },
+  { tokenAmountAtoms: "100000000000" },
+  { amountAtoms: "100000000000", creditAmountMovedStorageModel: WORK_LEGACY_ATOMIC_PROJECTION_MODEL },
+]) {
+  const sourceModel = workAmountStorageModelFromActivity(record, WORK_SUBATOM_PROJECTION_MODEL);
+  assert.equal(sourceModel, WORK_LEGACY_ATOMIC_PROJECTION_MODEL);
+  assert.equal(workAmountSubatomsFromRecord({ ...record, amountStorageModel: sourceModel }), "10000000000000000000");
+}
+const nativeActivity = { amountStorageModel: WORK_SUBATOM_PROJECTION_MODEL, amountSubatoms: "1" };
+assert.equal(workAmountSubatomsFromRecord({ ...nativeActivity, amountStorageModel: workAmountStorageModelFromActivity(nativeActivity) }), "1");
+for (const record of [
+  { amountStorageModel: "unknown", amountSubatoms: "1" },
+  { amountStorageModel: WORK_SUBATOM_PROJECTION_MODEL, amountAtoms: "1", amountSubatoms: "1" },
+  { amountAtoms: "1", amountSubatoms: "1" },
+]) {
+  assert.throws(() => workAmountSubatomsFromRecord({ ...record, amountStorageModel: workAmountStorageModelFromActivity(record, WORK_SUBATOM_PROJECTION_MODEL) }));
+}

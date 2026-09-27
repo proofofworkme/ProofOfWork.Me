@@ -452,6 +452,23 @@ export function workAmountAtomsFromRecord(
     : parseWorkAmountToAtoms(amount, { allowZero });
 }
 
+// Preserve the source unit when projecting historical activity into another
+// precision era. An atom field must never be relabeled as native subatoms.
+export function workAmountStorageModelFromActivity(record, fallbackModel = "") {
+  const item = record && typeof record === "object" ? record : {};
+  const authorization = item.saleAuthorization ?? {};
+  const explicit = [item.amountStorageModel, item.creditAmountMovedStorageModel,
+    authorization.amountStorageModel].find((value) => value !== undefined && value !== null && value !== "");
+  if (explicit !== undefined) return String(explicit);
+  const present = (value) => value !== undefined && value !== null && value !== "";
+  const atoms = [item.amountAtoms, item.tokenAmountAtoms, authorization.amountAtoms].some(present);
+  const subatoms = [item.amountSubatoms, item.tokenAmountSubatoms,
+    item.creditAmountMovedSubatoms, authorization.amountSubatoms].some(present);
+  if (atoms !== subatoms) return atoms ? WORK_LEGACY_ATOMIC_PROJECTION_MODEL : WORK_SUBATOM_PROJECTION_MODEL;
+  // Ambiguous aliases remain subject to the exact converter's rejection.
+  return String(fallbackModel);
+}
+
 export function workAmountSubatomsFromRecord(
   record,
   {
