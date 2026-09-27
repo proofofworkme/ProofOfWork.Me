@@ -3450,7 +3450,12 @@ the two known post-V5 rederive entries' zero legacy Q8 attachment fields as an
 old schema limitation, not as zero attached WORK. Those entries require the
 exact confirmed Q16 WORK companion, physical Core positions, parent attachment,
 and pinned H-1 issuance arithmetic; they cannot fall back to Q8 validation.
-The immutable witness manifest and preserved-payload byte checks stay unchanged. The sealed proof keeps
+The immutable witness manifest and preserved-payload byte checks stay unchanged.
+Exact Q16 INCB read projections may retain a Q8 compatibility alias only when
+the subatom amount divides exactly by the conversion factor and the canonical
+alias equals that quotient. Q16 remains authoritative; conflicting, rounded,
+missing-primary or mixed-model amounts fail closed. This also makes an exact
+issuance projection valid when read again. The sealed proof keeps
 its original snapshot identity permanently. A future full canonical summary
 that reproduces that identity receives a distinct deterministic ID across all
 eight summary payloads; it cannot overwrite or promote the sealed proof.

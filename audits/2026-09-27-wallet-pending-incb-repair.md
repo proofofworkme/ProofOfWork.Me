@@ -406,3 +406,60 @@ The source now pins this proof for only `ebe60fd1…`; stored-proof absence stil
 fails closed. Production has not yet been repaired. The next gate is the
 production-copy rehearsal, including strict preservation of all 46 older mints,
 all unrelated history and native accounting rows, and repeat-apply idempotence.
+
+## Pinned production-copy rehearsal and node release
+
+Commit `bf81f9cffcc7df2165e011e36543420a9f10066b` (tree
+`639ea2fe7202caad2776be5861d78bc5e88b87ba`) pins the completed proof.
+PR 81 merged as `819f0d8c380498ce658d503989e6e42d0527e3ac`; all three CI
+checks passed. Scoped-oracle, post-V5 repair, H-1 import and hygiene checks passed.
+
+In the isolated production copy, import dry-run rolled back, apply inserted
+one sealed oracle, and repeat inserted zero. Repair dry-run rolled back; apply
+added exactly one mint and removed exactly two invalid aliases; repeat returned
+`already-applied`, changing zero rows. The helper's API shutdown initially
+misidentified its exited but unreaped child as running. The systemd unit exited,
+and independent socket, process and database checks proved it was stopped.
+Publishing uses a separate start process so the unchanged stop verifier sees a
+reaped process. The application source and repair receipts were unchanged.
+
+The full before/after comparison passed: 46 older mint rows, all unrelated
+transactions/events/participants/references, token definitions, WORK balances,
+credit listings, native accounting rows and retained snapshots were byte-for-byte
+unchanged. Pending INCB deltas were conserved. Only the target recipient gained
+`720814688394061543`, yielding 47 mints and supply `945662401792509469`.
+The earlier missing bond was not repaired. The sealed oracle was added and
+380 recognized derived summaries were invalidated; historical evidence remained.
+Before inventory SHA-256:
+`86e25a35c1c37c37c7d53a954b30884e1f78ec0468259d222526d24ce9d20fd8`.
+After inventory SHA-256:
+`b56400da70bdf4191867d46798ed5c70b726d9e224df1455af853efe57eee1a0`.
+
+The exact candidate passed strict parity (102 checks, zero error-level failures;
+two preexisting historical V5 warnings), ledger consistency, and wallet
+conservation for 123 distinct reservations. Parity SHA-256:
+`cb32960fd98f61081b24e863ec766a7e627bea2255f61f7180e9169dadc2778c`;
+ledger SHA-256:
+`133649db9eb716a38156d98c2db01620e4df599f38ecc3c56a3a43748b62c4d9`;
+wallet SHA-256:
+`61078efc00a70ff048fa751f51ce08389d8a6870b8a24d9d7d413b7e463934bc`.
+
+Node release `bf81f9cffcc7-20260927T093457Z` has runtime SHA-256
+`89a5290570f36fa0298262ff9c46cfc60b77c44baa0b6b9237f5d5bb851cb523`.
+Its first cutover rolled back automatically because the archive publisher
+requires the seven-character commit in its request filename. The corrected
+retry deployed the same attested source successfully at `2026-09-27T09:42:06Z`,
+with ready health and zero lag at 968821. Both attempts and rollback receipts
+are retained under
+`/data/proofofwork-incb-guarded-cutover-bf81f9cffcc7-20260927T093457Z`.
+Core and PostgreSQL authority services were unchanged. This code-only deployment
+did not yet apply production issuance.
+
+The rehearsal summary gate exposed a reader incompatibility before production
+repair: the exact Q16 mint includes the lossless Q8 compatibility alias that the
+reader itself emits, but its input validator rejected any simultaneous alias.
+The reader now accepts that alias only when exact integer division reconstructs
+it without rounding. Q16 remains the authoritative quantity. Conflicting,
+noncanonical, fractional, missing-primary and mixed-model fields remain rejected.
+Regression coverage reads both real post-V5 fixtures and round-trips the exact
+projection; no mint payload or issuance amount is rewritten for this fix.

@@ -16823,8 +16823,14 @@ function canonicalIncbAttachedWorkQuantity(payload = {}) {
     }
     if (
       !subatomFieldPresent ||
-      atomFieldPresent ||
       !amountSubatoms ||
+      // Exact issuance projections retain a Q8 compatibility alias when the
+      // Q16 quantity divides exactly. It is not an independent amount source.
+      (atomFieldPresent && (
+        BigInt(amountSubatoms) % WORK_SUBATOM_CONVERSION_FACTOR !== 0n ||
+        canonicalIntegerText(source.attachedWorkAmountAtoms) !==
+          (BigInt(amountSubatoms) / WORK_SUBATOM_CONVERSION_FACTOR).toString()
+      )) ||
       BigInt(amountSubatoms) >
         BigInt(WORK_TOKEN_MAX_SUPPLY_SUBATOMS) ||
       amountVersion !== WORK_AMO_V8_TRANSFER_VERSION ||
