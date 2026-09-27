@@ -3340,6 +3340,15 @@ without inventing outpoint spends. This does not change public read admission,
 confirmed event rows, balances, or migration markers. Missing, duplicate or
 conflicting evidence still aborts the summary.
 
+Post-V5 native INCB replay records direct payment and an accepted WORK attachment
+as separate derived components. Persist one canonical recipient mint with their
+exact combined issuance and retain a component witness on that mint. Event-set
+verification expands the proven components back into the original native ordered
+records, preserving the original commitment, fees and state deltas. Require exact
+recipient, amount, WORK transfer, parent, position and descriptor agreement;
+missing, repeated or conflicting components abort. Do not persist the attachment
+again as another mint or rewrite the native transition to hide it.
+
 A later post-V5 incident has a separate, closed repair set: the confirmed
 INCB bonds in blocks 963782 and 968125. Their H-1 WORK Q8 values are fixed
 by canonical V8 transitions at 963781 and 968124, but the live H-1 rows are

@@ -122,3 +122,29 @@ without inventing spends. `scripts/fixtures/incb-replay-cutover-963781.json`
 contains compact public-chain witnesses from the read-only clone for regression
 checks; unrelated large transaction payloads are excluded. This diagnostic is
 not yet an imported production issuance oracle. Production INCB is unchanged.
+
+## Exact-source checkpoint and next replay barrier
+
+Replay reconciliation commit `dd437a71071aa38f238df5c14183b34a24c5432c`
+(PR #77, all three hygiene CI jobs passed and merged) reproduced H963781
+from an exact archive (`f7d8253bf16a7f8734919a712149178d03107e99b49682b726b0df88b0d9c023`).
+All 25 checks passed; response SHA-256
+`982d9bbcd7b842637ec6b770b01f8a688a184a4f63f523ba688bff42acd89638`.
+The bound replay marker remained unchanged. The subsequent isolated scan stored
+that green H-1 checkpoint, then stopped safely before block 963782 because its
+native direct/WORK issuance components could not bind to one combined mint.
+
+The component correction preserves the native four-record commitment while
+storing exactly one recipient mint. The public-chain fixture at
+`scripts/fixtures/incb-replay-components-963782.json` includes the exact Core
+transaction, native replay records and independently verified canonical mint.
+Regression coverage rejects altered/missing/duplicate components and absent WORK
+parents; it asserts unchanged transition history and exact event-set digest.
+
+Read-only comparison also found six older production INCB mint amounts differ
+from the isolated replay (three at 958796, two at 958943, one at 959004).
+These are not included in the approved single-target production repair. No
+production mint, balance, historical snapshot or recovery marker has been changed.
+The production marker remains an ordinary completed rebuild, not a certified
+958383 replay; existing importer/repair guards must not be bypassed or replaced
+with a copied clone certificate.

@@ -1,3 +1,4 @@
+import { canonicalIncbReplayComponents } from "../server/incb-replay-components.mjs";
 import assert from "node:assert/strict";
 import { createHash, timingSafeEqual } from "node:crypto";
 import { EventEmitter } from "node:events";
@@ -1518,6 +1519,7 @@ function isolatedFunction(path, name, globals = {}) {
     workAmoV5HasNoTextStorageNul,
     uniqueMarketplaceMutationActivity,
     validTxid,
+    canonicalIncbReplayComponents,
     ...globals,
   });
   const dependencyGraph = path.href === API_PATH.href
@@ -12146,22 +12148,7 @@ check("wallet-scoped token reads share identical in-flight loads without retaini
   assert.deepEqual(firstResult, { ok: true });
   assert.equal(inFlight.size, 0);
 
-  check("historical WORK transfers preserve Q8 source units during Q16 reconstruction", () => {
-  const project = isolatedFunction(API_PATH, "tokenTransferFromIndexedActivityItem", {
-    canonicalEventIdentityDetails: () => ({}), canonicalMinerFeeDetailsFromActivity: () => ({}),
-    indexedActivityValue: (item, ...keys) => keys.map((key) => item[key]).find(Boolean) ?? "",
-    creditAmountFromActivityItem: (item) => Number(item.amount),
-  });
-  const token = {tokenId: WORK_TOKEN_ID, ticker: "WORK", amountStorageModel: WORK_SUBATOM_PROJECTION_MODEL};
-  const record = {kind: "token-transfer", tokenId: WORK_TOKEN_ID, amountAtoms: "100000000",
-    amountStorageModel: WORK_ATOMIC_PROJECTION_MODEL, confirmed: true, txid: "a".repeat(64),
-    senderAddress: "sender", recipientAddress: "recipient"};
-  assert.equal(project(record, token, "livenet", WORK_SUBATOM_PROJECTION_MODEL).amountSubatoms, "10000000000000000");
-  assert.equal(project({...record, amountAtoms: undefined, amountSubatoms: "1", amountStorageModel: WORK_SUBATOM_PROJECTION_MODEL}, token, "livenet", WORK_SUBATOM_PROJECTION_MODEL).amountSubatoms, "1");
-  assert.equal(project({...record, amountStorageModel: WORK_SUBATOM_PROJECTION_MODEL}, token, "livenet", WORK_SUBATOM_PROJECTION_MODEL), null);
-});
-
-let failures = 0;
+  let failures = 0;
   await rejection(
     walletScopedTokenSingleFlight("retry-wallet", async () => {
       failures += 1;
@@ -87903,6 +87890,85 @@ check("Exact replay bond registries come from bounded confirmed PWIDs", () => {
     topLevelFunctionSource(API_PATH, "buildIndexedCanonicalLedgerPayload"),
     /exactRegistryState: registrySnapshot/u,
   );
+});
+
+check("post-V5 INCB fan-in preserves one mint and the native four-record commitment", async () => {
+  const fixture = JSON.parse(readFileSync(new URL("./fixtures/incb-replay-components-963782.json", import.meta.url)));
+  const { mint, rawTx, transition } = fixture;
+  const components = canonicalIncbReplayComponents(mint, transition.replayRecords);
+  assert.equal(components.attachments.length, 1);
+  const normalizedPosition = (value) => {
+    const p = value?.position ?? value;
+    return { blockHash: p.blockHash, blockHeight: p.blockHeight,
+      blockTransactionIndex: p.blockTransactionIndex ?? p.blockIndex,
+      protocolVout: p.protocolVout, recordOrdinal: p.recordOrdinal };
+  };
+  const key = (v) => { const p = normalizedPosition(v); return { position:p,
+    key:[p.blockHeight,p.blockTransactionIndex,p.protocolVout,p.recordOrdinal].join(":") }; };
+  const globals = { normalizeWorkAmoCanonicalPosition: normalizedPosition,
+    normalizedLowerText: (v) => String(v ?? "").trim().toLowerCase(),
+    isHexTxid: (v) => /^[0-9a-f]{64}$/u.test(v), workAmoV5ConsensusEventKind,
+    workAmoV5ReplayPositionKey: key, workAmoV5ReplayFrozenTerms: () => null,
+    workAmoFrozenTermsFromItem: () => null,
+    workAmoV5ReplayProjectionFromOutput: (output) => output?.projection ?? {},
+    workAmoV5CanonicalPayloadCommitment: isolatedCanonicalPayloadCommitment,
+    workAmoV5EventSetCommitment, canonicalRawProtocolRecordSetFromTransaction,
+    workAmoEventReasonCode: (row) => row.valid === true ? "" : "invalid", NETWORK: "livenet" };
+  const bind = isolatedFunction(BACKFILL_PATH, "bindPreparedTransactionsToWorkAmoV5Replay", globals);
+  const original = [{ txid: mint.txid, rawTx: { ...rawTx, height: mint.blockHeight,
+    _powBlockHash: mint.blockHash, _powBlockIndex: mint.blockIndex },
+    items: [transition.replayRecords[0].output.projection, mint, transition.replayRecords[2].output.projection]
+      .map((item) => ({ ...item, confirmed:true })) }];
+  const before = JSON.stringify(transition);
+  const bound = bind(structuredClone(original), transition)[0].items;
+  assert.equal(bound.length, 3);
+  const mints = bound.filter((item) => item.kind === "token-mint");
+  assert.equal(mints.length, 1);
+  assert.equal(mints[0].amount, "352529923159");
+  assert.equal(JSON.stringify(transition), before, "native history must not be rewritten");
+  const rawRecords = canonicalRawProtocolRecordSetFromTransaction(rawTx).records;
+  const rows = bound.map((item) => ({ block_height: mint.blockHeight, block_index: mint.blockIndex,
+    fee_sats: transition.replayRecords[0].transactionMinerFeeSats, kind:item.kind, payload:item,
+    protocol:item.protocol, protocol_vout:item.protocolVout, record_ordinal:item.recordOrdinal,
+    raw_payload: item.recordOrdinal === 0 ? rawRecords.find((r) => r.protocolVout === item.protocolVout).message : "",
+    raw_tx:rawTx, txid:mint.txid, valid:true, validation_errors:[] }));
+  const eventSet = isolatedFunction(BACKFILL_PATH, "workAmoV5CanonicalBlockEventSet", globals);
+  const commitment = await eventSet({query:async () => ({rows})},transition);
+  assert.equal(commitment.eventCount, 4);
+  assert.equal(commitment.sha256, transition.eventSetCommitment.sha256);
+  assert.equal(commitment.payloadBytes, transition.eventSetCommitment.payloadBytes);
+  for (const mutate of [
+    (f) => { f.mint.amount = "546"; },
+    (f) => { f.mint.attachedWorkAmountSubatoms = "1"; },
+    (f) => { f.transition.replayRecords.pop(); },
+    (f) => { f.transition.replayRecords.push(f.transition.replayRecords.at(-1)); },
+    (f) => { f.transition.replayRecords.at(-1).output.projection.recipientAddress = "wrong"; },
+    (f) => { f.transition.replayRecords.at(-1).rawWitness.descriptor.amount = "1"; },
+    (f) => { f.transition.replayRecords[2].outcome.valid = false; },
+    (f) => { f.transition.replayRecords[2].output.projection.amountSubatoms = "1"; },
+  ]) {
+    const changed = structuredClone(fixture); mutate(changed);
+    assert.throws(() => canonicalIncbReplayComponents(changed.mint, changed.transition.replayRecords));
+  }
+  const altered = structuredClone(rows);
+  altered.find((row) => row.kind === "token-mint").payload.workAmoV5IncbReplayComponents.pop();
+  await assert.rejects(eventSet({query:async () => ({rows:altered})},transition), /component witness/);
+  await assert.rejects(eventSet({query:async () => ({rows:rows.filter((row) => row.kind !== "token-transfer")})},transition), /coverage/);
+});
+
+check("historical WORK transfers preserve Q8 source units during Q16 reconstruction", () => {
+  const project = isolatedFunction(API_PATH, "tokenTransferFromIndexedActivityItem", {
+    canonicalEventIdentityDetails: () => ({}), canonicalMinerFeeDetailsFromActivity: () => ({}),
+    indexedActivityValue: (item, ...keys) => keys.map((key) => item[key]).find(Boolean) ?? "",
+    creditAmountFromActivityItem: (item) => Number(item.amount),
+  });
+  const token = {tokenId: WORK_TOKEN_ID, ticker: "WORK", amountStorageModel: WORK_SUBATOM_PROJECTION_MODEL};
+  const record = {kind: "token-transfer", tokenId: WORK_TOKEN_ID, amountAtoms: "100000000",
+    amountStorageModel: WORK_ATOMIC_PROJECTION_MODEL, confirmed: true, txid: "a".repeat(64),
+    senderAddress: "sender", recipientAddress: "recipient"};
+  assert.equal(project(record, token, "livenet", WORK_SUBATOM_PROJECTION_MODEL).amountSubatoms, "10000000000000000");
+  assert.equal(project({...record, amountAtoms: undefined, amountSubatoms: "1", amountStorageModel: WORK_SUBATOM_PROJECTION_MODEL}, token, "livenet", WORK_SUBATOM_PROJECTION_MODEL).amountSubatoms, "1");
+  assert.equal(project({...record, amountStorageModel: WORK_SUBATOM_PROJECTION_MODEL}, token, "livenet", WORK_SUBATOM_PROJECTION_MODEL), null);
 });
 
 let failures = 0;
