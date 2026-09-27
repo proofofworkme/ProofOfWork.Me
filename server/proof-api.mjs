@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { reviewedIncbReplayBaselineEvidence, reviewedIncbReplayBaselineFromEvidence } from "./incb-replay-baseline.mjs";
 
 import { SCOPED_INCB_ORACLE_PIN, canonicalSummarySnapshotIdOutsideScopedOracle } from "./incb-scoped-oracle.mjs";
 
@@ -46701,6 +46702,7 @@ function exactCreditFrozenValueComponentsAgree(actualValue) {
 }
 
 function ledgerSnapshotChecks({
+  incbReplayBaselineEvidence = null,
   activity,
   growthSummary,
   metrics,
@@ -47293,6 +47295,13 @@ function ledgerSnapshotChecks({
       seededFlowSats: seededInceptionBondFlowSats,
     },
   );
+  const historicalIncbBaseline = incbReplayBaselineEvidence
+    ? reviewedIncbReplayBaselineFromEvidence(incbReplayBaselineEvidence,
+        Number(metrics?.indexedThroughBlock), incbReplayBaselineEvidence.checkpointHash)
+    : LIVENET_INCB_HISTORICAL_BASELINE;
+  if (!historicalIncbBaseline) {
+    throw new Error("Historical INCB baseline has unverified replay evidence.");
+  }
   const loggedInceptionBondCount = loggedInceptionBondItems.length;
   const livenetInceptionParentCount = Math.max(
     seededInceptionBondCount,
@@ -47300,7 +47309,7 @@ function ledgerSnapshotChecks({
   );
   const livenetIncbBaselineRequiresExact =
     livenetInceptionParentCount ===
-    LIVENET_INCB_HISTORICAL_BASELINE.parentBondEvents;
+    historicalIncbBaseline.parentBondEvents;
   const livenetIncbBaselineValueOk = (actual, expected) => {
     const text = canonicalNonNegativeIntegerText(actual, {
       allowZero: true,
@@ -47315,42 +47324,43 @@ function ledgerSnapshotChecks({
   };
   const livenetIncbBaselineReached =
     livenetInceptionParentCount >=
-    LIVENET_INCB_HISTORICAL_BASELINE.parentBondEvents;
+    historicalIncbBaseline.parentBondEvents;
   const livenetIncbBaselineOk =
     network !== "livenet" ||
     livenetInceptionParentCount === 0 ||
     !livenetIncbBaselineReached ||
     (inceptionIssuance.complete &&
       inceptionIssuance.canonicalMints >=
-        LIVENET_INCB_HISTORICAL_BASELINE.acceptedMints &&
+        historicalIncbBaseline.acceptedMints &&
       inceptionIssuance.confirmedMints >=
-        LIVENET_INCB_HISTORICAL_BASELINE.acceptedMints &&
+        historicalIncbBaseline.acceptedMints &&
       livenetIncbBaselineValueOk(
         inceptionIssuance.directProofIssuanceUnits,
-        LIVENET_INCB_HISTORICAL_BASELINE.directProofIssuanceUnits,
+        historicalIncbBaseline.directProofIssuanceUnits,
       ) &&
       livenetIncbBaselineValueOk(
         inceptionIssuance.attachedWorkIssuanceUnits,
-        LIVENET_INCB_HISTORICAL_BASELINE.attachedWorkIssuanceUnits,
+        historicalIncbBaseline.attachedWorkIssuanceUnits,
       ) &&
       livenetIncbBaselineValueOk(
         incbConfirmedSupply,
-        LIVENET_INCB_HISTORICAL_BASELINE.confirmedSupply,
+        historicalIncbBaseline.confirmedSupply,
       ) &&
       livenetIncbBaselineValueOk(
         inceptionIssuance.issuanceNetworkValueQ8,
-        LIVENET_INCB_HISTORICAL_BASELINE.networkValueQ8,
+        historicalIncbBaseline.networkValueQ8,
       ) &&
       livenetIncbBaselineValueOk(
         inceptionIssuance.issuanceDustQ8,
-        LIVENET_INCB_HISTORICAL_BASELINE.issuanceDustQ8,
+        historicalIncbBaseline.issuanceDustQ8,
       ));
   addCheck(
     "inception-historical-issuance-baseline",
     livenetIncbBaselineOk,
     {
+      ...(incbReplayBaselineEvidence ? { replayBaselineEvidence: incbReplayBaselineEvidence } : {}),
       acceptedMints:
-        LIVENET_INCB_HISTORICAL_BASELINE.acceptedMints,
+        historicalIncbBaseline.acceptedMints,
       attachedWorkIssuanceUnits:
         inceptionIssuance.attachedWorkIssuanceUnits,
       confirmedSupply: incbConfirmedSupply,
@@ -47358,8 +47368,8 @@ function ledgerSnapshotChecks({
         inceptionIssuance.directProofIssuanceUnits,
       expected:
         livenetInceptionParentCount >=
-        LIVENET_INCB_HISTORICAL_BASELINE.parentBondEvents
-          ? LIVENET_INCB_HISTORICAL_BASELINE
+        historicalIncbBaseline.parentBondEvents
+          ? historicalIncbBaseline
           : null,
       exactRequired: livenetIncbBaselineRequiresExact,
       issuanceDustQ8: inceptionIssuance.issuanceDustQ8,
@@ -47367,7 +47377,7 @@ function ledgerSnapshotChecks({
         inceptionIssuance.issuanceNetworkValueQ8,
       loggedParents: loggedInceptionBondCount,
       parentBondEvents:
-        LIVENET_INCB_HISTORICAL_BASELINE.parentBondEvents,
+        historicalIncbBaseline.parentBondEvents,
       seededParents: seededInceptionBondCount,
     },
   );
@@ -51246,6 +51256,9 @@ async function buildIndexedCanonicalLedgerPayload(
   };
   const growthSummary = growthSummaryPayloadFromLedger(ledger);
   const consistency = ledgerSnapshotChecks({
+    incbReplayBaselineEvidence: replayBridgeEra
+      ? reviewedIncbReplayBaselineEvidence(options.replayVerifierBinding, exactHeight, exactHash)
+      : null,
     activity,
     growthSummary,
     metrics,

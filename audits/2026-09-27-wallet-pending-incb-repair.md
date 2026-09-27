@@ -232,3 +232,70 @@ the original proof remains immutable and excluded from public summaries.
 The scoped oracle and full API builder regressions pass, as do 547 recovery
 behavior checks and server-global/module-syntax checks. The target proof is
 still unpinned and no production INCB mutation has occurred.
+
+## Guarded code release, before target proof admission
+
+PR #79 merged as `0b582547fd7f3607c56cc22cb4b5792a9015c2be`, with all three
+hygiene CI jobs passing for exact source `f4ca769e920287d2deb1a21f35371fd4488f5344`.
+The code-only node release `f4ca769e9202-20260927T055111Z` completed its atomic
+cutover at `2026-09-27T05:59:30Z`. Source tree:
+`d4f8beb68ee21bc6d1d44c121f4b7d47ace9c003`; source bundle SHA-256:
+`2d3cbd751c7ad9f68f288fae1dff371a81c0c1b2703524939f88deeecbad6247`;
+attested runtime SHA-256:
+`2a05b563bc14160b1122f38fcc67f00fb6eb763279a4c6b583df2e4111a0192c`.
+The UI remains on the verified wallet release.
+
+The read-only candidate passed strict parity (102 checks, zero errors) and the
+ledger consistency audit at 968786. Receipt hashes are respectively
+`b12d62d1e0f3a509bb84c72b9fb815b0662f4aafb09a82ec3fe61551b699fcd6`
+and `e455027c62aa5989dd1cb839a9d836f5cfdeecc12c809a5e20b74a5f068c658c`.
+Candidate wallet receipt SHA-256:
+`56843f5e814915fa31f7d9715b7d6def836dfd51289c6a7b90654fa81f2973d9`.
+
+The live wallet check initially returned 503 while block 968788 and its summary
+were catching up. Once the checkpoint was current, the fresh authoritative
+wallet passed with 123 unique reservations, exact reservation sum, conserved
+confirmed-minus-reserved spendable balance, and pending-listing reserve
+`364405703` subatoms. Successful live wallet receipt SHA-256:
+`6fbfd4818f55f702c1feefc71513e7037137706cf87613b69b00c09be634fe02`.
+Production readiness was true with zero lag at 968788. SQL verified the same
+46 INCB mints and supply `224847713398447926`, with no target mint. The compiled
+scoped proof pin remains null; this release did not perform the data repair.
+Core/database services and the independent historical replay remained running.
+Durable cutover evidence is under
+`/data/proofofwork-incb-guarded-cutover-f4ca769e9202-20260927T055111Z/cutover`.
+
+
+## H968124 checkpoint validation
+
+The isolated replay reached H968124 after completing the 965783–967782 batch
+(2,000 blocks, 592 protocol transaction IDs, zero skips) and the following
+342-block batch. The retained first-batch continuation journal SHA-256 is
+`145f05db462b0491bb492adfd9c9968b4631fb857e711c7c8f1f23396a819d9f`.
+An extra pre-barrier summary probe stopped safely because the derived WORK
+balance table still reflected the start of its batch. Both projections contained
+the same 228 WORK transfers and 84 sales, and listing reconciliation passed.
+The existing guarded, WORK-only balance synchronization resolved this mismatch
+without changing the replay checkpoint. This was an orchestration-order issue;
+no parity guard was removed and production was unaffected.
+
+The repeated probe passed WORK holder reconciliation and exact native WORK
+value `840950469793071163780428513`, but the historical INCB baseline check
+correctly refused to compare independent replay totals to the old production
+46-mint totals. All 24 other ledger checks passed. The replay profile now derives
+its exact expectation from green snapshot `6838bcd9ef74c5b9b408ca2f` at 963781
+(source-row file SHA-256
+`dc478211126a97ff58aa929062b6643792c907fb51ad52ac5ffe573b47ce4a22`)
+and the independently verified `b00b9451…` component fixture at 963782.
+The resulting baseline has 47 mints, supply `210841722086821750`, direct units
+`27932`, attached units `210841722086793818`, fixed value Q8
+`21084172208682177064339629`, and issuance dust Q8 `2064339629`.
+
+Selection requires the exact reviewed active replay binding and immutable
+18-entry witness set. The source checkpoint, lineage and witness pins are
+retained in the ledger check; stored-summary admission rejects tampering.
+Ordinary production keeps its original baseline and earlier mint amounts.
+Regressions cover the actual ledger check and stored-summary validator,
+including unchanged production admission, false zero, wrong witness/checkpoint,
+and one-Q8-unit discrepancies. The target proof remains disabled pending a
+successful repeat and complete replay certificate.
