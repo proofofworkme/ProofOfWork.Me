@@ -1,3 +1,7 @@
+import {
+  SCOPED_INCB_ORACLE_PIN, scopedIncbOracleProjectionRows,
+  scopedIncbOracleLedgerPayload, storedScopedIncbOracle,
+} from "../incb-scoped-oracle.mjs";
 import { createHash } from "node:crypto";
 import { compareCanonicalUtf8 } from "../canonical-order.mjs";
 import { decodeCanonicalOpReturnOutput } from "../canonical-op-return.mjs";
@@ -26644,9 +26648,7 @@ async function canonicalIncbReplaySnapshotRows(client, network, snapshotIds) {
   if (!Array.isArray(snapshotIds) || snapshotIds.length === 0) {
     return [];
   }
-  const result = await client.query(
-    `
-      SELECT
+  const projection = `
         snapshot_id,
         indexed_through_block,
         generated_at,
@@ -26692,6 +26694,10 @@ async function canonicalIncbReplaySnapshotRows(client, network, snapshotIds) {
         source_hashes::text AS raw_source_hashes_json,
         consistency::text AS raw_consistency_json,
         metrics::text AS raw_metrics_json
+`;
+  const result = await client.query(
+    `
+      SELECT ${projection}
       FROM proof_indexer.ledger_snapshots
       WHERE network = $1
         AND snapshot_id = ANY($2::text[])
@@ -26699,7 +26705,8 @@ async function canonicalIncbReplaySnapshotRows(client, network, snapshotIds) {
     `,
     [network, snapshotIds],
   );
-  return result.rows;
+  const scoped = await scopedIncbOracleProjectionRows(client, network, snapshotIds, projection);
+  return result.rows.map((row) => scoped.find((item) => item.snapshot_id === row.snapshot_id) ?? row);
 }
 
 function canonicalIncbReplaySnapshotDescriptorFromReaderRow(row, entry) {
@@ -41091,6 +41098,15 @@ function canonicalSummaryLedgerValueBindingsAgree(left, right) {
       left.indexedThroughBlock === right.indexedThroughBlock &&
       exactKeys.every((key) => left[key] === right[key]),
   );
+}
+
+export async function proofIndexScopedIncbIssuanceOraclePayload(network, txid, height, blockHash) {
+  const pin = SCOPED_INCB_ORACLE_PIN;
+  if (!pin || network !== "livenet" || txid !== pin.txid || height !== pin.height || blockHash !== pin.blockHash) return null;
+  const pool = proofIndexPool();
+  if (!pool) return null;
+  const oracle = await storedScopedIncbOracle(pool, network);
+  return oracle ? scopedIncbOracleLedgerPayload(oracle.source) : null;
 }
 
 export async function proofIndexCanonicalSummaryLedgerPayload(

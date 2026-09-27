@@ -1,3 +1,4 @@
+import { SCOPED_INCB_ORACLE_PIN, scopedIncbOracleProjectionRows, storedScopedIncbOracle } from "../server/incb-scoped-oracle.mjs";
 import { canonicalIncbReplayComponents } from "../server/incb-replay-components.mjs";
 import { createHash, randomBytes } from "node:crypto";
 import { request as httpRequest } from "node:http";
@@ -8845,6 +8846,9 @@ async function rebuildConfirmedCreditBalancesFromCanonicalEvents(
           ? canonicalBondMintProjectionInvalidReason(bondProjectionItem)
           : "";
       if (bondProjectionInvalidReason) {
+        if (skipInvalidBondAliasEnrichment) {
+          throw new Error(`Scoped INCB issuance repair refuses to rewrite existing mint history at ${eventLabel}.`);
+        }
         const reason =
           `Canonical INCB bond projection rejected: ${bondProjectionInvalidReason}.`;
         await client.query(
@@ -8918,6 +8922,9 @@ async function rebuildConfirmedCreditBalancesFromCanonicalEvents(
             /^[1-9]\d*$/u.test(String(payload.amount ?? "").trim()) &&
             Number(payload.amountSats ?? 0) === 0;
       if (["POWB", "INCB"].includes(definition.ticker) && !expectedBondProjection) {
+        if (skipInvalidBondAliasEnrichment) {
+          throw new Error(`Scoped INCB issuance repair refuses to rewrite existing mint history at ${eventLabel}.`);
+        }
         const reason =
           `Canonical credit event ${eventLabel} attempts a generic mint in the reserved ${definition.ticker} namespace`;
         await client.query(
@@ -33967,9 +33974,7 @@ async function lockedCanonicalIncbValueSnapshots(client, snapshotIds) {
   if (!Array.isArray(snapshotIds) || snapshotIds.length === 0) {
     return [];
   }
-  const result = await client.query(
-    `
-      SELECT
+  const projection = `
         snapshot_id,
         indexed_through_block,
         generated_at,
@@ -34015,6 +34020,10 @@ async function lockedCanonicalIncbValueSnapshots(client, snapshotIds) {
         source_hashes::text AS raw_source_hashes_json,
         consistency::text AS raw_consistency_json,
         metrics::text AS raw_metrics_json
+`;
+  const result = await client.query(
+    `
+      SELECT ${projection}
       FROM proof_indexer.ledger_snapshots
       WHERE network = $1
         AND snapshot_id = ANY($2::text[])
@@ -34023,7 +34032,8 @@ async function lockedCanonicalIncbValueSnapshots(client, snapshotIds) {
     `,
     [NETWORK, snapshotIds],
   );
-  return result.rows;
+  const scoped = await scopedIncbOracleProjectionRows(client, NETWORK, snapshotIds, projection);
+  return result.rows.map((row) => scoped.find((item) => item.snapshot_id === row.snapshot_id) ?? row);
 }
 
 function lockedCanonicalIncbSnapshotWorkNetworkValueQ8(row) {
@@ -34954,8 +34964,14 @@ async function canonicalPostV5IncbRepairTarget(target) {
   if (parent?.kind !== INCEPTION_BOND_KIND || recipients.length !== 1) {
     throw new Error(`Post-V5 INCB repair target ${target.txid} has no unique canonical bond payment.`);
   }
-  const recovered = (await canonicalRecoveryItemsForTx(hydrated, messages))
-    .map((entry) => entry?.item ?? entry);
+  const transition = await verifiedWorkAmoV5BlockTransition({
+    blockHash: target.blockHash, blockHeight: target.blockHeight, previousBlockHash,
+  });
+  const prepared = await canonicalRecoveryItemsForTx(hydrated, messages);
+  const recovered = bindPreparedTransactionsToWorkAmoV5Replay([
+    { txid: target.txid, rawTx: hydrated, items: prepared },
+  ], { ...transition, replayRecords: transition.replayRecords.filter((record) => record.txid === target.txid) })[0]
+    .items.map((entry) => entry?.item ?? entry);
   const mints = recovered.filter((item) =>
     item?.kind === "token-mint" &&
     String(item.tokenId ?? "").trim().toLowerCase() === INCB_TOKEN_ID);
@@ -34990,7 +35006,7 @@ async function canonicalPostV5IncbRepairTarget(target) {
         String(parent.authorAddress ?? parent.senderAddress).trim()) {
     throw new Error(`Post-V5 INCB repair target ${target.txid} has a mismatched PWM author.`);
   }
-  return { ...target, bond, mint, previousBlockHash, recipient: recipients[0], witness, workTransfers };
+  return { ...target, bond, mint, previousBlockHash, recipient: recipients[0], witness, workTransfers, transition };
 }
 
 async function repairCanonicalPostV5IncbIssuance(client, repairTargets = POST_V5_INCB_ISSUANCE_REPAIR_TARGETS) {
@@ -35010,7 +35026,7 @@ async function repairCanonicalPostV5IncbIssuance(client, repairTargets = POST_V5
   try {
     if (APPLY_POST_V5_INCB_ISSUANCE_REPAIR) {
       await client.query(
-        "LOCK TABLE proof_indexer.transactions, proof_indexer.events, proof_indexer.blocks, proof_indexer.meta, proof_indexer.event_participants, proof_indexer.event_refs, proof_indexer.credit_balances, proof_indexer.credit_definitions, proof_indexer.ledger_snapshots IN SHARE ROW EXCLUSIVE MODE",
+        "LOCK TABLE proof_indexer.transactions, proof_indexer.events, proof_indexer.blocks, proof_indexer.meta, proof_indexer.event_participants, proof_indexer.event_refs, proof_indexer.credit_balances, proof_indexer.credit_definitions, proof_indexer.ledger_snapshots, proof_indexer.work_amo_block_transitions IN SHARE ROW EXCLUSIVE MODE",
       );
     }
     const recoveryRows = await client.query(
@@ -35019,34 +35035,44 @@ async function repairCanonicalPostV5IncbIssuance(client, repairTargets = POST_V5
     );
     const recovery = verifiedCanonicalRecoveryMetaState(recoveryRows.rows);
     const rebuild = recoveryRows.rows.find((row) => row.key === CANONICAL_REBUILD_META_KEY)?.value;
-    if (recovery.rebuild !== "certified-complete-pwt-range-replay" ||
-        canonicalPwtRangeReplayState(rebuild) !== "complete" ||
-        Number(rebuild.rangeReplayFromHeight) !== CANONICAL_INCB_PWT_RANGE_REPLAY_FROM_HEIGHT ||
-        Number(rebuild.indexedThroughBlock) < repairTargets.at(-1).blockHeight) {
-      throw new Error("Post-V5 INCB repair requires the certified completed 958383 PWT replay covering the selected bonds.");
+    const scopedPin = SCOPED_INCB_ORACLE_PIN;
+    const scopedTarget = scopedPin && repairTargets.length === 1 &&
+      repairTargets[0].txid === scopedPin.txid && snapshotIds.length === 1 &&
+      snapshotIds[0] === scopedPin.snapshotId;
+    const scopedOracle = recovery.rebuild === "complete" && scopedTarget
+      ? await storedScopedIncbOracle(client, NETWORK) : null;
+    const scopedAdmission = Boolean(scopedOracle &&
+      Number(rebuild.indexedThroughBlock) >= repairTargets[0].blockHeight);
+    if (!scopedAdmission) {
+      if (recovery.rebuild !== "certified-complete-pwt-range-replay" ||
+          canonicalPwtRangeReplayState(rebuild) !== "complete" ||
+          Number(rebuild.rangeReplayFromHeight) !== CANONICAL_INCB_PWT_RANGE_REPLAY_FROM_HEIGHT ||
+          Number(rebuild.indexedThroughBlock) < repairTargets.at(-1).blockHeight) {
+        throw new Error("Post-V5 INCB repair requires the certified completed 958383 PWT replay covering the selected bonds.");
+      }
+      const binding = canonicalPwtRangeReplayVerifierBinding(rebuild);
+      if (!binding) {
+        throw new Error("Post-V5 INCB repair has no completed replay verifier binding.");
+      }
+      const witnessRows = await client.query(
+        "SELECT value FROM proof_indexer.meta WHERE key = $1 FOR SHARE",
+        [binding.witnessSetMetaKey],
+      );
+      if (witnessRows.rows.length !== 1) {
+        throw new Error("Post-V5 INCB repair requires one immutable replay witness manifest.");
+      }
+      verifyIncbRangeReplayWitnessManifest(witnessRows.rows[0].value, {
+        bindingId: binding.bindingId,
+        count: binding.witnessCount,
+        hash: binding.witnessSetHash,
+        metaKey: binding.witnessSetMetaKey,
+        network: NETWORK,
+        preserveCount: binding.witnessPreserveCount,
+        rangeReplayFromHeight: binding.rangeReplayFromHeight,
+        throughHash: binding.witnessedThroughBlockHash,
+        throughHeight: binding.witnessedThroughBlock,
+      });
     }
-    const binding = canonicalPwtRangeReplayVerifierBinding(rebuild);
-    if (!binding) {
-      throw new Error("Post-V5 INCB repair has no completed replay verifier binding.");
-    }
-    const witnessRows = await client.query(
-      "SELECT value FROM proof_indexer.meta WHERE key = $1 FOR SHARE",
-      [binding.witnessSetMetaKey],
-    );
-    if (witnessRows.rows.length !== 1) {
-      throw new Error("Post-V5 INCB repair requires one immutable replay witness manifest.");
-    }
-    verifyIncbRangeReplayWitnessManifest(witnessRows.rows[0].value, {
-      bindingId: binding.bindingId,
-      count: binding.witnessCount,
-      hash: binding.witnessSetHash,
-      metaKey: binding.witnessSetMetaKey,
-      network: NETWORK,
-      preserveCount: binding.witnessPreserveCount,
-      rangeReplayFromHeight: binding.rangeReplayFromHeight,
-      throughHash: binding.witnessedThroughBlockHash,
-      throughHeight: binding.witnessedThroughBlock,
-    });
     const rebuildFingerprint = canonicalIncbReplaySha256(rebuild);
     const snapshotRows = await lockedCanonicalIncbValueSnapshots(client, snapshotIds);
     if (snapshotIds.length !== repairTargets.length ||
@@ -35158,6 +35184,38 @@ async function repairCanonicalPostV5IncbIssuance(client, repairTargets = POST_V5
     })) {
       throw new Error("Post-V5 INCB repair stored parent or accepted WORK companion disagrees with the canonical verifier.");
     }
+    const pinnedMintFields = [
+      "sourceBondTxid", "minterAddress", "amount",
+      "issuanceCheckpointMode", "issuanceValueSnapshotId",
+      "issuanceValueSnapshotBlockHash", "issuanceValueSnapshotCanonicalSummaryHash",
+      "issuanceValueSnapshotGeneratedAt", "issuanceValueSnapshotMode",
+      "issuanceValueSnapshotModel", "issuanceValueSnapshotWorkNetworkValueQ8",
+      "issuanceNetworkValueQ8",
+    ];
+    const repairedMintRowsMatch = (rows) => rows.length === targets.length && !targets.some((target) => {
+      const row = rows.find((candidate) => candidate.txid === target.txid);
+      const actual = row?.payload;
+      const expected = target.mint;
+      return row?.kind !== "token-mint" || row?.valid !== true ||
+        row?.status !== "confirmed" ||
+        String(row?.block_hash ?? "").trim().toLowerCase() !== target.blockHash ||
+        Number(row?.block_height) !== target.blockHeight ||
+        Number(row?.block_index) !== target.blockIndex ||
+        Number(row?.op_return_vout) !== Number(expected?.protocolVout) ||
+        Number(row?.record_ordinal) !== Number(expected?.recordOrdinal) ||
+        !canonicalBondMintProjection(actual) ||
+        pinnedMintFields.some((field) =>
+          String(actual?.[field] ?? "").trim() !== String(expected?.[field] ?? "").trim()) ||
+        Number(actual?.issuanceCheckpointBlockHeight) !== target.blockHeight ||
+        String(actual?.issuanceCheckpointBlockHash ?? "").trim().toLowerCase() !== target.blockHash ||
+        Number(actual?.issuanceCheckpointBlockIndex) !== target.blockIndex ||
+        Number(actual?.issuanceValueSnapshotBlockHeight) !== target.blockHeight - 1 ||
+        String(actual?.issuanceValueSnapshotBlockHash ?? "").trim().toLowerCase() !==
+          target.previousBlockHash ||
+        String(actual?.amount ?? "") !== target.witness.amount ||
+        String(actual?.issuanceNetworkValueQ8 ?? "") !== target.witness.fixedValueQ8;
+    });
+
     const incbEvents = await client.query(
       `SELECT event_id, txid, kind, protocol, status, valid,
               (SELECT canonical_transaction.block_hash
@@ -35172,7 +35230,8 @@ async function repairCanonicalPostV5IncbIssuance(client, repairTargets = POST_V5
        FOR UPDATE`,
       [NETWORK, targetTxids, INCB_TOKEN_ID],
     );
-    if (incbEvents.rows.length !== targets.length * 2 || targets.some((target) => {
+    const alreadyApplied = repairedMintRowsMatch(incbEvents.rows);
+    if (!alreadyApplied && (incbEvents.rows.length !== targets.length * 2 || targets.some((target) => {
       const rows = incbEvents.rows.filter((row) => row.txid === target.txid);
       const vouts = rows.map((row) => `${row.op_return_vout}:${row.record_ordinal}`).sort();
       return rows.length !== 2 ||
@@ -35185,7 +35244,7 @@ async function repairCanonicalPostV5IncbIssuance(client, repairTargets = POST_V5
           String(row?.block_hash ?? "").trim().toLowerCase() !== target.blockHash ||
           Number(row?.block_height) !== target.blockHeight ||
           Number(row?.block_index) !== target.blockIndex);
-    })) {
+    }))) {
       throw new Error("Post-V5 INCB repair expected exactly two reserved-namespace invalid aliases per target and no accepted mint.");
     }
     const before = await client.query(
@@ -35206,9 +35265,11 @@ async function repairCanonicalPostV5IncbIssuance(client, repairTargets = POST_V5
     const preflight = {
       apply: APPLY_POST_V5_INCB_ISSUANCE_REPAIR,
       beforeSupply: beforeMintSupply.toString(),
-      expectedAfterSupply: (beforeMintSupply + expectedAddition).toString(),
+      expectedAfterSupply: (beforeMintSupply + (alreadyApplied ? 0n : expectedAddition)).toString(),
       hMinusOneSnapshots: snapshotIds,
       replayMarkerFingerprint: rebuildFingerprint,
+      recoveryProof: scopedAdmission ? "pinned-independent-scoped-replay" : "certified-production-range-replay",
+      scopedOracleProofSha256: scopedAdmission ? scopedPin.proofSha256 : null,
       targets: targets.map((target) => ({
         txid: target.txid,
         blockHeight: target.blockHeight,
@@ -35217,9 +35278,24 @@ async function repairCanonicalPostV5IncbIssuance(client, repairTargets = POST_V5
         ...target.witness,
       })),
     };
+    const assertNativeCommitments = async () => {
+      for (const target of targets) {
+        const eventSet = await workAmoV5CanonicalBlockEventSet(client, target.transition);
+        const expected = target.transition.eventSetCommitment;
+        if (eventSet.sha256 !== expected.sha256 || eventSet.payloadBytes !== expected.payloadBytes ||
+            eventSet.eventCount !== target.transition.eventCount) {
+          throw new Error("Post-V5 INCB repair changed the native ordered event-set commitment.");
+        }
+      }
+    };
+    if (alreadyApplied) {
+      await assertNativeCommitments();
+      await client.query("ROLLBACK");
+      return { ...preflight, state: "already-applied", dryRun: !APPLY_POST_V5_INCB_ISSUANCE_REPAIR, changedRows: 0 };
+    }
     if (!APPLY_POST_V5_INCB_ISSUANCE_REPAIR) {
       await client.query("ROLLBACK");
-      return { ...preflight, dryRun: true, changedRows: 0 };
+      return { ...preflight, state: "ready", dryRun: true, changedRows: 0 };
     }
     for (const row of incbEvents.rows) {
       for (const table of ["event_participants", "event_refs"]) {
@@ -35250,6 +35326,7 @@ async function repairCanonicalPostV5IncbIssuance(client, repairTargets = POST_V5
     const replay = await rebuildConfirmedCreditBalancesFromCanonicalEvents(client, {
       supplyCorrectionMode: "canonical-incb-issuance-repair",
       skipInvalidBondAliasEnrichment: true,
+      preservePendingDeltas: true,
       supplyCorrectionTokenIds: [INCB_TOKEN_ID],
       tokenIds: [INCB_TOKEN_ID],
     });
@@ -35281,39 +35358,10 @@ async function repairCanonicalPostV5IncbIssuance(client, repairTargets = POST_V5
          AND lower(COALESCE(payload->>'tokenId', '')) = $3`,
       [NETWORK, targetTxids, INCB_TOKEN_ID],
     );
-    const pinnedMintFields = [
-      "sourceBondTxid", "minterAddress", "amount",
-      "issuanceCheckpointMode", "issuanceValueSnapshotId",
-      "issuanceValueSnapshotBlockHash", "issuanceValueSnapshotCanonicalSummaryHash",
-      "issuanceValueSnapshotGeneratedAt", "issuanceValueSnapshotMode",
-      "issuanceValueSnapshotModel", "issuanceValueSnapshotWorkNetworkValueQ8",
-      "issuanceNetworkValueQ8",
-    ];
-    if (repairedRows.rows.length !== targets.length || targets.some((target) => {
-      const row = repairedRows.rows.find((candidate) => candidate.txid === target.txid);
-      const actual = row?.payload;
-      const expected = target.mint;
-      return row?.kind !== "token-mint" || row?.valid !== true ||
-        row?.status !== "confirmed" ||
-        String(row?.block_hash ?? "").trim().toLowerCase() !== target.blockHash ||
-        Number(row?.block_height) !== target.blockHeight ||
-        Number(row?.block_index) !== target.blockIndex ||
-        Number(row?.op_return_vout) !== Number(expected?.protocolVout) ||
-        Number(row?.record_ordinal) !== Number(expected?.recordOrdinal) ||
-        !canonicalBondMintProjection(actual) ||
-        pinnedMintFields.some((field) =>
-          String(actual?.[field] ?? "").trim() !== String(expected?.[field] ?? "").trim()) ||
-        Number(actual?.issuanceCheckpointBlockHeight) !== target.blockHeight ||
-        String(actual?.issuanceCheckpointBlockHash ?? "").trim().toLowerCase() !== target.blockHash ||
-        Number(actual?.issuanceCheckpointBlockIndex) !== target.blockIndex ||
-        Number(actual?.issuanceValueSnapshotBlockHeight) !== target.blockHeight - 1 ||
-        String(actual?.issuanceValueSnapshotBlockHash ?? "").trim().toLowerCase() !==
-          target.previousBlockHash ||
-        String(actual?.amount ?? "") !== target.witness.amount ||
-        String(actual?.issuanceNetworkValueQ8 ?? "") !== target.witness.fixedValueQ8;
-    })) {
+    if (!repairedMintRowsMatch(repairedRows.rows)) {
       throw new Error("Post-V5 INCB repair did not persist one exact canonical mint and H-1 provenance per target.");
     }
+    await assertNativeCommitments();
     const scanSnapshotsBefore = await client.query(
       `SELECT snapshot_id FROM proof_indexer.ledger_snapshots
        WHERE network = $1 AND indexed_through_block >= $2

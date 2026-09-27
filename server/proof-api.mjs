@@ -1,5 +1,7 @@
 #!/usr/bin/env node
 
+import { SCOPED_INCB_ORACLE_PIN, canonicalSummarySnapshotIdOutsideScopedOracle } from "./incb-scoped-oracle.mjs";
+
 import { execFile } from "node:child_process";
 import { createHash, timingSafeEqual } from "node:crypto";
 import fs from "node:fs/promises";
@@ -303,6 +305,7 @@ import {
   proofIndexReplayCanonicalSummaryTokenTablePayload,
   proofIndexCanonicalWorkListingById,
   proofIndexCanonicalSummaryLedgerPayload,
+  proofIndexScopedIncbIssuanceOraclePayload,
   proofIndexCanonicalStateMetaPayload,
   proofIndexCanonicalTransactionPositionsPayload,
   proofIndexCanonicalTransactionsPayload,
@@ -29819,7 +29822,7 @@ async function canonicalInceptionIssuanceOptions(
         return [txid, postReplayHistoricalCheckpoint];
       }
       const checkpointSource = await cachedInternalVerifierState(
-        `incb-value-snapshot-source:${network}:h${Number(bond?.blockHeight)}:${bondBlockHash}${replayBindingCacheKey}`,
+        `incb-value-snapshot-source:${network}${!replayBinding && txid === SCOPED_INCB_ORACLE_PIN?.txid ? `:scoped-${txid}` : ""}:h${Number(bond?.blockHeight)}:${bondBlockHash}${replayBindingCacheKey}`,
         async () => {
           const previousBlockHash = await canonicalInceptionPreviousBlockHash(
             network,
@@ -29831,7 +29834,10 @@ async function canonicalInceptionIssuanceOptions(
               reason: "previous-block-hash-unavailable",
             });
           }
-          const snapshot = await proofIndexCanonicalSummaryLedgerPayload(
+          const scopedOracle = replayBinding ? null : await proofIndexScopedIncbIssuanceOraclePayload(
+            network, txid, Number(bond.blockHeight) - 1, previousBlockHash,
+          );
+          const snapshot = scopedOracle ?? await proofIndexCanonicalSummaryLedgerPayload(
             network,
             Number(bond.blockHeight) - 1,
             previousBlockHash,
@@ -51460,7 +51466,7 @@ async function internalCanonicalSummaryPayload(network, options = {}) {
     );
   }
 
-  const checkpointSnapshotId = sha256Hex(
+  const checkpointSnapshotId = canonicalSummarySnapshotIdOutsideScopedOracle(sha256Hex(
     Buffer.from(
       JSON.stringify({
         indexedThroughBlock: before.indexedThroughBlock,
@@ -51468,7 +51474,7 @@ async function internalCanonicalSummaryPayload(network, options = {}) {
         sourceSnapshotId: ledger.snapshotId,
       }),
     ),
-  ).slice(0, 24);
+  ).slice(0, 24));
   const hashBoundLedger = {
     ...ledger,
     indexedThroughBlockHash: before.tipHash,

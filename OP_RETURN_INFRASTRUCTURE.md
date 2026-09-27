@@ -3412,6 +3412,29 @@ set is accepted; target queries, supply addition, and derived-summary
 invalidation begin at that selected bond. The earlier bond is not repaired by
 that invocation. The selected target still requires its full verified H-1
 summary and all existing replay, provenance, and conservation checks.
+The separately pinned scoped-oracle path is for the single approved `ebe60fd1…`
+repair when production has an ordinary completed rebuild. It remains disabled
+until `SCOPED_INCB_ORACLE_PIN` contains the reviewed independent replay proof.
+`npm run indexer:import-scoped-incb-oracle -- --artifact /absolute/source.ndjson
+--proof /absolute/proof.json` defaults to rollback; apply additionally requires
+`POW_IMPORT_SCOPED_INCB_ORACLE_APPLY=1` and `--apply`. The importer verifies the
+complete source replay certificate and immutable witnesses, exact artifact
+hashes, full Q16 H-1 summary, Core hashes and matching production native WORK
+state commitments. It stores one sealed proof wrapper excluded from public
+summary selection and never alters production recovery metadata. Only that
+exact transaction and snapshot can use this exception; all other repair targets
+retain the certified-production-replay requirement. Source and proof artifacts
+must be retained with their digests and backup receipts. The sealed proof keeps
+its original snapshot identity permanently. A future full canonical summary
+that reproduces that identity receives a distinct deterministic ID across all
+eight summary payloads; it cannot overwrite or promote the sealed proof.
+
+The repair also verifies the original native ordered event-set commitment after
+persisting one combined issuance mint. An exact repeat conserves the existing
+supply and returns `already-applied`, `changedRows: 0`; mismatched existing
+issuance remains an error. The scoped balance rebuild retains pending INCB
+deltas and refuses to rewrite older malformed or generic mint records.
+
 Then apply with `POW_INDEX_REPAIR_POST_V5_INCB_APPLY=1`; the default two-target invocation must
 replace only the two target transactions' reserved-namespace aliases, leave
 the completed PWT replay certificate intact, and rebuild conserved INCB

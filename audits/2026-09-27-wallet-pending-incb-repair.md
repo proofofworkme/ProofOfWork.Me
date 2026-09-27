@@ -148,3 +148,87 @@ production mint, balance, historical snapshot or recovery marker has been change
 The production marker remains an ordinary completed rebuild, not a certified
 958383 replay; existing importer/repair guards must not be bypassed or replaced
 with a copied clone certificate.
+
+## Narrow production repair admission (in preparation)
+
+Component commit `75b196ea8aab12606470f58faf947b8ca3095ee3` (PR #78,
+all three hygiene CI jobs passed and merged) replayed block 963782 successfully:
+one combined mint of `352529923159` units and the unchanged native four-record
+commitment. Its exact source archive SHA-256 is
+`ade5e4923911393e6d9f27666d3a697be3bf7562f27155456d4626d9b39236f8`.
+The isolated continuation is progressing toward the target H-1 at 968124;
+production remains on the wallet release and production INCB is unchanged.
+
+The pending scoped importer stores the independently verified H-1 source row as
+a sealed, target-only proof wrapper, not as an eligible public summary. It has
+no `canonicalSummary` source hash, no summary payloads and no green summary
+status. A read-only query using the actual PostgreSQL public-summary admission
+expression accepted the original full H963781 source and rejected its wrapper.
+The final target proof remains disabled until the completed replay certificate,
+immutable witness manifest, exact source bytes, native state commitments and
+Core hashes are reviewed and pinned. No environment override enables it.
+
+The production recovery marker is never replaced with the clone certificate.
+Only the selected `ebe60fd1…` issuance can use the scoped checkpoint; transaction
+specific cache keys prevent it being reused for another bond in the same block.
+The repair binds the two native issuance components into one persisted mint,
+then checks the original ordered block event-set commitment before commit.
+A repeated exact repair returns `already-applied` with zero changed rows and
+requires conserved supply and the same native commitment. The six older mint
+amounts and the earlier `b00b9451…` incident remain outside this repair.
+
+An independent logical copy of production is being prepared for rehearsal of
+the final pinned importer and single-target repair. This rehearsal is separate
+from the historical replay database. The expected target-only supply change is
+`224847713398447926` to `945662401792509469` units; fixed issuance value Q8 changes
+from `22484771339844794793582060` to `94566240179250949146190218`.
+These are expectations, not a receipt of production mutation.
+
+The scoped balance rebuild now refuses to reclassify any pre-existing malformed
+or generic reserved-namespace mint instead of rewriting that historical row.
+It also preserves existing pending INCB deltas during the confirmed balance
+rebuild. These safeguards apply only to the explicitly scoped issuance repair;
+ordinary canonical recovery behavior is unchanged.
+
+The production rehearsal backup completed at `2026-09-27T03:11:11Z`: custom
+archive size `20162773017` bytes, SHA-256
+`89d1718cfa6b3e0c1e825ac50149605ec2b048d26e94539da843b4358e0a7850`.
+Its restore list passed and the checksum was independently re-read before
+restoration into `proof_indexer_scoped_rehearsal_20260927` on the private Unix
+socket/port 65447. This is a rehearsal backup, not the final production repair
+window backup. Native production H968124 is already pinned by closing state
+`1ba106b2a4636f92a3f4479c1f6b0181448b47e85144640abc99142463f2df8e`
+and WORK token state
+`7d8fc8fbea6d4e2913988ea0c1b6230bd00beddaca00d83ab5cb55b2873da69c`;
+the completed independent source must match both exactly.
+
+
+The restored production baseline passed all 25 ledger checks at block 968773
+(hash `0000000000000000000002e48c0a7659a430c38fe079ebb47a2ffbc344188a9e`),
+using exact commit `2f6378963aae66c3e601405e9a772fd6f306b214` with admission
+disabled. It retained 46 mints and supply `224847713398447926`; response SHA-256
+`b1a42b5cc4d38ec7577311dd301a31b98b8aa63806cbe05f963b5be092e7abbb`.
+The initial baseline connection was rejected by the private cluster's exact
+database allowlist. A single local peer rule for the new rehearsal database
+resolved it; production authentication was unchanged. Restore completed at
+03:33:53 UTC and the baseline passed at 03:35:07 UTC.
+
+The immutable before-inventory covers all transactions, blocks, metadata,
+unrelated events and references, non-INCB balances/definitions, listings,
+9,153 complete native transitions, 20,407 snapshots, and all 46 existing INCB
+mints. Inventory SHA-256 is
+`86e25a35c1c37c37c7d53a954b30884e1f78ec0468259d222526d24ce9d20fd8`;
+ordered native-row SHA-256 is
+`a738062d70578861d5467e66a185bfe7f69cad5a20a6598f2bd9a814917e4aee`.
+There were no pending INCB deltas in this baseline. The production target block
+still contains only its accepted parent bond, accepted WORK transfer, and two
+invalid issuance aliases.
+
+A future full replay can deterministically reproduce an H-1 snapshot identity.
+That identity is reserved for the sealed scoped oracle once pinned, so a newly
+rebuilt public summary receives a distinct deterministic identity if it would
+collide. All eight summary children and the ledger use the distinct identity;
+the original proof remains immutable and excluded from public summaries.
+The scoped oracle and full API builder regressions pass, as do 547 recovery
+behavior checks and server-global/module-syntax checks. The target proof is
+still unpinned and no production INCB mutation has occurred.
