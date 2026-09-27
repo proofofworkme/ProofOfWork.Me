@@ -1,3 +1,4 @@
+import { reviewedIncbReplayBaselineFromEvidence } from "../server/incb-replay-baseline.mjs";
 import { SCOPED_INCB_ORACLE_PIN, scopedIncbOracleProjectionRows, storedScopedIncbOracle } from "../server/incb-scoped-oracle.mjs";
 import { canonicalIncbReplayComponents } from "../server/incb-replay-components.mjs";
 import { createHash, randomBytes } from "node:crypto";
@@ -16241,6 +16242,12 @@ function canonicalSummaryIncbHistoricalBaselineCurrent(payload) {
   const baselineCheck = checkByName(
     "inception-historical-issuance-baseline",
   );
+  const replayEvidence = baselineCheck?.details?.replayBaselineEvidence;
+  const historicalIncbBaseline = replayEvidence
+    ? reviewedIncbReplayBaselineFromEvidence(replayEvidence,
+        Number(item.indexedThroughBlock), String(item.indexedThroughBlockHash ?? ""))
+    : LIVENET_INCB_HISTORICAL_BASELINE;
+  if (!historicalIncbBaseline) return false;
   const parentCount = Math.max(
     numberOrNull(seededCheck?.details?.seeded) ?? 0,
     numberOrNull(seededCheck?.details?.loggedParents) ?? 0,
@@ -16251,7 +16258,7 @@ function canonicalSummaryIncbHistoricalBaselineCurrent(payload) {
     return true;
   }
   const exactRequired =
-    parentCount === LIVENET_INCB_HISTORICAL_BASELINE.parentBondEvents;
+    parentCount === historicalIncbBaseline.parentBondEvents;
   const integerValueOk = (actual, expected) => {
     const text = canonicalIntegerText(actual);
     if (!text) {
@@ -16268,7 +16275,7 @@ function canonicalSummaryIncbHistoricalBaselineCurrent(payload) {
   const confirmedMints = numberOrNull(
     inceptionSummary?.token?.stats?.confirmedMints,
   );
-  if (parentCount < LIVENET_INCB_HISTORICAL_BASELINE.parentBondEvents) {
+  if (parentCount < historicalIncbBaseline.parentBondEvents) {
     return (
       Number.isSafeInteger(confirmedMints) &&
       confirmedMints > 0 &&
@@ -16278,26 +16285,26 @@ function canonicalSummaryIncbHistoricalBaselineCurrent(payload) {
   return (
     baselineCheck?.ok === true &&
     Number.isSafeInteger(confirmedMints) &&
-    confirmedMints >= LIVENET_INCB_HISTORICAL_BASELINE.acceptedMints &&
+    confirmedMints >= historicalIncbBaseline.acceptedMints &&
     integerValueOk(
       inceptionActual?.directProofIssuanceUnits,
-      LIVENET_INCB_HISTORICAL_BASELINE.directProofIssuanceUnits,
+      historicalIncbBaseline.directProofIssuanceUnits,
     ) &&
     integerValueOk(
       inceptionActual?.attachedWorkIssuanceUnits,
-      LIVENET_INCB_HISTORICAL_BASELINE.attachedWorkIssuanceUnits,
+      historicalIncbBaseline.attachedWorkIssuanceUnits,
     ) &&
     integerValueOk(
       inceptionSummary?.stats?.confirmedSupply,
-      LIVENET_INCB_HISTORICAL_BASELINE.confirmedSupply,
+      historicalIncbBaseline.confirmedSupply,
     ) &&
     integerValueOk(
       inceptionActual?.issuanceNetworkValueQ8,
-      LIVENET_INCB_HISTORICAL_BASELINE.networkValueQ8,
+      historicalIncbBaseline.networkValueQ8,
     ) &&
     integerValueOk(
       inceptionActual?.issuanceDustQ8,
-      LIVENET_INCB_HISTORICAL_BASELINE.issuanceDustQ8,
+      historicalIncbBaseline.issuanceDustQ8,
     )
   );
 }

@@ -1,0 +1,18 @@
+{
+  "model": "incb-replay-baseline-reference-v1",
+  "checkpointHeight": 963781,
+  "checkpointHash": "0000000000000000000125cb7a4ec1acf7be628e927f8d42fe277969c61d02a9",
+  "snapshotId": "6838bcd9ef74c5b9b408ca2f",
+  "sourceRowFileSha256": "dc478211126a97ff58aa929062b6643792c907fb51ad52ac5ffe573b47ce4a22",
+  "ledgerChecks": 25,
+  "ledgerGreen": true,
+  "baseline": {
+    "acceptedMints": 46,
+    "attachedWorkIssuanceUnits": "210841369556871205",
+    "confirmedSupply": "210841369556898591",
+    "directProofIssuanceUnits": "27386",
+    "issuanceDustQ8": "2014940890",
+    "networkValueQ8": "21084136955689861114940890",
+    "parentBondEvents": 46
+  }
+}

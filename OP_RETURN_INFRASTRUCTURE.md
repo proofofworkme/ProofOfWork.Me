@@ -3340,6 +3340,23 @@ without inventing outpoint spends. This does not change public read admission,
 confirmed event rows, balances, or migration markers. Missing, duplicate or
 conflicting evidence still aborts the summary.
 
+Before manually probing an active replay checkpoint, synchronize its WORK
+balance projection using the existing hash-bound replay reconciliation. Bounded
+scan batches may leave that derived table at their starting checkpoint; the
+normal next-pass startup and inception barrier perform this synchronization.
+Do not bypass holder parity because an extra diagnostic probe ran too early.
+
+The reviewed independent replay lineage `15638b38…` has a separate INCB baseline
+in `server/incb-replay-baseline.mjs`. Its 47-mint expectations derive from the
+previously green H963781 source row plus the independently verified H963782
+issuance, with exact Q8 arithmetic and pinned source evidence. Only the current
+verified active replay binding may select this profile in the internal ledger
+builder. Stored replay summaries retain the exact checkpoint-bound evidence;
+wrong lineage, witness set, height, hash or amounts fail admission. Ordinary
+production continues using the original 46-mint baseline. This profile neither
+changes older production amounts nor authorizes importing replay totals as a
+public production summary.
+
 Post-V5 native INCB replay records direct payment and an accepted WORK attachment
 as separate derived components. Persist one canonical recipient mint with their
 exact combined issuance and retain a component witness on that mint. Event-set

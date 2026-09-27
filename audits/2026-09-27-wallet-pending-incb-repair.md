@@ -264,3 +264,38 @@ scoped proof pin remains null; this release did not perform the data repair.
 Core/database services and the independent historical replay remained running.
 Durable cutover evidence is under
 `/data/proofofwork-incb-guarded-cutover-f4ca769e9202-20260927T055111Z/cutover`.
+
+
+## H968124 checkpoint validation
+
+The isolated replay reached H968124 after completing the 965783–967782 batch
+(2,000 blocks, 592 protocol transaction IDs, zero skips) and the following
+342-block batch. The retained first-batch continuation journal SHA-256 is
+`145f05db462b0491bb492adfd9c9968b4631fb857e711c7c8f1f23396a819d9f`.
+An extra pre-barrier summary probe stopped safely because the derived WORK
+balance table still reflected the start of its batch. Both projections contained
+the same 228 WORK transfers and 84 sales, and listing reconciliation passed.
+The existing guarded, WORK-only balance synchronization resolved this mismatch
+without changing the replay checkpoint. This was an orchestration-order issue;
+no parity guard was removed and production was unaffected.
+
+The repeated probe passed WORK holder reconciliation and exact native WORK
+value `840950469793071163780428513`, but the historical INCB baseline check
+correctly refused to compare independent replay totals to the old production
+46-mint totals. All 24 other ledger checks passed. The replay profile now derives
+its exact expectation from green snapshot `6838bcd9ef74c5b9b408ca2f` at 963781
+(source-row file SHA-256
+`dc478211126a97ff58aa929062b6643792c907fb51ad52ac5ffe573b47ce4a22`)
+and the independently verified `b00b9451…` component fixture at 963782.
+The resulting baseline has 47 mints, supply `210841722086821750`, direct units
+`27932`, attached units `210841722086793818`, fixed value Q8
+`21084172208682177064339629`, and issuance dust Q8 `2064339629`.
+
+Selection requires the exact reviewed active replay binding and immutable
+18-entry witness set. The source checkpoint, lineage and witness pins are
+retained in the ledger check; stored-summary admission rejects tampering.
+Ordinary production keeps its original baseline and earlier mint amounts.
+Regressions cover the actual ledger check and stored-summary validator,
+including unchanged production admission, false zero, wrong witness/checkpoint,
+and one-Q8-unit discrepancies. The target proof remains disabled pending a
+successful repeat and complete replay certificate.

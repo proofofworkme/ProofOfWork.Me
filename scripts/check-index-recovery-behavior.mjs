@@ -1,3 +1,4 @@
+import { REVIEWED_INCB_REPLAY_BASELINE, reviewedIncbReplayBaselineEvidence, reviewedIncbReplayBaselineFromEvidence } from "../server/incb-replay-baseline.mjs";
 import { SCOPED_INCB_ORACLE_PIN, scopedIncbOracleProjectionRows, storedScopedIncbOracle, canonicalSummarySnapshotIdOutsideScopedOracle } from "../server/incb-scoped-oracle.mjs";
 import { canonicalIncbReplayComponents } from "../server/incb-replay-components.mjs";
 import assert from "node:assert/strict";
@@ -17915,6 +17916,7 @@ check("stored canonical summaries reject false-zero historical INCB issuance", (
     "canonicalSummaryIncbHistoricalBaselineCurrent",
     {
       LIVENET_INCB_HISTORICAL_BASELINE: baseline,
+      reviewedIncbReplayBaselineFromEvidence,
       NETWORK: "livenet",
       canonicalIntegerText: (value) => {
         const text = String(value ?? "").trim();
@@ -17983,6 +17985,53 @@ check("stored canonical summaries reject false-zero historical INCB issuance", (
     canonicalSummaryIncbHistoricalBaselineCurrent(restored),
     true,
   );
+  const binding = {
+    model: "proof-indexer-pwt-range-replay-verifier-binding-v1", network: "livenet",
+    bindingId: "15638b38fe701044afc5e92eadaf6f29dcb787be4e12b9db4d8ffbe551e629de",
+    witnessSetHash: "ebccb0dd8a672b85da5ce0777f5c33f555f1cd9628b08cfa3de5153a471733a5",
+    rangeReplayFromHeight: 958383, witnessCount: 18, witnessPreserveCount: 10,
+    witnessedThroughBlock: 968345,
+    witnessedThroughBlockHash: "00000000000000000000b56a54d88f947645b2d5bf8a164a6d0b98b4ff24d4c6",
+  };
+  const height = 968124, hash = "000000000000000000011837b393ac8b60920238da37902390ad8629e76002f6";
+  const evidence = reviewedIncbReplayBaselineEvidence(binding, height, hash);
+  assert.ok(evidence);
+  for (const changed of [{bindingId:"a".repeat(64)},{witnessSetHash:"b".repeat(64)},
+    {witnessCount:17},{witnessPreserveCount:9},{rangeReplayFromHeight:958384},{network:"testnet"}]) {
+    assert.equal(reviewedIncbReplayBaselineEvidence({...binding,...changed},height,hash),null);
+  }
+  assert.equal(reviewedIncbReplayBaselineEvidence(binding,height,"a".repeat(64)),null);
+  assert.equal(reviewedIncbReplayBaselineEvidence(binding,963781,hash),null);
+  const reference = JSON.parse(readFileSync(new URL("./fixtures/incb-replay-baseline-963782.json", import.meta.url),"utf8"));
+  const mint = JSON.parse(readFileSync(new URL("./fixtures/incb-replay-components-963782.json", import.meta.url),"utf8")).mint;
+  assert.equal(reference.ledgerGreen,true);assert.equal(reference.ledgerChecks,25);
+  assert.equal(evidence.referenceRowSha256,reference.sourceRowFileSha256);
+  assert.equal(evidence.referenceSnapshotId,reference.snapshotId);
+  assert.equal(evidence.referenceIssuanceTxid,mint.txid);
+  for(const [key,mintKey] of [["attachedWorkIssuanceUnits","attachedWorkIssuanceUnits"],
+    ["confirmedSupply","amount"],["directProofIssuanceUnits","directProofIssuanceUnits"],
+    ["issuanceDustQ8","issuanceDustQ8"],["networkValueQ8","issuanceNetworkValueQ8"]]) {
+    assert.equal(REVIEWED_INCB_REPLAY_BASELINE[key],String(BigInt(reference.baseline[key])+BigInt(mint[mintKey])));
+  }
+  assert.equal(REVIEWED_INCB_REPLAY_BASELINE.acceptedMints,reference.baseline.acceptedMints+1);
+  const replay = structuredClone(restored);replay.indexedThroughBlock=height;replay.indexedThroughBlockHash=hash;
+  const rb=REVIEWED_INCB_REPLAY_BASELINE;
+  replay.summaryPayloads.inceptionSummary.actualValue={directProofIssuanceUnits:rb.directProofIssuanceUnits,
+    attachedWorkIssuanceUnits:rb.attachedWorkIssuanceUnits,issuanceDustQ8:rb.issuanceDustQ8,issuanceNetworkValueQ8:rb.networkValueQ8};
+  replay.summaryPayloads.inceptionSummary.stats.confirmedSupply=rb.confirmedSupply;
+  replay.summaryPayloads.inceptionSummary.token.stats.confirmedMints=rb.acceptedMints;
+  assert.equal(canonicalSummaryIncbHistoricalBaselineCurrent(replay),false,"ordinary production must reject replay totals");
+  replay.checks[1].details.replayBaselineEvidence=evidence;
+  assert.equal(canonicalSummaryIncbHistoricalBaselineCurrent(replay),true);
+  for (const mutate of [p=>{p.checks[1].details.replayBaselineEvidence.bindingId="a".repeat(64);},
+    p=>{p.indexedThroughBlockHash="a".repeat(64);},p=>{p.indexedThroughBlock--;},
+    p=>{p.summaryPayloads.inceptionSummary.stats.confirmedSupply="0";},
+    p=>{p.summaryPayloads.inceptionSummary.actualValue.issuanceDustQ8=String(BigInt(rb.issuanceDustQ8)+1n);},
+    p=>{p.summaryPayloads.inceptionSummary.token.stats.confirmedMints=46;}]) {
+    const bad=structuredClone(replay);mutate(bad);assert.equal(canonicalSummaryIncbHistoricalBaselineCurrent(bad),false);
+  }
+  assert.equal(canonicalSummaryIncbHistoricalBaselineCurrent(restored),true,"original production baseline stays accepted");
+
 });
 
 check("current snapshot readers require atomic WORK markers while pinned history bypasses them", async () => {
@@ -18261,10 +18310,12 @@ check("ledger consistency counts AMO bootstrap carry on the ledger side", () => 
     marketplaceMutationFeesCountedOk(428_064, 429_156, 546),
     false,
   );
+  let replayIssuance = null;
   const ledgerSnapshotChecks = isolatedFunction(
     API_PATH,
     "ledgerSnapshotChecks",
     {
+      reviewedIncbReplayBaselineFromEvidence,
       activityAmountSats: (item) => Number(item?.amountSats ?? 0),
       activityCoverageByTxidKind: () => new Map(),
       BOND_VALUE_Q8_SCALE: 100_000_000n,
@@ -18301,7 +18352,7 @@ check("ledger consistency counts AMO bootstrap carry on the ledger side", () => 
         networkValueQ8: "22484771339844794793582060",
         parentBondEvents: 47,
       },
-      inceptionIssuanceMetadataFromMints: () => ({
+      inceptionIssuanceMetadataFromMints: () => replayIssuance ?? ({
         canonicalMints: 0,
         complete: true,
         confirmedIssuanceUnits: "0",
@@ -18316,7 +18367,7 @@ check("ledger consistency counts AMO bootstrap carry on the ledger side", () => 
         }
         return BigInt(value);
       },
-      isInceptionBondActivityItem: () => false,
+      isInceptionBondActivityItem: (item) => item?.kind === "inception-bond",
       isInfinityBondActivityItem: () => false,
       MARKETPLACE_MUTATION_KINDS: new Set(["token-listing"]),
       marketplaceMutationFeesCountedOk,
@@ -18328,7 +18379,7 @@ check("ledger consistency counts AMO bootstrap carry on the ledger side", () => 
       scopedTokenPayloadFromState: (_state, tokenId) =>
         tokenId === POWB_TOKEN_ID
           ? { confirmedSupply: "630196569" }
-          : { confirmedSupply: "0", mints: [], sales: [], transfers: [] },
+          : { confirmedSupply: replayIssuance?.confirmedIssuanceUnits ?? "0", mints: [], sales: [], transfers: [] },
       TOKEN_MARKETPLACE_MUTATION_KINDS: new Set(["token-listing"]),
       tokenComponentCoverageFromConfirmedActivity: () => ({ ok: true }),
       tokenStateLogExpectations: () => [],
@@ -18424,6 +18475,28 @@ check("ledger consistency counts AMO bootstrap carry on the ledger side", () => 
     )?.ok,
     false,
   );
+  const rb = REVIEWED_INCB_REPLAY_BASELINE;
+  replayIssuance = {...rb,canonicalMints:47,confirmedMints:47,complete:true,
+    confirmedIssuanceUnits:rb.confirmedSupply,issuanceNetworkValueQ8:rb.networkValueQ8};
+  const replayPayload=structuredClone(payload);
+  replayPayload.activity=Array.from({length:47},(_,i)=>({kind:"inception-bond",confirmed:true,amountSats:546,txid:String(i)}));
+  replayPayload.metrics.indexedThroughBlock=968124;
+  const evidence=reviewedIncbReplayBaselineEvidence({
+    model:"proof-indexer-pwt-range-replay-verifier-binding-v1",network:"livenet",
+    bindingId:"15638b38fe701044afc5e92eadaf6f29dcb787be4e12b9db4d8ffbe551e629de",
+    witnessSetHash:"ebccb0dd8a672b85da5ce0777f5c33f555f1cd9628b08cfa3de5153a471733a5",
+    rangeReplayFromHeight:958383,witnessCount:18,witnessPreserveCount:10,witnessedThroughBlock:968345,
+    witnessedThroughBlockHash:"00000000000000000000b56a54d88f947645b2d5bf8a164a6d0b98b4ff24d4c6",
+  },968124,"000000000000000000011837b393ac8b60920238da37902390ad8629e76002f6");
+  const baselineCheck=p=>ledgerSnapshotChecks(p).checks.find(c=>c.name==="inception-historical-issuance-baseline");
+  assert.equal(baselineCheck(replayPayload).ok,false,"production must retain its exact historical baseline");
+  replayPayload.incbReplayBaselineEvidence=evidence;
+  assert.equal(baselineCheck(replayPayload).ok,true,"the verified lineage uses independently derived replay totals");
+  assert.equal(baselineCheck(replayPayload).details.acceptedMints,47);
+  replayIssuance={...replayIssuance,issuanceNetworkValueQ8:String(BigInt(rb.networkValueQ8)+1n)};
+  assert.equal(baselineCheck(replayPayload).ok,false,"one Q8 unit cannot be hidden by the replay profile");
+  assert.throws(()=>baselineCheck({...replayPayload,incbReplayBaselineEvidence:{...evidence,bindingId:"a".repeat(64)}}),/unverified replay evidence/);
+
 });
 
 check("credit frozen-value consistency uses exact Q8 above float precision", () => {
