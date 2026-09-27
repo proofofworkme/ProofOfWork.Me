@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { SCOPED_INCB_ORACLE_PIN } from "./incb-scoped-oracle.mjs";
+import { SCOPED_INCB_ORACLE_PIN, canonicalSummarySnapshotIdOutsideScopedOracle } from "./incb-scoped-oracle.mjs";
 
 import { execFile } from "node:child_process";
 import { createHash, timingSafeEqual } from "node:crypto";
@@ -51466,7 +51466,7 @@ async function internalCanonicalSummaryPayload(network, options = {}) {
     );
   }
 
-  const checkpointSnapshotId = sha256Hex(
+  const checkpointSnapshotId = canonicalSummarySnapshotIdOutsideScopedOracle(sha256Hex(
     Buffer.from(
       JSON.stringify({
         indexedThroughBlock: before.indexedThroughBlock,
@@ -51474,7 +51474,7 @@ async function internalCanonicalSummaryPayload(network, options = {}) {
         sourceSnapshotId: ledger.snapshotId,
       }),
     ),
-  ).slice(0, 24);
+  ).slice(0, 24));
   const hashBoundLedger = {
     ...ledger,
     indexedThroughBlockHash: before.tipHash,

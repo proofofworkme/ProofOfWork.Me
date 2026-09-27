@@ -3424,7 +3424,10 @@ state commitments. It stores one sealed proof wrapper excluded from public
 summary selection and never alters production recovery metadata. Only that
 exact transaction and snapshot can use this exception; all other repair targets
 retain the certified-production-replay requirement. Source and proof artifacts
-must be retained with their digests and backup receipts.
+must be retained with their digests and backup receipts. The sealed proof keeps
+its original snapshot identity permanently. A future full canonical summary
+that reproduces that identity receives a distinct deterministic ID across all
+eight summary payloads; it cannot overwrite or promote the sealed proof.
 
 The repair also verifies the original native ordered event-set commitment after
 persisting one combined issuance mint. An exact repeat conserves the existing

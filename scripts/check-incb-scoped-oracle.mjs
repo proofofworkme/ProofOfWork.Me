@@ -9,7 +9,7 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { SCOPED_INCB_ORACLE_PIN, SCOPED_INCB_ORACLE_MODEL, verifiedScopedIncbOracleSource,
   scopedIncbOracleWrapper, verifiedScopedIncbOracleRow, storedScopedIncbOracle,
-  scopedIncbOracleLedgerPayload } from "../server/incb-scoped-oracle.mjs";
+  scopedIncbOracleLedgerPayload, canonicalSummarySnapshotIdOutsideScopedOracle } from "../server/incb-scoped-oracle.mjs";
 import { importScopedIncbOracle } from "./import-scoped-incb-oracle.mjs";
 const sha = (v) => createHash("sha256").update(v).digest("hex");
 const pin = { txid:"e".repeat(64),snapshotId:"1".repeat(24),height:968124,
@@ -23,6 +23,12 @@ const row = {network:"livenet",snapshot_id:pin.snapshotId,indexed_through_block:
     totals:{workNetworkValueQ8:pin.workNetworkValueQ8},summaryPayloads:{workFloor:{}},
     workSufficientState:{closingStateCommitment:{sha256:pin.closingStateSha256},tokenStateCommitment:{sha256:pin.tokenStateSha256}}}};
 const raw = JSON.stringify(row);pin.sourceRowSha256=sha(raw);
+const distinctSummaryId = canonicalSummarySnapshotIdOutsideScopedOracle(pin.snapshotId, pin);
+assert.match(distinctSummaryId, /^[0-9a-f]{24}$/u);
+assert.notEqual(distinctSummaryId, pin.snapshotId);
+assert.equal(canonicalSummarySnapshotIdOutsideScopedOracle(pin.snapshotId, pin), distinctSummaryId);
+assert.equal(canonicalSummarySnapshotIdOutsideScopedOracle(distinctSummaryId, pin), distinctSummaryId);
+assert.equal(canonicalSummarySnapshotIdOutsideScopedOracle(pin.snapshotId, null), pin.snapshotId);
 const wrapper = scopedIncbOracleWrapper(raw,pin);
 assert.deepEqual(verifiedScopedIncbOracleRow(wrapper,pin),row);
 assert.equal(wrapper.payload.model,SCOPED_INCB_ORACLE_MODEL);

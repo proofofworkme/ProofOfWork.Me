@@ -1,4 +1,4 @@
-import { SCOPED_INCB_ORACLE_PIN, scopedIncbOracleProjectionRows, storedScopedIncbOracle } from "../server/incb-scoped-oracle.mjs";
+import { SCOPED_INCB_ORACLE_PIN, scopedIncbOracleProjectionRows, storedScopedIncbOracle, canonicalSummarySnapshotIdOutsideScopedOracle } from "../server/incb-scoped-oracle.mjs";
 import { canonicalIncbReplayComponents } from "../server/incb-replay-components.mjs";
 import assert from "node:assert/strict";
 import { createHash, timingSafeEqual } from "node:crypto";
@@ -1521,7 +1521,7 @@ function isolatedFunction(path, name, globals = {}) {
     uniqueMarketplaceMutationActivity,
     validTxid,
     canonicalIncbReplayComponents,
-    SCOPED_INCB_ORACLE_PIN, scopedIncbOracleProjectionRows, storedScopedIncbOracle,
+    SCOPED_INCB_ORACLE_PIN, scopedIncbOracleProjectionRows, storedScopedIncbOracle, canonicalSummarySnapshotIdOutsideScopedOracle,
     proofIndexScopedIncbIssuanceOraclePayload: async () => null,
     ...globals,
   });
@@ -36724,6 +36724,37 @@ check("post-replay historical INCB checkpoints pin late H-1 evidence", async () 
       activeSummary.workNetworkValueQ8,
     );
   }
+});
+
+check("rebuilt public summaries cannot overwrite the sealed scoped INCB proof identity", async () => {
+  const pin = { snapshotId: "a".repeat(24) }, height = 968124, blockHash = "b".repeat(64);
+  const baseLedger = { snapshotId: "old-ledger", indexedThroughBlock: height,
+    consistency: { ok: true }, metrics: { indexedThroughBlock: height }, workFloor: {} };
+  const attached = (_payload, ledger) => ({ snapshotId: ledger.snapshotId, indexedThroughBlock: height });
+  const build = isolatedFunction(API_PATH, "internalCanonicalSummaryPayload", {
+    exactCanonicalSummaryCheckpoint: async () => ({ indexedThroughBlock: height, tipHash: blockHash }),
+    buildIndexedCanonicalLedgerPayload: async () => baseLedger,
+    ledgerPayloadHasCurrentChecks: () => true,
+    ledgerPayloadIndexedThroughBlock: () => height,
+    sha256Hex: () => pin.snapshotId + "0".repeat(40),
+    canonicalSummarySnapshotIdOutsideScopedOracle: id => canonicalSummarySnapshotIdOutsideScopedOracle(id, pin),
+    attachLedgerMetadata: attached,
+    growthSummaryPayloadFromLedger: () => ({}), inceptionSummaryPayloadFromLedger: () => ({}),
+    infinitySummaryPayloadFromLedger: () => ({}), compactActivitySummaryPayload: () => ({}),
+    marketplaceSummaryPayloadFromLedger: ledger => attached({}, ledger),
+    compactTokenDirectorySummaryPayload: () => ({}), ledgerTokenStateForScope: () => ({}),
+    internalCanonicalWorkSummaryPayload: ledger => attached({}, ledger),
+    payloadSnapshotId: payload => payload.snapshotId,
+    proofIndexPayloadIndexedThroughBlock: payload => payload.indexedThroughBlock,
+    summaryPayloadHasFiniteNetworkValue: () => true,
+    ledgerConsistencyPayloadFromLedger: ledger => attached({}, ledger),
+  });
+  const result = await build("livenet");
+  const expected = canonicalSummarySnapshotIdOutsideScopedOracle(pin.snapshotId, pin);
+  assert.notEqual(result.snapshotId, pin.snapshotId); assert.equal(result.snapshotId, expected);
+  assert.equal(result.ledger.snapshotId, expected); assert.equal(Object.keys(result.summaryPayloads).length, 8);
+  for (const payload of Object.values(result.summaryPayloads)) assert.equal(payload.snapshotId, expected);
+  assert.equal(baseLedger.snapshotId, "old-ledger"); assert.equal(pin.snapshotId, "a".repeat(24));
 });
 
 check("scoped INCB issuance cannot share its checkpoint with another bond in the same block", async () => {

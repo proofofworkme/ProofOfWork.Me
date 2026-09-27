@@ -9,6 +9,18 @@ export const SCOPED_INCB_ORACLE_PIN = null;
 const digest = (text) => createHash("sha256").update(text, "utf8").digest("hex");
 const fail = () => { throw new Error("Scoped INCB oracle does not match the approved independent replay proof."); };
 
+// The sealed issuance proof owns its original snapshot ID permanently. A future
+// full replay may reproduce that ID; its public summary needs a distinct ID so
+// it cannot overwrite the proof or fail on an immutable-row collision.
+export function canonicalSummarySnapshotIdOutsideScopedOracle(snapshotId, pin = SCOPED_INCB_ORACLE_PIN) {
+  if (!pin || snapshotId !== pin.snapshotId) return snapshotId;
+  const distinctId = digest(JSON.stringify({
+    model: "canonical-summary-distinct-from-scoped-incb-oracle-v1", snapshotId,
+  })).slice(0, 24);
+  if (distinctId === snapshotId) return fail();
+  return distinctId;
+}
+
 export function verifiedScopedIncbOracleSource(sourceRowJson, pin = SCOPED_INCB_ORACLE_PIN) {
   if (!pin || typeof sourceRowJson !== "string" || sourceRowJson.length > 8 * 1024 * 1024 ||
       !/^[0-9a-f]{64}$/u.test(pin.sourceRowSha256) || digest(sourceRowJson) !== pin.sourceRowSha256) return fail();

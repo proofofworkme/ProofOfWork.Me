@@ -201,3 +201,34 @@ window backup. Native production H968124 is already pinned by closing state
 and WORK token state
 `7d8fc8fbea6d4e2913988ea0c1b6230bd00beddaca00d83ab5cb55b2873da69c`;
 the completed independent source must match both exactly.
+
+
+The restored production baseline passed all 25 ledger checks at block 968773
+(hash `0000000000000000000002e48c0a7659a430c38fe079ebb47a2ffbc344188a9e`),
+using exact commit `2f6378963aae66c3e601405e9a772fd6f306b214` with admission
+disabled. It retained 46 mints and supply `224847713398447926`; response SHA-256
+`b1a42b5cc4d38ec7577311dd301a31b98b8aa63806cbe05f963b5be092e7abbb`.
+The initial baseline connection was rejected by the private cluster's exact
+database allowlist. A single local peer rule for the new rehearsal database
+resolved it; production authentication was unchanged. Restore completed at
+03:33:53 UTC and the baseline passed at 03:35:07 UTC.
+
+The immutable before-inventory covers all transactions, blocks, metadata,
+unrelated events and references, non-INCB balances/definitions, listings,
+9,153 complete native transitions, 20,407 snapshots, and all 46 existing INCB
+mints. Inventory SHA-256 is
+`86e25a35c1c37c37c7d53a954b30884e1f78ec0468259d222526d24ce9d20fd8`;
+ordered native-row SHA-256 is
+`a738062d70578861d5467e66a185bfe7f69cad5a20a6598f2bd9a814917e4aee`.
+There were no pending INCB deltas in this baseline. The production target block
+still contains only its accepted parent bond, accepted WORK transfer, and two
+invalid issuance aliases.
+
+A future full replay can deterministically reproduce an H-1 snapshot identity.
+That identity is reserved for the sealed scoped oracle once pinned, so a newly
+rebuilt public summary receives a distinct deterministic identity if it would
+collide. All eight summary children and the ledger use the distinct identity;
+the original proof remains immutable and excluded from public summaries.
+The scoped oracle and full API builder regressions pass, as do 547 recovery
+behavior checks and server-global/module-syntax checks. The target proof is
+still unpinned and no production INCB mutation has occurred.
