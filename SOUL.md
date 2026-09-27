@@ -308,7 +308,7 @@ Future agents must preserve these unless the user explicitly asks for a migratio
 - `computer.proofofwork.me` is the full mail/computer app.
 - `desktop.proofofwork.me` is the public read-only file desktop.
 - `browser.proofofwork.me` is the standalone public HTML renderer.
-- `boost.proofofwork.me` is the public Proof-ranked social feed over confirmed `pwb1:` records; original posts reuse Mail/Files, and paid actions and asset trades use the Boost protocol.
+- `boost.proofofwork.me` is the public Proof-ranked social feed over confirmed `pwb1:` records; original posts reuse Mail/Files, and paid actions and asset trades use the Boost protocol. The feed leads with people and posts; proof evidence and exact signal lanes remain inspectable through disclosures. Compact display quantities never become ranking, payment, or signing authority.
 - `amo.proofofwork.me` is the canonical Autonomous Money Organization surface for governed WORK units and the existing ID/credit sale-ticket markets.
 - `marketplace.proofofwork.me` is a retained compatibility hostname for AMO; it is not a separate protocol or state plane.
 - `credit.proofofwork.me` is the standalone credit creation and mint app.
