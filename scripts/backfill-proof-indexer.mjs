@@ -1,3 +1,4 @@
+import { canonicalIncbReplayComponents } from "../server/incb-replay-components.mjs";
 import { createHash, randomBytes } from "node:crypto";
 import { request as httpRequest } from "node:http";
 import net from "node:net";
@@ -24419,6 +24420,17 @@ export function bindPreparedTransactionsToWorkAmoV5Replay(
           `Canonical AMO prepared item has no exact replay outcome at ${position.key}.`,
         );
       }
+      const incbComponents = canonicalIncbReplayComponents(item, transition.replayRecords);
+      if (incbComponents) {
+        for (const component of incbComponents.attachments) {
+          const key = workAmoV5ReplayPositionKey(component).key;
+          if (!replayByPosition.has(key) || preparedPositions.has(key)) {
+            throw new Error("Canonical INCB replay component was consumed twice.");
+          }
+          replayByPosition.delete(key);
+          preparedPositions.add(key);
+        }
+      }
       const outcome = replay?.outcome;
       const valid = outcome?.valid === true;
       const reasonCode = valid
@@ -24531,6 +24543,10 @@ export function bindPreparedTransactionsToWorkAmoV5Replay(
         ...item,
         ...semanticProjection,
         ...(governedListingMaterialization ?? {}),
+        ...(incbComponents ? {
+          amount: item.amount,
+          workAmoV5IncbReplayComponents: incbComponents.witness,
+        } : {}),
         _workAmoV5ReplayBound: true,
         blockHash: position.position.blockHash,
         blockHeight: position.position.blockHeight,
@@ -24698,7 +24714,7 @@ async function workAmoV5CanonicalBlockEventSet(client, transition) {
     }
     replayRecordsByPosition.set(key, record);
   }
-  const events = result.rows.map((row) => {
+  const events = result.rows.flatMap((row) => {
     const txid = String(row.txid ?? "").trim().toLowerCase();
     const rowPosition = canonicalProtocolPosition({
       blockHeight: row.block_height,
@@ -24854,6 +24870,24 @@ async function workAmoV5CanonicalBlockEventSet(client, transition) {
       };
       syntheticParentKeys.push(`${txid}:${protocolVout}`);
     }
+    const incbComponents = canonicalIncbReplayComponents(payload, transition.replayRecords);
+    const componentEvents = [];
+    if (incbComponents) {
+      if (workAmoV5CanonicalPayloadCommitment(payload.workAmoV5IncbReplayComponents).sha256 !==
+          workAmoV5CanonicalPayloadCommitment(incbComponents.witness).sha256) {
+        throw new Error("Canonical INCB stored component witness differs from native replay.");
+      }
+      for (const component of incbComponents.attachments) {
+        const key = workAmoV5ReplayPositionKey(component).key;
+        if (!replayRecordsByPosition.delete(key)) {
+          throw new Error("Canonical INCB stored component was consumed twice.");
+        }
+        componentEvents.push({ feeSats: String(row.fee_sats ?? "0"),
+          kind: workAmoV5ConsensusEventKind("pwt1", true), outcome: component.outcome,
+          payload: component.rawWitness, position: component.position, protocol: "pwt1",
+          reasonCode: "", stateDelta: component.stateDelta, txid, valid: true });
+      }
+    }
     const reasonCode = workAmoEventReasonCode(row);
     const rawCommitment = workAmoV5CanonicalPayloadCommitment(
       canonicalRawPayload,
@@ -24885,7 +24919,7 @@ async function workAmoV5CanonicalBlockEventSet(client, transition) {
       );
     }
     replayRecordsByPosition.delete(positionKey);
-    return {
+    return [{
       feeSats: String(row.fee_sats ?? "0"),
       kind: workAmoV5ConsensusEventKind(
         String(row.protocol ?? ""),
@@ -24907,7 +24941,7 @@ async function workAmoV5CanonicalBlockEventSet(client, transition) {
       stateDelta: replayRecord.stateDelta,
       txid,
       valid: row.valid === true,
-    };
+    }, ...componentEvents];
   });
   for (const parentKey of syntheticParentKeys) {
     if (!consumedCandidateKeys.has(parentKey)) {
