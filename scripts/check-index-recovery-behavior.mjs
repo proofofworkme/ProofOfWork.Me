@@ -1,3 +1,4 @@
+import { SCOPED_INCB_ORACLE_PIN, scopedIncbOracleProjectionRows, storedScopedIncbOracle } from "../server/incb-scoped-oracle.mjs";
 import { canonicalIncbReplayComponents } from "../server/incb-replay-components.mjs";
 import assert from "node:assert/strict";
 import { createHash, timingSafeEqual } from "node:crypto";
@@ -1520,6 +1521,8 @@ function isolatedFunction(path, name, globals = {}) {
     uniqueMarketplaceMutationActivity,
     validTxid,
     canonicalIncbReplayComponents,
+    SCOPED_INCB_ORACLE_PIN, scopedIncbOracleProjectionRows, storedScopedIncbOracle,
+    proofIndexScopedIncbIssuanceOraclePayload: async () => null,
     ...globals,
   });
   const dependencyGraph = path.href === API_PATH.href
@@ -36721,6 +36724,35 @@ check("post-replay historical INCB checkpoints pin late H-1 evidence", async () 
       activeSummary.workNetworkValueQ8,
     );
   }
+});
+
+check("scoped INCB issuance cannot share its checkpoint with another bond in the same block", async () => {
+  const target = { confirmed: true, kind: "inception-bond", txid: "e".repeat(64),
+    blockHeight: 968125, blockHash: "a".repeat(64), blockIndex: 2041 };
+  const other = { ...target, txid: "f".repeat(64), blockIndex: 2042 };
+  const previousHash = "b".repeat(64), cache = new Map(), scopedReads = [], ordinaryReads = [];
+  const optionsFor = isolatedFunction(API_PATH, "canonicalInceptionIssuanceOptions", {
+    SCOPED_INCB_ORACLE_PIN: { txid: target.txid },
+    canonicalPwtReplayVerifierBindingDescriptor: () => null,
+    canonicalPwtReplayVerifierBindingCacheKey: () => "",
+    canonicalPostReplayHistoricalInceptionCheckpoint: () => null,
+    canonicalInceptionPreviousBlockHash: async () => previousHash,
+    canonicalInceptionValueSnapshotCheckpoint: (snapshot) => ({ ...snapshot, valueSnapshotBlockHash: previousHash }),
+    cachedInternalVerifierState: async (key, loader) => {
+      if (!cache.has(key)) cache.set(key, Promise.resolve().then(loader));
+      return cache.get(key);
+    },
+    isInceptionBondActivityItem: (bond) => bond.kind === "inception-bond",
+    proofIndexScopedIncbIssuanceOraclePayload: async (network, txid, height, hash) => {
+      assert.equal(network, "livenet"); assert.equal(height, 968124); assert.equal(hash, previousHash);
+      scopedReads.push(txid); return txid === target.txid ? { source: "approved-target" } : null;
+    },
+    proofIndexCanonicalSummaryLedgerPayload: async () => { ordinaryReads.push(true); return { source: "ordinary" }; },
+  });
+  const options = await optionsFor("livenet", [target, other]);
+  assert.equal(options.preBondCheckpoint(target).source, "approved-target");
+  assert.equal(options.preBondCheckpoint(other).source, "ordinary");
+  assert.equal(cache.size, 2); assert.equal(scopedReads.length, 2); assert.equal(ordinaryReads.length, 1);
 });
 
 check("INCB production repair pins every historical mint and forbids stored-mint oracle fallback", () => {
@@ -86933,6 +86965,7 @@ check("post-V5 INCB repair dry run binds stored bond and accepted WORK before an
   const targets = POST_V5_INCB_ISSUANCE_REPAIR_TARGETS.map((target, index) => ({
     ...target,
     bond: { protocolVout: 1, recordOrdinal: 0 },
+    transition: { eventCount:4,eventSetCommitment:{sha256:"native-"+index,payloadBytes:100+index} },
     mint: {
       txid: target.txid,
       blockHash: target.blockHash,
@@ -87175,6 +87208,51 @@ check("post-V5 INCB repair dry run binds stored bond and accepted WORK before an
   assert.equal(singleResult.targets[0].txid, targets[1].txid);
   assert.equal(singleResult.expectedAfterSupply, "1051");
   assert.equal(singleClient.queries.at(-1), "ROLLBACK");
+  const ordinaryMarker = { active:false, complete:true, status:"complete", indexedThroughBlock:968345 };
+  const scopedDependencies = {
+    ...repairDependencies, APPLY_POST_V5_INCB_ISSUANCE_REPAIR:false,
+    SCOPED_INCB_ORACLE_PIN:{txid:targets[1].txid,snapshotId:"h-1-b",proofSha256:"pinned-proof"},
+    canonicalIncbValueSnapshotBindings:()=>new Map([["h-1-b",{}]]),
+    verifiedCanonicalRecoveryMetaState:(rows)=> {
+      const state = repairDependencies.verifiedCanonicalRecoveryMetaState(rows);
+      const marker=rows.find((row)=>row.key==="canonical:rebuild")?.value;
+      return marker?.status==="complete" && marker.active===false && marker.complete===true && !marker.mode
+        ? {rebuild:"complete"}:state;
+    },
+    storedScopedIncbOracle:async()=>({source:{snapshot_id:"h-1-b"}}),
+  };
+  const scopedClientFor = (options={}) => {
+    const client=clientFor(false,{marker:ordinaryMarker,snapshotRows:[{snapshot_id:"h-1-b"}],...options});
+    const query=client.query.bind(client);
+    client.query=async(sql,parameters)=> {
+      const result=await query(sql,parameters);
+      if(Array.isArray(parameters?.[1]) && parameters[1].includes(targets[1].txid)) {
+        assert.equal(parameters[1].length,1);result.rows=result.rows.filter((row)=>row.txid===targets[1].txid);
+      } else if(String(sql).includes("SELECT height, block_hash FROM proof_indexer.blocks")) {
+        result.rows=result.rows.filter((row)=>Number(row.height)===targets[1].blockHeight);
+      }
+      return result;
+    };return client;
+  };
+  const scopedRepair=isolatedFunction(BACKFILL_PATH,"repairCanonicalPostV5IncbIssuance",scopedDependencies);
+  const scopedClient=scopedClientFor();
+  const scopedResult=await scopedRepair(scopedClient,[POST_V5_INCB_ISSUANCE_REPAIR_TARGETS[1]]);
+  assert.equal(scopedResult.expectedAfterSupply,"1051");
+  assert.equal(scopedResult.recoveryProof,"pinned-independent-scoped-replay");
+  assert.equal(scopedResult.scopedOracleProofSha256,"pinned-proof");
+  assert.ok(scopedClient.queries.every((query)=>! /^(?:DELETE|INSERT|UPDATE|COMMIT|LOCK TABLE)/u.test(query)));
+  for(const [dependencies,options] of [
+    [{storedScopedIncbOracle:async()=>null},{}],
+    [{SCOPED_INCB_ORACLE_PIN:null},{}],
+    [{SCOPED_INCB_ORACLE_PIN:{txid:targets[0].txid,snapshotId:"h-1-b"}},{}],
+    [{},{marker:{...ordinaryMarker,indexedThroughBlock:968124}}],
+    [{},{faultActive:true}],
+  ]) {
+    const action=isolatedFunction(BACKFILL_PATH,"repairCanonicalPostV5IncbIssuance",{...scopedDependencies,...dependencies});
+    const client=scopedClientFor(options);
+    await assert.rejects(action(client,[POST_V5_INCB_ISSUANCE_REPAIR_TARGETS[1]]));
+    assert.equal(client.queries.at(-1),"ROLLBACK");
+  }
   const changedWorkClient = clientFor(true);
   await rejection(
     repair(changedWorkClient),
@@ -87212,6 +87290,11 @@ check("post-V5 INCB repair dry run binds stored bond and accepted WORK before an
       }
       throw new Error(`Unexpected Core call ${method}`);
     },
+    workAmoV5CanonicalBlockEventSet: async (client,transition) => {
+      client.nativeCommitmentChecks=(client.nativeCommitmentChecks ?? 0)+1;
+      return {...transition.eventSetCommitment,eventCount:transition.eventCount,
+        ...(client.wrongNativeCommitment?{sha256:"wrong"}:{})};
+    },
     canonicalBondMintProjection: () => true,
     canonicalProtocolItemForPostgres: (item) => item,
     isHexTxid: (value) => /^[0-9a-f]{64}$/u.test(String(value ?? "")),
@@ -87248,7 +87331,7 @@ check("post-V5 INCB repair dry run binds stored bond and accepted WORK before an
   });
   const applyClientFor = ({ unknownSnapshot = false, nonGreenSummary = false,
     wrongCanonicalBlock = false, wrongTargetBlock = false,
-    mutateMintProvenance = false, partialDelete = false } = {}) => {
+    mutateMintProvenance = false, partialDelete = false, wrongNativeCommitment = false } = {}) => {
     const rows = makeRows(false);
     const queries = [];
     const summaryRows = [
@@ -87265,7 +87348,7 @@ check("post-V5 INCB repair dry run binds stored bond and accepted WORK before an
     return {
       queries,
       mints: [],
-      mutateMintProvenance,
+      mutateMintProvenance, wrongNativeCommitment,
       snapshotRows: [{ snapshot_id: "h-1-a" }, { snapshot_id: "h-1-b" }],
       async query(sql, parameters = []) {
         const statement = String(sql).replace(/\s+/gu, " ").trim();
@@ -87333,6 +87416,21 @@ check("post-V5 INCB repair dry run binds stored bond and accepted WORK before an
     supplyCorrectionTokenIds: [INCB_TOKEN_ID], tokenIds: [INCB_TOKEN_ID],
   }));
   assert.equal(appliedClient.queries.at(-1), "COMMIT");
+  assert.equal(appliedClient.nativeCommitmentChecks,2);
+  const repeatClient=applyClientFor();repeatClient.mints=structuredClone(appliedClient.mints);
+  const repeatQuery=repeatClient.query.bind(repeatClient);
+  repeatClient.query=async(sql,parameters)=>{
+    if(String(sql).includes("kind, protocol, status, valid") && String(sql).includes("FROM proof_indexer.events")) {
+      repeatClient.queries.push(String(sql));return {rows:repeatClient.mints};
+    }
+    if(String(sql).includes("AS mint_supply")) return {rows:[{mint_supply:"2051",balance_supply:"2051"}]};
+    return repeatQuery(sql,parameters);
+  };
+  const repeated=await applyRepair(repeatClient);
+  assert.equal(repeated.state,"already-applied");assert.equal(repeated.changedRows,0);
+  assert.equal(repeated.expectedAfterSupply,"2051");assert.equal(repeatClient.nativeCommitmentChecks,2);
+  assert.equal(repeatClient.queries.at(-1),"ROLLBACK");
+  assert.ok(repeatClient.queries.every((query)=>! /^(?:DELETE|INSERT|UPDATE|COMMIT)/u.test(query)));
   const eventHashReads = appliedClient.queries.filter((query) =>
     query.includes("FROM proof_indexer.events") && query.includes("AS block_hash"));
   assert.equal(eventHashReads.length, 4);
@@ -87359,6 +87457,7 @@ check("post-V5 INCB repair dry run binds stored bond and accepted WORK before an
     ["wrong canonical block", { wrongCanonicalBlock: true }, /unrecognized unprotected snapshot shape/u],
     ["wrong target canonical block", { wrongTargetBlock: true }, /one matching canonical index block per target/u],
     ["altered persisted mint H-1 provenance", { mutateMintProvenance: true }, /exact canonical mint and H-1 provenance/u],
+    ["native commitment mismatch", {wrongNativeCommitment:true}, /native ordered event-set commitment/u],
     ["short snapshot deletion", { partialDelete: true }, /exactly its reviewed derived summaries/u],
   ]) {
     const rejectedClient = applyClientFor(options);

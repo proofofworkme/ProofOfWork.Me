@@ -148,3 +148,38 @@ production mint, balance, historical snapshot or recovery marker has been change
 The production marker remains an ordinary completed rebuild, not a certified
 958383 replay; existing importer/repair guards must not be bypassed or replaced
 with a copied clone certificate.
+
+## Narrow production repair admission (in preparation)
+
+Component commit `75b196ea8aab12606470f58faf947b8ca3095ee3` (PR #78,
+all three hygiene CI jobs passed and merged) replayed block 963782 successfully:
+one combined mint of `352529923159` units and the unchanged native four-record
+commitment. Its exact source archive SHA-256 is
+`ade5e4923911393e6d9f27666d3a697be3bf7562f27155456d4626d9b39236f8`.
+The isolated continuation is progressing toward the target H-1 at 968124;
+production remains on the wallet release and production INCB is unchanged.
+
+The pending scoped importer stores the independently verified H-1 source row as
+a sealed, target-only proof wrapper, not as an eligible public summary. It has
+no `canonicalSummary` source hash, no summary payloads and no green summary
+status. A read-only query using the actual PostgreSQL public-summary admission
+expression accepted the original full H963781 source and rejected its wrapper.
+The final target proof remains disabled until the completed replay certificate,
+immutable witness manifest, exact source bytes, native state commitments and
+Core hashes are reviewed and pinned. No environment override enables it.
+
+The production recovery marker is never replaced with the clone certificate.
+Only the selected `ebe60fd1…` issuance can use the scoped checkpoint; transaction
+specific cache keys prevent it being reused for another bond in the same block.
+The repair binds the two native issuance components into one persisted mint,
+then checks the original ordered block event-set commitment before commit.
+A repeated exact repair returns `already-applied` with zero changed rows and
+requires conserved supply and the same native commitment. The six older mint
+amounts and the earlier `b00b9451…` incident remain outside this repair.
+
+An independent logical copy of production is being prepared for rehearsal of
+the final pinned importer and single-target repair. This rehearsal is separate
+from the historical replay database. The expected target-only supply change is
+`224847713398447926` to `945662401792509469` units; fixed issuance value Q8 changes
+from `22484771339844794793582060` to `94566240179250949146190218`.
+These are expectations, not a receipt of production mutation.
