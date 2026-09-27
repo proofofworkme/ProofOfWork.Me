@@ -3430,8 +3430,12 @@ invalidation begin at that selected bond. The earlier bond is not repaired by
 that invocation. The selected target still requires its full verified H-1
 summary and all existing replay, provenance, and conservation checks.
 The separately pinned scoped-oracle path is for the single approved `ebe60fd1…`
-repair when production has an ordinary completed rebuild. It remains disabled
-until `SCOPED_INCB_ORACLE_PIN` contains the reviewed independent replay proof.
+repair when production has an ordinary completed rebuild.
+`SCOPED_INCB_ORACLE_PIN` pins the independently reviewed replay completed through
+968821, proof SHA-256
+`09b6440d3eb2b30483e5baae1b21a6511edfd23604d03cbab9e89c587cde00ed`.
+Admission still requires its exact sealed proof to be imported into the database;
+code deployment alone does not apply the issuance repair.
 `npm run indexer:import-scoped-incb-oracle -- --artifact /absolute/source.ndjson
 --proof /absolute/proof.json` defaults to rollback; apply additionally requires
 `POW_IMPORT_SCOPED_INCB_ORACLE_APPLY=1` and `--apply`. The importer verifies the

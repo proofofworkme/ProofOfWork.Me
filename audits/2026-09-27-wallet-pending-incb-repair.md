@@ -385,3 +385,24 @@ is changed. Real captured projections are retained in the regression fixture;
 tampered amounts, one-Q8-unit value changes, incorrect precision/positions,
 missing or duplicate companions, and foreign targets fail. All 549 recovery
 behavior checks pass.
+
+## Completed certificate and scoped proof activation
+
+The isolated replay completed through 968821 with source
+`ac488b093fceacbcfa6aaeb59d04c79bd9359241`, tree
+`9f3a02234e48ae73c3055239fc9ef25de2f2df51`, archive SHA-256
+`b423f2de2dd36959e40ac14560749ca70a3070dfa7571b6e64b41a9abe0d7a93`.
+The certificate accounts for all 18 witnesses: ten preserved byte-for-byte and
+eight rederived. It includes the exact clone-only restoration evidence above.
+The independent local review passed the full 25-check H-1 validator, verified
+the sealed-wrapper round trip and confirmed that the raw source artifact matches
+the previously captured 3,407,385 bytes. Production native H-1 commitments match.
+
+Completed proof SHA-256:
+`09b6440d3eb2b30483e5baae1b21a6511edfd23604d03cbab9e89c587cde00ed`.
+Retained export:
+`/data/proofofwork-incb-final-source-replay-20260925T022000Z/scoped-target-proof-ac488b0`.
+The source now pins this proof for only `ebe60fd1…`; stored-proof absence still
+fails closed. Production has not yet been repaired. The next gate is the
+production-copy rehearsal, including strict preservation of all 46 older mints,
+all unrelated history and native accounting rows, and repeat-apply idempotence.
