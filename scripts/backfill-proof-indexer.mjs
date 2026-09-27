@@ -8846,6 +8846,9 @@ async function rebuildConfirmedCreditBalancesFromCanonicalEvents(
           ? canonicalBondMintProjectionInvalidReason(bondProjectionItem)
           : "";
       if (bondProjectionInvalidReason) {
+        if (skipInvalidBondAliasEnrichment) {
+          throw new Error(`Scoped INCB issuance repair refuses to rewrite existing mint history at ${eventLabel}.`);
+        }
         const reason =
           `Canonical INCB bond projection rejected: ${bondProjectionInvalidReason}.`;
         await client.query(
@@ -8919,6 +8922,9 @@ async function rebuildConfirmedCreditBalancesFromCanonicalEvents(
             /^[1-9]\d*$/u.test(String(payload.amount ?? "").trim()) &&
             Number(payload.amountSats ?? 0) === 0;
       if (["POWB", "INCB"].includes(definition.ticker) && !expectedBondProjection) {
+        if (skipInvalidBondAliasEnrichment) {
+          throw new Error(`Scoped INCB issuance repair refuses to rewrite existing mint history at ${eventLabel}.`);
+        }
         const reason =
           `Canonical credit event ${eventLabel} attempts a generic mint in the reserved ${definition.ticker} namespace`;
         await client.query(
@@ -35320,6 +35326,7 @@ async function repairCanonicalPostV5IncbIssuance(client, repairTargets = POST_V5
     const replay = await rebuildConfirmedCreditBalancesFromCanonicalEvents(client, {
       supplyCorrectionMode: "canonical-incb-issuance-repair",
       skipInvalidBondAliasEnrichment: true,
+      preservePendingDeltas: true,
       supplyCorrectionTokenIds: [INCB_TOKEN_ID],
       tokenIds: [INCB_TOKEN_ID],
     });

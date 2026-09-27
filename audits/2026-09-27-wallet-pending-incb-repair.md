@@ -183,3 +183,21 @@ from the historical replay database. The expected target-only supply change is
 `224847713398447926` to `945662401792509469` units; fixed issuance value Q8 changes
 from `22484771339844794793582060` to `94566240179250949146190218`.
 These are expectations, not a receipt of production mutation.
+
+The scoped balance rebuild now refuses to reclassify any pre-existing malformed
+or generic reserved-namespace mint instead of rewriting that historical row.
+It also preserves existing pending INCB deltas during the confirmed balance
+rebuild. These safeguards apply only to the explicitly scoped issuance repair;
+ordinary canonical recovery behavior is unchanged.
+
+The production rehearsal backup completed at `2026-09-27T03:11:11Z`: custom
+archive size `20162773017` bytes, SHA-256
+`89d1718cfa6b3e0c1e825ac50149605ec2b048d26e94539da843b4358e0a7850`.
+Its restore list passed and the checksum was independently re-read before
+restoration into `proof_indexer_scoped_rehearsal_20260927` on the private Unix
+socket/port 65447. This is a rehearsal backup, not the final production repair
+window backup. Native production H968124 is already pinned by closing state
+`1ba106b2a4636f92a3f4479c1f6b0181448b47e85144640abc99142463f2df8e`
+and WORK token state
+`7d8fc8fbea6d4e2913988ea0c1b6230bd00beddaca00d83ab5cb55b2873da69c`;
+the completed independent source must match both exactly.

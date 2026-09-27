@@ -43663,6 +43663,38 @@ check("canonical Q8 WORK replay accepts exact subatom transfer amounts", async (
   );
 });
 
+check("scoped INCB repair refuses to rewrite pre-existing malformed mint history", async () => {
+  for (const invalidReason of ["malformed exact issuance", ""]) {
+    const writes = [];
+    const replay = isolatedFunction(BACKFILL_PATH, "rebuildConfirmedCreditBalancesFromCanonicalEvents", {
+      NETWORK: "livenet",
+      assertCanonicalWorkProjection: async () => ({ model: WORK_ATOMIC_PROJECTION_MODEL, state: "q8" }),
+      INCB_ISSUANCE_ACCOUNTING_MODEL: "canonical-pre-bond-live-network-value-v2",
+      canonicalBondMintProjectionInvalidReason: () => invalidReason,
+      canonicalBondMintProjection: () => false,
+    });
+    const client = { async query(sql) {
+      if (sql.includes("FROM proof_indexer.credit_definitions")) return { rows: [{
+        token_id: INCB_TOKEN_ID, ticker: "INCB", max_supply: "0", confirmed: true, created_height: 1,
+        metadata: { canonicalSynthetic: true, uncapped: true, blockIndex: 0,
+          issuanceAccountingModel: "canonical-pre-bond-live-network-value-v2",
+          issuanceValuationFixedAtSend: true, issuanceUnitSats: 1 },
+      }] };
+      if (sql.includes("FROM proof_indexer.events")) return { rows: [{
+        canonical_block_height: 968100, canonical_block_index: 1, canonical_protocol_vout: 2,
+        canonical_record_ordinal: 1, event_id: 99, kind: "token-mint", txid: "a".repeat(64),
+        payload: { tokenId: INCB_TOKEN_ID, amount: "10", minterAddress: "alice" },
+      }] };
+      if (sql.includes("sum(confirmed_balance)")) return { rows: [{ token_id: INCB_TOKEN_ID, confirmed_supply: "10" }] };
+      writes.push(sql); return { rows: [] };
+    } };
+    await assert.rejects(replay(client, { tokenIds: [INCB_TOKEN_ID],
+      supplyCorrectionMode: "canonical-incb-issuance-repair", supplyCorrectionTokenIds: [INCB_TOKEN_ID],
+      skipInvalidBondAliasEnrichment: true }), /refuses to rewrite existing mint history/);
+    assert.equal(writes.length, 0, "an unexpected older mint must abort before any history or balance write");
+  }
+});
+
 check("scoped canonical token replay preserves pending deltas", async () => {
   const tokenId = "5".repeat(64);
   const writes = [];
@@ -87413,6 +87445,7 @@ check("post-V5 INCB repair dry run binds stored bond and accepted WORK before an
   assert.equal(JSON.stringify(appliedClient.replayOptions), JSON.stringify({
     supplyCorrectionMode: "canonical-incb-issuance-repair",
     skipInvalidBondAliasEnrichment: true,
+    preservePendingDeltas: true,
     supplyCorrectionTokenIds: [INCB_TOKEN_ID], tokenIds: [INCB_TOKEN_ID],
   }));
   assert.equal(appliedClient.queries.at(-1), "COMMIT");

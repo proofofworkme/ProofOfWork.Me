@@ -3429,7 +3429,8 @@ must be retained with their digests and backup receipts.
 The repair also verifies the original native ordered event-set commitment after
 persisting one combined issuance mint. An exact repeat conserves the existing
 supply and returns `already-applied`, `changedRows: 0`; mismatched existing
-issuance remains an error.
+issuance remains an error. The scoped balance rebuild retains pending INCB
+deltas and refuses to rewrite older malformed or generic mint records.
 
 Then apply with `POW_INDEX_REPAIR_POST_V5_INCB_APPLY=1`; the default two-target invocation must
 replace only the two target transactions' reserved-namespace aliases, leave
