@@ -299,3 +299,89 @@ Regressions cover the actual ledger check and stored-summary validator,
 including unchanged production admission, false zero, wrong witness/checkpoint,
 and one-Q8-unit discrepancies. The target proof remains disabled pending a
 successful repeat and complete replay certificate.
+
+The repeated H968124 probe passed all 25 checks on source
+`e2c4610072563f9ea19e5b1f67941bcbfb83cde8` (tree
+`66326668ea8b4b23700be4a1a710f11d2af5e853`, source archive SHA-256
+`3932bc9360922b6cf6569bba53ac10e4e908b733d630ee2b5b1d5f3ac934c998`).
+The 3,210,164-byte probe response SHA-256 is
+`09c8682711bf805d9b1f4307509f9d3477fd0fbc173b0127f9e262e5bbf2857c`.
+The replay then processed block 968125 successfully at
+`2026-09-27T08:16:26Z`. A read-only query found exactly one target mint,
+amount `720814688394061543`, fixed value Q8
+`72081468839406154352608158`, and H-1 snapshot
+`a15d16ce2b3bc363ac1ed091`. The replay is continuing to its captured tip to
+complete the witness certificate; this intermediate success is not production
+repair authorization evidence by itself. At production height 968807, health
+remained ready with zero lag, 46 existing INCB mints, unchanged supply
+`224847713398447926`, and no accepted target mint.
+
+The actual stored H-1 row also passed the complete post-V5 import validator.
+Its raw artifact is 3,407,385 bytes, SHA-256
+`6e1aaec23312e2f86d70f0fa9cf8aeb9e110123209882be05db100a05004ae25`;
+the row without its terminal newline hashes to
+`c367fb109738073cd55d36bc4bebb7a4f8f418f16e935aaf64610b3ddfa67250`.
+The later completed-proof export must match this independently captured row.
+
+A fresh production backup completed at `2026-09-27T08:33:05Z`, before repair:
+`/data/proofofwork-incb-production-backup-20260927T082400Z/production-before-scoped-repair.dump`.
+It contains 20,256,103,254 bytes, SHA-256
+`ed251ef8b7ce69166f42e351c59f3bb55cd15002598f6187e989d6f95d3a2932`;
+its restore catalog was verified. The original rehearsal backup and all replay
+evidence remain retained.
+
+Before the final rehearsal, insertion-path review identified a noncanonical
+side effect: the normal event upsert refreshed the confirmed parent transaction's
+observation timestamps. The scoped repair now selects and verifies that existing
+canonical parent without any transaction-row write. Admission is restricted to
+the pinned target, its exact confirmed block position, INCB mint kind, and
+canonical raw transaction marker. The actual selector and insertion routing
+regression reject missing, duplicate, foreign, pending, or mismatched parents;
+all 548 recovery behavior checks pass. Ordinary ingestion is unchanged.
+
+## Preserved-witness completion guard
+
+The 968806 completion attempt correctly stopped at 968805 because ten preserved
+pre-V5 INCB payloads had been normalized during replay. Their amounts, exact Q8
+values, and H-1 bindings were unchanged. Differences were limited to the empty
+precision annotation, `historical-q8` versus `send2`, string versus integer payment
+representations, and synthetic `protocolVout` / `recordOrdinal` annotations.
+The immutable 18-entry manifest and the byte-for-byte completion guard were not
+changed or bypassed.
+
+A clone-only, hash-pinned operator restoration restored the original ten payloads
+from that manifest. It refused any other payload difference and preserved every
+physical event position and every other event column. It was hard-bound to
+`proof_indexer_final_replay_clean` on private Unix socket port 65447, the exact
+active verifier binding, and checkpoint 968805. It verified each historical
+block and predecessor against Core. Production was not a possible target.
+The same transaction in rollback mode passed before apply; apply changed exactly
+ten payloads and repeat changed zero. Balances, issuance sums, native state
+commitments, protected snapshots, the canonical fault state, and the rebuild
+marker shared unchanged critical-state SHA-256
+`d635d10c2d352a970d46268ee3076f558d08f5fe2d919a5428622b47597a2044`.
+
+Retained directory:
+`/data/proofofwork-incb-final-source-replay-20260925T022000Z/witness-restoration-20260927`.
+Helper SHA-256: `8ab387a41cffad9f2873f6466625cd1ab6ff25a9c8e4c581be02679fa3b84438`.
+Diagnostic SHA-256: `8f4a63f64125b955f21999c0f321cf728605d735f6637925030198e5ee884da2`.
+Rollback receipt SHA-256: `2de33c44774105123028942641aa0f08dbd4f103ed16738662eee1ce9a6fa464`.
+Apply receipt SHA-256: `90fbd0bab1a2521d7748ce6182fe01862a5f27a61706b2595f6cfa8710fe4b7b`.
+Repeat receipt SHA-256: `ef25aacf3086f9a18513fa5ef72338cf6142b56f11c7a24c6f7458154f976054`.
+The remaining blocks are then processed with the unchanged pinned `e2c4610`
+source and unchanged certificate validator. The completed proof must include
+this restoration's exact evidence and receipts.
+
+The next completion attempt passed the preserved witnesses and stopped at
+968820 on the first post-V5 rederive entry. The immutable legacy manifest had
+recorded `attachedWorkAmountAtoms: "0"` for both send3 bonds; the old completion
+predicate incorrectly compared that field to the real converted Q8 alias.
+Completion now requires the exact known Q16 path for these two entries: one
+confirmed parent, one accepted send3 WORK transfer, one combined mint, matching
+physical positions, the parent's exact Q16 attachment, correct unit metadata,
+and the independently pinned direct/attached issuance and H-1 values. The two
+entries cannot fall back to the legacy Q8 predicate. No manifest or mint amount
+is changed. Real captured projections are retained in the regression fixture;
+tampered amounts, one-Q8-unit value changes, incorrect precision/positions,
+missing or duplicate companions, and foreign targets fail. All 549 recovery
+behavior checks pass.
