@@ -25590,10 +25590,14 @@ export default function App() {
       } else {
         await refreshToken(true, false);
       }
-      // The directory is already checkpoint-qualified. Avoid a duplicate complete
-      // directory read on cold Credit; explicit refresh remains available.
-      const creditDirectoryRead = tokenMode || activeFolder === "token";
-      if (!creditDirectoryRead && !cancelled && document.visibilityState === "visible") {
+      // Credit and Wallet already have a checkpoint-qualified directory/account read.
+      // A delayed nonfresh repeat does not improve balances or signing readiness.
+      const tokenWorkspaceRead =
+        tokenMode ||
+        walletMode ||
+        activeFolder === "token" ||
+        activeFolder === "wallet";
+      if (!tokenWorkspaceRead && !cancelled && document.visibilityState === "visible") {
         window.setTimeout(() => {
           if (!cancelled && document.visibilityState === "visible") {
             if (marketplaceMode || activeFolder === "marketplace") {
