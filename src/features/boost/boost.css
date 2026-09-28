@@ -1154,3 +1154,39 @@
     width: 0;
   }
 }
+
+/* The avatar overlaps the cover, but neither its fallback nor transparent pixels expose it. */
+.boost-shell-instrument .boost-profile-avatar,
+.boost-shell-instrument .boost-avatar {
+  background: var(--surface);
+  object-fit: cover;
+  overflow: hidden;
+}
+.boost-profile-cover {
+  display: block;
+  width: 100%;
+  object-fit: cover;
+  overflow: hidden;
+}
+.boost-image-dialog {
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  width: min(640px, calc(100vw - 32px));
+  max-height: 85dvh;
+  padding: 20px;
+  overflow: auto;
+}
+.boost-image-dialog::backdrop { background: #000b; }
+.boost-image-slots { display: flex; flex-wrap: wrap; gap: 8px; margin-block: 12px; }
+.boost-image-dialog button { min-height: 44px; }
+.boost-image-dialog button[aria-pressed="true"] { outline: 2px solid var(--accent); }
+.boost-image-files { display: grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 12px; }
+.boost-image-files button { display: grid; gap: 6px; min-width: 0; padding: 10px; }
+.boost-image-files img { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 8px; }
+.boost-image-files span { overflow-wrap: anywhere; }
+.boost-image-preview img { display: block; object-fit: cover; background: var(--surface); margin: 16px auto; }
+.boost-image-crop-avatar { width: 128px; height: 128px; border-radius: 50%; border: 4px solid var(--border); }
+.boost-image-crop-banner { width: 100%; aspect-ratio: 3 / 1; }
+.boost-image-preview label { display: grid; gap: 6px; margin-block: 12px; }

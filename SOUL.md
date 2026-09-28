@@ -561,3 +561,5 @@ It is the feeling that the computer became honest.
 The founder voice says: attention should not be stolen, work should be proved, agents should not be fed mutable garbage, humans should not be trapped in platforms, and a single person with agents and ProofOfWork should be able to build, publish, coordinate, and earn without asking permission.
 
 This project is a computer for people and agents who want to walk the walk on chain.
+
+Boost profile pictures and banners are selections from confirmed ProofOfWork Files, published as address-authored `pwb1:profile` references through a local wallet. Keep image bytes in Files, verify their transaction and hash before rendering, and preserve prior images when only the display ID changes. The profile avatar must stay opaque above the banner.

@@ -4856,6 +4856,9 @@ function boostMediaPointer(value) {
     ...(name ? { name } : {}),
     ...(sha256 && /^[0-9a-f]{64}$/u.test(sha256) ? { sha256 } : {}),
     ...(txid ? { txid } : {}),
+    ...Object.fromEntries(["positionX", "positionY"].filter(key =>
+      typeof value[key] === "number" && Number.isFinite(value[key]) && value[key] >= 0 && value[key] <= 100
+    ).map(key => [key, value[key]])),
     ...(Number.isSafeInteger(size) && size > 0 ? { size } : {}),
     ...(normalizedText(value.source) ? { source: normalizedText(value.source) } : {}),
   };
@@ -5044,6 +5047,7 @@ function boostItemFromMessage(tx, message) {
     const image = boostMediaPointer(
       profile?.image ?? profile?.avatar ?? profile?.profilePicture,
     );
+    const banner = boostMediaPointer(profile?.banner);
     const profileId = normalizedPowId(
       String(profile?.id ?? profile?.profileId ?? profile?.handle ?? ""),
     );
@@ -5056,7 +5060,8 @@ function boostItemFromMessage(tx, message) {
       displayName: boostText(profile?.name).slice(0, 50),
       location: boostText(profile?.location).slice(0, 30) || "ProofOfWork",
       profile: {
-        ...(image ? { image } : {}),
+        ...(image ? { image } : profile?.image === null ? { image: null } : {}),
+        ...(banner ? { banner } : profile?.banner === null ? { banner: null } : {}),
         bio: boostText(profile?.bio).slice(0, 160),
         id: profileId || undefined,
         intent:

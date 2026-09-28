@@ -23,16 +23,23 @@ export type BoostProfileTab =
   | "replies-to";
 export type BoostTimelineMode = "all" | "following";
 
+export type BoostProfileImage = {
+  mime?: string;
+  name?: string;
+  sha256?: string;
+  txid?: string;
+  size?: number;
+  source?: string;
+  positionX?: number;
+  positionY?: number;
+  url?: string;
+};
+
 export type BoostProfile = {
   address: string;
   id?: string;
-  image?: {
-    mime?: string;
-    name?: string;
-    sha256?: string;
-    txid?: string;
-    url?: string;
-  };
+  image?: BoostProfileImage | null;
+  banner?: BoostProfileImage | null;
   name?: string;
   profileId?: string;
 };
@@ -397,19 +404,23 @@ export function buildBoostProfilePayload({
   id,
   intent,
   name,
+  image,
+  banner,
 }: {
-  id: string;
+  id?: string;
   intent?: BoostIdentityIntent;
   name?: string;
+  image?: BoostProfileImage | null;
+  banner?: BoostProfileImage | null;
 }) {
-  const profileId = normalizeBoostId(id);
-  if (!profileId) {
+  const profileId = normalizeBoostId(id ?? "");
+  if (!profileId && image === undefined && banner === undefined) {
     throw new Error("Choose a confirmed ProofOfWork ID.");
   }
   const profile = {
-    id: profileId,
-    name: name?.trim() || `${profileId}@proofofwork.me`,
-    profileId,
+    ...(profileId ? { id: profileId, profileId, name: name?.trim() || `${profileId}@proofofwork.me` } : {}),
+    ...(image !== undefined ? { image } : {}),
+    ...(banner !== undefined ? { banner } : {}),
     ...(intent
       ? {
           intent: {

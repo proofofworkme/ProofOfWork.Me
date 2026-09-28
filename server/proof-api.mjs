@@ -53269,22 +53269,23 @@ function boostOwnershipState(items, verifiedClosures = new Set(), network = "liv
             "",
         ),
       );
-      if (address && profileId) {
+      if (address && item.confirmed !== false) {
+        const previous = profiles.get(address);
         profiles.set(address, {
+          ...previous,
           address,
-          id: profileId,
-          image:
-            profile?.image &&
-            typeof profile.image === "object" &&
-            !Array.isArray(profile.image)
-              ? profile.image
-              : undefined,
+          id: profileId || previous?.id,
+          ...Object.fromEntries(["image", "banner"].filter(key =>
+            Object.prototype.hasOwnProperty.call(profile, key) &&
+            (profile[key] === null || (typeof profile[key] === "object" && !Array.isArray(profile[key])))
+          ).map(key => [key, profile[key]])),
           name: boostDisplayName(
             item?.displayName,
             profile?.name,
-            `${profileId}@proofofwork.me`,
+            previous?.name,
+            profileId ? `${profileId}@proofofwork.me` : address,
           ),
-          profileId,
+          profileId: profileId || previous?.profileId,
         });
       }
       continue;
@@ -53560,6 +53561,7 @@ function boostFeedItemFromEvent(
         ? {
             address: authorAddress,
             ...(profileState?.image ? { image: profileState.image } : {}),
+            ...(profileState?.banner ? { banner: profileState.banner } : {}),
             ...(profileId ? { id: profileId, profileId } : {}),
             ...(profileName ? { name: profileName } : {}),
           }
