@@ -2,6 +2,7 @@
 import importlib.util
 import json
 import os
+import shlex
 from pathlib import Path
 import subprocess
 import sys
@@ -16,6 +17,25 @@ spec.loader.exec_module(module)
 
 
 class RetainedRootTests(unittest.TestCase):
+    def test_publisher_retains_nine_and_sixteen_exact_roots_but_rejects_overflow_and_missing_classification(self):
+        source = Path('deploy/proofofwork-ui-release-publish.sh').read_text()
+        function = source.split('refuse_existing_rollback_roots() {', 1)[1].split('\n}\n', 1)[0]
+        function = 'refuse_existing_rollback_roots() {' + function + '\n}\n'
+        for count, omitted, expected in [(9, False, 0), (16, False, 0), (17, False, 1), (9, True, 1)]:
+            with tempfile.TemporaryDirectory(prefix='pow-retained-limit-') as root:
+                records = []
+                for index in range(count):
+                    name = f'proofofwork-www-pre-fixture-{index}'
+                    Path(root, name).mkdir()
+                    records.append(name + ':' + 'a' * 64 + ':' + 'b' * 64)
+                if omitted:
+                    records.pop()
+                script = ('set -eu\nrollback_root_parent=' + shlex.quote(root) + '\nretain_rollback_roots=(' +
+                          ' '.join(shlex.quote(record) for record in records) + ')\n' + function +
+                          'refuse_existing_rollback_roots\n')
+                result = subprocess.run(['bash', '-c', script], capture_output=True, text=True)
+                self.assertEqual(result.returncode, expected, result.stderr)
+
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory(prefix='pow-ui-retained-fixture-')
         self.root = Path(self.temporary.name)

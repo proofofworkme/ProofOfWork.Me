@@ -326,6 +326,10 @@ fields. It preserves top-level terms and authorizations and includes
 still use full records. V1 and full responses are unchanged, and cursors bind
 the requested projection version. Deploy API support before the frontend that
 requests V2; this is a transport change with no replay or database migration.
+The UI publisher accepts at most sixteen explicitly fingerprinted retained
+rollback roots, allowing releases beyond the former eight-root limit without
+deleting history. Exact root-set matching, locked fingerprint/provenance
+verification, and capacity checks remain mandatory.
 
 `POW_INDEX_READS=token-state` enables default `/api/v1/token`
 reads from stored token-state snapshots for global and scoped credit views,
