@@ -164,6 +164,27 @@ for (const [path, text] of contents) {
 }
 
 const css = contents.get("src/styles.css");
+const folderButton = css.match(/\.folders button\s*\{([^}]+)\}/u)?.[1] ?? "";
+const appSource = contents.get("src/App.tsx");
+const walletPresence = readFileSync(
+  "src/shared/wallet/useUnisatPresence.ts",
+  "utf8",
+);
+expect(
+  "mail folder controls meet the 44px product target on desktop and mobile",
+  /min-height:\s*44px/u.test(folderButton),
+);
+expect(
+  "wallet presence uses event-driven checks instead of a one-second polling interval",
+  /visibilitychange/u.test(walletPresence) &&
+    /addEventListener\("focus"/u.test(walletPresence) &&
+    !/setInterval/u.test(walletPresence),
+);
+expect(
+  "protected WORK V1 refund evidence is deferred to the selected relic history view",
+  !/import\s+workMarketV1RefundSnapshot\s+from/u.test(appSource) &&
+    /selectedMarketTokenIsWork[\s\S]*workMarketplaceVersion !== "v1-relic"[\s\S]*import\("\.\.\/WORK_MARKET_V1_REFUNDS_959061\.json"\)/u.test(appSource),
+);
 function cssHexVariable(name) {
   const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   return css.match(new RegExp(`${escaped}:\\s*(#[0-9a-f]{6})`, "i"))?.[1] ?? "";

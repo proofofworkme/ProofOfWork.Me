@@ -1704,7 +1704,7 @@ code {
   color: var(--text-muted);
   display: flex;
   justify-content: space-between;
-  min-height: 38px;
+  min-height: 44px;
   padding: 7px 10px;
   text-align: left;
 }
@@ -5995,6 +5995,15 @@ pre {
   font-size: 0.78rem;
   line-height: 1.45;
   overflow-wrap: anywhere;
+}
+
+.marketplace-summary-read-state .marketplace-snapshot-provenance {
+  font-size: 0.72rem;
+}
+
+.marketplace-snapshot-provenance code {
+  user-select: text;
+  word-break: break-all;
 }
 
 .marketplace-summary-read-state > button {

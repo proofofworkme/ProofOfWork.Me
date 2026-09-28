@@ -9,6 +9,7 @@ from unittest.mock import patch
 
 module = runpy.run_path('deploy/proofofwork-storage-trend.py')
 forecast, allocation_report, day = module['forecast'], module['allocation_report'], module['DAY']
+node_data_allocation_report = module['node_data_allocation_report']
 now = 10 * day
 reserve = 100
 assert forecast([], now, 200, reserve)['status'] == 'insufficient-history'
@@ -35,6 +36,12 @@ assert allocation['reviewRequired'] is True
 severity, allocation = allocation_report(policy, 2000)
 assert severity == 2 and allocation['status'] == 'critical-review'
 assert 'does not approve deletion' in allocation['note']
+severity, core = node_data_allocation_report('/data/bitcoin', 979 * module['GIB'])
+assert severity == 0 and core['label'] == 'canonical-bitcoin-core-chainstore'
+assert core['cleanupApproved'] is False
+severity, replay = node_data_allocation_report('/data/proofofwork-incb-final-source-replay-20260925', 89 * 1024**3)
+assert severity == 2 and replay['status'] == 'critical-review'
+assert replay['cleanupApproved'] is False
 observation_report = module['observation_report']
 assert observation_report([(now-900, 120)], now, 120, 100, 120)[0] == 0
 assert observation_report([(now-901, 120)], now, 120, 100, 120)[0] == 1
@@ -70,4 +77,44 @@ assert run_monitor(300, 13*gib)[0] == 0
 assert run_monitor(day, 13*gib)[0] == 1
 assert run_monitor(300, 11*gib)[0] == 1
 assert run_monitor(300, 9*gib)[0] == 2
+
+def run_node_attribution():
+    root_available = 40 * gib
+    data_available = 500 * gib
+    rows = []
+    for target, available in (('/', root_available), ('/data', data_available)):
+        for timestamp, bytes_free in ((now-day, available + gib), (now, available)):
+            message = (f'storage target={target} filesystem=/dev/test used_percent=50 '
+                       f'inode_used_percent=1 available_bytes={bytes_free} available_inodes=100')
+            rows.append(json.dumps({'MESSAGE': message,
+                                    '__REALTIME_TIMESTAMP': str(timestamp*1000000)}).encode())
+    journal = b'\n'.join(rows)
+    du = (f'{979*gib}\t/data/bitcoin\n{64*gib}\t/data/electrs\n'
+          f'{89*gib}\t/data/proofofwork-incb-final-source-replay-20260925\n').encode()
+    fake_os = SimpleNamespace(
+        geteuid=lambda: 0,
+        path=SimpleNamespace(isdir=lambda _: False, normpath=lambda path: path),
+        statvfs=lambda target: SimpleNamespace(
+            f_bavail=root_available if target == '/' else data_available,
+            f_frsize=1,
+        ),
+    )
+    def run(command, **kwargs):
+        return SimpleNamespace(stdout=journal if command[0].endswith('journalctl') else du)
+    output = io.StringIO()
+    with patch.dict(module['main'].__globals__, {
+            'sys': SimpleNamespace(flags=SimpleNamespace(isolated=True), argv=['monitor', 'node']),
+            'os': fake_os,
+            'subprocess': SimpleNamespace(run=run, check_output=lambda command, **kwargs: command[-1]),
+            'time': SimpleNamespace(time=lambda: now)}), contextlib.redirect_stdout(output):
+        code = module['main']()
+    reports = [json.loads(line) for line in output.getvalue().splitlines()]
+    by_path = {report.get('path'): report for report in reports if report.get('event') == 'storage-allocation'}
+    assert by_path['/data/bitcoin']['label'] == 'canonical-bitcoin-core-chainstore'
+    assert by_path['/data/electrs']['label'] == 'canonical-electrs-index'
+    assert by_path['/data/proofofwork-incb-final-source-replay-20260925']['status'] == 'critical-review'
+    assert all(report['cleanupApproved'] is False for report in by_path.values())
+    assert code == 2
+
+run_node_attribution()
 print('Storage forecast: history, exact bytes, allocation thresholds, producer freshness, current reserve warnings and actual monitor exit statuses passed.')

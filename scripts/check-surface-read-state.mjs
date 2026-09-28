@@ -134,16 +134,18 @@ visitAmo(ast);
 assert.ok(amoDeclaration);
 let attempt = 0;
 const reads = [];
+const listingReads = [];
 const complete = { listingBookComplete: true, listings: [{ tokenId: "WORK" }, { tokenId: "POWB" }, { tokenId: "INCB" }] };
 const loadAmo = new Function("fetchMarketplaceSummary", "tokenStateWithCurrentCompleteMarketplaceListings",
   `${transpile(amoDeclaration.getText(ast))};return fetchCompleteMarketplaceSnapshot`)(
   async (fresh) => { reads.push(fresh); return { indexedAt: String(++attempt), token: { listingBookComplete: false } }; },
-  async () => { if (attempt === 1) throw new Error("checkpoint changed"); return complete; },
+  async (_token, fresh) => { listingReads.push(fresh); if (attempt === 1) throw new Error("checkpoint changed"); return complete; },
 );
-const amo = await loadAmo(true);
+const amo = await loadAmo(false);
 assert.equal(amo.indexedAt, "2");
 assert.equal(amo.token, complete);
-assert.deepEqual(reads, [true, true]);
+assert.deepEqual(reads, [false, true]);
+assert.deepEqual(listingReads, [false, true]);
 let rejectedReads = 0;
 const rejectAmo = new Function("fetchMarketplaceSummary", "tokenStateWithCurrentCompleteMarketplaceListings",
   `${transpile(amoDeclaration.getText(ast))};return fetchCompleteMarketplaceSnapshot`)(

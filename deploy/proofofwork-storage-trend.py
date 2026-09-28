@@ -1,6 +1,7 @@
 #!/usr/bin/python3 -I
 """Read existing storage observations; forecast reserve exhaustion, never prune."""
 import datetime
+import fnmatch
 import json
 import os
 import re
@@ -119,6 +120,24 @@ def observation_report(samples, now, available, reserve, warning):
                       'limitation': 'Producer freshness and default absolute-byte thresholds; not a timer or external alert-delivery certificate.'}
 
 
+def node_data_allocation_report(path, allocated):
+    """Attribute top-level /data space without treating evidence as cleanup material."""
+    normalized = os.path.normpath(path)
+    if normalized == '/data/bitcoin':
+        policy = {'path': normalized, 'label': 'canonical-bitcoin-core-chainstore'}
+    elif normalized == '/data/electrs':
+        policy = {'path': normalized, 'label': 'canonical-electrs-index'}
+    elif normalized == '/data/mempool':
+        policy = {'path': normalized, 'label': 'mempool-index'}
+    elif fnmatch.fnmatch(normalized, '/data/proofofwork-incb-*'):
+        policy = {'path': normalized, 'label': 'work-amo-replay-or-recovery-evidence',
+                  'reviewBytes': 32 * GIB, 'criticalBytes': 64 * GIB}
+    else:
+        policy = {'path': normalized, 'label': 'unclassified-node-data',
+                  'reviewBytes': 32 * GIB, 'criticalBytes': 64 * GIB}
+    return allocation_report(policy, allocated)
+
+
 def main():
     assert sys.flags.isolated and os.geteuid() == 0 and sys.argv[1:] in (['ui'], ['node'])
     role = sys.argv[1]
@@ -171,6 +190,32 @@ def main():
         except (subprocess.SubprocessError, ValueError):
             print(json.dumps({'event': 'storage-allocation', 'path': path,
                               'label': policy.get('label', 'unclassified'),
+                              'status': 'incomplete', 'cleanupApproved': False,
+                              'reviewRequired': True}), flush=True)
+            severity = max(severity, 1)
+    if role == 'node':
+        # One low-priority top-level attribution pass explains unexplained
+        # /data growth. It reports measurements and review flags only; it never
+        # removes or changes a path. Static policy paths above keep their
+        # existing purpose-specific thresholds and are not emitted twice.
+        try:
+            measured = subprocess.run(
+                ['/usr/bin/du', '--one-file-system', '--max-depth=1',
+                 '--block-size=1', '/data'],
+                capture_output=True, timeout=60, check=True)
+            static_paths = {policy['path'] for policy in ALLOCATION_POLICIES['node']}
+            for line in measured.stdout.decode('utf-8', errors='strict').splitlines():
+                size_text, path = line.split('\t', 1)
+                path = os.path.normpath(path)
+                allocated = int(size_text)
+                if path == '/data' or path in static_paths or allocated < GIB:
+                    continue
+                allocation_severity, report = node_data_allocation_report(path, allocated)
+                print(json.dumps(report), flush=True)
+                severity = max(severity, allocation_severity)
+        except (subprocess.SubprocessError, UnicodeError, ValueError):
+            print(json.dumps({'event': 'storage-allocation', 'path': '/data',
+                              'label': 'node-data-top-level-attribution',
                               'status': 'incomplete', 'cleanupApproved': False,
                               'reviewRequired': True}), flush=True)
             severity = max(severity, 1)
