@@ -1,4 +1,5 @@
 import { ReactNode } from "react";
+import { FEE_RATE_STEP } from "../feeRate";
 
 export const FEE_RATE_PRESETS = [0.1, 0.5, 1, 2] as const;
 
@@ -19,7 +20,7 @@ export function FeeRateControl({
           <input
             min={0.1}
             onChange={(event) => setFeeRate(Number(event.target.value))}
-            step={0.1}
+            step={FEE_RATE_STEP}
             type="number"
             value={feeRate}
           />

@@ -65,7 +65,13 @@ for (const width of [1440, 390]) {
     await fee.fill("0");
     await expect(dialog.getByRole("button", { name: "Publish images" })).toBeDisabled();
     await expect(dialog.getByRole("alert")).toContainText("at least 0.1");
-    const rate = width === 1440 ? 3.7 : 0.5;
+    for (const value of ["0.35", "0.45", "0.12345678"]) {
+      await fee.fill(value);
+      expect(await fee.evaluate(el => el.checkValidity())).toBe(true);
+    }
+    await fee.fill("0.123456789");
+    expect(await fee.evaluate(el => el.checkValidity())).toBe(false);
+    const rate = width === 1440 ? 0.12345678 : 0.35;
     await fee.fill(String(rate));
     expect(await dialog.evaluate(el => el.scrollWidth <= el.clientWidth + 1)).toBe(true);
     await dialog.getByRole("button", { name: "Publish images" }).click();

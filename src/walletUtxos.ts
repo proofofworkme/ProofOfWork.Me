@@ -1,3 +1,11 @@
+// Compare decimal round-trips, not a floating-point modulo by 1e-8.
+export function assertFeeRatePrecision(feeRate: number) {
+  if (!Number.isFinite(feeRate) || feeRate < 0 ||
+      Number(feeRate.toFixed(8)) !== feeRate) {
+    throw new Error("Choose a non-negative fee rate with up to 8 decimal places.");
+  }
+}
+
 export type WalletUtxoSource =
   | "api"
   | "wallet-curated"
@@ -54,6 +62,7 @@ export function selectUtxos(
   baseInputCount = 0,
   dustSats = DEFAULT_DUST_SATS,
 ): WalletUtxoSelection {
+  assertFeeRatePrecision(feeRate);
   const selected: WalletUtxo[] = [];
   let selectedValue = 0;
 

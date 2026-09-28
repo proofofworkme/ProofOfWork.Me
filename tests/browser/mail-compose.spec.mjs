@@ -1544,3 +1544,27 @@ test("Computer Wallet preserves remaining WORK with a pending V8 listing", async
   await expect(form.getByRole("button", { name: "Create 25,000 proofs AMO intent" })).toBeEnabled();
   expect(await page.evaluate(() => window.__mailComposeFixture.signCalls)).toBe(0);
 });
+
+for (const rate of ["0.35", "0.45", "0.12345678"]) {
+  test(`AMO listing submits custom fee ${rate} and shares it with seal controls`, async ({ page }) => {
+    await installWallet(page);
+    await installApiFixtures(page, { pendingV8Listing: true });
+    await openConnectedWallet(page);
+    const form = page.locator("#wallet-list");
+    const fee = form.locator("form").getByLabel("Fee sat/vB");
+    await fee.fill(rate);
+    expect(await fee.evaluate(el => el.checkValidity())).toBe(true);
+    await expect(form.getByLabel("Fee sat/vB").last()).toHaveValue(rate);
+    await form.locator("form").evaluate(el => {
+      el.addEventListener("submit", event => {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        el.dataset.testSubmitted = "true";
+      }, { capture: true });
+    });
+    await form.getByRole("button", { name: "Create 25,000 proofs AMO intent" }).click();
+    await expect(form.locator("form")).toHaveAttribute("data-test-submitted", "true");
+    await fee.fill("0.123456789");
+    expect(await fee.evaluate(el => el.checkValidity())).toBe(false);
+  });
+}
