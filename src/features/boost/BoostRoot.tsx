@@ -2620,6 +2620,7 @@ export default function BoostRoot({
         </aside>
 
           {imageEditorOpen && address ? <BoostProfileImages key={`${network}:${address}`} address={address} network={network}
+            feeRate={feeRate} setFeeRate={setFeeRate}
             busy={Boolean(actionBusy)} publishStatus={status.text} onPublish={publishProfileImages} onClose={() => setImageEditorOpen(false)} /> : null}
 
         <section className="boost-feed-panel">
