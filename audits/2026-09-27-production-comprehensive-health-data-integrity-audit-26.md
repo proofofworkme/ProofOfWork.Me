@@ -488,3 +488,11 @@ Passed on the candidate source: production build (App 705.80 KB decoded / 169.86
 - One 33-byte probe response remains untouched on the node at `/tmp/pow-health-response` (mtime 2026-09-28 03:41:41 UTC). It contains only the probe response body. Removal requires separate approval under the read-only/no-cleanup boundary.
 - No exact database repair or production cleanup is proposed. Before any future cleanup, present exact paths, provenance, dependency/live-use proof, and rollback protection for separate approval. Before rollout, capture same-condition production/browser baselines, verify release/rollback target and storage headroom, monitor pinned canonical height/hash and latency, and rollback by restoring the previously deployed immutable release if correctness or readiness regresses.
 - **Follow-up priority:** investigate the high-latency canonical-summary/marketplace/WORK query shapes and add hash-bound small overview/page APIs only with full membership/completeness parity; diagnose API alert routing; capture route-specific field Web Vitals; measure client parse and useful-data readiness separately from API/indexing; and schedule an approved live-cluster integrity strategy that does not overload PostgreSQL or alter production records.
+
+## Delivery status update
+
+- **Recorded:** 2026-09-28 04:26 UTC. This update supersedes the earlier in-progress delivery statements above.
+- The reviewed candidate was committed as `7ce05af670f8e4f252e3e6224ea741dbcf31df42` (`Stabilize AMO reads and trim startup work`) on `audit/followups-1-8-approved-20260928` and pushed to `origin`.
+- Draft pull request [#89](https://github.com/proofofworkme/ProofOfWork.Me/pull/89) targets `main`. GitHub repository-hygiene jobs for Node.js 20, 22, and 24 passed. The PR remains open and unmerged.
+- No production deploy, merge, service/config change, production data operation, or protected-data cleanup occurred. Final production-release approval remains outstanding.
+- The local hygiene cleanup was separately approved and removed `dist/`, `node_modules/.vite`, and `node_modules/.vite-temp`; it touched local generated state only. The node probe file `/tmp/pow-health-response` was not removed because its separate cleanup request has not been approved.
