@@ -57364,7 +57364,7 @@ async function completeTokenListingHistoryPayload(
     error.statusCode = 400;
     throw error;
   }
-  if (itemProjection !== "full" && itemProjection !== "display-v1") {
+  if (!["full", "display-v1", "display-v2"].includes(itemProjection)) {
     const error = new Error("Unsupported token listing projection.");
     error.statusCode = 400;
     throw error;
@@ -57608,7 +57608,7 @@ async function completeTokenListingHistoryPayload(
   const filterFingerprint = digest({
     addresses: [...addresses].sort(compareCanonicalUtf8), network,
     query: request.query, scope: scope || "all",
-    ...(itemProjection === "display-v1" ? { itemProjection } : {}),
+    ...(itemProjection !== "full" ? { itemProjection } : {}),
     ...(exactListingId ? { exactListingId } : {}),
   });
   const membershipSha256 = digest(filtered.map((entry) => ({
@@ -57663,14 +57663,15 @@ async function completeTokenListingHistoryPayload(
   return {
     cursor: request.cursorRaw, end, hasMore, indexedAt: relational.indexedAt,
     indexedThroughBlock: relationalHeight, indexedThroughBlockHash: relationalHash,
-    items: pageEntries.map((entry) => itemProjection === "display-v1"
+    items: pageEntries.map((entry) => itemProjection !== "full"
       ? tokenListingDisplayProjection(entry.item, {
           fullRecordSha256: digest(entry.item), network, tokenScope: scope,
+          projection: itemProjection,
         })
       : entry.item), kind: "listings", limit: request.limit,
-    ...(itemProjection === "display-v1" ? {
+    ...(itemProjection !== "full" ? {
       itemProjection: {
-        model: "proof-token-listing-display-v1",
+        model: `proof-token-listing-${itemProjection}`,
         fullMembershipSha256: membershipSha256,
         fullSourceSha256: sourceSha256,
       },

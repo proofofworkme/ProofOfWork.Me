@@ -58,11 +58,15 @@ export function listingDisplayProjectionFingerprint(page: {
 }) {
   const projection = page.itemProjection;
   const hash = (value: unknown) => typeof value === "string" && /^[0-9a-f]{64}$/u.test(value);
-  if (projection?.model !== "proof-token-listing-display-v1" ||
+  if ((projection?.model !== "proof-token-listing-display-v1" &&
+       projection?.model !== "proof-token-listing-display-v2") ||
       !hash(projection.fullMembershipSha256) || !hash(projection.fullSourceSha256)) {
     throw new Error("Listing display projection lacks full evidence digests.");
   }
   const allowed = new Set(["workAmoV5ReplayOutput", "workAmoV5ReplayRawWitness", "workAmoV5RawScriptWitness"]);
+  if (projection.model === "proof-token-listing-display-v2") {
+    for (const field of ["parsed", "listing", "payload"]) allowed.add(field);
+  }
   for (const item of page.items ?? []) {
     const evidence = item.displayEvidence;
     if (evidence?.model !== projection.model || !hash(evidence.fullRecordSha256) ||

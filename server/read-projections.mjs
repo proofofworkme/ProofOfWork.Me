@@ -6,6 +6,15 @@ export const TOKEN_LISTING_DISPLAY_OMITTED_FIELDS = Object.freeze([
   "workAmoV5RawScriptWitness",
 ]);
 
+// V2 keeps the top-level normalized terms and authorizations. These internal
+// envelopes repeat the source record and are only needed for full inspection.
+export const TOKEN_LISTING_DISPLAY_V2_OMITTED_FIELDS = Object.freeze([
+  ...TOKEN_LISTING_DISPLAY_OMITTED_FIELDS,
+  "parsed",
+  "listing",
+  "payload",
+]);
+
 function projectionUnavailable(message) {
   const error = new Error(message);
   error.statusCode = 503;
@@ -60,20 +69,26 @@ export function tokenDirectoryProjection(payload) {
   return result;
 }
 
-export function tokenListingDisplayProjection(listing, { fullRecordSha256, network, tokenScope = "" }) {
+export function tokenListingDisplayProjection(listing, { fullRecordSha256, network, tokenScope = "", projection = "display-v1" }) {
+  if (projection !== "display-v1" && projection !== "display-v2") {
+    throw projectionUnavailable("Unsupported token listing display projection.");
+  }
   if (!/^[0-9a-f]{64}$/u.test(fullRecordSha256)) {
     throw projectionUnavailable("Full token listing evidence digest is unavailable.");
   }
-  const omittedFields = TOKEN_LISTING_DISPLAY_OMITTED_FIELDS.filter((key) => Object.hasOwn(listing, key));
+  const omittedKeys = projection === "display-v2"
+    ? TOKEN_LISTING_DISPLAY_V2_OMITTED_FIELDS
+    : TOKEN_LISTING_DISPLAY_OMITTED_FIELDS;
+  const omittedFields = omittedKeys.filter((key) => Object.hasOwn(listing, key));
   const detailQuery = new URLSearchParams({
     kind: "listings", network, q: String(listing.listingId ?? listing.txid ?? ""),
     listingId: String(listing.listingId ?? listing.txid ?? ""), projection: "full",
   });
   if (tokenScope) detailQuery.set("asset", tokenScope);
   return {
-    ...Object.fromEntries(Object.entries(listing).filter(([key]) => !TOKEN_LISTING_DISPLAY_OMITTED_FIELDS.includes(key))),
+    ...Object.fromEntries(Object.entries(listing).filter(([key]) => !omittedKeys.includes(key))),
     displayEvidence: {
-      model: "proof-token-listing-display-v1", fullRecordSha256, omittedFields,
+      model: `proof-token-listing-${projection}`, fullRecordSha256, omittedFields,
       fullDetailPath: `/api/v1/token-history?${detailQuery}`,
     },
   };

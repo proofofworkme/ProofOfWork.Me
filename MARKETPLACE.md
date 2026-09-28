@@ -1358,6 +1358,22 @@ limits rendered rows, not searchable inventory. Market-log rows
 remain lifecycle history and cannot manufacture active inventory. Wallet-owned
 listing hydration uses the same complete cursor contract.
 
+The summary's generation time and the listing reader's relational observation
+time are independent. Their `indexedAt` strings need not match when their
+verified canonical height and block hash agree. All listing pages must still
+share their own timestamp, snapshot id, full-source/membership digests, Core
+evidence, and exact count. A changed summary observation does not reuse a
+previous book merely because the block is unchanged; explicit refresh always
+rechecks ticket spends. Fresh transaction preflights remain mandatory.
+
+AMO requests `projection=display-v2` for listing pages. It omits the internal
+`parsed`, `listing`, and `payload` envelopes in addition to V1's replay
+transport fields. Top-level exact amounts, frozen terms, listing and sale
+authorizations, and unknown future fields are preserved. Every row retains
+its full-record digest and exact full-detail link. Full-source membership and
+Core verification are computed before projection. `display-v1` and `full`
+remain available, with projection-specific cursors that cannot be mixed.
+
 Confirmed V8 WORK listing witnesses recover their sale-ticket anchor from the
 original confirmed listing event and verify that exact outpoint against Core.
 Seal metadata can publish seller terms, but it cannot replace the listing

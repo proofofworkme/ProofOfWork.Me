@@ -59055,6 +59055,26 @@ check("token listing history rejects previews and fences relational and Core evi
   assert.equal(displaySecond.hasMore, false);
   assert.equal(displaySecond.totalCount, 2);
   assert.notEqual(displaySecond.items[0].listingId, displayFirst.items[0].listingId);
+  const displayV2First = await completeTokenListingHistoryPayload(
+    "livenet", "work", new URLSearchParams("limit=1&projection=display-v2"),
+  );
+  assert.equal(displayV2First.itemProjection.model, "proof-token-listing-display-v2");
+  assert.equal(displayV2First.snapshotId, first.snapshotId);
+  assert.deepEqual(displayV2First.listingAuthority, first.listingAuthority);
+  assert.deepEqual(displayV2First.listingProjection, first.listingProjection);
+  assert.equal(displayV2First.items[0].displayEvidence.fullRecordSha256,
+    displayFirst.items[0].displayEvidence.fullRecordSha256);
+  const displayV2Second = await completeTokenListingHistoryPayload(
+    "livenet", "work", new URLSearchParams({ limit: "1", projection: "display-v2", cursor: displayV2First.nextCursor }),
+  );
+  assert.equal(displayV2Second.hasMore, false);
+  assert.equal(displayV2Second.totalCount, first.totalCount);
+  assert.equal(displayV2Second.items[0].listingId, displaySecond.items[0].listingId);
+  for (const [projection, cursor] of [["display-v2", displayFirst.nextCursor], ["display-v1", displayV2First.nextCursor], ["full", displayV2First.nextCursor]]) {
+    await assert.rejects(() => completeTokenListingHistoryPayload(
+      "livenet", "work", new URLSearchParams({ limit: "1", projection, cursor }),
+    ), (error) => error?.statusCode === 409, "projection versions cannot share cursors");
+  }
   for (const [projection, cursor] of [["full", displayFirst.nextCursor], ["display-v1", first.nextCursor]]) {
     await assert.rejects(() => completeTokenListingHistoryPayload(
       "livenet", "work", new URLSearchParams({ limit: "1", projection, cursor }),

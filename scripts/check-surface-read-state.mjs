@@ -155,3 +155,103 @@ const rejectAmo = new Function("fetchMarketplaceSummary", "tokenStateWithCurrent
 await assert.rejects(rejectAmo(false), /incomplete inventory/);
 assert.equal(rejectedReads, 3);
 console.log(JSON.stringify({ ok: true, coverage: ["amo-complete-book-before-ready", "amo-checkpoint-restart", "amo-bounded-failure"] }));
+
+// Reproduce the production mismatch: independent summary and relational clocks
+// at one canonical block. Exercise the actual complete-book reader, including
+// its cross-page guards, rather than replacing it with a successful stub.
+function appFunction(name, bindings = {}) {
+  let found;
+  function find(node) {
+    if (ts.isFunctionDeclaration(node) && node.name?.text === name) found = node;
+    ts.forEachChild(node, find);
+  }
+  find(ast);
+  assert.ok(found, name);
+  return new Function(...Object.keys(bindings), `${transpile(found.getText(ast))};return ${name}`)(...Object.values(bindings));
+}
+const checkpointMatches = appFunction("completeTokenListingHistoryMatchesCheckpoint");
+const stateMatches = appFunction("completeTokenListingHistoryMatchesState", {
+  completeTokenListingHistoryMatchesCheckpoint: checkpointMatches,
+});
+const bookTime = "2026-09-28T22:43:45.778Z";
+const summaryState = { indexedAt: "2026-09-28T22:48:41.000Z", indexedThroughBlock: 969059, indexedThroughBlockHash: "a".repeat(64) };
+const bookState = { ...summaryState, indexedAt: bookTime };
+assert.equal(stateMatches(bookState, summaryState), true);
+for (const patch of [
+  { indexedThroughBlock: 969060 }, { indexedThroughBlockHash: "b".repeat(64) },
+  { indexedThroughBlock: 0 }, { indexedThroughBlockHash: "" }, { indexedAt: "invalid" },
+]) assert.equal(stateMatches(bookState, { ...summaryState, ...patch }), false);
+assert.equal(stateMatches({ ...bookState, indexedAt: "invalid" }, summaryState), false);
+
+const rows = Array.from({ length: 201 }, (_, index) => {
+  const listingId = (index + 1).toString(16).padStart(64, "0");
+  return { listingId, confirmed: true, network: "livenet", displayEvidence: {
+    model: "proof-token-listing-display-v2", fullRecordSha256: "b".repeat(64),
+    omittedFields: ["parsed", "listing", "payload"],
+    fullDetailPath: `/api/v1/token-history?kind=listings&projection=full&q=${listingId}&listingId=${listingId}`,
+  } };
+});
+const bookPage = (page) => ({
+  ...bookState, snapshotId: "c".repeat(64), network: "livenet", kind: "listings",
+  source: "proof-indexer-complete-core-reconciled-token-listings",
+  items: rows.slice(page * 200, (page + 1) * 200), totalCount: rows.length,
+  cursor: page ? "opaque-next" : "", nextCursor: page ? "" : "opaque-next",
+  start: page * 200, end: page ? 201 : 200, limit: 200, page, pageCount: 2,
+  hasMore: page === 0,
+  listingAuthority: { model: "proof-token-market-core-gettxout-v1", includeMempool: true,
+    checkpoint: { height: bookState.indexedThroughBlock, blockHash: bookState.indexedThroughBlockHash },
+    checkedOutpointsSha256: "d".repeat(64), checkedListingCount: 201, inputListingCount: 201,
+    outputListingCount: 201, spentListingCount: 0, unspentListingCount: 201 },
+  listingProjection: { model: "proof-token-market-cutover-after-core-v1", activeListingCount: 201,
+    coreUnspentListingCount: 201, excludedByProtocolCount: 0, membershipSha256: "e".repeat(64) },
+  itemProjection: { model: "proof-token-listing-display-v2", fullMembershipSha256: "f".repeat(64), fullSourceSha256: "1".repeat(64) },
+});
+let pageCalls = 0;
+let mutatePage = (value) => value;
+const readBook = appFunction("fetchCompleteTokenListings", {
+  TOKEN_HISTORY_PAGE_SIZE: 200, MAX_TOKEN_HISTORY_PAGES: 10,
+  listingDisplayProjectionFingerprint,
+  fetchTokenHistoryPage: async (_network, kind, options) => {
+    assert.equal(kind, "listings");
+    assert.equal(options.projection, "display-v2");
+    pageCalls++;
+    return mutatePage(bookPage(options.cursor ? 1 : 0));
+  },
+});
+const verifiedBook = await readBook("livenet");
+assert.equal(pageCalls, 2);
+assert.equal(verifiedBook.items.length, 201);
+assert.equal(stateMatches(verifiedBook, summaryState), true);
+for (const patch of [
+  { indexedAt: summaryState.indexedAt }, { indexedThroughBlockHash: "b".repeat(64) },
+  { snapshotId: "2".repeat(64) }, { totalCount: 202 }, { items: [rows[0]] },
+  { itemProjection: { ...bookPage(1).itemProjection, fullSourceSha256: "3".repeat(64) } },
+  { listingAuthority: { ...bookPage(1).listingAuthority, checkedOutpointsSha256: "4".repeat(64) } },
+]) {
+  mutatePage = (value) => value.page === 1 ? { ...value, ...patch } : value;
+  await assert.rejects(readBook("livenet"), /checkpoint|repeated|returned/);
+}
+const v2Projection = { itemProjection: bookPage(0).itemProjection, items: [rows[0]] };
+assert.doesNotThrow(() => listingDisplayProjectionFingerprint(v2Projection));
+for (const omitted of ["saleAuthorization", "listingAuthorization", "workAmoFrozenTerms", "amountSubatoms"]) {
+  assert.throws(() => listingDisplayProjectionFingerprint({ ...v2Projection,
+    items: [{ ...rows[0], displayEvidence: { ...rows[0].displayEvidence, omittedFields: [omitted] } }] }));
+}
+assert.throws(() => listingDisplayProjectionFingerprint({
+  ...projection, items: [{ ...item, displayEvidence: { ...item.displayEvidence, omittedFields: ["payload"] } }],
+}), /retrievable full evidence/);
+
+let currentBookReads = 0;
+const currentBook = appFunction("currentCompleteGlobalTokenListings", {
+  completeMarketplaceListingHistoryRef: { current: verifiedBook },
+  completeMarketplaceListingHistoryInFlightRef: { current: null },
+  completeTokenListingHistoryMatchesState: stateMatches,
+  fetchCompleteTokenListings: async () => { currentBookReads++; return verifiedBook; },
+});
+await currentBook(summaryState, false);
+assert.equal(currentBookReads, 1, "different observation clocks cannot reuse old pending-spend evidence");
+await currentBook(bookState, false);
+assert.equal(currentBookReads, 1, "identical observation can reuse its verified book");
+await currentBook(bookState, true);
+assert.equal(currentBookReads, 2, "explicit refresh always rechecks ticket spends");
+console.log(JSON.stringify({ ok: true, coverage: ["amo-independent-clocks", "amo-two-page-v2-book", "amo-page-mutation-rejection", "amo-v2-evidence-retained", "amo-cache-observation-fence"] }));

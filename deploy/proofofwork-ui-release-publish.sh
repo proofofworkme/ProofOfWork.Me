@@ -140,8 +140,8 @@ refuse_existing_rollback_roots() {
   local -a existing_rollback_roots
   local record name root
   local -A classified=()
-  if ((${#retain_rollback_roots[@]} > 8)); then
-    echo "At most eight exact retained rollback classifications are permitted." >&2
+  if ((${#retain_rollback_roots[@]} > 16)); then
+    echo "At most sixteen exact retained rollback classifications are permitted." >&2
     return 1
   fi
   for record in "${retain_rollback_roots[@]}"; do
