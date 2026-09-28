@@ -227,6 +227,12 @@ browser.proofofwork.me
 
 This route should stay compatible with the current Computer mail/file protocol. HTML pages are messages or files, not a new external carrier.
 
+## Boost Profile Images
+
+Boost's Profile images picker reuses confirmed Inbox/Sent attachments, including images received from another sender. It deduplicates self-sends by file transaction/hash and excludes pending or dropped mail. PNG, JPEG, GIF, WebP, and AVIF previews require matching hash, size, MIME, and name. A missing file library offers guidance to send an image to the connected address and wait for confirmation.
+
+Avatar and banner selection, crop position, and removal publish `pwb1:profile` metadata referencing existing Files; they do not duplicate the file bytes or alter mailbox organization. A 546-proof self-payment plus miner fee is reviewed and signed in the local wallet. Public profile rendering waits for confirmation, independently verifies the referenced file transaction and bytes, and falls back safely when unavailable.
+
 ## Outbox
 
 Outbox is local broadcast tracking for transactions that have not become durable on-chain mail yet.

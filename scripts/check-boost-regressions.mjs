@@ -1027,6 +1027,16 @@ test("Boost satoshi and outpoint writers reject fractional or unsafe inputs", as
     '"./boostNumeric"': JSON.stringify(numericUrl),
   });
   const protocol = await import(protocolUrl);
+  const profilePayload = protocol.buildBoostProfilePayload({ image: { txid, name: "photo.png" }, banner: null });
+  const decodedProfile = JSON.parse(Buffer.from(profilePayload.split(":")[2], "base64url"));
+  assert.equal(decodedProfile.image.txid, txid);
+  assert.equal(decodedProfile.banner, null);
+  assert.equal(Object.hasOwn(decodedProfile, "id"), false, "media-only updates do not overwrite identity");
+  const identityPayload = protocol.buildBoostProfilePayload({ id: "alice" });
+  const decodedIdentity = JSON.parse(Buffer.from(identityPayload.split(":")[2], "base64url"));
+  assert.equal(Object.hasOwn(decodedIdentity, "image"), false, "identity updates do not clear images");
+  assert.equal(Object.hasOwn(decodedIdentity, "banner"), false);
+
   const authorization = protocol.boostSaleAuthorizationDraft({
     boostTxid: txid,
     priceSats: 1,
@@ -1050,4 +1060,71 @@ test("Boost satoshi and outpoint writers reject fractional or unsafe inputs", as
   );
   assert.match(paymentBuilder, /excludeOutpoints\.map\(\s*normalizeBoostSpentOutpoint[\s\S]*?some\(\(outpoint\) => !outpoint\)[\s\S]*?throw new Error/u);
   assert.doesNotMatch(walletSource, /Math\.floor\((?:payment\.amountSats|outpoint\.vout)/u);
+});
+
+test("profile media updates preserve identity and untouched slots; null clears and pending cannot overwrite", () => {
+  const image = { txid: txid(100), sha256: "a".repeat(64), size: 12, mime: "image/png", name: "avatar.png" };
+  const banner = { ...image, name: "banner.png" };
+  const api = server(reader([]).read);
+  const events = [
+    event(1, "boost-profile", { profile: { image, banner } }),
+    event(2, "boost-profile", { profileId: "alice", profile: { id: "alice", name: "Alice" } }),
+    event(3, "boost-profile", { profile: { banner: null } }),
+    event(4, "boost-profile", { confirmed: false, profile: { image: null } }),
+  ];
+  const profile = api.boostOwnershipState(events).profiles.get("owner");
+  assert.equal(profile.id, "alice");
+  assert.equal(profile.image.sha256, image.sha256);
+  assert.equal(profile.banner, null);
+  assert.equal(profile.name, "Alice");
+  assert.equal(api.boostOwnershipState(events.slice(0, 1)).profiles.get("owner").image.txid, image.txid,
+    "addresses without IDs may publish images");
+});
+
+test("profile file choices require confirmed verified raster files and deduplicate Inbox/Sent", async () => {
+  const encodingUrl = await importTs("../src/shared/utils/encoding.ts", {
+    '"bitcoinjs-lib"': JSON.stringify(import.meta.resolve("bitcoinjs-lib")), '"buffer"': '"node:buffer"',
+  });
+  const mediaUrl = await importTs("../src/features/boost/boostMedia.ts", { '"../../shared/utils/encoding"': JSON.stringify(encodingUrl) });
+  const profileUrl = await importTs("../src/features/boost/boostProfileMedia.ts", { '"./boostMedia"': JSON.stringify(mediaUrl) });
+  const { profileImageChoices, verifiedProfileImage } = await import(profileUrl);
+  const bytes = Buffer.from("image bytes");
+  const attachment = { name: "photo.png", mime: "image/png", size: bytes.length,
+    sha256: createHash("sha256").update(bytes).digest("hex"), data: bytes.toString("base64url") };
+  const message = { txid: txid(300), confirmed: true, attachment };
+  const files = profileImageChoices({ inboxMessages: [message, { ...message, txid: txid(301), confirmed: false }],
+    sentMessages: [{ ...message, status: "confirmed" }, { ...message, txid: txid(302), attachment: { ...attachment, data: "invalid" } }] });
+  assert.equal(files.length, 1);
+  assert.match(files[0].url, /^data:image\/png;base64,/u);
+  assert.equal(files[0].pointer.source, "confirmed-pwm1-attachment");
+  assert.equal(verifiedProfileImage({ ...files[0].pointer, mime: "image/svg+xml" }, { ...attachment, mime: "image/svg+xml" }), "");
+  for (const field of ["txid", "sha256", "size", "mime", "name"]) {
+    assert.equal(verifiedProfileImage({ ...files[0].pointer, [field]: field === "size" ? 99 : "invalid" }, attachment), "", field);
+  }
+});
+
+test("profile carrier binds images to the transaction sender and preserves clear/crop metadata", async () => {
+  const source = await readFile(new URL("./backfill-proof-indexer.mjs", import.meta.url), "utf8");
+  const take = name => {
+    const start = source.indexOf(`function ${name}(`);
+    const end = source.indexOf("\nfunction ", start + 1);
+    assert.ok(start >= 0 && end > start);
+    return source.slice(start, end);
+  };
+  const context = vm.createContext({
+    normalizedText: value => String(value ?? "").trim(), normalizedLowerText: value => String(value ?? "").trim().toLowerCase(),
+    normalizedPowId: identityNormalizer, decodeCanonicalBase64UrlJsonObject: value => JSON.parse(Buffer.from(value, "base64url")),
+    baseProtocolItem: (tx, message, kind) => ({ txid: tx.txid, kind, confirmed: true }),
+    senderAddressFromTx: () => "actual-wallet", invalidProtocolItem: (item, reason) => ({ ...item, valid: false, reason }),
+  });
+  vm.runInContext(["boostTxidText", "boostMediaPointer", "boostJsonPayload", "boostText", "boostSignalSats", "boostItemFromMessage"].map(take).join("\n") + "\nthis.parse = boostItemFromMessage;", context);
+  const profile = { address: "forged-wallet", image: { txid: txid(1), mime: "image/png", name: "file.png", size: 12,
+    sha256: "b".repeat(64), positionX: 25, positionY: 100, url: "https://untrusted.example/tracker" }, banner: null };
+  const [item] = context.parse({ txid: txid(2) }, { text: `pwb1:profile:${Buffer.from(JSON.stringify(profile)).toString("base64url")}` });
+  assert.equal(item.authorAddress, "actual-wallet");
+  assert.equal(item.profile.image.positionX, 25);
+  assert.equal(item.profile.image.positionY, 100);
+  assert.equal(item.profile.image.url, undefined);
+  assert.equal(item.profile.banner, null);
+  assert.equal(item.valid, true);
 });

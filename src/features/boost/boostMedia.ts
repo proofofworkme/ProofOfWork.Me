@@ -25,7 +25,7 @@ export function boostMediaUrl(
   attachment: ProofAttachment | undefined,
 ) {
   if (!attachment?.data || !attachment.mime) return "";
-  if (media?.source === "same-tx-pwm1-attachment") {
+  if (media?.source === "same-tx-pwm1-attachment" || media?.source === "confirmed-pwm1-attachment") {
     if (!/^[0-9a-f]{64}$/u.test(media.sha256 ?? "") ||
         !Number.isSafeInteger(media.size) || (media.size ?? 0) < 1 ||
         !media.mime || !media.name ||

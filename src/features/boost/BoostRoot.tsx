@@ -59,6 +59,7 @@ import { formatExactDecimal } from "../../exactAmount";
 import { boostSignalQ8, formatBoostSignal } from "./boostAmounts";
 import { createBoostReadLifecycle } from "./boostReadLifecycle";
 import { boostMediaUrl } from "./boostMedia";
+import { BoostProfileImages, ProfileImage } from "./BoostProfileImages";
 import {
   BOOST_WORK_MUTATION_PROOFS,
   BOOST_WORK_REGISTRY_ADDRESS,
@@ -100,6 +101,7 @@ import {
   type BoostIdentityIntent,
   type BoostPaidAction,
   type BoostProfileTab,
+  type BoostProfileImage,
   type BoostTimelineMode,
   type PowIdRecordLike,
 } from "./boostProtocol";
@@ -445,18 +447,8 @@ function confirmDustFeeAbsorption({
 }
 
 function BoostAvatar({ item }: { item: BoostFeedItem }) {
-  const imageUrl = item.profile?.image?.url;
-  if (imageUrl) {
-    return (
-      <img alt="" className="boost-avatar" loading="lazy" src={imageUrl} />
-    );
-  }
-
-  return (
-    <div className="boost-avatar boost-avatar-fallback" aria-hidden="true">
-      {avatarText(item)}
-    </div>
-  );
+  return <ProfileImage pointer={item.profile?.image} network={item.network ?? "livenet"}
+    className="boost-avatar" fallback={avatarText(item)} />;
 }
 
 const BOOST_MEDIA_MAX_CONCURRENT = 4;
@@ -1017,6 +1009,7 @@ export default function BoostRoot({
   const [address, setAddress] = useState(initialAddress);
   const [boostRegistryAddress, setBoostRegistryAddress] = useState("");
   const [ownedIds, setOwnedIds] = useState<PowIdRecordLike[]>([]);
+  const [imageEditorOpen, setImageEditorOpen] = useState(false);
   const [selectedIdentityId, setSelectedIdentityId] = useState("");
   const [activeIdentity, setActiveIdentity] = useState<
     BoostIdentityIntent | undefined
@@ -1798,6 +1791,24 @@ export default function BoostRoot({
     }
   }
 
+  async function publishProfileImages(images: { image?: BoostProfileImage | null; banner?: BoostProfileImage | null }) {
+    try {
+      if (network !== "livenet") throw new Error("Choose Mainnet and reload your image files before publishing.");
+      const ready = await ensureBoostWriterReady(false);
+      const sent = await broadcastBoostPayload({
+        action: "profile", paymentLabel: "Boost profile images",
+        payments: [{ address: ready.walletAddress, amountSats: BOOST_ACTION_PAYMENT_SATS }],
+        protocolPayload: buildBoostProfilePayload({ ...images }),
+        walletAddress: ready.walletAddress,
+      });
+      if (sent) setImageEditorOpen(false);
+      return sent;
+    } catch (error) {
+      setStatus({ tone: "bad", text: error instanceof Error ? error.message : "Profile image publishing failed." });
+      return false;
+    }
+  }
+
   async function publishProfileIntent() {
     if (!activeIdentity) {
       setStatus({ tone: "bad", text: "Sign an ID intent first." });
@@ -2487,6 +2498,8 @@ export default function BoostRoot({
             )}
           </section>
 
+          {address ? <button className="secondary" type="button" disabled={Boolean(actionBusy)} onClick={() => setImageEditorOpen(true)}>Profile images</button> : null}
+
           {listingTarget ? (
             <form className="boost-action-panel" onSubmit={publishListing}>
               <div className="boost-action-panel-head">
@@ -2606,6 +2619,9 @@ export default function BoostRoot({
           </a>
         </aside>
 
+          {imageEditorOpen && address ? <BoostProfileImages key={`${network}:${address}`} address={address} network={network}
+            busy={Boolean(actionBusy)} publishStatus={status.text} onPublish={publishProfileImages} onClose={() => setImageEditorOpen(false)} /> : null}
+
         <section className="boost-feed-panel">
           {isProfileView ? (
             <>
@@ -2622,23 +2638,10 @@ export default function BoostRoot({
               </button>
             </div>
             <div className="boost-profile-head">
-              <div className="boost-profile-cover" />
+              <ProfileImage pointer={profileSubject?.profile?.banner} network={network} className="boost-profile-cover" />
               <div className="boost-profile-main">
-                {profileSubject?.profile?.image?.url ? (
-                  <img
-                    alt=""
-                    className="boost-profile-avatar"
-                    loading="lazy"
-                    src={profileSubject.profile.image.url}
-                  />
-                ) : (
-                  <div
-                    className="boost-profile-avatar boost-avatar-fallback"
-                    aria-hidden="true"
-                  >
-                    {profileSubjectAvatarText(payload)}
-                  </div>
-                )}
+                <ProfileImage pointer={profileSubject?.profile?.image} network={network}
+                  className="boost-profile-avatar" fallback={profileSubjectAvatarText(payload)} />
                 <div className="boost-profile-copy">
                   <h2>{profileSubjectDisplay(payload)}</h2>
                   <p>{profileSubjectHandle(payload) || profileRouteValue}</p>
@@ -2664,9 +2667,8 @@ export default function BoostRoot({
                   </details>
                 </div>
                 {profileSelfView ? <button className="secondary small boost-profile-edit" onClick={() => {
-                  if ((boostSurfaceRef.current?.getBoundingClientRect().width ?? 0) <= 1120) openTools();
-                  else toolsPanelRef.current?.querySelector<HTMLElement>(".boost-action-panel select, .boost-action-panel button")?.focus();
-                }} type="button">Edit identity</button> : null}
+                  setImageEditorOpen(true);
+                }} type="button">Edit profile</button> : null}
                 {!profileSelfView && profileSubjectAddress ? (
                   <button
                     className="secondary small boost-follow-button"
