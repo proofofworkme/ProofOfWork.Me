@@ -1011,3 +1011,12 @@ Important implementation points:
 - OP_RETURN infrastructure notes: `OP_RETURN_INFRASTRUCTURE.md`.
 - ID refund log: `ID_REFUNDS.md`.
 - AMO protocol notes: `MARKETPLACE.md` (retained historical filename).
+
+### Custom miner fee precision
+
+Every miner fee-rate field, including listing, seal, and mint/transfer UTXO
+preparation, accepts up to eight decimal places in sat/vB (for example, `0.35`,
+`0.45`, or `0.12345678`). The existing 0.1 sat/vB input minimum and presets
+remain unchanged. Transaction preparation preserves the selected rate and
+rounds the calculated total miner fee upward to whole proofs; precision beyond
+eight decimal places is rejected rather than silently rounded.

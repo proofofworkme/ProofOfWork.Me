@@ -1,3 +1,5 @@
+import { FEE_RATE_STEP } from "./shared/feeRate";
+import { assertFeeRatePrecision } from "./walletUtxos";
 import { canonicalWorkCapacityAddress, requireCanonicalWorkCapacity, type CanonicalWorkCapacity } from "./shared/work/canonicalWorkCapacity";
 import { assertCompleteTokenDirectory, assertCompleteIdReservations, walletReservationsReady, listingDisplayProjectionFingerprint } from "./shared/api/surfaceReadState";
 import {
@@ -19600,6 +19602,7 @@ function buildChainedMintPsbt({
   isLast: boolean;
   network: BitcoinNetwork;
 }): ChainedMintBuildResult {
+  assertFeeRatePrecision(feeRate);
   const selectedNetwork = bitcoinNetwork(network);
   const chainScript = scriptForAddress(
     fromAddress,
@@ -39473,7 +39476,7 @@ function TokenWalletWorkspace({
                 onChange={(event) =>
                   setPrepareTransferFeeRate(Number(event.target.value))
                 }
-                step={0.1}
+                step={FEE_RATE_STEP}
                 type="number"
                 value={prepareTransferFeeRate || ""}
               />
@@ -41636,7 +41639,7 @@ function TokenWorkspace({
                 onChange={(event) =>
                   setPrepareFeeRate(Number(event.target.value))
                 }
-                step={0.1}
+                step={FEE_RATE_STEP}
                 type="number"
                 value={prepareFeeRate || ""}
               />
