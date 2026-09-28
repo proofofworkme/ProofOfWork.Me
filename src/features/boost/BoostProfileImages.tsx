@@ -3,6 +3,7 @@ import type { BitcoinNetwork } from "../../shared/bitcoin/networks";
 import { fetchProofApiJson } from "../../shared/api/proofApiClient";
 import { imageMime, verifiedProfileImage, profileImageChoices, type Attachment, type FileChoice, type MailFile } from "./boostProfileMedia";
 import type { BoostProfileImage } from "./boostProtocol";
+import { FeeRateControl } from "../../shared/components/FeeRateControl";
 
 // Share repeat avatars and bound transaction reads across a feed page.
 const imageReads = new Map<string, { at: number; value: Promise<string> }>();
@@ -50,8 +51,9 @@ export function ProfileImage({ pointer, network, className, fallback, alt = "" }
     onError={() => setLoaded(undefined)} /> : <div className={`${className} boost-avatar-fallback`} aria-label={alt || undefined}>{fallback}</div>;
 }
 
-export function BoostProfileImages({ address, network, busy, onPublish, onClose, publishStatus }: {
+export function BoostProfileImages({ address, network, busy, feeRate, setFeeRate, onPublish, onClose, publishStatus }: {
   address: string; network: BitcoinNetwork; busy: boolean;
+  feeRate: number; setFeeRate: (value: number) => void;
   onPublish: (images: { image?: BoostProfileImage | null; banner?: BoostProfileImage | null }) => Promise<boolean>;
   publishStatus?: string;
   onClose: () => void;
@@ -81,6 +83,7 @@ export function BoostProfileImages({ address, network, busy, onPublish, onClose,
   }, [address, network, revision]);
   const selected = selection[slot];
   const changed = Object.keys(selection).length > 0;
+  const validFeeRate = Number.isFinite(feeRate) && feeRate >= 0.1;
   return <dialog className="boost-image-dialog" ref={dialog} aria-label="Profile images" onKeyDown={event => event.stopPropagation()} onCancel={event => { event.preventDefault(); if (!busy) onClose(); }}>
     <div className="boost-action-panel-head"><h2>Profile images</h2><button type="button" className="secondary" disabled={busy} onClick={onClose}>Close</button></div>
     <p>Choose images from your confirmed Inbox and Sent files.</p>
@@ -107,10 +110,15 @@ export function BoostProfileImages({ address, network, busy, onPublish, onClose,
           setSelection(previous => ({ ...previous, [slot]: { ...selected, pointer: { ...selected.pointer, [axis]: value } } }));
         }} /></label>)}
     </div> : selected === null ? <p>This {slot === "image" ? "picture" : "banner"} will be removed.</p> : null}
-    <p>Publish sends 546 proofs to your own address, plus the miner fee. Your wallet reviews and signs locally. Images change publicly after confirmation.</p>
+    <fieldset className="boost-image-fee" disabled={busy}>
+      <legend>Miner fee</legend>
+      <FeeRateControl feeRate={feeRate} setFeeRate={setFeeRate} />
+    </fieldset>
+    {!validFeeRate ? <p role="alert">Choose a fee rate of at least 0.1 sat/vB.</p> : null}
+    <p>Publish sends 546 proofs to your own address, plus the miner fee at your selected rate. Your wallet reviews and signs locally. Images change publicly after confirmation.</p>
     {publishStatus ? <p role="status">{publishStatus}</p> : null}
-    <button className="primary" type="button" disabled={busy || !changed} onClick={async () => {
-      if (publishing.current) return;
+    <button className="primary" type="button" disabled={busy || !changed || !validFeeRate} onClick={async () => {
+      if (publishing.current || !validFeeRate) return;
       publishing.current = true; setSubmitting(true);
       try { await onPublish(Object.fromEntries(Object.entries(selection).map(([key, file]) => [key, file?.pointer ?? null]))); }
       finally { publishing.current = false; setSubmitting(false); }

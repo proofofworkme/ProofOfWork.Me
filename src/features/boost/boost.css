@@ -1190,3 +1190,4 @@
 .boost-image-crop-avatar { width: 128px; height: 128px; border-radius: 50%; border: 4px solid var(--border); }
 .boost-image-crop-banner { width: 100%; aspect-ratio: 3 / 1; }
 .boost-image-preview label { display: grid; gap: 6px; margin-block: 12px; }
+.boost-image-fee { min-width: 0; margin: 16px 0; padding: 12px; border: 1px solid var(--border); border-radius: 8px; }
