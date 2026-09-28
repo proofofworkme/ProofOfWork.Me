@@ -78,3 +78,32 @@ test("directory-only transport preserves exact aggregates while explicitly omitt
   assert.equal(source.listings.length, 1);
   assert.throws(() => tokenDirectoryProjection({ tokens: [] }), (error) => error.statusCode === 503);
 });
+
+test("display-v2 removes internal envelopes without changing signed terms or full evidence", () => {
+  const original = {
+    listingId: "a".repeat(64), tokenId: "b".repeat(64), confirmed: true,
+    amountSubatoms: "9007199254740993", priceSats: 25000,
+    saleAuthorization: { anchorSignature: "signed", amountSubatoms: "9007199254740993" },
+    listingAuthorization: { version: "pwt-sale-v8", unitFaceProofs: 25000 },
+    workAmoFrozenTerms: { unitAmountSubatoms: "9007199254740993", unitPriceSats: 25000 },
+    parsed: { raw: "a".repeat(10000) }, listing: { raw: "b".repeat(10000) },
+    payload: { raw: "c".repeat(10000) }, futureUnknownField: { retain: true },
+  };
+  const before = JSON.stringify(original);
+  const options = { fullRecordSha256: createHash("sha256").update(before).digest("hex"), network: "livenet" };
+  const v1 = tokenListingDisplayProjection(original, options);
+  const v2 = tokenListingDisplayProjection(original, { ...options, projection: "display-v2" });
+  assert.equal(v1.parsed, original.parsed, "existing clients keep their v1 contract");
+  assert.equal(v1.listing, original.listing);
+  assert.equal(v1.payload, original.payload);
+  assert.equal(v2.displayEvidence.model, "proof-token-listing-display-v2");
+  assert.deepEqual(v2.displayEvidence.omittedFields, ["parsed", "listing", "payload"]);
+  for (const [key, value] of Object.entries(original)) {
+    if (["parsed", "listing", "payload"].includes(key)) assert.ok(!(key in v2));
+    else assert.deepEqual(v2[key], value);
+  }
+  assert.equal(v2.displayEvidence.fullRecordSha256, v1.displayEvidence.fullRecordSha256);
+  assert.equal(v2.displayEvidence.fullDetailPath, v1.displayEvidence.fullDetailPath);
+  assert.ok(JSON.stringify(v2).length < before.length / 10);
+  assert.equal(JSON.stringify(original), before);
+});

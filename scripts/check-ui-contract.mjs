@@ -3327,7 +3327,7 @@ expect(
     /listings\.length !== expectedTotalCount/.test(
       fetchCompleteTokenListingsBlock,
     ) &&
-    /state\.indexedAt === history\.indexedAt/.test(
+    /Number\.isFinite\(Date\.parse\(state\.indexedAt\)\)/.test(
       completeTokenListingHistoryMatchesStateBlock,
     ) &&
     /completeTokenListingHistoryMatchesCheckpoint\(history, state\)/.test(
@@ -3349,8 +3349,8 @@ expect(
     /bondCount=\{listingBookComplete \? bondListings\.length : undefined\}/.test(app),
 );
 expect(
-  "Completed listing history stays bound to exact indexed and canonical snapshots",
-  /state\.indexedAt === history\.indexedAt/.test(
+  "Completed listing history matches canonical checkpoints while retaining page and cache observation fences",
+  /Number\.isFinite\(Date\.parse\(history\.indexedAt\)\)/.test(
     completeTokenListingHistoryMatchesStateBlock,
   ) &&
     /completeTokenListingHistoryMatchesCheckpoint\(history, state\)/.test(
@@ -3359,6 +3359,7 @@ expect(
     /completeTokenListingHistoryMatchesState\(retained, state\)/.test(
       currentCompleteGlobalTokenListingsBlock,
     ) &&
+    /retained\.indexedAt === state\.indexedAt/.test(currentCompleteGlobalTokenListingsBlock) &&
     /pageIndexedAt !== expectedIndexedAt/.test(fetchCompleteTokenListingsBlock) &&
     /pageIndexedThroughBlockHash !== expectedIndexedThroughBlockHash/.test(
       fetchCompleteTokenListingsBlock,

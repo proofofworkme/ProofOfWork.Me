@@ -311,6 +311,22 @@ An explicit refresh rechecks Core-backed inventory even at an unchanged indexed
 snapshot. Compact rows never become searchable full inventory. Market-log rows are
 history and must never be merged into active inventory. Wallet-owned listing
 pagination follows the same cursor and evidence rules.
+Summary `indexedAt` is a generation/observation timestamp, not a canonical
+checkpoint identity: it can differ from the relational listing timestamp at
+the same verified height/hash. The client matches summary to book using that
+height/hash while preserving every cross-page timestamp, snapshot, digest,
+authority, and count check. Cache reuse additionally requires the same
+observation timestamp; an explicit refresh always rechecks the book.
+
+The additive `projection=display-v2` listing response removes internal
+`parsed`, `listing`, and `payload` envelopes as well as V1's replay transport
+fields. It preserves top-level terms and authorizations and includes
+`proof-token-listing-display-v2` evidence with the full-record digest and exact
+`projection=full` detail link. Source/membership digests and Core reconciliation
+still use full records. V1 and full responses are unchanged, and cursors bind
+the requested projection version. Deploy API support before the frontend that
+requests V2; this is a transport change with no replay or database migration.
+
 `POW_INDEX_READS=token-state` enables default `/api/v1/token`
 reads from stored token-state snapshots for global and scoped credit views,
 including AMO active/sealed books and sale-ticket lifecycle arrays.

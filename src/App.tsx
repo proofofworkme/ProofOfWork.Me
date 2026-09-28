@@ -16908,7 +16908,7 @@ async function fetchTokenHistoryPage<T>(
     pageIndex?: number;
     pageSize?: number;
     query?: string;
-    projection?: "display-v1";
+    projection?: "display-v1" | "display-v2";
     tokenScope?: string;
   } = {},
 ): Promise<PowPaginatedApiResponse<T>> {
@@ -17034,7 +17034,7 @@ async function fetchCompleteTokenListings(
       "listings",
       {
         address: options.address,
-        projection: "display-v1",
+        projection: "display-v2",
         cursor: cursor || undefined,
         fresh: options.fresh,
         pageSize: TOKEN_HISTORY_PAGE_SIZE,
@@ -17241,9 +17241,13 @@ function completeTokenListingHistoryMatchesState(
   history: CompleteTokenListingHistory,
   state: PowTokenState,
 ) {
+  // Summary generation and relational indexing have independent clocks.
+  // Each book is already bound across all pages to its own timestamp, content
+  // digests and Core evidence; match confirmed state by canonical height/hash.
   return (
     typeof state.indexedAt === "string" &&
-    state.indexedAt === history.indexedAt &&
+    Number.isFinite(Date.parse(state.indexedAt)) &&
+    Number.isFinite(Date.parse(history.indexedAt)) &&
     completeTokenListingHistoryMatchesCheckpoint(history, state)
   );
 }
@@ -17253,9 +17257,12 @@ function completeTokenListingHistoryMatchesCheckpoint(
   state: PowTokenState,
 ) {
   return (
+    typeof state.indexedThroughBlock === "number" &&
     Number.isSafeInteger(state.indexedThroughBlock) &&
+    state.indexedThroughBlock > 0 &&
     state.indexedThroughBlock === history.indexedThroughBlock &&
     typeof state.indexedThroughBlockHash === "string" &&
+    /^[0-9a-f]{64}$/u.test(state.indexedThroughBlockHash) &&
     state.indexedThroughBlockHash === history.indexedThroughBlockHash
   );
 }
@@ -22112,6 +22119,9 @@ export default function App() {
     if (
       !fresh &&
       retained &&
+      // Do not turn checkpoint compatibility into indefinite book caching:
+      // a new summary observation must still recheck pending ticket spends.
+      retained.indexedAt === state.indexedAt &&
       completeTokenListingHistoryMatchesState(retained, state)
     ) {
       return retained;
