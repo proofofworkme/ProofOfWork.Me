@@ -146,6 +146,42 @@ test("Log search waits for matching results and counts returned pending rows out
   await expect(page.locator(".activity-feed")).toHaveCount(0);
 });
 
+test("Log mounts one initial summary read and keeps its visible refresh schedule", async ({ page }) => {
+  test.skip(
+    process.env.POW_PLAYWRIGHT_PRODUCTION_BUILD !== "1",
+    "Run this request-count assertion against the production build, not React StrictMode development effects.",
+  );
+  const summaryReads = [];
+  await page.route("**/api/v1/**", async (route) => {
+    const url = new URL(route.request().url());
+    if (url.pathname === "/api/v1/log-summary") {
+      summaryReads.push(url.searchParams.toString());
+    }
+    return fallback(route);
+  });
+  await page.goto("/?log=1");
+  await expect.poll(() => summaryReads.length).toBeGreaterThan(0);
+  await page.waitForTimeout(1_250); // exceed the former duplicate initial refresh delay
+  expect(summaryReads).toHaveLength(1);
+});
+
+test("late UniSat injection updates wallet availability from a user interaction", async ({ page }) => {
+  test.skip(
+    process.env.POW_PLAYWRIGHT_PRODUCTION_BUILD !== "1",
+    "Run this wallet-presence assertion against the production build.",
+  );
+  await page.goto("/?boost=1");
+  await expect(page.getByRole("link", { name: "Install UniSat" })).toBeVisible();
+  await page.evaluate(() => {
+    window.unisat = {
+      on() {},
+      removeListener() {},
+    };
+    window.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
+  });
+  await expect(page.getByRole("button", { name: "Connect UniSat" })).toBeVisible();
+});
+
 test("Boost never reports partial or zero facts while awaiting a matching indexed search", async ({ page }) => {
   const initial = delayed(); const search = delayed(); const reads = [];
   const item = (eventId, text) => ({ eventId, txid: String(eventId).repeat(64), kind: "boost-post",
@@ -167,8 +203,15 @@ test("Boost never reports partial or zero facts while awaiting a matching indexe
   });
   await page.goto("/?boost=1");
   await expect(page.getByRole("heading", { name: "Loading Boost history" })).toBeVisible({ timeout: 45_000 });
-  const posts = page.locator(".account-signal-item").filter({ hasText: "Posts" });
-  const totalSignal = page.locator(".account-signal-item").filter({ hasText: "Total Signal" });
+  const discoveryStats = page.getByLabel("Boost discovery").locator(".boost-rail-stats");
+  await expect(discoveryStats).toContainText("Unavailable");
+  await expect(discoveryStats).not.toContainText("0");
+  await page.getByText("Network stats", { exact: true }).click();
+  const statValue = (label) => page.locator(".boost-network-stats dl > div")
+    .filter({ has: page.locator("dt", { hasText: label }) })
+    .locator("dd");
+  const posts = statValue("Posts");
+  const totalSignal = statValue("Total Signal");
   await expect(posts).toContainText("Loading");
   initial.release();
   await expect(posts).toContainText("2"); // full result count, despite one loaded row

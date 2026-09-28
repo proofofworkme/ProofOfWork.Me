@@ -1562,15 +1562,20 @@ assert.match(appSource, /function assertWorkAmoV6ListingEnabled/u);
 assert.match(appSource, /TOKEN_SALE_AUTH_WORK_CONFIRMATION_FLOOR_VERSION/u);
 assert.match(appSource, /Marketplace V1 Relic/u);
 assert.match(appSource, /disabledAtBlockHeight: 959062/u);
-assert.match(
+assert.doesNotMatch(
   appSource,
   /import workMarketV1RefundSnapshot from "\.\.\/WORK_MARKET_V1_REFUNDS_959061\.json"/u,
 );
 assert.match(
   appSource,
-  /function workMarketV1RelicRows\([\s\S]*workMarketV1RefundSnapshot\.listings[\s\S]*snapshotById[\s\S]*serverListingById\.get\(refund\.listingId\)/u,
+  /selectedMarketTokenIsWork[\s\S]*workMarketplaceVersion !== "v1-relic"[\s\S]*import\("\.\.\/WORK_MARKET_V1_REFUNDS_959061\.json"\)/u,
 );
-assert.match(appSource, /workRelicRows\.length\.toLocaleString\(\)/u);
+assert.match(
+  appSource,
+  /function workMarketV1RelicRows\([\s\S]*snapshotListings: readonly WorkMarketV1RefundListing\[\][\s\S]*snapshotById[\s\S]*serverListingById\.get\(refund\.listingId\)/u,
+);
+assert.match(appSource, /workV1RefundSnapshot\s*\?\s*workRelicRows\.length\.toLocaleString\(\)/u);
+assert.match(appSource, /no empty-history claim is\s+being made/u);
 assert.match(appSource, /refund\.refundSats\.toLocaleString\(\)/u);
 const relicViewStart = appSource.indexOf(
   'selectedMarketTokenIsWork && workMarketplaceVersion === "v1-relic"',

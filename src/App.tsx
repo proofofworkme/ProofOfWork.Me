@@ -154,7 +154,7 @@ import {
   type WalletUtxo as MempoolUtxo,
   type WalletUtxoSelection as UtxoSelection,
 } from "./walletUtxos";
-import workMarketV1RefundSnapshot from "../WORK_MARKET_V1_REFUNDS_959061.json";
+import { useUnisatPresence } from "./shared/wallet/useUnisatPresence";
 import {
   AppHeader,
   type AppHeaderAccountStat,
@@ -1233,6 +1233,8 @@ type TokenMarketplaceSummaryStats = {
 
 type MarketplaceSummaryReadState = {
   indexedAt?: string;
+  indexedThroughBlock?: number;
+  indexedThroughBlockHash?: string;
   message: string;
   retryable?: boolean;
   status: "loading" | "ready" | "unavailable" | "last-verified";
@@ -2504,6 +2506,25 @@ type MarketplaceSummarySnapshot = {
   token: PowTokenState;
   workFloor: WorkFloorQuote;
 };
+
+function marketplaceSnapshotReadProvenance(
+  snapshot: MarketplaceSummarySnapshot | undefined,
+) {
+  const height = Number(
+    snapshot?.workFloor.indexedThroughBlock ??
+      snapshot?.workFloor.stats?.indexedThroughBlock,
+  );
+  const hash = String(
+    snapshot?.workFloor.indexedThroughBlockHash ??
+      snapshot?.workFloor.stats?.indexedThroughBlockHash ??
+      "",
+  )
+    .trim()
+    .toLowerCase();
+  return Number.isSafeInteger(height) && height > 0 && /^[0-9a-f]{64}$/u.test(hash)
+    ? { indexedThroughBlock: height, indexedThroughBlockHash: hash }
+    : {};
+}
 
 type MarketplaceSummaryApiResponse = {
   indexedAt?: string;
@@ -10941,8 +10962,7 @@ function tokenClosedListingConfirmedForSpendability(
 
 function workMarketV1RelicRows(
   serverListings: PowTokenClosedListing[],
-  snapshotListings: readonly WorkMarketV1RefundListing[] =
-    workMarketV1RefundSnapshot.listings,
+  snapshotListings: readonly WorkMarketV1RefundListing[],
 ): WorkMarketV1RelicRow[] {
   const serverListingById = new Map<string, PowTokenClosedListing>();
   serverListings.forEach((listing) => {
@@ -14418,6 +14438,14 @@ function MarketplaceSummaryReadStatus({
   const indexedAt = readState.indexedAt
     ? ` Verified ${formatDate(readState.indexedAt)}.`
     : "";
+  const snapshotHeight = Number(readState.indexedThroughBlock);
+  const snapshotHash = String(readState.indexedThroughBlockHash ?? "")
+    .trim()
+    .toLowerCase();
+  const indexedAtEpoch = Date.parse(readState.indexedAt ?? "");
+  const snapshotAgeSeconds = Number.isFinite(indexedAtEpoch)
+    ? Math.max(0, Math.floor((Date.now() - indexedAtEpoch) / 1000))
+    : undefined;
 
   return (
     <section
@@ -14433,6 +14461,17 @@ function MarketplaceSummaryReadStatus({
           {readState.message}
           {indexedAt}
         </span>
+        {Number.isSafeInteger(snapshotHeight) && snapshotHeight > 0 &&
+        /^[0-9a-f]{64}$/u.test(snapshotHash) ? (
+          <span className="marketplace-snapshot-provenance">
+            Display snapshot: block {snapshotHeight.toLocaleString()} · hash{" "}
+            <code className="mono">{snapshotHash}</code>
+            {snapshotAgeSeconds !== undefined
+              ? ` · ${snapshotAgeSeconds.toLocaleString()}s old`
+              : ""}
+            . Display only; transaction actions require a fresh preflight.
+          </span>
+        ) : null}
       </div>
       {(readState.status === "unavailable" ||
         readState.status === "last-verified") &&
@@ -21203,7 +21242,7 @@ export default function App() {
     inceptionMode ||
     activityMode ||
     growthMode;
-  const [hasUnisat, setHasUnisat] = useState(() => Boolean(window.unisat));
+  const [hasUnisat, setHasUnisat] = useUnisatPresence();
   const [network, setNetwork] = useState<BitcoinNetwork>("livenet");
   const [address, setAddress] = useState("");
   const [recipient, setRecipient] = useState("");
@@ -22345,6 +22384,7 @@ export default function App() {
           };
           setMarketplaceSummaryReadState({
             indexedAt: currentMarketplaceSnapshot.indexedAt,
+            ...marketplaceSnapshotReadProvenance(currentMarketplaceSnapshot),
             message:
               "Registry, credit, complete Core-reconciled sale-ticket history, and WORK state agree at the same verified checkpoint.",
             status: "ready",
@@ -25002,13 +25042,6 @@ export default function App() {
   }, [browserRoute, desktopRoute, idLaunchMode]);
 
   useEffect(() => {
-    const detectWallet = () => setHasUnisat(Boolean(window.unisat));
-    detectWallet();
-    const interval = window.setInterval(detectWallet, 1000);
-    return () => window.clearInterval(interval);
-  }, []);
-
-  useEffect(() => {
     if (!address) {
       setAccountUtxos([]);
       setAccountUtxosLoaded(false);
@@ -25708,9 +25741,6 @@ export default function App() {
     };
 
     void refreshLogSurface(false, false);
-    settleTimer = window.setTimeout(() => {
-      loadVisibleLog(false);
-    }, BACKGROUND_FRESH_REFRESH_DELAY_MS);
 
     const interval = window.setInterval(() => {
       loadVisibleLog(false);
@@ -27507,14 +27537,18 @@ export default function App() {
   }
 
   async function fetchCompleteMarketplaceSnapshot(fresh: boolean) {
-    // Restart the whole read if the index advances between summary and book.
+    // Restart every page from a new exact-tip summary if the index advances.
     // No partial page is published as searchable market inventory.
     for (let attempt = 0; attempt < 3; attempt += 1) {
       try {
-        const snapshot = await fetchMarketplaceSummary(fresh);
+        const freshRead = fresh || attempt > 0;
+        if (attempt > 0) {
+          await new Promise((resolve) => setTimeout(resolve, attempt * 150));
+        }
+        const snapshot = await fetchMarketplaceSummary(freshRead);
         const token = await tokenStateWithCurrentCompleteMarketplaceListings(
           snapshot.token,
-          fresh,
+          freshRead,
         );
         return { ...snapshot, token };
       } catch (error) {
@@ -27652,6 +27686,7 @@ export default function App() {
             previousMarketplaceSnapshot
               ? {
                   indexedAt: previousMarketplaceSnapshot.indexedAt,
+                  ...marketplaceSnapshotReadProvenance(previousMarketplaceSnapshot),
                   message: fresh
                     ? "The exact-tip AMO response could not replace every verified lane without regression. Retained verified data remains labeled until one coherent current snapshot covers every lane."
                     : "The current AMO response could not replace every verified lane without regression. Retained verified data remains labeled until one coherent snapshot covers every lane.",
@@ -27700,6 +27735,7 @@ export default function App() {
               current.status === "unavailable");
           return {
             indexedAt: acceptedSnapshot.indexedAt,
+            ...marketplaceSnapshotReadProvenance(acceptedSnapshot),
             message: retainsIndexedSnapshot
               ? current.message
               : acceptedTokenState.listingBookComplete === true
@@ -27743,6 +27779,7 @@ export default function App() {
           lastGoodSnapshot
             ? {
                 indexedAt: lastGoodSnapshot.indexedAt,
+                ...marketplaceSnapshotReadProvenance(lastGoodSnapshot),
                 message:
                   lastGoodStatus ||
                   "The current AMO summary could not be verified. Showing the most recent verified snapshot.",
@@ -49325,6 +49362,11 @@ function TokenMarketplacePanel({
   const [workMarketplaceVersion, setWorkMarketplaceVersion] = useState<
     "amo" | "v4-relic" | "v1-relic"
   >("amo");
+  const [workV1RefundSnapshot, setWorkV1RefundSnapshot] = useState<
+    WorkMarketV1RefundListing[] | null
+  >(null);
+  const [workV1RefundSnapshotUnavailable, setWorkV1RefundSnapshotUnavailable] =
+    useState(false);
   const [workPreV8RelicPageIndex, setWorkPreV8RelicPageIndex] = useState(0);
   const [workRelicPageIndex, setWorkRelicPageIndex] = useState(0);
   const selectTokenMarketActivityTab = (tab: TokenMarketActivityTab) => {
@@ -49912,7 +49954,35 @@ function TokenMarketplacePanel({
       ? workFloorQuote?.workAmoV8?.reasonCode
       : workFloorQuote?.workAmoV6?.reasonCode) ?? "",
   ).trim();
-  const workRelicRows = workMarketV1RelicRows(marketClosedListings);
+  useEffect(() => {
+    if (
+      !selectedMarketTokenIsWork ||
+      workMarketplaceVersion !== "v1-relic" ||
+      workV1RefundSnapshot !== null ||
+      workV1RefundSnapshotUnavailable
+    ) {
+      return;
+    }
+    let current = true;
+    void import("../WORK_MARKET_V1_REFUNDS_959061.json")
+      .then(({ default: snapshot }) => {
+        if (current) setWorkV1RefundSnapshot(snapshot.listings);
+      })
+      .catch(() => {
+        if (current) setWorkV1RefundSnapshotUnavailable(true);
+      });
+    return () => {
+      current = false;
+    };
+  }, [
+    selectedMarketTokenIsWork,
+    workMarketplaceVersion,
+    workV1RefundSnapshot,
+    workV1RefundSnapshotUnavailable,
+  ]);
+  const workRelicRows = workV1RefundSnapshot
+    ? workMarketV1RelicRows(marketClosedListings, workV1RefundSnapshot)
+    : [];
   const workPreV8RelicRows = workAmoPreV8RelicRows(
     workFloorQuote?.workAmoV8,
     [
@@ -50613,7 +50683,9 @@ function TokenMarketplacePanel({
                 tabId: "work-marketplace-tab-v4-relic",
               },
               {
-                count: workRelicRows.length.toLocaleString(),
+                count: workV1RefundSnapshot
+                  ? workRelicRows.length.toLocaleString()
+                  : "—",
                 id: "v1-relic",
                 label: "Marketplace V1 Relic",
                 panelId: "work-v1-relic-panel",
@@ -50674,7 +50746,17 @@ function TokenMarketplacePanel({
                 </p>
               </div>
             </div>
-            {workRelicRows.length ? (
+            {workV1RefundSnapshotUnavailable ? (
+              <p className="field-note" role="alert">
+                The immutable Marketplace V1 refund snapshot could not be
+                loaded. Relic history is unavailable; no empty-history claim is
+                being made.
+              </p>
+            ) : workV1RefundSnapshot === null ? (
+              <p aria-live="polite" className="field-note" role="status">
+                Loading the immutable Marketplace V1 refund snapshot…
+              </p>
+            ) : workRelicRows.length ? (
               <div className="token-market-grid">
                 {workRelicPage.items.map(({ listing, refund }) => {
                   const sellerAddress =

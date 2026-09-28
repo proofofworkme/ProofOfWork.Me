@@ -39,6 +39,8 @@ import {
 } from "../../app/appLinks";
 import { appHref } from "../../app/routeRegistry";
 import { fetchProofApiJson } from "../../shared/api/proofApiClient";
+import { createInFlightRequestPool } from "../../shared/api/inFlightRequestPool";
+import { useUnisatPresence } from "../../shared/wallet/useUnisatPresence";
 import { explorerTxUrl } from "../../shared/bitcoin/networks";
 import {
   attachmentFromFile,
@@ -452,6 +454,11 @@ function BoostAvatar({ item }: { item: BoostFeedItem }) {
 }
 
 const BOOST_MEDIA_MAX_CONCURRENT = 4;
+const boostMediaRequests = createInFlightRequestPool<{
+  attachment?: {
+    data?: string; mime?: string; name?: string; sha256?: string; size?: number;
+  };
+}>();
 let boostMediaActive = 0;
 const boostMediaQueue: Array<{
   resolve: (release: () => void) => void;
@@ -496,28 +503,32 @@ function BoostMedia({ item, network }: { item: BoostFeedItem; network: BitcoinNe
         (item.media.url && item.media.source !== "same-tx-pwm1-attachment")) {
       return () => controller.abort();
     }
-    void acquireBoostMediaSlot(controller.signal)
-      .then(async (release) => {
+    const txid = String(item.boostTxid || item.txid).trim().toLowerCase();
+    void boostMediaRequests
+      .request(`${network}:${txid}`, controller.signal, async (signal) => {
+        const release = await acquireBoostMediaSlot(signal);
         try {
-          const payload = await fetchProofApiJson<{ attachment?: {
+          return await fetchProofApiJson<{ attachment?: {
             data?: string; mime?: string; name?: string; sha256?: string; size?: number;
           } }>(
-            `/api/v1/tx/${encodeURIComponent(item.boostTxid || item.txid)}`,
+            `/api/v1/tx/${encodeURIComponent(txid)}`,
             network,
-            { signal: controller.signal, timeoutMs: 30_000 },
+            { signal, timeoutMs: 30_000 },
           );
-          if (!controller.signal.aborted) {
-            const url = boostMediaUrl(item.media, payload.attachment);
-            if (url) setMediaUrl(url);
-            else setMediaError(true);
-          }
-        } catch {
-          if (!controller.signal.aborted) setMediaError(true);
         } finally {
           release();
         }
       })
-      .catch(() => undefined);
+      .then((payload) => {
+        if (!controller.signal.aborted) {
+          const url = boostMediaUrl(item.media, payload.attachment);
+          if (url) setMediaUrl(url);
+          else setMediaError(true);
+        }
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) setMediaError(true);
+      });
     return () => controller.abort();
   }, [item.boostTxid, item.media?.url, item.media?.mime, item.media?.name,
     item.media?.sha256, item.media?.size, item.media?.source, item.txid, network]);
@@ -1005,7 +1016,7 @@ export default function BoostRoot({
   const readLifecycle = useRef(createBoostReadLifecycle());
   const [busy, setBusy] = useState(false);
   const [actionBusy, setActionBusy] = useState<BoostActionBusy>("");
-  const [hasUnisat, setHasUnisat] = useState(() => Boolean(window.unisat));
+  const [hasUnisat, setHasUnisat] = useUnisatPresence();
   const [address, setAddress] = useState(initialAddress);
   const [boostRegistryAddress, setBoostRegistryAddress] = useState("");
   const [ownedIds, setOwnedIds] = useState<PowIdRecordLike[]>([]);
@@ -1957,13 +1968,6 @@ export default function BoostRoot({
   }, [initialAddress]);
 
   useEffect(() => {
-    const detectWallet = () => setHasUnisat(Boolean(window.unisat));
-    detectWallet();
-    const interval = window.setInterval(detectWallet, 1000);
-    return () => window.clearInterval(interval);
-  }, []);
-
-  useEffect(() => {
     if (!window.unisat?.on) {
       return;
     }
@@ -1997,7 +2001,7 @@ export default function BoostRoot({
       window.unisat?.removeListener?.("networkChanged", syncWallet);
       window.unisat?.removeListener?.("chainChanged", syncWallet);
     };
-  }, []);
+  }, [hasUnisat]);
 
   useEffect(() => {
     if (!listQuery || listingTarget || items.length === 0) {
@@ -2197,11 +2201,17 @@ export default function BoostRoot({
     },
     {
       label: "Posts",
-      value: payload ? (payload.totalCount ?? visibleItems.length).toLocaleString() : readStateLabel,
+      value: payload
+        ? Number.isSafeInteger(payload.totalCount)
+          ? Number(payload.totalCount).toLocaleString()
+          : payload.hasMore === false
+            ? visibleItems.length.toLocaleString()
+            : "Unavailable"
+        : readStateLabel,
     },
     {
-      label: "Listings",
-      value: activeMarketListings.length.toLocaleString(),
+      label: "Loaded Listings",
+      value: payload ? activeMarketListings.length.toLocaleString() : readStateLabel,
     },
   ];
 
@@ -2905,8 +2915,12 @@ export default function BoostRoot({
               <span>
                 <strong>
                   {isProfileView
-                    ? (profileSubject?.followerCount ?? 0)
-                    : (payload?.graph?.followingCount ?? 0)}
+                    ? Number.isSafeInteger(profileSubject?.followerCount)
+                      ? Number(profileSubject?.followerCount).toLocaleString()
+                      : "Unavailable"
+                    : Number.isSafeInteger(payload?.graph?.followingCount)
+                      ? Number(payload?.graph?.followingCount).toLocaleString()
+                      : "Unavailable"}
                 </strong>
                 {isProfileView ? "Followers" : "Following"}
               </span>
@@ -2932,7 +2946,11 @@ export default function BoostRoot({
                   </a>
                 ))
               ) : (
-                <span>No Boost signal yet.</span>
+                <span>
+                  {payload
+                    ? "No Boost signal in this verified snapshot."
+                    : readStateLabel}
+                </span>
               )}
             </div>
           </section>
@@ -2940,7 +2958,7 @@ export default function BoostRoot({
           <section className="boost-rail-panel">
             <div className="boost-rail-head">
               <strong>Who To Follow</strong>
-              <span>{suggestedProfiles.length}</span>
+              <span>{payload ? suggestedProfiles.length.toLocaleString() : "—"}</span>
             </div>
             <div className="boost-rail-list">
               {suggestedProfiles.length > 0 ? (
@@ -2959,7 +2977,13 @@ export default function BoostRoot({
                   </button>
                 ))
               ) : (
-                <span>{isProfileView ? "No other profile suggestions in this view." : "Connect and refresh to find active Boost profiles."}</span>
+                <span>
+                  {payload
+                    ? isProfileView
+                      ? "No other profile suggestions in this verified view."
+                      : "Connect and refresh to find active Boost profiles."
+                    : readStateLabel}
+                </span>
               )}
             </div>
           </section>
