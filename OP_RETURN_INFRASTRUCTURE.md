@@ -5607,3 +5607,20 @@ After changing the API or production build, verify:
 - Known HTML message-body transactions render through Browser from `pwm1:m`.
 - Known pending txs return `pending`.
 - Known dropped txs return `dropped`.
+
+### Audit 28 approved storage remediation (2026-09-29)
+
+The UI host accumulated 17 complete rollback roots, preventing the existing
+managed archive retention job from proceeding. After fresh verification of all
+16 surfaces and release archive checksums for current and latest rollback, the
+16 redundant roots were removed under the deployment lock. Compact manifests
+were preserved in `/var/backups/proofofwork-ui/cleanup-evidence/`. Managed archive
+retention was then restored. Rebuildable obsolete source/bundle copies require
+process/config reference checks and preservation of current/rollback sources;
+incomplete or unverifiable checkouts remain excluded. Active replay databases
+and incident evidence are not age-based cleanup targets.
+
+Every subsequent release must finish with exactly the latest verified complete
+rollback root, preserving compact retirement evidence before removing redundant
+roots. Run managed archive retention after this verification; keeping multiple
+complete roots defeats the bounded archive policy and risks exhausting UI disk.

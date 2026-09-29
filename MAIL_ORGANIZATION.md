@@ -550,3 +550,11 @@ They also fit the ProofOfWork model:
 - The app gives users a personal view over that record.
 - No delete fiction is needed.
 - Leaderboards make paid attention visible and social.
+
+### Canonical file byte preservation
+
+Mail bodies retained in activity projections preserve their exact UTF-8 bytes,
+including trailing whitespace, because public Desktop can derive HTML files
+from these bodies. Public Desktop target loads request fresh address mail.
+Whitespace normalization is appropriate for detection/display summaries, but
+never for a file body, byte count, or content hash.

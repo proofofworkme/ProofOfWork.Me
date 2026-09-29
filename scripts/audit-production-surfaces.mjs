@@ -92,7 +92,7 @@ const SURFACES = [
       {
         label: "dns summary",
         url: apiUrl("/api/v1/dns-summary?network=livenet"),
-        validate: validateRegistrySummary,
+        validate: validateDnsRegistrySummary,
       },
     ],
   },
@@ -298,6 +298,15 @@ function validateRegistrySummary(json) {
     "confirmedRecords",
   ]);
   assertCondition(count !== null, "missing registry record count");
+}
+
+function validateDnsRegistrySummary(json) {
+  validateIndexedJson(json);
+  assertCondition(json.coverage?.complete === true, "DNS history coverage is incomplete");
+  assertCondition(/^[0-9a-f]{64}$/u.test(json.checkpointHash ?? ""), "missing DNS checkpoint hash");
+  assertCondition(Array.isArray(json.records), "missing DNS records");
+  const count = firstNonNegativeInteger(json, ["stats.total"]);
+  assertCondition(count === json.records.length, "DNS record count disagrees with records");
 }
 
 function validateTokenSummary(json) {

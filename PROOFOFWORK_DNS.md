@@ -90,3 +90,13 @@ AMO DNS sale tickets use the same sale-ticket lifecycle as IDs, with
 `pwdns-sale-v1` authorization JSON and `.pow` asset display. A valid purchase
 must spend the active sale-ticket UTXO, pay the seller price plus ticket value,
 pay the DNS mutation fee, and write `pwdns1:buy5`.
+
+## Verified read coverage
+
+DNS summary `indexedThroughBlock` is the stable Core checkpoint proven against
+Electrum before and after complete canonical transaction hydration.
+`checkpointHash` binds that height; `latestEventBlock` separately reports the most
+recent DNS event. A changing checkpoint/history or incomplete hydration fails
+the read instead of implying complete coverage. Confirmed sale-ticket matching
+compares normalized terms by field, independent of JSON property insertion order;
+signatures and the sealed anchor txid remain separately verified.

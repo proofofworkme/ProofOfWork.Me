@@ -1650,7 +1650,7 @@ expectAll("Desktop address mail read stays first-party", fetchAddressMailSource,
 ]);
 expectAll("Desktop search loader uses address mail read", loadDesktopTargetSource, [
   /async function loadDesktopTarget\(target = desktopQuery\)/,
-  /fetchAddressMail\(resolved\.paymentAddress,\s*network\)/,
+  /fetchAddressMail\(resolved\.paymentAddress,\s*network,\s*true\)/,
 ]);
 expect("Desktop public search must keep fetchAddressMail source present", Boolean(fetchAddressMailSource));
 expect("Desktop public search must keep loadDesktopTarget source present", Boolean(loadDesktopTargetSource));

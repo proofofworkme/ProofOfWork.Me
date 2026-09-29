@@ -27554,7 +27554,7 @@ export default function App() {
         return;
       }
 
-      const mailState = await fetchAddressMail(resolved.paymentAddress, network);
+      const mailState = await fetchAddressMail(resolved.paymentAddress, network, true);
       const { inboxMessages, sentMessages } = mailState;
       const publicMail = fileSurfaceMessages(
         publicDesktopMail(inboxMessages, sentMessages),

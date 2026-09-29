@@ -48,7 +48,7 @@
     "check:node-ops": "node scripts/check-node-ops-contract.mjs && python3 -B scripts/check-storage-trend.py && python3 -B scripts/check-api-observation-health.py",
     "check:ui-ops": "node scripts/check-ui-ops-contract.mjs",
     "check:ui-capacity": "python3 -B scripts/check-ui-capacity.py && python3 -B scripts/check-ui-capacity-boundaries.py",
-    "check:api-truth": "node scripts/check-api-truth-contract.mjs",
+    "check:api-truth": "node scripts/check-api-truth-contract.mjs && node scripts/check-audit28-regressions.mjs",
     "check:canonical-order": "node scripts/check-canonical-order.mjs",
     "check:server-globals": "node scripts/check-server-free-identifiers.mjs",
     "check:electrum-client": "node scripts/check-electrum-client.mjs",

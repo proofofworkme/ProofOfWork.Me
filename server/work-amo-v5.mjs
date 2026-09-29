@@ -1838,7 +1838,10 @@ export function workAmoV5DnsSaleAuthorizationsMatch(left, right) {
   return Boolean(
     normalizedLeft &&
       normalizedRight &&
-      JSON.stringify(normalizedLeft) === JSON.stringify(normalizedRight)
+      Object.keys(normalizedLeft).length === Object.keys(normalizedRight).length &&
+      Object.keys(normalizedLeft).every(
+        (key) => normalizedLeft[key] === normalizedRight[key],
+      )
   );
 }
 
