@@ -97,7 +97,8 @@
       "audits/2026-09-27-production-comprehensive-health-data-integrity-audit-26.md",
       "audits/2026-09-28-ordered-read-only-application-audit-27.md",
       "audits/2026-09-29-production-comprehensive-health-data-integrity-audit-28.md",
-      "audits/2026-09-29-production-comprehensive-health-data-integrity-audit-28.evidence.json"
+      "audits/2026-09-29-production-comprehensive-health-data-integrity-audit-28.evidence.json",
+      "audits/2026-09-29-approved-audit-28-cleanup-corrections-execution.md"
     ],
     "staged-or-future-protocol-notes": [
       "CHAIN_CONTENT.md",
