@@ -3149,12 +3149,16 @@ expectAll("marketplace mutation fees are first-class network value", server, [
   /"marketplace-value-includes-mutation-fees"/,
 ]);
 
-expectAll("DNS is a first-class canonical Growth input", server + app, [
+expectAll("DNS is a first-class canonical Growth input", server + proofIndexReader + app, [
   /const DNS_REGISTRY_ACTIVITY_KINDS = new Set/,
   /const DNS_MARKETPLACE_MUTATION_KINDS = new Set/,
   /const DNS_ACTIVITY_KINDS = new Set/,
   /DNS_REGISTRY_ACTIVITY_KINDS\.has\(item\.kind\)/,
   /DNS_MARKETPLACE_MUTATION_KINDS\.has\(item\.kind\)/,
+  /function dnsLogSearchQueryAlias/,
+  /e\.kind LIKE 'dns-%'/,
+  /function dnsHistoryDisplayItem/,
+  /displayName: displayName \|\| undefined/,
   /dnsRegistryFlowSats \* GROWTH_MODEL_INPUTS\.valueMultiple/,
   /dnsMarketplaceFeeSats \+ dnsMarketplaceVolumeSats/,
   /dnsSats/,

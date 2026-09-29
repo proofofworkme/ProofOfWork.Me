@@ -33044,6 +33044,92 @@ check("exact Log txid reads use indexed refs and trust an exact empty page", asy
   );
 });
 
+check(".pow Log searches target canonical DNS activity rows", async () => {
+  const runSearch = async (query) => {
+    const sqlReads = [];
+    const proofIndexLogHistoryPayload = isolatedFunction(
+      READER_PATH,
+      "proofIndexLogHistoryPayload",
+      {
+        PUBLIC_LOG_EVENT_KINDS: new Set(["dns-register", "dns-list"]),
+        SMALL_EVENT_HISTORY_NORMALIZE_LIMIT: 1,
+        WORK_AMO_V5_ACTIVATION_HEIGHT,
+        dateIso: (value) => value,
+        dnsLogSearchQueryAlias: (value) => {
+          const text = String(value ?? "").trim().toLowerCase();
+          if (text === ".pow") {
+            return { allDns: true, name: "" };
+          }
+          return text.endsWith(".pow") && text.length > ".pow".length
+            ? { allDns: false, name: text.slice(0, -".pow".length) }
+            : null;
+        },
+        eventKindSqlCondition: (kind, addValue) =>
+          `e.kind = ${addValue(kind)}`,
+        historyCursor: (snapshotId, offset) => `${snapshotId}:${offset}`,
+        indexedThroughBlockFromItems: () => undefined,
+        ledgerSnapshot: async () => null,
+        ledgerSnapshotMetadata: async () => ({
+          generated_at: "2026-09-29T00:00:00.000Z",
+          indexed_through_block: WORK_AMO_V5_ACTIVATION_HEIGHT,
+          snapshot_id: "dns-log-snapshot",
+        }),
+        logHistoryPageFromItems: ({ items, source, totalCount }) => ({
+          items,
+          source,
+          totalCount: totalCount ?? items.length,
+        }),
+        logHistoryPageFromSnapshot: () => null,
+        normalizeHistoryEventRows: (rows) => rows,
+        normalizedTxid: () => "",
+        pendingLogSnapshotTimeSql: (snapshotTimeParam) => `
+          AND COALESCE(e.event_time, e.created_at) <= ${snapshotTimeParam}::timestamptz
+        `,
+        proofIndexLogHistoryReadEligibility: () => ({
+          pagination: {
+            limit: 25,
+            offset: 0,
+            query,
+            snapshotId: "",
+          },
+        }),
+        proofIndexPool: () => ({
+          async query(sql, params) {
+            sqlReads.push({ params, sql });
+            if (/count\(\*\) AS total_count/u.test(sql)) {
+              return {
+                rows: [{
+                  indexed_through_block: WORK_AMO_V5_ACTIVATION_HEIGHT,
+                  total_count: 0,
+                }],
+              };
+            }
+            return { rows: [] };
+          },
+        }),
+        rowNumber: (row, key) => Number(row?.[key]) || 0,
+      },
+    );
+    await proofIndexLogHistoryPayload(
+      "livenet",
+      "",
+      new URLSearchParams({ q: query }),
+      { currentRelational: true },
+    );
+    return sqlReads;
+  };
+
+  const allDnsReads = await runSearch(".pow");
+  assert.match(allDnsReads[0].sql, /e\.kind LIKE 'dns-%'/u);
+  assert.equal(allDnsReads[0].params[2], "%.pow%");
+
+  const namedDnsReads = await runSearch("chat.pow");
+  assert.match(namedDnsReads[0].sql, /dns_erq/u);
+  assert.match(namedDnsReads[0].sql, /dns_epq/u);
+  assert.equal(namedDnsReads[0].params[2], "%chat.pow%");
+  assert.equal(namedDnsReads[0].params[3], "%chat%");
+});
+
 check("stable exact Log authenticates only its bounded event membership", async () => {
   const txid = "6".repeat(64);
   const item = {

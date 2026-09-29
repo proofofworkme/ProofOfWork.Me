@@ -21472,6 +21472,17 @@ function eventKindSqlCondition(kind, addValue) {
   `;
 }
 
+function dnsLogSearchQueryAlias(query) {
+  const value = normalizedLowerText(query);
+  if (value === ".pow") {
+    return { allDns: true, name: "" };
+  }
+  if (value.endsWith(".pow") && value.length > ".pow".length) {
+    return { allDns: false, name: value.slice(0, -".pow".length) };
+  }
+  return null;
+}
+
 function valueSearchText(value) {
   if (value === null || value === undefined) {
     return "";
@@ -21664,6 +21675,114 @@ function eventKindTitle(kind, confirmationStatus) {
   return `${label || "ProofOfWork event"} ${state}`;
 }
 
+function shortHistoryAddress(value) {
+  const text = normalizedText(value);
+  return text.length > 18
+    ? `${text.slice(0, 8)}...${text.slice(-8)}`
+    : text || "Unknown";
+}
+
+function dnsHistoryDisplayName(item) {
+  const parsed = objectRecord(item?.parsed);
+  const saleAuthorization = objectRecord(item?.saleAuthorization);
+  const listing = objectRecord(item?.listing);
+  const id = normalizedLowerText(
+    item?.id ?? parsed.id ?? saleAuthorization.id ?? listing.id,
+  );
+  return id ? `${id}.pow` : "";
+}
+
+function tagsWithDnsDisplay(tags, displayName) {
+  const unique = new Map();
+  for (const tag of [
+    ...(Array.isArray(tags) ? tags : []),
+    "DNS",
+    ".pow",
+    displayName,
+  ]) {
+    const value = normalizedText(tag);
+    if (value) {
+      unique.set(value.toLowerCase(), value);
+    }
+  }
+  return [...unique.values()];
+}
+
+function dnsHistoryDisplayItem(item) {
+  const kind = normalizedLowerText(item?.kind);
+  if (!kind.startsWith("dns-")) {
+    return item;
+  }
+
+  const confirmed = item?.confirmed === true;
+  const displayName = dnsHistoryDisplayName(item);
+  const asset = displayName || ".pow name";
+  const amountSats = Number(item?.amountSats ?? 0);
+  const priceSats = Number(item?.priceSats ?? 0);
+  const saleAuthorization = objectRecord(item?.saleAuthorization);
+  const sellerAddress = normalizedText(item?.sellerAddress);
+  const buyerAddress = normalizedText(
+    item?.buyerAddress ?? item?.ownerAddress ?? item?.actor,
+  );
+  const ownerAddress = normalizedText(item?.ownerAddress);
+  const receiveAddress = normalizedText(item?.receiveAddress);
+  const titleByKind = {
+    "dns-buy": confirmed ? "DNS purchased" : "DNS purchase pending",
+    "dns-delist": confirmed ? "DNS delisted" : "DNS delisting pending",
+    "dns-list": confirmed ? "DNS listed" : "DNS listing pending",
+    "dns-register": confirmed ? "DNS registered" : "DNS registration pending",
+    "dns-seal": confirmed
+      ? "DNS sale ticket sealed"
+      : "DNS sale-ticket seal pending",
+    "dns-transfer": confirmed ? "DNS transferred" : "DNS transfer pending",
+    "dns-update": confirmed
+      ? "DNS receiver updated"
+      : "DNS receiver update pending",
+  };
+  const descriptionByKind = {
+    "dns-buy": `${asset} purchased by ${shortHistoryAddress(buyerAddress)}${sellerAddress ? ` from ${shortHistoryAddress(sellerAddress)}` : ""}.`,
+    "dns-delist": `${asset} delisted by spending its sale ticket.`,
+    "dns-list": `${asset} listed${Number.isFinite(priceSats) && priceSats > 0 ? ` for ${priceSats.toLocaleString("en-US")} proofs` : ""}${sellerAddress ? ` by ${shortHistoryAddress(sellerAddress)}` : ""}.`,
+    "dns-register": `${asset} claimed by ${shortHistoryAddress(ownerAddress)} and routed to ${shortHistoryAddress(receiveAddress)}.`,
+    "dns-seal": `Sale ticket sealed for ${asset}${item?.listingId ? ` on listing ${shortHistoryAddress(item.listingId)}` : ""}.`,
+    "dns-transfer": `${asset} transferred to ${shortHistoryAddress(ownerAddress)} and routed to ${shortHistoryAddress(receiveAddress)}.`,
+    "dns-update": `${asset} receive address updated to ${shortHistoryAddress(receiveAddress)}.`,
+  };
+  const detailByKind = {
+    "dns-buy": item?.listingId
+      ? `Listing ${shortHistoryAddress(item.listingId)}`
+      : undefined,
+    "dns-delist": normalizedText(item?.delistingVersion),
+    "dns-list": normalizedLowerText(item?.listingVersion) === "list5"
+      ? "Sale-ticket listing"
+      : normalizedText(item?.detail),
+    "dns-register": "Resolver registered",
+    "dns-seal": "Seller signature published on chain",
+  };
+  const tags = tagsWithDnsDisplay(item?.tags, displayName);
+  if (Number.isFinite(amountSats) && amountSats > 0) {
+    tags.push(`${amountSats.toLocaleString("en-US")} proofs`);
+  }
+  if (Number.isFinite(priceSats) && priceSats > 0) {
+    tags.push(`${priceSats.toLocaleString("en-US")} sale proofs`);
+  }
+
+  return {
+    ...item,
+    counterparty:
+      kind === "dns-buy"
+        ? sellerAddress || undefined
+        : kind === "dns-list"
+          ? normalizedText(saleAuthorization.buyerAddress) || undefined
+          : receiveAddress || ownerAddress || undefined,
+    description: descriptionByKind[kind] ?? item.description,
+    detail: detailByKind[kind] || item.detail,
+    displayName: displayName || undefined,
+    tags: [...new Map(tags.map((tag) => [tag.toLowerCase(), tag])).values()],
+    title: titleByKind[kind] ?? item.title,
+  };
+}
+
 function safeEventTags(item, network, confirmationStatus, kind, valid) {
   const statusTag = historyConfirmationLabel(confirmationStatus);
   const networkValue = normalizedText(item?.network) || network;
@@ -21735,7 +21854,7 @@ export function normalizeHistoryEventItem(
     normalizedText(item?.detail) ||
     `${title} for ${txid.slice(0, 8)}...${txid.slice(-8)}.`;
 
-  return {
+  const normalized = {
     ...item,
     confirmed,
     confirmationStatus,
@@ -21754,6 +21873,7 @@ export function normalizeHistoryEventItem(
     txid,
     ...(valid === undefined ? {} : { valid }),
   };
+  return dnsHistoryDisplayItem(normalized);
 }
 
 function normalizeHistoryEventRows(rows, network, options = {}) {
@@ -23869,8 +23989,7 @@ export async function proofIndexLogHistoryPayload(
       exactQueryTxid = queryTxid;
     } else {
       const queryParam = addParam(`%${pagination.query}%`);
-      conditions.push(`
-        (
+      const queryClauses = [`
           lower(e.txid) LIKE ${queryParam}
           OR lower(e.payload::text) LIKE ${queryParam}
           OR EXISTS (
@@ -23885,8 +24004,35 @@ export async function proofIndexLogHistoryPayload(
             WHERE epq.event_id = e.event_id
               AND lower(epq.address) LIKE ${queryParam}
           )
-        )
-      `);
+      `];
+      const dnsAlias = dnsLogSearchQueryAlias(pagination.query);
+      if (dnsAlias?.allDns) {
+        queryClauses.push("e.kind LIKE 'dns-%'");
+      } else if (dnsAlias?.name) {
+        const dnsQueryParam = addParam(`%${dnsAlias.name}%`);
+        queryClauses.push(`
+          (
+            e.kind LIKE 'dns-%'
+            AND (
+              lower(e.txid) LIKE ${dnsQueryParam}
+              OR lower(e.payload::text) LIKE ${dnsQueryParam}
+              OR EXISTS (
+                SELECT 1
+                FROM proof_indexer.event_refs dns_erq
+                WHERE dns_erq.event_id = e.event_id
+                  AND lower(dns_erq.ref_value) LIKE ${dnsQueryParam}
+              )
+              OR EXISTS (
+                SELECT 1
+                FROM proof_indexer.event_participants dns_epq
+                WHERE dns_epq.event_id = e.event_id
+                  AND lower(dns_epq.address) LIKE ${dnsQueryParam}
+              )
+            )
+          )
+        `);
+      }
+      conditions.push(`(${queryClauses.join(" OR ")})`);
     }
   }
 
