@@ -127,6 +127,7 @@ import {
   validateWorkAmoV5SufficientState,
   validateWorkAmoV5FrozenTerms,
   validateWorkAmoV5ReferencedAuthorization,
+  parseWorkAmoV5RawPwdnsRecord,
   workAmoCanonicalPositionPrecedes,
   workAmoV5CanonicalPayloadCommitment,
   workAmoV5CanonicalStateCommitment,
@@ -5378,6 +5379,49 @@ function protocolItemsFromTx(tx, message) {
       }];
     }
     return [{ ...base, id }];
+  }
+
+  if (message.prefix === "pwdns1:") {
+    const parsed = parseWorkAmoV5RawPwdnsRecord(message.text);
+    const base = baseProtocolItem(
+      tx,
+      message,
+      parsed?.kind ?? `dns-${action || "event"}`,
+    );
+    if (!parsed) {
+      return [invalidProtocolItem(base, "Malformed DNS protocol event.")];
+    }
+    const saleAuthorization = parsed.saleAuthorization;
+    const item = {
+      ...base,
+      ...parsed,
+      ...(saleAuthorization?.id ? { id: saleAuthorization.id } : {}),
+      ...(saleAuthorization?.priceSats !== undefined
+        ? { priceSats: saleAuthorization.priceSats }
+        : {}),
+      ...(saleAuthorization?.sellerAddress
+        ? { sellerAddress: saleAuthorization.sellerAddress }
+        : {}),
+      valid: true,
+    };
+    if (parsed.kind === "dns-list") {
+      return [
+        {
+          ...item,
+          listingId: tx.txid,
+          listingVersion: "list5",
+        },
+      ];
+    }
+    if (parsed.kind === "dns-delist") {
+      return [
+        {
+          ...item,
+          delistingVersion: "delist5",
+        },
+      ];
+    }
+    return [item];
   }
 
   if (message.prefix === "pwa1:") {

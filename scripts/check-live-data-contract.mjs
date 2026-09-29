@@ -3177,6 +3177,8 @@ expectAll("DNS AMO mutations have their own marketplace identity family", server
   /family === "dns"[\s\S]*dnsRegistryAddressForNetwork\(item\?\.network\)/,
 ]);
 expectAll("backfill routes DNS registry records as registry history", proofIndexerBackfill, [
+  /parseWorkAmoV5RawPwdnsRecord/,
+  /message\.prefix === "pwdns1:"/,
   /\["dns-register", "dns-update", "dns-transfer"\]\.includes\(kind\)/,
   /return "registry-records"/,
 ]);

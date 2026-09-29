@@ -39191,6 +39191,67 @@ check("legacy pwid1:r registrations retain plain IDs and projection fields", () 
   assert.equal(registration.receiveAddress, "1receiver");
 });
 
+check("canonical PWDNS records prepare DNS event rows for backfill", () => {
+  const txid = "b".repeat(64);
+  const protocolItemsFromTx = isolatedFunction(
+    BACKFILL_PATH,
+    "protocolItemsFromTx",
+    {
+      baseProtocolItem: (_tx, _message, kind) => ({
+        kind,
+        protocol: "pwdns1",
+        txid,
+      }),
+      parseWorkAmoV5RawPwdnsRecord: (text) => {
+        if (text.startsWith("pwdns1:list5:")) {
+          return {
+            kind: "dns-list",
+            saleAuthorization: {
+              id: "alice",
+              priceSats: 1234,
+              sellerAddress: "1seller",
+            },
+          };
+        }
+        return {
+          id: "alice",
+          kind: "dns-register",
+          ownerAddress: "1owner",
+          receiveAddress: "1receiver",
+        };
+      },
+    },
+  );
+
+  const [registration] = protocolItemsFromTx(
+    { txid },
+    {
+      prefix: "pwdns1:",
+      text: "pwdns1:r1:YWxpY2U:1owner:1receiver",
+    },
+  );
+  assert.equal(registration.kind, "dns-register");
+  assert.equal(registration.id, "alice");
+  assert.equal(registration.ownerAddress, "1owner");
+  assert.equal(registration.receiveAddress, "1receiver");
+  assert.equal(registration.valid, true);
+
+  const [listing] = protocolItemsFromTx(
+    { txid },
+    {
+      prefix: "pwdns1:",
+      text: "pwdns1:list5:ticket",
+    },
+  );
+  assert.equal(listing.kind, "dns-list");
+  assert.equal(listing.id, "alice");
+  assert.equal(listing.listingId, txid);
+  assert.equal(listing.listingVersion, "list5");
+  assert.equal(listing.priceSats, 1234);
+  assert.equal(listing.sellerAddress, "1seller");
+  assert.equal(listing.valid, true);
+});
+
 check("canonical PWID list5 preparation consumes its raw carrier exactly once", async () => {
   const txid =
     "0d966b98ae7672e7812db99ad41ecba5e97697b8f70f814da73f267492b7a649";
