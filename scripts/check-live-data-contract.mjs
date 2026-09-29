@@ -3224,7 +3224,7 @@ expectAll("AMO V5 legacy bootstrap carry is exact and separately reconciled", le
   /publishedCreditFixedQ8Matches[\s\S]*?publishedValidCreditFixedQ8 === validCreditFixedQ8[\s\S]*?publishedValidCreditFixedQ8 === legacyBaselineCreditFixedQ8[\s\S]*?publishedValidCreditFixedQ8 === committedCreditFixedQ8/,
   /const baseState = reconciliation\.validBaseState/,
   /const dnsOverlay =[\s\S]*?workAmoV5DnsGrowthOverlayFromActualValue/,
-  /const baseNetworkValueQ8 =[\s\S]*?value\.baseNetworkValueQ8 \+ dnsOverlay\.dnsTotalQ8/,
+  /const baseNetworkValueQ8 = value\.baseNetworkValueQ8/,
   /workAmoV5ExactValueAliases\(\s*"baseNetworkValue",\s*baseNetworkValueQ8/,
   /workAmoV5ExactValueAliases\("creditFixed", creditFixedQ8\)/,
   /marketplaceFeeSats:\s*Number\(marketplaceFee\)/,

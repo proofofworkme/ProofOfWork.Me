@@ -76886,6 +76886,36 @@ check("AMO V5 legacy carry preserves committed N while publishing valid-only mar
     reconciliation.legacyBootstrap.committedCreditFixedQ8,
     committedCreditFixedQ8.toString(),
   );
+  const dnsOverlayFlowSats = 3_546n;
+  const dnsOverlayQ8 =
+    dnsOverlayFlowSats * GROWTH_VALUE_MULTIPLE * VALUE_Q8_SCALE;
+  const dnsWorkFloor = {
+    ...workFloor,
+    actualValue: {
+      ...workFloor.actualValue,
+      dnsMarketplaceFeeSats: "546",
+      dnsMarketplaceVolumeSats: "2000",
+      dnsRegistrations: "1",
+      dnsRegistryFlowSats: "1000",
+    },
+  };
+  const dnsProjected = closingProjection(
+    state,
+    value,
+    dnsWorkFloor,
+    reconciliation,
+  );
+  assert.equal(
+    dnsProjected.exactAliases.baseNetworkValueQ8,
+    committedBaseNetworkValueQ8.toString(),
+  );
+  assert.equal(
+    dnsProjected.exactAliases.networkValueQ8,
+    (BigInt(state.networkValueQ8) + dnsOverlayQ8).toString(),
+  );
+  assert.equal(dnsProjected.flowFields.dnsTotalFlowSats, 3_546);
+  assert.equal(dnsProjected.flowFields.marketplaceFeeSats, 846);
+  assert.equal(dnsProjected.flowFields.marketplaceFlowSats, 2_846);
 
   const projected = closingProjection(
     state,
@@ -77069,6 +77099,24 @@ check("AMO V5 legacy carry preserves committed N while publishing valid-only mar
   assert.equal(
     published.workAmoV5Transition.closingStateCommitment.sha256,
     commitment.sha256,
+  );
+  const publishedWithDns = await publishClosing(
+    structuredClone(dnsWorkFloor),
+    "livenet",
+    blockHeight,
+    blockHash,
+  );
+  assert.equal(
+    publishedWithDns.actualValue.baseNetworkValueQ8,
+    committedBaseNetworkValueQ8.toString(),
+  );
+  assert.equal(
+    publishedWithDns.actualValue.networkValueQ8,
+    (BigInt(state.networkValueQ8) + dnsOverlayQ8).toString(),
+  );
+  assert.equal(
+    publishedWithDns.chartPoints.at(-1).networkValueQ8,
+    (BigInt(state.networkValueQ8) + dnsOverlayQ8).toString(),
   );
 
   const mismatchedEvidence = {

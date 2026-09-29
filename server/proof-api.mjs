@@ -66812,8 +66812,7 @@ function workAmoV5ClosingSummaryProjection(
     creditFixedQ8 + value.creditMovementLiveValueQ8;
   const dnsOverlay =
     workAmoV5DnsGrowthOverlayFromActualValue(workFloor?.actualValue);
-  const baseNetworkValueQ8 =
-    value.baseNetworkValueQ8 + dnsOverlay.dnsTotalQ8;
+  const baseNetworkValueQ8 = value.baseNetworkValueQ8;
   const frozenNetworkValueQ8 =
     value.frozenNetworkValueQ8 + dnsOverlay.dnsTotalQ8;
   const liveNetworkValueQ8 =
