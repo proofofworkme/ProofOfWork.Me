@@ -17,6 +17,7 @@ import {
   WORK_AMO_V5_DECLARATION_AUTHORITY_SCRIPT_PUBKEY,
   WORK_AMO_V5_DECLARATION_MIN_PAYMENT_SATS,
   WORK_AMO_V5_DECLARATION_REGISTRY_ADDRESS,
+  WORK_AMO_V5_DNS_REGISTRY_ADDRESS,
   WORK_AMO_V5_ID_REGISTRY_ADDRESS,
   WORK_AMO_V5_INCB_TOKEN_ID,
   WORK_AMO_V5_LISTING_ANCHOR_VALUE_SATS,
@@ -35,6 +36,7 @@ import {
   parseWorkAmoV5GenericSaleAuthorization,
   parseWorkAmoV5IdSaleAuthorization,
   parseWorkAmoV5PwmMessages,
+  parseWorkAmoV5RawPwdnsRecord,
   parseWorkAmoV5RawPwidRecord,
   parseWorkAmoV5RawPwtRecord,
   selectWorkAmoV5DistinctRegistryPayment,
@@ -49,6 +51,7 @@ import {
   workAmoCanonicalPositionPrecedes,
   workAmoV5CanonicalPayloadCommitment,
   workAmoV5CanonicalStateCommitment,
+  workAmoV5DnsSaleAuthorizationsMatch,
   workAmoV5GenericSaleAuthorizationsMatch,
   workAmoV5IdSaleAuthorizationsMatch,
 } from "./work-amo-v5.mjs";
@@ -2608,6 +2611,137 @@ function evaluatePwid(record, context) {
   };
 }
 
+function evaluatePwdns(record, context) {
+  const parsed = parseWorkAmoV5RawPwdnsRecord(record.message);
+  if (!parsed) {
+    return invalidOutcome(
+      "work-amo-v5-raw-pwdns-invalid",
+      null,
+      "protocol-event-invalid",
+    );
+  }
+  const inputs = inputAddresses(record);
+  const requiredSats =
+    parsed.kind === "dns-register" ? 1_000 : 546;
+  const claimed = claimedForTx(context.claimedByTxid, record.txid);
+  const registry = aggregateClaim(record, claimed, {
+    address: WORK_AMO_V5_DNS_REGISTRY_ADDRESS,
+    requireBeforeProtocol: true,
+    requiredSats,
+    role: "pwdns-registry",
+  });
+  if (!registry) {
+    return invalidOutcome(
+      "work-amo-v5-raw-pwdns-payment-invalid",
+      parsed,
+      parsed.kind,
+    );
+  }
+
+  let listing = null;
+  let output = null;
+  if (parsed.kind === "dns-list") {
+    const authorization = parsed.saleAuthorization;
+    const anchor = claimExactOutput(
+      record,
+      claimed,
+      authorization.anchorVout,
+    );
+    if (
+      !inputs.includes(authorization.sellerAddress) ||
+      authorization.anchorTxid ||
+      authorization.anchorSignature ||
+      authorizationExpiredForRecord(authorization, record) ||
+      !anchor ||
+      anchor.amountSats !== authorization.anchorValueSats ||
+      anchor.scriptPubKeyHex !== authorization.anchorScriptPubKey
+    ) {
+      return invalidOutcome(
+        "work-amo-v5-dns-listing-state-invalid",
+        parsed,
+        parsed.kind,
+      );
+    }
+    listing = {
+      id: authorization.id,
+      listingId: record.txid,
+      priceSats: BigInt(authorization.priceSats),
+      saleAuthorization: authorization,
+      sellerAddress: authorization.sellerAddress,
+    };
+    output = { listing };
+  } else if (parsed.kind === "dns-seal") {
+    const signed = parsed.saleAuthorization;
+    const unsigned = {
+      ...signed,
+      anchorSignature: "",
+      anchorTxid: "",
+      signature: "",
+    };
+    const signature = validateWorkAmoV5SaleTicketSignature({
+      authorization: signed,
+      listingId: parsed.listingId,
+      network: "livenet",
+      unitPriceSats: signed.priceSats.toString(),
+    });
+    if (
+      !inputs.includes(signed.sellerAddress) ||
+      !workAmoV5DnsSaleAuthorizationsMatch(signed, unsigned) ||
+      signed.anchorTxid !== parsed.listingId ||
+      signature.valid !== true
+    ) {
+      return invalidOutcome(
+        "work-amo-v5-dns-seal-invalid",
+        parsed,
+        parsed.kind,
+      );
+    }
+    listing = {
+      id: signed.id,
+      listingId: parsed.listingId,
+      priceSats: BigInt(signed.priceSats),
+      saleAuthorization: signed,
+      sellerAddress: signed.sellerAddress,
+    };
+    output = { listing };
+  } else if (parsed.kind === "dns-buy") {
+    if (!inputs.includes(parsed.ownerAddress)) {
+      return invalidOutcome(
+        "work-amo-v5-dns-buy-invalid",
+        parsed,
+        parsed.kind,
+      );
+    }
+    output = {
+      listingId: parsed.listingId,
+      ownerAddress: parsed.ownerAddress,
+      receiveAddress: parsed.receiveAddress,
+    };
+  } else if (parsed.kind === "dns-delist") {
+    output = { listingId: parsed.listingId };
+  } else {
+    output = {
+      id: parsed.id,
+      ownerAddress: parsed.ownerAddress,
+      receiveAddress: parsed.receiveAddress,
+    };
+  }
+
+  return {
+    chargesTransactionFee: false,
+    claimed,
+    derived: [],
+    output,
+    parsed,
+    reasonCode: "",
+    semanticKind: parsed.kind,
+    stateDelta: normalizeStateDelta({
+      economicOutputs: registry.outputs,
+    }),
+    valid: true,
+  };
+}
+
 function genericSemanticKind(kind) {
   return {
     buy: "token-sale",
@@ -3924,6 +4058,9 @@ function evaluateRecord(record, context) {
   if (record.protocol === "pwid1") {
     return evaluatePwid(record, context);
   }
+  if (record.protocol === "pwdns1") {
+    return evaluatePwdns(record, context);
+  }
   if (record.protocol === "pwt1") {
     return evaluatePwt(record, context);
   }
@@ -5197,7 +5334,10 @@ export function replayWorkAmoV5RawBlock({
         });
         workSendsByTxid.set(record.txid, sends);
       }
-      if (record.protocol !== "pwb1") {
+      if (
+        record.protocol !== "pwb1" &&
+        normalized.chargesTransactionFee !== false
+      ) {
         validTxids.add(record.txid);
       }
       normalized.networkValueBeforeQ8 =

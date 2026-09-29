@@ -420,6 +420,13 @@ const PUBLIC_LOG_EVENT_KINDS = new Set([
   "boost-transfer",
   "boost-unfollow",
   "browser",
+  "dns-buy",
+  "dns-delist",
+  "dns-list",
+  "dns-register",
+  "dns-seal",
+  "dns-transfer",
+  "dns-update",
   "file",
   "id-buy",
   "id-delist",
@@ -5564,6 +5571,9 @@ function sourceLabelForProtocolItem(item) {
     return "token-listings";
   }
   if (["id-register", "id-update", "id-transfer"].includes(kind)) {
+    return "registry-records";
+  }
+  if (["dns-register", "dns-update", "dns-transfer"].includes(kind)) {
     return "registry-records";
   }
   if (kind.includes("list")) {

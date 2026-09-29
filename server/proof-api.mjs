@@ -1465,9 +1465,25 @@ const TOKEN_MARKETPLACE_MUTATION_KINDS = new Set([
   "token-listing-sealed",
   "token-listing-closed",
 ]);
+const DNS_REGISTRY_ACTIVITY_KINDS = new Set([
+  "dns-register",
+  "dns-update",
+  "dns-transfer",
+]);
+const DNS_MARKETPLACE_MUTATION_KINDS = new Set([
+  "dns-list",
+  "dns-seal",
+  "dns-delist",
+  "dns-buy",
+]);
+const DNS_ACTIVITY_KINDS = new Set([
+  ...DNS_REGISTRY_ACTIVITY_KINDS,
+  ...DNS_MARKETPLACE_MUTATION_KINDS,
+]);
 const MARKETPLACE_MUTATION_KINDS = new Set([
   ...ID_MARKETPLACE_MUTATION_KINDS,
   ...TOKEN_MARKETPLACE_MUTATION_KINDS,
+  ...DNS_MARKETPLACE_MUTATION_KINDS,
 ]);
 const BOOST_EVENT_KINDS = new Set([
   "boost-buy",
@@ -44925,6 +44941,7 @@ function sourceCollectionFingerprint(items) {
 
 function ledgerSourceHashes({
   activityState,
+  dnsActivityState,
   registryState,
   seededMailActivityState,
   tokenState,
@@ -44932,6 +44949,7 @@ function ledgerSourceHashes({
 }) {
   return {
     activity: sourceCollectionFingerprint(activityState?.activity),
+    dnsActivity: sourceCollectionFingerprint(dnsActivityState?.activity),
     registry: sourceCollectionFingerprint(registryState?.activity),
     registryRecords: sourceCollectionFingerprint(registryState?.records),
     seededMail: sourceCollectionFingerprint(seededMailActivityState?.activity),
@@ -44944,6 +44962,59 @@ function ledgerSourceHashes({
     workMints: sourceCollectionFingerprint(workTokenState?.mints),
     workSales: sourceCollectionFingerprint(workTokenState?.sales),
     workTransfers: sourceCollectionFingerprint(workTokenState?.transfers),
+  };
+}
+
+function dnsActivityStateForCanonicalLedger(
+  network,
+  dnsState,
+  { throughBlockHeight = Number.MAX_SAFE_INTEGER } = {},
+) {
+  if (network === "livenet" && !dnsState) {
+    throw freshDataUnavailableError(
+      "The canonical DNS registry state is unavailable.",
+    );
+  }
+  const maxHeight = Number(throughBlockHeight);
+  const boundedHeight =
+    Number.isSafeInteger(maxHeight) && maxHeight > 0
+      ? maxHeight
+      : Number.MAX_SAFE_INTEGER;
+  const indexedHeight = Number(dnsState?.indexedThroughBlock);
+  const activity = dedupeActivityItems(
+    (Array.isArray(dnsState?.activity) ? dnsState.activity : [])
+      .filter((item) => {
+        if (item?.valid === false || item?.confirmed !== true) {
+          return false;
+        }
+        const blockHeight = Number(item?.blockHeight);
+        return (
+          Number.isSafeInteger(blockHeight) &&
+          blockHeight > 0 &&
+          blockHeight <= boundedHeight &&
+          DNS_ACTIVITY_KINDS.has(String(item?.kind ?? ""))
+        );
+      }),
+  );
+  return {
+    activity,
+    indexedAt: dnsState?.indexedAt ?? new Date().toISOString(),
+    indexedThroughBlock: Math.min(
+      Number.isSafeInteger(indexedHeight) && indexedHeight >= 0
+        ? indexedHeight
+        : boundedHeight === Number.MAX_SAFE_INTEGER
+          ? 0
+          : boundedHeight,
+      boundedHeight,
+    ),
+    network,
+    source: mergedSourceLabel(dnsState?.source, "dns-canonical-ledger"),
+    stats: activityStatsFromItems(activity, {
+      dns: activity.length,
+      dnsRegistrations: activity.filter(
+        (item) => item.kind === "dns-register",
+      ).length,
+    }),
   };
 }
 
@@ -45051,6 +45122,7 @@ function ledgerPayloadHasCurrentChecks(payload) {
     checkNames.has("credit-frozen-value-includes-event-components") &&
     checkNames.has("credit-live-value-is-active-network-value") &&
     checkNames.has("computer-event-flow-excludes-marketplace") &&
+    checkNames.has("dns-activity-counted") &&
     checkNames.has("token-sales-logged") &&
     checkNames.has("seeded-mail-events-logged") &&
     checkNames.has("seeded-inception-bonds-logged") &&
@@ -46437,6 +46509,7 @@ async function ledgerWithReplayedCreditNetworkValues(
   };
   const sourceHashes = ledgerSourceHashes({
     activityState: activityPayload,
+    dnsActivityState: ledger.dnsActivityState,
     registryState,
     seededMailActivityState: ledger.seededMailActivityState,
     tokenState,
@@ -46456,6 +46529,7 @@ async function ledgerWithReplayedCreditNetworkValues(
     ...ledger,
     activity,
     activityPayload,
+    dnsActivityState: ledger.dnsActivityState,
     generatedAt: new Date().toISOString(),
     indexedThroughBlock,
     metrics,
@@ -47274,6 +47348,39 @@ function ledgerSnapshotChecks({
     workFloor?.actualValue?.marketplaceFlowSats,
   );
   const marketplaceSats = numericValue(workFloor?.actualValue?.marketplaceSats);
+  const confirmedDnsRegistryFlowSats = confirmedActivity
+    .filter((item) => DNS_REGISTRY_ACTIVITY_KINDS.has(item.kind))
+    .reduce((total, item) => total + activityAmountSats(item), 0);
+  const confirmedDnsRegistrations = confirmedActivity.filter(
+    (item) => item.kind === "dns-register",
+  ).length;
+  const confirmedDnsMarketplaceFeeSats = marketplaceMutationPaymentFlowSats(
+    confirmedActivity,
+    DNS_MARKETPLACE_MUTATION_KINDS,
+  );
+  const confirmedDnsMarketplaceVolumeSats = confirmedActivity
+    .filter((item) => item.kind === "dns-buy" && item?.valid !== false)
+    .reduce((total, item) => total + numericValue(item.priceSats), 0);
+  const dnsRegistryFlowSats = numericValue(
+    workFloor?.actualValue?.dnsRegistryFlowSats ??
+      workFloor?.actualValue?.dnsFlowSats,
+  );
+  const dnsRegistrations = numericValue(
+    workFloor?.actualValue?.dnsRegistrations,
+  );
+  const dnsMarketplaceFeeSats = numericValue(
+    workFloor?.actualValue?.dnsMarketplaceFeeSats,
+  );
+  const dnsMarketplaceVolumeSats = numericValue(
+    workFloor?.actualValue?.dnsMarketplaceVolumeSats,
+  );
+  const dnsMarketplaceFlowSats = numericValue(
+    workFloor?.actualValue?.dnsMarketplaceFlowSats,
+  );
+  const dnsSats = numericValue(workFloor?.actualValue?.dnsSats);
+  const dnsTotalSats = numericValue(
+    workFloor?.actualValue?.dnsTotalSats ?? dnsSats,
+  );
   const expectedMarketplaceFlowSats =
     marketplaceSaleVolumeSats + marketplaceMutationFeeSats;
   const expectedMarketplaceSats =
@@ -47463,6 +47570,41 @@ function ledgerSnapshotChecks({
       computerEventFlowSats,
       expectedComputerEventFlowSats,
       marketplaceMutationFeeSats,
+    },
+  );
+  addCheck(
+    "dns-activity-counted",
+    numbersAgree(dnsRegistryFlowSats, confirmedDnsRegistryFlowSats) &&
+      numbersAgree(dnsRegistrations, confirmedDnsRegistrations) &&
+      numbersAgree(dnsMarketplaceFeeSats, confirmedDnsMarketplaceFeeSats) &&
+      numbersAgree(dnsMarketplaceVolumeSats, confirmedDnsMarketplaceVolumeSats) &&
+      numbersAgree(
+        dnsMarketplaceFlowSats,
+        dnsMarketplaceFeeSats + dnsMarketplaceVolumeSats,
+      ) &&
+      numbersAgree(
+        dnsSats,
+        dnsRegistryFlowSats * GROWTH_MODEL_INPUTS.valueMultiple,
+      ) &&
+      numbersAgree(
+        dnsTotalSats,
+        (dnsRegistryFlowSats +
+          dnsMarketplaceFeeSats +
+          dnsMarketplaceVolumeSats) *
+          GROWTH_MODEL_INPUTS.valueMultiple,
+      ),
+    {
+      confirmedDnsMarketplaceFeeSats,
+      confirmedDnsMarketplaceVolumeSats,
+      confirmedDnsRegistrations,
+      confirmedDnsRegistryFlowSats,
+      dnsMarketplaceFeeSats,
+      dnsMarketplaceFlowSats,
+      dnsMarketplaceVolumeSats,
+      dnsRegistrations,
+      dnsRegistryFlowSats,
+      dnsSats,
+      dnsTotalSats,
     },
   );
   addCheck(
@@ -48051,6 +48193,12 @@ function growthSummaryPayloadFromLedger(ledger) {
   const actualValue = workFloor.actualValue;
   const marketplaceStats = marketplaceStatsFromSales(registryState.sales ?? []);
   const confirmedActivity = activity.filter((item) => item.confirmed);
+  const confirmedDnsActivity = confirmedActivity.filter((item) =>
+    DNS_ACTIVITY_KINDS.has(item.kind),
+  );
+  const confirmedDnsSales = confirmedDnsActivity.filter(
+    (item) => item.kind === "dns-buy",
+  ).length;
   const events = growthRealEventItems(
     registryState.records ?? [],
     activity,
@@ -48080,6 +48228,13 @@ function growthSummaryPayloadFromLedger(ledger) {
       driveActions: confirmedActivity.filter(
         (item) => item.kind === "file" && !isBrowserActivityItem(item),
       ).length,
+      dnsActions: confirmedDnsActivity.length,
+      dnsMarketplaceActions: confirmedDnsActivity.filter((item) =>
+        DNS_MARKETPLACE_MUTATION_KINDS.has(item.kind),
+      ).length,
+      dnsRegistrations: confirmedDnsActivity.filter(
+        (item) => item.kind === "dns-register",
+      ).length,
       idListings: (registryState.listings ?? []).length,
       inceptionBondActions: confirmedActivity.filter(isInceptionBondActivityItem)
         .length,
@@ -48090,7 +48245,8 @@ function growthSummaryPayloadFromLedger(ledger) {
           (item.kind === "mail" || item.kind === "reply") &&
           !isBondActivityItem(item),
       ).length,
-      marketplaceSaleCount: marketplaceStats.confirmedSales + confirmedTokenSales,
+      marketplaceSaleCount:
+        marketplaceStats.confirmedSales + confirmedTokenSales + confirmedDnsSales,
       pendingRecords: (registryState.records ?? []).filter(
         (record) => !record.confirmed,
       ).length,
@@ -51089,6 +51245,7 @@ async function buildIndexedCanonicalLedgerPayload(
   let [
     activityState,
     registrySnapshot,
+    dnsRegistrySnapshot,
     btcUsdQuote,
     currentTokenTableState,
     currentMarketOverlay,
@@ -51103,6 +51260,11 @@ async function buildIndexedCanonicalLedgerPayload(
       exactHeight,
       replayBridgeEra,
     }),
+    payloadWithFallbackAfterMs(
+      dnsRegistryPayload(network),
+      null,
+      SUMMARY_PROOF_INDEX_READ_WAIT_MS,
+    ).catch(() => null),
     payloadWithFallbackAfterMs(
       btcUsdPricePayload(network, { fresh: false }),
       null,
@@ -51131,6 +51293,11 @@ async function buildIndexedCanonicalLedgerPayload(
   markTiming("sources");
   const sourceTipHeight = exactHeight;
   const registryState = registrySnapshot;
+  const dnsActivityState = dnsActivityStateForCanonicalLedger(
+    network,
+    dnsRegistrySnapshot,
+    { throughBlockHeight: exactHeight },
+  );
   const derivedTokenState = await tokenValueStateFromIndexedActivity(
     network,
     activityState,
@@ -51364,6 +51531,9 @@ async function buildIndexedCanonicalLedgerPayload(
       ? seededMailActivityState.activity
       : []),
     ...(Array.isArray(registryState?.activity) ? registryState.activity : []),
+    ...(Array.isArray(dnsActivityState?.activity)
+      ? dnsActivityState.activity
+      : []),
   ]);
   const ledgerTokenStateWithPowb = indexedPowbState
     ? tokenStateWithScopedTokenOverride(
@@ -51423,6 +51593,9 @@ async function buildIndexedCanonicalLedgerPayload(
       confirmed: publicLogConfirmedComputerActions,
       registry: Array.isArray(registryState?.activity)
         ? registryState.activity.length
+        : undefined,
+      dns: Array.isArray(dnsActivityState?.activity)
+        ? dnsActivityState.activity.length
         : undefined,
       seededMail: seededMailActivityState?.stats?.total,
     }),
@@ -51484,6 +51657,9 @@ async function buildIndexedCanonicalLedgerPayload(
       confirmed: publicLogConfirmedComputerActions,
       registry: Array.isArray(registryState?.activity)
         ? registryState.activity.length
+        : undefined,
+      dns: Array.isArray(dnsActivityState?.activity)
+        ? dnsActivityState.activity.length
         : undefined,
       seededMail: seededMailActivityState?.stats?.total,
     }),
@@ -51564,6 +51740,7 @@ async function buildIndexedCanonicalLedgerPayload(
   const sourceHashes = {
     ...ledgerSourceHashes({
       activityState,
+      dnsActivityState,
       registryState,
       seededMailActivityState,
       tokenState: valuedTokenState,
@@ -51589,6 +51766,7 @@ async function buildIndexedCanonicalLedgerPayload(
     activity,
     activityPayload,
     btcUsdQuote,
+    dnsActivityState,
     generatedAt: new Date().toISOString(),
     indexedThroughBlock,
     metrics,
@@ -51940,6 +52118,7 @@ async function buildCanonicalLedgerPayload(network, fresh = false) {
   const [
     activityState,
     registryState,
+    dnsRegistryState,
     tokenState,
     workTokenState,
     btcUsdQuote,
@@ -51956,6 +52135,11 @@ async function buildCanonicalLedgerPayload(network, fresh = false) {
           REGISTRY_CACHE_STALE_MS,
           emptyRegistryState,
         ),
+    payloadWithFallbackAfterMs(
+      dnsRegistryPayload(network),
+      null,
+      SUMMARY_PROOF_INDEX_READ_WAIT_MS,
+    ).catch(() => null),
     ledgerTokenPayload(network, "", fresh),
     ledgerTokenPayload(network, WORK_TOKEN_ID, fresh),
     network === "livenet"
@@ -51983,12 +52167,20 @@ async function buildCanonicalLedgerPayload(network, fresh = false) {
         activityState,
       )
     : await seededMailActivityPayload(network, seedAddresses);
+  const dnsActivityState = dnsActivityStateForCanonicalLedger(
+    network,
+    dnsRegistryState,
+    { throughBlockHeight: sourceTipHeight },
+  );
   const baseActivity = dedupeActivityItems([
     ...(Array.isArray(activityState?.activity) ? activityState.activity : []),
     ...(Array.isArray(seededMailActivityState?.activity)
       ? seededMailActivityState.activity
       : []),
     ...(Array.isArray(registryState?.activity) ? registryState.activity : []),
+    ...(Array.isArray(dnsActivityState?.activity)
+      ? dnsActivityState.activity
+      : []),
   ]);
   let ledgerTokenState = valueTokenState;
   for (const config of BOND_TOKEN_CONFIGS) {
@@ -52067,6 +52259,9 @@ async function buildCanonicalLedgerPayload(network, fresh = false) {
       registry: Array.isArray(registryState?.activity)
         ? registryState.activity.length
         : undefined,
+      dns: Array.isArray(dnsActivityState?.activity)
+        ? dnsActivityState.activity.length
+        : undefined,
       seededMail: seededMailActivityState?.stats?.total,
     }),
   };
@@ -52127,6 +52322,9 @@ async function buildCanonicalLedgerPayload(network, fresh = false) {
       registry: Array.isArray(registryState?.activity)
         ? registryState.activity.length
         : undefined,
+      dns: Array.isArray(dnsActivityState?.activity)
+        ? dnsActivityState.activity.length
+        : undefined,
       seededMail: seededMailActivityState?.stats?.total,
     }),
   };
@@ -52175,6 +52373,7 @@ async function buildCanonicalLedgerPayload(network, fresh = false) {
   };
   const sourceHashes = ledgerSourceHashes({
     activityState,
+    dnsActivityState,
     registryState,
     seededMailActivityState,
     tokenState: ledgerTokenState,
@@ -52193,6 +52392,7 @@ async function buildCanonicalLedgerPayload(network, fresh = false) {
     activity,
     activityPayload,
     btcUsdQuote,
+    dnsActivityState,
     generatedAt: new Date().toISOString(),
     metrics,
     network,
@@ -58901,11 +59101,21 @@ function marketplaceMutationPaymentIdentity(item) {
   if (!/^[0-9a-f]{64}$/u.test(txid)) {
     return "";
   }
-  const family = ID_MARKETPLACE_MUTATION_KINDS.has(kind) ? "id" : "token";
+  const family = ID_MARKETPLACE_MUTATION_KINDS.has(kind)
+    ? "id"
+    : DNS_MARKETPLACE_MUTATION_KINDS.has(kind)
+      ? "dns"
+      : "token";
+  const fallbackRegistryAddress =
+    family === "dns"
+      ? dnsRegistryAddressForNetwork(item?.network)
+      : family === "token"
+        ? item?.counterparty
+        : "";
   const registryAddress = String(
     item?.registryAddress ??
       item?.saleAuthorization?.registryAddress ??
-      (family === "token" ? item?.counterparty : "") ??
+      fallbackRegistryAddress ??
       "",
   )
     .trim()
@@ -59003,6 +59213,7 @@ function activityKindHasDedicatedGrowthBucket(item) {
 
   return (
     BOOST_EVENT_KINDS.has(item.kind) ||
+    DNS_REGISTRY_ACTIVITY_KINDS.has(item.kind) ||
     MARKETPLACE_MUTATION_KINDS.has(item.kind) ||
     item.kind === "mail" ||
     item.kind === "reply" ||
@@ -60919,6 +61130,19 @@ function growthActualBaseNetworkValue(
   const powids = numberFromInteger(state.powids);
   const browserFlowSats = numberFromInteger(state.browserFlowSats);
   const computerEventFlowSats = numberFromInteger(state.computerEventFlowSats);
+  const dnsRegistrations = numberFromInteger(state.dnsRegistrations);
+  const dnsRegistryFlowSats = numberFromInteger(state.dnsRegistryFlowSats);
+  const dnsMarketplaceFeeSats = numberFromInteger(
+    state.dnsMarketplaceFeeSats,
+  );
+  const dnsMarketplaceVolumeSats = numberFromInteger(
+    state.dnsMarketplaceVolumeSats,
+  );
+  const dnsMarketplaceFlowSats =
+    dnsMarketplaceFeeSats + dnsMarketplaceVolumeSats;
+  const dnsFlowSats = dnsRegistryFlowSats;
+  const dnsTotalFlowSats =
+    dnsRegistryFlowSats + dnsMarketplaceFlowSats;
   const driveFlowSats = numberFromInteger(state.driveFlowSats);
   const idMarketplaceFeeSats = numberFromInteger(state.idMarketplaceFeeSats);
   const idMarketplaceVolumeSats = numberFromInteger(
@@ -60945,10 +61169,10 @@ function growthActualBaseNetworkValue(
   );
   const walletFlowSats = tokenTransferFlowSats;
   const marketplaceSaleVolumeSats =
-    idMarketplaceVolumeSats + tokenSaleVolumeSats;
+    idMarketplaceVolumeSats + tokenSaleVolumeSats + dnsMarketplaceVolumeSats;
   const marketplaceVolumeSats = marketplaceSaleVolumeSats;
   const marketplaceFeeSats =
-    idMarketplaceFeeSats + tokenMarketplaceFeeSats;
+    idMarketplaceFeeSats + tokenMarketplaceFeeSats + dnsMarketplaceFeeSats;
   const marketplaceMutationFeeSats = marketplaceFeeSats;
   const marketplaceFlowSats =
     marketplaceSaleVolumeSats + marketplaceMutationFeeSats;
@@ -60961,6 +61185,12 @@ function growthActualBaseNetworkValue(
     GROWTH_ID_DENSITY_DENOMINATOR;
   const browserValueQ8 = valueQ8(state.browserFlowSats);
   const computerEventValueQ8 = valueQ8(state.computerEventFlowSats);
+  const dnsRegistryValueQ8 = valueQ8(state.dnsRegistryFlowSats);
+  const dnsMarketplaceValueQ8 = valueQ8(
+    state.dnsMarketplaceFeeSats + state.dnsMarketplaceVolumeSats,
+  );
+  const dnsValueQ8 = dnsRegistryValueQ8;
+  const dnsTotalValueQ8 = dnsRegistryValueQ8 + dnsMarketplaceValueQ8;
   const driveValueQ8 = valueQ8(state.driveFlowSats);
   const inceptionBondValueQ8 = valueQ8(state.inceptionBondFlowSats);
   const infinityBondValueQ8 = valueQ8(state.infinityBondFlowSats);
@@ -60968,8 +61198,10 @@ function growthActualBaseNetworkValue(
   const marketplaceValueQ8 = valueQ8(
     state.idMarketplaceVolumeSats +
       state.tokenSaleVolumeSats +
+      state.dnsMarketplaceVolumeSats +
       state.idMarketplaceFeeSats +
-      state.tokenMarketplaceFeeSats,
+      state.tokenMarketplaceFeeSats +
+      state.dnsMarketplaceFeeSats,
   );
   const tokenValueQ8 = valueQ8(
     state.tokenCreationFlowSats + state.tokenMintFlowSats,
@@ -60986,6 +61218,10 @@ function growthActualBaseNetworkValue(
   const tokenSats = q8ToNumber(tokenValueQ8);
   const walletSats = q8ToNumber(walletValueQ8);
   const computerEventSats = q8ToNumber(computerEventValueQ8);
+  const dnsRegistrySats = q8ToNumber(dnsRegistryValueQ8);
+  const dnsMarketplaceSats = q8ToNumber(dnsMarketplaceValueQ8);
+  const dnsSats = q8ToNumber(dnsValueQ8);
+  const dnsTotalSats = q8ToNumber(dnsTotalValueQ8);
   const totalSats = q8ToNumber(totalQ8);
   const years = Math.max(
     0,
@@ -61002,6 +61238,17 @@ function growthActualBaseNetworkValue(
     browserSats,
     computerEventFlowSats,
     computerEventSats,
+    dnsFlowSats,
+    dnsMarketplaceFeeSats,
+    dnsMarketplaceFlowSats,
+    dnsMarketplaceSats,
+    dnsMarketplaceVolumeSats,
+    dnsRegistrations,
+    dnsRegistryFlowSats,
+    dnsRegistrySats,
+    dnsSats,
+    dnsTotalFlowSats,
+    dnsTotalSats,
     driveFlowSats,
     driveSats,
     idSats,
@@ -61039,6 +61286,10 @@ function emptyGrowthActualBaseState() {
   return {
     browserFlowSats: 0n,
     computerEventFlowSats: 0n,
+    dnsMarketplaceFeeSats: 0n,
+    dnsMarketplaceVolumeSats: 0n,
+    dnsRegistrations: 0n,
+    dnsRegistryFlowSats: 0n,
     driveFlowSats: 0n,
     idMarketplaceFeeSats: 0n,
     idMarketplaceVolumeSats: 0n,
@@ -61076,29 +61327,35 @@ function growthActualBaseStateAdd(state, addition, multiplier = 1) {
 }
 
 function growthActualBaseStateTotalQ8(state) {
+  const value = (field) => proofFlowBigInt(state?.[field]);
   const marketplaceSaleVolumeSats =
-    state.idMarketplaceVolumeSats + state.tokenSaleVolumeSats;
+    value("idMarketplaceVolumeSats") +
+    value("tokenSaleVolumeSats") +
+    value("dnsMarketplaceVolumeSats");
   const marketplaceMutationFeeSats =
-    state.idMarketplaceFeeSats + state.tokenMarketplaceFeeSats;
+    value("idMarketplaceFeeSats") +
+    value("tokenMarketplaceFeeSats") +
+    value("dnsMarketplaceFeeSats");
   const marketplaceFlowSats =
     marketplaceSaleVolumeSats + marketplaceMutationFeeSats;
   return (
-    (state.powids *
-      state.powids *
+    (value("powids") *
+      value("powids") *
       GROWTH_ID_DENSITY_NUMERATOR *
       VALUE_Q8_SCALE) /
       GROWTH_ID_DENSITY_DENOMINATOR +
-    state.mailFlowSats * GROWTH_VALUE_MULTIPLE * VALUE_Q8_SCALE +
-    state.inceptionBondFlowSats * GROWTH_VALUE_MULTIPLE * VALUE_Q8_SCALE +
-    state.infinityBondFlowSats * GROWTH_VALUE_MULTIPLE * VALUE_Q8_SCALE +
-    state.driveFlowSats * GROWTH_VALUE_MULTIPLE * VALUE_Q8_SCALE +
+    value("mailFlowSats") * GROWTH_VALUE_MULTIPLE * VALUE_Q8_SCALE +
+    value("inceptionBondFlowSats") * GROWTH_VALUE_MULTIPLE * VALUE_Q8_SCALE +
+    value("infinityBondFlowSats") * GROWTH_VALUE_MULTIPLE * VALUE_Q8_SCALE +
+    value("driveFlowSats") * GROWTH_VALUE_MULTIPLE * VALUE_Q8_SCALE +
+    value("dnsRegistryFlowSats") * GROWTH_VALUE_MULTIPLE * VALUE_Q8_SCALE +
     marketplaceFlowSats * GROWTH_VALUE_MULTIPLE * VALUE_Q8_SCALE +
-    state.browserFlowSats * GROWTH_VALUE_MULTIPLE * VALUE_Q8_SCALE +
-    (state.tokenCreationFlowSats + state.tokenMintFlowSats) *
+    value("browserFlowSats") * GROWTH_VALUE_MULTIPLE * VALUE_Q8_SCALE +
+    (value("tokenCreationFlowSats") + value("tokenMintFlowSats")) *
       GROWTH_VALUE_MULTIPLE *
       VALUE_Q8_SCALE +
-    state.tokenTransferFlowSats * GROWTH_VALUE_MULTIPLE * VALUE_Q8_SCALE +
-    state.computerEventFlowSats * GROWTH_VALUE_MULTIPLE * VALUE_Q8_SCALE
+    value("tokenTransferFlowSats") * GROWTH_VALUE_MULTIPLE * VALUE_Q8_SCALE +
+    value("computerEventFlowSats") * GROWTH_VALUE_MULTIPLE * VALUE_Q8_SCALE
   );
 }
 
@@ -61193,6 +61450,27 @@ function growthActualBaseNetworkValueEvents(
       addEvent(item, "browserFlowSats", sats);
     } else if (item.kind === "file" && !isBrowserActivityItem(item)) {
       addEvent(item, "driveFlowSats", sats);
+    } else if (DNS_REGISTRY_ACTIVITY_KINDS.has(item.kind)) {
+      if (item.kind === "dns-register") {
+        addEvent(item, "dnsRegistrations", 1);
+      }
+      addEvent(item, "dnsRegistryFlowSats", sats);
+    } else if (
+      DNS_MARKETPLACE_MUTATION_KINDS.has(item.kind) &&
+      countedMarketplaceMutationActivity.has(item)
+    ) {
+      addEvent(
+        item,
+        "dnsMarketplaceFeeSats",
+        marketplaceMutationPaymentSatsBigInt(item),
+      );
+      if (item.kind === "dns-buy") {
+        addEvent(
+          item,
+          "dnsMarketplaceVolumeSats",
+          proofFlowBigInt(item.priceSats),
+        );
+      }
     } else if (
       ID_MARKETPLACE_MUTATION_KINDS.has(item.kind) &&
       countedMarketplaceMutationActivity.has(item)
@@ -62045,10 +62323,22 @@ function growthActivityKindLabel(kind) {
   }
 
   if (
+    kind === "dns-register" ||
+    kind === "dns-update" ||
+    kind === "dns-transfer"
+  ) {
+    return "DNS";
+  }
+
+  if (
     kind === "id-list" ||
     kind === "id-seal" ||
     kind === "id-delist" ||
     kind === "id-buy" ||
+    kind === "dns-list" ||
+    kind === "dns-seal" ||
+    kind === "dns-delist" ||
+    kind === "dns-buy" ||
     kind === "token-listing" ||
     kind === "token-listing-sealed" ||
     kind === "token-listing-closed" ||
@@ -62358,6 +62648,17 @@ function emptyWorkFloorPayload(network) {
       computerEventFlowSats: 0,
       computerEventSats: 0,
       confirmedComputerActions: 0,
+      dnsFlowSats: 0,
+      dnsMarketplaceFeeSats: 0,
+      dnsMarketplaceFlowSats: 0,
+      dnsMarketplaceSats: 0,
+      dnsMarketplaceVolumeSats: 0,
+      dnsRegistrations: 0,
+      dnsRegistryFlowSats: 0,
+      dnsRegistrySats: 0,
+      dnsSats: 0,
+      dnsTotalFlowSats: 0,
+      dnsTotalSats: 0,
       tokenCreationFlowSats: 0,
       tokenMintFlowSats: 0,
       tokenSaleFlowSats: 0,
@@ -62704,6 +63005,17 @@ function workFloorPayloadFromState(
       browserSats: actualValue.browserSats,
       computerEventFlowSats: actualValue.computerEventFlowSats,
       computerEventSats: actualValue.computerEventSats,
+      dnsFlowSats: actualValue.dnsFlowSats,
+      dnsMarketplaceFeeSats: actualValue.dnsMarketplaceFeeSats,
+      dnsMarketplaceFlowSats: actualValue.dnsMarketplaceFlowSats,
+      dnsMarketplaceSats: actualValue.dnsMarketplaceSats,
+      dnsMarketplaceVolumeSats: actualValue.dnsMarketplaceVolumeSats,
+      dnsRegistrations: actualValue.dnsRegistrations,
+      dnsRegistryFlowSats: actualValue.dnsRegistryFlowSats,
+      dnsRegistrySats: actualValue.dnsRegistrySats,
+      dnsSats: actualValue.dnsSats,
+      dnsTotalFlowSats: actualValue.dnsTotalFlowSats,
+      dnsTotalSats: actualValue.dnsTotalSats,
       driveFlowSats: actualValue.driveFlowSats,
       driveSats: actualValue.driveSats,
       idSats: actualValue.idSats,
@@ -66098,6 +66410,43 @@ function workAmoV5ExactValueAliases(prefix, valueQ8) {
   };
 }
 
+function workAmoV5DnsGrowthOverlayFromActualValue(actualValue) {
+  const dnsRegistryFlowSats = proofFlowBigInt(
+    actualValue?.dnsRegistryFlowSats ?? actualValue?.dnsFlowSats,
+  );
+  const dnsMarketplaceFeeSats = proofFlowBigInt(
+    actualValue?.dnsMarketplaceFeeSats,
+  );
+  const dnsMarketplaceVolumeSats = proofFlowBigInt(
+    actualValue?.dnsMarketplaceVolumeSats,
+  );
+  const dnsMarketplaceFlowSats =
+    dnsMarketplaceFeeSats + dnsMarketplaceVolumeSats;
+  const dnsTotalFlowSats =
+    dnsRegistryFlowSats + dnsMarketplaceFlowSats;
+  const dnsRegistryQ8 =
+    dnsRegistryFlowSats * GROWTH_VALUE_MULTIPLE * VALUE_Q8_SCALE;
+  const dnsMarketplaceQ8 =
+    dnsMarketplaceFlowSats * GROWTH_VALUE_MULTIPLE * VALUE_Q8_SCALE;
+  const dnsTotalQ8 = dnsRegistryQ8 + dnsMarketplaceQ8;
+  return {
+    dnsFlowSats: Number(dnsRegistryFlowSats),
+    dnsMarketplaceFeeSats: Number(dnsMarketplaceFeeSats),
+    dnsMarketplaceFlowSats: Number(dnsMarketplaceFlowSats),
+    dnsMarketplaceQ8,
+    dnsMarketplaceSats: q8ToNumber(dnsMarketplaceQ8),
+    dnsMarketplaceVolumeSats: Number(dnsMarketplaceVolumeSats),
+    dnsRegistrations: Number(proofFlowBigInt(actualValue?.dnsRegistrations)),
+    dnsRegistryFlowSats: Number(dnsRegistryFlowSats),
+    dnsRegistryQ8,
+    dnsRegistrySats: q8ToNumber(dnsRegistryQ8),
+    dnsSats: q8ToNumber(dnsRegistryQ8),
+    dnsTotalFlowSats: Number(dnsTotalFlowSats),
+    dnsTotalQ8,
+    dnsTotalSats: q8ToNumber(dnsTotalQ8),
+  };
+}
+
 function workAmoV5LegacyBootstrapEvidenceMatches(evidence) {
   const item =
     evidence &&
@@ -66461,16 +66810,24 @@ function workAmoV5ClosingSummaryProjection(
     creditFixedQ8 + creditMovementFrozenValueQ8;
   const creditEventLiveValueQ8 =
     creditFixedQ8 + value.creditMovementLiveValueQ8;
-  const frozenFloorQ8 = value.frozenNetworkValueQ8 / supply;
-  const liveFloorQ8 = value.networkValueQ8 / supply;
+  const dnsOverlay =
+    workAmoV5DnsGrowthOverlayFromActualValue(workFloor?.actualValue);
+  const baseNetworkValueQ8 =
+    value.baseNetworkValueQ8 + dnsOverlay.dnsTotalQ8;
+  const frozenNetworkValueQ8 =
+    value.frozenNetworkValueQ8 + dnsOverlay.dnsTotalQ8;
+  const liveNetworkValueQ8 =
+    value.networkValueQ8 + dnsOverlay.dnsTotalQ8;
+  const frozenFloorQ8 = frozenNetworkValueQ8 / supply;
+  const liveFloorQ8 = liveNetworkValueQ8 / supply;
   const exactAliases = {
     ...workAmoV5ExactValueAliases(
       "baseNetworkValue",
-      value.baseNetworkValueQ8,
+      baseNetworkValueQ8,
     ),
     ...workAmoV5ExactValueAliases(
       "baseTotal",
-      value.baseNetworkValueQ8,
+      baseNetworkValueQ8,
     ),
     ...workAmoV5ExactValueAliases(
       "creditEventFrozenValue",
@@ -66505,26 +66862,26 @@ function workAmoV5ClosingSummaryProjection(
     ...workAmoV5ExactValueAliases("frozenFloor", frozenFloorQ8),
     ...workAmoV5ExactValueAliases(
       "frozenNetworkValue",
-      value.frozenNetworkValueQ8,
+      frozenNetworkValueQ8,
     ),
     ...workAmoV5ExactValueAliases(
       "frozenTotal",
-      value.frozenNetworkValueQ8,
+      frozenNetworkValueQ8,
     ),
     ...workAmoV5ExactValueAliases("liveFloor", liveFloorQ8),
     ...workAmoV5ExactValueAliases(
       "liveNetworkValue",
-      value.networkValueQ8,
+      liveNetworkValueQ8,
     ),
-    ...workAmoV5ExactValueAliases("liveTotal", value.networkValueQ8),
+    ...workAmoV5ExactValueAliases("liveTotal", liveNetworkValueQ8),
     ...workAmoV5ExactValueAliases(
       "networkValue",
-      value.networkValueQ8,
+      liveNetworkValueQ8,
     ),
-    ...workAmoV5ExactValueAliases("total", value.networkValueQ8),
+    ...workAmoV5ExactValueAliases("total", liveNetworkValueQ8),
     ...workAmoV5ExactValueAliases(
       "workNetworkValue",
-      value.networkValueQ8,
+      liveNetworkValueQ8,
     ),
   };
   const numberState = Object.fromEntries(
@@ -66535,10 +66892,12 @@ function workAmoV5ClosingSummaryProjection(
   );
   const marketplaceFee =
     baseState.idMarketplaceFeeSats +
-    baseState.tokenMarketplaceFeeSats;
+    baseState.tokenMarketplaceFeeSats +
+    BigInt(dnsOverlay.dnsMarketplaceFeeSats);
   const marketplaceSaleVolume =
     baseState.idMarketplaceVolumeSats +
-    baseState.tokenSaleVolumeSats;
+    baseState.tokenSaleVolumeSats +
+    BigInt(dnsOverlay.dnsMarketplaceVolumeSats);
   const marketplaceFlow = marketplaceFee + marketplaceSaleVolume;
   const tokenFlow =
     baseState.tokenCreationFlowSats + baseState.tokenMintFlowSats;
@@ -66548,6 +66907,10 @@ function workAmoV5ClosingSummaryProjection(
   const componentQ8 = {
     browserSats: scaledQ8(baseState.browserFlowSats),
     computerEventSats: scaledQ8(baseState.computerEventFlowSats),
+    dnsMarketplaceSats: dnsOverlay.dnsMarketplaceQ8,
+    dnsRegistrySats: dnsOverlay.dnsRegistryQ8,
+    dnsSats: dnsOverlay.dnsRegistryQ8,
+    dnsTotalSats: dnsOverlay.dnsTotalQ8,
     driveSats: scaledQ8(baseState.driveFlowSats),
     idSats:
       (baseState.powids *
@@ -66602,6 +66965,13 @@ function workAmoV5ClosingSummaryProjection(
   );
   const flowFields = {
     ...numberState,
+    dnsFlowSats: dnsOverlay.dnsFlowSats,
+    dnsMarketplaceFeeSats: dnsOverlay.dnsMarketplaceFeeSats,
+    dnsMarketplaceFlowSats: dnsOverlay.dnsMarketplaceFlowSats,
+    dnsMarketplaceVolumeSats: dnsOverlay.dnsMarketplaceVolumeSats,
+    dnsRegistrations: dnsOverlay.dnsRegistrations,
+    dnsRegistryFlowSats: dnsOverlay.dnsRegistryFlowSats,
+    dnsTotalFlowSats: dnsOverlay.dnsTotalFlowSats,
     marketplaceFeeSats: Number(marketplaceFee),
     marketplaceFlowSats: Number(marketplaceFlow),
     marketplaceMutationFeeSats: Number(marketplaceFee),
@@ -66633,7 +67003,7 @@ function workAmoV5ClosingSummaryProjection(
     tokenSaleFlowSats: Number(baseState.tokenSaleVolumeSats),
     walletFlowSats: Number(walletFlow),
   };
-  const networkValueSats = q8ToNumber(value.networkValueQ8);
+  const networkValueSats = q8ToNumber(liveNetworkValueQ8);
   const floorSats = q8ToNumber(liveFloorQ8);
   const modelTotalUsd = growthSatsToUsdAtYears(
     networkValueSats,

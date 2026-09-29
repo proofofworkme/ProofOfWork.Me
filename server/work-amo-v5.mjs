@@ -186,6 +186,9 @@ export const WORK_AMO_V5_GENERIC_SALE_AUTH_VERSION = "pwt-sale-v1";
 export const WORK_AMO_V5_ID_SALE_AUTH_VERSION = "pwid-sale-v4";
 export const WORK_AMO_V5_ID_REGISTRY_ADDRESS =
   "bc1qfwytlzyr3ym3enz2eutwtjsf9kkf6uqkjydk3e";
+export const WORK_AMO_V5_DNS_SALE_AUTH_VERSION = "pwdns-sale-v1";
+export const WORK_AMO_V5_DNS_REGISTRY_ADDRESS =
+  "1F1zepCJ8VPcPoeMt6G4BPKuE3CYAxCKNY";
 export const WORK_AMO_V5_TOKEN_INDEX_ADDRESS =
   "1L4xrDurN9VghknrbsSju2vQb6oXZe1Pbn";
 export const WORK_AMO_V5_POWB_TOKEN_ID =
@@ -1363,6 +1366,26 @@ function workAmoV5NormalizedPowId(value) {
     : "";
 }
 
+function workAmoV5NormalizedPowDnsName(value) {
+  assertCanonicalUnicodeCaseMappingVersion();
+  const normalized = String(value ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/^@/u, "")
+    .replace(/^\./u, "")
+    .replace(/\.pow$/u, "")
+    .trim();
+  return workAmoV5HasNoTextStorageNul(normalized)
+    ? normalized
+    : "";
+}
+
+function workAmoV5PowDnsNameIsValid(name) {
+  return /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/u.test(
+    String(name ?? ""),
+  );
+}
+
 function workAmoV5CanonicalBase64UrlText(value) {
   const encoded = String(value ?? "").trim();
   if (!/^[A-Za-z0-9_-]+$/u.test(encoded)) {
@@ -1676,6 +1699,149 @@ export function workAmoV5IdSaleAuthorizationsMatch(left, right) {
   );
 }
 
+export function parseWorkAmoV5DnsSaleAuthorization(
+  value,
+  { network = "livenet" } = {},
+) {
+  const source =
+    value && typeof value === "object" && !Array.isArray(value)
+      ? value
+      : null;
+  if (
+    !source ||
+    network !== "livenet" ||
+    !workAmoV5HasNoTextStorageNul(source)
+  ) {
+    return null;
+  }
+  const id = workAmoV5NormalizedPowDnsName(
+    typeof source.id === "string" ? source.id : "",
+  );
+  const sellerAddress =
+    typeof source.sellerAddress === "string"
+      ? source.sellerAddress.trim()
+      : "";
+  const buyerAddress =
+    typeof source.buyerAddress === "string"
+      ? source.buyerAddress.trim()
+      : "";
+  const receiveAddress =
+    typeof source.receiveAddress === "string"
+      ? source.receiveAddress.trim()
+      : "";
+  const nonce =
+    typeof source.nonce === "string" ? source.nonce.trim() : "";
+  const expiresAt =
+    typeof source.expiresAt === "string"
+      ? source.expiresAt.trim()
+      : "";
+  const expiresAtMs = workAmoV5CanonicalExpiryMs(expiresAt);
+  const priceSats =
+    typeof source.priceSats === "number"
+      ? Math.floor(source.priceSats)
+      : Number.NaN;
+  const anchorType =
+    typeof source.anchorType === "string"
+      ? source.anchorType.trim()
+      : "";
+  const anchorSigHashType =
+    typeof source.anchorSigHashType === "number"
+      ? Math.floor(source.anchorSigHashType)
+      : Number.NaN;
+  const anchorSignature =
+    typeof source.anchorSignature === "string"
+      ? source.anchorSignature.trim().toLowerCase()
+      : "";
+  const anchorScriptPubKey =
+    typeof source.anchorScriptPubKey === "string"
+      ? source.anchorScriptPubKey.trim().toLowerCase()
+      : "";
+  const anchorTxid =
+    typeof source.anchorTxid === "string"
+      ? source.anchorTxid.trim().toLowerCase()
+      : "";
+  const anchorVout =
+    typeof source.anchorVout === "number"
+      ? Math.floor(source.anchorVout)
+      : Number.NaN;
+  const anchorValueSats =
+    typeof source.anchorValueSats === "number"
+      ? Math.floor(source.anchorValueSats)
+      : Number.NaN;
+  const sellerPublicKey =
+    typeof source.sellerPublicKey === "string"
+      ? source.sellerPublicKey.trim().toLowerCase()
+      : "";
+  const signature =
+    typeof source.signature === "string"
+      ? source.signature.trim()
+      : "";
+  if (
+    source.version !== WORK_AMO_V5_DNS_SALE_AUTH_VERSION ||
+    !workAmoV5PowDnsNameIsValid(id) ||
+    !isWorkAmoV5LivenetAddress(sellerAddress) ||
+    (buyerAddress && !isWorkAmoV5LivenetAddress(buyerAddress)) ||
+    (receiveAddress && !isWorkAmoV5LivenetAddress(receiveAddress)) ||
+    !Number.isSafeInteger(priceSats) ||
+    priceSats < 0 ||
+    !nonce ||
+    nonce.length > 160 ||
+    (expiresAt && !Number.isSafeInteger(expiresAtMs)) ||
+    anchorType !== "sale-ticket-v1" ||
+    !Number.isSafeInteger(anchorVout) ||
+    anchorVout < 0 ||
+    !Number.isSafeInteger(anchorValueSats) ||
+    anchorValueSats < WORK_AMO_V5_DECLARATION_MIN_PAYMENT_SATS ||
+    !SIGNATURE_HEX_PATTERN.test(anchorScriptPubKey) ||
+    !validPublicKeyHex(sellerPublicKey) ||
+    anchorSigHashType !== WORK_AMO_V5_LISTING_ANCHOR_SIGHASH_TYPE ||
+    (anchorTxid && !TXID_PATTERN.test(anchorTxid)) ||
+    (anchorSignature && !validSignatureHex(anchorSignature))
+  ) {
+    return null;
+  }
+  return {
+    anchorScriptPubKey,
+    anchorSigHashType,
+    ...(anchorSignature ? { anchorSignature } : {}),
+    ...(anchorTxid ? { anchorTxid } : {}),
+    anchorType,
+    anchorValueSats,
+    anchorVout,
+    ...(buyerAddress ? { buyerAddress } : {}),
+    ...(expiresAt ? { expiresAt } : {}),
+    id,
+    nonce,
+    priceSats,
+    ...(receiveAddress ? { receiveAddress } : {}),
+    sellerAddress,
+    sellerPublicKey,
+    signature,
+    version: WORK_AMO_V5_DNS_SALE_AUTH_VERSION,
+  };
+}
+
+export function workAmoV5DnsSaleAuthorizationsMatch(left, right) {
+  const normalize = (value) => {
+    const authorization = parseWorkAmoV5DnsSaleAuthorization(value);
+    return authorization
+      ? {
+          ...authorization,
+          anchorSignature: "",
+          anchorTxid: "",
+          signature: "",
+        }
+      : null;
+  };
+  const normalizedLeft = normalize(left);
+  const normalizedRight = normalize(right);
+  return Boolean(
+    normalizedLeft &&
+      normalizedRight &&
+      JSON.stringify(normalizedLeft) === JSON.stringify(normalizedRight)
+  );
+}
+
 export function parseWorkAmoV5RawPwidRecord(payload) {
   const text = String(payload ?? "");
   if (
@@ -1789,6 +1955,115 @@ export function parseWorkAmoV5RawPwidRecord(payload) {
       delist5: "id-delist",
       list5: "id-list",
       seal5: "id-seal",
+    }[parts[0]],
+    listingId,
+    ...(ownerAddress ? { ownerAddress, receiveAddress } : {}),
+    ...(saleAuthorization ? { saleAuthorization } : {}),
+  };
+}
+
+export function parseWorkAmoV5RawPwdnsRecord(payload) {
+  const text = String(payload ?? "");
+  if (
+    !text.startsWith("pwdns1:") ||
+    !workAmoV5HasNoTextStorageNul(text)
+  ) {
+    return null;
+  }
+  const parts = text.slice("pwdns1:".length).split(":");
+  const decodedName = (value) =>
+    workAmoV5NormalizedPowDnsName(
+      workAmoV5CanonicalBase64UrlText(value),
+    );
+  if (parts[0] === "r1" && parts.length === 4) {
+    const id = decodedName(parts[1]);
+    const ownerAddress = String(parts[2] ?? "").trim();
+    const receiveAddress = String(parts[3] ?? ownerAddress).trim();
+    return workAmoV5PowDnsNameIsValid(id) &&
+      isWorkAmoV5LivenetAddress(ownerAddress) &&
+      isWorkAmoV5LivenetAddress(receiveAddress)
+      ? {
+          id,
+          kind: "dns-register",
+          ownerAddress,
+          receiveAddress,
+        }
+      : null;
+  }
+  if (parts[0] === "u" && parts.length === 3) {
+    const id = decodedName(parts[1]);
+    const receiveAddress = String(parts[2] ?? "").trim();
+    return workAmoV5PowDnsNameIsValid(id) &&
+      isWorkAmoV5LivenetAddress(receiveAddress)
+      ? { id, kind: "dns-update", receiveAddress }
+      : null;
+  }
+  if (
+    parts[0] === "t" &&
+    parts.length >= 3 &&
+    parts.length <= 4
+  ) {
+    const id = decodedName(parts[1]);
+    const ownerAddress = String(parts[2] ?? "").trim();
+    const receiveAddress = String(parts[3] ?? ownerAddress).trim();
+    return workAmoV5PowDnsNameIsValid(id) &&
+      isWorkAmoV5LivenetAddress(ownerAddress) &&
+      isWorkAmoV5LivenetAddress(receiveAddress)
+      ? {
+          id,
+          kind: "dns-transfer",
+          ownerAddress,
+          receiveAddress,
+        }
+      : null;
+  }
+  if (!["list5", "seal5", "delist5", "buy5"].includes(parts[0])) {
+    return null;
+  }
+  const listingId =
+    parts[0] === "list5"
+      ? ""
+      : normalizedLowerText(parts[1]);
+  if (
+    (parts[0] !== "list5" && !TXID_PATTERN.test(listingId)) ||
+    (parts[0] === "list5" && parts.length !== 2) ||
+    (parts[0] === "seal5" && parts.length !== 3) ||
+    (parts[0] === "delist5" && parts.length !== 2) ||
+    (parts[0] === "buy5" && (parts.length < 3 || parts.length > 4))
+  ) {
+    return null;
+  }
+  const ownerAddress =
+    parts[0] === "buy5" ? String(parts[2] ?? "").trim() : "";
+  const receiveAddress =
+    parts[0] === "buy5"
+      ? String(parts[3] ?? ownerAddress).trim()
+      : "";
+  if (
+    parts[0] === "buy5" &&
+    (!isWorkAmoV5LivenetAddress(ownerAddress) ||
+      !isWorkAmoV5LivenetAddress(receiveAddress))
+  ) {
+    return null;
+  }
+  const saleAuthorization =
+    parts[0] === "list5" || parts[0] === "seal5"
+      ? parseWorkAmoV5DnsSaleAuthorization(
+          decodedWorkAmoV5Base64UrlJson(parts.at(-1)),
+        )
+      : null;
+  if (
+    (parts[0] === "list5" || parts[0] === "seal5") &&
+    !saleAuthorization
+  ) {
+    return null;
+  }
+  return {
+    kind: {
+      buy5: "dns-buy",
+      delist5: "dns-delist",
+      list5: "dns-list",
+      seal5: "dns-seal",
     }[parts[0]],
     listingId,
     ...(ownerAddress ? { ownerAddress, receiveAddress } : {}),

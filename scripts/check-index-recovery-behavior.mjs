@@ -484,10 +484,31 @@ const TOKEN_MARKETPLACE_MUTATION_KINDS = new Set([
   "token-listing-sealed",
   "token-listing-closed",
 ]);
+const DNS_REGISTRY_ACTIVITY_KINDS = new Set([
+  "dns-register",
+  "dns-update",
+  "dns-transfer",
+]);
+const DNS_MARKETPLACE_MUTATION_KINDS = new Set([
+  "dns-list",
+  "dns-seal",
+  "dns-delist",
+  "dns-buy",
+]);
+const DNS_ACTIVITY_KINDS = new Set([
+  ...DNS_REGISTRY_ACTIVITY_KINDS,
+  ...DNS_MARKETPLACE_MUTATION_KINDS,
+]);
 const MARKETPLACE_MUTATION_KINDS = new Set([
   ...ID_MARKETPLACE_MUTATION_KINDS,
   ...TOKEN_MARKETPLACE_MUTATION_KINDS,
+  ...DNS_MARKETPLACE_MUTATION_KINDS,
 ]);
+const DNS_REGISTRY_ADDRESSES = {
+  livenet: "1F1zepCJ8VPcPoeMt6G4BPKuE3CYAxCKNY",
+};
+const dnsRegistryAddressForNetwork = (network) =>
+  DNS_REGISTRY_ADDRESSES[String(network ?? "").trim().toLowerCase()] ?? "";
 const BOOST_EVENT_KINDS = new Set([
   "boost-buy",
   "boost-delist",
@@ -565,11 +586,21 @@ const marketplaceMutationPaymentIdentity = (item) => {
   if (!/^[0-9a-f]{64}$/u.test(txid)) {
     return "";
   }
-  const family = ID_MARKETPLACE_MUTATION_KINDS.has(kind) ? "id" : "token";
+  const family = ID_MARKETPLACE_MUTATION_KINDS.has(kind)
+    ? "id"
+    : DNS_MARKETPLACE_MUTATION_KINDS.has(kind)
+      ? "dns"
+      : "token";
+  const fallbackRegistryAddress =
+    family === "dns"
+      ? dnsRegistryAddressForNetwork(item?.network)
+      : family === "token"
+        ? item?.counterparty
+        : "";
   const registryAddress = String(
     item?.registryAddress ??
       item?.saleAuthorization?.registryAddress ??
-      (family === "token" ? item?.counterparty : "") ??
+      fallbackRegistryAddress ??
       "",
   )
     .trim()
@@ -1339,6 +1370,9 @@ function isolatedFunction(path, name, globals = {}) {
     assertInternalReplayVerifierResponseBinding: (payload) => payload,
     assertCurrentAmoV5CanonicalPositionUniqueness: async () => {},
     BOOST_EVENT_KINDS,
+    DNS_ACTIVITY_KINDS,
+    DNS_MARKETPLACE_MUTATION_KINDS,
+    DNS_REGISTRY_ACTIVITY_KINDS,
     ID_MARKETPLACE_MUTATION_KINDS,
     MARKETPLACE_MUTATION_KINDS,
     TOKEN_MARKETPLACE_MUTATION_KINDS,
@@ -1408,6 +1442,7 @@ function isolatedFunction(path, name, globals = {}) {
     dateIso,
     decimalTextFromQ8,
     decimalValueToQ8,
+    dnsRegistryAddressForNetwork,
     exactOrApproximateNumber,
     exactBondUnits: scopedExactBondUnits,
     exactWorkAmoV5RawTransitionChainCommitment,
@@ -1612,6 +1647,9 @@ function isolatedFunction(path, name, globals = {}) {
         ledgerSnapshotChecks: [
           "canonicalClosingCreditAggregateConsistency",
           "canonicalClosingCreditAggregatePrefixes",
+        ],
+        workAmoV5ClosingSummaryProjection: [
+          "workAmoV5DnsGrowthOverlayFromActualValue",
         ],
         buildIndexedCanonicalLedgerPayload: ["tokenStateWithVerifiedClosingCreditAggregates"],
         tokenStateWithVerifiedClosingCreditAggregates: [

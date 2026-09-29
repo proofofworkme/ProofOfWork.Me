@@ -37,6 +37,8 @@ import {
   WORK_AMO_V5_DECLARATION_TXID,
   WORK_AMO_V5_DECLARATION_WORK_PROTOCOL_VOUT,
   WORK_AMO_V5_EVENT_SET_COMMITMENT_MODEL,
+  WORK_AMO_V5_DNS_REGISTRY_ADDRESS,
+  WORK_AMO_V5_DNS_SALE_AUTH_VERSION,
   WORK_AMO_V5_GENERIC_SALE_AUTH_VERSION,
   WORK_AMO_V5_ID_REGISTRY_ADDRESS,
   WORK_AMO_V5_ID_SALE_AUTH_VERSION,
@@ -91,9 +93,11 @@ import {
   compareWorkAmoCanonicalPositions,
   deriveWorkAmoV5FrozenTerms,
   normalizeWorkAmoCanonicalPosition,
+  parseWorkAmoV5DnsSaleAuthorization,
   parseWorkAmoV5GenericSaleAuthorization,
   parseWorkAmoV5IdSaleAuthorization,
   parseWorkAmoV5PwmMessages,
+  parseWorkAmoV5RawPwdnsRecord,
   parseWorkAmoV5RawPwtRecord,
   parseWorkAmoV5RawPwidRecord,
   parseWorkAmoUsdQuoteRecord,
@@ -2625,6 +2629,13 @@ const validGenericSaleAuthorization = Buffer.from(
 const validIdSaleAuthorization = Buffer.from(
   JSON.stringify(rawIdSaleAuthorization),
 ).toString("base64url");
+const rawDnsSaleAuthorization = {
+  ...rawIdSaleAuthorization,
+  version: WORK_AMO_V5_DNS_SALE_AUTH_VERSION,
+};
+const validDnsSaleAuthorization = Buffer.from(
+  JSON.stringify(rawDnsSaleAuthorization),
+).toString("base64url");
 assert.equal(
   parseWorkAmoV5RawPwtRecord(
     `pwt1:list5:${validGenericSaleAuthorization}`,
@@ -2636,6 +2647,42 @@ assert.equal(
     `pwid1:list5:${validIdSaleAuthorization}`,
   )?.saleAuthorization?.version,
   WORK_AMO_V5_ID_SALE_AUTH_VERSION,
+);
+assert.equal(
+  parseWorkAmoV5RawPwdnsRecord(
+    `pwdns1:list5:${validDnsSaleAuthorization}`,
+  )?.saleAuthorization?.version,
+  WORK_AMO_V5_DNS_SALE_AUTH_VERSION,
+);
+const dnsNameEncoded = Buffer.from("Alice", "utf8").toString("base64url");
+assert.deepEqual(
+  parseWorkAmoV5RawPwdnsRecord(
+    `pwdns1:r1:${dnsNameEncoded}:${rawBuyerAddress}:${rawBuyerAddress}`,
+  ),
+  {
+    id: "alice",
+    kind: "dns-register",
+    ownerAddress: rawBuyerAddress,
+    receiveAddress: rawBuyerAddress,
+  },
+);
+assert.deepEqual(
+  parseWorkAmoV5RawPwdnsRecord(
+    `pwdns1:u:${dnsNameEncoded}:${rawBuyerAddress}`,
+  ),
+  {
+    id: "alice",
+    kind: "dns-update",
+    receiveAddress: rawBuyerAddress,
+  },
+);
+assert.equal(
+  parseWorkAmoV5DnsSaleAuthorization({
+    ...rawDnsSaleAuthorization,
+    id: ".Alice.pow",
+  })?.id,
+  "alice",
+  "DNS sale authorizations normalize the implied .pow suffix.",
 );
 const parsedRawIdListing = parseWorkAmoV5RawPwidRecord(
   `pwid1:list5:${validIdSaleAuthorization}`,
@@ -3940,6 +3987,40 @@ rawAdversarialInvalidOnlyBTxid =
     tx: rawAdversarialInvalidOnlyBTx,
   }).txid;
 
+let rawAdversarialDnsTxid = "";
+const rawAdversarialDnsNameEncoded =
+  Buffer.from("Alice", "utf8").toString("base64url");
+const rawAdversarialDnsMessage =
+  `pwdns1:r1:${rawAdversarialDnsNameEncoded}:` +
+  `${rawAdversarialActor}:${rawAdversarialRecipient}`;
+const rawAdversarialDnsTx = {
+  vin: [
+    {
+      prevout: {
+        scriptpubkey_address: rawAdversarialActor,
+      },
+      txid: hash("6"),
+      vout: 0,
+    },
+  ],
+  vout: [
+    {
+      scriptpubkey_address: WORK_AMO_V5_DNS_REGISTRY_ADDRESS,
+      value: 1_000,
+    },
+    {
+      scriptpubkey:
+        rawAdversarialOpReturnScript(rawAdversarialDnsMessage),
+      value: 0,
+    },
+  ],
+};
+rawAdversarialDnsTxid =
+  rawAdversarialHydratedTransaction({
+    feeSats: 31,
+    tx: rawAdversarialDnsTx,
+  }).txid;
+
 const rawAdversarialRecords = [
   rawAdversarialRecord({
     blockHash: rawAdversarialBlockHash,
@@ -4045,6 +4126,17 @@ const rawAdversarialRecords = [
     protocolVout: 0,
     tx: rawAdversarialInvalidOnlyBTx,
     txid: rawAdversarialInvalidOnlyBTxid,
+  }),
+  rawAdversarialRecord({
+    blockHash: rawAdversarialBlockHash,
+    blockHeight: rawAdversarialBlockHeight,
+    blockTransactionIndex: 7,
+    feeSats: 31,
+    message: rawAdversarialDnsMessage,
+    protocol: "pwdns1",
+    protocolVout: 1,
+    tx: rawAdversarialDnsTx,
+    txid: rawAdversarialDnsTxid,
   }),
 ];
 
@@ -5221,6 +5313,44 @@ assert.equal(
   rawAdversarialRecipient,
 );
 
+const rawValidDnsOutcome = rawAdversarialOutcome(
+  rawAdversarialDnsTxid,
+  1,
+);
+assert.equal(rawValidDnsOutcome?.valid, true);
+assert.equal(rawValidDnsOutcome?.semanticKind, "dns-register");
+assert.deepEqual(rawValidDnsOutcome?.output, {
+  id: "alice",
+  ownerAddress: rawAdversarialActor,
+  receiveAddress: rawAdversarialRecipient,
+});
+assert.deepEqual(
+  rawValidDnsOutcome?.stateDelta.economicOutputs.map(
+    ({ attributedSats, role, vout }) => ({
+      attributedSats,
+      role,
+      vout,
+    }),
+  ),
+  [{ attributedSats: "1000", role: "pwdns-registry", vout: 0 }],
+);
+assert.equal(
+  rawAdversarialReplay.events.find(
+    ({ txid, semanticKind }) =>
+      txid === rawAdversarialDnsTxid &&
+      semanticKind === "dns-register",
+  )?.valid,
+  true,
+);
+assert.equal(
+  rawAdversarialReplay.feeTransitions.some(
+    ({ txid, valid }) =>
+      txid === rawAdversarialDnsTxid && valid === true,
+  ),
+  false,
+  "DNS registry activity is canonical but does not charge the raw AMO miner-fee accumulator.",
+);
+
 const rawBothInvalidIdMessages = [
   rawAdversarialInvalidIdMessage,
   `pwid1:u:${Buffer.from("unknown-id", "utf8").toString("base64url")}:` +
@@ -5322,7 +5452,7 @@ assert.equal(
 );
 assert.equal(
   rawAdversarialReplay.rawProtocolCandidateCount,
-  9,
+  10,
 );
 assert.match(
   rawAdversarialReplay.blockDescriptorCommitment.sha256,

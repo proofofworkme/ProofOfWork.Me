@@ -2796,6 +2796,7 @@ expectAll("consistency endpoint guards the public invariant", server, [
   /"growth-work-floor-total"/,
   /"marketplace-mutation-fees-counted"/,
   /"marketplace-value-includes-mutation-fees"/,
+  /"dns-activity-counted"/,
   /"computer-event-flow-excludes-marketplace"/,
   /"token-events-logged"/,
   /"token-sales-logged"/,
@@ -2866,10 +2867,32 @@ expectAll("log history searches fall back to direct DB event rows", proofIndexRe
 const publicLogKinds = /const PUBLIC_LOG_EVENT_KINDS = new Set\(\[([\s\S]*?)\]\);/u.exec(
   proofIndexReader,
 )?.[1] ?? "";
+const backfillPublicLogKinds =
+  /const PUBLIC_LOG_EVENT_KINDS = new Set\(\[([\s\S]*?)\]\);/u.exec(
+    proofIndexerBackfill,
+  )?.[1] ?? "";
 expect(
   "public Log must exclude invalid protocol attempts",
   !/"token-event-invalid"/u.test(publicLogKinds),
 );
+for (const kind of [
+  "dns-buy",
+  "dns-delist",
+  "dns-list",
+  "dns-register",
+  "dns-seal",
+  "dns-transfer",
+  "dns-update",
+]) {
+  expect(
+    `public Log reader must include canonical DNS action ${kind}`,
+    publicLogKinds.includes(`"${kind}"`),
+  );
+  expect(
+    `public Log backfill must include canonical DNS action ${kind}`,
+    backfillPublicLogKinds.includes(`"${kind}"`),
+  );
+}
 expectAll("public Log SQL counts valid confirmed or pending actions only", proofIndexReader, [
   /const conditions = \[[\s\S]*?"e\.valid = true"[\s\S]*?"e\.status IN \('confirmed', 'pending'\)"[\s\S]*?"e\.kind = ANY\(\$2::text\[\]\)"/,
   /export async function proofIndexCanonicalActivityPayload\(\s*network,\s*options = \{\},?\s*\)[\s\S]*?AND e\.valid = true[\s\S]*?AND e\.status IN \('confirmed', 'pending'\)[\s\S]*?AND e\.kind = ANY\(\$2::text\[\]\)/,
@@ -3126,6 +3149,38 @@ expectAll("marketplace mutation fees are first-class network value", server, [
   /"marketplace-value-includes-mutation-fees"/,
 ]);
 
+expectAll("DNS is a first-class canonical Growth input", server + app, [
+  /const DNS_REGISTRY_ACTIVITY_KINDS = new Set/,
+  /const DNS_MARKETPLACE_MUTATION_KINDS = new Set/,
+  /const DNS_ACTIVITY_KINDS = new Set/,
+  /DNS_REGISTRY_ACTIVITY_KINDS\.has\(item\.kind\)/,
+  /DNS_MARKETPLACE_MUTATION_KINDS\.has\(item\.kind\)/,
+  /dnsRegistryFlowSats \* GROWTH_MODEL_INPUTS\.valueMultiple/,
+  /dnsMarketplaceFeeSats \+ dnsMarketplaceVolumeSats/,
+  /dnsSats/,
+  /dnsTotalSats/,
+  /name="DNS"/,
+  /actualValue\.dnsSats/,
+  /\.pow names/,
+]);
+expectAll("canonical ledger imports accepted DNS registry activity", server, [
+  /function dnsActivityStateForCanonicalLedger\(/,
+  /"The canonical DNS registry state is unavailable\."/,
+  /dnsRegistryPayload\(network\)/,
+  /dnsActivityStateForCanonicalLedger\([\s\S]*?throughBlockHeight: exactHeight/,
+  /dnsActivityStateForCanonicalLedger\([\s\S]*?throughBlockHeight: sourceTipHeight/,
+  /dnsActivity: sourceCollectionFingerprint\(dnsActivityState\?\.activity\)/,
+  /"dns-activity-counted"/,
+]);
+expectAll("DNS AMO mutations have their own marketplace identity family", server, [
+  /DNS_MARKETPLACE_MUTATION_KINDS\.has\(kind\)[\s\S]*\? "dns"/,
+  /family === "dns"[\s\S]*dnsRegistryAddressForNetwork\(item\?\.network\)/,
+]);
+expectAll("backfill routes DNS registry records as registry history", proofIndexerBackfill, [
+  /\["dns-register", "dns-update", "dns-transfer"\]\.includes\(kind\)/,
+  /return "registry-records"/,
+]);
+
 expectAll("invalid marketplace mutations contribute no canonical fee flow", uniqueMarketplaceMutationActivitySource + confirmedActivityFlowSatsSource, [
   /item\?\.valid !== false && kinds\.has\(item\?\.kind\)/,
   /item\?\.valid !== false && kinds\.has\(item\.kind\)/,
@@ -3168,7 +3223,9 @@ expectAll("AMO V5 legacy bootstrap carry is exact and separately reconciled", le
   /postActivationCreditFixedQ8 =[\s\S]*?committedCreditFixedQ8 >= legacyBaselineCreditFixedQ8[\s\S]*?committedCreditFixedQ8 - legacyBaselineCreditFixedQ8/,
   /publishedCreditFixedQ8Matches[\s\S]*?publishedValidCreditFixedQ8 === validCreditFixedQ8[\s\S]*?publishedValidCreditFixedQ8 === legacyBaselineCreditFixedQ8[\s\S]*?publishedValidCreditFixedQ8 === committedCreditFixedQ8/,
   /const baseState = reconciliation\.validBaseState/,
-  /workAmoV5ExactValueAliases\(\s*"baseNetworkValue",\s*value\.baseNetworkValueQ8/,
+  /const dnsOverlay =[\s\S]*?workAmoV5DnsGrowthOverlayFromActualValue/,
+  /const baseNetworkValueQ8 =[\s\S]*?value\.baseNetworkValueQ8 \+ dnsOverlay\.dnsTotalQ8/,
+  /workAmoV5ExactValueAliases\(\s*"baseNetworkValue",\s*baseNetworkValueQ8/,
   /workAmoV5ExactValueAliases\("creditFixed", creditFixedQ8\)/,
   /marketplaceFeeSats:\s*Number\(marketplaceFee\)/,
   /legacyBootstrapMarketplaceCarrySats:/,

@@ -1325,6 +1325,7 @@ type PowActivityItem = {
   minerFeeSats?: number;
   network: BitcoinNetwork;
   participants?: string[];
+  priceSats?: number;
   proofPaymentSats?: number;
   registryMutationFeeSats?: number;
   salePaymentSats?: number;
@@ -1347,9 +1348,25 @@ const TOKEN_MARKETPLACE_MUTATION_KINDS = new Set<PowActivityKind>([
   "token-listing-sealed",
   "token-listing-closed",
 ]);
+const DNS_REGISTRY_ACTIVITY_KINDS = new Set<PowActivityKind>([
+  "dns-register",
+  "dns-update",
+  "dns-transfer",
+]);
+const DNS_MARKETPLACE_MUTATION_KINDS = new Set<PowActivityKind>([
+  "dns-list",
+  "dns-seal",
+  "dns-delist",
+  "dns-buy",
+]);
+const DNS_ACTIVITY_KINDS = new Set<PowActivityKind>([
+  ...DNS_REGISTRY_ACTIVITY_KINDS,
+  ...DNS_MARKETPLACE_MUTATION_KINDS,
+]);
 const MARKETPLACE_MUTATION_KINDS = new Set<PowActivityKind>([
   ...ID_MARKETPLACE_MUTATION_KINDS,
   ...TOKEN_MARKETPLACE_MUTATION_KINDS,
+  ...DNS_MARKETPLACE_MUTATION_KINDS,
 ]);
 
 type PowActivityStats = {
@@ -2108,6 +2125,17 @@ type GrowthActualNetworkValue = {
   creditProofPaymentFlowSats?: number;
   creditRegistryMutationFlowSats?: number;
   creditSalePaymentFlowSats?: number;
+  dnsFlowSats: number;
+  dnsMarketplaceFeeSats: number;
+  dnsMarketplaceFlowSats: number;
+  dnsMarketplaceSats: number;
+  dnsMarketplaceVolumeSats: number;
+  dnsRegistrations: number;
+  dnsRegistryFlowSats: number;
+  dnsRegistrySats: number;
+  dnsSats: number;
+  dnsTotalFlowSats?: number;
+  dnsTotalSats?: number;
   driveFlowSats: number;
   driveSats: number;
   idMarketplaceFeeSats: number;
@@ -2480,6 +2508,9 @@ type GrowthSummaryCounts = {
   confirmedTokenSales: number;
   confirmedTokenTransfers: number;
   driveActions: number;
+  dnsActions: number;
+  dnsMarketplaceActions: number;
+  dnsRegistrations: number;
   idListings: number;
   inceptionBondActions: number;
   infinityBondActions: number;
@@ -17889,6 +17920,26 @@ function normalizeGrowthActualValue(
       payload,
       "creditSalePaymentFlowSats",
     ),
+    dnsFlowSats: growthNumberField(payload, "dnsFlowSats"),
+    dnsMarketplaceFeeSats: growthNumberField(
+      payload,
+      "dnsMarketplaceFeeSats",
+    ),
+    dnsMarketplaceFlowSats: growthNumberField(
+      payload,
+      "dnsMarketplaceFlowSats",
+    ),
+    dnsMarketplaceSats: growthNumberField(payload, "dnsMarketplaceSats"),
+    dnsMarketplaceVolumeSats: growthNumberField(
+      payload,
+      "dnsMarketplaceVolumeSats",
+    ),
+    dnsRegistrations: growthNumberField(payload, "dnsRegistrations"),
+    dnsRegistryFlowSats: growthNumberField(payload, "dnsRegistryFlowSats"),
+    dnsRegistrySats: growthNumberField(payload, "dnsRegistrySats"),
+    dnsSats: growthNumberField(payload, "dnsSats"),
+    dnsTotalFlowSats: growthNumberField(payload, "dnsTotalFlowSats"),
+    dnsTotalSats: growthNumberField(payload, "dnsTotalSats"),
     driveFlowSats: growthNumberField(payload, "driveFlowSats"),
     driveSats: growthNumberField(payload, "driveSats"),
     idMarketplaceFeeSats: growthNumberField(
@@ -18037,6 +18088,12 @@ function normalizeGrowthCounts(
     confirmedTokenSales: numberCount("confirmedTokenSales"),
     confirmedTokenTransfers: numberCount("confirmedTokenTransfers"),
     driveActions: numberCount("driveActions"),
+    dnsActions: numberCount("dnsActions"),
+    dnsMarketplaceActions: numberCount("dnsMarketplaceActions"),
+    dnsRegistrations: numberCount(
+      "dnsRegistrations",
+      actualValue.dnsRegistrations,
+    ),
     idListings: numberCount("idListings"),
     inceptionBondActions: numberCount("inceptionBondActions"),
     infinityBondActions: numberCount("infinityBondActions"),
@@ -45132,6 +45189,7 @@ function activityKindHasDedicatedGrowthBucket(item: PowActivityItem) {
   }
 
   return (
+    DNS_REGISTRY_ACTIVITY_KINDS.has(item.kind) ||
     MARKETPLACE_MUTATION_KINDS.has(item.kind) ||
     item.kind === "mail" ||
     item.kind === "reply" ||
@@ -45156,7 +45214,7 @@ function confirmedActivityFlowSats(
   kinds: Set<PowActivityKind>,
 ) {
   return confirmedActivity
-    .filter((item) => kinds.has(item.kind))
+    .filter((item) => item.valid !== false && kinds.has(item.kind))
     .reduce((total, item) => total + activityAmountSats(item), 0);
 }
 
@@ -45230,6 +45288,27 @@ function growthActualNetworkValue(
   const driveFlowSats = confirmedActivity
     .filter((item) => item.kind === "file" && !isBrowserActivityItem(item))
     .reduce((total, item) => total + (item.amountSats ?? 0), 0);
+  const dnsRegistryActivity = confirmedActivity.filter((item) =>
+    DNS_REGISTRY_ACTIVITY_KINDS.has(item.kind),
+  );
+  const dnsRegistrations = dnsRegistryActivity.filter(
+    (item) => item.kind === "dns-register",
+  ).length;
+  const dnsRegistryFlowSats = dnsRegistryActivity.reduce(
+    (total, item) => total + activityAmountSats(item),
+    0,
+  );
+  const dnsMarketplaceFeeSats = confirmedActivityFlowSats(
+    confirmedActivity,
+    DNS_MARKETPLACE_MUTATION_KINDS,
+  );
+  const dnsMarketplaceVolumeSats = confirmedActivity
+    .filter((item) => item.kind === "dns-buy")
+    .reduce((total, item) => total + (Number(item.priceSats) || 0), 0);
+  const dnsMarketplaceFlowSats =
+    dnsMarketplaceFeeSats + dnsMarketplaceVolumeSats;
+  const dnsFlowSats = dnsRegistryFlowSats;
+  const dnsTotalFlowSats = dnsRegistryFlowSats + dnsMarketplaceFlowSats;
   const idMarketplaceVolumeSats = confirmedSales.reduce(
     (total, sale) => total + sale.priceSats,
     0,
@@ -45240,7 +45319,7 @@ function growthActualNetworkValue(
   );
   const tokenSaleFlowSats = tokenSaleVolumeSats;
   const marketplaceSaleVolumeSats =
-    idMarketplaceVolumeSats + tokenSaleVolumeSats;
+    idMarketplaceVolumeSats + tokenSaleVolumeSats + dnsMarketplaceVolumeSats;
   const marketplaceVolumeSats = marketplaceSaleVolumeSats;
   const idMarketplaceFeeSats = confirmedActivityFlowSats(
     confirmedActivity,
@@ -45251,7 +45330,7 @@ function growthActualNetworkValue(
     TOKEN_MARKETPLACE_MUTATION_KINDS,
   );
   const marketplaceFeeSats =
-    idMarketplaceFeeSats + tokenMarketplaceFeeSats;
+    idMarketplaceFeeSats + tokenMarketplaceFeeSats + dnsMarketplaceFeeSats;
   const marketplaceMutationFeeSats = marketplaceFeeSats;
   const marketplaceFlowSats =
     marketplaceSaleVolumeSats + marketplaceMutationFeeSats;
@@ -45277,6 +45356,12 @@ function growthActualNetworkValue(
   const infinityBondSats =
     infinityBondFlowSats * GROWTH_MODEL_INPUTS.valueMultiple;
   const driveSats = driveFlowSats * GROWTH_MODEL_INPUTS.valueMultiple;
+  const dnsRegistrySats =
+    dnsRegistryFlowSats * GROWTH_MODEL_INPUTS.valueMultiple;
+  const dnsMarketplaceSats =
+    dnsMarketplaceFlowSats * GROWTH_MODEL_INPUTS.valueMultiple;
+  const dnsSats = dnsRegistrySats;
+  const dnsTotalSats = dnsRegistrySats + dnsMarketplaceSats;
   const marketplaceSats =
     marketplaceFlowSats * GROWTH_MODEL_INPUTS.valueMultiple;
   const browserSats = browserFlowSats * GROWTH_MODEL_INPUTS.valueMultiple;
@@ -45502,6 +45587,7 @@ function growthActualNetworkValue(
     inceptionBondSats +
     infinityBondSats +
     driveSats +
+    dnsSats +
     marketplaceSats +
     browserSats +
     tokenSats +
@@ -45532,6 +45618,17 @@ function growthActualNetworkValue(
     creditProofPaymentFlowSats,
     creditRegistryMutationFlowSats,
     creditSalePaymentFlowSats,
+    dnsFlowSats,
+    dnsMarketplaceFeeSats,
+    dnsMarketplaceFlowSats,
+    dnsMarketplaceSats,
+    dnsMarketplaceVolumeSats,
+    dnsRegistrations,
+    dnsRegistryFlowSats,
+    dnsRegistrySats,
+    dnsSats,
+    dnsTotalFlowSats,
+    dnsTotalSats,
     driveFlowSats,
     driveSats,
     inceptionBondFlowSats,
@@ -45789,10 +45886,22 @@ function growthActivityKindLabel(kind: PowActivityKind) {
   }
 
   if (
+    kind === "dns-register" ||
+    kind === "dns-update" ||
+    kind === "dns-transfer"
+  ) {
+    return "DNS";
+  }
+
+  if (
     kind === "id-list" ||
     kind === "id-seal" ||
     kind === "id-delist" ||
     kind === "id-buy" ||
+    kind === "dns-list" ||
+    kind === "dns-seal" ||
+    kind === "dns-delist" ||
+    kind === "dns-buy" ||
     kind === "token-listing" ||
     kind === "token-listing-sealed" ||
     kind === "token-listing-closed" ||
@@ -47383,6 +47492,17 @@ function GrowthWorkspace({
     confirmedActivity.filter(
       (item) => item.kind === "file" && !isBrowserActivityItem(item),
     ).length;
+  const dnsActions =
+    summaryCounts?.dnsActions ??
+    confirmedActivity.filter((item) => DNS_ACTIVITY_KINDS.has(item.kind)).length;
+  const dnsRegistrations =
+    summaryCounts?.dnsRegistrations ??
+    confirmedActivity.filter((item) => item.kind === "dns-register").length;
+  const dnsMarketplaceActions =
+    summaryCounts?.dnsMarketplaceActions ??
+    confirmedActivity.filter((item) =>
+      DNS_MARKETPLACE_MUTATION_KINDS.has(item.kind),
+    ).length;
   const confirmedTokenDefinitions =
     summaryCounts?.confirmedTokenDefinitions ??
     tokenDefinitions.filter((token) => token.confirmed).length;
@@ -47395,9 +47515,12 @@ function GrowthWorkspace({
   const confirmedTokenSales =
     summaryCounts?.confirmedTokenSales ??
     tokenSales.filter((sale) => sale.confirmed).length;
+  const confirmedDnsSales = confirmedActivity.filter(
+    (item) => item.kind === "dns-buy",
+  ).length;
   const marketplaceSaleCount =
     summaryCounts?.marketplaceSaleCount ??
-    marketplaceStats.confirmedSales + confirmedTokenSales;
+    marketplaceStats.confirmedSales + confirmedTokenSales + confirmedDnsSales;
   const marketplaceSaleVolumeSats =
     actualValue.marketplaceSaleVolumeSats || actualValue.marketplaceVolumeSats;
   const marketplaceFeeSats =
@@ -47407,6 +47530,13 @@ function GrowthWorkspace({
     marketplaceSaleVolumeSats + marketplaceFeeSats;
   const tokenFlowSats =
     actualValue.tokenCreationFlowSats + actualValue.tokenMintFlowSats;
+  const dnsRegistryFlowSats =
+    actualValue.dnsRegistryFlowSats || actualValue.dnsFlowSats;
+  const dnsTotalFlowSats =
+    actualValue.dnsTotalFlowSats ??
+    dnsRegistryFlowSats +
+      actualValue.dnsMarketplaceFeeSats +
+      actualValue.dnsMarketplaceVolumeSats;
   const walletFlowSats = actualValue.walletFlowSats;
   const creditNetworkValueSats =
     actualValue.creditNetworkValueSats ??
@@ -47470,7 +47600,7 @@ function GrowthWorkspace({
           <p>
             The candle-gold line is modeled ProofOfWork Computer network value. The
             olive line is real confirmed mainnet value from IDs, Mail, Infinity
-            Bonds, Inception Bonds, Drive, AMO, Browser, Credits, and Wallet.
+            Bonds, Inception Bonds, Drive, DNS, AMO, Browser, Credits, and Wallet.
             The forecast includes Boost, bonds, credit activity, and transfers with shared payments counted once.
           </p>
         </div>
@@ -47629,7 +47759,7 @@ function GrowthWorkspace({
           <h3>Candle-gold is the success case. Olive is ProofOfWork history.</h3>
           <p>
             The model asks what the ProofOfWork Computer can become if IDs, Mail,
-            Boost, Infinity Bonds, Inception Bonds, Drive, AMO, Browser, Credits, and Wallet
+            Boost, Infinity Bonds, Inception Bonds, Drive, DNS, AMO, Browser, Credits, and Wallet
             compound together. Boost is included in the revised scenario. The real line only counts confirmed mainnet
             records that already exist.
           </p>
@@ -47639,7 +47769,7 @@ function GrowthWorkspace({
           <h3>Everything is valued in proofs first.</h3>
           <p>
             IDs use n squared network value. Mail, Infinity Bonds, Inception Bonds, Drive,
-            AMO, Browser, Credits, and Wallet keep their confirmed
+            DNS, AMO, Browser, Credits, and Wallet keep their confirmed
             payment-flow buckets. WORK credit movements add live
             proof-equivalent value as the active site value, while each
             confirmation stamps its own frozen audit value plus separate miner fees.
@@ -47652,7 +47782,7 @@ function GrowthWorkspace({
           <h3>The olive line moves when ProofOfWork confirms.</h3>
           <p>
             Registrations, messages, replies, file writes, HTML page writes,
-            Infinity Bonds, Inception Bonds, AMO listings, seals, delistings,
+            Infinity Bonds, Inception Bonds, DNS names, AMO listings, seals, delistings,
             buyer-funded buys, credit creations, credit mints, and credit
             transfers are pulled from live endpoints. WORK credit transfers
             and sales also carry frozen and live network value. Other credits
@@ -47806,6 +47936,18 @@ function GrowthWorkspace({
             note="Network stock scenario: n squared using the historical May ID value density."
           />
           <GrowthProductCard
+            actual={growthSats(actualValue.dnsSats)}
+            actualLabel={`${growthUsdForSats(actualValue.dnsSats)} · ${dnsRegistryFlowSats.toLocaleString()} registry proofs · ${dnsRegistrations.toLocaleString()} .pow names · ${dnsActions.toLocaleString()} actions`}
+            icon={<Search size={24} />}
+            modelFiveYear={forecastVersion === "all-products" ? "Tracked live" : "Not modeled"}
+            modelFiveYearLabel={forecastVersion === "all-products" ? `${dnsTotalFlowSats.toLocaleString()} total DNS flow proofs` : "Original baseline"}
+            modelLabel="confirmed registry value"
+            modelOneYear={forecastVersion === "all-products" ? "Tracked live" : "Not modeled"}
+            modelOneYearLabel={forecastVersion === "all-products" ? `${actualValue.dnsMarketplaceFeeSats.toLocaleString()} AMO fee proofs · ${dnsMarketplaceActions.toLocaleString()} marketplace actions` : "Original baseline"}
+            name="DNS"
+            note=".pow registrations and resolver mutations count as DNS registry value; DNS sale-ticket activity is counted in AMO."
+          />
+          <GrowthProductCard
             actual={growthSats(actualValue.mailSats)}
             actualLabel={`${growthUsdForSats(actualValue.mailSats)} · ${actualValue.mailFlowSats.toLocaleString()} paid proofs · ${mailActions.toLocaleString()} actions`}
             icon={<Mail size={24} />}
@@ -47889,7 +48031,7 @@ function GrowthWorkspace({
             modelOneYear={growthSats(oneYear.marketplaceSats)}
             modelOneYearLabel={growthUsdForSats(oneYear.marketplaceSats)}
             name="AMO"
-            note="ID, Credit, WORK, POWB, and INCB sales and mutation fees are counted once. Boost trades stay in the Boost category."
+            note="ID, DNS, Credit, WORK, POWB, and INCB sales and mutation fees are counted once. Boost trades stay in the Boost category."
           />
           <GrowthProductCard
             actual={growthSats(actualValue.browserSats)}
@@ -47913,7 +48055,7 @@ function GrowthWorkspace({
             modelOneYear={forecastVersion === "all-products" ? growthSats(oneYear.computerEventSats ?? 0) : "Not modeled"}
             modelOneYearLabel={forecastVersion === "all-products" ? growthUsdForSats(oneYear.computerEventSats ?? 0) : "Original baseline"}
             name="Confirmed Events"
-            note="ID registration fees, receiver updates, and direct transfers are counted once; unrelated events have no assumed extra contribution."
+            note="Unbucketed confirmed Log proofs are counted once; product-specific DNS, ID, marketplace, bond, browser, and credit actions stay in their own lanes."
           />
           <GrowthProductCard
             actual={growthSats(actualValue.tokenSats)}
