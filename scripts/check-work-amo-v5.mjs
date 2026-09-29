@@ -94,6 +94,7 @@ import {
   deriveWorkAmoV5FrozenTerms,
   normalizeWorkAmoCanonicalPosition,
   parseWorkAmoV5DnsSaleAuthorization,
+  workAmoV5DnsSaleAuthorizationsMatch,
   parseWorkAmoV5GenericSaleAuthorization,
   parseWorkAmoV5IdSaleAuthorization,
   parseWorkAmoV5PwmMessages,
@@ -2636,6 +2637,19 @@ const rawDnsSaleAuthorization = {
 const validDnsSaleAuthorization = Buffer.from(
   JSON.stringify(rawDnsSaleAuthorization),
 ).toString("base64url");
+const signedDnsSaleAuthorization = {
+  ...rawDnsSaleAuthorization,
+  anchorTxid: rawListingId,
+  anchorSignature: "3044022061d92dab9d32c99e00614efaecfc407dd08e05280f6099a6a3f7ac91c0d96f12022036369acb78352f8a868a4403842cc32b65fec76c3b0f79c55316b65dae3c3ca783",
+  signature: "signed-terms",
+};
+assert.equal(workAmoV5DnsSaleAuthorizationsMatch(
+  signedDnsSaleAuthorization, rawDnsSaleAuthorization,
+), true, "DNS seal matching ignores signatures and property insertion order.");
+assert.equal(workAmoV5DnsSaleAuthorizationsMatch(
+  signedDnsSaleAuthorization,
+  { ...rawDnsSaleAuthorization, priceSats: rawDnsSaleAuthorization.priceSats + 1 },
+), false, "DNS seal matching rejects changed economic terms.");
 assert.equal(
   parseWorkAmoV5RawPwtRecord(
     `pwt1:list5:${validGenericSaleAuthorization}`,

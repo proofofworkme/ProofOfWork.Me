@@ -34744,7 +34744,35 @@ async function dnsRegistryPayload(network) {
     };
   }
 
-  const txs = await fetchRegistryTransactions(registryAddress, network);
+  const checkpoint = exactCoreTipFromBlockchainInfo(
+    await bitcoinRpc("getblockchaininfo", []),
+  );
+  if (!checkpoint) throw new Error("DNS canonical checkpoint is unavailable.");
+  await registryAuditElectrumCheckpoint(checkpoint);
+  const coverage = electrumAddressHistoryCoverage(
+    await fetchExactAddressHistoryFromElectrum(registryAddress, network),
+  );
+  const confirmedTxs = await hydrateExactConfirmedRegistryHistory(
+    coverage.entries, network,
+    { allHeights: true, registryAddress },
+  );
+  const pendingTxs = await mapWithConcurrency(
+    coverage.pendingTxids, 2,
+    (txid) => hydrateExactPendingRegistryTransaction(txid, network, { registryAddress }),
+  );
+  const txs = [...confirmedTxs, ...pendingTxs];
+  const finalCoverage = electrumAddressHistoryCoverage(
+    await fetchExactAddressHistoryFromElectrum(registryAddress, network),
+  );
+  const finalCheckpoint = exactCoreTipFromBlockchainInfo(
+    await bitcoinRpc("getblockchaininfo", []),
+  );
+  await registryAuditElectrumCheckpoint(checkpoint);
+  if (coverage.snapshotSha256 !== finalCoverage.snapshotSha256 ||
+      finalCheckpoint?.height !== checkpoint.height ||
+      finalCheckpoint?.blockHash !== checkpoint.blockHash) {
+    throw new Error("DNS chain/history changed during the canonical read.");
+  }
   const state = idRegistryStateFromTransactions(
     txs,
     registryAddress,
@@ -34760,7 +34788,7 @@ async function dnsRegistryPayload(network) {
     },
   );
   const listings = await filterSpendableListings(state.listings, network);
-  const indexedThroughBlock = indexedThroughBlockFromTransactions(txs) ?? 0;
+  const indexedThroughBlock = checkpoint.height;
   return {
     ...registryPayloadFromState(state, {
       indexedThroughBlock,
@@ -34770,6 +34798,9 @@ async function dnsRegistryPayload(network) {
       source: mempoolBase(network),
       transactionCount: txs.length,
     }),
+    checkpointHash: checkpoint.blockHash,
+    latestEventBlock: indexedThroughBlockFromTransactions(txs) ?? 0,
+    coverage: { complete: true, historySha256: coverage.snapshotSha256 },
     assetSuffix: ".pow",
     minMutationPriceSats: ID_MUTATION_PRICE_SATS,
     minRegistrationPriceSats: ID_REGISTRATION_PRICE_SATS,
@@ -57227,7 +57258,9 @@ function mailActivityItemFromMailMessage(message, address, network) {
     });
   }
 
-  const memo = String(message?.memo ?? "").trim();
+  // This activity projection can feed public Desktop files. Preserve the
+  // canonical UTF-8 body, including trailing whitespace, for byte/hash parity.
+  const memo = String(message?.memo ?? "");
   const protocolKind = String(message?.protocolKind ?? message?.kind ?? "")
     .trim()
     .toLowerCase();
@@ -75671,7 +75704,7 @@ function registryAuditProjection(payload, checkpoint) {
   };
 }
 
-async function hydrateExactPendingRegistryTransaction(txid, network) {
+async function hydrateExactPendingRegistryTransaction(txid, network, options = {}) {
   const transaction = await fetchTransactionFromBitcoinRpc(txid, network, {
     bypassCache: true,
     cacheResult: false,
@@ -75689,7 +75722,7 @@ async function hydrateExactPendingRegistryTransaction(txid, network) {
     typeof mempoolEntry.result !== "object" ||
     !Number.isSafeInteger(mempoolTime) ||
     mempoolTime < 1 ||
-    !registryAuditTransactionTouchesAddress(transaction, registryAddressForNetwork(network))
+    !registryAuditTransactionTouchesAddress(transaction, options.registryAddress ?? registryAddressForNetwork(network))
   ) {
     throw new Error(
       `Bitcoin Core did not prove pending registry transaction ${txid}.`,
@@ -75762,7 +75795,7 @@ async function hydrateExactConfirmedRegistryHistory(
             Number(transaction.status.block_time) < 1 ||
             !registryAuditTransactionTouchesAddress(
               transaction,
-              registryAddressForNetwork(network),
+              options.registryAddress ?? registryAddressForNetwork(network),
             )
           ) {
             throw new Error(

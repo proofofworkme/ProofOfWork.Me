@@ -1,0 +1,2448 @@
+{
+  "audit": "28",
+  "date": "2026-09-29",
+  "observationsUtc": "2026-09-29T19:25:00Z onward",
+  "localHead": "0e767c69e785945110a53092415894a4eab70d12",
+  "nodeHead": "d2c0afaffd9cd723fa99c02a6de6b86fe50a0be6",
+  "productionChanges": false,
+  "productionDeletions": false,
+  "predecessors": [
+    {
+      "path": "audits/2026-08-23-read-only-health-data-event-ui-audit.md",
+      "sha256": "5c92ac28243e87f5e3e2c25e7ba6e369e0130ea0230be9bce564e12086536701"
+    },
+    {
+      "path": "audits/2026-08-28-production-health-data-event-audit.md",
+      "sha256": "7ee40a9fca1a9360b2736ac1972b80f8d623f062bcedd551bc8821b055a4ce46"
+    },
+    {
+      "path": "audits/2026-08-30-production-health-data-event-storage-audit.md",
+      "sha256": "88548c5323662839173712cde591321b0e24c6bf6e8ee284eade67049a206bf2"
+    },
+    {
+      "path": "audits/2026-08-31-postgresql-retention-remediation-2c.md",
+      "sha256": "ad4dfba841530e6bdf3ffc032854e4c9381a4cc7f2a1626425c2788672a49d29"
+    },
+    {
+      "path": "audits/2026-08-31-postgresql-retention-remediation-2e.md",
+      "sha256": "1810c4cc1b8cd7896f10246d69ea4c84d22af6eccdc2e0ebda2dfc50cac24c6f"
+    },
+    {
+      "path": "audits/2026-08-31-production-health-data-event-storage-audit-2.md",
+      "sha256": "cc212146eeb0e9fc484dabd35ad054ffbda1cb56a4a659593223f375e8929b01"
+    },
+    {
+      "path": "audits/2026-08-31-storage-retention-node-manifest.md",
+      "sha256": "5f84a595fbb8a7a6e9e0e589a23731d4cf4b7cb6f4ba9c9b2dee36c5454b68c0"
+    },
+    {
+      "path": "audits/2026-08-31-storage-retention-ui-manifest.md",
+      "sha256": "cdda257b3eccbc04d5527003a794c960f74c004511f344fe7ca79100be83dde4"
+    },
+    {
+      "path": "audits/2026-09-01-production-health-data-event-storage-audit-3.md",
+      "sha256": "2fb5216f172b85a5409db8ed7710e2280e9b30741181b30c423a9dcdea4fbae4"
+    },
+    {
+      "path": "audits/2026-09-02-production-health-data-event-storage-audit-4.md",
+      "sha256": "3cd97f64c6e0c1f1964da7eeed0ede3eba471e2f9319289029df83e38d41acfe"
+    },
+    {
+      "path": "audits/2026-09-03-read-only-ui-ux-audit.md",
+      "sha256": "3f489f373db196ea0f5866916b1cecfc8d3c7a92c7432630ef9d581167393156"
+    },
+    {
+      "path": "audits/2026-09-04-amo-indexer-recovery.md",
+      "sha256": "2ab2a1aea74240c493ee31a800a303c54e93ada9e383169cdc74fd1297da5ca5"
+    },
+    {
+      "path": "audits/2026-09-05-all-product-growth-release.md",
+      "sha256": "47474f2b5118da2be1f65f236acf618bff580a5877498ae59a31602019c86108"
+    },
+    {
+      "path": "audits/2026-09-05-production-health-data-event-storage-audit-5.md",
+      "sha256": "58b3ae29ed8af0b9a38aae1387e7f5616ac1ed503798ed5b3aefb7349eb6566b"
+    },
+    {
+      "path": "audits/2026-09-08-production-health-data-event-storage-audit-6.md",
+      "sha256": "a6550612dce0d602e770540d2fd3492120e3b5c39dcb251c8333534fdd9bbbb8"
+    },
+    {
+      "path": "audits/2026-09-11-production-health-data-event-storage-audit-7.md",
+      "sha256": "d8013882ce85ae50f2c469d742faf4d0a67e4a46e957cf7ca6b37d49833287ce"
+    },
+    {
+      "path": "audits/2026-09-12-production-health-data-event-storage-audit-8.md",
+      "sha256": "4bc0a70297b936edf90a99393603661978e0569ee146ed7da089be2e2599e7e2"
+    },
+    {
+      "path": "audits/2026-09-13-incb-production-canonical-repair.md",
+      "sha256": "c5c3060b218312db214e9881475ec401ec9734760ed83e8339a03a21591c7e65"
+    },
+    {
+      "path": "audits/2026-09-13-production-health-data-event-storage-audit-9.md",
+      "sha256": "41277aeb34dc14a6971055d69704223a9e6469b8c6bd436513e382f0c14cac5e"
+    },
+    {
+      "path": "audits/2026-09-14-production-health-data-event-storage-audit-10.md",
+      "sha256": "e73d4dc4cfb25b0d80dbc6ba8badf5b5a03ea7f8de538986f5debcfaa81bd6d7"
+    },
+    {
+      "path": "audits/2026-09-15-production-reaudit-persistence-audit-11.md",
+      "sha256": "762742c4cf461c5d4de0b6c7b30b24ce71ab0b1126e79352f7bc3540b3ae8be8"
+    },
+    {
+      "path": "audits/2026-09-17-production-comprehensive-health-data-integrity-audit-12.md",
+      "sha256": "405f058a549ae9cac725b086dcfddc7a5967d6a5ae6e98fbf903f7a9a2c1b629"
+    },
+    {
+      "path": "audits/2026-09-18-production-comprehensive-health-data-integrity-audit-13.md",
+      "sha256": "f874e89b65c55d0ace19993968697a489cde0d4e8f1a0334dd04bb083f69c502"
+    },
+    {
+      "path": "audits/2026-09-19-audit-17-safe-stop-handoff.md",
+      "sha256": "fe33c99dd01a85891780b52cd5264035837c2ebea232bc142be588421fc0929a"
+    },
+    {
+      "path": "audits/2026-09-19-ordered-application-surface-audit-14.md",
+      "sha256": "112538692e789bf21b626c02e27fc2341bfe47838aba0496dda3f4d0317f05c8"
+    },
+    {
+      "path": "audits/2026-09-19-production-comprehensive-health-data-integrity-audit-16.md",
+      "sha256": "cb148d778f9c33a61fd8b431e4ef324da1edc98718e08629bbf168c352c57bb4"
+    },
+    {
+      "path": "audits/2026-09-19-production-comprehensive-health-data-integrity-audit-17.md",
+      "sha256": "38a3297a98284b3794408134f417ee3f413900e1bfcc08eaa330c113255be84e"
+    },
+    {
+      "path": "audits/2026-09-19-production-recovery-and-verification-audit-15.md",
+      "sha256": "85022367fdcfc0a2d8f2d5e3a8c18647c048a212e0bf58b48351ac98a33ff6dc"
+    },
+    {
+      "path": "audits/2026-09-20-production-comprehensive-health-data-integrity-audit-18.md",
+      "sha256": "5299493ae540bd4a8fda9e4a25c7fc01192c9c7bd842c75257e1e91f13ee8b4e"
+    },
+    {
+      "path": "audits/2026-09-20-production-comprehensive-health-data-integrity-audit-19.md",
+      "sha256": "d9cc19784ce8fd72844fd4a8c92bc140bc49ee8fd2b688dd34de1e4de8479a1d"
+    },
+    {
+      "path": "audits/2026-09-22-production-comprehensive-health-data-integrity-audit-20.md",
+      "sha256": "8108ce90ac84fa8e187b6883a26611d1b89fa65b11f65b22c6a8d4d9d0025733"
+    },
+    {
+      "path": "audits/2026-09-22-production-comprehensive-health-data-integrity-audit-21.md",
+      "sha256": "49e6d447be33cb89682b03be9aebea4feb3ca4f85cb804b025501fa371505719"
+    },
+    {
+      "path": "audits/2026-09-22-production-comprehensive-health-data-integrity-audit-22.md",
+      "sha256": "07741d3561488c3aab8091125136ba573662a6db2817b7aebb031cf522b74a69"
+    },
+    {
+      "path": "audits/2026-09-24-production-comprehensive-health-data-integrity-audit-23.md",
+      "sha256": "a387cd397866cd212dc8c40473b6d6ea3ed5cae4084a6e0fd31dde73ca0bbc1c"
+    },
+    {
+      "path": "audits/2026-09-25-production-comprehensive-health-data-integrity-audit-23.md",
+      "sha256": "6f499b2b166edbfe7e751a3380ae7a8195c88089e306208b90676eec743a8e5c"
+    },
+    {
+      "path": "audits/2026-09-26-approved-followups-1-8-execution.md",
+      "sha256": "f47ada1c42ad1b3e6c108eccda88fe89e7214902725e9ce59a507f336703126e"
+    },
+    {
+      "path": "audits/2026-09-26-production-comprehensive-health-data-integrity-audit-24.md",
+      "sha256": "07be573729eba4249b80b46712a84f622436c50f30939bccdd4c7087d5023efe"
+    },
+    {
+      "path": "audits/2026-09-26-production-comprehensive-health-data-integrity-audit-25.md",
+      "sha256": "849361d9fb9357577b3d23c9acd376e031239eb73593352f53254abdb385a2d7"
+    },
+    {
+      "path": "audits/2026-09-27-production-comprehensive-health-data-integrity-audit-26.md",
+      "sha256": "1ed40ada643c63f0c9f24902b8ffbc6df64b161752a0ec10e9d84aabcf6626c7"
+    },
+    {
+      "path": "audits/2026-09-27-wallet-pending-incb-repair.md",
+      "sha256": "2f3fff4deebe920a61e64dc81e27d16725180f76fe5ac2a088b9fef36c992eab"
+    },
+    {
+      "path": "audits/2026-09-28-ordered-read-only-application-audit-27.md",
+      "sha256": "e4d30700953e7a898e44fdeb5551095cc4b32089a6636ef02173762e113ddb90"
+    }
+  ],
+  "coreDatabaseReconciliation": {
+    "tipBefore": 969192,
+    "mempoolCountBefore": 76492,
+    "transactionsChecked": 26069,
+    "errors": [],
+    "pendingAbsent": [],
+    "droppedPresent": [],
+    "canonicalBlocksChecked": 21193,
+    "blockHashErrors": [],
+    "attachmentsChecked": 0,
+    "attachmentErrors": [],
+    "tipAfter": 969192,
+    "pendingAbsentBoth": [],
+    "droppedPresentBoth": []
+  },
+  "readOnlyReconciliationScript": "import subprocess,json,urllib.request,base64,time,decimal,hashlib\npid=subprocess.check_output(['systemctl','show','proofofwork-api','-p','MainPID','--value'],text=True).strip()\nenv=dict(e.split('=',1) for e in open('/proc/'+pid+'/environ').read().split('\\0') if '=' in e)\nurl=env['BITCOIN_RPC_URL'];auth=base64.b64encode((env['BITCOIN_RPC_USER']+':'+env['BITCOIN_RPC_PASSWORD']).encode()).decode()\ndef rpc(batch):\n q=urllib.request.Request(url,json.dumps([{'jsonrpc':'2.0','id':i,'method':m,'params':p} for i,(m,p) in enumerate(batch)]).encode(),{'Authorization':'Basic '+auth,'Content-Type':'application/json'})\n x=json.load(urllib.request.urlopen(q,timeout=90),parse_float=decimal.Decimal);return sorted(x,key=lambda v:v['id'])\ndef sql(q):\n r=subprocess.check_output(['sudo','-u','postgres','psql','-XAt','-d','proof_indexer','-c',q],text=True);return [json.loads(s) for s in r.splitlines()]\nr={};before=rpc([('getblockchaininfo',[]),('getrawmempool',[]) ]);r['tipBefore']=before[0]['result']['blocks'];mp=set(before[1]['result']);r['mempoolCountBefore']=len(mp)\nrows=sql(\"SELECT json_build_object('txid',txid,'status',status,'blockhash',block_hash,'height',block_height,'raw',raw_tx->>'hex') FROM proof_indexer.transactions WHERE network='livenet' ORDER BY txid\")\nr['transactionsChecked']=len(rows);r['errors']=[];r['pendingAbsent']=[];r['droppedPresent']=[]\nfor off in range(0,len(rows),50):\n chunk=rows[off:off+50];results=rpc([('getrawtransaction',[v['txid'],True]) for v in chunk])\n for v,a in zip(chunk,results):\n  z=a.get('result');err=a.get('error');st=v['status']\n  if st=='confirmed' and (not z or z.get('blockhash')!=v['blockhash'] or z.get('confirmations',0)<=0):r['errors'].append({'txid':v['txid'],'kind':'canonical-confirmation','rpcCode':err.get('code') if err else None})\n  if z and v['raw'] and v['raw']!=z['hex']:r['errors'].append({'txid':v['txid'],'kind':'raw-hex'})\n  if st=='pending' and v['txid'] not in mp:r['pendingAbsent'].append(v['txid'])\n  if st=='dropped' and v['txid'] in mp:r['droppedPresent'].append(v['txid'])\n if off%2500==0:print('PROGRESS',off,flush=True)\n # bounded sequential RPC groups, no parallel pressure\n time.sleep(.02)\nblocks=sql(\"SELECT json_build_object('height',height,'hash',block_hash) FROM proof_indexer.blocks WHERE network='livenet' AND canonical ORDER BY height\")\nr['canonicalBlocksChecked']=len(blocks);r['blockHashErrors']=[]\nfor off in range(0,len(blocks),100):\n c=blocks[off:off+100]\n for v,a in zip(c,rpc([('getblockhash',[v['height']]) for v in c])):\n  if a.get('result')!=v['hash']:r['blockHashErrors'].append(v)\nfiles=sql(\"SELECT json_build_object('txid',txid,'size',size_bytes,'sha',sha256,'bytes',encode(content_bytes,'base64')) FROM proof_indexer.file_attachments\")\nr['attachmentsChecked']=len(files);r['attachmentErrors']=[]\nfor f in files:\n b=base64.b64decode(f['bytes']) if f['bytes'] is not None else None\n if b is not None and (len(b)!=f['size'] or hashlib.sha256(b).hexdigest()!=f['sha']):r['attachmentErrors'].append(f['txid'])\nafter=rpc([('getblockchaininfo',[]),('getrawmempool',[])]);mp2=set(after[1]['result']);r['tipAfter']=after[0]['result']['blocks'];r['pendingAbsentBoth']=[t for t in r['pendingAbsent'] if t not in mp2];r['droppedPresentBoth']=[t for t in r['droppedPresent'] if t in mp2]\nprint(json.dumps(r,indent=2),flush=True)\n",
+  "databaseIntegritySql": "\\set ON_ERROR_STOP on\n\\pset pager off\nBEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY;\nSET LOCAL statement_timeout='60s';\nSET LOCAL lock_timeout='2s';\nSELECT status,count(*) FROM proof_indexer.transactions GROUP BY status;\nSELECT protocol,status,valid,count(*),sum(amount_sats) FROM proof_indexer.events GROUP BY 1,2,3 ORDER BY 1,2,3;\nSELECT 'duplicate-event-key' test,count(*) FROM (SELECT network,event_key FROM proof_indexer.events GROUP BY 1,2 HAVING count(*)>1) q\nUNION ALL SELECT 'duplicate-position',count(*) FROM (SELECT network,txid,op_return_vout,record_ordinal FROM proof_indexer.events WHERE status='confirmed' GROUP BY 1,2,3,4 HAVING count(*)>1) q\nUNION ALL SELECT 'event-orphan',count(*) FROM proof_indexer.events e LEFT JOIN proof_indexer.transactions t USING(network,txid) WHERE t.txid IS NULL\nUNION ALL SELECT 'event-parent-status',count(*) FROM proof_indexer.events e JOIN proof_indexer.transactions t USING(network,txid) WHERE e.status IS DISTINCT FROM t.status\nUNION ALL SELECT 'confirmed-block-missing',count(*) FROM proof_indexer.transactions t LEFT JOIN proof_indexer.blocks b ON b.network=t.network AND b.block_hash=t.block_hash AND b.height=t.block_height AND b.canonical WHERE t.status='confirmed' AND b.block_hash IS NULL\nUNION ALL SELECT 'confirmed-scan-marker-missing',count(*) FROM proof_indexer.transactions WHERE status='confirmed' AND (raw_tx->'canonicalBlockScan'->>'blockHash' IS DISTINCT FROM block_hash OR raw_tx->'canonicalBlockScan'->>'height' IS DISTINCT FROM block_height::text)\nUNION ALL SELECT 'confirmed-event-position-missing',count(*) FROM proof_indexer.events WHERE status='confirmed' AND (block_index IS NULL OR op_return_vout IS NULL OR record_ordinal IS NULL OR block_height IS NULL)\nUNION ALL SELECT 'confirmed-event-parent-position',count(*) FROM proof_indexer.events e JOIN proof_indexer.transactions t USING(network,txid) WHERE e.status='confirmed' AND (e.block_height IS DISTINCT FROM t.block_height OR e.block_index IS DISTINCT FROM t.block_index OR e.block_time IS DISTINCT FROM t.block_time)\nUNION ALL SELECT 'nonconfirmed-block-metadata',count(*) FROM proof_indexer.transactions WHERE status!='confirmed' AND (block_height IS NOT NULL OR block_hash IS NOT NULL OR block_index IS NOT NULL OR confirmed_at IS NOT NULL)\nUNION ALL SELECT 'participant-orphan',count(*) FROM proof_indexer.event_participants p LEFT JOIN proof_indexer.events e USING(event_id) WHERE e.event_id IS NULL\nUNION ALL SELECT 'ref-orphan',count(*) FROM proof_indexer.event_refs p LEFT JOIN proof_indexer.events e USING(event_id) WHERE e.event_id IS NULL\nUNION ALL SELECT 'mail-orphan',count(*) FROM proof_indexer.mail_items m LEFT JOIN proof_indexer.transactions t USING(network,txid) WHERE t.txid IS NULL\nUNION ALL SELECT 'mail-parent-status',count(*) FROM proof_indexer.mail_items m JOIN proof_indexer.transactions t USING(network,txid) WHERE m.status IS DISTINCT FROM t.status;\nSELECT d.ticker,d.token_id,d.max_supply::text,d.mint_amount::text,d.metadata->>'amountStorageModel' units,sum(b.confirmed_balance)::text supply,count(b.address) holders,sum(b.pending_delta)::text pending FROM proof_indexer.credit_definitions d LEFT JOIN proof_indexer.credit_balances b USING(network,token_id) WHERE d.ticker IN ('WORK','POWB','INCB') GROUP BY 1,2,3,4,5;\nSELECT 'invalid-credit-numeric' test,count(*) FROM proof_indexer.credit_balances WHERE confirmed_balance<0 OR confirmed_balance!=trunc(confirmed_balance) OR confirmed_balance::text IN ('NaN','Infinity','-Infinity') OR pending_delta!=trunc(pending_delta)\nUNION ALL SELECT 'credit-without-definition',count(*) FROM proof_indexer.credit_balances b LEFT JOIN proof_indexer.credit_definitions d USING(network,token_id) WHERE d.token_id IS NULL;\nWITH ordered AS (SELECT *,lag(block_height) OVER (PARTITION BY network ORDER BY block_height) h,lag(block_hash) OVER (PARTITION BY network ORDER BY block_height) hash,lag(closing_state_sha256) OVER (PARTITION BY network ORDER BY block_height) commitment,lag(closing_network_value_q8) OVER (PARTITION BY network ORDER BY block_height) n FROM proof_indexer.work_amo_block_transitions WHERE network='livenet') SELECT count(*) rows,min(block_height),max(block_height),count(*) FILTER(WHERE h IS NOT NULL AND (block_height!=h+1 OR previous_block_hash!=hash)) linkage_errors,count(*) FILTER(WHERE h IS NOT NULL AND opening_state_sha256!=commitment) opening_commitment_changes,count(*) FILTER(WHERE h IS NOT NULL AND opening_network_value_q8!=n) opening_value_errors,count(*) FILTER(WHERE NOT complete OR NOT block_atomic OR NOT fee_once OR NOT invalid_zero) incomplete,count(*) FILTER(WHERE closing_network_value_q8<opening_network_value_q8) value_decreases FROM ordered;\nSELECT block_height,block_hash,model,closing_network_value_q8::text,fee_once,invalid_zero,complete FROM proof_indexer.work_amo_block_transitions ORDER BY block_height DESC LIMIT 2;\nSELECT protocol,kind,txid,op_return_vout,record_ordinal,block_height,block_index,amount_sats,valid FROM proof_indexer.events WHERE protocol='pwdns1' ORDER BY block_height,block_index,op_return_vout,record_ordinal;\nSELECT key,left(value::text,500) FROM proof_indexer.meta;\nSELECT extname FROM pg_extension;\nROLLBACK;\n",
+  "databaseIntegrityResults": "Pager usage is off.\nBEGIN\nSET\nSET\n  status   | count \n-----------+-------\n confirmed | 25821\n pending   |   170\n dropped   |    78\n(3 rows)\n\n protocol |  status   | valid | count |    sum    \n----------+-----------+-------+-------+-----------\n pwb1     | confirmed | t     |    14 |      8736\n pwdns1   | confirmed | f     |     1 |       546\n pwdns1   | confirmed | t     |    24 |     23546\n pwid1    | confirmed | f     |    20 |      2638\n pwid1    | confirmed | t     |   538 |    524380\n pwid1    | pending   | t     |    21 |     21000\n pwm1     | confirmed | t     |   618 | 632017345\n pwt1     | confirmed | f     |   321 |     13650\n pwt1     | confirmed | t     | 24972 |  34914091\n pwt1     | dropped   | f     |     6 |         0\n pwt1     | dropped   | t     |     1 |       546\n pwt1     | pending   | f     |   146 |         0\n pwt1     | pending   | t     |     1 |       555\n(13 rows)\n\n               test               | count \n----------------------------------+-------\n mail-orphan                      |     0\n nonconfirmed-block-metadata      |     0\n mail-parent-status               |     0\n confirmed-scan-marker-missing    |     0\n event-parent-status              |     0\n duplicate-position               |    78\n duplicate-event-key              |     0\n confirmed-block-missing          |     0\n confirmed-event-parent-position  |     0\n event-orphan                     |     0\n confirmed-event-position-missing |     0\n participant-orphan               |     0\n ref-orphan                       |     0\n(13 rows)\n\n ticker |                             token_id                             |        max_supply        |     mint_amount      |      units       |          supply          | holders | pending \n--------+------------------------------------------------------------------+--------------------------+----------------------+------------------+--------------------------+---------+---------\n INCB   | 3cb25745f937f2b4e5508e5400189fe8fe679cd8e84bfa1e9176d70c9761f15d | 0                        | 1                    |                  | 945662401792509469       |       7 | 0\n POWB   | a3d0bc8528f91dfc52400a885bed7e49235396aa82aa9f95db41be629f1d5562 | 0                        | 1                    |                  | 630496569                |      11 | 0\n WORK   | d4e5ebf11d104d6a63fb74e42094364b25a5f7199a09e5c0e71408972466a8b8 | 210000000000000000000000 | 10000000000000000000 | work-subatoms-v2 | 210000000000000000000000 |     387 | 0\n(3 rows)\n\n           test            | count \n---------------------------+-------\n invalid-credit-numeric    |     0\n credit-without-definition |     0\n(2 rows)\n\n rows |  min   |  max   | linkage_errors | opening_commitment_changes | opening_value_errors | incomplete | value_decreases \n------+--------+--------+----------------+----------------------------+----------------------+------------+-----------------\n 9571 | 959621 | 969191 |              0 |                          1 |                    0 |          0 |               0\n(1 row)\n\n block_height |                            block_hash                            |                        model                        |   closing_network_value_q8   | fee_once | invalid_zero | complete \n--------------+------------------------------------------------------------------+-----------------------------------------------------+------------------------------+----------+--------------+----------\n       969191 | 0000000000000000000053f2537bd898d2aa128b8dcb4e5f02893e419eb262d6 | canonical-work-amo-full-position-block-sequencer-v4 | 1452083490330668089585252463 | t        | t            | t\n       969190 | 000000000000000000012169707ee22087f306be92086f0f4265ebfc53348123 | canonical-work-amo-full-position-block-sequencer-v4 | 1452083490330668089585252463 | t        | t            | t\n(2 rows)\n\n protocol |       kind       |                               txid                               | op_return_vout | record_ordinal | block_height | block_index | amount_sats | valid \n----------+------------------+------------------------------------------------------------------+----------------+----------------+--------------+-------------+-------------+-------\n pwdns1   | dns-register     | bb7cdbe095cf5be27c7166ff8d98451ec9f6483d0cef6740a506ab02822a885c |              1 |              0 |       969108 |        1898 |        1000 | t\n pwdns1   | dns-register     | 8dca01779f745bdbf02fe46173d6a70e589399275518e08c6d14ccb2872828a6 |              1 |              0 |       969108 |        1899 |        1000 | t\n pwdns1   | dns-register     | b49a97edc1766dfae88404139b8e3c557f40afb7312b09661dd53a121a88fa0e |              1 |              0 |       969108 |        1900 |        1000 | t\n pwdns1   | dns-register     | ac2ff6d835a10f49aa3851a7db2812c329044932c2fff7fad307dd5906f6d413 |              1 |              0 |       969108 |        1901 |        1000 | t\n pwdns1   | dns-register     | 7089f50a385138915f6f155d0fd35fcc3b9bf7381097448ea4052f51a87210fe |              1 |              0 |       969108 |        1902 |        1000 | t\n pwdns1   | dns-register     | bf389da1a32fcc23e8faaf307edad37adf3aa48d247edcbb38d104d05e72a82c |              1 |              0 |       969108 |        1928 |        1000 | t\n pwdns1   | dns-register     | 830ccd0500436f1fbb9fb1d9e7287e4d5155c67b7def3db6c5c34111c9e2458a |              1 |              0 |       969108 |        1954 |        1000 | t\n pwdns1   | dns-register     | 655ded11b7c72338d4c5087067cbb3c4fca24f03a80a6f7ee0351d162474c9df |              1 |              0 |       969111 |        2679 |        1000 | t\n pwdns1   | dns-register     | a23a3623232ac1ecd80cebd4c0518d9d2a526b6e4a93b22f9aac7c39e18becac |              1 |              0 |       969111 |        2855 |        1000 | t\n pwdns1   | dns-register     | 414a2e15d6775dc96fabd565fc9e2aa168b946687c622b3288a03c89bd909f52 |              1 |              0 |       969114 |        4060 |        1000 | t\n pwdns1   | dns-register     | c218e42d9ce481e71af046bf7065a946e93de04d573ca3b9161aefb9c6cf08bf |              1 |              0 |       969122 |        2055 |        1000 | t\n pwdns1   | dns-register     | 22f854de9c0b743937901df0b6f4098550325b1c81cd19ce3b31ebb4ee3ed53a |              1 |              0 |       969122 |        2181 |        1000 | t\n pwdns1   | dns-register     | e2000352063b1e741dc453783f612a5cece6c24132a3d19e9468d3f33f4e1ed7 |              1 |              0 |       969122 |        2182 |        1000 | t\n pwdns1   | dns-register     | 39ca680c9cfb966c4bf0792e241a5f3caf3bf1f92d5bb91beb781868304aedc6 |              1 |              0 |       969122 |        2183 |        1000 | t\n pwdns1   | dns-register     | 2b011a37e0a6d7c794a4c6f773e6ed4ae3446caf9a945a00d83b9af0675cc41d |              1 |              0 |       969122 |        2184 |        1000 | t\n pwdns1   | dns-register     | 0a8c2bf240aff70d8b247d4fe5120c7c3047042abe5884f023a1e3bf5104bca1 |              1 |              0 |       969122 |        2185 |        1000 | t\n pwdns1   | dns-register     | 3f9802bf0559546e0fd0dcb9c9ee5e0fc49f4d73022661575abefd87ac5449c8 |              1 |              0 |       969122 |        2186 |        1000 | t\n pwdns1   | dns-register     | 714fede38a11c9acc141e6c84fc16a67e724ce01aa4d8cba06d7c91e4c7e858f |              1 |              0 |       969122 |        2187 |        1000 | t\n pwdns1   | dns-register     | ceecb08e413c07f9a6ca884636851e69cb62ac33fcfd4818c397eff59ac66aad |              1 |              0 |       969122 |        2188 |        1000 | t\n pwdns1   | dns-register     | 0863ead37eab0e889d1a8828cf2cd31134d9c6239f95d2e78e122a71e0da46f7 |              1 |              0 |       969122 |        2189 |        1000 | t\n pwdns1   | dns-register     | 36a800aed50b8422bbe85c2e7b790cd86d19583699596497b03a0d0f49818cc2 |              1 |              0 |       969124 |        2918 |        1000 | t\n pwdns1   | dns-register     | 5d8685baf5d00bb21db4cf61cbc463e68b5d531707347222225fa08d22e4e82b |              1 |              0 |       969124 |        2919 |        1000 | t\n pwdns1   | dns-list         | a2f613500e807eb8907dad7762303c81fdd386ce1d1d3ce0e27f8d50c7a706bd |              1 |              0 |       969127 |        4274 |         546 | t\n pwdns1   | dns-register     | e983d3f23dc7eb72f56248347603b986f9bbcdf94032ae9e6cb76a161ac07cd2 |              1 |              0 |       969128 |        2352 |        1000 | t\n pwdns1   | dns-seal-invalid | dd498455bb712411341cfde6fab38764281ff6b77076a41012c3bee768475e38 |              1 |              0 |       969136 |        3156 |         546 | f\n(25 rows)\n\n                                                     key                                                      |                                                                                                                                                                                                                                                         left                                                                                                                                                                                                                                                         \n--------------------------------------------------------------------------------------------------------------+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------\n rushCanonicalDiscovery:livenet                                                                               | {\"cursor\": 0, \"entries\": [], \"network\": \"livenet\", \"version\": 1, \"historyHash\": \"4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945\", \"discoveredAt\": \"2026-07-13T22:33:51.007Z\", \"registryAddress\": \"bc1qym392dfvfm024k7ukzlnvnpfvuu4kfqvu56w3e\", \"historyEntryCount\": 0, \"indexedThroughBlock\": 957911, \"indexedTransactions\": 0, \"indexedThroughBlockHash\": \"000000000000000000009c217fa26f6f9fe24a0942e5630e84aed73b682fff6d\"}\n rushCanonicalBootstrap:livenet                                                                               | {\"network\": \"livenet\", \"version\": 1, \"mintCount\": 0, \"completedAt\": \"2026-07-13T22:33:51.010Z\", \"historyHash\": \"4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945\", \"registryAddress\": \"bc1qym392dfvfm024k7ukzlnvnpfvuu4kfqvu56w3e\", \"historyEntryCount\": 0, \"indexedThroughBlock\": 957911, \"indexedTransactions\": 0, \"indexedThroughBlockHash\": \"000000000000000000009c217fa26f6f9fe24a0942e5630e84aed73b682fff6d\"}\n workAmoV8ActivationLatch:livenet                                                                             | {\"model\": \"canonical-work-amo-v8-activation-latch-v1\", \"network\": \"livenet\", \"reached\": true, \"protocol\": \"pwm1\", \"inputCount\": 1, \"observedAt\": \"2026-08-01T18:22:54.789Z\", \"outputCount\": 7, \"coreVerified\": true, \"indexVerified\": true, \"declarationTxid\": \"f90e1faf572ef8253ca5959731b9d9e99c74bced4397380059878936712bee7a\", \"registryAddress\": \"1638Vn6KtmK8p5r4oGvAXq9nmZb1emU1DV\", \"activationHeight\": 960601, \"evidenceComplete\": true, \"declarationHeight\": 960600, \"registryPaymentSats\": \"546\", \"declar\n canonical:incb-range-replay-witness:livenet:fd0ac622022fa23ba8e18e7f9715805eb05740d698e2fb4fd8e4fa5bbaec9cae | {\"count\": 10, \"model\": \"canonical-incb-range-replay-witness-set-v1\", \"entries\": [{\"bond\": {\"txid\": \"c9c9f4e382f598aa39b3be57adc8fe1defeb80e5216387d3af6b0948da232aff\", \"blockHash\": \"00000000000000000001db52a4485f7d1a1784b7ba6c5b93db1b20449ac2628b\", \"blockIndex\": 2421, \"blockHeight\": 958383, \"bondRecipientVout\": 0, \"previousBlockHash\": \"00000000000000000000d1f42ef7b68ae4c1dd7a7ba10244b606f9a65a3e50cb\", \"bondRecipientAddress\": \"bc1pxhs9y9ryqnhm05lyv794f6upzk0mtu2zct5w2hgc2vm3d58pvcqspptre0\", \"bondR\n schema                                                                                                       | {\"name\": \"proof-indexer-v1\", \"path\": \"server/sql/proof-indexer-v1.sql\", \"appliedAt\": \"2026-08-01T05:05:16.192579+00:00\"}\n workAmoV5Migration:livenet                                                                                   | {\"audit\": {\"postV1V3Active\": 0, \"missingPositions\": 0, \"duplicatePositions\": 0, \"missingFrozenTerms\": 0, \"authorizationConflicts\": 0, \"postActivationV4Active\": 0, \"preActivationV4Actions\": 0, \"postActivationV4Actions\": 0, \"syntheticBondPositionGaps\": 0, \"confirmedParentMetadataGaps\": 0}, \"model\": \"canonical-work-amo-v5-migration-v2\", \"status\": \"complete\", \"network\": \"livenet\", \"updatedAt\": \"2026-07-27T08:25:39.750Z\", \"completedAt\": \"2026-07-27T08:25:39.750Z\", \"declaration\": {\"txid\": \"54d7a367a39\n workPrecisionV2Migration:livenet                                                                             | {\"after\": {\"balances\": {\"count\": 336, \"sha256\": \"8957a8a9957c266c58b721c2b6b6d6aab2fc611fb759fad0beea083ebb0f8af9\", \"payloadBytes\": 32428}, \"listings\": {\"count\": 0, \"sha256\": \"4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945\", \"payloadBytes\": 2}}, \"model\": \"canonical-work-q8-to-q16-migration-v1\", \"before\": {\"balances\": {\"count\": 336, \"sha256\": \"fd3cab5418b709cf5b14d187d3b073f33abe5be04890ecbb2f4aea29a85f63ac\", \"payloadBytes\": 29740}, \"listings\": {\"count\": 23, \"sha256\": \"1eddfff96\n workAmoV6Migration:livenet                                                                                   | {\"model\": \"canonical-work-amo-v6-proof-native-index-migration-v1\", \"status\": \"complete\", \"network\": \"livenet\", \"version\": \"pwt-sale-v6\", \"unitModel\": \"canonical-work-amo-proof-unit-v1\", \"updatedAt\": \"2026-07-30T07:57:44.913Z\", \"amountModel\": \"canonical-confirmed-position-derived-work-amount-v1\", \"completedAt\": \"2026-07-30T07:57:44.913Z\", \"facesProofs\": [20000, 50000, 100000], \"declarationTxid\": \"975fd82aa84995e014b240618ee1a1254d0a735e6e1241372d0bed0a0d9f0799\", \"stateOrderModel\": \"canonical-proo\n workQ16PendingAttempt:livenet                                                                                | {\"model\": \"canonical-work-q16-pending-publication-attempt-v1\", \"status\": \"published\", \"network\": \"livenet\", \"attemptId\": \"1895f2c85d9f2516ec2fd42fede46f4c7e0ba1e2b9d057f0b16d234826ba3ed0\", \"startedAt\": \"2026-09-29T19:20:54.529Z\", \"completedAt\": \"2026-09-29T19:21:10.732Z\", \"stageSha256\": \"61961dcde03605e088fb2f30d5e4a29ba790b95f447c4bcb491b694c4e149645\", \"requestSha256\": \"04aa0f719eba646d6ff5ec7893f7b2c73a2b295c01b8d96810cda2b2f540d952\", \"initialMempool\": {\"count\": 76926, \"model\": \"canonical-core\n mempoolScan:livenet                                                                                          | {\"cursor\": {\"time\": 1789890161, \"txid\": \"309c54ec1f36e9f52d93ff80bf8029d84f3272acefd975be223989956d97fd8d\"}, \"scannedAt\": \"2026-09-29T19:28:35.744Z\", \"priorityCursor\": {\"time\": 1790617873, \"txid\": \"951831f315bde9d28b592f1669071f1db2a96002c9cb15ac0b0416565f84630d\"}, \"processedTxids\": [\"09c818fa823159a66110bd826cae04585babbd3df80eab603ddc8f9d7a8a49c1\", \"270ce4eec0230279a5980fd1602611ddfbd694d9266eabe739ee6b4c523b7c12\", \"5d7015809280ef86bbe00f4e644367e1e529e596a3f19b3c17d774cadf70b311\", \"fd33cdbe9c\n workQ16PendingStage:livenet                                                                                  | {\"model\": \"canonical-work-q16-pending-verifier-stage-v2\", \"network\": \"livenet\", \"codeVersion\": \"proof-api-canonical-work-q16-pending-verifier-stage-v5\", \"replayTxids\": [\"0089c25a47f9ae381944bf1fc3712f2996774090d403d2ad2354d81212c4d66b\", \"00db23055ee8205ff4797b4f27e013cabdd73baea1a72ea20da66e57a5bfc08c\", \"01beecbf46508ceb0aa616bca45d9c6471dab0c631ec7de05cacfeddd8da059e\", \"02b98675beb79d05f0a1691bc83756634e47a9564116bf7e143b23111ca60d42\", \"0370cc60312e9078eaf445c7fb7d7ce84a37ecfa88412cdd212b17fbc2\n worker:lastRun                                                                                               | {\"ok\": true, \"state\": \"idle\", \"parity\": false, \"apiBase\": \"http://127.0.0.1:8081\", \"holders\": false, \"network\": \"livenet\", \"startedAt\": \"2026-09-29T19:28:27.829Z\", \"durationMs\": 10654, \"finishedAt\": \"2026-09-29T19:28:38.483Z\", \"noProgress\": {\"action\": \"normal\", \"active\": false, \"reason\": \"canonical-scan-success\", \"network\": \"livenet\", \"resetAt\": \"2026-09-29T19:28:31.322Z\", \"alertReady\": false, \"repeatCount\": 0, \"checkpointHash\": \"0000000000000000000053f2537bd898d2aa128b8dcb4e5f02893e419eb262d6\",\n canonical:rebuild                                                                                            | {\"active\": false, \"status\": \"complete\", \"network\": \"livenet\", \"complete\": true, \"startedAt\": \"2026-09-15T18:22:43.424Z\", \"updatedAt\": \"2026-09-29T19:20:14.406Z\", \"fromHeight\": 948000, \"completedAt\": \"2026-09-29T19:20:14.406Z\", \"bootstrapHash\": \"000000000000000000004238bec59ce46cd5b28982efe2b90071a51168d67986\", \"bootstrapHeight\": 947999, \"indexedThroughBlock\": 969191, \"indexedThroughBlockHash\": \"0000000000000000000053f2537bd898d2aa128b8dcb4e5f02893e419eb262d6\", \"transactionNormalization\": \"canoni\n workQ16PendingRebuild:livenet                                                                                | {\"scan\": {\"scanned\": 500, \"complete\": true, \"stopReason\": \"\", \"completeModel\": \"atomic-staged-pending-work-projection-audit-v1\", \"protocolTxids\": 0, \"discoveryModel\": \"bounded-best-effort-unconfirmed-discovery-v1\", \"inspectedTxids\": 146, \"globalUnresolved\": 0, \"canonicalDeferred\": 0, \"q16PendingUnresolved\": 0, \"mempoolMembershipCount\": 77018}, \"model\": \"canonical-work-q16-pending-rebuild-v2\", \"ready\": true, \"parity\": {\"model\": \"canonical-work-q16-pending-parity-v2\", \"ready\": true, \"membership\": \n(14 rows)\n\n      extname       \n--------------------\n plpgsql\n pg_stat_statements\n(2 rows)\n\nROLLBACK\n",
+  "additionalClassificationResults": "BEGIN\n status  | count \n---------+-------\n dropped |    78\n pending |   170\n(2 rows)\n\n                       kinds                        | count \n----------------------------------------------------+-------\n {token-listing-closed,token-sale}                  |    49\n {token-listing-closed,token-listing-sealed}        |     1\n {token-event-invalid,token-listing-invalid}        |    13\n {token-event-invalid,token-mint-invalid}           |     1\n {id-buy,id-buy2-invalid}                           |     1\n {id-list,id-list2-invalid}                         |     1\n {id-list,id-list3-invalid}                         |     1\n {token-event-invalid,token-listing-sealed-invalid} |    11\n(8 rows)\n\n                               txid                               |       kind       | valid | amount_sats | block_height | block_index |            reason            | v5_reason |         reason_code          \n------------------------------------------------------------------+------------------+-------+-------------+--------------+-------------+------------------------------+-----------+------------------------------\n a2f613500e807eb8907dad7762303c81fdd386ce1d1d3ce0e27f8d50c7a706bd | dns-list         | t     |         546 |       969127 |        4274 |                              |           | \n dd498455bb712411341cfde6fab38764281ff6b77076a41012c3bee768475e38 | dns-seal-invalid | f     |         546 |       969136 |        3156 | work-amo-v5-dns-seal-invalid |           | work-amo-v5-dns-seal-invalid\n(2 rows)\n\n    column_name    \n-------------------\n event_id\n network\n event_key\n txid\n op_return_vout\n protocol\n kind\n status\n valid\n validation_errors\n amount_sats\n data_bytes\n block_height\n block_time\n event_time\n raw_payload\n payload\n created_at\n updated_at\n block_index\n record_ordinal\n(21 rows)\n\nROLLBACK\n",
+  "transactionMathResults": "BEGIN\n   column_name    |        data_type         \n------------------+--------------------------\n network          | text\n txid             | text\n status           | text\n first_seen_at    | timestamp with time zone\n last_seen_at     | timestamp with time zone\n confirmed_at     | timestamp with time zone\n dropped_at       | timestamp with time zone\n block_hash       | text\n block_height     | integer\n block_time       | timestamp with time zone\n fee_sats         | bigint\n vsize            | integer\n weight           | integer\n version          | integer\n locktime         | bigint\n source           | text\n dropped_reason   | text\n replaced_by_txid | text\n raw_tx           | jsonb\n raw_hex          | text\n updated_at       | timestamp with time zone\n block_index      | integer\n(22 rows)\n\n      kind      | count \n----------------+-------\n file           |     6\n inception-bond |    48\n infinity-bond  |   467\n mail           |    78\n reply          |    19\n(5 rows)\n\n jsonb_object_keys \n-------------------\n kind\n txid\n valid\n amount\n status\n ticker\n dropped\n network\n payload\n tokenId\n decimals\n paidSats\n protocol\n blockHash\n blockTime\n confirmed\n createdAt\n dataBytes\n timestamp\n unitScale\n amountSats\n blockIndex\n recipients\n amountAtoms\n blockHeight\n indexedFrom\n minerFeeSats\n participants\n protocolVout\n minterAddress\n recordOrdinal\n senderAddress\n _powEventIndex\n validationMode\n registryAddress\n(35 rows)\n\n ?column? |                             ?column?                             | amount_sats \n----------+------------------------------------------------------------------+-------------\n 1000     | d4e5ebf11d104d6a63fb74e42094364b25a5f7199a09e5c0e71408972466a8b8 |        1000\n 1000     | d4e5ebf11d104d6a63fb74e42094364b25a5f7199a09e5c0e71408972466a8b8 |        1000\n 1000     | d4e5ebf11d104d6a63fb74e42094364b25a5f7199a09e5c0e71408972466a8b8 |        1000\n(3 rows)\n\n  txs  | negative_fees | raw_fee_disagreements \n-------+---------------+-----------------------\n 25821 |             0 |                     0\n(1 row)\n\nROLLBACK\n",
+  "genericSupplyConservation": {
+    "definitionsChecked": 236,
+    "conservationErrors": 0,
+    "capErrors": 0,
+    "sql": "BEGIN READ ONLY;\nWITH minted AS(SELECT payload->>'tokenId' token_id,sum((payload->>'amount')::numeric) minted FROM proof_indexer.events WHERE kind='token-mint' AND status='confirmed' AND valid GROUP BY 1),held AS(SELECT token_id,sum(confirmed_balance) held FROM proof_indexer.credit_balances GROUP BY 1) SELECT count(*) definitions,count(*) FILTER(WHERE coalesce(m.minted,0)*CASE WHEN d.metadata->>'amountStorageModel'='work-subatoms-v2' THEN 10000000000000000 ELSE 1 END!=coalesce(h.held,0)) conservation_errors,count(*) FILTER(WHERE d.max_supply>0 AND coalesce(m.minted,0)>d.max_supply/CASE WHEN d.metadata->>'amountStorageModel'='work-subatoms-v2' THEN 10000000000000000 ELSE 1 END) cap_errors FROM proof_indexer.credit_definitions d LEFT JOIN minted m USING(token_id) LEFT JOIN held h USING(token_id) WHERE d.ticker NOT IN ('POWB','INCB');\nROLLBACK;"
+  },
+  "incbArithmetic": {
+    "mintsChecked": 47,
+    "issuedUnits": "945662401792509469",
+    "issuanceValueQ8": "94566240179250949146190218",
+    "dustQ8": "2246190218",
+    "errors": [],
+    "scope": "Independent integer arithmetic over canonical stored send-time inputs, not a genesis recomputation of each H-1 value."
+  },
+  "healthInitial": {
+    "available": true,
+    "backend": "electrum",
+    "checks": {
+      "addressIndex": {
+        "canary": {
+          "confirmedSats": 0,
+          "scripthash": "8f52010f55361085b1806ee106632dd610d3a6587284138d06065d584bab8d21",
+          "unconfirmedSats": 0
+        },
+        "error": "",
+        "ok": true,
+        "source": "electrum://172.27.0.1:50001",
+        "timedOut": false
+      },
+      "backend": {
+        "ok": true,
+        "timedOut": false
+      },
+      "database": {
+        "canonicalMetaOk": true,
+        "ok": true,
+        "required": true,
+        "timedOut": false
+      },
+      "disk": {
+        "cache": {
+          "availableBytes": 472933261312,
+          "maxUsedPercent": 90,
+          "minFreeBytes": 5368709120,
+          "ok": true,
+          "path": "/data/proofofwork-api-cache",
+          "probePath": "/data/proofofwork-api-cache",
+          "totalBytes": 1764768071680,
+          "usedPercent": 73.20139292514605
+        },
+        "ok": true,
+        "root": {
+          "availableBytes": 71986413568,
+          "maxUsedPercent": 90,
+          "minFreeBytes": 5368709120,
+          "ok": true,
+          "path": "/",
+          "probePath": "/",
+          "totalBytes": 105089261568,
+          "usedPercent": 31.499743652285705
+        }
+      },
+      "electrum": {
+        "configured": true,
+        "error": "",
+        "headerHash": "0000000000000000000053f2537bd898d2aa128b8dcb4e5f02893e419eb262d6",
+        "headerHeight": 969191,
+        "ok": true,
+        "timedOut": false,
+        "atTip": true
+      },
+      "index": {
+        "aheadBlocks": 0,
+        "checkpointHash": "0000000000000000000053f2537bd898d2aa128b8dcb4e5f02893e419eb262d6",
+        "complete": true,
+        "canonicalState": {
+          "fault": {},
+          "ok": true,
+          "rebuild": {
+            "active": false,
+            "status": "complete",
+            "network": "livenet",
+            "complete": true,
+            "startedAt": "2026-09-15T18:22:43.424Z",
+            "updatedAt": "2026-09-29T19:20:14.406Z",
+            "fromHeight": 948000,
+            "completedAt": "2026-09-29T19:20:14.406Z",
+            "bootstrapHash": "000000000000000000004238bec59ce46cd5b28982efe2b90071a51168d67986",
+            "bootstrapHeight": 947999,
+            "indexedThroughBlock": 969191,
+            "indexedThroughBlockHash": "0000000000000000000053f2537bd898d2aa128b8dcb4e5f02893e419eb262d6",
+            "transactionNormalization": "canonical-raw-tx-only"
+          }
+        },
+        "checkpointCanonical": true,
+        "canonicalCheckpointHash": "0000000000000000000053f2537bd898d2aa128b8dcb4e5f02893e419eb262d6",
+        "indexedThroughBlock": 969191,
+        "lagBlocks": 0,
+        "available": true,
+        "ok": true,
+        "readModels": {
+          "confirmedIds": {
+            "count": 508,
+            "maxBlock": 969060
+          },
+          "confirmedTransfers": {
+            "count": 265,
+            "maxBlock": 969015
+          },
+          "confirmedEvents": {
+            "count": 26508,
+            "maxBlock": 969188
+          }
+        },
+        "summarySnapshot": {
+          "blockHash": "0000000000000000000053f2537bd898d2aa128b8dcb4e5f02893e419eb262d6",
+          "coverageByKey": {
+            "growthSummary": 969191,
+            "inceptionSummary": 969191,
+            "infinitySummary": 969191,
+            "logSummary": 969191,
+            "marketplaceSummary": 969191,
+            "tokenSummary": 969191,
+            "workFloor": 969191,
+            "workSummary": 969191
+          },
+          "eligible": true,
+          "generatedAt": "2026-09-29T19:20:30.455Z",
+          "indexedAt": "2026-09-29T19:20:30.455Z",
+          "indexedThroughBlock": 969191,
+          "payloadBytes": 5750886,
+          "snapshotId": "8cb44709e3b56348709e81cf",
+          "ok": true
+        },
+        "scanTipHeight": 969191,
+        "stopReason": ""
+      },
+      "node": {
+        "bestBlockHash": "0000000000000000000053f2537bd898d2aa128b8dcb4e5f02893e419eb262d6",
+        "chain": "main",
+        "headers": 969191,
+        "initialBlockDownload": false,
+        "ok": true,
+        "pruned": false,
+        "tipHeight": 969191,
+        "txindexHeight": 969191,
+        "txindexSynced": true,
+        "verificationProgress": 1
+      },
+      "worker": {
+        "ageMs": 25784,
+        "containment": {
+          "active": false,
+          "checkpointHash": "0000000000000000000053f2537bd898d2aa128b8dcb4e5f02893e419eb262d6",
+          "checkpointHeight": 969191,
+          "failingBlockHeight": null,
+          "fingerprint": "",
+          "network": "livenet",
+          "nextRetryAt": null,
+          "reason": "canonical-scan-success",
+          "repeatCount": 0,
+          "txid": ""
+        },
+        "consecutiveFailures": 0,
+        "error": "",
+        "lastSuccessAt": "2026-09-29T19:25:55.394Z",
+        "maxAgeMs": 600000,
+        "ok": true,
+        "proofReady": true,
+        "proofSource": "idle-confirmed-replay",
+        "pendingEvents": {
+          "globalUnresolved": 0,
+          "model": "bounded-best-effort-pending-event-health-v1",
+          "ok": true,
+          "q16PendingUnresolved": 0,
+          "required": true,
+          "scope": "all-observed-pending-protocol-events",
+          "status": {
+            "checked": 0,
+            "deferred": 0,
+            "errors": 0,
+            "ok": true,
+            "q16ParentDeferred": 0,
+            "staleCandidates": 0,
+            "unavailable": false,
+            "unavailableValid": true
+          }
+        },
+        "phase": "idle"
+      }
+    },
+    "indexedAt": "2026-09-29T19:26:21.178Z",
+    "indexedThroughBlock": 969191,
+    "lagBlocks": 0,
+    "mempoolBase": "http://127.0.0.1:8080",
+    "ok": true,
+    "ready": true,
+    "service": "proofofwork-op-return-api",
+    "tipHeight": 969191,
+    "mode": "readiness"
+  },
+  "healthFinal": {
+    "available": true,
+    "backend": "electrum",
+    "checks": {
+      "addressIndex": {
+        "canary": {
+          "confirmedSats": 0,
+          "scripthash": "8f52010f55361085b1806ee106632dd610d3a6587284138d06065d584bab8d21",
+          "unconfirmedSats": 0
+        },
+        "error": "",
+        "ok": true,
+        "source": "electrum://172.27.0.1:50001",
+        "timedOut": false
+      },
+      "backend": {
+        "ok": true,
+        "timedOut": false
+      },
+      "database": {
+        "canonicalMetaOk": true,
+        "ok": true,
+        "required": true,
+        "timedOut": false
+      },
+      "disk": {
+        "cache": {
+          "availableBytes": 472920186880,
+          "maxUsedPercent": 90,
+          "minFreeBytes": 5368709120,
+          "ok": true,
+          "path": "/data/proofofwork-api-cache",
+          "probePath": "/data/proofofwork-api-cache",
+          "totalBytes": 1764768071680,
+          "usedPercent": 73.20213378351775
+        },
+        "ok": true,
+        "root": {
+          "availableBytes": 72030883840,
+          "maxUsedPercent": 90,
+          "minFreeBytes": 5368709120,
+          "ok": true,
+          "path": "/",
+          "probePath": "/",
+          "totalBytes": 105089261568,
+          "usedPercent": 31.45742698611404
+        }
+      },
+      "electrum": {
+        "configured": true,
+        "error": "",
+        "headerHash": "000000000000000000004512347a7b16e76717d129f8ee71c7805113d07a32e9",
+        "headerHeight": 969192,
+        "ok": true,
+        "timedOut": false,
+        "atTip": true
+      },
+      "index": {
+        "aheadBlocks": 0,
+        "checkpointHash": "000000000000000000004512347a7b16e76717d129f8ee71c7805113d07a32e9",
+        "complete": true,
+        "canonicalState": {
+          "fault": {},
+          "ok": true,
+          "rebuild": {
+            "active": false,
+            "status": "complete",
+            "network": "livenet",
+            "complete": true,
+            "startedAt": "2026-09-15T18:22:43.424Z",
+            "updatedAt": "2026-09-29T19:32:11.241Z",
+            "fromHeight": 948000,
+            "completedAt": "2026-09-29T19:32:11.241Z",
+            "bootstrapHash": "000000000000000000004238bec59ce46cd5b28982efe2b90071a51168d67986",
+            "bootstrapHeight": 947999,
+            "indexedThroughBlock": 969192,
+            "indexedThroughBlockHash": "000000000000000000004512347a7b16e76717d129f8ee71c7805113d07a32e9",
+            "transactionNormalization": "canonical-raw-tx-only"
+          }
+        },
+        "checkpointCanonical": true,
+        "canonicalCheckpointHash": "000000000000000000004512347a7b16e76717d129f8ee71c7805113d07a32e9",
+        "indexedThroughBlock": 969192,
+        "lagBlocks": 0,
+        "available": true,
+        "ok": true,
+        "readModels": {
+          "confirmedIds": {
+            "count": 508,
+            "maxBlock": 969060
+          },
+          "confirmedTransfers": {
+            "count": 265,
+            "maxBlock": 969015
+          },
+          "confirmedEvents": {
+            "count": 26508,
+            "maxBlock": 969188
+          }
+        },
+        "summarySnapshot": {
+          "blockHash": "000000000000000000004512347a7b16e76717d129f8ee71c7805113d07a32e9",
+          "coverageByKey": {
+            "growthSummary": 969192,
+            "inceptionSummary": 969192,
+            "infinitySummary": 969192,
+            "logSummary": 969192,
+            "marketplaceSummary": 969192,
+            "tokenSummary": 969192,
+            "workFloor": 969192,
+            "workSummary": 969192
+          },
+          "eligible": true,
+          "generatedAt": "2026-09-29T19:32:26.865Z",
+          "indexedAt": "2026-09-29T19:32:26.865Z",
+          "indexedThroughBlock": 969192,
+          "payloadBytes": 5750922,
+          "snapshotId": "668fa64e2c6021652dca130c",
+          "ok": true
+        },
+        "scanTipHeight": 969192,
+        "stopReason": ""
+      },
+      "node": {
+        "bestBlockHash": "000000000000000000004512347a7b16e76717d129f8ee71c7805113d07a32e9",
+        "chain": "main",
+        "headers": 969192,
+        "initialBlockDownload": false,
+        "ok": true,
+        "pruned": false,
+        "tipHeight": 969192,
+        "txindexHeight": 969192,
+        "txindexSynced": true,
+        "verificationProgress": 1
+      },
+      "worker": {
+        "ageMs": 15220,
+        "containment": {
+          "active": false,
+          "checkpointHash": "000000000000000000004512347a7b16e76717d129f8ee71c7805113d07a32e9",
+          "checkpointHeight": 969192,
+          "failingBlockHeight": null,
+          "fingerprint": "",
+          "network": "livenet",
+          "nextRetryAt": null,
+          "reason": "canonical-scan-success",
+          "repeatCount": 0,
+          "txid": ""
+        },
+        "consecutiveFailures": 0,
+        "error": "",
+        "lastSuccessAt": "2026-09-29T19:37:31.759Z",
+        "maxAgeMs": 600000,
+        "ok": true,
+        "proofReady": true,
+        "proofSource": "idle-confirmed-replay",
+        "pendingEvents": {
+          "globalUnresolved": 0,
+          "model": "bounded-best-effort-pending-event-health-v1",
+          "ok": true,
+          "q16PendingUnresolved": 0,
+          "required": true,
+          "scope": "all-observed-pending-protocol-events",
+          "status": {
+            "checked": 0,
+            "deferred": 0,
+            "errors": 0,
+            "ok": true,
+            "q16ParentDeferred": 0,
+            "staleCandidates": 0,
+            "unavailable": false,
+            "unavailableValid": true
+          }
+        },
+        "phase": "idle"
+      }
+    },
+    "indexedAt": "2026-09-29T19:37:46.979Z",
+    "indexedThroughBlock": 969192,
+    "lagBlocks": 0,
+    "mempoolBase": "http://127.0.0.1:8080",
+    "ok": true,
+    "ready": true,
+    "service": "proofofwork-op-return-api",
+    "tipHeight": 969192,
+    "mode": "readiness"
+  },
+  "ledgerConsistency": {
+    "checks": [
+      {
+        "ok": true,
+        "name": "livenet-confirmed-history-present",
+        "details": {
+          "powids": 508,
+          "activityItems": 26190,
+          "confirmedTokens": 238
+        }
+      },
+      {
+        "ok": true,
+        "name": "token-definitions-cover-confirmed-mints",
+        "details": {
+          "confirmedTokens": 238,
+          "confirmedTokenMints": 21876
+        }
+      },
+      {
+        "ok": true,
+        "name": "token-components-cover-confirmed-activity",
+        "details": {
+          "ok": true,
+          "missing": [],
+          "stateCounts": {
+            "mints": 21876,
+            "sales": 89,
+            "tokens": 238,
+            "transfers": 265
+          },
+          "activityCounts": {
+            "mints": 21876,
+            "sales": 89,
+            "tokens": 236,
+            "transfers": 265
+          }
+        }
+      },
+      {
+        "ok": true,
+        "name": "canonical-activity-count-matches-public-log",
+        "details": {
+          "ok": true,
+          "ledgerActivityCount": 26190,
+          "canonicalActivityCount": 26188,
+          "publicLogActivityCount": 26188,
+          "supplementalActivityCount": 2,
+          "ledgerConfirmedActivityCount": 26166,
+          "canonicalConfirmedActivityCount": 26166,
+          "publicLogConfirmedActivityCount": 26166,
+          "supplementalConfirmedActivityCount": 0
+        }
+      },
+      {
+        "ok": true,
+        "name": "ledger-covers-node-tip",
+        "details": {
+          "lagBlocks": 0,
+          "tipHeight": 969191,
+          "maxLagBlocks": 6,
+          "indexedThroughBlock": 969191
+        }
+      },
+      {
+        "ok": true,
+        "name": "inception-live-issuance-matches-incb-supply",
+        "details": {
+          "canonicalMints": 47,
+          "confirmedMints": 47,
+          "incbConfirmedSupply": "945662401792509469",
+          "confirmedIssuanceUnits": "945662401792509469",
+          "issuanceAccountingModel": "canonical-pre-bond-live-network-value-v2",
+          "issuanceNetworkValueSats": "945662401792509491.46190218"
+        }
+      },
+      {
+        "ok": true,
+        "name": "inception-fixed-value-reconciles",
+        "details": {
+          "fixedFloorQ8": "100000000",
+          "fixedFloorSats": "1",
+          "saleVolumeSats": "0",
+          "confirmedSupply": "945662401792509469",
+          "transferFeeSats": "0",
+          "fixedNetworkValueQ8": "94566240179250949146190218",
+          "fixedNetworkValueSats": "945662401792509491.46190218",
+          "issuanceNetworkValueSats": "945662401792509491.46190218",
+          "marketplaceMutationFeeSats": "0",
+          "networkValueAccountingModel": "fixed-incb-issuance-plus-market-flow-v1"
+        }
+      },
+      {
+        "ok": true,
+        "name": "infinity-bond-flow-matches-powb-supply",
+        "details": {
+          "powbConfirmedSupply": "630496569",
+          "infinityBondFlowSats": "630496569"
+        }
+      },
+      {
+        "ok": true,
+        "name": "network-values-finite",
+        "details": {
+          "workFloorFinite": true,
+          "workActualValueQ8": "1452083490330680135585252463",
+          "workNetworkValueQ8": "1452083490330680135585252463",
+          "growthActualValueQ8": "1452083490330680135585252463",
+          "growthSummaryFinite": true,
+          "growthWorkFloorValueQ8": "1452083490330680135585252463",
+          "workActualValueSatsExact": "14520834903306801355.85252463",
+          "workNetworkValueSatsExact": "14520834903306801355.85252463",
+          "growthActualValueSatsExact": "14520834903306801355.85252463",
+          "hasCreditMinerFeeAccounting": true,
+          "growthWorkFloorValueSatsExact": "14520834903306801355.85252463",
+          "creditMinerFeeCoverageComplete": true,
+          "hasVerifiedCreditMinerFeeCoverage": true,
+          "creditMinerFeeCoverageInputVerified": true,
+          "creditMinerFeeMissingCanonicalEvents": 0
+        }
+      },
+      {
+        "ok": true,
+        "name": "work-floor-actual-total",
+        "details": {
+          "actualValueQ8": "1452083490330680135585252463",
+          "networkValueQ8": "1452083490330680135585252463",
+          "actualValueSatsExact": "14520834903306801355.85252463",
+          "networkValueSatsExact": "14520834903306801355.85252463"
+        }
+      },
+      {
+        "ok": true,
+        "name": "growth-actual-total",
+        "details": {
+          "workValueQ8": "1452083490330680135585252463",
+          "growthValueQ8": "1452083490330680135585252463",
+          "workValueSatsExact": "14520834903306801355.85252463",
+          "growthValueSatsExact": "14520834903306801355.85252463"
+        }
+      },
+      {
+        "ok": true,
+        "name": "growth-work-floor-total",
+        "details": {
+          "workValueQ8": "1452083490330680135585252463",
+          "growthWorkFloorQ8": "1452083490330680135585252463",
+          "workValueSatsExact": "14520834903306801355.85252463",
+          "growthWorkFloorSatsExact": "14520834903306801355.85252463"
+        }
+      },
+      {
+        "ok": true,
+        "name": "marketplace-mutation-fees-counted",
+        "details": {
+          "marketplaceFeeSats": 1384110,
+          "marketplaceMutationFeeSats": 1384110,
+          "legacyBootstrapCarryAccountingMode": "confirmed-activity-includes-carry",
+          "confirmedMarketplaceMutationFeeSats": 1384110,
+          "legacyBootstrapMarketplaceCarrySats": 546
+        }
+      },
+      {
+        "ok": true,
+        "name": "work-amo-v5-legacy-bootstrap-carry-proven",
+        "details": {
+          "model": "canonical-work-amo-v5-legacy-bootstrap-carry-v1",
+          "evidence": {
+            "txid": "5eb0a876603a7551653806b932533dc27a884631a581caa2e36dcf129b8278e8",
+            "model": "canonical-work-amo-v5-legacy-bootstrap-carry-v1",
+            "eventId": 4079493,
+            "complete": true,
+            "blockHash": "000000000000000000005a63a2c00834b92746ab0658c9f0c98aeb509724e8f9",
+            "blockIndex": 2552,
+            "reasonCode": "work-market-v4-version-required",
+            "sourceKind": "token-event-invalid",
+            "blockHeight": 959311,
+            "listingCount": 1,
+            "minerFeeSats": 2216,
+            "protocolVout": 1,
+            "baseCarryMode": "published-valid-excludes-carry",
+            "creditFixedQ8": "276200000000",
+            "growthValueQ8": "273000000000",
+            "recordOrdinal": 0,
+            "baseCarryField": "tokenMarketplaceFeeSats",
+            "validBaseState": {
+              "powids": "508",
+              "mailFlowSats": "1489022",
+              "driveFlowSats": "3276",
+              "browserFlowSats": "0",
+              "tokenMintFlowSats": "23545075",
+              "tokenSaleVolumeSats": "9728286",
+              "idMarketplaceFeeSats": "14742",
+              "infinityBondFlowSats": "630496569",
+              "computerEventFlowSats": "509638",
+              "inceptionBondFlowSats": "28478",
+              "tokenCreationFlowSats": "128856",
+              "tokenTransferFlowSats": "144690",
+              "idMarketplaceVolumeSats": "22000",
+              "tokenMarketplaceFeeSats": "1368276"
+            },
+            "creditFixedSats": 2762,
+            "growthValueSats": 2730,
+            "sourceAmountSats": 0,
+            "sourceReasonCode": "work-market-v2-canonical-oracle-unavailable",
+            "compatibilityMode": "legacy-bootstrap-invalid-only-replay-evidence-v1",
+            "activeListingCount": 0,
+            "committedBaseState": {
+              "powids": "508",
+              "mailFlowSats": "1489022",
+              "driveFlowSats": "3276",
+              "browserFlowSats": "0",
+              "tokenMintFlowSats": "23545075",
+              "tokenSaleVolumeSats": "9728286",
+              "idMarketplaceFeeSats": "14742",
+              "infinityBondFlowSats": "630496569",
+              "computerEventFlowSats": "509638",
+              "inceptionBondFlowSats": "28478",
+              "tokenCreationFlowSats": "128856",
+              "tokenTransferFlowSats": "144690",
+              "idMarketplaceVolumeSats": "22000",
+              "tokenMarketplaceFeeSats": "1368822"
+            },
+            "sourceListingCount": 0,
+            "validCreditFixedQ8": "4253206900000000",
+            "creditFixedOverlapQ8": "0",
+            "validCreditFixedSats": 42532069,
+            "committedCreditFixedQ8": "4257566000000000",
+            "creditFixedOverlapSats": 0,
+            "effectiveCreditFixedQ8": "276200000000",
+            "validBaseNetworkValueQ8": "340673358559710276",
+            "effectiveCreditFixedSats": 2762,
+            "sourceActiveListingCount": 0,
+            "postActivationBaseCarryQ8": "0",
+            "marketplaceMutationFeeSats": 546,
+            "publishedBaseNetworkValueQ8": "340685404559710276",
+            "sourceSaleTicketOutputCount": 1,
+            "postActivationBaseCarryFields": [],
+            "validActivityContributionSats": 0,
+            "validMarketplaceMutationFeeSats": 1383018,
+            "sourceRegistryPaymentOutputCount": 1
+          },
+          "indexedThroughBlock": 969191
+        }
+      },
+      {
+        "ok": true,
+        "name": "marketplace-value-includes-mutation-fees",
+        "details": {
+          "marketplaceSats": 55671980,
+          "marketplaceFlowSats": 11134396,
+          "marketplaceSaleVolumeSats": 9750286,
+          "marketplaceMutationFeeSats": 1384110
+        }
+      },
+      {
+        "ok": true,
+        "name": "computer-event-flow-excludes-marketplace",
+        "details": {
+          "computerEventFlowSats": 509638,
+          "marketplaceMutationFeeSats": 1384110,
+          "expectedComputerEventFlowSats": 509638
+        }
+      },
+      {
+        "ok": true,
+        "name": "dns-activity-counted",
+        "details": {
+          "dnsSats": 115000,
+          "dnsTotalSats": 120460,
+          "dnsRegistrations": 23,
+          "dnsRegistryFlowSats": 23000,
+          "dnsMarketplaceFeeSats": 1092,
+          "dnsMarketplaceFlowSats": 1092,
+          "dnsMarketplaceVolumeSats": 0,
+          "confirmedDnsRegistrations": 23,
+          "confirmedDnsRegistryFlowSats": 23000,
+          "confirmedDnsMarketplaceFeeSats": 1092,
+          "confirmedDnsMarketplaceVolumeSats": 0
+        }
+      },
+      {
+        "ok": true,
+        "name": "credit-frozen-value-includes-event-components",
+        "details": {
+          "creditMinerFeeFlowSats": 10324123,
+          "creditEventFrozenValueQ8": "177667049949107634809263081",
+          "creditSalePaymentFlowSats": 9728286,
+          "creditEventFrozenValueSats": 1776670499491076400,
+          "creditProofPaymentFlowSats": 21000546,
+          "creditMovementFrozenValueQ8": "177667049944850068809263081",
+          "postActivationCreditFixedQ8": "4082900000000",
+          "legacyBootstrapCreditFixedQ8": "276200000000",
+          "creditMovementFrozenValueSats": 1776670499448500700,
+          "postActivationCreditFixedSats": 40829,
+          "creditRegistryMutationFlowSats": 140868,
+          "legacyBootstrapCreditFixedSats": 2762,
+          "creditMarketplaceMutationFlowSats": 1338246
+        }
+      },
+      {
+        "ok": true,
+        "name": "credit-live-value-is-active-network-value",
+        "details": {
+          "creditNetworkValueQ8": "1452083489989994458025542187",
+          "creditEventLiveValueQ8": "1452083489989994458025542187",
+          "creditNetworkValueSats": 14520834899899945000,
+          "creditEventLiveValueSats": 14520834899899945000,
+          "creditLiveNetworkValueQ8": "1452083489989994458025542187",
+          "creditLiveNetworkValueSats": 14520834899899945000
+        }
+      },
+      {
+        "ok": true,
+        "name": "token-credit-aggregates-match-verified-closing-state",
+        "details": {
+          "blockHash": "0000000000000000000053f2537bd898d2aa128b8dcb4e5f02893e419eb262d6",
+          "aggregates": {
+            "creditFixedQ8": "4257566000000000",
+            "creditNetworkValueQ8": "1452083489989994458025542187",
+            "creditEventLiveValueQ8": "1452083489989994458025542187",
+            "creditEventFrozenValueQ8": "177667049949107634809263081",
+            "creditLiveNetworkValueQ8": "1452083489989994458025542187",
+            "creditMovementLiveValueQ8": "1452083489985736892025542187",
+            "creditFrozenNetworkValueQ8": "177667049949107634809263081",
+            "creditMovementFrozenValueQ8": "177667049944850068809263081",
+            "postActivationCreditFixedQ8": "4082900000000",
+            "legacyBootstrapCreditFixedQ8": "276200000000"
+          },
+          "mismatches": [],
+          "blockHeight": 969191
+        }
+      },
+      {
+        "ok": true,
+        "name": "token-events-logged",
+        "details": {
+          "sample": [],
+          "missing": 0
+        }
+      },
+      {
+        "ok": true,
+        "name": "token-sales-logged",
+        "details": {
+          "missing": 0
+        }
+      },
+      {
+        "ok": true,
+        "name": "seeded-mail-events-logged",
+        "details": {
+          "seeded": 618,
+          "missing": 0
+        }
+      },
+      {
+        "ok": true,
+        "name": "seeded-inception-bonds-logged",
+        "details": {
+          "seeded": 48,
+          "missing": 0,
+          "loggedFlowSats": 28478,
+          "seededFlowSats": 28478
+        }
+      },
+      {
+        "ok": true,
+        "name": "inception-historical-issuance-baseline",
+        "details": {
+          "expected": {
+            "acceptedMints": 46,
+            "issuanceDustQ8": "2193582060",
+            "networkValueQ8": "22484771339844794793582060",
+            "confirmedSupply": "224847713398447926",
+            "parentBondEvents": 47,
+            "directProofIssuanceUnits": "27386",
+            "attachedWorkIssuanceUnits": "224847713398420540"
+          },
+          "acceptedMints": 46,
+          "exactRequired": false,
+          "loggedParents": 48,
+          "seededParents": 48,
+          "issuanceDustQ8": "2246190218",
+          "confirmedSupply": "945662401792509469",
+          "parentBondEvents": 47,
+          "issuanceNetworkValueQ8": "94566240179250949146190218",
+          "directProofIssuanceUnits": "27932",
+          "attachedWorkIssuanceUnits": "945662401792481537"
+        }
+      },
+      {
+        "ok": true,
+        "name": "seeded-infinity-bonds-logged",
+        "details": {
+          "seeded": 467,
+          "missing": 0,
+          "loggedFlowSats": 630496569,
+          "seededFlowSats": 630496569
+        }
+      }
+    ],
+    "generatedAt": "2026-09-29T19:20:30.455Z",
+    "indexedThroughBlock": 969191,
+    "indexedThroughBlockHash": "0000000000000000000053f2537bd898d2aa128b8dcb4e5f02893e419eb262d6",
+    "metrics": {
+      "powids": 508,
+      "tipLagBlocks": 0,
+      "activityItems": 26190,
+      "networkValueQ8": "1452083490330680135585252463",
+      "confirmedTokens": 238,
+      "sourceTipHeight": 969191,
+      "networkValueSats": 14520834903306801000,
+      "invalidTokenEvents": 301,
+      "confirmedTokenMints": 21876,
+      "confirmedTokenSales": 89,
+      "indexedThroughBlock": 969191,
+      "networkValueSatsExact": "14520834903306801355.85252463",
+      "publicLogActivityItems": 26188,
+      "confirmedTokenTransfers": 265,
+      "confirmedComputerActions": 26166,
+      "supplementalActivityItems": 2,
+      "networkValueSatsApproximate": 14520834903306801000,
+      "publicLogConfirmedComputerActions": 26166,
+      "supplementalConfirmedComputerActions": 0
+    },
+    "missingLogEvents": [],
+    "network": "livenet",
+    "ok": true,
+    "snapshotId": "8cb44709e3b56348709e81cf",
+    "sourceHashes": {
+      "tokens": {
+        "count": 238,
+        "newest": 1783641600000,
+        "sample": [
+          "3bebbb3cfd5eb368e6aa057eac1bb9442725949a6d65d98d87e41dd40a3876a5",
+          "a19d7366ae3a19739722a6786c80e307fb4785495e084d749bd81e49ea8e3dbe",
+          "bbd8d0d76444d3191836ed9a68d44c572f72b4f93c945c9c191cbc2f6ed2b039",
+          "57bfe42e78d00aa9b437defc43f9efb19fe80beb9232ecd1832b9f56317a3e8b",
+          "b85af08d0f72f4aeb13af12fe426ebe1c8a92a8fcf44c9f84175c71cba1e512c",
+          "f6a06a796bdfe4740bd24bf196fdcee33811867ed7ba1e429cc6f883ba6be01a",
+          "9206a7f68262a42d3e1b635d663d67f72936748f2b549d9dc2c9675d4381f9c9",
+          "aac80b5d09313073cd33a64b91e8b16ebcd7dd0fd191ffaeb44c304056f25077"
+        ],
+        "confirmed": 238
+      },
+      "activity": {
+        "count": 26188,
+        "newest": 1790688724000,
+        "sample": [
+          "767b1c7d0df60edc9099ff29269b553843c896e397f550f5d7f8558834575c4b",
+          "1cace7434cc5863d1631a1db311768fe679660c5d6d44c60ce22ded190e85e97",
+          "1cace7434cc5863d1631a1db311768fe679660c5d6d44c60ce22ded190e85e97",
+          "3b35e6af4202115a2779e01dcdc3085927675c868a191a01ff61f656ae60e1b4",
+          "c616b2cd5525af3afbe2ca6bfc61b537a69f391c02c40b783ea77f9ec876a2b5",
+          "e983d3f23dc7eb72f56248347603b986f9bbcdf94032ae9e6cb76a161ac07cd2",
+          "a2f613500e807eb8907dad7762303c81fdd386ce1d1d3ce0e27f8d50c7a706bd",
+          "4f895eaabd46d1c8d69b6ac953aa3776a861bf29951b99a6126b31413b2b15bd"
+        ],
+        "confirmed": 26166
+      },
+      "registry": {
+        "count": 559,
+        "newest": 1790636325000,
+        "sample": [
+          "a29e8cdb4b2d8020d361e25d2580b3f496fb4c9487085507c591793afdc59ae0",
+          "951831f315bde9d28b592f1669071f1db2a96002c9cb15ac0b0416565f84630d",
+          "deb1096a1b628677f1b64f1bd6c350ddf563816132c183823fd8ed058796e666",
+          "c02ac0c897b2de0341873a7de727f01c7597a8fa8267ce479f8390f515f0d20d",
+          "8e55c2a1e53d4a4011fbb762f39fde539985a6776e6ce263556e6ca5f235a725",
+          "4ffc1a79d4218c4ca8c8e43f9537f6ec70b883ce1c5c5f494db38c8581c0ead3",
+          "3ace16343693076016f03fd9bbbc6f50eb602507c75f763a495b61ff6ff48378",
+          "cfdb34b0000beda563ae59e1665c97b32ae5f6d3fa087efa9e549551b0b6515c"
+        ],
+        "confirmed": 538
+      },
+      "blockScan": "0000000000000000000053f2537bd898d2aa128b8dcb4e5f02893e419eb262d6",
+      "workMints": {
+        "count": 21000,
+        "newest": 1784388227000,
+        "sample": [
+          "a10780b6ac4bc9282adc561e88406842e730f6d8ab0f8f2e5926f98ea65aa441",
+          "fead1e58fcab3ebbfb6d3faee2927ff111381acccedeea49accc6e8743db9d8c",
+          "e613b385812629d02450da0b183ec9672b88d222d9112932571213ed42a77891",
+          "a424ed32e2535036be90f67a5e082ecc3f4677c640e8d78eda6c0392514a0c6a",
+          "9652862c83975218dc2f571ae044a7f724ad85a6d80f4fbc576946ea9a319d17",
+          "59e75f788feaebd1b3ece1f681476bf53b14956a0e240b78fd2ff579411d6d21",
+          "58f825969f4eb211dc61e75498c059a28b3bcba4a42c90d20d2c4332c331286d",
+          "3418c6ec4dca924a8225637ca878529f54b7c5a9a6181f1bf244ba4c8e55c2df"
+        ],
+        "confirmed": 21000
+      },
+      "workSales": {
+        "count": 89,
+        "newest": 1790685635000,
+        "sample": [
+          "1cace7434cc5863d1631a1db311768fe679660c5d6d44c60ce22ded190e85e97",
+          "0f524768fd95dfb6bfbe203adb3e010be789d7f10363f0ff05a31e7e0342d5b9",
+          "85bb6e6dd22deff92a6ad2d3988b010dbf045e20f1d8faca2d1a3d41cf084048",
+          "6147359ae1c6db0756a5d480dd9a7c883842dbbd9f3fc2be91817ac78315d9f7",
+          "d453f4971b7c5481b93ed02242e45fdfc59cd6dde832646cdb14ddfa0ae18588",
+          "457091a0dcb8e63df0cbcb60e42d13a266870bd44bf6dcc860f325fb03e9f80f",
+          "477804a454c63a1cf29bb459821ad0d434de34e6e0228f1d8b1c305736fcbd73",
+          "b3a3b6fd1481e95b9a8eb472e9257bf3c2216b6e5622d4dfe7fa808eb77838d5"
+        ],
+        "confirmed": 89
+      },
+      "seededMail": {
+        "count": 618,
+        "newest": 1790567366000,
+        "sample": [
+          "2ae50bf34c9c790c11e6e86459235cc75fd068b8a2e9c7762cef2fc4f13b5ff1",
+          "ebe60fd108e8830b4741101e6525081387dcf328e81c12fa2b533de0bdbf0d3e",
+          "8ae8a348b6fec39e465b4d215d9b1c24ab286db7ff15db6077f3703db7685ca7",
+          "0c887ed6f7dbe415a2bfd88c1bdcb0c5c1681fee339d64bba644e703c8c759c5",
+          "ae4d012446b6a626d27df6ebdbb86d3526454b07102ba5ac8697256410e5fb82",
+          "4603bb613cb9107ee96819cf437759c4f2e95dc24731ae70b7da88a91f27d654",
+          "b7348e6c40b4327120282cc828cf6ee6a5e4ff5f4bc13da88f45e9e7a251012c",
+          "3c739d1a68a74c6870911f6da34dfafa08e1566c91d371b9822d492f7f3821ce"
+        ],
+        "confirmed": 618
+      },
+      "tokenMints": {
+        "count": 21877,
+        "newest": 1790065480000,
+        "sample": [
+          "d5c9d319858ebeb68c0c805ab7602d540d2f02e36bd5a4b2453ae18b8bf381b4",
+          "d1eb12902943f373ddc50e67aa153ff54dc4f77888d2d006394c081df6db584a",
+          "c81b0b231a23b311cad883d00ce1184d37544235d933af30c1808e3b4041ad92",
+          "bfad339c67423e7962fef3e42d195624bcab7991acbcc63be584d0f212578b60",
+          "bb10456e8153453375628ec35e9d590cd779b68008dcae0a2b8e8fe5b16abc76",
+          "a76374905b154b0f4ceaf216b1ccbd2f2726e25a19236365fa3c007939daf90e",
+          "a3aee9fd1f839e1fe54fd14f1dc53afadde3cd92fb643323be25c0151ce6a512",
+          "7da37aca6be7150bca46258f3b74d5262c4ec7916d1dcb687525857228d9ae85"
+        ],
+        "confirmed": 21876
+      },
+      "tokenSales": {
+        "count": 89,
+        "newest": 1790685635000,
+        "sample": [
+          "1cace7434cc5863d1631a1db311768fe679660c5d6d44c60ce22ded190e85e97",
+          "0f524768fd95dfb6bfbe203adb3e010be789d7f10363f0ff05a31e7e0342d5b9",
+          "85bb6e6dd22deff92a6ad2d3988b010dbf045e20f1d8faca2d1a3d41cf084048",
+          "6147359ae1c6db0756a5d480dd9a7c883842dbbd9f3fc2be91817ac78315d9f7",
+          "d453f4971b7c5481b93ed02242e45fdfc59cd6dde832646cdb14ddfa0ae18588",
+          "457091a0dcb8e63df0cbcb60e42d13a266870bd44bf6dcc860f325fb03e9f80f",
+          "477804a454c63a1cf29bb459821ad0d434de34e6e0228f1d8b1c305736fcbd73",
+          "b3a3b6fd1481e95b9a8eb472e9257bf3c2216b6e5622d4dfe7fa808eb77838d5"
+        ],
+        "confirmed": 89
+      },
+      "dnsActivity": {
+        "count": 25,
+        "newest": 1790675197000,
+        "sample": [
+          "dd498455bb712411341cfde6fab38764281ff6b77076a41012c3bee768475e38",
+          "e983d3f23dc7eb72f56248347603b986f9bbcdf94032ae9e6cb76a161ac07cd2",
+          "a2f613500e807eb8907dad7762303c81fdd386ce1d1d3ce0e27f8d50c7a706bd",
+          "5d8685baf5d00bb21db4cf61cbc463e68b5d531707347222225fa08d22e4e82b",
+          "36a800aed50b8422bbe85c2e7b790cd86d19583699596497b03a0d0f49818cc2",
+          "e2000352063b1e741dc453783f612a5cece6c24132a3d19e9468d3f33f4e1ed7",
+          "ceecb08e413c07f9a6ca884636851e69cb62ac33fcfd4818c397eff59ac66aad",
+          "c218e42d9ce481e71af046bf7065a946e93de04d573ca3b9161aefb9c6cf08bf"
+        ],
+        "confirmed": 25
+      },
+      "workTransfers": {
+        "count": 258,
+        "newest": 1790608393000,
+        "sample": [
+          "9b4a68fcee335e5d255d271d67e624100b2466bfb5e48b4b596fb38bc07c3d80",
+          "d4bdc27f9ce5b2f5010363fc60b82a859e18128c1322a8af637f50c2ad035af5",
+          "585b975dd968d5b987e73b058ebba7b63fb8d5ceacbb309e6b894d8662719880",
+          "aae9c777f40142da1ada77c698cc52be786a8f8d97c525600ea75ff2fdd35b61",
+          "4df0c0846713f0636c87340d597fc452ea6ca6829b62fedb77299b38493ab85d",
+          "e5f620bb089fdefbfff956462322649ba96242ccabc72775b0d3e040630c37c0",
+          "909955ca08285d21cfd2a327b1a75c9118696dd86d70b5aa76caf6386802a178",
+          "23b3f955dd5d2a7aea898c88ce86b138d2c9bce60a720dd5644a39f0e4e95275"
+        ],
+        "confirmed": 258
+      },
+      "tokenTransfers": {
+        "count": 265,
+        "newest": 1790608393000,
+        "sample": [
+          "9b4a68fcee335e5d255d271d67e624100b2466bfb5e48b4b596fb38bc07c3d80",
+          "d4bdc27f9ce5b2f5010363fc60b82a859e18128c1322a8af637f50c2ad035af5",
+          "585b975dd968d5b987e73b058ebba7b63fb8d5ceacbb309e6b894d8662719880",
+          "aae9c777f40142da1ada77c698cc52be786a8f8d97c525600ea75ff2fdd35b61",
+          "4df0c0846713f0636c87340d597fc452ea6ca6829b62fedb77299b38493ab85d",
+          "e5f620bb089fdefbfff956462322649ba96242ccabc72775b0d3e040630c37c0",
+          "909955ca08285d21cfd2a327b1a75c9118696dd86d70b5aa76caf6386802a178",
+          "23b3f955dd5d2a7aea898c88ce86b138d2c9bce60a720dd5644a39f0e4e95275"
+        ],
+        "confirmed": 265
+      },
+      "registryRecords": {
+        "count": 529,
+        "newest": 1790636325000,
+        "sample": [
+          "a29e8cdb4b2d8020d361e25d2580b3f496fb4c9487085507c591793afdc59ae0",
+          "deb1096a1b628677f1b64f1bd6c350ddf563816132c183823fd8ed058796e666",
+          "c02ac0c897b2de0341873a7de727f01c7597a8fa8267ce479f8390f515f0d20d",
+          "7d1782d617f54b8103ea3ab579992a929e71484edf64300201d3ee981e61d6e5",
+          "5e0a510f788fa0626f36a69b9ed2e7a73a81ebbaef82ca1eee0f09ea4ad41363",
+          "7b4bc6418aea9bca326fd5b392d07cb62f005da8bfb0a14041f5f4b270162da3",
+          "5afa0de40ddfb8a83b0ed0f653094371deae6f41f6828fb49f316e32f1549a0a",
+          "cdf467c83c0c71b094513e329b474010294fd2fb83b197b3208acc55540c9c3d"
+        ],
+        "confirmed": 508
+      },
+      "canonicalSummary": "0043bbff85f048b4ed9d5d593a2100365063ae415d447e9cc63117cf2d1cc603",
+      "workInvalidEvents": {
+        "count": 298,
+        "newest": 1790705476000,
+        "sample": [
+          "7390fe7e4f4a57f82b9af3a756433ebea38d1a818f6b357c369b4f3935aac014",
+          "825bc88c49583f2a52d9b89fd7101c98c9dd5b4aa9f3524f842737e0843f416d",
+          "31b3bbed517b7847f1985a96d986c653e9ecfaf85a7947d17e6e0997b7bb9c49",
+          "529f5f02437a7c22b3fa6ae0e4af02d88f409bd6868f7b95aae207ce9b59ba98",
+          "c9b83a26575be68339af0d6854cab3265bf816bdb95e8f3f99d106290d49ac35",
+          "3b4e01cd3fe2b8623f8f422b6fc3a4d5c7696babdfc155dc525ae59b871fb4e2",
+          "05eef27fd029a84b2456620f6c27844089f183343b9677252678a1b9827adf04",
+          "b8009f609db2feca77f5b3fcee60bbdb47f2ff4200175a4f0a1c58ef183e9f8f"
+        ],
+        "confirmed": 298
+      },
+      "tokenInvalidEvents": {
+        "count": 301,
+        "newest": 1790705476000,
+        "sample": [
+          "1d9b33af11c37783cee947e40cfb2052a4e8eccf3ea0d332750daa08025ca455",
+          "7390fe7e4f4a57f82b9af3a756433ebea38d1a818f6b357c369b4f3935aac014",
+          "825bc88c49583f2a52d9b89fd7101c98c9dd5b4aa9f3524f842737e0843f416d",
+          "31b3bbed517b7847f1985a96d986c653e9ecfaf85a7947d17e6e0997b7bb9c49",
+          "529f5f02437a7c22b3fa6ae0e4af02d88f409bd6868f7b95aae207ce9b59ba98",
+          "c9b83a26575be68339af0d6854cab3265bf816bdb95e8f3f99d106290d49ac35",
+          "3b4e01cd3fe2b8623f8f422b6fc3a4d5c7696babdfc155dc525ae59b871fb4e2",
+          "05eef27fd029a84b2456620f6c27844089f183343b9677252678a1b9827adf04"
+        ],
+        "confirmed": 301
+      },
+      "publicLogRelational": "b9fc9e666f60a7e9a3a7110096e86e04f844fd6c3332ab54ba51be83cc84b910",
+      "workAmoV5Transition": {
+        "model": "canonical-work-amo-full-position-block-sequencer-v2",
+        "blockHash": "0000000000000000000053f2537bd898d2aa128b8dcb4e5f02893e419eb262d6",
+        "blockHeight": 969191,
+        "networkValueQ8": "1452083490330668089585252463",
+        "eventSetCommitment": {
+          "model": "canonical-work-amo-event-set-sha256-v1",
+          "sha256": "43aabdf35a03c5f633796dcb27fa5486f589bf9f0dd5731ff80bf330fa36efb8",
+          "eventCount": 0,
+          "payloadBytes": 61
+        },
+        "blockDescriptorModel": "canonical-work-amo-raw-full-block-descriptor-v1",
+        "transitionChainModel": "canonical-work-amo-raw-transition-chain-sha256-v1",
+        "blockTransactionCount": 3815,
+        "closingStateCommitment": {
+          "model": "canonical-work-amo-sufficient-state-sha256-v1",
+          "sha256": "72a01be5072ca0b4bcd1b5dbb6ff5524943062ebca007159307b25a19d5636e9",
+          "payloadBytes": 2527552
+        },
+        "blockDescriptorCommitment": {
+          "model": "canonical-work-amo-payload-sha256-v1",
+          "sha256": "5c6c3cdbab594dab631523979b11c2aabda013df7903e478cd6426df820d5535",
+          "payloadBytes": 257149
+        },
+        "transitionChainCommitment": {
+          "model": "canonical-work-amo-raw-transition-chain-sha256-v1",
+          "sha256": "380bf708ed553daac6c49cf6a4d544bb94a7750f779367208414627302fa0822",
+          "payloadBytes": 1025
+        }
+      }
+    },
+    "status": "green",
+    "totals": {
+      "growthActualValueQ8": "1452083490330680135585252463",
+      "growthActualValueSats": 14520834903306801000,
+      "growthActualValueSatsExact": "14520834903306801355.85252463",
+      "growthWorkFloorValueQ8": "1452083490330680135585252463",
+      "growthWorkFloorValueSats": 14520834903306801000,
+      "growthWorkFloorValueSatsExact": "14520834903306801355.85252463",
+      "workActualValueQ8": "1452083490330680135585252463",
+      "workActualValueSats": 14520834903306801000,
+      "workActualValueSatsExact": "14520834903306801355.85252463",
+      "workNetworkValueAccountingModel": "canonical-exact-work-network-q8-v1",
+      "workNetworkValueQ8": "1452083490330680135585252463",
+      "workNetworkValueSats": 14520834903306801000,
+      "workNetworkValueSatsExact": "14520834903306801355.85252463"
+    },
+    "totalsApproximate": {
+      "growthActualValueSats": 14520834903306801000,
+      "growthWorkFloorValueSats": 14520834903306801000,
+      "workActualValueSats": 14520834903306801000,
+      "workNetworkValueSats": 14520834903306801000
+    }
+  },
+  "gates": {
+    "parity": {
+      "apiBase": "http://127.0.0.1:8081",
+      "indexedThroughBlock": 969191,
+      "latestSnapshotGeneratedAt": "2026-09-29T19:20:30.455Z",
+      "network": "livenet",
+      "ok": true,
+      "requireWorkAmoV5Ready": false,
+      "snapshotId": "8cb44709e3b56348709e81cf",
+      "strict": true,
+      "checks": [
+        {
+          "name": "work-amo-v5-declaration-evidence",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "work-amo-v5-canonical-positions",
+          "ok": true,
+          "severity": "warning"
+        },
+        {
+          "name": "work-amo-v5-migration",
+          "ok": false,
+          "severity": "warning"
+        },
+        {
+          "name": "work-amo-v5-usd-quote-head",
+          "ok": false,
+          "severity": "warning"
+        },
+        {
+          "name": "work-amo-v5-write-readiness",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "canonical-ledger-green",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "canonical-log-complete",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "database-has-canonical-summary-snapshot",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "canonical-summary-snapshot-current",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "transactions-cover-canonical-activity-txids",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "confirmed-transaction-status-lag",
+          "ok": true,
+          "severity": "warning"
+        },
+        {
+          "name": "confirmed-transactions-have-canonical-block-proof",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "nonconfirmed-transactions-have-no-block-metadata",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "confirmed-events-match-canonical-parent-metadata",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "nonconfirmed-events-have-no-block-metadata",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "canonical-confirmed-transactions-own-no-volatile-pwid-events",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "event-payload-status-matches-relational-status",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "events-cover-canonical-activity",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "credit-definitions-match-canonical",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "event-search-index-populated",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "rendered-event-participant-semantic-parity",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "rendered-event-reference-semantic-parity",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "rendered-mail-projection-semantic-parity",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "work-delist-regression-transaction-indexed",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "work-delist-regression-event-indexed",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "holder-projections-present",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "log-history-first-page-read-eligibility",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "log-history-first-page-read-reason",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "log-history-kind-token-sale-read-eligibility",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "log-history-kind-token-sale-read-reason",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "log-history-kind-token-sale-snapshot-pinned",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "log-history-query-infinity-bond-read-eligibility",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "log-history-query-infinity-bond-read-reason",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "log-history-query-infinity-bond-snapshot-pinned",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "log-history-query-pagination-gap-infinity-bond-read-eligibility",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "log-history-query-pagination-gap-infinity-bond-read-reason",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "log-history-query-pagination-gap-infinity-bond-snapshot-pinned",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "log-history-query-work-transfer-read-eligibility",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "log-history-query-work-transfer-read-reason",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "log-history-query-work-transfer-snapshot-pinned",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "log-history-query-work-delist-read-eligibility",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "log-history-query-work-delist-read-reason",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "log-history-query-work-delist-snapshot-pinned",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "log-history-paginated-history-read-eligibility",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "log-history-paginated-history-read-reason",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "log-history-paginated-history-snapshot-pinned",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "log-history-snapshot-cursor-stability",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "registry-canonical-fresh-authority",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "registry-history-records-parity",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "registry-history-records-current-relational",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "registry-history-listings-parity",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "registry-history-listings-current-relational",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "registry-history-sales-parity",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "registry-history-sales-current-relational",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "registry-history-activity-parity",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "registry-history-activity-current-relational",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "registry-history-records-search-parity",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "registry-history-records-search-current-relational",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "registry-history-records-page-2-parity",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "registry-history-records-page-2-current-relational",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "registry-confirmed-records-semantic-parity",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "registry-confirmed-listings-semantic-parity",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "registry-confirmed-sales-semantic-parity",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "registry-confirmed-activity-semantic-parity",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "registry-pending-visibility-parity",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "registry-confirmed-raw-evidence-complete",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "registry-payload-current-relational",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "growth-summary-snapshot-parity",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "inception-summary-snapshot-parity",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "infinity-summary-snapshot-parity",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "marketplace-summary-snapshot-parity",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "work-floor-snapshot-parity",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "work-summary-snapshot-parity",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "token-state-read-eligibility",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "token-state-current-relational",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "marketplace-token-state-lifecycle-present",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "work-token-state-current-relational",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "event-history-mail-protocol-db-page",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "event-history-credit-protocol-db-page",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "event-history-id-protocol-db-page",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "event-history-work-transfer-search-db-page",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "event-history-work-delist-search-db-page",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "address-mail-otc-db-page",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "address-mail-carbonz-db-page",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "address-mail-pinoratiko-db-page",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "token-history-all-mints-read-eligibility",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "token-history-all-mints-current-relational",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "token-history-all-transfers-read-eligibility",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "token-history-all-transfers-current-relational",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "token-history-work-transfer-query-read-eligibility",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "token-history-work-transfer-query-current-relational",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "token-history-all-invalid-events-read-eligibility",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "token-history-all-invalid-events-current-relational",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "token-history-work-holders-read-eligibility",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "token-history-work-holders-current-relational",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "token-history-work-market-log-read-eligibility",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "token-history-work-market-log-current-relational",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "token-history-work-delist-closed-query-read-eligibility",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "token-history-work-delist-closed-query-contains-expected-event",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "token-history-work-delist-closed-query-current-relational",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "token-history-non-work-holders-current-relational",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "tx-status-confirmed-sample-parity",
+          "ok": true,
+          "severity": "error"
+        }
+      ],
+      "failureCount": 0,
+      "warningCount": 0
+    },
+    "events": {
+      "apiBase": "http://127.0.0.1:8081",
+      "freshHistoryReads": false,
+      "network": "livenet",
+      "ok": true,
+      "checks": [
+        {
+          "name": "api-health-ok",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "ledger-green",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "ledger-covers-node-tip",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "ledger-has-no-missing-log-events",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "ledger-has-required-log-coverage-checks",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "db-confirmed-transactions-cover-canonical-action-txids",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "db-events-cover-ledger-confirmed-activity",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "all-confirmed-events-have-transaction-row",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "all-confirmed-events-join-confirmed-transaction",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "all-confirmed-events-have-raw-transaction-or-payload",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "all-confirmed-transactions-have-raw-transaction",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "event-search-index-populated",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "recent-confirmed-transactions-have-block-metadata",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "all-confirmed-transactions-have-block-metadata",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "op-return-table-populated",
+          "ok": true,
+          "severity": "warning"
+        },
+        {
+          "name": "work-growth-network-value-match",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "marketplace-work-network-value-match",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "inception-launch-ready",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "infinity-nonzero",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "reported-tx-db-reported WORK buy 8429",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "reported-tx-log-reported WORK buy 8429",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "reported-tx-history-reported WORK buy 8429",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "reported-tx-db-reported WORK buy 5dcd",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "reported-tx-log-reported WORK buy 5dcd",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "reported-tx-history-reported WORK buy 5dcd",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "reported-tx-db-reported WORK buy d946",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "reported-tx-log-reported WORK buy d946",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "reported-tx-history-reported WORK buy d946",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "reported-tx-db-reported WORK buy 4e59",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "reported-tx-log-reported WORK buy 4e59",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "reported-tx-history-reported WORK buy 4e59",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "reported-tx-db-reported WORK buy 2e57",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "reported-tx-log-reported WORK buy 2e57",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "reported-tx-history-reported WORK buy 2e57",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "reported-tx-db-Carbonz reported WORK buy",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "reported-tx-log-Carbonz reported WORK buy",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "reported-tx-history-Carbonz reported WORK buy",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "reported-tx-db-Carbonz delayed WORK transfer",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "reported-tx-log-Carbonz delayed WORK transfer",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "reported-tx-history-Carbonz delayed WORK transfer",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "reported-tx-db-Carbonz POWB transfer",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "reported-tx-log-Carbonz POWB transfer",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "reported-tx-history-Carbonz POWB transfer",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "reported-tx-db-Gullish POWB listing",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "reported-tx-log-Gullish POWB listing",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "reported-tx-history-Gullish POWB listing",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "reported-tx-db-spent seal listing closure",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "reported-tx-log-spent seal listing closure",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "reported-tx-history-spent seal listing closure",
+          "ok": true,
+          "severity": "error"
+        }
+      ],
+      "failureCount": 0,
+      "warningCount": 0
+    }
+  },
+  "uiProvenance": [
+    {
+      "root": "/var/www",
+      "releaseId": "0e767c69e785-20260929T165314Z",
+      "commit": "0e767c69e785945110a53092415894a4eab70d12",
+      "archive": "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-0e767c69e785-20260929T165314Z.tgz",
+      "archiveSha256": "2f0f1dc53e83efbcd1caec391fea7d19215b75e79f8aba15b05068d8febe2d68",
+      "archiveMatches": true,
+      "surfaces": [
+        {
+          "surface": "activity",
+          "files": 60,
+          "ok": true
+        },
+        {
+          "surface": "browser",
+          "files": 60,
+          "ok": true
+        },
+        {
+          "surface": "boost",
+          "files": 60,
+          "ok": true
+        },
+        {
+          "surface": "computer",
+          "files": 60,
+          "ok": true
+        },
+        {
+          "surface": "desktop",
+          "files": 60,
+          "ok": true
+        },
+        {
+          "surface": "dns",
+          "files": 60,
+          "ok": true
+        },
+        {
+          "surface": "growth",
+          "files": 60,
+          "ok": true
+        },
+        {
+          "surface": "id",
+          "files": 60,
+          "ok": true
+        },
+        {
+          "surface": "inception",
+          "files": 60,
+          "ok": true
+        },
+        {
+          "surface": "infinity",
+          "files": 60,
+          "ok": true
+        },
+        {
+          "surface": "landing",
+          "files": 60,
+          "ok": true
+        },
+        {
+          "surface": "marketplace",
+          "files": 60,
+          "ok": true
+        },
+        {
+          "surface": "nft",
+          "files": 60,
+          "ok": true
+        },
+        {
+          "surface": "token",
+          "files": 60,
+          "ok": true
+        },
+        {
+          "surface": "wallet",
+          "files": 60,
+          "ok": true
+        },
+        {
+          "surface": "work",
+          "files": 60,
+          "ok": true
+        }
+      ],
+      "allOk": true
+    },
+    {
+      "root": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-0e767c69e785-20260929T165314Z",
+      "releaseId": "d2c0afaffd9c-20260929T161019Z",
+      "commit": "d2c0afaffd9cd723fa99c02a6de6b86fe50a0be6",
+      "archive": "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-d2c0afaffd9c-20260929T161019Z.tgz",
+      "archiveSha256": "aa0dec2edd71d883ec97f0ae1ae09282efbe75843a6695fedc409b85b62401ac",
+      "archiveMatches": true,
+      "surfaces": [
+        {
+          "surface": "activity",
+          "files": 49,
+          "ok": true
+        },
+        {
+          "surface": "browser",
+          "files": 49,
+          "ok": true
+        },
+        {
+          "surface": "boost",
+          "files": 49,
+          "ok": true
+        },
+        {
+          "surface": "computer",
+          "files": 49,
+          "ok": true
+        },
+        {
+          "surface": "desktop",
+          "files": 49,
+          "ok": true
+        },
+        {
+          "surface": "dns",
+          "files": 49,
+          "ok": true
+        },
+        {
+          "surface": "growth",
+          "files": 49,
+          "ok": true
+        },
+        {
+          "surface": "id",
+          "files": 49,
+          "ok": true
+        },
+        {
+          "surface": "inception",
+          "files": 49,
+          "ok": true
+        },
+        {
+          "surface": "infinity",
+          "files": 49,
+          "ok": true
+        },
+        {
+          "surface": "landing",
+          "files": 49,
+          "ok": true
+        },
+        {
+          "surface": "marketplace",
+          "files": 49,
+          "ok": true
+        },
+        {
+          "surface": "nft",
+          "files": 49,
+          "ok": true
+        },
+        {
+          "surface": "token",
+          "files": 49,
+          "ok": true
+        },
+        {
+          "surface": "wallet",
+          "files": 49,
+          "ok": true
+        },
+        {
+          "surface": "work",
+          "files": 49,
+          "ok": true
+        }
+      ],
+      "allOk": true
+    }
+  ],
+  "uiRetentionInventory": "219881472\t/var/tmp/proofofwork-deploy/proofofwork-ui-surfaces-863385322af4-20260929T140259Z\n12288\t/var/tmp/proofofwork-deploy/audit26-ui-tools-5970b26e610b-20260926T225712Z\n205279232\t/var/tmp/proofofwork-deploy/proofofwork-ui-surfaces-cfd0899af4f8-20260927T173242Z\n219881472\t/var/tmp/proofofwork-deploy/proofofwork-ui-surfaces-c12b68c51faa-20260929T131338Z\n8192\t/var/tmp/proofofwork-deploy/boost-archive-base-b111f5941375-20260927T125836Z\n8192\t/var/tmp/proofofwork-deploy/profile-archive-62bb44d2251b-20260928T000229Z\n249860096\t/var/tmp/proofofwork-deploy/proofofwork-ui-source-f48d3a777a50-20260929T043647Z\n248074240\t/var/tmp/proofofwork-deploy/proofofwork-ui-source-c64963f4649f-20260927T001231Z\n248545280\t/var/tmp/proofofwork-deploy/proofofwork-ui-source-5970b26e610b-20260926T225712Z\n219881472\t/var/tmp/proofofwork-deploy/proofofwork-ui-surfaces-942478c7fa78-20260929T143619Z\n248717312\t/var/tmp/proofofwork-deploy/proofofwork-ui-source-cfd0899af4f8-20260927T173242Z\n249749504\t/var/tmp/proofofwork-deploy/proofofwork-ui-source-825f7288d606-20260928T004813Z\n1445888\t/var/tmp/proofofwork-deploy/proofofwork-ui-source-388572b6c8eb-20260925T095718Z\n249929728\t/var/tmp/proofofwork-deploy/proofofwork-ui-source-c12b68c51faa-20260929T131338Z\n205279232\t/var/tmp/proofofwork-deploy/proofofwork-ui-surfaces-b111f5941375-20260927T125836Z\n217088\t/var/tmp/proofofwork-deploy/audit26-ui-cutover-c64963f4649f-20260927T001231Z\n219619328\t/var/tmp/proofofwork-deploy/proofofwork-www-stage-863385322af4-20260929T134749Z\n249257984\t/var/tmp/proofofwork-deploy/proofofwork-ui-source-62bb44d2251b-20260928T000229Z\n8192\t/var/tmp/proofofwork-deploy/profile-archive-825f7288d606-20260928T004813Z\n250212352\t/var/tmp/proofofwork-deploy/proofofwork-ui-source-d2c0afaffd9c-20260929T161019Z\n249204736\t/var/tmp/proofofwork-deploy/proofofwork-ui-source-c964e304a8f9-20260927T181330Z\n205524992\t/var/tmp/proofofwork-deploy/proofofwork-ui-surfaces-08a3a9814c3c-20260928T170441Z\n4096\t/var/tmp/proofofwork-deploy/release-388572b6c8eb-20260925T095718Z\n249438208\t/var/tmp/proofofwork-deploy/proofofwork-ui-source-22a1b0d31d1c-20260929T035749Z\n205524992\t/var/tmp/proofofwork-deploy/proofofwork-ui-surfaces-b608e73eab41-20260928T230900Z\n248901632\t/var/tmp/proofofwork-deploy/proofofwork-ui-source-b111f5941375-20260927T125836Z\n205402112\t/var/tmp/proofofwork-deploy/proofofwork-ui-surfaces-62bb44d2251b-20260928T000229Z\n205524992\t/var/tmp/proofofwork-deploy/proofofwork-ui-surfaces-50eb42fe1c806f0b-20260928T043700Z\n8192\t/var/tmp/proofofwork-deploy/profile-archive-c964e304a8f9-20260927T181330Z\n249974784\t/var/tmp/proofofwork-deploy/proofofwork-ui-source-863385322af4-20260929T140259Z\n249446400\t/var/tmp/proofofwork-deploy/proofofwork-ui-source-08a3a9814c3c-20260928T170441Z\n249470976\t/var/tmp/proofofwork-deploy/proofofwork-ui-source-b608e73eab41-20260928T230900Z\n205340672\t/var/tmp/proofofwork-deploy/proofofwork-ui-surfaces-c964e304a8f9-20260927T181330Z\n249970688\t/var/tmp/proofofwork-deploy/proofofwork-ui-source-0e767c69e785-20260929T165314Z\n8192\t/var/tmp/proofofwork-deploy/amo-loading-archive-b608e73eab41-20260928T230900Z\n45056\t/var/tmp/proofofwork-deploy/wallet-incb-tools-b752518bf8b4-20260927T014804Z\n219881472\t/var/tmp/proofofwork-deploy/proofofwork-ui-surfaces-863385322af4-20260929T134749Z\n219815936\t/var/tmp/proofofwork-deploy/proofofwork-ui-surfaces-ce094d436e9b-20260929T034645Z\n249995264\t/var/tmp/proofofwork-deploy/proofofwork-ui-source-863385322af4-20260929T134749Z\n205463552\t/var/tmp/proofofwork-deploy/proofofwork-ui-surfaces-825f7288d606-20260928T004813Z\n249937920\t/var/tmp/proofofwork-deploy/proofofwork-ui-source-942478c7fa78-20260929T143619Z\n248180736\t/var/tmp/proofofwork-deploy/proofofwork-ui-source-b752518bf8b4-20260927T014804Z\n258473984\t/var/tmp/proofofwork-deploy/proofofwork-ui-source-50eb42fe1c806f0b-20260928T043700Z\n11089637376\t/var/tmp/proofofwork-deploy\n230977536\t/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-825f7288d606-20260928T004813Z\n231264256\t/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-f48d3a777a50-20260929T043647Z\n229863424\t/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-22a1b0d31d1c-20260929T035749Z\n219623424\t/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-0e767c69e785-20260929T165314Z\n230871040\t/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-62bb44d2251b-20260928T000229Z\n219561984\t/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-c12b68c51faa-20260929T131338Z\n231768064\t/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-c64963f4649f-20260927T001231Z\n230641664\t/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-b111f5941375-20260927T125836Z\n219623424\t/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-d2c0afaffd9c-20260929T161019Z\n231047168\t/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-50eb42fe1c806f0b-20260928T043700Z\n219623424\t/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-942478c7fa78-20260929T143619Z\n428503040\t/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-863385322af4-20260929T140259Z\n416346112\t/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-08a3a9814c3c-20260928T170441Z\n230596608\t/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-b752518bf8b4-20260927T014804Z\n230948864\t/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-cfd0899af4f8-20260927T173242Z\n413396992\t/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-b608e73eab41-20260928T230900Z\n415301632\t/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-c964e304a8f9-20260927T181330Z\n4629962752\t/var/backups/proofofwork-ui/rollback-roots\n/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-825f7288d606-20260928T004813Z/.proofofwork-ui-release\nformat=proofofwork-ui-release-v3\nrelease_id=62bb44d2251b-20260928T000229Z\ncommit=62bb44d2251bb360254485ff6accdf23347a5a92\nsource_tree=b92185c6782955f92f76ec9707aa4571fb420f46\nsource_attestation=detached-recursive-git-tree-v1\n/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-f48d3a777a50-20260929T043647Z/.proofofwork-ui-release\nformat=proofofwork-ui-release-v3\nrelease_id=22a1b0d31d1c-20260929T035749Z\ncommit=22a1b0d31d1c2ce37c7a22cd3e681030a1e97686\nsource_tree=b887035d9249a494806854ef353745b3dafc3585\nsource_attestation=detached-recursive-git-tree-v1\n/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-22a1b0d31d1c-20260929T035749Z/.proofofwork-ui-release\nformat=proofofwork-ui-release-v3\nrelease_id=b608e73eab41-20260928T230900Z\ncommit=b608e73eab41921c10670a5687afcfac782a6f8e\nsource_tree=baee72a5ed5a40b4a5c1faac8baf6a72709685c1\nsource_attestation=detached-recursive-git-tree-v1\n/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-0e767c69e785-20260929T165314Z/.proofofwork-ui-release\nformat=proofofwork-ui-release-v3\nrelease_id=d2c0afaffd9c-20260929T161019Z\ncommit=d2c0afaffd9cd723fa99c02a6de6b86fe50a0be6\nsource_tree=202e9fbd883c55e6df9cc1725906c31c34030596\nsource_attestation=detached-recursive-git-tree-v1\n/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-62bb44d2251b-20260928T000229Z/.proofofwork-ui-release\nformat=proofofwork-ui-release-v3\nrelease_id=c964e304a8f9-20260927T181330Z\ncommit=c964e304a8f977feab21482ca567fce74bf4c814\nsource_tree=3f9e0b9573b629f3ac3504eda319268b02e7bb4b\nsource_attestation=detached-recursive-git-tree-v1\n/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-c12b68c51faa-20260929T131338Z/.proofofwork-ui-release\nformat=proofofwork-ui-release-v3\nrelease_id=f48d3a777a50-20260929T043647Z\ncommit=f48d3a777a50f3434643e54852bb53dbbbcf7057\nsource_tree=b37031afb1b2c4d83981353cd05bd06b128bb7d0\nsource_attestation=detached-recursive-git-tree-v1\n/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-c64963f4649f-20260927T001231Z/.proofofwork-ui-release\nformat=proofofwork-ui-release-v3\nrelease_id=5970b26e610b-20260926T225712Z\ncommit=5970b26e610ba13412f8a4e68065f89e3f599fa3\nsource_tree=e613a990501a59c856be4e9709252a64c04e2738\nsource_attestation=detached-recursive-git-tree-v1\n/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-b111f5941375-20260927T125836Z/.proofofwork-ui-release\nformat=proofofwork-ui-release-v3\nrelease_id=b752518bf8b4-20260927T014804Z\ncommit=b752518bf8b4e8cb13691d3a09a3ce865c6e0dd0\nsource_tree=44a0443ffcb06ed04f14c4d68213788731631bae\nsource_attestation=detached-recursive-git-tree-v1\n/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-d2c0afaffd9c-20260929T161019Z/.proofofwork-ui-release\nformat=proofofwork-ui-release-v3\nrelease_id=942478c7fa78-20260929T143619Z\ncommit=942478c7fa7889362470996fe8258de3a250f941\nsource_tree=30b3d1a0a1a1ccf3c1257da2b64ec94e302555ce\nsource_attestation=detached-recursive-git-tree-v1\n/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-50eb42fe1c806f0b-20260928T043700Z/.proofofwork-ui-release\nformat=proofofwork-ui-release-v3\nrelease_id=825f7288d606-20260928T004813Z\ncommit=825f7288d606499c564a1bb4271fc8e518e3c3da\nsource_tree=740ce0fd49487a4dcd8c9b2da82e6f83844273e1\nsource_attestation=detached-recursive-git-tree-v1\n/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-942478c7fa78-20260929T143619Z/.proofofwork-ui-release\nformat=proofofwork-ui-release-v3\nrelease_id=863385322af4-20260929T140259Z\ncommit=863385322af4559a8ffd7b44ca3d47b339481532\nsource_tree=d9336d6fde05c84596dd5756dc3c6232453e56a2\nsource_attestation=detached-recursive-git-tree-v1\n/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-863385322af4-20260929T140259Z/.proofofwork-ui-release\nformat=proofofwork-ui-release-v3\nrelease_id=c12b68c51faa-20260929T131338Z\ncommit=c12b68c51faace1ec1aa2a1b00398851a1e7c08d\nsource_tree=526a665b10f38e5a06bbf39f4a04101608a1c6cb\nsource_attestation=detached-recursive-git-tree-v1\n/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-08a3a9814c3c-20260928T170441Z/.proofofwork-ui-release\nformat=proofofwork-ui-release-v3\nrelease_id=50eb42fe1c806f0b-20260928T043700Z\ncommit=50eb42fe1c806f0b6baf26f7d17b136884fa2a25\nsource_tree=a9492d45e68f066132159faaadd696d9c0f4c6af\nsource_attestation=detached-recursive-git-tree-v1\n/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-b752518bf8b4-20260927T014804Z/.proofofwork-ui-release\nformat=proofofwork-ui-release-v3\nrelease_id=c64963f4649f-20260927T001231Z\ncommit=c64963f4649f021c3d91bf71ad1a3dcde37e6d2b\nsource_tree=d5c2562fe3e0ccf88efba81f990c38bb14238e8e\nsource_attestation=detached-recursive-git-tree-v1\n/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-cfd0899af4f8-20260927T173242Z/.proofofwork-ui-release\nformat=proofofwork-ui-release-v3\nrelease_id=b111f5941375-20260927T125836Z\ncommit=b111f594137598eb2b7bf6296e8691eda132da13\nsource_tree=ce941ff6574b2782e6f893ef9e96b9440c95e13f\nsource_attestation=detached-recursive-git-tree-v1\n/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-b608e73eab41-20260928T230900Z/.proofofwork-ui-release\nformat=proofofwork-ui-release-v3\nrelease_id=08a3a9814c3c-20260928T170441Z\ncommit=08a3a9814c3ccaa2a63eaf7b900755fd04b89418\nsource_tree=a58c488812cf3dcb8aef96556b319f3d215744e5\nsource_attestation=detached-recursive-git-tree-v1\n/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-c964e304a8f9-20260927T181330Z/.proofofwork-ui-release\nformat=proofofwork-ui-release-v3\nrelease_id=cfd0899af4f8-20260927T173242Z\ncommit=cfd0899af4f8d047fdef7d0297307a93a21ae38e\nsource_tree=de952708e508a6fdf8ca97befd282d22c82a7f3f\nsource_attestation=detached-recursive-git-tree-v1\nFilesystem       1B-blocks        Used   Available Use% Mounted on\n/dev/sda1      39973924864 27169632256 11120099328  71% /\n",
+  "uiFinal": "94405785 proofofwork-ui-source-942478c7fa78-20260929T143619Z.tgz\n7721 publish-ui-dns-growth-8633853.sh\n124 proofofwork-ui-surfaces-08a3a9814c3c-20260928T170441Z.tgz.sha256\n367 audit5-stream-surfaces-0e767c69e785-20260929T165314Z.json\n37451 publisher-before-b608e73eab41-20260928T230900Z.sh\n18235 ui-capacity.py\n7557 stream-ui-bundle.py\n367 audit5-stream-surfaces-c64963f4649f-20260927T001231Z.json\n5885 deploy-boost-ui-remote.py\n122 proofofwork-ui-source-863385322af4-20260929T134749Z.tgz.sha256\n93988803 proofofwork-ui-source-62bb44d2251b-20260928T000229Z.tgz\n122 proofofwork-ui-source-c12b68c51faa-20260929T131338Z.tgz.sha256\n5174 profile-ui-publish.py\n381 profile-release-62bb44d2251b-20260928T000229Z.json\n182494152 proofofwork-ui-surfaces-c964e304a8f9-20260927T181330Z.tgz\n367 audit5-stream-surfaces-5970b26e610b-20260926T225712Z.json\n122 proofofwork-ui-source-08a3a9814c3c-20260928T170441Z.tgz.sha256\n6962 amo-loading-ui-publish-config.json\n124 proofofwork-ui-surfaces-cfd0899af4f8-20260927T173242Z.tgz.sha256\n94106952 proofofwork-ui-source-863385322af4-20260929T140259Z.tgz\n194839711 proofofwork-ui-surfaces-942478c7fa78-20260929T143619Z.tgz\n325 boost-ui-publish-b111f5941375-20260927T125836Z.json\n182476509 proofofwork-ui-surfaces-cfd0899af4f8-20260927T173242Z.tgz\n363 audit5-stream-source-0e767c69e785-20260929T165314Z.json\n7740 publish-ui-dns-growth-8633853-140259.sh\n128 proofofwork-ui-surfaces-50eb42fe1c806f0b-20260928T043700Z.tgz.sha256\n94464991 proofofwork-ui-source-863385322af4-20260929T134749Z.tgz\n7740 publish-ui-dns-growth-942478c-143619.sh\n93669880 proofofwork-ui-source-b111f5941375-20260927T125836Z.tgz\n5798 boost-images-ui-publish-config.json\n182540737 proofofwork-ui-surfaces-62bb44d2251b-20260928T000229Z.tgz\n363 audit5-stream-source-b752518bf8b4-20260927T014804Z.json\n122 proofofwork-ui-source-942478c7fa78-20260929T143619Z.tgz.sha256\n5761 amo-loading-ui-publish.py\n182589727 proofofwork-ui-surfaces-b608e73eab41-20260928T230900Z.tgz\n182582995 proofofwork-ui-surfaces-50eb42fe1c806f0b-20260928T043700Z.tgz\n194840515 proofofwork-ui-surfaces-863385322af4-20260929T134749Z.tgz\n94088077 proofofwork-ui-source-08a3a9814c3c-20260928T170441Z.tgz\n94100103 proofofwork-ui-source-b608e73eab41-20260928T230900Z.tgz\n194838940 proofofwork-ui-surfaces-c12b68c51faa-20260929T131338Z.tgz\n381 profile-release-825f7288d606-20260928T004813Z.json\n5693 boost-fees-publish-config.json\n363 audit5-stream-source-c64963f4649f-20260927T001231Z.json\n182591073 proofofwork-ui-surfaces-08a3a9814c3c-20260928T170441Z.tgz\n93969280 proofofwork-ui-source-c964e304a8f9-20260927T181330Z.tgz\n4743 ui-stage-candidate.sh\n94394994 proofofwork-ui-source-c12b68c51faa-20260929T131338Z.tgz\n363 audit5-stream-source-ce094d436e9b-20260929T034645Z.json\n124 proofofwork-ui-surfaces-c12b68c51faa-20260929T131338Z.tgz.sha256\n124 proofofwork-ui-surfaces-942478c7fa78-20260929T143619Z.tgz.sha256\n194699048 proofofwork-ui-surfaces-863385322af4-20260929T140259Z.tgz\n93484694 proofofwork-ui-source-cfd0899af4f8-20260927T173242Z.tgz\n367 audit5-stream-surfaces-22a1b0d31d1c-20260929T035749Z.json\n94469138 proofofwork-ui-source-825f7288d606-20260928T004813Z.tgz\n363 audit5-stream-source-22a1b0d31d1c-20260929T035749Z.json\n122 proofofwork-ui-source-cfd0899af4f8-20260927T173242Z.tgz.sha256\n4411 boost-ui-deploy-config.json\n124 proofofwork-ui-surfaces-863385322af4-20260929T140259Z.tgz.sha256\n122 proofofwork-ui-source-863385322af4-20260929T140259Z.tgz.sha256\n103100044 proofofwork-ui-source-50eb42fe1c806f0b-20260928T043700Z.tgz\n381 amo-loading-release-b608e73eab41-20260928T230900Z.json\n5437 profile-ui-publish-config.json\n367 audit5-stream-surfaces-ce094d436e9b-20260929T034645Z.json\n367 audit5-stream-surfaces-b752518bf8b4-20260927T014804Z.json\n182537052 proofofwork-ui-surfaces-825f7288d606-20260928T004813Z.tgz\n381 profile-release-c964e304a8f9-20260927T181330Z.json\n182534959 proofofwork-ui-surfaces-b111f5941375-20260927T125836Z.tgz\n126 proofofwork-ui-source-50eb42fe1c806f0b-20260928T043700Z.tgz.sha256\n124 proofofwork-ui-surfaces-863385322af4-20260929T134749Z.tgz.sha256\n363 audit5-stream-source-5970b26e610b-20260926T225712Z.json\nFilesystem       1B-blocks        Used   Available Use% Mounted on\n/dev/sda1      39973924864 27170217984 11119513600  71% /\nNRestarts=0\nActiveState=active\n-- No entries --\n",
+  "backupVerification": "proof_indexer.dump: OK\nglobals.sql: OK\n3598; 2606 824626 FK CONSTRAINT proof_indexer work_amo_v8_listing_terms work_amo_v8_listing_terms_network_listing_txid_fkey proof_indexer\n3599; 2606 824631 FK CONSTRAINT proof_indexer work_usd_quotes work_usd_quotes_network_txid_fkey proof_indexer\n",
+  "exactIdAuditTotals": "AUDIT_GATE_START ids 2026-09-29T19:34:24Z\nProofOfWork ID registry audit\nAddress source: http://127.0.0.1:8081\nRegistry: bc1qfwytlzyr3ym3enz2eutwtjsf9kkf6uqkjydk3e\nFetched transactions: 588\nCovered confirmed registry transactions: 565\nCovered pending registry transactions: 23\nCanonical lifecycle parity: verified against exact Core-ordered chain replay\nLifecycle events: 538\nActive listings: 6\nCanonical sales: 4\nRegistration attempts: 548\nConfirmed winners: 508\nPending candidates: 21\nRefund candidates: 17\nPending watchlist: 2\n\nRefund candidates: 17\n- trump | duplicate_confirmed_refund_candidate | 1000 sats | confirmed | 49b4e0b7e98c7e2ef6d6231a898c529571cc2c62d1894a5920a334900e1dd3bb | refund: bc1p8m24m3ycx2awggnlp4ljh0m8l54985scfwshet9zdg4qtf80udhqkwrx0c | winner: 7d156fcad1c3cc0a044685246cc6e125010cc26c4b5ddbd0b86cb79855c16218\n- 4 | duplicate_confirmed_refund_candidate | 1000 sats | confirmed | af5ffd87aff552a4e1d142e7e2f590870246dbef6a8a90d0b610d1b3f6f59aeb | refund: bc1p7kf50cf89xhjatzssjp67wjcs6m05d3y68jjcfkyn699yw2j2h8sh5pewc | winner: 8150aa31d41868b71cd6a13c90d40895811586393414b4dd91c666f520cbdb97\n- 4 | duplicate_confirmed_refund_candidate | 1000 sats | confirmed | 974c705a4709387a4abb30153f73a972263f449ca8fa0a99e72f3acd37572057 | refund: bc1p7kf50cf89xhjatzssjp67wjcs6m05d3y68jjcfkyn699yw2j2h8sh5pewc | winner: 8150aa31d41868b71cd6a13c90d40895811586393414b4dd91c666f520cbdb97\n- okx | duplicate_confirmed_refund_candidate | 1000 sats | confirmed | 3aa6bd1e5ff028033c32ca4a597705f8ccfab9bc08180b23f18f5f7b4391cb04 | refund: bc1p7kf50cf89xhjatzssjp67wjcs6m05d3y68jjcfkyn699yw2j2h8sh5pewc | winner: 80fcaa7d288ad185a7a6c1d250d77687af67b6f76ee435f18b2d08b49a1b3e15\n- ai | duplicate_confirmed_refund_candidate | 1000 sats | confirmed | ea9e5cd1508e40294462e52b1fc2e9a05476f2421336e7751da04ee99c17ce90 | refund: bc1p7kf50cf89xhjatzssjp67wjcs6m05d3y68jjcfkyn699yw2j2h8sh5pewc | winner: 89adc701264dc297f25820ef086c31031740e14c755c3cfd6976231d779f9a11\n- cz | duplicate_confirmed_refund_candidate | 1000 sats | confirmed | cbd801317e44af38197d3f7188d8c254712a3bdb91d8c8308e40c1c2eaca784d | refund: bc1p7kf50cf89xhjatzssjp67wjcs6m05d3y68jjcfkyn699yw2j2h8sh5pewc | winner: 78a5ef51a07219fb1ee962960db8217eb4d6c7f404a9caba18865038b62e84dc\n- okx | duplicate_confirmed_refund_candidate | 1000 sats | confirmed | ce2b15c05627036e620692193aae4b67f65ffdb84e4cdb63c2e033c88777fd07 | refund: bc1p7kf50cf89xhjatzssjp67wjcs6m05d3y68jjcfkyn699yw2j2h8sh5pewc | winner: 80fcaa7d288ad185a7a6c1d250d77687af67b6f76ee435f18b2d08b49a1b3e15\n- bitcoin | duplicate_confirmed_refund_candidate | 1000 sats | confirmed | eef3ee94b9d918619438be1d379eb573c9a23c12b017127850b0503b1ae3662a | refund: bc1q568xckhc4j0grkd0qjh23wl3ulqsufv2drrn6d | winner: 6ef73916cdc421e62df2a7df7bb4269b40db7b8616f9545f99f34a15e7a1932e\n- btc | duplicate_confirmed_refund_candidate | 1000 sats | confirmed | 2e7462975fcaa633f6ce9aaf8d226eda029635c4c65712aebf1cf2630b8e944b | refund: bc1q568xckhc4j0grkd0qjh23wl3ulqsufv2drrn6d | winner: c785dc99c5a23cafbd1dda34a0560eb20382f4b298874c3ffc63e53a80676fa7\n- sats | duplicate_confirmed_refund_candidate | 1000 sats | confirmed | d9322ede24688cee69975e4caf9d81b971f11d351b95bc58dbf5e76b4ddbd687 | refund: bc1q568xckhc4j0grkd0qjh23wl3ulqsufv2drrn6d | winner: f226dfa265ed88d21a4bf08ae2d04ea17080af7cd54997e322b4222d1324680d\n- bitcoin | duplicate_confirmed_refund_candidate | 1000 sats | confirmed | 4ba43814d73432172460b57480ec8a8568b2d93d1b7994ff273b35d70924f846 | refund: bc1q568xckhc4j0grkd0qjh23wl3ulqsufv2drrn6d | winner: 6ef73916cdc421e62df2a7df7bb4269b40db7b8616f9545f99f34a15e7a1932e\n- pepe | duplicate_confirmed_refund_candidate | 1000 sats | confirmed | b13dc30a1d04a334e6efc2f13299c1964c7120a3796efb84233ae59c8d2c283d | refund: bc1q568xckhc4j0grkd0qjh23wl3ulqsufv2drrn6d | winner: 34047cd0696415bc0f5d376428225d7c46860dbcae19cea47f7bd0a5e90714b2\n- x | duplicate_confirmed_refund_candidate | 1000 sats | confirmed | 29b725a414ddb7dff947338f04924ab319a6a97d4c4e23f4f77aac6359013964 | refund: bc1q568xckhc4j0grkd0qjh23wl3ulqsufv2drrn6d | winner: 2735b63314c65844b86f8653902e439572854ac49c895cb0f1c7dd3d7331df4e\n- pow | duplicate_confirmed_refund_candidate | 1000 sats | confirmed | feceb410fcd0973f4ec856db8e2e31cb76e8e1ae7a62bd94827d3996aab49483 | refund: bc1q568xckhc4j0grkd0qjh23wl3ulqsufv2drrn6d | winner: 588d7b052da4de76be500963b5313a9ce4934fca908237b9004a6efcc0868b8f\n- (unknown id) | invalid_confirmed_refund_candidate | 1000 sats | confirmed | 46c9785e6c9468f40058c0e4ff0906eb3a2050a87dc86b57177bce66bd366eb3 | refund: bc1qr8uxjrn8xhmr2s6295fgrqfmx2h2xx52ndt2qg | error: missing_registration_op_return\n- (unknown id) | invalid_confirmed_refund_candidate | 1000 sats | confirmed | 696e667efab8b2585109744bb32066ebb65496648a3dc4542c6733dc20350751 | refund: bc1paqddyak2dukl58z9j65rl7gks4xrf8hqc3h5f627hx3ss67rqknqvxaz48 | error: missing_registration_op_return\n- (unknown id) | invalid_confirmed_refund_candidate | 16227 sats | confirmed | e242656f4506dab3c8ab82fdc96ef3622d5d7b8a1c29d0495a88ff3c6f98b6f6 | refund: bc1qfwytlzyr3ym3enz2eutwtjsf9kkf6uqkjydk3e | error: missing_registration_op_return\n\nRefund totals by address: 6\n- bc1qfwytlzyr3ym3enz2eutwtjsf9kkf6uqkjydk3e | 16227 sats | 1 txs | IDs: (unknown id)\n- bc1q568xckhc4j0grkd0qjh23wl3ulqsufv2drrn6d | 7000 sats | 7 txs | IDs: bitcoin, btc, sats, bitcoin, pepe, x, pow\n- bc1p7kf50cf89xhjatzssjp67wjcs6m05d3y68jjcfkyn699yw2j2h8sh5pewc | 6000 sats | 6 txs | IDs: 4, 4, okx, ai, cz, okx\n- bc1p8m24m3ycx2awggnlp4ljh0m8l54985scfwshet9zdg4qtf80udhqkwrx0c | 1000 sats | 1 txs | IDs: trump\n- bc1paqddyak2dukl58z9j65rl7gks4xrf8hqc3h5f627hx3ss67rqknqvxaz48 | 1000 sats | 1 txs | IDs: (unknown id)\n- bc1qr8uxjrn8xhmr2s6295fgrqfmx2h2xx52ndt2qg | 1000 sats | 1 txs | IDs: (unknown id)\n\nPending watchlist: 2\n- ordi | duplicate_pending_watch | 1000 sats | pending | 8c7763b10c804bca60631ec3a20967ccd0fc369ad063ba6567c54b814e414688 | refund: bc1pyt7vze8s44y3sjdlgam0l5a530apms70m6mafcrpnmgknj2pgveskeusvz | winner: 5ea48555efd9c64c4a831014d0dc18b29e6b7e0c4ce5699f043e8aa0ec60897d\n- ai | duplicate_pending_watch | 1000 sats | pending | 2a879e276e899acea9dbef9a59410c722837cab2205d216f1880475d6e774d2e | refund: bc1plqn2g9dkyspk48r8ek83p3ecc32vz2g9fnlw006yvmvqvx8cnxyskrt9dc | winner: 89adc701264dc297f25820ef086c31031740e14c755c3cfd6976231d779f9a11\n\nPending watch totals by address: 2\n- bc1plqn2g9dkyspk48r8ek83p3ecc32vz2g9fnlw006yvmvqvx8cnxyskrt9dc | 1000 sats | 1 txs | IDs: ai\n- bc1pyt7vze8s44y3sjdlgam0l5a530apms70m6mafcrpnmgknj2pgveskeusvz | 1000 sats | 1 txs | IDs: ordi\n\nNo report files written (use --write-reports and --output-dir PATH to opt in). \nAUDIT_GATE_END ids 0\n",
+  "marketplaceRegression": {
+    "passed": true,
+    "getRequests": 102,
+    "http503Responses": 10,
+    "convergenceWaits": 11,
+    "finalLine": "Marketplace full regression checks passed for https://amo.proofofwork.me: delist, fresh summaries, sealed listings, sales, wallet, and Log close status."
+  },
+  "mailRegression": {
+    "apiBase": "https://computer.proofofwork.me",
+    "network": "livenet",
+    "ok": true,
+    "registry": {
+      "records": 529,
+      "source": "proof-indexer-current-id-events+proof-indexer-confirmed-id-records"
+    },
+    "historyResults": [
+      {
+        "label": "otc@proofofwork.me self-send",
+        "eventHistoryCount": 7,
+        "logHistoryCount": 1,
+        "txid": "64dcddd3bc035ad57e021f302f021fac5c135c20dcfeffb487ba6b23317d155e"
+      },
+      {
+        "label": "otc@proofofwork.me latest POWB self-send",
+        "eventHistoryCount": 7,
+        "logHistoryCount": 1,
+        "txid": "e54e68d1e567ab6158100d27a6fe357950d19248336af90fd4e7ed068f650b46"
+      }
+    ],
+    "results": [
+      {
+        "label": "carbonz@proofofwork.me",
+        "inbox": 27,
+        "indexedEvents": 58,
+        "scanFailed": false,
+        "sent": 32,
+        "source": "proof-indexer-mail",
+        "total": 59
+      },
+      {
+        "label": "gullish@proofofwork.me contact mail sender",
+        "inbox": 186,
+        "indexedEvents": 190,
+        "scanFailed": false,
+        "sent": 184,
+        "source": "proof-indexer-mail",
+        "total": 370
+      },
+      {
+        "label": "gullish contact mail recipient",
+        "inbox": 34,
+        "indexedEvents": 82,
+        "scanFailed": false,
+        "sent": 69,
+        "source": "proof-indexer-mail",
+        "total": 103
+      },
+      {
+        "label": "armyofyouth@proofofwork.me",
+        "inbox": 23,
+        "indexedEvents": 31,
+        "scanFailed": false,
+        "sent": 11,
+        "source": "proof-indexer-mail+historical-dropped-mail-witness+proof-indexer-event-mail-overlay",
+        "total": 35
+      },
+      {
+        "label": "pinoratiko@proofofwork.me",
+        "inbox": 78,
+        "indexedEvents": 159,
+        "scanFailed": false,
+        "sent": 81,
+        "source": "proof-indexer-mail",
+        "total": 159
+      },
+      {
+        "label": "otc@proofofwork.me self-send",
+        "inbox": 29,
+        "indexedEvents": 30,
+        "scanFailed": false,
+        "sent": 29,
+        "source": "proof-indexer-mail",
+        "total": 58
+      },
+      {
+        "label": "otc@proofofwork.me latest POWB self-send",
+        "inbox": 29,
+        "indexedEvents": 30,
+        "scanFailed": false,
+        "sent": 29,
+        "source": "proof-indexer-mail",
+        "total": 58
+      },
+      {
+        "label": "desktop public file sender",
+        "inbox": 1,
+        "indexedEvents": 2,
+        "scanFailed": false,
+        "sent": 1,
+        "source": "proof-indexer-mail",
+        "total": 2
+      }
+    ]
+  },
+  "surfaceRegression": "audit start proofofwork.me\naudit complete proofofwork.me\naudit start id.proofofwork.me\naudit complete id.proofofwork.me\naudit start dns.proofofwork.me\naudit failed dns.proofofwork.me\naudit start desktop.proofofwork.me\naudit complete desktop.proofofwork.me\naudit start browser.proofofwork.me\naudit complete browser.proofofwork.me\naudit start boost.proofofwork.me\naudit complete boost.proofofwork.me\naudit start amo.proofofwork.me\naudit complete amo.proofofwork.me\naudit start credit.proofofwork.me\naudit complete credit.proofofwork.me\naudit start wallet.proofofwork.me\naudit complete wallet.proofofwork.me\naudit start work.proofofwork.me\naudit complete work.proofofwork.me\naudit start infinity.proofofwork.me\naudit complete infinity.proofofwork.me\naudit start inception.proofofwork.me\naudit complete inception.proofofwork.me\naudit start log.proofofwork.me\naudit complete log.proofofwork.me\naudit start growth.proofofwork.me\naudit complete growth.proofofwork.me\naudit start computer.proofofwork.me\naudit complete computer.proofofwork.me\nok proofofwork.me html=1010ms assets=4 api=[registry summary 12387ms]\nok id.proofofwork.me html=571ms assets=4 api=[ids summary 4744ms]\nfail dns.proofofwork.me html=562ms assets=4 error=missing registry record count\nok desktop.proofofwork.me html=612ms assets=4 api=[log summary 2000ms]\nok browser.proofofwork.me html=443ms assets=4 api=[activity summary 2148ms]\nok boost.proofofwork.me html=509ms assets=4 api=[boost feed 2154ms]\nok amo.proofofwork.me html=431ms assets=4 api=[marketplace summary 8133ms]\nok credit.proofofwork.me html=425ms assets=4 api=[token summary 2464ms]\nok wallet.proofofwork.me html=456ms assets=4 api=[WORK token 11320ms]\nok work.proofofwork.me html=425ms assets=4 api=[work summary 5899ms, work floor 5242ms]\nok infinity.proofofwork.me html=475ms assets=4 api=[infinity summary 2548ms]\nok inception.proofofwork.me html=416ms assets=4 api=[inception summary 2087ms]\nok log.proofofwork.me html=465ms assets=4 api=[log summary 2070ms]\nok growth.proofofwork.me html=422ms assets=4 api=[growth summary 1840ms]\nok computer.proofofwork.me html=203ms assets=4 api=[health 1293ms, consistency 3508ms]\n{\"failed\":[\"dns.proofofwork.me\"],\"ok\":false,\"surfaces\":15}\n",
+  "localChecks": {
+    "contract-api": "\n> proofofwork-me@0.1.0 check:api-truth\n> node scripts/check-api-truth-contract.mjs\n\nWORK AMO V8 gate regressions passed: pending decision normalization, aggregate transfer admission, persistent Q16 replay, next-block liveness, and canonical declaration discovery.\nAPI truth contract check passed.\n",
+    "contract-containment": "\n> proofofwork-me@0.1.0 check:client-read-containment\n> node scripts/check-client-read-containment.mjs\n\n{\"checks\":43,\"logCacheDimensions\":[\"query\",\"kind\",\"page\",\"cursor\",\"snapshot\"],\"ok\":true}\n",
+    "contract-growth": "\n> proofofwork-me@0.1.0 check:growth\n> node --test scripts/check-growth-forecast.test.mjs scripts/check-boost-growth-client.test.mjs scripts/check-boost-growth.mjs scripts/check-growth-archive.test.mjs\n\nTAP version 13\n# Subtest: scripts/check-boost-growth-client.test.mjs\nok 1 - scripts/check-boost-growth-client.test.mjs\n  ---\n  duration_ms: 105.230429\n  type: 'test'\n  ...\n# Subtest: scripts/check-boost-growth.mjs\nok 2 - scripts/check-boost-growth.mjs\n  ---\n  duration_ms: 1222.35866\n  type: 'test'\n  ...\n# Subtest: scripts/check-growth-archive.test.mjs\nok 3 - scripts/check-growth-archive.test.mjs\n  ---\n  duration_ms: 98.853601\n  type: 'test'\n  ...\n# Subtest: scripts/check-growth-forecast.test.mjs\nok 4 - scripts/check-growth-forecast.test.mjs\n  ---\n  duration_ms: 334.111507\n  type: 'test'\n  ...\n1..4\n# tests 4\n# suites 0\n# pass 4\n# fail 0\n# cancelled 0\n# skipped 0\n# todo 0\n# duration_ms 1239.941504\n",
+    "contract-incb": "\n> proofofwork-me@0.1.0 check:incb-post-v5-repair\n> node scripts/check-incb-post-v5-repair.mjs\n\nTAP version 13\n# Subtest: exact post-V5 repair target conserves direct proofs and Q16 WORK without duplicate value\nok 1 - exact post-V5 repair target conserves direct proofs and Q16 WORK without duplicate value\n  ---\n  duration_ms: 1.47792\n  type: 'test'\n  ...\n# Subtest: first post-V5 bond pins the independent predecessor and exact issued units\nok 2 - first post-V5 bond pins the independent predecessor and exact issued units\n  ---\n  duration_ms: 0.282245\n  type: 'test'\n  ...\n# Subtest: post-V5 repair rejects rogue targets, detached or unaccepted WORK, and wrong H-1/value\nok 3 - post-V5 repair rejects rogue targets, detached or unaccepted WORK, and wrong H-1/value\n  ---\n  duration_ms: 2.033685\n  type: 'test'\n  ...\n# Subtest: explicit repair target cannot broaden issuance to the earlier bond or arbitrary transactions\nok 4 - explicit repair target cannot broaden issuance to the earlier bond or arbitrary transactions\n  ---\n  duration_ms: 1.228157\n  type: 'test'\n  ...\n1..4\n# tests 4\n# suites 0\n# pass 4\n# fail 0\n# cancelled 0\n# skipped 0\n# todo 0\n# duration_ms 14.853534\n",
+    "contract-live": "\n> proofofwork-me@0.1.0 check:live-data\n> node scripts/check-live-data-contract.mjs\n\nLive data contract passed.\n",
+    "contract-read": "\n> proofofwork-me@0.1.0 check:read-projections\n> node --test server/read-projections.test.mjs\n\nTAP version 13\n# Subtest: server/read-projections.test.mjs\nok 1 - server/read-projections.test.mjs\n  ---\n  duration_ms: 71.338232\n  type: 'test'\n  ...\n1..1\n# tests 1\n# suites 0\n# pass 1\n# fail 0\n# cancelled 0\n# skipped 0\n# todo 0\n# duration_ms 82.465513\n",
+    "contract-ui": "\n> proofofwork-me@0.1.0 check:ui\n> node scripts/check-ui-contract.mjs\n\nUI contract check passed.\n",
+    "math-bond": "\n> proofofwork-me@0.1.0 check:bond-exact-arithmetic\n> node scripts/check-bond-exact-arithmetic.mjs\n\nBond exact-arithmetic contract checks passed.\n",
+    "math-fees": "\n> proofofwork-me@0.1.0 check:fee-rate-precision\n> node scripts/check-fee-rate-precision.mjs\n\nFee precision and whole-proof transaction fee checks passed.\n",
+    "math-order": "\n> proofofwork-me@0.1.0 check:canonical-order\n> node scripts/check-canonical-order.mjs\n\nCanonical UTF-8 ordering checks passed.\n",
+    "math-precision": "\n> proofofwork-me@0.1.0 check:work-precision-v2\n> node scripts/check-work-precision-v2.mjs\n\nWORK Precision Protocol V2 contract: global Q16 units, immutable Q8 conversion, V8 pricing, cutover, metadata and cross-plane wiring pass.\n",
+    "math-v5": "\n> proofofwork-me@0.1.0 check:work-amo-v5\n> node scripts/check-work-amo-v5.mjs\n\nWORK AMO V5 checks passed.\n",
+    "math-v6": "\n> proofofwork-me@0.1.0 check:work-amo-v6\n> node scripts/check-work-amo-v6.mjs\n\n{\n  \"activationEvidence\": \"exact-and-fail-closed\",\n  \"declarationCarrier\": \"exact-raw-pwm1-m-with-mail-and-credit-siblings\",\n  \"allowedFaceProofs\": [\n    20000,\n    50000,\n    100000\n  ],\n  \"formula\": \"price=face;amount=floor(face*supply*q8/network);minimum=ceil(amount*network/(supply*q8))\",\n  \"legacySettlement\": \"pre-v6-v4-v5-frozen\",\n  \"listingNBefore\": \"2100000000000000\",\n  \"ordering\": \"block-height,transaction-index,protocol-vout,record-ordinal\",\n  \"settlement\": \"frozen-no-current-value\",\n  \"status\": \"ok\",\n  \"version\": \"pwt-sale-v6\"\n}\n",
+    "math-v8": "\n> proofofwork-me@0.1.0 check:work-amo-v8\n> node scripts/check-work-amo-v8.mjs && node scripts/check-work-amo-v8-gates.mjs\n\n{\n  \"allowedFaceProofs\": [\n    25000\n  ],\n  \"amountField\": \"unitAmountSubatoms\",\n  \"declarationPayloadBytes\": 5586,\n  \"declarationPayloadSha256\": \"0ef1432816fb93480b02a5302ce1c074d38f84a38e01150d57cf1df87d68024d\",\n  \"legacyV6AmountAtoms\": \"10\",\n  \"migratedV6AmountSubatoms\": \"1000000000\",\n  \"networkValueScale\": \"Q8\",\n  \"ordering\": \"block-height,transaction-index,protocol-vout,record-ordinal\",\n  \"precisionModel\": \"work-subatoms-v2\",\n  \"status\": \"ok\",\n  \"subatomsPerWork\": \"10000000000000000\",\n  \"version\": \"pwt-sale-v8\"\n}\nWORK AMO V8 gate regressions passed: pending decision normalization, aggregate transfer admission, persistent Q16 replay, next-block liveness, and canonical declaration discovery.\n"
+  },
+  "dnsDiscrepancy": {
+    "summaryIndexedThroughBlock": 969152,
+    "summaryIndexedAt": "2026-09-29T19:35:59.133Z",
+    "stats": {
+      "activeListings": 1,
+      "confirmed": 23,
+      "confirmedSales": 0,
+      "confirmedSalesVolumeSats": 0,
+      "indexedThroughBlock": 969152,
+      "listingCount": 1,
+      "listings": 1,
+      "pending": 0,
+      "pendingChanges": 0,
+      "pendingRecords": 0,
+      "pendingSales": 0,
+      "pendingSalesVolumeSats": 0,
+      "sales": 0,
+      "salesVolumeSats": 0,
+      "total": 23,
+      "transactions": 28
+    },
+    "txid": "dd498455bb712411341cfde6fab38764281ff6b77076a41012c3bee768475e38",
+    "listingId": "a2f613500e807eb8907dad7762303c81fdd386ce1d1d3ce0e27f8d50c7a706bd",
+    "name": "4",
+    "amountSats": 546,
+    "priceSats": 10000,
+    "publicValid": true,
+    "databaseValid": false,
+    "databaseReason": "work-amo-v5-dns-seal-invalid",
+    "signatureValid": true,
+    "sellerInInputs": true,
+    "listingMatches": true,
+    "signedAndUnsignedParsersAccept": true,
+    "authorizationsMatch": false,
+    "sourceCause": "JSON.stringify preserves differing property insertion order after optional signature fields are blanked.",
+    "publicLogMatches": 0
+  },
+  "capacity": {
+    "uiRoot": {
+      "totalBytes": 39973924864,
+      "usedBytes": 27170217984,
+      "availableBytes": 11119513600,
+      "reserveBytes": 10737418240,
+      "deployScratchBytes": 11089637376,
+      "rollbackRootBytes": 4629962752,
+      "releaseArchivesBytes": 4529553408
+    },
+    "nodeRoot": {
+      "totalBytes": 105089261568,
+      "usedBytes": 27837652992,
+      "availableBytes": 71866122240
+    },
+    "nodeData": {
+      "totalBytes": 1764768071680,
+      "usedBytes": 1282847617024,
+      "availableBytes": 472933277696
+    },
+    "databaseBytes": 37514181655,
+    "transitionTableBytes": 36262068224,
+    "uiNetConsumptionBytesPerDay": 9294529719,
+    "nodeDataNetConsumptionBytesPerDay": 2877181738
+  },
+  "desktopDiscrepancy": {
+    "txid": "8c2fd17b10a6550896035b9f725054d3c6e10c314911808d8f7aaa2955c3015b",
+    "canonicalBytes": 1018,
+    "canonicalSha256": "f05b31a5f4dfabff5fb0ffe3bef1a03de4a8f5c562694609114ae6d352e9caad",
+    "desktopBytes": 1017,
+    "desktopSha256": "0c2d97286186b6c5174102be1891d51fc5c8e4b217d58d3081f2e072cb94020b",
+    "currentDesktopHostMailboxPreservesCanonicalBytes": true,
+    "stripReproducesDesktopHash": true,
+    "sourceProducer": "Unresolved client/cache/mail projection; not proved to be a particular trimming line."
+  },
+  "repositoryHygiene": {
+    "fix": "Passed: no allowlisted rebuildable state found; nothing removed",
+    "check": "Passed",
+    "semanticReview": "SOUL, canonical documents, dated notes, generated artifacts and allowlist reviewed; no product/protocol change, no deletion."
+  }
+}
