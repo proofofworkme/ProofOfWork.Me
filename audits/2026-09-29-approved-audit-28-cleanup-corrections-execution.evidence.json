@@ -1,0 +1,2367 @@
+{
+  "format": "proofofwork-approved-audit28-execution-v1",
+  "dateUTC": "2026-09-29",
+  "authorization": "User explicitly approved cleanup, corrections, commit, deploy, merge, push and production verification",
+  "predecessors": {
+    "2026-09-29-production-comprehensive-health-data-integrity-audit-28.md": "9310f980d27cb7d8296b32b207b7c0f937b5ceb0c6bb9cfa8dc775cfd24dc8b6",
+    "2026-09-29-production-comprehensive-health-data-integrity-audit-28.evidence.json": "db1ca241011a777be688b4c8e0ddd4eaf02eef5ea75645f4e20e36e47be9090a"
+  },
+  "appCommit": "3bc6c9d44e00c504c324a1f13b7803f89cbfb122",
+  "uiRetentionCommit": "cefcc18",
+  "nodeRetentionCommit": "e6e60ba",
+  "pullRequests": [
+    93,
+    94,
+    95
+  ],
+  "coreReconciliation": {
+    "tipBefore": 969195,
+    "mempoolCountBefore": 75966,
+    "transactionsChecked": 26069,
+    "errors": [],
+    "pendingAbsent": [
+      "d729663829165bf4500e4708fd62dbf00f8012dde9ab4e53b321ce0cfe864cc2"
+    ],
+    "droppedPresent": [],
+    "canonicalBlocksChecked": 21196,
+    "blockHashErrors": [],
+    "attachmentsChecked": 0,
+    "attachmentErrors": [],
+    "tipAfter": 969195,
+    "pendingAbsentBoth": [
+      "d729663829165bf4500e4708fd62dbf00f8012dde9ab4e53b321ce0cfe864cc2"
+    ],
+    "droppedPresentBoth": []
+  },
+  "parity": {
+    "ok": true,
+    "strict": true,
+    "indexedThroughBlock": 969196,
+    "snapshotId": "0e25b0d45ad952359ba8d758",
+    "checks": [
+      {
+        "name": "work-amo-v5-declaration-evidence",
+        "ok": true,
+        "severity": "error"
+      },
+      {
+        "name": "work-amo-v5-canonical-positions",
+        "ok": true,
+        "severity": "warning"
+      },
+      {
+        "name": "work-amo-v5-migration",
+        "ok": false,
+        "severity": "warning"
+      },
+      {
+        "name": "work-amo-v5-usd-quote-head",
+        "ok": false,
+        "severity": "warning"
+      },
+      {
+        "name": "work-amo-v5-write-readiness",
+        "ok": true,
+        "severity": "error"
+      },
+      {
+        "name": "canonical-ledger-green",
+        "ok": true,
+        "severity": "error"
+      },
+      {
+        "name": "canonical-log-complete",
+        "ok": true,
+        "severity": "error"
+      },
+      {
+        "name": "database-has-canonical-summary-snapshot",
+        "ok": true,
+        "severity": "error"
+      },
+      {
+        "name": "canonical-summary-snapshot-current",
+        "ok": true,
+        "severity": "error"
+      },
+      {
+        "name": "transactions-cover-canonical-activity-txids",
+        "ok": true,
+        "severity": "error"
+      },
+      {
+        "name": "confirmed-transaction-status-lag",
+        "ok": true,
+        "severity": "warning"
+      },
+      {
+        "name": "confirmed-transactions-have-canonical-block-proof",
+        "ok": true,
+        "severity": "error"
+      },
+      {
+        "name": "nonconfirmed-transactions-have-no-block-metadata",
+        "ok": true,
+        "severity": "error"
+      },
+      {
+        "name": "confirmed-events-match-canonical-parent-metadata",
+        "ok": true,
+        "severity": "error"
+      },
+      {
+        "name": "nonconfirmed-events-have-no-block-metadata",
+        "ok": true,
+        "severity": "error"
+      },
+      {
+        "name": "canonical-confirmed-transactions-own-no-volatile-pwid-events",
+        "ok": true,
+        "severity": "error"
+      },
+      {
+        "name": "event-payload-status-matches-relational-status",
+        "ok": true,
+        "severity": "error"
+      },
+      {
+        "name": "events-cover-canonical-activity",
+        "ok": true,
+        "severity": "error"
+      },
+      {
+        "name": "credit-definitions-match-canonical",
+        "ok": true,
+        "severity": "error"
+      },
+      {
+        "name": "event-search-index-populated",
+        "ok": true,
+        "severity": "error"
+      },
+      {
+        "name": "rendered-event-participant-semantic-parity",
+        "ok": true,
+        "severity": "error"
+      },
+      {
+        "name": "rendered-event-reference-semantic-parity",
+        "ok": true,
+        "severity": "error"
+      },
+      {
+        "name": "rendered-mail-projection-semantic-parity",
+        "ok": true,
+        "severity": "error"
+      },
+      {
+        "name": "work-delist-regression-transaction-indexed",
+        "ok": true,
+        "severity": "error"
+      },
+      {
+        "name": "work-delist-regression-event-indexed",
+        "ok": true,
+        "severity": "error"
+      },
+      {
+        "name": "holder-projections-present",
+        "ok": true,
+        "severity": "error"
+      },
+      {
+        "name": "log-history-first-page-read-eligibility",
+        "ok": true,
+        "severity": "error"
+      },
+      {
+        "name": "log-history-first-page-read-reason",
+        "ok": true,
+        "severity": "error"
+      },
+      {
+        "name": "log-history-kind-token-sale-read-eligibility",
+        "ok": true,
+        "severity": "error"
+      },
+      {
+        "name": "log-history-kind-token-sale-read-reason",
+        "ok": true,
+        "severity": "error"
+      },
+      {
+        "name": "log-history-kind-token-sale-snapshot-pinned",
+        "ok": true,
+        "severity": "error"
+      },
+      {
+        "name": "log-history-query-infinity-bond-read-eligibility",
+        "ok": true,
+        "severity": "error"
+      },
+      {
+        "name": "log-history-query-infinity-bond-read-reason",
+        "ok": true,
+        "severity": "error"
+      },
+      {
+        "name": "log-history-query-infinity-bond-snapshot-pinned",
+        "ok": true,
+        "severity": "error"
+      },
+      {
+        "name": "log-history-query-pagination-gap-infinity-bond-read-eligibility",
+        "ok": true,
+        "severity": "error"
+      },
+      {
+        "name": "log-history-query-pagination-gap-infinity-bond-read-reason",
+        "ok": true,
+        "severity": "error"
+      },
+      {
+        "name": "log-history-query-pagination-gap-infinity-bond-snapshot-pinned",
+        "ok": true,
+        "severity": "error"
+      },
+      {
+        "name": "log-history-query-work-transfer-read-eligibility",
+        "ok": true,
+        "severity": "error"
+      },
+      {
+        "name": "log-history-query-work-transfer-read-reason",
+        "ok": true,
+        "severity": "error"
+      },
+      {
+        "name": "log-history-query-work-transfer-snapshot-pinned",
+        "ok": true,
+        "severity": "error"
+      },
+      {
+        "name": "log-history-query-work-delist-read-eligibility",
+        "ok": true,
+        "severity": "error"
+      },
+      {
+        "name": "log-history-query-work-delist-read-reason",
+        "ok": true,
+        "severity": "error"
+      },
+      {
+        "name": "log-history-query-work-delist-snapshot-pinned",
+        "ok": true,
+        "severity": "error"
+      },
+      {
+        "name": "log-history-paginated-history-read-eligibility",
+        "ok": true,
+        "severity": "error"
+      },
+      {
+        "name": "log-history-paginated-history-read-reason",
+        "ok": true,
+        "severity": "error"
+      },
+      {
+        "name": "log-history-paginated-history-snapshot-pinned",
+        "ok": true,
+        "severity": "error"
+      },
+      {
+        "name": "log-history-snapshot-cursor-stability",
+        "ok": true,
+        "severity": "error"
+      },
+      {
+        "name": "registry-canonical-fresh-authority",
+        "ok": true,
+        "severity": "error"
+      },
+      {
+        "name": "registry-history-records-parity",
+        "ok": true,
+        "severity": "error"
+      },
+      {
+        "name": "registry-history-records-current-relational",
+        "ok": true,
+        "severity": "error"
+      },
+      {
+        "name": "registry-history-listings-parity",
+        "ok": true,
+        "severity": "error"
+      },
+      {
+        "name": "registry-history-listings-current-relational",
+        "ok": true,
+        "severity": "error"
+      },
+      {
+        "name": "registry-history-sales-parity",
+        "ok": true,
+        "severity": "error"
+      },
+      {
+        "name": "registry-history-sales-current-relational",
+        "ok": true,
+        "severity": "error"
+      },
+      {
+        "name": "registry-history-activity-parity",
+        "ok": true,
+        "severity": "error"
+      },
+      {
+        "name": "registry-history-activity-current-relational",
+        "ok": true,
+        "severity": "error"
+      },
+      {
+        "name": "registry-history-records-search-parity",
+        "ok": true,
+        "severity": "error"
+      },
+      {
+        "name": "registry-history-records-search-current-relational",
+        "ok": true,
+        "severity": "error"
+      },
+      {
+        "name": "registry-history-records-page-2-parity",
+        "ok": true,
+        "severity": "error"
+      },
+      {
+        "name": "registry-history-records-page-2-current-relational",
+        "ok": true,
+        "severity": "error"
+      },
+      {
+        "name": "registry-confirmed-records-semantic-parity",
+        "ok": true,
+        "severity": "error"
+      },
+      {
+        "name": "registry-confirmed-listings-semantic-parity",
+        "ok": true,
+        "severity": "error"
+      },
+      {
+        "name": "registry-confirmed-sales-semantic-parity",
+        "ok": true,
+        "severity": "error"
+      },
+      {
+        "name": "registry-confirmed-activity-semantic-parity",
+        "ok": true,
+        "severity": "error"
+      },
+      {
+        "name": "registry-pending-visibility-parity",
+        "ok": true,
+        "severity": "error"
+      },
+      {
+        "name": "registry-confirmed-raw-evidence-complete",
+        "ok": true,
+        "severity": "error"
+      },
+      {
+        "name": "registry-payload-current-relational",
+        "ok": true,
+        "severity": "error"
+      },
+      {
+        "name": "growth-summary-snapshot-parity",
+        "ok": true,
+        "severity": "error"
+      },
+      {
+        "name": "inception-summary-snapshot-parity",
+        "ok": true,
+        "severity": "error"
+      },
+      {
+        "name": "infinity-summary-snapshot-parity",
+        "ok": true,
+        "severity": "error"
+      },
+      {
+        "name": "marketplace-summary-snapshot-parity",
+        "ok": true,
+        "severity": "error"
+      },
+      {
+        "name": "work-floor-snapshot-parity",
+        "ok": true,
+        "severity": "error"
+      },
+      {
+        "name": "work-summary-snapshot-parity",
+        "ok": true,
+        "severity": "error"
+      },
+      {
+        "name": "token-state-read-eligibility",
+        "ok": true,
+        "severity": "error"
+      },
+      {
+        "name": "token-state-current-relational",
+        "ok": true,
+        "severity": "error"
+      },
+      {
+        "name": "marketplace-token-state-lifecycle-present",
+        "ok": true,
+        "severity": "error"
+      },
+      {
+        "name": "work-token-state-current-relational",
+        "ok": true,
+        "severity": "error"
+      },
+      {
+        "name": "event-history-mail-protocol-db-page",
+        "ok": true,
+        "severity": "error"
+      },
+      {
+        "name": "event-history-credit-protocol-db-page",
+        "ok": true,
+        "severity": "error"
+      },
+      {
+        "name": "event-history-id-protocol-db-page",
+        "ok": true,
+        "severity": "error"
+      },
+      {
+        "name": "event-history-work-transfer-search-db-page",
+        "ok": true,
+        "severity": "error"
+      },
+      {
+        "name": "event-history-work-delist-search-db-page",
+        "ok": true,
+        "severity": "error"
+      },
+      {
+        "name": "address-mail-otc-db-page",
+        "ok": true,
+        "severity": "error"
+      },
+      {
+        "name": "address-mail-carbonz-db-page",
+        "ok": true,
+        "severity": "error"
+      },
+      {
+        "name": "address-mail-pinoratiko-db-page",
+        "ok": true,
+        "severity": "error"
+      },
+      {
+        "name": "token-history-all-mints-read-eligibility",
+        "ok": true,
+        "severity": "error"
+      },
+      {
+        "name": "token-history-all-mints-current-relational",
+        "ok": true,
+        "severity": "error"
+      },
+      {
+        "name": "token-history-all-transfers-read-eligibility",
+        "ok": true,
+        "severity": "error"
+      },
+      {
+        "name": "token-history-all-transfers-current-relational",
+        "ok": true,
+        "severity": "error"
+      },
+      {
+        "name": "token-history-work-transfer-query-read-eligibility",
+        "ok": true,
+        "severity": "error"
+      },
+      {
+        "name": "token-history-work-transfer-query-current-relational",
+        "ok": true,
+        "severity": "error"
+      },
+      {
+        "name": "token-history-all-invalid-events-read-eligibility",
+        "ok": true,
+        "severity": "error"
+      },
+      {
+        "name": "token-history-all-invalid-events-current-relational",
+        "ok": true,
+        "severity": "error"
+      },
+      {
+        "name": "token-history-work-holders-read-eligibility",
+        "ok": true,
+        "severity": "error"
+      },
+      {
+        "name": "token-history-work-holders-current-relational",
+        "ok": true,
+        "severity": "error"
+      },
+      {
+        "name": "token-history-work-market-log-read-eligibility",
+        "ok": true,
+        "severity": "error"
+      },
+      {
+        "name": "token-history-work-market-log-current-relational",
+        "ok": true,
+        "severity": "error"
+      },
+      {
+        "name": "token-history-work-delist-closed-query-read-eligibility",
+        "ok": true,
+        "severity": "error"
+      },
+      {
+        "name": "token-history-work-delist-closed-query-contains-expected-event",
+        "ok": true,
+        "severity": "error"
+      },
+      {
+        "name": "token-history-work-delist-closed-query-current-relational",
+        "ok": true,
+        "severity": "error"
+      },
+      {
+        "name": "token-history-non-work-holders-current-relational",
+        "ok": true,
+        "severity": "error"
+      },
+      {
+        "name": "tx-status-confirmed-sample-parity",
+        "ok": true,
+        "severity": "error"
+      }
+    ],
+    "activeInvariantFailureCount": 0,
+    "historicalWarnings": [
+      "work-amo-v5-migration",
+      "work-amo-v5-usd-quote-head"
+    ]
+  },
+  "finalReadiness": {
+    "available": true,
+    "backend": "electrum",
+    "checks": {
+      "addressIndex": {
+        "canary": {
+          "confirmedSats": 0,
+          "scripthash": "8f52010f55361085b1806ee106632dd610d3a6587284138d06065d584bab8d21",
+          "unconfirmedSats": 0
+        },
+        "error": "",
+        "ok": true,
+        "source": "electrum://172.27.0.1:50001",
+        "timedOut": false
+      },
+      "backend": {
+        "ok": true,
+        "timedOut": false
+      },
+      "database": {
+        "canonicalMetaOk": true,
+        "ok": true,
+        "required": true,
+        "timedOut": false
+      },
+      "disk": {
+        "cache": {
+          "availableBytes": 474455666688,
+          "maxUsedPercent": 90,
+          "minFreeBytes": 5368709120,
+          "ok": true,
+          "path": "/data/proofofwork-api-cache",
+          "probePath": "/data/proofofwork-api-cache",
+          "totalBytes": 1764768071680,
+          "usedPercent": 73.11512632726101
+        },
+        "ok": true,
+        "root": {
+          "availableBytes": 71736172544,
+          "maxUsedPercent": 90,
+          "minFreeBytes": 5368709120,
+          "ok": true,
+          "path": "/",
+          "probePath": "/",
+          "totalBytes": 105089261568,
+          "usedPercent": 31.73786600681198
+        }
+      },
+      "electrum": {
+        "configured": true,
+        "error": "",
+        "headerHash": "0000000000000000000154e8c20779af9b95e354835f1a621efd2a4e13965611",
+        "headerHeight": 969196,
+        "ok": true,
+        "timedOut": false,
+        "atTip": true
+      },
+      "index": {
+        "aheadBlocks": 0,
+        "checkpointHash": "0000000000000000000154e8c20779af9b95e354835f1a621efd2a4e13965611",
+        "complete": true,
+        "canonicalState": {
+          "fault": {},
+          "ok": true,
+          "rebuild": {
+            "active": false,
+            "status": "complete",
+            "network": "livenet",
+            "complete": true,
+            "startedAt": "2026-09-15T18:22:43.424Z",
+            "updatedAt": "2026-09-29T20:19:55.192Z",
+            "fromHeight": 948000,
+            "completedAt": "2026-09-29T20:19:55.192Z",
+            "bootstrapHash": "000000000000000000004238bec59ce46cd5b28982efe2b90071a51168d67986",
+            "bootstrapHeight": 947999,
+            "indexedThroughBlock": 969196,
+            "indexedThroughBlockHash": "0000000000000000000154e8c20779af9b95e354835f1a621efd2a4e13965611",
+            "transactionNormalization": "canonical-raw-tx-only"
+          }
+        },
+        "checkpointCanonical": true,
+        "canonicalCheckpointHash": "0000000000000000000154e8c20779af9b95e354835f1a621efd2a4e13965611",
+        "indexedThroughBlock": 969196,
+        "lagBlocks": 0,
+        "available": true,
+        "ok": true,
+        "readModels": {
+          "confirmedIds": {
+            "count": 508,
+            "maxBlock": 969060
+          },
+          "confirmedTransfers": {
+            "count": 265,
+            "maxBlock": 969015
+          },
+          "confirmedEvents": {
+            "count": 26508,
+            "maxBlock": 969188
+          }
+        },
+        "summarySnapshot": {
+          "blockHash": "0000000000000000000154e8c20779af9b95e354835f1a621efd2a4e13965611",
+          "coverageByKey": {
+            "growthSummary": 969196,
+            "inceptionSummary": 969196,
+            "infinitySummary": 969196,
+            "logSummary": 969196,
+            "marketplaceSummary": 969196,
+            "tokenSummary": 969196,
+            "workFloor": 969196,
+            "workSummary": 969196
+          },
+          "eligible": true,
+          "generatedAt": "2026-09-29T20:20:10.246Z",
+          "indexedAt": "2026-09-29T20:20:10.246Z",
+          "indexedThroughBlock": 969196,
+          "payloadBytes": 5750706,
+          "snapshotId": "0e25b0d45ad952359ba8d758",
+          "ok": true
+        },
+        "scanTipHeight": 969196,
+        "stopReason": ""
+      },
+      "node": {
+        "bestBlockHash": "0000000000000000000154e8c20779af9b95e354835f1a621efd2a4e13965611",
+        "chain": "main",
+        "headers": 969196,
+        "initialBlockDownload": false,
+        "ok": true,
+        "pruned": false,
+        "tipHeight": 969196,
+        "txindexHeight": 969196,
+        "txindexSynced": true,
+        "verificationProgress": 1
+      },
+      "worker": {
+        "ageMs": 21873,
+        "containment": {
+          "active": false,
+          "checkpointHash": "0000000000000000000154e8c20779af9b95e354835f1a621efd2a4e13965611",
+          "checkpointHeight": 969196,
+          "failingBlockHeight": null,
+          "fingerprint": "",
+          "network": "livenet",
+          "nextRetryAt": null,
+          "reason": "canonical-scan-success",
+          "repeatCount": 0,
+          "txid": ""
+        },
+        "consecutiveFailures": 0,
+        "error": "",
+        "lastSuccessAt": "2026-09-29T20:26:28.902Z",
+        "maxAgeMs": 600000,
+        "ok": true,
+        "proofReady": true,
+        "proofSource": "idle-confirmed-replay",
+        "pendingEvents": {
+          "globalUnresolved": 0,
+          "model": "bounded-best-effort-pending-event-health-v1",
+          "ok": true,
+          "q16PendingUnresolved": 0,
+          "required": true,
+          "scope": "all-observed-pending-protocol-events",
+          "status": {
+            "checked": 23,
+            "deferred": 0,
+            "errors": 0,
+            "ok": true,
+            "q16ParentDeferred": 0,
+            "staleCandidates": 23,
+            "unavailable": false,
+            "unavailableValid": true
+          }
+        },
+        "phase": "idle"
+      }
+    },
+    "indexedAt": "2026-09-29T20:26:50.775Z",
+    "indexedThroughBlock": 969196,
+    "lagBlocks": 0,
+    "mempoolBase": "http://127.0.0.1:8080",
+    "ok": true,
+    "ready": true,
+    "service": "proofofwork-op-return-api",
+    "tipHeight": 969196,
+    "mode": "readiness"
+  },
+  "surfaceInitialSweep": {
+    "apiBase": "https://computer.proofofwork.me",
+    "finishedAt": "2026-09-29T20:24:44.394Z",
+    "fresh": true,
+    "pageOnly": false,
+    "results": [
+      {
+        "html": {
+          "assets": {
+            "checked": 4,
+            "modules": 1,
+            "modulepreloads": 2,
+            "stylesheets": 1
+          },
+          "contentType": "text/html; charset=utf-8",
+          "elapsedMs": 919,
+          "ok": true,
+          "status": 200,
+          "title": "ProofOfWork.Me",
+          "url": "https://www.proofofwork.me/"
+        },
+        "key": "home",
+        "ok": false,
+        "probes": [],
+        "title": "proofofwork.me",
+        "error": "This operation was aborted"
+      },
+      {
+        "html": {
+          "assets": {
+            "checked": 4,
+            "modules": 1,
+            "modulepreloads": 2,
+            "stylesheets": 1
+          },
+          "contentType": "text/html; charset=utf-8",
+          "elapsedMs": 442,
+          "ok": true,
+          "status": 200,
+          "title": "ProofOfWork.Me",
+          "url": "https://id.proofofwork.me/"
+        },
+        "key": "id",
+        "ok": true,
+        "probes": [
+          {
+            "label": "ids summary",
+            "elapsedMs": 1797,
+            "ok": true,
+            "status": 200,
+            "url": "https://computer.proofofwork.me/api/v1/ids-summary?network=livenet&fresh=1"
+          }
+        ],
+        "title": "id.proofofwork.me"
+      },
+      {
+        "html": {
+          "assets": {
+            "checked": 4,
+            "modules": 1,
+            "modulepreloads": 2,
+            "stylesheets": 1
+          },
+          "contentType": "text/html; charset=utf-8",
+          "elapsedMs": 464,
+          "ok": true,
+          "status": 200,
+          "title": "ProofOfWork.Me",
+          "url": "https://dns.proofofwork.me/"
+        },
+        "key": "dns",
+        "ok": true,
+        "probes": [
+          {
+            "label": "dns summary",
+            "elapsedMs": 1434,
+            "ok": true,
+            "status": 200,
+            "url": "https://computer.proofofwork.me/api/v1/dns-summary?network=livenet&fresh=1"
+          }
+        ],
+        "title": "dns.proofofwork.me"
+      },
+      {
+        "html": {
+          "assets": {
+            "checked": 4,
+            "modules": 1,
+            "modulepreloads": 2,
+            "stylesheets": 1
+          },
+          "contentType": "text/html; charset=utf-8",
+          "elapsedMs": 510,
+          "ok": true,
+          "status": 200,
+          "title": "ProofOfWork.Me",
+          "url": "https://desktop.proofofwork.me/"
+        },
+        "key": "desktop",
+        "ok": true,
+        "probes": [
+          {
+            "label": "log summary",
+            "elapsedMs": 2453,
+            "ok": true,
+            "status": 200,
+            "url": "https://computer.proofofwork.me/api/v1/log-summary?network=livenet&fresh=1"
+          }
+        ],
+        "title": "desktop.proofofwork.me"
+      },
+      {
+        "html": {
+          "assets": {
+            "checked": 4,
+            "modules": 1,
+            "modulepreloads": 2,
+            "stylesheets": 1
+          },
+          "contentType": "text/html; charset=utf-8",
+          "elapsedMs": 416,
+          "ok": true,
+          "status": 200,
+          "title": "ProofOfWork.Me",
+          "url": "https://browser.proofofwork.me/"
+        },
+        "key": "browser",
+        "ok": true,
+        "probes": [
+          {
+            "label": "activity summary",
+            "elapsedMs": 2458,
+            "ok": true,
+            "status": 200,
+            "url": "https://computer.proofofwork.me/api/v1/activity-summary?network=livenet&fresh=1"
+          }
+        ],
+        "title": "browser.proofofwork.me"
+      },
+      {
+        "html": {
+          "assets": {
+            "checked": 4,
+            "modules": 1,
+            "modulepreloads": 2,
+            "stylesheets": 1
+          },
+          "contentType": "text/html; charset=utf-8",
+          "elapsedMs": 420,
+          "ok": true,
+          "status": 200,
+          "title": "ProofOfWork.Me",
+          "url": "https://boost.proofofwork.me/"
+        },
+        "key": "boost",
+        "ok": true,
+        "probes": [
+          {
+            "label": "boost feed",
+            "elapsedMs": 2722,
+            "ok": true,
+            "status": 200,
+            "url": "https://computer.proofofwork.me/api/v1/boost?network=livenet&limit=1&fresh=1"
+          }
+        ],
+        "title": "boost.proofofwork.me"
+      },
+      {
+        "html": {
+          "assets": {
+            "checked": 4,
+            "modules": 1,
+            "modulepreloads": 2,
+            "stylesheets": 1
+          },
+          "contentType": "text/html; charset=utf-8",
+          "elapsedMs": 505,
+          "ok": true,
+          "status": 200,
+          "title": "ProofOfWork.Me",
+          "url": "https://amo.proofofwork.me/"
+        },
+        "key": "amo",
+        "ok": true,
+        "probes": [
+          {
+            "label": "marketplace summary",
+            "elapsedMs": 12120,
+            "ok": true,
+            "status": 200,
+            "url": "https://computer.proofofwork.me/api/v1/marketplace-summary?network=livenet&compact=1&fresh=1"
+          }
+        ],
+        "title": "amo.proofofwork.me"
+      },
+      {
+        "html": {
+          "assets": {
+            "checked": 4,
+            "modules": 1,
+            "modulepreloads": 2,
+            "stylesheets": 1
+          },
+          "contentType": "text/html; charset=utf-8",
+          "elapsedMs": 459,
+          "ok": true,
+          "status": 200,
+          "title": "ProofOfWork.Me",
+          "url": "https://credit.proofofwork.me/"
+        },
+        "key": "credit",
+        "ok": true,
+        "probes": [
+          {
+            "label": "token summary",
+            "elapsedMs": 3358,
+            "ok": true,
+            "status": 200,
+            "url": "https://computer.proofofwork.me/api/v1/token-summary?network=livenet&compact=1&fresh=1"
+          }
+        ],
+        "title": "credit.proofofwork.me"
+      },
+      {
+        "html": {
+          "assets": {
+            "checked": 4,
+            "modules": 1,
+            "modulepreloads": 2,
+            "stylesheets": 1
+          },
+          "contentType": "text/html; charset=utf-8",
+          "elapsedMs": 482,
+          "ok": true,
+          "status": 200,
+          "title": "ProofOfWork.Me",
+          "url": "https://wallet.proofofwork.me/"
+        },
+        "key": "wallet",
+        "ok": true,
+        "probes": [
+          {
+            "label": "WORK token",
+            "elapsedMs": 9016,
+            "ok": true,
+            "status": 200,
+            "url": "https://computer.proofofwork.me/api/v1/token?network=livenet&asset=WORK&fresh=1"
+          }
+        ],
+        "title": "wallet.proofofwork.me"
+      },
+      {
+        "html": {
+          "assets": {
+            "checked": 4,
+            "modules": 1,
+            "modulepreloads": 2,
+            "stylesheets": 1
+          },
+          "contentType": "text/html; charset=utf-8",
+          "elapsedMs": 529,
+          "ok": true,
+          "status": 200,
+          "title": "ProofOfWork.Me",
+          "url": "https://work.proofofwork.me/"
+        },
+        "key": "work",
+        "ok": true,
+        "probes": [
+          {
+            "label": "work summary",
+            "elapsedMs": 8788,
+            "ok": true,
+            "status": 200,
+            "url": "https://computer.proofofwork.me/api/v1/work-summary?network=livenet&compact=1&fresh=1"
+          },
+          {
+            "label": "work floor",
+            "elapsedMs": 6497,
+            "ok": true,
+            "status": 200,
+            "url": "https://computer.proofofwork.me/api/v1/work-floor?network=livenet&fresh=1"
+          }
+        ],
+        "title": "work.proofofwork.me"
+      },
+      {
+        "html": {
+          "assets": {
+            "checked": 4,
+            "modules": 1,
+            "modulepreloads": 2,
+            "stylesheets": 1
+          },
+          "contentType": "text/html; charset=utf-8",
+          "elapsedMs": 469,
+          "ok": true,
+          "status": 200,
+          "title": "ProofOfWork.Me",
+          "url": "https://infinity.proofofwork.me/"
+        },
+        "key": "infinity",
+        "ok": true,
+        "probes": [
+          {
+            "label": "infinity summary",
+            "elapsedMs": 1955,
+            "ok": true,
+            "status": 200,
+            "url": "https://computer.proofofwork.me/api/v1/infinity-summary?network=livenet&fresh=1"
+          }
+        ],
+        "title": "infinity.proofofwork.me"
+      },
+      {
+        "html": {
+          "assets": {
+            "checked": 4,
+            "modules": 1,
+            "modulepreloads": 2,
+            "stylesheets": 1
+          },
+          "contentType": "text/html; charset=utf-8",
+          "elapsedMs": 420,
+          "ok": true,
+          "status": 200,
+          "title": "ProofOfWork.Me",
+          "url": "https://inception.proofofwork.me/"
+        },
+        "key": "inception",
+        "ok": true,
+        "probes": [
+          {
+            "label": "inception summary",
+            "elapsedMs": 1609,
+            "ok": true,
+            "status": 200,
+            "url": "https://computer.proofofwork.me/api/v1/inception-summary?network=livenet&fresh=1"
+          }
+        ],
+        "title": "inception.proofofwork.me"
+      },
+      {
+        "html": {
+          "assets": {
+            "checked": 4,
+            "modules": 1,
+            "modulepreloads": 2,
+            "stylesheets": 1
+          },
+          "contentType": "text/html; charset=utf-8",
+          "elapsedMs": 427,
+          "ok": true,
+          "status": 200,
+          "title": "ProofOfWork.Me",
+          "url": "https://log.proofofwork.me/"
+        },
+        "key": "log",
+        "ok": true,
+        "probes": [
+          {
+            "label": "log summary",
+            "elapsedMs": 1740,
+            "ok": true,
+            "status": 200,
+            "url": "https://computer.proofofwork.me/api/v1/log-summary?network=livenet&fresh=1"
+          }
+        ],
+        "title": "log.proofofwork.me"
+      },
+      {
+        "html": {
+          "assets": {
+            "checked": 4,
+            "modules": 1,
+            "modulepreloads": 2,
+            "stylesheets": 1
+          },
+          "contentType": "text/html; charset=utf-8",
+          "elapsedMs": 439,
+          "ok": true,
+          "status": 200,
+          "title": "ProofOfWork.Me",
+          "url": "https://growth.proofofwork.me/"
+        },
+        "key": "growth",
+        "ok": true,
+        "probes": [
+          {
+            "label": "growth summary",
+            "elapsedMs": 2389,
+            "ok": true,
+            "status": 200,
+            "url": "https://computer.proofofwork.me/api/v1/growth-summary?network=livenet&fresh=1"
+          }
+        ],
+        "title": "growth.proofofwork.me"
+      },
+      {
+        "html": {
+          "assets": {
+            "checked": 4,
+            "modules": 1,
+            "modulepreloads": 2,
+            "stylesheets": 1
+          },
+          "contentType": "text/html; charset=utf-8",
+          "elapsedMs": 127,
+          "ok": true,
+          "status": 200,
+          "title": "ProofOfWork.Me",
+          "url": "https://computer.proofofwork.me/"
+        },
+        "key": "computer",
+        "ok": true,
+        "probes": [
+          {
+            "label": "health",
+            "elapsedMs": 691,
+            "ok": true,
+            "status": 200,
+            "url": "https://computer.proofofwork.me/health?network=livenet"
+          },
+          {
+            "label": "consistency",
+            "elapsedMs": 3005,
+            "ok": true,
+            "status": 200,
+            "url": "https://computer.proofofwork.me/api/v1/consistency?network=livenet&fresh=1"
+          }
+        ],
+        "title": "computer.proofofwork.me"
+      }
+    ],
+    "startedAt": "2026-09-29T20:23:04.164Z",
+    "timeoutMs": 20000
+  },
+  "homeTimeoutRecheck": {
+    "apiBase": "https://computer.proofofwork.me",
+    "complete": true,
+    "finishedAt": "2026-09-29T20:25:38.791Z",
+    "fresh": true,
+    "ok": true,
+    "pageOnly": false,
+    "results": [
+      {
+        "html": {
+          "assets": {
+            "checked": 4,
+            "modules": 1,
+            "modulepreloads": 2,
+            "stylesheets": 1
+          },
+          "contentType": "text/html; charset=utf-8",
+          "elapsedMs": 977,
+          "ok": true,
+          "status": 200,
+          "title": "ProofOfWork.Me",
+          "url": "https://www.proofofwork.me/"
+        },
+        "key": "home",
+        "ok": true,
+        "probes": [
+          {
+            "label": "registry summary",
+            "elapsedMs": 5080,
+            "ok": true,
+            "status": 200,
+            "url": "https://computer.proofofwork.me/api/v1/registry-summary?network=livenet&fresh=1"
+          }
+        ],
+        "title": "proofofwork.me"
+      }
+    ],
+    "startedAt": "2026-09-29T20:25:32.023Z",
+    "timeoutMs": 60000
+  },
+  "dnsLogAfter": {
+    "cursor": "snapshot:0e25b0d45ad952359ba8d758:0",
+    "end": 1,
+    "indexedAt": "2026-09-29T20:20:05.876Z",
+    "indexedThroughBlock": 969196,
+    "items": [
+      {
+        "id": "4",
+        "kind": "dns-seal",
+        "tags": [
+          "546 proofs",
+          "Seal",
+          "dns-seal",
+          "Confirmed",
+          "Mainnet",
+          "DNS",
+          ".pow",
+          "4.pow",
+          "10,000 sale proofs"
+        ],
+        "txid": "dd498455bb712411341cfde6fab38764281ff6b77076a41012c3bee768475e38",
+        "actor": "1J8fGE9yNfaqBjdHNxGwWwUpfKiZfLfGg8",
+        "title": "DNS sale ticket sealed",
+        "valid": true,
+        "detail": "Seller signature published on chain",
+        "parsed": {
+          "kind": "dns-seal",
+          "listingId": "a2f613500e807eb8907dad7762303c81fdd386ce1d1d3ce0e27f8d50c7a706bd",
+          "saleAuthorization": {
+            "id": "4",
+            "nonce": "mumeml0l-ayj67vjjng",
+            "version": "pwdns-sale-v1",
+            "priceSats": 10000,
+            "signature": "",
+            "anchorTxid": "a2f613500e807eb8907dad7762303c81fdd386ce1d1d3ce0e27f8d50c7a706bd",
+            "anchorType": "sale-ticket-v1",
+            "anchorVout": 2,
+            "sellerAddress": "1J8fGE9yNfaqBjdHNxGwWwUpfKiZfLfGg8",
+            "anchorSignature": "3044022061d92dab9d32c99e00614efaecfc407dd08e05280f6099a6a3f7ac91c0d96f12022036369acb78352f8a868a4403842cc32b65fec76c3b0f79c55316b65dae3c3ca783",
+            "anchorValueSats": 546,
+            "sellerPublicKey": "038723b0a48b80f93e41a962365d9a0fcbaa5b991c172c35fe850e38eff30f7035",
+            "anchorSigHashType": 131,
+            "anchorScriptPubKey": "76a914bbecfd713ed81b1331e8ded61bf7e11e0301f3b088ac"
+          }
+        },
+        "reason": "",
+        "status": "confirmed",
+        "derived": [],
+        "dropped": false,
+        "network": "livenet",
+        "payload": "pwdns1:seal5:a2f613500e807eb8907dad7762303c81fdd386ce1d1d3ce0e27f8d50c7a706bd:eyJpZCI6IjQiLCJub25jZSI6Im11bWVtbDBsLWF5ajY3dmpqbmciLCJwcmljZVNhdHMiOjEwMDAwLCJzZWxsZXJBZGRyZXNzIjoiMUo4ZkdFOXlOZmFxQmpkSE54R3dXd1VwZktpWmZMZkdnOCIsInNlbGxlclB1YmxpY0tleSI6IjAzODcyM2IwYTQ4YjgwZjkzZTQxYTk2MjM2NWQ5YTBmY2JhYTViOTkxYzE3MmMzNWZlODUwZTM4ZWZmMzBmNzAzNSIsInZlcnNpb24iOiJwd2Rucy1zYWxlLXYxIiwiYW5jaG9yU2lnSGFzaFR5cGUiOjEzMSwiYW5jaG9yU2NyaXB0UHViS2V5IjoiNzZhOTE0YmJlY2ZkNzEzZWQ4MWIxMzMxZThkZWQ2MWJmN2UxMWUwMzAxZjNiMDg4YWMiLCJhbmNob3JUeXBlIjoic2FsZS10aWNrZXQtdjEiLCJhbmNob3JWYWx1ZVNhdHMiOjU0NiwiYW5jaG9yVm91dCI6Miwic2lnbmF0dXJlIjoiIiwiYW5jaG9yU2lnbmF0dXJlIjoiMzA0NDAyMjA2MWQ5MmRhYjlkMzJjOTllMDA2MTRlZmFlY2ZjNDA3ZGQwOGUwNTI4MGY2MDk5YTZhM2Y3YWM5MWMwZDk2ZjEyMDIyMDM2MzY5YWNiNzgzNTJmOGE4NjhhNDQwMzg0MmNjMzJiNjVmZWM3NmMzYjBmNzljNTUzMTZiNjVkYWUzYzNjYTc4MyIsImFuY2hvclR4aWQiOiJhMmY2MTM1MDBlODA3ZWI4OTA3ZGFkNzc2MjMwM2M4MWZkZDM4NmNlMWQxZDNjZTBlMjdmOGQ1MGM3YTcwNmJkIn0",
+        "position": {
+          "blockHash": "00000000000000000000aebc8dc758888998e96e870b9950bcefe53cbb28c9b9",
+          "blockHeight": 969136,
+          "protocolVout": 1,
+          "recordOrdinal": 0,
+          "blockTransactionIndex": 3156
+        },
+        "protocol": "pwdns1",
+        "blockHash": "00000000000000000000aebc8dc758888998e96e870b9950bcefe53cbb28c9b9",
+        "blockTime": "2026-09-29T09:46:37.000Z",
+        "confirmed": true,
+        "createdAt": "2026-09-29T09:46:37.000Z",
+        "dataBytes": 941,
+        "listingId": "a2f613500e807eb8907dad7762303c81fdd386ce1d1d3ce0e27f8d50c7a706bd",
+        "priceSats": 10000,
+        "timestamp": "2026-09-29T09:46:37.000Z",
+        "amountSats": 546,
+        "blockIndex": 3156,
+        "rawPayload": "pwdns1:seal5:a2f613500e807eb8907dad7762303c81fdd386ce1d1d3ce0e27f8d50c7a706bd:eyJpZCI6IjQiLCJub25jZSI6Im11bWVtbDBsLWF5ajY3dmpqbmciLCJwcmljZVNhdHMiOjEwMDAwLCJzZWxsZXJBZGRyZXNzIjoiMUo4ZkdFOXlOZmFxQmpkSE54R3dXd1VwZktpWmZMZkdnOCIsInNlbGxlclB1YmxpY0tleSI6IjAzODcyM2IwYTQ4YjgwZjkzZTQxYTk2MjM2NWQ5YTBmY2JhYTViOTkxYzE3MmMzNWZlODUwZTM4ZWZmMzBmNzAzNSIsInZlcnNpb24iOiJwd2Rucy1zYWxlLXYxIiwiYW5jaG9yU2lnSGFzaFR5cGUiOjEzMSwiYW5jaG9yU2NyaXB0UHViS2V5IjoiNzZhOTE0YmJlY2ZkNzEzZWQ4MWIxMzMxZThkZWQ2MWJmN2UxMWUwMzAxZjNiMDg4YWMiLCJhbmNob3JUeXBlIjoic2FsZS10aWNrZXQtdjEiLCJhbmNob3JWYWx1ZVNhdHMiOjU0NiwiYW5jaG9yVm91dCI6Miwic2lnbmF0dXJlIjoiIiwiYW5jaG9yU2lnbmF0dXJlIjoiMzA0NDAyMjA2MWQ5MmRhYjlkMzJjOTllMDA2MTRlZmFlY2ZjNDA3ZGQwOGUwNTI4MGY2MDk5YTZhM2Y3YWM5MWMwZDk2ZjEyMDIyMDM2MzY5YWNiNzgzNTJmOGE4NjhhNDQwMzg0MmNjMzJiNjVmZWM3NmMzYjBmNzljNTUzMTZiNjVkYWUzYzNjYTc4MyIsImFuY2hvclR4aWQiOiJhMmY2MTM1MDBlODA3ZWI4OTA3ZGFkNzc2MjMwM2M4MWZkZDM4NmNlMWQxZDNjZTBlMjdmOGQ1MGM3YTcwNmJkIn0",
+        "reasonCode": "",
+        "recipients": [
+          {
+            "vout": 0,
+            "address": "1F1zepCJ8VPcPoeMt6G4BPKuE3CYAxCKNY",
+            "amountSats": "546"
+          }
+        ],
+        "blockHeight": 969136,
+        "description": "Sale ticket sealed for 4.pow on listing a2f61350...c7a706bd.",
+        "participants": [
+          "1J8fGE9yNfaqBjdHNxGwWwUpfKiZfLfGg8",
+          "1F1zepCJ8VPcPoeMt6G4BPKuE3CYAxCKNY"
+        ],
+        "protocolVout": 1,
+        "recordOrdinal": 0,
+        "sellerAddress": "1J8fGE9yNfaqBjdHNxGwWwUpfKiZfLfGg8",
+        "senderAddress": "1J8fGE9yNfaqBjdHNxGwWwUpfKiZfLfGg8",
+        "_powEventIndex": 0,
+        "inputAddresses": [
+          "1J8fGE9yNfaqBjdHNxGwWwUpfKiZfLfGg8"
+        ],
+        "listingVersion": "list5",
+        "paymentOutputs": [
+          {
+            "vout": 0,
+            "address": "1F1zepCJ8VPcPoeMt6G4BPKuE3CYAxCKNY",
+            "amountSats": 546
+          }
+        ],
+        "spentOutpoints": [
+          {
+            "txid": "c218e42d9ce481e71af046bf7065a946e93de04d573ca3b9161aefb9c6cf08bf",
+            "vout": 2
+          }
+        ],
+        "protocolPayload": "pwdns1:seal5:a2f613500e807eb8907dad7762303c81fdd386ce1d1d3ce0e27f8d50c7a706bd:eyJpZCI6IjQiLCJub25jZSI6Im11bWVtbDBsLWF5ajY3dmpqbmciLCJwcmljZVNhdHMiOjEwMDAwLCJzZWxsZXJBZGRyZXNzIjoiMUo4ZkdFOXlOZmFxQmpkSE54R3dXd1VwZktpWmZMZkdnOCIsInNlbGxlclB1YmxpY0tleSI6IjAzODcyM2IwYTQ4YjgwZjkzZTQxYTk2MjM2NWQ5YTBmY2JhYTViOTkxYzE3MmMzNWZlODUwZTM4ZWZmMzBmNzAzNSIsInZlcnNpb24iOiJwd2Rucy1zYWxlLXYxIiwiYW5jaG9yU2lnSGFzaFR5cGUiOjEzMSwiYW5jaG9yU2NyaXB0UHViS2V5IjoiNzZhOTE0YmJlY2ZkNzEzZWQ4MWIxMzMxZThkZWQ2MWJmN2UxMWUwMzAxZjNiMDg4YWMiLCJhbmNob3JUeXBlIjoic2FsZS10aWNrZXQtdjEiLCJhbmNob3JWYWx1ZVNhdHMiOjU0NiwiYW5jaG9yVm91dCI6Miwic2lnbmF0dXJlIjoiIiwiYW5jaG9yU2lnbmF0dXJlIjoiMzA0NDAyMjA2MWQ5MmRhYjlkMzJjOTllMDA2MTRlZmFlY2ZjNDA3ZGQwOGUwNTI4MGY2MDk5YTZhM2Y3YWM5MWMwZDk2ZjEyMDIyMDM2MzY5YWNiNzgzNTJmOGE4NjhhNDQwMzg0MmNjMzJiNjVmZWM3NmMzYjBmNzljNTUzMTZiNjVkYWUzYzNjYTc4MyIsImFuY2hvclR4aWQiOiJhMmY2MTM1MDBlODA3ZWI4OTA3ZGFkNzc2MjMwM2M4MWZkZDM4NmNlMWQxZDNjZTBlMjdmOGQ1MGM3YTcwNmJkIn0",
+        "canonicalVerifier": "/api/v1/internal/work-amo-v5-block-verifier",
+        "protocolDataBytes": 941,
+        "saleAuthorization": {
+          "id": "4",
+          "nonce": "mumeml0l-ayj67vjjng",
+          "version": "pwdns-sale-v1",
+          "priceSats": 10000,
+          "signature": "",
+          "anchorTxid": "a2f613500e807eb8907dad7762303c81fdd386ce1d1d3ce0e27f8d50c7a706bd",
+          "anchorType": "sale-ticket-v1",
+          "anchorVout": 2,
+          "sellerAddress": "1J8fGE9yNfaqBjdHNxGwWwUpfKiZfLfGg8",
+          "anchorSignature": "3044022061d92dab9d32c99e00614efaecfc407dd08e05280f6099a6a3f7ac91c0d96f12022036369acb78352f8a868a4403842cc32b65fec76c3b0f79c55316b65dae3c3ca783",
+          "anchorValueSats": 546,
+          "sellerPublicKey": "038723b0a48b80f93e41a962365d9a0fcbaa5b991c172c35fe850e38eff30f7035",
+          "anchorSigHashType": 131,
+          "anchorScriptPubKey": "76a914bbecfd713ed81b1331e8ded61bf7e11e0301f3b088ac"
+        },
+        "auditPaymentOutputs": [
+          {
+            "vout": 0,
+            "address": "1F1zepCJ8VPcPoeMt6G4BPKuE3CYAxCKNY",
+            "amountSats": 546
+          }
+        ],
+        "currentOwnerAddress": "1J8fGE9yNfaqBjdHNxGwWwUpfKiZfLfGg8",
+        "_workAmoV5ReplayBound": true,
+        "currentReceiveAddress": "1J8fGE9yNfaqBjdHNxGwWwUpfKiZfLfGg8",
+        "workAmoV5RawCandidate": true,
+        "workAmoV5ReplayOutput": {
+          "projection": {
+            "kind": "dns-seal",
+            "txid": "dd498455bb712411341cfde6fab38764281ff6b77076a41012c3bee768475e38",
+            "valid": false,
+            "parsed": {
+              "kind": "dns-seal",
+              "listingId": "a2f613500e807eb8907dad7762303c81fdd386ce1d1d3ce0e27f8d50c7a706bd",
+              "saleAuthorization": {
+                "id": "4",
+                "nonce": "mumeml0l-ayj67vjjng",
+                "version": "pwdns-sale-v1",
+                "priceSats": 10000,
+                "signature": "",
+                "anchorTxid": "a2f613500e807eb8907dad7762303c81fdd386ce1d1d3ce0e27f8d50c7a706bd",
+                "anchorType": "sale-ticket-v1",
+                "anchorVout": 2,
+                "sellerAddress": "1J8fGE9yNfaqBjdHNxGwWwUpfKiZfLfGg8",
+                "anchorSignature": "3044022061d92dab9d32c99e00614efaecfc407dd08e05280f6099a6a3f7ac91c0d96f12022036369acb78352f8a868a4403842cc32b65fec76c3b0f79c55316b65dae3c3ca783",
+                "anchorValueSats": 546,
+                "sellerPublicKey": "038723b0a48b80f93e41a962365d9a0fcbaa5b991c172c35fe850e38eff30f7035",
+                "anchorSigHashType": 131,
+                "anchorScriptPubKey": "76a914bbecfd713ed81b1331e8ded61bf7e11e0301f3b088ac"
+              }
+            },
+            "derived": [],
+            "position": {
+              "blockHash": "00000000000000000000aebc8dc758888998e96e870b9950bcefe53cbb28c9b9",
+              "blockHeight": 969136,
+              "protocolVout": 1,
+              "recordOrdinal": 0,
+              "blockTransactionIndex": 3156
+            },
+            "protocol": "pwdns1",
+            "reasonCode": "work-amo-v5-dns-seal-invalid"
+          }
+        },
+        "workAmoV5ReplayOutcome": {
+          "kind": "pwdns1-invalid",
+          "valid": false,
+          "reasonCode": "work-amo-v5-dns-seal-invalid"
+        },
+        "workAmoV5RawDecodeValid": true,
+        "workAmoV5RawScriptWitness": {
+          "payloadHex": "7077646e73313a7365616c353a613266363133353030653830376562383930376461643737363233303363383166646433383663653164316433636530653237663864353063376137303662643a65794a705a434936496a51694c434a756232356a5a534936496d313162575674624442734c574635616a5933646d7071626d63694c434a77636d6c6a5a564e6864484d694f6a45774d4441774c434a7a5a5778735a584a425a4752795a584e7a496a6f694d556f345a6b64464f586c4f5a6d4678516d706b5345353452336458643156775a6b7470576d5a4d5a6b646e4f434973496e4e6c6247786c636c4231596d78705930746c65534936496a417a4f4463794d32497759545134596a67775a6a6b7a5a54517859546b324d6a4d324e5751355954426d59324a68595456694f546b78597a45334d6d4d7a4e575a6c4f4455775a544d345a575a6d4d7a426d4e7a417a4e534973496e5a6c636e4e70623234694f694a77643252756379317a5957786c4c585978496977695957356a6147397955326c6e5347467a61465235634755694f6a457a4d5377695957356a6147397955324e79615842305548566953325635496a6f694e7a5a684f544530596d4a6c59325a6b4e7a457a5a5751344d5749784d7a4d785a54686b5a5751324d574a6d4e3255784d5755774d7a41785a6a4e694d44673459574d694c434a68626d4e6f62334a556558426c496a6f69633246735a53313061574e725a585174646a45694c434a68626d4e6f62334a57595778315a564e6864484d694f6a55304e6977695957356a61473979566d3931644349364d69776963326c6e626d463064584a6c496a6f69496977695957356a6147397955326c6e626d463064584a6c496a6f694d7a41304e4441794d6a41324d5751354d6d5268596a6c6b4d7a4a6a4f546c6c4d4441324d54526c5a6d466c59325a6a4e4441335a4751774f4755774e5449344d4759324d446b3559545a684d32593359574d354d574d775a446b325a6a45794d4449794d444d324d7a593559574e694e7a677a4e544a6d4f4745344e6a68684e4451774d7a67304d6d4e6a4d7a4a694e6a566d5a574d334e6d4d7a596a426d4e7a6c6a4e54557a4d545a694e6a566b5957557a597a4e6a595463344d794973496d467559326876636c5234615751694f694a684d6d59324d544d314d44426c4f4441335a5749344f5441335a47466b4e7a63324d6a4d774d324d344d575a6b5a444d344e6d4e6c4d5751785a444e6a5a54426c4d6a646d4f4751314d474d33595463774e6d4a6b496e30",
+          "reasonCode": "",
+          "decodeValid": true,
+          "decodeDetail": "",
+          "scriptPubKeyHex": "6a4dad037077646e73313a7365616c353a613266363133353030653830376562383930376461643737363233303363383166646433383663653164316433636530653237663864353063376137303662643a65794a705a434936496a51694c434a756232356a5a534936496d313162575674624442734c574635616a5933646d7071626d63694c434a77636d6c6a5a564e6864484d694f6a45774d4441774c434a7a5a5778735a584a425a4752795a584e7a496a6f694d556f345a6b64464f586c4f5a6d4678516d706b5345353452336458643156775a6b7470576d5a4d5a6b646e4f434973496e4e6c6247786c636c4231596d78705930746c65534936496a417a4f4463794d32497759545134596a67775a6a6b7a5a54517859546b324d6a4d324e5751355954426d59324a68595456694f546b78597a45334d6d4d7a4e575a6c4f4455775a544d345a575a6d4d7a426d4e7a417a4e534973496e5a6c636e4e70623234694f694a77643252756379317a5957786c4c585978496977695957356a6147397955326c6e5347467a61465235634755694f6a457a4d5377695957356a6147397955324e79615842305548566953325635496a6f694e7a5a684f544530596d4a6c59325a6b4e7a457a5a5751344d5749784d7a4d785a54686b5a5751324d574a6d4e3255784d5755774d7a41785a6a4e694d44673459574d694c434a68626d4e6f62334a556558426c496a6f69633246735a53313061574e725a585174646a45694c434a68626d4e6f62334a57595778315a564e6864484d694f6a55304e6977695957356a61473979566d3931644349364d69776963326c6e626d463064584a6c496a6f69496977695957356a6147397955326c6e626d463064584a6c496a6f694d7a41304e4441794d6a41324d5751354d6d5268596a6c6b4d7a4a6a4f546c6c4d4441324d54526c5a6d466c59325a6a4e4441335a4751774f4755774e5449344d4759324d446b3559545a684d32593359574d354d574d775a446b325a6a45794d4449794d444d324d7a593559574e694e7a677a4e544a6d4f4745344e6a68684e4451774d7a67304d6d4e6a4d7a4a694e6a566d5a574d334e6d4d7a596a426d4e7a6c6a4e54557a4d545a694e6a566b5957557a597a4e6a595463344d794973496d467559326876636c5234615751694f694a684d6d59324d544d314d44426c4f4441335a5749344f5441335a47466b4e7a63324d6a4d774d324d344d575a6b5a444d344e6d4e6c4d5751785a444e6a5a54426c4d6a646d4f4751314d474d33595463774e6d4a6b496e30"
+        },
+        "workAmoV5ReplayRawWitness": {
+          "model": "canonical-raw-protocol-record-v1",
+          "rawRecordParts": [
+            {
+              "text": "pwdns1:seal5:a2f613500e807eb8907dad7762303c81fdd386ce1d1d3ce0e27f8d50c7a706bd:eyJpZCI6IjQiLCJub25jZSI6Im11bWVtbDBsLWF5ajY3dmpqbmciLCJwcmljZVNhdHMiOjEwMDAwLCJzZWxsZXJBZGRyZXNzIjoiMUo4ZkdFOXlOZmFxQmpkSE54R3dXd1VwZktpWmZMZkdnOCIsInNlbGxlclB1YmxpY0tleSI6IjAzODcyM2IwYTQ4YjgwZjkzZTQxYTk2MjM2NWQ5YTBmY2JhYTViOTkxYzE3MmMzNWZlODUwZTM4ZWZmMzBmNzAzNSIsInZlcnNpb24iOiJwd2Rucy1zYWxlLXYxIiwiYW5jaG9yU2lnSGFzaFR5cGUiOjEzMSwiYW5jaG9yU2NyaXB0UHViS2V5IjoiNzZhOTE0YmJlY2ZkNzEzZWQ4MWIxMzMxZThkZWQ2MWJmN2UxMWUwMzAxZjNiMDg4YWMiLCJhbmNob3JUeXBlIjoic2FsZS10aWNrZXQtdjEiLCJhbmNob3JWYWx1ZVNhdHMiOjU0NiwiYW5jaG9yVm91dCI6Miwic2lnbmF0dXJlIjoiIiwiYW5jaG9yU2lnbmF0dXJlIjoiMzA0NDAyMjA2MWQ5MmRhYjlkMzJjOTllMDA2MTRlZmFlY2ZjNDA3ZGQwOGUwNTI4MGY2MDk5YTZhM2Y3YWM5MWMwZDk2ZjEyMDIyMDM2MzY5YWNiNzgzNTJmOGE4NjhhNDQwMzg0MmNjMzJiNjVmZWM3NmMzYjBmNzljNTUzMTZiNjVkYWUzYzNjYTc4MyIsImFuY2hvclR4aWQiOiJhMmY2MTM1MDBlODA3ZWI4OTA3ZGFkNzc2MjMwM2M4MWZkZDM4NmNlMWQxZDNjZTBlMjdmOGQ1MGM3YTcwNmJkIn0",
+              "prefix": "pwdns1:",
+              "payloadHex": "7077646e73313a7365616c353a613266363133353030653830376562383930376461643737363233303363383166646433383663653164316433636530653237663864353063376137303662643a65794a705a434936496a51694c434a756232356a5a534936496d313162575674624442734c574635616a5933646d7071626d63694c434a77636d6c6a5a564e6864484d694f6a45774d4441774c434a7a5a5778735a584a425a4752795a584e7a496a6f694d556f345a6b64464f586c4f5a6d4678516d706b5345353452336458643156775a6b7470576d5a4d5a6b646e4f434973496e4e6c6247786c636c4231596d78705930746c65534936496a417a4f4463794d32497759545134596a67775a6a6b7a5a54517859546b324d6a4d324e5751355954426d59324a68595456694f546b78597a45334d6d4d7a4e575a6c4f4455775a544d345a575a6d4d7a426d4e7a417a4e534973496e5a6c636e4e70623234694f694a77643252756379317a5957786c4c585978496977695957356a6147397955326c6e5347467a61465235634755694f6a457a4d5377695957356a6147397955324e79615842305548566953325635496a6f694e7a5a684f544530596d4a6c59325a6b4e7a457a5a5751344d5749784d7a4d785a54686b5a5751324d574a6d4e3255784d5755774d7a41785a6a4e694d44673459574d694c434a68626d4e6f62334a556558426c496a6f69633246735a53313061574e725a585174646a45694c434a68626d4e6f62334a57595778315a564e6864484d694f6a55304e6977695957356a61473979566d3931644349364d69776963326c6e626d463064584a6c496a6f69496977695957356a6147397955326c6e626d463064584a6c496a6f694d7a41304e4441794d6a41324d5751354d6d5268596a6c6b4d7a4a6a4f546c6c4d4441324d54526c5a6d466c59325a6a4e4441335a4751774f4755774e5449344d4759324d446b3559545a684d32593359574d354d574d775a446b325a6a45794d4449794d444d324d7a593559574e694e7a677a4e544a6d4f4745344e6a68684e4451774d7a67304d6d4e6a4d7a4a694e6a566d5a574d334e6d4d7a596a426d4e7a6c6a4e54557a4d545a694e6a566b5957557a597a4e6a595463344d794973496d467559326876636c5234615751694f694a684d6d59324d544d314d44426c4f4441335a5749344f5441335a47466b4e7a63324d6a4d774d324d344d575a6b5a444d344e6d4e6c4d5751785a444e6a5a54426c4d6a646d4f4751314d474d33595463774e6d4a6b496e30",
+              "reasonCode": "",
+              "decodeValid": true,
+              "decodeDetail": "",
+              "protocolVout": 1,
+              "scriptPubKeyHex": "6a4dad037077646e73313a7365616c353a613266363133353030653830376562383930376461643737363233303363383166646433383663653164316433636530653237663864353063376137303662643a65794a705a434936496a51694c434a756232356a5a534936496d313162575674624442734c574635616a5933646d7071626d63694c434a77636d6c6a5a564e6864484d694f6a45774d4441774c434a7a5a5778735a584a425a4752795a584e7a496a6f694d556f345a6b64464f586c4f5a6d4678516d706b5345353452336458643156775a6b7470576d5a4d5a6b646e4f434973496e4e6c6247786c636c4231596d78705930746c65534936496a417a4f4463794d32497759545134596a67775a6a6b7a5a54517859546b324d6a4d324e5751355954426d59324a68595456694f546b78597a45334d6d4d7a4e575a6c4f4455775a544d345a575a6d4d7a426d4e7a417a4e534973496e5a6c636e4e70623234694f694a77643252756379317a5957786c4c585978496977695957356a6147397955326c6e5347467a61465235634755694f6a457a4d5377695957356a6147397955324e79615842305548566953325635496a6f694e7a5a684f544530596d4a6c59325a6b4e7a457a5a5751344d5749784d7a4d785a54686b5a5751324d574a6d4e3255784d5755774d7a41785a6a4e694d44673459574d694c434a68626d4e6f62334a556558426c496a6f69633246735a53313061574e725a585174646a45694c434a68626d4e6f62334a57595778315a564e6864484d694f6a55304e6977695957356a61473979566d3931644349364d69776963326c6e626d463064584a6c496a6f69496977695957356a6147397955326c6e626d463064584a6c496a6f694d7a41304e4441794d6a41324d5751354d6d5268596a6c6b4d7a4a6a4f546c6c4d4441324d54526c5a6d466c59325a6a4e4441335a4751774f4755774e5449344d4759324d446b3559545a684d32593359574d354d574d775a446b325a6a45794d4449794d444d324d7a593559574e694e7a677a4e544a6d4f4745344e6a68684e4451774d7a67304d6d4e6a4d7a4a694e6a566d5a574d334e6d4d7a596a426d4e7a6c6a4e54557a4d545a694e6a566b5957557a597a4e6a595463344d794973496d467559326876636c5234615751694f694a684d6d59324d544d314d44426c4f4441335a5749344f5441335a47466b4e7a63324d6a4d774d324d344d575a6b5a444d344e6d4e6c4d5751785a444e6a5a54426c4d6a646d4f4751314d474d33595463774e6d4a6b496e30"
+            }
+          ]
+        },
+        "workAmoV5RawDecodeReasonCode": "",
+        "firstInputPrevoutScriptpubkey": "76a914bbecfd713ed81b1331e8ded61bf7e11e0301f3b088ac",
+        "eventId": 4472609,
+        "confirmationStatus": "confirmed",
+        "displayName": "4.pow"
+      }
+    ],
+    "kind": "activity",
+    "limit": 5,
+    "network": "livenet",
+    "nextCursor": "",
+    "page": 0,
+    "pageCount": 1,
+    "pageSize": 5,
+    "query": "dd498455bb712411341cfde6fab38764281ff6b77076a41012c3bee768475e38",
+    "source": "proof-indexer",
+    "start": 0,
+    "totalCount": 1,
+    "consistency": {
+      "ok": true,
+      "checks": [
+        {
+          "ok": true,
+          "name": "livenet-confirmed-history-present",
+          "details": {
+            "powids": 508,
+            "activityItems": 26189,
+            "confirmedTokens": 238
+          }
+        },
+        {
+          "ok": true,
+          "name": "token-definitions-cover-confirmed-mints",
+          "details": {
+            "confirmedTokens": 238,
+            "confirmedTokenMints": 21876
+          }
+        },
+        {
+          "ok": true,
+          "name": "token-components-cover-confirmed-activity",
+          "details": {
+            "ok": true,
+            "missing": [],
+            "stateCounts": {
+              "mints": 21876,
+              "sales": 89,
+              "tokens": 238,
+              "transfers": 265
+            },
+            "activityCounts": {
+              "mints": 21876,
+              "sales": 89,
+              "tokens": 236,
+              "transfers": 265
+            }
+          }
+        },
+        {
+          "ok": true,
+          "name": "canonical-activity-count-matches-public-log",
+          "details": {
+            "ok": true,
+            "ledgerActivityCount": 26189,
+            "canonicalActivityCount": 26188,
+            "publicLogActivityCount": 26188,
+            "supplementalActivityCount": 1,
+            "ledgerConfirmedActivityCount": 26167,
+            "canonicalConfirmedActivityCount": 26167,
+            "publicLogConfirmedActivityCount": 26167,
+            "supplementalConfirmedActivityCount": 0
+          }
+        },
+        {
+          "ok": true,
+          "name": "ledger-covers-node-tip",
+          "details": {
+            "lagBlocks": 0,
+            "tipHeight": 969196,
+            "maxLagBlocks": 6,
+            "indexedThroughBlock": 969196
+          }
+        },
+        {
+          "ok": true,
+          "name": "inception-live-issuance-matches-incb-supply",
+          "details": {
+            "canonicalMints": 47,
+            "confirmedMints": 47,
+            "incbConfirmedSupply": "945662401792509469",
+            "confirmedIssuanceUnits": "945662401792509469",
+            "issuanceAccountingModel": "canonical-pre-bond-live-network-value-v2",
+            "issuanceNetworkValueSats": "945662401792509491.46190218"
+          }
+        },
+        {
+          "ok": true,
+          "name": "inception-fixed-value-reconciles",
+          "details": {
+            "fixedFloorQ8": "100000000",
+            "fixedFloorSats": "1",
+            "saleVolumeSats": "0",
+            "confirmedSupply": "945662401792509469",
+            "transferFeeSats": "0",
+            "fixedNetworkValueQ8": "94566240179250949146190218",
+            "fixedNetworkValueSats": "945662401792509491.46190218",
+            "issuanceNetworkValueSats": "945662401792509491.46190218",
+            "marketplaceMutationFeeSats": "0",
+            "networkValueAccountingModel": "fixed-incb-issuance-plus-market-flow-v1"
+          }
+        },
+        {
+          "ok": true,
+          "name": "infinity-bond-flow-matches-powb-supply",
+          "details": {
+            "powbConfirmedSupply": "630496569",
+            "infinityBondFlowSats": "630496569"
+          }
+        },
+        {
+          "ok": true,
+          "name": "network-values-finite",
+          "details": {
+            "workFloorFinite": true,
+            "workActualValueQ8": "1452083490330680135585252463",
+            "workNetworkValueQ8": "1452083490330680135585252463",
+            "growthActualValueQ8": "1452083490330680135585252463",
+            "growthSummaryFinite": true,
+            "growthWorkFloorValueQ8": "1452083490330680135585252463",
+            "workActualValueSatsExact": "14520834903306801355.85252463",
+            "workNetworkValueSatsExact": "14520834903306801355.85252463",
+            "growthActualValueSatsExact": "14520834903306801355.85252463",
+            "hasCreditMinerFeeAccounting": true,
+            "growthWorkFloorValueSatsExact": "14520834903306801355.85252463",
+            "creditMinerFeeCoverageComplete": true,
+            "hasVerifiedCreditMinerFeeCoverage": true,
+            "creditMinerFeeCoverageInputVerified": true,
+            "creditMinerFeeMissingCanonicalEvents": 0
+          }
+        },
+        {
+          "ok": true,
+          "name": "work-floor-actual-total",
+          "details": {
+            "actualValueQ8": "1452083490330680135585252463",
+            "networkValueQ8": "1452083490330680135585252463",
+            "actualValueSatsExact": "14520834903306801355.85252463",
+            "networkValueSatsExact": "14520834903306801355.85252463"
+          }
+        },
+        {
+          "ok": true,
+          "name": "growth-actual-total",
+          "details": {
+            "workValueQ8": "1452083490330680135585252463",
+            "growthValueQ8": "1452083490330680135585252463",
+            "workValueSatsExact": "14520834903306801355.85252463",
+            "growthValueSatsExact": "14520834903306801355.85252463"
+          }
+        },
+        {
+          "ok": true,
+          "name": "growth-work-floor-total",
+          "details": {
+            "workValueQ8": "1452083490330680135585252463",
+            "growthWorkFloorQ8": "1452083490330680135585252463",
+            "workValueSatsExact": "14520834903306801355.85252463",
+            "growthWorkFloorSatsExact": "14520834903306801355.85252463"
+          }
+        },
+        {
+          "ok": true,
+          "name": "marketplace-mutation-fees-counted",
+          "details": {
+            "marketplaceFeeSats": 1384110,
+            "marketplaceMutationFeeSats": 1384110,
+            "legacyBootstrapCarryAccountingMode": "confirmed-activity-includes-carry",
+            "confirmedMarketplaceMutationFeeSats": 1384110,
+            "legacyBootstrapMarketplaceCarrySats": 546
+          }
+        },
+        {
+          "ok": true,
+          "name": "work-amo-v5-legacy-bootstrap-carry-proven",
+          "details": {
+            "model": "canonical-work-amo-v5-legacy-bootstrap-carry-v1",
+            "evidence": {
+              "txid": "5eb0a876603a7551653806b932533dc27a884631a581caa2e36dcf129b8278e8",
+              "model": "canonical-work-amo-v5-legacy-bootstrap-carry-v1",
+              "eventId": 4079493,
+              "complete": true,
+              "blockHash": "000000000000000000005a63a2c00834b92746ab0658c9f0c98aeb509724e8f9",
+              "blockIndex": 2552,
+              "reasonCode": "work-market-v4-version-required",
+              "sourceKind": "token-event-invalid",
+              "blockHeight": 959311,
+              "listingCount": 1,
+              "minerFeeSats": 2216,
+              "protocolVout": 1,
+              "baseCarryMode": "published-valid-excludes-carry",
+              "creditFixedQ8": "276200000000",
+              "growthValueQ8": "273000000000",
+              "recordOrdinal": 0,
+              "baseCarryField": "tokenMarketplaceFeeSats",
+              "validBaseState": {
+                "powids": "508",
+                "mailFlowSats": "1489022",
+                "driveFlowSats": "3276",
+                "browserFlowSats": "0",
+                "tokenMintFlowSats": "23545075",
+                "tokenSaleVolumeSats": "9728286",
+                "idMarketplaceFeeSats": "14742",
+                "infinityBondFlowSats": "630496569",
+                "computerEventFlowSats": "509638",
+                "inceptionBondFlowSats": "28478",
+                "tokenCreationFlowSats": "128856",
+                "tokenTransferFlowSats": "144690",
+                "idMarketplaceVolumeSats": "22000",
+                "tokenMarketplaceFeeSats": "1368276"
+              },
+              "creditFixedSats": 2762,
+              "growthValueSats": 2730,
+              "sourceAmountSats": 0,
+              "sourceReasonCode": "work-market-v2-canonical-oracle-unavailable",
+              "compatibilityMode": "legacy-bootstrap-invalid-only-replay-evidence-v1",
+              "activeListingCount": 0,
+              "committedBaseState": {
+                "powids": "508",
+                "mailFlowSats": "1489022",
+                "driveFlowSats": "3276",
+                "browserFlowSats": "0",
+                "tokenMintFlowSats": "23545075",
+                "tokenSaleVolumeSats": "9728286",
+                "idMarketplaceFeeSats": "14742",
+                "infinityBondFlowSats": "630496569",
+                "computerEventFlowSats": "509638",
+                "inceptionBondFlowSats": "28478",
+                "tokenCreationFlowSats": "128856",
+                "tokenTransferFlowSats": "144690",
+                "idMarketplaceVolumeSats": "22000",
+                "tokenMarketplaceFeeSats": "1368822"
+              },
+              "sourceListingCount": 0,
+              "validCreditFixedQ8": "4253206900000000",
+              "creditFixedOverlapQ8": "0",
+              "validCreditFixedSats": 42532069,
+              "committedCreditFixedQ8": "4257566000000000",
+              "creditFixedOverlapSats": 0,
+              "effectiveCreditFixedQ8": "276200000000",
+              "validBaseNetworkValueQ8": "340673358559710276",
+              "effectiveCreditFixedSats": 2762,
+              "sourceActiveListingCount": 0,
+              "postActivationBaseCarryQ8": "0",
+              "marketplaceMutationFeeSats": 546,
+              "publishedBaseNetworkValueQ8": "340685404559710276",
+              "sourceSaleTicketOutputCount": 1,
+              "postActivationBaseCarryFields": [],
+              "validActivityContributionSats": 0,
+              "validMarketplaceMutationFeeSats": 1383018,
+              "sourceRegistryPaymentOutputCount": 1
+            },
+            "indexedThroughBlock": 969196
+          }
+        },
+        {
+          "ok": true,
+          "name": "marketplace-value-includes-mutation-fees",
+          "details": {
+            "marketplaceSats": 55671980,
+            "marketplaceFlowSats": 11134396,
+            "marketplaceSaleVolumeSats": 9750286,
+            "marketplaceMutationFeeSats": 1384110
+          }
+        },
+        {
+          "ok": true,
+          "name": "computer-event-flow-excludes-marketplace",
+          "details": {
+            "computerEventFlowSats": 509638,
+            "marketplaceMutationFeeSats": 1384110,
+            "expectedComputerEventFlowSats": 509638
+          }
+        },
+        {
+          "ok": true,
+          "name": "dns-activity-counted",
+          "details": {
+            "dnsSats": 115000,
+            "dnsTotalSats": 120460,
+            "dnsRegistrations": 23,
+            "dnsRegistryFlowSats": 23000,
+            "dnsMarketplaceFeeSats": 1092,
+            "dnsMarketplaceFlowSats": 1092,
+            "dnsMarketplaceVolumeSats": 0,
+            "confirmedDnsRegistrations": 23,
+            "confirmedDnsRegistryFlowSats": 23000,
+            "confirmedDnsMarketplaceFeeSats": 1092,
+            "confirmedDnsMarketplaceVolumeSats": 0
+          }
+        },
+        {
+          "ok": true,
+          "name": "credit-frozen-value-includes-event-components",
+          "details": {
+            "creditMinerFeeFlowSats": 10324123,
+            "creditEventFrozenValueQ8": "177667049949107634809263081",
+            "creditSalePaymentFlowSats": 9728286,
+            "creditEventFrozenValueSats": 1776670499491076400,
+            "creditProofPaymentFlowSats": 21000546,
+            "creditMovementFrozenValueQ8": "177667049944850068809263081",
+            "postActivationCreditFixedQ8": "4082900000000",
+            "legacyBootstrapCreditFixedQ8": "276200000000",
+            "creditMovementFrozenValueSats": 1776670499448500700,
+            "postActivationCreditFixedSats": 40829,
+            "creditRegistryMutationFlowSats": 140868,
+            "legacyBootstrapCreditFixedSats": 2762,
+            "creditMarketplaceMutationFlowSats": 1338246
+          }
+        },
+        {
+          "ok": true,
+          "name": "credit-live-value-is-active-network-value",
+          "details": {
+            "creditNetworkValueQ8": "1452083489989994458025542187",
+            "creditEventLiveValueQ8": "1452083489989994458025542187",
+            "creditNetworkValueSats": 14520834899899945000,
+            "creditEventLiveValueSats": 14520834899899945000,
+            "creditLiveNetworkValueQ8": "1452083489989994458025542187",
+            "creditLiveNetworkValueSats": 14520834899899945000
+          }
+        },
+        {
+          "ok": true,
+          "name": "token-credit-aggregates-match-verified-closing-state",
+          "details": {
+            "blockHash": "0000000000000000000154e8c20779af9b95e354835f1a621efd2a4e13965611",
+            "aggregates": {
+              "creditFixedQ8": "4257566000000000",
+              "creditNetworkValueQ8": "1452083489989994458025542187",
+              "creditEventLiveValueQ8": "1452083489989994458025542187",
+              "creditEventFrozenValueQ8": "177667049949107634809263081",
+              "creditLiveNetworkValueQ8": "1452083489989994458025542187",
+              "creditMovementLiveValueQ8": "1452083489985736892025542187",
+              "creditFrozenNetworkValueQ8": "177667049949107634809263081",
+              "creditMovementFrozenValueQ8": "177667049944850068809263081",
+              "postActivationCreditFixedQ8": "4082900000000",
+              "legacyBootstrapCreditFixedQ8": "276200000000"
+            },
+            "mismatches": [],
+            "blockHeight": 969196
+          }
+        },
+        {
+          "ok": true,
+          "name": "token-events-logged",
+          "details": {
+            "sample": [],
+            "missing": 0
+          }
+        },
+        {
+          "ok": true,
+          "name": "token-sales-logged",
+          "details": {
+            "missing": 0
+          }
+        },
+        {
+          "ok": true,
+          "name": "seeded-mail-events-logged",
+          "details": {
+            "seeded": 618,
+            "missing": 0
+          }
+        },
+        {
+          "ok": true,
+          "name": "seeded-inception-bonds-logged",
+          "details": {
+            "seeded": 48,
+            "missing": 0,
+            "loggedFlowSats": 28478,
+            "seededFlowSats": 28478
+          }
+        },
+        {
+          "ok": true,
+          "name": "inception-historical-issuance-baseline",
+          "details": {
+            "expected": {
+              "acceptedMints": 46,
+              "issuanceDustQ8": "2193582060",
+              "networkValueQ8": "22484771339844794793582060",
+              "confirmedSupply": "224847713398447926",
+              "parentBondEvents": 47,
+              "directProofIssuanceUnits": "27386",
+              "attachedWorkIssuanceUnits": "224847713398420540"
+            },
+            "acceptedMints": 46,
+            "exactRequired": false,
+            "loggedParents": 48,
+            "seededParents": 48,
+            "issuanceDustQ8": "2246190218",
+            "confirmedSupply": "945662401792509469",
+            "parentBondEvents": 47,
+            "issuanceNetworkValueQ8": "94566240179250949146190218",
+            "directProofIssuanceUnits": "27932",
+            "attachedWorkIssuanceUnits": "945662401792481537"
+          }
+        },
+        {
+          "ok": true,
+          "name": "seeded-infinity-bonds-logged",
+          "details": {
+            "seeded": 467,
+            "missing": 0,
+            "loggedFlowSats": 630496569,
+            "seededFlowSats": 630496569
+          }
+        }
+      ],
+      "status": "green",
+      "missingLogEvents": []
+    },
+    "ledgerGeneratedAt": "2026-09-29T20:20:10.246Z",
+    "snapshotId": "0e25b0d45ad952359ba8d758"
+  },
+  "cleanup": {
+    "cleanup-ui-roots-receipt.json": {
+      "sha256": "6953911ebbb1674c5ef00848ff65d91fdf51d1afd5c25e33c9a3f92e85868170",
+      "receipt": {
+        "approvedBy": "User audit28 cleanup approval",
+        "preserved": {
+          "/var/www": "0e767c69e785-20260929T165314Z",
+          "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-0e767c69e785-20260929T165314Z": "d2c0afaffd9c-20260929T161019Z"
+        },
+        "plan": [
+          {
+            "root": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-08a3a9814c3c-20260928T170441Z",
+            "manifest": "format=proofofwork-ui-release-v3\nrelease_id=50eb42fe1c806f0b-20260928T043700Z\ncommit=50eb42fe1c806f0b6baf26f7d17b136884fa2a25\nsource_tree=a9492d45e68f066132159faaadd696d9c0f4c6af\nsource_attestation=detached-recursive-git-tree-v1\nsource_dependency_model=node-modules-recursive-v1\nsource_dependency_entry_count=6118\nsource_dependency_bytes=160954989\nsource_dependency_sha256=567f7916f1109e0c662433b6df4c300b33564560865c37a07048ea2f4ad5ae91\ndeployed_at=2026-09-28T04:53:34Z\narchive_name=proofofwork-ui-release-50eb42fe1c806f0b-20260928T043700Z.tgz\narchive_sha256=d4a4c7e2d7961cd1cbbe4168d1402e97f9f9d1e56489020b8bf7091e630d7a92\narchive_payload_model=surfaces-v1\nsurface.activity.file_count=56\nsurface.activity.sha256=2d238405fee69fb7debfd43f9a12ca52d2fd00ac66c84055cd4503c68d0f9eed\nsurface.browser.file_count=56\nsurface.browser.sha256=13a3c082073318da652c0e15a5ff587bf2865228ecc90427d35b0ef9567004db\nsurface.boost.file_count=56\nsurface.boost.sha256=09618967a0d782868e23517714f96eb5ff5da3cf32babc204666a0bf8f2f784e\nsurface.computer.file_count=56\nsurface.computer.sha256=3681215bb3acd99cbafc98138757acbd34e5e222bf5c49c3dc61d0f6b87f618d\nsurface.desktop.file_count=56\nsurface.desktop.sha256=2244dc2d158a93d4dcf477b37bce288d2dd0977b82da4a26527b4bd2703c77e9\nsurface.growth.file_count=56\nsurface.growth.sha256=dc7cdea6613311e369f05672c642b5ae0bbed497704ad4e67411a06fad2371bf\nsurface.id.file_count=56\nsurface.id.sha256=709be04896314b0212e176a7f1a983eb35f456736b951b7b8490e1ec4e5cd228\nsurface.inception.file_count=56\nsurface.inception.sha256=f16b52f120e9541f6ab92b2050a5663cae81144ee294883d466dd4c478b9e10f\nsurface.infinity.file_count=56\nsurface.infinity.sha256=4aa16f02d5767029c350643034c4a04e58e5faaf2ab5d48dedc0ed3af7d7c173\nsurface.landing.file_count=56\nsurface.landing.sha256=bcbd029bfb47050cfb1a53445314eb8dd6299349138d27b1712ea513b9ad9ba1\nsurface.marketplace.file_count=56\nsurface.marketplace.sha256=b0fb91c72f91cf2bd88574fa902b9377796bd9455f091dd6590e9d391dbee04f\nsurface.nft.file_count=56\nsurface.nft.sha256=3681215bb3acd99cbafc98138757acbd34e5e222bf5c49c3dc61d0f6b87f618d\nsurface.token.file_count=56\nsurface.token.sha256=67d1571f751d2f7b34bf3c71520e6c1bfa02949292dc7c58220fcedd2c815c48\nsurface.wallet.file_count=56\nsurface.wallet.sha256=942f88c86a3c4faa06e9f6f16ef7f6d8a598944e103928d61c26d3af112b2b65\nsurface.work.file_count=56\nsurface.work.sha256=301b4c9428d862fbc969e74b124f1ce17d3679f6edf941f3c6fa01a833f0ff0e\n",
+            "manifestSha256": "8f577cb4befcc7431a01d7571c54b8ccbacad46fdcf61db4c3a2b0fe74d01060"
+          },
+          {
+            "root": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-22a1b0d31d1c-20260929T035749Z",
+            "manifest": "format=proofofwork-ui-release-v3\nrelease_id=b608e73eab41-20260928T230900Z\ncommit=b608e73eab41921c10670a5687afcfac782a6f8e\nsource_tree=baee72a5ed5a40b4a5c1faac8baf6a72709685c1\nsource_attestation=detached-recursive-git-tree-v1\nsource_dependency_model=node-modules-recursive-v1\nsource_dependency_entry_count=6118\nsource_dependency_bytes=160954989\nsource_dependency_sha256=74d54e7c58f15d225603104316eab06748209b85c6e2c27f8457ee6967f9b811\ndeployed_at=2026-09-28T23:22:12Z\narchive_name=proofofwork-ui-release-b608e73eab41-20260928T230900Z.tgz\narchive_sha256=8e08f7f84e554c2bd881084ec09d0f2d63b51311a7ee160e0d3ea83a0740c802\narchive_payload_model=surfaces-v1\nsurface.activity.file_count=55\nsurface.activity.sha256=846406d6d912356edfa47f24d44c9b024068d202f1529f00a25fb14df92312ed\nsurface.browser.file_count=55\nsurface.browser.sha256=5db9cba6e7075b1094b4b83242d971f46abafbdd9d41c1d128667f366ad2ce64\nsurface.boost.file_count=55\nsurface.boost.sha256=bc6440042b4f5269fe7bf6724b28fb99174baedc027f47568728b95946383d49\nsurface.computer.file_count=55\nsurface.computer.sha256=1a2886201f235286c21cfe538c1b363bc410bbd1bac3bd6593e1c1e4fb499bed\nsurface.desktop.file_count=55\nsurface.desktop.sha256=feba0919bf3a83b3dd4de9ad7f6e0c196f5fa1018c43ca01035c2ed9cd37cc96\nsurface.growth.file_count=55\nsurface.growth.sha256=c8d38db470937309c59d3add09dedff89f1daab00a1817268b90e37bd502fac7\nsurface.id.file_count=55\nsurface.id.sha256=21d050f9686553640edd60c18b588174e93704a8b9657c2aa0525a067194e4d2\nsurface.inception.file_count=55\nsurface.inception.sha256=54ca140313cc0c1c50c5829c4aee65c58765d133ad698776626b6b2506270d0b\nsurface.infinity.file_count=55\nsurface.infinity.sha256=7023bd3b7f1637519e5d1e66685dfd6ad0699f943c2a16b7ed2f849a1cf69361\nsurface.landing.file_count=55\nsurface.landing.sha256=deef92c9fe7b7955cf57d995b5616178b28f78f06966028026e8714f233c7c88\nsurface.marketplace.file_count=55\nsurface.marketplace.sha256=93b5cf4b9f101235559a6ebadc60067f66071c850d9d533f686bab4a856fc025\nsurface.nft.file_count=55\nsurface.nft.sha256=1a2886201f235286c21cfe538c1b363bc410bbd1bac3bd6593e1c1e4fb499bed\nsurface.token.file_count=55\nsurface.token.sha256=21abee3ba5edaa0635299d1117c7cb4cecfc6f7ebb31cc6f237d667d02816801\nsurface.wallet.file_count=55\nsurface.wallet.sha256=2691aefb678450f747ead7c6a49ac3da5312b9c059e02d0799c8c09ecc5f0476\nsurface.work.file_count=55\nsurface.work.sha256=6845d3043dc30a0a0a8aba9c059a7740976d57c9f5664f1e389312389f4a8863\n",
+            "manifestSha256": "8aed85f30b0337288a858d25ecb24e40915bfa9401bd2933a36bf32a83bf04dc"
+          },
+          {
+            "root": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-50eb42fe1c806f0b-20260928T043700Z",
+            "manifest": "format=proofofwork-ui-release-v3\nrelease_id=825f7288d606-20260928T004813Z\ncommit=825f7288d606499c564a1bb4271fc8e518e3c3da\nsource_tree=740ce0fd49487a4dcd8c9b2da82e6f83844273e1\nsource_attestation=detached-recursive-git-tree-v1\nsource_dependency_model=node-modules-recursive-v1\nsource_dependency_entry_count=6118\nsource_dependency_bytes=160954989\nsource_dependency_sha256=74d54e7c58f15d225603104316eab06748209b85c6e2c27f8457ee6967f9b811\ndeployed_at=2026-09-28T00:59:42Z\narchive_name=proofofwork-ui-release-825f7288d606-20260928T004813Z.tgz\narchive_sha256=3a8da68e5f156adee823a984fed06cc1194c3535136417f8aba6188bd6a250c5\narchive_payload_model=surfaces-v1\nsurface.activity.file_count=54\nsurface.activity.sha256=ad10525e7003dc7f68bf78cacceebda9b29795a119156ffe388bf43b1fedc6b7\nsurface.browser.file_count=54\nsurface.browser.sha256=0e1fcb2166f35e4823f829b2e5d1c64290593185060c01fe17014ab6e4f4a7f4\nsurface.boost.file_count=54\nsurface.boost.sha256=e6cdba1cf5f50f78badecd0eaa4e2b1d0b53fa553478589425d5861224946c45\nsurface.computer.file_count=54\nsurface.computer.sha256=075cf00349abc96691101b8737da80bd3457e2f6ab7b26d6c8fc48598fd03c5a\nsurface.desktop.file_count=54\nsurface.desktop.sha256=1b6649728e2f2647cc9c92dfa82b497ca66347fd59d1ac5bf7c5b704293ad490\nsurface.growth.file_count=54\nsurface.growth.sha256=4ce422aa19f75162ad232814b825aa33e85f130417224647d40b6edbcc96e371\nsurface.id.file_count=54\nsurface.id.sha256=f0ac78c22f10b9aeefaa2d39367aafd1c95478421b9dee7a52cf2b584ae36440\nsurface.inception.file_count=54\nsurface.inception.sha256=bc072ed6c9ece46802aa7e2d185a67ae736ba8ad71468c209f4716d781e05576\nsurface.infinity.file_count=54\nsurface.infinity.sha256=f4ee22c5e37d1086482e5c5dae729e71e640a8fd4a69f86b69884deb2d2c6fe6\nsurface.landing.file_count=54\nsurface.landing.sha256=df4033d2befe1617a7d42d6346d9feee62bb9282e22d58478471af97d591e6d3\nsurface.marketplace.file_count=54\nsurface.marketplace.sha256=f0e34785953c53ca12300a9cd73ea1c04a123532bd8dc9b33a31f87aca922034\nsurface.nft.file_count=54\nsurface.nft.sha256=075cf00349abc96691101b8737da80bd3457e2f6ab7b26d6c8fc48598fd03c5a\nsurface.token.file_count=54\nsurface.token.sha256=836e9bb0fba280f762329971ea289ab45bb6d11eb001bad4f59ac7002dc23e12\nsurface.wallet.file_count=54\nsurface.wallet.sha256=7de8fe23ce38b60c8f48e9f941dc5977581c65023efc375a6cec1db972c622f8\nsurface.work.file_count=54\nsurface.work.sha256=425c0b2e74ad2d80fe6b9eac0b737fad10f53552a75646d201e468032a070ec2\n",
+            "manifestSha256": "ae85421739247b69f789aa93f02796fe38f3c1ae05d52f849d030bdead318db2"
+          },
+          {
+            "root": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-62bb44d2251b-20260928T000229Z",
+            "manifest": "format=proofofwork-ui-release-v3\nrelease_id=c964e304a8f9-20260927T181330Z\ncommit=c964e304a8f977feab21482ca567fce74bf4c814\nsource_tree=3f9e0b9573b629f3ac3504eda319268b02e7bb4b\nsource_attestation=detached-recursive-git-tree-v1\nsource_dependency_model=node-modules-recursive-v1\nsource_dependency_entry_count=6118\nsource_dependency_bytes=160954989\nsource_dependency_sha256=74d54e7c58f15d225603104316eab06748209b85c6e2c27f8457ee6967f9b811\ndeployed_at=2026-09-27T18:23:33Z\narchive_name=proofofwork-ui-release-c964e304a8f9-20260927T181330Z.tgz\narchive_sha256=62cbc81e71c8ae3145bd1a6a098e44587d7180ce670e93c0a7ca4f10d4c9fa11\narchive_payload_model=surfaces-v1\nsurface.activity.file_count=54\nsurface.activity.sha256=e9748b0156b6f89788b2c80f7955cf508dd524da6aa9ec1a39029765d081b18e\nsurface.browser.file_count=54\nsurface.browser.sha256=33748e6b9123f5d7b8bc3fb2ac7378744aeb87bad1e59471b44a4bef8835f60d\nsurface.boost.file_count=54\nsurface.boost.sha256=10021b6b54206e75c1a502108fd7d6b84db3daeb5de4919cab4ed0dfde03a3c5\nsurface.computer.file_count=54\nsurface.computer.sha256=a613550b465cb4cf77420f3c13cab004b3de4d23f44fea17795c75dcc66a73ce\nsurface.desktop.file_count=54\nsurface.desktop.sha256=b5431b22a914f641fe0774a5bf1db0cd08c58d4ce7765031bd5732f5312b5838\nsurface.growth.file_count=54\nsurface.growth.sha256=82d45e0276b8a79d3812001cbb0028eef71d39ad7d542f720bff59c71a418248\nsurface.id.file_count=54\nsurface.id.sha256=2d49998c8841a08fa30bf625a4c9a12bce265781e950d39be85ee3c8ded38628\nsurface.inception.file_count=54\nsurface.inception.sha256=ed988c909bc23c820b95a1a683c5439903e341b1f915765086c23b41f46b04c7\nsurface.infinity.file_count=54\nsurface.infinity.sha256=732cd560d0ef23405c0bad2ea049977a02d54ac7dedc1f3c279ed5802bcb513c\nsurface.landing.file_count=54\nsurface.landing.sha256=80899e70858b472c62b95ba7e4b9efe46ec4b640f23df7ec855ad1384618a0a0\nsurface.marketplace.file_count=54\nsurface.marketplace.sha256=7b610833eea688fa1cf94a0c0f5c19d385d5567cea86a74e1c88bcc4411b8c10\nsurface.nft.file_count=54\nsurface.nft.sha256=a613550b465cb4cf77420f3c13cab004b3de4d23f44fea17795c75dcc66a73ce\nsurface.token.file_count=54\nsurface.token.sha256=4ebeb9cac12d580adf8423e9c737672cdf5674bf22dcff7f045d97a7ac3dd351\nsurface.wallet.file_count=54\nsurface.wallet.sha256=6b49f37fbfa623fbe6158a119731f557890c54ab3f9ea72d224334dc548cb4ed\nsurface.work.file_count=54\nsurface.work.sha256=65cb9d2ae84524ed62a79c24c905d798430bfb0e3df734820b60e721b1c99e0c\n",
+            "manifestSha256": "67238ccb10518fea1b6314b3e965da3ceed1cf2c7f198fe397de2135c99198cd"
+          },
+          {
+            "root": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-825f7288d606-20260928T004813Z",
+            "manifest": "format=proofofwork-ui-release-v3\nrelease_id=62bb44d2251b-20260928T000229Z\ncommit=62bb44d2251bb360254485ff6accdf23347a5a92\nsource_tree=b92185c6782955f92f76ec9707aa4571fb420f46\nsource_attestation=detached-recursive-git-tree-v1\nsource_dependency_model=node-modules-recursive-v1\nsource_dependency_entry_count=6118\nsource_dependency_bytes=160954989\nsource_dependency_sha256=74d54e7c58f15d225603104316eab06748209b85c6e2c27f8457ee6967f9b811\ndeployed_at=2026-09-28T00:13:50Z\narchive_name=proofofwork-ui-release-62bb44d2251b-20260928T000229Z.tgz\narchive_sha256=031be3ff46c14f4563e543f2e6e0af492dfba0810869508ea32947b43b0490de\narchive_payload_model=surfaces-v1\nsurface.activity.file_count=55\nsurface.activity.sha256=3cf3ae33bd5198e22f100a66c7b383d83b65d5628391377b725eec83441bdfda\nsurface.browser.file_count=55\nsurface.browser.sha256=0cf3e5502af328bff65c577caeea3d084ed31bccc28ff73036105dc2a0eaf400\nsurface.boost.file_count=55\nsurface.boost.sha256=609f0bb30349cc0c5d1460cc6630e4653157ff8120e392fbad1fb7d89a0a6b42\nsurface.computer.file_count=55\nsurface.computer.sha256=a4eb9c74a5c0cd34f3507f0de87c806b632b37d238ff0988eecc688b22ad99d8\nsurface.desktop.file_count=55\nsurface.desktop.sha256=83a18600b0ef17ec897871edbbd83d459f59977257eb2d61095ffcc74cb90ecf\nsurface.growth.file_count=55\nsurface.growth.sha256=69fd84f7cc163b0cc42cf90a8a11febe8a4fafa2c93667d53bf2f0dc75f6664d\nsurface.id.file_count=55\nsurface.id.sha256=f4b70e57e7d66deed96a211bc9cee86b07619a8d48a71dc82683c87c9bb9366e\nsurface.inception.file_count=55\nsurface.inception.sha256=b2040ba7a5e52e4f910d238c13a553826c8f4be2645970b8bfd2ba7636fe3ffe\nsurface.infinity.file_count=55\nsurface.infinity.sha256=1464b3f9e2d9ab579e33c94eb969494c24f3352499bd1038d30e5146c812bc46\nsurface.landing.file_count=55\nsurface.landing.sha256=aab53a3739eff868455b8f67573552ed43a2e0008edb0d24c7c72e68f163382b\nsurface.marketplace.file_count=55\nsurface.marketplace.sha256=8d6b77bfb8d71b2a7f9aaae6cd3f71a3c6d8ea7161c2b23c8a3a483bd2b37b04\nsurface.nft.file_count=55\nsurface.nft.sha256=a4eb9c74a5c0cd34f3507f0de87c806b632b37d238ff0988eecc688b22ad99d8\nsurface.token.file_count=55\nsurface.token.sha256=0022207fdd1f064ca8d17eb1b089ff593cbea474b5af9b909dfd80f73edbfc08\nsurface.wallet.file_count=55\nsurface.wallet.sha256=63ad1c59c92b8f2382527e40fb31f25d7b223280a3496f26fa7beb43d5271c64\nsurface.work.file_count=55\nsurface.work.sha256=5a576258508a8d60e4216c876ebb1fef05fe9adda0e82c3c946163d585f8c805\n",
+            "manifestSha256": "eea20e06627e66cc2e78ef6dde935138746c4a55e6316876ed81cf9278265b65"
+          },
+          {
+            "root": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-863385322af4-20260929T140259Z",
+            "manifest": "format=proofofwork-ui-release-v3\nrelease_id=c12b68c51faa-20260929T131338Z\ncommit=c12b68c51faace1ec1aa2a1b00398851a1e7c08d\nsource_tree=526a665b10f38e5a06bbf39f4a04101608a1c6cb\nsource_attestation=detached-recursive-git-tree-v1\nsource_dependency_model=node-modules-recursive-v1\nsource_dependency_entry_count=6118\nsource_dependency_bytes=160954989\nsource_dependency_sha256=74d54e7c58f15d225603104316eab06748209b85c6e2c27f8457ee6967f9b811\ndeployed_at=2026-09-29T13:43:18Z\narchive_name=proofofwork-ui-release-c12b68c51faa-20260929T131338Z.tgz\narchive_sha256=c72df9a7694a093d2448c387b9922093115f41d641efa17572261d79f1a0f986\narchive_payload_model=surfaces-v1\nsurface.activity.file_count=54\nsurface.activity.sha256=acb7ffab99a645bec98bd659db3bcca45de2ed5f68d41cfe76e5d1086e638e46\nsurface.browser.file_count=54\nsurface.browser.sha256=f846e3ea9e3dd84890530fe506a63d240ac5cdce44f5ace5a933e2e4f08275aa\nsurface.boost.file_count=54\nsurface.boost.sha256=229265e69d41f323d1309e9a1abd5ae728084d819f5a72db1da6b143962db248\nsurface.computer.file_count=54\nsurface.computer.sha256=63acfcba8165b8da119e02876b13a3ff02ea3567a8b25f5de8e050e88ef3ce94\nsurface.desktop.file_count=54\nsurface.desktop.sha256=73559d96c7f1532a418e502fd0c52693bec2e280373436dd91aa45e22b4b0df8\nsurface.dns.file_count=54\nsurface.dns.sha256=0a805ff2907dfcbacd26f76acb77f9033b6d23a2288e32a4774a08f8de01f7f6\nsurface.growth.file_count=54\nsurface.growth.sha256=8ed0f5d57b3aa360238a912567df5270b49cf044ddab48a4fd479bcb455d1060\nsurface.id.file_count=54\nsurface.id.sha256=2e9256dbdfc26e3e0dd7c8408c145388ac04388eeaf9c48dece2ea36c021b5db\nsurface.inception.file_count=54\nsurface.inception.sha256=02f112638ec5ac6d27e2568c9342dbd440d3da7951e065b1c1b13421e5cab2b4\nsurface.infinity.file_count=54\nsurface.infinity.sha256=f6833e0ba91f50fa551c21e9356a9008ddc1a9cb59fdc7ca391ecb48338b34af\nsurface.landing.file_count=54\nsurface.landing.sha256=42432c6739b65c00a7da381888c4048c77fadcd39ec73c03bdb3acb13b7cbfe3\nsurface.marketplace.file_count=54\nsurface.marketplace.sha256=74e840ed1421bc3c6ad441c11a833e3a0a99baec7142610614d8103cf90db259\nsurface.nft.file_count=54\nsurface.nft.sha256=63acfcba8165b8da119e02876b13a3ff02ea3567a8b25f5de8e050e88ef3ce94\nsurface.token.file_count=54\nsurface.token.sha256=4123640b2c5266e9dd3f9a8a471a206ff30cb237483d0f88e65164082034d8e9\nsurface.wallet.file_count=54\nsurface.wallet.sha256=b143e99550a7be53c1e114306dae527bc9d2d81bd608a875758ccab3457b74e1\nsurface.work.file_count=54\nsurface.work.sha256=032d779a391b69de7d0126ce7874fabf6856e0e1fd54036be6a6113e0f6d2733\n",
+            "manifestSha256": "e2f491789bf4101a7b03883ae9109d644abb1d442430340183a0e71589a2a027"
+          },
+          {
+            "root": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-942478c7fa78-20260929T143619Z",
+            "manifest": "format=proofofwork-ui-release-v3\nrelease_id=863385322af4-20260929T140259Z\ncommit=863385322af4559a8ffd7b44ca3d47b339481532\nsource_tree=d9336d6fde05c84596dd5756dc3c6232453e56a2\nsource_attestation=detached-recursive-git-tree-v1\nsource_dependency_model=node-modules-recursive-v1\nsource_dependency_entry_count=6118\nsource_dependency_bytes=160954989\nsource_dependency_sha256=74d54e7c58f15d225603104316eab06748209b85c6e2c27f8457ee6967f9b811\ndeployed_at=2026-09-29T14:17:46Z\narchive_name=proofofwork-ui-release-863385322af4-20260929T140259Z.tgz\narchive_sha256=79fa353aaf2252d6fb166ba5de95163e4df480d67011711d9d9ae5bf64f3691d\narchive_payload_model=surfaces-v1\nsurface.activity.file_count=49\nsurface.activity.sha256=7ba48152cea9bf10a1785e3cec48295fb79be2bb9906509ecd23d5146d4a1490\nsurface.browser.file_count=49\nsurface.browser.sha256=0f57fa9e5073a81b6154d00fc55ae38e91531e59f0a6fbd314941439cca1e0d5\nsurface.boost.file_count=49\nsurface.boost.sha256=8dcd153f8e84d7982eb73658aae20d0a4bf3bbbfaa8df185dfdabd4713829faa\nsurface.computer.file_count=49\nsurface.computer.sha256=c549ba59cc85529d0a848e52a57bdfd9e7a3d30c60b5fb1cc1fb71f78f8931e2\nsurface.desktop.file_count=49\nsurface.desktop.sha256=f5e3fc37e8656064c2a3d84956948394e2ee569926e8fe9047c4c8cbbf0eaf4a\nsurface.dns.file_count=49\nsurface.dns.sha256=e03d3436a4d273a5667a868eaf2d42e5fe3c3ecfe8447e9838e173cc6b9457a6\nsurface.growth.file_count=49\nsurface.growth.sha256=627ff23e24f4f31fd63c01833a246d12ce03bc3046f28b36da3097e610672bbf\nsurface.id.file_count=49\nsurface.id.sha256=cc4fb7c0d76aee0b7e75a376f75b212ea8a8383d3ac38c023cbd069bff909226\nsurface.inception.file_count=49\nsurface.inception.sha256=7570333e07fb570dba1879f31201d44011f42164de081c503433da4f92e51e68\nsurface.infinity.file_count=49\nsurface.infinity.sha256=e22e6bf965127b0547e286a535b492957d7bc89c8599c2426a126971c50a32d9\nsurface.landing.file_count=49\nsurface.landing.sha256=a428beb1b1158c7ecd1ae0245019c7a5da3868aedc991679c33d4e4dd0374c15\nsurface.marketplace.file_count=49\nsurface.marketplace.sha256=253befd1ed875e41a65f253f73cda0b8a47a3360020328777206f7a9f072ae94\nsurface.nft.file_count=49\nsurface.nft.sha256=c549ba59cc85529d0a848e52a57bdfd9e7a3d30c60b5fb1cc1fb71f78f8931e2\nsurface.token.file_count=49\nsurface.token.sha256=f3a2bd73c8863c0c08d1397f6184f18a6a60355a1abec3d7ace97dc024355eb5\nsurface.wallet.file_count=49\nsurface.wallet.sha256=428a36812056bb07297c4836341d29c5531bbf27c59e0167ee161c8b63896cfe\nsurface.work.file_count=49\nsurface.work.sha256=d19e2d3112a40f5371677743001f61f3f87e7c0dd38b957c9bff7a81822a9f54\n",
+            "manifestSha256": "0b28218cd9962673c76286379c7df1b5b2d95fe380ebe84fce62d4cbcbf7304e"
+          },
+          {
+            "root": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-b111f5941375-20260927T125836Z",
+            "manifest": "format=proofofwork-ui-release-v3\nrelease_id=b752518bf8b4-20260927T014804Z\ncommit=b752518bf8b4e8cb13691d3a09a3ce865c6e0dd0\nsource_tree=44a0443ffcb06ed04f14c4d68213788731631bae\nsource_attestation=detached-recursive-git-tree-v1\nsource_dependency_model=node-modules-recursive-v1\nsource_dependency_entry_count=6118\nsource_dependency_bytes=160954989\nsource_dependency_sha256=74d54e7c58f15d225603104316eab06748209b85c6e2c27f8457ee6967f9b811\ndeployed_at=2026-09-27T02:02:56Z\narchive_name=proofofwork-ui-release-b752518bf8b4-20260927T014804Z.tgz\narchive_sha256=d85607cb426ee47110f2268e54d8b913bdeece6ffaccbb23c7a2e8ce7193051e\narchive_payload_model=surfaces-v1\nsurface.activity.file_count=54\nsurface.activity.sha256=763be32561ca70dbfe545f3dccbc0248447980c27809e94dd9c66dd9e6567f8b\nsurface.browser.file_count=54\nsurface.browser.sha256=1c3360dd982d8d2632350594ce78caf0f17276dcd5b05281f00d16d43729b8d8\nsurface.boost.file_count=54\nsurface.boost.sha256=b13f8385a780007dd5abeb3450f4fe9c3fc0959ff559369fa9d52e9cb06bde91\nsurface.computer.file_count=54\nsurface.computer.sha256=40670bd7691137268d5a623524c962258ea2bbc830261eb26ff9eda785fd59bd\nsurface.desktop.file_count=54\nsurface.desktop.sha256=74d1ce8b4b4df07f9cdbf63e1892af4cfcdbff357dfb4eab1950a2fd81281bc3\nsurface.growth.file_count=54\nsurface.growth.sha256=925b540a938bb9f116dc68170bb0baf35dac9efd4c1bf4223cf80fa0230c5993\nsurface.id.file_count=54\nsurface.id.sha256=d8fa7a2071aa0cf45b53203906086fdefd0309323dd70331359b42896cf37e6a\nsurface.inception.file_count=54\nsurface.inception.sha256=9f985cfbe83a266854ea9a2e09c94e01d2f8b09a8934824ffedf291c0bbce721\nsurface.infinity.file_count=54\nsurface.infinity.sha256=27a2e3c3a82ade93087c00ffd8803db72ea130de37026b2d75fc69de026acbcb\nsurface.landing.file_count=54\nsurface.landing.sha256=b684151332742b6aba66cd6dc8c576766d08f289dbfdc4b4e63632f27a7b6372\nsurface.marketplace.file_count=54\nsurface.marketplace.sha256=a9a0dcf9298325b6170ae90b46dc3ce96471bf7331888879b6391f2f1c5d0b95\nsurface.nft.file_count=54\nsurface.nft.sha256=40670bd7691137268d5a623524c962258ea2bbc830261eb26ff9eda785fd59bd\nsurface.token.file_count=54\nsurface.token.sha256=9ac6be1666a19727cbf49135990f584d22d333a6a9351715940981e61d2b24a3\nsurface.wallet.file_count=54\nsurface.wallet.sha256=2fc8e19fe521c1401354f5d446d0cdd573d49745c06a016a9f4351ca41010d1c\nsurface.work.file_count=54\nsurface.work.sha256=5751772cdb6491d270a63627251591f50f9491a334fc60069c54e87a20069e48\n",
+            "manifestSha256": "40c40873f573a19477cb0ee42fa4f29f78855ba0e86475bf2c5bec99b9a9795f"
+          },
+          {
+            "root": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-b608e73eab41-20260928T230900Z",
+            "manifest": "format=proofofwork-ui-release-v3\nrelease_id=08a3a9814c3c-20260928T170441Z\ncommit=08a3a9814c3ccaa2a63eaf7b900755fd04b89418\nsource_tree=a58c488812cf3dcb8aef96556b319f3d215744e5\nsource_attestation=detached-recursive-git-tree-v1\nsource_dependency_model=node-modules-recursive-v1\nsource_dependency_entry_count=6118\nsource_dependency_bytes=160954989\nsource_dependency_sha256=74d54e7c58f15d225603104316eab06748209b85c6e2c27f8457ee6967f9b811\ndeployed_at=2026-09-28T17:20:31Z\narchive_name=proofofwork-ui-release-08a3a9814c3c-20260928T170441Z.tgz\narchive_sha256=fb122ff3524a9fd78eaaaecd43008fb47b15b73577cb8a3af5dcdd94fbf63fdc\narchive_payload_model=surfaces-v1\nsurface.activity.file_count=55\nsurface.activity.sha256=c17a802d800fcf6eb06433da8d95b9c1edd08aead77110528e4e42b6236073f5\nsurface.browser.file_count=55\nsurface.browser.sha256=d6d7feab6088e5327c294d536c0afcb338209248e16438a1ca000ac73d9f0a80\nsurface.boost.file_count=55\nsurface.boost.sha256=7e4bbfbb38fcd456476fc5f657223cc9b534cc00d0e5956987a3bfe320852f93\nsurface.computer.file_count=55\nsurface.computer.sha256=acb44f355607317138ab548d9e921fce6155a731d003f2637baa35e0001dd636\nsurface.desktop.file_count=55\nsurface.desktop.sha256=ec1a505d2eac1b41ee868384da5ee086ceb22ba770a571243e23d7eb8e72bd39\nsurface.growth.file_count=55\nsurface.growth.sha256=abdf0a255fa9a929b8294e29e384bc4a77b9a409b536456019f34180f2342735\nsurface.id.file_count=55\nsurface.id.sha256=04c157622a0c0dc41a965abebb0745b30e0cbd2220f76c9b349ae577910798d3\nsurface.inception.file_count=55\nsurface.inception.sha256=33cfbf37c1ffc9a76dae2db29bef3c2ede8b8684e3a4019338d2ed7c6e3f1e45\nsurface.infinity.file_count=55\nsurface.infinity.sha256=57ff743772b2e8ec6f5413fde4dcf39aeb7a962c95b7af1d95867cdc8f074da2\nsurface.landing.file_count=55\nsurface.landing.sha256=5439b107a74128c7341552d79e8ff261e57e2c550cc4f0c0a9f4c4cfe8789d7c\nsurface.marketplace.file_count=55\nsurface.marketplace.sha256=7733bb689306813b2463464ef34122e29704a15312db221b0d42cd88e89fa25b\nsurface.nft.file_count=55\nsurface.nft.sha256=acb44f355607317138ab548d9e921fce6155a731d003f2637baa35e0001dd636\nsurface.token.file_count=55\nsurface.token.sha256=0ac650a121733aa23e2ed27d86778ea56c810161e55c37c139b4b97a1a3321e6\nsurface.wallet.file_count=55\nsurface.wallet.sha256=c955d624bb3d11e1d09c62934b0fec7c7b4e9d827b422a739a6e44ff9f6498ce\nsurface.work.file_count=55\nsurface.work.sha256=ebd7a06457840dbca525934d471e23d276ef6ac531c7b086e76350d3b1b13ce1\n",
+            "manifestSha256": "dc0a77afcfff6c1e8dc4d139e97b432f845b0a83c1f414bc1e45f5855098884c"
+          },
+          {
+            "root": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-b752518bf8b4-20260927T014804Z",
+            "manifest": "format=proofofwork-ui-release-v3\nrelease_id=c64963f4649f-20260927T001231Z\ncommit=c64963f4649f021c3d91bf71ad1a3dcde37e6d2b\nsource_tree=d5c2562fe3e0ccf88efba81f990c38bb14238e8e\nsource_attestation=detached-recursive-git-tree-v1\nsource_dependency_model=node-modules-recursive-v1\nsource_dependency_entry_count=6118\nsource_dependency_bytes=160954989\nsource_dependency_sha256=74d54e7c58f15d225603104316eab06748209b85c6e2c27f8457ee6967f9b811\ndeployed_at=2026-09-27T00:28:47Z\narchive_name=proofofwork-ui-release-c64963f4649f-20260927T001231Z.tgz\narchive_sha256=e1b31e40724e7155a98115ffeab90d940ae67d9adc9f42395f9b1ae86ffbb40d\narchive_payload_model=surfaces-v1\nsurface.activity.file_count=53\nsurface.activity.sha256=5969197ead18f6e9ba3304f2ad70a4b3a4817ea1fc2801c7775fdb8db37767e5\nsurface.browser.file_count=53\nsurface.browser.sha256=c960f79c77f3bdcb99ed4d061573bb875a01f85f15255cc98634bcf3e0d215ef\nsurface.boost.file_count=53\nsurface.boost.sha256=cf93b100e12d6589d3e6971c82b87c4f736441cf1bcf4445ebe0a5fdb650228b\nsurface.computer.file_count=53\nsurface.computer.sha256=97a50262e9760c01f1d76dc6ef21a2be39668bf7a366bb4d73f022b25a024dd1\nsurface.desktop.file_count=53\nsurface.desktop.sha256=2bad54cf48736d59e8235bb55662dc6914b0ed8b459486fd07558851d34aadc8\nsurface.growth.file_count=53\nsurface.growth.sha256=12f75456b66d233ff9cb8de627b7c623dd1ace6954b833c3d213ae1385649df7\nsurface.id.file_count=53\nsurface.id.sha256=888ed3a595c59fc4f5c0f8f136da4a883200d4cc5a93ee9651b474e02d7874ae\nsurface.inception.file_count=53\nsurface.inception.sha256=0346d1a02add5601b9df02f2dcf224c9fd484d8b2bec221d30a49cc381b82b85\nsurface.infinity.file_count=53\nsurface.infinity.sha256=0c4cb75a232896df41f5ec530cb465f9fb41fb3c58a6d02d865bdbbd071cf111\nsurface.landing.file_count=53\nsurface.landing.sha256=cc688ff0df4ea35b054e8824b6ee09780a53646294866bdaa3b747f85e044b51\nsurface.marketplace.file_count=53\nsurface.marketplace.sha256=12a357deb10d3cc2ed52c6623eca8dfb090ca4f1bdf81151c5f01b1b06b7cb58\nsurface.nft.file_count=53\nsurface.nft.sha256=97a50262e9760c01f1d76dc6ef21a2be39668bf7a366bb4d73f022b25a024dd1\nsurface.token.file_count=53\nsurface.token.sha256=8d47bff651cd9ad9d873d222c23a24a93fc15787d2a9b14af7a2de8fccb1daea\nsurface.wallet.file_count=53\nsurface.wallet.sha256=9222242eae629fbb3da5362fc23f197e12e5d9b5ab4622fa4e0c5811019c9385\nsurface.work.file_count=53\nsurface.work.sha256=31990c144713f3def8922993fc979d7b978197bc0a1bca1219d854d56c7054a7\n",
+            "manifestSha256": "c5571e72e1a2d737757a1ce157e83e3a0b09faef7c50def113b2a362ad2b2398"
+          },
+          {
+            "root": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-c12b68c51faa-20260929T131338Z",
+            "manifest": "format=proofofwork-ui-release-v3\nrelease_id=f48d3a777a50-20260929T043647Z\ncommit=f48d3a777a50f3434643e54852bb53dbbbcf7057\nsource_tree=b37031afb1b2c4d83981353cd05bd06b128bb7d0\nsource_attestation=detached-recursive-git-tree-v1\nsource_dependency_model=node-modules-recursive-v1\nsource_dependency_entry_count=6118\nsource_dependency_bytes=160954989\nsource_dependency_sha256=74d54e7c58f15d225603104316eab06748209b85c6e2c27f8457ee6967f9b811\ndeployed_at=2026-09-29T04:51:58Z\narchive_name=proofofwork-ui-release-f48d3a777a50-20260929T043647Z.tgz\narchive_sha256=ce547786e3de61c303868b4b59c3ee575fdfa61bd21c0a57b7bd7146b91b29ff\narchive_payload_model=surfaces-v1\nsurface.activity.file_count=49\nsurface.activity.sha256=ef0f9e4d74cd760f2a3e9a1f377a53e5448ce0970c30cb0cc50532ccb1c36671\nsurface.browser.file_count=49\nsurface.browser.sha256=57eea964e2518669ccd6221f29d54359e6355300c9640374f5fe545cf8829efb\nsurface.boost.file_count=49\nsurface.boost.sha256=b8ad41ca8f3f1410e64dbd9208b0fb9f8bc8721e5e08ee1b906eeaffe1c82034\nsurface.computer.file_count=49\nsurface.computer.sha256=92b90423786cb7d765ba2ef39fff0c71e9f6587c3c7e12370c61637c350dcaf3\nsurface.desktop.file_count=49\nsurface.desktop.sha256=0bec8177093105f6c56bc15dc10127800ae8f016a420208d243bd98531b536f3\nsurface.dns.file_count=49\nsurface.dns.sha256=f8db97577fb8d829dd2e524e71253c1cf947e6372d15486be46047c62cb3919d\nsurface.growth.file_count=49\nsurface.growth.sha256=c071a481687e0b5ca1d65632dd92934f5a2e0389ab9447726109db5fd94ae8c9\nsurface.id.file_count=49\nsurface.id.sha256=d05865275d1c567fbe3e982df31f67cf1d649bafe1b707b7d6c7796301688cdf\nsurface.inception.file_count=49\nsurface.inception.sha256=2ef207757d68056a23a27aae061add8e4d16e52cfad638bf19f977cb3d65af39\nsurface.infinity.file_count=49\nsurface.infinity.sha256=c4c18886a536249e05878dd6f223dbe313be2189f7e04652ee1f8cf9ca9f6646\nsurface.landing.file_count=49\nsurface.landing.sha256=54a160693687897375ab5a1a352a613a43d617a25600cba37e026dc82b434cd1\nsurface.marketplace.file_count=49\nsurface.marketplace.sha256=bf4d47142f13b118be260c05ebc9ef341f37bc92b5af706d39f83bceca9e8dea\nsurface.nft.file_count=49\nsurface.nft.sha256=92b90423786cb7d765ba2ef39fff0c71e9f6587c3c7e12370c61637c350dcaf3\nsurface.token.file_count=49\nsurface.token.sha256=b2abdad3aac5ba34adbd60249cf2c0a02784794e780212826228d0a1340f3159\nsurface.wallet.file_count=49\nsurface.wallet.sha256=0a2943249e10a42e96b036992ad195c90173f907f70d836274dae949d2b748f2\nsurface.work.file_count=49\nsurface.work.sha256=b10b1445a8b0d42112f0cb32f45fef52c47536d219095505152f7cfd6e9d8967\n",
+            "manifestSha256": "dea8b13d73a79389370faaa7fabff8f69bab799414c428f2c78022ee471ba625"
+          },
+          {
+            "root": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-c64963f4649f-20260927T001231Z",
+            "manifest": "format=proofofwork-ui-release-v3\nrelease_id=5970b26e610b-20260926T225712Z\ncommit=5970b26e610ba13412f8a4e68065f89e3f599fa3\nsource_tree=e613a990501a59c856be4e9709252a64c04e2738\nsource_attestation=detached-recursive-git-tree-v1\nsource_dependency_model=node-modules-recursive-v1\nsource_dependency_entry_count=6118\nsource_dependency_bytes=160954989\nsource_dependency_sha256=74d54e7c58f15d225603104316eab06748209b85c6e2c27f8457ee6967f9b811\ndeployed_at=2026-09-26T23:24:27Z\narchive_name=proofofwork-ui-release-5970b26e610b-20260926T225712Z.tgz\narchive_sha256=f1dca803ce478be612871eb6710f73b0852a1441d7bd236dd1b1fe0b9ab11abc\narchive_payload_model=surfaces-v1\nsurface.activity.file_count=56\nsurface.activity.sha256=b821e337ce20e4930c6c20946cc8d14a06244daf1da09465b4b9553678fc7f9f\nsurface.browser.file_count=56\nsurface.browser.sha256=eafd09e02940ba37a0b9317a7e75b129ba20ea2cc08c6973d18e03993b6afc2f\nsurface.boost.file_count=56\nsurface.boost.sha256=46909b222e2c3eb0111c3f30075a3279f17cfa20aace19957b383748deb605ad\nsurface.computer.file_count=56\nsurface.computer.sha256=11a246838a447f260f1fe5a2e1ba3156fc89c6e3330b5abe03087d28a0ca82ae\nsurface.desktop.file_count=56\nsurface.desktop.sha256=73387edff99188a796f2475e66ec5ea76e8ccad54c81bca6262c68945de61a8b\nsurface.growth.file_count=56\nsurface.growth.sha256=b150cbfdcee4620dcd653b94d82c1603be86767a0a9233cfe74c1fa6e04c6c57\nsurface.id.file_count=56\nsurface.id.sha256=4ab33747ac25d18d31d405e92e30a15774ca8adb43d78e9893ff34c53cdf16a1\nsurface.inception.file_count=56\nsurface.inception.sha256=e91894bc79bdb49a25c70e478c48ac3b52bc2e7fee90b5c6372999e1a4fa873e\nsurface.infinity.file_count=56\nsurface.infinity.sha256=23292a49c245d7dc13554fed69c94c831a805b63e918aef7bcb40462f3f23144\nsurface.landing.file_count=56\nsurface.landing.sha256=edfd37cb4adfc4acbdfcf8d2a0eb859cc85f543ef460c1baa86774347ee8cbbd\nsurface.marketplace.file_count=56\nsurface.marketplace.sha256=551b769d74b8e6c11eec47910d8c65f2b47b2350c9cc222ad98bb0e69f154dca\nsurface.nft.file_count=56\nsurface.nft.sha256=11a246838a447f260f1fe5a2e1ba3156fc89c6e3330b5abe03087d28a0ca82ae\nsurface.token.file_count=56\nsurface.token.sha256=1911dd65c10d62504bbdbff71a7e93a9f05476738f0f682a13ca51ef37ff85e4\nsurface.wallet.file_count=56\nsurface.wallet.sha256=9a1236d85ae93a6afaba450cba8f109fc536a51529c7125ad0b697fe7509fe00\nsurface.work.file_count=56\nsurface.work.sha256=77348ee6d235a29797c9a15c57e39fd2dc877b43d9eb4daade4832980061f46a\n",
+            "manifestSha256": "4cd121eec37887f765c08ef54b0c31b969c98ce46708c979ea8756e9003a655e"
+          },
+          {
+            "root": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-c964e304a8f9-20260927T181330Z",
+            "manifest": "format=proofofwork-ui-release-v3\nrelease_id=cfd0899af4f8-20260927T173242Z\ncommit=cfd0899af4f8d047fdef7d0297307a93a21ae38e\nsource_tree=de952708e508a6fdf8ca97befd282d22c82a7f3f\nsource_attestation=detached-recursive-git-tree-v1\nsource_dependency_model=node-modules-recursive-v1\nsource_dependency_entry_count=6118\nsource_dependency_bytes=160954989\nsource_dependency_sha256=74d54e7c58f15d225603104316eab06748209b85c6e2c27f8457ee6967f9b811\ndeployed_at=2026-09-27T17:42:29Z\narchive_name=proofofwork-ui-release-cfd0899af4f8-20260927T173242Z.tgz\narchive_sha256=d3f5c303006abb147662567282ffbb4a433e1c63fcd7fc710a490dab64b8e225\narchive_payload_model=surfaces-v1\nsurface.activity.file_count=54\nsurface.activity.sha256=11f4b6cd4b855758821f25c2a629da07fdf335b5b3da82e1bf4d3f1bd6c2a056\nsurface.browser.file_count=54\nsurface.browser.sha256=4a95c4cec98e6972515cc09ed75e42f6985d36f9032745976801eec48448db4f\nsurface.boost.file_count=54\nsurface.boost.sha256=95d8fd854fb9077735dfe198046a96a7e34d22c2641f4573dde70b38ef410c63\nsurface.computer.file_count=54\nsurface.computer.sha256=644f669c22a6cfca1f614f86cbabaec9e68cf79a0f268884691152b34a081b9c\nsurface.desktop.file_count=54\nsurface.desktop.sha256=574c7adb57e77e30f3a229c9d52d46a31f7456df32f3550b659ab6565efbf0e0\nsurface.growth.file_count=54\nsurface.growth.sha256=85a7d19138fa76c6cf7ccb33927cee4278bd27df5a639bd3be3ef18921c235f3\nsurface.id.file_count=54\nsurface.id.sha256=12a26e71610e8b4425add29e96b5d413019a4c8f44597f47b74d9c0fd37556e8\nsurface.inception.file_count=54\nsurface.inception.sha256=8ec11def02ca53009fda80c2c2e27c98fe2f52c8d5d92d6c5fa8350372464443\nsurface.infinity.file_count=54\nsurface.infinity.sha256=c54e62eabb2094c01b76ec9019318303c08d28917886a22b307f66c112451db6\nsurface.landing.file_count=54\nsurface.landing.sha256=8f19fa7029325ac068a8ca587417ed9ce33e6ab931fd1d1674c1df587d97fe8c\nsurface.marketplace.file_count=54\nsurface.marketplace.sha256=e63a028194236fe9feaa4c57301e92394465a51bb9846746d6a234cbe6f8c954\nsurface.nft.file_count=54\nsurface.nft.sha256=644f669c22a6cfca1f614f86cbabaec9e68cf79a0f268884691152b34a081b9c\nsurface.token.file_count=54\nsurface.token.sha256=da09fde0a99edc7b4371aeaafb60eb4412ada2b8c7c6e9bd2c7974d36d612d4d\nsurface.wallet.file_count=54\nsurface.wallet.sha256=1c6a44e01d345c30350700a76c6e06819284bf9e6d81cf4340b57a9a23a692bb\nsurface.work.file_count=54\nsurface.work.sha256=83319c979b2e0ae706dccf136bde8b8776f8bc4a8edda6ca4a82c8469125516a\n",
+            "manifestSha256": "c3c73fd2260319ffc8578b61fc04cbd7b1e92f069299bfb84f7b4e250766728c"
+          },
+          {
+            "root": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-cfd0899af4f8-20260927T173242Z",
+            "manifest": "format=proofofwork-ui-release-v3\nrelease_id=b111f5941375-20260927T125836Z\ncommit=b111f594137598eb2b7bf6296e8691eda132da13\nsource_tree=ce941ff6574b2782e6f893ef9e96b9440c95e13f\nsource_attestation=detached-recursive-git-tree-v1\nsource_dependency_model=node-modules-recursive-v1\nsource_dependency_entry_count=6118\nsource_dependency_bytes=160954989\nsource_dependency_sha256=32d4354d7dfb24b267ec001bf1f915fcab934b40c843a2d28907e0ee097550b4\ndeployed_at=2026-09-27T13:08:21Z\narchive_name=proofofwork-ui-release-b111f5941375-20260927T125836Z.tgz\narchive_sha256=5829111db52d97d39f80a94738b4c91ca296ce88f6af716e306c966701390c24\narchive_payload_model=surfaces-v1\nsurface.activity.file_count=58\nsurface.activity.sha256=1212d58adc3b06803f30ab771aca42d53974c41e46e3fcfb07cb1275690601de\nsurface.browser.file_count=58\nsurface.browser.sha256=5fd8b0a663caae6d49dec6da65192698dfbe87a1c7db4e17cb53d010b49ea2e0\nsurface.boost.file_count=58\nsurface.boost.sha256=57c89f74b539ac52d19cbfdd6fbce7940c4183f23e2729158bd4cca438c3ef16\nsurface.computer.file_count=58\nsurface.computer.sha256=7314d1ce91b4006d7978d30ba771debc3bd405f455eceac69e69342ea9eb8958\nsurface.desktop.file_count=58\nsurface.desktop.sha256=674f956eee54b47e1b4beb3cf3065a911eb76d618ffa37daad0ee93d3994562d\nsurface.growth.file_count=58\nsurface.growth.sha256=bfeef57d9a8fbc992234447340da14fe42257d0a615a230b7481cbc4d7dc2eb7\nsurface.id.file_count=58\nsurface.id.sha256=3dbf0396ffc7676977185d3513e278892cb9d8a85be988f30c3a1d6da8c5c23f\nsurface.inception.file_count=58\nsurface.inception.sha256=608a9172fdba5c6d73f5ea2a059041af91db971fb400c07fa9fe412a4933c928\nsurface.infinity.file_count=58\nsurface.infinity.sha256=95444e1ae1a53cdc950a143d7c69001442c3adf5e316f201f671a9d2e87fce02\nsurface.landing.file_count=58\nsurface.landing.sha256=587e50c6a57577011c97443da9c36d41f643121858d1022468d0dc524ad61094\nsurface.marketplace.file_count=58\nsurface.marketplace.sha256=4c967d471390022d124b1eba80616627354de7587953d2e589fc6800fa31131f\nsurface.nft.file_count=58\nsurface.nft.sha256=7314d1ce91b4006d7978d30ba771debc3bd405f455eceac69e69342ea9eb8958\nsurface.token.file_count=58\nsurface.token.sha256=1ebe1f3d0636728f4a357c8c79619f734cd0ee3f5493c6b58018bfd2f3255f1b\nsurface.wallet.file_count=58\nsurface.wallet.sha256=5220749838ebbd6b31ce8129bc235391ccd6764232223e1ad2f1fc5e65b8f071\nsurface.work.file_count=58\nsurface.work.sha256=18c9f7e2ebcb57686c8d3969ff7b9538d494dd2dc13eedff877edbcfc77a2603\n",
+            "manifestSha256": "9cb8504b2e0ec91244f77a22660ba55a4d3c2530707b0441f78adc6a0a93c981"
+          },
+          {
+            "root": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-d2c0afaffd9c-20260929T161019Z",
+            "manifest": "format=proofofwork-ui-release-v3\nrelease_id=942478c7fa78-20260929T143619Z\ncommit=942478c7fa7889362470996fe8258de3a250f941\nsource_tree=30b3d1a0a1a1ccf3c1257da2b64ec94e302555ce\nsource_attestation=detached-recursive-git-tree-v1\nsource_dependency_model=node-modules-recursive-v1\nsource_dependency_entry_count=6118\nsource_dependency_bytes=160954989\nsource_dependency_sha256=74d54e7c58f15d225603104316eab06748209b85c6e2c27f8457ee6967f9b811\ndeployed_at=2026-09-29T14:59:23Z\narchive_name=proofofwork-ui-release-942478c7fa78-20260929T143619Z.tgz\narchive_sha256=094249c35d21db2a37b4df17f6a90999968aad081307430fde58c3a11ae7f277\narchive_payload_model=surfaces-v1\nsurface.activity.file_count=49\nsurface.activity.sha256=7ba48152cea9bf10a1785e3cec48295fb79be2bb9906509ecd23d5146d4a1490\nsurface.browser.file_count=49\nsurface.browser.sha256=0f57fa9e5073a81b6154d00fc55ae38e91531e59f0a6fbd314941439cca1e0d5\nsurface.boost.file_count=49\nsurface.boost.sha256=8dcd153f8e84d7982eb73658aae20d0a4bf3bbbfaa8df185dfdabd4713829faa\nsurface.computer.file_count=49\nsurface.computer.sha256=c549ba59cc85529d0a848e52a57bdfd9e7a3d30c60b5fb1cc1fb71f78f8931e2\nsurface.desktop.file_count=49\nsurface.desktop.sha256=f5e3fc37e8656064c2a3d84956948394e2ee569926e8fe9047c4c8cbbf0eaf4a\nsurface.dns.file_count=49\nsurface.dns.sha256=e03d3436a4d273a5667a868eaf2d42e5fe3c3ecfe8447e9838e173cc6b9457a6\nsurface.growth.file_count=49\nsurface.growth.sha256=627ff23e24f4f31fd63c01833a246d12ce03bc3046f28b36da3097e610672bbf\nsurface.id.file_count=49\nsurface.id.sha256=cc4fb7c0d76aee0b7e75a376f75b212ea8a8383d3ac38c023cbd069bff909226\nsurface.inception.file_count=49\nsurface.inception.sha256=7570333e07fb570dba1879f31201d44011f42164de081c503433da4f92e51e68\nsurface.infinity.file_count=49\nsurface.infinity.sha256=e22e6bf965127b0547e286a535b492957d7bc89c8599c2426a126971c50a32d9\nsurface.landing.file_count=49\nsurface.landing.sha256=a428beb1b1158c7ecd1ae0245019c7a5da3868aedc991679c33d4e4dd0374c15\nsurface.marketplace.file_count=49\nsurface.marketplace.sha256=253befd1ed875e41a65f253f73cda0b8a47a3360020328777206f7a9f072ae94\nsurface.nft.file_count=49\nsurface.nft.sha256=c549ba59cc85529d0a848e52a57bdfd9e7a3d30c60b5fb1cc1fb71f78f8931e2\nsurface.token.file_count=49\nsurface.token.sha256=f3a2bd73c8863c0c08d1397f6184f18a6a60355a1abec3d7ace97dc024355eb5\nsurface.wallet.file_count=49\nsurface.wallet.sha256=428a36812056bb07297c4836341d29c5531bbf27c59e0167ee161c8b63896cfe\nsurface.work.file_count=49\nsurface.work.sha256=d19e2d3112a40f5371677743001f61f3f87e7c0dd38b957c9bff7a81822a9f54\n",
+            "manifestSha256": "7cf5142d1f16fbd8fdd7ce8a650df65df4d9d060cbf93deda4015461780e0ebe"
+          },
+          {
+            "root": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-f48d3a777a50-20260929T043647Z",
+            "manifest": "format=proofofwork-ui-release-v3\nrelease_id=22a1b0d31d1c-20260929T035749Z\ncommit=22a1b0d31d1c2ce37c7a22cd3e681030a1e97686\nsource_tree=b887035d9249a494806854ef353745b3dafc3585\nsource_attestation=detached-recursive-git-tree-v1\nsource_dependency_model=node-modules-recursive-v1\nsource_dependency_entry_count=6118\nsource_dependency_bytes=160954989\nsource_dependency_sha256=74d54e7c58f15d225603104316eab06748209b85c6e2c27f8457ee6967f9b811\ndeployed_at=2026-09-29T04:12:33Z\narchive_name=proofofwork-ui-release-22a1b0d31d1c-20260929T035749Z.tgz\narchive_sha256=16d6d22ac55c525d9b5c13f4268062cc35c1cd9749b2f689e2b8e14db8e183be\narchive_payload_model=surfaces-v1\nsurface.activity.file_count=55\nsurface.activity.sha256=585ed4a4a90ccf33e71439deef935f7d5634d88f48e79eade8f9cd8009f62eb5\nsurface.browser.file_count=55\nsurface.browser.sha256=2e20339b36a528f2bd2d0c26df4aa8582ab95c1c29c88f80ab8e678bbe7e02db\nsurface.boost.file_count=55\nsurface.boost.sha256=a4106405c5d313112b1c846a424068a462e2858ea10d1cd7f2bfcc0a05abd4d1\nsurface.computer.file_count=55\nsurface.computer.sha256=42b47120ce84d6f657e5362f3276936b5386ab3225706212326dd4511f7a223e\nsurface.desktop.file_count=55\nsurface.desktop.sha256=6f640f44f304fe850cf04d20a66988117f88d7eca7ed835212cbaa9f04e6e416\nsurface.dns.file_count=49\nsurface.dns.sha256=f8db97577fb8d829dd2e524e71253c1cf947e6372d15486be46047c62cb3919d\nsurface.growth.file_count=55\nsurface.growth.sha256=8beb4132a67e299354332358159e36f52b12349a1748d9a1f7e0f27fbf032298\nsurface.id.file_count=55\nsurface.id.sha256=0deaf3ba89e65bc752694d6b1ad9b8e3a9bad54f0fcbf17ed31bc62ec0c0074f\nsurface.inception.file_count=55\nsurface.inception.sha256=1c360b0e6299610d5a81a5a37ea130cf39d69b36984dad0e5c08000c1d647268\nsurface.infinity.file_count=55\nsurface.infinity.sha256=b977a29aba37354beb74880ecd9b4c3048d2aab110ae5beec9bc2d3faeb2ba01\nsurface.landing.file_count=55\nsurface.landing.sha256=6c6288e0a5de2a32c03bcabcfed65078acdbc66eb9afdc7b936ddb916669a526\nsurface.marketplace.file_count=55\nsurface.marketplace.sha256=6512d1ae2b823c821090ef23a57edfd9e529871d60930e5d2154b671b3e0b595\nsurface.nft.file_count=55\nsurface.nft.sha256=42b47120ce84d6f657e5362f3276936b5386ab3225706212326dd4511f7a223e\nsurface.token.file_count=55\nsurface.token.sha256=fbf32ef92bbda49d02d637ff7370095fc396b97b97a65a8c2c9df979bb2da3b5\nsurface.wallet.file_count=55\nsurface.wallet.sha256=93fc7bbfdf26ac35b2d83440cd55a51d27d9fd8a431c5c53a436e7ec96906286\nsurface.work.file_count=55\nsurface.work.sha256=8a73544a6a8b433ab43130dd76463e694d330078da873e4e245fbb5222cb682e\n",
+            "manifestSha256": "b5b0bd5ab48d187f41386b467625abd3878cb7a759d941410fb21b27d0789596"
+          }
+        ]
+      }
+    },
+    "cleanup-ui-stages-receipt.json": {
+      "sha256": "81dd81f70d59d23cf300db642c592ac84e8fcce8ad0865c90665567aaebc9edc",
+      "receipt": {
+        "preservedReleases": [
+          "0e767c69e785-20260929T165314Z",
+          "d2c0afaffd9c-20260929T161019Z"
+        ],
+        "plan": [
+          {
+            "path": "/var/tmp/proofofwork-deploy/proofofwork-ui-source-08a3a9814c3c-20260928T170441Z",
+            "allocatedBytes": 249446400,
+            "commit": "08a3a9814c3ccaa2a63eaf7b900755fd04b89418"
+          },
+          {
+            "path": "/var/tmp/proofofwork-deploy/proofofwork-ui-source-08a3a9814c3c-20260928T170441Z.tgz",
+            "allocatedBytes": 94093312,
+            "sha256": "f5f1187e2e0f2b672ee51d2016542fa15a97b94b36989480d89bc39134b06ad4"
+          },
+          {
+            "path": "/var/tmp/proofofwork-deploy/proofofwork-ui-source-08a3a9814c3c-20260928T170441Z.tgz.sha256",
+            "allocatedBytes": 4096,
+            "sha256": "99716d421f987df1d3cc3fc50ec918644f7d36103dc6577890518f4300d9dc24"
+          },
+          {
+            "path": "/var/tmp/proofofwork-deploy/proofofwork-ui-source-22a1b0d31d1c-20260929T035749Z",
+            "allocatedBytes": 249438208,
+            "commit": "22a1b0d31d1c2ce37c7a22cd3e681030a1e97686"
+          },
+          {
+            "path": "/var/tmp/proofofwork-deploy/proofofwork-ui-source-50eb42fe1c806f0b-20260928T043700Z",
+            "allocatedBytes": 258473984,
+            "commit": "50eb42fe1c806f0b6baf26f7d17b136884fa2a25"
+          },
+          {
+            "path": "/var/tmp/proofofwork-deploy/proofofwork-ui-source-50eb42fe1c806f0b-20260928T043700Z.tgz",
+            "allocatedBytes": 103104512,
+            "sha256": "87b91982ca6f006e7c0f0ed1a7fa8142721bc094ded2e06ba34919b55e174254"
+          },
+          {
+            "path": "/var/tmp/proofofwork-deploy/proofofwork-ui-source-50eb42fe1c806f0b-20260928T043700Z.tgz.sha256",
+            "allocatedBytes": 4096,
+            "sha256": "c1e4a089b370940ae8a28b7bc9133b7547264f4546162cb220616286f433a4b8"
+          },
+          {
+            "path": "/var/tmp/proofofwork-deploy/proofofwork-ui-source-5970b26e610b-20260926T225712Z",
+            "allocatedBytes": 248545280,
+            "commit": "5970b26e610ba13412f8a4e68065f89e3f599fa3"
+          },
+          {
+            "path": "/var/tmp/proofofwork-deploy/proofofwork-ui-source-62bb44d2251b-20260928T000229Z",
+            "allocatedBytes": 249257984,
+            "commit": "62bb44d2251bb360254485ff6accdf23347a5a92"
+          },
+          {
+            "path": "/var/tmp/proofofwork-deploy/proofofwork-ui-source-62bb44d2251b-20260928T000229Z.tgz",
+            "allocatedBytes": 93995008,
+            "sha256": "4b4121b2aee97390ad15034a2d699cef5258c38ee159bf2fbce1ae3db7f8bdfe"
+          },
+          {
+            "path": "/var/tmp/proofofwork-deploy/proofofwork-ui-source-825f7288d606-20260928T004813Z",
+            "allocatedBytes": 249749504,
+            "commit": "825f7288d606499c564a1bb4271fc8e518e3c3da"
+          },
+          {
+            "path": "/var/tmp/proofofwork-deploy/proofofwork-ui-source-825f7288d606-20260928T004813Z.tgz",
+            "allocatedBytes": 94474240,
+            "sha256": "4374116edeb8199c0037d49a308a06a4af8919b6c500c01032f34c0ececebee1"
+          },
+          {
+            "path": "/var/tmp/proofofwork-deploy/proofofwork-ui-source-863385322af4-20260929T134749Z",
+            "allocatedBytes": 249995264,
+            "commit": "863385322af4559a8ffd7b44ca3d47b339481532"
+          },
+          {
+            "path": "/var/tmp/proofofwork-deploy/proofofwork-ui-source-863385322af4-20260929T134749Z.tgz",
+            "allocatedBytes": 94466048,
+            "sha256": "60d8728b9d22bfeb6f3457c8d2913fa5bdc6fa950d73135901260bdd7ebe5f04"
+          },
+          {
+            "path": "/var/tmp/proofofwork-deploy/proofofwork-ui-source-863385322af4-20260929T134749Z.tgz.sha256",
+            "allocatedBytes": 4096,
+            "sha256": "ea0855d29e3da47cca18be30cfb5912f783469b36f666c3eb38bf86297bf0ba5"
+          },
+          {
+            "path": "/var/tmp/proofofwork-deploy/proofofwork-ui-source-863385322af4-20260929T140259Z",
+            "allocatedBytes": 249974784,
+            "commit": "863385322af4559a8ffd7b44ca3d47b339481532"
+          },
+          {
+            "path": "/var/tmp/proofofwork-deploy/proofofwork-ui-source-863385322af4-20260929T140259Z.tgz",
+            "allocatedBytes": 94113792,
+            "sha256": "bcd871337cb0c58465ffc8f6bb807976da4a26cb477c0b6c30c20d9a35e1a6f7"
+          },
+          {
+            "path": "/var/tmp/proofofwork-deploy/proofofwork-ui-source-863385322af4-20260929T140259Z.tgz.sha256",
+            "allocatedBytes": 4096,
+            "sha256": "488cbd5fd6488a53f39e36d3fbd37f24b07d67e6c8de7e45741163a3d17336de"
+          },
+          {
+            "path": "/var/tmp/proofofwork-deploy/proofofwork-ui-source-942478c7fa78-20260929T143619Z",
+            "allocatedBytes": 249937920,
+            "commit": "942478c7fa7889362470996fe8258de3a250f941"
+          },
+          {
+            "path": "/var/tmp/proofofwork-deploy/proofofwork-ui-source-942478c7fa78-20260929T143619Z.tgz",
+            "allocatedBytes": 94408704,
+            "sha256": "7072a8d651bccefc6a477cb364cf9bcb96e06f8aa04d74642a21d4b353da5a43"
+          },
+          {
+            "path": "/var/tmp/proofofwork-deploy/proofofwork-ui-source-942478c7fa78-20260929T143619Z.tgz.sha256",
+            "allocatedBytes": 4096,
+            "sha256": "3d1108e610459537cc4ffca6dba1edb9d6e58d2dee4ad680b494737b0db0e0be"
+          },
+          {
+            "path": "/var/tmp/proofofwork-deploy/proofofwork-ui-source-b111f5941375-20260927T125836Z",
+            "allocatedBytes": 248901632,
+            "commit": "b111f594137598eb2b7bf6296e8691eda132da13"
+          },
+          {
+            "path": "/var/tmp/proofofwork-deploy/proofofwork-ui-source-b111f5941375-20260927T125836Z.tgz",
+            "allocatedBytes": 93671424,
+            "sha256": "8e3dfa7c82487b8edcac9c6de0581517b850a6ef095054740d5499157d98319c"
+          },
+          {
+            "path": "/var/tmp/proofofwork-deploy/proofofwork-ui-source-b608e73eab41-20260928T230900Z",
+            "allocatedBytes": 249470976,
+            "commit": "b608e73eab41921c10670a5687afcfac782a6f8e"
+          },
+          {
+            "path": "/var/tmp/proofofwork-deploy/proofofwork-ui-source-b608e73eab41-20260928T230900Z.tgz",
+            "allocatedBytes": 94105600,
+            "sha256": "d1edf38e37fbc054fa6f361ff0f8317590b384e280e99adbbd822ea8a0eefbfc"
+          },
+          {
+            "path": "/var/tmp/proofofwork-deploy/proofofwork-ui-source-b752518bf8b4-20260927T014804Z",
+            "allocatedBytes": 248180736,
+            "commit": "b752518bf8b4e8cb13691d3a09a3ce865c6e0dd0"
+          },
+          {
+            "path": "/var/tmp/proofofwork-deploy/proofofwork-ui-source-c12b68c51faa-20260929T131338Z",
+            "allocatedBytes": 249929728,
+            "commit": "c12b68c51faace1ec1aa2a1b00398851a1e7c08d"
+          },
+          {
+            "path": "/var/tmp/proofofwork-deploy/proofofwork-ui-source-c12b68c51faa-20260929T131338Z.tgz",
+            "allocatedBytes": 94396416,
+            "sha256": "09ea20cc12ba48085477c00628f16b92cb7ae3f232b6c3be4149d9710fe0cf15"
+          },
+          {
+            "path": "/var/tmp/proofofwork-deploy/proofofwork-ui-source-c12b68c51faa-20260929T131338Z.tgz.sha256",
+            "allocatedBytes": 4096,
+            "sha256": "12e70ca3a1e13122745c6336d6919f758c38ecb8db4b57d146e5b62bcaea53aa"
+          },
+          {
+            "path": "/var/tmp/proofofwork-deploy/proofofwork-ui-source-c64963f4649f-20260927T001231Z",
+            "allocatedBytes": 248074240,
+            "commit": "c64963f4649f021c3d91bf71ad1a3dcde37e6d2b"
+          },
+          {
+            "path": "/var/tmp/proofofwork-deploy/proofofwork-ui-source-c964e304a8f9-20260927T181330Z",
+            "allocatedBytes": 249204736,
+            "commit": "c964e304a8f977feab21482ca567fce74bf4c814"
+          },
+          {
+            "path": "/var/tmp/proofofwork-deploy/proofofwork-ui-source-c964e304a8f9-20260927T181330Z.tgz",
+            "allocatedBytes": 93974528,
+            "sha256": "2721a53e42e26a02848f0370742445391f73f6b934493ec1a2c7f1aaf62cf143"
+          },
+          {
+            "path": "/var/tmp/proofofwork-deploy/proofofwork-ui-source-cfd0899af4f8-20260927T173242Z",
+            "allocatedBytes": 248717312,
+            "commit": "cfd0899af4f8d047fdef7d0297307a93a21ae38e"
+          },
+          {
+            "path": "/var/tmp/proofofwork-deploy/proofofwork-ui-source-cfd0899af4f8-20260927T173242Z.tgz",
+            "allocatedBytes": 93491200,
+            "sha256": "62f5def46b0a01f5cef022846f9d3e5e0c9e51a8abb0e5bef95b68f0ae3c734f"
+          },
+          {
+            "path": "/var/tmp/proofofwork-deploy/proofofwork-ui-source-cfd0899af4f8-20260927T173242Z.tgz.sha256",
+            "allocatedBytes": 4096,
+            "sha256": "9b77dbb6cf801c69018112e509eaa40825883af82e16f6a6f003af17bd04f550"
+          },
+          {
+            "path": "/var/tmp/proofofwork-deploy/proofofwork-ui-source-f48d3a777a50-20260929T043647Z",
+            "allocatedBytes": 249860096,
+            "commit": "f48d3a777a50f3434643e54852bb53dbbbcf7057"
+          },
+          {
+            "path": "/var/tmp/proofofwork-deploy/proofofwork-ui-surfaces-08a3a9814c3c-20260928T170441Z",
+            "allocatedBytes": 205524992
+          },
+          {
+            "path": "/var/tmp/proofofwork-deploy/proofofwork-ui-surfaces-08a3a9814c3c-20260928T170441Z.tgz",
+            "allocatedBytes": 182595584,
+            "sha256": "47094fe3ac9e26be5c102351c310265a2a02b35a86c346c4504e95a99992c6f0"
+          },
+          {
+            "path": "/var/tmp/proofofwork-deploy/proofofwork-ui-surfaces-08a3a9814c3c-20260928T170441Z.tgz.sha256",
+            "allocatedBytes": 4096,
+            "sha256": "5f56c4a9b37106acdca252611a9662104bb260410331b166bec772dd6d4b57fe"
+          },
+          {
+            "path": "/var/tmp/proofofwork-deploy/proofofwork-ui-surfaces-50eb42fe1c806f0b-20260928T043700Z",
+            "allocatedBytes": 205524992
+          },
+          {
+            "path": "/var/tmp/proofofwork-deploy/proofofwork-ui-surfaces-50eb42fe1c806f0b-20260928T043700Z.tgz",
+            "allocatedBytes": 182587392,
+            "sha256": "82b9185bd439e2f6c50421865b763e36692b9a2d6ede8e6323057bee4c576e51"
+          },
+          {
+            "path": "/var/tmp/proofofwork-deploy/proofofwork-ui-surfaces-50eb42fe1c806f0b-20260928T043700Z.tgz.sha256",
+            "allocatedBytes": 4096,
+            "sha256": "0d87008df33a5d53b1efb1af1779e91612ebbfaac8ef2ae8eb5939cdfc7806c1"
+          },
+          {
+            "path": "/var/tmp/proofofwork-deploy/proofofwork-ui-surfaces-62bb44d2251b-20260928T000229Z",
+            "allocatedBytes": 205402112
+          },
+          {
+            "path": "/var/tmp/proofofwork-deploy/proofofwork-ui-surfaces-62bb44d2251b-20260928T000229Z.tgz",
+            "allocatedBytes": 182546432,
+            "sha256": "5172c9104cf64485655230dbf284600febf26fbbf4f67a5421efd946fa3eb0dc"
+          },
+          {
+            "path": "/var/tmp/proofofwork-deploy/proofofwork-ui-surfaces-825f7288d606-20260928T004813Z",
+            "allocatedBytes": 205463552
+          },
+          {
+            "path": "/var/tmp/proofofwork-deploy/proofofwork-ui-surfaces-825f7288d606-20260928T004813Z.tgz",
+            "allocatedBytes": 182542336,
+            "sha256": "5b2ca00e5d43d5ede75fa87f860840f29fdd91cd92b699e7a5b2298d8d5b16a1"
+          },
+          {
+            "path": "/var/tmp/proofofwork-deploy/proofofwork-ui-surfaces-863385322af4-20260929T134749Z",
+            "allocatedBytes": 219881472
+          },
+          {
+            "path": "/var/tmp/proofofwork-deploy/proofofwork-ui-surfaces-863385322af4-20260929T134749Z.tgz",
+            "allocatedBytes": 194842624,
+            "sha256": "99e1be0c7c08ef03d9161504fcfad6a925e6bd218d8682fa6c311ad276894921"
+          },
+          {
+            "path": "/var/tmp/proofofwork-deploy/proofofwork-ui-surfaces-863385322af4-20260929T134749Z.tgz.sha256",
+            "allocatedBytes": 4096,
+            "sha256": "be23ee488d9a0f942accd0719832f0fb8ebcd48068cdd666447415fbe15bc6c7"
+          },
+          {
+            "path": "/var/tmp/proofofwork-deploy/proofofwork-ui-surfaces-863385322af4-20260929T140259Z",
+            "allocatedBytes": 219881472
+          },
+          {
+            "path": "/var/tmp/proofofwork-deploy/proofofwork-ui-surfaces-863385322af4-20260929T140259Z.tgz",
+            "allocatedBytes": 194703360,
+            "sha256": "cd96f0b463f86ad0295fcebcedfbb0552b0032e6eb5d9b9cb04d7c8bd5455b0c"
+          },
+          {
+            "path": "/var/tmp/proofofwork-deploy/proofofwork-ui-surfaces-863385322af4-20260929T140259Z.tgz.sha256",
+            "allocatedBytes": 4096,
+            "sha256": "dbdd7201c9331d540818b52c891284c24079f960589d3b6ef149aecca9fdc7c5"
+          },
+          {
+            "path": "/var/tmp/proofofwork-deploy/proofofwork-ui-surfaces-942478c7fa78-20260929T143619Z",
+            "allocatedBytes": 219881472
+          },
+          {
+            "path": "/var/tmp/proofofwork-deploy/proofofwork-ui-surfaces-942478c7fa78-20260929T143619Z.tgz",
+            "allocatedBytes": 194846720,
+            "sha256": "8c7080065be8c542d5de91ef58b142b5423acc0830a4394457626e0703bc5378"
+          },
+          {
+            "path": "/var/tmp/proofofwork-deploy/proofofwork-ui-surfaces-942478c7fa78-20260929T143619Z.tgz.sha256",
+            "allocatedBytes": 4096,
+            "sha256": "0f361cbc86149ed4aa67bdfa58e3d487ee45adcff46d2799ec2396032c62f776"
+          },
+          {
+            "path": "/var/tmp/proofofwork-deploy/proofofwork-ui-surfaces-b111f5941375-20260927T125836Z",
+            "allocatedBytes": 205279232
+          },
+          {
+            "path": "/var/tmp/proofofwork-deploy/proofofwork-ui-surfaces-b111f5941375-20260927T125836Z.tgz",
+            "allocatedBytes": 182538240,
+            "sha256": "c65db678b759eb2d82d05e6adc990a3942cc2a20f517a6a2ab7d0d8010edd318"
+          },
+          {
+            "path": "/var/tmp/proofofwork-deploy/proofofwork-ui-surfaces-b608e73eab41-20260928T230900Z",
+            "allocatedBytes": 205524992
+          },
+          {
+            "path": "/var/tmp/proofofwork-deploy/proofofwork-ui-surfaces-b608e73eab41-20260928T230900Z.tgz",
+            "allocatedBytes": 182595584,
+            "sha256": "649c02eda53ddfc4237881cd9b26daa809b2f065ef5f03f033ee87c054ccbf2d"
+          },
+          {
+            "path": "/var/tmp/proofofwork-deploy/proofofwork-ui-surfaces-c12b68c51faa-20260929T131338Z",
+            "allocatedBytes": 219881472
+          },
+          {
+            "path": "/var/tmp/proofofwork-deploy/proofofwork-ui-surfaces-c12b68c51faa-20260929T131338Z.tgz",
+            "allocatedBytes": 194842624,
+            "sha256": "d0d2ea4593c147fd44b87a85d97456e4856463b54502516c44b298a17ea8de5a"
+          },
+          {
+            "path": "/var/tmp/proofofwork-deploy/proofofwork-ui-surfaces-c12b68c51faa-20260929T131338Z.tgz.sha256",
+            "allocatedBytes": 4096,
+            "sha256": "29d121752bdce4f748b2d6700f02155260622a52a8e7ab31a6c4710ff9d45fa2"
+          },
+          {
+            "path": "/var/tmp/proofofwork-deploy/proofofwork-ui-surfaces-c964e304a8f9-20260927T181330Z",
+            "allocatedBytes": 205340672
+          },
+          {
+            "path": "/var/tmp/proofofwork-deploy/proofofwork-ui-surfaces-c964e304a8f9-20260927T181330Z.tgz",
+            "allocatedBytes": 182501376,
+            "sha256": "d73b026476250b7008db24c43c0e42e8c8045d01519819d6ecfc39d040568cce"
+          },
+          {
+            "path": "/var/tmp/proofofwork-deploy/proofofwork-ui-surfaces-ce094d436e9b-20260929T034645Z",
+            "allocatedBytes": 219815936
+          },
+          {
+            "path": "/var/tmp/proofofwork-deploy/proofofwork-ui-surfaces-cfd0899af4f8-20260927T173242Z",
+            "allocatedBytes": 205279232
+          },
+          {
+            "path": "/var/tmp/proofofwork-deploy/proofofwork-ui-surfaces-cfd0899af4f8-20260927T173242Z.tgz",
+            "allocatedBytes": 182480896,
+            "sha256": "39e2c45b2985f1bd84fde653102193167e05191edd90af0b8de4b753374d637a"
+          },
+          {
+            "path": "/var/tmp/proofofwork-deploy/proofofwork-ui-surfaces-cfd0899af4f8-20260927T173242Z.tgz.sha256",
+            "allocatedBytes": 4096,
+            "sha256": "a8f33a56956cd8c2725b9bf766632dd89166df780475d3ebd2e91de0b9ef4b37"
+          }
+        ]
+      }
+    }
+  },
+  "desktopDownload": {
+    "verification": "Observed deployed browser Download href, decoded data URL bytes; no signed transaction",
+    "bytes": 1018,
+    "sha256": "f05b31a5f4dfabff5fb0ffe3bef1a03de4a8f5c562694609114ae6d352e9caad",
+    "lastByte": 10,
+    "savedDownloadOnDiskVerified": false,
+    "canonicalReference": "Audit 28 predecessor Desktop mail/browser receipt; canonical 1018-byte message-body.html"
+  },
+  "executionReceipts": {
+    "node-cutover-retry2.log": {
+      "sha256": "cf9b6d9cb17bfbf1dd95e0b6caf69b214f95c9ab63b9589655a45e33a56a0e57",
+      "text": "{\"ok\": true, \"phase\": \"complete\", \"commit\": \"3bc6c9d44e00c504c324a1f13b7803f89cbfb122\", \"receipt\": \"/data/proofofwork-audit28-cutover-3bc6c9d44e00-20260929T200136Z-retry2\"}"
+    },
+    "ui-publish.log": {
+      "sha256": "b56900f5b4e94dbd7056ac1758fe24d678359119cc7c9233534c636ca1d6e237",
+      "text": "ui_release_provenance status=recorded release_id=3bc6c9d44e00-20260929T200127Z commit=3bc6c9d44e00c504c324a1f13b7803f89cbfb122 archive_sha256=9fb8049076552a54fa847cb86c39dbeeb02268e07a38dc6e1366043b8876438f\nui_release_provenance status=verified release_id=3bc6c9d44e00-20260929T200127Z commit=3bc6c9d44e00c504c324a1f13b7803f89cbfb122 archive_sha256=9fb8049076552a54fa847cb86c39dbeeb02268e07a38dc6e1366043b8876438f\nui_release_publish status=published release_id=3bc6c9d44e00-20260929T200127Z commit=3bc6c9d44e00c504c324a1f13b7803f89cbfb122 rollback_root=/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-3bc6c9d44e00-20260929T200127Z\nui_release_provenance status=verified release_id=3bc6c9d44e00-20260929T200127Z commit=3bc6c9d44e00c504c324a1f13b7803f89cbfb122 archive_sha256=9fb8049076552a54fa847cb86c39dbeeb02268e07a38dc6e1366043b8876438f"
+    },
+    "dns-repair.log": {
+      "sha256": "d8226fc7c49fa17725dd24846b04ba548e25a0735352d02302aaef767fdd9043",
+      "text": "{\"ok\":true,\"txid\":\"dd498455bb712411341cfde6fab38764281ff6b77076a41012c3bee768475e38\",\"eventId\":\"4472609\",\"beforeKind\":\"dns-seal-invalid\",\"after\":{\"event_id\":\"4472609\",\"kind\":\"dns-seal\",\"valid\":true},\"evidenceSha256\":\"862b8bc0fe3dd9ca828b24713f833cccba8ad8c2771de02d8a2031d58f85afd7\",\"historicalTransitionsUnchanged\":true,\"canonicalRawTransactionUnchanged\":true}\n"
+    },
+    "retention-production-dry-run.log": {
+      "sha256": "fd1e786c2fe084b15b59e2a10c3997cb9b8549edace0a09dd734e2e1daf818f9",
+      "text": "{\"ok\": true, \"mode\": \"dry-run\", \"candidatePaths\": 1, \"preservedReleases\": [\"0e767c69e785-20260929T165314Z\", \"3bc6c9d44e00-20260929T200127Z\"]}\nproofofwork-www-pre-0e767c69e785-20260929T165314Z\nproofofwork-www-pre-3bc6c9d44e00-20260929T200127Z\n"
+    },
+    "retention-installed-applied.log": {
+      "sha256": "02944ad5a1587e366bd19ab1f60ffb448a86820063eca670a9be945b6fe892c7",
+      "text": "fbee8df0ade0f353cb677d56f4961e404744b423c90d7798ea328c95a0a0c81f  /usr/local/sbin/proofofwork-ui-release-publish\n0e3a5adce67f07fb6beb0b0d8001a002e247db316bc5911f3d6f5e622983e4d1  /usr/local/sbin/proofofwork-ui-verified-retention\n224cdb741bcb83e79bccc1b45730bd919bf38ba7292559fab6ce3184ddc053a4  /usr/local/sbin/proofofwork-ui-release-publish\n{\"ok\": true, \"mode\": \"apply\", \"candidatePaths\": 1, \"preservedReleases\": [\"0e767c69e785-20260929T165314Z\", \"3bc6c9d44e00-20260929T200127Z\"]}\nwould_prune archive=/var/backups/proofofwork-ui/releases/proofofwork-ui-release-d2c0afaffd9c-20260929T161019Z.tgz checksum=/var/backups/proofofwork-ui/releases/proofofwork-ui-release-d2c0afaffd9c-20260929T161019Z.tgz.sha256 provenance=/var/backups/proofofwork-ui/releases/proofofwork-ui-release-d2c0afaffd9c-20260929T161019Z.tgz.provenance\nrelease_retention mode=dry-run verified_archives=3 unverified_archives=0\nrelease_retention mode=apply verified_archives=3 unverified_archives=0\n{\"ok\": true, \"mode\": \"dry-run\", \"candidatePaths\": 0, \"preservedReleases\": [\"0e767c69e785-20260929T165314Z\", \"3bc6c9d44e00-20260929T200127Z\"]}\nproofofwork-www-pre-3bc6c9d44e00-20260929T200127Z\n20260716T201653Z-pre-0e48e49\nCaddyfile.pre-f8460ef-20260727T050014Z\nproofofwork-ui-pre-amo-v5-20260726T200700Z.tgz\nproofofwork-ui-pre-amo-v5-20260726T200700Z.tgz.sha256\nproofofwork-ui-pre-mail-work-admission-27a3c25.tgz\nproofofwork-ui-pre-mail-work-admission-27a3c25.tgz.sha256\nproofofwork-ui-release-0e767c69e785-20260929T165314Z.tgz\nproofofwork-ui-release-0e767c69e785-20260929T165314Z.tgz.provenance\nproofofwork-ui-release-0e767c69e785-20260929T165314Z.tgz.sha256\nproofofwork-ui-release-3bc6c9d44e00-20260929T200127Z.tgz\nproofofwork-ui-release-3bc6c9d44e00-20260929T200127Z.tgz.provenance\nproofofwork-ui-release-3bc6c9d44e00-20260929T200127Z.tgz.sha256\nproofofwork-ui-release-cbb0de3-20260824T013448Z.tgz.pre-normalized-20260824T020000Z\nproofofwork-ui-release-dd7bcc0295d1-20260921T020136Z.tgz.rejected-hardlink\nproofofwork-ui-release-dd7bcc0295d1-20260921T020136Z.tgz.sha256.rejected-hardlink\nui-pre-work-atoms-20260716T185321Z.tgz\nui-pre-work-atoms-20260716T185321Z.tgz.sha256\nFilesystem       1B-blocks       Used   Available Use% Mounted on\n/dev/sda1      39973924864 9751564288 28538167296  26% /\n/dev/sda1      39973924864 9751564288 28538167296  26% /\n"
+    },
+    "node-retention-installed-applied.log": {
+      "sha256": "91a4ff2f9fd67ddd56607c0e6992bcf16d4e7b1408d8a47e35b6afab4a674eff",
+      "text": "/tmp/proofofwork-release-prune.sh: OK\n/tmp/proofofwork-node-release-prune.service: OK\nwould_prune archive=/data/proofofwork-release-backups/managed/proofofwork-node-release-8f19f2c-20260929T155139Z.tgz checksum=/data/proofofwork-release-backups/managed/proofofwork-node-release-8f19f2c-20260929T155139Z.tgz.sha256 provenance=/data/proofofwork-release-backups/managed/proofofwork-node-release-8f19f2c-20260929T155139Z.tgz.provenance\nwould_prune archive=/data/proofofwork-release-backups/managed/proofofwork-node-release-9fa3581-20260929T152445Z.tgz checksum=/data/proofofwork-release-backups/managed/proofofwork-node-release-9fa3581-20260929T152445Z.tgz.sha256 provenance=/data/proofofwork-release-backups/managed/proofofwork-node-release-9fa3581-20260929T152445Z.tgz.provenance\nrelease_retention mode=dry-run verified_archives=4 unverified_archives=0\nResult=success\nExecMainStatus=0\nrelease_retention mode=dry-run verified_archives=2 unverified_archives=0\n54bc3a68c3064e8d488b35d85c14d9821d630995f30e3bee1004e7efa9f3c0c5  /usr/local/sbin/proofofwork-release-prune\n06369c980ae669574ee306c2b8764cb6b69521795fdbff1d325fb32973d3f287  /etc/systemd/system/proofofwork-node-release-prune.service\n"
+    },
+    "ui-final-retention-monitors.txt": {
+      "sha256": "49a850049b9e7e0ad9a3b9bc30c69a5a184f623cd155adce2f8ff32c5077467c",
+      "text": "Result=success\nExecMainStatus=0\n\nResult=success\nExecMainStatus=0\nSep 29 20:25:55 ubuntu-4gb-hel1-1 proofofwork-release-prune[134266]: release_retention mode=apply verified_archives=2 unverified_archives=0\nSep 29 20:25:55 ubuntu-4gb-hel1-1 systemd[1]: proofofwork-ui-release-prune.service: Deactivated successfully.\nSep 29 20:25:55 ubuntu-4gb-hel1-1 systemd[1]: Finished proofofwork-ui-release-prune.service - Apply managed ProofOfWork UI release backup retention.\nSep 29 20:25:55 ubuntu-4gb-hel1-1 systemd[1]: proofofwork-ui-release-prune.service: Consumed 3.325s CPU time.\n"
+    },
+    "node-final-capacity-services.txt": {
+      "sha256": "d107ba5b03f776b223dea0d5ad6113f3b6f534eabe5ef17b6ed86becee65037c",
+      "text": "Filesystem               1B-blocks          Used    Available Use% Mounted on\n/dev/mapper/vg0-root  105089261568   27968098304  71735676928  29% /\n/dev/mapper/vg0-data 1764768071680 1281511686144 474269208576  73% /data\n               total        used        free      shared  buff/cache   available\nMem:     134125752320 16163573760  8095535104   461967360 111612436480 117962178560\nSwap:    17179865088   996933632 16182931456\n 20:24:10 up 143 days,  6:54,  6 users,  load average: 4.80, 3.48, 2.89\nactive\nactive\nactive\nactive\nactive\n37538323479\n"
+    },
+    "ui-final-capacity-services.txt": {
+      "sha256": "88c080de5024e62abd00cc65b991159cfab9007895e968723a6700d0caa4f8ca",
+      "text": "Filesystem       1B-blocks       Used   Available Use% Mounted on\n/dev/sda1      39973924864 9751584768 28538146816  26% /\n               total        used        free      shared  buff/cache   available\nMem:      4005457920   663908352  1433067520     4988928  2281242624  3341549568\nSwap:              0           0           0\n 20:24:13 up 144 days, 23:23,  1 user,  load average: 0.24, 0.24, 0.30\nactive\nTue 2026-09-29 20:25:23 UTC      1min 10s Tue 2026-09-29 20:20:24 UTC  3min 48s ago proofofwork-ui-storage-health.timer     proofofwork-ui-storage-health.service\nTue 2026-09-29 21:01:27 UTC         37min Tue 2026-09-29 20:01:31 UTC     22min ago proofofwork-storage-trend@ui.timer      proofofwork-storage-trend@ui.service\nWed 2026-09-30 00:10:07 UTC      3h 45min Tue 2026-09-29 13:44:19 UTC        6h ago proofofwork-ui-release-prune.timer      proofofwork-ui-release-prune.service\nWed 2026-09-30 01:18:37 UTC      4h 54min Tue 2026-09-29 01:18:48 UTC       19h ago proofofwork-ui-storage-prune.timer      proofofwork-ui-storage-prune.service\n"
+    },
+    "final-node-health-and-disk.txt": {
+      "sha256": "a4e67707f7e091f5dfda3ad13b9956a67a51435bbd9c107441a198d393ab79d0",
+      "text": "{\"available\":true,\"backend\":\"electrum\",\"checks\":{\"addressIndex\":{\"canary\":{\"confirmedSats\":0,\"scripthash\":\"8f52010f55361085b1806ee106632dd610d3a6587284138d06065d584bab8d21\",\"unconfirmedSats\":0},\"error\":\"\",\"ok\":true,\"source\":\"electrum://172.27.0.1:50001\",\"timedOut\":false},\"backend\":{\"ok\":true,\"timedOut\":false},\"database\":{\"canonicalMetaOk\":true,\"ok\":true,\"required\":true,\"timedOut\":false},\"disk\":{\"cache\":{\"availableBytes\":474455666688,\"maxUsedPercent\":90,\"minFreeBytes\":5368709120,\"ok\":true,\"path\":\"/data/proofofwork-api-cache\",\"probePath\":\"/data/proofofwork-api-cache\",\"totalBytes\":1764768071680,\"usedPercent\":73.11512632726101},\"ok\":true,\"root\":{\"availableBytes\":71736172544,\"maxUsedPercent\":90,\"minFreeBytes\":5368709120,\"ok\":true,\"path\":\"/\",\"probePath\":\"/\",\"totalBytes\":105089261568,\"usedPercent\":31.73786600681198}},\"electrum\":{\"configured\":true,\"error\":\"\",\"headerHash\":\"0000000000000000000154e8c20779af9b95e354835f1a621efd2a4e13965611\",\"headerHeight\":969196,\"ok\":true,\"timedOut\":false,\"atTip\":true},\"index\":{\"aheadBlocks\":0,\"checkpointHash\":\"0000000000000000000154e8c20779af9b95e354835f1a621efd2a4e13965611\",\"complete\":true,\"canonicalState\":{\"fault\":{},\"ok\":true,\"rebuild\":{\"active\":false,\"status\":\"complete\",\"network\":\"livenet\",\"complete\":true,\"startedAt\":\"2026-09-15T18:22:43.424Z\",\"updatedAt\":\"2026-09-29T20:19:55.192Z\",\"fromHeight\":948000,\"completedAt\":\"2026-09-29T20:19:55.192Z\",\"bootstrapHash\":\"000000000000000000004238bec59ce46cd5b28982efe2b90071a51168d67986\",\"bootstrapHeight\":947999,\"indexedThroughBlock\":969196,\"indexedThroughBlockHash\":\"0000000000000000000154e8c20779af9b95e354835f1a621efd2a4e13965611\",\"transactionNormalization\":\"canonical-raw-tx-only\"}},\"checkpointCanonical\":true,\"canonicalCheckpointHash\":\"0000000000000000000154e8c20779af9b95e354835f1a621efd2a4e13965611\",\"indexedThroughBlock\":969196,\"lagBlocks\":0,\"available\":true,\"ok\":true,\"readModels\":{\"confirmedIds\":{\"count\":508,\"maxBlock\":969060},\"confirmedTransfers\":{\"count\":265,\"maxBlock\":969015},\"confirmedEvents\":{\"count\":26508,\"maxBlock\":969188}},\"summarySnapshot\":{\"blockHash\":\"0000000000000000000154e8c20779af9b95e354835f1a621efd2a4e13965611\",\"coverageByKey\":{\"growthSummary\":969196,\"inceptionSummary\":969196,\"infinitySummary\":969196,\"logSummary\":969196,\"marketplaceSummary\":969196,\"tokenSummary\":969196,\"workFloor\":969196,\"workSummary\":969196},\"eligible\":true,\"generatedAt\":\"2026-09-29T20:20:10.246Z\",\"indexedAt\":\"2026-09-29T20:20:10.246Z\",\"indexedThroughBlock\":969196,\"payloadBytes\":5750706,\"snapshotId\":\"0e25b0d45ad952359ba8d758\",\"ok\":true},\"scanTipHeight\":969196,\"stopReason\":\"\"},\"node\":{\"bestBlockHash\":\"0000000000000000000154e8c20779af9b95e354835f1a621efd2a4e13965611\",\"chain\":\"main\",\"headers\":969196,\"initialBlockDownload\":false,\"ok\":true,\"pruned\":false,\"tipHeight\":969196,\"txindexHeight\":969196,\"txindexSynced\":true,\"verificationProgress\":1},\"worker\":{\"ageMs\":21873,\"containment\":{\"active\":false,\"checkpointHash\":\"0000000000000000000154e8c20779af9b95e354835f1a621efd2a4e13965611\",\"checkpointHeight\":969196,\"failingBlockHeight\":null,\"fingerprint\":\"\",\"network\":\"livenet\",\"nextRetryAt\":null,\"reason\":\"canonical-scan-success\",\"repeatCount\":0,\"txid\":\"\"},\"consecutiveFailures\":0,\"error\":\"\",\"lastSuccessAt\":\"2026-09-29T20:26:28.902Z\",\"maxAgeMs\":600000,\"ok\":true,\"proofReady\":true,\"proofSource\":\"idle-confirmed-replay\",\"pendingEvents\":{\"globalUnresolved\":0,\"model\":\"bounded-best-effort-pending-event-health-v1\",\"ok\":true,\"q16PendingUnresolved\":0,\"required\":true,\"scope\":\"all-observed-pending-protocol-events\",\"status\":{\"checked\":23,\"deferred\":0,\"errors\":0,\"ok\":true,\"q16ParentDeferred\":0,\"staleCandidates\":23,\"unavailable\":false,\"unavailableValid\":true}},\"phase\":\"idle\"}},\"indexedAt\":\"2026-09-29T20:26:50.775Z\",\"indexedThroughBlock\":969196,\"lagBlocks\":0,\"mempoolBase\":\"http://127.0.0.1:8080\",\"ok\":true,\"ready\":true,\"service\":\"proofofwork-op-return-api\",\"tipHeight\":969196,\"mode\":\"readiness\"}Filesystem               1B-blocks          Used    Available Use% Mounted on\n/dev/mapper/vg0-root  105089261568   27969949696  71733825536  29% /\n/dev/mapper/vg0-data 1764768071680 1281325228032 474455666688  73% /data\n"
+    },
+    "post-corrections-ledger-final.log": {
+      "sha256": "199a362f485ab08e12e6ef6dba5a3c4f611a98427a5368b47b58ce46e32a4d01",
+      "text": "\n> proofofwork-me@0.1.0 audit:ledger\n> node scripts/audit-ledger-consistency.mjs\n\nLedger consistency audit passed for https://work.proofofwork.me: snapshot 0e25b0d45ad952359ba8d758, value 14520834903306801355.85252463 proofs.\n"
+    },
+    "post-corrections-ids-final.log": {
+      "sha256": "22d09c19efff1e9d297dde2afecab125194563cbc35d857d9387dbb8f7f1253f",
+      "text": "AUDIT_GATE_START ids 2026-09-29T20:21:32Z\nProofOfWork ID registry audit\nAddress source: http://127.0.0.1:8081\nRegistry: bc1qfwytlzyr3ym3enz2eutwtjsf9kkf6uqkjydk3e\nFetched transactions: 587\nCovered confirmed registry transactions: 565\nCovered pending registry transactions: 22\nCanonical lifecycle parity: verified against exact Core-ordered chain replay\nLifecycle events: 538\nActive listings: 6\nCanonical sales: 4\nRegistration attempts: 547\nConfirmed winners: 508\nPending candidates: 20\nRefund candidates: 17\nPending watchlist: 2\n\nRefund candidates: 17\n- trump | duplicate_confirmed_refund_candidate | 1000 sats | confirmed | 49b4e0b7e98c7e2ef6d6231a898c529571cc2c62d1894a5920a334900e1dd3bb | refund: bc1p8m24m3ycx2awggnlp4ljh0m8l54985scfwshet9zdg4qtf80udhqkwrx0c | winner: 7d156fcad1c3cc0a044685246cc6e125010cc26c4b5ddbd0b86cb79855c16218\n- 4 | duplicate_confirmed_refund_candidate | 1000 sats | confirmed | af5ffd87aff552a4e1d142e7e2f590870246dbef6a8a90d0b610d1b3f6f59aeb | refund: bc1p7kf50cf89xhjatzssjp67wjcs6m05d3y68jjcfkyn699yw2j2h8sh5pewc | winner: 8150aa31d41868b71cd6a13c90d40895811586393414b4dd91c666f520cbdb97\n- 4 | duplicate_confirmed_refund_candidate | 1000 sats | confirmed | 974c705a4709387a4abb30153f73a972263f449ca8fa0a99e72f3acd37572057 | refund: bc1p7kf50cf89xhjatzssjp67wjcs6m05d3y68jjcfkyn699yw2j2h8sh5pewc | winner: 8150aa31d41868b71cd6a13c90d40895811586393414b4dd91c666f520cbdb97\n- okx | duplicate_confirmed_refund_candidate | 1000 sats | confirmed | 3aa6bd1e5ff028033c32ca4a597705f8ccfab9bc08180b23f18f5f7b4391cb04 | refund: bc1p7kf50cf89xhjatzssjp67wjcs6m05d3y68jjcfkyn699yw2j2h8sh5pewc | winner: 80fcaa7d288ad185a7a6c1d250d77687af67b6f76ee435f18b2d08b49a1b3e15\n- ai | duplicate_confirmed_refund_candidate | 1000 sats | confirmed | ea9e5cd1508e40294462e52b1fc2e9a05476f2421336e7751da04ee99c17ce90 | refund: bc1p7kf50cf89xhjatzssjp67wjcs6m05d3y68jjcfkyn699yw2j2h8sh5pewc | winner: 89adc701264dc297f25820ef086c31031740e14c755c3cfd6976231d779f9a11\n- cz | duplicate_confirmed_refund_candidate | 1000 sats | confirmed | cbd801317e44af38197d3f7188d8c254712a3bdb91d8c8308e40c1c2eaca784d | refund: bc1p7kf50cf89xhjatzssjp67wjcs6m05d3y68jjcfkyn699yw2j2h8sh5pewc | winner: 78a5ef51a07219fb1ee962960db8217eb4d6c7f404a9caba18865038b62e84dc\n- okx | duplicate_confirmed_refund_candidate | 1000 sats | confirmed | ce2b15c05627036e620692193aae4b67f65ffdb84e4cdb63c2e033c88777fd07 | refund: bc1p7kf50cf89xhjatzssjp67wjcs6m05d3y68jjcfkyn699yw2j2h8sh5pewc | winner: 80fcaa7d288ad185a7a6c1d250d77687af67b6f76ee435f18b2d08b49a1b3e15\n- bitcoin | duplicate_confirmed_refund_candidate | 1000 sats | confirmed | eef3ee94b9d918619438be1d379eb573c9a23c12b017127850b0503b1ae3662a | refund: bc1q568xckhc4j0grkd0qjh23wl3ulqsufv2drrn6d | winner: 6ef73916cdc421e62df2a7df7bb4269b40db7b8616f9545f99f34a15e7a1932e\n- btc | duplicate_confirmed_refund_candidate | 1000 sats | confirmed | 2e7462975fcaa633f6ce9aaf8d226eda029635c4c65712aebf1cf2630b8e944b | refund: bc1q568xckhc4j0grkd0qjh23wl3ulqsufv2drrn6d | winner: c785dc99c5a23cafbd1dda34a0560eb20382f4b298874c3ffc63e53a80676fa7\n- sats | duplicate_confirmed_refund_candidate | 1000 sats | confirmed | d9322ede24688cee69975e4caf9d81b971f11d351b95bc58dbf5e76b4ddbd687 | refund: bc1q568xckhc4j0grkd0qjh23wl3ulqsufv2drrn6d | winner: f226dfa265ed88d21a4bf08ae2d04ea17080af7cd54997e322b4222d1324680d\n- bitcoin | duplicate_confirmed_refund_candidate | 1000 sats | confirmed | 4ba43814d73432172460b57480ec8a8568b2d93d1b7994ff273b35d70924f846 | refund: bc1q568xckhc4j0grkd0qjh23wl3ulqsufv2drrn6d | winner: 6ef73916cdc421e62df2a7df7bb4269b40db7b8616f9545f99f34a15e7a1932e\n- pepe | duplicate_confirmed_refund_candidate | 1000 sats | confirmed | b13dc30a1d04a334e6efc2f13299c1964c7120a3796efb84233ae59c8d2c283d | refund: bc1q568xckhc4j0grkd0qjh23wl3ulqsufv2drrn6d | winner: 34047cd0696415bc0f5d376428225d7c46860dbcae19cea47f7bd0a5e90714b2\n- x | duplicate_confirmed_refund_candidate | 1000 sats | confirmed | 29b725a414ddb7dff947338f04924ab319a6a97d4c4e23f4f77aac6359013964 | refund: bc1q568xckhc4j0grkd0qjh23wl3ulqsufv2drrn6d | winner: 2735b63314c65844b86f8653902e439572854ac49c895cb0f1c7dd3d7331df4e\n- pow | duplicate_confirmed_refund_candidate | 1000 sats | confirmed | feceb410fcd0973f4ec856db8e2e31cb76e8e1ae7a62bd94827d3996aab49483 | refund: bc1q568xckhc4j0grkd0qjh23wl3ulqsufv2drrn6d | winner: 588d7b052da4de76be500963b5313a9ce4934fca908237b9004a6efcc0868b8f\n- (unknown id) | invalid_confirmed_refund_candidate | 1000 sats | confirmed | 46c9785e6c9468f40058c0e4ff0906eb3a2050a87dc86b57177bce66bd366eb3 | refund: bc1qr8uxjrn8xhmr2s6295fgrqfmx2h2xx52ndt2qg | error: missing_registration_op_return\n- (unknown id) | invalid_confirmed_refund_candidate | 1000 sats | confirmed | 696e667efab8b2585109744bb32066ebb65496648a3dc4542c6733dc20350751 | refund: bc1paqddyak2dukl58z9j65rl7gks4xrf8hqc3h5f627hx3ss67rqknqvxaz48 | error: missing_registration_op_return\n- (unknown id) | invalid_confirmed_refund_candidate | 16227 sats | confirmed | e242656f4506dab3c8ab82fdc96ef3622d5d7b8a1c29d0495a88ff3c6f98b6f6 | refund: bc1qfwytlzyr3ym3enz2eutwtjsf9kkf6uqkjydk3e | error: missing_registration_op_return\n\nRefund totals by address: 6\n- bc1qfwytlzyr3ym3enz2eutwtjsf9kkf6uqkjydk3e | 16227 sats | 1 txs | IDs: (unknown id)\n- bc1q568xckhc4j0grkd0qjh23wl3ulqsufv2drrn6d | 7000 sats | 7 txs | IDs: bitcoin, btc, sats, bitcoin, pepe, x, pow\n- bc1p7kf50cf89xhjatzssjp67wjcs6m05d3y68jjcfkyn699yw2j2h8sh5pewc | 6000 sats | 6 txs | IDs: 4, 4, okx, ai, cz, okx\n- bc1p8m24m3ycx2awggnlp4ljh0m8l54985scfwshet9zdg4qtf80udhqkwrx0c | 1000 sats | 1 txs | IDs: trump\n- bc1paqddyak2dukl58z9j65rl7gks4xrf8hqc3h5f627hx3ss67rqknqvxaz48 | 1000 sats | 1 txs | IDs: (unknown id)\n- bc1qr8uxjrn8xhmr2s6295fgrqfmx2h2xx52ndt2qg | 1000 sats | 1 txs | IDs: (unknown id)\n\nPending watchlist: 2\n- ordi | duplicate_pending_watch | 1000 sats | pending | 8c7763b10c804bca60631ec3a20967ccd0fc369ad063ba6567c54b814e414688 | refund: bc1pyt7vze8s44y3sjdlgam0l5a530apms70m6mafcrpnmgknj2pgveskeusvz | winner: 5ea48555efd9c64c4a831014d0dc18b29e6b7e0c4ce5699f043e8aa0ec60897d\n- ai | duplicate_pending_watch | 1000 sats | pending | 2a879e276e899acea9dbef9a59410c722837cab2205d216f1880475d6e774d2e | refund: bc1plqn2g9dkyspk48r8ek83p3ecc32vz2g9fnlw006yvmvqvx8cnxyskrt9dc | winner: 89adc701264dc297f25820ef086c31031740e14c755c3cfd6976231d779f9a11\n\nPending watch totals by address: 2\n- bc1plqn2g9dkyspk48r8ek83p3ecc32vz2g9fnlw006yvmvqvx8cnxyskrt9dc | 1000 sats | 1 txs | IDs: ai\n- bc1pyt7vze8s44y3sjdlgam0l5a530apms70m6mafcrpnmgknj2pgveskeusvz | 1000 sats | 1 txs | IDs: ordi\n\nNo report files written (use --write-reports and --output-dir PATH to opt in). \nAUDIT_GATE_END ids 0\n"
+    },
+    "retention-ui-ops-tests.log": {
+      "sha256": "d6c5222db6157cbc8a5416cf74fd041ccddb359203ad29b967683973f2ccecbf",
+      "text": "\n> proofofwork-me@0.1.0 check:ui-ops\n> node scripts/check-ui-ops-contract.mjs && python3 -B scripts/check-ui-verified-retention.py\n\nUI candidate regression: measured527332 and limit1048576 accepted;1048577 rejected by both parsers\nUI dependency regression: production ceiling is pinned; accept/reject branches passed under a fast lowered ceiling\nUI scratch retention: 12 discovery, size-limit and ordering failure cases preserved every candidate\nUI operations contract checks passed.\n"
+    },
+    "node-retention-tests.log": {
+      "sha256": "c9d16e773fd0cd11acf6ceae8f85a8b2ff71092a3614ea9ff53805a7113c38a3",
+      "text": "\n> proofofwork-me@0.1.0 check:node-ops\n> node scripts/check-node-ops-contract.mjs && python3 -B scripts/check-storage-trend.py && python3 -B scripts/check-api-observation-health.py\n\nNode operations contract checks passed.\nStorage forecast: history, exact bytes, allocation thresholds, producer freshness, current reserve warnings and actual monitor exit statuses passed.\nAPI observation thresholds, aborted-read timing, byte measurements and address normalization passed.\n"
+    }
+  },
+  "procedures": {
+    "repair-dns-event.mjs": {
+      "sha256": "3e1eead1e70dd2236c78a4f04215caf949db88f7ab141f6903e0c20bd8b560ba",
+      "source": "import assert from 'node:assert/strict';\nimport fs from 'node:fs';\nimport {createHash} from 'node:crypto';\nimport {createProofIndexPool} from '/opt/proofofwork-api/server/db/postgres.mjs';\nimport {decodeCanonicalOpReturnOutput} from '/opt/proofofwork-api/server/canonical-op-return.mjs';\nimport {parseWorkAmoV5RawPwdnsRecord,workAmoV5DnsSaleAuthorizationsMatch,validateWorkAmoV5SaleTicketSignature} from '/opt/proofofwork-api/server/work-amo-v5.mjs';\nimport {proofIndexEventParticipantsForItem,proofIndexEventRefsForItem} from '/opt/proofofwork-api/server/proof-index-event-relations.mjs';\nconst txid='dd498455bb712411341cfde6fab38764281ff6b77076a41012c3bee768475e38', blockHash='00000000000000000000aebc8dc758888998e96e870b9950bcefe53cbb28c9b9';\nasync function rpc(method,params){const r=await fetch(process.env.BITCOIN_RPC_URL,{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Basic '+Buffer.from(process.env.BITCOIN_RPC_USER+':'+process.env.BITCOIN_RPC_PASSWORD).toString('base64')},body:JSON.stringify({jsonrpc:'2.0',id:1,method,params})});const x=await r.json();assert.ok(x.error==null);return x.result;}\nconst tx=await rpc('getrawtransaction',[txid,true]);assert.equal(tx.blockhash,blockHash);assert.ok(tx.confirmations>0);assert.equal(await rpc('getblockhash',[969136]),blockHash);const block=await rpc('getblock',[blockHash,1]);assert.equal(block.tx[3156],txid);\nconst decoded=decodeCanonicalOpReturnOutput({scriptpubkey:tx.vout[1].scriptPubKey.hex});assert.equal(decoded.decodeValid,true);const parsed=parseWorkAmoV5RawPwdnsRecord(decoded.text);assert.equal(parsed.kind,'dns-seal');\nconst signed=parsed.saleAuthorization,unsigned={...signed,anchorSignature:'',anchorTxid:'',signature:''};assert.equal(workAmoV5DnsSaleAuthorizationsMatch(signed,unsigned),true);assert.equal(signed.anchorTxid,parsed.listingId);assert.equal(validateWorkAmoV5SaleTicketSignature({authorization:signed,listingId:parsed.listingId,network:'livenet',unitPriceSats:String(signed.priceSats)}).valid,true);\nconst inputs=await Promise.all(tx.vin.map(async input=>{const prev=await rpc('getrawtransaction',[input.txid,true]);return prev.vout[input.vout].scriptPubKey.address;}));assert.ok(inputs.includes(signed.sellerAddress));\nconst response=await fetch('http://127.0.0.1:8081/api/v1/dns-summary?network=livenet&fresh=1');assert.equal(response.status,200);const dns=await response.json();const activity=dns.activity.find(e=>e.txid===txid);assert.ok(activity && activity.valid===true && activity.kind==='dns-seal');assert.equal(activity.rawPayload??activity.payload,decoded.text);\nconst pool=createProofIndexPool({max:1}),client=await pool.connect();let committed=false;\ntry{\n await client.query('BEGIN');await client.query(\"SET LOCAL lock_timeout='5s'\");\n const before=(await client.query(\"SELECT * FROM proof_indexer.events WHERE network='livenet' AND txid=$1 FOR UPDATE\",[txid])).rows;assert.equal(before.length,1);const row=before[0];assert.equal(String(row.event_id),'4472609');assert.equal(row.kind,'dns-seal-invalid');assert.equal(row.valid,false);assert.equal(row.raw_payload,decoded.text);assert.equal(row.block_height,969136);assert.equal(row.block_index,3156);assert.equal(row.op_return_vout,1);\n const parent=(await client.query(\"SELECT raw_tx FROM proof_indexer.transactions WHERE network='livenet' AND txid=$1\",[txid])).rows[0];assert.equal(parent.raw_tx.hex,tx.hex);\n const relations={participants:(await client.query('SELECT * FROM proof_indexer.event_participants WHERE event_id=$1',[row.event_id])).rows,refs:(await client.query('SELECT * FROM proof_indexer.event_refs WHERE event_id=$1',[row.event_id])).rows};\n const evidence=JSON.stringify({before:row,relations,canonical:{txid,blockHash,height:969136,index:3156,rawHexSha256:createHash('sha256').update(tx.hex).digest('hex')},approvedScope:'Audit 28 derived DNS event classification only'},null,2);\n const receipt='/data/proofofwork-audit28-dns-repair/before.json';fs.writeFileSync(receipt,evidence,{flag:'wx',mode:0o600});const fd=fs.openSync(receipt,'r');fs.fsyncSync(fd);fs.closeSync(fd);\n const payload={...row.payload,...activity,kind:'dns-seal',valid:true,reason:'',reasonCode:'',parsed,derived:row.payload.derived??[],indexedFrom:row.payload.indexedFrom};\n const key=row.event_key.replace(':dns-seal-invalid:',':dns-seal:');assert.notEqual(key,row.event_key);\n const updated=await client.query(\"UPDATE proof_indexer.events SET kind='dns-seal',event_key=$1,valid=true,validation_errors='{}'::text[],payload=$2::jsonb,updated_at=now() WHERE event_id=$3 AND kind='dns-seal-invalid' AND valid=false RETURNING event_id,kind,valid\",[key,JSON.stringify(payload),row.event_id]);assert.equal(updated.rowCount,1);\n await client.query('DELETE FROM proof_indexer.event_participants WHERE event_id=$1',[row.event_id]);for(const p of proofIndexEventParticipantsForItem(payload,{protocol:'pwdns1',kind:'dns-seal'}))await client.query(\"INSERT INTO proof_indexer.event_participants(event_id,address,role,powid) VALUES($1,$2,$3,NULLIF($4,'')) ON CONFLICT DO NOTHING\",[row.event_id,p.address,p.role,p.powid]);\n await client.query('DELETE FROM proof_indexer.event_refs WHERE event_id=$1',[row.event_id]);for(const r of proofIndexEventRefsForItem(payload))await client.query('INSERT INTO proof_indexer.event_refs(event_id,ref_type,ref_value) VALUES($1,$2,$3) ON CONFLICT DO NOTHING',[row.event_id,r.refType,r.refValue]);\n assert.equal((await client.query(\"SELECT raw_tx->>'hex' AS hex FROM proof_indexer.transactions WHERE network='livenet' AND txid=$1\",[txid])).rows[0].hex,tx.hex);\n await client.query('COMMIT');committed=true;console.log(JSON.stringify({ok:true,txid,eventId:String(row.event_id),beforeKind:row.kind,after:updated.rows[0],evidenceSha256:createHash('sha256').update(evidence).digest('hex'),historicalTransitionsUnchanged:true,canonicalRawTransactionUnchanged:true}));\n}catch(error){if(!committed)await client.query('ROLLBACK');throw error;}finally{client.release();await pool.end();}\n"
+    },
+    "core-db-verify.py": {
+      "sha256": "e6e1d463c63d9a2825af69e13125c1157a5338380c71c9c4eb4dde99a751bd70",
+      "source": "import subprocess,json,urllib.request,base64,time,decimal,hashlib\npid=subprocess.check_output(['systemctl','show','proofofwork-api','-p','MainPID','--value'],text=True).strip()\nenv=dict(e.split('=',1) for e in open('/proc/'+pid+'/environ').read().split('\\0') if '=' in e)\nurl=env['BITCOIN_RPC_URL'];auth=base64.b64encode((env['BITCOIN_RPC_USER']+':'+env['BITCOIN_RPC_PASSWORD']).encode()).decode()\ndef rpc(batch):\n q=urllib.request.Request(url,json.dumps([{'jsonrpc':'2.0','id':i,'method':m,'params':p} for i,(m,p) in enumerate(batch)]).encode(),{'Authorization':'Basic '+auth,'Content-Type':'application/json'})\n x=json.load(urllib.request.urlopen(q,timeout=90),parse_float=decimal.Decimal);return sorted(x,key=lambda v:v['id'])\ndef sql(q):\n r=subprocess.check_output(['sudo','-u','postgres','psql','-XAt','-d','proof_indexer','-c',q],text=True);return [json.loads(s) for s in r.splitlines()]\nr={};before=rpc([('getblockchaininfo',[]),('getrawmempool',[]) ]);r['tipBefore']=before[0]['result']['blocks'];mp=set(before[1]['result']);r['mempoolCountBefore']=len(mp)\nrows=sql(\"SELECT json_build_object('txid',txid,'status',status,'blockhash',block_hash,'height',block_height,'raw',raw_tx->>'hex') FROM proof_indexer.transactions WHERE network='livenet' ORDER BY txid\")\nr['transactionsChecked']=len(rows);r['errors']=[];r['pendingAbsent']=[];r['droppedPresent']=[]\nfor off in range(0,len(rows),50):\n chunk=rows[off:off+50];results=rpc([('getrawtransaction',[v['txid'],True]) for v in chunk])\n for v,a in zip(chunk,results):\n  z=a.get('result');err=a.get('error');st=v['status']\n  if st=='confirmed' and (not z or z.get('blockhash')!=v['blockhash'] or z.get('confirmations',0)<=0):r['errors'].append({'txid':v['txid'],'kind':'canonical-confirmation','rpcCode':err.get('code') if err else None})\n  if z and v['raw'] and v['raw']!=z['hex']:r['errors'].append({'txid':v['txid'],'kind':'raw-hex'})\n  if st=='pending' and v['txid'] not in mp:r['pendingAbsent'].append(v['txid'])\n  if st=='dropped' and v['txid'] in mp:r['droppedPresent'].append(v['txid'])\n if off%2500==0:print('PROGRESS',off,flush=True)\n # bounded sequential RPC groups, no parallel pressure\n time.sleep(.02)\nblocks=sql(\"SELECT json_build_object('height',height,'hash',block_hash) FROM proof_indexer.blocks WHERE network='livenet' AND canonical ORDER BY height\")\nr['canonicalBlocksChecked']=len(blocks);r['blockHashErrors']=[]\nfor off in range(0,len(blocks),100):\n c=blocks[off:off+100]\n for v,a in zip(c,rpc([('getblockhash',[v['height']]) for v in c])):\n  if a.get('result')!=v['hash']:r['blockHashErrors'].append(v)\nfiles=sql(\"SELECT json_build_object('txid',txid,'size',size_bytes,'sha',sha256,'bytes',encode(content_bytes,'base64')) FROM proof_indexer.file_attachments\")\nr['attachmentsChecked']=len(files);r['attachmentErrors']=[]\nfor f in files:\n b=base64.b64decode(f['bytes']) if f['bytes'] is not None else None\n if b is not None and (len(b)!=f['size'] or hashlib.sha256(b).hexdigest()!=f['sha']):r['attachmentErrors'].append(f['txid'])\nafter=rpc([('getblockchaininfo',[]),('getrawmempool',[])]);mp2=set(after[1]['result']);r['tipAfter']=after[0]['result']['blocks'];r['pendingAbsentBoth']=[t for t in r['pendingAbsent'] if t not in mp2];r['droppedPresentBoth']=[t for t in r['droppedPresent'] if t in mp2]\nprint(json.dumps(r,indent=2),flush=True)\n"
+    },
+    "cleanup-ui-roots.py": {
+      "sha256": "752f28070caf839488242802abf7b4beab8b7182f239f05b8425bb25c34cb5f7",
+      "source": "import pathlib,os,fcntl,json,hashlib,shutil,subprocess,datetime\nparent=pathlib.Path('/var/backups/proofofwork-ui/rollback-roots')\nkeep=parent/'proofofwork-www-pre-0e767c69e785-20260929T165314Z'\nlock=open('/run/proofofwork-ui/deploy.lock','a');fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)\nexpected={'/var/www':'0e767c69e785-20260929T165314Z',str(keep):'d2c0afaffd9c-20260929T161019Z'}\nfor root,release in expected.items():\n p=pathlib.Path(root);m=dict(l.split('=',1) for l in (p/'.proofofwork-ui-release').read_text().splitlines() if '=' in l)\n assert m['release_id']==release\n a=pathlib.Path('/var/backups/proofofwork-ui/releases')/m['archive_name'];h=hashlib.sha256()\n with a.open('rb') as f:\n  for b in iter(lambda:f.read(1048576),b''):h.update(b)\n assert h.hexdigest()==m['archive_sha256']\n for k,v in m.items():\n  if not(k.startswith('surface.') and k.endswith('.sha256')):continue\n  surface=k.split('.')[1];d=p/('proofofwork-'+surface);paths=[]\n  for base,dirs,files in os.walk(d,followlinks=False):\n   assert not any((pathlib.Path(base)/n).is_symlink() for n in dirs+files)\n   paths.extend((pathlib.Path(base)/n).relative_to(d).as_posix() for n in files)\n  digest=hashlib.sha256()\n  for n in sorted(paths,key=lambda v:v.encode()):\n   q=d/n;digest.update(n.encode()+b'\\0'+format(q.stat().st_mode&0o7777,'o').encode()+b'\\0'+hashlib.sha256(q.read_bytes()).hexdigest().encode()+b'\\n')\n  assert digest.hexdigest()==v and len(paths)==int(m['surface.'+surface+'.file_count'])\nplan=[]\nfor p in sorted(parent.iterdir()):\n if p==keep:continue\n assert p.name.startswith('proofofwork-www-pre-') and p.is_dir() and not p.is_symlink()\n assert not os.path.ismount(p)\n manifest=(p/'.proofofwork-ui-release').read_text()\n plan.append({'root':str(p),'manifest':manifest,'manifestSha256':hashlib.sha256(manifest.encode()).hexdigest()})\nassert len(plan)==16\n# No process cwd/root/executable or open descriptor may reference a retired tree.\nfor proc in pathlib.Path('/proc').glob('[0-9]*'):\n for ref in [proc/'cwd',proc/'root',proc/'exe',*list((proc/'fd').glob('*'))]:\n  try:target=os.readlink(ref)\n  except OSError:continue\n  assert not any(target==r['root'] or target.startswith(r['root']+'/') for r in plan),target\nfor p in pathlib.Path('/var/www').rglob('*'):\n if p.is_symlink():assert not any(str(p.resolve()).startswith(r['root']+'/') for r in plan)\nreceipt=pathlib.Path('/var/backups/proofofwork-ui/cleanup-evidence/audit28-rollback-roots-20260929.json')\nassert not receipt.exists()\nreceipt.write_text(json.dumps({'approvedBy':'User audit28 cleanup approval','preserved':expected,'plan':plan},indent=2));os.chmod(receipt,0o600)\nwith receipt.open('rb') as f:os.fsync(f.fileno())\nfor row in plan:\n shutil.rmtree(row['root'])\n print(json.dumps({'removed':row['root']}),flush=True)\nprint(subprocess.check_output(['df','-B1','/'],text=True))\n"
+    },
+    "cleanup-ui-stages.py": {
+      "sha256": "c9640464f7584905d710c56041f8d2b211f1a6d4073b7b6344494b572c1afe04",
+      "source": "import pathlib,os,fcntl,json,shutil,re,subprocess,hashlib\nroot=pathlib.Path('/var/tmp/proofofwork-deploy');keep=('0e767c69e785-20260929T165314Z','d2c0afaffd9c-20260929T161019Z')\nlock=open('/run/proofofwork-ui/deploy.lock','a');fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)\npattern=re.compile(r'proofofwork-ui-(?:source|surfaces)-[0-9a-f]{12,16}-[0-9]{8}T[0-9]{6}Z(?:\\.tgz(?:\\.sha256)?)?')\nplan=[]\nfor p in sorted(root.iterdir()):\n if not pattern.fullmatch(p.name) or any(k in p.name for k in keep):continue\n assert not p.is_symlink() and not os.path.ismount(p)\n row={'path':str(p),'allocatedBytes':int(subprocess.check_output(['du','-s','-B1',str(p)],text=True).split()[0])}\n if p.is_dir() and 'source-' in p.name and not (p/'.git').exists():continue\n if p.is_dir() and 'source-' in p.name:\n  result=subprocess.run(['git','-c','safe.directory='+str(p),'-C',str(p),'rev-parse','HEAD'],capture_output=True,text=True)\n  if result.returncode:continue\n  row['commit']=result.stdout.strip()\n  assert row['commit'].startswith(p.name.split('source-')[1].split('-')[0])\n elif p.is_file():\n  h=hashlib.sha256()\n  with p.open('rb') as f:\n   for b in iter(lambda:f.read(1048576),b''):h.update(b)\n  row['sha256']=h.hexdigest()\n plan.append(row)\nfor proc in pathlib.Path('/proc').glob('[0-9]*'):\n refs=[proc/'cwd',proc/'exe',proc/'root',*list((proc/'fd').glob('*'))]\n for ref in refs:\n  try:target=os.readlink(ref)\n  except OSError:continue\n  assert not any(target==r['path'] or target.startswith(r['path']+'/') for r in plan),target\n try:cmd=(proc/'cmdline').read_bytes().replace(b'\\0',b' ').decode(errors='replace')\n except OSError:continue\n assert not any(r['path'] in cmd for r in plan),'process references retired stage'\nfor base in ['/etc/systemd/system','/etc/caddy','/var/www']:\n for p in pathlib.Path(base).rglob('*'):\n  if p.is_symlink():\n   assert not any(str(p.resolve())==r['path'] or str(p.resolve()).startswith(r['path']+'/') for r in plan)\n  elif p.is_file() and p.stat().st_size<100000 and base!='/var/www':\n   text=p.read_text(errors='replace');assert not any(r['path'] in text for r in plan),'config references stage'\nreceipt=pathlib.Path('/var/backups/proofofwork-ui/cleanup-evidence/audit28-rebuildable-stages-20260929.json');assert not receipt.exists();receipt.write_text(json.dumps({'preservedReleases':keep,'plan':plan},indent=2));os.chmod(receipt,0o600)\nwith receipt.open('rb') as f:os.fsync(f.fileno())\nfor row in plan:\n p=pathlib.Path(row['path']);shutil.rmtree(p) if p.is_dir() else p.unlink()\nprint(json.dumps({'removedPaths':len(plan),'allocatedBytes':sum(r['allocatedBytes'] for r in plan)}));print(subprocess.check_output(['df','-B1','/'],text=True))\n"
+    }
+  }
+}
