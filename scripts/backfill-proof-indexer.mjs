@@ -8048,6 +8048,7 @@ async function persistPreparedProtocolItems(client, preparedItems) {
         "pwm1",
         "pwa1",
         "pwid1",
+        "pwdns1",
         "pwt1",
       ].includes(String(item?.protocol ?? "").trim().toLowerCase());
       const confirmedGoverned =
@@ -12097,6 +12098,7 @@ function stableEventKey({ item, kind, protocol, sourceLabel, txid }) {
     "pwm1",
     "pwa1",
     "pwid1",
+    "pwdns1",
     "pwt1",
   ].includes(String(protocol ?? "").trim().toLowerCase());
   const confirmed =
@@ -14167,6 +14169,7 @@ async function upsertEvent(client, sourceLabel, item, { preserveCanonicalTransac
     "pwm1",
     "pwa1",
     "pwid1",
+    "pwdns1",
     "pwb1",
     "pwt1",
   ].includes(protocol);

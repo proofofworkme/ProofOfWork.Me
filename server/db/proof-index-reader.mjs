@@ -8411,6 +8411,7 @@ async function proofIndexWorkPrecisionV2MigrationReadinessFullAudit(
     const pendingGovernedProtocols = [
       "pwa1",
       "pwid1",
+      "pwdns1",
       "pwm1",
       "pwt1",
     ];
