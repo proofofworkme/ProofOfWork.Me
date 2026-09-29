@@ -5624,3 +5624,13 @@ Every subsequent release must finish with exactly the latest verified complete
 rollback root, preserving compact retirement evidence before removing redundant
 roots. Run managed archive retention after this verification; keeping multiple
 complete roots defeats the bounded archive policy and risks exhausting UI disk.
+
+The approved Audit 28 retention helper
+`deploy/proofofwork-ui-verified-retention.py` runs after successful UI publication under the inherited deployment lock,
+so the existing archive prune service can maintain its bounded recovery pair. It verifies all surface file fingerprints and both
+current/latest rollback archive checksums, then preserves a durable compact
+plan before retiring other complete roots and obsolete rebuildable transport
+copies. It refuses process/config references, mounts, unverified source
+checkouts, missing recovery material, corrupted bytes, and concurrent deploys.
+The latest prior release and its source remain available. This closes the
+rollback/staging accumulation recurrence rather than relying on age alone.

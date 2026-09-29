@@ -669,6 +669,17 @@ fi
 
 ui_capacity_check "${www_root}" 131072 8 publisher-admission
 
+if [[ "${allow_test_roots}" != "1" ]]; then
+  verified_retention=/usr/local/sbin/proofofwork-ui-verified-retention
+  if [[ ! -f "${verified_retention}" || -L "${verified_retention}" ||
+    "$(realpath -e -- "${verified_retention}")" != "${verified_retention}" ||
+    "$(stat --format=%u -- "${verified_retention}")" != "${EUID}" ]] ||
+    ((8#$(stat --format=%a -- "${verified_retention}") & 07022)); then
+    echo "Verified UI retention helper is missing or unsafe." >&2
+    exit 1
+  fi
+fi
+
 # Repeat the growth guard under the shared lock so a lock-aware classifier or
 # publisher cannot race the earlier fail-fast check.
 refuse_existing_rollback_roots
@@ -1015,6 +1026,10 @@ verify_directory_identity "${www_root}" "${staged_www_identity}"
 committed=1
 exchange_armed=0
 trap - EXIT
+
+if [[ "${allow_test_roots}" != "1" ]]; then
+  POW_UI_DEPLOY_LOCK_FD="${deploy_lock_fd}" /usr/bin/python3 -I "${verified_retention}" --apply
+fi
 
 printf 'ui_release_publish status=published release_id=%s commit=%s rollback_root=%s\n' \
   "${release_id}" "${commit}" "${rollback_root}"

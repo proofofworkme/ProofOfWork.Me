@@ -46,7 +46,7 @@
     "check:ui:browser": "playwright test --config playwright.ui.config.mjs",
     "check:hardening": "node scripts/check-hardening-contract.mjs && python3 -B scripts/check-backup-capacity.py",
     "check:node-ops": "node scripts/check-node-ops-contract.mjs && python3 -B scripts/check-storage-trend.py && python3 -B scripts/check-api-observation-health.py",
-    "check:ui-ops": "node scripts/check-ui-ops-contract.mjs",
+    "check:ui-ops": "node scripts/check-ui-ops-contract.mjs && python3 -B scripts/check-ui-verified-retention.py",
     "check:ui-capacity": "python3 -B scripts/check-ui-capacity.py && python3 -B scripts/check-ui-capacity-boundaries.py",
     "check:api-truth": "node scripts/check-api-truth-contract.mjs && node scripts/check-audit28-regressions.mjs",
     "check:canonical-order": "node scripts/check-canonical-order.mjs",
