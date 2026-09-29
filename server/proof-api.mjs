@@ -34646,6 +34646,9 @@ function registryPayloadFromState(
       confirmed,
       confirmedSales: marketplaceStats.confirmedSales,
       confirmedSalesVolumeSats: marketplaceStats.confirmedVolumeSats,
+      ...(Number.isSafeInteger(indexedThroughBlock) && indexedThroughBlock >= 0
+        ? { indexedThroughBlock }
+        : {}),
       listingCount: listings.length,
       listings: listings.length,
       pending: pendingRecords + pendingEvents.length,
@@ -34709,6 +34712,7 @@ async function dnsRegistryPayload(network) {
           sales: [],
         },
         {
+          indexedThroughBlock: 0,
           listings: [],
           network,
           registryAddress: "",
@@ -34740,8 +34744,10 @@ async function dnsRegistryPayload(network) {
     },
   );
   const listings = await filterSpendableListings(state.listings, network);
+  const indexedThroughBlock = indexedThroughBlockFromTransactions(txs) ?? 0;
   return {
     ...registryPayloadFromState(state, {
+      indexedThroughBlock,
       listings,
       network,
       registryAddress,
