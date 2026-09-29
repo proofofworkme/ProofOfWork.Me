@@ -17,7 +17,7 @@ SURFACES = 'activity boost browser computer desktop dns growth id inception infi
 # Reviewed current stager from Audit 19. The historical Audit 5 publisher below
 # remains pinned to its original helper; the live phase-bound collector must load
 # the current stager whose guarded copy operations it is bounding.
-EXPECTED_STAGER_SHA256 = '115a18d186bf40ed6493940224f2b4ce71987e4c8d6061f02c4b23b03a21f95f'
+EXPECTED_STAGER_SHA256 = 'fc87130cd6aa62203050605086e39352d5c1e0657a049aaa25c2ee0cda2f38ab'
 
 
 def rounded(size, block):
