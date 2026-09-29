@@ -4629,7 +4629,7 @@ async function assertWorkPrecisionPendingReady(
       listingRows: listingResult.rows,
       recoveryRows: recoveryResult.rows,
     });
-    const governedProtocols = ["pwa1", "pwid1", "pwm1", "pwt1"];
+    const governedProtocols = ["pwa1", "pwid1", "pwdns1", "pwm1", "pwt1"];
     const projectionEventResult = await client.query(
       `
         SELECT

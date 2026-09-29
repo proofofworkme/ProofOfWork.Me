@@ -483,6 +483,12 @@ const appLinks = contents.get("src/app/appLinks.ts");
 expect("app links include Wallet", /label:\s*"Wallet"/.test(appLinks));
 expect("app links include Growth", /label:\s*"Growth"/.test(appLinks));
 expect(
+  "app links include DNS",
+  /DNS_APP_URL\s*=\s*"https:\/\/dns\.proofofwork\.me"/.test(appLinks) &&
+    /LOCAL_DNS_APP_URL\s*=\s*"\/\?dns-launch=1"/.test(appLinks) &&
+    /label:\s*"DNS"/.test(appLinks),
+);
+expect(
   "app links publish AMO as the canonical governed exchange",
   /MARKETPLACE_APP_URL\s*=\s*"https:\/\/amo\.proofofwork\.me"/.test(
     appLinks,
@@ -574,7 +580,7 @@ expect(
 );
 expect(
   "AMO exposes hard-price bond listings with Inception and Infinity sub-tabs",
-  /type MarketplaceTab = "ids" \| "tokens" \| "bonds"/.test(app) &&
+  /type MarketplaceTab = "ids" \| "dns" \| "tokens" \| "bonds" \| "boosts"/.test(app) &&
     /type BondMarketplaceTab = "inception" \| "infinity"/.test(app) &&
     /function BondMarketplacePanel\(/.test(app) &&
     /<h3>Bond Listings<\/h3>/.test(app) &&
@@ -1004,6 +1010,19 @@ expect(
       domainNav,
     ) &&
     /link\.label === "AMO"/.test(domainNav),
+);
+expect(
+  "DNS launch route and aliases point at the dedicated DNS surface",
+  /VITE_DNS_LAUNCH_ONLY/.test(routeRegistry) &&
+    /hostname\(\) === "dns\.proofofwork\.me"/.test(routeRegistry) &&
+    /searchFlag\("dns-launch"\)/.test(routeRegistry) &&
+    /dns\.proofofwork\.me\s*\{[\s\S]*import common_dns_app/.test(caddyfile) &&
+    /domain\.proofofwork\.me\s*\{[\s\S]*redir https:\/\/dns\.proofofwork\.me\{uri\} 308/.test(
+      caddyfile,
+    ) &&
+    /domains\.proofofwork\.me\s*\{[\s\S]*redir https:\/\/dns\.proofofwork\.me\{uri\} 308/.test(
+      caddyfile,
+    ),
 );
 expect(
   "Proof API errors preserve canonical error codes without raw JSON UI",

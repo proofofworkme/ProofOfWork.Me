@@ -18,7 +18,7 @@ network identity are not granted by the MIT License. See
 
 Before modifying ProofOfWork.Me, read `SOUL.md`.
 
-This repository is built for agent collaboration. `SOUL.md` explains the project's voice, thesis, and long-term direction. Protocol behavior lives in `README.md`, `PROOFOFWORK_IDS.md`, `MARKETPLACE.md`, and the source code.
+This repository is built for agent collaboration. `SOUL.md` explains the project's voice, thesis, and long-term direction. Protocol behavior lives in `README.md`, `PROOFOFWORK_IDS.md`, `PROOFOFWORK_DNS.md`, `MARKETPLACE.md`, and the source code.
 
 Public language uses `proofs` for sat-denominated value across ProofOfWork.Me social copy, dashboards, and user-facing labels. Agents must still preserve exact protocol/API names such as `amountSats`, `priceSats`, `paidSats`, `networkValueSats`, and `floorSats`; `proofs` is display language, not a JSON or serialized protocol rename. Public/social copy uses ProofOfWork and ProofOfWork-native language and must not use Bitcoin or BTC. Every ProofOfWork.Me public/social post carries `$WORK $POWB $INCB` unless the user explicitly requests different cashtags. The recurring six-post market structure lives in `SOUL.md`.
 
@@ -40,6 +40,9 @@ The front door renders a focused landing page that routes users to the productio
 
 ```text
 id.proofofwork.me
+dns.proofofwork.me
+domain.proofofwork.me -> https://dns.proofofwork.me/
+domains.proofofwork.me -> https://dns.proofofwork.me/
 computer.proofofwork.me
 desktop.proofofwork.me
 browser.proofofwork.me
@@ -62,11 +65,13 @@ Production app roles:
 - `www.proofofwork.me` is the canonical landing/router page.
 - `proofofwork.me` redirects to `https://www.proofofwork.me/`.
 - `id.proofofwork.me` is the focused Phase 1 ID registry onboarding app.
+- `dns.proofofwork.me` is the focused ProofOfWork DNS `.pow` claim/search app.
+- `domain.proofofwork.me` and `domains.proofofwork.me` redirect to `https://dns.proofofwork.me/`.
 - `computer.proofofwork.me` is the full ProofOfWork.Me mail/computer app.
 - `desktop.proofofwork.me` is the standalone public read-only file search engine for addresses or confirmed ProofOfWork IDs.
 - `browser.proofofwork.me` is the standalone public HTML renderer for ProofOfWork message bodies or verified file attachments by txid.
 - `boost.proofofwork.me` is the public Proof-ranked social feed for confirmed Boost posts and profiles.
-- `amo.proofofwork.me` is the canonical Autonomous Money Organization surface. Governed WORK units plus ID, credit, POWB, and INCB sale-ticket markets share this app.
+- `amo.proofofwork.me` is the canonical Autonomous Money Organization surface. Governed WORK units plus ID, DNS, credit, POWB, and INCB sale-ticket markets share this app.
 - `marketplace.proofofwork.me` is a retained URI-preserving compatibility route to AMO.
 - `credit.proofofwork.me` is the standalone mainnet credit creation and mint app.
 - `token.proofofwork.me` and `tokens.proofofwork.me` redirect permanently to `https://credit.proofofwork.me/`.
@@ -79,11 +84,11 @@ Production app roles:
 - The root landing page can feature public on-chain social proof, with testimonial links pointing directly to their ProofOfWork transactions.
 - The landing page links to the current public YouTube overview video.
 
-Every public app header and footer should expose the current public surfaces: Home, IDs, Computer, Desktop, Browser, Boost, AMO, Credit, Wallet, WORK, Infinity, Inception, Log, and Growth. Public social links should include X, YouTube, and GitHub.
+Every public app header and footer should expose the current public surfaces: Home, IDs, DNS, Computer, Desktop, Browser, Boost, AMO, Credit, Wallet, WORK, Infinity, Inception, Log, and Growth. Public social links should include X, YouTube, and GitHub.
 
 ### Audit Workflow
 
-Audit standalone public apps before the full Computer shell: Home, IDs, Desktop,
+Audit standalone public apps before the full Computer shell: Home, IDs, DNS, Desktop,
 Browser, AMO, Credit, Wallet, WORK, Infinity, Inception, Log, and Growth come
 first. `computer.proofofwork.me` comes last because it embeds and cross-checks
 the same protocols, workspaces, and read models in one integrated ProofOfWork
@@ -209,6 +214,19 @@ Launch invariants for future developers/agents:
 - Keep IDs case-insensitive and normalized to lowercase for comparisons.
 - Keep the real ID size cap tied to the aggregate 100 KB OP_RETURN data-carrier limit, not arbitrary character rules.
 
+The focused DNS claim/search flow is:
+
+```text
+dns.proofofwork.me
+```
+
+This subdomain renders a mainnet `.pow` claim/search app from the same codebase.
+It uses `domains@proofofwork.me` as the registry identity, the confirmed
+mainnet DNS registry address, and the `pwdns1:r1` registration protocol. Users
+type the bare prefix, such as `alice`; the app implies and displays `alice.pow`.
+DNS registrations cost 1,000 proofs and do not include PGP keys. DNS AMO actions
+live in `amo.proofofwork.me`, not in the focused claim app.
+
 ## What It Does
 
 - Connects UniSat.
@@ -257,11 +275,13 @@ Launch invariants for future developers/agents:
 - Supports fractional miner fee rates, including sub-1 sat/vB values like `0.1`.
 - Uses the correct external explorer path for the connected chain, including `/testnet4`.
 - Registers and scans mainnet ProofOfWork IDs through the canonical registry address.
+- Registers and scans mainnet ProofOfWork DNS `.pow` names through the `domains@proofofwork.me` registry address. The focused DNS app accepts the bare prefix and implies `.pow`; DNS records do not carry PGP keys.
 - Searches ID registry records, owned IDs, pending ID events, AMO listings, and registry supply views across the app.
+- Searches DNS registry records, owned `.pow` names, pending DNS events, and DNS AMO listings across the DNS and AMO surfaces.
 - Lets current ID owners update the receive address or transfer ownership through paid on-chain registry events.
 - Resolves confirmed ProofOfWork IDs as direct transfer targets, so ownership can be sent to an ID's current owner/receiver instead of manually pasting the raw address.
 - Lets ID management receive fields accept confirmed ProofOfWork IDs, resolving them to raw ProofOfWork receive addresses before writing registry events.
-- Lets current ID owners publish on-chain AMO listings, seal them, delist them, and execute buyer-funded ID transfers. AMO is tabbed by asset class: IDs, Credits, Bonds, and Boost sale-ticket markets are live.
+- Lets current ID and DNS owners publish on-chain AMO listings, seal them, delist them, and execute buyer-funded transfers. AMO is tabbed by asset class: IDs, DNS, Credits, Bonds, and Boost sale-ticket markets are live.
 - Shows pending ID receiver updates, direct transfers, listings, seals, delistings, and AMO buys to wallets touched by the event, so both sender and receiver can track in-flight ID changes before confirmation.
 - Exposes AMO as a first-class Computer sidebar workspace, not just a buried ID panel.
 - Exposes Credits as a mainnet-only creation and mint surface, a Wallet surface for balances, transfers, listing actions, and sale history, a dedicated WORK credit dashboard, and Infinity Bond / POWB plus Inception Bond / INCB workspaces in the Computer shell. Credit creation pays the built-in index fee to `tokens@proofofwork.me`; mints, transfers, listings, seals, delistings, and buys pay each credit's own registry at the owner-set price or mutation fee.
@@ -288,6 +308,7 @@ Launch invariants for future developers/agents:
 - Computes WORK, Infinity, Inception, Growth, Log, and livenet credit/token views from one canonical confirmed ledger snapshot, so public searches, logged events, and network value cannot diverge after refresh.
 - Keeps the IDs workspace limited to registration, receiver updates, and direct owner transfers.
 - Keeps `id.proofofwork.me` registration-only. ID management and AMO flows live in the Computer app and the standalone AMO app.
+- Keeps `dns.proofofwork.me` claim/search-only. DNS management and AMO flows live in the Computer AMO workspace and the standalone AMO app.
 - Paginates the ID registry's confirmed transaction history and separately merges mempool transactions before applying first-confirmed-wins.
 - Reads registry, mail, files, pagination, wallet UTXOs, transaction preparation data, broadcast status, live BTC/USD, WORK floor, Infinity/Inception summaries, and app metrics through the first-party ProofOfWork OP_RETURN API.
 - Uses `/api/v1/consistency` and `npm run audit:ledger` as the regression gate for livenet ledger coverage across Log, Growth, WORK, Infinity, Inception, and credit/token history.
@@ -313,6 +334,7 @@ Production routes the API through the same app domains:
 ```text
 https://www.proofofwork.me/api/*
 https://id.proofofwork.me/api/*
+https://dns.proofofwork.me/api/*
 https://computer.proofofwork.me/api/*
 https://desktop.proofofwork.me/api/*
 https://browser.proofofwork.me/api/*
@@ -366,13 +388,13 @@ Current production behavior:
 - Legacy whole-credit transfers use `pwt1:send:<token-create-txid>:<amount>:<recipient-address>` and remain replayable exactly as signed. Historical atomic WORK transfers use `pwt1:send2:<canonical-work-token-id>:<amount-atoms>:<recipient-address>`, where one WORK is 100,000,000 atoms. After the approved V8 WORK Precision Protocol V2 declaration confirms in block `D` and activates at `D+1`, new WORK transfers use `pwt1:send3:<canonical-work-token-id>:<amount-subatoms>:<recipient-address>`, where one WORK is 10,000,000,000,000,000 subatoms. The earlier V7 proposal never activated. Other credits continue to use `send`. Every form requires the normal 546-proof registry mutation payment; confirmed transfers debit the first input address and credit the recipient address, while pending transfers are visibility only. Multiple same-era WORK transfers may use separate qualifying registry outputs or one singular exact `546 * transferCount` aggregate output before every transfer; the aggregate shape permits only those WORK `pwt1:` records and earlier `pwm1:` mail-envelope records.
 - Spendable-WORK message senders can combine the era-valid canonical WORK transfer with ProofOfWork mail in one transaction. Mail recipients remain the normal payment outputs before the first `pwm1:` output. The WORK registry mutation payment is placed after the mail `pwm1:` outputs and before the `pwt1:` transfer outputs so mail delivery and WORK transfer parsing stay separate while sharing one txid. `send2` remains valid replay before the Q16 activation boundary; `send3` is required afterward.
 - WORK attachments to normal messages are exposed to every connected mainnet sender whose authoritative wallet-scoped state proves positive spendable WORK after active listing reservations, pending outgoing transfers, and uncovered pending sales. Infinity Bonds remain a V1 allowlisted sender feature for `1447TsdXtFSnVrWawSamyyQKPDNW4ALtBT`, `1BPVvi1GK4QkfqFMU4jHGjsQjyGwjJJJ7x`, and `1F1p9UEHuH5KTFR7Zsx93Khdrqhj6t5nFv`. Inception Bonds expose WORK attachment to every connected mainnet address whose authoritative wallet-scoped state proves a positive confirmed WORK balance. The pre-sign check fails closed and subtracts active listing reservations, pending outgoing transfers, and uncovered pending sales; pending incoming WORK does not qualify until confirmation. A holder with no currently spendable WORK can still create a proof-only Inception Bond.
-- AMO automatically verifies the complete active WORK, credit, POWB, and INCB listing book before showing ready inventory. Search, sorting, filters, and listing counts cover the full book; history loads separately and pagination limits only rendered rows. Unavailable reads show retry or retain labeled verified data.
+- AMO automatically verifies the complete active DNS, WORK, credit, POWB, and INCB listing book before showing ready inventory. Search, sorting, filters, and listing counts cover the full book; history loads separately and pagination limits only rendered rows. Unavailable reads show retry or retain labeled verified data.
   Summary and listing observations match by canonical block height/hash, not
   their independent generation timestamps. Listing pages still share one
   timestamp, snapshot, content digests, and complete Core evidence. The
   `display-v2` listing transport omits internal record envelopes while keeping
   exact amounts, frozen terms, authorizations, and retrievable full evidence.
-- The Credit tab inside AMO is the shared market surface for non-bond credit trades, including governed WORK units. The Bonds tab is the shared market surface for POWB and INCB sale-ticket trades, with sub-tabs for Inception and Infinity. The Boost tab is the shared read surface for active `pwb1:list5` Boost sale tickets created from the public Boost app or from the original Mail item. Credit `list5` events reserve seller balance and create a seller-controlled sale-ticket output, `seal5` publishes the seller's `SIGHASH_SINGLE|ANYONECANPAY` ticket signature without spending that output, `delist5` spends the ticket to cancel, and `buy5` spends the ticket while paying the seller plus the credit registry mutation fee. POWB and INCB hard-price listings keep signed `pwt-sale-v1` terms: the seller chooses any positive whole bond quantity and exact total proof price, and confirmation freezes those terms without a governed face, derived amount, or later repricing. The on-chain POWB/INCB hard-price declaration source is `server/bond-hard-price-declaration.mjs`; `npm run build:bond-hard-price-declaration` emits its exact `pwm1:m:` commitment and `npm run prepare:bond-hard-price-declaration` emits the local-wallet signing draft with authority and post-confirmation pin fields. Mail recipients, self-send outputs, attached WORK, additional payments, and miner fees can signal value but are not declaration evidence. Historical non-WORK and whole-credit tickets keep signed `pwt-sale-v1` terms, and historical fractional WORK tickets keep their earlier immutable terms. Pre-V6 governed WORK actions use `pwt-sale-v5`: a listing commits only `$20`, `$50`, or `$100`, while canonical position, the preceding USD quote, and network value immediately before confirmation derive and freeze the exact WORK atoms and proof price. V6 commits only 20,000, 50,000, or 100,000 proofs and derives exact Q8 WORK atoms from network value immediately before confirmation, with no USD consensus input. The unactivated V7 proposal would have preserved those faces at Q16; it remains historical only. V8 instead admits exactly one new governed face, 25,000 proofs, under `pwt-sale-v8` and derives exact Q16 `unitAmountSubatoms`. At V8 activation every active or sealing pre-V8 WORK listing becomes a non-actionable relic, its reservation is released, and legacy seal, buy, and delist actions are unavailable. Only a confirmed V8 listing can later seal or purchase against frozen terms without repricing. The `list5`/`seal5`/`buy5`/`delist5` envelopes and sale-ticket anchoring remain compatible for V8.
+- The DNS tab inside AMO is the shared market surface for `.pow` names using `pwdns1:list5`, `pwdns1:seal5`, `pwdns1:delist5`, and `pwdns1:buy5` with `pwdns-sale-v1` sale-ticket authorizations. The Credit tab is the shared market surface for non-bond credit trades, including governed WORK units. The Bonds tab is the shared market surface for POWB and INCB sale-ticket trades, with sub-tabs for Inception and Infinity. The Boost tab is the shared read surface for active `pwb1:list5` Boost sale tickets created from the public Boost app or from the original Mail item. Credit `list5` events reserve seller balance and create a seller-controlled sale-ticket output, `seal5` publishes the seller's `SIGHASH_SINGLE|ANYONECANPAY` ticket signature without spending that output, `delist5` spends the ticket to cancel, and `buy5` spends the ticket while paying the seller plus the credit registry mutation fee. POWB and INCB hard-price listings keep signed `pwt-sale-v1` terms: the seller chooses any positive whole bond quantity and exact total proof price, and confirmation freezes those terms without a governed face, derived amount, or later repricing. The on-chain POWB/INCB hard-price declaration source is `server/bond-hard-price-declaration.mjs`; `npm run build:bond-hard-price-declaration` emits its exact `pwm1:m:` commitment and `npm run prepare:bond-hard-price-declaration` emits the local-wallet signing draft with authority and post-confirmation pin fields. Mail recipients, self-send outputs, attached WORK, additional payments, and miner fees can signal value but are not declaration evidence. Historical non-WORK and whole-credit tickets keep signed `pwt-sale-v1` terms, and historical fractional WORK tickets keep their earlier immutable terms. Pre-V6 governed WORK actions use `pwt-sale-v5`: a listing commits only `$20`, `$50`, or `$100`, while canonical position, the preceding USD quote, and network value immediately before confirmation derive and freeze the exact WORK atoms and proof price. V6 commits only 20,000, 50,000, or 100,000 proofs and derives exact Q8 WORK atoms from network value immediately before confirmation, with no USD consensus input. The unactivated V7 proposal would have preserved those faces at Q16; it remains historical only. V8 instead admits exactly one new governed face, 25,000 proofs, under `pwt-sale-v8` and derives exact Q16 `unitAmountSubatoms`. At V8 activation every active or sealing pre-V8 WORK listing becomes a non-actionable relic, its reservation is released, and legacy seal, buy, and delist actions are unavailable. Only a confirmed V8 listing can later seal or purchase against frozen terms without repricing. The `list5`/`seal5`/`buy5`/`delist5` envelopes and sale-ticket anchoring remain compatible for V8.
 - Credit active listings are spend-state aware. A sale-ticket outpoint spend closes the listing; production Core-backed spend checks keep Wallet and AMO aligned while summaries warm. If the spend is a valid `pwt1:buy5`, the sale appears in credit sales, credit market logs, Growth, and summary endpoints after refresh.
 - Infinity Bonds use the canonical `pwm1:m:powb` message memo. Each confirmed recipient payment mints the same number of POWB to that recipient address. POWB is a reserved, uncapped synthetic credit backed by confirmed bond proofs and registered through `infinity@proofofwork.me`; `infinity.proofofwork.me` exposes `/api/v1/infinity-summary`, the bond composer, POWB balances, and the POWB sale-ticket market. POWB supply has no maximum and can trend to infinity.
 - POWB floor accounting is confirmed bond network value divided by confirmed POWB supply. Bond network value includes confirmed bond proof payments, POWB seller sale volume, POWB transfer fees, and POWB marketplace mutation fees. POWB sale volume and mutation fees also contribute to the broader ProofOfWork Computer/WORK network floor alongside the rest of confirmed marketplace flow.
@@ -539,6 +561,28 @@ The UI may accept confirmed ProofOfWork IDs in owner/receive fields, but `pwid1:
 `pwid1:delist5` cancels a listing by spending the sale ticket and paying the mutation fee. Historical `list2`/`buy2`/`delist2`, `list3`/`buy3`/`delist3`, and `list4`/`buy4`/`delist4` events remain readable for replay, but new marketplace writes use `list5`/`seal5`/`buy5`/`delist5`.
 Pending `pwid1:u`, `pwid1:t`, `pwid1:list5`, `pwid1:seal5`, `pwid1:delist5`, and `pwid1:buy5` events are exposed as in-flight changes for touched wallets. They do not change canonical owner/receiver routing until confirmed.
 
+ProofOfWork DNS `.pow` registrations are written as:
+
+```text
+pwdns1:r1:<name-base64url>:<owner-address>:<resolver-address>
+```
+
+The DNS UI accepts the bare prefix and appends `.pow` for display and lookup.
+DNS names are case-insensitive. Current DNS AMO mutations use:
+
+```text
+pwdns1:u:<name-base64url>:<resolver-address>
+pwdns1:t:<name-base64url>:<new-owner-address>:<new-resolver-address?>
+pwdns1:list5:<sale-ticket-json-base64url>
+pwdns1:seal5:<listing-txid>:<sealed-sale-ticket-json-base64url>
+pwdns1:delist5:<listing-txid>
+pwdns1:buy5:<listing-txid>:<new-owner-address>:<new-resolver-address?>
+```
+
+`pwdns1:r1` registrations require 1,000 proofs to the DNS registry. DNS
+mutations and AMO writes require a 546-proof DNS registry mutation payment.
+DNS sale tickets use `pwdns-sale-v1`; no DNS event includes a PGP key.
+
 ## Boost Protocol
 
 Boost is a separate ProofOfWork social meta protocol, not a change to the canonical `pwid1:` registry. The public Boost surface at `boost.proofofwork.me` reads confirmed `pwb1:` records, ranks visible posts by attached proof/WORK signal or time, and exposes profile pages for addresses and ProofOfWork IDs.
@@ -599,6 +643,12 @@ To preview the ID launch flow locally:
 
 ```text
 http://localhost:5173/?id-launch=1
+```
+
+To preview the DNS launch flow locally:
+
+```text
+http://localhost:5173/?dns-launch=1
 ```
 
 To preview the root landing page locally:
@@ -674,6 +724,7 @@ When running on `localhost`, shared app navigation stays local instead of jumpin
 ```text
 Home -> /?landing=1
 IDs -> /?id-launch=1
+DNS -> /?dns-launch=1
 Computer -> /
 Desktop -> /?desktop=1
 Browser -> /?browser=1
@@ -697,6 +748,12 @@ To build an ID-registration-only deployment that hides the full mail app on ever
 
 ```bash
 VITE_ID_LAUNCH_ONLY=1 VITE_POW_API_BASE=https://id.proofofwork.me npm run build
+```
+
+To build a DNS-registration-only deployment that hides the full mail app on every hostname:
+
+```bash
+VITE_DNS_LAUNCH_ONLY=1 VITE_POW_API_BASE=https://dns.proofofwork.me npm run build
 ```
 
 To build the full computer app for production:
@@ -967,6 +1024,7 @@ Important implementation points:
 - Agent bootstrap: `SOUL.md`, `AGENTS.md`, `CLAUDE.md`, `.cursorrules`, `.cursor/rules/proofofwork-soul.mdc`, and `.github/copilot-instructions.md`.
 - Repository hygiene policy and classification: `REPOSITORY_HYGIENE.md` and `repository-hygiene.json`.
 - ID launch route switch: `isIdLaunchRoute()` in `src/app/routeRegistry.ts`.
+- DNS launch route switch: `isDnsLaunchRoute()` in `src/app/routeRegistry.ts`.
 - Root landing route switch: `isLandingRoute()` in `src/app/routeRegistry.ts`.
 - Public Desktop route switch: `isDesktopRoute()` in `src/app/routeRegistry.ts`.
 - Public Browser route switch: `isBrowserRoute()` in `src/app/routeRegistry.ts`.
@@ -983,6 +1041,7 @@ Important implementation points:
 - Production ledger audit: `scripts/audit-ledger-consistency.mjs`.
 - Landing-only deploy switch: `VITE_LANDING_ONLY=1`.
 - ID-only deploy switch: `VITE_ID_LAUNCH_ONLY=1`.
+- DNS-only deploy switch: `VITE_DNS_LAUNCH_ONLY=1`.
 - Desktop-only deploy switch: `VITE_DESKTOP_ONLY=1`.
 - Browser-only deploy switch: `VITE_BROWSER_ONLY=1`.
 - Boost-only deploy switch: `VITE_BOOST_ONLY=1`.
@@ -1007,6 +1066,7 @@ Important implementation points:
 - Confirmed-only ID compose routing: `resolveRecipientInput()`.
 - Multi-recipient compose routing: `resolveRecipientInputs()` and `buildPaymentPsbt()` payment outputs.
 - Dedicated registration-only launch UI: `IdLaunchApp`.
+- Dedicated DNS claim/search launch UI: `DnsLaunchApp`.
 - Full app ID workspace: `IdsWorkspace`.
 - Standalone AMO UI: `MarketplaceApp` (retained internal compatibility name).
 - Computer AMO workspace: `MarketplaceWorkspace` (retained internal compatibility name).

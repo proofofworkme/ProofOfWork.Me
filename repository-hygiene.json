@@ -4,6 +4,7 @@
     "SOUL.md",
     "README.md",
     "PROOFOFWORK_IDS.md",
+    "PROOFOFWORK_DNS.md",
     "MARKETPLACE.md",
     "OP_RETURN_INFRASTRUCTURE.md",
     "MAIL_ORGANIZATION.md",
@@ -21,6 +22,7 @@
       "SOUL.md",
       "README.md",
       "PROOFOFWORK_IDS.md",
+      "PROOFOFWORK_DNS.md",
       "MARKETPLACE.md",
       "OP_RETURN_INFRASTRUCTURE.md",
       "MAIL_ORGANIZATION.md",
@@ -92,7 +94,8 @@
       "audits/2026-09-26-production-comprehensive-health-data-integrity-audit-25.md",
       "audits/2026-09-26-approved-followups-1-8-execution.md",
       "audits/2026-09-27-wallet-pending-incb-repair.md",
-      "audits/2026-09-27-production-comprehensive-health-data-integrity-audit-26.md"
+      "audits/2026-09-27-production-comprehensive-health-data-integrity-audit-26.md",
+      "audits/2026-09-28-ordered-read-only-application-audit-27.md"
     ],
     "staged-or-future-protocol-notes": [
       "CHAIN_CONTENT.md",

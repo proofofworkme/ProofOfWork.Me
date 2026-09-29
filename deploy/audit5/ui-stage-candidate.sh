@@ -51,7 +51,7 @@ archive_tmp=$(mktemp "$archive_root/.$archive_name.audit5.XXXXXXXX")
 archive_base=$(mktemp -d /dev/shm/pow-audit5-archive-base.XXXXXXXX)
 install -d -m 0755 "$archive_base/surfaces"
 roots=()
-for name in activity boost browser computer desktop growth id inception infinity landing marketplace nft token wallet work; do roots+=("proofofwork-$name"); done
+for name in activity boost browser computer desktop dns growth id inception infinity landing marketplace nft token wallet work; do roots+=("proofofwork-$name"); done
 tar --sort=name --create --gzip --hard-dereference --file "$archive_tmp" \
   --transform='s|^proofofwork-|surfaces/|' --directory "$archive_base" surfaces --directory "$stage" "${roots[@]}"
 rmdir "$archive_base/surfaces" "$archive_base"

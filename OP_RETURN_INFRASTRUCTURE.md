@@ -1,6 +1,6 @@
 # ProofOfWork OP_RETURN Infrastructure
 
-ProofOfWork.Me has a first-party OP_RETURN API layer for the existing `pwm1:` mail/files protocol, `pwid1:` ID registry protocol, and `pwt1:` credit protocol.
+ProofOfWork.Me has a first-party OP_RETURN API layer for the existing `pwm1:` mail/files protocol, `pwid1:` ID registry protocol, `pwdns1:` DNS registry protocol, and `pwt1:` credit protocol.
 
 The current product direction is OP_RETURN only. Future protocol work should improve this OP_RETURN indexer and API before introducing any new carrier.
 
@@ -607,7 +607,7 @@ order:
    `POW_INDEX_BACKFILL_BLOCK_SCAN_FROM_HEIGHT=948000`, run
    `npm run indexer:backfill -- --prepare-canonical-rebuild`. Preparation is
    one database transaction: it clears only the derived canonical
-   `pwid1`/`pwt1`/`pwm1` projections, invalidates ledger snapshots, seeds the
+   `pwid1`/`pwdns1`/`pwt1`/`pwm1` projections, invalidates ledger snapshots, seeds the
    synthetic WORK definition directly in exact `work-atoms-v1` storage, and
    stores the hash of block `947999` as the bootstrap checkpoint. Preparation
    and every resumed rebuild re-read and verify that stored atomic definition;
@@ -1593,13 +1593,13 @@ fee is applied once after the final protocol record. A block projection is not
 published until its hash, every relevant position, every transition, and its
 resulting checkpoint have been verified.
 
-The raw block evaluator enumerates every Core `pwm1`, `pwa1`, `pwid1`, and
-`pwt1` candidate before consulting any database projection. It owns one
+The raw block evaluator enumerates every Core `pwm1`, `pwa1`, `pwid1`,
+`pwdns1`, and `pwt1` candidate before consulting any database projection. It owns one
 claimed-vout set per transaction. A required reuse invalidates the later
 record; PWM claim-all also fails when there is no candidate output or any
 candidate was already claimed. PWA and WORK registry payments select the first
 qualifying single output in vout order and never aggregate. PWID and non-WORK
-PWT registry-payment requirements use the shared deterministic
+PWDNS/PWT registry-payment requirements use the shared deterministic
 allocator: claim-all and constrained roles first, then larger requirements,
 with the smallest sufficient single output or a largest-first deterministic
 prefix. The allocator never funds or aggregates PWA, WORK-registry, or seller
@@ -3955,11 +3955,11 @@ bytes; do not weaken those pins or reuse them as current installers. Before any
 approved helper installation, compare the deployed helper with the repository
 and preserve separately reviewed production differences.
 
-Build the 14 primary surfaces from one detached source checkout and copy
+Build the 15 primary surfaces from one detached source checkout and copy
 Computer byte-for-byte as the `nft` compatibility alias. Prepare one complete
 staged clone of `/var/www` at the publisher's release-bound path, remove the
 copied `.proofofwork-ui-release` manifest (the publisher recreates it from the
-new archive and source attestation), and replace only the 15 managed roots in
+new archive and source attestation), and replace only the 16 managed roots in
 that clone. A fresh managed output must also copy
 the immediate prior asset dependency closure under the original relative paths.
 The closure begins with same-surface root-relative references (including
@@ -4005,12 +4005,12 @@ The root-only stager is the canonical constructor for that full candidate. It
 takes the canonical live `/var/www`, an exact release-bound `surfaces` payload,
 and the exact release-bound stage path. It copies every non-managed passthrough
 path with its type, mode, uid, gid, and bytes; removes the copied active
-manifest; replaces exactly the 15 managed roots; and copies only the bounded
+manifest; replaces exactly the 16 managed roots; and copies only the bounded
 immediate-prior dependency closure above. It rejects links, special files,
 nested mounts, unsafe modes or ownership, differing path collisions, a
 Computer/NFT mismatch, concurrent live/payload changes, and any pre-existing
 stage target. Before copying, it counts the common `surfaces/` archive root,
-all 15 surface roots, and every descendant directory or regular file and
+all 16 surface roots, and every descendant directory or regular file and
 requires no more than 10,000 total entries and 1 GiB of regular-file bytes. It
 repeats the same provenance-equivalent aggregate proof after adding the prior
 compatibility closure, so neither the incoming payload nor the final archive
@@ -4023,11 +4023,13 @@ importing a mutable runtime module. `npm run check:ui-ops` contract-tests the
 two implementations by passing
 a stager-built candidate through every publisher pre-exchange proof, as well as
 testing stale-asset omission, collision rejection, and link rejection.
-The first Boost cutover preserves rollback safety across the surface-count
-boundary: active or rollback manifests created before Boost may verify with the
-legacy 14-surface set only when `/var/www/proofofwork-boost` is absent. New
-candidates, active releases after publication, and any manifest with Boost
-evidence remain 15-surface strict.
+The first Boost and DNS cutovers preserve rollback safety across the
+surface-count boundaries: active or rollback manifests created before Boost may
+verify with the legacy 14-surface set only when `/var/www/proofofwork-boost` is
+absent, and manifests created before DNS may verify with the legacy 15-surface
+set only when `/var/www/proofofwork-dns` is absent. New candidates, active
+releases after publication, and any manifest with DNS evidence remain
+16-surface strict.
 
 For an approved capacity-constrained release, the stager accepts
 `--deduplicate-managed-files`. It hardlinks identical regular files only within
@@ -4105,7 +4107,7 @@ exchange markers before proceeding.
 The following is the exact no-Node-on-UI-host release procedure. Run the first
 block on the trusted build host only after the approved release is committed.
 It creates a fresh detached checkout, installs the lockfile without lifecycle
-scripts, keeps every build output outside that checkout, builds all 14 primary
+scripts, keeps every build output outside that checkout, builds all 15 primary
 surfaces, and copies Computer as NFT. Do not build from the working tree or
 reuse a prior `dist` directory.
 
@@ -4162,6 +4164,7 @@ build_surface() {
 
 build_surface landing https://www.proofofwork.me VITE_LANDING_ONLY
 build_surface id https://id.proofofwork.me VITE_ID_LAUNCH_ONLY
+build_surface dns https://dns.proofofwork.me VITE_DNS_LAUNCH_ONLY
 build_surface computer https://computer.proofofwork.me
 build_surface desktop https://desktop.proofofwork.me VITE_DESKTOP_ONLY
 build_surface browser https://browser.proofofwork.me VITE_BROWSER_ONLY
@@ -4272,7 +4275,7 @@ the historical root has no valid v3 or legacy evidence, stop here. Preserve an
 invalid existing manifest with an exact checksum using the incident procedure
 below, then execute the one-time legacy bytes-only bootstrap block; do not
 invent a commit claim for mixed historical bytes. After `verify-rollback`
-passes, construct the candidate and archive the candidate's exact 15 managed
+passes, construct the candidate and archive the candidate's exact 16 managed
 roots, not the clean input payload:
 
 ```bash
@@ -4308,7 +4311,7 @@ fi
   --additional-bytes 65536 --additional-inodes 4 --phase archive-payload-directory
 archive_payload="$(mktemp -d "${deploy_root}/.archive-${release_id}.XXXXXXXXXX")"
 install -d -o root -g root -m 0700 "${archive_payload}/surfaces"
-for surface in activity browser boost computer desktop growth id inception infinity landing marketplace nft token wallet work; do
+for surface in activity browser boost computer desktop dns growth id inception infinity landing marketplace nft token wallet work; do
   /usr/bin/python3 -I -B /usr/local/sbin/proofofwork-ui-capacity check-copy \
     --source "${stage_root}/proofofwork-${surface}" \
     --path "${archive_payload}/surfaces" --phase "archive-copy-${surface}"
@@ -4370,12 +4373,12 @@ systemctl enable --now proofofwork-ui-release-provenance.timer \
 ```
 
 The archive must be a gzip-compressed tar with exactly one top-level
-`surfaces/` directory and exactly the 15 named surface directories beneath it;
+`surfaces/` directory and exactly the 16 named surface directories beneath it;
 it must not contain `/var/www` passthrough data or the active manifest. The v3
 root manifest and archive-adjacent `.provenance` must be byte-equal and bind the
 release id, full commit and tree, detached-source model, recursive
 `node_modules` entry count/bytes/digest, archive name/digest/payload model, all
-15 surface counts and mode-sensitive digests, Computer/NFT identity, and the
+16 surface counts and mode-sensitive digests, Computer/NFT identity, and the
 post-exchange deployment time. It is exact source-and-served-byte evidence, not
 a claim that the build itself was reproducible.
 
@@ -4383,7 +4386,7 @@ Immediately after publication, run the following from a host outside the UI
 VPS. It checksum-verifies the retained archive, requires the active and adjacent
 provenance to be byte-equal, and byte-compares every archived regular file for
 the public surfaces -- including the retained prior dependency closure -- with
-its HTTPS response on all 14 canonical public surface hostnames. It separately
+its HTTPS response on all 15 canonical public surface hostnames. It separately
 checks each public hostname root and the apex-to-`www` redirect. Do not classify
 the rollback root or release scratch as removable until this is green.
 
@@ -4421,6 +4424,7 @@ hosts = {
     "boost": "boost.proofofwork.me",
     "computer": "computer.proofofwork.me",
     "desktop": "desktop.proofofwork.me",
+    "dns": "dns.proofofwork.me",
     "growth": "growth.proofofwork.me",
     "id": "id.proofofwork.me",
     "inception": "inception.proofofwork.me",
@@ -4469,7 +4473,7 @@ with urllib.request.urlopen("https://proofofwork.me/", timeout=30) as response:
         raise SystemExit("apex redirect target is incorrect")
     if response.read() != indices["landing"]:
         raise SystemExit("apex redirect did not serve the landing index")
-print(f"ui_https_archive_smoke status=verified surfaces=14 files={checked}")
+print(f"ui_https_archive_smoke status=verified surfaces=15 files={checked}")
 PY
 ```
 
@@ -4888,7 +4892,7 @@ a full node, the release is not ready and the affected write/read path must
 fail closed.
 
 Production audits should follow the public app dependency order. Verify the
-standalone surfaces first: Home, IDs, Desktop, Browser, AMO, Credit,
+standalone surfaces first: Home, IDs, DNS, Desktop, Browser, AMO, Credit,
 Wallet, WORK, Infinity, Inception, Log, and Growth. Audit `computer.proofofwork.me` last,
 because it is the integrated shell over the same registry, mail/file, credit,
 marketplace, WORK, Infinity, Inception, Log, and Growth read paths. The final Computer
@@ -4917,6 +4921,9 @@ Production domains:
 www.proofofwork.me          -> canonical landing page
 proofofwork.me              -> permanent redirect to https://www.proofofwork.me/
 id.proofofwork.me           -> ID registry app
+dns.proofofwork.me          -> ProofOfWork DNS .pow claim/search app
+domain.proofofwork.me       -> redirect to https://dns.proofofwork.me/
+domains.proofofwork.me      -> redirect to https://dns.proofofwork.me/
 computer.proofofwork.me     -> full mail/computer app
 desktop.proofofwork.me      -> public read-only file desktop
 browser.proofofwork.me      -> public HTML browser by txid
@@ -4934,7 +4941,7 @@ log.proofofwork.me          -> public ProofOfWork Computer log
 growth.proofofwork.me       -> public growth model dashboard
 ```
 
-Public headers and footers should list every current app domain as they are added, so users can move between Home, IDs, Computer, Desktop, Browser, AMO, Credit, Wallet, WORK, Infinity, Inception, Log, and Growth from any production surface. Social links should include X, YouTube, and GitHub.
+Public headers and footers should list every current app domain as they are added, so users can move between Home, IDs, DNS, Computer, Desktop, Browser, AMO, Credit, Wallet, WORK, Infinity, Inception, Log, and Growth from any production surface. Social links should include X, YouTube, and GitHub.
 
 Each production domain proxies these paths to the ProofOfWork OP_RETURN API:
 
@@ -5017,6 +5024,7 @@ On `localhost` and `127.0.0.1`, shared app navigation uses local route flags ins
 ```text
 /?landing=1
 /?id-launch=1
+/?dns-launch=1
 /
 /?desktop=1
 /?browser=1
@@ -5035,6 +5043,7 @@ Production builds:
 ```bash
 VITE_LANDING_ONLY=1 VITE_POW_API_BASE=https://www.proofofwork.me npm run build
 VITE_ID_LAUNCH_ONLY=1 VITE_POW_API_BASE=https://id.proofofwork.me npm run build
+VITE_DNS_LAUNCH_ONLY=1 VITE_POW_API_BASE=https://dns.proofofwork.me npm run build
 VITE_POW_API_BASE=https://computer.proofofwork.me npm run build
 VITE_DESKTOP_ONLY=1 VITE_POW_API_BASE=https://desktop.proofofwork.me npm run build
 VITE_BROWSER_ONLY=1 VITE_POW_API_BASE=https://browser.proofofwork.me npm run build
@@ -5141,13 +5150,14 @@ The registry endpoint:
 - Keeps pending IDs visible but not routable.
 - Exposes confirmed and pending ID marketplace events, including `list5`, `seal5`, `buy5`, and `delist5`.
 - Exposes AMO sales data from valid `buy5` buyer-funded ID transfers: sale count and seller-price volume, split between confirmed canonical sales and pending mempool-visible sales. Legacy buy events remain replayable history but are not included in the public AMO metric.
-- Exposes Credits, Bonds, and Boost AMO tabs over confirmed credit creations, mints, transfers, holders, registries, active sale-ticket listings, settled credit sales, POWB/INCB hard-price bond sale-ticket books with Inception and Infinity sub-tabs, and active `pwb1:list5` Boost sale tickets. The POWB/INCB hard-price declaration source is `server/bond-hard-price-declaration.mjs`; `npm run build:bond-hard-price-declaration` emits its exact `pwm1:m:` commitment and `npm run prepare:bond-hard-price-declaration` emits the authority-input local-wallet signing draft.
+- Scans the canonical DNS registry address for confirmed and pending `pwdns1:` records, including `.pow` registrations, resolver updates, transfers, listings, seals, delistings, and buyer-funded purchases.
+- Exposes DNS, Credits, Bonds, and Boost AMO tabs over confirmed `.pow` records, confirmed credit creations, mints, transfers, holders, registries, active sale-ticket listings, settled credit sales, POWB/INCB hard-price bond sale-ticket books with Inception and Infinity sub-tabs, and active `pwb1:list5` Boost sale tickets. The POWB/INCB hard-price declaration source is `server/bond-hard-price-declaration.mjs`; `npm run build:bond-hard-price-declaration` emits its exact `pwm1:m:` commitment and `npm run prepare:bond-hard-price-declaration` emits the authority-input local-wallet signing draft.
 - Exposes registry records, pending events, listings, and registry-specific activity.
 
 The canonical livenet ledger payload:
 
 - Is the shared source for `/api/v1/log`, `/api/v1/log-history`, `/api/v1/work-floor`, `/api/v1/growth-summary`, `/api/v1/infinity-summary`, `/api/v1/inception-summary`, `/api/v1/token`, `/api/v1/token-summary`, and `/api/v1/token-history`.
-- Merges registry activity, discovered global Computer activity, seeded mail activity from app-derived addresses, canonical WORK state, canonical credit/token state, and staged protocol activity when enabled.
+- Merges ID and DNS registry activity, discovered global Computer activity, seeded mail activity from app-derived addresses, canonical WORK state, canonical credit/token state, and staged protocol activity when enabled.
 - Uses complete address history for configured mail-heavy Computer addresses, with paginated mempool/address reads as the faster path for the wider seed set. This prevents confirmed mail, Infinity Bond, or Inception Bond transactions from appearing in direct address search while missing from global Log and network value.
 - Emits one `snapshotId`, source hashes, metrics, and consistency checks so WORK, Growth, Log, and credit/token history can prove they are reading the same confirmed state.
 - Fresh summary reads must reject stale ledger fallbacks. A fresh WORK,
@@ -5203,10 +5213,10 @@ checks that WORK/Growth live USD reconciles from `/api/v1/prices/btc-usd`.
 The log endpoint:
 
 - Reads from the canonical livenet ledger payload for global Log and Log history.
-- Starts from the canonical registry and all known ProofOfWork ID owner/receiver addresses.
+- Starts from the canonical ID and DNS registries and all known ProofOfWork ID owner/receiver addresses.
 - Crawls the ProofOfWork mail/file address graph by reading `pwm1:` transactions, discovering senders and recipients, and expanding until the configured safety cap.
 - Supports server-backed search by address, confirmed ProofOfWork ID, txid, protocol kind, participant, token id, or app label against the same ledger-backed event set.
-- Exposes a normalized read-only log feed for registrations, receiver updates, direct transfers, listings, seals, delistings, buyer-funded marketplace transfers, messages, replies, files, attachments, credit creations, credit mints, credit transfers, credit listings, and credit sales.
+- Exposes a normalized read-only log feed for registrations, resolver/receiver updates, direct transfers, listings, seals, delistings, buyer-funded marketplace transfers, messages, replies, files, attachments, credit creations, credit mints, credit transfers, credit listings, and credit sales.
 - Reports total indexed ProofOfWork protocol data bytes across all discovered app OP_RETURN payloads, including marketplace listing/seal/buy/delist records.
 
 The Growth app:
@@ -5441,6 +5451,30 @@ Mainnet canonical registry:
 bc1qfwytlzyr3ym3enz2eutwtjsf9kkf6uqkjydk3e
 ```
 
+DNS:
+
+```text
+pwdns1:r1:<name-base64url>:<owner-address>:<resolver-address>
+pwdns1:u:<name-base64url>:<resolver-address>
+pwdns1:t:<name-base64url>:<new-owner-address>:<new-resolver-address?>
+pwdns1:list5:<sale-ticket-json-base64url>
+pwdns1:seal5:<listing-txid>:<sealed-sale-ticket-json-base64url>
+pwdns1:delist5:<listing-txid>
+pwdns1:buy5:<listing-txid>:<new-owner-address>:<new-resolver-address?>
+```
+
+Mainnet DNS registry:
+
+```text
+domains@proofofwork.me
+1F1zepCJ8VPcPoeMt6G4BPKuE3CYAxCKNY
+```
+
+DNS registrations cost 1,000 proofs. DNS resolver updates, transfers,
+listings, seals, delistings, and buyer-funded purchases cost 546 proofs to the
+DNS registry. UI input accepts the bare prefix and displays the implied `.pow`
+suffix. Sale tickets use `pwdns-sale-v1`; DNS records do not include PGP keys.
+
 Credits:
 
 ```text
@@ -5506,7 +5540,7 @@ pwb1:delist5:<listing-txid>
 pwb1:buy5:<listing-txid>:<new-owner-address>
 ```
 
-Boost is public behind `boost.proofofwork.me`, `/?boost=1`, and `VITE_BOOST_ONLY=1`. The Mail original-post writer, standalone “What’s happening?” composer, and indexer treat `pwb1:` as a canonical governed protocol alongside Mail, IDs, AMO, and credits. Validation keeps posts and replies capped at 140 user-visible characters; a post may include an optional `quoteTxid` in its JSON to render a quote-style Boost. Original posts carry self-directed Proof and/or WORK signal to the author's own address and do not pay the Boost registry fee; the standalone writer requires a positive signal plus miner fee and permits Files attachment in the same transaction. WORK-only originals bind their declared exact Q16 signal to a canonical token-verifier-approved same-transaction WORK self-transfer; forged, unmatched, or ambiguous WORK claims are invalid. Likes, replies, and reboosts pay at least 546 proofs directly to the current Boost owner. Each confirmed owner-directed payment is attributed to the targeted original Boost's proof signal, while the UI separately reports the action's increment. The direct composer, replies, likes, and reboosts expose the shared selectable miner-fee-rate control. A follow pays 546 proofs to the followed profile; unfollow keeps its profile-target payment rule. Self-follow is invalid, including upper/lower Bech32 spellings of the same address. Boost graph, profile, and Following reads use that Bech32 identity while Base58 address case remains exact. Confirmed `pwb1:t` ownership changes therefore route future likes, replies, and reboosts to the new owner, without retroactively rewriting historical payments. The Boost registry receives its 546-proof mutation fee only for direct Boost transfers and listing-sale mutations (`list5`, `seal5`, `delist5`, and `buy5`); historical registry-paid social actions remain replayable history. The latest confirmed follow/unfollow event for a follower-address plus target-address pair determines the active graph edge used by Following views and profile counts. Following also includes the connected wallet's own authored Boosts without creating a self-follow edge. Replies and reboosts display their own paid action signal, while canonical feed totals attribute owner-directed payments to the original Boost once. The nested original post opens its original Boost detail from both timeline cards and expanded reboost detail. Transfer writers require the current confirmed owner, accept a raw address or confirmed ProofOfWork ID resolved to its owner address, and keep wallet signing local. Boost media and profile images should be created through the ProofOfWork Files attachment layer; Boost records store file txid/proof/hash/size metadata and render from Files. A new same-transaction media claim is accepted only when its SHA-256, size, MIME type, and name match exactly one verified PWM attachment in the same transaction and confirmation state; client rendering rehashes the fetched bytes against that pointer. Addresses are canonical profile actors, confirmed ProofOfWork IDs are preferred display identities, and pending IDs are visible but not routable social identities. A wallet with multiple confirmed IDs chooses its Boost display identity by signing a local intent for one ID; publishing `pwb1:profile` makes that selection chain-readable without mutating the canonical ID registry. Boost records are assets keyed by original post txid; `pwb1:t`, `pwb1:list5`, `pwb1:seal5`, `pwb1:delist5`, and `pwb1:buy5` reuse the AMO sale-ticket model. Owners can start `pwb1:list5` from the Boost feed or from the original Boost Mail item after the post txid exists, and active Boost sale tickets appear in AMO's Boost tab. Boost profile routes are person/profile projections, not home timeline filters: `profile=` resolves one address or confirmed ID and exposes authored boosts/reboosts, authored replies, currently owned or purchased boosts, liked boosts, and expanded replies to that person's original boosts. A confirmed `pwb1:hide` event hides the target record from default app/profile indexes without deleting it from ProofOfWork. Confirmed ProofOfWork history is canonical; pending Boost records are visibility only.
+Boost is public behind `boost.proofofwork.me`, `/?boost=1`, and `VITE_BOOST_ONLY=1`. The Mail original-post writer, standalone “What’s happening?” composer, and indexer treat `pwb1:` as a canonical governed protocol alongside Mail, IDs, DNS, AMO, and credits. Validation keeps posts and replies capped at 140 user-visible characters; a post may include an optional `quoteTxid` in its JSON to render a quote-style Boost. Original posts carry self-directed Proof and/or WORK signal to the author's own address and do not pay the Boost registry fee; the standalone writer requires a positive signal plus miner fee and permits Files attachment in the same transaction. WORK-only originals bind their declared exact Q16 signal to a canonical token-verifier-approved same-transaction WORK self-transfer; forged, unmatched, or ambiguous WORK claims are invalid. Likes, replies, and reboosts pay at least 546 proofs directly to the current Boost owner. Each confirmed owner-directed payment is attributed to the targeted original Boost's proof signal, while the UI separately reports the action's increment. The direct composer, replies, likes, and reboosts expose the shared selectable miner-fee-rate control. A follow pays 546 proofs to the followed profile; unfollow keeps its profile-target payment rule. Self-follow is invalid, including upper/lower Bech32 spellings of the same address. Boost graph, profile, and Following reads use that Bech32 identity while Base58 address case remains exact. Confirmed `pwb1:t` ownership changes therefore route future likes, replies, and reboosts to the new owner, without retroactively rewriting historical payments. The Boost registry receives its 546-proof mutation fee only for direct Boost transfers and listing-sale mutations (`list5`, `seal5`, `delist5`, and `buy5`); historical registry-paid social actions remain replayable history. The latest confirmed follow/unfollow event for a follower-address plus target-address pair determines the active graph edge used by Following views and profile counts. Following also includes the connected wallet's own authored Boosts without creating a self-follow edge. Replies and reboosts display their own paid action signal, while canonical feed totals attribute owner-directed payments to the original Boost once. The nested original post opens its original Boost detail from both timeline cards and expanded reboost detail. Transfer writers require the current confirmed owner, accept a raw address or confirmed ProofOfWork ID resolved to its owner address, and keep wallet signing local. Boost media and profile images should be created through the ProofOfWork Files attachment layer; Boost records store file txid/proof/hash/size metadata and render from Files. A new same-transaction media claim is accepted only when its SHA-256, size, MIME type, and name match exactly one verified PWM attachment in the same transaction and confirmation state; client rendering rehashes the fetched bytes against that pointer. Addresses are canonical profile actors, confirmed ProofOfWork IDs are preferred display identities, and pending IDs are visible but not routable social identities. A wallet with multiple confirmed IDs chooses its Boost display identity by signing a local intent for one ID; publishing `pwb1:profile` makes that selection chain-readable without mutating the canonical ID registry. Boost records are assets keyed by original post txid; `pwb1:t`, `pwb1:list5`, `pwb1:seal5`, `pwb1:delist5`, and `pwb1:buy5` reuse the AMO sale-ticket model. Owners can start `pwb1:list5` from the Boost feed or from the original Boost Mail item after the post txid exists, and active Boost sale tickets appear in AMO's Boost tab. Boost profile routes are person/profile projections, not home timeline filters: `profile=` resolves one address or confirmed ID and exposes authored boosts/reboosts, authored replies, currently owned or purchased boosts, liked boosts, and expanded replies to that person's original boosts. A confirmed `pwb1:hide` event hides the target record from default app/profile indexes without deleting it from ProofOfWork. Confirmed ProofOfWork history is canonical; pending Boost records are visibility only.
 
 Boost profile image metadata is additive to `pwb1:profile`: `image` and `banner` carry `txid`, `sha256`, `size`, `mime`, `name`, source `confirmed-pwm1-attachment`, and optional numeric `positionX`/`positionY` percentages from 0 to 100. The transaction sender is the profile actor; the connected writer pays 546 proofs to itself plus miner fee. No ID registry mutation or new registration fee is involved. Confirmed replay preserves omitted slots and clears explicit null slots; identity-only events preserve images, and media-only events preserve the current qualified ID/name. Address profiles may publish media without owning an ID. Historical carriers remain replayable. The worker must receive the updated parser before banner writes are exposed; no historical replay or database migration is needed for these new fields. UI readers retrieve `/api/v1/tx/:txid`, require confirmed transaction status, and verify exact attachment metadata and SHA-256 before rendering supported raster formats. Crop coordinates affect presentation only. Pending profiles never replace confirmed images.
 

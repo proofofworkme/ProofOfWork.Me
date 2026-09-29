@@ -41,6 +41,7 @@ build_surface() {
 }
 build_surface landing https://www.proofofwork.me VITE_LANDING_ONLY
 build_surface id https://id.proofofwork.me VITE_ID_LAUNCH_ONLY
+build_surface dns https://dns.proofofwork.me VITE_DNS_LAUNCH_ONLY
 build_surface computer https://computer.proofofwork.me
 build_surface desktop https://desktop.proofofwork.me VITE_DESKTOP_ONLY
 build_surface browser https://browser.proofofwork.me VITE_BROWSER_ONLY

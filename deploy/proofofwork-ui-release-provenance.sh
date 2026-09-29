@@ -136,6 +136,7 @@ surfaces=(
   boost
   computer
   desktop
+  dns
   growth
   id
   inception
@@ -147,11 +148,32 @@ surfaces=(
   wallet
   work
 )
-if ((${#surfaces[@]} != 15)); then
-  echo "UI provenance surface set must contain exactly 15 entries." >&2
+if ((${#surfaces[@]} != 16)); then
+  echo "UI provenance surface set must contain exactly 16 entries." >&2
   exit 70
 fi
 legacy_surfaces=(
+  activity
+  browser
+  boost
+  computer
+  desktop
+  growth
+  id
+  inception
+  infinity
+  landing
+  marketplace
+  nft
+  token
+  wallet
+  work
+)
+if ((${#legacy_surfaces[@]} != 15)); then
+  echo "UI provenance legacy surface set must contain exactly 15 entries." >&2
+  exit 70
+fi
+pre_boost_surfaces=(
   activity
   browser
   computer
@@ -167,8 +189,8 @@ legacy_surfaces=(
   wallet
   work
 )
-if ((${#legacy_surfaces[@]} != 14)); then
-  echo "UI provenance legacy surface set must contain exactly 14 entries." >&2
+if ((${#pre_boost_surfaces[@]} != 14)); then
+  echo "UI provenance pre-Boost surface set must contain exactly 14 entries." >&2
   exit 70
 fi
 declare -A surface_seen=()
@@ -180,7 +202,7 @@ for surface in "${surfaces[@]}"; do
   surface_seen["${surface}"]=1
 done
 unset surface_seen surface
-surface_pattern='activity|browser|boost|computer|desktop|growth|id|inception|infinity|landing|marketplace|nft|token|wallet|work'
+surface_pattern='activity|browser|boost|computer|desktop|dns|growth|id|inception|infinity|landing|marketplace|nft|token|wallet|work'
 
 surface_directory() {
   printf '%s/proofofwork-%s\n' "${ui_root}" "$1"
@@ -808,8 +830,11 @@ verify_archive_payload() {
   local -n expected_digests="${digests_name}"
   local -a archive_surfaces=("${surfaces[@]}")
 
-  if [[ -z "${expected_counts[boost]:-}" && -z "${expected_digests[boost]:-}" ]]; then
+  if [[ -z "${expected_counts[dns]:-}" && -z "${expected_digests[dns]:-}" ]]; then
     archive_surfaces=("${legacy_surfaces[@]}")
+  fi
+  if [[ -z "${expected_counts[boost]:-}" && -z "${expected_digests[boost]:-}" ]]; then
+    archive_surfaces=("${pre_boost_surfaces[@]}")
   fi
 
   ui_capacity_check "${TMPDIR:-/tmp}" 65536 4 provenance-verification-directory || return 1
@@ -1012,6 +1037,8 @@ record_rollback_evidence() {
     exit 1
   fi
   if [[ ! -e "$(surface_directory boost)" && ! -L "$(surface_directory boost)" ]]; then
+    record_surfaces=("${pre_boost_surfaces[@]}")
+  elif [[ ! -e "$(surface_directory dns)" && ! -L "$(surface_directory dns)" ]]; then
     record_surfaces=("${legacy_surfaces[@]}")
   fi
 
@@ -1378,12 +1405,19 @@ verify_manifest() {
     echo "Active UI release manifest does not preserve the NFT compatibility alias." >&2
     exit 1
   fi
+  if [[ -z "${values[surface.dns.file_count]:-}" && -z "${values[surface.dns.sha256]:-}" ]]; then
+    if [[ -e "$(surface_directory dns)" || -L "$(surface_directory dns)" ]]; then
+      echo "Active UI release manifest is missing surface evidence: dns" >&2
+      exit 1
+    fi
+    manifest_surfaces=("${legacy_surfaces[@]}")
+  fi
   if [[ -z "${values[surface.boost.file_count]:-}" && -z "${values[surface.boost.sha256]:-}" ]]; then
     if [[ -e "$(surface_directory boost)" || -L "$(surface_directory boost)" ]]; then
       echo "Active UI release manifest is missing surface evidence: boost" >&2
       exit 1
     fi
-    manifest_surfaces=("${legacy_surfaces[@]}")
+    manifest_surfaces=("${pre_boost_surfaces[@]}")
   fi
 
   archive="${archive_root}/${values[archive_name]}"
@@ -1495,12 +1529,19 @@ verify_rollback_evidence() {
     echo "UI rollback evidence does not preserve the NFT compatibility alias." >&2
     exit 1
   fi
+  if [[ -z "${values[surface.dns.file_count]:-}" && -z "${values[surface.dns.sha256]:-}" ]]; then
+    if [[ -e "$(surface_directory dns)" || -L "$(surface_directory dns)" ]]; then
+      echo "UI rollback evidence is missing surface evidence: dns" >&2
+      exit 1
+    fi
+    evidence_surfaces=("${legacy_surfaces[@]}")
+  fi
   if [[ -z "${values[surface.boost.file_count]:-}" && -z "${values[surface.boost.sha256]:-}" ]]; then
     if [[ -e "$(surface_directory boost)" || -L "$(surface_directory boost)" ]]; then
       echo "UI rollback evidence is missing surface evidence: boost" >&2
       exit 1
     fi
-    evidence_surfaces=("${legacy_surfaces[@]}")
+    evidence_surfaces=("${pre_boost_surfaces[@]}")
   fi
 
   archive="${archive_root}/${values[archive_name]}"

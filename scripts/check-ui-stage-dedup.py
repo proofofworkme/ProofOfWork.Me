@@ -273,7 +273,10 @@ class StagerIntegrationTests(unittest.TestCase):
             restored.mkdir(mode=0o755)
             subprocess.run(["tar", "-xf", str(archive), "-C", str(restored)], check=True)
             self.assertEqual(stage.tree_fingerprint(dedup), stage.tree_fingerprint(restored))
-            self.assertEqual(len({inode(restored / f"proofofwork-{s}/assets/new.js") for s in stage.SURFACES}), 15)
+            self.assertEqual(
+                len({inode(restored / f"proofofwork-{s}/assets/new.js") for s in stage.SURFACES}),
+                len(stage.SURFACES),
+            )
             self.assertFalse(list(staging.glob(".proofofwork-ui-stage-*")))
             # An unsafe pre-existing inode group in a fresh copy must abort
             # before publication and remove only the unpublished candidate.

@@ -833,7 +833,7 @@ expectAll("hot worker summary publication is canonical, conservative, and health
   /const before = await exactCanonicalSummaryCheckpoint\([\s\S]*?const after = await exactCanonicalSummaryCheckpoint\(/,
   /exactCanonicalSummaryCheckpoint\([\s\S]*?indexedThroughBlock !== tipHeight[\s\S]*?storedHash !== tipHash/,
   /buildIndexedCanonicalLedgerPayload\([\s\S]*?indexedActivityStateForCanonicalLedger\(network, \{\s*exactHash,\s*exactHeight,\s*replayBridgeEra,?\s*\}\)[\s\S]*?exactTokenTablePayloadForCanonicalLedger\(/,
-  /const PROTOCOL_PREFIXES = \["pwm1:", "pwa1:", "pwid1:", "pwb1:", "pwt1:"\]/,
+  /const PROTOCOL_PREFIXES = \["pwm1:", "pwa1:", "pwid1:", "pwdns1:", "pwb1:", "pwt1:"\]/,
   /function tokenTablePayloadHasConservedBalances\([\s\S]*?!tokenIds\.has\(tokenId\)[\s\S]*?minted === held[\s\S]*?mintedSupply === heldSupply/,
   /async function tokenStatePayloadAtCanonicalCheckpoint\([\s\S]*?canonical_blocks AS[\s\S]*?checkpoint_block\.canonical = true[\s\S]*?GREATEST\(latest_scan\.height, canonical_blocks\.height\) AS scan_height[\s\S]*?token_event\.protocol = 'pwt1'[\s\S]*?token_event\.kind LIKE 'token-%'[\s\S]*?token_event\.status = 'confirmed'[\s\S]*?indexedThroughBlock: checkpointHeight[\s\S]*?indexedThroughBlockHash: normalizedCheckpointHash/,
   /proofIndexCanonicalSummaryTokenTablePayload\([\s\S]*?checkpointRelationalPayload[\s\S]*?tokenStatePayloadAtCanonicalCheckpoint\([\s\S]*?payloadWithCurrentWorkPrecisionReadPolicy\([\s\S]*?checkpointRelationalPayload/,
@@ -1185,7 +1185,7 @@ expectAll("supervised canonical rebuild resets mixed-era state behind a hashed b
   /POW_INDEX_BACKFILL_CANONICAL_REBUILD/,
   /--prepare-canonical-rebuild/,
   /requires NETWORK=livenet and an explicit positive POW_INDEX_BACKFILL_BLOCK_SCAN_FROM_HEIGHT/,
-  /DELETE FROM proof_indexer\.events[\s\S]*?\["pwid1", "pwt1", "pwm1", "pwa1", "pwb1"\]/,
+  /DELETE FROM proof_indexer\.events[\s\S]*?\["pwid1", "pwdns1", "pwt1", "pwm1", "pwa1", "pwb1"\]/,
   /DELETE FROM proof_indexer\.id_records/,
   /DELETE FROM proof_indexer\.credit_balances/,
   /DELETE FROM proof_indexer\.credit_listings/,
@@ -1654,12 +1654,12 @@ expect("Desktop public route must not expose network switching controls", !/onNe
 expectAll("Desktop public route has dedicated metadata", app, [
   /desktopRoute[\s\S]*?Search public confirmed ProofOfWork files by address or confirmed ProofOfWork ID\./,
   /title:\s*"ProofOfWork Desktop"/,
-  /\},\s*\[browserRoute,\s*desktopRoute,\s*idLaunchMode\]\)/,
+  /\},\s*\[browserRoute,\s*desktopRoute,\s*dnsLaunchMode,\s*idLaunchMode\]\)/,
 ]);
 expectAll("Browser public route has dedicated metadata", app, [
   /browserRoute[\s\S]*?Render ProofOfWork HTML message bodies and verified HTML attachments by transaction ID\./,
   /title:\s*"ProofOfWork Browser"/,
-  /\},\s*\[browserRoute,\s*desktopRoute,\s*idLaunchMode\]\)/,
+  /\},\s*\[browserRoute,\s*desktopRoute,\s*dnsLaunchMode,\s*idLaunchMode\]\)/,
 ]);
 expect("fetchAddressMail must not call public mempool.space", !/mempool\.space/i.test(fetchAddressMailSource));
 expect("loadDesktopTarget must not call public mempool.space", !/mempool\.space/i.test(loadDesktopTargetSource));

@@ -52,6 +52,9 @@ user@proofofwork.me
 ```
 
 They are not traditional DNS records. They are on-chain mail IDs resolved by the ProofOfWork.Me app/indexer.
+The separate ProofOfWork DNS `.pow` registry is documented in
+[`PROOFOFWORK_DNS.md`](PROOFOFWORK_DNS.md); it uses `pwdns1:`, omits PGP keys,
+and must not be treated as a `pwid1:` ID alias.
 
 - Registry events live in ProofOfWork OP_RETURN outputs.
 - First valid registration wins.
@@ -102,6 +105,9 @@ Production domains:
 www.proofofwork.me          canonical landing page
 proofofwork.me              permanent redirect to https://www.proofofwork.me/
 id.proofofwork.me           focused ID registry app
+dns.proofofwork.me          focused ProofOfWork DNS .pow claim/search app
+domain.proofofwork.me       redirect to https://dns.proofofwork.me/
+domains.proofofwork.me      redirect to https://dns.proofofwork.me/
 computer.proofofwork.me     full mail/computer app
 desktop.proofofwork.me      public read-only file desktop
 browser.proofofwork.me      public HTML browser by txid
@@ -120,9 +126,10 @@ growth.proofofwork.me       public growth model dashboard
 ```
 
 The ID subdomain is the first onboarding experience and should stay focused on claiming/resolving IDs, not reading mail.
+The DNS subdomain is the `.pow` claim/search experience and should stay focused on availability, registration, and public records; DNS trading belongs in AMO.
 The Desktop subdomain can resolve confirmed IDs for public file browsing, but it must not treat pending IDs as searchable/routable identities.
 Boost is the public 140-character social meta protocol over ProofOfWork addresses and confirmed ProofOfWork IDs. It must not mutate the canonical `pwid1:` registry for posts, likes, replies, reboosts, follows, unfollows, profile display, transfers, or marketplace activity.
-The AMO subdomain can connect UniSat, publish sale-ticket on-chain listings for owned confirmed IDs, seal or delist active listings, and execute buyer-funded `pwid1:buy5` transfers. It is tabbed by asset class: the ID tab is live, the Credits tab uses the same sale-ticket shape for non-bond credit `list5`, `seal5`, `delist5`, and `buy5` records, and the Bonds tab exposes POWB/INCB hard-price sale-ticket books with Inception and Infinity sub-tabs. The POWB/INCB hard-price declaration source is `server/bond-hard-price-declaration.mjs`; it is buildable with `npm run build:bond-hard-price-declaration` and prepared as an authority-input declaration with `npm run prepare:bond-hard-price-declaration`. The former Marketplace hostname resolves to this same surface.
+The AMO subdomain can connect UniSat, publish sale-ticket on-chain listings for owned confirmed IDs and `.pow` names, seal or delist active listings, and execute buyer-funded `pwid1:buy5` or `pwdns1:buy5` transfers. It is tabbed by asset class: the ID and DNS tabs are live, the Credits tab uses the same sale-ticket shape for non-bond credit `list5`, `seal5`, `delist5`, and `buy5` records, and the Bonds tab exposes POWB/INCB hard-price sale-ticket books with Inception and Infinity sub-tabs. The POWB/INCB hard-price declaration source is `server/bond-hard-price-declaration.mjs`; it is buildable with `npm run build:bond-hard-price-declaration` and prepared as an authority-input declaration with `npm run prepare:bond-hard-price-declaration`. The former Marketplace hostname resolves to this same surface.
 The Log subdomain is read-only. It exposes a unified ProofOfWork Computer log for registrations, receiver updates, direct transfers, listings, seals, delistings, purchases, messages, replies, files, attachments, credit creations, credit mints, credit transfers, credit listings, credit sales, and seeded Computer mail events. Log search is server-backed by the canonical livenet ledger, so address, confirmed ID, txid, participant, and token searches should agree with global Log.
 The Credit subdomain creates and mints mint-first `pwt1:` credits. The `tokens` subdomain redirects to Credit. The Wallet subdomain tracks credit balances and broadcasts generic-credit `pwt1:send` transfers plus the era-valid canonical WORK atomic transfer: historical Q8 `pwt1:send2`, then Q16 `pwt1:send3` only after the staged precision declaration activates. Every transfer pays the relevant credit registry, and legacy bytes retain their original scale. The WORK subdomain is the dedicated WORK credit dashboard. The Infinity subdomain tracks POWB supply/floor data and creates `pwm1:m:powb` bond messages. The Inception subdomain tracks INCB supply/floor data and creates `pwm1:m:incb` bond messages. Its canonical registry identity is `inception@proofofwork.me`, and its reserved synthetic credit id is `3cb25745f937f2b4e5508e5400189fe8fe679cd8e84bfa1e9176d70c9761f15d`. Both bond families reuse the credit sale-ticket lifecycle for transfers and trades, while only canonical WORK can be attached as a separate era-valid `send2`/`send3` credit transfer to a bond message.
 The Growth subdomain is read-only. It compares the canonical ID/Mail/Drive/AMO/Credit network-value model with confirmed registry, log, file, AMO, and credit value metrics in proofs and USD. Growth, WORK, Log, and credit/token history should share one confirmed livenet ledger snapshot after refresh. WORK has a permanent floor derived from live confirmed network value: `work_floor_sats = live_network_value_sats / 21,000,000 WORK`; the inverse `21,000,000 / live_network_value_sats` is the WORK-per-proof ratio. Frozen network value is kept separately as the confirmation-time audit stamp for WORK movement and other event components.
@@ -138,6 +145,7 @@ Local preview:
 
 ```text
 http://localhost:5173/?id-launch=1
+http://localhost:5173/?dns-launch=1
 http://localhost:5173/?boost=1
 http://localhost:5173/?infinity=1
 http://localhost:5173/?inception=1
@@ -147,6 +155,12 @@ ID-only launch build:
 
 ```bash
 VITE_ID_LAUNCH_ONLY=1 VITE_POW_API_BASE=https://id.proofofwork.me npm run build
+```
+
+DNS-only launch build:
+
+```bash
+VITE_DNS_LAUNCH_ONLY=1 VITE_POW_API_BASE=https://dns.proofofwork.me npm run build
 ```
 
 Infinity-only production build:
@@ -473,6 +487,7 @@ Phase 1 production uses same-origin API proxies:
 ```text
 https://www.proofofwork.me/api/*
 https://id.proofofwork.me/api/*
+https://dns.proofofwork.me/api/*
 https://computer.proofofwork.me/api/*
 https://desktop.proofofwork.me/api/*
 https://browser.proofofwork.me/api/*

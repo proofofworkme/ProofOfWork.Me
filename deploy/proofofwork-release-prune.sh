@@ -105,6 +105,7 @@ ui_surfaces=(
   boost
   computer
   desktop
+  dns
   growth
   id
   inception
@@ -117,6 +118,23 @@ ui_surfaces=(
   work
 )
 legacy_ui_surfaces=(
+  activity
+  browser
+  boost
+  computer
+  desktop
+  growth
+  id
+  inception
+  infinity
+  landing
+  marketplace
+  nft
+  token
+  wallet
+  work
+)
+pre_boost_ui_surfaces=(
   activity
   browser
   computer
@@ -233,6 +251,9 @@ protect_ui_manifest_archive() {
   fi
   if [[ -z "${manifest_values[surface.boost.file_count]:-}" &&
     -z "${manifest_values[surface.boost.sha256]:-}" ]]; then
+    manifest_surfaces=("${pre_boost_ui_surfaces[@]}")
+  elif [[ -z "${manifest_values[surface.dns.file_count]:-}" &&
+    -z "${manifest_values[surface.dns.sha256]:-}" ]]; then
     manifest_surfaces=("${legacy_ui_surfaces[@]}")
   fi
   for surface in "${manifest_surfaces[@]}"; do

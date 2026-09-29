@@ -9505,6 +9505,10 @@ check("fresh registry enumerates every PWID carrier with distinct physical fees"
         left.recordOrdinal - right.recordOrdinal,
       compareRegistryRecordDisplayOrder: () => 0,
       firstIdProtocolOutputIndex,
+      firstRegistryProtocolOutputIndex: (outputs, protocolPrefix) =>
+        outputs.findIndex(
+          (output) => output?.candidate?.prefix === protocolPrefix,
+        ),
       idActivityItemsFromEvents: (events) => events,
       idEventMinimumPaymentSats: (kind) =>
         kind === "register" ? 1_000 : 546,
@@ -45500,6 +45504,7 @@ check("canonical rebuild reset and hashed bootstrap are one transaction", async 
   );
   assert.deepEqual(Array.from(eventDelete.params[1]), [
     "pwid1",
+    "pwdns1",
     "pwt1",
     "pwm1",
     "pwa1",
@@ -47451,7 +47456,7 @@ check("canonical transaction detail rows preserve full-node input and output tru
     BACKFILL_PATH,
     "canonicalTransactionDetailRows",
     {
-      PROTOCOL_PREFIXES: ["pwm1:", "pwid1:", "pwt1:"],
+      PROTOCOL_PREFIXES: ["pwm1:", "pwid1:", "pwdns1:", "pwt1:"],
       addressFromVout,
       canonicalOpReturnPayloadFromVout,
       isHexTxid: (value) => /^[0-9a-f]{64}$/u.test(String(value)),
@@ -66551,7 +66556,7 @@ check("AMO V5 current readers reject a globally duplicated canonical position", 
   assert.match(auditSql, /event_block\.canonical = true/u);
   assert.match(
     auditSql,
-    /ARRAY\['pwm1','pwa1','pwid1','pwb1','pwt1'\]/u,
+    /ARRAY\['pwm1','pwa1','pwid1','pwdns1','pwb1','pwt1'\]/u,
   );
   assert.match(auditSql, /event_row\.status = 'confirmed'/u);
   assert.match(auditSql, /event_row\.block_height >= \$2/u);
@@ -70435,6 +70440,16 @@ check("AMO V5 ID sale authorization normalization matches live replay exactly", 
       .replace(/^@/u, "")
       .replace(/@proofofwork\.me$/u, "")
       .trim();
+  const normalizeRegistryAssetId = (value, saleVersion = "") =>
+    saleVersion === "pwdns-sale-v1"
+      ? String(value ?? "")
+        .trim()
+        .toLowerCase()
+        .replace(/^@/u, "")
+        .replace(/^\./u, "")
+        .replace(/\.pow$/u, "")
+        .trim()
+      : normalizePowId(value);
   const validPublicKeyHex = (value) =>
     /^(?:[0-9a-fA-F]{64}|(?:02|03)[0-9a-fA-F]{64}|04[0-9a-fA-F]{128})$/u
       .test(value);
@@ -70455,6 +70470,7 @@ check("AMO V5 ID sale authorization normalization matches live replay exactly", 
       ID_SALE_AUTH_VERSION: "pwid-sale-v3",
       ID_SALE_AUTH_VERSION_ANCHORED: "pwid-sale-v2",
       ID_SALE_AUTH_VERSION_TICKET: "pwid-sale-v4",
+      normalizeRegistryAssetId,
       normalizePowId,
     },
   );
@@ -70470,9 +70486,11 @@ check("AMO V5 ID sale authorization normalization matches live replay exactly", 
       ID_SALE_AUTH_VERSION_ANCHORED: "pwid-sale-v2",
       ID_SALE_AUTH_VERSION_LEGACY: "pwid-sale-v1",
       ID_SALE_AUTH_VERSION_TICKET: "pwid-sale-v4",
+      DNS_SALE_AUTH_VERSION_TICKET: "pwdns-sale-v1",
       isValidBitcoinAddress: (address, network) =>
         network === "livenet" && address === validAddress,
       marketplaceLegacyAnchorScriptPubKey: () => "fixture-unused",
+      normalizeRegistryAssetId,
       normalizePowId,
       saleAuthorizationDraft,
       validPublicKeyHex,
@@ -80747,7 +80765,7 @@ check("AMO V5 canonical positions and immutable projections are schema-bound", (
   );
   for (const required of [
     /event_row\.record_ordinal IS NULL/u,
-    /duplicate_event\.protocol = ANY\(\s*ARRAY\['pwm1','pwa1','pwid1','pwb1','pwt1'\]::text\[\]\s*\)/u,
+    /duplicate_event\.protocol = ANY\(\s*ARRAY\['pwm1','pwa1','pwid1','pwdns1','pwb1','pwt1'\]::text\[\]\s*\)/u,
     /duplicate_tx\.block_height = duplicate_event\.block_height/u,
     /duplicate_tx\.block_index = duplicate_event\.block_index/u,
     /duplicate_block\.canonical = true/u,

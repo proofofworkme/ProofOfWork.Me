@@ -918,7 +918,7 @@ const MEMPOOL_SCAN_SEEN_LIMIT = Number(
   process.env.POW_INDEX_MEMPOOL_SCAN_SEEN_LIMIT ?? 10_000,
 );
 // Only protocols with a canonical block-scan parser/verifier belong here.
-const PROTOCOL_PREFIXES = ["pwm1:", "pwa1:", "pwid1:", "pwb1:", "pwt1:"];
+const PROTOCOL_PREFIXES = ["pwm1:", "pwa1:", "pwid1:", "pwdns1:", "pwb1:", "pwt1:"];
 const MAIL_ATTACHMENT_MAX_BYTES = 60_000;
 const INCLUDE_SCOPED_HOLDERS = !/^(?:0|false|no)$/iu.test(
   String(process.env.POW_INDEX_BACKFILL_HOLDERS ?? "1"),
@@ -5261,6 +5261,7 @@ function protocolItemsFromTx(tx, message) {
     const invalidKind = {
       "pwa1:": "work-usd-quote",
       "pwid1:": "id-event",
+      "pwdns1:": "dns-event",
       "pwb1:": "boost-event",
       "pwt1:": "token-event",
     }[message?.prefix] ?? "protocol-event";
@@ -5530,7 +5531,7 @@ function rawProtocolItemsForTx(tx, messages) {
     ...canonicalBondMintItemsFromMailItem(mailItem),
     ...messages
       .filter((message) =>
-        ["pwa1:", "pwid1:", "pwb1:", "pwt1:"].includes(message?.prefix),
+        ["pwa1:", "pwid1:", "pwdns1:", "pwb1:", "pwt1:"].includes(message?.prefix),
       )
       .flatMap((message) => protocolItemsFromTx(tx, message)),
   ];
@@ -21463,7 +21464,7 @@ async function prepareCanonicalRebuild(client) {
         WHERE network = $1
           AND protocol = ANY($2::text[])
       `,
-      [NETWORK, ["pwid1", "pwt1", "pwm1", "pwa1", "pwb1"]],
+      [NETWORK, ["pwid1", "pwdns1", "pwt1", "pwm1", "pwa1", "pwb1"]],
     );
     await client.query(`DELETE FROM proof_indexer.id_records WHERE network = $1`, [
       NETWORK,
@@ -24442,7 +24443,7 @@ export function bindPreparedTransactionsToWorkAmoV5Replay(
   preparedTransactions,
   transition,
 ) {
-  const protocols = new Set(["pwa1", "pwid1", "pwm1", "pwb1", "pwt1"]);
+  const protocols = new Set(["pwa1", "pwid1", "pwdns1", "pwm1", "pwb1", "pwt1"]);
   const replayByPosition = new Map();
   for (const record of Array.isArray(transition?.replayRecords)
     ? transition.replayRecords
@@ -24793,7 +24794,7 @@ async function workAmoV5CanonicalBlockEventSet(client, transition) {
         AND event_row.status = 'confirmed'
         AND event_row.block_height = $2
         AND event_row.protocol = ANY(
-          ARRAY['pwm1','pwa1','pwid1','pwb1','pwt1']::text[]
+          ARRAY['pwm1','pwa1','pwid1','pwdns1','pwb1','pwt1']::text[]
         )
       ORDER BY
         event_row.block_index,
@@ -29163,7 +29164,7 @@ async function persistExactWorkQ16PendingWitness(
       [
         NETWORK,
         stage.replayTxids,
-        ["pwa1", "pwid1", "pwm1", "pwb1", "pwt1"],
+        ["pwa1", "pwid1", "pwdns1", "pwm1", "pwb1", "pwt1"],
       ],
     );
     const expectedStagedEventOutcomes =
@@ -29424,7 +29425,7 @@ async function persistExactWorkQ16PendingWitness(
         "WORK Q16 pending membership contains a malformed or unresolved persisted WORK row.",
       );
     }
-    const governedProtocols = ["pwa1", "pwid1", "pwm1", "pwb1", "pwt1"];
+    const governedProtocols = ["pwa1", "pwid1", "pwdns1", "pwm1", "pwb1", "pwt1"];
     const projectionEventResult = await client.query(
       `
         SELECT
@@ -30771,7 +30772,7 @@ function assertWorkQ16PendingCompanionCoverage(
   companionPrepared,
   txid,
 ) {
-  const governedProtocols = new Set(["pwa1", "pwid1", "pwm1", "pwb1"]);
+  const governedProtocols = new Set(["pwa1", "pwid1", "pwdns1", "pwm1", "pwb1"]);
   const records = (Array.isArray(rawRecords) ? rawRecords : []).filter(
     (record) => governedProtocols.has(normalizedLowerText(record?.protocol)),
   );
@@ -31007,7 +31008,7 @@ async function clearWorkQ16PendingStageDecision(client, txid) {
         AND event.protocol = ANY($3::text[])
         AND event.status IN ('pending', 'dropped', 'orphaned')
     `,
-    [NETWORK, txid, ["pwa1", "pwid1", "pwm1", "pwb1", "pwt1"]],
+    [NETWORK, txid, ["pwa1", "pwid1", "pwdns1", "pwm1", "pwb1", "pwt1"]],
   );
   await client.query(
     `

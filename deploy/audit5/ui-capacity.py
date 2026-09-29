@@ -13,7 +13,7 @@ from pathlib import Path
 import stat
 import types
 
-SURFACES = 'activity boost browser computer desktop growth id inception infinity landing marketplace nft token wallet work'.split()
+SURFACES = 'activity boost browser computer desktop dns growth id inception infinity landing marketplace nft token wallet work'.split()
 # Reviewed current stager from Audit 19. The historical Audit 5 publisher below
 # remains pinned to its original helper; the live phase-bound collector must load
 # the current stager whose guarded copy operations it is bounding.

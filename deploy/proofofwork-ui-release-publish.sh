@@ -264,6 +264,7 @@ surfaces=(
   boost
   computer
   desktop
+  dns
   growth
   id
   inception
@@ -275,11 +276,32 @@ surfaces=(
   wallet
   work
 )
-if ((${#surfaces[@]} != 15)); then
-  echo "UI publisher surface set must contain exactly 15 entries." >&2
+if ((${#surfaces[@]} != 16)); then
+  echo "UI publisher surface set must contain exactly 16 entries." >&2
   exit 70
 fi
 legacy_surfaces=(
+  activity
+  browser
+  boost
+  computer
+  desktop
+  growth
+  id
+  inception
+  infinity
+  landing
+  marketplace
+  nft
+  token
+  wallet
+  work
+)
+if ((${#legacy_surfaces[@]} != 15)); then
+  echo "UI publisher legacy surface set must contain exactly 15 entries." >&2
+  exit 70
+fi
+pre_boost_surfaces=(
   activity
   browser
   computer
@@ -295,8 +317,8 @@ legacy_surfaces=(
   wallet
   work
 )
-if ((${#legacy_surfaces[@]} != 14)); then
-  echo "UI publisher legacy surface set must contain exactly 14 entries." >&2
+if ((${#pre_boost_surfaces[@]} != 14)); then
+  echo "UI publisher pre-Boost surface set must contain exactly 14 entries." >&2
   exit 70
 fi
 declare -A surface_seen=()
@@ -312,6 +334,8 @@ unset surface_seen surface
 verify_prior_asset_compatibility() {
   local -a prior_surfaces=("${surfaces[@]}")
   if [[ ! -e "${www_root}/proofofwork-boost" && ! -L "${www_root}/proofofwork-boost" ]]; then
+    prior_surfaces=("${pre_boost_surfaces[@]}")
+  elif [[ ! -e "${www_root}/proofofwork-dns" && ! -L "${www_root}/proofofwork-dns" ]]; then
     prior_surfaces=("${legacy_surfaces[@]}")
   fi
   # Bound the compatibility scan so a large retained rollback tree cannot
@@ -343,7 +367,7 @@ css_import_pattern = re.compile(
 maximum_index_bytes = 2 * 1024 * 1024
 maximum_asset_bytes = 64 * 1024 * 1024
 maximum_total_bytes = 512 * 1024 * 1024
-# The current 15-surface split bundle has 525 reachable prior assets (35 per
+# The current 16-surface split bundle has 560 reachable prior assets (35 per
 # surface). Keep this served-path ceiling aligned with the canonical stager;
 # byte, reference-edge, candidate and per-file limits remain independent.
 maximum_dependencies = 1024

@@ -29,6 +29,7 @@ SURFACES = (
     "boost",
     "computer",
     "desktop",
+    "dns",
     "growth",
     "id",
     "inception",
@@ -40,12 +41,15 @@ SURFACES = (
     "wallet",
     "work",
 )
-LEGACY_SURFACES = tuple(surface for surface in SURFACES if surface != "boost")
+LEGACY_SURFACES = tuple(surface for surface in SURFACES if surface != "dns")
+PRE_BOOST_SURFACES = tuple(
+    surface for surface in SURFACES if surface not in {"boost", "dns"}
+)
 COMPATIBILITY_MODEL = "proofofwork-ui-prior-asset-closure-v1"
 MAXIMUM_INDEX_BYTES = 2 * 1024 * 1024
 MAXIMUM_ASSET_BYTES = 64 * 1024 * 1024
 MAXIMUM_TOTAL_BYTES = 512 * 1024 * 1024
-# The current 15-surface split bundle has 525 reachable prior assets (35 per
+# The current 16-surface split bundle has 560 reachable prior assets (35 per
 # surface). Count each served path, including shared-content URLs, and retain
 # a finite ceiling above that measured set alongside the byte/edge limits.
 MAXIMUM_DEPENDENCIES = 1024
@@ -598,6 +602,9 @@ def payload_surface_fingerprint(
 def live_surface_names(root: Path) -> tuple[str, ...]:
     boost = root / "proofofwork-boost"
     if not os.path.lexists(boost):
+        return PRE_BOOST_SURFACES
+    dns = root / "proofofwork-dns"
+    if not os.path.lexists(dns):
         return LEGACY_SURFACES
     return SURFACES
 
@@ -712,7 +719,7 @@ def validate_exact_surfaces_root(
     if actual != expected:
         missing = sorted(expected - actual)
         extra = sorted(actual - expected)
-        fail(f"New-build surfaces root must contain exactly 15 surfaces; missing={missing} extra={extra}")
+        fail(f"New-build surfaces root must contain exactly {len(SURFACES)} surfaces; missing={missing} extra={extra}")
     fingerprints, entry_count, regular_bytes = bounded_payload_fingerprint(
         surfaces_root,
         expected_owner,

@@ -5,13 +5,14 @@ Before doing any work in this repository, read these files in order:
 1. `SOUL.md`
 2. `README.md`
 3. `PROOFOFWORK_IDS.md`
-4. `MARKETPLACE.md`
-5. `OP_RETURN_INFRASTRUCTURE.md`
-6. `MAIL_ORGANIZATION.md`
+4. `PROOFOFWORK_DNS.md`
+5. `MARKETPLACE.md`
+6. `OP_RETURN_INFRASTRUCTURE.md`
+7. `MAIL_ORGANIZATION.md`
 
 `SOUL.md` is the operating memory and voice of ProofOfWork.Me. It should shape how agents reason, prioritize, write, and build.
 
-`SOUL.md` is not the protocol spec. When there is a conflict, the protocol docs, source code, and explicit user instructions win. Use `MARKETPLACE.md` for current ID/credit sale-ticket behavior, `OP_RETURN_INFRASTRUCTURE.md` for node/API/deployment behavior, and `MAIL_ORGANIZATION.md` for mailbox, desktop, contacts, folders, and local UX state.
+`SOUL.md` is not the protocol spec. When there is a conflict, the protocol docs, source code, and explicit user instructions win. Use `PROOFOFWORK_DNS.md` for the `.pow` registry, `MARKETPLACE.md` for current ID/DNS/credit sale-ticket behavior, `OP_RETURN_INFRASTRUCTURE.md` for node/API/deployment behavior, and `MAIL_ORGANIZATION.md` for mailbox, desktop, contacts, folders, and local UX state.
 
 Core operating rules:
 

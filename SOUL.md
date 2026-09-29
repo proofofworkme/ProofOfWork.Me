@@ -15,7 +15,7 @@ It is distilled from current repository docs and public launch memory captured t
 - Public archives reviewed: `/home/sixer/Downloads/twitter-2026-05-19-4780579747040c69c6ee36267c276b61d1375ffa6de1fde07a0d945892fafea7`, `/home/sixer/Downloads/twitter-2026-06-09-4780579747040c69c6ee36267c276b61d1375ffa6de1fde07a0d945892fafea7`, `/home/sixer/Downloads/twitter-2026-07-14-4780579747040c69c6ee36267c276b61d1375ffa6de1fde07a0d945892fafea7`, `/home/sixer/Downloads/twitter-2026-08-19-4780579747040c69c6ee36267c276b61d1375ffa6de1fde07a0d945892fafea7`
 - 2026-07-14 archive inventory reviewed without sampling: 2,486 active tweet records, 39 deleted-tweet records, 67 long-form Note Tweet records, 2,486 active headers, and 39 deleted headers. Active and deleted tweet IDs were each unique; 271 active records were retweets.
 - 2026-08-19 archive inventory reviewed with full file inventory and targeted public-record sampling: 3,195 active tweet records, 10 deleted-tweet records, 167 long-form Note Tweet records, 3,195 active headers, 10 deleted headers, 417 active tweet media files, and 4 deleted-tweet media files. Active and deleted tweet IDs were each unique; 35 active records were retweets. Active public tweet records span 2026-05-08 through 2026-08-19, while Note Tweet records span 2026-07-16 through 2026-08-17.
-- Core domains: `www.proofofwork.me`, `proofofwork.me`, `id.proofofwork.me`, `computer.proofofwork.me`, `desktop.proofofwork.me`, `browser.proofofwork.me`, `boost.proofofwork.me`, `amo.proofofwork.me`, legacy `marketplace.proofofwork.me`, `credit.proofofwork.me`, `token.proofofwork.me`, `tokens.proofofwork.me`, `wallet.proofofwork.me`, `work.proofofwork.me`, `infinity.proofofwork.me`, `inception.proofofwork.me`, `log.proofofwork.me`, `growth.proofofwork.me`
+- Core domains: `www.proofofwork.me`, `proofofwork.me`, `id.proofofwork.me`, `dns.proofofwork.me`, `domain.proofofwork.me`, `domains.proofofwork.me`, `computer.proofofwork.me`, `desktop.proofofwork.me`, `browser.proofofwork.me`, `boost.proofofwork.me`, `amo.proofofwork.me`, legacy `marketplace.proofofwork.me`, `credit.proofofwork.me`, `token.proofofwork.me`, `tokens.proofofwork.me`, `wallet.proofofwork.me`, `work.proofofwork.me`, `infinity.proofofwork.me`, `inception.proofofwork.me`, `log.proofofwork.me`, `growth.proofofwork.me`
 
 ## One Sentence
 
@@ -305,11 +305,13 @@ Future agents must preserve these unless the user explicitly asks for a migratio
 - `www.proofofwork.me` is the canonical landing/router.
 - `proofofwork.me` redirects to `https://www.proofofwork.me/`.
 - `id.proofofwork.me` is the focused ID registry app.
+- `dns.proofofwork.me` is the focused ProofOfWork DNS `.pow` claim/search app.
+- `domain.proofofwork.me` and `domains.proofofwork.me` redirect to `https://dns.proofofwork.me/`.
 - `computer.proofofwork.me` is the full mail/computer app.
 - `desktop.proofofwork.me` is the public read-only file desktop.
 - `browser.proofofwork.me` is the standalone public HTML renderer.
 - `boost.proofofwork.me` is the public Proof-ranked social feed over confirmed `pwb1:` records; original posts reuse Mail/Files, and paid actions and asset trades use the Boost protocol. The feed leads with people and posts; proof evidence and exact signal lanes remain inspectable through disclosures. Compact display quantities never become ranking, payment, or signing authority.
-- `amo.proofofwork.me` is the canonical Autonomous Money Organization surface for governed WORK units and the existing ID/credit sale-ticket markets.
+- `amo.proofofwork.me` is the canonical Autonomous Money Organization surface for governed WORK units and the existing ID, DNS, credit, bond, and Boost sale-ticket markets.
 - `marketplace.proofofwork.me` is a retained compatibility hostname for AMO; it is not a separate protocol or state plane.
 - `credit.proofofwork.me` is the standalone credit creation and mint app.
 - `token.proofofwork.me` and `tokens.proofofwork.me` redirect to `https://credit.proofofwork.me/`.
@@ -323,6 +325,12 @@ Future agents must preserve these unless the user explicitly asks for a migratio
 - Registration price: `1000` proofs.
 - ID mutation price: `546` proofs for receiver updates, direct transfers, AMO listings, seals, delistings, and buyer-funded AMO transfers.
 - Current ID event: `pwid1:r2:<id-base64url>:<owner-address>:<receive-address>:<pgp-public-key-base64url?>`
+- DNS registry identity: `domains@proofofwork.me`
+- DNS mainnet registry address: `1F1zepCJ8VPcPoeMt6G4BPKuE3CYAxCKNY`
+- DNS registration price: `1000` proofs.
+- DNS mutation price: `546` proofs for resolver updates, direct transfers, AMO listings, seals, delistings, and buyer-funded AMO transfers.
+- Current DNS event: `pwdns1:r1:<name-base64url>:<owner-address>:<resolver-address>`
+- DNS names are displayed with `.pow`, but users type the bare prefix and the app implies the suffix.
 - Current mail prefix: `pwm1:`
 - Mailbox projections must preserve subject/body separation: `pwm1:s` supplies the subject, `pwm1:m` supplies the body, and `mail_items.body_text` plus UI memo rendering must not use Log display detail as a substitute for decoded message content.
 - Current credit prefix: `pwt1:`

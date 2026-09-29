@@ -13,7 +13,7 @@ ROOT = Path(__file__).resolve().parent.parent
 PROVENANCE = ROOT / 'deploy/proofofwork-ui-release-provenance.sh'
 PUBLISHER = ROOT / 'deploy/proofofwork-ui-release-publish.sh'
 CAPACITY = ROOT / 'deploy/proofofwork-ui-capacity.py'
-SURFACES = ('activity', 'browser', 'boost', 'computer', 'desktop', 'growth', 'id',
+SURFACES = ('activity', 'browser', 'boost', 'computer', 'desktop', 'dns', 'growth', 'id',
             'inception', 'infinity', 'landing', 'marketplace', 'nft', 'token', 'wallet', 'work')
 
 

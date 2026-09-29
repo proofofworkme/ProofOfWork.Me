@@ -107,6 +107,15 @@
 	}
 }
 
+(common_dns_app) {
+	import common_static_policy
+	handle {
+		root * /var/www/proofofwork-dns
+		try_files {path} /index.html
+		file_server
+	}
+}
+
 (common_computer_app) {
 	import common_static_policy
 	handle {
@@ -178,6 +187,9 @@ http://77.42.91.106 {
 http://proofofwork.me,
 http://www.proofofwork.me,
 http://id.proofofwork.me,
+http://dns.proofofwork.me,
+http://domain.proofofwork.me,
+http://domains.proofofwork.me,
 http://computer.proofofwork.me,
 http://desktop.proofofwork.me,
 http://browser.proofofwork.me,
@@ -208,6 +220,20 @@ www.proofofwork.me {
 
 id.proofofwork.me {
 	import common_id_app
+}
+
+dns.proofofwork.me {
+	import common_dns_app
+}
+
+domain.proofofwork.me {
+	import common_headers
+	redir https://dns.proofofwork.me{uri} 308
+}
+
+domains.proofofwork.me {
+	import common_headers
+	redir https://dns.proofofwork.me{uri} 308
 }
 
 computer.proofofwork.me {

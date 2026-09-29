@@ -36,6 +36,7 @@ const FIXTURE_CONFIG = {
     'SOUL.md',
     'README.md',
     'PROOFOFWORK_IDS.md',
+    'PROOFOFWORK_DNS.md',
     'MARKETPLACE.md',
     'OP_RETURN_INFRASTRUCTURE.md',
     'MAIL_ORGANIZATION.md',
@@ -53,6 +54,7 @@ const FIXTURE_CONFIG = {
       'SOUL.md',
       'README.md',
       'PROOFOFWORK_IDS.md',
+      'PROOFOFWORK_DNS.md',
       'MARKETPLACE.md',
       'OP_RETURN_INFRASTRUCTURE.md',
       'MAIL_ORGANIZATION.md',
@@ -324,6 +326,7 @@ function createFixture(t, { withObsoleteFile = false } = {}) {
   );
   for (const document of [
     'PROOFOFWORK_IDS.md',
+    'PROOFOFWORK_DNS.md',
     'MARKETPLACE.md',
     'OP_RETURN_INFRASTRUCTURE.md',
     'MAIL_ORGANIZATION.md',

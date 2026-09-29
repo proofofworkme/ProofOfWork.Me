@@ -64,6 +64,7 @@ import {
   BROWSER_APP_URL,
   COMPUTER_APP_URL,
   DESKTOP_APP_URL,
+  DNS_APP_URL,
   GROWTH_APP_URL,
   HOME_APP_URL,
   ID_APP_URL,
@@ -74,6 +75,7 @@ import {
   LOCAL_BOOST_APP_URL,
   LOCAL_COMPUTER_APP_URL,
   LOCAL_DESKTOP_APP_URL,
+  LOCAL_DNS_APP_URL,
   LOCAL_GROWTH_APP_URL,
   LOCAL_ID_APP_URL,
   LOCAL_INCEPTION_APP_URL,
@@ -94,6 +96,7 @@ import {
   isActivityRoute,
   isBrowserRoute,
   isDesktopRoute,
+  isDnsLaunchRoute,
   isGrowthRoute,
   isIdLaunchRoute,
   isInceptionRoute,
@@ -176,7 +179,10 @@ import {
   explorerAddressUrl,
   explorerTxUrl,
 } from "./shared/bitcoin/networks";
-import { registryAddressForNetwork } from "./shared/protocol/idRegistry";
+import {
+  dnsRegistryAddressForNetwork,
+  registryAddressForNetwork,
+} from "./shared/protocol/idRegistry";
 import { MAX_DATA_CARRIER_BYTES } from "./shared/bitcoin/protocolLimits";
 import {
   attachmentFromFile,
@@ -397,6 +403,7 @@ const COMPUTER_ROUTE_FOLDERS: Folder[] = [
 const STANDALONE_ROUTE_PARAMS = [
   "landing",
   "id-launch",
+  "dns-launch",
   "desktop",
   "browser",
   "marketplace",
@@ -1030,7 +1037,7 @@ type MarketplacePurchaseReceipt = {
   amountLabel: string;
   assetLabel: string;
   buyerAddress: string;
-  kind: "id" | "token";
+  kind: "dns" | "id" | "token";
   listingId: string;
   network: BitcoinNetwork;
   priceSats: number;
@@ -1265,6 +1272,13 @@ type PowActivityKind =
   | "id-seal"
   | "id-delist"
   | "id-buy"
+  | "dns-register"
+  | "dns-update"
+  | "dns-transfer"
+  | "dns-list"
+  | "dns-seal"
+  | "dns-delist"
+  | "dns-buy"
   | "inception-bond"
   | "infinity-bond"
   | "mail"
@@ -1410,7 +1424,12 @@ type PowIdSaleAuthorizationDraft = {
   receiveAddress?: string;
   sellerAddress: string;
   sellerPublicKey?: string;
-  version: "pwid-sale-v1" | "pwid-sale-v2" | "pwid-sale-v3" | "pwid-sale-v4";
+  version:
+    | "pwid-sale-v1"
+    | "pwid-sale-v2"
+    | "pwid-sale-v3"
+    | "pwid-sale-v4"
+    | "pwdns-sale-v1";
 };
 
 type PowIdSaleAuthorization = PowIdSaleAuthorizationDraft & {
@@ -1798,12 +1817,16 @@ let btcUsdBrowserCache:
 // Do not fork this address/protocol for id.proofofwork.me; the launch surface
 // must use the same registry as the full mail app so first-confirmed-wins stays global.
 const ID_PROTOCOL_PREFIX = "pwid1:";
+const DNS_PROTOCOL_PREFIX = "pwdns1:";
+const DNS_REGISTRY_ID = "domains@proofofwork.me";
+const DNS_SUFFIX = ".pow";
 const ID_REGISTRATION_PRICE_SATS = 1000;
 const ID_MUTATION_PRICE_SATS = 546;
 const ID_SALE_AUTH_VERSION_LEGACY = "pwid-sale-v1";
 const ID_SALE_AUTH_VERSION_ANCHORED = "pwid-sale-v2";
 const ID_SALE_AUTH_VERSION = "pwid-sale-v3";
 const ID_SALE_AUTH_VERSION_TICKET = "pwid-sale-v4";
+const DNS_SALE_AUTH_VERSION_TICKET = "pwdns-sale-v1";
 const ID_LISTING_ANCHOR_TYPE_LEGACY = "p2wsh-op-true-v1";
 const ID_LISTING_ANCHOR_TYPE = "seller-utxo-v1";
 const ID_LISTING_TICKET_ANCHOR_TYPE = "sale-ticket-v1";
@@ -2933,7 +2956,7 @@ function xVerificationUrl(record: PowIdRecord) {
 
 function marketplacePurchaseTweetUrl(receipt: MarketplacePurchaseReceipt) {
   const assetLine =
-    receipt.kind === "id"
+    receipt.kind === "id" || receipt.kind === "dns"
       ? `I bought ${receipt.assetLabel} on ProofOfWork.Me.`
       : `I bought ${receipt.amountLabel} on ProofOfWork.Me.`;
   const text = [
@@ -2959,10 +2982,14 @@ function MarketplacePurchaseReceiptModal({
   const title =
     receipt.kind === "id"
       ? "ID purchase broadcast"
+      : receipt.kind === "dns"
+        ? "DNS purchase broadcast"
       : "Credit purchase broadcast";
   const description =
     receipt.kind === "id"
       ? `${receipt.assetLabel} buyer-funded transfer is on ProofOfWork.`
+      : receipt.kind === "dns"
+        ? `${receipt.assetLabel} buyer-funded DNS transfer is on ProofOfWork.`
       : `${receipt.amountLabel} purchase is on ProofOfWork.`;
 
   return (
@@ -3588,10 +3615,17 @@ function pendingIdEventDirection(
   return "Pending";
 }
 
-function pendingIdEventLabel(event: PowIdPendingEvent, targetAddress: string) {
+function pendingIdEventLabel(
+  event: PowIdPendingEvent,
+  targetAddress: string,
+  {
+    assetLabel = "ID",
+    receiverLabel = "receiver",
+  }: { assetLabel?: string; receiverLabel?: string } = {},
+) {
   const direction = pendingIdEventDirection(event, targetAddress);
   if (event.kind === "update") {
-    return `${direction} receiver update`;
+    return `${direction} ${receiverLabel} update`;
   }
 
   if (event.kind === "list") {
@@ -3606,7 +3640,7 @@ function pendingIdEventLabel(event: PowIdPendingEvent, targetAddress: string) {
     return `${direction} delisting`;
   }
 
-  return `${direction} ID transfer`;
+  return `${direction} ${assetLabel} transfer`;
 }
 
 function resolveRecipientInput(
@@ -4644,6 +4678,38 @@ function normalizePowId(value: string) {
     .trim();
 }
 
+function normalizePowDnsName(value: string) {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/^@/u, "")
+    .replace(/^\./u, "")
+    .replace(/\.pow$/u, "")
+    .trim();
+}
+
+function powDnsError(name: string) {
+  if (!name) {
+    return "Enter a .pow name.";
+  }
+
+  if (!/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/u.test(name)) {
+    return "Use one label: 1-63 lowercase letters, numbers, or hyphens.";
+  }
+
+  return "";
+}
+
+function powDnsDisplayName(name: string) {
+  return `${normalizePowDnsName(name)}${DNS_SUFFIX}`;
+}
+
+function normalizeSaleAuthorizationId(id: string, version: string) {
+  return version === DNS_SALE_AUTH_VERSION_TICKET
+    ? normalizePowDnsName(id)
+    : normalizePowId(id);
+}
+
 function setDocumentMeta(selector: string, content: string) {
   document
     .querySelector<HTMLMetaElement>(selector)
@@ -4681,6 +4747,14 @@ function buildIdRegistrationPayload(
 ) {
   const pgp = pgpKey.trim();
   return `${ID_PROTOCOL_PREFIX}r2:${encodeTextBase64Url(id)}:${ownerAddress}:${receiveAddress}${pgp ? `:${encodeTextBase64Url(pgp)}` : ""}`;
+}
+
+function buildDnsRegistrationPayload(
+  name: string,
+  ownerAddress: string,
+  receiveAddress: string,
+) {
+  return `${DNS_PROTOCOL_PREFIX}r1:${encodeTextBase64Url(normalizePowDnsName(name))}:${ownerAddress}:${receiveAddress}`;
 }
 
 function buildIdReceiverUpdatePayload(id: string, receiveAddress: string) {
@@ -4734,7 +4808,7 @@ function saleAuthorizationDraft({
   const draft: PowIdSaleAuthorizationDraft = {
     buyerAddress: buyerAddress?.trim() || undefined,
     expiresAt: expiresAt?.trim() || undefined,
-    id: normalizePowId(id),
+    id: normalizeSaleAuthorizationId(id, version),
     nonce,
     priceSats: Math.floor(priceSats),
     receiveAddress: receiveAddress?.trim() || undefined,
@@ -4746,14 +4820,16 @@ function saleAuthorizationDraft({
   if (
     version === ID_SALE_AUTH_VERSION_ANCHORED ||
     version === ID_SALE_AUTH_VERSION ||
-    version === ID_SALE_AUTH_VERSION_TICKET
+    version === ID_SALE_AUTH_VERSION_TICKET ||
+    version === DNS_SALE_AUTH_VERSION_TICKET
   ) {
     draft.anchorSigHashType =
       typeof anchorSigHashType === "number" &&
       Number.isSafeInteger(anchorSigHashType)
         ? Math.floor(anchorSigHashType)
         : version === ID_SALE_AUTH_VERSION ||
-            version === ID_SALE_AUTH_VERSION_TICKET
+            version === ID_SALE_AUTH_VERSION_TICKET ||
+            version === DNS_SALE_AUTH_VERSION_TICKET
           ? ID_LISTING_ANCHOR_SIGHASH_TYPE
           : undefined;
     draft.anchorSignature = anchorSignature?.trim().toLowerCase() || undefined;
@@ -4762,7 +4838,8 @@ function saleAuthorizationDraft({
     draft.anchorTxid = anchorTxid?.trim().toLowerCase() || undefined;
     draft.anchorType =
       anchorType?.trim() ||
-      (version === ID_SALE_AUTH_VERSION_TICKET
+      (version === ID_SALE_AUTH_VERSION_TICKET ||
+      version === DNS_SALE_AUTH_VERSION_TICKET
         ? ID_LISTING_TICKET_ANCHOR_TYPE
         : version === ID_SALE_AUTH_VERSION
           ? ID_LISTING_ANCHOR_TYPE
@@ -4789,10 +4866,18 @@ function saleAuthorizationDraft({
 }
 
 function saleAuthorizationMessage(authorization: PowIdSaleAuthorizationDraft) {
+  const assetSuffix =
+    authorization.version === DNS_SALE_AUTH_VERSION_TICKET
+      ? DNS_SUFFIX
+      : "@proofofwork.me";
+  const saleLabel =
+    authorization.version === DNS_SALE_AUTH_VERSION_TICKET
+      ? "ProofOfWork.Me DNS Sale"
+      : "ProofOfWork.Me ID Sale";
   const lines = [
-    "ProofOfWork.Me ID Sale",
+    saleLabel,
     `version:${authorization.version}`,
-    `id:${normalizePowId(authorization.id)}@proofofwork.me`,
+    `id:${normalizeSaleAuthorizationId(authorization.id, authorization.version)}${assetSuffix}`,
     `seller:${authorization.sellerAddress}`,
     `priceSats:${Math.floor(authorization.priceSats)}`,
     `buyer:${authorization.buyerAddress || "*"}`,
@@ -4804,7 +4889,8 @@ function saleAuthorizationMessage(authorization: PowIdSaleAuthorizationDraft) {
   if (
     authorization.version === ID_SALE_AUTH_VERSION_ANCHORED ||
     authorization.version === ID_SALE_AUTH_VERSION ||
-    authorization.version === ID_SALE_AUTH_VERSION_TICKET
+    authorization.version === ID_SALE_AUTH_VERSION_TICKET ||
+    authorization.version === DNS_SALE_AUTH_VERSION_TICKET
   ) {
     lines.push(
       `anchorType:${authorization.anchorType || ""}`,
@@ -4835,7 +4921,6 @@ function parseSaleAuthorizationText(
     throw new Error("Sale authorization must be a JSON object.");
   }
 
-  const id = normalizePowId(typeof parsed.id === "string" ? parsed.id : "");
   const sellerAddress =
     typeof parsed.sellerAddress === "string" ? parsed.sellerAddress.trim() : "";
   const buyerAddress =
@@ -4862,7 +4947,13 @@ function parseSaleAuthorizationText(
           ? ID_SALE_AUTH_VERSION
           : parsed.version === ID_SALE_AUTH_VERSION_TICKET
             ? ID_SALE_AUTH_VERSION_TICKET
+            : parsed.version === DNS_SALE_AUTH_VERSION_TICKET
+              ? DNS_SALE_AUTH_VERSION_TICKET
             : "";
+  const id = normalizeSaleAuthorizationId(
+    typeof parsed.id === "string" ? parsed.id : "",
+    version,
+  );
   const anchorType =
     typeof parsed.anchorType === "string" ? parsed.anchorType.trim() : "";
   const anchorSigHashType =
@@ -4898,7 +4989,8 @@ function parseSaleAuthorizationText(
     throw new Error("Sale authorization version is not supported.");
   }
 
-  const idError = powIdError(id);
+  const idError =
+    version === DNS_SALE_AUTH_VERSION_TICKET ? powDnsError(id) : powIdError(id);
   if (idError) {
     throw new Error(idError);
   }
@@ -4963,7 +5055,10 @@ function parseSaleAuthorizationText(
     }
   }
 
-  if (version === ID_SALE_AUTH_VERSION_TICKET) {
+  if (
+    version === ID_SALE_AUTH_VERSION_TICKET ||
+    version === DNS_SALE_AUTH_VERSION_TICKET
+  ) {
     if (
       anchorType !== ID_LISTING_TICKET_ANCHOR_TYPE ||
       !Number.isSafeInteger(anchorVout) ||
@@ -5014,6 +5109,8 @@ function saleAuthorizationCanBroadcast(authorization: PowIdSaleAuthorization) {
     (authorization.version === ID_SALE_AUTH_VERSION_ANCHORED ||
       authorization.version === ID_SALE_AUTH_VERSION ||
       (authorization.version === ID_SALE_AUTH_VERSION_TICKET &&
+        saleAuthorizationUsesSaleTicketAnchor(authorization)) ||
+      (authorization.version === DNS_SALE_AUTH_VERSION_TICKET &&
         saleAuthorizationUsesSaleTicketAnchor(authorization))) &&
     Boolean(authorization.id && authorization.nonce)
   );
@@ -5086,7 +5183,8 @@ function saleAuthorizationHasAnchor(
   return (
     (authorization.version === ID_SALE_AUTH_VERSION_ANCHORED ||
       authorization.version === ID_SALE_AUTH_VERSION ||
-      authorization.version === ID_SALE_AUTH_VERSION_TICKET) &&
+      authorization.version === ID_SALE_AUTH_VERSION_TICKET ||
+      authorization.version === DNS_SALE_AUTH_VERSION_TICKET) &&
     (authorization.anchorType === ID_LISTING_ANCHOR_TYPE_LEGACY ||
       authorization.anchorType === ID_LISTING_ANCHOR_TYPE ||
       authorization.anchorType === ID_LISTING_TICKET_ANCHOR_TYPE) &&
@@ -5140,7 +5238,8 @@ function saleAuthorizationUsesSaleTicketAnchor(
 } {
   return (
     saleAuthorizationHasAnchor(authorization) &&
-    authorization.version === ID_SALE_AUTH_VERSION_TICKET &&
+    (authorization.version === ID_SALE_AUTH_VERSION_TICKET ||
+      authorization.version === DNS_SALE_AUTH_VERSION_TICKET) &&
     authorization.anchorType === ID_LISTING_TICKET_ANCHOR_TYPE &&
     typeof authorization.anchorTxid === "string" &&
     /^[0-9a-f]{64}$/u.test(authorization.anchorTxid) &&
@@ -5229,7 +5328,8 @@ function listingAnchorIsPresent(
 
   if (
     authorization.version !== ID_SALE_AUTH_VERSION_ANCHORED &&
-    authorization.version !== ID_SALE_AUTH_VERSION_TICKET
+    authorization.version !== ID_SALE_AUTH_VERSION_TICKET &&
+    authorization.version !== DNS_SALE_AUTH_VERSION_TICKET
   ) {
     return false;
   }
@@ -5242,7 +5342,8 @@ function listingAnchorIsPresent(
   }
 
   if (
-    authorization.version === ID_SALE_AUTH_VERSION_TICKET &&
+    (authorization.version === ID_SALE_AUTH_VERSION_TICKET ||
+      authorization.version === DNS_SALE_AUTH_VERSION_TICKET) &&
     authorization.anchorType !== ID_LISTING_TICKET_ANCHOR_TYPE
   ) {
     return false;
@@ -5353,6 +5454,19 @@ function buildIdMarketplaceTransferPayload(
   return `${ID_PROTOCOL_PREFIX}${version}:${listingId}:${ownerAddress}${receiver ? `:${receiver}` : ""}`;
 }
 
+function buildDnsMarketplaceTransferPayload(
+  listingId: string,
+  ownerAddress: string,
+  receiveAddress: string,
+  version: Extract<
+    PowIdMarketplaceTransferVersion,
+    "buy3" | "buy4" | "buy5"
+  > = "buy5",
+) {
+  const receiver = receiveAddress.trim();
+  return `${DNS_PROTOCOL_PREFIX}${version}:${listingId}:${ownerAddress}${receiver ? `:${receiver}` : ""}`;
+}
+
 function marketplaceTransferVersionForListing(
   listing: PowIdListing,
 ): Extract<PowIdMarketplaceTransferVersion, "buy3" | "buy4" | "buy5"> {
@@ -5379,6 +5493,13 @@ function buildIdListingPayload(
   return `${ID_PROTOCOL_PREFIX}${version}:${encodeTextBase64Url(JSON.stringify(authorization))}`;
 }
 
+function buildDnsListingPayload(
+  authorization: PowIdSaleAuthorization,
+  version: Extract<PowIdListingVersion, "list4" | "list5"> = "list5",
+) {
+  return `${DNS_PROTOCOL_PREFIX}${version}:${encodeTextBase64Url(JSON.stringify(authorization))}`;
+}
+
 function buildIdSaleSealPayload(
   listingId: string,
   authorization: PowIdSaleAuthorization,
@@ -5390,11 +5511,29 @@ function buildIdSaleSealPayload(
   return `${ID_PROTOCOL_PREFIX}seal5:${listingId}:${encodeTextBase64Url(JSON.stringify(authorization))}`;
 }
 
+function buildDnsSaleSealPayload(
+  listingId: string,
+  authorization: PowIdSaleAuthorization,
+) {
+  if (!saleAuthorizationUsesSaleTicketAnchor(authorization)) {
+    throw new Error("Sale-ticket seal signature is invalid.");
+  }
+
+  return `${DNS_PROTOCOL_PREFIX}seal5:${listingId}:${encodeTextBase64Url(JSON.stringify(authorization))}`;
+}
+
 function buildIdDelistingPayload(
   listingId: string,
   version: PowIdDelistingVersion = "delist5",
 ) {
   return `${ID_PROTOCOL_PREFIX}${version}:${listingId}`;
+}
+
+function buildDnsDelistingPayload(
+  listingId: string,
+  version: PowIdDelistingVersion = "delist5",
+) {
+  return `${DNS_PROTOCOL_PREFIX}${version}:${listingId}`;
 }
 
 function protocolOutputScripts(payloads: string[]) {
@@ -15814,6 +15953,74 @@ async function fetchIdRecordState(
   };
 }
 
+async function fetchDnsRegistryState(
+  targetNetwork: BitcoinNetwork,
+  fresh = false,
+  summary = false,
+): Promise<PowRegistryState> {
+  const registryAddress = dnsRegistryAddressForNetwork(targetNetwork);
+  if (!registryAddress) {
+    return {
+      activity: [],
+      listings: [],
+      pendingEvents: [],
+      records: [],
+      sales: [],
+    };
+  }
+
+  const basePath = summary ? "/api/v1/dns-summary" : "/api/v1/dns";
+  const path = fresh ? `${basePath}?fresh=1` : basePath;
+  const payload = await fetchProofApiJson<PowRegistryApiResponse>(
+    path,
+    targetNetwork,
+  );
+  return normalizeRegistryApiState(payload);
+}
+
+async function fetchDnsRecordState(
+  targetNetwork: BitcoinNetwork,
+  name: string,
+): Promise<PowRegistryState & { record?: PowIdRecord | null }> {
+  const normalizedName = normalizePowDnsName(name);
+  if (!normalizedName) {
+    throw new Error("Choose a .pow name first.");
+  }
+
+  const params = new URLSearchParams({ current: "1", fresh: "1" });
+  const payload = await fetchProofApiJson<PowRegistryApiResponse>(
+    `/api/v1/dns/${encodeURIComponent(normalizedName)}?${params.toString()}`,
+    targetNetwork,
+  );
+  const state = normalizeRegistryApiState(payload);
+  const payloadRecord =
+    payload.record && normalizePowDnsName(payload.record.id) === normalizedName
+      ? payload.record
+      : null;
+  const record =
+    payloadRecord ??
+    state.records.find(
+      (candidate) =>
+        candidate.network === targetNetwork &&
+        normalizePowDnsName(candidate.id) === normalizedName,
+    ) ??
+    null;
+  const records = record
+    ? [
+        record,
+        ...state.records.filter(
+          (candidate) => normalizePowDnsName(candidate.id) !== normalizedName,
+        ),
+      ]
+    : state.records;
+
+  return {
+    ...state,
+    record,
+    records,
+  };
+}
+
 async function fetchGlobalActivity(
   targetNetwork: BitcoinNetwork,
   fresh = false,
@@ -20366,7 +20573,8 @@ function listingAnchorDetails(
   }
 
   if (
-    authorization.version === ID_SALE_AUTH_VERSION_TICKET &&
+    (authorization.version === ID_SALE_AUTH_VERSION_TICKET ||
+      authorization.version === DNS_SALE_AUTH_VERSION_TICKET) &&
     authorization.anchorType === ID_LISTING_TICKET_ANCHOR_TYPE &&
     typeof authorization.sellerPublicKey === "string"
   ) {
@@ -21226,6 +21434,7 @@ async function signAndBroadcastPsbt(
 
 export default function App() {
   const idLaunchMode = isIdLaunchRoute();
+  const dnsLaunchMode = isDnsLaunchRoute();
   const landingMode = isLandingRoute();
   const desktopRoute = isDesktopRoute();
   const browserRoute = isBrowserRoute();
@@ -21244,6 +21453,7 @@ export default function App() {
   const growthMode = isGrowthRoute();
   const mainnetRegistryMode =
     idLaunchMode ||
+    dnsLaunchMode ||
     marketplaceMode ||
     tokenMode ||
     walletMode ||
@@ -21296,6 +21506,32 @@ export default function App() {
   const [idSelectedListingId, setIdSelectedListingId] = useState("");
   const [idPurchaseOwnerAddress, setIdPurchaseOwnerAddress] = useState("");
   const [idPurchaseReceiveAddress, setIdPurchaseReceiveAddress] = useState("");
+  const [dnsRegistry, setDnsRegistry] = useState<PowIdRecord[]>([]);
+  const [dnsRegistryReadState, setDnsRegistryReadState] =
+    useState<RegistryReadState>({
+      network: "livenet",
+      status: "unavailable",
+    });
+  const [dnsListings, setDnsListings] = useState<PowIdListing[]>([]);
+  const [dnsPendingEvents, setDnsPendingEvents] = useState<
+    PowIdPendingEvent[]
+  >([]);
+  const [dnsSales, setDnsSales] = useState<PowIdMarketplaceSale[]>([]);
+  const [dnsActivity, setDnsActivity] = useState<PowActivityItem[]>([]);
+  const [lastRegisteredDns, setLastRegisteredDns] = useState<
+    PowIdRecord | undefined
+  >();
+  const [dnsName, setDnsName] = useState("");
+  const [dnsReceiveAddress, setDnsReceiveAddress] = useState("");
+  const [managedDnsName, setManagedDnsName] = useState("");
+  const [dnsSalePriceSats, setDnsSalePriceSats] = useState(1000);
+  const [dnsSaleBuyerAddress, setDnsSaleBuyerAddress] = useState("");
+  const [dnsSaleReceiveAddress, setDnsSaleReceiveAddress] = useState("");
+  const [dnsSaleAuthorization, setDnsSaleAuthorization] = useState("");
+  const [dnsSelectedListingId, setDnsSelectedListingId] = useState("");
+  const [dnsPurchaseOwnerAddress, setDnsPurchaseOwnerAddress] = useState("");
+  const [dnsPurchaseReceiveAddress, setDnsPurchaseReceiveAddress] =
+    useState("");
   const [tokenDefinitions, setTokenDefinitions] = useState<
     PowTokenDefinition[]
   >([]);
@@ -21501,6 +21737,7 @@ export default function App() {
     const queryFolder =
       !landingMode &&
       !idLaunchMode &&
+      !dnsLaunchMode &&
       !desktopRoute &&
       !browserRoute &&
       !marketplaceMode &&
@@ -21605,6 +21842,8 @@ export default function App() {
   const [mailSendBusy, setMailSendBusy] = useState(false);
   const [mailWorkAdmissionError, setMailWorkAdmissionError] = useState("");
   const [idMarketplaceAction, setIdMarketplaceAction] =
+    useState<IdMarketplaceAction>("idle");
+  const [dnsMarketplaceAction, setDnsMarketplaceAction] =
     useState<IdMarketplaceAction>("idle");
 
   useEffect(() => {
@@ -21855,6 +22094,8 @@ export default function App() {
   const idRefreshInFlightRef =
     useRef<Promise<PowRegistryState | undefined> | null>(null);
   const idRefreshInFlightFreshRef = useRef(false);
+  const dnsRefreshInFlightRef =
+    useRef<Promise<PowRegistryState | undefined> | null>(null);
   const tokenRefreshInFlightRef = useRef(
     new Map<
       string,
@@ -22020,6 +22261,15 @@ export default function App() {
     setIdSales(accepted.sales);
     setIdActivity(accepted.activity);
     return accepted;
+  }
+
+  function applyDnsRegistryState(state: PowRegistryState) {
+    setDnsRegistry(state.records);
+    setDnsListings(state.listings);
+    setDnsPendingEvents(state.pendingEvents);
+    setDnsSales(state.sales);
+    setDnsActivity(state.activity);
+    return state;
   }
 
   function renderTokenState(state: PowTokenState, scopeKey: string) {
@@ -23141,6 +23391,7 @@ export default function App() {
       ? "ready"
       : "disabled";
   const normalizedIdName = normalizePowId(idName);
+  const normalizedDnsName = normalizePowDnsName(dnsName);
   const idRegistrationPayload = useMemo(
     () =>
       address && idReceiveAddress && normalizedIdName
@@ -23160,6 +23411,24 @@ export default function App() {
         : 0,
     [idRegistrationPayload],
   );
+  const dnsRegistrationPayload = useMemo(
+    () =>
+      address && dnsReceiveAddress && normalizedDnsName
+        ? buildDnsRegistrationPayload(
+            normalizedDnsName,
+            address,
+            dnsReceiveAddress.trim(),
+          )
+        : "",
+    [address, dnsReceiveAddress, normalizedDnsName],
+  );
+  const dnsRegistrationBytes = useMemo(
+    () =>
+      dnsRegistrationPayload
+        ? dataCarrierBytesForPayload(dnsRegistrationPayload)
+        : 0,
+    [dnsRegistrationPayload],
+  );
   const ownedIdCount = useMemo(
     () => ownedPowIds(idRegistry, address).length,
     [address, idRegistry],
@@ -23168,6 +23437,12 @@ export default function App() {
     ? "unavailable"
     : registryReadState.network === network
       ? registryReadState.status
+      : "loading";
+  const dnsRegistryAddress = dnsRegistryAddressForNetwork(network);
+  const dnsRegistryReadStatus: RegistryReadStatus = !dnsRegistryAddress
+    ? "unavailable"
+    : dnsRegistryReadState.network === network
+      ? dnsRegistryReadState.status
       : "loading";
   const verifiedRegistrySnapshot =
     registryReadStatus === "ready" || registryReadStatus === "last-verified"
@@ -23206,6 +23481,15 @@ export default function App() {
       ),
     [idRegistry, network, normalizedIdName],
   );
+  const existingDnsRegistration = useMemo(
+    () =>
+      dnsRegistry.find(
+        (record) =>
+          record.network === network &&
+          normalizePowDnsName(record.id) === normalizedDnsName,
+      ),
+    [dnsRegistry, network, normalizedDnsName],
+  );
   const canRegisterId =
     Boolean(
       address &&
@@ -23216,6 +23500,17 @@ export default function App() {
     ) &&
     idRegistrationBytes <= MAX_DATA_CARRIER_BYTES &&
     !existingIdRegistration &&
+    !busy;
+  const canRegisterDns =
+    Boolean(
+      address &&
+      dnsRegistryAddress &&
+      dnsRegistrationPayload &&
+      !powDnsError(normalizedDnsName) &&
+      isValidBitcoinAddress(dnsReceiveAddress.trim(), network),
+    ) &&
+    dnsRegistrationBytes <= MAX_DATA_CARRIER_BYTES &&
+    !existingDnsRegistration &&
     !busy;
   const ownerControlledIds = useMemo(
     () =>
@@ -23232,6 +23527,22 @@ export default function App() {
       ownerControlledIds.find((record) => record.id === managedIdName) ??
       ownerControlledIds[0],
     [managedIdName, ownerControlledIds],
+  );
+  const ownerControlledDns = useMemo(
+    () =>
+      dnsRegistry.filter(
+        (record) =>
+          record.network === network &&
+          record.confirmed &&
+          record.ownerAddress === address,
+      ),
+    [address, dnsRegistry, network],
+  );
+  const managedDnsRecord = useMemo(
+    () =>
+      ownerControlledDns.find((record) => record.id === managedDnsName) ??
+      ownerControlledDns[0],
+    [managedDnsName, ownerControlledDns],
   );
   const receiverUpdateResolution = useMemo(
     () =>
@@ -23319,6 +23630,30 @@ export default function App() {
           listing.network === network,
       ),
     [idListings, idSelectedListingId, network],
+  );
+  const parsedDnsSaleAuthorization = useMemo(() => {
+    const trimmed = dnsSaleAuthorization.trim();
+    if (!trimmed) {
+      return undefined;
+    }
+
+    try {
+      const parsed = parseSaleAuthorizationText(trimmed, network);
+      return parsed.version === DNS_SALE_AUTH_VERSION_TICKET
+        ? parsed
+        : undefined;
+    } catch {
+      return undefined;
+    }
+  }, [dnsSaleAuthorization, network]);
+  const selectedDnsMarketplaceListing = useMemo(
+    () =>
+      dnsListings.find(
+        (listing) =>
+          listing.listingId === dnsSelectedListingId &&
+          listing.network === network,
+      ),
+    [dnsListings, dnsSelectedListingId, network],
   );
   const tokenIndexAddress = tokenIndexAddressForNetwork(network);
   const normalizedTokenTicker = normalizeTokenTicker(tokenCreateTicker);
@@ -24859,6 +25194,26 @@ export default function App() {
     idPurchaseReceiveAddress,
     selectedMarketplaceListing,
   ]);
+  const dnsPurchasePayload = useMemo(() => {
+    if (!selectedDnsMarketplaceListing || !dnsPurchaseOwnerAddress.trim()) {
+      return "";
+    }
+
+    try {
+      return buildDnsMarketplaceTransferPayload(
+        selectedDnsMarketplaceListing.listingId,
+        dnsPurchaseOwnerAddress.trim(),
+        dnsPurchaseReceiveAddress.trim(),
+        marketplaceTransferVersionForListing(selectedDnsMarketplaceListing),
+      );
+    } catch {
+      return "";
+    }
+  }, [
+    dnsPurchaseOwnerAddress,
+    dnsPurchaseReceiveAddress,
+    selectedDnsMarketplaceListing,
+  ]);
   const idReceiverUpdateBytes = useMemo(
     () =>
       idReceiverUpdatePayload
@@ -24876,10 +25231,19 @@ export default function App() {
       idPurchasePayload ? dataCarrierBytesForPayload(idPurchasePayload) : 0,
     [idPurchasePayload],
   );
+  const dnsPurchaseBytes = useMemo(
+    () =>
+      dnsPurchasePayload ? dataCarrierBytesForPayload(dnsPurchasePayload) : 0,
+    [dnsPurchasePayload],
+  );
   const salePriceSats = Math.floor(idSalePriceSats);
   const saleBuyerAddress = idSaleBuyerAddress.trim();
   const saleReceiveAddress = idSaleReceiveAddress.trim();
   const purchaseReceiveAddress = idPurchaseReceiveAddress.trim();
+  const dnsSalePriceValue = Math.floor(dnsSalePriceSats);
+  const dnsSaleBuyer = dnsSaleBuyerAddress.trim();
+  const dnsSaleReceive = dnsSaleReceiveAddress.trim();
+  const dnsPurchaseReceive = dnsPurchaseReceiveAddress.trim();
   const canCreateSaleAuthorization =
     Boolean(
       address &&
@@ -24891,6 +25255,17 @@ export default function App() {
       (!saleBuyerAddress || isValidBitcoinAddress(saleBuyerAddress, network)) &&
       (!saleReceiveAddress ||
         isValidBitcoinAddress(saleReceiveAddress, network)),
+    ) && !busy;
+  const canCreateDnsSaleAuthorization =
+    Boolean(
+      address &&
+      dnsRegistryAddress &&
+      managedDnsRecord &&
+      managedDnsRecord.ownerAddress === address &&
+      Number.isSafeInteger(dnsSalePriceValue) &&
+      dnsSalePriceValue >= 0 &&
+      (!dnsSaleBuyer || isValidBitcoinAddress(dnsSaleBuyer, network)) &&
+      (!dnsSaleReceive || isValidBitcoinAddress(dnsSaleReceive, network)),
     ) && !busy;
   const canUpdateId =
     Boolean(
@@ -24941,6 +25316,27 @@ export default function App() {
     ) &&
     idPurchaseBytes <= MAX_DATA_CARRIER_BYTES &&
     !busy;
+  const canPurchaseDns =
+    Boolean(
+      address &&
+      dnsRegistryAddress &&
+      parsedDnsSaleAuthorization &&
+      selectedDnsMarketplaceListing &&
+      listingCanBePurchased(selectedDnsMarketplaceListing) &&
+      dnsPurchasePayload &&
+      isValidBitcoinAddress(dnsPurchaseOwnerAddress.trim(), network) &&
+      (!dnsPurchaseReceive ||
+        isValidBitcoinAddress(dnsPurchaseReceive, network)) &&
+      (!parsedDnsSaleAuthorization.buyerAddress ||
+        parsedDnsSaleAuthorization.buyerAddress ===
+          dnsPurchaseOwnerAddress.trim()) &&
+      (!parsedDnsSaleAuthorization.receiveAddress ||
+        parsedDnsSaleAuthorization.receiveAddress ===
+          (dnsPurchaseReceive || dnsPurchaseOwnerAddress.trim())) &&
+      saleAuthorizationCanBroadcast(parsedDnsSaleAuthorization),
+    ) &&
+    dnsPurchaseBytes <= MAX_DATA_CARRIER_BYTES &&
+    !busy;
   const refreshInProgress = refreshing || checkingBroadcasts;
   const refreshDisabled =
     activeFolder === "contacts"
@@ -24980,6 +25376,7 @@ export default function App() {
     if (
       landingMode ||
       idLaunchMode ||
+      dnsLaunchMode ||
       desktopRoute ||
       browserRoute ||
       marketplaceMode ||
@@ -25015,6 +25412,7 @@ export default function App() {
     activityMode,
     browserRoute,
     desktopRoute,
+    dnsLaunchMode,
     growthMode,
     idLaunchMode,
     inceptionMode,
@@ -25034,6 +25432,12 @@ export default function App() {
               "Claim a permanent on-chain ProofOfWork ID that resolves to your ProofOfWork receive address.",
             title: "ProofOfWork IDs",
           }
+        : dnsLaunchMode
+          ? {
+              description:
+                "Claim a permanent on-chain .pow DNS name that resolves to your ProofOfWork address.",
+              title: "ProofOfWork DNS",
+            }
         : desktopRoute
           ? {
               description:
@@ -25052,7 +25456,7 @@ export default function App() {
                 title: "ProofOfWork.Me",
               },
     );
-  }, [browserRoute, desktopRoute, idLaunchMode]);
+  }, [browserRoute, desktopRoute, dnsLaunchMode, idLaunchMode]);
 
   useEffect(() => {
     if (!address) {
@@ -25621,10 +26025,16 @@ export default function App() {
       return;
     }
 
+    if (dnsLaunchMode) {
+      void refreshDns(true);
+      return;
+    }
+
     setActiveFolder("ids");
     void refreshIds(true);
   }, [
     activityMode,
+    dnsLaunchMode,
     growthMode,
     inceptionMode,
     infinityMode,
@@ -26013,6 +26423,7 @@ export default function App() {
     }
 
     void refreshMarketplaceSummary(true, false);
+    void refreshDns(true, false);
   }, [marketplaceMode, network]);
 
   useEffect(() => {
@@ -29291,10 +29702,99 @@ export default function App() {
     return refreshPromise;
   }
 
+  async function refreshDns(
+    silent = false,
+    fresh = !silent,
+  ): Promise<PowRegistryState | undefined> {
+    const requestWorkspaceKey = activeWorkspaceStatusKeyRef.current;
+    if (!dnsRegistryAddress) {
+      setDnsRegistryReadState({ network, status: "unavailable" });
+      setDnsRegistry([]);
+      setDnsListings([]);
+      setDnsPendingEvents([]);
+      setDnsSales([]);
+      setDnsActivity([]);
+      if (!silent) {
+        setStatusForWorkspace(requestWorkspaceKey, {
+          tone: "idle",
+          text: `No ProofOfWork DNS registry configured for ${networkLabel(network)} yet.`,
+        });
+      }
+      return undefined;
+    }
+
+    if (dnsRefreshInFlightRef.current) {
+      if (!silent) {
+        setBusyForWorkspace(requestWorkspaceKey, true);
+        setStatusForWorkspace(requestWorkspaceKey, {
+          tone: "idle",
+          text: "DNS registry refresh already in progress...",
+        });
+      }
+      try {
+        return await dnsRefreshInFlightRef.current;
+      } finally {
+        if (!silent) {
+          setBusyForWorkspace(requestWorkspaceKey, false);
+        }
+      }
+    }
+
+    setDnsRegistryReadState({ network, status: "loading" });
+    const refreshPromise = (async () => {
+      if (!silent) {
+        setBusyForWorkspace(requestWorkspaceKey, true);
+        setStatusForWorkspace(requestWorkspaceKey, {
+          tone: "idle",
+          text: "Scanning ProofOfWork DNS registry...",
+        });
+      }
+      try {
+        const state = await fetchDnsRegistryState(network, fresh, false);
+        applyDnsRegistryState(state);
+        setDnsRegistryReadState({ network, status: "ready" });
+        if (!silent) {
+          const confirmed = state.records.filter(
+            (record) => record.confirmed,
+          ).length;
+          const pending = state.records.length - confirmed;
+          setStatusForWorkspace(requestWorkspaceKey, {
+            tone: "good",
+            text: `DNS registry loaded. ${confirmed} confirmed, ${pending} pending, ${state.pendingEvents.length} in flight.`,
+          });
+        }
+        return state;
+      } catch (error) {
+        setDnsRegistryReadState({
+          network,
+          status: dnsRegistry.length > 0 ? "last-verified" : "unavailable",
+        });
+        if (!silent) {
+          setStatusForWorkspace(requestWorkspaceKey, {
+            tone: "bad",
+            text: errorMessage(error, "DNS registry scan failed."),
+          });
+        }
+        return undefined;
+      } finally {
+        dnsRefreshInFlightRef.current = null;
+        if (!silent) {
+          setBusyForWorkspace(requestWorkspaceKey, false);
+        }
+      }
+    })();
+    dnsRefreshInFlightRef.current = refreshPromise;
+    return refreshPromise;
+  }
+
   function refreshIdStateAfterMutation() {
     return marketplaceWorkspaceIsCurrent()
       ? refreshMarketplaceSummary(true, true)
       : refreshIds(true);
+  }
+
+  function refreshDnsStateAfterMutation() {
+    return refreshDns(true, true);
   }
 
   function refreshTokenStateAfterMutation() {
@@ -29495,6 +29995,203 @@ export default function App() {
       setStatus({
         tone: "bad",
         text: errorMessage(error, "ID registration failed."),
+      });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function registerDns(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    if (!window.unisat) {
+      setStatus({ tone: "bad", text: "Connect UniSat first." });
+      return;
+    }
+
+    if (!window.unisat.signPsbt) {
+      setStatus({
+        tone: "bad",
+        text: "UniSat signPsbt is not available. Update UniSat and try again.",
+      });
+      return;
+    }
+
+    if (!dnsRegistryAddress) {
+      setStatus({
+        tone: "bad",
+        text: `No ProofOfWork DNS registry configured for ${networkLabel(network)} yet.`,
+      });
+      return;
+    }
+
+    const nameError = powDnsError(normalizedDnsName);
+    if (nameError) {
+      setStatus({ tone: "bad", text: nameError });
+      return;
+    }
+
+    if (!isValidBitcoinAddress(dnsReceiveAddress.trim(), network)) {
+      setStatus({
+        tone: "bad",
+        text: "Resolver address is not valid for the selected network.",
+      });
+      return;
+    }
+
+    if (dnsRegistrationBytes > MAX_DATA_CARRIER_BYTES) {
+      setStatus({
+        tone: "bad",
+        text: "DNS registration OP_RETURN is over 100 KB.",
+      });
+      return;
+    }
+
+    setBusy(true);
+    setStatus({
+      tone: "idle",
+      text: `Checking ${powDnsDisplayName(normalizedDnsName)} availability...`,
+    });
+
+    try {
+      const latestState = await fetchDnsRecordState(network, normalizedDnsName);
+      setDnsRegistry((current) =>
+        replaceExactPowIdStateItems(
+          current,
+          latestState.records,
+          normalizedDnsName,
+          network,
+        ),
+      );
+      setDnsListings((current) =>
+        replaceExactPowIdStateItems(
+          current,
+          latestState.listings,
+          normalizedDnsName,
+          network,
+        ),
+      );
+      setDnsPendingEvents((current) =>
+        replaceExactPowIdStateItems(
+          current,
+          latestState.pendingEvents,
+          normalizedDnsName,
+          network,
+        ),
+      );
+      setDnsSales((current) =>
+        replaceExactPowIdStateItems(
+          current,
+          latestState.sales,
+          normalizedDnsName,
+          network,
+        ),
+      );
+
+      const existingRecord =
+        latestState.record ??
+        latestState.records.find(
+          (record) =>
+            record.network === network &&
+            normalizePowDnsName(record.id) === normalizedDnsName,
+        );
+      if (existingRecord?.confirmed) {
+        setStatus({
+          tone: "bad",
+          text: `${powDnsDisplayName(normalizedDnsName)} is already registered.`,
+        });
+        return;
+      }
+
+      if (existingRecord) {
+        setStatus({
+          tone: "bad",
+          text: `${powDnsDisplayName(normalizedDnsName)} is already pending. Wait for confirmation before retrying.`,
+        });
+        return;
+      }
+
+      setStatus({
+        tone: "idle",
+        text: `Registering ${powDnsDisplayName(normalizedDnsName)}...`,
+      });
+      const latestListings = replaceExactPowIdStateItems(
+        dnsListings,
+        latestState.listings,
+        normalizedDnsName,
+        network,
+      );
+      const reservedOutpoints = activeListingAnchorOutpointsForAddress(
+        latestListings,
+        address,
+        { network },
+      );
+
+      await ensureWalletNetwork(window.unisat, network, address);
+
+      const paymentPsbt = await buildPaymentPsbt({
+        amountSats: ID_REGISTRATION_PRICE_SATS,
+        excludeOutpoints: reservedOutpoints,
+        feeRate,
+        fromAddress: address,
+        network,
+        protocolPayloads: [dnsRegistrationPayload],
+        requireConfirmedUtxos: true,
+        toAddress: dnsRegistryAddress,
+      });
+      if (
+        !confirmDustFeeAbsorption({
+          dustFeeSats: paymentPsbt.dustFeeSats,
+          feeRate,
+          feeSats: paymentPsbt.feeSats,
+        })
+      ) {
+        setStatus({ tone: "idle", text: dustFeeAbsorptionCanceledText() });
+        return;
+      }
+
+      const txid = await signAndBroadcastPsbt({
+        inputCount: paymentPsbt.inputCount,
+        network,
+        psbtHex: paymentPsbt.psbtHex,
+        signingAddress: address,
+        wallet: window.unisat,
+      });
+      const registeredRecord: PowIdRecord = {
+        amountSats: ID_REGISTRATION_PRICE_SATS,
+        confirmed: false,
+        createdAt: new Date().toISOString(),
+        id: normalizedDnsName,
+        network,
+        ownerAddress: address,
+        receiveAddress: dnsReceiveAddress.trim(),
+        txid,
+      };
+
+      setLastRegisteredDns(registeredRecord);
+      setDnsRegistry((current) =>
+        current.some((record) => record.txid === txid)
+          ? current
+          : [registeredRecord, ...current],
+      );
+      setDnsName("");
+      setStatus(
+        goodBroadcastStatus(
+          `${powDnsDisplayName(normalizedDnsName)} registration broadcast: ${shortAddress(txid)}.`,
+          txid,
+          network,
+        ),
+      );
+      await refreshDnsStateAfterMutation();
+      setDnsRegistry((current) =>
+        current.some((record) => record.txid === txid)
+          ? current
+          : [registeredRecord, ...current],
+      );
+    } catch (error) {
+      setStatus({
+        tone: "bad",
+        text: errorMessage(error, "DNS registration failed."),
       });
     } finally {
       setBusy(false);
@@ -30559,6 +31256,896 @@ export default function App() {
       });
     } finally {
       setIdMarketplaceAction("idle");
+      setBusy(false);
+    }
+  }
+
+  async function prepareDnsSaleAuthorization() {
+    if (!window.unisat) {
+      throw new Error("Connect UniSat first.");
+    }
+
+    if (!managedDnsRecord) {
+      throw new Error("Choose one of your confirmed .pow names first.");
+    }
+
+    if (managedDnsRecord.ownerAddress !== address) {
+      throw new Error(
+        "Only the current owner can publish an on-chain listing.",
+      );
+    }
+
+    if (!Number.isSafeInteger(dnsSalePriceValue) || dnsSalePriceValue < 0) {
+      throw new Error("Sale price must be zero or more proofs.");
+    }
+
+    if (dnsSaleBuyer && !isValidBitcoinAddress(dnsSaleBuyer, network)) {
+      throw new Error(
+        "Specific buyer address is not valid for the selected network.",
+      );
+    }
+
+    if (dnsSaleReceive && !isValidBitcoinAddress(dnsSaleReceive, network)) {
+      throw new Error(
+        "Locked resolver address is not valid for the selected network.",
+      );
+    }
+
+    const latestState = await fetchDnsRecordState(network, managedDnsRecord.id);
+    setDnsRegistry((current) =>
+      replaceExactPowIdStateItems(
+        current,
+        latestState.records,
+        managedDnsRecord.id,
+        network,
+      ),
+    );
+    setDnsListings((current) =>
+      replaceExactPowIdStateItems(
+        current,
+        latestState.listings,
+        managedDnsRecord.id,
+        network,
+      ),
+    );
+    setDnsPendingEvents((current) =>
+      replaceExactPowIdStateItems(
+        current,
+        latestState.pendingEvents,
+        managedDnsRecord.id,
+        network,
+      ),
+    );
+    setDnsSales((current) =>
+      replaceExactPowIdStateItems(
+        current,
+        latestState.sales,
+        managedDnsRecord.id,
+        network,
+      ),
+    );
+    const latestRecord =
+      latestState.record?.confirmed === true
+        ? latestState.record
+        : latestState.records.find(
+            (record) =>
+              record.network === network &&
+              normalizePowDnsName(record.id) ===
+                normalizePowDnsName(managedDnsRecord.id) &&
+              record.confirmed,
+          );
+
+    if (!latestRecord) {
+      throw new Error(`${powDnsDisplayName(managedDnsRecord.id)} is not confirmed yet.`);
+    }
+
+    if (latestRecord.ownerAddress !== address) {
+      throw new Error(
+        `${powDnsDisplayName(managedDnsRecord.id)} is owned by ${shortAddress(latestRecord.ownerAddress)}.`,
+      );
+    }
+
+    await ensureWalletNetwork(window.unisat, network, address);
+
+    setStatus({ tone: "idle", text: "Preparing DNS sale-ticket listing..." });
+    const sellerPublicKey =
+      (await window.unisat.getPublicKey?.())?.trim().toLowerCase() ?? "";
+    if (!validPublicKeyHex(sellerPublicKey)) {
+      throw new Error(
+        "Could not read a seller public key from UniSat for the sale ticket.",
+      );
+    }
+
+    const draft = saleAuthorizationDraft({
+      anchorSigHashType: ID_LISTING_ANCHOR_SIGHASH_TYPE,
+      anchorScriptPubKey: bytesToHex(
+        scriptForAddress(
+          latestRecord.ownerAddress,
+          network,
+          "Sale-ticket output",
+        ),
+      ),
+      anchorType: ID_LISTING_TICKET_ANCHOR_TYPE,
+      anchorValueSats: ID_LISTING_ANCHOR_VALUE_SATS,
+      anchorVout: ID_LISTING_ANCHOR_VOUT,
+      buyerAddress: dnsSaleBuyer,
+      id: latestRecord.id,
+      nonce: `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`,
+      priceSats: dnsSalePriceValue,
+      receiveAddress: dnsSaleReceive,
+      sellerAddress: latestRecord.ownerAddress,
+      sellerPublicKey,
+      version: DNS_SALE_AUTH_VERSION_TICKET,
+    });
+
+    return {
+      authorization: { ...draft, signature: "" },
+      reservedOutpoints: activeListingAnchorOutpointsForAddress(
+        replaceExactPowIdStateItems(
+          dnsListings,
+          latestState.listings,
+          managedDnsRecord.id,
+          network,
+        ),
+        address,
+        { network },
+      ),
+    };
+  }
+
+  async function publishDnsListing() {
+    if (!window.unisat) {
+      setStatus({ tone: "bad", text: "Connect UniSat first." });
+      return;
+    }
+
+    if (!dnsRegistryAddress) {
+      setStatus({
+        tone: "bad",
+        text: `No ProofOfWork DNS registry configured for ${networkLabel(network)} yet.`,
+      });
+      return;
+    }
+
+    setDnsMarketplaceAction("publish");
+    setBusy(true);
+    setStatus({
+      tone: "idle",
+      text: `Checking current owner for ${managedDnsRecord ? powDnsDisplayName(managedDnsRecord.id) : ".pow name"}...`,
+    });
+
+    try {
+      const { authorization, reservedOutpoints } =
+        await prepareDnsSaleAuthorization();
+      setStatus({
+        tone: "idle",
+        text: "Listing ticket ready. Approve the on-chain listing transaction in UniSat...",
+      });
+      const payload = buildDnsListingPayload(authorization);
+      if (dataCarrierBytesForPayload(payload) > MAX_DATA_CARRIER_BYTES) {
+        setStatus({
+          tone: "bad",
+          text: "DNS listing OP_RETURN is over 100 KB.",
+        });
+        return;
+      }
+
+      setStatus({
+        tone: "idle",
+        text: `Publishing listing for ${powDnsDisplayName(authorization.id)}...`,
+      });
+      const paymentPsbt = await buildPaymentPsbt({
+        amountSats: ID_MUTATION_PRICE_SATS,
+        excludeOutpoints: reservedOutpoints,
+        feeRate,
+        fromAddress: address,
+        network,
+        postProtocolPayments: [
+          {
+            address,
+            amountSats: ID_LISTING_ANCHOR_VALUE_SATS,
+          },
+        ],
+        protocolPayloads: [payload],
+        requireConfirmedUtxos: true,
+        toAddress: dnsRegistryAddress,
+      });
+      if (
+        !confirmDustFeeAbsorption({
+          dustFeeSats: paymentPsbt.dustFeeSats,
+          feeRate,
+          feeSats: paymentPsbt.feeSats,
+        })
+      ) {
+        setStatus({ tone: "idle", text: dustFeeAbsorptionCanceledText() });
+        return;
+      }
+
+      const txid = await signAndBroadcastPsbt({
+        inputCount: paymentPsbt.inputCount,
+        network,
+        psbtHex: paymentPsbt.psbtHex,
+        signingAddress: address,
+        wallet: window.unisat,
+      });
+
+      setDnsSaleAuthorization(JSON.stringify(authorization, null, 2));
+      setStatus(
+        goodBroadcastStatus(
+          `${powDnsDisplayName(authorization.id)} sale ticket broadcast: ${shortAddress(txid)}. After it confirms, seal it so buyers can settle atomically.`,
+          txid,
+          network,
+        ),
+      );
+      await refreshDnsStateAfterMutation();
+    } catch (error) {
+      setStatus({
+        tone: "bad",
+        text: errorMessage(error, "DNS listing failed."),
+      });
+    } finally {
+      setDnsMarketplaceAction("idle");
+      setBusy(false);
+    }
+  }
+
+  async function sealDnsListing(listing: PowIdListing) {
+    if (!window.unisat) {
+      setStatus({ tone: "bad", text: "Connect UniSat first." });
+      return;
+    }
+
+    if (!window.unisat.signPsbt) {
+      setStatus({
+        tone: "bad",
+        text: "UniSat signPsbt is not available. Update UniSat and try again.",
+      });
+      return;
+    }
+
+    if (!dnsRegistryAddress) {
+      setStatus({
+        tone: "bad",
+        text: `No ProofOfWork DNS registry configured for ${networkLabel(network)} yet.`,
+      });
+      return;
+    }
+
+    if (listing.sellerAddress !== address) {
+      setStatus({
+        tone: "bad",
+        text: "Only the current listing seller can seal this sale ticket.",
+      });
+      return;
+    }
+
+    if (listing.listingVersion !== "list5") {
+      setStatus({
+        tone: "bad",
+        text: "Only sale-ticket listings need sealing.",
+      });
+      return;
+    }
+
+    if (saleAuthorizationUsesSaleTicketAnchor(listing.saleAuthorization)) {
+      setStatus({ tone: "good", text: "This sale ticket is already sealed." });
+      return;
+    }
+
+    setBusy(true);
+    setStatus({
+      tone: "idle",
+      text: `Checking sale ticket for ${powDnsDisplayName(listing.id)}...`,
+    });
+
+    try {
+      const latestState = await fetchDnsRecordState(network, listing.id);
+      setDnsRegistry((current) =>
+        replaceExactPowIdStateItems(
+          current,
+          latestState.records,
+          listing.id,
+          network,
+        ),
+      );
+      setDnsListings((current) =>
+        replaceExactPowIdStateItems(
+          current,
+          latestState.listings,
+          listing.id,
+          network,
+        ),
+      );
+      setDnsPendingEvents((current) =>
+        replaceExactPowIdStateItems(
+          current,
+          latestState.pendingEvents,
+          listing.id,
+          network,
+        ),
+      );
+      setDnsSales((current) =>
+        replaceExactPowIdStateItems(
+          current,
+          latestState.sales,
+          listing.id,
+          network,
+        ),
+      );
+      const latestListing = latestState.listings.find(
+        (item) =>
+          item.listingId === listing.listingId && item.network === network,
+      );
+      const latestRecord = latestState.records.find(
+        (record) =>
+          record.network === network &&
+          normalizePowDnsName(record.id) === normalizePowDnsName(listing.id) &&
+          record.confirmed,
+      );
+
+      if (!latestListing || latestListing.listingVersion !== "list5") {
+        setStatus({
+          tone: "bad",
+          text: "This sale-ticket listing is no longer active.",
+        });
+        return;
+      }
+
+      if (!latestRecord || latestRecord.ownerAddress !== address) {
+        setStatus({
+          tone: "bad",
+          text: `${powDnsDisplayName(listing.id)} is no longer owned by this wallet.`,
+        });
+        return;
+      }
+
+      await ensureWalletNetwork(window.unisat, network, address);
+
+      setStatus({
+        tone: "idle",
+        text: "Approve the sale-ticket seal in UniSat. This signature is published on-chain.",
+      });
+      const anchorSignature = await signSaleTicketAuthorization({
+        listing: latestListing,
+        network,
+        wallet: window.unisat,
+      });
+      const sealedAuthorization: PowIdSaleAuthorization = {
+        ...latestListing.saleAuthorization,
+        anchorSignature,
+        anchorTxid: latestListing.listingId,
+      };
+      const payload = buildDnsSaleSealPayload(
+        latestListing.listingId,
+        sealedAuthorization,
+      );
+      if (dataCarrierBytesForPayload(payload) > MAX_DATA_CARRIER_BYTES) {
+        setStatus({
+          tone: "bad",
+          text: "DNS sale-ticket seal OP_RETURN is over 100 KB.",
+        });
+        return;
+      }
+
+      setStatus({
+        tone: "idle",
+        text: `Publishing sale-ticket seal for ${powDnsDisplayName(listing.id)}...`,
+      });
+      const anchor = listingAnchorOutpoint(latestListing);
+      const reservedOutpoints = activeListingAnchorOutpointsForAddress(
+        latestState.listings,
+        address,
+        {
+          exceptListingId: latestListing.listingId,
+          network,
+        },
+      );
+      const paymentPsbt = await buildPaymentPsbt({
+        amountSats: ID_MUTATION_PRICE_SATS,
+        excludeOutpoints: [...reservedOutpoints, ...(anchor ? [anchor] : [])],
+        feeRate,
+        fromAddress: address,
+        network,
+        protocolPayloads: [payload],
+        requireConfirmedUtxos: true,
+        toAddress: dnsRegistryAddress,
+      });
+      if (
+        !confirmDustFeeAbsorption({
+          dustFeeSats: paymentPsbt.dustFeeSats,
+          feeRate,
+          feeSats: paymentPsbt.feeSats,
+        })
+      ) {
+        setStatus({ tone: "idle", text: dustFeeAbsorptionCanceledText() });
+        return;
+      }
+
+      const txid = await signAndBroadcastPsbt({
+        inputCount: paymentPsbt.inputCount,
+        network,
+        psbtHex: paymentPsbt.psbtHex,
+        signingAddress: address,
+        wallet: window.unisat,
+      });
+
+      setDnsSaleAuthorization(JSON.stringify(sealedAuthorization, null, 2));
+      setStatus(
+        goodBroadcastStatus(
+          `${powDnsDisplayName(listing.id)} sale ticket sealed: ${shortAddress(txid)}.`,
+          txid,
+          network,
+        ),
+      );
+      await refreshDnsStateAfterMutation();
+    } catch (error) {
+      setStatus({
+        tone: "bad",
+        text: errorMessage(error, "DNS sale-ticket seal failed."),
+      });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function delistDnsListing(listing: PowIdListing) {
+    if (!window.unisat) {
+      setStatus({ tone: "bad", text: "Connect UniSat first." });
+      return;
+    }
+
+    if (!window.unisat.signPsbt) {
+      setStatus({
+        tone: "bad",
+        text: "UniSat signPsbt is not available. Update UniSat and try again.",
+      });
+      return;
+    }
+
+    if (!dnsRegistryAddress) {
+      setStatus({
+        tone: "bad",
+        text: `No ProofOfWork DNS registry configured for ${networkLabel(network)} yet.`,
+      });
+      return;
+    }
+
+    if (listing.sellerAddress !== address) {
+      setStatus({
+        tone: "bad",
+        text: "Only the current listing seller can delist this .pow name.",
+      });
+      return;
+    }
+
+    const payload = buildDnsDelistingPayload(listing.listingId);
+    if (dataCarrierBytesForPayload(payload) > MAX_DATA_CARRIER_BYTES) {
+      setStatus({
+        tone: "bad",
+        text: "DNS delisting OP_RETURN is over 100 KB.",
+      });
+      return;
+    }
+
+    setBusy(true);
+    setStatus({
+      tone: "idle",
+      text: `Closing sale ticket for ${powDnsDisplayName(listing.id)}...`,
+    });
+
+    try {
+      const latestState = await fetchDnsRecordState(network, listing.id);
+      setDnsRegistry((current) =>
+        replaceExactPowIdStateItems(
+          current,
+          latestState.records,
+          listing.id,
+          network,
+        ),
+      );
+      setDnsListings((current) =>
+        replaceExactPowIdStateItems(
+          current,
+          latestState.listings,
+          listing.id,
+          network,
+        ),
+      );
+      setDnsPendingEvents((current) =>
+        replaceExactPowIdStateItems(
+          current,
+          latestState.pendingEvents,
+          listing.id,
+          network,
+        ),
+      );
+      setDnsSales((current) =>
+        replaceExactPowIdStateItems(
+          current,
+          latestState.sales,
+          listing.id,
+          network,
+        ),
+      );
+      const latestListing = latestState.listings.find(
+        (item) =>
+          item.listingId === listing.listingId && item.network === network,
+      );
+      const latestRecord = latestState.records.find(
+        (record) =>
+          record.network === network &&
+          normalizePowDnsName(record.id) === normalizePowDnsName(listing.id) &&
+          record.confirmed,
+      );
+
+      if (!latestListing || latestListing.listingVersion !== "list5") {
+        setStatus({ tone: "bad", text: "This listing is no longer active." });
+        return;
+      }
+
+      if (!latestRecord || latestRecord.ownerAddress !== address) {
+        setStatus({
+          tone: "bad",
+          text: `${powDnsDisplayName(listing.id)} is no longer owned by this wallet.`,
+        });
+        return;
+      }
+
+      await ensureWalletNetwork(window.unisat, network, address);
+
+      const reservedOutpoints = activeListingAnchorOutpointsForAddress(
+        latestState.listings,
+        address,
+        {
+          exceptListingId: latestListing.listingId,
+          network,
+        },
+      );
+      const paymentPsbt = await buildAnchoredMarketplacePsbt({
+        anchorSpendMode: "wallet",
+        excludeOutpoints: reservedOutpoints,
+        feeRate,
+        fromAddress: address,
+        listing: latestListing,
+        network,
+        payments: [
+          {
+            address: latestListing.sellerAddress,
+            amountSats:
+              latestListing.anchorValueSats ?? ID_LISTING_ANCHOR_VALUE_SATS,
+          },
+          {
+            address: dnsRegistryAddress,
+            amountSats: ID_MUTATION_PRICE_SATS,
+          },
+        ],
+        protocolPayloads: [payload],
+        requireConfirmedUtxos: true,
+      });
+      if (
+        !confirmDustFeeAbsorption({
+          dustFeeSats: paymentPsbt.dustFeeSats,
+          feeRate,
+          feeSats: paymentPsbt.feeSats,
+        })
+      ) {
+        setStatus({ tone: "idle", text: dustFeeAbsorptionCanceledText() });
+        return;
+      }
+
+      const txid = await signAndBroadcastPsbt({
+        allowedReservedListingAnchorOutpoints: mergeListingAnchorOutpoints([
+          listingAnchorOutpoint(latestListing),
+        ]),
+        inputCount: paymentPsbt.inputCount,
+        network,
+        psbtHex: paymentPsbt.psbtHex,
+        signInputIndexes: paymentPsbt.walletInputIndexes,
+        signingAddress: address,
+        wallet: window.unisat,
+      });
+
+      setStatus(
+        goodBroadcastStatus(
+          `Delisting for ${powDnsDisplayName(listing.id)} broadcast: ${shortAddress(txid)}.`,
+          txid,
+          network,
+        ),
+      );
+      await refreshDnsStateAfterMutation();
+    } catch (error) {
+      setStatus({
+        tone: "bad",
+        text: errorMessage(error, "DNS delisting failed."),
+      });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function purchaseDns(
+    event?: FormEvent<HTMLFormElement> | MouseEvent<HTMLButtonElement>,
+  ) {
+    event?.preventDefault();
+
+    if (!window.unisat) {
+      setStatus({ tone: "bad", text: "Connect UniSat first." });
+      return;
+    }
+
+    if (!window.unisat.signPsbt) {
+      setStatus({
+        tone: "bad",
+        text: "UniSat signPsbt is not available. Update UniSat and try again.",
+      });
+      return;
+    }
+
+    if (!dnsRegistryAddress) {
+      setStatus({
+        tone: "bad",
+        text: `No ProofOfWork DNS registry configured for ${networkLabel(network)} yet.`,
+      });
+      return;
+    }
+
+    let authorization: PowIdSaleAuthorization;
+    try {
+      authorization = parseSaleAuthorizationText(
+        dnsSaleAuthorization.trim(),
+        network,
+      );
+    } catch (error) {
+      setStatus({
+        tone: "bad",
+        text: errorMessage(error, "Listing authorization is invalid."),
+      });
+      return;
+    }
+
+    if (authorization.version !== DNS_SALE_AUTH_VERSION_TICKET) {
+      setStatus({
+        tone: "bad",
+        text: "Select a DNS listing first.",
+      });
+      return;
+    }
+
+    const ownerAddress = dnsPurchaseOwnerAddress.trim();
+    const receiveAddress = dnsPurchaseReceiveAddress.trim();
+    const effectiveReceiveAddress = receiveAddress || ownerAddress;
+
+    if (!saleAuthorizationCanBroadcast(authorization)) {
+      setStatus({
+        tone: "bad",
+        text: "Select an active on-chain listing first.",
+      });
+      return;
+    }
+
+    const selectedListing = selectedDnsMarketplaceListing;
+    if (!selectedListing || !listingCanBePurchased(selectedListing)) {
+      setStatus({
+        tone: "bad",
+        text: "Select an active on-chain listing first.",
+      });
+      return;
+    }
+
+    if (!isValidBitcoinAddress(ownerAddress, network)) {
+      setStatus({
+        tone: "bad",
+        text: "New owner address is not valid for the selected network.",
+      });
+      return;
+    }
+
+    if (receiveAddress && !isValidBitcoinAddress(receiveAddress, network)) {
+      setStatus({
+        tone: "bad",
+        text: "New resolver address is not valid for the selected network.",
+      });
+      return;
+    }
+
+    if (
+      authorization.buyerAddress &&
+      authorization.buyerAddress !== ownerAddress
+    ) {
+      setStatus({
+        tone: "bad",
+        text: `This sale is locked to ${shortAddress(authorization.buyerAddress)}.`,
+      });
+      return;
+    }
+
+    if (
+      authorization.receiveAddress &&
+      authorization.receiveAddress !== effectiveReceiveAddress
+    ) {
+      setStatus({
+        tone: "bad",
+        text: `This sale is locked to resolve at ${shortAddress(authorization.receiveAddress)}.`,
+      });
+      return;
+    }
+
+    const payload = buildDnsMarketplaceTransferPayload(
+      selectedListing.listingId,
+      ownerAddress,
+      receiveAddress,
+      marketplaceTransferVersionForListing(selectedListing),
+    );
+    if (dataCarrierBytesForPayload(payload) > MAX_DATA_CARRIER_BYTES) {
+      setStatus({
+        tone: "bad",
+        text: "DNS AMO transfer OP_RETURN is over 100 KB.",
+      });
+      return;
+    }
+
+    setDnsMarketplaceAction("buy");
+    setBusy(true);
+    setStatus({
+      tone: "idle",
+      text: `Checking ${powDnsDisplayName(authorization.id)} listing terms...`,
+    });
+
+    try {
+      const latestState = await fetchDnsRecordState(network, authorization.id);
+      setDnsRegistry((current) =>
+        replaceExactPowIdStateItems(
+          current,
+          latestState.records,
+          authorization.id,
+          network,
+        ),
+      );
+      setDnsListings((current) =>
+        replaceExactPowIdStateItems(
+          current,
+          latestState.listings,
+          authorization.id,
+          network,
+        ),
+      );
+      setDnsPendingEvents((current) =>
+        replaceExactPowIdStateItems(
+          current,
+          latestState.pendingEvents,
+          authorization.id,
+          network,
+        ),
+      );
+      setDnsSales((current) =>
+        replaceExactPowIdStateItems(
+          current,
+          latestState.sales,
+          authorization.id,
+          network,
+        ),
+      );
+      const latestListing = latestState.listings.find(
+        (listing) =>
+          listing.network === network &&
+          listing.listingId === selectedListing.listingId,
+      );
+      const latestRecord = latestState.records.find(
+        (record) =>
+          record.network === network &&
+          normalizePowDnsName(record.id) ===
+            normalizePowDnsName(authorization.id) &&
+          record.confirmed,
+      );
+
+      if (!latestRecord) {
+        setStatus({
+          tone: "bad",
+          text: `${powDnsDisplayName(authorization.id)} is not confirmed yet.`,
+        });
+        return;
+      }
+
+      if (!latestListing || !listingCanBePurchased(latestListing)) {
+        setStatus({ tone: "bad", text: "This listing is no longer active." });
+        return;
+      }
+
+      if (latestRecord.ownerAddress !== latestListing.sellerAddress) {
+        setStatus({
+          tone: "bad",
+          text: `${powDnsDisplayName(authorization.id)} is no longer owned by this seller.`,
+        });
+        return;
+      }
+
+      await ensureWalletNetwork(window.unisat, network, address);
+
+      const payments: PaymentOutputSpec[] = [
+        {
+          address: latestListing.sellerAddress,
+          amountSats: sellerPaymentRequiredSats(latestListing),
+        },
+        {
+          address: dnsRegistryAddress,
+          amountSats: ID_MUTATION_PRICE_SATS,
+        },
+      ];
+
+      setStatus({
+        tone: "idle",
+        text: `Buying ${powDnsDisplayName(authorization.id)}...`,
+      });
+      const reservedOutpoints = activeListingAnchorOutpointsForAddress(
+        latestState.listings,
+        address,
+        {
+          exceptListingId: latestListing.listingId,
+          network,
+        },
+      );
+      const paymentPsbt = await buildAnchoredMarketplacePsbt({
+        excludeOutpoints: reservedOutpoints,
+        feeRate,
+        fromAddress: address,
+        listing: latestListing,
+        network,
+        payments,
+        protocolPayloads: [payload],
+        requireConfirmedUtxos: true,
+      });
+      if (
+        !confirmDustFeeAbsorption({
+          dustFeeSats: paymentPsbt.dustFeeSats,
+          feeRate,
+          feeSats: paymentPsbt.feeSats,
+        })
+      ) {
+        setStatus({ tone: "idle", text: dustFeeAbsorptionCanceledText() });
+        return;
+      }
+
+      const txid = await signAndBroadcastPsbt({
+        allowedReservedListingAnchorOutpoints: mergeListingAnchorOutpoints([
+          listingAnchorOutpoint(latestListing),
+        ]),
+        inputCount: paymentPsbt.inputCount,
+        network,
+        psbtHex: paymentPsbt.psbtHex,
+        signInputIndexes: paymentPsbt.walletInputIndexes,
+        signingAddress: address,
+        wallet: window.unisat,
+      });
+
+      setStatus(
+        goodBroadcastStatus(
+          `${powDnsDisplayName(authorization.id)} purchase broadcast: ${shortAddress(txid)}.`,
+          txid,
+          network,
+        ),
+      );
+      setPurchaseReceipt({
+        amountLabel: "1 .pow",
+        assetLabel: powDnsDisplayName(authorization.id),
+        buyerAddress: ownerAddress,
+        kind: "dns",
+        listingId: latestListing.listingId,
+        network,
+        priceSats: latestListing.priceSats,
+        sellerAddress: latestListing.sellerAddress,
+        txid,
+      });
+      setDnsSaleAuthorization("");
+      setDnsSelectedListingId("");
+      setDnsPurchaseReceiveAddress("");
+      await refreshDnsStateAfterMutation();
+    } catch (error) {
+      setStatus({
+        tone: "bad",
+        text: errorMessage(error, "DNS purchase failed."),
+      });
+    } finally {
+      setDnsMarketplaceAction("idle");
       setBusy(false);
     }
   }
@@ -34039,6 +35626,41 @@ export default function App() {
     );
   }
 
+  if (dnsLaunchMode) {
+    return (
+      <DnsLaunchApp
+        accountStats={connectedAccountStats}
+        address={address}
+        busy={busy}
+        canRegister={canRegisterDns}
+        connectWallet={connectWallet}
+        disconnectWallet={disconnectWallet}
+        degradedReadStatus={degradedReadStatus}
+        dnsName={dnsName}
+        dnsReceiveAddress={dnsReceiveAddress}
+        feeRate={feeRate}
+        hasUnisat={hasUnisat}
+        lastRegisteredDns={
+          lastRegisteredDns?.network === "livenet"
+            ? lastRegisteredDns
+            : undefined
+        }
+        registryAddress={dnsRegistryAddressForNetwork("livenet")}
+        registryRecords={dnsRegistry.filter(
+          (record) => record.network === "livenet",
+        )}
+        registryReadStatus={dnsRegistryReadStatus}
+        registrationBytes={dnsRegistrationBytes}
+        setDnsName={setDnsName}
+        setDnsReceiveAddress={setDnsReceiveAddress}
+        setFeeRate={setFeeRate}
+        status={status}
+        submit={registerDns}
+        onRefresh={() => void refreshDns()}
+      />
+    );
+  }
+
   if (marketplaceMode) {
     return (
       <>
@@ -34048,13 +35670,24 @@ export default function App() {
           btcUsd={tokenBtcUsd}
           busy={busy}
           canCreateSaleAuthorization={canCreateSaleAuthorization}
+          canCreateDnsSaleAuthorization={canCreateDnsSaleAuthorization}
           canPurchaseId={canPurchaseId}
+          canPurchaseDns={canPurchaseDns}
           connectWallet={connectWallet}
           delistListing={delistIdListing}
+          delistDnsListing={delistDnsListing}
           disconnectWallet={disconnectWallet}
           degradedReadStatus={degradedReadStatus}
           feeRate={feeRate}
           hasUnisat={hasUnisat}
+          dnsPurchaseBytes={dnsPurchaseBytes}
+          dnsPurchaseOwnerAddress={dnsPurchaseOwnerAddress}
+          dnsPurchaseReceiveAddress={dnsPurchaseReceiveAddress}
+          dnsSaleAuthorization={dnsSaleAuthorization}
+          dnsSaleBuyerAddress={dnsSaleBuyerAddress}
+          dnsSalePriceSats={dnsSalePriceSats}
+          dnsSaleReceiveAddress={dnsSaleReceiveAddress}
+          dnsMarketplaceAction={dnsMarketplaceAction}
           idPurchaseBytes={idPurchaseBytes}
           idPurchaseOwnerAddress={idPurchaseOwnerAddress}
           idPurchaseReceiveAddress={idPurchaseReceiveAddress}
@@ -34063,6 +35696,7 @@ export default function App() {
           idSalePriceSats={idSalePriceSats}
           idSaleReceiveAddress={idSaleReceiveAddress}
           idMarketplaceAction={idMarketplaceAction}
+          managedDnsName={managedDnsRecord?.id ?? ""}
           managedIdName={managedIdRecord?.id ?? ""}
           marketplaceSummaryReadState={marketplaceSummaryReadState}
           completeListingBookError={completeListingBookError}
@@ -34076,7 +35710,19 @@ export default function App() {
           pendingEvents={idPendingEvents.filter(
             (event) => event.network === "livenet",
           )}
+          dnsPendingEvents={dnsPendingEvents.filter(
+            (event) => event.network === "livenet",
+          )}
           registryAddress={registryAddressForNetwork("livenet")}
+          publishDnsListing={publishDnsListing}
+          dnsRegistryAddress={dnsRegistryAddressForNetwork("livenet")}
+          dnsRegistryListings={dnsListings.filter(
+            (listing) => listing.network === "livenet",
+          )}
+          dnsRegistryRecords={dnsRegistry.filter(
+            (record) => record.network === "livenet",
+          )}
+          dnsRegistrySales={dnsSales.filter((sale) => sale.network === "livenet")}
           registryListings={idListings.filter(
             (listing) => listing.network === "livenet",
           )}
@@ -34085,12 +35731,23 @@ export default function App() {
           )}
           registrySales={idSales.filter((sale) => sale.network === "livenet")}
           sealListing={sealIdListing}
+          sealDnsListing={sealDnsListing}
+          setDnsPurchaseOwnerAddress={setDnsPurchaseOwnerAddress}
+          setDnsPurchaseReceiveAddress={setDnsPurchaseReceiveAddress}
+          setDnsSaleBuyerAddress={setDnsSaleBuyerAddress}
+          setDnsSalePriceSats={setDnsSalePriceSats}
+          setDnsSaleReceiveAddress={setDnsSaleReceiveAddress}
           setIdPurchaseOwnerAddress={setIdPurchaseOwnerAddress}
           setIdPurchaseReceiveAddress={setIdPurchaseReceiveAddress}
           setIdSaleBuyerAddress={setIdSaleBuyerAddress}
           setIdSalePriceSats={setIdSalePriceSats}
           setIdSaleReceiveAddress={setIdSaleReceiveAddress}
           setFeeRate={setFeeRate}
+          setManagedDnsName={(id) => {
+            setManagedDnsName(id);
+            setDnsSaleAuthorization("");
+            setDnsSelectedListingId("");
+          }}
           setManagedIdName={(id) => {
             setManagedIdName(id);
             setIdSaleAuthorization("");
@@ -34098,6 +35755,7 @@ export default function App() {
           }}
           status={status}
           submitPurchase={purchaseId}
+          submitDnsPurchase={purchaseDns}
           tokenClosedListings={tokenClosedListings.filter(
             (listing) => listing.network === "livenet",
           )}
@@ -34120,6 +35778,14 @@ export default function App() {
           inceptionSummary={inceptionBondSummary}
           infinitySummary={infinityBondSummary}
           buyTokenListing={buyTokenListing}
+          useDnsListing={(listing) => {
+            setDnsSaleAuthorization(
+              JSON.stringify(listing.saleAuthorization, null, 2),
+            );
+            setDnsSelectedListingId(listing.listingId);
+            setDnsPurchaseOwnerAddress(address);
+            setDnsPurchaseReceiveAddress(listing.receiveAddress ?? "");
+          }}
           useListing={(listing) => {
             setIdSaleAuthorization(
               JSON.stringify(listing.saleAuthorization, null, 2),
@@ -34129,6 +35795,7 @@ export default function App() {
             setIdPurchaseReceiveAddress(listing.receiveAddress ?? "");
           }}
           onRefreshBonds={refreshBondMarkets}
+          onRefreshDns={() => void refreshDns(false, true)}
           onRetryMarketplaceSummary={() =>
             void refreshMarketplaceSummary(false, true)
           }
@@ -35102,9 +36769,20 @@ export default function App() {
             btcUsd={tokenBtcUsd}
             busy={busy}
             canCreateSaleAuthorization={canCreateSaleAuthorization}
+            canCreateDnsSaleAuthorization={canCreateDnsSaleAuthorization}
             canPurchaseId={canPurchaseId}
+            canPurchaseDns={canPurchaseDns}
             delistListing={delistIdListing}
+            delistDnsListing={delistDnsListing}
             feeRate={feeRate}
+            dnsPurchaseBytes={dnsPurchaseBytes}
+            dnsPurchaseOwnerAddress={dnsPurchaseOwnerAddress}
+            dnsPurchaseReceiveAddress={dnsPurchaseReceiveAddress}
+            dnsSaleAuthorization={dnsSaleAuthorization}
+            dnsSaleBuyerAddress={dnsSaleBuyerAddress}
+            dnsSalePriceSats={dnsSalePriceSats}
+            dnsSaleReceiveAddress={dnsSaleReceiveAddress}
+            dnsMarketplaceAction={dnsMarketplaceAction}
             idPurchaseBytes={idPurchaseBytes}
             idPurchaseOwnerAddress={idPurchaseOwnerAddress}
             idPurchaseReceiveAddress={idPurchaseReceiveAddress}
@@ -35113,6 +36791,7 @@ export default function App() {
             idSalePriceSats={idSalePriceSats}
             idSaleReceiveAddress={idSaleReceiveAddress}
             idMarketplaceAction={idMarketplaceAction}
+            managedDnsName={managedDnsName}
             managedIdName={managedIdName}
             marketplaceSummaryReadState={marketplaceSummaryReadState}
             completeListingBookError={completeListingBookError}
@@ -35122,18 +36801,35 @@ export default function App() {
             }
             network={network}
             pendingEvents={idPendingEvents}
+            dnsPendingEvents={dnsPendingEvents}
             publishListing={publishIdListing}
+            publishDnsListing={publishDnsListing}
+            dnsRegistryAddress={dnsRegistryAddress}
+            dnsRegistryListings={dnsListings}
+            dnsRegistryRecords={dnsRegistry}
+            dnsRegistrySales={dnsSales}
             registryAddress={registryAddress}
             registryListings={idListings}
             registryRecords={idRegistry}
             registrySales={idSales}
             sealListing={sealIdListing}
+            sealDnsListing={sealDnsListing}
+            setDnsPurchaseOwnerAddress={setDnsPurchaseOwnerAddress}
+            setDnsPurchaseReceiveAddress={setDnsPurchaseReceiveAddress}
+            setDnsSaleBuyerAddress={setDnsSaleBuyerAddress}
+            setDnsSalePriceSats={setDnsSalePriceSats}
+            setDnsSaleReceiveAddress={setDnsSaleReceiveAddress}
             setIdPurchaseOwnerAddress={setIdPurchaseOwnerAddress}
             setIdPurchaseReceiveAddress={setIdPurchaseReceiveAddress}
             setIdSaleBuyerAddress={setIdSaleBuyerAddress}
             setIdSalePriceSats={setIdSalePriceSats}
             setIdSaleReceiveAddress={setIdSaleReceiveAddress}
             setFeeRate={setFeeRate}
+            setManagedDnsName={(id) => {
+              setManagedDnsName(id);
+              setDnsSaleAuthorization("");
+              setDnsSelectedListingId("");
+            }}
             setManagedIdName={(id) => {
               setManagedIdName(id);
               setIdSaleAuthorization("");
@@ -35141,6 +36837,7 @@ export default function App() {
             }}
             status={status}
             submitPurchase={purchaseId}
+            submitDnsPurchase={purchaseDns}
             buyTokenListing={buyTokenListing}
             tokenClosedListings={tokenClosedListings}
             tokenListings={tokenListings}
@@ -35157,6 +36854,14 @@ export default function App() {
             infinitySummary={infinityBondSummary}
             onOpenTokenWorkspace={openTokenWorkspace}
             onOpenWalletWorkspace={openWalletWorkspace}
+            useDnsListing={(listing) => {
+              setDnsSaleAuthorization(
+                JSON.stringify(listing.saleAuthorization, null, 2),
+              );
+              setDnsSelectedListingId(listing.listingId);
+              setDnsPurchaseOwnerAddress(address);
+              setDnsPurchaseReceiveAddress(listing.receiveAddress ?? "");
+            }}
             useListing={(listing) => {
               setIdSaleAuthorization(
                 JSON.stringify(listing.saleAuthorization, null, 2),
@@ -35166,6 +36871,7 @@ export default function App() {
               setIdPurchaseReceiveAddress(listing.receiveAddress ?? "");
             }}
             onRefreshBonds={refreshBondMarkets}
+            onRefreshDns={() => void refreshDns(false, true)}
             onRetryMarketplaceSummary={() =>
               void refreshMarketplaceSummary(false, true)
             }
@@ -46679,7 +48385,390 @@ function IdLaunchApp({
   );
 }
 
-type MarketplaceTab = "ids" | "tokens" | "bonds" | "boosts";
+function DnsLaunchApp({
+  accountStats = [],
+  address,
+  busy,
+  canRegister,
+  connectWallet,
+  disconnectWallet,
+  degradedReadStatus,
+  dnsName,
+  dnsReceiveAddress,
+  feeRate,
+  hasUnisat,
+  lastRegisteredDns,
+  registryAddress,
+  registryRecords,
+  registryReadStatus,
+  registrationBytes,
+  setDnsName,
+  setDnsReceiveAddress,
+  setFeeRate,
+  status,
+  submit,
+  onRefresh,
+}: {
+  accountStats?: AppHeaderAccountStat[];
+  address: string;
+  busy: boolean;
+  canRegister: boolean;
+  connectWallet: () => void;
+  disconnectWallet: () => void;
+  degradedReadStatus?: WorkspaceStatus;
+  dnsName: string;
+  dnsReceiveAddress: string;
+  feeRate: number;
+  hasUnisat: boolean;
+  lastRegisteredDns?: PowIdRecord;
+  registryAddress: string;
+  registryRecords: PowIdRecord[];
+  registryReadStatus: RegistryReadStatus;
+  registrationBytes: number;
+  setDnsName: (value: string) => void;
+  setDnsReceiveAddress: (value: string) => void;
+  setFeeRate: (value: number) => void;
+  status: { tone: StatusTone; text: string };
+  submit: (event: FormEvent<HTMLFormElement>) => void;
+  onRefresh: () => void;
+}) {
+  const normalizedName = normalizePowDnsName(dnsName);
+  const uniqueRegistryRecords = uniquePowIdRecords(registryRecords);
+  const ownedNames = ownedPowIds(uniqueRegistryRecords, address);
+  const confirmedRecords = uniqueRegistryRecords.filter(
+    (record) => record.confirmed,
+  );
+  const pendingRecords = uniqueRegistryRecords.filter(
+    (record) => !record.confirmed,
+  );
+  const registryHasSnapshot =
+    registryReadStatus === "ready" || registryReadStatus === "last-verified";
+  const registryStatValue = (count: number) =>
+    registryHasSnapshot
+      ? count.toLocaleString()
+      : registryReadStatus === "loading"
+        ? "Verifying..."
+        : "Unavailable";
+  const registryReadNote =
+    registryReadStatus === "last-verified"
+      ? "Showing the last verified DNS snapshot; refresh is unavailable."
+      : registryReadStatus === "unavailable"
+        ? "The DNS registry could not be verified. No zero-count result is available."
+        : registryReadStatus === "loading"
+          ? "Verifying the DNS registry..."
+          : "";
+  const confirmedMatch = normalizedName
+    ? confirmedRecords.find(
+        (record) => normalizePowDnsName(record.id) === normalizedName,
+      )
+    : undefined;
+  const pendingMatch = normalizedName
+    ? pendingRecords.find(
+        (record) => normalizePowDnsName(record.id) === normalizedName,
+      )
+    : undefined;
+  const nameError = powDnsError(normalizedName);
+  const availabilityTone =
+    normalizedName && (confirmedMatch || nameError) ? "bad" : "idle";
+  const availabilityTitle = !normalizedName
+    ? "Search any .pow"
+    : nameError
+      ? nameError
+      : confirmedMatch
+        ? `${powDnsDisplayName(normalizedName)} is taken`
+        : pendingMatch
+          ? `${powDnsDisplayName(normalizedName)} is pending`
+          : `${powDnsDisplayName(normalizedName)} needs a live check`;
+  const availabilityText = !normalizedName
+    ? "Enter a prefix to check the ProofOfWork DNS registry before you claim."
+    : nameError
+      ? "Use a single DNS label. The .pow suffix is already assumed."
+      : confirmedMatch
+        ? `First confirmed registration won in ${shortAddress(confirmedMatch.txid)}.`
+        : pendingMatch
+          ? "Pending is not final. First confirmed valid registration wins."
+          : "Submit to verify the exact .pow name against current chain coverage before signing.";
+  const registerButtonLabel = busy
+    ? "Registering"
+    : !address
+      ? "Connect UniSat first"
+      : !normalizedName
+        ? "Enter a name"
+        : confirmedMatch
+          ? ".pow taken"
+          : pendingMatch
+            ? ".pow pending"
+            : !canRegister
+              ? "Complete registration"
+              : "Verify and register for 1,000 proofs";
+
+  return (
+    <main className="id-launch-app">
+      <AppHeader
+        accountStats={accountStats}
+        address={address}
+        busy={busy}
+        connectWallet={connectWallet}
+        disconnectWallet={disconnectWallet}
+        hasUnisat={hasUnisat}
+        onRefresh={onRefresh}
+        subtitle="Mainnet registry"
+        title="ProofOfWork DNS"
+      />
+
+      <AppStatusRow
+        persistent
+        secondaryStatus={degradedReadStatus}
+        status={status}
+      />
+
+      <section className="id-launch-main">
+        <WorkspaceSectionNav
+          label="DNS registry sections"
+          items={[
+            { href: "#dns-overview", label: "Overview" },
+            { href: "#dns-register", label: "Register" },
+            { href: "#dns-owned", label: "Your .pow" },
+            { href: "#dns-registry", label: "Registry" },
+          ]}
+        />
+        <div className="id-launch-hero" id="dns-overview">
+          <div>
+            <span className="id-launch-kicker">ProofOfWork-native DNS</span>
+            <h2>Claim your .pow name.</h2>
+            <p>
+              Register a permanent on-chain DNS name that resolves to your
+              ProofOfWork address. First confirmed valid registration wins.
+            </p>
+          </div>
+
+          <div className="id-launch-stats" aria-label="DNS registry stats">
+            <div>
+              <strong>{registryStatValue(confirmedRecords.length)}</strong>
+              <span>Confirmed .pow</span>
+            </div>
+            <div>
+              <strong>{registryStatValue(pendingRecords.length)}</strong>
+              <span>Pending .pow</span>
+            </div>
+            <div>
+              <strong>{registryStatValue(uniqueRegistryRecords.length)}</strong>
+              <span>Visible records</span>
+            </div>
+          </div>
+          {registryReadNote ? (
+            <p className="registry-read-note">{registryReadNote}</p>
+          ) : null}
+        </div>
+
+        <div className="id-launch-grid">
+          <form
+            className="id-launch-card id-claim-card"
+            id="dns-register"
+            onSubmit={submit}
+          >
+            <div className="id-card-head">
+              <div className="empty-icon" aria-hidden="true">
+                <AtSign size={24} />
+              </div>
+              <div>
+                <h3>Register .pow</h3>
+                <p>
+                  Pay {ID_REGISTRATION_PRICE_SATS.toLocaleString()} proofs to
+                  the DNS registry address.
+                </p>
+              </div>
+            </div>
+
+            <label>
+              Name
+              <div className="id-input-row">
+                <input
+                  autoComplete="off"
+                  onChange={(event) => setDnsName(event.target.value)}
+                  placeholder="alice"
+                  spellCheck={false}
+                  value={dnsName}
+                />
+                <span>{DNS_SUFFIX}</span>
+              </div>
+            </label>
+
+            <div className={`id-availability ${availabilityTone}`}>
+              <strong>{availabilityTitle}</strong>
+              <span>{availabilityText}</span>
+            </div>
+
+            <div className="compose-grid">
+              <label>
+                Owner
+                <input readOnly value={address || "Connect UniSat"} />
+              </label>
+              <label>
+                Resolves to
+                <input
+                  autoComplete="off"
+                  onChange={(event) => setDnsReceiveAddress(event.target.value)}
+                  spellCheck={false}
+                  value={dnsReceiveAddress}
+                />
+              </label>
+            </div>
+
+            <FeeRateControl
+              feeRate={feeRate}
+              setFeeRate={setFeeRate}
+              sidecar={
+                <label>
+                  Registry
+                  <input readOnly value={registryAddress} />
+                </label>
+              }
+            />
+
+            <div
+              className={
+                registrationBytes > MAX_DATA_CARRIER_BYTES
+                  ? "counter bad"
+                  : "counter"
+              }
+            >
+              {registrationBytes.toLocaleString()} /{" "}
+              {MAX_DATA_CARRIER_BYTES.toLocaleString()} OP_RETURN data-carrier
+              bytes
+            </div>
+
+            <button className="primary" disabled={!canRegister} type="submit">
+              <span className="button-content">
+                <AtSign size={16} />
+                <span>{registerButtonLabel}</span>
+              </span>
+            </button>
+          </form>
+
+          <aside className="id-launch-side">
+            {lastRegisteredDns ? (
+              <section className="id-launch-card id-verify-card">
+                <div className="id-card-head">
+                  <div className="empty-icon" aria-hidden="true">
+                    <AtSign size={24} />
+                  </div>
+                  <div>
+                    <h3>Registration broadcast</h3>
+                    <p>{powDnsDisplayName(lastRegisteredDns.id)} is pending.</p>
+                  </div>
+                </div>
+                <div className="id-record-actions">
+                  <a
+                    className="secondary link-button"
+                    href={explorerTxUrl(
+                      lastRegisteredDns.txid,
+                      lastRegisteredDns.network,
+                    )}
+                    rel="noreferrer"
+                    target="_blank"
+                  >
+                    <span className="button-content">
+                      <ArrowUpRight size={16} />
+                      <span>View TX</span>
+                    </span>
+                  </a>
+                </div>
+              </section>
+            ) : null}
+
+            <section className="id-launch-card">
+              <h3>Canonical Registry</h3>
+              <dl className="file-detail-list">
+                <div>
+                  <dt>Network</dt>
+                  <dd>Mainnet</dd>
+                </div>
+                <div>
+                  <dt>Registry</dt>
+                  <dd>{DNS_REGISTRY_ID}</dd>
+                </div>
+                <div>
+                  <dt>Address</dt>
+                  <dd>{registryAddress}</dd>
+                </div>
+                <div>
+                  <dt>Protocol</dt>
+                  <dd>{DNS_PROTOCOL_PREFIX}r1</dd>
+                </div>
+              </dl>
+            </section>
+
+            <section className="id-launch-card" id="dns-owned">
+              <h3>Your .pow</h3>
+              <IdRecordList
+                records={ownedNames}
+                displaySuffix={DNS_SUFFIX}
+                empty={
+                  !address
+                    ? "Connect UniSat to see your .pow names."
+                    : registryReadStatus === "ready"
+                      ? "No .pow names for this wallet yet."
+                      : registryReadStatus === "last-verified"
+                        ? "No .pow names for this wallet in the last verified snapshot."
+                        : registryReadStatus === "loading"
+                          ? "Verifying your .pow names against the registry..."
+                          : "Registry unavailable; your .pow names could not be verified."
+                }
+                pageLabel=".pow names"
+                searchPlaceholder="Search your .pow"
+                showPgp={false}
+              />
+            </section>
+          </aside>
+        </div>
+
+        <section className="id-launch-card" id="dns-registry">
+          <div className="id-launch-section-head">
+            <div>
+              <h3>Public Registry</h3>
+              <p>
+                Confirmed .pow records are on-chain DNS assets and can be listed
+                in AMO.
+              </p>
+            </div>
+            <button
+              className="secondary small"
+              disabled={busy}
+              onClick={onRefresh}
+              type="button"
+            >
+              <span className="button-content">
+                <RefreshCw className={busy ? "refresh-spin" : ""} size={15} />
+                <span>Refresh</span>
+              </span>
+            </button>
+          </div>
+          <IdRecordList
+            records={uniqueRegistryRecords}
+            displaySuffix={DNS_SUFFIX}
+            empty={
+              registryReadStatus === "ready"
+                ? "No DNS records found in the verified snapshot."
+                : registryReadStatus === "last-verified"
+                  ? "No records in the last verified DNS snapshot."
+                  : registryReadStatus === "loading"
+                    ? "Verifying DNS registry..."
+                    : "Registry unavailable; no zero-count result can be shown."
+            }
+            initialLimit={12}
+            pageLabel=".pow names"
+            showPgp={false}
+          />
+        </section>
+      </section>
+
+      <SocialFooter />
+    </main>
+  );
+}
+
+type MarketplaceTab = "ids" | "dns" | "tokens" | "bonds" | "boosts";
 type BondMarketplaceTab = "inception" | "infinity";
 type BoostMarketplaceSortMode = "newest" | "price-asc" | "price-desc";
 
@@ -47855,6 +49944,9 @@ function initialMarketplaceTabFromRoute(defaultTab: MarketplaceTab) {
   const params = new URLSearchParams(window.location.search);
   const tab = String(params.get("tab") ?? "").trim().toLowerCase();
   const boostTarget = String(params.get("boost") ?? "").trim();
+  if (tab === "dns" || tab === "domain" || tab === "domains") {
+    return "dns";
+  }
   if (tab === "boost" || tab === "boosts" || (boostTarget && boostTarget !== "1")) {
     return "boosts";
   }
@@ -48199,6 +50291,7 @@ function MarketplaceTabs({
   active,
   bondCount,
   boostCount,
+  dnsCount,
   idCount,
   onChange,
   tokenCount,
@@ -48206,6 +50299,7 @@ function MarketplaceTabs({
   active: MarketplaceTab;
   bondCount?: number;
   boostCount?: number;
+  dnsCount?: number;
   idCount?: number;
   onChange: (tab: MarketplaceTab) => void;
   tokenCount?: number;
@@ -48215,6 +50309,7 @@ function MarketplaceTabs({
       {(
         [
           ["ids", "IDs", idCount],
+          ["dns", "DNS", dnsCount],
           ["tokens", "Credits", tokenCount],
           ["bonds", "Bonds", bondCount],
           ["boosts", "Boosts", boostCount],
@@ -48238,6 +50333,10 @@ function marketplaceStatusIsIdScoped(text: string) {
   return /(?:ID registry|ProofOfWork ID|Registry loaded)/u.test(text);
 }
 
+function marketplaceStatusIsDnsScoped(text: string) {
+  return /(?:DNS|\.pow|ProofOfWork DNS)/u.test(text);
+}
+
 function marketplaceStatusIsTokenScoped(text: string) {
   return /(?:Credit index|credit market|WORK floor)/iu.test(text);
 }
@@ -48258,6 +50357,7 @@ function marketplaceStatusForTab({
   active,
   bondSummary,
   boostSummary,
+  dnsSummary,
   idSummary,
   status,
   tokenSummary,
@@ -48265,6 +50365,7 @@ function marketplaceStatusForTab({
   active: MarketplaceTab;
   bondSummary: { tone: StatusTone; text: string };
   boostSummary: { tone: StatusTone; text: string };
+  dnsSummary: { tone: StatusTone; text: string };
   idSummary: { tone: StatusTone; text: string };
   status: { tone: StatusTone; text: string };
   tokenSummary: { tone: StatusTone; text: string };
@@ -48276,6 +50377,7 @@ function marketplaceStatusForTab({
   if (
     active === "bonds" &&
     (marketplaceStatusIsIdScoped(status.text) ||
+      marketplaceStatusIsDnsScoped(status.text) ||
       marketplaceStatusIsBoostScoped(status.text) ||
       marketplaceStatusIsTokenScoped(status.text))
   ) {
@@ -48285,6 +50387,7 @@ function marketplaceStatusForTab({
   if (
     active === "boosts" &&
     (marketplaceStatusIsIdScoped(status.text) ||
+      marketplaceStatusIsDnsScoped(status.text) ||
       marketplaceStatusIsBondScoped(status.text) ||
       marketplaceStatusIsTokenScoped(status.text))
   ) {
@@ -48294,6 +50397,7 @@ function marketplaceStatusForTab({
   if (
     active === "tokens" &&
     (marketplaceStatusIsIdScoped(status.text) ||
+      marketplaceStatusIsDnsScoped(status.text) ||
       marketplaceStatusIsBoostScoped(status.text) ||
       marketplaceStatusIsBondScoped(status.text) ||
       marketplaceStatusIsGenericTokenRefresh(status.text))
@@ -48302,8 +50406,19 @@ function marketplaceStatusForTab({
   }
 
   if (
+    active === "dns" &&
+    (marketplaceStatusIsIdScoped(status.text) ||
+      marketplaceStatusIsTokenScoped(status.text) ||
+      marketplaceStatusIsBoostScoped(status.text) ||
+      marketplaceStatusIsBondScoped(status.text))
+  ) {
+    return dnsSummary;
+  }
+
+  if (
     active === "ids" &&
     (marketplaceStatusIsTokenScoped(status.text) ||
+      marketplaceStatusIsDnsScoped(status.text) ||
       marketplaceStatusIsBoostScoped(status.text) ||
       marketplaceStatusIsBondScoped(status.text))
   ) {
@@ -52014,13 +54129,24 @@ function MarketplaceApp({
   btcUsd,
   busy,
   canCreateSaleAuthorization,
+  canCreateDnsSaleAuthorization,
   canPurchaseId,
+  canPurchaseDns,
   connectWallet,
   delistListing,
+  delistDnsListing,
   disconnectWallet,
   degradedReadStatus,
   feeRate,
   hasUnisat,
+  dnsPurchaseBytes,
+  dnsPurchaseOwnerAddress,
+  dnsPurchaseReceiveAddress,
+  dnsSaleAuthorization,
+  dnsSaleBuyerAddress,
+  dnsSalePriceSats,
+  dnsSaleReceiveAddress,
+  dnsMarketplaceAction,
   idPurchaseBytes,
   idPurchaseOwnerAddress,
   idPurchaseReceiveAddress,
@@ -52029,6 +54155,7 @@ function MarketplaceApp({
   idSalePriceSats,
   idSaleReceiveAddress,
   idMarketplaceAction,
+  managedDnsName,
   managedIdName,
   marketplaceSummaryReadState,
   completeListingBookError = "",
@@ -52037,21 +54164,35 @@ function MarketplaceApp({
   network,
   onNetworkChange,
   pendingEvents,
+  dnsPendingEvents,
   publishListing,
+  publishDnsListing,
+  dnsRegistryAddress,
+  dnsRegistryListings,
+  dnsRegistryRecords,
+  dnsRegistrySales,
   registryAddress,
   registryListings,
   registryRecords,
   registrySales,
   sealListing,
+  sealDnsListing,
+  setDnsPurchaseOwnerAddress,
+  setDnsPurchaseReceiveAddress,
+  setDnsSaleBuyerAddress,
+  setDnsSalePriceSats,
+  setDnsSaleReceiveAddress,
   setIdPurchaseOwnerAddress,
   setIdPurchaseReceiveAddress,
   setIdSaleBuyerAddress,
   setIdSalePriceSats,
   setIdSaleReceiveAddress,
   setFeeRate,
+  setManagedDnsName,
   setManagedIdName,
   status,
   submitPurchase,
+  submitDnsPurchase,
   tokenClosedListings,
   tokenListings,
   tokenMints,
@@ -52066,8 +54207,10 @@ function MarketplaceApp({
   inceptionSummary,
   infinitySummary,
   buyTokenListing,
+  useDnsListing,
   useListing,
   onRefreshBonds,
+  onRefreshDns,
   onRetryMarketplaceSummary,
   onRefreshTokens,
 }: {
@@ -52076,13 +54219,24 @@ function MarketplaceApp({
   btcUsd: number;
   busy: boolean;
   canCreateSaleAuthorization: boolean;
+  canCreateDnsSaleAuthorization: boolean;
   canPurchaseId: boolean;
+  canPurchaseDns: boolean;
   connectWallet: () => void;
   delistListing: (listing: PowIdListing) => void;
+  delistDnsListing: (listing: PowIdListing) => void;
   disconnectWallet: () => void;
   degradedReadStatus?: WorkspaceStatus;
   feeRate: number;
   hasUnisat: boolean;
+  dnsPurchaseBytes: number;
+  dnsPurchaseOwnerAddress: string;
+  dnsPurchaseReceiveAddress: string;
+  dnsSaleAuthorization: string;
+  dnsSaleBuyerAddress: string;
+  dnsSalePriceSats: number;
+  dnsSaleReceiveAddress: string;
+  dnsMarketplaceAction: IdMarketplaceAction;
   idPurchaseBytes: number;
   idPurchaseOwnerAddress: string;
   idPurchaseReceiveAddress: string;
@@ -52091,6 +54245,7 @@ function MarketplaceApp({
   idSalePriceSats: number;
   idSaleReceiveAddress: string;
   idMarketplaceAction: IdMarketplaceAction;
+  managedDnsName: string;
   managedIdName: string;
   marketplaceSummaryReadState: MarketplaceSummaryReadState;
   completeListingBookError?: string;
@@ -52099,21 +54254,37 @@ function MarketplaceApp({
   network: BitcoinNetwork;
   onNetworkChange: (network: BitcoinNetwork) => void;
   pendingEvents: PowIdPendingEvent[];
+  dnsPendingEvents: PowIdPendingEvent[];
   publishListing: () => void;
+  publishDnsListing: () => void;
+  dnsRegistryAddress: string;
+  dnsRegistryListings: PowIdListing[];
+  dnsRegistryRecords: PowIdRecord[];
+  dnsRegistrySales: PowIdMarketplaceSale[];
   registryAddress: string;
   registryListings: PowIdListing[];
   registryRecords: PowIdRecord[];
   registrySales: PowIdMarketplaceSale[];
   sealListing: (listing: PowIdListing) => void;
+  sealDnsListing: (listing: PowIdListing) => void;
+  setDnsPurchaseOwnerAddress: (value: string) => void;
+  setDnsPurchaseReceiveAddress: (value: string) => void;
+  setDnsSaleBuyerAddress: (value: string) => void;
+  setDnsSalePriceSats: (value: number) => void;
+  setDnsSaleReceiveAddress: (value: string) => void;
   setIdPurchaseOwnerAddress: (value: string) => void;
   setIdPurchaseReceiveAddress: (value: string) => void;
   setIdSaleBuyerAddress: (value: string) => void;
   setIdSalePriceSats: (value: number) => void;
   setIdSaleReceiveAddress: (value: string) => void;
   setFeeRate: (value: number) => void;
+  setManagedDnsName: (value: string) => void;
   setManagedIdName: (value: string) => void;
   status: { tone: StatusTone; text: string };
   submitPurchase: (
+    event?: FormEvent<HTMLFormElement> | MouseEvent<HTMLButtonElement>,
+  ) => void;
+  submitDnsPurchase: (
     event?: FormEvent<HTMLFormElement> | MouseEvent<HTMLButtonElement>,
   ) => void;
   tokenClosedListings: PowTokenClosedListing[];
@@ -52130,8 +54301,10 @@ function MarketplaceApp({
   inceptionSummary?: InfinitySummarySnapshot;
   infinitySummary?: InfinitySummarySnapshot;
   buyTokenListing: (listing: PowTokenListing) => void;
+  useDnsListing: (listing: PowIdListing) => void;
   useListing: (listing: PowIdListing) => void;
   onRefreshBonds: () => void;
+  onRefreshDns: () => void;
   onRetryMarketplaceSummary: () => void;
   onRefreshTokens: () => void;
 }) {
@@ -52164,13 +54337,29 @@ function MarketplaceApp({
   const ownerControlledIds = confirmedRecords.filter(
     (record) => record.ownerAddress === address,
   );
+  const confirmedDnsRecords = dnsRegistryRecords.filter(
+    (record) => record.confirmed,
+  );
+  const pendingDnsRecords = dnsRegistryRecords.filter(
+    (record) => !record.confirmed,
+  );
+  const ownerControlledDnsRecords = confirmedDnsRecords.filter(
+    (record) => record.ownerAddress === address,
+  );
   const managedId =
     ownerControlledIds.find((record) => record.id === managedIdName) ??
     ownerControlledIds[0];
+  const managedDns =
+    ownerControlledDnsRecords.find((record) => record.id === managedDnsName) ??
+    ownerControlledDnsRecords[0];
   const walletPendingEvents = pendingEvents.filter((event) =>
     pendingIdEventTouchesAddress(event, address),
   );
+  const walletPendingDnsEvents = dnsPendingEvents.filter((event) =>
+    pendingIdEventTouchesAddress(event, address),
+  );
   const marketplaceStats = marketplaceStatsFromSales(registrySales);
+  const dnsMarketplaceStats = marketplaceStatsFromSales(dnsRegistrySales);
   const creditTokens = tokens.filter((token) => !isBondTokenDefinition(token));
   const creditTokenListings = tokenListings.filter(
     (listing) => !BOND_TOKEN_IDS.has(listing.tokenId),
@@ -52261,6 +54450,10 @@ function MarketplaceApp({
           ? "Boost AMO listings loading."
           : `Boost AMO loaded. ${boostListings.length.toLocaleString()} open listing${boostListings.length === 1 ? "" : "s"}.`,
     },
+    dnsSummary: {
+      tone: "good",
+      text: `DNS sale tickets loaded in AMO. ${confirmedDnsRecords.length.toLocaleString()} confirmed .pow name${confirmedDnsRecords.length === 1 ? "" : "s"}, ${dnsRegistryListings.length.toLocaleString()} active listing${dnsRegistryListings.length === 1 ? "" : "s"}, ${pendingDnsRecords.length.toLocaleString()} pending.`,
+    },
     idSummary: {
       tone: "good",
       text: `ID sale tickets loaded in AMO. ${confirmedRecords.length.toLocaleString()} confirmed, ${registryListings.length.toLocaleString()} active listing${registryListings.length === 1 ? "" : "s"}, ${pendingRecords.length.toLocaleString()} pending.`,
@@ -52281,7 +54474,9 @@ function MarketplaceApp({
           tone: "bad",
           text: "Requested credit unavailable. The asset identifier does not match the verified AMO snapshot; scoped totals are withheld.",
         }
-      : marketplaceTab === "boosts" || marketplaceSummaryReadState.status === "ready"
+      : marketplaceTab === "boosts" ||
+          marketplaceTab === "dns" ||
+          marketplaceSummaryReadState.status === "ready"
       ? scopedStatus
       : {
           tone:
@@ -52299,6 +54494,11 @@ function MarketplaceApp({
   const refreshMarketplaceTab = () => {
     if (marketplaceTab === "boosts") {
       void refreshBoostMarketplace(true);
+      return;
+    }
+
+    if (marketplaceTab === "dns") {
+      onRefreshDns();
       return;
     }
 
@@ -52350,8 +54550,9 @@ function MarketplaceApp({
             </span>
             <h2>Trade ProofOfWork-native assets.</h2>
             <p>
-              IDs, credits, and bonds trade through sale tickets: sellers reserve
-              the asset, seal exact terms, and buyers settle on ProofOfWork.
+              IDs, DNS names, credits, and bonds trade through sale tickets:
+              sellers reserve the asset, seal exact terms, and buyers settle on
+              ProofOfWork.
             </p>
           </div>
 
@@ -52408,6 +54609,37 @@ function MarketplaceApp({
                     marketplaceSummaryReadState,
                     marketplaceStats.pendingSales,
                   )}
+                </strong>
+                <span>Pending Sales</span>
+              </div>
+            </div>
+          ) : marketplaceTab === "dns" ? (
+            <div className="id-launch-stats" aria-label="DNS AMO stats">
+              <div>
+                <strong>{dnsRegistryRecords.length.toLocaleString()}</strong>
+                <span>Total .pow Names</span>
+              </div>
+              <div>
+                <strong>{dnsRegistryListings.length.toLocaleString()}</strong>
+                <span>Active Listings</span>
+              </div>
+              <div>
+                <strong>{dnsMarketplaceStats.totalSales.toLocaleString()}</strong>
+                <span>DNS Sales</span>
+              </div>
+              <div>
+                <strong>
+                  {dnsMarketplaceStats.totalVolumeSats.toLocaleString()}
+                </strong>
+                <span>Volume proofs</span>
+              </div>
+              <div>
+                <strong>{pendingDnsRecords.length.toLocaleString()}</strong>
+                <span>Pending .pow</span>
+              </div>
+              <div>
+                <strong>
+                  {dnsMarketplaceStats.pendingSales.toLocaleString()}
                 </strong>
                 <span>Pending Sales</span>
               </div>
@@ -52511,12 +54743,15 @@ function MarketplaceApp({
           active={marketplaceTab}
           bondCount={listingBookComplete ? bondListings.length : undefined}
           boostCount={boostListings.length > 0 || (!boostMarketLoading && !boostMarketError) ? boostListings.length : undefined}
+          dnsCount={dnsRegistryListings.length}
           idCount={marketplaceSummaryVerified ? registryListings.length : undefined}
           onChange={setMarketplaceTab}
           tokenCount={marketplaceSummaryVerified ? creditTokens.length : undefined}
         />
 
-        {marketplaceTab !== "boosts" && !marketplaceSummaryVerified ? (
+        {marketplaceTab !== "boosts" &&
+        marketplaceTab !== "dns" &&
+        !marketplaceSummaryVerified ? (
           <MarketplaceSummaryGate
             busy={busy}
             onRetry={onRetryMarketplaceSummary}
@@ -52668,6 +54903,164 @@ function MarketplaceApp({
             />
           </section>
         </div>
+        ) : marketplaceTab === "dns" ? (
+        <div className="ids-content marketplace-content">
+          <section className="id-card">
+            <div className="id-card-head">
+              <div className="empty-icon" aria-hidden="true">
+                <Wallet size={24} />
+              </div>
+              <div>
+                <h3>List a .pow name</h3>
+                <p>
+                  Publish an on-chain listing for one of your confirmed .pow
+                  names. Listings cost {ID_MUTATION_PRICE_SATS.toLocaleString()} proofs.
+                </p>
+              </div>
+            </div>
+
+            {ownerControlledDnsRecords.length === 0 ? (
+              <p className="field-note">
+                {address
+                  ? "This wallet does not own any confirmed .pow names yet."
+                  : "Connect the owner wallet to list confirmed .pow names."}
+              </p>
+            ) : (
+              <>
+                <label>
+                  .pow name
+                  <select
+                    value={managedDns?.id ?? ""}
+                    onChange={(event) => setManagedDnsName(event.target.value)}
+                  >
+                    {ownerControlledDnsRecords.map((record) => (
+                      <option
+                        key={`${record.network}-${record.id}`}
+                        value={record.id}
+                      >
+                        {record.id}{DNS_SUFFIX}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                {managedDns ? (
+                  <dl className="id-manage-state">
+                    <div>
+                      <dt>Owner</dt>
+                      <dd>{shortAddress(managedDns.ownerAddress)}</dd>
+                    </div>
+                    <div>
+                      <dt>Resolver</dt>
+                      <dd>{shortAddress(managedDns.receiveAddress)}</dd>
+                    </div>
+                    <div>
+                      <dt>Registry</dt>
+                      <dd>{shortAddress(dnsRegistryAddress)}</dd>
+                    </div>
+                  </dl>
+                ) : null}
+                <p className="field-note">
+                  The published listing includes on-chain sale terms. Delisting
+                  costs {ID_MUTATION_PRICE_SATS.toLocaleString()} proofs and
+                  transfers invalidate old listings.
+                </p>
+              </>
+            )}
+          </section>
+
+          <IdMarketplaceCard
+            assetLabel=".pow name"
+            canCreateSaleAuthorization={canCreateDnsSaleAuthorization}
+            canPurchaseId={canPurchaseDns}
+            displaySuffix={DNS_SUFFIX}
+            feeRate={feeRate}
+            idPurchaseBytes={dnsPurchaseBytes}
+            idPurchaseOwnerAddress={dnsPurchaseOwnerAddress}
+            idPurchaseReceiveAddress={dnsPurchaseReceiveAddress}
+            idSaleAuthorization={dnsSaleAuthorization}
+            idSaleBuyerAddress={dnsSaleBuyerAddress}
+            idSalePriceSats={dnsSalePriceSats}
+            idSaleReceiveAddress={dnsSaleReceiveAddress}
+            idMarketplaceAction={dnsMarketplaceAction}
+            managedId={managedDns}
+            network="livenet"
+            publishListing={publishDnsListing}
+            setIdPurchaseOwnerAddress={setDnsPurchaseOwnerAddress}
+            setIdPurchaseReceiveAddress={setDnsPurchaseReceiveAddress}
+            setIdSaleBuyerAddress={setDnsSaleBuyerAddress}
+            setIdSalePriceSats={setDnsSalePriceSats}
+            setIdSaleReceiveAddress={setDnsSaleReceiveAddress}
+            setFeeRate={setFeeRate}
+            status={status}
+            submitPurchase={submitDnsPurchase}
+          />
+
+          <MarketplaceListingList
+            address={address}
+            assetLabel=".pow name"
+            assetPluralLabel=".pow names"
+            displaySuffix={DNS_SUFFIX}
+            feeRate={feeRate}
+            listings={dnsRegistryListings}
+            onDelist={delistDnsListing}
+            onSeal={sealDnsListing}
+            onUse={useDnsListing}
+            pendingEvents={dnsPendingEvents}
+            setFeeRate={setFeeRate}
+          />
+
+          <section className="id-card">
+            <div className="id-card-head">
+              <div className="empty-icon" aria-hidden="true">
+                <Clock size={24} />
+              </div>
+              <div>
+                <h3>Pending DNS Transfers</h3>
+                <p>
+                  Listings, purchases, and resolver changes touching your wallet
+                  stay here until confirmation.
+                </p>
+              </div>
+            </div>
+            <PendingIdEventList
+              address={address}
+              assetLabel="DNS"
+              displaySuffix={DNS_SUFFIX}
+              empty={
+                address
+                  ? "No pending DNS AMO transfers for this wallet."
+                  : "Connect a wallet to see pending DNS AMO transfers."
+              }
+              events={walletPendingDnsEvents}
+              receiverLabel="resolver"
+              searchPlaceholder="Search pending .pow names, addresses, txids"
+            />
+          </section>
+
+          <section className="id-card ids-registry-card">
+            <div className="id-card-head">
+              <div className="empty-icon" aria-hidden="true">
+                <Inbox size={24} />
+              </div>
+              <div>
+                <h3>DNS Supply</h3>
+                <p>
+                  Confirmed .pow names are AMO assets. The public listing book
+                  builds on the same registry.
+                </p>
+              </div>
+            </div>
+            <IdRecordList
+              displaySuffix={DNS_SUFFIX}
+              empty="No confirmed DNS records found yet."
+              initialLimit={24}
+              pageLabel=".pow names"
+              records={confirmedDnsRecords}
+              searchPlaceholder="Search .pow supply"
+              showPgp={false}
+            />
+          </section>
+        </div>
         ) : marketplaceTab === "boosts" ? (
           <BoostMarketplacePanel
             btcUsd={btcUsd}
@@ -52744,9 +55137,20 @@ function MarketplaceWorkspace({
   btcUsd,
   busy,
   canCreateSaleAuthorization,
+  canCreateDnsSaleAuthorization,
   canPurchaseId,
+  canPurchaseDns,
   delistListing,
+  delistDnsListing,
   feeRate,
+  dnsPurchaseBytes,
+  dnsPurchaseOwnerAddress,
+  dnsPurchaseReceiveAddress,
+  dnsSaleAuthorization,
+  dnsSaleBuyerAddress,
+  dnsSalePriceSats,
+  dnsSaleReceiveAddress,
+  dnsMarketplaceAction,
   idPurchaseBytes,
   idPurchaseOwnerAddress,
   idPurchaseReceiveAddress,
@@ -52755,6 +55159,7 @@ function MarketplaceWorkspace({
   idSalePriceSats,
   idSaleReceiveAddress,
   idMarketplaceAction,
+  managedDnsName,
   managedIdName,
   marketplaceSummaryReadState,
   completeListingBookError = "",
@@ -52762,21 +55167,35 @@ function MarketplaceWorkspace({
   onLoadCompleteListingBook,
   network,
   pendingEvents,
+  dnsPendingEvents,
   publishListing,
+  publishDnsListing,
+  dnsRegistryAddress,
+  dnsRegistryListings,
+  dnsRegistryRecords,
+  dnsRegistrySales,
   registryAddress,
   registryListings,
   registryRecords,
   registrySales,
   sealListing,
+  sealDnsListing,
+  setDnsPurchaseOwnerAddress,
+  setDnsPurchaseReceiveAddress,
+  setDnsSaleBuyerAddress,
+  setDnsSalePriceSats,
+  setDnsSaleReceiveAddress,
   setIdPurchaseOwnerAddress,
   setIdPurchaseReceiveAddress,
   setIdSaleBuyerAddress,
   setIdSalePriceSats,
   setIdSaleReceiveAddress,
   setFeeRate,
+  setManagedDnsName,
   setManagedIdName,
   status,
   submitPurchase,
+  submitDnsPurchase,
   buyTokenListing,
   tokenClosedListings,
   tokenListings,
@@ -52793,8 +55212,10 @@ function MarketplaceWorkspace({
   infinitySummary,
   onOpenTokenWorkspace,
   onOpenWalletWorkspace,
+  useDnsListing,
   useListing,
   onRefreshBonds,
+  onRefreshDns,
   onRetryMarketplaceSummary,
   onRefreshTokens,
 }: {
@@ -52802,9 +55223,20 @@ function MarketplaceWorkspace({
   btcUsd: number;
   busy: boolean;
   canCreateSaleAuthorization: boolean;
+  canCreateDnsSaleAuthorization: boolean;
   canPurchaseId: boolean;
+  canPurchaseDns: boolean;
   delistListing: (listing: PowIdListing) => void;
+  delistDnsListing: (listing: PowIdListing) => void;
   feeRate: number;
+  dnsPurchaseBytes: number;
+  dnsPurchaseOwnerAddress: string;
+  dnsPurchaseReceiveAddress: string;
+  dnsSaleAuthorization: string;
+  dnsSaleBuyerAddress: string;
+  dnsSalePriceSats: number;
+  dnsSaleReceiveAddress: string;
+  dnsMarketplaceAction: IdMarketplaceAction;
   idPurchaseBytes: number;
   idPurchaseOwnerAddress: string;
   idPurchaseReceiveAddress: string;
@@ -52813,6 +55245,7 @@ function MarketplaceWorkspace({
   idSalePriceSats: number;
   idSaleReceiveAddress: string;
   idMarketplaceAction: IdMarketplaceAction;
+  managedDnsName: string;
   managedIdName: string;
   marketplaceSummaryReadState: MarketplaceSummaryReadState;
   completeListingBookError?: string;
@@ -52820,21 +55253,37 @@ function MarketplaceWorkspace({
   onLoadCompleteListingBook?: () => void;
   network: BitcoinNetwork;
   pendingEvents: PowIdPendingEvent[];
+  dnsPendingEvents: PowIdPendingEvent[];
   publishListing: () => void;
+  publishDnsListing: () => void;
+  dnsRegistryAddress: string;
+  dnsRegistryListings: PowIdListing[];
+  dnsRegistryRecords: PowIdRecord[];
+  dnsRegistrySales: PowIdMarketplaceSale[];
   registryAddress: string;
   registryListings: PowIdListing[];
   registryRecords: PowIdRecord[];
   registrySales: PowIdMarketplaceSale[];
   sealListing: (listing: PowIdListing) => void;
+  sealDnsListing: (listing: PowIdListing) => void;
+  setDnsPurchaseOwnerAddress: (value: string) => void;
+  setDnsPurchaseReceiveAddress: (value: string) => void;
+  setDnsSaleBuyerAddress: (value: string) => void;
+  setDnsSalePriceSats: (value: number) => void;
+  setDnsSaleReceiveAddress: (value: string) => void;
   setIdPurchaseOwnerAddress: (value: string) => void;
   setIdPurchaseReceiveAddress: (value: string) => void;
   setIdSaleBuyerAddress: (value: string) => void;
   setIdSalePriceSats: (value: number) => void;
   setIdSaleReceiveAddress: (value: string) => void;
   setFeeRate: (value: number) => void;
+  setManagedDnsName: (value: string) => void;
   setManagedIdName: (value: string) => void;
   status: { tone: StatusTone; text: string };
   submitPurchase: (
+    event?: FormEvent<HTMLFormElement> | MouseEvent<HTMLButtonElement>,
+  ) => void;
+  submitDnsPurchase: (
     event?: FormEvent<HTMLFormElement> | MouseEvent<HTMLButtonElement>,
   ) => void;
   buyTokenListing: (listing: PowTokenListing) => void;
@@ -52853,8 +55302,10 @@ function MarketplaceWorkspace({
   infinitySummary?: InfinitySummarySnapshot;
   onOpenTokenWorkspace?: (token?: PowTokenDefinition) => void;
   onOpenWalletWorkspace?: (token?: PowTokenDefinition) => void;
+  useDnsListing: (listing: PowIdListing) => void;
   useListing: (listing: PowIdListing) => void;
   onRefreshBonds: () => void;
+  onRefreshDns: () => void;
   onRetryMarketplaceSummary: () => void;
   onRefreshTokens: () => void;
 }) {
@@ -52892,13 +55343,39 @@ function MarketplaceWorkspace({
   );
   const networkSales = registrySales.filter((sale) => sale.network === network);
   const marketplaceStats = marketplaceStatsFromSales(networkSales);
+  const networkDnsRecords = dnsRegistryRecords.filter(
+    (record) => record.network === network,
+  );
+  const confirmedDnsRecords = networkDnsRecords.filter(
+    (record) => record.confirmed,
+  );
+  const pendingDnsRecords = networkDnsRecords.filter(
+    (record) => !record.confirmed,
+  );
+  const networkDnsListings = dnsRegistryListings.filter(
+    (listing) => listing.network === network,
+  );
+  const networkDnsSales = dnsRegistrySales.filter(
+    (sale) => sale.network === network,
+  );
+  const dnsMarketplaceStats = marketplaceStatsFromSales(networkDnsSales);
   const ownerControlledIds = confirmedRecords.filter(
+    (record) => record.ownerAddress === address,
+  );
+  const ownerControlledDnsRecords = confirmedDnsRecords.filter(
     (record) => record.ownerAddress === address,
   );
   const managedId =
     ownerControlledIds.find((record) => record.id === managedIdName) ??
     ownerControlledIds[0];
+  const managedDns =
+    ownerControlledDnsRecords.find((record) => record.id === managedDnsName) ??
+    ownerControlledDnsRecords[0];
   const walletPendingEvents = pendingEvents.filter(
+    (event) =>
+      event.network === network && pendingIdEventTouchesAddress(event, address),
+  );
+  const walletPendingDnsEvents = dnsPendingEvents.filter(
     (event) =>
       event.network === network && pendingIdEventTouchesAddress(event, address),
   );
@@ -52967,6 +55444,11 @@ function MarketplaceWorkspace({
       return;
     }
 
+    if (marketplaceTab === "dns") {
+      onRefreshDns();
+      return;
+    }
+
     if (marketplaceTab === "bonds") {
       onRefreshBonds();
       return;
@@ -52989,7 +55471,7 @@ function MarketplaceWorkspace({
             {!marketplaceSummaryVerified
               ? `Canonical AMO summary ${marketplaceSummaryReadState.status === "unavailable" ? "unavailable" : "loading"}`
               : registryAddress
-              ? `${networkListings.length.toLocaleString()} ID listings · ${networkTokenCount.toLocaleString()} credits · ${bondListings.length.toLocaleString()} bond tickets · ${boostListings.length.toLocaleString()} Boost listings`
+              ? `${networkListings.length.toLocaleString()} ID listings · ${networkDnsListings.length.toLocaleString()} DNS listings · ${networkTokenCount.toLocaleString()} credits · ${bondListings.length.toLocaleString()} bond tickets · ${boostListings.length.toLocaleString()} Boost listings`
               : `No AMO registry configured for ${networkLabel(network)}`}
           </span>
         </div>
@@ -53016,12 +55498,15 @@ function MarketplaceWorkspace({
         active={marketplaceTab}
         bondCount={listingBookComplete ? bondListings.length : undefined}
         boostCount={boostListings.length > 0 || (!boostMarketLoading && !boostMarketError) ? boostListings.length : undefined}
+        dnsCount={networkDnsListings.length}
         idCount={marketplaceSummaryVerified ? networkListings.length : undefined}
         onChange={setMarketplaceTab}
         tokenCount={marketplaceSummaryVerified ? networkTokenCount : undefined}
       />
 
-      {marketplaceTab !== "boosts" && !marketplaceSummaryVerified ? (
+      {marketplaceTab !== "boosts" &&
+      marketplaceTab !== "dns" &&
+      !marketplaceSummaryVerified ? (
         <MarketplaceSummaryGate
           busy={busy}
           onRetry={onRetryMarketplaceSummary}
@@ -53219,6 +55704,196 @@ function MarketplaceWorkspace({
             }
             initialLimit={24}
             searchPlaceholder="Search registry supply"
+          />
+        </section>
+      </div>
+        </>
+      ) : marketplaceTab === "dns" ? (
+        <>
+      <div
+        className="id-launch-stats marketplace-workspace-stats"
+        aria-label="DNS AMO stats"
+      >
+        <div>
+          <strong>{networkDnsListings.length.toLocaleString()}</strong>
+          <span>Active Listings</span>
+        </div>
+        <div>
+          <strong>{dnsMarketplaceStats.totalSales.toLocaleString()}</strong>
+          <span>DNS Sales</span>
+        </div>
+        <div>
+          <strong>
+            {dnsMarketplaceStats.totalVolumeSats.toLocaleString()}
+          </strong>
+          <span>Volume proofs</span>
+        </div>
+        <div>
+          <strong>{pendingDnsRecords.length.toLocaleString()}</strong>
+          <span>Pending .pow</span>
+        </div>
+      </div>
+
+      <div className="ids-content marketplace-content">
+        <section className="id-card">
+          <div className="id-card-head">
+            <div className="empty-icon" aria-hidden="true">
+              <Wallet size={24} />
+            </div>
+            <div>
+              <h3>List a .pow name</h3>
+              <p>
+                Publish an on-chain listing for one of your confirmed .pow
+                names. Listings cost {ID_MUTATION_PRICE_SATS.toLocaleString()} proofs.
+              </p>
+            </div>
+          </div>
+
+          {ownerControlledDnsRecords.length === 0 ? (
+            <p className="field-note">
+              {address
+                ? "This wallet does not own any confirmed .pow names yet."
+                : "Connect the owner wallet to list confirmed .pow names."}
+            </p>
+          ) : (
+            <>
+              <label>
+                .pow name
+                <select
+                  value={managedDns?.id ?? ""}
+                  onChange={(event) => setManagedDnsName(event.target.value)}
+                >
+                  {ownerControlledDnsRecords.map((record) => (
+                    <option
+                      key={`${record.network}-${record.id}`}
+                      value={record.id}
+                    >
+                      {record.id}{DNS_SUFFIX}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              {managedDns ? (
+                <dl className="id-manage-state">
+                  <div>
+                    <dt>Owner</dt>
+                    <dd>{shortAddress(managedDns.ownerAddress)}</dd>
+                  </div>
+                  <div>
+                    <dt>Resolver</dt>
+                    <dd>{shortAddress(managedDns.receiveAddress)}</dd>
+                  </div>
+                  <div>
+                    <dt>Registry</dt>
+                    <dd>{shortAddress(dnsRegistryAddress)}</dd>
+                  </div>
+                </dl>
+              ) : null}
+              <p className="field-note">
+                The published listing includes on-chain sale terms. Delisting
+                costs {ID_MUTATION_PRICE_SATS.toLocaleString()} proofs and
+                transfers invalidate old listings.
+              </p>
+            </>
+          )}
+        </section>
+
+        <IdMarketplaceCard
+          assetLabel=".pow name"
+          canCreateSaleAuthorization={canCreateDnsSaleAuthorization}
+          canPurchaseId={canPurchaseDns}
+          displaySuffix={DNS_SUFFIX}
+          feeRate={feeRate}
+          idPurchaseBytes={dnsPurchaseBytes}
+          idPurchaseOwnerAddress={dnsPurchaseOwnerAddress}
+          idPurchaseReceiveAddress={dnsPurchaseReceiveAddress}
+          idSaleAuthorization={dnsSaleAuthorization}
+          idSaleBuyerAddress={dnsSaleBuyerAddress}
+          idSalePriceSats={dnsSalePriceSats}
+          idSaleReceiveAddress={dnsSaleReceiveAddress}
+          idMarketplaceAction={dnsMarketplaceAction}
+          managedId={managedDns}
+          network={network}
+          publishListing={publishDnsListing}
+          setIdPurchaseOwnerAddress={setDnsPurchaseOwnerAddress}
+          setIdPurchaseReceiveAddress={setDnsPurchaseReceiveAddress}
+          setIdSaleBuyerAddress={setDnsSaleBuyerAddress}
+          setIdSalePriceSats={setDnsSalePriceSats}
+          setIdSaleReceiveAddress={setDnsSaleReceiveAddress}
+          setFeeRate={setFeeRate}
+          status={status}
+          submitPurchase={submitDnsPurchase}
+        />
+
+        <MarketplaceListingList
+          address={address}
+          assetLabel=".pow name"
+          assetPluralLabel=".pow names"
+          displaySuffix={DNS_SUFFIX}
+          feeRate={feeRate}
+          listings={networkDnsListings}
+          onDelist={delistDnsListing}
+          onSeal={sealDnsListing}
+          onUse={useDnsListing}
+          pendingEvents={dnsPendingEvents.filter(
+            (event) => event.network === network,
+          )}
+          setFeeRate={setFeeRate}
+        />
+
+        <section className="id-card">
+          <div className="id-card-head">
+            <div className="empty-icon" aria-hidden="true">
+              <Clock size={24} />
+            </div>
+            <div>
+              <h3>Pending DNS Transfers</h3>
+              <p>
+                Listings, purchases, and resolver changes touching your wallet
+                stay here until confirmation.
+              </p>
+            </div>
+          </div>
+          <PendingIdEventList
+            address={address}
+            assetLabel="DNS"
+            displaySuffix={DNS_SUFFIX}
+            empty={
+              address
+                ? "No pending DNS AMO transfers for this wallet."
+                : "Connect a wallet to see pending DNS AMO transfers."
+            }
+            events={walletPendingDnsEvents}
+            receiverLabel="resolver"
+            searchPlaceholder="Search pending .pow names, addresses, txids"
+          />
+        </section>
+
+        <section className="id-card ids-registry-card">
+          <div className="id-card-head">
+            <div className="empty-icon" aria-hidden="true">
+              <Inbox size={24} />
+            </div>
+            <div>
+              <h3>DNS Supply</h3>
+              <p>
+                Confirmed .pow names are AMO assets. The standalone AMO
+                uses the same registry.
+              </p>
+            </div>
+          </div>
+          <IdRecordList
+            displaySuffix={DNS_SUFFIX}
+            empty={
+              dnsRegistryAddress
+                ? "No confirmed DNS records found yet."
+                : "Switch to Mainnet to browse the DNS AMO book."
+            }
+            initialLimit={24}
+            pageLabel=".pow names"
+            records={confirmedDnsRecords}
+            searchPlaceholder="Search .pow supply"
+            showPgp={false}
           />
         </section>
       </div>
@@ -54066,6 +56741,9 @@ function IdsWorkspace({
 
 function MarketplaceListingList({
   address,
+  assetLabel = "ID",
+  assetPluralLabel = "IDs",
+  displaySuffix = "@proofofwork.me",
   feeRate,
   listings,
   onDelist,
@@ -54075,6 +56753,9 @@ function MarketplaceListingList({
   setFeeRate,
 }: {
   address: string;
+  assetLabel?: string;
+  assetPluralLabel?: string;
+  displaySuffix?: string;
   feeRate: number;
   listings: PowIdListing[];
   onDelist: (listing: PowIdListing) => void;
@@ -54156,14 +56837,14 @@ function MarketplaceListingList({
         <div>
           <h3>Active Listings</h3>
           <p>
-            On-chain listings are canceled by delisting, expiry, or any
-            ownership transfer.
+            On-chain {assetLabel.toLowerCase()} listings are canceled by
+            delisting, expiry, or any ownership transfer.
           </p>
         </div>
       </div>
 
       <IdSearchControl
-        placeholder="Search listings, sellers, txids"
+        placeholder={`Search ${assetLabel.toLowerCase()} listings, sellers, txids`}
         resultCount={filteredListings.length}
         setValue={setSearchQuery}
         totalCount={visibleListings.length}
@@ -54171,7 +56852,7 @@ function MarketplaceListingList({
       />
       <MarketplaceListingBookTabs
         allCount={listings.length}
-        label="ID order book filter"
+        label={`${assetLabel} order book filter`}
         onChange={setListingBookFilter}
         sealedCount={sealedListings.length}
         unsealedCount={unsealedListings.length}
@@ -54197,7 +56878,9 @@ function MarketplaceListingList({
       ) : null}
 
       {listings.length === 0 ? (
-        <p className="field-note">No active on-chain listings yet.</p>
+        <p className="field-note">
+          No active on-chain {assetLabel.toLowerCase()} listings yet.
+        </p>
       ) : visibleListings.length === 0 ? (
         <p className="field-note">
           {listingBookFilter === "sealed"
@@ -54205,7 +56888,9 @@ function MarketplaceListingList({
             : "No unsealed active listings yet."}
         </p>
       ) : filteredListings.length === 0 ? (
-        <p className="field-note">No active listings match this search.</p>
+        <p className="field-note">
+          No active {assetLabel.toLowerCase()} listings match this search.
+        </p>
       ) : (
         <div className="id-record-list marketplace-listing-list">
           {listingPage.items.map((listing) => {
@@ -54215,7 +56900,7 @@ function MarketplaceListingList({
             return (
               <article className="id-record" key={listing.listingId}>
                 <div>
-                  <strong>{listing.id}@proofofwork.me</strong>
+                  <strong>{listing.id}{displaySuffix}</strong>
                   <span>
                     {listing.priceSats.toLocaleString()} proofs ·{" "}
                     {listingStatus(listing)} · Listed{" "}
@@ -54319,7 +57004,7 @@ function MarketplaceListingList({
         </div>
       )}
       <PaginationControls
-        label="Listings"
+        label={`${assetPluralLabel} listings`}
         onPageChange={setListingPageIndex}
         page={listingPage}
       />
@@ -54328,6 +57013,8 @@ function MarketplaceListingList({
 }
 
 function IdMarketplaceCard({
+  assetLabel = "ID",
+  displaySuffix = "@proofofwork.me",
   canCreateSaleAuthorization,
   canPurchaseId,
   feeRate,
@@ -54351,6 +57038,8 @@ function IdMarketplaceCard({
   status,
   submitPurchase,
 }: {
+  assetLabel?: string;
+  displaySuffix?: string;
   canCreateSaleAuthorization: boolean;
   canPurchaseId: boolean;
   feeRate: number;
@@ -54392,6 +57081,8 @@ function IdMarketplaceCard({
     : false;
   const publishInProgress = idMarketplaceAction === "publish";
   const buyInProgress = idMarketplaceAction === "buy";
+  const assetName = assetLabel.toLowerCase();
+  const receiveLabel = assetLabel === "DNS" ? "resolver" : "receive";
 
   return (
     <section className="id-card id-marketplace-card">
@@ -54414,8 +57105,8 @@ function IdMarketplaceCard({
           <h4>Publish on-chain listing</h4>
           <p className="field-note">
             {managedId
-              ? `Listing ${managedId.id}@proofofwork.me from ${shortAddress(managedId.ownerAddress)}.`
-              : "Select an owned confirmed ID above first."}
+              ? `Listing ${managedId.id}${displaySuffix} from ${shortAddress(managedId.ownerAddress)}.`
+              : `Select an owned confirmed ${assetName} above first.`}
           </p>
           <label>
             Seller price proofs
@@ -54440,7 +57131,7 @@ function IdMarketplaceCard({
             />
           </label>
           <label>
-            Locked receive address optional
+            Locked {receiveLabel} address optional
             <input
               autoComplete="off"
               onChange={(event) => setIdSaleReceiveAddress(event.target.value)}
@@ -54470,7 +57161,7 @@ function IdMarketplaceCard({
         <form className="id-action-form" onSubmit={submitPurchase}>
           <h4>
             {parsedSale
-              ? `Buy ${parsedSale.id}@proofofwork.me`
+              ? `Buy ${parsedSale.id}${displaySuffix}`
               : "Select an on-chain listing"}
           </h4>
           <p
@@ -54500,7 +57191,7 @@ function IdMarketplaceCard({
               />
             </label>
             <label>
-              New receive optional
+              New {receiveLabel} optional
               <input
                 autoComplete="off"
                 onChange={(event) =>
@@ -54545,12 +57236,20 @@ function IdMarketplaceCard({
 
 function PendingIdEventList({
   address,
+  assetLabel = "ID",
+  displaySuffix = "@proofofwork.me",
   empty,
   events,
+  receiverLabel = "receiver",
+  searchPlaceholder = "Search pending IDs, addresses, txids",
 }: {
   address: string;
+  assetLabel?: string;
+  displaySuffix?: string;
   empty: string;
   events: PowIdPendingEvent[];
+  receiverLabel?: string;
+  searchPlaceholder?: string;
 }) {
   const [searchQuery, setSearchQuery] = useState("");
   const [pageIndex, setPageIndex] = useState(0);
@@ -54566,14 +57265,16 @@ function PendingIdEventList({
   return (
     <>
       <IdSearchControl
-        placeholder="Search pending IDs, addresses, txids"
+        placeholder={searchPlaceholder}
         resultCount={filteredEvents.length}
         setValue={setSearchQuery}
         totalCount={events.length}
         value={searchQuery}
       />
       {filteredEvents.length === 0 ? (
-        <p className="field-note">No pending ID events match this search.</p>
+        <p className="field-note">
+          No pending {assetLabel.toLowerCase()} events match this search.
+        </p>
       ) : (
         <div className="id-record-list">
           {eventPage.items.map((event) => (
@@ -54583,10 +57284,13 @@ function PendingIdEventList({
             >
               <div>
                 <strong>
-                  {event.id ? `${event.id}@proofofwork.me` : "Registry event"}
+                  {event.id ? `${event.id}${displaySuffix}` : "Registry event"}
                 </strong>
                 <span>
-                  {pendingIdEventLabel(event, address)} ·{" "}
+                  {pendingIdEventLabel(event, address, {
+                    assetLabel,
+                    receiverLabel,
+                  })} ·{" "}
                   {event.amountSats.toLocaleString()} proofs
                 </span>
               </div>
@@ -54699,18 +57403,24 @@ function IdRecordList({
   records,
   allowVerification = false,
   contacts = [],
+  displaySuffix = "@proofofwork.me",
   empty,
   initialLimit,
   onAddContact,
+  pageLabel = "IDs",
   searchPlaceholder = "Search IDs, addresses, txids",
+  showPgp = true,
 }: {
   records: PowIdRecord[];
   allowVerification?: boolean;
   contacts?: ContactRecord[];
+  displaySuffix?: string;
   empty: string;
   initialLimit?: number;
   onAddContact?: (record: PowIdRecord) => void;
+  pageLabel?: string;
   searchPlaceholder?: string;
+  showPgp?: boolean;
 }) {
   const [searchQuery, setSearchQuery] = useState("");
   const [pageIndex, setPageIndex] = useState(0);
@@ -54738,7 +57448,7 @@ function IdRecordList({
         value={searchQuery}
       />
       {visibleRecords.length === 0 ? (
-        <p className="field-note">No IDs match this search.</p>
+        <p className="field-note">No records match this search.</p>
       ) : (
         <div className="id-record-list">
           {visibleRecords.map((record) => {
@@ -54752,7 +57462,7 @@ function IdRecordList({
                 key={`${record.network}-${record.txid}-${record.id}`}
               >
                 <div>
-                  <strong>{record.id}@proofofwork.me</strong>
+                  <strong>{record.id}{displaySuffix}</strong>
                   <span>
                     {record.confirmed ? "Confirmed" : "Pending"} ·{" "}
                     {record.amountSats.toLocaleString()} proofs
@@ -54767,10 +57477,12 @@ function IdRecordList({
                     <dt>Receives</dt>
                     <dd>{shortAddress(record.receiveAddress)}</dd>
                   </div>
-                  <div>
-                    <dt>PGP</dt>
-                    <dd>{record.pgpKey ? "Registered" : "None"}</dd>
-                  </div>
+                  {showPgp ? (
+                    <div>
+                      <dt>PGP</dt>
+                      <dd>{record.pgpKey ? "Registered" : "None"}</dd>
+                    </div>
+                  ) : null}
                   <div>
                     <dt>TX</dt>
                     <dd>{shortAddress(record.txid)}</dd>
@@ -54821,7 +57533,7 @@ function IdRecordList({
         </div>
       )}
       <PaginationControls
-        label="IDs"
+        label={pageLabel}
         onPageChange={setPageIndex}
         page={recordPage}
       />

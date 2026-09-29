@@ -974,6 +974,7 @@ const SLIPSTREAM_CLIENT_CODE_REQUIRED_MESSAGE =
 
 const PROTOCOL_PREFIX = "pwm1:";
 const ID_PROTOCOL_PREFIX = "pwid1:";
+const DNS_PROTOCOL_PREFIX = "pwdns1:";
 const TOKEN_PROTOCOL_PREFIX = "pwt1:";
 const INFINITY_BOND_MEMO = "powb";
 const INCEPTION_BOND_MEMO = "incb";
@@ -1490,6 +1491,7 @@ const ID_SALE_AUTH_VERSION_LEGACY = "pwid-sale-v1";
 const ID_SALE_AUTH_VERSION_ANCHORED = "pwid-sale-v2";
 const ID_SALE_AUTH_VERSION = "pwid-sale-v3";
 const ID_SALE_AUTH_VERSION_TICKET = "pwid-sale-v4";
+const DNS_SALE_AUTH_VERSION_TICKET = "pwdns-sale-v1";
 const ID_LISTING_ANCHOR_TYPE_LEGACY = "p2wsh-op-true-v1";
 const ID_LISTING_ANCHOR_TYPE = "seller-utxo-v1";
 const ID_LISTING_TICKET_ANCHOR_TYPE = "sale-ticket-v1";
@@ -1501,6 +1503,10 @@ const MAX_ATTACHMENT_BYTES = 60_000;
 const ID_REGISTRY_ADDRESSES = {
   livenet: "bc1qfwytlzyr3ym3enz2eutwtjsf9kkf6uqkjydk3e",
 };
+const DNS_REGISTRY_ADDRESSES = {
+  livenet: "1F1zepCJ8VPcPoeMt6G4BPKuE3CYAxCKNY",
+};
+const DNS_REGISTRY_ID = "domains@proofofwork.me";
 const TOKEN_INDEX_ADDRESSES = {
   livenet: "1L4xrDurN9VghknrbsSju2vQb6oXZe1Pbn",
 };
@@ -7542,6 +7548,10 @@ function registryAddressForNetwork(network) {
   return ID_REGISTRY_ADDRESSES[network] ?? "";
 }
 
+function dnsRegistryAddressForNetwork(network) {
+  return DNS_REGISTRY_ADDRESSES[network] ?? "";
+}
+
 function tokenIndexAddressForNetwork(network) {
   return TOKEN_INDEX_ADDRESSES[network] ?? "";
 }
@@ -12528,7 +12538,7 @@ function workAmoV8SignedMutationShape(txHex, network) {
     (output, protocolVout) =>
       decodedOpReturnMessages([output])
         .filter((message) =>
-          /^(?:pwa1|pwid1|pwm1|pwt1):/u.test(message),
+          /^(?:pwa1|pwid1|pwdns1|pwm1|pwt1):/u.test(message),
         )
         .map((message) => ({ message, protocolVout })),
   );
@@ -16213,6 +16223,7 @@ function proofProtocolDataBytesForVout(vout) {
       (message) =>
         message.startsWith(PROTOCOL_PREFIX) ||
         message.startsWith(ID_PROTOCOL_PREFIX) ||
+        message.startsWith(DNS_PROTOCOL_PREFIX) ||
         message.startsWith(TOKEN_PROTOCOL_PREFIX),
     )
     .reduce((total, message) => total + Buffer.byteLength(message, "utf8"), 0);
@@ -16229,10 +16240,14 @@ function firstProtocolOutputIndex(vout) {
 }
 
 function firstIdProtocolOutputIndex(vout) {
+  return firstRegistryProtocolOutputIndex(vout, ID_PROTOCOL_PREFIX);
+}
+
+function firstRegistryProtocolOutputIndex(vout, protocolPrefix) {
   return vout.findIndex(
     (output) =>
       canonicalProtocolCandidateFromOutput(output)?.prefix ===
-      ID_PROTOCOL_PREFIX,
+      protocolPrefix,
   );
 }
 
@@ -24917,6 +24932,26 @@ function normalizePowId(value) {
     .trim();
 }
 
+function normalizePowDnsName(value) {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/^@/u, "")
+    .replace(/^\./u, "")
+    .replace(/\.pow$/u, "")
+    .trim();
+}
+
+function powDnsNameIsValid(name) {
+  return /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/u.test(name);
+}
+
+function normalizeRegistryAssetId(value, saleVersion = "") {
+  return saleVersion === DNS_SALE_AUTH_VERSION_TICKET
+    ? normalizePowDnsName(value)
+    : normalizePowId(value);
+}
+
 function parseIdRegistrationPayload(payload, network) {
   let rawId = "";
   let ownerAddress = "";
@@ -24980,6 +25015,40 @@ function parseIdRegistrationPayload(payload, network) {
   };
 }
 
+function parseDnsRegistrationPayload(payload, network) {
+  if (!payload.startsWith("r1:")) {
+    return null;
+  }
+
+  const parts = payload.split(":");
+  if (parts.length !== 4) {
+    return null;
+  }
+
+  const [, nameEncoded, ownerAddress, receiveAddress] = parts;
+  let rawName = "";
+  try {
+    rawName = decodeTextBase64Url(nameEncoded);
+  } catch {
+    return null;
+  }
+
+  const id = normalizePowDnsName(rawName);
+  if (
+    !powDnsNameIsValid(id) ||
+    !isValidBitcoinAddress(ownerAddress, network) ||
+    !isValidBitcoinAddress(receiveAddress, network)
+  ) {
+    return null;
+  }
+
+  return {
+    id,
+    ownerAddress,
+    receiveAddress,
+  };
+}
+
 function parseIdReceiverUpdatePayload(payload, network) {
   if (!payload.startsWith("u:")) {
     return null;
@@ -25000,6 +25069,35 @@ function parseIdReceiverUpdatePayload(payload, network) {
 
   const id = normalizePowId(rawId);
   if (!id || !isValidBitcoinAddress(receiver, network)) {
+    return null;
+  }
+
+  return {
+    id,
+    receiveAddress: receiver,
+  };
+}
+
+function parseDnsReceiverUpdatePayload(payload, network) {
+  if (!payload.startsWith("u:")) {
+    return null;
+  }
+
+  const parts = payload.split(":");
+  if (parts.length !== 3) {
+    return null;
+  }
+
+  const [, nameEncoded, receiver] = parts;
+  let rawName = "";
+  try {
+    rawName = decodeTextBase64Url(nameEncoded);
+  } catch {
+    return null;
+  }
+
+  const id = normalizePowDnsName(rawName);
+  if (!powDnsNameIsValid(id) || !isValidBitcoinAddress(receiver, network)) {
     return null;
   }
 
@@ -25044,6 +25142,41 @@ function parseIdTransferPayload(payload, network) {
   };
 }
 
+function parseDnsTransferPayload(payload, network) {
+  if (!payload.startsWith("t:")) {
+    return null;
+  }
+
+  const parts = payload.split(":");
+  if (parts.length < 3 || parts.length > 4) {
+    return null;
+  }
+
+  const [, nameEncoded, owner, receiver] = parts;
+  let rawName = "";
+  try {
+    rawName = decodeTextBase64Url(nameEncoded);
+  } catch {
+    return null;
+  }
+
+  const receiveAddress = receiver?.trim() || owner;
+  const id = normalizePowDnsName(rawName);
+  if (
+    !powDnsNameIsValid(id) ||
+    !isValidBitcoinAddress(owner, network) ||
+    !isValidBitcoinAddress(receiveAddress, network)
+  ) {
+    return null;
+  }
+
+  return {
+    id,
+    ownerAddress: owner,
+    receiveAddress,
+  };
+}
+
 function saleAuthorizationDraft({
   anchorSigHashType,
   anchorSignature,
@@ -25065,7 +25198,7 @@ function saleAuthorizationDraft({
   const draft = {
     buyerAddress: buyerAddress?.trim() || undefined,
     expiresAt: expiresAt?.trim() || undefined,
-    id: normalizePowId(id),
+    id: normalizeRegistryAssetId(id, version),
     nonce,
     priceSats: Math.floor(priceSats),
     receiveAddress: receiveAddress?.trim() || undefined,
@@ -25077,12 +25210,14 @@ function saleAuthorizationDraft({
   if (
     version === ID_SALE_AUTH_VERSION_ANCHORED ||
     version === ID_SALE_AUTH_VERSION ||
-    version === ID_SALE_AUTH_VERSION_TICKET
+    version === ID_SALE_AUTH_VERSION_TICKET ||
+    version === DNS_SALE_AUTH_VERSION_TICKET
   ) {
     draft.anchorSigHashType = Number.isSafeInteger(anchorSigHashType)
       ? Math.floor(anchorSigHashType)
       : version === ID_SALE_AUTH_VERSION ||
-          version === ID_SALE_AUTH_VERSION_TICKET
+          version === ID_SALE_AUTH_VERSION_TICKET ||
+          version === DNS_SALE_AUTH_VERSION_TICKET
         ? ID_LISTING_ANCHOR_SIGHASH_TYPE
         : undefined;
     draft.anchorSignature = anchorSignature?.trim().toLowerCase() || undefined;
@@ -25091,7 +25226,8 @@ function saleAuthorizationDraft({
     draft.anchorTxid = anchorTxid?.trim().toLowerCase() || undefined;
     draft.anchorType =
       anchorType?.trim() ||
-      (version === ID_SALE_AUTH_VERSION_TICKET
+      (version === ID_SALE_AUTH_VERSION_TICKET ||
+      version === DNS_SALE_AUTH_VERSION_TICKET
         ? ID_LISTING_TICKET_ANCHOR_TYPE
         : version === ID_SALE_AUTH_VERSION
           ? ID_LISTING_ANCHOR_TYPE
@@ -25115,10 +25251,18 @@ function saleAuthorizationDraft({
 }
 
 function saleAuthorizationMessage(authorization) {
+  const assetSuffix =
+    authorization.version === DNS_SALE_AUTH_VERSION_TICKET
+      ? ".pow"
+      : "@proofofwork.me";
+  const saleLabel =
+    authorization.version === DNS_SALE_AUTH_VERSION_TICKET
+      ? "ProofOfWork.Me DNS Sale"
+      : "ProofOfWork.Me ID Sale";
   const lines = [
-    "ProofOfWork.Me ID Sale",
+    saleLabel,
     `version:${authorization.version}`,
-    `id:${normalizePowId(authorization.id)}@proofofwork.me`,
+    `id:${normalizeRegistryAssetId(authorization.id, authorization.version)}${assetSuffix}`,
     `seller:${authorization.sellerAddress}`,
     `priceSats:${Math.floor(authorization.priceSats)}`,
     `buyer:${authorization.buyerAddress || "*"}`,
@@ -25130,7 +25274,8 @@ function saleAuthorizationMessage(authorization) {
   if (
     authorization.version === ID_SALE_AUTH_VERSION_ANCHORED ||
     authorization.version === ID_SALE_AUTH_VERSION ||
-    authorization.version === ID_SALE_AUTH_VERSION_TICKET
+    authorization.version === ID_SALE_AUTH_VERSION_TICKET ||
+    authorization.version === DNS_SALE_AUTH_VERSION_TICKET
   ) {
     lines.push(
       `anchorType:${authorization.anchorType || ""}`,
@@ -25152,7 +25297,6 @@ function parseSaleAuthorizationJson(value, network) {
     throw new Error("Sale authorization must be a JSON object.");
   }
 
-  const id = normalizePowId(typeof parsed.id === "string" ? parsed.id : "");
   const sellerAddress =
     typeof parsed.sellerAddress === "string" ? parsed.sellerAddress.trim() : "";
   const buyerAddress =
@@ -25179,7 +25323,13 @@ function parseSaleAuthorizationJson(value, network) {
           ? ID_SALE_AUTH_VERSION
           : parsed.version === ID_SALE_AUTH_VERSION_TICKET
             ? ID_SALE_AUTH_VERSION_TICKET
+            : parsed.version === DNS_SALE_AUTH_VERSION_TICKET
+              ? DNS_SALE_AUTH_VERSION_TICKET
             : "";
+  const id = normalizeRegistryAssetId(
+    typeof parsed.id === "string" ? parsed.id : "",
+    version,
+  );
   const anchorType =
     typeof parsed.anchorType === "string" ? parsed.anchorType.trim() : "";
   const anchorSigHashType =
@@ -25211,7 +25361,14 @@ function parseSaleAuthorizationJson(value, network) {
       ? parsed.sellerPublicKey.trim().toLowerCase()
       : "";
 
-  if (!version || !id || !isValidBitcoinAddress(sellerAddress, network)) {
+  if (
+    !version ||
+    !id ||
+    (version === DNS_SALE_AUTH_VERSION_TICKET
+      ? !powDnsNameIsValid(id)
+      : false) ||
+    !isValidBitcoinAddress(sellerAddress, network)
+  ) {
     throw new Error("Sale authorization is invalid.");
   }
 
@@ -25269,7 +25426,10 @@ function parseSaleAuthorizationJson(value, network) {
     }
   }
 
-  if (version === ID_SALE_AUTH_VERSION_TICKET) {
+  if (
+    version === ID_SALE_AUTH_VERSION_TICKET ||
+    version === DNS_SALE_AUTH_VERSION_TICKET
+  ) {
     if (
       anchorType !== ID_LISTING_TICKET_ANCHOR_TYPE ||
       !Number.isSafeInteger(anchorVout) ||
@@ -25381,7 +25541,8 @@ function saleAuthorizationHasAnchor(authorization) {
   return (
     (authorization?.version === ID_SALE_AUTH_VERSION_ANCHORED ||
       authorization?.version === ID_SALE_AUTH_VERSION ||
-      authorization?.version === ID_SALE_AUTH_VERSION_TICKET) &&
+      authorization?.version === ID_SALE_AUTH_VERSION_TICKET ||
+      authorization?.version === DNS_SALE_AUTH_VERSION_TICKET) &&
     (authorization.anchorType === ID_LISTING_ANCHOR_TYPE_LEGACY ||
       authorization.anchorType === ID_LISTING_ANCHOR_TYPE ||
       authorization.anchorType === ID_LISTING_TICKET_ANCHOR_TYPE) &&
@@ -25396,7 +25557,8 @@ function saleAuthorizationHasAnchor(authorization) {
 function saleAuthorizationUsesSaleTicketAnchor(authorization) {
   return (
     saleAuthorizationHasAnchor(authorization) &&
-    authorization.version === ID_SALE_AUTH_VERSION_TICKET &&
+    (authorization.version === ID_SALE_AUTH_VERSION_TICKET ||
+      authorization.version === DNS_SALE_AUTH_VERSION_TICKET) &&
     authorization.anchorType === ID_LISTING_TICKET_ANCHOR_TYPE &&
     typeof authorization.anchorTxid === "string" &&
     /^[0-9a-f]{64}$/u.test(authorization.anchorTxid) &&
@@ -25462,7 +25624,8 @@ function listingAnchorIsPresent(vout, authorization) {
 
   if (
     authorization.version !== ID_SALE_AUTH_VERSION_ANCHORED &&
-    authorization.version !== ID_SALE_AUTH_VERSION_TICKET
+    authorization.version !== ID_SALE_AUTH_VERSION_TICKET &&
+    authorization.version !== DNS_SALE_AUTH_VERSION_TICKET
   ) {
     return false;
   }
@@ -25475,7 +25638,8 @@ function listingAnchorIsPresent(vout, authorization) {
   }
 
   if (
-    authorization.version === ID_SALE_AUTH_VERSION_TICKET &&
+    (authorization.version === ID_SALE_AUTH_VERSION_TICKET ||
+      authorization.version === DNS_SALE_AUTH_VERSION_TICKET) &&
     authorization.anchorType !== ID_LISTING_TICKET_ANCHOR_TYPE
   ) {
     return false;
@@ -26275,6 +26439,76 @@ function parseIdEventPayload(payload, network) {
   return null;
 }
 
+function parseDnsEventPayload(payload, network) {
+  const registration = parseDnsRegistrationPayload(payload, network);
+  if (registration) {
+    const event = {
+      kind: "register",
+      ...registration,
+    };
+    return workAmoV5HasNoTextStorageNul(event) ? event : null;
+  }
+
+  const update = parseDnsReceiverUpdatePayload(payload, network);
+  if (update) {
+    const event = {
+      kind: "update",
+      ...update,
+    };
+    return workAmoV5HasNoTextStorageNul(event) ? event : null;
+  }
+
+  const transfer = parseDnsTransferPayload(payload, network);
+  if (transfer) {
+    const event = {
+      kind: "transfer",
+      ...transfer,
+    };
+    return workAmoV5HasNoTextStorageNul(event) ? event : null;
+  }
+
+  const marketplaceTransfer = parseIdMarketplaceTransferPayload(
+    payload,
+    network,
+  );
+  if (marketplaceTransfer) {
+    const event = {
+      kind: "marketTransfer",
+      ...marketplaceTransfer,
+    };
+    return workAmoV5HasNoTextStorageNul(event) ? event : null;
+  }
+
+  const listing = parseIdListingPayload(payload, network);
+  if (listing) {
+    const event = {
+      kind: "list",
+      ...listing,
+    };
+    return workAmoV5HasNoTextStorageNul(event) ? event : null;
+  }
+
+  const seal = parseIdSaleSealPayload(payload, network);
+  if (seal) {
+    const event = {
+      kind: "seal",
+      ...seal,
+    };
+    return workAmoV5HasNoTextStorageNul(event) ? event : null;
+  }
+
+  const delisting = parseIdDelistingPayload(payload);
+  if (delisting) {
+    const event = {
+      kind: "delist",
+      ...delisting,
+    };
+    return workAmoV5HasNoTextStorageNul(event) ? event : null;
+  }
+
+  return null;
+}
+
 function shortAddress(value) {
   if (!value) {
     return "Unknown";
@@ -26484,6 +26718,27 @@ function idActivityItemsFromEvents(events) {
   });
 }
 
+function dnsActivityItemsFromEvents(events) {
+  return idActivityItemsFromEvents(events).map((item) => {
+    const description = String(item.description ?? "")
+      .replace(/@proofofwork\.me/gu, ".pow")
+      .replace(/\bID\b/gu, "DNS")
+      .replace(/PGP key registered|No PGP key/gu, "Resolver registered");
+    const title = String(item.title ?? "").replace(/\bID\b/gu, "DNS");
+    return {
+      ...item,
+      description,
+      detail:
+        item.kind === "id-register" ? "Resolver registered" : item.detail,
+      kind: String(item.kind ?? "").replace(/^id-/u, "dns-"),
+      tags: Array.isArray(item.tags)
+        ? item.tags.map((tag) => String(tag).replace(/\bID\b/gu, "DNS"))
+        : item.tags,
+      title,
+    };
+  });
+}
+
 function formatBytes(bytes) {
   if (!Number.isFinite(bytes) || bytes <= 0) {
     return "0 B";
@@ -26576,7 +26831,7 @@ function activityKey(item) {
   const protocol = String(item?.protocol ?? "").trim().toLowerCase();
   if (
     item?.confirmed !== true &&
-    ["pwm1", "pwa1", "pwid1", "pwt1"].includes(protocol)
+    ["pwm1", "pwa1", "pwid1", "pwdns1", "pwt1"].includes(protocol)
   ) {
     const protocolVout = exactPositionInteger("protocolVout");
     const recordOrdinal = exactPositionInteger("recordOrdinal");
@@ -32860,6 +33115,20 @@ function idRegistryStateFromTransactions(
   network,
   options = {},
 ) {
+  const protocolPrefix = options.protocolPrefix ?? ID_PROTOCOL_PREFIX;
+  const protocolName =
+    options.protocol ??
+    String(protocolPrefix).replace(/:$/u, "").trim().toLowerCase();
+  const parseEventPayload = options.parseEventPayload ?? parseIdEventPayload;
+  const activityItemsFromEvents =
+    options.activityItemsFromEvents ?? idActivityItemsFromEvents;
+  const registryRole = options.registryRole ?? "pwid-registry";
+  const sellerUtxoSaleAuthVersion =
+    options.sellerUtxoSaleAuthVersion ?? ID_SALE_AUTH_VERSION;
+  const saleTicketAuthVersion =
+    options.saleTicketAuthVersion ?? ID_SALE_AUTH_VERSION_TICKET;
+  const legacySaleAuthVersion =
+    options.legacySaleAuthVersion ?? ID_SALE_AUTH_VERSION_LEGACY;
   const initialConfirmedState = options.initialConfirmedState
     ? normalizeWorkAmoV5RawIdState(options.initialConfirmedState)
     : { listings: [], records: [] };
@@ -32873,7 +33142,10 @@ function idRegistryStateFromTransactions(
       return [];
     }
 
-    const paymentCutoffVout = firstIdProtocolOutputIndex(vout);
+    const paymentCutoffVout = firstRegistryProtocolOutputIndex(
+      vout,
+      protocolPrefix,
+    );
     const registryPaymentOutputs = paymentOutputsBeforeVout(
       vout,
       paymentCutoffVout,
@@ -32883,15 +33155,15 @@ function idRegistryStateFromTransactions(
     const eventRecords = vout.flatMap((output, protocolVout) => {
       const candidate = canonicalProtocolCandidateFromOutput(output);
       if (
-        candidate?.prefix !== ID_PROTOCOL_PREFIX ||
+        candidate?.prefix !== protocolPrefix ||
         candidate.decodeValid !== true
       ) {
         return [];
       }
       const message = String(candidate.text ?? "");
       try {
-        const eventMessage = parseIdEventPayload(
-          message.slice(ID_PROTOCOL_PREFIX.length),
+        const eventMessage = parseEventPayload(
+          message.slice(protocolPrefix.length),
           network,
         );
         return eventMessage
@@ -32913,13 +33185,16 @@ function idRegistryStateFromTransactions(
 
     const blockTime = tokenTransactionTime(tx);
     const eventSpentOutpoints = spentOutpoints(vin);
-    // Preserve the historical resolver cutoff at the first PWID carrier,
+    // Preserve the historical resolver cutoff at the first registry carrier,
     // including a malformed earlier carrier. The actual accepted record vout
     // remains recorded separately below.
-    const eventPaymentOutputs = paymentOutputsBeforeIdProtocol(vout);
+    const eventPaymentOutputs = paymentOutputsBeforeVout(
+      vout,
+      firstRegistryProtocolOutputIndex(vout, protocolPrefix),
+    );
     const auditPaymentOutputs = paymentOutputsBeforeVout(
       vout,
-      firstIdProtocolOutputIndex(vout),
+      firstRegistryProtocolOutputIndex(vout, protocolPrefix),
     );
     return eventRecords.flatMap(
       ({
@@ -32943,7 +33218,7 @@ function idRegistryStateFromTransactions(
       network,
       paymentOutputs: eventPaymentOutputs,
       payload: protocolMessage,
-      protocol: "pwid1",
+      protocol: protocolName,
       protocolPayload: protocolMessage,
       protocolVout,
       protocolDataBytes: Buffer.byteLength(protocolMessage, "utf8"),
@@ -33117,7 +33392,7 @@ function idRegistryStateFromTransactions(
         claimAll: false,
         requireBeforeProtocol: true,
         requiredSats: String(idEventMinimumPaymentSats(event.kind)),
-        role: "pwid-registry",
+        role: registryRole,
       }],
       {
         claimedVouts: claimedRegistryPaymentVoutsByTxid.get(txid) ?? [],
@@ -33439,12 +33714,12 @@ function idRegistryStateFromTransactions(
         saleAuthorizationExpired(event.saleAuthorization, event.createdAt) ||
         (event.listingVersion === "list3" && !event.listingAnchorPresent) ||
         (event.listingVersion === "list4" &&
-          event.saleAuthorization.version !== ID_SALE_AUTH_VERSION) ||
+          event.saleAuthorization.version !== sellerUtxoSaleAuthVersion) ||
         (event.listingVersion === "list5" &&
-          (event.saleAuthorization.version !== ID_SALE_AUTH_VERSION_TICKET ||
+          (event.saleAuthorization.version !== saleTicketAuthVersion ||
             !event.listingAnchorPresent)) ||
         (event.listingVersion === "list2" &&
-          event.saleAuthorization.version !== ID_SALE_AUTH_VERSION_LEGACY)
+          event.saleAuthorization.version !== legacySaleAuthVersion)
       ) {
         continue;
       }
@@ -33874,12 +34149,12 @@ function idRegistryStateFromTransactions(
           saleAuthorizationExpired(event.saleAuthorization, event.createdAt) ||
           (event.listingVersion === "list3" && !event.listingAnchorPresent) ||
           (event.listingVersion === "list4" &&
-            event.saleAuthorization.version !== ID_SALE_AUTH_VERSION) ||
+            event.saleAuthorization.version !== sellerUtxoSaleAuthVersion) ||
           (event.listingVersion === "list5" &&
-            (event.saleAuthorization.version !== ID_SALE_AUTH_VERSION_TICKET ||
+            (event.saleAuthorization.version !== saleTicketAuthVersion ||
               !event.listingAnchorPresent)) ||
           (event.listingVersion === "list2" &&
-            event.saleAuthorization.version !== ID_SALE_AUTH_VERSION_LEGACY)
+            event.saleAuthorization.version !== legacySaleAuthVersion)
         ) {
           return [];
         }
@@ -34048,7 +34323,7 @@ function idRegistryStateFromTransactions(
         }
       : {}),
     activity:
-      idActivityItemsFromEvents(activityEvents).sort(compareActivityItems),
+      activityItemsFromEvents(activityEvents).sort(compareActivityItems),
     listings: [...listings.values()].sort(
       (left, right) =>
         Date.parse(right.createdAt) - Date.parse(left.createdAt) ||
@@ -34420,6 +34695,74 @@ async function registryPayload(network) {
     source: mempoolBase(network),
     transactionCount: txs.length,
   });
+}
+
+async function dnsRegistryPayload(network) {
+  const registryAddress = dnsRegistryAddressForNetwork(network);
+  if (!registryAddress) {
+    return {
+      ...registryPayloadFromState(
+        {
+          activity: [],
+          pendingEvents: [],
+          records: [],
+          sales: [],
+        },
+        {
+          listings: [],
+          network,
+          registryAddress: "",
+          source: mempoolBase(network),
+        },
+      ),
+      assetSuffix: ".pow",
+      minMutationPriceSats: ID_MUTATION_PRICE_SATS,
+      minRegistrationPriceSats: ID_REGISTRATION_PRICE_SATS,
+      protocol: "pwdns1",
+      protocolPrefix: DNS_PROTOCOL_PREFIX,
+      registryId: DNS_REGISTRY_ID,
+    };
+  }
+
+  const txs = await fetchRegistryTransactions(registryAddress, network);
+  const state = idRegistryStateFromTransactions(
+    txs,
+    registryAddress,
+    network,
+    {
+      activityItemsFromEvents: dnsActivityItemsFromEvents,
+      includeAuditEvents: true,
+      parseEventPayload: parseDnsEventPayload,
+      protocol: "pwdns1",
+      protocolPrefix: DNS_PROTOCOL_PREFIX,
+      registryRole: "pwdns-registry",
+      saleTicketAuthVersion: DNS_SALE_AUTH_VERSION_TICKET,
+    },
+  );
+  const listings = await filterSpendableListings(state.listings, network);
+  return {
+    ...registryPayloadFromState(state, {
+      listings,
+      network,
+      registryAddress,
+      source: mempoolBase(network),
+      transactionCount: txs.length,
+    }),
+    assetSuffix: ".pow",
+    minMutationPriceSats: ID_MUTATION_PRICE_SATS,
+    minRegistrationPriceSats: ID_REGISTRATION_PRICE_SATS,
+    protocol: "pwdns1",
+    protocolPrefix: DNS_PROTOCOL_PREFIX,
+    registryId: DNS_REGISTRY_ID,
+  };
+}
+
+async function strictPublicDnsRegistryPayload(network, options = {}) {
+  const payload = await dnsRegistryPayload(network);
+  if (options.fresh === true) {
+    return payload;
+  }
+  return payload;
 }
 
 async function indexedRegistryPayload(network, options = {}) {
@@ -79396,6 +79739,107 @@ async function handleRequest(request, response) {
         await fetchBlockTxids(blockHash, network),
         "public, max-age=300",
       );
+      return;
+    }
+
+    if (
+      url.pathname === "/api/v1/dns-summary"
+    ) {
+      const payload = await strictPublicDnsRegistryPayload(network, {
+        fresh: freshRead,
+      });
+      jsonResponse(
+        response,
+        200,
+        url.searchParams.get("projection") === "counts-v1"
+          ? registryCountsProjection(payload)
+          : payload,
+        freshRead ? FRESH_READ_CACHE_CONTROL : EXPENSIVE_READ_CACHE_CONTROL,
+      );
+      return;
+    }
+
+    if (url.pathname === "/api/v1/dns") {
+      jsonResponse(
+        response,
+        200,
+        await strictPublicDnsRegistryPayload(network, { fresh: freshRead }),
+        freshRead ? FRESH_READ_CACHE_CONTROL : EXPENSIVE_READ_CACHE_CONTROL,
+      );
+      return;
+    }
+
+    if (
+      pathParts.length === 4 &&
+      pathParts[0] === "api" &&
+      pathParts[1] === "v1" &&
+      pathParts[2] === "dns"
+    ) {
+      const id = normalizePowDnsName(decodeURIComponent(pathParts[3]));
+      if (!powDnsNameIsValid(id)) {
+        errorResponse(response, 400, "Invalid ProofOfWork DNS name.");
+        return;
+      }
+      const registry = await strictPublicDnsRegistryPayload(network, {
+        fresh: freshRead || url.searchParams.get("current") === "1",
+      });
+      const records = (Array.isArray(registry.records)
+        ? registry.records
+        : []
+      ).filter((record) => normalizePowDnsName(String(record?.id ?? "")) === id);
+      const confirmed = records.find((record) => record.confirmed);
+      const pending = records.find((record) => !record.confirmed);
+      const listings = (Array.isArray(registry.listings)
+        ? registry.listings
+        : []
+      ).filter((listing) => normalizePowDnsName(String(listing?.id ?? "")) === id);
+      const exactListingIds = new Set(
+        listings
+          .map((listing) => String(listing?.listingId ?? "").toLowerCase())
+          .filter((listingId) => /^[0-9a-f]{64}$/u.test(listingId)),
+      );
+      const pendingEvents = (Array.isArray(registry.pendingEvents)
+        ? registry.pendingEvents
+        : []
+      ).filter(
+        (event) =>
+          normalizePowDnsName(String(event?.id ?? "")) === id ||
+          exactListingIds.has(String(event?.listingId ?? "").toLowerCase()),
+      );
+      const sales = (Array.isArray(registry.sales) ? registry.sales : []).filter(
+        (sale) => normalizePowDnsName(String(sale?.id ?? "")) === id,
+      );
+      const lifecycleTxids = new Set([
+        ...listings.map((listing) => String(listing?.listingId ?? "").toLowerCase()),
+        ...sales.map((sale) => String(sale?.txid ?? "").toLowerCase()),
+      ]);
+      const activity = (Array.isArray(registry.activity)
+        ? registry.activity
+        : []
+      ).filter(
+        (item) =>
+          normalizePowDnsName(String(item?.id ?? "")) === id ||
+          lifecycleTxids.has(String(item?.txid ?? "").toLowerCase()) ||
+          exactListingIds.has(String(item?.listingId ?? "").toLowerCase()),
+      );
+      jsonResponse(response, 200, {
+        activity,
+        assetSuffix: ".pow",
+        id,
+        indexedAt: registry.indexedAt,
+        listings,
+        name: `${id}.pow`,
+        network,
+        pendingEvents,
+        record: confirmed ?? pending ?? null,
+        records,
+        registryAddress: registry.registryAddress,
+        registryId: DNS_REGISTRY_ID,
+        routable: Boolean(confirmed),
+        sales,
+        source: registry.source,
+        status: confirmed ? "confirmed" : pending ? "pending" : "available",
+      });
       return;
     }
 

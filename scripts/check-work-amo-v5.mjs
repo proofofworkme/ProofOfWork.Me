@@ -3352,7 +3352,7 @@ assert.equal(
   ]).sha256,
 );
 
-const mixedProtocols = ["pwm1", "pwa1", "pwid1", "pwb1", "pwt1"];
+const mixedProtocols = ["pwm1", "pwa1", "pwid1", "pwdns1", "pwb1", "pwt1"];
 const mixedProtocolEvents = mixedProtocols.map((protocol, index) => ({
   feeSats: String(index + 1),
   kind: `display-label-${index}`,
@@ -3402,6 +3402,7 @@ assert.deepEqual(
     "pwm1-valid",
     "pwa1-valid",
     "pwid1-valid",
+    "pwdns1-valid",
     "pwb1-valid",
     "pwt1-invalid",
   ],

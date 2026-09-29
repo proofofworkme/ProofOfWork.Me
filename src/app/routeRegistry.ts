@@ -1,6 +1,7 @@
 export type AppSurface =
   | "landing"
   | "id-launch"
+  | "dns-launch"
   | "computer"
   | "desktop"
   | "browser"
@@ -42,6 +43,14 @@ export function isIdLaunchRoute() {
   }
 
   return hostname() === "id.proofofwork.me" || searchFlag("id-launch");
+}
+
+export function isDnsLaunchRoute() {
+  if (import.meta.env.VITE_DNS_LAUNCH_ONLY === "1") {
+    return true;
+  }
+
+  return hostname() === "dns.proofofwork.me" || searchFlag("dns-launch");
 }
 
 export function isLandingRoute() {
@@ -178,6 +187,7 @@ export function isGrowthRoute() {
 export function detectAppSurface(): AppSurface {
   if (isLandingRoute()) return "landing";
   if (isIdLaunchRoute()) return "id-launch";
+  if (isDnsLaunchRoute()) return "dns-launch";
   if (isDesktopRoute()) return "desktop";
   if (isBrowserRoute()) return "browser";
   if (isBoostRoute()) return "boost";

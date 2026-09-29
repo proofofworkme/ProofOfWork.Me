@@ -7,21 +7,23 @@ Autonomous Money Organization.
 ## Product Boundaries
 
 - `id.proofofwork.me` is registration-only.
+- `dns.proofofwork.me` is `.pow` claim/search-only; `domain.proofofwork.me` and `domains.proofofwork.me` redirect there.
 - `computer.proofofwork.me` contains the authenticated AMO workspace.
 - `amo.proofofwork.me` is the canonical standalone AMO app.
 - `marketplace.proofofwork.me` is a compatibility hostname for the same app.
 
-AMO is organized by asset tabs. IDs, Credits, POWB, INCB, and Boost are live
-asset classes. IDs, credits, and bonds use sale-ticket settlement so the buyer
+AMO is organized by asset tabs. IDs, DNS, Credits, POWB, INCB, and Boost are live
+asset classes. IDs, DNS, credits, and bonds use sale-ticket settlement so the buyer
 path spends a scarce UTXO, pays the seller, pays the registry mutation fee, and
 writes a chain-readable transfer/purchase event. Boost exposes active
 `pwb1:list5` sale tickets in the same AMO surface after owners list from Boost
 or from the original Boost Mail item.
 - `log.proofofwork.me` is the public read-only ProofOfWork Computer log for tx-backed app actions.
 - The IDs workspace is for registration, receiver updates, and direct owner transfers only.
+- The DNS launch surface is for `.pow` claim/search only.
 - AMO is for on-chain listings, seals, delistings, buyer-funded purchases, credit sales, and future asset trades.
 - AMO actions with txids should be visible in Log, including listing tx, seal tx, delisting tx, buyer-funded transfer/buy tx, credit sale tx, and sale-ticket UTXO references.
-- AMO attention metrics should be derived from valid chain events: active listings, ID sale count, credit sale count, seller-price sale volume, credit sale volume, and mutation-fee flow.
+- AMO attention metrics should be derived from valid chain events: active listings, ID sale count, DNS sale count, credit sale count, seller-price sale volume, credit sale volume, and mutation-fee flow.
 - POWB and INCB market actions use the same credit sale-ticket machinery under their reserved synthetic assets. POWB supply comes directly from confirmed `pwm1:m:powb` recipient proof payments. INCB valuation and issuance amount come from direct bond proofs plus attached WORK valued by the send-time oracle: the last confirmed green canonical live WORK summary at H-1, hash-bound to the exact previous block. Every transaction in the bond block is excluded. Confirmation fixes the resulting balance and supply. Neither asset can be issued by `pwt1:mint`.
 
 ## Current ID AMO Model
@@ -50,6 +52,36 @@ The current flow:
 6. The resolver accepts the purchase only if the listing is active and sealed, the seller is still the current owner, the sale ticket is spent, seller payment is sufficient, and buyer/receiver constraints match.
 
 The sale ticket is the scarce settlement point. Competing buyers must spend the same outpoint, so only one purchase can confirm. A vandal cannot consume the ticket without paying the seller the required price plus the ticket value.
+
+## Current DNS AMO Model
+
+The live DNS AMO writes on-chain listing-book events to the canonical
+ProofOfWork DNS registry address for `domains@proofofwork.me`.
+
+Current events:
+
+```text
+pwdns1:list5:<sale-ticket-json-base64url>
+pwdns1:seal5:<listing-txid>:<sealed-sale-ticket-json-base64url>
+pwdns1:delist5:<listing-txid>
+pwdns1:buy5:<listing-txid>:<new-owner-address>:<new-resolver-address?>
+```
+
+Each listing mutation pays the 546-proof DNS registry mutation fee. DNS sale
+tickets use signed `pwdns-sale-v1` authorizations and display the asset with
+the implied `.pow` suffix. No DNS event carries a PGP key.
+
+The current flow:
+
+1. The current `.pow` owner chooses an owned confirmed name.
+2. The owner enters sale terms with price, optional buyer lock, optional resolver-address lock, nonce, and optional expiry.
+3. The app publishes `pwdns1:list5` and creates a 546-proof seller-controlled sale-ticket UTXO in the listing transaction.
+4. After the listing txid exists, the seller publishes `pwdns1:seal5` with a `SIGHASH_SINGLE|ANYONECANPAY` signature for the sale ticket.
+5. A buyer funds one `pwdns1:buy5` transaction that spends the sale ticket, pays the seller price plus ticket value, pays the 546-proof DNS registry mutation fee, and writes the `.pow` transfer event.
+6. The resolver accepts the purchase only if the listing is active and sealed, the seller is still the current owner, the sale ticket is spent, seller payment is sufficient, and buyer/resolver constraints match.
+
+The sale ticket is the scarce settlement point for DNS names too. Competing
+buyers must spend the same outpoint, so only one `.pow` purchase can confirm.
 
 ## Sales Metrics
 
@@ -1565,12 +1597,13 @@ New clients must write `list5`, `seal5`, `delist5`, and `buy5`.
 
 ## General Asset Trading
 
-IDs and Credits are the first AMO assets. AMO should stay asset-agnostic without
+IDs, DNS names, and Credits are AMO assets. AMO should stay asset-agnostic without
 weakening the live ID or credit sale-ticket protocols.
 
 Future asset classes can include:
 
 - ProofOfWork IDs
+- ProofOfWork DNS `.pow` names
 - apps
 - files
 - code bundles

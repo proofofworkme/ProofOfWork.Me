@@ -3951,7 +3951,7 @@ function canonicalRecord(record) {
   if (
     !txid ||
     !position ||
-    !["pwa1", "pwm1", "pwid1", "pwb1", "pwt1"].includes(protocol) ||
+    !["pwa1", "pwm1", "pwid1", "pwdns1", "pwb1", "pwt1"].includes(protocol) ||
     !record?.tx ||
     !transactionMinerFeeSats ||
     (

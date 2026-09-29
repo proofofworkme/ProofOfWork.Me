@@ -85,6 +85,18 @@ const SURFACES = [
     ],
   },
   {
+    key: "dns",
+    title: "dns.proofofwork.me",
+    url: "https://dns.proofofwork.me/",
+    probes: [
+      {
+        label: "dns summary",
+        url: apiUrl("/api/v1/dns-summary?network=livenet"),
+        validate: validateRegistrySummary,
+      },
+    ],
+  },
+  {
     key: "desktop",
     title: "desktop.proofofwork.me",
     url: "https://desktop.proofofwork.me/",
