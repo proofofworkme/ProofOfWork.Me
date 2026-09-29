@@ -240,7 +240,7 @@ assert.match(releaseHealth, /unverified node release archives/u);
 assert.match(releaseHealthService, /ProtectSystem=strict/u);
 assert.match(releaseHealthService, /^CapabilityBoundingSet=CAP_DAC_READ_SEARCH$/mu);
 assert.match(releasePruneService, /^CapabilityBoundingSet=CAP_DAC_READ_SEARCH$/mu);
-assert.match(releasePruneService, /^ExecStart=.*\/managed 3 --dry-run$/mu);
+assert.match(releasePruneService, /^ExecStart=.*\/managed 2 --apply$/mu);
 assert.match(releaseHealthService, /^Nice=10$/mu);
 assert.match(releaseHealthService, /^IOSchedulingClass=idle$/mu);
 assert.match(releaseHealthService, /^CPUWeight=10$/mu);
@@ -605,8 +605,8 @@ try {
       `${uiRoot}:2`,
     )
     .replace(
-      "/data/proofofwork-release-backups/managed:3",
-      `${nodeRoot}:3`,
+      "/data/proofofwork-release-backups/managed:2 | /data/proofofwork-release-backups/managed:3",
+      `${nodeRoot}:2 | ${nodeRoot}:3`,
     );
   writeFileSync(fixturePath, fixture, { mode: 0o700 });
   chmodSync(fixturePath, 0o700);

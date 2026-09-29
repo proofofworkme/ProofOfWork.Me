@@ -4,8 +4,8 @@ RequiresMountsFor=/data/proofofwork-release-backups
 
 [Service]
 Type=oneshot
-# Node archive deletion awaits a separate exact retention approval.
-ExecStart=/usr/local/sbin/proofofwork-release-prune /data/proofofwork-release-backups/managed 3 --dry-run
+# Audit 28 operator approval: current release and latest verified recovery archive.
+ExecStart=/usr/local/sbin/proofofwork-release-prune /data/proofofwork-release-backups/managed 2 --apply
 TimeoutStartSec=30m
 NoNewPrivileges=true
 PrivateTmp=true

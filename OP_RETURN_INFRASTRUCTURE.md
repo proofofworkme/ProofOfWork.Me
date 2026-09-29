@@ -5634,3 +5634,9 @@ copies. It refuses process/config references, mounts, unverified source
 checkouts, missing recovery material, corrupted bytes, and concurrent deploys.
 The latest prior release and its source remain available. This closes the
 rollback/staging accumulation recurrence rather than relying on age alone.
+
+Audit 28 also approves node managed-archive retention in apply mode with a
+current/latest pair (`managed 2 --apply`). The live commit/tree archive stays
+protected even outside the ordinary keep window. Unverified legacy artifacts,
+active replay databases, logical backups and incident evidence remain excluded.
+The three-archive manual target remains supported for conservative rehearsals.
