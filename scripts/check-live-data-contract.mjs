@@ -3218,6 +3218,8 @@ expectAll("AMO V5 legacy bootstrap carry is exact and separately reconciled", le
   /WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_REASON_CODE/,
   /const legacyBootstrapCarryFields = new Set\(\[[\s\S]*?"tokenMarketplaceFeeSats"[\s\S]*?"tokenTransferFlowSats"[\s\S]*?\]\)/,
   /committed !== valid \+ expectedCarry/,
+  /publishedBaseNetworkValueCandidates[\s\S]*?dnsOverlay\.dnsTotalQ8/,
+  /publishedBaseNetworkValueEquals\(committedBaseNetworkValueQ8\)/,
   /committedBaseNetworkValueQ8 !==\s*finalValidBaseNetworkValueQ8 \+ legacyBootstrapGrowthValueQ8/,
   /legacyBootstrapEffectiveCreditFixedQ8 =[\s\S]*?legacyBootstrapCreditRemainderQ8[\s\S]*?legacyBootstrapCreditFixedQ8/,
   /legacyBootstrapCreditFixedOverlapQ8 =\s*legacyBootstrapCreditFixedQ8 - legacyBootstrapEffectiveCreditFixedQ8/,

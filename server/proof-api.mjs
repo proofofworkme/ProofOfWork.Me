@@ -66575,6 +66575,23 @@ function workAmoV5LegacyBootstrapReconciliation(
     workFloor?.actualValue?.baseNetworkValueQ8,
   );
   const legacyBootstrapGrowthValueQ8 = BigInt(evidence.growthValueQ8);
+  const dnsOverlay =
+    workAmoV5DnsGrowthOverlayFromActualValue(workFloor?.actualValue);
+  const publishedBaseNetworkValueCandidates =
+    publishedValidBaseNetworkValueQ8 === null
+      ? []
+      : [
+          publishedValidBaseNetworkValueQ8,
+          ...(dnsOverlay.dnsTotalQ8 > 0n &&
+          publishedValidBaseNetworkValueQ8 >= dnsOverlay.dnsTotalQ8
+            ? [publishedValidBaseNetworkValueQ8 - dnsOverlay.dnsTotalQ8]
+            : []),
+        ];
+  const publishedBaseNetworkValueEquals = (target) =>
+    target !== null &&
+    publishedBaseNetworkValueCandidates.some(
+      (candidate) => candidate === target,
+    );
   if (excludedCarryFields.length > 1) {
     if (!excludedCarryFields.includes("tokenMarketplaceFeeSats")) {
       return invalid("legacy-bootstrap-base-carry-ambiguous");
@@ -66604,11 +66621,9 @@ function workAmoV5LegacyBootstrapReconciliation(
         growthActualBaseStateTotalQ8(candidateBaseState);
       if (
         committedBaseNetworkValueQ8 !== null &&
-        publishedValidBaseNetworkValueQ8 !== null &&
         growthActualBaseStateTotalQ8(committedBaseState) ===
           committedBaseNetworkValueQ8 &&
-        publishedValidBaseNetworkValueQ8 ===
-          committedBaseNetworkValueQ8 &&
+        publishedBaseNetworkValueEquals(committedBaseNetworkValueQ8) &&
         committedBaseNetworkValueQ8 ===
           candidateBaseNetworkValueQ8 + legacyBootstrapGrowthValueQ8
       ) {
@@ -66622,12 +66637,17 @@ function workAmoV5LegacyBootstrapReconciliation(
   const finalValidBaseNetworkValueQ8 =
     growthActualBaseStateTotalQ8(validBaseState);
   const publishedBaseNetworkValueMatches =
-    publishedValidBaseNetworkValueQ8 === finalValidBaseNetworkValueQ8 ||
-    publishedValidBaseNetworkValueQ8 + postActivationBaseCarryQ8 ===
-      finalValidBaseNetworkValueQ8 ||
-    (legacyBootstrapBaseCarryMode ===
-      "published-valid-includes-carry" &&
-      publishedValidBaseNetworkValueQ8 === committedBaseNetworkValueQ8);
+    publishedBaseNetworkValueCandidates.some(
+      (publishedBaseNetworkValueQ8) =>
+        publishedBaseNetworkValueQ8 === finalValidBaseNetworkValueQ8 ||
+        publishedBaseNetworkValueQ8 + postActivationBaseCarryQ8 ===
+          finalValidBaseNetworkValueQ8 ||
+        (
+          legacyBootstrapBaseCarryMode ===
+            "published-valid-includes-carry" &&
+          publishedBaseNetworkValueQ8 === committedBaseNetworkValueQ8
+        ),
+    );
   if (
     committedBaseNetworkValueQ8 === null ||
     publishedValidBaseNetworkValueQ8 === null ||

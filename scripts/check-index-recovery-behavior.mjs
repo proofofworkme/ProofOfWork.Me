@@ -76658,6 +76658,24 @@ check("AMO V5 legacy carry preserves committed N while publishing valid-only mar
       growthActualBaseStateTotalQ8: baseStateTotalQ8,
       workAmoV5ExactInteger: exactInteger,
       workAmoV5LegacyBootstrapEvidenceMatches: evidenceMatches,
+      workAmoV5DnsGrowthOverlayFromActualValue: (actualValue) => {
+        const amount = (value) =>
+          /^[0-9]+$/u.test(String(value ?? ""))
+            ? BigInt(String(value))
+            : 0n;
+        const registry = amount(
+          actualValue?.dnsRegistryFlowSats ?? actualValue?.dnsFlowSats,
+        );
+        const marketplace =
+          amount(actualValue?.dnsMarketplaceFeeSats) +
+          amount(actualValue?.dnsMarketplaceVolumeSats);
+        return {
+          dnsTotalQ8:
+            (registry + marketplace) *
+            GROWTH_VALUE_MULTIPLE *
+            VALUE_Q8_SCALE,
+        };
+      },
     },
   );
   const exactAliases = isolatedFunction(
@@ -76954,17 +76972,28 @@ check("AMO V5 legacy carry preserves committed N while publishing valid-only mar
     ...workFloor,
     actualValue: {
       ...workFloor.actualValue,
+      baseNetworkValueQ8: (
+        validBaseNetworkValueQ8 + dnsOverlayQ8
+      ).toString(),
+      baseTotalQ8: (validBaseNetworkValueQ8 + dnsOverlayQ8).toString(),
       dnsMarketplaceFeeSats: "546",
       dnsMarketplaceVolumeSats: "2000",
       dnsRegistrations: "1",
       dnsRegistryFlowSats: "1000",
     },
   };
+  const dnsReconciliation = reconcile(
+    state,
+    value,
+    dnsWorkFloor,
+    evidence,
+  );
+  assert.equal(dnsReconciliation.valid, true);
   const dnsProjected = closingProjection(
     state,
     value,
     dnsWorkFloor,
-    reconciliation,
+    dnsReconciliation,
   );
   assert.equal(
     dnsProjected.exactAliases.baseNetworkValueQ8,
