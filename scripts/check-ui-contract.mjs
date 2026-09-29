@@ -432,34 +432,52 @@ expect(
   ),
 );
 expect(
-  "landing root reads only the first-party registry summary and preserves unknown state",
+  "landing root reads first-party ID and DNS registry summaries and preserves unknown state",
   /fetchProofApiJson<RegistrySummaryResponse>[\s\S]*\/api\/v1\/registry-summary/.test(
     landingRoot,
   ) &&
-    /fresh=1/.test(landingRoot) &&
-    /refreshRegistry\(false\)[\s\S]*refreshRegistry\(true\)/.test(landingRoot) &&
+    /\/api\/v1\/dns-summary/.test(landingRoot) &&
+    /params\.set\("fresh", "1"\)/.test(landingRoot) &&
+    /refreshRegistries\(false\)[\s\S]*refreshRegistries\(true\)/.test(landingRoot) &&
     /registryLoaded/.test(landingRoot) &&
+    /dnsRegistryLoaded/.test(landingRoot) &&
     /registryFresh/.test(landingRoot) &&
+    /dnsRegistryFresh/.test(landingRoot) &&
     /AbortController/.test(landingRoot) &&
-    /projection=counts-v1/.test(landingRoot) &&
-    /setRegistryCounts\(completeRegistryCounts\(payload\)\)/.test(landingRoot) &&
+    /projection: "counts-v1"/.test(landingRoot) &&
+    /completeRegistryCounts\(payload, label\)/.test(landingRoot) &&
     !/payload\.records/.test(landingRoot) &&
     !/from "\.\.\/\.\.\/App"|bitcoinjs|signPsbt|buildPaymentPsbt/.test(
       landingRoot,
     ) &&
-    /registryLoaded \? registryCounts\.confirmedCount\.toLocaleString\(\) : "…"/.test(
+    /registryStatValue\(registryLoaded, registryCounts\.confirmedCount\)/.test(
+      landingApp,
+    ) &&
+    /registryStatValue\(dnsRegistryLoaded, dnsRegistryCounts\.confirmedCount\)/.test(
       landingApp,
     ),
 );
 expect(
+  "landing surfaces DNS stats beside ID stats",
+  /Confirmed IDs/.test(landingApp) &&
+    /Pending IDs/.test(landingApp) &&
+    /ID records/.test(landingApp) &&
+    /Confirmed \.pow/.test(landingApp) &&
+    /Pending \.pow/.test(landingApp) &&
+    /DNS records/.test(landingApp) &&
+    /Refresh Registries/.test(landingApp),
+);
+expect(
   "landing retains verified registry data when its background exact-tip refresh is degraded",
   /lastGoodRegistryRef/.test(landingRoot) &&
+    /lastGoodDnsRegistryRef/.test(landingRoot) &&
     /fresh\s*&&[\s\S]*lastGoodRegistryRef\.current\.loaded[\s\S]*isTransientProofApiReadError\(error\)[\s\S]*proofApiLastGoodReadStatus/.test(
-      landingRoot,
+      landingRoot.replace(/idResult\.reason/g, "error"),
     ) &&
     /registryWarning=\{registryWarning\}/.test(landingRoot) &&
+    /dnsRegistryWarning=\{dnsRegistryWarning\}/.test(landingRoot) &&
     /registryWarning[\s\S]*tone: "idle"/.test(landingApp) &&
-    /Verified last-good ProofOfWork ID registry summary loaded\. This view is not current/.test(
+    /Verified last-good ProofOfWork ID and DNS registry summaries loaded\. This view is not current/.test(
       landingApp,
     ),
 );
@@ -487,6 +505,14 @@ expect(
   /DNS_APP_URL\s*=\s*"https:\/\/dns\.proofofwork\.me"/.test(appLinks) &&
     /LOCAL_DNS_APP_URL\s*=\s*"\/\?dns-launch=1"/.test(appLinks) &&
     /label:\s*"DNS"/.test(appLinks),
+);
+expect(
+  "landing Explore Computer places DNS under Identity and markets",
+  /label:\s*"Identity & markets"[\s\S]*label:\s*"IDs"[\s\S]*label:\s*"DNS"[\s\S]*label:\s*"AMO"/.test(
+    landingApp,
+  ) &&
+    /href:\s*DNS_APP_URL/.test(landingApp) &&
+    /localHref:\s*LOCAL_DNS_APP_URL/.test(landingApp),
 );
 expect(
   "app links publish AMO as the canonical governed exchange",

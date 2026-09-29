@@ -5168,6 +5168,11 @@ The canonical livenet ledger payload:
   of returning an older or lower snapshot as if it were refreshed.
 - Carries live BTC/USD metadata (`btcUsd`, `btcUsdIndexedAt`, `usdSource`) on WORK/Growth responses. `actualValue.totalUsd` is current live USD from the first-party price endpoint, while `actualValue.modelTotalUsd` is the separate Growth model USD projection.
 - Keeps pending records visible where useful, but only confirmed records affect canonical network value and the WORK floor.
+- Treats new first-class products as ledger products, not isolated UI launches:
+  each one needs canonical event parsing/replay, public Log visibility, Growth
+  network-value and WORK-floor accounting when confirmed proof flow affects
+  value, shared navigation, Explore Computer placement, product stats, protocol
+  docs, contract checks, and production verification before launch is complete.
 - Keeps live and frozen network value separate. Live network value is the active site value and WORK floor source. Frozen network value is the immutable confirmation-time audit stamp for WORK movement and fixed event components.
 - Applies credit movement value only to canonical WORK. Other credits remain proof-flow only: confirmed proof payments, registry/mutation fees, sale payments, and marketplace flow can count, but their listing floors do not reprice network value.
 - Counts cumulative WORK miner fees once per confirmed transaction id from complete full-node input value minus output value. This is historical Bitcoin blockspace/security expenditure, not platform revenue, retained reserves, or spendable backing.

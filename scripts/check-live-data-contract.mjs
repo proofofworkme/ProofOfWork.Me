@@ -1,5 +1,10 @@
 import { readFileSync } from "node:fs";
 
+const readme = readFileSync("README.md", "utf8");
+const opReturnInfrastructure = readFileSync(
+  "OP_RETURN_INFRASTRUCTURE.md",
+  "utf8",
+);
 const server = readFileSync("server/proof-api.mjs", "utf8");
 const electrumClient = readFileSync("server/electrum-client.mjs", "utf8");
 const proofIndexReader = readFileSync("server/db/proof-index-reader.mjs", "utf8");
@@ -3166,6 +3171,16 @@ expectAll("DNS is a first-class canonical Growth input", server + proofIndexRead
   /name="DNS"/,
   /actualValue\.dnsSats/,
   /\.pow names/,
+]);
+expectAll("new product integration standard covers every shared product surface", readme + opReturnInfrastructure, [
+  /Product Integration Standard/,
+  /canonical event parsing\/replay/,
+  /public Log/,
+  /Growth\/network-value\/WORK-floor accounting/,
+  /shared navigation/,
+  /Explore Computer/,
+  /product stats/,
+  /production verification/,
 ]);
 expectAll("canonical ledger imports accepted DNS registry activity", server, [
   /function dnsActivityStateForCanonicalLedger\(/,

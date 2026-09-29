@@ -7,7 +7,7 @@ export function completeRegistryCounts(payload: {
     pendingCount?: unknown;
     totalCount?: unknown;
   };
-}) {
+}, label = "registry") {
   const counts = payload.registryCounts;
   const values = [counts?.confirmedCount, counts?.pendingCount, counts?.totalCount];
   if (
@@ -15,7 +15,7 @@ export function completeRegistryCounts(payload: {
     !values.every((value) => typeof value === "number" && Number.isSafeInteger(value) && value >= 0) ||
     Number(counts.confirmedCount) + Number(counts.pendingCount) !== counts.totalCount
   ) {
-    throw new Error("The complete ID counts are unavailable. Keeping the last verified counts.");
+    throw new Error(`The complete ${label} counts are unavailable. Keeping the last verified counts.`);
   }
   return {
     confirmedCount: counts.confirmedCount as number,

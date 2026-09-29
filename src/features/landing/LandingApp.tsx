@@ -5,6 +5,7 @@ import {
   FilePenLine,
   FileText,
   GitBranch,
+  Globe2,
   Infinity as InfinityIcon,
   Mail,
   MessageSquareQuote,
@@ -22,6 +23,7 @@ import {
   BROWSER_APP_URL,
   COMPUTER_APP_URL,
   DESKTOP_APP_URL,
+  DNS_APP_URL,
   GROWTH_APP_URL,
   ID_APP_URL,
   INCEPTION_APP_URL,
@@ -30,6 +32,7 @@ import {
   LOCAL_BOOST_APP_URL,
   LOCAL_COMPUTER_APP_URL,
   LOCAL_DESKTOP_APP_URL,
+  LOCAL_DNS_APP_URL,
   LOCAL_GROWTH_APP_URL,
   LOCAL_ID_APP_URL,
   LOCAL_INCEPTION_APP_URL,
@@ -59,6 +62,12 @@ type LandingRegistryCounts = {
   confirmedCount: number;
   pendingCount: number;
   totalCount: number;
+};
+
+const EMPTY_REGISTRY_COUNTS: LandingRegistryCounts = {
+  confirmedCount: 0,
+  pendingCount: 0,
+  totalCount: 0,
 };
 
 const LANDING_VIDEO_URL = "https://www.youtube.com/watch?v=vJLBCylKMyc";
@@ -120,6 +129,14 @@ const LANDING_APP_GROUPS = [
         icon: AtSign,
         label: "IDs",
         localHref: LOCAL_ID_APP_URL,
+      },
+      {
+        description:
+          "Claim and search a permanent .pow DNS name from the canonical registry.",
+        href: DNS_APP_URL,
+        icon: Globe2,
+        label: "DNS",
+        localHref: LOCAL_DNS_APP_URL,
       },
       {
         description:
@@ -212,6 +229,13 @@ function shortAddress(value: string) {
 }
 
 export function LandingApp({
+  dnsRegistryAddress,
+  dnsRegistryCounts = EMPTY_REGISTRY_COUNTS,
+  dnsRegistryError = "",
+  dnsRegistryFresh = false,
+  dnsRegistryLoaded = false,
+  dnsRegistryLoading = false,
+  dnsRegistryWarning = "",
   registryAddress,
   registryError = "",
   registryFresh = false,
@@ -221,6 +245,13 @@ export function LandingApp({
   registryWarning = "",
   onRefresh,
 }: {
+  dnsRegistryAddress: string;
+  dnsRegistryCounts?: LandingRegistryCounts;
+  dnsRegistryError?: string;
+  dnsRegistryFresh?: boolean;
+  dnsRegistryLoaded?: boolean;
+  dnsRegistryLoading?: boolean;
+  dnsRegistryWarning?: string;
   registryAddress: string;
   registryError?: string;
   registryFresh?: boolean;
@@ -231,6 +262,17 @@ export function LandingApp({
   onRefresh: () => void;
 }) {
   const [videoLoaded, setVideoLoaded] = useState(false);
+  const registriesLoaded = registryLoaded && dnsRegistryLoaded;
+  const registriesLoading = registryLoading || dnsRegistryLoading;
+  const registriesFresh = registryFresh && dnsRegistryFresh;
+  const registryStatusText = [registryError, dnsRegistryError]
+    .filter(Boolean)
+    .join(" ");
+  const registryWarningText = [registryWarning, dnsRegistryWarning]
+    .filter(Boolean)
+    .join(" ");
+  const registryStatValue = (loaded: boolean, value: number) =>
+    loaded ? value.toLocaleString() : "…";
 
   return (
     <main className="landing-app">
@@ -241,30 +283,30 @@ export function LandingApp({
       <AppStatusRow
         persistent
         secondaryStatus={
-          registryWarning
-            ? { tone: "idle", text: registryWarning }
+          registryWarningText
+            ? { tone: "idle", text: registryWarningText }
             : undefined
         }
         status={
-          registryLoading
+          registriesLoading
             ? {
                 tone: "idle",
-                text: registryLoaded
-                  ? "Refreshing the ID registry through the full node..."
-                  : "Loading the indexed ProofOfWork ID registry summary...",
+                text: registriesLoaded
+                  ? "Refreshing the ID and DNS registries through the full node..."
+                  : "Loading the indexed ProofOfWork ID and DNS registry summaries...",
               }
-            : registryError
-              ? { tone: "bad", text: registryError }
-              : registryLoaded
+            : registryStatusText
+              ? { tone: "bad", text: registryStatusText }
+              : registriesLoaded
                 ? {
-                    tone: registryFresh ? "good" : "idle",
-                    text: registryFresh
-                      ? "Full-node ProofOfWork ID registry summary verified."
-                      : "Verified last-good ProofOfWork ID registry summary loaded. This view is not current until an exact-tip refresh succeeds.",
+                    tone: registriesFresh ? "good" : "idle",
+                    text: registriesFresh
+                      ? "Full-node ProofOfWork ID and DNS registry summaries verified."
+                      : "Verified last-good ProofOfWork ID and DNS registry summaries loaded. This view is not current until an exact-tip refresh succeeds.",
                   }
                 : {
                     tone: "idle",
-                    text: "ProofOfWork ID registry summary has not loaded yet.",
+                    text: "ProofOfWork ID and DNS registry summaries have not loaded yet.",
                   }
         }
       />
@@ -328,35 +370,41 @@ export function LandingApp({
       <section className="landing-main" aria-label="ProofOfWork.Me onboarding">
         <section
           className="landing-stats"
-          aria-label="ProofOfWork ID registry stats"
+          aria-label="ProofOfWork ID and DNS registry stats"
         >
           <div>
             <span>Confirmed IDs</span>
-            <strong>
-              {registryLoaded ? registryCounts.confirmedCount.toLocaleString() : "…"}
-            </strong>
+            <strong>{registryStatValue(registryLoaded, registryCounts.confirmedCount)}</strong>
           </div>
           <div>
             <span>Pending IDs</span>
-            <strong>
-              {registryLoaded ? registryCounts.pendingCount.toLocaleString() : "…"}
-            </strong>
+            <strong>{registryStatValue(registryLoaded, registryCounts.pendingCount)}</strong>
           </div>
           <div>
-            <span>Visible records</span>
-            <strong>
-              {registryLoaded ? registryCounts.totalCount.toLocaleString() : "…"}
-            </strong>
+            <span>ID records</span>
+            <strong>{registryStatValue(registryLoaded, registryCounts.totalCount)}</strong>
+          </div>
+          <div>
+            <span>Confirmed .pow</span>
+            <strong>{registryStatValue(dnsRegistryLoaded, dnsRegistryCounts.confirmedCount)}</strong>
+          </div>
+          <div>
+            <span>Pending .pow</span>
+            <strong>{registryStatValue(dnsRegistryLoaded, dnsRegistryCounts.pendingCount)}</strong>
+          </div>
+          <div>
+            <span>DNS records</span>
+            <strong>{registryStatValue(dnsRegistryLoaded, dnsRegistryCounts.totalCount)}</strong>
           </div>
           <button
             className="secondary"
-            disabled={registryLoading}
+            disabled={registriesLoading}
             onClick={onRefresh}
             type="button"
           >
             <span className="button-content">
               <RefreshCw size={16} />
-              <span>{registryLoading ? "Refreshing" : "Refresh Registry"}</span>
+              <span>{registriesLoading ? "Refreshing" : "Refresh Registries"}</span>
             </span>
           </button>
         </section>
@@ -492,24 +540,40 @@ export function LandingApp({
 
         <section className="landing-protocol">
           <div>
-            <span className="landing-kicker">Canonical registry</span>
-            <h3>{shortAddress(registryAddress)}</h3>
+            <span className="landing-kicker">Canonical registries</span>
+            <h3>
+              {shortAddress(registryAddress)} · {shortAddress(dnsRegistryAddress)}
+            </h3>
             <p>
-              ProofOfWork IDs are resolved from ProofOfWork. First confirmed valid
-              registration wins, and the app only routes mail to confirmed IDs.
+              ProofOfWork IDs and .pow DNS names are resolved from ProofOfWork.
+              First confirmed valid registration wins, and apps only route to
+              confirmed records.
             </p>
           </div>
-          <a
-            className="secondary link-button"
-            href={explorerAddressUrl(registryAddress, "livenet")}
-            rel="noreferrer"
-            target="_blank"
-          >
-            <span className="button-content">
-              <ArrowUpRight size={16} />
-              <span>View Registry</span>
-            </span>
-          </a>
+          <div className="landing-protocol-actions">
+            <a
+              className="secondary link-button"
+              href={explorerAddressUrl(registryAddress, "livenet")}
+              rel="noreferrer"
+              target="_blank"
+            >
+              <span className="button-content">
+                <ArrowUpRight size={16} />
+                <span>View ID Registry</span>
+              </span>
+            </a>
+            <a
+              className="secondary link-button"
+              href={explorerAddressUrl(dnsRegistryAddress, "livenet")}
+              rel="noreferrer"
+              target="_blank"
+            >
+              <span className="button-content">
+                <ArrowUpRight size={16} />
+                <span>View DNS Registry</span>
+              </span>
+            </a>
+          </div>
         </section>
       </section>
 

@@ -182,7 +182,7 @@
   border: 1px solid var(--border);
   border-radius: 16px;
   gap: 0;
-  grid-template-columns: repeat(3, minmax(0, 1fr)) auto;
+  grid-template-columns: repeat(6, minmax(0, 1fr)) auto;
   overflow: hidden;
 }
 
@@ -428,6 +428,13 @@
   border-style: dashed;
 }
 
+.landing-protocol-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: flex-end;
+}
+
 @media (max-width: 900px) {
   .landing-app .landing-hero-content {
     gap: 24px;
@@ -436,6 +443,27 @@
 
   .landing-hero-instrument {
     max-width: 620px;
+  }
+
+  .landing-app .landing-stats {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .landing-app .landing-stats div {
+    border-bottom: 1px solid var(--border);
+  }
+
+  .landing-app .landing-stats div:nth-of-type(3n) {
+    border-right: 0;
+  }
+
+  .landing-app .landing-stats .secondary {
+    grid-column: 1 / -1;
+    min-height: 54px;
+  }
+
+  .landing-protocol-actions {
+    justify-content: flex-start;
   }
 }
 
@@ -457,19 +485,16 @@
 
   .landing-app .landing-stats div {
     border-bottom: 1px solid var(--border);
+    border-right: 1px solid var(--border);
     padding: 14px;
   }
 
-  .landing-app .landing-stats div:nth-child(2) {
+  .landing-app .landing-stats div:nth-of-type(2n) {
     border-right: 0;
   }
 
-  .landing-app .landing-stats div:nth-child(3) {
-    border-bottom: 0;
-  }
-
   .landing-app .landing-stats .secondary {
-    border-left: 1px solid var(--border);
+    border-top: 0;
   }
 
   .landing-app-grid {
