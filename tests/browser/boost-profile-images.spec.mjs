@@ -39,9 +39,9 @@ for (const width of [1440, 390]) {
   test(`profile images load verified files and picker previews crop at ${width}`, async ({ page }) => {
     await page.setViewportSize({ width, height: 950 }); await fixture(page);
     await page.goto(`/?boost=1&profile=${ADDRESS}`);
-    await expect(page.locator("img.boost-profile-avatar")).toBeVisible();
-    await expect(page.locator("img.boost-profile-cover")).toBeVisible();
-    expect(await page.locator(".boost-profile-avatar").evaluate(el => getComputedStyle(el).objectPosition)).toBe("20% 70%");
+    await expect(page.locator(".boost-profile-avatar img")).toBeVisible();
+    await expect(page.locator(".boost-profile-cover img")).toBeVisible();
+    expect(await page.locator(".boost-profile-avatar img").evaluate(el => getComputedStyle(el).objectPosition)).toBe("20% 70%");
     const tools = page.getByRole("button", { name: "Tools", exact: true });
     if (await tools.isVisible()) await tools.click();
     await page.locator(".boost-sidebar").getByRole("button", { name: "Connect", exact: true }).click();
@@ -91,11 +91,38 @@ for (const width of [1440, 390]) {
     await expect(dialog).toHaveCount(0);
   });
 }
+
+for (const width of [1440, 390]) for (const surface of ["boost=1", "folder=boost"]) {
+  test(`profile picture and banner expand without crop at ${width} on ${surface}`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 950 }); await fixture(page);
+    await page.goto(`/?${surface}&profile=${ADDRESS}`);
+    for (const label of ["Profile picture", "Profile banner"]) {
+      const trigger = page.getByRole("button", { name: `Expand ${label.toLowerCase()}`, exact: true });
+      await expect(trigger).toBeVisible();
+      const source = await trigger.locator("img").getAttribute("src");
+      await trigger.focus(); await page.keyboard.press("Enter");
+      const viewer = page.getByRole("dialog", { name: label, exact: true });
+      await expect(viewer).toBeVisible();
+      await expect(viewer.getByRole("img")).toHaveAttribute("src", source);
+      expect(await viewer.getByRole("img").evaluate(el => getComputedStyle(el).objectFit)).toBe("contain");
+      await expect(viewer.getByRole("button", { name: "Close image" })).toBeFocused();
+      await page.keyboard.press("Tab");
+      await expect(viewer.getByRole("button", { name: "Close image" })).toBeFocused();
+      await page.keyboard.press("Escape"); await expect(viewer).toHaveCount(0); await expect(trigger).toBeFocused();
+      await trigger.click(); await viewer.getByRole("button", { name: "Close image" }).click();
+      await expect(viewer).toHaveCount(0); await expect(trigger).toBeFocused();
+      await trigger.click(); await page.mouse.click(4, 4); await expect(viewer).toHaveCount(0);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
+    }
+  });
+}
+
 for (const options of [{ confirmed: false }, { corrupt: true }]) {
   test(`unverified profile files fall back opaquely ${JSON.stringify(options)}`, async ({ page }) => {
     await fixture(page, options); await page.goto(`/?boost=1&profile=${ADDRESS}`);
     await expect(page.locator(".boost-profile-avatar")).toHaveText("AR");
-    await expect(page.locator("img.boost-profile-avatar")).toHaveCount(0);
+    await expect(page.locator(".boost-profile-avatar img")).toHaveCount(0);
+    await expect(page.getByRole("button", { name: /^Expand profile/ })).toHaveCount(0);
     const background = await page.locator(".boost-profile-avatar").evaluate(el => getComputedStyle(el).backgroundColor);
     expect(background).toMatch(/^rgb\(/);
   });

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import type { BitcoinNetwork } from "../../shared/bitcoin/networks";
 import { fetchProofApiJson } from "../../shared/api/proofApiClient";
 import { imageMime, verifiedProfileImage, profileImageChoices, type Attachment, type FileChoice, type MailFile } from "./boostProfileMedia";
@@ -32,10 +33,41 @@ function readProfileImage(pointer: BoostProfileImage, network: BitcoinNetwork) {
   return value;
 }
 
-export function ProfileImage({ pointer, network, className, fallback, alt = "" }: {
+function ProfileImageViewer({ url, alt, invoker, onClose }: { url: string; alt: string; invoker: HTMLButtonElement | null; onClose: () => void }) {
+  const dialog = useRef<HTMLDialogElement>(null);
+  useEffect(() => {
+    const element = dialog.current;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    element?.showModal();
+    return () => {
+      element?.close();
+      document.body.style.overflow = previousOverflow;
+      if (invoker?.isConnected) invoker.focus();
+    };
+  }, [invoker]);
+  return createPortal(<dialog ref={dialog} className="boost-profile-image-viewer" aria-label={alt}
+    onKeyDown={event => {
+      event.stopPropagation();
+      if (event.key === "Tab") {
+        event.preventDefault();
+        event.currentTarget.querySelector<HTMLButtonElement>("button")?.focus();
+      }
+    }}
+    onCancel={event => { event.preventDefault(); onClose(); }}
+    onClick={event => { if (event.target === event.currentTarget) onClose(); }}>
+    <button type="button" className="secondary" aria-label="Close image" onClick={onClose} autoFocus>Close</button>
+    <img src={url} alt={alt} />
+  </dialog>, document.body);
+}
+
+export function ProfileImage({ pointer, network, className, fallback, alt = "", expandable = false }: {
   pointer?: BoostProfileImage | null; network: BitcoinNetwork; className: string; fallback?: string; alt?: string;
+  expandable?: boolean;
 }) {
   const [loaded, setLoaded] = useState<{ key: string; url: string }>();
+  const [expandedKey, setExpandedKey] = useState<string>();
+  const imageTrigger = useRef<HTMLButtonElement>(null);
   const key = JSON.stringify([network, pointer]);
   useEffect(() => {
     const controller = new AbortController();
@@ -46,6 +78,14 @@ export function ProfileImage({ pointer, network, className, fallback, alt = "" }
     return () => controller.abort();
   }, [key, network]);
   const url = loaded && loaded.key === key ? loaded.url : "";
+  if (url && expandable) return <>
+    <button ref={imageTrigger} type="button" className={`${className} boost-profile-image-trigger`} aria-label={`Expand ${alt.toLowerCase()}`}
+      onClick={() => setExpandedKey(key)}>
+      <img src={url} alt={alt} style={{ objectPosition: `${pointer?.positionX ?? 50}% ${pointer?.positionY ?? 50}%` }}
+        onError={() => setLoaded(undefined)} />
+    </button>
+    {expandedKey === key ? <ProfileImageViewer url={url} alt={alt} invoker={imageTrigger.current} onClose={() => setExpandedKey(undefined)} /> : null}
+  </>;
   return url ? <img alt={alt} className={className} src={url}
     style={{ objectPosition: `${pointer?.positionX ?? 50}% ${pointer?.positionY ?? 50}%` }}
     onError={() => setLoaded(undefined)} /> : <div className={`${className} boost-avatar-fallback`} aria-label={alt || undefined}>{fallback}</div>;

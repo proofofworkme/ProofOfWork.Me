@@ -2658,10 +2658,10 @@ export default function BoostRoot({
               </button>
             </div>
             <div className="boost-profile-head">
-              <ProfileImage pointer={profileSubject?.profile?.banner} network={network} className="boost-profile-cover" />
+              <ProfileImage pointer={profileSubject?.profile?.banner} network={network} className="boost-profile-cover" alt="Profile banner" expandable />
               <div className="boost-profile-main">
                 <ProfileImage pointer={profileSubject?.profile?.image} network={network}
-                  className="boost-profile-avatar" fallback={profileSubjectAvatarText(payload)} />
+                  className="boost-profile-avatar" fallback={profileSubjectAvatarText(payload)} alt="Profile picture" expandable />
                 <div className="boost-profile-copy">
                   <h2>{profileSubjectDisplay(payload)}</h2>
                   <p>{profileSubjectHandle(payload) || profileRouteValue}</p>
