@@ -427,5 +427,985 @@
       "commits",
       "pushes"
     ]
+  },
+  "approvedExecution": {
+    "approvedScope": "User approved exact manifest and named deployment plan; isolated restore excluded.",
+    "recordedAtUTC": "2026-09-30T01:16:35.195110+00:00",
+    "status": "Node/UI deployed and provenance verified; all 15 surface smoke checks pass; final public Growth verification waits normal next-block summary publication.",
+    "sourceCommit": "db853f434f9b9e6162bcd41e5b1c9fdebee292eb",
+    "branch": "codex/audit28-approved-followup",
+    "cleanup": {
+      "time": "2026-09-30T01:11:59.618565+00:00",
+      "manifestSha256": "4f953d31585ed762be0147a332ac8c5ab9850ad43b6f008159729b59f839b59f",
+      "mode": "apply",
+      "path": "/var/tmp/proofofwork-deploy/proofofwork-ui-source-d2c0afaffd9c-20260929T161019Z",
+      "fingerprint": {
+        "path": "/var/tmp/proofofwork-deploy/proofofwork-ui-source-d2c0afaffd9c-20260929T161019Z",
+        "fingerprintModel": "lstat-and-content-json-v1",
+        "sha256": "39d2c864228c66bfa54808d179bd3374f4dd3f170480902b5c3a9c1e873d13f6",
+        "entryCount": 6770,
+        "inode": 911710,
+        "device": 2049,
+        "mtimeNs": 1790698227000000000,
+        "fileBytes": 232171828
+      },
+      "preserved": {
+        "uiCurrent": {
+          "format": "proofofwork-ui-release-v3",
+          "release_id": "3bc6c9d44e00-20260929T200127Z",
+          "commit": "3bc6c9d44e00c504c324a1f13b7803f89cbfb122",
+          "source_tree": "a3428b21a53b98603771470a7744b5e9ec81eb42",
+          "source_attestation": "detached-recursive-git-tree-v1",
+          "source_dependency_model": "node-modules-recursive-v1",
+          "source_dependency_entry_count": "6118",
+          "source_dependency_bytes": "160954989",
+          "source_dependency_sha256": "74d54e7c58f15d225603104316eab06748209b85c6e2c27f8457ee6967f9b811",
+          "deployed_at": "2026-09-29T20:14:53Z",
+          "archive_name": "proofofwork-ui-release-3bc6c9d44e00-20260929T200127Z.tgz",
+          "archive_sha256": "9fb8049076552a54fa847cb86c39dbeeb02268e07a38dc6e1366043b8876438f",
+          "archive_payload_model": "surfaces-v1",
+          "surface.activity.file_count": "54",
+          "surface.activity.sha256": "db1813fbe4c5665c932c9e167b4561e9f2686673be6987fb9dba178aee8b262d",
+          "surface.browser.file_count": "54",
+          "surface.browser.sha256": "6704a8e4a1324f449a13526b9a7a1fef9866703d742479b5e6e979c93510122c",
+          "surface.boost.file_count": "54",
+          "surface.boost.sha256": "ba4e1a5dd3c7b71122de8ccdd8851efff9f6b1173f7de5d2d99e1267a67fdd23",
+          "surface.computer.file_count": "54",
+          "surface.computer.sha256": "4c05da974070aa1f6e885636b07ce1fb4061981218636d51375134dc4a5405d6",
+          "surface.desktop.file_count": "54",
+          "surface.desktop.sha256": "a09030830ac31a0588b7982673851701ebf2d3a18411fd135c2ecd41fb46c951",
+          "surface.dns.file_count": "54",
+          "surface.dns.sha256": "e95394866c29a00792a80cb10ede34e5fd939cfb1dda1932c522eb4128f4fe9a",
+          "surface.growth.file_count": "54",
+          "surface.growth.sha256": "12f13d771bd5bba7c58cf95da9350a55d77763713dca0559daa01d3104f0b410",
+          "surface.id.file_count": "54",
+          "surface.id.sha256": "b13f4030d663a48ac6ed6dd0bdeeede90969d7c9d365d17a20f805c5efe6c233",
+          "surface.inception.file_count": "54",
+          "surface.inception.sha256": "30fcf3972ea72392da864315ead00fbaa81e993f59b04f5420321a43c0844146",
+          "surface.infinity.file_count": "54",
+          "surface.infinity.sha256": "7c8742e8dddf923d928e95ba65bad41e6e73e52f76de05f34f8b4679634ef9dd",
+          "surface.landing.file_count": "54",
+          "surface.landing.sha256": "ec75b448b6062051c0a71ec92f4e27616850975106715239e9dd6f7af0cff74d",
+          "surface.marketplace.file_count": "54",
+          "surface.marketplace.sha256": "9968b53a3b5e89e9aa695246b66c9a53dbb7bd8d9e6a08b2dfa6a319b15ff2ea",
+          "surface.nft.file_count": "54",
+          "surface.nft.sha256": "4c05da974070aa1f6e885636b07ce1fb4061981218636d51375134dc4a5405d6",
+          "surface.token.file_count": "54",
+          "surface.token.sha256": "607d1bd2776dc9599038d4f4902a8706155a6be6e2ba1b759220f43cb66c68a5",
+          "surface.wallet.file_count": "54",
+          "surface.wallet.sha256": "6ba0d111e8ba23f871a5fbe0edd2222a25b2e3f74b7bef3750e631e17eebbbf8",
+          "surface.work.file_count": "54",
+          "surface.work.sha256": "7aff22590ce87360dc342173ea6aee5b31fdfb12fe8e505c0efdc8fc3c33be09"
+        },
+        "uiPrevious": {
+          "format": "proofofwork-ui-release-v3",
+          "release_id": "0e767c69e785-20260929T165314Z",
+          "commit": "0e767c69e785945110a53092415894a4eab70d12",
+          "source_tree": "e6fe8d40533caa0149d0ca0955a609682337aa09",
+          "source_attestation": "detached-recursive-git-tree-v1",
+          "source_dependency_model": "node-modules-recursive-v1",
+          "source_dependency_entry_count": "6118",
+          "source_dependency_bytes": "160954989",
+          "source_dependency_sha256": "74d54e7c58f15d225603104316eab06748209b85c6e2c27f8457ee6967f9b811",
+          "deployed_at": "2026-09-29T17:13:22Z",
+          "archive_name": "proofofwork-ui-release-0e767c69e785-20260929T165314Z.tgz",
+          "archive_sha256": "2f0f1dc53e83efbcd1caec391fea7d19215b75e79f8aba15b05068d8febe2d68",
+          "archive_payload_model": "surfaces-v1",
+          "surface.activity.file_count": "60",
+          "surface.activity.sha256": "cc6a5a58b541f8ed4b0a193609301a8d21d865e57260bb26a0a1846b5654252a",
+          "surface.browser.file_count": "60",
+          "surface.browser.sha256": "88a0135b4dd5eef784be04c64dbc4f176377806d8483221c4538e90c289503c8",
+          "surface.boost.file_count": "60",
+          "surface.boost.sha256": "55e8791213459397f48de1f2fdcdae178c783516ad1bd8e5671f8489d0e856fd",
+          "surface.computer.file_count": "60",
+          "surface.computer.sha256": "0b9ecece2fce4d1e8ec4f726f7496b4ce4fc03a350ce00b87b40a864977bbcaf",
+          "surface.desktop.file_count": "60",
+          "surface.desktop.sha256": "224fc086ed3459bf288e5a8e9a3aff2b89ab03837fc50a35724903d0b88a9751",
+          "surface.dns.file_count": "60",
+          "surface.dns.sha256": "25ad1ffaaeee3fca8404eea7e078965facc7aa8e158186e9b15a984917a4bc1d",
+          "surface.growth.file_count": "60",
+          "surface.growth.sha256": "e6e555c3867e1385eb0f0930f80501bcb90d98117ae62aae719620c1230c6a70",
+          "surface.id.file_count": "60",
+          "surface.id.sha256": "790dfe1c5c1023ed54cfc3fff6579dd1e4b619329564e7933e1f6e9534796bf8",
+          "surface.inception.file_count": "60",
+          "surface.inception.sha256": "5e1a985d6a9c22a90a2c12db2291c8b17ca0c10087a2328cd88a9205c37cae03",
+          "surface.infinity.file_count": "60",
+          "surface.infinity.sha256": "781364ea24579c6ef6771353165b0af70d54c120d8b0bd3ee99373ba9ad09f62",
+          "surface.landing.file_count": "60",
+          "surface.landing.sha256": "a28e4ad63777fa9a1324deb8fa183b97ae32cae339e71b81792ff196e43a83e2",
+          "surface.marketplace.file_count": "60",
+          "surface.marketplace.sha256": "d143d5a80cdf25b8d1454d82fee005b418ae83556c557266522bb22f71f0bdaf",
+          "surface.nft.file_count": "60",
+          "surface.nft.sha256": "0b9ecece2fce4d1e8ec4f726f7496b4ce4fc03a350ce00b87b40a864977bbcaf",
+          "surface.token.file_count": "60",
+          "surface.token.sha256": "83f577dce3d5e934300501fcf46bfd7af27481932a090a765b12c66a521da9f6",
+          "surface.wallet.file_count": "60",
+          "surface.wallet.sha256": "34a19656bd2251ba84dad32efeb7f91fec377b3c205d7d88b875cd9be542402a",
+          "surface.work.file_count": "60",
+          "surface.work.sha256": "25c323b781d67706d2a97fb7977d8f3a94a0cb5ddbf42e7f7b8e670dceee0902"
+        },
+        "nodeCurrentCommit": "3bc6c9d44e00c504c324a1f13b7803f89cbfb122",
+        "nodePreviousCommit": "d2c0afaffd9cd723fa99c02a6de6b86fe50a0be6",
+        "allOtherInventoryRows": true,
+        "liveCoreElectrsPostgresLedgersConfirmedHistory": true
+      }
+    },
+    "filesystemBeforeAfter": [
+      "/dev/sda1      39973924864 9759727616 28530003968  26% /",
+      "/dev/sda1      39973924864 9509531648 28780199936  25% /"
+    ],
+    "publisherInstall": [
+      "c2f06538c2c3263d1a7b7157c67dfebe007803b3fdbf60b9aeb21e4aedeb30e9  /usr/local/sbin/proofofwork-ui-release-publish",
+      "224cdb741bcb83e79bccc1b45730bd919bf38ba7292559fab6ce3184ddc053a4  /var/backups/proofofwork-ui/release-tooling/audit28-publisher-pre-db853f4.sh",
+      "inactive",
+      "inactive"
+    ],
+    "shadowVerification": {
+      "results": [
+        {
+          "route": "health",
+          "status": 200,
+          "ready": true,
+          "height": 969233
+        },
+        {
+          "route": "/api/v1/dns?network=livenet",
+          "status": 200,
+          "ms": 993,
+          "checkpointHash": "000000000000000000017cf6107fd52223e886a8d844df47963ddb1f9a3c2cda",
+          "height": 969233,
+          "coverage": {
+            "complete": true,
+            "historySha256": "be7d18c51c6775982c4260b90dae5391875cd6b8548a0a87057bd64ddd7c7889"
+          },
+          "records": 23,
+          "listings": 1
+        },
+        {
+          "route": "/api/v1/work-summary?network=livenet",
+          "status": 200,
+          "ms": 4247,
+          "checkpointHash": null,
+          "height": 969233,
+          "coverage": null,
+          "records": 0,
+          "listings": 0
+        }
+      ],
+      "readonlyVerified": true,
+      "shadowStopped": true
+    },
+    "nodeCutover": {
+      "time": "2026-09-30T01:14:30.424168+00:00",
+      "before": {
+        "proofofwork-worker-recovery-watch.timer": {
+          "ActiveState": "active"
+        },
+        "proofofwork-indexer-worker.service": {
+          "MainPID": "597260",
+          "NRestarts": "0",
+          "ExecMainStartTimestamp": "Tue 2026-09-29 20:07:20 UTC",
+          "ActiveState": "active"
+        },
+        "proofofwork-api-wg.socket": {
+          "ActiveState": "active"
+        },
+        "proofofwork-api-wg.service": {
+          "MainPID": "595619",
+          "NRestarts": "0",
+          "ExecMainStartTimestamp": "Tue 2026-09-29 20:05:25 UTC",
+          "ActiveState": "active"
+        },
+        "proofofwork-api.service": {
+          "MainPID": "595186",
+          "NRestarts": "0",
+          "ExecMainStartTimestamp": "Tue 2026-09-29 20:04:36 UTC",
+          "ActiveState": "active"
+        }
+      },
+      "authority": {
+        "bitcoind.service": {
+          "MainPID": "1324302",
+          "NRestarts": "0",
+          "ExecMainStartTimestamp": "Sat 2026-09-12 06:24:39 UTC",
+          "ActiveState": "active"
+        },
+        "electrs.service": {
+          "MainPID": "1324320",
+          "NRestarts": "0",
+          "ExecMainStartTimestamp": "Sat 2026-09-12 06:24:39 UTC",
+          "ActiveState": "active"
+        },
+        "postgresql@16-main.service": {
+          "MainPID": "97096",
+          "NRestarts": "0",
+          "ExecMainStartTimestamp": "Wed 2026-09-23 06:34:24 UTC",
+          "ActiveState": "active"
+        },
+        "pg_receivewal@16-main.service": {
+          "MainPID": "0",
+          "NRestarts": "0",
+          "ExecMainStartTimestamp": "Sat 2026-09-19 04:55:31 UTC",
+          "ActiveState": "inactive"
+        }
+      },
+      "liveAttestation": "3bc6c9d44e00c504c324a1f13b7803f89cbfb122\ta3428b21a53b98603771470a7744b5e9ec81eb42\t6724\t199905815\t2532852be0eef362a2902d4defbc2662e10d2a2fb1d8310069480cac22399f09",
+      "candidateAttestation": "db853f434f9b9e6162bcd41e5b1c9fdebee292eb\ta30a8aa54504a7757fefc4ea28e001279e897d19\t6738\t200666588\t41f87f3052708bfe5ea65d618e5de164691a462506b519123eb77b7ab49f0781",
+      "releaseId": "db853f434f9b-20260930T011125Z",
+      "exchange": true,
+      "rollback": false,
+      "exchangeResult": "node_release_exchange status=exchanged release_id=db853f434f9b-20260930T011125Z live=/opt/proofofwork-api rollback=/opt/proofofwork-api-stage-db853f434f9b-20260930T011125Z",
+      "health": {
+        "ready": true,
+        "indexedThroughBlock": 969234,
+        "indexerLagBlocks": null
+      },
+      "status": "deployed"
+    },
+    "nodePublication": "published archive=proofofwork-node-release-db853f4-20260930T011125Z.tgz commit=db853f434f9b9e6162bcd41e5b1c9fdebee292eb tree=a30a8aa54504a7757fefc4ea28e001279e897d19 runtime_sha256=41f87f3052708bfe5ea65d618e5de164691a462506b519123eb77b7ab49f0781 sha256=0985f4de6d7687b67146330b86de359de8944667a2827708f84432513ab13791 bytes=93794408",
+    "authoritativeSealRecheck": {
+      "checkedAt": "2026-09-30T01:19:37.785155+00:00",
+      "tip": {
+        "blocks": 969234,
+        "headers": 969234,
+        "bestblockhash": "000000000000000000002628072c0cbbf1767aca95785e594252ae006e594782",
+        "initialblockdownload": false
+      },
+      "seals": [
+        {
+          "txid": "767b1c7d0df60edc9099ff29269b553843c896e397f550f5d7f8558834575c4b",
+          "height": 969161,
+          "hash": "00000000000000000001544e99d743e00dcaabc696ff8285ec026ca45f5a9f91",
+          "time": 1790688724,
+          "confirmations": 74
+        },
+        {
+          "txid": "4f895eaabd46d1c8d69b6ac953aa3776a861bf29951b99a6126b31413b2b15bd",
+          "height": 969127,
+          "hash": "00000000000000000000a786c1d5ec636bf1b81655b4b3fe2e949f982053c400",
+          "time": 1790670667,
+          "confirmations": 108
+        },
+        {
+          "txid": "3eb8cfcb5edb187cb77e2bc4ef4a3142a03c4897afe9a800613605e2d65e62e6",
+          "height": 969127,
+          "hash": "00000000000000000000a786c1d5ec636bf1b81655b4b3fe2e949f982053c400",
+          "time": 1790670667,
+          "confirmations": 108
+        },
+        {
+          "txid": "00943f5892cee2e9d4d097e9b6098629a7f5a080ccbd7c33b24c8de9685975a5",
+          "height": 962784,
+          "hash": "000000000000000000011434041d6e9aee8b68f0a935f187b7ece16b68dcf6bc",
+          "time": 1786916263,
+          "confirmations": 6451
+        }
+      ]
+    },
+    "canonicalGrowthConstruction": {
+      "status": 200,
+      "ms": 12480,
+      "height": 969234,
+      "hash": "000000000000000000002628072c0cbbf1767aca95785e594252ae006e594782",
+      "events": [
+        {
+          "amountLabel": "546 proofs",
+          "createdAt": "2026-09-29T13:32:04.000Z",
+          "detail": "Listing 0137e467...085cabc6",
+          "key": "767b1c7d0df60edc9099ff29269b553843c896e397f550f5d7f8558834575c4b",
+          "kind": "AMO",
+          "network": "livenet",
+          "title": "Credit sale ticket sealed",
+          "txid": "767b1c7d0df60edc9099ff29269b553843c896e397f550f5d7f8558834575c4b"
+        },
+        {
+          "amountLabel": "25,000 sale proofs",
+          "createdAt": "2026-09-29T12:40:35.000Z",
+          "detail": "0.0000000749030366 WORK bought by 19MXUmBg...8cYSaHk4 from 1Pg9E4EH...3UdZKXD9.",
+          "key": "1cace7434cc5863d1631a1db311768fe679660c5d6d44c60ce22ded190e85e97",
+          "kind": "AMO",
+          "network": "livenet",
+          "title": "AMO sale",
+          "txid": "1cace7434cc5863d1631a1db311768fe679660c5d6d44c60ce22ded190e85e97"
+        },
+        {
+          "amountLabel": "546 proofs",
+          "createdAt": "2026-09-29T12:09:54.000Z",
+          "detail": "Waiting for sale-ticket seal",
+          "key": "3b35e6af4202115a2779e01dcdc3085927675c868a191a01ff61f656ae60e1b4",
+          "kind": "AMO",
+          "network": "livenet",
+          "title": "Credit listing",
+          "txid": "3b35e6af4202115a2779e01dcdc3085927675c868a191a01ff61f656ae60e1b4"
+        },
+        {
+          "amountLabel": "546 proofs",
+          "createdAt": "2026-09-29T11:02:49.000Z",
+          "detail": "Waiting for sale-ticket seal",
+          "key": "c616b2cd5525af3afbe2ca6bfc61b537a69f391c02c40b783ea77f9ec876a2b5",
+          "kind": "AMO",
+          "network": "livenet",
+          "title": "Credit listing",
+          "txid": "c616b2cd5525af3afbe2ca6bfc61b537a69f391c02c40b783ea77f9ec876a2b5"
+        },
+        {
+          "amountLabel": "546 proofs",
+          "createdAt": "2026-09-29T09:46:37.000Z",
+          "detail": "Seller signature published on chain",
+          "key": "dd498455bb712411341cfde6fab38764281ff6b77076a41012c3bee768475e38",
+          "kind": "AMO",
+          "network": "livenet",
+          "title": "Sale ticket sealed: 4@proofofwork.me",
+          "txid": "dd498455bb712411341cfde6fab38764281ff6b77076a41012c3bee768475e38"
+        },
+        {
+          "amountLabel": "1000 proofs",
+          "createdAt": "2026-09-29T08:37:08.000Z",
+          "detail": "Resolver registered",
+          "key": "e983d3f23dc7eb72f56248347603b986f9bbcdf94032ae9e6cb76a161ac07cd2",
+          "kind": "DNS",
+          "network": "livenet",
+          "title": "DNS registered: chat@proofofwork.me",
+          "txid": "e983d3f23dc7eb72f56248347603b986f9bbcdf94032ae9e6cb76a161ac07cd2"
+        },
+        {
+          "amountLabel": "546 proofs",
+          "createdAt": "2026-09-29T08:31:07.000Z",
+          "detail": "Sale-ticket listing",
+          "key": "a2f613500e807eb8907dad7762303c81fdd386ce1d1d3ce0e27f8d50c7a706bd",
+          "kind": "AMO",
+          "network": "livenet",
+          "title": "DNS listed: 4@proofofwork.me",
+          "txid": "a2f613500e807eb8907dad7762303c81fdd386ce1d1d3ce0e27f8d50c7a706bd"
+        },
+        {
+          "amountLabel": "546 proofs",
+          "createdAt": "2026-09-29T08:31:07.000Z",
+          "detail": "Listing dc6c63aa...cd114f37",
+          "key": "4f895eaabd46d1c8d69b6ac953aa3776a861bf29951b99a6126b31413b2b15bd",
+          "kind": "AMO",
+          "network": "livenet",
+          "title": "Credit sale ticket sealed",
+          "txid": "4f895eaabd46d1c8d69b6ac953aa3776a861bf29951b99a6126b31413b2b15bd"
+        },
+        {
+          "amountLabel": "546 proofs",
+          "createdAt": "2026-09-29T08:31:07.000Z",
+          "detail": "Listing 34134284...6ed1110b",
+          "key": "3eb8cfcb5edb187cb77e2bc4ef4a3142a03c4897afe9a800613605e2d65e62e6",
+          "kind": "AMO",
+          "network": "livenet",
+          "title": "Credit sale ticket sealed",
+          "txid": "3eb8cfcb5edb187cb77e2bc4ef4a3142a03c4897afe9a800613605e2d65e62e6"
+        },
+        {
+          "amountLabel": "546 proofs",
+          "createdAt": "2026-09-29T08:16:41.000Z",
+          "detail": "Sealed sale ticket 4f895eaa...3b2b15bd",
+          "key": "dc6c63aa080d9e81a3acf558366d379e4c5e5f9be122ad5e1f6229e5cd114f37",
+          "kind": "AMO",
+          "network": "livenet",
+          "title": "Credit listing sealed",
+          "txid": "dc6c63aa080d9e81a3acf558366d379e4c5e5f9be122ad5e1f6229e5cd114f37"
+        },
+        {
+          "amountLabel": "1000 proofs",
+          "createdAt": "2026-09-29T08:16:41.000Z",
+          "detail": "Resolver registered",
+          "key": "5d8685baf5d00bb21db4cf61cbc463e68b5d531707347222225fa08d22e4e82b",
+          "kind": "DNS",
+          "network": "livenet",
+          "title": "DNS registered: samsung@proofofwork.me",
+          "txid": "5d8685baf5d00bb21db4cf61cbc463e68b5d531707347222225fa08d22e4e82b"
+        },
+        {
+          "amountLabel": "1000 proofs",
+          "createdAt": "2026-09-29T08:16:41.000Z",
+          "detail": "Resolver registered",
+          "key": "36a800aed50b8422bbe85c2e7b790cd86d19583699596497b03a0d0f49818cc2",
+          "kind": "DNS",
+          "network": "livenet",
+          "title": "DNS registered: nokia@proofofwork.me",
+          "txid": "36a800aed50b8422bbe85c2e7b790cd86d19583699596497b03a0d0f49818cc2"
+        }
+      ]
+    },
+    "boundedPostNodeReadiness": {
+      "checkedAt": "2026-09-30T01:18:33.791Z",
+      "base": "https://computer.proofofwork.me",
+      "network": "livenet",
+      "ok": true,
+      "thresholds": {
+        "timeoutMs": 30000,
+        "warnMs": 2500,
+        "criticalMs": 10000,
+        "maxLagBlocks": 2,
+        "healthMaxLagBlocks": 1
+      },
+      "summary": {
+        "ok": true,
+        "activeInvariantFailures": [],
+        "staleReadiness": [],
+        "latency": [
+          {
+            "severity": "warning",
+            "kind": "route-latency-warning",
+            "message": "work-summary exceeded warning latency threshold",
+            "details": {
+              "elapsedMs": 6788,
+              "warnMs": 2500
+            }
+          },
+          {
+            "severity": "warning",
+            "kind": "route-latency-warning",
+            "message": "marketplace-summary exceeded warning latency threshold",
+            "details": {
+              "elapsedMs": 9783,
+              "warnMs": 2500
+            }
+          }
+        ],
+        "warnings": [
+          {
+            "severity": "warning",
+            "kind": "route-latency-warning",
+            "message": "work-summary exceeded warning latency threshold",
+            "details": {
+              "elapsedMs": 6788,
+              "warnMs": 2500
+            }
+          },
+          {
+            "severity": "warning",
+            "kind": "route-latency-warning",
+            "message": "marketplace-summary exceeded warning latency threshold",
+            "details": {
+              "elapsedMs": 9783,
+              "warnMs": 2500
+            }
+          }
+        ],
+        "counts": {
+          "activeInvariantFailures": 0,
+          "staleReadiness": 0,
+          "latencyWarnings": 2,
+          "latencyErrors": 0,
+          "warnings": 2,
+          "total": 2
+        }
+      },
+      "health": {
+        "ready": true,
+        "available": true,
+        "lagBlocks": 0,
+        "indexedThroughBlock": 969234,
+        "indexedThroughBlockHash": "000000000000000000002628072c0cbbf1767aca95785e594252ae006e594782",
+        "tipHeight": 969234,
+        "tipHash": "000000000000000000002628072c0cbbf1767aca95785e594252ae006e594782",
+        "summarySnapshotId": "fd7905c5cdd5e428185f8101",
+        "summarySnapshotOk": true
+      },
+      "routes": {
+        "work": {
+          "label": "work-summary",
+          "status": 200,
+          "ok": true,
+          "elapsedMs": 6788,
+          "checkpoint": {
+            "snapshotId": "fd7905c5cdd5e428185f8101",
+            "indexedThroughBlock": 969234,
+            "indexedThroughBlockHash": "000000000000000000002628072c0cbbf1767aca95785e594252ae006e594782",
+            "indexedAt": "2026-09-30T01:14:00.403Z"
+          },
+          "workAmoV8": {
+            "ready": true,
+            "status": null,
+            "indexReady": true,
+            "migrationReady": true,
+            "declarationReady": true,
+            "evidenceComplete": true,
+            "pendingWitnessReady": true,
+            "workerReady": true,
+            "workerState": "idle",
+            "workerTipHeight": 969234,
+            "workerTipHash": "000000000000000000002628072c0cbbf1767aca95785e594252ae006e594782",
+            "migrationTipHeight": 969234,
+            "migrationTipHash": "000000000000000000002628072c0cbbf1767aca95785e594252ae006e594782",
+            "tipHeight": 969234,
+            "tipHash": "000000000000000000002628072c0cbbf1767aca95785e594252ae006e594782",
+            "snapshotHeight": null,
+            "snapshotHash": null,
+            "activationTipVerified": true,
+            "declarationEvidence": {
+              "declarationTxid": "f90e1faf572ef8253ca5959731b9d9e99c74bced4397380059878936712bee7a",
+              "declarationHeight": 960600,
+              "activationHeight": 960601,
+              "evidenceComplete": true,
+              "coreVerified": true,
+              "indexVerified": true,
+              "configuredPinsMatch": true
+            }
+          },
+          "error": null,
+          "errorCode": null,
+          "reason": null
+        },
+        "marketplace": {
+          "label": "marketplace-summary",
+          "status": 200,
+          "ok": true,
+          "elapsedMs": 9783,
+          "checkpoint": {
+            "snapshotId": "fd7905c5cdd5e428185f8101",
+            "indexedThroughBlock": 969234,
+            "indexedThroughBlockHash": "000000000000000000002628072c0cbbf1767aca95785e594252ae006e594782",
+            "indexedAt": "2026-09-30T01:14:00.403Z"
+          },
+          "workAmoV8": {
+            "ready": true,
+            "status": null,
+            "indexReady": true,
+            "migrationReady": true,
+            "declarationReady": true,
+            "evidenceComplete": true,
+            "pendingWitnessReady": true,
+            "workerReady": true,
+            "workerState": "idle",
+            "workerTipHeight": 969234,
+            "workerTipHash": "000000000000000000002628072c0cbbf1767aca95785e594252ae006e594782",
+            "migrationTipHeight": 969234,
+            "migrationTipHash": "000000000000000000002628072c0cbbf1767aca95785e594252ae006e594782",
+            "tipHeight": 969234,
+            "tipHash": "000000000000000000002628072c0cbbf1767aca95785e594252ae006e594782",
+            "snapshotHeight": null,
+            "snapshotHash": null,
+            "activationTipVerified": true,
+            "declarationEvidence": {
+              "declarationTxid": "f90e1faf572ef8253ca5959731b9d9e99c74bced4397380059878936712bee7a",
+              "declarationHeight": 960600,
+              "activationHeight": 960601,
+              "evidenceComplete": true,
+              "coreVerified": true,
+              "indexVerified": true,
+              "configuredPinsMatch": true
+            }
+          },
+          "error": null,
+          "errorCode": null,
+          "reason": null
+        }
+      }
+    },
+    "uiArtifacts": {
+      "releaseId": "db853f434f9b-20260930T011125Z",
+      "sourceArchiveSha256": "2019e0e06e6ea3903d6f362566118b1360b3e1c9d24e12b895e96a52f932b450",
+      "surfacePayloadSha256": "c5a60c75326337f14c821afcadce1e200366e34670de5cddd8581afe5bc048fc",
+      "managedArchiveSha256": "5ea63ef85b25ed16579b03133109290f9de49eca26e22f3b4d23578711b17154",
+      "buildRuntime": "Node v22.23.2 / npm 10.9.8; 15 successful clean builds; Computer copied to NFT; lockfile installed with lifecycle scripts disabled"
+    },
+    "deployedHistorySealTimes": [
+      {
+        "txid": "767b1c7d0df60edc9099ff29269b553843c896e397f550f5d7f8558834575c4b",
+        "createdAt": "2026-09-29T13:32:04.000Z",
+        "coreTime": 1790688724
+      },
+      {
+        "txid": "4f895eaabd46d1c8d69b6ac953aa3776a861bf29951b99a6126b31413b2b15bd",
+        "createdAt": "2026-09-29T08:31:07.000Z",
+        "coreTime": 1790670667
+      },
+      {
+        "txid": "3eb8cfcb5edb187cb77e2bc4ef4a3142a03c4897afe9a800613605e2d65e62e6",
+        "createdAt": "2026-09-29T08:31:07.000Z",
+        "coreTime": 1790670667
+      },
+      {
+        "txid": "00943f5892cee2e9d4d097e9b6098629a7f5a080ccbd7c33b24c8de9685975a5",
+        "createdAt": "2026-08-16T21:37:43.000Z",
+        "coreTime": 1786916263
+      }
+    ],
+    "uiPublication": [
+      "ui_release_provenance status=verified release_id=0e767c69e785-20260929T165314Z commit=0e767c69e785945110a53092415894a4eab70d12 archive_sha256=2f0f1dc53e83efbcd1caec391fea7d19215b75e79f8aba15b05068d8febe2d68",
+      "ui_release_provenance status=verified release_id=3bc6c9d44e00-20260929T200127Z commit=3bc6c9d44e00c504c324a1f13b7803f89cbfb122 archive_sha256=9fb8049076552a54fa847cb86c39dbeeb02268e07a38dc6e1366043b8876438f",
+      "ui_release_candidate status=verified release_id=db853f434f9b-20260930T011125Z commit=db853f434f9b9e6162bcd41e5b1c9fdebee292eb archive_sha256=5ea63ef85b25ed16579b03133109290f9de49eca26e22f3b4d23578711b17154",
+      "ui_release_provenance status=verified release_id=3bc6c9d44e00-20260929T200127Z commit=3bc6c9d44e00c504c324a1f13b7803f89cbfb122 archive_sha256=9fb8049076552a54fa847cb86c39dbeeb02268e07a38dc6e1366043b8876438f",
+      "ui_release_provenance status=recorded release_id=db853f434f9b-20260930T011125Z commit=db853f434f9b9e6162bcd41e5b1c9fdebee292eb archive_sha256=5ea63ef85b25ed16579b03133109290f9de49eca26e22f3b4d23578711b17154",
+      "ui_release_provenance status=verified release_id=db853f434f9b-20260930T011125Z commit=db853f434f9b9e6162bcd41e5b1c9fdebee292eb archive_sha256=5ea63ef85b25ed16579b03133109290f9de49eca26e22f3b4d23578711b17154",
+      "ui_release_publish status=published release_id=db853f434f9b-20260930T011125Z commit=db853f434f9b9e6162bcd41e5b1c9fdebee292eb rollback_root=/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-db853f434f9b-20260930T011125Z",
+      "ui_release_provenance status=verified release_id=db853f434f9b-20260930T011125Z commit=db853f434f9b9e6162bcd41e5b1c9fdebee292eb archive_sha256=5ea63ef85b25ed16579b03133109290f9de49eca26e22f3b4d23578711b17154"
+    ],
+    "retentionTimers": {
+      "stopped": [
+        "UI proofofwork-ui-release-prune.timer",
+        "UI proofofwork-ui-storage-prune.timer",
+        "node proofofwork-node-release-prune.timer"
+      ],
+      "unitEnablement": "All three remain enabled; an approved persistent pause/pin-aware policy is required before reboot or resumption. No disabling/masking is performed by this stop-only plan."
+    },
+    "uiPreservation": [
+      "9fb8049076552a54fa847cb86c39dbeeb02268e07a38dc6e1366043b8876438f  /var/backups/proofofwork-ui/releases/proofofwork-ui-release-3bc6c9d44e00-20260929T200127Z.tgz",
+      "2f0f1dc53e83efbcd1caec391fea7d19215b75e79f8aba15b05068d8febe2d68  /var/backups/proofofwork-ui/releases/proofofwork-ui-release-0e767c69e785-20260929T165314Z.tgz",
+      "drwxr-xr-x 34 root root 4096 Sep 29 17:13 /var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-3bc6c9d44e00-20260929T200127Z",
+      "drwxr-xr-x 34 root root 4096 Sep 29 20:15 /var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-db853f434f9b-20260930T011125Z",
+      "inactive",
+      "inactive",
+      "Filesystem       1B-blocks        Used   Available Use% Mounted on",
+      "/dev/sda1      39973924864 10897977344 27391754240  29% /"
+    ],
+    "nodePreservation": [
+      "238d3197bdc14150cb34856f2731fe8a8f50d8d98592d950a428ba26568fd3bc  /data/proofofwork-release-backups/managed/proofofwork-node-release-3bc6c9d-20260929T200136Z.tgz",
+      "f69487fe62e1774be1b04a50ad2cb766d7f39df7e21142d1eb5fa12b57778474  /data/proofofwork-release-backups/managed/proofofwork-node-release-d2c0afa-20260929T160642Z.tgz",
+      "inactive",
+      "active",
+      "active",
+      "active"
+    ],
+    "servedBundleDnsTests": {
+      "passed": 2,
+      "durationSeconds": 9.1,
+      "mockedReads": true,
+      "productionWrites": false
+    },
+    "productionSurfaces": [
+      {
+        "host": "proofofwork.me",
+        "growthEvents": null,
+        "badAssets": [],
+        "dnsStats": null,
+        "dnsTabText": null,
+        "status": 200,
+        "elapsedMs": 6698,
+        "title": "ProofOfWork.Me",
+        "bodyPrefix": "Skip to main content\nPoW\nProofOfWork.Me\nThe final network\nHome\nDNS\nBoost\nHome\nRefreshing the ID and DNS registries through the full node...\nRefreshing the ID and DNS registries through the full node...\nTHE PROOFOFWORK COMPUTER\nProofOfWork.Me\n\nClaim a permanent on-chain ID, then communicate, publish, exchange, and verify through one chain-readable computer.\n\nClaim an ID\nOpen Computer\nPROOF INSTRUMENT\nLIVE\nSOURCE\nConfirmed ProofOfWork\nSIGNING\nLocal wallet\nRECORDS\nHuman-readable \u00b7 agent-verifiable\nPending data is visibility. Confirmation is truth.\nConfirmed IDs\n508\nPending IDs\n20\nID records\n528\nConfirmed .pow\n23\nPending .pow\n0\nDNS records\n23\nRefreshing\nAPPARATUS\nExplore the Computer\n\nStart with a task. Every surface resolves back to the same chain-readable record.\n\n01\nCreate & communicate\n\nCommunicate, publish, and inspect chain-readable work.\n\nComputer\nMail, files, contacts, applications, and local-first account state in one sovereign workspace.\nDesktop\nSearch a confirmed ID or address and browse its public, verified files.\nBrowser\nRender verified HTML messages and attachments from a transaction ID.\nBoost\nFollow proof-ranked people and publish permanent social records from Mail.\n02\nIdentity & markets\n\nOwn an identity, then create and exchange verifiable value.\n\nIDs\nClaim a permanent ProofOfWork ID through the canonical registry.\nDNS\nClaim and search a permanent .pow DNS name from the canonical registry.\nAMO\nBrowse sealed terms and settle ID, credit, WORK, bond, and Boost sale tickets.\nCredits\nCreate proof-backed credits and mint directly through their owner registries.\nWallet\nReview balances, transfer owned credits and bonds, and manage your sale tickets.\n03\nProof instruments\n\nRead the instruments built from confirmed ProofOfWork state.\n\nWORK\nInspect WORK supply, holders, network-value floor, AMO units, and confirmed history.\nInfinity\nCreate and inspect POWB Infinity Bonds and their sale-ticket market.\nInception\nCreate and inspect INCB Inception Bonds with frozen conf",
+        "pageErrors": [],
+        "unavailable": []
+      },
+      {
+        "host": "id.proofofwork.me",
+        "growthEvents": null,
+        "badAssets": [],
+        "dnsStats": null,
+        "dnsTabText": null,
+        "status": 200,
+        "elapsedMs": 6034,
+        "title": "ProofOfWork IDs",
+        "bodyPrefix": "Skip to main content\nPoW\nProofOfWork IDs\nMainnet registry\nHome\nDNS\nBoost\nIDs\nRefresh\nInstall UniSat\nProofOfWork Computer verifying public data. Connect UniSat for account balances and spendable proofs.\nProofOfWork Computer verifying public data. Connect UniSat for account balances and spendable proofs.\nOverview\nRegister\nYour IDs\nRegistry\nPROOFOFWORK-NATIVE IDENTITY\nClaim your ProofOfWork ID.\n\nRegister a permanent on-chain mail identity that resolves to your ProofOfWork receive address. First confirmed valid registration wins.\n\n508\nConfirmed IDs\n20\nPending IDs\n528\nVisible records\nRegister ID\n\nPay 1,000 proofs to the canonical registry address.\n\nID\n@proofofwork.me\nSearch any ID\nEnter a name to check the ProofOfWork registry before you claim.\nOwner\nReceive address\nAdvanced options\n0 / 100,000 OP_RETURN data-carrier bytes\nConnect UniSat first\nCanonical Registry\nNETWORK\nMainnet\nADDRESS\nbc1qfwytlzyr3ym3enz2eutwtjsf9kkf6uqkjydk3e\nPROTOCOL\npwid1:r2\nYour IDs\n\nConnect UniSat to see your IDs.\n\nPublic Registry\n\nGlobal records create the network effect. Verification actions only appear for your own IDs.\n\nRefresh\n528 total\ndomains@proofofwork.me\nConfirmed \u00b7 1,000 proofs\nOWNER\n1F1zepCJ...CYAxCKNY\nRECEIVES\n1F1zepCJ...CYAxCKNY\nPGP\nNone\nTX\na29e8cdb...fdc59ae0\nView TX\nluuk2@proofofwork.me\nConfirmed \u00b7 1,000 proofs\nOWNER\n14BZkyir...7nSphQDy\nRECEIVES\n14BZkyir...7nSphQDy\nPGP\nNone\nTX\ndeb1096a...8796e666\nView TX\n77@proofofwork.me\nConfirmed \u00b7 1,000 proofs\nOWNER\nbc1pt0uw...mshhleqp\nRECEIVES\nbc1pt0uw...mshhleqp\nPGP\nNone\nTX\nc02ac0c8...15f0d20d\nView TX\nluuk@proofofwork.me\nConfirmed \u00b7 1,000 proofs\nOWNER\n1MbghEKw...d5iy7PzM\nRECEIVES\n1MbghEKw...d5iy7PzM\nPGP\nNone\nTX\n7d1782d6...1e61d6e5\nView TX\nboost@proofofwork.me\nConfirmed \u00b7 1,000 proofs\nOWNER\n1MwPXzhs...uTNhGskU\nRECEIVES\n1MwPXzhs...uTNhGskU\nPGP\nNone\nTX\n5e0a510f...4ad41363\nView TX\njustme@proofofwork.me\nConfirmed \u00b7 1,000 proofs\nOWNER\n1NMqxJJd...EgxVqQSt\nRECEIVES\n1NMqxJJd...EgxVqQSt\nPGP\nNone\nTX\n7b4bc641...70162da3\nView TX\ncollect@proofofwork.me\nConfi",
+        "pageErrors": [],
+        "unavailable": []
+      },
+      {
+        "host": "dns.proofofwork.me",
+        "growthEvents": null,
+        "badAssets": [],
+        "dnsStats": null,
+        "dnsTabText": null,
+        "status": 200,
+        "elapsedMs": 5923,
+        "title": "ProofOfWork DNS",
+        "bodyPrefix": "Skip to main content\nPoW\nProofOfWork DNS\nMainnet registry\nHome\nDNS\nBoost\nDNS\nRefresh\nInstall UniSat\nProofOfWork Computer verifying public data. Connect UniSat for account balances and spendable proofs.\nProofOfWork Computer verifying public data. Connect UniSat for account balances and spendable proofs.\nOverview\nRegister\nYour .pow\nRegistry\nPROOFOFWORK-NATIVE DNS\nClaim your .pow name.\n\nRegister a permanent on-chain DNS name that resolves to your ProofOfWork address. First confirmed valid registration wins.\n\n23\nConfirmed .pow\n0\nPending .pow\n23\nVisible records\nRegister .pow\n\nPay 1,000 proofs to the DNS registry address.\n\nName\n.pow\nSearch any .pow\nEnter a prefix to check the ProofOfWork DNS registry before you claim.\nOwner\nResolves to\nFee sat/vB\nRegistry\n0.1 sat\n0.5 sat\n1 sat\n2 sat\n0 / 100,000 OP_RETURN data-carrier bytes\nConnect UniSat first\nCanonical Registry\nNETWORK\nMainnet\nREGISTRY\ndomains@proofofwork.me\nADDRESS\n1F1zepCJ8VPcPoeMt6G4BPKuE3CYAxCKNY\nPROTOCOL\npwdns1:r1\nYour .pow\n\nConnect UniSat to see your .pow names.\n\nPublic Registry\n\nConfirmed .pow records are on-chain DNS assets and can be listed in AMO.\n\nRefresh\n23 total\nchat.pow\nConfirmed \u00b7 1,000 proofs\nOWNER\n1J8fGE9y...iZfLfGg8\nRECEIVES\n1J8fGE9y...iZfLfGg8\nTX\ne983d3f2...1ac07cd2\nView TX\nsamsung.pow\nConfirmed \u00b7 1,000 proofs\nOWNER\n1J8fGE9y...iZfLfGg8\nRECEIVES\n1J8fGE9y...iZfLfGg8\nTX\n5d8685ba...22e4e82b\nView TX\nnokia.pow\nConfirmed \u00b7 1,000 proofs\nOWNER\n1J8fGE9y...iZfLfGg8\nRECEIVES\n1J8fGE9y...iZfLfGg8\nTX\n36a800ae...49818cc2\nView TX\n2.pow\nConfirmed \u00b7 1,000 proofs\nOWNER\n1J8fGE9y...iZfLfGg8\nRECEIVES\n1J8fGE9y...iZfLfGg8\nTX\n0863ead3...e0da46f7\nView TX\n4.pow\nConfirmed \u00b7 1,000 proofs\nOWNER\n1J8fGE9y...iZfLfGg8\nRECEIVES\n1J8fGE9y...iZfLfGg8\nTX\nceecb08e...9ac66aad\nView TX\nlasvegas.pow\nConfirmed \u00b7 1,000 proofs\nOWNER\n1J8fGE9y...iZfLfGg8\nRECEIVES\n1J8fGE9y...iZfLfGg8\nTX\n714fede3...4c7e858f\nView TX\ndubai.pow\nConfirmed \u00b7 1,000 proofs\nOWNER\n1J8fGE9y...iZfLfGg8\nRECEIVES\n1J8fGE9y...iZfLfGg8\nTX\n3f9802bf...ac5449c8\nView TX\n3.pow\nConfirmed \u00b7 1",
+        "pageErrors": [],
+        "unavailable": []
+      },
+      {
+        "host": "desktop.proofofwork.me",
+        "growthEvents": null,
+        "badAssets": [],
+        "dnsStats": null,
+        "dnsTabText": null,
+        "status": 200,
+        "elapsedMs": 5945,
+        "title": "ProofOfWork Desktop",
+        "bodyPrefix": "Skip to main content\nPoW\nProofOfWork Desktop\nPublic file search\nHome\nDNS\nBoost\nDesktop\nRefresh\nProofOfWork Computer verifying public data. Connect UniSat for account balances and spendable proofs.\nProofOfWork Computer verifying public data. Connect UniSat for account balances and spendable proofs.\nPoW\nProofOfWork Desktop\nOpen a public ProofOfWork desktop.\nOpen\nMainnet\nConfirmed files\nNo wallet required\nProofOfWork.Me\nHome\nIDs\nDNS\nComputer\nDesktop\nBrowser\nBoost\nAMO\nCredit\nWallet\nWORK\nInfinity\nInception\nLog\nGrowth\nX\nYT\nYouTube\nGitHub",
+        "pageErrors": [],
+        "unavailable": []
+      },
+      {
+        "host": "browser.proofofwork.me",
+        "growthEvents": null,
+        "badAssets": [],
+        "dnsStats": null,
+        "dnsTabText": null,
+        "status": 200,
+        "elapsedMs": 5956,
+        "title": "ProofOfWork Browser",
+        "bodyPrefix": "Skip to main content\nPoW\nProofOfWork Browser\nHTML from ProofOfWork\nHome\nDNS\nBoost\nBrowser\nEnter a ProofOfWork txid to load verified HTML.\nEnter a ProofOfWork txid to load verified HTML.\nRender\nEvidence\nPage template\nPROOFOFWORK-NATIVE BROWSER\nPaste a txid. Render the page.\n\nHTML pages are ProofOfWork message bodies or file attachments, reconstructed from OP_RETURN chunks and rendered inside a static, script-disabled sandbox.\n\nTransaction ID\nNETWORK\nMainnet\nTestnet4\nTestnet3\nView Page\nNo page loaded\n\nBrowser accepts confirmed or pending txids with HTML in the message body or a verified HTML attachment.\n\nPAGE TEMPLATE\nComputer-native HTML\nCOPY HTML\nDOWNLOAD\nTitle\nKicker\nBody\nBYTES\n2.1 KB\nSHA-256\nfb694a7888634ab165823e919099ab580beb55da2648f60b01998cc80eb2d2de\nProofOfWork.Me\nHome\nIDs\nDNS\nComputer\nDesktop\nBrowser\nBoost\nAMO\nCredit\nWallet\nWORK\nInfinity\nInception\nLog\nGrowth\nX\nYT\nYouTube\nGitHub",
+        "pageErrors": [],
+        "unavailable": []
+      },
+      {
+        "host": "boost.proofofwork.me",
+        "growthEvents": null,
+        "badAssets": [],
+        "dnsStats": null,
+        "dnsTabText": null,
+        "status": 200,
+        "elapsedMs": 5897,
+        "title": "ProofOfWork.Me",
+        "bodyPrefix": "Skip to main content\nPoW\nBoost\nProof-ranked social signal\nBoost\nRefresh\nMainnet\nInstall UniSat\nBoost indexed 7 records.\nBoost indexed 7 records.\nNetwork stats\nPost a Boost\nGet ID\nIdentity\nConnect\nProfile\nView\nBoost AMO\nFor You\nFollowing\nPo\nReview Boost\n\n140 characters \u00b7 Proof / WORK \u00b7 Files\n\nHour\nDay\nWeek\nAll\nValue\nNewest\nOldest\nRefresh\ncarbonz@proofofwork.me\n@carbonz\nSep 14, 7:32 PM\n4.84T proofs\nFollow\n\nIncredible feat by armyofyouth@proofofwork.me! Boost socials will prevent brain rot of the youth. $WORK keeps getting pristine\ud83e\uddbe\n\nView proof\nConfirmed\n1\n1\n1\nShare\n19\n19JE7LS6...XXe8qEG3\n@19JE7LS6...XXe8qEG3\nSep 5, 7:00 AM\n692.01K proofs\nFollow\n\n$WORK is the only real deal. There is no incentive in gambling on prediction markets and rug pull chains since May 15th 2026.\n\nView proof\nConfirmed\n0\n0\n0\nShare\nBC\nbc1p0uxp...hq5ca7ed\n@bc1p0uxp...hq5ca7ed\nSep 1, 5:43 PM\n69.69K proofs\nFollow\n\nPROOFOFWORK is schooling openai how to $WORK \ud83e\udd29\n\nView proof\nConfirmed\n0\n0\n0\nShare\narmyofyouth@proofofwork.me\n@armyofyouth\nSep 27, 11:49 PM\n546 proofs\nFollow\n\nBuild with purpose. Leave proof. Make effort visible, records verifiable, and every small step useful to the next builder. $WORK $POWB $INCB\n\nView proof\nConfirmed\n0\n0\n0\nShare\narmyofyouth@proofofwork.me\n@armyofyouth\nAug 28, 10:15 PM\n546 proofs\nFollow\n\nhello world, testing boost.\n\nView proof\nConfirmed\n0\n0\n0\nShare\n1M\n1MwPXzhs...uTNhGskU\n@1MwPXzhs...uTNhGskU\nSep 16, 11:58 PM\nAction signal 546 proofs\nFollow\n\nthanks bro\n\nView proof\nConfirmed\n0\n0\n0\nShare\narmyofyouth@proofofwork.me\nreboosted\n@armyofyouth\nSep 16, 11:49 PM\nAction signal 546 proofs\nFollow\nReboosted post\nOpen original Boost\ncarbonz@proofofwork.me\n@carbonz\nSep 14, 7:32 PM\n\nIncredible feat by armyofyouth@proofofwork.me! Boost socials will prevent brain rot of the youth. $WORK keeps getting pristine\ud83e\uddbe\n\nOriginal Boost signal\n1,092 proofs\nView original proof\nView proof\nConfirmed\n1\n1\n1\nShare\nExplore Boost\nSignal Now\nSep 29, 9:14 PM\n4.84T proofs\nTotal\n3,276 proofs\nProof\n0\nFollowing\nTop ",
+        "pageErrors": [],
+        "unavailable": []
+      },
+      {
+        "host": "amo.proofofwork.me",
+        "growthEvents": null,
+        "badAssets": [],
+        "dnsStats": "23\nTotal .pow Names\n1\nActive Listings\n0\nDNS Sales\n0\nVolume proofs\n0\nPending .pow\n0\nPending Sales",
+        "dnsTabText": "DNS\n1",
+        "status": 200,
+        "elapsedMs": 10010,
+        "title": "ProofOfWork.Me",
+        "bodyPrefix": "Skip to main content\nPoW\nProofOfWork AMO\nAutonomous Money Organization\nHome\nDNS\nBoost\nAMO\nRefresh\nMainnet\nInstall UniSat\nProofOfWork Computer verifying public data. Connect UniSat for account balances and spendable proofs.\nProofOfWork Computer verifying public data. Connect UniSat for account balances and spendable proofs.\nLoading\nCanonical AMO summary\nLoading all credit and bond listings and verifying the AMO snapshot.\nAUTONOMOUS MONEY ORGANIZATION\nTrade ProofOfWork-native assets.\n\nIDs, DNS names, credits, and bonds trade through sale tickets: sellers reserve the asset, seal exact terms, and buyers settle on ProofOfWork.\n\n23\nTotal .pow Names\n1\nActive Listings\n0\nDNS Sales\n0\nVolume proofs\n0\nPending .pow\n0\nPending Sales\nIDs\n\u2014\nDNS\n1\nCredits\n\u2014\nBonds\n\u2014\nBoosts\n0\nList a .pow name\n\nPublish an on-chain listing for one of your confirmed .pow names. Listings cost 546 proofs.\n\nConnect the owner wallet to list confirmed .pow names.\n\nAMO Transfer\n\nListings create a sale-ticket UTXO. Buyers settle by spending that ticket and paying the 546 sat registry transfer.\n\nPublish on-chain listing\n\nSelect an owned confirmed .pow name above first.\n\nSeller price proofs\nSpecific buyer optional\nLocked receive address optional\nFee sat/vB\n0.1 sat\n0.5 sat\n1 sat\n2 sat\nPublish On-Chain\nSelect an on-chain listing\n\nChoose an active listing below. The purchase form fills from that on-chain listing.\n\nProofOfWork Computer verifying public data. Connect UniSat for account balances and spendable proofs.\nProofOfWork Computer verifying public data. Connect UniSat for account balances and spendable proofs.\nNew owner\nNew receive optional\n0 / 100,000 OP_RETURN data-carrier bytes\nFee sat/vB\n0.1 sat\n0.5 sat\n1 sat\n2 sat\nBuy Listing On-Chain\nActive Listings\n\nOn-chain .pow name listings are canceled by delisting, expiry, or any ownership transfer.\n\n1 total\nAll\n1\nSealed\n1\nUnsealed\n0\nSort\nPrice high\nPrice low\nArb high\nArb low\n4.pow\n10,000 proofs \u00b7 Sealed ticket \u00b7 Listed Sep 29, 4:31 AM\nSELLER\n1J8fGE9y...iZfLfGg8\nBUYER",
+        "pageErrors": [],
+        "unavailable": []
+      },
+      {
+        "host": "credit.proofofwork.me",
+        "growthEvents": null,
+        "badAssets": [],
+        "dnsStats": null,
+        "dnsTabText": null,
+        "status": 200,
+        "elapsedMs": 5946,
+        "title": "ProofOfWork.Me",
+        "bodyPrefix": "Skip to main content\nPoW\nCredits\nProofOfWork credit factory\nHome\nDNS\nBoost\nCredit\nRefresh\nMainnet\nInstall UniSat\nProofOfWork Computer verifying public data. Connect UniSat for account balances and spendable proofs.\nProofOfWork Computer verifying public data. Connect UniSat for account balances and spendable proofs.\nOverview\nCreate\nMint\nLedger\nDirectory\nCREDIT INDEX\ntokens@proofofwork.me\n\nCreation records and credit ids.\n\nSELECTED REGISTRY\nbc1px0ek...as2quvx2\n\nMint payments go to the creator registry.\n\nMINT RULE\n1,000 DRAIN\n\nEvery credit keeps its own mint lane.\n\nCreate credit\n\nPay the creation fee to tokens@proofofwork.me. Mints route to your registry.\n\nTicker\nMax supply\nMint amount\nMint price proofs\nCredit registry\nFee sat/vB\n0.1 sat\n0.5 sat\n1 sat\n2 sat\nUse 21M template\nCreate fee\n546 proofs\nMinimum mint\n546 proofs\nLaunch price\n0 proof / TOKEN\nUSD/credit\n$0\n\nEnter a ticker and your own registry. WORK is already reserved for the canonical WORK credit.\n\n0 / 100,000 OP_RETURN data-carrier bytes\nCreate Credit\n\nConnect UniSat to create credit.\n\nMint credit\n\nMints pay the credit registry directly. ProofOfWork only charges the creation event.\n\nCredit\nDRAIN - 2eff2fb3...797a9d23 - confirmed\nTOKEN - 414871ab...5fd3b60f - confirmed\nECOSYSTEM - 84b51783...33e3f849 - confirmed\nMAJOR - 164b425b...3622bec7 - confirmed\nSHOGUN - 5306e79c...b442aad1 - confirmed\nAVALON - 6469e5f1...095d2af4 - confirmed\nASCEND - 89cbf0cb...0e2a8964 - confirmed\nDEFI - 629969a7...7206b92e - confirmed\nHYBRID - 020b5f09...59d1fcbf - confirmed\nKRAKEN - 68b71c96...06d3bef7 - confirmed\nTROJAN - 8e8fb37d...19c3ad03 - confirmed\nFUSION - 4d8baefa...c8cef973 - confirmed\nFUTURE - e67c85da...5a933f04 - confirmed\nPLASMA - ee3e50b9...d4771818 - confirmed\nPURPLE - 03e567ad...b72c683f - confirmed\nBLUE - 5701b52b...cc73a3ca - confirmed\nRED - e376186e...4975d0c2 - confirmed\nPINK - e7e1fc77...83e80631 - confirmed\nYELLOW - ebc65c93...e706cb81 - confirmed\nGREEN - ff479210...06e66b84 - confirmed\nCOPPER - 9ac67011...6f447a2",
+        "pageErrors": [],
+        "unavailable": []
+      },
+      {
+        "host": "wallet.proofofwork.me",
+        "growthEvents": null,
+        "badAssets": [],
+        "dnsStats": null,
+        "dnsTabText": null,
+        "status": 200,
+        "elapsedMs": 6443,
+        "title": "ProofOfWork.Me",
+        "bodyPrefix": "Skip to main content\nPoW\nWallet\nCredit balances and transfers\nHome\nDNS\nBoost\nWallet\nRefresh\nMainnet\nInstall UniSat\nPublic credit directory loaded. 236 credits. Connect UniSat to verify account balances and spendable proofs.\nPublic credit directory loaded. 236 credits. Connect UniSat to verify account balances and spendable proofs.\nOverview\nBalances\nSend\nList\nActivity\n\nCredit wallet\n\nConnect UniSat\nConfirmed balances are canonical. Pending transfers stay visible until ProofOfWork confirms or drops them.\nCredit types\nConnect UniSat\nSpendable proofs\nConnect UniSat\nMovements seen\nConnect UniSat\nMutation fee\n546 proofs\nBalances\n\nConnect UniSat to view account-specific credit balances, pending activity, and spendable amounts.\n\nConnect UniSat to view balances\n\nThe public credit directory can load without a wallet; account balances and spendable amounts require a connected address.\n\nTransfer\n\nSends a `pwt1:send` event and pays the selected credit registry.\n\nCredit\nConnect UniSat to view balances\nAmount\nRecipient address\nSpendable\nConnect UniSat\nRegistry fee\n546 proofs\nPayload\n0 bytes\n\nRegistry and miner fees are final once broadcast. Rejected credit events are not automatically refunded.\n\nFee sat/vB\n0.1 sat\n0.5 sat\n1 sat\n2 sat\nTransfer credit\n\nConnect UniSat first.\n\nTransfer funding lanes\nList\n\nCreates a sale-ticket listing paid to the credit registry.\n\nAmount\nPrice proofs\nList unit\nSet amount and price\n$0\nReference\nNo market data\nRefresh for latest\nPosition\nn/a\nSet listing\nBuyer lock optional\nSpendable\nConnect UniSat\nRegistry fee\n546 proofs\nTicket\n546 proofs\nFee sat/vB\n0.1 sat\n0.5 sat\n1 sat\n2 sat\nList credit\nTransfer log\n\nTransfers, trades, and rejected attempts touching the connected address.\n\nConnect UniSat to view activity\n\nConfirmed and pending activity is specific to the connected address.\n\nProofOfWork.Me\nHome\nIDs\nDNS\nComputer\nDesktop\nBrowser\nBoost\nAMO\nCredit\nWallet\nWORK\nInfinity\nInception\nLog\nGrowth\nX\nYT\nYouTube\nGitHub",
+        "pageErrors": [],
+        "unavailable": []
+      },
+      {
+        "host": "work.proofofwork.me",
+        "growthEvents": null,
+        "badAssets": [],
+        "dnsStats": null,
+        "dnsTabText": null,
+        "status": 200,
+        "elapsedMs": 6361,
+        "title": "ProofOfWork.Me",
+        "bodyPrefix": "Skip to main content\nPoW\nWORK\nProofOfWork credit dashboard\nHome\nDNS\nBoost\nWORK\nRefresh\nMainnet\nInstall UniSat\nProofOfWork Computer verifying public data. Connect UniSat for account balances and spendable proofs.\nProofOfWork Computer verifying public data. Connect UniSat for account balances and spendable proofs.\nFactory\nRefresh\nOverview\nMarket\nMint\nHolders\nMint log\n\nCredit dashboard\n\nWORK\n21,000,000 max\n1,000 per mint\n1 proof / WORK\n21,000 mints\n\nMinted by confirmed ProofOfWork history. Mints pay the token registry directly.\n\nDeploy TX\nRegistry\nMINT PROGRESS\n100%\n\n21,000,000 / 21,000,000 WORK confirmed. 0 confirmed remaining; 0 available after pending mints.\n\n21,000,000\nMax supply\n21,000,000\nConfirmed minted\n387\nHolders\n21,000\nConfirmed mints\nLive WORK floor\n\nLive ProofOfWork Computer network value divided by 21,000,000 WORK.\n\nFloor\n691,468,328,728.89530265\nproofs / WORK\nExact value\nUSD/WORK\n$576,836,709.19\nLive network value\n14,520,834,903,306,801,355.85252463\nproofs\nExact value\nNetwork USD\n$12,113,570,893,036,600.00\nFrozen network value\n1,776,670,502,897,933,123.68973357\nproofs\nExact value\nFrozen floor\n84,603,357,280.85395827\nproofs / WORK\nExact value\nLive WORK event value\n14,520,834,899,899,944,580.25542187 proofs\nFrozen WORK event value\n1,776,670,499,491,076,348.09263081 proofs\nLive WORK mark\n14,520,834,899,857,368,920.25542187 proofs\nFrozen WORK mark\n1,776,670,499,448,500,688.09263081 proofs\nSale proofs\n9,728,286 proofs\nBitcoin miner fees paid\n10,324,123 proofs\nProofs\nUSD\nPRICE / WORK (LOG SCALE)\n0.932 proofs\n803K proofs\n691B proofs\nMay 14, 10:57 PM\nSep 29, 9:13 PM\nTIME\nLow 0.93212535 proofs / WORK\nHigh 691,468,328,728.8953 proofs / WORK\n242 confirmed points\n\nMint price remains 1,000 proofs for 1,000 WORK. The live floor follows live network value from confirmed events; pending mints, bonds, and transfers wait for confirmation and do not affect the floor. Refreshed Sep 29, 9:13 PM from confirmed Computer value across 26,167 confirmed actions, including 14,520,8",
+        "pageErrors": [],
+        "unavailable": []
+      },
+      {
+        "host": "infinity.proofofwork.me",
+        "growthEvents": null,
+        "badAssets": [],
+        "dnsStats": null,
+        "dnsTabText": null,
+        "status": 200,
+        "elapsedMs": 6092,
+        "title": "ProofOfWork.Me",
+        "bodyPrefix": "Skip to main content\nPoW\nInfinity Bonds\nPOWB bond market\nHome\nDNS\nBoost\nInfinity\nRefresh\nMainnet\nInstall UniSat\nProofOfWork Computer verifying public data. Connect UniSat for account balances and spendable proofs.\nProofOfWork Computer verifying public data. Connect UniSat for account balances and spendable proofs.\nOverview\nHistory\nCreate\nWallet\nMarket\n\nPOWB\n\nInfinity Bond Market\ninfinity@proofofwork.me\nConfirmed supply\n630,496,569 POWB\nPending supply\n0 POWB\nBond floor\n1.00000779 proofs / POWB\nNetwork value\n630,501,483 proofs\nFloor USD\n$0.000834\nNetwork USD\n$525,976.95\n\nPOWB history\n\nInfinity Bond Chart\nConfirmed bond proofs, POWB supply, sales, transfers, and mutation fees.\nChart points\n476\nBond events\n476\nLatest supply\n630,496,569 POWB\nLatest floor\n1.00000779 proofs / POWB\nSupply\nBacking\nFloor\nPOWB SUPPLY\n0 POWB\n384.5M POWB\n769M POWB\nJun 3, 11:30 PM\nSep 8, 2:23 AM\nTIME\nLow 1,000,000 POWB\nHigh 630,496,569 POWB\nRefreshed Sep 29, 9:14 PM\nCreate Bond\n\n1H1arP2xpam6MZmHt6k1tB83stqVdH6ANK\n\nProofs\nRecipient\nPOWB credit\n1,000 POWB\nRecipient\nConnect UniSat\nPayload\n40 bytes\nFee sat/vB\n0.1 sat\n0.5 sat\n1 sat\n2 sat\nCreate bond\n\nPOWB wallet\n\nConnect UniSat\nConfirmed balances are canonical. Pending transfers stay visible until ProofOfWork confirms or drops them.\nPOWB positions\nConnect UniSat\nMovements seen\nConnect UniSat\nMutation fee\n546 proofs\nBalances\n\nConnect UniSat to view account-specific credit balances, pending activity, and spendable amounts.\n\nConnect UniSat to view balances\n\nThe public credit directory can load without a wallet; account balances and spendable amounts require a connected address.\n\nTransfer\n\nSends a pwt1:send POWB event and pays the Infinity Bond registry.\n\nPOWB\nConnect UniSat to view balances\nAmount\nRecipient address\nSpendable\nConnect UniSat\nRegistry fee\n546 proofs\nPayload\n0 bytes\n\nRegistry and miner fees are final once broadcast. Rejected credit events are not automatically refunded.\n\nFee sat/vB\n0.1 sat\n0.5 sat\n1 sat\n2 sat\nTransfer POWB\n\nConnect UniSat fi",
+        "pageErrors": [],
+        "unavailable": []
+      },
+      {
+        "host": "inception.proofofwork.me",
+        "growthEvents": null,
+        "badAssets": [],
+        "dnsStats": null,
+        "dnsTabText": null,
+        "status": 200,
+        "elapsedMs": 5902,
+        "title": "ProofOfWork.Me",
+        "bodyPrefix": "Skip to main content\nPoW\nInception Bonds\nINCB bond market\nHome\nDNS\nBoost\nInception\nRefresh\nMainnet\nInstall UniSat\nProofOfWork Computer verifying public data. Connect UniSat for account balances and spendable proofs.\nProofOfWork Computer verifying public data. Connect UniSat for account balances and spendable proofs.\nOverview\nHistory\nCreate\nWallet\nMarket\n\nINCB\n\nInception Bond Market\ninception@proofofwork.me\nFixed issued supply\n945,662,401,792,509,469 INCB\nPending issuance\n0 INCB\nINCB floor\n1 proofs / INCB\nInception network value\n945,662,401,792,509,491.46190218 proofs\nFloor USD\n$0.000834\nNetwork USD\n$788,890,488,823,347.20\n\nFixed INCB issuance \u00b7 Each bond is valued once from its last confirmed green live WORK summary at H-1, hash-bound to the exact block before that bond.\n\nDirect proof issuance\n27,932 INCB\nAttached WORK issuance\n945,662,401,792,481,537 INCB \u00b7 137,212,259.9999999900000000 WORK\nTotal issued\n945,662,401,792,509,469 INCB\nFixed cumulative issuance value\n945,662,401,792,509,491.46190218 proofs\nWeighted H-1 WORK floor\n6,891,967,246.89529658 proofs / WORK\nLatest H-1 WORK network value\n8,409,504,697,930,711,637.80428513 proofs\nLatest value snapshot block\n968,124\nLatest bond block provenance\n968,125 \u00b7 tx 2,041\n\nEach send-time valuation uses the last confirmed green canonical live WORK summary at that bond's H-1. Every transaction in that bond block is excluded. Confirmation fixes the resulting INCB balance, supply, and attached WORK value; 46 confirmed WORK attachments contributed to issuance; sub-proof dust stays in network value and is not issued.\n\nINCB network value equals fixed cumulative issuance value plus confirmed INCB sale volume, transfer fees, and AMO mutation fees. Later WORK value changes do not reprice INCB.\n\nLatest snapshot a15d16ce2b3bc363ac1ed091 \u00b7 value block 000000000000\u2026 \u00b7 canonical summary c5f433791fd5\u2026 \u00b7 published 2026-09-27T08:16:20.436Z \u00b7 bond block 000000000000\u2026 \u00b7 canonical-summary-refresh \u00b7 canonical-summary-h-minus-one-v1\n\nINCB histo",
+        "pageErrors": [],
+        "unavailable": []
+      },
+      {
+        "host": "log.proofofwork.me",
+        "growthEvents": null,
+        "badAssets": [],
+        "dnsStats": null,
+        "dnsTabText": null,
+        "status": 200,
+        "elapsedMs": 6024,
+        "title": "ProofOfWork.Me",
+        "bodyPrefix": "Skip to main content\nPoW\nProofOfWork Log\nProofOfWork Computer log\nHome\nDNS\nBoost\nLog\nRefresh\nMainnet\nLog loaded from indexed ledger. 26,189 computer actions tracked.\nLog loaded from indexed ledger. 26,189 computer actions tracked.\nOverview\nEvents\nPROOFOFWORK-NATIVE AUDIT TRAIL\nEvery ProofOfWork action with a txid.\n\nMessages, replies, files, ID registry events, listings, seals, delistings, purchases, and token events in one chain-readable log.\n\nSearch\nRefresh\nClear\n26,189\nTotal actions\n26,167\nConfirmed\n21\nPending\n5284 KB\nData stored\nMainnet\nNetwork\nGlobal ProofOfWork log\n\nConfirmed records are canonical. Pending records are visible until they confirm or disappear.\n\nRefreshed through block 969,234.\n\nShowing paged results from 26,189 matching actions. Search an address, ID, txid, or app label to narrow the feed.\n\nCredit sale ticket sealed\n0.0000000364405703 WORK sale ticket sealed for listing 0137e467...085cabc6.\nListing 0137e467...085cabc6\nSep 29, 11:44 AM\nConfirmed\nMainnet\nCredit\nAMO\nSeal\nWORK\n0.0000000364405703 WORK\n546 registry proofs\nACTOR\nbc1pp9wy...tq0hj8rj\nCOUNTERPARTY\n1638Vn6K...b1emU1DV\nLISTING\n0137e467...085cabc6\nView TX\nView Listing\nCredit sale ticket sealed\n0.0000000361549458 WORK sale ticket sealed for listing dc6c63aa...cd114f37.\nListing dc6c63aa...cd114f37\nSep 29, 11:44 AM\nConfirmed\nMainnet\nCredit\nAMO\nSeal\nWORK\n0.0000000361549458 WORK\n546 registry proofs\nACTOR\n1J8fGE9y...iZfLfGg8\nCOUNTERPARTY\n1638Vn6K...b1emU1DV\nLISTING\ndc6c63aa...cd114f37\nView TX\nView Listing\nCredit sale ticket sealed\n0.0000000361549458 WORK sale ticket sealed for listing 34134284...6ed1110b.\nListing 34134284...6ed1110b\nSep 29, 11:44 AM\nConfirmed\nMainnet\nCredit\nAMO\nSeal\nWORK\n0.0000000361549458 WORK\n546 registry proofs\nACTOR\n1J8fGE9y...iZfLfGg8\nCOUNTERPARTY\n1638Vn6K...b1emU1DV\nLISTING\n34134284...6ed1110b\nView TX\nView Listing\nCredit sale ticket sealed\n0.0000000749030366 WORK sale ticket sealed for listing 246c10db...d83ffce5.\nListing 246c10db...d83ffce5\nSep 29, 11:44 AM\nConfirmed\nMainnet",
+        "pageErrors": [],
+        "unavailable": []
+      },
+      {
+        "host": "growth.proofofwork.me",
+        "growthEvents": "AMO\nCredit sale ticket sealed\n\nListing 0137e467...085cabc6\n\n546 proofs\nSep 29, 2026, 11:44 AM\n767b1c7d...34575c4b\nAMO\nCredit sale ticket sealed\n\nListing dc6c63aa...cd114f37\n\n546 proofs\nSep 29, 2026, 11:44 AM\n4f895eaa...3b2b15bd\nAMO\nCredit sale ticket sealed\n\nListing 34134284...6ed1110b\n\n546 proofs\nSep 29, 2026, 11:44 AM\n3eb8cfcb...d65e62e6\nAMO\nCredit sale ticket sealed\n\nListing 246c10db...d83ffce5\n\n546 proofs\nSep 29, 2026, 11:44 AM\n00943f58...685975a5\nAMO\nAMO sale\n\n0.0000000749030366 WORK bought by 19MXUmBg...8cYSaHk4 from 1Pg9E4EH...3UdZKXD9.\n\n25,000 sale proofs\nSep 29, 2026, 8:40 AM\n1cace743...90e85e97\nAMO\nCredit listing\n\nWaiting for sale-ticket seal\n\n546 proofs\nSep 29, 2026, 8:09 AM\n3b35e6af...ae60e1b4\nAMO\nCredit listing\n\nWaiting for sale-ticket seal\n\n546 proofs\nSep 29, 2026, 7:02 AM\nc616b2cd...c876a2b5\nAMO\nSale ticket sealed: 4@proofofwork.me\n\nSeller signature published on chain\n\n546 proofs\nSep 29, 2026, 5:46 AM\ndd498455...68475e38\nDNS\nDNS registered: chat@proofofwork.me\n\nResolver registered\n\n1000 proofs\nSep 29, 2026, 4:37 AM\ne983d3f2...1ac07cd2\nAMO\nDNS listed: 4@proofofwork.me\n\nSale-ticket listing\n\n546 proofs\nSep 29, 2026, 4:31 AM\na2f61350...c7a706bd\nAMO\nCredit listing sealed\n\nSealed sale ticket 4f895eaa...3b2b15bd\n\n546 proofs\nSep 29, 2026, 4:16 AM\ndc6c63aa...cd114f37\nDNS\nDNS registered: samsung@proofofwork.me\n\nResolver registered\n\n1000 proofs\nSep 29, 2026, 4:16 AM\n5d8685ba...22e4e82b",
+        "badAssets": [],
+        "dnsStats": null,
+        "dnsTabText": null,
+        "status": 200,
+        "elapsedMs": 6210,
+        "title": "ProofOfWork.Me",
+        "bodyPrefix": "Skip to main content\nPoW\nProofOfWork Growth\nModel vs chain\nHome\nDNS\nBoost\nGrowth\nRefresh\nMainnet\nProofOfWork Computer verifying public data. Connect UniSat for account balances and spendable proofs.\nProofOfWork Computer verifying public data. Connect UniSat for account balances and spendable proofs.\nOverview\nModel\nEvents\nProducts\nAssumptions\nPROOFOFWORK COMPUTER GROWTH MODEL\nModel the future. Measure the chain.\n\nThe candle-gold line is modeled ProofOfWork Computer network value. The olive line is real confirmed mainnet value from IDs, Mail, Infinity Bonds, Inception Bonds, Drive, DNS, AMO, Browser, Credits, and Wallet. The forecast includes Boost, bonds, credit activity, and transfers with shared payments counted once.\n\nForecast version\n\nAll-product scenario revised 2026-09-05. Both use the 2026-05-11 model origin.\n\nModel shown\nAll products \u00b7 2026-09-05\nOriginal baseline \u00b7 2026-05-13\n\nExplicit assumptions for every product, using the historical May origin. This scenario is not calibrated to current activity and does not revise confirmed network value.\n\nBASELINE VALUE\n2.4M proofs\nBASELINE IDS\n94\nNODE CAGR\n25%\nAGENT SHARE\n51%\nSCENARIO FEE RATE\n0.00001 sat/vB\nRefresh chain metrics\n\nLedger snapshot Sep 29, 9:14 PM from confirmed Computer events with USD quote Sep 29, 9:00 PM.\n\n14,520,834,903,306,801,355.85252463\nproofs\nExact value\nReal network value now \u00b7 $12114T\n3.1B proofs\nModeled value now \u00b7 $2.59M\n+14520835T proofs\n+467,025,346,274% versus model now\n508\nConfirmed IDs \u00b7 20 pending\n26,167\nConfirmed computer actions\n11,134,396\nAMO flow proofs \u00b7 9,750,286 sale \u00b7 93 confirmed sales \u00b7 1,384,110 fee proofs\n14,520,834,899,899,944,580.25542187\nproofs\nExact value\nWORK live event value \u00b7 14,520,834,899,857,368,920.25542187 live mark \u00b7 1,776,670,499,491,076,348.09263081 frozen event \u00b7 9,728,286 sale proofs \u00b7 1,479,114 mutation proofs\nPLAIN READ\nCandle-gold is the success case. Olive is ProofOfWork history.\n\nThe model asks what the ProofOfWork Computer can become if IDs, Mail, B",
+        "pageErrors": [],
+        "unavailable": []
+      },
+      {
+        "host": "computer.proofofwork.me",
+        "growthEvents": null,
+        "badAssets": [],
+        "dnsStats": "1\nActive Listings\n0\nDNS Sales\n0\nVolume proofs\n0\nPending .pow",
+        "dnsTabText": "DNS\n1",
+        "status": 200,
+        "elapsedMs": 10348,
+        "title": "ProofOfWork.Me",
+        "bodyPrefix": "Skip to main content\nPoW\nAMO\nProofOfWork Computer \u00b7 Mainnet\nHome\nDNS\nBoost\nComputer\nRefresh\nMainnet\nInstall UniSat\nProofOfWork Computer verifying public data. Connect UniSat for account balances and spendable proofs.\nProofOfWork Computer verifying public data. Connect UniSat for account balances and spendable proofs.\nCompose\nMAIL\nInbox\n0\nIncoming\n0\nSent\n0\nOutbox\n0\nDrafts\n0\nFavorites\n0\nArchive\n0\nCREATE & FILES\nFiles\n0\nDesktop\n0\nBrowser\nBoost\nIDENTITY & VALUE\nIDs\n0\nAMO\n0\nCredit\n\u2026\nWallet\n\u2026\nWORK\n\u2026\nInfinity\n\u2026\nInception\n\u2026\nVERIFY\nLog\n\u2026\nCONTACTS & LOCAL\nContacts\n0\nREGISTRY NETWORK\nUnavailable\nNo verified public registry snapshot available; wallet connection is separate.\nAccount\nNot connected\nExport\nImport\nAMO\nCanonical AMO summary loading\nRefresh\nLoading\nCanonical AMO summary\nLoading all credit and bond listings and verifying the AMO snapshot.\nIDs\n\u2014\nDNS\n1\nCredits\n\u2014\nBonds\n\u2014\nBoosts\n0\n1\nActive Listings\n0\nDNS Sales\n0\nVolume proofs\n0\nPending .pow\nList a .pow name\n\nPublish an on-chain listing for one of your confirmed .pow names. Listings cost 546 proofs.\n\nConnect the owner wallet to list confirmed .pow names.\n\nAMO Transfer\n\nListings create a sale-ticket UTXO. Buyers settle by spending that ticket and paying the 546 sat registry transfer.\n\nPublish on-chain listing\n\nSelect an owned confirmed .pow name above first.\n\nSeller price proofs\nSpecific buyer optional\nLocked receive address optional\nFee sat/vB\n0.1 sat\n0.5 sat\n1 sat\n2 sat\nPublish On-Chain\nSelect an on-chain listing\n\nChoose an active listing below. The purchase form fills from that on-chain listing.\n\nProofOfWork Computer verifying public data. Connect UniSat for account balances and spendable proofs.\nProofOfWork Computer verifying public data. Connect UniSat for account balances and spendable proofs.\nNew owner\nNew receive optional\n0 / 100,000 OP_RETURN data-carrier bytes\nFee sat/vB\n0.1 sat\n0.5 sat\n1 sat\n2 sat\nBuy Listing On-Chain\nActive Listings\n\nOn-chain .pow name listings are canceled by delisting, expiry, or any ownership ",
+        "pageErrors": [],
+        "unavailable": []
+      }
+    ],
+    "finalReadiness": {
+      "checkedAt": "2026-09-30T01:28:24.749Z",
+      "base": "https://computer.proofofwork.me",
+      "network": "livenet",
+      "ok": true,
+      "thresholds": {
+        "timeoutMs": 30000,
+        "warnMs": 2500,
+        "criticalMs": 10000,
+        "maxLagBlocks": 2,
+        "healthMaxLagBlocks": 1
+      },
+      "summary": {
+        "ok": true,
+        "activeInvariantFailures": [],
+        "staleReadiness": [],
+        "latency": [
+          {
+            "severity": "error",
+            "kind": "route-latency-critical",
+            "message": "marketplace-summary exceeded critical latency threshold",
+            "details": {
+              "elapsedMs": 10773,
+              "criticalMs": 10000
+            }
+          }
+        ],
+        "warnings": [],
+        "counts": {
+          "activeInvariantFailures": 0,
+          "staleReadiness": 0,
+          "latencyWarnings": 0,
+          "latencyErrors": 1,
+          "warnings": 0,
+          "total": 1
+        }
+      },
+      "health": {
+        "ready": true,
+        "available": true,
+        "lagBlocks": 0,
+        "indexedThroughBlock": 969234,
+        "indexedThroughBlockHash": "000000000000000000002628072c0cbbf1767aca95785e594252ae006e594782",
+        "tipHeight": 969234,
+        "tipHash": "000000000000000000002628072c0cbbf1767aca95785e594252ae006e594782",
+        "summarySnapshotId": "fd7905c5cdd5e428185f8101",
+        "summarySnapshotOk": true
+      },
+      "routes": {
+        "work": {
+          "label": "work-summary",
+          "status": 200,
+          "ok": true,
+          "elapsedMs": 1324,
+          "checkpoint": {
+            "snapshotId": "fd7905c5cdd5e428185f8101",
+            "indexedThroughBlock": 969234,
+            "indexedThroughBlockHash": "000000000000000000002628072c0cbbf1767aca95785e594252ae006e594782",
+            "indexedAt": "2026-09-30T01:14:00.403Z"
+          },
+          "workAmoV8": {
+            "ready": true,
+            "status": null,
+            "indexReady": true,
+            "migrationReady": true,
+            "declarationReady": true,
+            "evidenceComplete": true,
+            "pendingWitnessReady": true,
+            "workerReady": true,
+            "workerState": "idle",
+            "workerTipHeight": 969234,
+            "workerTipHash": "000000000000000000002628072c0cbbf1767aca95785e594252ae006e594782",
+            "migrationTipHeight": 969234,
+            "migrationTipHash": "000000000000000000002628072c0cbbf1767aca95785e594252ae006e594782",
+            "tipHeight": 969234,
+            "tipHash": "000000000000000000002628072c0cbbf1767aca95785e594252ae006e594782",
+            "snapshotHeight": null,
+            "snapshotHash": null,
+            "activationTipVerified": true,
+            "declarationEvidence": {
+              "declarationTxid": "f90e1faf572ef8253ca5959731b9d9e99c74bced4397380059878936712bee7a",
+              "declarationHeight": 960600,
+              "activationHeight": 960601,
+              "evidenceComplete": true,
+              "coreVerified": true,
+              "indexVerified": true,
+              "configuredPinsMatch": true
+            }
+          },
+          "error": null,
+          "errorCode": null,
+          "reason": null
+        },
+        "marketplace": {
+          "label": "marketplace-summary",
+          "status": 200,
+          "ok": true,
+          "elapsedMs": 10773,
+          "checkpoint": {
+            "snapshotId": "fd7905c5cdd5e428185f8101",
+            "indexedThroughBlock": 969234,
+            "indexedThroughBlockHash": "000000000000000000002628072c0cbbf1767aca95785e594252ae006e594782",
+            "indexedAt": "2026-09-30T01:14:00.403Z"
+          },
+          "workAmoV8": {
+            "ready": true,
+            "status": null,
+            "indexReady": true,
+            "migrationReady": true,
+            "declarationReady": true,
+            "evidenceComplete": true,
+            "pendingWitnessReady": true,
+            "workerReady": true,
+            "workerState": "canonical-phase-complete",
+            "workerTipHeight": 969234,
+            "workerTipHash": "000000000000000000002628072c0cbbf1767aca95785e594252ae006e594782",
+            "migrationTipHeight": 969234,
+            "migrationTipHash": "000000000000000000002628072c0cbbf1767aca95785e594252ae006e594782",
+            "tipHeight": 969234,
+            "tipHash": "000000000000000000002628072c0cbbf1767aca95785e594252ae006e594782",
+            "snapshotHeight": null,
+            "snapshotHash": null,
+            "activationTipVerified": true,
+            "declarationEvidence": {
+              "declarationTxid": "f90e1faf572ef8253ca5959731b9d9e99c74bced4397380059878936712bee7a",
+              "declarationHeight": 960600,
+              "activationHeight": 960601,
+              "evidenceComplete": true,
+              "coreVerified": true,
+              "indexVerified": true,
+              "configuredPinsMatch": true
+            }
+          },
+          "error": null,
+          "errorCode": null,
+          "reason": null
+        }
+      }
+    },
+    "performanceQualification": "Single bounded observations; some requests overlapped normal browser/API traffic. Not an isolated benchmark or proof that intermittent AUD26-02/H24-01 availability is resolved.",
+    "localRetainedGitObjects": 27,
+    "accountingVerification": "Exact WORK precision, bond arithmetic and whole-proof fee checks pass on Node v22.23.2. All prior complete population evidence stays historical; no second population audit is claimed."
   }
 }

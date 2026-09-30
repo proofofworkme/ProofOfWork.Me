@@ -5653,3 +5653,21 @@ release cutover and cleanup. The prepared change is not evidence of deployment:
 see `audits/2026-09-29-audit28-followup-preparation.md` and its execution receipt
 when one exists. Never resume a scheduled pruner that can retire an explicitly
 protected release without the corresponding retention approval.
+
+
+### Audit 28 follow-up deployed retention exception (2026-09-29 EDT)
+
+The approved follow-up installed UI publisher SHA-256
+`c2f06538c2c3263d1a7b7157c67dfebe007803b3fdbf60b9aeb21e4aedeb30e9`
+and published `db853f434f9b-20260930T011125Z` with
+`--defer-verified-retention`, preserving the designated older UI/node rollback
+sets. Original publisher bytes remain at
+`/var/backups/proofofwork-ui/release-tooling/audit28-publisher-pre-db853f4.sh`.
+The two UI prune timers and node release-prune timer are stopped, but remain
+enabled. Reboot can reactivate them; do not reboot or resume pruning without a
+reviewed persistent pause/pin-aware policy that preserves these designated sets.
+No timer disabling/masking, broad pruning, backup retention change or live DB
+maintenance was performed. The dated execution appendix in
+`audits/2026-09-29-production-comprehensive-health-data-integrity-audit-28.md`
+and the preparation evidence JSON record actual release and verification state.
+The prepared exception above is historical context, not deployment evidence.
