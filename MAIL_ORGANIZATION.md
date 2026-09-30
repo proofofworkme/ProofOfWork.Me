@@ -95,6 +95,21 @@ TX links. Profile connection counts open Followers/Following lists with profile
 navigation and a Back control. These are confirmed social projections, not
 mailbox or Contacts state; inspecting them does not initiate a paid action.
 
+## Account Read State and Embedded Navigation
+
+Computer does not treat a disconnected or unverified account as an empty
+mailbox. Mail and Files counts stay unknown until a successful scan for the
+current address and network; clearing or switching the account clears that
+read evidence. Computer IDs distinguishes disconnected, verifying, unavailable,
+last-verified, and verified-empty owned collections. Local organization remains
+browser state and does not change confirmed chain history.
+
+Embedded Boost profile, profile-tab, and timeline navigation keeps
+`folder=boost` and the Computer shell. Standalone Boost retains its own
+`boost=1` routes. Public Desktop and Log search controls and generated Browser
+HTML source retain visible labels after entry. Miner-fee controls display the
+rate in proofs/vB; exact protocol/API field names and arithmetic are unchanged.
+
 ## Core Idea
 
 Messages written to ProofOfWork are permanent. The app should not pretend users can delete them from the chain.

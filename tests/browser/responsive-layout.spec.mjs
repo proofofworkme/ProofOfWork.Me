@@ -1306,9 +1306,7 @@ async function assertOperableTargetGeometry(page, label) {
       "details > summary",
       ".attachment-picker",
       ".compose-social-toggle",
-      "a.primary",
-      "a.secondary",
-      "a.icon-button",
+      "a[href]",
     ].join(",");
     const targets = [...new Set(document.querySelectorAll(selector))];
     return targets.flatMap((element) => {
@@ -3126,7 +3124,7 @@ test("AMO retains one atomic last-verified snapshot when a canonical lane regres
   await expect(verification).toHaveAttribute("data-state", "ready", {
     timeout: 60_000,
   });
-  const verifiedText = await verification.locator("div span").innerText();
+  const verifiedText = await verification.locator("div > span:not(.marketplace-snapshot-provenance)").innerText();
   const verifiedAt = verifiedText.match(/Verified .+\.$/u)?.[0];
   expect(verifiedAt).toBeTruthy();
 
@@ -3635,4 +3633,84 @@ test("Computer Credit directory refresh is isolated from AMO history regression 
   await expect(page.getByLabel("Credit stats")).toContainText("2Created credits");
   await expect(page.locator(".token-record").filter({ hasText: "AUD" })).toContainText("7");
   await expect(page.locator(".sidebar").getByRole("button", { name: /^Credit/u })).toContainText("2");
+});
+
+// Batch 1: unknown account state is not an empty account, and preview rows are not a complete book.
+test("account state stays qualified across disconnected Computer and Credit", async ({ page }, testInfo) => {
+  await installApiFixtures(page);
+  for (const width of [320, 768, 1440]) {
+    await page.setViewportSize({ width, height: width === 320 ? 568 : 900 });
+    await page.goto("/?folder=inbox");
+    await expect(page.getByRole("heading", { name: "Connect to inspect your mail" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "No Inbox messages" })).toHaveCount(0);
+    if (width === 320) await page.screenshot({ path: testInfo.outputPath("computer-disconnected-320.png") });
+    await page.goto("/?folder=ids");
+    await expect(page.getByText("Connect UniSat to see your IDs.")).toBeVisible();
+    await expect(page.getByText("No IDs for this wallet yet.", { exact: true })).toHaveCount(0);
+    await expect(page.locator(".ids-workspace .files-toolbar")).not.toContainText("0 yours");
+    await page.goto("/?folder=files");
+    await expect(page.locator(".files-toolbar")).toContainText("Connect to inspect your files");
+    await expect(page.locator(".files-toolbar")).not.toContainText("0 files");
+    for (const path of ["/?credit=1", "/?folder=token"]) {
+      await page.goto(path);
+      await expect(page.locator("#credit-mint")).toContainText("Connect UniSat to inspect your confirmed balance.");
+      await expect(page.locator("#credit-mint")).not.toContainText("Your confirmed balance is 0");
+    }
+  }
+});
+
+test("bond previews withhold totals and empty-history claims in both hosts", async ({ page }) => {
+  await installApiFixtures(page);
+  for (const [ticker, path] of [
+    ["POWB", "/?infinity=1"], ["INCB", "/?inception=1"],
+    ["POWB", "/?folder=infinity"], ["INCB", "/?folder=inception"],
+  ]) {
+    await page.goto(path);
+    const panel = page.locator(".token-market-card").filter({ has: page.getByRole("heading", { name: `${ticker} Sale Tickets` }) });
+    await expect(panel.getByRole("status")).toContainText("preview");
+    await expect(panel.getByRole("button", { name: "All —", exact: true })).toBeVisible();
+    await expect(panel.getByRole("button", { name: "Sealed —", exact: true })).toBeVisible();
+    await expect(page.getByRole("heading", { name: `${ticker} history not verified` })).toBeVisible();
+    await expect(page.getByRole("heading", { name: `No ${ticker} market history yet` })).toHaveCount(0);
+  }
+});
+
+test("embedded Boost profiles and profile tabs retain the Computer host", async ({ page }) => {
+  await installApiFixtures(page, { boostItems: [BOOST_FIXTURE_ITEM] });
+  await page.setViewportSize({ width: 390, height: 600 });
+  await page.goto("/?folder=boost");
+  const author = page.locator(".boost-post .boost-author").first();
+  await expect(author).toHaveAttribute("href", /folder=boost.*profile=/u);
+  await author.click();
+  await expect(page.locator(".mail-layout.is-boost-workspace")).toBeVisible();
+  await expect(page.getByRole("navigation", { name: "Primary Computer workspaces" })).toBeVisible();
+  await page.getByRole("tab", { name: /^Replies (?:—|[0-9])/u }).click();
+  expect(new URL(page.url()).searchParams.get("folder")).toBe("boost");
+  expect(new URL(page.url()).searchParams.has("boost")).toBe(false);
+  await page.reload();
+  await expect(page.locator(".mail-layout.is-boost-workspace")).toBeVisible();
+  await page.getByRole("link", { name: "Back to timeline" }).click();
+  await expect(page.locator(".mail-layout.is-boost-workspace")).toBeVisible();
+  expect(new URL(page.url()).searchParams.has("profile")).toBe(false);
+  await page.goto("/?boost=1");
+  await expect(page.locator(".boost-post .boost-author").first()).toHaveAttribute("href", /boost=1.*profile=/u);
+});
+
+test("public search and generated source keep persistent labels in both hosts", async ({ page }) => {
+  await installApiFixtures(page);
+  for (const path of ["/?desktop=1", "/?folder=desktop"]) {
+    await page.goto(path);
+    const input = page.getByRole("textbox", { name: "Public address or confirmed ID", exact: true });
+    await input.fill("1BPVvi1GK4QkfqFMU4jHGjsQjyGwjJJJ7x");
+    await expect(input).toBeVisible();
+    await expect(page.locator("label.public-search-field")).toContainText("Public address or confirmed ID");
+  }
+  for (const path of ["/?log=1", "/?folder=log"]) {
+    await page.goto(path);
+    await expect(page.getByRole("textbox", { name: "Search activity", exact: true })).toBeVisible();
+  }
+  for (const path of ["/?browser=1", "/?folder=browser"]) {
+    await page.goto(path);
+    await expect(page.getByRole("textbox", { name: "Generated HTML source", exact: true })).toBeVisible();
+  }
 });

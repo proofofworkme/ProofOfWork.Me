@@ -184,6 +184,15 @@ long values with tabular figures, local overflow, and explicit copy/reveal
 behavior where needed. Display formatting never changes the canonical integer
 or decimal-string value used by protocol and read-model code.
 
+Account counts and empty states require a connected account and a verified
+read. A disconnected or unread mailbox, ID collection, or credit balance is
+qualified instead of displayed as a confirmed zero. Bond preview counts and
+empty-history claims remain unknown until the complete book is verified.
+Computer-embedded Boost profile and timeline routes retain the Computer host.
+Public search and generated HTML source have persistent labels; miner-fee
+controls display proofs/vB while protocol/API rate fields remain unchanged.
+The responsive target checks include ordinary links as well as buttons.
+
 Official YouTube:
 
 ```text

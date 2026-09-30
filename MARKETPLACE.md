@@ -1390,6 +1390,13 @@ limits rendered rows, not searchable inventory. Market-log rows
 remain lifecycle history and cannot manufacture active inventory. Wallet-owned
 listing hydration uses the same complete cursor contract.
 
+A public complete-book read is scoped to its network and workspace, not the
+connected account. Connecting a wallet does not cancel public inventory
+verification. Network/workspace changes still cancel obsolete reads; wallet-owned
+listing reads keep their address-specific cancellation guard. Infinity and
+Inception preview cards and filters withhold total counts, and their history
+panels do not claim a verified empty market before complete-book verification.
+
 The summary's generation time and the listing reader's relational observation
 time are independent. Their `indexedAt` strings need not match when their
 verified canonical height and block hash agree. All listing pages must still

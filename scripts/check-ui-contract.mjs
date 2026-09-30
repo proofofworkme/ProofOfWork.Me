@@ -593,12 +593,12 @@ expect(
 const app = contents.get("src/App.tsx");
 const feeRateControl = contents.get("src/shared/components/FeeRateControl.tsx");
 expect(
-  "fee rate selector exposes only approved sat/vB presets with one sat default wiring",
+  "fee rate selector exposes approved proofs/vB presets with one-proof default wiring",
   /FEE_RATE_PRESETS\s*=\s*\[0\.1,\s*0\.5,\s*1,\s*2\]\s*as const/.test(
     feeRateControl,
   ) &&
-    /Fee sat\/vB/.test(feeRateControl) &&
-    /\{preset\} sat/.test(feeRateControl) &&
+    /Fee proofs\/vB/.test(feeRateControl) &&
+    /\{preset\} proofs\/vB/.test(feeRateControl) &&
     /const DEFAULT_FEE_RATE = 1;/.test(app) &&
     /FEE_RATE_PRESETS\.map/.test(app) &&
     !/\[0\.1,\s*0\.25,\s*0\.5,\s*1,\s*2,\s*5\]/.test(app) &&
@@ -722,7 +722,7 @@ const boostProfileHeadSource = boostRoot.slice(
 expect(
   "Boost profile timeline navigation lives in the left rail",
   /boost-profile-timeline-link/u.test(boostSidebarSource) &&
-    /href=\{boostRouteHref\("\/", \{ boost: "1" \}\)\}/u.test(
+    /href=\{boostTimelineHref\(embedded\)\}/u.test(
       boostSidebarSource,
     ) &&
     /<Clock size=\{16\} \/>/u.test(boostSidebarSource) &&
@@ -3348,7 +3348,7 @@ expect(
     /seenCursors\.has\(nextCursor\)/.test(fetchCompleteTokenListingsBlock) &&
     /cursor = nextCursor;/.test(fetchCompleteTokenListingsBlock) &&
     !/pageIndex:\s*pageIndex/.test(fetchCompleteTokenListingsBlock) &&
-    /state: PowTokenState,[\s\S]*await currentCompleteGlobalTokenListings\(state, fresh\)/.test(
+    /state: PowTokenState,[\s\S]*await currentCompleteGlobalTokenListings\(state, fresh, undefined, signal\)/.test(
       fetchWalletOwnedTokenListingsBlock,
     ) &&
     /listing\.tokenId === tokenScope[\s\S]*listing\.sellerAddress === walletAddress/.test(
@@ -3527,7 +3527,7 @@ expect(
     /!completeTokenListingHistoryMatchesState\(history, state\)/.test(
       tokenStateWithCompleteTokenBondListingsBlock,
     ) &&
-    /await currentCompleteGlobalTokenListings\(state, fresh\)/.test(
+    /await currentCompleteGlobalTokenListings\(state, fresh, undefined, signal\)/.test(
       fetchWalletOwnedTokenListingsBlock,
     ) &&
     /listing\.network === "livenet"[\s\S]*listing\.tokenId === tokenScope[\s\S]*listing\.sellerAddress === walletAddress/.test(

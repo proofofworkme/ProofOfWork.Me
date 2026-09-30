@@ -136,24 +136,29 @@ let attempt = 0;
 const reads = [];
 const listingReads = [];
 const complete = { listingBookComplete: true, listings: [{ tokenId: "WORK" }, { tokenId: "POWB" }, { tokenId: "INCB" }] };
-const loadAmo = new Function("fetchMarketplaceSummary", "tokenStateWithCurrentCompleteMarketplaceListings",
-  `${transpile(amoDeclaration.getText(ast))};return fetchCompleteMarketplaceSnapshot`)(
-  async (fresh) => { reads.push(fresh); return { indexedAt: String(++attempt), token: { listingBookComplete: false } }; },
-  async (_token, fresh) => { listingReads.push(fresh); if (attempt === 1) throw new Error("checkpoint changed"); return complete; },
-);
+const amoEnv = {
+  activeWorkspaceStatusKeyRef: { current: "marketplace" },
+  marketplaceReadContextRef: { current: "livenet:" },
+  network: "livenet",
+  fetchMarketplaceSummary: async (fresh) => { reads.push(fresh); return { indexedAt: String(++attempt), token: { listingBookComplete: false } }; },
+  tokenStateWithCurrentCompleteMarketplaceListings: async (_token, fresh) => { listingReads.push(fresh); if (attempt === 1) throw new Error("checkpoint changed"); return complete; },
+};
+const actualAmoRead = (env) => new Function(...Object.keys(env),
+  `${transpile(amoDeclaration.getText(ast))};return fetchCompleteMarketplaceSnapshot`)(...Object.values(env));
+const loadAmo = actualAmoRead(amoEnv);
 const amo = await loadAmo(false);
 assert.equal(amo.indexedAt, "2");
 assert.equal(amo.token, complete);
 assert.deepEqual(reads, [false, true]);
 assert.deepEqual(listingReads, [false, true]);
 let rejectedReads = 0;
-const rejectAmo = new Function("fetchMarketplaceSummary", "tokenStateWithCurrentCompleteMarketplaceListings",
-  `${transpile(amoDeclaration.getText(ast))};return fetchCompleteMarketplaceSnapshot`)(
-  async () => { rejectedReads += 1; return { token: {} }; },
-  async () => { throw new Error("incomplete inventory"); },
-);
+const rejectAmo = actualAmoRead({
+  ...amoEnv,
+  fetchMarketplaceSummary: async () => { rejectedReads += 1; return { token: {} }; },
+  tokenStateWithCurrentCompleteMarketplaceListings: async () => { throw new Error("incomplete inventory"); },
+});
 await assert.rejects(rejectAmo(false), /incomplete inventory/);
-assert.equal(rejectedReads, 3);
+assert.equal(rejectedReads, 2);
 console.log(JSON.stringify({ ok: true, coverage: ["amo-complete-book-before-ready", "amo-checkpoint-restart", "amo-bounded-failure"] }));
 
 // Reproduce the production mismatch: independent summary and relational clocks
@@ -255,3 +260,22 @@ assert.equal(currentBookReads, 1, "identical observation can reuse its verified 
 await currentBook(bookState, true);
 assert.equal(currentBookReads, 2, "explicit refresh always rechecks ticket spends");
 console.log(JSON.stringify({ ok: true, coverage: ["amo-independent-clocks", "amo-two-page-v2-book", "amo-page-mutation-rejection", "amo-v2-evidence-retained", "amo-cache-observation-fence"] }));
+
+// Public AMO inventory survives account connection, but not network or workspace changes.
+for (const transition of ["account", "network", "workspace"]) {
+  const summary = deferred();
+  const env = {
+    ...amoEnv,
+    activeWorkspaceStatusKeyRef: { current: "marketplace" },
+    marketplaceReadContextRef: { current: "livenet:" },
+    fetchMarketplaceSummary: () => summary.promise,
+    tokenStateWithCurrentCompleteMarketplaceListings: async () => complete,
+  };
+  const pendingRead = actualAmoRead(env)(false);
+  if (transition === "workspace") env.activeWorkspaceStatusKeyRef.current = "computer:inbox";
+  else env.marketplaceReadContextRef.current = transition === "account" ? "livenet:wallet-a" : "testnet4:wallet-a";
+  summary.resolve({ token: { listingBookComplete: false } });
+  if (transition === "account") assert.equal((await pendingRead).token, complete);
+  else await assert.rejects(pendingRead, { name: "AbortError" });
+}
+console.log(JSON.stringify({ ok: true, coverage: ["public-amo-account-transition", "obsolete-amo-network-and-workspace-cancellation"] }));

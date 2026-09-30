@@ -292,7 +292,7 @@ type TokenAction =
   | "transfer";
 const INITIAL_COMPUTER_STATUS: WorkspaceStatus = {
   tone: "idle",
-  text: "ProofOfWork Computer verifying public data. Connect UniSat for account balances and spendable proofs.",
+  text: "Verifying public ProofOfWork data. Confirmed records are canonical; pending visibility is best effort.",
 };
 
 function txStatusLink(txid: string, network: BitcoinNetwork) {
@@ -3281,7 +3281,7 @@ function confirmDustFeeAbsorption({
   return window.confirm(
     [
       `${extraFeeSats.toLocaleString()} proofs of below-dust change will be added to the miner fee.`,
-      `Selected fee rate: ${feeRate} sat/vB.`,
+      `Selected fee rate: ${feeRate} proofs/vB.`,
       `Estimated fee: ${feeSats.toLocaleString()} proofs.`,
       "Use a larger confirmed UTXO or batch payments to avoid this. Continue signing?",
     ].join("\n\n"),
@@ -21945,6 +21945,7 @@ export default function App() {
   const [fileFilter, setFileFilter] = useState<FileFilter>("all");
   const [selectedKey, setSelectedKey] = useState("");
   const [composeOpen, setComposeOpen] = useState(true);
+  const [mailReadScope, setMailReadScope] = useState("");
   const [sidebarExpanded, setSidebarExpanded] = useState(false);
   const [compactComputerNavigation, setCompactComputerNavigation] =
     useState(false);
@@ -24409,6 +24410,11 @@ export default function App() {
     tokenStateScopeKey({ network, tokenScope: WORK_TOKEN_ID, walletScoped: false }),
   ) ?? sidebarDirectoryState;
   const sidebarWorkDefinition = sidebarWorkState?.tokens.find((token) => isWorkToken(token));
+  const mailAccountReadVerified = Boolean(address) && mailReadScope === `${network}:${address}`;
+  const accountCreditBalancesReady = Boolean(address) &&
+    accountTokenLaneStatuses.all.loaded &&
+    !accountTokenLaneStatuses.all.loading &&
+    !accountTokenLaneStatuses.all.error;
   const walletBalanceCountLoaded = address
     ? accountTokenLaneStatuses.all.loaded
     : activeTokenStateLoaded;
@@ -26773,6 +26779,7 @@ export default function App() {
 
       setAddress(nextAddress);
       setNetwork(nextNetwork);
+      setMailReadScope("");
       setInbox([]);
       setChainSent([]);
       setSelectedKey("");
@@ -26906,6 +26913,7 @@ export default function App() {
           return;
         }
         const { inboxMessages, sentMessages } = mailState;
+        setMailReadScope(`${nextNetwork}:${nextAddress}`);
         setInbox(inboxMessages);
         setChainSent(sentMessages);
         setSelectedKey(selectedInboundKey("inbox", inboxMessages));
@@ -28130,10 +28138,12 @@ export default function App() {
 
   async function fetchCompleteMarketplaceSnapshot(fresh: boolean) {
     const controller = new AbortController();
-    const scope = `${activeWorkspaceStatusKeyRef.current}:${network}:${address}`;
+    const scope = activeWorkspaceStatusKeyRef.current;
+    // This is a public book: connecting an account does not invalidate it.
     const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(120_000)]);
     const abortObsoleteContext = () => {
-      if (`${activeWorkspaceStatusKeyRef.current}:${marketplaceReadContextRef.current}` !== scope) {
+      if (activeWorkspaceStatusKeyRef.current !== scope ||
+          !marketplaceReadContextRef.current.startsWith(`${network}:`)) {
         controller.abort(new DOMException("AMO workspace changed.", "AbortError"));
       }
     };
@@ -28177,7 +28187,8 @@ export default function App() {
   ): Promise<MarketplaceSummarySnapshot | undefined> {
     const requestWorkspaceKey = activeWorkspaceStatusKeyRef.current;
     const requestIsActive = () =>
-      activeWorkspaceStatusKeyRef.current === requestWorkspaceKey;
+      activeWorkspaceStatusKeyRef.current === requestWorkspaceKey &&
+      marketplaceReadContextRef.current.startsWith(`${network}:`);
     if (network !== "livenet") {
       return undefined;
     }
@@ -28243,6 +28254,7 @@ export default function App() {
           fetchCompleteMarketplaceSnapshot(fresh),
           fetchBtcUsdPrice(fresh).catch(() => undefined),
         ]);
+        if (!requestIsActive()) return undefined;
         const completeTokenState = snapshot.token;
         const marketplaceTokenScopeKey = tokenStateScopeKey({
           network: "livenet",
@@ -28377,6 +28389,7 @@ export default function App() {
         }
         return acceptedSnapshot;
       } catch (error) {
+        if (!requestIsActive()) return undefined;
         const lastGoodSnapshot = acceptedMarketplaceSnapshotRef.current;
         const lastGoodWorkFloor = lastGoodSnapshot?.workFloor;
         const lastGoodStatus = fresh && lastGoodSnapshot
@@ -29294,6 +29307,7 @@ export default function App() {
 
   function clearWalletSession() {
     setAddress("");
+    setMailReadScope("");
     setInbox([]);
     setChainSent([]);
     setSavedDraft(undefined);
@@ -29365,6 +29379,7 @@ export default function App() {
       }
 
       setAddress(firstAddress);
+      setMailReadScope("");
       setInbox([]);
       setChainSent([]);
       setSelectedKey("");
@@ -29515,6 +29530,7 @@ export default function App() {
           return;
         }
         const { inboxMessages, sentMessages } = mailState;
+        setMailReadScope(`${scanNetwork}:${firstAddress}`);
         setInbox(inboxMessages);
         setChainSent(sentMessages);
         setSelectedKey(selectedInboundKey("inbox", inboxMessages));
@@ -29571,6 +29587,7 @@ export default function App() {
 
     if (!window.unisat?.switchChain && !window.unisat?.switchNetwork) {
       setNetwork(nextNetwork);
+      setMailReadScope("");
       setInbox([]);
       setChainSent([]);
       setSelectedKey("");
@@ -29603,6 +29620,7 @@ export default function App() {
       const nextAddress = accounts[0] ?? verifiedAddress;
       setNetwork(activeWalletNetwork);
       setAddress(nextAddress);
+      setMailReadScope("");
       setInbox([]);
       setChainSent([]);
       setSelectedKey("");
@@ -29620,6 +29638,7 @@ export default function App() {
         activeWalletNetwork,
       );
       const { inboxMessages, sentMessages } = mailState;
+      setMailReadScope(`${activeWalletNetwork}:${nextAddress}`);
       setInbox(inboxMessages);
       setChainSent(sentMessages);
       setSelectedKey(selectedInboundKey("inbox", inboxMessages));
@@ -33447,6 +33466,7 @@ export default function App() {
         ? applyBroadcastCheckResults(sentMessages, summary)
         : sentMessages;
 
+      setMailReadScope(`${network}:${address}`);
       setInbox(inboxMessages);
       setChainSent(checkedSentMessages);
       if (summary) {
@@ -35749,7 +35769,7 @@ export default function App() {
       });
       setStatus(
         goodBroadcastStatus(
-          `${mintCount.toLocaleString()} mint UTXOs prepared for ${selectedToken.ticker}: ${shortAddress(txid)}. Split fee ${paymentPsbt.feeSats.toLocaleString()} proofs at ${prepareFeeRate} sat/vB. Wait for confirmation before burst minting.`,
+          `${mintCount.toLocaleString()} mint UTXOs prepared for ${selectedToken.ticker}: ${shortAddress(txid)}. Split fee ${paymentPsbt.feeSats.toLocaleString()} proofs at ${prepareFeeRate} proofs/vB. Wait for confirmation before burst minting.`,
           txid,
           "livenet",
         ),
@@ -36263,6 +36283,7 @@ export default function App() {
         tokenSales={tokenSales}
         tokens={dashboardTokenDefinitions}
         walletBalances={accountWalletBalances}
+        accountBalanceReady={accountCreditBalancesReady}
         workFloorLoading={workFloorLoading}
         workFloorQuote={workFloorQuote}
         workFloorLastGoodStatus={workFloorLastGoodStatus}
@@ -36541,7 +36562,7 @@ export default function App() {
                 <Inbox size={17} />
                 <span>Inbox</span>
               </span>
-              <strong>{inboxMail.length}</strong>
+              <strong>{mailAccountReadVerified ? inboxMail.length : "—"}</strong>
             </button>
             <button
               aria-current={activeFolder === "incoming"}
@@ -36552,7 +36573,7 @@ export default function App() {
                 <Mail size={17} />
                 <span>Incoming</span>
               </span>
-              <strong>{incomingMail.length}</strong>
+              <strong>{mailAccountReadVerified ? incomingMail.length : "—"}</strong>
             </button>
             <button
               aria-current={activeFolder === "sent"}
@@ -36563,7 +36584,7 @@ export default function App() {
                 <Send size={17} />
                 <span>Sent</span>
               </span>
-              <strong>{sentMail.length}</strong>
+              <strong>{mailAccountReadVerified ? sentMail.length : "—"}</strong>
             </button>
             <button
               aria-current={activeFolder === "outbox"}
@@ -36574,7 +36595,7 @@ export default function App() {
                 <Clock size={17} />
                 <span>Outbox</span>
               </span>
-              <strong>{outboxMail.length}</strong>
+              <strong>{mailAccountReadVerified ? outboxMail.length : "—"}</strong>
             </button>
             <button
               aria-current={activeFolder === "drafts"}
@@ -36596,7 +36617,7 @@ export default function App() {
                 <Star size={17} />
                 <span>Favorites</span>
               </span>
-              <strong>{favoritesMail.length}</strong>
+              <strong>{mailAccountReadVerified ? favoritesMail.length : "—"}</strong>
             </button>
             <button
               aria-current={activeFolder === "archive"}
@@ -36607,7 +36628,7 @@ export default function App() {
                 <Archive size={17} />
                 <span>Archive</span>
               </span>
-              <strong>{archiveMail.length}</strong>
+              <strong>{mailAccountReadVerified ? archiveMail.length : "—"}</strong>
             </button>
             {customFolders.map((folder) => (
               <div className="custom-folder-row" key={folder.id}>
@@ -36666,7 +36687,7 @@ export default function App() {
                 <Paperclip size={17} />
                 <span>Files</span>
               </span>
-              <strong>{allFileMessages.length}</strong>
+              <strong>{mailAccountReadVerified ? allFileMessages.length : "—"}</strong>
             </button>
             <button
               aria-current={activeFolder === "desktop"}
@@ -36709,7 +36730,7 @@ export default function App() {
                 <AtSign size={17} />
                 <span>IDs</span>
               </span>
-              <strong>{ownedIdCount + walletPendingIdEvents.length}</strong>
+              <strong>{address && ["ready", "last-verified"].includes(registryReadStatus) ? ownedIdCount + walletPendingIdEvents.length : "—"}</strong>
             </button>
             <button
               aria-current={activeFolder === "marketplace"}
@@ -36720,7 +36741,7 @@ export default function App() {
                 <Users size={17} />
                 <span>AMO</span>
               </span>
-              <strong>{ownerControlledIds.length}</strong>
+              <strong>{address && ["ready", "last-verified"].includes(registryReadStatus) ? ownerControlledIds.length : "—"}</strong>
             </button>
             <button
               aria-current={activeFolder === "token"}
@@ -37225,6 +37246,7 @@ export default function App() {
             tokens={orderedTokenDefinitions.filter((token) => !isBondTokenDefinition(token))}
             ledgerError={tokenDataError}
             walletBalances={accountWalletBalances}
+            accountBalanceReady={accountCreditBalancesReady}
             workFloorLoading={workFloorLoading}
             workFloorQuote={workFloorQuote}
             workFloorLastGoodStatus={workFloorLastGoodStatus}
@@ -37406,6 +37428,7 @@ export default function App() {
             activeNetwork={network}
             busy={busy || refreshInProgress}
             connected={Boolean(address)}
+            readVerified={mailAccountReadVerified}
             fileFilter={fileFilter}
             messages={activeMessages}
             refreshing={refreshInProgress}
@@ -37510,6 +37533,9 @@ export default function App() {
                 />
               ) : (
                 <MessageList
+                  connected={Boolean(address)}
+                  loading={refreshInProgress}
+                  readVerified={mailAccountReadVerified}
                   activeKey={selectedMessage ? mailKey(selectedMessage) : ""}
                   activeNetwork={network}
                   activeFolder={activeFolder}
@@ -38599,12 +38625,15 @@ function BrowserApp({
                 </div>
               </dl>
             </div>
-            <textarea
-              className="browser-template-source"
-              readOnly
-              rows={18}
-              value={template}
-            />
+            <label className="browser-source-label">
+              Generated HTML source
+              <textarea
+                className="browser-template-source"
+                readOnly
+                rows={18}
+                value={template}
+              />
+            </label>
           </div>
         </section>
       </section>
@@ -38936,12 +38965,15 @@ function BrowserWorkspace({
               </div>
             </dl>
           </div>
-          <textarea
-            className="browser-template-source"
-            readOnly
-            rows={18}
-            value={template}
-          />
+          <label className="browser-source-label">
+            Generated HTML source
+            <textarea
+              className="browser-template-source"
+              readOnly
+              rows={18}
+              value={template}
+            />
+          </label>
         </div>
       </section>
     </section>
@@ -39276,13 +39308,16 @@ function ActivityWorkspace({
         </div>
         <form className="desktop-search activity-search" onSubmit={onSearch}>
           <Search size={16} aria-hidden="true" />
-          <input
-            autoComplete="off"
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder="address, user@proofofwork.me, or txid"
-            spellCheck={false}
-            value={query}
-          />
+          <label className="public-search-field">
+            <span>Search activity</span>
+            <input
+              autoComplete="off"
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="address, user@proofofwork.me, or txid"
+              spellCheck={false}
+              value={query}
+            />
+          </label>
           <button
             className="secondary small"
             disabled={busy || !query.trim()}
@@ -41377,7 +41412,7 @@ function TokenWalletWorkspace({
               />
             </label>
             <label>
-              Split fee sat/vB
+              Split fee proofs/vB
               <input
                 min={0.1}
                 onChange={(event) =>
@@ -41402,7 +41437,7 @@ function TokenWalletWorkspace({
                 onClick={() => setPrepareTransferFeeRate(preset)}
                 type="button"
               >
-                {preset} sat
+                {preset} proofs/vB
               </button>
             ))}
           </div>
@@ -42449,6 +42484,7 @@ type TokenAppProps = {
   tokenSales: PowTokenSale[];
   tokens: PowTokenDefinition[];
   walletBalances?: PowTokenWalletBalance[];
+  accountBalanceReady?: boolean;
   workFloorLoading: boolean;
   workFloorQuote?: WorkFloorQuote;
   workFloorLastGoodStatus?: string;
@@ -42583,6 +42619,7 @@ function TokenWorkspace({
   tokenSales,
   tokens,
   walletBalances = [],
+  accountBalanceReady = false,
   workFloorLoading,
   workFloorQuote,
   workFloorLastGoodStatus = "",
@@ -43490,7 +43527,7 @@ function TokenWorkspace({
           <div className="token-utxo-dashboard">
             <div>
               <span>Split tx fee rate</span>
-              <strong>{normalizedPrepareFeeRate.toLocaleString()} sat/vB</strong>
+              <strong>{normalizedPrepareFeeRate.toLocaleString()} proofs/vB</strong>
               <p>
                 Miner fee for the one self-send transaction that creates mint
                 UTXOs.
@@ -43540,7 +43577,7 @@ function TokenWorkspace({
               />
             </label>
             <label>
-              Split fee sat/vB
+              Split fee proofs/vB
               <input
                 min={0.1}
                 onChange={(event) =>
@@ -43560,7 +43597,7 @@ function TokenWorkspace({
                 onClick={() => setPrepareFeeRate(preset)}
                 type="button"
               >
-                {preset} sat
+                {preset} proofs/vB
               </button>
             ))}
           </div>
@@ -44440,7 +44477,9 @@ function TokenWorkspace({
                     estimate. Paid to{" "}
                     {shortAddress(detailToken.registryAddress)}.
                     {address
-                      ? ` Your confirmed balance is ${tokenAmountDisplay(detailToken, detailHolderBalance, undefined, detailHolderBalanceAtoms)} ${detailToken.ticker}.`
+                      ? accountBalanceReady
+                        ? ` Your confirmed balance is ${tokenAmountDisplay(detailToken, detailHolderBalance, undefined, detailHolderBalanceAtoms)} ${detailToken.ticker}.`
+                        : " Your account balance has not been verified."
                       : ""}
                   </p>
                   <div className="token-payment-lane">
@@ -44907,16 +44946,12 @@ function TokenWorkspace({
               {selectedToken
                 ? shortAddress(selectedToken.registryAddress)
                 : "the credit registry"}{" "}
-              on each mint. Your confirmed balance is{" "}
-              {selectedToken
-                ? tokenAmountDisplay(
-                    selectedToken,
-                    holderBalance,
-                    undefined,
-                    holderBalanceAtoms,
-                  )
-                : "0"}{" "}
-              {selectedToken?.ticker ?? ""}.
+              on each mint.{" "}
+              {!address
+                ? "Connect UniSat to inspect your confirmed balance."
+                : !accountBalanceReady || !selectedToken
+                  ? "Your account balance has not been verified."
+                  : `Your confirmed balance is ${tokenAmountDisplay(selectedToken, holderBalance, undefined, holderBalanceAtoms)} ${selectedToken.ticker}.`}
             </p>
             <FeeRateControl feeRate={feeRate} setFeeRate={setFeeRate} />
             <div className="token-action-footer">
@@ -49719,11 +49754,11 @@ function MarketplaceListingBookTabs({
   unsealedCount,
   value,
 }: {
-  allCount: number;
+  allCount?: number;
   label: string;
   onChange: (value: MarketplaceListingBookFilter) => void;
-  sealedCount: number;
-  unsealedCount: number;
+  sealedCount?: number;
+  unsealedCount?: number;
   value: MarketplaceListingBookFilter;
 }) {
   return (
@@ -49731,14 +49766,14 @@ function MarketplaceListingBookTabs({
       ariaLabel={label}
       className="marketplace-tabs marketplace-listing-tabs"
       items={[
-        { count: allCount.toLocaleString(), id: "all", label: "All" },
+        { count: allCount === undefined ? "—" : allCount.toLocaleString(), id: "all", label: "All" },
         {
-          count: sealedCount.toLocaleString(),
+          count: sealedCount === undefined ? "—" : sealedCount.toLocaleString(),
           id: "sealed",
           label: "Sealed",
         },
         {
-          count: unsealedCount.toLocaleString(),
+          count: unsealedCount === undefined ? "—" : unsealedCount.toLocaleString(),
           id: "unsealed",
           label: "Unsealed",
         },
@@ -50909,11 +50944,11 @@ function InfinityBondMarketPanel({
           </div>
           <div>
             <span>Open tickets</span>
-            <strong>{marketListings.length.toLocaleString()}</strong>
+            <strong>{listingBookPreviewIncomplete ? "—" : marketListings.length.toLocaleString()}</strong>
           </div>
           <div>
             <span>Sealed</span>
-            <strong>{sealedListings.length.toLocaleString()}</strong>
+            <strong>{listingBookPreviewIncomplete ? "—" : sealedListings.length.toLocaleString()}</strong>
           </div>
         </div>
         <div className="listing-fee-control token-listing-fee-control">
@@ -50924,11 +50959,11 @@ function InfinityBondMarketPanel({
           <FeeRateControl feeRate={feeRate} setFeeRate={setFeeRate} />
         </div>
         <MarketplaceListingBookTabs
-          allCount={marketListings.length}
+          allCount={listingBookPreviewIncomplete ? undefined : marketListings.length}
           label={`${bondConfig.ticker} order book filter`}
           onChange={setTokenListingBookFilter}
-          sealedCount={sealedListings.length}
-          unsealedCount={unsealedListings.length}
+          sealedCount={listingBookPreviewIncomplete ? undefined : sealedListings.length}
+          unsealedCount={listingBookPreviewIncomplete ? undefined : unsealedListings.length}
           value={tokenListingBookFilter}
         />
         <MarketplaceSortControl
@@ -51380,8 +51415,10 @@ function InfinityBondMarketPanel({
         ) : (
           <div className="empty-state">
             <FileText size={28} />
-            <h3>No {bondConfig.ticker} market history yet</h3>
-            <p>{bondConfig.ticker} listings and sales will appear here after they index.</p>
+            <h3>{listingBookPreviewIncomplete ? `${bondConfig.ticker} history not verified` : `No ${bondConfig.ticker} market history yet`}</h3>
+            <p>{listingBookPreviewIncomplete
+              ? "Load the complete checkpoint-bound book before reporting an empty market history."
+              : `${bondConfig.ticker} listings and sales will appear here after they index.`}</p>
           </div>
         )}
         <PaginationControls
@@ -56626,9 +56663,9 @@ function IdsWorkspace({
             {!registryAddress
               ? `No registry configured for ${networkLabel(network)}`
               : registryReadStatus === "ready"
-                ? `${registryRecords.length} total registry record${registryRecords.length === 1 ? "" : "s"} · ${ownedIds.length} yours`
+                ? `${registryRecords.length} total registry record${registryRecords.length === 1 ? "" : "s"} · ${address ? `${ownedIds.length} yours` : "connect to inspect your IDs"}`
                 : registryReadStatus === "last-verified"
-                  ? `${registryRecords.length} total registry record${registryRecords.length === 1 ? "" : "s"} · ${ownedIds.length} yours · last verified snapshot`
+                  ? `${registryRecords.length} total registry record${registryRecords.length === 1 ? "" : "s"} · ${address ? `${ownedIds.length} yours` : "connect to inspect your IDs"} · last verified snapshot`
                   : registryReadStatus === "loading"
                     ? "Verifying canonical registry…"
                     : "Registry unavailable; no verified count"}
@@ -56968,7 +57005,15 @@ function IdsWorkspace({
             records={ownedIds}
             allowVerification
             contacts={contacts}
-            empty="No IDs for this wallet yet."
+            empty={!address
+              ? "Connect UniSat to see your IDs."
+              : registryReadStatus === "ready"
+                ? "No IDs for this wallet yet."
+                : registryReadStatus === "last-verified"
+                  ? "No IDs for this wallet in the last verified snapshot."
+                  : registryReadStatus === "loading"
+                    ? "Verifying your IDs against the registry…"
+                    : "Registry unavailable; your IDs could not be verified."}
             onAddContact={onAddContact}
             searchPlaceholder="Search your IDs"
           />
@@ -57838,6 +57883,9 @@ function IdRecordList({
 }
 
 function MessageList({
+  connected,
+  loading,
+  readVerified,
   activeKey,
   activeFolder,
   activeNetwork,
@@ -57847,6 +57895,9 @@ function MessageList({
   onOpenInbox,
   onSelect,
 }: {
+  connected: boolean;
+  loading: boolean;
+  readVerified: boolean;
   activeKey: string;
   activeFolder: Folder;
   activeNetwork: BitcoinNetwork;
@@ -57857,6 +57908,18 @@ function MessageList({
   onSelect: (message: MailMessage) => void;
 }) {
   if (messages.length === 0) {
+    if (!connected || !readVerified || loading) {
+      return (
+        <div className="empty-state empty-list" role="status">
+          <h3>{!connected ? "Connect to inspect your mail" : loading ? "Verifying mail" : "Mail not verified"}</h3>
+          <p>{!connected
+            ? "Connect UniSat to read confirmed mail and pending activity for your account."
+            : loading
+              ? "Waiting for the account scan before reporting an empty mailbox."
+              : "Refresh to verify this account before reporting an empty mailbox."}</p>
+        </div>
+      );
+    }
     const emptyIcon =
       activeFolder === "inbox" ? (
         <Inbox size={26} />
@@ -58127,13 +58190,16 @@ function DesktopWorkspace({
               onSubmit={onSearch}
             >
               <Search size={18} aria-hidden="true" />
-              <input
-                autoComplete="off"
-                onChange={(event) => setDesktopQuery(event.target.value)}
-                placeholder="address or user@proofofwork.me"
-                spellCheck={false}
-                value={desktopQuery}
-              />
+              <label className="public-search-field">
+                <span>Public address or confirmed ID</span>
+                <input
+                  autoComplete="off"
+                  onChange={(event) => setDesktopQuery(event.target.value)}
+                  placeholder="address or user@proofofwork.me"
+                  spellCheck={false}
+                  value={desktopQuery}
+                />
+              </label>
               <button
                 className="primary"
                 disabled={busy || !desktopQuery.trim()}
@@ -58168,13 +58234,16 @@ function DesktopWorkspace({
         </div>
         <form className="desktop-search" onSubmit={onSearch}>
           <Search size={16} aria-hidden="true" />
-          <input
-            autoComplete="off"
-            onChange={(event) => setDesktopQuery(event.target.value)}
-            placeholder="address or user@proofofwork.me"
-            spellCheck={false}
-            value={desktopQuery}
-          />
+          <label className="public-search-field">
+            <span>Public address or confirmed ID</span>
+            <input
+              autoComplete="off"
+              onChange={(event) => setDesktopQuery(event.target.value)}
+              placeholder="address or user@proofofwork.me"
+              spellCheck={false}
+              value={desktopQuery}
+            />
+          </label>
           <button
             className="secondary small"
             disabled={busy || !desktopQuery.trim()}
@@ -58293,6 +58362,7 @@ function FilesWorkspace({
   activeNetwork,
   busy,
   connected,
+  readVerified,
   fileFilter,
   messages,
   refreshing,
@@ -58311,6 +58381,7 @@ function FilesWorkspace({
   activeNetwork: BitcoinNetwork;
   busy: boolean;
   connected: boolean;
+  readVerified: boolean;
   fileFilter: FileFilter;
   messages: MailMessage[];
   refreshing: boolean;
@@ -58335,7 +58406,7 @@ function FilesWorkspace({
           busy={busy}
           connected={connected}
           fileFilter={fileFilter}
-          fileCount={0}
+          fileCount={connected && readVerified ? 0 : undefined}
           refreshing={refreshing}
           setFileFilter={setFileFilter}
           setSignalMode={setSignalMode}
@@ -58350,7 +58421,9 @@ function FilesWorkspace({
           </div>
           <h3>
             {connected
-              ? fileFilter === "all"
+              ? !readVerified
+                ? refreshing ? "Verifying files" : "Files not verified"
+                : fileFilter === "all"
                 ? "No files"
                 : `No ${fileFilterLabel(fileFilter).toLowerCase()}`
               : "Connect to view files"}
@@ -58377,7 +58450,7 @@ function FilesWorkspace({
         busy={busy}
         connected={connected}
         fileFilter={fileFilter}
-        fileCount={fileMessages.length}
+        fileCount={connected && readVerified ? fileMessages.length : undefined}
         refreshing={refreshing}
         setFileFilter={setFileFilter}
         setSignalMode={setSignalMode}
@@ -58428,7 +58501,7 @@ function FilesToolbar({
   busy: boolean;
   connected: boolean;
   fileFilter: FileFilter;
-  fileCount: number;
+  fileCount?: number;
   refreshing: boolean;
   setFileFilter: (value: FileFilter) => void;
   setSignalMode: (value: MailSignalMode) => void;
@@ -58442,8 +58515,11 @@ function FilesToolbar({
       <div>
         <h2>Files</h2>
         <span>
-          {fileCount.toLocaleString()} file{fileCount === 1 ? "" : "s"} across
-          mail
+          {!connected
+            ? "Connect to inspect your files"
+            : fileCount === undefined
+              ? "Account files not verified"
+              : `${fileCount.toLocaleString()} file${fileCount === 1 ? "" : "s"} across mail`}
         </span>
       </div>
       <label className="sort-control">

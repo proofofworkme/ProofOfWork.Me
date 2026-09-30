@@ -57,7 +57,7 @@ for (const width of [1440, 390]) {
     await dialog.getByRole("button", { name: "sun.png" }).click();
     await expect(dialog.getByAltText("Banner preview")).toBeVisible();
     await expect(dialog.getByRole("button", { name: "Publish images" })).toBeEnabled();
-    const fee = dialog.getByLabel("Fee sat/vB");
+    const fee = dialog.getByLabel("Fee proofs/vB");
     for (const preset of [0.1, 0.5, 1, 2]) {
       await dialog.getByRole("button", { name: `${preset} sat`, exact: true }).click();
       await expect(fee).toHaveValue(String(preset));
@@ -77,7 +77,7 @@ for (const width of [1440, 390]) {
     await dialog.getByRole("button", { name: "Publish images" }).click();
     await expect.poll(() => page.evaluate(() => Boolean(window.testUnsignedPsbt))).toBe(true);
     await expect(fee).toBeDisabled();
-    await expect(dialog.getByRole("button", { name: "2 sat", exact: true })).toBeDisabled();
+    await expect(dialog.getByRole("button", { name: "2 proofs/vB", exact: true })).toBeDisabled();
     const psbt = Psbt.fromHex(await page.evaluate(() => window.testUnsignedPsbt));
     const outputs = psbt.txOutputs;
     const feePaid = 100_000 - Number(outputs.reduce((sum, output) => sum + output.value, 0n));

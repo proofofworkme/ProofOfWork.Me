@@ -1194,12 +1194,10 @@ test("AMO order book counts sealed and unsealed V8 listings with exact buyer arb
     .first();
   await expect(amoUnits).toBeVisible();
   await expect(amoUnits.getByText("No credit listings yet")).toHaveCount(0);
-  await expect(
-    amoUnits.getByRole("button", { name: "Load complete sale-ticket history" }),
-  ).toBeVisible();
-  await amoUnits
-    .getByRole("button", { name: "Load complete sale-ticket history" })
-    .click();
+  // The public AMO read hydrates the exact book before exposing the market,
+  // including when wallet connection changes the account during that read.
+  await expect(page.locator(".marketplace-summary-read-state").first()).toHaveAttribute("data-state", "ready");
+  await expect(amoUnits.getByRole("button", { name: "Load complete sale-ticket history" })).toHaveCount(0);
   await expect(
     amoUnits.getByRole("button", { name: "All 2" }),
   ).toContainText("2");
@@ -1551,10 +1549,10 @@ for (const rate of ["0.35", "0.45", "0.12345678"]) {
     await installApiFixtures(page, { pendingV8Listing: true });
     await openConnectedWallet(page);
     const form = page.locator("#wallet-list");
-    const fee = form.locator("form").getByLabel("Fee sat/vB");
+    const fee = form.locator("form").getByLabel("Fee proofs/vB");
     await fee.fill(rate);
     expect(await fee.evaluate(el => el.checkValidity())).toBe(true);
-    await expect(form.getByLabel("Fee sat/vB").last()).toHaveValue(rate);
+    await expect(form.getByLabel("Fee proofs/vB").last()).toHaveValue(rate);
     await form.locator("form").evaluate(el => {
       el.addEventListener("submit", event => {
         event.preventDefault();

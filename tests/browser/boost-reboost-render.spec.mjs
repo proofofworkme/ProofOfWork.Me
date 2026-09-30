@@ -130,9 +130,9 @@ test("reboost renders the original post instead of the target txid", async ({ pa
   await expect(composer.getByText("WORK signal", { exact: true })).toBeVisible();
   await expect(composer.getByText("Attach file")).toBeVisible();
   const composerFeeControl = page.getByRole("dialog", { name: "What’s happening?" }).locator(".fee-control");
-  await expect(composerFeeControl.getByText("Fee sat/vB")).toBeVisible();
+  await expect(composerFeeControl.getByText("Fee proofs/vB")).toBeVisible();
   await expect(composerFeeControl.locator('input[type="number"]')).toHaveValue("1");
-  await composerFeeControl.getByRole("button", { name: "2 sat" }).click();
+  await composerFeeControl.getByRole("button", { name: "2 proofs/vB" }).click();
   await expect(composerFeeControl.locator('input[type="number"]')).toHaveValue("2");
   await page.keyboard.press("Escape");
 

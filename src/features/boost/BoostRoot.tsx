@@ -368,8 +368,15 @@ function profileEmptyTitle(tab: BoostProfileTab) {
   }[tab];
 }
 
-function boostProfileHref(value: string) {
-  return boostRouteHref("/", { boost: "1", profile: value });
+function boostTimelineHref(embedded: boolean) {
+  return boostRouteHref("/", embedded ? { folder: "boost" } : { boost: "1" });
+}
+
+function boostProfileHref(value: string, embedded: boolean) {
+  return boostRouteHref("/", {
+    ...(embedded ? { folder: "boost" } : { boost: "1" }),
+    profile: value,
+  });
 }
 
 function boostAmoHref(boostTxid?: string) {
@@ -442,7 +449,7 @@ function confirmDustFeeAbsorption({
   return window.confirm(
     [
       `${extraFeeSats.toLocaleString()} proofs of below-dust change will be added to the miner fee.`,
-      `Selected fee rate: ${feeRate} sat/vB.`,
+      `Selected fee rate: ${feeRate} proofs/vB.`,
       `Estimated fee: ${feeSats.toLocaleString()} proofs.`,
       "Use a larger confirmed UTXO or batch payments to avoid this. Continue signing?",
     ].join("\n\n"),
@@ -543,10 +550,12 @@ function BoostMedia({ item, network }: { item: BoostFeedItem; network: BitcoinNe
 }
 
 function ReboostedPost({
+  embedded,
   network,
   onOpenOriginal,
   post,
 }: {
+  embedded: boolean;
   network: BitcoinNetwork;
   onOpenOriginal: (post: BoostFeedItem) => void;
   post?: BoostFeedItem;
@@ -596,7 +605,7 @@ function ReboostedPost({
         <div className="boost-reboosted-post-body">
           <div className="boost-reboosted-post-author-line">
             {profileValue ? (
-              <a className="boost-author" href={boostProfileHref(profileValue)}>
+              <a className="boost-author" href={boostProfileHref(profileValue, embedded)}>
                 {authorLabel(post, undefined, "")}
               </a>
             ) : (
@@ -673,6 +682,7 @@ function QuotedPost({
 }
 
 function BoostPost({
+  embedded,
   actionBusy,
   activeAddress,
   activeIdentity,
@@ -691,6 +701,7 @@ function BoostPost({
   reboostMenuOpen,
   profileAddress,
 }: {
+  embedded: boolean;
   actionBusy: BoostActionBusy;
   activeAddress: string;
   activeIdentity?: BoostIdentityIntent;
@@ -766,7 +777,7 @@ function BoostPost({
         <div className="boost-post-head">
           <div className="boost-author-line">
             {profileValue ? (
-              <a className="boost-author" href={boostProfileHref(profileValue)}>
+              <a className="boost-author" href={boostProfileHref(profileValue, embedded)}>
                 {authorLabel(item, activeIdentity, activeAddress)}
               </a>
             ) : (
@@ -802,7 +813,7 @@ function BoostPost({
         </div>
 
         {isReboost ? (
-          <ReboostedPost network={network} onOpenOriginal={onOpenOriginal} post={item.reboostedPost} />
+          <ReboostedPost embedded={embedded} network={network} onOpenOriginal={onOpenOriginal} post={item.reboostedPost} />
         ) : (
           <>
             {item.text ? <p className="boost-post-text">{item.text}</p> : null}
@@ -1491,7 +1502,7 @@ export default function BoostRoot({
     if (!nextProfile) {
       return;
     }
-    window.location.href = boostProfileHref(nextProfile);
+    window.location.href = boostProfileHref(nextProfile, embedded);
   }
 
   function selectProfileTab(nextTab: BoostProfileTab) {
@@ -1500,7 +1511,12 @@ export default function BoostRoot({
       return;
     }
     const url = new URL(window.location.href);
-    url.searchParams.set("boost", "1");
+    if (embedded) {
+      url.searchParams.delete("boost");
+      url.searchParams.set("folder", "boost");
+    } else {
+      url.searchParams.set("boost", "1");
+    }
     url.searchParams.set("profile", profileRouteValue.trim());
     url.searchParams.set("profileTab", nextTab);
     window.history.replaceState(null, "", `${url.pathname}?${url.searchParams.toString()}${url.hash}`);
@@ -2256,6 +2272,7 @@ export default function BoostRoot({
   function renderBoostPost(item: BoostFeedItem) {
     return (
       <BoostPost
+        embedded={embedded}
         actionBusy={actionBusy}
         activeAddress={address}
         activeIdentity={activeIdentity}
@@ -2362,9 +2379,9 @@ export default function BoostRoot({
           />
         ) : null}
         <nav className="boost-compact-nav" aria-label="Boost navigation">
-          <a href={boostRouteHref("/", { boost: "1" })} aria-label="Home" title="Home"><Home size={22} /><span>Home</span></a>
+          <a href={boostTimelineHref(embedded)} aria-label="Home" title="Home"><Home size={22} /><span>Home</span></a>
           <button onClick={openTools} type="button" aria-label="Search and profile tools" title="Search and profile tools"><Search size={22} /><span>Search</span></button>
-          {address ? <a href={boostProfileHref(address)} aria-label="My profile" title="My profile"><UserCircle size={22} /><span>Profile</span></a> :
+          {address ? <a href={boostProfileHref(address, embedded)} aria-label="My profile" title="My profile"><UserCircle size={22} /><span>Profile</span></a> :
             <button onClick={openTools} type="button" aria-label="Connect profile" title="Connect profile"><UserCircle size={22} /><span>Profile</span></button>}
           <button className="primary" onClick={onComposeBoost ?? (() => openBoostComposer())} type="button" aria-label="Post a Boost" title="Post a Boost"><Zap size={22} /><span>Post</span></button>
         </nav>
@@ -2428,7 +2445,7 @@ export default function BoostRoot({
           {isProfileView ? (
             <a
               className="secondary link-button boost-profile-timeline-link"
-              href={boostRouteHref("/", { boost: "1" })}
+              href={boostTimelineHref(embedded)}
             >
               <span className="button-content">
                 <Clock size={16} />
@@ -2646,7 +2663,7 @@ export default function BoostRoot({
           {isProfileView ? (
             <>
             <div className="boost-profile-titlebar">
-              <a className="secondary small link-button" href={boostRouteHref("/", { boost: "1" })} aria-label="Back to timeline" title="Back to timeline">
+              <a className="secondary small link-button" href={boostTimelineHref(embedded)} aria-label="Back to timeline" title="Back to timeline">
                 <ArrowLeft size={20} />
               </a>
               <div className="boost-profile-title">

@@ -642,6 +642,13 @@ textarea {
     transform 160ms ease;
 }
 
+a[href] {
+  align-items: center;
+  display: inline-flex;
+  min-height: 44px;
+  min-width: 44px;
+}
+
 button:disabled {
   cursor: not-allowed;
   opacity: 0.5;
@@ -723,7 +730,8 @@ code {
 .mail-app > .app-footer .domain-nav-links a,
 .mail-app > .app-footer a {
   font-size: 0.76rem;
-  min-height: 28px;
+  min-height: 44px;
+  min-width: 44px;
   padding: 4px 6px;
 }
 
@@ -820,7 +828,8 @@ code {
   flex: 0 0 clamp(210px, 20vw, 300px);
   gap: 12px;
   max-width: 300px;
-  min-width: 0;
+  min-height: 44px;
+  min-width: 44px;
   text-decoration: none;
 }
 
@@ -1853,7 +1862,8 @@ code {
   color: var(--text-muted);
   display: inline-flex;
   font-weight: 760;
-  min-height: 32px;
+  min-height: 44px;
+  min-width: 44px;
   padding: 5px 8px;
   text-decoration: none;
 }
@@ -1881,7 +1891,8 @@ code {
 .app-footer.compact .app-menu-trigger {
   background: var(--surface);
   border-color: var(--border);
-  min-height: 30px;
+  min-height: 44px;
+  min-width: 44px;
 }
 
 .message-column {
@@ -2536,6 +2547,29 @@ select {
   margin-left: 7px;
 }
 
+.public-search-field,
+.browser-source-label {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.public-search-field > span,
+.browser-source-label {
+  color: var(--text-muted);
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+.public-search-field > span {
+  padding-left: 4px;
+}
+
+.desktop-search .public-search-field input {
+  min-height: 44px;
+  width: 100%;
+}
+
 .desktop-search input {
   background: transparent;
   border: 0;
@@ -2612,6 +2646,10 @@ select {
   box-shadow: 0 24px 70px rgba(0, 0, 0, 0.28);
   color: #111827;
   width: min(100%, 680px);
+}
+
+.desktop-search-large .public-search-field > span {
+  color: #111827;
 }
 
 .desktop-search-large input {
