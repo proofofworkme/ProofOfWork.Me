@@ -274,6 +274,17 @@ live in `amo.proofofwork.me`, not in the focused claim app.
 - Reviews prepared Mail destinations, exact payments, WORK attachments, registry
   payments, miner fee, and change before local wallet signing. Unknown broadcast
   outcomes retain the draft and signed txid for inspection before another send.
+- Reviews ID and .pow registrations, ID receiver/owner changes, and direct credit
+  transfers before requesting a local wallet signature. Exact prepared destinations,
+  registry payments, miner fees, change, and public protocol records remain inspectable.
+  Fresh state and funding are checked before signing and broadcasting. Local action
+  receipts retain the signed txid before a broadcast attempt; unknown outcomes block
+  another action, and pending receipts block repetition of the same task until a
+  first-party status check reports confirmation or dropping. Task fields can be
+  restored from receipts for inspection; restoration never submits a transaction.
+  Receipts are browser-local recovery evidence, excluded from organization backups,
+  and cannot establish ownership, routing, balances, or settlement. Marketplace seller
+  authorizations and anchored purchases retain their separate existing flows.
 - Previews local restore replacements before writing; absent groups remain
   unchanged, concurrent local changes stop the restore, and failed writes attempt
   recovery with explicit reporting if recovery is incomplete. Theme preference

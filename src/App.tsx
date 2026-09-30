@@ -1,3 +1,5 @@
+import { ActionTransactionReview, type ActionReview } from "./shared/components/ActionTransactionReview";
+import { readActionReceipts, saveActionReceipt, type ActionReceipt } from "./shared/wallet/actionRecovery";
 import { FEE_RATE_STEP } from "./shared/feeRate";
 import { TransactionReview, type MailTransactionReview } from "./shared/components/TransactionReview";
 import { BackupPreview } from "./shared/components/BackupPreview";
@@ -21952,6 +21954,14 @@ export default function App() {
   const [busy, setBusy] = useState(false);
   const [mailSendBusy, setMailSendBusy] = useState(false);
   const [mailReview, setMailReview] = useState<MailTransactionReview>();
+  const [actionReview, setActionReview] = useState<ActionReview>();
+  const actionReviewResolverRef = useRef<((approved: boolean) => void) | null>(null);
+  const actionReturnFocusRef = useRef<HTMLElement | null>(null);
+  const actionInFlightRef = useRef(false);
+  const [actionReceipts, setActionReceipts] = useState<ActionReceipt[]>([]);
+  const [actionRecoveryError, setActionRecoveryError] = useState("");
+  const [actionRecoveryBusy, setActionRecoveryBusy] = useState(false);
+
   const mailReviewResolverRef = useRef<((approved: boolean) => void) | null>(null);
   const mailWalletRevisionRef = useRef(0);
   const mailReviewReturnFocusRef = useRef<HTMLElement | null>(null);
@@ -23507,6 +23517,127 @@ export default function App() {
     if (mailReviewResolverRef.current) finishMailReview(false);
   }, [mailReviewContext]);
   useEffect(() => () => { mailReviewResolverRef.current?.(false); }, []);
+  const actionContext = JSON.stringify([address, network, feeRate, activeFolder,
+    idName, idReceiveAddress, idPgpKey, managedIdName, idUpdateReceiveAddress,
+    idTransferOwnerAddress, idTransferReceiveAddress, dnsName, dnsReceiveAddress,
+    tokenTransferTokenId, tokenTransferAmount, tokenTransferRecipient]);
+  const actionContextRef = useRef(actionContext);
+  actionContextRef.current = actionContext;
+  function finishActionReview(approved: boolean) {
+    const resolve = actionReviewResolverRef.current;
+    actionReviewResolverRef.current = null;
+    setActionReview(undefined);
+    resolve?.(approved);
+  }
+  useEffect(() => { finishActionReview(false); }, [actionContext]);
+  useEffect(() => {
+    try { setActionReceipts(readActionReceipts(localStorage)); }
+    catch (error) { setActionRecoveryError(errorMessage(error, "Local recovery records are unavailable.")); }
+    return () => { actionReviewResolverRef.current?.(false); };
+  }, []);
+  async function refreshActionRecovery(txid: string) {
+    setActionRecoveryBusy(true);
+    try {
+      const receipts = readActionReceipts(localStorage);
+      for (const receipt of receipts.filter(item => item.txid === txid && item.address === address && item.network === network &&
+        (item.status === "unknown" || item.status === "pending"))) {
+        const nextStatus = await fetchBroadcastStatus(receipt.txid, receipt.network);
+        // An unknown or unavailable read cannot release a duplicate-send guard.
+        if (nextStatus !== "unknown") setActionReceipts(saveActionReceipt(localStorage, { ...receipt, status: nextStatus }));
+      }
+      setActionRecoveryError("");
+    } catch (error) { setActionRecoveryError(errorMessage(error, "Transaction status is unavailable. Recovery records retained.")); }
+    finally { setActionRecoveryBusy(false); }
+  }
+  function captureActionContext() {
+    const context = actionContextRef.current;
+    const wallet = window.unisat;
+    const revision = mailWalletRevisionRef.current;
+    const trigger = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    return { wallet, trigger, assertCurrent: () => {
+      if (!wallet || wallet !== window.unisat || revision !== mailWalletRevisionRef.current || context !== actionContextRef.current) {
+        throw new Error("Task or wallet context changed. Review the current task before signing again.");
+      }
+    }};
+  }
+  async function fetchActionRegistryRecord(kind: "ids" | "dns", id: string) {
+    const payload = await fetchProofApiJson<PowRegistryApiResponse>(
+      `/api/v1/${kind}/${encodeURIComponent(id)}?current=1&fresh=1`, network);
+    if (!payload || !Array.isArray(payload.records) || !Array.isArray(payload.pendingEvents) ||
+      !Array.isArray(payload.listings) || !Array.isArray(payload.sales)) {
+      throw new Error("Current registry evidence is incomplete. Retry the read before signing.");
+    }
+    assertCompleteIdReservations(payload);
+    return { ...normalizeRegistryApiState(payload), record: payload.record };
+  }
+  async function reviewAndSendAction({ prepared, title, fields, payload, registry, registryProofs,
+    key, context, revalidate }: {
+    prepared: Awaited<ReturnType<typeof buildPaymentPsbt>>; title: string; fields: [string, string][];
+    payload: string; registry: string; registryProofs: number; key: string;
+    context: ReturnType<typeof captureActionContext>; revalidate: () => Promise<void>;
+  }): Promise<string> {
+    if (actionInFlightRef.current) throw new Error("Another transaction is being reviewed or signed. Finish that task first.");
+    actionInFlightRef.current = true;
+    let attempted: ActionReceipt | undefined;
+    try {
+      context.assertCurrent();
+      const receipts = readActionReceipts(localStorage);
+      if (receipts.some(item => item.address === address && item.network === network &&
+        (item.status === "unknown" || item.status === "pending") && (item.status === "unknown" || item.key === key))) {
+        throw new Error("An earlier transaction needs a status check before retrying this task. Use Check transaction status in Transaction recovery.");
+      }
+      const evidence = inspectPreparedPayment({ ...prepared, network: bitcoinNetwork(network), paymentCount: 0, registryPaymentCount: 1 });
+      const payment = evidence.outputs.find(output => output.kind === "payment");
+      if (!payment || payment.address !== registry || payment.proofs !== String(registryProofs) ||
+        JSON.stringify(evidence.records) !== JSON.stringify([payload]) ||
+        evidence.outputs.some(output => output.kind === "change" && output.address !== address)) {
+        throw new Error("Prepared action does not match its exact registry, record, or change destination.");
+      }
+      await assertTransactionIntentDoesNotSpendReservedListingAnchors({
+        intent: psbtUnsignedTransactionIntent(bitcoin.Psbt.fromHex(prepared.psbtHex, { network: bitcoinNetwork(network) })), network, signingAddress: address,
+      });
+      context.assertCurrent();
+      setStatus({ tone: "idle", text: "Review the prepared transaction before opening your wallet." });
+      actionReturnFocusRef.current = context.trigger;
+      const approved = await new Promise<boolean>(resolve => {
+        actionReviewResolverRef.current = resolve;
+        setActionReview({ title, fields, evidence, networkLabel: networkLabel(network), feeRate: String(feeRate), dustFeeProofs: String(prepared.dustFeeSats) });
+      });
+      if (!approved) throw new Error("Transaction review canceled. Task preserved; no signature requested.");
+      const preflight = async () => {
+        context.assertCurrent();
+        await ensureWalletNetwork(context.wallet!, network, address);
+        await assertActiveWalletAddress(context.wallet!, address);
+        await revalidate();
+        const funding = await fetchAddressApiUtxos(address, network);
+        if (evidence.inputs.some(input => !funding.some(utxo => utxo.status?.confirmed &&
+          `${utxo.txid}:${utxo.vout}` === input.outpoint && Number.isSafeInteger(utxo.value) && String(utxo.value) === input.proofs))) {
+          throw new Error("Prepared funding changed or is unavailable. Refresh funds and review again.");
+        }
+        context.assertCurrent();
+      };
+      setStatus({ tone: "idle", text: "Rechecking current registry, balances, and confirmed funding…" });
+      await preflight();
+      setStatus({ tone: "idle", text: "Waiting for your local wallet signature…" });
+      const result = await signAndBroadcastPsbtDetailed({ ...prepared, network, signingAddress: address,
+        wallet: context.wallet!, beforeBroadcast: preflight,
+        onBroadcastAttempt: txid => {
+          context.assertCurrent();
+          const receipt: ActionReceipt = { txid, address, network, title, fields, key, createdAt: new Date().toISOString(), status: "unknown" };
+          setActionReceipts(saveActionReceipt(localStorage, receipt));
+          attempted = receipt;
+        },
+      });
+      if (attempted) {
+        try { setActionReceipts(saveActionReceipt(localStorage, { ...attempted, status: "pending" })); }
+        catch { setActionRecoveryError("Broadcast returned, but the saved receipt remains uncertain. Check its transaction status before retrying."); }
+      }
+      return result.txid;
+    } catch (error) {
+      if (attempted) throw new Error(`Broadcast outcome requires a status check for ${attempted.txid}. Task and recovery evidence retained. ${errorMessage(error, "")}`);
+      throw error;
+    } finally { actionInFlightRef.current = false; }
+  }
   const uncertainMailBroadcast = allSent.find(message => message.from === address &&
     message.network === network && message.status === "unknown");
   const mailRecoveryReason = uncertainMailBroadcast
@@ -26955,6 +27086,7 @@ export default function App() {
     const handleWalletChange = () => {
       mailWalletRevisionRef.current += 1;
       finishMailReview(false);
+      finishActionReview(false);
       void syncWallet().catch((error) => {
         setStatus({
           tone: "bad",
@@ -30093,6 +30225,7 @@ export default function App() {
       return;
     }
 
+    const reviewContext = captureActionContext();
     setBusy(true);
     setStatus({
       tone: "idle",
@@ -30184,23 +30317,14 @@ export default function App() {
         requireConfirmedUtxos: true,
         toAddress: registryAddress,
       });
-      if (
-        !confirmDustFeeAbsorption({
-          dustFeeSats: paymentPsbt.dustFeeSats,
-          feeRate,
-          feeSats: paymentPsbt.feeSats,
-        })
-      ) {
-        setStatus({ tone: "idle", text: dustFeeAbsorptionCanceledText() });
-        return;
-      }
-
-      const txid = await signAndBroadcastPsbt({
-        inputCount: paymentPsbt.inputCount,
-        network,
-        psbtHex: paymentPsbt.psbtHex,
-        signingAddress: address,
-        wallet: window.unisat,
+      const txid = await reviewAndSendAction({
+        prepared: paymentPsbt, title: "Review ID registration", fields: [["ID", normalizedIdName + "@proofofwork.me"], ["Owner address", address], ["Mail receiver", idReceiveAddress.trim()], ...(idPgpKey.trim() ? [["PGP public key", idPgpKey.trim()] as [string, string]] : [])], payload: idRegistrationPayload,
+        registry: registryAddress, registryProofs: ID_REGISTRATION_PRICE_SATS,
+        key: "registerId:" + normalizedIdName, context: reviewContext,
+        revalidate: async () => {
+          const latest = await fetchActionRegistryRecord("ids", normalizedIdName);
+          if (latest.record || latest.records.some(record => record.id === normalizedIdName)) throw new Error("Name availability changed. Refresh and review again.");
+        },
       });
       const registeredRecord: PowIdRecord = {
         amountSats: ID_REGISTRATION_PRICE_SATS,
@@ -30291,6 +30415,7 @@ export default function App() {
       return;
     }
 
+    const reviewContext = captureActionContext();
     setBusy(true);
     setStatus({
       tone: "idle",
@@ -30383,23 +30508,14 @@ export default function App() {
         requireConfirmedUtxos: true,
         toAddress: dnsRegistryAddress,
       });
-      if (
-        !confirmDustFeeAbsorption({
-          dustFeeSats: paymentPsbt.dustFeeSats,
-          feeRate,
-          feeSats: paymentPsbt.feeSats,
-        })
-      ) {
-        setStatus({ tone: "idle", text: dustFeeAbsorptionCanceledText() });
-        return;
-      }
-
-      const txid = await signAndBroadcastPsbt({
-        inputCount: paymentPsbt.inputCount,
-        network,
-        psbtHex: paymentPsbt.psbtHex,
-        signingAddress: address,
-        wallet: window.unisat,
+      const txid = await reviewAndSendAction({
+        prepared: paymentPsbt, title: "Review .pow registration", fields: [["Name", powDnsDisplayName(normalizedDnsName)], ["Owner address", address], ["Resolver address", dnsReceiveAddress.trim()]], payload: dnsRegistrationPayload,
+        registry: dnsRegistryAddress, registryProofs: ID_REGISTRATION_PRICE_SATS,
+        key: "registerDns:" + normalizedDnsName, context: reviewContext,
+        revalidate: async () => {
+          const latest = await fetchActionRegistryRecord("dns", normalizedDnsName);
+          if (latest.record || latest.records.some(record => record.id === normalizedDnsName)) throw new Error("Name availability changed. Refresh and review again.");
+        },
       });
       const registeredRecord: PowIdRecord = {
         amountSats: ID_REGISTRATION_PRICE_SATS,
@@ -30447,11 +30563,17 @@ export default function App() {
     id,
     payload,
     successText,
+    reviewFields,
+    revalidateDestination,
+    capturedContext,
   }: {
     expectedOwner: string;
     id: string;
     payload: string;
     successText: string;
+    capturedContext?: ReturnType<typeof captureActionContext>;
+    reviewFields?: [string, string][];
+    revalidateDestination?: () => Promise<void>;
   }) {
     if (!window.unisat) {
       setStatus({ tone: "bad", text: "Connect UniSat first." });
@@ -30490,6 +30612,7 @@ export default function App() {
       return;
     }
 
+    const reviewContext = capturedContext ?? captureActionContext();
     setBusy(true);
     setStatus({
       tone: "idle",
@@ -30559,25 +30682,40 @@ export default function App() {
         requireConfirmedUtxos: true,
         toAddress: registryAddress,
       });
-      if (
-        !confirmDustFeeAbsorption({
-          dustFeeSats: paymentPsbt.dustFeeSats,
-          feeRate,
-          feeSats: paymentPsbt.feeSats,
-        })
-      ) {
-        setStatus({ tone: "idle", text: dustFeeAbsorptionCanceledText() });
-        return;
+      let txid: string;
+      if (reviewFields) {
+        txid = await reviewAndSendAction({ prepared: paymentPsbt, title: successText, fields: reviewFields,
+          payload, registry: registryAddress, registryProofs: ID_MUTATION_PRICE_SATS,
+          key: "id-mutation:" + id, context: reviewContext,
+          revalidate: async () => {
+            const latest = await fetchActionRegistryRecord("ids", id);
+            const record = latest.record?.confirmed ? latest.record : latest.records.find(item => item.id === id && item.confirmed);
+            if (!record || record.ownerAddress !== latestRecord.ownerAddress || record.receiveAddress !== latestRecord.receiveAddress) {
+              throw new Error("Confirmed ID state changed. Refresh and review again.");
+            }
+            await revalidateDestination?.();
+          },
+        });
+      } else {
+        if (
+          !confirmDustFeeAbsorption({
+            dustFeeSats: paymentPsbt.dustFeeSats,
+            feeRate,
+            feeSats: paymentPsbt.feeSats,
+          })
+        ) {
+          setStatus({ tone: "idle", text: dustFeeAbsorptionCanceledText() });
+          return;
+        }
+
+        txid = await signAndBroadcastPsbt({
+          inputCount: paymentPsbt.inputCount,
+          network,
+          psbtHex: paymentPsbt.psbtHex,
+          signingAddress: address,
+          wallet: window.unisat,
+        });
       }
-
-      const txid = await signAndBroadcastPsbt({
-        inputCount: paymentPsbt.inputCount,
-        network,
-        psbtHex: paymentPsbt.psbtHex,
-        signingAddress: address,
-        wallet: window.unisat,
-      });
-
       setStatus(
         goodBroadcastStatus(
           `${successText} broadcast: ${shortAddress(txid)}.`,
@@ -30586,6 +30724,7 @@ export default function App() {
         ),
       );
       await refreshIdStateAfterMutation();
+      return true;
     } catch (error) {
       setStatus({
         tone: "bad",
@@ -32396,6 +32535,7 @@ export default function App() {
 
   async function updateIdReceiver(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    const capturedContext = captureActionContext();
 
     if (!managedIdRecord) {
       setStatus({
@@ -32463,11 +32603,19 @@ export default function App() {
       id: managedIdRecord.id,
       payload: buildIdReceiverUpdatePayload(managedIdRecord.id, receiveAddress),
       successText: `Receiver update for ${managedIdRecord.id}@proofofwork.me`,
+      capturedContext,
+      reviewFields: [["ID", managedIdRecord.id + "@proofofwork.me"], ["Owner address (unchanged)", managedIdRecord.ownerAddress], ["Current mail receiver", managedIdRecord.receiveAddress], ["New mail receiver", receiveAddress]],
+      revalidateDestination: async () => {
+        if (isValidBitcoinAddress(receiveInput, network)) return;
+        const current = resolveRecipientInput(receiveInput, network, (await fetchIdRegistryState(network)).records, registryAddress);
+        if (current.error || current.paymentAddress !== receiveAddress) throw new Error("Destination ID receiver changed. Review again.");
+      },
     });
   }
 
   async function transferId(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    const capturedContext = captureActionContext();
 
     if (!managedIdRecord) {
       setStatus({
@@ -32562,7 +32710,7 @@ export default function App() {
       return;
     }
 
-    await broadcastIdMutation({
+    const succeeded = await broadcastIdMutation({
       expectedOwner: managedIdRecord.ownerAddress,
       id: managedIdRecord.id,
       payload: buildIdTransferPayload(
@@ -32571,10 +32719,21 @@ export default function App() {
         payloadReceiveAddress,
       ),
       successText: `Transfer for ${managedIdRecord.id}@proofofwork.me`,
+      capturedContext,
+      reviewFields: [["ID", managedIdRecord.id + "@proofofwork.me"], ["Current owner", managedIdRecord.ownerAddress], ["New owner", latestOwnerAddress], ["Mail receiver after transfer", effectiveReceiveAddress]],
+      revalidateDestination: async () => {
+        const records = (await fetchIdRegistryState(network)).records;
+        const owner = resolvePowIdOwnerInput(idTransferOwnerAddress, network, records, registryAddress);
+        const receive = receiveInput ? resolveRecipientInput(receiveInput, network, records, registryAddress) : undefined;
+        if (owner.error || owner.ownerAddress !== latestOwnerAddress || receive?.error ||
+          (receive?.paymentAddress ?? owner.receiveAddress) !== effectiveReceiveAddress) throw new Error("Transfer destination changed. Review again.");
+      },
     });
 
-    setIdTransferOwnerAddress("");
-    setIdTransferReceiveAddress("");
+    if (succeeded) {
+      setIdTransferOwnerAddress("");
+      setIdTransferReceiveAddress("");
+    }
   }
 
   async function sendOpReturn(event: FormEvent<HTMLFormElement>) {
@@ -34220,6 +34379,7 @@ export default function App() {
       return;
     }
 
+    const reviewContext = captureActionContext();
     const actionAddress = address;
     const walletAction = beginWalletScopedTokenAction("transfer", {
       tone: "idle",
@@ -34325,40 +34485,22 @@ export default function App() {
       if (!walletAction.isCurrent()) {
         return;
       }
-      if (
-        !confirmDustFeeAbsorption({
-          dustFeeSats: paymentPsbt.dustFeeSats,
-          feeRate,
-          feeSats: paymentPsbt.feeSats,
-        })
-      ) {
-        walletAction.setStatus({
-          tone: "idle",
-          text: dustFeeAbsorptionCanceledText(),
-        });
-        return;
-      }
-      await assertActiveWalletAddress(window.unisat, actionAddress);
-      if (!walletAction.isCurrent()) {
-        return;
-      }
-
-      const txid = await signAndBroadcastPsbt({
-        beforeBroadcast:
-          isWorkToken(token) && preparedWorkMode
-            ? async () => {
-                await freshWorkWriteMode(preparedWorkMode);
-                await requireFreshWorkCapacityBeforeBroadcast(
-                  actionAddress, token, attemptedAmountUnits,
-                  tokenListings, tokenClosedListings, tokenTransfers, tokenSales,
-                );
-              }
-            : undefined,
-        inputCount: paymentPsbt.inputCount,
-        network: "livenet",
-        psbtHex: paymentPsbt.psbtHex,
-        signingAddress: actionAddress,
-        wallet: window.unisat,
+      const txid = await reviewAndSendAction({ prepared: paymentPsbt, title: "Review credit transfer",
+        fields: [["Credit", token.ticker], ["Credit ID", token.tokenId], ["Exact quantity", isWorkToken(token) ? workDecimalFromAtoms(parsedAmount.amountSubatoms ?? "0") + " WORK" : String(parsedAmount.amount) + " " + token.ticker], ["Sender", actionAddress], ["Recipient", recipientAddress]],
+        payload, registry: token.registryAddress, registryProofs: TOKEN_MIN_MUTATION_PRICE_SATS,
+        key: "credit-transfer:" + token.tokenId, context: reviewContext,
+        revalidate: async () => {
+          if (!walletAction.isCurrent()) throw new Error("Wallet task changed. Review again.");
+          if (isWorkToken(token) && preparedWorkMode) {
+            await freshWorkWriteMode(preparedWorkMode);
+            await requireFreshWorkCapacityBeforeBroadcast(actionAddress, token, attemptedAmountUnits, tokenListings, tokenClosedListings, tokenTransfers, tokenSales);
+          } else {
+            const fresh = await fetchFreshWalletTokenPreflightState(actionAddress, token.tokenId);
+            const spendable = tokenSpendabilityForWallet(actionAddress, token, fresh, tokenListings, tokenClosedListings, tokenTransfers, tokenSales);
+            const available = exactIntegerBigInt(spendable.spendableBalanceAtoms);
+            if (available === null || attemptedAmountUnits > available) throw new Error("Spendable credit balance changed or is unavailable. Refresh and review again.");
+          }
+        },
       });
       if (!walletAction.isCurrent()) {
         return;
@@ -35931,8 +36073,50 @@ export default function App() {
     void refreshInfinity(true, true, INFINITY_BOND_UI);
   };
 
+  const actionComputerMode = !idLaunchMode && !dnsLaunchMode && !walletMode && !tokenMode && !workTokenMode && !standaloneBondConfig;
+  function canRestoreActionHere(receipt: ActionReceipt) {
+    if (receipt.key.startsWith("registerDns:")) return dnsLaunchMode;
+    if (receipt.key.startsWith("registerId:")) return idLaunchMode || actionComputerMode;
+    if (receipt.key.startsWith("id-mutation:")) return actionComputerMode;
+    return receipt.key.startsWith("credit-transfer:") && Boolean(actionComputerMode || walletMode ||
+      (standaloneBondConfig && receipt.fields.find(([label]) => label === "Credit ID")?.[1] === standaloneBondConfig.tokenId));
+  }
+  function restoreActionTask(receipt: ActionReceipt) {
+    const field = (name: string) => receipt.fields.find(([label]) => label === name)?.[1] ?? "";
+    if (receipt.key.startsWith("registerId:")) {
+      setIdName(receipt.key.slice("registerId:".length)); setIdReceiveAddress(field("Mail receiver")); setIdPgpKey(field("PGP public key"));
+      if (!idLaunchMode) openFolder("ids");
+    } else if (receipt.key.startsWith("registerDns:")) {
+      setDnsName(receipt.key.slice("registerDns:".length)); setDnsReceiveAddress(field("Resolver address"));
+      if (!dnsLaunchMode) { setStatus({ tone: "idle", text: "Retained .pow details are shown above. Open DNS to resume registration." }); return; }
+    } else if (receipt.key.startsWith("id-mutation:")) {
+      setManagedIdName(receipt.key.slice("id-mutation:".length));
+      if (field("New owner")) { setIdTransferOwnerAddress(field("New owner")); setIdTransferReceiveAddress(field("Mail receiver after transfer")); }
+      else setIdUpdateReceiveAddress(field("New mail receiver"));
+      openFolder("ids");
+    } else if (receipt.key.startsWith("credit-transfer:")) {
+      setTokenTransferTokenId(field("Credit ID")); setTokenTransferAmount(field("Exact quantity").split(" ")[0]); setTokenTransferRecipient(field("Recipient"));
+      if (!walletMode && !tokenMode && !workTokenMode && !standaloneBondConfig) openFolder("wallet");
+    }
+    setStatus({ tone: "idle", text: "Retained task restored for inspection. Refresh current state and review before signing; no transaction was submitted." });
+  }
+  const actionUi = <>
+    {actionRecoveryError ? <p role="alert" className="field-note">{actionRecoveryError}</p> : null}
+    {actionReceipts.filter(item => item.address === address && item.network === network).sort((a, b) => Number(b.status === "unknown" || b.status === "pending") - Number(a.status === "unknown" || a.status === "pending")).slice(0, 10).map(item =>
+      <section className="review-recovery" key={item.txid} aria-label="Transaction recovery">
+        <p role="status"><strong>{item.title}</strong> · {item.status === "unknown" ? "Broadcast outcome unknown" : item.status === "pending" ? "Pending confirmation" : item.status === "confirmed" ? "Confirmed transaction" : "Dropped transaction — review before retrying"}</p>
+        <code className="review-exact">{item.txid}</code><p className="field-note">Local recovery evidence. Pending is not confirmed ownership, routing, or balance.</p>
+        <details><summary>Inspect retained task</summary><dl className="review-fields">{item.fields.map(([label, value]) => <div key={label}><dt>{label}</dt><dd><code className="review-exact">{value}</code></dd></div>)}</dl></details>
+        {canRestoreActionHere(item) ? <button type="button" className="secondary" disabled={actionInFlightRef.current} onClick={() => restoreActionTask(item)}>Restore task fields</button> : <p className="field-note">Inspect and copy the retained fields here, then resume in <a href={item.key.startsWith("registerDns:") ? appHref(DNS_APP_URL, LOCAL_DNS_APP_URL) : appHref(COMPUTER_APP_URL, LOCAL_COMPUTER_APP_URL)}>the appropriate workspace</a>.</p>}
+        <button type="button" className="secondary" disabled={actionRecoveryBusy || (item.status !== "unknown" && item.status !== "pending")} onClick={() => void refreshActionRecovery(item.txid)}>{actionRecoveryBusy ? "Checking transaction status…" : "Check transaction status"}</button>
+      </section>)}
+    {actionReview ? <ActionTransactionReview review={actionReview} returnFocus={actionReturnFocusRef.current} onCancel={() => finishActionReview(false)} onApprove={() => finishActionReview(true)} /> : null}
+  </>;
+
   if (idLaunchMode) {
     return (
+      <>
+      {actionUi}
       <IdLaunchApp
         accountStats={connectedAccountStats}
         address={address}
@@ -35963,11 +36147,14 @@ export default function App() {
         submit={registerId}
         onRefresh={() => void refreshIds()}
       />
+      </>
     );
   }
 
   if (dnsLaunchMode) {
     return (
+      <>
+      {actionUi}
       <DnsLaunchApp
         accountStats={connectedAccountStats}
         address={address}
@@ -35998,6 +36185,7 @@ export default function App() {
         submit={registerDns}
         onRefresh={() => void refreshDns()}
       />
+      </>
     );
   }
 
@@ -36157,6 +36345,8 @@ export default function App() {
 
   if (walletMode) {
     return (
+      <>
+      {actionUi}
       <TokenWalletApp
         accountStats={connectedAccountStats}
         address={address}
@@ -36249,11 +36439,14 @@ export default function App() {
         workFloorLoading={workFloorLoading}
         workFloorQuote={workFloorQuote}
       />
+      </>
     );
   }
 
   if (standaloneBondConfig) {
     return (
+      <>
+      {actionUi}
       <InfinityApp
         accountStats={connectedAccountStats}
         address={address}
@@ -36330,6 +36523,7 @@ export default function App() {
         transferToken={walletTransferToken}
         transferring={tokenAction === "transfer"}
       />
+      </>
     );
   }
 
@@ -37921,6 +38115,7 @@ export default function App() {
         onClose={() => setPurchaseReceipt(undefined)}
       />
       <SocialFooter compact />
+      {actionUi}
       {mailReview ? <TransactionReview review={mailReview} returnFocus={mailReviewReturnFocusRef.current} onCancel={() => finishMailReview(false)} onApprove={() => finishMailReview(true)} /> : null}
       {backupPreview ? <BackupPreview {...backupPreview} returnFocus={backupReturnFocusRef.current} onCancel={() => setBackupPreview(undefined)} onRestore={restorePreviewedBackup} /> : null}
     </main>

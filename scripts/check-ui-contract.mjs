@@ -2357,9 +2357,10 @@ expect(
     /function buildTokenSendPayload\([\s\S]*workWriteMode: WorkWriteMode = "paused"/.test(
       app,
     ) &&
-    /async function transferToken[\s\S]*const freshAdmission = await freshWorkWriteMode\(\)[\s\S]*preparedWorkMode = freshAdmission\.mode[\s\S]*beforeBroadcast:[\s\S]*freshWorkWriteMode\(preparedWorkMode\)/.test(
+    /async function transferToken[\s\S]*const freshAdmission = await freshWorkWriteMode\(\)[\s\S]*preparedWorkMode = freshAdmission\.mode[\s\S]*reviewAndSendAction\([\s\S]*revalidate:[\s\S]*freshWorkWriteMode\(preparedWorkMode\)/.test(
       app,
     ) &&
+    /async function reviewAndSendAction[\s\S]*const preflight =[\s\S]*await revalidate\(\)[\s\S]*await preflight\(\)[\s\S]*beforeBroadcast: preflight/.test(app) &&
     /async function sendOpReturn[\s\S]*preparedWorkAttachmentMode =[\s\S]*await freshWorkWriteMode\(\)[\s\S]*beforeBroadcast:[\s\S]*freshWorkWriteMode\(preparedWorkAttachmentMode\)/.test(
       app,
     ) &&

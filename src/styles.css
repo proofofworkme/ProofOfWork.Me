@@ -9379,3 +9379,18 @@ html
     overflow: visible;
   }
 }
+
+.review-recovery {
+  box-sizing: border-box;
+  max-width: 100%;
+  margin: 12px;
+  padding: 16px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+.review-recovery summary, .review-recovery button { min-height: 44px; }
+
+.review-protocol { font-family: var(--font-mono); }

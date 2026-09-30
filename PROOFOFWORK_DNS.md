@@ -3,6 +3,8 @@
 Canonical documentation for the live ProofOfWork DNS `.pow` registry, backed by
 ProofOfWork OP_RETURN events.
 
+The focused DNS registration flow opens an exact review of the name, owner, resolver, registry payment, miner fee, change, and public protocol record before local wallet signing. Availability and confirmed funding are rechecked before signing and broadcast. Browser-local signed-txid receipts support status checks and task restoration after interrupted broadcasts; they never establish confirmed ownership or resolution. Marketplace signing flows remain separate.
+
 ## Developer Warning
 
 ProofOfWork DNS is intentionally parallel to ProofOfWork IDs, but it is not an

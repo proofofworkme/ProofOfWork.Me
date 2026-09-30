@@ -2,6 +2,8 @@
 
 Canonical documentation for the live ProofOfWork.Me human-readable on-chain ID registry, backed by ProofOfWork OP_RETURN events.
 
+ID registration on the focused ID app and registration, receiver updates, and direct transfers in Computer open an exact transaction review before local wallet signing. Owner and mail receiver are separate fields. Fresh registry state and confirmed funding are checked again before signing and broadcast. Browser-local receipts retain a signed txid before broadcast; uncertain outcomes require a first-party status check before another action. A receipt does not establish canonical ID state. Marketplace authorizations remain a separate flow.
+
 ## Developer Warning
 
 Phase 1 is a canonical registry launch. Future developers and agents should treat this file as protocol documentation, not loose brainstorming.

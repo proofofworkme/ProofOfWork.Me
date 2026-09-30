@@ -547,6 +547,8 @@ When working on ProofOfWork.Me:
 20. Before handoff, inspect `git status`, the final diff, and relevant tests. Every authored commit is a durable agent handoff and must carry the hygiene trailers required by `REPOSITORY_HYGIENE.md`; only an exact mechanical server merge may inherit its reviewed parents' attestations.
 21. Keep production serving during lengthy audit, build, backup and release checks. Limit any required stopped-writer window to the approved repair, invariant checks, necessary bootstrap and brief cutover. Prepare recovery before closing public access; if validation delays publication, restore the verified compatible release and continue checks online. Never leave the public API closed merely while completing audit paperwork or investigating a test harness.
 
+- Transaction consent must name the exact action and destinations before local wallet signing. ID/.pow registration, direct ID mutations, and direct credit sends retain browser-local txid recovery evidence before broadcast. Uncertain receipts never become canonical ownership, routing, balances, or settlement; fresh first-party status must resolve uncertainty before retrying.
+
 ## Future Directions From The Archive
 
 These are strategic directions, not all current implementation:

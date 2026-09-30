@@ -1678,3 +1678,231 @@ for (const route of ["/?marketplace=1", "/?folder=marketplace"]) {
     await expect(tabs.getByRole("button", {name:/^DNS/})).toContainText("0");
   });
 }
+
+async function openActionRegistration(page, dns = false) {
+  await installWallet(page); await installApiFixtures(page);
+  await page.route("**/api/v1/ids/*", route => route.fulfill({ contentType: "application/json", body: JSON.stringify(registryState()) }));
+  await page.route("**/api/v1/dns**", route => route.fulfill({ contentType: "application/json", body: JSON.stringify(registryState()) }));
+  await page.goto(dns ? '/?dns-launch=1' : '/?id-launch=1');
+  const connect = page.getByRole('button', { name: /Connect (UniSat|wallet)/ }).first();
+  if (await connect.isVisible({ timeout: 1000 }).catch(() => false)) await connect.click();
+  await expect(page.locator('.topbar-wallet-button')).toContainText('1BPVvi1G');
+  const form = page.locator(dns ? '#dns-register' : '#id-register');
+  await form.getByPlaceholder(dns ? 'alice' : 'user', { exact: true }).fill('reviewfixture');
+  await form.getByLabel(dns ? 'Resolves to' : 'Receive address', { exact: true }).fill(RECIPIENT);
+  await form.locator('button[type=submit]').click();
+  return form;
+}
+for (const dns of [false, true]) {
+  test(`Action review: ${dns ? 'DNS' : 'ID'} registration preserves task on cancel and rejected signing`, async ({ page }) => {
+    const form = await openActionRegistration(page, dns);
+    const dialog = page.getByRole('dialog');
+    await expect(dialog).toBeVisible(); await expect(dialog).toContainText('1000 proofs');
+    await expect(dialog).toContainText(RECIPIENT);
+    expect(await page.evaluate(() => window.__mailComposeFixture.signCalls)).toBe(0);
+    await page.keyboard.press('Escape');
+    await expect(form.getByPlaceholder(dns ? 'alice' : 'user', { exact: true })).toHaveValue('reviewfixture');
+    await page.evaluate(() => { window.unisat.signPsbt = async () => { window.__mailComposeFixture.signCalls++; throw new Error('User rejected signing'); }; });
+    await form.locator('button[type=submit]').click();
+    await dialog.getByRole('button', { name: 'Continue to wallet' }).click();
+    await expect(page.locator('.status-text')).toContainText('User rejected signing');
+    await expect(form.getByPlaceholder(dns ? 'alice' : 'user', { exact: true })).toHaveValue('reviewfixture');
+    expect(await page.evaluate(() => window.__mailComposeFixture.signCalls)).toBe(1);
+  });
+}
+
+test('Action recovery retains unknown broadcast across reload and releases retry only on explicit dropped evidence', async ({ page }) => {
+  const form = await openActionRegistration(page);
+  await page.exposeFunction('fixtureFinalizeAction', hex => {
+    const psbt = bitcoin.Psbt.fromHex(hex);
+    for (let index = 0; index < psbt.inputCount; index++) psbt.updateInput(index, { finalScriptSig: bitcoin.script.compile([Buffer.alloc(72, 1), Buffer.alloc(33, 2)]) });
+    return psbt.toHex();
+  });
+  await page.evaluate(() => { window.unisat.signPsbt = async hex => { window.__mailComposeFixture.signCalls++; return window.fixtureFinalizeAction(hex); }; });
+  let broadcastCalls = 0; let state = 'unknown';
+  await page.route('**/api/v1/broadcast/tx*', async route => { broadcastCalls++; await route.fulfill({ status: 400, contentType: 'application/json', body: '{"error":"fixture unavailable"}' }); });
+  await page.route('**/api/v1/tx/*/status*', async route => {
+    await route.fulfill({ contentType: 'application/json', body: JSON.stringify({ status: route.request().url().includes(FUNDING_TXID) ? 'confirmed' : state }) });
+  });
+  await page.getByRole('dialog').getByRole('button', { name: 'Continue to wallet' }).click();
+  await expect(page.getByRole('region', { name: 'Transaction recovery' })).toContainText('Broadcast outcome unknown');
+  await expect(form.getByPlaceholder('user', { exact: true })).toHaveValue('reviewfixture');
+  await form.locator('button[type=submit]').click();
+  await expect(page.locator('.status-text')).toContainText('earlier transaction');
+  expect(broadcastCalls).toBe(1);
+  await page.reload();
+  const connect = page.getByRole('button', { name: /Connect (UniSat|wallet)/ }).first();
+  if (await connect.isVisible({ timeout: 1000 }).catch(() => false)) await connect.click();
+  await expect(page.locator('.topbar-wallet-button')).toContainText('1BPVvi1G');
+  await expect(page.getByRole('region', { name: 'Transaction recovery' })).toContainText('reviewfixture');
+  await page.getByRole('button', { name: 'Check transaction status' }).click();
+  await expect(page.getByRole('region', { name: 'Transaction recovery' })).toContainText('Broadcast outcome unknown');
+  state = 'dropped'; await page.getByRole('button', { name: 'Check transaction status' }).click();
+  await expect(page.getByRole('region', { name: 'Transaction recovery' })).toContainText('Dropped transaction');
+  await page.getByRole('button', { name: 'Restore task fields' }).click();
+  await expect(page.locator('#id-register').getByPlaceholder('user', { exact: true })).toHaveValue('reviewfixture');
+  expect(broadcastCalls).toBe(1);
+});
+
+for (const transfer of [false, true]) {
+  test(`Action review: Computer ID ${transfer ? 'ownership transfer' : 'receiver update'} retains destinations on rejection`, async ({ page }) => {
+    await installWallet(page); await installApiFixtures(page);
+    const record = { id: 'ownedfixture', ownerAddress: SENDER, receiveAddress: SENDER, confirmed: true, network: 'livenet', txid: HASH, amountSats: 1000, createdAt: NOW };
+    const state = { ...registryState(), records: [record], record };
+    await page.route('**/api/v1/registry*', route => route.fulfill({ contentType: 'application/json', body: JSON.stringify(state) }));
+    await page.route('**/api/v1/ids/*', route => route.fulfill({ contentType: 'application/json', body: JSON.stringify(state) }));
+    await page.goto('/');
+    await page.locator('.onboarding-pane').getByRole('button', { name: 'Connect UniSat' }).click();
+    await page.locator('.sidebar').getByRole('button', { name: /^IDs/ }).click();
+    const label = transfer ? 'New owner address or ID' : 'New receive address or ID';
+    await page.getByLabel(label, { exact: true }).fill(RECIPIENT);
+    await page.evaluate(() => { window.unisat.signPsbt = async () => { window.__mailComposeFixture.signCalls++; throw new Error('User rejected signing'); }; });
+    await page.getByRole('button', { name: transfer ? 'Transfer ID' : 'Update Receiver', exact: true }).click();
+    const dialog = page.getByRole('dialog');
+    await expect(dialog).toContainText('546 proofs'); await expect(dialog).toContainText(RECIPIENT);
+    await dialog.getByRole('button', { name: 'Continue to wallet' }).click();
+    await expect(page.locator('.status-text')).toContainText('User rejected signing');
+    await expect(page.getByLabel(label, { exact: true })).toHaveValue(RECIPIENT);
+  });
+}
+for (const computer of [false, true]) {
+  test(`Action review: ${computer ? 'Computer' : 'standalone'} Wallet preserves exact Q16 WORK and cancels safely`, async ({ page }) => {
+    await installWallet(page); await installApiFixtures(page);
+    if (computer) {
+      await page.goto('/'); await page.locator('.onboarding-pane').getByRole('button', { name: 'Connect UniSat' }).click();
+      await page.locator('.sidebar').getByRole('button', { name: /^Wallet/ }).click();
+    } else await openConnectedWallet(page);
+    const form = page.locator('#wallet-send');
+    await form.getByLabel('Amount', { exact: true }).fill('0.0000000000000001');
+    await form.getByLabel('Recipient address', { exact: true }).fill(RECIPIENT);
+    await form.getByRole('button', { name: 'Transfer credit', exact: true }).click();
+    const dialog = page.getByRole('dialog');
+    await expect(dialog).toContainText('0.0000000000000001 WORK'); await expect(dialog).toContainText('546 proofs');
+    await dialog.getByRole('button', { name: 'Back to task' }).click();
+    await expect(form.getByLabel('Amount', { exact: true })).toHaveValue('0.0000000000000001');
+    expect(await page.evaluate(() => window.__mailComposeFixture.signCalls)).toBe(0);
+  });
+}
+
+test('Action review fails closed on unavailable fresh registry and wallet context changes', async ({ page }) => {
+  const form = await openActionRegistration(page);
+  await page.route('**/api/v1/ids/*', route => route.fulfill({ contentType: 'application/json', body: '{}' }));
+  await page.getByRole('dialog').getByRole('button', { name: 'Continue to wallet' }).click();
+  await expect(page.locator('.status-text')).toContainText('registry evidence is incomplete');
+  expect(await page.evaluate(() => window.__mailComposeFixture.signCalls)).toBe(0);
+  await page.unroute('**/api/v1/ids/*');
+  await page.route('**/api/v1/ids/*', route => route.fulfill({ contentType: 'application/json', body: JSON.stringify(registryState()) }));
+  await form.locator('button[type=submit]').click();
+  await expect(page.getByRole('dialog')).toBeVisible();
+  await page.evaluate(() => window.__mailComposeFixture.emit('accountsChanged'));
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  expect(await page.evaluate(() => window.__mailComposeFixture.signCalls)).toBe(0);
+});
+for (const viewport of [{ width: 320, height: 180 }, { width: 768, height: 512 }, { width: 1440, height: 360 }]) {
+  test(`Action review remains keyboard reachable at ${viewport.width}×${viewport.height}`, async ({ page }) => {
+    await page.setViewportSize(viewport); const form = await openActionRegistration(page);
+    const dialog = page.getByRole('dialog'); await expect(dialog).toBeVisible();
+    const cancel = dialog.getByRole('button', { name: 'Cancel', exact: true });
+    await expect(cancel).toBeFocused();
+    await page.keyboard.press('Shift+Tab');
+    const approve = dialog.getByRole('button', { name: 'Continue to wallet' });
+    await expect(approve).toBeFocused(); await expect(approve).toBeInViewport();
+    expect((await approve.boundingBox()).height).toBeGreaterThanOrEqual(44);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    await page.screenshot({ path: `/tmp/pow-batch4a-review-${viewport.width}x${viewport.height}.png` });
+    await page.keyboard.press('Escape');
+    await expect(form.getByPlaceholder('user', { exact: true })).toHaveValue('reviewfixture');
+    expect(await page.evaluate(() => window.__mailComposeFixture.signCalls)).toBe(0);
+  });
+}
+
+test('Action recovery storage failure prevents broadcast after fixture signing', async ({ page }) => {
+  await openActionRegistration(page);
+  await page.exposeFunction('fixtureFinalizeStorageAction', hex => {
+    const psbt = bitcoin.Psbt.fromHex(hex);
+    for (let index = 0; index < psbt.inputCount; index++) psbt.updateInput(index, { finalScriptSig: bitcoin.script.compile([Buffer.alloc(72, 1), Buffer.alloc(33, 2)]) });
+    return psbt.toHex();
+  });
+  await page.evaluate(() => {
+    window.unisat.signPsbt = async hex => window.fixtureFinalizeStorageAction(hex);
+    const original = Storage.prototype.setItem;
+    Storage.prototype.setItem = function(key, value) { if (key === 'proofofwork-action-receipts-v1') throw new Error('Recovery storage unavailable'); return original.call(this, key, value); };
+  });
+  let calls = 0; await page.route('**/api/v1/broadcast/tx*', async route => { calls++; await route.abort(); });
+  await page.getByRole('dialog').getByRole('button', { name: 'Continue to wallet' }).click();
+  await expect(page.locator('.status-text')).toContainText('Recovery storage unavailable');
+  expect(calls).toBe(0);
+  await expect(page.locator('#id-register').getByPlaceholder('user', { exact: true })).toHaveValue('reviewfixture');
+});
+
+test('Action review rechecks confirmed funding before requesting a signature', async ({ page }) => {
+  await openActionRegistration(page);
+  await page.route(`**/api/v1/address/${SENDER}/utxo*`, route => route.fulfill({ contentType: 'application/json', body: '[]' }));
+  await page.getByRole('dialog').getByRole('button', { name: 'Continue to wallet' }).click();
+  await expect(page.locator('.status-text')).toContainText('Prepared funding changed');
+  expect(await page.evaluate(() => window.__mailComposeFixture.signCalls)).toBe(0);
+});
+
+test('Action review retains exact whole bond quantity beyond Number precision', async ({ page }) => {
+  await installWallet(page); await installApiFixtures(page);
+  const amount = '9007199254740993';
+  const token = { ...workTokenDefinition(), ticker: 'POWB', tokenId: POWB_TOKEN_ID, txid: POWB_TOKEN_ID, decimals: 0, uncapped: true, maxSupply: null, mintAmount: '1', registryAddress: RECIPIENT };
+  const state = { ...authoritativeWorkState(), tokens: [token], holders: [{ address: SENDER, ticker: 'POWB', tokenId: POWB_TOKEN_ID, balance: amount, pendingDelta: '0' }], hasMore: false, collectionHasMore: { tokens: false }, totalCounts: { tokens: 1 } };
+  await page.route('**/api/v1/token?**', route => route.fulfill({ contentType: 'application/json', body: JSON.stringify(state) }));
+  await page.route('**/api/v1/token-summary?**', route => route.fulfill({ contentType: 'application/json', body: JSON.stringify(state) }));
+  await openConnectedWallet(page);
+  const form = page.locator('#wallet-send');
+  await form.getByRole('combobox', { name: 'Credit', exact: true }).selectOption(POWB_TOKEN_ID);
+  await form.getByLabel('Amount', { exact: true }).fill(amount);
+  await form.getByLabel('Recipient address', { exact: true }).fill(RECIPIENT);
+  await form.getByRole('button', { name: 'Transfer credit', exact: true }).click();
+  const dialog = page.getByRole('dialog'); await expect(dialog).toContainText(amount + ' POWB');
+  await page.evaluate(() => { window.unisat.signPsbt = async () => { window.__mailComposeFixture.signCalls++; throw new Error('User rejected signing'); }; });
+  await dialog.getByRole('button', { name: 'Continue to wallet' }).click();
+  await expect(page.locator('.status-text')).toContainText('User rejected signing');
+  await expect(form.getByLabel('Amount', { exact: true })).toHaveValue(amount);
+});
+
+test('Action review checks funding again after signing and prevents an obsolete broadcast', async ({ page }) => {
+  await openActionRegistration(page);
+  let fundingAvailable = true;
+  await page.route(`**/api/v1/address/${SENDER}/utxo*`, route => route.fulfill({ contentType: 'application/json', body: JSON.stringify(fundingAvailable ? [{ txid: FUNDING_TXID, vout: 0, value: 100000, status: { confirmed: true } }] : []) }));
+  await page.exposeFunction('fixtureFinalizeStaleAction', hex => {
+    fundingAvailable = false;
+    const psbt = bitcoin.Psbt.fromHex(hex);
+    for (let index = 0; index < psbt.inputCount; index++) psbt.updateInput(index, { finalScriptSig: bitcoin.script.compile([Buffer.alloc(72, 1), Buffer.alloc(33, 2)]) });
+    return psbt.toHex();
+  });
+  await page.evaluate(() => { window.unisat.signPsbt = async hex => { window.__mailComposeFixture.signCalls++; return window.fixtureFinalizeStaleAction(hex); }; });
+  let calls = 0; await page.route('**/api/v1/broadcast/tx*', async route => { calls++; await route.abort(); });
+  await page.getByRole('dialog').getByRole('button', { name: 'Continue to wallet' }).click();
+  await expect(page.locator('.status-text')).toContainText('Prepared funding changed');
+  expect(await page.evaluate(() => window.__mailComposeFixture.signCalls)).toBe(1);
+  expect(calls).toBe(0);
+});
+
+for (const [ticker, id, surface] of [['POWB', POWB_TOKEN_ID, 'infinity'], ['INCB', INCB_TOKEN_ID, 'inception']]) {
+  for (const computer of [false, true]) {
+    test(`Action review: ${computer ? 'Computer keyboard' : 'standalone'} ${ticker} transfer opens before signing`, async ({ page }) => {
+      await installWallet(page); await installApiFixtures(page);
+      const token = { ...workTokenDefinition(), ticker, tokenId: id, txid: id, decimals: 0, uncapped: true, maxSupply: null, mintAmount: '1', registryAddress: RECIPIENT };
+      const state = { ...authoritativeWorkState(), tokens: [token], holders: [{ address: SENDER, ticker, tokenId: id, balance: '100', pendingDelta: '0' }], hasMore: false, collectionHasMore: { tokens: false }, totalCounts: { tokens: 1 } };
+      await page.route('**/api/v1/token?**', route => route.fulfill({ contentType: 'application/json', body: JSON.stringify(state) }));
+      await page.route('**/api/v1/token-summary?**', route => route.fulfill({ contentType: 'application/json', body: JSON.stringify(state) }));
+      await page.goto(computer ? `/?folder=${surface}` : `/?${surface}=1`);
+      const connect = page.getByRole('button', { name: /Connect (UniSat|wallet)/ }).first();
+      if (await connect.isVisible({ timeout: 1000 }).catch(() => false)) await connect.click();
+      await expect(page.locator('.topbar-wallet-button')).toContainText('1BPVvi1G');
+      const form = page.locator('#wallet-send');
+      await form.getByLabel('Amount', { exact: true }).fill('2');
+      await form.getByLabel('Recipient address', { exact: true }).fill(RECIPIENT);
+      const submit = form.locator('button[type=submit]').first();
+      // Existing embedded bond pointer clipping is tracked separately; test keyboard consent here.
+      if (computer) { await submit.focus(); await page.keyboard.press('Enter'); }
+      else await submit.click();
+      await expect(page.getByRole('dialog')).toContainText('2 ' + ticker);
+      await page.getByRole('dialog').getByRole('button', { name: 'Back to task' }).click();
+      expect(await page.evaluate(() => window.__mailComposeFixture.signCalls)).toBe(0);
+    });
+  }
+}

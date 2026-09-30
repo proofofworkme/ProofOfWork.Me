@@ -80,3 +80,20 @@ missing.addInput({ hash: previous.getId(), index: 0 }); missing.addOutput({ addr
 assert.throws(() => inspectPreparedPayment({ psbtHex: missing.toHex(), network: bitcoin.networks.bitcoin,
   paymentCount: 1, registryPaymentCount: 0, feeSats: 100, changeSats: 0 }), /unavailable or inconsistent/);
 console.log("Local restore replacement, conflict, rollback/recovery, and exact PSBT review checks passed.");
+
+const recovery = load("../src/shared/wallet/actionRecovery.ts");
+storage = new StorageFixture();
+const receipt = { txid: "a".repeat(64), address: sender, network: "livenet", key: "register:fixture", title: "Register fixture", createdAt: "2026-09-30T00:00:00Z", status: "unknown", fields: [["ID", "fixture"]] };
+assert.deepEqual(Array.from(recovery.readActionReceipts(storage)), []);
+recovery.saveActionReceipt(storage, receipt);
+assert.equal(recovery.readActionReceipts(storage)[0].status, "unknown");
+recovery.saveActionReceipt(storage, { ...receipt, status: "pending" });
+assert.equal(recovery.readActionReceipts(storage).length, 1);
+assert.equal(recovery.readActionReceipts(storage)[0].status, "pending");
+storage.failAt = storage.calls + 1;
+assert.throws(() => recovery.saveActionReceipt(storage, { ...receipt, status: "confirmed" }), /quota fixture/);
+assert.equal(recovery.readActionReceipts(storage)[0].status, "pending");
+storage.data.set(recovery.ACTION_RECEIPTS_KEY, '[{"txid":"invalid"}]');
+assert.throws(() => recovery.readActionReceipts(storage), /unreadable/);
+assert.throws(() => recovery.saveActionReceipt(storage, receipt), /unreadable/);
+console.log("Action recovery round-trip, txid deduplication, failed writes, and malformed storage checks passed.");
