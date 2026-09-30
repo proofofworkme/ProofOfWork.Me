@@ -1652,6 +1652,8 @@ type ChainedMintBuildResult = {
 };
 
 type PowRegistryApiResponse = {
+  checkpointHash?: string;
+  coverage?: { complete?: boolean };
   summaryOnly?: boolean;
   collectionHasMore?: { listings?: boolean };
   indexedAt?: string;
@@ -16006,6 +16008,16 @@ async function fetchDnsRegistryState(
     path,
     targetNetwork,
   );
+  if (
+    payload.coverage?.complete !== true ||
+    !Number.isSafeInteger(payload.indexedThroughBlock) ||
+    (payload.indexedThroughBlock ?? -1) < 0 ||
+    !/^[0-9a-f]{64}$/u.test(payload.checkpointHash ?? "") ||
+    !Array.isArray(payload.records) ||
+    !Array.isArray(payload.listings)
+  ) {
+    throw new Error("The DNS registry response is incomplete or has no verified chain checkpoint.");
+  }
   return normalizeRegistryApiState(payload);
 }
 
@@ -26470,7 +26482,7 @@ export default function App() {
   }, [landingMode, network]);
 
   useEffect(() => {
-    if (!marketplaceMode) {
+    if (!marketplaceMode && activeFolder !== "marketplace") {
       return;
     }
 
@@ -26479,8 +26491,13 @@ export default function App() {
       return;
     }
 
-    void refreshMarketplaceSummary(true, false);
     void refreshDns(true, false);
+  }, [activeFolder, marketplaceMode, network]);
+
+  useEffect(() => {
+    if (marketplaceMode && network === "livenet") {
+      void refreshMarketplaceSummary(true, false);
+    }
   }, [marketplaceMode, network]);
 
   useEffect(() => {
@@ -35772,6 +35789,7 @@ export default function App() {
           )}
           registryAddress={registryAddressForNetwork("livenet")}
           publishDnsListing={publishDnsListing}
+          dnsRegistryReadStatus={dnsRegistryReadStatus}
           dnsRegistryAddress={dnsRegistryAddressForNetwork("livenet")}
           dnsRegistryListings={dnsListings.filter(
             (listing) => listing.network === "livenet",
@@ -36861,6 +36879,7 @@ export default function App() {
             dnsPendingEvents={dnsPendingEvents}
             publishListing={publishIdListing}
             publishDnsListing={publishDnsListing}
+            dnsRegistryReadStatus={dnsRegistryReadStatus}
             dnsRegistryAddress={dnsRegistryAddress}
             dnsRegistryListings={dnsListings}
             dnsRegistryRecords={dnsRegistry}
@@ -54309,6 +54328,7 @@ function MarketplaceApp({
   dnsPendingEvents,
   publishListing,
   publishDnsListing,
+  dnsRegistryReadStatus,
   dnsRegistryAddress,
   dnsRegistryListings,
   dnsRegistryRecords,
@@ -54399,6 +54419,7 @@ function MarketplaceApp({
   dnsPendingEvents: PowIdPendingEvent[];
   publishListing: () => void;
   publishDnsListing: () => void;
+  dnsRegistryReadStatus: RegistryReadStatus;
   dnsRegistryAddress: string;
   dnsRegistryListings: PowIdListing[];
   dnsRegistryRecords: PowIdRecord[];
@@ -54755,6 +54776,10 @@ function MarketplaceApp({
                 <span>Pending Sales</span>
               </div>
             </div>
+          ) : marketplaceTab === "dns" && dnsRegistryReadStatus !== "ready" ? (
+            <div className="id-launch-stats" aria-label="DNS AMO stats">
+              <div><strong>—</strong><span>DNS registry awaiting verification</span></div>
+            </div>
           ) : marketplaceTab === "dns" ? (
             <div className="id-launch-stats" aria-label="DNS AMO stats">
               <div>
@@ -54885,7 +54910,7 @@ function MarketplaceApp({
           active={marketplaceTab}
           bondCount={listingBookComplete ? bondListings.length : undefined}
           boostCount={boostListings.length > 0 || (!boostMarketLoading && !boostMarketError) ? boostListings.length : undefined}
-          dnsCount={dnsRegistryListings.length}
+          dnsCount={dnsRegistryReadStatus === "ready" ? dnsRegistryListings.length : undefined}
           idCount={marketplaceSummaryVerified ? registryListings.length : undefined}
           onChange={setMarketplaceTab}
           tokenCount={marketplaceSummaryVerified ? creditTokens.length : undefined}
@@ -55045,6 +55070,12 @@ function MarketplaceApp({
             />
           </section>
         </div>
+        ) : marketplaceTab === "dns" && dnsRegistryReadStatus !== "ready" ? (
+          <section className="id-card" role="status">
+            <h3>DNS {dnsRegistryReadStatus === "loading" ? "loading" : "unavailable"}</h3>
+            <p>DNS names and sale tickets require a verified DNS registry. Refresh to retry.</p>
+            <button type="button" disabled={busy} onClick={onRefreshDns}>Refresh DNS</button>
+          </section>
         ) : marketplaceTab === "dns" ? (
         <div className="ids-content marketplace-content">
           <section className="id-card">
@@ -55312,6 +55343,7 @@ function MarketplaceWorkspace({
   dnsPendingEvents,
   publishListing,
   publishDnsListing,
+  dnsRegistryReadStatus,
   dnsRegistryAddress,
   dnsRegistryListings,
   dnsRegistryRecords,
@@ -55398,6 +55430,7 @@ function MarketplaceWorkspace({
   dnsPendingEvents: PowIdPendingEvent[];
   publishListing: () => void;
   publishDnsListing: () => void;
+  dnsRegistryReadStatus: RegistryReadStatus;
   dnsRegistryAddress: string;
   dnsRegistryListings: PowIdListing[];
   dnsRegistryRecords: PowIdRecord[];
@@ -55613,7 +55646,7 @@ function MarketplaceWorkspace({
             {!marketplaceSummaryVerified
               ? `Canonical AMO summary ${marketplaceSummaryReadState.status === "unavailable" ? "unavailable" : "loading"}`
               : registryAddress
-              ? `${networkListings.length.toLocaleString()} ID listings · ${networkDnsListings.length.toLocaleString()} DNS listings · ${networkTokenCount.toLocaleString()} credits · ${bondListings.length.toLocaleString()} bond tickets · ${boostListings.length.toLocaleString()} Boost listings`
+              ? `${networkListings.length.toLocaleString()} ID listings · ${dnsRegistryReadStatus === "ready" ? networkDnsListings.length.toLocaleString() : "unavailable"} DNS listings · ${networkTokenCount.toLocaleString()} credits · ${bondListings.length.toLocaleString()} bond tickets · ${boostListings.length.toLocaleString()} Boost listings`
               : `No AMO registry configured for ${networkLabel(network)}`}
           </span>
         </div>
@@ -55640,7 +55673,7 @@ function MarketplaceWorkspace({
         active={marketplaceTab}
         bondCount={listingBookComplete ? bondListings.length : undefined}
         boostCount={boostListings.length > 0 || (!boostMarketLoading && !boostMarketError) ? boostListings.length : undefined}
-        dnsCount={networkDnsListings.length}
+        dnsCount={dnsRegistryReadStatus === "ready" ? networkDnsListings.length : undefined}
         idCount={marketplaceSummaryVerified ? networkListings.length : undefined}
         onChange={setMarketplaceTab}
         tokenCount={marketplaceSummaryVerified ? networkTokenCount : undefined}
@@ -55850,7 +55883,13 @@ function MarketplaceWorkspace({
         </section>
       </div>
         </>
-      ) : marketplaceTab === "dns" ? (
+      ) : marketplaceTab === "dns" && dnsRegistryReadStatus !== "ready" ? (
+          <section className="id-card" role="status">
+            <h3>DNS {dnsRegistryReadStatus === "loading" ? "loading" : "unavailable"}</h3>
+            <p>DNS names and sale tickets require a verified DNS registry. Refresh to retry.</p>
+            <button type="button" disabled={busy} onClick={onRefreshDns}>Refresh DNS</button>
+          </section>
+        ) : marketplaceTab === "dns" ? (
         <>
       <div
         className="id-launch-stats marketplace-workspace-stats"

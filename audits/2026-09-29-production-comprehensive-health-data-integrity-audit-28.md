@@ -237,3 +237,208 @@ Recommended order:
 6. Measure daily database/transition and staging growth, verify retention after each deployment, and verify external delivery of capacity alerts. Producer logs alone do not prove a human receives alerts.
 
 Repository handoff: required operating/protocol docs, historical notes/evidence, generated-artifact declarations and narrow safe-cleanup allowlist reviewed. This pass creates no product/protocol invariant requiring a `SOUL.md` or canonical-spec edit. Historical notes remain dated evidence. `npm run hygiene:fix` passed with no allowlisted rebuildable state found and nothing removed. `npm run hygiene:check` passed. Final status/diff review contains only this log, its receipts and the note-inventory classification; ignored `node_modules/` remains untouched. No commit was created.
+
+
+---
+
+## Ordered read-only continuation — 2026-09-29, after approved Audit 28 corrections
+
+Audit date: **2026-09-29 America/Toronto (EDT)**. Live observations approximately **20:35–20:54 UTC / 16:35–16:54 EDT**; document review preceded these observations. This is an appended audit, not authorization to implement its recommendations. The user explicitly approved this append and prohibited code/configuration/data/database/ledger/backup/log/infrastructure changes, deployments, restarts and cleanup. No production mutation, signing, broadcast, commit or push was performed. Ordinary GET/navigation activity naturally enters service logs and may exercise existing read caches.
+
+### Scope and prior evidence
+
+The seven required operating/protocol documents were consulted in the prescribed order. The prior audit inventory comprised **43 Markdown logs / 27,302 lines** before this append; prior finding identifiers and correction records were reviewed to avoid creating duplicate tickets. The closest baselines are the [ordered Audit 27](2026-09-28-ordered-read-only-application-audit-27.md), this Audit 28 and the [approved corrections execution record](2026-09-29-approved-audit-28-cleanup-corrections-execution.md). Their pre-audit SHA-256 bindings are respectively `e4d30700953e7a898e44fdeb5551095cc4b32089a6636ef02173762e113ddb90`, `9310f980d27cb7d8296b32b207b7c0f937b5ceb0c6bb9cfa8dc775cfd24dc8b6`, and `e4ca6b70106ca9e739ff0b7db676bf3192f035061ac923de3dc1f61c25c85d63`.
+
+Local HEAD is `fcf3886383eeffa779c3ccf57c5e87e39720dccd` (merge of approved corrections). The previously verified deployed application source is `3bc6c9d44e00c504c324a1f13b7803f89cbfb122`; current UI/node archive inventories retain that release and the designated predecessor. This continuation does not replace the execution record's streamed archive/runtime fingerprints with a new full release attestation.
+
+### Pages reviewed, in requested order
+
+The in-app browser review followed this sequence; Computer was reviewed after Growth. Independently, `node scripts/audit-production-surfaces.mjs --json --timeout-ms=60000` followed the same 15-surface sequence, finishing at **20:42:21.559 UTC**, with **15/15 successful page, asset and fresh API probes**. ID means registration on the standalone host; management belongs to Computer.
+
+| Order | Surface | Read-only result and qualifications |
+|---|---|---|
+| 1 | `proofofwork.me` — Home | Apex redirects to www; navigation and verified registry counts loaded. 508 confirmed IDs, 20 pending in the current public summary; 23 confirmed DNS names. |
+| 2 | `id.proofofwork.me` — IDs | Registration-only controls retained; 1,000-proof registration fee. Connected account balances loaded. Generic connection/readiness text still appears while connected: existing AUD26-03. |
+| 3 | `dns.proofofwork.me` — DNS | 23 confirmed names, zero pending; registration 1,000 proofs; current registry address and `.pow` naming agree with protocol. Fresh coverage now certifies block 969198 separately from latest event 969152. |
+| 4 | `desktop.proofofwork.me` — Desktop | Public lookup of `satoshin@proofofwork.me` returned three files, with no duplicate self-send row. Welcome HTML now 1,018 bytes with the canonical hash below. No file/local-state write performed. |
+| 5 | `browser.proofofwork.me` — Browser | Opened the welcome transaction through Desktop; confirmed HTML, 1,018 bytes, same hash. Inspected empty iframe sandbox and deny-all CSP, including script/connect/form/object/worker restrictions. |
+| 6 | `boost.proofofwork.me` — Social | Feed, confirmed post/reply/reboost records and transaction links rendered. Different proof-only versus WORK-valued signal contexts were not treated as an accounting discrepancy. No social action submitted. |
+| 7 | `amo.proofofwork.me` — AMO | Credit book hydration was slow; DNS tab showed 23 names and one sealed `4.pow` listing at 10,000 proofs. Listing/seal references agree with confirmed chain records. No purchase/list/seal/delist attempted. |
+| 8 | `credit.proofofwork.me` — Credits | 236 generic credit definitions; DRAIN supply 110,000 and holder balances 75,000 + 35,000 rendered. Creation 546 proofs, owner-registry mint lanes and paged holders/history loaded. Fresh WORK account state intermittently unavailable, with last-verified balances retained. |
+| 9 | `wallet.proofofwork.me` — Wallet | Confirmed/spendable/reserved WORK arithmetic agrees across account surfaces. Listings, seals and movement history rendered; WORK face 25,000 proofs and Q16 amount shown. No transfer or ticket action executed. |
+| 10 | `work.proofofwork.me` — WORK | 21,000,000 supply, 21,000 mints, 387 holder rows, zero pending mint supply; mint controls indicate minted out. Exact floor/value agree with Growth/Computer. USD/chart projections are display-only. |
+| 11 | `infinity.proofofwork.me` — Infinity | Supply 630,496,569 POWB, zero pending; value 630,501,483 proofs; one sealed 2,000,000-POWB ticket priced at 2,000,000 proofs. Preview-completeness qualification visible. |
+| 12 | `inception.proofofwork.me` — Inception | 47 fixed bond issuances, supply 945,662,401,792,509,469 INCB, zero pending; H−1 provenance, historical units and sub-proof dust shown. No new bond created. |
+| 13 | `log.proofofwork.me` — Log | Repaired DNS seal renders confirmed with listing link and 546 proofs. Initial cached count/checkpoint settled to current 969198; generic status text can retain older totals (existing family). Pending records visibly distinguished. |
+| 14 | `growth.proofofwork.me` — Growth | Exact current value matches WORK/Computer; scenario assumptions explicitly separate from chain measurements. **Seal chronology regression below** persists in fresh API and rendered cards. |
+| 15 | `computer.proofofwork.me` — Computer | Connected UniSat, inspected Mail shell, IDs, Wallet and AMO. IDs retains registration/update/direct-transfer scope and 1,000/546 fee split. Wallet's initial stale V6/default-face state recovered after refresh to V8/25,000; existing hydration/readiness family. **DNS tab initially asserted false empty state; DNS-specific refresh recovered it**, as detailed below. |
+
+The observed account was `18hkqE81wQuq75UEBKhB4JjAuQg47jN7Aa`. No wallet secrets were requested or handled. Existing wallet permissions were used; Computer needed a connection click but no transaction signing.
+
+### Full-node authority, index and database verification
+
+Core, Electrs, canonical index and summary coverage agreed at **969198**, block hash `000000000000000000002af378eff440c89bd7b7b2f86c0eb79493ed88af8cef`. Core headers matched blocks, IBD false, unpruned, verification progress 1, no warnings; txindex, coinstats and compact-filter indexes were synced. API ready/available true, lag/ahead zero, canonical fault empty, rebuild complete/inactive, worker consecutive failures zero and no unresolved pending protocol events reported. Final health GET at **20:50:01.875 UTC** retained that checkpoint and readiness.
+
+Sequential read-only Core RPC reconciliation covered **all 26,069 indexed transaction IDs** and **all 21,199 stored canonical block hashes**. All 25,821 confirmed transaction hex values and confirmations matched Core. All indexed pending transactions were present in the sampled mempool and indexed dropped transactions absent; before/after tip remained 969198. Current SQL population was 25,821 confirmed / 169 pending / 79 dropped, differing from earlier baseline by one natural pending-to-dropped transition. Mempool count itself changed during observation and is best-effort visibility, not canonical confirmed supply.
+
+Normalized inputs matched raw input prevout identities/sequences and outputs matched raw values/scripts: zero mismatches. All 25,821 confirmed normalized input/output fee totals were nonnegative and agreed with stored raw fee amounts. Event/transaction/participant/reference/mail orphan checks, parent status and canonical-coordinate checks returned zero discrepancies; no invalid/unready indexes or unvalidated constraints. 248 missing stored raw hex values belong solely to pending/dropped rows, not confirmed transactions. The 78 shared positions retain known classes: 49 sale/closure pairs, 24 invalid/detail pairs, one invalid mint/detail pair, three historical ID compatibility pairs and one seal/closure pair. They are not duplicate confirmed transfers and must not be deleted.
+
+The read-only parity gate returned `ok=true`, **102 checks, zero active invariant failures**. Two previously classified historical V5 migration/USD-head warnings remain, without active V8 invariant failure. The gate used the reviewed prior audit harness against current readers/APIs; it was not a destructive replay/rebuild.
+
+All **46 returned confirmed account UTXOs** were independently checked with Core `gettxout(..., true)`: every outpoint remained unspent, positively confirmed, and had the returned value; sum **25,646 proofs**, zero errors. Initial UniSat-selected spendability was **1,589 proofs** plus **24,057 protected/unavailable**. A later refresh reported **2,714 spendable + 22,932 protected**, with the same Core total. Wallet eligibility and reservation freshness are separate from confirmed value; this audit did not certify signing eligibility or interpret that changing partition as new chain funds.
+
+The confirmed DNS seal `dd498455bb712411341cfde6fab38764281ff6b77076a41012c3bee768475e38`, welcome HTML transaction and V8 declaration `f90e1faf572ef8253ca5959731b9d9e99c74bced4397380059878936712bee7a` were also read directly from Core. Every one of the 47 served INCB H−1 block hashes independently matched Core. Stored `file_attachments` contained zero rows; this is not an attachment-population assurance claim. Welcome HTML was verified through the mail/Desktop/Browser representation and the already established raw-byte fixture.
+
+### Data and deterministic math
+
+- All **236 generic credit definitions** passed confirmed mint/holder conservation and max-supply checks, zero errors. The Q16 WORK conversion was applied explicitly; POWB/INCB were checked as separate bond lanes.
+- WORK confirmed balance sum is exactly **210000000000000000000000 Q16 subatoms = 21,000,000 WORK**. No negative or fractional stored integer balances found. Observed account: **9,999,997,003,878,536 = 9,999,970,087,899,719 spendable + 26,915,978,817 reserved subatoms**. Display values preserve all 16 decimals.
+- Independent INCB integer arithmetic used each record's declared historical Q8/current Q16 unit scale and its hash-bound H−1 value. For attachment quantity `a` at scale `u`, attachment value Q8 is `floor(a × HminusOneNetworkValueQ8 / (21,000,000 × u))`; add direct proofs × 10^8, then floor issuance once to whole INCB. **All 47 records passed**, total issued and holder sum **945662401792509469**, cumulative value **94566240179250949146190218 Q8**, cumulative unissued dust **2246190218 Q8 = 22.46190218 proofs**. Direct issued 27,932; attached issued 945,662,401,792,481,537. This independently checks arithmetic over canonical supplied H−1 inputs, not a new genesis recomputation of every historical summary.
+- Shared live network value: **1452083490330680135585252463 Q8 = 14,520,834,903,306,801,355.85252463 proofs**. Divide by 21,000,000 using integer Q8 floor: **69146832872889530265 Q8 = 691,468,328,728.89530265 proofs / WORK**. The 25,000-proof current intent estimate is **361549458 Q16 subatoms = 0.0000000361549458 WORK**. UI values agree; confirmation-position frozen terms remain distinct from current estimates.
+- DNS overlay remains `(23 × 1,000 + 2 × 546) × 5 = 120,460` weighted proofs, **12046000000000 Q8**, explaining the difference from the raw transition closing value **1452083490330668089585252463 Q8**. Do not fold this separate overlay into transition replay or count it twice.
+- **9,578 transition rows**, 959621–969198: zero block/hash linkage errors, zero opening-value errors, no incomplete/block-atomic/fee-once/invalid-zero flags, no value decreases. The sole opening state commitment boundary is **960601**, the established Q16/V8 activation boundary; it is not an unexplained discontinuity.
+- Local checks passed: `check:work-precision` (131 checks), `check:work-precision-v2`, `check:bond-exact-arithmetic`, `check:fee-rate-precision`, and `check:api-truth`, including six Audit 28 regression tests and V8 gate regressions. These are contract tests, not proof of every production signing path.
+
+Exact integer fields and canonical functions must continue to drive settlement. Large live values, INCB supplies and Q16 balances exceed JavaScript safe-integer range; Number/USD/chart projections cannot be reused for accounting. No new arithmetic failure was demonstrated in the checked populations; “math must never fail” remains a required invariant, not a guarantee inferred from passing tests.
+
+### Previously reported issues rechecked
+
+| Existing finding | Current result |
+|---|---|
+| AUD28-01 DNS auth/Log classification | Remains corrected: all 25 confirmed DNS relational events valid; repaired seal renders in Log/Growth and sealed listing is available. |
+| AUD28-02 DNS coverage | Remains corrected: fresh response at 20:50:33.287 UTC covers 969198/hash above; latestEventBlock separately 969152; coverage complete true. |
+| AUD28-03 surface validator | Remains corrected: DNS-specific validation and all 15 public probes pass. |
+| AUD28-04 Desktop bytes | Remains corrected: Desktop and Browser show 1,018 bytes; SHA-256 `f05b31a5f4dfabff5fb0ffe3bef1a03de4a8f5c562694609114ae6d352e9caad`. |
+| H19-01 exact aggregates / repaired INCB arithmetic | No reopening: 102-check parity and independent conservation/issuance/value arithmetic pass. |
+| H20-03 Desktop deduplication / H20-04 confirmed labels | No recurrence observed in selected fixture/current Log; not universal fault-injection coverage. |
+| H24-01 / AUD26-02 fresh-wallet availability; PERF-27-01/02/04 | Still open: intermittent unavailable fresh wallet state, lengthy AMO hydration, large summaries and stale fallback states. Eventually green reads do not close these. |
+| AUD26-03 readiness/stale wording | Still open: connected “Connect UniSat” text, older status/count snapshots, transient V6/default faces before refresh. DNS initial empty-state manifestation below adds concrete scope. |
+| Audit 12/17 timestamp family, later repaired relational metadata | Relational event times now match Core for selected affected seals, but Growth projection chronology regressed below. Do not reopen the original NULL-column population without evidence. |
+| H18-06 live PostgreSQL physical assurance | Still open: `data_checksums=off`; no live full physical checksum/amcheck/restore campaign performed. Valid indexes and logical arithmetic do not certify physical pages. |
+| H8-05 / H10-02 transition growth; H24-04–06 recovery/retention | Still open; current sizes and post-cleanup improvements below. Protected recovery dependencies remain. |
+| H24-07 failed-unit noise | Still present: 32 failed node units and one historical UI publish unit. Scheduled release-health failure is dated 04:28, before cleanup; do not infer current archive verification failure from that stale unit state. API observation/storage-review failures also reflect real current latency/allocation thresholds and need separate classification. |
+| AUD27-01 dropped-only Outbox label | Not closed. Current connected account has no Mail/Outbox fixture; no fresh UI reproduction with that fixture account. Earlier Core absence remains dated evidence. |
+
+### New or materially changed findings
+
+**AUD28-C01 — P2, Growth seal chronology regression in the existing timestamp family.** Fresh Growth API and UI assigned the same **2026-09-29T15:44:40.675Z** date to four distinct confirmed seals. Direct Core receipts:
+
+| Seal txid | Core canonical block time, UTC | Growth displayed source time |
+|---|---|---|
+| `767b1c7d0df60edc9099ff29269b553843c896e397f550f5d7f8558834575c4b` | 2026-09-29 13:32:04 | 2026-09-29 15:44:40.675 |
+| `4f895eaabd46d1c8d69b6ac953aa3776a861bf29951b99a6126b31413b2b15bd` | 2026-09-29 08:31:07 | 2026-09-29 15:44:40.675 |
+| `3eb8cfcb5edb187cb77e2bc4ef4a3142a03c4897afe9a800613605e2d65e62e6` | 2026-09-29 08:31:07 | 2026-09-29 15:44:40.675 |
+| `00943f5892cee2e9d4d097e9b6098629a7f5a080ccbd7c33b24c8de9685975a5` | **2026-08-16 21:37:43** | **2026-09-29 15:44:40.675** |
+
+SQL confirms the first and August seal's `block_time`/`event_time` equal Core. Log shows the correct selected seal time; repaired DNS seal time also agrees with Core. This is a downstream timestamp/order defect, not demonstrated supply/fee corruption. `server/db/proof-index-reader.mjs` projects `sealAt` from payload `sealAt`/`sealedAt` or row `updated_at`; `server/proof-api.mjs` then uses it for seal activity and Growth uses that activity's `createdAt`. This fallback is a plausible source, requiring tracing before any correction. Recommendation: project confirmed chronology from authoritative seal-event/parent block time, retain observation/update time separately, and test old and new seals across Log/Growth without rewriting chain history. **Approval required.**
+
+**AUD28-C02 — P2, Computer DNS initial hydration/false empty state; added scope to existing cross-app readiness family.** After complete credit/bond hydration, Computer AMO showed Ready at block 969198 but its DNS tab asserted **0 active listings**, “No active on-chain .pow name listings yet” and “No confirmed DNS records found yet.” Standalone AMO and fresh DNS API at the same checkpoint showed **23 confirmed names and one sealed 4.pow listing**. Header Refresh refreshed credits and did not recover DNS. The DNS tab's own Refresh then loaded 23 names/one listing and restored agreement. Source inspection shows standalone `marketplaceMode` triggers `refreshDns` on entry, while the Computer AMO passes independent DNS state; its per-tab refresh invokes `onRefreshDns`. This narrows the defect to initial hydration/empty-state gating, not registry loss. Recommendation: hydrate/fence Computer DNS when the tab becomes active and suppress zero/empty claims until that independent state is verified. Overall credit-book readiness cannot certify DNS readiness. **Approval required.**
+
+No new critical/high chain-integrity finding was established. These continuation identifiers record concrete regressions/materially changed scope; they do not replace or duplicate existing issue families.
+
+### Health, performance, security and resilience
+
+Page GETs measured **127–1,018 ms** in the ordered harness. Fresh API probes ranged **2,007–11,749 ms**; marketplace summary 6,500 ms, WORK summary 7,975 ms, WORK token 11,749 ms. In-app full-book hydration took longer and is not measured by those single-request timings. The shared summary snapshot payload remains **5,750,706 bytes**. Existing observation-health journal at 20:40 reports `/api/v1/token` p95 **27,446 ms**, registry **11,563 ms**, internal canonical summary **14,060 ms** and work-floor **10,138 ms** in its bounded window. The monitor failed on latency thresholds; that alert must not be cleared merely because this audit's endpoint samples returned 200. Measurements include ordinary production traffic and audit GET load, not controlled benchmarks.
+
+Core, Electrs, API, indexer worker and PostgreSQL were active with `NRestarts=0` in sampled unit counters. Node RAID1 pairs were `[UU]`; memory available about 115 GB. Effective UFW defaults deny inbound/routed; RPC/Electrs are limited to loopback/container addresses, PostgreSQL/mempool HTTP to loopback, API to loopback/WireGuard and UI peer. SSH and chain P2P remain public by policy. API/indexer run as powadmin with NoNewPrivileges, PrivateTmp and ProtectHome; API ProtectSystem strict with a narrow cache write path, indexer ProtectSystem full. Browser restrictions were inspected directly. These observations are not an external penetration test, authentication exhaustiveness certificate or alert-delivery proof.
+
+Prioritize bounded checkpoint-coherent reads, smaller public summary responses, complete-book pagination without repeated full-state copies, per-surface hydration and explicit stale/unavailable states. Keep exact arithmetic/chain fences and fresh signing preflight intact while improving latency. Measure p50/p95/p99, payload bytes, complete-book time, refusal reasons, checkpoint changes and worker lag separately; verify alert delivery under an approved monitoring exercise.
+
+### Storage and retention review — nothing removed
+
+| Item | Current measured size/reserve | Decision for this audit |
+|---|---:|---|
+| UI root available | **28,529,139,712 B**, 26% used | Prior urgent reserve pressure materially improved after separately approved cleanup; do not repeat the old near-full finding. |
+| UI backups / deploy scratch / logs | 3,735,498,752 / 1,262,129,152 / 734,404,608 B | Dependency-reviewed candidates only; preserve current/prior rollback and evidence. |
+| UI rollback/archive set | One pre-3bc rollback root; normal 3bc + 0e archives | Expected post-cleanup inventory observed. Historical out-of-pattern archives still require review. |
+| Node root / data available | 71,735,771,136 / 474,457,194,496 B | Healthy absolute reserve now; short historical growth estimates are not exhaustion guarantees. |
+| Production database / transition relation | **37,546,515,479 / 36,294,754,304 B** | About 96.7% transition evidence. Preserve live tables; design bounded evidence retention/compaction only after replay proof and approval. |
+| PostgreSQL backups | 19,371,266,048 B | Protected logical/physical/WAL/PITR dependencies; prior checksum/restore evidence is dated, not freshly rerun here. |
+| API cache / node logs | 172,699,648 / 1,231,388,672 B | Potential future bounded retention review, never blanket removal during reads. |
+| Active INCB final-source replay/recovery tree | **89,525,575,680 B** | Critical-review size, not disposable waste. Preserve until live/recovery dependencies and equivalent retained proof are established. |
+| Other replay/recovery trees | ~32.85 GB, ~20.16 GB, ~20.26 GB in scheduled receipts | Same protected classification; no safe-removal certificate. |
+| Node release backups | ~8.65 GB, including old ~5.78 GB operator-review archive | Normal managed archives now 3bc + d2; historical out-of-pattern material remains dependency/provenance review scope. |
+| Local allowlisted build/test/cache output | No allowlisted cleanup candidates observed; only ignored node_modules | No local cleanup performed. Temporary audit receipts remain under /tmp and are not production evidence stores. |
+
+Some staging/caches may ultimately be rebuildable, but **no production item is certified safe to delete by this audit**. Any future cleanup must verify active-unit/read paths, symlinks, open files, backup/restore chains, current+predecessor rollback bytes and provenance, retained replay evidence, and expected post-removal health before approval. Age and redundant-looking names are insufficient. Audit logs, protocol migrations, tx-backed records and ledgers remain protected.
+
+### Recommended actions requiring separate approval
+
+1. Correct Growth confirmed seal chronology and Computer DNS initial hydration/empty-state gating, with focused regression checks and Core/API/UI parity receipts.
+2. Resolve the existing fresh-wallet availability and complete-book latency family; preserve fail-closed preflight and integer settlement rules. Benchmark coherent checkpoint reads under bounded load.
+3. Separate stale failed oneshot units from active API latency/storage alerts, retaining incident evidence; verify external notification delivery.
+4. Plan transition/database growth bounds and live PostgreSQL physical integrity assurance, including resource-budgeted isolated restore/amcheck/checksum options. Do not change checksum settings or compact evidence in place during audit.
+5. Review historical staging/archive/recovery dependencies and retention manifests. Preserve the designated rollback and full-node/indexer/replay recovery material; no cleanup is approved by this list.
+
+### Limits and repository handoff
+
+This audit reconciled the stored indexed population, selected full-node-bound UI fixtures and current projection arithmetic. It did not rescan every historical block for omitted protocol discovery, recompute every historical H−1 summary from genesis, exercise purchases/signing/broadcasts, induce reorg/RBF/eviction, read private mailbox bodies, prove every attachment/media byte, perform physical backup restoration or establish universal mobile/browser/security/performance coverage. Earlier unresolved findings remain open unless explicitly rechecked above.
+
+Only this existing audit log was appended. SOUL, canonical docs, tracked notes/generated artifacts, protected histories and cleanup allowlist were reviewed; no semantic protocol/product change required another document edit. `hygiene:check` passed before append and was rerun after append. **`hygiene:fix` was intentionally not executed because the user's explicit no-cleanup instruction overrides the normal mutating hygiene step**; its allowlist was inspected read-only and no candidate existed. No hook was bypassed and no commit created. Final status/diff must contain only this append.
+
+### Compact retained receipts
+
+The following results are embedded so the conclusions do not depend on /tmp surviving. Larger local diagnostic outputs were kept outside Git to avoid copying 34 MB of historical parity preimages into an audit log; source procedures remain in the existing Audit 28 evidence and results are bounded to the checkpoint above.
+
+```json
+{
+  "coreReconciliation": {
+    "tipBefore": 969198,
+    "mempoolCountBefore": 72857,
+    "transactionsChecked": 26069,
+    "errors": [],
+    "pendingAbsent": [],
+    "droppedPresent": [],
+    "canonicalBlocksChecked": 21199,
+    "blockHashErrors": [],
+    "attachmentsChecked": 0,
+    "attachmentErrors": [],
+    "tipAfter": 969198,
+    "pendingAbsentBoth": [],
+    "droppedPresentBoth": []
+  },
+  "inceptionIntegerMath": {
+    "mintsChecked": 47,
+    "issuedUnits": "945662401792509469",
+    "issuanceValueQ8": "94566240179250949146190218",
+    "dustQ8": "2246190218",
+    "errors": [],
+    "holderSum": "945662401792509469",
+    "scope": "Independent integer arithmetic over served canonical H-1 inputs with historical Q8/current Q16 units; Core raw transactions checked separately, not genesis H-1 rederivation."
+  },
+  "walletCoreOutpoints": {
+    "outpointsChecked": 46,
+    "confirmedSumProofs": 25646,
+    "errors": []
+  },
+  "parity": {
+    "ok": true,
+    "checks": 102,
+    "activeInvariantFailures": 0,
+    "knownHistoricalV5Warnings": 2
+  }
+}
+```
+
+Local receipt SHA-256 bindings (receipts are temporary; compact results above are durable):
+
+| Receipt | SHA-256 |
+|---|---|
+| `surfaces.json` | `ca6f5230e22788a5f41b9c3fbdd71de8b958aadf66657f2bd3a4b7e87659de04` |
+| `core-db.txt` | `f2f058f5230d48ca142451bbb639137cf138c8d2773bfdb1175d15db4153e27d` |
+| `parity.txt` | `950ef932b49dda38d5c6107169fc7f3246da4d7f96e61e9ab0d50f06cdb87b6d` |
+| `incb-math.json` | `e0d232e39886e4b6e7ae3d9ed7d0bcd4b62fce4ba54e6004aa1bc2a469d4f9b4` |
+| `utxo-core.txt` | `f889968c2bc297796b4c33ab6ebaea337b313c5d46a3cb3dee2287590d184629` |
+| `growth-chronology.json` | `4f8e2ce46805fc569059901142efcae9d90f122c51c246c110c4fcabedffaeb6` |
+| `final-dns.json` | `cf4e5c3a4d5a2ed4cf4e32e4a8af1807c859a8c36f5cfd3cce8c6725bd9fbf31` |
+| `final-health.json` | `658d781a4f35fec16a15f4c24f488fe9096fa1b42e8cf1eb99352f73b66f3fe6` |
+
+### Approved follow-up preparation — 2026-09-29
+
+The user separately approved local implementation/testing of the Growth and Computer DNS fixes, bounded wallet/AMO/monitoring investigation, cleanup inventory, exact manifests and restore/deployment/rollback preparation. See [the preparation and approval boundaries](2026-09-29-audit28-followup-preparation.md), [exact cleanup manifest](2026-09-29-audit28-followup-cleanup.manifest.json), and [compact verification receipts](2026-09-29-audit28-followup-preparation.evidence.json).
+
+Both projection/UI fixes are prepared locally. Four affected seal dates were rechecked directly against Core; Computer and standalone AMO DNS browser tests cover loading, errors, malformed successful HTTP envelopes, retry and legitimate verified empty state. Index-recovery checks pass 552/552; build, exact arithmetic/fee checks and hygiene pass. Wallet/AMO availability remains open: a bounded fresh probe returned AMO HTTP 503/core-checkpoint-mismatch while overall health and WORK were ready at a Core-verified checkpoint. No correctness fence was weakened.
+
+817 storage path observations are classified. Only one exact retired UI source tree is proposed for deletion (250,212,352 allocated bytes); every other inventoried item is held. Manifest SHA-256 is `4f953d31585ed762be0147a332ac8c5ab9850ad43b6f008159729b59f839b59f`. Production verification-only execution passed; no deletion occurred. Backup catalog readability and prepared isolated restore checks do not constitute a completed full restore or physical live-database assurance. Existing named rollback sets and active recovery dependencies remain protected. The full UI publication/rollback contract suite ultimately passed under the final bounded local run; the preparation document records the exact approval needed before execution.
+
+No production deployment, service/configuration change, deletion, ledger/database repair, commit or push was performed. Relevant local source/tests/docs/audit files were edited under the separate preparation approval; repository-allowlisted build/Vite cache outputs were removed by the mandatory local hygiene pass.

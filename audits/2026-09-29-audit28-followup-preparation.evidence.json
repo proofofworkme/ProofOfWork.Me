@@ -1,0 +1,431 @@
+{
+  "dateUTC": "2026-09-29",
+  "scope": "Preparation-only; no production execution",
+  "core": {
+    "coreTip": 969204,
+    "coreHeaders": 969204,
+    "ibd": false,
+    "checkpoint": {
+      "height": 969203,
+      "hash": "000000000000000000008b88dbffebe2b87debd75d7fd3f095488110df356d4c"
+    },
+    "seals": [
+      {
+        "txid": "767b1c7d0df60edc9099ff29269b553843c896e397f550f5d7f8558834575c4b",
+        "height": 969161,
+        "blockHash": "00000000000000000001544e99d743e00dcaabc696ff8285ec026ca45f5a9f91",
+        "blockTime": 1790688724,
+        "confirmations": 44
+      },
+      {
+        "txid": "4f895eaabd46d1c8d69b6ac953aa3776a861bf29951b99a6126b31413b2b15bd",
+        "height": 969127,
+        "blockHash": "00000000000000000000a786c1d5ec636bf1b81655b4b3fe2e949f982053c400",
+        "blockTime": 1790670667,
+        "confirmations": 78
+      },
+      {
+        "txid": "3eb8cfcb5edb187cb77e2bc4ef4a3142a03c4897afe9a800613605e2d65e62e6",
+        "height": 969127,
+        "blockHash": "00000000000000000000a786c1d5ec636bf1b81655b4b3fe2e949f982053c400",
+        "blockTime": 1790670667,
+        "confirmations": 78
+      },
+      {
+        "txid": "00943f5892cee2e9d4d097e9b6098629a7f5a080ccbd7c33b24c8de9685975a5",
+        "height": 962784,
+        "blockHash": "000000000000000000011434041d6e9aee8b68f0a935f187b7ece16b68dcf6bc",
+        "blockTime": 1786916263,
+        "confirmations": 6421
+      }
+    ]
+  },
+  "boundedReadinessProbe": {
+    "checkedAt": "2026-09-29T21:11:28.078Z",
+    "base": "https://computer.proofofwork.me",
+    "network": "livenet",
+    "ok": false,
+    "thresholds": {
+      "timeoutMs": 30000,
+      "warnMs": 2500,
+      "criticalMs": 10000,
+      "maxLagBlocks": 2,
+      "healthMaxLagBlocks": 1
+    },
+    "summary": {
+      "ok": false,
+      "activeInvariantFailures": [],
+      "staleReadiness": [
+        {
+          "severity": "error",
+          "kind": "stale-readiness",
+          "message": "marketplace-summary did not return an OK payload",
+          "details": {
+            "status": 503,
+            "error": "The indexed registry checkpoint is catching up to Bitcoin Core.",
+            "errorCode": "REGISTRY_AUTHORITY_UNAVAILABLE",
+            "reason": "core-checkpoint-mismatch"
+          }
+        }
+      ],
+      "latency": [
+        {
+          "severity": "warning",
+          "kind": "route-latency-slow-correct",
+          "message": "work-summary exceeded warning latency threshold",
+          "details": {
+            "elapsedMs": 4440,
+            "warnMs": 2500
+          }
+        },
+        {
+          "severity": "warning",
+          "kind": "route-latency-slow-correct",
+          "message": "marketplace-summary exceeded warning latency threshold",
+          "details": {
+            "elapsedMs": 9105,
+            "warnMs": 2500
+          }
+        }
+      ],
+      "warnings": [
+        {
+          "severity": "warning",
+          "kind": "route-latency-slow-correct",
+          "message": "work-summary exceeded warning latency threshold",
+          "details": {
+            "elapsedMs": 4440,
+            "warnMs": 2500
+          }
+        },
+        {
+          "severity": "warning",
+          "kind": "route-latency-slow-correct",
+          "message": "marketplace-summary exceeded warning latency threshold",
+          "details": {
+            "elapsedMs": 9105,
+            "warnMs": 2500
+          }
+        }
+      ],
+      "counts": {
+        "activeInvariantFailures": 0,
+        "staleReadiness": 1,
+        "latencyWarnings": 2,
+        "latencyErrors": 0,
+        "warnings": 2,
+        "total": 3
+      }
+    },
+    "health": {
+      "ready": true,
+      "available": true,
+      "lagBlocks": 0,
+      "indexedThroughBlock": 969203,
+      "indexedThroughBlockHash": "000000000000000000008b88dbffebe2b87debd75d7fd3f095488110df356d4c",
+      "tipHeight": 969203,
+      "tipHash": "000000000000000000008b88dbffebe2b87debd75d7fd3f095488110df356d4c",
+      "summarySnapshotId": "e868397c903c6e73542346b6",
+      "summarySnapshotOk": true
+    },
+    "routes": {
+      "work": {
+        "label": "work-summary",
+        "status": 200,
+        "ok": true,
+        "elapsedMs": 4440,
+        "checkpoint": {
+          "snapshotId": "e868397c903c6e73542346b6",
+          "indexedThroughBlock": 969203,
+          "indexedThroughBlockHash": "000000000000000000008b88dbffebe2b87debd75d7fd3f095488110df356d4c",
+          "indexedAt": "2026-09-29T21:09:35.330Z"
+        },
+        "workAmoV8": {
+          "ready": true,
+          "status": null,
+          "indexReady": true,
+          "migrationReady": true,
+          "declarationReady": true,
+          "evidenceComplete": true,
+          "pendingWitnessReady": true,
+          "workerReady": true,
+          "workerState": "idle",
+          "workerTipHeight": 969203,
+          "workerTipHash": "000000000000000000008b88dbffebe2b87debd75d7fd3f095488110df356d4c",
+          "migrationTipHeight": 969203,
+          "migrationTipHash": "000000000000000000008b88dbffebe2b87debd75d7fd3f095488110df356d4c",
+          "tipHeight": 969203,
+          "tipHash": "000000000000000000008b88dbffebe2b87debd75d7fd3f095488110df356d4c",
+          "snapshotHeight": null,
+          "snapshotHash": null,
+          "activationTipVerified": true,
+          "declarationEvidence": {
+            "declarationTxid": "f90e1faf572ef8253ca5959731b9d9e99c74bced4397380059878936712bee7a",
+            "declarationHeight": 960600,
+            "activationHeight": 960601,
+            "evidenceComplete": true,
+            "coreVerified": true,
+            "indexVerified": true,
+            "configuredPinsMatch": true
+          }
+        },
+        "error": null,
+        "errorCode": null,
+        "reason": null
+      },
+      "marketplace": {
+        "label": "marketplace-summary",
+        "status": 503,
+        "ok": false,
+        "elapsedMs": 9105,
+        "checkpoint": {
+          "snapshotId": null,
+          "indexedThroughBlock": null,
+          "indexedThroughBlockHash": null,
+          "indexedAt": null
+        },
+        "workAmoV8": null,
+        "error": "The indexed registry checkpoint is catching up to Bitcoin Core.",
+        "errorCode": "REGISTRY_AUTHORITY_UNAVAILABLE",
+        "reason": "core-checkpoint-mismatch"
+      }
+    }
+  },
+  "cleanupVerification": {
+    "time": "2026-09-29T21:27:23.957164+00:00",
+    "manifestSha256": "4f953d31585ed762be0147a332ac8c5ab9850ad43b6f008159729b59f839b59f",
+    "mode": "verify",
+    "path": "/var/tmp/proofofwork-deploy/proofofwork-ui-source-d2c0afaffd9c-20260929T161019Z",
+    "fingerprint": {
+      "path": "/var/tmp/proofofwork-deploy/proofofwork-ui-source-d2c0afaffd9c-20260929T161019Z",
+      "fingerprintModel": "lstat-and-content-json-v1",
+      "sha256": "39d2c864228c66bfa54808d179bd3374f4dd3f170480902b5c3a9c1e873d13f6",
+      "entryCount": 6770,
+      "inode": 911710,
+      "device": 2049,
+      "mtimeNs": 1790698227000000000,
+      "fileBytes": 232171828
+    },
+    "preserved": {
+      "uiCurrent": {
+        "format": "proofofwork-ui-release-v3",
+        "release_id": "3bc6c9d44e00-20260929T200127Z",
+        "commit": "3bc6c9d44e00c504c324a1f13b7803f89cbfb122",
+        "source_tree": "a3428b21a53b98603771470a7744b5e9ec81eb42",
+        "source_attestation": "detached-recursive-git-tree-v1",
+        "source_dependency_model": "node-modules-recursive-v1",
+        "source_dependency_entry_count": "6118",
+        "source_dependency_bytes": "160954989",
+        "source_dependency_sha256": "74d54e7c58f15d225603104316eab06748209b85c6e2c27f8457ee6967f9b811",
+        "deployed_at": "2026-09-29T20:14:53Z",
+        "archive_name": "proofofwork-ui-release-3bc6c9d44e00-20260929T200127Z.tgz",
+        "archive_sha256": "9fb8049076552a54fa847cb86c39dbeeb02268e07a38dc6e1366043b8876438f",
+        "archive_payload_model": "surfaces-v1",
+        "surface.activity.file_count": "54",
+        "surface.activity.sha256": "db1813fbe4c5665c932c9e167b4561e9f2686673be6987fb9dba178aee8b262d",
+        "surface.browser.file_count": "54",
+        "surface.browser.sha256": "6704a8e4a1324f449a13526b9a7a1fef9866703d742479b5e6e979c93510122c",
+        "surface.boost.file_count": "54",
+        "surface.boost.sha256": "ba4e1a5dd3c7b71122de8ccdd8851efff9f6b1173f7de5d2d99e1267a67fdd23",
+        "surface.computer.file_count": "54",
+        "surface.computer.sha256": "4c05da974070aa1f6e885636b07ce1fb4061981218636d51375134dc4a5405d6",
+        "surface.desktop.file_count": "54",
+        "surface.desktop.sha256": "a09030830ac31a0588b7982673851701ebf2d3a18411fd135c2ecd41fb46c951",
+        "surface.dns.file_count": "54",
+        "surface.dns.sha256": "e95394866c29a00792a80cb10ede34e5fd939cfb1dda1932c522eb4128f4fe9a",
+        "surface.growth.file_count": "54",
+        "surface.growth.sha256": "12f13d771bd5bba7c58cf95da9350a55d77763713dca0559daa01d3104f0b410",
+        "surface.id.file_count": "54",
+        "surface.id.sha256": "b13f4030d663a48ac6ed6dd0bdeeede90969d7c9d365d17a20f805c5efe6c233",
+        "surface.inception.file_count": "54",
+        "surface.inception.sha256": "30fcf3972ea72392da864315ead00fbaa81e993f59b04f5420321a43c0844146",
+        "surface.infinity.file_count": "54",
+        "surface.infinity.sha256": "7c8742e8dddf923d928e95ba65bad41e6e73e52f76de05f34f8b4679634ef9dd",
+        "surface.landing.file_count": "54",
+        "surface.landing.sha256": "ec75b448b6062051c0a71ec92f4e27616850975106715239e9dd6f7af0cff74d",
+        "surface.marketplace.file_count": "54",
+        "surface.marketplace.sha256": "9968b53a3b5e89e9aa695246b66c9a53dbb7bd8d9e6a08b2dfa6a319b15ff2ea",
+        "surface.nft.file_count": "54",
+        "surface.nft.sha256": "4c05da974070aa1f6e885636b07ce1fb4061981218636d51375134dc4a5405d6",
+        "surface.token.file_count": "54",
+        "surface.token.sha256": "607d1bd2776dc9599038d4f4902a8706155a6be6e2ba1b759220f43cb66c68a5",
+        "surface.wallet.file_count": "54",
+        "surface.wallet.sha256": "6ba0d111e8ba23f871a5fbe0edd2222a25b2e3f74b7bef3750e631e17eebbbf8",
+        "surface.work.file_count": "54",
+        "surface.work.sha256": "7aff22590ce87360dc342173ea6aee5b31fdfb12fe8e505c0efdc8fc3c33be09"
+      },
+      "uiPrevious": {
+        "format": "proofofwork-ui-release-v3",
+        "release_id": "0e767c69e785-20260929T165314Z",
+        "commit": "0e767c69e785945110a53092415894a4eab70d12",
+        "source_tree": "e6fe8d40533caa0149d0ca0955a609682337aa09",
+        "source_attestation": "detached-recursive-git-tree-v1",
+        "source_dependency_model": "node-modules-recursive-v1",
+        "source_dependency_entry_count": "6118",
+        "source_dependency_bytes": "160954989",
+        "source_dependency_sha256": "74d54e7c58f15d225603104316eab06748209b85c6e2c27f8457ee6967f9b811",
+        "deployed_at": "2026-09-29T17:13:22Z",
+        "archive_name": "proofofwork-ui-release-0e767c69e785-20260929T165314Z.tgz",
+        "archive_sha256": "2f0f1dc53e83efbcd1caec391fea7d19215b75e79f8aba15b05068d8febe2d68",
+        "archive_payload_model": "surfaces-v1",
+        "surface.activity.file_count": "60",
+        "surface.activity.sha256": "cc6a5a58b541f8ed4b0a193609301a8d21d865e57260bb26a0a1846b5654252a",
+        "surface.browser.file_count": "60",
+        "surface.browser.sha256": "88a0135b4dd5eef784be04c64dbc4f176377806d8483221c4538e90c289503c8",
+        "surface.boost.file_count": "60",
+        "surface.boost.sha256": "55e8791213459397f48de1f2fdcdae178c783516ad1bd8e5671f8489d0e856fd",
+        "surface.computer.file_count": "60",
+        "surface.computer.sha256": "0b9ecece2fce4d1e8ec4f726f7496b4ce4fc03a350ce00b87b40a864977bbcaf",
+        "surface.desktop.file_count": "60",
+        "surface.desktop.sha256": "224fc086ed3459bf288e5a8e9a3aff2b89ab03837fc50a35724903d0b88a9751",
+        "surface.dns.file_count": "60",
+        "surface.dns.sha256": "25ad1ffaaeee3fca8404eea7e078965facc7aa8e158186e9b15a984917a4bc1d",
+        "surface.growth.file_count": "60",
+        "surface.growth.sha256": "e6e555c3867e1385eb0f0930f80501bcb90d98117ae62aae719620c1230c6a70",
+        "surface.id.file_count": "60",
+        "surface.id.sha256": "790dfe1c5c1023ed54cfc3fff6579dd1e4b619329564e7933e1f6e9534796bf8",
+        "surface.inception.file_count": "60",
+        "surface.inception.sha256": "5e1a985d6a9c22a90a2c12db2291c8b17ca0c10087a2328cd88a9205c37cae03",
+        "surface.infinity.file_count": "60",
+        "surface.infinity.sha256": "781364ea24579c6ef6771353165b0af70d54c120d8b0bd3ee99373ba9ad09f62",
+        "surface.landing.file_count": "60",
+        "surface.landing.sha256": "a28e4ad63777fa9a1324deb8fa183b97ae32cae339e71b81792ff196e43a83e2",
+        "surface.marketplace.file_count": "60",
+        "surface.marketplace.sha256": "d143d5a80cdf25b8d1454d82fee005b418ae83556c557266522bb22f71f0bdaf",
+        "surface.nft.file_count": "60",
+        "surface.nft.sha256": "0b9ecece2fce4d1e8ec4f726f7496b4ce4fc03a350ce00b87b40a864977bbcaf",
+        "surface.token.file_count": "60",
+        "surface.token.sha256": "83f577dce3d5e934300501fcf46bfd7af27481932a090a765b12c66a521da9f6",
+        "surface.wallet.file_count": "60",
+        "surface.wallet.sha256": "34a19656bd2251ba84dad32efeb7f91fec377b3c205d7d88b875cd9be542402a",
+        "surface.work.file_count": "60",
+        "surface.work.sha256": "25c323b781d67706d2a97fb7977d8f3a94a0cb5ddbf42e7f7b8e670dceee0902"
+      },
+      "nodeCurrentCommit": "3bc6c9d44e00c504c324a1f13b7803f89cbfb122",
+      "nodePreviousCommit": "d2c0afaffd9cd723fa99c02a6de6b86fe50a0be6",
+      "allOtherInventoryRows": true,
+      "liveCoreElectrsPostgresLedgersConfirmedHistory": true
+    }
+  },
+  "backupCatalog": {
+    "entries": 202,
+    "header": [
+      ";",
+      "; Archive created at 2026-09-29 03:18:53 UTC",
+      ";     dbname: proof_indexer",
+      ";     TOC Entries: 202",
+      ";     Compression: gzip",
+      ";     Dump Version: 1.15-0",
+      ";     Format: CUSTOM",
+      ";     Integer: 4 bytes",
+      ";     Offset: 8 bytes",
+      ";     Dumped from database version: 16.15 (Ubuntu 16.15-0ubuntu0.24.04.1)",
+      ";     Dumped by pg_dump version: 16.15 (Ubuntu 16.15-0ubuntu0.24.04.1)",
+      ";",
+      ";",
+      "; Selected TOC Entries:",
+      ";"
+    ],
+    "tocSha256": "7eaf8e549ccb12e4677aafe95c905a9cf22687778f873d0eb05150ac3562e02b",
+    "fullRestoreCompleted": false
+  },
+  "manifestSha256": "4f953d31585ed762be0147a332ac8c5ab9850ad43b6f008159729b59f839b59f",
+  "retainedUiRollbackRoot": {
+    "classification": "retain",
+    "entries": 1360,
+    "format": "proofofwork-ui-retained-root-v1",
+    "manifestSha256": "d003251754bd7a70c5c72b068fcc9283e280bad124247e12b119b61836ec586f",
+    "regularBytes": 429245689,
+    "root": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-3bc6c9d44e00-20260929T200127Z",
+    "treeSha256": "519c5d45432292b3324b7a2edd662947bb9dc6d8230289ffa1d563ea8442f2a0"
+  },
+  "installedToolSha256": {
+    "/usr/local/sbin/proofofwork-ui-verified-retention": "0e3a5adce67f07fb6beb0b0d8001a002e247db316bc5911f3d6f5e622983e4d1",
+    "/usr/local/sbin/proofofwork-ui-release-publish": "224cdb741bcb83e79bccc1b45730bd919bf38ba7292559fab6ce3184ddc053a4"
+  },
+  "preparedToolSha256": {
+    "deploy/audit28/cleanup-manifest.py": "366668e82d2d9b514878476c0f2ccca022c60f242050cd1f8a4b4e1586211575",
+    "deploy/audit28/restore-logical.sh": "1adf36ed5dd2a4a67683f7fa95238d1c1a644baf91d6e07d0dd3472391246074",
+    "deploy/proofofwork-ui-release-publish.sh": "c2f06538c2c3263d1a7b7157c67dfebe007803b3fdbf60b9aeb21e4aedeb30e9"
+  },
+  "preparedCanonicalSealJoinVerification": {
+    "scope": "Actual prepared SQL join; READ ONLY; five-second statement timeout; all four timestamps/heights/cardinalities reconciled with Core",
+    "rows": [
+      {
+        "seal_txid": "00943f5892cee2e9d4d097e9b6098629a7f5a080ccbd7c33b24c8de9685975a5",
+        "listing_id": "246c10db1f78272be03efaa369af2da44b8ecc605f6558fd9a38c67ad83ffce5",
+        "seal_event_block_time": "2026-08-16T21:37:43+00:00",
+        "seal_event_match_count": 1,
+        "seal_event_block_height": 962784,
+        "seal_transaction_block_time": "2026-08-16T21:37:43+00:00"
+      },
+      {
+        "seal_txid": "3eb8cfcb5edb187cb77e2bc4ef4a3142a03c4897afe9a800613605e2d65e62e6",
+        "listing_id": "341342841a6ecbfc629d46b90fba72c9c4a4289d2bf7e3406e8ed8816ed1110b",
+        "seal_event_block_time": "2026-09-29T08:31:07+00:00",
+        "seal_event_match_count": 1,
+        "seal_event_block_height": 969127,
+        "seal_transaction_block_time": "2026-09-29T08:31:07+00:00"
+      },
+      {
+        "seal_txid": "4f895eaabd46d1c8d69b6ac953aa3776a861bf29951b99a6126b31413b2b15bd",
+        "listing_id": "dc6c63aa080d9e81a3acf558366d379e4c5e5f9be122ad5e1f6229e5cd114f37",
+        "seal_event_block_time": "2026-09-29T08:31:07+00:00",
+        "seal_event_match_count": 1,
+        "seal_event_block_height": 969127,
+        "seal_transaction_block_time": "2026-09-29T08:31:07+00:00"
+      },
+      {
+        "seal_txid": "767b1c7d0df60edc9099ff29269b553843c896e397f550f5d7f8558834575c4b",
+        "listing_id": "0137e46750e33ae95f5e51b8b9eb04f96a77e6800a12616bf6fa45fe085cabc6",
+        "seal_event_block_time": "2026-09-29T13:32:04+00:00",
+        "seal_event_match_count": 1,
+        "seal_event_block_height": 969161,
+        "seal_transaction_block_time": "2026-09-29T13:32:04+00:00"
+      }
+    ],
+    "querySha256": "2e60b6935f7ebf1b8314c9f45f6f4f5b7a37f2a1b4ec9bc849252b947047e4c6",
+    "sql": "BEGIN READ ONLY; SET LOCAL statement_timeout='5s'; SET LOCAL TIME ZONE 'UTC';\nSELECT coalesce(jsonb_agg(to_jsonb(r)),'[]'::jsonb) FROM (\nSELECT cl.listing_id, cl.seal_txid, canonical_seal_event.seal_event_block_time,\ncanonical_seal_event.seal_event_block_height, canonical_seal_event.seal_event_match_count,\nseal_tx.block_time AS seal_transaction_block_time\nFROM proof_indexer.credit_listings cl\nLEFT JOIN proof_indexer.transactions seal_tx ON seal_tx.network=cl.network AND seal_tx.txid=cl.seal_txid AND seal_tx.status='confirmed'\nLEFT JOIN LATERAL (\n    SELECT\n      canonical_seal_event_row.payload AS seal_event_payload,\n      canonical_seal_event_row.status AS seal_event_status,\n      canonical_seal_event_row.txid AS seal_event_txid,\n      canonical_seal_tx.block_hash AS seal_event_block_hash,\n      canonical_seal_tx.block_time AS seal_event_block_time,\n      canonical_seal_event_row.block_height AS seal_event_block_height,\n      canonical_seal_event_row.block_index AS seal_event_block_index,\n      canonical_seal_event_row.op_return_vout AS seal_event_protocol_vout,\n      canonical_seal_event_row.record_ordinal AS seal_event_record_ordinal,\n      COUNT(*) OVER () AS seal_event_match_count\n    FROM proof_indexer.events canonical_seal_event_row\n    JOIN proof_indexer.transactions canonical_seal_tx\n      ON canonical_seal_tx.network = canonical_seal_event_row.network\n     AND canonical_seal_tx.txid = canonical_seal_event_row.txid\n     AND canonical_seal_tx.status = 'confirmed'\n     AND canonical_seal_tx.block_height =\n       canonical_seal_event_row.block_height\n     AND canonical_seal_tx.block_index =\n       canonical_seal_event_row.block_index\n    JOIN proof_indexer.blocks canonical_seal_block\n      ON canonical_seal_block.network = canonical_seal_tx.network\n     AND canonical_seal_block.block_hash = canonical_seal_tx.block_hash\n     AND canonical_seal_block.height = canonical_seal_tx.block_height\n     AND canonical_seal_block.canonical = true\n    WHERE canonical_seal_event_row.network = cl.network\n      AND canonical_seal_event_row.txid = lower(cl.seal_txid)\n      AND canonical_seal_event_row.valid = true\n      AND canonical_seal_event_row.status = 'confirmed'\n      AND canonical_seal_event_row.protocol = 'pwt1'\n      AND canonical_seal_event_row.kind = 'token-listing-sealed'\n      AND lower(canonical_seal_event_row.payload->>'listingId') =\n        lower(cl.listing_id)\n      AND lower(COALESCE(\n        canonical_seal_event_row.payload->>'tokenId',\n        canonical_seal_event_row.payload->'saleAuthorization'->>'tokenId',\n        ''\n      )) = lower(cl.token_id)\n      AND (\n        lower(COALESCE(cl.token_id, '')) <> 'd4e5ebf11d104d6a63fb74e42094364b25a5f7199a09e5c0e71408972466a8b8'\n        OR (\n          lower(COALESCE(\n            cl.payload->'saleAuthorization'->>'version',\n            ''\n          )) IN (\n            'pwt-sale-v3',\n            'pwt-sale-v4',\n            'pwt-sale-v5',\n            'pwt-sale-v6',\n            'pwt-sale-v8'\n          )\n          AND lower(COALESCE(\n            canonical_seal_event_row.payload->'saleAuthorization'->>'version',\n            ''\n          )) = lower(COALESCE(\n            cl.payload->'saleAuthorization'->>'version',\n            ''\n          ))\n        )\n      )\n    ORDER BY\n      canonical_seal_event_row.block_height DESC,\n      canonical_seal_event_row.block_index DESC,\n      canonical_seal_event_row.op_return_vout DESC,\n      canonical_seal_event_row.record_ordinal DESC\n    LIMIT 1\n  ) canonical_seal_event ON true\nWHERE cl.network='livenet' AND cl.seal_txid=ANY(ARRAY['767b1c7d0df60edc9099ff29269b553843c896e397f550f5d7f8558834575c4b','4f895eaabd46d1c8d69b6ac953aa3776a861bf29951b99a6126b31413b2b15bd','3eb8cfcb5edb187cb77e2bc4ef4a3142a03c4897afe9a800613605e2d65e62e6','00943f5892cee2e9d4d097e9b6098629a7f5a080ccbd7c33b24c8de9685975a5'])\nORDER BY cl.seal_txid) r; ROLLBACK;\n"
+  },
+  "localVerification": {
+    "indexRecovery": {
+      "passed": 552,
+      "total": 552
+    },
+    "dnsBrowserRoutes": 2,
+    "cleanupRestorePublisherPreparationTests": 5,
+    "retentionHelperTests": 7,
+    "apiTimeoutTests": 10,
+    "clientContainmentChecks": 43,
+    "workPrecisionChecks": 131,
+    "uiOperationsContract": {
+      "passed": true,
+      "overallLimitSeconds": 900,
+      "instrumentation": "Temporary progress logging only; original assertions; no per-step timeout",
+      "logSha256": "90c6ba08051b8031127e56b021ceae075a5859e30c4ab16570f505a3f5cb4fe4"
+    },
+    "passed": [
+      "build",
+      "api-truth",
+      "server-globals",
+      "surface-read-state",
+      "hardening",
+      "live-data",
+      "node-ops",
+      "wallet-utxo-refresh",
+      "read-projections",
+      "bond-exact-arithmetic",
+      "fee-rate-precision",
+      "hygiene:fix",
+      "hygiene:check"
+    ],
+    "notPerformed": [
+      "production deployment",
+      "production deletion",
+      "service/configuration changes",
+      "full isolated backup restore",
+      "commits",
+      "pushes"
+    ]
+  }
+}

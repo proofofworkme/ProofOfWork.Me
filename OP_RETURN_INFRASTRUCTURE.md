@@ -5640,3 +5640,16 @@ current/latest pair (`managed 2 --apply`). The live commit/tree archive stays
 protected even outside the ordinary keep window. Unverified legacy artifacts,
 active replay databases, logical backups and incident evidence remain excluded.
 The three-archive manual target remains supported for conservative rehearsals.
+
+### Audit 28 prepared retention exception (2026-09-29)
+
+The UI publisher accepts `--defer-verified-retention` to skip its post-publication
+retention apply when an explicitly approved rollout must preserve a wider
+named rollback set. Default publication retains its existing retention behavior.
+This option does not authorize cleanup or change scheduled pruning policies.
+The Audit 28 follow-up preparation records the exact protected sets and the
+separate approval required for publisher installation, retention timer changes,
+release cutover and cleanup. The prepared change is not evidence of deployment:
+see `audits/2026-09-29-audit28-followup-preparation.md` and its execution receipt
+when one exists. Never resume a scheduled pruner that can retire an explicitly
+protected release without the corresponding retention approval.

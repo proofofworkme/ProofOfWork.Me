@@ -304,7 +304,7 @@ function pushLatencyIssues(issues, measurements) {
       issues.push(
         compactIssue(
           "warning",
-          "route-latency-slow-correct",
+          "route-latency-warning",
           `${measurement.label} exceeded warning latency threshold`,
           { elapsedMs: measurement.elapsedMs, warnMs: WARN_MS },
         ),
