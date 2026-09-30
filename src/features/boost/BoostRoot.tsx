@@ -3315,8 +3315,7 @@ export default function BoostRoot({
                   onClick={() => setExpandedItem(undefined)}
                   type="button"
                 >
-                  <ArrowLeft size={16} />
-                  <span>Back</span>
+                  <span className="button-content"><ArrowLeft size={16} /><span>Back</span></span>
                 </button>
               </div>
               <BoostActivity key={expandedItem.txid}
@@ -3341,7 +3340,7 @@ export default function BoostRoot({
         </div>
       ) : null}
 
-      {embedded ? null : <SocialFooter compact />}
+      {embedded ? null : <SocialFooter quiet />}
     </div>
   );
 }

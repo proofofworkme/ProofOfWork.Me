@@ -4,8 +4,8 @@ const respondent = "1F1zepCJ8VPcPoeMt6G4BPKuE3CYAxCKNY";
 const txid = "a".repeat(64), replyTxid = "b".repeat(64), actionTxid = "c".repeat(64);
 const post = { txid, boostTxid: txid, authorAddress: author, authorId: "carbonz", currentOwnerAddress: author,
   confirmed: true, kind: "boost-post", createdAt: "2026-09-30T10:00:00Z", text: "A proof worth replying to.",
-  totalSignalQ8: "109200000000", proofSignalQ8: "109200000000", likeCount: 1, replyCount: 1, reboostCount: 1 };
-const reply = { ...post, txid: replyTxid, authorAddress: respondent, authorId: "responder", kind: "boost-reply", targetTxid: txid, text: "The reply outside the loaded feed." };
+  totalSignalQ8: "109200000000", proofSignalQ8: "109200000000", likeCount: 1, replyCount: 1, reboostCount: 1, media: { mime: "image/png", url: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aOt8AAAAASUVORK5CYII=" } };
+const reply = { ...post, txid: replyTxid, authorAddress: respondent, authorId: "responder", kind: "boost-reply", targetTxid: txid, media: undefined, text: "The reply outside the loaded feed." };
 async function fixture(page, { fail = false, delay = false } = {}) {
   const queries = [];
   await page.route("**/api/v1/**", async route => {
@@ -37,6 +37,13 @@ for (const route of ["/?boost=1", `/?boost=1&profile=${author}`, "/?folder=boost
     await page.getByTestId("boost-post").getByText(post.text, { exact: true }).click();
     const detail = page.getByRole("dialog", { name: "Boost detail" });
     await expect(detail.getByText(reply.text, { exact: true })).toBeVisible();
+    await expect(detail.locator(".boost-post-media")).toBeVisible();
+    expect((await detail.locator(".boost-post-media").boundingBox()).height).toBeLessThanOrEqual(281);
+    await detail.evaluate(el => { el.scrollTop = el.scrollHeight; });
+    const top = (await detail.boundingBox()).y;
+    expect((await detail.locator(".boost-modal-head").boundingBox()).y).toBeGreaterThanOrEqual(top);
+    expect((await detail.locator(".boost-modal-head").boundingBox()).y).toBeLessThan(top + 24);
+    await expect(detail.getByRole("button", { name: "Close Boost detail" })).toBeVisible();
     await expect(detail.getByLabel("Reply, 1 replies").last()).toBeVisible();
     await detail.getByRole("tab", { name: "Likes 1", exact: true }).click();
     await expect(detail.getByRole("link", { name: "View TX" })).toHaveAttribute("href", new RegExp(actionTxid));
