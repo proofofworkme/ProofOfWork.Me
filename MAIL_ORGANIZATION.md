@@ -2,6 +2,16 @@
 
 Notes for mailbox features that make ProofOfWork.Me feel like a normal mail app while respecting ProofOfWork permanence.
 
+## Computer navigation on short screens
+
+At viewport heights of 480px or less, Computer uses document scrolling instead
+of keeping its header, status, and mobile workspace controls fixed over the
+content. Controls retain their minimum 44px targets. On compact widths, the
+open navigation sheet scrolls as a whole so its workspaces and local backup
+controls remain reachable. Keyboard focus wraps within the sheet; Escape or
+choosing a workspace closes it and restores focus to More. Moving above the
+compact-width breakpoint closes the sheet and releases its scroll lock.
+
 ## Current Launch Status
 
 The Phase 1 public launch surfaces are:

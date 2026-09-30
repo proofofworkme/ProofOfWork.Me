@@ -9337,3 +9337,45 @@ html
   white-space: normal;
   overflow-wrap: anywhere;
 }
+
+/* Short viewports need document flow: fixed chrome must not cover tasks. */
+@media (max-height: 480px) {
+  .mail-app {
+    height: auto;
+    min-height: 100dvh;
+    overflow: visible;
+  }
+
+  .mail-app > .app-header-stack,
+  .mail-app > .app-status-row {
+    position: static;
+  }
+
+  .mail-app > .mail-layout {
+    min-height: 480px;
+  }
+
+  .mail-app .computer-mobile-nav {
+    position: static;
+  }
+
+  .mail-app {
+    padding-bottom: 0;
+  }
+
+  .mail-layout > .sidebar.is-expanded {
+    bottom: max(10px, env(safe-area-inset-bottom));
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+
+  .mail-layout > .sidebar.is-expanded > * {
+    flex: 0 0 auto;
+  }
+
+  .mail-layout > .sidebar.is-expanded .folders {
+    overflow: visible;
+  }
+}

@@ -3714,3 +3714,43 @@ test("public search and generated source keep persistent labels in both hosts", 
     await expect(page.getByRole("textbox", { name: "Generated HTML source", exact: true })).toBeVisible();
   }
 });
+
+for (const viewport of [
+  { width: 320, height: 180 },
+  { width: 768, height: 360 },
+]) {
+  test(`short Computer navigation remains scrollable and keyboard operable at ${viewport.width}×${viewport.height}`, async ({ page }) => {
+    await installApiFixtures(page);
+    await page.setViewportSize(viewport);
+    await page.goto("/?folder=inbox");
+    await assertComputerMoreSheet(page, "short Computer");
+    const more = page.locator(".computer-mobile-nav").getByRole("button", { name: "More", exact: true });
+    await more.click();
+    const panel = page.getByRole("dialog", { name: "Computer navigation" });
+    const importButton = panel.getByRole("button", { name: "Import", exact: true });
+    const sections = await panel.evaluate(element => {
+      const folders = element.querySelector(".folders").getBoundingClientRect();
+      const account = element.querySelector(".account-box").getBoundingClientRect();
+      return { folderBottom: folders.bottom, accountTop: account.top };
+    });
+    expect(sections.accountTop).toBeGreaterThanOrEqual(sections.folderBottom);
+    await importButton.focus();
+    await expect(importButton).toBeInViewport();
+    await importButton.click({ trial: true });
+    await page.screenshot({ path: `/tmp/pow-batch3-navigation-${viewport.width}x${viewport.height}.png` });
+    await page.keyboard.press("Tab");
+    await expect(panel.getByRole("button", { name: "Close navigation" })).toBeFocused();
+    await page.keyboard.press("Shift+Tab");
+    await expect(importButton).toBeFocused();
+    await expect(importButton).toBeInViewport();
+    await panel.getByRole("button", { name: /^Wallet/u }).click();
+    await expect(panel).toBeHidden();
+    await expect(more).toBeFocused();
+    await expect(page.locator(".computer-mobile-nav").getByRole("button", { name: "Wallet", exact: true })).toHaveAttribute("aria-current", "true");
+    await more.click();
+    await expect(panel).toBeVisible();
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await expect(page.locator("html")).not.toHaveClass(/computer-nav-open/u);
+    await expect(page.getByRole("dialog", { name: "Computer navigation" })).toHaveCount(0);
+  });
+}

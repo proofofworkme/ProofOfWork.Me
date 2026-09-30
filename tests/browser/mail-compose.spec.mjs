@@ -1253,129 +1253,27 @@ test("AMO order book counts sealed and unsealed V8 listings with exact buyer arb
   await expect(amoUnits.getByText("Pre-V8 relic")).toHaveCount(0);
 });
 
-test("AMO keeps a labeled preview when complete listing evidence disagrees with its summary", async ({
-  page,
-}) => {
-  await installWallet(page);
-  await installApiFixtures(page, {
-    listingSummaryMismatch: true,
-    mode: "precision-paused",
-    remoteV8MarketListings: true,
+for (const scenario of [
+  { name: "mismatched exact listing evidence", options: { listingSummaryMismatch: true, mode: "precision-paused" } },
+  { name: "unverified zero compact inventory", options: { compactZeroListingSummary: true, completeListingHistoryFailure: true } },
+]) {
+  test(`AMO withholds inventory and offers retry for ${scenario.name}`, async ({ page }) => {
+    const fixture = await installApiFixtures(page, { ...scenario.options, remoteV8MarketListings: true });
+    await page.goto(`/?marketplace=1&asset=${WORK_TOKEN_ID}`, { waitUntil: "domcontentloaded" });
+    const state = page.locator(".marketplace-summary-read-state").first();
+    await expect(state).toHaveAttribute("data-state", "unavailable");
+    await expect(page.getByRole("heading", { name: "AMO inventory unavailable" })).toBeVisible();
+    await expect(page.locator(".marketplace-summary-gate")).toContainText("Totals and empty-book claims are withheld");
+    await expect(page.getByText("No credit listings yet", { exact: true })).toHaveCount(0);
+    await expect(page.getByRole("heading", { name: "AMO Units", exact: true })).toHaveCount(0);
+    const countReads = () => fixture.requests.filter(request => new URL(request).pathname === "/api/v1/marketplace-summary").length;
+    const before = countReads();
+    await state.getByRole("button", { name: "Retry", exact: true }).click();
+    await expect.poll(countReads).toBeGreaterThan(before);
+    await expect(state).toHaveAttribute("data-state", "unavailable");
+    await expect(page.getByRole("heading", { name: "AMO inventory unavailable" })).toBeVisible();
   });
-
-  await page.goto(`/?marketplace=1&asset=${WORK_TOKEN_ID}`, {
-    waitUntil: "domcontentloaded",
-  });
-  const amoUnits = page
-    .locator(".token-market-card")
-    .filter({ has: page.getByRole("heading", { name: "AMO Units" }) })
-    .first();
-  await expect(amoUnits).toBeVisible();
-  await expect(
-    amoUnits.getByText(
-      /Showing a verified AMO preview/u,
-    ),
-  ).toBeVisible();
-  await expect(
-    amoUnits.getByText(
-      /1 credit tickets visible; 3 total credit and bond tickets declared/u,
-    ),
-  ).toBeVisible();
-  await expect(amoUnits.getByText("No credit listings yet")).toHaveCount(0);
-  await expect(amoUnits.getByRole("button", { name: "All 1" })).toContainText(
-    "1",
-  );
-  await expect(
-    amoUnits.locator(".token-market-grid .token-market-row"),
-  ).toHaveCount(1);
-  await amoUnits
-    .getByRole("button", { name: "Load complete sale-ticket history" })
-    .click();
-  await expect(
-    amoUnits.locator(".listing-history-load-controls .field-note.bad"),
-  ).toContainText("exact indexed summary snapshot");
-  await expect(
-    amoUnits.getByText(/Showing a verified AMO preview/u),
-  ).toBeVisible();
-
-  await page
-    .getByRole("button", { name: "Bonds —" })
-    .click();
-  await expect(page.locator(".app-status-row.status.idle")).toBeVisible();
-  await expect(page.locator(".app-status-row.status.good")).toHaveCount(0);
-  const incbBook = page
-    .locator(".token-market-card")
-    .filter({ has: page.getByRole("heading", { name: "INCB Sale Tickets" }) })
-    .first();
-  await expect(incbBook).toBeVisible();
-  await expect(
-    incbBook.getByText(
-      /0 INCB tickets visible; 3 total credit and bond tickets declared/u,
-    ),
-  ).toBeVisible();
-  await expect(
-    incbBook.getByRole("heading", {
-      name: "Complete INCB history not loaded",
-    }),
-  ).toBeVisible();
-  await expect(incbBook.getByText("No INCB sale tickets yet")).toHaveCount(0);
-});
-
-test("AMO treats a zero compact listing array as an incomplete preview when exact hydration fails", async ({
-  page,
-}) => {
-  const fixture = await installApiFixtures(page, {
-    compactZeroListingSummary: true,
-    completeListingHistoryFailure: true,
-    remoteV8MarketListings: true,
-  });
-
-  await page.goto(`/?marketplace=1&asset=${WORK_TOKEN_ID}`, {
-    waitUntil: "domcontentloaded",
-  });
-  const amoUnits = page
-    .locator(".token-market-card")
-    .filter({ has: page.getByRole("heading", { name: "AMO Units" }) })
-    .first();
-  await expect(amoUnits).toBeVisible();
-  await expect(
-    amoUnits.getByText(
-      /0 credit tickets visible; 0 total credit and bond tickets declared/u,
-    ),
-  ).toBeVisible();
-  await expect(
-    amoUnits.getByRole("heading", {
-      name: "Complete credit history not loaded",
-    }),
-  ).toBeVisible();
-  await expect(amoUnits.getByText("No credit listings yet")).toHaveCount(0);
-  expect(
-    fixture.requests.some((request) => {
-      const url = new URL(request);
-      return url.pathname === "/api/v1/token-history" && url.searchParams.get("kind") === "listings";
-    }),
-  ).toBe(false);
-  await amoUnits
-    .getByRole("button", { name: "Load complete sale-ticket history" })
-    .click();
-  await expect
-    .poll(() =>
-      fixture.requests.some((request) => {
-        const url = new URL(request);
-        return (
-          url.pathname === "/api/v1/token-history" &&
-          url.searchParams.get("kind") === "listings"
-        );
-      }),
-    )
-    .toBe(true);
-  await expect(
-    amoUnits.locator(".listing-history-load-controls .field-note.bad"),
-  ).toContainText("verified preview remains visible");
-  await expect(amoUnits.getByText("No credit listings yet")).toHaveCount(0);
-  await expect(page.locator(".app-status-row.status.idle")).toBeVisible();
-  await expect(page.locator(".app-status-row.status.bad")).toHaveCount(0);
-});
+}
 
 test("standalone INCB clears its compact preview after filtering the exact global listing book", async ({
   page,
@@ -1672,15 +1570,13 @@ test("Unknown Mail broadcast persists its txid and draft until a status check re
 
 for (const viewport of [{ width: 320, height: 568 }, { width: 320, height: 180 }, { width: 768, height: 512 }, { width: 1440, height: 360 }]) {
   test(`Mail review reflows and keeps controls reachable at ${viewport.width}×${viewport.height}`, async ({ page }) => {
-    // At extreme zoom, test resizing an already-open review. The existing shell
-    // obstructs its initial Connect action at 320×180; track that separately.
-    if (viewport.height > 180) await page.setViewportSize(viewport);
+    await page.setViewportSize(viewport);
     await installWallet(page); await installApiFixtures(page); await openConnectedCompose(page);
     await fillReadyMail(page, "0.1234567890123456");
     await page.locator(".mail-send-button").click();
     const review = page.getByRole("dialog");
     await expect(review).toBeVisible();
-    if (viewport.height === 180) await page.setViewportSize(viewport);
+
     const geometry = await review.evaluate(element => ({ width: element.getBoundingClientRect().width, client: element.clientWidth, scroll: element.scrollWidth }));
     expect(geometry.width).toBeLessThanOrEqual(viewport.width);
     expect(geometry.scroll).toBeLessThanOrEqual(geometry.client + 1);
