@@ -1204,6 +1204,17 @@
 .boost-thread-reply { border-left: 2px solid var(--border); padding-left: 12px; }
 .boost-connections .boost-profile-titlebar > div { flex: 1; min-width: 0; overflow-wrap: anywhere; }
 .boost-connections .boost-profile-titlebar p { margin: 4px 0; color: var(--text-muted); }
+.boost-connections .boost-profile-tabs {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  width: 100%;
+  gap: 0;
+}
+.boost-connections .boost-profile-tabs button {
+  width: 100%;
+  justify-content: center;
+  text-align: center;
+}
 .boost-person-copy > a:first-child { color: var(--text); text-decoration: none; }
 .boost-person-copy > a:first-child:hover { text-decoration: underline; }
 .boost-person-copy > a:last-child { color: var(--accent); }
