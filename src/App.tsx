@@ -1,4 +1,8 @@
 import { FEE_RATE_STEP } from "./shared/feeRate";
+import { TransactionReview, type MailTransactionReview } from "./shared/components/TransactionReview";
+import { BackupPreview } from "./shared/components/BackupPreview";
+import { applyLocalRestore, isBackupStorageKey, prepareLocalRestore, type RestorePlan } from "./shared/localBackup";
+import { inspectPreparedPayment } from "./shared/wallet/paymentReview";
 import { assertFeeRatePrecision } from "./walletUtxos";
 import { canonicalWorkCapacityAddress, requireCanonicalWorkCapacity, type CanonicalWorkCapacity } from "./shared/work/canonicalWorkCapacity";
 import { assertCompleteTokenDirectory, assertCompleteIdReservations, walletReservationsReady, listingDisplayProjectionFingerprint } from "./shared/api/surfaceReadState";
@@ -2711,16 +2715,6 @@ type InfinitySummaryApiResponse = {
 };
 
 const MAX_GROWTH_ACTUAL_CHART_EVENTS = 240;
-
-function isBackupStorageKey(key: string) {
-  return (
-    key === SENT_KEY ||
-    key === MAIL_PREFS_KEY ||
-    key === CONTACTS_KEY ||
-    key === CUSTOM_FOLDERS_KEY ||
-    key.startsWith(`${DRAFT_KEY_PREFIX}:`)
-  );
-}
 
 function validateBackupValue(key: string, value: string) {
   try {
@@ -21437,6 +21431,7 @@ async function broadcastSignedRawTransaction(
 async function signAndBroadcastPsbtDetailed({
   allowedReservedListingAnchorOutpoints,
   beforeBroadcast,
+  onBroadcastAttempt,
   broadcastStrategy = "mempool",
   inputCount,
   network,
@@ -21447,6 +21442,7 @@ async function signAndBroadcastPsbtDetailed({
 }: {
   allowedReservedListingAnchorOutpoints?: PowIdSpentOutpoint[];
   beforeBroadcast?: () => Promise<void>;
+  onBroadcastAttempt?: (txid: string) => void;
   broadcastStrategy?: BroadcastStrategy;
   inputCount: number;
   network: BitcoinNetwork;
@@ -21535,6 +21531,7 @@ async function signAndBroadcastPsbtDetailed({
     network,
     signingAddress,
   });
+  onBroadcastAttempt?.(signedTransaction.getId());
   return broadcastSignedRawTransaction(rawTx, network, broadcastStrategy);
 }
 
@@ -21954,6 +21951,12 @@ export default function App() {
   const [replyParentTxid, setReplyParentTxid] = useState<string | undefined>();
   const [busy, setBusy] = useState(false);
   const [mailSendBusy, setMailSendBusy] = useState(false);
+  const [mailReview, setMailReview] = useState<MailTransactionReview>();
+  const mailReviewResolverRef = useRef<((approved: boolean) => void) | null>(null);
+  const mailWalletRevisionRef = useRef(0);
+  const mailReviewReturnFocusRef = useRef<HTMLElement | null>(null);
+  const backupReturnFocusRef = useRef<HTMLElement | null>(null);
+  const [backupPreview, setBackupPreview] = useState<{ plan: RestorePlan; fileName: string; ignoredKeys: number; error?: string }>();
   const [mailWorkAdmissionError, setMailWorkAdmissionError] = useState("");
   const [idMarketplaceAction, setIdMarketplaceAction] =
     useState<IdMarketplaceAction>("idle");
@@ -23489,6 +23492,26 @@ export default function App() {
       ]),
     [protocolPayloads, workAttachmentPayloads],
   );
+  const mailReviewContext = JSON.stringify([address, network, activeFolder, composeOpen,
+    recipient, ccRecipient, amountSats, messageWorkAmount, feeRate, subject, memo,
+    attachment?.sha256, attachment?.name, attachment?.size, socialMode, replyParentTxid]);
+  const mailReviewContextRef = useRef(mailReviewContext);
+  mailReviewContextRef.current = mailReviewContext;
+  function finishMailReview(approved: boolean) {
+    const resolve = mailReviewResolverRef.current;
+    mailReviewResolverRef.current = null;
+    setMailReview(undefined);
+    resolve?.(approved);
+  }
+  useEffect(() => {
+    if (mailReviewResolverRef.current) finishMailReview(false);
+  }, [mailReviewContext]);
+  useEffect(() => () => { mailReviewResolverRef.current?.(false); }, []);
+  const uncertainMailBroadcast = allSent.find(message => message.from === address &&
+    message.network === network && message.status === "unknown");
+  const mailRecoveryReason = uncertainMailBroadcast
+    ? `Broadcast outcome unknown for ${uncertainMailBroadcast.txid}. Refresh mail to check this transaction before another send.`
+    : "";
   const canSend =
     Boolean(
       address &&
@@ -23511,7 +23534,7 @@ export default function App() {
     !boostComposeReason &&
     workAttachmentBalanceOk &&
     composeDataCarrierBytes <= MAX_DATA_CARRIER_BYTES &&
-    !mailSendBusy;
+    !mailSendBusy && !uncertainMailBroadcast;
   const composeSendState = mailSendBusy
     ? "busy"
     : canSend
@@ -26930,6 +26953,8 @@ export default function App() {
     };
 
     const handleWalletChange = () => {
+      mailWalletRevisionRef.current += 1;
+      finishMailReview(false);
       void syncWallet().catch((error) => {
         setStatus({
           tone: "bad",
@@ -27595,16 +27620,29 @@ export default function App() {
     }
 
     try {
-      const data = parseBackup(await file.text());
-      for (const [key, value] of Object.entries(data)) {
-        localStorage.setItem(key, value);
-      }
+      const text = await file.text();
+      const data = parseBackup(text);
+      const parsed = JSON.parse(text) as LocalBackupPayload;
+      if (mailSendInFlightRef.current) throw new Error("Finish or cancel Mail signing before restoring local data.");
+      setBackupPreview({ plan: prepareLocalRestore(localStorage, data), fileName: file.name,
+        ignoredKeys: Object.keys(parsed.data).filter(key => !isBackupStorageKey(key)).length });
+    } catch (error) {
+      setStatus({ tone: "bad", text: errorMessage(error, "Backup preview failed. Local data was not changed.") });
+    }
+  }
 
+  function restorePreviewedBackup() {
+    if (!backupPreview || backupPreview.error) return;
+    try {
+      if (mailSendInFlightRef.current) throw new Error("Finish or cancel Mail signing before restoring local data.");
+      const { data } = backupPreview.plan;
+      applyLocalRestore(localStorage, backupPreview.plan);
       setAllSent(loadSentMessages());
       setMailPreferences(loadMailPreferences());
       setContacts(loadContacts());
       setCustomFolders(loadCustomFolders());
       setSavedDraft(address ? loadDraft(address, network) : undefined);
+      if (address && Object.prototype.hasOwnProperty.call(data, draftKey(address, network))) setComposeOpen(false);
 
       const keyCount = Object.keys(data).length;
       const summary = backupDataSummary(data);
@@ -27612,11 +27650,9 @@ export default function App() {
         tone: "good",
         text: `Backup imported. ${keyCount} data group${keyCount === 1 ? "" : "s"} restored${summary ? `: ${summary}` : ""}.`,
       });
+      setBackupPreview(undefined);
     } catch (error) {
-      setStatus({
-        tone: "bad",
-        text: errorMessage(error, "Backup import failed."),
-      });
+      setBackupPreview(current => current ? { ...current, error: errorMessage(error, "Backup restore failed.") } : current);
     }
   }
 
@@ -32547,6 +32583,10 @@ export default function App() {
     if (mailSendInFlightRef.current || mailSendBusy) {
       return;
     }
+    if (uncertainMailBroadcast) {
+      setStatus({ tone: "bad", text: mailRecoveryReason });
+      return;
+    }
 
     if (!window.unisat) {
       setStatus({ tone: "bad", text: "Connect UniSat first." });
@@ -32610,7 +32650,18 @@ export default function App() {
         needsRegistryResolution(ccRecipientInput, network));
 
     mailSendInFlightRef.current = true;
+    mailReviewReturnFocusRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     setMailSendBusy(true);
+    const reviewContext = mailReviewContextRef.current;
+    const reviewWallet = window.unisat;
+    const walletRevision = mailWalletRevisionRef.current;
+    const assertMailContext = () => {
+      if (mailReviewContextRef.current !== reviewContext || window.unisat !== reviewWallet || walletRevision !== mailWalletRevisionRef.current) {
+        throw new Error("Mail or wallet context changed. Review the current draft before signing again.");
+      }
+    };
+    let attemptedMailRecord: SentMessage | undefined;
+    let mailBroadcastTxid = "";
     setStatus({
       tone: "idle",
       text: shouldResolveId
@@ -32882,16 +32933,94 @@ export default function App() {
         prefetchedWalletUtxos: accountUtxosLoaded ? accountUtxos : undefined,
         protocolPayloads,
       });
-      if (
-        !confirmDustFeeAbsorption({
-          dustFeeSats: paymentPsbt.dustFeeSats,
-          feeRate,
-          feeSats: paymentPsbt.feeSats,
-        })
-      ) {
-        setStatus({ tone: "idle", text: dustFeeAbsorptionCanceledText() });
+      assertMailContext();
+      await assertTransactionIntentDoesNotSpendReservedListingAnchors({
+        intent: psbtUnsignedTransactionIntent(bitcoin.Psbt.fromHex(paymentPsbt.psbtHex, { network: bitcoinNetwork(network) })),
+        network,
+        signingAddress: address,
+      });
+      assertMailContext();
+      const evidence = inspectPreparedPayment({ ...paymentPsbt,
+        network: bitcoinNetwork(network), paymentCount: mailRecipients.length,
+        registryPaymentCount: attachedWorkPayloads.length > 0 ? 1 : 0 });
+      const recipientOutputs = evidence.outputs.filter(output => output.kind === "payment");
+      if (evidence.outputs.some(output => output.kind === "change" && output.address !== address)) {
+        throw new Error("Prepared change does not return to the connected sender.");
+      }
+      if (JSON.stringify(evidence.records) !== JSON.stringify([...protocolPayloads, ...attachedWorkPayloads])) {
+        throw new Error("Prepared message or WORK evidence does not match the draft.");
+      }
+      mailRecipients.forEach((mailRecipient, index) => {
+        const output = recipientOutputs[index];
+        if (!output || output.address !== mailRecipient.address || output.proofs !== String(mailRecipient.amountSats)) {
+          throw new Error("Prepared recipient payment does not match the resolved destination.");
+        }
+      });
+      const registryOutput = attachedWorkPayloads.length > 0 ? recipientOutputs[mailRecipients.length] : undefined;
+      if (registryOutput && (registryOutput.address !== WORK_TOKEN_REGISTRY_ADDRESS ||
+        registryOutput.proofs !== String(TOKEN_MIN_MUTATION_PRICE_SATS * attachedWorkPayloads.length))) {
+        throw new Error("Prepared WORK registry payment does not match the attachment.");
+      }
+      setStatus({ tone: "idle", text: "Review the prepared mail transaction before opening your wallet." });
+      const approved = await new Promise<boolean>(resolve => {
+        mailReviewResolverRef.current = resolve;
+        setMailReview({ evidence, sender: address, networkLabel: networkLabel(network), feeRate: String(feeRate),
+          totalWork: workAttachmentAtoms > 0n ? workDecimalFromAtoms(workAttachmentAtoms * BigInt(mailRecipients.length)) : undefined,
+          dustFeeProofs: String(paymentPsbt.dustFeeSats), subject: normalizeSubject(subject), message: memo,
+          attachment: attachment ? { name: attachment.name, size: attachment.size, sha256: attachment.sha256 } : undefined,
+          recipients: mailRecipients.map((mailRecipient, index) => ({
+            address: mailRecipient.address, label: mailRecipient.display,
+            role: index < toRecipients.length ? "To" : "CC", proofs: recipientOutputs[index].proofs,
+            work: workAttachmentAtoms > 0n ? workDecimalFromAtoms(workAttachmentAtoms) : undefined,
+          })),
+          registry: registryOutput ? { address: registryOutput.address, proofs: registryOutput.proofs } : undefined,
+        });
+      });
+      if (!approved) {
+        setStatus({ tone: "idle", text: "Mail review canceled. Draft preserved; no signature requested." });
         return;
       }
+      assertMailContext();
+      await ensureWalletNetwork(reviewWallet, network, address);
+      const assertCurrentMailFunding = async () => {
+        const current = await fetchAddressApiUtxos(address, network);
+        const confirmed = new Map(current.filter(utxo => utxo.status?.confirmed)
+          .map(utxo => [`${utxo.txid}:${utxo.vout}`, utxo]));
+        if (evidence.inputs.some(input => {
+          const utxo = confirmed.get(input.outpoint);
+          return !utxo || !Number.isSafeInteger(utxo.value) || BigInt(utxo.value).toString() !== input.proofs;
+        })) throw new Error("Prepared funding changed or is unavailable. Refresh wallet funds and review again before signing.");
+      };
+      const assertCurrentMailDestinations = async () => {
+        if (!shouldResolveId) return;
+        const latest = await fetchIdRegistry(network);
+        const latestTo = resolveRecipientInputs(recipientInput, network, latest, registryAddress);
+        const latestCc = resolveRecipientInputs(ccRecipientInput, network, latest, registryAddress);
+        const destinationKey = (resolution: MultiRecipientResolution) => JSON.stringify(resolution.recipients.map(item => [item.id, item.paymentAddress]));
+        if (latestTo.error || latestCc.error || destinationKey(latestTo) !== destinationKey(resolvedRecipients) ||
+          destinationKey(latestCc) !== destinationKey(resolvedCcRecipients)) {
+          throw new Error("A confirmed ID receiver changed after preparation. Review the current destination before signing again.");
+        }
+      };
+      await assertCurrentMailDestinations();
+      await assertCurrentMailFunding();
+      if (preparedWorkAttachmentMode) {
+        await freshWorkWriteMode(preparedWorkAttachmentMode);
+        await requireFreshWorkCapacityBeforeBroadcast(address, WORK_TOKEN_DEFINITION,
+          workAttachmentAtoms * BigInt(mailRecipients.length), tokenListings, tokenClosedListings, tokenTransfers, tokenSales);
+      }
+      assertMailContext();
+
+      const createdAt = new Date().toISOString();
+      const makeSentMessage = (txid: string, status: BroadcastStatus): SentMessage => ({
+        txid, status, network, from: address,
+        to: recipientSummary(toRecipients, recipientInput), recipients: mailRecipients, toRecipients,
+        ccRecipients: ccRecipients.length > 0 ? ccRecipients : undefined,
+        amountSats: totalRecipientSats(mailRecipients), feeRate,
+        subject: normalizeSubject(subject) || undefined, memo, attachment,
+        lastCheckedAt: createdAt, replyTo: address, parentTxid: replyParentTxid, createdAt,
+        attachedCredits: attachedWorkCredits.length > 0 ? attachedWorkCredits : undefined, socialMode,
+      });
 
       setStatus({
         tone: "idle",
@@ -32899,45 +33028,41 @@ export default function App() {
       });
 
       const txid = await signAndBroadcastPsbt({
-        beforeBroadcast: preparedWorkAttachmentMode
-          ? async () => {
-              await freshWorkWriteMode(preparedWorkAttachmentMode);
-              await requireFreshWorkCapacityBeforeBroadcast(
-                address, WORK_TOKEN_DEFINITION, workAttachmentAtoms * BigInt(mailRecipients.length),
-                tokenListings, tokenClosedListings, tokenTransfers, tokenSales,
-              );
-            }
-          : undefined,
+        beforeBroadcast: async () => {
+          assertMailContext();
+          await ensureWalletNetwork(reviewWallet, network, address);
+          await assertCurrentMailDestinations();
+          await assertCurrentMailFunding();
+          if (preparedWorkAttachmentMode) {
+            await freshWorkWriteMode(preparedWorkAttachmentMode);
+            await requireFreshWorkCapacityBeforeBroadcast(
+              address, WORK_TOKEN_DEFINITION, workAttachmentAtoms * BigInt(mailRecipients.length),
+              tokenListings, tokenClosedListings, tokenTransfers, tokenSales,
+            );
+          }
+          assertMailContext();
+        },
+        onBroadcastAttempt: candidateTxid => {
+          const record = makeSentMessage(candidateTxid, "unknown");
+          const next = [record, ...allSentRef.current.filter(message => message.txid !== candidateTxid || message.network !== network)];
+          // Preserve a txid before any network write so an interrupted result can be inspected.
+          try { saveSentMessages(next); } catch {
+            throw new Error("Local transaction tracking could not be saved. Export local data and free storage before trying again. No broadcast was attempted.");
+          }
+          attemptedMailRecord = record;
+          allSentRef.current = next;
+          setAllSent(next);
+        },
         inputCount: paymentPsbt.inputCount,
         network,
         psbtHex: paymentPsbt.psbtHex,
         signingAddress: address,
         wallet: window.unisat,
       });
-
-      const createdAt = new Date().toISOString();
-      const sentMessage: SentMessage = {
-        txid,
-        network,
-        from: address,
-        to: recipientSummary(toRecipients, recipientInput),
-        recipients: mailRecipients,
-        toRecipients,
-        ccRecipients: ccRecipients.length > 0 ? ccRecipients : undefined,
-        amountSats: totalRecipientSats(mailRecipients),
-        feeRate,
-        subject: normalizeSubject(subject) || undefined,
-        memo,
-        attachment,
-        status: "pending",
-        lastCheckedAt: createdAt,
-        replyTo: address,
-        parentTxid: replyParentTxid,
-        createdAt,
-        attachedCredits:
-          attachedWorkCredits.length > 0 ? attachedWorkCredits : undefined,
-        socialMode,
-      };
+      mailBroadcastTxid = txid;
+      const sentMessage = makeSentMessage(txid, "pending");
+      saveSentMessages([sentMessage, ...allSentRef.current.filter(message => message.txid !== txid || message.network !== network)]);
+      setAllSent((current) => [sentMessage, ...current.filter(message => message.txid !== txid || message.network !== network)]);
       const selfRecipient = mailRecipients.find((mailRecipient) =>
         samePaymentAddress(mailRecipient.address, address),
       );
@@ -32971,7 +33096,6 @@ export default function App() {
 
       clearDraft(address, network);
       setSavedDraft(undefined);
-      setAllSent((current) => [sentMessage, ...current]);
       if (finalizedPendingWorkTransfers.length > 0) {
         setTokenTransfers((current) => {
           const existingKeys = new Set(
@@ -33035,7 +33159,14 @@ export default function App() {
     } catch (error) {
       setStatus({
         tone: "bad",
-        text: errorMessage(error, "Transaction failed."),
+        text: mailBroadcastTxid
+          ? `Transaction broadcast: ${mailBroadcastTxid}. Local update failed; refresh mail to inspect delivery. ${errorMessage(error, "Local update failed.")}`
+          : attemptedMailRecord
+            ? `Broadcast outcome unknown. Draft and transaction ${attemptedMailRecord.txid} preserved. Refresh mail to check it before another send. ${errorMessage(error, "Broadcast failed.")}`
+            : /user.*(?:reject|cancel|denied)|(?:reject|cancel).*request|request.*(?:reject|cancel)|sign(?:ature|ing).*cancel/i.test(errorMessage(error, ""))
+              ? "Signature rejected or canceled. Draft preserved; review again when ready."
+              : `${errorMessage(error, "Transaction failed.")} Draft preserved.`,
+        links: attemptedMailRecord ? [txStatusLink(attemptedMailRecord.txid, network)] : undefined,
       });
     } finally {
       mailSendInFlightRef.current = false;
@@ -36907,7 +37038,9 @@ export default function App() {
               </button>
               <button
                 className="secondary small"
-                onClick={() => backupInputRef.current?.click()}
+                disabled={mailSendBusy}
+                aria-describedby={mailSendBusy ? "backup-import-busy" : undefined}
+                onClick={(event) => { backupReturnFocusRef.current = event.currentTarget; backupInputRef.current?.click(); }}
                 type="button"
               >
                 <span className="button-content">
@@ -36916,6 +37049,7 @@ export default function App() {
                 </span>
               </button>
             </div>
+            {mailSendBusy ? <p className="field-note" id="backup-import-busy">Finish or cancel Mail signing before restoring local data.</p> : null}
             <input
               ref={backupInputRef}
               accept="application/json,.json"
@@ -37579,7 +37713,7 @@ export default function App() {
                   recipientError={Boolean(recipientResolution.error)}
                   recipientNote={recipientNote}
                   sendState={composeSendState}
-                  sendStatus={[boostComposeReason, mailWorkAdmissionReason]
+                  sendStatus={[mailRecoveryReason, boostComposeReason, mailWorkAdmissionReason]
                     .filter(Boolean)
                     .join(" ")}
                   sender={address}
@@ -37637,7 +37771,7 @@ export default function App() {
                   recipientError={Boolean(recipientResolution.error)}
                   recipientNote={recipientNote}
                   sendState={composeSendState}
-                  sendStatus={[boostComposeReason, mailWorkAdmissionReason]
+                  sendStatus={[mailRecoveryReason, boostComposeReason, mailWorkAdmissionReason]
                     .filter(Boolean)
                     .join(" ")}
                   sender={address}
@@ -37787,6 +37921,8 @@ export default function App() {
         onClose={() => setPurchaseReceipt(undefined)}
       />
       <SocialFooter compact />
+      {mailReview ? <TransactionReview review={mailReview} returnFocus={mailReviewReturnFocusRef.current} onCancel={() => finishMailReview(false)} onApprove={() => finishMailReview(true)} /> : null}
+      {backupPreview ? <BackupPreview {...backupPreview} returnFocus={backupReturnFocusRef.current} onCancel={() => setBackupPreview(undefined)} onRestore={restorePreviewedBackup} /> : null}
     </main>
   );
 }

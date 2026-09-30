@@ -1,3 +1,48 @@
+.review-dialog {
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+  box-sizing: border-box;
+  width: min(680px, calc(100% - 24px));
+  max-height: calc(100dvh - 24px);
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding: 24px;
+}
+.review-dialog::backdrop { background: rgba(0, 0, 0, .72); }
+.review-dialog-head, .review-actions, .review-value-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.review-dialog-head { margin-bottom: 16px; }
+.review-dialog h2 { margin: 0; }
+.review-dialog h3 { margin: 16px 0 8px; }
+.review-dialog p { overflow-wrap: anywhere; }
+.review-value-row > * { min-width: 0; max-width: 100%; overflow-wrap: anywhere; }
+.review-list { padding: 0; list-style: none; margin: 12px 0; }
+.review-list > li { border-bottom: 1px solid var(--border); padding: 12px 0; }
+.review-exact { display: block; overflow-wrap: anywhere; white-space: normal; max-width: 100%; margin-top: 6px; }
+.review-work { margin-bottom: 0; }
+.review-fields > div { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr); gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--border); }
+.review-fields dd { margin: 0; text-align: right; min-width: 0; }
+.review-total { font-weight: 500; }
+.review-dialog .review-total { border-bottom-color: var(--accent); }
+.review-dialog summary { min-height: 44px; padding: 12px 0; box-sizing: border-box; }
+.review-message { font-family: var(--font-ui); white-space: pre-wrap; overflow-wrap: anywhere; }
+.review-actions { margin-top: 20px; justify-content: flex-end; }
+.review-dialog button { min-width: 44px; min-height: 44px; }
+@media (max-width: 480px) {
+  .review-dialog { padding: 16px; }
+  .review-fields > div { grid-template-columns: minmax(0, 1fr); }
+  .review-fields dd { text-align: left; }
+  .review-actions > button { flex: 1 1 100%; }
+}
+
 :root {
   color-scheme: dark;
   --font-ui: "Inter Variable", Inter, ui-sans-serif, system-ui, -apple-system,

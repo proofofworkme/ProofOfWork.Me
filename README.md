@@ -271,6 +271,13 @@ live in `amo.proofofwork.me`, not in the focused claim app.
 - Uses saved Contacts as compose suggestions.
 - Accepts multiple compose recipients separated by commas, semicolons, or new lines, with removable recipient chips.
 - Exports and imports local app data backups for contacts, drafts, archives, favorites, custom folders, and broadcast tracking.
+- Reviews prepared Mail destinations, exact payments, WORK attachments, registry
+  payments, miner fee, and change before local wallet signing. Unknown broadcast
+  outcomes retain the draft and signed txid for inspection before another send.
+- Previews local restore replacements before writing; absent groups remain
+  unchanged, concurrent local changes stop the restore, and failed writes attempt
+  recovery with explicit reporting if recovery is incomplete. Theme preference
+  is outside the current backup allowlist.
 - Supports one small attachment per message, capped at 60,000 bytes before encoding.
 - Adds a desktop-style Files section for confirmed attachment-only browsing, filtering, sorting, in-app previews, download, and opening the source message.
 - Previews images, PDFs, audio, video, text, Markdown, JSON, and code files directly in the app, with copy support for text/code content.

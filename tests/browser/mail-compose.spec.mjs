@@ -539,6 +539,7 @@ async function installWallet(page) {
     window.__mailComposeFixture = {
       psbtHexes: [],
       signCalls: 0,
+      emit: (event) => listeners.get(event)?.(),
     };
     window.confirm = () => true;
     window.unisat = {
@@ -803,14 +804,14 @@ async function installApiFixtures(
   };
 }
 
-async function openConnectedCompose(page) {
-  await page.goto("/", { waitUntil: "domcontentloaded" });
+async function openConnectedCompose(page, route = "/") {
+  await page.goto(route, { waitUntil: "domcontentloaded" });
   await page
     .locator(".onboarding-pane")
     .getByRole("button", { name: "Connect UniSat" })
     .click();
   await expect(page.locator(".topbar-wallet-button")).toContainText("1BPVvi1G");
-  await page.locator(".compose-button").first().click();
+  await page.locator(".compose-button:visible").first().click();
   await expect(page.getByRole("heading", { name: "New Message" })).toBeVisible();
   await expect(page.getByLabel("From")).toHaveValue(SENDER);
   await expect(page.getByLabel("WORK each")).toBeVisible();
@@ -928,6 +929,7 @@ async function expectReadableButton(locator, state) {
 }
 
 async function capturedPsbt(page) {
+  await page.getByRole("dialog", { name: "Review mail transaction" }).getByRole("button", { name: "Continue to wallet" }).click();
   await expect
     .poll(() =>
       page.evaluate(() => window.__mailComposeFixture?.signCalls ?? 0),
@@ -1518,6 +1520,180 @@ test("post-V8 mail prepares an exact one-subatom send3", async ({ page }) => {
     ),
   ).toBe(false);
 });
+
+test("Mail reviews exact payments and WORK before any wallet invocation; cancel preserves draft and focus", async ({ page }) => {
+  await installWallet(page);
+  await installApiFixtures(page);
+  await openConnectedCompose(page);
+  await fillReadyMail(page, "0.1234567890123456");
+  const send = page.locator(".mail-send-button");
+  await send.click();
+  const review = page.getByRole("dialog", { name: "Review mail transaction" });
+  await expect(review).toBeVisible();
+  await expect(review.locator(".review-work").getByText("0.1234567890123456 WORK", { exact: true })).toBeVisible();
+  await expect(review.getByText(RECIPIENT, { exact: true }).first()).toBeVisible();
+  await expect(review.locator(".review-fields").getByText("546 proofs", { exact: true })).toBeVisible();
+  await expect(review.getByRole("button", { name: "Cancel", exact: true })).toBeFocused();
+  expect(await page.evaluate(() => window.__mailComposeFixture.signCalls)).toBe(0);
+  await page.keyboard.press("Escape");
+  await expect(review).toHaveCount(0);
+  await expect(send).toBeFocused();
+  await expect(send).toBeEnabled();
+  await expect(page.getByLabel("Message")).toHaveValue("Mail admission browser contract");
+  await expect(page.getByLabel("WORK each")).toHaveValue("0.1234567890123456");
+  expect(await page.evaluate(() => window.__mailComposeFixture.signCalls)).toBe(0);
+});
+
+test("Mail signing rejection retains draft and permits a newly prepared review", async ({ page }) => {
+  await installWallet(page);
+  await installApiFixtures(page);
+  await openConnectedCompose(page);
+  await fillReadyMail(page, "0");
+  await page.evaluate(() => { window.unisat.signPsbt = async () => { window.__mailComposeFixture.signCalls++; throw new Error("User rejected request"); }; });
+  await page.locator(".mail-send-button").click();
+  await page.getByRole("dialog").getByRole("button", { name: "Continue to wallet" }).click();
+  await expect(page.locator(".status-text").getByText("Signature rejected or canceled. Draft preserved; review again when ready.")).toBeVisible();
+  await expect(page.getByLabel("Message")).toHaveValue("Mail admission browser contract");
+  await expect(page.locator(".mail-send-button")).toBeEnabled();
+  await page.locator(".mail-send-button").click();
+  await expect(page.getByRole("dialog", { name: "Review mail transaction" })).toBeVisible();
+  expect(await page.evaluate(() => window.__mailComposeFixture.signCalls)).toBe(1);
+});
+
+test("Wallet events invalidate an open Mail review without signing", async ({ page }) => {
+  await installWallet(page);
+  await installApiFixtures(page);
+  await openConnectedCompose(page);
+  await fillReadyMail(page, "0");
+  await page.locator(".mail-send-button").click();
+  await expect(page.getByRole("dialog")).toBeVisible();
+  await page.evaluate(() => window.__mailComposeFixture.emit("accountsChanged"));
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  expect(await page.evaluate(() => window.__mailComposeFixture.signCalls)).toBe(0);
+});
+
+test("Changing a draft during preparation invalidates its signing review", async ({ page }) => {
+  await installWallet(page); await installApiFixtures(page); await openConnectedCompose(page, "/?folder=inbox");
+  await fillReadyMail(page, "0");
+  let release;
+  const gate = new Promise(resolve => { release = resolve; });
+  let waiting = false;
+  await page.route(`**/api/v1/tx/${FUNDING_TXID}/hex*`, async route => {
+    waiting = true; await gate;
+    await route.fulfill({ contentType: "application/json", body: JSON.stringify({ hex: FUNDING_HEX }) });
+  });
+  await page.locator(".mail-send-button").click();
+  await expect.poll(() => waiting).toBe(true);
+  await page.getByLabel("Message").fill("Changed while preparing");
+  release();
+  await expect(page.locator(".status-text")).toContainText("Mail or wallet context changed");
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  expect(await page.evaluate(() => window.__mailComposeFixture.signCalls)).toBe(0);
+});
+
+test("Mail stops before signing when a reviewed funding input is no longer available", async ({ page }) => {
+  await installWallet(page); await installApiFixtures(page); await openConnectedCompose(page);
+  await fillReadyMail(page, "0"); await page.locator(".mail-send-button").click();
+  await expect(page.getByRole("dialog")).toBeVisible();
+  await page.route(`**/api/v1/address/${SENDER}/utxo*`, route => route.fulfill({ contentType: "application/json", body: '[]' }));
+  await page.getByRole("dialog").getByRole("button", { name: "Continue to wallet" }).click();
+  await expect(page.locator(".status-text")).toContainText("Prepared funding changed or is unavailable");
+  expect(await page.evaluate(() => window.__mailComposeFixture.signCalls)).toBe(0);
+  await expect(page.getByLabel("Message")).toHaveValue("Mail admission browser contract");
+});
+
+test("Mail review separates To and CC, exact WORK each, registry total, and file evidence", async ({ page }) => {
+  await installWallet(page); await installApiFixtures(page); await openConnectedCompose(page);
+  await fillReadyMail(page, "0.0000000000000001");
+  await page.getByRole("combobox", { name: "CC", exact: true }).fill(WORK_REGISTRY);
+  await page.locator('form.compose-pane input[type="file"]').setInputFiles({ name: "evidence.txt", mimeType: "text/plain", buffer: Buffer.from("Verified file fixture") });
+  await expect(page.getByText("evidence.txt", { exact: true })).toBeVisible();
+  await page.locator(".mail-send-button").click();
+  const review = page.getByRole("dialog");
+  await expect(review.locator(".review-work")).toHaveCount(2);
+  await expect(review.locator(".review-work").first()).toContainText("0.0000000000000001 WORK");
+  await expect(review.locator(".review-fields").getByText("1092 proofs", { exact: true })).toBeVisible();
+  await expect(review.locator(".review-value-row").getByText("CC", { exact: true })).toBeVisible();
+  await review.getByText("Inspect message and transaction evidence", { exact: true }).click();
+  await expect(review.getByText(/File: evidence.txt · 21 bytes/)).toBeVisible();
+  await expect(review.getByText(/SHA-256: [0-9a-f]{64}/)).toBeVisible();
+  await page.evaluate(() => Object.defineProperty(navigator, "clipboard", { configurable: true, value: {
+    writeText: async text => { window.__copiedReview = text; },
+  }}));
+  await review.getByRole("button", { name: "Copy review evidence" }).click();
+  const copied = await page.evaluate(() => JSON.parse(window.__copiedReview));
+  expect(copied.recipients[0].work).toBe("0.0000000000000001");
+  expect(copied.totalWork).toBe("0.0000000000000002");
+  expect(copied.evidence.records.some(record => record.startsWith("pwt1:send3:"))).toBe(true);
+  expect(copied.registry.proofs).toBe("1092");
+  expect(await page.evaluate(() => window.__mailComposeFixture.signCalls)).toBe(0);
+});
+
+test("Unknown Mail broadcast persists its txid and draft until a status check resolves it", async ({ page }) => {
+  await installWallet(page); await installApiFixtures(page); await openConnectedCompose(page);
+  await fillReadyMail(page, "0");
+  await page.exposeFunction("fixtureFinalizeMail", hex => {
+    const psbt = bitcoin.Psbt.fromHex(hex);
+    // Structurally finalized fixture only; broadcast is intercepted and never reaches a node.
+    for (let index = 0; index < psbt.inputCount; index++) psbt.updateInput(index, {
+      finalScriptSig: bitcoin.script.compile([Buffer.alloc(72, 1), Buffer.alloc(33, 2)]),
+    });
+    return psbt.toHex();
+  });
+  await page.evaluate(() => { window.unisat.signPsbt = async hex => {
+    window.__mailComposeFixture.signCalls++; return window.fixtureFinalizeMail(hex);
+  }; });
+  let broadcastCalls = 0;
+  let resolved = false;
+  await page.route("**/api/v1/broadcast/tx*", async route => {
+    broadcastCalls++;
+    await route.fulfill({ status: 400, contentType: "application/json", body: '{"error":"fixture result unavailable"}' });
+  });
+  await page.route("**/api/v1/tx/*/status*", async route => {
+    if (route.request().url().includes(FUNDING_TXID)) return route.fulfill({ contentType: "application/json", body: '{"status":"confirmed","confirmed":true}' });
+    await route.fulfill({ contentType: "application/json", body: JSON.stringify({ status: resolved ? "dropped" : "unknown" }) });
+  });
+  await page.locator(".mail-send-button").click();
+  await page.getByRole("dialog").getByRole("button", { name: "Continue to wallet" }).click();
+  await expect(page.locator(".status-text")).toContainText("Broadcast outcome unknown");
+  expect(broadcastCalls).toBe(1);
+  await expect(page.locator(".mail-send-button")).toBeDisabled();
+  await expect(page.getByLabel("Message")).toHaveValue("Mail admission browser contract");
+  const records = await page.evaluate(() => JSON.parse(localStorage.getItem("proofofwork.sent.v5")));
+  expect(records).toHaveLength(1); expect(records[0].status).toBe("unknown"); expect(records[0].txid).toMatch(/^[0-9a-f]{64}$/);
+  resolved = true;
+  await page.locator(".list-toolbar").getByRole("button", { name: "Refresh", exact: true }).click();
+  await page.locator(".compose-button").first().click();
+  await fillReadyMail(page, "0");
+  await expect(page.locator(".mail-send-button")).toBeEnabled();
+  const checked = await page.evaluate(() => JSON.parse(localStorage.getItem("proofofwork.sent.v5")));
+  expect(checked[0].status).toBe("dropped"); expect(broadcastCalls).toBe(1);
+});
+
+for (const viewport of [{ width: 320, height: 568 }, { width: 320, height: 180 }, { width: 768, height: 512 }, { width: 1440, height: 360 }]) {
+  test(`Mail review reflows and keeps controls reachable at ${viewport.width}×${viewport.height}`, async ({ page }) => {
+    // At extreme zoom, test resizing an already-open review. The existing shell
+    // obstructs its initial Connect action at 320×180; track that separately.
+    if (viewport.height > 180) await page.setViewportSize(viewport);
+    await installWallet(page); await installApiFixtures(page); await openConnectedCompose(page);
+    await fillReadyMail(page, "0.1234567890123456");
+    await page.locator(".mail-send-button").click();
+    const review = page.getByRole("dialog");
+    await expect(review).toBeVisible();
+    if (viewport.height === 180) await page.setViewportSize(viewport);
+    const geometry = await review.evaluate(element => ({ width: element.getBoundingClientRect().width, client: element.clientWidth, scroll: element.scrollWidth }));
+    expect(geometry.width).toBeLessThanOrEqual(viewport.width);
+    expect(geometry.scroll).toBeLessThanOrEqual(geometry.client + 1);
+    const approve = review.getByRole("button", { name: "Continue to wallet" });
+    await approve.scrollIntoViewIfNeeded();
+    await expect(approve).toBeInViewport();
+    const target = await approve.boundingBox();
+    expect(target.height).toBeGreaterThanOrEqual(44); expect(target.width).toBeGreaterThanOrEqual(44);
+    if (viewport.width === 320) await page.screenshot({ path: "/tmp/pow-batch-two-mail-review-320.png" });
+    await review.getByRole("button", { name: "Back to compose" }).click();
+    expect(await page.evaluate(() => window.__mailComposeFixture.signCalls)).toBe(0);
+  });
+}
 
 
 test("wallet keeps remaining WORK and a second listing available while the first V8 intent is pending", async ({ page }) => {

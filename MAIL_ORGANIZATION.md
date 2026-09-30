@@ -444,9 +444,41 @@ Backup should export a versioned JSON file containing only supported app-local d
 - Custom folder definitions and folder membership.
 - Local contacts.
 - Local sent/outbox broadcast tracking.
-- Theme preference.
+- Theme preference is currently excluded from the supported backup allowlist.
 
 Import should validate the JSON before writing anything, ignore unsupported keys, and restore only ProofOfWork.Me local storage keys. It must not include wallet private keys, seed phrases, UniSat connection state, or anything outside app-local UX data.
+
+Selecting an import file opens a local restore preview before any storage write.
+The preview compares each supported group with current local data, rendering
+at most 25 groups per inventory page and naming the total replacement scope.
+Matching groups are replaced in full; keys absent from the backup remain unchanged.
+Canceling changes nothing. If supported local data changes after the preview,
+the restore stops and asks the user to select the file again. Failed writes
+attempt to recover the prior values; incomplete recovery names the affected
+storage keys instead of claiming a successful or atomic restore. The existing
+version-one format and shallow JSON shape validation remain compatible;
+record counts are inventory, not proof of field-level or chain validity.
+
+## Mail Transaction Review
+
+Mail prepares its transaction before opening an inspectable review. The review
+shows To and CC resolved addresses, exact recipient payments, exact WORK per
+recipient, the WORK registry payment when present, miner fee including absorbed
+dust, change, and total proofs spent. Funding inputs and output values are
+decoded from the same PSBT passed to the local wallet. Message and file evidence
+remain inspectable, and the review explains their public on-chain permanence.
+WORK quantities retain current Q16 precision and historical Q8 preparation.
+
+Cancel or rejected signing preserves the draft. Changing draft, account,
+network, or workspace invalidates the review. Confirmed funding inputs, ID
+destinations, and WORK admission/capacity are rechecked before signing and before broadcast;
+the existing signed-intent and reserved-anchor checks remain authoritative.
+Before a Mail broadcast attempt, local tracking persists the signed txid with
+unknown status. A successful broadcast updates it to pending, never confirmed
+delivery. If the outcome remains unknown, the draft and txid stay available and
+Mail pauses another send until status checks identify pending, confirmed, or
+dropped state. Dropped transactions require new preparation and review;
+unavailable status reads never authorize a blind resend.
 
 ## UI Notes
 
