@@ -30,4 +30,4 @@ Core operating rules:
 - Build features so future agents can inspect, verify, and act from chain-readable records.
 - Keep product/UI copy calm and precise; keep launch/social copy alive with the ProofOfWork.Me voice.
 - In public/social copy, use ProofOfWork, ProofOfWork-native, and proofs; do not use Bitcoin or BTC. Put `$WORK $POWB $INCB` on every ProofOfWork.Me public/social post unless the user explicitly requests different cashtags.
-- After a user-approved production workflow has been production-verified, committed, deployed, and pushed, immediately provide tweet-ready public copy in the ProofOfWork.Me voice unless the user explicitly says not to.
+- After each user-approved update or upgrade has been production-verified, committed, deployed, and pushed, publish its release announcement to `@proofofworkme` using the logged-in in-app browser unless the user explicitly says not to. The user authorized this standing workflow on 2026-09-30. Verify the published post and return its link; if posting is blocked, provide tweet-ready copy and explain the blocker. Do not post a second announcement for documentation-only bookkeeping of the same release.
