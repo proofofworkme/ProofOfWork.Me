@@ -60,6 +60,7 @@ import { formatBytes, formatDate, shortAddress } from "../../functions";
 import { formatExactDecimal } from "../../exactAmount";
 import { boostSignalQ8, formatBoostSignal } from "./boostAmounts";
 import { createBoostReadLifecycle } from "./boostReadLifecycle";
+import { BoostActivity, BoostConnections, type ConnectionTab } from "./BoostSocialRecords";
 import { boostMediaUrl } from "./boostMedia";
 import { BoostProfileImages, ProfileImage } from "./BoostProfileImages";
 import {
@@ -974,6 +975,7 @@ function BoostPost({
               </span>
             </button>
           ) : null}
+          <button className="secondary small" onClick={() => onOpen(item)} type="button">View activity</button>
           <a
             className="secondary small link-button"
             href={txHref}
@@ -1005,6 +1007,17 @@ export default function BoostRoot({
   const [timelineMode, setTimelineMode] =
     useState<BoostTimelineMode>("all");
   const [profileRouteValue] = useState(() => initialSearchParam("profile"));
+  const [connectionsTab, setConnectionsTab] = useState<ConnectionTab | undefined>(() => {
+    const value = initialSearchParam("connections");
+    return value === "followers" || value === "following" ? value : undefined;
+  });
+  function selectConnections(tab?: ConnectionTab) {
+    setConnectionsTab(tab);
+    const url = new URL(window.location.href);
+    if (tab) url.searchParams.set("connections", tab);
+    else url.searchParams.delete("connections");
+    window.history.replaceState(null, "", url);
+  }
   const [profileLookup, setProfileLookup] = useState(profileRouteValue);
   const [profileTab, setProfileTab] =
     useState<BoostProfileTab>(initialProfileTab);
@@ -1113,17 +1126,6 @@ export default function BoostRoot({
   }, [address, items, profileRouteValue, payload?.profileSubject?.address]);
   const topSignalItems = useMemo(() => visibleItems.slice(0, 3), [visibleItems]);
   const isProfileView = Boolean(profileRouteValue.trim());
-  const expandedReplies = useMemo(
-    () =>
-      expandedItem
-        ? visibleItems.filter(
-            (item) =>
-              item.kind === "boost-reply" &&
-              item.targetTxid === boostItemTxid(expandedItem),
-          )
-        : [],
-    [expandedItem, visibleItems],
-  );
   const modalOpen = Boolean(
     directPostOpen || expandedItem || pendingPaidAction || replyTarget,
   );
@@ -2077,6 +2079,7 @@ export default function BoostRoot({
       ".boost-modal[role='dialog']",
     );
     const previousOverflow = document.body.style.overflow;
+    const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     document.body.style.overflow = "hidden";
     const focusableSelector =
       "button:not([disabled]), a[href], input:not([disabled]), textarea:not([disabled]), select:not([disabled]), summary";
@@ -2115,6 +2118,7 @@ export default function BoostRoot({
       window.cancelAnimationFrame(focusFrame);
       window.removeEventListener("keydown", handleKeyDown);
       document.body.style.overflow = previousOverflow;
+      if (previousFocus?.isConnected) previousFocus.focus();
     };
   }, [modalOpen]);
 
@@ -2634,6 +2638,11 @@ export default function BoostRoot({
             busy={Boolean(actionBusy)} publishStatus={status.text} onPublish={publishProfileImages} onClose={() => setImageEditorOpen(false)} /> : null}
 
         <section className="boost-feed-panel">
+          {isProfileView && connectionsTab ? (
+            <BoostConnections profile={profileRouteValue} tab={connectionsTab} onTab={selectConnections}
+              network={network} viewer={address} onBack={() => selectConnections()}
+              onFollow={(target, id, following) => { if (!actionBusy) void publishFollowTarget(following ? "unfollow" : "follow", target, id); }} />
+          ) : <>
           {isProfileView ? (
             <>
             <div className="boost-profile-titlebar">
@@ -2657,8 +2666,8 @@ export default function BoostRoot({
                   <h2>{profileSubjectDisplay(payload)}</h2>
                   <p>{profileSubjectHandle(payload) || profileRouteValue}</p>
                   <div className="boost-profile-stats" aria-label="Profile connections">
-                    <span><strong>{profileCount(profileSubject?.followingCount)}</strong> Following</span>
-                    <span><strong>{profileCount(profileSubject?.followerCount)}</strong> Followers</span>
+                    <button type="button" onClick={() => selectConnections("following")}><strong>{profileCount(profileSubject?.followingCount)}</strong> Following</button>
+                    <button type="button" onClick={() => selectConnections("followers")}><strong>{profileCount(profileSubject?.followerCount)}</strong> Followers</button>
                   </div>
                   <div className="boost-profile-signal" aria-label="Profile signal">
                     <span>{profileSubject ? <CompactSignal value={boostSignalQ8(profileSubject.totalSignalQ8, profileSubject.totalSignalSatsExact, profileSubject.totalSignalSats ?? 0)} /> : "Unavailable"} signal</span>
@@ -2880,6 +2889,7 @@ export default function BoostRoot({
               </button>
             ) : null}
           </div>
+          </>}
         </section>
 
         <aside className="boost-right-rail" aria-label="Boost discovery">
@@ -3309,24 +3319,9 @@ export default function BoostRoot({
                   <span>Back</span>
                 </button>
               </div>
-              {renderBoostPost(expandedItem)}
-              <div className="boost-detail-replies">
-                <div className="boost-detail-replies-head">
-                  <strong>Replies</strong>
-                  <span>{expandedReplies.length}</span>
-                </div>
-                {expandedReplies.length > 0 ? (
-                  expandedReplies.map((reply) => (
-                    <article className="boost-detail-reply" key={reply.eventId ?? reply.txid}>
-                      <strong>{authorLabel(reply, activeIdentity, address)}</strong>
-                      <span>{formatDate(reply.createdAt)}</span>
-                      <p>{reply.text}</p>
-                    </article>
-                  ))
-                ) : (
-                  <p className="field-note">Replies will appear here after the canonical feed refreshes.</p>
-                )}
-              </div>
+              <BoostActivity key={expandedItem.txid}
+                txid={expandedItem.txid}
+                network={network} viewer={address} renderPost={renderBoostPost} />
               <button
                 className="primary"
                 onClick={() => {

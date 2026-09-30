@@ -329,6 +329,8 @@ Rules to preserve:
 - A post-time sale price can only queue a later listing/seal after the post txid exists. JSON price metadata alone is not buyable.
 - Boost timeline tabs are social views over confirmed `pwb1:` records: For You shows all visible confirmed Boosts; Following shows the connected wallet's own authored Boosts and visible confirmed Boosts from addresses it actively follows without creating a self-follow edge. Reply and reboost cards show their own paid action signal, and the nested original opens the original Boost detail.
 - Boost profile routes are person views, not timeline filters. A `profile=` route resolves one address or confirmed ID and then shows profile-specific tabs for authored boosts/reboosts, authored replies, currently owned or purchased boosts, liked boosts, and expanded replies to that person's original boosts.
+- Boost detail/activity reads are transaction-scoped, independent of profile, search, period and feed pagination. Confirmed replies use the shared actionable cards; likes and reboosts expose the acting confirmed ID or address plus action TX. Browsing activity never signs a transaction.
+- Profile Following/Followers counts open paginated confirmed connection lists with profile links, viewer relationship status and the latest active follow TX. Unfollow supersedes its edge; pending events never create canonical connections.
 - Authors can hide their own Boost from default app/profile indexing with `pwb1:hide`. This is a visibility tombstone, not deletion from ProofOfWork.
 - Confirmed ProofOfWork history is canonical. Pending Boost records are only visibility.
 - Wallet signing stays local.

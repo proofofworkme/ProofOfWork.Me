@@ -5557,6 +5557,22 @@ pagination is bound to projection identity, and `listings=1` discovers the compl
 active original-post ticket inventory independently of the newest timeline page.
 Clients cancel superseded reads and reject responses for obsolete scopes.
 
+Boost also exposes paginated confirmed social projections through
+`/api/v1/boost?detail=<txid>&activity=replies|likes|reboosts` and
+`/api/v1/boost?profile=<id-or-address>&connections=followers|following`.
+Both exhaust the same qualified, checkpoint-bound event history as the feed.
+Detail reads ignore profile/search/time/feed filters; reboost detail retains its
+nested original and inspects the original's engagement. Connection lists use
+latest confirmed follow/unfollow edges and retain the active edge's transaction
+as evidence. Display IDs resolve only through a complete confirmed registry at
+the same canonical checkpoint, with addresses as the fallback. Cursors bind the
+projection, viewer, canonical provenance and complete ordering; changed history
+requires a restart from the first page. Invalid queries, missing confirmed
+records and unavailable authority are errors, never fabricated empty lists.
+Clients cancel obsolete reads, reject obsolete responses and show explicit
+loading, unavailable/retry and confirmed-empty states. No schema migration,
+protocol event, registry fee or signing-policy change is required.
+
 ## Launch Rule
 
 For production, ID resolution must use the ProofOfWork API/node path. If the API is unavailable, it is safer to fail closed than to route or register IDs from incomplete public API state.
@@ -5640,3 +5656,159 @@ current/latest pair (`managed 2 --apply`). The live commit/tree archive stays
 protected even outside the ordinary keep window. Unverified legacy artifacts,
 active replay databases, logical backups and incident evidence remain excluded.
 The three-archive manual target remains supported for conservative rehearsals.
+
+### Audit 28 prepared retention exception (2026-09-29)
+
+The UI publisher accepts `--defer-verified-retention` to skip its post-publication
+retention apply when an explicitly approved rollout must preserve a wider
+named rollback set. Default publication retains its existing retention behavior.
+This option does not authorize cleanup or change scheduled pruning policies.
+The Audit 28 follow-up preparation records the exact protected sets and the
+separate approval required for publisher installation, retention timer changes,
+release cutover and cleanup. The prepared change is not evidence of deployment:
+see `audits/2026-09-29-audit28-followup-preparation.md` and its execution receipt
+when one exists. Never resume a scheduled pruner that can retire an explicitly
+protected release without the corresponding retention approval.
+
+
+### Audit 28 follow-up deployed retention exception (2026-09-29 EDT)
+
+The approved follow-up installed UI publisher SHA-256
+`c2f06538c2c3263d1a7b7157c67dfebe007803b3fdbf60b9aeb21e4aedeb30e9`
+and published `db853f434f9b-20260930T011125Z` with
+`--defer-verified-retention`, preserving the designated older UI/node rollback
+sets. Original publisher bytes remain at
+`/var/backups/proofofwork-ui/release-tooling/audit28-publisher-pre-db853f4.sh`.
+The two UI prune timers and node release-prune timer are stopped, but remain
+enabled. Reboot can reactivate them; do not reboot or resume pruning without a
+reviewed persistent pause/pin-aware policy that preserves these designated sets.
+No timer disabling/masking, broad pruning, backup retention change or live DB
+maintenance was performed. The dated execution appendix in
+`audits/2026-09-29-production-comprehensive-health-data-integrity-audit-28.md`
+and the preparation evidence JSON record actual release and verification state.
+The prepared exception above is historical context, not deployment evidence.
+
+
+### Audit 28 remaining follow-ups — prepared, not deployed (2026-09-29)
+
+The separately approved pinned logical restore is recorded in
+`audits/2026-09-29-audit28-remaining-followups.md` and its evidence file.
+Local source now bounds complete listing reads to 120 seconds and AMO's combined
+summary/book hydration to the same total budget with one retry and wallet/workspace
+cancellation. These client changes do not alter checkpoint authority, exact
+accounting, signing rechecks or protocol history and are not yet production-published.
+
+Prepared retention protection uses persistent holds plus timer masks and direct
+pruning guards; the live three timers remain stopped but enabled until separately
+approved installation. The exact tooling/timer hashes and zero-item deletion plan
+are in `audits/2026-09-29-audit28-remaining-followups.manifest.json`. All 816 old held
+observations remain retained. Live database checksums remain off; a successful
+logical restore would not certify live physical-page integrity or WAL/PITR recovery.
+The installed monitoring executable still has the old slow-correct warning label;
+its prepared replacement separates correctness from critical operational latency.
+No production retention resume, database change or newly discovered deletion is
+authorized by this preparation record.
+
+The pinned logical restore completed data/schema and offline-page checks with
+zero bad checksums, but final journal review found its storage watcher exited on
+WAL recycling. Continuous storage-guard assurance therefore remains incomplete.
+The original script and full restore job are retained unchanged; a fail-closed
+watcher correction is prepared separately and needs new approval before a full
+rerun. The logical-backup helper's keep-newest-only policy can retire the exact
+source at its next successful run; the prepared root-controlled pin policy and
+helper guard protect it while allowing backups to continue. These backup-policy
+and watcher changes are explicitly not installed or executed. See the exact
+remaining-followups manifest and final evidence for the named approval gates.
+
+## Approved execution update — 2026-09-30 UTC
+
+The user approved the next production-tooling, corrected-restore and commit/push
+steps. At 02:41 UTC, exact tooling and timer fingerprints matched; the original
+backup source remained present. Both UI retention timers and the node release
+retention timer are now persistently masked/inactive with root-owned hold markers
+and service conditions. Prior tools/timer bytes and link receipts are preserved
+at the manifest's exact evidence roots. The logical-backup pin and guard are
+installed; scheduled backup creation was not paused. UI retention monitoring passes.
+The corrected restore remains approved but awaits a clear backup-lock window
+after the scheduled 03:18:48 UTC backup. No storage deletion was performed.
+
+The first hardened node checker failed because its empty capability set could
+not inspect the postgres-owned 0700 backup source, although direct root execution
+passed. The failure journal and original unit were preserved. The user separately
+approved exact candidate `deploy/audit28/retention-protection-node-readonly.service`
+SHA256 `0d128a66f97990fcd7184b1e6b995acc823f09ee6c2afae6a11708baa5062b43`.
+Installed at 02:44 UTC, it allows only CAP_DAC_READ_SEARCH in its bounding/ambient
+sets; strict read-only filesystem protection and all resource limits are unchanged.
+The service now passes with exit zero. This explicitly approved candidate supersedes
+the earlier prepared node unit for installation. The canonical node unit now
+contains the same approved correction; its original pin and remote preserved
+bytes remain historical baseline evidence. Receipt and amendment are in
+the evidence JSON. All live application service processes remain unchanged;
+production UI uses Caddy and the worker is proofofwork-indexer-worker.service.
+Application source publication still requires review of its final commit-bound
+archive. All 816 held observations remain retained; productionDelete stays empty.
+
+### Audit 28 exact UI release publication — 2026-09-30 UTC
+
+The separately approved complete UI release `bbb03cebb6c6-20260930T024800Z`
+(commit `bbb03cebb6c66d91b8b033dbf4e732f11a0ad967`, archive SHA256
+`c5258926d28133181d9f52d2c5b165ac58a2ec7baab2900f424635241ccfc7e4`)
+was published at 03:19 UTC with retention deferred. Independent provenance
+verification and all 15 ordered public surfaces passed; Computer DNS served
+regressions passed twice. The full previous live root is preserved at
+`/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-bbb03cebb6c6-20260930T024800Z`.
+Caddy PID 3092586 is unchanged. API/indexer remain on db853f4 with no replacement
+or restart. Core/Electrs/indexer matched block 969245 and its hash after
+publication; readiness passed with zero lag. This records client containment
+and UI correctness, not a claim that remaining backend latency is corrected.
+All 816 held paths remain present and no storage was deleted. The scheduled
+logical backup continues normally before the approved corrected isolated restore.
+Exact receipts, pins, retained-root attestations and verification results are in
+`audits/2026-09-29-audit28-remaining-followups.evidence.json`.
+
+### Approved follow-up closeout — 2026-09-30 UTC
+
+The scheduled logical backup completed successfully at 03:37:08 UTC. Its newest
+set passed checksum/catalog verification, and the log explicitly records
+preservation of the original pinned source. The corrected isolated restore was
+admitted at 03:37:49 UTC with every reviewed pin and bound unchanged and passed
+at 04:05:00 UTC. Backup checksums passed; the restored private database contains
+26,035 transactions, 26,648 events, 238 credit definitions, 435 credit balances,
+20,289 ledger snapshots and 9,470 transitions across the saved backup's scope.
+There are zero invalid indexes and zero unvalidated constraints. Offline page
+checks scanned 1,470 files and 4,437,022 blocks with zero bad checksums.
+
+The job allocated 37,423,022,080 bytes, below its 80 GiB cap; available data space
+at completion was 379,514,814,464 bytes, above the 100 GiB floor. Unit journal
+reports 27min 8.129s CPU, 4.0 GiB peak memory and zero swap. Resource limits
+were revalidated on admission; read-only progress records observed the watchdog
+through import. No resource-failure marker exists; intentional watcher shutdown
+is recorded. The private postmaster and socket are absent. Both original and
+corrected restored datasets remain preserved, together with results and the
+pinned backup. This verifies data/schema and offline restored pages only; it
+does not establish roles/grants, PITR, production page checksums or complete
+independent protocol replay. Different offline page totals between separate
+restores do not establish a ledger discrepancy; logical counts match the original
+restored backup and both page checks pass.
+
+At final verification Core, Electrs, txindex, canonical indexer and summary
+coverage reconcile at block 969252, hash
+`0000000000000000000150faa48f43caf4acb67364b3208d969a5ef5fad832ee`;
+API readiness passes with zero lag. Core, Electrs, production PostgreSQL, API,
+indexer-worker and Caddy process IDs are unchanged. Final retention checks pass
+on both hosts; all three pruning timers remain persistently masked/inactive.
+All 295 UI and 521 node held paths remain present after scheduled backup and
+restore. No storage item was deleted in this phase. Remote final receipts are
+`/var/backups/proofofwork-ui/release-tooling/audit28-remaining-20260930T020000Z/completed-verification.json`
+and `/data/proofofwork-audit28-retention-tooling-20260930T020000Z/completed-verification.json`.
+
+The approved execution scope is complete, subject to repository closeout.
+Remaining audit recommendations require separately reviewed work: fail-closed
+logical-backup capacity monitoring (AUD28-FU-02), server-side wallet/AMO route
+profiling and optimization, live database checksum/recovery assurance, and proof
+of redundancy/dependencies before any held-item deletion. The scheduled backup's
+existing unit has no memory/CPU/runtime cap and reported 18.8 GiB peak memory;
+this is operational context for the backup-hardening recommendation, not a new
+resource-policy change or an observed reserve breach. All retention decisions
+remain retain with no automatic expiry. No fix for the newly found backup
+watcher condition, deletion, database migration or alert destination was added.

@@ -18,6 +18,11 @@ commit=""
 source_checkout=""
 archive=""
 declare -a retain_rollback_roots=()
+defer_verified_retention=0
+# Publication remains available while all automatic retention stays paused.
+if [[ -e /etc/proofofwork-retention/audit28.hold || -L /etc/proofofwork-retention/audit28.hold ]]; then
+  defer_verified_retention=1
+fi
 
 while (($# > 0)); do
   case "$1" in
@@ -36,6 +41,11 @@ while (($# > 0)); do
     --archive)
       archive="${2:-}"
       shift 2
+      ;;
+    --defer-verified-retention)
+      # Approval-scoped releases may preserve a wider designated rollback set.
+      defer_verified_retention=1
+      shift
       ;;
     --retain-rollback-root)
       # Exact basename:manifest-SHA256:complete-root-SHA256 classification.
@@ -1027,7 +1037,7 @@ committed=1
 exchange_armed=0
 trap - EXIT
 
-if [[ "${allow_test_roots}" != "1" ]]; then
+if [[ "${allow_test_roots}" != "1" ]] && ((defer_verified_retention == 0)); then
   POW_UI_DEPLOY_LOCK_FD="${deploy_lock_fd}" /usr/bin/python3 -I "${verified_retention}" --apply
 fi
 

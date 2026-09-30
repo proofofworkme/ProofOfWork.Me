@@ -48,7 +48,7 @@
     "check:node-ops": "node scripts/check-node-ops-contract.mjs && python3 -B scripts/check-storage-trend.py && python3 -B scripts/check-api-observation-health.py",
     "check:ui-ops": "node scripts/check-ui-ops-contract.mjs && python3 -B scripts/check-ui-verified-retention.py",
     "check:ui-capacity": "python3 -B scripts/check-ui-capacity.py && python3 -B scripts/check-ui-capacity-boundaries.py",
-    "check:api-truth": "node scripts/check-api-truth-contract.mjs && node scripts/check-audit28-regressions.mjs",
+    "check:api-truth": "node scripts/check-api-truth-contract.mjs && node scripts/check-audit28-regressions.mjs && node --test server/canonical-seal-time.test.mjs scripts/check-summary-route-latency.test.mjs",
     "check:canonical-order": "node scripts/check-canonical-order.mjs",
     "check:server-globals": "node scripts/check-server-free-identifiers.mjs",
     "check:electrum-client": "node scripts/check-electrum-client.mjs",
@@ -112,7 +112,9 @@
     "check:audit5-node-attestor": "python3 -I -B scripts/check-audit5-node-attestor.py",
     "check:audit5-ops-installer": "python3 -I -B scripts/check-audit5-ops-installer.py",
     "check:audit5-candidate-probe": "node scripts/check-audit5-candidate-probe.mjs",
-    "check:send-prep-fixtures": "node scripts/check-send-prep-fixtures.mjs"
+    "check:send-prep-fixtures": "node scripts/check-send-prep-fixtures.mjs",
+    "check:audit28-preparation": "python3 -B scripts/check-audit28-preparation.py",
+    "check:audit28-followups": "node --test scripts/check-marketplace-read-budget.test.mjs scripts/check-summary-route-latency.test.mjs && python3 -B scripts/check-audit28-persistent-retention.py && python3 -B scripts/check-audit28-restore-watchdog.py && python3 -B scripts/check-audit28-logical-backup-pins.py"
   },
   "dependencies": {
     "@bitcoinerlab/secp256k1": "^1.2.0",

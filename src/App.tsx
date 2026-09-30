@@ -1652,6 +1652,8 @@ type ChainedMintBuildResult = {
 };
 
 type PowRegistryApiResponse = {
+  checkpointHash?: string;
+  coverage?: { complete?: boolean };
   summaryOnly?: boolean;
   collectionHasMore?: { listings?: boolean };
   indexedAt?: string;
@@ -13329,10 +13331,12 @@ async function fetchAddressTransactionsPage(
   targetAddress: string,
   targetNetwork: BitcoinNetwork,
   path: string,
+  signal?: AbortSignal,
 ) {
   const transactions = await fetchProofApiJson<Array<Record<string, unknown>>>(
     `/api/v1/address/${encodeURIComponent(targetAddress)}/${path}`,
     targetNetwork,
+    { signal },
   );
   return Array.isArray(transactions)
     ? (transactions as Array<Record<string, unknown>>)
@@ -13349,11 +13353,13 @@ async function fetchAddressTransactions(
 async function fetchPendingTokenListingSealsForAddress(
   targetAddress: string,
   targetNetwork: BitcoinNetwork,
+  signal?: AbortSignal,
 ) {
   const txs = await fetchAddressTransactionsPage(
     targetAddress,
     targetNetwork,
     "txs/mempool",
+    signal,
   );
 
   return txs.flatMap((tx): PendingTokenListingSeal[] => {
@@ -16006,6 +16012,16 @@ async function fetchDnsRegistryState(
     path,
     targetNetwork,
   );
+  if (
+    payload.coverage?.complete !== true ||
+    !Number.isSafeInteger(payload.indexedThroughBlock) ||
+    (payload.indexedThroughBlock ?? -1) < 0 ||
+    !/^[0-9a-f]{64}$/u.test(payload.checkpointHash ?? "") ||
+    !Array.isArray(payload.records) ||
+    !Array.isArray(payload.listings)
+  ) {
+    throw new Error("The DNS registry response is incomplete or has no verified chain checkpoint.");
+  }
   return normalizeRegistryApiState(payload);
 }
 
@@ -17140,6 +17156,7 @@ async function fetchTokenHistoryPage<T>(
     | "tokens"
     | "transfers",
   options: {
+    signal?: AbortSignal;
     address?: string;
     cursor?: string;
     fresh?: boolean;
@@ -17176,6 +17193,7 @@ async function fetchTokenHistoryPage<T>(
   const payload = await fetchProofApiJson<PowPaginatedApiResponse<T>>(
     `/api/v1/token-history?${params.toString()}`,
     targetNetwork,
+    { signal: options.signal },
   );
   if (
     !Array.isArray(payload.items) &&
@@ -17247,12 +17265,17 @@ type TokenListingHistoryProgress = CompleteTokenListingHistory & {
 async function fetchCompleteTokenListings(
   targetNetwork: BitcoinNetwork,
   options: {
+    signal?: AbortSignal;
     address?: string;
     fresh?: boolean;
     onVerifiedPage?: (progress: TokenListingHistoryProgress) => void;
     tokenScope?: string;
   } = {},
 ): Promise<CompleteTokenListingHistory> {
+  const deadline = AbortSignal.timeout(120_000);
+  const signal = options.signal
+    ? AbortSignal.any([options.signal, deadline])
+    : deadline;
   const listings: PowTokenListing[] = [];
   const listingIds = new Set<string>();
   const seenCursors = new Set<string>();
@@ -17267,10 +17290,12 @@ async function fetchCompleteTokenListings(
   let expectedItemProjectionFingerprint = "";
 
   for (let pageIndex = 0; pageIndex < MAX_TOKEN_HISTORY_PAGES; pageIndex += 1) {
+    signal.throwIfAborted();
     const page = await fetchTokenHistoryPage<PowTokenListing>(
       targetNetwork,
       "listings",
       {
+        signal,
         address: options.address,
         projection: "display-v2",
         cursor: cursor || undefined,
@@ -18909,6 +18934,7 @@ async function fetchWorkSummary(
 
 async function fetchMarketplaceSummary(
   fresh = false,
+  signal?: AbortSignal,
 ): Promise<MarketplaceSummarySnapshot> {
   const params = new URLSearchParams({ compact: "1" });
   if (fresh) {
@@ -18917,6 +18943,7 @@ async function fetchMarketplaceSummary(
   const payload = await fetchProofApiJson<MarketplaceSummaryApiResponse>(
     `/api/v1/marketplace-summary?${params.toString()}`,
     "livenet",
+    { signal },
   );
 
   if (
@@ -22006,6 +22033,8 @@ export default function App() {
                               }`;
   const activeWorkspaceStatusKeyRef = useRef(activeWorkspaceStatusKey);
   activeWorkspaceStatusKeyRef.current = activeWorkspaceStatusKey;
+  const marketplaceReadContextRef = useRef(`${network}:${address}`);
+  marketplaceReadContextRef.current = `${network}:${address}`;
   const workspaceStatusesRef = useRef(
     new Map<string, WorkspaceStatus>([
       [activeWorkspaceStatusKey, INITIAL_COMPUTER_STATUS],
@@ -22421,7 +22450,9 @@ export default function App() {
     state: PowTokenState,
     fresh = false,
     onVerifiedPage?: (progress: TokenListingHistoryProgress) => void,
+    signal?: AbortSignal,
   ) {
+    signal?.throwIfAborted();
     const retained = completeMarketplaceListingHistoryRef.current;
     if (
       !fresh &&
@@ -22434,16 +22465,23 @@ export default function App() {
       return retained;
     }
 
-    let request = completeMarketplaceListingHistoryInFlightRef.current;
+    // Caller-bound requests cannot share another caller's cancellation lifetime.
+    let request = signal || fresh
+      ? null
+      : completeMarketplaceListingHistoryInFlightRef.current;
     if (!request) {
       request = fetchCompleteTokenListings("livenet", {
         fresh,
         onVerifiedPage,
+        signal,
       });
-      completeMarketplaceListingHistoryInFlightRef.current = request;
+      if (!signal && !fresh) {
+        completeMarketplaceListingHistoryInFlightRef.current = request;
+      }
     }
     try {
       const history = await request;
+      signal?.throwIfAborted();
       if (!completeTokenListingHistoryMatchesState(history, state)) {
         throw new Error(
           "The complete sale-ticket book is awaiting the exact indexed summary snapshot.",
@@ -22462,11 +22500,13 @@ export default function App() {
     state: PowTokenState,
     fresh = false,
     onVerifiedPage?: (progress: TokenListingHistoryProgress) => void,
+    signal?: AbortSignal,
   ) {
     const history = await currentCompleteGlobalTokenListings(
       state,
       fresh,
       onVerifiedPage,
+      signal,
     );
     if (!completeTokenListingHistoryMatchesState(history, state)) {
       throw new Error(
@@ -24862,34 +24902,60 @@ export default function App() {
     tokenScope: string,
     state: PowTokenState,
     fresh = false,
+    callerSignal?: AbortSignal,
   ) {
-    const listingPages = (
-      await currentCompleteGlobalTokenListings(state, fresh)
-    ).items;
+    const controller = new AbortController();
+    const signal = AbortSignal.any([
+      controller.signal,
+      AbortSignal.timeout(120_000),
+      ...(callerSignal ? [callerSignal] : []),
+    ]);
+    const workspace = activeWorkspaceStatusKeyRef.current;
+    const abortObsoleteContext = () => {
+      if (activeWorkspaceStatusKeyRef.current !== workspace ||
+          marketplaceReadContextRef.current !== `livenet:${walletAddress}`) {
+        controller.abort(new DOMException("Wallet listing context changed.", "AbortError"));
+      }
+    };
+    const scopeWatch = setInterval(abortObsoleteContext, 100);
+    try {
+      abortObsoleteContext();
+      signal.throwIfAborted();
+      const listingPages = (
+        await currentCompleteGlobalTokenListings(state, fresh, undefined, signal)
+      ).items;
 
-    const pendingSeals = await fetchPendingTokenListingSealsForAddress(
-      walletAddress,
-      "livenet",
-    ).catch(() => []);
+      abortObsoleteContext();
+      signal.throwIfAborted();
+      const pendingSeals = await fetchPendingTokenListingSealsForAddress(
+        walletAddress,
+        "livenet",
+        signal,
+      ).catch(() => []);
 
-    if (pendingSeals.length > 0) {
-      savePendingTokenListingSeals([
-        ...loadPendingTokenListingSeals(),
-        ...pendingSeals,
-      ]);
-    }
+      abortObsoleteContext();
+      signal.throwIfAborted();
+      if (pendingSeals.length > 0) {
+        savePendingTokenListingSeals([
+          ...loadPendingTokenListingSeals(),
+          ...pendingSeals,
+        ]);
+      }
 
-    return reconcileTokenListingSealStatuses(
-      applyPendingTokenListingSeals(
-        listingPages.filter(
-          (listing) =>
-            listing.network === "livenet" &&
-            listing.tokenId === tokenScope &&
-            listing.sellerAddress === walletAddress &&
-            !tokenListingIsExpired(listing),
+      return reconcileTokenListingSealStatuses(
+        applyPendingTokenListingSeals(
+          listingPages.filter(
+            (listing) =>
+              listing.network === "livenet" &&
+              listing.tokenId === tokenScope &&
+              listing.sellerAddress === walletAddress &&
+              !tokenListingIsExpired(listing),
+          ),
         ),
-      ),
-    );
+      );
+    } finally {
+      clearInterval(scopeWatch);
+    }
   }
 
   useEffect(() => {
@@ -24903,6 +24969,7 @@ export default function App() {
     }
 
     let cancelled = false;
+    const controller = new AbortController();
     const walletAddress = address;
     const tokenScope = walletTransferToken.tokenId;
 
@@ -24917,6 +24984,8 @@ export default function App() {
         walletAddress,
         tokenScope,
         state,
+        false,
+        controller.signal,
       );
       if (cancelled) {
         return;
@@ -24937,6 +25006,7 @@ export default function App() {
 
     return () => {
       cancelled = true;
+      controller.abort();
     };
   }, [
     activeFolder,
@@ -26470,7 +26540,7 @@ export default function App() {
   }, [landingMode, network]);
 
   useEffect(() => {
-    if (!marketplaceMode) {
+    if (!marketplaceMode && activeFolder !== "marketplace") {
       return;
     }
 
@@ -26479,8 +26549,13 @@ export default function App() {
       return;
     }
 
-    void refreshMarketplaceSummary(true, false);
     void refreshDns(true, false);
+  }, [activeFolder, marketplaceMode, network]);
+
+  useEffect(() => {
+    if (marketplaceMode && network === "livenet") {
+      void refreshMarketplaceSummary(true, false);
+    }
   }, [marketplaceMode, network]);
 
   useEffect(() => {
@@ -28018,25 +28093,46 @@ export default function App() {
   }
 
   async function fetchCompleteMarketplaceSnapshot(fresh: boolean) {
-    // Restart every page from a new exact-tip summary if the index advances.
-    // No partial page is published as searchable market inventory.
-    for (let attempt = 0; attempt < 3; attempt += 1) {
-      try {
-        const freshRead = fresh || attempt > 0;
-        if (attempt > 0) {
-          await new Promise((resolve) => setTimeout(resolve, attempt * 150));
-        }
-        const snapshot = await fetchMarketplaceSummary(freshRead);
-        const token = await tokenStateWithCurrentCompleteMarketplaceListings(
-          snapshot.token,
-          freshRead,
-        );
-        return { ...snapshot, token };
-      } catch (error) {
-        if (attempt === 2) throw error;
+    const controller = new AbortController();
+    const scope = `${activeWorkspaceStatusKeyRef.current}:${network}:${address}`;
+    const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(120_000)]);
+    const abortObsoleteContext = () => {
+      if (`${activeWorkspaceStatusKeyRef.current}:${marketplaceReadContextRef.current}` !== scope) {
+        controller.abort(new DOMException("AMO workspace changed.", "AbortError"));
       }
+    };
+    const scopeWatch = setInterval(abortObsoleteContext, 100);
+    try {
+      // Restart every page from a new exact-tip summary if the index advances.
+      // No partial page is published as searchable market inventory.
+      for (let attempt = 0; attempt < 2; attempt += 1) {
+        try {
+          const freshRead = fresh || attempt > 0;
+          if (attempt > 0) {
+            await new Promise((resolve) => setTimeout(resolve, attempt * 150));
+          }
+          abortObsoleteContext();
+          signal.throwIfAborted();
+          const snapshot = await fetchMarketplaceSummary(freshRead, signal);
+          abortObsoleteContext();
+          signal.throwIfAborted();
+          const token = await tokenStateWithCurrentCompleteMarketplaceListings(
+            snapshot.token,
+            freshRead,
+            undefined,
+            signal,
+          );
+          abortObsoleteContext();
+          signal.throwIfAborted();
+          return { ...snapshot, token };
+        } catch (error) {
+          if (signal.aborted || attempt === 1) throw error;
+        }
+      }
+      throw new Error("The complete AMO inventory could not be verified.");
+    } finally {
+      clearInterval(scopeWatch);
     }
-    throw new Error("The complete AMO inventory could not be verified.");
   }
 
   async function refreshMarketplaceSummary(
@@ -35772,6 +35868,7 @@ export default function App() {
           )}
           registryAddress={registryAddressForNetwork("livenet")}
           publishDnsListing={publishDnsListing}
+          dnsRegistryReadStatus={dnsRegistryReadStatus}
           dnsRegistryAddress={dnsRegistryAddressForNetwork("livenet")}
           dnsRegistryListings={dnsListings.filter(
             (listing) => listing.network === "livenet",
@@ -36861,6 +36958,7 @@ export default function App() {
             dnsPendingEvents={dnsPendingEvents}
             publishListing={publishIdListing}
             publishDnsListing={publishDnsListing}
+            dnsRegistryReadStatus={dnsRegistryReadStatus}
             dnsRegistryAddress={dnsRegistryAddress}
             dnsRegistryListings={dnsListings}
             dnsRegistryRecords={dnsRegistry}
@@ -54309,6 +54407,7 @@ function MarketplaceApp({
   dnsPendingEvents,
   publishListing,
   publishDnsListing,
+  dnsRegistryReadStatus,
   dnsRegistryAddress,
   dnsRegistryListings,
   dnsRegistryRecords,
@@ -54399,6 +54498,7 @@ function MarketplaceApp({
   dnsPendingEvents: PowIdPendingEvent[];
   publishListing: () => void;
   publishDnsListing: () => void;
+  dnsRegistryReadStatus: RegistryReadStatus;
   dnsRegistryAddress: string;
   dnsRegistryListings: PowIdListing[];
   dnsRegistryRecords: PowIdRecord[];
@@ -54755,6 +54855,10 @@ function MarketplaceApp({
                 <span>Pending Sales</span>
               </div>
             </div>
+          ) : marketplaceTab === "dns" && dnsRegistryReadStatus !== "ready" ? (
+            <div className="id-launch-stats" aria-label="DNS AMO stats">
+              <div><strong>—</strong><span>DNS registry awaiting verification</span></div>
+            </div>
           ) : marketplaceTab === "dns" ? (
             <div className="id-launch-stats" aria-label="DNS AMO stats">
               <div>
@@ -54885,7 +54989,7 @@ function MarketplaceApp({
           active={marketplaceTab}
           bondCount={listingBookComplete ? bondListings.length : undefined}
           boostCount={boostListings.length > 0 || (!boostMarketLoading && !boostMarketError) ? boostListings.length : undefined}
-          dnsCount={dnsRegistryListings.length}
+          dnsCount={dnsRegistryReadStatus === "ready" ? dnsRegistryListings.length : undefined}
           idCount={marketplaceSummaryVerified ? registryListings.length : undefined}
           onChange={setMarketplaceTab}
           tokenCount={marketplaceSummaryVerified ? creditTokens.length : undefined}
@@ -55045,6 +55149,12 @@ function MarketplaceApp({
             />
           </section>
         </div>
+        ) : marketplaceTab === "dns" && dnsRegistryReadStatus !== "ready" ? (
+          <section className="id-card" role="status">
+            <h3>DNS {dnsRegistryReadStatus === "loading" ? "loading" : "unavailable"}</h3>
+            <p>DNS names and sale tickets require a verified DNS registry. Refresh to retry.</p>
+            <button type="button" disabled={busy} onClick={onRefreshDns}>Refresh DNS</button>
+          </section>
         ) : marketplaceTab === "dns" ? (
         <div className="ids-content marketplace-content">
           <section className="id-card">
@@ -55312,6 +55422,7 @@ function MarketplaceWorkspace({
   dnsPendingEvents,
   publishListing,
   publishDnsListing,
+  dnsRegistryReadStatus,
   dnsRegistryAddress,
   dnsRegistryListings,
   dnsRegistryRecords,
@@ -55398,6 +55509,7 @@ function MarketplaceWorkspace({
   dnsPendingEvents: PowIdPendingEvent[];
   publishListing: () => void;
   publishDnsListing: () => void;
+  dnsRegistryReadStatus: RegistryReadStatus;
   dnsRegistryAddress: string;
   dnsRegistryListings: PowIdListing[];
   dnsRegistryRecords: PowIdRecord[];
@@ -55613,7 +55725,7 @@ function MarketplaceWorkspace({
             {!marketplaceSummaryVerified
               ? `Canonical AMO summary ${marketplaceSummaryReadState.status === "unavailable" ? "unavailable" : "loading"}`
               : registryAddress
-              ? `${networkListings.length.toLocaleString()} ID listings · ${networkDnsListings.length.toLocaleString()} DNS listings · ${networkTokenCount.toLocaleString()} credits · ${bondListings.length.toLocaleString()} bond tickets · ${boostListings.length.toLocaleString()} Boost listings`
+              ? `${networkListings.length.toLocaleString()} ID listings · ${dnsRegistryReadStatus === "ready" ? networkDnsListings.length.toLocaleString() : "unavailable"} DNS listings · ${networkTokenCount.toLocaleString()} credits · ${bondListings.length.toLocaleString()} bond tickets · ${boostListings.length.toLocaleString()} Boost listings`
               : `No AMO registry configured for ${networkLabel(network)}`}
           </span>
         </div>
@@ -55640,7 +55752,7 @@ function MarketplaceWorkspace({
         active={marketplaceTab}
         bondCount={listingBookComplete ? bondListings.length : undefined}
         boostCount={boostListings.length > 0 || (!boostMarketLoading && !boostMarketError) ? boostListings.length : undefined}
-        dnsCount={networkDnsListings.length}
+        dnsCount={dnsRegistryReadStatus === "ready" ? networkDnsListings.length : undefined}
         idCount={marketplaceSummaryVerified ? networkListings.length : undefined}
         onChange={setMarketplaceTab}
         tokenCount={marketplaceSummaryVerified ? networkTokenCount : undefined}
@@ -55850,7 +55962,13 @@ function MarketplaceWorkspace({
         </section>
       </div>
         </>
-      ) : marketplaceTab === "dns" ? (
+      ) : marketplaceTab === "dns" && dnsRegistryReadStatus !== "ready" ? (
+          <section className="id-card" role="status">
+            <h3>DNS {dnsRegistryReadStatus === "loading" ? "loading" : "unavailable"}</h3>
+            <p>DNS names and sale tickets require a verified DNS registry. Refresh to retry.</p>
+            <button type="button" disabled={busy} onClick={onRefreshDns}>Refresh DNS</button>
+          </section>
+        ) : marketplaceTab === "dns" ? (
         <>
       <div
         className="id-launch-stats marketplace-workspace-stats"

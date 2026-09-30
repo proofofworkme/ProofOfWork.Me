@@ -154,6 +154,9 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--apply', action='store_true')
     options = parser.parse_args()
+    hold = Path('/etc/proofofwork-retention/audit28.hold')
+    if options.apply and (hold.exists() or hold.is_symlink()):
+        raise ValueError('Persistent audit28 retention hold: exact manifest approval required')
     if os.geteuid() != 0:
         raise ValueError('Production retention requires root')
     www = Path('/var/www')

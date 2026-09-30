@@ -88,6 +88,13 @@ payments, attached WORK value, or Files bytes. Observed companion Mail/WORK
 attribution is explanatory and adds no second canonical value. A future
 economic change is only a [draft proposal](BOOST_GROWTH_ACCOUNTING_PROPOSAL.md).
 
+Boost's shared standalone/Computer detail view loads replies and engagement by
+transaction ID rather than searching a visible feed page. Likes/reboosts and
+reply evidence remain inspectable through confirmed IDs, address fallbacks and
+TX links. Profile connection counts open Followers/Following lists with profile
+navigation and a Back control. These are confirmed social projections, not
+mailbox or Contacts state; inspecting them does not initiate a paid action.
+
 ## Core Idea
 
 Messages written to ProofOfWork are permanent. The app should not pretend users can delete them from the chain.

@@ -28,7 +28,7 @@ case "${root}:${keep}" in
     ui_manifest="${POW_RELEASE_UI_MANIFEST:-/var/www/.proofofwork-ui-release}"
     ui_rollback_root="${POW_RELEASE_UI_ROLLBACK_ROOT:-/var/backups/proofofwork-ui/rollback-roots}"
     ;;
-  /data/proofofwork-release-backups/managed:2 | /data/proofofwork-release-backups/managed:3)
+  /data/proofofwork-release-backups/managed:3)
     release_kind="node"
     node_checkout="${POW_RELEASE_NODE_CHECKOUT:-/opt/proofofwork-api}"
     ;;

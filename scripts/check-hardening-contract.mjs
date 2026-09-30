@@ -589,7 +589,7 @@ assert.match(summaryRouteHealthTimer, /^Persistent=true$/mu);
 assert.match(summaryRouteHealth, /WORK_AMO_V8_DECLARATION_TXID/u);
 assert.match(summaryRouteHealth, /activeInvariantFailures/u);
 assert.match(summaryRouteHealth, /staleReadiness/u);
-assert.match(summaryRouteHealth, /route-latency-slow-correct/u);
+assert.match(summaryRouteHealth, /route-latency-warning/u);
 assert.match(postgresBasebackupTimer, /Persistent=true/u);
 assert.match(
   releasePrune,

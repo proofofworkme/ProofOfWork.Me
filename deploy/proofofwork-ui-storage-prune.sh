@@ -10,6 +10,12 @@ case "${mode}" in
     ;;
 esac
 
+# Persistent audit hold blocks destructive retention, including manual invocations.
+if [[ "${mode}" == --apply && ( -e /etc/proofofwork-retention/audit28.hold || -L /etc/proofofwork-retention/audit28.hold ) ]]; then
+  echo 'Retention blocked by /etc/proofofwork-retention/audit28.hold; exact manifest approval required.' >&2
+  exit 78
+fi
+
 www_root="${POW_UI_WWW_ROOT:-/var/www}"
 var_tmp_root="${POW_UI_VAR_TMP_ROOT:-/var/tmp}"
 if [[ "${www_root}" != "/var/www" || "${var_tmp_root}" != "/var/tmp" ]] &&

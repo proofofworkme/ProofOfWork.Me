@@ -586,6 +586,15 @@ DNS sale tickets use `pwdns-sale-v1`; no DNS event includes a PGP key.
 
 ## Boost Protocol
 
+Boost details load confirmed replies, likes and reboosts by transaction ID,
+independently of timeline/profile filters or the currently loaded feed page.
+Activity tabs expose each actor's confirmed ID or address and the action TX;
+reply cards retain the shared Boost controls. Viewing activity is read-only and
+separate from the existing paid signing flows. Profile Following/Followers
+counts open a connections view with switchable tabs, profile links, relationship
+status, follow evidence and Back to profile. Both standalone Boost and the
+Computer workspace use these shared reads and views.
+
 Boost is a separate ProofOfWork social meta protocol, not a change to the canonical `pwid1:` registry. The public Boost surface at `boost.proofofwork.me` reads confirmed `pwb1:` records, ranks visible posts by attached proof/WORK signal or time, and exposes profile pages for addresses and ProofOfWork IDs.
 
 Event shape:

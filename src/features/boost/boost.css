@@ -1191,3 +1191,19 @@
 .boost-image-crop-banner { width: 100%; aspect-ratio: 3 / 1; }
 .boost-image-preview label { display: grid; gap: 6px; margin-block: 12px; }
 .boost-image-fee { min-width: 0; margin: 16px 0; padding: 12px; border: 1px solid var(--border); border-radius: 8px; }
+
+.boost-profile-stats button { min-height: 44px; background: transparent; border: 0; color: inherit; padding: 0 8px 0 0; }
+.boost-profile-stats button:hover { text-decoration: underline; }
+.boost-person-row { display: flex; align-items: flex-start; gap: 12px; padding: 16px; border-bottom: 1px solid var(--border); min-width: 0; }
+.boost-person-avatar { flex: 0 0 40px; }
+.boost-person-copy { display: grid; gap: 5px; flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.boost-person-copy > span { color: var(--text-muted); font-size: .85rem; }
+.boost-person-copy details { font-size: .8rem; }
+.boost-person-copy details[open] { display: grid; gap: 8px; }
+.boost-person-address { font-family: var(--font-mono); overflow-wrap: anywhere; }
+.boost-thread-reply { border-left: 2px solid var(--border); padding-left: 12px; }
+.boost-connections .boost-profile-titlebar > div { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.boost-connections .boost-profile-titlebar p { margin: 4px 0; color: var(--text-muted); }
+.boost-person-copy > a:first-child { color: var(--text); text-decoration: none; }
+.boost-person-copy > a:first-child:hover { text-decoration: underline; }
+.boost-person-copy > a:last-child { color: var(--accent); }

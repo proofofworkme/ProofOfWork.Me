@@ -1568,3 +1568,43 @@ for (const rate of ["0.35", "0.45", "0.12345678"]) {
     expect(await fee.evaluate(el => el.checkValidity())).toBe(false);
   });
 }
+
+
+for (const route of ["/?marketplace=1", "/?folder=marketplace"]) {
+  test(`DNS AMO loads independently and never reports an unverified empty registry: ${route}`, async ({ page }) => {
+    await installApiFixtures(page);
+    let release;
+    const gate = new Promise(resolve => { release = resolve; });
+    let dnsReads = 0;
+    let dnsFailed = true;
+    let dnsMalformed = false;
+    await page.route("**/api/v1/dns*", async request => {
+      dnsReads++;
+      await gate;
+      await request.fulfill({ status: dnsFailed ? 503 : 200, contentType: "application/json",
+        body: JSON.stringify(dnsFailed ? {error:"DNS temporarily unavailable"} : dnsMalformed ? {records:[],listings:[]} : {
+          records: [], listings: [], pendingEvents: [], activity: [], sales: [],
+          coverage: {complete:true}, checkpointHash: HASH, indexedThroughBlock:960220, indexedAt:NOW,
+        }) });
+    });
+    await page.goto(route);
+    const tabs = page.getByLabel("AMO asset tabs");
+    await tabs.getByRole("button", { name: /^DNS/ }).click();
+    await expect(page.getByRole("heading", { name: "DNS loading", exact: true })).toBeVisible();
+    await expect(tabs.getByRole("button", { name: /^DNS/ })).toContainText("—");
+    await expect(page.getByText("No confirmed DNS records found yet.", {exact:true})).toHaveCount(0);
+    expect(dnsReads).toBeGreaterThan(0);
+    release();
+    await expect(page.getByRole("heading", { name: "DNS unavailable", exact: true })).toBeVisible();
+    await expect(page.getByText("No confirmed DNS records found yet.", {exact:true})).toHaveCount(0);
+    dnsFailed = false;
+    dnsMalformed = true;
+    await page.getByRole("button", {name:"Refresh DNS",exact:true}).click();
+    await expect(page.getByRole("heading", { name: "DNS unavailable", exact: true })).toBeVisible();
+    await expect(page.getByText("No confirmed DNS records found yet.", {exact:true})).toHaveCount(0);
+    dnsMalformed = false;
+    await page.getByRole("button", {name:"Refresh DNS",exact:true}).click();
+    await expect(page.getByText("No confirmed DNS records found yet.", {exact:true})).toBeVisible();
+    await expect(tabs.getByRole("button", {name:/^DNS/})).toContainText("0");
+  });
+}

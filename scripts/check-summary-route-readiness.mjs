@@ -49,6 +49,7 @@ async function fetchJson(label, url) {
       url: url.toString(),
       status: response.status,
       ok: response.ok,
+      payloadBytes: Buffer.byteLength(text, "utf8"),
       elapsedMs: Math.round(performance.now() - startedAt),
       payload,
     };
@@ -58,6 +59,7 @@ async function fetchJson(label, url) {
       url: url.toString(),
       status: response?.status ?? 0,
       ok: false,
+      payloadBytes: Buffer.byteLength(text, "utf8"),
       elapsedMs: Math.round(performance.now() - startedAt),
       error: error instanceof Error ? error.message : String(error),
       bodyPrefix: text.slice(0, 200),
@@ -267,6 +269,7 @@ function routeSummary(fetchResult, nestedKey) {
     status: fetchResult.status,
     ok: fetchResult.ok,
     elapsedMs: fetchResult.elapsedMs,
+    payloadBytes: fetchResult.payloadBytes,
     checkpoint: checkpointFromPayload(fetchResult.payload, nestedKey),
     workAmoV8: v8Summary(workAmoV8FromPayload(fetchResult.payload)),
     error: asString(fetchResult.payload?.error) ?? asString(fetchResult.error),
@@ -304,7 +307,7 @@ function pushLatencyIssues(issues, measurements) {
       issues.push(
         compactIssue(
           "warning",
-          "route-latency-slow-correct",
+          "route-latency-warning",
           `${measurement.label} exceeded warning latency threshold`,
           { elapsedMs: measurement.elapsedMs, warnMs: WARN_MS },
         ),
@@ -586,7 +589,9 @@ async function main() {
     checkedAt: new Date().toISOString(),
     base: BASE,
     network: NETWORK,
-    ok: summary.ok,
+    // Correctness and operational latency are independent approval gates.
+    ok: summary.ok && summary.counts.latencyErrors === 0,
+    correctnessOk: summary.ok,
     thresholds: {
       timeoutMs: TIMEOUT_MS,
       warnMs: WARN_MS,
@@ -604,7 +609,7 @@ async function main() {
 
   console.log(JSON.stringify(result, null, 2));
 
-  if (!summary.ok) {
+  if (!result.ok) {
     process.exitCode = 1;
   }
 }

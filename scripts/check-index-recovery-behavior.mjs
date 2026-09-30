@@ -1,3 +1,4 @@
+import { canonicalSealTime } from "../server/canonical-seal-time.mjs";
 import { REVIEWED_INCB_REPLAY_BASELINE, reviewedIncbReplayBaselineEvidence, reviewedIncbReplayBaselineFromEvidence } from "../server/incb-replay-baseline.mjs";
 import { SCOPED_INCB_ORACLE_PIN, scopedIncbOracleProjectionRows, storedScopedIncbOracle, canonicalSummarySnapshotIdOutsideScopedOracle } from "../server/incb-scoped-oracle.mjs";
 import { canonicalIncbReplayComponents } from "../server/incb-replay-components.mjs";
@@ -1266,6 +1267,7 @@ function isolatedFunction(path, name, globals = {}) {
       : "";
   };
   const context = vm.createContext({
+    canonicalSealTime,
     Buffer,
     createHash,
     URLSearchParams,
@@ -56223,6 +56225,7 @@ check("terminal credit listings preserve canonical sale chronology across mainte
       listing_id: listingId,
       payload: { saleAuthorization: {} },
       seal_txid: "b".repeat(64),
+      seal_transaction_block_time: "2026-06-25T12:00:00Z",
       status: "sealing",
       token_id: "fixture-token",
       updated_at: migrationUpdatedAt,
@@ -56230,7 +56233,13 @@ check("terminal credit listings preserve canonical sale chronology across mainte
     "livenet",
   );
   assert.equal(active.createdAt, migrationUpdatedAt);
-  assert.equal(active.sealAt, migrationUpdatedAt);
+  assert.equal(active.sealAt, "2026-06-25T12:00:00.000Z");
+  const missingSealTime = tokenListingFromCreditListingRow({
+    listing_id: listingId, seal_txid: "b".repeat(64), status: "sealing",
+    token_id: "fixture-token", updated_at: migrationUpdatedAt,
+    payload: { saleAuthorization: {}, sealAt: migrationUpdatedAt },
+  }, "livenet");
+  assert.equal(missingSealTime.sealAt, undefined);
 
   const mergeCanonicalTokenSaleRecord = isolatedFunction(
     READER_PATH,

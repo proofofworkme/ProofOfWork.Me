@@ -54000,6 +54000,7 @@ function boostOwnershipState(items, verifiedClosures = new Set(), network = "liv
     actionOwners,
     followersByTarget,
     followingByFollower,
+    followStates,
     profiles,
     states,
   };
@@ -54558,6 +54559,15 @@ async function boostCanonicalMarketTransaction(network, item) {
 }
 
 async function boostFeedPayload(network, searchParams, fresh = false) {
+  const detail = String(searchParams.get("detail") ?? "").trim().toLowerCase();
+  const connections = searchParams.get("connections") ?? "";
+  const activity = searchParams.get("activity") ?? "replies";
+  if ((detail && !/^[0-9a-f]{64}$/u.test(detail)) ||
+      (connections && !["followers", "following"].includes(connections)) ||
+      (detail && !["replies", "likes", "reboosts"].includes(activity)) ||
+      (connections && (!searchParams.get("profile") || detail || searchParams.has("listings")))) {
+    throw boostProjectionError("Invalid Boost detail or connections query.", 400);
+  }
   const listingsOnly = /^(?:1|true)$/iu.test(searchParams.get("listings") ?? "");
   const cursor = decodeBoostFeedCursor(searchParams.get("cursor"));
   const sort = boostSortMode(searchParams);
@@ -54565,7 +54575,7 @@ async function boostFeedPayload(network, searchParams, fresh = false) {
   const profileTab = boostProfileTab(searchParams);
   const valueWindow = listingsOnly ? "all" : boostValueWindow(searchParams);
   const limit = boundedInteger(searchParams.get("limit"), 50, 1, 100);
-  const includePending = !listingsOnly && /^(?:1|true|yes)$/iu.test(
+  const includePending = !detail && !connections && !listingsOnly && /^(?:1|true|yes)$/iu.test(
     String(searchParams.get("pending") ?? ""),
   );
   const profile = listingsOnly ? "" : String(searchParams.get("profile") ?? "").trim();
@@ -54605,7 +54615,7 @@ async function boostFeedPayload(network, searchParams, fresh = false) {
     registryHistory?.items ?? [],
     rawOwnership.actionOwners,
   );
-  const needsIdentities = boostHasIdentityClaims(qualification.accepted) || (profile && !boostLooksLikeAddress(profile));
+  const needsIdentities = Boolean(detail || connections) || boostHasIdentityClaims(qualification.accepted) || (profile && !boostLooksLikeAddress(profile));
   const identityQualification = needsIdentities ? qualifyBoostIdentityClaims(
     qualification.accepted,
     await proofIndexRegistryPayload(network, {
@@ -54623,7 +54633,7 @@ async function boostFeedPayload(network, searchParams, fresh = false) {
     ownersSha256: boostProjectionFingerprint([...identityQualification.owners].sort(([a], [b]) => compareCanonicalUtf8(a, b))),
   } : null;
   const sourceItems = identityQualification.items;
-  const usesWorkValuation = sourceItems.some((item) => Boolean(boostWorkSignalSubatoms(item)));
+  const usesWorkValuation = !connections && sourceItems.some((item) => Boolean(boostWorkSignalSubatoms(item)));
 
   const [quote, workFloor] = network === "livenet"
     ? await Promise.all([
@@ -54645,6 +54655,7 @@ async function boostFeedPayload(network, searchParams, fresh = false) {
     counts,
     followersByTarget,
     followingByFollower,
+    followStates,
     profiles,
     states,
   } = boostOwnershipState(sourceItems, rawVerifiedClosures, network);
@@ -54669,6 +54680,93 @@ async function boostFeedPayload(network, searchParams, fresh = false) {
     viewerFollowing,
     identityQualification.owners,
   );
+  const toFeedEntry = (item) => {
+    const originalPost = boostOriginalPostForReboost(item, originalPostsByTxid);
+    const originalProfileState = originalPost
+      ? profiles.get(boostAddress(originalPost?.authorAddress ?? originalPost?.actor))
+      : null;
+    const quotedPost = boostQuoteTxid(item)
+      ? originalPostsByTxid.get(boostQuoteTxid(item)) ?? null
+      : null;
+    const quotedPostProfileState = quotedPost
+      ? profiles.get(boostAddress(quotedPost?.authorAddress ?? quotedPost?.actor))
+      : null;
+    const feedItem = boostFeedItemWithGraph(
+      boostFeedItemFromEvent(
+        item,
+        states.get(boostPostTxid(item)),
+        profiles.get(
+          boostAddress(item?.authorAddress ?? item?.actor),
+        ),
+        counts,
+        network,
+        btcUsd,
+        workFloor,
+        originalPost,
+        originalPost ? states.get(boostPostTxid(originalPost)) : null,
+        originalProfileState,
+        quotedPost,
+        quotedPost ? states.get(boostPostTxid(quotedPost)) : null,
+        quotedPostProfileState,
+      ),
+      item,
+      followersByTarget,
+      followingByFollower,
+      viewerFollowing,
+      viewerActions,
+    );
+    return feedItem ? { feedItem, sourceItem: item } : null;
+  };
+  const provenance = { ...indexedPayload.provenance, applicationRejectedEvents: qualification.rejected,
+    applicationRejectedIdentityClaims: identityQualification.rejected, identityRegistry: identityProvenance,
+    registryHistory: registryHistory?.provenance ?? null };
+  if (detail || connections) {
+    const idsByAddress = new Map();
+    for (const [id, owner] of [...identityQualification.owners].sort(([a], [b]) => compareCanonicalUtf8(a, b))) {
+      const key = boostAddress(owner);
+      if (!idsByAddress.has(key)) idsByAddress.set(key, id);
+    }
+    const person = (address) => {
+      const key = boostAddress(address), profile = profiles.get(key);
+      const id = profile?.id || idsByAddress.get(key) || undefined;
+      return { address: key, id, displayName: profile?.name || (id ? `${id}@proofofwork.me` : key),
+        profile, viewerFollowsProfile: viewerFollowing.has(key),
+        followsViewer: Boolean(viewerKey && followingByFollower.get(key)?.has(viewerKey)) };
+    };
+    let post;
+    let rows;
+    if (detail) {
+      const record = sourceItems.find(item => boostHexTxid(item.txid) === detail &&
+        BOOST_VISIBLE_EVENT_KINDS.has(item.kind) && item.confirmed === true);
+      if (!record) throw boostProjectionError("Confirmed Boost record is unavailable.", 404);
+      post = toFeedEntry(record)?.feedItem;
+      const activityTarget = record.kind === "boost-reboost" ? boostTargetTxid(record) : detail;
+      const kind = { replies: "boost-reply", likes: "boost-like", reboosts: "boost-reboost" }[activity];
+      rows = sourceItems.filter(item => item.confirmed === true && item.kind === kind && boostTargetTxid(item) === activityTarget)
+        .sort(compareBoostCanonicalEvents).map(item => ({ ...person(item.authorAddress ?? item.actor),
+          eventId: item.eventId, txid: item.txid, createdAt: item.createdAt, confirmed: true, kind: item.kind,
+          ...(activity === "replies" ? { post: { ...toFeedEntry(item)?.feedItem,
+            authorId: person(item.authorAddress ?? item.actor).id || undefined } } : {}) }));
+    } else {
+      const subject = boostAddress(profileSubject?.address);
+      const members = connections === "followers" ? followersByTarget.get(subject) : followingByFollower.get(subject);
+      rows = [...(members ?? [])].sort(compareCanonicalUtf8).map(address => {
+        const follower = connections === "followers" ? address : subject;
+        const target = connections === "followers" ? subject : address;
+        const edge = followStates.get(follower)?.get(target);
+        return { ...person(address), txid: edge.txid, createdAt: edge.updatedAt, confirmed: true, kind: "boost-follow" };
+      });
+    }
+    const fingerprint = boostProjectionFingerprint({ provenance, detail, connections, activity,
+      profile, viewerAddress, rows, post });
+    const page = paginateBoostEntries(rows, { limit, cursor, fingerprint, snapshotId: indexedPayload.snapshotId });
+    return { ...page, complete: true, provenance, snapshotId: indexedPayload.snapshotId,
+      indexedThroughBlock: indexedPayload.indexedThroughBlock, indexedThroughBlockHash: indexedPayload.indexedThroughBlockHash,
+      indexedAt: indexedPayload.indexedAt, network, mode: detail ? "detail" : "connections",
+      totalCount: rows.length, post, activity: detail ? activity : undefined,
+      connections: connections || undefined, profileSubject: connections ? { ...person(profileSubject.address), query: profile,
+        followerCount: profileSubject.followerCount, followingCount: profileSubject.followingCount } : undefined };
+  }
   const entries = sourceItems
     .filter((item) => {
       const kind = String(item?.kind ?? "").trim().toLowerCase();
@@ -54714,43 +54812,7 @@ async function boostFeedPayload(network, searchParams, fresh = false) {
       ].join(" ");
       return listingsOnly || !query || searchText.includes(query);
     })
-    .map((item) => {
-      const originalPost = boostOriginalPostForReboost(item, originalPostsByTxid);
-      const originalProfileState = originalPost
-        ? profiles.get(boostAddress(originalPost?.authorAddress ?? originalPost?.actor))
-        : null;
-      const quotedPost = boostQuoteTxid(item)
-        ? originalPostsByTxid.get(boostQuoteTxid(item)) ?? null
-        : null;
-      const quotedPostProfileState = quotedPost
-        ? profiles.get(boostAddress(quotedPost?.authorAddress ?? quotedPost?.actor))
-        : null;
-      const feedItem = boostFeedItemWithGraph(
-        boostFeedItemFromEvent(
-          item,
-          states.get(boostPostTxid(item)),
-          profiles.get(
-            boostAddress(item?.authorAddress ?? item?.actor),
-          ),
-          counts,
-          network,
-          btcUsd,
-          workFloor,
-          originalPost,
-          originalPost ? states.get(boostPostTxid(originalPost)) : null,
-          originalProfileState,
-          quotedPost,
-          quotedPost ? states.get(boostPostTxid(quotedPost)) : null,
-          quotedPostProfileState,
-        ),
-        item,
-        followersByTarget,
-        followingByFollower,
-        viewerFollowing,
-        viewerActions,
-      );
-      return feedItem ? { feedItem, sourceItem: item } : null;
-    })
+    .map(toFeedEntry)
     .filter(Boolean);
 
   const profileTabs = profileSubject

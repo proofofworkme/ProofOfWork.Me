@@ -1,0 +1,11 @@
+[Unit]
+Description=Check persistent ProofOfWork retention protection every five minutes
+
+[Timer]
+OnCalendar=*:0/5
+RandomizedDelaySec=30s
+Persistent=true
+Unit=proofofwork-retention-protection.service
+
+[Install]
+WantedBy=timers.target

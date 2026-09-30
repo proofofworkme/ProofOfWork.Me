@@ -1,3 +1,4 @@
+import { canonicalSealTime } from "../canonical-seal-time.mjs";
 import {
   SCOPED_INCB_ORACLE_PIN, scopedIncbOracleProjectionRows,
   scopedIncbOracleLedgerPayload, storedScopedIncbOracle,
@@ -15907,6 +15908,7 @@ function canonicalTokenListingSealEventJoinSql(listingAlias = "cl") {
       canonical_seal_event_row.status AS seal_event_status,
       canonical_seal_event_row.txid AS seal_event_txid,
       canonical_seal_tx.block_hash AS seal_event_block_hash,
+      canonical_seal_tx.block_time AS seal_event_block_time,
       canonical_seal_event_row.block_height AS seal_event_block_height,
       canonical_seal_event_row.block_index AS seal_event_block_index,
       canonical_seal_event_row.op_return_vout AS seal_event_protocol_vout,
@@ -18100,12 +18102,14 @@ function tokenHistoryCanonicalMarketEventsSql(
         canonical_seal_event.seal_event_status,
         canonical_seal_event.seal_event_txid,
         canonical_seal_event.seal_event_block_hash,
+        canonical_seal_event.seal_event_block_time,
         canonical_seal_event.seal_event_block_height,
         canonical_seal_event.seal_event_block_index,
         canonical_seal_event.seal_event_protocol_vout,
         canonical_seal_event.seal_event_record_ordinal,
         canonical_seal_event.seal_event_match_count,
         seal_transaction.block_height AS seal_transaction_block_height,
+        seal_transaction.block_time AS seal_transaction_block_time,
         (e.status = 'confirmed') AS history_item_confirmed,
         ${itemTxid} AS history_item_txid,
         ${itemKindRank} AS history_item_kind_rank,
@@ -18144,6 +18148,7 @@ function tokenHistoryCanonicalMarketEventsSql(
           canonical_seal_event_row.status AS seal_event_status,
           canonical_seal_event_row.txid AS seal_event_txid,
           canonical_seal_tx.block_hash AS seal_event_block_hash,
+          canonical_seal_tx.block_time AS seal_event_block_time,
           canonical_seal_event_row.block_height AS seal_event_block_height,
           canonical_seal_event_row.block_index AS seal_event_block_index,
           canonical_seal_event_row.op_return_vout AS seal_event_protocol_vout,
@@ -20477,9 +20482,11 @@ async function exactActiveTokenListingHistoryPage(
               canonical_listing_event.listing_event_match_count,
               seal_tx.status AS seal_tx_status,
               seal_tx.block_height AS seal_transaction_block_height,
+              seal_tx.block_time AS seal_transaction_block_time,
               canonical_seal_event.seal_event_payload,
               canonical_seal_event.seal_event_status,
               canonical_seal_event.seal_event_block_hash,
+              canonical_seal_event.seal_event_block_time,
               canonical_seal_event.seal_event_block_height,
               canonical_seal_event.seal_event_block_index,
               canonical_seal_event.seal_event_protocol_vout,
@@ -29287,11 +29294,11 @@ function tokenListingFromCreditListingRow(row, network) {
   );
   const projectedSealAt = invalidConfirmedSealEvidence
     ? undefined
-    : dateIso(payload.sealAt ?? payload.sealedAt ?? row?.updated_at);
+    : canonicalSealTime(row, payload, sealConfirmed);
   const sealEvidencePatch = invalidConfirmedSealEvidence
     ? {}
     : {
-        ...(projectedSealAt ? { sealAt: projectedSealAt } : {}),
+        sealAt: projectedSealAt,
         ...(payload.sealDataBytes !== undefined
           ? { sealDataBytes: payload.sealDataBytes }
           : {}),
@@ -30125,9 +30132,11 @@ async function proofIndexTokenListingsFromTables(pool, network, scope) {
         close_tx.block_index AS close_transaction_block_index,
         seal_tx.status AS seal_tx_status,
         seal_tx.block_height AS seal_transaction_block_height,
+        seal_tx.block_time AS seal_transaction_block_time,
         canonical_seal_event.seal_event_payload,
         canonical_seal_event.seal_event_status,
         canonical_seal_event.seal_event_block_hash,
+        canonical_seal_event.seal_event_block_time,
         canonical_seal_event.seal_event_block_height,
         canonical_seal_event.seal_event_block_index,
         canonical_seal_event.seal_event_protocol_vout,
@@ -33389,9 +33398,11 @@ export async function proofIndexWalletTokenOverlayPayload(
         canonical_listing_event.listing_event_match_count,
         seal_tx.status AS seal_tx_status,
         seal_tx.block_height AS seal_transaction_block_height,
+        seal_tx.block_time AS seal_transaction_block_time,
         canonical_seal_event.seal_event_payload,
         canonical_seal_event.seal_event_status,
         canonical_seal_event.seal_event_block_hash,
+        canonical_seal_event.seal_event_block_time,
         canonical_seal_event.seal_event_block_height,
         canonical_seal_event.seal_event_block_index,
         canonical_seal_event.seal_event_protocol_vout,
@@ -33478,9 +33489,11 @@ export async function proofIndexWalletTokenOverlayPayload(
         canonical_listing_event.listing_event_match_count,
         seal_tx.status AS seal_tx_status,
         seal_tx.block_height AS seal_transaction_block_height,
+        seal_tx.block_time AS seal_transaction_block_time,
         canonical_seal_event.seal_event_payload,
         canonical_seal_event.seal_event_status,
         canonical_seal_event.seal_event_block_hash,
+        canonical_seal_event.seal_event_block_time,
         canonical_seal_event.seal_event_block_height,
         canonical_seal_event.seal_event_block_index,
         canonical_seal_event.seal_event_protocol_vout,
@@ -42421,9 +42434,11 @@ export async function proofIndexCreditListingsPayload(
         canonical_listing_event.listing_event_match_count,
         seal_tx.status AS seal_tx_status,
         seal_tx.block_height AS seal_transaction_block_height,
+        seal_tx.block_time AS seal_transaction_block_time,
         canonical_seal_event.seal_event_payload,
         canonical_seal_event.seal_event_status,
         canonical_seal_event.seal_event_block_hash,
+        canonical_seal_event.seal_event_block_time,
         canonical_seal_event.seal_event_block_height,
         canonical_seal_event.seal_event_block_index,
         canonical_seal_event.seal_event_protocol_vout,
@@ -43088,15 +43103,11 @@ export async function proofIndexCreditListingsPayload(
       }
       const projectedSealAt = invalidConfirmedSealEvidence
         ? undefined
-        : dateIso(
-            payload.sealAt ??
-              payload.sealedAt ??
-              row.updated_at,
-          );
+        : canonicalSealTime(row, payload, sealConfirmed);
       const sealEvidencePatch = invalidConfirmedSealEvidence
         ? {}
         : {
-            ...(projectedSealAt ? { sealAt: projectedSealAt } : {}),
+            sealAt: projectedSealAt,
             ...(payload.sealDataBytes !== undefined
               ? { sealDataBytes: payload.sealDataBytes }
               : {}),
