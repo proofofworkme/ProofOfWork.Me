@@ -9,8 +9,7 @@ test("reboost renders the original post instead of the target txid", async ({ pa
     if (route.request().method() !== "GET") return route.abort("blockedbyclient");
     const url = new URL(route.request().url());
     if (url.pathname === "/api/v1/boost") {
-      return route.fulfill({
-        json: {
+      const payload = {
           complete: true,
           indexedAt: "2026-09-05T07:00:00.000Z",
           network: "livenet",
@@ -69,8 +68,10 @@ test("reboost renders the original post instead of the target txid", async ({ pa
             totalSignalUsd: 0,
             workSignalSubatoms: "0",
           },
-        },
-      });
+      };
+      const detail = url.searchParams.get("detail");
+      return route.fulfill({ json: detail ? { ...payload, mode: "detail", totalCount: 0, items: [],
+        post: detail === ORIGINAL_TXID ? payload.items[0].reboostedPost : payload.items[0] } : payload });
     }
     if (url.pathname.includes("registry") || url.pathname.startsWith("/api/v1/id/")) {
       return route.fulfill({ json: { records: [], listings: [], stats: { total: 0 } } });

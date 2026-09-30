@@ -1128,3 +1128,62 @@ test("profile carrier binds images to the transaction sender and preserves clear
   assert.equal(item.profile.banner, null);
   assert.equal(item.valid, true);
 });
+
+test("transaction-scoped Boost detail exhausts history independently of profile, filters and feed pagination", async () => {
+  const events = [event(1), ...Array.from({ length: 120 }, (_, i) => event(i + 2, "boost-reply", { authorAddress: "reply-author", targetTxid: txid(1) })),
+    event(122, "boost-like", { authorAddress: "liker", targetTxid: txid(1) }),
+    event(123, "boost-reboost", { authorAddress: "rebooster", targetTxid: txid(1) }),
+    event(124, "boost-reply", { authorAddress: "pending", targetTxid: txid(1), confirmed: false, status: "pending" }),
+    event(125, "boost-like", { targetTxid: txid(1), valid: false })];
+  const api = server(reader(events).read, { proofIndexRegistryPayload: async () => identityRegistry([
+    { id: "reply-id", ownerAddress: "reply-author", confirmed: true }, { id: "liker-id", ownerAddress: "liker", confirmed: true },
+  ]) });
+  const params = new URLSearchParams({ detail: txid(1), profile: "owner", q: "no match", window: "day", pending: "1", limit: "50" });
+  const first = await api.boostFeedPayload("livenet", params);
+  assert.equal(first.mode, "detail");
+  assert.equal(first.totalCount, 120);
+  assert.equal(first.post.replyCount, 120);
+  assert.equal(first.post.likeCount, 1);
+  assert.equal(first.post.reboostCount, 1);
+  assert.equal(first.items[0].id, "reply-id");
+  assert.equal(first.items[0].post.kind, "boost-reply");
+  assert.equal(first.items[0].txid, txid(2));
+  const second = await api.boostFeedPayload("livenet", new URLSearchParams({ ...Object.fromEntries(params), cursor: first.nextCursor }));
+  const third = await api.boostFeedPayload("livenet", new URLSearchParams({ ...Object.fromEntries(params), cursor: second.nextCursor }));
+  assert.equal(new Set([...first.items, ...second.items, ...third.items].map(row => row.eventId)).size, 120);
+  assert.equal(third.hasMore, false);
+  for (const [activity, actor] of [["likes", "liker"], ["reboosts", "rebooster"]]) {
+    const result = await api.boostFeedPayload("livenet", new URLSearchParams({ detail: txid(1), activity }));
+    assert.equal(result.totalCount, 1);
+    assert.equal(result.items[0].address, actor);
+    assert.equal(result.items[0].confirmed, true);
+  }
+  await assert.rejects(api.boostFeedPayload("livenet", new URLSearchParams({ detail: txid(1), activity: "likes", cursor: first.nextCursor })), /changed/u);
+  await assert.rejects(api.boostFeedPayload("livenet", new URLSearchParams({ detail: txid(999) })), /unavailable/u);
+  await assert.rejects(api.boostFeedPayload("livenet", new URLSearchParams({ detail: "bad" })), /Invalid/u);
+});
+
+test("connection lists use latest confirmed edges and show qualified IDs, relationship flags and follow evidence", async () => {
+  const events = [event(1, "boost-follow", { authorAddress: "alice", targetAddress: "subject" }),
+    event(2, "boost-follow", { authorAddress: "bob", targetAddress: "subject" }),
+    event(3, "boost-unfollow", { authorAddress: "bob", targetAddress: "subject" }),
+    event(4, "boost-follow", { authorAddress: "pending", targetAddress: "subject", confirmed: false, status: "pending" }),
+    event(5, "boost-follow", { authorAddress: "subject", targetAddress: "alice" }),
+    event(6, "boost-follow", { authorAddress: "subject", targetAddress: "subject" }),
+    event(7, "boost-follow", { authorAddress: "alice", targetAddress: "subject" })];
+  const api = server(reader(events).read, { proofIndexRegistryPayload: async () => identityRegistry([
+    { id: "alice-id", ownerAddress: "alice", confirmed: true }, { id: "subject-id", ownerAddress: "subject", confirmed: true },
+    { id: "pending-id", ownerAddress: "alice", confirmed: false },
+  ]) });
+  for (const connections of ["followers", "following"]) {
+    const result = await api.boostFeedPayload("livenet", new URLSearchParams({ profile: "subject-id", connections, viewer: "subject", pending: "1" }));
+    assert.equal(result.totalCount, 1);
+    assert.equal(result.items[0].address, "alice");
+    assert.equal(result.items[0].id, "alice-id");
+    assert.equal(result.items[0].viewerFollowsProfile, true);
+    assert.equal(result.items[0].followsViewer, true);
+    assert.equal(result.items[0].txid, txid(connections === "followers" ? 7 : 5));
+    assert.equal(result.profileSubject.address, "subject");
+  }
+  await assert.rejects(api.boostFeedPayload("livenet", new URLSearchParams({ connections: "followers" })), /Invalid/u);
+});

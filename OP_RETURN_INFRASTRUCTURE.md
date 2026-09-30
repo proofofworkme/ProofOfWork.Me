@@ -5557,6 +5557,22 @@ pagination is bound to projection identity, and `listings=1` discovers the compl
 active original-post ticket inventory independently of the newest timeline page.
 Clients cancel superseded reads and reject responses for obsolete scopes.
 
+Boost also exposes paginated confirmed social projections through
+`/api/v1/boost?detail=<txid>&activity=replies|likes|reboosts` and
+`/api/v1/boost?profile=<id-or-address>&connections=followers|following`.
+Both exhaust the same qualified, checkpoint-bound event history as the feed.
+Detail reads ignore profile/search/time/feed filters; reboost detail retains its
+nested original and inspects the original's engagement. Connection lists use
+latest confirmed follow/unfollow edges and retain the active edge's transaction
+as evidence. Display IDs resolve only through a complete confirmed registry at
+the same canonical checkpoint, with addresses as the fallback. Cursors bind the
+projection, viewer, canonical provenance and complete ordering; changed history
+requires a restart from the first page. Invalid queries, missing confirmed
+records and unavailable authority are errors, never fabricated empty lists.
+Clients cancel obsolete reads, reject obsolete responses and show explicit
+loading, unavailable/retry and confirmed-empty states. No schema migration,
+protocol event, registry fee or signing-policy change is required.
+
 ## Launch Rule
 
 For production, ID resolution must use the ProofOfWork API/node path. If the API is unavailable, it is safer to fail closed than to route or register IDs from incomplete public API state.

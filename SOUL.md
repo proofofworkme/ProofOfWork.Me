@@ -385,6 +385,13 @@ Future agents must preserve these unless the user explicitly asks for a migratio
 - Confirmed chain history is canonical; pending status can become dropped.
 - Local state is portable through backups, not server accounts.
 
+Boost threads and social evidence must be consistent across entry points.
+Details read by transaction ID, never from a currently loaded feed subset.
+People can inspect confirmed reply/like/reboost actors and their TXs, and browse
+Followers/Following as confirmed graph projections. Reading evidence stays
+separate from paid signing; address actors and confirmed-ID ownership remain
+authoritative.
+
 ## Interface Direction
 
 Proof Instrument is the approved interface direction for the ProofOfWork
