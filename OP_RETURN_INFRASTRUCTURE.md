@@ -5724,9 +5724,75 @@ SHA256 `0d128a66f97990fcd7184b1e6b995acc823f09ee6c2afae6a11708baa5062b43`.
 Installed at 02:44 UTC, it allows only CAP_DAC_READ_SEARCH in its bounding/ambient
 sets; strict read-only filesystem protection and all resource limits are unchanged.
 The service now passes with exit zero. This explicitly approved candidate supersedes
-the earlier prepared node unit for installation; the earlier unit remains baseline
-evidence, not the current recommended installation. Receipt and amendment are in
+the earlier prepared node unit for installation. The canonical node unit now
+contains the same approved correction; its original pin and remote preserved
+bytes remain historical baseline evidence. Receipt and amendment are in
 the evidence JSON. All live application service processes remain unchanged;
 production UI uses Caddy and the worker is proofofwork-indexer-worker.service.
 Application source publication still requires review of its final commit-bound
 archive. All 816 held observations remain retained; productionDelete stays empty.
+
+### Audit 28 exact UI release publication — 2026-09-30 UTC
+
+The separately approved complete UI release `bbb03cebb6c6-20260930T024800Z`
+(commit `bbb03cebb6c66d91b8b033dbf4e732f11a0ad967`, archive SHA256
+`c5258926d28133181d9f52d2c5b165ac58a2ec7baab2900f424635241ccfc7e4`)
+was published at 03:19 UTC with retention deferred. Independent provenance
+verification and all 15 ordered public surfaces passed; Computer DNS served
+regressions passed twice. The full previous live root is preserved at
+`/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-bbb03cebb6c6-20260930T024800Z`.
+Caddy PID 3092586 is unchanged. API/indexer remain on db853f4 with no replacement
+or restart. Core/Electrs/indexer matched block 969245 and its hash after
+publication; readiness passed with zero lag. This records client containment
+and UI correctness, not a claim that remaining backend latency is corrected.
+All 816 held paths remain present and no storage was deleted. The scheduled
+logical backup continues normally before the approved corrected isolated restore.
+Exact receipts, pins, retained-root attestations and verification results are in
+`audits/2026-09-29-audit28-remaining-followups.evidence.json`.
+
+### Approved follow-up closeout — 2026-09-30 UTC
+
+The scheduled logical backup completed successfully at 03:37:08 UTC. Its newest
+set passed checksum/catalog verification, and the log explicitly records
+preservation of the original pinned source. The corrected isolated restore was
+admitted at 03:37:49 UTC with every reviewed pin and bound unchanged and passed
+at 04:05:00 UTC. Backup checksums passed; the restored private database contains
+26,035 transactions, 26,648 events, 238 credit definitions, 435 credit balances,
+20,289 ledger snapshots and 9,470 transitions across the saved backup's scope.
+There are zero invalid indexes and zero unvalidated constraints. Offline page
+checks scanned 1,470 files and 4,437,022 blocks with zero bad checksums.
+
+The job allocated 37,423,022,080 bytes, below its 80 GiB cap; available data space
+at completion was 379,514,814,464 bytes, above the 100 GiB floor. Unit journal
+reports 27min 8.129s CPU, 4.0 GiB peak memory and zero swap. Resource limits
+were revalidated on admission; read-only progress records observed the watchdog
+through import. No resource-failure marker exists; intentional watcher shutdown
+is recorded. The private postmaster and socket are absent. Both original and
+corrected restored datasets remain preserved, together with results and the
+pinned backup. This verifies data/schema and offline restored pages only; it
+does not establish roles/grants, PITR, production page checksums or complete
+independent protocol replay. Different offline page totals between separate
+restores do not establish a ledger discrepancy; logical counts match the original
+restored backup and both page checks pass.
+
+At final verification Core, Electrs, txindex, canonical indexer and summary
+coverage reconcile at block 969252, hash
+`0000000000000000000150faa48f43caf4acb67364b3208d969a5ef5fad832ee`;
+API readiness passes with zero lag. Core, Electrs, production PostgreSQL, API,
+indexer-worker and Caddy process IDs are unchanged. Final retention checks pass
+on both hosts; all three pruning timers remain persistently masked/inactive.
+All 295 UI and 521 node held paths remain present after scheduled backup and
+restore. No storage item was deleted in this phase. Remote final receipts are
+`/var/backups/proofofwork-ui/release-tooling/audit28-remaining-20260930T020000Z/completed-verification.json`
+and `/data/proofofwork-audit28-retention-tooling-20260930T020000Z/completed-verification.json`.
+
+The approved execution scope is complete, subject to repository closeout.
+Remaining audit recommendations require separately reviewed work: fail-closed
+logical-backup capacity monitoring (AUD28-FU-02), server-side wallet/AMO route
+profiling and optimization, live database checksum/recovery assurance, and proof
+of redundancy/dependencies before any held-item deletion. The scheduled backup's
+existing unit has no memory/CPU/runtime cap and reported 18.8 GiB peak memory;
+this is operational context for the backup-hardening recommendation, not a new
+resource-policy change or an observed reserve breach. All retention decisions
+remain retain with no automatic expiry. No fix for the newly found backup
+watcher condition, deletion, database migration or alert destination was added.

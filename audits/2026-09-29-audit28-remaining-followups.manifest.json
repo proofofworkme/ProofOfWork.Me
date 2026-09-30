@@ -1,6 +1,6 @@
 {
   "format": "proof-of-work-audit28-remaining-followups-plan-v1",
-  "approvalStatus": "prepared-not-approved-for-production",
+  "approvalStatus": "explicitly approved; exact tooling and UI publication executed and verified",
   "baseCommit": "4f75b17a48d9e18d2b18dfe50ab7105ad08a0a80",
   "productionDelete": [],
   "heldItemCount": 816,
@@ -191,12 +191,7 @@
   "sourceChanges": [
     "src/App.tsx"
   ],
-  "requiresApproval": [
-    "exact production tooling/configuration installation",
-    "three timer file replacement/disable/mask operations and daemon-reload",
-    "UI publication bound to the final approved source commit and verified complete archive",
-    "commits and push"
-  ],
+  "requiresApproval": [],
   "stopFor": [
     "pinned current tooling mismatch",
     "active live/recovery dependency change",
@@ -299,7 +294,7 @@
     "dataFreeFloorBytes": 107374182400,
     "rootFreeFloorBytes": 10737418240,
     "scope": "Same pinned data/schema/offline-page verification, with bounded du retries, fail-closed watchdog exit, liveness assertions and retained watcher evidence. No globals/ACL/owner/tablespace recovery; no production DB/service changes.",
-    "executionStatus": "not-executed; fresh explicit approval required",
+    "executionStatus": "explicitly approved and passed at 2026-09-30T04:05:00Z; preserved stopped private cluster",
     "preconditions": [
       "backup pin and every resource bound revalidated",
       "new job/unit/script targets absent and canonical",
@@ -344,5 +339,94 @@
     "group": "root",
     "mode": "0755",
     "scope": "Retain every older set while continuing unchanged backup generation/current verification. Use only under the idle backup lock. Never restore the unguarded predecessor while the exact source pin is required. Checker reports degraded until the reviewed guarded helper is restored."
+  },
+  "applicationReleaseRequiringPublicationApproval": {
+    "status": "explicitly approved and published; served verification passed",
+    "releaseId": "bbb03cebb6c6-20260930T024800Z",
+    "commit": "bbb03cebb6c66d91b8b033dbf4e732f11a0ad967",
+    "sourceTree": "24fe475b9c7ca7d82e74dba8dec79efe27786d36",
+    "archive": "/tmp/audit28-commit-bound-f77g8e62/archives/proofofwork-ui-release-bbb03cebb6c6-20260930T024800Z.tgz",
+    "archiveSha256": "c5258926d28133181d9f52d2c5b165ac58a2ec7baab2900f424635241ccfc7e4",
+    "archiveBytes": 197832405,
+    "sourceBundle": {
+      "path": "/tmp/audit28-commit-bound-f77g8e62/proofofwork-ui-source-bbb03cebb6c6-20260930T024800Z.tgz",
+      "sha256": "1ee4eba6cc64e1151da55283413d5dd50af6ce1e1323e4b8a32d7508bc182eff",
+      "bytes": 304425492
+    },
+    "uiHost": "77.42.91.106",
+    "productionSourceCheckout": "/var/tmp/proofofwork-deploy/proofofwork-ui-source-bbb03cebb6c6-20260930T024800Z",
+    "productionStageRoot": "/var/tmp/proofofwork-deploy/proofofwork-www-stage-bbb03cebb6c6-20260930T024800Z",
+    "productionArchive": "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-bbb03cebb6c6-20260930T024800Z.tgz",
+    "productionSourceBundle": "/var/tmp/proofofwork-deploy/proofofwork-ui-source-bbb03cebb6c6-20260930T024800Z.tgz",
+    "expectedCurrentReleaseId": "db853f434f9b-20260930T011125Z",
+    "expectedCurrentArchiveSha256": "5ea63ef85b25ed16579b03133109290f9de49eca26e22f3b4d23578711b17154",
+    "expectedPublisherSha256": "5ae1535e668c77ca7234c016ffe3602a3a8a5d930b3a75eefc28bb864a19af76",
+    "preserveRollbackRoot": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-bbb03cebb6c6-20260930T024800Z",
+    "publicationAction": "Complete root exchange using existing reviewed publisher with retention deferred; no backend replacement/restart. Preserve passthrough files, current full UI root and every designated rollback set.",
+    "rollback": "Use exact preserved db853f434f9b-20260930T011125Z full root and current archive provenance if served bytes, authority/readiness or assets fail. Preserve failed candidate and evidence.",
+    "verification": "All 15 affected surfaces in initial audit order, Computer last; served-byte provenance, no failed static assets or browser exceptions, Core-bound checkpoint/readiness checks; no signing or broadcasts.",
+    "stopFor": [
+      "current release/tool fingerprint mismatch",
+      "managed staged bytes differ from approved complete archive",
+      "readiness or authority failure before publication",
+      "new deletion or backend/config dependency",
+      "resource or source scope expansion"
+    ],
+    "storageDeletions": [],
+    "retainedRootAttestations": [
+      {
+        "classification": "retain",
+        "entries": 1360,
+        "format": "proofofwork-ui-retained-root-v1",
+        "manifestSha256": "d003251754bd7a70c5c72b068fcc9283e280bad124247e12b119b61836ec586f",
+        "regularBytes": 429245689,
+        "root": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-3bc6c9d44e00-20260929T200127Z",
+        "treeSha256": "519c5d45432292b3324b7a2edd662947bb9dc6d8230289ffa1d563ea8442f2a0"
+      },
+      {
+        "classification": "retain",
+        "entries": 1264,
+        "format": "proofofwork-ui-retained-root-v1",
+        "manifestSha256": "ff9c21d03df7ee201d82573469eff149abb1d2e6d1adebf5c0590c1143fdfc04",
+        "regularBytes": 425865929,
+        "root": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-db853f434f9b-20260930T011125Z",
+        "treeSha256": "66fbdae808fcf6e7932e2dec26671688f55b6152cf49b75db17080ecd11b5676"
+      }
+    ],
+    "retainedRootAction": "Supply mandatory exact --retain-rollback-root attestations for these already-designated retained roots; no pruning or policy resumption.",
+    "completedAt": "2026-09-30T03:19:14.691193+00:00"
+  },
+  "approvedExecutionAmendments": [
+    {
+      "approvedBy": "Explicit user reply: Approve the exact checker correction",
+      "target": "/etc/systemd/system/proofofwork-retention-protection.service",
+      "role": "node",
+      "supersedesPreparedSha256": "220f97483dcd07c916659f7fcb15dea59ba64c9d00d079e511d89570d40e5b19",
+      "source": "deploy/audit28/retention-protection-node-readonly.service",
+      "canonicalSource": "deploy/proofofwork-retention-protection-node.service",
+      "currentSha256": "0d128a66f97990fcd7184b1e6b995acc823f09ee6c2afae6a11708baa5062b43",
+      "priorUnitPreservedAt": "/data/proofofwork-audit28-retention-tooling-20260930T020000Z/retention-protection-node-before-read-capability.service",
+      "status": "installed and verified; original prepared unit pin remains historical baseline"
+    }
+  ],
+  "requiresApprovalHistorical": [
+    "exact production tooling/configuration installation",
+    "three timer file replacement/disable/mask operations and daemon-reload",
+    "UI publication bound to the final approved source commit and verified complete archive",
+    "commits and push"
+  ],
+  "remainingActionsRequiringSeparateApproval": [
+    "any storage deletion, retention expiry or resumption outside the reviewed hold policy",
+    "production correction of newly identified logical-backup capacity-watcher failure and any resource-cap changes",
+    "server/API/SQL/cache performance changes beyond deployed UI request containment",
+    "live database checksum migration, production maintenance or expanded role/PITR recovery test"
+  ],
+  "executionCloseout": {
+    "sourceCommit": "bbb03cebb6c66d91b8b033dbf4e732f11a0ad967",
+    "backendCommit": "db853f434f9b9e6162bcd41e5b1c9fdebee292eb",
+    "productionDelete": [],
+    "heldItemsPresent": 816,
+    "rollbackRequired": false,
+    "evidence": "audits/2026-09-29-audit28-remaining-followups.evidence.json"
   }
 }
