@@ -431,7 +431,7 @@
   "approvedExecution": {
     "approvedScope": "User approved exact manifest and named deployment plan; isolated restore excluded.",
     "recordedAtUTC": "2026-09-30T01:16:35.195110+00:00",
-    "status": "Node/UI deployed and provenance verified; all 15 surface smoke checks pass; final public Growth verification waits normal next-block summary publication.",
+    "status": "Completed within approved scope: single cleanup, publisher/retention exception, node/UI deployment and production verification passed. Existing performance/availability findings and held cleanup/optional restore remain open.",
     "sourceCommit": "db853f434f9b9e6162bcd41e5b1c9fdebee292eb",
     "branch": "codex/audit28-approved-followup",
     "cleanup": {
@@ -1406,6 +1406,675 @@
     },
     "performanceQualification": "Single bounded observations; some requests overlapped normal browser/API traffic. Not an isolated benchmark or proof that intermittent AUD26-02/H24-01 availability is resolved.",
     "localRetainedGitObjects": 27,
-    "accountingVerification": "Exact WORK precision, bond arithmetic and whole-proof fee checks pass on Node v22.23.2. All prior complete population evidence stays historical; no second population audit is claimed."
+    "accountingVerification": "Exact WORK precision, bond arithmetic and whole-proof fee checks pass on Node v22.23.2. All prior complete population evidence stays historical; no second population audit is claimed.",
+    "closedAtUTC": "2026-09-30T01:36:44.150079+00:00",
+    "closeoutCore": {
+      "checkedAt": "2026-09-30T01:35:32.634749+00:00",
+      "core": {
+        "blocks": 969235,
+        "headers": 969235,
+        "bestblockhash": "00000000000000000000af90e6226650d00ba63e9ac4875cd479ada5f1930cb5",
+        "initialblockdownload": false
+      },
+      "checkpoint969235": "00000000000000000000af90e6226650d00ba63e9ac4875cd479ada5f1930cb5",
+      "preservedPrefix969234": "000000000000000000002628072c0cbbf1767aca95785e594252ae006e594782"
+    },
+    "closeoutGrowth": {
+      "indexedThroughBlock": 969235,
+      "indexedThroughBlockHash": "00000000000000000000af90e6226650d00ba63e9ac4875cd479ada5f1930cb5",
+      "indexedAt": "2026-09-30T01:33:29.788Z",
+      "snapshotId": "c50ea9f95818948a1c49bf62",
+      "events": [
+        {
+          "key": "767b1c7d0df60edc9099ff29269b553843c896e397f550f5d7f8558834575c4b",
+          "kind": "AMO",
+          "txid": "767b1c7d0df60edc9099ff29269b553843c896e397f550f5d7f8558834575c4b",
+          "title": "Credit sale ticket sealed",
+          "detail": "Listing 0137e467...085cabc6",
+          "network": "livenet",
+          "createdAt": "2026-09-29T13:32:04.000Z",
+          "amountLabel": "546 proofs"
+        },
+        {
+          "key": "1cace7434cc5863d1631a1db311768fe679660c5d6d44c60ce22ded190e85e97",
+          "kind": "AMO",
+          "txid": "1cace7434cc5863d1631a1db311768fe679660c5d6d44c60ce22ded190e85e97",
+          "title": "AMO sale",
+          "detail": "0.0000000749030366 WORK bought by 19MXUmBg...8cYSaHk4 from 1Pg9E4EH...3UdZKXD9.",
+          "network": "livenet",
+          "createdAt": "2026-09-29T12:40:35.000Z",
+          "amountLabel": "25,000 sale proofs"
+        },
+        {
+          "key": "3b35e6af4202115a2779e01dcdc3085927675c868a191a01ff61f656ae60e1b4",
+          "kind": "AMO",
+          "txid": "3b35e6af4202115a2779e01dcdc3085927675c868a191a01ff61f656ae60e1b4",
+          "title": "Credit listing",
+          "detail": "Waiting for sale-ticket seal",
+          "network": "livenet",
+          "createdAt": "2026-09-29T12:09:54.000Z",
+          "amountLabel": "546 proofs"
+        },
+        {
+          "key": "c616b2cd5525af3afbe2ca6bfc61b537a69f391c02c40b783ea77f9ec876a2b5",
+          "kind": "AMO",
+          "txid": "c616b2cd5525af3afbe2ca6bfc61b537a69f391c02c40b783ea77f9ec876a2b5",
+          "title": "Credit listing",
+          "detail": "Waiting for sale-ticket seal",
+          "network": "livenet",
+          "createdAt": "2026-09-29T11:02:49.000Z",
+          "amountLabel": "546 proofs"
+        },
+        {
+          "key": "dd498455bb712411341cfde6fab38764281ff6b77076a41012c3bee768475e38",
+          "kind": "AMO",
+          "txid": "dd498455bb712411341cfde6fab38764281ff6b77076a41012c3bee768475e38",
+          "title": "Sale ticket sealed: 4@proofofwork.me",
+          "detail": "Seller signature published on chain",
+          "network": "livenet",
+          "createdAt": "2026-09-29T09:46:37.000Z",
+          "amountLabel": "546 proofs"
+        },
+        {
+          "key": "e983d3f23dc7eb72f56248347603b986f9bbcdf94032ae9e6cb76a161ac07cd2",
+          "kind": "DNS",
+          "txid": "e983d3f23dc7eb72f56248347603b986f9bbcdf94032ae9e6cb76a161ac07cd2",
+          "title": "DNS registered: chat@proofofwork.me",
+          "detail": "Resolver registered",
+          "network": "livenet",
+          "createdAt": "2026-09-29T08:37:08.000Z",
+          "amountLabel": "1000 proofs"
+        },
+        {
+          "key": "a2f613500e807eb8907dad7762303c81fdd386ce1d1d3ce0e27f8d50c7a706bd",
+          "kind": "AMO",
+          "txid": "a2f613500e807eb8907dad7762303c81fdd386ce1d1d3ce0e27f8d50c7a706bd",
+          "title": "DNS listed: 4@proofofwork.me",
+          "detail": "Sale-ticket listing",
+          "network": "livenet",
+          "createdAt": "2026-09-29T08:31:07.000Z",
+          "amountLabel": "546 proofs"
+        },
+        {
+          "key": "4f895eaabd46d1c8d69b6ac953aa3776a861bf29951b99a6126b31413b2b15bd",
+          "kind": "AMO",
+          "txid": "4f895eaabd46d1c8d69b6ac953aa3776a861bf29951b99a6126b31413b2b15bd",
+          "title": "Credit sale ticket sealed",
+          "detail": "Listing dc6c63aa...cd114f37",
+          "network": "livenet",
+          "createdAt": "2026-09-29T08:31:07.000Z",
+          "amountLabel": "546 proofs"
+        },
+        {
+          "key": "3eb8cfcb5edb187cb77e2bc4ef4a3142a03c4897afe9a800613605e2d65e62e6",
+          "kind": "AMO",
+          "txid": "3eb8cfcb5edb187cb77e2bc4ef4a3142a03c4897afe9a800613605e2d65e62e6",
+          "title": "Credit sale ticket sealed",
+          "detail": "Listing 34134284...6ed1110b",
+          "network": "livenet",
+          "createdAt": "2026-09-29T08:31:07.000Z",
+          "amountLabel": "546 proofs"
+        },
+        {
+          "key": "dc6c63aa080d9e81a3acf558366d379e4c5e5f9be122ad5e1f6229e5cd114f37",
+          "kind": "AMO",
+          "txid": "dc6c63aa080d9e81a3acf558366d379e4c5e5f9be122ad5e1f6229e5cd114f37",
+          "title": "Credit listing sealed",
+          "detail": "Sealed sale ticket 4f895eaa...3b2b15bd",
+          "network": "livenet",
+          "createdAt": "2026-09-29T08:16:41.000Z",
+          "amountLabel": "546 proofs"
+        },
+        {
+          "key": "5d8685baf5d00bb21db4cf61cbc463e68b5d531707347222225fa08d22e4e82b",
+          "kind": "DNS",
+          "txid": "5d8685baf5d00bb21db4cf61cbc463e68b5d531707347222225fa08d22e4e82b",
+          "title": "DNS registered: samsung@proofofwork.me",
+          "detail": "Resolver registered",
+          "network": "livenet",
+          "createdAt": "2026-09-29T08:16:41.000Z",
+          "amountLabel": "1000 proofs"
+        },
+        {
+          "key": "36a800aed50b8422bbe85c2e7b790cd86d19583699596497b03a0d0f49818cc2",
+          "kind": "DNS",
+          "txid": "36a800aed50b8422bbe85c2e7b790cd86d19583699596497b03a0d0f49818cc2",
+          "title": "DNS registered: nokia@proofofwork.me",
+          "detail": "Resolver registered",
+          "network": "livenet",
+          "createdAt": "2026-09-29T08:16:41.000Z",
+          "amountLabel": "1000 proofs"
+        },
+        {
+          "key": "341342841a6ecbfc629d46b90fba72c9c4a4289d2bf7e3406e8ed8816ed1110b",
+          "kind": "AMO",
+          "txid": "341342841a6ecbfc629d46b90fba72c9c4a4289d2bf7e3406e8ed8816ed1110b",
+          "title": "Credit listing sealed",
+          "detail": "Sealed sale ticket 3eb8cfcb...d65e62e6",
+          "network": "livenet",
+          "createdAt": "2026-09-29T08:16:41.000Z",
+          "amountLabel": "546 proofs"
+        },
+        {
+          "key": "e2000352063b1e741dc453783f612a5cece6c24132a3d19e9468d3f33f4e1ed7",
+          "kind": "DNS",
+          "txid": "e2000352063b1e741dc453783f612a5cece6c24132a3d19e9468d3f33f4e1ed7",
+          "title": "DNS registered: work@proofofwork.me",
+          "detail": "Resolver registered",
+          "network": "livenet",
+          "createdAt": "2026-09-29T07:57:57.000Z",
+          "amountLabel": "1000 proofs"
+        },
+        {
+          "key": "ceecb08e413c07f9a6ca884636851e69cb62ac33fcfd4818c397eff59ac66aad",
+          "kind": "DNS",
+          "txid": "ceecb08e413c07f9a6ca884636851e69cb62ac33fcfd4818c397eff59ac66aad",
+          "title": "DNS registered: 4@proofofwork.me",
+          "detail": "Resolver registered",
+          "network": "livenet",
+          "createdAt": "2026-09-29T07:57:57.000Z",
+          "amountLabel": "1000 proofs"
+        },
+        {
+          "key": "c218e42d9ce481e71af046bf7065a946e93de04d573ca3b9161aefb9c6cf08bf",
+          "kind": "DNS",
+          "txid": "c218e42d9ce481e71af046bf7065a946e93de04d573ca3b9161aefb9c6cf08bf",
+          "title": "DNS registered: ai@proofofwork.me",
+          "detail": "Resolver registered",
+          "network": "livenet",
+          "createdAt": "2026-09-29T07:57:57.000Z",
+          "amountLabel": "1000 proofs"
+        },
+        {
+          "key": "714fede38a11c9acc141e6c84fc16a67e724ce01aa4d8cba06d7c91e4c7e858f",
+          "kind": "DNS",
+          "txid": "714fede38a11c9acc141e6c84fc16a67e724ce01aa4d8cba06d7c91e4c7e858f",
+          "title": "DNS registered: lasvegas@proofofwork.me",
+          "detail": "Resolver registered",
+          "network": "livenet",
+          "createdAt": "2026-09-29T07:57:57.000Z",
+          "amountLabel": "1000 proofs"
+        },
+        {
+          "key": "3f9802bf0559546e0fd0dcb9c9ee5e0fc49f4d73022661575abefd87ac5449c8",
+          "kind": "DNS",
+          "txid": "3f9802bf0559546e0fd0dcb9c9ee5e0fc49f4d73022661575abefd87ac5449c8",
+          "title": "DNS registered: dubai@proofofwork.me",
+          "detail": "Resolver registered",
+          "network": "livenet",
+          "createdAt": "2026-09-29T07:57:57.000Z",
+          "amountLabel": "1000 proofs"
+        },
+        {
+          "key": "39ca680c9cfb966c4bf0792e241a5f3caf3bf1f92d5bb91beb781868304aedc6",
+          "kind": "DNS",
+          "txid": "39ca680c9cfb966c4bf0792e241a5f3caf3bf1f92d5bb91beb781868304aedc6",
+          "title": "DNS registered: nyc@proofofwork.me",
+          "detail": "Resolver registered",
+          "network": "livenet",
+          "createdAt": "2026-09-29T07:57:57.000Z",
+          "amountLabel": "1000 proofs"
+        },
+        {
+          "key": "2b011a37e0a6d7c794a4c6f773e6ed4ae3446caf9a945a00d83b9af0675cc41d",
+          "kind": "DNS",
+          "txid": "2b011a37e0a6d7c794a4c6f773e6ed4ae3446caf9a945a00d83b9af0675cc41d",
+          "title": "DNS registered: london@proofofwork.me",
+          "detail": "Resolver registered",
+          "network": "livenet",
+          "createdAt": "2026-09-29T07:57:57.000Z",
+          "amountLabel": "1000 proofs"
+        },
+        {
+          "key": "22f854de9c0b743937901df0b6f4098550325b1c81cd19ce3b31ebb4ee3ed53a",
+          "kind": "DNS",
+          "txid": "22f854de9c0b743937901df0b6f4098550325b1c81cd19ce3b31ebb4ee3ed53a",
+          "title": "DNS registered: king@proofofwork.me",
+          "detail": "Resolver registered",
+          "network": "livenet",
+          "createdAt": "2026-09-29T07:57:57.000Z",
+          "amountLabel": "1000 proofs"
+        },
+        {
+          "key": "0a8c2bf240aff70d8b247d4fe5120c7c3047042abe5884f023a1e3bf5104bca1",
+          "kind": "DNS",
+          "txid": "0a8c2bf240aff70d8b247d4fe5120c7c3047042abe5884f023a1e3bf5104bca1",
+          "title": "DNS registered: 3@proofofwork.me",
+          "detail": "Resolver registered",
+          "network": "livenet",
+          "createdAt": "2026-09-29T07:57:57.000Z",
+          "amountLabel": "1000 proofs"
+        },
+        {
+          "key": "0863ead37eab0e889d1a8828cf2cd31134d9c6239f95d2e78e122a71e0da46f7",
+          "kind": "DNS",
+          "txid": "0863ead37eab0e889d1a8828cf2cd31134d9c6239f95d2e78e122a71e0da46f7",
+          "title": "DNS registered: 2@proofofwork.me",
+          "detail": "Resolver registered",
+          "network": "livenet",
+          "createdAt": "2026-09-29T07:57:57.000Z",
+          "amountLabel": "1000 proofs"
+        },
+        {
+          "key": "b527c0ba4efff1410dfbf20838d897c8c3602765f384de28bde8f53c8a0fa7ae",
+          "kind": "AMO",
+          "txid": "b527c0ba4efff1410dfbf20838d897c8c3602765f384de28bde8f53c8a0fa7ae",
+          "title": "Credit listing",
+          "detail": "Waiting for sale-ticket seal",
+          "network": "livenet",
+          "createdAt": "2026-09-29T07:01:30.000Z",
+          "amountLabel": "546 proofs"
+        },
+        {
+          "key": "414a2e15d6775dc96fabd565fc9e2aa168b946687c622b3288a03c89bd909f52",
+          "kind": "DNS",
+          "txid": "414a2e15d6775dc96fabd565fc9e2aa168b946687c622b3288a03c89bd909f52",
+          "title": "DNS registered: agent@proofofwork.me",
+          "detail": "Resolver registered",
+          "network": "livenet",
+          "createdAt": "2026-09-29T06:54:35.000Z",
+          "amountLabel": "1000 proofs"
+        },
+        {
+          "key": "a23a3623232ac1ecd80cebd4c0518d9d2a526b6e4a93b22f9aac7c39e18becac",
+          "kind": "DNS",
+          "txid": "a23a3623232ac1ecd80cebd4c0518d9d2a526b6e4a93b22f9aac7c39e18becac",
+          "title": "DNS registered: america@proofofwork.me",
+          "detail": "Resolver registered",
+          "network": "livenet",
+          "createdAt": "2026-09-29T06:35:35.000Z",
+          "amountLabel": "1000 proofs"
+        },
+        {
+          "key": "655ded11b7c72338d4c5087067cbb3c4fca24f03a80a6f7ee0351d162474c9df",
+          "kind": "DNS",
+          "txid": "655ded11b7c72338d4c5087067cbb3c4fca24f03a80a6f7ee0351d162474c9df",
+          "title": "DNS registered: si@proofofwork.me",
+          "detail": "Resolver registered",
+          "network": "livenet",
+          "createdAt": "2026-09-29T06:35:35.000Z",
+          "amountLabel": "1000 proofs"
+        },
+        {
+          "key": "bf389da1a32fcc23e8faaf307edad37adf3aa48d247edcbb38d104d05e72a82c",
+          "kind": "DNS",
+          "txid": "bf389da1a32fcc23e8faaf307edad37adf3aa48d247edcbb38d104d05e72a82c",
+          "title": "DNS registered: world@proofofwork.me",
+          "detail": "Resolver registered",
+          "network": "livenet",
+          "createdAt": "2026-09-29T06:13:40.000Z",
+          "amountLabel": "1000 proofs"
+        },
+        {
+          "key": "bb7cdbe095cf5be27c7166ff8d98451ec9f6483d0cef6740a506ab02822a885c",
+          "kind": "DNS",
+          "txid": "bb7cdbe095cf5be27c7166ff8d98451ec9f6483d0cef6740a506ab02822a885c",
+          "title": "DNS registered: 7@proofofwork.me",
+          "detail": "Resolver registered",
+          "network": "livenet",
+          "createdAt": "2026-09-29T06:13:40.000Z",
+          "amountLabel": "1000 proofs"
+        },
+        {
+          "key": "b49a97edc1766dfae88404139b8e3c557f40afb7312b09661dd53a121a88fa0e",
+          "kind": "DNS",
+          "txid": "b49a97edc1766dfae88404139b8e3c557f40afb7312b09661dd53a121a88fa0e",
+          "title": "DNS registered: trillion@proofofwork.me",
+          "detail": "Resolver registered",
+          "network": "livenet",
+          "createdAt": "2026-09-29T06:13:40.000Z",
+          "amountLabel": "1000 proofs"
+        },
+        {
+          "key": "ac2ff6d835a10f49aa3851a7db2812c329044932c2fff7fad307dd5906f6d413",
+          "kind": "DNS",
+          "txid": "ac2ff6d835a10f49aa3851a7db2812c329044932c2fff7fad307dd5906f6d413",
+          "title": "DNS registered: bitcoin@proofofwork.me",
+          "detail": "Resolver registered",
+          "network": "livenet",
+          "createdAt": "2026-09-29T06:13:40.000Z",
+          "amountLabel": "1000 proofs"
+        },
+        {
+          "key": "8dca01779f745bdbf02fe46173d6a70e589399275518e08c6d14ccb2872828a6",
+          "kind": "DNS",
+          "txid": "8dca01779f745bdbf02fe46173d6a70e589399275518e08c6d14ccb2872828a6",
+          "title": "DNS registered: hello@proofofwork.me",
+          "detail": "Resolver registered",
+          "network": "livenet",
+          "createdAt": "2026-09-29T06:13:40.000Z",
+          "amountLabel": "1000 proofs"
+        },
+        {
+          "key": "830ccd0500436f1fbb9fb1d9e7287e4d5155c67b7def3db6c5c34111c9e2458a",
+          "kind": "DNS",
+          "txid": "830ccd0500436f1fbb9fb1d9e7287e4d5155c67b7def3db6c5c34111c9e2458a",
+          "title": "DNS registered: carbonz@proofofwork.me",
+          "detail": "Resolver registered",
+          "network": "livenet",
+          "createdAt": "2026-09-29T06:13:40.000Z",
+          "amountLabel": "1000 proofs"
+        },
+        {
+          "key": "7089f50a385138915f6f155d0fd35fcc3b9bf7381097448ea4052f51a87210fe",
+          "kind": "DNS",
+          "txid": "7089f50a385138915f6f155d0fd35fcc3b9bf7381097448ea4052f51a87210fe",
+          "title": "DNS registered: 1@proofofwork.me",
+          "detail": "Resolver registered",
+          "network": "livenet",
+          "createdAt": "2026-09-29T06:13:40.000Z",
+          "amountLabel": "1000 proofs"
+        },
+        {
+          "key": "3b727c6d487bb4345cb666abec1b0c8842f2444a8e307c39a2d1171972641751",
+          "kind": "Mail",
+          "txid": "3b727c6d487bb4345cb666abec1b0c8842f2444a8e307c39a2d1171972641751",
+          "title": "Boost profile",
+          "detail": "Boost profile for 3b727c6d...72641751.",
+          "network": "livenet",
+          "createdAt": "2026-09-29T06:13:40.000Z",
+          "amountLabel": "546 proofs"
+        },
+        {
+          "key": "0f524768fd95dfb6bfbe203adb3e010be789d7f10363f0ff05a31e7e0342d5b9",
+          "kind": "AMO",
+          "txid": "0f524768fd95dfb6bfbe203adb3e010be789d7f10363f0ff05a31e7e0342d5b9",
+          "title": "AMO sale",
+          "detail": "0.0000000749030366 WORK bought by 19MXUmBg...8cYSaHk4 from bc1pdk2h...vs63qxz4.",
+          "network": "livenet",
+          "createdAt": "2026-09-28T23:57:12.000Z",
+          "amountLabel": "25,000 sale proofs"
+        },
+        {
+          "key": "9aa0da02a62bf65acfc9ccc182571ae34c2c02f59d6329dcbf971f02eabfb2c4",
+          "kind": "AMO",
+          "txid": "9aa0da02a62bf65acfc9ccc182571ae34c2c02f59d6329dcbf971f02eabfb2c4",
+          "title": "Credit sale ticket sealed",
+          "detail": "Listing adeb0594...7c80a258",
+          "network": "livenet",
+          "createdAt": "2026-09-28T23:56:14.000Z",
+          "amountLabel": "546 proofs"
+        },
+        {
+          "key": "adeb05942431a87f244ac5e6048265498f81d5fd41f3aca5b3f0225f7c80a258",
+          "kind": "AMO",
+          "txid": "adeb05942431a87f244ac5e6048265498f81d5fd41f3aca5b3f0225f7c80a258",
+          "title": "Credit listing sealed",
+          "detail": "Sealed sale ticket 9aa0da02...eabfb2c4",
+          "network": "livenet",
+          "createdAt": "2026-09-28T23:28:45.000Z",
+          "amountLabel": "546 proofs"
+        },
+        {
+          "key": "a29e8cdb4b2d8020d361e25d2580b3f496fb4c9487085507c591793afdc59ae0",
+          "kind": "ID",
+          "txid": "a29e8cdb4b2d8020d361e25d2580b3f496fb4c9487085507c591793afdc59ae0",
+          "title": "ID registered: domains@proofofwork.me",
+          "detail": "No PGP key",
+          "network": "livenet",
+          "createdAt": "2026-09-28T22:58:45.000Z",
+          "amountLabel": "1,000 proofs"
+        },
+        {
+          "key": "781cd06367a21653957fbae16db9edc139b9651ca869103e3cc9e4f0e84abbf7",
+          "kind": "AMO",
+          "txid": "781cd06367a21653957fbae16db9edc139b9651ca869103e3cc9e4f0e84abbf7",
+          "title": "Credit sale ticket sealed",
+          "detail": "Listing f9d98eca...5240bb9f",
+          "network": "livenet",
+          "createdAt": "2026-09-28T22:58:45.000Z",
+          "amountLabel": "546 proofs"
+        },
+        {
+          "key": "fcb2998fe904cfac7eeda9b321d47357c6f4c7b5a32b40135aec02d4b1771803",
+          "kind": "AMO",
+          "txid": "fcb2998fe904cfac7eeda9b321d47357c6f4c7b5a32b40135aec02d4b1771803",
+          "title": "Credit sale ticket sealed",
+          "detail": "Listing 78f20f0d...0d488db8",
+          "network": "livenet",
+          "createdAt": "2026-09-28T19:29:25.000Z",
+          "amountLabel": "546 proofs"
+        },
+        {
+          "key": "e1845c9ed7965626aa56cc89d9065b84ebd7763110e2799afb3ad970f7fa6e7e",
+          "kind": "AMO",
+          "txid": "e1845c9ed7965626aa56cc89d9065b84ebd7763110e2799afb3ad970f7fa6e7e",
+          "title": "Credit listing",
+          "detail": "Waiting for sale-ticket seal",
+          "network": "livenet",
+          "createdAt": "2026-09-28T15:47:53.000Z",
+          "amountLabel": "546 proofs"
+        },
+        {
+          "key": "85c0ee6bbffa75adba11ec242692ca11ee111c1ceb2991da088a784e3587c737",
+          "kind": "AMO",
+          "txid": "85c0ee6bbffa75adba11ec242692ca11ee111c1ceb2991da088a784e3587c737",
+          "title": "Credit listing",
+          "detail": "Waiting for sale-ticket seal",
+          "network": "livenet",
+          "createdAt": "2026-09-28T15:47:53.000Z",
+          "amountLabel": "546 proofs"
+        },
+        {
+          "key": "9b4a68fcee335e5d255d271d67e624100b2466bfb5e48b4b596fb38bc07c3d80",
+          "kind": "Wallet",
+          "txid": "9b4a68fcee335e5d255d271d67e624100b2466bfb5e48b4b596fb38bc07c3d80",
+          "title": "Wallet transfer",
+          "detail": "19999 WORK moved from 1DT6UZaJ...QwYKxcus to 1Cvsp1Fc...pafBgZNE.",
+          "network": "livenet",
+          "createdAt": "2026-09-28T15:13:13.000Z",
+          "amountLabel": "546 registry proofs"
+        },
+        {
+          "key": "8acb9120f9e4b4b682039ba29fc385365e4df6836f0106cb138b7a84c9d46553",
+          "kind": "AMO",
+          "txid": "8acb9120f9e4b4b682039ba29fc385365e4df6836f0106cb138b7a84c9d46553",
+          "title": "Credit sale ticket sealed",
+          "detail": "Listing 9361917f...5c913c96",
+          "network": "livenet",
+          "createdAt": "2026-09-28T14:56:49.000Z",
+          "amountLabel": "546 proofs"
+        },
+        {
+          "key": "53226159ebe6eebc0370321b70dad48219e9e676474d17b5061cd9bfc3e89d3e",
+          "kind": "AMO",
+          "txid": "53226159ebe6eebc0370321b70dad48219e9e676474d17b5061cd9bfc3e89d3e",
+          "title": "Credit sale ticket sealed",
+          "detail": "Listing 7d4355bc...2251d957",
+          "network": "livenet",
+          "createdAt": "2026-09-28T14:56:49.000Z",
+          "amountLabel": "546 proofs"
+        },
+        {
+          "key": "e813c1d8d936db9ac5323935c5ca9a77ae78a9257d2e3394e7414de1453bd736",
+          "kind": "AMO",
+          "txid": "e813c1d8d936db9ac5323935c5ca9a77ae78a9257d2e3394e7414de1453bd736",
+          "title": "Credit sale ticket sealed",
+          "detail": "Listing d43044c6...2adb3c04",
+          "network": "livenet",
+          "createdAt": "2026-09-28T14:03:17.000Z",
+          "amountLabel": "546 proofs"
+        },
+        {
+          "key": "7d4355bc235c3d8184b92edee5fdcabc156a73cc1d588d423fb972d22251d957",
+          "kind": "AMO",
+          "txid": "7d4355bc235c3d8184b92edee5fdcabc156a73cc1d588d423fb972d22251d957",
+          "title": "Credit listing sealed",
+          "detail": "Sealed sale ticket 53226159...c3e89d3e",
+          "network": "livenet",
+          "createdAt": "2026-09-28T14:03:17.000Z",
+          "amountLabel": "546 proofs"
+        },
+        {
+          "key": "d4bdc27f9ce5b2f5010363fc60b82a859e18128c1322a8af637f50c2ad035af5",
+          "kind": "Wallet",
+          "txid": "d4bdc27f9ce5b2f5010363fc60b82a859e18128c1322a8af637f50c2ad035af5",
+          "title": "Wallet transfer",
+          "detail": "0.0000977 WORK moved from 19zNWaDP...BxE9AesJ to 1J8fGE9y...iZfLfGg8.",
+          "network": "livenet",
+          "createdAt": "2026-09-28T13:55:00.000Z",
+          "amountLabel": "546 registry proofs"
+        },
+        {
+          "key": "9361917f8a82b96e147c75b968f285f9cfbe90012766a28f76d735645c913c96",
+          "kind": "AMO",
+          "txid": "9361917f8a82b96e147c75b968f285f9cfbe90012766a28f76d735645c913c96",
+          "title": "Credit listing sealed",
+          "detail": "Sealed sale ticket 8acb9120...c9d46553",
+          "network": "livenet",
+          "createdAt": "2026-09-28T13:55:00.000Z",
+          "amountLabel": "546 proofs"
+        },
+        {
+          "key": "536c638a1cd3a0555200f5f073eb752df93e04f05c90ced42053b6a5025e54f5",
+          "kind": "AMO",
+          "txid": "536c638a1cd3a0555200f5f073eb752df93e04f05c90ced42053b6a5025e54f5",
+          "title": "Credit sale ticket sealed",
+          "detail": "Listing 9143d293...35883dc8",
+          "network": "livenet",
+          "createdAt": "2026-09-28T12:43:22.000Z",
+          "amountLabel": "546 proofs"
+        },
+        {
+          "key": "ef0f467b4dee7d1c691355fee93a8fd6b3551a51a31befb7709d2fda72a997e9",
+          "kind": "AMO",
+          "txid": "ef0f467b4dee7d1c691355fee93a8fd6b3551a51a31befb7709d2fda72a997e9",
+          "title": "Credit sale ticket sealed",
+          "detail": "Listing 16a26d18...709e66bf",
+          "network": "livenet",
+          "createdAt": "2026-09-28T12:25:02.000Z",
+          "amountLabel": "546 proofs"
+        },
+        {
+          "key": "d43044c6d22ebbac91bb5427d9aa38a6a8f98550cf6e9e515a1ae0232adb3c04",
+          "kind": "AMO",
+          "txid": "d43044c6d22ebbac91bb5427d9aa38a6a8f98550cf6e9e515a1ae0232adb3c04",
+          "title": "Credit listing sealed",
+          "detail": "Sealed sale ticket e813c1d8...453bd736",
+          "network": "livenet",
+          "createdAt": "2026-09-28T12:25:02.000Z",
+          "amountLabel": "546 proofs"
+        },
+        {
+          "key": "12fc156cf54b58a8d34190f9654bc9c540c2821393c0cadf3b5a14713f48967f",
+          "kind": "AMO",
+          "txid": "12fc156cf54b58a8d34190f9654bc9c540c2821393c0cadf3b5a14713f48967f",
+          "title": "Credit sale ticket sealed",
+          "detail": "Listing acdf6608...6ef4b58f",
+          "network": "livenet",
+          "createdAt": "2026-09-28T12:25:02.000Z",
+          "amountLabel": "546 proofs"
+        },
+        {
+          "key": "16a26d182df001a4b95b84948f1357594cda512fdc32f29fec40456f709e66bf",
+          "kind": "AMO",
+          "txid": "16a26d182df001a4b95b84948f1357594cda512fdc32f29fec40456f709e66bf",
+          "title": "Credit listing sealed",
+          "detail": "Sealed sale ticket ef0f467b...72a997e9",
+          "network": "livenet",
+          "createdAt": "2026-09-28T10:32:39.000Z",
+          "amountLabel": "546 proofs"
+        },
+        {
+          "key": "cd1dfa97eda88b2481e24ed2a749c762cf8cd3120c70d6d7fb71b82335353123",
+          "kind": "AMO",
+          "txid": "cd1dfa97eda88b2481e24ed2a749c762cf8cd3120c70d6d7fb71b82335353123",
+          "title": "Credit sale ticket sealed",
+          "detail": "Listing e637ccc0...c9c9d181",
+          "network": "livenet",
+          "createdAt": "2026-09-28T10:20:05.000Z",
+          "amountLabel": "546 proofs"
+        },
+        {
+          "key": "9be5b012fc9396fb81b8d799296fe316e65004145a6e8f0f6b3b29de021cc3fd",
+          "kind": "AMO",
+          "txid": "9be5b012fc9396fb81b8d799296fe316e65004145a6e8f0f6b3b29de021cc3fd",
+          "title": "Credit sale ticket sealed",
+          "detail": "Listing 0819ff61...86f2717b",
+          "network": "livenet",
+          "createdAt": "2026-09-28T10:16:54.000Z",
+          "amountLabel": "546 proofs"
+        },
+        {
+          "key": "0819ff6139f6e81c2f44287e2e244b8f448f112225f280049f6fbe2186f2717b",
+          "kind": "AMO",
+          "txid": "0819ff6139f6e81c2f44287e2e244b8f448f112225f280049f6fbe2186f2717b",
+          "title": "Credit listing sealed",
+          "detail": "Sealed sale ticket 9be5b012...021cc3fd",
+          "network": "livenet",
+          "createdAt": "2026-09-28T09:32:18.000Z",
+          "amountLabel": "546 proofs"
+        },
+        {
+          "key": "e637ccc083aa54dbec1345093b1f6a069c502804bc001ef4a91d7eabc9c9d181",
+          "kind": "AMO",
+          "txid": "e637ccc083aa54dbec1345093b1f6a069c502804bc001ef4a91d7eabc9c9d181",
+          "title": "Credit listing sealed",
+          "detail": "Sealed sale ticket cd1dfa97...35353123",
+          "network": "livenet",
+          "createdAt": "2026-09-28T09:29:04.000Z",
+          "amountLabel": "546 proofs"
+        },
+        {
+          "key": "acdf6608841cd7521d394e3a9f56173a470f55921ffc69a7243cdfc66ef4b58f",
+          "kind": "AMO",
+          "txid": "acdf6608841cd7521d394e3a9f56173a470f55921ffc69a7243cdfc66ef4b58f",
+          "title": "Credit listing sealed",
+          "detail": "Sealed sale ticket 12fc156c...3f48967f",
+          "network": "livenet",
+          "createdAt": "2026-09-28T09:29:04.000Z",
+          "amountLabel": "546 proofs"
+        }
+      ]
+    },
+    "closeoutDns": {
+      "height": 969235,
+      "hash": "00000000000000000000af90e6226650d00ba63e9ac4875cd479ada5f1930cb5",
+      "coverage": {
+        "complete": true,
+        "historySha256": "be7d18c51c6775982c4260b90dae5391875cd6b8548a0a87057bd64ddd7c7889"
+      },
+      "records": 23,
+      "listings": 1
+    },
+    "closeoutBrowser": [
+      {
+        "host": "growth.proofofwork.me",
+        "growthEvents": "AMO\nCredit sale ticket sealed\n\nListing 0137e467...085cabc6\n\n546 proofs\nSep 29, 2026, 9:32 AM\n767b1c7d...34575c4b\nAMO\nAMO sale\n\n0.0000000749030366 WORK bought by 19MXUmBg...8cYSaHk4 from 1Pg9E4EH...3UdZKXD9.\n\n25,000 sale proofs\nSep 29, 2026, 8:40 AM\n1cace743...90e85e97\nAMO\nCredit listing\n\nWaiting for sale-ticket seal\n\n546 proofs\nSep 29, 2026, 8:09 AM\n3b35e6af...ae60e1b4\nAMO\nCredit listing\n\nWaiting for sale-ticket seal\n\n546 proofs\nSep 29, 2026, 7:02 AM\nc616b2cd...c876a2b5\nAMO\nSale ticket sealed: 4@proofofwork.me\n\nSeller signature published on chain\n\n546 proofs\nSep 29, 2026, 5:46 AM\ndd498455...68475e38\nDNS\nDNS registered: chat@proofofwork.me\n\nResolver registered\n\n1000 proofs\nSep 29, 2026, 4:37 AM\ne983d3f2...1ac07cd2\nAMO\nDNS listed: 4@proofofwork.me\n\nSale-ticket listing\n\n546 proofs\nSep 29, 2026, 4:31 AM\na2f61350...c7a706bd\nAMO\nCredit sale ticket sealed\n\nListing dc6c63aa...cd114f37\n\n546 proofs\nSep 29, 2026, 4:31 AM\n4f895eaa...3b2b15bd\nAMO\nCredit sale ticket sealed\n\nListing 34134284...6ed1110b\n\n546 proofs\nSep 29, 2026, 4:31 AM\n3eb8cfcb...d65e62e6\nAMO\nCredit listing sealed\n\nSealed sale ticket 4f895eaa...3b2b15bd\n\n546 proofs\nSep 29, 2026, 4:16 AM\ndc6c63aa...cd114f37\nDNS\nDNS registered: samsung@proofofwork.me\n\nResolver registered\n\n1000 proofs\nSep 29, 2026, 4:16 AM\n5d8685ba...22e4e82b\nDNS\nDNS registered: nokia@proofofwork.me\n\nResolver registered\n\n1000 proofs\nSep 29, 2026, 4:16 AM\n36a800ae...49818cc2",
+        "badAssets": [],
+        "dnsStats": null,
+        "dnsTabText": null,
+        "status": 200,
+        "elapsedMs": 6296,
+        "title": "ProofOfWork.Me",
+        "bodyPrefix": "Skip to main content\nPoW\nProofOfWork Growth\nModel vs chain\nHome\nDNS\nBoost\nGrowth\nRefresh\nMainnet\nProofOfWork Computer verifying public data. Connect UniSat for account balances and spendable proofs.\nProofOfWork Computer verifying public data. Connect UniSat for account balances and spendable proofs.\nOverview\nModel\nEvents\nProducts\nAssumptions\nPROOFOFWORK COMPUTER GROWTH MODEL\nModel the future. Measure the chain.\n\nThe candle-gold line is modeled ProofOfWork Computer network value. The olive line is real confirmed mainnet value from IDs, Mail, Infinity Bonds, Inception Bonds, Drive, DNS, AMO, Browser, Credits, and Wallet. The forecast includes Boost, bonds, credit activity, and transfers with shared payments counted once.\n\nForecast version\n\nAll-product scenario revised 2026-09-05. Both use the 2026-05-11 model origin.\n\nModel shown\nAll products \u00b7 2026-09-05\nOriginal baseline \u00b7 2026-05-13\n\nExplicit assumptions for every product, using the historical May origin. This scenario is not calibrated to current activity and does not revise confirmed network value.\n\nBASELINE VALUE\n2.4M proofs\nBASELINE IDS\n94\nNODE CAGR\n25%\nAGENT SHARE\n51%\nSCENARIO FEE RATE\n0.00001 sat/vB\nRefresh chain metrics\n\nLedger snapshot Sep 29, 9:33 PM from confirmed Computer events with USD quote Sep 29, 9:00 PM.\n\n14,520,834,903,306,801,355.85252463\nproofs\nExact value\nReal network value now \u00b7 $12114T\n3.1B proofs\nModeled value now \u00b7 $2.59M\n+14520835T proofs\n+466,908,284,224% versus model now\n508\nConfirmed IDs \u00b7 20 pending\n26,167\nConfirmed computer actions\n11,134,396\nAMO flow proofs \u00b7 9,750,286 sale \u00b7 93 confirmed sales \u00b7 1,384,110 fee proofs\n14,520,834,899,899,944,580.25542187\nproofs\nExact value\nWORK live event value \u00b7 14,520,834,899,857,368,920.25542187 live mark \u00b7 1,776,670,499,491,076,348.09263081 frozen event \u00b7 9,728,286 sale proofs \u00b7 1,479,114 mutation proofs\nPLAIN READ\nCandle-gold is the success case. Olive is ProofOfWork history.\n\nThe model asks what the ProofOfWork Computer can become if IDs, Mail, B",
+        "pageErrors": [],
+        "unavailable": []
+      },
+      {
+        "host": "computer.proofofwork.me",
+        "growthEvents": null,
+        "badAssets": [],
+        "dnsStats": "1\nActive Listings\n0\nDNS Sales\n0\nVolume proofs\n0\nPending .pow",
+        "dnsTabText": "DNS\n1",
+        "status": 200,
+        "elapsedMs": 10281,
+        "title": "ProofOfWork.Me",
+        "bodyPrefix": "Skip to main content\nPoW\nAMO\nProofOfWork Computer \u00b7 Mainnet\nHome\nDNS\nBoost\nComputer\nRefresh\nMainnet\nInstall UniSat\nProofOfWork Computer verifying public data. Connect UniSat for account balances and spendable proofs.\nProofOfWork Computer verifying public data. Connect UniSat for account balances and spendable proofs.\nCompose\nMAIL\nInbox\n0\nIncoming\n0\nSent\n0\nOutbox\n0\nDrafts\n0\nFavorites\n0\nArchive\n0\nCREATE & FILES\nFiles\n0\nDesktop\n0\nBrowser\nBoost\nIDENTITY & VALUE\nIDs\n0\nAMO\n0\nCredit\n\u2026\nWallet\n\u2026\nWORK\n\u2026\nInfinity\n\u2026\nInception\n\u2026\nVERIFY\nLog\n\u2026\nCONTACTS & LOCAL\nContacts\n0\nREGISTRY NETWORK\nUnavailable\nNo verified public registry snapshot available; wallet connection is separate.\nAccount\nNot connected\nExport\nImport\nAMO\nCanonical AMO summary loading\nRefresh\nLoading\nCanonical AMO summary\nLoading all credit and bond listings and verifying the AMO snapshot.\nIDs\n\u2014\nDNS\n1\nCredits\n\u2014\nBonds\n\u2014\nBoosts\n0\n1\nActive Listings\n0\nDNS Sales\n0\nVolume proofs\n0\nPending .pow\nList a .pow name\n\nPublish an on-chain listing for one of your confirmed .pow names. Listings cost 546 proofs.\n\nConnect the owner wallet to list confirmed .pow names.\n\nAMO Transfer\n\nListings create a sale-ticket UTXO. Buyers settle by spending that ticket and paying the 546 sat registry transfer.\n\nPublish on-chain listing\n\nSelect an owned confirmed .pow name above first.\n\nSeller price proofs\nSpecific buyer optional\nLocked receive address optional\nFee sat/vB\n0.1 sat\n0.5 sat\n1 sat\n2 sat\nPublish On-Chain\nSelect an on-chain listing\n\nChoose an active listing below. The purchase form fills from that on-chain listing.\n\nProofOfWork Computer verifying public data. Connect UniSat for account balances and spendable proofs.\nProofOfWork Computer verifying public data. Connect UniSat for account balances and spendable proofs.\nNew owner\nNew receive optional\n0 / 100,000 OP_RETURN data-carrier bytes\nFee sat/vB\n0.1 sat\n0.5 sat\n1 sat\n2 sat\nBuy Listing On-Chain\nActive Listings\n\nOn-chain .pow name listings are canceled by delisting, expiry, or any ownership ",
+        "pageErrors": [],
+        "unavailable": []
+      }
+    ],
+    "closeoutAssertions": {
+      "checkpointMatchesDirectCore": true,
+      "confirmedPrefixUnchanged": true,
+      "allFourCanonicalHistoryDatesMatchCore": true,
+      "publicGrowthDatesCorrectAfterNaturalPublication": true,
+      "augustSealNoFalseSeptemberRecentEvent": true,
+      "computerReviewedLast": true,
+      "rollbackRequired": false,
+      "optionalRestoreRun": false,
+      "otherInventoryDeletionsPerformed": false
+    }
   }
 }
