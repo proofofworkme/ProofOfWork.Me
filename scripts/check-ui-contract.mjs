@@ -1952,6 +1952,15 @@ expect(
     ),
 );
 expect(
+  "Desktop fetches a confirmed welcome system reference independently of address mail",
+  /fetchDesktopWelcomeReference\(network\)\.catch/.test(app) &&
+    /if \(!page\.confirmed\)/.test(app) &&
+    /fetchBrowserPage\(CANONICAL_WELCOME_TXID, targetNetwork\)/.test(app) &&
+    /setDesktopMail\(desktopMessages\)/.test(app) &&
+    /Welcome system reference unavailable/.test(app) &&
+    /not a file belonging to this address/.test(app),
+);
+expect(
   "attachment reconstruction caps declared part counts before allocation",
   /const MAX_ATTACHMENT_PARTS = 1_024/.test(app) &&
     /total > MAX_ATTACHMENT_PARTS[\s\S]{0,1000}Array\.from\(\{ length: total \}/.test(

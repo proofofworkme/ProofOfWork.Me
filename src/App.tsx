@@ -528,6 +528,7 @@ type DesktopProfile = {
   network: BitcoinNetwork;
   query: string;
   resolvedId?: string;
+  welcomeUnavailable?: boolean;
 };
 
 type BrowserPage = {
@@ -1583,7 +1584,7 @@ type MultiRecipientResolution = {
   recipients: RecipientResolution[];
 };
 
-type MailMessage =
+type MailMessage = (
   | (InboxMessage & {
       folder: "inbox";
     })
@@ -1592,7 +1593,8 @@ type MailMessage =
     })
   | (SentMessage & {
       folder: "sent";
-    });
+    })
+) & { systemReference?: boolean };
 type FileSurfaceMessage = MailMessage & {
   attachment: MailAttachment;
   desktopDirections?: Array<"inbox" | "sent">;
@@ -13795,7 +13797,10 @@ function desktopFileSurfaceMessages(
     const direction = message.folder === "sent" ? "sent" : "inbox";
     const existing = files.get(key);
     if (!existing) {
-      files.set(key, { ...message, desktopDirections: [direction] });
+      files.set(key, {
+        ...message,
+        desktopDirections: message.systemReference ? undefined : [direction],
+      });
       continue;
     }
     const directions = new Set(existing.desktopDirections ?? []);
@@ -13926,6 +13931,30 @@ async function fetchBrowserPage(txid: string, targetNetwork: BitcoinNetwork) {
     );
   }
   return browserPageFromTransaction(transaction, targetNetwork);
+}
+
+async function fetchDesktopWelcomeReference(
+  targetNetwork: BitcoinNetwork,
+): Promise<FileSurfaceMessage | undefined> {
+  if (targetNetwork !== "livenet") return undefined;
+  const page = await fetchBrowserPage(CANONICAL_WELCOME_TXID, targetNetwork);
+  if (!page.confirmed) {
+    throw new Error("The welcome transaction is not confirmed.");
+  }
+  return {
+    folder: "inbox",
+    systemReference: true,
+    amountSats: page.amountSats,
+    attachment: { ...page.attachment, name: "Welcome to ProofOfWork.Me.html" },
+    confirmed: page.confirmed,
+    createdAt: page.createdAt,
+    from: page.sender,
+    to: "",
+    memo: page.html,
+    network: page.network,
+    replyTo: page.sender,
+    txid: page.txid,
+  };
 }
 
 function publicDesktopMail(
@@ -27629,11 +27658,17 @@ export default function App() {
         return;
       }
 
-      const mailState = await fetchAddressMail(resolved.paymentAddress, network, true);
+      const [mailState, welcome] = await Promise.all([
+        fetchAddressMail(resolved.paymentAddress, network, true),
+        fetchDesktopWelcomeReference(network).catch(() => undefined),
+      ]);
       const { inboxMessages, sentMessages } = mailState;
       const publicMail = fileSurfaceMessages(
         publicDesktopMail(inboxMessages, sentMessages),
       );
+      const desktopMessages = welcome
+        ? [welcome, ...publicMail.filter((message) => message.txid !== welcome.txid)]
+        : publicMail;
       const files = desktopFileSurfaceMessages(publicMail).filter(hasAttachment);
       const profile: DesktopProfile = {
         address: resolved.paymentAddress,
@@ -27644,6 +27679,7 @@ export default function App() {
         network,
         query,
         resolvedId: resolved.id,
+        welcomeUnavailable: network === "livenet" && !welcome,
       };
 
       if (!requestIsActive()) {
@@ -27652,7 +27688,7 @@ export default function App() {
 
       setDesktopQuery(query);
       setDesktopProfile(profile);
-      setDesktopMail(publicMail);
+      setDesktopMail(desktopMessages);
       setDesktopSelectedKey(files[0] ? desktopFileIdentityKey(files[0]) : "");
       setActiveFolder("desktop");
       setComposeOpen(false);
@@ -58126,8 +58162,7 @@ function DesktopWorkspace({
         <div>
           <h2>{profile.label} Desktop</h2>
           <span>
-            {fileMessages.length.toLocaleString()} public file
-            {fileMessages.length === 1 ? "" : "s"} ·{" "}
+            {fileMessages.filter((message) => !message.systemReference).length.toLocaleString()} public files ·{" "}
             {shortAddress(profile.address)}
           </span>
         </div>
@@ -58205,6 +58240,15 @@ function DesktopWorkspace({
         </button>
       </div>
 
+      {profile.welcomeUnavailable ? (
+        <p className="desktop-reference-status" role="status">
+          Welcome system reference unavailable: its confirmed transaction could
+          not be verified. Refresh to retry.
+        </p>
+      ) : null}
+      {fileMessages.some((message) => message.systemReference) ? (
+        <p className="desktop-reference-status">Welcome system reference · verified on-chain · shared across Desktops</p>
+      ) : null}
       {fileMessages.length === 0 ? (
         <div className="desktop-empty">
           <div className="empty-icon" aria-hidden="true">
@@ -58460,7 +58504,7 @@ function FileTile({
 }: {
   active: boolean;
   activeNetwork: BitcoinNetwork;
-  message: MailMessage & { attachment: MailAttachment };
+  message: FileSurfaceMessage;
   onSelect: (message: MailMessage) => void;
   showWorkSignal?: boolean;
 }) {
@@ -58476,6 +58520,7 @@ function FileTile({
     >
       <FilePreview attachment={attachment} />
       <strong title={attachment.name}>{attachment.name}</strong>
+      {message.systemReference ? <span>System reference</span> : null}
       <span>
         {formatBytes(attachment.size)} ·{" "}
         {fileFilterLabel(fileKindForMessage(message)).replace(/s$/u, "")}
@@ -58721,7 +58766,12 @@ function FileInspector({
           <dt>{isInboundFolder(message.folder) ? "From" : "To"}</dt>
           <dd>{peer}</dd>
         </div>
-        {message.desktopDirections?.length ? (
+        {message.systemReference ? (
+          <div>
+            <dt>Source</dt>
+            <dd>System reference · not a file belonging to this address</dd>
+          </div>
+        ) : message.desktopDirections?.length ? (
           <div>
             <dt>Mailbox</dt>
             <dd>

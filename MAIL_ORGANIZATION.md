@@ -186,6 +186,7 @@ Behavior:
 - Do not show local-only metadata such as drafts, folders, favorites, archives, or contacts.
 - Do not show pending Incoming or Outbox transactions as public files.
 - A canonical `Welcome to ProofOfWork.Me.html` system reference may be shown only when its actual chain-backed bytes and txid have been fetched and verified. Label it as a system reference; do not synthesize it, attribute it to the searched address, or imply it is present when unavailable. It should open through Browser by txid.
+  Public Desktop fetches the canonical welcome transaction independently for every mainnet address lookup, including empty addresses. Its confirmed HTML appears as a shared system reference, separate from the address-owned public file count. Failed verification shows an explicit unavailable notice and Refresh retries; other networks do not inherit the mainnet reference. The original transaction bytes, sender, timestamp, proof value, and Browser link are preserved.
 - Do not expose `Open Message` as a private mailbox action in the public inspector; link to the source transaction instead.
 - Do not show the Computer sidebar, compose tools, wallet controls, inbox/sent folders, or local account state on the public Desktop route.
 

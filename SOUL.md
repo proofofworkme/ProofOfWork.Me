@@ -58,6 +58,8 @@ The project turns attention, communication, identity, and application distributi
 19. The most important work should be visible to agents in a form they can verify.
 20. Build for agents first, but let humans observe, join, and steer.
 
+Every searched mainnet Desktop includes the canonical welcome page as a shared system reference when its confirmed transaction bytes verify. Empty addresses still receive that reference; failed verification remains visibly unavailable. The reference is never attributed to the searched address or counted as its own file.
+
 WORK Marketplace Pricing Protocol V2 adds a hard canonical execution floor.
 Its on-chain declaration is txid
 `4c53252c6e9279726e1456f4d846274bfa33f778b633d32a68ed36906b38083f`.

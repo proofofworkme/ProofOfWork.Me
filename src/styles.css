@@ -2491,6 +2491,13 @@ select {
   padding: 14px 16px;
 }
 
+.desktop-reference-status {
+  margin: 0;
+  padding: 12px 18px;
+  color: var(--muted);
+  font-size: 0.875rem;
+}
+
 .desktop-toolbar {
   align-items: center;
   border-bottom: 1px solid var(--border);

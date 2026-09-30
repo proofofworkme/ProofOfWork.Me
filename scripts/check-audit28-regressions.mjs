@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
+import ts from 'typescript';
 import { test } from 'node:test';
 import { electrumAddressHistoryCoverage } from '../server/address-chain-pagination.mjs';
 const source = readFileSync(new URL('../server/proof-api.mjs', import.meta.url), 'utf8');
@@ -76,4 +77,35 @@ test('DNS surface count accepts the DNS schema and rejects inconsistent counts',
  assert.throws(()=>validate({...fence,records:[{}],stats:{total:0}}));
  assert.throws(()=>validate({...fence,records:[{}],stats:{}}));
  assert.throws(()=>validate({records:[],stats:{total:0}}));
+});
+
+const appSource = readFileSync(new URL('../src/App.tsx', import.meta.url), 'utf8');
+function welcomeLoader(fetchBrowserPage) {
+ const start = appSource.indexOf('async function fetchDesktopWelcomeReference(');
+ const end = appSource.indexOf('\nfunction publicDesktopMail(', start);
+ const javascript = ts.transpile(appSource.slice(start, end), {target: ts.ScriptTarget.ES2022});
+ return vm.runInNewContext(`${javascript}; fetchDesktopWelcomeReference`, {
+  fetchBrowserPage, CANONICAL_WELCOME_TXID: 'welcome-tx',
+ });
+}
+test('Desktop welcome uses fetched bytes and original metadata without assigning address ownership', async () => {
+ const page = {confirmed:true, html:'<html>welcome</html>\n', txid:'welcome-tx',
+  attachment:{data:'exact',sha256:'hash',size:21,mime:'text/html',name:'body.html'},
+  amountSats:546,createdAt:'original-time',sender:'original-sender',network:'livenet'};
+ const load = welcomeLoader(async (txid, network) => {
+  assert.equal(txid,'welcome-tx'); assert.equal(network,'livenet'); return page;
+ });
+ const result = await load('livenet');
+ assert.equal(result.memo,page.html);
+ assert.equal(result.attachment.data,page.attachment.data);
+ assert.equal(result.attachment.sha256,page.attachment.sha256);
+ assert.equal(result.from,page.sender);
+ assert.equal(result.createdAt,page.createdAt);
+ assert.equal(result.to,'');
+ assert.equal(result.systemReference,true);
+});
+test('Desktop welcome rejects pending or unavailable evidence and does not fetch mainnet on testnets', async () => {
+ await assert.rejects(welcomeLoader(async () => ({confirmed:false}))('livenet'), /not confirmed/);
+ await assert.rejects(welcomeLoader(async () => {throw new Error('unavailable');})('livenet'), /unavailable/);
+ assert.equal(await welcomeLoader(async () => {throw new Error('must not fetch');})('testnet4'),undefined);
 });
