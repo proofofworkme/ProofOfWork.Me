@@ -88,14 +88,15 @@ function PersonRow({ row, network, viewer, onFollow }: { row: SocialRecord; netw
       <ProfileImage pointer={row.profile?.image} network={network} className="boost-avatar" fallback={row.displayName.slice(0, 2)} />
     </a>
     <div className="boost-person-copy">
-      <a href={boostRouteHref("/", { boost: "1", profile: row.id || row.address })}><strong>{row.profile?.name || row.id || row.displayName}</strong></a>
+      <a href={boostRouteHref("/", { boost: "1", profile: row.id || row.address })}><strong>{row.profile?.name === `${row.id}@proofofwork.me` ? row.id : row.profile?.name || row.id || row.displayName}</strong></a>
       <span>{row.id ? `${row.id}@proofofwork.me` : row.address}</span>
       {row.followsViewer ? <span>Follows you</span> : null}
       {row.viewerFollowsProfile ? <span>Following</span> : null}
-      <details><summary>Proof details</summary><span className="boost-person-address">{row.address}</span>
+      <div className="boost-person-meta"><details><summary>Proof details</summary><span className="boost-person-address">{row.address}</span>
         <span>{formatDate(row.createdAt)} · Confirmed</span>
       </details>
       <a href={explorerTxUrl(row.txid, network)} target="_blank" rel="noreferrer">View TX</a>
+      </div>
     </div>
     {onFollow && !self ? <button className="secondary small" onClick={() => onFollow(row)} type="button">{row.viewerFollowsProfile ? "Unfollow" : "Follow"}</button> : null}
   </article>;

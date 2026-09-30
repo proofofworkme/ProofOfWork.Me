@@ -1230,3 +1230,69 @@
 .boost-profile-image-viewer[open] { display: flex; align-items: center; justify-content: center; }
 .boost-profile-image-viewer > button { position: absolute; top: 16px; right: 16px; min-height: 44px; }
 .boost-profile-image-viewer > img { display: block; width: auto; height: auto; max-width: 100%; max-height: 100%; object-fit: contain; }
+
+/* Keep social detail views readable independently of the timeline shell. */
+.boost-modal { background: var(--bg); scroll-padding-top: 84px; }
+.boost-modal-head {
+  position: sticky; top: -20px; z-index: 5; align-items: center;
+  margin: -20px -20px 0; padding: 16px 20px;
+  background: var(--bg); border-bottom: 1px solid var(--border);
+}
+.boost-modal-head > button { flex: 0 0 auto; min-height: 44px; }
+.boost-modal-head > button span { text-transform: none; letter-spacing: normal; font-size: .85rem; color: inherit; }
+.boost-detail-modal { width: min(100%, 640px); max-width: 640px; gap: 0; }
+.boost-detail-modal .boost-post { background: transparent; padding: 16px 0; box-shadow: none; cursor: default; }
+.boost-detail-modal .boost-post-head { flex-wrap: wrap; gap: 8px; }
+.boost-detail-modal .boost-post-head-actions { flex-wrap: wrap; gap: 8px; }
+.boost-detail-modal .boost-post-media { width: 100%; max-height: min(280px, 32dvh); object-fit: contain; margin: 12px 0; }
+.boost-detail-modal .boost-profile-tabs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0; margin: 0; }
+.boost-detail-modal .boost-profile-tabs button { min-width: 0; min-height: 48px; padding: 10px 4px; text-align: center; justify-content: center; }
+.boost-detail-modal .boost-profile-tabs button[aria-selected="true"] { border-bottom-color: var(--accent); color: var(--text); background: var(--accent-soft); }
+.boost-detail-replies { border-top: 0; padding: 12px 0; gap: 0; }
+.boost-detail-replies > .field-note { margin: 0; padding: 8px 0; }
+.boost-detail-modal .boost-thread-reply { border-left: 0; padding: 0; }
+.boost-detail-modal > .primary { margin-top: 12px; }
+.boost-connections .boost-profile-titlebar { display: grid; grid-template-columns: 44px minmax(0, 1fr) 44px; align-items: center; gap: 12px; padding: 12px 16px; }
+.boost-connections .boost-profile-titlebar > div { text-align: center; }
+.boost-connections .boost-profile-titlebar > button { display: inline-flex; justify-content: center; align-items: center; padding: 0; width: 44px; height: 44px; }
+.boost-connections [role="tabpanel"] > .field-note { text-align: center; margin: 0; padding: 12px 16px; }
+.boost-person-row { gap: 12px; padding: 16px; align-items: flex-start; }
+.boost-person-copy { gap: 4px; line-height: 1.4; }
+.boost-person-row > button { margin: 0; min-height: 40px; align-self: flex-start; }
+.boost-person-meta { display: flex; gap: 16px; align-items: flex-start; min-width: 0; font-size: .78rem; color: var(--text-muted); }
+.boost-person-meta details { flex: 1; min-width: 0; margin: 0; padding: 0; }
+.boost-person-meta details[open] > span { display: block; margin-top: 8px; }
+.boost-person-meta > a { flex-shrink: 0; color: var(--accent); min-height: 24px; padding: 0; }
+.boost-public-app.mail-app { display: flex; flex-direction: column; }
+.boost-public-app.mail-app > .boost-shell-instrument { flex: 1 0 auto; }
+.boost-public-app.mail-app > .app-footer.boost-footer {
+  background: var(--bg); border-top: 1px solid var(--border); margin: auto 0 0;
+  padding: 24px 20px; display: grid; grid-template-columns: auto auto;
+  justify-content: center; align-items: center; gap: 12px 24px;
+}
+.boost-footer .boost-footer-apps { grid-column: 1 / -1; color: var(--text-muted); font-size: .8rem; }
+.boost-footer .boost-footer-apps summary { cursor: pointer; }
+.boost-footer .footer-app-nav { margin-top: 12px; max-width: 760px; }
+.boost-public-app.mail-app > .app-footer.boost-footer a { background: transparent; border: 0; border-radius: 0; padding: 4px 8px; }
+.boost-public-app.mail-app > .app-footer.boost-footer a:hover { text-decoration: underline; }
+@media (max-width: 480px) {
+  .boost-modal-backdrop { padding: 8px; }
+  .boost-modal { padding: 16px; max-height: calc(100dvh - 16px); }
+  .boost-modal-head { top: -16px; margin: -16px -16px 0; padding: 12px 16px; }
+  .boost-detail-modal .boost-post-head-actions { justify-content: flex-start; }
+  .boost-person-row { padding: 14px 12px; gap: 10px; }
+  .boost-person-meta { gap: 10px; }
+  .boost-public-app.mail-app > .app-footer.boost-footer { grid-template-columns: minmax(0, 1fr); gap: 8px; padding-bottom: 88px; }
+  .boost-footer .social-nav { justify-content: center; }
+}
+.boost-connections .boost-profile-titlebar { background: var(--bg); }
+.boost-footer .social-nav { grid-column: 2; grid-row: 1; }
+.boost-footer .boost-footer-apps { grid-row: 2; margin: 0; padding: 0; }
+.boost-footer .social-nav svg, .boost-footer .social-nav [aria-hidden="true"] { display: none; }
+@media (max-width: 480px) {
+  .boost-footer .social-nav { grid-column: 1; grid-row: 2; }
+  .boost-footer .boost-footer-apps { grid-row: 3; }
+}
+@media (max-width: 480px) {
+  .boost-detail-modal .boost-actions > a .button-content > span { display: none; }
+}
