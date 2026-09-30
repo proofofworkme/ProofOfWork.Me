@@ -284,37 +284,6 @@ verify_complete_backup_set() {
   candidate_verify_reason=verified
 }
 
-# Root-controlled policy protects pinned source dumps without stopping backups.
-# Missing/unsafe policy fails closed for old-set deletion, not backup creation.
-logical_backup_pin_file=/etc/proofofwork-postgres-logical-backup.pins
-pinned_logical_backups=()
-read_logical_backup_pin_policy() {
-  local line mode
-  [[ -f "${logical_backup_pin_file}" && ! -L "${logical_backup_pin_file}" &&
-     "$(realpath -e "${logical_backup_pin_file}")" == "${logical_backup_pin_file}" &&
-     "$(stat --format=%u "${logical_backup_pin_file}")" == 0 &&
-     "$(stat --format=%s "${logical_backup_pin_file}")" -le 4096 ]] || return 1
-  mode="$(stat --format=%a "${logical_backup_pin_file}")" || return 1
-  [[ "${mode}" == 644 ]] || return 1
-  while IFS= read -r line || [[ -n "${line}" ]]; do
-    [[ "${line}" =~ ^proof_indexer-[0-9]{8}T[0-9]{6}Z\.dumpset$ ]] || return 1
-    pinned_logical_backups+=("${line}")
-    ((${#pinned_logical_backups[@]} <= 16)) || return 1
-  done <"${logical_backup_pin_file}" || return 1
-}
-logical_backup_is_pinned() {
-  local pinned
-  for pinned in "${pinned_logical_backups[@]}"; do
-    [[ "$1" != "${pinned}" ]] || return 0
-  done
-  return 1
-}
-logical_retention_policy_ready=1
-if ! read_logical_backup_pin_policy; then
-  logical_retention_policy_ready=0
-  echo 'Logical backup pin policy missing or unsafe: old backup sets will be preserved.' >&2
-fi
-
 retained_current_set=false
 for entry in "${backups[@]}"; do
   name="${entry#* }"
@@ -334,10 +303,9 @@ for entry in "${backups[@]}"; do
       "${candidate}" "${backup_candidate_bytes}"
     continue
   fi
-  if (( logical_retention_policy_ready == 0 )) || logical_backup_is_pinned "${name}"; then
-    printf 'backup_retention_review candidate=%s reason=operator-pin-or-unavailable-policy action=preserve\n' "${candidate}"
-    continue
-  fi
+  # Reviewed emergency fallback: backups continue; no older set is retired.
+  printf 'backup_retention_review candidate=%s reason=audit28-emergency-retention-hold action=preserve\n' "${candidate}"
+  continue
   if ! verify_complete_backup_set "${candidate}"; then
     printf 'backup_retention_review candidate=%s reason=verification-failed predicate=%s members=%s action=preserve\n' \
       "${candidate}" "${candidate_verify_reason:-unknown}" "${candidate_member_inventory:-unknown}"

@@ -476,3 +476,104 @@ Public Growth API and UI show the correct seal chronology: `767b…5c4b` at 13:3
 **Approved execution complete.** One inventoried cleanup candidate removed; 816 inventory observations remain held. Source fix/monitoring/retention guard deployed from `db853f4`; execution records committed and pushed separately on `codex/audit28-approved-followup`. Protected rollback/recovery material remains, no rollback was needed, and no protocol/accounting/schema/physical-DB changes or unrelated cleanup occurred.
 
 **Still open / separately approved next steps:** AMO/wallet performance and intermittent availability; persistent retention pause or pin-aware policy before reboot/resumption; optional pinned isolated restore; remaining deletion manifests/retention decisions; physical DB assurance/maintenance and external alert delivery. Source preparation remains distinct from approval to deploy future improvements or delete held items. Hygiene and required commit hooks are retained; no public/social post was sent.
+
+
+## 2026-09-29 remaining-follow-up preparation and isolated restore
+
+The user approved local preparation of persistent retention protection, bounded
+wallet/AMO reads, monitoring, database assurance and review of all 816 held items,
+and separately approved execution of the original pinned isolated logical test.
+Production tooling/configuration installation, publication, commits/pushes and
+new deletion remain gated. The complete prepared plan and exact proposed changes
+are in `2026-09-29-audit28-remaining-followups.md` and its manifest/evidence files.
+
+- All 816 host-qualified observations were refreshed and conservatively
+  classified; all still exist, 402 changed metadata, and the proposed storage
+  deletion list is empty. Bounded classification of the previously unclassified
+  79, positive INCB/log process references and the live cache configuration
+  reinforce their holds. Absence of a bounded reference is not deletion proof.
+- Prepared client changes bound complete listing reads and AMO summary/book
+  hydration to 120 seconds, allow one AMO retry, isolate fresh/caller-cancelled
+  requests, and cancel obsolete wallet/workspace/token-selection reads. All
+  authority, checkpoint, completeness, signing and exact-accounting gates remain.
+  TypeScript, all 15 surface builds plus NFT parity, 14 budget/cancellation
+  regressions, 43 client-containment checks, 10 API timeout cases, exact WORK/bond/
+  fee contracts and two DNS/AMO browser regressions pass. No server speed gain
+  is claimed from these undeployed changes.
+- Four sequential public reads took 18.46 seconds total: WORK 7367 ms/1,609,151
+  bytes and AMO 9127 ms/2,022,087 bytes, both HTTP 200 at direct Core checkpoint
+  969236/hash 000000000000000000010673be0bbadcddc01435c1732aa17ef4795e5ab8fa0d.
+  Existing performance/availability findings remain open.
+- **Closeout clarification:** the installed monitor executable still uses the
+  old slow-correct warning label. The prior source release included the neutral
+  correction, but that did not update `/usr/local/sbin/proofofwork-summary-route-health`.
+  Its resolution remains open. A prepared replacement separates correctness
+  from critical operational latency and records payload bytes; three monitor
+  regressions pass. This supplements, rather than deletes, the earlier record.
+- Live database catalog checks were read-only with five-second limits: zero
+  invalid indexes and unvalidated constraints. Size 37,724,707,863 bytes; transition
+  table 36,472,152,064 bytes. Live checksums remain off (existing H18-06); no
+  production database or protocol changes were made.
+- The original pinned restore's dump and globals checksums passed. An initial
+  203/EXEC staging-path failure was preserved; the unchanged script then ran
+  under the reviewed unit caps. At 2026-09-30 02:09:27 UTC, data/schema and offline
+  page verification passed: 1470 files, 4,437,025 blocks, zero bad checksums, zero
+  invalid indexes/constraints. All recovery data and evidence remain retained,
+  and the isolated cluster is stopped. These results do not certify live physical
+  pages, roles/ACLs, PITR or full chain replay equivalence.
+- **New P1 — restore storage-watchdog failure:** WAL recycling caused `du` to
+  fail and the background watcher exited at 01:44:34 UTC; the parent did not
+  monitor its liveness. Memory/CPU/runtime caps remained enforced. Final job
+  allocation was 37,423,046,656 bytes and free data space 436,713,209,856 bytes;
+  no measured breach was observed, but continuous storage-limit assurance is
+  incomplete. A separate fail-closed script correction passes seven local
+  regressions. No corrected full test was silently rerun; new approval is required.
+- Persistent retention remains a prepared change: the original three timers
+  are stopped but enabled. New root holds, exact timer masks/service conditions,
+  guarded manual pruning/publishing and bounded journal-only checker units are
+  pinned in the manifest. Six guard/checker cases and unit syntax validation pass.
+- **Time-sensitive recovery dependency:** the logical-backup helper keeps only
+  the newest verified set; its next run is 2026-09-30 03:18:48 UTC. A separately
+  prepared exact pin policy and guarded helper preserve the original restore
+  source while backups continue. Seven policy regressions and the existing
+  hardening contract pass. This new production target is not installed; its
+  approval is required before relying on the source surviving the next backup.
+- Final direct Core was fully synced at 969237/hash
+  0000000000000000000040c40549cdc7cf645bfd66432c1251d418739082a373; public API
+  health was ready at the same height with zero reported lag. Core/Electrs/live
+  PostgreSQL/API/indexer identities remained unchanged and active.
+
+Recommended priority remains: protect retention and the exact backup pin; review
+and publish the tested client/monitoring changes; approve a corrected isolated
+restore after its exact revalidation and backup-window checks; investigate server
+phase costs and transition-payload/index efficiency; release held storage only
+after unique-history/recovery/dependency proof and a separately approved exact
+manifest. No additional production deletion, live maintenance, alert delivery,
+commit, push or deployment has been performed in this preparation phase.
+
+## Approved execution update — 2026-09-30 UTC
+
+The user approved the next production-tooling, corrected-restore and commit/push
+steps. At 02:41 UTC, exact tooling and timer fingerprints matched; the original
+backup source remained present. Both UI retention timers and the node release
+retention timer are now persistently masked/inactive with root-owned hold markers
+and service conditions. Prior tools/timer bytes and link receipts are preserved
+at the manifest's exact evidence roots. The logical-backup pin and guard are
+installed; scheduled backup creation was not paused. UI retention monitoring passes.
+The corrected restore remains approved but awaits a clear backup-lock window
+after the scheduled 03:18:48 UTC backup. No storage deletion was performed.
+
+The first hardened node checker failed because its empty capability set could
+not inspect the postgres-owned 0700 backup source, although direct root execution
+passed. The failure journal and original unit were preserved. The user separately
+approved exact candidate `deploy/audit28/retention-protection-node-readonly.service`
+SHA256 `0d128a66f97990fcd7184b1e6b995acc823f09ee6c2afae6a11708baa5062b43`.
+Installed at 02:44 UTC, it allows only CAP_DAC_READ_SEARCH in its bounding/ambient
+sets; strict read-only filesystem protection and all resource limits are unchanged.
+The service now passes with exit zero. This explicitly approved candidate supersedes
+the earlier prepared node unit for installation; the earlier unit remains baseline
+evidence, not the current recommended installation. Receipt and amendment are in
+the evidence JSON. All live application service processes remain unchanged;
+production UI uses Caddy and the worker is proofofwork-indexer-worker.service.
+Application source publication still requires review of its final commit-bound
+archive. All 816 held observations remain retained; productionDelete stays empty.

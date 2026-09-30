@@ -5671,3 +5671,62 @@ maintenance was performed. The dated execution appendix in
 `audits/2026-09-29-production-comprehensive-health-data-integrity-audit-28.md`
 and the preparation evidence JSON record actual release and verification state.
 The prepared exception above is historical context, not deployment evidence.
+
+
+### Audit 28 remaining follow-ups — prepared, not deployed (2026-09-29)
+
+The separately approved pinned logical restore is recorded in
+`audits/2026-09-29-audit28-remaining-followups.md` and its evidence file.
+Local source now bounds complete listing reads to 120 seconds and AMO's combined
+summary/book hydration to the same total budget with one retry and wallet/workspace
+cancellation. These client changes do not alter checkpoint authority, exact
+accounting, signing rechecks or protocol history and are not yet production-published.
+
+Prepared retention protection uses persistent holds plus timer masks and direct
+pruning guards; the live three timers remain stopped but enabled until separately
+approved installation. The exact tooling/timer hashes and zero-item deletion plan
+are in `audits/2026-09-29-audit28-remaining-followups.manifest.json`. All 816 old held
+observations remain retained. Live database checksums remain off; a successful
+logical restore would not certify live physical-page integrity or WAL/PITR recovery.
+The installed monitoring executable still has the old slow-correct warning label;
+its prepared replacement separates correctness from critical operational latency.
+No production retention resume, database change or newly discovered deletion is
+authorized by this preparation record.
+
+The pinned logical restore completed data/schema and offline-page checks with
+zero bad checksums, but final journal review found its storage watcher exited on
+WAL recycling. Continuous storage-guard assurance therefore remains incomplete.
+The original script and full restore job are retained unchanged; a fail-closed
+watcher correction is prepared separately and needs new approval before a full
+rerun. The logical-backup helper's keep-newest-only policy can retire the exact
+source at its next successful run; the prepared root-controlled pin policy and
+helper guard protect it while allowing backups to continue. These backup-policy
+and watcher changes are explicitly not installed or executed. See the exact
+remaining-followups manifest and final evidence for the named approval gates.
+
+## Approved execution update — 2026-09-30 UTC
+
+The user approved the next production-tooling, corrected-restore and commit/push
+steps. At 02:41 UTC, exact tooling and timer fingerprints matched; the original
+backup source remained present. Both UI retention timers and the node release
+retention timer are now persistently masked/inactive with root-owned hold markers
+and service conditions. Prior tools/timer bytes and link receipts are preserved
+at the manifest's exact evidence roots. The logical-backup pin and guard are
+installed; scheduled backup creation was not paused. UI retention monitoring passes.
+The corrected restore remains approved but awaits a clear backup-lock window
+after the scheduled 03:18:48 UTC backup. No storage deletion was performed.
+
+The first hardened node checker failed because its empty capability set could
+not inspect the postgres-owned 0700 backup source, although direct root execution
+passed. The failure journal and original unit were preserved. The user separately
+approved exact candidate `deploy/audit28/retention-protection-node-readonly.service`
+SHA256 `0d128a66f97990fcd7184b1e6b995acc823f09ee6c2afae6a11708baa5062b43`.
+Installed at 02:44 UTC, it allows only CAP_DAC_READ_SEARCH in its bounding/ambient
+sets; strict read-only filesystem protection and all resource limits are unchanged.
+The service now passes with exit zero. This explicitly approved candidate supersedes
+the earlier prepared node unit for installation; the earlier unit remains baseline
+evidence, not the current recommended installation. Receipt and amendment are in
+the evidence JSON. All live application service processes remain unchanged;
+production UI uses Caddy and the worker is proofofwork-indexer-worker.service.
+Application source publication still requires review of its final commit-bound
+archive. All 816 held observations remain retained; productionDelete stays empty.

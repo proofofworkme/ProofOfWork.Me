@@ -1,0 +1,130 @@
+{
+  "root": "/tmp/audit28-followup-build-m27pijnk",
+  "source": "/tmp/audit28-followup-build-m27pijnk/source",
+  "heapLimitMiB": 1024,
+  "concurrency": 1,
+  "maximumBuildSeconds": 900,
+  "elapsedSeconds": 19.66,
+  "surfaces": [
+    {
+      "surface": "landing",
+      "sha256": "01773e62f37d062ecf00898cba86323836c6d675e34789b2588e303488479e5b",
+      "files": 49,
+      "bytes": 13639245,
+      "modeContentSha256": "b6398eb5b875b18934dabdb44f414a96c94e8a5a96bca7cf6679294726e47651"
+    },
+    {
+      "surface": "id",
+      "sha256": "d2de5848883041dfa1a97e120458d4c4002f7b8b1b6fca2c9be75c3a072f690f",
+      "files": 49,
+      "bytes": 13639273,
+      "modeContentSha256": "8ba8b621ffee8ac2063208b21363b994ecf60ba0533a89dd2a5090445c4ef8be"
+    },
+    {
+      "surface": "dns",
+      "sha256": "2d1325486572d1644609c9d2793cf46230f4c5bbb1ccbdcf691185a751c0e11f",
+      "files": 49,
+      "bytes": 13639272,
+      "modeContentSha256": "371fd7fc93c2c61782c37e09cda31be449ea7ea068e3e07c0d3e13fa64c38082"
+    },
+    {
+      "surface": "computer",
+      "sha256": "e528cd3cc016f8a63e2414d5c7f23198dceca9a009b37d9e6290d538ab190639",
+      "files": 49,
+      "bytes": 13639319,
+      "modeContentSha256": "d4d73cea1d678638402f2bcbc6483ca15c253eacec977609df54635a4615c5ae"
+    },
+    {
+      "surface": "desktop",
+      "sha256": "24352271299818a6e980e2a671f3b3acdd8981e6b7b4fdb871229f4f59d814d8",
+      "files": 49,
+      "bytes": 13639275,
+      "modeContentSha256": "1ad1d0496209148643bdaed6ec1132fed15e1ee4491cc355b3e8e63bcad2cb5e"
+    },
+    {
+      "surface": "browser",
+      "sha256": "e06de13b91bcd91b75802aa48202e7e517c34b21286e6f314b1607780d6e17f1",
+      "files": 49,
+      "bytes": 13639275,
+      "modeContentSha256": "b450dfef1f47c3d5eb50ed78a95693f4f7e5d1b8d746e5acc57fec01d7cbc20a"
+    },
+    {
+      "surface": "boost",
+      "sha256": "ea1e7a325bfd106459ea2f734b14182de2e1fd13ca189a8d5b9b77d122c9b19c",
+      "files": 49,
+      "bytes": 13639277,
+      "modeContentSha256": "a985877e78e011b191a2b91993be2a6df397401d26577f2a8f055a1646eefed4"
+    },
+    {
+      "surface": "marketplace",
+      "sha256": "7552b83cdf98a9eef8f19ecaca32b8a99f75ee38437eb5665f7e9d9c91361eb3",
+      "files": 49,
+      "bytes": 13639225,
+      "modeContentSha256": "626e00719e98d905c0860b9d4011484ba649f25e0322ba61445ab1e8dedb214a"
+    },
+    {
+      "surface": "token",
+      "sha256": "c269c3cfffa7b3161786cdb92e6b43b48afc539eb8e339f43e6a4cae518b681e",
+      "files": 49,
+      "bytes": 13639199,
+      "modeContentSha256": "6b2d35c82793af12ca7f92b9848ec8a79e27f9673ac7540406cd9be7b18d7df8"
+    },
+    {
+      "surface": "wallet",
+      "sha256": "c1ac3db4a3c0f6eecf28ed25e6614e4c40d1386de48450ff0728b217aa4820a4",
+      "files": 49,
+      "bytes": 13639276,
+      "modeContentSha256": "4ec9d12c475a2300ca1cc93c8dccf080e43da8c1e9b9f0bafadeb7824e1eceb2"
+    },
+    {
+      "surface": "work",
+      "sha256": "fd8aa17f6935bb7348dac63ecd6d4dc6c083cd85f65403feb8fe8b6c95bb07c4",
+      "files": 49,
+      "bytes": 13639278,
+      "modeContentSha256": "82c90e67f601811a08566a8460b5780b253c65add9fe50deed86ccc8970b33fe"
+    },
+    {
+      "surface": "infinity",
+      "sha256": "bc5ddc36d15a750d3e79a54c1e6fc40698bcef0988accc835bad9120c043547d",
+      "files": 49,
+      "bytes": 13639274,
+      "modeContentSha256": "2e9809225651d6a807dd1394dc04568387abd010f603edfb8034bb43e2cfff86"
+    },
+    {
+      "surface": "inception",
+      "sha256": "3df6251cd214392456dc9b2d9e8034452ac29876e099353256a7dbad4d9a6c4e",
+      "files": 49,
+      "bytes": 13639273,
+      "modeContentSha256": "cc63efa2b2505fc41d3b7d91498b6b02e8faddfb412f49651e4ec282f99db2ba"
+    },
+    {
+      "surface": "activity",
+      "sha256": "296795ae227aec06475886bb0d0c0b222297b6f6aeb5686dda55df397c069aa7",
+      "files": 49,
+      "bytes": 13639225,
+      "modeContentSha256": "058b7d4f7a426c3f97e15e46e350db1471b010c4f9ffb66855a8dcee196986ca"
+    },
+    {
+      "surface": "growth",
+      "sha256": "ff2925ba395a5aedfb67f5da6c490e2b31602430f911e0a30a4610fd5008892b",
+      "files": 49,
+      "bytes": 13639276,
+      "modeContentSha256": "c5cf8f8b7572a7647f1478219040790bc09365c3d5d7d8c0020e2b15e1c2efd9"
+    },
+    {
+      "surface": "nft",
+      "sha256": "e528cd3cc016f8a63e2414d5c7f23198dceca9a009b37d9e6290d538ab190639",
+      "files": 49,
+      "bytes": 13639319,
+      "modeContentSha256": "d4d73cea1d678638402f2bcbc6483ca15c253eacec977609df54635a4615c5ae"
+    }
+  ],
+  "sha256Model": "Sorted UTF-8 relative path, NUL, content SHA-256, LF; modes excluded",
+  "modeContentSha256Model": "Sorted UTF-8 relative path, NUL, octal mode, NUL, content SHA-256, LF",
+  "preparedArchive": {
+    "path": "/tmp/audit28-followup-ui-surfaces-reviewed.tgz",
+    "sha256": "421e734295e3e62347ececf6ef79a6269ce3aee654f73b94b16a4f6c0b13b76e",
+    "bytes": 194684967,
+    "scope": "Reviewed build bytes only; not yet a clean-Git-bound production release archive"
+  }
+}

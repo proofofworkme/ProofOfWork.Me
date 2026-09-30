@@ -101,7 +101,12 @@
       "audits/2026-09-29-approved-audit-28-cleanup-corrections-execution.md",
       "audits/2026-09-29-audit28-followup-preparation.md",
       "audits/2026-09-29-audit28-followup-cleanup.manifest.json",
-      "audits/2026-09-29-audit28-followup-preparation.evidence.json"
+      "audits/2026-09-29-audit28-followup-preparation.evidence.json",
+      "audits/2026-09-29-audit28-held-review.json",
+      "audits/2026-09-29-audit28-remaining-followups.md",
+      "audits/2026-09-29-audit28-remaining-followups.manifest.json",
+      "audits/2026-09-29-audit28-remaining-followups.evidence.json",
+      "audits/2026-09-29-audit28-followup-builds.json"
     ],
     "staged-or-future-protocol-notes": [
       "CHAIN_CONTENT.md",

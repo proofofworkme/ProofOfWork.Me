@@ -19,6 +19,10 @@ source_checkout=""
 archive=""
 declare -a retain_rollback_roots=()
 defer_verified_retention=0
+# Publication remains available while all automatic retention stays paused.
+if [[ -e /etc/proofofwork-retention/audit28.hold || -L /etc/proofofwork-retention/audit28.hold ]]; then
+  defer_verified_retention=1
+fi
 
 while (($# > 0)); do
   case "$1" in

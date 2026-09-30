@@ -1,0 +1,538 @@
+{
+  "scope": "Bounded preparation; isolated restore separately authorized",
+  "fullNodeBefore": {
+    "chain": "main",
+    "blocks": 969236,
+    "headers": 969236,
+    "bestblockhash": "000000000000000000010673be0bbadcddc01435c1732aa17ef4795e5ab8fa0d",
+    "initialblockdownload": false,
+    "verificationprogress": 1
+  },
+  "fullNodeAfter": {
+    "chain": "main",
+    "blocks": 969236,
+    "headers": 969236,
+    "bestblockhash": "000000000000000000010673be0bbadcddc01435c1732aa17ef4795e5ab8fa0d",
+    "initialblockdownload": false,
+    "verificationprogress": 1
+  },
+  "routeProbe": {
+    "observedAt": "2026-09-30T01:48:15.336956+00:00",
+    "concurrency": 1,
+    "maximumRequests": 4,
+    "runBudgetSeconds": 120,
+    "requestTimeoutSeconds": 30,
+    "elapsedMs": 18457,
+    "measurements": [
+      {
+        "path": "/api/v1/health",
+        "status": 200,
+        "elapsedMs": 958,
+        "payloadBytes": 3877,
+        "height": 969236,
+        "blockHash": null,
+        "reason": null,
+        "code": null
+      },
+      {
+        "path": "/api/v1/work-summary?network=livenet&compact=1",
+        "status": 200,
+        "elapsedMs": 7367,
+        "payloadBytes": 1609151,
+        "height": 969236,
+        "blockHash": "000000000000000000010673be0bbadcddc01435c1732aa17ef4795e5ab8fa0d",
+        "reason": null,
+        "code": null
+      },
+      {
+        "path": "/api/v1/marketplace-summary?network=livenet&compact=1",
+        "status": 200,
+        "elapsedMs": 9127,
+        "payloadBytes": 2022087,
+        "height": 969236,
+        "blockHash": "000000000000000000010673be0bbadcddc01435c1732aa17ef4795e5ab8fa0d",
+        "reason": null,
+        "code": null
+      },
+      {
+        "path": "/api/v1/health",
+        "status": 200,
+        "elapsedMs": 1004,
+        "payloadBytes": 3874,
+        "height": 969236,
+        "blockHash": null,
+        "reason": null,
+        "code": null
+      }
+    ]
+  },
+  "liveDatabaseCatalog": {
+    "database": "proof_indexer",
+    "readOnly": "on",
+    "dataChecksums": "off",
+    "databaseBytes": 37724707863,
+    "invalidIndexes": 0,
+    "transitionTableBytes": 36472152064,
+    "unvalidatedConstraints": 0,
+    "transitionEstimatedRows": 9604
+  },
+  "isolatedRestore": {
+    "unit": "proofofwork-audit28-isolated-restore-20260929T213000Z",
+    "job": "/data/proofofwork-audit28-restore-20260929T213000Z",
+    "scriptSha256": "1adf36ed5dd2a4a67683f7fa95238d1c1a644baf91d6e07d0dd3472391246074",
+    "scriptPath": "/var/tmp/audit28-restore-logical.sh",
+    "status": "data-schema-and-offline-page-checksums-passed; continuous-storage-watchdog-assurance-incomplete",
+    "launchFailure": "203/EXEC at original root-private staging path; evidence preserved before clearing only isolated failed unit",
+    "failureEvidence": "/data/proofofwork-audit28-restore-20260929T213000Z-launch-failure.txt",
+    "results": {
+      "recordedAt": "2026-09-30T02:14:17.087051+00:00",
+      "schema": {
+        "port": "55432",
+        "events": 26648,
+        "socket": "/data/proofofwork-audit28-restore-20260929T213000Z/socket",
+        "database": "proof_indexer",
+        "transitions": 9470,
+        "transactions": 26035,
+        "dataDirectory": "/data/proofofwork-audit28-restore-20260929T213000Z/cluster",
+        "databaseBytes": 36325096471,
+        "creditBalances": 435,
+        "invalidIndexes": 0,
+        "ledgerSnapshots": 20289,
+        "listenAddresses": "",
+        "creditDefinitions": 238,
+        "unvalidatedConstraints": 0
+      },
+      "pageChecksums": "Checksum operation completed\nFiles scanned:   1470\nBlocks scanned:  4437025\nBad checksums:  0\nData checksum version: 1\n",
+      "backupChecksums": "proof_indexer.dump: OK\nglobals.sql: OK\n",
+      "jobAllocatedBytes": 37423046656,
+      "dataFreeBytes": 436713209856,
+      "rootFreeBytes": 71296782336,
+      "isolatedPostmasterPidExists": false,
+      "isolatedSocketExists": false,
+      "evidenceFiles": [
+        {
+          "name": "backup-checksums.txt",
+          "bytes": 39,
+          "sha256": "4998b72e3b7547b3ec9f4bbe3a4db92c56ddf55fae5b062820abea153c29c95c"
+        },
+        {
+          "name": "restore-toc.txt",
+          "bytes": 19253,
+          "sha256": "7eaf8e549ccb12e4677aafe95c905a9cf22687778f873d0eb05150ac3562e02b"
+        },
+        {
+          "name": "restore.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "name": "initdb.log",
+          "bytes": 906,
+          "sha256": "34f690b883890f77e2fb5ae6fba3804eeaea5c260229eccbe742647a95b65eb1"
+        },
+        {
+          "name": "postgres.log",
+          "bytes": 44072,
+          "sha256": "c03fe656f4e997aee21a24e931d038b8bf049f4468d1029083b90bb3fa5a031e"
+        },
+        {
+          "name": "cluster-control.log",
+          "bytes": 108,
+          "sha256": "d52c3d19b27719cac3b95cb56fbb6749d5ac0e8050f3edbc29e813a31e042d4e"
+        },
+        {
+          "name": "restored-schema-evidence.json",
+          "bytes": 436,
+          "sha256": "505ed4b16fd1b23d7e16987cbe4c8534cfa8acf9fb61593c2beb80d3e64c61f6"
+        },
+        {
+          "name": "page-checksums.txt",
+          "bytes": 119,
+          "sha256": "691bb95b85c5e71e7aad2fd26a8399eff19d7d10b7a62fd6a8b0f95f9abf3b03"
+        }
+      ],
+      "unit": "Result=success\nExecMainStatus=0\nMemoryPeak=[not set]\nCPUUsageNSec=[not set]\nActiveState=inactive\nSubState=dead\n",
+      "productionServices": "MainPID=1324302\nId=bitcoind.service\nActiveState=active\n\nMainPID=1324320\nId=electrs.service\nActiveState=active\n\nMainPID=97096\nId=postgresql@16-main.service\nActiveState=active\n\nMainPID=736307\nId=proofofwork-api.service\nActiveState=active\n\nMainPID=736323\nId=proofofwork-indexer-worker.service\nActiveState=active\n",
+      "journal": "Sep 30 01:42:28 pow-bitcoin-01 systemd[1]: Started proofofwork-audit28-isolated-restore-20260929T213000Z.service - /var/tmp/proofofwork-deploy/audit28-restore-logical.sh --apply 20260929T213000Z.\nSep 30 01:42:28 pow-bitcoin-01 (gical.sh)[751286]: proofofwork-audit28-isolated-restore-20260929T213000Z.service: Failed to execute /var/tmp/proofofwork-deploy/audit28-restore-logical.sh: Permission denied\nSep 30 01:42:28 pow-bitcoin-01 systemd[1]: proofofwork-audit28-isolated-restore-20260929T213000Z.service: Main process exited, code=exited, status=203/EXEC\nSep 30 01:42:28 pow-bitcoin-01 systemd[1]: proofofwork-audit28-isolated-restore-20260929T213000Z.service: Failed with result 'exit-code'.\nSep 30 01:43:42 pow-bitcoin-01 systemd[1]: Started proofofwork-audit28-isolated-restore-20260929T213000Z.service - /var/tmp/audit28-restore-logical.sh --apply 20260929T213000Z.\nSep 30 01:43:42 pow-bitcoin-01 audit28-restore-logical.sh[752023]: restore_plan source=/data/proofofwork-postgres-backups/logical/proof_indexer-20260929T031853Z.dumpset isolated_root=/data/proofofwork-audit28-restore-20260929T213000Z data_floor_bytes=107374182400 maximum_job_bytes=85899345920 listen_addresses=none port=55432 scope=data-schema-no-owner-no-acl-no-tablespaces\nSep 30 01:44:34 pow-bitcoin-01 audit28-restore-logical.sh[752618]: du: cannot access '/data/proofofwork-audit28-restore-20260929T213000Z/cluster/pg_wal/000000010000000000000021': No such file or directory\nSep 30 01:44:34 pow-bitcoin-01 audit28-restore-logical.sh[752618]: du: cannot access '/data/proofofwork-audit28-restore-20260929T213000Z/cluster/pg_wal/000000010000000000000019': No such file or directory\nSep 30 02:09:27 pow-bitcoin-01 audit28-restore-logical.sh[752023]: restore_check status=passed isolated_root=/data/proofofwork-audit28-restore-20260929T213000Z scope=data-schema-and-page-checksums global_roles_grants=not-restored production_tablespaces=not-used\nSep 30 02:09:27 pow-bitcoin-01 systemd[1]: proofofwork-audit28-isolated-restore-20260929T213000Z.service: Deactivated successfully.\nSep 30 02:09:27 pow-bitcoin-01 systemd[1]: proofofwork-audit28-isolated-restore-20260929T213000Z.service: Consumed 25min 41.606s CPU time, 4.0G memory peak, 0B memory swap peak.\n"
+    },
+    "storageWatchdogIssue": {
+      "severity": "P1",
+      "cause": "set -e/pipefail terminated the background monitor when du encountered recycled WAL files at 2026-09-30T01:44:34Z; parent did not verify watchdog liveness",
+      "observedBreach": "none demonstrated; final allocated job 37423046656 bytes and data free 436713209856 bytes satisfy limits, but continuous enforcement cannot be certified",
+      "executionStopped": "Original isolated cluster is stopped. No corrected full restore was started. Original script, failure journal and full recovery data preserved."
+    }
+  },
+  "verification": {
+    "typeScript": "passed",
+    "productionBuild": "passed; existing 500KB chunk warning",
+    "clientContainmentChecks": 43,
+    "mathContracts": [
+      "work-precision-v2",
+      "bond-exact-arithmetic",
+      "fee-rate-precision"
+    ],
+    "preparedRetentionCases": 6,
+    "preparedClientBudgetCases": 14,
+    "monitoringCases": 3,
+    "apiClientTimeoutCases": 10,
+    "preparedMonitoringCases": 3,
+    "allPublishedSurfaceBuilds": {
+      "root": "/tmp/audit28-followup-build-m27pijnk",
+      "source": "/tmp/audit28-followup-build-m27pijnk/source",
+      "heapLimitMiB": 1024,
+      "concurrency": 1,
+      "maximumBuildSeconds": 900,
+      "elapsedSeconds": 19.66,
+      "surfaces": [
+        {
+          "surface": "landing",
+          "sha256": "01773e62f37d062ecf00898cba86323836c6d675e34789b2588e303488479e5b",
+          "files": 49,
+          "bytes": 13639245,
+          "modeContentSha256": "b6398eb5b875b18934dabdb44f414a96c94e8a5a96bca7cf6679294726e47651"
+        },
+        {
+          "surface": "id",
+          "sha256": "d2de5848883041dfa1a97e120458d4c4002f7b8b1b6fca2c9be75c3a072f690f",
+          "files": 49,
+          "bytes": 13639273,
+          "modeContentSha256": "8ba8b621ffee8ac2063208b21363b994ecf60ba0533a89dd2a5090445c4ef8be"
+        },
+        {
+          "surface": "dns",
+          "sha256": "2d1325486572d1644609c9d2793cf46230f4c5bbb1ccbdcf691185a751c0e11f",
+          "files": 49,
+          "bytes": 13639272,
+          "modeContentSha256": "371fd7fc93c2c61782c37e09cda31be449ea7ea068e3e07c0d3e13fa64c38082"
+        },
+        {
+          "surface": "computer",
+          "sha256": "e528cd3cc016f8a63e2414d5c7f23198dceca9a009b37d9e6290d538ab190639",
+          "files": 49,
+          "bytes": 13639319,
+          "modeContentSha256": "d4d73cea1d678638402f2bcbc6483ca15c253eacec977609df54635a4615c5ae"
+        },
+        {
+          "surface": "desktop",
+          "sha256": "24352271299818a6e980e2a671f3b3acdd8981e6b7b4fdb871229f4f59d814d8",
+          "files": 49,
+          "bytes": 13639275,
+          "modeContentSha256": "1ad1d0496209148643bdaed6ec1132fed15e1ee4491cc355b3e8e63bcad2cb5e"
+        },
+        {
+          "surface": "browser",
+          "sha256": "e06de13b91bcd91b75802aa48202e7e517c34b21286e6f314b1607780d6e17f1",
+          "files": 49,
+          "bytes": 13639275,
+          "modeContentSha256": "b450dfef1f47c3d5eb50ed78a95693f4f7e5d1b8d746e5acc57fec01d7cbc20a"
+        },
+        {
+          "surface": "boost",
+          "sha256": "ea1e7a325bfd106459ea2f734b14182de2e1fd13ca189a8d5b9b77d122c9b19c",
+          "files": 49,
+          "bytes": 13639277,
+          "modeContentSha256": "a985877e78e011b191a2b91993be2a6df397401d26577f2a8f055a1646eefed4"
+        },
+        {
+          "surface": "marketplace",
+          "sha256": "7552b83cdf98a9eef8f19ecaca32b8a99f75ee38437eb5665f7e9d9c91361eb3",
+          "files": 49,
+          "bytes": 13639225,
+          "modeContentSha256": "626e00719e98d905c0860b9d4011484ba649f25e0322ba61445ab1e8dedb214a"
+        },
+        {
+          "surface": "token",
+          "sha256": "c269c3cfffa7b3161786cdb92e6b43b48afc539eb8e339f43e6a4cae518b681e",
+          "files": 49,
+          "bytes": 13639199,
+          "modeContentSha256": "6b2d35c82793af12ca7f92b9848ec8a79e27f9673ac7540406cd9be7b18d7df8"
+        },
+        {
+          "surface": "wallet",
+          "sha256": "c1ac3db4a3c0f6eecf28ed25e6614e4c40d1386de48450ff0728b217aa4820a4",
+          "files": 49,
+          "bytes": 13639276,
+          "modeContentSha256": "4ec9d12c475a2300ca1cc93c8dccf080e43da8c1e9b9f0bafadeb7824e1eceb2"
+        },
+        {
+          "surface": "work",
+          "sha256": "fd8aa17f6935bb7348dac63ecd6d4dc6c083cd85f65403feb8fe8b6c95bb07c4",
+          "files": 49,
+          "bytes": 13639278,
+          "modeContentSha256": "82c90e67f601811a08566a8460b5780b253c65add9fe50deed86ccc8970b33fe"
+        },
+        {
+          "surface": "infinity",
+          "sha256": "bc5ddc36d15a750d3e79a54c1e6fc40698bcef0988accc835bad9120c043547d",
+          "files": 49,
+          "bytes": 13639274,
+          "modeContentSha256": "2e9809225651d6a807dd1394dc04568387abd010f603edfb8034bb43e2cfff86"
+        },
+        {
+          "surface": "inception",
+          "sha256": "3df6251cd214392456dc9b2d9e8034452ac29876e099353256a7dbad4d9a6c4e",
+          "files": 49,
+          "bytes": 13639273,
+          "modeContentSha256": "cc63efa2b2505fc41d3b7d91498b6b02e8faddfb412f49651e4ec282f99db2ba"
+        },
+        {
+          "surface": "activity",
+          "sha256": "296795ae227aec06475886bb0d0c0b222297b6f6aeb5686dda55df397c069aa7",
+          "files": 49,
+          "bytes": 13639225,
+          "modeContentSha256": "058b7d4f7a426c3f97e15e46e350db1471b010c4f9ffb66855a8dcee196986ca"
+        },
+        {
+          "surface": "growth",
+          "sha256": "ff2925ba395a5aedfb67f5da6c490e2b31602430f911e0a30a4610fd5008892b",
+          "files": 49,
+          "bytes": 13639276,
+          "modeContentSha256": "c5cf8f8b7572a7647f1478219040790bc09365c3d5d7d8c0020e2b15e1c2efd9"
+        },
+        {
+          "surface": "nft",
+          "sha256": "e528cd3cc016f8a63e2414d5c7f23198dceca9a009b37d9e6290d538ab190639",
+          "files": 49,
+          "bytes": 13639319,
+          "modeContentSha256": "d4d73cea1d678638402f2bcbc6483ca15c253eacec977609df54635a4615c5ae"
+        }
+      ],
+      "sha256Model": "Sorted UTF-8 relative path, NUL, content SHA-256, LF; modes excluded",
+      "modeContentSha256Model": "Sorted UTF-8 relative path, NUL, octal mode, NUL, content SHA-256, LF",
+      "preparedArchive": {
+        "path": "/tmp/audit28-followup-ui-surfaces-reviewed.tgz",
+        "sha256": "421e734295e3e62347ececf6ef79a6269ce3aee654f73b94b16a4f6c0b13b76e",
+        "bytes": 194684967,
+        "scope": "Reviewed build bytes only; not yet a clean-Git-bound production release archive"
+      }
+    },
+    "retentionUnitValidation": [
+      {
+        "role": "ui",
+        "status": 0,
+        "diagnostics": "",
+        "scope": "Unit syntax and resource/security directives; only ExecStart executable mapped to existing local script for validation"
+      },
+      {
+        "role": "node",
+        "status": 0,
+        "diagnostics": "",
+        "scope": "Unit syntax and resource/security directives; only ExecStart executable mapped to existing local script for validation"
+      }
+    ],
+    "dnsAmoBrowserCases": 2,
+    "correctedStorageWatchdogCases": 7,
+    "logicalBackupPinCases": 8,
+    "hardeningContract": "passed after ensuring newest-backup verification remains before old-set pin decisions",
+    "repositoryHygiene": "fix/check passed; no commit or push performed"
+  },
+  "proposedTargetRevalidation": "New monitor service/timer, checker, hold markers and evidence roots absent; exact three timer enablement symlinks point to their pinned /etc unit files. Revalidate again before execution.",
+  "heldReview": {
+    "reviewedCount": 816,
+    "retainedCount": 816,
+    "proposedDeletions": 0,
+    "metadataChanged": 402,
+    "formerlyUnclassified": 79,
+    "unclassifiedRemaining": 0,
+    "scope": "Conservative classification, bounded metadata/children/source-provenance reads and positive process/config references; no equivalence/deletion certification."
+  },
+  "fullNodeAfterRestore": {
+    "chain": "main",
+    "blocks": 969237,
+    "headers": 969237,
+    "bestblockhash": "0000000000000000000040c40549cdc7cf645bfd66432c1251d418739082a373",
+    "initialblockdownload": false,
+    "verificationprogress": 1
+  },
+  "apiHealthAfterRestore": {
+    "observedAt": "2026-09-30T02:14:55.380722+00:00",
+    "indexedThroughBlock": 969237,
+    "lagBlocks": 0,
+    "ok": true,
+    "ready": true
+  },
+  "logicalBackupDependency": {
+    "installedToolSha256": "100a52b4bcca92ee17de265e57a6abb5dc09d2b90564b37e6b8d728dae5c7165",
+    "policy": "keeps only newest verified dumpset",
+    "nextScheduledBackupUTC": "2026-09-30 03:18:48 UTC",
+    "risk": "Exact original source may be retired by the scheduled successful backup; cannot silently substitute another dump for a corrected test. New pin-aware guard requires separate production approval."
+  },
+  "approvedExecution": {
+    "userApproval": "I approve the next approvals",
+    "uiInstallation": {
+      "role": "ui",
+      "startedAt": "2026-09-30T02:41:54.354892+00:00",
+      "priorTools": [
+        {
+          "path": "/usr/local/sbin/proofofwork-release-prune",
+          "copy": "/var/backups/proofofwork-ui/release-tooling/audit28-remaining-20260930T020000Z/proofofwork-release-prune",
+          "sha256": "c2366a61a3ff603b3ad48195bc14a3d0297332a6e3a5238867ceb5b1c1bb726a"
+        },
+        {
+          "path": "/usr/local/sbin/proofofwork-ui-release-publish",
+          "copy": "/var/backups/proofofwork-ui/release-tooling/audit28-remaining-20260930T020000Z/proofofwork-ui-release-publish",
+          "sha256": "c2f06538c2c3263d1a7b7157c67dfebe007803b3fdbf60b9aeb21e4aedeb30e9"
+        },
+        {
+          "path": "/usr/local/sbin/proofofwork-ui-storage-prune",
+          "copy": "/var/backups/proofofwork-ui/release-tooling/audit28-remaining-20260930T020000Z/proofofwork-ui-storage-prune",
+          "sha256": "d3a3bd887d58429c48f87655ddc5b6263fbe4e684af8fd377ca14a80d857336e"
+        },
+        {
+          "path": "/usr/local/sbin/proofofwork-ui-verified-retention",
+          "copy": "/var/backups/proofofwork-ui/release-tooling/audit28-remaining-20260930T020000Z/proofofwork-ui-verified-retention",
+          "sha256": "0e3a5adce67f07fb6beb0b0d8001a002e247db316bc5911f3d6f5e622983e4d1"
+        }
+      ],
+      "priorTimers": [
+        {
+          "path": "/etc/systemd/system/proofofwork-ui-release-prune.timer",
+          "copy": "/var/backups/proofofwork-ui/release-tooling/audit28-remaining-20260930T020000Z/proofofwork-ui-release-prune.timer",
+          "sha256": "eee51062e961780e38cee5be33beba4960adc8d49586b0408d1e86f3bbc98796",
+          "enablementLink": "/etc/systemd/system/timers.target.wants/proofofwork-ui-release-prune.timer",
+          "target": "/etc/systemd/system/proofofwork-ui-release-prune.timer"
+        },
+        {
+          "path": "/etc/systemd/system/proofofwork-ui-storage-prune.timer",
+          "copy": "/var/backups/proofofwork-ui/release-tooling/audit28-remaining-20260930T020000Z/proofofwork-ui-storage-prune.timer",
+          "sha256": "e9f23a064767f4d9f8a6e8d285e4f8e6e9eba3e783fb4875cf7111569d8b396b",
+          "enablementLink": "/etc/systemd/system/timers.target.wants/proofofwork-ui-storage-prune.timer",
+          "target": "/etc/systemd/system/proofofwork-ui-storage-prune.timer"
+        }
+      ],
+      "liveServicesBefore": {
+        "nginx.service": {
+          "MainPID": "0",
+          "ActiveState": "inactive"
+        }
+      },
+      "checker": {
+        "role": "ui",
+        "ok": true,
+        "issues": [],
+        "units": {
+          "proofofwork-ui-release-prune.timer": {
+            "LoadState": "masked",
+            "ActiveState": "inactive",
+            "persistentMask": true
+          },
+          "proofofwork-ui-storage-prune.timer": {
+            "LoadState": "masked",
+            "ActiveState": "inactive",
+            "persistentMask": true
+          }
+        },
+        "checkedAt": "2026-09-30T02:41:58.391221+00:00"
+      },
+      "liveServicesAfter": {
+        "nginx.service": {
+          "MainPID": "0",
+          "ActiveState": "inactive"
+        }
+      },
+      "result": "installed-and-verified",
+      "finishedAt": "2026-09-30T02:41:58.429563+00:00"
+    },
+    "nodeInstallation": "installed; hardened checker service failed because empty CapabilityBoundingSet prevents traversal of postgres-owned 0700 source directory; direct root checker passes; prior receipt retained on node",
+    "correctedRestore": "approved; pending clear backup-lock window after scheduled 03:18:48 UTC backup; backup not paused",
+    "uiPublication": "pending final commit-bound release review",
+    "nodeInstallationReceipt": {
+      "role": "node",
+      "startedAt": "2026-09-30T02:41:23.425582+00:00",
+      "priorTools": [
+        {
+          "path": "/usr/local/sbin/proofofwork-release-prune",
+          "copy": "/data/proofofwork-audit28-retention-tooling-20260930T020000Z/proofofwork-release-prune",
+          "sha256": "54bc3a68c3064e8d488b35d85c14d9821d630995f30e3bee1004e7efa9f3c0c5"
+        },
+        {
+          "path": "/usr/local/sbin/proofofwork-summary-route-health",
+          "copy": "/data/proofofwork-audit28-retention-tooling-20260930T020000Z/proofofwork-summary-route-health",
+          "sha256": "d486d074e52e8772a4c9fa85ebc6bbd4cc789452c2fac87324086a6db40429bb"
+        },
+        {
+          "path": "/usr/local/sbin/proofofwork-postgres-logical-backup",
+          "copy": "/data/proofofwork-audit28-retention-tooling-20260930T020000Z/proofofwork-postgres-logical-backup",
+          "sha256": "100a52b4bcca92ee17de265e57a6abb5dc09d2b90564b37e6b8d728dae5c7165"
+        }
+      ],
+      "priorTimers": [
+        {
+          "path": "/etc/systemd/system/proofofwork-node-release-prune.timer",
+          "copy": "/data/proofofwork-audit28-retention-tooling-20260930T020000Z/proofofwork-node-release-prune.timer",
+          "sha256": "9e2a3db68786c50a116fa400f07b6abe29658410b6c92882e4bea31513547577",
+          "enablementLink": "/etc/systemd/system/timers.target.wants/proofofwork-node-release-prune.timer",
+          "target": "/etc/systemd/system/proofofwork-node-release-prune.timer"
+        }
+      ],
+      "liveServicesBefore": {
+        "bitcoind.service": {
+          "MainPID": "1324302",
+          "ActiveState": "active"
+        },
+        "electrs.service": {
+          "MainPID": "1324320",
+          "ActiveState": "active"
+        },
+        "postgresql@16-main.service": {
+          "MainPID": "97096",
+          "ActiveState": "active"
+        },
+        "proofofwork-api.service": {
+          "MainPID": "736307",
+          "ActiveState": "active"
+        },
+        "proofofwork-indexer.service": {
+          "MainPID": "0",
+          "ActiveState": "inactive"
+        }
+      },
+      "result": "incomplete-stop-review-required",
+      "error": "Command '('systemctl', 'start', 'proofofwork-retention-protection.service')' returned non-zero exit status 1."
+    },
+    "nodeCheckerCorrection": {
+      "completedAt": "2026-09-30T02:44:34.844561+00:00",
+      "service": "Result=success\nExecMainStatus=0\nCPUQuotaPerSecUSec=100ms\nMemoryMax=33554432\nTasksMax=16\nCapabilityBoundingSet=cap_dac_read_search\nAmbientCapabilities=cap_dac_read_search\nProtectSystem=strict\n",
+      "checker": {
+        "role": "node",
+        "ok": true,
+        "issues": [],
+        "units": {
+          "proofofwork-node-release-prune.timer": {
+            "LoadState": "masked",
+            "ActiveState": "inactive",
+            "persistentMask": true
+          }
+        },
+        "checkedAt": "2026-09-30T02:44:34.874446+00:00"
+      }
+    },
+    "actualLiveServiceVerification": {
+      "indexerWorker": {
+        "unit": "proofofwork-indexer-worker.service",
+        "MainPID": "736323",
+        "ActiveState": "active"
+      },
+      "uiWebServer": "caddy.service active; initial installer checked inactive nginx.service, which is not the production UI server; no web-server restart issued"
+    }
+  },
+  "nodeCheckerCorrectionRequiringApproval": {
+    "source": "deploy/audit28/retention-protection-node-readonly.service",
+    "sourceSha256": "0d128a66f97990fcd7184b1e6b995acc823f09ee6c2afae6a11708baa5062b43",
+    "target": "/etc/systemd/system/proofofwork-retention-protection.service",
+    "expectedBeforeSha256": "220f97483dcd07c916659f7fcb15dea59ba64c9d00d079e511d89570d40e5b19",
+    "mode": "0644",
+    "owner": "root",
+    "change": "CapabilityBoundingSet and AmbientCapabilities each become CAP_DAC_READ_SEARCH. All other sandbox and resource controls unchanged. Allows read/search of private postgres backup paths; ProtectSystem=strict keeps filesystem read-only.",
+    "actions": [
+      "preserve installed unit at /data/proofofwork-audit28-retention-tooling-20260930T020000Z/retention-protection-node-before-read-capability.service",
+      "replace exact service unit",
+      "systemctl daemon-reload",
+      "start only proofofwork-retention-protection.service",
+      "verify root checker and unit result; preserve previous failure journal"
+    ],
+    "rollback": "restore original exact unit, daemon-reload; failure remains visible; backup guard, markers and masks remain",
+    "status": "explicitly approved and installed; hardened service passed",
+    "unitSyntaxValidation": "passed; executable mapped to local Python for validation only"
+  }
+}

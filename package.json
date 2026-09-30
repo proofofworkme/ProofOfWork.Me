@@ -113,7 +113,8 @@
     "check:audit5-ops-installer": "python3 -I -B scripts/check-audit5-ops-installer.py",
     "check:audit5-candidate-probe": "node scripts/check-audit5-candidate-probe.mjs",
     "check:send-prep-fixtures": "node scripts/check-send-prep-fixtures.mjs",
-    "check:audit28-preparation": "python3 -B scripts/check-audit28-preparation.py"
+    "check:audit28-preparation": "python3 -B scripts/check-audit28-preparation.py",
+    "check:audit28-followups": "node --test scripts/check-marketplace-read-budget.test.mjs scripts/check-summary-route-latency.test.mjs && python3 -B scripts/check-audit28-persistent-retention.py && python3 -B scripts/check-audit28-restore-watchdog.py && python3 -B scripts/check-audit28-logical-backup-pins.py"
   },
   "dependencies": {
     "@bitcoinerlab/secp256k1": "^1.2.0",
