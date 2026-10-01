@@ -13957,5 +13957,1881 @@
     "controllerFixtureGroupsPassed": 23,
     "retryNamespace": "retry1; initial unit/logs/receipts remain preserved",
     "productionCutoverStatus": "pending reviewed tooling-only retry; oldlive993 application ready"
+  },
+  "publisherContractAndArtifactLimitsCorrection": {
+    "applicationCandidateUnchanged": true,
+    "actualPublicationPending": true,
+    "retry1": {
+      "path": "/tmp/pow-audit29-release/node/cutover-527-retry1.json",
+      "bytes": 45580,
+      "sha256": "53dbbc02b3a4878eee34d970ff834300ba2129de68ba17a5d526c9949990c1dd",
+      "receipt": [
+        {
+          "path": "/data/proofofwork-audit29-cutover-527e4cbaa66f-20261001T062733Z-retry1/002-bindings.json",
+          "sha256": "b87dd1b91ab22f734008e2245cd3250d661c9e35092bab6856b3229bea6ca447",
+          "receipt": {
+            "at": "2026-10-01T06:52:32.508491+00:00",
+            "command": "node",
+            "release": "527e4cbaa66f-20261001T062733Z",
+            "attempt": "retry1",
+            "controllerSourceSha256": "286cd6610845b6fc96c09fa3e504c105a64131358c7cd0878e5438b234c8ad9a",
+            "helpers": {
+              "attestor": "4bec20fa1e5931636e3bfc84f617f005a7b1b71e752dc7f7c9b8bea23014be38",
+              "exchange": "2c8ae0549a707640c3a11a8b6a03fd888c9ef4e5fbe6afded7b7d3866f1754c5",
+              "publisher": "42ad099555cee0257572dd348a85a9f684005aba4f9c8f8077ea9aa67d68df78"
+            },
+            "productionDataChanges": false,
+            "retentionDeferred": true
+          }
+        },
+        {
+          "path": "/data/proofofwork-audit29-cutover-527e4cbaa66f-20261001T062733Z-retry1/006-postgres-preflight.json",
+          "sha256": "0713c4966bcfadeeac6ace7237b48be231df1686b5c353b875c7c47e23edd8e7",
+          "receipt": {
+            "at": "2026-10-01T06:52:32.531599+00:00",
+            "client": "/usr/lib/postgresql/16/bin/psql",
+            "clientSha256": "df8031178589c31c7bc20aa2adf902e1cc3f0aa9ea12428aa5db3d476cbcac1a",
+            "uid": 108,
+            "gid": 112,
+            "version": "psql (PostgreSQL) 16.15 (Ubuntu 16.15-0ubuntu0.24.04.1)",
+            "state": {
+              "role": "postgres",
+              "sessionRole": "postgres",
+              "database": "proof_indexer",
+              "readOnly": "on",
+              "statementTimeout": "30s",
+              "lockTimeout": "5s",
+              "sessions": 13,
+              "rebuild": {
+                "active": false,
+                "status": "complete",
+                "network": "livenet",
+                "complete": true,
+                "startedAt": "2026-09-15T18:22:43.424Z",
+                "updatedAt": "2026-10-01T06:47:02.740Z",
+                "fromHeight": 948000,
+                "completedAt": "2026-10-01T06:47:02.740Z",
+                "bootstrapHash": "000000000000000000004238bec59ce46cd5b28982efe2b90071a51168d67986",
+                "bootstrapHeight": 947999,
+                "indexedThroughBlock": 969408,
+                "indexedThroughBlockHash": "00000000000000000000ba83db7b1fbcc7a65c121a1aa554da91618e5c10a4e2",
+                "transactionNormalization": "canonical-raw-tx-only"
+              }
+            },
+            "nativeCredentials": true,
+            "rootLockDescriptorsInherited": false,
+            "applicationServicesStopped": false
+          }
+        },
+        {
+          "path": "/data/proofofwork-audit29-cutover-527e4cbaa66f-20261001T062733Z-retry1/007-shadow-accepted.json",
+          "sha256": "9d67f81305a769e93f00864c1c58e47dfa4cbc8663acbc4250f406822e37ff28",
+          "receipt": {
+            "at": "2026-10-01T06:52:32.602340+00:00",
+            "sha256": "15d58da39b7c3452520404052d137926be17a40dc2e085def2b03391c4acad87",
+            "candidate": {
+              "commit": "527e4cbaa66f689169197c7ce9569425ef334492",
+              "tree": "34c2be6c121a40292d147d74f3a866b169d1feea",
+              "runtimeSha256": "1b6cbd76ded9075c44a96f79c83e4a8b7968d861b024a60267874999892ab373"
+            },
+            "stableCheckpoint": {
+              "height": 969406,
+              "hash": "0000000000000000000044224aa1086a6cdc38f77b6894275e5af46b8d6cc240"
+            },
+            "completedAt": "2026-10-01T06:39:18.992Z"
+          }
+        },
+        {
+          "path": "/data/proofofwork-audit29-cutover-527e4cbaa66f-20261001T062733Z-retry1/010-roots.json",
+          "sha256": "5f54a01a897c16429f4a834a6bceee4e2f19979afcde4c18542dd1b166e04c59",
+          "receipt": {
+            "at": "2026-10-01T06:52:34.437256+00:00",
+            "live": [
+              64512,
+              404891
+            ],
+            "stage": [
+              64512,
+              434431
+            ],
+            "old": [
+              "993523cc6869ad94762f48dd7d0a17aaa9cf346c",
+              "822ed66541ed3330fdcb7fe0d7ad45cd3b3cb86b",
+              "6757",
+              "202299779",
+              "cadf48225cf338099f37ac360e21452e94f93ed4e0490a27586da227036bde36"
+            ],
+            "candidate": [
+              "527e4cbaa66f689169197c7ce9569425ef334492",
+              "34c2be6c121a40292d147d74f3a866b169d1feea",
+              "6794",
+              "205746551",
+              "1b6cbd76ded9075c44a96f79c83e4a8b7968d861b024a60267874999892ab373"
+            ],
+            "recoveryArchive": "/data/proofofwork-release-backups/managed/proofofwork-node-release-993523c-20260930T045021Z.tgz",
+            "recoverySha256": "21587d8a282fd30cf8f84f59e132e877da07120512f0c5e30aa194026abff03e"
+          }
+        },
+        {
+          "path": "/data/proofofwork-audit29-cutover-527e4cbaa66f-20261001T062733Z-retry1/068-before.json",
+          "sha256": "f6769d15cdf6add4068a42e73c2b0bdf0d131f2686dcc8092fdb9b2379a35c59",
+          "receipt": {
+            "at": "2026-10-01T06:52:34.960034+00:00",
+            "timers": {
+              "pg_basebackup@16-main.timer": {
+                "LoadState": "loaded",
+                "ActiveState": "inactive",
+                "SubState": "dead",
+                "UnitFileState": "disabled"
+              },
+              "pg_compresswal@16-main.timer": {
+                "LoadState": "loaded",
+                "ActiveState": "inactive",
+                "SubState": "dead",
+                "UnitFileState": "disabled"
+              },
+              "proofofwork-cache-prune.timer": {
+                "LoadState": "loaded",
+                "ActiveState": "active",
+                "SubState": "waiting",
+                "UnitFileState": "enabled"
+              },
+              "proofofwork-node-release-health.timer": {
+                "LoadState": "loaded",
+                "ActiveState": "active",
+                "SubState": "waiting",
+                "UnitFileState": "enabled"
+              },
+              "proofofwork-node-release-prune.timer": {
+                "LoadState": "masked",
+                "ActiveState": "inactive",
+                "SubState": "dead",
+                "UnitFileState": "masked"
+              },
+              "proofofwork-postgres-logical-backup.timer": {
+                "LoadState": "loaded",
+                "ActiveState": "active",
+                "SubState": "waiting",
+                "UnitFileState": "enabled"
+              },
+              "proofofwork-postgres-query-health.timer": {
+                "LoadState": "loaded",
+                "ActiveState": "active",
+                "SubState": "waiting",
+                "UnitFileState": "enabled"
+              },
+              "proofofwork-worker-recovery-watch.timer": {
+                "LoadState": "loaded",
+                "ActiveState": "active",
+                "SubState": "waiting",
+                "UnitFileState": "enabled"
+              }
+            },
+            "jobs": {
+              "pg_basebackup@16-main.service": {
+                "MainPID": "0",
+                "NRestarts": "0",
+                "ExecMainStartTimestamp": "Mon 2026-09-21 00:17:18 UTC",
+                "ControlGroup": "",
+                "LoadState": "loaded",
+                "ActiveState": "inactive",
+                "SubState": "dead",
+                "UnitFileState": "static"
+              },
+              "pg_compresswal@16-main.service": {
+                "MainPID": "0",
+                "NRestarts": "0",
+                "ExecMainStartTimestamp": "Fri 2026-09-25 00:49:57 UTC",
+                "ControlGroup": "",
+                "LoadState": "loaded",
+                "ActiveState": "inactive",
+                "SubState": "dead",
+                "UnitFileState": "static"
+              },
+              "proofofwork-api-candidate-156bc34e42ee-20260827T161923Z.service": {
+                "MainPID": "0",
+                "NRestarts": "0",
+                "ExecMainStartTimestamp": "",
+                "ControlGroup": "",
+                "LoadState": "loaded",
+                "ActiveState": "inactive",
+                "SubState": "dead",
+                "UnitFileState": "disabled"
+              },
+              "proofofwork-api-candidate-2a8f01f.service": {
+                "MainPID": "0",
+                "NRestarts": "0",
+                "ExecMainStartTimestamp": "",
+                "ControlGroup": "",
+                "LoadState": "loaded",
+                "ActiveState": "inactive",
+                "SubState": "dead",
+                "UnitFileState": "static"
+              },
+              "proofofwork-api-candidate-38e90e51f4a6-20260827T041410Z.service": {
+                "MainPID": "0",
+                "NRestarts": "0",
+                "ExecMainStartTimestamp": "",
+                "ControlGroup": "",
+                "LoadState": "loaded",
+                "ActiveState": "inactive",
+                "SubState": "dead",
+                "UnitFileState": "disabled"
+              },
+              "proofofwork-api-candidate-4acbde1de362-20260826T090612Z.service": {
+                "MainPID": "0",
+                "NRestarts": "0",
+                "ExecMainStartTimestamp": "",
+                "ControlGroup": "",
+                "LoadState": "loaded",
+                "ActiveState": "inactive",
+                "SubState": "dead",
+                "UnitFileState": "disabled"
+              },
+              "proofofwork-api-candidate-542cd64c1067-20260827T054846Z.service": {
+                "MainPID": "0",
+                "NRestarts": "0",
+                "ExecMainStartTimestamp": "",
+                "ControlGroup": "",
+                "LoadState": "loaded",
+                "ActiveState": "inactive",
+                "SubState": "dead",
+                "UnitFileState": "disabled"
+              },
+              "proofofwork-api-candidate-8d3fd79.service": {
+                "MainPID": "0",
+                "NRestarts": "0",
+                "ExecMainStartTimestamp": "",
+                "ControlGroup": "",
+                "LoadState": "loaded",
+                "ActiveState": "inactive",
+                "SubState": "dead",
+                "UnitFileState": "static"
+              },
+              "proofofwork-api-candidate-a196496.service": {
+                "MainPID": "0",
+                "NRestarts": "0",
+                "ExecMainStartTimestamp": "",
+                "ControlGroup": "",
+                "LoadState": "loaded",
+                "ActiveState": "inactive",
+                "SubState": "dead",
+                "UnitFileState": "static"
+              },
+              "proofofwork-api-candidate-af41478.service": {
+                "MainPID": "0",
+                "NRestarts": "0",
+                "ExecMainStartTimestamp": "",
+                "ControlGroup": "",
+                "LoadState": "loaded",
+                "ActiveState": "inactive",
+                "SubState": "dead",
+                "UnitFileState": "static"
+              },
+              "proofofwork-api-candidate-b8ca4a7.service": {
+                "MainPID": "0",
+                "NRestarts": "0",
+                "ExecMainStartTimestamp": "",
+                "ControlGroup": "",
+                "LoadState": "loaded",
+                "ActiveState": "inactive",
+                "SubState": "dead",
+                "UnitFileState": "static"
+              },
+              "proofofwork-api-candidate-c9450496012a-20260827T045135Z.service": {
+                "MainPID": "0",
+                "NRestarts": "0",
+                "ExecMainStartTimestamp": "",
+                "ControlGroup": "",
+                "LoadState": "loaded",
+                "ActiveState": "inactive",
+                "SubState": "dead",
+                "UnitFileState": "disabled"
+              },
+              "proofofwork-api-candidate-db017c1cb3a3-20260827T145813Z.service": {
+                "MainPID": "0",
+                "NRestarts": "0",
+                "ExecMainStartTimestamp": "",
+                "ControlGroup": "",
+                "LoadState": "loaded",
+                "ActiveState": "inactive",
+                "SubState": "dead",
+                "UnitFileState": "disabled"
+              },
+              "proofofwork-api-candidate-f395b1a.service": {
+                "MainPID": "0",
+                "NRestarts": "0",
+                "ExecMainStartTimestamp": "",
+                "ControlGroup": "",
+                "LoadState": "loaded",
+                "ActiveState": "inactive",
+                "SubState": "dead",
+                "UnitFileState": "static"
+              },
+              "proofofwork-api-candidate-f70b0bf3b047-20260827T170709Z.service": {
+                "MainPID": "0",
+                "NRestarts": "0",
+                "ExecMainStartTimestamp": "",
+                "ControlGroup": "",
+                "LoadState": "loaded",
+                "ActiveState": "inactive",
+                "SubState": "dead",
+                "UnitFileState": "disabled"
+              },
+              "proofofwork-api-candidate-faa47c.service": {
+                "MainPID": "0",
+                "NRestarts": "0",
+                "ExecMainStartTimestamp": "",
+                "ControlGroup": "",
+                "LoadState": "loaded",
+                "ActiveState": "inactive",
+                "SubState": "dead",
+                "UnitFileState": "static"
+              },
+              "proofofwork-api-candidate-fb21b2dc4da8-20260827T043029Z.service": {
+                "MainPID": "0",
+                "NRestarts": "0",
+                "ExecMainStartTimestamp": "",
+                "ControlGroup": "",
+                "LoadState": "loaded",
+                "ActiveState": "inactive",
+                "SubState": "dead",
+                "UnitFileState": "disabled"
+              },
+              "proofofwork-cache-prune.service": {
+                "MainPID": "0",
+                "NRestarts": "0",
+                "ExecMainStartTimestamp": "Thu 2026-10-01 06:20:04 UTC",
+                "ControlGroup": "",
+                "LoadState": "loaded",
+                "ActiveState": "inactive",
+                "SubState": "dead",
+                "UnitFileState": "static"
+              },
+              "proofofwork-indexer-candidate-2a8f01f.service": {
+                "MainPID": "0",
+                "NRestarts": "0",
+                "ExecMainStartTimestamp": "",
+                "ControlGroup": "",
+                "LoadState": "loaded",
+                "ActiveState": "inactive",
+                "SubState": "dead",
+                "UnitFileState": "static"
+              },
+              "proofofwork-indexer-candidate-38e90e51f4a6-20260827T041410Z.service": {
+                "MainPID": "0",
+                "NRestarts": "0",
+                "ExecMainStartTimestamp": "",
+                "ControlGroup": "",
+                "LoadState": "loaded",
+                "ActiveState": "inactive",
+                "SubState": "dead",
+                "UnitFileState": "static"
+              },
+              "proofofwork-indexer-candidate-542cd64c1067-20260827T054846Z.service": {
+                "MainPID": "0",
+                "NRestarts": "0",
+                "ExecMainStartTimestamp": "",
+                "ControlGroup": "",
+                "LoadState": "loaded",
+                "ActiveState": "inactive",
+                "SubState": "dead",
+                "UnitFileState": "static"
+              },
+              "proofofwork-indexer-candidate-8d3fd79-loop.service": {
+                "MainPID": "0",
+                "NRestarts": "0",
+                "ExecMainStartTimestamp": "",
+                "ControlGroup": "",
+                "LoadState": "loaded",
+                "ActiveState": "inactive",
+                "SubState": "dead",
+                "UnitFileState": "disabled"
+              },
+              "proofofwork-indexer-candidate-a196496.service": {
+                "MainPID": "0",
+                "NRestarts": "0",
+                "ExecMainStartTimestamp": "",
+                "ControlGroup": "",
+                "LoadState": "loaded",
+                "ActiveState": "inactive",
+                "SubState": "dead",
+                "UnitFileState": "static"
+              },
+              "proofofwork-indexer-candidate-af41478-loop.service": {
+                "MainPID": "0",
+                "NRestarts": "0",
+                "ExecMainStartTimestamp": "",
+                "ControlGroup": "",
+                "LoadState": "loaded",
+                "ActiveState": "inactive",
+                "SubState": "dead",
+                "UnitFileState": "disabled"
+              },
+              "proofofwork-indexer-candidate-b8ca4a7-loop.service": {
+                "MainPID": "0",
+                "NRestarts": "0",
+                "ExecMainStartTimestamp": "",
+                "ControlGroup": "",
+                "LoadState": "loaded",
+                "ActiveState": "inactive",
+                "SubState": "dead",
+                "UnitFileState": "disabled"
+              },
+              "proofofwork-indexer-candidate-c9450496012a-20260827T045135Z.service": {
+                "MainPID": "0",
+                "NRestarts": "0",
+                "ExecMainStartTimestamp": "",
+                "ControlGroup": "",
+                "LoadState": "loaded",
+                "ActiveState": "inactive",
+                "SubState": "dead",
+                "UnitFileState": "static"
+              },
+              "proofofwork-indexer-candidate-f395b1a-loop.service": {
+                "MainPID": "0",
+                "NRestarts": "0",
+                "ExecMainStartTimestamp": "",
+                "ControlGroup": "",
+                "LoadState": "loaded",
+                "ActiveState": "inactive",
+                "SubState": "dead",
+                "UnitFileState": "disabled"
+              },
+              "proofofwork-indexer-candidate-faa47c-loop.service": {
+                "MainPID": "0",
+                "NRestarts": "0",
+                "ExecMainStartTimestamp": "",
+                "ControlGroup": "",
+                "LoadState": "loaded",
+                "ActiveState": "inactive",
+                "SubState": "dead",
+                "UnitFileState": "static"
+              },
+              "proofofwork-indexer-candidate-faa47c.service": {
+                "MainPID": "0",
+                "NRestarts": "0",
+                "ExecMainStartTimestamp": "",
+                "ControlGroup": "",
+                "LoadState": "loaded",
+                "ActiveState": "inactive",
+                "SubState": "dead",
+                "UnitFileState": "static"
+              },
+              "proofofwork-indexer-candidate-fb21b2dc4da8-20260827T043029Z.service": {
+                "MainPID": "0",
+                "NRestarts": "0",
+                "ExecMainStartTimestamp": "",
+                "ControlGroup": "",
+                "LoadState": "loaded",
+                "ActiveState": "inactive",
+                "SubState": "dead",
+                "UnitFileState": "static"
+              },
+              "proofofwork-node-release-health.service": {
+                "MainPID": "0",
+                "NRestarts": "0",
+                "ExecMainStartTimestamp": "Thu 2026-10-01 04:28:15 UTC",
+                "ControlGroup": "",
+                "LoadState": "loaded",
+                "ActiveState": "failed",
+                "SubState": "failed",
+                "UnitFileState": "static"
+              },
+              "proofofwork-node-release-prune.service": {
+                "MainPID": "0",
+                "NRestarts": "0",
+                "ExecMainStartTimestamp": "",
+                "ControlGroup": "",
+                "LoadState": "loaded",
+                "ActiveState": "inactive",
+                "SubState": "dead",
+                "UnitFileState": "static"
+              },
+              "proofofwork-postgres-logical-backup.service": {
+                "MainPID": "0",
+                "NRestarts": "0",
+                "ExecMainStartTimestamp": "Thu 2026-10-01 03:18:49 UTC",
+                "ControlGroup": "",
+                "LoadState": "loaded",
+                "ActiveState": "inactive",
+                "SubState": "dead",
+                "UnitFileState": "static"
+              },
+              "proofofwork-postgres-query-health.service": {
+                "MainPID": "0",
+                "NRestarts": "0",
+                "ExecMainStartTimestamp": "Thu 2026-10-01 06:50:05 UTC",
+                "ControlGroup": "",
+                "LoadState": "loaded",
+                "ActiveState": "failed",
+                "SubState": "failed",
+                "UnitFileState": "static"
+              },
+              "proofofwork-recovery-api.service": {
+                "MainPID": "0",
+                "NRestarts": "0",
+                "ExecMainStartTimestamp": "",
+                "ControlGroup": "",
+                "LoadState": "loaded",
+                "ActiveState": "inactive",
+                "SubState": "dead",
+                "UnitFileState": "disabled"
+              },
+              "proofofwork-recovery-block-scan.service": {
+                "MainPID": "0",
+                "NRestarts": "0",
+                "ExecMainStartTimestamp": "",
+                "ControlGroup": "",
+                "LoadState": "loaded",
+                "ActiveState": "inactive",
+                "SubState": "dead",
+                "UnitFileState": "disabled"
+              },
+              "proofofwork-recovery-snapshot.service": {
+                "MainPID": "0",
+                "NRestarts": "0",
+                "ExecMainStartTimestamp": "",
+                "ControlGroup": "",
+                "LoadState": "loaded",
+                "ActiveState": "inactive",
+                "SubState": "dead",
+                "UnitFileState": "disabled"
+              },
+              "proofofwork-recovery-summary-repair.service": {
+                "MainPID": "0",
+                "NRestarts": "0",
+                "ExecMainStartTimestamp": "",
+                "ControlGroup": "",
+                "LoadState": "loaded",
+                "ActiveState": "inactive",
+                "SubState": "dead",
+                "UnitFileState": "disabled"
+              },
+              "proofofwork-recovery-worker-continuous.service": {
+                "MainPID": "0",
+                "NRestarts": "0",
+                "ExecMainStartTimestamp": "",
+                "ControlGroup": "",
+                "LoadState": "loaded",
+                "ActiveState": "inactive",
+                "SubState": "dead",
+                "UnitFileState": "disabled"
+              },
+              "proofofwork-recovery-worker-once.service": {
+                "MainPID": "0",
+                "NRestarts": "0",
+                "ExecMainStartTimestamp": "",
+                "ControlGroup": "",
+                "LoadState": "loaded",
+                "ActiveState": "inactive",
+                "SubState": "dead",
+                "UnitFileState": "disabled"
+              },
+              "proofofwork-worker-recovery-watch.service": {
+                "MainPID": "0",
+                "NRestarts": "0",
+                "ExecMainStartTimestamp": "Thu 2026-10-01 06:52:32 UTC",
+                "ControlGroup": "",
+                "LoadState": "loaded",
+                "ActiveState": "inactive",
+                "SubState": "dead",
+                "UnitFileState": "static"
+              }
+            },
+            "authorities": {
+              "bitcoind.service": {
+                "MainPID": "1324302",
+                "NRestarts": "0",
+                "ExecMainStartTimestamp": "Sat 2026-09-12 06:24:39 UTC",
+                "ControlGroup": "/system.slice/bitcoind.service",
+                "LoadState": "loaded",
+                "ActiveState": "active",
+                "SubState": "running",
+                "UnitFileState": "enabled"
+              },
+              "electrs.service": {
+                "MainPID": "1324320",
+                "NRestarts": "0",
+                "ExecMainStartTimestamp": "Sat 2026-09-12 06:24:39 UTC",
+                "ControlGroup": "/system.slice/electrs.service",
+                "LoadState": "loaded",
+                "ActiveState": "active",
+                "SubState": "running",
+                "UnitFileState": "enabled"
+              },
+              "postgresql@16-main.service": {
+                "MainPID": "1537429",
+                "NRestarts": "0",
+                "ExecMainStartTimestamp": "Thu 2026-10-01 06:24:32 UTC",
+                "ControlGroup": "/system.slice/system-postgresql.slice/postgresql@16-main.service",
+                "LoadState": "loaded",
+                "ActiveState": "active",
+                "SubState": "running",
+                "UnitFileState": "enabled-runtime"
+              },
+              "pg_receivewal@16-main.service": {
+                "MainPID": "0",
+                "NRestarts": "0",
+                "ExecMainStartTimestamp": "Sat 2026-09-19 04:55:31 UTC",
+                "ControlGroup": "",
+                "LoadState": "loaded",
+                "ActiveState": "inactive",
+                "SubState": "dead",
+                "UnitFileState": "disabled"
+              }
+            },
+            "apps": {
+              "proofofwork-api-wg.socket": {
+                "ControlGroup": "/system.slice/proofofwork-api-wg.socket",
+                "LoadState": "loaded",
+                "ActiveState": "active",
+                "SubState": "running",
+                "UnitFileState": "enabled"
+              },
+              "proofofwork-api-wg.service": {
+                "MainPID": "1549989",
+                "NRestarts": "0",
+                "ExecMainStartTimestamp": "Thu 2026-10-01 06:40:52 UTC",
+                "ControlGroup": "/system.slice/proofofwork-api-wg.service",
+                "LoadState": "loaded",
+                "ActiveState": "active",
+                "SubState": "running",
+                "UnitFileState": "static"
+              },
+              "proofofwork-api.service": {
+                "MainPID": "1549987",
+                "NRestarts": "0",
+                "ExecMainStartTimestamp": "Thu 2026-10-01 06:40:52 UTC",
+                "ControlGroup": "/system.slice/proofofwork-api.service",
+                "LoadState": "loaded",
+                "ActiveState": "active",
+                "SubState": "running",
+                "UnitFileState": "enabled"
+              },
+              "proofofwork-indexer-worker.service": {
+                "MainPID": "1550000",
+                "NRestarts": "0",
+                "ExecMainStartTimestamp": "Thu 2026-10-01 06:40:52 UTC",
+                "ControlGroup": "/system.slice/proofofwork-indexer-worker.service",
+                "LoadState": "loaded",
+                "ActiveState": "active",
+                "SubState": "running",
+                "UnitFileState": "enabled"
+              }
+            },
+            "holds": {
+              "/etc/proofofwork-retention/audit28.hold": {
+                "sha256": "e9aca6e22b1dc36b714ed663051f8bc20d9479efa4173474e0b6b771958ca6a4",
+                "mode": 384
+              }
+            }
+          }
+        },
+        {
+          "path": "/data/proofofwork-audit29-cutover-527e4cbaa66f-20261001T062733Z-retry1/131-held.json",
+          "sha256": "4c2b0e793f96cdeda8bb3539302185f4726e093a9034c2c3020c206a2b2c3e98",
+          "receipt": {
+            "at": "2026-10-01T06:52:35.513526+00:00",
+            "units": {
+              "timers": {
+                "pg_basebackup@16-main.timer": {
+                  "LoadState": "loaded",
+                  "ActiveState": "inactive",
+                  "SubState": "dead",
+                  "UnitFileState": "disabled"
+                },
+                "pg_compresswal@16-main.timer": {
+                  "LoadState": "loaded",
+                  "ActiveState": "inactive",
+                  "SubState": "dead",
+                  "UnitFileState": "disabled"
+                },
+                "proofofwork-cache-prune.timer": {
+                  "LoadState": "loaded",
+                  "ActiveState": "inactive",
+                  "SubState": "dead",
+                  "UnitFileState": "enabled"
+                },
+                "proofofwork-node-release-health.timer": {
+                  "LoadState": "loaded",
+                  "ActiveState": "inactive",
+                  "SubState": "dead",
+                  "UnitFileState": "enabled"
+                },
+                "proofofwork-node-release-prune.timer": {
+                  "LoadState": "masked",
+                  "ActiveState": "inactive",
+                  "SubState": "dead",
+                  "UnitFileState": "masked"
+                },
+                "proofofwork-postgres-logical-backup.timer": {
+                  "LoadState": "loaded",
+                  "ActiveState": "inactive",
+                  "SubState": "dead",
+                  "UnitFileState": "enabled"
+                },
+                "proofofwork-postgres-query-health.timer": {
+                  "LoadState": "loaded",
+                  "ActiveState": "inactive",
+                  "SubState": "dead",
+                  "UnitFileState": "enabled"
+                },
+                "proofofwork-worker-recovery-watch.timer": {
+                  "LoadState": "loaded",
+                  "ActiveState": "inactive",
+                  "SubState": "dead",
+                  "UnitFileState": "enabled"
+                }
+              },
+              "jobs": {
+                "pg_basebackup@16-main.service": {
+                  "MainPID": "0",
+                  "NRestarts": "0",
+                  "ExecMainStartTimestamp": "Mon 2026-09-21 00:17:18 UTC",
+                  "ControlGroup": "",
+                  "LoadState": "loaded",
+                  "ActiveState": "inactive",
+                  "SubState": "dead",
+                  "UnitFileState": "static"
+                },
+                "pg_compresswal@16-main.service": {
+                  "MainPID": "0",
+                  "NRestarts": "0",
+                  "ExecMainStartTimestamp": "Fri 2026-09-25 00:49:57 UTC",
+                  "ControlGroup": "",
+                  "LoadState": "loaded",
+                  "ActiveState": "inactive",
+                  "SubState": "dead",
+                  "UnitFileState": "static"
+                },
+                "proofofwork-api-candidate-156bc34e42ee-20260827T161923Z.service": {
+                  "MainPID": "0",
+                  "NRestarts": "0",
+                  "ExecMainStartTimestamp": "",
+                  "ControlGroup": "",
+                  "LoadState": "loaded",
+                  "ActiveState": "inactive",
+                  "SubState": "dead",
+                  "UnitFileState": "disabled"
+                },
+                "proofofwork-api-candidate-2a8f01f.service": {
+                  "MainPID": "0",
+                  "NRestarts": "0",
+                  "ExecMainStartTimestamp": "",
+                  "ControlGroup": "",
+                  "LoadState": "loaded",
+                  "ActiveState": "inactive",
+                  "SubState": "dead",
+                  "UnitFileState": "static"
+                },
+                "proofofwork-api-candidate-38e90e51f4a6-20260827T041410Z.service": {
+                  "MainPID": "0",
+                  "NRestarts": "0",
+                  "ExecMainStartTimestamp": "",
+                  "ControlGroup": "",
+                  "LoadState": "loaded",
+                  "ActiveState": "inactive",
+                  "SubState": "dead",
+                  "UnitFileState": "disabled"
+                },
+                "proofofwork-api-candidate-4acbde1de362-20260826T090612Z.service": {
+                  "MainPID": "0",
+                  "NRestarts": "0",
+                  "ExecMainStartTimestamp": "",
+                  "ControlGroup": "",
+                  "LoadState": "loaded",
+                  "ActiveState": "inactive",
+                  "SubState": "dead",
+                  "UnitFileState": "disabled"
+                },
+                "proofofwork-api-candidate-542cd64c1067-20260827T054846Z.service": {
+                  "MainPID": "0",
+                  "NRestarts": "0",
+                  "ExecMainStartTimestamp": "",
+                  "ControlGroup": "",
+                  "LoadState": "loaded",
+                  "ActiveState": "inactive",
+                  "SubState": "dead",
+                  "UnitFileState": "disabled"
+                },
+                "proofofwork-api-candidate-8d3fd79.service": {
+                  "MainPID": "0",
+                  "NRestarts": "0",
+                  "ExecMainStartTimestamp": "",
+                  "ControlGroup": "",
+                  "LoadState": "loaded",
+                  "ActiveState": "inactive",
+                  "SubState": "dead",
+                  "UnitFileState": "static"
+                },
+                "proofofwork-api-candidate-a196496.service": {
+                  "MainPID": "0",
+                  "NRestarts": "0",
+                  "ExecMainStartTimestamp": "",
+                  "ControlGroup": "",
+                  "LoadState": "loaded",
+                  "ActiveState": "inactive",
+                  "SubState": "dead",
+                  "UnitFileState": "static"
+                },
+                "proofofwork-api-candidate-af41478.service": {
+                  "MainPID": "0",
+                  "NRestarts": "0",
+                  "ExecMainStartTimestamp": "",
+                  "ControlGroup": "",
+                  "LoadState": "loaded",
+                  "ActiveState": "inactive",
+                  "SubState": "dead",
+                  "UnitFileState": "static"
+                },
+                "proofofwork-api-candidate-b8ca4a7.service": {
+                  "MainPID": "0",
+                  "NRestarts": "0",
+                  "ExecMainStartTimestamp": "",
+                  "ControlGroup": "",
+                  "LoadState": "loaded",
+                  "ActiveState": "inactive",
+                  "SubState": "dead",
+                  "UnitFileState": "static"
+                },
+                "proofofwork-api-candidate-c9450496012a-20260827T045135Z.service": {
+                  "MainPID": "0",
+                  "NRestarts": "0",
+                  "ExecMainStartTimestamp": "",
+                  "ControlGroup": "",
+                  "LoadState": "loaded",
+                  "ActiveState": "inactive",
+                  "SubState": "dead",
+                  "UnitFileState": "disabled"
+                },
+                "proofofwork-api-candidate-db017c1cb3a3-20260827T145813Z.service": {
+                  "MainPID": "0",
+                  "NRestarts": "0",
+                  "ExecMainStartTimestamp": "",
+                  "ControlGroup": "",
+                  "LoadState": "loaded",
+                  "ActiveState": "inactive",
+                  "SubState": "dead",
+                  "UnitFileState": "disabled"
+                },
+                "proofofwork-api-candidate-f395b1a.service": {
+                  "MainPID": "0",
+                  "NRestarts": "0",
+                  "ExecMainStartTimestamp": "",
+                  "ControlGroup": "",
+                  "LoadState": "loaded",
+                  "ActiveState": "inactive",
+                  "SubState": "dead",
+                  "UnitFileState": "static"
+                },
+                "proofofwork-api-candidate-f70b0bf3b047-20260827T170709Z.service": {
+                  "MainPID": "0",
+                  "NRestarts": "0",
+                  "ExecMainStartTimestamp": "",
+                  "ControlGroup": "",
+                  "LoadState": "loaded",
+                  "ActiveState": "inactive",
+                  "SubState": "dead",
+                  "UnitFileState": "disabled"
+                },
+                "proofofwork-api-candidate-faa47c.service": {
+                  "MainPID": "0",
+                  "NRestarts": "0",
+                  "ExecMainStartTimestamp": "",
+                  "ControlGroup": "",
+                  "LoadState": "loaded",
+                  "ActiveState": "inactive",
+                  "SubState": "dead",
+                  "UnitFileState": "static"
+                },
+                "proofofwork-api-candidate-fb21b2dc4da8-20260827T043029Z.service": {
+                  "MainPID": "0",
+                  "NRestarts": "0",
+                  "ExecMainStartTimestamp": "",
+                  "ControlGroup": "",
+                  "LoadState": "loaded",
+                  "ActiveState": "inactive",
+                  "SubState": "dead",
+                  "UnitFileState": "disabled"
+                },
+                "proofofwork-cache-prune.service": {
+                  "MainPID": "0",
+                  "NRestarts": "0",
+                  "ExecMainStartTimestamp": "Thu 2026-10-01 06:20:04 UTC",
+                  "ControlGroup": "",
+                  "LoadState": "loaded",
+                  "ActiveState": "inactive",
+                  "SubState": "dead",
+                  "UnitFileState": "static"
+                },
+                "proofofwork-indexer-candidate-2a8f01f.service": {
+                  "MainPID": "0",
+                  "NRestarts": "0",
+                  "ExecMainStartTimestamp": "",
+                  "ControlGroup": "",
+                  "LoadState": "loaded",
+                  "ActiveState": "inactive",
+                  "SubState": "dead",
+                  "UnitFileState": "static"
+                },
+                "proofofwork-indexer-candidate-38e90e51f4a6-20260827T041410Z.service": {
+                  "MainPID": "0",
+                  "NRestarts": "0",
+                  "ExecMainStartTimestamp": "",
+                  "ControlGroup": "",
+                  "LoadState": "loaded",
+                  "ActiveState": "inactive",
+                  "SubState": "dead",
+                  "UnitFileState": "static"
+                },
+                "proofofwork-indexer-candidate-542cd64c1067-20260827T054846Z.service": {
+                  "MainPID": "0",
+                  "NRestarts": "0",
+                  "ExecMainStartTimestamp": "",
+                  "ControlGroup": "",
+                  "LoadState": "loaded",
+                  "ActiveState": "inactive",
+                  "SubState": "dead",
+                  "UnitFileState": "static"
+                },
+                "proofofwork-indexer-candidate-8d3fd79-loop.service": {
+                  "MainPID": "0",
+                  "NRestarts": "0",
+                  "ExecMainStartTimestamp": "",
+                  "ControlGroup": "",
+                  "LoadState": "loaded",
+                  "ActiveState": "inactive",
+                  "SubState": "dead",
+                  "UnitFileState": "disabled"
+                },
+                "proofofwork-indexer-candidate-a196496.service": {
+                  "MainPID": "0",
+                  "NRestarts": "0",
+                  "ExecMainStartTimestamp": "",
+                  "ControlGroup": "",
+                  "LoadState": "loaded",
+                  "ActiveState": "inactive",
+                  "SubState": "dead",
+                  "UnitFileState": "static"
+                },
+                "proofofwork-indexer-candidate-af41478-loop.service": {
+                  "MainPID": "0",
+                  "NRestarts": "0",
+                  "ExecMainStartTimestamp": "",
+                  "ControlGroup": "",
+                  "LoadState": "loaded",
+                  "ActiveState": "inactive",
+                  "SubState": "dead",
+                  "UnitFileState": "disabled"
+                },
+                "proofofwork-indexer-candidate-b8ca4a7-loop.service": {
+                  "MainPID": "0",
+                  "NRestarts": "0",
+                  "ExecMainStartTimestamp": "",
+                  "ControlGroup": "",
+                  "LoadState": "loaded",
+                  "ActiveState": "inactive",
+                  "SubState": "dead",
+                  "UnitFileState": "disabled"
+                },
+                "proofofwork-indexer-candidate-c9450496012a-20260827T045135Z.service": {
+                  "MainPID": "0",
+                  "NRestarts": "0",
+                  "ExecMainStartTimestamp": "",
+                  "ControlGroup": "",
+                  "LoadState": "loaded",
+                  "ActiveState": "inactive",
+                  "SubState": "dead",
+                  "UnitFileState": "static"
+                },
+                "proofofwork-indexer-candidate-f395b1a-loop.service": {
+                  "MainPID": "0",
+                  "NRestarts": "0",
+                  "ExecMainStartTimestamp": "",
+                  "ControlGroup": "",
+                  "LoadState": "loaded",
+                  "ActiveState": "inactive",
+                  "SubState": "dead",
+                  "UnitFileState": "disabled"
+                },
+                "proofofwork-indexer-candidate-faa47c-loop.service": {
+                  "MainPID": "0",
+                  "NRestarts": "0",
+                  "ExecMainStartTimestamp": "",
+                  "ControlGroup": "",
+                  "LoadState": "loaded",
+                  "ActiveState": "inactive",
+                  "SubState": "dead",
+                  "UnitFileState": "static"
+                },
+                "proofofwork-indexer-candidate-faa47c.service": {
+                  "MainPID": "0",
+                  "NRestarts": "0",
+                  "ExecMainStartTimestamp": "",
+                  "ControlGroup": "",
+                  "LoadState": "loaded",
+                  "ActiveState": "inactive",
+                  "SubState": "dead",
+                  "UnitFileState": "static"
+                },
+                "proofofwork-indexer-candidate-fb21b2dc4da8-20260827T043029Z.service": {
+                  "MainPID": "0",
+                  "NRestarts": "0",
+                  "ExecMainStartTimestamp": "",
+                  "ControlGroup": "",
+                  "LoadState": "loaded",
+                  "ActiveState": "inactive",
+                  "SubState": "dead",
+                  "UnitFileState": "static"
+                },
+                "proofofwork-node-release-health.service": {
+                  "MainPID": "0",
+                  "NRestarts": "0",
+                  "ExecMainStartTimestamp": "Thu 2026-10-01 04:28:15 UTC",
+                  "ControlGroup": "",
+                  "LoadState": "loaded",
+                  "ActiveState": "failed",
+                  "SubState": "failed",
+                  "UnitFileState": "static"
+                },
+                "proofofwork-node-release-prune.service": {
+                  "MainPID": "0",
+                  "NRestarts": "0",
+                  "ExecMainStartTimestamp": "",
+                  "ControlGroup": "",
+                  "LoadState": "loaded",
+                  "ActiveState": "inactive",
+                  "SubState": "dead",
+                  "UnitFileState": "static"
+                },
+                "proofofwork-postgres-logical-backup.service": {
+                  "MainPID": "0",
+                  "NRestarts": "0",
+                  "ExecMainStartTimestamp": "Thu 2026-10-01 03:18:49 UTC",
+                  "ControlGroup": "",
+                  "LoadState": "loaded",
+                  "ActiveState": "inactive",
+                  "SubState": "dead",
+                  "UnitFileState": "static"
+                },
+                "proofofwork-postgres-query-health.service": {
+                  "MainPID": "0",
+                  "NRestarts": "0",
+                  "ExecMainStartTimestamp": "Thu 2026-10-01 06:50:05 UTC",
+                  "ControlGroup": "",
+                  "LoadState": "loaded",
+                  "ActiveState": "failed",
+                  "SubState": "failed",
+                  "UnitFileState": "static"
+                },
+                "proofofwork-recovery-api.service": {
+                  "MainPID": "0",
+                  "NRestarts": "0",
+                  "ExecMainStartTimestamp": "",
+                  "ControlGroup": "",
+                  "LoadState": "loaded",
+                  "ActiveState": "inactive",
+                  "SubState": "dead",
+                  "UnitFileState": "disabled"
+                },
+                "proofofwork-recovery-block-scan.service": {
+                  "MainPID": "0",
+                  "NRestarts": "0",
+                  "ExecMainStartTimestamp": "",
+                  "ControlGroup": "",
+                  "LoadState": "loaded",
+                  "ActiveState": "inactive",
+                  "SubState": "dead",
+                  "UnitFileState": "disabled"
+                },
+                "proofofwork-recovery-snapshot.service": {
+                  "MainPID": "0",
+                  "NRestarts": "0",
+                  "ExecMainStartTimestamp": "",
+                  "ControlGroup": "",
+                  "LoadState": "loaded",
+                  "ActiveState": "inactive",
+                  "SubState": "dead",
+                  "UnitFileState": "disabled"
+                },
+                "proofofwork-recovery-summary-repair.service": {
+                  "MainPID": "0",
+                  "NRestarts": "0",
+                  "ExecMainStartTimestamp": "",
+                  "ControlGroup": "",
+                  "LoadState": "loaded",
+                  "ActiveState": "inactive",
+                  "SubState": "dead",
+                  "UnitFileState": "disabled"
+                },
+                "proofofwork-recovery-worker-continuous.service": {
+                  "MainPID": "0",
+                  "NRestarts": "0",
+                  "ExecMainStartTimestamp": "",
+                  "ControlGroup": "",
+                  "LoadState": "loaded",
+                  "ActiveState": "inactive",
+                  "SubState": "dead",
+                  "UnitFileState": "disabled"
+                },
+                "proofofwork-recovery-worker-once.service": {
+                  "MainPID": "0",
+                  "NRestarts": "0",
+                  "ExecMainStartTimestamp": "",
+                  "ControlGroup": "",
+                  "LoadState": "loaded",
+                  "ActiveState": "inactive",
+                  "SubState": "dead",
+                  "UnitFileState": "disabled"
+                },
+                "proofofwork-worker-recovery-watch.service": {
+                  "MainPID": "0",
+                  "NRestarts": "0",
+                  "ExecMainStartTimestamp": "Thu 2026-10-01 06:52:32 UTC",
+                  "ControlGroup": "",
+                  "LoadState": "loaded",
+                  "ActiveState": "inactive",
+                  "SubState": "dead",
+                  "UnitFileState": "static"
+                }
+              },
+              "authorities": {
+                "bitcoind.service": {
+                  "MainPID": "1324302",
+                  "NRestarts": "0",
+                  "ExecMainStartTimestamp": "Sat 2026-09-12 06:24:39 UTC",
+                  "ControlGroup": "/system.slice/bitcoind.service",
+                  "LoadState": "loaded",
+                  "ActiveState": "active",
+                  "SubState": "running",
+                  "UnitFileState": "enabled"
+                },
+                "electrs.service": {
+                  "MainPID": "1324320",
+                  "NRestarts": "0",
+                  "ExecMainStartTimestamp": "Sat 2026-09-12 06:24:39 UTC",
+                  "ControlGroup": "/system.slice/electrs.service",
+                  "LoadState": "loaded",
+                  "ActiveState": "active",
+                  "SubState": "running",
+                  "UnitFileState": "enabled"
+                },
+                "postgresql@16-main.service": {
+                  "MainPID": "1537429",
+                  "NRestarts": "0",
+                  "ExecMainStartTimestamp": "Thu 2026-10-01 06:24:32 UTC",
+                  "ControlGroup": "/system.slice/system-postgresql.slice/postgresql@16-main.service",
+                  "LoadState": "loaded",
+                  "ActiveState": "active",
+                  "SubState": "running",
+                  "UnitFileState": "enabled-runtime"
+                },
+                "pg_receivewal@16-main.service": {
+                  "MainPID": "0",
+                  "NRestarts": "0",
+                  "ExecMainStartTimestamp": "Sat 2026-09-19 04:55:31 UTC",
+                  "ControlGroup": "",
+                  "LoadState": "loaded",
+                  "ActiveState": "inactive",
+                  "SubState": "dead",
+                  "UnitFileState": "disabled"
+                }
+              },
+              "apps": {
+                "proofofwork-api-wg.socket": {
+                  "ControlGroup": "/system.slice/proofofwork-api-wg.socket",
+                  "LoadState": "loaded",
+                  "ActiveState": "active",
+                  "SubState": "running",
+                  "UnitFileState": "enabled"
+                },
+                "proofofwork-api-wg.service": {
+                  "MainPID": "1549989",
+                  "NRestarts": "0",
+                  "ExecMainStartTimestamp": "Thu 2026-10-01 06:40:52 UTC",
+                  "ControlGroup": "/system.slice/proofofwork-api-wg.service",
+                  "LoadState": "loaded",
+                  "ActiveState": "active",
+                  "SubState": "running",
+                  "UnitFileState": "static"
+                },
+                "proofofwork-api.service": {
+                  "MainPID": "1549987",
+                  "NRestarts": "0",
+                  "ExecMainStartTimestamp": "Thu 2026-10-01 06:40:52 UTC",
+                  "ControlGroup": "/system.slice/proofofwork-api.service",
+                  "LoadState": "loaded",
+                  "ActiveState": "active",
+                  "SubState": "running",
+                  "UnitFileState": "enabled"
+                },
+                "proofofwork-indexer-worker.service": {
+                  "MainPID": "1550000",
+                  "NRestarts": "0",
+                  "ExecMainStartTimestamp": "Thu 2026-10-01 06:40:52 UTC",
+                  "ControlGroup": "/system.slice/proofofwork-indexer-worker.service",
+                  "LoadState": "loaded",
+                  "ActiveState": "active",
+                  "SubState": "running",
+                  "UnitFileState": "enabled"
+                }
+              },
+              "holds": {
+                "/etc/proofofwork-retention/audit28.hold": {
+                  "sha256": "e9aca6e22b1dc36b714ed663051f8bc20d9479efa4173474e0b6b771958ca6a4",
+                  "mode": 384
+                }
+              }
+            },
+            "previouslyActive": [
+              "proofofwork-cache-prune.timer",
+              "proofofwork-node-release-health.timer",
+              "proofofwork-postgres-logical-backup.timer",
+              "proofofwork-postgres-query-health.timer",
+              "proofofwork-worker-recovery-watch.timer"
+            ]
+          }
+        },
+        {
+          "path": "/data/proofofwork-audit29-cutover-527e4cbaa66f-20261001T062733Z-retry1/134-phase.json",
+          "sha256": "bf84a3c1d9a055529c8b75536dc5f0d96daae33ce47321b9faadf38a0ab3d487",
+          "receipt": {
+            "at": "2026-10-01T06:52:35.533260+00:00",
+            "phase": "stopping-apps"
+          }
+        },
+        {
+          "path": "/data/proofofwork-audit29-cutover-527e4cbaa66f-20261001T062733Z-retry1/142-drained.json",
+          "sha256": "b058f8d0123ff54f7d62fec29deba27ea01a175aede9c4143f867f0fd9830cdb",
+          "receipt": {
+            "at": "2026-10-01T06:52:35.920219+00:00",
+            "sessions": 0,
+            "attempt": 0,
+            "rebuild": {
+              "active": false,
+              "status": "complete",
+              "network": "livenet",
+              "complete": true,
+              "startedAt": "2026-09-15T18:22:43.424Z",
+              "updatedAt": "2026-10-01T06:47:02.740Z",
+              "fromHeight": 948000,
+              "completedAt": "2026-10-01T06:47:02.740Z",
+              "bootstrapHash": "000000000000000000004238bec59ce46cd5b28982efe2b90071a51168d67986",
+              "bootstrapHeight": 947999,
+              "indexedThroughBlock": 969408,
+              "indexedThroughBlockHash": "00000000000000000000ba83db7b1fbcc7a65c121a1aa554da91618e5c10a4e2",
+              "transactionNormalization": "canonical-raw-tx-only"
+            }
+          }
+        },
+        {
+          "path": "/data/proofofwork-audit29-cutover-527e4cbaa66f-20261001T062733Z-retry1/206-phase.json",
+          "sha256": "a31ba56e7ecd303108f39f0e4932a081d80fc4c9e74a73e9c16f23a073087bcc",
+          "receipt": {
+            "at": "2026-10-01T06:52:38.297731+00:00",
+            "phase": "exchange-uncertain"
+          }
+        },
+        {
+          "path": "/data/proofofwork-audit29-cutover-527e4cbaa66f-20261001T062733Z-retry1/210-exchange.json",
+          "sha256": "4045a1dd9b21602880e65ba1b3eac80ca71483de8bc9ef627636997e69804dea",
+          "receipt": {
+            "at": "2026-10-01T06:52:40.165948+00:00",
+            "result": "node_release_exchange status=exchanged release_id=527e4cbaa66f-20261001T062733Z live=/opt/proofofwork-api rollback=/opt/proofofwork-api-stage-527e4cbaa66f-20261001T062733Z",
+            "oldRecoveryRoot": "/opt/proofofwork-api-stage-527e4cbaa66f-20261001T062733Z"
+          }
+        },
+        {
+          "path": "/data/proofofwork-audit29-cutover-527e4cbaa66f-20261001T062733Z-retry1/212-ready.json",
+          "sha256": "e13d685b4bedb06ea089b1220a5c1711cff9137724722e2615fb7b64f21958cd",
+          "receipt": {
+            "at": "2026-10-01T06:52:43.145692+00:00",
+            "health": {
+              "available": true,
+              "backend": "electrum",
+              "checks": {
+                "addressIndex": {
+                  "canary": {
+                    "confirmedSats": 0,
+                    "scripthash": "8f52010f55361085b1806ee106632dd610d3a6587284138d06065d584bab8d21",
+                    "unconfirmedSats": 0
+                  },
+                  "error": "",
+                  "ok": true,
+                  "source": "electrum://172.27.0.1:50001",
+                  "timedOut": false
+                },
+                "backend": {
+                  "ok": true,
+                  "timedOut": false
+                },
+                "database": {
+                  "canonicalMetaOk": true,
+                  "ok": true,
+                  "required": true,
+                  "timedOut": false
+                },
+                "disk": {
+                  "cache": {
+                    "availableBytes": 377733525504,
+                    "maxUsedPercent": 90,
+                    "minFreeBytes": 5368709120,
+                    "ok": true,
+                    "path": "/data/proofofwork-api-cache",
+                    "probePath": "/data/proofofwork-api-cache",
+                    "totalBytes": 1764768071680,
+                    "usedPercent": 78.59585451676885
+                  },
+                  "ok": true,
+                  "root": {
+                    "availableBytes": 69784297472,
+                    "maxUsedPercent": 90,
+                    "minFreeBytes": 5368709120,
+                    "ok": true,
+                    "path": "/",
+                    "probePath": "/",
+                    "totalBytes": 105089261568,
+                    "usedPercent": 33.5952156949502
+                  }
+                },
+                "electrum": {
+                  "configured": true,
+                  "error": "",
+                  "headerHash": "00000000000000000000ba83db7b1fbcc7a65c121a1aa554da91618e5c10a4e2",
+                  "headerHeight": 969408,
+                  "ok": true,
+                  "timedOut": false,
+                  "atTip": true
+                },
+                "index": {
+                  "aheadBlocks": 0,
+                  "checkpointHash": "00000000000000000000ba83db7b1fbcc7a65c121a1aa554da91618e5c10a4e2",
+                  "complete": true,
+                  "canonicalState": {
+                    "fault": {},
+                    "ok": true,
+                    "rebuild": {
+                      "active": false,
+                      "status": "complete",
+                      "network": "livenet",
+                      "complete": true,
+                      "startedAt": "2026-09-15T18:22:43.424Z",
+                      "updatedAt": "2026-10-01T06:47:02.740Z",
+                      "fromHeight": 948000,
+                      "completedAt": "2026-10-01T06:47:02.740Z",
+                      "bootstrapHash": "000000000000000000004238bec59ce46cd5b28982efe2b90071a51168d67986",
+                      "bootstrapHeight": 947999,
+                      "indexedThroughBlock": 969408,
+                      "indexedThroughBlockHash": "00000000000000000000ba83db7b1fbcc7a65c121a1aa554da91618e5c10a4e2",
+                      "transactionNormalization": "canonical-raw-tx-only"
+                    }
+                  },
+                  "checkpointCanonical": true,
+                  "canonicalCheckpointHash": "00000000000000000000ba83db7b1fbcc7a65c121a1aa554da91618e5c10a4e2",
+                  "indexedThroughBlock": 969408,
+                  "lagBlocks": 0,
+                  "available": true,
+                  "ok": true,
+                  "readModels": {
+                    "confirmedIds": {
+                      "count": 508,
+                      "maxBlock": 969060
+                    },
+                    "confirmedTransfers": {
+                      "count": 265,
+                      "maxBlock": 969015
+                    },
+                    "confirmedEvents": {
+                      "count": 26596,
+                      "maxBlock": 969362
+                    }
+                  },
+                  "summarySnapshot": {
+                    "blockHash": "00000000000000000000ba83db7b1fbcc7a65c121a1aa554da91618e5c10a4e2",
+                    "coverageByKey": {
+                      "growthSummary": 969408,
+                      "inceptionSummary": 969408,
+                      "infinitySummary": 969408,
+                      "logSummary": 969408,
+                      "marketplaceSummary": 969408,
+                      "tokenSummary": 969408,
+                      "workFloor": 969408,
+                      "workSummary": 969408
+                    },
+                    "eligible": true,
+                    "generatedAt": "2026-10-01T06:51:12.624Z",
+                    "indexedAt": "2026-10-01T06:51:12.624Z",
+                    "indexedThroughBlock": 969408,
+                    "payloadBytes": 5735336,
+                    "snapshotId": "acad511bec2183ce802c54fd",
+                    "ok": true
+                  },
+                  "scanTipHeight": 969408,
+                  "stopReason": ""
+                },
+                "node": {
+                  "bestBlockHash": "00000000000000000000ba83db7b1fbcc7a65c121a1aa554da91618e5c10a4e2",
+                  "chain": "main",
+                  "headers": 969408,
+                  "initialBlockDownload": false,
+                  "ok": true,
+                  "pruned": false,
+                  "tipHeight": 969408,
+                  "txindexHeight": 969408,
+                  "txindexSynced": true,
+                  "verificationProgress": 1
+                },
+                "worker": {
+                  "ageMs": 9034,
+                  "containment": {
+                    "active": false,
+                    "checkpointHash": "00000000000000000000ba83db7b1fbcc7a65c121a1aa554da91618e5c10a4e2",
+                    "checkpointHeight": 969408,
+                    "failingBlockHeight": null,
+                    "fingerprint": "",
+                    "network": "livenet",
+                    "nextRetryAt": null,
+                    "reason": "canonical-scan-success",
+                    "repeatCount": 0,
+                    "txid": ""
+                  },
+                  "consecutiveFailures": 0,
+                  "error": "",
+                  "lastSuccessAt": "2026-10-01T06:52:34.110Z",
+                  "maxAgeMs": 600000,
+                  "ok": true,
+                  "proofReady": true,
+                  "proofSource": "last-success-confirmed-replay",
+                  "pendingEvents": {
+                    "globalUnresolved": 0,
+                    "model": "bounded-best-effort-pending-event-health-v1",
+                    "ok": true,
+                    "q16PendingUnresolved": 0,
+                    "required": true,
+                    "scope": "all-observed-pending-protocol-events",
+                    "status": {
+                      "checked": 0,
+                      "deferred": 0,
+                      "errors": 0,
+                      "ok": true,
+                      "q16ParentDeferred": 0,
+                      "staleCandidates": 0,
+                      "unavailable": false,
+                      "unavailableValid": true
+                    }
+                  },
+                  "phase": "running"
+                }
+              },
+              "indexedAt": "2026-10-01T06:52:43.144Z",
+              "indexedThroughBlock": 969408,
+              "lagBlocks": 0,
+              "mempoolBase": "http://127.0.0.1:8080",
+              "ok": true,
+              "ready": true,
+              "service": "proofofwork-op-return-api",
+              "tipHeight": 969408,
+              "mode": "readiness"
+            }
+          }
+        },
+        {
+          "path": "/data/proofofwork-audit29-cutover-527e4cbaa66f-20261001T062733Z-retry1/220-failure.json",
+          "sha256": "fc2e9b3e7df0e60c49ab2763951233cd17b58bdc2dacec3a87b04c2f0de049a3",
+          "receipt": {
+            "at": "2026-10-01T06:52:45.830732+00:00",
+            "phase": "exchanged",
+            "error": "Command refused: proofofwork-node-release-publish exit=1 evidence=219-command.log"
+          }
+        },
+        {
+          "path": "/data/proofofwork-audit29-cutover-527e4cbaa66f-20261001T062733Z-retry1/221-failure-root-position.json",
+          "sha256": "24979a0c309bf5ab8cc70f804dfb10a78e5e7bfa995ef2428118fc0902022c78",
+          "receipt": {
+            "at": "2026-10-01T06:52:45.831332+00:00",
+            "position": "exchanged",
+            "phase": "exchanged"
+          }
+        },
+        {
+          "path": "/data/proofofwork-audit29-cutover-527e4cbaa66f-20261001T062733Z-retry1/236-drained.json",
+          "sha256": "3e18c6471d7d4f40af457f4037e0fc62ecd933e1236d9c4ad1ae953842cdf08a",
+          "receipt": {
+            "at": "2026-10-01T06:52:48.899411+00:00",
+            "sessions": 0,
+            "attempt": 1,
+            "rebuild": {
+              "active": false,
+              "status": "complete",
+              "network": "livenet",
+              "complete": true,
+              "startedAt": "2026-09-15T18:22:43.424Z",
+              "updatedAt": "2026-10-01T06:47:02.740Z",
+              "fromHeight": 948000,
+              "completedAt": "2026-10-01T06:47:02.740Z",
+              "bootstrapHash": "000000000000000000004238bec59ce46cd5b28982efe2b90071a51168d67986",
+              "bootstrapHeight": 947999,
+              "indexedThroughBlock": 969408,
+              "indexedThroughBlockHash": "00000000000000000000ba83db7b1fbcc7a65c121a1aa554da91618e5c10a4e2",
+              "transactionNormalization": "canonical-raw-tx-only"
+            }
+          }
+        },
+        {
+          "path": "/data/proofofwork-audit29-cutover-527e4cbaa66f-20261001T062733Z-retry1/240-rollback.json",
+          "sha256": "deea334dd23eaf715932b47097fdedfe70207e4f73e3c2e06b69676bb99c0c33",
+          "receipt": {
+            "at": "2026-10-01T06:52:50.767395+00:00",
+            "result": "node_release_exchange status=exchanged release_id=527e4cbaa66f-20261001T062733Z live=/opt/proofofwork-api rollback=/opt/proofofwork-api-stage-527e4cbaa66f-20261001T062733Z",
+            "oldLiveRestored": true,
+            "failedCandidatePreserved": "/opt/proofofwork-api-stage-527e4cbaa66f-20261001T062733Z"
+          }
+        },
+        {
+          "path": "/data/proofofwork-audit29-cutover-527e4cbaa66f-20261001T062733Z-retry1/242-ready.json",
+          "sha256": "903cfbc14b11ed8ebfe3fd6417a427aa12436e552d48ee7b1fa29a5ffc6f7a56",
+          "receipt": {
+            "at": "2026-10-01T06:52:53.417159+00:00",
+            "health": {
+              "available": true,
+              "backend": "electrum",
+              "checks": {
+                "addressIndex": {
+                  "canary": {
+                    "confirmedSats": 0,
+                    "scripthash": "8f52010f55361085b1806ee106632dd610d3a6587284138d06065d584bab8d21",
+                    "unconfirmedSats": 0
+                  },
+                  "error": "",
+                  "ok": true,
+                  "source": "electrum://172.27.0.1:50001",
+                  "timedOut": false
+                },
+                "backend": {
+                  "ok": true,
+                  "timedOut": false
+                },
+                "database": {
+                  "canonicalMetaOk": true,
+                  "ok": true,
+                  "required": true,
+                  "timedOut": false
+                },
+                "disk": {
+                  "cache": {
+                    "availableBytes": 377733410816,
+                    "maxUsedPercent": 90,
+                    "minFreeBytes": 5368709120,
+                    "ok": true,
+                    "path": "/data/proofofwork-api-cache",
+                    "probePath": "/data/proofofwork-api-cache",
+                    "totalBytes": 1764768071680,
+                    "usedPercent": 78.59586101552651
+                  },
+                  "ok": true,
+                  "root": {
+                    "availableBytes": 69784236032,
+                    "maxUsedPercent": 90,
+                    "minFreeBytes": 5368709120,
+                    "ok": true,
+                    "path": "/",
+                    "probePath": "/",
+                    "totalBytes": 105089261568,
+                    "usedPercent": 33.59527415953457
+                  }
+                },
+                "electrum": {
+                  "configured": true,
+                  "error": "",
+                  "headerHash": "00000000000000000000ba83db7b1fbcc7a65c121a1aa554da91618e5c10a4e2",
+                  "headerHeight": 969408,
+                  "ok": true,
+                  "timedOut": false,
+                  "atTip": true
+                },
+                "index": {
+                  "aheadBlocks": 0,
+                  "checkpointHash": "00000000000000000000ba83db7b1fbcc7a65c121a1aa554da91618e5c10a4e2",
+                  "complete": true,
+                  "canonicalState": {
+                    "fault": {},
+                    "ok": true,
+                    "rebuild": {
+                      "active": false,
+                      "status": "complete",
+                      "network": "livenet",
+                      "complete": true,
+                      "startedAt": "2026-09-15T18:22:43.424Z",
+                      "updatedAt": "2026-10-01T06:47:02.740Z",
+                      "fromHeight": 948000,
+                      "completedAt": "2026-10-01T06:47:02.740Z",
+                      "bootstrapHash": "000000000000000000004238bec59ce46cd5b28982efe2b90071a51168d67986",
+                      "bootstrapHeight": 947999,
+                      "indexedThroughBlock": 969408,
+                      "indexedThroughBlockHash": "00000000000000000000ba83db7b1fbcc7a65c121a1aa554da91618e5c10a4e2",
+                      "transactionNormalization": "canonical-raw-tx-only"
+                    }
+                  },
+                  "checkpointCanonical": true,
+                  "canonicalCheckpointHash": "00000000000000000000ba83db7b1fbcc7a65c121a1aa554da91618e5c10a4e2",
+                  "indexedThroughBlock": 969408,
+                  "lagBlocks": 0,
+                  "available": true,
+                  "ok": true,
+                  "readModels": {
+                    "confirmedIds": {
+                      "count": 508,
+                      "maxBlock": 969060
+                    },
+                    "confirmedTransfers": {
+                      "count": 265,
+                      "maxBlock": 969015
+                    },
+                    "confirmedEvents": {
+                      "count": 26596,
+                      "maxBlock": 969362
+                    }
+                  },
+                  "summarySnapshot": {
+                    "blockHash": "00000000000000000000ba83db7b1fbcc7a65c121a1aa554da91618e5c10a4e2",
+                    "coverageByKey": {
+                      "growthSummary": 969408,
+                      "inceptionSummary": 969408,
+                      "infinitySummary": 969408,
+                      "logSummary": 969408,
+                      "marketplaceSummary": 969408,
+                      "tokenSummary": 969408,
+                      "workFloor": 969408,
+                      "workSummary": 969408
+                    },
+                    "eligible": true,
+                    "generatedAt": "2026-10-01T06:51:12.624Z",
+                    "indexedAt": "2026-10-01T06:51:12.624Z",
+                    "indexedThroughBlock": 969408,
+                    "payloadBytes": 5735336,
+                    "snapshotId": "acad511bec2183ce802c54fd",
+                    "ok": true
+                  },
+                  "scanTipHeight": 969408,
+                  "stopReason": ""
+                },
+                "node": {
+                  "bestBlockHash": "00000000000000000000ba83db7b1fbcc7a65c121a1aa554da91618e5c10a4e2",
+                  "chain": "main",
+                  "headers": 969408,
+                  "initialBlockDownload": false,
+                  "ok": true,
+                  "pruned": false,
+                  "tipHeight": 969408,
+                  "txindexHeight": 969408,
+                  "txindexSynced": true,
+                  "verificationProgress": 1
+                },
+                "worker": {
+                  "ageMs": 19306,
+                  "containment": {
+                    "active": false,
+                    "checkpointHash": "00000000000000000000ba83db7b1fbcc7a65c121a1aa554da91618e5c10a4e2",
+                    "checkpointHeight": 969408,
+                    "failingBlockHeight": null,
+                    "fingerprint": "",
+                    "network": "livenet",
+                    "nextRetryAt": null,
+                    "reason": "canonical-scan-success",
+                    "repeatCount": 0,
+                    "txid": ""
+                  },
+                  "consecutiveFailures": 0,
+                  "error": "",
+                  "lastSuccessAt": "2026-10-01T06:52:34.110Z",
+                  "maxAgeMs": 600000,
+                  "ok": true,
+                  "proofReady": true,
+                  "proofSource": "last-success-confirmed-replay",
+                  "pendingEvents": {
+                    "globalUnresolved": 0,
+                    "model": "bounded-best-effort-pending-event-health-v1",
+                    "ok": true,
+                    "q16PendingUnresolved": 0,
+                    "required": true,
+                    "scope": "all-observed-pending-protocol-events",
+                    "status": {
+                      "checked": 0,
+                      "deferred": 0,
+                      "errors": 0,
+                      "ok": true,
+                      "q16ParentDeferred": 0,
+                      "staleCandidates": 0,
+                      "unavailable": false,
+                      "unavailableValid": true
+                    }
+                  },
+                  "phase": "running"
+                }
+              },
+              "indexedAt": "2026-10-01T06:52:53.416Z",
+              "indexedThroughBlock": 969408,
+              "lagBlocks": 0,
+              "mempoolBase": "http://127.0.0.1:8080",
+              "ok": true,
+              "ready": true,
+              "service": "proofofwork-op-return-api",
+              "tipHeight": 969408,
+              "mode": "readiness"
+            }
+          }
+        },
+        {
+          "path": "/data/proofofwork-audit29-cutover-527e4cbaa66f-20261001T062733Z-retry1/247-timer-restoration-intent.json",
+          "sha256": "fe4c0a0cb13fd360e8fe2aedc1a0aec1dd88cae7d0ae38465147cdf9c32ace10",
+          "receipt": {
+            "at": "2026-10-01T06:52:53.447300+00:00",
+            "phase": "rolled-back"
+          }
+        },
+        {
+          "path": "/data/proofofwork-audit29-cutover-527e4cbaa66f-20261001T062733Z-retry1/265-timers-restored.json",
+          "sha256": "9031ef3dd463803f8d7b5a2e0ab538320d8280131ed4b7934b2eda12ad4791ab",
+          "receipt": {
+            "at": "2026-10-01T06:52:53.579305+00:00",
+            "timers": {
+              "pg_basebackup@16-main.timer": {
+                "LoadState": "loaded",
+                "ActiveState": "inactive",
+                "SubState": "dead",
+                "UnitFileState": "disabled"
+              },
+              "pg_compresswal@16-main.timer": {
+                "LoadState": "loaded",
+                "ActiveState": "inactive",
+                "SubState": "dead",
+                "UnitFileState": "disabled"
+              },
+              "proofofwork-cache-prune.timer": {
+                "LoadState": "loaded",
+                "ActiveState": "active",
+                "SubState": "waiting",
+                "UnitFileState": "enabled"
+              },
+              "proofofwork-node-release-health.timer": {
+                "LoadState": "loaded",
+                "ActiveState": "active",
+                "SubState": "waiting",
+                "UnitFileState": "enabled"
+              },
+              "proofofwork-node-release-prune.timer": {
+                "LoadState": "masked",
+                "ActiveState": "inactive",
+                "SubState": "dead",
+                "UnitFileState": "masked"
+              },
+              "proofofwork-postgres-logical-backup.timer": {
+                "LoadState": "loaded",
+                "ActiveState": "active",
+                "SubState": "waiting",
+                "UnitFileState": "enabled"
+              },
+              "proofofwork-postgres-query-health.timer": {
+                "LoadState": "loaded",
+                "ActiveState": "active",
+                "SubState": "waiting",
+                "UnitFileState": "enabled"
+              },
+              "proofofwork-worker-recovery-watch.timer": {
+                "LoadState": "loaded",
+                "ActiveState": "active",
+                "SubState": "waiting",
+                "UnitFileState": "enabled"
+              }
+            }
+          }
+        },
+        {
+          "path": "/data/proofofwork-audit29-cutover-527e4cbaa66f-20261001T062733Z-retry1/266-final.json",
+          "sha256": "ec0792c3bc2a01a38fe4d6832adf46b9dd8e32e80ac8e449dfc5e470b7182f8f",
+          "receipt": {
+            "at": "2026-10-01T06:52:53.579614+00:00",
+            "ok": false,
+            "phase": "rolled-back",
+            "commit": "527e4cbaa66f689169197c7ce9569425ef334492",
+            "authorityServicesModified": false,
+            "recoveryRemoved": false
+          }
+        }
+      ]
+    },
+    "exactPublisherRefusal": {
+      "path": "/tmp/pow-audit29-release/node/publisher-contract-refusal-527.json",
+      "bytes": 271,
+      "sha256": "1e0d4f108b83eb3670e7ec90fcc3ce255a8b4e3f7edf9d882c6aecfecb597bcf",
+      "receipt": {
+        "path": "/data/proofofwork-audit29-cutover-527e4cbaa66f-20261001T062733Z-retry1/219-command.log",
+        "bytes": 60,
+        "sha256": "00ff9fc7cc37df73b35fc189c33a18db0b6ce4863c8f80f48d29d8271be2b30e",
+        "classification": "Release archive name does not identify live commit 527e4cb."
+      }
+    },
+    "archivePredicateFixtures": {
+      "path": "/tmp/pow-audit29-release/controllers/publisher-trigger-release-tests.json",
+      "bytes": 963,
+      "sha256": "feaf2d7c76b437a2d127ab559f2178c4ae0ed8968f0b3e46d93cfcdce4ca27da",
+      "receipt": {
+        "completedAt": "2026-10-01T06:56:01.795293+00:00",
+        "ok": true,
+        "tests": 24,
+        "previousTests": 23,
+        "newTests": 1,
+        "sourceSha256": {
+          "tests": "103a04ba788c867aca1159d98eed953c6986ff14074f380932143d28dcd3f6de",
+          "controller": "a049ff73b98a78a93deddc408c300965f840c1fd476c81f70d6da53054da29fd",
+          "publisher": "42ad099555cee0257572dd348a85a9f684005aba4f9c8f8077ea9aa67d68df78"
+        },
+        "testLog": "/tmp/pow-audit29-release/controllers/publisher-trigger-release-tests.txt",
+        "testLogSha256": "e594b73ce114273b2cea5ea3262f83576a18d7694b11e13ca0eaa1aed18d7604",
+        "productionActions": false,
+        "publisherExecuted": false,
+        "fixtureScope": "actual installed publisher short_commit assignment and following complete Bash if/fi clause only; corrected7 accepted, old12 and wrong7 rejected; identity helper malformed and mismatched input rejected",
+        "priorEvidencePreserved": "/tmp/pow-audit29-release/controllers/native-postgres-release-tests.json"
+      }
+    },
+    "artifactLimitReproduction": {
+      "path": "/tmp/pow-audit29-release/ui/prepublication/fsize-inheritance-proof.json",
+      "bytes": 510,
+      "sha256": "4ec05988e7a224257d6770e3e702bcb40339ee442a47bc728ea5f82f1ec628af",
+      "receipt": {
+        "sourceSha256": "a049ff73b98a78a93deddc408c300965f840c1fd476c81f70d6da53054da29fd",
+        "scope": "Private /tmp actual Controller.run only; no production command/SQL/service",
+        "attemptedArtifactBytes": 4194305,
+        "actualArtifactBytes": 4194304,
+        "failure": "Command refused: python3 exit=1 evidence=001-command.log",
+        "elapsedSeconds": 0.17298792199289892,
+        "conclusion": "Actual child inherits4MiB hardfilesystem-filelimit; loglimit cannot also serve as legitimate archive/pack/extraction-filelimit."
+      }
+    },
+    "preservedFailedAttempts": [
+      "initial",
+      "retry1"
+    ],
+    "archiveNaming": "commit7 delimited token; unchanged commit12 stage identity",
+    "logLimitBytes": 4194304,
+    "ordinaryPerFileLimitBytes": 4194304,
+    "publisherProvenancePerFileLimitBytes": 2147483648,
+    "protectedDataChanges": false,
+    "finalFocusedFixtures": {
+      "path": "/tmp/pow-audit29-release/controllers/root-publisher-and-artifact-tests-20261001T0704Z.json",
+      "sha256": "f06ccb80d289d08235947c15a7aebec9e27f69959dc4d076d43176830b69a5a5",
+      "receipt": {
+        "tests": {
+          "controller": 30,
+          "transport": 5,
+          "workflow": 26
+        },
+        "allPassed": true,
+        "controllerSha256": "09afe5ddd243a796ea9c830b0041924747eb77a3803a3cfe56a3279cd24bf670",
+        "testSha256": "2dedf57a60949a8953c9d423b1ca7f4b39dd4ed6237a181820ddefa166ee8568",
+        "productionPublication": false
+      }
+    }
   }
 }

@@ -19,6 +19,7 @@ import pwd
 from pathlib import Path
 import re
 import resource
+import selectors
 import signal
 import stat
 import subprocess
@@ -62,6 +63,14 @@ POSTGRES_ENV = {'PGOPTIONS': '-c default_transaction_read_only=on -c statement_t
 
 class ControlledStop(RuntimeError):
     """A watchdog/user interruption must never be swallowed as a health retry."""
+
+
+def node_archive_name(commit, release):
+    require(HEX40.fullmatch(commit) and RELEASE.fullmatch(release)
+            and release.startswith(commit[:12] + '-'), 'Node archive identity differs')
+    # The installed publisher requires its seven-character commit as a delimited
+    # token; twelve-character stage IDs deliberately remain a separate identity.
+    return 'proofofwork-node-release-' + commit[:7] + '-' + release[13:] + '.tgz'
 
 
 def require(condition, message):
@@ -234,14 +243,17 @@ class Controller:
         finally:
             os.close(fd)
 
-    def run(self, argv, timeout=90, extra=None, *, as_postgres=False):
+    def run(self, argv, timeout=90, extra=None, *, as_postgres=False, artifact_writer=False):
         self.counter += 1
         output = self.out / f'{self.counter:03d}-command.log'
         bound = min(timeout, self.deadline - time.monotonic())
         require(bound > 0, 'Controller time budget exhausted')
+        require(not (as_postgres and artifact_writer), 'SQL reader cannot be an artifact writer')
+        log_limit = 4 * 1024**2
+        file_limit = 2 * 1024**3 if artifact_writer else log_limit
         def limits():
             resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
-            resource.setrlimit(resource.RLIMIT_FSIZE, (4 * 1024**2, 4 * 1024**2))
+            resource.setrlimit(resource.RLIMIT_FSIZE, (file_limit, file_limit))
         credentials = {}
         descriptors = () if self.lock_fd is None else (self.lock_fd,)
         if as_postgres:
@@ -255,18 +267,45 @@ class Controller:
                            'extra_groups': [], 'umask': 0o077}
             descriptors = ()  # The unprivileged SQL reader never inherits root locks.
         with output.open('xb') as target:
-            proc = subprocess.Popen(argv, stdin=subprocess.DEVNULL, stdout=target, stderr=subprocess.STDOUT,
+            proc = subprocess.Popen(argv, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                                     env={**ENV, **(extra or {})}, cwd='/', start_new_session=True,
                                     pass_fds=descriptors, preexec_fn=limits, **credentials)
             try:
-                code = proc.wait(timeout=bound)
+                # Output is bounded independently of legitimate runtime packs,
+                # archives and provenance extraction. A pipe remains open for
+                # inherited descendants even after their leader has exited.
+                deadline = time.monotonic() + bound
+                logged = 0
+                os.set_blocking(proc.stdout.fileno(), False)
+                with selectors.DefaultSelector() as selector:
+                    selector.register(proc.stdout, selectors.EVENT_READ)
+                    while selector.get_map():
+                        remaining = deadline - time.monotonic()
+                        if remaining <= 0:
+                            raise subprocess.TimeoutExpired(argv, bound)
+                        for key, _ in selector.select(min(remaining, 0.25)):
+                            block = os.read(key.fileobj.fileno(), 65536)
+                            if not block:
+                                selector.unregister(key.fileobj)
+                                continue
+                            available = log_limit - logged
+                            target.write(block[:available])
+                            logged += min(available, len(block))
+                            require(len(block) <= available, 'Command output exceeds 4 MiB limit')
+                code = proc.wait(timeout=max(0.001, deadline - time.monotonic()))
             except BaseException as error:
-                if proc.poll() is None:
-                    os.killpg(proc.pid, signal.SIGKILL); proc.wait(timeout=10)
                 if isinstance(error, subprocess.TimeoutExpired):
                     raise RuntimeError('Bounded command timed out: ' + Path(argv[0]).name) from error
                 raise
             finally:
+                # Kill the entire private group even if its original leader
+                # already exited; no descendant may retain locks or write later.
+                try:
+                    os.killpg(proc.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+                proc.wait(timeout=10)
+                proc.stdout.close()
                 target.flush(); os.fsync(target.fileno())
         require(code == 0, 'Command refused: ' + Path(argv[0]).name + ' exit=' + str(code)
                 + ' evidence=' + output.name)
@@ -513,7 +552,14 @@ class Controller:
 
     def node(self):
         args = self.args
+        request = SCRATCH / node_archive_name(args.commit, args.release_id)
+        final = Path('/data/proofofwork-release-backups/managed') / request.name
+        require(not any(os.path.lexists(p) for p in (request, final, Path(str(final) + '.sha256'),
+                                                    Path(str(final) + '.provenance'))),
+                'Archive request/publication evidence already exists; inspect it before another cutover')
         self.postgres_preflight()  # Before timer/shadow/application stops or exchanges.
+        self.save('archive-request-identity', {'request': str(request), 'managedArchive': str(final),
+                  'commitToken': args.commit[:7], 'applicationServicesStopped': False})
         live, stage = Path('/opt/proofofwork-api'), Path('/opt/proofofwork-api-stage-' + args.release_id)
         expected = attestation(bound_file(args.candidate_attestation, args.attestation_sha256,
                                          text=True, limit=65536).decode())
@@ -561,17 +607,15 @@ class Controller:
         require(self.attest(live) == expected and self.attest(stage) == old, 'Post-start tree drift')
         # The installed node publisher reconstructs its archive from the attested
         # live tree. The request is a trigger, never a claimed candidate archive.
-        request = SCRATCH / ('proofofwork-node-release-' + args.commit[:12] + '-' + args.release_id[13:] + '.tgz')
         with request.open('xb') as target:
             target.write(b'Audit 29 archive reconstruction request; source bundle hash retained in receipt.\n')
             target.flush(); os.fsync(target.fileno())
-        archive = self.run([self.helpers['publisher'], str(request)], 600)
+        archive = self.run([self.helpers['publisher'], str(request)], 600, artifact_writer=True)
         published = [line for line in archive.splitlines() if line.startswith('published ')]
         require(len(published) == 1, 'Missing unique managed archive publication receipt')
         fields = dict(item.split('=', 1) for item in published[0][10:].split())
         require(fields.get('commit') == expected[0] and fields.get('tree') == expected[1]
                 and fields.get('runtime_sha256') == expected[4], 'Published archive attestation differs')
-        final = Path('/data/proofofwork-release-backups/managed') / request.name
         require(fields.get('archive') == request.name, 'Managed archive name differs')
         bound_file(final, fields.get('sha256', ''))
         self.save('archive-published', {'result': archive, 'candidateBundleSha256': args.archive_sha256,
@@ -620,10 +664,10 @@ class Controller:
         for root, record in retained.items():
             self.run([self.helpers['retained'], root, '--manifest-sha256', record['manifestSha256'],
                       '--tree-sha256', record['treeSha256']], 130)
-        self.run([self.helpers['provenance'], 'verify-rollback'], 180)
+        self.run([self.helpers['provenance'], 'verify-rollback'], 180, artifact_writer=True)
         self.run([self.helpers['provenance'], 'verify-candidate', '--release-id', args.release_id,
                   '--commit', args.commit, '--source-checkout', str(source), '--archive', str(archive)], 300,
-                 extra={'POW_UI_WWW_ROOT': str(stage), 'POW_UI_STAGED_ROOT': '1'})
+                 extra={'POW_UI_WWW_ROOT': str(stage), 'POW_UI_STAGED_ROOT': '1'}, artifact_writer=True)
         self.old_identity, self.new_identity = identity(live), identity(stage)
         self.save('roots', {'old': old, 'live': self.old_identity, 'stage': self.new_identity, 'retained': retained,
                             'candidateArchiveSha256': args.archive_sha256})
@@ -635,14 +679,14 @@ class Controller:
                 '--source-checkout', str(source), '--archive', str(archive), '--defer-verified-retention']
         for root, record in retained.items():
             argv.extend(['--retain-rollback-root', Path(root).name + ':' + record['manifestSha256'] + ':' + record['treeSha256']])
-        result = self.run(argv, 600)
+        result = self.run(argv, 600, artifact_writer=True)
         self.phase = 'published'
         recovery = ROLLBACKS / ('proofofwork-www-pre-' + args.release_id)
         require('status=published' in result and identity(live) == self.new_identity
                 and identity(recovery) == self.old_identity and self.fingerprint(recovery)['treeSha256'] == old['treeSha256'],
                 'Published UI/recovery identity differs')
         bound_file(archive, args.archive_sha256)
-        self.run([self.helpers['provenance'], 'verify'], 180)
+        self.run([self.helpers['provenance'], 'verify'], 180, artifact_writer=True)
         manifest = parse_lines(Path('/var/www/.proofofwork-ui-release').read_text())
         require(manifest.get('commit') == args.commit and manifest.get('source_tree') == args.tree
                 and manifest.get('archive_sha256') == args.archive_sha256, 'Published UI manifest binding differs')
@@ -686,7 +730,7 @@ class Controller:
                 fingerprint = self.fingerprint(live)
                 require(fingerprint['manifestSha256'] == self.args.old_manifest_sha256
                         and fingerprint['treeSha256'] == self.args.old_tree_sha256, 'UI rollback fingerprint differs')
-                self.run([self.helpers['provenance'], 'verify-rollback'], 180)
+                self.run([self.helpers['provenance'], 'verify-rollback'], 180, artifact_writer=True)
                 self.phase = 'rolled-back'
             self.save('publisher-rollback-observed', {'oldLiveRestoredAndVerified': restored,
                                                      'phase': self.phase, 'automaticSecondExchange': False})

@@ -13,6 +13,10 @@ for staging. Do not change the candidate bytes or reuse a failed receipt directo
 For an application-preserving retry, supply `--attempt retry1` and append
 `-retry1` to the exact managed publication unit. The controller gives that attempt
 a fresh evidence directory; the original unit, logs and receipts remain evidence.
+Node archive requests use a delimited seven-character commit token, as required
+by the installed publisher: `proofofwork-node-release-COMMIT7-UTC.tgz`. Stage,
+unit and receipt identities continue to use the twelve-character release ID.
+Existing request/archive/provenance/checksum paths refuse reuse before any stop.
 
 Before production use, run these local private-fixture checks:
 
@@ -240,6 +244,14 @@ specific child process group. An owner SIGKILL cannot leave controller child
 writers outside the systemd cgroup; durable pre-action receipts explain any
 held services/timers. The controller never enables, disables, unmasks, resets
 failed units, starts previously inactive timers, or removes recovery evidence.
+
+Command stdout/stderr is streamed into an exclusive evidence file with a 4 MiB
+ceiling. Exceeding that ceiling or timing out terminates the entire child process
+group, including descendants whose original leader has already exited. Ordinary
+metadata and SQL children retain a 4 MiB per-file limit. Only the hash-bound
+archive publishers and UI provenance phases receive a separate finite 2 GiB
+per-file artifact limit, sufficient for the reviewed runtime packs and archives;
+their log limit stays 4 MiB. SQL readers cannot request the artifact writer mode.
 
 After the controller succeeds, the release operator must separately verify
 public HTTP, the connected-wallet/Desktop/AMO UI, protected current gates and

@@ -271,6 +271,82 @@ class ReleaseContracts(unittest.TestCase):
             time.sleep(0.6)
             self.assertFalse(marker.exists(), 'timed-out child must not keep writing')
 
+    def test_designated_artifact_writer_can_create_more_than_log_cap(self):
+        with tempfile.TemporaryDirectory() as folder:
+            fixture=native_fixture(); fixture.out=Path(folder)
+            artifact=Path(folder)/'verified-release-fixture'
+            code=('import json,pathlib,resource; pathlib.Path('+repr(str(artifact))+').write_bytes(b"x"*(5*1024**2)); '
+                  'print(json.dumps({"artifact":"complete","limit":resource.getrlimit(resource.RLIMIT_FSIZE)}))')
+            result=fixture.run([sys.executable,'-I','-B','-c',code],10,artifact_writer=True)
+            self.assertEqual(json.loads(result), {'artifact':'complete','limit':[2*1024**3,2*1024**3]})
+            self.assertEqual(artifact.stat().st_size,5*1024**2)
+            self.assertEqual(hashlib.sha256(artifact.read_bytes()).hexdigest(),
+                             hashlib.sha256(b'x'*(5*1024**2)).hexdigest())
+            self.assertLess((fixture.out/'001-command.log').stat().st_size,4096)
+
+    def test_ordinary_command_cannot_create_artifact_larger_than_four_mib(self):
+        with tempfile.TemporaryDirectory() as folder:
+            fixture=native_fixture(); fixture.out=Path(folder)
+            artifact=Path(folder)/'not-authorized-as-artifact-writer'
+            code='import pathlib; pathlib.Path('+repr(str(artifact))+').write_bytes(b"x"*(5*1024**2))'
+            with self.assertRaises(RuntimeError):
+                fixture.run([sys.executable,'-I','-B','-c',code],10)
+            self.assertTrue(artifact.exists())
+            self.assertLessEqual(artifact.stat().st_size,4*1024**2)
+
+    def test_native_sql_reader_cannot_enable_artifact_writer_limit(self):
+        with tempfile.TemporaryDirectory() as folder:
+            fixture=native_fixture(); fixture.out=Path(folder)
+            with patch.object(release.subprocess,'Popen') as child:
+                with self.assertRaisesRegex(RuntimeError,'SQL reader cannot be an artifact writer'):
+                    fixture.run([str(release.POSTGRES_CLIENT),'--version'],as_postgres=True,artifact_writer=True)
+                child.assert_not_called()
+            self.assertEqual(list(fixture.out.iterdir()),[])
+
+    def test_output_overflow_kills_descendant_even_after_group_leader_exits(self):
+        with tempfile.TemporaryDirectory() as folder:
+            fixture=native_fixture(); fixture.out=Path(folder)
+            marker=Path(folder)/'late-descendant-write'
+            leader=Path(folder)/'leader-exited-before-output'
+            code=("import os,pathlib,time\nchild=os.fork()\nif child:\n "
+                  "pathlib.Path("+repr(str(leader))+").write_text('leader exiting')\n os._exit(0)\n"
+                  "time.sleep(0.15)\nos.write(1,b'x'*(4*1024**2+65536))\ntime.sleep(0.8)\n"
+                  "pathlib.Path("+repr(str(marker))+").write_text('unexpected')\n")
+            started=time.monotonic()
+            with self.assertRaises(RuntimeError):
+                fixture.run([sys.executable,'-I','-B','-c',code],5,artifact_writer=True)
+            self.assertLess(time.monotonic()-started,3)
+            self.assertEqual(leader.read_text(),'leader exiting')
+            self.assertLessEqual((fixture.out/'001-command.log').stat().st_size,4*1024**2)
+            time.sleep(1)
+            self.assertFalse(marker.exists(),'overflow must kill the group even after its leader exits')
+
+    def test_pipe_held_by_exited_leader_descendant_obeys_command_deadline(self):
+        with tempfile.TemporaryDirectory() as folder:
+            fixture=native_fixture(); fixture.out=Path(folder)
+            marker=Path(folder)/'late-held-pipe-write'
+            code=("import os,pathlib,time\nif os.fork(): os._exit(0)\ntime.sleep(0.8)\n"
+                  "pathlib.Path("+repr(str(marker))+").write_text('unexpected')\n")
+            started=time.monotonic()
+            with self.assertRaisesRegex(RuntimeError,'timed out'):
+                fixture.run([sys.executable,'-I','-B','-c',code],0.1)
+            self.assertLess(time.monotonic()-started,2)
+            time.sleep(0.9)
+            self.assertFalse(marker.exists(),'deadline must kill children retaining the output pipe')
+
+    def test_ordinary_command_preserves_exact_inherited_operational_lock_fd(self):
+        with tempfile.TemporaryDirectory() as folder:
+            fixture=native_fixture(); fixture.out=Path(folder)
+            lock=os.open(Path(folder)/'operational-lock',os.O_CREAT|os.O_RDWR,0o600)
+            fixture.lock_fd=lock; expected=os.fstat(lock)
+            try:
+                code=('import json,os; st=os.fstat('+str(lock)+'); '
+                      'print(json.dumps({"device":st.st_dev,"inode":st.st_ino}))')
+                observed=json.loads(fixture.run([sys.executable,'-I','-B','-c',code],10))
+            finally:
+                os.close(lock)
+            self.assertEqual(observed,{'device':expected.st_dev,'inode':expected.st_ino})
+
     def test_native_postgres_child_has_fixed_identity_environment_and_no_root_lock_fd(self):
         with tempfile.TemporaryDirectory() as folder:
             fixture = native_fixture(); fixture.out = Path(folder)
@@ -279,14 +355,14 @@ class ReleaseContracts(unittest.TestCase):
             account = SimpleNamespace(pw_uid=uid, pw_gid=gid)
             lock = os.open(Path(folder)/'private-lock', os.O_CREAT | os.O_RDWR, 0o600)
             os.set_inheritable(lock, True); fixture.lock_fd = lock
-            captured = []; real_popen = subprocess.Popen
+            captured = []; processes = []; real_popen = subprocess.Popen
             def popen(argv, **kwargs):
                 captured.append(kwargs.copy())
                 # This nonroot test cannot call setgroups. Assert the production
                 # credential argument below; root runs exercise the native drop.
                 if os.geteuid() != 0:
                     kwargs = {key: value for key, value in kwargs.items() if key != 'extra_groups'}
-                return real_popen(argv, **kwargs)
+                process=real_popen(argv, **kwargs); processes.append(process); return process
             code = ("import json,os,resource; "
                     "\ntry: os.fstat("+str(lock)+"); inherited=True"
                     "\nexcept OSError: inherited=False"
@@ -319,7 +395,8 @@ class ReleaseContracts(unittest.TestCase):
                                'pass_fds':(), 'cwd':'/', 'start_new_session':True,
                                'stdin':subprocess.DEVNULL, 'stderr':subprocess.STDOUT}.items():
                 self.assertEqual(captured[0][key], value)
-            self.assertTrue(captured[0]['stdout'].closed)
+            self.assertEqual(captured[0]['stdout'],subprocess.PIPE)
+            self.assertTrue(processes[0].stdout.closed)
 
     def test_native_postgres_command_rejects_wrong_executable_or_changed_account(self):
         fixture = native_fixture(); fixture.postgres_account = (1000, 1000)
@@ -448,6 +525,29 @@ class ReleaseContracts(unittest.TestCase):
                 with self.assertRaises(FileExistsError): retry.setup()
                 bound.assert_not_called(); state.assert_not_called()
             self.assertEqual(marker.read_bytes(), b'preserved prior failure')
+
+    def test_node_archive_trigger_passes_actual_installed_publisher_commit_predicate(self):
+        publisher = Path(__file__).parents[1]/'proofofwork-node-release-publish.sh'
+        lines = publisher.read_text().splitlines()
+        starts = [index for index, line in enumerate(lines) if line.startswith('short_commit=')]
+        self.assertEqual(len(starts), 1, 'publisher must expose one unambiguous commit-name check')
+        start = starts[0]
+        self.assertTrue(lines[start+1].startswith('if [[ ! "${name}" =~ '))
+        end = next(index for index in range(start+2, len(lines)) if lines[index] == 'fi')
+        predicate = '\n'.join(lines[start:end+1])
+        script = 'set -eu\ncommit="$1"\nname="$2"\n'+predicate+'\n'
+        release_id = C[:12]+'-20261001T060000Z'
+        corrected = release.node_archive_name(C, release_id)
+        self.assertEqual(corrected, 'proofofwork-node-release-'+C[:7]+'-20261001T060000Z.tgz')
+        old = 'proofofwork-node-release-'+C[:12]+'-20261001T060000Z.tgz'
+        wrong = 'proofofwork-node-release-'+T[:7]+'-20261001T060000Z.tgz'
+        for name, accepted in ((corrected, True), (old, False), (wrong, False)):
+            result = subprocess.run(['/bin/bash', '-c', script, 'publisher-filename-fixture', C, name],
+                                    stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                    cwd='/', env=release.ENV, timeout=5)
+            self.assertEqual(result.returncode == 0, accepted, name)
+        for commit, identity in (('bad', release_id), (C, T[:12]+'-20261001T060000Z')):
+            with self.assertRaises(RuntimeError): release.node_archive_name(commit, identity)
 
     def test_unknown_exchange_never_restarts_or_restores_timers(self):
         fixture = FixtureController(position='uncertain')

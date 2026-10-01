@@ -303,3 +303,28 @@ The actual host preflight passed at 06:49:24 UTC with PostgreSQL 16.15, uid108/
 gid112, read-only mode and 30s/5s timeout settings. Its 14 live application
 sessions were expected and were not terminated. The preflight stopped no
 services and changed no data. Actual publication remains pending.
+
+At 06:52:40 UTC, retry1 exchanged the verified candidate after a successful
+native read-only preflight and zero-session drain. Candidate readiness recovered
+at 06:52:43 UTC, but the installed archive publisher rejected the twelve-character
+request filename: its contract requires a delimited seven-character commit token.
+The controller verified the same old/candidate root pair, drained and exchanged
+back at 06:52:50 UTC; the prior application was ready at 06:52:53 UTC. Authorities,
+holds, recovery bytes and prior timer states remained unchanged. This was a
+verified rollback after exchange, distinct from the first pre-exchange refusal.
+Both attempts and the rejected request remain preserved.
+
+The tooling correction validates the full application commit/release identity,
+uses the publisher's required commit7 filename, and refuses existing request,
+managed archive, checksum or provenance paths before stopping applications. An
+actual-source fixture executes only the installed publisher's filename predicate:
+the corrected name passes; the original commit12 and wrong commit7 names fail.
+
+Independent review also reproduced an inherited 4 MiB per-file limit blocking
+legitimate archive/runtime writes. The controller now bounds log output separately
+using a pipe and finite time budget. Metadata/SQL children retain the 4 MiB file
+limit; only bound publisher/provenance artifact phases receive a finite 2 GiB
+per-file limit. Log overflow and timeout kill the complete private process group,
+including descendants of an exited leader. This is a release-tooling correction;
+application source, protocol rules, accepted runtime and UI archives stay frozen.
+Fresh mandatory shadow acceptance and actual publication remain required.
