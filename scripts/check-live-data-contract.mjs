@@ -1644,13 +1644,13 @@ expectAll("Desktop public search stays on first-party ProofOfWork API", app, [
   /function DesktopApp\([\s\S]*?<DesktopWorkspace[\s\S]*?onSearch=\{onSearch\}/,
 ]);
 expectAll("Desktop address mail read stays first-party", fetchAddressMailSource, [
-  /async function fetchAddressMail\(\s*targetAddress:\s*string,\s*targetNetwork:\s*BitcoinNetwork,\s*fresh = false,\s*\)/,
+  /async function fetchAddressMail\(\s*targetAddress:\s*string,\s*targetNetwork:\s*BitcoinNetwork,\s*fresh = false,\s*signal\?:\s*AbortSignal,\s*\)/,
   /const suffix = fresh \? "\?fresh=1" : ""/,
   /fetchProofApiJson<[\s\S]*?`\/api\/v1\/address\/\$\{encodeURIComponent\(targetAddress\)\}\/mail\$\{suffix\}`/,
 ]);
 expectAll("Desktop search loader uses address mail read", loadDesktopTargetSource, [
   /async function loadDesktopTarget\(target = desktopQuery\)/,
-  /fetchAddressMail\(resolved\.paymentAddress,\s*network,\s*true\)/,
+  /fetchAddressMail\(resolved\.paymentAddress,\s*requestNetwork,\s*true,\s*controller\.signal\)/,
 ]);
 expect("Desktop public search must keep fetchAddressMail source present", Boolean(fetchAddressMailSource));
 expect("Desktop public search must keep loadDesktopTarget source present", Boolean(loadDesktopTargetSource));

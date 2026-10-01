@@ -533,6 +533,7 @@ type DesktopProfile = {
   loadedAt: string;
   network: BitcoinNetwork;
   query: string;
+  readWarning?: string;
   resolvedId?: string;
   welcomeUnavailable?: boolean;
 };
@@ -1787,6 +1788,13 @@ type PowPaginatedApiResponse<T> = {
 };
 
 type PowMailApiResponse = {
+  address?: string;
+  network?: BitcoinNetwork;
+  error?: unknown;
+  scanError?: string;
+  historyCoverage?: { complete?: boolean; model?: string };
+  source?: string;
+  stats?: { partialScan?: boolean; scanFailed?: boolean };
   inboxMessages?: InboxMessage[];
   sentMessages?: SentMessage[];
 };
@@ -4098,6 +4106,24 @@ function isVisibleSentStatus(status: BroadcastStatus) {
 
 function isOutboxStatus(status: BroadcastStatus) {
   return status === "pending" || status === "dropped";
+}
+
+function mailHeaderLifecycleCounts(
+  incoming: Array<Pick<InboxMessage, "confirmed"> | Pick<SentMessage, "status">>,
+  sent: Pick<SentMessage, "status">[],
+) {
+  const counts = { pending: 0, dropped: 0, checking: 0 };
+  for (const message of incoming) {
+    if ("confirmed" in message && message.confirmed === false) counts.pending += 1;
+    else if (!("confirmed" in message) || message.confirmed !== true) counts.checking += 1;
+  }
+  for (const message of sent) {
+    const status = sentDeliveryStatus(message);
+    if (status === "pending") counts.pending += 1;
+    else if (status === "dropped") counts.dropped += 1;
+    else if (status === "unknown") counts.checking += 1;
+  }
+  return counts;
 }
 
 function folderLabel(folder: Folder) {
@@ -13735,25 +13761,47 @@ async function fetchAddressMail(
   targetAddress: string,
   targetNetwork: BitcoinNetwork,
   fresh = false,
+  signal?: AbortSignal,
 ) {
   const suffix = fresh ? "?fresh=1" : "";
   const payload = await fetchProofApiJson<PowMailApiResponse>(
     `/api/v1/address/${encodeURIComponent(targetAddress)}/mail${suffix}`,
     targetNetwork,
+    { signal },
   );
+  if (
+    !payload ||
+    !Array.isArray(payload.inboxMessages) ||
+    !Array.isArray(payload.sentMessages) ||
+    payload.address !== targetAddress ||
+    payload.network !== targetNetwork ||
+    (payload.error !== undefined && payload.error !== null && payload.error !== "") ||
+    (payload.historyCoverage !== undefined && payload.historyCoverage?.complete !== true)
+  ) {
+    throw new Error("The requested mailbox response could not be verified. Keeping previously verified mail when available.");
+  }
+  const enrichmentFailed = Boolean(
+    payload.scanError || payload.stats?.scanFailed || payload.stats?.partialScan,
+  );
+  const completeIndexedBase =
+    payload.historyCoverage?.model === "proof-index-address-mail-complete-v1" &&
+    payload.historyCoverage.complete === true;
+  if (enrichmentFailed && !completeIndexedBase) {
+    throw new Error("The mailbox scan failed or was incomplete. No verified empty-mail result is available.");
+  }
   return {
-    inboxMessages: Array.isArray(payload.inboxMessages)
-      ? payload.inboxMessages
-      : [],
-    sentMessages: Array.isArray(payload.sentMessages)
-      ? payload.sentMessages
-      : [],
+    inboxMessages: payload.inboxMessages,
+    sentMessages: payload.sentMessages,
+    readWarning: enrichmentFailed
+      ? "Complete indexed mail remains available; supplemental scan failed or was incomplete. Pending and recovery visibility may be incomplete."
+      : undefined,
   };
 }
 
 async function fetchTransactionJson(
   txid: string,
   targetNetwork: BitcoinNetwork,
+  signal?: AbortSignal,
 ) {
   const normalizedTxid = txid.trim().toLowerCase();
   if (!/^[0-9a-f]{64}$/u.test(normalizedTxid)) {
@@ -13762,7 +13810,7 @@ async function fetchTransactionJson(
 
   const payload = await fetchProofApiJson<{
     tx?: Record<string, unknown> | null;
-  }>(`/api/v1/tx/${encodeURIComponent(normalizedTxid)}`, targetNetwork);
+  }>(`/api/v1/tx/${encodeURIComponent(normalizedTxid)}`, targetNetwork, { signal });
   if (!payload.tx) {
     throw new Error("Transaction not found.");
   }
@@ -13965,9 +14013,9 @@ function browserPageFromTransaction(
   };
 }
 
-async function fetchBrowserPage(txid: string, targetNetwork: BitcoinNetwork) {
+async function fetchBrowserPage(txid: string, targetNetwork: BitcoinNetwork, signal?: AbortSignal) {
   const normalizedTxid = txid.trim().toLowerCase();
-  const transaction = await fetchTransactionJson(normalizedTxid, targetNetwork);
+  const transaction = await fetchTransactionJson(normalizedTxid, targetNetwork, signal);
   const payloadTxid = String(transaction.txid ?? "").trim().toLowerCase();
   if (payloadTxid !== normalizedTxid) {
     throw new Error(
@@ -13979,9 +14027,10 @@ async function fetchBrowserPage(txid: string, targetNetwork: BitcoinNetwork) {
 
 async function fetchDesktopWelcomeReference(
   targetNetwork: BitcoinNetwork,
+  signal?: AbortSignal,
 ): Promise<FileSurfaceMessage | undefined> {
   if (targetNetwork !== "livenet") return undefined;
-  const page = await fetchBrowserPage(CANONICAL_WELCOME_TXID, targetNetwork);
+  const page = await fetchBrowserPage(CANONICAL_WELCOME_TXID, targetNetwork, signal);
   if (!page.confirmed) {
     throw new Error("The welcome transaction is not confirmed.");
   }
@@ -16023,6 +16072,7 @@ async function fetchIdRegistryState(
 async function fetchIdRecordState(
   targetNetwork: BitcoinNetwork,
   id: string,
+  signal?: AbortSignal,
 ): Promise<PowRegistryState & { record?: PowIdRecord | null }> {
   const normalizedId = normalizePowId(id);
   if (!normalizedId) {
@@ -16033,6 +16083,7 @@ async function fetchIdRecordState(
   const payload = await fetchProofApiJson<PowRegistryApiResponse>(
     `/api/v1/ids/${encodeURIComponent(normalizedId)}?${params.toString()}`,
     targetNetwork,
+    { signal },
   );
   const state = normalizeRegistryApiState(payload);
   const payloadRecord =
@@ -17216,6 +17267,87 @@ async function fetchTokenSupplyStateWithIndexedFallback(
   }
 }
 
+function assertTokenHolderMintHistoryPage(
+  payload: PowPaginatedApiResponse<unknown>,
+  targetNetwork: BitcoinNetwork,
+  kind: "holders" | "mints",
+  options: { pageIndex?: number; pageSize?: number; query?: string; tokenScope?: string },
+) {
+  const limit = options.pageSize ?? DATA_PAGE_SIZE;
+  const total = payload?.totalCount;
+  const start = payload?.start;
+  const end = payload?.end;
+  const refusal = payload as PowPaginatedApiResponse<unknown> & {
+    error?: unknown;
+    historyCoverage?: { complete?: boolean };
+  };
+  const requestedStart = (options.pageIndex ?? 0) * limit;
+  if (
+    !payload || !Array.isArray(payload.items) ||
+    (refusal.error !== undefined && refusal.error !== null && refusal.error !== "") ||
+    payload.authoritative === false || payload.complete === false || payload.preview === true ||
+    (refusal.historyCoverage !== undefined && refusal.historyCoverage?.complete !== true) ||
+    payload.kind !== kind || payload.network !== targetNetwork ||
+    payload.query !== (options.query?.trim().toLowerCase() ?? "") ||
+    !Number.isSafeInteger(total) || Number(total) < 0 ||
+    !Number.isSafeInteger(start) || start !== Math.min(requestedStart, Number(total)) ||
+    !Number.isSafeInteger(end) || end !== Math.min(Number(total), Number(start) + limit) ||
+    payload.items.length !== Number(end) - Number(start) ||
+    payload.limit !== limit ||
+    (payload.pageSize !== undefined && payload.pageSize !== limit) ||
+    payload.page !== Math.floor(Number(start) / limit) ||
+    payload.pageCount !== Math.max(1, Math.ceil(Number(total) / limit)) ||
+    (payload.hasMore !== undefined && payload.hasMore !== (Number(end) < Number(total))) ||
+    typeof payload.nextCursor !== "string" ||
+    Boolean(payload.nextCursor) !== (Number(end) < Number(total)) ||
+    typeof payload.indexedAt !== "string" || !Number.isFinite(Date.parse(payload.indexedAt)) ||
+    payload.items.some((value) => {
+      if (!value || typeof value !== "object" || Array.isArray(value)) return true;
+      const row = value as PowTokenHolder & PowTokenMint;
+      const tokenScope = options.tokenScope?.trim().toLowerCase() ?? "";
+      if (/^[0-9a-f]{64}$/u.test(tokenScope) && row.tokenId !== tokenScope) return true;
+      const amount = kind === "holders" ? row.balance : row.amount;
+      const units = isWorkToken(row)
+        ? workRecordAtoms(amount,
+            kind === "holders" ? row.balanceAtoms : row.amountAtoms,
+            kind === "holders" ? row.balanceSubatoms : row.amountSubatoms)
+        : exactIntegerBigInt(amount);
+      return units === null || units < 0n || (kind === "mints" && units === 0n) || (kind === "holders"
+        ? typeof row.address !== "string" || !row.address.trim()
+        : !/^[0-9a-f]{64}$/u.test(String(row.txid ?? "")) ||
+          row.network !== targetNetwork || typeof row.confirmed !== "boolean" ||
+          typeof row.ticker !== "string" || !row.ticker.trim() ||
+          typeof row.minterAddress !== "string" || !row.minterAddress.trim() ||
+          !Number.isSafeInteger(row.paidSats) || row.paidSats < 0 ||
+          typeof row.createdAt !== "string" || !Number.isFinite(Date.parse(row.createdAt)));
+    })
+  ) {
+    throw new Error(`The requested ${kind === "holders" ? "holder" : "mint"} history page could not be verified.`);
+  }
+}
+
+type TokenHistoryReadState = {
+  key: string;
+  sourceKey: string;
+  status: "loading" | "unavailable" | "verified";
+  error?: string;
+};
+type TokenHistoryDisplayStatus = "local" | "loading" | "unavailable" | "last-verified" | "verified";
+
+function tokenHistoryDisplayStatus(
+  requiresRemote: boolean,
+  state: TokenHistoryReadState | undefined,
+  key: string,
+  sourceKey: string,
+  hasVerifiedPage: boolean,
+): TokenHistoryDisplayStatus {
+  if (!requiresRemote) return "local";
+  const current = state?.key === key && state.sourceKey === sourceKey ? state : undefined;
+  if (current?.status === "verified" && hasVerifiedPage) return "verified";
+  if (hasVerifiedPage) return "last-verified";
+  return current?.status === "unavailable" ? "unavailable" : "loading";
+}
+
 async function fetchTokenHistoryPage<T>(
   targetNetwork: BitcoinNetwork,
   kind:
@@ -17270,6 +17402,9 @@ async function fetchTokenHistoryPage<T>(
     targetNetwork,
     { signal: options.signal },
   );
+  if (kind === "holders" || kind === "mints") {
+    assertTokenHolderMintHistoryPage(payload, targetNetwork, kind, options);
+  }
   if (
     !Array.isArray(payload.items) &&
     typeof (payload as { error?: unknown }).error === "string"
@@ -21898,6 +22033,11 @@ export default function App() {
   const activitySearchGenerationRef = useRef(0);
   const activityHistoryGenerationRef = useRef(0);
   const [desktopLoading, setDesktopLoading] = useState(false);
+  const desktopReadGenerationRef = useRef(0);
+  const desktopReadControllerRef = useRef<AbortController>();
+  const desktopReadTargetRef = useRef("");
+  const desktopNetworkRef = useRef(network);
+  desktopNetworkRef.current = network;
   const [savedDraft, setSavedDraft] = useState<DraftMessage | undefined>();
   const [inbox, setInbox] = useState<InboxMessage[]>([]);
   const [activeFolder, setActiveFolder] = useState<Folder>(() => {
@@ -24976,7 +25116,8 @@ export default function App() {
         (tokenWalletBalanceHasAmount(balance, "pendingOutgoing") ? 1 : 0),
       0,
     );
-    const pendingMailEvents = incomingMailAll.length + outboxMailAll.length;
+    const mailLifecycle = mailHeaderLifecycleCounts(incomingMailAll, sentMailAll);
+    const pendingMailEvents = mailLifecycle.pending;
     const pendingActionEvents =
       unconfirmedUtxos.length +
       pendingMailEvents +
@@ -25115,6 +25256,23 @@ export default function App() {
       });
     }
 
+    if (mailLifecycle.dropped > 0) {
+      stats.push({
+        detail: "Dropped broadcast attempts remain in Outbox and can be restored as drafts.",
+        label: "dropped mail",
+        tone: "default",
+        value: `${mailLifecycle.dropped.toLocaleString()} attempt${mailLifecycle.dropped === 1 ? "" : "s"}`,
+      });
+    }
+    if (mailLifecycle.checking > 0) {
+      stats.push({
+        detail: "Broadcast status is unknown; check the transaction before sending again.",
+        label: "checking mail",
+        tone: "pending",
+        value: `${mailLifecycle.checking.toLocaleString()} attempt${mailLifecycle.checking === 1 ? "" : "s"}`,
+      });
+    }
+
     if (confirmedCreditBalances.length > 0) {
       const creditSummaries = confirmedCreditBalances.map((balance) => ({
         balance,
@@ -25250,6 +25408,7 @@ export default function App() {
     incomingMailAll,
     incbWalletBalances,
     outboxMailAll,
+    sentMailAll,
     powbWalletBalances,
     tokenWalletBalances,
     connectedWalletProofAvailability,
@@ -26392,6 +26551,18 @@ export default function App() {
   }, [managedIdName, ownerControlledIds]);
 
   useEffect(() => {
+    desktopReadGenerationRef.current += 1;
+    desktopReadControllerRef.current?.abort();
+    desktopReadTargetRef.current = "";
+    setDesktopLoading(false);
+    return () => {
+      desktopReadGenerationRef.current += 1;
+      desktopReadControllerRef.current?.abort();
+      desktopReadTargetRef.current = "";
+    };
+  }, [network, activeWorkspaceStatusKey]);
+
+  useEffect(() => {
     if (desktopProfile && desktopProfile.network !== network) {
       setDesktopProfile(undefined);
       setDesktopMail([]);
@@ -27275,8 +27446,8 @@ export default function App() {
         setChainSent(sentMessages);
         setSelectedKey(selectedInboundKey("inbox", inboxMessages));
         setStatus({
-          tone: "good",
-          text: `${shortAddress(nextAddress)} loaded. ${mailboxSummary(inboxMessages, sentMessages)}.`,
+          tone: mailState.readWarning ? "idle" : "good",
+          text: `${shortAddress(nextAddress)} loaded. ${mailboxSummary(inboxMessages, sentMessages)}.${mailState.readWarning ? ` ${mailState.readWarning}` : ""}`,
         });
       } catch (error) {
         setStatus({
@@ -27993,10 +28164,21 @@ export default function App() {
 
   async function loadDesktopTarget(target = desktopQuery) {
     const requestWorkspaceKey = activeWorkspaceStatusKeyRef.current;
-    const requestIsActive = () =>
-      activeWorkspaceStatusKeyRef.current === requestWorkspaceKey;
+    const requestNetwork = network;
+    const generation = ++desktopReadGenerationRef.current;
+    desktopReadControllerRef.current?.abort();
+    const controller = new AbortController();
+    desktopReadControllerRef.current = controller;
     const query = target.trim();
+    desktopReadTargetRef.current = query;
+    const requestIsActive = () =>
+      generation === desktopReadGenerationRef.current &&
+      !controller.signal.aborted &&
+      desktopReadTargetRef.current === query &&
+      desktopNetworkRef.current === requestNetwork &&
+      activeWorkspaceStatusKeyRef.current === requestWorkspaceKey;
     if (!query) {
+      setDesktopLoading(false);
       setStatusForWorkspace(requestWorkspaceKey, {
         tone: "bad",
         text: "Enter a ProofOfWork address or confirmed ProofOfWork ID.",
@@ -28013,15 +28195,16 @@ export default function App() {
     try {
       let resolved = resolveRecipientInput(
         query,
-        network,
+        requestNetwork,
         idRegistry,
         registryAddress,
       );
       if (resolved.isId || resolved.error) {
-        const state = await fetchIdRecordState(network, query);
+        const state = await fetchIdRecordState(requestNetwork, query, controller.signal);
+        if (!requestIsActive()) return;
         resolved = resolveRecipientInput(
           query,
-          network,
+          requestNetwork,
           state.records,
           registryAddress,
         );
@@ -28038,9 +28221,10 @@ export default function App() {
       }
 
       const [mailState, welcome] = await Promise.all([
-        fetchAddressMail(resolved.paymentAddress, network, true),
-        fetchDesktopWelcomeReference(network).catch(() => undefined),
+        fetchAddressMail(resolved.paymentAddress, requestNetwork, true, controller.signal),
+        fetchDesktopWelcomeReference(requestNetwork, controller.signal).catch(() => undefined),
       ]);
+      if (!requestIsActive()) return;
       const { inboxMessages, sentMessages } = mailState;
       const publicMail = fileSurfaceMessages(
         publicDesktopMail(inboxMessages, sentMessages),
@@ -28057,10 +28241,11 @@ export default function App() {
           ? resolved.displayRecipient
           : shortAddress(resolved.paymentAddress),
         loadedAt: new Date().toISOString(),
-        network,
+        network: requestNetwork,
         query,
+        readWarning: mailState.readWarning,
         resolvedId: resolved.id,
-        welcomeUnavailable: network === "livenet" && !welcome,
+        welcomeUnavailable: requestNetwork === "livenet" && !welcome,
       };
 
       if (!requestIsActive()) {
@@ -28075,20 +28260,25 @@ export default function App() {
       setComposeOpen(false);
       setSelectedKey("");
       setStatusForWorkspace(requestWorkspaceKey, {
-        tone: "good",
-        text: `${profile.label} desktop loaded. ${files.length.toLocaleString()} public file${files.length === 1 ? "" : "s"}.`,
+        tone: mailState.readWarning ? "idle" : "good",
+        text: `${profile.label} desktop loaded. ${files.length.toLocaleString()} public file${files.length === 1 ? "" : "s"}.${mailState.readWarning ? ` ${mailState.readWarning}` : ""}`,
       });
     } catch (error) {
+      if (!requestIsActive()) return;
       setStatusForWorkspace(requestWorkspaceKey, {
         tone: "bad",
         text: errorMessage(error, "Desktop search failed."),
       });
     } finally {
-      setDesktopLoading(false);
+      if (requestIsActive()) setDesktopLoading(false);
     }
   }
 
   function clearDesktop() {
+    desktopReadGenerationRef.current += 1;
+    desktopReadControllerRef.current?.abort();
+    desktopReadTargetRef.current = "";
+    setDesktopLoading(false);
     setDesktopProfile(undefined);
     setDesktopMail([]);
     setDesktopSelectedKey("");
@@ -29919,8 +30109,8 @@ export default function App() {
         setChainSent(sentMessages);
         setSelectedKey(selectedInboundKey("inbox", inboxMessages));
         setStatus({
-          tone: "good",
-          text: `UniSat connected. ${mailboxSummary(inboxMessages, sentMessages)}.`,
+          tone: mailState.readWarning ? "idle" : "good",
+          text: `UniSat connected. ${mailboxSummary(inboxMessages, sentMessages)}.${mailState.readWarning ? ` ${mailState.readWarning}` : ""}`,
         });
       } catch (error) {
         setStatus({
@@ -30027,8 +30217,8 @@ export default function App() {
       setChainSent(sentMessages);
       setSelectedKey(selectedInboundKey("inbox", inboxMessages));
       setStatus({
-        tone: "good",
-        text: `${networkLabel(activeWalletNetwork)} ready. ${mailboxSummary(inboxMessages, sentMessages)}.`,
+        tone: mailState.readWarning ? "idle" : "good",
+        text: `${networkLabel(activeWalletNetwork)} ready. ${mailboxSummary(inboxMessages, sentMessages)}.${mailState.readWarning ? ` ${mailState.readWarning}` : ""}`,
       });
     } catch (error) {
       setStatus({
@@ -33878,10 +34068,10 @@ export default function App() {
       setSelectedKey(selectedInboundKey(nextFolder, inboxMessages));
       setStatus({
         tone:
-          summary && summary.failed === summary.results.length ? "bad" : "good",
+          summary && summary.failed === summary.results.length ? "bad" : mailState.readWarning ? "idle" : "good",
         text: `Refreshed. ${mailboxSummary(inboxMessages, checkedSentMessages)}${
           summary ? `. ${broadcastCheckSummaryText(summary)}` : ""
-        }.`,
+        }.${mailState.readWarning ? ` ${mailState.readWarning}` : ""}`,
       });
     } catch (error) {
       setStatus({ tone: "bad", text: errorMessage(error, "Refresh failed.") });
@@ -36546,6 +36736,7 @@ export default function App() {
         btcUsd={tokenBtcUsd}
         hasUnisat={hasUnisat}
         holders={selectedTokenHolders}
+        historySummary={tokenSummary}
         ledgerError={tokenDataError}
         mintBytes={tokenMintBytes}
         network={network}
@@ -37556,6 +37747,7 @@ export default function App() {
               activeFolder === "work" ? WORK_TOKEN_TICKER : ""
             }
             tokenIndexAddress={tokenIndexAddressForNetwork("livenet")}
+            historySummary={tokenSummary}
             ledgerLoading={tokenLedgerLoading}
             tokenListings={tokenListings}
             tokenSales={tokenSales}
@@ -38608,6 +38800,7 @@ function BrowserApp({
   const [templateCopied, setTemplateCopied] = useState(false);
   const initialLoadRef = useRef(false);
   const loadGenerationRef = useRef(0);
+  const loadControllerRef = useRef<AbortController>();
   const template = useMemo(() => browserTemplateHtml(templateTitle, templateKicker, templateBody), [templateBody, templateKicker, templateTitle]);
   const templateBytes = useMemo(() => byteLength(template), [template]);
   const templateSha256 = useMemo(
@@ -38623,6 +38816,9 @@ function BrowserApp({
       updateHistory = true,
     ) => {
       const generation = ++loadGenerationRef.current;
+      loadControllerRef.current?.abort();
+      const controller = new AbortController();
+      loadControllerRef.current = controller;
       const txid = target.trim().toLowerCase();
       if (!/^[0-9a-f]{64}$/u.test(txid)) {
         setLoading(false);
@@ -38637,7 +38833,7 @@ function BrowserApp({
         text: "Loading verified page from ProofOfWork...",
       });
       try {
-        const loadedPage = await fetchBrowserPage(txid, targetNetwork);
+        const loadedPage = await fetchBrowserPage(txid, targetNetwork, controller.signal);
         if (generation !== loadGenerationRef.current) {
           return;
         }
@@ -38684,6 +38880,26 @@ function BrowserApp({
   }, [loadPage]);
 
   useEffect(() => {
+    return () => {
+      loadGenerationRef.current += 1;
+      loadControllerRef.current?.abort();
+      initialLoadRef.current = false;
+    };
+  }, []);
+
+  function changeBrowserNetwork(nextNetwork: BitcoinNetwork) {
+    if (nextNetwork === network) return;
+    loadGenerationRef.current += 1;
+    loadControllerRef.current?.abort();
+    setLoading(false);
+    setNetwork(nextNetwork);
+    setStatus({
+      tone: "idle",
+      text: `View Page to load verified HTML on ${networkLabel(nextNetwork)}.`,
+    });
+  }
+
+  useEffect(() => {
     const restoreBrowserLocation = () => {
       const nextNetwork = networkFromBrowserLocation();
       const nextTxid = txidFromBrowserLocation();
@@ -38696,6 +38912,7 @@ function BrowserApp({
       }
 
       loadGenerationRef.current += 1;
+      loadControllerRef.current?.abort();
       setLoading(false);
       setStatus({
         tone: "idle",
@@ -38760,7 +38977,7 @@ function BrowserApp({
               />
             </label>
             <div className="browser-form-row">
-              <BrowserNetworkTabs network={network} onChange={setNetwork} />
+              <BrowserNetworkTabs network={network} onChange={changeBrowserNetwork} />
               <button className="primary" disabled={loading} type="submit">
                 <span className="button-content">
                   <Search size={16} />
@@ -38984,6 +39201,7 @@ function BrowserWorkspace({
   );
   const [templateCopied, setTemplateCopied] = useState(false);
   const loadGenerationRef = useRef(0);
+  const loadControllerRef = useRef<AbortController>();
   const template = useMemo(
     () => browserTemplateHtml(templateTitle, templateKicker, templateBody),
     [templateBody, templateKicker, templateTitle],
@@ -38997,14 +39215,26 @@ function BrowserWorkspace({
 
   useEffect(() => {
     loadGenerationRef.current += 1;
+    loadControllerRef.current?.abort();
     setNetwork(activeNetwork);
     setPage(undefined);
     setLoading(false);
+    setStatus({
+      tone: "idle",
+      text: `View Page to load verified HTML on ${networkLabel(activeNetwork)}.`,
+    });
+    return () => {
+      loadGenerationRef.current += 1;
+      loadControllerRef.current?.abort();
+    };
   }, [activeNetwork]);
 
   const loadPage = useCallback(
     async (target = query) => {
       const generation = ++loadGenerationRef.current;
+      loadControllerRef.current?.abort();
+      const controller = new AbortController();
+      loadControllerRef.current = controller;
       const txid = target.trim().toLowerCase();
       if (!/^[0-9a-f]{64}$/u.test(txid)) {
         setLoading(false);
@@ -39019,8 +39249,8 @@ function BrowserWorkspace({
         text: "Loading verified page from ProofOfWork...",
       });
       try {
-        const loadedPage = await fetchBrowserPage(txid, network);
-        if (generation !== loadGenerationRef.current) {
+        const loadedPage = await fetchBrowserPage(txid, network, controller.signal);
+        if (generation !== loadGenerationRef.current || controller.signal.aborted) {
           return;
         }
         setPage(loadedPage);
@@ -39032,7 +39262,7 @@ function BrowserWorkspace({
             : "Verified pending HTML page. Confirmation is still final truth.",
         });
       } catch (error) {
-        if (generation !== loadGenerationRef.current) {
+        if (generation !== loadGenerationRef.current || controller.signal.aborted) {
           return;
         }
         setPage(undefined);
@@ -39041,13 +39271,25 @@ function BrowserWorkspace({
           text: errorMessage(error, "Could not load Browser page."),
         });
       } finally {
-        if (generation === loadGenerationRef.current) {
+        if (generation === loadGenerationRef.current && !controller.signal.aborted) {
           setLoading(false);
         }
       }
     },
     [network, query],
   );
+
+  function changeBrowserWorkspaceNetwork(nextNetwork: BitcoinNetwork) {
+    if (nextNetwork === network) return;
+    loadGenerationRef.current += 1;
+    loadControllerRef.current?.abort();
+    setLoading(false);
+    setNetwork(nextNetwork);
+    setStatus({
+      tone: "idle",
+      text: `View Page to load verified HTML on ${networkLabel(nextNetwork)}.`,
+    });
+  }
 
   async function copyTemplate() {
     await copyTextToClipboard(template);
@@ -39100,7 +39342,7 @@ function BrowserWorkspace({
             />
           </label>
           <div className="browser-form-row">
-            <BrowserNetworkTabs network={network} onChange={setNetwork} />
+            <BrowserNetworkTabs network={network} onChange={changeBrowserWorkspaceNetwork} />
             <button className="primary" disabled={loading} type="submit">
               <span className="button-content">
                 <Search size={16} />
@@ -39340,6 +39582,7 @@ function DesktopApp({
     <main className="desktop-public-app has-route-status">
       <AppHeader
         accountStats={accountStats}
+        busy={busy}
         network={activeNetwork}
         onRefresh={onRefresh}
         subtitle="Public file search"
@@ -42765,6 +43008,7 @@ type TokenAppProps = {
   hasUnisat: boolean;
   ledgerError?: string;
   ledgerLoading?: boolean;
+  historySummary?: PowTokenSummaryMetadata;
   network: BitcoinNetwork;
   holders: PowTokenHolder[];
   mintBytes: number;
@@ -42897,6 +43141,7 @@ function TokenWorkspace({
   feeRate,
   btcUsd,
   holders,
+  historySummary,
   ledgerError = "",
   ledgerLoading = false,
   mintBytes,
@@ -42965,6 +43210,7 @@ function TokenWorkspace({
   const [remoteMintPage, setRemoteMintPage] = useState<
     | {
         key: string;
+        sourceKey: string;
         page: PowPaginatedApiResponse<PowTokenMint>;
       }
     | undefined
@@ -42973,11 +43219,16 @@ function TokenWorkspace({
   const [remoteHolderPage, setRemoteHolderPage] = useState<
     | {
         key: string;
+        sourceKey: string;
         page: PowPaginatedApiResponse<PowTokenHolder>;
       }
     | undefined
   >();
   const [remoteHolderPageLoading, setRemoteHolderPageLoading] = useState(false);
+  const [holderHistoryReadState, setHolderHistoryReadState] = useState<TokenHistoryReadState>();
+  const [mintHistoryReadState, setMintHistoryReadState] = useState<TokenHistoryReadState>();
+  const [holderHistoryRetryNonce, setHolderHistoryRetryNonce] = useState(0);
+  const [mintHistoryRetryNonce, setMintHistoryRetryNonce] = useState(0);
   const holderQuery = holderSearch.trim().toLowerCase();
   const mintQuery = mintSearch.trim().toLowerCase();
   const detailMode = workTokenOnly || Boolean(tokenDetailTarget.trim());
@@ -43008,33 +43259,52 @@ function TokenWorkspace({
     mintQuery,
     TOKEN_LIST_PREVIEW_COUNT,
   ].join(":");
+  const historySourceKey = JSON.stringify([
+    network, historySummary?.indexedAt, historySummary?.indexedThroughBlock,
+    historySummary?.indexedThroughBlockHash, historySummary?.snapshotId,
+    historySummary?.collectionHasMore?.holders, historySummary?.collectionHasMore?.mints,
+  ]);
+  const holderRequiresRemote = Boolean(holderHistoryToken?.tokenId && network === "livenet" && (
+    holderQuery || holderHistoryTotalHint > holderHistoryLocalCount || holderPageIndex > 0 ||
+    historySummary?.collectionHasMore?.holders === true
+  ));
+  const mintRequiresRemote = Boolean(mintHistoryToken?.tokenId && network === "livenet" && (
+    mintHistoryTotalHint > mintHistoryLocalCount || historySummary?.collectionHasMore?.mints === true
+  ));
   const activeRemoteHolderPage =
     remoteHolderPage?.key === holderHistoryKey
       ? remoteHolderPage.page
       : undefined;
   const activeRemoteMintPage =
     remoteMintPage?.key === mintHistoryKey ? remoteMintPage.page : undefined;
+  const holderHistoryStatus = tokenHistoryDisplayStatus(holderRequiresRemote,
+    holderHistoryReadState, holderHistoryKey, historySourceKey, Boolean(activeRemoteHolderPage));
+  const mintHistoryStatus = tokenHistoryDisplayStatus(mintRequiresRemote,
+    mintHistoryReadState, mintHistoryKey, historySourceKey, Boolean(activeRemoteMintPage));
+  const holderHistoryError = holderHistoryReadState?.key === holderHistoryKey &&
+    holderHistoryReadState.sourceKey === historySourceKey ? holderHistoryReadState.error ?? "" : "";
+  const mintHistoryError = mintHistoryReadState?.key === mintHistoryKey &&
+    mintHistoryReadState.sourceKey === historySourceKey ? mintHistoryReadState.error ?? "" : "";
   useEffect(() => {
     setHolderPageIndex(0);
   }, [holderHistoryToken?.tokenId, holderQuery]);
   useEffect(() => {
-    const needsRemotePage =
-      Boolean(holderQuery) ||
-      holderHistoryTotalHint > holderHistoryLocalCount ||
-      holderPageIndex > 0;
-    if (
-      !holderHistoryToken?.tokenId ||
-      network !== "livenet" ||
-      !needsRemotePage
-    ) {
+    setMintPageIndex(0);
+  }, [mintHistoryToken?.tokenId, mintQuery]);
+  useEffect(() => {
+    if (!holderRequiresRemote || !holderHistoryToken) {
       setRemoteHolderPage(undefined);
       setRemoteHolderPageLoading(false);
+      setHolderHistoryReadState(undefined);
       return;
     }
 
     let cancelled = false;
+    const controller = new AbortController();
     setRemoteHolderPageLoading(true);
+    setHolderHistoryReadState({ key: holderHistoryKey, sourceKey: historySourceKey, status: "loading" });
     void fetchTokenHistoryPage<PowTokenHolder>(network, "holders", {
+      signal: controller.signal,
       fresh: true,
       pageIndex: holderPageIndex,
       pageSize: TOKEN_LIST_PREVIEW_COUNT,
@@ -43043,12 +43313,14 @@ function TokenWorkspace({
     })
       .then((page) => {
         if (!cancelled) {
-          setRemoteHolderPage({ key: holderHistoryKey, page });
+          setRemoteHolderPage({ key: holderHistoryKey, sourceKey: historySourceKey, page });
+          setHolderHistoryReadState({ key: holderHistoryKey, sourceKey: historySourceKey, status: "verified" });
         }
       })
-      .catch(() => {
+      .catch((error) => {
         if (!cancelled) {
-          setRemoteHolderPage(undefined);
+          setHolderHistoryReadState({ key: holderHistoryKey, sourceKey: historySourceKey,
+            status: "unavailable", error: errorMessage(error, "Holder history unavailable. Refresh to retry.") });
         }
       })
       .finally(() => {
@@ -43059,6 +43331,7 @@ function TokenWorkspace({
 
     return () => {
       cancelled = true;
+      controller.abort();
     };
   }, [
     holderHistoryKey,
@@ -43067,22 +43340,26 @@ function TokenWorkspace({
     holderHistoryTotalHint,
     holderPageIndex,
     holderQuery,
+    holderRequiresRemote,
+    historySourceKey,
+    holderHistoryRetryNonce,
     network,
   ]);
   useEffect(() => {
-    if (!mintHistoryToken?.tokenId || network !== "livenet") {
+    if (!mintRequiresRemote || !mintHistoryToken) {
       setRemoteMintPage(undefined);
-      return;
-    }
-
-    if (mintHistoryTotalHint <= mintHistoryLocalCount) {
-      setRemoteMintPage(undefined);
+      setRemoteMintPageLoading(false);
+      setMintHistoryReadState(undefined);
       return;
     }
 
     let cancelled = false;
+    const controller = new AbortController();
     setRemoteMintPageLoading(true);
+    setMintHistoryReadState({ key: mintHistoryKey, sourceKey: historySourceKey, status: "loading" });
     void fetchTokenHistoryPage<PowTokenMint>(network, "mints", {
+      signal: controller.signal,
+      fresh: true,
       pageIndex: mintPageIndex,
       pageSize: TOKEN_LIST_PREVIEW_COUNT,
       query: mintQuery,
@@ -43090,12 +43367,14 @@ function TokenWorkspace({
     })
       .then((page) => {
         if (!cancelled) {
-          setRemoteMintPage({ key: mintHistoryKey, page });
+          setRemoteMintPage({ key: mintHistoryKey, sourceKey: historySourceKey, page });
+          setMintHistoryReadState({ key: mintHistoryKey, sourceKey: historySourceKey, status: "verified" });
         }
       })
-      .catch(() => {
+      .catch((error) => {
         if (!cancelled) {
-          setRemoteMintPage(undefined);
+          setMintHistoryReadState({ key: mintHistoryKey, sourceKey: historySourceKey,
+            status: "unavailable", error: errorMessage(error, "Mint history unavailable. Refresh to retry.") });
         }
       })
       .finally(() => {
@@ -43106,6 +43385,7 @@ function TokenWorkspace({
 
     return () => {
       cancelled = true;
+      controller.abort();
     };
   }, [
     mintHistoryKey,
@@ -43114,6 +43394,9 @@ function TokenWorkspace({
     mintHistoryTotalHint,
     mintPageIndex,
     mintQuery,
+    mintRequiresRemote,
+    historySourceKey,
+    mintHistoryRetryNonce,
     network,
   ]);
   const selectedWalletBalance = walletBalances.find(
@@ -43147,7 +43430,7 @@ function TokenWorkspace({
     tokenHolderMatchesSearch(holder, holderQuery),
   );
   const selectedRemoteHolderPage =
-    !detailMode && activeRemoteHolderPage
+    !detailMode && holderRequiresRemote && activeRemoteHolderPage
       ? historyPageToPagedItems(
           activeRemoteHolderPage,
           holderPageIndex,
@@ -43157,7 +43440,7 @@ function TokenWorkspace({
   const selectedHolderPage =
     selectedRemoteHolderPage ??
     pagedItems(
-      selectedMatchingHolders,
+      holderRequiresRemote ? [] : selectedMatchingHolders,
       holderPageIndex,
       TOKEN_LIST_PREVIEW_COUNT,
     );
@@ -43172,7 +43455,7 @@ function TokenWorkspace({
     tokenMintMatchesSearch(mint, mintQuery),
   );
   const selectedRemoteMintPage =
-    !detailMode && activeRemoteMintPage
+    !detailMode && mintRequiresRemote && activeRemoteMintPage
       ? historyPageToPagedItems(
           activeRemoteMintPage,
           mintPageIndex,
@@ -43181,7 +43464,7 @@ function TokenWorkspace({
       : undefined;
   const selectedMintPage =
     selectedRemoteMintPage ??
-    pagedItems(selectedMatchingMints, mintPageIndex, TOKEN_LIST_PREVIEW_COUNT);
+    pagedItems(mintRequiresRemote ? [] : selectedMatchingMints, mintPageIndex, TOKEN_LIST_PREVIEW_COUNT);
   const selectedVisibleMints = selectedMintPage.items;
   const selectedMintMatchingCount =
     selectedRemoteMintPage?.totalCount ?? selectedMatchingMints.length;
@@ -43419,7 +43702,7 @@ function TokenWorkspace({
     tokenHolderMatchesSearch(holder, holderQuery),
   );
   const detailRemoteHolderPage =
-    detailMode && activeRemoteHolderPage
+    detailMode && holderRequiresRemote && activeRemoteHolderPage
       ? historyPageToPagedItems(
           activeRemoteHolderPage,
           holderPageIndex,
@@ -43429,7 +43712,7 @@ function TokenWorkspace({
   const detailHolderPage =
     detailRemoteHolderPage ??
     pagedItems(
-      detailMatchingHolders,
+      holderRequiresRemote ? [] : detailMatchingHolders,
       holderPageIndex,
       TOKEN_LIST_PREVIEW_COUNT,
     );
@@ -43444,7 +43727,7 @@ function TokenWorkspace({
     tokenMintMatchesSearch(mint, mintQuery),
   );
   const detailRemoteMintPage =
-    detailMode && activeRemoteMintPage
+    detailMode && mintRequiresRemote && activeRemoteMintPage
       ? historyPageToPagedItems(
           activeRemoteMintPage,
           mintPageIndex,
@@ -43453,7 +43736,7 @@ function TokenWorkspace({
       : undefined;
   const detailMintPage =
     detailRemoteMintPage ??
-    pagedItems(detailMatchingMints, mintPageIndex, TOKEN_LIST_PREVIEW_COUNT);
+    pagedItems(mintRequiresRemote ? [] : detailMatchingMints, mintPageIndex, TOKEN_LIST_PREVIEW_COUNT);
   const detailVisibleMints = detailMintPage.items;
   const detailMintMatchingCount =
     detailRemoteMintPage?.totalCount ?? detailMatchingMints.length;
@@ -43983,10 +44266,14 @@ function TokenWorkspace({
     totalCount: number,
     label: string,
     query: string,
-  ) =>
-    query
+    readStatus: TokenHistoryDisplayStatus,
+  ) => readStatus === "loading"
+    ? `Verifying ${label}`
+    : readStatus === "unavailable"
+      ? `${label === "holders" ? "Holder" : "Mint"} history unavailable`
+      : `${readStatus === "last-verified" ? "Last verified · " : ""}${query
       ? `${visibleCount.toLocaleString()} of ${matchingCount.toLocaleString()} matching ${label}`
-      : `${visibleCount.toLocaleString()} of ${totalCount.toLocaleString()} ${label}`;
+      : `${visibleCount.toLocaleString()} of ${totalCount.toLocaleString()} ${label}`}`;
   const renderHolderSearch = (
     visibleCount: number,
     matchingCount: number,
@@ -44009,8 +44296,12 @@ function TokenWorkspace({
           totalCount,
           "holders",
           holderQuery,
+          holderHistoryStatus,
         )}
       </span>
+      {holderHistoryError ? <button className="secondary small" type="button"
+        disabled={remoteHolderPageLoading}
+        onClick={() => setHolderHistoryRetryNonce((value) => value + 1)}>Retry holder history</button> : null}
     </div>
   );
   const renderMintSearch = (
@@ -44035,8 +44326,12 @@ function TokenWorkspace({
           totalCount,
           "mints",
           mintQuery,
+          mintHistoryStatus,
         )}
       </span>
+      {mintHistoryError ? <button className="secondary small" type="button"
+        disabled={remoteMintPageLoading}
+        onClick={() => setMintHistoryRetryNonce((value) => value + 1)}>Retry mint history</button> : null}
     </div>
   );
   const renderHolderList = (
@@ -44045,17 +44340,28 @@ function TokenWorkspace({
     loadingRemotePage = false,
   ) => (
     <div className="id-record-list">
+      {holderHistoryStatus === "last-verified" ? <p className="field-note" role="status">
+        Showing the last verified holder page. {holderHistoryError || "Verifying current holder history…"}
+      </p> : null}
       {visibleHolders.length === 0 ? (
         <div className="empty-state">
           <h3>
-            {loadingRemotePage
+            {holderHistoryStatus === "unavailable"
+              ? "Holder history unavailable"
+              : holderHistoryStatus === "last-verified"
+                ? "Last verified holder page is empty"
+                : holderHistoryStatus === "loading" || loadingRemotePage
               ? "Loading holders"
               : holderQuery
                 ? "No holder matches"
                 : "No holders yet"}
           </h3>
           <p>
-            {loadingRemotePage
+            {holderHistoryStatus === "unavailable"
+              ? holderHistoryError || "The requested holder page could not be verified. Retry to check matches."
+              : holderHistoryStatus === "last-verified"
+                ? "Current holder results have not been verified; this is the retained page."
+                : holderHistoryStatus === "loading" || loadingRemotePage
               ? "Fetching the requested holder page."
               : holderQuery
               ? "Search by a full address fragment or confirmed balance."
@@ -44098,17 +44404,28 @@ function TokenWorkspace({
     loadingRemotePage = false,
   ) => (
     <div className="activity-feed">
+      {mintHistoryStatus === "last-verified" ? <p className="field-note" role="status">
+        Showing the last verified mint page. {mintHistoryError || "Verifying current mint history…"}
+      </p> : null}
       {visibleMints.length === 0 ? (
         <div className="empty-state">
           <h3>
-            {loadingRemotePage
+            {mintHistoryStatus === "unavailable"
+              ? "Mint history unavailable"
+              : mintHistoryStatus === "last-verified"
+                ? "Last verified mint page is empty"
+                : mintHistoryStatus === "loading" || loadingRemotePage
               ? "Loading mints"
               : mintQuery
                 ? "No mint matches"
                 : "No mints yet"}
           </h3>
           <p>
-            {loadingRemotePage
+            {mintHistoryStatus === "unavailable"
+              ? mintHistoryError || "The requested mint page could not be verified. Retry to check matches."
+              : mintHistoryStatus === "last-verified"
+                ? "Current mint results have not been verified; this is the retained page."
+                : mintHistoryStatus === "loading" || loadingRemotePage
               ? "Fetching the requested history page."
               : mintQuery
               ? "Search by minter address, transaction id, status, amount, or proofs."
@@ -58670,6 +58987,9 @@ function DesktopWorkspace({
         </button>
       </div>
 
+      {profile.readWarning ? (
+        <p className="desktop-reference-status" role="status">{profile.readWarning}</p>
+      ) : null}
       {profile.welcomeUnavailable ? (
         <p className="desktop-reference-status" role="status">
           Welcome system reference unavailable: its confirmed transaction could

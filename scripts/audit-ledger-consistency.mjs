@@ -150,31 +150,33 @@ async function requestJson(path) {
     () => controller.abort(),
     AUDIT_REQUEST_TIMEOUT_MS,
   );
-  let response;
   try {
-    response = await fetch(endpoint(path), { signal: controller.signal });
+    const response = await fetch(endpoint(path), { signal: controller.signal });
+    if (!response.ok) {
+      let errorPayload = null;
+      try {
+        errorPayload = await response.json();
+      } catch (error) {
+        if (controller.signal.aborted || error?.name === "AbortError") {
+          throw error;
+        }
+        // Non-JSON failures remain non-retryable and preserve their HTTP status.
+      }
+      throw new MarketplaceRegressionHttpError(
+        endpoint(path),
+        response.status,
+        errorPayload,
+      );
+    }
+    return await response.json();
   } catch (error) {
-    if (error?.name === "AbortError") {
+    if (controller.signal.aborted || error?.name === "AbortError") {
       throw new Error(`${path} timed out after ${AUDIT_REQUEST_TIMEOUT_MS}ms`);
     }
     throw error;
   } finally {
     clearTimeout(timeout);
   }
-  if (!response.ok) {
-    let errorPayload = null;
-    try {
-      errorPayload = await response.json();
-    } catch {
-      // Non-JSON failures remain non-retryable and preserve their HTTP status.
-    }
-    throw new MarketplaceRegressionHttpError(
-      endpoint(path),
-      response.status,
-      errorPayload,
-    );
-  }
-  return response.json();
 }
 
 async function readJson(path) {

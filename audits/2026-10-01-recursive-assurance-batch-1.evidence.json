@@ -1,0 +1,823 @@
+{
+  "schemaVersion": 1,
+  "status": "local-acceptance-complete-within-declared-coverage; client production closure pending",
+  "date": "2026-10-01",
+  "timezone": "America/Toronto",
+  "investigationPasses": 3,
+  "source": {
+    "baseRevision": "fc3db324b5532bc2f28d48fc00eca3d93597c4e9",
+    "initialAppSha256": "2a026334f439dfda41fca106549d25fd24b4dbb14781128fc7f6a2a6ef92a365",
+    "recordedDeployedRevision": "527e4cbaa66f689169197c7ce9569425ef334492",
+    "deployedRevisionEvidence": "audits/2026-10-01-audit29-remediation-release.md",
+    "livePrivateReleaseManifestReattested": true
+  },
+  "authorization": {
+    "response": "Approve this local correction batch",
+    "scope": [
+      "src/App.tsx",
+      "scripts/audit-production-surfaces.mjs",
+      "scripts/audit-ledger-consistency.mjs",
+      "scripts/check-surface-read-state.mjs",
+      "scripts/check-recursive-assurance.test.mjs",
+      "package.json",
+      "audits/2026-10-01-recursive-assurance-batch-1.md",
+      "audits/2026-10-01-recursive-assurance-batch-1.evidence.json",
+      "repository-hygiene.json",
+      "scripts/check-live-data-contract.mjs",
+      "tests/browser/desktop-welcome-ui.spec.mjs"
+    ],
+    "excluded": [
+      "production configuration",
+      "protocol migration",
+      "node application changes",
+      "signing",
+      "broadcasts"
+    ],
+    "additionalApprovalsPending": [],
+    "initialScope": [
+      "src/App.tsx",
+      "scripts/audit-production-surfaces.mjs",
+      "scripts/audit-ledger-consistency.mjs",
+      "scripts/check-surface-read-state.mjs",
+      "scripts/check-recursive-assurance.test.mjs",
+      "package.json",
+      "audits/2026-10-01-recursive-assurance-batch-1.md",
+      "audits/2026-10-01-recursive-assurance-batch-1.evidence.json",
+      "repository-hygiene.json"
+    ],
+    "additionalApproval": {
+      "response": "i approve",
+      "files": [
+        "scripts/check-live-data-contract.mjs",
+        "tests/browser/desktop-welcome-ui.spec.mjs"
+      ],
+      "scope": "two stale source patterns and address/network fields at three mock sites; retain assertions and rerun both checks"
+    },
+    "initialExcluded": [
+      "commits",
+      "pushes",
+      "deployments",
+      "production configuration",
+      "protocol migration",
+      "signing",
+      "broadcasts"
+    ],
+    "releaseApproval": {
+      "response": "i approve 1-4",
+      "steps": [
+        "exact-commit frontend build and rollback preparation",
+        "commit/push/frontend deployment of verified local batch",
+        "fresh production verification and closure receipt",
+        "publish and verify release announcement"
+      ],
+      "scope": "current audited local batch and its frontend release evidence; preserve all recovery"
+    }
+  },
+  "findings": [
+    {
+      "id": "H6-06",
+      "severity": "P2",
+      "priorStatus": "open",
+      "localStatus": "behavior-verified-local",
+      "productionStatus": "not-deployed",
+      "behavior": "Desktop latest target/network/workspace wins; obsolete success/status/finally rejected"
+    },
+    {
+      "id": "H6-08",
+      "severity": "P2",
+      "priorStatus": "open",
+      "localStatus": "behavior-verified-local",
+      "productionStatus": "not-deployed",
+      "behavior": "Holder/mint failed or incomplete reads remain unavailable or last verified; scoped pagination and observation invalidation"
+    },
+    {
+      "id": "H6-12",
+      "severity": "P3",
+      "priorStatus": "open",
+      "localStatus": "behavior-verified-local",
+      "productionStatus": "not-deployed; standalone race reproduced live",
+      "behavior": "Standalone and integrated Browser manual/global network changes invalidate pending reads"
+    },
+    {
+      "id": "AUD27-01",
+      "severity": "P3",
+      "priorStatus": "open",
+      "localStatus": "behavior-verified-local",
+      "productionStatus": "not-deployed",
+      "behavior": "Pending, dropped and unknown/checking mail counts are separate"
+    },
+    {
+      "id": "RA-M01",
+      "severity": "P2",
+      "priorStatus": "new",
+      "localStatus": "behavior-verified-local",
+      "productionStatus": "fault not observed live; not-deployed",
+      "behavior": "Scoped mail arrays and read declarations validated; complete indexed mail retained with enrichment warning"
+    },
+    {
+      "id": "RA-V01",
+      "severity": "P2",
+      "priorStatus": "new",
+      "localStatus": "behavior-verified-local",
+      "productionStatus": "local verifier; corrected parser used live",
+      "behavior": "Malformed numeric coercions cannot certify checkpoint/count zero"
+    },
+    {
+      "id": "RA-V02",
+      "severity": "P2",
+      "priorStatus": "new",
+      "localStatus": "behavior-verified-local",
+      "productionStatus": "local verifier; real read-only retry recorded separately",
+      "behavior": "Ledger deadline spans headers and success/error bodies"
+    },
+    {
+      "id": "RA-V03",
+      "severity": "P2",
+      "priorStatus": "new",
+      "localStatus": "behavior-verified-local",
+      "productionStatus": "local verifier; no live resume used",
+      "behavior": "Resume binds source/settings/order/age and preserves reused observations; failed results retry"
+    }
+  ],
+  "production": {
+    "baselineSurfaceCheck": {
+      "result": "pass",
+      "hosts": 15,
+      "resumeUsed": false,
+      "limits": "entry HTML/assets and sampled API schema, not complete workflows"
+    },
+    "strengthenedSurfaceCheck": {
+      "command": "node scripts/audit-production-surfaces.mjs --timeout-ms=20000 --json",
+      "sourceSha256": "9312f9a7b20fad85768263d90118f762195621c7eafb8724c52331e3db6d1323",
+      "auditId": "d1983e6a-94ef-4815-b1da-c5c223854cde",
+      "startedAt": "2026-10-01T13:11:42.730Z",
+      "finishedAt": "2026-10-01T13:13:08.421Z",
+      "complete": true,
+      "currentRunComplete": true,
+      "ok": true,
+      "fresh": true,
+      "pageOnly": false,
+      "observations": {
+        "currentRun": 15,
+        "reused": 0
+      },
+      "results": [
+        {
+          "surface": "Home",
+          "htmlMs": 1073,
+          "apiMs": [
+            8041
+          ]
+        },
+        {
+          "surface": "IDs",
+          "htmlMs": 649,
+          "apiMs": [
+            3394
+          ]
+        },
+        {
+          "surface": "DNS",
+          "htmlMs": 421,
+          "apiMs": [
+            1907
+          ]
+        },
+        {
+          "surface": "Desktop",
+          "htmlMs": 414,
+          "apiMs": [
+            2382
+          ]
+        },
+        {
+          "surface": "Browser",
+          "htmlMs": 451,
+          "apiMs": [
+            2052
+          ]
+        },
+        {
+          "surface": "Boost",
+          "htmlMs": 437,
+          "apiMs": [
+            2311
+          ]
+        },
+        {
+          "surface": "AMO",
+          "htmlMs": 797,
+          "apiMs": [
+            11448
+          ]
+        },
+        {
+          "surface": "Credit",
+          "htmlMs": 452,
+          "apiMs": [
+            2545
+          ]
+        },
+        {
+          "surface": "Wallet",
+          "htmlMs": 449,
+          "apiMs": [
+            10793
+          ]
+        },
+        {
+          "surface": "WORK",
+          "htmlMs": 444,
+          "apiMs": [
+            5997,
+            4840
+          ]
+        },
+        {
+          "surface": "Infinity",
+          "htmlMs": 416,
+          "apiMs": [
+            1771
+          ]
+        },
+        {
+          "surface": "Inception",
+          "htmlMs": 417,
+          "apiMs": [
+            1394
+          ]
+        },
+        {
+          "surface": "Log",
+          "htmlMs": 415,
+          "apiMs": [
+            2656
+          ]
+        },
+        {
+          "surface": "Growth",
+          "htmlMs": 452,
+          "apiMs": [
+            2058
+          ]
+        },
+        {
+          "surface": "Computer",
+          "htmlMs": 127,
+          "apiMs": [
+            475,
+            2098
+          ]
+        }
+      ],
+      "everySurfaceHttpStatus": 200,
+      "everySurfaceAssets": {
+        "checked": 4,
+        "modules": 1,
+        "modulepreloads": 2,
+        "stylesheets": 1
+      },
+      "qualification": "Final subsequent redirect refinement has separate local regression protection; this receipt binds the script digest actually run."
+    },
+    "baselineLedger": {
+      "result": "pass",
+      "snapshotId": "682ae5389ceec2508eba32f3",
+      "networkValueProofs": "14521121704174468736.46341097"
+    },
+    "correctedLedgerFirstAttempt": {
+      "result": "stopped-on-unready-health",
+      "httpStatus": 503,
+      "healthIndexedAt": "2026-10-01T13:13:55.121Z",
+      "height": 969447,
+      "blockHash": "00000000000000000000325bd9908eb0014bf4c9bd948d777c6f4fce4aab6601",
+      "workerPhase": "running",
+      "indexOk": false,
+      "workerProofReady": false,
+      "summarySnapshotId": "845ea2a17207bea16f93c574"
+    },
+    "readinessRecovery": {
+      "observedAt": "2026-10-01T13:14:14.699Z",
+      "httpStatus": 200,
+      "ready": true,
+      "height": 969447,
+      "blockHash": "00000000000000000000325bd9908eb0014bf4c9bd948d777c6f4fce4aab6601",
+      "workerPhase": "canonical-phase-complete",
+      "indexOk": true,
+      "workerProofReady": true
+    },
+    "correctedLedgerBoundedRetry": {
+      "status": "pass",
+      "exitCode": 0,
+      "snapshotId": "845ea2a17207bea16f93c574",
+      "networkValueProofs": "14521121704174468736.46341097",
+      "observationTime": "Exact command completion time not retained; completed after 13:14:14.699Z readiness witness.",
+      "limits": "Real endpoint success under amended body deadline; no independent fresh raw-chain replay."
+    },
+    "independentComparison": {
+      "startedAt": "2026-10-01T12:58:21.743Z",
+      "finishedAt": "2026-10-01T12:58:31.044Z",
+      "height": 969444,
+      "blockHash": "000000000000000000021d549dcbe4aaf005ad25a203a81fc4cd2918a6b060be",
+      "beforeAfterCoreIdentityEqual": true,
+      "snapshotId": "682ae5389ceec2508eba32f3",
+      "networkValueQ8": "1452112170417446873646341097",
+      "workSupply": "21000000",
+      "independentFloorQ8": "69148198591306993983",
+      "floorMatches": true,
+      "growthValueMatches": true,
+      "directPrivateCoreRpc": false,
+      "responseSha256": {
+        "healthBefore": "a74caa1adce0cdf2aeb010da748acac552996a67db4582938c7df67d5d254c5e",
+        "workFloor": "863438b7a09db855b2c514e7fbae3c82bdd3b14b5ec4663f1140a39ab8c908b3",
+        "growth": "160d0fac7d954fc74194d335efb51e853343d32d8dd478b4dbcc0a25849fa773",
+        "healthAfter": "d86bcfb727edc7947d05151c81a4e32838ae50069052c891212f76e66b9395e4"
+      }
+    },
+    "browser": {
+      "order": [
+        "Home",
+        "IDs",
+        "DNS",
+        "Desktop",
+        "Browser",
+        "Boost",
+        "AMO",
+        "Credit",
+        "Wallet",
+        "WORK",
+        "Infinity",
+        "Inception",
+        "Log",
+        "Growth",
+        "Computer"
+      ],
+      "connectedWallet": false,
+      "signatures": 0,
+      "broadcasts": 0,
+      "observations": [
+        {
+          "surface": "Home",
+          "result": "qualified confirmed/pending counts"
+        },
+        {
+          "surface": "IDs",
+          "result": "Unavailable, no zero claim"
+        },
+        {
+          "surface": "DNS",
+          "result": "23 confirmed, 0 pending"
+        },
+        {
+          "surface": "Desktop",
+          "result": "address read stopped on canonical catch-up"
+        },
+        {
+          "surface": "Browser",
+          "result": "H6-12 race reproduced; confirmed welcome 1018 bytes SHA256 f05b31a5f4dfabff5fb0ffe3bef1a03de4a8f5c562694609114ae6d352e9caad; proof remains Mainnet; iframe sandbox empty permissions"
+        },
+        {
+          "surface": "Boost",
+          "result": "7 indexed records rendered; no paid/social action"
+        },
+        {
+          "surface": "AMO",
+          "result": "Loading persisted during bounded observation; complete book UI not accepted"
+        },
+        {
+          "surface": "Credit",
+          "result": "directory eventually rendered; no signed creation/mint"
+        },
+        {
+          "surface": "Wallet",
+          "result": "Connect UniSat account-specific state"
+        },
+        {
+          "surface": "WORK",
+          "result": "21M supply, 21K mints, 388 holders rendered"
+        },
+        {
+          "surface": "Infinity",
+          "result": "630496569 POWB supply; 630501483 proofs value"
+        },
+        {
+          "surface": "Inception",
+          "observedAt": "2026-10-01T13:10:10.287Z",
+          "result": "fixed issued 945662401792509469 INCB rendered; incomplete market empty claims withheld"
+        },
+        {
+          "surface": "Log",
+          "observedAt": "2026-10-01T13:10:28.353Z",
+          "result": "loaded; summary 26277 total/26255 confirmed/21 pending, page declares26285. Different observation/population not fenced; no new definitive defect claimed."
+        },
+        {
+          "surface": "Growth",
+          "observedAt": "2026-10-01T13:10:59.938Z",
+          "result": "exact value rendered and forecasts explicitly assumptions"
+        },
+        {
+          "surface": "Computer",
+          "observedAt": "2026-10-01T13:11:25.492Z",
+          "result": "Connect to inspect mail; account balances not invented; no warning/error console records"
+        }
+      ],
+      "timestampLimitation": "Initial browser snapshots did not record per-observation timestamps; later records have exact times. Summaries retain observation order without inventing missing times."
+    },
+    "finalHomeRedirectCheck": {
+      "command": "node scripts/audit-production-surfaces.mjs --surface=home --timeout-ms=20000 --json",
+      "sourceSha256": "c876280878e2dce3a30e08e1de424127ddb7e9d8f10724dc5fe3fda1a9464765",
+      "auditId": "a437faf7-2e51-4fee-ac34-9729614d89bc",
+      "startedAt": "2026-10-01T13:16:28.803Z",
+      "finishedAt": "2026-10-01T13:16:36.431Z",
+      "ok": true,
+      "complete": true,
+      "currentRunComplete": true,
+      "observations": {
+        "currentRun": 1,
+        "reused": 0
+      },
+      "html": {
+        "requestedUrl": "https://proofofwork.me/",
+        "observedUrl": "https://www.proofofwork.me/",
+        "status": 200,
+        "elapsedMs": 941
+      },
+      "registrySummary": {
+        "status": 200,
+        "elapsedMs": 5762
+      }
+    }
+  },
+  "validation": {
+    "result": "all selected local acceptance gates passed within declared coverage",
+    "passed": [
+      {
+        "command": "./node_modules/.bin/tsc --noEmit",
+        "exitCode": 0
+      },
+      {
+        "command": "npm run check:surface-read-state",
+        "exitCode": 0,
+        "coverageGroups": 8,
+        "ambiguityAssertion": "effect extraction requires exactly one actual-source match"
+      },
+      {
+        "command": "node scripts/check-recursive-assurance.test.mjs",
+        "exitCode": 0,
+        "cases": 11
+      },
+      {
+        "command": "npm run check:assurance-regressions",
+        "exitCode": 0
+      },
+      {
+        "command": "node scripts/check-audit28-regressions.mjs",
+        "exitCode": 0,
+        "cases": 8
+      },
+      {
+        "command": "node --test server/registry-pending-times.test.mjs scripts/check-audit29-ui-regressions.test.mjs",
+        "exitCode": 0
+      },
+      {
+        "command": "npm run check:client-read-containment",
+        "exitCode": 0,
+        "checks": 43
+      },
+      {
+        "command": "npm run check:api-client-timeouts",
+        "exitCode": 0,
+        "cases": 10,
+        "loopbackAuthorization": true
+      },
+      {
+        "command": "npm run check:work-amo-v8",
+        "exitCode": 0
+      },
+      {
+        "command": "npm run check:work-precision-v2",
+        "exitCode": 0
+      },
+      {
+        "command": "npm run check:bond-exact-arithmetic",
+        "exitCode": 0
+      },
+      {
+        "command": "npm run check:fee-rate-precision",
+        "exitCode": 0
+      },
+      {
+        "command": "npm run check:wallet-utxo-refresh",
+        "exitCode": 0
+      },
+      {
+        "command": "npm run check:send-prep-fixtures",
+        "exitCode": 0,
+        "cases": 8
+      },
+      {
+        "command": "git diff --check",
+        "exitCode": 0
+      },
+      {
+        "command": "npm run check:live-data",
+        "exitCode": 0
+      },
+      {
+        "command": "npm run check:ui:browser -- tests/browser/desktop-welcome-ui.spec.mjs --workers=1",
+        "exitCode": 0,
+        "cases": 5,
+        "durationSeconds": 12.8
+      },
+      {
+        "command": "npm run build",
+        "exitCode": 0,
+        "classification": "working-tree smoke build; not deployment artifact",
+        "warning": "existing large App chunk warning"
+      }
+    ],
+    "existingGate": {
+      "command": "npm run check:live-data",
+      "exitCode": 0,
+      "classification": "approved source-pattern correction",
+      "file": "scripts/check-live-data-contract.mjs",
+      "editApprovalPending": false
+    },
+    "browserFixture": {
+      "file": "tests/browser/desktop-welcome-ui.spec.mjs",
+      "editApprovalPending": false,
+      "cases": 5,
+      "status": "all five existing browser cases passed",
+      "durationSeconds": 12.8,
+      "baseUrl": "http://127.0.0.1:4173",
+      "workers": 1,
+      "producerScopeFieldsAddedAtThreeSites": true,
+      "assertionsChanged": false,
+      "transactionFixturesChanged": false
+    },
+    "intermediateHarnessFailures": [
+      "nonempty mint fixture lacked paidSats/minter/registry render fields; corrected",
+      "integrated Browser introduced ambiguous effect marker; unique markers and exact-one-match extraction now pass",
+      "attempted nonexistent check:audit28-regressions npm alias; actual script run directly passed"
+    ],
+    "independentReview": {
+      "result": "no additional material issue in declared correction coverage",
+      "assumptions": "actual-source functions and controlled producers; not full live raw-chain or connected-wallet evidence"
+    },
+    "existingGateBeforeFixtureCorrection": {
+      "command": "npm run check:live-data",
+      "exitCode": 1,
+      "classification": "two obsolete source-pattern assertions",
+      "file": "scripts/check-live-data-contract.mjs",
+      "lines": [
+        1647,
+        1653
+      ],
+      "editApprovalPending": true
+    },
+    "browserFixtureBeforeCorrection": {
+      "file": "tests/browser/desktop-welcome-ui.spec.mjs",
+      "editApprovalPending": true,
+      "cases": 5,
+      "status": "not executed as valid producer fixtures; missing address/network scope at three mock sites"
+    },
+    "fixtureIndependentReview": {
+      "result": "clear",
+      "diff": "exactly two regex replacements and scope fields at three mock sites",
+      "firstPartyContractPreserved": true,
+      "browserAssertionsUnchanged": true,
+      "noAdditionalMaterialIssue": true
+    }
+  },
+  "hygiene": {
+    "fix": {
+      "command": "npm run hygiene:fix",
+      "exitCode": 0,
+      "report": "no allowlisted rebuildable state found",
+      "removedPaths": []
+    },
+    "semanticReview": {
+      "documents": [
+        "SOUL.md",
+        "README.md",
+        "PROOFOFWORK_IDS.md",
+        "PROOFOFWORK_DNS.md",
+        "MARKETPLACE.md",
+        "OP_RETURN_INFRASTRUCTURE.md",
+        "MAIL_ORGANIZATION.md",
+        "REPOSITORY_HYGIENE.md"
+      ],
+      "decision": "reviewed-no-change: existing canonical invariants already require corrected behavior; report records local status and open historical evidence",
+      "scope": "note inventory/prior audits/releases, deterministic generated artifacts policy, safe cleanup allowlist, git status including ignored state, final diff and relevant tests"
+    },
+    "check": {
+      "command": "npm run hygiene:check",
+      "exitCode": 0,
+      "report": "repository state check passed"
+    },
+    "protectedRemovals": [],
+    "staging": false,
+    "commits": false,
+    "pushes": false,
+    "deployments": false,
+    "announcements": false,
+    "fixtureContinuation": {
+      "fix": {
+        "command": "npm run hygiene:fix",
+        "exitCode": 0,
+        "removedPaths": [
+          "node_modules/.vite",
+          "node_modules/.vite-temp"
+        ],
+        "reportedBytes": "7.08 MiB total",
+        "trackedOrProtectedRemovals": []
+      },
+      "semanticReview": "existing canonical requirements and source bindings unchanged; report reconciled approved fixture results, inventory, generated artifacts policy, cleanup allowlist, final diff and git status including ignored state",
+      "check": {
+        "command": "npm run hygiene:check",
+        "exitCode": 0,
+        "report": "repository state check passed"
+      },
+      "diffCheck": {
+        "command": "git diff --check",
+        "exitCode": 0
+      },
+      "recordedAt": "2026-10-01T13:22:35Z"
+    },
+    "releasePreparation": {
+      "fix": {
+        "command": "npm run hygiene:fix",
+        "exitCode": 0,
+        "removedPaths": [
+          "dist",
+          "node_modules/.vite-temp"
+        ],
+        "reportedBytes": "13.1 MiB total",
+        "trackedOrProtectedRemovals": []
+      },
+      "check": {
+        "command": "npm run hygiene:check",
+        "exitCode": 0
+      },
+      "semanticReview": "canonical SOUL/protocol/product/infrastructure remain accurate for frontend-only enforcement; approved release chronology appended, prior evidence preserved, ignored state and final diff reviewed",
+      "diffCheck": {
+        "command": "git diff --check",
+        "exitCode": 0
+      }
+    }
+  },
+  "limitations": [
+    "no deployed client closure",
+    "no direct private Core or new genesis/full historical replay",
+    "no connected wallet/manual signing workflows",
+    "historical capacity/PITR/physical checksum/provider bandwidth gaps remain",
+    "local resume files are not cryptographically authenticated against deliberate alteration"
+  ],
+  "artifactBindings": {
+    "report": {
+      "path": "audits/2026-10-01-recursive-assurance-batch-1.md",
+      "sha256": "2da27c4f262f7c188db53871621eaf0106baba8dd595f3f2a6d85fbf49ae351a"
+    },
+    "localFiles": {
+      "src/App.tsx": "aff8ad4f7dd2d3f4e36b7f748b60ac86a33e376a77e657b9ab5693cd241bd296",
+      "scripts/audit-production-surfaces.mjs": "c876280878e2dce3a30e08e1de424127ddb7e9d8f10724dc5fe3fda1a9464765",
+      "scripts/audit-ledger-consistency.mjs": "9180446b7cca24d36071d7c2992ecb3ff14b8572c8fb1fd13e2f6b3861c68e41",
+      "scripts/check-surface-read-state.mjs": "017042659e5cb0d79af50d3bc0b697f1ba62bc5047cdee96f8939ca6a613a2a2",
+      "scripts/check-recursive-assurance.test.mjs": "2d94e2fbab0221cdabbfddbf817f9e7d672d51b2188f583f6063170bc5b6a759",
+      "package.json": "77698bfa10fc5694d113ab905753e223a84accaf16a059169826f2cc7db41c78",
+      "repository-hygiene.json": "a66248b3fde1479faebf49a5d9cc3c21e9c8c2d00b68db4a840fc2b24debdd3a",
+      "scripts/check-live-data-contract.mjs": "5580828b82b53cad83ed5c5a166dd577b84b3cef6f0c374341c1280270f97906",
+      "tests/browser/desktop-welcome-ui.spec.mjs": "e8357af9ee7b2705d819f7f8c65072630a053ab6183d1a30c9efec143835f6c5"
+    },
+    "priorReportSha256": "70bdcea79bc3df56ee34e70ad5e05be5b30d7483643b7c9a23d56dbddfc3b944"
+  },
+  "release": {
+    "status": "approved; preparation in progress",
+    "frontendOnly": true,
+    "nodeApplicationChanges": false,
+    "configurationChanges": false,
+    "retentionDeferred": true,
+    "previousReleaseId": "527e4cbaa66f-20261001T062733Z",
+    "previousCommit": "527e4cbaa66f689169197c7ce9569425ef334492",
+    "publication": "installed documented UI publisher; full-root atomic exchange",
+    "build": "deploy/audit5/build-ui-release.sh clean detached full commit; all15public plus nft",
+    "preflight": {
+      "observedAt": "2026-10-01T13:43:23Z",
+      "live": {
+        "format": "proofofwork-ui-retained-root-v1",
+        "classification": "retain",
+        "root": "/var/www",
+        "manifestSha256": "305492a8b43e08a3fec529fad770f58b5209c9eb605490c694562242314f94ba",
+        "treeSha256": "acde0cfe67a9716074135758b364703c05047693336dcaec1e5282361d9de8c0",
+        "entries": 1264,
+        "regularBytes": 427700521
+      },
+      "retained": [
+        {
+          "format": "proofofwork-ui-retained-root-v1",
+          "classification": "retain",
+          "root": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-527e4cbaa66f-20261001T062733Z",
+          "manifestSha256": "a0fc55747b9fa9161055fea319bd90fd6e485f7caa9b4ea232e53498af18edb6",
+          "treeSha256": "28aa403305e358d274107251925d23e9a953dfa494c4ddb1faa2261cf7871764",
+          "entries": 1264,
+          "regularBytes": 427671209
+        }
+      ],
+      "availableBytes": 25747083264,
+      "availableInodes": 2341102,
+      "helpers": {
+        "controller": {
+          "path": "/var/tmp/proofofwork-deploy/audit29-tools/release.py",
+          "sha256": "098ca423e57f33d2a3a2c318995935a4000596536b59e460da4ccc996bcb25ac",
+          "mode": "0o600",
+          "uid": 0
+        },
+        "receiver": {
+          "path": "/var/tmp/proofofwork-deploy/audit29-tools/stream-ui-bundle.py",
+          "sha256": "28c5dc45f75184a0cb3138df52b3558b0ebcb0c3d8c59233ae261fdbd812817b",
+          "mode": "0o600",
+          "uid": 0
+        },
+        "stage-shell": {
+          "path": "/var/tmp/proofofwork-deploy/audit29-tools/ui-stage-candidate.sh",
+          "sha256": "2f5f80b8065170c10b00f83363f2f1fb429dfbea6ce7237fb4ec311b74e264ff",
+          "mode": "0o600",
+          "uid": 0
+        },
+        "phase-capacity": {
+          "path": "/var/tmp/proofofwork-deploy/audit29-tools/ui-capacity.py",
+          "sha256": "0df38e794a8504ac576c86e79877d8c9a35b2c216b1cbc340587a4f6c7c5df40",
+          "mode": "0o600",
+          "uid": 0
+        },
+        "capacity": {
+          "path": "/usr/local/sbin/proofofwork-ui-capacity",
+          "sha256": "ea6745b2519d57fbd08deff723e81540d4dad2b4c649ff7e6c2b060a7e7edbb6",
+          "mode": "0o755",
+          "uid": 0
+        },
+        "retained": {
+          "path": "/usr/local/sbin/proofofwork-ui-retained-root",
+          "sha256": "6421d58ec8a2259cc21512679db05654b2a138a6e6f56d3656c0287b934ddd9e",
+          "mode": "0o755",
+          "uid": 0
+        },
+        "publisher": {
+          "path": "/usr/local/sbin/proofofwork-ui-release-publish",
+          "sha256": "5ae1535e668c77ca7234c016ffe3602a3a8a5d930b3a75eefc28bb864a19af76",
+          "mode": "0o755",
+          "uid": 0
+        },
+        "stager": {
+          "path": "/usr/local/sbin/proofofwork-ui-release-stage",
+          "sha256": "c6f7a20f0f53d0e0871c3e024a4ea5d1b7c95f9f9788064a723f2b115d27000a",
+          "mode": "0o755",
+          "uid": 0
+        },
+        "provenance": {
+          "path": "/usr/local/sbin/proofofwork-ui-release-provenance",
+          "sha256": "4e083a179a305907760ffe36f6ad00aef9a441279898b903171edea54cb1b9d6",
+          "mode": "0o755",
+          "uid": 0
+        },
+        "transport": {
+          "path": "/var/tmp/proofofwork-deploy/audit29-tools/ui-transport.py",
+          "sha256": "a0c022d2071ad1f949c2bd7304cc5a3d8f1368bb3d71cb710b5d709956f7bdd9",
+          "mode": "0o600",
+          "uid": 0
+        }
+      },
+      "checks": [
+        {
+          "command": [
+            "/usr/local/sbin/proofofwork-ui-release-provenance",
+            "verify-rollback"
+          ],
+          "exitCode": 0,
+          "outputSha256": "4521bd24c289cbf2f1cb634ee60fdf2acc134fce8116b8b8f176eb8900ec8f64",
+          "tail": "ui_release_provenance status=verified release_id=527e4cbaa66f-20261001T062733Z commit=527e4cbaa66f689169197c7ce9569425ef334492 archive_sha256=51d4b0a88ae42af45022f2215277fe8edf37538579feccc57122ee5d89911ad1"
+        },
+        {
+          "command": [
+            "/usr/bin/python3",
+            "-I",
+            "-B",
+            "/usr/local/sbin/proofofwork-ui-capacity",
+            "check-scratch",
+            "--path",
+            "/var/tmp/proofofwork-deploy",
+            "--additional-bytes",
+            "65536",
+            "--additional-inodes",
+            "4",
+            "--phase",
+            "assurance-plan-preflight"
+          ],
+          "exitCode": 0,
+          "outputSha256": "0227245d593fdd4aec1ecd51826a7280b08b4032b5960d7744f94d5af04fc156",
+          "tail": "{\"additionalBytes\": 65536, \"allocatedBytes\": 3936157696, \"cleanupApproved\": false, \"maximumBytes\": 5368709120, \"path\": \"/var/tmp/proofofwork-deploy\", \"phase\": \"assurance-plan-preflight\", \"status\": \"sufficient\"}"
+        }
+      ],
+      "rawReceiptSha256": "2983abc458059e42173ffd2295f681d444aa6dbfca3bdeaf99ae910734878757"
+    }
+  }
+}

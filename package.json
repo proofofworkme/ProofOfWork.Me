@@ -60,6 +60,7 @@
     "check:read-projections": "node --test server/read-projections.test.mjs",
     "check:boost-regressions": "node scripts/check-inflight-request-pool.mjs && node --test scripts/check-boost-regressions.mjs",
     "check:surface-read-state": "node scripts/check-surface-read-state.mjs",
+    "check:assurance-regressions": "node --test scripts/check-recursive-assurance.test.mjs",
     "check:summary-route-readiness": "node scripts/check-summary-route-readiness.mjs",
     "check:production-observability": "node scripts/check-production-observability.mjs",
     "check:inflight-request-pool": "node scripts/check-inflight-request-pool.mjs",

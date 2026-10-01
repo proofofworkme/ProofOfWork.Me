@@ -1,8 +1,14 @@
 #!/usr/bin/env node
 
 import fs from "node:fs";
+import { createHash, randomUUID } from "node:crypto";
 
 const DEFAULT_TIMEOUT_MS = 20_000;
+const RESUME_SCHEMA_VERSION = 1;
+const MAX_RESUME_AGE_MS = 60 * 60 * 1_000;
+const SOURCE_SHA256 = createHash("sha256")
+  .update(fs.readFileSync(new URL(import.meta.url)))
+  .digest("hex");
 const API_BASE = String(
   process.env.POW_API_BASE || "https://computer.proofofwork.me",
 ).replace(/\/+$/u, "");
@@ -36,7 +42,10 @@ Environment:
 
 --surface runs one named surface (for example --surface=computer).
 --resume-file writes completed per-surface results after each surface so an
-interrupted audit can resume without repeating completed surfaces.`);
+interrupted audit can resume without repeating successful surfaces. Receipts
+must match this script, settings and ordered surface plan, and be less than one
+hour old from the original audit start. Reused observations keep their original
+timestamps and are explicitly labeled; failed surfaces are retried.`);
 }
 
 if (process.argv.includes("--help") || process.argv.includes("-h")) {
@@ -270,6 +279,12 @@ function firstNonNegativeInteger(json, keys) {
     for (const part of parts) {
       value = value?.[part];
     }
+    if (
+      typeof value !== "number" &&
+      !(typeof value === "string" && /^(?:0|[1-9][0-9]*)$/u.test(value))
+    ) {
+      continue;
+    }
     const number = Number(value);
     if (Number.isSafeInteger(number) && number >= 0) {
       return number;
@@ -391,6 +406,14 @@ function validateConsistency(json) {
   const failed = Array.isArray(json?.failedChecks) ? json.failedChecks : [];
   assertCondition(failed.length === 0, `failed checks: ${failed.join(", ")}`);
   validateIndexedJson(json);
+}
+
+function responseOriginMatchesRequest(requestedUrl, observedUrl, allowHomeWww = false) {
+  const requested = new URL(requestedUrl);
+  const observed = new URL(observedUrl);
+  return requested.origin === observed.origin || (allowHomeWww &&
+    requested.origin === "https://proofofwork.me" &&
+    observed.origin === "https://www.proofofwork.me");
 }
 
 async function fetchText(url, signal) {
@@ -539,6 +562,10 @@ async function htmlResult(surface, fetched) {
     HTML_CONTENT_TYPE_PATTERN.test(fetched.contentType),
     `unexpected HTML content-type ${fetched.contentType || "<empty>"}`,
   );
+  assertCondition(
+    responseOriginMatchesRequest(surface.url, fetched.url, true),
+    `unexpected HTML response origin ${fetched.url}`,
+  );
   assertCondition(title.length > 0, "missing document title");
   assertCondition(
     /<div\b[^>]*\bid=(?:"root"|'root')[^>]*>/iu.test(fetched.body),
@@ -564,6 +591,7 @@ async function htmlResult(surface, fetched) {
     contentType: fetched.contentType,
     elapsedMs: fetched.elapsedMs,
     ok: true,
+    requestedUrl: surface.url,
     status: fetched.status,
     title,
     url: fetched.url,
@@ -572,6 +600,10 @@ async function htmlResult(surface, fetched) {
 
 async function runProbe(probe) {
   const fetched = await withTimeout((signal) => fetchText(probe.url, signal));
+  assertCondition(
+    responseOriginMatchesRequest(probe.url, fetched.url),
+    `unexpected API response origin ${fetched.url}`,
+  );
   let json;
   try {
     json = JSON.parse(fetched.body);
@@ -586,6 +618,7 @@ async function runProbe(probe) {
   return {
     elapsedMs: fetched.elapsedMs,
     ok: true,
+    requestedUrl: probe.url,
     status: fetched.status,
     url: fetched.url,
   };
@@ -593,6 +626,8 @@ async function runProbe(probe) {
 
 async function runSurface(surface) {
   const result = {
+    evidence: "current-run",
+    startedAt: new Date().toISOString(),
     html: null,
     key: surface.key,
     ok: false,
@@ -614,46 +649,180 @@ async function runSurface(surface) {
   } catch (error) {
     result.error = String(error?.message ?? error);
   }
+  result.finishedAt = new Date().toISOString();
   return result;
 }
 
-const startedAt = new Date();
+function receiptTimestamp(value, label) {
+  const time = typeof value === "string" ? Date.parse(value) : NaN;
+  assertCondition(
+    Number.isFinite(time) && new Date(time).toISOString() === value,
+    `invalid ${label} timestamp`,
+  );
+  return time;
+}
+
+function validateResumeResult(result, surface, bounds, allowHistory = true) {
+  assertCondition(result?.key === surface.key && result.title === surface.title,
+    "resume surface identity disagrees with the ordered plan");
+  assertCondition(typeof result.ok === "boolean", "invalid resume surface status");
+  assertCondition(result.evidence === "current-run" || result.evidence === "reused",
+    "missing resume observation provenance");
+  const started = receiptTimestamp(result.startedAt, "surface start");
+  const finished = receiptTimestamp(result.finishedAt, "surface finish");
+  assertCondition(started >= bounds.started && finished >= started && finished <= bounds.finished,
+    "resume observation is outside the original audit interval");
+  if (result.evidence === "reused") {
+    const reused = receiptTimestamp(result.reusedAt, "surface reuse");
+    assertCondition(reused >= finished && reused <= bounds.finished,
+      "invalid resume observation reuse interval");
+  }
+  assertCondition(Array.isArray(result.probes), "missing resume probe evidence");
+  const probes = PAGE_ONLY ? [] : surface.probes;
+  assertCondition(result.probes.length <= probes.length &&
+    (!result.ok || result.probes.length === probes.length),
+  "resume probe evidence does not cover the requested mode");
+  for (const [index, probe] of result.probes.entries()) {
+    assertCondition(probe.label === probes[index].label && probe.requestedUrl === probes[index].url &&
+      responseOriginMatchesRequest(probe.requestedUrl, probe.url) &&
+      probe.ok === true && Number.isInteger(probe.status) &&
+      probe.status >= 200 && probe.status < 400 &&
+      Number.isSafeInteger(probe.elapsedMs) && probe.elapsedMs >= 0,
+    "invalid resume probe evidence");
+  }
+  if (result.html !== null) {
+    const html = result.html;
+    assertCondition(html?.ok === true && Number.isInteger(html.status) &&
+      html.status >= 200 && html.status < 400 &&
+      HTML_CONTENT_TYPE_PATTERN.test(html.contentType ?? "") &&
+      typeof html.title === "string" && html.title.trim().length > 0 &&
+      Number.isSafeInteger(html.elapsedMs) && html.elapsedMs >= 0 &&
+      html.requestedUrl === surface.url &&
+      responseOriginMatchesRequest(html.requestedUrl, html.url, true),
+    "invalid resume HTML evidence");
+    const assets = html.assets;
+    assertCondition(assets && [assets.checked, assets.modules, assets.modulepreloads, assets.stylesheets]
+      .every((value) => Number.isSafeInteger(value) && value >= 0) &&
+      assets.modules > 0 &&
+      assets.checked === assets.modules + assets.modulepreloads + assets.stylesheets,
+    "invalid resume shell asset evidence");
+  }
+  assertCondition(result.ok ? result.html?.ok === true && result.error === undefined :
+    typeof result.error === "string" && result.error.length > 0,
+  "resume status disagrees with its evidence");
+  if (result.previousAttempts !== undefined) {
+    assertCondition(allowHistory && Array.isArray(result.previousAttempts),
+      "invalid resume attempt history");
+    for (const attempt of result.previousAttempts) {
+      assertCondition(attempt.ok === false, "resume history must retain failed attempts only");
+      validateResumeResult(attempt, surface, { ...bounds, finished: started }, false);
+    }
+  }
+}
+
+function validateResumeReceipt(prior, surfacePlan, now) {
+  assertCondition(prior?.schemaVersion === RESUME_SCHEMA_VERSION,
+    "unsupported resume receipt schema");
+  assertCondition(prior.sourceSha256 === SOURCE_SHA256, "resume script digest differs");
+  assertCondition(prior.apiBase === API_BASE && prior.fresh === FRESH &&
+    prior.pageOnly === PAGE_ONLY && prior.timeoutMs === timeoutMs(),
+  "resume origin or audit settings differ");
+  assertCondition(JSON.stringify(prior.surfacePlan) === JSON.stringify(surfacePlan),
+    "resume ordered surface plan differs");
+  assertCondition(typeof prior.auditId === "string" &&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/u.test(prior.auditId),
+  "missing resume audit identity");
+  const started = receiptTimestamp(prior.startedAt, "audit start");
+  const finished = receiptTimestamp(prior.finishedAt, "audit finish");
+  assertCondition(started <= finished && finished <= now && now - started <= MAX_RESUME_AGE_MS,
+    "resume receipt is stale or has an invalid audit interval");
+  assertCondition(Array.isArray(prior.results) && prior.results.length <= surfacePlan.length,
+    "invalid resume result population");
+  for (const [index, result] of prior.results.entries()) {
+    validateResumeResult(result, selectedSurfaces[index], { started, finished });
+  }
+  const complete = prior.results.length === surfacePlan.length;
+  assertCondition(prior.complete === complete &&
+    prior.ok === (complete && prior.results.every((result) => result.ok)),
+  "resume aggregate status disagrees with its observations");
+  return prior;
+}
+
+const runStartedAt = new Date();
 const selectedSurfaces = SELECTED_SURFACE
   ? SURFACES.filter((surface) => surface.key === SELECTED_SURFACE)
   : SURFACES;
 if (SELECTED_SURFACE && selectedSurfaces.length === 0) {
-  console.error(`Unknown surface: ${SELECTED_SURFACE}`);
-  process.exitCode = 2;
+  throw new Error(`Unknown surface: ${SELECTED_SURFACE}`);
 }
-let results = [];
+const surfacePlan = selectedSurfaces.map((surface) => ({
+  key: surface.key,
+  title: surface.title,
+  url: surface.url,
+  probes: surface.probes.map(({ label, url }) => ({ label, url })),
+}));
+let prior = null;
 if (RESUME_FILE) {
   try {
-    const prior = JSON.parse(fs.readFileSync(RESUME_FILE, "utf8"));
-    results = Array.isArray(prior.results) ? prior.results : [];
-  } catch {
-    results = [];
+    prior = validateResumeReceipt(
+      JSON.parse(fs.readFileSync(RESUME_FILE, "utf8")), surfacePlan, runStartedAt.getTime(),
+    );
+  } catch (error) {
+    if (error?.code !== "ENOENT") {
+      throw new Error(`Invalid resume evidence: ${error.message}`);
+    }
   }
 }
-const completed = new Set(results.map((result) => result.key));
+const startedAt = prior?.startedAt ?? runStartedAt.toISOString();
+const auditId = prior?.auditId ?? randomUUID();
+const previous = new Map((prior?.results ?? []).map((result) => [result.key, result]));
+const results = [];
+
+function auditPayload(finishedAt) {
+  const complete = results.length === selectedSurfaces.length;
+  const currentRun = results.filter((result) => result.evidence === "current-run").length;
+  return {
+    schemaVersion: RESUME_SCHEMA_VERSION,
+    sourceSha256: SOURCE_SHA256,
+    auditId,
+    apiBase: API_BASE,
+    complete,
+    currentRunComplete: complete && currentRun === selectedSurfaces.length,
+    finishedAt,
+    fresh: FRESH,
+    ok: complete && results.every((result) => result.ok),
+    pageOnly: PAGE_ONLY,
+    results,
+    startedAt,
+    runStartedAt: runStartedAt.toISOString(),
+    resumedAt: prior ? runStartedAt.toISOString() : null,
+    resumeSourceFinishedAt: prior?.finishedAt ?? null,
+    observations: {
+      currentRun,
+      reused: results.filter((result) => result.evidence === "reused").length,
+    },
+    surfacePlan,
+    timeoutMs: timeoutMs(),
+  };
+}
+
 for (const surface of selectedSurfaces) {
-  if (completed.has(surface.key)) {
-    console.error(`resume skip ${surface.title}`);
+  const previousResult = previous.get(surface.key);
+  if (previousResult?.ok === true) {
+    results.push({ ...previousResult, evidence: "reused", reusedAt: runStartedAt.toISOString() });
+    console.error(`resume reuse ${surface.title} observed=${previousResult.finishedAt}`);
     continue;
   }
   console.error(`audit start ${surface.title}`);
   const result = await runSurface(surface);
+  if (previousResult) {
+    const { previousAttempts = [], ...lastAttempt } = previousResult;
+    result.previousAttempts = [...previousAttempts, lastAttempt];
+  }
   results.push(result);
   console.error(`audit ${result.ok ? "complete" : "failed"} ${surface.title}`);
   if (RESUME_FILE) {
-    const checkpoint = {
-      apiBase: API_BASE,
-      finishedAt: new Date().toISOString(),
-      fresh: FRESH,
-      pageOnly: PAGE_ONLY,
-      results,
-      startedAt: startedAt.toISOString(),
-      timeoutMs: timeoutMs(),
-    };
+    const checkpoint = auditPayload(new Date().toISOString());
     const temporary = `${RESUME_FILE}.tmp`;
     fs.writeFileSync(temporary, `${JSON.stringify(checkpoint, null, 2)}\n`);
     fs.renameSync(temporary, RESUME_FILE);
@@ -661,18 +830,7 @@ for (const surface of selectedSurfaces) {
 }
 
 const failed = results.filter((result) => !result.ok);
-const payload = {
-  apiBase: API_BASE,
-  complete: results.length === selectedSurfaces.length &&
-    selectedSurfaces.every((surface) => results.some((result) => result.key === surface.key)),
-  finishedAt: new Date().toISOString(),
-  fresh: FRESH,
-  ok: failed.length === 0,
-  pageOnly: PAGE_ONLY,
-  results,
-  startedAt: startedAt.toISOString(),
-  timeoutMs: timeoutMs(),
-};
+const payload = auditPayload(new Date().toISOString());
 
 if (JSON_OUTPUT) {
   console.log(JSON.stringify(payload, null, 2));
@@ -686,7 +844,7 @@ if (JSON_OUTPUT) {
       .map((probe) => `${probe.label} ${probe.elapsedMs}ms`)
       .join(", ");
     console.log(
-      `${result.ok ? "ok" : "fail"} ${result.title} html=${htmlMs}${assets}${
+      `${result.ok ? "ok" : "fail"} ${result.title} evidence=${result.evidence} observed=${result.finishedAt} html=${htmlMs}${assets}${
         probes ? ` api=[${probes}]` : ""
       }${result.error ? ` error=${result.error}` : ""}`,
     );

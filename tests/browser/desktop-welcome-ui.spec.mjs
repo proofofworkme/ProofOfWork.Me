@@ -17,7 +17,7 @@ for (const state of ['confirmed', 'pending', 'unavailable', 'wrong-txid']) {
       {value:0,scriptpubkey_type:'op_return',scriptpubkey_asm:`OP_RETURN ${carrier.toString('hex')}`,scriptpubkey:`6a${carrier.length.toString(16).padStart(2,'0')}${carrier.toString('hex')}`}],
     }}});
    }
-   return route.fulfill({json:{inboxMessages:[],sentMessages:[],records:[],listings:[]}});
+   return route.fulfill({json:{address,network:'livenet',inboxMessages:[],sentMessages:[],records:[],listings:[]}});
   });
   await page.goto('/?desktop=1');
   await page.getByPlaceholder('address or user@proofofwork.me').fill(address);
@@ -55,6 +55,7 @@ test('Desktop toast counts owned publications after welcome and self-send dedupl
  await page.route('**/api/v1/**', async route => {
   const path = new URL(route.request().url()).pathname;
   if (path === `/api/v1/address/${owner}/mail`) return route.fulfill({ json: {
+   address: owner, network: 'livenet',
    inboxMessages: [welcome, selfSend, message('c'.repeat(64))],
    sentMessages: [welcome, selfSend],
   }});
@@ -66,7 +67,7 @@ test('Desktop toast counts owned publications after welcome and self-send dedupl
      scriptpubkey_asm: `OP_RETURN ${carrier.toString('hex')}` }],
    } }});
   }
-  return route.fulfill({ json: { inboxMessages: [], sentMessages: [], records: [], listings: [] } });
+  return route.fulfill({ json: { address: owner, network: 'livenet', inboxMessages: [], sentMessages: [], records: [], listings: [] } });
  });
  await page.goto('/?desktop=1');
  await page.getByPlaceholder('address or user@proofofwork.me').fill(owner);
