@@ -768,7 +768,7 @@ async function installApiFixtures(
       }
       if (kind === "listings" && tokenListingHistoryResponse) {
         json = typeof tokenListingHistoryResponse === "function"
-          ? tokenListingHistoryResponse(url)
+          ? await tokenListingHistoryResponse(url)
           : tokenListingHistoryResponse;
       } else if (kind === "listings") {
         const book = completeTokenListingHistoryFixture(fixtureTokenState.listings);
@@ -2937,6 +2937,7 @@ test("AMO summary moves from loading to ready without presenting placeholder zer
     timeout: 60_000,
   });
   await expect(verification).toContainText("Ready");
+  await expect(page.locator(".marketplace-app")).not.toContainText("Verifying public ProofOfWork data.");
   await expect(loadingMetrics.first()).not.toHaveText("—");
 });
 
@@ -3762,3 +3763,154 @@ for (const viewport of [
     await expect(page.getByRole("dialog", { name: "Computer navigation" })).toHaveCount(0);
   });
 }
+
+// Timings are observations, not hardware-independent performance budgets.
+// Playwright routing disables HTTP caching: repeat navigation measures warm
+// browser/process state, not a warmed asset cache.
+for (const count of [1_000, 10_000]) {
+  for (const workspace of ["standalone", "computer"]) {
+    test(`AMO controlled load measurement ${count} records ${workspace}`, async ({ page }, testInfo) => {
+      test.setTimeout(180_000);
+      const rows = Array.from({ length: count }, (_, index) => ({
+        ...responsiveAmoListing(index),
+        // Keep one known-valid sealed fixture shape; IDs/outpoints remain unique.
+        saleAuthorization: { ...RESPONSIVE_AMO_LISTINGS[0].saleAuthorization,
+          anchorTxid: fixtureTxid(index), nonce: `measurement-${index}` },
+        sealConfirmed: true, sealTxid: fixtureTxid(index, 20_000),
+      }));
+      const book = completeTokenListingHistoryFixture(rows);
+      const requests = [];
+      await installApiFixtures(page, {
+        countedAmo: true,
+        responseDelayMs: 20,
+        marketplaceSummaryTransform: (summary) => ({ ...summary, token: {
+          ...summary.token, listings: rows.slice(0, 40), listingBookComplete: false,
+          totalCounts: { ...summary.token.totalCounts, listings: count },
+          stats: { ...summary.token.stats, confirmedOpenListings: count, openListings: count },
+        } }),
+        tokenListingHistoryResponse: (url) => {
+          const start = Number((url.searchParams.get("cursor") || "fixture-0").split("-")[1]);
+          const end = Math.min(start + 200, count);
+          return { ...book, items: book.items.slice(start, end), start, end,
+            cursor: url.searchParams.get("cursor") || "", page: Math.floor(start / 200),
+            pageCount: Math.ceil(count / 200), hasMore: end < count,
+            nextCursor: end < count ? `fixture-${end}` : "" };
+        },
+      });
+      page.on("requestfinished", (request) => {
+        if (request.url().includes("/api/v1/")) requests.push({
+          url: request.url(), timing: request.timing(),
+        });
+      });
+      const samples = [];
+      for (const phase of ["first-navigation", "repeat-navigation"]) {
+        requests.length = 0;
+        const navigationEpoch = Date.now();
+        const start = performance.now();
+        await page.goto(`/?${workspace === "computer" ? "folder=marketplace" : "marketplace=1"}&asset=${WORK_TOKEN_ID}`);
+        await expect(page.getByLabel("AMO summary verification")).toHaveAttribute("data-state", "ready", { timeout: 90_000 });
+        const readyMs = performance.now() - start;
+        await expect(page.getByPlaceholder("Search sale tickets, sellers, txids")).toBeVisible();
+        const rendered = await page.locator("#credit-market-book .token-market-row").count();
+        expect(rendered).toBeGreaterThan(0);
+        expect(rendered).toBeLessThanOrEqual(25);
+        expect(requests.filter((request) => request.timing.startTime >= navigationEpoch && new URL(request.url).pathname === "/api/v1/token-history" && new URL(request.url).searchParams.get("kind") === "listings" && !new URL(request.url).searchParams.has("fresh"))).toHaveLength(Math.ceil(count / 200));
+        const searchStart = performance.now();
+        await page.getByPlaceholder("Search sale tickets, sellers, txids").fill(rows[count - 1].listingId);
+        await expect(page.locator("#credit-market-book .token-market-row")).toHaveCount(1);
+        samples.push({ phase, readyMs, searchMs: performance.now() - searchStart, rendered,
+          navigation: await page.evaluate(() => performance.getEntriesByType("navigation").map((entry) => entry.toJSON())),
+          apiRequests: [...requests] });
+      }
+      await testInfo.attach("controlled-load-measurements", { body: JSON.stringify({ count, workspace,
+        fixtureDelayMs: 20, cache: "disabled by Playwright routing", samples }, null, 2), contentType: "application/json" });
+    });
+  }
+}
+
+for (const workspace of ["standalone", "computer"]) {
+  test(`AMO checkpoint-bound page progress ${workspace}`, async ({ page }) => {
+    let release;
+    const gate = new Promise((resolve) => { release = resolve; });
+    const rows = RESPONSIVE_AMO_LISTINGS.slice(0, 201);
+    const book = completeTokenListingHistoryFixture(rows);
+    await installApiFixtures(page, {
+      marketplaceSummaryTransform: (summary) => ({ ...summary, token: { ...summary.token,
+        listings: rows.slice(0, 40), listingBookComplete: false,
+        totalCounts: { ...summary.token.totalCounts, listings: rows.length },
+      } }),
+      tokenListingHistoryResponse: async (url) => {
+        const start = url.searchParams.has("cursor") ? 200 : 0;
+        if (start) await gate;
+        const end = Math.min(start + 200, rows.length);
+        return { ...book, items: book.items.slice(start, end), start, end,
+          cursor: start ? "last-page" : "", page: start ? 1 : 0, pageCount: 2,
+          hasMore: end < rows.length, nextCursor: end < rows.length ? "last-page" : "" };
+      },
+    });
+    try {
+      await page.goto(`/?${workspace === "computer" ? "folder=marketplace" : "marketplace=1"}&asset=${WORK_TOKEN_ID}`);
+      const verification = page.getByLabel("AMO summary verification");
+      await expect(verification).toHaveAttribute("data-state", "loading");
+      await expect(verification).toContainText("200 of 201 sale-ticket records verified at block");
+      await expect(page.getByPlaceholder("Search sale tickets, sellers, txids")).toHaveCount(0);
+      release();
+      await expect(verification).toHaveAttribute("data-state", "ready");
+      if (workspace === "standalone") await expect(page.locator(".marketplace-app")).not.toContainText("Verifying public ProofOfWork data.");
+    } finally { release(); }
+  });
+}
+
+// Serve fixtures and production assets directly so this test can exercise real
+// HTTP cache reuse without Playwright interception disabling the browser cache.
+test("Home production assets cold and warm cache measurements", async ({ page }, testInfo) => {
+  test.skip(process.env.POW_PLAYWRIGHT_PRODUCTION_BUILD !== "1", "Requires npm run build.");
+  const { createServer } = await import("node:http");
+  const { readFile } = await import("node:fs/promises");
+  const { resolve, extname } = await import("node:path");
+  let apiHandler;
+  await installApiFixtures({ route: async (_pattern, handler) => { apiHandler = handler; } });
+  const root = resolve("dist");
+  const server = createServer(async (request, response) => {
+    const url = new URL(request.url, `http://${request.headers.host}`);
+    try {
+      if (url.pathname.startsWith("/api/v1/")) {
+        await apiHandler({ request: () => ({ url: () => url.href }),
+          fulfill: async ({ body, contentType = "application/json", status = 200 }) => {
+            response.writeHead(status, { "Content-Type": contentType, "Cache-Control": "no-store" });
+            response.end(body);
+          } });
+        return;
+      }
+      const pathname = url.pathname.startsWith("/assets/") ? url.pathname : "/index.html";
+      const file = resolve(root, `.${pathname}`);
+      if (!file.startsWith(`${root}/`)) throw new Error("Invalid asset path");
+      const type = { ".js": "text/javascript", ".css": "text/css", ".html": "text/html", ".woff2": "font/woff2", ".woff": "font/woff" }[extname(file)] || "application/octet-stream";
+      response.writeHead(200, { "Content-Type": type, "Cache-Control": pathname.startsWith("/assets/") ? "public, max-age=31536000, immutable" : "no-cache" });
+      response.end(await readFile(file));
+    } catch (error) { if (!response.headersSent) response.writeHead(500); response.end(String(error)); }
+  });
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  try {
+    const samples = [];
+    for (const phase of ["cold-cache", "warm-cache"]) {
+      const start = performance.now();
+      await page.goto(`http://127.0.0.1:${server.address().port}/?landing=1`);
+      await expect(page.locator(".landing-app")).toContainText("Full-node ProofOfWork ID and DNS registry summaries verified.");
+      await expect(page.getByRole("button", { name: "Refresh Registries", exact: true })).toBeEnabled();
+      const readyMs = performance.now() - start;
+      await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+      samples.push({ phase, readyMs, entries: await page.evaluate(() => ({
+        navigation: performance.getEntriesByType("navigation").map((entry) => entry.toJSON()),
+        paint: performance.getEntriesByType("paint").map((entry) => entry.toJSON()),
+        resources: performance.getEntriesByType("resource").map((entry) => entry.toJSON()),
+      })) });
+    }
+    const assets = (sample) => sample.entries.resources.filter((entry) => entry.name.includes("/assets/") && entry.name.endsWith(".js"));
+    expect(assets(samples[0]).some((entry) => entry.transferSize > 0)).toBe(true);
+    expect(assets(samples[1]).every((entry) => entry.transferSize === 0)).toBe(true);
+    await testInfo.attach("cold-warm-cache-measurements", { body: JSON.stringify({
+      scope: "Home production build; local HTTP server; API fixture readiness separate from assets", samples,
+    }, null, 2), contentType: "application/json" });
+  } finally { server.closeAllConnections(); await new Promise((resolve) => server.close(resolve)); }
+});

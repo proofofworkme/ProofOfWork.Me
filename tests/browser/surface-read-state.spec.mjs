@@ -82,6 +82,7 @@ test("Home reads qualified counts and retains them after malformed fresh counts"
   const reads = []; const gate = delayed();
   await page.route("**/api/v1/**", async (route) => {
     const url = new URL(route.request().url());
+    if (url.pathname === "/api/v1/dns-summary") return fulfill(route, { indexedAt: NOW, registryCounts: { model: "proof-registry-counts-v1", complete: true, confirmedCount: 31, pendingCount: 0, totalCount: 31 } });
     if (url.pathname !== "/api/v1/registry-summary") return fallback(route);
     reads.push(url.searchParams.get("projection"));
     if (url.searchParams.has("fresh")) { await gate.promise; return fulfill(route, { registryCounts: { model: "proof-registry-counts-v1", complete: false, confirmedCount: 0, pendingCount: 0, totalCount: 0 } }); }
@@ -90,10 +91,37 @@ test("Home reads qualified counts and retains them after malformed fresh counts"
   await page.goto("/?landing=1");
   await expect(page.locator(".landing-app")).toContainText("505");
   gate.release();
-  await expect(page.locator(".landing-app")).toContainText("complete ID counts are unavailable");
+  await expect(page.locator(".landing-app")).toContainText("complete ProofOfWork ID registry counts are unavailable");
   await expect(page.locator(".landing-app")).toContainText("505");
   expect(reads.every((projection) => projection === "counts-v1")).toBe(true);
 });
+
+for (const failedRegistry of ["ID", "DNS"]) {
+  test(`Home retains ${failedRegistry} counts independently and recovers on refresh`, async ({ page }) => {
+    let failFresh = true;
+    await page.route("**/api/v1/**", async (route) => {
+      const url = new URL(route.request().url());
+      const isId = url.pathname === "/api/v1/registry-summary";
+      if (!isId && url.pathname !== "/api/v1/dns-summary") return fallback(route);
+      const failed = failFresh && url.searchParams.has("fresh") && (isId ? "ID" : "DNS") === failedRegistry;
+      return fulfill(route, { indexedAt: NOW, registryCounts: {
+        model: "proof-registry-counts-v1", complete: !failed,
+        confirmedCount: failed ? 0 : isId ? 505 : 31, pendingCount: 0,
+        totalCount: failed ? 0 : isId ? 505 : 31,
+      } });
+    });
+    await page.goto("/?landing=1");
+    const app = page.locator(".landing-app");
+    await expect(app).toContainText(`complete ProofOfWork ${failedRegistry} registry counts are unavailable`);
+    await expect(app).toContainText("505");
+    await expect(app).toContainText("31");
+    failFresh = false;
+    await page.getByRole("button", { name: "Refresh Registries", exact: true }).click();
+    await expect(app).not.toContainText("counts are unavailable");
+    await expect(app).toContainText("505");
+    await expect(app).toContainText("31");
+  });
+}
 
 test("Desktop rejects pending IDs via one current ID lookup without scanning the registry", async ({ page }) => {
   const reads = [];

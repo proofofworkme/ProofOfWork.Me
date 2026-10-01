@@ -28446,7 +28446,18 @@ export default function App() {
           const token = await tokenStateWithCurrentCompleteMarketplaceListings(
             snapshot.token,
             freshRead,
-            undefined,
+            (progress) => {
+              abortObsoleteContext();
+              if (signal.aborted || !completeTokenListingHistoryMatchesState(progress, snapshot.token)) {
+                return;
+              }
+              // Progress describes the new read, never ownership or a usable partial book.
+              // Retained data keeps its existing Last Verified qualification.
+              setMarketplaceSummaryReadState((current) => !signal.aborted &&
+                activeWorkspaceStatusKeyRef.current === scope && current.status === "loading"
+                ? { ...current, message: `${progress.items.length.toLocaleString()} of ${progress.totalCount.toLocaleString()} sale-ticket records verified at block ${Number(progress.indexedThroughBlock).toLocaleString()}. Verifying the complete AMO snapshot.` }
+                : current);
+            },
             signal,
           );
           abortObsoleteContext();
@@ -50897,6 +50908,18 @@ function marketplaceStatusForTab({
 }) {
   if (status.tone === "bad") {
     return status;
+  }
+
+  // The initial passive read message expires when the scoped summary loads.
+  // Do not replace signing, payment, or other action feedback here.
+  if (status.text === INITIAL_COMPUTER_STATUS.text) {
+    return {
+      bonds: bondSummary,
+      boosts: boostSummary,
+      dns: dnsSummary,
+      ids: idSummary,
+      tokens: tokenSummary,
+    }[active];
   }
 
   if (
