@@ -12,7 +12,7 @@ Current status: the eight scoped corrections and approved fixtures passed local
 acceptance and the frontend was committed, pushed and production-verified within
 the coverage below. The connected Files projection exposed a separate unresolved
 Audit28 recurrence; no overall Files byte-preservation closure is claimed.
-Announcement verification is recorded at the end when complete. The initial
+The release announcement is published and verified as recorded at the end. The initial
 approval covered local edits; the subsequent “i approve 1-4” added the described
 Git/frontend release/announcement steps. Production configuration, protocol
 migrations, node application changes, signing and broadcasts remain excluded.
@@ -469,3 +469,30 @@ without rewriting earlier observations. `hygiene:check` and `git diff --check`
 passed. Only this approved report and its evidence JSON changed; no tracked or
 protected deletion occurred. Source and deployed artifacts remain at the code
 commit above. Receipt commits use the required review trailers and hooks.
+
+## Verified release announcement
+
+The production receipt was committed as
+`b5bbb2e4d6ea4303a846b403fbe8cadf62cf8ae6` and pushed; the remote branch head
+matched that exact commit before posting. The approved release announcement was
+published using the logged-in in-app browser to `@proofofworkme`, then verified
+on its refreshed profile and public permalink. Displayed publication time:
+10:27 AM EDT, Oct 1, 2026.
+
+[Verified announcement](https://x.com/proofofworkme/status/2105665869988634880).
+
+> THE PROOFOFWORK COMPUTER KEEPS ITS RECEIPTS.
+>
+> Desktop and Browser discard stale reads. Failed histories keep verified data.
+> Dropped mail stays separate from pending.
+>
+> Release bytes checked across 15 public surfaces.
+>
+> https://computer.proofofwork.me
+>
+> $WORK $POWB $INCB
+
+The companion evidence records the verification time and screenshot hash.
+This documentation-only completion does not deploy different code or generate
+a second release announcement. All eight corrections are accepted within the
+stated evidence; the remaining AUD28-04 branch and historical gaps stay open.

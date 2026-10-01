@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "status": "approved corrections and frontend release verified within stated coverage; remaining AUD28-04 indexed Files projection; announcement pending",
+  "status": "approved corrections and frontend release complete within stated coverage; AUD28-04 indexed Files projection and historical gaps remain open",
   "date": "2026-10-01",
   "timezone": "America/Toronto",
   "investigationPasses": 3,
@@ -1563,7 +1563,7 @@
     "commits": true,
     "pushes": true,
     "deployments": true,
-    "announcements": false,
+    "announcements": true,
     "fixtureContinuation": {
       "fix": {
         "command": "npm run hygiene:fix",
@@ -1632,6 +1632,24 @@
         "command": "git diff --check",
         "exitCode": 0
       }
+    },
+    "announcementCompletion": {
+      "scope": "only approved report and evidence JSON; release code/source/production configuration unchanged",
+      "semanticReview": "verified post/body/account/cashtags/link; no second announcement for documentation bookkeeping",
+      "protectedRemovals": [],
+      "fix": {
+        "command": "npm run hygiene:fix",
+        "exitCode": 0,
+        "removedPaths": []
+      },
+      "check": {
+        "command": "npm run hygiene:check",
+        "exitCode": 0
+      },
+      "diffCheck": {
+        "command": "git diff --check",
+        "exitCode": 0
+      }
     }
   },
   "limitations": [
@@ -1646,7 +1664,7 @@
   "artifactBindings": {
     "report": {
       "path": "audits/2026-10-01-recursive-assurance-batch-1.md",
-      "sha256": "c3939c0492c1ee4a4b3ecd2558e1d37d8a2e3a7f533ed7fedc9fc71d1f89126c"
+      "sha256": "c354276ed28b9e5a03ed1080d80615c236b01e9029798201b1042b316a3356ef"
     },
     "localFiles": {
       "src/App.tsx": "aff8ad4f7dd2d3f4e36b7f748b60ac86a33e376a77e657b9ab5693cd241bd296",
@@ -1662,7 +1680,7 @@
     "priorReportSha256": "70bdcea79bc3df56ee34e70ad5e05be5b30d7483643b7c9a23d56dbddfc3b944"
   },
   "release": {
-    "status": "frontend published and verified; receipt commit and announcement pending",
+    "status": "frontend published, production-verified, receipt committed/pushed, announcement published and permalink verified; no second announcement for completion bookkeeping",
     "frontendOnly": true,
     "nodeApplicationChanges": false,
     "configurationChanges": false,
@@ -2274,6 +2292,19 @@
       "apiParserLimit": "component agreement is consistency evidence; Core checkpoint and arithmetic/raw transaction reference independent",
       "remainingFinding": "AUD28-04 connected Files indexed reader branch",
       "noUniversalBugFreedomClaim": true
+    },
+    "receiptCommit": "b5bbb2e4d6ea4303a846b403fbe8cadf62cf8ae6",
+    "receiptPushedAndRemoteHeadVerified": true,
+    "announcement": {
+      "ok": true,
+      "url": "https://x.com/proofofworkme/status/2105665869988634880",
+      "account": "@proofofworkme",
+      "verifiedAt": "2026-10-01T14:28:19.818Z",
+      "displayedTimestamp": "10:27 AM \u00b7 Oct 1, 2026",
+      "text": "THE PROOFOFWORK COMPUTER KEEPS ITS RECEIPTS.\n\nDesktop and Browser discard stale reads. Failed histories keep verified data. Dropped mail stays separate from pending.\n\nRelease bytes checked across 15 public surfaces.\n\nhttps://computer.proofofwork.me\n\n$WORK $POWB $INCB",
+      "screenshotPath": "/tmp/recursive-assurance-release-announcement.jpg",
+      "screenshotSha256": "6f1708fa181b7d3a48e030002a27711d8a94838dda30a5a532627377caeac585",
+      "method": "Logged-in in-app browser; sent confirmation plus refreshed profile and public permalink body verified"
     }
   },
   "initialLimitations": [
@@ -2294,5 +2325,5 @@
     "RA-V03": "verifier correction accepted by actual-source regression and fresh read-only production use",
     "AUD28-04": "remaining/recurring connected indexed-mail Files branch; no repair approved or attempted"
   },
-  "updatedAt": "2026-10-01T14:23:26.098769+00:00"
+  "updatedAt": "2026-10-01T14:28:39.779011+00:00"
 }
