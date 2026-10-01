@@ -5007,6 +5007,32 @@ as `BITCOIN_RPC_GETRAWTRANSACTION_MAX_IN_FLIGHT`,
 
 ## Frontend API
 
+DNS subdomain self-messages use a dedicated complete discovery lane after the
+protocol's pinned activation height. Registry-address Electrum history still
+proves root state, while contiguous exact-checkpoint raw block transitions
+discover every `pwdns1:sub1` carrier. Full serialized Core blocks, header and
+transaction Merkle binding, BIP141 witness evidence, candidate descriptors,
+and canonical input prevouts are verified using the same raw block witness as
+the canonical index. Verified discovery retains Core-derived child evidence
+through the last complete prefix. Every read rebinds that prefix hash to Core
+and a unique canonical index anchor, verifies the new tail, and closes against
+the exact index checkpoint. It never reconstructs cached authority from mutable
+event rows. A reorg drops the prefix and rebuilds it. The compact immutable
+block cache is bounded to 128 MiB, child projections to 64 MiB, and each catch-up
+read to 25 seconds; pending discovery is best effort and bounded to 256 indexed
+transactions. A retry can reuse verified blocks after a bounded catch-up fails.
+Missing blocks,
+descriptor mismatches, incomplete hydration, or unverifiable owner epochs close
+subdomain admission instead of implying zero children. Pending child messages
+are best-effort previews and cannot alter confirmed root or child resolution.
+
+The versioned child parser/reducer lives in
+`src/shared/protocol/dnsSubdomains.mjs` and is shared by API and browser writers.
+Its neutral carrier admission adds no WORK state delta or additional fee
+attribution. Existing companion Mail accounting remains independent. The DNS
+API exposes separate child records/history, counts, ownership epochs, and
+checkpoint-bound admission; root registration supply remains root-only.
+
 The frontend reads app data and broadcasts signed transactions through the ProofOfWork API. Production builds set the explicit app-domain API base:
 
 ```bash

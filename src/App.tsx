@@ -5,6 +5,8 @@ import { TransactionReview, type MailTransactionReview } from "./shared/componen
 import { BackupPreview } from "./shared/components/BackupPreview";
 import { applyLocalRestore, isBackupStorageKey, prepareLocalRestore, type RestorePlan } from "./shared/localBackup";
 import { inspectPreparedPayment } from "./shared/wallet/paymentReview";
+import { DnsSubdomains, assertDnsSubdomainAction, readDnsSubdomainSnapshot, type DnsSubdomainDraft } from "./features/dns/DnsSubdomains";
+import { buildDnsSubdomainPayload, DNS_SUBDOMAIN_SELF_PAYMENT_SATS, normalizeDnsSubdomainLabel } from "./shared/protocol/dnsSubdomains.mjs";
 import { assertFeeRatePrecision } from "./walletUtxos";
 import { canonicalWorkCapacityAddress, requireCanonicalWorkCapacity, type CanonicalWorkCapacity } from "./shared/work/canonicalWorkCapacity";
 import { assertCompleteTokenDirectory, assertCompleteIdReservations, walletReservationsReady, listingDisplayProjectionFingerprint } from "./shared/api/surfaceReadState";
@@ -21826,6 +21828,11 @@ export default function App() {
   const [dnsName, setDnsName] = useState("");
   const [dnsReceiveAddress, setDnsReceiveAddress] = useState("");
   const [managedDnsName, setManagedDnsName] = useState("");
+  const [dnsSubdomainDraft, setDnsSubdomainDraft] = useState<DnsSubdomainDraft>({ parent: "", label: "", action: "create", resolver: "" });
+  const [dnsSubdomainRefreshNonce, setDnsSubdomainRefreshNonce] = useState(0);
+  const [dnsSubdomainRestoreNonce, setDnsSubdomainRestoreNonce] = useState(0);
+  const dnsSubdomainInFlightRef = useRef(false);
+  useEffect(() => { setDnsSubdomainDraft({ parent: "", label: "", action: "create", resolver: "" }); }, [address, network]);
   const [dnsSalePriceSats, setDnsSalePriceSats] = useState(1000);
   const [dnsSaleBuyerAddress, setDnsSaleBuyerAddress] = useState("");
   const [dnsSaleReceiveAddress, setDnsSaleReceiveAddress] = useState("");
@@ -23718,7 +23725,7 @@ export default function App() {
     idTransferOwnerAddress, idTransferReceiveAddress, dnsName, dnsReceiveAddress,
     tokenTransferTokenId, tokenTransferAmount, tokenTransferRecipient, tokenDetailTarget,
     idSalePriceSats, idSaleBuyerAddress, idSaleReceiveAddress, idSaleAuthorization, idSelectedListingId, idPurchaseOwnerAddress, idPurchaseReceiveAddress,
-    managedDnsName, dnsSalePriceSats, dnsSaleBuyerAddress, dnsSaleReceiveAddress, dnsSaleAuthorization, dnsSelectedListingId, dnsPurchaseOwnerAddress, dnsPurchaseReceiveAddress,
+    managedDnsName, dnsSubdomainDraft, dnsSalePriceSats, dnsSaleBuyerAddress, dnsSaleReceiveAddress, dnsSaleAuthorization, dnsSelectedListingId, dnsPurchaseOwnerAddress, dnsPurchaseReceiveAddress,
     tokenListAmount, tokenListPriceSats, tokenListBuyerAddress, tokenListFaceProofs]);
   const actionContextRef = useRef(actionContext);
   actionContextRef.current = actionContext;
@@ -23769,10 +23776,16 @@ export default function App() {
     assertCompleteIdReservations(payload);
     return { ...normalizeRegistryApiState(payload), record: payload.record };
   }
-  async function reviewAndSendAction({ prepared, title, fields, payload, registry, registryProofs,
+  const loadDnsSubdomainState = useCallback(async (query: string, signal?: AbortSignal) => {
+    const payload = await fetchProofApiJson<unknown>(
+      `/api/v1/dns/${encodeURIComponent(query)}?current=1&fresh=1`, network, { signal });
+    return readDnsSubdomainSnapshot(payload, query, { network, validateAddress: value => isValidBitcoinAddress(value, network) });
+  }, [network]);
+  async function reviewAndSendAction({ prepared, title, fields, payload, expectedRecords, returnedSelfPayment = false, registry, registryProofs,
     key, context, revalidate, marketplace }: {
     prepared: Awaited<ReturnType<typeof buildPaymentPsbt>>; title: string; fields: [string, string][];
     payload: string; registry: string; registryProofs: number; key: string;
+    expectedRecords?: string[]; returnedSelfPayment?: boolean;
     context: ReturnType<typeof captureActionContext>; revalidate: () => Promise<void>;
     marketplace?: { payments: PaymentOutputSpec[]; labels: string[]; allowedAnchors?: PowIdSpentOutpoint[]; signInputIndexes?: number[]; foreignAnchor?: PowIdSpentOutpoint; explanation: string };
   }): Promise<string> {
@@ -23791,11 +23804,12 @@ export default function App() {
       const actualPayments = evidence.outputs.filter(output => output.kind === "payment");
       if (actualPayments.length !== payments.length || actualPayments.some((output, index) =>
         output.address !== payments[index].address || output.proofs !== String(payments[index].amountSats)) ||
-        JSON.stringify(evidence.records) !== JSON.stringify([payload]) ||
+        JSON.stringify(evidence.records) !== JSON.stringify(expectedRecords ?? [payload]) ||
         evidence.outputs.some(output => output.kind === "change" && output.address !== address)) {
         throw new Error("Prepared action does not match its exact payments, record, or change destination.");
       }
-      const returnedWalletProofs = marketplace?.signInputIndexes ? actualPayments.filter(output => output.address === address).reduce((sum, output) => sum + BigInt(output.proofs), 0n) : 0n;
+      if (returnedSelfPayment && actualPayments.some(output => output.address !== address)) throw new Error("A reviewed self-payment unexpectedly leaves the connected owner wallet.");
+      const returnedWalletProofs = marketplace?.signInputIndexes || returnedSelfPayment ? actualPayments.filter(output => output.address === address).reduce((sum, output) => sum + BigInt(output.proofs), 0n) : 0n;
       const foreignInput = marketplace?.foreignAnchor ? evidence.inputs.find(input => input.outpoint ===
         `${marketplace.foreignAnchor!.txid}:${marketplace.foreignAnchor!.vout}`) : undefined;
       if (marketplace?.foreignAnchor && !foreignInput) throw new Error("Seller ticket input is missing from the prepared purchase.");
@@ -30775,6 +30789,69 @@ export default function App() {
     }
   }
 
+  async function submitDnsSubdomain(draft: DnsSubdomainDraft): Promise<boolean> {
+    if (busy || actionInFlightRef.current || dnsSubdomainInFlightRef.current) return false;
+    dnsSubdomainInFlightRef.current = true;
+    const context = captureActionContext();
+    setBusy(true);
+    try {
+      if (!address || !window.unisat) throw new Error("Connect the confirmed parent owner wallet first.");
+      assertFeeRatePrecision(feeRate);
+      if (draft.action !== "revoke" && draft.resolver.trim() && !isValidBitcoinAddress(draft.resolver.trim(), network)) {
+        throw new Error("Enter a valid resolver override or leave it empty to inherit the parent resolver.");
+      }
+      setStatus({ tone: "idle", text: "Verifying current parent ownership, subdomain history, and protocol admission…" });
+      const fresh = await loadDnsSubdomainState(draft.parent);
+      context.assertCurrent();
+      const { parent, active } = assertDnsSubdomainAction(fresh, draft, address);
+      const epoch = parent.ownershipEpoch!;
+      const label = normalizeDnsSubdomainLabel(draft.label);
+      const name = `${label}.${draft.parent}.pow`;
+      const payload = buildDnsSubdomainPayload(draft.action === "revoke" ? { action: "revoke", parent: draft.parent, label, epoch }
+        : { action: draft.action, parent: draft.parent, label, epoch, resolver: draft.resolver.trim() || null },
+        { validateAddress: (value: string) => isValidBitcoinAddress(value, network) });
+      const expectedRecords = [...buildProtocolPayloads("", name), payload];
+      if (expectedRecords.reduce((bytes, record) => bytes + dataCarrierBytesForPayload(record), 0) > MAX_DATA_CARRIER_BYTES) throw new Error("Subdomain records exceed the transaction data-carrier limit.");
+      const targetIdentity = active ? JSON.stringify([active.txid, active.updatedTxid, active.resolver]) : "";
+      const revalidate = async () => {
+        const current = await loadDnsSubdomainState(draft.parent);
+        const currentAction = assertDnsSubdomainAction(current, draft, address, epoch);
+        const currentIdentity = currentAction.active ? JSON.stringify([currentAction.active.txid, currentAction.active.updatedTxid, currentAction.active.resolver]) : "";
+        if (targetIdentity !== currentIdentity || (draft.action !== "revoke" && !draft.resolver.trim() && currentAction.parent.receiveAddress !== parent.receiveAddress)) {
+          throw new Error("Subdomain or inherited resolver changed. Refresh, prepare, and review a new transaction.");
+        }
+        const dnsState = await fetchDnsRegistryState(network, true);
+        const intent = psbtUnsignedTransactionIntent(bitcoin.Psbt.fromHex(prepared.psbtHex, { network: bitcoinNetwork(network) }));
+        if (activeListingAnchorOutpointsForAddress(dnsState.listings, address, { network }).some(outpoint => transactionIntentSpendsOutpoint(intent, outpoint))) {
+          throw new Error("Prepared funding is now reserved by a DNS sale ticket. Refresh funds and review again.");
+        }
+      };
+      await ensureWalletNetwork(context.wallet!, network, address);
+      context.assertCurrent();
+      const dnsState = await fetchDnsRegistryState(network, true);
+      const prepared = await buildPaymentPsbt({ amountSats: DNS_SUBDOMAIN_SELF_PAYMENT_SATS, feeRate,
+        fromAddress: address, toAddress: address, network, requireConfirmedUtxos: true, protocolPayloads: expectedRecords,
+        excludeOutpoints: activeListingAnchorOutpointsForAddress(dnsState.listings, address, { network }) });
+      const txid = await reviewAndSendAction({ prepared, title: `Review subdomain ${draft.action}`,
+        fields: [["Subdomain", name], ["Subdomain action", draft.action], ["Parent owner", address],
+          ["Ownership period", `${epoch.txid}:${epoch.protocolVout}:${epoch.recordOrdinal}`],
+          ["Resolver mode", draft.action === "revoke" ? "Revoked; no resolution" : draft.resolver.trim() ? "Explicit override" : "Inherit current parent resolver"],
+          ["Resolver override", draft.action === "revoke" ? "" : draft.resolver.trim()],
+          ["Resolves to", draft.action === "revoke" ? "No address" : draft.resolver.trim() || parent.receiveAddress]],
+        payload, expectedRecords, returnedSelfPayment: true, registry: address, registryProofs: DNS_SUBDOMAIN_SELF_PAYMENT_SATS,
+        key: `dns-subdomain:${draft.parent}:${label}`, context, revalidate,
+        marketplace: { payments: [{ address, amountSats: DNS_SUBDOMAIN_SELF_PAYMENT_SATS }], labels: ["546-proof self-payment to the confirmed parent owner"],
+          explanation: "The 546-proof self-payment remains in your owner wallet; the net wallet cost is the miner fee. This self-message and public subdomain record belong to the reviewed parent ownership period. A confirmed parent transfer or purchase invalidates it. Pending records never establish resolution." },
+      });
+      setStatus(goodBroadcastStatus(`${name} ${draft.action} broadcast. Resolution changes only after confirmation.`, txid, network));
+      setDnsSubdomainRefreshNonce(value => value + 1);
+      return true;
+    } catch (error) {
+      setStatus({ tone: "bad", text: errorMessage(error, "Subdomain action failed. Task retained.") });
+      return false;
+    } finally { dnsSubdomainInFlightRef.current = false; setBusy(false); }
+  }
+
   async function registerDns(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
@@ -36251,6 +36328,7 @@ export default function App() {
   function canRestoreActionHere(receipt: ActionReceipt) {
     if (receipt.fields.some(([label]) => label === "Listing transaction")) return false;
     if (receipt.key.startsWith("registerDns:")) return dnsLaunchMode;
+    if (receipt.key.startsWith("dns-subdomain:")) return dnsLaunchMode || actionComputerMode || marketplaceMode;
     if (receipt.key.startsWith("registerId:")) return idLaunchMode || actionComputerMode;
     if (receipt.key.startsWith("id-mutation:")) return actionComputerMode;
     return receipt.key.startsWith("credit-transfer:") && Boolean(actionComputerMode || walletMode ||
@@ -36264,6 +36342,12 @@ export default function App() {
     } else if (receipt.key.startsWith("registerDns:")) {
       setDnsName(receipt.key.slice("registerDns:".length)); setDnsReceiveAddress(field("Resolver address"));
       if (!dnsLaunchMode) { setStatus({ tone: "idle", text: "Retained .pow details are shown above. Open DNS to resume registration." }); return; }
+    } else if (receipt.key.startsWith("dns-subdomain:")) {
+      const name = field("Subdomain").split(".");
+      const action = field("Subdomain action");
+      setDnsSubdomainDraft({ parent: name[1] ?? "", label: name[0] ?? "", action: action === "update" || action === "revoke" ? action : "create", resolver: field("Resolver override") });
+      setDnsSubdomainRestoreNonce(value => value + 1);
+      if (actionComputerMode) openFolder("marketplace");
     } else if (receipt.key.startsWith("id-mutation:")) {
       setManagedIdName(receipt.key.slice("id-mutation:".length));
       if (field("New owner")) { setIdTransferOwnerAddress(field("New owner")); setIdTransferReceiveAddress(field("Mail receiver after transfer")); }
@@ -36282,11 +36366,18 @@ export default function App() {
         <p role="status"><strong>{item.title}</strong> · {item.status === "unknown" ? "Broadcast outcome unknown" : item.status === "pending" ? "Pending confirmation" : item.status === "confirmed" ? "Confirmed transaction" : "Dropped transaction — review before retrying"}</p>
         <code className="review-exact">{item.txid}</code><p className="field-note">Local recovery evidence. Pending is not confirmed ownership, routing, or balance.</p>
         <details><summary>Inspect retained task</summary><dl className="review-fields">{item.fields.map(([label, value]) => <div key={label}><dt>{label}</dt><dd><code className="review-exact">{value}</code></dd></div>)}</dl></details>
-        {canRestoreActionHere(item) ? <button type="button" className="secondary" disabled={actionInFlightRef.current} onClick={() => restoreActionTask(item)}>Restore task fields</button> : <p className="field-note">Inspect and copy the retained fields here, then resume in <a href={item.key.startsWith("marketplace:") || item.fields.some(([label]) => label === "Listing transaction") ? appHref(MARKETPLACE_APP_URL, LOCAL_MARKETPLACE_APP_URL) : item.key.startsWith("registerDns:") ? appHref(DNS_APP_URL, LOCAL_DNS_APP_URL) : appHref(COMPUTER_APP_URL, LOCAL_COMPUTER_APP_URL)}>the appropriate workspace</a>.</p>}
+        {canRestoreActionHere(item) ? <button type="button" className="secondary" disabled={actionInFlightRef.current} onClick={() => restoreActionTask(item)}>Restore task fields</button> : <p className="field-note">Inspect and copy the retained fields here, then resume in <a href={item.key.startsWith("marketplace:") || item.fields.some(([label]) => label === "Listing transaction") ? appHref(MARKETPLACE_APP_URL, LOCAL_MARKETPLACE_APP_URL) : item.key.startsWith("registerDns:") || item.key.startsWith("dns-subdomain:") ? appHref(DNS_APP_URL, LOCAL_DNS_APP_URL) : appHref(COMPUTER_APP_URL, LOCAL_COMPUTER_APP_URL)}>the appropriate workspace</a>.</p>}
         <button type="button" className="secondary" disabled={actionRecoveryBusy || (item.status !== "unknown" && item.status !== "pending")} onClick={() => void refreshActionRecovery(item.txid)}>{actionRecoveryBusy ? "Checking transaction status…" : "Check transaction status"}</button>
       </section>)}
     {actionReview ? <ActionTransactionReview review={actionReview} returnFocus={actionReturnFocusRef.current} onCancel={() => finishActionReview(false)} onApprove={() => finishActionReview(true)} /> : null}
   </>;
+
+  const dnsSubdomainUi = <DnsSubdomains address={address} network={network} busy={busy}
+    roots={dnsRegistry} registryReady={dnsRegistryReadStatus === "ready"}
+    draft={dnsSubdomainDraft} setDraft={setDnsSubdomainDraft} load={loadDnsSubdomainState}
+    submit={submitDnsSubdomain} validateAddress={value => isValidBitcoinAddress(value, network)}
+    transactionUrl={txid => explorerTxUrl(txid, network)} refreshNonce={dnsSubdomainRefreshNonce}
+    feeControl={<fieldset disabled={busy} style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}><FeeRateControl feeRate={feeRate} setFeeRate={setFeeRate} /></fieldset>} />;
 
   if (idLaunchMode) {
     return (
@@ -36331,6 +36422,7 @@ export default function App() {
       <>
       {actionUi}
       <DnsLaunchApp
+        dnsSubdomainUi={dnsSubdomainUi}
         accountStats={connectedAccountStats}
         address={address}
         busy={busy}
@@ -36369,6 +36461,8 @@ export default function App() {
       <>
         {actionUi}
         <MarketplaceApp
+          dnsSubdomainUi={dnsSubdomainUi}
+          dnsSubdomainRestoreNonce={dnsSubdomainRestoreNonce}
           walletEvidence={marketplaceWalletEvidence}
           accountStats={connectedAccountStats}
           address={address}
@@ -37482,6 +37576,8 @@ export default function App() {
           />
         ) : activeFolder === "marketplace" ? (
           <MarketplaceWorkspace
+            dnsSubdomainUi={dnsSubdomainUi}
+            dnsSubdomainRestoreNonce={dnsSubdomainRestoreNonce}
             walletEvidence={marketplaceWalletEvidence}
             address={address}
             btcUsd={tokenBtcUsd}
@@ -49333,6 +49429,7 @@ function IdLaunchApp({
 }
 
 function DnsLaunchApp({
+  dnsSubdomainUi,
   accountStats = [],
   address,
   busy,
@@ -49356,6 +49453,7 @@ function DnsLaunchApp({
   submit,
   onRefresh,
 }: {
+  dnsSubdomainUi?: ReactNode;
   accountStats?: AppHeaderAccountStat[];
   address: string;
   busy: boolean;
@@ -49476,6 +49574,7 @@ function DnsLaunchApp({
             { href: "#dns-overview", label: "Overview" },
             { href: "#dns-register", label: "Register" },
             { href: "#dns-owned", label: "Your .pow" },
+            { href: "#dns-subdomains", label: "Subdomains" },
             { href: "#dns-registry", label: "Registry" },
           ]}
         />
@@ -49669,6 +49768,8 @@ function DnsLaunchApp({
             </section>
           </aside>
         </div>
+
+        {dnsSubdomainUi}
 
         <section className="id-launch-card" id="dns-registry">
           <div className="id-launch-section-head">
@@ -55111,6 +55212,8 @@ function TokenMarketplacePanel({
 }
 
 function MarketplaceApp({
+  dnsSubdomainUi,
+  dnsSubdomainRestoreNonce = 0,
   walletEvidence,
   accountStats = [],
   address,
@@ -55203,6 +55306,8 @@ function MarketplaceApp({
   onRetryMarketplaceSummary,
   onRefreshTokens,
 }: {
+  dnsSubdomainUi?: ReactNode;
+  dnsSubdomainRestoreNonce?: number;
   walletEvidence: TokenMarketplaceWalletEvidence;
   accountStats?: AppHeaderAccountStat[];
   address: string;
@@ -55313,6 +55418,7 @@ function MarketplaceApp({
     useState<MarketplaceTab>(() =>
       initialMarketplaceTabFromRoute(defaultMarketplaceTab),
     );
+  useEffect(() => { if (dnsSubdomainRestoreNonce > 0) setMarketplaceTab("dns"); }, [dnsSubdomainRestoreNonce]);
   const {
     error: boostMarketError,
     listings: boostListings,
@@ -55743,6 +55849,8 @@ function MarketplaceApp({
           tokenCount={marketplaceSummaryVerified ? creditTokens.length : undefined}
         />
 
+        {marketplaceTab === "dns" ? dnsSubdomainUi : null}
+
         {marketplaceTab !== "boosts" &&
         marketplaceTab !== "dns" &&
         !marketplaceSummaryVerified ? (
@@ -56134,6 +56242,8 @@ function MarketplaceApp({
 }
 
 function MarketplaceWorkspace({
+  dnsSubdomainUi,
+  dnsSubdomainRestoreNonce = 0,
   walletEvidence,
   address,
   btcUsd,
@@ -56222,6 +56332,8 @@ function MarketplaceWorkspace({
   onRetryMarketplaceSummary,
   onRefreshTokens,
 }: {
+  dnsSubdomainUi?: ReactNode;
+  dnsSubdomainRestoreNonce?: number;
   walletEvidence: TokenMarketplaceWalletEvidence;
   address: string;
   btcUsd: number;
@@ -56328,6 +56440,7 @@ function MarketplaceWorkspace({
     useState<MarketplaceTab>(() =>
       initialMarketplaceTabFromRoute(defaultMarketplaceTab),
     );
+  useEffect(() => { if (dnsSubdomainRestoreNonce > 0) setMarketplaceTab("dns"); }, [dnsSubdomainRestoreNonce]);
   const {
     error: boostMarketError,
     listings: boostListings,
@@ -56507,6 +56620,8 @@ function MarketplaceWorkspace({
         onChange={setMarketplaceTab}
         tokenCount={marketplaceSummaryVerified ? networkTokenCount : undefined}
       />
+
+      {marketplaceTab === "dns" ? dnsSubdomainUi : null}
 
       {marketplaceTab !== "boosts" &&
       marketplaceTab !== "dns" &&

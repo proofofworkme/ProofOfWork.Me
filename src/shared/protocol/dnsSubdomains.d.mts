@@ -1,0 +1,111 @@
+export const DNS_SUBDOMAIN_PREFIX: "pwdns1:sub1:";
+export const DNS_SUBDOMAIN_SELF_PAYMENT_SATS: 546;
+export const DNS_SUBDOMAIN_ACTIVATION_HEIGHT: number;
+export type DnsSubdomainAction = "create" | "update" | "revoke";
+export type DnsOwnershipEpoch = {
+  txid: string;
+  protocolVout: number;
+  recordOrdinal: number;
+};
+export type DnsSubdomainRecord = {
+  action: "create" | "update";
+  parent: string;
+  label: string;
+  epoch: DnsOwnershipEpoch;
+  resolver: string | null;
+} | {
+  action: "revoke";
+  parent: string;
+  label: string;
+  epoch: DnsOwnershipEpoch;
+  resolver?: never;
+};
+export type DnsSubdomainAddressValidator = (address: string) => boolean;
+export type DnsSubdomainOptions = { validateAddress?: DnsSubdomainAddressValidator };
+export type DnsSubdomainRootEvent = {
+  action: "register" | "transfer" | "buy" | "update";
+  name: string;
+  ownerAddress: string;
+  resolverAddress: string;
+  txid: string;
+  blockHeight: number;
+  txIndex: number;
+  protocolVout: number;
+  recordOrdinal: number;
+};
+export type DnsSubdomainEvent = {
+  payload: string;
+  txid: string;
+  blockHeight?: number | null;
+  txIndex?: number | null;
+  protocolVout: number;
+  recordOrdinal: number;
+  inputAddresses: (string | null)[];
+  hasCoinbaseInput?: boolean;
+  subdomainCarrierCount?: number;
+  outputs: { vout: number; address: string | null; valueSats: number | string | bigint }[];
+};
+export type DnsSubdomainRoot = {
+  name: string;
+  parent: string;
+  ownerAddress: string;
+  resolverAddress: string;
+  ownershipEpoch: DnsOwnershipEpoch;
+  ownershipEpochBlockHeight: number;
+};
+export type DnsSubdomainState = {
+  name: string;
+  parent: string;
+  label: string;
+  ownerAddress: string;
+  resolverOverride: string | null;
+  inherited: boolean;
+  resolverAddress: string;
+  resolvedAddress: string;
+  epoch: DnsOwnershipEpoch;
+  status: "active" | "revoked" | "invalidated";
+  txid: string;
+  createdTxid: string;
+  lastEventTxid: string;
+  updatedTxid: string;
+  createdAtBlock: number;
+  updatedAtBlock: number;
+  protocolVout: number;
+  recordOrdinal: number;
+  invalidatedByTxid?: string;
+  invalidatedAtBlock?: number;
+  revokedAtBlock?: number;
+};
+export type DnsSubdomainHistory = {
+  txid: string;
+  blockHeight: number | null;
+  txIndex: number | null;
+  protocolVout: number;
+  recordOrdinal: number;
+  record: DnsSubdomainRecord | null;
+  valid: boolean;
+  status: "accepted" | "rejected" | "pending";
+  reason: string | null;
+  state?: DnsSubdomainState;
+};
+export type DnsSubdomainReplay = {
+  records: DnsSubdomainState[];
+  roots: DnsSubdomainRoot[];
+  history: DnsSubdomainHistory[];
+  historicalRecords: DnsSubdomainState[];
+  pendingEvents: DnsSubdomainHistory[];
+};
+export function normalizeDnsSubdomainLabel(value: unknown): string;
+export function dnsSubdomainLabelError(value: unknown): string;
+export function parseDnsSubdomainName(value: unknown): { parent: string; label: string; name: string } | null;
+export function dnsSubdomainAddressIdentity(value: unknown): string;
+export function dnsOwnershipEpoch(event: Partial<DnsOwnershipEpoch> | null | undefined): DnsOwnershipEpoch | null;
+export function dnsSubdomainSelfSendAuthor(event: DnsSubdomainEvent & { subdomainCarrierCount: number }, options?: DnsSubdomainOptions): string | null;
+export function buildDnsSubdomainPayload(record: DnsSubdomainRecord, options?: DnsSubdomainOptions): string;
+export function parseDnsSubdomainPayload(payload: unknown, options?: DnsSubdomainOptions): DnsSubdomainRecord | null;
+export function replayDnsSubdomains(options?: {
+  rootEvents?: DnsSubdomainRootEvent[];
+  subdomainEvents?: DnsSubdomainEvent[];
+  activationHeight?: number;
+  validateAddress?: DnsSubdomainAddressValidator;
+}): DnsSubdomainReplay;

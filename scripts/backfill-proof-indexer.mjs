@@ -1,3 +1,7 @@
+import {
+  DNS_SUBDOMAIN_ACTIVATION_HEIGHT, DNS_SUBDOMAIN_PREFIX,
+  dnsSubdomainSelfSendAuthor,
+} from "../src/shared/protocol/dnsSubdomains.mjs";
 import { reviewedIncbReplayBaselineFromEvidence } from "../server/incb-replay-baseline.mjs";
 import { SCOPED_INCB_ORACLE_PIN, scopedIncbOracleProjectionRows, storedScopedIncbOracle } from "../server/incb-scoped-oracle.mjs";
 import { canonicalIncbReplayComponents } from "../server/incb-replay-components.mjs";
@@ -128,6 +132,7 @@ import {
   validateWorkAmoV5FrozenTerms,
   validateWorkAmoV5ReferencedAuthorization,
   parseWorkAmoV5RawPwdnsRecord,
+  isWorkAmoV5LivenetAddress,
   workAmoCanonicalPositionPrecedes,
   workAmoV5CanonicalPayloadCommitment,
   workAmoV5CanonicalStateCommitment,
@@ -421,6 +426,9 @@ const PUBLIC_LOG_EVENT_KINDS = new Set([
   "boost-transfer",
   "boost-unfollow",
   "browser",
+  "dns-subdomain-create",
+  "dns-subdomain-update",
+  "dns-subdomain-revoke",
   "dns-buy",
   "dns-delist",
   "dns-list",
@@ -5390,6 +5398,28 @@ function protocolItemsFromTx(tx, message) {
     );
     if (!parsed) {
       return [invalidProtocolItem(base, "Malformed DNS protocol event.")];
+    }
+    if (parsed.kind.startsWith("dns-subdomain-")) {
+      const carrierCount = canonicalRawProtocolRecordSetFromTransaction(tx).records.filter(record =>
+        record.protocol === "pwdns1" && record.rawRecordParts?.some(part =>
+          String(part.payloadHex ?? "").startsWith(Buffer.from(DNS_SUBDOMAIN_PREFIX).toString("hex")))).length;
+      const authorAddress = dnsSubdomainSelfSendAuthor({
+        txid: base.txid, recordOrdinal: base.recordOrdinal,
+        protocolVout: base.protocolVout, subdomainCarrierCount: carrierCount,
+        inputAddresses: (tx.vin ?? []).map(input => input?.prevout?.scriptpubkey_address ??
+          input?.prevout?.scriptPubKey?.address ?? null),
+        hasCoinbaseInput: (tx.vin ?? []).some(input => input?.coinbase !== undefined || input?.is_coinbase === true),
+        outputs: (base.recipients ?? []).map(output => ({ vout: output.vout,
+          address: output.address, valueSats: output.amountSats })),
+      }, { validateAddress: address => isWorkAmoV5LivenetAddress(address) });
+      const child = { ...base, ...parsed, authorAddress,
+        title: `DNS subdomain ${parsed.action}`, detail: `${parsed.label}.${parsed.parent}.pow`,
+        dnsSubdomainAuthority: "requires-complete-root-epoch-replay", valid: true };
+      if (!DNS_SUBDOMAIN_ACTIVATION_HEIGHT ||
+          (base.confirmed && base.blockHeight < DNS_SUBDOMAIN_ACTIVATION_HEIGHT) || !authorAddress) {
+        return [invalidProtocolItem(child, "dns-subdomain-carrier-not-admitted")];
+      }
+      return [child];
     }
     const saleAuthorization = parsed.saleAuthorization;
     const item = {

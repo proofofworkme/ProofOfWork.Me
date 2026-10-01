@@ -1,4 +1,12 @@
 #!/usr/bin/env node
+import {
+  DNS_SUBDOMAIN_ACTIVATION_HEIGHT, DNS_SUBDOMAIN_PREFIX,
+  DNS_SUBDOMAIN_SELF_PAYMENT_SATS, parseDnsSubdomainName, replayDnsSubdomains,
+} from "../src/shared/protocol/dnsSubdomains.mjs";
+import {
+  createDnsSubdomainDiscovery, dnsSubdomainCandidates, dnsSubdomainCoreBlockWitness,
+  qualifyDnsSubdomainLogPayload, dnsSubdomainLogPayloadHasChildren,
+} from "./dns-subdomain-discovery.mjs";
 import { reviewedIncbReplayBaselineEvidence, reviewedIncbReplayBaselineFromEvidence } from "./incb-replay-baseline.mjs";
 
 import { SCOPED_INCB_ORACLE_PIN, canonicalSummarySnapshotIdOutsideScopedOracle } from "./incb-scoped-oracle.mjs";
@@ -226,6 +234,7 @@ import {
   projectWorkAmoV5RawEvents,
   replayWorkAmoV5RawBlock,
   workAmoV5RawGenericStateCommitment,
+  workAmoV5RawBlockDiscoveryEnvelope,
   workAmoV5RawIdStateCommitment,
 } from "./work-amo-v5-raw.mjs";
 import {
@@ -302,6 +311,7 @@ import {
   proofIndexCanonicalInceptionMintWitnessesPayload,
   proofIndexCanonicalHistoricalWorkListingScopes,
   proofIndexCanonicalCheckpointPayload,
+  proofIndexDnsSubdomainDiscovery,
   proofIndexCanonicalSummaryTokenTablePayload,
   proofIndexReplayCanonicalSummaryTokenTablePayload,
   proofIndexCanonicalWorkListingById,
@@ -34814,6 +34824,147 @@ async function registryPayload(network) {
   }), txs, network);
 }
 
+
+function dnsSubdomainEnvelope(record, transaction) {
+  const txid = transactionTxid(transaction);
+  const confirmed = transactionConfirmed(transaction);
+  const part = record.rawRecordParts?.[0];
+  return {
+    payload: part?.decodeValid === true ? part.text : DNS_SUBDOMAIN_PREFIX,
+    txid,
+    blockHeight: confirmed ? transactionBlockHeight(transaction) : null,
+    txIndex: confirmed ? transactionBlockIndex(transaction) : null,
+    protocolVout: record.protocolVout,
+    recordOrdinal: record.recordOrdinal,
+    subdomainCarrierCount: dnsSubdomainCandidates(canonicalRawProtocolRecordSetFromTransaction(transaction).records).length,
+    // Unknown and coinbase inputs remain in place; filtering them would invent
+    // complete owner authority from a partial input set.
+    inputAddresses: (transaction.vin ?? []).map(input =>
+      input?.prevout?.scriptpubkey_address ?? null),
+    hasCoinbaseInput: (transaction.vin ?? []).some(input => input?.is_coinbase === true || input?.coinbase !== undefined),
+    outputs: (transaction.vout ?? []).map((output, vout) => ({
+      vout, address: output.scriptpubkey_address ?? null, valueSats: output.value,
+    })),
+  };
+}
+
+const discoverDnsSubdomains = createDnsSubdomainDiscovery({
+  readIndex: proofIndexDnsSubdomainDiscovery,
+  async readCoreHash(height) {
+    const result = await bitcoinRpc("getblockhash", [height]);
+    const hash = String(result?.ok ? result.result : "").trim().toLowerCase();
+    if (!/^[0-9a-f]{64}$/u.test(hash)) throw new Error("DNS subdomain prefix Core binding is unavailable.");
+    return hash;
+  },
+  async readCoreBlock(row) {
+    const context = await canonicalVerifierCurrentBlock("livenet", Number(row.height),
+      row.previous_block_hash, row.block_hash);
+    const envelope = workAmoV5RawBlockDiscoveryEnvelope({
+      blockTransactions: context.blockTransactions,
+      blockHeaderHex: context.blockHeaderHex,
+      blockHash: row.block_hash, blockHeight: Number(row.height),
+      previousBlockHash: row.previous_block_hash,
+    });
+    const transactions = new Map(context.transactions.map(tx => [transactionTxid(tx), tx]));
+    const childEvents = dnsSubdomainCandidates(envelope.records).map(record => {
+      const transaction = transactions.get(record.txid);
+      if (!transaction || transaction?._powCanonicalRpcHydration !== true ||
+          !transactionHasCompleteCanonicalPrevouts(transaction) ||
+          transactionBlockHash(transaction) !== row.block_hash ||
+          transactionBlockHeight(transaction) !== Number(row.height) ||
+          transactionBlockIndex(transaction) !== record.blockTransactionIndex) {
+        throw new Error("DNS subdomain Core carrier hydration is incomplete.");
+      }
+      return dnsSubdomainEnvelope(record, transaction);
+    });
+    return dnsSubdomainCoreBlockWitness(envelope, childEvents);
+  },
+  async hydratePending(txid, network) {
+    const tx = await fetchTransactionFromBitcoinRpc(txid, network, {
+      bypassCache: true, cacheResult: false, requireCanonicalPrevouts: true,
+    });
+    const entry = await bitcoinRpc("getmempoolentry", [txid]);
+    if (!entry?.ok || !tx || transactionTxid(tx) !== txid || transactionConfirmed(tx) ||
+        !transactionHasCompleteCanonicalPrevouts(tx)) return [];
+    return dnsSubdomainCandidates(canonicalRawProtocolRecordSetFromTransaction(tx).records)
+      .map(record => dnsSubdomainEnvelope(record, tx));
+  },
+});
+
+function dnsSubdomainPublicRecord(record, network, root = null) {
+  return { ...record, network, id: record.name.replace(/\.pow$/u, ""),
+    resolver: record.resolverOverride, receiveAddress: record.resolvedAddress,
+    txid: record.updatedTxid ?? record.lastEventTxid ?? record.txid,
+    confirmed: true, active: record.status === "active", valid: record.status === "active",
+    ownershipEpoch: record.epoch, blockHeight: record.updatedAtBlock ?? record.createdAtBlock,
+    currentOwnerAddress: root?.ownerAddress ?? record.ownerAddress,
+    currentOwnershipEpoch: root?.ownershipEpoch ?? record.epoch,
+  };
+}
+
+function dnsSubdomainPublicEvent(event, network, root = null) {
+  const record = event.record;
+  return { ...event, network, action: record?.action,
+    name: record ? `${record.label}.${record.parent}.pow` : undefined,
+    parent: record?.parent, label: record?.label, epoch: record?.epoch,
+    resolver: record?.resolver, confirmed: event.blockHeight !== null,
+    kind: `dns-subdomain-${record?.action ?? "event"}`,
+    reasonCode: event.reason ?? "",
+    currentOwnerAddress: root?.ownerAddress,
+    currentOwnershipEpoch: root?.ownershipEpoch,
+  };
+}
+
+async function dnsPayloadWithSubdomains(payload, state, checkpoint, network) {
+  const activationHeight = DNS_SUBDOMAIN_ACTIVATION_HEIGHT;
+  const baseAdmission = { activationHeight, minSelfPaymentSats: DNS_SUBDOMAIN_SELF_PAYMENT_SATS,
+    indexedThroughBlock: checkpoint.height, checkpointHash: checkpoint.blockHash,
+    protocolPrefix: DNS_SUBDOMAIN_PREFIX };
+  const rootEvents = (state._powAuditEvents ?? []).filter(event =>
+    ["register", "transfer", "marketTransfer", "update"].includes(event.kind)).map(event => ({
+      action: event.kind === "marketTransfer" ? "buy" : event.kind,
+      name: event.id, ownerAddress: event.ownerAddress,
+      resolverAddress: event.receiveAddress, txid: event.txid,
+      blockHeight: event.blockHeight, txIndex: event.blockIndex,
+      protocolVout: event.protocolVout, recordOrdinal: event.recordOrdinal,
+    }));
+  let discovery = { events: [], coverage: { complete: false } };
+  let unavailableReason = "";
+  if (activationHeight === 0) unavailableReason = "DNS subdomain activation is not configured.";
+  else if (checkpoint.height < activationHeight) unavailableReason = "DNS subdomain activation has not been reached.";
+  else {
+    try { discovery = await discoverDnsSubdomains(network, checkpoint, activationHeight); }
+    catch (error) { unavailableReason = `DNS subdomain coverage is unavailable: ${errorSummary(error)}`; }
+  }
+  const replay = replayDnsSubdomains({ rootEvents, subdomainEvents: discovery.events,
+    activationHeight, validateAddress: address => isValidBitcoinAddress(address, network) });
+  const roots = new Map(replay.roots.map(root => [root.parent, root]));
+  const records = (payload.records ?? []).map(record => {
+    const root = record.confirmed === true ? roots.get(record.id) : null;
+    return root ? { ...record, ownershipEpoch: root.ownershipEpoch,
+      ownershipEpochBlockHeight: root.ownershipEpochBlockHeight } : record;
+  });
+  const finalCheckpoint = exactCoreTipFromBlockchainInfo(await bitcoinRpc("getblockchaininfo", []));
+  if (finalCheckpoint?.height !== checkpoint.height || finalCheckpoint.blockHash !== checkpoint.blockHash) {
+    throw new Error("DNS subdomain canonical checkpoint changed during the read.");
+  }
+  return { ...payload, records,
+    subdomains: unavailableReason ? [] : replay.records.map(record => dnsSubdomainPublicRecord(record, network, roots.get(record.parent))),
+    subdomainEvents: unavailableReason ? [] : replay.history.map(event => dnsSubdomainPublicEvent(event, network, roots.get(event.record?.parent))),
+    subdomainPendingEvents: unavailableReason ? [] : replay.pendingEvents.map(event => dnsSubdomainPublicEvent(event, network, roots.get(event.record?.parent))),
+    subdomainHistoricalRecords: unavailableReason ? [] : replay.historicalRecords.map(record => dnsSubdomainPublicRecord(record, network, roots.get(record.parent))),
+    subdomainCoverage: { ...discovery.coverage, complete: !unavailableReason && discovery.coverage.complete === true },
+    subdomainAdmission: { ...baseAdmission, ready: !unavailableReason,
+      reason: unavailableReason || "Complete confirmed Core/index coverage verified.",
+      reasonCode: unavailableReason ? "dns-subdomain-coverage-unavailable" : "" },
+    subdomainStats: { active: unavailableReason ? null : replay.records.length,
+      confirmedEvents: unavailableReason ? null : replay.history.length,
+      invalidEvents: unavailableReason ? null : replay.history.filter(event => !event.valid).length,
+      pendingEvents: unavailableReason ? null : replay.pendingEvents.length,
+      historicalRecords: unavailableReason ? null : replay.historicalRecords.length },
+  };
+}
+
 async function dnsRegistryPayload(network) {
   const registryAddress = dnsRegistryAddressForNetwork(network);
   if (!registryAddress) {
@@ -34887,7 +35038,7 @@ async function dnsRegistryPayload(network) {
   );
   const listings = await filterSpendableListings(state.listings, network);
   const indexedThroughBlock = checkpoint.height;
-  return {
+  return dnsPayloadWithSubdomains({
     ...registryPayloadFromState(state, {
       indexedThroughBlock,
       listings,
@@ -34905,7 +35056,16 @@ async function dnsRegistryPayload(network) {
     protocol: "pwdns1",
     protocolPrefix: DNS_PROTOCOL_PREFIX,
     registryId: DNS_REGISTRY_ID,
-  };
+  }, state, checkpoint, network);
+}
+
+async function logPayloadWithDnsSubdomainAuthority(payload, network) {
+  if (!dnsSubdomainLogPayloadHasChildren(payload)) return payload;
+  try {
+    return qualifyDnsSubdomainLogPayload(payload, await dnsRegistryPayload(network));
+  } catch (error) {
+    throw freshDataUnavailableError(`DNS subdomain Log authority unavailable: ${errorSummary(error)}`);
+  }
 }
 
 async function strictPublicDnsRegistryPayload(network, options = {}) {
@@ -80344,7 +80504,8 @@ async function handleRequest(request, response) {
         response,
         200,
         url.searchParams.get("projection") === "counts-v1"
-          ? registryCountsProjection(payload)
+          ? { ...registryCountsProjection(payload), subdomainStats: payload.subdomainStats,
+              subdomainCoverage: payload.subdomainCoverage, subdomainAdmission: payload.subdomainAdmission }
           : payload,
         freshRead ? FRESH_READ_CACHE_CONTROL : EXPENSIVE_READ_CACHE_CONTROL,
       );
@@ -80367,7 +80528,9 @@ async function handleRequest(request, response) {
       pathParts[1] === "v1" &&
       pathParts[2] === "dns"
     ) {
-      const id = normalizePowDnsName(decodeURIComponent(pathParts[3]));
+      const rawName = decodeURIComponent(pathParts[3]);
+      const childName = parseDnsSubdomainName(rawName);
+      const id = childName ? childName.parent : normalizePowDnsName(rawName);
       if (!powDnsNameIsValid(id)) {
         errorResponse(response, 400, "Invalid ProofOfWork DNS name.");
         return;
@@ -80375,6 +80538,32 @@ async function handleRequest(request, response) {
       const registry = await strictPublicDnsRegistryPayload(network, {
         fresh: freshRead || url.searchParams.get("current") === "1",
       });
+      const childRecords = (registry.subdomains ?? []).filter(record => record.parent === id);
+      const childHistory = (registry.subdomainEvents ?? []).filter(event => event.parent === id);
+      const childPending = (registry.subdomainPendingEvents ?? []).filter(event => event.parent === id);
+      const childHistorical = (registry.subdomainHistoricalRecords ?? []).filter(record => record.parent === id);
+      const parentRecord = (registry.records ?? []).find(record => record.id === id && record.confirmed === true) ?? null;
+      if (childName) {
+        if (registry.subdomainCoverage?.complete !== true || registry.subdomainAdmission?.ready !== true) {
+          throw freshDataUnavailableError(registry.subdomainAdmission?.reason ?? "DNS subdomain coverage is unavailable.");
+        }
+        const record = childRecords.find(item => item.name === childName.name) ?? null;
+        const history = childHistory.filter(item => item.name === childName.name);
+        const pendingEvents = childPending.filter(item => item.name === childName.name);
+        const historicalRecords = childHistorical.filter(item => item.name === childName.name);
+        const latestHistorical = historicalRecords.at(-1);
+        jsonResponse(response, 200, { network, name: childName.name, id: childName.name.replace(/\.pow$/u, ""),
+          parentRecord, record, records: record ? [record] : [], historicalRecords,
+          activity: history, subdomainEvents: history, pendingEvents, subdomains: record ? [record] : [],
+          routable: Boolean(record), status: record ? "confirmed" : latestHistorical?.status ??
+            (pendingEvents.some(event => event.valid) ? "pending" : "available"),
+          registryAddress: registry.registryAddress, registryId: DNS_REGISTRY_ID,
+          indexedAt: registry.indexedAt, indexedThroughBlock: registry.indexedThroughBlock,
+          checkpointHash: registry.checkpointHash, source: registry.source, coverage: registry.coverage,
+          subdomainCoverage: registry.subdomainCoverage, subdomainAdmission: registry.subdomainAdmission,
+        }, freshRead ? FRESH_READ_CACHE_CONTROL : EXPENSIVE_READ_CACHE_CONTROL);
+        return;
+      }
       const records = (Array.isArray(registry.records)
         ? registry.records
         : []
@@ -80427,6 +80616,11 @@ async function handleRequest(request, response) {
         records,
         registryAddress: registry.registryAddress,
         registryId: DNS_REGISTRY_ID,
+        subdomains: childRecords, subdomainEvents: childHistory,
+        subdomainPendingEvents: childPending, subdomainHistoricalRecords: childHistorical,
+        subdomainAdmission: registry.subdomainAdmission, subdomainCoverage: registry.subdomainCoverage,
+        indexedThroughBlock: registry.indexedThroughBlock, checkpointHash: registry.checkpointHash,
+        coverage: registry.coverage,
         routable: Boolean(confirmed),
         sales,
         source: registry.source,
@@ -80530,7 +80724,7 @@ async function handleRequest(request, response) {
           jsonResponse(
             response,
             200,
-            indexedPayload,
+            await logPayloadWithDnsSubdomainAuthority(indexedPayload, network),
             EXPENSIVE_READ_CACHE_CONTROL,
           );
           return;
@@ -80620,7 +80814,7 @@ async function handleRequest(request, response) {
           jsonResponse(
             response,
             200,
-            responsePayload,
+            await logPayloadWithDnsSubdomainAuthority(responsePayload, network),
             freshRead
               ? FRESH_READ_CACHE_CONTROL
               : EXPENSIVE_READ_CACHE_CONTROL,
@@ -80641,7 +80835,7 @@ async function handleRequest(request, response) {
         jsonResponse(
           response,
           200,
-          fallbackPayload,
+          await logPayloadWithDnsSubdomainAuthority(fallbackPayload, network),
           freshRead
             ? FRESH_READ_CACHE_CONTROL
             : EXPENSIVE_READ_CACHE_CONTROL,
@@ -80652,7 +80846,7 @@ async function handleRequest(request, response) {
         jsonResponse(
           response,
           200,
-          await freshProofIndexLogPayload(network),
+          await logPayloadWithDnsSubdomainAuthority(await freshProofIndexLogPayload(network), network),
           FRESH_READ_CACHE_CONTROL,
         );
         return;
@@ -80661,7 +80855,7 @@ async function handleRequest(request, response) {
       jsonResponse(
         response,
         200,
-        await mergedLogActivityPayload(network),
+        await logPayloadWithDnsSubdomainAuthority(await mergedLogActivityPayload(network), network),
         EXPENSIVE_READ_CACHE_CONTROL,
       );
       return;
@@ -80731,7 +80925,7 @@ async function handleRequest(request, response) {
           jsonResponse(
             response,
             200,
-            responsePayload,
+            await logPayloadWithDnsSubdomainAuthority(responsePayload, network),
             freshRead
               ? FRESH_READ_CACHE_CONTROL
               : EXPENSIVE_READ_CACHE_CONTROL,
@@ -80754,7 +80948,7 @@ async function handleRequest(request, response) {
       jsonResponse(
         response,
         200,
-        payload,
+        await logPayloadWithDnsSubdomainAuthority(payload, network),
         freshRead ? FRESH_READ_CACHE_CONTROL : EXPENSIVE_READ_CACHE_CONTROL,
       );
       return;

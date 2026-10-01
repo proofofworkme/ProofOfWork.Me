@@ -386,6 +386,14 @@ Future agents must preserve these unless the user explicitly asks for a migratio
 - Merged apps should be treated as normal apps across public links, local route maps, GitHub docs, and Growth inputs.
 - Attachments are small and verified by size/hash.
 - Confirmed chain history is canonical; pending status can become dropped.
+- DNS subdomains belong to the parent's ownership period. Owner-authorized
+  self-messages create, update, and revoke one-level children; every accepted
+  confirmed parent transfer or purchase resets the period, including a return
+  to the same wallet. Preserve invalidated records as evidence. The owner is
+  the authority, not the resolver or message recipient. Reads and signing must
+  bind complete parent and child history to one verified checkpoint; incomplete
+  discovery never becomes a false empty namespace. Child carriers add no
+  separate WORK economics and do not change root registration or AMO fees.
 - Local state is portable through backups, not server accounts.
 
 Boost threads and social evidence must be consistent across entry points.

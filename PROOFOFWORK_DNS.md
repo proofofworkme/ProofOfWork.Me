@@ -16,6 +16,7 @@ Do not change these without an explicit migration plan:
 - Mainnet registry address: `1F1zepCJ8VPcPoeMt6G4BPKuE3CYAxCKNY`
 - Registration price: `1000` proofs
 - Mutation price: `546` proofs for resolver updates, transfers, on-chain listings, seals, delistings, and buyer-funded marketplace transfers
+- Subdomain action payment: one `546`-proof self-payment to the root owner for create, update, or revoke; this is not a registry mutation fee
 - Protocol prefix: `pwdns1:`
 - Registration event: `pwdns1:r1:<name-base64url>:<owner-address>:<resolver-address>`
 - Resolver update event: `pwdns1:u:<name-base64url>:<resolver-address>`
@@ -33,16 +34,19 @@ Do not change these without an explicit migration plan:
 ## Product Surfaces
 
 ```text
-dns.proofofwork.me      focused .pow claim/search app
+dns.proofofwork.me      focused .pow claim/search and owner-controlled subdomains
 domain.proofofwork.me   redirect to https://dns.proofofwork.me/
 domains.proofofwork.me  redirect to https://dns.proofofwork.me/
-amo.proofofwork.me      DNS tab for listing, sealing, delisting, and purchases
-computer.proofofwork.me AMO workspace with the same DNS tab
+amo.proofofwork.me      DNS tab for root management, subdomains, and trading
+computer.proofofwork.me AMO workspace with the same DNS controls
 ```
 
-The DNS launch app stays narrow: connect UniSat, check/search `.pow`
-availability, register, view registry stats, view owned names, and view public
-registry records. DNS management and trading belong in AMO.
+The focused DNS app connects UniSat, checks/searches `.pow` availability,
+registers root names, shows registry stats and owned names, and lets a confirmed
+root owner create, update, or revoke subdomains. It also exposes public root and
+child records. AMO's DNS tab provides the same owner-controlled subdomain panel
+inside standalone AMO and Computer. Root resolver updates, direct transfers, and
+marketplace trading remain in AMO.
 
 Production reads use the same first-party ProofOfWork OP_RETURN API as the rest
 of the Computer:
@@ -84,9 +88,10 @@ pwdns1:buy5:<listing-txid>:<new-owner-address>:<new-resolver-address?>
 ```
 
 `pwdns1:r1` registrations require a 1,000-proof payment to the DNS registry
-address. Mutations and AMO writes require the same 546-proof registry mutation
-fee used by ID AMO. The registry payment output must appear before the DNS
-OP_RETURN output.
+address. The root mutations and AMO writes listed above require the same
+546-proof registry mutation fee used by ID AMO. The registry payment output must
+appear before the DNS OP_RETURN output. The additive `pwdns1:sub1` child actions
+use the owner self-payment described below; they do not pay this registry fee.
 
 AMO DNS sale tickets use the same sale-ticket lifecycle as IDs, with
 `pwdns-sale-v1` authorization JSON and `.pow` asset display. A valid purchase
@@ -102,3 +107,101 @@ recent DNS event. A changing checkpoint/history or incomplete hydration fails
 the read instead of implying complete coverage. Confirmed sale-ticket matching
 compares normalized terms by field, independent of JSON property insertion order;
 signatures and the sealed anchor txid remain separately verified.
+
+## Owner-controlled subdomains V1
+
+The additive `pwdns1:sub1` protocol registers exactly one child level, such as
+`abc.alice.pow`. It does not change root registration, fees, resolver updates,
+ownership, or sale-ticket rules. The current confirmed root owner controls every
+child. Root resolver recipients have no independent authority, and children have
+no independent transfer, sale, or delegated ownership in V1.
+
+The canonical record is:
+
+```text
+pwdns1:sub1:<canonical-json-base64url>
+```
+
+Create and update use this exact JSON key order:
+
+```json
+{"action":"create","parent":"alice","label":"abc","epoch":{"txid":"<root-ownership-event-txid>","protocolVout":1,"recordOrdinal":0},"resolver":null}
+```
+
+`action` is `create`, `update`, or `revoke`. `parent` and `label` are bare
+lowercase labels of 1–63 ASCII characters, using letters, numbers, and internal
+hyphens; each end must be a letter or number. Display and lookup use
+`<label>.<parent>.pow`. User builders normalize casing and trim input. Wire
+records must already have canonical lowercase labels.
+
+`epoch` has exactly `txid`, `protocolVout`, and `recordOrdinal`, in that order.
+The txid is 64 lowercase hexadecimal characters. The output index is a
+nonnegative uint32, and the record ordinal is a nonnegative safe integer.
+The epoch identifies the accepted root ownership event, never merely an owner
+address. `resolver: null` inherits the root's current confirmed resolver; a
+valid explicit network address overrides inheritance. Valid Bech32 address
+spellings are canonicalized to lowercase; Base58 address case remains exact.
+Updates may switch between inheritance and an override. A revoke record omits
+`resolver` entirely and otherwise uses the same field order and ownership epoch.
+
+The JSON must match exact canonical serialization: no extra or duplicate keys,
+alternate key order, whitespace, escaped equivalents, or alternate number
+encodings. Encoding is unpadded base64url with canonical unused bits and valid
+UTF-8. A carrier is bounded to 2,048 text characters. Ordinary messages that
+mention a child name are not subdomain records.
+
+Every action requires an explicit self-payment output of at least **546 proofs**
+before its own protocol OP_RETURN output, plus the miner fee. The payment goes
+to the root owner, not the DNS registry. Every transaction input must resolve to
+that same recognized owner address: mixed authors, unknown prevouts, missing
+input addresses, and coinbase inputs fail authorization. The transaction may
+carry a normal human-readable self-message, but V1 permits exactly **one**
+`sub1` carrier per transaction. All matching prefix carriers count, including
+malformed records, so one self-payment cannot authorize several child actions.
+Payment amounts are verified as exact nonnegative integers; floating-point or
+guessed base-unit conversions are not authority.
+
+Confirmed replay combines already accepted root registration, transfer,
+purchase, and resolver-update events with independently discovered raw child
+records. Ordering is exact block height, transaction index, protocol output
+index, and record ordinal. Missing or ambiguous accepted root positions fail
+the read closed. Registry-address history alone is not complete child
+discovery: owner self-messages must be discovered from complete canonical
+protocol history, including malformed child carriers.
+
+An accepted root registration opens its first ownership epoch. Every accepted
+confirmed direct transfer or marketplace purchase opens a new epoch, including
+a transfer to the same address. The current ownership epoch must be confirmed
+in an earlier block than a child action. Same-block resolver updates do not
+reset that height. At the child's exact position, the root must exist, the
+record must bind the current epoch, and the transaction author must be the
+current root owner. A former owner's message confirmed after a transfer has no
+authority, even if it was signed or broadcast earlier.
+
+Within an epoch, the first valid create for a child wins. An active child may be
+updated or revoked; updates and revokes for an absent child are invalid. A
+revoked child may be created again. Inherited children follow later accepted
+parent resolver updates, while explicit overrides retain their address.
+Listings, seals, and delistings do not reset the epoch or invalidate children.
+
+Every accepted ownership change immediately invalidates all active children of
+that root. A new owner may create those names again under the new epoch. An
+Alice → Bob → Alice sequence cannot resurrect Alice's old children. Revoked,
+invalidated, and rejected records remain inspectable history. Reorg replay
+rebuilds ownership and children from the surviving canonical chain, restoring
+or removing child validity according to that history.
+
+Pending records are best-effort previews over confirmed state. They never
+change canonical resolution, authorize a later pending update, reserve a name,
+or become ownership evidence. Subdomains are derived DNS state; their
+self-payments add no new registry or network-value contribution. Existing
+independent protocol accounting remains unchanged.
+
+The mainnet V1 activation boundary is the opening of block **969489**, pinned by
+`DNS_SUBDOMAIN_ACTIVATION_HEIGHT = 969489`. A zero boundary disables child
+admission. The rollout must prove complete canonical discovery from activation
+through the current checkpoint before exposing writes. Child-shaped messages
+confirmed below height 969489 never acquire authority. Wallet review names the
+exact action, full child name, parent owner,
+ownership epoch, resolver mode, self-payment destination, miner fee, change,
+and public wire record. Signing stays local.

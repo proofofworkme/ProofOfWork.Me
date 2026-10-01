@@ -128,7 +128,11 @@ growth.proofofwork.me       public growth model dashboard
 ```
 
 The ID subdomain is the first onboarding experience and should stay focused on claiming/resolving IDs, not reading mail.
-The DNS subdomain is the `.pow` claim/search experience and should stay focused on availability, registration, and public records; DNS trading belongs in AMO.
+The DNS subdomain is the `.pow` claim/search experience with owner-authorized
+one-level subdomain management and public records; DNS trading belongs in AMO.
+Subdomain records are `pwdns1:sub1` self-messages bound to the parent ownership
+epoch. They are not `pwid1:` IDs or aliases, and do not change ID registration,
+fees, management, or mail routing rules. See [`PROOFOFWORK_DNS.md`](PROOFOFWORK_DNS.md).
 The Desktop subdomain can resolve confirmed IDs for public file browsing, but it must not treat pending IDs as searchable/routable identities.
 Boost is the public 140-character social meta protocol over ProofOfWork addresses and confirmed ProofOfWork IDs. It must not mutate the canonical `pwid1:` registry for posts, likes, replies, reboosts, follows, unfollows, profile display, transfers, or marketplace activity.
 The AMO subdomain can connect UniSat, publish sale-ticket on-chain listings for owned confirmed IDs and `.pow` names, seal or delist active listings, and execute buyer-funded `pwid1:buy5` or `pwdns1:buy5` transfers. It is tabbed by asset class: the ID and DNS tabs are live, the Credits tab uses the same sale-ticket shape for non-bond credit `list5`, `seal5`, `delist5`, and `buy5` records, and the Bonds tab exposes POWB/INCB hard-price sale-ticket books with Inception and Infinity sub-tabs. The POWB/INCB hard-price declaration source is `server/bond-hard-price-declaration.mjs`; it is buildable with `npm run build:bond-hard-price-declaration` and prepared as an authority-input declaration with `npm run prepare:bond-hard-price-declaration`. The former Marketplace hostname resolves to this same surface.

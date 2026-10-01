@@ -7,7 +7,7 @@ Autonomous Money Organization.
 ## Product Boundaries
 
 - `id.proofofwork.me` is registration-only.
-- `dns.proofofwork.me` is `.pow` claim/search-only; `domain.proofofwork.me` and `domains.proofofwork.me` redirect there.
+- `dns.proofofwork.me` provides `.pow` claims, searches, and owner-controlled subdomains; `domain.proofofwork.me` and `domains.proofofwork.me` redirect there.
 - `computer.proofofwork.me` contains the authenticated AMO workspace.
 - `amo.proofofwork.me` is the canonical standalone AMO app.
 - `marketplace.proofofwork.me` is a compatibility hostname for the same app.
@@ -20,7 +20,7 @@ writes a chain-readable transfer/purchase event. Boost exposes active
 or from the original Boost Mail item.
 - `log.proofofwork.me` is the public read-only ProofOfWork Computer log for tx-backed app actions.
 - The IDs workspace is for registration, receiver updates, and direct owner transfers only.
-- The DNS launch surface is for `.pow` claim/search only.
+- The DNS launch surface provides `.pow` claims/searches and owner-authorized subdomain create/update/revoke actions. Root trading remains in AMO.
 - AMO is for on-chain listings, seals, delistings, buyer-funded purchases, credit sales, and future asset trades.
 - AMO actions with txids should be visible in Log, including listing tx, seal tx, delisting tx, buyer-funded transfer/buy tx, credit sale tx, and sale-ticket UTXO references.
 - AMO attention metrics should be derived from valid chain events: active listings, ID sale count, DNS sale count, credit sale count, seller-price sale volume, credit sale volume, and mutation-fee flow.
@@ -79,6 +79,15 @@ The current flow:
 The sale ticket is the scarce settlement point. Competing buyers must spend the same outpoint, so only one purchase can confirm. A vandal cannot consume the ticket without paying the seller the required price plus the ticket value.
 
 ## Current DNS AMO Model
+
+Accepted confirmed root transfers and purchases reset the root ownership
+epoch and invalidate every subdomain from the previous epoch. This includes
+same-address transfers and a later return to a previous owner. Listing,
+sealing, delisting, and resolver updates do not reset the epoch. Invalidated
+child records remain historical evidence. Subdomains have no independent
+sale ticket, transfer, or delegated ownership in this version; the DNS
+Subdomains panel in standalone AMO and Computer exposes owner management
+using the self-message protocol in [`PROOFOFWORK_DNS.md`](PROOFOFWORK_DNS.md).
 
 The live DNS AMO writes on-chain listing-book events to the canonical
 ProofOfWork DNS registry address for `domains@proofofwork.me`.

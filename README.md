@@ -236,6 +236,18 @@ type the bare prefix, such as `alice`; the app implies and displays `alice.pow`.
 DNS registrations cost 1,000 proofs and do not include PGP keys. DNS AMO actions
 live in `amo.proofofwork.me`, not in the focused claim app.
 
+Confirmed `.pow` owners can manage one-level subdomains such as
+`abc.alice.pow` through owner-authorized self-messages. Subdomain create,
+update, and revoke records bind to the parent's current ownership event;
+every accepted confirmed parent transfer or purchase invalidates the previous
+children, including a transfer back to the same wallet. Each action returns
+at least 546 proofs to the signing owner before the protocol record, plus
+miner fee. Children inherit the current parent resolver unless explicitly
+overridden. The DNS app and Computer's AMO DNS panel expose these controls;
+subdomain trading and delegation are outside this version. See
+[`PROOFOFWORK_DNS.md`](PROOFOFWORK_DNS.md) for activation, authority,
+discovery, and replay rules.
+
 ## What It Does
 
 - Connects UniSat.
@@ -342,7 +354,7 @@ live in `amo.proofofwork.me`, not in the focused claim app.
 - Computes WORK, Infinity, Inception, Growth, Log, and livenet credit/token views from one canonical confirmed ledger snapshot, so public searches, logged events, and network value cannot diverge after refresh.
 - Keeps the IDs workspace limited to registration, receiver updates, and direct owner transfers.
 - Keeps `id.proofofwork.me` registration-only. ID management and AMO flows live in the Computer app and the standalone AMO app.
-- Keeps `dns.proofofwork.me` claim/search-only. DNS management and AMO flows live in the Computer AMO workspace and the standalone AMO app.
+- Keeps `dns.proofofwork.me` focused on root claims, search, and owner-controlled subdomains. Root resolver updates, transfers, and trading remain in the Computer AMO workspace and the standalone AMO app.
 - Paginates the ID registry's confirmed transaction history and separately merges mempool transactions before applying first-confirmed-wins.
 - Reads registry, mail, files, pagination, wallet UTXOs, transaction preparation data, broadcast status, live BTC/USD, WORK floor, Infinity/Inception summaries, and app metrics through the first-party ProofOfWork OP_RETURN API.
 - Uses `/api/v1/consistency` and `npm run audit:ledger` as the regression gate for livenet ledger coverage across Log, Growth, WORK, Infinity, Inception, and credit/token history.

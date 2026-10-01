@@ -29,6 +29,9 @@ function dnsReader({ changedTip = false, changedHistory = false, hydrationFailur
   mapWithConcurrency: async (entries, _, fn) => Promise.all(entries.map(fn)),
   hydrateExactPendingRegistryTransaction: async () => {throw new Error('unexpected pending');},
   idRegistryStateFromTransactions: () => ({records:[],listings:[]}),
+  // This historical root-coverage fixture isolates the additive child adapter;
+  // complete child discovery/replay has its independent regression suite.
+  dnsPayloadWithSubdomains: async payload => payload,
   dnsActivityItemsFromEvents: () => [], parseDnsEventPayload: () => null,
   DNS_PROTOCOL_PREFIX:'pwdns1:', DNS_SALE_AUTH_VERSION_TICKET:'pwdns-sale-v1',
   filterSpendableListings: async value => value,

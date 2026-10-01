@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { TextDecoder } from "node:util";
 import * as ecc from "@bitcoinerlab/secp256k1";
 import * as bitcoin from "bitcoinjs-lib";
+import { parseDnsSubdomainPayload } from "../src/shared/protocol/dnsSubdomains.mjs";
 import {
   assertCanonicalUnicodeCaseMappingVersion,
   compareCanonicalUtf8,
@@ -1972,6 +1973,16 @@ export function parseWorkAmoV5RawPwdnsRecord(payload) {
     !workAmoV5HasNoTextStorageNul(text)
   ) {
     return null;
+  }
+  if (text.startsWith("pwdns1:sub1:")) {
+    const child = parseDnsSubdomainPayload(text, {
+      validateAddress: isWorkAmoV5LivenetAddress,
+    });
+    return child ? {
+      ...child,
+      id: `${child.label}.${child.parent}`,
+      kind: `dns-subdomain-${child.action}`,
+    } : null;
   }
   const parts = text.slice("pwdns1:".length).split(":");
   const decodedName = (value) =>

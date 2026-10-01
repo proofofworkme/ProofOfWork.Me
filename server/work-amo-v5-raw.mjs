@@ -1,6 +1,11 @@
 import { createHash } from "node:crypto";
 import * as bitcoin from "bitcoinjs-lib";
 import {
+  DNS_SUBDOMAIN_ACTIVATION_HEIGHT,
+  DNS_SUBDOMAIN_PREFIX,
+  dnsSubdomainSelfSendAuthor,
+} from "../src/shared/protocol/dnsSubdomains.mjs";
+import {
   CANONICAL_OP_RETURN_SCRIPT_MALFORMED,
   CANONICAL_OP_RETURN_TEXT_STORAGE_INVALID,
   CANONICAL_OP_RETURN_UTF8_INVALID,
@@ -2620,6 +2625,46 @@ function evaluatePwdns(record, context) {
       "protocol-event-invalid",
     );
   }
+  if (parsed.kind.startsWith("dns-subdomain-")) {
+    const authorAddress = dnsSubdomainSelfSendAuthor({
+      txid: record.txid,
+      protocolVout: record.position.protocolVout,
+      recordOrdinal: record.position.recordOrdinal,
+      subdomainCarrierCount: canonicalRawProtocolRecordSetFromTransaction(record.tx)
+        .records.filter((candidate) =>
+          candidate.protocol === "pwdns1" &&
+          candidate.rawRecordParts?.some((part) =>
+            String(part.payloadHex ?? "").startsWith(Buffer.from(DNS_SUBDOMAIN_PREFIX).toString("hex")))).length,
+      inputAddresses: (record.tx?.vin ?? []).map((input) =>
+        outputAddress(input?.prevout) || null),
+      hasCoinbaseInput: (record.tx?.vin ?? []).some((input) =>
+        typeof input?.coinbase === "string" || input?.is_coinbase === true),
+      outputs: rawOutputs(record).map((output) => ({
+        vout: output.vout,
+        address: output.address,
+        valueSats: String(output.amountSats),
+      })),
+    }, { validateAddress: isWorkAmoV5LivenetAddress });
+    if (!DNS_SUBDOMAIN_ACTIVATION_HEIGHT ||
+        record.position.blockHeight < DNS_SUBDOMAIN_ACTIVATION_HEIGHT ||
+        !authorAddress) {
+      return invalidOutcome(
+        "dns-subdomain-carrier-not-admitted", parsed, parsed.kind,
+      );
+    }
+    // Root ownership and epoch validity are resolved by the complete DNS
+    // projection. A child carrier adds no WORK economics or registry fee.
+    return {
+      chargesTransactionFee: false,
+      derived: [],
+      output: { ...parsed, authorAddress },
+      parsed,
+      reasonCode: "",
+      semanticKind: parsed.kind,
+      stateDelta: emptyStateDelta(),
+      valid: true,
+    };
+  }
   const inputs = inputAddresses(record);
   const requiredSats =
     parsed.kind === "dns-register" ? 1_000 : 546;
@@ -4789,6 +4834,35 @@ function canonicalFullBlockEnvelope(
     expectedRecordsByKey,
     rawProtocolCandidateCount,
     transactionsByTxid,
+  };
+}
+
+// Discovery uses the same complete serialized-block witness as economic replay.
+// It deliberately does not evaluate records or alter historical economic state.
+export function workAmoV5RawBlockDiscoveryEnvelope({
+  blockTransactions,
+  blockHeaderHex,
+  blockHash,
+  blockHeight,
+  previousBlockHash,
+} = {}) {
+  const hash = normalizedTxid(blockHash);
+  const previous = normalizedTxid(previousBlockHash);
+  const height = exactSafeInteger(blockHeight, { positive: true });
+  if (!hash || !previous || height === null) {
+    throw new TypeError("work-amo-v5-raw-discovery-checkpoint-invalid");
+  }
+  const envelope = canonicalFullBlockEnvelope(
+    blockTransactions, blockHeaderHex, hash, height, previous,
+  );
+  return {
+    blockDescriptorCommitment: envelope.blockDescriptorCommitment,
+    blockDescriptorModel: envelope.blockDescriptorModel,
+    bip141Witness: envelope.bip141Witness,
+    blockTimeMs: envelope.blockTimeMs,
+    blockTransactionCount: envelope.blockTransactionCount,
+    rawProtocolCandidateCount: envelope.rawProtocolCandidateCount,
+    records: [...envelope.expectedRecordsByKey.values()],
   };
 }
 
