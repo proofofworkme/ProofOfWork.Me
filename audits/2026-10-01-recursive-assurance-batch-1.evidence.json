@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "status": "local-acceptance-complete-within-declared-coverage; client production closure pending",
+  "status": "approved corrections and frontend release verified within stated coverage; remaining AUD28-04 indexed Files projection; announcement pending",
   "date": "2026-10-01",
   "timezone": "America/Toronto",
   "investigationPasses": 3,
@@ -9,7 +9,10 @@
     "initialAppSha256": "2a026334f439dfda41fca106549d25fd24b4dbb14781128fc7f6a2a6ef92a365",
     "recordedDeployedRevision": "527e4cbaa66f689169197c7ce9569425ef334492",
     "deployedRevisionEvidence": "audits/2026-10-01-audit29-remediation-release.md",
-    "livePrivateReleaseManifestReattested": true
+    "livePrivateReleaseManifestReattested": true,
+    "currentFrontendCommit": "dbfa88b95819ab0fb8cbe0eabaf349e635909b5e",
+    "nodeCheckoutHead": "527e4cbaa66f689169197c7ce9569425ef334492",
+    "nodeIdentityLimit": "read-only checkout HEAD, not full process/configuration attestation"
   },
   "authorization": {
     "response": "Approve this local correction batch",
@@ -79,64 +82,80 @@
       "severity": "P2",
       "priorStatus": "open",
       "localStatus": "behavior-verified-local",
-      "productionStatus": "not-deployed",
-      "behavior": "Desktop latest target/network/workspace wins; obsolete success/status/finally rejected"
+      "productionStatus": "correction verified locally and in exact deployed frontend within declared coverage",
+      "behavior": "Desktop latest target/network/workspace wins; obsolete success/status/finally rejected",
+      "initialProductionStatus": "not-deployed"
     },
     {
       "id": "H6-08",
       "severity": "P2",
       "priorStatus": "open",
       "localStatus": "behavior-verified-local",
-      "productionStatus": "not-deployed",
-      "behavior": "Holder/mint failed or incomplete reads remain unavailable or last verified; scoped pagination and observation invalidation"
+      "productionStatus": "correction verified locally and in exact deployed frontend within declared coverage",
+      "behavior": "Holder/mint failed or incomplete reads remain unavailable or last verified; scoped pagination and observation invalidation",
+      "initialProductionStatus": "not-deployed"
     },
     {
       "id": "H6-12",
       "severity": "P3",
       "priorStatus": "open",
       "localStatus": "behavior-verified-local",
-      "productionStatus": "not-deployed; standalone race reproduced live",
-      "behavior": "Standalone and integrated Browser manual/global network changes invalidate pending reads"
+      "productionStatus": "correction verified locally and in exact deployed frontend within declared coverage",
+      "behavior": "Standalone and integrated Browser manual/global network changes invalidate pending reads",
+      "initialProductionStatus": "not-deployed; standalone race reproduced live"
     },
     {
       "id": "AUD27-01",
       "severity": "P3",
       "priorStatus": "open",
       "localStatus": "behavior-verified-local",
-      "productionStatus": "not-deployed",
-      "behavior": "Pending, dropped and unknown/checking mail counts are separate"
+      "productionStatus": "correction verified locally and in exact deployed frontend within declared coverage",
+      "behavior": "Pending, dropped and unknown/checking mail counts are separate",
+      "initialProductionStatus": "not-deployed"
     },
     {
       "id": "RA-M01",
       "severity": "P2",
       "priorStatus": "new",
       "localStatus": "behavior-verified-local",
-      "productionStatus": "fault not observed live; not-deployed",
-      "behavior": "Scoped mail arrays and read declarations validated; complete indexed mail retained with enrichment warning"
+      "productionStatus": "correction verified locally and in exact deployed frontend within declared coverage",
+      "behavior": "Scoped mail arrays and read declarations validated; complete indexed mail retained with enrichment warning",
+      "initialProductionStatus": "fault not observed live; not-deployed"
     },
     {
       "id": "RA-V01",
       "severity": "P2",
       "priorStatus": "new",
       "localStatus": "behavior-verified-local",
-      "productionStatus": "local verifier; corrected parser used live",
-      "behavior": "Malformed numeric coercions cannot certify checkpoint/count zero"
+      "productionStatus": "verifier correction accepted by actual-source regression and fresh read-only production use",
+      "behavior": "Malformed numeric coercions cannot certify checkpoint/count zero",
+      "initialProductionStatus": "local verifier; corrected parser used live"
     },
     {
       "id": "RA-V02",
       "severity": "P2",
       "priorStatus": "new",
       "localStatus": "behavior-verified-local",
-      "productionStatus": "local verifier; real read-only retry recorded separately",
-      "behavior": "Ledger deadline spans headers and success/error bodies"
+      "productionStatus": "verifier correction accepted by actual-source regression and fresh read-only production use",
+      "behavior": "Ledger deadline spans headers and success/error bodies",
+      "initialProductionStatus": "local verifier; real read-only retry recorded separately"
     },
     {
       "id": "RA-V03",
       "severity": "P2",
       "priorStatus": "new",
       "localStatus": "behavior-verified-local",
-      "productionStatus": "local verifier; no live resume used",
-      "behavior": "Resume binds source/settings/order/age and preserves reused observations; failed results retry"
+      "productionStatus": "verifier correction accepted by actual-source regression and fresh read-only production use",
+      "behavior": "Resume binds source/settings/order/age and preserves reused observations; failed results retry",
+      "initialProductionStatus": "local verifier; no live resume used"
+    },
+    {
+      "id": "AUD28-04",
+      "severity": "P2",
+      "priorStatus": "public Desktop/mail-activity repair previously verified; indexed-reader branch remained",
+      "localStatus": "actual pinned helper reproduces observed trimmed fingerprint; no repair approved",
+      "productionStatus": "remaining/recurring connected indexed Files branch observed; current API-envelope/config/row attribution not captured",
+      "behavior": "Files message-body projection omits canonical final LF; Browser/Core and Desktop System reference preserve1018B"
     }
   ],
   "production": {
@@ -420,7 +439,8 @@
           "result": "Connect to inspect mail; account balances not invented; no warning/error console records"
         }
       ],
-      "timestampLimitation": "Initial browser snapshots did not record per-observation timestamps; later records have exact times. Summaries retain observation order without inventing missing times."
+      "timestampLimitation": "Initial browser snapshots did not record per-observation timestamps; later records have exact times. Summaries retain observation order without inventing missing times.",
+      "stage": "initial unauthenticated investigation; subsequent connected release checks are recorded under afterReleaseBrowser"
     },
     "finalHomeRedirectCheck": {
       "command": "node scripts/audit-production-surfaces.mjs --surface=home --timeout-ms=20000 --json",
@@ -445,6 +465,930 @@
         "status": 200,
         "elapsedMs": 5762
       }
+    },
+    "afterReleaseSurfaceCheck": {
+      "schemaVersion": 1,
+      "sourceSha256": "c876280878e2dce3a30e08e1de424127ddb7e9d8f10724dc5fe3fda1a9464765",
+      "auditId": "5d867f1b-7f5f-4304-a815-a715bc3af814",
+      "apiBase": "https://computer.proofofwork.me",
+      "complete": true,
+      "currentRunComplete": true,
+      "finishedAt": "2026-10-01T14:05:28.979Z",
+      "fresh": true,
+      "ok": true,
+      "pageOnly": false,
+      "results": [
+        {
+          "evidence": "current-run",
+          "startedAt": "2026-10-01T14:03:59.498Z",
+          "html": {
+            "assets": {
+              "checked": 4,
+              "modules": 1,
+              "modulepreloads": 2,
+              "stylesheets": 1
+            },
+            "contentType": "text/html; charset=utf-8",
+            "elapsedMs": 953,
+            "ok": true,
+            "requestedUrl": "https://proofofwork.me/",
+            "status": 200,
+            "title": "ProofOfWork.Me",
+            "url": "https://www.proofofwork.me/"
+          },
+          "key": "home",
+          "ok": true,
+          "probes": [
+            {
+              "label": "registry summary",
+              "elapsedMs": 9414,
+              "ok": true,
+              "requestedUrl": "https://computer.proofofwork.me/api/v1/registry-summary?network=livenet&fresh=1",
+              "status": 200,
+              "url": "https://computer.proofofwork.me/api/v1/registry-summary?network=livenet&fresh=1"
+            }
+          ],
+          "title": "proofofwork.me",
+          "finishedAt": "2026-10-01T14:04:10.556Z"
+        },
+        {
+          "evidence": "current-run",
+          "startedAt": "2026-10-01T14:04:10.556Z",
+          "html": {
+            "assets": {
+              "checked": 4,
+              "modules": 1,
+              "modulepreloads": 2,
+              "stylesheets": 1
+            },
+            "contentType": "text/html; charset=utf-8",
+            "elapsedMs": 479,
+            "ok": true,
+            "requestedUrl": "https://id.proofofwork.me/",
+            "status": 200,
+            "title": "ProofOfWork.Me",
+            "url": "https://id.proofofwork.me/"
+          },
+          "key": "id",
+          "ok": true,
+          "probes": [
+            {
+              "label": "ids summary",
+              "elapsedMs": 3908,
+              "ok": true,
+              "requestedUrl": "https://computer.proofofwork.me/api/v1/ids-summary?network=livenet&fresh=1",
+              "status": 200,
+              "url": "https://computer.proofofwork.me/api/v1/ids-summary?network=livenet&fresh=1"
+            }
+          ],
+          "title": "id.proofofwork.me",
+          "finishedAt": "2026-10-01T14:04:15.703Z"
+        },
+        {
+          "evidence": "current-run",
+          "startedAt": "2026-10-01T14:04:15.703Z",
+          "html": {
+            "assets": {
+              "checked": 4,
+              "modules": 1,
+              "modulepreloads": 2,
+              "stylesheets": 1
+            },
+            "contentType": "text/html; charset=utf-8",
+            "elapsedMs": 447,
+            "ok": true,
+            "requestedUrl": "https://dns.proofofwork.me/",
+            "status": 200,
+            "title": "ProofOfWork.Me",
+            "url": "https://dns.proofofwork.me/"
+          },
+          "key": "dns",
+          "ok": true,
+          "probes": [
+            {
+              "label": "dns summary",
+              "elapsedMs": 962,
+              "ok": true,
+              "requestedUrl": "https://computer.proofofwork.me/api/v1/dns-summary?network=livenet&fresh=1",
+              "status": 200,
+              "url": "https://computer.proofofwork.me/api/v1/dns-summary?network=livenet&fresh=1"
+            }
+          ],
+          "title": "dns.proofofwork.me",
+          "finishedAt": "2026-10-01T14:04:17.816Z"
+        },
+        {
+          "evidence": "current-run",
+          "startedAt": "2026-10-01T14:04:17.816Z",
+          "html": {
+            "assets": {
+              "checked": 4,
+              "modules": 1,
+              "modulepreloads": 2,
+              "stylesheets": 1
+            },
+            "contentType": "text/html; charset=utf-8",
+            "elapsedMs": 459,
+            "ok": true,
+            "requestedUrl": "https://desktop.proofofwork.me/",
+            "status": 200,
+            "title": "ProofOfWork.Me",
+            "url": "https://desktop.proofofwork.me/"
+          },
+          "key": "desktop",
+          "ok": true,
+          "probes": [
+            {
+              "label": "log summary",
+              "elapsedMs": 1392,
+              "ok": true,
+              "requestedUrl": "https://computer.proofofwork.me/api/v1/log-summary?network=livenet&fresh=1",
+              "status": 200,
+              "url": "https://computer.proofofwork.me/api/v1/log-summary?network=livenet&fresh=1"
+            }
+          ],
+          "title": "desktop.proofofwork.me",
+          "finishedAt": "2026-10-01T14:04:20.573Z"
+        },
+        {
+          "evidence": "current-run",
+          "startedAt": "2026-10-01T14:04:20.573Z",
+          "html": {
+            "assets": {
+              "checked": 4,
+              "modules": 1,
+              "modulepreloads": 2,
+              "stylesheets": 1
+            },
+            "contentType": "text/html; charset=utf-8",
+            "elapsedMs": 509,
+            "ok": true,
+            "requestedUrl": "https://browser.proofofwork.me/",
+            "status": 200,
+            "title": "ProofOfWork.Me",
+            "url": "https://browser.proofofwork.me/"
+          },
+          "key": "browser",
+          "ok": true,
+          "probes": [
+            {
+              "label": "activity summary",
+              "elapsedMs": 1411,
+              "ok": true,
+              "requestedUrl": "https://computer.proofofwork.me/api/v1/activity-summary?network=livenet&fresh=1",
+              "status": 200,
+              "url": "https://computer.proofofwork.me/api/v1/activity-summary?network=livenet&fresh=1"
+            }
+          ],
+          "title": "browser.proofofwork.me",
+          "finishedAt": "2026-10-01T14:04:23.172Z"
+        },
+        {
+          "evidence": "current-run",
+          "startedAt": "2026-10-01T14:04:23.172Z",
+          "html": {
+            "assets": {
+              "checked": 4,
+              "modules": 1,
+              "modulepreloads": 2,
+              "stylesheets": 1
+            },
+            "contentType": "text/html; charset=utf-8",
+            "elapsedMs": 444,
+            "ok": true,
+            "requestedUrl": "https://boost.proofofwork.me/",
+            "status": 200,
+            "title": "ProofOfWork.Me",
+            "url": "https://boost.proofofwork.me/"
+          },
+          "key": "boost",
+          "ok": true,
+          "probes": [
+            {
+              "label": "boost feed",
+              "elapsedMs": 1788,
+              "ok": true,
+              "requestedUrl": "https://computer.proofofwork.me/api/v1/boost?network=livenet&limit=1&fresh=1",
+              "status": 200,
+              "url": "https://computer.proofofwork.me/api/v1/boost?network=livenet&limit=1&fresh=1"
+            }
+          ],
+          "title": "boost.proofofwork.me",
+          "finishedAt": "2026-10-01T14:04:26.101Z"
+        },
+        {
+          "evidence": "current-run",
+          "startedAt": "2026-10-01T14:04:26.102Z",
+          "html": {
+            "assets": {
+              "checked": 4,
+              "modules": 1,
+              "modulepreloads": 2,
+              "stylesheets": 1
+            },
+            "contentType": "text/html; charset=utf-8",
+            "elapsedMs": 453,
+            "ok": true,
+            "requestedUrl": "https://amo.proofofwork.me/",
+            "status": 200,
+            "title": "ProofOfWork.Me",
+            "url": "https://amo.proofofwork.me/"
+          },
+          "key": "amo",
+          "ok": true,
+          "probes": [
+            {
+              "label": "marketplace summary",
+              "elapsedMs": 13249,
+              "ok": true,
+              "requestedUrl": "https://computer.proofofwork.me/api/v1/marketplace-summary?network=livenet&compact=1&fresh=1",
+              "status": 200,
+              "url": "https://computer.proofofwork.me/api/v1/marketplace-summary?network=livenet&compact=1&fresh=1"
+            }
+          ],
+          "title": "amo.proofofwork.me",
+          "finishedAt": "2026-10-01T14:04:40.582Z"
+        },
+        {
+          "evidence": "current-run",
+          "startedAt": "2026-10-01T14:04:40.582Z",
+          "html": {
+            "assets": {
+              "checked": 4,
+              "modules": 1,
+              "modulepreloads": 2,
+              "stylesheets": 1
+            },
+            "contentType": "text/html; charset=utf-8",
+            "elapsedMs": 469,
+            "ok": true,
+            "requestedUrl": "https://credit.proofofwork.me/",
+            "status": 200,
+            "title": "ProofOfWork.Me",
+            "url": "https://credit.proofofwork.me/"
+          },
+          "key": "credit",
+          "ok": true,
+          "probes": [
+            {
+              "label": "token summary",
+              "elapsedMs": 2561,
+              "ok": true,
+              "requestedUrl": "https://computer.proofofwork.me/api/v1/token-summary?network=livenet&compact=1&fresh=1",
+              "status": 200,
+              "url": "https://computer.proofofwork.me/api/v1/token-summary?network=livenet&compact=1&fresh=1"
+            }
+          ],
+          "title": "credit.proofofwork.me",
+          "finishedAt": "2026-10-01T14:04:44.436Z"
+        },
+        {
+          "evidence": "current-run",
+          "startedAt": "2026-10-01T14:04:44.436Z",
+          "html": {
+            "assets": {
+              "checked": 4,
+              "modules": 1,
+              "modulepreloads": 2,
+              "stylesheets": 1
+            },
+            "contentType": "text/html; charset=utf-8",
+            "elapsedMs": 543,
+            "ok": true,
+            "requestedUrl": "https://wallet.proofofwork.me/",
+            "status": 200,
+            "title": "ProofOfWork.Me",
+            "url": "https://wallet.proofofwork.me/"
+          },
+          "key": "wallet",
+          "ok": true,
+          "probes": [
+            {
+              "label": "WORK token",
+              "elapsedMs": 11531,
+              "ok": true,
+              "requestedUrl": "https://computer.proofofwork.me/api/v1/token?network=livenet&asset=WORK&fresh=1",
+              "status": 200,
+              "url": "https://computer.proofofwork.me/api/v1/token?network=livenet&asset=WORK&fresh=1"
+            }
+          ],
+          "title": "wallet.proofofwork.me",
+          "finishedAt": "2026-10-01T14:04:57.194Z"
+        },
+        {
+          "evidence": "current-run",
+          "startedAt": "2026-10-01T14:04:57.195Z",
+          "html": {
+            "assets": {
+              "checked": 4,
+              "modules": 1,
+              "modulepreloads": 2,
+              "stylesheets": 1
+            },
+            "contentType": "text/html; charset=utf-8",
+            "elapsedMs": 668,
+            "ok": true,
+            "requestedUrl": "https://work.proofofwork.me/",
+            "status": 200,
+            "title": "ProofOfWork.Me",
+            "url": "https://work.proofofwork.me/"
+          },
+          "key": "work",
+          "ok": true,
+          "probes": [
+            {
+              "label": "work summary",
+              "elapsedMs": 5203,
+              "ok": true,
+              "requestedUrl": "https://computer.proofofwork.me/api/v1/work-summary?network=livenet&compact=1&fresh=1",
+              "status": 200,
+              "url": "https://computer.proofofwork.me/api/v1/work-summary?network=livenet&compact=1&fresh=1"
+            },
+            {
+              "label": "work floor",
+              "elapsedMs": 4424,
+              "ok": true,
+              "requestedUrl": "https://computer.proofofwork.me/api/v1/work-floor?network=livenet&fresh=1",
+              "status": 200,
+              "url": "https://computer.proofofwork.me/api/v1/work-floor?network=livenet&fresh=1"
+            }
+          ],
+          "title": "work.proofofwork.me",
+          "finishedAt": "2026-10-01T14:05:08.291Z"
+        },
+        {
+          "evidence": "current-run",
+          "startedAt": "2026-10-01T14:05:08.291Z",
+          "html": {
+            "assets": {
+              "checked": 4,
+              "modules": 1,
+              "modulepreloads": 2,
+              "stylesheets": 1
+            },
+            "contentType": "text/html; charset=utf-8",
+            "elapsedMs": 468,
+            "ok": true,
+            "requestedUrl": "https://infinity.proofofwork.me/",
+            "status": 200,
+            "title": "ProofOfWork.Me",
+            "url": "https://infinity.proofofwork.me/"
+          },
+          "key": "infinity",
+          "ok": true,
+          "probes": [
+            {
+              "label": "infinity summary",
+              "elapsedMs": 2407,
+              "ok": true,
+              "requestedUrl": "https://computer.proofofwork.me/api/v1/infinity-summary?network=livenet&fresh=1",
+              "status": 200,
+              "url": "https://computer.proofofwork.me/api/v1/infinity-summary?network=livenet&fresh=1"
+            }
+          ],
+          "title": "infinity.proofofwork.me",
+          "finishedAt": "2026-10-01T14:05:11.875Z"
+        },
+        {
+          "evidence": "current-run",
+          "startedAt": "2026-10-01T14:05:11.875Z",
+          "html": {
+            "assets": {
+              "checked": 4,
+              "modules": 1,
+              "modulepreloads": 2,
+              "stylesheets": 1
+            },
+            "contentType": "text/html; charset=utf-8",
+            "elapsedMs": 613,
+            "ok": true,
+            "requestedUrl": "https://inception.proofofwork.me/",
+            "status": 200,
+            "title": "ProofOfWork.Me",
+            "url": "https://inception.proofofwork.me/"
+          },
+          "key": "inception",
+          "ok": true,
+          "probes": [
+            {
+              "label": "inception summary",
+              "elapsedMs": 2194,
+              "ok": true,
+              "requestedUrl": "https://computer.proofofwork.me/api/v1/inception-summary?network=livenet&fresh=1",
+              "status": 200,
+              "url": "https://computer.proofofwork.me/api/v1/inception-summary?network=livenet&fresh=1"
+            }
+          ],
+          "title": "inception.proofofwork.me",
+          "finishedAt": "2026-10-01T14:05:15.790Z"
+        },
+        {
+          "evidence": "current-run",
+          "startedAt": "2026-10-01T14:05:15.790Z",
+          "html": {
+            "assets": {
+              "checked": 4,
+              "modules": 1,
+              "modulepreloads": 2,
+              "stylesheets": 1
+            },
+            "contentType": "text/html; charset=utf-8",
+            "elapsedMs": 454,
+            "ok": true,
+            "requestedUrl": "https://log.proofofwork.me/",
+            "status": 200,
+            "title": "ProofOfWork.Me",
+            "url": "https://log.proofofwork.me/"
+          },
+          "key": "log",
+          "ok": true,
+          "probes": [
+            {
+              "label": "log summary",
+              "elapsedMs": 3101,
+              "ok": true,
+              "requestedUrl": "https://computer.proofofwork.me/api/v1/log-summary?network=livenet&fresh=1",
+              "status": 200,
+              "url": "https://computer.proofofwork.me/api/v1/log-summary?network=livenet&fresh=1"
+            }
+          ],
+          "title": "log.proofofwork.me",
+          "finishedAt": "2026-10-01T14:05:20.030Z"
+        },
+        {
+          "evidence": "current-run",
+          "startedAt": "2026-10-01T14:05:20.030Z",
+          "html": {
+            "assets": {
+              "checked": 4,
+              "modules": 1,
+              "modulepreloads": 2,
+              "stylesheets": 1
+            },
+            "contentType": "text/html; charset=utf-8",
+            "elapsedMs": 449,
+            "ok": true,
+            "requestedUrl": "https://growth.proofofwork.me/",
+            "status": 200,
+            "title": "ProofOfWork.Me",
+            "url": "https://growth.proofofwork.me/"
+          },
+          "key": "growth",
+          "ok": true,
+          "probes": [
+            {
+              "label": "growth summary",
+              "elapsedMs": 2694,
+              "ok": true,
+              "requestedUrl": "https://computer.proofofwork.me/api/v1/growth-summary?network=livenet&fresh=1",
+              "status": 200,
+              "url": "https://computer.proofofwork.me/api/v1/growth-summary?network=livenet&fresh=1"
+            }
+          ],
+          "title": "growth.proofofwork.me",
+          "finishedAt": "2026-10-01T14:05:23.856Z"
+        },
+        {
+          "evidence": "current-run",
+          "startedAt": "2026-10-01T14:05:23.856Z",
+          "html": {
+            "assets": {
+              "checked": 4,
+              "modules": 1,
+              "modulepreloads": 2,
+              "stylesheets": 1
+            },
+            "contentType": "text/html; charset=utf-8",
+            "elapsedMs": 202,
+            "ok": true,
+            "requestedUrl": "https://computer.proofofwork.me/",
+            "status": 200,
+            "title": "ProofOfWork.Me",
+            "url": "https://computer.proofofwork.me/"
+          },
+          "key": "computer",
+          "ok": true,
+          "probes": [
+            {
+              "label": "health",
+              "elapsedMs": 637,
+              "ok": true,
+              "requestedUrl": "https://computer.proofofwork.me/health?network=livenet",
+              "status": 200,
+              "url": "https://computer.proofofwork.me/health?network=livenet"
+            },
+            {
+              "label": "consistency",
+              "elapsedMs": 3282,
+              "ok": true,
+              "requestedUrl": "https://computer.proofofwork.me/api/v1/consistency?network=livenet&fresh=1",
+              "status": 200,
+              "url": "https://computer.proofofwork.me/api/v1/consistency?network=livenet&fresh=1"
+            }
+          ],
+          "title": "computer.proofofwork.me",
+          "finishedAt": "2026-10-01T14:05:28.979Z"
+        }
+      ],
+      "startedAt": "2026-10-01T14:03:59.497Z",
+      "runStartedAt": "2026-10-01T14:03:59.497Z",
+      "resumedAt": null,
+      "resumeSourceFinishedAt": null,
+      "observations": {
+        "currentRun": 15,
+        "reused": 0
+      },
+      "surfacePlan": [
+        {
+          "key": "home",
+          "title": "proofofwork.me",
+          "url": "https://proofofwork.me/",
+          "probes": [
+            {
+              "label": "registry summary",
+              "url": "https://computer.proofofwork.me/api/v1/registry-summary?network=livenet&fresh=1"
+            }
+          ]
+        },
+        {
+          "key": "id",
+          "title": "id.proofofwork.me",
+          "url": "https://id.proofofwork.me/",
+          "probes": [
+            {
+              "label": "ids summary",
+              "url": "https://computer.proofofwork.me/api/v1/ids-summary?network=livenet&fresh=1"
+            }
+          ]
+        },
+        {
+          "key": "dns",
+          "title": "dns.proofofwork.me",
+          "url": "https://dns.proofofwork.me/",
+          "probes": [
+            {
+              "label": "dns summary",
+              "url": "https://computer.proofofwork.me/api/v1/dns-summary?network=livenet&fresh=1"
+            }
+          ]
+        },
+        {
+          "key": "desktop",
+          "title": "desktop.proofofwork.me",
+          "url": "https://desktop.proofofwork.me/",
+          "probes": [
+            {
+              "label": "log summary",
+              "url": "https://computer.proofofwork.me/api/v1/log-summary?network=livenet&fresh=1"
+            }
+          ]
+        },
+        {
+          "key": "browser",
+          "title": "browser.proofofwork.me",
+          "url": "https://browser.proofofwork.me/",
+          "probes": [
+            {
+              "label": "activity summary",
+              "url": "https://computer.proofofwork.me/api/v1/activity-summary?network=livenet&fresh=1"
+            }
+          ]
+        },
+        {
+          "key": "boost",
+          "title": "boost.proofofwork.me",
+          "url": "https://boost.proofofwork.me/",
+          "probes": [
+            {
+              "label": "boost feed",
+              "url": "https://computer.proofofwork.me/api/v1/boost?network=livenet&limit=1&fresh=1"
+            }
+          ]
+        },
+        {
+          "key": "amo",
+          "title": "amo.proofofwork.me",
+          "url": "https://amo.proofofwork.me/",
+          "probes": [
+            {
+              "label": "marketplace summary",
+              "url": "https://computer.proofofwork.me/api/v1/marketplace-summary?network=livenet&compact=1&fresh=1"
+            }
+          ]
+        },
+        {
+          "key": "credit",
+          "title": "credit.proofofwork.me",
+          "url": "https://credit.proofofwork.me/",
+          "probes": [
+            {
+              "label": "token summary",
+              "url": "https://computer.proofofwork.me/api/v1/token-summary?network=livenet&compact=1&fresh=1"
+            }
+          ]
+        },
+        {
+          "key": "wallet",
+          "title": "wallet.proofofwork.me",
+          "url": "https://wallet.proofofwork.me/",
+          "probes": [
+            {
+              "label": "WORK token",
+              "url": "https://computer.proofofwork.me/api/v1/token?network=livenet&asset=WORK&fresh=1"
+            }
+          ]
+        },
+        {
+          "key": "work",
+          "title": "work.proofofwork.me",
+          "url": "https://work.proofofwork.me/",
+          "probes": [
+            {
+              "label": "work summary",
+              "url": "https://computer.proofofwork.me/api/v1/work-summary?network=livenet&compact=1&fresh=1"
+            },
+            {
+              "label": "work floor",
+              "url": "https://computer.proofofwork.me/api/v1/work-floor?network=livenet&fresh=1"
+            }
+          ]
+        },
+        {
+          "key": "infinity",
+          "title": "infinity.proofofwork.me",
+          "url": "https://infinity.proofofwork.me/",
+          "probes": [
+            {
+              "label": "infinity summary",
+              "url": "https://computer.proofofwork.me/api/v1/infinity-summary?network=livenet&fresh=1"
+            }
+          ]
+        },
+        {
+          "key": "inception",
+          "title": "inception.proofofwork.me",
+          "url": "https://inception.proofofwork.me/",
+          "probes": [
+            {
+              "label": "inception summary",
+              "url": "https://computer.proofofwork.me/api/v1/inception-summary?network=livenet&fresh=1"
+            }
+          ]
+        },
+        {
+          "key": "log",
+          "title": "log.proofofwork.me",
+          "url": "https://log.proofofwork.me/",
+          "probes": [
+            {
+              "label": "log summary",
+              "url": "https://computer.proofofwork.me/api/v1/log-summary?network=livenet&fresh=1"
+            }
+          ]
+        },
+        {
+          "key": "growth",
+          "title": "growth.proofofwork.me",
+          "url": "https://growth.proofofwork.me/",
+          "probes": [
+            {
+              "label": "growth summary",
+              "url": "https://computer.proofofwork.me/api/v1/growth-summary?network=livenet&fresh=1"
+            }
+          ]
+        },
+        {
+          "key": "computer",
+          "title": "computer.proofofwork.me",
+          "url": "https://computer.proofofwork.me/",
+          "probes": [
+            {
+              "label": "health",
+              "url": "https://computer.proofofwork.me/health?network=livenet"
+            },
+            {
+              "label": "consistency",
+              "url": "https://computer.proofofwork.me/api/v1/consistency?network=livenet&fresh=1"
+            }
+          ]
+        }
+      ],
+      "timeoutMs": 20000
+    },
+    "afterReleaseIndependentChain": {
+      "ok": true,
+      "startedAt": "2026-10-01T14:08:26Z",
+      "finishedAt": "2026-10-01T14:08:45Z",
+      "directPrivateCoreRpc": true,
+      "height": 969451,
+      "blockHash": "00000000000000000000004b63a0e0ce385e104408b93d13ba37b3657f9b0745",
+      "stableBeforeAfter": true,
+      "snapshotId": "59a921311759056f2d8dbac6",
+      "networkValueQ8": "1452112170417446873646341097",
+      "supply": "21000000",
+      "independentFloorQ8": "69148198591306993983",
+      "floorMatches": true,
+      "growthMatches": true,
+      "welcomeTxid": "8c2fd17b10a6550896035b9f725054d3c6e10c314911808d8f7aaa2955c3015b",
+      "welcomeConfirmations": 20199,
+      "welcomeHeight": 949253,
+      "welcomeBlockHash": "00000000000000000000d62351dbdee65198745a8ff15b73facf143ec2b49a62",
+      "welcomeCanonicalBlock": true,
+      "responseSha256": {
+        "core-before": "9cfebfcb7b4a318b61b266ea8d4cd9aa153801fc6f0627de6f5ef0032709179a",
+        "health": "67fee227ce81a77b6aef7ab62b124c23a84469ad3b37bb741679f9ad5d7a267a",
+        "work-floor": "8eb830cf890053aaa4bc0b63add64bf4db5280395f0456eb24f18e2657da6b0a",
+        "growth": "040b15102ab5e65a199747bffeb4f84cef91bd5b04d6691abfc36115cd59ff1e",
+        "welcome-core": "52ed82251d45b3575f81e12dfadc734abccdf040c4848f21bd8ec6cde3c83a3f",
+        "welcome-block": "262e16379293eb8d123267988b17ce1635fa634f385b746449b944557a2b4265",
+        "core-after": "9cfebfcb7b4a318b61b266ea8d4cd9aa153801fc6f0627de6f5ef0032709179a"
+      },
+      "limit": "independent checkpoint and integer reference; not a genesis replay of the aggregate"
+    },
+    "afterReleaseLedger": {
+      "status": "pass",
+      "maxTipLagBlocks": 0,
+      "snapshotId": "59a921311759056f2d8dbac6",
+      "networkValueProofs": "14521121704174468736.46341097",
+      "receipt": {
+        "path": "/tmp/recursive-assurance-ledger-after-release.log",
+        "bytes": 144,
+        "sha256": "01625805d6588466de5a0a67782ec166ff84b4e9532054b2e77b0c28a0c0e80a"
+      }
+    },
+    "welcomeRawIndependent": {
+      "ok": true,
+      "observedAt": "2026-10-01T14:17:46.410000+00:00",
+      "sourceFile": "/tmp/recursive-assurance-independent-chain-after-release/welcome-core.json",
+      "sourceSha256": "52ed82251d45b3575f81e12dfadc734abccdf040c4848f21bd8ec6cde3c83a3f",
+      "method": "Independent CompactSize transaction and OP_RETURN pushdata decoding; no application/server parser",
+      "serializedTxid": "8c2fd17b10a6550896035b9f725054d3c6e10c314911808d8f7aaa2955c3015b",
+      "serializedTxidMatchesCore": true,
+      "serializedScriptsMatchDecodedCore": true,
+      "transactionBytes": 1231,
+      "vinCount": 1,
+      "voutCount": 2,
+      "welcomeVout": 1,
+      "protocol": "pwm1:m:",
+      "protocolPayloadBytes": 1025,
+      "rawHtmlBytes": 1018,
+      "rawHtmlSha256": "f05b31a5f4dfabff5fb0ffe3bef1a03de4a8f5c562694609114ae6d352e9caad",
+      "uiRawHashMatches": true,
+      "reportedIframeBytes": 1369,
+      "reportedIframeSha256": "cc69271b49a073ed02277ac925807c492d4230b78baa201f9d379f22c865551d",
+      "previewHashIndependentlyRecomputed": false,
+      "rawTagCounts": {
+        "meta": 2,
+        "title": 1,
+        "main": 1,
+        "p": 8,
+        "h1": 1,
+        "b": 2,
+        "code": 1
+      },
+      "coreReportedBlockHash": "00000000000000000000d62351dbdee65198745a8ff15b73facf143ec2b49a62",
+      "coreReportedConfirmations": 20199,
+      "limits": "Captured Core response only; no fresh network/chain lookup or DOM execution. Preview sanitizer reserialization was inspected but iframe bytes were not independently reproduced."
+    },
+    "welcomePreviewIndependent": {
+      "ok": true,
+      "observedAt": "2026-10-01T14:18:35.365422+00:00",
+      "method": "Independent literal reconstruction of inspected browserStaticDocument wrapper for this shell-free captured fragment; no DOM execution",
+      "rawHtmlBytes": 1018,
+      "rawHtmlSha256": "f05b31a5f4dfabff5fb0ffe3bef1a03de4a8f5c562694609114ae6d352e9caad",
+      "removedOriginalDoctypeAndMetaBytes": 104,
+      "sanitizedKnownFragmentBytes": 914,
+      "addedWrapperBytes": 455,
+      "previewBytes": 1369,
+      "previewSha256": "cc69271b49a073ed02277ac925807c492d4230b78baa201f9d379f22c865551d",
+      "reportedIframeBytes": 1369,
+      "reportedIframeSha256": "cc69271b49a073ed02277ac925807c492d4230b78baa201f9d379f22c865551d",
+      "iframeAgreement": true,
+      "limits": "Matches this supplied fragment only; does not test general DOM sanitization or execute the Browser. No network or canonical chain refresh."
+    },
+    "afterReleaseBrowser": {
+      "connectedWallet": true,
+      "address": "1KNkUBREnfno2BeV7QsBf8XCWZN6YFfxPH",
+      "network": "livenet",
+      "signatures": 0,
+      "broadcasts": 0,
+      "newDrafts": 0,
+      "orderedFirstAuditPreserved": true,
+      "records": {
+        "path": "/tmp/recursive-assurance-production-ui-records.json",
+        "bytes": 151105,
+        "sha256": "90b25acd59c42dce7268a4a20d9a8ea2a510b1111d924333611d8d64df13b75a"
+      },
+      "Desktop": "real A2ownedfiles thenB4ownedfiles; previous verifiedA retained duringB read, busy controls; integratedA2ownedfiles plus separate1018B Systemreference accepted",
+      "Browser": "standalone pending manual-network change remainedTestnet4 and rejected obsolete completion; explicitMainnet recovery raw1018B canonicalSHA; previousMainnetproof not relabelled; integratedselectedTestnet4/Mainnetproof agreement observed but warm response may finish before action",
+      "Credit": "DRAIN2holders and mints1-25 then26-50 of110 accepted",
+      "WORK": "holders1-25 then26-50 of388 and mints1-25 then26-50 of21000 accepted; not exhaustive collection",
+      "ComputerMail": {
+        "inbox": 23,
+        "incoming": 0,
+        "sent": 11,
+        "outbox": 1,
+        "drafts": 0,
+        "droppedHeader": 1,
+        "pendingBadge": false,
+        "outboxTxid": "8e9074486fa0a6a75fd01f20c8a41a56ccd964be569e61e81e92c60266c001f0",
+        "rebuildDraftAvailable": true,
+        "rebuildDraftExecuted": false
+      },
+      "Files": "two owned attachments; derived message-body projection1017B/noncanonicalSHA documented as remainingAUD28-04",
+      "screenshots": [
+        {
+          "path": "/tmp/recursive-assurance-desktop-after-release.jpg",
+          "bytes": 89000,
+          "sha256": "e66b12d082db14914355645cba33f048344ef85ee5382f90dac7eaf1d72ed67b"
+        },
+        {
+          "path": "/tmp/recursive-assurance-browser-after-release.jpg",
+          "bytes": 82622,
+          "sha256": "35bc727b989caa16d2db6c0f362f8f4c340dd808d39ef1ce6657166ea40d52b2"
+        },
+        {
+          "path": "/tmp/recursive-assurance-outbox-after-release.jpg",
+          "bytes": 54344,
+          "sha256": "90da35a283bc9ba9eac9225b3d0205eebecb5381ecec9fae02bace1f354438d3"
+        }
+      ]
+    },
+    "remainingFilesProjection": {
+      "ok": true,
+      "observedAt": "2026-10-01T14:22:50.746Z",
+      "findingId": "AUD28-04",
+      "scope": "Offline attribution to unchanged indexed mailbox memo function; no correction",
+      "checkoutCommit": "dbfa88b95819ab0fb8cbe0eabaf349e635909b5e",
+      "referenceNodeCommit": "527e4cbaa66f689169197c7ce9569425ef334492",
+      "sourcePath": "server/db/proof-index-reader.mjs",
+      "currentFunctionLine": 39823,
+      "referenceFunctionLine": 39823,
+      "functionSha256": "d4b97f00f15a15033cce76a968c2b0f8364dc046bb2a2402573edad7b54b5ea9",
+      "referenceFunctionSha256": "d4b97f00f15a15033cce76a968c2b0f8364dc046bb2a2402573edad7b54b5ea9",
+      "exactFunctionSourceEqual": true,
+      "coreResponseFile": "/tmp/recursive-assurance-independent-chain-after-release/welcome-core.json",
+      "coreResponseSha256": "52ed82251d45b3575f81e12dfadc734abccdf040c4848f21bd8ec6cde3c83a3f",
+      "txid": "8c2fd17b10a6550896035b9f725054d3c6e10c314911808d8f7aaa2955c3015b",
+      "protocolVout": 1,
+      "rawHtml": {
+        "bytes": 1018,
+        "sha256": "f05b31a5f4dfabff5fb0ffe3bef1a03de4a8f5c562694609114ae6d352e9caad",
+        "lastByte": 10
+      },
+      "observedFiles": {
+        "bytes": 1017,
+        "sha256": "0c2d97286186b6c5174102be1891d51fc5c8e4b217d58d3081f2e072cb94020b"
+      },
+      "actualPureSourceBranches": [
+        {
+          "name": "payload.body",
+          "bytes": 1017,
+          "sha256": "0c2d97286186b6c5174102be1891d51fc5c8e4b217d58d3081f2e072cb94020b",
+          "lastByte": 62,
+          "matchesObservedFiles": true
+        },
+        {
+          "name": "payload.message",
+          "bytes": 1017,
+          "sha256": "0c2d97286186b6c5174102be1891d51fc5c8e4b217d58d3081f2e072cb94020b",
+          "lastByte": 62,
+          "matchesObservedFiles": true
+        },
+        {
+          "name": "payload.memo",
+          "bytes": 1017,
+          "sha256": "0c2d97286186b6c5174102be1891d51fc5c8e4b217d58d3081f2e072cb94020b",
+          "lastByte": 62,
+          "matchesObservedFiles": true
+        },
+        {
+          "name": "row.body_text",
+          "bytes": 1017,
+          "sha256": "0c2d97286186b6c5174102be1891d51fc5c8e4b217d58d3081f2e072cb94020b",
+          "lastByte": 62,
+          "matchesObservedFiles": true
+        },
+        {
+          "name": "payload.detail",
+          "bytes": 1017,
+          "sha256": "0c2d97286186b6c5174102be1891d51fc5c8e4b217d58d3081f2e072cb94020b",
+          "lastByte": 62,
+          "matchesObservedFiles": true
+        }
+      ],
+      "locations": {
+        "reader": "server/db/proof-index-reader.mjs:39823",
+        "readerConsumer": "server/db/proof-index-reader.mjs:40188",
+        "indexedPayload": "server/db/proof-index-reader.mjs:40585",
+        "api": "server/proof-api.mjs:64163",
+        "clientFiles": "src/App.tsx:13858",
+        "clientByteHash": "src/App.tsx:13919",
+        "canonicalRequirement": "MAIL_ORGANIZATION.md:619",
+        "predecessorFinding": "audits/2026-09-29-production-comprehensive-health-data-integrity-audit-28.md:186",
+        "predecessorCorrection": "audits/2026-09-29-approved-audit-28-cleanup-corrections-execution.md:73"
+      },
+      "limits": "Node HEAD identity is supplied by parent fresh observation, not queried here. Exact function matches that commit. Pure source execution establishes this mechanism and exact Files fingerprint, but no current mailbox API envelope, runtime configuration, database row, or caller provenance was captured here. Original raw transaction and Browser bytes remain intact. No network, CUA, production mutation, repository edits, or fix."
     }
   },
   "validation": {
@@ -615,10 +1559,10 @@
       "report": "repository state check passed"
     },
     "protectedRemovals": [],
-    "staging": false,
-    "commits": false,
-    "pushes": false,
-    "deployments": false,
+    "staging": true,
+    "commits": true,
+    "pushes": true,
+    "deployments": true,
     "announcements": false,
     "fixtureContinuation": {
       "fix": {
@@ -663,19 +1607,46 @@
         "command": "git diff --check",
         "exitCode": 0
       }
+    },
+    "originalLocalBoundary": {
+      "staging": false,
+      "commits": false,
+      "pushes": false,
+      "deployments": false,
+      "announcements": false
+    },
+    "releaseReceiptReview": {
+      "fix": {
+        "command": "npm run hygiene:fix",
+        "exitCode": 0,
+        "report": "no allowlisted rebuildable state found",
+        "removedPaths": []
+      },
+      "semanticReview": "SOUL and canonical rules remain accurate; report current status reconciled with retained chronological evidence. Remaining AUD28-04 indexed reader violates existing Mail requirement, so no canonical rewrite or source repair made. Classified audit evidence, generated artifacts, cleanup boundary, ignored status and final diff reviewed. Source files and deployed bytes unchanged.",
+      "protectedRemovals": [],
+      "check": {
+        "command": "npm run hygiene:check",
+        "exitCode": 0
+      },
+      "diffCheck": {
+        "command": "git diff --check",
+        "exitCode": 0
+      }
     }
   },
   "limitations": [
-    "no deployed client closure",
-    "no direct private Core or new genesis/full historical replay",
-    "no connected wallet/manual signing workflows",
-    "historical capacity/PITR/physical checksum/provider bandwidth gaps remain",
+    "no independent genesis replay of aggregate or complete new historical protocol replay",
+    "controlled malformed/stalled/reversed-response cases are local evidence; deployed browser fixtures intercept APIs",
+    "live history pages1-2 do not exhaust holders/mints; integrated Browser warm-response timing does not prove pending cancellation",
+    "no signing, broadcasts, draft restoration fixture, real provider-network switch, node deployment or configuration change",
+    "AUD28-04 connected indexed Files projection still trims final LF; no general Files original-byte closure",
+    "historical canonical-branch/reorg, event-audit, capacity/PITR/physical checksum/off-host alert/provider bandwidth gaps remain",
     "local resume files are not cryptographically authenticated against deliberate alteration"
   ],
   "artifactBindings": {
     "report": {
       "path": "audits/2026-10-01-recursive-assurance-batch-1.md",
-      "sha256": "2da27c4f262f7c188db53871621eaf0106baba8dd595f3f2a6d85fbf49ae351a"
+      "sha256": "c3939c0492c1ee4a4b3ecd2558e1d37d8a2e3a7f533ed7fedc9fc71d1f89126c"
     },
     "localFiles": {
       "src/App.tsx": "aff8ad4f7dd2d3f4e36b7f748b60ac86a33e376a77e657b9ab5693cd241bd296",
@@ -691,7 +1662,7 @@
     "priorReportSha256": "70bdcea79bc3df56ee34e70ad5e05be5b30d7483643b7c9a23d56dbddfc3b944"
   },
   "release": {
-    "status": "approved; preparation in progress",
+    "status": "frontend published and verified; receipt commit and announcement pending",
     "frontendOnly": true,
     "nodeApplicationChanges": false,
     "configurationChanges": false,
@@ -818,6 +1789,510 @@
         }
       ],
       "rawReceiptSha256": "2983abc458059e42173ffd2295f681d444aa6dbfca3bdeaf99ae910734878757"
+    },
+    "releaseId": "dbfa88b95819-20261001T134456Z",
+    "commit": "dbfa88b95819ab0fb8cbe0eabaf349e635909b5e",
+    "tree": "4e197da009779e6db5babbb349f67d3a1f27a9fd",
+    "branch": "codex/audit29-remediation",
+    "codePushed": true,
+    "mainMerged": false,
+    "cleanBuildReceipt": {
+      "releaseId": "dbfa88b95819-20261001T134456Z",
+      "commit": "dbfa88b95819ab0fb8cbe0eabaf349e635909b5e",
+      "tree": "4e197da009779e6db5babbb349f67d3a1f27a9fd",
+      "buildRoot": "/tmp/proofofwork-ui-release.1Dk5EycQXi",
+      "node": "/usr/bin/node",
+      "nodeVersion": "v22.23.2",
+      "bundles": {
+        "source": {
+          "path": "/tmp/proofofwork-ui-release.1Dk5EycQXi/proofofwork-ui-source-dbfa88b95819-20261001T134456Z.tgz",
+          "bytes": 96929254,
+          "sha256": "9a97be103dbba20f7c3e4302d9a344cfd1d56bbd59bcda12322371f6867880be"
+        },
+        "surfaces": {
+          "path": "/tmp/proofofwork-ui-release.1Dk5EycQXi/proofofwork-ui-surfaces-dbfa88b95819-20261001T134456Z.tgz",
+          "bytes": 195209221,
+          "sha256": "7d521ccc3a100960d0fe91772e700774510d60b81a253ed08d8098c6b2baf852"
+        }
+      },
+      "sourceAllocatedBytes": 258617344
+    },
+    "transportPlan": {
+      "schema": "proof-of-work-audit29-ui-transport-plan-v1",
+      "releaseId": "dbfa88b95819-20261001T134456Z",
+      "commit": "dbfa88b95819ab0fb8cbe0eabaf349e635909b5e",
+      "tree": "4e197da009779e6db5babbb349f67d3a1f27a9fd",
+      "sourceAllocatedBytes": 258617344,
+      "admissions": {
+        "source-receive": {
+          "bytes": 303316992,
+          "inodes": 15000
+        },
+        "surfaces-receive": {
+          "bytes": 241188864,
+          "inodes": 4000
+        }
+      },
+      "helperSha256": {
+        "controller": "098ca423e57f33d2a3a2c318995935a4000596536b59e460da4ccc996bcb25ac",
+        "receiver": "28c5dc45f75184a0cb3138df52b3558b0ebcb0c3d8c59233ae261fdbd812817b",
+        "stage-shell": "2f5f80b8065170c10b00f83363f2f1fb429dfbea6ce7237fb4ec311b74e264ff",
+        "phase-capacity": "0df38e794a8504ac576c86e79877d8c9a35b2c216b1cbc340587a4f6c7c5df40",
+        "capacity": "ea6745b2519d57fbd08deff723e81540d4dad2b4c649ff7e6c2b060a7e7edbb6",
+        "retained": "6421d58ec8a2259cc21512679db05654b2a138a6e6f56d3656c0287b934ddd9e"
+      },
+      "oldLiveManifestSha256": "305492a8b43e08a3fec529fad770f58b5209c9eb605490c694562242314f94ba",
+      "oldFullRootTreeSha256": "acde0cfe67a9716074135758b364703c05047693336dcaec1e5282361d9de8c0",
+      "installedStagerSha256": "c6f7a20f0f53d0e0871c3e024a4ea5d1b7c95f9f9788064a723f2b115d27000a",
+      "stageInodes": 10000,
+      "retainedRoots": [
+        {
+          "format": "proofofwork-ui-retained-root-v1",
+          "classification": "retain",
+          "root": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-527e4cbaa66f-20261001T062733Z",
+          "manifestSha256": "a0fc55747b9fa9161055fea319bd90fd6e485f7caa9b4ea232e53498af18edb6",
+          "treeSha256": "28aa403305e358d274107251925d23e9a953dfa494c4ddb1faa2261cf7871764",
+          "entries": 1264,
+          "regularBytes": 427671209
+        }
+      ],
+      "controllerSourceCommit": "527e4cbaa66f689169197c7ce9569425ef334492",
+      "controllerUsage": "reviewed unchanged admit-ui only",
+      "publicationHelpers": {
+        "retained": {
+          "path": "/usr/local/sbin/proofofwork-ui-retained-root",
+          "sha256": "6421d58ec8a2259cc21512679db05654b2a138a6e6f56d3656c0287b934ddd9e",
+          "mode": "0o755",
+          "uid": 0
+        },
+        "capacity": {
+          "path": "/usr/local/sbin/proofofwork-ui-capacity",
+          "sha256": "ea6745b2519d57fbd08deff723e81540d4dad2b4c649ff7e6c2b060a7e7edbb6",
+          "mode": "0o755",
+          "uid": 0
+        },
+        "publisher": {
+          "path": "/usr/local/sbin/proofofwork-ui-release-publish",
+          "sha256": "5ae1535e668c77ca7234c016ffe3602a3a8a5d930b3a75eefc28bb864a19af76",
+          "mode": "0o755",
+          "uid": 0
+        },
+        "stager": {
+          "path": "/usr/local/sbin/proofofwork-ui-release-stage",
+          "sha256": "c6f7a20f0f53d0e0871c3e024a4ea5d1b7c95f9f9788064a723f2b115d27000a",
+          "mode": "0o755",
+          "uid": 0
+        },
+        "provenance": {
+          "path": "/usr/local/sbin/proofofwork-ui-release-provenance",
+          "sha256": "4e083a179a305907760ffe36f6ad00aef9a441279898b903171edea54cb1b9d6",
+          "mode": "0o755",
+          "uid": 0
+        }
+      },
+      "publicationWrapperSha256": "a39a580bad9224c5f174cb9b25634a56553eeaf8b4038d4a554b62ed5d44e228",
+      "source": {
+        "compressedBytes": 96929254,
+        "sha256": "9a97be103dbba20f7c3e4302d9a344cfd1d56bbd59bcda12322371f6867880be"
+      },
+      "surfaces": {
+        "compressedBytes": 195209221,
+        "sha256": "7d521ccc3a100960d0fe91772e700774510d60b81a253ed08d8098c6b2baf852"
+      },
+      "stageArchiveUpperBoundBytes": 490250875,
+      "allocationDerivation": {
+        "oldManaged": {
+          "entries": 880,
+          "logicalBytes": 233908642,
+          "regularFiles": 864
+        },
+        "newLogicalBytes": {
+          "source": 240417796,
+          "surfaces": 219310297
+        },
+        "newEntries": {
+          "source": 6849,
+          "surfaces": 818
+        },
+        "receiveMetadataBytesPerEntry": 4096,
+        "receiveFixedMarginBytes": 16777216,
+        "archiveFixedMarginBytes": 33554432,
+        "archivePaddingBytesPerEntry": 2048
+      }
+    },
+    "publicationPlan": {
+      "schema": "proof-of-work-audit29-ui-transport-plan-v1",
+      "releaseId": "dbfa88b95819-20261001T134456Z",
+      "commit": "dbfa88b95819ab0fb8cbe0eabaf349e635909b5e",
+      "tree": "4e197da009779e6db5babbb349f67d3a1f27a9fd",
+      "sourceAllocatedBytes": 258617344,
+      "admissions": {
+        "source-receive": {
+          "bytes": 303316992,
+          "inodes": 15000
+        },
+        "surfaces-receive": {
+          "bytes": 241188864,
+          "inodes": 4000
+        }
+      },
+      "helperSha256": {
+        "controller": "098ca423e57f33d2a3a2c318995935a4000596536b59e460da4ccc996bcb25ac",
+        "receiver": "28c5dc45f75184a0cb3138df52b3558b0ebcb0c3d8c59233ae261fdbd812817b",
+        "stage-shell": "2f5f80b8065170c10b00f83363f2f1fb429dfbea6ce7237fb4ec311b74e264ff",
+        "phase-capacity": "0df38e794a8504ac576c86e79877d8c9a35b2c216b1cbc340587a4f6c7c5df40",
+        "capacity": "ea6745b2519d57fbd08deff723e81540d4dad2b4c649ff7e6c2b060a7e7edbb6",
+        "retained": "6421d58ec8a2259cc21512679db05654b2a138a6e6f56d3656c0287b934ddd9e"
+      },
+      "oldLiveManifestSha256": "305492a8b43e08a3fec529fad770f58b5209c9eb605490c694562242314f94ba",
+      "oldFullRootTreeSha256": "acde0cfe67a9716074135758b364703c05047693336dcaec1e5282361d9de8c0",
+      "installedStagerSha256": "c6f7a20f0f53d0e0871c3e024a4ea5d1b7c95f9f9788064a723f2b115d27000a",
+      "stageInodes": 10000,
+      "retainedRoots": [
+        {
+          "format": "proofofwork-ui-retained-root-v1",
+          "classification": "retain",
+          "root": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-527e4cbaa66f-20261001T062733Z",
+          "manifestSha256": "a0fc55747b9fa9161055fea319bd90fd6e485f7caa9b4ea232e53498af18edb6",
+          "treeSha256": "28aa403305e358d274107251925d23e9a953dfa494c4ddb1faa2261cf7871764",
+          "entries": 1264,
+          "regularBytes": 427671209
+        }
+      ],
+      "controllerSourceCommit": "527e4cbaa66f689169197c7ce9569425ef334492",
+      "controllerUsage": "reviewed unchanged admit-ui only",
+      "publicationHelpers": {
+        "retained": {
+          "path": "/usr/local/sbin/proofofwork-ui-retained-root",
+          "sha256": "6421d58ec8a2259cc21512679db05654b2a138a6e6f56d3656c0287b934ddd9e",
+          "mode": "0o755",
+          "uid": 0
+        },
+        "capacity": {
+          "path": "/usr/local/sbin/proofofwork-ui-capacity",
+          "sha256": "ea6745b2519d57fbd08deff723e81540d4dad2b4c649ff7e6c2b060a7e7edbb6",
+          "mode": "0o755",
+          "uid": 0
+        },
+        "publisher": {
+          "path": "/usr/local/sbin/proofofwork-ui-release-publish",
+          "sha256": "5ae1535e668c77ca7234c016ffe3602a3a8a5d930b3a75eefc28bb864a19af76",
+          "mode": "0o755",
+          "uid": 0
+        },
+        "stager": {
+          "path": "/usr/local/sbin/proofofwork-ui-release-stage",
+          "sha256": "c6f7a20f0f53d0e0871c3e024a4ea5d1b7c95f9f9788064a723f2b115d27000a",
+          "mode": "0o755",
+          "uid": 0
+        },
+        "provenance": {
+          "path": "/usr/local/sbin/proofofwork-ui-release-provenance",
+          "sha256": "4e083a179a305907760ffe36f6ad00aef9a441279898b903171edea54cb1b9d6",
+          "mode": "0o755",
+          "uid": 0
+        }
+      },
+      "publicationWrapperSha256": "9c7bb3ae97db15ba2892de4a7a62b581491a40dd1807b83652db48ce935be0c6",
+      "source": {
+        "compressedBytes": 96929254,
+        "sha256": "9a97be103dbba20f7c3e4302d9a344cfd1d56bbd59bcda12322371f6867880be"
+      },
+      "surfaces": {
+        "compressedBytes": 195209221,
+        "sha256": "7d521ccc3a100960d0fe91772e700774510d60b81a253ed08d8098c6b2baf852"
+      },
+      "stageArchiveUpperBoundBytes": 490250875,
+      "allocationDerivation": {
+        "oldManaged": {
+          "entries": 880,
+          "logicalBytes": 233908642,
+          "regularFiles": 864
+        },
+        "newLogicalBytes": {
+          "source": 240417796,
+          "surfaces": 219310297
+        },
+        "newEntries": {
+          "source": 6849,
+          "surfaces": 818
+        },
+        "receiveMetadataBytesPerEntry": 4096,
+        "receiveFixedMarginBytes": 16777216,
+        "archiveFixedMarginBytes": 33554432,
+        "archivePaddingBytesPerEntry": 2048
+      },
+      "publicationAttempt": "retry1"
+    },
+    "publicationReceipt": {
+      "unit": "proofofwork-assurance-release-dbfa88b95819-20261001T134456Z-ui-retry1.service",
+      "exitCode": 0,
+      "failure": null,
+      "finishedAt": "2026-10-01T14:03:11Z",
+      "runtimeSeconds": 258.494,
+      "capturedLogBytes": 169169,
+      "publisherLogSha256": "9e85df01461dde9ca4288f43fc6eae978efdc0aa5544f7cccb20e60d0435506d",
+      "remoteEvidence": "/var/tmp/proofofwork-deploy/assurance-publish-dbfa88b95819-20261001T134456Z-retry1",
+      "activeManifestSha256": "2426aa769644d6f4dd85cf3948375cb7547c061e8934e2b2656a32a30dacb9ba",
+      "managedArchiveSha256": "c1b6af4f60964bd2ae0b3fc637b73bae8c9e3ed07099b6ddd98183d7c9c00881",
+      "allPriorRootsPreserved": true,
+      "retentionDeferred": true,
+      "coupledNodeShadowGateInvoked": false
+    },
+    "initialPublicationFailure": {
+      "attempt": "initial",
+      "unit": "proofofwork-assurance-release-dbfa88b95819-20261001T134456Z-ui.service",
+      "releaseId": "dbfa88b95819-20261001T134456Z",
+      "exitCode": 1,
+      "runtimeMilliseconds": 246,
+      "failure": "operator omitted plan hash, full commit and tree arguments; sys.argv unpack failed",
+      "productionChanged": false,
+      "lockAcquired": false,
+      "evidenceCreatedByWrapper": false,
+      "planSha256": "bec0b5c682f3b4f8b34a854cab0250582b02dd22a7e26492c29db273c0e3d3c7",
+      "wrapperSha256": "2343d194b48d1aab8275fa34430617ff67508a3d97a78928cd9910fcdab881aa",
+      "preserved": "failed managed unit and chat command/output; fresh retry1 unit and evidence path; no reset/reuse"
+    },
+    "httpsArchiveSmoke": {
+      "ok": true,
+      "releaseId": "dbfa88b95819-20261001T134456Z",
+      "commit": "dbfa88b95819ab0fb8cbe0eabaf349e635909b5e",
+      "tree": "4e197da009779e6db5babbb349f67d3a1f27a9fd",
+      "archiveSha256": "c1b6af4f60964bd2ae0b3fc637b73bae8c9e3ed07099b6ddd98183d7c9c00881",
+      "manifestSha256": "2426aa769644d6f4dd85cf3948375cb7547c061e8934e2b2656a32a30dacb9ba",
+      "publicSurfaces": 15,
+      "archivedFiles": 810,
+      "hostnameRoots": 15,
+      "apexRedirectVerified": true,
+      "startedAt": "2026-10-01T14:05:25Z",
+      "finishedAt": "2026-10-01T14:17:08Z"
+    },
+    "postflight": {
+      "observedAt": "2026-10-01T14:18:41Z",
+      "helpers": {
+        "controller": {
+          "path": "/var/tmp/proofofwork-deploy/audit29-tools/release.py",
+          "sha256": "098ca423e57f33d2a3a2c318995935a4000596536b59e460da4ccc996bcb25ac",
+          "mode": "0o600",
+          "uid": 0
+        },
+        "receiver": {
+          "path": "/var/tmp/proofofwork-deploy/audit29-tools/stream-ui-bundle.py",
+          "sha256": "28c5dc45f75184a0cb3138df52b3558b0ebcb0c3d8c59233ae261fdbd812817b",
+          "mode": "0o600",
+          "uid": 0
+        },
+        "stage-shell": {
+          "path": "/var/tmp/proofofwork-deploy/audit29-tools/ui-stage-candidate.sh",
+          "sha256": "2f5f80b8065170c10b00f83363f2f1fb429dfbea6ce7237fb4ec311b74e264ff",
+          "mode": "0o600",
+          "uid": 0
+        },
+        "phase-capacity": {
+          "path": "/var/tmp/proofofwork-deploy/audit29-tools/ui-capacity.py",
+          "sha256": "0df38e794a8504ac576c86e79877d8c9a35b2c216b1cbc340587a4f6c7c5df40",
+          "mode": "0o600",
+          "uid": 0
+        },
+        "capacity": {
+          "path": "/usr/local/sbin/proofofwork-ui-capacity",
+          "sha256": "ea6745b2519d57fbd08deff723e81540d4dad2b4c649ff7e6c2b060a7e7edbb6",
+          "mode": "0o755",
+          "uid": 0
+        },
+        "retained": {
+          "path": "/usr/local/sbin/proofofwork-ui-retained-root",
+          "sha256": "6421d58ec8a2259cc21512679db05654b2a138a6e6f56d3656c0287b934ddd9e",
+          "mode": "0o755",
+          "uid": 0
+        },
+        "publisher": {
+          "path": "/usr/local/sbin/proofofwork-ui-release-publish",
+          "sha256": "5ae1535e668c77ca7234c016ffe3602a3a8a5d930b3a75eefc28bb864a19af76",
+          "mode": "0o755",
+          "uid": 0
+        },
+        "stager": {
+          "path": "/usr/local/sbin/proofofwork-ui-release-stage",
+          "sha256": "c6f7a20f0f53d0e0871c3e024a4ea5d1b7c95f9f9788064a723f2b115d27000a",
+          "mode": "0o755",
+          "uid": 0
+        },
+        "provenance": {
+          "path": "/usr/local/sbin/proofofwork-ui-release-provenance",
+          "sha256": "4e083a179a305907760ffe36f6ad00aef9a441279898b903171edea54cb1b9d6",
+          "mode": "0o755",
+          "uid": 0
+        },
+        "transport": {
+          "path": "/var/tmp/proofofwork-deploy/audit29-tools/ui-transport.py",
+          "sha256": "a0c022d2071ad1f949c2bd7304cc5a3d8f1368bb3d71cb710b5d709956f7bdd9",
+          "mode": "0o600",
+          "uid": 0
+        }
+      },
+      "live": {
+        "format": "proofofwork-ui-retained-root-v1",
+        "classification": "retain",
+        "root": "/var/www",
+        "manifestSha256": "2426aa769644d6f4dd85cf3948375cb7547c061e8934e2b2656a32a30dacb9ba",
+        "treeSha256": "52b517b5c153638067acc1e39e013368d76574fff547c2517149ada4ecb8dbd4",
+        "entries": 1264,
+        "regularBytes": 427837289
+      },
+      "retained": [
+        {
+          "format": "proofofwork-ui-retained-root-v1",
+          "classification": "retain",
+          "root": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-527e4cbaa66f-20261001T062733Z",
+          "manifestSha256": "a0fc55747b9fa9161055fea319bd90fd6e485f7caa9b4ea232e53498af18edb6",
+          "treeSha256": "28aa403305e358d274107251925d23e9a953dfa494c4ddb1faa2261cf7871764",
+          "entries": 1264,
+          "regularBytes": 427671209
+        },
+        {
+          "format": "proofofwork-ui-retained-root-v1",
+          "classification": "retain",
+          "root": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-dbfa88b95819-20261001T134456Z",
+          "manifestSha256": "305492a8b43e08a3fec529fad770f58b5209c9eb605490c694562242314f94ba",
+          "treeSha256": "acde0cfe67a9716074135758b364703c05047693336dcaec1e5282361d9de8c0",
+          "entries": 1264,
+          "regularBytes": 427700521
+        }
+      ],
+      "availableBytes": 25054035968,
+      "availableInodes": 2333605,
+      "checks": [
+        {
+          "command": [
+            "/usr/local/sbin/proofofwork-ui-release-provenance",
+            "verify-rollback"
+          ],
+          "exitCode": 0,
+          "output": "{\"additionalBytes\": 67108864, \"additionalInodes\": 8, \"allocationPath\": \"/run/proofofwork-ui\", \"checks\": [{\"availableBytes\": 25054027776, \"availableInodes\": 2333605, \"path\": \"/\", \"requiredBytes\": 10804527104, \"requiredInodes\": 128}, {\"availableBytes\": 399630336, \"availableInodes\": 488195, \"path\": \"/run/proofofwork-ui\", \"requiredBytes\": 134217728, \"requiredInodes\": 136}], \"growthReserveBytes\": 67108864, \"phase\": \"provenance-surface-inventory\", \"rootReserveBytes\": 10737418240, \"status\": \"sufficient\"}\n{\"additionalBytes\": 67108864, \"additionalInodes\": 8, \"allocationPath\": \"/run/proofofwork-ui\", \"checks\": [{\"availableBytes\": 25054027776, \"availableInodes\": 2333605, \"path\": \"/\", \"requiredBytes\": 10804527104, \"requiredInodes\": 128}, {\"availableBytes\": 399630336, \"availableInodes\": 488195, \"path\": \"/run/proofofwork-ui\", \"requiredBytes\": 134217728, \"requiredInodes\": 136}], \"growthReserveBytes\": 67108864, \"phase\": \"provenance-surface-fingerprint\", \"rootReserveBytes\": 10737418240, \"status\": \"sufficient\"}\n{\"additionalBytes\": 67108864, \"additionalInodes\": 8, \"allocationPath\": \"/run/proofofwork-ui\", \"checks\": [{\"availableBytes\": 25054027776, \"availableInodes\": 2333605, \"path\": \"/\", \"requiredBytes\": 10804527104, \"requiredInodes\": 128}, {\"availableBytes\": 399630336, \"availableInodes\": 488195, \"path\": \"/run/proofofwork-ui\", \"requiredBytes\": 134217728, \"requiredInodes\": 136}], \"growthReserveBytes\": 67108864, \"phase\": \"provenance-surface-inventory\", \"rootReserveBytes\": 10737418240, \"status\": \"sufficient\"}\n{\"additionalBytes\": 67108864, \"additionalInodes\": 8, \"allocationPath\": \"/run/proofofwork-ui\", \"checks\": [{\"availableBytes\": 25054027776, \"availableInodes\": 2333605, \"path\": \"/\", \"requiredBytes\": 10804527104, \"requiredInodes\": 128}, {\"availableBytes\": 399630336, \"availableInodes\": 488195, \"path\": \"/run/proofofwork-ui\", \"requiredBytes\": 134217728, \"requiredInodes\": 136}], \"growthReserveBytes\": 67108864, \"phase\": \"provenance-surface-fingerprint\", \"rootReserveBytes\": 10737418240, \"status\": \"sufficient\"}\n{\"additionalBytes\": 67108864, \"additionalInodes\": 8, \"allocationPath\": \"/run/proofofwork-ui\", \"checks\": [{\"availableBytes\": 25054027776, \"availableInodes\": 2333605, \"path\": \"/\", \"requiredBytes\": 10804527104, \"requiredInodes\": 128}, {\"availableBytes\": 399630336, \"availableInodes\": 488195, \"path\": \"/run/proofofwork-ui\", \"requiredBytes\": 134217728, \"requiredInodes\": 136}], \"growthReserveBytes\": 67108864, \"phase\": \"provenance-surface-inventory\", \"rootReserveBytes\": 10737418240, \"status\": \"sufficient\"}\n{\"additionalBytes\": 67108864, \"additionalInodes\": 8, \"allocationPath\": \"/run/proofofwork-ui\", \"checks\": [{\"availableBytes\": 25054027776, \"availableInodes\": 2333605, \"path\": \"/\", \"requiredBytes\": 10804527104, \"requiredInodes\": 128}, {\"availableBytes\": 399630336, \"availableInodes\": 488195, \"path\": \"/run/proofofwork-ui\", \"requiredBytes\": 134217728, \"requiredInodes\": 136}], \"growthReserveBytes\": 67108864, \"phase\": \"provenance-surface-fingerprint\", \"rootReserveBytes\": 10737418240, \"status\": \"sufficient\"}\n{\"additionalBytes\": 67108864, \"additionalInodes\": 8, \"allocationPath\": \"/run/proofofwork-ui\", \"checks\": [{\"availableBytes\": 25054027776, \"availableInodes\": 2333605, \"path\": \"/\", \"requiredBytes\": 10804527104, \"requiredInodes\": 128}, {\"availableBytes\": 399630336, \"availableInodes\": 488195, \"path\": \"/run/proofofwork-ui\", \"requiredBytes\": 134217728, \"requiredInodes\": 136}], \"growthReserveBytes\": 67108864, \"phase\": \"provenance-surface-inventory\", \"rootReserveBytes\": 10737418240, \"status\": \"sufficient\"}\n{\"additionalBytes\": 67108864, \"additionalInodes\": 8, \"allocationPath\": \"/run/proofofwork-ui\", \"checks\": [{\"availableBytes\": 25054027776, \"availableInodes\": 2333605, \"path\": \"/\", \"requiredBytes\": 10804527104, \"requiredInodes\": 128}, {\"availableBytes\": 399630336, \"availableInodes\": 488195, \"path\": \"/run/proofofwork-ui\", \"requiredBytes\": 134217728, \"requiredInodes\": 136}], \"growthReserveBytes\": 67108864, \"phase\": \"provenance-surface-fingerprint\", \"rootReserveBytes\": 10737418240, \"status\": \"sufficient\"}\n{\"additionalBytes\": 67108864, \"additionalInodes\": 8, \"allocationPath\": \"/run/proofofwork-ui\", \"checks\": [{\"availableBytes\": 25054027776, \"availableInodes\": 2333605, \"path\": \"/\", \"requiredBytes\": 10804527104, \"requiredInodes\": 128}, {\"availableBytes\": 399630336, \"availableInodes\": 488195, \"path\": \"/run/proofofwork-ui\", \"requiredBytes\": 134217728, \"requiredInodes\": 136}], \"growthReserveBytes\": 67108864, \"phase\": \"provenance-surface-inventory\", \"rootReserveBytes\": 10737418240, \"status\": \"sufficient\"}\n{\"additionalBytes\": 67108864, \"additionalInodes\": 8, \"allocationPath\": \"/run/proofofwork-ui\", \"checks\": [{\"availableBytes\": 25054027776, \"availableInodes\": 2333605, \"path\": \"/\", \"requiredBytes\": 10804527104, \"requiredInodes\": 128}, {\"availableBytes\": 399630336, \"availableInodes\": 488195, \"path\": \"/run/proofofwork-ui\", \"requiredBytes\": 134217728, \"requiredInodes\": 136}], \"growthReserveBytes\": 67108864, \"phase\": \"provenance-surface-fingerprint\", \"rootReserveBytes\": 10737418240, \"status\": \"sufficient\"}\n{\"additionalBytes\": 67108864, \"additionalInodes\": 8, \"allocationPath\": \"/run/proofofwork-ui\", \"checks\": [{\"availableBytes\": 25054027776, \"availableInodes\": 2333605, \"path\": \"/\", \"requiredBytes\": 10804527104, \"requiredInodes\": 128}, {\"availableBytes\": 399630336, \"availableInodes\": 488195, \"path\": \"/run/proofofwork-ui\", \"requiredBytes\": 134217728, \"requiredInodes\": 136}], \"growthReserveBytes\": 67108864, \"phase\": \"provenance-surface-inventory\", \"rootReserveBytes\": 10737418240, \"status\": \"sufficient\"}\n{\"additionalBytes\": 67108864, \"additionalInodes\": 8, \"allocationPath\": \"/run/proofofwork-ui\", \"checks\": [{\"availableBytes\": 25054027776, \"availableInodes\": 2333605, \"path\": \"/\", \"requiredBytes\": 10804527104, \"requiredInodes\": 128}, {\"availableBytes\": 399630336, \"availableInodes\": 488195, \"path\": \"/run/proofofwork-ui\", \"requiredBytes\": 134217728, \"requiredInodes\": 136}], \"growthReserveBytes\": 67108864, \"phase\": \"provenance-surface-fingerprint\", \"rootReserveBytes\": 10737418240, \"status\": \"sufficient\"}\n{\"additionalBytes\": 67108864, \"additionalInodes\": 8, \"allocationPath\": \"/run/proofofwork-ui\", \"checks\": [{\"availableBytes\": 25054027776, \"availableInodes\": 2333605, \"path\": \"/\", \"requiredBytes\": 10804527104, \"requiredInodes\": 128}, {\"availableBytes\": 399630336, \"availableInodes\": 488195, \"path\": \"/run/proofofwork-ui\", \"requiredBytes\": 134217728, \"requiredInodes\": 136}], \"growthReserveBytes\": 67108864, \"phase\": \"provenance-surface-inventory\", \"rootReserveBytes\": 10737418240, \"status\": \"sufficient\"}\n{\"additionalBytes\": 67108864, \"additionalInodes\": 8, \"allocationPath\": \"/run/proofofwork-ui\", \"checks\": [{\"availableBytes\": 25054027776, \"availableInodes\": 2333605, \"path\": \"/\", \"requiredBytes\": 10804527104, \"requiredInodes\": 128}, {\"availableBytes\": 399630336, \"availableInodes\": 488195, \"path\": \"/run/proofofwork-ui\", \"requiredBytes\": 134217728, \"requiredInodes\": 136}], \"growthReserveBytes\": 67108864, \"phase\": \"provenance-surface-fingerprint\", \"rootReserveBytes\": 10737418240, \"status\": \"sufficient\"}\n{\"additionalBytes\": 67108864, \"additionalInodes\": 8, \"allocationPath\": \"/run/proofofwork-ui\", \"checks\": [{\"availableBytes\": 25054027776, \"availableInodes\": 2333605, \"path\": \"/\", \"requiredBytes\": 10804527104, \"requiredInodes\": 128}, {\"availableBytes\": 399630336, \"availableInodes\": 488195, \"path\": \"/run/proofofwork-ui\", \"requiredBytes\": 134217728, \"requiredInodes\": 136}], \"growthReserveBytes\": 67108864, \"phase\": \"provenance-surface-inventory\", \"rootReserveBytes\": 10737418240, \"status\": \"sufficient\"}\n{\"additionalBytes\": 67108864, \"additionalInodes\": 8, \"allocationPath\": \"/run/proofofwork-ui\", \"checks\": [{\"availableBytes\": 25054027776, \"availableInodes\": 2333605, \"path\": \"/\", \"requiredBytes\": 10804527104, \"requiredInodes\": 128}, {\"availableBytes\": 399630336, \"availableInodes\": 488195, \"path\": \"/run/proofofwork-ui\", \"requiredBytes\": 134217728, \"requiredInodes\": 136}], \"growthReserveBytes\": 67108864, \"phase\": \"provenance-surface-fingerprint\", \"rootReserveBytes\": 10737418240, \"status\": \"sufficient\"}\n{\"additionalBytes\": 67108864, \"additionalInodes\": 8, \"allocationPath\": \"/run/proofofwork-ui\", \"checks\": [{\"availableBytes\": 25054027776, \"availableInodes\": 2333605, \"path\": \"/\", \"requiredBytes\": 10804527104, \"requiredInodes\": 128}, {\"availableBytes\": 399630336, \"availableInodes\": 488195, \"path\": \"/run/proofofwork-ui\", \"requiredBytes\": 134217728, \"requiredInodes\": 136}], \"growthReserveBytes\": 67108864, \"phase\": \"provenance-surface-inventory\", \"rootReserveBytes\": 10737418240, \"status\": \"sufficient\"}\n{\"additionalBytes\": 67108864, \"additionalInodes\": 8, \"allocationPath\": \"/run/proofofwork-ui\", \"checks\": [{\"availableBytes\": 25054027776, \"availableInodes\": 2333605, \"path\": \"/\", \"requiredBytes\": 10804527104, \"requiredInodes\": 128}, {\"availableBytes\": 399630336, \"availableInodes\": 488195, \"path\": \"/run/proofofwork-ui\", \"requiredBytes\": 134217728, \"requiredInodes\": 136}], \"growthReserveBytes\": 67108864, \"phase\": \"provenance-surface-fingerprint\", \"rootReserveBytes\": 10737418240, \"status\": \"sufficient\"}\n{\"additionalBytes\": 67108864, \"additionalInodes\": 8, \"allocationPath\": \"/run/proofofwork-ui\", \"checks\": [{\"availableBytes\": 25054027776, \"availableInodes\": 2333605, \"path\": \"/\", \"requiredBytes\": 10804527104, \"requiredInodes\": 128}, {\"availableBytes\": 399630336, \"availableInodes\": 488195, \"path\": \"/run/proofofwork-ui\", \"requiredBytes\": 134217728, \"requiredInodes\": 136}], \"growthReserveBytes\": 67108864, \"phase\": \"provenance-surface-inventory\", \"rootReserveBytes\": 10737418240, \"status\": \"sufficient\"}\n{\"additionalBytes\": 67108864, \"additionalInodes\": 8, \"allocationPath\": \"/run/proofofwork-ui\", \"checks\": [{\"availableBytes\": 25054027776, \"availableInodes\": 2333605, \"path\": \"/\", \"requiredBytes\": 10804527104, \"requiredInodes\": 128}, {\"availableBytes\": 399630336, \"availableInodes\": 488195, \"path\": \"/run/proofofwork-ui\", \"requiredBytes\": 134217728, \"requiredInodes\": 136}], \"growthReserveBytes\": 67108864, \"phase\": \"provenance-surface-fingerprint\", \"rootReserveBytes\": 10737418240, \"status\": \"sufficient\"}\n{\"additionalBytes\": 67108864, \"additionalInodes\": 8, \"allocationPath\": \"/run/proofofwork-ui\", \"checks\": [{\"availableBytes\": 25054023680, \"availableInodes\": 2333605, \"path\": \"/\", \"requiredBytes\": 10804527104, \"requiredInodes\": 128}, {\"availableBytes\": 399630336, \"availableInodes\": 488195, \"path\": \"/run/proofofwork-ui\", \"requiredBytes\": 134217728, \"requiredInodes\": 136}], \"growthReserveBytes\": 67108864, \"phase\": \"provenance-surface-inventory\", \"rootReserveBytes\": 10737418240, \"status\": \"sufficient\"}\n{\"additionalBytes\": 67108864, \"additionalInodes\": 8, \"allocationPath\": \"/run/proofofwork-ui\", \"checks\": [{\"availableBytes\": 25054023680, \"availableInodes\": 2333605, \"path\": \"/\", \"requiredBytes\": 10804527104, \"requiredInodes\": 128}, {\"availableBytes\": 399630336, \"availableInodes\": 488195, \"path\": \"/run/proofofwork-ui\", \"requiredBytes\": 134217728, \"requiredInodes\": 136}], \"growthReserveBytes\": 67108864, \"phase\": \"provenance-surface-fingerprint\", \"rootReserveBytes\": 10737418240, \"status\": \"sufficient\"}\n{\"additionalBytes\": 67108864, \"additionalInodes\": 8, \"allocationPath\": \"/run/proofofwork-ui\", \"checks\": [{\"availableBytes\": 25054023680, \"availableInodes\": 2333605, \"path\": \"/\", \"requiredBytes\": 10804527104, \"requiredInodes\": 128}, {\"availableBytes\": 399630336, \"availableInodes\": 488195, \"path\": \"/run/proofofwork-ui\", \"requiredBytes\": 134217728, \"requiredInodes\": 136}], \"growthReserveBytes\": 67108864, \"phase\": \"provenance-surface-inventory\", \"rootReserveBytes\": 10737418240, \"status\": \"sufficient\"}\n{\"additionalBytes\": 67108864, \"additionalInodes\": 8, \"allocationPath\": \"/run/proofofwork-ui\", \"checks\": [{\"availableBytes\": 25054023680, \"availableInodes\": 2333605, \"path\": \"/\", \"requiredBytes\": 10804527104, \"requiredInodes\": 128}, {\"availableBytes\": 399630336, \"availableInodes\": 488195, \"path\": \"/run/proofofwork-ui\", \"requiredBytes\": 134217728, \"requiredInodes\": 136}], \"growthReserveBytes\": 67108864, \"phase\": \"provenance-surface-fingerprint\", \"rootReserveBytes\": 10737418240, \"status\": \"sufficient\"}\n{\"additionalBytes\": 67108864, \"additionalInodes\": 8, \"allocationPath\": \"/run/proofofwork-ui\", \"checks\": [{\"availableBytes\": 25054023680, \"availableInodes\": 2333605, \"path\": \"/\", \"requiredBytes\": 10804527104, \"requiredInodes\": 128}, {\"availableBytes\": 399630336, \"availableInodes\": 488195, \"path\": \"/run/proofofwork-ui\", \"requiredBytes\": 134217728, \"requiredInodes\": 136}], \"growthReserveBytes\": 67108864, \"phase\": \"provenance-surface-inventory\", \"rootReserveBytes\": 10737418240, \"status\": \"sufficient\"}\n{\"additionalBytes\": 67108864, \"additionalInodes\": 8, \"allocationPath\": \"/run/proofofwork-ui\", \"checks\": [{\"availableBytes\": 25054023680, \"availableInodes\": 2333605, \"path\": \"/\", \"requiredBytes\": 10804527104, \"requiredInodes\": 128}, {\"availableBytes\": 399630336, \"availableInodes\": 488195, \"path\": \"/run/proofofwork-ui\", \"requiredBytes\": 134217728, \"requiredInodes\": 136}], \"growthReserveBytes\": 67108864, \"phase\": \"provenance-surface-fingerprint\", \"rootReserveBytes\": 10737418240, \"status\": \"sufficient\"}\n{\"additionalBytes\": 67108864, \"additionalInodes\": 8, \"allocationPath\": \"/run/proofofwork-ui\", \"checks\": [{\"availableBytes\": 25054023680, \"availableInodes\": 2333605, \"path\": \"/\", \"requiredBytes\": 10804527104, \"requiredInodes\": 128}, {\"availableBytes\": 399630336, \"availableInodes\": 488195, \"path\": \"/run/proofofwork-ui\", \"requiredBytes\": 134217728, \"requiredInodes\": 136}], \"growthReserveBytes\": 67108864, \"phase\": \"provenance-surface-inventory\", \"rootReserveBytes\": 10737418240, \"status\": \"sufficient\"}\n{\"additionalBytes\": 67108864, \"additionalInodes\": 8, \"allocationPath\": \"/run/proofofwork-ui\", \"checks\": [{\"availableBytes\": 25054023680, \"availableInodes\": 2333605, \"path\": \"/\", \"requiredBytes\": 10804527104, \"requiredInodes\": 128}, {\"availableBytes\": 399630336, \"availableInodes\": 488195, \"path\": \"/run/proofofwork-ui\", \"requiredBytes\": 134217728, \"requiredInodes\": 136}], \"growthReserveBytes\": 67108864, \"phase\": \"provenance-surface-fingerprint\", \"rootReserveBytes\": 10737418240, \"status\": \"sufficient\"}\n{\"additionalBytes\": 67108864, \"additionalInodes\": 8, \"allocationPath\": \"/run/proofofwork-ui\", \"checks\": [{\"availableBytes\": 25054023680, \"availableInodes\": 2333605, \"path\": \"/\", \"requiredBytes\": 10804527104, \"requiredInodes\": 128}, {\"availableBytes\": 399630336, \"availableInodes\": 488195, \"path\": \"/run/proofofwork-ui\", \"requiredBytes\": 134217728, \"requiredInodes\": 136}], \"growthReserveBytes\": 67108864, \"phase\": \"provenance-surface-inventory\", \"rootReserveBytes\": 10737418240, \"status\": \"sufficient\"}\n{\"additionalBytes\": 67108864, \"additionalInodes\": 8, \"allocationPath\": \"/run/proofofwork-ui\", \"checks\": [{\"availableBytes\": 25054023680, \"availableInodes\": 2333605, \"path\": \"/\", \"requiredBytes\": 10804527104, \"requiredInodes\": 128}, {\"availableBytes\": 399630336, \"availableInodes\": 488195, \"path\": \"/run/proofofwork-ui\", \"requiredBytes\": 134217728, \"requiredInodes\": 136}], \"growthReserveBytes\": 67108864, \"phase\": \"provenance-surface-fingerprint\", \"rootReserveBytes\": 10737418240, \"status\": \"sufficient\"}\n{\"additionalBytes\": 67108864, \"additionalInodes\": 8, \"allocationPath\": \"/run/proofofwork-ui\", \"checks\": [{\"availableBytes\": 25054023680, \"availableInodes\": 2333605, \"path\": \"/\", \"requiredBytes\": 10804527104, \"requiredInodes\": 128}, {\"availableBytes\": 399630336, \"availableInodes\": 488195, \"path\": \"/run/proofofwork-ui\", \"requiredBytes\": 134217728, \"requiredInodes\": 136}], \"growthReserveBytes\": 67108864, \"phase\": \"provenance-surface-inventory\", \"rootReserveBytes\": 10737418240, \"status\": \"sufficient\"}\n{\"additionalBytes\": 67108864, \"additionalInodes\": 8, \"allocationPath\": \"/run/proofofwork-ui\", \"checks\": [{\"availableBytes\": 25054023680, \"availableInodes\": 2333605, \"path\": \"/\", \"requiredBytes\": 10804527104, \"requiredInodes\": 128}, {\"availableBytes\": 399630336, \"availableInodes\": 488195, \"path\": \"/run/proofofwork-ui\", \"requiredBytes\": 134217728, \"requiredInodes\": 136}], \"growthReserveBytes\": 67108864, \"phase\": \"provenance-surface-fingerprint\", \"rootReserveBytes\": 10737418240, \"status\": \"sufficient\"}\nui_release_provenance status=verified release_id=dbfa88b95819-20261001T134456Z commit=dbfa88b95819ab0fb8cbe0eabaf349e635909b5e archive_sha256=c1b6af4f60964bd2ae0b3fc637b73bae8c9e3ed07099b6ddd98183d7c9c00881\n"
+        },
+        {
+          "command": [
+            "/usr/bin/python3",
+            "-I",
+            "-B",
+            "/usr/local/sbin/proofofwork-ui-capacity",
+            "check-scratch",
+            "--path",
+            "/var/tmp/proofofwork-deploy",
+            "--additional-bytes",
+            "65536",
+            "--additional-inodes",
+            "4",
+            "--phase",
+            "assurance-plan-preflight"
+          ],
+          "exitCode": 0,
+          "output": "{\"additionalBytes\": 65536, \"allocatedBytes\": 4195127296, \"cleanupApproved\": false, \"maximumBytes\": 5368709120, \"path\": \"/var/tmp/proofofwork-deploy\", \"phase\": \"assurance-plan-preflight\", \"status\": \"sufficient\"}\n"
+        }
+      ]
+    },
+    "releaseToolingTests": {
+      "passed": 93,
+      "suites": 6,
+      "receipt": {
+        "path": "/tmp/recursive-assurance-release-tooling-tests.json",
+        "bytes": 14125,
+        "sha256": "97e879093fd3434bfb5c59bfa461af595278cbebb98f9b50ffed615b01718a64"
+      }
+    },
+    "deployedBrowserFixtures": {
+      "cases": 5,
+      "passed": 5,
+      "durationSeconds": 12.1,
+      "interceptedApis": true,
+      "receipt": {
+        "path": "/tmp/recursive-assurance-deployed-browser-fixtures.log",
+        "bytes": 896,
+        "sha256": "1d797256430ae0bd0d8cb0fcd988d9572861b2e88f35175df9a5f0ae8638dfff"
+      }
+    },
+    "artifactBindings": [
+      {
+        "path": "/tmp/recursive-assurance-ui-transport-plan.json",
+        "bytes": 3834,
+        "sha256": "b61f2e65b55a1ec976e949f86a243fd463bfd9a0606e43691d3720ca05924fcd"
+      },
+      {
+        "path": "/tmp/recursive-assurance-ui-publication-plan-retry1.json",
+        "bytes": 3868,
+        "sha256": "bfc8143763f3aea1c6db6dd9c2dc8c578ead8e53b7b61c21455535b2baa11589"
+      },
+      {
+        "path": "/tmp/recursive-assurance-ui-publish.py",
+        "bytes": 7990,
+        "sha256": "9c7bb3ae97db15ba2892de4a7a62b581491a40dd1807b83652db48ce935be0c6"
+      },
+      {
+        "path": "/tmp/recursive-assurance-ui-surfaces-transport.log",
+        "bytes": 533,
+        "sha256": "55a53d80a0a72ee8f5657b07908215335fa961c6cd0016f939d26badd9503fe1"
+      },
+      {
+        "path": "/tmp/recursive-assurance-ui-source-transport.log",
+        "bytes": 505,
+        "sha256": "a841e7eb234cec312c7fb02caca931168e3d0bb30051d18a68a41fe2db343596"
+      },
+      {
+        "path": "/tmp/recursive-assurance-ui-publication-retry1.log",
+        "bytes": 1004,
+        "sha256": "9e0e97f136d164408b533ae57b4aea6989dad26445b9eb6505012ed553c31505"
+      },
+      {
+        "path": "/tmp/recursive-assurance-ui-http-smoke.log",
+        "bytes": 567,
+        "sha256": "30617241653fb16e137258b88a5f67bdd3cd73d1d934c885d848538e1859982e"
+      },
+      {
+        "path": "/tmp/recursive-assurance-ui-postflight.json",
+        "bytes": 22227,
+        "sha256": "abcfdf1b58911101a8cc5ff027bb9c82134e6376174a035032de397261501822"
+      },
+      {
+        "path": "/tmp/recursive-assurance-production-surfaces-after-release.json",
+        "bytes": 21148,
+        "sha256": "99a5ac001b08c56cc89e0c9abbdbd04cd53688b86e308b81f3992871ce1deaec"
+      },
+      {
+        "path": "/tmp/recursive-assurance-independent-chain-after-release/receipt.json",
+        "bytes": 1469,
+        "sha256": "ef4eef39b20c5db7638733159ac097c71344748206ab1b6184ab6829a5fcfb4f"
+      },
+      {
+        "path": "/tmp/recursive-assurance-node-runtime-revision.txt",
+        "bytes": 41,
+        "sha256": "262549b7083a79be6a7fef67a822562d9048bf96aabe0c610779058f6760e183"
+      }
+    ],
+    "independentReview": {
+      "result": "clear for exact release bindings and selected verification evidence",
+      "apiParserLimit": "component agreement is consistency evidence; Core checkpoint and arithmetic/raw transaction reference independent",
+      "remainingFinding": "AUD28-04 connected Files indexed reader branch",
+      "noUniversalBugFreedomClaim": true
     }
-  }
+  },
+  "initialLimitations": [
+    "no deployed client closure",
+    "no direct private Core or new genesis/full historical replay",
+    "no connected wallet/manual signing workflows",
+    "historical capacity/PITR/physical checksum/provider bandwidth gaps remain",
+    "local resume files are not cryptographically authenticated against deliberate alteration"
+  ],
+  "findingReleaseStatus": {
+    "H6-06": "correction verified locally and in exact deployed frontend within declared coverage",
+    "H6-08": "correction verified locally and in exact deployed frontend within declared coverage",
+    "H6-12": "correction verified locally and in exact deployed frontend within declared coverage",
+    "AUD27-01": "correction verified locally and in exact deployed frontend within declared coverage",
+    "RA-M01": "correction verified locally and in exact deployed frontend within declared coverage",
+    "RA-V01": "verifier correction accepted by actual-source regression and fresh read-only production use",
+    "RA-V02": "verifier correction accepted by actual-source regression and fresh read-only production use",
+    "RA-V03": "verifier correction accepted by actual-source regression and fresh read-only production use",
+    "AUD28-04": "remaining/recurring connected indexed-mail Files branch; no repair approved or attempted"
+  },
+  "updatedAt": "2026-10-01T14:23:26.098769+00:00"
 }

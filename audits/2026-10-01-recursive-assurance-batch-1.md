@@ -1,18 +1,25 @@
-# Recursive assurance — local batch 1
+# Recursive assurance — batch 1 and approved frontend release
 
 Date: 2026-10-01 (America/Toronto). Initial source revision:
 `fc3db324b5532bc2f28d48fc00eca3d93597c4e9`. Initial App source SHA-256:
 `2a026334f439dfda41fca106549d25fd24b4dbb14781128fc7f6a2a6ef92a365`.
-Latest recorded deployed application is App527,
-`527e4cbaa66f689169197c7ce9569425ef334492`. This batch does not reattest its
-private release manifest or publish a new release.
+Initial deployed application was App527,
+`527e4cbaa66f689169197c7ce9569425ef334492`. The approved frontend release is
+`dbfa88b95819-20261001T134456Z`, source commit
+`dbfa88b95819ab0fb8cbe0eabaf349e635909b5e`. The node checkout remains App527.
 
-Status: eight scoped corrections and the additionally approved fixtures are
-verified locally within the declared coverage. No client production
-closure is claimed. The initial investigation was read-only; the user then
-explicitly approved the named local source, tests, report, evidence and hygiene
-changes. Git commits/pushes, deployment, configuration changes, migrations,
-signing and broadcasts remain outside this approval.
+Current status: the eight scoped corrections and approved fixtures passed local
+acceptance and the frontend was committed, pushed and production-verified within
+the coverage below. The connected Files projection exposed a separate unresolved
+Audit28 recurrence; no overall Files byte-preservation closure is claimed.
+Announcement verification is recorded at the end when complete. The initial
+approval covered local edits; the subsequent “i approve 1-4” added the described
+Git/frontend release/announcement steps. Production configuration, protocol
+migrations, node application changes, signing and broadcasts remain excluded.
+
+The initial investigation and local acceptance sections preserve their original
+observation boundaries. Their statements about absent connection or release
+evidence refer to those stages, not to the later approved release below.
 
 ## Target and acceptance inventory
 
@@ -273,3 +280,192 @@ release scratch used 3,936,157,696 of the fixed 5 GiB ceiling. Neither reserve
 will be lowered. Preparation hygiene removed only ignored `dist` (13.1 MiB)
 and the zero-byte Vite temporary cache; repository hygiene and diff checks
 passed. No tracked or protected deletion occurred.
+
+## Frontend publication and fresh acceptance
+
+Code commit `dbfa88b95819ab0fb8cbe0eabaf349e635909b5e`, tree
+`4e197da009779e6db5babbb349f67d3a1f27a9fd`, passed the repository hooks and
+was pushed to `codex/audit29-remediation`. Main remains at the initial revision;
+this release did not merge a branch. A clean detached exact-commit build used
+Node v22.23.2 and isolated `npm ci --ignore-scripts`. Its source bundle SHA256 is
+`9a97be103dbba20f7c3e4302d9a344cfd1d56bbd59bcda12322371f6867880be`
+(96,929,254 bytes); incoming surfaces SHA256 is
+`7d521ccc3a100960d0fe91772e700774510d60b81a253ed08d8098c6b2baf852`
+(195,209,221 bytes). The clean source bundle and both local bundles are retained.
+Six relevant private release-tooling suites passed 93 tests before publication.
+
+Managed transport verified both streams, fresh capacity admission, candidate
+provenance and retained dependency closure. Installed helper hashes were pinned.
+The installed older controller was used only for the independently reviewed,
+unchanged `admit-ui` path. The documented frontend publisher then exchanged the
+complete root under the shared lock, with deferred retention. This was the
+frontend-only path; the coupled Audit29 node-shadow publication gate was neither
+executed nor claimed. No gate, reserve, timer, hold, Caddy or node configuration
+was changed.
+
+The first operator publication invocation supplied the wrong argument count and
+exited before opening any helper, file or lock. This was an operator error, not
+an application failure; its failed unit and receipt are retained. A fresh retry
+unit, with argument validation and a separately bound plan/wrapper, succeeded at
+14:03:11 UTC, exit 0, runtime 4 min 18 s. A plan upload attempted during transport
+was safely refused by the active lock before allocation. No failed evidence was
+replaced. A read-only manifest probe during root finalization saw a temporarily
+absent manifest; the successful publisher's final proof and later postflight
+verify the finalized root.
+
+Active manifest SHA256:
+`2426aa769644d6f4dd85cf3948375cb7547c061e8934e2b2656a32a30dacb9ba`.
+Managed archive SHA256:
+`c1b6af4f60964bd2ae0b3fc637b73bae8c9e3ed07099b6ddd98183d7c9c00881`.
+The managed archive includes retained assets and therefore differs from the
+incoming surface gzip. Source commit/tree, archive, active/adjacent manifests
+and Computer/NFT identity passed the installed provenance checks. Remote
+publication evidence is
+`/var/tmp/proofofwork-deploy/assurance-publish-dbfa88b95819-20261001T134456Z-retry1`.
+The companion JSON binds plans, logs, receipts and local artifact hashes.
+
+Fresh strengthened surface verification, 14:03:59.497–14:05:28.979 UTC, passed
+all 15 ordered surfaces with 17 sampled API probes and 60 linked asset fetches.
+All evidence was current-run; none was reused. Final verifier SHA256 is
+`c876280878e2dce3a30e08e1de424127ddb7e9d8f10724dc5fe3fda1a9464765`.
+The documented off-host HTTPS archive check then verified **810 files**, every
+public hostname root and the apex redirect, 14:05:25–14:17:08 UTC. It bound the
+exact managed archive and active manifest above. These are byte/availability
+checks, not proof of every workflow.
+
+The five existing Desktop browser fixtures also passed against the deployed
+bundle in 12.1 s. Their intercepted API responses exercise controlled failure,
+pending rejection, wrong-txid rejection, refresh recovery and deduplication;
+they are distinguished from live producer evidence. Real Desktop reads accepted
+address A (`1KNkUBREnfno2BeV7QsBf8XCWZN6YFfxPH`, two owned files), then address B
+(`1F1p9UEHuH5KTFR7Zsx93Khdrqhj6t5nFv`, four owned files). While B loaded, A's
+previous verified profile remained visible and controls stayed busy. B completed
+with consistent target, heading, count and status. The verified shared welcome
+reference did not increase owned-file counts. Integrated Computer Desktop later
+accepted A's two owned files and its separate 1,018-byte system reference.
+
+Standalone Browser was observed loading the confirmed welcome txid before
+selection changed to Testnet4. The selected network stayed Testnet4, no obsolete
+completion restored Mainnet or the page URL, and an explicit Mainnet retry
+recovered the verified page. Selecting Testnet4 after recovery retained the
+previous proof as Mainnet. Integrated Browser likewise retained Testnet4 and a
+correct Mainnet proof; its warm read may have completed before the selector
+action, so that observation does not independently prove the pending race.
+Deterministic actual-source tests cover the integrated pending and unmount
+cases. No real provider network switch was requested.
+
+Credit DRAIN accepted two holders and two nonempty mint pages (1–25, then 26–50
+of 110). WORK accepted holder pages 1 and 2 of 388 and mint pages 1 and 2 of
+21,000. Loading states explicitly withheld unverified histories. This establishes
+valid producer compatibility and page transitions, not an exhaustive collection
+of all histories. Malformed/error/obsolete-response cases remain controlled
+local evidence.
+
+The user connected the existing assurance account; after the deployed-client
+reload, the same account was reconnected. Computer reported 23 Inbox, 0 Incoming,
+11 Sent and one Outbox item. Its dropped attempt
+`8e9074486fa0a6a75fd01f20c8a41a56ccd964be569e61e81e92c60266c001f0`
+remained in Outbox, labelled Dropped, with Check TX and Rebuild Draft available.
+The header reported **1 dropped attempt** and no pending-mail badge. The old
+client had counted this item as an unconfirmed event. No Drafts fixture existed;
+draft restoration was not exercised. No draft, signature, broadcast or financial
+action was created. Files ownership/header counts agreed at two owned files;
+the separate message-body projection discrepancy below remains open.
+
+Postflight at 14:18:41 UTC verified active complete-root SHA256
+`52b517b5c153638067acc1e39e013368d76574fff547c2517149ada4ecb8dbd4`.
+Both prior complete roots retained exact preflight fingerprints. All ten helper
+hashes/modes/owners were unchanged. Rollback provenance and scratch admission
+passed; 25,054,035,968 bytes and 2,333,605 inodes remained available. Scratch was
+4,195,127,296 / 5,368,709,120 bytes. Both rollback roots, release archives, source
+and prior evidence are retained. This is not a restore rehearsal. A direct
+read-only node checkout HEAD probe still returned App527; this is not a full
+process/configuration attestation.
+
+## Independent chain and byte evidence after release
+
+Direct private Core RPC and an independent Python integer reference ran
+14:08:26–14:08:45 UTC. Core was stable before/after at height **969451**, hash
+`00000000000000000000004b63a0e0ce385e104408b93d13ba37b3657f9b0745`.
+Health, WORK and Growth agreed on that canonical checkpoint and snapshot
+`59a921311759056f2d8dbac6`. Integer network value Q8
+`1452112170417446873646341097` divided by 21,000,000 gives floor Q8
+`69148198591306993983`, matching the API and visible WORK floor. The strengthened
+ledger also passed with zero permitted tip lag. Response hashes are retained.
+This validates the checkpoint and reference arithmetic; it is not an independent
+genesis replay of the aggregate value.
+
+Core confirmed welcome txid
+`8c2fd17b10a6550896035b9f725054d3c6e10c314911808d8f7aaa2955c3015b`
+at height 949253, canonical block hash
+`00000000000000000000d62351dbdee65198745a8ff15b73facf143ec2b49a62`.
+Independent decoding of its serialized transaction recomputed the txid,
+matched its scripts to Core, and reconstructed the `pwm1:m:` payload without
+the application parser. Raw HTML is **1,018 bytes**, SHA256
+`f05b31a5f4dfabff5fb0ffe3bef1a03de4a8f5c562694609114ae6d352e9caad`.
+Browser's displayed raw source matches exactly. Its iframe is a separate static
+representation: removing 104 original doctype/meta bytes and adding 455 bytes
+of referrer/CSP/inert wrapper yields 1,369 bytes, SHA256
+`cc69271b49a073ed02277ac925807c492d4230b78baa201f9d379f22c865551d`.
+An independent literal reconstruction matched this known fragment's preview;
+it does not establish general sanitizer correctness.
+
+Separate review found no additional issue in the eight corrected mechanisms,
+release bindings or selected verification evidence. The connected Files
+recurrence below prevents broad Files closure. H6-05, H6-10, event-audit and
+historical capacity/PITR/checksum/off-host alert/provider-bandwidth gaps remain
+qualified/open. Acceptance is confined to the corrections and checks described
+here. The highest-value next action is a bounded approval batch for the Files
+projection recurrence, followed by the prior canonical-branch/reorg gaps.
+
+## Remaining AUD28-04 connected Files projection
+
+**AUD28-04 / P2, remaining/recurring indexed-mail branch; not repaired by this
+frontend batch.** Canonical `MAIL_ORGANIZATION.md:620` requires preservation of
+leading/trailing whitespace and hashing the actual reconstructed bytes. The
+previous Audit28 receipt preserved its public Desktop/mail-activity repair;
+this new connected observation does not invalidate that narrower historical
+proof or alter confirmed history.
+
+Minimal reproducer: connect the assurance account on Mainnet, open Computer
+Files, and select welcome `message-body.html` for txid `8c2fd17b...3015b`.
+Files shows **1,017 bytes**, SHA256
+`0c2d97286186b6c5174102be1891d51fc5c8e4b217d58d3081f2e072cb94020b`.
+Open the same txid in Browser: Core and raw Browser source show 1,018 bytes and
+the canonical `f05b31a5...e9caad` hash above. Removing the final LF alone exactly
+reproduces the Files size/hash. The observed file is a derived message-body
+projection; the confirmed transaction and two owned attachment records remain
+intact.
+
+The exact source mechanism is `mailMemoFromEvent` in
+`server/db/proof-index-reader.mjs:39823`: direct payload body/message/memo,
+stored `body_text` and detail branches each apply `.trim()`. Its result flows
+through `addressMailRowPayloads:40188`, `proofIndexAddressMailPayload:40585`,
+the address-mail API, `fetchAddressMail`, then `fileSurfaceMessages:13858` and
+`browserMessageBodyAttachment:13919` in `src/App.tsx`. The client synthesis
+hashes its supplied string unchanged. A pure execution of the actual reader
+helper with captured Core HTML reproduced the observed noncanonical hash for
+all three branches. Current network-envelope attribution was not captured;
+source mechanism plus matching byte fingerprint is the stated evidence.
+The helper is byte-identical in this checkout and the freshly observed node
+commit App527, SHA256
+`d4b97f00f15a15033cce76a968c2b0f8364dc046bb2a2402573edad7b54b5ea9`.
+The body/message/memo variants plus stored text and detail cases all reproduce
+the same trimmed result. This binds the source mechanism without inventing a
+live API/configuration/row attribution.
+
+Proposed next correction: preserve body bytes in this indexed-mail reader while
+using separate normalized text only where search/classification needs it. Add
+meaningful leading/trailing/multibyte body fixtures across all three source
+branches and check connected Files/Browser/download byte agreement against
+Core. This requires a new exact source/test/node-release approval; the current
+frontend approval does not authorize that repair or a node deployment. No fix
+was attempted. Do not claim all Files projections preserve canonical bytes.
+
+Release receipt hygiene: `hygiene:fix` removed nothing; semantic review retained
+the existing SOUL/canonical rules, classified historical evidence, generators,
+cleanup boundaries and recovery artifacts. The current status was reconciled
+without rewriting earlier observations. `hygiene:check` and `git diff --check`
+passed. Only this approved report and its evidence JSON changed; no tracked or
+protected deletion occurred. Source and deployed artifacts remain at the code
+commit above. Receipt commits use the required review trailers and hooks.
