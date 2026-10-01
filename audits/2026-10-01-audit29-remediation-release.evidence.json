@@ -8687,6 +8687,207 @@
           "externalKillBoundary": "SIGKILL/cgroup timeout can interrupt Python finally; durable backup timer intent remains and prior state must be inspected/restored before retry. This qualification is explicit in final invocation."
         }
       }
+    },
+    "cleanupCompleted": {
+      "bytes": 10561,
+      "sha256": "80f487f268a9f8cdcb7980cdd898519c15b69175005a59db62e2d4c4a7a45563",
+      "receipt": {
+        "receipt": {
+          "schema": "proof-of-work-audit29-completed-retirements-v1",
+          "host": "77.42.91.106",
+          "status": "completed",
+          "approvedManifestSha256": "9aa090024effa42b31be9d4b4a4d6e072c87b5b3c50919623a418f73d2a92211",
+          "historicalHeldReviewSha256": "c3bd35740d7fcc135839274c8228e38f7a45c23e33567743e0d77151b32451d9",
+          "retiredPathCount": 26,
+          "retired": [
+            {
+              "path": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-289e886f35dd-20260930T052419Z",
+              "beforeFingerprintSha256": "44e1f97ecb9581a31f45fa91baaea6db591d973ff639f540a29c71fc76687ae9",
+              "outcome": "retired",
+              "retiredAtUtc": "2026-10-01T05:50:54.734761+00:00"
+            },
+            {
+              "path": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-399175ed49e1-20260930T205459Z",
+              "beforeFingerprintSha256": "08ce76234311ed61cf80c32221c95ebfbcfff2be90c2455cd9a39ba2f41cea69",
+              "outcome": "retired",
+              "retiredAtUtc": "2026-10-01T05:51:07.772609+00:00"
+            },
+            {
+              "path": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-3bc6c9d44e00-20260929T200127Z",
+              "beforeFingerprintSha256": "4e3d1b0ba7f632e7ceb1883bbab6e5070acfd863dda656a70af61979d992a3ce",
+              "outcome": "retired",
+              "retiredAtUtc": "2026-10-01T05:51:20.539055+00:00"
+            },
+            {
+              "path": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-5b18f35202d1-20260930T172209Z",
+              "beforeFingerprintSha256": "1e83a5f9a5abfa20917fdc8e373f490e139ea25d4384a304a8ab52209a03dd84",
+              "outcome": "retired",
+              "retiredAtUtc": "2026-10-01T05:51:32.707461+00:00"
+            },
+            {
+              "path": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-66a13c81031b-20261001T003606Z",
+              "beforeFingerprintSha256": "09364979cb7c3fa68f2fea678513ea94792b245d657d76e2d7c9c486317e9828",
+              "outcome": "retired",
+              "retiredAtUtc": "2026-10-01T05:51:47.239646+00:00"
+            },
+            {
+              "path": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-66bb45ee0c1f-20260930T234940Z",
+              "beforeFingerprintSha256": "dfacba36af9e016c7dd544b2a5e9f375984055f4964f3cfd01ea18f1a84e69e7",
+              "outcome": "retired",
+              "retiredAtUtc": "2026-10-01T05:52:01.347270+00:00"
+            },
+            {
+              "path": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-8d592346ce05-20260930T151413Z",
+              "beforeFingerprintSha256": "02ebead5c2c97cb980522d304ca447ab28690d4e30ef1737212ffcd2271d2520",
+              "outcome": "retired",
+              "retiredAtUtc": "2026-10-01T05:52:14.013053+00:00"
+            },
+            {
+              "path": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-993523cc6869-20260930T045021Z",
+              "beforeFingerprintSha256": "f2f0cf0145dda45923071a1223446b81980589e891cdaaef80ab30bf1fae48dc",
+              "outcome": "retired",
+              "retiredAtUtc": "2026-10-01T05:52:27.671188+00:00"
+            },
+            {
+              "path": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-a69101a9423c-20260930T154441Z",
+              "beforeFingerprintSha256": "55d22a7d2121bbc9eacb37293c4cbaeeb05647985bfb4ea33bf8a851c465af9b",
+              "outcome": "retired",
+              "retiredAtUtc": "2026-10-01T05:52:40.088980+00:00"
+            },
+            {
+              "path": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-bbb03cebb6c6-20260930T024800Z",
+              "beforeFingerprintSha256": "19fb6ee52d25147f228b7509fe636cac3f80ede6557db8dc6f408ad34fb4fc69",
+              "outcome": "retired",
+              "retiredAtUtc": "2026-10-01T05:52:54.116396+00:00"
+            },
+            {
+              "path": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-c40b634e8457-20261001T015901Z",
+              "beforeFingerprintSha256": "8a6422a1a3488288346b9506e9b0e44c00daabffd5436cb5615006efaca3a6ad",
+              "outcome": "retired",
+              "retiredAtUtc": "2026-10-01T05:53:08.753289+00:00"
+            },
+            {
+              "path": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-db853f434f9b-20260930T011125Z",
+              "beforeFingerprintSha256": "b234d01a68592162791792c77e244fe9c1d9ea87a3a9e199f859f69bee8617b3",
+              "outcome": "retired",
+              "retiredAtUtc": "2026-10-01T05:53:20.870047+00:00"
+            },
+            {
+              "path": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-de34debc27d2-20261001T012016Z",
+              "beforeFingerprintSha256": "6c96a32cfecd4c7d284a053092e445c92a4bdb4ed6df5c343c46dce68af97a31",
+              "outcome": "retired",
+              "retiredAtUtc": "2026-10-01T05:53:33.881738+00:00"
+            },
+            {
+              "path": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-fbf45f3a8cf0-20260930T213055Z",
+              "beforeFingerprintSha256": "87f6b297b231d04558a4c8c88c7388ead1bc50c27f0aa4998db5e13c8c98cc0d",
+              "outcome": "retired",
+              "retiredAtUtc": "2026-10-01T05:53:47.248867+00:00"
+            },
+            {
+              "path": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-fcea80732940-20260930T190436Z",
+              "beforeFingerprintSha256": "a6c2eeb0663135f9d708bc53476508ba47595fa8d456ae33031ab7b3613436ea",
+              "outcome": "retired",
+              "retiredAtUtc": "2026-10-01T05:54:00.921839+00:00"
+            },
+            {
+              "path": "/var/tmp/proofofwork-deploy/proofofwork-ui-source-0e767c69e785-20260929T165314Z",
+              "beforeFingerprintSha256": "409c2c8b6c6ded052d95f482d7e6f071f8565045848c3969a48601a115a248de",
+              "outcome": "retired",
+              "retiredAtUtc": "2026-10-01T05:54:12.919951+00:00"
+            },
+            {
+              "path": "/var/tmp/proofofwork-deploy/proofofwork-ui-source-289e886f35dd-20260930T052419Z",
+              "beforeFingerprintSha256": "45761c9f0519de400b64d53adac82082d5176c31ced032e608f9eca86184bae5",
+              "outcome": "retired",
+              "retiredAtUtc": "2026-10-01T05:54:23.797002+00:00"
+            },
+            {
+              "path": "/var/tmp/proofofwork-deploy/proofofwork-ui-source-3bc6c9d44e00-20260929T200127Z",
+              "beforeFingerprintSha256": "dea6ab3869f5f993abb514dddfe8ed4567bd909c90b9c9962eb44cb35ccb6673",
+              "outcome": "retired",
+              "retiredAtUtc": "2026-10-01T05:54:34.789406+00:00"
+            },
+            {
+              "path": "/var/tmp/proofofwork-deploy/proofofwork-ui-source-5b18f35202d1-20260930T172209Z",
+              "beforeFingerprintSha256": "3938d4f0091114f1f06904d8d574518849d33cbc7c53f648285867df9ab662ea",
+              "outcome": "retired",
+              "retiredAtUtc": "2026-10-01T05:54:45.338457+00:00"
+            },
+            {
+              "path": "/var/tmp/proofofwork-deploy/proofofwork-ui-source-66a13c81031b-20261001T003606Z",
+              "beforeFingerprintSha256": "62c281478de654570924f9e4f3a24cb1ac7ea06fd61b33cb8770df3d152a3f64",
+              "outcome": "retired",
+              "retiredAtUtc": "2026-10-01T05:54:56.196633+00:00"
+            },
+            {
+              "path": "/var/tmp/proofofwork-deploy/proofofwork-ui-source-8d592346ce05-20260930T151413Z",
+              "beforeFingerprintSha256": "3c61bc81cdf7b5277a561eb2e6e3329b026a80ffa181d4a8ea0e98dfc523d9e9",
+              "outcome": "retired",
+              "retiredAtUtc": "2026-10-01T05:55:06.732971+00:00"
+            },
+            {
+              "path": "/var/tmp/proofofwork-deploy/proofofwork-ui-source-993523cc6869-20260930T045021Z",
+              "beforeFingerprintSha256": "72ac8f7f29830a89425f3c291571b0d23bf0efc3aa1a05797e6576a302a41f77",
+              "outcome": "retired",
+              "retiredAtUtc": "2026-10-01T05:55:18.868584+00:00"
+            },
+            {
+              "path": "/var/tmp/proofofwork-deploy/proofofwork-ui-source-a69101a9423c-20260930T154441Z",
+              "beforeFingerprintSha256": "2e84f7b9adde7172b4544c9fd550317cbc51ff00e310d1aa6692456f197798e3",
+              "outcome": "retired",
+              "retiredAtUtc": "2026-10-01T05:55:30.024496+00:00"
+            },
+            {
+              "path": "/var/tmp/proofofwork-deploy/proofofwork-ui-source-bbb03cebb6c6-20260930T024800Z",
+              "beforeFingerprintSha256": "bc77fb9347702d025d0698eda4c2f3e30089b1220c23ffffca71090675c5ac02",
+              "outcome": "retired",
+              "retiredAtUtc": "2026-10-01T05:55:45.386504+00:00"
+            },
+            {
+              "path": "/var/tmp/proofofwork-deploy/proofofwork-ui-source-db853f434f9b-20260930T011125Z",
+              "beforeFingerprintSha256": "af1374832c2aa9d018bd96eb99b67c16f288930d38f8f07774b62932ce897ada",
+              "outcome": "retired",
+              "retiredAtUtc": "2026-10-01T05:55:56.340078+00:00"
+            },
+            {
+              "path": "/var/tmp/proofofwork-deploy/proofofwork-ui-source-de34debc27d2-20261001T012016Z",
+              "beforeFingerprintSha256": "1d9f47ff33d4cb4dc7f7f4001433ecffda4b9c406e11cd44e49ef27f1cd03dff",
+              "outcome": "retired",
+              "retiredAtUtc": "2026-10-01T05:56:07.151804+00:00"
+            }
+          ],
+          "originalHistoricalUiHeldPaths": 295,
+          "remainingPresentHistoricalUiHeldPaths": 282,
+          "preexistingUnresolvedHeldAbsenceCount": 11,
+          "preexistingUiAbsenceReceiptSha256": "1d5194c18b1a40922801318af04d25c248e1a1259081f837b83006e44b71a821",
+          "preexistingUnresolvedHeldAbsences": [
+            "/var/tmp/proofofwork-deploy/audit5-stream-source-5970b26e610b-20260926T225712Z.json",
+            "/var/tmp/proofofwork-deploy/audit5-stream-source-b752518bf8b4-20260927T014804Z.json",
+            "/var/tmp/proofofwork-deploy/audit5-stream-source-c64963f4649f-20260927T001231Z.json",
+            "/var/tmp/proofofwork-deploy/audit5-stream-surfaces-5970b26e610b-20260926T225712Z.json",
+            "/var/tmp/proofofwork-deploy/audit5-stream-surfaces-b752518bf8b4-20260927T014804Z.json",
+            "/var/tmp/proofofwork-deploy/audit5-stream-surfaces-c64963f4649f-20260927T001231Z.json",
+            "/var/tmp/proofofwork-deploy/boost-ui-deploy-config.json",
+            "/var/tmp/proofofwork-deploy/boost-ui-publish-b111f5941375-20260927T125836Z.json",
+            "/var/tmp/proofofwork-deploy/deploy-boost-ui-remote.py",
+            "/var/tmp/proofofwork-deploy/profile-release-c964e304a8f9-20260927T181330Z.json",
+            "/var/tmp/proofofwork-deploy/profile-ui-publish-config.json"
+          ],
+          "retentionMonitorMustRemainFailing": true,
+          "holdMarkerPreserved": true,
+          "pruneMasksPreserved": true,
+          "intentPath": "/var/backups/proofofwork-ui/cleanup-evidence/audit29-intent-20261001T054702.513442Z.json",
+          "intentSha256": "84716618c00286c4009b1d64ea5597dbd601075f07967d62f3c452b6634d0453",
+          "completedAtUtc": "2026-10-01T05:56:11.249714+00:00"
+        },
+        "completedReceiptSha256": "2b927bca35216a21f3c92145715d36fbbbd9cb03432780bfc04dc18d17d61057",
+        "exactCompletedRetirementReceiptInstalled": "/etc/proofofwork-retention/audit29-completed-retirements.json",
+        "observedUtc": "2026-10-01T05:56:57.079587+00:00",
+        "availableBytes": 22858788864,
+        "scratchAllocatedBytes": 3677802496,
+        "caddyMainPID": "3092586"
+      }
     }
   },
   "cleanupManifest": {
@@ -8720,7 +8921,7 @@
     "noFabricatedRecovery": true,
     "cause": "Old3day tmpfiles expiry plausible, individual deletion attribution unproven"
   },
-  "cleanupExecutionStatus": "approved-exact26-in-progress-no-completion-claim",
+  "cleanupExecutionStatus": "completed-exact26",
   "currentSourceBindings": [
     {
       "path": "deploy/audit29/INVOCATION.md",
@@ -8767,5 +8968,93 @@
       "bytes": 12669,
       "sha256": "b626304aeb0aa4b5e04c30a2bbad15319ed101871be0659860d70aec397d7e32"
     }
-  ]
+  ],
+  "cleanupCapacity": {
+    "beforeAvailableBytes": 14573342720,
+    "afterAvailableBytes": 22858788864,
+    "observedIncreaseBytes": 8285446144,
+    "beforeScratchAllocatedBytes": 6676426752,
+    "afterScratchAllocatedBytes": 3677802496,
+    "scratchDecreaseBytes": 2998624256,
+    "qualification": "Filesystem measurements include concurrent normal allocations; cohort allocated sum is not substituted for reclaimed free space."
+  },
+  "workflowCorrection": {
+    "handoff": {
+      "scope": "Local workflow correction only; no application edits, production execution, commit or deployment",
+      "sourceFrozen": true,
+      "files": {
+        "deploy/audit29/release.py": "dc74b724114d993b82d22f4b040472e4e7165b84915f92fae61942637c1d8e74",
+        "deploy/audit29/check-release.test.py": "29f9dfd8d7e7f430addef822f7a6d701cfad9db09b027aa241e887b1bfe26d82",
+        "deploy/audit5/stream-ui-bundle.py": "28c5dc45f75184a0cb3138df52b3558b0ebcb0c3d8c59233ae261fdbd812817b",
+        "deploy/audit5/ui-stage-candidate.sh": "2f5f80b8065170c10b00f83363f2f1fb429dfbea6ce7237fb4ec311b74e264ff",
+        "scripts/check-audit5-ui-workflow.py": "92d9d510adbb889d19ae10b525f53b9491787c5c70a767673fa65991b37e2bc5",
+        "deploy/audit29/INVOCATION.md": "2d7d08e185abc1ae1311c9b93c4b83a6c5678b323558d27f0c99a9a7785c9ab1"
+      },
+      "changes": {
+        "wal": "Core/Electrs/Postgres must remain active; loaded WAL receiver may retain existing active or inactive baseline (inactive requires PID0). SubState and UnitFileState now join exact unchanged identity fences. No receiver start/configuration is introduced.",
+        "ui": "Receiver and candidate-stage shell reuse validated inherited POW_UI_DEPLOY_LOCK_FD when supplied; default independent locking remains. Exact path/inode/ownership/type/mode/nlink checks and nonblocking flock precede allocation. Inherited descriptors remain owned by transport parent."
+      },
+      "tests": [
+        {
+          "command": "python3 -I -B deploy/audit29/check-release.test.py",
+          "result": "PASS14/14",
+          "receipt": "/tmp/pow-audit29-release/controllers/workflow-release14.txt"
+        },
+        {
+          "command": "python3 -I -B scripts/check-audit5-ui-workflow.py",
+          "result": "PASS26/26",
+          "receipt": "/tmp/pow-audit29-release/controllers/workflow-ui26-final.txt"
+        },
+        {
+          "command": "bash -n deploy/audit5/ui-stage-candidate.sh",
+          "result": "PASS"
+        },
+        {
+          "command": "git diff --check",
+          "result": "PASS"
+        }
+      ],
+      "integrationProof": "Actual full16surface tar reception followed by full real stager subprocess under inherited parent FD; independent competitor repeatedly refuses throughout reads/staging and succeeds only after parent closes; live fingerprint unchanged. Shell inherited branch tested with real passed FD; invalid/wrong/closed FD refuses.",
+      "earlierFixtureCorrection": "Expanded full-stager fixture initially created umask-derived unsafe writable files/directories. Fixture now explicitly supplies safe644/755 metadata and real directory archive entries; production behavior unchanged.",
+      "releaseInstructions": "Rebuild/restage one coherent correction commit, supply refreshed exact controller/receiver/stage-shell SHA bindings, retain all existing failures/stages. Export POW_UI_DEPLOY_LOCK_FD from outer admitted lock parent; Python subprocess parents must pass_fds. Installed stager/capacity bytes unchanged, currentc6f7a20f pin remains valid.",
+      "hygiene": "Root owns final repository hygiene, report semantic decisions, commit, push, deployment and production verification."
+    },
+    "independentReview": {
+      "checkedAtUtc": "2026-10-01T05:59:20.914950+00:00",
+      "ok": true,
+      "sourceEdits": 0,
+      "productionCommands": 0,
+      "bindings": {
+        "deploy/audit29/release.py": "dc74b724114d993b82d22f4b040472e4e7165b84915f92fae61942637c1d8e74",
+        "deploy/audit29/check-release.test.py": "29f9dfd8d7e7f430addef822f7a6d701cfad9db09b027aa241e887b1bfe26d82",
+        "deploy/audit5/stream-ui-bundle.py": "28c5dc45f75184a0cb3138df52b3558b0ebcb0c3d8c59233ae261fdbd812817b",
+        "deploy/audit5/ui-stage-candidate.sh": "2f5f80b8065170c10b00f83363f2f1fb429dfbea6ce7237fb4ec311b74e264ff",
+        "scripts/check-audit5-ui-workflow.py": "92d9d510adbb889d19ae10b525f53b9491787c5c70a767673fa65991b37e2bc5"
+      },
+      "checks": [
+        {
+          "tests": 14,
+          "receipt": "/tmp/pow-audit29-release/math/workflow-controller-peer.log",
+          "receiptSha256": "2c450f6a018b2d7b99b0aaa1d5a4545d1be29e5a9a1ed0d01b58617b485299bc"
+        },
+        {
+          "tests": 26,
+          "receipt": "/tmp/pow-audit29-release/math/workflow-lock-peer.log",
+          "receiptSha256": "ed1117848ea18fcf650ff08785c3c6ed5d22b06287e2e1041d3af27bf7ac77c7"
+        }
+      ],
+      "conclusions": [
+        "Core/Electrs/PG remain mandatory active. Loaded WAL may preserve prior active or inactivePID0 baseline; exact SubState/UnitFileState/PID/start/restart fence remains. No WAL start/configuration change.",
+        "Receiver and shell validate inherited FD against exact managed lock path/current inode/device/type/mode/uid/gid/nlink. Nonblocking exclusive flock precedes allocation; inherited FD is not closed/unlocked, parent retains ownership.",
+        "Full16surface tar then actual stager subprocess test excludes independent competitor throughout transfer/staging and after child exit; competitor succeeds only when parent closes. Prior live fingerprint remains unchanged.",
+        "Malformed/wrong/closed inherited FDs fail before scratch allocation. Existing default independent-lock branch retained.",
+        "Timer restoration only starts previously active timers and preserves exact prior states, holds and masks. No assurance gate is relaxed for an unavailable primary authority."
+      ],
+      "qualification": "Local source/fixture review only; coherent refreshed commit/build/stage/hash bindings and production verification remain root responsibilities."
+    },
+    "rootTests": {
+      "releaseController": "14/14 PASS",
+      "uiWorkflow": "26/26 PASS"
+    }
+  }
 }

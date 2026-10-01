@@ -73,11 +73,22 @@ def receive(mode, release, length, expected, source, parent, lock_path, *, owner
     safe_directory(parent, owner)
     safe_directory(lock_path.parent, owner)
     require(lock_path.resolve() == lock_path, 'Unsafe deploy lock path')
-    descriptor = os.open(lock_path, os.O_RDONLY | os.O_NOFOLLOW)
+    inherited = os.environ.get('POW_UI_DEPLOY_LOCK_FD', '')
+    if inherited:
+        require(inherited.isdigit() and int(inherited) >= 3, 'Invalid inherited deploy lock descriptor')
+        descriptor = int(inherited)
+        require(Path(f'/proc/self/fd/{descriptor}').resolve() == lock_path,
+                'Inherited deploy lock path differs')
+    else:
+        descriptor = os.open(lock_path, os.O_RDONLY | os.O_NOFOLLOW)
     try:
         details = os.fstat(descriptor)
         require(stat.S_ISREG(details.st_mode) and details.st_uid == owner and
                 details.st_nlink == 1 and not details.st_mode & 0o7022, 'Unsafe deploy lock')
+        current = lock_path.lstat()
+        require((details.st_dev, details.st_ino, details.st_mode, details.st_uid, details.st_gid, details.st_nlink) ==
+                (current.st_dev, current.st_ino, current.st_mode, current.st_uid, current.st_gid, current.st_nlink),
+                'Inherited/open deploy lock identity differs')
         fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
         top = f'proofofwork-ui-{mode}-{release}'
         root = parent / top
@@ -149,7 +160,8 @@ def receive(mode, release, length, expected, source, parent, lock_path, *, owner
             os.close(parent_fd)
         return receipt
     finally:
-        os.close(descriptor)
+        if not inherited:
+            os.close(descriptor)
 
 
 def main():

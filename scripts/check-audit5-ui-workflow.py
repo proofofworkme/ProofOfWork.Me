@@ -1,6 +1,7 @@
 #!/usr/bin/python3
 """Temporary-only behavior fixtures for the audit-5 UI transport/capacity path."""
 import hashlib
+import fcntl
 import importlib.util
 import io
 import json
@@ -12,6 +13,7 @@ import subprocess
 import sys
 import tarfile
 import tempfile
+import time
 import unittest
 from types import SimpleNamespace
 from unittest import mock
@@ -46,6 +48,8 @@ def archive_bytes(mode='surfaces', entries=None):
                 member.type, member.linkname = tarfile.SYMTYPE, value
             elif kind == 'hardlink':
                 member.type, member.linkname = tarfile.LNKTYPE, top + '/' + value
+            elif kind == 'directory':
+                member.type = tarfile.DIRTYPE
             else:
                 member.size = len(value)
             archive.addfile(member, io.BytesIO(value) if member.isfile() else None)
@@ -166,6 +170,116 @@ class TransportTests(unittest.TestCase):
         self.assertNotEqual(isolated.returncode, 0)  # No production arguments supplied.
         self.assertNotIn('POISONED_LOCAL_IMPORT', isolated.stderr)
         self.assertTrue('Run receiver as root' in isolated.stderr or 'Usage:' in isolated.stderr)
+
+    def competing_lock(self):
+        code = "import fcntl,os,sys; f=os.open(sys.argv[1],os.O_RDONLY); " + \
+               "\ntry: fcntl.flock(f,fcntl.LOCK_EX|fcntl.LOCK_NB)\nexcept BlockingIOError: sys.exit(42)"
+        return subprocess.run([sys.executable, '-I', '-c', code, str(self.lock)],
+                              capture_output=True, timeout=5).returncode
+
+    def test_parent_lock_excludes_competitor_through_stream_and_stager_handoff(self):
+        descriptor = os.open(self.lock, os.O_RDONLY)
+        fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        entries = [('surfaces', 'directory', b'', 0o755)]
+        live = self.parent / 'www'; live.mkdir(mode=0o755)
+        for surface in stager.SURFACES:
+            old = live / ('proofofwork-' + surface); old.mkdir(mode=0o755)
+            (old / 'assets').mkdir(mode=0o755)
+            (old / 'index.html').write_bytes(b'<script src="/assets/old.js"></script>')
+            (old / 'assets/old.js').write_bytes(b'preserved prior asset')
+            (old / 'index.html').chmod(0o644); (old / 'assets/old.js').chmod(0o644)
+            entries.extend([('surfaces/' + surface, 'directory', b'', 0o755),
+                            ('surfaces/' + surface + '/assets', 'directory', b'', 0o755),
+                            ('surfaces/' + surface + '/index.html', 'file', b'<script src="/assets/new.js"></script>', 0o644),
+                            ('surfaces/' + surface + '/assets/new.js', 'file', b'accepted', 0o644)])
+        live_before = stager.tree_fingerprint(live)
+        data = archive_bytes(entries=entries); checks = []
+        owner = self
+        class CheckedSource(io.BytesIO):
+            def read(self, size=-1):
+                owner.assertEqual(owner.competing_lock(), 42)
+                checks.append('stream-read')
+                return super().read(size)
+        try:
+            with mock.patch.dict(os.environ, {'POW_UI_DEPLOY_LOCK_FD': str(descriptor)}):
+                result = stream.receive('surfaces', RELEASE, len(data), hashlib.sha256(data).hexdigest(),
+                    CheckedSource(data), self.parent, self.lock, owner=os.getuid(), floor=0)
+                payload = Path(result['extractedRoot']) / 'surfaces'
+                self.assertEqual((payload / 'activity/assets/new.js').read_bytes(), b'accepted')
+                self.assertTrue(checks)
+                self.assertEqual(self.competing_lock(), 42)
+                self.assertEqual(stager.acquire_deploy_lock(self.lock, True), descriptor)
+                self.assertEqual(self.competing_lock(), 42)
+                destination = self.parent / ('proofofwork-www-stage-' + RELEASE)
+                child = subprocess.Popen([sys.executable, '-I', '-B', str(ROOT / 'deploy/proofofwork-ui-release-stage.py'),
+                    '--release-id', RELEASE, '--surfaces-root', str(payload), '--stage-root', str(destination),
+                    '--deduplicate-managed-files'], pass_fds=(descriptor,), stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                    env={**os.environ, 'POW_UI_ALLOW_TEST_ROOTS': '1', 'POW_UI_STAGE_WWW_ROOT': str(live),
+                         'POW_UI_STAGE_STAGING_ROOT': str(self.parent), 'POW_UI_DEPLOY_LOCK': str(self.lock)})
+                deadline = time.monotonic() + 30
+                try:
+                    while child.poll() is None and time.monotonic() < deadline:
+                        self.assertEqual(self.competing_lock(), 42)
+                        time.sleep(0.01)
+                    stdout, stderr = child.communicate(timeout=1)
+                    self.assertEqual(child.returncode, 0, stderr.decode())
+                    self.assertIn(b'ui_release_stage status=staged', stdout)
+                finally:
+                    if child.poll() is None: child.kill(); child.wait(timeout=3)
+                    child.stdout.close(); child.stderr.close()
+                self.assertEqual(self.competing_lock(), 42)
+                self.assertEqual((destination / 'proofofwork-activity/assets/new.js').read_bytes(), b'accepted')
+                self.assertEqual(stager.tree_fingerprint(live), live_before)
+                os.fstat(descriptor)  # Receiver/stager never close parent's FD.
+        finally:
+            os.close(descriptor)
+        self.assertEqual(self.competing_lock(), 0)
+
+    def test_inherited_receiver_refuses_wrong_or_closed_descriptor_before_scratch(self):
+        other = self.parent / 'other.lock'; other.touch(mode=0o600)
+        descriptor = os.open(other, os.O_RDONLY)
+        try:
+            for value in (str(descriptor), '2', 'invalid'):
+                with mock.patch.dict(os.environ, {'POW_UI_DEPLOY_LOCK_FD': value}), self.assertRaises(Exception):
+                    self.receive(archive_bytes())
+        finally: os.close(descriptor)
+        with mock.patch.dict(os.environ, {'POW_UI_DEPLOY_LOCK_FD': str(descriptor)}), self.assertRaises(Exception):
+            self.receive(archive_bytes())
+        self.assertFalse(list(self.parent.glob('.audit5-stream-*')))
+
+    def test_stage_shell_reuses_parent_descriptor_with_competing_process_excluded(self):
+        source = (ROOT / 'deploy/audit5/ui-stage-candidate.sh').read_text()
+        guard = source.split('# BEGIN inherited deploy lock\n', 1)[1].split('# END inherited deploy lock', 1)[0]
+        # Only the fixed production path is mapped to this private fixture.
+        guard = guard.replace('/run/proofofwork-ui/deploy.lock', str(self.lock))
+        descriptor = os.open(self.lock, os.O_RDONLY)
+        fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        env = {**os.environ, 'POW_UI_DEPLOY_LOCK_FD': str(descriptor)}
+        competitor = "import fcntl,os,sys; f=os.open(sys.argv[1],os.O_RDONLY); " + \
+                     "\ntry: fcntl.flock(f,fcntl.LOCK_EX|fcntl.LOCK_NB)\nexcept BlockingIOError: sys.exit(42)"
+        try:
+            with tempfile.TemporaryDirectory(prefix='pow-lock-handoff-') as folder:
+                probe = Path(folder) / 'competitor.py'; probe.write_text(competitor)
+                tail = '\n' + str(Path(sys.executable).resolve()) + ' -I ' + str(probe) + ' ' + str(self.lock) + \
+                       '\n[[ $? == 42 ]]\n'
+                # The expected competitor failure is captured explicitly; the
+                # actual inherited validation/flock block runs under errexit.
+                tail = tail.replace('\n' + str(Path(sys.executable).resolve()), '\nset +e\n' + str(Path(sys.executable).resolve()))
+                run = subprocess.run(['/bin/bash', '-Eeuo', 'pipefail', '-c', guard + tail],
+                                     env=env, pass_fds=(descriptor,), capture_output=True, text=True, timeout=5)
+                self.assertEqual(run.returncode, 0, run.stderr)
+                self.assertEqual(self.competing_lock(), 42)
+                other = self.parent / 'wrong.lock'; other.touch(mode=0o600)
+                wrong = os.open(other, os.O_RDONLY)
+                try:
+                    for value, passed in [('2', ()), ('invalid', ()), (str(descriptor), ()), (str(wrong), (wrong,))]:
+                        invalid = subprocess.run(['/bin/bash', '-Eeuo', 'pipefail', '-c', guard],
+                            env={**env, 'POW_UI_DEPLOY_LOCK_FD': value}, pass_fds=passed,
+                            capture_output=True, text=True, timeout=5)
+                        self.assertNotEqual(invalid.returncode, 0)
+                finally: os.close(wrong)
+        finally: os.close(descriptor)
+        self.assertEqual(self.competing_lock(), 0)
 
 
 class CapacityTests(unittest.TestCase):

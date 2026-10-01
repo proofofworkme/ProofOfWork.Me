@@ -118,6 +118,35 @@ class ReleaseContracts(unittest.TestCase):
                 release.quiet({'backup': {'ActiveState': active, 'MainPID': pid}})
         release.quiet({'backup': {'ActiveState': 'inactive', 'MainPID': '0'}})
 
+    def test_inactive_disabled_wal_is_preserved_while_core_is_required_active(self):
+        authorities = {u: {'LoadState': 'loaded', 'ActiveState': 'active', 'SubState': 'running',
+                          'UnitFileState': 'enabled', 'MainPID': '111', 'NRestarts': '0',
+                          'ExecMainStartTimestamp': 'unchanged'} for u in release.KEEP}
+        authorities['pg_receivewal@16-main.service'].update(ActiveState='inactive', SubState='dead',
+                                                          UnitFileState='disabled', MainPID='0')
+        release.authority_baseline(authorities)
+        fixture = release.Controller(SimpleNamespace(command='node', release_id=C[:12] + '-20261001T060000Z'))
+        fixture.before = {'authorities': authorities, 'holds': {}}
+        fixture.holds = lambda: {}
+        fixture.state = lambda unit: authorities[unit].copy()
+        fixture.unchanged_authority_and_holds()
+        for unit in release.REQUIRED_AUTHORITY:
+            bad = {**authorities, unit: {**authorities[unit], 'ActiveState': 'failed'}}
+            with self.assertRaisesRegex(RuntimeError, 'Authority service'):
+                release.authority_baseline(bad)
+
+    def test_wal_state_or_configuration_change_still_refuses(self):
+        old = {'LoadState': 'loaded', 'ActiveState': 'inactive', 'SubState': 'dead',
+               'UnitFileState': 'disabled', 'MainPID': '0', 'NRestarts': '0', 'ExecMainStartTimestamp': ''}
+        fixture = release.Controller(SimpleNamespace(command='node', release_id=C[:12] + '-20261001T060000Z'))
+        fixture.before = {'authorities': {'pg_receivewal@16-main.service': old}, 'holds': {}}
+        fixture.holds = lambda: {}
+        for field, value in [('ActiveState', 'active'), ('SubState', 'running'),
+                             ('UnitFileState', 'enabled'), ('MainPID', '123')]:
+            fixture.state = lambda unit: {**old, field: value}
+            with self.assertRaisesRegex(RuntimeError, 'Authority service identity'):
+                fixture.unchanged_authority_and_holds()
+
     def test_timer_restoration_preserves_masked_and_inactive_states(self):
         before = {'held': {'ActiveState': 'inactive', 'UnitFileState': 'masked'},
                   'enabled': {'ActiveState': 'active', 'UnitFileState': 'enabled'}}

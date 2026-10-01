@@ -29,6 +29,7 @@ ENV = {'PATH': '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin',
        'LC_ALL': 'C', 'GIT_OPTIONAL_LOCKS': '0', 'GIT_CONFIG_NOSYSTEM': '1',
        'GIT_CONFIG_GLOBAL': '/dev/null'}
 KEEP = ['bitcoind.service', 'electrs.service', 'postgresql@16-main.service', 'pg_receivewal@16-main.service']
+REQUIRED_AUTHORITY = KEEP[:3]
 APPS = ['proofofwork-api-wg.socket', 'proofofwork-api-wg.service',
         'proofofwork-api.service', 'proofofwork-indexer-worker.service']
 NODE_TIMERS = ['pg_basebackup@16-main.timer', 'pg_compresswal@16-main.timer',
@@ -171,6 +172,15 @@ def exchange_position(live, stage, old_identity, new_identity):
     return 'uncertain'
 
 
+def authority_baseline(units):
+    require(all(units[u].get('ActiveState') == 'active' for u in REQUIRED_AUTHORITY),
+            'Authority service is unavailable')
+    wal = units['pg_receivewal@16-main.service']
+    require(wal.get('LoadState') == 'loaded' and wal.get('ActiveState') in ('active', 'inactive') and
+            (wal['ActiveState'] == 'active' or wal.get('MainPID') == '0'),
+            'Unexpected WAL receiver baseline state')
+
+
 def timer_restore(before, current):
     require(set(before) == set(current), 'Timer set changed')
     for unit, old in before.items():
@@ -272,7 +282,8 @@ class Controller:
         for unit, old in self.before['authorities'].items():
             current = self.state(unit)
             require(all(current.get(k) == old.get(k) for k in
-                        ('LoadState', 'ActiveState', 'MainPID', 'NRestarts', 'ExecMainStartTimestamp')),
+                        ('LoadState', 'ActiveState', 'SubState', 'UnitFileState',
+                         'MainPID', 'NRestarts', 'ExecMainStartTimestamp')),
                     'Authority service identity changed: ' + unit)
 
     def quiet_now(self):
@@ -351,8 +362,7 @@ class Controller:
         for unit, value in self.before['timers'].items():
             require(value.get('ActiveState') in ('active', 'inactive'), 'Unexpected timer state: ' + unit)
         if self.mode == 'node':
-            require(all(self.before['authorities'][u].get('ActiveState') == 'active' for u in KEEP),
-                    'Authority service is unavailable')
+            authority_baseline(self.before['authorities'])
             require(all(self.before['apps'][u].get('ActiveState') == 'active' for u in APPS[2:]),
                     'Capture before API/worker stop')
         self.save('before', self.before)

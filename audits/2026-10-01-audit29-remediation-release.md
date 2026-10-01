@@ -10,9 +10,8 @@ preserved. The node safeguards were installed at 05:37:16 UTC; the backup timer
 was restored to its prior active/enabled state. Caddy, Core, Electrs, PostgreSQL
 and masked prune-timer states remained unchanged. Production
 application cutover and announcement results must be added from actual receipts
-after execution; they have not yet occurred. Exact cleanup passed a 26-candidate
-read-only verification and is executing under bounded supervision. Its completion
-and reclaimed capacity are not yet claimed.
+after execution; they have not yet occurred. Exact cleanup completed at 05:56:11 UTC under bounded supervision. Its
+completed receipt is bound below; application publication remains pending.
 
 The user approved this implementation, exact verified cleanup, commit/push,
 deployment and release workflow. Database migrations, compaction, checksum/PITR
@@ -203,3 +202,30 @@ a later source-bound production receipt can close the actual release gates.
 The required hygiene cleaner found no remaining allowlisted rebuildable state.
 Canonical docs and SOUL were semantically reviewed; generated outputs and
 original audits/ledgers are preserved. No protected tracked file is deleted.
+
+## Completed exact cleanup, 05:56:11 UTC
+
+All 15 approved nonlatest rollback roots and 11 clean source trees were removed
+after full preflight and per-removal current/latest recovery verification. The
+26-item completion receipt SHA-256 is
+`2b927bca35216a21f3c92145715d36fbbbd9cb03432780bfc04dc18d17d61057`.
+The exact two held-source retirements are installed as completed exceptions; no
+missing historical file is exempted. The 282 other currently present UI held
+paths, current/latest roots and archives, incomplete source, original held
+review/markers, prune masks and preserved unique Git work remain intact.
+
+Actual UI available space changed from 14,573,342,720 to 22,858,788,864 bytes
+(an observed increase of 8,285,446,144 bytes). Scratch allocation changed from
+6,676,426,752 to 3,677,802,496 bytes. These filesystem measurements include
+concurrent normal activity; the candidate allocation sum is not claimed as the
+observed free-space result. Caddy retained PID 3092586 throughout.
+
+Prepublication review found two tooling-only corrections before any application
+exchange: preserve the intentionally inactive/disabled WAL receiver rather than
+requiring PITR to be enabled, and inherit the admitting deployment lock through
+UI transport/extraction/staging. Core, Electrs and PostgreSQL must still be
+active; their states and the WAL baseline must remain unchanged. The original
+implementation commit remains preserved. Revised release tooling passes 14/14
+controller and 26/26 workflow fixtures, including a real competing lock process
+through all 16 surfaces and staging; an independent review reran both suites.
+It will be committed and used for a newly bound candidate.

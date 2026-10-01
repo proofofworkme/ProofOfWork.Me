@@ -17,9 +17,25 @@ stage="$deploy/proofofwork-www-stage-$release_id"
 [[ -d "$payload/surfaces" && ! -L "$payload" && ! -e "$stage" && ! -L "$stage" ]]
 [[ $(realpath -e "$payload") == "$payload" ]]
 [[ ! -e "$deploy/proofofwork-ui-source-$release_id" && ! -L "$deploy/proofofwork-ui-source-$release_id" ]]
-exec {deploy_fd}</run/proofofwork-ui/deploy.lock
+# Keep the admitting transport parent's open-file-description lock throughout
+# staging. Reopening this same inode independently would contend with that lock.
+# BEGIN inherited deploy lock
+deploy_lock=/run/proofofwork-ui/deploy.lock
+if [[ -n ${POW_UI_DEPLOY_LOCK_FD-} ]]; then
+  deploy_fd=$POW_UI_DEPLOY_LOCK_FD
+  [[ "$deploy_fd" =~ ^[1-9][0-9]{0,5}$ ]]
+  ((deploy_fd >= 3))
+  [[ -f "$deploy_lock" && ! -L "$deploy_lock" && $(realpath -e "$deploy_lock") == "$deploy_lock" ]]
+  [[ $(stat -c %u "$deploy_lock") == "$EUID" && $(stat -c %h "$deploy_lock") == 1 ]]
+  (( (8#$(stat -c %a "$deploy_lock") & 07022) == 0 ))
+  [[ $(realpath -e "/proc/$$/fd/$deploy_fd") == "$deploy_lock" ]]
+  [[ $(stat -Lc '%d:%i:%f:%u:%g:%h' "/proc/$$/fd/$deploy_fd") == $(stat -Lc '%d:%i:%f:%u:%g:%h' "$deploy_lock") ]]
+else
+  exec {deploy_fd}<"$deploy_lock"
+fi
 flock --exclusive --nonblock "$deploy_fd"
 export POW_UI_DEPLOY_LOCK_FD=$deploy_fd
+# END inherited deploy lock
 floor=10737418240; reserve=67108864
 phase_budget=$(python3 -I "$capacity" stage "$payload/surfaces")
 required=$(python3 -I -c 'import json,sys;print(json.load(sys.stdin)["peakAdditionalBytes"])' <<<"$phase_budget")

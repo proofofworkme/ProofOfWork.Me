@@ -53,6 +53,7 @@ charges 8 MiB/32 inodes for its evidence. It retains the 5 GiB scratch ceiling,
 # Run this in the same trusted root shell which will perform the transport.
 exec {audit29_lock_fd}</run/proofofwork-ui/deploy.lock
 flock --exclusive --nonblock "$audit29_lock_fd"
+export POW_UI_DEPLOY_LOCK_FD=$audit29_lock_fd
 python3 -I -B /var/tmp/proofofwork-deploy/audit29-tools/release.py admit-ui \
   --release-id COMMIT12-UTC --admission-id source-receive-1 \
   --lock-fd "$audit29_lock_fd" --additional-bytes CONSERVATIVE_BYTES \
@@ -61,6 +62,7 @@ python3 -I -B /var/tmp/proofofwork-deploy/audit29-tools/release.py admit-ui \
 # Repeat admission with a fresh admission-id immediately before each next phase.
 # Close this shell's FD only after all transport/extraction/staging is finished.
 exec {audit29_lock_fd}<&-
+unset POW_UI_DEPLOY_LOCK_FD
 ```
 
 Receipts go to
@@ -68,6 +70,11 @@ Receipts go to
 reservation after the parent drops its lock. The staged root, exact source
 checkout and managed archive must already have passed the reviewed stager and
 provenance tools before publication. Keep failed payloads and stages as evidence.
+The receiver and candidate staging shell reuse this inherited descriptor after
+validating its exact canonical path, inode, ownership and mode. Keep the FD open
+in the transport parent across reception and staging; a Python parent must pass
+it explicitly with `pass_fds`. Independently reopening the locked file contends
+with the parent and refuses, even when the inode is the same.
 
 ## Node cutover
 
@@ -107,7 +114,9 @@ backup unit, processes and temporary sets must be quiet. The controller holds
 only previously active maintenance timers, acquires the real backup writer
 lock, stops the shadow and application services, drains without terminating any
 database sessions, and verifies both exact tree attestations before exchange.
-Core, Electrs, PostgreSQL and WAL receiver process identities remain unchanged.
+Core, Electrs and PostgreSQL must be active and their process identities remain
+unchanged. The WAL receiver retains its exact existing active or inactive state,
+including disabled configuration; this controller never starts or configures it.
 
 After verifying the exchange, the controller restores application service and
 readiness immediately. Managed archive reconstruction happens while the API is
