@@ -837,6 +837,10 @@ async function installApiFixtures(
             pendingCount: REGISTRY_STATE.records.filter((row) => !row.confirmed).length,
             totalCount: REGISTRY_STATE.records.length } }
         : REGISTRY_STATE;
+    } else if (pathname === "/api/v1/dns" || pathname === "/api/v1/dns-summary") {
+      json = { ...REGISTRY_STATE, coverage: { complete: true }, checkpointHash: HASH,
+        registryCounts: { model: "proof-registry-counts-v1", complete: true,
+          confirmedCount: 0, pendingCount: 0, totalCount: 0 } };
     } else if (pathname === "/api/v1/prices/btc-usd") {
       json = { USD: 100_000, usd: 100_000 };
     } else if (pathname === "/api/v1/boost") {
@@ -1112,7 +1116,11 @@ async function assertBoostDrawerResizeCleanup(page, label) {
     .poll(() => page.evaluate(() => document.body.style.overflow))
     .toBe("hidden");
 
+  // At 1024px the container still uses its tools sheet. Crossing the actual
+  // 1120px container breakpoint must remove modal state and release scrolling.
   await page.setViewportSize({ height: VIEWPORT_HEIGHT, width: 1024 });
+  await expect(dialog).toBeVisible();
+  await page.setViewportSize({ height: VIEWPORT_HEIGHT, width: 1440 });
   await expect(dialog, `${label} tools drawer remained modal after resize`).toBeHidden();
   await expect(page.locator(".boost-tools-backdrop")).toHaveCount(0);
   await expect(page.locator(".boost-sidebar")).toBeVisible();

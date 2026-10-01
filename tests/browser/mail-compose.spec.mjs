@@ -1883,8 +1883,12 @@ test('Action review checks funding again after signing and prevents an obsolete 
 });
 
 for (const [ticker, id, surface] of [['POWB', POWB_TOKEN_ID, 'infinity'], ['INCB', INCB_TOKEN_ID, 'inception']]) {
-  for (const computer of [false, true]) {
-    test(`Action review: ${computer ? 'Computer keyboard' : 'standalone'} ${ticker} transfer opens before signing`, async ({ page }) => {
+  for (const computer of [false, true]) for (const viewport of [
+    { width: 320, height: 180 }, { width: 768, height: 512 },
+    { width: 1280, height: 720 },
+  ]) {
+    test(`Action review: ${computer ? 'Computer' : 'standalone'} ${ticker} transfer opens before signing at ${viewport.width}x${viewport.height}`, async ({ page }) => {
+      await page.setViewportSize(viewport);
       await installWallet(page); await installApiFixtures(page);
       const token = { ...workTokenDefinition(), ticker, tokenId: id, txid: id, decimals: 0, uncapped: true, maxSupply: null, mintAmount: '1', registryAddress: RECIPIENT };
       const state = { ...authoritativeWorkState(), tokens: [token], holders: [{ address: SENDER, ticker, tokenId: id, balance: '100', pendingDelta: '0' }], hasMore: false, collectionHasMore: { tokens: false }, totalCounts: { tokens: 1 } };
@@ -1898,9 +1902,14 @@ for (const [ticker, id, surface] of [['POWB', POWB_TOKEN_ID, 'infinity'], ['INCB
       await form.getByLabel('Amount', { exact: true }).fill('2');
       await form.getByLabel('Recipient address', { exact: true }).fill(RECIPIENT);
       const submit = form.locator('button[type=submit]').first();
-      // Existing embedded bond pointer clipping is tracked separately; test keyboard consent here.
-      if (computer) { await submit.focus(); await page.keyboard.press('Enter'); }
-      else await submit.click();
+      await submit.click();
+      const bounds = await submit.boundingBox();
+      expect(bounds.height).toBeGreaterThanOrEqual(44);
+      expect(bounds.width).toBeGreaterThanOrEqual(44);
+      await expect(page.getByRole('dialog')).toContainText('2 ' + ticker);
+      await page.getByRole('dialog').getByRole('button', { name: 'Back to task' }).click();
+      await submit.focus();
+      await page.keyboard.press('Enter');
       await expect(page.getByRole('dialog')).toContainText('2 ' + ticker);
       await page.getByRole('dialog').getByRole('button', { name: 'Back to task' }).click();
       expect(await page.evaluate(() => window.__mailComposeFixture.signCalls)).toBe(0);

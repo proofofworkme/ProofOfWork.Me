@@ -276,7 +276,7 @@
   form > .secondary
 ) {
   justify-content: center;
-  min-height: 42px;
+  min-height: 44px;
   width: 100%;
 }
 
@@ -544,7 +544,7 @@
 .mail-layout .token-wallet-workspace button.secondary,
 .mail-layout .token-wallet-workspace .id-form button {
   justify-content: center;
-  min-height: 42px;
+  min-height: 44px;
   width: 100%;
 }
 
@@ -6528,6 +6528,7 @@ pre {
 
 .mail-layout > .token-workspace {
   align-content: start;
+  grid-auto-rows: max-content;
   grid-column: 2 / -1;
   margin: 0;
   max-width: none;
