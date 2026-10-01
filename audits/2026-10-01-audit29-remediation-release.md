@@ -268,3 +268,38 @@ reproduced every record hash, complete membership, protocol membership and
 snapshot binding. All 22 probe and 9 candidate fixtures pass. Full independent
 Core ticket checks and a fresh source-bound accepted release receipt are still
 required before cutover; the failed candidate receipt cannot authorize it.
+
+## Accepted candidate and preserved cutover refusal
+
+The unchanged application candidate `527e4cbaa66f` (tree
+`34c2be6c121a40292d147d74f3a866b169d1feea`) passed the complete mandatory
+shadow gates at stable Core 969406. The root-owned accepted receipt SHA-256 is
+`15d58da39b7c3452520404052d137926be17a40dc2e085def2b03391c4acad87`.
+All 999 current WORK listings passed full/display membership and independent
+Core anchor checks, followed by a fresh membership fence. IDs covered all
+565 confirmed and 22 observed pending registry transactions, resolving 508
+confirmed winners and 20 pending candidates. Events passed 49 checks; strict
+parity passed 100 checks with the same two inactive V5 warnings. The wallet
+returned independently conserved available confirmed/spendable/reserved amounts.
+
+The first cutover refused before exchange at 06:40:52 UTC because the controller
+referenced `/usr/bin/runuser`, absent on this VPS. It restored the prior
+application and timers; readiness was proven at 06:41:47 UTC. No code exchange,
+authority-service change or recovery deletion occurred. The failed controller
+receipt remains at `/data/proofofwork-audit29-cutover-527e4cbaa66f-20261001T062733Z`.
+
+The correction is confined to release tooling: native nonroot PostgreSQL
+credentials, a hash-bound version-16 client and a real read-only preflight before
+any application stop. A fresh attempt namespace preserves the original failure.
+Application source, staged runtime, UI source/surfaces and archives remain
+byte-identical to the accepted 527 candidate. The separately committed controller
+is bound independently, avoiding redundant application rebuild/staging allocation.
+Its host preflight and actual publication results must be added after execution.
+
+The corrected controller passes 23 focused fixture groups, including actual
+native-child execution, zero inherited root locks, pre-stop failure refusal,
+read-only connection settings, session drain and immutable retry namespaces.
+The actual host preflight passed at 06:49:24 UTC with PostgreSQL 16.15, uid108/
+gid112, read-only mode and 30s/5s timeout settings. Its 14 live application
+sessions were expected and were not terminated. The preflight stopped no
+services and changed no data. Actual publication remains pending.

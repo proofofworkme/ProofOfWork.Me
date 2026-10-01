@@ -15,6 +15,7 @@ import hashlib
 import json
 import math
 import os
+import pwd
 from pathlib import Path
 import re
 import resource
@@ -54,6 +55,9 @@ ROLLBACKS = Path('/var/backups/proofofwork-ui/rollback-roots')
 HEX40 = re.compile(r'[0-9a-f]{40}\Z')
 HEX64 = re.compile(r'[0-9a-f]{64}\Z')
 RELEASE = re.compile(r'[0-9a-f]{12}-[0-9]{8}T[0-9]{6}Z\Z')
+POSTGRES_CLIENT = Path('/usr/lib/postgresql/16/bin/psql')
+POSTGRES_ENV = {'PGOPTIONS': '-c default_transaction_read_only=on -c statement_timeout=30000 -c lock_timeout=5000 -c idle_in_transaction_session_timeout=30000',
+                'PGCONNECT_TIMEOUT': '5', 'PGAPPNAME': 'audit29-release-readonly'}
 
 
 class ControlledStop(RuntimeError):
@@ -203,10 +207,15 @@ class Controller:
         self.deadline = started + 1200
         self.hard_deadline = started + 1740
         self.hashes = {}
+        self.attempt = getattr(args, 'attempt', 'initial')
+        require(re.fullmatch(r'[a-z0-9][a-z0-9-]{0,24}', self.attempt), 'Malformed release attempt')
+        suffix = '' if self.attempt == 'initial' else '-' + self.attempt
+        self.unit = 'proofofwork-audit29-release-' + args.release_id + '-' + self.mode + suffix + '.service'
+        self.postgres_account = None
         name = ('audit29-admit-' + args.release_id + '-' + args.admission_id
                 if args.command == 'admit-ui' else 'audit29-publish-' + args.release_id)
-        self.out = (Path('/data') / ('proofofwork-audit29-cutover-' + args.release_id)
-                    if self.mode == 'node' else SCRATCH / name)
+        self.out = (Path('/data') / ('proofofwork-audit29-cutover-' + args.release_id + suffix)
+                    if self.mode == 'node' else SCRATCH / (name + suffix))
 
     def save(self, name, value):
         self.counter += 1
@@ -225,7 +234,7 @@ class Controller:
         finally:
             os.close(fd)
 
-    def run(self, argv, timeout=90, extra=None):
+    def run(self, argv, timeout=90, extra=None, *, as_postgres=False):
         self.counter += 1
         output = self.out / f'{self.counter:03d}-command.log'
         bound = min(timeout, self.deadline - time.monotonic())
@@ -233,10 +242,22 @@ class Controller:
         def limits():
             resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
             resource.setrlimit(resource.RLIMIT_FSIZE, (4 * 1024**2, 4 * 1024**2))
+        credentials = {}
+        descriptors = () if self.lock_fd is None else (self.lock_fd,)
+        if as_postgres:
+            require(self.mode == 'node' and argv[0] == str(POSTGRES_CLIENT)
+                    and self.postgres_account is not None, 'Unexpected PostgreSQL child')
+            account = pwd.getpwnam('postgres')
+            require((account.pw_uid, account.pw_gid) == self.postgres_account
+                    and account.pw_uid > 0 and account.pw_gid > 0, 'PostgreSQL identity changed')
+            bound_file(POSTGRES_CLIENT, self.args.postgres_client_sha256, limit=8 * 1024**2)
+            credentials = {'user': account.pw_uid, 'group': account.pw_gid,
+                           'extra_groups': [], 'umask': 0o077}
+            descriptors = ()  # The unprivileged SQL reader never inherits root locks.
         with output.open('xb') as target:
             proc = subprocess.Popen(argv, stdin=subprocess.DEVNULL, stdout=target, stderr=subprocess.STDOUT,
                                     env={**ENV, **(extra or {})}, cwd='/', start_new_session=True,
-                                    pass_fds=(() if self.lock_fd is None else (self.lock_fd,)), preexec_fn=limits)
+                                    pass_fds=descriptors, preexec_fn=limits, **credentials)
             try:
                 code = proc.wait(timeout=bound)
             except BaseException as error:
@@ -343,14 +364,17 @@ class Controller:
             safe_path(lock)
             fcntl.flock(self.lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
         if args.command != 'admit-ui':
-            unit = 'proofofwork-audit29-release-' + args.release_id + '-' + self.mode + '.service'
+            unit = self.unit
             managed = self.state(unit, FIELDS + ['KillMode', 'RuntimeMaxUSec'])
             require(managed.get('ActiveState') == 'active' and managed.get('MainPID') == str(os.getpid())
                     and managed.get('KillMode') == 'control-group' and managed.get('RuntimeMaxUSec') == '30min',
                     'Apply requires the exact bounded systemd unit/MainPID/control-group')
             require(any(line.endswith(':' + managed.get('ControlGroup', '\0'))
                         for line in Path('/proc/self/cgroup').read_text().splitlines()), 'Wrong controller cgroup')
-        self.save('bindings', {'command': args.command, 'release': args.release_id, 'helpers': hashes,
+        controller_hash = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
+        bound_file(Path(__file__), controller_hash, limit=2 * 1024**2)
+        self.save('bindings', {'command': args.command, 'release': args.release_id, 'attempt': self.attempt,
+                               'controllerSourceSha256': controller_hash, 'helpers': hashes,
                                'productionDataChanges': False, 'retentionDeferred': True})
 
     def rebind_helpers(self):
@@ -427,6 +451,43 @@ class Controller:
             time.sleep(2)
         raise RuntimeError('Production readiness did not recover within 300 seconds')
 
+    def postgres_state(self):
+        query = ("BEGIN READ ONLY; SET LOCAL statement_timeout='30s'; SET LOCAL lock_timeout='5s'; "
+                 "SELECT json_build_object('role',current_user,'sessionRole',session_user,'database',current_database(),"
+                 "'readOnly',current_setting('transaction_read_only'),'statementTimeout',current_setting('statement_timeout'),"
+                 "'lockTimeout',current_setting('lock_timeout'),'sessions',(SELECT count(*) FROM pg_stat_activity "
+                 "WHERE datname=current_database() AND pid<>pg_backend_pid()),'rebuild',(SELECT value "
+                 "FROM proof_indexer.meta WHERE key='canonical:rebuild')); ROLLBACK;")
+        result = self.run([str(POSTGRES_CLIENT), '-X', '-w', '-qAt', '-v', 'ON_ERROR_STOP=1',
+                           '-h', '/run/postgresql', '-p', '5432', '-U', 'postgres', '-d', 'proof_indexer',
+                           '-c', query], 35, extra=POSTGRES_ENV, as_postgres=True)
+        value = json.loads(result)
+        require(value.get('role') == value.get('sessionRole') == 'postgres'
+                and value.get('database') == 'proof_indexer' and value.get('readOnly') == 'on'
+                and value.get('statementTimeout') == '30s' and value.get('lockTimeout') == '5s',
+                'PostgreSQL read-only connection settings differ')
+        rebuild = value.get('rebuild') or {}
+        require(rebuild.get('active') is not True and rebuild.get('complete') is True
+                and rebuild.get('status') == 'complete', 'Canonical rebuild is active/incomplete')
+        return value
+
+    def postgres_preflight(self):
+        bound_file(POSTGRES_CLIENT, self.args.postgres_client_sha256, limit=8 * 1024**2)
+        account = pwd.getpwnam('postgres')
+        require(account.pw_uid > 0 and account.pw_gid > 0, 'PostgreSQL must use an unprivileged identity')
+        state = self.state('postgresql@16-main.service')
+        require(state.get('ActiveState') == 'active' and state.get('MainPID', '0').isdigit()
+                and int(state['MainPID']) > 0, 'PostgreSQL service is not running')
+        require(Path('/proc/' + state['MainPID']).stat().st_uid == account.pw_uid,
+                'PostgreSQL service account differs')
+        self.postgres_account = (account.pw_uid, account.pw_gid)
+        version = self.run([str(POSTGRES_CLIENT), '--version'], 15, as_postgres=True)
+        require(version.startswith('psql (PostgreSQL) 16.'), 'PostgreSQL client version differs')
+        value = self.postgres_state()  # Live application sessions are expected here.
+        self.save('postgres-preflight', {'client': str(POSTGRES_CLIENT), 'clientSha256': self.args.postgres_client_sha256,
+                  'uid': account.pw_uid, 'gid': account.pw_gid, 'version': version, 'state': value,
+                  'nativeCredentials': True, 'rootLockDescriptorsInherited': False, 'applicationServicesStopped': False})
+
     def drain(self, roots):
         require(not self.run(['/usr/bin/ss', '-ltnH', 'sport = :8081 or sport = :18081'], 20),
                 'Application TCP listener remains')
@@ -439,15 +500,8 @@ class Controller:
                 continue
             require(not any(cwd == str(root) or cwd.startswith(str(root) + '/') for root in roots),
                     'Candidate/live checkout process remains')
-        query = ("BEGIN READ ONLY; SET LOCAL statement_timeout='30s'; SET LOCAL lock_timeout='5s'; "
-                 "SELECT json_build_object('sessions',(SELECT count(*) FROM pg_stat_activity "
-                 "WHERE datname=current_database() AND pid<>pg_backend_pid()),'rebuild',(SELECT value "
-                 "FROM proof_indexer.meta WHERE key='canonical:rebuild')); ROLLBACK;")
         for attempt in range(6):
-            result = self.run(['/usr/bin/runuser', '-u', 'postgres', '--', '/usr/bin/env',
-                               'PGOPTIONS=-c default_transaction_read_only=on -c statement_timeout=30000 -c lock_timeout=5000',
-                               '/usr/bin/psql', '-XqAt', '-v', 'ON_ERROR_STOP=1', '-d', 'proof_indexer', '-c', query], 35)
-            value = json.loads(result)
+            value = self.postgres_state()
             rebuild = value.get('rebuild') or {}
             require(rebuild.get('active') is not True and rebuild.get('complete') is True
                     and rebuild.get('status') == 'complete', 'Canonical rebuild is active/incomplete')
@@ -459,6 +513,7 @@ class Controller:
 
     def node(self):
         args = self.args
+        self.postgres_preflight()  # Before timer/shadow/application stops or exchanges.
         live, stage = Path('/opt/proofofwork-api'), Path('/opt/proofofwork-api-stage-' + args.release_id)
         expected = attestation(bound_file(args.candidate_attestation, args.attestation_sha256,
                                          text=True, limit=65536).decode())
@@ -699,10 +754,12 @@ def parser():
         for name in ('commit', 'tree', 'candidate-attestation', 'attestation-sha256', 'archive-sha256',
                      'shadow-receipt', 'shadow-sha256'):
             p.add_argument('--' + name, required=True)
+        p.add_argument('--attempt', default='initial', help='Fresh immutable retry namespace; never overwrite prior receipts')
         if command == 'node':
             for name in ('old-attestation', 'old-attestation-sha256', 'recovery-archive', 'recovery-sha256',
                          'recovery-provenance-sha256', 'shadow-unit'):
                 p.add_argument('--' + name, required=True)
+            p.add_argument('--postgres-client-sha256', required=True)
         else:
             for name in ('old-manifest-sha256', 'old-tree-sha256', 'classifications', 'classifications-sha256'):
                 p.add_argument('--' + name, required=True)

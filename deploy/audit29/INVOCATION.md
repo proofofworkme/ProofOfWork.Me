@@ -6,6 +6,14 @@ upload, extract, delete recovery, change protocol/ledger data, or clear holds.
 All examples contain placeholders which the release operator must replace with
 the exact reviewed values. Preserve every failed attempt and its receipt.
 
+An unchanged application candidate can be published with a separately reviewed,
+hash-bound release-controller correction. Record both the application commit/tree
+and the controller source commit/SHA256; preserve the controller originally used
+for staging. Do not change the candidate bytes or reuse a failed receipt directory.
+For an application-preserving retry, supply `--attempt retry1` and append
+`-retry1` to the exact managed publication unit. The controller gives that attempt
+a fresh evidence directory; the original unit, logs and receipts remain evidence.
+
 Before production use, run these local private-fixture checks:
 
 ```sh
@@ -142,6 +150,7 @@ systemd-run --unit=proofofwork-audit29-release-COMMIT12-UTC-node \
   --old-attestation /ROOT_PRIVATE/old.tsv --old-attestation-sha256 SHA256 \
   --recovery-archive /data/proofofwork-release-backups/managed/OLD_ARCHIVE.tgz \
   --recovery-sha256 SHA256 --recovery-provenance-sha256 SHA256 \
+  --postgres-client-sha256 REVIEWED_PSQL16_SHA256 \
   --shadow-unit proofofwork-audit29-shadow-COMMIT12-UTC.service \
   --helper-sha attestor=SHA256 --helper-sha exchange=SHA256 \
   --helper-sha publisher=SHA256
@@ -156,6 +165,15 @@ database sessions, and verifies both exact tree attestations before exchange.
 Core, Electrs and PostgreSQL must be active and their process identities remain
 unchanged. The WAL receiver retains its exact existing active or inactive state,
 including disabled configuration; this controller never starts or configures it.
+
+Before stopping timers, the shadow or application services, the node controller
+hashes the canonical `/usr/lib/postgresql/16/bin/psql`, matches the nonroot
+`postgres` identity to the running PostgreSQL process, and performs a bounded
+read-only connection preflight. SQL children use native uid/gid credentials,
+empty supplementary groups, no inherited root lock descriptors, a fixed local
+socket/port/database/role, `-X -w`, and read-only timeout settings. They stay in
+the managed cgroup without a PAM launcher. The same checks protect post-stop
+draining, which waits for sessions rather than terminating them.
 
 After verifying the exchange, the controller restores application service and
 readiness immediately. Managed archive reconstruction happens while the API is

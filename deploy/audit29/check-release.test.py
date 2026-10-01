@@ -4,8 +4,10 @@ import datetime as dt
 import hashlib
 import importlib.util
 import json
+import os
 from pathlib import Path
 import signal
+import subprocess
 import tempfile
 import time
 import sys
@@ -25,6 +27,20 @@ def proof():
             'candidate': {'commit': C, 'tree': T, 'runtimeSha256': H},
             'gates': {'ids': True, 'events': True, 'parity': True},
             'stableCheckpoint': {'height': 969395, 'hash': 'd' * 64}}
+
+
+def postgres_observation(sessions=0):
+    return {'role': 'postgres', 'sessionRole': 'postgres', 'database': 'proof_indexer',
+            'readOnly': 'on', 'statementTimeout': '30s', 'lockTimeout': '5s', 'sessions': sessions,
+            'rebuild': {'active': False, 'complete': True, 'status': 'complete'}}
+
+
+def native_fixture():
+    fixture = release.Controller(SimpleNamespace(command='node', release_id=C[:12] + '-20261001T060000Z',
+                                                postgres_client_sha256=H, commit=C, tree=T))
+    fixture.receipts = []
+    fixture.save = lambda name, value: fixture.receipts.append((name, value))
+    return fixture
 
 
 class FixtureController(release.Controller):
@@ -254,6 +270,184 @@ class ReleaseContracts(unittest.TestCase):
                 fixture.run([sys.executable, '-I', '-c', code], 0.1)
             time.sleep(0.6)
             self.assertFalse(marker.exists(), 'timed-out child must not keep writing')
+
+    def test_native_postgres_child_has_fixed_identity_environment_and_no_root_lock_fd(self):
+        with tempfile.TemporaryDirectory() as folder:
+            fixture = native_fixture(); fixture.out = Path(folder)
+            uid, gid = ((65534, 65534) if os.geteuid() == 0 else (os.getuid(), os.getgid()))
+            fixture.postgres_account = (uid, gid)
+            account = SimpleNamespace(pw_uid=uid, pw_gid=gid)
+            lock = os.open(Path(folder)/'private-lock', os.O_CREAT | os.O_RDWR, 0o600)
+            os.set_inheritable(lock, True); fixture.lock_fd = lock
+            captured = []; real_popen = subprocess.Popen
+            def popen(argv, **kwargs):
+                captured.append(kwargs.copy())
+                # This nonroot test cannot call setgroups. Assert the production
+                # credential argument below; root runs exercise the native drop.
+                if os.geteuid() != 0:
+                    kwargs = {key: value for key, value in kwargs.items() if key != 'extra_groups'}
+                return real_popen(argv, **kwargs)
+            code = ("import json,os,resource; "
+                    "\ntry: os.fstat("+str(lock)+"); inherited=True"
+                    "\nexcept OSError: inherited=False"
+                    "\nprint(json.dumps({'uid':os.getuid(),'gid':os.getgid(),'groups':os.getgroups(),"
+                    "'cwd':os.getcwd(),'lockInherited':inherited,'env':dict(os.environ),"
+                    "'coreLimit':resource.getrlimit(resource.RLIMIT_CORE),"
+                    "'fileLimit':resource.getrlimit(resource.RLIMIT_FSIZE),"
+                    "'sessionLeader':os.getsid(0)==os.getpid(),'umask':os.umask(0)}))")
+            try:
+                with patch.object(release, 'POSTGRES_CLIENT', Path(sys.executable)), \
+                     patch.object(release.pwd, 'getpwnam', return_value=account), \
+                     patch.object(release, 'bound_file', return_value=b'fixture client'), \
+                     patch.object(release.subprocess, 'Popen', popen), \
+                     patch.dict(os.environ, {'PGPASSWORD':'fixture-secret', 'UNRELATED_SECRET':'fixture-secret'}):
+                    observed = json.loads(fixture.run([sys.executable, '-I', '-c', code], 10,
+                                                     extra=release.POSTGRES_ENV, as_postgres=True))
+            finally:
+                os.close(lock)
+            self.assertEqual((observed['uid'], observed['gid']), (uid, gid))
+            if os.geteuid() == 0: self.assertEqual(observed['groups'], [])
+            self.assertFalse(observed['lockInherited'])
+            self.assertTrue(observed['sessionLeader'])
+            self.assertEqual(observed['cwd'], '/')
+            self.assertEqual(observed['umask'], 0o077)
+            self.assertEqual(observed['coreLimit'], [0, 0])
+            self.assertEqual(observed['fileLimit'], [4*1024**2, 4*1024**2])
+            self.assertEqual(observed['env'], {**release.ENV, **release.POSTGRES_ENV})
+            self.assertEqual(len(captured), 1)
+            for key, value in {'user':uid, 'group':gid, 'extra_groups':[], 'umask':0o077,
+                               'pass_fds':(), 'cwd':'/', 'start_new_session':True,
+                               'stdin':subprocess.DEVNULL, 'stderr':subprocess.STDOUT}.items():
+                self.assertEqual(captured[0][key], value)
+            self.assertTrue(captured[0]['stdout'].closed)
+
+    def test_native_postgres_command_rejects_wrong_executable_or_changed_account(self):
+        fixture = native_fixture(); fixture.postgres_account = (1000, 1000)
+        with tempfile.TemporaryDirectory() as folder:
+            fixture.out = Path(folder)
+            with self.assertRaisesRegex(RuntimeError, 'Unexpected PostgreSQL child'):
+                fixture.run(['/bin/true'], as_postgres=True)
+            for account in (SimpleNamespace(pw_uid=0, pw_gid=1000),
+                            SimpleNamespace(pw_uid=1001, pw_gid=1000)):
+                with patch.object(release.pwd, 'getpwnam', return_value=account), \
+                     patch.object(release.subprocess, 'Popen') as child:
+                    with self.assertRaisesRegex(RuntimeError, 'PostgreSQL identity changed'):
+                        fixture.run([str(release.POSTGRES_CLIENT), '--version'], as_postgres=True)
+                    child.assert_not_called()
+
+    def test_postgres_preflight_missing_client_or_root_identity_refuses_before_stops(self):
+        for problem in ('missing-client', 'root-identity'):
+            fixture = native_fixture(); operations = []
+            fixture.run = lambda *args, **kwargs: operations.append(args) or ''
+            fixture.state = lambda unit: operations.append(('state', unit)) or {}
+            fixture.hold_timers = lambda: operations.append(('stop-timers',))
+            with patch.object(release, 'bound_file', side_effect=(FileNotFoundError('fixture missing client')
+                  if problem == 'missing-client' else None)), \
+                 patch.object(release.pwd, 'getpwnam', return_value=SimpleNamespace(pw_uid=0, pw_gid=1000)):
+                with self.assertRaises((RuntimeError, FileNotFoundError)):
+                    fixture.node()
+            self.assertEqual(operations, [], 'preflight must precede stops, queries and exchanges')
+            self.assertEqual(fixture.phase, 'preflight')
+
+    def test_postgres_preflight_allows_existing_application_sessions_and_records_no_stops(self):
+        fixture = native_fixture(); uid, gid = 1000, 1000; calls=[]
+        fixture.state = lambda unit: {'ActiveState':'active', 'MainPID':'12345'}
+        def run(argv, timeout, **kwargs):
+            calls.append((argv, timeout, kwargs))
+            return 'psql (PostgreSQL) 16.11' if argv[-1] == '--version' else json.dumps(postgres_observation(3))
+        fixture.run = run
+        with patch.object(release, 'bound_file', return_value=b'fixture client'), \
+             patch.object(release.pwd, 'getpwnam', return_value=SimpleNamespace(pw_uid=uid, pw_gid=gid)), \
+             patch.object(release.Path, 'stat', return_value=SimpleNamespace(st_uid=uid)):
+            fixture.postgres_preflight()
+        self.assertEqual(fixture.postgres_account, (uid, gid))
+        self.assertEqual(len(calls), 2)
+        name, receipt = fixture.receipts[-1]
+        self.assertEqual(name, 'postgres-preflight')
+        self.assertEqual(receipt['state']['sessions'], 3)
+        self.assertFalse(receipt['applicationServicesStopped'])
+        self.assertFalse(receipt['rootLockDescriptorsInherited'])
+        self.assertTrue(all(call[2]['as_postgres'] for call in calls))
+
+    def test_postgres_readonly_connection_rejects_settings_and_rebuild_drift(self):
+        fixture = native_fixture(); calls=[]
+        observed = postgres_observation(2)
+        def run(argv, timeout, **kwargs):
+            calls.append((argv, timeout, kwargs)); return json.dumps(observed)
+        fixture.run = run
+        self.assertEqual(fixture.postgres_state()['sessions'], 2)
+        argv, timeout, kwargs = calls[0]
+        self.assertEqual(argv[:-2], [str(release.POSTGRES_CLIENT), '-X', '-w', '-qAt', '-v', 'ON_ERROR_STOP=1',
+                                   '-h', '/run/postgresql', '-p', '5432', '-U', 'postgres', '-d', 'proof_indexer'])
+        self.assertEqual(argv[-2], '-c'); self.assertEqual(timeout, 35)
+        self.assertEqual(kwargs, {'extra':release.POSTGRES_ENV, 'as_postgres':True})
+        self.assertTrue(argv[-1].startswith('BEGIN READ ONLY;'))
+        self.assertTrue(argv[-1].endswith(' ROLLBACK;'))
+        self.assertNotIn('pg_terminate_backend', argv[-1])
+        for field, value in [('role','root'), ('sessionRole','root'), ('database','postgres'),
+                             ('readOnly','off'), ('statementTimeout','0'), ('lockTimeout','0')]:
+            observed = {**postgres_observation(), field:value}
+            with self.assertRaisesRegex(RuntimeError, 'read-only connection'):
+                fixture.postgres_state()
+        for rebuild in ({'active':True,'complete':True,'status':'complete'},
+                        {'active':False,'complete':False,'status':'complete'},
+                        {'active':False,'complete':True,'status':'running'}):
+            observed = {**postgres_observation(), 'rebuild':rebuild}
+            with self.assertRaisesRegex(RuntimeError, 'rebuild'):
+                fixture.postgres_state()
+
+    def test_wrong_readonly_preflight_refuses_before_any_stop_or_exchange(self):
+        fixture = native_fixture(); calls=[]
+        fixture.state=lambda unit: {'ActiveState':'active', 'MainPID':'12345'}
+        fixture.run=lambda argv,*args,**kwargs: calls.append(argv) or ('psql (PostgreSQL) 16.11'
+            if argv[-1]=='--version' else json.dumps({**postgres_observation(), 'readOnly':'off'}))
+        with patch.object(release, 'bound_file', return_value=b'fixture client'), \
+             patch.object(release.pwd, 'getpwnam', return_value=SimpleNamespace(pw_uid=1000,pw_gid=1000)), \
+             patch.object(release.Path, 'stat', return_value=SimpleNamespace(st_uid=1000)):
+            with self.assertRaisesRegex(RuntimeError, 'read-only connection'):
+                fixture.node()
+        self.assertEqual(len(calls), 2)
+        self.assertTrue(all(argv[0] == str(release.POSTGRES_CLIENT) for argv in calls))
+        self.assertEqual(fixture.receipts, [])
+
+    def test_poststop_drain_requires_zero_sessions_without_terminating_any(self):
+        fixture = native_fixture(); calls=[]; samples=iter([3,1,0])
+        fixture.run=lambda argv,*args,**kwargs: calls.append(argv) or ''
+        fixture.postgres_state=lambda: postgres_observation(next(samples))
+        with patch.object(release.Path,'iterdir',return_value=iter(())), patch.object(release.time,'sleep'):
+            fixture.drain(())
+        self.assertEqual(fixture.receipts[-1][0], 'drained')
+        self.assertEqual(fixture.receipts[-1][1]['sessions'], 0)
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(calls[0][0], '/usr/bin/ss')
+        fixture.receipts=[]; observed=[]
+        fixture.postgres_state=lambda: observed.append(1) or postgres_observation(1)
+        with patch.object(release.Path,'iterdir',return_value=iter(())), patch.object(release.time,'sleep'):
+            with self.assertRaisesRegex(RuntimeError, 'sessions'):
+                fixture.drain(())
+        self.assertEqual(len(observed), 6)
+        self.assertEqual(fixture.receipts, [])
+
+    def test_retry_attempt_has_separate_unit_and_immutable_receipt_namespace(self):
+        args = dict(command='node', release_id=C[:12]+'-20261001T060000Z', commit=C, tree=T)
+        original = release.Controller(SimpleNamespace(**args))
+        retry = release.Controller(SimpleNamespace(**args, attempt='retry1'))
+        self.assertNotEqual(original.unit, retry.unit)
+        self.assertNotEqual(original.out, retry.out)
+        self.assertTrue(retry.unit.endswith('-node-retry1.service'))
+        self.assertEqual(retry.out.name, original.out.name+'-retry1')
+        for attempt in ('', '../retry', 'Retry1', 'x'*26):
+            with self.assertRaisesRegex(RuntimeError, 'Malformed release attempt'):
+                release.Controller(SimpleNamespace(**args, attempt=attempt))
+        with tempfile.TemporaryDirectory() as folder:
+            retry.out=Path(folder)/'existing-receipts'; retry.out.mkdir()
+            marker=retry.out/'failure.json'; marker.write_bytes(b'preserved prior failure')
+            with patch.object(release.os,'geteuid',return_value=0), \
+                 patch.object(release,'safe_path',return_value=SimpleNamespace()), \
+                 patch.object(release,'bound_file') as bound, patch.object(retry,'state') as state:
+                with self.assertRaises(FileExistsError): retry.setup()
+                bound.assert_not_called(); state.assert_not_called()
+            self.assertEqual(marker.read_bytes(), b'preserved prior failure')
 
     def test_unknown_exchange_never_restarts_or_restores_timers(self):
         fixture = FixtureController(position='uncertain')
