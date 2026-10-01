@@ -5840,7 +5840,11 @@ held source paths after verified removal. A fresh existence census found eleven
 UI and twelve node historical scratch files already missing before cleanup;
 the prior marker-only monitor did not prove inventory existence. The original
 held obligations remain unchanged and the new monitor stays red for those
-absences. Only a hash-bound pre-cleanup census can qualify the exact approved
+absences. The earlier Audit28 closeout statement that all 295 UI and 521 node held
+paths remained present exceeded what its marker-only monitor established. That
+historical report and evidence remain preserved; this actual existence census
+supersedes the prior assurance. Exact disappearance times remain unproved.
+Only a hash-bound pre-cleanup census can qualify the exact approved
 cleanup while preserving every currently present held path; it creates no
 exception for missing evidence. Prune timers remain masked. Release archives, current
 and latest rollback/source, incomplete sources, active replay, backup pins,

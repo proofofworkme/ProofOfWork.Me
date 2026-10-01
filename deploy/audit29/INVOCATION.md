@@ -258,3 +258,14 @@ public HTTP, the connected-wallet/Desktop/AMO UI, protected current gates and
 fresh capacity. Record actual results in the remediation audit; an invocation
 or local fixture result does not prove production acceptance. Cleanup remains
 the separately approved exact controller and is never implied by release.
+
+For production verification, explicitly select
+`--base-url https://computer.proofofwork.me`; its `/api/*` and `/health` routes
+are the documented serving API. A separate `api.proofofwork.me` DNS record is
+not required by production. An allowed hostname alone does not prove that it
+resolves or serves the API. Check health and the same current public ID route
+with bounded requests before the full run, retaining `redirect:error`.
+Private authority stays `http://127.0.0.1:8081`; candidate bindings, strict
+checks, complete book/Core verification, deadlines and timer restoration stay
+unchanged. Preserve every failed origin attempt and bind any corrected
+invocation separately; never rewrite its receipt or weaken a gate.
