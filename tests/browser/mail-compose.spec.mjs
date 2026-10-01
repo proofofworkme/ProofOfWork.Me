@@ -573,6 +573,7 @@ async function installApiFixtures(
     repairedV8Listing = false,
     pendingV8Listing = false,
     remoteV8MarketListings = false,
+    marketRegistryState,
   } = {},
 ) {
   const requests = [];
@@ -667,7 +668,7 @@ async function installApiFixtures(
       json = {
         indexedAt: NOW,
         network: "livenet",
-        registry: registryState(),
+        registry: marketRegistryState ?? registryState(),
         summaryOnly: true,
         token,
         workFloor: workFloor(mode),
@@ -1906,3 +1907,176 @@ for (const [ticker, id, surface] of [['POWB', POWB_TOKEN_ID, 'infinity'], ['INCB
     });
   }
 }
+
+const MARKET_PUBLIC_KEY = '02777b8fd3dc524694c52f2b505d14eacf289430f42b5785c48b7cb4948db8499b';
+async function installMarketPublicKey(page) {
+  await page.addInitScript(key => { window.unisat.getPublicKey = async () => key; }, MARKET_PUBLIC_KEY);
+}
+for (const computer of [false, true]) for (const dns of [false, true]) {
+  test(`Marketplace review: ${computer ? 'Computer' : 'standalone AMO'} ${dns ? 'DNS' : 'ID'} listing cancels and retains rejected terms`, async ({ page }) => {
+    test.setTimeout(25000);
+    await installWallet(page); await installMarketPublicKey(page);
+    const record = {id:'ownedfixture', ownerAddress:SENDER, receiveAddress:SENDER, confirmed:true, network:'livenet', txid:HASH, amountSats:1000, createdAt:NOW};
+    const state = {...registryState(), records:[record], record, coverage:{complete:true}, indexedThroughBlock:960220, checkpointHash:HASH};
+    await installApiFixtures(page, {marketRegistryState:state,remoteV8MarketListings:true});
+    for (const path of ['**/api/v1/registry*', '**/api/v1/ids/*', '**/api/v1/dns*','**/api/v1/dns/**']) await page.route(path, route => route.fulfill({contentType:'application/json', body:JSON.stringify(state)}));
+    await page.goto(computer ? '/?folder=marketplace' : '/?marketplace=1');
+    const connect = page.getByRole('button',{name:/Connect (UniSat|wallet)/}).first();
+    if (await connect.isVisible({timeout:1000}).catch(()=>false)) await connect.click();
+    await expect(page.locator('.topbar-wallet-button')).toContainText('1BPVvi1G');
+    await page.getByLabel('AMO asset tabs').getByRole('button',{name:dns ? /^DNS/ : /^IDs/}).click();
+    await page.getByLabel('Seller price proofs',{exact:true}).fill('12345');
+    await page.getByRole('button',{name:'Publish On-Chain',exact:true}).click();
+    const review = page.getByRole('dialog');
+    await expect(review).toContainText('12345 proofs'); await expect(review).toContainText('Seller-controlled ticket locked');
+    await expect(review).toContainText('546 proofs');
+    expect(await page.evaluate(()=>window.__mailComposeFixture.signCalls)).toBe(0);
+    await review.getByRole('button',{name:'Back to task'}).click();
+    await expect(page.getByLabel('Seller price proofs',{exact:true})).toHaveValue('12345');
+    await page.evaluate(()=>{window.unisat.signPsbt=async()=>{window.__mailComposeFixture.signCalls++;throw new Error('User rejected marketplace signing');};});
+    await page.getByRole('button',{name:'Publish On-Chain',exact:true}).click();
+    await review.getByRole('button',{name:'Continue to wallet'}).click();
+    await expect(page.getByText('User rejected marketplace signing',{exact:true}).first()).toBeVisible();
+    await expect(page.getByLabel('Seller price proofs',{exact:true})).toHaveValue('12345');
+    expect(await page.evaluate(()=>window.__mailComposeFixture.signCalls)).toBe(1);
+  });
+}
+for(const viewport of [{width:320,height:180},{width:768,height:512}]) {
+  test(`Marketplace review: WORK intent is estimated and keyboard reachable at ${viewport.width}×${viewport.height}`,async({page})=>{
+    await page.setViewportSize(viewport); await installWallet(page); await installMarketPublicKey(page); await installApiFixtures(page,{pendingV8Listing:true});
+    await openConnectedWallet(page);
+    await page.locator('#wallet-list').getByRole('button',{name:'Create 25,000 proofs AMO intent'}).click();
+    const review=page.getByRole('dialog'); await expect(review).toContainText('Derived and frozen only at confirmation');
+    await expect(review).toContainText('25000 proofs'); await expect(review).toContainText('Seller-controlled ticket locked');
+    expect(await page.evaluate(()=>window.__mailComposeFixture.signCalls)).toBe(0);
+    for (let i=0;i<6;i++) await page.keyboard.press('Tab');
+    expect(await review.evaluate(el=>el.contains(document.activeElement))).toBe(true);
+    await page.screenshot({path:`/tmp/pow-batch4b-work-${viewport.width}x${viewport.height}.png`});
+    await page.keyboard.press('Escape'); await expect(review).toHaveCount(0);
+  });
+}
+
+async function openMarketWorkTicket(page, {computer=false, sealed=false, seller=SENDER, market=false}={}) {
+  await installWallet(page); await installApiFixtures(page,{repairedV8Listing:true});
+  const sellerPublicKey = seller === SENDER ? MARKET_PUBLIC_KEY : "0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798";
+  if (seller !== SENDER) seller = bitcoin.payments.p2pkh({pubkey:Buffer.from(sellerPublicKey,"hex")}).address;
+  const tx=new bitcoin.Transaction(); tx.addInput(Buffer.alloc(32,7),0);
+  tx.addOutput(bitcoin.address.toOutputScript(WORK_REGISTRY),546n);
+  tx.addOutput(bitcoin.payments.embed({data:[Buffer.from('fixture listing')]}).output,0n);
+  tx.addOutput(bitcoin.address.toOutputScript(seller),546n);
+  const listing=v8AmoListing({listingId:tx.getId(),sealed,sellerAddress:seller});
+  listing.saleAuthorization.sellerPublicKey=sellerPublicKey;
+  listing.saleAuthorization.anchorScriptPubKey=Buffer.from(bitcoin.address.toOutputScript(seller)).toString('hex');
+  if(sealed) listing.saleAuthorization.anchorSignature=Buffer.from(bitcoin.script.signature.encode(Buffer.alloc(64,1),131)).toString('hex');
+  listing.displayEvidence.fullDetailPath=`/api/v1/token-history?kind=listings&projection=full&q=${listing.listingId}&listingId=${listing.listingId}`;
+  const state=authoritativeWorkState({repairedV8Listing:true}); state.listings=[listing];state.invalidEvents=[];
+  Object.assign(state,{indexedAt:NOW,snapshotId:LISTING_SNAPSHOT_ID,totalCounts:{listings:1}});
+  state.canonicalWorkCapacities[0].reservations=[{amountSubatoms:listing.amountSubatoms,listingId:listing.listingId}];
+  for(const path of ['**/api/v1/token?**','**/api/v1/token-summary?**']) await page.route(path,route=>route.fulfill({contentType:'application/json',body:JSON.stringify(state)}));
+  await page.route(`**/api/v1/tx/${listing.listingId}/hex*`,route=>route.fulfill({contentType:'application/json',body:JSON.stringify({hex:tx.toHex()})}));
+  await page.route(`**/api/v1/tx/${listing.listingId}/outspend/2*`,route=>route.fulfill({contentType:'application/json',body:'{"spent":false}'}));
+  await page.route('**/api/v1/marketplace-summary**',route=>route.fulfill({contentType:'application/json',body:JSON.stringify({indexedAt:NOW,network:'livenet',registry:registryState(),summaryOnly:true,token:state,workFloor:workFloor()})}));
+  await page.route('**/api/v1/token-history?**',async route=>{
+    const url=new URL(route.request().url());
+    if(url.searchParams.get('kind')!=='listings') return route.fallback();
+    await route.fulfill({contentType:'application/json',body:JSON.stringify(completeListingHistoryPage({allListings:[listing]}))});
+  });
+  if(market){await page.goto(computer?'/?folder=marketplace':'/?marketplace=1');const connect=page.getByRole('button',{name:/Connect (UniSat|wallet)/}).first();if(await connect.isVisible({timeout:1000}).catch(()=>false))await connect.click();await page.getByLabel('AMO asset tabs').getByRole('button',{name:/^Credits/}).click();}
+  else if(computer){await page.goto('/');await page.locator('.onboarding-pane').getByRole('button',{name:'Connect UniSat'}).click();await page.locator('.sidebar').getByRole('button',{name:/^Wallet/}).click();}
+  else await openConnectedWallet(page);
+  return {listing,state};
+}
+for(const computer of [false,true]){
+  test(`Marketplace review: ${computer?'Computer':'standalone Wallet'} seller seal explains reusable signature and cancels before wallet`,async({page})=>{
+    await openMarketWorkTicket(page,{computer});
+    const row=page.locator('.token-list-item').filter({hasText:'25,000 proofs AMO unit'});
+    await row.getByRole('button',{name:'Seal',exact:true}).click();
+    const review=page.getByRole('dialog');await expect(review).toContainText('0.0000000752009741 WORK');
+    await expect(review).toContainText('25546 proofs');await expect(review).toContainText('ANYONECANPAY');
+    await expect(review).toContainText('does not broadcast');expect(await page.evaluate(()=>window.__mailComposeFixture.signCalls)).toBe(0);
+    await review.getByRole('button',{name:'Back to task'}).click();
+    await page.evaluate(()=>{window.unisat.signPsbt=async()=>{window.__mailComposeFixture.signCalls++;throw new Error('User rejected seller seal');};});
+    await row.getByRole('button',{name:'Seal',exact:true}).click();await review.getByRole('button',{name:'Continue to wallet'}).click();
+    await expect(page.locator('.status-text')).toContainText('User rejected seller seal');
+    expect(await page.evaluate(()=>window.__mailComposeFixture.signCalls)).toBe(1);
+  });
+}
+test('Marketplace review: changed ticket evidence blocks a reviewed seller signature',async({page})=>{
+  const {listing}=await openMarketWorkTicket(page);
+  await page.locator('.token-list-item').getByRole('button',{name:'Seal',exact:true}).click();
+  const review=page.getByRole('dialog');await expect(review).toBeVisible();
+  await page.route(`**/api/v1/tx/${listing.listingId}/outspend/2*`,route=>route.fulfill({contentType:'application/json',body:'{"spent":true}'}));
+  await review.getByRole('button',{name:'Continue to wallet'}).click();
+  await expect(page.locator('.status-text')).toContainText('already been spent');expect(await page.evaluate(()=>window.__mailComposeFixture.signCalls)).toBe(0);
+});
+test('Marketplace review: delisting returns the ticket and rechecks exact funding',async({page})=>{
+  await openMarketWorkTicket(page);
+  await page.locator('.token-list-item').getByRole('button',{name:'Delist',exact:true}).click();
+  const review=page.getByRole('dialog');await expect(review).toContainText('Ticket value returned to seller');
+  await expect(review).toContainText('0.0000000752009741 WORK');expect(await page.evaluate(()=>window.__mailComposeFixture.signCalls)).toBe(0);
+  await page.route(`**/api/v1/address/${SENDER}/utxo*`,route=>route.fulfill({contentType:'application/json',body:'[]'}));
+  await review.getByRole('button',{name:'Continue to wallet'}).click();await expect(page.locator('.status-text')).toContainText('Prepared funding changed');
+  expect(await page.evaluate(()=>window.__mailComposeFixture.signCalls)).toBe(0);
+});
+
+for(const computer of [false,true]) test(`Marketplace review: ${computer?'Computer AMO':'standalone AMO'} purchase separates buyer funding and frozen ticket terms`,async({page})=>{
+  await openMarketWorkTicket(page,{computer,market:true,sealed:true,seller:RECIPIENT});
+  await page.getByRole('button',{name:'Buy',exact:true}).click();
+  const review=page.getByRole('dialog');await expect(review).toContainText('0.0000000752009741 WORK');await expect(review).toContainText('Seller price plus returned ticket value');
+  await expect(review).toContainText('25546 proofs');await expect(review).toContainText('Frozen WORK terms never reprice');
+  const fields=await review.locator('.review-total').innerText();
+  const minerFee = BigInt((await review.locator('dt').filter({hasText:/^Miner fee$/}).locator('..').locator('dd code').innerText()).replace(' proofs',''));
+  expect(fields).toContain(`${25000n + 546n + minerFee} proofs`);
+  expect(await page.evaluate(()=>window.__mailComposeFixture.signCalls)).toBe(0);
+  await review.getByRole('button',{name:'Back to task'}).click();
+  await expect(page.getByRole('button',{name:'Buy',exact:true})).toBeEnabled();
+});
+
+
+test('Marketplace review: unavailable ticket spend evidence stops signing', async ({page}) => {
+  const {listing} = await openMarketWorkTicket(page);
+  await page.locator('#wallet-list').getByRole('button',{name:'Delist',exact:true}).click();
+  const review = page.getByRole('dialog'); await expect(review).toBeVisible();
+  await page.route(`**/api/v1/tx/${listing.listingId}/outspend/2*`,route=>route.fulfill({contentType:'application/json',body:'{}'}));
+  await review.getByRole('button',{name:'Continue to wallet'}).click();
+  await expect(page.getByText('Sale ticket availability cannot be confirmed. Refresh and review again.',{exact:true}).first()).toBeVisible();
+  expect(await page.evaluate(()=>window.__mailComposeFixture.signCalls)).toBe(0);
+});
+
+test('Marketplace review: unknown WORK intent broadcast retains recovery after reload', async ({page}) => {
+  await installWallet(page); await installMarketPublicKey(page); await installApiFixtures(page,{pendingV8Listing:true});
+  await openConnectedWallet(page);
+  await page.exposeFunction('fixtureFinalizeMarket', hex => {
+    const psbt=bitcoin.Psbt.fromHex(hex);
+    for(let index=0; index<psbt.inputCount; index++) psbt.updateInput(index,{finalScriptSig:bitcoin.script.compile([Buffer.alloc(72,1),Buffer.alloc(33,2)])});
+    return psbt.toHex(); // Structurally finalized fixture; no real broadcast.
+  });
+  await page.evaluate(()=>{window.unisat.signPsbt=async hex=>{window.__mailComposeFixture.signCalls++;return window.fixtureFinalizeMarket(hex);};});
+  let calls=0;
+  await page.route('**/api/v1/broadcast/tx*',route=>{calls++;return route.fulfill({status:400,contentType:'application/json',body:'{"error":"fixture unavailable"}'});});
+  const create=page.locator('#wallet-list').getByRole('button',{name:'Create 25,000 proofs AMO intent'});
+  await create.click();await page.getByRole('dialog').getByRole('button',{name:'Continue to wallet'}).click();
+  await expect(page.getByRole('region',{name:'Transaction recovery'})).toContainText('Broadcast outcome unknown');
+  await create.click();await expect(page.locator('.status-text')).toContainText('earlier transaction');expect(calls).toBe(1);
+  await page.reload();await expect(page.getByRole('region',{name:'Transaction recovery'})).toContainText('WORK');
+  await expect(page.getByRole('region',{name:'Transaction recovery'}).getByRole('link',{name:'the appropriate workspace'})).toHaveAttribute('href', /marketplace|amo/);
+  expect(calls).toBe(1);
+});
+
+test('Marketplace review: seller authorization leads to a separate seal publication review', async ({page}) => {
+  await openMarketWorkTicket(page);
+  await page.exposeFunction('fixtureAuthorizeMarket', hex => {
+    const psbt=bitcoin.Psbt.fromHex(hex);
+    psbt.updateInput(0,{partialSig:[{pubkey:Buffer.from(MARKET_PUBLIC_KEY,'hex'),signature:bitcoin.script.signature.encode(Buffer.alloc(64,1),131)}]});
+    return psbt.toHex(); // Structural signature fixture; never broadcast.
+  });
+  await page.evaluate(()=>{window.unisat.signPsbt=async hex=>{window.__mailComposeFixture.signCalls++;return window.fixtureAuthorizeMarket(hex);};});
+  let broadcasts=0;
+  await page.route('**/api/v1/broadcast/tx*',route=>{broadcasts++;return route.fulfill({status:400,body:'fixture blocked'});});
+  await page.locator('#wallet-list').getByRole('button',{name:'Seal',exact:true}).click();
+  await page.getByRole('dialog').getByRole('button',{name:'Continue to wallet'}).click();
+  const publication=page.getByRole('dialog',{name:'Review marketplace seal publication'});
+  await expect(publication).toBeVisible(); await expect(publication).toContainText('Registry payment to publish seal');
+  expect(await page.evaluate(()=>window.__mailComposeFixture.signCalls)).toBe(1);
+  await publication.getByRole('button',{name:'Back to task'}).click();expect(broadcasts).toBe(0);
+});

@@ -20377,6 +20377,7 @@ async function signSellerAnchorAuthorization({
       ],
     });
   } catch (addressError) {
+    if (!/(tosigninput|sign input|matched|current address)/i.test(errorMessage(addressError, ""))) throw addressError;
     try {
       signedPsbtHex = await wallet.signPsbt(psbt.toHex(), {
         autoFinalized: false,
@@ -20472,6 +20473,7 @@ async function signSaleTicketAuthorization({
       ],
     });
   } catch (addressError) {
+    if (!/(tosigninput|sign input|matched|current address)/i.test(errorMessage(addressError, ""))) throw addressError;
     try {
       signedPsbtHex = await wallet.signPsbt(psbt.toHex(), {
         autoFinalized: false,
@@ -20491,6 +20493,7 @@ async function signSaleTicketAuthorization({
   const signedPsbt = bitcoin.Psbt.fromHex(signedPsbtHex, {
     network: bitcoinNetwork(network),
   });
+  assertSignedTransactionIntent(psbtUnsignedTransactionIntent(psbt), psbtUnsignedTransactionIntent(signedPsbt));
   const inputSignature = signedInputSignature(signedPsbt, 0, anchor.publicKey);
   const signature = inputSignature?.signature;
 
@@ -20564,6 +20567,7 @@ async function signTokenSaleTicketAuthorization({
       ],
     });
   } catch (addressError) {
+    if (!/(tosigninput|sign input|matched|current address)/i.test(errorMessage(addressError, ""))) throw addressError;
     try {
       signedPsbtHex = await wallet.signPsbt(psbt.toHex(), {
         autoFinalized: false,
@@ -20583,6 +20587,7 @@ async function signTokenSaleTicketAuthorization({
   const signedPsbt = bitcoin.Psbt.fromHex(signedPsbtHex, {
     network: bitcoinNetwork(network),
   });
+  assertSignedTransactionIntent(psbtUnsignedTransactionIntent(psbt), psbtUnsignedTransactionIntent(signedPsbt));
   const inputSignature = signedInputSignature(signedPsbt, 0, anchor.publicKey);
   const signature = inputSignature?.signature;
 
@@ -23520,7 +23525,10 @@ export default function App() {
   const actionContext = JSON.stringify([address, network, feeRate, activeFolder,
     idName, idReceiveAddress, idPgpKey, managedIdName, idUpdateReceiveAddress,
     idTransferOwnerAddress, idTransferReceiveAddress, dnsName, dnsReceiveAddress,
-    tokenTransferTokenId, tokenTransferAmount, tokenTransferRecipient]);
+    tokenTransferTokenId, tokenTransferAmount, tokenTransferRecipient, tokenDetailTarget,
+    idSalePriceSats, idSaleBuyerAddress, idSaleReceiveAddress, idSaleAuthorization, idSelectedListingId, idPurchaseOwnerAddress, idPurchaseReceiveAddress,
+    managedDnsName, dnsSalePriceSats, dnsSaleBuyerAddress, dnsSaleReceiveAddress, dnsSaleAuthorization, dnsSelectedListingId, dnsPurchaseOwnerAddress, dnsPurchaseReceiveAddress,
+    tokenListAmount, tokenListPriceSats, tokenListBuyerAddress, tokenListFaceProofs]);
   const actionContextRef = useRef(actionContext);
   actionContextRef.current = actionContext;
   function finishActionReview(approved: boolean) {
@@ -23571,10 +23579,11 @@ export default function App() {
     return { ...normalizeRegistryApiState(payload), record: payload.record };
   }
   async function reviewAndSendAction({ prepared, title, fields, payload, registry, registryProofs,
-    key, context, revalidate }: {
+    key, context, revalidate, marketplace }: {
     prepared: Awaited<ReturnType<typeof buildPaymentPsbt>>; title: string; fields: [string, string][];
     payload: string; registry: string; registryProofs: number; key: string;
     context: ReturnType<typeof captureActionContext>; revalidate: () => Promise<void>;
+    marketplace?: { payments: PaymentOutputSpec[]; labels: string[]; allowedAnchors?: PowIdSpentOutpoint[]; signInputIndexes?: number[]; foreignAnchor?: PowIdSpentOutpoint; explanation: string };
   }): Promise<string> {
     if (actionInFlightRef.current) throw new Error("Another transaction is being reviewed or signed. Finish that task first.");
     actionInFlightRef.current = true;
@@ -23586,14 +23595,21 @@ export default function App() {
         (item.status === "unknown" || item.status === "pending") && (item.status === "unknown" || item.key === key))) {
         throw new Error("An earlier transaction needs a status check before retrying this task. Use Check transaction status in Transaction recovery.");
       }
-      const evidence = inspectPreparedPayment({ ...prepared, network: bitcoinNetwork(network), paymentCount: 0, registryPaymentCount: 1 });
-      const payment = evidence.outputs.find(output => output.kind === "payment");
-      if (!payment || payment.address !== registry || payment.proofs !== String(registryProofs) ||
+      const evidence = inspectPreparedPayment({ ...prepared, network: bitcoinNetwork(network), paymentCount: 0, registryPaymentCount: marketplace?.payments.length ?? 1 });
+      const payments = marketplace?.payments ?? [{ address: registry, amountSats: registryProofs }];
+      const actualPayments = evidence.outputs.filter(output => output.kind === "payment");
+      if (actualPayments.length !== payments.length || actualPayments.some((output, index) =>
+        output.address !== payments[index].address || output.proofs !== String(payments[index].amountSats)) ||
         JSON.stringify(evidence.records) !== JSON.stringify([payload]) ||
         evidence.outputs.some(output => output.kind === "change" && output.address !== address)) {
-        throw new Error("Prepared action does not match its exact registry, record, or change destination.");
+        throw new Error("Prepared action does not match its exact payments, record, or change destination.");
       }
+      const returnedWalletProofs = marketplace?.signInputIndexes ? actualPayments.filter(output => output.address === address).reduce((sum, output) => sum + BigInt(output.proofs), 0n) : 0n;
+      const foreignInput = marketplace?.foreignAnchor ? evidence.inputs.find(input => input.outpoint ===
+        `${marketplace.foreignAnchor!.txid}:${marketplace.foreignAnchor!.vout}`) : undefined;
+      if (marketplace?.foreignAnchor && !foreignInput) throw new Error("Seller ticket input is missing from the prepared purchase.");
       await assertTransactionIntentDoesNotSpendReservedListingAnchors({
+        allowedOutpoints: marketplace?.allowedAnchors,
         intent: psbtUnsignedTransactionIntent(bitcoin.Psbt.fromHex(prepared.psbtHex, { network: bitcoinNetwork(network) })), network, signingAddress: address,
       });
       context.assertCurrent();
@@ -23601,7 +23617,9 @@ export default function App() {
       actionReturnFocusRef.current = context.trigger;
       const approved = await new Promise<boolean>(resolve => {
         actionReviewResolverRef.current = resolve;
-        setActionReview({ title, fields, evidence, networkLabel: networkLabel(network), feeRate: String(feeRate), dustFeeProofs: String(prepared.dustFeeSats) });
+        setActionReview({ title, fields, evidence, networkLabel: networkLabel(network), feeRate: String(feeRate), dustFeeProofs: String(prepared.dustFeeSats),
+          paymentLabels: marketplace?.labels, explanation: marketplace?.explanation,
+          walletSpendProofs: marketplace ? (BigInt(evidence.totalSpendProofs) - BigInt(foreignInput?.proofs ?? "0") - returnedWalletProofs).toString() : undefined });
       });
       if (!approved) throw new Error("Transaction review canceled. Task preserved; no signature requested.");
       const preflight = async () => {
@@ -23610,7 +23628,7 @@ export default function App() {
         await assertActiveWalletAddress(context.wallet!, address);
         await revalidate();
         const funding = await fetchAddressApiUtxos(address, network);
-        if (evidence.inputs.some(input => !funding.some(utxo => utxo.status?.confirmed &&
+        if (evidence.inputs.filter(input => input !== foreignInput).some(input => !funding.some(utxo => utxo.status?.confirmed &&
           `${utxo.txid}:${utxo.vout}` === input.outpoint && Number.isSafeInteger(utxo.value) && String(utxo.value) === input.proofs))) {
           throw new Error("Prepared funding changed or is unavailable. Refresh funds and review again.");
         }
@@ -23621,6 +23639,7 @@ export default function App() {
       setStatus({ tone: "idle", text: "Waiting for your local wallet signature…" });
       const result = await signAndBroadcastPsbtDetailed({ ...prepared, network, signingAddress: address,
         wallet: context.wallet!, beforeBroadcast: preflight,
+        allowedReservedListingAnchorOutpoints: marketplace?.allowedAnchors, signInputIndexes: marketplace?.signInputIndexes,
         onBroadcastAttempt: txid => {
           context.assertCurrent();
           const receipt: ActionReceipt = { txid, address, network, title, fields, key, createdAt: new Date().toISOString(), status: "unknown" };
@@ -23637,6 +23656,100 @@ export default function App() {
       if (attempted) throw new Error(`Broadcast outcome requires a status check for ${attempted.txid}. Task and recovery evidence retained. ${errorMessage(error, "")}`);
       throw error;
     } finally { actionInFlightRef.current = false; }
+  }
+  function marketplaceTerms(listing: PowIdListing | PowTokenListing) {
+    return JSON.stringify([listing.listingId, listing.network, listing.confirmed,
+      listing.sellerAddress, listing.priceSats, listing.saleAuthorization,
+      "tokenId" in listing ? [listing.tokenId, listing.amountAtoms, listing.amountSubatoms,
+        listing.frozenTerms ?? listing.workAmoFrozenTerms, listing.sealConfirmed === true] : [listing.id, listing.listingVersion]],
+      (_, value) => value && typeof value === "object" && !Array.isArray(value)
+        ? Object.fromEntries(Object.keys(value).sort().map(key => [key, value[key]])) : value);
+  }
+  function marketplaceFields(listing: PowIdListing | PowTokenListing): [string, string][] {
+    const credit = "tokenId" in listing;
+    const frozen = credit && isWorkToken(listing) ? workAmoFrozenTerms(listing) : null;
+    const outpoint = credit ? tokenListingAnchorOutpoint(listing) : listingAnchorOutpoint(listing);
+    return [["Sale ticket outpoint", outpoint ? `${outpoint.txid}:${outpoint.vout}` : "Historical owner-funded listing; no sale ticket"], ["Listing transaction", listing.listingId], ["Seller", listing.sellerAddress],
+      ["Asset", credit ? listing.ticker : listing.id],
+      ...(credit ? [["Credit ID", listing.tokenId], ["Exact quantity", frozen
+        ? workDecimalFromAtoms(frozen.amountSubatoms) + " WORK"
+        : String(listing.amount) + " " + listing.ticker]] as [string, string][] : []),
+      ...(credit ? [[listing.amountSubatoms ? "Exact quantity subatoms (Q16)" : "Exact quantity atoms", String(listing.amountSubatoms ?? listing.amountAtoms ?? "Unavailable")], ["Seller public key", listing.saleAuthorization.sellerPublicKey]] as [string, string][] : []),
+      ...(frozen ? [["Frozen unit", frozen.faceProofs ? String(frozen.faceProofs) + " proofs" : frozen.faceUsdCents ? String(frozen.faceUsdCents) + " USD cents (historical)" : "Grandfathered WORK listing"]] as [string, string][] : []),
+      ["Seller price", String(frozen?.priceSats ?? listing.priceSats) + " proofs"],
+      ["Signed seller payment", String(credit ? tokenSellerPaymentRequiredSats(listing) : sellerPaymentRequiredSats(listing)) + " proofs"],
+      ["Buyer lock", listing.saleAuthorization.buyerAddress || "Any eligible buyer"],
+      ["Ticket value returned to seller", String(listing.saleAuthorization.anchorValueSats ?? ID_LISTING_ANCHOR_VALUE_SATS) + " proofs"]];
+  }
+  async function revalidateMarketplaceListing(listing: PowIdListing | PowTokenListing, kind: "ids" | "dns" | "credit") {
+    let current: PowIdListing | PowTokenListing | undefined;
+    if (kind === "credit" && "tokenId" in listing) {
+      current = (await fetchFreshWalletTokenListingsForAnchors(listing.sellerAddress, listing.tokenId))
+        .find(item => item.listingId === listing.listingId);
+    } else if ("id" in listing) {
+      const state = await fetchActionRegistryRecord(kind === "dns" ? "dns" : "ids", listing.id);
+      current = state.listings.find(item => item.listingId === listing.listingId);
+      const owner = state.record?.confirmed ? state.record : state.records.find(item => item.id === listing.id && item.confirmed);
+      if (!owner || owner.ownerAddress !== listing.sellerAddress) throw new Error("Confirmed registry ownership changed. Refresh and review again.");
+    }
+    if (!current?.confirmed || marketplaceTerms(current) !== marketplaceTerms(listing)) {
+      throw new Error("Confirmed listing terms changed or are unavailable. Refresh and review again.");
+    }
+    if (!("tokenId" in current) && !listingAnchorOutpoint(current)) return; // Historical owner-funded listings have no sale ticket.
+    const anchor = await assertListingAnchorUnspent(current, current.network);
+    if (bitcoin.Transaction.fromHex(anchor.previousTxHex).getId() !== anchor.txid) throw new Error("Sale ticket transaction evidence does not match its outpoint. Refresh and review again.");
+    const spent = await fetchTransactionOutspend(anchor.txid, anchor.vout, current.network);
+    if (!spent || typeof spent.spent !== "boolean" || spent.spent) throw new Error("Sale ticket availability cannot be confirmed. Refresh and review again.");
+  }
+  async function reviewMarketplaceSeal(listing: PowIdListing | PowTokenListing, kind: "ids" | "dns" | "credit", context: ReturnType<typeof captureActionContext>, sign: () => Promise<string>, admission?: () => Promise<void>) {
+    context.assertCurrent();
+    if (actionInFlightRef.current) throw new Error("Finish the current transaction review first.");
+    actionInFlightRef.current = true;
+    try {
+      const receipts = readActionReceipts(localStorage);
+      if (receipts.some(item => item.address === address && item.network === network && (item.status === "unknown" || item.status === "pending" && item.key === "marketplace:" + listing.listingId))) throw new Error("An earlier transaction needs a status check before sealing. Use Transaction recovery.");
+      await revalidateMarketplaceListing(listing, kind);
+      await admission?.();
+      context.assertCurrent();
+      actionReturnFocusRef.current = context.trigger;
+      const approved = await new Promise<boolean>(resolve => {
+        actionReviewResolverRef.current = resolve;
+        setActionReview({title: "Review seller seal authorization", fields: marketplaceFields(listing),
+          networkLabel: networkLabel(listing.network), feeRate: "", dustFeeProofs: "0",
+          explanation: "Authorize spending this sale ticket only with the signed seller payment. SIGHASH_SINGLE | ANYONECANPAY (131) lets a buyer add funding inputs. The signature will be published on-chain; this step alone does not close or sell the listing. Frozen WORK terms never reprice; USD is display-only."});
+      });
+      if (!approved) throw new Error("Seller seal review canceled. No signature requested.");
+      context.assertCurrent();
+      await ensureWalletNetwork(context.wallet!, listing.network, address);
+      await assertActiveWalletAddress(context.wallet!, address);
+      await revalidateMarketplaceListing(listing, kind);
+      await admission?.();
+      context.assertCurrent();
+      const signature = await sign();
+      context.assertCurrent();
+      return signature;
+    } finally { actionInFlightRef.current = false; }
+  }
+  async function reviewAndSendMarketplace({ prepared, title, fields, payload, registry, context,
+    payments, labels, listing, kind, revalidate, explanation }: {
+    prepared: Awaited<ReturnType<typeof buildPaymentPsbt>> & { walletInputIndexes?: number[] };
+    title: string; fields: [string, string][]; payload: string; registry: string;
+    context: ReturnType<typeof captureActionContext>; payments: PaymentOutputSpec[]; labels: string[];
+    listing?: PowIdListing | PowTokenListing; kind: "ids" | "dns" | "credit";
+    revalidate?: () => Promise<void>; explanation?: string;
+  }) {
+    context.assertCurrent();
+    if (listing) await revalidateMarketplaceListing(listing, kind);
+    context.assertCurrent();
+    const anchor = listing ? "tokenId" in listing ? tokenListingAnchorOutpoint(listing) : listingAnchorOutpoint(listing) : undefined;
+    return reviewAndSendAction({ prepared, title, fields, payload, registry, registryProofs: 546,
+      key: "marketplace:" + (listing?.listingId ?? kind + ":" + bytesToHex(bitcoin.crypto.hash256(Buffer.from(prepared.psbtHex, "hex")))), context,
+      marketplace: { payments, labels, signInputIndexes: prepared.walletInputIndexes,
+        allowedAnchors: prepared.walletInputIndexes ? mergeListingAnchorOutpoints([anchor]) : [],
+        foreignAnchor: prepared.walletInputIndexes && listing && listing.sellerAddress !== address ? anchor ?? undefined : undefined,
+        explanation: explanation ?? "Only confirmed, valid terms can settle. Seller price and returned ticket value are separate; pending visibility does not prove a sale or delisting. Frozen WORK terms never reprice; USD is display-only. Confirmed registry and miner fees are not refunded." },
+      revalidate: async () => { if (listing) await revalidateMarketplaceListing(listing, kind); await revalidate?.(); },
+    });
   }
   const uncertainMailBroadcast = allSent.find(message => message.from === address &&
     message.network === network && message.status === "unknown");
@@ -30873,6 +30986,7 @@ export default function App() {
   }
 
   async function publishIdListing() {
+    const marketContext = captureActionContext();
     if (!window.unisat) {
       setStatus({ tone: "bad", text: "Connect UniSat first." });
       return;
@@ -30929,23 +31043,11 @@ export default function App() {
         requireConfirmedUtxos: true,
         toAddress: registryAddress,
       });
-      if (
-        !confirmDustFeeAbsorption({
-          dustFeeSats: paymentPsbt.dustFeeSats,
-          feeRate,
-          feeSats: paymentPsbt.feeSats,
-        })
-      ) {
-        setStatus({ tone: "idle", text: dustFeeAbsorptionCanceledText() });
-        return;
-      }
 
-      const txid = await signAndBroadcastPsbt({
-        inputCount: paymentPsbt.inputCount,
-        network,
-        psbtHex: paymentPsbt.psbtHex,
-        signingAddress: address,
-        wallet: window.unisat,
+      const txid = await reviewAndSendMarketplace({
+        prepared: paymentPsbt, title: "Review marketplace listing intent", fields: [["Asset", authorization.id], ["Seller", address], ["Buyer lock", authorization.buyerAddress || "Any eligible buyer"], ["Seller price", String(authorization.priceSats) + " proofs"], ["Receiver lock", authorization.receiveAddress || "Buyer chooses"]],
+        payload, registry: registryAddress, context: marketContext, kind: "ids",
+        payments: [{address: registryAddress, amountSats: 546}, {address, amountSats: 546}], labels: ["Registry payment", "Seller-controlled ticket locked until purchase or delisting"], revalidate: async () => { const fresh = await fetchActionRegistryRecord("ids", authorization.id); const owner = fresh.record?.confirmed ? fresh.record : fresh.records.find(item => item.id === authorization.id && item.confirmed); if (owner?.ownerAddress !== address) throw new Error("Confirmed ownership changed. Refresh and review again."); },
       });
 
       setIdSaleAuthorization(JSON.stringify(authorization, null, 2));
@@ -30969,6 +31071,7 @@ export default function App() {
   }
 
   async function sealIdListing(listing: PowIdListing) {
+    const marketContext = captureActionContext();
     if (!window.unisat) {
       setStatus({ tone: "bad", text: "Connect UniSat first." });
       return;
@@ -31084,11 +31187,8 @@ export default function App() {
         tone: "idle",
         text: "Approve the sale-ticket seal in UniSat. This signature is published on-chain.",
       });
-      const anchorSignature = await signSaleTicketAuthorization({
-        listing: latestListing,
-        network,
-        wallet: window.unisat,
-      });
+      const anchorSignature = await reviewMarketplaceSeal(latestListing, "ids", marketContext,
+        () => signSaleTicketAuthorization({listing: latestListing, network, wallet: marketContext.wallet!}));
       const sealedAuthorization: PowIdSaleAuthorization = {
         ...latestListing.saleAuthorization,
         anchorSignature,
@@ -31129,23 +31229,11 @@ export default function App() {
         requireConfirmedUtxos: true,
         toAddress: registryAddress,
       });
-      if (
-        !confirmDustFeeAbsorption({
-          dustFeeSats: paymentPsbt.dustFeeSats,
-          feeRate,
-          feeSats: paymentPsbt.feeSats,
-        })
-      ) {
-        setStatus({ tone: "idle", text: dustFeeAbsorptionCanceledText() });
-        return;
-      }
 
-      const txid = await signAndBroadcastPsbt({
-        inputCount: paymentPsbt.inputCount,
-        network,
-        psbtHex: paymentPsbt.psbtHex,
-        signingAddress: address,
-        wallet: window.unisat,
+      const txid = await reviewAndSendMarketplace({
+        prepared: paymentPsbt, title: "Review marketplace seal publication", fields: marketplaceFields(latestListing),
+        payload, registry: registryAddress, context: marketContext, kind: "ids", listing: latestListing,
+        payments: [{address: registryAddress, amountSats: 546}], labels: ["Registry payment to publish seal"], revalidate: undefined,
       });
 
       setIdSaleAuthorization(JSON.stringify(sealedAuthorization, null, 2));
@@ -31168,6 +31256,7 @@ export default function App() {
   }
 
   async function delistIdListing(listing: PowIdListing) {
+    const marketContext = captureActionContext();
     if (!window.unisat) {
       setStatus({ tone: "bad", text: "Connect UniSat first." });
       return;
@@ -31312,28 +31401,12 @@ export default function App() {
           protocolPayloads: [payload],
           requireConfirmedUtxos: true,
         });
-        if (
-          !confirmDustFeeAbsorption({
-            dustFeeSats: paymentPsbt.dustFeeSats,
-            feeRate,
-            feeSats: paymentPsbt.feeSats,
-          })
-        ) {
-          setStatus({ tone: "idle", text: dustFeeAbsorptionCanceledText() });
-          return;
-        }
 
-        const txid = await signAndBroadcastPsbt({
-          allowedReservedListingAnchorOutpoints: mergeListingAnchorOutpoints([
-            listingAnchorOutpoint(latestListing),
-          ]),
-          inputCount: paymentPsbt.inputCount,
-          network,
-          psbtHex: paymentPsbt.psbtHex,
-          signInputIndexes: paymentPsbt.walletInputIndexes,
-          signingAddress: address,
-          wallet: window.unisat,
-        });
+        const txid = await reviewAndSendMarketplace({
+        prepared: paymentPsbt, title: "Review marketplace delisting", fields: marketplaceFields(latestListing),
+        payload, registry: registryAddress, context: marketContext, kind: "ids", listing: latestListing,
+        payments: [{address: latestListing.sellerAddress, amountSats: latestListing.saleAuthorization.anchorValueSats ?? 546}, {address: registryAddress, amountSats: 546}], labels: ["Ticket value returned to seller", "Registry payment"], revalidate: undefined,
+      });
 
         setStatus(
           goodBroadcastStatus(
@@ -31362,12 +31435,15 @@ export default function App() {
         listing.listingVersion === "list4" ? "delist4" : "delist2",
       ),
       successText: `Delisting for ${listing.id}@proofofwork.me`,
+      reviewFields: marketplaceFields(listing),
+      revalidateDestination: () => revalidateMarketplaceListing(listing, "ids"),
     });
   }
 
   async function purchaseId(
     event?: FormEvent<HTMLFormElement> | MouseEvent<HTMLButtonElement>,
   ) {
+    const marketContext = captureActionContext();
     event?.preventDefault();
 
     if (!window.unisat) {
@@ -31587,27 +31663,11 @@ export default function App() {
         protocolPayloads: [payload],
         requireConfirmedUtxos: true,
       });
-      if (
-        !confirmDustFeeAbsorption({
-          dustFeeSats: paymentPsbt.dustFeeSats,
-          feeRate,
-          feeSats: paymentPsbt.feeSats,
-        })
-      ) {
-        setStatus({ tone: "idle", text: dustFeeAbsorptionCanceledText() });
-        return;
-      }
 
-      const txid = await signAndBroadcastPsbt({
-        allowedReservedListingAnchorOutpoints: mergeListingAnchorOutpoints([
-          listingAnchorOutpoint(latestListing),
-        ]),
-        inputCount: paymentPsbt.inputCount,
-        network,
-        psbtHex: paymentPsbt.psbtHex,
-        signInputIndexes: paymentPsbt.walletInputIndexes,
-        signingAddress: address,
-        wallet: window.unisat,
+      const txid = await reviewAndSendMarketplace({
+        prepared: paymentPsbt, title: "Review marketplace purchase", fields: [...marketplaceFields(latestListing), ["New owner", ownerAddress], ["Mail receiver", effectiveReceiveAddress]],
+        payload, registry: registryAddress, context: marketContext, kind: "ids", listing: latestListing,
+        payments: [{address: latestListing.sellerAddress, amountSats: sellerPaymentRequiredSats(latestListing)}, {address: registryAddress, amountSats: 546}], labels: ["Seller price plus returned ticket value", "Registry payment"], revalidate: undefined,
       });
 
       setStatus(
@@ -31777,6 +31837,7 @@ export default function App() {
   }
 
   async function publishDnsListing() {
+    const marketContext = captureActionContext();
     if (!window.unisat) {
       setStatus({ tone: "bad", text: "Connect UniSat first." });
       return;
@@ -31833,23 +31894,11 @@ export default function App() {
         requireConfirmedUtxos: true,
         toAddress: dnsRegistryAddress,
       });
-      if (
-        !confirmDustFeeAbsorption({
-          dustFeeSats: paymentPsbt.dustFeeSats,
-          feeRate,
-          feeSats: paymentPsbt.feeSats,
-        })
-      ) {
-        setStatus({ tone: "idle", text: dustFeeAbsorptionCanceledText() });
-        return;
-      }
 
-      const txid = await signAndBroadcastPsbt({
-        inputCount: paymentPsbt.inputCount,
-        network,
-        psbtHex: paymentPsbt.psbtHex,
-        signingAddress: address,
-        wallet: window.unisat,
+      const txid = await reviewAndSendMarketplace({
+        prepared: paymentPsbt, title: "Review marketplace listing intent", fields: [["Asset", authorization.id], ["Seller", address], ["Buyer lock", authorization.buyerAddress || "Any eligible buyer"], ["Seller price", String(authorization.priceSats) + " proofs"], ["Receiver lock", authorization.receiveAddress || "Buyer chooses"]],
+        payload, registry: dnsRegistryAddress, context: marketContext, kind: "dns",
+        payments: [{address: dnsRegistryAddress, amountSats: 546}, {address, amountSats: 546}], labels: ["Registry payment", "Seller-controlled ticket locked until purchase or delisting"], revalidate: async () => { const fresh = await fetchActionRegistryRecord("dns", authorization.id); const owner = fresh.record?.confirmed ? fresh.record : fresh.records.find(item => item.id === authorization.id && item.confirmed); if (owner?.ownerAddress !== address) throw new Error("Confirmed ownership changed. Refresh and review again."); },
       });
 
       setDnsSaleAuthorization(JSON.stringify(authorization, null, 2));
@@ -31873,6 +31922,7 @@ export default function App() {
   }
 
   async function sealDnsListing(listing: PowIdListing) {
+    const marketContext = captureActionContext();
     if (!window.unisat) {
       setStatus({ tone: "bad", text: "Connect UniSat first." });
       return;
@@ -31988,11 +32038,8 @@ export default function App() {
         tone: "idle",
         text: "Approve the sale-ticket seal in UniSat. This signature is published on-chain.",
       });
-      const anchorSignature = await signSaleTicketAuthorization({
-        listing: latestListing,
-        network,
-        wallet: window.unisat,
-      });
+      const anchorSignature = await reviewMarketplaceSeal(latestListing, "dns", marketContext,
+        () => signSaleTicketAuthorization({listing: latestListing, network, wallet: marketContext.wallet!}));
       const sealedAuthorization: PowIdSaleAuthorization = {
         ...latestListing.saleAuthorization,
         anchorSignature,
@@ -32033,23 +32080,11 @@ export default function App() {
         requireConfirmedUtxos: true,
         toAddress: dnsRegistryAddress,
       });
-      if (
-        !confirmDustFeeAbsorption({
-          dustFeeSats: paymentPsbt.dustFeeSats,
-          feeRate,
-          feeSats: paymentPsbt.feeSats,
-        })
-      ) {
-        setStatus({ tone: "idle", text: dustFeeAbsorptionCanceledText() });
-        return;
-      }
 
-      const txid = await signAndBroadcastPsbt({
-        inputCount: paymentPsbt.inputCount,
-        network,
-        psbtHex: paymentPsbt.psbtHex,
-        signingAddress: address,
-        wallet: window.unisat,
+      const txid = await reviewAndSendMarketplace({
+        prepared: paymentPsbt, title: "Review marketplace seal publication", fields: marketplaceFields(latestListing),
+        payload, registry: dnsRegistryAddress, context: marketContext, kind: "dns", listing: latestListing,
+        payments: [{address: dnsRegistryAddress, amountSats: 546}], labels: ["Registry payment to publish seal"], revalidate: undefined,
       });
 
       setDnsSaleAuthorization(JSON.stringify(sealedAuthorization, null, 2));
@@ -32072,6 +32107,7 @@ export default function App() {
   }
 
   async function delistDnsListing(listing: PowIdListing) {
+    const marketContext = captureActionContext();
     if (!window.unisat) {
       setStatus({ tone: "bad", text: "Connect UniSat first." });
       return;
@@ -32205,27 +32241,11 @@ export default function App() {
         protocolPayloads: [payload],
         requireConfirmedUtxos: true,
       });
-      if (
-        !confirmDustFeeAbsorption({
-          dustFeeSats: paymentPsbt.dustFeeSats,
-          feeRate,
-          feeSats: paymentPsbt.feeSats,
-        })
-      ) {
-        setStatus({ tone: "idle", text: dustFeeAbsorptionCanceledText() });
-        return;
-      }
 
-      const txid = await signAndBroadcastPsbt({
-        allowedReservedListingAnchorOutpoints: mergeListingAnchorOutpoints([
-          listingAnchorOutpoint(latestListing),
-        ]),
-        inputCount: paymentPsbt.inputCount,
-        network,
-        psbtHex: paymentPsbt.psbtHex,
-        signInputIndexes: paymentPsbt.walletInputIndexes,
-        signingAddress: address,
-        wallet: window.unisat,
+      const txid = await reviewAndSendMarketplace({
+        prepared: paymentPsbt, title: "Review marketplace delisting", fields: marketplaceFields(latestListing),
+        payload, registry: dnsRegistryAddress, context: marketContext, kind: "dns", listing: latestListing,
+        payments: [{address: latestListing.sellerAddress, amountSats: latestListing.saleAuthorization.anchorValueSats ?? 546}, {address: dnsRegistryAddress, amountSats: 546}], labels: ["Ticket value returned to seller", "Registry payment"], revalidate: undefined,
       });
 
       setStatus(
@@ -32249,6 +32269,7 @@ export default function App() {
   async function purchaseDns(
     event?: FormEvent<HTMLFormElement> | MouseEvent<HTMLButtonElement>,
   ) {
+    const marketContext = captureActionContext();
     event?.preventDefault();
 
     if (!window.unisat) {
@@ -32477,27 +32498,11 @@ export default function App() {
         protocolPayloads: [payload],
         requireConfirmedUtxos: true,
       });
-      if (
-        !confirmDustFeeAbsorption({
-          dustFeeSats: paymentPsbt.dustFeeSats,
-          feeRate,
-          feeSats: paymentPsbt.feeSats,
-        })
-      ) {
-        setStatus({ tone: "idle", text: dustFeeAbsorptionCanceledText() });
-        return;
-      }
 
-      const txid = await signAndBroadcastPsbt({
-        allowedReservedListingAnchorOutpoints: mergeListingAnchorOutpoints([
-          listingAnchorOutpoint(latestListing),
-        ]),
-        inputCount: paymentPsbt.inputCount,
-        network,
-        psbtHex: paymentPsbt.psbtHex,
-        signInputIndexes: paymentPsbt.walletInputIndexes,
-        signingAddress: address,
-        wallet: window.unisat,
+      const txid = await reviewAndSendMarketplace({
+        prepared: paymentPsbt, title: "Review marketplace purchase", fields: [...marketplaceFields(latestListing), ["New owner", ownerAddress], ["Resolver", effectiveReceiveAddress]],
+        payload, registry: dnsRegistryAddress, context: marketContext, kind: "dns", listing: latestListing,
+        payments: [{address: latestListing.sellerAddress, amountSats: sellerPaymentRequiredSats(latestListing)}, {address: dnsRegistryAddress, amountSats: 546}], labels: ["Seller price plus returned ticket value", "Registry payment"], revalidate: undefined,
       });
 
       setStatus(
@@ -34547,40 +34552,8 @@ export default function App() {
     }
   }
 
-  function confirmWorkAmoEstimateListing(
-    faceProofs: number,
-    estimate: WorkAmoV6Estimate,
-  ) {
-    return window.confirm(
-      `${workAmoProofFaceLabel(faceProofs)} AMO unit: the displayed ${formatWorkAmountAmo(
-        workAmoEstimateSubatoms(estimate) ?? 0n,
-        false,
-      )} WORK amount is an estimate only. The ${Number(estimate.unitPriceSats).toLocaleString()}-proof face is fixed in the intent; confirmation order derives and freezes the exact WORK amount from canonical network value immediately before the listing. The transaction can fail admission if the balance or canonical state is invalid at its position. Registry and miner fees are final once broadcast. Continue?`,
-    );
-  }
-
-  function confirmWorkAmoFrozenAction(
-    actionLabel: "purchase" | "seal",
-    listing: PowTokenListing,
-  ) {
-    const frozen = workAmoFrozenTerms(listing);
-    if (!frozen) {
-      return false;
-    }
-    const unitLabel = frozen.faceProofs
-      ? `${workAmoProofFaceLabel(frozen.faceProofs)} AMO unit`
-      : frozen.faceUsdCents
-        ? `${workAmoFaceLabel(frozen.faceUsdCents)} historical AMO unit`
-        : "grandfathered V4 WORK listing";
-    return window.confirm(
-      `${actionLabel === "seal" ? "Seal" : "Purchase"} ${unitLabel}: this confirmed listing is frozen at ${formatWorkAmountAmo(
-        BigInt(frozen.amountSubatoms),
-        false,
-      )} WORK for ${frozen.priceSats.toLocaleString()} proofs. Later network-value changes do not reprice it; any USD equivalent is display-only. Registry and miner fees are final once broadcast. Continue?`,
-    );
-  }
-
   async function listToken(event: FormEvent<HTMLFormElement>) {
+    const marketContext = captureActionContext();
     event.preventDefault();
     const token = walletTransferToken;
     const priceSats = Math.floor(tokenListPriceSats);
@@ -34841,42 +34814,16 @@ export default function App() {
       if (!walletAction.isCurrent()) {
         return;
       }
-      if (
-        !confirmDustFeeAbsorption({
-          dustFeeSats: paymentPsbt.dustFeeSats,
-          feeRate,
-          feeSats: paymentPsbt.feeSats,
-        })
-      ) {
-        walletAction.setStatus({
-          tone: "idle",
-          text: dustFeeAbsorptionCanceledText(),
-        });
-        return;
-      }
 
-      if (
-        workListing &&
-        workEstimate &&
-        !confirmWorkAmoEstimateListing(
-          tokenListFaceProofs,
-          workEstimate,
-        )
-      ) {
-        walletAction.setStatus({
-          tone: "idle",
-          text: "WORK listing canceled before signing.",
-        });
-        return;
-      }
 
       await assertActiveWalletAddress(window.unisat, actionAddress);
       if (!walletAction.isCurrent()) {
         return;
       }
-      const txid = await signAndBroadcastPsbt({
-        beforeBroadcast:
-          workListing && preparedWorkListingMode
+      const txid = await reviewAndSendMarketplace({
+        prepared: paymentPsbt, title: "Review marketplace listing intent", fields: [["Asset", latestToken.ticker], ["Seller", address], ["Buyer lock", saleAuthorization.buyerAddress || "Any eligible buyer"], ["Seller price", workListing ? "Derived and frozen only at confirmation" : String(saleAuthorization.priceSats) + " proofs"], ["Credit ID", latestToken.tokenId], ["Quantity terms", workListing ? "Derived and frozen only at confirmation; estimate " + attemptedAmountDisplay : parsedAmount!.display + " " + token.ticker], ["Proof face", workListing ? String(tokenListFaceProofs) + " proofs" : "Not a WORK AMO unit"]],
+        payload, registry: latestToken.registryAddress, context: marketContext, kind: "credit",
+        payments: [{address: latestToken.registryAddress, amountSats: 546}, {address, amountSats: 546}], labels: ["Registry payment", "Seller-controlled ticket locked until purchase or delisting"], revalidate: async () => { await (workListing && preparedWorkListingMode
             ? async () => {
                 await freshWorkWriteMode(preparedWorkListingMode);
                 await requireFreshWorkCapacityBeforeBroadcast(
@@ -34885,12 +34832,7 @@ export default function App() {
                   workV8Listing,
                 );
               }
-            : undefined,
-        inputCount: paymentPsbt.inputCount,
-        network: "livenet",
-        psbtHex: paymentPsbt.psbtHex,
-        signingAddress: actionAddress,
-        wallet: window.unisat,
+            : undefined)?.(); if (!isWorkToken(token)) { const fresh = await fetchFreshWalletTokenPreflightState(actionAddress, token.tokenId); const spendable = tokenSpendabilityForWallet(actionAddress, token, fresh, tokenListings, tokenClosedListings, tokenTransfers, tokenSales); const available = exactIntegerBigInt(spendable.spendableBalanceAtoms); if (available === null || attemptedAmountUnits > available) throw new Error("Credit capacity changed. Refresh and review again."); } },
       });
       if (!walletAction.isCurrent()) {
         return;
@@ -34943,6 +34885,7 @@ export default function App() {
   }
 
   async function sealTokenListing(listing: PowTokenListing) {
+    const marketContext = captureActionContext();
     if (!window.unisat?.signPsbt) {
       setStatus({
         tone: "bad",
@@ -34992,11 +34935,13 @@ export default function App() {
           workAmoStaticAuthorizationForListing(listing);
       }
 
-      const anchorSignature = await signTokenSaleTicketAuthorization({
-        listing,
-        network: "livenet",
-        wallet: window.unisat,
-      });
+      const anchorSignature = await reviewMarketplaceSeal(listing, "credit", marketContext,
+        () => signTokenSaleTicketAuthorization({listing, network: "livenet", wallet: marketContext.wallet!}),
+        preparedWorkSettlementMode ? async () => {
+          const fresh = await freshWorkWriteMode(preparedWorkSettlementMode);
+          assertWorkAmoSettlementEnabled(fresh.quote);
+          assertWorkAmoListingWriteEra(listing, preparedWorkSettlementMode);
+        } : undefined);
       const sealedAuthorization: PowTokenSaleAuthorization = {
         ...baseAuthorization,
         anchorSignature,
@@ -35024,31 +34969,13 @@ export default function App() {
         protocolPayloads: [payload],
         requireConfirmedUtxos: true,
       });
-      if (
-        !confirmDustFeeAbsorption({
-          dustFeeSats: paymentPsbt.dustFeeSats,
-          feeRate,
-          feeSats: paymentPsbt.feeSats,
-        })
-      ) {
-        setStatus({ tone: "idle", text: dustFeeAbsorptionCanceledText() });
-        return;
-      }
 
-      if (
-        isWorkToken(listing) &&
-        !confirmWorkAmoFrozenAction("seal", listing)
-      ) {
-        setStatus({
-          tone: "idle",
-          text: "WORK listing seal canceled before signing.",
-        });
-        return;
-      }
 
       await assertActiveWalletAddress(window.unisat, address);
-      const txid = await signAndBroadcastPsbt({
-        beforeBroadcast: preparedWorkSettlementMode
+      const txid = await reviewAndSendMarketplace({
+        prepared: paymentPsbt, title: "Review marketplace seal publication", fields: marketplaceFields(listing),
+        payload, registry: listing.registryAddress, context: marketContext, kind: "credit", listing: listing,
+        payments: [{address: listing.registryAddress, amountSats: 546}], labels: ["Registry payment to publish seal"], revalidate: preparedWorkSettlementMode
           ? async () => {
               const freshAdmission = await freshWorkWriteMode(
                 preparedWorkSettlementMode,
@@ -35060,11 +34987,6 @@ export default function App() {
               );
             }
           : undefined,
-        inputCount: paymentPsbt.inputCount,
-        network: "livenet",
-        psbtHex: paymentPsbt.psbtHex,
-        signingAddress: address,
-        wallet: window.unisat,
       });
       const sealAt = new Date().toISOString();
       savePendingTokenListingSeal(listing, sealedAuthorization, txid, sealAt);
@@ -35113,6 +35035,7 @@ export default function App() {
   }
 
   async function delistTokenListing(listing: PowTokenListing) {
+    const marketContext = captureActionContext();
     if (!window.unisat?.signPsbt) {
       setStatus({
         tone: "bad",
@@ -35180,22 +35103,11 @@ export default function App() {
         protocolPayloads: [payload],
         requireConfirmedUtxos: true,
       });
-      if (
-        !confirmDustFeeAbsorption({
-          dustFeeSats: paymentPsbt.dustFeeSats,
-          feeRate,
-          feeSats: paymentPsbt.feeSats,
-        })
-      ) {
-        setStatus({ tone: "idle", text: dustFeeAbsorptionCanceledText() });
-        return;
-      }
 
-      const txid = await signAndBroadcastPsbt({
-        allowedReservedListingAnchorOutpoints: mergeListingAnchorOutpoints([
-          tokenListingAnchorOutpoint(listing),
-        ]),
-        beforeBroadcast: preparedWorkSettlementMode
+      const txid = await reviewAndSendMarketplace({
+        prepared: paymentPsbt, title: "Review marketplace delisting", fields: marketplaceFields(listing),
+        payload, registry: listing.registryAddress, context: marketContext, kind: "credit", listing: listing,
+        payments: [{address: listing.sellerAddress, amountSats: listing.saleAuthorization.anchorValueSats ?? 546}, {address: listing.registryAddress, amountSats: 546}], labels: ["Ticket value returned to seller", "Registry payment"], revalidate: preparedWorkSettlementMode
           ? async () => {
               const freshAdmission = await freshWorkWriteMode(
                 preparedWorkSettlementMode,
@@ -35208,12 +35120,6 @@ export default function App() {
               );
             }
           : undefined,
-        inputCount: paymentPsbt.inputCount,
-        network: "livenet",
-        psbtHex: paymentPsbt.psbtHex,
-        signInputIndexes: paymentPsbt.walletInputIndexes,
-        signingAddress: address,
-        wallet: window.unisat,
       });
       setTokenListings((current) =>
         current.filter((item) => item.listingId !== listing.listingId),
@@ -35235,7 +35141,7 @@ export default function App() {
       });
       setStatus(
         goodBroadcastStatus(
-          `Credit listing delisted: ${shortAddress(txid)}.`,
+          `Delisting broadcast: ${shortAddress(txid)}. Confirmation pending.`,
           txid,
           "livenet",
         ),
@@ -35253,6 +35159,7 @@ export default function App() {
   }
 
   async function buyTokenListing(listing: PowTokenListing) {
+    const marketContext = captureActionContext();
     if (!window.unisat?.signPsbt) {
       setStatus({
         tone: "bad",
@@ -35361,33 +35268,13 @@ export default function App() {
         protocolPayloads: [payload],
         requireConfirmedUtxos: true,
       });
-      if (
-        !confirmDustFeeAbsorption({
-          dustFeeSats: paymentPsbt.dustFeeSats,
-          feeRate,
-          feeSats: paymentPsbt.feeSats,
-        })
-      ) {
-        setStatus({ tone: "idle", text: dustFeeAbsorptionCanceledText() });
-        return;
-      }
 
-      if (isWorkToken(listing)) {
-        if (!confirmWorkAmoFrozenAction("purchase", listing)) {
-          setStatus({
-            tone: "idle",
-            text: "WORK purchase canceled before signing.",
-          });
-          return;
-        }
-      }
 
       await assertActiveWalletAddress(window.unisat, address);
-      const txid = await signAndBroadcastPsbt({
-        allowedReservedListingAnchorOutpoints: mergeListingAnchorOutpoints([
-          tokenListingAnchorOutpoint(listing),
-        ]),
-        beforeBroadcast: preparedWorkSettlementMode
+      const txid = await reviewAndSendMarketplace({
+        prepared: paymentPsbt, title: "Review marketplace purchase", fields: marketplaceFields(listing),
+        payload, registry: listing.registryAddress, context: marketContext, kind: "credit", listing: listing,
+        payments: [{address: listing.sellerAddress, amountSats: tokenSellerPaymentRequiredSats(listing)}, {address: listing.registryAddress, amountSats: 546}], labels: ["Seller price plus returned ticket value", "Registry payment"], revalidate: preparedWorkSettlementMode
           ? async () => {
               const freshAdmission = await freshWorkWriteMode(
                 preparedWorkSettlementMode,
@@ -35399,12 +35286,6 @@ export default function App() {
               );
             }
           : undefined,
-        inputCount: paymentPsbt.inputCount,
-        network: "livenet",
-        psbtHex: paymentPsbt.psbtHex,
-        signInputIndexes: paymentPsbt.walletInputIndexes,
-        signingAddress: address,
-        wallet: window.unisat,
       });
       const sale: PowTokenSale = {
         amount: listing.amount,
@@ -36075,6 +35956,7 @@ export default function App() {
 
   const actionComputerMode = !idLaunchMode && !dnsLaunchMode && !walletMode && !tokenMode && !workTokenMode && !standaloneBondConfig;
   function canRestoreActionHere(receipt: ActionReceipt) {
+    if (receipt.fields.some(([label]) => label === "Listing transaction")) return false;
     if (receipt.key.startsWith("registerDns:")) return dnsLaunchMode;
     if (receipt.key.startsWith("registerId:")) return idLaunchMode || actionComputerMode;
     if (receipt.key.startsWith("id-mutation:")) return actionComputerMode;
@@ -36107,7 +35989,7 @@ export default function App() {
         <p role="status"><strong>{item.title}</strong> · {item.status === "unknown" ? "Broadcast outcome unknown" : item.status === "pending" ? "Pending confirmation" : item.status === "confirmed" ? "Confirmed transaction" : "Dropped transaction — review before retrying"}</p>
         <code className="review-exact">{item.txid}</code><p className="field-note">Local recovery evidence. Pending is not confirmed ownership, routing, or balance.</p>
         <details><summary>Inspect retained task</summary><dl className="review-fields">{item.fields.map(([label, value]) => <div key={label}><dt>{label}</dt><dd><code className="review-exact">{value}</code></dd></div>)}</dl></details>
-        {canRestoreActionHere(item) ? <button type="button" className="secondary" disabled={actionInFlightRef.current} onClick={() => restoreActionTask(item)}>Restore task fields</button> : <p className="field-note">Inspect and copy the retained fields here, then resume in <a href={item.key.startsWith("registerDns:") ? appHref(DNS_APP_URL, LOCAL_DNS_APP_URL) : appHref(COMPUTER_APP_URL, LOCAL_COMPUTER_APP_URL)}>the appropriate workspace</a>.</p>}
+        {canRestoreActionHere(item) ? <button type="button" className="secondary" disabled={actionInFlightRef.current} onClick={() => restoreActionTask(item)}>Restore task fields</button> : <p className="field-note">Inspect and copy the retained fields here, then resume in <a href={item.key.startsWith("marketplace:") || item.fields.some(([label]) => label === "Listing transaction") ? appHref(MARKETPLACE_APP_URL, LOCAL_MARKETPLACE_APP_URL) : item.key.startsWith("registerDns:") ? appHref(DNS_APP_URL, LOCAL_DNS_APP_URL) : appHref(COMPUTER_APP_URL, LOCAL_COMPUTER_APP_URL)}>the appropriate workspace</a>.</p>}
         <button type="button" className="secondary" disabled={actionRecoveryBusy || (item.status !== "unknown" && item.status !== "pending")} onClick={() => void refreshActionRecovery(item.txid)}>{actionRecoveryBusy ? "Checking transaction status…" : "Check transaction status"}</button>
       </section>)}
     {actionReview ? <ActionTransactionReview review={actionReview} returnFocus={actionReturnFocusRef.current} onCancel={() => finishActionReview(false)} onApprove={() => finishActionReview(true)} /> : null}
@@ -36192,6 +36074,7 @@ export default function App() {
   if (marketplaceMode) {
     return (
       <>
+        {actionUi}
         <MarketplaceApp
           accountStats={connectedAccountStats}
           address={address}

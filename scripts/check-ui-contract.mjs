@@ -2007,10 +2007,10 @@ expect(
     /rawUnsignedTransactionIntent\(signedTransaction\)/.test(
       detailedSignerBlock,
     ) &&
-    /allowedReservedListingAnchorOutpoints:\s*mergeListingAnchorOutpoints\(\[\s*listingAnchorOutpoint\(latestListing\)/.test(
+    /function reviewAndSendMarketplace[\s\S]*tokenListingAnchorOutpoint\(listing\)[\s\S]*listingAnchorOutpoint\(listing\)/.test(
       app,
     ) &&
-    /allowedReservedListingAnchorOutpoints:\s*mergeListingAnchorOutpoints\(\[\s*tokenListingAnchorOutpoint\(listing\)/.test(
+    /allowedAnchors: prepared\.walletInputIndexes \? mergeListingAnchorOutpoints\(\[anchor\]\) : \[\]/.test(
       app,
     ),
 );
@@ -2214,7 +2214,7 @@ expect(
     /const estimate =\s*listing\.confirmed !== true\s*&&\s*rawEstimate/.test(
       app,
     ) &&
-    /const freshAdmission = await freshWorkWriteMode\(\)[\s\S]*preparedWorkListingMode = freshAdmission\.mode[\s\S]*workV8Listing = preparedWorkListingMode === "native-q16"[\s\S]*version: workListing[\s\S]*workV8Listing[\s\S]*TOKEN_SALE_AUTH_WORK_AMO_SUBATOM_VERSION[\s\S]*TOKEN_SALE_AUTH_WORK_AMO_PROOF_UNIT_VERSION[\s\S]*beforeBroadcast:[\s\S]*freshWorkWriteMode\(preparedWorkListingMode\)/.test(
+    /const freshAdmission = await freshWorkWriteMode\(\)[\s\S]*preparedWorkListingMode = freshAdmission\.mode[\s\S]*workV8Listing = preparedWorkListingMode === "native-q16"[\s\S]*version: workListing[\s\S]*workV8Listing[\s\S]*TOKEN_SALE_AUTH_WORK_AMO_SUBATOM_VERSION[\s\S]*TOKEN_SALE_AUTH_WORK_AMO_PROOF_UNIT_VERSION[\s\S]*revalidate:[\s\S]*freshWorkWriteMode\(preparedWorkListingMode\)/.test(
       listTokenSource,
     ) &&
     /selectedListTokenIsWork\s*\?\s*\([\s\S]*work-amo-face-selector[\s\S]*\)\s*:\s*\([\s\S]*Amount[\s\S]*Hard price proofs[\s\S]*Price proofs/.test(
@@ -2244,10 +2244,10 @@ expect(
     /function workAmoV8FrozenProjection[\s\S]*!workAmoV8FaceProofsAllowed\(faceProofs\)/.test(
       app,
     ) &&
-    /function confirmWorkAmoEstimateListing[\s\S]*workAmoProofFaceLabel\(faceProofs\)/.test(
+    /Review marketplace listing intent[\s\S]*Derived and frozen only at confirmation/.test(
       app,
     ) &&
-    /function confirmWorkAmoFrozenAction[\s\S]*workAmoProofFaceLabel\(frozen\.faceProofs\)/.test(
+    /function marketplaceFields[\s\S]*workAmoFrozenTerms\(listing\)[\s\S]*workDecimalFromAtoms\(frozen\.amountSubatoms\)/.test(
       app,
     ) &&
     /function workAmoFrozenTerms[\s\S]*TOKEN_SALE_AUTH_WORK_AMO_SUBATOM_VERSION[\s\S]*workAmoV8FrozenProjection\(listing\)[\s\S]*TOKEN_SALE_AUTH_WORK_AMO_PROOF_UNIT_VERSION[\s\S]*workAmoV6FrozenProjection\(listing\)[\s\S]*amountAtoms \* WORK_LEGACY_TO_CANONICAL_FACTOR/.test(
@@ -2268,7 +2268,7 @@ expect(
     /workAmoStaticAuthorizationForListing\(listing\)/.test(
       sealTokenListingSource,
     ) &&
-    /confirmWorkAmoFrozenAction\("seal", listing\)/.test(
+    /reviewMarketplaceSeal\(listing, "credit", marketContext/.test(
       sealTokenListingSource,
     ) &&
     /buildPaymentPsbt\(\{[\s\S]*excludeOutpoints:\s*activeTokenListingAnchorOutpointsForAddress\([\s\S]*amountSats:\s*TOKEN_MIN_MUTATION_PRICE_SATS[\s\S]*protocolPayloads:\s*\[payload\]/.test(
@@ -2278,7 +2278,7 @@ expect(
     !/signInputIndexes:\s*paymentPsbt\.walletInputIndexes/.test(
       sealTokenListingSource,
     ) &&
-    /signAndBroadcastPsbt\(\{[\s\S]*signingAddress:\s*address/.test(
+    /reviewAndSendMarketplace\(\{[\s\S]*context: marketContext/.test(
       sealTokenListingSource,
     ) &&
     /const freshAdmission = await freshWorkWriteMode\(\)[\s\S]*preparedWorkSettlementMode = freshAdmission\.mode[\s\S]*assertWorkAmoSettlementEnabled\(freshAdmission\.quote\)/.test(
@@ -2293,15 +2293,15 @@ expect(
     /const purchaseAuthorization = isWorkToken\(listing\)[\s\S]*workAmoStaticAuthorizationForListing\(listing\)[\s\S]*buildTokenBuyPayload\(\s*listing\.listingId,\s*address,\s*purchaseAuthorization/.test(
       buyTokenListingSource,
     ) &&
-    /confirmWorkAmoFrozenAction\("purchase", listing\)/.test(
+    /reviewAndSendMarketplace\(\{[\s\S]*marketplaceFields\(listing\)/.test(
       buyTokenListingSource,
     ) &&
-    /freshWorkWriteMode\(\)[\s\S]*assertWorkAmoSettlementEnabled\(freshAdmission\.quote\)[\s\S]*assertWorkAmoListingWriteEra\([\s\S]*allowLegacyWithoutFrozen: true[\s\S]*beforeBroadcast/.test(
+    /freshWorkWriteMode\(\)[\s\S]*assertWorkAmoSettlementEnabled\(freshAdmission\.quote\)[\s\S]*assertWorkAmoListingWriteEra\([\s\S]*allowLegacyWithoutFrozen: true[\s\S]*revalidate/.test(
       delistTokenListingSource,
     ) &&
     [sealTokenListingSource, buyTokenListingSource, delistTokenListingSource].every(
       (source) =>
-        /beforeBroadcast:[\s\S]*freshWorkWriteMode\([\s\S]*preparedWorkSettlementMode/.test(
+        /revalidate:[\s\S]*freshWorkWriteMode\([\s\S]*preparedWorkSettlementMode/.test(
           source,
         ),
     ),
@@ -3778,6 +3778,14 @@ expect(
     /tokenSales,[\s\S]*tokenSummary,[\s\S]*tokenTransfers,[\s\S]*\]\);/.test(app),
 );
 expect("stale browser network tab CSS removed", !/browser-network-tabs/.test(css));
+
+expect("marketplace review retains explicit two-stage signing and fail-closed ticket checks",
+  /Review seller seal authorization/.test(app) &&
+  /typeof spent.spent !== "boolean"/.test(app) &&
+  /marketplaceTerms\(current\) !== marketplaceTerms\(listing\)/.test(app) &&
+  /walletSpendProofs: marketplace \? \(BigInt\(evidence.totalSpendProofs\) - BigInt\(foreignInput\?\.proofs \?\? "0"\) - returnedWalletProofs\)/.test(app) &&
+  /const signature = await sign\(\);[\s\S]*context.assertCurrent\(\)/.test(app));
+
 
 if (failures.length) {
   console.error("UI contract check failed:");

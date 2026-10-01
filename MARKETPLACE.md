@@ -26,6 +26,31 @@ or from the original Boost Mail item.
 - AMO attention metrics should be derived from valid chain events: active listings, ID sale count, DNS sale count, credit sale count, seller-price sale volume, credit sale volume, and mutation-fee flow.
 - POWB and INCB market actions use the same credit sale-ticket machinery under their reserved synthetic assets. POWB supply comes directly from confirmed `pwm1:m:powb` recipient proof payments. INCB valuation and issuance amount come from direct bond proofs plus attached WORK valued by the send-time oracle: the last confirmed green canonical live WORK summary at H-1, hash-bound to the exact previous block. Every transaction in the bond block is excluded. Confirmation fixes the resulting balance and supply. Neither asset can be issued by `pwt1:mint`.
 
+## Local transaction review
+
+AMO and Computer use the same prepared-transaction review for ID, DNS, credit,
+and bond listing, seal publication, delisting, and purchase actions. The review
+shows exact asset terms, recipients, seller payments, returned or newly locked
+546-proof ticket value, the 546-proof registry mutation payment, miner fee,
+change, funding outpoints, and protocol records. Buyer wallet cost excludes the
+seller's ticket input; returning an owned ticket on delisting is not a new cost.
+
+Sealing has two explicit reviews: the reusable seller authorization using
+`SIGHASH_SINGLE | ANYONECANPAY` (131), then the registry transaction that publishes
+it. Canceling the second review does not publish the already requested signature.
+A rejected wallet request does not trigger a second request automatically.
+
+Confirmed listing terms, ownership where applicable, exact ticket transaction
+identity, and unspent status are checked again before signing and broadcasting.
+Missing or changed evidence stops the action. Historical owner-funded ID listings
+without a ticket retain their existing delisting path and ownership checks.
+WORK listing quantities are estimates until confirmation freezes them; later
+reviews inspect frozen quantities and payments without repricing them. USD remains
+display-only. Unknown broadcast receipts block further actions until an explicit
+first-party status check; restoring receipt fields never submits a transaction.
+Distinct new listing intents can use remaining spendable capacity while known
+pending intents retain their existing reservations.
+
 ## Current ID AMO Model
 
 The live AMO writes on-chain listing-book events to the same canonical

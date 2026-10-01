@@ -283,8 +283,14 @@ live in `amo.proofofwork.me`, not in the focused claim app.
   first-party status check reports confirmation or dropping. Task fields can be
   restored from receipts for inspection; restoration never submits a transaction.
   Receipts are browser-local recovery evidence, excluded from organization backups,
-  and cannot establish ownership, routing, balances, or settlement. Marketplace seller
-  authorizations and anchored purchases retain their separate existing flows.
+  and cannot establish ownership, routing, balances, or settlement.
+- Reviews AMO ID, DNS, credit, and bond listing, seal, delisting, and purchase
+  actions with exact payments and ticket evidence. Seller sealing first reviews
+  the reusable authorization; publishing it requires a separate transaction review.
+  Buyer funding excludes the seller ticket input; delisting separates returned
+  ticket value from wallet cost. Fresh confirmed terms and unspent ticket evidence
+  are required before signing and broadcast. WORK intent estimates remain distinct
+  from confirmation-frozen settlement quantities.
 - Previews local restore replacements before writing; absent groups remain
   unchanged, concurrent local changes stop the restore, and failed writes attempt
   recovery with explicit reporting if recovery is incomplete. Theme preference
