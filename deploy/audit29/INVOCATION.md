@@ -11,6 +11,7 @@ Before production use, run these local private-fixture checks:
 ```sh
 python3 -I -B deploy/audit29/check-release.test.py
 python3 -I -B deploy/audit29/check-private-verify.test.py
+python3 -I -B deploy/audit29/check-ui-transport.test.py
 python3 -I -B scripts/check-audit29-ops-install.py
 python3 -B scripts/check-ui-stage-dedup.py
 python3 -I -B scripts/check-audit5-ui-workflow.py
@@ -75,6 +76,44 @@ validating its exact canonical path, inode, ownership and mode. Keep the FD open
 in the transport parent across reception and staging; a Python parent must pass
 it explicitly with `pass_fds`. Independently reopening the locked file contends
 with the parent and refuses, even when the inode is the same.
+
+The reusable `ui-transport.py` parent implements this lock continuity. Install
+its reviewed bytes beside the exact `release.py`, `stream-ui-bundle.py`,
+`ui-stage-candidate.sh` and `ui-capacity.py` copies in the canonical root-owned
+0700 `audit29-tools` directory. Preserve previous tooling before replacement.
+Supply one root-owned, SHA256-bound JSON plan with fresh release/build hashes,
+compressed stream lengths, receive allocation/inode bounds, source allocation,
+all six helper hashes, old live manifest/full-root hashes, installed stager hash,
+and a conservative archive upper bound/inode envelope. It rejects altered helper
+bytes or live roots before transport. Do not reuse an earlier candidate plan.
+
+Run two distinct managed units: `surfaces-stage` receives only the exact surfaces
+gzip, then measures the real copy/pass-through/compatibility peak under its FD,
+adds the archive reserve, requires fresh admission, and stages/archives. `source`
+runs afterward with a fresh parent FD/admission and receives only the exact
+source gzip; it requires the preceding verified-checksum archive. Extra/truncated
+input refuses. Each input stream goes to stdin without an on-disk archive copy.
+
+```sh
+# Run from the trusted release operator, forwarding exactly one gzip on stdin.
+# Replace PHASE with surfaces-stage, then source in a separate later invocation.
+ssh root@77.42.91.106 \
+  'systemd-run --unit=proofofwork-audit29-ui-transport-RELEASE-PHASE \
+   --service-type=exec --wait --pipe \
+   --property=User=root --property=Group=root --property=KillMode=control-group \
+   --property=RuntimeMaxSec=20min --property=TimeoutStopSec=30s \
+   --property=MemoryMax=4G --property=MemorySwapMax=0 --property=UMask=0077 \
+   /usr/bin/python3 -I -B /var/tmp/proofofwork-deploy/audit29-tools/ui-transport.py \
+   /ROOT_PRIVATE/FRESH-transport-plan.json --config-sha256 PLAN_SHA --phase PHASE' \
+  < EXACT_LOCAL_PHASE_GZIP
+```
+
+The parent retains bounded private logs and its immutable plan intent in
+`audit29-transport-RELEASE-PHASE`, and never publishes `/var/www`. Failed payloads,
+stages and logs remain evidence. The fixed 5 GiB scratch ceiling, filesystem and
+inode reserves, installed stager pin and original receiver integrity rules all
+remain mandatory. If measured peak plus archive reserve refuses admission,
+preserve the evidence and inspect the allocation; do not loosen the gate.
 
 ## Node cutover
 

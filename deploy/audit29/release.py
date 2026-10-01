@@ -567,7 +567,8 @@ class Controller:
                       '--tree-sha256', record['treeSha256']], 130)
         self.run([self.helpers['provenance'], 'verify-rollback'], 180)
         self.run([self.helpers['provenance'], 'verify-candidate', '--release-id', args.release_id,
-                  '--commit', args.commit, '--source-checkout', str(source), '--archive', str(archive)], 300)
+                  '--commit', args.commit, '--source-checkout', str(source), '--archive', str(archive)], 300,
+                 extra={'POW_UI_WWW_ROOT': str(stage), 'POW_UI_STAGED_ROOT': '1'})
         self.old_identity, self.new_identity = identity(live), identity(stage)
         self.save('roots', {'old': old, 'live': self.old_identity, 'stage': self.new_identity, 'retained': retained,
                             'candidateArchiveSha256': args.archive_sha256})

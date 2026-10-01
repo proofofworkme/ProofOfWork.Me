@@ -3,6 +3,7 @@
 import datetime as dt
 import hashlib
 import importlib.util
+import json
 from pathlib import Path
 import signal
 import tempfile
@@ -146,6 +147,45 @@ class ReleaseContracts(unittest.TestCase):
             fixture.state = lambda unit: {**old, field: value}
             with self.assertRaisesRegex(RuntimeError, 'Authority service identity'):
                 fixture.unchanged_authority_and_holds()
+
+    def test_ui_candidate_verification_invokes_helper_against_staged_root(self):
+        with tempfile.TemporaryDirectory() as folder:
+            base = Path(folder); rollbacks = base / 'rollback-roots'; rollbacks.mkdir()
+            helper = base / 'provenance-helper'
+            helper.write_text('#!' + sys.executable + '\nimport json,os,sys\n' +
+                'print(json.dumps({"argv":sys.argv[1:],"root":os.environ.get("POW_UI_WWW_ROOT"),'
+                '"staged":os.environ.get("POW_UI_STAGED_ROOT")}))\n')
+            helper.chmod(0o700)
+            release_id = C[:12] + '-20261001T060000Z'
+            args = SimpleNamespace(command='ui', release_id=release_id, commit=C, tree=T,
+                archive_sha256=H, candidate_attestation=base/'candidate.json', attestation_sha256=H,
+                classifications=base/'classifications.json', classifications_sha256=H,
+                old_manifest_sha256=H, old_tree_sha256=H)
+            fixture = release.Controller(args); fixture.out=base
+            fixture.helpers = {**fixture.helpers, 'provenance': str(helper)}
+            fixture.capacity=lambda: None; fixture.bound_acceptance=lambda: None
+            fixture.fingerprint=lambda root: {'manifestSha256':H,'treeSha256':H}
+            observed=[]
+            def run(argv, *positional, **named):
+                if argv[1]=='verify-candidate':
+                    output=release.Controller.run(fixture,argv,*positional,**named)
+                    observed.append(json.loads(output))
+                return ''
+            fixture.run=run
+            def bound(path,*args,**kwargs):
+                if path == args_original.candidate_attestation:
+                    return json.dumps({'commit':C,'tree':T,'archiveSha256':H}).encode()
+                if path == args_original.classifications: return b'[]'
+                return b''
+            args_original=args
+            with patch.object(release,'ROLLBACKS',rollbacks), patch.object(release,'bound_file',bound), \
+                 patch.object(release,'identity',side_effect=RuntimeError('stop before mutation')):
+                with self.assertRaisesRegex(RuntimeError,'stop before mutation'): fixture.ui()
+            self.assertEqual(len(observed),1)
+            self.assertEqual(observed[0]['root'],str(release.SCRATCH/('proofofwork-www-stage-'+release_id)))
+            self.assertEqual(observed[0]['staged'],'1')
+            self.assertEqual(observed[0]['argv'][0],'verify-candidate')
+            self.assertIn(str(release.SCRATCH/('proofofwork-ui-source-'+release_id)),observed[0]['argv'])
 
     def test_timer_restoration_preserves_masked_and_inactive_states(self):
         before = {'held': {'ActiveState': 'inactive', 'UnitFileState': 'masked'},

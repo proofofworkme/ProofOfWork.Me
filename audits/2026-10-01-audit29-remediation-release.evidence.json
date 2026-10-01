@@ -9056,5 +9056,65 @@
       "releaseController": "14/14 PASS",
       "uiWorkflow": "26/26 PASS"
     }
+  },
+  "uiCandidateRootCorrection": {
+    "files": {
+      "deploy/audit29/release.py": "098ca423e57f33d2a3a2c318995935a4000596536b59e460da4ccc996bcb25ac",
+      "deploy/audit29/check-release.test.py": "ecd3db3a4daf7cd79b77b88792da37a6e0c36a839f9a42573b32385ba4bf566c"
+    },
+    "rootTest": "15/15 PASS",
+    "issue": "UI verify-candidate previously inherited default /var/www instead of exact staged root",
+    "action": "Set only POW_UI_WWW_ROOT=exactstage and POW_UI_STAGED_ROOT=1 for that read-only helper invocation",
+    "applicationPublication": false
+  },
+  "uiPostCleanupRetention": {
+    "role": "ui",
+    "ok": false,
+    "issues": [
+      "historical-held-path-missing-or-retirement-invalid"
+    ],
+    "units": {
+      "proofofwork-ui-release-prune.timer": {
+        "LoadState": "masked",
+        "ActiveState": "inactive",
+        "persistentMask": true
+      },
+      "proofofwork-ui-storage-prune.timer": {
+        "LoadState": "masked",
+        "ActiveState": "inactive",
+        "persistentMask": true
+      }
+    },
+    "historicalHeldInventory": {
+      "ok": false,
+      "heldPaths": 295,
+      "approvedRetiredHeldPaths": 2,
+      "mustRemainPresent": 293,
+      "missingHeldPaths": [
+        "/var/tmp/proofofwork-deploy/audit5-stream-source-5970b26e610b-20260926T225712Z.json",
+        "/var/tmp/proofofwork-deploy/audit5-stream-source-b752518bf8b4-20260927T014804Z.json",
+        "/var/tmp/proofofwork-deploy/audit5-stream-source-c64963f4649f-20260927T001231Z.json",
+        "/var/tmp/proofofwork-deploy/audit5-stream-surfaces-5970b26e610b-20260926T225712Z.json",
+        "/var/tmp/proofofwork-deploy/audit5-stream-surfaces-b752518bf8b4-20260927T014804Z.json",
+        "/var/tmp/proofofwork-deploy/audit5-stream-surfaces-c64963f4649f-20260927T001231Z.json",
+        "/var/tmp/proofofwork-deploy/boost-ui-deploy-config.json",
+        "/var/tmp/proofofwork-deploy/boost-ui-publish-b111f5941375-20260927T125836Z.json",
+        "/var/tmp/proofofwork-deploy/deploy-boost-ui-remote.py",
+        "/var/tmp/proofofwork-deploy/profile-release-c964e304a8f9-20260927T181330Z.json",
+        "/var/tmp/proofofwork-deploy/profile-ui-publish-config.json"
+      ],
+      "unexpectedRetiredPathsPresent": []
+    },
+    "checkedAt": "2026-10-01T06:09:31.123916+00:00"
+  },
+  "uiTransportWrapper": {
+    "files": {
+      "deploy/audit29/ui-transport.py": "a0c022d2071ad1f949c2bd7304cc5a3d8f1368bb3d71cb710b5d709956f7bdd9",
+      "deploy/audit29/check-ui-transport.test.py": "153069d4caa9cb3cee0ad2e92feedace0a20175a7f5ee33cac05bf1dc1285124",
+      "deploy/audit29/INVOCATION.md": "c6b2327e2488972e2fd74ee01b535734f6c1d02f821d44e51de0a957d0135a00"
+    },
+    "rootTest": "5/5 PASS",
+    "productionRun": false,
+    "scope": "Continuous admitted parent lock through exact transport and staging; separate later source admission; bounded child output and descendant cleanup"
   }
 }

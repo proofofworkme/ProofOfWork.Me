@@ -229,3 +229,15 @@ implementation commit remains preserved. Revised release tooling passes 14/14
 controller and 26/26 workflow fixtures, including a real competing lock process
 through all 16 surfaces and staging; an independent review reran both suites.
 It will be committed and used for a newly bound candidate.
+
+A further prepublication tooling correction binds UI candidate verification to
+the exact staged root using the installed helper's allowlisted staged mode.
+The live-root default would otherwise compare the new archive with the prior
+UI. A controller-level fixture checks the actual helper arguments and scoped
+environment; all 15 controller tests pass. Earlier candidates and tool inputs
+remain preserved; a fresh exact candidate will bind this correction.
+
+The reusable UI transport parent is preserved in the repository. Five focused
+fixtures verify exact stdin, inherited descriptor, hash/ownership refusal,
+bounded failure output and descendant termination before releasing the parent
+lock. Its production run remains a separate acceptance requirement.
