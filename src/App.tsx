@@ -51987,7 +51987,7 @@ function TokenMarketplacePanel({
     useState<WorkFloorChartUnit>("sats");
   const [tokenMarketChartUnit, setTokenMarketChartUnit] =
     useState<WorkFloorChartUnit>("sats");
-  const rows = tokenMarketplaceRowsFor({
+  const rows = useMemo(() => tokenMarketplaceRowsFor({
     address,
     listingBookComplete: summary.listingBookComplete === true,
     listings,
@@ -51996,7 +51996,7 @@ function TokenMarketplacePanel({
     sales,
     tokens,
     transfers,
-  });
+  }), [address, summary.listingBookComplete, listings, mints, network, sales, tokens, transfers]);
   const marketplaceSummaryVerified = marketplaceSummaryHasVerifiedData(
     marketplaceSummaryReadState,
   );
@@ -52103,141 +52103,199 @@ function TokenMarketplacePanel({
     setTokenMarketRoute("");
     focusTokenMarketDirectoryHeading();
   };
-  const networkListings = listings.filter(
-    (listing) => listing.network === network,
-  );
-  const selectedTokenIsWork =
-    selectedMarketToken?.tokenId === WORK_TOKEN_ID ||
-    selectedMarketToken?.ticker === WORK_TOKEN_TICKER;
-  const workV8BoundaryObserved =
-    workV8DeclarationBoundaryObserved(workFloorQuote);
-  const allMarketListings = selectedMarketToken
-    ? networkListings.filter(
-        (listing) => listing.tokenId === selectedMarketToken.tokenId,
-      )
-    : networkListings;
-  const workAmoListings = selectedTokenIsWork
-    ? allMarketListings.filter((listing) =>
-        isWorkAmoDerivedUnitAuthorization(
-          listing.saleAuthorization.version,
-        ) &&
-        (workV8BoundaryObserved
-          ? listing.saleAuthorization.version ===
-            TOKEN_SALE_AUTH_WORK_AMO_SUBATOM_VERSION
-          : listing.saleAuthorization.version !==
-            TOKEN_SALE_AUTH_WORK_AMO_SUBATOM_VERSION),
-      )
-    : [];
-  const workV4RelicListings = selectedTokenIsWork
-    ? allMarketListings.filter(
-        (listing) =>
-          workV8BoundaryObserved
-            ? listing.saleAuthorization.version !==
+  // Search edits reuse canonical-data derivations; source changes invalidate them.
+  const {
+    networkListings,
+    selectedTokenIsWork,
+    workV8BoundaryObserved,
+    workAmoListings,
+    workV4RelicListings,
+    marketListings,
+    listingBookPreviewIncomplete,
+    declaredListingCount,
+    marketClosedListings,
+    workMarketFloorSats,
+    workMarketFloorQ8,
+    workMarketFrozenFloorSats,
+    workMarketFrozenFloorQ8,
+    tokenReferenceById,
+    tokenMarketListingActivityItems,
+    tokenMarketSealActivityItems,
+    tokenMarketSaleActivityItems,
+    bestWorkAmoBuyerArb,
+  } = useMemo(() => {
+    const networkListings = listings.filter(
+      (listing) => listing.network === network,
+    );
+    const selectedTokenIsWork =
+      selectedMarketToken?.tokenId === WORK_TOKEN_ID ||
+      selectedMarketToken?.ticker === WORK_TOKEN_TICKER;
+    const workV8BoundaryObserved =
+      workV8DeclarationBoundaryObserved(workFloorQuote);
+    const allMarketListings = selectedMarketToken
+      ? networkListings.filter(
+          (listing) => listing.tokenId === selectedMarketToken.tokenId,
+        )
+      : networkListings;
+    const workAmoListings = selectedTokenIsWork
+      ? allMarketListings.filter((listing) =>
+          isWorkAmoDerivedUnitAuthorization(
+            listing.saleAuthorization.version,
+          ) &&
+          (workV8BoundaryObserved
+            ? listing.saleAuthorization.version ===
               TOKEN_SALE_AUTH_WORK_AMO_SUBATOM_VERSION
-            : listing.saleAuthorization.version ===
-              TOKEN_SALE_AUTH_WORK_CONFIRMATION_FLOOR_VERSION,
-      )
-    : [];
-  const marketListings =
-    selectedTokenIsWork && workMarketplaceVersion === "amo"
-      ? workAmoListings
-      : selectedTokenIsWork && workMarketplaceVersion === "v4-relic"
-        ? workV4RelicListings
-        : allMarketListings;
-  const workAmoBestAskListings = networkListings.filter(
-    (listing) =>
-      isWorkToken(listing) &&
-      workAmoListingMatchesReadEra(listing, workFloorQuote),
-  );
-  const listingBookPreviewIncomplete = summary.listingBookComplete !== true;
-  const declaredListingCount = Number(summary.totalCounts?.listings);
-  const networkClosedListings = closedListings.filter(
-    (listing) => listing.network === network,
-  );
-  const marketClosedListings = selectedMarketToken
-    ? networkClosedListings.filter(
-        (listing) => listing.tokenId === selectedMarketToken.tokenId,
-      )
-    : networkClosedListings;
-  const networkSales = sales.filter((sale) => sale.network === network);
-  const marketSales = selectedMarketToken
-    ? networkSales.filter((sale) => sale.tokenId === selectedMarketToken.tokenId)
-    : networkSales;
-  const workMarketFloorSats =
-    network === "livenet" && workFloorQuote
-      ? (workFloorQuote.liveFloorSats ||
-          workFloorQuote.networkValueSats / WORK_TOKEN_MAX_SUPPLY)
-      : 0;
-  const workMarketFloorQ8 =
-    workFloorQuote?.liveFloorQ8 ??
-    workFloorQuote?.actualValue?.liveFloorQ8 ??
-    workFloorQuote?.floorQ8 ??
-    workFloorQuote?.actualValue?.floorQ8;
-  const workMarketFrozenFloorSats =
-    network === "livenet" && workFloorQuote
-      ? (workFloorQuote.frozenFloorSats ||
-          (workFloorQuote.frozenNetworkValueSats ?? workFloorQuote.networkValueSats) /
-            WORK_TOKEN_MAX_SUPPLY)
-      : 0;
-  const workMarketFrozenFloorQ8 =
-    workFloorQuote?.frozenFloorQ8 ??
-    workFloorQuote?.actualValue?.frozenFloorQ8;
-  const tokenReferenceById = new Map<string, TokenReferenceSnapshot>(
-    rows.map((token) => [token.tokenId, token]),
-  );
-  const marketListingHistoryById = new Map<string, PowTokenListing>();
-  for (const listing of [...marketClosedListings, ...allMarketListings]) {
-    const listingId = listing.listingId.trim().toLowerCase();
-    if (listingId) {
-      marketListingHistoryById.set(listingId, listing);
+            : listing.saleAuthorization.version !==
+              TOKEN_SALE_AUTH_WORK_AMO_SUBATOM_VERSION),
+        )
+      : [];
+    const workV4RelicListings = selectedTokenIsWork
+      ? allMarketListings.filter(
+          (listing) =>
+            workV8BoundaryObserved
+              ? listing.saleAuthorization.version !==
+                TOKEN_SALE_AUTH_WORK_AMO_SUBATOM_VERSION
+              : listing.saleAuthorization.version ===
+                TOKEN_SALE_AUTH_WORK_CONFIRMATION_FLOOR_VERSION,
+        )
+      : [];
+    const marketListings =
+      selectedTokenIsWork && workMarketplaceVersion === "amo"
+        ? workAmoListings
+        : selectedTokenIsWork && workMarketplaceVersion === "v4-relic"
+          ? workV4RelicListings
+          : allMarketListings;
+    const workAmoBestAskListings = networkListings.filter(
+      (listing) =>
+        isWorkToken(listing) &&
+        workAmoListingMatchesReadEra(listing, workFloorQuote),
+    );
+    const listingBookPreviewIncomplete = summary.listingBookComplete !== true;
+    const declaredListingCount = Number(summary.totalCounts?.listings);
+    const networkClosedListings = closedListings.filter(
+      (listing) => listing.network === network,
+    );
+    const marketClosedListings = selectedMarketToken
+      ? networkClosedListings.filter(
+          (listing) => listing.tokenId === selectedMarketToken.tokenId,
+        )
+      : networkClosedListings;
+    const networkSales = sales.filter((sale) => sale.network === network);
+    const marketSales = selectedMarketToken
+      ? networkSales.filter((sale) => sale.tokenId === selectedMarketToken.tokenId)
+      : networkSales;
+    const workMarketFloorSats =
+      network === "livenet" && workFloorQuote
+        ? (workFloorQuote.liveFloorSats ||
+            workFloorQuote.networkValueSats / WORK_TOKEN_MAX_SUPPLY)
+        : 0;
+    const workMarketFloorQ8 =
+      workFloorQuote?.liveFloorQ8 ??
+      workFloorQuote?.actualValue?.liveFloorQ8 ??
+      workFloorQuote?.floorQ8 ??
+      workFloorQuote?.actualValue?.floorQ8;
+    const workMarketFrozenFloorSats =
+      network === "livenet" && workFloorQuote
+        ? (workFloorQuote.frozenFloorSats ||
+            (workFloorQuote.frozenNetworkValueSats ?? workFloorQuote.networkValueSats) /
+              WORK_TOKEN_MAX_SUPPLY)
+        : 0;
+    const workMarketFrozenFloorQ8 =
+      workFloorQuote?.frozenFloorQ8 ??
+      workFloorQuote?.actualValue?.frozenFloorQ8;
+    const tokenReferenceById = new Map<string, TokenReferenceSnapshot>(
+      rows.map((token) => [token.tokenId, token]),
+    );
+    const marketListingHistoryById = new Map<string, PowTokenListing>();
+    for (const listing of [...marketClosedListings, ...allMarketListings]) {
+      const listingId = listing.listingId.trim().toLowerCase();
+      if (listingId) {
+        marketListingHistoryById.set(listingId, listing);
+      }
     }
-  }
-  const tokenMarketListingActivityItems = sortTokenMarketLogItems([
-    ...[...marketListingHistoryById.values()].map((listing) => ({
-      createdAt: listing.createdAt,
-      kind: "listing" as const,
-      listing,
-      txid: listing.listingId,
-    })),
-    ...marketClosedListings
-      .filter(
-        (closedListing) =>
-          !tokenMarketClosedListingIsSaleSettlement(
-            closedListing,
-            marketSales,
-          ),
-      )
-      .map((closedListing) => ({
-        closedListing,
-        createdAt: closedListing.closedAt ?? closedListing.createdAt,
-        kind: "closed-listing" as const,
-        txid: closedListing.closedTxid || closedListing.listingId,
+    const tokenMarketListingActivityItems = sortTokenMarketLogItems([
+      ...[...marketListingHistoryById.values()].map((listing) => ({
+        createdAt: listing.createdAt,
+        kind: "listing" as const,
+        listing,
+        txid: listing.listingId,
       })),
-  ]);
-  const marketSealHistoryById = new Map<string, PowTokenListing>();
-  for (const listing of [...marketClosedListings, ...allMarketListings]) {
-    const sealTxid = String(listing.sealTxid ?? "").trim().toLowerCase();
-    const listingId = listing.listingId.trim().toLowerCase();
-    if (sealTxid && listingId) {
-      marketSealHistoryById.set(`${sealTxid}:${listingId}`, listing);
+      ...marketClosedListings
+        .filter(
+          (closedListing) =>
+            !tokenMarketClosedListingIsSaleSettlement(
+              closedListing,
+              marketSales,
+            ),
+        )
+        .map((closedListing) => ({
+          closedListing,
+          createdAt: closedListing.closedAt ?? closedListing.createdAt,
+          kind: "closed-listing" as const,
+          txid: closedListing.closedTxid || closedListing.listingId,
+        })),
+    ]);
+    const marketSealHistoryById = new Map<string, PowTokenListing>();
+    for (const listing of [...marketClosedListings, ...allMarketListings]) {
+      const sealTxid = String(listing.sealTxid ?? "").trim().toLowerCase();
+      const listingId = listing.listingId.trim().toLowerCase();
+      if (sealTxid && listingId) {
+        marketSealHistoryById.set(`${sealTxid}:${listingId}`, listing);
+      }
     }
-  }
-  const tokenMarketSealActivityItems = sortTokenMarketLogItems(
-    [...marketSealHistoryById.values()].map((seal) => ({
-      createdAt: seal.sealAt ?? seal.createdAt,
-      kind: "seal" as const,
-      seal,
-      txid: seal.sealTxid ?? "",
-    })),
-  );
-  const tokenMarketSaleActivityItems = sortTokenMarketLogItems(
-    marketSales.map((sale) => ({
-      createdAt: sale.createdAt,
-      kind: "sale" as const,
-      sale,
-      txid: sale.txid,
-    })),
-  );
+    const tokenMarketSealActivityItems = sortTokenMarketLogItems(
+      [...marketSealHistoryById.values()].map((seal) => ({
+        createdAt: seal.sealAt ?? seal.createdAt,
+        kind: "seal" as const,
+        seal,
+        txid: seal.sealTxid ?? "",
+      })),
+    );
+    const tokenMarketSaleActivityItems = sortTokenMarketLogItems(
+      marketSales.map((sale) => ({
+        createdAt: sale.createdAt,
+        kind: "sale" as const,
+        sale,
+        txid: sale.txid,
+      })),
+    );
+    const bestWorkAmoBuyerArb = workAmoBestAskListings
+      .filter(tokenListingHasConfirmedSaleTicketSeal)
+      .reduce<ExactRational | null>((best, listing) => {
+          if (!workAmoListingMatchesReadEra(listing, workFloorQuote)) {
+            return best;
+          }
+          const arb = tokenListingBuyerArbExact(
+            listing,
+            tokenReferenceById,
+            workMarketFloorQ8,
+          );
+          return arb && (!best || compareExactRational(arb, best) > 0)
+            ? arb
+            : best;
+        }, null);
+    return {
+      networkListings,
+      selectedTokenIsWork,
+      workV8BoundaryObserved,
+      workAmoListings,
+      workV4RelicListings,
+      marketListings,
+      listingBookPreviewIncomplete,
+      declaredListingCount,
+      marketClosedListings,
+      workMarketFloorSats,
+      workMarketFloorQ8,
+      workMarketFrozenFloorSats,
+      workMarketFrozenFloorQ8,
+      tokenReferenceById,
+      tokenMarketListingActivityItems,
+      tokenMarketSealActivityItems,
+      tokenMarketSaleActivityItems,
+      bestWorkAmoBuyerArb,
+    };
+  }, [listings, network, selectedMarketToken, workFloorQuote, closedListings, sales, rows,
+    workMarketplaceVersion, summary.listingBookComplete, summary.totalCounts?.listings]);
   const localTokenMarketActivityItems =
     tokenMarketActivityTab === "listings"
       ? tokenMarketListingActivityItems
@@ -52484,44 +52542,31 @@ function TokenMarketplacePanel({
         : {}
       : localTokenMarketActivityTotals;
   const orderBookListings = marketListings;
-  const sealedListings = orderBookListings.filter(
+  const sealedListings = useMemo(() => orderBookListings.filter(
     tokenListingHasConfirmedSaleTicketSeal,
-  );
-  const bestWorkAmoBuyerArb = workAmoBestAskListings
-    .filter(tokenListingHasConfirmedSaleTicketSeal)
-    .reduce<ExactRational | null>((best, listing) => {
-        if (!workAmoListingMatchesReadEra(listing, workFloorQuote)) {
-          return best;
-        }
-        const arb = tokenListingBuyerArbExact(
-          listing,
-          tokenReferenceById,
-          workMarketFloorQ8,
-        );
-        return arb && (!best || compareExactRational(arb, best) > 0)
-          ? arb
-          : best;
-      }, null);
-  const unsealedListings = orderBookListings.filter(
+  ), [orderBookListings]);
+  const unsealedListings = useMemo(() => orderBookListings.filter(
     (listing) => !tokenListingHasConfirmedSaleTicketSeal(listing),
-  );
+  ), [orderBookListings]);
   const visibleMarketListings =
     tokenListingBookFilter === "sealed"
       ? sealedListings
       : tokenListingBookFilter === "unsealed"
         ? unsealedListings
         : orderBookListings;
-  const filteredMarketListings = tokenListingSearchQuery
-    ? visibleMarketListings.filter((listing) =>
-        tokenListingMatchesSearch(listing, tokenListingSearchQuery),
-      )
-    : visibleMarketListings;
-  const sortedMarketListings = sortTokenListings(
-    filteredMarketListings,
+  // Sorting before filtering preserves exact ordering without re-sorting on each query.
+  const sortedBookListings = useMemo(() => sortTokenListings(
+    visibleMarketListings,
     tokenListingSortMode,
     tokenReferenceById,
     workMarketFloorQ8,
-  );
+  ), [visibleMarketListings, tokenListingSortMode, tokenReferenceById, workMarketFloorQ8]);
+  const filteredMarketListings = useMemo(() => tokenListingSearchQuery
+    ? sortedBookListings.filter((listing) =>
+        tokenListingMatchesSearch(listing, tokenListingSearchQuery),
+      )
+    : sortedBookListings, [sortedBookListings, tokenListingSearchQuery]);
+  const sortedMarketListings = filteredMarketListings;
   const walletMarketListings = address
     ? sortTokenListings(
         orderBookListings.filter(

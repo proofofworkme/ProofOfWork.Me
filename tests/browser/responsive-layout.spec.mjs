@@ -3818,7 +3818,16 @@ for (const count of [1_000, 10_000]) {
         const searchStart = performance.now();
         await page.getByPlaceholder("Search sale tickets, sellers, txids").fill(rows[count - 1].listingId);
         await expect(page.locator("#credit-market-book .token-market-row")).toHaveCount(1);
-        samples.push({ phase, readyMs, searchMs: performance.now() - searchStart, rendered,
+        await expect(page.locator("#credit-market-book").getByRole("link", { name: "Listing TX", exact: true })).toHaveAttribute("href", new RegExp(`${rows[count - 1].listingId}$`, "u"));
+        const searchMs = performance.now() - searchStart;
+        const repeatedSearchMs = [];
+        for (const index of [count - 2, count - 3, count - 1]) {
+          const editStart = performance.now();
+          await page.getByPlaceholder("Search sale tickets, sellers, txids").fill(rows[index].listingId);
+          await expect(page.locator("#credit-market-book").getByRole("link", { name: "Listing TX", exact: true })).toHaveAttribute("href", new RegExp(`${rows[index].listingId}$`, "u"));
+          repeatedSearchMs.push(performance.now() - editStart);
+        }
+        samples.push({ phase, readyMs, searchMs, repeatedSearchMs, rendered,
           navigation: await page.evaluate(() => performance.getEntriesByType("navigation").map((entry) => entry.toJSON())),
           apiRequests: [...requests] });
       }
