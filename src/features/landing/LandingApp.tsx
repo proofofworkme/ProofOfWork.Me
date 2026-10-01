@@ -331,6 +331,15 @@ export function LandingApp({
                 </span>
               </a>
               <a
+                className="primary link-button"
+                href={appHref(DNS_APP_URL, LOCAL_DNS_APP_URL)}
+              >
+                <span className="button-content">
+                  <Globe2 size={17} />
+                  <span>Claim DNS</span>
+                </span>
+              </a>
+              <a
                 className="secondary link-button landing-computer-action"
                 href={appHref(COMPUTER_APP_URL, LOCAL_COMPUTER_APP_URL)}
               >
