@@ -1,4 +1,5 @@
 import { ActionTransactionReview, type ActionReview } from "./shared/components/ActionTransactionReview";
+import { ActionRecoveryPanel } from "./shared/components/ActionRecoveryPanel";
 import { readActionReceipts, saveActionReceipt, type ActionReceipt } from "./shared/wallet/actionRecovery";
 import { FEE_RATE_STEP } from "./shared/feeRate";
 import { TransactionReview, type MailTransactionReview } from "./shared/components/TransactionReview";
@@ -19848,10 +19849,12 @@ async function chooseSellerAnchorPlan(
 async function fetchBroadcastStatus(
   txid: string,
   ownerNetwork: BitcoinNetwork,
+  signal?: AbortSignal,
 ): Promise<BroadcastStatus> {
   const payload = await fetchProofApiJson<PowTxStatusApiResponse>(
     `/api/v1/tx/${encodeURIComponent(txid)}/status`,
     ownerNetwork,
+    { signal },
   );
   return normalizeBroadcastStatus(payload.status);
 }
@@ -22163,6 +22166,7 @@ export default function App() {
   const [actionReceipts, setActionReceipts] = useState<ActionReceipt[]>([]);
   const [actionRecoveryError, setActionRecoveryError] = useState("");
   const [actionRecoveryBusy, setActionRecoveryBusy] = useState(false);
+  const actionRecoveryRequestRef = useRef<{ scope: string; controller: AbortController; promise: Promise<void> }>();
 
   const mailReviewResolverRef = useRef<((approved: boolean) => void) | null>(null);
   const mailWalletRevisionRef = useRef(0);
@@ -23741,20 +23745,66 @@ export default function App() {
     catch (error) { setActionRecoveryError(errorMessage(error, "Local recovery records are unavailable.")); }
     return () => { actionReviewResolverRef.current?.(false); };
   }, []);
-  async function refreshActionRecovery(txid: string) {
+  const actionRecoveryScope = JSON.stringify([address, network, activeWorkspaceStatusKey]);
+  const actionRecoveryScopeRef = useRef(actionRecoveryScope);
+  actionRecoveryScopeRef.current = actionRecoveryScope;
+  function refreshActionRecovery(): Promise<void> {
+    if (!address) return Promise.resolve();
+    const scope = actionRecoveryScope;
+    const existing = actionRecoveryRequestRef.current;
+    if (existing?.scope === scope && !existing.controller.signal.aborted) return existing.promise;
+    existing?.controller.abort();
+    const controller = new AbortController();
+    const request = { scope, controller, promise: Promise.resolve() };
+    const isCurrent = () => !controller.signal.aborted && actionRecoveryScopeRef.current === scope && actionRecoveryRequestRef.current === request;
+    actionRecoveryRequestRef.current = request;
     setActionRecoveryBusy(true);
-    try {
-      const receipts = readActionReceipts(localStorage);
-      for (const receipt of receipts.filter(item => item.txid === txid && item.address === address && item.network === network &&
-        (item.status === "unknown" || item.status === "pending"))) {
-        const nextStatus = await fetchBroadcastStatus(receipt.txid, receipt.network);
-        // An unknown or unavailable read cannot release a duplicate-send guard.
-        if (nextStatus !== "unknown") setActionReceipts(saveActionReceipt(localStorage, { ...receipt, status: nextStatus }));
+    request.promise = Promise.resolve().then(async () => {
+      try {
+        const receipts = readActionReceipts(localStorage);
+        const targets = receipts.filter(item => item.address === address && item.network === network &&
+          (item.status === "unknown" || item.status === "pending"));
+        let nextIndex = 0;
+        let unavailable = false;
+        const checkNext = async () => {
+          while (isCurrent() && nextIndex < targets.length) {
+            const receipt = targets[nextIndex++];
+            try {
+              const nextStatus = await fetchBroadcastStatus(receipt.txid, receipt.network, controller.signal);
+              if (!isCurrent()) return;
+              // Unavailable/unknown evidence never releases a duplicate-action guard.
+              if (nextStatus === "unknown") { unavailable = true; continue; }
+              const current = readActionReceipts(localStorage).find(item => item.txid === receipt.txid && item.address === address && item.network === network);
+              // A concurrent check or another tab may already have resolved this receipt.
+              if (current && (current.status === "unknown" || current.status === "pending") && current.status !== nextStatus) {
+                setActionReceipts(saveActionReceipt(localStorage, { ...current, status: nextStatus }));
+              }
+            } catch (error) {
+              if (!isCurrent()) return;
+              unavailable = true;
+            }
+          }
+        };
+        // Bound status reads without hiding older unresolved receipts.
+        await Promise.all([checkNext(), checkNext()]);
+        if (isCurrent()) {
+          setActionReceipts(readActionReceipts(localStorage));
+          setActionRecoveryError(unavailable ? "Some transaction statuses could not be verified. Recovery records and retry protection retained; refresh or check again." : "");
+        }
+      } catch (error) {
+        if (isCurrent()) setActionRecoveryError(errorMessage(error, "Transaction status is unavailable. Recovery records retained."));
+      } finally {
+        if (isCurrent()) { setActionRecoveryBusy(false); actionRecoveryRequestRef.current = undefined; }
       }
-      setActionRecoveryError("");
-    } catch (error) { setActionRecoveryError(errorMessage(error, "Transaction status is unavailable. Recovery records retained.")); }
-    finally { setActionRecoveryBusy(false); }
+    });
+    return request.promise;
   }
+  useEffect(() => {
+    setActionRecoveryBusy(false);
+    setActionRecoveryError("");
+    void refreshActionRecovery();
+    return () => { actionRecoveryRequestRef.current?.controller.abort(); };
+  }, [address, network, activeWorkspaceStatusKey]);
   function captureActionContext() {
     const context = actionContextRef.current;
     const wallet = window.unisat;
@@ -36360,15 +36410,16 @@ export default function App() {
     setStatus({ tone: "idle", text: "Retained task restored for inspection. Refresh current state and review before signing; no transaction was submitted." });
   }
   const actionUi = <>
-    {actionRecoveryError ? <p role="alert" className="field-note">{actionRecoveryError}</p> : null}
-    {actionReceipts.filter(item => item.address === address && item.network === network).sort((a, b) => Number(b.status === "unknown" || b.status === "pending") - Number(a.status === "unknown" || a.status === "pending")).slice(0, 10).map(item =>
-      <section className="review-recovery" key={item.txid} aria-label="Transaction recovery">
-        <p role="status"><strong>{item.title}</strong> · {item.status === "unknown" ? "Broadcast outcome unknown" : item.status === "pending" ? "Pending confirmation" : item.status === "confirmed" ? "Confirmed transaction" : "Dropped transaction — review before retrying"}</p>
-        <code className="review-exact">{item.txid}</code><p className="field-note">Local recovery evidence. Pending is not confirmed ownership, routing, or balance.</p>
-        <details><summary>Inspect retained task</summary><dl className="review-fields">{item.fields.map(([label, value]) => <div key={label}><dt>{label}</dt><dd><code className="review-exact">{value}</code></dd></div>)}</dl></details>
-        {canRestoreActionHere(item) ? <button type="button" className="secondary" disabled={actionInFlightRef.current} onClick={() => restoreActionTask(item)}>Restore task fields</button> : <p className="field-note">Inspect and copy the retained fields here, then resume in <a href={item.key.startsWith("marketplace:") || item.fields.some(([label]) => label === "Listing transaction") ? appHref(MARKETPLACE_APP_URL, LOCAL_MARKETPLACE_APP_URL) : item.key.startsWith("registerDns:") || item.key.startsWith("dns-subdomain:") ? appHref(DNS_APP_URL, LOCAL_DNS_APP_URL) : appHref(COMPUTER_APP_URL, LOCAL_COMPUTER_APP_URL)}>the appropriate workspace</a>.</p>}
-        <button type="button" className="secondary" disabled={actionRecoveryBusy || (item.status !== "unknown" && item.status !== "pending")} onClick={() => void refreshActionRecovery(item.txid)}>{actionRecoveryBusy ? "Checking transaction status…" : "Check transaction status"}</button>
-      </section>)}
+    <ActionRecoveryPanel
+      receipts={actionReceipts.filter(item => item.address === address && item.network === network)}
+      error={actionRecoveryError}
+      checking={actionRecoveryBusy}
+      restoringDisabled={actionInFlightRef.current}
+      canRestore={canRestoreActionHere}
+      onRestore={restoreActionTask}
+      onCheck={() => void refreshActionRecovery()}
+      workspaceHref={item => item.key.startsWith("marketplace:") || item.fields.some(([label]) => label === "Listing transaction") ? appHref(MARKETPLACE_APP_URL, LOCAL_MARKETPLACE_APP_URL) : item.key.startsWith("registerDns:") || item.key.startsWith("dns-subdomain:") ? appHref(DNS_APP_URL, LOCAL_DNS_APP_URL) : appHref(COMPUTER_APP_URL, LOCAL_COMPUTER_APP_URL)}
+    />
     {actionReview ? <ActionTransactionReview review={actionReview} returnFocus={actionReturnFocusRef.current} onCancel={() => finishActionReview(false)} onApprove={() => finishActionReview(true)} /> : null}
   </>;
 
@@ -36382,8 +36433,9 @@ export default function App() {
   if (idLaunchMode) {
     return (
       <>
-      {actionUi}
       <IdLaunchApp
+        recoveryUi={actionUi}
+        onRefreshRecovery={() => void refreshActionRecovery()}
         accountStats={connectedAccountStats}
         address={address}
         busy={busy}
@@ -36420,8 +36472,9 @@ export default function App() {
   if (dnsLaunchMode) {
     return (
       <>
-      {actionUi}
       <DnsLaunchApp
+        recoveryUi={actionUi}
+        onRefreshRecovery={() => void refreshActionRecovery()}
         dnsSubdomainUi={dnsSubdomainUi}
         accountStats={connectedAccountStats}
         address={address}
@@ -36459,8 +36512,9 @@ export default function App() {
   if (marketplaceMode) {
     return (
       <>
-        {actionUi}
         <MarketplaceApp
+        recoveryUi={actionUi}
+        onRefreshRecovery={() => void refreshActionRecovery()}
           dnsSubdomainUi={dnsSubdomainUi}
           dnsSubdomainRestoreNonce={dnsSubdomainRestoreNonce}
           walletEvidence={marketplaceWalletEvidence}
@@ -36617,8 +36671,9 @@ export default function App() {
   if (walletMode) {
     return (
       <>
-      {actionUi}
       <TokenWalletApp
+        recoveryUi={actionUi}
+        onRefreshRecovery={() => void refreshActionRecovery()}
         accountStats={connectedAccountStats}
         address={address}
         balances={walletTransferBalances}
@@ -36717,8 +36772,9 @@ export default function App() {
   if (standaloneBondConfig) {
     return (
       <>
-      {actionUi}
       <InfinityApp
+        recoveryUi={actionUi}
+        onRefreshRecovery={() => void refreshActionRecovery()}
         accountStats={connectedAccountStats}
         address={address}
         balances={activeBondWalletBalances}
@@ -37024,6 +37080,8 @@ export default function App() {
   return (
     <main className="mail-app">
       <AppHeader
+        afterHeader={actionUi}
+        onRefreshRecovery={() => void refreshActionRecovery()}
         accountStats={connectedAccountStats}
         address={address}
         busy={busy}
@@ -38391,7 +38449,6 @@ export default function App() {
         onClose={() => setPurchaseReceipt(undefined)}
       />
       <SocialFooter compact />
-      {actionUi}
       {mailReview ? <TransactionReview review={mailReview} returnFocus={mailReviewReturnFocusRef.current} onCancel={() => finishMailReview(false)} onApprove={() => finishMailReview(true)} /> : null}
       {backupPreview ? <BackupPreview {...backupPreview} returnFocus={backupReturnFocusRef.current} onCancel={() => setBackupPreview(undefined)} onRestore={restorePreviewedBackup} /> : null}
     </main>
@@ -40221,6 +40278,8 @@ function ActivityFeed({
 }
 
 type TokenWalletAppProps = {
+  recoveryUi?: ReactNode;
+  onRefreshRecovery?: () => void;
   accountStats?: AppHeaderAccountStat[];
   address: string;
   balances: PowTokenWalletBalance[];
@@ -40295,6 +40354,8 @@ type TokenWalletAppProps = {
 };
 
 type InfinityAppProps = {
+  recoveryUi?: ReactNode;
+  onRefreshRecovery?: () => void;
   accountStats?: AppHeaderAccountStat[];
   address: string;
   balances: PowTokenWalletBalance[];
@@ -40371,6 +40432,8 @@ type InfinityAppProps = {
 };
 
 function InfinityApp({
+  recoveryUi,
+  onRefreshRecovery,
   accountStats = [],
   address,
   balances,
@@ -41099,6 +41162,8 @@ function InfinityApp({
   return (
     <main className="id-launch-app token-public-app token-wallet-public-app">
       <AppHeader
+        afterHeader={recoveryUi}
+        onRefreshRecovery={onRefreshRecovery}
         accountStats={accountStats}
         address={address}
         busy={busy}
@@ -41128,6 +41193,8 @@ function InfinityApp({
 }
 
 function TokenWalletApp({
+  recoveryUi,
+  onRefreshRecovery,
   accountStats = [],
   address,
   balances,
@@ -41203,6 +41270,8 @@ function TokenWalletApp({
   return (
     <main className="id-launch-app token-public-app token-wallet-public-app">
       <AppHeader
+        afterHeader={recoveryUi}
+        onRefreshRecovery={onRefreshRecovery}
         accountStats={accountStats}
         address={address}
         busy={busy}
@@ -49034,6 +49103,8 @@ function GrowthWorkspace({
 }
 
 function IdLaunchApp({
+  recoveryUi,
+  onRefreshRecovery,
   accountStats = [],
   address,
   busy,
@@ -49059,6 +49130,8 @@ function IdLaunchApp({
   submit,
   onRefresh,
 }: {
+  recoveryUi?: ReactNode;
+  onRefreshRecovery?: () => void;
   accountStats?: AppHeaderAccountStat[];
   address: string;
   busy: boolean;
@@ -49147,6 +49220,8 @@ function IdLaunchApp({
   return (
     <main className="id-launch-app">
       <AppHeader
+        afterHeader={recoveryUi}
+        onRefreshRecovery={onRefreshRecovery}
         accountStats={accountStats}
         address={address}
         busy={busy}
@@ -49429,6 +49504,8 @@ function IdLaunchApp({
 }
 
 function DnsLaunchApp({
+  recoveryUi,
+  onRefreshRecovery,
   dnsSubdomainUi,
   accountStats = [],
   address,
@@ -49453,6 +49530,8 @@ function DnsLaunchApp({
   submit,
   onRefresh,
 }: {
+  recoveryUi?: ReactNode;
+  onRefreshRecovery?: () => void;
   dnsSubdomainUi?: ReactNode;
   accountStats?: AppHeaderAccountStat[];
   address: string;
@@ -49550,6 +49629,8 @@ function DnsLaunchApp({
   return (
     <main className="id-launch-app">
       <AppHeader
+        afterHeader={recoveryUi}
+        onRefreshRecovery={onRefreshRecovery}
         accountStats={accountStats}
         address={address}
         busy={busy}
@@ -55212,6 +55293,8 @@ function TokenMarketplacePanel({
 }
 
 function MarketplaceApp({
+  recoveryUi,
+  onRefreshRecovery,
   dnsSubdomainUi,
   dnsSubdomainRestoreNonce = 0,
   walletEvidence,
@@ -55306,6 +55389,8 @@ function MarketplaceApp({
   onRetryMarketplaceSummary,
   onRefreshTokens,
 }: {
+  recoveryUi?: ReactNode;
+  onRefreshRecovery?: () => void;
   dnsSubdomainUi?: ReactNode;
   dnsSubdomainRestoreNonce?: number;
   walletEvidence: TokenMarketplaceWalletEvidence;
@@ -55614,6 +55699,8 @@ function MarketplaceApp({
   return (
     <main className="id-launch-app marketplace-app">
       <AppHeader
+        afterHeader={recoveryUi}
+        onRefreshRecovery={onRefreshRecovery}
         accountStats={accountStats}
         address={address}
         busy={busy}

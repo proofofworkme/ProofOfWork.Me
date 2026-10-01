@@ -296,6 +296,12 @@ discovery, and replay rules.
   restored from receipts for inspection; restoration never submits a transaction.
   Receipts are browser-local recovery evidence, excluded from organization backups,
   and cannot establish ownership, routing, balances, or settlement.
+  Transaction recovery appears as a compact, initially collapsed section below
+  the app header. Account/workspace entry and header Refresh check unresolved
+  receipts through the first-party status endpoint with at most two concurrent
+  reads. Unknown or unavailable evidence preserves retry protection. Confirmed
+  and dropped receipts remain inspectable in collapsed resolved history; no
+  recovery record is deleted by the interface.
 - Reviews AMO ID, DNS, credit, and bond listing, seal, delisting, and purchase
   actions with exact payments and ticket evidence. Seller sealing first reviews
   the reusable authorization; publishing it requires a separate transaction review.

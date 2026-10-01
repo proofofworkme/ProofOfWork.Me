@@ -232,11 +232,13 @@ test("Signed subdomain receipts retain uncertain outcomes across reload and requ
   await expect(page.locator(".status-text")).toContainText("earlier transaction needs a status check");
   await openOwner(page);
   await expect(recovery).toContainText("Broadcast outcome unknown");
+  await recovery.locator(".action-recovery-disclosure > summary").click();
   await recovery.getByRole("button", { name: "Check transaction status" }).click();
   await expect(recovery).toContainText("Broadcast outcome unknown");
   state.broadcastState = "dropped";
   await recovery.getByRole("button", { name: "Check transaction status" }).click();
   await expect(recovery).toContainText("Dropped transaction");
+  await recovery.locator(".action-recovery-history > summary").click();
   await recovery.getByRole("button", { name: "Restore task fields" }).click();
   await expect(page.getByRole("form", { name: "Manage DNS subdomains" }).getByLabel("Subdomain label")).toHaveValue("abc");
   expect(state.broadcastCalls).toBe(attempts);
@@ -264,6 +266,8 @@ test("Computer recovery restores subdomain fields into the DNS tab without signi
   if (await connect.isVisible().catch(() => false)) await connect.click();
   await expect(page.locator(".topbar-wallet-button")).toContainText("1BPVvi1G");
   await expect(page.getByRole("form", { name: "Manage DNS subdomains" })).toHaveCount(0);
+  await page.locator(".action-recovery-disclosure > summary").click();
+  await page.locator(".action-recovery-history > summary").click();
   await page.getByRole("region", { name: "Transaction recovery" }).getByRole("button", { name: "Restore task fields" }).click();
   const form = page.getByRole("form", { name: "Manage DNS subdomains" });
   await expect(form.getByLabel("Subdomain label")).toHaveValue("abc");

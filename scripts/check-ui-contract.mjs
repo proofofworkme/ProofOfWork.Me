@@ -151,6 +151,14 @@ function cssBlock(selector) {
   return css.match(new RegExp(`${escaped}\\s*\\{([\\s\\S]*?)\\}`))?.[1] ?? "";
 }
 
+function cssSelectorBlock(selector, source = css) {
+  // Match a member of a grouped rule without requiring it to be the final member.
+  const rules = Array.from(source.matchAll(/([^{}]+)\{([^{}]*)\}/gu));
+  return rules.find(([, selectors]) => selectors.split(",").some(
+    item => item.trim().replace(/\s+/gu, " ") === selector,
+  ))?.[2] ?? "";
+}
+
 function cssMediaBlock(query) {
   const marker = `@media (${query})`;
   const start = css.indexOf(marker);
@@ -387,7 +395,12 @@ expect(
   "AppHeader exposes refresh as a direct topbar action",
   /const refreshAction\s*=\s*onRefresh\s*\?\?/.test(appHeader) &&
     /className="topbar-action-button topbar-refresh-button"/.test(appHeader) &&
-    /onClick=\{\(\) => void refreshAction\(\)\}/.test(appHeader),
+    /onClick=\{\(\) => \{\s*onRefreshRecovery\?\.\(\);\s*void refreshAction\(\);\s*\}\}/.test(appHeader),
+);
+expect(
+  "AppHeader renders the recovery slot after its shared sticky header stack",
+  /afterHeader\?: ReactNode/.test(appHeader) &&
+    /className="skip-target" id="main-content"[\s\S]*?<\/div>\s*\{afterHeader\}\s*<\/>/.test(appHeader),
 );
 expect(
   "AppHeader exposes wallet as a direct topbar action",
@@ -1681,9 +1694,7 @@ const filesWorkspaceBlock =
 const computerFilesSourceBlock =
   app.match(/const allFileMessages[\s\S]*?const desktopFileMessages/)?.[0] ??
   "";
-const desktopWorkspaceMailSortBlock =
-  app.match(/function DesktopWorkspace[\s\S]*?function FilesWorkspace/)?.[0] ??
-  "";
+const desktopWorkspaceMailSortBlock = topLevelFunctionSource(app, "DesktopWorkspace");
 expect(
   "mail WORK signal accepts only canonical WORK and exact Q16 subatoms",
   /credit\.tokenId[\s\S]*WORK_TOKEN_ID/.test(mailWorkSignalBlock) &&
@@ -1812,9 +1823,8 @@ expect(
 ].forEach((pattern) =>
   notContains("src/App.tsx", pattern, `no per-route AppHeader override ${pattern}`),
 );
-const browserAppBlock = app.match(/function BrowserApp[\s\S]*?function BrowserWorkspace/)?.[0] ?? "";
-const browserWorkspaceBlock =
-  app.match(/function BrowserWorkspace[\s\S]*?function DesktopApp/)?.[0] ?? "";
+const browserAppBlock = topLevelFunctionSource(app, "BrowserApp");
+const browserWorkspaceBlock = topLevelFunctionSource(app, "BrowserWorkspace");
 expect(
   "standalone Browser route has dedicated metadata and canonical URLs",
   [
@@ -1951,14 +1961,19 @@ expect(
       app,
     ),
 );
+const desktopWelcomeReferenceBlock = topLevelFunctionSource(app, "fetchDesktopWelcomeReference");
+const fileInspectorBlock = topLevelFunctionSource(app, "FileInspector");
+const loadDesktopTargetBlock =
+  app.match(/  async function loadDesktopTarget\([\s\S]*?(?=\n  function clearDesktop\()/)?.[0] ?? "";
 expect(
   "Desktop fetches a confirmed welcome system reference independently of address mail",
-  /fetchDesktopWelcomeReference\(network\)\.catch/.test(app) &&
-    /if \(!page\.confirmed\)/.test(app) &&
-    /fetchBrowserPage\(CANONICAL_WELCOME_TXID, targetNetwork\)/.test(app) &&
-    /setDesktopMail\(desktopMessages\)/.test(app) &&
-    /Welcome system reference unavailable/.test(app) &&
-    /not a file belonging to this address/.test(app),
+  /const \[mailState, welcome\] = await Promise\.all\(\[\s*fetchAddressMail\(resolved\.paymentAddress, requestNetwork, true, controller\.signal\),\s*fetchDesktopWelcomeReference\(requestNetwork, controller\.signal\)\.catch/.test(loadDesktopTargetBlock) &&
+    /if \(!page\.confirmed\)/.test(desktopWelcomeReferenceBlock) &&
+    /fetchBrowserPage\(CANONICAL_WELCOME_TXID, targetNetwork, signal\)/.test(desktopWelcomeReferenceBlock) &&
+    /systemReference: true/.test(desktopWelcomeReferenceBlock) &&
+    /setDesktopMail\(desktopMessages\)/.test(loadDesktopTargetBlock) &&
+    /Welcome system reference unavailable/.test(desktopWorkspaceMailSortBlock) &&
+    /message\.systemReference[\s\S]*not a file belonging to this address/.test(fileInspectorBlock),
 );
 expect(
   "attachment reconstruction caps declared part counts before allocation",
@@ -2700,11 +2715,13 @@ expect(
     /options\.signal\?\.addEventListener\("abort"/.test(proofApiClient) &&
     /options\.signal\?\.removeEventListener\("abort"/.test(proofApiClient),
 );
+const browserSearchForm = browserAppBlock.match(/<form[\s\S]*?<\/form>/)?.[0] ?? "";
+const browserHeaderTag = browserAppBlock.match(/<AppHeader[\s\S]*?\/>/)?.[0] ?? "";
 expect(
   "standalone Browser keeps the network selector in the form, not the shared topbar",
-  /<BrowserNetworkTabs\s+network=\{network\}\s+onChange=\{setNetwork\}/.test(
-    browserAppBlock,
-  ) && !/<AppHeader[\s\S]*?onNetworkChange=\{setNetwork\}/.test(browserAppBlock),
+  /<BrowserNetworkTabs\s+network=\{network\}\s+onChange=\{changeBrowserNetwork\}/.test(browserSearchForm) &&
+    /function changeBrowserNetwork\(nextNetwork: BitcoinNetwork\)[\s\S]*?loadGenerationRef\.current \+= 1;[\s\S]*?loadControllerRef\.current\?\.abort\(\);[\s\S]*?setNetwork\(nextNetwork\)/.test(browserAppBlock) &&
+    Boolean(browserHeaderTag) && !/onNetworkChange=/.test(browserHeaderTag),
 );
 const appStatusRow = contents.get("src/shared/components/AppStatusRow.tsx");
 const appStatusRowUsages = app.match(/<AppStatusRow[\s\S]*?\/>/g) ?? [];
@@ -2785,9 +2802,24 @@ expect(
   /\.desktop-public-app\.has-route-status\s+\.app-header-stack\s*\+\s*\.desktop-route-status\s*\{[\s\S]*position:\s*sticky[\s\S]*top:\s*var\(--topbar-height\)[\s\S]*z-index:\s*var\(--sticky-status-z\)/.test(
     css,
   ) &&
-    /\.app-header-stack\.has-account-stats\s*\+\s*\.app-status-row\s*\{[\s\S]*top:\s*calc\(var\(--topbar-height\)\s*\+\s*44px\)/.test(
-      css,
-    ),
+    [
+      ".app-header-stack + .app-status-row",
+      ".app-header-stack + .action-recovery-panel + .app-status-row",
+    ].every(selector => /position:\s*sticky/.test(cssSelectorBlock(selector)) &&
+      /top:\s*var\(--topbar-height\)/.test(cssSelectorBlock(selector)) &&
+      /z-index:\s*var\(--sticky-status-z\)/.test(cssSelectorBlock(selector))) &&
+    [
+      ".app-header-stack.has-account-stats + .app-status-row",
+      ".app-header-stack.has-account-stats + .action-recovery-panel + .app-status-row",
+    ].every(selector => /top:\s*calc\(var\(--topbar-height\)\s*\+\s*44px\)/.test(cssSelectorBlock(selector)) &&
+      /z-index:\s*var\(--sticky-status-z\)/.test(cssSelectorBlock(selector))),
+);
+expect(
+  "short Computer viewports keep status chrome static when recovery is present",
+  /position:\s*static/.test(cssSelectorBlock(
+    ".mail-app > .app-header-stack + .action-recovery-panel + .app-status-row",
+    cssMediaBlock("max-height: 480px"),
+  )),
 );
 expect(
   "shared sticky chrome does not create desktop horizontal overflow",

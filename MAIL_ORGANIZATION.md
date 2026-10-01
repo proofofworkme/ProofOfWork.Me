@@ -503,6 +503,16 @@ unavailable status reads never authorize a blind resend.
 
 ## UI Notes
 
+Reviewed ID, DNS, credit-transfer, and AMO action receipts live in a compact
+Transaction recovery disclosure below the Computer or standalone app header.
+It starts collapsed, shows the unresolved count, and retains confirmed/dropped
+records in a separate collapsed history disclosure. Account/workspace entry and
+header Refresh check unresolved receipts through first-party transaction status,
+with bounded concurrency and account/network/workspace fencing. An unknown or
+unavailable response never removes recovery evidence or releases retry protection.
+Receipt restoration only fills fields for inspection. Mail's draft and Outbox
+recovery remain their existing separate flow.
+
 Useful controls:
 
 - Archive button in the reader toolbar.

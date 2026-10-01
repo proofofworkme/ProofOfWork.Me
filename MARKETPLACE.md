@@ -46,8 +46,12 @@ Missing or changed evidence stops the action. Historical owner-funded ID listing
 without a ticket retain their existing delisting path and ownership checks.
 WORK listing quantities are estimates until confirmation freezes them; later
 reviews inspect frozen quantities and payments without repricing them. USD remains
-display-only. Unknown broadcast receipts block further actions until an explicit
-first-party status check; restoring receipt fields never submits a transaction.
+display-only. Unknown broadcast receipts block further actions until a verified
+first-party status check. Checks run on account/workspace entry, header Refresh,
+or the retained task's status button; unavailable or unknown reads preserve the
+guard. The compact recovery section sits below the header, with confirmed and
+dropped receipts retained in collapsed history. Restoring receipt fields never
+submits a transaction.
 Distinct new listing intents can use remaining spendable capacity while known
 pending intents retain their existing reservations.
 

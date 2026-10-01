@@ -1,4 +1,5 @@
 import { LogOut, RefreshCw, Wallet } from "lucide-react";
+import type { ReactNode } from "react";
 import { HOME_APP_URL, LOCAL_HOME_APP_URL } from "../../app/appLinks";
 import { appHref } from "../../app/routeRegistry";
 import { shortAddress } from "../../functions";
@@ -15,6 +16,7 @@ export type AppHeaderAccountStat = {
 };
 
 export function AppHeader({
+  afterHeader,
   accountStats = [],
   address = "",
   busy = false,
@@ -26,9 +28,11 @@ export function AppHeader({
   onDomainNavigate,
   onNetworkChange,
   onRefresh,
+  onRefreshRecovery,
   subtitle,
   title,
 }: {
+  afterHeader?: ReactNode;
   accountStats?: AppHeaderAccountStat[];
   address?: string;
   busy?: boolean;
@@ -40,6 +44,7 @@ export function AppHeader({
   onDomainNavigate?: (label: string) => boolean | void;
   onNetworkChange?: (network: BitcoinNetwork) => void;
   onRefresh?: () => void;
+  onRefreshRecovery?: () => void;
   subtitle?: string;
   title: string;
 }) {
@@ -72,6 +77,7 @@ export function AppHeader({
     });
 
   return (
+    <>
     <div
       className={
         visibleAccountStats.length
@@ -105,7 +111,7 @@ export function AppHeader({
               aria-label={busy ? "Refreshing" : "Refresh"}
               className="topbar-action-button topbar-refresh-button"
               disabled={busy}
-              onClick={() => void refreshAction()}
+              onClick={() => { onRefreshRecovery?.(); void refreshAction(); }}
               title={busy ? "Refreshing" : "Refresh"}
               type="button"
             >
@@ -189,5 +195,7 @@ export function AppHeader({
       ) : null}
       <span className="skip-target" id="main-content" tabIndex={-1} />
     </div>
+    {afterHeader}
+    </>
   );
 }

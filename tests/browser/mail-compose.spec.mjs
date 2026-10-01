@@ -1803,14 +1803,306 @@ test('Action recovery retains unknown broadcast across reload and releases retry
   if (await connect.isVisible({ timeout: 1000 }).catch(() => false)) await connect.click();
   await expect(page.locator('.topbar-wallet-button')).toContainText('1BPVvi1G');
   await expect(page.getByRole('region', { name: 'Transaction recovery' })).toContainText('reviewfixture');
+  await revealActionRecovery(page);
   await page.getByRole('button', { name: 'Check transaction status' }).click();
   await expect(page.getByRole('region', { name: 'Transaction recovery' })).toContainText('Broadcast outcome unknown');
   state = 'dropped'; await page.getByRole('button', { name: 'Check transaction status' }).click();
   await expect(page.getByRole('region', { name: 'Transaction recovery' })).toContainText('Dropped transaction');
+  await page.locator('.action-recovery-history > summary').click();
   await page.getByRole('button', { name: 'Restore task fields' }).click();
   await expect(page.locator('#id-register').getByPlaceholder('user', { exact: true })).toHaveValue('reviewfixture');
   expect(broadcastCalls).toBe(1);
 });
+
+const ACTION_RECOVERY_STORAGE_KEY = "proofofwork-action-receipts-v1";
+
+function actionRecoveryReceipt(txid, overrides = {}) {
+  return {
+    address: SENDER,
+    createdAt: NOW,
+    fields: [["Listing transaction", txid], ["Asset", "WORK"]],
+    key: `marketplace:${txid}`,
+    network: "livenet",
+    status: "pending",
+    title: "Review marketplace seal publication",
+    txid,
+    ...overrides,
+  };
+}
+
+async function seedActionRecovery(page, receipts) {
+  await page.addInitScript(({ key, receipts }) => {
+    // Reload must exercise persisted status changes, not reinstall the seed.
+    if (localStorage.getItem(key) === null) {
+      localStorage.setItem(key, JSON.stringify(receipts));
+    }
+  }, { key: ACTION_RECOVERY_STORAGE_KEY, receipts });
+}
+
+async function savedActionRecovery(page) {
+  return page.evaluate(key => JSON.parse(localStorage.getItem(key) ?? "[]"), ACTION_RECOVERY_STORAGE_KEY);
+}
+
+async function revealActionRecovery(page) {
+  const region = page.getByRole("region", { name: "Transaction recovery" });
+  const disclosure = region.locator(".action-recovery-disclosure");
+  if (await disclosure.getAttribute("open") === null) {
+    await disclosure.locator(":scope > summary").click();
+  }
+  return region;
+}
+
+for (const viewport of [{ width: 1280, height: 900 }, { width: 390, height: 844 }]) {
+  test(`Action recovery: Wallet keeps compact recovery below its header and retains resolved history at ${viewport.width}px`, async ({ page }) => {
+    await page.setViewportSize(viewport);
+    await installWallet(page);
+    await installApiFixtures(page);
+    const pending = actionRecoveryReceipt("a".repeat(64));
+    const confirmed = actionRecoveryReceipt("b".repeat(64), { status: "confirmed" });
+    const dropped = actionRecoveryReceipt("c".repeat(64), { status: "dropped" });
+    const foreign = actionRecoveryReceipt("d".repeat(64), { address: RECIPIENT });
+    const statusChecks = [];
+    await seedActionRecovery(page, [pending, confirmed, dropped, foreign]);
+    await page.route(`**/api/v1/tx/${pending.txid}/status*`, async route => {
+      statusChecks.push(route.request().url());
+      await route.fulfill({ contentType: "application/json", body: JSON.stringify({ status: "pending" }) });
+    });
+    await openConnectedWallet(page);
+    await expect.poll(() => statusChecks.length).toBeGreaterThan(0);
+    const region = page.getByRole("region", { name: "Transaction recovery" });
+    await expect(region).toBeVisible();
+    await expect(region.locator(".action-recovery-disclosure > summary")).toContainText("1 unresolved");
+    await expect(region.locator(".action-recovery-disclosure")).not.toHaveAttribute("open", "");
+    await expect(region.getByText(pending.txid, { exact: true }).first()).not.toBeVisible();
+    const headerBox = await page.locator(".app-header-stack").boundingBox();
+    const recoveryBox = await region.boundingBox();
+    expect(recoveryBox.y).toBeGreaterThanOrEqual(headerBox.y + headerBox.height - 1);
+    expect(await page.locator(".app-header-stack").evaluate(node => getComputedStyle(node).position)).toBe("sticky");
+    expect(await page.locator(".app-header-stack + .action-recovery-panel + .app-status-row").evaluate(node => getComputedStyle(node).position)).toBe("sticky");
+    expect(recoveryBox.height).toBeLessThan(160);
+    expect(recoveryBox.x).toBeGreaterThanOrEqual(0);
+    expect(recoveryBox.x + recoveryBox.width).toBeLessThanOrEqual(viewport.width + 1);
+
+    await revealActionRecovery(page);
+    await expect(region.getByText(pending.txid, { exact: true }).first()).toBeVisible();
+    const history = region.locator(".action-recovery-history");
+    await expect(history.locator(":scope > summary")).toHaveText("Resolved transaction history (2)");
+    await expect(history).not.toHaveAttribute("open", "");
+    await expect(history.getByText(confirmed.txid, { exact: true }).first()).not.toBeVisible();
+    await expect(history.getByText(dropped.txid, { exact: true }).first()).not.toBeVisible();
+    await history.locator(":scope > summary").click();
+    await expect(history.getByText(confirmed.txid, { exact: true }).first()).toBeVisible();
+    await expect(history.getByText(dropped.txid, { exact: true }).first()).toBeVisible();
+    await expect(history).toContainText("Confirmed transaction");
+    await expect(history).toContainText("Dropped transaction");
+    await expect(region.getByText(foreign.txid, { exact: true })).toHaveCount(0);
+    expect(await savedActionRecovery(page)).toEqual([pending, confirmed, dropped, foreign]);
+    expect(await page.evaluate(() => window.__mailComposeFixture.signCalls)).toBe(0);
+  });
+}
+
+test("Action recovery: short Computer viewports keep recovery, header and status in document flow", async ({ page }) => {
+  await page.setViewportSize({ width: 844, height: 390 });
+  await installWallet(page);
+  await installApiFixtures(page);
+  const receipt = actionRecoveryReceipt("5".repeat(64));
+  await seedActionRecovery(page, [receipt]);
+  await page.route(`**/api/v1/tx/${receipt.txid}/status*`, route => route.fulfill({ contentType: "application/json", body: '{"status":"pending"}' }));
+  await page.goto("/?folder=wallet");
+  const connect = page.getByRole("button", { name: "Connect UniSat", exact: true }).first();
+  if (await connect.isVisible({ timeout: 1000 }).catch(() => false)) await connect.click();
+  await expect(page.locator(".topbar-wallet-button")).toContainText("1BPVvi1G");
+  const region = page.getByRole("region", { name: "Transaction recovery" });
+  await expect(region).toBeVisible();
+  expect(await page.locator(".mail-app > .app-header-stack").evaluate(node => getComputedStyle(node).position)).toBe("static");
+  expect(await page.locator(".mail-app > .app-header-stack + .action-recovery-panel + .app-status-row").evaluate(node => getComputedStyle(node).position)).toBe("static");
+  const headerBox = await page.locator(".mail-app > .app-header-stack").boundingBox();
+  const recoveryBox = await region.boundingBox();
+  expect(recoveryBox.y).toBeGreaterThanOrEqual(headerBox.y + headerBox.height - 1);
+  await revealActionRecovery(page);
+  await expect(region.getByText(receipt.txid, { exact: true }).first()).toBeVisible();
+  expect(await page.evaluate(() => window.__mailComposeFixture.signCalls)).toBe(0);
+});
+
+test("Action recovery: checks every receipt beyond ten with two requests and coalesces Refresh", async ({ page }) => {
+  await installWallet(page);
+  await installApiFixtures(page);
+  const unresolved = Array.from({ length: 12 }, (_, index) => actionRecoveryReceipt((index + 32).toString(16).padStart(64, "0"), {
+    status: index % 2 ? "unknown" : "pending",
+  }));
+  const historical = [
+    actionRecoveryReceipt("3".repeat(64), { status: "confirmed" }),
+    actionRecoveryReceipt("4".repeat(64), { status: "dropped" }),
+  ];
+  const foreign = actionRecoveryReceipt("2".repeat(64), { address: RECIPIENT });
+  const receipts = [...unresolved, ...historical, foreign];
+  const targetTxids = new Set(unresolved.map(receipt => receipt.txid));
+  let releaseStatus;
+  const statusGate = new Promise(resolve => { releaseStatus = resolve; });
+  const calls = [];
+  let active = 0;
+  let maximumActive = 0;
+  await seedActionRecovery(page, receipts);
+  await page.route("**/api/v1/tx/*/status*", async route => {
+    const txid = new URL(route.request().url()).pathname.split("/")[4];
+    if (!targetTxids.has(txid)) return route.fallback();
+    calls.push(txid);
+    active++;
+    maximumActive = Math.max(maximumActive, active);
+    await statusGate;
+    await route.fulfill({ contentType: "application/json", body: '{"status":"confirmed"}' });
+    active--;
+  });
+  await openConnectedWallet(page);
+  await expect.poll(() => calls.length).toBe(2);
+  const region = await revealActionRecovery(page);
+  await expect(region.locator(".action-recovery-disclosure > summary")).toContainText("12 unresolved");
+  await expect(region.locator(".action-recovery-content > .review-recovery")).toHaveCount(12);
+  await page.locator(".topbar-refresh-button").click();
+  await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  expect(calls).toHaveLength(2);
+  await expect(region).toHaveAttribute("aria-busy", "true");
+  releaseStatus();
+  await expect.poll(async () => (await savedActionRecovery(page)).filter(receipt => targetTxids.has(receipt.txid) && receipt.status === "confirmed").length).toBe(12);
+  await expect(region).toHaveAttribute("aria-busy", "false");
+  expect(calls).toHaveLength(12);
+  expect(new Set(calls)).toEqual(targetTxids);
+  expect(maximumActive).toBe(2);
+  await expect(region.locator(".action-recovery-history > summary")).toHaveText("Resolved transaction history (14)");
+  const saved = await savedActionRecovery(page);
+  expect(saved).toHaveLength(receipts.length);
+  for (const receipt of receipts) {
+    expect(saved.find(item => item.txid === receipt.txid)).toEqual(targetTxids.has(receipt.txid) ? { ...receipt, status: "confirmed" } : receipt);
+  }
+  expect(await page.evaluate(() => window.__mailComposeFixture.signCalls)).toBe(0);
+});
+
+test("Action recovery: entry automatically reconciles pending receipts into retained confirmed history", async ({ page }) => {
+  await installWallet(page);
+  await installApiFixtures(page);
+  const receipt = actionRecoveryReceipt("e".repeat(64));
+  let statusChecks = 0;
+  await seedActionRecovery(page, [receipt]);
+  await page.route(`**/api/v1/tx/${receipt.txid}/status*`, async route => {
+    statusChecks++;
+    await route.fulfill({ contentType: "application/json", body: JSON.stringify({ status: "confirmed" }) });
+  });
+  await openConnectedWallet(page);
+  await expect.poll(async () => (await savedActionRecovery(page))[0]?.status).toBe("confirmed");
+  expect(statusChecks).toBeGreaterThan(0);
+  const region = await revealActionRecovery(page);
+  await expect(region.locator(".action-recovery-disclosure > summary")).toContainText("0 unresolved");
+  const history = region.locator(".action-recovery-history");
+  await expect(history.locator(":scope > summary")).toHaveText("Resolved transaction history (1)");
+  await expect(history.getByText(receipt.txid, { exact: true }).first()).not.toBeVisible();
+  await history.locator(":scope > summary").click();
+  await expect(history.getByText(receipt.txid, { exact: true }).first()).toBeVisible();
+  await expect(history).toContainText("Confirmed transaction");
+  expect(await savedActionRecovery(page)).toEqual([{ ...receipt, status: "confirmed" }]);
+  expect(await page.evaluate(() => window.__mailComposeFixture.signCalls)).toBe(0);
+});
+
+test("Action recovery: Wallet Refresh reconciles unresolved receipts without opening recovery or signing", async ({ page }) => {
+  await installWallet(page);
+  await installApiFixtures(page);
+  const receipt = actionRecoveryReceipt("f".repeat(64));
+  let status = "pending";
+  let statusChecks = 0;
+  await seedActionRecovery(page, [receipt]);
+  await page.route(`**/api/v1/tx/${receipt.txid}/status*`, async route => {
+    statusChecks++;
+    await route.fulfill({ contentType: "application/json", body: JSON.stringify({ status }) });
+  });
+  await openConnectedWallet(page);
+  await expect.poll(() => statusChecks).toBeGreaterThan(0);
+  const region = page.getByRole("region", { name: "Transaction recovery" });
+  await expect(region.locator(".action-recovery-disclosure > summary")).toContainText("1 unresolved");
+  await expect(region.locator(".action-recovery-disclosure")).not.toHaveAttribute("open", "");
+  const initialChecks = statusChecks;
+  status = "confirmed";
+  await page.locator(".topbar-refresh-button").click();
+  await expect.poll(async () => (await savedActionRecovery(page))[0]?.status).toBe("confirmed");
+  expect(statusChecks).toBeGreaterThan(initialChecks);
+  await expect(region.locator(".action-recovery-disclosure > summary")).toContainText("0 unresolved");
+  await expect(region.locator(".action-recovery-disclosure")).not.toHaveAttribute("open", "");
+  await page.reload();
+  await expect(page.getByRole("region", { name: "Transaction recovery" })).toContainText("Resolved transaction history (1)");
+  expect(await savedActionRecovery(page)).toEqual([{ ...receipt, status: "confirmed" }]);
+  expect(await page.evaluate(() => window.__mailComposeFixture.signCalls)).toBe(0);
+});
+
+test("Action recovery: a late status response cannot update receipts after the wallet disconnects", async ({ page }) => {
+  await installWallet(page);
+  await installApiFixtures(page);
+  const receipt = actionRecoveryReceipt("6".repeat(64));
+  let statusStarted = false;
+  let statusFinished = false;
+  let releaseStatus;
+  const statusGate = new Promise(resolve => { releaseStatus = resolve; });
+  await seedActionRecovery(page, [receipt]);
+  await page.route(`**/api/v1/tx/${receipt.txid}/status*`, async route => {
+    statusStarted = true;
+    await statusGate;
+    await route.fulfill({ contentType: "application/json", body: '{"status":"confirmed"}' }).catch(() => {});
+    statusFinished = true;
+  });
+  await openConnectedWallet(page);
+  await expect.poll(() => statusStarted).toBe(true);
+  await page.getByRole("button", { name: "Disconnect UniSat", exact: true }).click();
+  await expect(page.locator(".topbar-wallet-button")).toContainText("Connect UniSat");
+  releaseStatus();
+  await expect.poll(() => statusFinished).toBe(true);
+  await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  await expect(page.getByRole("region", { name: "Transaction recovery" })).toHaveCount(0);
+  expect(await savedActionRecovery(page)).toEqual([receipt]);
+  expect(await page.evaluate(() => window.__mailComposeFixture.signCalls)).toBe(0);
+});
+
+for (const status of ["unknown", "pending"]) {
+  test(`Action recovery: unavailable status retains ${status} receipt and duplicate signing protection`, async ({ page }) => {
+    await installWallet(page);
+    await installApiFixtures(page);
+    const receipt = actionRecoveryReceipt(status === "unknown" ? "7".repeat(64) : "8".repeat(64), {
+      fields: [["ID", "reviewfixture"], ["Mail receiver", RECIPIENT]],
+      key: "registerId:reviewfixture",
+      status,
+      title: "Review ID registration",
+    });
+    let statusChecks = 0;
+    let broadcasts = 0;
+    await seedActionRecovery(page, [receipt]);
+    await page.route("**/api/v1/ids/*", route => route.fulfill({ contentType: "application/json", body: JSON.stringify(registryState()) }));
+    await page.route(`**/api/v1/tx/${receipt.txid}/status*`, async route => {
+      statusChecks++;
+      await route.fulfill({ status: 503, contentType: "application/json", body: '{"error":"Recovery status temporarily unavailable"}' });
+    });
+    await page.route("**/api/v1/broadcast/tx*", async route => {
+      broadcasts++;
+      await route.fulfill({ status: 400, contentType: "application/json", body: '{"error":"Unexpected fixture broadcast"}' });
+    });
+    await page.goto("/?id-launch=1");
+    const connect = page.getByRole("button", { name: "Connect UniSat", exact: true }).first();
+    if (await connect.isVisible({ timeout: 1000 }).catch(() => false)) await connect.click();
+    await expect(page.locator(".topbar-wallet-button")).toContainText("1BPVvi1G");
+    await expect.poll(() => statusChecks).toBeGreaterThan(0);
+    const initialChecks = statusChecks;
+    await page.locator(".topbar-refresh-button").click();
+    await expect.poll(() => statusChecks).toBeGreaterThan(initialChecks);
+    expect(await savedActionRecovery(page)).toEqual([receipt]);
+    const region = await revealActionRecovery(page);
+    await expect(region.locator(".action-recovery-disclosure > summary")).toContainText("1 unresolved");
+    await expect(region).toContainText(status === "unknown" ? "Broadcast outcome unknown" : "Pending confirmation");
+    const form = page.locator("#id-register");
+    await form.getByPlaceholder("user", { exact: true }).fill("reviewfixture");
+    await form.getByLabel("Receive address", { exact: true }).fill(RECIPIENT);
+    await form.locator("button[type=submit]").click();
+    await expect(page.locator(".status-text")).toContainText("earlier transaction");
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    expect(await page.evaluate(() => window.__mailComposeFixture.signCalls)).toBe(0);
+    expect(broadcasts).toBe(0);
+    expect(await savedActionRecovery(page)).toEqual([receipt]);
+  });
+}
 
 for (const transfer of [false, true]) {
   test(`Action review: Computer ID ${transfer ? 'ownership transfer' : 'receiver update'} retains destinations on rejection`, async ({ page }) => {
@@ -2134,7 +2426,10 @@ test('Marketplace review: unknown WORK intent broadcast retains recovery after r
   await create.click();await page.getByRole('dialog').getByRole('button',{name:'Continue to wallet'}).click();
   await expect(page.getByRole('region',{name:'Transaction recovery'})).toContainText('Broadcast outcome unknown');
   await create.click();await expect(page.locator('.status-text')).toContainText('earlier transaction');expect(calls).toBe(1);
+  const retainedTxid = (await savedActionRecovery(page))[0].txid;
+  await page.route(`**/api/v1/tx/${retainedTxid}/status*`, route => route.fulfill({ contentType: 'application/json', body: '{"status":"unknown"}' }));
   await page.reload();await expect(page.getByRole('region',{name:'Transaction recovery'})).toContainText('WORK');
+  await revealActionRecovery(page);
   await expect(page.getByRole('region',{name:'Transaction recovery'}).getByRole('link',{name:'the appropriate workspace'})).toHaveAttribute('href', /marketplace|amo/);
   expect(calls).toBe(1);
 });
