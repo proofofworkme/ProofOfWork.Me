@@ -21,6 +21,14 @@ exit 1''')
  text=source.replace('backup_root="/data/proofofwork-postgres-backups/logical"','backup_root="'+str(backup)+'"')
  for original,replacement in [('df',df),('psql',sql),('pg_dump',dump),('pg_dumpall',globals),('pg_restore',restore),('fuser',fuser)]:
   text=text.replace('/usr/bin/'+original+' ',replacement+' ').replace('/usr/bin/'+original+' \\\n',replacement+' \\\n')
+ # The production policy is root-controlled. Use an empty, private safe policy
+ # and substitute only its ownership test; no host /etc policy is inspected.
+ pins=p/'backup.pins';pins.write_text('');pins.chmod(0o644)
+ text=text.replace('logical_backup_pin_file=/etc/proofofwork-postgres-logical-backup.pins',
+                   'logical_backup_pin_file='+str(pins))
+ text=text.replace('"$(stat --format=%u "${logical_backup_pin_file}")" == 0', '0 == 0')
+ cgroup=p/'cgroup';cgroup.write_text('0::/system.slice/proofofwork-postgres-logical-backup.service\n')
+ text=text.replace('/proc/self/cgroup',str(cgroup))
  script=p/'backup.sh';script.write_text(text)
  env={**os.environ,'TEST_AVAILABLE':'1000','TEST_CALLED':str(p/'called'),'POW_POSTGRES_BACKUP_MIN_FREE_BYTES':'10737418240'}
  result=subprocess.run(['bash',str(script)],env=env,text=True,capture_output=True,timeout=10)

@@ -17,6 +17,9 @@ const source = readFileSync(new URL("./proof-api.mjs", import.meta.url), "utf8")
 const parsed = ts.createSourceFile("proof-api.mjs", source, ts.ScriptTarget.Latest, true);
 const functions = new Map(parsed.statements.filter(ts.isFunctionDeclaration)
   .map((node) => [node.name.text, node.getText(parsed)]));
+const constants = new Map(parsed.statements.filter(ts.isVariableStatement)
+  .flatMap((node) => node.declarationList.declarations)
+  .map((node) => [node.name.getText(parsed), node.getText(parsed)]));
 const coreFunctions = [
   "canonicalClosingCreditAggregatePrefixes",
   "tokenStateWithVerifiedClosingCreditAggregates",
@@ -41,10 +44,16 @@ function runtime(names = [], globals = {}) {
     freshDataUnavailableError: (message) => Object.assign(new Error(message), { statusCode: 503 }),
     ...globals,
   });
-  vm.runInContext([...new Set([...coreFunctions, ...names])].map((name) => {
+  const dnsConstants = [
+    "DNS_REGISTRY_ACTIVITY_KINDS", "DNS_MARKETPLACE_MUTATION_KINDS",
+  ].map((name) => {
+    assert.ok(constants.has(name), `missing API constant ${name}`);
+    return `const ${constants.get(name)};`;
+  });
+  vm.runInContext([...dnsConstants, ...[...new Set([...coreFunctions, ...names])].map((name) => {
     assert.ok(functions.has(name), `missing API function ${name}`);
     return functions.get(name);
-  }).join("\n"), context);
+  })].join("\n"), context);
   return context;
 }
 
@@ -312,6 +321,9 @@ function ledgerGlobals() {
     isInfinityBondActivityItem: (item) => item.kind === "infinity-bond",
     activityAmountSats: (item) => item.amountSats ?? 0,
     confirmedActivityFlowSats: () => 0,
+    marketplaceMutationPaymentFlowSats: (items, kinds) => items
+      .filter((item) => kinds.has(item.kind) && item.valid !== false)
+      .reduce((total, item) => total + (item.amountSats ?? 0), 0),
     marketplaceMutationFeesCountedOk: () => true,
     workAmoV5LegacyBootstrapEvidenceMatches: () => true,
     unbucketedConfirmedComputerLogFlowSats: () => 0,
@@ -353,6 +365,44 @@ test("actual ledger checks turn the same-response green mismatch red and disting
   assert.equal(aliasResult.checks.find((check) => check.name === guardName).ok, false);
 });
 
+test("actual ledger DNS accounting includes confirmed routing and market fees without pending value", () => {
+  const api = runtime(["ledgerSnapshotChecks", "exactCreditFrozenValueComponentsAgree"], ledgerGlobals());
+  const good = checkedState(api);
+  const floor = closingFloor();
+  Object.assign(floor.actualValue, {
+    dnsRegistrations: 1,
+    dnsRegistryFlowSats: 1546,
+    dnsMarketplaceFeeSats: 1092,
+    dnsMarketplaceVolumeSats: 10000,
+    dnsMarketplaceFlowSats: 11092,
+    dnsSats: 7730,
+    dnsTotalSats: 63190,
+  });
+  const input = ledgerInput(good, good, floor);
+  input.activity.push(
+    { kind: "dns-register", confirmed: true, amountSats: 1000 },
+    { kind: "dns-update", confirmed: true, amountSats: 546 },
+    { kind: "dns-seal", confirmed: true, amountSats: 546 },
+    { kind: "dns-buy", confirmed: true, amountSats: 546, priceSats: 10000 },
+    { kind: "dns-register", confirmed: false, amountSats: 1000 },
+    { kind: "dns-buy", confirmed: false, amountSats: 546, priceSats: 20000 },
+  );
+  const original = structuredClone(input);
+  const dnsCheck = (value) => api.ledgerSnapshotChecks(value).checks
+    .find((check) => check.name === "dns-activity-counted");
+  assert.equal(dnsCheck(input).ok, true);
+  assert.equal(JSON.stringify(input), JSON.stringify(original),
+    "the DNS gate must preserve its event inputs across the isolated VM realm");
+  for (const field of [
+    "dnsRegistrations", "dnsRegistryFlowSats", "dnsMarketplaceFeeSats",
+    "dnsMarketplaceVolumeSats", "dnsMarketplaceFlowSats", "dnsSats", "dnsTotalSats",
+  ]) {
+    const wrong = structuredClone(input);
+    wrong.workFloor.actualValue[field]++;
+    assert.equal(dnsCheck(wrong).ok, false, field);
+  }
+});
+
 test("actual indexed builder reconciles both token states before metrics, hashes and consistency", async () => {
   const state = staleState();
   const phases = [];
@@ -369,6 +419,8 @@ test("actual indexed builder reconciles both token states before metrics, hashes
     workAmoV8ReplayPrecisionOptions: async () => ({ workAmountStorageModel: "fixture-q16" }),
     indexedActivityStateForCanonicalLedger: async () => ({ activity: ledgerInput().activity }),
     indexedRegistryStateForCanonicalLedger: async () => ({ records: [], sales: [], activity: [] }),
+    dnsRegistryPayload: async () => ({ records: [], sales: [], activity: [], pendingEvents: [] }),
+    dnsActivityStateForCanonicalLedger: () => ({ activity: [] }),
     btcUsdPricePayload: async () => null,
     payloadWithFallbackAfterMs: (value) => value,
     exactTokenTablePayloadForCanonicalLedger: async () => state,

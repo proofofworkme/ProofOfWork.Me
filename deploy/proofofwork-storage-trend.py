@@ -68,7 +68,9 @@ def forecast(samples, now, available, reserve):
     return {'status': status, 'availableBytes': available, 'reserveBytes': reserve,
             'headroomBytes': runway, 'netConsumptionBytesPerDay': rate if windows else None,
             'secondsToReserve': seconds, 'windows': windows,
-            'limitation': 'Net historical consumption; sudden growth and future backup bursts can exceed this estimate.'}
+            'basis': 'conditional-historical-net-consumption',
+            'healthCategory': 'capacity',
+            'limitation': 'Conditional on the observed net rate continuing; sudden growth, cleanup and backup bursts can change this estimate.'}
 
 
 def allocation_report(policy, allocated):
@@ -78,13 +80,14 @@ def allocation_report(policy, allocated):
     severity = 0
     if critical and allocated >= critical:
         status = 'critical-review'
-        severity = 2
+        severity = 1
     elif review and allocated >= review:
         status = 'review'
         severity = 1
     report = {'event': 'storage-allocation', 'path': policy['path'],
               'label': policy.get('label', 'unclassified'), 'allocatedBytes': allocated,
-              'status': status, 'cleanupApproved': False}
+              'status': status, 'healthCategory': 'allocation-review',
+              'capacityEmergency': False, 'cleanupApproved': False}
     if review:
         report['reviewBytes'] = review
     if critical:
@@ -92,6 +95,7 @@ def allocation_report(policy, allocated):
     if severity:
         report['reviewRequired'] = True
         report['reason'] = 'allocation-threshold-crossed'
+        report['thresholdBand'] = 'critical' if critical and allocated >= critical else 'review'
         report['note'] = 'Review dependencies before any cleanup; this measurement alone does not approve deletion.'
     return severity, report
 
@@ -159,6 +163,8 @@ def main():
     if role == 'node':
         targets['/data'] = (100 * GIB, 200 * GIB)
     severity = 0
+    capacity_severity = 0
+    allocation_review_severity = 0
     for target, (reserve, warning) in targets.items():
         mount = subprocess.check_output(['/usr/bin/findmnt', '-n', '-o', 'TARGET', '--target', target], text=True, timeout=5).strip()
         assert mount == target, 'Expected mount missing: ' + target
@@ -168,10 +174,13 @@ def main():
                                                         available, reserve, warning)
         print(json.dumps({'role': role, 'target': target, **observed}), flush=True)
         severity = max(severity, observed_severity)
+        capacity_severity = max(capacity_severity, observed_severity)
         item = forecast(samples.get(target, []), now, available, reserve)
         print(json.dumps({'event': 'storage-growth-forecast', 'role': role, 'target': target,
                           'at': datetime.datetime.now(datetime.timezone.utc).isoformat(), **item}), flush=True)
-        severity = max(severity, {'critical': 2, 'warning': 1, 'insufficient-history': 1, 'ok': 0}[item['status']])
+        forecast_severity = {'critical': 2, 'warning': 1, 'insufficient-history': 1, 'ok': 0}[item['status']]
+        severity = max(severity, forecast_severity)
+        capacity_severity = max(capacity_severity, forecast_severity)
     # Attribute current allocation separately. Values must not be summed: hard
     # links and recovery copies may share blocks. No path is a cleanup candidate.
     for policy in ALLOCATION_POLICIES[role]:
@@ -187,6 +196,7 @@ def main():
             allocation_severity, report = allocation_report(policy, allocated)
             print(json.dumps(report), flush=True)
             severity = max(severity, allocation_severity)
+            allocation_review_severity = max(allocation_review_severity, allocation_severity)
         except (subprocess.SubprocessError, ValueError):
             print(json.dumps({'event': 'storage-allocation', 'path': path,
                               'label': policy.get('label', 'unclassified'),
@@ -213,12 +223,18 @@ def main():
                 allocation_severity, report = node_data_allocation_report(path, allocated)
                 print(json.dumps(report), flush=True)
                 severity = max(severity, allocation_severity)
+                allocation_review_severity = max(allocation_review_severity, allocation_severity)
         except (subprocess.SubprocessError, UnicodeError, ValueError):
             print(json.dumps({'event': 'storage-allocation', 'path': '/data',
                               'label': 'node-data-top-level-attribution',
                               'status': 'incomplete', 'cleanupApproved': False,
                               'reviewRequired': True}), flush=True)
             severity = max(severity, 1)
+    print(json.dumps({'event': 'storage-health-summary', 'role': role,
+                      'status': ('ok', 'warning', 'critical')[severity],
+                      'capacitySeverity': capacity_severity,
+                      'allocationReviewSeverity': allocation_review_severity,
+                      'cleanupApproved': False}), flush=True)
     return severity
 
 

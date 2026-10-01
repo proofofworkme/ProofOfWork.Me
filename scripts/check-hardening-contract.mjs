@@ -294,6 +294,7 @@ try {
   const restoreHelper = join(backupTestRoot, "pg-restore-helper");
   const failingFindHelper = join(backupTestRoot, "find-helper");
   mkdirSync(backupRoot, { mode: 0o700 });
+  writeFileSync(join(backupRoot, '.cgroup-fixture'), '0::/system.slice/proofofwork-postgres-logical-backup.service\n');
   const seededNames = Array.from(
     { length: 15 },
     (_, index) =>
@@ -337,6 +338,7 @@ exit 41
     chmodSync(helper, 0o700);
   }
   const fixture = postgresBackup
+    .replaceAll('/proc/self/cgroup', join(backupRoot, '.cgroup-fixture'))
     .replace(
       'backup_root="/data/proofofwork-postgres-backups/logical"',
       `backup_root="${backupRoot}"`,
@@ -381,6 +383,7 @@ exit 41
   writeFileSync(restoreHelper, "#!/usr/bin/env bash\nexit 37\n");
   chmodSync(restoreHelper, 0o700);
   const diagnosticFixture = postgresBackup
+    .replaceAll('/proc/self/cgroup', join(backupRoot, '.cgroup-fixture'))
     .replace(
       'backup_root="/data/proofofwork-postgres-backups/logical"',
       `backup_root="${backupRoot}"`,
@@ -450,6 +453,7 @@ try {
     `proof_indexer-${fixedTimestamp}.dumpset`,
   );
   mkdirSync(backupRoot, { mode: 0o700 });
+  writeFileSync(join(backupRoot, '.cgroup-fixture'), '0::/system.slice/proofofwork-postgres-logical-backup.service\n');
   writeFileSync(
     dumpHelper,
     `#!/usr/bin/env bash
@@ -495,6 +499,7 @@ printf 'overlap globals bytes\\n' >"\${output}"
     chmodSync(helper, 0o700);
   }
   const fixture = postgresBackup
+    .replaceAll('/proc/self/cgroup', join(backupRoot, '.cgroup-fixture'))
     .replace(
       'backup_root="/data/proofofwork-postgres-backups/logical"',
       `backup_root="${backupRoot}"`,

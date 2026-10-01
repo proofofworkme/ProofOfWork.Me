@@ -1683,3 +1683,13 @@ Asset-for-asset trades are a later phase because true atomic swaps require both 
 - and enough signed terms for the indexer to verify the swap.
 
 For assets outside the ProofOfWork protocol, the marketplace should require an adapter that can prove ownership and transfer finality.
+
+### Connected account balance cards — Audit 29 remediation
+
+AMO directory cards use accepted exact network/address/token wallet evidence for
+confirmed balances. Compact movement previews cannot establish wallet totals or
+a zero balance. Missing or failed evidence displays Loading or Unavailable;
+accepted prior balances are labeled last verified during refresh. A clean
+dedicated lane takes precedence over a clean all-account fallback, matching the
+account balance merge. This display correction changes no confirmed balance,
+reservation, sellable capacity, fee, listing terms or protocol arithmetic.

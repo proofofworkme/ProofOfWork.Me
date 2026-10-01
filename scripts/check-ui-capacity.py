@@ -47,6 +47,20 @@ class CapacityTests(unittest.TestCase):
             with self.assertRaises(capacity.CapacityError):
                 capacity.check_capacity(Path("/"), invalid, 0, "invalid")
 
+    def test_scratch_ceiling_refuses_growth_without_removing_evidence(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            evidence = root / "held-evidence"; evidence.write_bytes(b"retained")
+            result = SimpleNamespace(stdout=f"{capacity.MAX_DEPLOY_SCRATCH_BYTES - 7}\t{root}\n".encode())
+            with mock.patch.object(capacity.subprocess, "run", return_value=result):
+                self.assertEqual(capacity.check_deploy_scratch(root, 7, "at-limit")["status"], "sufficient")
+                with self.assertRaisesRegex(capacity.CapacityError, "scratch review required"):
+                    capacity.check_deploy_scratch(root, 8, "over-limit")
+            with mock.patch.object(capacity.subprocess, "run", side_effect=subprocess.TimeoutExpired("du", 30)):
+                with self.assertRaises(subprocess.TimeoutExpired):
+                    capacity.check_deploy_scratch(root, 0, "measurement-timeout")
+            self.assertEqual(evidence.read_bytes(), b"retained")
+
     def test_separate_tmpfs_keeps_root_reserve_without_requiring_ten_gib_on_tmpfs(self):
         def directory(path):
             return SimpleNamespace(st_dev=1 if path == Path("/") else 2)

@@ -10,7 +10,16 @@ User=postgres
 Group=postgres
 UMask=0077
 ExecStart=/usr/local/sbin/proofofwork-postgres-logical-backup
-TimeoutStartSec=2h
+# Observed Oct 1 peak: 20,333,518,848 bytes. These limits retain headroom
+# while preventing an unbounded dump from competing with canonical services.
+TimeoutStartSec=90m
+TimeoutStopSec=30s
+KillMode=control-group
+MemoryHigh=24G
+MemoryMax=32G
+CPUQuota=200%
+TasksMax=32
+IOWeight=10
 Nice=10
 IOSchedulingClass=best-effort
 IOSchedulingPriority=7

@@ -5812,3 +5812,45 @@ this is operational context for the backup-hardening recommendation, not a new
 resource-policy change or an observed reserve breach. All retention decisions
 remain retain with no automatic expiry. No fix for the newly found backup
 watcher condition, deletion, database migration or alert destination was added.
+
+### Audit 29 remediation safeguards — 2026-10-01 UTC
+
+The approved release adds resource limits and whole-run supervision to logical
+backups, including dump, globals, catalog, hashing, and sync phases. Incomplete
+sets remain failure evidence; publication requires successful supervised phases.
+The scheduled service uses `MemoryHigh=24G`, `MemoryMax=32G`, `CPUQuota=200%`,
+`TasksMax=32`, and a 90-minute timeout. Limits do not establish physical checksums
+or PITR recovery. Backup pins and retention holds remain authoritative. Unmanaged manual `--apply`
+is refused; use `systemctl start proofofwork-postgres-logical-backup.service` so
+the reviewed cgroup also contains children after an owner SIGKILL. Capacity-only
+inspection remains available without creating a backup.
+
+UI staging additionally refuses allocations beyond a 5 GiB deployment-scratch
+ceiling. Capacity admission precedes allocation and rechecks actual available
+space; potential cleanup and hard-link savings cannot be counted as free space.
+Deployment-source and failed-stage evidence no longer expires merely by age.
+Storage reports distinguish allocation requiring review from available-capacity
+emergencies and qualify burst extrapolation as conditional. These monitors are
+local observations, not proof of externally delivered alerts.
+
+The Audit 28 hold review and hold markers remain immutable. Approval for the
+exact Audit 29 cohort covers 15 redundant UI rollback roots and 11 clean source
+trees only. A completed retirement receipt can exempt exactly two overlapping
+held source paths after verified removal. A fresh existence census found eleven
+UI and twelve node historical scratch files already missing before cleanup;
+the prior marker-only monitor did not prove inventory existence. The original
+held obligations remain unchanged and the new monitor stays red for those
+absences. Only a hash-bound pre-cleanup census can qualify the exact approved
+cleanup while preserving every currently present held path; it creates no
+exception for missing evidence. Prune timers remain masked. Release archives, current
+and latest rollback/source, incomplete sources, active replay, backup pins,
+ledgers, canonical data, and historical audit evidence are outside cleanup.
+Historical source Git refs must have durable reachability or a verified recovery
+bundle before removal. The protected recovery bundle for commit `412903503279`
+requires ancestor `140fd182f0f9df7e6d6def1031abdb5f0fc3dab4`, retained on main.
+
+The implementation and later production verification are recorded separately
+in [Audit 29 remediation](audits/2026-10-01-audit29-remediation-release.md).
+Original Audit 29 observations and byte-bound evidence are preserved unchanged.
+Database migrations/compaction, enabling physical checksums, PITR changes, and
+additional protected-data retirement require separate concrete approval.

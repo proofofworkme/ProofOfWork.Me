@@ -113,12 +113,15 @@ def capacity_guard(path: Path, additional_bytes: int, additional_inodes: int, ph
         raise StageError(str(error)) from error
 
 
-def copy_capacity_guard(source: Path, destination_parent: Path, phase: str, extra_entries: int = 0) -> None:
+def copy_capacity_guard(source: Path, destination_parent: Path, phase: str, extra_entries: int = 0, *, scratch_budget: bool = False) -> None:
     helper = capacity_helper()
     try:
         bound = helper.tree_bound(source, destination_parent)
         block = helper.allocation_block(destination_parent)
-    except (helper.CapacityError, OSError) as error:
+        if scratch_budget:
+            helper.check_deploy_scratch(destination_parent, bound["additionalBytes"] +
+                                        extra_entries * helper.entry_bytes(0, block), phase)
+    except (helper.CapacityError, OSError, subprocess.SubprocessError, UnicodeError) as error:
         raise StageError(str(error)) from error
     capacity_guard(destination_parent, bound["additionalBytes"] + extra_entries * helper.entry_bytes(0, block),
                    bound["additionalInodes"] + extra_entries, phase)
@@ -1175,7 +1178,7 @@ def main() -> int:
         # Guard before creating private scratch, then refresh immediately before
         # every real copy. Do not assume future deduplication or removals reclaim
         # any bytes; only a new statvfs measurement can observe released space.
-        copy_capacity_guard(www_root, staging_root, "stage-private-root", extra_entries=2)
+        copy_capacity_guard(www_root, staging_root, "stage-private-root", extra_entries=2, scratch_budget=True)
         temporary_parent = Path(
             tempfile.mkdtemp(
                 prefix=f".proofofwork-ui-stage-{arguments.release_id}.",

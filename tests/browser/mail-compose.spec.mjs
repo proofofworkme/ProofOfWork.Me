@@ -567,6 +567,8 @@ async function installApiFixtures(
     freshMarketLogFailure = false,
     freshWorkWalletFailure = false,
     holdInitialFloor = false,
+    holdWalletBalanceReads = false,
+    walletBalanceSubatoms,
     inboxMessage = false,
     listingSummaryMismatch = false,
     mode = "post-v8",
@@ -582,6 +584,8 @@ async function installApiFixtures(
     releaseInitialFloor = resolve;
   });
   let initialFloorHeld = false;
+  let releaseWalletBalanceReads;
+  const walletBalanceGate = new Promise((resolve) => { releaseWalletBalanceReads = resolve; });
 
   await page.route("**/api/v1/**", async (route) => {
     const url = new URL(route.request().url());
@@ -749,6 +753,7 @@ async function installApiFixtures(
       pathname === "/api/v1/token" ||
       pathname === "/api/v1/token-summary"
     ) {
+      if (holdWalletBalanceReads && searchParams.get("wallet") === "1") await walletBalanceGate;
       if (
         freshWorkWalletFailure &&
         pathname === "/api/v1/token" &&
@@ -764,6 +769,13 @@ async function installApiFixtures(
         status = 503;
       } else {
         json = authoritativeWorkState({ repairedV8Listing, pendingV8Listing });
+        if (walletBalanceSubatoms && searchParams.get("wallet") === "1") {
+          json.holders[0].balanceSubatoms = walletBalanceSubatoms;
+          json.canonicalWorkCapacities[0].confirmedBalanceSubatoms = walletBalanceSubatoms;
+          json.canonicalWorkCapacities[0].transferableBalanceSubatoms = (
+            BigInt(walletBalanceSubatoms) - BigInt(json.canonicalWorkCapacities[0].reservedBalanceSubatoms)
+          ).toString();
+        }
       }
     } else if (
       pathname === "/api/v1/registry" ||
@@ -800,6 +812,7 @@ async function installApiFixtures(
   });
 
   return {
+    releaseWalletBalanceReads: () => releaseWalletBalanceReads(),
     releaseInitialFloor: () => releaseInitialFloor(),
     requests,
   };
@@ -1176,6 +1189,60 @@ test("wallet V8 AMO seal can retry during exact-tip catch-up", async ({
       page.evaluate(() => window.__mailComposeFixture?.signCalls ?? 0),
     )
     .toBe(0);
+});
+
+for (const route of ["/?marketplace=1", "/?folder=marketplace"]) {
+test(`AMO directory reads confirmed wallet balance from the account lane despite compact empty movement history: ${route}`, async ({ page }) => {
+  await installWallet(page);
+  const fixture = await installApiFixtures(page, {
+    holdWalletBalanceReads: true,
+    remoteV8MarketListings: true,
+    walletBalanceSubatoms: "9999997003878536",
+  });
+  await page.goto(route, { waitUntil: "domcontentloaded" });
+  await expect(page.locator(".marketplace-summary-read-state").first()).toHaveAttribute("data-state", "ready");
+  const card = page.locator("article.token-market-row").filter({ has: page.getByText("WORK", { exact: true }) });
+  await expect(card).toContainText("Your confirmed balance Loading WORK");
+  await expect(card).not.toContainText("Your confirmed balance 0.0000000000000000 WORK");
+  fixture.releaseWalletBalanceReads();
+  await expect(card).toContainText("Your confirmed balance 0.9999997003878536 WORK");
+  const tokenReads = fixture.requests.map((request) => new URL(request))
+    .filter((url) => url.pathname === "/api/v1/token");
+  expect(tokenReads.every((url) => url.searchParams.get("wallet") === "1" && url.searchParams.get("address") === SENDER)).toBe(true);
+  expect(tokenReads.some((url) => url.searchParams.get("asset") === WORK_TOKEN_ID)).toBe(true);
+  let releaseNextWallet;
+  const nextWalletGate = new Promise((resolve) => { releaseNextWallet = resolve; });
+  await page.route("**/api/v1/**", async (route) => {
+    const url = new URL(route.request().url());
+    if (url.searchParams.get("wallet") !== "1" || url.searchParams.get("address") !== RECIPIENT) return route.fallback();
+    await nextWalletGate;
+    const next = authoritativeWorkState();
+    next.holders[0].address = RECIPIENT;
+    next.holders[0].balanceSubatoms = "2500000000000000";
+    Object.assign(next.canonicalWorkCapacities[0], { address: RECIPIENT,
+      confirmedBalanceSubatoms: "2500000000000000", transferableBalanceSubatoms: "2500000000000000" });
+    return route.fulfill({ json: next });
+  });
+  await page.evaluate((next) => {
+    window.unisat.getAccounts = async () => [next];
+    window.__mailComposeFixture.emit("accountsChanged");
+  }, RECIPIENT);
+  await expect(card).toContainText("Your confirmed balance Loading WORK");
+  await expect(card).not.toContainText("0.9999997003878536 WORK");
+  releaseNextWallet();
+  await expect(card).toContainText("Your confirmed balance 0.2500000000000000 WORK");
+});
+}
+
+test("AMO directory uses the clean all-account fallback when the dedicated fresh capacity read fails", async ({ page }) => {
+  await installWallet(page);
+  await installApiFixtures(page, { freshWorkWalletFailure: true,
+    remoteV8MarketListings: true, walletBalanceSubatoms: "9999997003878536" });
+  await page.goto("/?marketplace=1", { waitUntil: "domcontentloaded" });
+  await expect(page.locator(".marketplace-summary-read-state").first()).toHaveAttribute("data-state", "ready");
+  const card = page.locator("article.token-market-row").filter({ has: page.getByText("WORK", { exact: true }) });
+  await expect(card).toContainText("Your confirmed balance 0.9999997003878536 WORK");
+  await expect(card).not.toContainText("Your confirmed balance 0.0000000000000000 WORK");
 });
 
 test("AMO order book counts sealed and unsealed V8 listings with exact buyer arb", async ({

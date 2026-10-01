@@ -323,6 +323,7 @@ import {
   proofIndexReadFeatureEnabled,
   proofIndexReadUnconfirmedTxStatus,
   proofIndexIdRecordPayload,
+  proofIndexPendingRegistryObservationTimes,
   proofIndexRegistryPayload,
   proofIndexShadowFeatureEnabled,
   proofIndexSnapshotPayload,
@@ -34680,6 +34681,103 @@ function registryPayloadFromState(
   };
 }
 
+function registryPayloadWithPendingObservationTimes(
+  payload,
+  transactions,
+  observations,
+  { requireIndexed = false } = {},
+) {
+  const byTxid = new Map();
+  for (const row of observations ?? []) {
+    const rows = byTxid.get(row.txid) ?? [];
+    rows.push(row);
+    byTxid.set(row.txid, rows);
+  }
+  const admissionByTxid = new Map((transactions ?? [])
+    .filter((tx) => !transactionConfirmed(tx))
+    .map((tx) => [transactionTxid(tx), {
+      time: tx.status?.mempool_time,
+      source: tx._powCanonicalRpcHydration === true
+        ? "bitcoin-core-getmempoolentry" : "transaction-mempool-time",
+    }]));
+  const eventKind = (kind) => ({
+    register: "id-register", update: "id-update", transfer: "id-transfer",
+    list: "id-list", seal: "id-seal", delist: "id-delist", marketTransfer: "id-buy",
+  })[kind] ?? kind;
+  const patch = (item, collection) => {
+    // Invalid/dropped audit evidence is not an accepted pending lifecycle
+    // projection. Keep that evidence intact rather than requiring a valid-row
+    // timestamp or silently relabeling its status.
+    if (item?.confirmed === true || item?.valid === false || item?.dropped === true ||
+        item?.status === "dropped") return item;
+    const kind = collection === "records" ? "id-register"
+      : collection === "sales" ? "id-buy" : eventKind(item?.kind);
+    const matches = (byTxid.get(item?.txid) ?? []).filter((row) =>
+      row.kind === kind &&
+      (collection !== "records" && !row.id || String(row.id ?? "").toLowerCase() ===
+        String(item?.id ?? "").toLowerCase()) &&
+      (item?.protocolVout === undefined || row.protocolVout === item.protocolVout) &&
+      (item?.recordOrdinal === undefined || row.recordOrdinal === item.recordOrdinal));
+    if (matches.length > 1 || (requireIndexed && matches.length !== 1)) {
+      throw freshDataUnavailableError(
+        "The pending registry event has no unique retained index observation time.",
+      );
+    }
+    const observation = matches[0];
+    const admissionEvidence = admissionByTxid.get(item?.txid);
+    const admission = Number(admissionEvidence?.time);
+    return {
+      ...item,
+      ...(observation ? {
+        createdAt: observation.indexedEventTime,
+        createdAtSource: "proof-indexer-retained-event-time",
+        indexedEventTime: observation.indexedEventTime,
+        ...(observation.indexedFirstSeenAt
+          ? { indexedFirstSeenAt: observation.indexedFirstSeenAt } : {}),
+      } : { createdAtSource: "transaction-mempool-time" }),
+      ...(Number.isSafeInteger(admission) && admission > 0
+        ? {
+            mempoolAcceptedAt: new Date(admission * 1000).toISOString(),
+            mempoolAcceptedAtSource: admissionEvidence.source,
+          } : {}),
+    };
+  };
+  const result = { ...payload };
+  for (const collection of ["records", "activity", "pendingEvents", "sales"]) {
+    if (Array.isArray(payload?.[collection])) {
+      result[collection] = payload[collection].map((item) => patch(item, collection));
+    }
+  }
+  if (payload?.record) result.record = patch(payload.record, "records");
+  if (Array.isArray(result.records)) result.records.sort(compareRegistryRecordDisplayOrder);
+  if (Array.isArray(result.activity)) result.activity.sort(compareActivityItems);
+  if (Array.isArray(result.sales)) result.sales.sort(compareMarketplaceSales);
+  if (Array.isArray(result.pendingEvents)) result.pendingEvents.sort((left, right) =>
+    Date.parse(right.createdAt) - Date.parse(left.createdAt) ||
+    compareCanonicalUtf8(right.txid, left.txid) ||
+    (left.protocolVout ?? 0) - (right.protocolVout ?? 0) ||
+    (left.recordOrdinal ?? 0) - (right.recordOrdinal ?? 0));
+  return result;
+}
+
+async function registryPayloadWithIndexedPendingTimes(
+  payload, transactions, network, options = {},
+) {
+  const txids = [...new Set(["records", "activity", "pendingEvents", "sales"]
+    .flatMap((kind) => payload?.[kind] ?? []).concat(payload?.record ? [payload.record] : [])
+    .filter((item) => item?.confirmed !== true && item?.valid !== false &&
+      item?.dropped !== true && item?.status !== "dropped")
+    .map((item) => item.txid))];
+  if (txids.length === 0) return payload;
+  const observations = await proofIndexPendingRegistryObservationTimes(network, txids, options);
+  // Presentation enrichment happens after resolution. Core admission remains
+  // the resolver's clock for expiry and pending conflict decisions; retained
+  // index observations never rewrite those decisions or historical rows.
+  return registryPayloadWithPendingObservationTimes(
+    payload, transactions, observations, options,
+  );
+}
+
 async function registryPayload(network) {
   const registryAddress = registryAddressForNetwork(network);
   if (!registryAddress) {
@@ -34707,13 +34805,13 @@ async function registryPayload(network) {
     { includeAuditEvents: true },
   );
   const listings = await filterSpendableListings(state.listings, network);
-  return registryPayloadFromState(state, {
+  return registryPayloadWithIndexedPendingTimes(registryPayloadFromState(state, {
     listings,
     network,
     registryAddress,
     source: mempoolBase(network),
     transactionCount: txs.length,
-  });
+  }), txs, network);
 }
 
 async function dnsRegistryPayload(network) {
@@ -78368,7 +78466,7 @@ async function buildInternalRegistryParityPayload(network) {
     network,
     { includeAuditEvents: true },
   );
-  const unresolvedPayload = registryPayloadFromState(state, {
+  const unresolvedPayload = await registryPayloadWithIndexedPendingTimes(registryPayloadFromState(state, {
     indexedAt: generatedAt,
     indexedThroughBlock: initialTip.height,
     indexedThroughBlockHash: initialTip.blockHash,
@@ -78377,6 +78475,10 @@ async function buildInternalRegistryParityPayload(network) {
     registryAddress,
     source: `electrum://${ELECTRUM_HOST}:${ELECTRUM_PORT}+bitcoin-core`,
     transactionCount: transactions.length,
+  }), transactions, network, {
+    expectedHash: initialTip.blockHash,
+    expectedHeight: initialTip.height,
+    requireIndexed: true,
   });
   const listingReconciliation = await strictCoreRegistryListingReconciliation(
     unresolvedPayload,
@@ -78714,7 +78816,7 @@ async function livePendingRegistryPayload(network) {
     network,
   );
   return {
-    ...state,
+    ...await registryPayloadWithIndexedPendingTimes(state, transactions, network),
     indexedAt: new Date().toISOString(),
     network,
     registryAddress,

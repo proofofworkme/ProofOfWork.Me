@@ -215,10 +215,10 @@ class CapacityTests(unittest.TestCase):
     def test_historical_tooling_pins_match_reviewed_helpers_and_keep_app_provenance(self):
         script = (ROOT / 'deploy/audit5/ui-publish-candidate.sh').read_text()
         # Keep the historical publisher's approval bytes fixed. The phase-bound
-        # capacity collector separately pins the current, Audit-19-reviewed
+        # capacity collector separately pins the current, Audit-29-reviewed
         # stager whose guarded operations it measures.
         historical_stage_sha = '39f17624d0e244382c344e31f5b04b0b58bb8f4e8c7bc9c93d7418bc8ab0f238'
-        current_stage_sha = '115a18d186bf40ed6493940224f2b4ce71987e4c8d6061f02c4b23b03a21f95f'
+        current_stage_sha = 'c6f7a20f0f53d0e0871c3e024a4ea5d1b7c95f9f9788064a723f2b115d27000a'
         publisher_sha = '8846f6c6d3a8793fe83387e4d6fc317b87ef293b7961e2cd593490fd1bbd5024'
         self.assertEqual(capacity.EXPECTED_STAGER_SHA256, current_stage_sha)
         self.assertEqual(hashlib.sha256((ROOT / 'deploy/proofofwork-ui-release-stage.py').read_bytes()).hexdigest(), current_stage_sha)
@@ -340,7 +340,8 @@ class PhaseCapacityTests(unittest.TestCase):
             live, incoming = self.fixture(base)
             result = capacity.stage_budget(incoming, live, stager, owner=os.getuid())
             self.assertTrue(result['inputStabilityVerified'])
-            self.assertEqual(result['compatibilityCounters']['dependencies'], 15)
+            # This fixture creates one prior reachable asset on all16 managed surfaces, includingDNS.
+            self.assertEqual(result['compatibilityCounters']['dependencies'], 16)
             exclusive = sum(capacity.rounded(path.stat().st_size, self.BLOCK)
                             for path in live.rglob('*') if path.is_file() and path.stat().st_nlink == 1)
             self.assertEqual(result['exclusiveOldContributionBytes'], exclusive)

@@ -1129,3 +1129,9 @@ preparation, accepts up to eight decimal places in sat/vB (for example, `0.35`,
 remain unchanged. Transaction preparation preserves the selected rate and
 rounds the calculated total miner fee upward to whole proofs; precision beyond
 eight decimal places is rejected rather than silently rounded.
+
+Audit 29 remediation adds `npm run check:audit29-remediation` for retained pending
+ID times, Desktop/AMO account projections, the full accounting gate, backup
+supervision, and exact approved-retirement boundaries. Release outcomes and
+remaining approval plans are recorded in
+[audit remediation evidence](audits/2026-10-01-audit29-remediation-release.md).

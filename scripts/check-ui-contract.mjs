@@ -1193,22 +1193,22 @@ expect(
     /accountWorkTokenState/.test(app) &&
     /accountPowbTokenState/.test(app) &&
     /accountIncbTokenState/.test(app) &&
-    /fetchTokenState\(\s*network,\s*false,\s*"",\s*true,\s*\[address\],\s*true\s*\)/.test(
+    /fetchTokenState\(\s*network,\s*false,\s*"",\s*true,\s*\[address\],\s*true,\s*false,\s*requestController\.signal,?\s*\)/.test(
       app,
     ) &&
-    /fetchTokenState\(\s*network,\s*true,\s*WORK_TOKEN_ID,\s*false,\s*\[address\],\s*true,\s*true,?\s*\)/.test(
+    /fetchTokenState\(\s*network,\s*true,\s*WORK_TOKEN_ID,\s*false,\s*\[address\],\s*true,\s*true,\s*requestController\.signal,?\s*\)/.test(
       app,
     ) &&
-    /fetchTokenState\(\s*network,\s*false,\s*POWB_TOKEN_ID,\s*true,\s*\[address\],\s*true,?\s*\)/.test(
+    /fetchTokenState\(\s*network,\s*false,\s*POWB_TOKEN_ID,\s*true,\s*\[address\],\s*true,\s*false,\s*requestController\.signal,?\s*\)/.test(
       app,
     ) &&
-    /fetchTokenState\(\s*network,\s*false,\s*INCB_TOKEN_ID,\s*true,\s*\[address\],\s*true,?\s*\)/.test(
+    /fetchTokenState\(\s*network,\s*false,\s*INCB_TOKEN_ID,\s*true,\s*\[address\],\s*true,\s*false,\s*requestController\.signal,?\s*\)/.test(
       app,
     ),
 );
 expect(
   "wallet balance lanes commit independently and preserve per-lane last-good data",
-  /const loadAccountTokenLane = \([\s\S]*\[lane\]: \{ \.\.\.current\[lane\], loading: true \}[\s\S]*void load\(\)[\s\S]*commit\(state\)[\s\S]*\[lane\]: \{ error: "", loaded: true, loading: false \}[\s\S]*\.catch\(\(error\)[\s\S]*\.\.\.current\[lane\][\s\S]*loading: false/.test(
+  /const loadAccountTokenLane = \([\s\S]*\[lane\]: \{ \.\.\.current\[lane\], loading: true \}[\s\S]*return load\(\)[\s\S]*commit\(state\)[\s\S]*\[lane\]: \{ error: "", loaded: true, loading: false \}[\s\S]*\.catch\(\(error\)[\s\S]*\.\.\.current\[lane\][\s\S]*loading: false/.test(
     app,
   ) &&
     /loadAccountTokenLane\(\s*"all"[\s\S]*setAccountTokenState/.test(app) &&

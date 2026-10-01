@@ -15,6 +15,13 @@ critical_idle_transaction_seconds="${POW_POSTGRES_CRITICAL_IDLE_TRANSACTION_SECO
 tablespace_name="proof_indexer_large_state_v1"
 tablespace_path="/data/proofofwork-postgres-tablespaces/proof_indexer_large_state_v1"
 
+# PostgreSQL bigint values stay decimal strings until comparison. Reject values
+# that Bash would interpret as octal or overflow its signed integer arithmetic.
+is_nonnegative_bigint() {
+  [[ "${1}" =~ ^(0|[1-9][0-9]{0,18})$ ]] || return 1
+  [[ "${#1}" -lt 19 || "${1}" < 9223372036854775808 ]]
+}
+
 if [[ ! "${database}" =~ ^[a-zA-Z_][a-zA-Z0-9_]*$ ]]; then
   echo "PostgreSQL health database name is invalid." >&2
   exit 64
@@ -30,8 +37,8 @@ for value in \
   "${critical_lock_wait_seconds}" \
   "${warn_idle_transaction_seconds}" \
   "${critical_idle_transaction_seconds}"; do
-  if [[ ! "${value}" =~ ^[0-9]+$ ]] || ((value < 1)); then
-    echo "PostgreSQL query-health thresholds must be positive integers." >&2
+  if [[ ! "${value}" =~ ^[1-9][0-9]{0,8}$ ]]; then
+    echo "PostgreSQL query-health thresholds must be positive decimal integers no greater than 999999999." >&2
     exit 64
   fi
 done
@@ -53,7 +60,9 @@ metrics="$(/usr/bin/psql \
   --field-separator='|' \
   --set=ON_ERROR_STOP=1 \
   --command="
-    SET statement_timeout = '5s';
+    BEGIN READ ONLY;
+    SET LOCAL statement_timeout = '5s';
+    SET LOCAL lock_timeout = '2s';
     WITH all_client_sessions AS (
       SELECT
         datname,
@@ -124,8 +133,13 @@ metrics="$(/usr/bin/psql \
         0
       )::bigint
     FROM scoped_sessions;
+    ROLLBACK;
   ")"
 
+if [[ ! "${metrics}" =~ ^([0-9]+\|){11}[0-9]+$ ]]; then
+  echo "PostgreSQL query-health metrics must contain exactly one bounded numeric row." >&2
+  exit 65
+fi
 IFS='|' read -r total_connections backup_sessions backup_active_queries oldest_backup_query_seconds application_connections active_queries oldest_query_seconds max_same_query lock_waiters oldest_lock_wait_seconds idle_in_transaction oldest_idle_transaction_seconds <<<"${metrics}"
 for value in \
   "${total_connections}" \
@@ -140,7 +154,7 @@ for value in \
   "${oldest_lock_wait_seconds}" \
   "${idle_in_transaction}" \
   "${oldest_idle_transaction_seconds}"; do
-  if [[ ! "${value}" =~ ^[0-9]+$ ]]; then
+  if ! is_nonnegative_bigint "${value}"; then
     echo "PostgreSQL query-health metrics were not parseable." >&2
     exit 65
   fi
@@ -155,7 +169,9 @@ placement_metrics="$(/usr/bin/psql \
   --field-separator='|' \
   --set=ON_ERROR_STOP=1 \
   --command="
-    SET statement_timeout = '5s';
+    BEGIN READ ONLY;
+    SET LOCAL statement_timeout = '5s';
+    SET LOCAL lock_timeout = '2s';
     WITH target AS (
       SELECT
         oid,
@@ -172,6 +188,8 @@ placement_metrics="$(/usr/bin/psql \
     parents AS (
       SELECT
         relation.oid,
+        relation.relname,
+        relation.reltuples,
         relation.relkind,
         relation.relpersistence,
         relation.relowner,
@@ -273,10 +291,36 @@ placement_metrics="$(/usr/bin/psql \
       COALESCE(
         (SELECT sum(pg_total_relation_size(oid))::bigint FROM parents),
         0
+      ),
+      pg_database_size(current_database()),
+      COALESCE(
+        (SELECT pg_total_relation_size(oid) FROM parents
+         WHERE relname = 'work_amo_block_transitions'),
+        0
+      ),
+      COALESCE(
+        (SELECT pg_total_relation_size(oid) FROM parents
+         WHERE relname = 'ledger_snapshots'),
+        0
+      ),
+      COALESCE(
+        (SELECT reltuples::bigint FROM parents
+         WHERE relname = 'work_amo_block_transitions'),
+        -1
+      ),
+      COALESCE(
+        (SELECT reltuples::bigint FROM parents
+         WHERE relname = 'ledger_snapshots'),
+        -1
       );
+    ROLLBACK;
   ")"
 
-IFS='|' read -r tablespace_count tablespace_identity_ready parent_count parent_shape_ready toast_count closure_count placed_count index_count invalid_index_count unrelated_count owned_sequence_count placed_bytes <<<"${placement_metrics}"
+if [[ ! "${placement_metrics}" =~ ^([0-9]+\|){15}(-1|[0-9]+)\|(-1|[0-9]+)$ ]]; then
+  echo "PostgreSQL tablespace-health metrics must contain exactly one bounded numeric row." >&2
+  exit 65
+fi
+IFS='|' read -r tablespace_count tablespace_identity_ready parent_count parent_shape_ready toast_count closure_count placed_count index_count invalid_index_count unrelated_count owned_sequence_count placed_bytes database_bytes transition_bytes snapshot_bytes transition_rows_estimated snapshot_rows_estimated <<<"${placement_metrics}"
 for value in \
   "${tablespace_count}" \
   "${tablespace_identity_ready}" \
@@ -289,9 +333,18 @@ for value in \
   "${invalid_index_count}" \
   "${unrelated_count}" \
   "${owned_sequence_count}" \
-  "${placed_bytes}"; do
-  if [[ ! "${value}" =~ ^[0-9]+$ ]]; then
+  "${placed_bytes}" \
+  "${database_bytes}" \
+  "${transition_bytes}" \
+  "${snapshot_bytes}"; do
+  if ! is_nonnegative_bigint "${value}"; then
     echo "PostgreSQL tablespace-health metrics were not parseable." >&2
+    exit 65
+  fi
+done
+for value in "${transition_rows_estimated}" "${snapshot_rows_estimated}"; do
+  if [[ "${value}" != -1 ]] && ! is_nonnegative_bigint "${value}"; then
+    echo "PostgreSQL catalog row estimates were not parseable." >&2
     exit 65
   fi
 done
@@ -325,6 +378,16 @@ printf 'postgres_storage database=%s tablespace=%s location=%s parents=%s toasts
   "${invalid_index_count}" \
   "${unrelated_count}" \
   "${owned_sequence_count}"
+
+# Sizes include relation indexes/TOAST; reltuples are catalog estimates, not a
+# row census. -1 explicitly means unknown. No live relation rows are scanned.
+printf 'postgres_growth database=%s database_bytes=%s transition_total_bytes=%s snapshot_total_bytes=%s transition_rows_estimated=%s snapshot_rows_estimated=%s row_estimate_source=pg_class.reltuples unknown_row_estimate=-1 size_source=postgres_filesystem_allocation\n' \
+  "${database}" \
+  "${database_bytes}" \
+  "${transition_bytes}" \
+  "${snapshot_bytes}" \
+  "${transition_rows_estimated}" \
+  "${snapshot_rows_estimated}"
 
 if ((tablespace_count != 1)) ||
   ((tablespace_identity_ready != 1)) ||

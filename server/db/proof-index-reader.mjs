@@ -2796,6 +2796,7 @@ async function payloadWithCurrentWorkPrecisionReadPolicy(
     allowCanonicalSummaryBootstrap = false,
     exactCheckpointHash = "",
     exactCheckpointHeight = 0,
+    onUnavailable,
     requireExactCheckpoint = false,
     requireSupplyEnvelope = true,
   } = {},
@@ -2823,6 +2824,9 @@ async function payloadWithCurrentWorkPrecisionReadPolicy(
       item?.amountStorageModel === WORK_SUBATOM_PROJECTION_MODEL,
   );
   if (!pins) {
+    if (payloadCarriesQ16Work) {
+      onUnavailable?.({ reason: "work-q16-reader-pins-unavailable" });
+    }
     return payloadCarriesQ16Work ? null : payload;
   }
   const snapshotHeight = Number(
@@ -2864,14 +2868,27 @@ async function payloadWithCurrentWorkPrecisionReadPolicy(
       exactCheckpointHash,
       exactCheckpointHeight,
     });
+  const readinessAvailable = fullReadiness || bootstrapReadiness;
+  const payloadExact = readinessAvailable && workPrecisionV2CurrentPayloadIsExact(
+    currentPayload, pins.activationHeight, { requireSupplyEnvelope },
+  );
   if (
     (!fullReadiness && !bootstrapReadiness) ||
-    !workPrecisionV2CurrentPayloadIsExact(
-      currentPayload,
-      pins.activationHeight,
-      { requireSupplyEnvelope },
-    )
+    !payloadExact
   ) {
+    onUnavailable?.({
+      reason: !fullReadiness && !bootstrapReadiness
+        ? "work-q16-readiness-unavailable" : "work-q16-payload-inexact",
+      active: readiness?.active === true,
+      evidenceComplete: readiness?.evidenceComplete === true,
+      parityReady: readiness?.parityReady === true,
+      pendingReady: readiness?.pendingReady === true,
+      replayReady: readiness?.replayReady === true,
+      ready: readiness?.ready === true,
+      payloadExact: readinessAvailable ? payloadExact : null,
+      payloadHeight: snapshotHeight,
+      readinessHeight: Number(readiness?.tipHeight) || 0,
+    });
     return null;
   }
   const snapshotBacked = normalizedLowerText(
@@ -2885,6 +2902,12 @@ async function payloadWithCurrentWorkPrecisionReadPolicy(
       snapshotHeight !== Number(readiness.tipHeight) ||
       payloadHash !== normalizedLowerText(readiness.tipHash)
     ) {
+      onUnavailable?.({
+        reason: "work-q16-checkpoint-mismatch",
+        payloadHeight: snapshotHeight,
+        readinessHeight: Number(readiness.tipHeight) || 0,
+        hashesMatch: payloadHash === normalizedLowerText(readiness.tipHash),
+      });
       return null;
     }
   }
@@ -22224,6 +22247,89 @@ export async function proofIndexTxStatusPayload(txid, network, options = {}) {
   return payload;
 }
 
+// These are observations retained by this index, not proof of a transaction's
+// first-ever network appearance or its current Core mempool admission.
+export async function proofIndexPendingRegistryObservationTimes(network, txids, options = {}) {
+  if (!Array.isArray(txids) || txids.length > 500 ||
+      txids.some((txid) => !/^[0-9a-f]{64}$/u.test(String(txid)))) {
+    throw new Error("Pending registry observation lookup exceeds its exact txid bound.");
+  }
+  const requested = [...new Set(txids)].sort(compareCanonicalUtf8);
+  if (requested.length === 0) return [];
+  const pool = proofIndexPool();
+  if (!pool) return null;
+  const exactCheckpointRequested = options.expectedHeight !== undefined ||
+    options.expectedHash !== undefined;
+  const expectedHeight = Number(options.expectedHeight);
+  const expectedHash = normalizedLowerText(options.expectedHash);
+  if (exactCheckpointRequested && (!Number.isSafeInteger(expectedHeight) ||
+      expectedHeight < 1 || !/^[0-9a-f]{64}$/u.test(expectedHash))) {
+    throw new Error("Pending registry observation lookup has an invalid checkpoint.");
+  }
+  const checkpointMatches = async () => {
+    // This fence needs scalar checkpoint metadata, not the broad operational
+    // scan helper's confirmed-event/ID/transfer aggregate counts.
+    const checkpoint = await pool.query(`
+      SELECT indexed_through_block, payload->'complete' AS complete,
+        COALESCE(payload->>'indexedThroughBlockHash',
+          payload->>'blockHash') AS block_hash
+      FROM proof_indexer.ledger_snapshots
+      WHERE network = $1 AND NOT (source_hashes ? 'canonicalSummary')
+        AND (source_hashes ? 'blockScan'
+          OR payload->>'source' = 'proof-indexer-block-scan'
+          OR consistency->>'status' LIKE 'block-scan%')
+      ORDER BY
+        CASE WHEN NULLIF(COALESCE(
+          NULLIF(payload->>'indexedThroughBlockHash', ''),
+          NULLIF(payload->>'blockHash', ''), NULLIF(source_hashes->>'blockScan', '')), '')
+          IS NOT NULL THEN 0 ELSE 1 END,
+        indexed_through_block DESC NULLS LAST, generated_at DESC
+      LIMIT 1
+    `, [network]);
+    const scan = checkpoint.rows[0];
+    return scan?.complete === true &&
+      rowNumber(scan, "indexed_through_block") === expectedHeight &&
+      normalizedLowerText(scan?.block_hash) === expectedHash;
+  };
+  if (exactCheckpointRequested && !(await checkpointMatches())) return null;
+  const result = await pool.query(`
+    SELECT e.txid, e.kind, e.op_return_vout, e.record_ordinal,
+      e.event_time, e.block_time, e.created_at,
+      e.payload->>'blockTime' AS payload_block_time,
+      e.payload->>'timestamp' AS payload_timestamp,
+      e.payload->>'createdAt' AS payload_created_at,
+      e.payload->>'id' AS id,
+      t.first_seen_at
+    FROM proof_indexer.events e
+    JOIN proof_indexer.transactions t
+      ON t.network = e.network AND t.txid = e.txid
+    WHERE e.network = $1 AND e.txid = ANY($2::text[])
+      AND e.protocol = 'pwid1' AND e.valid = true
+      AND e.status = 'pending' AND t.status = 'pending'
+    ORDER BY e.txid, e.op_return_vout, e.record_ordinal, e.event_id
+  `, [network, requested]);
+  if (exactCheckpointRequested && !(await checkpointMatches())) return null;
+  return result.rows.map((row) => {
+    const eventTime = plausibleBitcoinEventTime(
+      row.event_time, row.block_time, row.payload_block_time,
+      row.payload_timestamp, row.payload_created_at, row.created_at,
+    );
+    const firstSeen = plausibleBitcoinEventTime(row.first_seen_at);
+    if (!eventTime) {
+      throw new Error("Pending registry event has no retained plausible observation time.");
+    }
+    return {
+      txid: normalizedTxid(row.txid),
+      kind: normalizedLowerText(row.kind),
+      id: normalizedLowerText(row.id),
+      protocolVout: Number(row.op_return_vout),
+      recordOrdinal: Number(row.record_ordinal),
+      indexedEventTime: dateIso(eventTime),
+      ...(firstSeen ? { indexedFirstSeenAt: dateIso(firstSeen) } : {}),
+    };
+  });
+}
+
 async function ledgerSnapshot(pool, network, snapshotId = "") {
   const pinnedSnapshotId = normalizedSnapshotId(snapshotId);
   if (pinnedSnapshotId) {
@@ -33144,6 +33250,11 @@ export async function proofIndexWalletTokenOverlayPayload(
     network,
   );
   if (!checkpointBeforeRead) {
+    console.warn(JSON.stringify({
+      event: "wallet-token-overlay-unavailable",
+      reason: "wallet-checkpoint-unavailable",
+      warning: "wallet-checkpoint-unavailable",
+    }));
     return null;
   }
   const scopeCondition = scoped
@@ -34137,6 +34248,11 @@ export async function proofIndexWalletTokenOverlayPayload(
     network,
     currentMarketPayload,
     {
+      onUnavailable: (details) => console.warn(JSON.stringify({
+        event: "wallet-token-overlay-unavailable",
+        warning: details.reason,
+        ...details,
+      })),
       requireExactCheckpoint: true,
       requireSupplyEnvelope: false,
     },
@@ -35233,6 +35349,13 @@ function pendingIdRegistryStateFromActivity(activity, network) {
           amountSats: Number(item?.amountSats ?? 0),
           confirmed: false,
           createdAt: dateIso(item?.createdAt),
+          ...(item?.indexedEventTime ? {
+            indexedEventTime: item.indexedEventTime,
+            createdAtSource: item.createdAtSource,
+          } : {}),
+          ...(item?.indexedFirstSeenAt ? {
+            indexedFirstSeenAt: item.indexedFirstSeenAt,
+          } : {}),
           id: normalizedText(item?.id),
           network,
           ownerAddress,
@@ -35343,6 +35466,7 @@ async function currentIdRegistryEventState(
         t.block_height AS transaction_block_height,
         t.block_index AS transaction_block_index,
         t.block_time AS transaction_block_time,
+        t.first_seen_at AS transaction_first_seen_at,
         t.fee_sats AS transaction_fee_sats,
         t.raw_tx AS transaction_raw_tx,
         t.block_hash,
@@ -39190,6 +39314,19 @@ function eventRowPayload(row, network) {
     confirmedPwidRawHydrationRequired
       ? confirmedPwidStoredDisplayBase(payload)
       : payload;
+  const retainedEventTime = plausibleBitcoinEventTime(
+    row.event_time, row.block_time, payload.blockTime, payload.timestamp,
+    payload.createdAt, row.created_at,
+  );
+  const indexedFirstSeen = plausibleBitcoinEventTime(row.transaction_first_seen_at);
+  const pendingObservationPatch = rowProtocol === "pwid1" &&
+      normalizedLowerText(row?.status) === "pending" && retainedEventTime
+    ? {
+        createdAtSource: "proof-indexer-retained-event-time",
+        indexedEventTime: dateIso(retainedEventTime),
+        ...(indexedFirstSeen ? { indexedFirstSeenAt: dateIso(indexedFirstSeen) } : {}),
+      }
+    : {};
   return {
     ...displayPayload,
     ...canonicalEventIdentityDetails({
@@ -39259,16 +39396,8 @@ function eventRowPayload(row, network) {
     confirmed: row.status ? row.status === "confirmed" : payload.confirmed,
     createdAt:
       confirmedPwidRawEvidence.createdAt ??
-      dateIso(
-        plausibleBitcoinEventTime(
-          row.event_time,
-          row.block_time,
-          payload.blockTime,
-          payload.timestamp,
-          payload.createdAt,
-          row.created_at,
-        ),
-      ),
+      dateIso(retainedEventTime),
+    ...pendingObservationPatch,
     ...(confirmedPwidRawEvidence.createdAt
       ? {
           blockTime: confirmedPwidRawEvidence.createdAt,

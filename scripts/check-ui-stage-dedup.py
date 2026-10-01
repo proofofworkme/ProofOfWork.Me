@@ -15,6 +15,7 @@ SPEC = importlib.util.spec_from_file_location("ui_stage_dedup", ROOT / "deploy/p
 stage = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(stage)
 STAMP = 1_700_000_000_000_000_000
+EXPECTED_SURFACES = frozenset('activity boost browser computer desktop dns growth id inception infinity landing marketplace nft token wallet work'.split())
 
 
 def write(path, content=b"same managed content\n", mode=0o644, stamp=STAMP):
@@ -209,6 +210,8 @@ class InternalDedupTests(unittest.TestCase):
 
 class StagerIntegrationTests(unittest.TestCase):
     def test_default_independence_opt_in_capacity_compatibility_and_archive_bytes(self):
+        self.assertEqual(set(stage.SURFACES), EXPECTED_SURFACES)
+        self.assertEqual(len(stage.SURFACES), len(EXPECTED_SURFACES), 'surfaces must be unique')
         with tempfile.TemporaryDirectory(prefix="pow-ui-stage-dedup-") as name:
             base = Path(name)
             live = base / "www"
@@ -249,7 +252,7 @@ class StagerIntegrationTests(unittest.TestCase):
             for asset in ["new.js", "old.js"]:
                 normal_inodes = {inode(normal / f"proofofwork-{s}/assets/{asset}") for s in stage.SURFACES}
                 dedup_inodes = {inode(dedup / f"proofofwork-{s}/assets/{asset}") for s in stage.SURFACES}
-                self.assertEqual(len(normal_inodes), 15)
+                self.assertEqual(len(normal_inodes), len(EXPECTED_SURFACES))
                 self.assertEqual(len(dedup_inodes), 1)
                 for surface in stage.SURFACES:
                     copied = dedup / f"proofofwork-{surface}/assets/{asset}"

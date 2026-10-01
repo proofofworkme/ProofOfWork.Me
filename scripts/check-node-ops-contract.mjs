@@ -307,6 +307,13 @@ assert.match(
 assert.match(postgresObservabilitySql, /REVOKE EXECUTE ON FUNCTION/u);
 assert.match(postgresObservabilitySql, /REVOKE SELECT ON %I\.%I FROM PUBLIC/u);
 assert.match(postgresQueryHealth, /pg_stat_activity/u);
+assert.equal((postgresQueryHealth.match(/BEGIN READ ONLY;/gu) ?? []).length, 2);
+assert.equal((postgresQueryHealth.match(/SET LOCAL statement_timeout = '5s';/gu) ?? []).length, 2);
+assert.equal((postgresQueryHealth.match(/SET LOCAL lock_timeout = '2s';/gu) ?? []).length, 2);
+assert.match(postgresQueryHealth, /pg_database_size\(current_database\(\)\)/u);
+assert.match(postgresQueryHealth, /reltuples::bigint/u);
+assert.match(postgresQueryHealth, /postgres_growth database=%s database_bytes=%s/u);
+assert.match(postgresQueryHealth, /row_estimate_source=pg_class\.reltuples/u);
 assert.match(postgresQueryHealth, /query_id::text/u);
 assert.match(postgresQueryHealth, /backend_type = 'client backend'/u);
 assert.match(postgresQueryHealth, /all_client_sessions/u);
@@ -1523,4 +1530,5 @@ try {
   rmSync(testRoot, { recursive: true, force: true });
 }
 
+runChecked("/usr/bin/python3", ["-I", "-B", "scripts/check-postgres-query-health.py"]);
 console.log("Node operations contract checks passed.");

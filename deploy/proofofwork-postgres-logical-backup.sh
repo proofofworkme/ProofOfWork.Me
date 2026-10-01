@@ -16,6 +16,21 @@ else
   }
 fi
 
+require_backup_cgroup() {
+  # A shell cannot contain its independently sessioned children after SIGKILL.
+  # Production creation therefore belongs only to the reviewed systemd unit,
+  # whose control group enforces resource limits and kills all descendants.
+  local cgroup
+  cgroup="$(</proc/self/cgroup)" || return 1
+  [[ "${cgroup}" == '0::/system.slice/proofofwork-postgres-logical-backup.service' ]] || {
+    echo 'Logical backup creation requires proofofwork-postgres-logical-backup.service; use systemctl start instead of unmanaged --apply.' >&2
+    return 1
+  }
+}
+if [[ "${mode}" == --apply ]]; then
+  require_backup_cgroup || exit 77
+fi
+
 backup_root="/data/proofofwork-postgres-backups/logical"
 keep=1
 timestamp="$(date -u +%Y%m%dT%H%M%SZ)"
@@ -33,13 +48,31 @@ backup_lock="${backup_root}/.proofofwork-postgres-logical-backup.lock"
 minimum_free_bytes="${POW_POSTGRES_BACKUP_MIN_FREE_BYTES:-107374182400}"
 monitor_pid=''
 dump_pid=''
+owner_pid=$$
+maximum_runtime_seconds=5400
+watchdog_started_seconds=${SECONDS}
 [[ "${minimum_free_bytes}" =~ ^[0-9]{1,15}$ ]] && ((minimum_free_bytes >= 10737418240)) || {
   echo 'Backup reserve must be an integer of at least 10 GiB.' >&2; exit 64;
 }
 
 cleanup() {
-  [[ -z "${monitor_pid}" ]] || kill "${monitor_pid}" 2>/dev/null || true
-  [[ -z "${dump_pid}" ]] || kill -TERM "${dump_pid}" 2>/dev/null || true
+  if [[ -n "${monitor_pid}" ]]; then
+    : >"${temporary_set}/.watchdog-stop-requested" || true
+    kill "${monitor_pid}" 2>/dev/null || true
+    wait "${monitor_pid}" 2>/dev/null || true
+  fi
+  if [[ -n "${dump_pid}" ]]; then
+    # Every backup step has its own session. Stop its entire process group,
+    # including verifier/hash children, before releasing the backup lock.
+    kill -TERM -- "-${dump_pid}" 2>/dev/null || true
+    kill -TERM "${dump_pid}" 2>/dev/null || true
+    for attempt in {1..20}; do
+      kill -0 "${dump_pid}" 2>/dev/null || break
+      sleep 0.1
+    done
+    kill -KILL -- "-${dump_pid}" 2>/dev/null || true
+    wait "${dump_pid}" 2>/dev/null || true
+  fi
   if [[ -n "${temporary_set_identity}" ]]; then
     printf 'backup_incomplete retained_path=%s identity=%s review_required=true\n' "${temporary_set}" "${temporary_set_identity}" >&2
   fi
@@ -109,46 +142,95 @@ fi
 [[ "${mode}" != --check-capacity ]] || exit 0
 /usr/bin/mkdir --mode=0700 "${temporary_set}"
 temporary_set_identity="$(stat --format='%d:%i' -- "${temporary_set}")"
-/usr/bin/pg_dump \
-  --dbname=proof_indexer \
-  --format=custom \
-  --compress=gzip:6 \
-  --file="${temporary_set}/proof_indexer.dump" &
-dump_pid=$!
-(
-  while sleep 5; do
-    available="$(LC_ALL=C /usr/bin/df -B1 --output=avail "${backup_root}" | /usr/bin/tail -1 | /usr/bin/tr -d ' ')"
-    size="$(/usr/bin/stat -c %s "${temporary_set}/proof_indexer.dump" 2>/dev/null || echo 0)"
-    if [[ ! "${available}" =~ ^[0-9]{1,15}$ || ! "${size}" =~ ^[0-9]{1,15}$ ]] ||
-      ((available < minimum_free_bytes || size > maximum_dump_bytes)); then
-      printf 'CRITICAL backup capacity bound reached; preserving incomplete set %s\n' "${temporary_set}" >&2
-      kill -TERM "${dump_pid}" 2>/dev/null || true
-      exit
+# A known empty file distinguishes a legitimate zero-byte starting dump from
+# a failed stat. Watch all backup phases, not only the pg_dump subprocess.
+: >"${temporary_set}/proof_indexer.dump"
+stop_for_watchdog_failure() {
+  if [[ ! -e "${temporary_set}/.watchdog-failed" ]]; then
+    printf 'backup_watchdog_failed reason=%s\n' "$1" >"${temporary_set}/.watchdog-failed" || true
+  fi
+  printf 'CRITICAL backup capacity bound reached or supervision failed reason=%s; preserving incomplete set %s\n' "$1" "${temporary_set}" >&2
+  kill -TERM "${owner_pid}" 2>/dev/null || true
+}
+assert_backup_watchdog() {
+  [[ ! -e "${temporary_set}/.watchdog-failed" ]] && kill -0 "${monitor_pid}" 2>/dev/null
+}
+run_backup_step() {
+  local step_status=0
+  if ! assert_backup_watchdog; then
+    stop_for_watchdog_failure watchdog-not-running
+    return 1
+  fi
+  /usr/bin/setsid "$@" &
+  dump_pid=$!
+  # SIGKILL cannot run the watcher's trap. Independently supervise its liveness
+  # while each actual writer/verifier is running, then reap its exit status.
+  while kill -0 "${dump_pid}" 2>/dev/null; do
+    if ! assert_backup_watchdog; then
+      stop_for_watchdog_failure watchdog-not-running
+      return 1
     fi
+    sleep 0.2
+  done
+  wait "${dump_pid}" || step_status=$?
+  dump_pid=''
+  ((step_status == 0)) || return "${step_status}"
+  assert_backup_watchdog
+}
+(
+  # Unexpected death (including failed measurements under errexit) is fatal.
+  # Main marks intentional shutdown before signalling or reaping the watcher.
+  trap '[[ -e "${temporary_set}/.watchdog-stop-requested" ]] || stop_for_watchdog_failure unexpected-watchdog-exit' EXIT
+  while true; do
+    if ! available="$(LC_ALL=C /usr/bin/df -B1 --output=avail "${backup_root}" | /usr/bin/tail -1 | /usr/bin/tr -d ' ')"; then
+      stop_for_watchdog_failure free-space-read-failed; exit 1
+    fi
+    if ! size="$(/usr/bin/stat -c %s "${temporary_set}/proof_indexer.dump")"; then
+      stop_for_watchdog_failure dump-size-read-failed; exit 1
+    fi
+    if [[ ! "${available}" =~ ^[0-9]{1,15}$ || ! "${size}" =~ ^[0-9]{1,15}$ ]]; then
+      stop_for_watchdog_failure invalid-storage-measurement; exit 1
+    fi
+    if ((available < minimum_free_bytes || size > maximum_dump_bytes)); then
+      stop_for_watchdog_failure storage-bound-exceeded; exit 1
+    fi
+    if ((SECONDS - watchdog_started_seconds >= maximum_runtime_seconds)); then
+      stop_for_watchdog_failure runtime-bound-exceeded; exit 1
+    fi
+    sleep 5
   done
 ) &
 monitor_pid=$!
-dump_status=0
-wait "${dump_pid}" || dump_status=$?
-dump_pid=''
-kill "${monitor_pid}" 2>/dev/null || true
-wait "${monitor_pid}" 2>/dev/null || true
-monitor_pid=''
-((dump_status == 0)) || exit "${dump_status}"
-/usr/bin/pg_dumpall \
+run_backup_step /usr/bin/pg_dump \
+  --dbname=proof_indexer \
+  --format=custom \
+  --compress=gzip:6 \
+  --file="${temporary_set}/proof_indexer.dump"
+run_backup_step /usr/bin/pg_dumpall \
   --globals-only \
   --file="${temporary_set}/globals.sql"
-/usr/bin/pg_restore --list "${temporary_set}/proof_indexer.dump" >/dev/null
+run_backup_step /usr/bin/pg_restore --list "${temporary_set}/proof_indexer.dump" >/dev/null
 /usr/bin/test -s "${temporary_set}/globals.sql"
 
-(
-  cd "${temporary_set}"
-  /usr/bin/sha256sum proof_indexer.dump globals.sql >SHA256SUMS
-  /usr/bin/sha256sum --check --strict SHA256SUMS >/dev/null
-)
-/usr/bin/sync -f "${temporary_set}/proof_indexer.dump"
-/usr/bin/sync -f "${temporary_set}/globals.sql"
-/usr/bin/sync -f "${temporary_set}/SHA256SUMS"
+previous_directory="$PWD"
+cd "${temporary_set}"
+run_backup_step /usr/bin/sha256sum proof_indexer.dump globals.sql >SHA256SUMS
+run_backup_step /usr/bin/sha256sum --check --strict SHA256SUMS >/dev/null
+cd "${previous_directory}"
+for member in proof_indexer.dump globals.sql SHA256SUMS; do
+  run_backup_step /usr/bin/sync -f "${temporary_set}/${member}"
+done
+run_backup_step /usr/bin/sync -f "${temporary_set}"
+assert_backup_watchdog
+: >"${temporary_set}/.watchdog-stop-requested"
+kill "${monitor_pid}" 2>/dev/null || true
+monitor_status=0
+wait "${monitor_pid}" 2>/dev/null || monitor_status=$?
+monitor_pid=''
+# Intentional TERM is expected; an unexpected exit or prior failure cannot
+# publish a verified set. Failure diagnostics remain inside the incomplete set.
+[[ ! -e "${temporary_set}/.watchdog-failed" ]] && ((monitor_status == 0 || monitor_status == 143))
+/usr/bin/rm -- "${temporary_set}/.watchdog-stop-requested"
 /usr/bin/sync -f "${temporary_set}"
 /usr/bin/mv -- "${temporary_set}" "${final_set}"
 temporary_set_identity=""

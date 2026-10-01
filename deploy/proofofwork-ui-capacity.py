@@ -13,6 +13,7 @@ import json
 import os
 from pathlib import Path, PurePosixPath
 import stat
+import subprocess
 import sys
 import tarfile
 
@@ -22,6 +23,7 @@ INODE_RESERVE = 128
 MAX_ARCHIVE_ENTRIES = 10000
 MAX_ARCHIVE_BYTES = 1024**3
 MAX_TREE_ENTRIES = 100000
+MAX_DEPLOY_SCRATCH_BYTES = 5 * 1024**3
 
 
 class CapacityError(RuntimeError):
@@ -90,6 +92,28 @@ def check_capacity(path: Path, additional_bytes: int, additional_inodes: int, ph
             "additionalBytes": additional_bytes, "additionalInodes": additional_inodes,
             "rootReserveBytes": ROOT_RESERVE_BYTES, "growthReserveBytes": GROWTH_RESERVE_BYTES,
             "checks": checks}
+
+
+def check_deploy_scratch(path: Path, additional_bytes: int, phase: str) -> dict:
+    """Refuse another deployment burst; retained evidence never expires here."""
+    integer(additional_bytes, "Additional scratch bytes")
+    before = canonical_directory(path)
+    measured = subprocess.run(
+        ["/usr/bin/du", "--one-file-system", "--summarize", "--block-size=1", "--", str(path)],
+        capture_output=True, check=True, timeout=30,
+    )
+    fields = measured.stdout.decode("utf-8", errors="strict").strip().split("\t")
+    if len(fields) != 2 or fields[1] != str(path) or not fields[0].isascii() or not fields[0].isdecimal():
+        raise CapacityError("Unable to measure deployment scratch allocation")
+    if identity(canonical_directory(path)) != identity(before):
+        raise CapacityError("Deployment scratch changed during measurement")
+    allocated = int(fields[0])
+    report = {"phase": phase, "path": str(path), "allocatedBytes": allocated,
+              "additionalBytes": additional_bytes, "maximumBytes": MAX_DEPLOY_SCRATCH_BYTES,
+              "cleanupApproved": False}
+    if allocated + additional_bytes > MAX_DEPLOY_SCRATCH_BYTES:
+        raise CapacityError("UI deployment scratch review required " + json.dumps(report, sort_keys=True))
+    return {"status": "sufficient", **report}
 
 
 def identity(details: os.stat_result) -> tuple:
@@ -196,7 +220,7 @@ def cli_integer(value: str) -> int:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("command", choices=("check", "check-copy", "check-archive", "check-pack", "budget"))
+    parser.add_argument("command", choices=("check", "check-copy", "check-archive", "check-pack", "check-scratch", "budget"))
     parser.add_argument("--path", type=Path, required=True)
     parser.add_argument("--source", type=Path)
     parser.add_argument("--archive", type=Path)
@@ -204,7 +228,9 @@ def main() -> int:
     parser.add_argument("--additional-inodes", type=cli_integer, default=0)
     parser.add_argument("--phase", default="ui-allocation")
     args = parser.parse_args()
-    if args.command == "budget":
+    if args.command == "check-scratch":
+        result = check_deploy_scratch(args.path, args.additional_bytes, args.phase)
+    elif args.command == "budget":
         if args.source is None:
             parser.error("budget requires --source")
         result = tree_bound(args.source, args.path)
@@ -229,6 +255,6 @@ def main() -> int:
 if __name__ == "__main__":
     try:
         raise SystemExit(main())
-    except (CapacityError, OSError, tarfile.TarError) as error:
+    except (CapacityError, OSError, subprocess.SubprocessError, UnicodeError, tarfile.TarError) as error:
         print(str(error), file=sys.stderr)
         raise SystemExit(1) from error

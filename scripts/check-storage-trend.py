@@ -34,13 +34,16 @@ severity, allocation = allocation_report(policy, 1000)
 assert severity == 1 and allocation['status'] == 'review'
 assert allocation['reviewRequired'] is True
 severity, allocation = allocation_report(policy, 2000)
-assert severity == 2 and allocation['status'] == 'critical-review'
+assert severity == 1 and allocation['status'] == 'critical-review'
 assert 'does not approve deletion' in allocation['note']
+assert allocation['healthCategory'] == 'allocation-review' and allocation['capacityEmergency'] is False
+assert allocation['thresholdBand'] == 'critical'
+assert forecast([(now-day, 300)], now, 200, reserve)['basis'] == 'conditional-historical-net-consumption'
 severity, core = node_data_allocation_report('/data/bitcoin', 979 * module['GIB'])
 assert severity == 0 and core['label'] == 'canonical-bitcoin-core-chainstore'
 assert core['cleanupApproved'] is False
 severity, replay = node_data_allocation_report('/data/proofofwork-incb-final-source-replay-20260925', 89 * 1024**3)
-assert severity == 2 and replay['status'] == 'critical-review'
+assert severity == 1 and replay['status'] == 'critical-review'
 assert replay['cleanupApproved'] is False
 observation_report = module['observation_report']
 assert observation_report([(now-900, 120)], now, 120, 100, 120)[0] == 0
@@ -114,7 +117,10 @@ def run_node_attribution():
     assert by_path['/data/electrs']['label'] == 'canonical-electrs-index'
     assert by_path['/data/proofofwork-incb-final-source-replay-20260925']['status'] == 'critical-review'
     assert all(report['cleanupApproved'] is False for report in by_path.values())
-    assert code == 2
+    assert code == 1
+    assert reports[-1]['capacitySeverity'] == 0
+    assert reports[-1]['allocationReviewSeverity'] == 1
+    assert reports[-1]['status'] == 'warning'
 
 run_node_attribution()
 print('Storage forecast: history, exact bytes, allocation thresholds, producer freshness, current reserve warnings and actual monitor exit statuses passed.')

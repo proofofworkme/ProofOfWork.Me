@@ -623,3 +623,18 @@ including trailing whitespace, because public Desktop can derive HTML files
 from these bodies. Public Desktop target loads request fresh address mail.
 Whitespace normalization is appropriate for detection/display summaries, but
 never for a file body, byte count, or content hash.
+
+### Desktop counts and AMO account hydration — Audit 29 remediation
+
+The public Desktop load count includes deduplicated owned messages and files.
+A shared system welcome reference remains visible but does not increase the
+owned-content count. Its bytes and chain identity remain intact.
+
+Computer's AMO confirmed balance uses the accepted wallet lane for the exact
+network, address, and token. A compact market movement preview cannot establish
+a wallet balance. A missing or failed account read displays Loading or
+Unavailable; a clean scoped read may establish zero. During refresh, accepted
+prior evidence is labeled last verified. Confirmed, spendable, and reserved
+amounts retain their separate exact accounting meaning. Overlapping account
+refreshes coalesce, and obsolete account/network requests are aborted and cannot
+commit late results.

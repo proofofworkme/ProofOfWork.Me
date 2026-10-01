@@ -545,3 +545,19 @@ ProofOfWork.Me stays browser-native for users and sovereign at the data layer.
 - IDs, credit balances, credit markets, wallet movements, Log, Growth, and WORK floor are replayed from confirmed ProofOfWork history.
 - Pending mempool data is useful visibility, not canonical state.
 - The backend improves data access without becoming custodial.
+
+### Pending ID observation times — Audit 29 remediation
+
+Pending ID presentation distinguishes retained index evidence from current Core
+mempool admission. `createdAt` and `indexedEventTime` use the indexer's retained
+event-time projection, with `createdAtSource: proof-indexer-retained-event-time`.
+`indexedFirstSeenAt` separately preserves the transaction row's recorded first
+observation; neither field proves a first-ever network appearance.
+`mempoolAcceptedAt` records the current independently verified Core admission.
+
+Enrichment occurs after canonical ID resolution. Expiry and pending conflicts
+continue to use current admission evidence; confirmed block times, fees, rules,
+historical event rows, and first-confirmed-wins behavior are unchanged. Strict
+parity requires a unique accepted pending event identity and a matching complete
+height/hash checkpoint before and after the bounded lookup. Invalid and dropped
+audit evidence remains visible under its original status.

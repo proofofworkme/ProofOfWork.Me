@@ -42,3 +42,38 @@ for (const state of ['confirmed', 'pending', 'unavailable', 'wrong-txid']) {
   }
  });
 }
+
+test('Desktop toast counts owned publications after welcome and self-send deduplication', async ({ page }) => {
+ const owner = '1F1p9UEHuH5KTFR7Zsx93Khdrqhj6t5nFv';
+ const attachment = { data: 'cHJvb2Y=', mime: 'text/plain', name: 'proof.txt', sha256: 'e'.repeat(64), size: 5 };
+ const message = (publication, extra = {}) => ({ amountSats: 546, status: 'confirmed',
+  confirmed: true, createdAt: '2026-09-30T12:00:00.000Z', from: owner, to: owner,
+  memo: 'Owned publication', network: 'livenet', replyTo: owner, attachment,
+  txid: publication, ...extra });
+ const welcome = message(txid, { attachment: undefined, memo: html });
+ const selfSend = message('b'.repeat(64));
+ await page.route('**/api/v1/**', async route => {
+  const path = new URL(route.request().url()).pathname;
+  if (path === `/api/v1/address/${owner}/mail`) return route.fulfill({ json: {
+   inboxMessages: [welcome, selfSend, message('c'.repeat(64))],
+   sentMessages: [welcome, selfSend],
+  }});
+  if (path === `/api/v1/tx/${txid}`) {
+   const carrier = Buffer.from(`pwm1:m:${html}`);
+   return route.fulfill({ json: { tx: { txid, status: { confirmed: true, block_time: 1778695081 },
+    vin: [{ prevout: { scriptpubkey_address: owner } }],
+    vout: [{ value: 546, scriptpubkey_address: owner }, { value: 0, scriptpubkey_type: 'op_return',
+     scriptpubkey_asm: `OP_RETURN ${carrier.toString('hex')}` }],
+   } }});
+  }
+  return route.fulfill({ json: { inboxMessages: [], sentMessages: [], records: [], listings: [] } });
+ });
+ await page.goto('/?desktop=1');
+ await page.getByPlaceholder('address or user@proofofwork.me').fill(owner);
+ await page.getByRole('button', { name: 'Open', exact: true }).click();
+ await expect(page.locator('.desktop-toolbar')).toContainText('2 public files');
+ await expect(page.locator('.status-text')).toContainText('desktop loaded. 2 public files.');
+ await expect(page.locator('.file-tile')).toHaveCount(3);
+ await expect(page.locator('.file-tile').filter({ hasText: 'System reference' })).toHaveCount(1);
+ await expect(page.locator('.file-inspector')).toContainText('Inbox · Sent');
+});

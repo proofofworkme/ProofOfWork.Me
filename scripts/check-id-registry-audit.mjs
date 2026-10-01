@@ -6,6 +6,7 @@ import { readFileSync } from "node:fs";
 import { mkdtemp, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import ts from "typescript";
 import {
   assertAuditMatchesCoverage,
   auditConfiguration,
@@ -713,10 +714,15 @@ assert.match(
   readerSource,
   /replay_metadata_present[\s\S]*raw_script_witness_present/u,
 );
-const parseIdEventSource = serverSource.match(
-  /(function parseIdEventPayload\(payload, network\) \{[\s\S]*?\n\})\n\nfunction shortAddress/u,
-)?.[1];
+const serverParsed = ts.createSourceFile(
+  "proof-api.mjs", serverSource, ts.ScriptTarget.Latest, true,
+);
+const parseIdEventNode = serverParsed.statements.find((node) =>
+  ts.isFunctionDeclaration(node) && node.name?.text === "parseIdEventPayload");
+const parseIdEventSource = parseIdEventNode?.getText(serverParsed);
 assert.ok(parseIdEventSource, "The pending ID parser must remain inspectable.");
+assert.doesNotMatch(parseIdEventSource, /function parseDnsEventPayload/u,
+  "a neighboring DNS declaration must not be swallowed by ID parser extraction");
 assert.equal(
   workAmoV5HasNoTextStorageNul({
     id: "safe",
@@ -918,12 +924,31 @@ assert.match(
 );
 assert.match(
   registryResolverSource,
-  /const eventPaymentOutputs = paymentOutputsBeforeIdProtocol\(vout\)/u,
+  /const protocolPrefix = options\.protocolPrefix \?\? ID_PROTOCOL_PREFIX/u,
+  "ID replay must retain its PWID default when sharing the resolver with DNS.",
+);
+assert.match(
+  registryResolverSource,
+  /const eventPaymentOutputs = paymentOutputsBeforeVout\(\s*vout,\s*firstRegistryProtocolOutputIndex\(vout, protocolPrefix\)/u,
+  "Payments must stop at the earliest registry carrier, including malformed earlier carriers.",
 );
 assert.doesNotMatch(
   registryResolverSource,
-  /paymentOutputsBeforeIdProtocol\(vout,\s*protocolVout/u,
+  /paymentOutputsBeforeVout\(vout,\s*protocolVout/u,
 );
+const cutoffNode = serverParsed.statements.find((node) =>
+  ts.isFunctionDeclaration(node) && node.name?.text === "firstRegistryProtocolOutputIndex");
+assert.ok(cutoffNode, "The shared registry carrier cutoff must remain inspectable.");
+const registryCarrierCutoff = Function("canonicalProtocolCandidateFromOutput",
+  `"use strict"; return (${cutoffNode.getText(serverParsed)});`)((output) => output.candidate);
+const carrierFixture = [
+  { candidate: { prefix: "pwid1:", decodeValid: false } },
+  { value: 1000 },
+  { candidate: { prefix: "pwid1:", decodeValid: true } },
+  { candidate: { prefix: "pwdns1:", decodeValid: true } },
+];
+assert.equal(registryCarrierCutoff(carrierFixture, "pwid1:"), 0);
+assert.equal(registryCarrierCutoff(carrierFixture, "pwdns1:"), 3);
 assert.match(source, /POW_ID_AUDIT_COVERAGE_TIMEOUT_MS/u);
 assert.match(source, /AbortSignal\.timeout\(timeoutMs\)/u);
 assert.match(source, /\{ flag: "wx" \}/u);

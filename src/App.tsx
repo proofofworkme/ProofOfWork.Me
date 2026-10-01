@@ -1230,6 +1230,12 @@ type PowTokenWalletBalance = {
   token: PowTokenDefinition;
 };
 
+type TokenMarketplaceWalletEvidence = {
+  scope: string;
+  balances: PowTokenWalletBalance[];
+  statuses: AccountTokenLaneStatuses;
+};
+
 type PowIdMarketplaceStats = {
   confirmedSales: number;
   confirmedVolumeSats: number;
@@ -11915,6 +11921,48 @@ function accountTokenLaneErrorForDefinition(
   return (lane ? statuses[lane].error : "") || statuses.all.error;
 }
 
+function tokenMarketplaceConfirmedWalletBalance(
+  token: PowTokenDefinition,
+  address: string,
+  network: BitcoinNetwork,
+  evidence: TokenMarketplaceWalletEvidence,
+) {
+  const note = (amount: string, lastVerified = false) =>
+    `Your ${lastVerified ? "last verified confirmed" : "confirmed"} balance ${amount} ${token.ticker}`;
+  if (
+    token.network !== network ||
+    evidence.scope !== tokenStateScopeKey({ network, walletScoped: true, address })
+  ) {
+    return note("Loading");
+  }
+  const lane = accountTokenLaneForDefinition(token);
+  const dedicatedStatus = lane ? evidence.statuses[lane] : undefined;
+  const authorityStatus = dedicatedStatus?.loaded && !dedicatedStatus.error
+    ? dedicatedStatus
+    : evidence.statuses.all;
+  if (!authorityStatus.loaded || authorityStatus.error) {
+    return note(
+      accountTokenLaneErrorForDefinition(token, evidence.statuses)
+        ? "Unavailable"
+        : "Loading",
+    );
+  }
+  const balance = evidence.balances.find(
+    (item) =>
+      item.token.network === network &&
+      item.token.tokenId === token.tokenId,
+  );
+  // Only a clean read of this account can establish an absent balance as zero.
+  // The market's compact movement preview cannot establish a wallet balance.
+  const lastVerified = authorityStatus.loading;
+  return note(
+    balance
+      ? tokenWalletBalanceDisplay(balance)
+      : tokenAmountDisplayFromUnits(token, 0n),
+    lastVerified,
+  );
+}
+
 function tokenReservedBalanceFor(
   listings: PowTokenListing[],
   tokenId: string,
@@ -16702,6 +16750,7 @@ async function fetchTokenState(
   addressHints: string[] = [],
   walletScoped = false,
   requireAuthoritativeWallet = false,
+  signal?: AbortSignal,
 ): Promise<PowTokenState> {
   const indexAddress = tokenIndexAddressForNetwork(targetNetwork);
   if (!indexAddress) {
@@ -16738,6 +16787,7 @@ async function fetchTokenState(
         ? "/api/v1/token-summary"
       : "/api/v1/token",
     targetNetwork,
+    { signal },
   );
   if (
     requireAuthoritativeWallet &&
@@ -22221,6 +22271,7 @@ export default function App() {
   });
   const [accountTokenLaneStatuses, setAccountTokenLaneStatuses] =
     useState<AccountTokenLaneStatuses>(() => emptyAccountTokenLaneStatuses());
+  const [accountTokenBalanceScope, setAccountTokenBalanceScope] = useState("");
   const [refreshing, setRefreshing] = useState(false);
   const [checkingBroadcasts, setCheckingBroadcasts] = useState(false);
   const allSentRef = useRef(allSent);
@@ -24433,6 +24484,14 @@ export default function App() {
       accountWorkWalletBalances,
     ],
   );
+  const marketplaceWalletEvidence = useMemo<TokenMarketplaceWalletEvidence>(
+    () => ({
+      scope: accountTokenBalanceScope,
+      balances: accountWalletBalances,
+      statuses: accountTokenLaneStatuses,
+    }),
+    [accountTokenBalanceScope, accountWalletBalances, accountTokenLaneStatuses],
+  );
   const accountWalletInvalidEvents = useMemo(
     () =>
       mergeTokenInvalidEventsByTxid(
@@ -26000,6 +26059,7 @@ export default function App() {
 
   useEffect(() => {
     if (!address || !tokenIndexAddress) {
+      setAccountTokenBalanceScope("");
       setAccountTokenState(emptyTokenState());
       setAccountWorkTokenState(emptyTokenState());
       setAccountPowbTokenState(emptyTokenState());
@@ -26010,6 +26070,11 @@ export default function App() {
 
     let cancelled = false;
     let requestId = 0;
+    let inFlight = false;
+    let controller: AbortController | undefined;
+    setAccountTokenBalanceScope(
+      tokenStateScopeKey({ network, walletScoped: true, address }),
+    );
     setAccountTokenState(emptyTokenState());
     setAccountWorkTokenState(emptyTokenState());
     setAccountPowbTokenState(emptyTokenState());
@@ -26017,7 +26082,11 @@ export default function App() {
     setAccountTokenLaneStatuses(emptyAccountTokenLaneStatuses());
 
     const loadAccountTokenBalances = () => {
+      if (inFlight) return;
+      inFlight = true;
       const currentRequestId = ++requestId;
+      const requestController = new AbortController();
+      controller = requestController;
       const loadAccountTokenLane = (
         lane: AccountTokenLane,
         load: () => Promise<PowTokenState>,
@@ -26028,7 +26097,7 @@ export default function App() {
           ...current,
           [lane]: { ...current[lane], loading: true },
         }));
-        void load()
+        return load()
           .then((state) => {
             if (!cancelled && currentRequestId === requestId) {
               commit(state);
@@ -26037,7 +26106,7 @@ export default function App() {
                   ...current,
                   [lane]: { error: "", loaded: true, loading: true },
                 }));
-                void options
+                return options
                   .refresh()
                   .then((freshState) => {
                     if (!cancelled && currentRequestId === requestId) {
@@ -26063,7 +26132,6 @@ export default function App() {
                       }));
                     }
                   });
-                return;
               }
               setAccountTokenLaneStatuses((current) => ({
                 ...current,
@@ -26088,63 +26156,84 @@ export default function App() {
           });
       };
 
-      loadAccountTokenLane(
-        "all",
-        () => fetchTokenState(network, false, "", true, [address], true),
-        setAccountTokenState,
-      );
-      loadAccountTokenLane(
-        "work",
-        () =>
-          fetchTokenState(
-            network,
-            false,
-            WORK_TOKEN_ID,
-            false,
-            [address],
-            true,
-            true,
-          ),
-        setAccountWorkTokenState,
-        {
-          refresh: () =>
+      const reads = [
+        loadAccountTokenLane(
+          "all",
+          () =>
             fetchTokenState(
               network,
+              false,
+              "",
               true,
+              [address],
+              true,
+              false,
+              requestController.signal,
+            ),
+          setAccountTokenState,
+        ),
+        loadAccountTokenLane(
+          "work",
+          () =>
+            fetchTokenState(
+              network,
+              false,
               WORK_TOKEN_ID,
               false,
               [address],
               true,
               true,
+              requestController.signal,
             ),
-        },
-      );
-      loadAccountTokenLane(
-        "powb",
-        () =>
-          fetchTokenState(
-            network,
-            false,
-            POWB_TOKEN_ID,
-            true,
-            [address],
-            true,
-          ),
-        setAccountPowbTokenState,
-      );
-      loadAccountTokenLane(
-        "incb",
-        () =>
-          fetchTokenState(
-            network,
-            false,
-            INCB_TOKEN_ID,
-            true,
-            [address],
-            true,
-          ),
-        setAccountIncbTokenState,
-      );
+          setAccountWorkTokenState,
+          {
+            refresh: () =>
+              fetchTokenState(
+                network,
+                true,
+                WORK_TOKEN_ID,
+                false,
+                [address],
+                true,
+                true,
+                requestController.signal,
+              ),
+          },
+        ),
+        loadAccountTokenLane(
+          "powb",
+          () =>
+            fetchTokenState(
+              network,
+              false,
+              POWB_TOKEN_ID,
+              true,
+              [address],
+              true,
+              false,
+              requestController.signal,
+            ),
+          setAccountPowbTokenState,
+        ),
+        loadAccountTokenLane(
+          "incb",
+          () =>
+            fetchTokenState(
+              network,
+              false,
+              INCB_TOKEN_ID,
+              true,
+              [address],
+              true,
+              false,
+              requestController.signal,
+            ),
+          setAccountIncbTokenState,
+        ),
+      ];
+      void Promise.all(reads).finally(() => {
+        if (!cancelled && currentRequestId === requestId) inFlight = false;
+      });
     };
 
     loadAccountTokenBalances();
@@ -26153,6 +26242,7 @@ export default function App() {
 
     return () => {
       cancelled = true;
+      controller?.abort();
       window.clearInterval(interval);
       window.removeEventListener("focus", loadAccountTokenBalances);
     };
@@ -27958,7 +28048,9 @@ export default function App() {
       const desktopMessages = welcome
         ? [welcome, ...publicMail.filter((message) => message.txid !== welcome.txid)]
         : publicMail;
-      const files = desktopFileSurfaceMessages(publicMail).filter(hasAttachment);
+      const files = desktopFileSurfaceMessages(desktopMessages).filter(
+        (message) => hasAttachment(message) && !message.systemReference,
+      );
       const profile: DesktopProfile = {
         address: resolved.paymentAddress,
         label: resolved.isId
@@ -36087,6 +36179,7 @@ export default function App() {
       <>
         {actionUi}
         <MarketplaceApp
+          walletEvidence={marketplaceWalletEvidence}
           accountStats={connectedAccountStats}
           address={address}
           btcUsd={tokenBtcUsd}
@@ -37198,6 +37291,7 @@ export default function App() {
           />
         ) : activeFolder === "marketplace" ? (
           <MarketplaceWorkspace
+            walletEvidence={marketplaceWalletEvidence}
             address={address}
             btcUsd={tokenBtcUsd}
             busy={busy}
@@ -49322,9 +49416,6 @@ type TokenMarketplaceRow = PowTokenDefinition & {
   pricePerToken: number;
   progress: number;
   transferCount: number;
-  walletBalance: ExactIntegerValue;
-  walletBalanceAtoms?: string;
-  walletBalanceSubatoms?: string;
 };
 
 type MarketplaceSortMode =
@@ -50115,7 +50206,6 @@ function TokenMarketActivityTabs({
 }
 
 function tokenMarketplaceRowsFor({
-  address,
   listingBookComplete = false,
   listings,
   mints,
@@ -50124,7 +50214,6 @@ function tokenMarketplaceRowsFor({
   tokens,
   transfers,
 }: {
-  address: string;
   listingBookComplete?: boolean;
   listings: PowTokenListing[];
   mints: PowTokenMint[];
@@ -50424,12 +50513,6 @@ function tokenMarketplaceRowsFor({
         current?.transferCount ?? 0,
         Number.isFinite(token.transferCount) ? Number(token.transferCount) : 0,
       );
-      const walletBalanceAtoms = address
-        ? [balances.get(address) ?? 0n, 0n].reduce((maximum, value) =>
-            value > maximum ? value : maximum,
-          )
-        : 0n;
-
       return {
         ...token,
         confirmedMints,
@@ -50452,15 +50535,6 @@ function tokenMarketplaceRowsFor({
           token,
         ),
         transferCount,
-        walletBalance: isWorkToken(token)
-          ? workNumberFromAtoms(walletBalanceAtoms)
-          : isBondTokenDefinition(token)
-            ? walletBalanceAtoms.toString()
-            : Number(walletBalanceAtoms),
-        walletBalanceAtoms: undefined,
-        walletBalanceSubatoms: isWorkToken(token)
-          ? walletBalanceAtoms.toString()
-          : undefined,
       };
     })
     .sort(
@@ -51923,6 +51997,7 @@ function TokenMarketRouteUnavailable({
 }
 
 function TokenMarketplacePanel({
+  walletEvidence,
   address,
   btcUsd,
   busy,
@@ -51953,6 +52028,7 @@ function TokenMarketplacePanel({
   workFloorLoading,
   workFloorQuote,
 }: {
+  walletEvidence: TokenMarketplaceWalletEvidence;
   address: string;
   btcUsd: number;
   busy: boolean;
@@ -51988,7 +52064,6 @@ function TokenMarketplacePanel({
   const [tokenMarketChartUnit, setTokenMarketChartUnit] =
     useState<WorkFloorChartUnit>("sats");
   const rows = useMemo(() => tokenMarketplaceRowsFor({
-    address,
     listingBookComplete: summary.listingBookComplete === true,
     listings,
     mints,
@@ -51996,7 +52071,7 @@ function TokenMarketplacePanel({
     sales,
     tokens,
     transfers,
-  }), [address, summary.listingBookComplete, listings, mints, network, sales, tokens, transfers]);
+  }), [summary.listingBookComplete, listings, mints, network, sales, tokens, transfers]);
   const marketplaceSummaryVerified = marketplaceSummaryHasVerifiedData(
     marketplaceSummaryReadState,
   );
@@ -53303,7 +53378,7 @@ function TokenMarketplacePanel({
                     Registry {shortAddress(token.registryAddress)} ·{" "}
                     {token.pendingMints.toLocaleString()} pending mints
                     {address
-                      ? ` · Your balance ${tokenAmountDisplay(token, token.walletBalance, token.walletBalanceAtoms, token.walletBalanceSubatoms)} ${token.ticker}`
+                      ? ` · ${tokenMarketplaceConfirmedWalletBalance(token, address, network, walletEvidence)}`
                       : ""}
                   </p>
                   <div className="id-record-actions">
@@ -54719,6 +54794,7 @@ function TokenMarketplacePanel({
 }
 
 function MarketplaceApp({
+  walletEvidence,
   accountStats = [],
   address,
   btcUsd,
@@ -54810,6 +54886,7 @@ function MarketplaceApp({
   onRetryMarketplaceSummary,
   onRefreshTokens,
 }: {
+  walletEvidence: TokenMarketplaceWalletEvidence;
   accountStats?: AppHeaderAccountStat[];
   address: string;
   btcUsd: number;
@@ -54979,7 +55056,6 @@ function MarketplaceApp({
   const bondSaleCount = confirmedBondSaleCount(tokens, "livenet");
   const sealedBondListings = bondListings.filter(tokenListingHasConfirmedSaleTicketSeal);
   const tokenMarketRows = tokenMarketplaceRowsFor({
-    address,
     listingBookComplete: tokenSummary.listingBookComplete === true,
     listings: creditTokenListings,
     mints: creditTokenMints,
@@ -55705,6 +55781,7 @@ function MarketplaceApp({
           />
         ) : (
           <TokenMarketplacePanel
+            walletEvidence={walletEvidence}
             address={address}
             btcUsd={btcUsd}
             busy={busy}
@@ -55740,6 +55817,7 @@ function MarketplaceApp({
 }
 
 function MarketplaceWorkspace({
+  walletEvidence,
   address,
   btcUsd,
   busy,
@@ -55827,6 +55905,7 @@ function MarketplaceWorkspace({
   onRetryMarketplaceSummary,
   onRefreshTokens,
 }: {
+  walletEvidence: TokenMarketplaceWalletEvidence;
   address: string;
   btcUsd: number;
   busy: boolean;
@@ -56013,7 +56092,6 @@ function MarketplaceWorkspace({
     (token) => token.network === network,
   ).length;
   const tokenMarketRows = tokenMarketplaceRowsFor({
-    address,
     listingBookComplete: tokenSummary.listingBookComplete === true,
     listings: creditTokenListings,
     mints: creditTokenMints,
@@ -56608,6 +56686,7 @@ function MarketplaceWorkspace({
             stats={tokenSummaryStats}
           />
           <TokenMarketplacePanel
+            walletEvidence={walletEvidence}
             address={address}
             btcUsd={btcUsd}
             busy={busy}
