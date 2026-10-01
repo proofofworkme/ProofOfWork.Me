@@ -9116,5 +9116,1081 @@
     "rootTest": "5/5 PASS",
     "productionRun": false,
     "scope": "Continuous admitted parent lock through exact transport and staging; separate later source admission; bounded child output and descendant cleanup"
+  },
+  "prepublicationBookVerificationCorrection": {
+    "failedAttempt": {
+      "format": "audit29-candidate-readonly-v1",
+      "ok": false,
+      "network": "livenet",
+      "startedAt": "2026-10-01T06:05:39.034Z",
+      "candidate": {
+        "commit": "e007b77dcad67667d30111432201923b29be49ed",
+        "tree": "3a4e3145462f0bc51f41ac0dc6a9f0601439d1fe",
+        "runtimeSha256": "4c2b0226675c162441e54eebe013f9dd0156e3c249afd2eb1a7fa7d93bd6b403"
+      },
+      "mode": "shadow",
+      "base": "http://127.0.0.1:18081",
+      "authority": "http://127.0.0.1:18081",
+      "limits": {
+        "pageRows": 200,
+        "pagesPerInventory": 32,
+        "listingRows": 2000,
+        "httpRequests": 96,
+        "coreRequests": 2100,
+        "bodyBytes": 33554432,
+        "httpBytes": 201326592,
+        "gateBytes": 67108864,
+        "milliseconds": 900000
+      },
+      "gates": {
+        "ids": true,
+        "events": true,
+        "parity": true
+      },
+      "gateReceipts": {
+        "ids": {
+          "exitCode": 0,
+          "stdoutBytes": 6581,
+          "stderrBytes": 0,
+          "stdoutSha256": "e47b39e1ba8b2791ca1f8dcf098ede747d2c0c244a541b6495d48e1f3554d518",
+          "scriptSha256": "244b001553bc26f9dda3220c8c5f57c114a5bb9c5d5f991c5703bfa20783b6d5",
+          "startedAt": "2026-10-01T06:05:39.225Z",
+          "completedAt": "2026-10-01T06:11:27.987Z",
+          "before": {
+            "height": 969403,
+            "hash": "00000000000000000001b2eb52a579cf33236c4a97b7782671822b2ac12dd443"
+          },
+          "after": {
+            "height": 969403,
+            "hash": "00000000000000000001b2eb52a579cf33236c4a97b7782671822b2ac12dd443"
+          },
+          "checkpointStable": true,
+          "counts": {
+            "Fetched transactions": 587,
+            "Confirmed winners": 508,
+            "Pending candidates": 20,
+            "Covered confirmed registry transactions": 565,
+            "Covered pending registry transactions": 22
+          }
+        },
+        "events": {
+          "exitCode": 0,
+          "stdoutBytes": 54108,
+          "stderrBytes": 0,
+          "stdoutSha256": "7a7752ae6dc0a9fc86d361be1440e2a698e634ee908db75087dc6a662d57c0c1",
+          "scriptSha256": "a5a82730ab8d7edde3d617362c960aa64155dbb090e5676a0906306d6a6d0bce",
+          "startedAt": "2026-10-01T06:11:28.029Z",
+          "completedAt": "2026-10-01T06:11:57.743Z",
+          "before": {
+            "height": 969403,
+            "hash": "00000000000000000001b2eb52a579cf33236c4a97b7782671822b2ac12dd443"
+          },
+          "after": {
+            "height": 969403,
+            "hash": "00000000000000000001b2eb52a579cf33236c4a97b7782671822b2ac12dd443"
+          },
+          "checkpointStable": true,
+          "checks": [
+            {
+              "name": "api-health-ok",
+              "ok": true,
+              "severity": "error"
+            },
+            {
+              "name": "ledger-green",
+              "ok": true,
+              "severity": "error"
+            },
+            {
+              "name": "ledger-covers-node-tip",
+              "ok": true,
+              "severity": "error"
+            },
+            {
+              "name": "ledger-has-no-missing-log-events",
+              "ok": true,
+              "severity": "error"
+            },
+            {
+              "name": "ledger-has-required-log-coverage-checks",
+              "ok": true,
+              "severity": "error"
+            },
+            {
+              "name": "db-confirmed-transactions-cover-canonical-action-txids",
+              "ok": true,
+              "severity": "error"
+            },
+            {
+              "name": "db-events-cover-ledger-confirmed-activity",
+              "ok": true,
+              "severity": "error"
+            },
+            {
+              "name": "all-confirmed-events-have-transaction-row",
+              "ok": true,
+              "severity": "error"
+            },
+            {
+              "name": "all-confirmed-events-join-confirmed-transaction",
+              "ok": true,
+              "severity": "error"
+            },
+            {
+              "name": "all-confirmed-events-have-raw-transaction-or-payload",
+              "ok": true,
+              "severity": "error"
+            },
+            {
+              "name": "all-confirmed-transactions-have-raw-transaction",
+              "ok": true,
+              "severity": "error"
+            },
+            {
+              "name": "event-search-index-populated",
+              "ok": true,
+              "severity": "error"
+            },
+            {
+              "name": "recent-confirmed-transactions-have-block-metadata",
+              "ok": true,
+              "severity": "error"
+            },
+            {
+              "name": "all-confirmed-transactions-have-block-metadata",
+              "ok": true,
+              "severity": "error"
+            },
+            {
+              "name": "op-return-table-populated",
+              "ok": true,
+              "severity": "warning"
+            },
+            {
+              "name": "work-growth-network-value-match",
+              "ok": true,
+              "severity": "error"
+            },
+            {
+              "name": "marketplace-work-network-value-match",
+              "ok": true,
+              "severity": "error"
+            },
+            {
+              "name": "inception-launch-ready",
+              "ok": true,
+              "severity": "error"
+            },
+            {
+              "name": "infinity-nonzero",
+              "ok": true,
+              "severity": "error"
+            },
+            {
+              "name": "reported-tx-db-reported WORK buy 8429",
+              "ok": true,
+              "severity": "error"
+            },
+            {
+              "name": "reported-tx-log-reported WORK buy 8429",
+              "ok": true,
+              "severity": "error"
+            },
+            {
+              "name": "reported-tx-history-reported WORK buy 8429",
+              "ok": true,
+              "severity": "error"
+            },
+            {
+              "name": "reported-tx-db-reported WORK buy 5dcd",
+              "ok": true,
+              "severity": "error"
+            },
+            {
+              "name": "reported-tx-log-reported WORK buy 5dcd",
+              "ok": true,
+              "severity": "error"
+            },
+            {
+              "name": "reported-tx-history-reported WORK buy 5dcd",
+              "ok": true,
+              "severity": "error"
+            },
+            {
+              "name": "reported-tx-db-reported WORK buy d946",
+              "ok": true,
+              "severity": "error"
+            },
+            {
+              "name": "reported-tx-log-reported WORK buy d946",
+              "ok": true,
+              "severity": "error"
+            },
+            {
+              "name": "reported-tx-history-reported WORK buy d946",
+              "ok": true,
+              "severity": "error"
+            },
+            {
+              "name": "reported-tx-db-reported WORK buy 4e59",
+              "ok": true,
+              "severity": "error"
+            },
+            {
+              "name": "reported-tx-log-reported WORK buy 4e59",
+              "ok": true,
+              "severity": "error"
+            },
+            {
+              "name": "reported-tx-history-reported WORK buy 4e59",
+              "ok": true,
+              "severity": "error"
+            },
+            {
+              "name": "reported-tx-db-reported WORK buy 2e57",
+              "ok": true,
+              "severity": "error"
+            },
+            {
+              "name": "reported-tx-log-reported WORK buy 2e57",
+              "ok": true,
+              "severity": "error"
+            },
+            {
+              "name": "reported-tx-history-reported WORK buy 2e57",
+              "ok": true,
+              "severity": "error"
+            },
+            {
+              "name": "reported-tx-db-Carbonz reported WORK buy",
+              "ok": true,
+              "severity": "error"
+            },
+            {
+              "name": "reported-tx-log-Carbonz reported WORK buy",
+              "ok": true,
+              "severity": "error"
+            },
+            {
+              "name": "reported-tx-history-Carbonz reported WORK buy",
+              "ok": true,
+              "severity": "error"
+            },
+            {
+              "name": "reported-tx-db-Carbonz delayed WORK transfer",
+              "ok": true,
+              "severity": "error"
+            },
+            {
+              "name": "reported-tx-log-Carbonz delayed WORK transfer",
+              "ok": true,
+              "severity": "error"
+            },
+            {
+              "name": "reported-tx-history-Carbonz delayed WORK transfer",
+              "ok": true,
+              "severity": "error"
+            },
+            {
+              "name": "reported-tx-db-Carbonz POWB transfer",
+              "ok": true,
+              "severity": "error"
+            },
+            {
+              "name": "reported-tx-log-Carbonz POWB transfer",
+              "ok": true,
+              "severity": "error"
+            },
+            {
+              "name": "reported-tx-history-Carbonz POWB transfer",
+              "ok": true,
+              "severity": "error"
+            },
+            {
+              "name": "reported-tx-db-Gullish POWB listing",
+              "ok": true,
+              "severity": "error"
+            },
+            {
+              "name": "reported-tx-log-Gullish POWB listing",
+              "ok": true,
+              "severity": "error"
+            },
+            {
+              "name": "reported-tx-history-Gullish POWB listing",
+              "ok": true,
+              "severity": "error"
+            },
+            {
+              "name": "reported-tx-db-spent seal listing closure",
+              "ok": true,
+              "severity": "error"
+            },
+            {
+              "name": "reported-tx-log-spent seal listing closure",
+              "ok": true,
+              "severity": "error"
+            },
+            {
+              "name": "reported-tx-history-spent seal listing closure",
+              "ok": true,
+              "severity": "error"
+            }
+          ],
+          "checkCount": 49
+        },
+        "parity": {
+          "exitCode": 0,
+          "stdoutBytes": 34398067,
+          "stderrBytes": 0,
+          "stdoutSha256": "df7fef6da22653228255b0869517902bf4d8b32063529376eca71e7e90043dee",
+          "scriptSha256": "450e5361ae5ecdd8dde6e434723366e3d4cc1cafae4675e9e7760c3d1cac90ac",
+          "startedAt": "2026-10-01T06:11:57.772Z",
+          "completedAt": "2026-10-01T06:12:51.386Z",
+          "before": {
+            "height": 969403,
+            "hash": "00000000000000000001b2eb52a579cf33236c4a97b7782671822b2ac12dd443"
+          },
+          "after": {
+            "height": 969403,
+            "hash": "00000000000000000001b2eb52a579cf33236c4a97b7782671822b2ac12dd443"
+          },
+          "checkpointStable": true,
+          "checks": [
+            {
+              "name": "work-amo-v5-declaration-evidence",
+              "ok": true,
+              "severity": "error"
+            },
+            {
+              "name": "work-amo-v5-canonical-positions",
+              "ok": true,
+              "severity": "warning"
+            },
+            {
+              "name": "work-amo-v5-migration",
+              "ok": false,
+              "severity": "warning"
+            },
+            {
+              "name": "work-amo-v5-usd-quote-head",
+              "ok": false,
+              "severity": "warning"
+            },
+            {
+              "name": "work-amo-v5-write-readiness",
+              "ok": true,
+              "severity": "error"
+            },
+            {
+              "name": "canonical-ledger-green",
+              "ok": true,
+              "severity": "error"
+            },
+            {
+              "name": "canonical-log-complete",
+              "ok": true,
+              "severity": "error"
+            },
+            {
+              "name": "database-has-canonical-summary-snapshot",
+              "ok": true,
+              "severity": "error"
+            },
+            {
+              "name": "canonical-summary-snapshot-current",
+              "ok": true,
+              "severity": "error"
+            },
+            {
+              "name": "transactions-cover-canonical-activity-txids",
+              "ok": true,
+              "severity": "error"
+            },
+            {
+              "name": "confirmed-transaction-status-lag",
+              "ok": true,
+              "severity": "warning"
+            },
+            {
+              "name": "confirmed-transactions-have-canonical-block-proof",
+              "ok": true,
+              "severity": "error"
+            },
+            {
+              "name": "nonconfirmed-transactions-have-no-block-metadata",
+              "ok": true,
+              "severity": "error"
+            },
+            {
+              "name": "confirmed-events-match-canonical-parent-metadata",
+              "ok": true,
+              "severity": "error"
+            },
+            {
+              "name": "nonconfirmed-events-have-no-block-metadata",
+              "ok": true,
+              "severity": "error"
+            },
+            {
+              "name": "canonical-confirmed-transactions-own-no-volatile-pwid-events",
+              "ok": true,
+              "severity": "error"
+            },
+            {
+              "name": "event-payload-status-matches-relational-status",
+              "ok": true,
+              "severity": "error"
+            },
+            {
+              "name": "events-cover-canonical-activity",
+              "ok": true,
+              "severity": "error"
+            },
+            {
+              "name": "credit-definitions-match-canonical",
+              "ok": true,
+              "severity": "error"
+            },
+            {
+              "name": "event-search-index-populated",
+              "ok": true,
+              "severity": "error"
+            },
+            {
+              "name": "rendered-event-participant-semantic-parity",
+              "ok": true,
+              "severity": "error"
+            },
+            {
+              "name": "rendered-event-reference-semantic-parity",
+              "ok": true,
+              "severity": "error"
+            },
+            {
+              "name": "rendered-mail-projection-semantic-parity",
+              "ok": true,
+              "severity": "error"
+            },
+            {
+              "name": "work-delist-regression-transaction-indexed",
+              "ok": true,
+              "severity": "error"
+            },
+            {
+              "name": "work-delist-regression-event-indexed",
+              "ok": true,
+              "severity": "error"
+            },
+            {
+              "name": "holder-projections-present",
+              "ok": true,
+              "severity": "error"
+            },
+            {
+              "name": "log-history-first-page-read-eligibility",
+              "ok": true,
+              "severity": "error"
+            },
+            {
+              "name": "log-history-first-page-read-reason",
+              "ok": true,
+              "severity": "error"
+            },
+            {
+              "name": "log-history-kind-token-sale-read-eligibility",
+              "ok": true,
+              "severity": "error"
+            },
+            {
+              "name": "log-history-kind-token-sale-read-reason",
+              "ok": true,
+              "severity": "error"
+            },
+            {
+              "name": "log-history-kind-token-sale-snapshot-pinned",
+              "ok": true,
+              "severity": "error"
+            },
+            {
+              "name": "log-history-query-infinity-bond-read-eligibility",
+              "ok": true,
+              "severity": "error"
+            },
+            {
+              "name": "log-history-query-infinity-bond-read-reason",
+              "ok": true,
+              "severity": "error"
+            },
+            {
+              "name": "log-history-query-infinity-bond-snapshot-pinned",
+              "ok": true,
+              "severity": "error"
+            },
+            {
+              "name": "log-history-query-pagination-gap-infinity-bond-read-eligibility",
+              "ok": true,
+              "severity": "error"
+            },
+            {
+              "name": "log-history-query-pagination-gap-infinity-bond-read-reason",
+              "ok": true,
+              "severity": "error"
+            },
+            {
+              "name": "log-history-query-pagination-gap-infinity-bond-snapshot-pinned",
+              "ok": true,
+              "severity": "error"
+            },
+            {
+              "name": "log-history-query-work-transfer-read-eligibility",
+              "ok": true,
+              "severity": "error"
+            },
+            {
+              "name": "log-history-query-work-transfer-read-reason",
+              "ok": true,
+              "severity": "error"
+            },
+            {
+              "name": "log-history-query-work-transfer-snapshot-pinned",
+              "ok": true,
+              "severity": "error"
+            },
+            {
+              "name": "log-history-query-work-delist-read-eligibility",
+              "ok": true,
+              "severity": "error"
+            },
+            {
+              "name": "log-history-query-work-delist-read-reason",
+              "ok": true,
+              "severity": "error"
+            },
+            {
+              "name": "log-history-query-work-delist-snapshot-pinned",
+              "ok": true,
+              "severity": "error"
+            },
+            {
+              "name": "log-history-paginated-history-read-eligibility",
+              "ok": true,
+              "severity": "error"
+            },
+            {
+              "name": "log-history-paginated-history-read-reason",
+              "ok": true,
+              "severity": "error"
+            },
+            {
+              "name": "log-history-paginated-history-snapshot-pinned",
+              "ok": true,
+              "severity": "error"
+            },
+            {
+              "name": "log-history-snapshot-cursor-stability",
+              "ok": true,
+              "severity": "error"
+            },
+            {
+              "name": "registry-canonical-fresh-authority",
+              "ok": true,
+              "severity": "error"
+            },
+            {
+              "name": "registry-history-records-parity",
+              "ok": true,
+              "severity": "error"
+            },
+            {
+              "name": "registry-history-records-current-relational",
+              "ok": true,
+              "severity": "error"
+            },
+            {
+              "name": "registry-history-listings-parity",
+              "ok": true,
+              "severity": "error"
+            },
+            {
+              "name": "registry-history-listings-current-relational",
+              "ok": true,
+              "severity": "error"
+            },
+            {
+              "name": "registry-history-sales-parity",
+              "ok": true,
+              "severity": "error"
+            },
+            {
+              "name": "registry-history-sales-current-relational",
+              "ok": true,
+              "severity": "error"
+            },
+            {
+              "name": "registry-history-activity-parity",
+              "ok": true,
+              "severity": "error"
+            },
+            {
+              "name": "registry-history-activity-current-relational",
+              "ok": true,
+              "severity": "error"
+            },
+            {
+              "name": "registry-history-records-search-parity",
+              "ok": true,
+              "severity": "error"
+            },
+            {
+              "name": "registry-history-records-search-current-relational",
+              "ok": true,
+              "severity": "error"
+            },
+            {
+              "name": "registry-history-records-page-2-parity",
+              "ok": true,
+              "severity": "error"
+            },
+            {
+              "name": "registry-history-records-page-2-current-relational",
+              "ok": true,
+              "severity": "error"
+            },
+            {
+              "name": "registry-confirmed-records-semantic-parity",
+              "ok": true,
+              "severity": "error"
+            },
+            {
+              "name": "registry-confirmed-listings-semantic-parity",
+              "ok": true,
+              "severity": "error"
+            },
+            {
+              "name": "registry-confirmed-sales-semantic-parity",
+              "ok": true,
+              "severity": "error"
+            },
+            {
+              "name": "registry-confirmed-activity-semantic-parity",
+              "ok": true,
+              "severity": "error"
+            },
+            {
+              "name": "registry-pending-visibility-parity",
+              "ok": true,
+              "severity": "error"
+            },
+            {
+              "name": "registry-confirmed-raw-evidence-complete",
+              "ok": true,
+              "severity": "error"
+            },
+            {
+              "name": "registry-payload-current-relational",
+              "ok": true,
+              "severity": "error"
+            },
+            {
+              "name": "growth-summary-snapshot-parity",
+              "ok": true,
+              "severity": "error"
+            },
+            {
+              "name": "inception-summary-snapshot-parity",
+              "ok": true,
+              "severity": "error"
+            },
+            {
+              "name": "infinity-summary-snapshot-parity",
+              "ok": true,
+              "severity": "error"
+            },
+            {
+              "name": "marketplace-summary-snapshot-parity",
+              "ok": true,
+              "severity": "error"
+            },
+            {
+              "name": "work-floor-snapshot-parity",
+              "ok": true,
+              "severity": "error"
+            },
+            {
+              "name": "work-summary-snapshot-parity",
+              "ok": true,
+              "severity": "error"
+            },
+            {
+              "name": "token-state-read-eligibility",
+              "ok": true,
+              "severity": "error"
+            },
+            {
+              "name": "token-state-current-relational",
+              "ok": true,
+              "severity": "error"
+            },
+            {
+              "name": "marketplace-token-state-lifecycle-present",
+              "ok": true,
+              "severity": "error"
+            },
+            {
+              "name": "work-token-state-current-relational",
+              "ok": true,
+              "severity": "error"
+            },
+            {
+              "name": "event-history-mail-protocol-db-page",
+              "ok": true,
+              "severity": "error"
+            },
+            {
+              "name": "event-history-credit-protocol-db-page",
+              "ok": true,
+              "severity": "error"
+            },
+            {
+              "name": "event-history-id-protocol-db-page",
+              "ok": true,
+              "severity": "error"
+            },
+            {
+              "name": "event-history-work-transfer-search-db-page",
+              "ok": true,
+              "severity": "error"
+            },
+            {
+              "name": "event-history-work-delist-search-db-page",
+              "ok": true,
+              "severity": "error"
+            },
+            {
+              "name": "address-mail-otc-db-page",
+              "ok": true,
+              "severity": "error"
+            },
+            {
+              "name": "address-mail-carbonz-db-page",
+              "ok": true,
+              "severity": "error"
+            },
+            {
+              "name": "address-mail-pinoratiko-db-page",
+              "ok": true,
+              "severity": "error"
+            },
+            {
+              "name": "token-history-all-mints-read-eligibility",
+              "ok": true,
+              "severity": "error"
+            },
+            {
+              "name": "token-history-all-mints-current-relational",
+              "ok": true,
+              "severity": "error"
+            },
+            {
+              "name": "token-history-all-transfers-read-eligibility",
+              "ok": true,
+              "severity": "error"
+            },
+            {
+              "name": "token-history-all-transfers-current-relational",
+              "ok": true,
+              "severity": "error"
+            },
+            {
+              "name": "token-history-work-transfer-query-read-eligibility",
+              "ok": true,
+              "severity": "error"
+            },
+            {
+              "name": "token-history-work-transfer-query-current-relational",
+              "ok": true,
+              "severity": "error"
+            },
+            {
+              "name": "token-history-all-invalid-events-read-eligibility",
+              "ok": true,
+              "severity": "error"
+            },
+            {
+              "name": "token-history-all-invalid-events-current-relational",
+              "ok": true,
+              "severity": "error"
+            },
+            {
+              "name": "token-history-work-holders-read-eligibility",
+              "ok": true,
+              "severity": "error"
+            },
+            {
+              "name": "token-history-work-holders-current-relational",
+              "ok": true,
+              "severity": "error"
+            },
+            {
+              "name": "token-history-work-market-log-read-eligibility",
+              "ok": true,
+              "severity": "error"
+            },
+            {
+              "name": "token-history-work-market-log-current-relational",
+              "ok": true,
+              "severity": "error"
+            },
+            {
+              "name": "token-history-work-delist-closed-query-read-eligibility",
+              "ok": true,
+              "severity": "error"
+            },
+            {
+              "name": "token-history-work-delist-closed-query-contains-expected-event",
+              "ok": true,
+              "severity": "error"
+            },
+            {
+              "name": "token-history-work-delist-closed-query-current-relational",
+              "ok": true,
+              "severity": "error"
+            },
+            {
+              "name": "token-history-non-work-holders-current-relational",
+              "ok": true,
+              "severity": "error"
+            },
+            {
+              "name": "tx-status-confirmed-sample-parity",
+              "ok": true,
+              "severity": "error"
+            }
+          ],
+          "checkCount": 102
+        }
+      },
+      "reads": [
+        {
+          "route": "/api/v1/internal/registry-parity",
+          "status": 200,
+          "bytes": 1930167,
+          "sha256": "c072866e46f137e09cc9432df149eb73e4a24b8ee24d0dedaf40e835c2d2160f"
+        },
+        {
+          "route": "/api/v1/ids/ross",
+          "status": 200,
+          "bytes": 1436,
+          "sha256": "b9eac9b830ba748a37749f3ac4449d5ef2a1336bf24bbd838736724343f0b2db"
+        },
+        {
+          "route": "/api/v1/token",
+          "status": 200,
+          "bytes": 1640152,
+          "sha256": "1f69ea75e0bcab5e9edf510c123f47261a5795b925a7be0bff0fe5f61d536663"
+        },
+        {
+          "route": "/api/v1/token-history",
+          "status": 200,
+          "bytes": 6731333,
+          "sha256": "d8718e688f7aafa74d85bbada5f5a04c17f6f0521a30972a5daa5ae8a1911225"
+        },
+        {
+          "route": "/api/v1/token-history",
+          "status": 200,
+          "bytes": 6733253,
+          "sha256": "61fb0e1ba4c5bb76a0a2d09f2122ca21cf8985cb25244b00c79b259a4dba3c85"
+        },
+        {
+          "route": "/api/v1/token-history",
+          "status": 200,
+          "bytes": 6757385,
+          "sha256": "aa91a8706b20df970373af6262f64faf29d6bee7e9482be0b6ee9760663844cb"
+        },
+        {
+          "route": "/api/v1/token-history",
+          "status": 200,
+          "bytes": 6776109,
+          "sha256": "35240b360747e68ca0fbd06544040a00b026ea8cd72e659a15a9eb7881e6d82b"
+        },
+        {
+          "route": "/api/v1/token-history",
+          "status": 200,
+          "bytes": 6740186,
+          "sha256": "4970256b7b93f6ffdf3701be4636c6e2863926175cca9390810037f2cc20c393"
+        },
+        {
+          "route": "/api/v1/token-history",
+          "status": 200,
+          "bytes": 3223605,
+          "sha256": "c5031978c8d243bd44f14425d7c2604662e5e3f13fb0d8131153f5d0336e2eac"
+        },
+        {
+          "route": "/api/v1/token-history",
+          "status": 200,
+          "bytes": 3224732,
+          "sha256": "1d260949f872dac8f83da52697880639eaa5734a1762ccf5e008a6c5c10c350d"
+        },
+        {
+          "route": "/api/v1/token-history",
+          "status": 200,
+          "bytes": 3243318,
+          "sha256": "3ff9548e9272c4a59b0e03c47aeb8a9e3abd7cacb8643fc83da4ed501fdb76cc"
+        },
+        {
+          "route": "/api/v1/token-history",
+          "status": 200,
+          "bytes": 3254762,
+          "sha256": "c750c6506d25efc780eabdeb32ecf6747b032d78661925d957c6cb13f9be5614"
+        },
+        {
+          "route": "/api/v1/token-history",
+          "status": 200,
+          "bytes": 3237145,
+          "sha256": "645908115298a01ac5df9e20c064d10b2a0fda73d08557adf4293d35084fa010"
+        }
+      ],
+      "backupQuietChecks": [
+        {
+          "checkedAt": "2026-10-01T06:05:39.162Z",
+          "inactive": true,
+          "noPgDumpWriter": true
+        },
+        {
+          "checkedAt": "2026-10-01T06:05:39.223Z",
+          "inactive": true,
+          "noPgDumpWriter": true
+        },
+        {
+          "checkedAt": "2026-10-01T06:11:28.028Z",
+          "inactive": true,
+          "noPgDumpWriter": true
+        },
+        {
+          "checkedAt": "2026-10-01T06:11:57.769Z",
+          "inactive": true,
+          "noPgDumpWriter": true
+        },
+        {
+          "checkedAt": "2026-10-01T06:13:07.273Z",
+          "inactive": true,
+          "noPgDumpWriter": true
+        }
+      ],
+      "qualification": "Candidate runtime identity is supplied by the guarded launcher and separately bound by the release controller; this driver performs no signing, broadcast, replay repair or data writes.",
+      "checkpointBefore": {
+        "height": 969403,
+        "hash": "00000000000000000001b2eb52a579cf33236c4a97b7782671822b2ac12dd443"
+      },
+      "pendingDates": {
+        "pendingRecords": 20,
+        "historicalAuditBaseline": 20,
+        "deltaFromAuditBaseline": 0,
+        "recordsSha256": "28243fc2b065752d8a8ffad3e416f56f35a36478582f53e467ab1745412254f8",
+        "confirmedRecords": 508,
+        "qualification": "Retained indexed event time is checked separately from current Core admission; it is not proof of first-ever network observation."
+      },
+      "exactId": {
+        "id": "ross",
+        "confirmed": false,
+        "status": "pending",
+        "payloadSha256": "aeb213cfb4c89d6a1525b15e914982cb40026f20614a5f73db403d440c1457db"
+      },
+      "wallet": {
+        "ready": true,
+        "balanceVerified": true,
+        "capacityVerified": true,
+        "verificationStatus": "passed",
+        "status": 200,
+        "confirmedBalanceSubatoms": "9999997003878536",
+        "spendableBalanceSubatoms": "9999970087899719",
+        "reservedBalanceSubatoms": "26915978817",
+        "pendingDeltaSubatoms": "0",
+        "payloadSha256": "0479300608bc3674c182693a1864c3b8f70bfb07e509d4f5a95f39609462c170",
+        "checkpoint": {
+          "before": {
+            "height": 969403,
+            "hash": "00000000000000000001b2eb52a579cf33236c4a97b7782671822b2ac12dd443"
+          },
+          "after": {
+            "height": 969403,
+            "hash": "00000000000000000001b2eb52a579cf33236c4a97b7782671822b2ac12dd443"
+          },
+          "stable": true
+        }
+      },
+      "failure": "FULL_MEMBERSHIP_DIGEST_CHANGED",
+      "needsAttention": "review-preserved-receipt",
+      "checkpointAfter": {
+        "height": 969403,
+        "hash": "00000000000000000001b2eb52a579cf33236c4a97b7782671822b2ac12dd443"
+      },
+      "completedAt": "2026-10-01T06:14:15.453Z",
+      "counters": {
+        "httpCalls": 13,
+        "coreCalls": 10,
+        "bytes": 53498824
+      }
+    },
+    "completeNormalizationProof": {
+      "schema": "proof-of-work-full-book-declared-seal-commitment-diagnostic-v1",
+      "ok": true,
+      "observedUtc": "2026-10-01T06:20:40.790216+00:00",
+      "completedUtc": "2026-10-01T06:21:50.242284+00:00",
+      "checkpointBefore": {
+        "height": 969404,
+        "hash": "0000000000000000000069c18c84d21a6fda9426c7077d1c85bc70f70ee37032"
+      },
+      "checkpointAfter": {
+        "height": 969404,
+        "hash": "0000000000000000000069c18c84d21a6fda9426c7077d1c85bc70f70ee37032"
+      },
+      "stableCheckpoint": true,
+      "requests": 10,
+      "responseBytes": 49921828,
+      "elapsedMs": 69452,
+      "scope": "Read-only finished e007 shadow WORK complete full/display-v1 books; current all rows, not fixed historical count. No configuration/data mutation or environment reads. Independent per-ticket RPC is deferred to fresh candidate driver.",
+      "candidate": {
+        "commit": "e007b77dcad67667d30111432201923b29be49ed",
+        "tree": "3a4e3145462f0bc51f41ac0dc6a9f0601439d1fe"
+      },
+      "captureSha256": "d2d02a010d34d5c39913224cb1e3e5236c2af3a9ef9f93e88297b048f7562dc9",
+      "sourceBindings": {
+        "deploy/audit5/probe-candidate.mjs": "edc672e0327248c55eb073f4d720e37a8ea0ac33f61027456b8cf19609aa6ab1",
+        "scripts/check-audit5-candidate-probe.mjs": "484a791e64f91e0e859b49cb91a90df6be083b92adbe5b706cda36874b88092e",
+        "server/proof-api.mjs": "fb179dc39f5e989a46a53f6c2f6e35f6d396873bbe7decacc1d5b2bb5fd536b6",
+        "server/db/proof-index-reader.mjs": "f7197081cf35a0b61a3c0f28cb2ba8e5a3637e0c120e12b81e209e8151599dbc",
+        "server/canonical-seal-time.mjs": "93703ab62b0c9e527569e8baefaa01e09037ce1b82e4667fe838b04fb0dfa4db"
+      },
+      "fullPages": 5,
+      "displayPages": 5,
+      "rawWireRecordHashMatches": 0,
+      "previousTenFieldRecordHashMatches": 958,
+      "sourceDeclaredFormRecordHashMatches": 999,
+      "shapeCounts": {
+        "{\"status\":\"sealing\",\"sealConfirmed\":true,\"hasSealAt\":true}": 958,
+        "{\"status\":\"active\",\"sealConfirmed\":false,\"hasSealAt\":false}": 41
+      },
+      "book": {
+        "listings": 999,
+        "fullRowsSha256": "50a38b50e3f908366b5d60f2f5dae95ed93517730acaef4c91ba66e0cd651afc",
+        "savedRowBytes": 17555884,
+        "commitmentReconstruction": {
+          "model": "source-declared-lifecycle-and-seal-patch-v1",
+          "possibleSealPatchForms": 2,
+          "missingSealAtReconstructedNull": 41,
+          "qualification": "The wire omits undefined sealAt. Only the source-declared absent-patch or owned-null commitment is selected by each full-record hash; membership and snapshot are independently recomputed."
+        },
+        "sourceDigestQualification": "Bound to full-route snapshot; excluded historical source rows are not independently replayed."
+      }
+    },
+    "helperSha256": "edc672e0327248c55eb073f4d720e37a8ea0ac33f61027456b8cf19609aa6ab1",
+    "fixtureSha256": "484a791e64f91e0e859b49cb91a90df6be083b92adbe5b706cda36874b88092e",
+    "rootLocalTests": {
+      "probe": "22/22 PASS",
+      "candidate": "9/9 PASS"
+    },
+    "productionLogicOrDataChanged": false
   }
 }

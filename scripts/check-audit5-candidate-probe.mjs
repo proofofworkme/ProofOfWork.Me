@@ -1,10 +1,13 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { readFile } from 'node:fs/promises';
+import vm from 'node:vm';
+import ts from 'typescript';
 import { apiBase, canonicalJson, compareCandidate, coreCliExecFileInvocation, coreCliInvocation, decimalQ8, decodeCoreCliPayload, digest, FIXTURE, integer, inventory, listingCommitmentRecord,
   verifyBonds, verifyBookPair, verifyBoost, verifyCounts, verifyDirectory, verifyWallet,
   verifyWalletListingScopes } from '../deploy/audit5/probe-candidate.mjs';
 import { registryCountsProjection, tokenDirectoryProjection, tokenListingDisplayProjection } from '../server/read-projections.mjs';
+import { canonicalSealTime } from '../server/canonical-seal-time.mjs';
 
 const h = (n) => String(n).padStart(64, '0');
 const WORK = 'd4e5ebf11d104d6a63fb74e42094364b25a5f7199a09e5c0e71408972466a8b8';
@@ -159,6 +162,71 @@ test('commitment reconstructs only declared wire omissions and preserves present
   const { full, display } = book();
   display.rows[0].displayEvidence.fullRecordSha256 = h(99);
   assert.throws(() => verifyBookPair(full, display), /FULL_RECORD_DIGEST_CHANGED/u);
+});
+test('actual AST seal producer preserves unsealed, sealed and omitted invalid-evidence forms', async () => {
+  const readerText = await readFile(new URL('../server/db/proof-index-reader.mjs', import.meta.url), 'utf8');
+  const apiText = await readFile(new URL('../server/proof-api.mjs', import.meta.url), 'utf8');
+  const reader = ts.createSourceFile('reader.mjs', readerText, ts.ScriptTarget.Latest, true, ts.ScriptKind.JS);
+  const api = ts.createSourceFile('api.mjs', apiText, ts.ScriptTarget.Latest, true, ts.ScriptKind.JS);
+  const patches = [], times = [], builders = [], serializers = [];
+  const optional = ['buyerAddress', 'closedAt', 'saleTxid', 'saleAt', 'saleBlockHash', 'saleBlockHeight',
+    'saleBlockIndex', 'saleProtocolVout', 'saleRecordOrdinal', 'saleTransactionBlockHeight'];
+  const visit = (node) => {
+    if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name)) {
+      if (node.name.text === 'sealEvidencePatch') patches.push(node.initializer);
+      if (node.name.text === 'projectedSealAt') times.push(node.initializer);
+    }
+    if (ts.isObjectLiteralExpression(node) && node.properties.some((property) =>
+      ts.isSpreadAssignment(property) && property.expression.getText(reader) === 'sealEvidencePatch') &&
+      optional.every((name) => node.properties.some((property) =>
+        ts.isPropertyAssignment(property) && property.name.getText(reader) === name))) builders.push(node);
+    ts.forEachChild(node, visit);
+  };
+  visit(reader);
+  const visitApi = (node) => {
+    if (ts.isFunctionDeclaration(node) && node.name?.text === 'checkpointCursorCanonicalJson') serializers.push(node);
+    ts.forEachChild(node, visitApi);
+  };
+  visitApi(api);
+  assert.equal(patches.length, 2); assert.equal(times.length, 2); assert.equal(builders.length, 1); assert.equal(serializers.length, 1);
+  const serverDigest = (value) => {
+    const context = vm.createContext({ value, compareCanonicalUtf8: (a,b) => Buffer.compare(Buffer.from(a), Buffer.from(b)) });
+    const serialized = vm.runInContext(`${serializers[0].getText(api)}; checkpointCursorCanonicalJson(value);`, context);
+    return digest(JSON.parse(serialized));
+  };
+  for (let index = 0; index < patches.length; index++) {
+    assert(ts.isConditionalExpression(patches[index]));
+    assert.equal(patches[index].condition.getText(reader), 'invalidConfirmedSealEvidence');
+    assert.equal(patches[index].whenTrue.getText(reader), '{}');
+    assert.equal(patches[index].whenFalse.properties.find((x) => ts.isPropertyAssignment(x) && x.name.getText(reader) === 'sealAt').initializer.getText(reader), 'projectedSealAt');
+    const properties = builders[0].properties.filter((x) => ts.isPropertyAssignment(x) && optional.includes(x.name.getText(reader)));
+    for (const variant of ['unsealed', 'sealed', 'invalid-confirmed-seal']) {
+      const sealed = variant === 'sealed', invalid = variant === 'invalid-confirmed-seal';
+      const context = vm.createContext({ canonicalSealTime, invalidConfirmedSealEvidence: invalid, sealConfirmed: sealed,
+        row: sealed ? { seal_event_block_time: '2026-09-30T01:02:03Z' } : {}, payload: {}, sealTransactionBlockHeight: null,
+        closedByCanonicalOutpointSpend: false, canonicalCloseProvenancePatch: {}, base: rows[0] });
+      const source = vm.runInContext(`const projectedSealAt=${times[index].getText(reader)};
+        const sealEvidencePatch=${patches[index].getText(reader)};
+        ({...base,${properties.map((x)=>x.getText(reader)).join(',')},...sealEvidencePatch,sealConfirmed});`, context);
+      const wire = JSON.parse(JSON.stringify(source)); const fullRecordSha256 = serverDigest(source);
+      const committed = listingCommitmentRecord(wire, fullRecordSha256);
+      assert.equal(digest(committed), fullRecordSha256, variant);
+      assert.equal(Object.hasOwn(source,'sealAt'), !invalid, variant);
+      assert.equal(Object.hasOwn(committed,'sealAt'), !invalid, variant);
+      if (sealed) assert.equal(committed.sealAt,'2026-09-30T01:02:03.000Z');
+      else if (!invalid) assert.equal(committed.sealAt,null);
+      for (const tamper of [{ amountSubatoms:'11' }, { sellerAddress:'wrong-seller' },
+        { saleAuthorization:{...wire.saleAuthorization,anchorValueSats:547} }, { sealAt:'2026-09-30T01:02:04.000Z' }]) {
+        assert.throws(()=>listingCommitmentRecord({...wire,...tamper},fullRecordSha256),/FULL_RECORD_DIGEST_CHANGED/u);
+      }
+      assert.throws(()=>listingCommitmentRecord(wire,h(999)),/FULL_RECORD_DIGEST_CHANGED/u);
+      assert.deepEqual(wire,JSON.parse(JSON.stringify(source)),'wire rows remain unchanged');
+    }
+  }
+  for(const present of [null,'',false,0]) {
+    const source={...listingCommitmentRecord(rows[0]),sealAt:present};const committed=listingCommitmentRecord(source,serverDigest(source));
+    assert.equal(committed.sealAt,present);
+  }
 });
 test('pagination exhausts continuation and rejects same-height event update or projection mutation', async () => {
   const b = boosts();

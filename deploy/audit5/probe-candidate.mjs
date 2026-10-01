@@ -42,11 +42,23 @@ export function canonicalJson(value) {
 // undefined object properties on the wire. Reconstruct only those declared
 // properties for digest verification, preserving wire rows and present values.
 // Source: proof-index-reader.mjs lifecycle return; proof-api.mjs
-// checkpointCursorCanonicalJson. This does not change either server contract.
-export function listingCommitmentRecord(row) {
+// checkpointCursorCanonicalJson. The seal-evidence producer has exactly two
+// forms: invalid confirmed evidence omits its patch, while other evidence owns
+// sealAt even when its value is undefined. Those forms can have identical JSON
+// rows. When a full-record hash is supplied, select only between these declared
+// forms; unknown hashes still fail closed. Never try arbitrary key subsets.
+// This reconstructs commitments without changing wire rows or server contracts.
+export function listingCommitmentRecord(row, fullRecordSha256) {
   const optional = ['buyerAddress', 'closedAt', 'saleTxid', 'saleAt', 'saleBlockHash', 'saleBlockHeight',
     'saleBlockIndex', 'saleProtocolVout', 'saleRecordOrdinal', 'saleTransactionBlockHeight'];
-  return { ...Object.fromEntries(optional.map((key) => [key, null])), ...row };
+  const base = { ...Object.fromEntries(optional.map((key) => [key, null])), ...row };
+  if (fullRecordSha256 === undefined) return base;
+  requireFact(HASH.test(fullRecordSha256 ?? ''), 'FULL_RECORD_DIGEST_CHANGED');
+  if (digest(base) === fullRecordSha256) return base;
+  requireFact(!Object.hasOwn(row, 'sealAt'), 'FULL_RECORD_DIGEST_CHANGED');
+  const unsealed = { ...base, sealAt: null };
+  requireFact(digest(unsealed) === fullRecordSha256, 'FULL_RECORD_DIGEST_CHANGED');
+  return unsealed;
 }
 export const digest = (value) => createHash('sha256').update(canonicalJson(value)).digest('hex');
 const equal = (a, b, code) => requireFact(digest(a) === digest(b), code);
@@ -201,7 +213,9 @@ export function verifyBookPair(full, display) {
   const projection = display.first.itemProjection;
   requireFact(projection?.model === 'proof-token-listing-display-v1' && HASH.test(projection.fullMembershipSha256 ?? '') &&
     HASH.test(projection.fullSourceSha256 ?? ''), 'MISSING_FULL_BOOK_DIGESTS');
-  const membership = digest(full.rows.map((item) => ({ item: listingCommitmentRecord(item), key: [String(item.listingId ?? item.txid ?? '').trim().toLowerCase(),
+  const commitments = full.rows.map((item, index) =>
+    listingCommitmentRecord(item, display.rows[index]?.displayEvidence?.fullRecordSha256));
+  const membership = digest(full.rows.map((item, index) => ({ item: commitments[index], key: [String(item.listingId ?? item.txid ?? '').trim().toLowerCase(),
     Number(item.blockHeight ?? 0), Number(item.blockIndex ?? 0), Number(item.protocolVout ?? 0), Number(item.recordOrdinal ?? 0)] })));
   requireFact(projection.fullMembershipSha256 === membership && full.first.listingProjection.membershipSha256 === membership,
     'FULL_MEMBERSHIP_DIGEST_CHANGED');
@@ -217,7 +231,7 @@ export function verifyBookPair(full, display) {
     const shown = display.rows[index];
     const evidence = shown.displayEvidence;
     requireFact(row.confirmed === true && row.network === 'livenet' && HASH.test(row.listingId), 'UNCONFIRMED_BOOK_ROW');
-    requireFact(evidence?.model === projection.model && evidence.fullRecordSha256 === digest(listingCommitmentRecord(row)), 'FULL_RECORD_DIGEST_CHANGED');
+    requireFact(evidence?.model === projection.model && evidence.fullRecordSha256 === digest(commitments[index]), 'FULL_RECORD_DIGEST_CHANGED');
     equal(evidence.omittedFields, OMIT.filter((key) => Object.hasOwn(row, key)), 'UNEXPECTED_OMITTED_FIELDS');
     const url = new URL(evidence.fullDetailPath, BASE);
     requireFact(url.origin === BASE && url.pathname === '/api/v1/token-history' && url.searchParams.get('kind') === 'listings' &&
@@ -230,6 +244,11 @@ export function verifyBookPair(full, display) {
     omittedBytes += Buffer.byteLength(JSON.stringify(row)) - Buffer.byteLength(JSON.stringify(shown));
   }
   return { listings: full.rows.length, fullRowsSha256: digest(full.rows), savedRowBytes: omittedBytes,
+    commitmentReconstruction: { model: 'source-declared-lifecycle-and-seal-patch-v1',
+      possibleSealPatchForms: 2,
+      missingSealAtReconstructedNull: full.rows.filter((row, index) => !Object.hasOwn(row, 'sealAt') &&
+        Object.hasOwn(commitments[index], 'sealAt')).length,
+      qualification: 'The wire omits undefined sealAt. Only the source-declared absent-patch or owned-null commitment is selected by each full-record hash; membership and snapshot are independently recomputed.' },
     sourceDigestQualification: 'Bound to full-route snapshot; excluded historical source rows are not independently replayed.' };
 }
 
@@ -492,7 +511,7 @@ export async function compareCandidate(io) {
   for (const row of display.rows.slice(0, 3)) {
     const detail = await io.get(row.displayEvidence.fullDetailPath);
     requireFact(detail.totalCount === 1 && detail.items?.length === 1 &&
-      digest(listingCommitmentRecord(detail.items[0])) === row.displayEvidence.fullRecordSha256, 'FULL_DETAIL_REFERENCE_MISMATCH');
+      digest(listingCommitmentRecord(detail.items[0], row.displayEvidence.fullRecordSha256)) === row.displayEvidence.fullRecordSha256, 'FULL_DETAIL_REFERENCE_MISMATCH');
   }
   // Recheck current complete Core membership after all individual RPCs. An
   // unrelated mempool sequence change is recorded, not mistaken for data loss.

@@ -241,3 +241,30 @@ The reusable UI transport parent is preserved in the repository. Five focused
 fixtures verify exact stdin, inherited descriptor, hash/ownership refusal,
 bounded failure output and descendant termination before releasing the parent
 lock. Its production run remains a separate acceptance requirement.
+
+## Prepublication full-book verification correction
+
+The first source-bound shadow attempt passed the complete ID audit (587
+transactions, 508 confirmed winners, 20 pending candidates), all 49 event checks
+and the strict 102-check parity suite (100 passing checks and two pre-existing
+inactive V5 warnings) at stable Core height 969403. Its exact wallet response
+was available and independently conserved 9,999,997,003,878,536 confirmed
+subatoms = 9,999,970,087,899,719 spendable + 26,915,978,817 reserved. This is a
+point-in-time availability result; it does not establish permanent resolution
+of the prior intermittent fresh-wallet issue.
+
+That attempt correctly refused publication when the independent helper omitted
+the source-declared unsealed `sealAt` commitment. JSON drops owned undefined
+properties; invalid confirmed seal evidence instead omits the seal patch. Only
+those two actual producer forms are reconstructed, selected by the full-record
+hash; arbitrary key combinations, substantive changes and unknown hashes fail.
+AST fixtures use the actual reader producers and API serializer. No API,
+protocol, canonical record or ledger is rewritten.
+
+A separate read-only complete five-page full/five-page display read at stable
+Core height 969404 proved all 999 actual listings: 958 sealed commitments and
+41 unsealed owned-null commitments. The corrected helper independently
+reproduced every record hash, complete membership, protocol membership and
+snapshot binding. All 22 probe and 9 candidate fixtures pass. Full independent
+Core ticket checks and a fresh source-bound accepted release receipt are still
+required before cutover; the failed candidate receipt cannot authorize it.
