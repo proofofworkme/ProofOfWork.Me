@@ -5969,7 +5969,7 @@ plan SHA-256 is
 
 ### Boost search row correction — 2026-10-02 UTC
 
-The follow-up UI correction is deployed from commit
+The follow-up UI correction was deployed from commit
 `d2636f6fb3c56c64ab970a66d3b09bdfdb8be03e`, tree
 `717d37662e911737c34d957ec2f976a511b69ad3`, as release
 `d2636f6fb3c5-20261002T023421Z`. The API remains on the preceding
@@ -6016,3 +6016,80 @@ The HTTPS receipt, final surface JSON, resume checkpoint, report, and both
 audit logs are preserved as hash-verified creation-only evidence under
 `/var/tmp/proofofwork-deploy/recovery-publish-d2636f6fb3c5-20261002T023421Z-boost-search-row/public-audit-evidence/`.
 No retry or changed verification limit was needed.
+
+### Boost central search view — 2026-10-02 UTC
+
+The subsequent UI correction is deployed from commit
+`f81ae55bf4b096c7ab229dbb9f1415669e18dd95`, tree
+`54f1e2fc7136669dab9460b72e00c0475b91e281`, as release
+`f81ae55bf4b0-20261002T031600Z`. The API remains on
+`d4d888757a1c44aab3b9690f79e1917935930f0f` and its preceding runtime
+attestation; this correction changes no server code, protocol, fee, wallet
+flow, or schema.
+
+Keyword, hashtag, and cashtag search now have their own central view. Its
+Back link and 46-pixel query field sit above the results; timeline tabs and
+the inline composer appear only on the main timeline. The sidebar offers
+search navigation instead of a search input. Legacy query links still work,
+editing updates the shareable URL, clearing keeps search open, and Back
+preserves the selected network and Computer workspace. Scoped profile
+search also stays central; Escape clears the filter and returns focus to its
+trigger. A single outer focus outline replaces the nested input frame.
+
+All 33 relevant browser tests, TypeScript, UI contract, and repository hygiene
+checks passed. In-app browser verification confirmed the central layout on
+Boost and Computer at 1920- and 390-pixel widths, six existing `$work` matches,
+one `$powb` match after editing, the empty search prompt after clearing, and
+the restored inline composer after Back. No test transaction was broadcast.
+The live-browser observation receipt SHA-256 is
+`346ff36a4c58c94863bdb18402baa6f7bbe4a57861058e802b1840dd862c54b7`.
+
+The managed archive is
+`/var/backups/proofofwork-ui/releases/proofofwork-ui-release-f81ae55bf4b0-20261002T031600Z.tgz`,
+SHA-256 `e86ee87c4c4d8dd6a6ad43dd5b7044dc7bcd5674048f32d570e22004ed5c9415`.
+Its provenance equals the live manifest, SHA-256
+`64ac49385d25f8662c3b0153ba8c4e059020ac2603b78310aed92ba79247884c`.
+Publication preserved all seven preceding rollback roots; the prior live UI
+became the eighth at
+`/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-f81ae55bf4b0-20261002T031600Z`.
+Off-host HTTPS verification compared all 825 archived public files across 15
+serving roots and checked the apex redirect. The NFT mirror's 55 files remain
+covered by managed-root verification. The HTTPS receipt SHA-256 is
+`22662a7bb3b32768c534d1214ebd4e1b5d9c9e3ec0d75fbc3cc9cb36f659e295`.
+
+Before staging, the unchanged 5 GiB scratch ceiling required reversible
+preservation of four historical transport files: the source/surface archives
+for `db853f434f9b-20260930T011125Z` and their checksum sidecars. Their
+289,865,728 allocated bytes were renamed on the same filesystem into
+`/var/backups/proofofwork-ui/transport-evidence/historical-archives-boost-search-view-20261002T030550Z`.
+The bound plan SHA-256 is
+`970bf2e6de0da008acc4656ae45bf484a7e9f4a5911a57f3dbbe0b59ec59caa7`.
+Bytes, inodes, ownership, modes, extended attributes, and access/modification
+times were preserved; rename-induced ctime changes were recorded with
+per-move receipts and restoration controls. All prior rollback fingerprints,
+live/current release material, and helper pins were unchanged. No historical
+evidence was deleted and no capacity ceiling or production configuration was
+changed. Fresh preflight SHA-256
+`1cd50d94e1daf7eb23080cbffee3db65b8ff46dbcc948bed1e0246ca268ca156`
+confirmed 717,123,584 bytes of scratch headroom before release admission.
+
+The ordered public surface audit passed all 15 full/fresh surfaces under the
+unchanged 20-second request limit, with 15 current observations and zero
+reused observations. Its actual final JSON SHA-256 is
+`aecc21f6b37cc9c5aea177e715ccb9c3f95cb0817b61275b01b23b2d62881cd5`;
+the separate resume checkpoint is retained even though this successful run
+produced identical final/checkpoint bytes. The normal public ledger audit
+then passed at snapshot `af9b0f6abe50f0e8abe1011f`, with ledger-log SHA-256
+`e6e14dfca59d9f46ee128790b62130ded5dec6837c60d3851bdfc89732921426`.
+The ordered audit report SHA-256 is
+`b87ee20245b31d97888f3ea5cad95fcd60a7720c85ed60672e0deb0d24d9b91c`.
+Exact source, publisher-log, and HTTPS receipt rechecks passed afterward.
+
+Fifteen accepted evidence files are preserved under
+`/var/tmp/proofofwork-deploy/recovery-publish-f81ae55bf4b0-20261002T031600Z-boost-search-view/public-audit-evidence/`:
+the publisher log, HTTPS receipt, final surface JSON, separate checkpoint,
+ordered report, surface and ledger logs, live browser observations, four
+desktop/phone screenshots, browser-test log, build receipt, and collection
+receipt. Preservation was hash-verified and creation-only under the continuous
+deploy lock, with private 0700/0600 modes and unchanged capacity checks.
+No retry, relaxed verification limit, or historical deletion was needed.
