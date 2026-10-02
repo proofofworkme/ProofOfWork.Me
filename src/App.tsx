@@ -41,6 +41,7 @@ import {
   FilePenLine,
   FileText,
   GitBranch,
+  Globe,
   Inbox,
   InfinityIcon,
   LogOut,
@@ -376,6 +377,7 @@ type Folder =
   | "browser"
   | "boost"
   | "ids"
+  | "dns"
   | "marketplace"
   | "token"
   | "wallet"
@@ -399,6 +401,7 @@ const COMPUTER_ROUTE_FOLDERS: Folder[] = [
   "browser",
   "boost",
   "ids",
+  "dns",
   "marketplace",
   "token",
   "wallet",
@@ -4158,6 +4161,10 @@ function folderLabel(folder: Folder) {
     return "IDs";
   }
 
+  if (folder === "dns") {
+    return "DNS";
+  }
+
   if (folder === "marketplace") {
     return "AMO";
   }
@@ -4232,6 +4239,10 @@ function folderSubtitle(folder: Folder) {
 
   if (folder === "ids") {
     return "ProofOfWork ID registry";
+  }
+
+  if (folder === "dns") {
+    return "ProofOfWork DNS .pow registry";
   }
 
   if (folder === "infinity") {
@@ -22119,6 +22130,7 @@ export default function App() {
     mainnetRegistryMode ||
     [
       "ids",
+      "dns",
       "marketplace",
       "token",
       "wallet",
@@ -26056,6 +26068,8 @@ export default function App() {
         ? desktopLoading || !desktopProfile
           : activeFolder === "browser"
             ? true
+            : activeFolder === "dns"
+              ? busy || refreshInProgress || !dnsRegistryAddress
             : activeFolder === "ids" ||
                 activeFolder === "marketplace" ||
                 activeFolder === "token" ||
@@ -26701,6 +26715,7 @@ export default function App() {
 
     if (
       activeFolder === "ids" ||
+      activeFolder === "dns" ||
       activeFolder === "marketplace" ||
       activeFolder === "token" ||
       activeFolder === "wallet" ||
@@ -26713,6 +26728,7 @@ export default function App() {
         activeFolder !== "contacts" &&
         [
           "ids",
+          "dns",
           "marketplace",
           "token",
           "wallet",
@@ -26739,6 +26755,10 @@ export default function App() {
 
       if (activeFolder === "token" || activeFolder === "wallet" || activeFolder === "work") {
         void refreshToken(true);
+        return;
+      }
+      if (activeFolder === "dns") {
+        void refreshDns(true);
         return;
       }
       void refreshIds(true);
@@ -27483,6 +27503,26 @@ export default function App() {
           return;
         }
 
+        if (dnsLaunchMode || activeFolderRef.current === "dns") {
+          const workspaceKey = activeWorkspaceStatusKeyRef.current;
+          await ensureWalletNetwork(wallet, "livenet", nextAddress);
+          const state = await fetchDnsRegistryState("livenet");
+          if (
+            generation !== walletSyncGenerationRef.current ||
+            activeWorkspaceStatusKeyRef.current !== workspaceKey ||
+            (!dnsLaunchMode && activeFolderRef.current !== "dns")
+          ) {
+            return;
+          }
+          applyDnsRegistryState(state);
+          setDnsRegistryReadState({ network: "livenet", status: "ready" });
+          setStatusForWorkspace(workspaceKey, {
+            tone: "good",
+            text: `${shortAddress(nextAddress)} connected. ProofOfWork DNS registry ready.`,
+          });
+          return;
+        }
+
         if (mainnetWorkspaceMode) {
           await ensureWalletNetwork(wallet, "livenet", nextAddress);
           const state = await fetchIdRegistryState("livenet");
@@ -27945,6 +27985,15 @@ export default function App() {
     setReplyParentTxid(undefined);
     setAttachment(undefined);
     setSelectedKey("");
+  }
+
+  function openDnsManagement() {
+    const url = new URL(window.location.href);
+    url.searchParams.set("tab", "dns");
+    url.searchParams.delete("asset");
+    url.searchParams.delete("ticker");
+    window.history.replaceState({}, "", `${url.pathname}${url.search}${url.hash}`);
+    openFolder("marketplace");
   }
 
   function openTokenWorkspace(token?: PowTokenDefinition) {
@@ -30145,6 +30194,34 @@ export default function App() {
           return;
         }
 
+        if (dnsLaunchMode || activeFolderRef.current === "dns") {
+          const workspaceKey = activeWorkspaceStatusKeyRef.current;
+          firstAddress = await ensureWalletNetwork(window.unisat, "livenet", firstAddress);
+          if (
+            generation !== walletSyncGenerationRef.current ||
+            activeWorkspaceStatusKeyRef.current !== workspaceKey
+          ) {
+            return;
+          }
+          setAddress(firstAddress);
+          setNetwork("livenet");
+          const state = await fetchDnsRegistryState("livenet");
+          if (
+            generation !== walletSyncGenerationRef.current ||
+            activeWorkspaceStatusKeyRef.current !== workspaceKey ||
+            (!dnsLaunchMode && activeFolderRef.current !== "dns")
+          ) {
+            return;
+          }
+          applyDnsRegistryState(state);
+          setDnsRegistryReadState({ network: "livenet", status: "ready" });
+          setStatusForWorkspace(workspaceKey, {
+            tone: "good",
+            text: "UniSat connected. ProofOfWork DNS registry ready.",
+          });
+          return;
+        }
+
         if (mainnetWorkspaceMode) {
           const state = await fetchIdRegistryState("livenet");
           if (
@@ -30553,6 +30630,17 @@ export default function App() {
     fresh = !silent,
   ): Promise<PowRegistryState | undefined> {
     const requestWorkspaceKey = activeWorkspaceStatusKeyRef.current;
+    // Resolve the passive native-DNS entry message without replacing wallet,
+    // recovery, or transaction feedback when the background read completes.
+    const shouldReportRead = () =>
+      !silent ||
+      (requestWorkspaceKey === "computer:dns" &&
+        [
+          INITIAL_COMPUTER_STATUS.text,
+          "Workspace selected. Refresh to load verified ProofOfWork data.",
+        ].includes(
+          workspaceStatusesRef.current.get(requestWorkspaceKey)?.text ?? "",
+        ));
     if (!dnsRegistryAddress) {
       setDnsRegistryReadState({ network, status: "unavailable" });
       setDnsRegistry([]);
@@ -30560,7 +30648,7 @@ export default function App() {
       setDnsPendingEvents([]);
       setDnsSales([]);
       setDnsActivity([]);
-      if (!silent) {
+      if (shouldReportRead()) {
         setStatusForWorkspace(requestWorkspaceKey, {
           tone: "idle",
           text: `No ProofOfWork DNS registry configured for ${networkLabel(network)} yet.`,
@@ -30578,7 +30666,19 @@ export default function App() {
         });
       }
       try {
-        return await dnsRefreshInFlightRef.current;
+        const state = await dnsRefreshInFlightRef.current;
+        if (shouldReportRead()) {
+          const confirmed = state?.records.filter((record) => record.confirmed).length ?? 0;
+          const pending = state ? state.records.length - confirmed : 0;
+          setStatusForWorkspace(requestWorkspaceKey, state ? {
+            tone: "good",
+            text: `DNS registry loaded. ${confirmed} confirmed, ${pending} pending, ${state.pendingEvents.length} in flight.`,
+          } : {
+            tone: "bad",
+            text: "DNS registry could not be verified. Refresh to retry.",
+          });
+        }
+        return state;
       } finally {
         if (!silent) {
           setBusyForWorkspace(requestWorkspaceKey, false);
@@ -30599,7 +30699,7 @@ export default function App() {
         const state = await fetchDnsRegistryState(network, fresh, false);
         applyDnsRegistryState(state);
         setDnsRegistryReadState({ network, status: "ready" });
-        if (!silent) {
+        if (shouldReportRead()) {
           const confirmed = state.records.filter(
             (record) => record.confirmed,
           ).length;
@@ -30615,7 +30715,7 @@ export default function App() {
           network,
           status: dnsRegistry.length > 0 ? "last-verified" : "unavailable",
         });
-        if (!silent) {
+        if (shouldReportRead()) {
           setStatusForWorkspace(requestWorkspaceKey, {
             tone: "bad",
             text: errorMessage(error, "DNS registry scan failed."),
@@ -36375,9 +36475,10 @@ export default function App() {
   };
 
   const actionComputerMode = !idLaunchMode && !dnsLaunchMode && !walletMode && !tokenMode && !workTokenMode && !standaloneBondConfig;
+  const computerDnsRecoveryMode = actionComputerMode && !marketplaceMode && !desktopRoute && !browserRoute && !activityMode && !growthMode && !landingMode;
   function canRestoreActionHere(receipt: ActionReceipt) {
     if (receipt.fields.some(([label]) => label === "Listing transaction")) return false;
-    if (receipt.key.startsWith("registerDns:")) return dnsLaunchMode;
+    if (receipt.key.startsWith("registerDns:")) return dnsLaunchMode || computerDnsRecoveryMode;
     if (receipt.key.startsWith("dns-subdomain:")) return dnsLaunchMode || actionComputerMode || marketplaceMode;
     if (receipt.key.startsWith("registerId:")) return idLaunchMode || actionComputerMode;
     if (receipt.key.startsWith("id-mutation:")) return actionComputerMode;
@@ -36391,13 +36492,14 @@ export default function App() {
       if (!idLaunchMode) openFolder("ids");
     } else if (receipt.key.startsWith("registerDns:")) {
       setDnsName(receipt.key.slice("registerDns:".length)); setDnsReceiveAddress(field("Resolver address"));
-      if (!dnsLaunchMode) { setStatus({ tone: "idle", text: "Retained .pow details are shown above. Open DNS to resume registration." }); return; }
+      if (computerDnsRecoveryMode) openFolder("dns");
     } else if (receipt.key.startsWith("dns-subdomain:")) {
       const name = field("Subdomain").split(".");
       const action = field("Subdomain action");
       setDnsSubdomainDraft({ parent: name[1] ?? "", label: name[0] ?? "", action: action === "update" || action === "revoke" ? action : "create", resolver: field("Resolver override") });
       setDnsSubdomainRestoreNonce(value => value + 1);
-      if (actionComputerMode) openFolder("marketplace");
+      if (computerDnsRecoveryMode) openFolder("dns");
+      else if (actionComputerMode) openFolder("marketplace");
     } else if (receipt.key.startsWith("id-mutation:")) {
       setManagedIdName(receipt.key.slice("id-mutation:".length));
       if (field("New owner")) { setIdTransferOwnerAddress(field("New owner")); setIdTransferReceiveAddress(field("Mail receiver after transfer")); }
@@ -36407,7 +36509,12 @@ export default function App() {
       setTokenTransferTokenId(field("Credit ID")); setTokenTransferAmount(field("Exact quantity").split(" ")[0]); setTokenTransferRecipient(field("Recipient"));
       if (!walletMode && !tokenMode && !workTokenMode && !standaloneBondConfig) openFolder("wallet");
     }
-    setStatus({ tone: "idle", text: "Retained task restored for inspection. Refresh current state and review before signing; no transaction was submitted." });
+    const restoredStatus: WorkspaceStatus = { tone: "idle", text: "Retained task restored for inspection. Refresh current state and review before signing; no transaction was submitted." };
+    if (computerDnsRecoveryMode && (receipt.key.startsWith("registerDns:") || receipt.key.startsWith("dns-subdomain:"))) {
+      setStatusForWorkspace("computer:dns", restoredStatus);
+    } else {
+      setStatus(restoredStatus);
+    }
   }
   const actionUi = <>
     <ActionRecoveryPanel
@@ -36418,7 +36525,7 @@ export default function App() {
       canRestore={canRestoreActionHere}
       onRestore={restoreActionTask}
       onCheck={() => void refreshActionRecovery()}
-      workspaceHref={item => item.key.startsWith("marketplace:") || item.fields.some(([label]) => label === "Listing transaction") ? appHref(MARKETPLACE_APP_URL, LOCAL_MARKETPLACE_APP_URL) : item.key.startsWith("registerDns:") || item.key.startsWith("dns-subdomain:") ? appHref(DNS_APP_URL, LOCAL_DNS_APP_URL) : appHref(COMPUTER_APP_URL, LOCAL_COMPUTER_APP_URL)}
+      workspaceHref={item => item.key.startsWith("marketplace:") || item.fields.some(([label]) => label === "Listing transaction") ? appHref(MARKETPLACE_APP_URL, LOCAL_MARKETPLACE_APP_URL) : item.key.startsWith("registerDns:") || item.key.startsWith("dns-subdomain:") ? computerDnsRecoveryMode ? "?folder=dns" : appHref(DNS_APP_URL, LOCAL_DNS_APP_URL) : appHref(COMPUTER_APP_URL, LOCAL_COMPUTER_APP_URL)}
     />
     {actionReview ? <ActionTransactionReview review={actionReview} returnFocus={actionReturnFocusRef.current} onCancel={() => finishActionReview(false)} onApprove={() => finishActionReview(true)} /> : null}
   </>;
@@ -37071,6 +37178,7 @@ export default function App() {
       ? "is-token-workspace"
       : "",
     activeFolder === "marketplace" ? "is-marketplace-workspace" : "",
+    activeFolder === "dns" ? "is-dns-workspace" : "",
     activeFolder === "browser" ? "is-browser-workspace" : "",
     activeFolder === "boost" ? "is-boost-workspace" : "",
   ]
@@ -37131,6 +37239,11 @@ export default function App() {
                 }
 
                 if (activeFolder === "boost") {
+                  return;
+                }
+
+                if (activeFolder === "dns") {
+                  void refreshDns();
                   return;
                 }
 
@@ -37388,6 +37501,16 @@ export default function App() {
               <strong>{address && ["ready", "last-verified"].includes(registryReadStatus) ? ownedIdCount + walletPendingIdEvents.length : "—"}</strong>
             </button>
             <button
+              aria-current={activeFolder === "dns"}
+              onClick={() => openFolder("dns")}
+              type="button"
+            >
+              <span className="folder-label">
+                <Globe size={17} />
+                <span>DNS</span>
+              </span>
+            </button>
+            <button
               aria-current={activeFolder === "marketplace"}
               onClick={() => openFolder("marketplace")}
               type="button"
@@ -37631,6 +37754,28 @@ export default function App() {
             submitTransfer={transferId}
             submitUpdate={updateIdReceiver}
             submit={registerId}
+          />
+        ) : activeFolder === "dns" ? (
+          <DnsWorkspace
+            address={address}
+            busy={busy}
+            canRegister={canRegisterDns}
+            dnsName={dnsName}
+            dnsReceiveAddress={dnsReceiveAddress}
+            dnsSubdomainUi={dnsSubdomainUi}
+            feeRate={feeRate}
+            lastRegisteredDns={lastRegisteredDns?.network === network ? lastRegisteredDns : undefined}
+            network={network}
+            onOpenManagement={openDnsManagement}
+            onRefresh={() => void refreshDns()}
+            registrationBytes={dnsRegistrationBytes}
+            registryAddress={dnsRegistryAddress}
+            registryReadStatus={dnsRegistryReadStatus}
+            registryRecords={dnsRegistry.filter(record => record.network === network)}
+            setDnsName={setDnsName}
+            setDnsReceiveAddress={setDnsReceiveAddress}
+            setFeeRate={setFeeRate}
+            submit={registerDns}
           />
         ) : activeFolder === "marketplace" ? (
           <MarketplaceWorkspace
@@ -49503,48 +49648,18 @@ function IdLaunchApp({
   );
 }
 
-function DnsLaunchApp({
-  recoveryUi,
-  onRefreshRecovery,
-  dnsSubdomainUi,
-  accountStats = [],
-  address,
-  busy,
-  canRegister,
-  connectWallet,
-  disconnectWallet,
-  degradedReadStatus,
-  dnsName,
-  dnsReceiveAddress,
-  feeRate,
-  hasUnisat,
-  lastRegisteredDns,
-  registryAddress,
-  registryRecords,
-  registryReadStatus,
-  registrationBytes,
-  setDnsName,
-  setDnsReceiveAddress,
-  setFeeRate,
-  status,
-  submit,
-  onRefresh,
-}: {
-  recoveryUi?: ReactNode;
-  onRefreshRecovery?: () => void;
+type DnsWorkspaceProps = {
   dnsSubdomainUi?: ReactNode;
-  accountStats?: AppHeaderAccountStat[];
   address: string;
   busy: boolean;
   canRegister: boolean;
-  connectWallet: () => void;
-  disconnectWallet: () => void;
-  degradedReadStatus?: WorkspaceStatus;
   dnsName: string;
   dnsReceiveAddress: string;
   feeRate: number;
-  hasUnisat: boolean;
   lastRegisteredDns?: PowIdRecord;
+  network?: BitcoinNetwork;
+  managementHref?: string;
+  onOpenManagement?: () => void;
   registryAddress: string;
   registryRecords: PowIdRecord[];
   registryReadStatus: RegistryReadStatus;
@@ -49552,10 +49667,98 @@ function DnsLaunchApp({
   setDnsName: (value: string) => void;
   setDnsReceiveAddress: (value: string) => void;
   setFeeRate: (value: number) => void;
-  status: { tone: StatusTone; text: string };
   submit: (event: FormEvent<HTMLFormElement>) => void;
   onRefresh: () => void;
+};
+
+function DnsLaunchApp({
+  recoveryUi,
+  onRefreshRecovery,
+  accountStats = [],
+  connectWallet,
+  disconnectWallet,
+  degradedReadStatus,
+  hasUnisat,
+  status,
+  ...workspaceProps
+}: DnsWorkspaceProps & {
+  recoveryUi?: ReactNode;
+  onRefreshRecovery?: () => void;
+  accountStats?: AppHeaderAccountStat[];
+  connectWallet: () => void;
+  disconnectWallet: () => void;
+  degradedReadStatus?: WorkspaceStatus;
+  hasUnisat: boolean;
+  status: { tone: StatusTone; text: string };
 }) {
+  return (
+    <main className="id-launch-app">
+      <AppHeader
+        afterHeader={recoveryUi}
+        onRefreshRecovery={onRefreshRecovery}
+        accountStats={accountStats}
+        address={workspaceProps.address}
+        busy={workspaceProps.busy}
+        connectWallet={connectWallet}
+        disconnectWallet={disconnectWallet}
+        hasUnisat={hasUnisat}
+        onRefresh={workspaceProps.onRefresh}
+        subtitle="Mainnet registry"
+        title="ProofOfWork DNS"
+      />
+
+      <AppStatusRow
+        persistent
+        secondaryStatus={degradedReadStatus}
+        status={status}
+      />
+
+      <DnsWorkspace {...workspaceProps} />
+
+      <SocialFooter />
+    </main>
+  );
+}
+
+function DnsWorkspace({
+  dnsSubdomainUi,
+  address,
+  busy,
+  canRegister,
+  dnsName,
+  dnsReceiveAddress,
+  feeRate,
+  lastRegisteredDns,
+  network = "livenet",
+  managementHref = appHref(
+    `${MARKETPLACE_APP_URL}/?tab=dns`,
+    `${LOCAL_MARKETPLACE_APP_URL}&tab=dns`,
+  ),
+  onOpenManagement,
+  registryAddress,
+  registryRecords,
+  registryReadStatus,
+  registrationBytes,
+  setDnsName,
+  setDnsReceiveAddress,
+  setFeeRate,
+  submit,
+  onRefresh,
+}: DnsWorkspaceProps) {
+  if (network !== "livenet") {
+    return (
+      <section className="dns-workspace id-launch-main">
+        <section className="id-launch-card" role="status">
+          <h2>ProofOfWork DNS</h2>
+          <p>
+            The canonical .pow registry is available on Mainnet. Switch your
+            wallet to Mainnet to search, register, and manage .pow names.
+          </p>
+        </section>
+      </section>
+    );
+  }
+
   const normalizedName = normalizePowDnsName(dnsName);
   const uniqueRegistryRecords = uniquePowIdRecords(registryRecords);
   const ownedNames = ownedPowIds(uniqueRegistryRecords, address);
@@ -49627,28 +49830,7 @@ function DnsLaunchApp({
               : "Verify and register for 1,000 proofs";
 
   return (
-    <main className="id-launch-app">
-      <AppHeader
-        afterHeader={recoveryUi}
-        onRefreshRecovery={onRefreshRecovery}
-        accountStats={accountStats}
-        address={address}
-        busy={busy}
-        connectWallet={connectWallet}
-        disconnectWallet={disconnectWallet}
-        hasUnisat={hasUnisat}
-        onRefresh={onRefresh}
-        subtitle="Mainnet registry"
-        title="ProofOfWork DNS"
-      />
-
-      <AppStatusRow
-        persistent
-        secondaryStatus={degradedReadStatus}
-        status={status}
-      />
-
-      <section className="id-launch-main">
+      <section className="dns-workspace id-launch-main">
         <WorkspaceSectionNav
           label="DNS registry sections"
           items={[
@@ -49809,7 +49991,7 @@ function DnsLaunchApp({
               <dl className="file-detail-list">
                 <div>
                   <dt>Network</dt>
-                  <dd>Mainnet</dd>
+                  <dd>{networkLabel(network)}</dd>
                 </div>
                 <div>
                   <dt>Registry</dt>
@@ -49846,6 +50028,27 @@ function DnsLaunchApp({
                 searchPlaceholder="Search your .pow"
                 showPgp={false}
               />
+              <p className="field-note">
+                Resolver updates, transfers, and trading are managed in AMO.
+              </p>
+              <div className="id-record-actions">
+                {onOpenManagement ? (
+                  <button
+                    className="secondary small"
+                    onClick={onOpenManagement}
+                    type="button"
+                  >
+                    Open DNS in AMO
+                  </button>
+                ) : (
+                  <a
+                    className="secondary link-button"
+                    href={managementHref}
+                  >
+                    Open DNS in AMO
+                  </a>
+                )}
+              </div>
             </section>
           </aside>
         </div>
@@ -49887,13 +50090,11 @@ function DnsLaunchApp({
             }
             initialLimit={12}
             pageLabel=".pow names"
+            searchPlaceholder="Search .pow names, addresses, txids"
             showPgp={false}
           />
         </section>
       </section>
-
-      <SocialFooter />
-    </main>
   );
 }
 

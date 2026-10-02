@@ -38,8 +38,17 @@ dns.proofofwork.me      focused .pow claim/search and owner-controlled subdomain
 domain.proofofwork.me   redirect to https://dns.proofofwork.me/
 domains.proofofwork.me  redirect to https://dns.proofofwork.me/
 amo.proofofwork.me      DNS tab for root management, subdomains, and trading
-computer.proofofwork.me AMO workspace with the same DNS controls
+computer.proofofwork.me DNS workspace for claims/search/subdomains; AMO for root management/trading
 ```
+
+Computer exposes a dedicated DNS workspace beside IDs at `/?folder=dns`, also
+reachable from mobile More. It shares the focused app's Mainnet claim/search,
+owned-name and public-record views, and owner-controlled subdomain panel.
+Disconnected users can inspect and refresh public records; writes still need
+the verified owner wallet and current signing preflights. Retained registration
+and subdomain receipts can restore their task into this workspace without
+signing or broadcasting. Its AMO control opens `/?folder=marketplace&tab=dns`
+inside Computer for root resolver updates, direct transfers, and trading.
 
 The focused DNS app connects UniSat, checks/searches `.pow` availability,
 registers root names, shows registry stats and owned names, and lets a confirmed

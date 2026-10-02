@@ -20,7 +20,7 @@ writes a chain-readable transfer/purchase event. Boost exposes active
 or from the original Boost Mail item.
 - `log.proofofwork.me` is the public read-only ProofOfWork Computer log for tx-backed app actions.
 - The IDs workspace is for registration, receiver updates, and direct owner transfers only.
-- The DNS launch surface provides `.pow` claims/searches and owner-authorized subdomain create/update/revoke actions. Root trading remains in AMO.
+- The DNS launch surface and Computer's dedicated DNS workspace provide `.pow` claims/searches and owner-authorized subdomain create/update/revoke actions. Root resolver changes, direct transfers, and trading remain in AMO; Computer's DNS workspace links to its AMO DNS tab.
 - AMO is for on-chain listings, seals, delistings, buyer-funded purchases, credit sales, and future asset trades.
 - AMO actions with txids should be visible in Log, including listing tx, seal tx, delisting tx, buyer-funded transfer/buy tx, credit sale tx, and sale-ticket UTXO references.
 - AMO attention metrics should be derived from valid chain events: active listings, ID sale count, DNS sale count, credit sale count, seller-price sale volume, credit sale volume, and mutation-fee flow.

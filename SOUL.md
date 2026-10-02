@@ -310,6 +310,10 @@ Future agents must preserve these unless the user explicitly asks for a migratio
 - `dns.proofofwork.me` is the focused ProofOfWork DNS `.pow` claim/search app.
 - `domain.proofofwork.me` and `domains.proofofwork.me` redirect to `https://dns.proofofwork.me/`.
 - `computer.proofofwork.me` is the full mail/computer app.
+- Computer includes a Mainnet DNS workspace beside IDs for `.pow` claims,
+  search, owned names, records, and owner-controlled subdomains. It shares the
+  focused DNS app's canonical reads, local signing, and recovery. Root resolver
+  changes, direct transfers, and trading stay in AMO's DNS tab.
 - `desktop.proofofwork.me` is the public read-only file desktop.
 - `browser.proofofwork.me` is the standalone public HTML renderer.
 - `boost.proofofwork.me` is the public Proof-ranked social feed over confirmed `pwb1:` records; original posts reuse Mail/Files, and paid actions and asset trades use the Boost protocol. The feed leads with people and posts; proof evidence and exact signal lanes remain inspectable through disclosures. Compact display quantities never become ranking, payment, or signing authority.

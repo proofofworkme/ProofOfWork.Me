@@ -243,7 +243,7 @@ every accepted confirmed parent transfer or purchase invalidates the previous
 children, including a transfer back to the same wallet. Each action returns
 at least 546 proofs to the signing owner before the protocol record, plus
 miner fee. Children inherit the current parent resolver unless explicitly
-overridden. The DNS app and Computer's AMO DNS panel expose these controls;
+overridden. The DNS app, Computer's DNS workspace, and its AMO DNS panel expose these controls;
 subdomain trading and delegation are outside this version. See
 [`PROOFOFWORK_DNS.md`](PROOFOFWORK_DNS.md) for activation, authority,
 discovery, and replay rules.
@@ -328,6 +328,7 @@ discovery, and replay rules.
 - Uses the correct external explorer path for the connected chain, including `/testnet4`.
 - Registers and scans mainnet ProofOfWork IDs through the canonical registry address.
 - Registers and scans mainnet ProofOfWork DNS `.pow` names through the `domains@proofofwork.me` registry address. The focused DNS app accepts the bare prefix and implies `.pow`; DNS records do not carry PGP keys.
+- Exposes DNS beside IDs in the Computer sidebar and mobile More navigation at `/?folder=dns`. The shared Mainnet workspace supports claims, search, owned names, public records, and owner-controlled subdomains. Refresh and interrupted registration/subdomain task recovery remain inside Computer; root management and trading open its AMO DNS tab.
 - Searches ID registry records, owned IDs, pending ID events, AMO listings, and registry supply views across the app.
 - Searches DNS registry records, owned `.pow` names, pending DNS events, and DNS AMO listings across the DNS and AMO surfaces.
 - Lets current ID owners update the receive address or transfer ownership through paid on-chain registry events.

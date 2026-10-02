@@ -114,6 +114,7 @@
    the Computer mail shell must fit the shell column without horizontal clipping. */
 .mail-layout.is-token-workspace,
 .mail-layout.is-marketplace-workspace,
+.mail-layout.is-dns-workspace,
 .mail-layout.is-browser-workspace,
 .mail-layout.is-boost-workspace {
   min-height: 0;
@@ -132,7 +133,8 @@
 }
 
 .mail-layout.is-token-workspace > :is(.workspace, .token-workspace, .id-launch-main),
-.mail-layout.is-marketplace-workspace > :is(.workspace, .ids-workspace, .marketplace-workspace) {
+.mail-layout.is-marketplace-workspace > :is(.workspace, .ids-workspace, .marketplace-workspace),
+.mail-layout.is-dns-workspace > .dns-workspace {
   align-self: stretch;
   box-sizing: border-box;
   container-type: inline-size;
@@ -147,6 +149,27 @@
   padding: 16px;
   scrollbar-gutter: stable;
   width: 100%;
+}
+
+.mail-layout.is-dns-workspace > .dns-workspace {
+  background: var(--surface);
+  align-content: start;
+  grid-auto-rows: max-content;
+}
+
+.mail-layout.is-dns-workspace > .dns-workspace > * {
+  min-width: 0;
+}
+
+.mail-layout.is-dns-workspace .id-launch-hero h2 {
+  font-size: clamp(1.6rem, 3vw, 2.6rem);
+}
+
+@container (max-width: 800px) {
+  .dns-workspace .id-launch-hero,
+  .dns-workspace .id-launch-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 .mail-layout.is-token-workspace :is(.token-workspace, .token-workspace-compact, .token-wallet-workspace),
@@ -344,7 +367,8 @@
 
 @media (max-width: 860px) {
   .mail-layout.is-token-workspace > :is(.workspace, .token-workspace, .id-launch-main),
-  .mail-layout.is-marketplace-workspace > :is(.workspace, .ids-workspace, .marketplace-workspace) {
+  .mail-layout.is-marketplace-workspace > :is(.workspace, .ids-workspace, .marketplace-workspace),
+  .mail-layout.is-dns-workspace > .dns-workspace {
     grid-column: 1 / -1;
     padding: 14px;
   }
@@ -354,7 +378,8 @@
    Standalone app pages can be wide and theatrical; inside Computer they must
    behave like compact operating panels with no horizontal bleed. */
 @media (min-width: 861px) {
-  .mail-layout.is-marketplace-workspace {
+  .mail-layout.is-marketplace-workspace,
+  .mail-layout.is-dns-workspace {
     grid-template-columns: 232px minmax(0, 1fr);
   }
 
@@ -7779,6 +7804,7 @@ pre {
   .mail-layout,
   .mail-layout.is-token-workspace,
   .mail-layout.is-marketplace-workspace,
+  .mail-layout.is-dns-workspace,
   .mail-layout.is-browser-workspace,
   .mail-layout.is-boost-workspace {
     grid-template-columns: 1fr;
@@ -7788,6 +7814,7 @@ pre {
     > :is(.workspace, .token-workspace, .id-launch-main),
   .mail-layout.is-marketplace-workspace
     > :is(.workspace, .ids-workspace, .marketplace-workspace),
+  .mail-layout.is-dns-workspace > .dns-workspace,
   .mail-layout.is-browser-workspace > .browser-computer-workspace,
   .mail-layout.is-boost-workspace > .boost-embedded-app {
     grid-column: 1 / -1;
