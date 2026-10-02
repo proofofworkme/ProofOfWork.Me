@@ -1317,7 +1317,7 @@
   z-index: 3;
 }
 .boost-search-head > .boost-route-search { margin: 0; }
-.boost-search-head > a { min-height: 44px; padding: 0; }
+.boost-search-head > a { justify-content: center; min-height: 44px; padding: 0; }
 .boost-public-app.mail-app .boost-search-head { top: calc(var(--topbar-height) + var(--status-row-height)); }
 .boost-search-surface .boost-feed-panel { grid-template-rows: auto auto minmax(0, 1fr); }
 .boost-profile-search-active .boost-feed-panel { grid-template-rows: auto auto auto auto minmax(0, 1fr); }
