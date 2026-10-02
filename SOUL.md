@@ -397,6 +397,10 @@ Future agents must preserve these unless the user explicitly asks for a migratio
 - Local state is portable through backups, not server accounts.
 
 Boost threads and social evidence must be consistent across entry points.
+The inline Boost composer belongs only to the main timeline. Keyword,
+hashtag, and cashtag search use a separate view with the search field at the
+top of the center feed. Clearing a query keeps search open; Back returns to
+the timeline. Search inputs never belong in the identity/tools sidebar.
 Cashtags and hashtags in every Boost text surface open whole-tag searches.
 PowID mentions in short or full form open the current confirmed owner's
 profile; address mentions support people without IDs. Hover/focus previews

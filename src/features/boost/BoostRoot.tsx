@@ -199,6 +199,12 @@ function initialSearchParam(name: string) {
   return new URLSearchParams(window.location.search).get(name)?.trim() ?? "";
 }
 
+function initialSearchView() {
+  if (typeof window === "undefined") return false;
+  const params = new URLSearchParams(window.location.search);
+  return params.get("mode") === "search" || params.has("q") || params.has("search");
+}
+
 function initialBoostNetwork(fallback: BitcoinNetwork) {
   const value = initialSearchParam("network");
   return value === "livenet" || value === "testnet" || value === "testnet4" ? value : fallback;
@@ -374,8 +380,12 @@ function profileEmptyTitle(tab: BoostProfileTab) {
   }[tab];
 }
 
-function boostTimelineHref(embedded: boolean) {
-  return boostRouteHref("/", embedded ? { folder: "boost" } : { boost: "1" });
+function boostTimelineHref(embedded: boolean, network?: BitcoinNetwork) {
+  return boostRouteHref("/", { ...(embedded ? { folder: "boost" } : { boost: "1" }), network });
+}
+
+function boostSearchHref(embedded: boolean, network: BitcoinNetwork) {
+  return boostRouteHref("/", { ...(embedded ? { folder: "boost" } : { boost: "1" }), network, mode: "search" });
 }
 
 function boostProfileHref(value: string, embedded: boolean) {
@@ -1042,7 +1052,8 @@ export default function BoostRoot({
   const [listQuery] = useState(() => initialSearchParam("list"));
   const [searchQuery, setSearchQuery] = useState(() => initialSearchParam("q") || initialSearchParam("search"));
   const [indexedSearchQuery, setIndexedSearchQuery] = useState(() => initialSearchParam("q") || initialSearchParam("search"));
-  const [routeSearchActive] = useState(() => Boolean(initialSearchParam("q") || initialSearchParam("search")));
+  const [routeSearchActive] = useState(initialSearchView);
+  const [profileSearchActive, setProfileSearchActive] = useState(initialSearchView);
   const [storedPayload, setPayload] = useState<BoostFeedPayload | undefined>();
   const [payloadScope, setPayloadScope] = useState("");
   const readLifecycle = useRef(createBoostReadLifecycle());
@@ -1087,14 +1098,17 @@ export default function BoostRoot({
   const toolsTriggerRef = useRef<HTMLButtonElement>(null);
   const toolsInvokerRef = useRef<HTMLElement | null>(null);
   const profileSearchRef = useRef<HTMLInputElement>(null);
-  const toolsSearchFocusRef = useRef(false);
+  const profileSearchTriggerRef = useRef<HTMLButtonElement>(null);
   const [status, setStatus] = useState<AppStatusState>({
     tone: "idle",
     text: "",
   });
 
+  const isProfileView = Boolean(profileRouteValue.trim());
+  const isSearchView = !isProfileView && routeSearchActive;
+  const emptySearch = isSearchView && !searchQuery.trim();
   const readScope = JSON.stringify([address, network, profileRouteValue, profileTab,
-    sortMode, timelineMode, valueWindow, indexedSearchQuery]);
+    sortMode, isSearchView ? "search" : timelineMode, valueWindow, indexedSearchQuery]);
   const currentReadScope = useRef(readScope);
   currentReadScope.current = readScope;
   const searchPending = searchQuery.trim() !== indexedSearchQuery;
@@ -1144,7 +1158,6 @@ export default function BoostRoot({
     return [...byAddress.values()].slice(0, 4);
   }, [address, items, profileRouteValue, payload?.profileSubject?.address]);
   const topSignalItems = useMemo(() => visibleItems.slice(0, 3), [visibleItems]);
-  const isProfileView = Boolean(profileRouteValue.trim());
   const modalOpen = Boolean(
     directPostOpen || expandedItem || pendingPaidAction || replyTarget,
   );
@@ -1878,6 +1891,11 @@ export default function BoostRoot({
 
   const refresh = async (append = false, fresh = false, announce = true) => {
     if (currentReadScope.current !== readScope) return;
+    if (isSearchView && !indexedSearchQuery) {
+      setBusy(false);
+      if (announce) setStatus({ tone: "idle", text: "Search Boost by keyword, hashtag, or cashtag." });
+      return;
+    }
     const request = readLifecycle.current.begin();
     const ownsRequest = () => request.current() && currentReadScope.current === readScope;
     setBusy(true);
@@ -1898,7 +1916,7 @@ export default function BoostRoot({
         params.set("profile", profileRouteValue.trim());
         params.set("profileTab", profileTab);
       } else {
-        params.set("view", timelineMode);
+        params.set("view", isSearchView ? "all" : timelineMode);
       }
       const nextPayload = await fetchProofApiJson<BoostFeedPayload>(
         `/api/v1/boost?${params.toString()}`,
@@ -1970,7 +1988,12 @@ export default function BoostRoot({
     timelineMode,
     valueWindow,
     indexedSearchQuery,
+    isSearchView,
   ]);
+
+  useEffect(() => {
+    if (isSearchView || profileSearchActive) profileSearchRef.current?.focus();
+  }, [isSearchView, profileSearchActive]);
 
   useEffect(() => {
     if (previousInitialNetwork.current !== initialNetwork) {
@@ -2050,13 +2073,10 @@ export default function BoostRoot({
     const panel = toolsPanelRef.current;
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
-    const initialFocus = toolsSearchFocusRef.current
-      ? profileSearchRef.current
-      : panel?.querySelector<HTMLElement>(
+    const initialFocus = panel?.querySelector<HTMLElement>(
           "button:not([disabled]), a[href], input:not([disabled]), select:not([disabled]), textarea:not([disabled])",
         );
     initialFocus?.focus();
-    toolsSearchFocusRef.current = false;
 
     const handleKeyDown = (event: globalThis.KeyboardEvent) => {
       if (event.key === "Escape") {
@@ -2255,14 +2275,8 @@ export default function BoostRoot({
   }
 
   function openProfileSearch() {
-    if (routeSearchActive) {
-      profileSearchRef.current?.focus();
-    } else if ((boostSurfaceRef.current?.getBoundingClientRect().width ?? window.innerWidth) <= 1120) {
-      toolsSearchFocusRef.current = true;
-      openTools();
-    } else {
-      profileSearchRef.current?.focus();
-    }
+    setProfileSearchActive(true);
+    profileSearchRef.current?.focus();
   }
 
   function openToolsForCompactSurface() {
@@ -2272,13 +2286,39 @@ export default function BoostRoot({
     }
   }
 
-  function renderSearchControl(inline = false) {
+  function updateSearchQuery(value: string) {
+    setSearchQuery(value);
+    const url = new URL(window.location.href);
+    url.searchParams.delete("search");
+    url.searchParams.set("network", network);
+    if (isProfileView && !value.trim()) url.searchParams.delete("q");
+    else url.searchParams.set("q", value.trim());
+    if (isSearchView) url.searchParams.set("mode", "search");
+    window.history.replaceState(null, "", url);
+    if (isSearchView && !value.trim()) {
+      readLifecycle.current.cancel();
+      setBusy(false);
+      setStatus({ tone: "idle", text: "Search Boost by keyword, hashtag, or cashtag." });
+    }
+  }
+
+  function renderSearchControl() {
     const label = isProfileView ? "Search this profile" : "Search Boost";
-    return <label className={inline ? "boost-search boost-route-search" : "boost-search"}>
+    return <form className="boost-search boost-route-search" role="search" aria-label={label}
+      onSubmit={event => { event.preventDefault(); setIndexedSearchQuery(searchQuery.trim()); }}>
       <Search size={15} aria-hidden="true" />
-      <input autoComplete="off" onChange={event => setSearchQuery(event.target.value)}
+      <input autoComplete="off" onChange={event => updateSearchQuery(event.target.value)}
+        onKeyDown={event => {
+          if (event.key === "Escape" && isProfileView) {
+            event.preventDefault();
+            updateSearchQuery("");
+            setIndexedSearchQuery("");
+            setProfileSearchActive(false);
+            profileSearchTriggerRef.current?.focus();
+          }
+        }}
         aria-label={label} placeholder={label} ref={profileSearchRef} value={searchQuery} />
-    </label>;
+    </form>;
   }
 
   function openBoostComposer(quote?: BoostFeedItem) {
@@ -2357,7 +2397,8 @@ export default function BoostRoot({
     <div
       className={[
         embedded ? "boost-public-app boost-embedded-app" : "mail-app boost-public-app",
-        isProfileView ? "boost-profile-surface" : "",
+        isProfileView ? "boost-profile-surface" : isSearchView ? "boost-search-surface" : "",
+        isProfileView && profileSearchActive ? "boost-profile-search-active" : "",
       ].filter(Boolean).join(" ")}
       ref={boostSurfaceRef}
     >
@@ -2385,7 +2426,7 @@ export default function BoostRoot({
       ) : null}
 
       <div
-        aria-label={embedded ? undefined : "Boost timeline"}
+        aria-label={embedded ? undefined : isSearchView ? "Boost search" : "Boost timeline"}
         className={
           embedded
             ? "boost-shell boost-shell-instrument is-embedded"
@@ -2402,8 +2443,8 @@ export default function BoostRoot({
           />
         ) : null}
         <nav className="boost-compact-nav" aria-label="Boost navigation">
-          <a href={boostTimelineHref(embedded)} aria-label="Home" title="Home"><Home size={22} /><span>Home</span></a>
-          <button onClick={openTools} type="button" aria-label="Search and profile tools" title="Search and profile tools"><Search size={22} /><span>Search</span></button>
+          <a href={boostTimelineHref(embedded, network)} aria-label="Home" title="Home"><Home size={22} /><span>Home</span></a>
+          <a href={boostSearchHref(embedded, network)} aria-label="Search Boost" title="Search Boost" aria-current={isSearchView ? "page" : undefined}><Search size={22} /><span>Search</span></a>
           {address ? <a href={boostProfileHref(address, embedded)} aria-label="My profile" title="My profile"><UserCircle size={22} /><span>Profile</span></a> :
             <button onClick={openTools} type="button" aria-label="Connect profile" title="Connect profile"><UserCircle size={22} /><span>Profile</span></button>}
           <button className="primary" onClick={onComposeBoost ?? (() => openBoostComposer())} type="button" aria-label="Post a Boost" title="Post a Boost"><Zap size={22} /><span>Post</span></button>
@@ -2468,7 +2509,7 @@ export default function BoostRoot({
           {isProfileView ? (
             <a
               className="secondary link-button boost-profile-timeline-link"
-              href={boostTimelineHref(embedded)}
+              href={boostTimelineHref(embedded, network)}
             >
               <span className="button-content">
                 <Clock size={16} />
@@ -2631,7 +2672,10 @@ export default function BoostRoot({
             </form>
           ) : null}
 
-          {!routeSearchActive ? renderSearchControl() : null}
+          <a className="secondary link-button boost-search-nav-link" href={boostSearchHref(embedded, network)}
+            aria-current={isSearchView ? "page" : undefined}>
+            <span className="button-content"><Search size={16} /><span>Search Boost</span></span>
+          </a>
 
           <form className="boost-profile-filter" onSubmit={openProfileRoute}>
             <label>
@@ -2668,6 +2712,13 @@ export default function BoostRoot({
             busy={Boolean(actionBusy)} publishStatus={status.text} onPublish={publishProfileImages} onClose={() => setImageEditorOpen(false)} /> : null}
 
         <section className="boost-feed-panel">
+          {isSearchView ? (
+            <header className="boost-search-head">
+              <a className="secondary small link-button" href={boostTimelineHref(embedded, network)}
+                aria-label="Back to timeline" title="Back to timeline"><ArrowLeft size={20} /></a>
+              {renderSearchControl()}
+            </header>
+          ) : null}
           {isProfileView && connectionsTab ? (
             <BoostConnections profile={profileRouteValue} tab={connectionsTab} onTab={selectConnections}
               network={network} viewer={address} onBack={() => selectConnections()}
@@ -2676,14 +2727,14 @@ export default function BoostRoot({
           {isProfileView ? (
             <>
             <div className="boost-profile-titlebar">
-              <a className="secondary small link-button" href={boostTimelineHref(embedded)} aria-label="Back to timeline" title="Back to timeline">
+              <a className="secondary small link-button" href={boostTimelineHref(embedded, network)} aria-label="Back to timeline" title="Back to timeline">
                 <ArrowLeft size={20} />
               </a>
               <div className="boost-profile-title">
                 <strong title={profileSubjectDisplay(payload)}>{profileSubjectDisplay(payload)}</strong>
                 <span>{profileCount(profileBoostCount)} {profileBoostCount === 1 ? "Boost" : "Boosts"}</span>
               </div>
-              <button className="secondary small" onClick={openProfileSearch} type="button" aria-label="Search this profile" title="Search this profile">
+              <button className="secondary small" onClick={openProfileSearch} ref={profileSearchTriggerRef} type="button" aria-label="Search this profile" title="Search this profile">
                 <Search size={20} />
               </button>
             </div>
@@ -2771,7 +2822,7 @@ export default function BoostRoot({
               </div>
             </div>
             </>
-          ) : (
+          ) : !isSearchView ? (
             <div className="boost-timeline-head">
               <div
                 className="boost-timeline-tabs"
@@ -2824,8 +2875,8 @@ export default function BoostRoot({
                 <p className="boost-composer-hint">140 characters · Proof / WORK · Files</p>
               </div>
             </div>
-          )}
-          {routeSearchActive ? renderSearchControl(true) : null}
+          ) : null}
+          {isProfileView && profileSearchActive ? renderSearchControl() : null}
           <div className="boost-feed-toolbar">
             <button
               aria-controls="boost-tools-panel"
@@ -2889,22 +2940,31 @@ export default function BoostRoot({
 
           <div
             aria-labelledby={
-              isProfileView
+              isSearchView ? undefined : isProfileView
                 ? `boost-profile-tab-${profileTab}`
                 : `boost-timeline-tab-${timelineMode}`
             }
+            aria-label={isSearchView ? "Boost search results" : undefined}
             className="boost-feed"
-            id={isProfileView ? "boost-profile-panel" : "boost-timeline-panel"}
-            role="tabpanel"
+            id={isSearchView ? "boost-search-results" : isProfileView ? "boost-profile-panel" : "boost-timeline-panel"}
+            role={isSearchView ? "region" : "tabpanel"}
             tabIndex={0}
           >
-            {visibleItems.length > 0 ? (
+            {emptySearch ? (
+              <div className="boost-empty">
+                <Search size={28} />
+                <h2>Search Boost</h2>
+                <p>Find Boosts by keyword, hashtag, or cashtag.</p>
+              </div>
+            ) : visibleItems.length > 0 ? (
               visibleItems.map((item) => renderBoostPost(item))
             ) : (
               <div className="boost-empty">
                 <Zap size={28} />
                 <h2>
-                  {!payload ? busy || searchPending ? "Loading Boost history" : "Boost history unavailable" : isProfileView
+                  {!payload ? busy || searchPending ? "Loading Boost history" : "Boost history unavailable" : isSearchView
+                    ? "No Boosts match your search"
+                    : isProfileView
                     ? profileEmptyTitle(profileTab)
                     : timelineMode === "following"
                     ? address

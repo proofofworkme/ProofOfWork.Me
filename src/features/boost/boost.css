@@ -1302,6 +1302,26 @@
 .boost-text-link:focus-visible { outline: 2px solid var(--focus-outline, #77a7e8); outline-offset: 3px; border-radius: 2px; }
 .boost-route-search { margin: 12px 16px; min-width: 0; }
 .boost-route-search > input { min-width: 0; }
+.boost-route-search:focus-within { outline: 2px solid var(--focus-outline, #77a7e8); outline-offset: 2px; }
+.boost-shell-instrument .boost-route-search > input:focus { outline: 0; box-shadow: none; }
+.boost-search-head {
+  align-items: center;
+  background: var(--surface-raised);
+  border-bottom: 1px solid var(--border);
+  display: grid;
+  gap: 12px;
+  grid-template-columns: 44px minmax(0, 1fr);
+  padding: 12px 16px;
+  position: sticky;
+  top: 0;
+  z-index: 3;
+}
+.boost-search-head > .boost-route-search { margin: 0; }
+.boost-search-head > a { min-height: 44px; padding: 0; }
+.boost-public-app.mail-app .boost-search-head { top: calc(var(--topbar-height) + var(--status-row-height)); }
+.boost-search-surface .boost-feed-panel { grid-template-rows: auto auto minmax(0, 1fr); }
+.boost-profile-search-active .boost-feed-panel { grid-template-rows: auto auto auto auto minmax(0, 1fr); }
+.boost-search-nav-link[aria-current="page"] { border-color: var(--accent); color: var(--text); }
 .boost-mention-preview {
   position: fixed;
   z-index: 160;

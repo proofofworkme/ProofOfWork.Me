@@ -3,10 +3,12 @@ import { expect, test } from "@playwright/test";
 const SUBJECT = "1KNkUBREnfno2BeV7QsBf8XCWZN6YFfxPH";
 const OTHER = "1BoatSLRHtKNngkdXEeobR76b53LETtpyT";
 async function fixtures(page, { displayName = "carbonz@proofofwork.me", unavailable = false } = {}) {
+  const queries = [];
   await page.route("**/api/v1/**", async (route) => {
     if (route.request().method() !== "GET") return route.abort("blockedbyclient");
     const url = new URL(route.request().url());
     if (url.pathname !== "/api/v1/boost") return route.fulfill({ json: { records: [], listings: [] } });
+    queries.push(Object.fromEntries(url.searchParams));
     if (unavailable) return route.fulfill({ status: 503, json: { error: "Profile temporarily unavailable" } });
     const items = Array.from({ length: 12 }, (_, i) => ({
       authorAddress: i === 11 ? OTHER : SUBJECT, authorId: i === 11 ? "another" : "carbonz",
@@ -24,15 +26,20 @@ async function fixtures(page, { displayName = "carbonz@proofofwork.me", unavaila
       signalStats: { proofSignalQ8: "109200000000", totalSignalQ8: "109200000000", workSignalSubatoms: "0" },
     } });
   });
+  return queries;
 }
 
-for (const [width, embedded] of [[1920, false], [1440, false], [960, false], [768, false], [390, false], [320, false], [1440, true], [390, true]]) {
+for (const [width, embedded] of [[1920, false], [1440, false], [960, false], [768, false], [390, false], [320, false], [1920, true], [1440, true], [390, true]]) {
   test(`profile hierarchy and actions fit ${width}px ${embedded ? "Computer" : "standalone"}`, async ({ page }, testInfo) => {
     await page.setViewportSize({ width, height: 1000 });
     await fixtures(page);
     await page.goto(`/?${embedded ? "folder=boost" : "boost=1"}&profile=carbonz`);
     const surface = page.locator(".boost-profile-surface");
     const header = surface.locator(".boost-profile-titlebar");
+    await expect(surface.locator(".boost-composer-strip")).toHaveCount(0);
+    await expect(surface.locator(".boost-search-head")).toHaveCount(0);
+    await expect(surface.locator(".boost-sidebar .boost-search")).toHaveCount(0);
+    await expect(surface.getByRole("textbox", { name: "Search this profile", exact: true })).toHaveCount(0);
     await expect(header).toContainText("35 Boosts");
     await expect(surface.locator(".boost-profile-copy h2")).toHaveText("carbonz");
     await expect(surface.locator(".boost-profile-copy > p")).toHaveText("@carbonz");
@@ -68,17 +75,31 @@ for (const [width, embedded] of [[1920, false], [1440, false], [960, false], [76
     await toolbar.getByRole("combobox", { name: "Boost value window" }).selectOption("week");
     await periodRequest;
     await expect(header).toContainText("35 Boosts");
+    await surface.locator("#boost-profile-tab-likes").click();
     const searchButton = header.getByRole("button", { name: "Search this profile" });
     await searchButton.click();
     const search = surface.getByRole("textbox", { name: "Search this profile" });
     await expect(search).toBeFocused();
+    await expect(surface.locator(".boost-feed-panel > .boost-route-search")).toBeVisible();
+    await expect(surface.locator(".boost-sidebar .boost-search")).toHaveCount(0);
     const searchRequest = page.waitForRequest(request => new URL(request.url()).searchParams.get("q") === "proof");
     await search.fill("proof");
-    expect(new URL((await searchRequest).url()).searchParams.get("profile")).toBe("carbonz");
-    if (bounds.surface <= 1120) {
-      await page.keyboard.press("Escape");
-      await expect(searchButton).toBeFocused();
-    }
+    const requestParams = new URL((await searchRequest).url()).searchParams;
+    expect(requestParams.get("profile")).toBe("carbonz");
+    expect(requestParams.get("profileTab")).toBe("likes");
+    expect(new URL(page.url()).searchParams.get("profileTab")).toBe("likes");
+    expect(new URL(page.url()).searchParams.get("q")).toBe("proof");
+    const resetRequest = page.waitForRequest(request => {
+      const url = new URL(request.url());
+      return url.pathname === "/api/v1/boost" && url.searchParams.get("profile") === "carbonz"
+        && url.searchParams.get("profileTab") === "likes" && !url.searchParams.has("q");
+    });
+    await page.keyboard.press("Escape");
+    await expect(searchButton).toBeFocused();
+    await expect(search).toHaveCount(0);
+    await resetRequest;
+    expect(new URL(page.url()).searchParams.has("q")).toBe(false);
+    expect(new URL(page.url()).searchParams.has("search")).toBe(false);
     await surface.locator(".boost-profile-identity > summary").click();
     await expect(surface.locator(".boost-profile-identity")).toContainText("carbonz@proofofwork.me");
     await expect(surface.locator(".boost-profile-identity")).toContainText(SUBJECT);
@@ -95,6 +116,25 @@ for (const [width, embedded] of [[1920, false], [1440, false], [960, false], [76
     const backParams = new URL(backHref, page.url()).searchParams;
     expect(backParams.get(embedded ? "folder" : "boost")).toBe(embedded ? "boost" : "1");
     expect(backParams.has(embedded ? "boost" : "folder")).toBe(false);
+  });
+}
+
+for (const embedded of [false, true]) {
+  test(`query routes retain the profile and selected tab ahead of global search ${embedded ? "Computer" : "standalone"}`, async ({ page }) => {
+    await page.setViewportSize({ width: embedded ? 390 : 1920, height: 1000 });
+    const queries = await fixtures(page);
+    await page.goto(`/?${embedded ? "folder=boost" : "boost=1"}&profile=carbonz&profileTab=likes&mode=search&q=proof`);
+    const surface = page.locator(".boost-profile-surface");
+    await expect(surface.locator(".boost-profile-copy h2")).toHaveText("carbonz");
+    await expect(surface.locator("#boost-profile-tab-likes")).toHaveAttribute("aria-selected", "true");
+    const search = surface.getByRole("textbox", { name: "Search this profile", exact: true });
+    await expect(search).toHaveValue("proof");
+    await expect(surface.locator(".boost-feed-panel > .boost-route-search")).toBeVisible();
+    await expect(surface.locator(".boost-sidebar .boost-search")).toHaveCount(0);
+    await expect(surface.locator(".boost-composer-strip")).toHaveCount(0);
+    await expect(page.getByRole("textbox", { name: "Search Boost", exact: true })).toHaveCount(0);
+    await expect(page.getByRole("region", { name: "Boost search results", exact: true })).toHaveCount(0);
+    await expect.poll(() => queries.at(-1)).toMatchObject({ profile: "carbonz", profileTab: "likes", q: "proof" });
   });
 }
 

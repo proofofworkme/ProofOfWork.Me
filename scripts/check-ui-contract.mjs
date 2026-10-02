@@ -721,7 +721,7 @@ expect(
     /className="boost-profile-head"/u.test(boostRoot) &&
     /aria-label="Boost profile tabs"/u.test(boostRoot) &&
     /params\.set\("profileTab", profileTab\)/u.test(boostRoot) &&
-    /params\.set\("view", timelineMode\)/u.test(boostRoot) &&
+    /params\.set\("view", isSearchView \? "all" : timelineMode\)/u.test(boostRoot) &&
     /profileTabs\?: Record<BoostProfileTab, number>/u.test(boostProtocol),
 );
 const boostSidebarSource = boostRoot.slice(
@@ -735,7 +735,7 @@ const boostProfileHeadSource = boostRoot.slice(
 expect(
   "Boost profile timeline navigation lives in the left rail",
   /boost-profile-timeline-link/u.test(boostSidebarSource) &&
-    /href=\{boostTimelineHref\(embedded\)\}/u.test(
+    /href=\{boostTimelineHref\(embedded, network\)\}/u.test(
       boostSidebarSource,
     ) &&
     /<Clock size=\{16\} \/>/u.test(boostSidebarSource) &&

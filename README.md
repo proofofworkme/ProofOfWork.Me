@@ -643,8 +643,15 @@ searches over the complete confirmed history. `$work`, `#work`, and ordinary
 `work` searches remain distinct. The same text renderer covers posts, replies,
 quotes, and reboost originals in standalone Boost and Computer; search and
 profile links retain their host and selected network.
-Active tag searches keep a compact, single-line icon and input above the feed
-on desktop and mobile, with the search name retained for assistive technology.
+Keyword, hashtag, and cashtag search have their own central view in Boost and
+Computer: a Back link and compact search field sit above the results, with no
+inline composer or timeline tabs. The inline composer belongs only to the
+main timeline. Search navigation opens this view with `mode=search`; legacy
+`q` and `search` links remain supported. Editing updates the shareable query,
+clearing keeps the empty search view open, and Back returns to the timeline
+while retaining the selected network. Sidebar search inputs are replaced by
+search navigation; profile search remains scoped in the center feed. Search
+names stay accessible on desktop and mobile.
 
 Mentions accept `@name`, `name@proofofwork.me`, and `@<address>` for an address
 without a PowID. PowIDs resolve to their current confirmed owner, while raw

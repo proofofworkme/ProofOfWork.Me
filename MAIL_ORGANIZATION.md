@@ -131,6 +131,12 @@ Embedded Boost profile, profile-tab, and timeline navigation keeps
 HTML source retain visible labels after entry. Miner-fee controls display the
 rate in proofs/vB; exact protocol/API field names and arithmetic are unchanged.
 
+Boost's inline composer appears only on the main timeline. Search opens a
+separate center-feed view with a Back link and editable keyword/tag query;
+clearing the query keeps this view open. Search and profile-search inputs stay
+in the center feed, while the tools sidebar provides navigation and identity
+controls. Search and Back preserve the Computer workspace and selected network.
+
 Boost posts, replies, quotes, and reboost originals link cashtags and hashtags
 to whole-tag search and link PowID/address mentions to Boost profiles. Both
 `@name` and `name@proofofwork.me` resolve a current confirmed PowID owner;

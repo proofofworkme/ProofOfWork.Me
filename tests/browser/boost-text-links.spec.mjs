@@ -49,7 +49,7 @@ function subject(query) {
   };
 }
 
-async function fixture(page, { items = contextItems, previewState = "resolved", delayPreview = 0 } = {}) {
+async function fixture(page, { items = contextItems, previewState = "resolved", delayPreview = 0, network = "livenet" } = {}) {
   const queries = [];
   const previews = [];
   await page.route("**/api/v1/**", async (route) => {
@@ -61,7 +61,7 @@ async function fixture(page, { items = contextItems, previewState = "resolved", 
     const query = Object.fromEntries(url.searchParams);
     queries.push(query);
     const common = {
-      complete: true, snapshotId: "boost-text-fixture", network: "livenet",
+      complete: true, snapshotId: "boost-text-fixture", network,
       indexedAt: "2026-10-01T14:00:00Z", hasMore: false, nextCursor: "", start: 0,
       signalStats: signal, stats: { total: items.length, confirmed: items.length, pending: 0 },
     };
@@ -143,18 +143,36 @@ for (const embedded of [false, true]) {
     if (embedded) await expect(page.locator(".boost-embedded-app")).toBeVisible();
   });
 
-  test(`${surface} initializes generic cash and hash searches from encoded links`, async ({ page }) => {
+  test(`${surface} initializes keywords, tags, and legacy search links in the dedicated view`, async ({ page }) => {
     const { queries } = await fixture(page, { items: [post(ORIGINAL_TXID, "$generic_7 #網絡_2026")] });
-    for (const q of ["$generic_7", "#網絡_2026"]) {
-      await page.goto(`${route}&q=${encodeURIComponent(q)}`);
-      await expect(page.getByRole("textbox", { name: "Search Boost", exact: true })).toHaveValue(q);
-      await expect.poll(() => queries.at(-1)?.q).toBe(q);
-      await expect(page.getByTestId("boost-post").getByRole("link", { name: q, exact: true })).toBeVisible();
+    for (const [parameter, q] of [["q", "$generic_7"], ["q", "#網絡_2026"], ["search", "keyword phrase"], ["q", ""], ["search", ""]]) {
+      await page.goto(`${route}&${parameter}=${encodeURIComponent(q)}`);
+      const input = page.getByRole("textbox", { name: "Search Boost", exact: true });
+      await expect(input).toHaveValue(q);
+      await expect(page.locator(".boost-feed-panel > .boost-search-head")).toBeVisible();
+      await expect(page.locator(".boost-composer-strip")).toHaveCount(0);
+      await expect(page.locator(".boost-sidebar .boost-search")).toHaveCount(0);
+      const results = page.getByRole("region", { name: "Boost search results", exact: true });
+      if (q) {
+        await expect.poll(() => queries.at(-1)?.q).toBe(q);
+        expect(queries.at(-1)?.view).toBe("all");
+        if (/^[#$]/u.test(q)) await expect(results.getByRole("link", { name: q, exact: true })).toBeVisible();
+      } else {
+        await expect(results.getByRole("heading", { name: "Search Boost", exact: true })).toBeVisible();
+        await expect(page.getByTestId("boost-post")).toHaveCount(0);
+      }
+      if (parameter === "search" && q) {
+        await input.fill("$generic_7");
+        await input.press("Enter");
+        await expect.poll(() => queries.at(-1)?.q).toBe("$generic_7");
+        assertRoute(page.url(), embedded, { mode: "search", q: "$generic_7" });
+        expect(new URL(page.url()).searchParams.has("search")).toBe(false);
+      }
     }
   });
 
   for (const width of [1920, 390]) {
-    test(`${surface} keeps the route search icon and editable input in one row at ${width}px`, async ({ page }) => {
+    test(`${surface} centers search above results without a composer at ${width}px`, async ({ page }, testInfo) => {
       await page.setViewportSize({ width, height: width === 390 ? 844 : 1080 });
       const { queries } = await fixture(page, { items: [post(ORIGINAL_TXID, "$generic_7 #網絡_2026")] });
       await page.goto(`${route}&q=${encodeURIComponent("$generic_7")}`);
@@ -163,8 +181,17 @@ for (const embedded of [false, true]) {
       await expect(input).toHaveValue("$generic_7");
       await expect(input).toHaveAttribute("placeholder", "Search Boost");
       await expect(control).toHaveCount(1);
+      await expect(page.locator(".boost-feed-panel > .boost-search-head:first-child")).toBeVisible();
+      await expect(page.locator(".boost-search-head").getByRole("search", { name: "Search Boost", exact: true })).toBeVisible();
+      await expect(page.locator(".boost-sidebar .boost-search")).toHaveCount(0);
+      await expect(page.locator(".boost-composer-strip")).toHaveCount(0);
+      await expect(page.getByRole("textbox", { name: "Boost text", exact: true })).toHaveCount(0);
+      await expect(page.getByRole("tablist", { name: "Boost timeline", exact: true })).toHaveCount(0);
+      const results = page.getByRole("region", { name: "Boost search results", exact: true });
+      await expect(results).toHaveAttribute("id", "boost-search-results");
       await expect(page.getByTestId("boost-post")).toBeVisible();
       await expect.poll(() => queries.at(-1)?.q).toBe("$generic_7");
+      expect(queries.at(-1)?.view).toBe("all");
 
       const geometry = await control.evaluate((element) => {
         const box = (node) => {
@@ -179,6 +206,9 @@ for (const embedded of [false, true]) {
           gap: parseFloat(style.columnGap),
           overflow: element.scrollWidth - element.clientWidth,
           documentWidth: document.documentElement.scrollWidth,
+          panel: box(element.closest(".boost-feed-panel")),
+          toolbar: box(element.closest(".boost-feed-panel").querySelector(".boost-feed-toolbar")),
+          results: box(element.closest(".boost-feed-panel").querySelector("#boost-search-results")),
         };
       });
       expect(geometry.control.height).toBeGreaterThanOrEqual(43);
@@ -195,17 +225,76 @@ for (const embedded of [false, true]) {
       expect(geometry.control.x).toBeGreaterThanOrEqual(0);
       expect(geometry.control.right).toBeLessThanOrEqual(width + 1);
       expect(geometry.documentWidth).toBeLessThanOrEqual(width + 1);
+      expect(geometry.control.x).toBeGreaterThanOrEqual(geometry.panel.x);
+      expect(geometry.control.right).toBeLessThanOrEqual(geometry.panel.right);
+      expect(geometry.control.bottom).toBeLessThanOrEqual(geometry.toolbar.y);
+      expect(geometry.control.bottom).toBeLessThanOrEqual(geometry.results.y);
 
       await input.fill("#網絡_2026");
       await expect(input).toHaveValue("#網絡_2026");
       await expect.poll(() => queries.at(-1)?.q).toBe("#網絡_2026");
+      assertRoute(page.url(), embedded, { mode: "search", q: "#網絡_2026" });
       await expect(input).toBeFocused();
-      await page.screenshot({ path: `/tmp/pow-boost-search-row-${embedded ? "computer" : "standalone"}-${width}.png` });
+      await page.screenshot({ path: testInfo.outputPath("central-search.png") });
+    });
+
+    test(`${surface} opens empty search, refines and clears queries, and returns to the timeline at ${width}px`, async ({ page }) => {
+      await page.setViewportSize({ width, height: width === 390 ? 844 : 1080 });
+      const { queries } = await fixture(page, { items: [], network: "testnet4" });
+      await page.goto(`${route}&network=testnet4`);
+      await expect(page.locator(".boost-composer-strip")).toBeVisible();
+      await expect(page.locator(".boost-sidebar .boost-search")).toHaveCount(0);
+      await expect.poll(() => queries.length).toBeGreaterThan(0);
+      const beforeSearch = queries.length;
+      const navigation = page.locator(width === 390 ? ".boost-compact-nav" : ".boost-sidebar");
+      const entry = navigation.getByRole("link", { name: "Search Boost", exact: true });
+      assertRoute(await entry.getAttribute("href"), embedded, { mode: "search", network: "testnet4" });
+      await entry.click();
+      const input = page.getByRole("textbox", { name: "Search Boost", exact: true });
+      const results = page.getByRole("region", { name: "Boost search results", exact: true });
+      await expect(input).toHaveValue("");
+      await expect(input).toBeFocused();
+      await expect(page.locator(".boost-composer-strip")).toHaveCount(0);
+      await expect(results).toContainText("keyword, hashtag, or cashtag");
+      await page.waitForTimeout(350); // Allow the normal debounce to reveal an accidental unfiltered read.
+      expect(queries.slice(beforeSearch)).toEqual([]);
+
+      await input.fill("keyword phrase");
+      await input.press("Enter");
+      await expect.poll(() => queries.at(-1)?.q).toBe("keyword phrase");
+      expect(queries.at(-1)).toMatchObject({ view: "all", network: "testnet4" });
+      assertRoute(page.url(), embedded, { mode: "search", q: "keyword phrase", network: "testnet4" });
+      await input.fill("$generic_7");
+      await expect.poll(() => queries.at(-1)?.q).toBe("$generic_7");
+      await input.fill("#網絡_2026");
+      await expect.poll(() => queries.at(-1)?.q).toBe("#網絡_2026");
+      const beforeClear = queries.length;
+      await input.fill("cancel pending query");
+      await input.fill("");
+      await expect(results.getByRole("heading", { name: "Search Boost", exact: true })).toBeVisible();
+      await expect(page.locator(".boost-composer-strip")).toHaveCount(0);
+      await page.waitForTimeout(350);
+      expect(queries.slice(beforeClear)).toEqual([]);
+      assertRoute(page.url(), embedded, { mode: "search", q: "", network: "testnet4" });
+      const back = page.locator(".boost-search-head").getByRole("link", { name: "Back to timeline", exact: true });
+      const backUrl = assertRoute(await back.getAttribute("href"), embedded, { network: "testnet4" });
+      for (const parameter of ["mode", "q", "search"]) expect(backUrl.searchParams.has(parameter)).toBe(false);
+      await back.click();
+      await expect(page.locator(".boost-composer-strip")).toBeVisible();
+      await expect(page.locator(".boost-search-head")).toHaveCount(0);
+      await expect(page.getByRole("tablist", { name: "Boost timeline", exact: true })).toBeVisible();
+      if (width === 390) {
+        await page.locator(".boost-compact-nav").getByRole("link", { name: "Search Boost", exact: true }).click();
+        const home = page.locator(".boost-compact-nav").getByRole("link", { name: "Home", exact: true });
+        assertRoute(await home.getAttribute("href"), embedded, { network: "testnet4" });
+        await home.click();
+        await expect(page.locator(".boost-composer-strip")).toBeVisible();
+      }
     });
   }
 }
 
-test("ID mentions share a confirmed owner preview, stay keyboard-accessible, and open without a Boost detail", async ({ page }) => {
+test("ID mentions share a confirmed owner preview, stay keyboard-accessible, and open without a Boost detail", async ({ page }, testInfo) => {
   const { previews, queries } = await fixture(page, { items: [original], delayPreview: 400 });
   await page.goto("/?boost=1");
   const mention = page.getByRole("link", { name: "@ArmyOfYouth", exact: true });
@@ -230,7 +319,7 @@ test("ID mentions share a confirmed owner preview, stay keyboard-accessible, and
   await expect(open).toBeFocused();
   await page.keyboard.press("Shift+Tab");
   await expect(email).toBeFocused();
-  await page.screenshot({ path: "/tmp/pow-boost-links-local-desktop.png" });
+  await page.screenshot({ path: testInfo.outputPath("mention-preview-desktop.png") });
   await page.keyboard.press("Escape");
   await expect(preview).toHaveCount(0);
   await expect(email).toHaveAttribute("aria-expanded", "false");
@@ -275,7 +364,7 @@ test("Unicode, punctuation, and quoted PowIDs keep the complete identity in prof
   await expect(page.getByRole("dialog", { name: "Boost detail", exact: true })).toHaveCount(0);
 });
 
-test("raw legacy, P2SH, SegWit, and Taproot address mentions work without an ID and stay contained on mobile", async ({ page }) => {
+test("raw legacy, P2SH, SegWit, and Taproot address mentions work without an ID and stay contained on mobile", async ({ page }, testInfo) => {
   await page.setViewportSize({ width: 390, height: 844 });
   const addresses = [LEGACY, P2SH, SEGWIT.toUpperCase(), TAPROOT];
   const { previews } = await fixture(page, { items: addresses.map((address, index) =>
@@ -294,7 +383,7 @@ test("raw legacy, P2SH, SegWit, and Taproot address mentions work without an ID 
     expect(bounds.x + bounds.width).toBeLessThanOrEqual(391);
     expect(bounds.y + bounds.height).toBeLessThanOrEqual(845);
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(391);
-    if (address === TAPROOT) await page.screenshot({ path: "/tmp/pow-boost-links-local-mobile.png" });
+    if (address === TAPROOT) await page.screenshot({ path: testInfo.outputPath("mention-preview-mobile.png") });
     await page.keyboard.press("Escape");
   }
   expect(previews).toHaveLength(4);
