@@ -1,0 +1,22 @@
+{
+  "approvedUnitSha256": "14426a6092ca97ab3c3e05e2030cc99912ed03afbbc899a03cafb33960622ea5",
+  "firstBatchApprovalSha256": "d99a40236b49b1735c794fb853c4f7f4f0724da8e3f83fab75c7464e0e8ee373",
+  "onlyChange": {
+    "TimeoutStartSec": {
+      "after": "60s",
+      "before": "20s"
+    }
+  },
+  "preserved": {
+    "CPUQuota": "10%",
+    "MemoryMax": "32M",
+    "TasksMax": "16",
+    "allOtherUnitBytes": true,
+    "nodeDeadline": "20s"
+  },
+  "recordedAtUtc": "2026-10-02T19:38:29.260038+00:00",
+  "role": "ui",
+  "schema": "proof-of-work-audit30-ui-retention-deadline-approval-v1",
+  "source": "Direct human user answer in this Codex chat",
+  "userStatement": "Approve UI 60-second deadline"
+}

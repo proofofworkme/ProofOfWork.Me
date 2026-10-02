@@ -163,7 +163,9 @@ import {
 import {
   enrichWalletCuratedUtxoConfirmations,
   estimateTxVbytes,
+  feeForEstimatedVbytes,
   normalizeWalletUtxos,
+  previewFeeForEstimatedVbytes,
   selectSmallestSingleConfirmedUtxo,
   selectUtxos,
   type WalletUtxo as MempoolUtxo,
@@ -20167,8 +20169,9 @@ function buildChainedMintPsbt({
     (total, output) => total + output.amountSats,
     0,
   );
-  const baseFeeSats = Math.ceil(
-    estimateTxVbytes(inputs.length, fixedOutputVbytes) * feeRate,
+  const baseFeeSats = feeForEstimatedVbytes(
+    estimateTxVbytes(inputs.length, fixedOutputVbytes),
+    feeRate,
   );
   const chainValue = totalInputSats - totalFixedSats - baseFeeSats;
   if (chainValue < 0) {
@@ -34520,8 +34523,9 @@ export default function App() {
         0,
       );
     const changeOutputVbytes = outputVbytesForScript(changeScript);
-    const estimatedFeePerMint = Math.ceil(
-      estimateTxVbytes(1, fixedOutputVbytes + changeOutputVbytes) * feeRate,
+    const estimatedFeePerMint = feeForEstimatedVbytes(
+      estimateTxVbytes(1, fixedOutputVbytes + changeOutputVbytes),
+      feeRate,
     );
     const initialInputs = await selectChainedInitialInputs({
       excludeOutpoints: activeTokenListingAnchorOutpointsForAddress(
@@ -42205,8 +42209,9 @@ function TokenWalletWorkspace({
             estimatedTransferSelfOutputVbytes,
         )
       : 0;
-  const estimatedTransferSplitFeeSats = Math.ceil(
-    estimatedTransferSplitVbytes * normalizedPrepareTransferFeeRate,
+  const estimatedTransferSplitFeeSats = previewFeeForEstimatedVbytes(
+    estimatedTransferSplitVbytes,
+    normalizedPrepareTransferFeeRate,
   );
   const transferFundingPrep =
     prepareTransferUtxos &&
@@ -42258,7 +42263,9 @@ function TokenWalletWorkspace({
           </div>
           <div>
             <span>Estimated split fee</span>
-            <strong>{estimatedTransferSplitFeeSats.toLocaleString()} proofs</strong>
+            <strong>{estimatedTransferSplitFeeSats === null
+              ? "Unavailable"
+              : `${estimatedTransferSplitFeeSats.toLocaleString()} proofs`}</strong>
             <p>One estimated input, prepared outputs, and change.</p>
           </div>
         </div>
@@ -42325,7 +42332,7 @@ function TokenWalletWorkspace({
           <div className="token-assistant-actions">
             <button
               className="secondary"
-              disabled={!canPrepareTransferUtxos}
+              disabled={!canPrepareTransferUtxos || estimatedTransferSplitFeeSats === null}
               type="submit"
             >
               <span className="button-content">
@@ -44425,16 +44432,19 @@ function TokenWorkspace({
               ESTIMATED_PAYMENT_OUTPUT_VBYTES,
           )
         : 0;
-    const estimatedSplitFeeSats =
-      normalizedPrepareMintCount > 0
-        ? Math.ceil(estimatedSplitVbytes * normalizedPrepareFeeRate)
-        : 0;
-    const estimatedTotalSats = totalPreparedSats + estimatedSplitFeeSats;
+    const estimatedSplitFeeSats = previewFeeForEstimatedVbytes(
+      estimatedSplitVbytes,
+      normalizedPrepareFeeRate,
+    );
+    const estimatedTotalSats = estimatedSplitFeeSats === null
+      ? null
+      : totalPreparedSats + estimatedSplitFeeSats;
     const registrySatsTotal = token.mintPriceSats * normalizedPrepareMintCount;
     const futureReserveTotal =
       normalizedPrepareFeeReserveSats * normalizedPrepareMintCount;
     const helperTokenSelected = selectedToken?.tokenId === token.tokenId;
-    const helperCanPrepare = canPrepareMintUtxos && helperTokenSelected;
+    const helperCanPrepare = canPrepareMintUtxos && helperTokenSelected &&
+      estimatedSplitFeeSats !== null;
 
     return (
       <details className="token-utxo-prep" open>
@@ -44459,12 +44469,16 @@ function TokenWorkspace({
             </div>
             <div>
               <span>Split miner fee</span>
-              <strong>{estimatedSplitFeeSats.toLocaleString()} proofs</strong>
+              <strong>{estimatedSplitFeeSats === null
+                ? "Unavailable"
+                : `${estimatedSplitFeeSats.toLocaleString()} proofs`}</strong>
               <p>This is paid to miners by the prepare transaction.</p>
             </div>
             <div>
               <span>Total wallet needed</span>
-              <strong>{estimatedTotalSats.toLocaleString()} proofs</strong>
+              <strong>{estimatedTotalSats === null
+                ? "Unavailable"
+                : `${estimatedTotalSats.toLocaleString()} proofs`}</strong>
               <p>Outputs total plus the split transaction miner fee.</p>
             </div>
           </div>
@@ -44543,11 +44557,15 @@ function TokenWorkspace({
             </div>
             <div>
               <span>Split tx miner fee</span>
-              <strong>{estimatedSplitFeeSats.toLocaleString()} proofs</strong>
+              <strong>{estimatedSplitFeeSats === null
+                ? "Unavailable"
+                : `${estimatedSplitFeeSats.toLocaleString()} proofs`}</strong>
             </div>
             <div>
               <span>Total needed now</span>
-              <strong>{estimatedTotalSats.toLocaleString()} proofs</strong>
+              <strong>{estimatedTotalSats === null
+                ? "Unavailable"
+                : `${estimatedTotalSats.toLocaleString()} proofs`}</strong>
             </div>
           </div>
           <p className="field-note">

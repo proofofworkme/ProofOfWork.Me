@@ -1172,6 +1172,19 @@ preparation, accepts up to eight decimal places in sat/vB (for example, `0.35`,
 remain unchanged. Transaction preparation preserves the selected rate and
 rounds the calculated total miner fee upward to whole proofs; precision beyond
 eight decimal places is rejected rather than silently rounded.
+The accepted decimal rate is converted to an integer Q8 value before fee
+multiplication and ceiling division. Computer, Boost, chained mint budgets and
+UTXO split previews use the same calculation; for 275 vB at 0.28 sat/vB the
+estimated fee is exactly 77 proofs. Draft rates beyond eight decimal places or
+estimates outside the safe whole-proof range display an unavailable preview and
+cannot prepare a transaction. Existing empty/nonpositive input defaults remain
+unchanged.
+
+Audit 30 adds `npm run check:audit30-first-batch` for independent rational fee
+and unsigned preparation fixtures, exact relocation/namespace reporting,
+rollback-safe monitor installation, scoped storage preservation and release
+refusal coverage. Production acceptance is recorded separately in the
+[Audit 30 follow-up tracker](audits/2026-10-02-audit30-followup-tracker.md).
 
 Audit 29 remediation adds `npm run check:audit29-remediation` for retained pending
 ID times, Desktop/AMO account projections, the full accounting gate, backup

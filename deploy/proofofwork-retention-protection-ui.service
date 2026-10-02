@@ -6,12 +6,13 @@ Type=oneshot
 User=root
 Group=root
 ExecStart=/usr/local/sbin/proofofwork-retention-protection --role=ui
-TimeoutStartSec=20s
+TimeoutStartSec=60s
 MemoryMax=32M
 CPUQuota=10%
 TasksMax=16
 NoNewPrivileges=true
 PrivateTmp=true
+BindReadOnlyPaths=/var/tmp/proofofwork-deploy
 PrivateDevices=true
 ProtectSystem=strict
 ProtectHome=true

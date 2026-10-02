@@ -11,6 +11,21 @@ import unittest
 ROOT = Path(__file__).resolve().parents[1]
 MODULE = runpy.run_path(str(ROOT / 'scripts/check-retention-protection.py'))
 REVIEW = json.loads((ROOT / 'audits/2026-09-29-audit28-held-review.json').read_text())
+RELOCATION_FIXTURE = json.loads((ROOT / 'scripts/fixtures/retention-approved-ui-relocations.json').read_text())
+
+
+def relocation_fixtures():
+    intent = json.loads(RELOCATION_FIXTURE['preserve-intent.json']['text'])
+    completion = json.loads(RELOCATION_FIXTURE['preserve-receipt.json']['text'])
+    moves, current, absent = {}, {}, {}
+    for name, receipt, _ in MODULE['UI_RELOCATIONS']:
+        source = str(MODULE['SCRATCH_ROOT'] / name)
+        move = json.loads(RELOCATION_FIXTURE[receipt]['text'])
+        moves[source] = move
+        current[source] = {key: value for key, value in move['verifiedState'].items() if key != 'atimeNs'}
+        current[source]['ctimeNs'] = move['ctimeNsAfterRename']
+        absent[source] = True
+    return intent, moves, completion, current, absent
 
 
 def fixtures():
@@ -30,6 +45,84 @@ def fixtures():
 
 
 class RetirementProtectionTests(unittest.TestCase):
+    def test_approved_relocation_receipts_and_plan_are_exact(self):
+        for name, digest in [('preserve-intent.json', MODULE['EXPECTED_UI_RELOCATION_INTENT_SHA256']),
+                             ('preserve-receipt.json', MODULE['EXPECTED_UI_RELOCATION_COMPLETION_SHA256'])]:
+            self.assertEqual(hashlib.sha256(RELOCATION_FIXTURE[name]['text'].encode()).hexdigest(), digest)
+        for _, receipt, digest in MODULE['UI_RELOCATIONS']:
+            self.assertEqual(hashlib.sha256(RELOCATION_FIXTURE[receipt]['text'].encode()).hexdigest(), digest)
+        approved = MODULE['validate_approved_relocations'](*relocation_fixtures())
+        self.assertEqual(len(approved), 2)
+
+    def test_relocation_and_retirement_do_not_silence_original_gaps(self):
+        manifest, receipt = fixtures()
+        retired = MODULE['validate_completed_retirements'](manifest, receipt, 'approved-digest')
+        relocated = MODULE['validate_approved_relocations'](*relocation_fixtures())
+        missing = set(RELOCATION_FIXTURE['originalMissingPathsByRole']['ui'])
+        result = MODULE['held_path_protection']('ui', REVIEW, retired,
+            lambda path: path not in retired and path not in relocated and path not in missing, relocated)
+        self.assertFalse(result['ok'])
+        self.assertEqual(set(result['missingHeldPaths']), missing)
+        self.assertEqual(len(missing), 11)
+        self.assertEqual(result['approvedRetiredHeldPaths'], 2)
+        self.assertEqual(result['approvedRelocatedHeldPaths'], 2)
+        self.assertEqual(result['mustRemainPresent'], 293)
+        self.assertEqual(result['mustRemainAtOriginalPath'], 291)
+        node_missing = set(RELOCATION_FIXTURE['originalMissingPathsByRole']['node'])
+        qualified = set(RELOCATION_FIXTURE['qualifiedNodeManagedAbsences'])
+        node = MODULE['held_path_protection']('node', REVIEW, set(),
+            lambda path: path not in node_missing and path not in qualified)
+        self.assertFalse(node['ok'])
+        self.assertEqual(set(node['missingHeldPaths']), node_missing | qualified)
+        self.assertEqual(len(node_missing), 12)
+        self.assertEqual(len(qualified), 6)
+
+    def test_changed_unsafe_partial_or_unapproved_relocation_is_rejected(self):
+        for field in ('bytes', 'allocatedBytes', 'dev', 'inode', 'uid', 'gid', 'mode', 'links', 'mtimeNs', 'ctimeNs', 'sha256', 'xattrs'):
+            args = list(copy.deepcopy(relocation_fixtures()))
+            row = next(iter(args[3].values()))
+            row[field] = 'changed'
+            with self.subTest(field=field), self.assertRaises(ValueError):
+                MODULE['validate_approved_relocations'](*args)
+        for mutate in (
+            lambda a: a[0].update(mode='dry-run'),
+            lambda a: a[0].update(planSha256='unapproved'),
+            lambda a: a[0]['plan'].update(destination='/other'),
+            lambda a: a[0]['plan']['files'].pop(0),
+            lambda a: a[1].pop(next(iter(a[1]))),
+            lambda a: a[1].update(unapproved=next(iter(a[1].values()))),
+            lambda a: next(iter(a[1].values())).update(sameInodeAndBytes=False),
+            lambda a: next(iter(a[1].values())).update(target='/var/www/live'),
+            lambda a: next(iter(a[1].values()))['verifiedState'].update(bytes=0),
+            lambda a: a[2].update(ok=False),
+            lambda a: a[2].update(historicalDeletion=True),
+            lambda a: a[2].update(permissionsOwnersXattrsContentInodesPreserved=False),
+            lambda a: a[4].update({next(iter(a[4])): False}),
+        ):
+            args = list(copy.deepcopy(relocation_fixtures())); mutate(args)
+            with self.assertRaises(ValueError):
+                MODULE['validate_approved_relocations'](*args)
+
+    def test_reappearing_original_or_expanded_relocation_never_covers_hold(self):
+        relocated = MODULE['validate_approved_relocations'](*relocation_fixtures())
+        result = MODULE['held_path_protection']('ui', REVIEW, set(), lambda _: True, relocated)
+        self.assertFalse(result['ok'])
+        self.assertEqual(set(result['unexpectedRelocatedOriginalPathsPresent']), set(relocated))
+        for role, mapping in [('node', relocated), ('ui', {**relocated, '/unapproved': '/other'}),
+                              ('ui', {key: '/other' for key in relocated})]:
+            with self.assertRaises(ValueError):
+                MODULE['held_path_protection'](role, REVIEW, set(), lambda _: False, mapping)
+
+    def test_broken_symlink_and_unsafe_target_are_not_preserved_files(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            link = root / 'target'; link.symlink_to(root / 'missing')
+            with self.assertRaises(ValueError):
+                MODULE['preserved_file_state'](link)
+            regular = root / 'regular'; regular.write_bytes(b'changed'); regular.chmod(0o666)
+            with self.assertRaises(ValueError):
+                MODULE['preserved_file_state'](regular)
+
     def test_complete_binding_covers_exact_two_held_paths_only(self):
         manifest, receipt = fixtures()
         retired = MODULE['validate_completed_retirements'](manifest, receipt, 'approved-digest')

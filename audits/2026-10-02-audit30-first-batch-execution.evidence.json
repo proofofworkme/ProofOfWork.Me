@@ -1,0 +1,1766 @@
+{
+  "approval": {
+    "path": "audits/2026-10-02-audit30-first-batch-approval.json",
+    "sha256": "d99a40236b49b1735c794fb853c4f7f4f0724da8e3f83fab75c7464e0e8ee373"
+  },
+  "independentReviews": [
+    {
+      "bytes": 5034,
+      "content": {
+        "atUtc": "2026-10-02T19:48:35.214676+00:00",
+        "canonicalDependencyParity": {
+          "canonicalScriptSha256": "4e083a179a305907760ffe36f6ad00aef9a441279898b903171edea54cb1b9d6",
+          "comparison": "Actual canonical Python heredoc execution equals storage snapshot hashing; same parity is now a durable test.",
+          "entryCount": 7,
+          "gid": 1000,
+          "regularBytes": 22,
+          "rootIncluded": true,
+          "sha256": "6f17f895f60abdcd311f44782a74945f0591ec2fab36b7db4071447ff927ca7c",
+          "uid": 1000,
+          "vector": "node_modules755; directories a755 and \u00e9755; a/binary644 bytes00ff0a; tool755 bytes#!/bin/sh\\n; \u00e9/file644 bytesutf8-dir\\n; relative symlink to a/binary"
+        },
+        "filesSha256": {
+          "deploy/audit30/STORAGE.md": "e9bfd8c5f7ea7773a5aca33f21886e3447a17e9893662f08a40445329035f35e",
+          "deploy/audit30/check-install-retention.test.py": "002a2fbda8b5e1e036a1d03ad62d0a797657987ab04ed66daf06c12ada8ba936",
+          "deploy/audit30/check-ui-storage.test.py": "20a76f4895a8df163eda252e0606258094769729432d01589194dcdecf3feb2e",
+          "deploy/audit30/install-retention.py": "cd9c266e938d22949c9f0c6a48853933d9bcbb58368071b2da4027f13411eaa5",
+          "deploy/audit30/ui-release-policy.py": "ad3d65e5b24be96ade466d45879f7b3048642a0fce77bd2db6adfeaadbc5878e",
+          "deploy/audit30/ui-storage.py": "569f215fdc897799b4906559423229de1bcdd85eee22f9ef9db22a253185346b",
+          "deploy/proofofwork-ui-release-provenance.sh": "4e083a179a305907760ffe36f6ad00aef9a441279898b903171edea54cb1b9d6",
+          "scripts/check-retention-service-namespace.py": "c8325a808f01d89f49949a9681485997b0d342bcaed6a698f41eb522a9482536"
+        },
+        "remainingLimits": [
+          "This receipt does not establish production installation, cleanup, preservation, bootstrap/admission or fee publication completion.",
+          "Production acceptance requires successful command exit, fresh bytes/modes/authority/hold verification and reconciled failure/completion receipts.",
+          "SIGKILL/powerloss/physical evidence-write or rollback-write failure needs durable intent, preserved bytes and explicit manual reconciliation.",
+          "Pointer scan is bounded to enumerated roots and live pointers; textualfiles above1MiB and Gitobject/dependency payloads are separately preserved/hashed, not searched as universal references.",
+          "Preservation reclassifies allocation and does not free root disk bytes; future policy is opt-in and requires per-publication admission/application."
+        ],
+        "reviewer": "math_review",
+        "reviewerProductionMutations": false,
+        "schema": "proof-of-work-audit30-independent-first-batch-review-v1",
+        "status": "local-review-accepted-not-production-completion",
+        "tests": [
+          {
+            "command": "python3 -I -B deploy/audit30/check-install-retention.test.py",
+            "count": 19,
+            "log": "/tmp/pow-audit30-install-retention-tests.log",
+            "logSha256": "9462c085f2b4f9d254437f726e3d1480c23a80534aa5dac01bceec6a3069f644",
+            "result": "PASS"
+          },
+          {
+            "command": "python3 -I -B scripts/check-retention-service-namespace.py",
+            "count": 6,
+            "log": "/tmp/pow-audit30-retention-service-namespace-tests.log",
+            "logSha256": "7b7c9db1e822e2185b85f54a6d28dc97b3e81f7af9ce51da387b02ce05317831",
+            "result": "PASS"
+          },
+          {
+            "command": "python3 -I -B deploy/audit30/check-ui-storage.test.py",
+            "count": 26,
+            "log": "/tmp/pow-audit30-ui-storage-independent.log",
+            "logSha256": "be1024dd71112867b7fe1b74228f3ad09751a578e9e789b3ab630d32d61e3a26",
+            "result": "PASS"
+          }
+        ],
+        "verifiedScope": [
+          "Installer writes only exact checker+role service; prior bytes/modes backed up before rename; only daemon-reload; hold/prune/authority/backup/WAL states preserved.",
+          "UI original20 or exact separately approved60 bytes only; node exact20; missing/tampered/scope-altered approval refuses before mutation.",
+          "Effective UI1min is accepted as observed systemd spelling of approved60s; unit source60s and direct timeout60 remain unchanged; node20 exact.",
+          "Fixed40-path cleanup; complete retained current/prior16-surface/root/archive/source/Git/dependency proofs, hardlink accounting, pointer/hold/capacity/inode safeguards.",
+          "Three exact whole-source same-filesystem no-overwrite renames preserve complete bytes/inodes/metadata/xattrs/history/runtime; completedcleanup prerequisite and inverse plans checked.",
+          "Read-only Git proof rejects clean/process/diff external helpers, absolute/includes/worktrees/alternates/shallow/promisor dependencies and index flags before status.",
+          "Actual SIGTERM immediately after real source rename yields inverse-usable failed receipt; source inverse restores originals.",
+          "Future policy requires explicit immutable ordinary admissions and fresh exact plans; source/input/transport/evidence/historical holds remain excluded; traditional prune timers remain masked.",
+          "Actual namespace verification collects current systemd InvocationID and requires exact journal+checker receipt equality; missing/different current IDs refuse for both roles."
+        ]
+      },
+      "path": "/tmp/pow-audit30-independent-first-batch-review.json",
+      "sha256": "2516cf784a9a4b3e68427ae175e44a2a28656a25de27b418330554a204c1f623"
+    },
+    {
+      "bytes": 2577,
+      "content": {
+        "blockingCodeFindings": [],
+        "controllerSha256": "569f215fdc897799b4906559423229de1bcdd85eee22f9ef9db22a253185346b",
+        "deletionPathCount": 40,
+        "exactDeletionPathsAndOrderMatch": true,
+        "exactPreservationMappingsAndOrderMatch": true,
+        "format": "pow-audit30-ui-storage-independent-source-review-v1",
+        "futurePolicy": "One immutable explicit two-release bootstrap plus complete per-release admissions; retain current+fully verified prior; admitted-only ordinary rollback/archive/sidecar eligibility; historical preapproval assets/source/evidence never dynamically discovered for deletion; completed receipts required for missing admitted assets.",
+        "policySha256": "ad3d65e5b24be96ade466d45879f7b3048642a0fce77bd2db6adfeaadbc5878e",
+        "productionMutationsByReview": false,
+        "protectedBoundary": [
+          "current live and immediate-prior root manifests,16surface inventories,archives+sidecars",
+          "current/prior clean source HEAD/tree identities and actual node-modules-recursive-v1 dependency fingerprints",
+          "fixed held review/hold hashes, masked prune timers and complete held-presence census",
+          "candidate non-release logical passthrough matches current or prior",
+          "protected shared inode removal counts explain nlink/ctime changes only; no protected bytes change",
+          "preserved complete sources excluded from all retirement scopes"
+        ],
+        "qualifications": [
+          "Reference scan excludes text files over1MiB and Git object/dependency payload textual search; explicit Git pointers separately checked and all bytes preserved/hash verified.",
+          "Same-volume source rename recovers no root disk bytes.",
+          "Concrete production plan remains to be independently reviewed; passing local tests does not attest its current filesystem state or completion."
+        ],
+        "scopeSha256": "f0027078971b7521fb2411e15bd8931b110a0f1815ea7e04bdaed3b5d4bdfdd0",
+        "sourcePreservationPairCount": 3,
+        "sourceReadSafety": [
+          "GIT_OPTIONAL_LOCKS=0 disables optional index refresh",
+          "system/global Git configuration disabled",
+          "local filter/diff command/textconv/includes/fsmonitor/hooks/ssh/proxy/worktree/partialclone/promisor refused before status",
+          "promisor packs, alternates, grafts, shallow/worktree/common external paths rejected",
+          "assumed-clean/skip-worktree/unresolved index flags rejected",
+          "relative symlinks remain entirely inside whole directory"
+        ],
+        "tests": {
+          "command": "python3 -I -B deploy/audit30/check-ui-storage.test.py",
+          "log": "/tmp/pow-audit30-storage-independent-test.txt",
+          "passed": 25,
+          "total": 25
+        }
+      },
+      "path": "/tmp/pow-audit30-storage-source-independent-review.json",
+      "sha256": "19965d17a36cfa1fbf1d13dbb71e468e9731afbf782fdbe363c2d532d16f19e2"
+    },
+    {
+      "bytes": 3755,
+      "content": {
+        "approvalScope": "UI frontend release only; no node API cutover",
+        "finding": "No blocking change introduced by copying these reviewed wrappers and tightening SSH options. Exclusive inherited deployment lock, capacity gates, preservation and rollback helper pins remain intact.",
+        "format": "pow-audit30-ui-release-independent-review-v1",
+        "localRefusalTests": {
+          "command": "python3 -B deploy/audit30/ui-release/check-ui-release.test.py",
+          "covered": [
+            "plan identity and bounds",
+            "immutable inputs and installed-helper hash pins",
+            "dirty checkout refusal",
+            "creation-only canonical evidence",
+            "changed wrapper/helper/bundle refusal before SSH",
+            "regular owner/mode/link/size/hash checks",
+            "actual nonblocking exclusive lock contention",
+            "publisher PID/cgroup/runtime matching",
+            "child log ceiling and deadline termination",
+            "all16managed roots plus15public surfaces and apex",
+            "unsafe/duplicate/link/missing archive refusal",
+            "manifest/provenance/sidecar/archive/HTTP mismatch refusal",
+            "SSH identity and host key pins"
+          ],
+          "method": "Real local artifacts; mocked SSH/HTTPS boundary; AST-extracted publish/remote_transport functions and unit/lock guards, no module-level production execution",
+          "passed": 16,
+          "tests": 16
+        },
+        "priorSuccessfulPipelineComparison": {
+          "otherSix": "exact /tmp/pow-computer-dns-release-tools except release.py SSH adds IdentitiesOnly=yes and StrictHostKeyChecking=yes",
+          "preflight": "exact latest /tmp/pow-computer-dns-final-postflight-tools-v2/preflight.py"
+        },
+        "productionMutationByReview": false,
+        "reviewedLaunchPath": [
+          "release.py preflight",
+          "release.py make-plan",
+          "release.py upload-plan",
+          "transport_preserve.py surfaces-stage",
+          "transport_preserve.py source",
+          "release.py publish",
+          "collect_verify.py"
+        ],
+        "scopeQualifications": [
+          "Publisher transaction and rollback behavior depends on separately hash-pinned installed production helpers; these local tests do not inject a production publication failure.",
+          "All16managed archive roots are required; HTTPS byte checks cover15public hostnames and apex. nft bytes remain managed archive scope and are intentionally skipped for public HTTP because it has no hostname mapping.",
+          "Use transport_preserve.py for both transport phases; release.py has no transport CLI subcommand.",
+          "Actual release still requires fresh host preflight, committed clean source, exact build receipts, successful phase receipts, production manifest/archive verification and real off-host HTTPS smoke."
+        ],
+        "scripts": {
+          "check-ui-release.test.py": {
+            "bytes": 23644,
+            "sha256": "f50c4fdde232c7bb574cf24ee77a6a32ec89d9bb76156ca0376fc9076a5f72af"
+          },
+          "collect_verify.py": {
+            "bytes": 3348,
+            "sha256": "dd898d0a1642f9715f806b52d66fd173445bb4dd81ea3e904934dc73a43b7f04"
+          },
+          "https_smoke.py": {
+            "bytes": 15072,
+            "sha256": "4c422a3fb3e29b21706f344491eb2ebcec3552f8b9dc8b67f56b913697135b23"
+          },
+          "preflight.py": {
+            "bytes": 6165,
+            "sha256": "a7f672dcf4e6f3c5187c858143ad3cd4c87deb5fb3f0b244130a4826d72b6b84"
+          },
+          "publish.py": {
+            "bytes": 8593,
+            "sha256": "d285f986463eb5253f6669ceaf552e0a773222ae80431bc868ba92d853ff7b3d"
+          },
+          "release.py": {
+            "bytes": 12002,
+            "sha256": "652170dfeb01b47c0c0102665744b6aee713457db6c186483dff6e2bcd66fdc5"
+          },
+          "remote_transport.py": {
+            "bytes": 16802,
+            "sha256": "7153e99661b7c05b31c6d789b0546f0c130af4e60cbd9d47dd63f83198b93d28"
+          },
+          "transport_preserve.py": {
+            "bytes": 2366,
+            "sha256": "98e083a9ece551dea8efe591541e7f2702e2426ca7788e828deaa4207550d1fe"
+          }
+        }
+      },
+      "path": "/tmp/pow-audit30-ui-release-independent-review.json",
+      "sha256": "a6a37c9458a785857c5967be371077d39bd7be063261821667e144f7cf287ae8"
+    }
+  ],
+  "items": {
+    "1": {
+      "localBrowser": {
+        "bytes": 1476,
+        "content": {
+          "base": "http://127.0.0.1:5178",
+          "checkedAtUtc": "2026-10-02T19:37:23.339208+00:00",
+          "integratedCredit": {
+            "draftRate": "0.28",
+            "estimatedVbytes": 1441,
+            "nineDecimalDraftRate": "0.123456789",
+            "observedFee": "Unavailable",
+            "observedFeeProofs": 404,
+            "observedWalletNeeded": "Unavailable",
+            "observedWalletNeededProofs": 80404,
+            "outputsProofs": 80000,
+            "prepareEnabled": false
+          },
+          "method": "Codex in-app browser; visible actual Credit workspace controls and read-only DOM text",
+          "qualification": "Only observed draft states are attested; preexisting empty/nonpositive default normalization remains unchanged.",
+          "schema": "proof-of-work-audit30-local-fee-browser-v1",
+          "signedOrBroadcast": false,
+          "sourceSha256": {
+            "src/App.tsx": "3f473087e2d2ec1bf11a46d1ff329844a204b5ff1040a21e58a4e1a2cfa5c472",
+            "src/walletUtxos.ts": "d1ce0930d129bfbcb4a7f4d320a41da6943b1166d6e5271758afc1ec04fb0082"
+          },
+          "standaloneCheckedAtUtc": "2026-10-02T19:53:06.164955+00:00",
+          "standaloneCredit": {
+            "draftRate": "0.28",
+            "estimatedVbytes": 1441,
+            "observedFeeProofs": 404,
+            "observedWalletNeededProofs": 80404,
+            "outputsProofs": 80000,
+            "screenshot": {
+              "path": "/tmp/pow-audit30-local-standalone-fee-preview.png",
+              "sha256": "d90ff9ce07dba3816076219bb5ca43ea3fbf73f40280022edce728b2e5a5e581"
+            },
+            "url": "http://127.0.0.1:5178/?credit=1",
+            "walletConnected": false
+          },
+          "walletConnected": false
+        },
+        "path": "/tmp/pow-audit30-local-fee-browser-receipt.json",
+        "sha256": "ffe09c6e8ae097d12f241ba8842a0c09d0a862138475124d6c4d9fb7e88b22ce"
+      },
+      "productionDataChanged": false,
+      "rationalVectors": 1113,
+      "signaturesOrBroadcasts": 0,
+      "status": "source-and-local-acceptance-passed-production-pending",
+      "unsignedPsbtFixtures": 9
+    },
+    "2": {
+      "finalInvocationVerification": [
+        {
+          "bytes": 1330,
+          "content": {
+            "approvedRelocatedHeldPaths": 2,
+            "checkedAt": "2026-10-02T19:50:24.629983+00:00",
+            "missingHeldPaths": [
+              "/var/tmp/proofofwork-deploy/audit5-stream-source-5970b26e610b-20260926T225712Z.json",
+              "/var/tmp/proofofwork-deploy/audit5-stream-source-b752518bf8b4-20260927T014804Z.json",
+              "/var/tmp/proofofwork-deploy/audit5-stream-source-c64963f4649f-20260927T001231Z.json",
+              "/var/tmp/proofofwork-deploy/audit5-stream-surfaces-5970b26e610b-20260926T225712Z.json",
+              "/var/tmp/proofofwork-deploy/audit5-stream-surfaces-b752518bf8b4-20260927T014804Z.json",
+              "/var/tmp/proofofwork-deploy/audit5-stream-surfaces-c64963f4649f-20260927T001231Z.json",
+              "/var/tmp/proofofwork-deploy/boost-ui-deploy-config.json",
+              "/var/tmp/proofofwork-deploy/boost-ui-publish-b111f5941375-20260927T125836Z.json",
+              "/var/tmp/proofofwork-deploy/deploy-boost-ui-remote.py",
+              "/var/tmp/proofofwork-deploy/profile-release-c964e304a8f9-20260927T181330Z.json",
+              "/var/tmp/proofofwork-deploy/profile-ui-publish-config.json"
+            ],
+            "monitorExitStatus": 1,
+            "ok": true,
+            "qualification": "Verification passes when namespace/reporting is correct; a red retention result remains red and its missing paths remain visible.",
+            "retentionOk": false,
+            "role": "ui",
+            "scheduledAndDirectAgree": true,
+            "scratchReadOnlyInActualService": true,
+            "serviceInvocationId": "41fe2417d1024796b773a913f17c5de2"
+          },
+          "path": "/tmp/pow-audit30-ui-namespace-invocation-verification.json",
+          "sha256": "09e66e95776a521a1da7535265a7cba5115993c7cc61050d2ad00a46734ad6e2"
+        },
+        {
+          "bytes": 2139,
+          "content": {
+            "approvedRelocatedHeldPaths": 0,
+            "checkedAt": "2026-10-02T19:50:28.349590+00:00",
+            "missingHeldPaths": [
+              "/var/tmp/proofofwork-deploy/incb-guarded-cutover-f4ca769.py",
+              "/var/tmp/proofofwork-deploy/proofofwork-audit5-source-5970b26e610b-20260926T224701Z.bundle",
+              "/var/tmp/proofofwork-deploy/proofofwork-audit5-source-9d04fd3cf1f6-20260927T094716Z.bundle",
+              "/var/tmp/proofofwork-deploy/proofofwork-audit5-source-b752518bf8b4-20260927T014810Z.bundle",
+              "/var/tmp/proofofwork-deploy/proofofwork-audit5-source-bf81f9cffcc7-20260927T093457Z.bundle",
+              "/var/tmp/proofofwork-deploy/proofofwork-audit5-source-f4ca769e9202-20260927T055111Z.bundle",
+              "/var/tmp/proofofwork-deploy/proofofwork-node-release-5970b26-20260926T224701Z.tgz",
+              "/var/tmp/proofofwork-deploy/proofofwork-node-release-9d04fd3-20260927T094716Z.tgz",
+              "/var/tmp/proofofwork-deploy/proofofwork-node-release-b752518-20260927T014810Z.tgz",
+              "/var/tmp/proofofwork-deploy/proofofwork-node-release-bf81f9c-20260927T093457Z.tgz",
+              "/var/tmp/proofofwork-deploy/proofofwork-node-release-bf81f9cffcc7-20260927T093457Z.tgz",
+              "/var/tmp/proofofwork-deploy/proofofwork-node-release-f4ca769-20260927T055111Z.tgz",
+              "/data/proofofwork-release-backups/managed/proofofwork-node-release-3bc6c9d-20260929T200136Z.tgz",
+              "/data/proofofwork-release-backups/managed/proofofwork-node-release-3bc6c9d-20260929T200136Z.tgz.provenance",
+              "/data/proofofwork-release-backups/managed/proofofwork-node-release-3bc6c9d-20260929T200136Z.tgz.sha256",
+              "/data/proofofwork-release-backups/managed/proofofwork-node-release-d2c0afa-20260929T160642Z.tgz",
+              "/data/proofofwork-release-backups/managed/proofofwork-node-release-d2c0afa-20260929T160642Z.tgz.provenance",
+              "/data/proofofwork-release-backups/managed/proofofwork-node-release-d2c0afa-20260929T160642Z.tgz.sha256"
+            ],
+            "monitorExitStatus": 1,
+            "ok": true,
+            "qualification": "Verification passes when namespace/reporting is correct; a red retention result remains red and its missing paths remain visible.",
+            "retentionOk": false,
+            "role": "node",
+            "scheduledAndDirectAgree": true,
+            "scratchReadOnlyInActualService": true,
+            "serviceInvocationId": "8d3d55425fc74700ab14f43a3b3febdc"
+          },
+          "path": "/tmp/pow-audit30-node-namespace-invocation-verification.json",
+          "sha256": "a183b129a0d5e83e0f304ef5d43d340501864eae0635cc5e1f5f30ff19679247"
+        }
+      ],
+      "finalInvocationVerifierSha256": "c8325a808f01d89f49949a9681485997b0d342bcaed6a698f41eb522a9482536",
+      "namespaceVerification": [
+        {
+          "bytes": 1330,
+          "content": {
+            "approvedRelocatedHeldPaths": 2,
+            "checkedAt": "2026-10-02T19:47:06.003032+00:00",
+            "missingHeldPaths": [
+              "/var/tmp/proofofwork-deploy/audit5-stream-source-5970b26e610b-20260926T225712Z.json",
+              "/var/tmp/proofofwork-deploy/audit5-stream-source-b752518bf8b4-20260927T014804Z.json",
+              "/var/tmp/proofofwork-deploy/audit5-stream-source-c64963f4649f-20260927T001231Z.json",
+              "/var/tmp/proofofwork-deploy/audit5-stream-surfaces-5970b26e610b-20260926T225712Z.json",
+              "/var/tmp/proofofwork-deploy/audit5-stream-surfaces-b752518bf8b4-20260927T014804Z.json",
+              "/var/tmp/proofofwork-deploy/audit5-stream-surfaces-c64963f4649f-20260927T001231Z.json",
+              "/var/tmp/proofofwork-deploy/boost-ui-deploy-config.json",
+              "/var/tmp/proofofwork-deploy/boost-ui-publish-b111f5941375-20260927T125836Z.json",
+              "/var/tmp/proofofwork-deploy/deploy-boost-ui-remote.py",
+              "/var/tmp/proofofwork-deploy/profile-release-c964e304a8f9-20260927T181330Z.json",
+              "/var/tmp/proofofwork-deploy/profile-ui-publish-config.json"
+            ],
+            "monitorExitStatus": 1,
+            "ok": true,
+            "qualification": "Verification passes when namespace/reporting is correct; a red retention result remains red and its missing paths remain visible.",
+            "retentionOk": false,
+            "role": "ui",
+            "scheduledAndDirectAgree": true,
+            "scratchReadOnlyInActualService": true,
+            "serviceInvocationId": "41fe2417d1024796b773a913f17c5de2"
+          },
+          "path": "/tmp/pow-audit30-ui-namespace-canonical-duration-verification.json",
+          "sha256": "e3a133071f5c845aab1531d4dc352ac002e075edc4811fd4a6e806a9db816f79"
+        },
+        {
+          "bytes": 2495,
+          "content": {
+            "monitorStartExit": 1,
+            "monitorStartStderr": "Job for proofofwork-retention-protection.service failed because the control process exited with error code.\nSee \"systemctl status proofofwork-retention-protection.service\" and \"journalctl -xeu proofofwork-retention-protection.service\" for details.\n",
+            "role": "node",
+            "verification": {
+              "approvedRelocatedHeldPaths": 0,
+              "checkedAt": "2026-10-02T19:45:44.731325+00:00",
+              "missingHeldPaths": [
+                "/var/tmp/proofofwork-deploy/incb-guarded-cutover-f4ca769.py",
+                "/var/tmp/proofofwork-deploy/proofofwork-audit5-source-5970b26e610b-20260926T224701Z.bundle",
+                "/var/tmp/proofofwork-deploy/proofofwork-audit5-source-9d04fd3cf1f6-20260927T094716Z.bundle",
+                "/var/tmp/proofofwork-deploy/proofofwork-audit5-source-b752518bf8b4-20260927T014810Z.bundle",
+                "/var/tmp/proofofwork-deploy/proofofwork-audit5-source-bf81f9cffcc7-20260927T093457Z.bundle",
+                "/var/tmp/proofofwork-deploy/proofofwork-audit5-source-f4ca769e9202-20260927T055111Z.bundle",
+                "/var/tmp/proofofwork-deploy/proofofwork-node-release-5970b26-20260926T224701Z.tgz",
+                "/var/tmp/proofofwork-deploy/proofofwork-node-release-9d04fd3-20260927T094716Z.tgz",
+                "/var/tmp/proofofwork-deploy/proofofwork-node-release-b752518-20260927T014810Z.tgz",
+                "/var/tmp/proofofwork-deploy/proofofwork-node-release-bf81f9c-20260927T093457Z.tgz",
+                "/var/tmp/proofofwork-deploy/proofofwork-node-release-bf81f9cffcc7-20260927T093457Z.tgz",
+                "/var/tmp/proofofwork-deploy/proofofwork-node-release-f4ca769-20260927T055111Z.tgz",
+                "/data/proofofwork-release-backups/managed/proofofwork-node-release-3bc6c9d-20260929T200136Z.tgz",
+                "/data/proofofwork-release-backups/managed/proofofwork-node-release-3bc6c9d-20260929T200136Z.tgz.provenance",
+                "/data/proofofwork-release-backups/managed/proofofwork-node-release-3bc6c9d-20260929T200136Z.tgz.sha256",
+                "/data/proofofwork-release-backups/managed/proofofwork-node-release-d2c0afa-20260929T160642Z.tgz",
+                "/data/proofofwork-release-backups/managed/proofofwork-node-release-d2c0afa-20260929T160642Z.tgz.provenance",
+                "/data/proofofwork-release-backups/managed/proofofwork-node-release-d2c0afa-20260929T160642Z.tgz.sha256"
+              ],
+              "monitorExitStatus": 1,
+              "ok": true,
+              "qualification": "Verification passes when namespace/reporting is correct; a red retention result remains red and its missing paths remain visible.",
+              "retentionOk": false,
+              "role": "node",
+              "scheduledAndDirectAgree": true,
+              "scratchReadOnlyInActualService": true,
+              "serviceInvocationId": "ab3156353a284578ad1f9cb303aa1e83"
+            },
+            "verifierExit": 0
+          },
+          "path": "/tmp/pow-audit30-retention-node-namespace-verification-20261002T194544Z.json",
+          "sha256": "65663e8f7bb5a95a64e3f3ff624195b5c07a3e768290f4f03cf44f03e703aa0b"
+        }
+      ],
+      "preservedFailures": [
+        {
+          "reason": "Actual20-second UI service invocations timed out under unchanged10% CPU quota.",
+          "resolution": "Separately approved exact60-second deadline",
+          "source": "production.ui.journalEvents"
+        },
+        {
+          "reason": "First node installer refused nonexistent guessedWALservice before mutation.",
+          "resolution": "Bind actual5active authorities and preserve established inactive WALtemplate+active backup scheduler."
+        },
+        {
+          "evidence": {
+            "bytes": 468,
+            "content": {
+              "monitorStartExit": 1,
+              "monitorStartStderr": "Job for proofofwork-retention-protection.service failed because the control process exited with error code.\nSee \"systemctl status proofofwork-retention-protection.service\" and \"journalctl -xeu proofofwork-retention-protection.service\" for details.\n",
+              "role": "ui",
+              "verification": {
+                "error": "Effective hardening differs: TimeoutStartUSec",
+                "errorClass": "ValueError",
+                "ok": false,
+                "role": "ui"
+              },
+              "verifierExit": 1
+            },
+            "path": "/tmp/pow-audit30-retention-ui-namespace-verification-20261002T194544Z.json",
+            "sha256": "bd96ce352ef1f9f1de1f318c6d13e203206003e7a77d53dba18cc00ba39bb464"
+          },
+          "reason": "Actual UI60-second run completed but verifier initially rejected canonical1min spelling.",
+          "resolution": "Exact1min equivalence fixture; no extra production config change"
+        }
+      ],
+      "production": [
+        {
+          "bytes": 22483,
+          "content": {
+            "atUtc": "2026-10-02T19:47:41.650380+00:00",
+            "files": [
+              {
+                "bytes": 20677,
+                "gid": 0,
+                "mode": 493,
+                "path": "/usr/local/sbin/proofofwork-retention-protection",
+                "sha256": "da5d1336ce857acc571ba0849c2b0150ef5fc6dfdacf80e65b9f1d3611c48e8a",
+                "uid": 0
+              },
+              {
+                "bytes": 650,
+                "gid": 0,
+                "mode": 420,
+                "path": "/etc/systemd/system/proofofwork-retention-protection.service",
+                "sha256": "14426a6092ca97ab3c3e05e2030cc99912ed03afbbc899a03cafb33960622ea5",
+                "uid": 0
+              },
+              {
+                "bytes": 81,
+                "gid": 0,
+                "mode": 384,
+                "path": "/etc/proofofwork-retention/audit28.hold",
+                "sha256": "e9aca6e22b1dc36b714ed663051f8bc20d9479efa4173474e0b6b771958ca6a4",
+                "uid": 0
+              },
+              {
+                "bytes": 1030164,
+                "gid": 0,
+                "mode": 420,
+                "path": "/etc/proofofwork-retention/audit28-held-review.json",
+                "sha256": "c3bd35740d7fcc135839274c8228e38f7a45c23e33567743e0d77151b32451d9",
+                "uid": 0
+              }
+            ],
+            "installationReceipts": [
+              {
+                "bytes": 10966,
+                "gid": 0,
+                "mode": 384,
+                "path": "/var/backups/proofofwork-ui/release-tooling/audit30-retention-ui-92ccd615df32f255/retention-ui-20261002T193201.012504Z/0.previous",
+                "sha256": "b5802552dfc99283aebd4bc0152c4bb2740c39081637218bb1d8c8ec35559f0a",
+                "uid": 0
+              },
+              {
+                "bytes": 604,
+                "gid": 0,
+                "mode": 384,
+                "path": "/var/backups/proofofwork-ui/release-tooling/audit30-retention-ui-92ccd615df32f255/retention-ui-20261002T193201.012504Z/1.previous",
+                "sha256": "6a8a933356726137ed574710c88b66509f1889910b6cf38aa374d9808c04c3ce",
+                "uid": 0
+              },
+              {
+                "bytes": 542,
+                "content": {
+                  "authorityAndHoldUnchanged": true,
+                  "installed": [
+                    {
+                      "path": "/usr/local/sbin/proofofwork-retention-protection",
+                      "sha256": "da5d1336ce857acc571ba0849c2b0150ef5fc6dfdacf80e65b9f1d3611c48e8a"
+                    },
+                    {
+                      "path": "/etc/systemd/system/proofofwork-retention-protection.service",
+                      "sha256": "60776c973e416ed2dbd7eff744e02ddb90bbbdd353d4fbc9c18fbd707cd9bca4"
+                    }
+                  ],
+                  "manifestSha256": "b291486bb297b4e7a8c752061dfc21aec7f5d8a8a027ceec9776668a887e33a2",
+                  "monitorRunPerformed": false,
+                  "status": "completed"
+                },
+                "gid": 0,
+                "mode": 384,
+                "path": "/var/backups/proofofwork-ui/release-tooling/audit30-retention-ui-92ccd615df32f255/retention-ui-20261002T193201.012504Z/completed.json",
+                "sha256": "3b85814785f65d32ef49367b70efe138a776cf3f0ee8ffac72e878e8cf084ba4",
+                "uid": 0
+              },
+              {
+                "bytes": 1567,
+                "content": {
+                  "approvalSha256": "d99a40236b49b1735c794fb853c4f7f4f0724da8e3f83fab75c7464e0e8ee373",
+                  "baseline": {
+                    "caddy.service": {
+                      "ActiveState": "active",
+                      "LoadState": "loaded",
+                      "MainPID": "3092586",
+                      "UnitFileState": "enabled"
+                    },
+                    "proofofwork-ui-release-prune.timer": {
+                      "ActiveState": "inactive",
+                      "LoadState": "masked",
+                      "UnitFileState": "masked"
+                    },
+                    "proofofwork-ui-storage-prune.timer": {
+                      "ActiveState": "inactive",
+                      "LoadState": "masked",
+                      "UnitFileState": "masked"
+                    }
+                  },
+                  "holdSha256": "e9aca6e22b1dc36b714ed663051f8bc20d9479efa4173474e0b6b771958ca6a4",
+                  "manifestSha256": "b291486bb297b4e7a8c752061dfc21aec7f5d8a8a027ceec9776668a887e33a2",
+                  "previous": [
+                    {
+                      "backup": "0.previous",
+                      "identity": [
+                        2049,
+                        727,
+                        33261,
+                        0,
+                        0,
+                        10966,
+                        1790832648165009251,
+                        1790832648168009512
+                      ],
+                      "mode": 493,
+                      "path": "/usr/local/sbin/proofofwork-retention-protection",
+                      "sha256": "b5802552dfc99283aebd4bc0152c4bb2740c39081637218bb1d8c8ec35559f0a"
+                    },
+                    {
+                      "backup": "1.previous",
+                      "identity": [
+                        2049,
+                        133184,
+                        33188,
+                        0,
+                        0,
+                        604,
+                        1790736115520217196,
+                        1790736115521217284
+                      ],
+                      "mode": 420,
+                      "path": "/etc/systemd/system/proofofwork-retention-protection.service",
+                      "sha256": "6a8a933356726137ed574710c88b66509f1889910b6cf38aa374d9808c04c3ce"
+                    }
+                  ],
+                  "productionDataChanges": false,
+                  "status": "prepared"
+                },
+                "gid": 0,
+                "mode": 384,
+                "path": "/var/backups/proofofwork-ui/release-tooling/audit30-retention-ui-92ccd615df32f255/retention-ui-20261002T193201.012504Z/intent.json",
+                "sha256": "930c639311cc77b6133ddd8781933b2b7cc9d4827db79d1af262308e5a89ad1f",
+                "uid": 0
+              },
+              {
+                "bytes": 20677,
+                "gid": 0,
+                "mode": 384,
+                "path": "/var/backups/proofofwork-ui/release-tooling/audit30-retention-ui-bedc5b7b2a6bd1e2/retention-ui-20261002T194451.036641Z/0.previous",
+                "sha256": "da5d1336ce857acc571ba0849c2b0150ef5fc6dfdacf80e65b9f1d3611c48e8a",
+                "uid": 0
+              },
+              {
+                "bytes": 650,
+                "gid": 0,
+                "mode": 384,
+                "path": "/var/backups/proofofwork-ui/release-tooling/audit30-retention-ui-bedc5b7b2a6bd1e2/retention-ui-20261002T194451.036641Z/1.previous",
+                "sha256": "60776c973e416ed2dbd7eff744e02ddb90bbbdd353d4fbc9c18fbd707cd9bca4",
+                "uid": 0
+              },
+              {
+                "bytes": 542,
+                "content": {
+                  "authorityAndHoldUnchanged": true,
+                  "installed": [
+                    {
+                      "path": "/usr/local/sbin/proofofwork-retention-protection",
+                      "sha256": "da5d1336ce857acc571ba0849c2b0150ef5fc6dfdacf80e65b9f1d3611c48e8a"
+                    },
+                    {
+                      "path": "/etc/systemd/system/proofofwork-retention-protection.service",
+                      "sha256": "14426a6092ca97ab3c3e05e2030cc99912ed03afbbc899a03cafb33960622ea5"
+                    }
+                  ],
+                  "manifestSha256": "b167e5f546e8fac2c2fe76464c5ec10000e58de77de4f00b0595fb8cc93168e9",
+                  "monitorRunPerformed": false,
+                  "status": "completed"
+                },
+                "gid": 0,
+                "mode": 384,
+                "path": "/var/backups/proofofwork-ui/release-tooling/audit30-retention-ui-bedc5b7b2a6bd1e2/retention-ui-20261002T194451.036641Z/completed.json",
+                "sha256": "0fd88bb39b3c03abf834f905cb98f3bcbca38f405828fa1afd9b3db5411f7132",
+                "uid": 0
+              },
+              {
+                "bytes": 1665,
+                "content": {
+                  "approvalSha256": "d99a40236b49b1735c794fb853c4f7f4f0724da8e3f83fab75c7464e0e8ee373",
+                  "baseline": {
+                    "caddy.service": {
+                      "ActiveState": "active",
+                      "LoadState": "loaded",
+                      "MainPID": "3092586",
+                      "UnitFileState": "enabled"
+                    },
+                    "proofofwork-ui-release-prune.timer": {
+                      "ActiveState": "inactive",
+                      "LoadState": "masked",
+                      "UnitFileState": "masked"
+                    },
+                    "proofofwork-ui-storage-prune.timer": {
+                      "ActiveState": "inactive",
+                      "LoadState": "masked",
+                      "UnitFileState": "masked"
+                    }
+                  },
+                  "holdSha256": "e9aca6e22b1dc36b714ed663051f8bc20d9479efa4173474e0b6b771958ca6a4",
+                  "manifestSha256": "b167e5f546e8fac2c2fe76464c5ec10000e58de77de4f00b0595fb8cc93168e9",
+                  "previous": [
+                    {
+                      "backup": "0.previous",
+                      "identity": [
+                        2049,
+                        676,
+                        33261,
+                        0,
+                        0,
+                        20677,
+                        1790969521021927243,
+                        1790969521024927512
+                      ],
+                      "mode": 493,
+                      "path": "/usr/local/sbin/proofofwork-retention-protection",
+                      "sha256": "da5d1336ce857acc571ba0849c2b0150ef5fc6dfdacf80e65b9f1d3611c48e8a"
+                    },
+                    {
+                      "backup": "1.previous",
+                      "identity": [
+                        2049,
+                        130245,
+                        33188,
+                        0,
+                        0,
+                        650,
+                        1790969521027927781,
+                        1790969521029927961
+                      ],
+                      "mode": 420,
+                      "path": "/etc/systemd/system/proofofwork-retention-protection.service",
+                      "sha256": "60776c973e416ed2dbd7eff744e02ddb90bbbdd353d4fbc9c18fbd707cd9bca4"
+                    }
+                  ],
+                  "productionDataChanges": false,
+                  "status": "prepared",
+                  "uiDeadlineApprovalSha256": "b630bcb42bea4af4ad3fe3ac7cce0bb64b0dbb4acdc6bf58b22f1f6d16d4bdf2"
+                },
+                "gid": 0,
+                "mode": 384,
+                "path": "/var/backups/proofofwork-ui/release-tooling/audit30-retention-ui-bedc5b7b2a6bd1e2/retention-ui-20261002T194451.036641Z/intent.json",
+                "sha256": "cb7e3a8f7d656edd2ade7808aaccc2c4e24538861d38119d70488321cd0112b5",
+                "uid": 0
+              }
+            ],
+            "journalEvents": [
+              {
+                "MESSAGE": "Starting proofofwork-retention-protection.service - Read-only check of persistent ProofOfWork retention protection...",
+                "PRIORITY": "6",
+                "__REALTIME_TIMESTAMP": "1790969404290488"
+              },
+              {
+                "MESSAGE": null,
+                "PRIORITY": "6",
+                "_SYSTEMD_INVOCATION_ID": "1cbab833c9e54cfd8c04eba95a081de8",
+                "__REALTIME_TIMESTAMP": "1790969406866232"
+              },
+              {
+                "MESSAGE": "proofofwork-retention-protection.service: Main process exited, code=exited, status=1/FAILURE",
+                "PRIORITY": "5",
+                "__REALTIME_TIMESTAMP": "1790969407065229"
+              },
+              {
+                "MESSAGE": "proofofwork-retention-protection.service: Failed with result 'exit-code'.",
+                "PRIORITY": "4",
+                "__REALTIME_TIMESTAMP": "1790969407065794"
+              },
+              {
+                "MESSAGE": "Failed to start proofofwork-retention-protection.service - Read-only check of persistent ProofOfWork retention protection.",
+                "PRIORITY": "3",
+                "__REALTIME_TIMESTAMP": "1790969407067291"
+              },
+              {
+                "MESSAGE": "Starting proofofwork-retention-protection.service - Read-only check of persistent ProofOfWork retention protection...",
+                "PRIORITY": "6",
+                "__REALTIME_TIMESTAMP": "1790969569905187"
+              },
+              {
+                "MESSAGE": "proofofwork-retention-protection.service: start operation timed out. Terminating.",
+                "PRIORITY": "4",
+                "__REALTIME_TIMESTAMP": "1790969589915919"
+              },
+              {
+                "MESSAGE": "proofofwork-retention-protection.service: Main process exited, code=killed, status=15/TERM",
+                "PRIORITY": "4",
+                "__REALTIME_TIMESTAMP": "1790969589925887"
+              },
+              {
+                "MESSAGE": "proofofwork-retention-protection.service: Failed with result 'timeout'.",
+                "PRIORITY": "4",
+                "__REALTIME_TIMESTAMP": "1790969589926614"
+              },
+              {
+                "MESSAGE": "Failed to start proofofwork-retention-protection.service - Read-only check of persistent ProofOfWork retention protection.",
+                "PRIORITY": "3",
+                "__REALTIME_TIMESTAMP": "1790969589927925"
+              },
+              {
+                "MESSAGE": "proofofwork-retention-protection.service: Consumed 2.012s CPU time.",
+                "PRIORITY": "6",
+                "__REALTIME_TIMESTAMP": "1790969589929886"
+              },
+              {
+                "MESSAGE": "Starting proofofwork-retention-protection.service - Read-only check of persistent ProofOfWork retention protection...",
+                "PRIORITY": "6",
+                "__REALTIME_TIMESTAMP": "1790969704630831"
+              },
+              {
+                "MESSAGE": "proofofwork-retention-protection.service: start operation timed out. Terminating.",
+                "PRIORITY": "4",
+                "__REALTIME_TIMESTAMP": "1790969724666265"
+              },
+              {
+                "MESSAGE": "proofofwork-retention-protection.service: Main process exited, code=killed, status=15/TERM",
+                "PRIORITY": "4",
+                "__REALTIME_TIMESTAMP": "1790969724672031"
+              },
+              {
+                "MESSAGE": "proofofwork-retention-protection.service: Failed with result 'timeout'.",
+                "PRIORITY": "4",
+                "__REALTIME_TIMESTAMP": "1790969724672429"
+              },
+              {
+                "MESSAGE": "Failed to start proofofwork-retention-protection.service - Read-only check of persistent ProofOfWork retention protection.",
+                "PRIORITY": "3",
+                "__REALTIME_TIMESTAMP": "1790969724673772"
+              },
+              {
+                "MESSAGE": "proofofwork-retention-protection.service: Consumed 2.013s CPU time.",
+                "PRIORITY": "6",
+                "__REALTIME_TIMESTAMP": "1790969724676087"
+              },
+              {
+                "MESSAGE": "Starting proofofwork-retention-protection.service - Read-only check of persistent ProofOfWork retention protection...",
+                "PRIORITY": "6",
+                "__REALTIME_TIMESTAMP": "1790970001953425"
+              },
+              {
+                "MESSAGE": "{\"role\": \"ui\", \"ok\": false, \"issues\": [\"historical-held-path-missing-or-retirement-invalid\"], \"units\": {\"proofofwork-ui-release-prune.timer\": {\"LoadState\": \"masked\", \"ActiveState\": \"inactive\", \"persistentMask\": true}, \"proofofwork-ui-storage-prune.timer\": {\"LoadState\": \"masked\", \"ActiveState\": \"inactive\", \"persistentMask\": true}}, \"historicalHeldInventory\": {\"ok\": false, \"heldPaths\": 295, \"approvedRetiredHeldPaths\": 2, \"mustRemainPresent\": 293, \"approvedRelocatedHeldPaths\": 2, \"mustRemainAtOriginalPath\": 291, \"approvedRelocations\": {\"/var/tmp/proofofwork-deploy/proofofwork-ui-source-3bc6c9d44e00-20260929T200127Z.tgz\": \"/var/backups/proofofwork-ui/transport-evidence/historical-archives-boost-20261002T013023Z/proofofwork-ui-source-3bc6c9d44e00-20260929T200127Z.tgz\", \"/var/tmp/proofofwork-deploy/proofofwork-ui-surfaces-3bc6c9d44e00-20260929T200127Z.tgz\": \"/var/backups/proofofwork-ui/transport-evidence/historical-archives-boost-20261002T013023Z/proofofwork-ui-surfaces-3bc6c9d44e00-20260929T200127Z.tgz\"}, \"unexpectedRelocatedOriginalPathsPresent\": [], \"missingHeldPaths\": [\"/var/tmp/proofofwork-deploy/audit5-stream-source-5970b26e610b-20260926T225712Z.json\", \"/var/tmp/proofofwork-deploy/audit5-stream-source-b752518bf8b4-20260927T014804Z.json\", \"/var/tmp/proofofwork-deploy/audit5-stream-source-c64963f4649f-20260927T001231Z.json\", \"/var/tmp/proofofwork-deploy/audit5-stream-surfaces-5970b26e610b-20260926T225712Z.json\", \"/var/tmp/proofofwork-deploy/audit5-stream-surfaces-b752518bf8b4-20260927T014804Z.json\", \"/var/tmp/proofofwork-deploy/audit5-stream-surfaces-c64963f4649f-20260927T001231Z.json\", \"/var/tmp/proofofwork-deploy/boost-ui-deploy-config.json\", \"/var/tmp/proofofwork-deploy/boost-ui-publish-b111f5941375-20260927T125836Z.json\", \"/var/tmp/proofofwork-deploy/deploy-boost-ui-remote.py\", \"/var/tmp/proofofwork-deploy/profile-release-c964e304a8f9-20260927T181330Z.json\", \"/var/tmp/proofofwork-deploy/profile-ui-publish-config.json\"], \"unexpectedRetiredPathsPresent\": [], \"approvedRelocationEvidence\": {\"ok\": true}}, \"scratchNamespace\": {\"path\": \"/var/tmp/proofofwork-deploy\", \"exists\": true, \"canonical\": true, \"exactMount\": {\"mountpoint\": \"/var/tmp/proofofwork-deploy\", \"mountOptions\": [\"ro\", \"nosuid\", \"relatime\"]}, \"readOnlyBind\": true, \"invocationId\": \"955642b097d64fb089f580c1fe81ae81\"}, \"checkedAt\": \"2026-10-02T19:40:20.507155+00:00\"}",
+                "PRIORITY": "6",
+                "_SYSTEMD_INVOCATION_ID": "955642b097d64fb089f580c1fe81ae81",
+                "__REALTIME_TIMESTAMP": "1790970020508044",
+                "checkerReceipt": {
+                  "checkedAt": "2026-10-02T19:40:20.507155+00:00",
+                  "historicalHeldInventory": {
+                    "approvedRelocatedHeldPaths": 2,
+                    "approvedRelocationEvidence": {
+                      "ok": true
+                    },
+                    "approvedRelocations": {
+                      "/var/tmp/proofofwork-deploy/proofofwork-ui-source-3bc6c9d44e00-20260929T200127Z.tgz": "/var/backups/proofofwork-ui/transport-evidence/historical-archives-boost-20261002T013023Z/proofofwork-ui-source-3bc6c9d44e00-20260929T200127Z.tgz",
+                      "/var/tmp/proofofwork-deploy/proofofwork-ui-surfaces-3bc6c9d44e00-20260929T200127Z.tgz": "/var/backups/proofofwork-ui/transport-evidence/historical-archives-boost-20261002T013023Z/proofofwork-ui-surfaces-3bc6c9d44e00-20260929T200127Z.tgz"
+                    },
+                    "approvedRetiredHeldPaths": 2,
+                    "heldPaths": 295,
+                    "missingHeldPaths": [
+                      "/var/tmp/proofofwork-deploy/audit5-stream-source-5970b26e610b-20260926T225712Z.json",
+                      "/var/tmp/proofofwork-deploy/audit5-stream-source-b752518bf8b4-20260927T014804Z.json",
+                      "/var/tmp/proofofwork-deploy/audit5-stream-source-c64963f4649f-20260927T001231Z.json",
+                      "/var/tmp/proofofwork-deploy/audit5-stream-surfaces-5970b26e610b-20260926T225712Z.json",
+                      "/var/tmp/proofofwork-deploy/audit5-stream-surfaces-b752518bf8b4-20260927T014804Z.json",
+                      "/var/tmp/proofofwork-deploy/audit5-stream-surfaces-c64963f4649f-20260927T001231Z.json",
+                      "/var/tmp/proofofwork-deploy/boost-ui-deploy-config.json",
+                      "/var/tmp/proofofwork-deploy/boost-ui-publish-b111f5941375-20260927T125836Z.json",
+                      "/var/tmp/proofofwork-deploy/deploy-boost-ui-remote.py",
+                      "/var/tmp/proofofwork-deploy/profile-release-c964e304a8f9-20260927T181330Z.json",
+                      "/var/tmp/proofofwork-deploy/profile-ui-publish-config.json"
+                    ],
+                    "mustRemainAtOriginalPath": 291,
+                    "mustRemainPresent": 293,
+                    "ok": false,
+                    "unexpectedRelocatedOriginalPathsPresent": [],
+                    "unexpectedRetiredPathsPresent": []
+                  },
+                  "issues": [
+                    "historical-held-path-missing-or-retirement-invalid"
+                  ],
+                  "ok": false,
+                  "role": "ui",
+                  "scratchNamespace": {
+                    "canonical": true,
+                    "exactMount": {
+                      "mountOptions": [
+                        "ro",
+                        "nosuid",
+                        "relatime"
+                      ],
+                      "mountpoint": "/var/tmp/proofofwork-deploy"
+                    },
+                    "exists": true,
+                    "invocationId": "955642b097d64fb089f580c1fe81ae81",
+                    "path": "/var/tmp/proofofwork-deploy",
+                    "readOnlyBind": true
+                  },
+                  "units": {
+                    "proofofwork-ui-release-prune.timer": {
+                      "ActiveState": "inactive",
+                      "LoadState": "masked",
+                      "persistentMask": true
+                    },
+                    "proofofwork-ui-storage-prune.timer": {
+                      "ActiveState": "inactive",
+                      "LoadState": "masked",
+                      "persistentMask": true
+                    }
+                  }
+                }
+              },
+              {
+                "MESSAGE": "proofofwork-retention-protection.service: Main process exited, code=exited, status=1/FAILURE",
+                "PRIORITY": "5",
+                "__REALTIME_TIMESTAMP": "1790970020905013"
+              },
+              {
+                "MESSAGE": "proofofwork-retention-protection.service: Failed with result 'exit-code'.",
+                "PRIORITY": "4",
+                "__REALTIME_TIMESTAMP": "1790970020905875"
+              },
+              {
+                "MESSAGE": "Failed to start proofofwork-retention-protection.service - Read-only check of persistent ProofOfWork retention protection.",
+                "PRIORITY": "3",
+                "__REALTIME_TIMESTAMP": "1790970020907107"
+              },
+              {
+                "MESSAGE": "proofofwork-retention-protection.service: Consumed 1.903s CPU time.",
+                "PRIORITY": "6",
+                "__REALTIME_TIMESTAMP": "1790970020908889"
+              },
+              {
+                "MESSAGE": "Starting proofofwork-retention-protection.service - Read-only check of persistent ProofOfWork retention protection...",
+                "PRIORITY": "6",
+                "__REALTIME_TIMESTAMP": "1790970321185885"
+              },
+              {
+                "MESSAGE": "{\"role\": \"ui\", \"ok\": false, \"issues\": [\"historical-held-path-missing-or-retirement-invalid\"], \"units\": {\"proofofwork-ui-release-prune.timer\": {\"LoadState\": \"masked\", \"ActiveState\": \"inactive\", \"persistentMask\": true}, \"proofofwork-ui-storage-prune.timer\": {\"LoadState\": \"masked\", \"ActiveState\": \"inactive\", \"persistentMask\": true}}, \"historicalHeldInventory\": {\"ok\": false, \"heldPaths\": 295, \"approvedRetiredHeldPaths\": 2, \"mustRemainPresent\": 293, \"approvedRelocatedHeldPaths\": 2, \"mustRemainAtOriginalPath\": 291, \"approvedRelocations\": {\"/var/tmp/proofofwork-deploy/proofofwork-ui-source-3bc6c9d44e00-20260929T200127Z.tgz\": \"/var/backups/proofofwork-ui/transport-evidence/historical-archives-boost-20261002T013023Z/proofofwork-ui-source-3bc6c9d44e00-20260929T200127Z.tgz\", \"/var/tmp/proofofwork-deploy/proofofwork-ui-surfaces-3bc6c9d44e00-20260929T200127Z.tgz\": \"/var/backups/proofofwork-ui/transport-evidence/historical-archives-boost-20261002T013023Z/proofofwork-ui-surfaces-3bc6c9d44e00-20260929T200127Z.tgz\"}, \"unexpectedRelocatedOriginalPathsPresent\": [], \"missingHeldPaths\": [\"/var/tmp/proofofwork-deploy/audit5-stream-source-5970b26e610b-20260926T225712Z.json\", \"/var/tmp/proofofwork-deploy/audit5-stream-source-b752518bf8b4-20260927T014804Z.json\", \"/var/tmp/proofofwork-deploy/audit5-stream-source-c64963f4649f-20260927T001231Z.json\", \"/var/tmp/proofofwork-deploy/audit5-stream-surfaces-5970b26e610b-20260926T225712Z.json\", \"/var/tmp/proofofwork-deploy/audit5-stream-surfaces-b752518bf8b4-20260927T014804Z.json\", \"/var/tmp/proofofwork-deploy/audit5-stream-surfaces-c64963f4649f-20260927T001231Z.json\", \"/var/tmp/proofofwork-deploy/boost-ui-deploy-config.json\", \"/var/tmp/proofofwork-deploy/boost-ui-publish-b111f5941375-20260927T125836Z.json\", \"/var/tmp/proofofwork-deploy/deploy-boost-ui-remote.py\", \"/var/tmp/proofofwork-deploy/profile-release-c964e304a8f9-20260927T181330Z.json\", \"/var/tmp/proofofwork-deploy/profile-ui-publish-config.json\"], \"unexpectedRetiredPathsPresent\": [], \"approvedRelocationEvidence\": {\"ok\": true}}, \"scratchNamespace\": {\"path\": \"/var/tmp/proofofwork-deploy\", \"exists\": true, \"canonical\": true, \"exactMount\": {\"mountpoint\": \"/var/tmp/proofofwork-deploy\", \"mountOptions\": [\"ro\", \"nosuid\", \"relatime\"]}, \"readOnlyBind\": true, \"invocationId\": \"41fe2417d1024796b773a913f17c5de2\"}, \"checkedAt\": \"2026-10-02T19:45:42.600496+00:00\"}",
+                "PRIORITY": "6",
+                "_SYSTEMD_INVOCATION_ID": "41fe2417d1024796b773a913f17c5de2",
+                "__REALTIME_TIMESTAMP": "1790970342601166",
+                "checkerReceipt": {
+                  "checkedAt": "2026-10-02T19:45:42.600496+00:00",
+                  "historicalHeldInventory": {
+                    "approvedRelocatedHeldPaths": 2,
+                    "approvedRelocationEvidence": {
+                      "ok": true
+                    },
+                    "approvedRelocations": {
+                      "/var/tmp/proofofwork-deploy/proofofwork-ui-source-3bc6c9d44e00-20260929T200127Z.tgz": "/var/backups/proofofwork-ui/transport-evidence/historical-archives-boost-20261002T013023Z/proofofwork-ui-source-3bc6c9d44e00-20260929T200127Z.tgz",
+                      "/var/tmp/proofofwork-deploy/proofofwork-ui-surfaces-3bc6c9d44e00-20260929T200127Z.tgz": "/var/backups/proofofwork-ui/transport-evidence/historical-archives-boost-20261002T013023Z/proofofwork-ui-surfaces-3bc6c9d44e00-20260929T200127Z.tgz"
+                    },
+                    "approvedRetiredHeldPaths": 2,
+                    "heldPaths": 295,
+                    "missingHeldPaths": [
+                      "/var/tmp/proofofwork-deploy/audit5-stream-source-5970b26e610b-20260926T225712Z.json",
+                      "/var/tmp/proofofwork-deploy/audit5-stream-source-b752518bf8b4-20260927T014804Z.json",
+                      "/var/tmp/proofofwork-deploy/audit5-stream-source-c64963f4649f-20260927T001231Z.json",
+                      "/var/tmp/proofofwork-deploy/audit5-stream-surfaces-5970b26e610b-20260926T225712Z.json",
+                      "/var/tmp/proofofwork-deploy/audit5-stream-surfaces-b752518bf8b4-20260927T014804Z.json",
+                      "/var/tmp/proofofwork-deploy/audit5-stream-surfaces-c64963f4649f-20260927T001231Z.json",
+                      "/var/tmp/proofofwork-deploy/boost-ui-deploy-config.json",
+                      "/var/tmp/proofofwork-deploy/boost-ui-publish-b111f5941375-20260927T125836Z.json",
+                      "/var/tmp/proofofwork-deploy/deploy-boost-ui-remote.py",
+                      "/var/tmp/proofofwork-deploy/profile-release-c964e304a8f9-20260927T181330Z.json",
+                      "/var/tmp/proofofwork-deploy/profile-ui-publish-config.json"
+                    ],
+                    "mustRemainAtOriginalPath": 291,
+                    "mustRemainPresent": 293,
+                    "ok": false,
+                    "unexpectedRelocatedOriginalPathsPresent": [],
+                    "unexpectedRetiredPathsPresent": []
+                  },
+                  "issues": [
+                    "historical-held-path-missing-or-retirement-invalid"
+                  ],
+                  "ok": false,
+                  "role": "ui",
+                  "scratchNamespace": {
+                    "canonical": true,
+                    "exactMount": {
+                      "mountOptions": [
+                        "ro",
+                        "nosuid",
+                        "relatime"
+                      ],
+                      "mountpoint": "/var/tmp/proofofwork-deploy"
+                    },
+                    "exists": true,
+                    "invocationId": "41fe2417d1024796b773a913f17c5de2",
+                    "path": "/var/tmp/proofofwork-deploy",
+                    "readOnlyBind": true
+                  },
+                  "units": {
+                    "proofofwork-ui-release-prune.timer": {
+                      "ActiveState": "inactive",
+                      "LoadState": "masked",
+                      "persistentMask": true
+                    },
+                    "proofofwork-ui-storage-prune.timer": {
+                      "ActiveState": "inactive",
+                      "LoadState": "masked",
+                      "persistentMask": true
+                    }
+                  }
+                }
+              },
+              {
+                "MESSAGE": "proofofwork-retention-protection.service: Main process exited, code=exited, status=1/FAILURE",
+                "PRIORITY": "5",
+                "__REALTIME_TIMESTAMP": "1790970342806612"
+              },
+              {
+                "MESSAGE": "proofofwork-retention-protection.service: Failed with result 'exit-code'.",
+                "PRIORITY": "4",
+                "__REALTIME_TIMESTAMP": "1790970342807753"
+              },
+              {
+                "MESSAGE": "Failed to start proofofwork-retention-protection.service - Read-only check of persistent ProofOfWork retention protection.",
+                "PRIORITY": "3",
+                "__REALTIME_TIMESTAMP": "1790970342808100"
+              },
+              {
+                "MESSAGE": "proofofwork-retention-protection.service: Consumed 2.175s CPU time.",
+                "PRIORITY": "6",
+                "__REALTIME_TIMESTAMP": "1790970342808584"
+              }
+            ],
+            "role": "ui",
+            "schema": "pow-audit30-installed-monitor-execution-v1",
+            "units": [
+              {
+                "properties": {
+                  "ActiveState": "failed",
+                  "BindReadOnlyPaths": "/var/tmp/proofofwork-deploy:/var/tmp/proofofwork-deploy:rbind",
+                  "CPUQuotaPerSecUSec": "100ms",
+                  "CPUUsageNSec": "2175888000",
+                  "ExecMainStatus": "1",
+                  "InvocationID": "41fe2417d1024796b773a913f17c5de2",
+                  "LoadState": "loaded",
+                  "MainPID": "0",
+                  "MemoryMax": "33554432",
+                  "NRestarts": "0",
+                  "PrivateTmp": "yes",
+                  "Result": "exit-code",
+                  "TimeoutStartUSec": "1min"
+                },
+                "unit": "proofofwork-retention-protection.service"
+              },
+              {
+                "properties": {
+                  "ActiveState": "active",
+                  "BindReadOnlyPaths": "",
+                  "CPUQuotaPerSecUSec": "infinity",
+                  "CPUUsageNSec": "12079483274000",
+                  "ExecMainStatus": "0",
+                  "InvocationID": "201feac74de54f1da7b5e304adb1b621",
+                  "LoadState": "loaded",
+                  "MainPID": "3092586",
+                  "MemoryMax": "infinity",
+                  "NRestarts": "0",
+                  "PrivateTmp": "yes",
+                  "Result": "success",
+                  "TimeoutStartUSec": "1min 30s"
+                },
+                "unit": "caddy.service"
+              },
+              {
+                "properties": {
+                  "ActiveState": "inactive",
+                  "InvocationID": "",
+                  "LoadState": "masked",
+                  "Result": "success"
+                },
+                "unit": "proofofwork-ui-release-prune.timer"
+              },
+              {
+                "properties": {
+                  "ActiveState": "inactive",
+                  "InvocationID": "",
+                  "LoadState": "masked",
+                  "Result": "success"
+                },
+                "unit": "proofofwork-ui-storage-prune.timer"
+              }
+            ]
+          },
+          "path": "/tmp/pow-audit30-retention-ui-production-execution.json",
+          "sha256": "b6a043cbc0336682573643e91a78bbdb636b3d982148c5047ec32ec550621762"
+        },
+        {
+          "bytes": 17099,
+          "content": {
+            "atUtc": "2026-10-02T19:47:43.973586+00:00",
+            "files": [
+              {
+                "bytes": 20677,
+                "gid": 0,
+                "mode": 493,
+                "path": "/usr/local/sbin/proofofwork-retention-protection",
+                "sha256": "da5d1336ce857acc571ba0849c2b0150ef5fc6dfdacf80e65b9f1d3611c48e8a",
+                "uid": 0
+              },
+              {
+                "bytes": 690,
+                "gid": 0,
+                "mode": 420,
+                "path": "/etc/systemd/system/proofofwork-retention-protection.service",
+                "sha256": "8f9c54b522961e26d8f02ed33ad065af70906f1e95ca2ad65edd322c8f758448",
+                "uid": 0
+              },
+              {
+                "bytes": 81,
+                "gid": 0,
+                "mode": 384,
+                "path": "/etc/proofofwork-retention/audit28.hold",
+                "sha256": "e9aca6e22b1dc36b714ed663051f8bc20d9479efa4173474e0b6b771958ca6a4",
+                "uid": 0
+              },
+              {
+                "bytes": 1030164,
+                "gid": 0,
+                "mode": 420,
+                "path": "/etc/proofofwork-retention/audit28-held-review.json",
+                "sha256": "c3bd35740d7fcc135839274c8228e38f7a45c23e33567743e0d77151b32451d9",
+                "uid": 0
+              }
+            ],
+            "installationReceipts": [
+              {
+                "bytes": 10966,
+                "gid": 0,
+                "mode": 384,
+                "path": "/data/audit30-retention-node-67074bbf4a7f6a43/retention-node-20261002T194519.799473Z/0.previous",
+                "sha256": "b5802552dfc99283aebd4bc0152c4bb2740c39081637218bb1d8c8ec35559f0a",
+                "uid": 0
+              },
+              {
+                "bytes": 644,
+                "gid": 0,
+                "mode": 384,
+                "path": "/data/audit30-retention-node-67074bbf4a7f6a43/retention-node-20261002T194519.799473Z/1.previous",
+                "sha256": "0d128a66f97990fcd7184b1e6b995acc823f09ee6c2afae6a11708baa5062b43",
+                "uid": 0
+              },
+              {
+                "bytes": 542,
+                "content": {
+                  "authorityAndHoldUnchanged": true,
+                  "installed": [
+                    {
+                      "path": "/usr/local/sbin/proofofwork-retention-protection",
+                      "sha256": "da5d1336ce857acc571ba0849c2b0150ef5fc6dfdacf80e65b9f1d3611c48e8a"
+                    },
+                    {
+                      "path": "/etc/systemd/system/proofofwork-retention-protection.service",
+                      "sha256": "8f9c54b522961e26d8f02ed33ad065af70906f1e95ca2ad65edd322c8f758448"
+                    }
+                  ],
+                  "manifestSha256": "9eb6d06286a37632f55f00907d88791612aff65930a5cd7c2ca19422c0192327",
+                  "monitorRunPerformed": false,
+                  "status": "completed"
+                },
+                "gid": 0,
+                "mode": 384,
+                "path": "/data/audit30-retention-node-67074bbf4a7f6a43/retention-node-20261002T194519.799473Z/completed.json",
+                "sha256": "29fa55421226aff214cccb6860fb927f3c88b1a5bc69f0470577e7631712f627",
+                "uid": 0
+              },
+              {
+                "bytes": 2443,
+                "content": {
+                  "approvalSha256": "d99a40236b49b1735c794fb853c4f7f4f0724da8e3f83fab75c7464e0e8ee373",
+                  "baseline": {
+                    "bitcoind.service": {
+                      "ActiveState": "active",
+                      "LoadState": "loaded",
+                      "MainPID": "1324302",
+                      "UnitFileState": "enabled"
+                    },
+                    "electrs.service": {
+                      "ActiveState": "active",
+                      "LoadState": "loaded",
+                      "MainPID": "1324320",
+                      "UnitFileState": "enabled"
+                    },
+                    "pg_receivewal@16-main.service": {
+                      "ActiveState": "inactive",
+                      "LoadState": "loaded",
+                      "MainPID": "0",
+                      "UnitFileState": "disabled"
+                    },
+                    "postgresql@16-main.service": {
+                      "ActiveState": "active",
+                      "LoadState": "loaded",
+                      "MainPID": "1537429",
+                      "UnitFileState": "enabled-runtime"
+                    },
+                    "proofofwork-api.service": {
+                      "ActiveState": "active",
+                      "LoadState": "loaded",
+                      "MainPID": "2103747",
+                      "UnitFileState": "enabled"
+                    },
+                    "proofofwork-indexer-worker.service": {
+                      "ActiveState": "active",
+                      "LoadState": "loaded",
+                      "MainPID": "2103760",
+                      "UnitFileState": "enabled"
+                    },
+                    "proofofwork-node-release-prune.timer": {
+                      "ActiveState": "inactive",
+                      "LoadState": "masked",
+                      "UnitFileState": "masked"
+                    },
+                    "proofofwork-postgres-logical-backup.timer": {
+                      "ActiveState": "active",
+                      "LoadState": "loaded",
+                      "UnitFileState": "enabled"
+                    }
+                  },
+                  "holdSha256": "e9aca6e22b1dc36b714ed663051f8bc20d9479efa4173474e0b6b771958ca6a4",
+                  "manifestSha256": "9eb6d06286a37632f55f00907d88791612aff65930a5cd7c2ca19422c0192327",
+                  "previous": [
+                    {
+                      "backup": "0.previous",
+                      "identity": [
+                        64512,
+                        6302955,
+                        33261,
+                        0,
+                        0,
+                        10966,
+                        1790833036623778342,
+                        1790833036624778341
+                      ],
+                      "mode": 493,
+                      "path": "/usr/local/sbin/proofofwork-retention-protection",
+                      "sha256": "b5802552dfc99283aebd4bc0152c4bb2740c39081637218bb1d8c8ec35559f0a"
+                    },
+                    {
+                      "backup": "1.previous",
+                      "identity": [
+                        64512,
+                        3147976,
+                        33188,
+                        0,
+                        0,
+                        644,
+                        1790736274018843801,
+                        1790736274019843801
+                      ],
+                      "mode": 420,
+                      "path": "/etc/systemd/system/proofofwork-retention-protection.service",
+                      "sha256": "0d128a66f97990fcd7184b1e6b995acc823f09ee6c2afae6a11708baa5062b43"
+                    }
+                  ],
+                  "productionDataChanges": false,
+                  "status": "prepared",
+                  "uiDeadlineApprovalSha256": null
+                },
+                "gid": 0,
+                "mode": 384,
+                "path": "/data/audit30-retention-node-67074bbf4a7f6a43/retention-node-20261002T194519.799473Z/intent.json",
+                "sha256": "c183bf12a439592d170d36c3962c8f6db6a5dfcb559afe79671915e449ff9e8c",
+                "uid": 0
+              }
+            ],
+            "journalEvents": [
+              {
+                "MESSAGE": "Starting proofofwork-retention-protection.service - Read-only check of persistent ProofOfWork retention protection...",
+                "PRIORITY": "6",
+                "__REALTIME_TIMESTAMP": "1790969419393995"
+              },
+              {
+                "MESSAGE": null,
+                "PRIORITY": "6",
+                "_SYSTEMD_INVOCATION_ID": "2b4acd6608d64223a05dfe2bb104923b",
+                "__REALTIME_TIMESTAMP": "1790969419997135"
+              },
+              {
+                "MESSAGE": "proofofwork-retention-protection.service: Main process exited, code=exited, status=1/FAILURE",
+                "PRIORITY": "5",
+                "__REALTIME_TIMESTAMP": "1790969420092696"
+              },
+              {
+                "MESSAGE": "proofofwork-retention-protection.service: Failed with result 'exit-code'.",
+                "PRIORITY": "4",
+                "__REALTIME_TIMESTAMP": "1790969420092909"
+              },
+              {
+                "MESSAGE": "Failed to start proofofwork-retention-protection.service - Read-only check of persistent ProofOfWork retention protection.",
+                "PRIORITY": "3",
+                "__REALTIME_TIMESTAMP": "1790969420093255"
+              },
+              {
+                "MESSAGE": "Starting proofofwork-retention-protection.service - Read-only check of persistent ProofOfWork retention protection...",
+                "PRIORITY": "6",
+                "__REALTIME_TIMESTAMP": "1790969715146123"
+              },
+              {
+                "MESSAGE": null,
+                "PRIORITY": "6",
+                "_SYSTEMD_INVOCATION_ID": "f20f0bcc3920464ea21798a4eb67c48c",
+                "__REALTIME_TIMESTAMP": "1790969715802888"
+              },
+              {
+                "MESSAGE": "proofofwork-retention-protection.service: Main process exited, code=exited, status=1/FAILURE",
+                "PRIORITY": "5",
+                "__REALTIME_TIMESTAMP": "1790969715898595"
+              },
+              {
+                "MESSAGE": "proofofwork-retention-protection.service: Failed with result 'exit-code'.",
+                "PRIORITY": "4",
+                "__REALTIME_TIMESTAMP": "1790969715898708"
+              },
+              {
+                "MESSAGE": "Failed to start proofofwork-retention-protection.service - Read-only check of persistent ProofOfWork retention protection.",
+                "PRIORITY": "3",
+                "__REALTIME_TIMESTAMP": "1790969715898945"
+              },
+              {
+                "MESSAGE": "Starting proofofwork-retention-protection.service - Read-only check of persistent ProofOfWork retention protection...",
+                "PRIORITY": "6",
+                "__REALTIME_TIMESTAMP": "1790970013142941"
+              },
+              {
+                "MESSAGE": null,
+                "PRIORITY": "6",
+                "_SYSTEMD_INVOCATION_ID": "ebc6efc43d8d4d729381ff70c52e28b6",
+                "__REALTIME_TIMESTAMP": "1790970013745173"
+              },
+              {
+                "MESSAGE": "proofofwork-retention-protection.service: Main process exited, code=exited, status=1/FAILURE",
+                "PRIORITY": "5",
+                "__REALTIME_TIMESTAMP": "1790970013840625"
+              },
+              {
+                "MESSAGE": "proofofwork-retention-protection.service: Failed with result 'exit-code'.",
+                "PRIORITY": "4",
+                "__REALTIME_TIMESTAMP": "1790970013840752"
+              },
+              {
+                "MESSAGE": "Failed to start proofofwork-retention-protection.service - Read-only check of persistent ProofOfWork retention protection.",
+                "PRIORITY": "3",
+                "__REALTIME_TIMESTAMP": "1790970013840954"
+              },
+              {
+                "MESSAGE": "Starting proofofwork-retention-protection.service - Read-only check of persistent ProofOfWork retention protection...",
+                "PRIORITY": "6",
+                "__REALTIME_TIMESTAMP": "1790970312904427"
+              },
+              {
+                "MESSAGE": null,
+                "PRIORITY": "6",
+                "_SYSTEMD_INVOCATION_ID": "18701adb02d9455c8ec81787c51fe736",
+                "__REALTIME_TIMESTAMP": "1790970313487737"
+              },
+              {
+                "MESSAGE": "proofofwork-retention-protection.service: Main process exited, code=exited, status=1/FAILURE",
+                "PRIORITY": "5",
+                "__REALTIME_TIMESTAMP": "1790970313579574"
+              },
+              {
+                "MESSAGE": "proofofwork-retention-protection.service: Failed with result 'exit-code'.",
+                "PRIORITY": "4",
+                "__REALTIME_TIMESTAMP": "1790970313579682"
+              },
+              {
+                "MESSAGE": "Failed to start proofofwork-retention-protection.service - Read-only check of persistent ProofOfWork retention protection.",
+                "PRIORITY": "3",
+                "__REALTIME_TIMESTAMP": "1790970313579883"
+              },
+              {
+                "MESSAGE": "Starting proofofwork-retention-protection.service - Read-only check of persistent ProofOfWork retention protection...",
+                "PRIORITY": "6",
+                "__REALTIME_TIMESTAMP": "1790970343978963"
+              },
+              {
+                "MESSAGE": "{\"role\": \"node\", \"ok\": false, \"issues\": [\"historical-held-path-missing-or-retirement-invalid\"], \"units\": {\"proofofwork-node-release-prune.timer\": {\"LoadState\": \"masked\", \"ActiveState\": \"inactive\", \"persistentMask\": true}}, \"historicalHeldInventory\": {\"ok\": false, \"heldPaths\": 521, \"approvedRetiredHeldPaths\": 0, \"mustRemainPresent\": 521, \"approvedRelocatedHeldPaths\": 0, \"mustRemainAtOriginalPath\": 521, \"approvedRelocations\": {}, \"unexpectedRelocatedOriginalPathsPresent\": [], \"missingHeldPaths\": [\"/var/tmp/proofofwork-deploy/incb-guarded-cutover-f4ca769.py\", \"/var/tmp/proofofwork-deploy/proofofwork-audit5-source-5970b26e610b-20260926T224701Z.bundle\", \"/var/tmp/proofofwork-deploy/proofofwork-audit5-source-9d04fd3cf1f6-20260927T094716Z.bundle\", \"/var/tmp/proofofwork-deploy/proofofwork-audit5-source-b752518bf8b4-20260927T014810Z.bundle\", \"/var/tmp/proofofwork-deploy/proofofwork-audit5-source-bf81f9cffcc7-20260927T093457Z.bundle\", \"/var/tmp/proofofwork-deploy/proofofwork-audit5-source-f4ca769e9202-20260927T055111Z.bundle\", \"/var/tmp/proofofwork-deploy/proofofwork-node-release-5970b26-20260926T224701Z.tgz\", \"/var/tmp/proofofwork-deploy/proofofwork-node-release-9d04fd3-20260927T094716Z.tgz\", \"/var/tmp/proofofwork-deploy/proofofwork-node-release-b752518-20260927T014810Z.tgz\", \"/var/tmp/proofofwork-deploy/proofofwork-node-release-bf81f9c-20260927T093457Z.tgz\", \"/var/tmp/proofofwork-deploy/proofofwork-node-release-bf81f9cffcc7-20260927T093457Z.tgz\", \"/var/tmp/proofofwork-deploy/proofofwork-node-release-f4ca769-20260927T055111Z.tgz\", \"/data/proofofwork-release-backups/managed/proofofwork-node-release-3bc6c9d-20260929T200136Z.tgz\", \"/data/proofofwork-release-backups/managed/proofofwork-node-release-3bc6c9d-20260929T200136Z.tgz.provenance\", \"/data/proofofwork-release-backups/managed/proofofwork-node-release-3bc6c9d-20260929T200136Z.tgz.sha256\", \"/data/proofofwork-release-backups/managed/proofofwork-node-release-d2c0afa-20260929T160642Z.tgz\", \"/data/proofofwork-release-backups/managed/proofofwork-node-release-d2c0afa-20260929T160642Z.tgz.provenance\", \"/data/proofofwork-release-backups/managed/proofofwork-node-release-d2c0afa-20260929T160642Z.tgz.sha256\"], \"unexpectedRetiredPathsPresent\": []}, \"scratchNamespace\": {\"path\": \"/var/tmp/proofofwork-deploy\", \"exists\": true, \"canonical\": true, \"exactMount\": {\"mountpoint\": \"/var/tmp/proofofwork-deploy\", \"mountOptions\": [\"ro\", \"nosuid\", \"relatime\"]}, \"readOnlyBind\": true, \"invocationId\": \"ab3156353a284578ad1f9cb303aa1e83\"}, \"checkedAt\": \"2026-10-02T19:45:44.556970+00:00\"}",
+                "PRIORITY": "6",
+                "_SYSTEMD_INVOCATION_ID": "ab3156353a284578ad1f9cb303aa1e83",
+                "__REALTIME_TIMESTAMP": "1790970344557068",
+                "checkerReceipt": {
+                  "checkedAt": "2026-10-02T19:45:44.556970+00:00",
+                  "historicalHeldInventory": {
+                    "approvedRelocatedHeldPaths": 0,
+                    "approvedRelocations": {},
+                    "approvedRetiredHeldPaths": 0,
+                    "heldPaths": 521,
+                    "missingHeldPaths": [
+                      "/var/tmp/proofofwork-deploy/incb-guarded-cutover-f4ca769.py",
+                      "/var/tmp/proofofwork-deploy/proofofwork-audit5-source-5970b26e610b-20260926T224701Z.bundle",
+                      "/var/tmp/proofofwork-deploy/proofofwork-audit5-source-9d04fd3cf1f6-20260927T094716Z.bundle",
+                      "/var/tmp/proofofwork-deploy/proofofwork-audit5-source-b752518bf8b4-20260927T014810Z.bundle",
+                      "/var/tmp/proofofwork-deploy/proofofwork-audit5-source-bf81f9cffcc7-20260927T093457Z.bundle",
+                      "/var/tmp/proofofwork-deploy/proofofwork-audit5-source-f4ca769e9202-20260927T055111Z.bundle",
+                      "/var/tmp/proofofwork-deploy/proofofwork-node-release-5970b26-20260926T224701Z.tgz",
+                      "/var/tmp/proofofwork-deploy/proofofwork-node-release-9d04fd3-20260927T094716Z.tgz",
+                      "/var/tmp/proofofwork-deploy/proofofwork-node-release-b752518-20260927T014810Z.tgz",
+                      "/var/tmp/proofofwork-deploy/proofofwork-node-release-bf81f9c-20260927T093457Z.tgz",
+                      "/var/tmp/proofofwork-deploy/proofofwork-node-release-bf81f9cffcc7-20260927T093457Z.tgz",
+                      "/var/tmp/proofofwork-deploy/proofofwork-node-release-f4ca769-20260927T055111Z.tgz",
+                      "/data/proofofwork-release-backups/managed/proofofwork-node-release-3bc6c9d-20260929T200136Z.tgz",
+                      "/data/proofofwork-release-backups/managed/proofofwork-node-release-3bc6c9d-20260929T200136Z.tgz.provenance",
+                      "/data/proofofwork-release-backups/managed/proofofwork-node-release-3bc6c9d-20260929T200136Z.tgz.sha256",
+                      "/data/proofofwork-release-backups/managed/proofofwork-node-release-d2c0afa-20260929T160642Z.tgz",
+                      "/data/proofofwork-release-backups/managed/proofofwork-node-release-d2c0afa-20260929T160642Z.tgz.provenance",
+                      "/data/proofofwork-release-backups/managed/proofofwork-node-release-d2c0afa-20260929T160642Z.tgz.sha256"
+                    ],
+                    "mustRemainAtOriginalPath": 521,
+                    "mustRemainPresent": 521,
+                    "ok": false,
+                    "unexpectedRelocatedOriginalPathsPresent": [],
+                    "unexpectedRetiredPathsPresent": []
+                  },
+                  "issues": [
+                    "historical-held-path-missing-or-retirement-invalid"
+                  ],
+                  "ok": false,
+                  "role": "node",
+                  "scratchNamespace": {
+                    "canonical": true,
+                    "exactMount": {
+                      "mountOptions": [
+                        "ro",
+                        "nosuid",
+                        "relatime"
+                      ],
+                      "mountpoint": "/var/tmp/proofofwork-deploy"
+                    },
+                    "exists": true,
+                    "invocationId": "ab3156353a284578ad1f9cb303aa1e83",
+                    "path": "/var/tmp/proofofwork-deploy",
+                    "readOnlyBind": true
+                  },
+                  "units": {
+                    "proofofwork-node-release-prune.timer": {
+                      "ActiveState": "inactive",
+                      "LoadState": "masked",
+                      "persistentMask": true
+                    }
+                  }
+                }
+              },
+              {
+                "MESSAGE": "proofofwork-retention-protection.service: Main process exited, code=exited, status=1/FAILURE",
+                "PRIORITY": "5",
+                "__REALTIME_TIMESTAMP": "1790970344652256"
+              },
+              {
+                "MESSAGE": "proofofwork-retention-protection.service: Failed with result 'exit-code'.",
+                "PRIORITY": "4",
+                "__REALTIME_TIMESTAMP": "1790970344652440"
+              },
+              {
+                "MESSAGE": "Failed to start proofofwork-retention-protection.service - Read-only check of persistent ProofOfWork retention protection.",
+                "PRIORITY": "3",
+                "__REALTIME_TIMESTAMP": "1790970344652554"
+              }
+            ],
+            "role": "node",
+            "schema": "pow-audit30-installed-monitor-execution-v1",
+            "units": [
+              {
+                "properties": {
+                  "ActiveState": "failed",
+                  "BindReadOnlyPaths": "/var/tmp/proofofwork-deploy:/var/tmp/proofofwork-deploy:rbind",
+                  "CPUQuotaPerSecUSec": "100ms",
+                  "CPUUsageNSec": "67859000",
+                  "ExecMainStatus": "1",
+                  "InvocationID": "ab3156353a284578ad1f9cb303aa1e83",
+                  "LoadState": "loaded",
+                  "MainPID": "0",
+                  "MemoryMax": "33554432",
+                  "NRestarts": "0",
+                  "PrivateTmp": "yes",
+                  "Result": "exit-code",
+                  "TimeoutStartUSec": "20s"
+                },
+                "unit": "proofofwork-retention-protection.service"
+              },
+              {
+                "properties": {
+                  "ActiveState": "active",
+                  "BindReadOnlyPaths": "",
+                  "CPUQuotaPerSecUSec": "infinity",
+                  "CPUUsageNSec": "313892576665000",
+                  "ExecMainStatus": "0",
+                  "InvocationID": "64e1fa7be2e2442d8c7f5763f60b85fb",
+                  "LoadState": "loaded",
+                  "MainPID": "1324302",
+                  "MemoryMax": "infinity",
+                  "NRestarts": "0",
+                  "PrivateTmp": "yes",
+                  "Result": "success",
+                  "TimeoutStartUSec": "1min 30s"
+                },
+                "unit": "bitcoind.service"
+              },
+              {
+                "properties": {
+                  "ActiveState": "active",
+                  "BindReadOnlyPaths": "",
+                  "CPUQuotaPerSecUSec": "infinity",
+                  "CPUUsageNSec": "407891748827000",
+                  "ExecMainStatus": "0",
+                  "InvocationID": "72418b1c7ab245e4a37685ed868a1084",
+                  "LoadState": "loaded",
+                  "MainPID": "1324320",
+                  "MemoryMax": "infinity",
+                  "NRestarts": "0",
+                  "PrivateTmp": "yes",
+                  "Result": "success",
+                  "TimeoutStartUSec": "1min 30s"
+                },
+                "unit": "electrs.service"
+              },
+              {
+                "properties": {
+                  "ActiveState": "active",
+                  "BindReadOnlyPaths": "",
+                  "CPUQuotaPerSecUSec": "infinity",
+                  "CPUUsageNSec": "125418781476000",
+                  "ExecMainStatus": "0",
+                  "InvocationID": "e0bf545f0ad944e89fe1005577e61b9c",
+                  "LoadState": "loaded",
+                  "MainPID": "1537429",
+                  "MemoryMax": "infinity",
+                  "NRestarts": "0",
+                  "PrivateTmp": "no",
+                  "Result": "success",
+                  "TimeoutStartUSec": "infinity"
+                },
+                "unit": "postgresql@16-main.service"
+              },
+              {
+                "properties": {
+                  "ActiveState": "active",
+                  "BindReadOnlyPaths": "",
+                  "CPUQuotaPerSecUSec": "infinity",
+                  "CPUUsageNSec": "44816545992000",
+                  "ExecMainStatus": "0",
+                  "InvocationID": "208f8bcbecc54afbb7166754f12065c2",
+                  "LoadState": "loaded",
+                  "MainPID": "2103747",
+                  "MemoryMax": "infinity",
+                  "NRestarts": "0",
+                  "PrivateTmp": "yes",
+                  "Result": "success",
+                  "TimeoutStartUSec": "1min 30s"
+                },
+                "unit": "proofofwork-api.service"
+              },
+              {
+                "properties": {
+                  "ActiveState": "active",
+                  "BindReadOnlyPaths": "",
+                  "CPUQuotaPerSecUSec": "infinity",
+                  "CPUUsageNSec": "9509904314000",
+                  "ExecMainStatus": "0",
+                  "InvocationID": "33b3ee25490749db89e0d55fd29d0afb",
+                  "LoadState": "loaded",
+                  "MainPID": "2103760",
+                  "MemoryMax": "infinity",
+                  "NRestarts": "0",
+                  "PrivateTmp": "yes",
+                  "Result": "success",
+                  "TimeoutStartUSec": "1min 30s"
+                },
+                "unit": "proofofwork-indexer-worker.service"
+              },
+              {
+                "properties": {
+                  "ActiveState": "inactive",
+                  "BindReadOnlyPaths": "",
+                  "CPUQuotaPerSecUSec": "infinity",
+                  "CPUUsageNSec": "603908101000",
+                  "ExecMainStatus": "0",
+                  "InvocationID": "c3ac4e887abf4887a7fa9d0416730da1",
+                  "LoadState": "loaded",
+                  "MainPID": "0",
+                  "MemoryMax": "infinity",
+                  "NRestarts": "0",
+                  "PrivateTmp": "no",
+                  "Result": "success",
+                  "TimeoutStartUSec": "1min 30s"
+                },
+                "unit": "pg_receivewal@16-main.service"
+              },
+              {
+                "properties": {
+                  "ActiveState": "active",
+                  "InvocationID": "f6c3cf223a7146dcaf182346078c5ff6",
+                  "LoadState": "loaded",
+                  "Result": "success"
+                },
+                "unit": "proofofwork-postgres-logical-backup.timer"
+              },
+              {
+                "properties": {
+                  "ActiveState": "inactive",
+                  "InvocationID": "",
+                  "LoadState": "masked",
+                  "Result": "success"
+                },
+                "unit": "proofofwork-node-release-prune.timer"
+              }
+            ]
+          },
+          "path": "/tmp/pow-audit30-retention-node-production-execution.json",
+          "sha256": "3e6dc43b84c4d19adb57bfd3f8f6d5b13d4799b215c8add9750d6ddba0233ad9"
+        }
+      ],
+      "productionDataChanged": false,
+      "remainingObligations": {
+        "allHistoricalGapsRemainVisible": true,
+        "originalNode": 12,
+        "originalUi": 11,
+        "qualifiedNodeManagedAssets": 6
+      },
+      "status": "production-namespace-verified-final-handoff-pending",
+      "uiDeadlineApproval": {
+        "path": "audits/2026-10-02-audit30-ui-monitor-deadline-approval.json",
+        "sha256": "b630bcb42bea4af4ad3fe3ac7cce0bb64b0dbb4acdc6bf58b22f1f6d16d4bdf2"
+      }
+    },
+    "3": {
+      "planningAttempts": [
+        {
+          "atUtc": "2026-10-02T19:49:38Z",
+          "productionDeletionOrRelocation": false,
+          "resolution": "Wrapper mode0700 is canonical private tar packaging, outside16surface inventory; correction under review, all deployed directory modes and payload hashes remain verified.",
+          "returnCode": 1,
+          "seconds": 7.871,
+          "stderr": {
+            "error": "Unsafe surfaces archive root",
+            "errorClass": "ValueError",
+            "status": "refused"
+          },
+          "stderrSha256": "b10530d838f61a6c0d39b7a0b63b4b53c2991b082f9ef365559afac1ad68dcc2",
+          "unit": "pow-audit30-storage-20261002T194938Z-1199e647c13c"
+        }
+      ],
+      "productionDataChanged": false,
+      "status": "in-progress",
+      "toolPackage": {
+        "applicationChanged": false,
+        "path": "/var/backups/proofofwork-ui/cleanup-evidence/audit30-private-tools-f7acdcf1ccc7e99872f88a7c8a5e54f8e422a8869b7a9ebd9fd3613c0c0ee890",
+        "sha256": "f7acdcf1ccc7e99872f88a7c8a5e54f8e422a8869b7a9ebd9fd3613c0c0ee890"
+      },
+      "toolPackageCorrected": {
+        "path": "/var/backups/proofofwork-ui/cleanup-evidence/audit30-private-tools-3c476692f430ced60e45e9e1716f0f9e82e67d17540ac988a6faf5f2b307a4d3",
+        "sha256": "3c476692f430ced60e45e9e1716f0f9e82e67d17540ac988a6faf5f2b307a4d3"
+      },
+      "wrapperCorrection": {
+        "actualCanonicalHeaders": [
+          {
+            "gid": 0,
+            "kind": "directory",
+            "mode": "0o700",
+            "name": "surfaces",
+            "size": 0,
+            "uid": 0
+          },
+          {
+            "gid": 0,
+            "kind": "directory",
+            "mode": "0o755",
+            "name": "surfaces/activity",
+            "size": 0,
+            "uid": 0
+          },
+          {
+            "gid": 0,
+            "kind": "file",
+            "mode": "0o644",
+            "name": "surfaces/activity/apple-touch-icon.png",
+            "size": 46183,
+            "uid": 0
+          },
+          {
+            "gid": 0,
+            "kind": "directory",
+            "mode": "0o755",
+            "name": "surfaces/activity/assets",
+            "size": 0,
+            "uid": 0
+          },
+          {
+            "gid": 0,
+            "kind": "file",
+            "mode": "0o644",
+            "name": "surfaces/activity/assets/App-C3ZwtjrI.js",
+            "size": 821170,
+            "uid": 0
+          },
+          {
+            "gid": 0,
+            "kind": "file",
+            "mode": "0o644",
+            "name": "surfaces/activity/assets/App-DLeuVxT-.js",
+            "size": 821159,
+            "uid": 0
+          }
+        ],
+        "agentProductionCalls": 0,
+        "agentProductionMutation": false,
+        "atUtc": "2026-10-02T19:53:42.289062+00:00",
+        "cause": "Temporary surfaces wrapper0700 incorrectly required0755; rendered directory mode0755 requirement remains",
+        "correction": "Only required surfaces wrapper permits0700 or0755 and owner UID/GID; rejects absent/000/777/foreign-owner wrapper; all rendered dirs still0755 with complete inventory/modes/owners/filehash equivalence",
+        "files": [
+          {
+            "path": "deploy/audit30/ui-storage.py",
+            "sha256": "f360354ee2ada5c1caf960ae174a18e4905f702800794931adb8c23c0ccb73de"
+          },
+          {
+            "path": "deploy/audit30/ui-release-policy.py",
+            "sha256": "ad3d65e5b24be96ade466d45879f7b3048642a0fce77bd2db6adfeaadbc5878e"
+          },
+          {
+            "path": "deploy/audit30/check-ui-storage.test.py",
+            "sha256": "be0e3d9db12e16c28e9aa47b9edb16fffae212901f47719ef49f6b537599126c"
+          },
+          {
+            "path": "deploy/audit30/STORAGE.md",
+            "sha256": "e9b138ad1e83d91a52471e4a3a91629e89cda78aa44b9d167ff35aea51381339"
+          }
+        ],
+        "firstProductionAttempt": "read-only plan safely refused before any retirement",
+        "firstRefusal": "Unsafe surfaces archive root",
+        "independentReview": "pending /root/math_review before root launch",
+        "operatorSha256": "eeacd9fbe92a54b40e36e9d62277f7ca2ac1a695aed1c5cce14ce98f28388c4a",
+        "packageSha256": "3c476692f430ced60e45e9e1716f0f9e82e67d17540ac988a6faf5f2b307a4d3",
+        "schema": "pow-audit30-canonical-archive-wrapper-correction-v1",
+        "tests": {
+          "count": 27,
+          "seconds": 10.853,
+          "status": "PASS"
+        }
+      }
+    },
+    "4": {
+      "productionDataChanged": false,
+      "status": "unapproved"
+    },
+    "5": {
+      "productionDataChanged": false,
+      "status": "unapproved"
+    },
+    "6": {
+      "productionDataChanged": false,
+      "status": "unapproved"
+    },
+    "7": {
+      "productionDataChanged": false,
+      "status": "unapproved"
+    },
+    "8": {
+      "productionDataChanged": false,
+      "status": "unapproved"
+    }
+  },
+  "localAcceptance": {
+    "command": "npm run check:audit30-first-batch",
+    "exitCode": 0,
+    "finalNamespaceTests": 6,
+    "installerTests": 19,
+    "namespaceTests": 5,
+    "persistentHoldTests": 6,
+    "qualification": "Local gates do not establish production completion. Later verifier InvocationID tightening requires affected fixtures and fresh capture.",
+    "rationalVectors": 1113,
+    "releaseTests": 16,
+    "retirementTests": 11,
+    "storageTests": 26,
+    "storageWrapperTests": 27,
+    "unsignedPsbtFixtures": 9
+  },
+  "repositoryHygiene": {
+    "safeLocalBytecodeCleanup": [
+      {
+        "bytes": 70285,
+        "documentedAtUtc": "2026-10-02T19:54:36.160630+00:00",
+        "path": "deploy/audit30/__pycache__/ui-storage.cpython-312.pyc",
+        "reason": "Untracked Python bytecode produced by this approved controller implementation; derived entirely from preserved source, outside all evidence/history/runtime data.",
+        "sha256": "f78520a84ba378e957c1b8be85598d0576b981159782f08ecc1ba7cfd1ddcb77"
+      },
+      {
+        "bytes": 19305,
+        "documentedAtUtc": "2026-10-02T19:54:36.160903+00:00",
+        "path": "deploy/audit30/__pycache__/ui-release-policy.cpython-312.pyc",
+        "reason": "Untracked Python bytecode produced by this approved controller implementation; derived entirely from preserved source, outside all evidence/history/runtime data.",
+        "sha256": "66540a007381457d7be06cdb8c6ca70e68f25ff744ea89d357a78bffb2c92053"
+      }
+    ],
+    "semanticReview": "SOUL/current canonical protocol and product docs/notes/generated inventory/allowlist reviewed; historical protocol/audit/ledger records preserved.",
+    "trackedDeletions": [],
+    "untrackedGeneratedCleanup": [
+      {
+        "method": "npm run hygiene:fix",
+        "path": "node_modules/.vite",
+        "reportedSize": "7.08 MiB"
+      },
+      {
+        "bytes": 0,
+        "method": "npm run hygiene:fix",
+        "path": "node_modules/.vite-temp"
+      }
+    ]
+  },
+  "schema": "proof-of-work-audit30-first-batch-execution-v1",
+  "scope": "Approved items 1-3 only; historical Audit30/proposal receipts remain immutable.",
+  "scopeFile": {
+    "path": "audits/2026-10-02-audit30-first-batch-preparation.evidence.json",
+    "sha256": "f0027078971b7521fb2411e15bd8931b110a0f1815ea7e04bdaed3b5d4bdfdd0"
+  },
+  "updatedAtUtc": "2026-10-02T19:54:01.477107+00:00"
+}

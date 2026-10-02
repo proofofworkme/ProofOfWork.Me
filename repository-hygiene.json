@@ -114,7 +114,14 @@
       "audits/recovery/audit29-ui-source-412903503279.bundle",
       "audits/2026-10-01-audit29-approved-cleanup.json",
       "audits/2026-10-01-recursive-assurance-batch-1.md",
-      "audits/2026-10-01-recursive-assurance-batch-1.evidence.json"
+      "audits/2026-10-01-recursive-assurance-batch-1.evidence.json",
+      "audits/2026-10-02-production-comprehensive-health-data-integrity-audit-30.md",
+      "audits/2026-10-02-production-comprehensive-health-data-integrity-audit-30.evidence.json",
+      "audits/2026-10-02-audit30-followup-tracker.md",
+      "audits/2026-10-02-audit30-first-batch-preparation.evidence.json",
+      "audits/2026-10-02-audit30-first-batch-approval.json",
+      "audits/2026-10-02-audit30-ui-monitor-deadline-approval.json",
+      "audits/2026-10-02-audit30-first-batch-execution.evidence.json"
     ],
     "staged-or-future-protocol-notes": [
       "CHAIN_CONTENT.md",
@@ -135,7 +142,8 @@
     "support-notes": [
       "TRADEMARKS.md",
       "test-api/README.md",
-      "deploy/audit29/INVOCATION.md"
+      "deploy/audit29/INVOCATION.md",
+      "deploy/audit30/STORAGE.md"
     ]
   },
   "safeCleanupPaths": [

@@ -5690,6 +5690,45 @@ protected even outside the ordinary keep window. Unverified legacy artifacts,
 active replay databases, logical backups and incident evidence remain excluded.
 The three-archive manual target remains supported for conservative rehearsals.
 
+### Audit 30 retention-monitor namespace correction (2026-10-02)
+
+The UI and node monitor units retain `PrivateTmp=true` and their existing
+read-only hardening, resource limits and capability boundaries. They bind only
+`/var/tmp/proofofwork-deploy` back into that namespace with
+`BindReadOnlyPaths`, so the scheduled checker observes the host's held deployment
+evidence. `scripts/check-retention-service-namespace.py --verify-installed`
+checks the mount reported by the actual service process, its effective hardening
+and agreement with a direct read. A successful namespace verification does not
+make unresolved historical evidence loss healthy.
+
+The checker recognizes only the two previously approved `3bc6c9d44e00` archive
+relocations. Exact approval, intent, move and completion receipt hashes bind
+each absent original path to its preserved destination, complete bytes and
+metadata. Every other missing held path remains visible. The generic hold,
+masked prune timers, logical-backup pin and historical Audit 28 inventory remain
+authoritative. `deploy/audit30/install-retention.py` installs only the reviewed
+checker and host-specific monitor unit, verifies prior bytes, preserves rollback
+copies and reloads systemd without restarting production services.
+
+The UI monitor uses the separately approved 60-second deadline because two
+actual 20-second runs expired before producing a complete receipt at the
+unchanged 10% CPU quota. The node deadline remains 20 seconds. Both retain
+32 MiB memory and every other security/resource setting. The separate
+[deadline approval receipt](audits/2026-10-02-audit30-ui-monitor-deadline-approval.json)
+binds the exact UI unit bytes. Systemd reports 60 seconds as `1min`.
+
+Audit 30's approved storage workflow uses the exact controller and opt-in
+ordinary-release policy described in
+[the storage invocation guide](deploy/audit30/STORAGE.md). It preserves the
+live release and one fully verified immediate prior recovery pair. Historical
+Audit 28 cleanup descriptions above record their own approvals; they do not
+permit unmasking current holds or retiring source/evidence by age. The new
+policy must be invoked with immutable per-release admissions and reviewed
+plans after each verified publication. Traditional prune timers remain masked.
+
+Current execution and the numbered follow-up status are recorded in
+[the Audit 30 tracker](audits/2026-10-02-audit30-followup-tracker.md).
+
 ### Audit 28 prepared retention exception (2026-09-29)
 
 The UI publisher accepts `--defer-verified-retention` to skip its post-publication

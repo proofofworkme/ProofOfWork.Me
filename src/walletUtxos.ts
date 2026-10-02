@@ -6,6 +6,38 @@ export function assertFeeRatePrecision(feeRate: number) {
   }
 }
 
+export function feeForEstimatedVbytes(estimatedVbytes: number, feeRate: number) {
+  assertFeeRatePrecision(feeRate);
+  if (!Number.isSafeInteger(estimatedVbytes) || estimatedVbytes < 0) {
+    throw new Error("Fee estimate size must be a non-negative safe integer.");
+  }
+
+  // Convert the accepted decimal rate before multiplying. Number multiplication
+  // can put an exact whole-proof product just above its integer boundary.
+  const [coefficient, exponent = "0"] = feeRate.toString().split("e");
+  const [whole, fraction = ""] = coefficient.split(".");
+  const rateQ8 = BigInt(whole + fraction) *
+    10n ** BigInt(Number(exponent) + 8 - fraction.length);
+  const numerator = BigInt(estimatedVbytes) * rateQ8;
+  const fee = (numerator + 99_999_999n) / 100_000_000n;
+  if (fee > BigInt(Number.MAX_SAFE_INTEGER)) {
+    throw new Error("Estimated miner fee exceeds the safe whole-proof range.");
+  }
+  return Number(fee);
+}
+
+export function previewFeeForEstimatedVbytes(
+  estimatedVbytes: number,
+  feeRate: number,
+): number | null {
+  try {
+    return feeForEstimatedVbytes(estimatedVbytes, feeRate);
+  } catch {
+    // A draft can contain incomplete or invalid values while the user types.
+    return null;
+  }
+}
+
 export type WalletUtxoSource =
   | "api"
   | "wallet-curated"
@@ -70,11 +102,12 @@ export function selectUtxos(
     selected.push(utxo);
     selectedValue += utxo.value;
 
-    const feeWithChange = Math.ceil(
+    const feeWithChange = feeForEstimatedVbytes(
       estimateTxVbytes(
         selected.length + baseInputCount,
         fixedOutputVbytes + changeOutputVbytes,
-      ) * feeRate,
+      ),
+      feeRate,
     );
     const changeWithChange = selectedValue - amountSats - feeWithChange;
     if (changeWithChange >= dustSats) {
@@ -86,11 +119,12 @@ export function selectUtxos(
       };
     }
 
-    const feeWithoutChange = Math.ceil(
+    const feeWithoutChange = feeForEstimatedVbytes(
       estimateTxVbytes(
         selected.length + baseInputCount,
         fixedOutputVbytes,
-      ) * feeRate,
+      ),
+      feeRate,
     );
     const remainder = selectedValue - amountSats - feeWithoutChange;
     if (remainder >= 0) {
@@ -104,11 +138,12 @@ export function selectUtxos(
   }
 
   const lastInputCount = Math.max(selected.length, 1) + baseInputCount;
-  const estimatedFee = Math.ceil(
+  const estimatedFee = feeForEstimatedVbytes(
     estimateTxVbytes(
       lastInputCount,
       fixedOutputVbytes + changeOutputVbytes,
-    ) * feeRate,
+    ),
+    feeRate,
   );
   throw new Error(
     `Insufficient funds. Need about ${(amountSats + estimatedFee).toLocaleString()} proofs for amount plus fee.`,

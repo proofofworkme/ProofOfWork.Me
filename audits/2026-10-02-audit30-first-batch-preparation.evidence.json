@@ -1,0 +1,1301 @@
+{
+  "schema": "proof-of-work-audit30-first-batch-approval-scope-v1",
+  "date": "2026-10-02",
+  "timezone": "America/Toronto",
+  "purpose": "Concrete proposed first-batch scope and progress evidence; not execution approval",
+  "productionChangesApproved": false,
+  "executionReady": false,
+  "auditEvidence": {
+    "path": "audits/2026-10-02-production-comprehensive-health-data-integrity-audit-30.evidence.json",
+    "bytes": 1218693,
+    "sha256": "8c57aae23db56530ac2289a4232208a5eaa9af9345f1f929948c1eb41a4eb9a8"
+  },
+  "scope": {
+    "items": [
+      1,
+      2,
+      3
+    ],
+    "frontendFiles": [
+      "src/walletUtxos.ts",
+      "src/App.tsx",
+      "scripts/check-fee-rate-precision.mjs"
+    ],
+    "opsFiles": [
+      "deploy/proofofwork-retention-protection-ui.service",
+      "deploy/proofofwork-retention-protection-node.service",
+      "scripts/check-retention-protection.py"
+    ],
+    "additionalFiles": "Relevant tests, new exact cleanup/retention tools, bounded deployment wiring and audit/progress evidence; describe consequential scope changes before mutation",
+    "releaseActionsProposed": [
+      "targeted tests",
+      "build",
+      "mandatory hygiene and hooks",
+      "commit",
+      "push",
+      "standard frontend release deployment",
+      "exact retention monitor install and read-only verification",
+      "standing verified release announcement",
+      "exact 40-child backup retirement after gates",
+      "three exact byte-preserving source relocations after gates",
+      "express approved current-plus-one-verified-prior ordinary release-retention policy with per-release manifests and historical exclusions"
+    ]
+  },
+  "exactOneTimeCleanup": {
+    "topLevelPathCount": 40,
+    "paths": [
+      {
+        "path": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-04927c291bf4-20261001T150448Z",
+        "kind": "rollback-directory",
+        "allocatedBytesAtAudit": 234504192,
+        "containedReleaseAtAudit": "dbfa88b95819-20261001T134456Z",
+        "manifestSha256AtAudit": "2426aa769644d6f4dd85cf3948375cb7547c061e8934e2b2656a32a30dacb9ba",
+        "passthroughAtAudit": {
+          "sha256": "b7d145b4076211336b8087bc563278e0942f07311edcc1ec1ec46265df43f170",
+          "entries": 366
+        },
+        "fullFreshFingerprintRequired": true
+      },
+      {
+        "path": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-527e4cbaa66f-20261001T062733Z",
+        "kind": "rollback-directory",
+        "allocatedBytesAtAudit": 430469120,
+        "containedReleaseAtAudit": "9d46289661d5-20261001T023414Z",
+        "manifestSha256AtAudit": "a0fc55747b9fa9161055fea319bd90fd6e485f7caa9b4ea232e53498af18edb6",
+        "passthroughAtAudit": {
+          "sha256": "b7d145b4076211336b8087bc563278e0942f07311edcc1ec1ec46265df43f170",
+          "entries": 366
+        },
+        "fullFreshFingerprintRequired": true
+      },
+      {
+        "path": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-53b5b428e864-20261001T201028Z",
+        "kind": "rollback-directory",
+        "allocatedBytesAtAudit": 234627072,
+        "containedReleaseAtAudit": "04927c291bf4-20261001T150448Z",
+        "manifestSha256AtAudit": "90f5b6e9de3233382f0dac2e0917b79d8aa1767df799b57cdc1fabc35f5f64b8",
+        "passthroughAtAudit": {
+          "sha256": "b7d145b4076211336b8087bc563278e0942f07311edcc1ec1ec46265df43f170",
+          "entries": 366
+        },
+        "fullFreshFingerprintRequired": true
+      },
+      {
+        "path": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-835e30258d23-20261002T052338Z",
+        "kind": "rollback-directory",
+        "allocatedBytesAtAudit": 235651072,
+        "containedReleaseAtAudit": "df4d56da93ce-20261002T042258Z",
+        "manifestSha256AtAudit": "63693d8af1dfbd7052b160c5982821ff6a1edca3c28e9a367d49bb1a2c63ebd6",
+        "passthroughAtAudit": {
+          "sha256": "b7d145b4076211336b8087bc563278e0942f07311edcc1ec1ec46265df43f170",
+          "entries": 366
+        },
+        "fullFreshFingerprintRequired": true
+      },
+      {
+        "path": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-d2636f6fb3c5-20261002T023421Z",
+        "kind": "rollback-directory",
+        "allocatedBytesAtAudit": 235466752,
+        "containedReleaseAtAudit": "d4d888757a1c-20261002T013828Z",
+        "manifestSha256AtAudit": "a3e437f4f1e72b9f363839472ef04f91679bdb1a8671b87eb26db44110616e37",
+        "passthroughAtAudit": {
+          "sha256": "b7d145b4076211336b8087bc563278e0942f07311edcc1ec1ec46265df43f170",
+          "entries": 366
+        },
+        "fullFreshFingerprintRequired": true
+      },
+      {
+        "path": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-d4d888757a1c-20261002T013828Z",
+        "kind": "rollback-directory",
+        "allocatedBytesAtAudit": 235397120,
+        "containedReleaseAtAudit": "ed838d5c8691-20261001T210406Z",
+        "manifestSha256AtAudit": "ddd58cfe07b30909244d1bc2f7aceb4677a510e32c8947987a06cbab906780d0",
+        "passthroughAtAudit": {
+          "sha256": "b7d145b4076211336b8087bc563278e0942f07311edcc1ec1ec46265df43f170",
+          "entries": 366
+        },
+        "fullFreshFingerprintRequired": true
+      },
+      {
+        "path": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-dbfa88b95819-20261001T134456Z",
+        "kind": "rollback-directory",
+        "allocatedBytesAtAudit": 234381312,
+        "containedReleaseAtAudit": "527e4cbaa66f-20261001T062733Z",
+        "manifestSha256AtAudit": "305492a8b43e08a3fec529fad770f58b5209c9eb605490c694562242314f94ba",
+        "passthroughAtAudit": {
+          "sha256": "b7d145b4076211336b8087bc563278e0942f07311edcc1ec1ec46265df43f170",
+          "entries": 366
+        },
+        "fullFreshFingerprintRequired": true
+      },
+      {
+        "path": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-df4d56da93ce-20261002T042258Z",
+        "kind": "rollback-directory",
+        "allocatedBytesAtAudit": 235651072,
+        "containedReleaseAtAudit": "f81ae55bf4b0-20261002T031600Z",
+        "manifestSha256AtAudit": "64ac49385d25f8662c3b0153ba8c4e059020ac2603b78310aed92ba79247884c",
+        "passthroughAtAudit": {
+          "sha256": "b7d145b4076211336b8087bc563278e0942f07311edcc1ec1ec46265df43f170",
+          "entries": 366
+        },
+        "fullFreshFingerprintRequired": true
+      },
+      {
+        "path": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-ed838d5c8691-20261001T210406Z",
+        "kind": "rollback-directory",
+        "allocatedBytesAtAudit": 234934272,
+        "containedReleaseAtAudit": "53b5b428e864-20261001T201028Z",
+        "manifestSha256AtAudit": "b6db167e1f1e23d7eee2ff38c63d121c68ee01d8f1158e569a59b9341919594f",
+        "passthroughAtAudit": {
+          "sha256": "b7d145b4076211336b8087bc563278e0942f07311edcc1ec1ec46265df43f170",
+          "entries": 366
+        },
+        "fullFreshFingerprintRequired": true
+      },
+      {
+        "path": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-f81ae55bf4b0-20261002T031600Z",
+        "kind": "rollback-directory",
+        "allocatedBytesAtAudit": 235651072,
+        "containedReleaseAtAudit": "d2636f6fb3c5-20261002T023421Z",
+        "manifestSha256AtAudit": "3ebd806d1754276784b5ef13c864fc49f949548615b9ed97e700af6a41f8206a",
+        "passthroughAtAudit": {
+          "sha256": "b7d145b4076211336b8087bc563278e0942f07311edcc1ec1ec46265df43f170",
+          "entries": 366
+        },
+        "fullFreshFingerprintRequired": true
+      },
+      {
+        "path": "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-04927c291bf4-20261001T150448Z.tgz",
+        "kind": "release-archive",
+        "bytesAtAudit": 198396223,
+        "sha256AtAudit": "32d4284d89eae6a256af6c5fb6629fe8f528dca7e68d3eb42f6af16f81257dd8",
+        "allocatedBytesAtAudit": 198402048
+      },
+      {
+        "path": "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-04927c291bf4-20261001T150448Z.tgz.sha256",
+        "kind": "archive-sidecar",
+        "parentArchive": "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-04927c291bf4-20261001T150448Z.tgz",
+        "freshBytesAndIdentityVerificationRequired": true
+      },
+      {
+        "path": "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-04927c291bf4-20261001T150448Z.tgz.provenance",
+        "kind": "archive-sidecar",
+        "parentArchive": "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-04927c291bf4-20261001T150448Z.tgz",
+        "freshBytesAndIdentityVerificationRequired": true
+      },
+      {
+        "path": "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-527e4cbaa66f-20261001T062733Z.tgz",
+        "kind": "release-archive",
+        "bytesAtAudit": 198317252,
+        "sha256AtAudit": "51d4b0a88ae42af45022f2215277fe8edf37538579feccc57122ee5d89911ad1",
+        "allocatedBytesAtAudit": 198324224
+      },
+      {
+        "path": "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-527e4cbaa66f-20261001T062733Z.tgz.sha256",
+        "kind": "archive-sidecar",
+        "parentArchive": "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-527e4cbaa66f-20261001T062733Z.tgz",
+        "freshBytesAndIdentityVerificationRequired": true
+      },
+      {
+        "path": "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-527e4cbaa66f-20261001T062733Z.tgz.provenance",
+        "kind": "archive-sidecar",
+        "parentArchive": "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-527e4cbaa66f-20261001T062733Z.tgz",
+        "freshBytesAndIdentityVerificationRequired": true
+      },
+      {
+        "path": "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-53b5b428e864-20261001T201028Z.tgz",
+        "kind": "release-archive",
+        "bytesAtAudit": 198478642,
+        "sha256AtAudit": "d8862f2f0f5a95728dc1983560c6ebcca9b00016934a275424e3ca5f162a8577",
+        "allocatedBytesAtAudit": 198483968
+      },
+      {
+        "path": "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-53b5b428e864-20261001T201028Z.tgz.sha256",
+        "kind": "archive-sidecar",
+        "parentArchive": "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-53b5b428e864-20261001T201028Z.tgz",
+        "freshBytesAndIdentityVerificationRequired": true
+      },
+      {
+        "path": "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-53b5b428e864-20261001T201028Z.tgz.provenance",
+        "kind": "archive-sidecar",
+        "parentArchive": "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-53b5b428e864-20261001T201028Z.tgz",
+        "freshBytesAndIdentityVerificationRequired": true
+      },
+      {
+        "path": "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-9d46289661d5-20261001T023414Z.tgz",
+        "kind": "release-archive",
+        "bytesAtAudit": 198308535,
+        "sha256AtAudit": "6a78e3ea53aa624a2bd42ed2977cff577613019ebce4d270db26c5d1e1c0ef3f",
+        "allocatedBytesAtAudit": 198316032
+      },
+      {
+        "path": "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-9d46289661d5-20261001T023414Z.tgz.sha256",
+        "kind": "archive-sidecar",
+        "parentArchive": "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-9d46289661d5-20261001T023414Z.tgz",
+        "freshBytesAndIdentityVerificationRequired": true
+      },
+      {
+        "path": "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-9d46289661d5-20261001T023414Z.tgz.provenance",
+        "kind": "archive-sidecar",
+        "parentArchive": "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-9d46289661d5-20261001T023414Z.tgz",
+        "freshBytesAndIdentityVerificationRequired": true
+      },
+      {
+        "path": "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-d2636f6fb3c5-20261002T023421Z.tgz",
+        "kind": "release-archive",
+        "bytesAtAudit": 198808742,
+        "sha256AtAudit": "61623c7bef3d8fd201703a241fcd67fefa99d70b9800df063722c5d48e796d97",
+        "allocatedBytesAtAudit": 198815744
+      },
+      {
+        "path": "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-d2636f6fb3c5-20261002T023421Z.tgz.sha256",
+        "kind": "archive-sidecar",
+        "parentArchive": "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-d2636f6fb3c5-20261002T023421Z.tgz",
+        "freshBytesAndIdentityVerificationRequired": true
+      },
+      {
+        "path": "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-d2636f6fb3c5-20261002T023421Z.tgz.provenance",
+        "kind": "archive-sidecar",
+        "parentArchive": "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-d2636f6fb3c5-20261002T023421Z.tgz",
+        "freshBytesAndIdentityVerificationRequired": true
+      },
+      {
+        "path": "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-d4d888757a1c-20261002T013828Z.tgz",
+        "kind": "release-archive",
+        "bytesAtAudit": 198759197,
+        "sha256AtAudit": "0ad90dcaf48925f77cf7c4b1b9b5e3eeccfde5189c18c1e0ebe5c3ebda098848",
+        "allocatedBytesAtAudit": 198766592
+      },
+      {
+        "path": "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-d4d888757a1c-20261002T013828Z.tgz.sha256",
+        "kind": "archive-sidecar",
+        "parentArchive": "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-d4d888757a1c-20261002T013828Z.tgz",
+        "freshBytesAndIdentityVerificationRequired": true
+      },
+      {
+        "path": "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-d4d888757a1c-20261002T013828Z.tgz.provenance",
+        "kind": "archive-sidecar",
+        "parentArchive": "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-d4d888757a1c-20261002T013828Z.tgz",
+        "freshBytesAndIdentityVerificationRequired": true
+      },
+      {
+        "path": "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-dbfa88b95819-20261001T134456Z.tgz",
+        "kind": "release-archive",
+        "bytesAtAudit": 198352698,
+        "sha256AtAudit": "c1b6af4f60964bd2ae0b3fc637b73bae8c9e3ed07099b6ddd98183d7c9c00881",
+        "allocatedBytesAtAudit": 198356992
+      },
+      {
+        "path": "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-dbfa88b95819-20261001T134456Z.tgz.sha256",
+        "kind": "archive-sidecar",
+        "parentArchive": "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-dbfa88b95819-20261001T134456Z.tgz",
+        "freshBytesAndIdentityVerificationRequired": true
+      },
+      {
+        "path": "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-dbfa88b95819-20261001T134456Z.tgz.provenance",
+        "kind": "archive-sidecar",
+        "parentArchive": "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-dbfa88b95819-20261001T134456Z.tgz",
+        "freshBytesAndIdentityVerificationRequired": true
+      },
+      {
+        "path": "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-df4d56da93ce-20261002T042258Z.tgz",
+        "kind": "release-archive",
+        "bytesAtAudit": 198814335,
+        "sha256AtAudit": "9d910d85aa94957a73b54be429b02535b13b654c6f382e35bf87b58135c09687",
+        "allocatedBytesAtAudit": 198819840
+      },
+      {
+        "path": "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-df4d56da93ce-20261002T042258Z.tgz.sha256",
+        "kind": "archive-sidecar",
+        "parentArchive": "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-df4d56da93ce-20261002T042258Z.tgz",
+        "freshBytesAndIdentityVerificationRequired": true
+      },
+      {
+        "path": "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-df4d56da93ce-20261002T042258Z.tgz.provenance",
+        "kind": "archive-sidecar",
+        "parentArchive": "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-df4d56da93ce-20261002T042258Z.tgz",
+        "freshBytesAndIdentityVerificationRequired": true
+      },
+      {
+        "path": "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-ed838d5c8691-20261001T210406Z.tgz",
+        "kind": "release-archive",
+        "bytesAtAudit": 198990445,
+        "sha256AtAudit": "70234ab85ce1bba5e95d8923551d92bdc231ea3d09513828bd659eb4e24c25bb",
+        "allocatedBytesAtAudit": 198995968
+      },
+      {
+        "path": "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-ed838d5c8691-20261001T210406Z.tgz.sha256",
+        "kind": "archive-sidecar",
+        "parentArchive": "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-ed838d5c8691-20261001T210406Z.tgz",
+        "freshBytesAndIdentityVerificationRequired": true
+      },
+      {
+        "path": "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-ed838d5c8691-20261001T210406Z.tgz.provenance",
+        "kind": "archive-sidecar",
+        "parentArchive": "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-ed838d5c8691-20261001T210406Z.tgz",
+        "freshBytesAndIdentityVerificationRequired": true
+      },
+      {
+        "path": "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-f81ae55bf4b0-20261002T031600Z.tgz",
+        "kind": "release-archive",
+        "bytesAtAudit": 198817170,
+        "sha256AtAudit": "e86ee87c4c4d8dd6a6ad43dd5b7044dc7bcd5674048f32d570e22004ed5c9415",
+        "allocatedBytesAtAudit": 198823936
+      },
+      {
+        "path": "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-f81ae55bf4b0-20261002T031600Z.tgz.sha256",
+        "kind": "archive-sidecar",
+        "parentArchive": "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-f81ae55bf4b0-20261002T031600Z.tgz",
+        "freshBytesAndIdentityVerificationRequired": true
+      },
+      {
+        "path": "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-f81ae55bf4b0-20261002T031600Z.tgz.provenance",
+        "kind": "archive-sidecar",
+        "parentArchive": "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-f81ae55bf4b0-20261002T031600Z.tgz",
+        "freshBytesAndIdentityVerificationRequired": true
+      }
+    ],
+    "historicalHeldIntersection": "All40 post-census candidates sit below held parent directory rows /var/backups/proofofwork-ui/rollback-roots and /var/backups/proofofwork-ui/releases. Local review found no exact individually held candidate or held descendant; this is not blanket prefix nonintersection. Explicit narrow retirement authority for only enumerated children must preserve both held parents and all individually held material, with fresh installed review/identity validation.",
+    "genericHold": "Remains present; ordinary prune timers remain masked; a new separately approved exact controller is required",
+    "rootAllocatedBytesAtAudit": 2546733056,
+    "archiveAllocatedBytesAtAudit": 1986105344,
+    "additionalSidecarBytes": "not added to this estimate",
+    "freshChecksRequired": [
+      "complete locked fingerprints and current identity",
+      "verified surviving live and immediate prior recovery assets",
+      "archive/source dependencies and open/live references",
+      "immutable hold and protected inventory boundaries",
+      "exact approval receipt",
+      "durable intent and completion receipts",
+      "measured free-space recovery"
+    ],
+    "refuseOn": "any failed or changed authority, identity, dependency, held-boundary or retained-recovery verification",
+    "excluded": "All other source/scratch/transport/evidence/node/database/backup/historical-record paths",
+    "heldContainerGates": [
+      {
+        "path": "/var/backups/proofofwork-ui/releases",
+        "retentionClass": "managed-ui-recovery-container",
+        "releaseGate": "Exact content/provenance, recovery equivalence and live dependency checks; separately approved deletion manifest required.",
+        "retentionPolicy": "No automatic expiry; preserve until the exact recovery/history/dependency release gate is proved and separately approved."
+      },
+      {
+        "path": "/var/backups/proofofwork-ui/rollback-roots",
+        "retentionClass": "managed-ui-recovery-container",
+        "releaseGate": "Exact content/provenance, recovery equivalence and live dependency checks; separately approved deletion manifest required.",
+        "retentionPolicy": "No automatic expiry; preserve until the exact recovery/history/dependency release gate is proved and separately approved."
+      }
+    ]
+  },
+  "futureRetentionPolicyProposed": {
+    "approvalRequired": true,
+    "keep": "live release and one fully verified immediate prior rollback root with both archives/checksum/provenance sidecars",
+    "deleteOnly": "ordinary release assets covered by express approved policy and an exact validated per-release retirement manifest",
+    "preserve": [
+      "historical hold inventory",
+      "immutable generic hold",
+      "backup pins",
+      "masked ordinary prune timers",
+      "incident evidence",
+      "source/transport evidence",
+      "all canonical records"
+    ],
+    "activation": "must reconcile hold authority without blanket unmasking or hold removal; blocked conflicts remain explicit"
+  },
+  "capacityGuards": {
+    "alreadyImplemented": true,
+    "rootReserveBytes": 10737418240,
+    "growthMarginBytes": 67108864,
+    "scratchCapBytes": 5368709120,
+    "instruction": "verify/preserve; no duplicate implementation, limits reduction or capacity credit for prospective removals"
+  },
+  "deploymentPrerequisite": {
+    "state": "concrete preservation-first scratch scope prepared; awaiting explicit approval",
+    "minimumStageAdditionalBytes": 452653056,
+    "currentHeadroomBytes": 420372480,
+    "minimumDeficitBeforePayloadBytes": 32280576,
+    "conditionalHeadroomAfterApprovedMovesBytes": 1198903296,
+    "condition": "exact new release admission model and all existing guards must pass after approved cleanup/relocations; no override",
+    "closureQualification": {
+      "scriptPath": "/tmp/pow-audit30-vps/source_closure_probe.py",
+      "returnCode": 1,
+      "resultReturned": false,
+      "failure": "Final held-review small-read loader rejected a file above 300 KB; no full source/Git closure receipt was returned.",
+      "interpretation": "Do not claim full remote content equality, fsck results, all-object/reflog closure or whole-run metadata stability. No rerun or further production probe was performed. Local input TGZ inventory passed only locally."
+    }
+  },
+  "remainingItems": {
+    "4": "separate byte-preserving parser/deployment and projection-rebuild scope",
+    "5": "separate isolated storage/replay prototype and migration scope",
+    "6": "separate diagnosed API correction and acceptance scope",
+    "7": "separate isolated restore/physical-integrity/PITR scope",
+    "8": "separate custody, runtime permissions, node inventory and ledger assurance scopes"
+  },
+  "freshPreparationReceipt": {
+    "bytes": 39356,
+    "sha256": "9e4a22599b8151aa55f112b1cf1619af327544d85398e37440daf1bdb1637f43",
+    "receipt": {
+      "schema": "pow-audit30-ui-scratch-approval-preparation-readonly-v1",
+      "preparedAtUtc": "2026-10-02T19:06:49.112631+00:00",
+      "productionWritesPerformed": false,
+      "repositoryEditsPerformed": false,
+      "cleanupPerformed": false,
+      "approvalsObtainedForRepairsOrDeletion": false,
+      "observationAtUtc": "2026-10-02T18:57:34.708098+00:00",
+      "freshScratch": {
+        "path": "/var/tmp/proofofwork-deploy",
+        "allocatedBytes": 4948336640,
+        "maximumBytes": 5368709120,
+        "headroomBytes": 420372480,
+        "currentLiveFullCopyBudget": 452620288,
+        "stagerExtraEntryBytes": 32768,
+        "minimumPrivateStageAdditionalBytes": 452653056,
+        "minimumDeficitBeforeNewPayloadOrEvidenceBytes": 32280576,
+        "installedGuardAlreadyImplemented": true,
+        "guardPolicy": "Keep 10 GiB root available reserve, 64 MiB growth reserve, 5 GiB scratch ceiling and existing inode/entry guards; no override or prospective cleanup credit.",
+        "boundedProbeAdmissionRefusal": {
+          "testedAdditionalBytes": 458272768,
+          "returnCode": 1,
+          "qualification": "Probe used an overestimate. The separately returned actual copy budget plus the two stager entry allowances also exceeds headroom by 32,280,576 bytes. The refusal is not used as the exact new-release model."
+        },
+        "newFeeReleaseExactModel": "Not yet available. Requires the approved exact local build/input member bounds and installed receiver/controller/stager phase model. Prior release numeric receipts cannot certify a new release fits."
+      },
+      "retainedDependencies": {
+        "currentSource": "/var/tmp/proofofwork-deploy/proofofwork-ui-source-26500e4d2ff7-20261002T054938Z",
+        "immediatePriorSource": "/var/tmp/proofofwork-deploy/proofofwork-ui-source-835e30258d23-20261002T052338Z",
+        "currentReleaseId": "26500e4d2ff7-20261002T054938Z",
+        "priorReleaseId": "835e30258d23-20261002T052338Z",
+        "currentRoot": "/var/www",
+        "currentManifestSha256": "62c9c67a71f7f0366db1e240774780cf5c5df93e2161518c84ce0c0b054d289d",
+        "currentFullRootSha256": "0b4fdc218f39274b218d495b2ddb62c904a2d43fb3f092dd22857ea5521a5c9e",
+        "latestVerifiedRollbackRoot": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-26500e4d2ff7-20261002T054938Z",
+        "latestVerifiedRollbackManifestSha256": "d25bf8d360b04d15c0ebfed5b4108f36f768759cd433f5b3a24e2ee2d5f6d1cb",
+        "latestVerifiedRollbackFullRootSha256": "f8d0e3c0d7acb7a001482cc49afa8a0c696b2b6d8b0d181a5231286c921a39e9",
+        "sourceAndInputDirectoriesToKeep": [
+          "/var/tmp/proofofwork-deploy/proofofwork-ui-source-26500e4d2ff7-20261002T054938Z",
+          "/var/tmp/proofofwork-deploy/proofofwork-ui-source-835e30258d23-20261002T052338Z"
+        ],
+        "qualification": "Audit 30 binding; preservation proposal excludes current and immediate-prior source/checkouts, managed archives, active root and rollback."
+      },
+      "backupCleanupScope": {
+        "exactPathCount": 40,
+        "paths": [
+          {
+            "path": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-04927c291bf4-20261001T150448Z",
+            "kind": "rollback-root",
+            "allocatedBytes": 234504192,
+            "manifestSha256": "2426aa769644d6f4dd85cf3948375cb7547c061e8934e2b2656a32a30dacb9ba",
+            "containedReleaseId": "dbfa88b95819-20261001T134456Z",
+            "passthroughMatchesRetained": true,
+            "heldAncestor": "/var/backups/proofofwork-ui/rollback-roots",
+            "heldInventoryIntersections": [
+              {
+                "path": "/var/backups/proofofwork-ui/rollback-roots",
+                "relation": "ancestor"
+              }
+            ]
+          },
+          {
+            "path": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-527e4cbaa66f-20261001T062733Z",
+            "kind": "rollback-root",
+            "allocatedBytes": 430469120,
+            "manifestSha256": "a0fc55747b9fa9161055fea319bd90fd6e485f7caa9b4ea232e53498af18edb6",
+            "containedReleaseId": "9d46289661d5-20261001T023414Z",
+            "passthroughMatchesRetained": true,
+            "heldAncestor": "/var/backups/proofofwork-ui/rollback-roots",
+            "heldInventoryIntersections": [
+              {
+                "path": "/var/backups/proofofwork-ui/rollback-roots",
+                "relation": "ancestor"
+              }
+            ]
+          },
+          {
+            "path": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-53b5b428e864-20261001T201028Z",
+            "kind": "rollback-root",
+            "allocatedBytes": 234627072,
+            "manifestSha256": "90f5b6e9de3233382f0dac2e0917b79d8aa1767df799b57cdc1fabc35f5f64b8",
+            "containedReleaseId": "04927c291bf4-20261001T150448Z",
+            "passthroughMatchesRetained": true,
+            "heldAncestor": "/var/backups/proofofwork-ui/rollback-roots",
+            "heldInventoryIntersections": [
+              {
+                "path": "/var/backups/proofofwork-ui/rollback-roots",
+                "relation": "ancestor"
+              }
+            ]
+          },
+          {
+            "path": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-835e30258d23-20261002T052338Z",
+            "kind": "rollback-root",
+            "allocatedBytes": 235651072,
+            "manifestSha256": "63693d8af1dfbd7052b160c5982821ff6a1edca3c28e9a367d49bb1a2c63ebd6",
+            "containedReleaseId": "df4d56da93ce-20261002T042258Z",
+            "passthroughMatchesRetained": true,
+            "heldAncestor": "/var/backups/proofofwork-ui/rollback-roots",
+            "heldInventoryIntersections": [
+              {
+                "path": "/var/backups/proofofwork-ui/rollback-roots",
+                "relation": "ancestor"
+              }
+            ]
+          },
+          {
+            "path": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-d2636f6fb3c5-20261002T023421Z",
+            "kind": "rollback-root",
+            "allocatedBytes": 235466752,
+            "manifestSha256": "a3e437f4f1e72b9f363839472ef04f91679bdb1a8671b87eb26db44110616e37",
+            "containedReleaseId": "d4d888757a1c-20261002T013828Z",
+            "passthroughMatchesRetained": true,
+            "heldAncestor": "/var/backups/proofofwork-ui/rollback-roots",
+            "heldInventoryIntersections": [
+              {
+                "path": "/var/backups/proofofwork-ui/rollback-roots",
+                "relation": "ancestor"
+              }
+            ]
+          },
+          {
+            "path": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-d4d888757a1c-20261002T013828Z",
+            "kind": "rollback-root",
+            "allocatedBytes": 235397120,
+            "manifestSha256": "ddd58cfe07b30909244d1bc2f7aceb4677a510e32c8947987a06cbab906780d0",
+            "containedReleaseId": "ed838d5c8691-20261001T210406Z",
+            "passthroughMatchesRetained": true,
+            "heldAncestor": "/var/backups/proofofwork-ui/rollback-roots",
+            "heldInventoryIntersections": [
+              {
+                "path": "/var/backups/proofofwork-ui/rollback-roots",
+                "relation": "ancestor"
+              }
+            ]
+          },
+          {
+            "path": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-dbfa88b95819-20261001T134456Z",
+            "kind": "rollback-root",
+            "allocatedBytes": 234381312,
+            "manifestSha256": "305492a8b43e08a3fec529fad770f58b5209c9eb605490c694562242314f94ba",
+            "containedReleaseId": "527e4cbaa66f-20261001T062733Z",
+            "passthroughMatchesRetained": true,
+            "heldAncestor": "/var/backups/proofofwork-ui/rollback-roots",
+            "heldInventoryIntersections": [
+              {
+                "path": "/var/backups/proofofwork-ui/rollback-roots",
+                "relation": "ancestor"
+              }
+            ]
+          },
+          {
+            "path": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-df4d56da93ce-20261002T042258Z",
+            "kind": "rollback-root",
+            "allocatedBytes": 235651072,
+            "manifestSha256": "64ac49385d25f8662c3b0153ba8c4e059020ac2603b78310aed92ba79247884c",
+            "containedReleaseId": "f81ae55bf4b0-20261002T031600Z",
+            "passthroughMatchesRetained": true,
+            "heldAncestor": "/var/backups/proofofwork-ui/rollback-roots",
+            "heldInventoryIntersections": [
+              {
+                "path": "/var/backups/proofofwork-ui/rollback-roots",
+                "relation": "ancestor"
+              }
+            ]
+          },
+          {
+            "path": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-ed838d5c8691-20261001T210406Z",
+            "kind": "rollback-root",
+            "allocatedBytes": 234934272,
+            "manifestSha256": "b6db167e1f1e23d7eee2ff38c63d121c68ee01d8f1158e569a59b9341919594f",
+            "containedReleaseId": "53b5b428e864-20261001T201028Z",
+            "passthroughMatchesRetained": true,
+            "heldAncestor": "/var/backups/proofofwork-ui/rollback-roots",
+            "heldInventoryIntersections": [
+              {
+                "path": "/var/backups/proofofwork-ui/rollback-roots",
+                "relation": "ancestor"
+              }
+            ]
+          },
+          {
+            "path": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-f81ae55bf4b0-20261002T031600Z",
+            "kind": "rollback-root",
+            "allocatedBytes": 235651072,
+            "manifestSha256": "3ebd806d1754276784b5ef13c864fc49f949548615b9ed97e700af6a41f8206a",
+            "containedReleaseId": "d2636f6fb3c5-20261002T023421Z",
+            "passthroughMatchesRetained": true,
+            "heldAncestor": "/var/backups/proofofwork-ui/rollback-roots",
+            "heldInventoryIntersections": [
+              {
+                "path": "/var/backups/proofofwork-ui/rollback-roots",
+                "relation": "ancestor"
+              }
+            ]
+          },
+          {
+            "path": "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-04927c291bf4-20261001T150448Z.tgz",
+            "kind": "managed-release-archive",
+            "allocatedBytes": 198402048,
+            "sha256": "32d4284d89eae6a256af6c5fb6629fe8f528dca7e68d3eb42f6af16f81257dd8",
+            "heldAncestor": "/var/backups/proofofwork-ui/releases",
+            "heldInventoryIntersections": [
+              {
+                "path": "/var/backups/proofofwork-ui/releases",
+                "relation": "ancestor"
+              }
+            ]
+          },
+          {
+            "path": "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-04927c291bf4-20261001T150448Z.tgz.sha256",
+            "kind": "archive-sidecar",
+            "heldAncestor": "/var/backups/proofofwork-ui/releases",
+            "individualFingerprintRequiredBeforeExecution": true,
+            "heldInventoryIntersections": [
+              {
+                "path": "/var/backups/proofofwork-ui/releases",
+                "relation": "ancestor"
+              }
+            ]
+          },
+          {
+            "path": "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-04927c291bf4-20261001T150448Z.tgz.provenance",
+            "kind": "archive-sidecar",
+            "heldAncestor": "/var/backups/proofofwork-ui/releases",
+            "individualFingerprintRequiredBeforeExecution": true,
+            "heldInventoryIntersections": [
+              {
+                "path": "/var/backups/proofofwork-ui/releases",
+                "relation": "ancestor"
+              }
+            ]
+          },
+          {
+            "path": "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-527e4cbaa66f-20261001T062733Z.tgz",
+            "kind": "managed-release-archive",
+            "allocatedBytes": 198324224,
+            "sha256": "51d4b0a88ae42af45022f2215277fe8edf37538579feccc57122ee5d89911ad1",
+            "heldAncestor": "/var/backups/proofofwork-ui/releases",
+            "heldInventoryIntersections": [
+              {
+                "path": "/var/backups/proofofwork-ui/releases",
+                "relation": "ancestor"
+              }
+            ]
+          },
+          {
+            "path": "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-527e4cbaa66f-20261001T062733Z.tgz.sha256",
+            "kind": "archive-sidecar",
+            "heldAncestor": "/var/backups/proofofwork-ui/releases",
+            "individualFingerprintRequiredBeforeExecution": true,
+            "heldInventoryIntersections": [
+              {
+                "path": "/var/backups/proofofwork-ui/releases",
+                "relation": "ancestor"
+              }
+            ]
+          },
+          {
+            "path": "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-527e4cbaa66f-20261001T062733Z.tgz.provenance",
+            "kind": "archive-sidecar",
+            "heldAncestor": "/var/backups/proofofwork-ui/releases",
+            "individualFingerprintRequiredBeforeExecution": true,
+            "heldInventoryIntersections": [
+              {
+                "path": "/var/backups/proofofwork-ui/releases",
+                "relation": "ancestor"
+              }
+            ]
+          },
+          {
+            "path": "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-53b5b428e864-20261001T201028Z.tgz",
+            "kind": "managed-release-archive",
+            "allocatedBytes": 198483968,
+            "sha256": "d8862f2f0f5a95728dc1983560c6ebcca9b00016934a275424e3ca5f162a8577",
+            "heldAncestor": "/var/backups/proofofwork-ui/releases",
+            "heldInventoryIntersections": [
+              {
+                "path": "/var/backups/proofofwork-ui/releases",
+                "relation": "ancestor"
+              }
+            ]
+          },
+          {
+            "path": "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-53b5b428e864-20261001T201028Z.tgz.sha256",
+            "kind": "archive-sidecar",
+            "heldAncestor": "/var/backups/proofofwork-ui/releases",
+            "individualFingerprintRequiredBeforeExecution": true,
+            "heldInventoryIntersections": [
+              {
+                "path": "/var/backups/proofofwork-ui/releases",
+                "relation": "ancestor"
+              }
+            ]
+          },
+          {
+            "path": "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-53b5b428e864-20261001T201028Z.tgz.provenance",
+            "kind": "archive-sidecar",
+            "heldAncestor": "/var/backups/proofofwork-ui/releases",
+            "individualFingerprintRequiredBeforeExecution": true,
+            "heldInventoryIntersections": [
+              {
+                "path": "/var/backups/proofofwork-ui/releases",
+                "relation": "ancestor"
+              }
+            ]
+          },
+          {
+            "path": "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-9d46289661d5-20261001T023414Z.tgz",
+            "kind": "managed-release-archive",
+            "allocatedBytes": 198316032,
+            "sha256": "6a78e3ea53aa624a2bd42ed2977cff577613019ebce4d270db26c5d1e1c0ef3f",
+            "heldAncestor": "/var/backups/proofofwork-ui/releases",
+            "heldInventoryIntersections": [
+              {
+                "path": "/var/backups/proofofwork-ui/releases",
+                "relation": "ancestor"
+              }
+            ]
+          },
+          {
+            "path": "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-9d46289661d5-20261001T023414Z.tgz.sha256",
+            "kind": "archive-sidecar",
+            "heldAncestor": "/var/backups/proofofwork-ui/releases",
+            "individualFingerprintRequiredBeforeExecution": true,
+            "heldInventoryIntersections": [
+              {
+                "path": "/var/backups/proofofwork-ui/releases",
+                "relation": "ancestor"
+              }
+            ]
+          },
+          {
+            "path": "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-9d46289661d5-20261001T023414Z.tgz.provenance",
+            "kind": "archive-sidecar",
+            "heldAncestor": "/var/backups/proofofwork-ui/releases",
+            "individualFingerprintRequiredBeforeExecution": true,
+            "heldInventoryIntersections": [
+              {
+                "path": "/var/backups/proofofwork-ui/releases",
+                "relation": "ancestor"
+              }
+            ]
+          },
+          {
+            "path": "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-d2636f6fb3c5-20261002T023421Z.tgz",
+            "kind": "managed-release-archive",
+            "allocatedBytes": 198815744,
+            "sha256": "61623c7bef3d8fd201703a241fcd67fefa99d70b9800df063722c5d48e796d97",
+            "heldAncestor": "/var/backups/proofofwork-ui/releases",
+            "heldInventoryIntersections": [
+              {
+                "path": "/var/backups/proofofwork-ui/releases",
+                "relation": "ancestor"
+              }
+            ]
+          },
+          {
+            "path": "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-d2636f6fb3c5-20261002T023421Z.tgz.sha256",
+            "kind": "archive-sidecar",
+            "heldAncestor": "/var/backups/proofofwork-ui/releases",
+            "individualFingerprintRequiredBeforeExecution": true,
+            "heldInventoryIntersections": [
+              {
+                "path": "/var/backups/proofofwork-ui/releases",
+                "relation": "ancestor"
+              }
+            ]
+          },
+          {
+            "path": "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-d2636f6fb3c5-20261002T023421Z.tgz.provenance",
+            "kind": "archive-sidecar",
+            "heldAncestor": "/var/backups/proofofwork-ui/releases",
+            "individualFingerprintRequiredBeforeExecution": true,
+            "heldInventoryIntersections": [
+              {
+                "path": "/var/backups/proofofwork-ui/releases",
+                "relation": "ancestor"
+              }
+            ]
+          },
+          {
+            "path": "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-d4d888757a1c-20261002T013828Z.tgz",
+            "kind": "managed-release-archive",
+            "allocatedBytes": 198766592,
+            "sha256": "0ad90dcaf48925f77cf7c4b1b9b5e3eeccfde5189c18c1e0ebe5c3ebda098848",
+            "heldAncestor": "/var/backups/proofofwork-ui/releases",
+            "heldInventoryIntersections": [
+              {
+                "path": "/var/backups/proofofwork-ui/releases",
+                "relation": "ancestor"
+              }
+            ]
+          },
+          {
+            "path": "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-d4d888757a1c-20261002T013828Z.tgz.sha256",
+            "kind": "archive-sidecar",
+            "heldAncestor": "/var/backups/proofofwork-ui/releases",
+            "individualFingerprintRequiredBeforeExecution": true,
+            "heldInventoryIntersections": [
+              {
+                "path": "/var/backups/proofofwork-ui/releases",
+                "relation": "ancestor"
+              }
+            ]
+          },
+          {
+            "path": "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-d4d888757a1c-20261002T013828Z.tgz.provenance",
+            "kind": "archive-sidecar",
+            "heldAncestor": "/var/backups/proofofwork-ui/releases",
+            "individualFingerprintRequiredBeforeExecution": true,
+            "heldInventoryIntersections": [
+              {
+                "path": "/var/backups/proofofwork-ui/releases",
+                "relation": "ancestor"
+              }
+            ]
+          },
+          {
+            "path": "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-dbfa88b95819-20261001T134456Z.tgz",
+            "kind": "managed-release-archive",
+            "allocatedBytes": 198356992,
+            "sha256": "c1b6af4f60964bd2ae0b3fc637b73bae8c9e3ed07099b6ddd98183d7c9c00881",
+            "heldAncestor": "/var/backups/proofofwork-ui/releases",
+            "heldInventoryIntersections": [
+              {
+                "path": "/var/backups/proofofwork-ui/releases",
+                "relation": "ancestor"
+              }
+            ]
+          },
+          {
+            "path": "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-dbfa88b95819-20261001T134456Z.tgz.sha256",
+            "kind": "archive-sidecar",
+            "heldAncestor": "/var/backups/proofofwork-ui/releases",
+            "individualFingerprintRequiredBeforeExecution": true,
+            "heldInventoryIntersections": [
+              {
+                "path": "/var/backups/proofofwork-ui/releases",
+                "relation": "ancestor"
+              }
+            ]
+          },
+          {
+            "path": "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-dbfa88b95819-20261001T134456Z.tgz.provenance",
+            "kind": "archive-sidecar",
+            "heldAncestor": "/var/backups/proofofwork-ui/releases",
+            "individualFingerprintRequiredBeforeExecution": true,
+            "heldInventoryIntersections": [
+              {
+                "path": "/var/backups/proofofwork-ui/releases",
+                "relation": "ancestor"
+              }
+            ]
+          },
+          {
+            "path": "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-df4d56da93ce-20261002T042258Z.tgz",
+            "kind": "managed-release-archive",
+            "allocatedBytes": 198819840,
+            "sha256": "9d910d85aa94957a73b54be429b02535b13b654c6f382e35bf87b58135c09687",
+            "heldAncestor": "/var/backups/proofofwork-ui/releases",
+            "heldInventoryIntersections": [
+              {
+                "path": "/var/backups/proofofwork-ui/releases",
+                "relation": "ancestor"
+              }
+            ]
+          },
+          {
+            "path": "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-df4d56da93ce-20261002T042258Z.tgz.sha256",
+            "kind": "archive-sidecar",
+            "heldAncestor": "/var/backups/proofofwork-ui/releases",
+            "individualFingerprintRequiredBeforeExecution": true,
+            "heldInventoryIntersections": [
+              {
+                "path": "/var/backups/proofofwork-ui/releases",
+                "relation": "ancestor"
+              }
+            ]
+          },
+          {
+            "path": "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-df4d56da93ce-20261002T042258Z.tgz.provenance",
+            "kind": "archive-sidecar",
+            "heldAncestor": "/var/backups/proofofwork-ui/releases",
+            "individualFingerprintRequiredBeforeExecution": true,
+            "heldInventoryIntersections": [
+              {
+                "path": "/var/backups/proofofwork-ui/releases",
+                "relation": "ancestor"
+              }
+            ]
+          },
+          {
+            "path": "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-ed838d5c8691-20261001T210406Z.tgz",
+            "kind": "managed-release-archive",
+            "allocatedBytes": 198995968,
+            "sha256": "70234ab85ce1bba5e95d8923551d92bdc231ea3d09513828bd659eb4e24c25bb",
+            "heldAncestor": "/var/backups/proofofwork-ui/releases",
+            "heldInventoryIntersections": [
+              {
+                "path": "/var/backups/proofofwork-ui/releases",
+                "relation": "ancestor"
+              }
+            ]
+          },
+          {
+            "path": "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-ed838d5c8691-20261001T210406Z.tgz.sha256",
+            "kind": "archive-sidecar",
+            "heldAncestor": "/var/backups/proofofwork-ui/releases",
+            "individualFingerprintRequiredBeforeExecution": true,
+            "heldInventoryIntersections": [
+              {
+                "path": "/var/backups/proofofwork-ui/releases",
+                "relation": "ancestor"
+              }
+            ]
+          },
+          {
+            "path": "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-ed838d5c8691-20261001T210406Z.tgz.provenance",
+            "kind": "archive-sidecar",
+            "heldAncestor": "/var/backups/proofofwork-ui/releases",
+            "individualFingerprintRequiredBeforeExecution": true,
+            "heldInventoryIntersections": [
+              {
+                "path": "/var/backups/proofofwork-ui/releases",
+                "relation": "ancestor"
+              }
+            ]
+          },
+          {
+            "path": "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-f81ae55bf4b0-20261002T031600Z.tgz",
+            "kind": "managed-release-archive",
+            "allocatedBytes": 198823936,
+            "sha256": "e86ee87c4c4d8dd6a6ad43dd5b7044dc7bcd5674048f32d570e22004ed5c9415",
+            "heldAncestor": "/var/backups/proofofwork-ui/releases",
+            "heldInventoryIntersections": [
+              {
+                "path": "/var/backups/proofofwork-ui/releases",
+                "relation": "ancestor"
+              }
+            ]
+          },
+          {
+            "path": "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-f81ae55bf4b0-20261002T031600Z.tgz.sha256",
+            "kind": "archive-sidecar",
+            "heldAncestor": "/var/backups/proofofwork-ui/releases",
+            "individualFingerprintRequiredBeforeExecution": true,
+            "heldInventoryIntersections": [
+              {
+                "path": "/var/backups/proofofwork-ui/releases",
+                "relation": "ancestor"
+              }
+            ]
+          },
+          {
+            "path": "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-f81ae55bf4b0-20261002T031600Z.tgz.provenance",
+            "kind": "archive-sidecar",
+            "heldAncestor": "/var/backups/proofofwork-ui/releases",
+            "individualFingerprintRequiredBeforeExecution": true,
+            "heldInventoryIntersections": [
+              {
+                "path": "/var/backups/proofofwork-ui/releases",
+                "relation": "ancestor"
+              }
+            ]
+          }
+        ],
+        "classificationCorrection": "All 40 paths have held ancestor containers. Earlier no-intersection wording meant no exact held row or individually held descendant, and must not imply no prefix intersection.",
+        "heldParentPolicy": "Retain both parent containers and all individually held children. Explicitly approve only the enumerated post-census children after exact content/provenance/recovery equivalence and dependency gates; no blanket subtree exemption, hold removal or unmasking.",
+        "heldIntersectionSource": "Independent review supplied by /root/audit_review and root; current execution must revalidate the immutable held inventory and exact/ancestor/descendant relationships.",
+        "scratchBytesFreedByBackupCleanup": 0,
+        "qualification": "Potential redundant roots/archives remain approval- and fresh-proof-gated. Old age or apparent size is not a deletion proof; hardlinked root actual recovery may be less than summed du.",
+        "heldReviewBinding": {
+          "repositoryPath": "/home/sixer/ProofOfWork.Me/audits/2026-09-29-audit28-held-review.json",
+          "sha256": "c3bd35740d7fcc135839274c8228e38f7a45c23e33567743e0d77151b32451d9",
+          "productionPath": "/etc/proofofwork-retention/audit28-held-review.json",
+          "qualification": "Immutable repository copy agrees with independent production reviewer binding; live bytes and intersection census must be revalidated before execution."
+        },
+        "heldParentRows": [
+          {
+            "path": "/var/backups/proofofwork-ui/rollback-roots",
+            "decision": "retain",
+            "retentionClass": "managed-ui-recovery-container",
+            "retentionPolicy": "No automatic expiry; preserve until the exact recovery/history/dependency release gate is proved and separately approved.",
+            "releaseGate": "Exact content/provenance, recovery equivalence and live dependency checks; separately approved deletion manifest required.",
+            "relation": "ancestor of enumerated candidate children"
+          },
+          {
+            "path": "/var/backups/proofofwork-ui/releases",
+            "decision": "retain",
+            "retentionClass": "managed-ui-recovery-container",
+            "retentionPolicy": "No automatic expiry; preserve until the exact recovery/history/dependency release gate is proved and separately approved.",
+            "releaseGate": "Exact content/provenance, recovery equivalence and live dependency checks; separately approved deletion manifest required.",
+            "relation": "ancestor of enumerated candidate children"
+          }
+        ]
+      },
+      "additionalSourceCandidates": [
+        {
+          "source": "/var/tmp/proofofwork-deploy/proofofwork-ui-source-ed838d5c8691-20261001T210406Z",
+          "proposedPreservedTarget": "/var/backups/proofofwork-ui/transport-evidence/audit30-preserved-sources/proofofwork-ui-source-ed838d5c8691-20261001T210406Z",
+          "allocatedBytes": 259653632,
+          "head": "ed838d5c8691e176bb927010efb4387ed434fffe",
+          "tree": "d132168398c46fa14274752a135fba1120f3a4b0",
+          "observedAtUtc": "2026-10-02T18:57:34.708098+00:00",
+          "trackedAndUntrackedClean": true,
+          "ignoredEntriesOnlyNodeModules": 5866,
+          "headAncestralToRetainedCurrent": true,
+          "refObjects": {
+            "returnCode": 0,
+            "distinctCount": 7,
+            "sha256": "75b73ce6c355769be434dcdcc87082cd82d6818556913c9c016aff46a1b74243"
+          },
+          "smallSourceBindings": [
+            {
+              "path": "/var/tmp/proofofwork-deploy/proofofwork-ui-source-ed838d5c8691-20261001T210406Z/src/walletUtxos.ts",
+              "bytes": 6930,
+              "sha256": "55d0dba9d6c3ee6935f9301d897e77cc2abbaa8a49586f61dd3d6abf031369a7"
+            },
+            {
+              "path": "/var/tmp/proofofwork-deploy/proofofwork-ui-source-ed838d5c8691-20261001T210406Z/package-lock.json",
+              "bytes": 49057,
+              "sha256": "a9bc88218f249818700f1e66e98cf3e92f0a6f4b65b316c243184bed28f4f55f"
+            }
+          ],
+          "boundedLiveReferences": [],
+          "originalInput": {
+            "localPath": "/tmp/proofofwork-ui-release.ynhORlyEsw/proofofwork-ui-source-ed838d5c8691-20261001T210406Z.tgz",
+            "compressedBytes": 97694290,
+            "sha256": "80e012090e2930fe58a8d42fdb7697628106e569e42de0a2c9cd3dababda0b94",
+            "buildReceiptPath": "/tmp/proofofwork-ui-release.ynhORlyEsw/build-receipt.json",
+            "buildReceiptSha256": "13589881ae482ea1564c6ce601c27ebb58b91cad2701b017905bd344fc408969",
+            "tarMemberCount": 6859,
+            "localMetadataStable": true,
+            "allMembersHashedWithoutExtraction": true,
+            "durability": "Local /tmp only; not a durable VPS archive",
+            "remoteWholeContentEqualityReturned": false
+          },
+          "deletionApprovalReady": false,
+          "retirementReason": "Durable preservation/equivalence of every source/Git metadata/ignored byte is not proved; preserve this entire directory.",
+          "preservationProposalStatus": "Concrete path and size proposal; only execute after explicit approval and fresh exclusive-lock safety checks.",
+          "heldInventoryIntersections": [],
+          "proposedTargetHeldIntersections": []
+        },
+        {
+          "source": "/var/tmp/proofofwork-deploy/proofofwork-ui-source-d2636f6fb3c5-20261002T023421Z",
+          "proposedPreservedTarget": "/var/backups/proofofwork-ui/transport-evidence/audit30-preserved-sources/proofofwork-ui-source-d2636f6fb3c5-20261002T023421Z",
+          "allocatedBytes": 259297280,
+          "head": "d2636f6fb3c56c64ab970a66d3b09bdfdb8be03e",
+          "tree": "717d37662e911737c34d957ec2f976a511b69ad3",
+          "observedAtUtc": "2026-10-02T18:57:34.708098+00:00",
+          "trackedAndUntrackedClean": true,
+          "ignoredEntriesOnlyNodeModules": 5866,
+          "headAncestralToRetainedCurrent": true,
+          "refObjects": {
+            "returnCode": 0,
+            "distinctCount": 8,
+            "sha256": "f0f84517897e5150a428fb62f844003e7778d347d27418ef08be7f2b3d3687dc"
+          },
+          "smallSourceBindings": [
+            {
+              "path": "/var/tmp/proofofwork-deploy/proofofwork-ui-source-d2636f6fb3c5-20261002T023421Z/src/walletUtxos.ts",
+              "bytes": 6930,
+              "sha256": "55d0dba9d6c3ee6935f9301d897e77cc2abbaa8a49586f61dd3d6abf031369a7"
+            },
+            {
+              "path": "/var/tmp/proofofwork-deploy/proofofwork-ui-source-d2636f6fb3c5-20261002T023421Z/package-lock.json",
+              "bytes": 49057,
+              "sha256": "a9bc88218f249818700f1e66e98cf3e92f0a6f4b65b316c243184bed28f4f55f"
+            }
+          ],
+          "boundedLiveReferences": [],
+          "originalInput": {
+            "localPath": "/tmp/proofofwork-ui-release.sOByVraNGC/proofofwork-ui-source-d2636f6fb3c5-20261002T023421Z.tgz",
+            "compressedBytes": 97295507,
+            "sha256": "e6b750c48b1455f6ea1f076f7e68cd42ae212b0a8794114ddf2c7cc652cdf370",
+            "buildReceiptPath": "/tmp/proofofwork-ui-release.sOByVraNGC/build-receipt.json",
+            "buildReceiptSha256": "aca437f8cc70c037aa12cf5715e859208c402be25d506d76ca53590a3c6fff8d",
+            "tarMemberCount": 6863,
+            "localMetadataStable": true,
+            "allMembersHashedWithoutExtraction": true,
+            "durability": "Local /tmp only; not a durable VPS archive",
+            "remoteWholeContentEqualityReturned": false
+          },
+          "deletionApprovalReady": false,
+          "retirementReason": "Durable preservation/equivalence of every source/Git metadata/ignored byte is not proved; preserve this entire directory.",
+          "preservationProposalStatus": "Concrete path and size proposal; only execute after explicit approval and fresh exclusive-lock safety checks.",
+          "heldInventoryIntersections": [],
+          "proposedTargetHeldIntersections": []
+        },
+        {
+          "source": "/var/tmp/proofofwork-deploy/proofofwork-ui-source-f81ae55bf4b0-20261002T031600Z",
+          "proposedPreservedTarget": "/var/backups/proofofwork-ui/transport-evidence/audit30-preserved-sources/proofofwork-ui-source-f81ae55bf4b0-20261002T031600Z",
+          "allocatedBytes": 259579904,
+          "head": "f81ae55bf4b096c7ab229dbb9f1415669e18dd95",
+          "tree": "54f1e2fc7136669dab9460b72e00c0475b91e281",
+          "observedAtUtc": "2026-10-02T18:57:34.708098+00:00",
+          "trackedAndUntrackedClean": true,
+          "ignoredEntriesOnlyNodeModules": 5866,
+          "headAncestralToRetainedCurrent": true,
+          "refObjects": {
+            "returnCode": 0,
+            "distinctCount": 8,
+            "sha256": "976bf7a13f70993dae794a8813203b51073d63f8868a27ffe789d6ee954a9d85"
+          },
+          "smallSourceBindings": [
+            {
+              "path": "/var/tmp/proofofwork-deploy/proofofwork-ui-source-f81ae55bf4b0-20261002T031600Z/src/walletUtxos.ts",
+              "bytes": 6930,
+              "sha256": "55d0dba9d6c3ee6935f9301d897e77cc2abbaa8a49586f61dd3d6abf031369a7"
+            },
+            {
+              "path": "/var/tmp/proofofwork-deploy/proofofwork-ui-source-f81ae55bf4b0-20261002T031600Z/package-lock.json",
+              "bytes": 49057,
+              "sha256": "a9bc88218f249818700f1e66e98cf3e92f0a6f4b65b316c243184bed28f4f55f"
+            }
+          ],
+          "boundedLiveReferences": [],
+          "originalInput": {
+            "localPath": "/tmp/proofofwork-ui-release.6LNwFhJxu7/proofofwork-ui-source-f81ae55bf4b0-20261002T031600Z.tgz",
+            "compressedBytes": 97566601,
+            "sha256": "4c8cfa1c28e79b6d05d17d38190c5a4a961c833a81fc10d9b4a611802bbc5a65",
+            "buildReceiptPath": "/tmp/proofofwork-ui-release.6LNwFhJxu7/build-receipt.json",
+            "buildReceiptSha256": "a4a1c63f009735c8e543b455269887d91dccf7d456bfda48b60274fce816ec33",
+            "tarMemberCount": 6863,
+            "localMetadataStable": true,
+            "allMembersHashedWithoutExtraction": true,
+            "durability": "Local /tmp only; not a durable VPS archive",
+            "remoteWholeContentEqualityReturned": false
+          },
+          "deletionApprovalReady": false,
+          "retirementReason": "Durable preservation/equivalence of every source/Git metadata/ignored byte is not proved; preserve this entire directory.",
+          "preservationProposalStatus": "Concrete path and size proposal; only execute after explicit approval and fresh exclusive-lock safety checks.",
+          "heldInventoryIntersections": [],
+          "proposedTargetHeldIntersections": []
+        }
+      ],
+      "atomicPreservationProposal": {
+        "operation": "Explicitly approved atomic same-filesystem rename of exactly these three full source directories into the preserved target parent; never delete their contents.",
+        "targetParent": "/var/backups/proofofwork-ui/transport-evidence/audit30-preserved-sources",
+        "sourceAllocatedBytesTotal": 778530816,
+        "rootBytesRecovered": 0,
+        "expectedScratchAllocatedBytesAfter": 4169805824,
+        "expectedScratchHeadroomBytesAfter": 1198903296,
+        "executionPrerequisites": [
+          "User explicitly approves these three exact preservation relocations and the separately enumerated 40-child backup retirement scope.",
+          "First complete the approved backup cleanup with fresh immutable hold/dependency gates and durable receipts; then remeasure root space and scratch capacity.",
+          "Under the existing exclusive deployment lock, verify no active publication/restore process, live FD/cwd/maps/mount, systemd/Caddy/cron/operator/deploy/backup script pointer or external symlink uses any source path; qualify historical receipt references and record the relocation map.",
+          "Revalidate exact/ancestor/descendant held intersections and preserve generic hold bytes, held parent containers, individual historical paths and masks. If a protected obligation applies, obtain the exact scoped approval before proceeding.",
+          "Require source and target parent to be real canonical root-owned same-filesystem directories with no symlink/nested mount and absent target entries; refuse cross-filesystem copies and existing targets.",
+          "Capture stable full source/Git/dependency inventories plus modes, UID/GID, inode/dev, link counts and relevant xattrs before rename; write durable intent, atomically rename each full directory, then confirm unchanged content/metadata/inodes and durable completion receipt. Preserve current 265 and prior 835 sources and original inputs. Record intentional parent path and ctime changes; preserve the complete byte inventories, original mtimes, inode identity and all source content. Refuse absolute symlink, linked-worktree, alternate object or graft/shallow pointers that would become invalid without a separately reviewed mapping.",
+          "Refresh the approved exact new-build transport/source/stage/archive admission model after preservation; production deployment remains conditional on all installed reserve/scratch/inode gates passing without override."
+        ],
+        "qualification": "This moves storage accounting from scratch to backups on the same volume. It preserves bytes, including any unique Git metadata, and must not be counted as root disk recovery. Fresh pre-move safety checks are required; approval preparation is not execution."
+      },
+      "closureAttempt": {
+        "scriptPath": "/tmp/pow-audit30-vps/source_closure_probe.py",
+        "returnCode": 1,
+        "resultReturned": false,
+        "failure": "Final held-review small-read loader rejected a file above 300 KB; no full source/Git closure receipt was returned.",
+        "interpretation": "Do not claim full remote content equality, fsck results, all-object/reflog closure or whole-run metadata stability. No rerun or further production probe was performed. Local input TGZ inventory passed only locally."
+      },
+      "boundedLiveReferenceQualification": "18:57 census covers process cwd/root/exe/fd/cmdline/maps, systemd/Caddy configuration and mountinfo. Zero matches is not a universal no-dependency claim; cron/operator/installed deployment/backup pointers and external symlinks require fresh examination before any rename.",
+      "actionsTaken": [
+        "Read-only UI census and installed capacity budget query",
+        "No-atime small source and receipt bindings",
+        "Local original input TGZ checksum and all-member content inventory without extraction",
+        "Bounded remote full source closure attempt failed its final receipt gate; no repair or cleanup",
+        "Created this sanitized local /tmp approval preparation receipt"
+      ],
+      "evidenceInputs": [
+        {
+          "localPath": "/tmp/pow-audit30-vps/ui-scratch-admission-fresh.json",
+          "bytes": 1818686,
+          "sha256": "6c75143ee913f82fb1cf23ecebc6ee9e75568a0566b2a21bd6e9550066c0602d"
+        },
+        {
+          "localPath": "/tmp/pow-audit30-vps/scratch_admission_probe.py",
+          "bytes": 5819,
+          "sha256": "7336c3dd245386342e3e9a69ad181998ae0d1821522e67979990e779a01757b3"
+        },
+        {
+          "localPath": "/tmp/pow-audit30-vps/source_closure_probe.py",
+          "bytes": 8859,
+          "sha256": "d17f9e5415dd06e8fa6dc2359c3300f0679346f007e39df774d19e9667e357fc"
+        },
+        {
+          "localPath": "/tmp/pow-audit30-vps/local_source_bundle_inventory.py",
+          "bytes": 2436,
+          "sha256": "dac35954d147f682ae672179779a358339ddaf3001c08c45a4482f712d8744f4"
+        },
+        {
+          "localPath": "/tmp/pow-audit30-vps/local-source-bundles-full.json",
+          "bytes": 8370083,
+          "sha256": "18a5046158b562a7866762202a3c5505b3b1a82951d1cd84d49eac514e8ce9c2"
+        },
+        {
+          "localPath": "/tmp/pow-audit30-vps/vps-health-summary.json",
+          "bytes": 112271,
+          "sha256": "08b7332d69e16ad352da1a5dfcfc3e32002901506fea3e010ab8ddea44d5645b"
+        },
+        {
+          "localPath": "/tmp/pow-audit30-vps/ui-recovery-retry.json",
+          "bytes": 23044,
+          "sha256": "6a2f5c1fe4e8a42b5727cf5d366241d54bd6d27ed50eff01ed302443d26dcc27"
+        }
+      ]
+    }
+  },
+  "exactPreservationRelocations": {
+    "userApprovalRequired": true,
+    "count": 3,
+    "sourceDeletionApprovedOrProposed": false,
+    "pairs": [
+      {
+        "source": "/var/tmp/proofofwork-deploy/proofofwork-ui-source-ed838d5c8691-20261001T210406Z",
+        "target": "/var/backups/proofofwork-ui/transport-evidence/audit30-preserved-sources/proofofwork-ui-source-ed838d5c8691-20261001T210406Z",
+        "allocatedBytesAtObservation": 259653632,
+        "headAtObservation": "ed838d5c8691e176bb927010efb4387ed434fffe",
+        "treeAtObservation": "d132168398c46fa14274752a135fba1120f3a4b0"
+      },
+      {
+        "source": "/var/tmp/proofofwork-deploy/proofofwork-ui-source-d2636f6fb3c5-20261002T023421Z",
+        "target": "/var/backups/proofofwork-ui/transport-evidence/audit30-preserved-sources/proofofwork-ui-source-d2636f6fb3c5-20261002T023421Z",
+        "allocatedBytesAtObservation": 259297280,
+        "headAtObservation": "d2636f6fb3c56c64ab970a66d3b09bdfdb8be03e",
+        "treeAtObservation": "717d37662e911737c34d957ec2f976a511b69ad3"
+      },
+      {
+        "source": "/var/tmp/proofofwork-deploy/proofofwork-ui-source-f81ae55bf4b0-20261002T031600Z",
+        "target": "/var/backups/proofofwork-ui/transport-evidence/audit30-preserved-sources/proofofwork-ui-source-f81ae55bf4b0-20261002T031600Z",
+        "allocatedBytesAtObservation": 259579904,
+        "headAtObservation": "f81ae55bf4b096c7ab229dbb9f1415669e18dd95",
+        "treeAtObservation": "54f1e2fc7136669dab9460b72e00c0475b91e281"
+      }
+    ],
+    "policy": {
+      "operation": "Explicitly approved atomic same-filesystem rename of exactly these three full source directories into the preserved target parent; never delete their contents.",
+      "targetParent": "/var/backups/proofofwork-ui/transport-evidence/audit30-preserved-sources",
+      "sourceAllocatedBytesTotal": 778530816,
+      "rootBytesRecovered": 0,
+      "expectedScratchAllocatedBytesAfter": 4169805824,
+      "expectedScratchHeadroomBytesAfter": 1198903296,
+      "executionPrerequisites": [
+        "User explicitly approves these three exact preservation relocations and the separately enumerated 40-child backup retirement scope.",
+        "First complete the approved backup cleanup with fresh immutable hold/dependency gates and durable receipts; then remeasure root space and scratch capacity.",
+        "Under the existing exclusive deployment lock, verify no active publication/restore process, live FD/cwd/maps/mount, systemd/Caddy/cron/operator/deploy/backup script pointer or external symlink uses any source path; qualify historical receipt references and record the relocation map.",
+        "Revalidate exact/ancestor/descendant held intersections and preserve generic hold bytes, held parent containers, individual historical paths and masks. If a protected obligation applies, obtain the exact scoped approval before proceeding.",
+        "Require source and target parent to be real canonical root-owned same-filesystem directories with no symlink/nested mount and absent target entries; refuse cross-filesystem copies and existing targets.",
+        "Capture stable full source/Git/dependency inventories plus modes, UID/GID, inode/dev, link counts and relevant xattrs before rename; write durable intent, atomically rename each full directory, then confirm unchanged content/metadata/inodes and durable completion receipt. Preserve current 265 and prior 835 sources and original inputs. Record intentional parent path and ctime changes; preserve the complete byte inventories, original mtimes, inode identity and all source content. Refuse absolute symlink, linked-worktree, alternate object or graft/shallow pointers that would become invalid without a separately reviewed mapping.",
+        "Refresh the approved exact new-build transport/source/stage/archive admission model after preservation; production deployment remains conditional on all installed reserve/scratch/inode gates passing without override."
+      ],
+      "qualification": "This moves storage accounting from scratch to backups on the same volume. It preserves bytes, including any unique Git metadata, and must not be counted as root disk recovery. Fresh pre-move safety checks are required; approval preparation is not execution."
+    },
+    "independentReviewAcceptance": [
+      "no source retirement certification from failed closure",
+      "preserve entire Git/ignored/dependency bytes via same-filesystem whole-directory rename",
+      "record pathname/root-ctime/parent metadata changes; preserve content/mode/uid/gid/mtime/inode and relevant xattrs",
+      "reject invalid absolute symlink/worktree/alternate and inbound pointers",
+      "never overwrite a target",
+      "preserved destination excluded from all ordinary cleanup/retention",
+      "fresh complete locked inventories and before/after intent/completion receipts",
+      "retain inverse-rename recovery mapping and current/prior sources"
+    ]
+  }
+}

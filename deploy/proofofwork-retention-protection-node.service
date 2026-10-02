@@ -12,6 +12,7 @@ CPUQuota=10%
 TasksMax=16
 NoNewPrivileges=true
 PrivateTmp=true
+BindReadOnlyPaths=/var/tmp/proofofwork-deploy
 PrivateDevices=true
 ProtectSystem=strict
 ProtectHome=true
