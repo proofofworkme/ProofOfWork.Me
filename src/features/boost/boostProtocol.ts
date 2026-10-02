@@ -141,6 +141,7 @@ export type BoostFeedPayload = {
   profile?: string;
   profileSubject?: {
     address?: string;
+    resolved?: boolean;
     displayName?: string;
     followerCount?: number;
     followingCount?: number;

@@ -91,7 +91,10 @@ for (const [width, embedded] of [[1920, false], [1440, false], [960, false], [76
       expect(titleRect.y).toBeGreaterThanOrEqual(0);
       expect(titleRect.y).toBeLessThan(180);
     }
-    await expect(header.getByRole("link", { name: "Back to timeline" })).toHaveAttribute("href", /boost=1/);
+    const backHref = await header.getByRole("link", { name: "Back to timeline" }).getAttribute("href");
+    const backParams = new URL(backHref, page.url()).searchParams;
+    expect(backParams.get(embedded ? "folder" : "boost")).toBe(embedded ? "boost" : "1");
+    expect(backParams.has(embedded ? "boost" : "folder")).toBe(false);
   });
 }
 

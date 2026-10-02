@@ -63,6 +63,7 @@ import { createBoostReadLifecycle } from "./boostReadLifecycle";
 import { BoostActivity, BoostConnections, type ConnectionTab } from "./BoostSocialRecords";
 import { boostMediaUrl } from "./boostMedia";
 import { BoostProfileImages, ProfileImage } from "./BoostProfileImages";
+import { BoostText, BoostTextProvider } from "./BoostText";
 import {
   BOOST_WORK_MUTATION_PROOFS,
   BOOST_WORK_REGISTRY_ADDRESS,
@@ -196,6 +197,11 @@ function initialSearchParam(name: string) {
     return "";
   }
   return new URLSearchParams(window.location.search).get(name)?.trim() ?? "";
+}
+
+function initialBoostNetwork(fallback: BitcoinNetwork) {
+  const value = initialSearchParam("network");
+  return value === "livenet" || value === "testnet" || value === "testnet4" ? value : fallback;
 }
 
 function initialProfileTab(): BoostProfileTab {
@@ -616,7 +622,7 @@ function ReboostedPost({
             <span>@{boostAuthorId(post) || shortAddress(post.authorAddress)}</span>
             <span>{formatDate(post.createdAt)}</span>
           </div>
-          {post.text ? <p className="boost-post-text">{post.text}</p> : null}
+          {post.text ? <p className="boost-post-text"><BoostText text={post.text} /></p> : null}
           {post.media?.mime && /^(?:image|video)\//iu.test(post.media.mime) ? (
             <BoostMedia item={post} network={network} />
           ) : null}
@@ -667,7 +673,7 @@ function QuotedPost({
       <span className="boost-quoted-post-handle">
         @{boostAuthorId(post) || shortAddress(post.authorAddress)}
       </span>
-      {post.text ? <p>{post.text}</p> : null}
+      {post.text ? <p><BoostText text={post.text} /></p> : null}
       <a
         className="boost-proof-frame"
         href={explorerTxUrl(post.txid, network)}
@@ -816,7 +822,7 @@ function BoostPost({
           <ReboostedPost embedded={embedded} network={network} onOpenOriginal={onOpenOriginal} post={item.reboostedPost} />
         ) : (
           <>
-            {item.text ? <p className="boost-post-text">{item.text}</p> : null}
+            {item.text ? <p className="boost-post-text"><BoostText text={item.text} /></p> : null}
 
             {item.media?.mime && /^(?:image|video)\//iu.test(item.media.mime) ? (
               <BoostMedia item={item} network={network} />
@@ -1012,7 +1018,8 @@ export default function BoostRoot({
   initialNetwork = "livenet",
   onComposeBoost,
 }: BoostRootProps = {}) {
-  const [network, setNetwork] = useState<BitcoinNetwork>(initialNetwork);
+  const [network, setNetwork] = useState<BitcoinNetwork>(() => initialBoostNetwork(initialNetwork));
+  const previousInitialNetwork = useRef(initialNetwork);
   const [sortMode, setSortMode] = useState<BoostSortMode>("value");
   const [valueWindow, setValueWindow] = useState<BoostValueWindow>("all");
   const [timelineMode, setTimelineMode] =
@@ -1033,8 +1040,9 @@ export default function BoostRoot({
   const [profileTab, setProfileTab] =
     useState<BoostProfileTab>(initialProfileTab);
   const [listQuery] = useState(() => initialSearchParam("list"));
-  const [searchQuery, setSearchQuery] = useState("");
-  const [indexedSearchQuery, setIndexedSearchQuery] = useState("");
+  const [searchQuery, setSearchQuery] = useState(() => initialSearchParam("q") || initialSearchParam("search"));
+  const [indexedSearchQuery, setIndexedSearchQuery] = useState(() => initialSearchParam("q") || initialSearchParam("search"));
+  const [routeSearchActive] = useState(() => Boolean(initialSearchParam("q") || initialSearchParam("search")));
   const [storedPayload, setPayload] = useState<BoostFeedPayload | undefined>();
   const [payloadScope, setPayloadScope] = useState("");
   const readLifecycle = useRef(createBoostReadLifecycle());
@@ -1965,7 +1973,10 @@ export default function BoostRoot({
   ]);
 
   useEffect(() => {
-    setNetwork(initialNetwork);
+    if (previousInitialNetwork.current !== initialNetwork) {
+      previousInitialNetwork.current = initialNetwork;
+      setNetwork(initialNetwork);
+    }
   }, [initialNetwork]);
 
   useEffect(() => {
@@ -2244,7 +2255,9 @@ export default function BoostRoot({
   }
 
   function openProfileSearch() {
-    if ((boostSurfaceRef.current?.getBoundingClientRect().width ?? window.innerWidth) <= 1120) {
+    if (routeSearchActive) {
+      profileSearchRef.current?.focus();
+    } else if ((boostSurfaceRef.current?.getBoundingClientRect().width ?? window.innerWidth) <= 1120) {
       toolsSearchFocusRef.current = true;
       openTools();
     } else {
@@ -2257,6 +2270,16 @@ export default function BoostRoot({
     if ((surfaceWidth ?? window.innerWidth) <= 1120) {
       openTools();
     }
+  }
+
+  function renderSearchControl(inline = false) {
+    const label = isProfileView ? "Search this profile" : "Search Boost";
+    return <label className={inline ? "boost-search boost-route-search" : "boost-search"}>
+      <Search size={15} aria-hidden="true" />
+      {inline ? <span>{label}</span> : null}
+      <input autoComplete="off" onChange={event => setSearchQuery(event.target.value)}
+        aria-label={label} placeholder={label} ref={profileSearchRef} value={searchQuery} />
+    </label>;
   }
 
   function openBoostComposer(quote?: BoostFeedItem) {
@@ -2331,6 +2354,7 @@ export default function BoostRoot({
   }
 
   return (
+    <BoostTextProvider embedded={embedded} network={network} snapshotId={payload?.snapshotId}>
     <div
       className={[
         embedded ? "boost-public-app boost-embedded-app" : "mail-app boost-public-app",
@@ -2608,17 +2632,7 @@ export default function BoostRoot({
             </form>
           ) : null}
 
-          <label className="boost-search">
-            <Search size={15} />
-            <input
-              autoComplete="off"
-              onChange={(event) => setSearchQuery(event.target.value)}
-              aria-label={isProfileView ? "Search this profile" : "Search Boost"}
-              placeholder={isProfileView ? "Search this profile" : "Search Boost"}
-              ref={profileSearchRef}
-              value={searchQuery}
-            />
-          </label>
+          {!routeSearchActive ? renderSearchControl() : null}
 
           <form className="boost-profile-filter" onSubmit={openProfileRoute}>
             <label>
@@ -2812,6 +2826,7 @@ export default function BoostRoot({
               </div>
             </div>
           )}
+          {routeSearchActive ? renderSearchControl(true) : null}
           <div className="boost-feed-toolbar">
             <button
               aria-controls="boost-tools-panel"
@@ -3359,5 +3374,6 @@ export default function BoostRoot({
 
       {embedded ? null : <SocialFooter quiet />}
     </div>
+    </BoostTextProvider>
   );
 }

@@ -638,6 +638,21 @@ DNS sale tickets use `pwdns-sale-v1`; no DNS event includes a PGP key.
 
 ## Boost Protocol
 
+Boost text links all cashtags and hashtags to case-insensitive, whole-tag
+searches over the complete confirmed history. `$work`, `#work`, and ordinary
+`work` searches remain distinct. The same text renderer covers posts, replies,
+quotes, and reboost originals in standalone Boost and Computer; search and
+profile links retain their host and selected network.
+
+Mentions accept `@name`, `name@proofofwork.me`, and `@<address>` for an address
+without a PowID. PowIDs resolve to their current confirmed owner, while raw
+addresses retain network validation and Base58 case. IDs containing spaces or
+ambiguous delimiters can use JSON-quoted forms such as `@"space name"` or
+`"space name"@proofofwork.me`. Hover and keyboard focus show a read-only profile
+preview with verified Files-backed avatar and confirmed connection counts.
+Unknown or pending IDs and failed reads remain explicitly unresolved or
+unavailable. Mention text does not register an ID or publish a social action.
+
 Boost details load confirmed replies, likes and reboosts by transaction ID,
 independently of timeline/profile filters or the currently loaded feed page.
 Activity tabs expose each actor's confirmed ID or address and the action TX;

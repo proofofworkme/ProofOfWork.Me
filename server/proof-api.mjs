@@ -8,6 +8,7 @@ import {
   qualifyDnsSubdomainLogPayload, dnsSubdomainLogPayloadHasChildren,
 } from "./dns-subdomain-discovery.mjs";
 import { reviewedIncbReplayBaselineEvidence, reviewedIncbReplayBaselineFromEvidence } from "./incb-replay-baseline.mjs";
+import { boostTextMatchesTag } from "../src/shared/protocol/boostText.mjs";
 
 import { SCOPED_INCB_ORACLE_PIN, canonicalSummarySnapshotIdOutsideScopedOracle } from "./incb-scoped-oracle.mjs";
 
@@ -53928,6 +53929,11 @@ function boostEventSearchText(item, state, profileState) {
     .join(" ");
 }
 
+function boostEventPostText(item) {
+  return String(item?.kind ?? "").trim().toLowerCase() === "boost-reboost"
+    ? "" : String(item?.text ?? item?.memo ?? item?.detail ?? "").trim();
+}
+
 function boostDisplayName(...values) {
   return values.map((value) => String(value ?? "").trim()).find(Boolean) ?? "";
 }
@@ -54319,9 +54325,7 @@ function boostFeedItemFromEvent(
         workFloor,
       )
     : null;
-  const text = kind === "boost-reboost"
-    ? ""
-    : String(item?.text ?? item?.memo ?? item?.detail ?? "").trim();
+  const text = boostEventPostText(item);
   const media = Array.isArray(item?.media)
     ? item.media[0]
     : typeof item?.media === "object" && item.media
@@ -54543,7 +54547,7 @@ function boostProfileSourceIds(item, profileState) {
 }
 
 function boostLooksLikeAddress(value) {
-  return /^(?:bc1|[13])[a-z0-9]{20,}$/iu.test(String(value ?? "").trim());
+  return /^(?:bc1|tb1|bcrt1|[13mn2])[a-z0-9]{20,}$/iu.test(String(value ?? "").trim());
 }
 
 function boostProfileSubjectForQuery(
@@ -54554,14 +54558,20 @@ function boostProfileSubjectForQuery(
   followingByFollower,
   viewerFollowing,
   confirmedOwners = undefined,
+  network = "livenet",
 ) {
   const query = String(profile ?? "").trim();
   if (!query) {
     return null;
   }
   const queryKey = boostAddress(query);
+  const rawAddress = boostLooksLikeAddress(query) && isValidBitcoinAddress(query, network) ? queryKey : "";
+  // Address-shaped queries never become another identity through case folding.
+  // In particular, a mixed-case Bech32 spelling must remain unresolved.
   const queryId = boostLooksLikeAddress(query) ? "" : normalizePowId(query);
   let address = queryId && confirmedOwners ? confirmedOwners.get(queryId) ?? "" : "";
+  const resolved = Boolean(address || rawAddress);
+  if (!address && rawAddress) address = rawAddress;
   let profileState = null;
 
   for (const [profileKey, candidate] of profiles) {
@@ -54631,6 +54641,7 @@ function boostProfileSubjectForQuery(
   return {
     address,
     addressKey,
+    resolved,
     displayName: boostDisplayName(
       profileState?.name,
       id ? `${id}@proofofwork.me` : "",
@@ -54849,6 +54860,7 @@ async function boostFeedPayload(network, searchParams, fresh = false) {
   )
     .trim()
     .toLowerCase();
+  const tagQuery = boostTextMatchesTag(query, query);
 
   if (!proofIndexReadFeatureEnabled("event-history,events")) {
     throw boostProjectionError("Canonical Boost history is unavailable.");
@@ -54873,7 +54885,8 @@ async function boostFeedPayload(network, searchParams, fresh = false) {
     registryHistory?.items ?? [],
     rawOwnership.actionOwners,
   );
-  const needsIdentities = Boolean(detail || connections) || boostHasIdentityClaims(qualification.accepted) || (profile && !boostLooksLikeAddress(profile));
+  const needsIdentities = Boolean(detail || connections) || boostHasIdentityClaims(qualification.accepted) ||
+    (profile && !(boostLooksLikeAddress(profile) && isValidBitcoinAddress(profile, network)));
   const identityQualification = needsIdentities ? qualifyBoostIdentityClaims(
     qualification.accepted,
     await proofIndexRegistryPayload(network, {
@@ -54937,6 +54950,7 @@ async function boostFeedPayload(network, searchParams, fresh = false) {
     followingByFollower,
     viewerFollowing,
     identityQualification.owners,
+    network,
   );
   const toFeedEntry = (item) => {
     const originalPost = boostOriginalPostForReboost(item, originalPostsByTxid);
@@ -55022,7 +55036,7 @@ async function boostFeedPayload(network, searchParams, fresh = false) {
       indexedThroughBlock: indexedPayload.indexedThroughBlock, indexedThroughBlockHash: indexedPayload.indexedThroughBlockHash,
       indexedAt: indexedPayload.indexedAt, network, mode: detail ? "detail" : "connections",
       totalCount: rows.length, post, activity: detail ? activity : undefined,
-      connections: connections || undefined, profileSubject: connections ? { ...person(profileSubject.address), query: profile,
+      connections: connections || undefined, profileSubject: connections ? { ...person(profileSubject.address), query: profile, resolved: profileSubject.resolved,
         followerCount: profileSubject.followerCount, followingCount: profileSubject.followingCount } : undefined };
   }
   const entries = sourceItems
@@ -55068,7 +55082,17 @@ async function boostFeedPayload(network, searchParams, fresh = false) {
             )
           : "",
       ].join(" ");
-      return listingsOnly || !query || searchText.includes(query);
+      if (listingsOnly || !query) return true;
+      if (tagQuery) {
+        // Tags come from visible source text, never author names, transaction
+        // metadata, URLs or an incomplete client-side timeline page.
+        const quotedPost = boostQuoteTxid(item)
+          ? originalPostsByTxid.get(boostQuoteTxid(item)) : null;
+        return boostTextMatchesTag(boostEventPostText(item), query) ||
+          Boolean(originalPost && boostTextMatchesTag(boostEventPostText(originalPost), query)) ||
+          Boolean(quotedPost && boostTextMatchesTag(boostEventPostText(quotedPost), query));
+      }
+      return searchText.includes(query);
     })
     .map(toFeedEntry)
     .filter(Boolean);
@@ -55141,6 +55165,7 @@ async function boostFeedPayload(network, searchParams, fresh = false) {
           proofSignalSatsExact: profileSignalStats?.proofSignalSatsExact ?? "0",
           purchasedCount: profileTabs.purchased.length,
           query: profileSubject.query,
+          resolved: profileSubject.resolved,
           replyCount: profileTabs.replies.length,
           repliesToCount: profileTabs["replies-to"].length,
           boostCount: profileTabs.boosts.length,

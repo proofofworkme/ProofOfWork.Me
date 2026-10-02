@@ -7,6 +7,7 @@ import ts from "typescript";
 import * as projection from "../server/boost-projection.mjs";
 import { verifiedBoostTicketClosures } from "../server/boost-marketplace-proof.mjs";
 import { decimalValueToQ8, formatWorkSubatoms, q8ToCanonicalDecimal, q8ToNumber, WORK_SUBATOM_UNIT_SCALE } from "../server/work-units.mjs";
+import { parseBoostText, boostTextMatchesTag } from "../src/shared/protocol/boostText.mjs";
 
 const apiSource = await readFile(new URL("../server/proof-api.mjs", import.meta.url), "utf8");
 function definition(name) {
@@ -54,7 +55,7 @@ function reader(events, mutate = (page) => page) {
   return { read, calls };
 }
 function server(readPage, overrides = {}) {
-  const context = vm.createContext({ console, URLSearchParams, ...projection, verifiedBoostTicketClosures,
+  const context = vm.createContext({ console, URLSearchParams, ...projection, verifiedBoostTicketClosures, boostTextMatchesTag,
     decimalValueToQ8, formatWorkSubatoms, q8ToCanonicalDecimal, q8ToNumber,
     WORK_SUBATOM_UNIT_SCALE, WORK_TOKEN_MAX_SUPPLY: 21_000_000,
     proofIndexReadFeatureEnabled: () => true, proofIndexEventHistoryPayload: readPage,
@@ -93,6 +94,130 @@ test("canonical Boost failures never become successful empty history", async () 
 const identityCheckpoint = { network: "livenet", snapshotId: "fixture-snapshot", indexedThroughBlock: 965000, indexedThroughBlockHash: "a".repeat(64) };
 const identityRegistry = (records) => ({ ...identityCheckpoint, records, stats: { total: records.length } });
 const identityNormalizer = value => String(value).trim().toLowerCase().replace(/^@/u, "").replace(/@proofofwork\.me$/u, "");
+
+test("Boost text links retain source text, all tag symbols and case-insensitive PowIDs", () => {
+  const text = "($wOrK), #WORK #東京 #café #credit_2 $NEW123 @ArmyOfYouth armyofyouth@ProofOfWork.Me! @hello.name @hello-world @alice+label @☕";
+  const parsed = parseBoostText(text);
+  assert.equal(parsed.map(segment => segment.text).join(""), text);
+  assert.deepEqual(parsed.filter(segment => segment.kind !== "text").map(segment => [segment.kind, segment.value]), [
+    ["cashtag", "$work"], ["hashtag", "#work"], ["hashtag", "#東京"], ["hashtag", "#café"],
+    ["hashtag", "#credit_2"], ["cashtag", "$new123"], ["mention", "armyofyouth"], ["mention", "armyofyouth"],
+    ["mention", "hello.name"], ["mention", "hello-world"], ["mention", "alice+label"], ["mention", "☕"],
+  ]);
+  assert.equal(boostTextMatchesTag("$WORK #workshop", "$work"), true);
+  assert.equal(boostTextMatchesTag("$WORK #workshop", "#work"), false);
+  assert.equal(boostTextMatchesTag("$WORKER #WORK", "$work"), false);
+  assert.equal(boostTextMatchesTag("$WORKER #WORK", "#work"), true);
+  assert.equal(boostTextMatchesTag("#café", "#CAFÉ"), true);
+});
+
+test("Boost token parsing excludes partial URLs, foreign emails and digit-only cash amounts", () => {
+  const text = 'https://example.com/$WORK/#work/@armyofyouth www.example.com/#work example.com/$WORK name@example.com work@proofofwork.me.evil "space name"@example.com "space name"@proofofwork.me.evil $100 $12.50 a$WORK a#work a@armyofyouth ##work';
+  assert.deepEqual(parseBoostText(text), [{ kind: "text", text, value: text }]);
+  assert.equal(boostTextMatchesTag(text, "$work"), false);
+  assert.equal(boostTextMatchesTag(text, "#work"), false);
+  assert.equal(parseBoostText('https://example.com/@"armyofyouth"').filter(segment => segment.kind !== "text").length, 0);
+  assert.deepEqual(parseBoostText(""), []);
+});
+
+test("quoted Boost mentions support arbitrary ID delimiters, whitespace and JSON escapes", () => {
+  const ids = ["Space Name", "a/b & c!?", "double\"quote\\backslash", "name\nwith\ttabs", "#tag $cash https://example.com @foreign", "colon:name"];
+  for (const id of ids) {
+    for (const text of [`@${JSON.stringify(id)}!`, `${JSON.stringify(id)}@proofofwork.me.`]) {
+      const parsed = parseBoostText(text);
+      assert.equal(parsed.map(segment => segment.text).join(""), text);
+      const mentions = parsed.filter(segment => segment.kind === "mention");
+      assert.equal(mentions.length, 1, text);
+      assert.equal(mentions[0].identityKind, "id");
+      assert.equal(mentions[0].value, identityNormalizer(id));
+    }
+  }
+});
+
+test("Boost address mentions preserve Base58 case and canonicalize unmixed Bech32", () => {
+  const base58 = "1BoatSLRHtKNngkdXEeobR76b53LETtpyT";
+  const bech32 = "bc1qfwytlzyr3ym3enz2eutwtjsf9kkf6uqkjydk3e";
+  const parsed = parseBoostText(`@${base58} @${bech32.toUpperCase()}`).filter(segment => segment.kind === "mention");
+  assert.deepEqual(parsed.map(segment => [segment.identityKind, segment.value]), [["address", base58], ["address", bech32]]);
+  const mixed = `bC${bech32.slice(2)}`;
+  assert.equal(parseBoostText(`@${mixed}`)[0].identityKind, "address");
+  assert.equal(parseBoostText(`@${mixed}`)[0].value, mixed, "invalid mixed-case address cannot silently target lowercase Bech32");
+  const quotedId = parseBoostText(`@${JSON.stringify(base58)}`)[0];
+  assert.equal(quotedId.identityKind, "id");
+  assert.equal(quotedId.value, base58.toLowerCase(), "explicit quoted syntax denotes a case-insensitive PowID");
+});
+
+test("emoji and adjacent complete tags delimit Boost tag links without creating word fragments", () => {
+  const text = "🚀$work🔥 #work🎉 $POWB$INCB #build#proof a$WORK a#work";
+  assert.deepEqual(parseBoostText(text).filter(segment => segment.kind !== "text").map(segment => segment.value),
+    ["$work", "#work", "$powb", "$incb", "#build", "#proof"]);
+});
+
+test("tag search matches full visible tokens across complete history, replies and reboost originals", async () => {
+  const events = [
+    event(1, "boost-post", { text: "work #WORKSHOP $WORKER" }),
+    event(2, "boost-post", { text: "$wOrK #東京" }),
+    event(3, "boost-post", { text: "#WORK $USD" }),
+    event(4, "boost-post", { text: "https://example.com/$WORK #work@example.com" }),
+    event(5, "boost-reply", { targetTxid: txid(2), text: "$work!" }),
+    event(6, "boost-reboost", { targetTxid: txid(2), text: `reboost ${txid(2)}` }),
+    event(7, "boost-post", { text: "$100 $12.50" }),
+    event(8, "boost-post", { text: "$WORK hidden" }),
+    event(9, "boost-post", { text: "other", title: "$WORK" }),
+    event(10, "boost-post", { text: "$WORK", confirmed: false, status: "pending" }),
+    event(11, "boost-post", { text: "$WORK", valid: false }),
+    event(12, "boost-hide", { targetTxid: txid(8) }),
+    ...Array.from({ length: 240 }, (_, index) => event(13 + index, "boost-post", { text: index === 225 ? "older $WORK" : `unrelated ${index}` })),
+    event(253, "boost-post", { text: "quoting another post", quoteTxid: txid(3) }),
+    event(254, "boost-post", { text: undefined, memo: "visible legacy #tag" }),
+    event(255, "boost-reboost", { text: "$phantom metadata", targetTxid: txid(1) }),
+  ];
+  const api = server(reader(events).read);
+  const search = async query => api.boostFeedPayload("livenet", new URLSearchParams({ q: query, sort: "oldest" }));
+  const cash = await search("$work");
+  assert.equal(cash.provenance.pages, 2);
+  assert.deepEqual(Array.from(cash.items, item => item.txid), [txid(2), txid(5), txid(6), txid(238)]);
+  assert.deepEqual(Array.from((await search("#work")).items, item => item.txid), [txid(3), txid(253)]);
+  assert.deepEqual(Array.from((await search("#東京")).items, item => item.txid), [txid(2), txid(6)]);
+  assert.equal((await search("$100")).totalCount, 1, "numeric cash text keeps ordinary search behavior without tag links");
+  assert.deepEqual(Array.from((await search("$work #東京")).items, item => item.txid), [txid(2), txid(6)], "compound query keeps ordinary literal substring semantics");
+  assert.equal((await search("#work $usd")).items[0].txid, txid(3));
+  assert.equal((await search("#tag")).items[0].txid, txid(254), "legacy displayed body fallback uses the same tag rules");
+  assert.equal((await search("$phantom")).totalCount, 0, "reboost metadata is not visible post text");
+  assert.ok((await search("work")).items.some(item => item.txid === txid(9)), "ordinary text/metadata lookup stays compatible");
+});
+
+test("profile preview resolution requires a current confirmed owner or a valid network address", async () => {
+  const base58 = "1BoatSLRHtKNngkdXEeobR76b53LETtpyT";
+  const testnet = "mipcBbFg9gMiCh81Kj8tqqdgoZub1ZJRfn";
+  const bech32 = "bc1qfwytlzyr3ym3enz2eutwtjsf9kkf6uqkjydk3e";
+  const events = [event(1, "boost-post", { authorAddress: "old-owner", profileId: "transferred" }),
+    event(2, "boost-profile", { authorAddress: "old-owner", profile: { name: "unregistered@proofofwork.me" } })];
+  const api = server(reader(events).read, {
+    isValidBitcoinAddress: (value, network) => (network === "livenet" && [base58, bech32].includes(value)) || (network === "testnet" && value === testnet),
+    proofIndexRegistryPayload: async () => identityRegistry([
+      { id: "transferred", ownerAddress: "new-owner", confirmed: true },
+      { id: "pending", ownerAddress: "old-owner", confirmed: false },
+      { id: "space name", ownerAddress: "quoted-owner", confirmed: true },
+      { id: base58, ownerAddress: "named-address-owner", confirmed: true },
+    ]),
+  });
+  const profile = async value => (await api.boostFeedPayload("livenet", new URLSearchParams({ profile: value }))).profileSubject;
+  const transferred = await profile("TRANSFERRED@proofofwork.me");
+  assert.equal(transferred.resolved, true);
+  assert.equal(transferred.address, "new-owner");
+  assert.equal((await profile("space name")).resolved, true);
+  for (const value of ["unregistered", "pending", "old-owner", `${base58.slice(0, -1)}x`, testnet, `bC${bech32.slice(2)}`]) {
+    assert.equal((await profile(value)).resolved, false, value);
+  }
+  assert.equal((await profile(base58)).resolved, true);
+  assert.equal((await profile(base58)).address, base58);
+  const namedAddress = await profile(`${base58}@proofofwork.me`);
+  assert.equal(namedAddress.resolved, true);
+  assert.equal(namedAddress.address, "named-address-owner", "explicit full-ID lookup resolves its registry owner instead of the raw address");
+  const connections = await api.boostFeedPayload("livenet", new URLSearchParams({ profile: "transferred", connections: "followers" }));
+  assert.equal(connections.profileSubject.resolved, true);
+});
 
 test("Boost identity claims require exact current confirmed ownership without rewriting history", () => {
   const records = [{ id: "alice", ownerAddress: "Owner", confirmed: true }, { id: "pending", ownerAddress: "Owner", confirmed: false }];

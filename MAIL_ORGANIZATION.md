@@ -131,6 +131,14 @@ Embedded Boost profile, profile-tab, and timeline navigation keeps
 HTML source retain visible labels after entry. Miner-fee controls display the
 rate in proofs/vB; exact protocol/API field names and arithmetic are unchanged.
 
+Boost posts, replies, quotes, and reboost originals link cashtags and hashtags
+to whole-tag search and link PowID/address mentions to Boost profiles. Both
+`@name` and `name@proofofwork.me` resolve a current confirmed PowID owner;
+`@<address>` supports profiles without IDs. JSON-quoted names support IDs with
+spaces or delimiters. Hover/focus previews are confirmed social reads with
+verified Files images, not Contacts or mailbox state, and retain the Computer
+host and network. Pending/unregistered IDs cannot establish preview identity.
+
 ## Core Idea
 
 Messages written to ProofOfWork are permanent. The app should not pretend users can delete them from the chain.

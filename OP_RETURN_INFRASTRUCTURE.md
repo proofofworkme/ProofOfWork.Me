@@ -5586,6 +5586,13 @@ Clients cancel superseded reads and reject responses for obsolete scopes.
 Boost also exposes paginated confirmed social projections through
 `/api/v1/boost?detail=<txid>&activity=replies|likes|reboosts` and
 `/api/v1/boost?profile=<id-or-address>&connections=followers|following`.
+Cashtag/hashtag `q` queries use the shared Boost text parser for case-insensitive
+whole-tag matching before pagination; ordinary searches retain their existing
+text, identity, address, and transaction lookup. Profile subjects expose
+`resolved` from the same checkpoint-bound confirmed owner map or a valid raw
+network address. Mention previews require this flag and a complete read, so an
+unresolved query shell cannot masquerade as a verified identity. Preview reads
+use the existing profile projection independently of the visible feed.
 Both exhaust the same qualified, checkpoint-bound event history as the feed.
 Detail reads ignore profile/search/time/feed filters; reboost detail retains its
 nested original and inspects the original's engagement. Connection lists use

@@ -397,6 +397,12 @@ Future agents must preserve these unless the user explicitly asks for a migratio
 - Local state is portable through backups, not server accounts.
 
 Boost threads and social evidence must be consistent across entry points.
+Cashtags and hashtags in every Boost text surface open whole-tag searches.
+PowID mentions in short or full form open the current confirmed owner's
+profile; address mentions support people without IDs. Hover/focus previews
+must prove identity and verify Files images, while unresolved names remain
+explicitly unresolved. Text interpretation never changes raw chain bytes,
+registry rules, fees, or signing authority.
 Details read by transaction ID, never from a currently loaded feed subset.
 People can inspect confirmed reply/like/reboost actors and their TXs, and browse
 Followers/Following as confirmed graph projections. Reading evidence stays
