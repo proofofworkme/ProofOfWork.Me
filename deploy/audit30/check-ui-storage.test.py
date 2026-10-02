@@ -72,6 +72,20 @@ class StorageTests(unittest.TestCase):
         if os.getuid()==1000 and os.getgid()==1000:self.assertEqual(out[2],'6f17f895f60abdcd311f44782a74945f0591ec2fab36b7db4071447ff927ca7c')
     def cleanup(self):
         plan=self.plan();out=S.execute(plan,S.digest(plan),self.l,True);return dict(path=out['receiptPath'],sha256=out['receiptSha256'])
+    def citation_manifest(self,kind,candidates,files):
+        pair=S.protected_pair(self.l,{});evidence=self.l.evidence/'audit30-semantic-fixture.json'
+        if not evidence.exists():S.durable(evidence,dict(classification='Historical release evidence; no active dependencies'))
+        rows=[]
+        for source,relative in files:
+            raw=(source/relative).read_bytes();citations=[]
+            for target,offset in S.path_occurrences(raw,candidates):
+                start=raw.rfind(b'\n',0,offset)+1;end=raw.find(b'\n',offset);end=len(raw) if end<0 else end+1
+                citations.append(dict(target=target,byteOffset=offset,line=raw.count(b'\n',0,offset)+1,lineSha256=hashlib.sha256(raw[start:end]).hexdigest(),classification='historical-release-evidence'))
+            rows.append(dict(sourcePath=str(source),relativePath=relative,sha256=hashlib.sha256(raw).hexdigest(),bytes=len(raw),gitBlobSha1=hashlib.sha1(b'blob '+str(len(raw)).encode()+b'\0'+raw).hexdigest(),citations=citations))
+        value=dict(schema='pow-audit30-historical-citation-review-v1',host='77.42.91.106',scopeApprovalSha256=self.auth,operationKind=kind,candidatePaths=candidates,protectedSources=[dict(path=r['path'],head=r['git']['head'],tree=r['git']['tree']) for r in pair['sources']],reviewEvidence=[dict(path=str(evidence),sha256=S.hash_read(evidence,S.MAX_JSON)[0])],files=rows)
+        p=self.l.evidence/('audit30-citation-review-'+str(len(list(self.l.evidence.glob('audit30-citation-review-*'))))+'.json');S.durable(p,value);return dict(path=str(p),sha256=S.hash_read(p,S.MAX_JSON)[0])
+    def fake_blob(self,source,relative,head):
+        raw=(source/relative).read_bytes();return hashlib.sha1(b'blob '+str(len(raw)).encode()+b'\0'+raw).hexdigest()
     def test_exact_cleanup_and_preserved_pair(self):
         plan=self.plan();self.assertEqual(len(plan['delete']),40);self.assertEqual(len(plan['heldBoundaries']),40)
         S.validate_plan(plan,self.l,'cleanup',self.auth);out=S.execute(plan,S.digest(plan),self.l,True)
@@ -113,6 +127,78 @@ class StorageTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,'references'):S.references([candidate],[p],proc=self.base/'no-proc')
         inbound=self.base/'inbound';inbound.symlink_to(candidate)
         with self.assertRaisesRegex(ValueError,'references'):S.references([candidate],[inbound],proc=self.base/'no-proc')
+    def test_reference_budget_and_per_root_census(self):
+        one=self.base/'scan-one';two=self.base/'scan-two';one.mkdir();two.mkdir();(one/'small').write_bytes(b'1234');(two/'small').write_bytes(b'5678');(two/'large').write_bytes(b'x'*(1024**2+1));(two/'node_modules').mkdir();(two/'node_modules'/'excluded').write_bytes(b'stay excluded')
+        out=S.references([], [one,two],proc=self.base/'no-proc',byte_limit=8)
+        self.assertEqual(out['bytesRead'],8);self.assertEqual(out['entryLimit'],100000);self.assertEqual(out['perFileByteLimit'],1024**2);self.assertEqual([r['bytesRead'] for r in out['perRoot']],[0,4,4]);self.assertEqual(out['perRoot'][2]['skippedLargeFiles'],1);self.assertEqual(out['perRoot'][2]['skippedPayloadDirectories'],1)
+        with self.assertRaisesRegex(ValueError,'byte bound: limit=7 consumed=8'):S.references([], [one,two],proc=self.base/'no-proc',byte_limit=7)
+    def test_escaped_regex_preserves_substring_and_process_pointer_semantics(self):
+        candidate=str(self.base/'literal[1].root');operator=self.base/'operator';operator.write_text('prefix '+candidate+'-suffix')
+        with self.assertRaisesRegex(ValueError,'content-pointer'):S.references([candidate],[operator],proc=self.base/'no-proc')
+        operator.write_text(candidate.replace('[1]','1').replace('.root','Xroot'));S.references([candidate],[operator],proc=self.base/'no-proc');S.references([], [operator],proc=self.base/'no-proc')
+        proc=self.base/'fake-proc';process=proc/'123';process.mkdir(parents=True);(process/'cwd').symlink_to(candidate);(process/'cmdline').write_bytes(b'command');(process/'maps').write_bytes(os.fsencode(candidate)+b' (deleted)');(process/'mountinfo').write_bytes(b'mount')
+        with self.assertRaisesRegex(ValueError,'path-pointer'):S.references([candidate],[],proc=proc)
+        (process/'cwd').unlink()
+        with self.assertRaisesRegex(ValueError,'content-pointer'):S.references([candidate],[],proc=proc)
+    def test_process_mapping_read_bound_refuses(self):
+        proc=self.base/'fake-proc';process=proc/'123';process.mkdir(parents=True);(process/'maps').write_bytes(b'x'*(1024**2+1))
+        with self.assertRaisesRegex(ValueError,'per-file byte bound'):S.references([],[],proc=proc)
+    def test_exact_historical_citation_plan_and_byte_tamper(self):
+        source=self.l.scratch/('proofofwork-ui-source-'+self.current);target=self.l.exact()[0]['path'];doc=source/'OP_RETURN_INFRASTRUCTURE.md';doc.write_text('Historical release receipt: '+target+'\n');self.l.refs=[]
+        with self.assertRaisesRegex(ValueError,'references'):self.plan()
+        binding=self.citation_manifest('cleanup',[r['path'] for r in self.l.exact()],[(source,doc.name)])
+        with patch.object(S,'git_document_blob',side_effect=self.fake_blob):
+            plan=S.create_plan(self.l,'cleanup',self.auth,citation_review=binding);self.assertEqual(len(plan['references']['qualifiedHistoricalMatches']),1);self.assertEqual(plan['citationReview'],binding);S.execute(plan,S.digest(plan),self.l,False)
+            doc.write_text(doc.read_text()+'unreviewed edit\n')
+            with self.assertRaisesRegex(ValueError,'bytes/Git blob'):S.execute(plan,S.digest(plan),self.l,True)
+        self.assertTrue(all(os.path.lexists(r['path']) for r in self.l.exact()))
+    def test_citation_scope_occurrence_context_and_review_hash_refuse(self):
+        source=self.l.scratch/('proofofwork-ui-source-'+self.current);target=self.l.exact()[0]['path'];doc=source/'OP_RETURN_INFRASTRUCTURE.md';doc.write_text('Historical '+target+'\nHistorical '+target+'\n');binding=self.citation_manifest('cleanup',[r['path'] for r in self.l.exact()],[(source,doc.name)]);pair=S.protected_pair(self.l,{});original=json.loads(Path(binding['path']).read_text())
+        with patch.object(S,'git_document_blob',side_effect=self.fake_blob):
+            for mutate in [lambda v:v['candidatePaths'].pop(),lambda v:v['protectedSources'][0].update(head='f'*40),lambda v:v['files'][0]['citations'].pop(),lambda v:v['files'][0]['citations'][0].update(lineSha256='f'*64),lambda v:v['files'][0]['citations'][0].update(classification='active-config')]:
+                value=json.loads(json.dumps(original));mutate(value);Path(binding['path']).write_text(json.dumps(value));h=S.hash_read(Path(binding['path']),S.MAX_JSON)[0]
+                with self.assertRaises(ValueError):S.load_citation_review(dict(path=binding['path'],sha256=h),self.l,pair,'cleanup',[r['path'] for r in self.l.exact()],self.auth)
+            with self.assertRaisesRegex(ValueError,'hash differs'):S.load_citation_review(binding,self.l,pair,'cleanup',[r['path'] for r in self.l.exact()],self.auth)
+    def test_citation_never_qualifies_config_symlink_or_process_match(self):
+        source=self.l.scratch/('proofofwork-ui-source-'+self.current);target=self.l.exact()[0]['path'];doc=source/'OP_RETURN_INFRASTRUCTURE.md';doc.write_text('Historical '+target+'\n');binding=self.citation_manifest('cleanup',[r['path'] for r in self.l.exact()],[(source,doc.name)])
+        with patch.object(S,'git_document_blob',side_effect=self.fake_blob):
+            admitted=S.load_citation_review(binding,self.l,S.protected_pair(self.l,{}),'cleanup',[r['path'] for r in self.l.exact()],self.auth);config=self.base/'installed-config';config.write_text(target)
+            with self.assertRaisesRegex(ValueError,'references'):S.references([target],[config,source],proc=self.base/'no-proc',reviewed_files=admitted)
+            with self.assertRaisesRegex(ValueError,'references'):S.references([target],[doc],proc=self.base/'no-proc',reviewed_files=admitted)
+            config.unlink();config.symlink_to(target)
+            with self.assertRaisesRegex(ValueError,'references'):S.references([target],[config,source],proc=self.base/'no-proc',reviewed_files=admitted)
+            proc=self.base/'fake-proc';process=proc/'123';process.mkdir(parents=True);(process/'maps').write_text(target)
+            with self.assertRaisesRegex(ValueError,'references'):S.references([target],[source],proc=proc,reviewed_files=admitted)
+            value=json.loads(Path(binding['path']).read_text());value['files'][0]['relativePath']='.env';Path(binding['path']).write_text(json.dumps(value));bad=dict(path=binding['path'],sha256=S.hash_read(Path(binding['path']),S.MAX_JSON)[0])
+            with self.assertRaisesRegex(ValueError,'allowed protected-source document'):S.load_citation_review(bad,self.l,S.protected_pair(self.l,{}),'cleanup',[r['path'] for r in self.l.exact()],self.auth)
+    def test_reviewed_document_alias_and_active_usage_always_refuse(self):
+        source=self.l.scratch/('proofofwork-ui-source-'+self.current);target=self.l.exact()[0]['path'];doc=source/'OP_RETURN_INFRASTRUCTURE.md';doc.write_text('Historical '+target+'\n');binding=self.citation_manifest('cleanup',[r['path'] for r in self.l.exact()],[(source,doc.name)])
+        with patch.object(S,'git_document_blob',side_effect=self.fake_blob):
+            admitted=S.load_citation_review(binding,self.l,S.protected_pair(self.l,{}),'cleanup',[r['path'] for r in self.l.exact()],self.auth);outside=self.base/'outside-scan';outside.mkdir();chain=outside/'alias';chain.symlink_to(doc);config=self.base/'installed-config.json';config.symlink_to(chain)
+            with self.assertRaisesRegex(ValueError,'active-reviewed-document-pointer'):S.references([target],[config,source],proc=self.base/'no-proc',reviewed_files=admitted)
+            config.unlink();config.symlink_to(source)
+            with self.assertRaisesRegex(ValueError,'active-reviewed-document-pointer'):S.references([target],[config,source],proc=self.base/'no-proc',reviewed_files=admitted)
+            config.unlink();config.write_text('read '+str(doc))
+            with self.assertRaisesRegex(ValueError,'active-reviewed-document-content-pointer'):S.references([target],[config,source],proc=self.base/'no-proc',reviewed_files=admitted)
+            config.unlink();proc=self.base/'fake-proc';process=proc/'123';process.mkdir(parents=True);(process/'fd').mkdir();(process/'fd'/'7').symlink_to(doc)
+            with self.assertRaisesRegex(ValueError,'active-reviewed-document-pointer'):S.references([target],[source],proc=proc,reviewed_files=admitted)
+            (process/'fd'/'7').unlink();(process/'fd'/'7').symlink_to(chain)
+            with self.assertRaisesRegex(ValueError,'active-reviewed-document-pointer'):S.references([target],[source],proc=proc,reviewed_files=admitted)
+            (process/'fd'/'7').unlink();(process/'cwd').symlink_to(source)
+            with self.assertRaisesRegex(ValueError,'active-reviewed-document-pointer'):S.references([target],[source],proc=proc,reviewed_files=admitted)
+            (process/'cwd').unlink();(process/'exe').symlink_to(doc)
+            with self.assertRaisesRegex(ValueError,'active-reviewed-document-pointer'):S.references([target],[source],proc=proc,reviewed_files=admitted)
+            (process/'exe').unlink();(process/'maps').write_text(str(doc))
+            with self.assertRaisesRegex(ValueError,'active-reviewed-document-content-pointer'):S.references([target],[source],proc=proc,reviewed_files=admitted)
+            with self.assertRaisesRegex(ValueError,'active-reviewed-document-content-pointer'):S.references([],[source],proc=proc,reviewed_files=admitted)
+            config.write_text(str(doc))
+            with self.assertRaisesRegex(ValueError,'active-reviewed-document-content-pointer'):S.references([],[config,source],proc=self.base/'no-proc',reviewed_files=admitted)
+            config.unlink()
+            (process/'maps').unlink();(process/'root').symlink_to('/')
+            out=S.references([target],[source],proc=proc,reviewed_files=admitted);self.assertEqual(len(out['qualifiedHistoricalMatches']),1)
+    def test_committed_document_blob_is_exact_and_nonexecutable(self):
+        p=self.base/'git-document';subprocess.run(['git','init','-q',str(p)],check=True);doc=p/'OP_RETURN_INFRASTRUCTURE.md';doc.write_text('Historical record\n');subprocess.run(['git','-C',str(p),'add',doc.name],check=True);subprocess.run(['git','-C',str(p),'-c','user.name=Fixture','-c','user.email=fixture@example.invalid','commit','-qm','fixture'],check=True);head=subprocess.check_output(['git','-C',str(p),'rev-parse','HEAD'],text=True).strip();self.assertEqual(S.git_document_blob(p,doc.name,head),self.fake_blob(p,doc.name,head));doc.chmod(0o755);subprocess.run(['git','-C',str(p),'add',doc.name],check=True);subprocess.run(['git','-C',str(p),'-c','user.name=Fixture','-c','user.email=fixture@example.invalid','commit','-qm','exec fixture'],check=True);head=subprocess.check_output(['git','-C',str(p),'rev-parse','HEAD'],text=True).strip()
+        with self.assertRaisesRegex(ValueError,'regular committed document'):S.git_document_blob(p,doc.name,head)
     def test_preservation_requires_completed_cleanup(self):
         with self.assertRaisesRegex(ValueError,'cleanup prerequisite'):S.create_plan(self.l,'preserve-sources',self.auth)
     def test_whole_source_preservation_and_inverse(self):
@@ -191,6 +277,13 @@ class StorageTests(unittest.TestCase):
             bootstrap=P.admission(self.l,self.auth,True);bad=json.loads(json.dumps(bootstrap));bad['archives']=bad['archives'][:1]
             index=self.policy_index([bad])
             with self.assertRaisesRegex(ValueError,'Partial'):P.policy_scope(index,self.l,self.auth)
+    def test_postpublication_policy_requires_fresh_exact_citation_review(self):
+        with patch.object(P,'S',S),patch.object(S,'git_document_blob',side_effect=self.fake_blob):
+            old_source=self.l.scratch/('proofofwork-ui-source-'+self.current);(old_source/'OP_RETURN_INFRASTRUCTURE.md').write_text('Historical '+self.l.exact()[0]['path']+'\n');old=self.citation_manifest('cleanup',[r['path'] for r in self.l.exact()],[(old_source,'OP_RETURN_INFRASTRUCTURE.md')]);bootstrap=P.admission(self.l,self.auth,True);index=self.policy_index([bootstrap])
+            new='abcdef123456-20261002T220000Z';os.rename(self.l.live,self.l.roots/('proofofwork-www-pre-'+new));self.release(self.l.live,new);source=self.l.scratch/('proofofwork-ui-source-'+new);source.mkdir();(source/'.git').mkdir();(source/'node_modules').mkdir();(source/'node_modules'/'dep').write_text('new runtime');self.dependency_provenance(self.l.live,new);added=P.admission(self.l,self.auth,False,index);index=self.policy_index([bootstrap,added]);scope=P.policy_scope(index,self.l,self.auth);targets=[r['path'] for r in scope['eligible']];(source/'audits').mkdir();doc=source/'audits'/'release.md';doc.write_text('Historical verified prior recovery: '+targets[0]+'\nHistorical archive: '+next(p for p in targets if p.endswith('.tgz'))+'\n')
+            with self.assertRaisesRegex(ValueError,'references'):S.create_plan(self.l,'future-retention',self.auth,scope)
+            with self.assertRaisesRegex(ValueError,'scope/source/approval'):S.create_plan(self.l,'future-retention',self.auth,scope,citation_review=old)
+            binding=self.citation_manifest('future-retention',targets,[(source,'audits/release.md')]);plan=S.create_plan(self.l,'future-retention',self.auth,scope,citation_review=binding);self.assertEqual(len(plan['references']['qualifiedHistoricalMatches']),1);out=S.execute(plan,S.digest(plan),self.l,True);self.assertEqual(out['completedCount'],4);self.assertTrue(doc.exists());self.assertEqual(doc.read_text().count('Historical'),2)
 
     def test_shared_protected_inode_survives_complete_cleanup(self):
         shared=self.l.live/'proofofwork-work'/'index.html';old=self.l.roots/('proofofwork-www-pre-'+S.ROOT_IDS[0])/'proofofwork-work'/'index.html';old.unlink();os.link(shared,old)

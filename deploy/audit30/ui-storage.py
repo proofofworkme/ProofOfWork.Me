@@ -276,46 +276,98 @@ def safeguards(layout):
         census.append(row)
     return dict(heldSha256=h,holdSha256=hold,masks=masks,heldCensus=census,missingHeldPaths=[r['path'] for r in census if not r['exists']]),review
 
-def references(paths, roots, proc=Path('/proc')):
+def path_occurrences(raw,paths):
+    out=[]
+    for target in paths:
+        token=os.fsencode(target);start=0
+        while True:
+            offset=raw.find(token,start)
+            if offset<0:break
+            out.append((target,offset));start=offset+1
+    return sorted(out)
+
+def references(paths, roots, proc=Path('/proc'), byte_limit=1024**3, reviewed_files=None):
     """Bounded live pointer search; a limit/error refuses instead of implying absence."""
-    paths=[str(p) for p in paths]; matches=[]; entries=0; bytes_read=0
+    if not isinstance(byte_limit,int) or byte_limit<1:raise ValueError('Invalid reference byte bound')
+    paths=[str(p) for p in paths]; matches=[]; historical=[]; entries=0; bytes_read=0; per_root=[];reviewed_files=reviewed_files or {}
+    pattern=re.compile(b'|'.join(re.escape(os.fsencode(p)) for p in paths)) if paths else None
+    document_pattern=re.compile(b'|'.join(re.escape(os.fsencode(p)) for p in reviewed_files)) if reviewed_files else None
+    def row(root):
+        value=dict(root=str(root),exists=os.path.lexists(root),entries=0,bytesRead=0,regularFilesRead=0,pointerLinksChecked=0,skippedLargeFiles=0,skippedPayloadDirectories=0,skippedSpecialEntries=0)
+        per_root.append(value);return value
+    def count_entry(stats):
+        nonlocal entries
+        entries+=1;stats['entries']+=1
+        if entries>100000:raise ValueError('Reference scan entry bound: limit=100000 consumed='+str(entries)+' root='+stats['root'])
+    def read_bounded(p,stats,expected=None):
+        nonlocal bytes_read
+        fd=os.open(p,os.O_RDONLY|os.O_NOFOLLOW|os.O_NOATIME)
+        with os.fdopen(fd,'rb') as f:
+            if expected is not None and identity(os.fstat(f.fileno()))!=identity(expected):raise ValueError('Reference file identity changed')
+            raw=f.read(1024**2+1)
+            if expected is not None and (identity(os.fstat(f.fileno()))!=identity(expected) or identity(p.lstat())!=identity(expected)):raise ValueError('Reference file changed during scan')
+        if len(raw)>1024**2:raise ValueError('Reference per-file byte bound exceeded')
+        bytes_read+=len(raw);stats['bytesRead']+=len(raw);stats['regularFilesRead']+=1
+        if bytes_read>byte_limit:raise ValueError('Reference scan byte bound: limit='+str(byte_limit)+' consumed='+str(bytes_read)+' root='+stats['root'])
+        return raw
     def target(value, source):
         if any(value==p or value.startswith(p+'/') for p in paths): matches.append(dict(reference=str(source),kind='path-pointer'))
-    def contents(raw,source):
-        if any(os.fsencode(p) in raw for p in paths):matches.append(dict(reference=str(source),kind='content-pointer'))
+        # A live/configuration alias can make an otherwise historical document
+        # operational. A process root '/' is not an alias to a source checkout.
+        if any(value==p or value.startswith(p+'/') or (value==r['sourcePath'] or value.startswith(r['sourcePath']+'/')) and p.startswith(value+'/') for p,r in reviewed_files.items()):matches.append(dict(reference=str(source),kind='active-reviewed-document-pointer'))
+    def contents(raw,source,scan_root=None):
+        admitted=reviewed_files.get(str(source));qualified_location=admitted and scan_root==admitted['sourcePath']
+        if not qualified_location and document_pattern is not None and document_pattern.search(raw):matches.append(dict(reference=str(source),kind='active-reviewed-document-content-pointer'))
+        if pattern is None or not pattern.search(raw):return
+        # A reviewed source document is never an exception for process/config/
+        # operator/live-root data, nor for any symlink pointer to that document.
+        if qualified_location:
+            if hashlib.sha256(raw).hexdigest()!=admitted['sha256'] or len(raw)!=admitted['bytes']:raise ValueError('Reviewed citation document changed during scan')
+            observed=path_occurrences(raw,paths);allowed={(r['target'],r['byteOffset']):r for r in admitted['citations']}
+            if any(r not in allowed for r in observed):raise ValueError('Unreviewed historical citation occurrence')
+            historical.append(dict(reference=str(source),kind='qualified-historical-citation',sha256=admitted['sha256'],sourceHead=admitted['sourceHead'],sourceTree=admitted['sourceTree'],citations=[allowed[r] for r in observed]))
+        else:matches.append(dict(reference=str(source),kind='content-pointer'))
+    proc_stats=row(proc)
     for p in proc.glob('[0-9]*'):
         if p.name==str(os.getpid()):continue
         for q in [p/'cwd',p/'root',p/'exe',*list((p/'fd').glob('*'))]:
-            try:target(os.readlink(q).removesuffix(' (deleted)'),q)
+            count_entry(proc_stats)
+            try:
+                value=os.readlink(q).removesuffix(' (deleted)');proc_stats['pointerLinksChecked']+=1;target(value,q)
+                if reviewed_files:
+                    resolved=str(q.resolve(strict=False)).removesuffix(' (deleted)')
+                    if resolved!=value:target(resolved,q)
             except (FileNotFoundError,ProcessLookupError):continue
             except PermissionError:raise ValueError('Cannot inspect a live process pointer')
         for name in ('cmdline','maps','mountinfo'):
-            try:raw=(p/name).read_bytes()
+            count_entry(proc_stats)
+            try:raw=read_bounded(p/name,proc_stats)
             except (FileNotFoundError,ProcessLookupError):continue
             except PermissionError:raise ValueError('Cannot inspect live process mapping')
             contents(raw,p/name)
-    def walk(p):
-        nonlocal entries,bytes_read
-        entries+=1
-        if entries>100000:raise ValueError('Reference scan entry bound')
+    def walk(p,stats):
+        count_entry(stats)
         s=p.lstat()
         if stat.S_ISLNK(s.st_mode):
-            target(os.path.normpath(os.path.join(str(p.parent),os.readlink(p))),p);return
+            stats['pointerLinksChecked']+=1;raw_target=os.path.normpath(os.path.join(str(p.parent),os.readlink(p)));target(raw_target,p)
+            # Keep the default/raw dangling-retirement checks, and additionally
+            # resolve complete alias chains only when document qualification exists.
+            if reviewed_files:
+                resolved=str(p.resolve(strict=False))
+                if resolved!=raw_target:target(resolved,p)
+            return
         if stat.S_ISDIR(s.st_mode):
-            if p.name in ('node_modules','objects'):return
-            for n in sorted(os.listdir(p)):walk(p/n)
+            if p.name in ('node_modules','objects'):stats['skippedPayloadDirectories']+=1;return
+            for n in sorted(os.listdir(p)):walk(p/n,stats)
         elif stat.S_ISREG(s.st_mode):
-            if s.st_size>1024**2:return  # Known scope limit, separately recorded in proof.
-            bytes_read+=s.st_size
-            if bytes_read>128*1024**2:raise ValueError('Reference scan byte bound')
-            fd=os.open(p,os.O_RDONLY|os.O_NOFOLLOW|os.O_NOATIME)
-            with os.fdopen(fd,'rb') as f:raw=f.read(1024**2+1)
-            if len(raw)>1024**2:raise ValueError('Reference file grew')
-            contents(raw,p)
+            if s.st_size>1024**2:stats['skippedLargeFiles']+=1;return  # Existing textual-scan scope; reported explicitly.
+            contents(read_bounded(p,stats,s),p,stats['root'])
+        else:stats['skippedSpecialEntries']+=1
     for root in roots:
-        if os.path.lexists(root):walk(root)
+        stats=row(root)
+        if stats['exists']:walk(root,stats)
     if matches:raise ValueError('Active/configuration/inbound references: '+json.dumps(matches))
-    return dict(matches=[],entries=entries,bytesRead=bytes_read,roots=[str(p) for p in roots],qualification='Process pointers/mappings/mounts and enumerated configuration/operator/symlink roots; regular files above 1 MiB and object/dependency payloads are outside textual scan. Git pointer files are checked separately.')
+    return dict(matches=[],qualifiedHistoricalMatches=historical,entries=entries,bytesRead=bytes_read,roots=[str(p) for p in roots],perRoot=per_root,byteLimit=byte_limit,entryLimit=100000,perFileByteLimit=1024**2,excludedSelfPid=os.getpid(),contentLookup='one compiled escaped-literal bytes regex; same substring semantics',qualification='Process pointers/mappings/mounts and enumerated configuration/operator/symlink roots; regular files above 1 MiB and object/dependency payloads are outside textual scan. Only explicit hash-bound committed protected-source citations may qualify; all other matches refuse. Git pointer files are checked separately. All reads are bounded; limits and unresolved read errors refuse.')
 
 def source_pointers(path):
     safe(path,True); safe(path/'.git',True)
@@ -373,6 +425,56 @@ def dependency_fingerprint(fp):
     if count<2 or not total:raise ValueError('Empty runtime dependency tree')
     return dict(model='node-modules-recursive-v1',entryCount=count,regularBytes=total,sha256=h.hexdigest())
 
+def git_document_blob(source,relative,head):
+    env={'PATH':'/usr/bin:/bin','GIT_OPTIONAL_LOCKS':'0','GIT_CONFIG_NOSYSTEM':'1','GIT_CONFIG_GLOBAL':'/dev/null','GIT_CONFIG_SYSTEM':'/dev/null'}
+    out=subprocess.check_output(['/usr/bin/git','-c','safe.directory='+str(source),'-c','core.fsmonitor=false','-c','core.hooksPath=/dev/null','-C',str(source),'ls-tree','-z','--full-tree',head,'--',relative],env=env,timeout=30).split(b'\0')
+    if len(out)!=2 or out[1]:raise ValueError('Reviewed document does not have one committed Git blob')
+    metadata,separator,name=out[0].partition(b'\t');parts=metadata.split()
+    if not separator or name!=os.fsencode(relative) or len(parts)!=3 or parts[:2]!=[b'100644',b'blob'] or not re.fullmatch(b'[0-9a-f]{40}',parts[2]):raise ValueError('Reviewed citation is not a regular committed document')
+    return parts[2].decode()
+
+def load_citation_review(binding,layout,protected,kind,candidates,approval_sha):
+    if binding is None:return {}
+    if kind not in ('cleanup','future-retention'):raise ValueError('Citation review cannot qualify source-preservation references')
+    path=Path(binding['path'])
+    if path.parent!=layout.evidence or not path.name.startswith('audit30-citation-review-') or path.suffix!='.json':raise ValueError('Citation review outside durable Audit30 evidence')
+    value,h=read_json(path,binding['sha256'])
+    expected_sources=[dict(path=r['path'],head=r['git']['head'],tree=r['git']['tree']) for r in protected['sources']]
+    if value.get('schema')!='pow-audit30-historical-citation-review-v1' or value.get('host')!='77.42.91.106' or value.get('scopeApprovalSha256')!=approval_sha or value.get('operationKind')!=kind or value.get('candidatePaths')!=candidates or value.get('protectedSources')!=expected_sources:raise ValueError('Citation review scope/source/approval binding differs')
+    evidence=value.get('reviewEvidence',[])
+    if not evidence or len(evidence)>8 or len({r['path'] for r in evidence})!=len(evidence):raise ValueError('Citation semantic-review evidence missing/duplicated')
+    for r in evidence:
+        p=Path(r['path'])
+        if p.parent!=layout.evidence or not p.name.startswith('audit30-') or p==path or hash_read(p,MAX_JSON)[0]!=r['sha256']:raise ValueError('Citation semantic-review evidence binding differs')
+    sources={r['path']:r for r in expected_sources}
+    for r in expected_sources:
+        actual=source_pointers(Path(r['path']))
+        if actual['head']!=r['head'] or actual['tree']!=r['tree']:raise ValueError('Reviewed protected source HEAD/tree changed')
+    files=value.get('files',[])
+    if not files or len(files)>64:raise ValueError('Citation review must enumerate bounded exact documents')
+    out={}
+    for r in files:
+        source=sources.get(r.get('sourcePath'));relative=r.get('relativePath','');parts=relative.split('/')
+        allowed=relative=='OP_RETURN_INFRASTRUCTURE.md' or len(parts)==2 and parts[0]=='audits' and re.fullmatch(r'[A-Za-z0-9._-]+\.(md|json)',parts[1])
+        if source is None or not allowed:raise ValueError('Citation review file is not an allowed protected-source document')
+        p=Path(source['path'])/relative
+        if str(p) in out:raise ValueError('Duplicate reviewed citation document')
+        sha,raw=hash_read(p,1024**2,True)
+        blob=hashlib.sha1(b'blob '+str(len(raw)).encode()+b'\0'+raw).hexdigest()
+        if sha!=r.get('sha256') or type(r.get('bytes')) is not int or len(raw)!=r['bytes'] or blob!=r.get('gitBlobSha1') or git_document_blob(Path(source['path']),relative,source['head'])!=blob:raise ValueError('Reviewed document bytes/Git blob differ')
+        citations=r.get('citations',[])
+        if not citations or len(citations)>1024:raise ValueError('Exact historical citation occurrences required')
+        observed=path_occurrences(raw,candidates);declared=[]
+        for c in citations:
+            target=c.get('target');offset=c.get('byteOffset')
+            if target not in candidates or type(offset) is not int or offset<0 or c.get('classification')!='historical-release-evidence':raise ValueError('Unreviewed citation target/offset/classification')
+            start=raw.rfind(b'\n',0,offset)+1;end=raw.find(b'\n',offset);end=len(raw) if end<0 else end+1
+            if raw[offset:offset+len(os.fsencode(target))]!=os.fsencode(target) or c.get('line')!=raw.count(b'\n',0,offset)+1 or c.get('lineSha256')!=hashlib.sha256(raw[start:end]).hexdigest():raise ValueError('Citation occurrence/context differs')
+            declared.append((target,offset))
+        if len(set(declared))!=len(declared) or sorted(declared)!=observed:raise ValueError('Citation review does not cover every exact occurrence')
+        out[str(p)]=dict(r,sourceHead=source['head'],sourceTree=source['tree'])
+    return out
+
 def cleanup_prerequisite(path, expected, layout, approval_sha):
     value,h=read_json(path,expected)
     if value.get('schema')!='pow-audit30-ui-storage-progress-v1' or value.get('status')!='completed':raise ValueError('Completed Audit30 cleanup receipt required')
@@ -384,7 +486,7 @@ def cleanup_prerequisite(path, expected, layout, approval_sha):
     if any(os.path.lexists(p) for p in wanted):raise ValueError('A completed cleanup candidate reappeared')
     return dict(path=str(path),sha256=h,planSha256=value['planSha256'])
 
-def create_plan(layout, kind, approval_sha, policy_scope=None, prerequisite=None, inverse_receipt=None):
+def create_plan(layout, kind, approval_sha, policy_scope=None, prerequisite=None, inverse_receipt=None,citation_review=None):
     cache={}; protected=protected_pair(layout,cache); guards,review=safeguards(layout)
     plan=dict(schema='pow-audit30-exact-ui-storage-plan-v1',kind=kind,host='77.42.91.106',atUtc=utc(),scopeApprovalSha256=approval_sha,safeguards=guards,protected=protected,delete=[],moves=[],policyScope=policy_scope,capacityHelperSha256=hash_read(layout.capacity,1024**2)[0],controllerSha256=hash_read(Path(__file__).resolve(),1024**2)[0])
     if kind in ('cleanup','future-retention'):
@@ -435,7 +537,9 @@ def create_plan(layout, kind, approval_sha, policy_scope=None, prerequisite=None
             plan['moves'].append(dict(row,git=meta,snapshot=fp,allocatedBytes=int(subprocess.check_output(['/usr/bin/du','-x','-s','-B1',str(p)],timeout=30).split()[0])))
     else:raise ValueError('Unsupported operation')
     paths=[r['path'] for r in plan['delete']]+[r['source'] for r in plan['moves']]
-    plan['references']=references(paths,layout.refs+[Path(r['path']) for r in protected['sources']])
+    plan['citationReview']=citation_review
+    admitted=load_citation_review(citation_review,layout,protected,kind,[r['path'] for r in plan['delete']],approval_sha)
+    plan['references']=references(paths,layout.refs+[Path(r['path']) for r in protected['sources']],reviewed_files=admitted)
     plan['archives']=list(cache.values())
     plan['limits']='Exact snapshots and bounded pointer scan; unresolved held absences remain reported, never exempted. Existing capacities/hold/masks must stay unchanged.'
     return plan
@@ -462,6 +566,8 @@ def validate_plan(plan,layout,kind,approval_sha):
         if plan['moves']:raise ValueError('Future policy cannot relocate sources')
     else:raise ValueError('Unsupported plan kind')
     if len({r['path'] for r in plan['delete']})!=len(plan['delete']):raise ValueError('Duplicate deletion path')
+    citation=plan.get('citationReview')
+    if citation is not None and (kind not in ('cleanup','future-retention') or not isinstance(citation,dict) or set(citation)!= {'path','sha256'} or not SHA.fullmatch(citation['sha256'])):raise ValueError('Invalid citation-review plan binding')
     for row in plan['delete']+plan['moves']:
         fp=row['snapshot']
         if fp['path']!=row.get('path',row.get('source')) or digest(fp['entries'])!=fp['sha256']:raise ValueError('Malformed candidate snapshot')
@@ -513,7 +619,8 @@ def verify_plan(plan,layout,removed=None,full=True):
     if hash_read(Path(__file__).resolve(),1024**2)[0]!=plan['controllerSha256']:raise ValueError('Controller version changed since exact plan')
     if plan['kind']=='preserve-sources':cleanup_prerequisite(Path(plan['cleanupPrerequisite']['path']),plan['cleanupPrerequisite']['sha256'],layout,plan['scopeApprovalSha256'])
     paths=[r['path'] for r in plan['delete'] if os.path.lexists(r['path'])]+[r['source'] for r in plan['moves'] if os.path.lexists(r['source'])]
-    references(paths,layout.refs+[Path(r['path']) for r in plan['protected']['sources']])
+    admitted=load_citation_review(plan.get('citationReview'),layout,plan['protected'],plan['kind'],[r['path'] for r in plan['delete']],plan['scopeApprovalSha256'])
+    references(paths,layout.refs+[Path(r['path']) for r in plan['protected']['sources']],reviewed_files=admitted)
     protected=plan['protected']; cache={}
     for k in ('current','previous'):
         expected=protected[k]; actual=release_proof(Path(expected['path']),layout,cache)
@@ -617,15 +724,18 @@ def main():
     p=argparse.ArgumentParser(description=__doc__);p.add_argument('command',choices=['plan-cleanup','plan-preservation','plan-inverse','verify','apply'])
     p.add_argument('--approval',type=Path,required=True);p.add_argument('--approval-sha256',required=True);p.add_argument('--plan',type=Path);p.add_argument('--plan-sha256')
     p.add_argument('--cleanup-receipt',type=Path);p.add_argument('--cleanup-receipt-sha256');p.add_argument('--preservation-receipt',type=Path);p.add_argument('--preservation-receipt-sha256')
+    p.add_argument('--citation-review',type=Path);p.add_argument('--citation-review-sha256')
     a=p.parse_args()
     if os.geteuid()!=0:raise ValueError('Production controller requires root')
     layout=Layout();fd=lock(layout);os.nice(15)
     try:
+        if bool(a.citation_review)!=bool(a.citation_review_sha256) or a.citation_review and a.command!='plan-cleanup':raise ValueError('Citation path/SHA pair is admitted only by a cleanup plan')
         if a.command.startswith('plan-'):
             kind={'plan-cleanup':'cleanup','plan-preservation':'preserve-sources','plan-inverse':'inverse-preservation'}[a.command];approval(a.approval,a.approval_sha256,kind)
             prerequisite=dict(path=str(a.cleanup_receipt),sha256=a.cleanup_receipt_sha256) if a.cleanup_receipt and a.cleanup_receipt_sha256 else None
             inverse=dict(path=str(a.preservation_receipt),sha256=a.preservation_receipt_sha256) if a.preservation_receipt and a.preservation_receipt_sha256 else None
-            plan=create_plan(layout,kind,a.approval_sha256,prerequisite=prerequisite,inverse_receipt=inverse);print(json.dumps(plan,sort_keys=True));return
+            citation=dict(path=str(a.citation_review),sha256=a.citation_review_sha256) if a.citation_review else None
+            plan=create_plan(layout,kind,a.approval_sha256,prerequisite=prerequisite,inverse_receipt=inverse,citation_review=citation);print(json.dumps(plan,sort_keys=True));return
         if not a.plan or not a.plan_sha256:raise ValueError('Exact reviewed plan path and SHA required')
         plan,h=read_json(a.plan,a.plan_sha256)
         if plan.get('kind')=='future-retention':raise ValueError('Future plans require the per-release admission policy controller')

@@ -128,10 +128,12 @@ def policy_scope(index,layout,approval_sha):
 def main():
     p=argparse.ArgumentParser(description=__doc__);p.add_argument('command',choices=['admit-bootstrap','admit-release','plan','verify','apply'])
     p.add_argument('--approval',type=Path,required=True);p.add_argument('--approval-sha256',required=True);p.add_argument('--index',type=Path);p.add_argument('--index-sha256');p.add_argument('--record',action='store_true');p.add_argument('--plan',type=Path);p.add_argument('--plan-sha256')
+    p.add_argument('--citation-review',type=Path);p.add_argument('--citation-review-sha256')
     a=p.parse_args()
     if os.geteuid()!=0:raise ValueError('Production policy requires root')
     layout=S.Layout();fd=S.lock(layout);os.nice(15)
     try:
+        if bool(a.citation_review)!=bool(a.citation_review_sha256) or a.citation_review and a.command!='plan':raise ValueError('Citation path/SHA pair is admitted only by a policy plan')
         S.approval(a.approval,a.approval_sha256,a.command if a.command.startswith('admit-') else 'future-retention')
         index=dict(path=str(a.index),sha256=a.index_sha256) if a.index and a.index_sha256 else None
         if a.command.startswith('admit-'):
@@ -142,7 +144,9 @@ def main():
             print(json.dumps(dict(status='admitted',path=str(target),sha256=S.hash_read(target,S.MAX_JSON)[0],ordinaryPruneMasksUnchanged=True)));return
         if not index:raise ValueError('Exact admission index SHA required')
         scope=policy_scope(index,layout,a.approval_sha256)
-        if a.command=='plan':print(json.dumps(S.create_plan(layout,'future-retention',a.approval_sha256,scope),sort_keys=True));return
+        if a.command=='plan':
+            citation=dict(path=str(a.citation_review),sha256=a.citation_review_sha256) if a.citation_review else None
+            print(json.dumps(S.create_plan(layout,'future-retention',a.approval_sha256,scope,citation_review=citation),sort_keys=True));return
         if not a.plan or not a.plan_sha256:raise ValueError('Exact future plan SHA required')
         plan,h=S.read_json(a.plan,a.plan_sha256);S.validate_plan(plan,layout,'future-retention',a.approval_sha256)
         if plan['policyScope']!=scope:raise ValueError('Fresh eligible per-release scope changed')

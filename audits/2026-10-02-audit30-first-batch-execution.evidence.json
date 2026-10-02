@@ -3,6 +3,7 @@
     "path": "audits/2026-10-02-audit30-first-batch-approval.json",
     "sha256": "d99a40236b49b1735c794fb853c4f7f4f0724da8e3f83fab75c7464e0e8ee373"
   },
+  "implementationCommit": "c648312e6fcab6c734f9d3802f8f3a8d5f5c72ae",
   "independentReviews": [
     {
       "bytes": 5034,
@@ -207,10 +208,165 @@
       },
       "path": "/tmp/pow-audit30-ui-release-independent-review.json",
       "sha256": "a6a37c9458a785857c5967be371077d39bd7be063261821667e144f7cf287ae8"
+    },
+    {
+      "bytes": 9664,
+      "content": {
+        "atUtc": "2026-10-02T20:19:27.949085+00:00",
+        "canonicalDependencyParity": {
+          "canonicalScriptSha256": "4e083a179a305907760ffe36f6ad00aef9a441279898b903171edea54cb1b9d6",
+          "comparison": "Actual canonical Python heredoc execution equals storage snapshot hashing; same parity is now a durable test.",
+          "entryCount": 7,
+          "gid": 1000,
+          "regularBytes": 22,
+          "rootIncluded": true,
+          "sha256": "6f17f895f60abdcd311f44782a74945f0591ec2fab36b7db4071447ff927ca7c",
+          "uid": 1000,
+          "vector": "node_modules755; directories a755 and \u00e9755; a/binary644 bytes00ff0a; tool755 bytes#!/bin/sh\\n; \u00e9/file644 bytesutf8-dir\\n; relative symlink to a/binary"
+        },
+        "filesSha256": {
+          "deploy/audit30/STORAGE.md": "87eadb3f18517c8e852253eb9aa18e5e8952654eeb40684c93132a94fa5ff1e6",
+          "deploy/audit30/check-install-retention.test.py": "002a2fbda8b5e1e036a1d03ad62d0a797657987ab04ed66daf06c12ada8ba936",
+          "deploy/audit30/check-ui-storage.test.py": "fe85868e142ebb544c3c83a00549b8e8de2fb457ae5ac566bdab5147714e1dbd",
+          "deploy/audit30/install-retention.py": "cd9c266e938d22949c9f0c6a48853933d9bcbb58368071b2da4027f13411eaa5",
+          "deploy/audit30/storage-operator.py": "930b99da6f83dc4633084ef538c1185f8ef6f89710bcc2a48357f72e0718fbb4",
+          "deploy/audit30/ui-release-policy.py": "f023bd536223437dd2dce5ece6c4c4995cd9d63c648b7fe2f9eabc354a10f22d",
+          "deploy/audit30/ui-storage.py": "038a2315c4ba5d10e27335a69c400f6c09ec3c2b50b0f64fefb1f5f09d6a06c2",
+          "deploy/proofofwork-ui-release-provenance.sh": "4e083a179a305907760ffe36f6ad00aef9a441279898b903171edea54cb1b9d6",
+          "scripts/check-retention-service-namespace.py": "c8325a808f01d89f49949a9681485997b0d342bcaed6a698f41eb522a9482536"
+        },
+        "historicalCitationReview": {
+          "actualGitBlobValidation": "Independent git show at both actual265/835 commits verified every complete document bytecount/SHA256/GitblobSHA1 and all26 exacttarget/offset/line/newline-inclusive lineSHA256 occurrences. Context is historical deployment archive/rollback statements and past release preflight/transport/publication/postflight evidence.",
+          "candidatePathCount": 40,
+          "citationCount": 26,
+          "committedDocumentCount": 4,
+          "controls": [
+            "Review optional; default every reference refuses.",
+            "Exact host/approval/operation/ordered candidates/protected source HEAD-tree/review-evidence SHA.",
+            "Only committed100644 protected-source infrastructure/audit documents; complete SHA256/Gitblob/bytes and every declared occurrence/context rechecked before every action.",
+            "Mixed live/config/operator/proc/symlink/document-alias references refuse; malformed or stale reviews refuse.",
+            "Preservation/inverse do not admit citation qualification; independently confirmed refusal before file read.",
+            "Postpublication future policy requires fresh exact candidate/source review, cannot reuse cleanup template.",
+            "All complete source/dependency/root/archive/hold/mask/lock/capacity protections remain."
+          ],
+          "findingAndCorrection": {
+            "correctedControllerSha256": "038a2315c4ba5d10e27335a69c400f6c09ec3c2b50b0f64fefb1f5f09d6a06c2",
+            "correction": "Full symlink chains to admitted documents/source directories, live process FD/cwd/exe aliases and unqualified proc/config textual document paths refuse, including empty remaining retirement paths. Only exact direct protected-source historical file content qualifies.",
+            "finding": "A config symlink to a reviewed protected-source document was accepted because only retirement candidate paths were checked as symlink targets. Source scan then qualified its candidate text.",
+            "independentPostCorrectionReproducer": {
+              "formerlyAcceptedConfigSymlinkToReviewedDocNowRefused": true
+            },
+            "independentPreCorrectionReproducer": {
+              "configSymlinkToReviewedDocAccepted": true,
+              "qualifiedHistoricalMatches": 1
+            },
+            "preCorrectionControllerSha256": "3570893990da94d3b28e63d668e051b92745582bc1c78c94d78e20bdf4001574",
+            "productionImpact": "Pre-correction357 controller was not uploaded; no production mutation by reviewer."
+          },
+          "protectedSources": [
+            {
+              "head": "26500e4d2ff743d65a0ca2b4dc06bbd5f62b27ea",
+              "path": "/var/tmp/proofofwork-deploy/proofofwork-ui-source-26500e4d2ff7-20261002T054938Z",
+              "tree": "1d13d6263b992403c1d58f334c4adc42e3c6d85b"
+            },
+            {
+              "head": "835e30258d23eb6c5261e41159fec8e3b3245d6e",
+              "path": "/var/tmp/proofofwork-deploy/proofofwork-ui-source-835e30258d23-20261002T052338Z",
+              "tree": "ed333d82d474456bd88b88d03d4a134385c31328"
+            }
+          ],
+          "qualification": "Textual scan stays bounded to enumerated roots:1MiB per file,1GiB total,100000entries; larger files and object/dependency payloads explicitly excluded from textual scan but preserved/hashed. No universal absence claim.",
+          "semanticReviewSha256": "557ce318a26a83c40c1852976a7e2e3564aed6dd64e74e95798f567de2327dea",
+          "status": "accepted-after-alias-correction",
+          "templateSha256": "7ab7af92e4c6e2aced3ab8106639ca2434e8194f1cdf2d07616bc08c6f7715db"
+        },
+        "releaseDependencies": [
+          "Root must update storage-operator.py PINS from old source hashes to accepted controller038a2315\u2026 and policyf023bd53\u2026, then prepare fresh package/pins. The currently recorded operator hash is inspected argument wiring with intentionally old fail-closed PINS, not a production-ready package.",
+          "Root creation-only upload of exact citation manifest and semantic evidence; fresh full locked production plan and manual review before approved apply; fresh completion receipts."
+        ],
+        "remainingLimits": [
+          "This receipt does not establish production installation, cleanup, preservation, bootstrap/admission or fee publication completion.",
+          "Production acceptance requires successful command exit, fresh bytes/modes/authority/hold verification and reconciled failure/completion receipts.",
+          "SIGKILL/powerloss/physical evidence-write or rollback-write failure needs durable intent, preserved bytes and explicit manual reconciliation.",
+          "Pointer scan is bounded to enumerated roots and live pointers; textualfiles above1MiB and Gitobject/dependency payloads are separately preserved/hashed, not searched as universal references.",
+          "Preservation reclassifies allocation and does not free root disk bytes; future policy is opt-in and requires per-publication admission/application."
+        ],
+        "reviewer": "math_review",
+        "reviewerProductionMutations": false,
+        "schema": "proof-of-work-audit30-independent-first-batch-review-v1",
+        "status": "local-review-accepted-not-production-completion",
+        "tests": [
+          {
+            "command": "python3 -I -B deploy/audit30/check-install-retention.test.py",
+            "count": 19,
+            "log": "/tmp/pow-audit30-install-retention-tests.log",
+            "logSha256": "9462c085f2b4f9d254437f726e3d1480c23a80534aa5dac01bceec6a3069f644",
+            "result": "PASS"
+          },
+          {
+            "command": "python3 -I -B scripts/check-retention-service-namespace.py",
+            "count": 6,
+            "log": "/tmp/pow-audit30-retention-service-namespace-tests.log",
+            "logSha256": "7b7c9db1e822e2185b85f54a6d28dc97b3e81f7af9ce51da387b02ce05317831",
+            "result": "PASS"
+          },
+          {
+            "command": "python3 -I -B deploy/audit30/check-ui-storage.test.py",
+            "count": 36,
+            "log": "/tmp/pow-audit30-ui-storage-independent.log",
+            "logSha256": "9af868d0e8c8f2ddd7c54b1afe9cd59fdbdd44c9c60c4fd72613b303115aa0dd",
+            "result": "PASS",
+            "seconds": 17.319
+          }
+        ],
+        "verifiedScope": [
+          "Installer writes only exact checker+role service; prior bytes/modes backed up before rename; only daemon-reload; hold/prune/authority/backup/WAL states preserved.",
+          "UI original20 or exact separately approved60 bytes only; node exact20; missing/tampered/scope-altered approval refuses before mutation.",
+          "Effective UI1min is accepted as observed systemd spelling of approved60s; unit source60s and direct timeout60 remain unchanged; node20 exact.",
+          "Fixed40-path cleanup; complete retained current/prior16-surface/root/archive/source/Git/dependency proofs, hardlink accounting, pointer/hold/capacity/inode safeguards.",
+          "Three exact whole-source same-filesystem no-overwrite renames preserve complete bytes/inodes/metadata/xattrs/history/runtime; completedcleanup prerequisite and inverse plans checked.",
+          "Read-only Git proof rejects clean/process/diff external helpers, absolute/includes/worktrees/alternates/shallow/promisor dependencies and index flags before status.",
+          "Actual SIGTERM immediately after real source rename yields inverse-usable failed receipt; source inverse restores originals.",
+          "Future policy requires explicit immutable ordinary admissions and fresh exact plans; source/input/transport/evidence/historical holds remain excluded; traditional prune timers remain masked.",
+          "Actual namespace verification collects current systemd InvocationID and requires exact journal+checker receipt equality; missing/different current IDs refuse for both roles.",
+          "Canonical private archive wrapper compatibility: required outer surfaces directory accepts only0700/0755 with ownerUID/GID; all rendered directories remain0755/full root inventory proof. Independently inspected current265 local production archive headers: surfaces0700 UID/GID0, rendered directories0755, files0644.",
+          "Optional historical citation classification accepted only after exact actual committed-blob/semantic-context verification and alias-guard correction. Original citation documents remain unchanged; only reviewed archival references qualify."
+        ]
+      },
+      "path": "/tmp/pow-audit30-independent-first-batch-review.json",
+      "sha256": "00b8466a0f8dcd914d0bcb8c55726980c958a0ff74eee902ac4703317f735f3d"
     }
   ],
   "items": {
     "1": {
+      "firstCoherentBuild": {
+        "buildLogSha256": "54df18405dc4e2d7f15c5dcbe015c16d029976975ca77ba70375aaf21865c929",
+        "qualification": "Storage scanner correction requires a later reviewed source commit. This build is not deployment evidence.",
+        "receipt": {
+          "buildRoot": "/tmp/proofofwork-ui-release.KBjMbWcHLf",
+          "bundles": {
+            "source": {
+              "bytes": 98256826,
+              "path": "/tmp/proofofwork-ui-release.KBjMbWcHLf/proofofwork-ui-source-c648312e6fca-20261002T195817Z.tgz",
+              "sha256": "676d670de5a7e353c3876b02aae560c0f10f84377a67b6ea264ce7785d3e2e8c"
+            },
+            "surfaces": {
+              "bytes": 195295505,
+              "path": "/tmp/proofofwork-ui-release.KBjMbWcHLf/proofofwork-ui-surfaces-c648312e6fca-20261002T195817Z.tgz",
+              "sha256": "d07aa1663fc23a4263f62073e5a9039beda1086fdf40b367fd9d6842d3653f7e"
+            }
+          },
+          "commit": "c648312e6fcab6c734f9d3802f8f3a8d5f5c72ae",
+          "node": "/usr/bin/node",
+          "nodeVersion": "v22.23.3",
+          "receipt": "/tmp/proofofwork-ui-release.KBjMbWcHLf/build-receipt.json",
+          "releaseId": "c648312e6fca-20261002T195817Z",
+          "sourceAllocatedBytes": 261681152,
+          "status": "built",
+          "tree": "0278031c912462db45dd7bd0a34e6e3b9774e543"
+        },
+        "status": "built-not-published"
+      },
       "localBrowser": {
         "bytes": 1476,
         "content": {
@@ -1574,6 +1730,1574 @@
       }
     },
     "3": {
+      "aliasCorrection": {
+        "controllerSha256": "038a2315c4ba5d10e27335a69c400f6c09ec3c2b50b0f64fefb1f5f09d6a06c2",
+        "fixtureCount": 36,
+        "independentReviewers": [
+          "integrity",
+          "math_review"
+        ],
+        "productionMutation": false,
+        "review": {
+          "bytes": 2034,
+          "content": {
+            "cases": 18,
+            "controllerSha256": "038a2315c4ba5d10e27335a69c400f6c09ec3c2b50b0f64fefb1f5f09d6a06c2",
+            "format": "pow-audit30-independent-citation-alias-repro-v1",
+            "localOnly": true,
+            "ok": true,
+            "results": [
+              {
+                "case": "pure exact historical document",
+                "outcome": "accepted-expected",
+                "qualified": 1
+              },
+              {
+                "case": "direct document symlink",
+                "outcome": "refused-expected"
+              },
+              {
+                "case": "outside-scan chain symlink",
+                "outcome": "refused-expected"
+              },
+              {
+                "case": "whole source directory alias",
+                "outcome": "refused-expected"
+              },
+              {
+                "case": "nested document parent alias",
+                "outcome": "refused-expected"
+              },
+              {
+                "case": "hardlinked operator document",
+                "outcome": "refused-expected"
+              },
+              {
+                "case": "textual operator document path",
+                "outcome": "refused-expected"
+              },
+              {
+                "case": "textual operator path after all candidates gone",
+                "outcome": "refused-expected"
+              },
+              {
+                "case": "process FD direct document",
+                "outcome": "refused-expected"
+              },
+              {
+                "case": "process FD outside chain",
+                "outcome": "refused-expected"
+              },
+              {
+                "case": "process source cwd alias",
+                "outcome": "refused-expected"
+              },
+              {
+                "case": "process nested document parent cwd",
+                "outcome": "refused-expected"
+              },
+              {
+                "case": "process executable alias",
+                "outcome": "refused-expected"
+              },
+              {
+                "case": "process cmdline textual document",
+                "outcome": "refused-expected"
+              },
+              {
+                "case": "process maps textual document",
+                "outcome": "refused-expected"
+              },
+              {
+                "case": "process mountinfo textual document",
+                "outcome": "refused-expected"
+              },
+              {
+                "case": "process document mapping after all candidates gone",
+                "outcome": "refused-expected"
+              },
+              {
+                "case": "ordinary process filesystem root allowed",
+                "outcome": "accepted-expected",
+                "qualified": 1
+              }
+            ]
+          },
+          "path": "/tmp/pow-audit30-independent-citation-alias-repro-result.json",
+          "sha256": "ec8a917eb7a0972169ab67eb8be15ed00877463f0052c7fb50d1c735d05da2bb"
+        }
+      },
+      "citationManifest": {
+        "independentProtectedIdentity": {
+          "bytes": 3441,
+          "content": {
+            "format": "pow-audit30-independent-protected-source-identity-v1",
+            "readOnly": true,
+            "rows": [
+              {
+                "documents": [
+                  {
+                    "bytes": 394526,
+                    "committedTreeEntry": "100644 blob b7f5907de888360c16462fc18afe8f739a5dc7d0\tOP_RETURN_INFRASTRUCTURE.md",
+                    "gitBlobSha1": "b7f5907de888360c16462fc18afe8f739a5dc7d0",
+                    "relativePath": "OP_RETURN_INFRASTRUCTURE.md",
+                    "sha256": "ea3f3581f033e8fb24eec0d00bb351eb5ab843497a811ccad80fd8c0710d1419"
+                  },
+                  {
+                    "bytes": 107399,
+                    "committedTreeEntry": "100644 blob fecfe3c2d0b13c4da4ad2d3d4d09fa26df63c7c5\taudits/2026-10-01-recursive-assurance-batch-1.evidence.json",
+                    "gitBlobSha1": "fecfe3c2d0b13c4da4ad2d3d4d09fa26df63c7c5",
+                    "relativePath": "audits/2026-10-01-recursive-assurance-batch-1.evidence.json",
+                    "sha256": "28eca227e456be86d42d4906776f0c6ca6120f56da619b911801e14be158bdd1"
+                  }
+                ],
+                "fields": {
+                  "archive_name": "proofofwork-ui-release-26500e4d2ff7-20261002T054938Z.tgz",
+                  "archive_sha256": "fa49655b7e09949b82eed67da5d0dae7ef1758a46f21c90e21d0da8f6136740c",
+                  "commit": "26500e4d2ff743d65a0ca2b4dc06bbd5f62b27ea",
+                  "release_id": "26500e4d2ff7-20261002T054938Z",
+                  "source_attestation": "detached-recursive-git-tree-v1",
+                  "source_dependency_bytes": "160954989",
+                  "source_dependency_entry_count": "6118",
+                  "source_dependency_model": "node-modules-recursive-v1",
+                  "source_dependency_sha256": "74d54e7c58f15d225603104316eab06748209b85c6e2c27f8457ee6967f9b811",
+                  "source_tree": "1d13d6263b992403c1d58f334c4adc42e3c6d85b"
+                },
+                "head": "26500e4d2ff743d65a0ca2b4dc06bbd5f62b27ea",
+                "manifestSha256": "62c9c67a71f7f0366db1e240774780cf5c5df93e2161518c84ce0c0b054d289d",
+                "root": "/var/www",
+                "sourcePath": "/var/tmp/proofofwork-deploy/proofofwork-ui-source-26500e4d2ff7-20261002T054938Z",
+                "tree": "1d13d6263b992403c1d58f334c4adc42e3c6d85b"
+              },
+              {
+                "documents": [
+                  {
+                    "bytes": 394526,
+                    "committedTreeEntry": "100644 blob b7f5907de888360c16462fc18afe8f739a5dc7d0\tOP_RETURN_INFRASTRUCTURE.md",
+                    "gitBlobSha1": "b7f5907de888360c16462fc18afe8f739a5dc7d0",
+                    "relativePath": "OP_RETURN_INFRASTRUCTURE.md",
+                    "sha256": "ea3f3581f033e8fb24eec0d00bb351eb5ab843497a811ccad80fd8c0710d1419"
+                  },
+                  {
+                    "bytes": 107399,
+                    "committedTreeEntry": "100644 blob fecfe3c2d0b13c4da4ad2d3d4d09fa26df63c7c5\taudits/2026-10-01-recursive-assurance-batch-1.evidence.json",
+                    "gitBlobSha1": "fecfe3c2d0b13c4da4ad2d3d4d09fa26df63c7c5",
+                    "relativePath": "audits/2026-10-01-recursive-assurance-batch-1.evidence.json",
+                    "sha256": "28eca227e456be86d42d4906776f0c6ca6120f56da619b911801e14be158bdd1"
+                  }
+                ],
+                "fields": {
+                  "archive_name": "proofofwork-ui-release-835e30258d23-20261002T052338Z.tgz",
+                  "archive_sha256": "01ba8b4aae057470e03fb0435b148bc267864cd0677359fb76dcc238e5dcc664",
+                  "commit": "835e30258d23eb6c5261e41159fec8e3b3245d6e",
+                  "release_id": "835e30258d23-20261002T052338Z",
+                  "source_attestation": "detached-recursive-git-tree-v1",
+                  "source_dependency_bytes": "160954989",
+                  "source_dependency_entry_count": "6118",
+                  "source_dependency_model": "node-modules-recursive-v1",
+                  "source_dependency_sha256": "74d54e7c58f15d225603104316eab06748209b85c6e2c27f8457ee6967f9b811",
+                  "source_tree": "ed333d82d474456bd88b88d03d4a134385c31328"
+                },
+                "head": "835e30258d23eb6c5261e41159fec8e3b3245d6e",
+                "manifestSha256": "d25bf8d360b04d15c0ebfed5b4108f36f768759cd433f5b3a24e2ee2d5f6d1cb",
+                "root": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-26500e4d2ff7-20261002T054938Z",
+                "sourcePath": "/var/tmp/proofofwork-deploy/proofofwork-ui-source-835e30258d23-20261002T052338Z",
+                "tree": "ed333d82d474456bd88b88d03d4a134385c31328"
+              }
+            ]
+          },
+          "path": "/tmp/pow-audit30-citation-protected-identity.json",
+          "sha256": "cbb27790d0b7ecdf18330a1fa649088b525222f1327f6f136c72dd90227b33e1"
+        },
+        "independentReview": {
+          "bytes": 9666,
+          "content": {
+            "candidateCount": 40,
+            "checks": [
+              {
+                "name": "frozen-scope-sha",
+                "ok": true
+              },
+              {
+                "name": "manifest-identity",
+                "ok": true
+              },
+              {
+                "name": "exact-ordered-candidates",
+                "ok": true
+              },
+              {
+                "name": "exact-protected-sources",
+                "ok": true
+              },
+              {
+                "name": "two-unique-protected-sources",
+                "ok": true
+              },
+              {
+                "name": "source-tree-/var/tmp/proofofwork-deploy/proofofwork-ui-source-26500e4d2ff7-20261002T054938Z",
+                "ok": true
+              },
+              {
+                "name": "source-path-name-/var/tmp/proofofwork-deploy/proofofwork-ui-source-26500e4d2ff7-20261002T054938Z",
+                "ok": true
+              },
+              {
+                "name": "source-tree-/var/tmp/proofofwork-deploy/proofofwork-ui-source-835e30258d23-20261002T052338Z",
+                "ok": true
+              },
+              {
+                "name": "source-path-name-/var/tmp/proofofwork-deploy/proofofwork-ui-source-835e30258d23-20261002T052338Z",
+                "ok": true
+              },
+              {
+                "name": "single-exact-semantic-evidence",
+                "ok": true
+              },
+              {
+                "name": "semantic-evidence-bytes",
+                "ok": true
+              },
+              {
+                "name": "semantic-probe-binding",
+                "ok": true
+              },
+              {
+                "name": "original-probe-complete-within-defined-scope",
+                "ok": true
+              },
+              {
+                "name": "document-allowlist-0",
+                "ok": true
+              },
+              {
+                "name": "document-unique-0",
+                "ok": true
+              },
+              {
+                "name": "committed-regular-mode-0",
+                "ok": true
+              },
+              {
+                "name": "full-gitblob-bytes-0",
+                "ok": true
+              },
+              {
+                "name": "every-literal-occurrence-offset-context-0",
+                "ok": true
+              },
+              {
+                "name": "live-probed-file-bytes-0",
+                "ok": true
+              },
+              {
+                "name": "probe-count-lines-0-/var/backups/proofofwork-ui/releases/proofofwork-ui-release-d2636f6fb3c5-20261002T023421Z.tgz",
+                "ok": true
+              },
+              {
+                "name": "probe-count-lines-0-/var/backups/proofofwork-ui/releases/proofofwork-ui-release-d4d888757a1c-20261002T013828Z.tgz",
+                "ok": true
+              },
+              {
+                "name": "probe-count-lines-0-/var/backups/proofofwork-ui/releases/proofofwork-ui-release-df4d56da93ce-20261002T042258Z.tgz",
+                "ok": true
+              },
+              {
+                "name": "probe-count-lines-0-/var/backups/proofofwork-ui/releases/proofofwork-ui-release-f81ae55bf4b0-20261002T031600Z.tgz",
+                "ok": true
+              },
+              {
+                "name": "probe-count-lines-0-/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-d2636f6fb3c5-20261002T023421Z",
+                "ok": true
+              },
+              {
+                "name": "probe-count-lines-0-/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-d4d888757a1c-20261002T013828Z",
+                "ok": true
+              },
+              {
+                "name": "probe-count-lines-0-/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-df4d56da93ce-20261002T042258Z",
+                "ok": true
+              },
+              {
+                "name": "probe-count-lines-0-/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-f81ae55bf4b0-20261002T031600Z",
+                "ok": true
+              },
+              {
+                "name": "probe-target-completeness-0",
+                "ok": true
+              },
+              {
+                "name": "document-allowlist-1",
+                "ok": true
+              },
+              {
+                "name": "document-unique-1",
+                "ok": true
+              },
+              {
+                "name": "committed-regular-mode-1",
+                "ok": true
+              },
+              {
+                "name": "full-gitblob-bytes-1",
+                "ok": true
+              },
+              {
+                "name": "every-literal-occurrence-offset-context-1",
+                "ok": true
+              },
+              {
+                "name": "live-probed-file-bytes-1",
+                "ok": true
+              },
+              {
+                "name": "probe-count-lines-1-/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-527e4cbaa66f-20261001T062733Z",
+                "ok": true
+              },
+              {
+                "name": "probe-count-lines-1-/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-dbfa88b95819-20261001T134456Z",
+                "ok": true
+              },
+              {
+                "name": "probe-target-completeness-1",
+                "ok": true
+              },
+              {
+                "name": "document-allowlist-2",
+                "ok": true
+              },
+              {
+                "name": "document-unique-2",
+                "ok": true
+              },
+              {
+                "name": "committed-regular-mode-2",
+                "ok": true
+              },
+              {
+                "name": "full-gitblob-bytes-2",
+                "ok": true
+              },
+              {
+                "name": "every-literal-occurrence-offset-context-2",
+                "ok": true
+              },
+              {
+                "name": "live-probed-file-bytes-2",
+                "ok": true
+              },
+              {
+                "name": "probe-count-lines-2-/var/backups/proofofwork-ui/releases/proofofwork-ui-release-d2636f6fb3c5-20261002T023421Z.tgz",
+                "ok": true
+              },
+              {
+                "name": "probe-count-lines-2-/var/backups/proofofwork-ui/releases/proofofwork-ui-release-d4d888757a1c-20261002T013828Z.tgz",
+                "ok": true
+              },
+              {
+                "name": "probe-count-lines-2-/var/backups/proofofwork-ui/releases/proofofwork-ui-release-df4d56da93ce-20261002T042258Z.tgz",
+                "ok": true
+              },
+              {
+                "name": "probe-count-lines-2-/var/backups/proofofwork-ui/releases/proofofwork-ui-release-f81ae55bf4b0-20261002T031600Z.tgz",
+                "ok": true
+              },
+              {
+                "name": "probe-count-lines-2-/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-d2636f6fb3c5-20261002T023421Z",
+                "ok": true
+              },
+              {
+                "name": "probe-count-lines-2-/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-d4d888757a1c-20261002T013828Z",
+                "ok": true
+              },
+              {
+                "name": "probe-count-lines-2-/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-df4d56da93ce-20261002T042258Z",
+                "ok": true
+              },
+              {
+                "name": "probe-count-lines-2-/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-f81ae55bf4b0-20261002T031600Z",
+                "ok": true
+              },
+              {
+                "name": "probe-target-completeness-2",
+                "ok": true
+              },
+              {
+                "name": "document-allowlist-3",
+                "ok": true
+              },
+              {
+                "name": "document-unique-3",
+                "ok": true
+              },
+              {
+                "name": "committed-regular-mode-3",
+                "ok": true
+              },
+              {
+                "name": "full-gitblob-bytes-3",
+                "ok": true
+              },
+              {
+                "name": "every-literal-occurrence-offset-context-3",
+                "ok": true
+              },
+              {
+                "name": "live-probed-file-bytes-3",
+                "ok": true
+              },
+              {
+                "name": "probe-count-lines-3-/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-527e4cbaa66f-20261001T062733Z",
+                "ok": true
+              },
+              {
+                "name": "probe-count-lines-3-/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-dbfa88b95819-20261001T134456Z",
+                "ok": true
+              },
+              {
+                "name": "probe-target-completeness-3",
+                "ok": true
+              },
+              {
+                "name": "full-four-file-probe-census",
+                "ok": true
+              },
+              {
+                "name": "26-occurrences-10-targets",
+                "ok": true
+              },
+              {
+                "name": "reviewed-semantic-historical-only",
+                "ok": true
+              }
+            ],
+            "distinctTargetCount": 10,
+            "documentCount": 4,
+            "documents": [
+              {
+                "bytes": 394526,
+                "gitBlobSha1": "b7f5907de888360c16462fc18afe8f739a5dc7d0",
+                "occurrences": 8,
+                "relativePath": "OP_RETURN_INFRASTRUCTURE.md",
+                "sha256": "ea3f3581f033e8fb24eec0d00bb351eb5ab843497a811ccad80fd8c0710d1419",
+                "sourcePath": "/var/tmp/proofofwork-deploy/proofofwork-ui-source-26500e4d2ff7-20261002T054938Z"
+              },
+              {
+                "bytes": 107399,
+                "gitBlobSha1": "fecfe3c2d0b13c4da4ad2d3d4d09fa26df63c7c5",
+                "occurrences": 5,
+                "relativePath": "audits/2026-10-01-recursive-assurance-batch-1.evidence.json",
+                "sha256": "28eca227e456be86d42d4906776f0c6ca6120f56da619b911801e14be158bdd1",
+                "sourcePath": "/var/tmp/proofofwork-deploy/proofofwork-ui-source-26500e4d2ff7-20261002T054938Z"
+              },
+              {
+                "bytes": 394526,
+                "gitBlobSha1": "b7f5907de888360c16462fc18afe8f739a5dc7d0",
+                "occurrences": 8,
+                "relativePath": "OP_RETURN_INFRASTRUCTURE.md",
+                "sha256": "ea3f3581f033e8fb24eec0d00bb351eb5ab843497a811ccad80fd8c0710d1419",
+                "sourcePath": "/var/tmp/proofofwork-deploy/proofofwork-ui-source-835e30258d23-20261002T052338Z"
+              },
+              {
+                "bytes": 107399,
+                "gitBlobSha1": "fecfe3c2d0b13c4da4ad2d3d4d09fa26df63c7c5",
+                "occurrences": 5,
+                "relativePath": "audits/2026-10-01-recursive-assurance-batch-1.evidence.json",
+                "sha256": "28eca227e456be86d42d4906776f0c6ca6120f56da619b911801e14be158bdd1",
+                "sourcePath": "/var/tmp/proofofwork-deploy/proofofwork-ui-source-835e30258d23-20261002T052338Z"
+              }
+            ],
+            "format": "pow-audit30-independent-historical-citation-review-v1",
+            "manifestPath": "/tmp/pow-audit30-citation-review-v1-template.json",
+            "manifestSha256": "7ab7af92e4c6e2aced3ab8106639ca2434e8194f1cdf2d07616bc08c6f7715db",
+            "occurrenceCount": 26,
+            "ok": true,
+            "preflightSha256": "4259e676f321e17cc399a5223ecba46d765df4e31355b608cc0e12f8f86e3a4a",
+            "productionIdentityReceiptSha256": "cbb27790d0b7ecdf18330a1fa649088b525222f1327f6f136c72dd90227b33e1",
+            "protectedSources": [
+              {
+                "head": "26500e4d2ff743d65a0ca2b4dc06bbd5f62b27ea",
+                "path": "/var/tmp/proofofwork-deploy/proofofwork-ui-source-26500e4d2ff7-20261002T054938Z",
+                "tree": "1d13d6263b992403c1d58f334c4adc42e3c6d85b"
+              },
+              {
+                "head": "835e30258d23eb6c5261e41159fec8e3b3245d6e",
+                "path": "/var/tmp/proofofwork-deploy/proofofwork-ui-source-835e30258d23-20261002T052338Z",
+                "tree": "ed333d82d474456bd88b88d03d4a134385c31328"
+              }
+            ],
+            "qualification": "Exact hash-bound historical citations only; no exemption for live config/process/operator/symlink pointers. Actual protected production source identities are bound by a separate read-only receipt and each controller action. Textual scan excludes regular files above1MiB and dependency/object payload directories.",
+            "sourceIdentityBoundToCurrentAndPriorManifests": true
+          },
+          "path": "/tmp/pow-audit30-independent-citation-review-result.json",
+          "sha256": "4dc4d38836f11eaf7f48a29c1817f964d0c2a39bd99b15a69ecd298480d87d0e"
+        },
+        "productionStatus": "created-exact-root-owned-0600",
+        "remotePath": "/var/backups/proofofwork-ui/cleanup-evidence/audit30-citation-review-v1.json",
+        "review": {
+          "bytes": 15622,
+          "content": {
+            "candidatePaths": [
+              "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-04927c291bf4-20261001T150448Z",
+              "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-527e4cbaa66f-20261001T062733Z",
+              "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-53b5b428e864-20261001T201028Z",
+              "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-835e30258d23-20261002T052338Z",
+              "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-d2636f6fb3c5-20261002T023421Z",
+              "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-d4d888757a1c-20261002T013828Z",
+              "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-dbfa88b95819-20261001T134456Z",
+              "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-df4d56da93ce-20261002T042258Z",
+              "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-ed838d5c8691-20261001T210406Z",
+              "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-f81ae55bf4b0-20261002T031600Z",
+              "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-04927c291bf4-20261001T150448Z.tgz",
+              "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-04927c291bf4-20261001T150448Z.tgz.sha256",
+              "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-04927c291bf4-20261001T150448Z.tgz.provenance",
+              "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-527e4cbaa66f-20261001T062733Z.tgz",
+              "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-527e4cbaa66f-20261001T062733Z.tgz.sha256",
+              "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-527e4cbaa66f-20261001T062733Z.tgz.provenance",
+              "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-53b5b428e864-20261001T201028Z.tgz",
+              "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-53b5b428e864-20261001T201028Z.tgz.sha256",
+              "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-53b5b428e864-20261001T201028Z.tgz.provenance",
+              "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-9d46289661d5-20261001T023414Z.tgz",
+              "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-9d46289661d5-20261001T023414Z.tgz.sha256",
+              "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-9d46289661d5-20261001T023414Z.tgz.provenance",
+              "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-d2636f6fb3c5-20261002T023421Z.tgz",
+              "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-d2636f6fb3c5-20261002T023421Z.tgz.sha256",
+              "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-d2636f6fb3c5-20261002T023421Z.tgz.provenance",
+              "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-d4d888757a1c-20261002T013828Z.tgz",
+              "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-d4d888757a1c-20261002T013828Z.tgz.sha256",
+              "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-d4d888757a1c-20261002T013828Z.tgz.provenance",
+              "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-dbfa88b95819-20261001T134456Z.tgz",
+              "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-dbfa88b95819-20261001T134456Z.tgz.sha256",
+              "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-dbfa88b95819-20261001T134456Z.tgz.provenance",
+              "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-df4d56da93ce-20261002T042258Z.tgz",
+              "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-df4d56da93ce-20261002T042258Z.tgz.sha256",
+              "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-df4d56da93ce-20261002T042258Z.tgz.provenance",
+              "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-ed838d5c8691-20261001T210406Z.tgz",
+              "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-ed838d5c8691-20261001T210406Z.tgz.sha256",
+              "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-ed838d5c8691-20261001T210406Z.tgz.provenance",
+              "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-f81ae55bf4b0-20261002T031600Z.tgz",
+              "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-f81ae55bf4b0-20261002T031600Z.tgz.sha256",
+              "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-f81ae55bf4b0-20261002T031600Z.tgz.provenance"
+            ],
+            "files": [
+              {
+                "bytes": 394526,
+                "citations": [
+                  {
+                    "byteOffset": 383844,
+                    "classification": "historical-release-evidence",
+                    "line": 5990,
+                    "lineSha256": "11c523ca004234dfb19aec2415e3d295886294727b6778e6eace982352ed149e",
+                    "target": "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-d2636f6fb3c5-20261002T023421Z.tgz"
+                  },
+                  {
+                    "byteOffset": 379328,
+                    "classification": "historical-release-evidence",
+                    "line": 5919,
+                    "lineSha256": "73397d77af363e9f62be96b0b02e197c20a1a23072673198f0d588bdb1c8be81",
+                    "target": "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-d4d888757a1c-20261002T013828Z.tgz"
+                  },
+                  {
+                    "byteOffset": 391386,
+                    "classification": "historical-release-evidence",
+                    "line": 6113,
+                    "lineSha256": "3339adf5b4b0e062d6262ca3ba62e0e19cbbf38711c546d073460249dc644cad",
+                    "target": "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-df4d56da93ce-20261002T042258Z.tgz"
+                  },
+                  {
+                    "byteOffset": 387223,
+                    "classification": "historical-release-evidence",
+                    "line": 6048,
+                    "lineSha256": "0e66142be6ac2efec10b189ef9adb8aaa60cd50423db26a168b12990d1255b41",
+                    "target": "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-f81ae55bf4b0-20261002T031600Z.tgz"
+                  },
+                  {
+                    "byteOffset": 384230,
+                    "classification": "historical-release-evidence",
+                    "line": 5996,
+                    "lineSha256": "4fdfb35035a7d90a227a640d6dcc88d50edc2e4e7fc2ee17eff665f1fef610c9",
+                    "target": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-d2636f6fb3c5-20261002T023421Z"
+                  },
+                  {
+                    "byteOffset": 379960,
+                    "classification": "historical-release-evidence",
+                    "line": 5928,
+                    "lineSha256": "871dc770855628820dd9d44a7c032b5e36d7a539184ef638adf2b40b5374ace9",
+                    "target": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-d4d888757a1c-20261002T013828Z"
+                  },
+                  {
+                    "byteOffset": 391689,
+                    "classification": "historical-release-evidence",
+                    "line": 6118,
+                    "lineSha256": "8c380833a3de8ff8afe3b14d9fbdc1ac5da055114d6dbe6f7dc59caff91f584d",
+                    "target": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-df4d56da93ce-20261002T042258Z"
+                  },
+                  {
+                    "byteOffset": 387610,
+                    "classification": "historical-release-evidence",
+                    "line": 6054,
+                    "lineSha256": "1876a8b4de847e1883dcd697eb467bb51fe63ef8fd28cf526daa8c6528c572b2",
+                    "target": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-f81ae55bf4b0-20261002T031600Z"
+                  }
+                ],
+                "gitBlobSha1": "b7f5907de888360c16462fc18afe8f739a5dc7d0",
+                "relativePath": "OP_RETURN_INFRASTRUCTURE.md",
+                "sha256": "ea3f3581f033e8fb24eec0d00bb351eb5ab843497a811ccad80fd8c0710d1419",
+                "sourcePath": "/var/tmp/proofofwork-deploy/proofofwork-ui-source-26500e4d2ff7-20261002T054938Z"
+              },
+              {
+                "bytes": 107399,
+                "citations": [
+                  {
+                    "byteOffset": 62878,
+                    "classification": "historical-release-evidence",
+                    "line": 1707,
+                    "lineSha256": "285c1c1a917aa7e5a663e6eadd8663a1f02a101a77eec528975403f55a59248a",
+                    "target": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-527e4cbaa66f-20261001T062733Z"
+                  },
+                  {
+                    "byteOffset": 69935,
+                    "classification": "historical-release-evidence",
+                    "line": 1870,
+                    "lineSha256": "285c1c1a917aa7e5a663e6eadd8663a1f02a101a77eec528975403f55a59248a",
+                    "target": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-527e4cbaa66f-20261001T062733Z"
+                  },
+                  {
+                    "byteOffset": 74201,
+                    "classification": "historical-release-evidence",
+                    "line": 1973,
+                    "lineSha256": "285c1c1a917aa7e5a663e6eadd8663a1f02a101a77eec528975403f55a59248a",
+                    "target": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-527e4cbaa66f-20261001T062733Z"
+                  },
+                  {
+                    "byteOffset": 82156,
+                    "classification": "historical-release-evidence",
+                    "line": 2165,
+                    "lineSha256": "285c1c1a917aa7e5a663e6eadd8663a1f02a101a77eec528975403f55a59248a",
+                    "target": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-527e4cbaa66f-20261001T062733Z"
+                  },
+                  {
+                    "byteOffset": 82635,
+                    "classification": "historical-release-evidence",
+                    "line": 2174,
+                    "lineSha256": "f5ca2893fa954826e718470ecdb1d1b034f54bd89fdf4a29bf01ac1a465d2648",
+                    "target": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-dbfa88b95819-20261001T134456Z"
+                  }
+                ],
+                "gitBlobSha1": "fecfe3c2d0b13c4da4ad2d3d4d09fa26df63c7c5",
+                "relativePath": "audits/2026-10-01-recursive-assurance-batch-1.evidence.json",
+                "sha256": "28eca227e456be86d42d4906776f0c6ca6120f56da619b911801e14be158bdd1",
+                "sourcePath": "/var/tmp/proofofwork-deploy/proofofwork-ui-source-26500e4d2ff7-20261002T054938Z"
+              },
+              {
+                "bytes": 394526,
+                "citations": [
+                  {
+                    "byteOffset": 383844,
+                    "classification": "historical-release-evidence",
+                    "line": 5990,
+                    "lineSha256": "11c523ca004234dfb19aec2415e3d295886294727b6778e6eace982352ed149e",
+                    "target": "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-d2636f6fb3c5-20261002T023421Z.tgz"
+                  },
+                  {
+                    "byteOffset": 379328,
+                    "classification": "historical-release-evidence",
+                    "line": 5919,
+                    "lineSha256": "73397d77af363e9f62be96b0b02e197c20a1a23072673198f0d588bdb1c8be81",
+                    "target": "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-d4d888757a1c-20261002T013828Z.tgz"
+                  },
+                  {
+                    "byteOffset": 391386,
+                    "classification": "historical-release-evidence",
+                    "line": 6113,
+                    "lineSha256": "3339adf5b4b0e062d6262ca3ba62e0e19cbbf38711c546d073460249dc644cad",
+                    "target": "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-df4d56da93ce-20261002T042258Z.tgz"
+                  },
+                  {
+                    "byteOffset": 387223,
+                    "classification": "historical-release-evidence",
+                    "line": 6048,
+                    "lineSha256": "0e66142be6ac2efec10b189ef9adb8aaa60cd50423db26a168b12990d1255b41",
+                    "target": "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-f81ae55bf4b0-20261002T031600Z.tgz"
+                  },
+                  {
+                    "byteOffset": 384230,
+                    "classification": "historical-release-evidence",
+                    "line": 5996,
+                    "lineSha256": "4fdfb35035a7d90a227a640d6dcc88d50edc2e4e7fc2ee17eff665f1fef610c9",
+                    "target": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-d2636f6fb3c5-20261002T023421Z"
+                  },
+                  {
+                    "byteOffset": 379960,
+                    "classification": "historical-release-evidence",
+                    "line": 5928,
+                    "lineSha256": "871dc770855628820dd9d44a7c032b5e36d7a539184ef638adf2b40b5374ace9",
+                    "target": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-d4d888757a1c-20261002T013828Z"
+                  },
+                  {
+                    "byteOffset": 391689,
+                    "classification": "historical-release-evidence",
+                    "line": 6118,
+                    "lineSha256": "8c380833a3de8ff8afe3b14d9fbdc1ac5da055114d6dbe6f7dc59caff91f584d",
+                    "target": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-df4d56da93ce-20261002T042258Z"
+                  },
+                  {
+                    "byteOffset": 387610,
+                    "classification": "historical-release-evidence",
+                    "line": 6054,
+                    "lineSha256": "1876a8b4de847e1883dcd697eb467bb51fe63ef8fd28cf526daa8c6528c572b2",
+                    "target": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-f81ae55bf4b0-20261002T031600Z"
+                  }
+                ],
+                "gitBlobSha1": "b7f5907de888360c16462fc18afe8f739a5dc7d0",
+                "relativePath": "OP_RETURN_INFRASTRUCTURE.md",
+                "sha256": "ea3f3581f033e8fb24eec0d00bb351eb5ab843497a811ccad80fd8c0710d1419",
+                "sourcePath": "/var/tmp/proofofwork-deploy/proofofwork-ui-source-835e30258d23-20261002T052338Z"
+              },
+              {
+                "bytes": 107399,
+                "citations": [
+                  {
+                    "byteOffset": 62878,
+                    "classification": "historical-release-evidence",
+                    "line": 1707,
+                    "lineSha256": "285c1c1a917aa7e5a663e6eadd8663a1f02a101a77eec528975403f55a59248a",
+                    "target": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-527e4cbaa66f-20261001T062733Z"
+                  },
+                  {
+                    "byteOffset": 69935,
+                    "classification": "historical-release-evidence",
+                    "line": 1870,
+                    "lineSha256": "285c1c1a917aa7e5a663e6eadd8663a1f02a101a77eec528975403f55a59248a",
+                    "target": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-527e4cbaa66f-20261001T062733Z"
+                  },
+                  {
+                    "byteOffset": 74201,
+                    "classification": "historical-release-evidence",
+                    "line": 1973,
+                    "lineSha256": "285c1c1a917aa7e5a663e6eadd8663a1f02a101a77eec528975403f55a59248a",
+                    "target": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-527e4cbaa66f-20261001T062733Z"
+                  },
+                  {
+                    "byteOffset": 82156,
+                    "classification": "historical-release-evidence",
+                    "line": 2165,
+                    "lineSha256": "285c1c1a917aa7e5a663e6eadd8663a1f02a101a77eec528975403f55a59248a",
+                    "target": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-527e4cbaa66f-20261001T062733Z"
+                  },
+                  {
+                    "byteOffset": 82635,
+                    "classification": "historical-release-evidence",
+                    "line": 2174,
+                    "lineSha256": "f5ca2893fa954826e718470ecdb1d1b034f54bd89fdf4a29bf01ac1a465d2648",
+                    "target": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-dbfa88b95819-20261001T134456Z"
+                  }
+                ],
+                "gitBlobSha1": "fecfe3c2d0b13c4da4ad2d3d4d09fa26df63c7c5",
+                "relativePath": "audits/2026-10-01-recursive-assurance-batch-1.evidence.json",
+                "sha256": "28eca227e456be86d42d4906776f0c6ca6120f56da619b911801e14be158bdd1",
+                "sourcePath": "/var/tmp/proofofwork-deploy/proofofwork-ui-source-835e30258d23-20261002T052338Z"
+              }
+            ],
+            "host": "77.42.91.106",
+            "operationKind": "cleanup",
+            "protectedSources": [
+              {
+                "head": "26500e4d2ff743d65a0ca2b4dc06bbd5f62b27ea",
+                "path": "/var/tmp/proofofwork-deploy/proofofwork-ui-source-26500e4d2ff7-20261002T054938Z",
+                "tree": "1d13d6263b992403c1d58f334c4adc42e3c6d85b"
+              },
+              {
+                "head": "835e30258d23eb6c5261e41159fec8e3b3245d6e",
+                "path": "/var/tmp/proofofwork-deploy/proofofwork-ui-source-835e30258d23-20261002T052338Z",
+                "tree": "ed333d82d474456bd88b88d03d4a134385c31328"
+              }
+            ],
+            "reviewEvidence": [
+              {
+                "path": "/var/backups/proofofwork-ui/cleanup-evidence/audit30-reference-semantic-review-v1.json",
+                "sha256": "557ce318a26a83c40c1852976a7e2e3564aed6dd64e74e95798f567de2327dea"
+              }
+            ],
+            "schema": "pow-audit30-historical-citation-review-v1",
+            "scopeApprovalSha256": "d99a40236b49b1735c794fb853c4f7f4f0724da8e3f83fab75c7464e0e8ee373"
+          },
+          "path": "/tmp/pow-audit30-citation-review-v1-template.json",
+          "sha256": "7ab7af92e4c6e2aced3ab8106639ca2434e8194f1cdf2d07616bc08c6f7715db"
+        }
+      },
+      "finalCitationCodeReview": {
+        "bytes": 2353,
+        "content": {
+          "agentProductionCalls": 0,
+          "agentProductionMutations": false,
+          "approvalSha256": "d99a40236b49b1735c794fb853c4f7f4f0724da8e3f83fab75c7464e0e8ee373",
+          "atUtc": "2026-10-02T20:20:18.658314+00:00",
+          "correction": [
+            "Resolve complete symlink chains, including aliases outside enumerated roots",
+            "ProcessFD/cwd/exe/source-directory pointers into admitted documents block",
+            "Unqualified config/process text naming admitted documents blocks",
+            "Document-alias checks remain active when remaining candidate paths are empty",
+            "Only directly scanned exact protected-source committed historical bytes can qualify",
+            "No-review defaults, bounded scan roots/budgets, archive/source/dependency/hold/mask/capacity gates remain unchanged"
+          ],
+          "defaultAllMatchesRefuse": true,
+          "files": [
+            {
+              "path": "deploy/audit30/ui-storage.py",
+              "sha256": "038a2315c4ba5d10e27335a69c400f6c09ec3c2b50b0f64fefb1f5f09d6a06c2"
+            },
+            {
+              "path": "deploy/audit30/ui-release-policy.py",
+              "sha256": "f023bd536223437dd2dce5ece6c4c4995cd9d63c648b7fe2f9eabc354a10f22d"
+            },
+            {
+              "path": "deploy/audit30/check-ui-storage.test.py",
+              "sha256": "fe85868e142ebb544c3c83a00549b8e8de2fb457ae5ac566bdab5147714e1dbd"
+            },
+            {
+              "path": "deploy/audit30/STORAGE.md",
+              "sha256": "87eadb3f18517c8e852253eb9aa18e5e8952654eeb40684c93132a94fa5ff1e6"
+            },
+            {
+              "path": "deploy/audit30/storage-operator.py",
+              "sha256": "f57552f2fb5a879a61fe6dce3ef994cc06eb93843a8aad9a934793172203fe00"
+            }
+          ],
+          "historicalDocumentsChanged": false,
+          "manifestTemplate": {
+            "candidatePaths": 40,
+            "citations": 26,
+            "path": "/tmp/pow-audit30-citation-review-v1-template.json",
+            "sha256": "7ab7af92e4c6e2aced3ab8106639ca2434e8194f1cdf2d07616bc08c6f7715db",
+            "sourceFiles": 4
+          },
+          "optionalExactReviewedManifest": true,
+          "originalReviewerFinding": "An external config symlink into a reviewed source document could bypass operational-reference refusal",
+          "rootExecutionPending": true,
+          "schema": "pow-audit30-historical-citation-final-alias-verification-v1",
+          "tests": {
+            "count": 36,
+            "integrityIndependent": "pending",
+            "local": "PASS15.155seconds",
+            "mathIndependent": "PASS17.319seconds plus exact former symlink vector refusal and actual26source Gitblob/offset/linecontext checks"
+          }
+        },
+        "path": "/tmp/pow-audit30-citation-final-alias-receipt.json",
+        "sha256": "f041c43c72fb45ce62ec3a67e048d34ca309aee7045272f12d11dd1accf39d78"
+      },
+      "finalCleanupPlanLaunch": {
+        "bytes": 1479,
+        "content": {
+          "controllerArgv": [
+            "ui-storage.py",
+            "plan-cleanup",
+            "--approval",
+            "/var/backups/proofofwork-ui/cleanup-evidence/audit30-private-tools-b5b07962b41152cbe4655701ef9d54f85b82106af53439769393f25682c49b32/approval.json",
+            "--approval-sha256",
+            "d99a40236b49b1735c794fb853c4f7f4f0724da8e3f83fab75c7464e0e8ee373",
+            "--citation-review",
+            "/var/backups/proofofwork-ui/cleanup-evidence/audit30-citation-review-v1.json",
+            "--citation-review-sha256",
+            "7ab7af92e4c6e2aced3ab8106639ca2434e8194f1cdf2d07616bc08c6f7715db"
+          ],
+          "deadline": "30min",
+          "launchError": "Running as unit: pow-audit30-storage-20261002T202009Z-762d63c72f9d.service; invocation ID: 01a6e07f38ca4961b8c767e817eb17c8\n",
+          "launchOutput": "",
+          "package": "/var/backups/proofofwork-ui/cleanup-evidence/audit30-private-tools-b5b07962b41152cbe4655701ef9d54f85b82106af53439769393f25682c49b32",
+          "packageSha256": "b5b07962b41152cbe4655701ef9d54f85b82106af53439769393f25682c49b32",
+          "prefix": "/var/backups/proofofwork-ui/cleanup-evidence/audit30-run-plan-cleanup-20261002T202009Z-762d63c72f9d",
+          "resultPath": "/var/backups/proofofwork-ui/cleanup-evidence/audit30-run-plan-cleanup-20261002T202009Z-762d63c72f9d.result.json",
+          "stderrPath": "/var/backups/proofofwork-ui/cleanup-evidence/audit30-run-plan-cleanup-20261002T202009Z-762d63c72f9d.stderr.log",
+          "stdoutPath": "/var/backups/proofofwork-ui/cleanup-evidence/audit30-run-plan-cleanup-20261002T202009Z-762d63c72f9d.stdout.json",
+          "unit": "pow-audit30-storage-20261002T202009Z-762d63c72f9d"
+        },
+        "path": "/tmp/pow-audit30-storage-plan-citation-final-launch.json",
+        "sha256": "81fce9715add7d721a40973baab985ec4c08b764339845e4a0f2c2bc97a0ece7"
+      },
+      "finalPrivateToolUpload": {
+        "bytes": 655,
+        "content": {
+          "holdsOrMasksChanged": false,
+          "members": {
+            "approval.json": "d99a40236b49b1735c794fb853c4f7f4f0724da8e3f83fab75c7464e0e8ee373",
+            "runner.py": "1f6de99e7aec1c375045bd8027542ba170eccf67163c903086220883fd814711",
+            "ui-release-policy.py": "f023bd536223437dd2dce5ece6c4c4995cd9d63c648b7fe2f9eabc354a10f22d",
+            "ui-storage.py": "038a2315c4ba5d10e27335a69c400f6c09ec3c2b50b0f64fefb1f5f09d6a06c2"
+          },
+          "package": "/var/backups/proofofwork-ui/cleanup-evidence/audit30-private-tools-b5b07962b41152cbe4655701ef9d54f85b82106af53439769393f25682c49b32",
+          "packageSha256": "b5b07962b41152cbe4655701ef9d54f85b82106af53439769393f25682c49b32",
+          "status": "installed-private-tools"
+        },
+        "path": "/tmp/pow-audit30-storage-upload-citation-final.json",
+        "sha256": "33d746c043e408877ea4b328fe03522b638c144c5a07162ef16eb21937113e40"
+      },
+      "futureSourceCitationPrecheck": {
+        "bytes": 10328,
+        "content": {
+          "candidates": [
+            "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-26500e4d2ff7-20261002T054938Z",
+            "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-835e30258d23-20261002T052338Z.tgz",
+            "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-835e30258d23-20261002T052338Z.tgz.sha256",
+            "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-835e30258d23-20261002T052338Z.tgz.provenance"
+          ],
+          "expectedOldReviewedDocAliases": [
+            "/var/tmp/proofofwork-deploy/proofofwork-ui-source-26500e4d2ff7-20261002T054938Z/OP_RETURN_INFRASTRUCTURE.md",
+            "/var/tmp/proofofwork-deploy/proofofwork-ui-source-26500e4d2ff7-20261002T054938Z/audits/2026-10-01-recursive-assurance-batch-1.evidence.json"
+          ],
+          "filesReadBytes": 19249560,
+          "format": "pow-audit30-prepublication-local-future-citation-census-v1",
+          "gitFilesObserved": 669,
+          "localWorkingFilesOnly": true,
+          "matches": [
+            {
+              "allowedNonExecutableDocument": true,
+              "bytes": 404892,
+              "canBeFreshV2Reviewed": true,
+              "candidateCitations": [
+                {
+                  "byteOffset": 399444,
+                  "line": 6243,
+                  "lineSha256": "31131189bac4f65f12ef5cd5e40ab92a5c9d6960e196c75d777b17cf08c10a1e",
+                  "target": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-26500e4d2ff7-20261002T054938Z"
+                },
+                {
+                  "byteOffset": 398035,
+                  "line": 6221,
+                  "lineSha256": "e7597ff9c3360d6497394892f4d0d7b137fd1f85f82b5244cc485c697cea9750",
+                  "target": "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-835e30258d23-20261002T052338Z.tgz"
+                }
+              ],
+              "relativePath": "OP_RETURN_INFRASTRUCTURE.md",
+              "reviewedDocAliases": [],
+              "sha256": "b4784d1940160c4c5a4e1804f94b6886e5f54dd1e54bd5ee97c59cd81efa4bf5"
+            },
+            {
+              "allowedNonExecutableDocument": true,
+              "bytes": 201768,
+              "canBeFreshV2Reviewed": true,
+              "candidateCitations": [
+                {
+                  "byteOffset": 97245,
+                  "line": 1772,
+                  "lineSha256": "e9f7e348d001b148e392f16b7f3a33199e8fc6089716ab884fc5a4c1b2ee9152",
+                  "target": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-26500e4d2ff7-20261002T054938Z"
+                },
+                {
+                  "byteOffset": 188184,
+                  "line": 3445,
+                  "lineSha256": "aee57174d43ec11101efe3235aa33f7968d0e4afcad545f7f26617e5f1c03733",
+                  "target": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-26500e4d2ff7-20261002T054938Z"
+                },
+                {
+                  "byteOffset": 189082,
+                  "line": 3468,
+                  "lineSha256": "aee57174d43ec11101efe3235aa33f7968d0e4afcad545f7f26617e5f1c03733",
+                  "target": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-26500e4d2ff7-20261002T054938Z"
+                },
+                {
+                  "byteOffset": 189724,
+                  "line": 3483,
+                  "lineSha256": "aee57174d43ec11101efe3235aa33f7968d0e4afcad545f7f26617e5f1c03733",
+                  "target": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-26500e4d2ff7-20261002T054938Z"
+                },
+                {
+                  "byteOffset": 190357,
+                  "line": 3498,
+                  "lineSha256": "aee57174d43ec11101efe3235aa33f7968d0e4afcad545f7f26617e5f1c03733",
+                  "target": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-26500e4d2ff7-20261002T054938Z"
+                },
+                {
+                  "byteOffset": 188467,
+                  "line": 3452,
+                  "lineSha256": "80f131011d4883780afef122b705a4ac2d88bd9410eb9ed46d00ea130d218ebc",
+                  "target": "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-835e30258d23-20261002T052338Z.tgz"
+                }
+              ],
+              "relativePath": "audits/2026-10-02-audit30-first-batch-execution.evidence.json",
+              "reviewedDocAliases": [
+                {
+                  "byteOffset": 130328,
+                  "line": 2412,
+                  "lineSha256": "e6257dd9343e33fbccf7598192471fc1b41c25bdb18dc0b0862d77cff23c239f",
+                  "target": "/var/tmp/proofofwork-deploy/proofofwork-ui-source-26500e4d2ff7-20261002T054938Z/OP_RETURN_INFRASTRUCTURE.md"
+                },
+                {
+                  "byteOffset": 158266,
+                  "line": 2894,
+                  "lineSha256": "1366ecd189f7a35c9095e6c352e73685bcf54d35218c48cff31bc20de0bbc27c",
+                  "target": "/var/tmp/proofofwork-deploy/proofofwork-ui-source-26500e4d2ff7-20261002T054938Z/OP_RETURN_INFRASTRUCTURE.md"
+                },
+                {
+                  "byteOffset": 160105,
+                  "line": 2918,
+                  "lineSha256": "e6257dd9343e33fbccf7598192471fc1b41c25bdb18dc0b0862d77cff23c239f",
+                  "target": "/var/tmp/proofofwork-deploy/proofofwork-ui-source-26500e4d2ff7-20261002T054938Z/OP_RETURN_INFRASTRUCTURE.md"
+                },
+                {
+                  "byteOffset": 133600,
+                  "line": 2485,
+                  "lineSha256": "466f00b36dc60e5f65464b526fc8b3575aaa6f787b0135652591d820de9a15d0",
+                  "target": "/var/tmp/proofofwork-deploy/proofofwork-ui-source-26500e4d2ff7-20261002T054938Z/audits/2026-10-01-recursive-assurance-batch-1.evidence.json"
+                },
+                {
+                  "byteOffset": 158443,
+                  "line": 2894,
+                  "lineSha256": "1366ecd189f7a35c9095e6c352e73685bcf54d35218c48cff31bc20de0bbc27c",
+                  "target": "/var/tmp/proofofwork-deploy/proofofwork-ui-source-26500e4d2ff7-20261002T054938Z/audits/2026-10-01-recursive-assurance-batch-1.evidence.json"
+                },
+                {
+                  "byteOffset": 163377,
+                  "line": 2991,
+                  "lineSha256": "466f00b36dc60e5f65464b526fc8b3575aaa6f787b0135652591d820de9a15d0",
+                  "target": "/var/tmp/proofofwork-deploy/proofofwork-ui-source-26500e4d2ff7-20261002T054938Z/audits/2026-10-01-recursive-assurance-batch-1.evidence.json"
+                }
+              ],
+              "sha256": "1d2d6524a4e9bb1141cd5cb0e21c333839fed9e203946434bc7b93838bd7b278"
+            },
+            {
+              "allowedNonExecutableDocument": true,
+              "bytes": 70422,
+              "canBeFreshV2Reviewed": true,
+              "candidateCitations": [
+                {
+                  "byteOffset": 25114,
+                  "line": 470,
+                  "lineSha256": "f0f71bc89a1a9cc9a82762c26f532cfec9b21a54b7b5d9bda5f2d1958898af37",
+                  "target": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-26500e4d2ff7-20261002T054938Z"
+                }
+              ],
+              "relativePath": "audits/2026-10-02-audit30-first-batch-preparation.evidence.json",
+              "reviewedDocAliases": [],
+              "sha256": "f0027078971b7521fb2411e15bd8931b110a0f1815ea7e04bdaed3b5d4bdfdd0"
+            },
+            {
+              "allowedNonExecutableDocument": true,
+              "bytes": 46542,
+              "canBeFreshV2Reviewed": true,
+              "candidateCitations": [
+                {
+                  "byteOffset": 8110,
+                  "line": 71,
+                  "lineSha256": "b9bb6362a4271ca33a7375d205abe32799ea9fcbd06d6d7f1f06cf094be491d0",
+                  "target": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-26500e4d2ff7-20261002T054938Z"
+                }
+              ],
+              "relativePath": "audits/2026-10-02-production-comprehensive-health-data-integrity-audit-30.md",
+              "reviewedDocAliases": [],
+              "sha256": "2d0d0d052df0772505ce77050a06033574bf06b87083d3792f376a8186c7a305"
+            }
+          ],
+          "notFinalCommitProof": true,
+          "oldProtected265Documents": [
+            {
+              "bytes": 394526,
+              "canBeFreshV2Reviewed": false,
+              "candidateOccurrences": {
+                "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-835e30258d23-20261002T052338Z.tgz": 0,
+                "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-835e30258d23-20261002T052338Z.tgz.provenance": 0,
+                "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-835e30258d23-20261002T052338Z.tgz.sha256": 0,
+                "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-26500e4d2ff7-20261002T054938Z": 0
+              },
+              "relativePath": "OP_RETURN_INFRASTRUCTURE.md",
+              "sha256": "ea3f3581f033e8fb24eec0d00bb351eb5ab843497a811ccad80fd8c0710d1419"
+            },
+            {
+              "bytes": 107399,
+              "canBeFreshV2Reviewed": false,
+              "candidateOccurrences": {
+                "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-835e30258d23-20261002T052338Z.tgz": 0,
+                "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-835e30258d23-20261002T052338Z.tgz.provenance": 0,
+                "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-835e30258d23-20261002T052338Z.tgz.sha256": 0,
+                "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-26500e4d2ff7-20261002T054938Z": 0
+              },
+              "relativePath": "audits/2026-10-01-recursive-assurance-batch-1.evidence.json",
+              "sha256": "28eca227e456be86d42d4906776f0c6ca6120f56da619b911801e14be158bdd1"
+            }
+          ],
+          "perFileByteLimit": 1048576,
+          "qualification": "Working tree changes as receipts are appended. Recompute exactv2 manifest only after commit/publication using actual protectedcurrent/prior source HEAD/tree/blobs. Only exact frozen full paths are counted; all other scanner limits and active alias guards remain.",
+          "skippedLargeFiles": [
+            {
+              "bytes": 2119571,
+              "relativePath": "audits/2026-09-05-production-health-data-event-storage-audit-5.evidence.json"
+            },
+            {
+              "bytes": 1181755,
+              "relativePath": "audits/2026-09-22-production-comprehensive-health-data-integrity-audit-20.evidence.json"
+            },
+            {
+              "bytes": 2413677,
+              "relativePath": "audits/2026-09-30-production-comprehensive-health-data-integrity-audit-29.evidence.json"
+            },
+            {
+              "bytes": 1344281,
+              "relativePath": "audits/2026-10-01-audit29-remediation-release.evidence.json"
+            },
+            {
+              "bytes": 1218693,
+              "relativePath": "audits/2026-10-02-production-comprehensive-health-data-integrity-audit-30.evidence.json"
+            },
+            {
+              "bytes": 1240615,
+              "relativePath": "public/favicon.png"
+            },
+            {
+              "bytes": 7968826,
+              "relativePath": "public/proofofwork-general-deck.mp4"
+            },
+            {
+              "bytes": 1240615,
+              "relativePath": "public/proofofwork-logo.png"
+            },
+            {
+              "bytes": 1318676,
+              "relativePath": "scripts/backfill-proof-indexer.mjs"
+            },
+            {
+              "bytes": 2826830,
+              "relativePath": "scripts/check-index-recovery-behavior.mjs"
+            },
+            {
+              "bytes": 1527496,
+              "relativePath": "server/db/proof-index-reader.mjs"
+            },
+            {
+              "bytes": 2591378,
+              "relativePath": "server/proof-api.mjs"
+            },
+            {
+              "bytes": 2005274,
+              "relativePath": "src/App.tsx"
+            }
+          ]
+        },
+        "path": "/tmp/pow-audit30-future-source-citation-census.json",
+        "sha256": "5c8556500a37c2b1920efae4e0781f7ba57df41be6f0052e2f6185fe3c0d9b7d"
+      },
+      "historicalCitationReviews": [
+        {
+          "bytes": 10052,
+          "content": {
+            "cleanupTargetCount": 40,
+            "completeWithinDefinedScope": true,
+            "format": "pow-audit30-exact-reference-classification-v1",
+            "futurePolicyTargetCount": 4,
+            "matches": [
+              {
+                "classification": "documentation-citation-needs-semantic-review",
+                "fileBytes": 394526,
+                "fileSha256": "ea3f3581f033e8fb24eec0d00bb351eb5ab843497a811ccad80fd8c0710d1419",
+                "kind": "content-pointer",
+                "reference": "/var/tmp/proofofwork-deploy/proofofwork-ui-source-26500e4d2ff7-20261002T054938Z/OP_RETURN_INFRASTRUCTURE.md",
+                "targets": [
+                  {
+                    "firstLineNumbers": [
+                      5990
+                    ],
+                    "occurrences": 1,
+                    "path": "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-d2636f6fb3c5-20261002T023421Z.tgz",
+                    "scope": "approved-exact40-cleanup"
+                  },
+                  {
+                    "firstLineNumbers": [
+                      5919
+                    ],
+                    "occurrences": 1,
+                    "path": "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-d4d888757a1c-20261002T013828Z.tgz",
+                    "scope": "approved-exact40-cleanup"
+                  },
+                  {
+                    "firstLineNumbers": [
+                      6113
+                    ],
+                    "occurrences": 1,
+                    "path": "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-df4d56da93ce-20261002T042258Z.tgz",
+                    "scope": "approved-exact40-cleanup"
+                  },
+                  {
+                    "firstLineNumbers": [
+                      6048
+                    ],
+                    "occurrences": 1,
+                    "path": "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-f81ae55bf4b0-20261002T031600Z.tgz",
+                    "scope": "approved-exact40-cleanup"
+                  },
+                  {
+                    "firstLineNumbers": [
+                      5996
+                    ],
+                    "occurrences": 1,
+                    "path": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-d2636f6fb3c5-20261002T023421Z",
+                    "scope": "approved-exact40-cleanup"
+                  },
+                  {
+                    "firstLineNumbers": [
+                      5928
+                    ],
+                    "occurrences": 1,
+                    "path": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-d4d888757a1c-20261002T013828Z",
+                    "scope": "approved-exact40-cleanup"
+                  },
+                  {
+                    "firstLineNumbers": [
+                      6118
+                    ],
+                    "occurrences": 1,
+                    "path": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-df4d56da93ce-20261002T042258Z",
+                    "scope": "approved-exact40-cleanup"
+                  },
+                  {
+                    "firstLineNumbers": [
+                      6054
+                    ],
+                    "occurrences": 1,
+                    "path": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-f81ae55bf4b0-20261002T031600Z",
+                    "scope": "approved-exact40-cleanup"
+                  }
+                ]
+              },
+              {
+                "classification": "historical-audit-citation",
+                "fileBytes": 107399,
+                "fileSha256": "28eca227e456be86d42d4906776f0c6ca6120f56da619b911801e14be158bdd1",
+                "kind": "content-pointer",
+                "reference": "/var/tmp/proofofwork-deploy/proofofwork-ui-source-26500e4d2ff7-20261002T054938Z/audits/2026-10-01-recursive-assurance-batch-1.evidence.json",
+                "targets": [
+                  {
+                    "firstLineNumbers": [
+                      1707,
+                      1870,
+                      1973,
+                      2165
+                    ],
+                    "occurrences": 4,
+                    "path": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-527e4cbaa66f-20261001T062733Z",
+                    "scope": "approved-exact40-cleanup"
+                  },
+                  {
+                    "firstLineNumbers": [
+                      2174
+                    ],
+                    "occurrences": 1,
+                    "path": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-dbfa88b95819-20261001T134456Z",
+                    "scope": "approved-exact40-cleanup"
+                  }
+                ]
+              },
+              {
+                "classification": "documentation-citation-needs-semantic-review",
+                "fileBytes": 394526,
+                "fileSha256": "ea3f3581f033e8fb24eec0d00bb351eb5ab843497a811ccad80fd8c0710d1419",
+                "kind": "content-pointer",
+                "reference": "/var/tmp/proofofwork-deploy/proofofwork-ui-source-835e30258d23-20261002T052338Z/OP_RETURN_INFRASTRUCTURE.md",
+                "targets": [
+                  {
+                    "firstLineNumbers": [
+                      5990
+                    ],
+                    "occurrences": 1,
+                    "path": "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-d2636f6fb3c5-20261002T023421Z.tgz",
+                    "scope": "approved-exact40-cleanup"
+                  },
+                  {
+                    "firstLineNumbers": [
+                      5919
+                    ],
+                    "occurrences": 1,
+                    "path": "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-d4d888757a1c-20261002T013828Z.tgz",
+                    "scope": "approved-exact40-cleanup"
+                  },
+                  {
+                    "firstLineNumbers": [
+                      6113
+                    ],
+                    "occurrences": 1,
+                    "path": "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-df4d56da93ce-20261002T042258Z.tgz",
+                    "scope": "approved-exact40-cleanup"
+                  },
+                  {
+                    "firstLineNumbers": [
+                      6048
+                    ],
+                    "occurrences": 1,
+                    "path": "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-f81ae55bf4b0-20261002T031600Z.tgz",
+                    "scope": "approved-exact40-cleanup"
+                  },
+                  {
+                    "firstLineNumbers": [
+                      5996
+                    ],
+                    "occurrences": 1,
+                    "path": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-d2636f6fb3c5-20261002T023421Z",
+                    "scope": "approved-exact40-cleanup"
+                  },
+                  {
+                    "firstLineNumbers": [
+                      5928
+                    ],
+                    "occurrences": 1,
+                    "path": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-d4d888757a1c-20261002T013828Z",
+                    "scope": "approved-exact40-cleanup"
+                  },
+                  {
+                    "firstLineNumbers": [
+                      6118
+                    ],
+                    "occurrences": 1,
+                    "path": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-df4d56da93ce-20261002T042258Z",
+                    "scope": "approved-exact40-cleanup"
+                  },
+                  {
+                    "firstLineNumbers": [
+                      6054
+                    ],
+                    "occurrences": 1,
+                    "path": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-f81ae55bf4b0-20261002T031600Z",
+                    "scope": "approved-exact40-cleanup"
+                  }
+                ]
+              },
+              {
+                "classification": "historical-audit-citation",
+                "fileBytes": 107399,
+                "fileSha256": "28eca227e456be86d42d4906776f0c6ca6120f56da619b911801e14be158bdd1",
+                "kind": "content-pointer",
+                "reference": "/var/tmp/proofofwork-deploy/proofofwork-ui-source-835e30258d23-20261002T052338Z/audits/2026-10-01-recursive-assurance-batch-1.evidence.json",
+                "targets": [
+                  {
+                    "firstLineNumbers": [
+                      1707,
+                      1870,
+                      1973,
+                      2165
+                    ],
+                    "occurrences": 4,
+                    "path": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-527e4cbaa66f-20261001T062733Z",
+                    "scope": "approved-exact40-cleanup"
+                  },
+                  {
+                    "firstLineNumbers": [
+                      2174
+                    ],
+                    "occurrences": 1,
+                    "path": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-dbfa88b95819-20261001T134456Z",
+                    "scope": "approved-exact40-cleanup"
+                  }
+                ]
+              }
+            ],
+            "matchesByClassification": {
+              "documentation-citation-needs-semantic-review": 2,
+              "historical-audit-citation": 2
+            },
+            "perRoot": [
+              {
+                "bytesRead": 694286,
+                "entries": 1223,
+                "exists": true,
+                "filesRead": 387,
+                "linksChecked": 735,
+                "root": "/proc",
+                "skippedLargeFiles": 0,
+                "skippedPayloadDirectories": 0,
+                "skippedSpecial": 0
+              },
+              {
+                "bytesRead": 3430631,
+                "entries": 1682,
+                "exists": true,
+                "filesRead": 876,
+                "linksChecked": 576,
+                "root": "/etc",
+                "skippedLargeFiles": 0,
+                "skippedPayloadDirectories": 0,
+                "skippedSpecial": 0
+              },
+              {
+                "bytesRead": 563493,
+                "entries": 21,
+                "exists": true,
+                "filesRead": 19,
+                "linksChecked": 0,
+                "root": "/usr/local/sbin",
+                "skippedLargeFiles": 0,
+                "skippedPayloadDirectories": 0,
+                "skippedSpecial": 0
+              },
+              {
+                "bytesRead": 0,
+                "entries": 1,
+                "exists": true,
+                "filesRead": 0,
+                "linksChecked": 0,
+                "root": "/usr/local/bin",
+                "skippedLargeFiles": 0,
+                "skippedPayloadDirectories": 0,
+                "skippedSpecial": 0
+              },
+              {
+                "bytesRead": 2,
+                "entries": 5,
+                "exists": true,
+                "filesRead": 1,
+                "linksChecked": 0,
+                "root": "/var/spool/cron",
+                "skippedLargeFiles": 0,
+                "skippedPayloadDirectories": 0,
+                "skippedSpecial": 0
+              },
+              {
+                "bytesRead": 105242833,
+                "entries": 1264,
+                "exists": true,
+                "filesRead": 1107,
+                "linksChecked": 0,
+                "root": "/var/www",
+                "skippedLargeFiles": 93,
+                "skippedPayloadDirectories": 0,
+                "skippedSpecial": 0
+              },
+              {
+                "bytesRead": 18668671,
+                "entries": 742,
+                "exists": true,
+                "filesRead": 657,
+                "linksChecked": 0,
+                "root": "/var/tmp/proofofwork-deploy/proofofwork-ui-source-26500e4d2ff7-20261002T054938Z",
+                "skippedLargeFiles": 12,
+                "skippedPayloadDirectories": 2,
+                "skippedSpecial": 0
+              },
+              {
+                "bytesRead": 18665784,
+                "entries": 742,
+                "exists": true,
+                "filesRead": 657,
+                "linksChecked": 0,
+                "root": "/var/tmp/proofofwork-deploy/proofofwork-ui-source-835e30258d23-20261002T052338Z",
+                "skippedLargeFiles": 12,
+                "skippedPayloadDirectories": 2,
+                "skippedSpecial": 0
+              }
+            ],
+            "qualification": "Only literal whole absolute path citations/pointers; historical-audit classification requires semantic confirmation against committed records. Files>1MiB and objects/node_modules textual payloads excluded as in approved controller; all processed reads bounded and file identities fenced. No content snippets or credentials emitted.",
+            "targetCount": 44,
+            "totalBytesRead": 147265700,
+            "totalEntries": 5680
+          },
+          "path": "/tmp/pow-audit30-storage-reference-classification.json",
+          "sha256": "a54d0ec7f8445c90b79894969eadf50bac749ad4b69bae9f5946c8d275da6635"
+        },
+        {
+          "bytes": 9647,
+          "content": {
+            "committedDocuments": [
+              {
+                "commit": "26500e4d2ff7",
+                "matches": [
+                  {
+                    "containsHistoricalReleaseVerificationLanguage": true,
+                    "line": 5990,
+                    "lineContext": "In-app browser checks confirmed six existing `$work` matches and a contained\n46-pixel search row on Boost and Computer at both 1920- and 390-pixel widths;\nediting the live Boost query to `$powb` returned its one existing match.\n\nThe managed UI archive is\n`/var/backups/proofofwork-ui/releases/proofofwork-ui-release-d2636f6fb3c5-20261002T023421Z.tgz`,\nSHA-256 `61623c7bef3d8fd201703a241fcd67fefa99d70b9800df063722c5d48e796d97`.\nIts provenance equals the live manifest, SHA-256\n`3ebd806d1754276784b5ef13c864fc49f949548615b9ed97e700af6a41f8206a`.\nPublication preserved all six preceding rollback roots; the prior live UI",
+                    "section": "### Boost search row correction \u2014 2026-10-02 UTC",
+                    "target": "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-d2636f6fb3c5-20261002T023421Z.tgz"
+                  },
+                  {
+                    "containsHistoricalReleaseVerificationLanguage": true,
+                    "line": 5919,
+                    "lineContext": "production receipt is\n`/data/proofofwork-audit29-verify-launch-d4d888757a1c-20261002T013828Z-production-retry1/accepted-receipt.json`,\nSHA-256 `571fed130f19f5dfed0f36509a1a1fd06f6c53faa3b09f158f344d13265c35cf`.\n\nThe managed UI archive is\n`/var/backups/proofofwork-ui/releases/proofofwork-ui-release-d4d888757a1c-20261002T013828Z.tgz`,\nSHA-256 `0ad90dcaf48925f77cf7c4b1b9b5e3eeccfde5189c18c1e0ebe5c3ebda098848`.\nIts provenance equals the live manifest, SHA-256\n`a3e437f4f1e72b9f363839472ef04f91679bdb1a8671b87eb26db44110616e37`.\nOff-host HTTPS verification compared all 825 archived public files across 15",
+                    "section": "### Boost tag and profile links release \u2014 2026-10-02 UTC",
+                    "target": "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-d4d888757a1c-20261002T013828Z.tgz"
+                  },
+                  {
+                    "containsHistoricalReleaseVerificationLanguage": true,
+                    "line": 6113,
+                    "lineContext": "network and Computer workspace. The browser receipt SHA-256 is\n`88ce7dc74c78f41d448b917fec38d8454544d53607f99f2c6a456789b39cffcd`.\n\nThe managed release archive SHA-256 is\n`9d910d85aa94957a73b54be429b02535b13b654c6f382e35bf87b58135c09687`,\nat `/var/backups/proofofwork-ui/releases/proofofwork-ui-release-df4d56da93ce-20261002T042258Z.tgz`.\nIts provenance equals the live manifest, SHA-256\n`63693d8af1dfbd7052b160c5982821ff6a1edca3c28e9a367d49bb1a2c63ebd6`.\nAll eight prior rollback roots were preserved; the preceding live UI became\nthe ninth at",
+                    "section": "### Boost search Back arrow centering \u2014 2026-10-02 UTC",
+                    "target": "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-df4d56da93ce-20261002T042258Z.tgz"
+                  },
+                  {
+                    "containsHistoricalReleaseVerificationLanguage": true,
+                    "line": 6048,
+                    "lineContext": "the restored inline composer after Back. No test transaction was broadcast.\nThe live-browser observation receipt SHA-256 is\n`346ff36a4c58c94863bdb18402baa6f7bbe4a57861058e802b1840dd862c54b7`.\n\nThe managed archive is\n`/var/backups/proofofwork-ui/releases/proofofwork-ui-release-f81ae55bf4b0-20261002T031600Z.tgz`,\nSHA-256 `e86ee87c4c4d8dd6a6ad43dd5b7044dc7bcd5674048f32d570e22004ed5c9415`.\nIts provenance equals the live manifest, SHA-256\n`64ac49385d25f8662c3b0153ba8c4e059020ac2603b78310aed92ba79247884c`.\nPublication preserved all seven preceding rollback roots; the prior live UI",
+                    "section": "### Boost central search view \u2014 2026-10-02 UTC",
+                    "target": "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-f81ae55bf4b0-20261002T031600Z.tgz"
+                  },
+                  {
+                    "containsHistoricalReleaseVerificationLanguage": true,
+                    "line": 5996,
+                    "lineContext": "SHA-256 `61623c7bef3d8fd201703a241fcd67fefa99d70b9800df063722c5d48e796d97`.\nIts provenance equals the live manifest, SHA-256\n`3ebd806d1754276784b5ef13c864fc49f949548615b9ed97e700af6a41f8206a`.\nPublication preserved all six preceding rollback roots; the prior live UI\nbecame the seventh at\n`/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-d2636f6fb3c5-20261002T023421Z`.\nThe unchanged 5 GiB scratch ceiling admitted this release without another\ntransport relocation or deletion of historical evidence.\n\nOff-host HTTPS verification compared all 825 archived public files across 15",
+                    "section": "### Boost search row correction \u2014 2026-10-02 UTC",
+                    "target": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-d2636f6fb3c5-20261002T023421Z"
+                  },
+                  {
+                    "containsHistoricalReleaseVerificationLanguage": true,
+                    "line": 5928,
+                    "lineContext": "Off-host HTTPS verification compared all 825 archived public files across 15\nserving roots and checked the apex redirect. The NFT mirror's 55 files are\ncovered by the publisher's managed-root verification, rather than this HTTPS\nsmoke. All five preceding rollback roots remained preserved; the prior live\nUI became the sixth rollback root at\n`/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-d4d888757a1c-20261002T013828Z`.\nThe HTTPS receipt is preserved beside the publisher evidence at\n`/var/tmp/proofofwork-deploy/recovery-publish-d4d888757a1c-20261002T013828Z-boost/https-smoke-receipt.json`,\nSHA-256 `c393bc11a00b7c9d5f71411b2d298a2b0d295b13202f0595b64ba6e62753cbcc`.\n",
+                    "section": "### Boost tag and profile links release \u2014 2026-10-02 UTC",
+                    "target": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-d4d888757a1c-20261002T013828Z"
+                  },
+                  {
+                    "containsHistoricalReleaseVerificationLanguage": true,
+                    "line": 6118,
+                    "lineContext": "at `/var/backups/proofofwork-ui/releases/proofofwork-ui-release-df4d56da93ce-20261002T042258Z.tgz`.\nIts provenance equals the live manifest, SHA-256\n`63693d8af1dfbd7052b160c5982821ff6a1edca3c28e9a367d49bb1a2c63ebd6`.\nAll eight prior rollback roots were preserved; the preceding live UI became\nthe ninth at\n`/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-df4d56da93ce-20261002T042258Z`.\nFresh postflight verification passed. Caddy's configuration, process, and\ninvocation remained unchanged. The API remains on\n`d4d888757a1c44aab3b9690f79e1917935930f0f`; this UI correction changes no\nprotocol, fee, wallet flow, schema, or server code.",
+                    "section": "### Boost search Back arrow centering \u2014 2026-10-02 UTC",
+                    "target": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-df4d56da93ce-20261002T042258Z"
+                  },
+                  {
+                    "containsHistoricalReleaseVerificationLanguage": true,
+                    "line": 6054,
+                    "lineContext": "SHA-256 `e86ee87c4c4d8dd6a6ad43dd5b7044dc7bcd5674048f32d570e22004ed5c9415`.\nIts provenance equals the live manifest, SHA-256\n`64ac49385d25f8662c3b0153ba8c4e059020ac2603b78310aed92ba79247884c`.\nPublication preserved all seven preceding rollback roots; the prior live UI\nbecame the eighth at\n`/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-f81ae55bf4b0-20261002T031600Z`.\nOff-host HTTPS verification compared all 825 archived public files across 15\nserving roots and checked the apex redirect. The NFT mirror's 55 files remain\ncovered by managed-root verification. The HTTPS receipt SHA-256 is\n`22662a7bb3b32768c534d1214ebd4e1b5d9c9e3ec0d75fbc3cc9cb36f659e295`.",
+                    "section": "### Boost central search view \u2014 2026-10-02 UTC",
+                    "target": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-f81ae55bf4b0-20261002T031600Z"
+                  }
+                ],
+                "relativePath": "OP_RETURN_INFRASTRUCTURE.md",
+                "sameCommittedBytes": true,
+                "sha256": "ea3f3581f033e8fb24eec0d00bb351eb5ab843497a811ccad80fd8c0710d1419"
+              },
+              {
+                "commit": "26500e4d2ff7",
+                "matches": [
+                  {
+                    "jsonPointer": "/release/preflight/retained/0/root",
+                    "target": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-527e4cbaa66f-20261001T062733Z",
+                    "valueIsExactlyTargetPath": true
+                  },
+                  {
+                    "jsonPointer": "/release/transportPlan/retainedRoots/0/root",
+                    "target": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-527e4cbaa66f-20261001T062733Z",
+                    "valueIsExactlyTargetPath": true
+                  },
+                  {
+                    "jsonPointer": "/release/publicationPlan/retainedRoots/0/root",
+                    "target": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-527e4cbaa66f-20261001T062733Z",
+                    "valueIsExactlyTargetPath": true
+                  },
+                  {
+                    "jsonPointer": "/release/postflight/retained/0/root",
+                    "target": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-527e4cbaa66f-20261001T062733Z",
+                    "valueIsExactlyTargetPath": true
+                  },
+                  {
+                    "jsonPointer": "/release/postflight/retained/1/root",
+                    "target": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-dbfa88b95819-20261001T134456Z",
+                    "valueIsExactlyTargetPath": true
+                  }
+                ],
+                "relativePath": "audits/2026-10-01-recursive-assurance-batch-1.evidence.json",
+                "sameCommittedBytes": true,
+                "sha256": "28eca227e456be86d42d4906776f0c6ca6120f56da619b911801e14be158bdd1"
+              }
+            ],
+            "format": "pow-audit30-historical-reference-semantic-review-v1",
+            "probeSha256": "a54d0ec7f8445c90b79894969eadf50bac749ad4b69bae9f5946c8d275da6635"
+          },
+          "path": "/tmp/pow-audit30-storage-reference-semantic-review.json",
+          "sha256": "557ce318a26a83c40c1852976a7e2e3564aed6dd64e74e95798f567de2327dea"
+        }
+      ],
       "planningAttempts": [
         {
           "atUtc": "2026-10-02T19:49:38Z",
@@ -1588,10 +3312,755 @@
           },
           "stderrSha256": "b10530d838f61a6c0d39b7a0b63b4b53c2991b082f9ef365559afac1ad68dcc2",
           "unit": "pow-audit30-storage-20261002T194938Z-1199e647c13c"
+        },
+        {
+          "atUtc": "2026-10-02T19:54:00Z",
+          "productionDeletionOrRelocation": false,
+          "resolution": "Cumulative128MiB pointer-read budget is smaller than selected actualroots. Everyroot/perfile/entrybound stays; largerexplicit cumulativebound and equivalentone-pass search underreview. No bypass or deletion.",
+          "returnCode": 1,
+          "seconds": 223.594,
+          "stderr": {
+            "error": "Reference scan byte bound",
+            "errorClass": "ValueError",
+            "status": "refused"
+          },
+          "stderrSha256": "c3a63a6ff00e2aa97d6598946b0f6e84bab9c397a1a87ba50fb4ffc9edf711b5",
+          "unit": "pow-audit30-storage-20261002T195400Z-49a7b4a0f23b"
+        }
+      ],
+      "preservedImplementationFindings": [
+        {
+          "atUtc": "2026-10-02T20:15:58.224243+00:00",
+          "finding": "Installed-config symlink to a reviewed protected-source document could pass without being qualified as a runtime alias.",
+          "impact": "Historical citation exception could conceal a live dependency through an alias.",
+          "productionMutation": false,
+          "resolution": "Exact reviewed-document/source-parent aliases, full symlink chains, configuration/process content and empty-remaining-path checks now refuse. Independently checked18 cases;36 controller fixtures pass.",
+          "sourceControllerSha256": "3570893990da94d3b28e63d668e051b92745582bc1c78c94d78e20bdf4001574",
+          "status": "Independent review blocked production plan; alias refusal correction in progress."
+        }
+      ],
+      "preservedPlanRefusals": [
+        {
+          "bytes": 2370,
+          "content": {
+            ".result.json": {
+              "bytes": 989,
+              "content": {
+                "argv": [
+                  "ui-storage.py",
+                  "plan-cleanup",
+                  "--approval",
+                  "/var/backups/proofofwork-ui/cleanup-evidence/audit30-private-tools-6152b4c0ab63892c2b4ec4fd0c09d685d11c5f72921790a116885a8900a5ece7/approval.json",
+                  "--approval-sha256",
+                  "d99a40236b49b1735c794fb853c4f7f4f0724da8e3f83fab75c7464e0e8ee373"
+                ],
+                "errorClass": null,
+                "privatePackage": "/var/backups/proofofwork-ui/cleanup-evidence/audit30-private-tools-6152b4c0ab63892c2b4ec4fd0c09d685d11c5f72921790a116885a8900a5ece7",
+                "returnCode": 1,
+                "seconds": 229.206,
+                "status": "failed",
+                "stderrBytes": 812,
+                "stderrPath": "/var/backups/proofofwork-ui/cleanup-evidence/audit30-run-plan-cleanup-20261002T200428Z-f2e20824a89a.stderr.log",
+                "stderrSha256": "eec85b9e1214d6ea4e113a75e41da7515aed8558c1aa67b055fb6ffba8f45b9c",
+                "stdoutBytes": 0,
+                "stdoutPath": "/var/backups/proofofwork-ui/cleanup-evidence/audit30-run-plan-cleanup-20261002T200428Z-f2e20824a89a.stdout.json",
+                "stdoutSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+              },
+              "path": "/var/backups/proofofwork-ui/cleanup-evidence/audit30-run-plan-cleanup-20261002T200428Z-f2e20824a89a.result.json",
+              "sha256": "70c2835da7ebd79deb3aeb6170fa4f4d5f49c7b6bc3959d4d9b48d9549cf73f3"
+            },
+            ".stderr.log": {
+              "bytes": 812,
+              "content": "{\"status\": \"refused\", \"errorClass\": \"ValueError\", \"error\": \"Active/configuration/inbound references: [{\\\"reference\\\": \\\"/var/tmp/proofofwork-deploy/proofofwork-ui-source-26500e4d2ff7-20261002T054938Z/OP_RETURN_INFRASTRUCTURE.md\\\", \\\"kind\\\": \\\"content-pointer\\\"}, {\\\"reference\\\": \\\"/var/tmp/proofofwork-deploy/proofofwork-ui-source-26500e4d2ff7-20261002T054938Z/audits/2026-10-01-recursive-assurance-batch-1.evidence.json\\\", \\\"kind\\\": \\\"content-pointer\\\"}, {\\\"reference\\\": \\\"/var/tmp/proofofwork-deploy/proofofwork-ui-source-835e30258d23-20261002T052338Z/OP_RETURN_INFRASTRUCTURE.md\\\", \\\"kind\\\": \\\"content-pointer\\\"}, {\\\"reference\\\": \\\"/var/tmp/proofofwork-deploy/proofofwork-ui-source-835e30258d23-20261002T052338Z/audits/2026-10-01-recursive-assurance-batch-1.evidence.json\\\", \\\"kind\\\": \\\"content-pointer\\\"}]\"}\n",
+              "path": "/var/backups/proofofwork-ui/cleanup-evidence/audit30-run-plan-cleanup-20261002T200428Z-f2e20824a89a.stderr.log",
+              "sha256": "eec85b9e1214d6ea4e113a75e41da7515aed8558c1aa67b055fb6ffba8f45b9c"
+            }
+          },
+          "path": "/tmp/pow-audit30-storage-plan-third-refusal.json",
+          "sha256": "b40a7f496bcac730616c57c1732d872b46e3abb4a9a5c674bccd74647d7a58cc"
         }
       ],
       "productionDataChanged": false,
-      "status": "in-progress",
+      "referenceReview": [
+        {
+          "bytes": 10052,
+          "content": {
+            "cleanupTargetCount": 40,
+            "completeWithinDefinedScope": true,
+            "format": "pow-audit30-exact-reference-classification-v1",
+            "futurePolicyTargetCount": 4,
+            "matches": [
+              {
+                "classification": "documentation-citation-needs-semantic-review",
+                "fileBytes": 394526,
+                "fileSha256": "ea3f3581f033e8fb24eec0d00bb351eb5ab843497a811ccad80fd8c0710d1419",
+                "kind": "content-pointer",
+                "reference": "/var/tmp/proofofwork-deploy/proofofwork-ui-source-26500e4d2ff7-20261002T054938Z/OP_RETURN_INFRASTRUCTURE.md",
+                "targets": [
+                  {
+                    "firstLineNumbers": [
+                      5990
+                    ],
+                    "occurrences": 1,
+                    "path": "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-d2636f6fb3c5-20261002T023421Z.tgz",
+                    "scope": "approved-exact40-cleanup"
+                  },
+                  {
+                    "firstLineNumbers": [
+                      5919
+                    ],
+                    "occurrences": 1,
+                    "path": "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-d4d888757a1c-20261002T013828Z.tgz",
+                    "scope": "approved-exact40-cleanup"
+                  },
+                  {
+                    "firstLineNumbers": [
+                      6113
+                    ],
+                    "occurrences": 1,
+                    "path": "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-df4d56da93ce-20261002T042258Z.tgz",
+                    "scope": "approved-exact40-cleanup"
+                  },
+                  {
+                    "firstLineNumbers": [
+                      6048
+                    ],
+                    "occurrences": 1,
+                    "path": "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-f81ae55bf4b0-20261002T031600Z.tgz",
+                    "scope": "approved-exact40-cleanup"
+                  },
+                  {
+                    "firstLineNumbers": [
+                      5996
+                    ],
+                    "occurrences": 1,
+                    "path": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-d2636f6fb3c5-20261002T023421Z",
+                    "scope": "approved-exact40-cleanup"
+                  },
+                  {
+                    "firstLineNumbers": [
+                      5928
+                    ],
+                    "occurrences": 1,
+                    "path": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-d4d888757a1c-20261002T013828Z",
+                    "scope": "approved-exact40-cleanup"
+                  },
+                  {
+                    "firstLineNumbers": [
+                      6118
+                    ],
+                    "occurrences": 1,
+                    "path": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-df4d56da93ce-20261002T042258Z",
+                    "scope": "approved-exact40-cleanup"
+                  },
+                  {
+                    "firstLineNumbers": [
+                      6054
+                    ],
+                    "occurrences": 1,
+                    "path": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-f81ae55bf4b0-20261002T031600Z",
+                    "scope": "approved-exact40-cleanup"
+                  }
+                ]
+              },
+              {
+                "classification": "historical-audit-citation",
+                "fileBytes": 107399,
+                "fileSha256": "28eca227e456be86d42d4906776f0c6ca6120f56da619b911801e14be158bdd1",
+                "kind": "content-pointer",
+                "reference": "/var/tmp/proofofwork-deploy/proofofwork-ui-source-26500e4d2ff7-20261002T054938Z/audits/2026-10-01-recursive-assurance-batch-1.evidence.json",
+                "targets": [
+                  {
+                    "firstLineNumbers": [
+                      1707,
+                      1870,
+                      1973,
+                      2165
+                    ],
+                    "occurrences": 4,
+                    "path": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-527e4cbaa66f-20261001T062733Z",
+                    "scope": "approved-exact40-cleanup"
+                  },
+                  {
+                    "firstLineNumbers": [
+                      2174
+                    ],
+                    "occurrences": 1,
+                    "path": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-dbfa88b95819-20261001T134456Z",
+                    "scope": "approved-exact40-cleanup"
+                  }
+                ]
+              },
+              {
+                "classification": "documentation-citation-needs-semantic-review",
+                "fileBytes": 394526,
+                "fileSha256": "ea3f3581f033e8fb24eec0d00bb351eb5ab843497a811ccad80fd8c0710d1419",
+                "kind": "content-pointer",
+                "reference": "/var/tmp/proofofwork-deploy/proofofwork-ui-source-835e30258d23-20261002T052338Z/OP_RETURN_INFRASTRUCTURE.md",
+                "targets": [
+                  {
+                    "firstLineNumbers": [
+                      5990
+                    ],
+                    "occurrences": 1,
+                    "path": "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-d2636f6fb3c5-20261002T023421Z.tgz",
+                    "scope": "approved-exact40-cleanup"
+                  },
+                  {
+                    "firstLineNumbers": [
+                      5919
+                    ],
+                    "occurrences": 1,
+                    "path": "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-d4d888757a1c-20261002T013828Z.tgz",
+                    "scope": "approved-exact40-cleanup"
+                  },
+                  {
+                    "firstLineNumbers": [
+                      6113
+                    ],
+                    "occurrences": 1,
+                    "path": "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-df4d56da93ce-20261002T042258Z.tgz",
+                    "scope": "approved-exact40-cleanup"
+                  },
+                  {
+                    "firstLineNumbers": [
+                      6048
+                    ],
+                    "occurrences": 1,
+                    "path": "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-f81ae55bf4b0-20261002T031600Z.tgz",
+                    "scope": "approved-exact40-cleanup"
+                  },
+                  {
+                    "firstLineNumbers": [
+                      5996
+                    ],
+                    "occurrences": 1,
+                    "path": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-d2636f6fb3c5-20261002T023421Z",
+                    "scope": "approved-exact40-cleanup"
+                  },
+                  {
+                    "firstLineNumbers": [
+                      5928
+                    ],
+                    "occurrences": 1,
+                    "path": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-d4d888757a1c-20261002T013828Z",
+                    "scope": "approved-exact40-cleanup"
+                  },
+                  {
+                    "firstLineNumbers": [
+                      6118
+                    ],
+                    "occurrences": 1,
+                    "path": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-df4d56da93ce-20261002T042258Z",
+                    "scope": "approved-exact40-cleanup"
+                  },
+                  {
+                    "firstLineNumbers": [
+                      6054
+                    ],
+                    "occurrences": 1,
+                    "path": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-f81ae55bf4b0-20261002T031600Z",
+                    "scope": "approved-exact40-cleanup"
+                  }
+                ]
+              },
+              {
+                "classification": "historical-audit-citation",
+                "fileBytes": 107399,
+                "fileSha256": "28eca227e456be86d42d4906776f0c6ca6120f56da619b911801e14be158bdd1",
+                "kind": "content-pointer",
+                "reference": "/var/tmp/proofofwork-deploy/proofofwork-ui-source-835e30258d23-20261002T052338Z/audits/2026-10-01-recursive-assurance-batch-1.evidence.json",
+                "targets": [
+                  {
+                    "firstLineNumbers": [
+                      1707,
+                      1870,
+                      1973,
+                      2165
+                    ],
+                    "occurrences": 4,
+                    "path": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-527e4cbaa66f-20261001T062733Z",
+                    "scope": "approved-exact40-cleanup"
+                  },
+                  {
+                    "firstLineNumbers": [
+                      2174
+                    ],
+                    "occurrences": 1,
+                    "path": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-dbfa88b95819-20261001T134456Z",
+                    "scope": "approved-exact40-cleanup"
+                  }
+                ]
+              }
+            ],
+            "matchesByClassification": {
+              "documentation-citation-needs-semantic-review": 2,
+              "historical-audit-citation": 2
+            },
+            "perRoot": [
+              {
+                "bytesRead": 694286,
+                "entries": 1223,
+                "exists": true,
+                "filesRead": 387,
+                "linksChecked": 735,
+                "root": "/proc",
+                "skippedLargeFiles": 0,
+                "skippedPayloadDirectories": 0,
+                "skippedSpecial": 0
+              },
+              {
+                "bytesRead": 3430631,
+                "entries": 1682,
+                "exists": true,
+                "filesRead": 876,
+                "linksChecked": 576,
+                "root": "/etc",
+                "skippedLargeFiles": 0,
+                "skippedPayloadDirectories": 0,
+                "skippedSpecial": 0
+              },
+              {
+                "bytesRead": 563493,
+                "entries": 21,
+                "exists": true,
+                "filesRead": 19,
+                "linksChecked": 0,
+                "root": "/usr/local/sbin",
+                "skippedLargeFiles": 0,
+                "skippedPayloadDirectories": 0,
+                "skippedSpecial": 0
+              },
+              {
+                "bytesRead": 0,
+                "entries": 1,
+                "exists": true,
+                "filesRead": 0,
+                "linksChecked": 0,
+                "root": "/usr/local/bin",
+                "skippedLargeFiles": 0,
+                "skippedPayloadDirectories": 0,
+                "skippedSpecial": 0
+              },
+              {
+                "bytesRead": 2,
+                "entries": 5,
+                "exists": true,
+                "filesRead": 1,
+                "linksChecked": 0,
+                "root": "/var/spool/cron",
+                "skippedLargeFiles": 0,
+                "skippedPayloadDirectories": 0,
+                "skippedSpecial": 0
+              },
+              {
+                "bytesRead": 105242833,
+                "entries": 1264,
+                "exists": true,
+                "filesRead": 1107,
+                "linksChecked": 0,
+                "root": "/var/www",
+                "skippedLargeFiles": 93,
+                "skippedPayloadDirectories": 0,
+                "skippedSpecial": 0
+              },
+              {
+                "bytesRead": 18668671,
+                "entries": 742,
+                "exists": true,
+                "filesRead": 657,
+                "linksChecked": 0,
+                "root": "/var/tmp/proofofwork-deploy/proofofwork-ui-source-26500e4d2ff7-20261002T054938Z",
+                "skippedLargeFiles": 12,
+                "skippedPayloadDirectories": 2,
+                "skippedSpecial": 0
+              },
+              {
+                "bytesRead": 18665784,
+                "entries": 742,
+                "exists": true,
+                "filesRead": 657,
+                "linksChecked": 0,
+                "root": "/var/tmp/proofofwork-deploy/proofofwork-ui-source-835e30258d23-20261002T052338Z",
+                "skippedLargeFiles": 12,
+                "skippedPayloadDirectories": 2,
+                "skippedSpecial": 0
+              }
+            ],
+            "qualification": "Only literal whole absolute path citations/pointers; historical-audit classification requires semantic confirmation against committed records. Files>1MiB and objects/node_modules textual payloads excluded as in approved controller; all processed reads bounded and file identities fenced. No content snippets or credentials emitted.",
+            "targetCount": 44,
+            "totalBytesRead": 147265700,
+            "totalEntries": 5680
+          },
+          "path": "/tmp/pow-audit30-storage-reference-classification.json",
+          "sha256": "a54d0ec7f8445c90b79894969eadf50bac749ad4b69bae9f5946c8d275da6635"
+        },
+        {
+          "bytes": 9647,
+          "content": {
+            "committedDocuments": [
+              {
+                "commit": "26500e4d2ff7",
+                "matches": [
+                  {
+                    "containsHistoricalReleaseVerificationLanguage": true,
+                    "line": 5990,
+                    "lineContext": "In-app browser checks confirmed six existing `$work` matches and a contained\n46-pixel search row on Boost and Computer at both 1920- and 390-pixel widths;\nediting the live Boost query to `$powb` returned its one existing match.\n\nThe managed UI archive is\n`/var/backups/proofofwork-ui/releases/proofofwork-ui-release-d2636f6fb3c5-20261002T023421Z.tgz`,\nSHA-256 `61623c7bef3d8fd201703a241fcd67fefa99d70b9800df063722c5d48e796d97`.\nIts provenance equals the live manifest, SHA-256\n`3ebd806d1754276784b5ef13c864fc49f949548615b9ed97e700af6a41f8206a`.\nPublication preserved all six preceding rollback roots; the prior live UI",
+                    "section": "### Boost search row correction \u2014 2026-10-02 UTC",
+                    "target": "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-d2636f6fb3c5-20261002T023421Z.tgz"
+                  },
+                  {
+                    "containsHistoricalReleaseVerificationLanguage": true,
+                    "line": 5919,
+                    "lineContext": "production receipt is\n`/data/proofofwork-audit29-verify-launch-d4d888757a1c-20261002T013828Z-production-retry1/accepted-receipt.json`,\nSHA-256 `571fed130f19f5dfed0f36509a1a1fd06f6c53faa3b09f158f344d13265c35cf`.\n\nThe managed UI archive is\n`/var/backups/proofofwork-ui/releases/proofofwork-ui-release-d4d888757a1c-20261002T013828Z.tgz`,\nSHA-256 `0ad90dcaf48925f77cf7c4b1b9b5e3eeccfde5189c18c1e0ebe5c3ebda098848`.\nIts provenance equals the live manifest, SHA-256\n`a3e437f4f1e72b9f363839472ef04f91679bdb1a8671b87eb26db44110616e37`.\nOff-host HTTPS verification compared all 825 archived public files across 15",
+                    "section": "### Boost tag and profile links release \u2014 2026-10-02 UTC",
+                    "target": "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-d4d888757a1c-20261002T013828Z.tgz"
+                  },
+                  {
+                    "containsHistoricalReleaseVerificationLanguage": true,
+                    "line": 6113,
+                    "lineContext": "network and Computer workspace. The browser receipt SHA-256 is\n`88ce7dc74c78f41d448b917fec38d8454544d53607f99f2c6a456789b39cffcd`.\n\nThe managed release archive SHA-256 is\n`9d910d85aa94957a73b54be429b02535b13b654c6f382e35bf87b58135c09687`,\nat `/var/backups/proofofwork-ui/releases/proofofwork-ui-release-df4d56da93ce-20261002T042258Z.tgz`.\nIts provenance equals the live manifest, SHA-256\n`63693d8af1dfbd7052b160c5982821ff6a1edca3c28e9a367d49bb1a2c63ebd6`.\nAll eight prior rollback roots were preserved; the preceding live UI became\nthe ninth at",
+                    "section": "### Boost search Back arrow centering \u2014 2026-10-02 UTC",
+                    "target": "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-df4d56da93ce-20261002T042258Z.tgz"
+                  },
+                  {
+                    "containsHistoricalReleaseVerificationLanguage": true,
+                    "line": 6048,
+                    "lineContext": "the restored inline composer after Back. No test transaction was broadcast.\nThe live-browser observation receipt SHA-256 is\n`346ff36a4c58c94863bdb18402baa6f7bbe4a57861058e802b1840dd862c54b7`.\n\nThe managed archive is\n`/var/backups/proofofwork-ui/releases/proofofwork-ui-release-f81ae55bf4b0-20261002T031600Z.tgz`,\nSHA-256 `e86ee87c4c4d8dd6a6ad43dd5b7044dc7bcd5674048f32d570e22004ed5c9415`.\nIts provenance equals the live manifest, SHA-256\n`64ac49385d25f8662c3b0153ba8c4e059020ac2603b78310aed92ba79247884c`.\nPublication preserved all seven preceding rollback roots; the prior live UI",
+                    "section": "### Boost central search view \u2014 2026-10-02 UTC",
+                    "target": "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-f81ae55bf4b0-20261002T031600Z.tgz"
+                  },
+                  {
+                    "containsHistoricalReleaseVerificationLanguage": true,
+                    "line": 5996,
+                    "lineContext": "SHA-256 `61623c7bef3d8fd201703a241fcd67fefa99d70b9800df063722c5d48e796d97`.\nIts provenance equals the live manifest, SHA-256\n`3ebd806d1754276784b5ef13c864fc49f949548615b9ed97e700af6a41f8206a`.\nPublication preserved all six preceding rollback roots; the prior live UI\nbecame the seventh at\n`/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-d2636f6fb3c5-20261002T023421Z`.\nThe unchanged 5 GiB scratch ceiling admitted this release without another\ntransport relocation or deletion of historical evidence.\n\nOff-host HTTPS verification compared all 825 archived public files across 15",
+                    "section": "### Boost search row correction \u2014 2026-10-02 UTC",
+                    "target": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-d2636f6fb3c5-20261002T023421Z"
+                  },
+                  {
+                    "containsHistoricalReleaseVerificationLanguage": true,
+                    "line": 5928,
+                    "lineContext": "Off-host HTTPS verification compared all 825 archived public files across 15\nserving roots and checked the apex redirect. The NFT mirror's 55 files are\ncovered by the publisher's managed-root verification, rather than this HTTPS\nsmoke. All five preceding rollback roots remained preserved; the prior live\nUI became the sixth rollback root at\n`/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-d4d888757a1c-20261002T013828Z`.\nThe HTTPS receipt is preserved beside the publisher evidence at\n`/var/tmp/proofofwork-deploy/recovery-publish-d4d888757a1c-20261002T013828Z-boost/https-smoke-receipt.json`,\nSHA-256 `c393bc11a00b7c9d5f71411b2d298a2b0d295b13202f0595b64ba6e62753cbcc`.\n",
+                    "section": "### Boost tag and profile links release \u2014 2026-10-02 UTC",
+                    "target": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-d4d888757a1c-20261002T013828Z"
+                  },
+                  {
+                    "containsHistoricalReleaseVerificationLanguage": true,
+                    "line": 6118,
+                    "lineContext": "at `/var/backups/proofofwork-ui/releases/proofofwork-ui-release-df4d56da93ce-20261002T042258Z.tgz`.\nIts provenance equals the live manifest, SHA-256\n`63693d8af1dfbd7052b160c5982821ff6a1edca3c28e9a367d49bb1a2c63ebd6`.\nAll eight prior rollback roots were preserved; the preceding live UI became\nthe ninth at\n`/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-df4d56da93ce-20261002T042258Z`.\nFresh postflight verification passed. Caddy's configuration, process, and\ninvocation remained unchanged. The API remains on\n`d4d888757a1c44aab3b9690f79e1917935930f0f`; this UI correction changes no\nprotocol, fee, wallet flow, schema, or server code.",
+                    "section": "### Boost search Back arrow centering \u2014 2026-10-02 UTC",
+                    "target": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-df4d56da93ce-20261002T042258Z"
+                  },
+                  {
+                    "containsHistoricalReleaseVerificationLanguage": true,
+                    "line": 6054,
+                    "lineContext": "SHA-256 `e86ee87c4c4d8dd6a6ad43dd5b7044dc7bcd5674048f32d570e22004ed5c9415`.\nIts provenance equals the live manifest, SHA-256\n`64ac49385d25f8662c3b0153ba8c4e059020ac2603b78310aed92ba79247884c`.\nPublication preserved all seven preceding rollback roots; the prior live UI\nbecame the eighth at\n`/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-f81ae55bf4b0-20261002T031600Z`.\nOff-host HTTPS verification compared all 825 archived public files across 15\nserving roots and checked the apex redirect. The NFT mirror's 55 files remain\ncovered by managed-root verification. The HTTPS receipt SHA-256 is\n`22662a7bb3b32768c534d1214ebd4e1b5d9c9e3ec0d75fbc3cc9cb36f659e295`.",
+                    "section": "### Boost central search view \u2014 2026-10-02 UTC",
+                    "target": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-f81ae55bf4b0-20261002T031600Z"
+                  }
+                ],
+                "relativePath": "OP_RETURN_INFRASTRUCTURE.md",
+                "sameCommittedBytes": true,
+                "sha256": "ea3f3581f033e8fb24eec0d00bb351eb5ab843497a811ccad80fd8c0710d1419"
+              },
+              {
+                "commit": "26500e4d2ff7",
+                "matches": [
+                  {
+                    "jsonPointer": "/release/preflight/retained/0/root",
+                    "target": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-527e4cbaa66f-20261001T062733Z",
+                    "valueIsExactlyTargetPath": true
+                  },
+                  {
+                    "jsonPointer": "/release/transportPlan/retainedRoots/0/root",
+                    "target": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-527e4cbaa66f-20261001T062733Z",
+                    "valueIsExactlyTargetPath": true
+                  },
+                  {
+                    "jsonPointer": "/release/publicationPlan/retainedRoots/0/root",
+                    "target": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-527e4cbaa66f-20261001T062733Z",
+                    "valueIsExactlyTargetPath": true
+                  },
+                  {
+                    "jsonPointer": "/release/postflight/retained/0/root",
+                    "target": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-527e4cbaa66f-20261001T062733Z",
+                    "valueIsExactlyTargetPath": true
+                  },
+                  {
+                    "jsonPointer": "/release/postflight/retained/1/root",
+                    "target": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-dbfa88b95819-20261001T134456Z",
+                    "valueIsExactlyTargetPath": true
+                  }
+                ],
+                "relativePath": "audits/2026-10-01-recursive-assurance-batch-1.evidence.json",
+                "sameCommittedBytes": true,
+                "sha256": "28eca227e456be86d42d4906776f0c6ca6120f56da619b911801e14be158bdd1"
+              }
+            ],
+            "format": "pow-audit30-historical-reference-semantic-review-v1",
+            "probeSha256": "a54d0ec7f8445c90b79894969eadf50bac749ad4b69bae9f5946c8d275da6635"
+          },
+          "path": "/tmp/pow-audit30-storage-reference-semantic-review.json",
+          "sha256": "557ce318a26a83c40c1852976a7e2e3564aed6dd64e74e95798f567de2327dea"
+        },
+        {
+          "bytes": 2842,
+          "content": {
+            "completeWithinDefinedScope": true,
+            "format": "pow-audit30-exact-reference-classification-v1",
+            "matches": [],
+            "matchesByClassification": {},
+            "perRoot": [
+              {
+                "bytesRead": 635696,
+                "entries": 1195,
+                "exists": true,
+                "filesRead": 381,
+                "linksChecked": 713,
+                "root": "/proc",
+                "skippedLargeFiles": 0,
+                "skippedPayloadDirectories": 0,
+                "skippedSpecial": 0
+              },
+              {
+                "bytesRead": 3430631,
+                "entries": 1682,
+                "exists": true,
+                "filesRead": 876,
+                "linksChecked": 576,
+                "root": "/etc",
+                "skippedLargeFiles": 0,
+                "skippedPayloadDirectories": 0,
+                "skippedSpecial": 0
+              },
+              {
+                "bytesRead": 563493,
+                "entries": 21,
+                "exists": true,
+                "filesRead": 19,
+                "linksChecked": 0,
+                "root": "/usr/local/sbin",
+                "skippedLargeFiles": 0,
+                "skippedPayloadDirectories": 0,
+                "skippedSpecial": 0
+              },
+              {
+                "bytesRead": 0,
+                "entries": 1,
+                "exists": true,
+                "filesRead": 0,
+                "linksChecked": 0,
+                "root": "/usr/local/bin",
+                "skippedLargeFiles": 0,
+                "skippedPayloadDirectories": 0,
+                "skippedSpecial": 0
+              },
+              {
+                "bytesRead": 2,
+                "entries": 5,
+                "exists": true,
+                "filesRead": 1,
+                "linksChecked": 0,
+                "root": "/var/spool/cron",
+                "skippedLargeFiles": 0,
+                "skippedPayloadDirectories": 0,
+                "skippedSpecial": 0
+              },
+              {
+                "bytesRead": 105242833,
+                "entries": 1264,
+                "exists": true,
+                "filesRead": 1107,
+                "linksChecked": 0,
+                "root": "/var/www",
+                "skippedLargeFiles": 93,
+                "skippedPayloadDirectories": 0,
+                "skippedSpecial": 0
+              },
+              {
+                "bytesRead": 18668671,
+                "entries": 742,
+                "exists": true,
+                "filesRead": 657,
+                "linksChecked": 0,
+                "root": "/var/tmp/proofofwork-deploy/proofofwork-ui-source-26500e4d2ff7-20261002T054938Z",
+                "skippedLargeFiles": 12,
+                "skippedPayloadDirectories": 2,
+                "skippedSpecial": 0
+              },
+              {
+                "bytesRead": 18665784,
+                "entries": 742,
+                "exists": true,
+                "filesRead": 657,
+                "linksChecked": 0,
+                "root": "/var/tmp/proofofwork-deploy/proofofwork-ui-source-835e30258d23-20261002T052338Z",
+                "skippedLargeFiles": 12,
+                "skippedPayloadDirectories": 2,
+                "skippedSpecial": 0
+              }
+            ],
+            "preservationSourceCount": 3,
+            "preservationTargetCount": 3,
+            "qualification": "Only literal whole absolute path citations/pointers; historical-audit classification requires semantic confirmation against committed records. Files>1MiB and objects/node_modules textual payloads excluded as in approved controller; all processed reads bounded and file identities fenced. No content snippets or credentials emitted.",
+            "targetCount": 6,
+            "totalBytesRead": 147207110,
+            "totalEntries": 5652
+          },
+          "path": "/tmp/pow-audit30-preservation-reference-classification.json",
+          "sha256": "28224c8ccfc8f304453f655ed5787ed46045326dc00e8d9797346f6754026495"
+        },
+        {
+          "bytes": 2677,
+          "content": {
+            "files": [
+              {
+                "bytes": 404892,
+                "matches": [
+                  {
+                    "lineCount": 1,
+                    "lines": [
+                      6243
+                    ],
+                    "target": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-26500e4d2ff7-20261002T054938Z"
+                  },
+                  {
+                    "lineCount": 1,
+                    "lines": [
+                      6221
+                    ],
+                    "target": "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-835e30258d23-20261002T052338Z.tgz"
+                  }
+                ],
+                "overScanner1MiB": false,
+                "path": "OP_RETURN_INFRASTRUCTURE.md",
+                "sha256": "b4784d1940160c4c5a4e1804f94b6886e5f54dd1e54bd5ee97c59cd81efa4bf5"
+              },
+              {
+                "bytes": 1218693,
+                "matches": [
+                  {
+                    "lineCount": 2,
+                    "lines": [
+                      481,
+                      1181
+                    ],
+                    "target": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-26500e4d2ff7-20261002T054938Z"
+                  }
+                ],
+                "overScanner1MiB": true,
+                "path": "audits/2026-10-02-production-comprehensive-health-data-integrity-audit-30.evidence.json",
+                "sha256": "8c57aae23db56530ac2289a4232208a5eaa9af9345f1f929948c1eb41a4eb9a8"
+              },
+              {
+                "bytes": 46542,
+                "matches": [
+                  {
+                    "lineCount": 1,
+                    "lines": [
+                      71
+                    ],
+                    "target": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-26500e4d2ff7-20261002T054938Z"
+                  }
+                ],
+                "overScanner1MiB": false,
+                "path": "audits/2026-10-02-production-comprehensive-health-data-integrity-audit-30.md",
+                "sha256": "2d0d0d052df0772505ce77050a06033574bf06b87083d3792f376a8186c7a305"
+              },
+              {
+                "bytes": 70422,
+                "matches": [
+                  {
+                    "lineCount": 1,
+                    "lines": [
+                      470
+                    ],
+                    "target": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-26500e4d2ff7-20261002T054938Z"
+                  }
+                ],
+                "overScanner1MiB": false,
+                "path": "audits/2026-10-02-audit30-first-batch-preparation.evidence.json",
+                "sha256": "f0027078971b7521fb2411e15bd8931b110a0f1815ea7e04bdaed3b5d4bdfdd0"
+              }
+            ],
+            "format": "pow-audit30-future-policy-current-working-source-citations-v1",
+            "qualification": "Read-only current working tree snapshot, not final committed/deployed source. Three files under1MiB will create historical-citation matches for superseded835 targets if copied unchanged into the next protected source; the1,218,693-byte audit evidence is above the unchanged textual scan limit. Preceding rg search found matching paths only in these four document files, excluding build/dependency trees; it is not a production reference scan."
+          },
+          "path": "/tmp/pow-audit30-future-policy-local-citations.json",
+          "sha256": "e77cee33e728a5ab59548f8e3d6af35255683d7a8594895b08f2bbfe4fd91aec"
+        }
+      ],
+      "referenceReviewProduction": {
+        "bytes": 9647,
+        "creationOnly": true,
+        "mode": "0600",
+        "path": "/var/backups/proofofwork-ui/cleanup-evidence/audit30-reference-semantic-review-v1.json",
+        "qualifiedForDeletion": false,
+        "sha256": "557ce318a26a83c40c1852976a7e2e3564aed6dd64e74e95798f567de2327dea",
+        "status": "created"
+      },
+      "scannerCorrection": {
+        "content": {
+          "atUtc": "2026-10-02T20:01:58.992257+00:00",
+          "budgets": {
+            "applyRuntimeUnchanged": "90min",
+            "entries": 100000,
+            "memoryCgroupUnchanged": "2GiB",
+            "perFileBytes": 1048576,
+            "totalBytes": 1073741824
+          },
+          "files": [
+            {
+              "path": "deploy/audit30/ui-storage.py",
+              "sha256": "8580b7cb5238cd49e5ac756cbe7df8f868de7148b958c0649c09c32c7b32a231"
+            },
+            {
+              "path": "deploy/audit30/ui-release-policy.py",
+              "sha256": "ad3d65e5b24be96ade466d45879f7b3048642a0fce77bd2db6adfeaadbc5878e"
+            },
+            {
+              "path": "deploy/audit30/check-ui-storage.test.py",
+              "sha256": "35389d105014b2f32ddc0b6a129b65ce4e49a6d6d36c1a6e008125afdde3115c"
+            },
+            {
+              "path": "deploy/audit30/STORAGE.md",
+              "sha256": "d6ed98b463433118dab3100f8d7fddd3fe1327ff29ffb6ddb0af28f61bbade3e"
+            }
+          ],
+          "lookup": "One compiled escaped-literal bytes regex has the same substring semantics as any literal path in raw, including suffix matches; empty paths list cannot match",
+          "previousReadOnlyProductionRefusal": {
+            "beforeDeletion": true,
+            "message": "Reference scan byte bound",
+            "seconds": 223.594,
+            "stderrSha256": "c3a63a6ff00e2aa97d6598946b0f6e84bab9c397a1a87ba50fb4ffc9edf711b5"
+          },
+          "productionCallsByAgent": 0,
+          "productionMutationsByAgent": false,
+          "proof": "Per-root actual bytes/entries/read/link/skipped-large/skipped-payload/skipped-special counts, total consumed/bounds, bounded process mappings, filesystem identity fences; all limits/read errors refuse",
+          "remaining": "Independent acceptance then fresh root-owned hash-pinned package/plan; measured successful plan must precede runtime decision",
+          "schema": "pow-audit30-bounded-reference-scanner-correction-v1",
+          "scope": "All prior filesystem/process pointer roots remain; no caching or skipped required roots",
+          "tests": {
+            "command": "python3 -I -B deploy/audit30/check-ui-storage.test.py",
+            "count": 30,
+            "newFixtures": [
+              "8-byte total acceptance/7-byte total refusal",
+              "per-root totals and unchanged large/payload exclusions",
+              "literal regex escaping and substring suffix parity",
+              "empty paths no-match",
+              "process cwd/config/maps positive matches",
+              "process mapping above1MiB refusal"
+            ],
+            "seconds": 15.544,
+            "status": "PASS"
+          }
+        },
+        "independentLiteralEquivalenceVectors": 3000,
+        "mismatches": 0,
+        "path": "/tmp/pow-audit30-scanner-correction-receipt.json",
+        "sha256": "affbbdfc53677e29308fc7f391dde8ccc3a3db7be14636d1360822e094305082"
+      },
+      "status": "exact-citation-review-accepted-read-only-full-production-plan-running",
       "toolPackage": {
         "applicationChanged": false,
         "path": "/var/backups/proofofwork-ui/cleanup-evidence/audit30-private-tools-f7acdcf1ccc7e99872f88a7c8a5e54f8e422a8869b7a9ebd9fd3613c0c0ee890",
@@ -1600,6 +4069,10 @@
       "toolPackageCorrected": {
         "path": "/var/backups/proofofwork-ui/cleanup-evidence/audit30-private-tools-3c476692f430ced60e45e9e1716f0f9e82e67d17540ac988a6faf5f2b307a4d3",
         "sha256": "3c476692f430ced60e45e9e1716f0f9e82e67d17540ac988a6faf5f2b307a4d3"
+      },
+      "toolPackageScanner": {
+        "path": "/var/backups/proofofwork-ui/cleanup-evidence/audit30-private-tools-6152b4c0ab63892c2b4ec4fd0c09d685d11c5f72921790a116885a8900a5ece7",
+        "sha256": "6152b4c0ab63892c2b4ec4fd0c09d685d11c5f72921790a116885a8900a5ece7"
       },
       "wrapperCorrection": {
         "actualCanonicalHeaders": [
@@ -1713,6 +4186,28 @@
     "command": "npm run check:audit30-first-batch",
     "exitCode": 0,
     "finalNamespaceTests": 6,
+    "finalPreReleaseGate": {
+      "checkedAtUtc": "2026-10-02T20:21:29.763854+00:00",
+      "command": "npm run check:audit30-first-batch",
+      "exitCode": 0,
+      "feeSourceUnchangedSinceInitialImplementation": true,
+      "logSha256": "30b495980a7dae862ad178ce142b7895764eedc489babc2a9307c06afb2cb230",
+      "otherVerifiedFixtureCounts": {
+        "installer": 19,
+        "persistentHold": 6,
+        "rationalFeeVectors": 1113,
+        "retirement": 11,
+        "serviceNamespace": 6,
+        "uiRelease": 16,
+        "unsignedPsbtFixtures": 9
+      },
+      "storageFixtureCount": 36,
+      "typescript": {
+        "command": "npx tsc --noEmit",
+        "exitCode": 0,
+        "logSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    },
     "installerTests": 19,
     "namespaceTests": 5,
     "persistentHoldTests": 6,
@@ -1725,6 +4220,15 @@
     "unsignedPsbtFixtures": 9
   },
   "repositoryHygiene": {
+    "correctionPreReleasePass": {
+      "atUtc": "2026-10-02T20:21:29.764011+00:00",
+      "check": "passed",
+      "diffWhitespace": "passed",
+      "fix": "No allowlisted rebuildable state found",
+      "ignoredOnly": "node_modules/",
+      "semanticReview": "Existing SOUL and canonical protocol/product rules remain correct; exact historical citations and all original audit/approval bytes remain preserved. Classified storage guide and audit bookkeeping updated only within approved batch.",
+      "trackedDeletions": []
+    },
     "safeLocalBytecodeCleanup": [
       {
         "bytes": 70285,
@@ -1762,5 +4266,5 @@
     "path": "audits/2026-10-02-audit30-first-batch-preparation.evidence.json",
     "sha256": "f0027078971b7521fb2411e15bd8931b110a0f1815ea7e04bdaed3b5d4bdfdd0"
   },
-  "updatedAtUtc": "2026-10-02T19:54:01.477107+00:00"
+  "updatedAtUtc": "2026-10-02T20:21:29.764017+00:00"
 }

@@ -25,8 +25,8 @@ KEY='/home/sixer/.ssh/proofofwork_me_ed25519'
 EVIDENCE='/var/backups/proofofwork-ui/cleanup-evidence'
 AUTH='d99a40236b49b1735c794fb853c4f7f4f0724da8e3f83fab75c7464e0e8ee373'
 PINS={
- 'ui-storage.py':('deploy/audit30/ui-storage.py','f360354ee2ada5c1caf960ae174a18e4905f702800794931adb8c23c0ccb73de'),
- 'ui-release-policy.py':('deploy/audit30/ui-release-policy.py','ad3d65e5b24be96ade466d45879f7b3048642a0fce77bd2db6adfeaadbc5878e'),
+ 'ui-storage.py':('deploy/audit30/ui-storage.py','038a2315c4ba5d10e27335a69c400f6c09ec3c2b50b0f64fefb1f5f09d6a06c2'),
+ 'ui-release-policy.py':('deploy/audit30/ui-release-policy.py','f023bd536223437dd2dce5ece6c4c4995cd9d63c648b7fe2f9eabc354a10f22d'),
  'approval.json':('audits/2026-10-02-audit30-first-batch-approval.json',AUTH),
 }
 SHA=re.compile('[0-9a-f]{64}\\Z')
@@ -158,6 +158,8 @@ def start(a,h,pins,directory):
         args=['ui-release-policy.py',command,*authority,'--index',evidence_path(a.index),'--index-sha256',pin(a.index_sha256)]
         if command=='admit-release':args+=['--record']
         elif command in ('verify','apply'):args+=['--plan',evidence_path(a.plan),'--plan-sha256',pin(a.plan_sha256)]
+    if bool(a.citation_review)!=bool(a.citation_review_sha256) or a.citation_review and a.operation not in ('plan-cleanup','policy-plan'):raise ValueError('Citation path/SHA pair is admitted only by cleanup/policy plans')
+    if a.citation_review:args+=['--citation-review',evidence_path(a.citation_review),'--citation-review-sha256',pin(a.citation_review_sha256)]
     stamp=datetime.datetime.now(datetime.timezone.utc).strftime('%Y%m%dT%H%M%SZ')+'-'+uuid.uuid4().hex[:12]
     unit='pow-audit30-storage-'+stamp;prefix=EVIDENCE+'/audit30-run-'+a.operation+'-'+stamp
     deadline='90min' if a.operation in ('apply','policy-apply') else '30min'
@@ -165,7 +167,7 @@ def start(a,h,pins,directory):
     result=ssh(command);return {'unit':unit,'prefix':prefix,'package':directory,'packageSha256':h,'deadline':deadline,'controllerArgv':args,'launchOutput':result.stdout.decode(),'launchError':result.stderr.decode(),'resultPath':prefix+'.result.json','stdoutPath':prefix+'.stdout.json','stderrPath':prefix+'.stderr.log'}
 
 def main():
-    p=argparse.ArgumentParser(description=__doc__);p.add_argument('command',choices=['prepare','upload','start','status','fetch']);p.add_argument('--operation',choices=['bootstrap','plan-cleanup','plan-preservation','plan-inverse','verify','apply','policy-admit','policy-plan','policy-verify','policy-apply']);p.add_argument('--receipt');p.add_argument('--receipt-sha256');p.add_argument('--plan');p.add_argument('--plan-sha256');p.add_argument('--index');p.add_argument('--index-sha256');p.add_argument('--unit');p.add_argument('--prefix');p.add_argument('--remote-path');p.add_argument('--sha256');p.add_argument('--output',type=Path)
+    p=argparse.ArgumentParser(description=__doc__);p.add_argument('command',choices=['prepare','upload','start','status','fetch']);p.add_argument('--operation',choices=['bootstrap','plan-cleanup','plan-preservation','plan-inverse','verify','apply','policy-admit','policy-plan','policy-verify','policy-apply']);p.add_argument('--receipt');p.add_argument('--receipt-sha256');p.add_argument('--plan');p.add_argument('--plan-sha256');p.add_argument('--index');p.add_argument('--index-sha256');p.add_argument('--unit');p.add_argument('--prefix');p.add_argument('--remote-path');p.add_argument('--sha256');p.add_argument('--output',type=Path);p.add_argument('--citation-review');p.add_argument('--citation-review-sha256')
     a=p.parse_args();raw,h,pins,directory=package()
     if a.command=='prepare':
         target=Path('/tmp/pow-audit30-ui-tools-'+h+'.tar')
