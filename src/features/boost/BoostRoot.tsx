@@ -2276,7 +2276,6 @@ export default function BoostRoot({
     const label = isProfileView ? "Search this profile" : "Search Boost";
     return <label className={inline ? "boost-search boost-route-search" : "boost-search"}>
       <Search size={15} aria-hidden="true" />
-      {inline ? <span>{label}</span> : null}
       <input autoComplete="off" onChange={event => setSearchQuery(event.target.value)}
         aria-label={label} placeholder={label} ref={profileSearchRef} value={searchQuery} />
     </label>;

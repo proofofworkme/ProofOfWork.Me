@@ -152,6 +152,57 @@ for (const embedded of [false, true]) {
       await expect(page.getByTestId("boost-post").getByRole("link", { name: q, exact: true })).toBeVisible();
     }
   });
+
+  for (const width of [1920, 390]) {
+    test(`${surface} keeps the route search icon and editable input in one row at ${width}px`, async ({ page }) => {
+      await page.setViewportSize({ width, height: width === 390 ? 844 : 1080 });
+      const { queries } = await fixture(page, { items: [post(ORIGINAL_TXID, "$generic_7 #網絡_2026")] });
+      await page.goto(`${route}&q=${encodeURIComponent("$generic_7")}`);
+      const input = page.getByRole("textbox", { name: "Search Boost", exact: true });
+      const control = page.locator(".boost-route-search");
+      await expect(input).toHaveValue("$generic_7");
+      await expect(input).toHaveAttribute("placeholder", "Search Boost");
+      await expect(control).toHaveCount(1);
+      await expect(page.getByTestId("boost-post")).toBeVisible();
+      await expect.poll(() => queries.at(-1)?.q).toBe("$generic_7");
+
+      const geometry = await control.evaluate((element) => {
+        const box = (node) => {
+          const { x, y, width, height, right, bottom } = node.getBoundingClientRect();
+          return { x, y, width, height, right, bottom, centerY: y + height / 2 };
+        };
+        const style = getComputedStyle(element);
+        return {
+          control: box(element), icon: box(element.querySelector(":scope > svg")),
+          input: box(element.querySelector("input")),
+          insetRight: parseFloat(style.paddingRight) + parseFloat(style.borderRightWidth),
+          gap: parseFloat(style.columnGap),
+          overflow: element.scrollWidth - element.clientWidth,
+          documentWidth: document.documentElement.scrollWidth,
+        };
+      });
+      expect(geometry.control.height).toBeGreaterThanOrEqual(43);
+      expect(geometry.control.height).toBeLessThanOrEqual(46);
+      expect(Math.abs(geometry.icon.centerY - geometry.input.centerY)).toBeLessThanOrEqual(1);
+      expect(Math.abs(geometry.control.centerY - geometry.input.centerY)).toBeLessThanOrEqual(1);
+      expect(geometry.input.y).toBeGreaterThanOrEqual(geometry.control.y);
+      expect(geometry.input.bottom).toBeLessThanOrEqual(geometry.control.bottom);
+      const expectedRight = geometry.control.right - geometry.insetRight;
+      expect(geometry.input.x).toBeGreaterThanOrEqual(geometry.icon.right + geometry.gap - 1);
+      expect(geometry.input.width).toBeGreaterThanOrEqual(expectedRight - geometry.icon.right - geometry.gap - 1);
+      expect(Math.abs(geometry.input.right - expectedRight)).toBeLessThanOrEqual(1);
+      expect(geometry.overflow).toBeLessThanOrEqual(1);
+      expect(geometry.control.x).toBeGreaterThanOrEqual(0);
+      expect(geometry.control.right).toBeLessThanOrEqual(width + 1);
+      expect(geometry.documentWidth).toBeLessThanOrEqual(width + 1);
+
+      await input.fill("#網絡_2026");
+      await expect(input).toHaveValue("#網絡_2026");
+      await expect.poll(() => queries.at(-1)?.q).toBe("#網絡_2026");
+      await expect(input).toBeFocused();
+      await page.screenshot({ path: `/tmp/pow-boost-search-row-${embedded ? "computer" : "standalone"}-${width}.png` });
+    });
+  }
 }
 
 test("ID mentions share a confirmed owner preview, stay keyboard-accessible, and open without a Boost detail", async ({ page }) => {

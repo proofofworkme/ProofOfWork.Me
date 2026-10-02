@@ -1301,7 +1301,6 @@
 .boost-text-link:hover { text-decoration-thickness: 2px; }
 .boost-text-link:focus-visible { outline: 2px solid var(--focus-outline, #77a7e8); outline-offset: 3px; border-radius: 2px; }
 .boost-route-search { margin: 12px 16px; min-width: 0; }
-.boost-route-search > span { flex: 0 0 auto; font-size: .8rem; color: var(--text-muted); }
 .boost-route-search > input { min-width: 0; }
 .boost-mention-preview {
   position: fixed;

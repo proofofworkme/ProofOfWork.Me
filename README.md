@@ -643,6 +643,8 @@ searches over the complete confirmed history. `$work`, `#work`, and ordinary
 `work` searches remain distinct. The same text renderer covers posts, replies,
 quotes, and reboost originals in standalone Boost and Computer; search and
 profile links retain their host and selected network.
+Active tag searches keep a compact, single-line icon and input above the feed
+on desktop and mobile, with the search name retained for assistive technology.
 
 Mentions accept `@name`, `name@proofofwork.me`, and `@<address>` for an address
 without a PowID. PowIDs resolve to their current confirmed owner, while raw
