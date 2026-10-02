@@ -30,7 +30,7 @@ async function fixture(page, overrides = {}) {
   const state = { records: [ROOT,
     { ...ROOT, id: "bob", ownerAddress: RESOLVER, txid: "c".repeat(64) },
     { ...ROOT, id: "pending", ownerAddress: RESOLVER, confirmed: false, txid: "d".repeat(64) }],
-    children: [CHILD], network: "livenet", initiallyConnected: false, delayAccounts: false,
+    children: [CHILD], idRecords: [], network: "livenet", initiallyConnected: false, delayAccounts: false,
     complete: true, fail: false, gate: null,
     reads: [], nonGet: [], ...overrides };
   await page.addInitScript(({ owner, network, initiallyConnected, delayAccounts }) => {
@@ -63,6 +63,8 @@ async function fixture(page, overrides = {}) {
       if (state.gate) await state.gate.promise;
       if (state.fail) return route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ error: "DNS fixture unavailable" }) });
       response = { ...REGISTRY, records: state.records, coverage: { complete: state.complete } };
+    } else if (url.pathname === "/api/v1/registry" || url.pathname === "/api/v1/registry-summary") {
+      response = { ...REGISTRY, records: state.idRecords };
     } else if (url.pathname.startsWith("/api/v1/dns/")) {
       expect(url.searchParams.get("current")).toBe("1");
       expect(url.searchParams.get("fresh")).toBe("1");
@@ -151,6 +153,46 @@ test("Computer DNS deep link shares claims, owned names, public search and confi
   await expect(page.locator(".dns-workspace").getByRole("heading", { name: "List a .pow name" })).toHaveCount(0);
   await expectReadOnly(page, state);
 });
+
+for (const [label, path] of [["native Computer", "/?folder=dns"], ["focused DNS", "/?dns-launch=1"]]) {
+  test(`${label} searches .pow names with their DNS suffix without matching the ID namespace`, async ({ page }) => {
+    const names = [ROOT, { ...ROOT, id: "work", ownerAddress: RESOLVER, txid: "c".repeat(64) }];
+    const state = await fixture(page, { records: names, idRecords: names });
+    await connect(page, path);
+    const registry = page.locator("#dns-registry");
+    await expect(registry.locator(".id-record strong")).toHaveText(["alice.pow", "work.pow"]);
+    const search = registry.getByPlaceholder("Search .pow names, addresses, txids");
+    for (const query of ["work", "work.pow", "WORK.POW"]) {
+      await search.fill(query);
+      await expect(registry.locator(".id-record strong")).toHaveText(["work.pow"]);
+    }
+    const owned = page.locator("#dns-owned");
+    await owned.getByPlaceholder("Search your .pow").fill("alice.pow");
+    await expect(owned.locator(".id-record strong")).toHaveText(["alice.pow"]);
+    await search.fill("work@proofofwork.me");
+    await expect(registry.locator(".id-record")).toHaveCount(0);
+    await expect(registry).toContainText("No records match this search.");
+    await owned.getByPlaceholder("Search your .pow").fill("alice@proofofwork.me");
+    await expect(owned.locator(".id-record")).toHaveCount(0);
+    await expect(owned).toContainText("No records match this search.");
+    if (label === "native Computer") {
+      await page.locator(".sidebar").getByRole("button", { name: /^IDs/ }).click();
+      await expect(page).toHaveURL(/folder=ids/);
+      const ids = page.locator(".ids-registry-card");
+      await expect(ids.locator(".id-record strong")).toHaveText(["alice@proofofwork.me", "work@proofofwork.me"]);
+      await ids.getByRole("textbox").fill("work");
+      await expect(ids.locator(".id-record strong")).toHaveText(["alice@proofofwork.me", "work@proofofwork.me"]);
+      await ids.getByRole("textbox").fill("work@proofofwork.me");
+      await expect(ids.locator(".id-record strong")).toHaveText(["work@proofofwork.me"]);
+      const ownedIds = page.locator(".id-card").filter({ has: page.getByRole("heading", { name: "Your IDs", exact: true }) });
+      await ownedIds.getByPlaceholder("Search your IDs").fill("alice@proofofwork.me");
+      await expect(ownedIds.locator(".id-record strong")).toHaveText(["alice@proofofwork.me"]);
+      await ids.getByRole("textbox").fill("work.pow");
+      await expect(ids.locator(".id-record")).toHaveCount(0);
+    }
+    await expectReadOnly(page, state);
+  });
+}
 
 test("Computer DNS registration prepares the canonical payment review without signing", async ({ page }) => {
   const state = await fixture(page);

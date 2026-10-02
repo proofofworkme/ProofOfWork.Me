@@ -3546,11 +3546,15 @@ function replaceExactPowIdStateItems<T extends PowIdExactStateItem>(
   ];
 }
 
-function idRecordMatchesSearch(record: PowIdRecord, query: string) {
+function idRecordMatchesSearch(
+  record: PowIdRecord,
+  query: string,
+  displaySuffix = "@proofofwork.me",
+) {
   return searchIncludes(
     [
       record.id,
-      `${record.id}@proofofwork.me`,
+      `${record.id}${displaySuffix}`,
       record.ownerAddress,
       record.receiveAddress,
       record.pgpKey ? "pgp" : "none",
@@ -58847,7 +58851,7 @@ function IdRecordList({
   const [searchQuery, setSearchQuery] = useState("");
   const [pageIndex, setPageIndex] = useState(0);
   const filteredRecords = searchQuery
-    ? records.filter((record) => idRecordMatchesSearch(record, searchQuery))
+    ? records.filter((record) => idRecordMatchesSearch(record, searchQuery, displaySuffix))
     : records;
   const recordPage = pagedItems(
     filteredRecords,

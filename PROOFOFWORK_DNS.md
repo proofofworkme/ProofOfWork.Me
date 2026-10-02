@@ -44,6 +44,8 @@ computer.proofofwork.me DNS workspace for claims/search/subdomains; AMO for root
 Computer exposes a dedicated DNS workspace beside IDs at `/?folder=dns`, also
 reachable from mobile More. It shares the focused app's Mainnet claim/search,
 owned-name and public-record views, and owner-controlled subdomain panel.
+Owned-name and public-record searches accept the bare label or its full `.pow`
+name, as well as addresses and transaction IDs.
 Disconnected users can inspect and refresh public records; writes still need
 the verified owner wallet and current signing preflights. Retained registration
 and subdomain receipts can restore their task into this workspace without
