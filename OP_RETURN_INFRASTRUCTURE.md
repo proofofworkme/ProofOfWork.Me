@@ -6093,3 +6093,70 @@ desktop/phone screenshots, browser-test log, build receipt, and collection
 receipt. Preservation was hash-verified and creation-only under the continuous
 deploy lock, with private 0700/0600 modes and unchanged capacity checks.
 No retry, relaxed verification limit, or historical deletion was needed.
+
+### Boost search Back arrow centering — 2026-10-02 UTC
+
+The user-approved correction adds horizontal centering to the existing search
+Back link. The arrow is centered in its 44-by-44-pixel control in standalone
+Boost and Computer. Commit `df4d56da93ce13a8ee19b3a36bb488a122568886`, tree
+`17b3924aed9efe812e2a5b29e580d1130bba0df4`, is deployed as release
+`df4d56da93ce-20261002T042258Z`. Eight relevant browser tests, TypeScript, UI
+contract, and repository hygiene checks passed. Live in-app browser checks
+confirmed actual 1920- and 390-pixel viewports on both sites, zero horizontal
+or vertical arrow offset, six existing `$work` results, search remaining open
+after clearing, and Back restoring the timeline composer and preserving the
+network and Computer workspace. The browser receipt SHA-256 is
+`88ce7dc74c78f41d448b917fec38d8454544d53607f99f2c6a456789b39cffcd`.
+
+The managed release archive SHA-256 is
+`9d910d85aa94957a73b54be429b02535b13b654c6f382e35bf87b58135c09687`,
+at `/var/backups/proofofwork-ui/releases/proofofwork-ui-release-df4d56da93ce-20261002T042258Z.tgz`.
+Its provenance equals the live manifest, SHA-256
+`63693d8af1dfbd7052b160c5982821ff6a1edca3c28e9a367d49bb1a2c63ebd6`.
+All eight prior rollback roots were preserved; the preceding live UI became
+the ninth at
+`/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-df4d56da93ce-20261002T042258Z`.
+Fresh postflight verification passed. Caddy's configuration, process, and
+invocation remained unchanged. The API remains on
+`d4d888757a1c44aab3b9690f79e1917935930f0f`; this UI correction changes no
+protocol, fee, wallet flow, schema, or server code.
+
+The surface staging capacity gate initially refused admission under its
+unchanged 5 GiB ceiling. With explicit user approval, the single historical
+304,425,492-byte archive
+`proofofwork-ui-source-bbb03cebb6c6-20260930T024800Z.tgz` was renamed on the
+same filesystem from `/var/tmp/proofofwork-deploy/` into
+`/var/backups/proofofwork-ui/transport-evidence/historical-archives-boost-back-center-20261002T043000Z/`.
+Its content, inode, ownership, mode, extended attributes, and access and
+modification times were preserved; rename-induced ctime changes were recorded.
+The preservation plan SHA-256 is
+`555a7ccda9d7dd1a2f7165d1a751effb8314e61ee9328978fc4eb6489d90eb99`;
+its successful receipt SHA-256 is
+`234605f621a54cce991fdff29dc4fbd09683aeb4df43a456816e75b199f0ca40`.
+Staging resumed from the already verified incoming payload under the existing
+deploy lock and unchanged gates, with the failed-attempt evidence retained.
+No historical material was deleted and no capacity limit was relaxed.
+
+Off-host HTTPS verification compared all 825 public files across 15 serving
+roots and checked the apex redirect; the NFT mirror's 55 files remain covered
+by managed-root verification. The HTTPS receipt SHA-256 is
+`cd793c109434ac7e3fd04082fa89925811cd6d299cf69b4ebdfff0b4a139729f`.
+The ordered full/fresh surface audit passed all 15 surfaces with 15 current
+observations, zero reused observations, no resume, and the unchanged 20-second
+request limit. Its actual final JSON SHA-256 is
+`d02668913e0b5ee4d713b0ff2fbe20dbd14e772c54b92425327d8d05ca950a61`.
+The subsequent ledger audit passed at snapshot `6b5258b23bb7d1ecacb58e04`;
+the ledger-log SHA-256 is
+`e03a484eec0cc2739ac7f74c16d47157beb6142a1f66630bb3a5bf569b683c1f`.
+The ordered audit report SHA-256 is
+`2dc7359caf61eb591b82a32e7336864e4001447cefe536a1d6624799b58f7687`.
+
+Twenty accepted evidence files are preserved under
+`/var/tmp/proofofwork-deploy/recovery-publish-df4d56da93ce-20261002T042258Z-boost-back-center/public-audit-evidence/`,
+including the actual final audits, publisher and HTTPS receipts, live browser
+observations and four screenshots, browser-test log, build receipt, historical
+archive preservation records, staging resume plan and census, postflight, and
+Caddy comparison. Preservation was creation-only and hash-verified under the
+continuous deploy lock, private 0700/0600 modes, and unchanged capacity checks.
+The local preservation receipt SHA-256 is
+`87d29f450ea1c0d11372c79e11c1aab35a069ec423d79e4af13d9313146080a7`.
