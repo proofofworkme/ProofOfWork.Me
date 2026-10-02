@@ -5726,6 +5726,16 @@ permit unmasking current holds or retiring source/evidence by age. The new
 policy must be invoked with immutable per-release admissions and reviewed
 plans after each verified publication. Traditional prune timers remain masked.
 
+The exact cleanup stopped after 38 paths when the existing hourly logrotate
+service changed 196 held system-log inode numbers at 21:02 UTC. It preserved its
+failed receipt before the next action. The explicit `plan-reconcile` continuation
+binds that original plan, intent, failed receipt, controller and reviewed rotation
+evidence; it admits only the two original remaining sidecars after fresh complete
+recovery/source, reference, capacity and guard checks. The historical inventory,
+hold bytes and masks stay intact. This one-run reconciliation does not create a
+general dynamic-log exemption or automatic resume. A later guard change refuses
+again. The original failure and old/new census remain in execution evidence.
+
 Current execution and the numbered follow-up status are recorded in
 [the Audit 30 tracker](audits/2026-10-02-audit30-followup-tracker.md).
 

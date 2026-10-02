@@ -37,6 +37,10 @@ SCOPE_SHA = 'f0027078971b7521fb2411e15bd8931b110a0f1815ea7e04bdaed3b5d4bdfdd0'
 RELEASE_ID = re.compile(r'[0-9a-f]{12}-[0-9]{8}T[0-9]{6}Z\Z')
 SHA = re.compile(r'[0-9a-f]{64}\Z')
 MAX_JSON = 64 * 1024**2
+# This is one reviewed continuation of the exact Audit30 run, never a generic
+# dynamic-log exception or an automatic recovery from absent paths.
+RECONCILIATION_PINS = dict(reviewManifest='3d09b077148cf471c1b9581e091a676ad7d4b25e799ba50b11561247b7f1f04b',originalPlan='17fd46d15d836d485e96fe0e25abf9bae0505cfee4d64728a895fd50b0e7e8b7',originalIntent='e2a6afa6f7da36ce4e9c5c7797409e5911d99bdcd5f448a2843e513d3a892df2',failedReceipt='4575ad6fee8475822c4db7db31da7843b26abd1053f052027ec4dc4cfcdf12a9',originalController='038a2315c4ba5d10e27335a69c400f6c09ec3c2b50b0f64fefb1f5f09d6a06c2',rotationEvidence='0550a89409c6176febf514278ee0ae70710e0b4b5788d2962e077dfe799b3bb9')
+ROTATION_CONFIG_PINS={'/etc/logrotate.d/rsyslog':'b33b9a6126dfec23ec966cb43d18fbd90d053acc683f67d3c76aa49c0b1afc3b','/etc/logrotate.d/ufw':'03dedaa1de48c9b708363ef4ac2ebeb35b20e47ce1f8a5d650f1335a5f37a5d1'}
 
 def utc(): return datetime.datetime.now(datetime.timezone.utc).isoformat()
 def encoded(value): return json.dumps(value, sort_keys=True, separators=(',', ':')).encode()
@@ -482,9 +486,70 @@ def cleanup_prerequisite(path, expected, layout, approval_sha):
     validate_plan(plan,layout,'cleanup',approval_sha)
     if intent.get('planSha256')!=value.get('planSha256'):raise ValueError('Cleanup intent/result binding differs')
     wanted={r['path'] for r in layout.exact()}; rows=value.get('completed',[])
-    if len(rows)!=40 or {r.get('path') for r in rows}!=wanted or any(r.get('outcome')!='retired' for r in rows):raise ValueError('Incomplete cleanup progress cannot admit preservation')
+    if value.get('holdsAndMasksUnchanged') is not True or len(rows)!=40 or any(r.get('path')!=p['path'] or r.get('outcome')!='retired' or r.get('snapshotSha256')!=p['snapshot']['sha256'] for r,p in zip(rows,plan['delete'])):raise ValueError('Incomplete, reordered or unfenced cleanup progress cannot admit preservation')
     if any(os.path.lexists(p) for p in wanted):raise ValueError('A completed cleanup candidate reappeared')
     return dict(path=str(path),sha256=h,planSha256=value['planSha256'])
+
+def reconciliation_state(layout,binding,approval_sha):
+    if binding.get('sha256')!=RECONCILIATION_PINS['reviewManifest']:raise ValueError('Reconciliation review version pin differs')
+    path=Path(binding['path'])
+    if path.parent!=layout.evidence or not path.name.startswith('audit30-cleanup-reconciliation-review-') or path.suffix!='.json':raise ValueError('Reconciliation review outside durable evidence')
+    review,_=read_json(path,binding['sha256'])
+    if review.get('schema')!='pow-audit30-cleanup-reconciliation-review-v1' or review.get('host')!='77.42.91.106' or review.get('scopeApprovalSha256')!=approval_sha or review.get('classification')!='configured-logrotate-inode-replacement':raise ValueError('Wrong reconciliation authority')
+    values={}
+    for key in ('originalPlan','originalIntent','failedReceipt','originalController'):
+        row=review.get(key,{})
+        if set(row)!= {'path','sha256'} or row['sha256']!=RECONCILIATION_PINS[key]:raise ValueError('Reconciliation original version pin differs')
+        p=Path(row['path'])
+        if key=='originalController':
+            if not p.is_relative_to(layout.evidence) or p.name!='ui-storage.py':raise ValueError('Original controller outside immutable private package')
+            if hash_read(p,1024**2)[0]!=row['sha256']:raise ValueError('Original controller bytes differ')
+        else:
+            if p.parent!=layout.evidence or not p.name.startswith('audit30-'):raise ValueError('Original receipt outside durable evidence')
+            values[key]=read_json(p,row['sha256'])[0]
+    original=values['originalPlan'];intent=values['originalIntent'];failed=values['failedReceipt']
+    validate_plan(original,layout,'cleanup',approval_sha)
+    if 'reconciliation' in original or original['controllerSha256']!=RECONCILIATION_PINS['originalController'] or intent.get('schema')!='pow-audit30-ui-storage-intent-v1' or intent.get('status')!='approved-intent' or intent.get('plan')!=original or intent.get('planSha256')!=RECONCILIATION_PINS['originalPlan']:raise ValueError('Original intent/plan binding differs')
+    prefix=failed.get('completed',[])
+    if failed.get('schema')!='pow-audit30-ui-storage-progress-v1' or failed.get('status')!='failed' or failed.get('planSha256')!=RECONCILIATION_PINS['originalPlan'] or failed.get('intentPath')!=review['originalIntent']['path'] or failed.get('intentSha256')!=RECONCILIATION_PINS['originalIntent'] or failed.get('phase')!='immediate-before-retirement' or failed.get('currentPath')!=original['delete'][38]['path'] or failed.get('holdsAndMasksUnchanged') is not False or failed.get('missingHeldPaths')!=original['safeguards']['missingHeldPaths'] or len(prefix)!=38:raise ValueError('Original failed prefix authority differs')
+    removed=collections.Counter()
+    for completed,row in zip(prefix,original['delete']):
+        if completed.get('path')!=row['path'] or completed.get('outcome')!='retired' or completed.get('snapshotSha256')!=row['snapshot']['sha256'] or not isinstance(completed.get('atUtc'),str) or os.path.lexists(row['path']):raise ValueError('Retired original prefix is unproven or reappeared')
+        for entry in row['snapshot']['entries']:
+            if entry['kind']=='file':removed[(entry['device'],entry['inode'])]+=1
+    before=original['safeguards'];after=review.get('afterGuards',{})
+    if set(after)!=set(before) or any(after[k]!=before[k] for k in before if k!='heldCensus') or len(after['heldCensus'])!=len(before['heldCensus']):raise ValueError('Hold/mask/missing/non-census reconciliation expansion')
+    differences=[]
+    for left,right in zip(before['heldCensus'],after['heldCensus']):
+        if left==right:continue
+        if not left.get('exists') or not right.get('exists') or {k:v for k,v in left.items() if k!='inode'}!={k:v for k,v in right.items() if k!='inode'} or type(right.get('inode')) is not int or right['inode']<=0:raise ValueError('Reconciliation is not an inode-only present-log rotation')
+        differences.append(dict(guard='heldCensus',path=left['path'],expected=left,actual=right))
+    def at(p):return str(layout.prefix/p.lstrip('/'))
+    families=['auth.log','kern.log','syslog','ufw.log'];wanted={at('/var/log/'+family+suffix) for family in families for suffix in ['','.1',*['.'+str(n)+'.gz' for n in range(2,49)]]}
+    if len(differences)!=196 or {r['path'] for r in differences}!=wanted or review.get('approvedDifference')!=differences:raise ValueError('Reconciliation must be exactly the reviewed 196/four-family delta')
+    old={r['path']:r for r in before['heldCensus']};new={r['path']:r for r in after['heldCensus']}
+    for family in families:
+        base=at('/var/log/'+family)
+        if old[base]['inode']!=new[base+'.1']['inode'] or any(old[base+'.'+str(n)+'.gz']['inode']!=new[base+'.'+str(n+1)+'.gz']['inode'] for n in range(2,48)):raise ValueError('Rotation inode chain differs')
+    evidence=review.get('rotationEvidence',[])
+    if len(evidence)!=1 or set(evidence[0])!= {'path','sha256'} or evidence[0]['sha256']!=RECONCILIATION_PINS['rotationEvidence']:raise ValueError('Configured rotation evidence pin differs')
+    ep=Path(evidence[0]['path'])
+    if ep.parent!=layout.evidence or not ep.name.startswith('audit30-') or ep==path or hash_read(ep,MAX_JSON)[0]!=evidence[0]['sha256']:raise ValueError('Configured rotation evidence bytes differ')
+    configs=[dict(path=at(p),sha256=h) for p,h in ROTATION_CONFIG_PINS.items()]
+    if review.get('rotationConfigFiles')!=configs or any(hash_read(Path(r['path']),1024**2)[0]!=r['sha256'] for r in configs):raise ValueError('Configured rotation authority changed')
+    compare_guards(layout,after,[])
+    return original,failed,review,removed
+
+def create_reconciliation_plan(layout,approval_sha,binding):
+    original,failed,review,removed=reconciliation_state(layout,binding,approval_sha)
+    plan=json.loads(encoded(original));plan.update(atUtc=utc(),safeguards=review['afterGuards'],controllerSha256=hash_read(Path(__file__).resolve(),1024**2)[0],reconciliation=binding)
+    verify_plan(plan,layout,removed,full=False)
+    for row in plan['delete'][38:]:match_snapshot(snapshot(Path(row['path'])),row['snapshot'],removed)
+    capacity(layout,'audit30-reconciliation-plan')
+    admitted=load_citation_review(plan.get('citationReview'),layout,plan['protected'],'cleanup',[r['path'] for r in plan['delete']],approval_sha)
+    plan['references']=references([r['path'] for r in plan['delete'][38:]],layout.refs+[Path(r['path']) for r in plan['protected']['sources']],reviewed_files=admitted)
+    plan['limits']='Explicit reviewed original38-prefix reconciliation; only original two remaining sidecars may retire. Exact old/new log inode census and pinned configured rotation evidence are retained. No automatic resume, dynamic guard exemption, generic hold/mask or capacity change.'
+    return plan
 
 def create_plan(layout, kind, approval_sha, policy_scope=None, prerequisite=None, inverse_receipt=None,citation_review=None):
     cache={}; protected=protected_pair(layout,cache); guards,review=safeguards(layout)
@@ -555,6 +620,9 @@ def validate_plan(plan,layout,kind,approval_sha):
     if kind=='cleanup':
         observed=[{k:r[k] for k in ('path','kind')} for r in plan['delete']]
         if observed!=layout.exact() or plan['moves']:raise ValueError('Expanded, reordered or partial 40-path scope')
+        if 'reconciliation' in plan:
+            binding=plan['reconciliation']
+            if not isinstance(binding,dict) or set(binding)!= {'path','sha256'} or not SHA.fullmatch(binding['sha256']):raise ValueError('Invalid explicit reconciliation binding')
     elif kind=='preserve-sources':
         if [{k:r[k] for k in ('source','target')} for r in plan['moves']]!=layout.moves() or plan['delete']:raise ValueError('Expanded/partial preservation scope')
     elif kind=='inverse-preservation':
@@ -614,7 +682,15 @@ def resources(layout):
     return dict(atUtc=utc(),availableRootBytes=v.f_bavail*v.f_frsize,availableInodes=v.f_favail,scratchAllocatedBytes=allocated,scratchMaximumBytes=5*1024**3,scratchHeadroomBytes=5*1024**3-allocated,qualification='Observed filesystem endpoints include concurrent background writes and new durable evidence; retirement recovery is not the sum of hardlinked apparent sizes. Preservation reclassifies allocation and does not free root bytes.')
 
 def verify_plan(plan,layout,removed=None,full=True):
-    removed=removed or {}; compare_guards(layout,plan['safeguards'],[])
+    removed=removed or {}
+    if 'reconciliation' in plan:
+        original,failed,review,reconstructed=reconciliation_state(layout,plan['reconciliation'],plan['scopeApprovalSha256'])
+        if plan['kind']!='cleanup' or any(plan[k]!=original[k] for k in ('delete','moves','protected','archives','heldBoundaries','citationReview','capacityHelperSha256','policyScope')) or plan['safeguards']!=review['afterGuards']:raise ValueError('Reconciliation expanded or rewrote original proof/scope')
+        if not removed:removed=reconstructed
+        if full:
+            for row in plan['delete'][38:]:match_snapshot(snapshot(Path(row['path'])),row['snapshot'],removed)
+        full=False  # Original retired prefix is proven by its exact immutable intent/result.
+    compare_guards(layout,plan['safeguards'],[])
     if hash_read(layout.capacity,1024**2)[0]!=plan['capacityHelperSha256']:raise ValueError('Installed capacity helper changed')
     if hash_read(Path(__file__).resolve(),1024**2)[0]!=plan['controllerSha256']:raise ValueError('Controller version changed since exact plan')
     if plan['kind']=='preserve-sources':cleanup_prerequisite(Path(plan['cleanupPrerequisite']['path']),plan['cleanupPrerequisite']['sha256'],layout,plan['scopeApprovalSha256'])
@@ -626,6 +702,12 @@ def verify_plan(plan,layout,removed=None,full=True):
         expected=protected[k]; actual=release_proof(Path(expected['path']),layout,cache)
         if actual['fields']!=expected['fields']:raise ValueError('Current/prior release changed')
         match_snapshot(actual['snapshot'],expected['snapshot'],removed)
+        retained_archive=cache[str(layout.archives/expected['fields']['archive_name'])]
+        archived=next((r for r in plan['archives'] if r['path']==retained_archive['path']),None)
+        if archived is None:raise ValueError('Retained archive snapshot absent from frozen plan')
+        match_snapshot(retained_archive['snapshot'],archived['snapshot'],removed)
+        if [r['path'] for r in retained_archive['sidecars']]!=[r['path'] for r in archived['sidecars']]:raise ValueError('Retained archive sidecar scope differs')
+        for observed,frozen in zip(retained_archive['sidecars'],archived['sidecars']):match_snapshot(observed,frozen,removed)
     for r in protected['sources']:match_snapshot(snapshot(Path(r['path']),links=True),r['snapshot'],removed)
     if full:
         for r in plan['delete']:
@@ -659,10 +741,12 @@ def execute_impl(plan,plan_sha,layout,apply=False):
     if not shutil.rmtree.avoids_symlink_attacks:raise ValueError('Descriptor-based rmtree unavailable')
     evidence_bound=max(8*1024**2,len(encoded(plan))*(4+2*len(plan['moves']))+len(plan['delete'])*4096)
     safe(layout.evidence,True);capacity(layout,'audit30-evidence',evidence_bound)
+    completed=[]; removed=collections.Counter()
+    if 'reconciliation' in plan:
+        _,failed,_,removed=reconciliation_state(layout,plan['reconciliation'],plan['scopeApprovalSha256']);completed=list(failed['completed'])
     stamp=datetime.datetime.now(datetime.timezone.utc).strftime('%Y%m%dT%H%M%S.%fZ');prefix=layout.evidence/('audit30-'+plan['kind']+'-'+stamp)
     before_capacity=resources(layout)
-    intent=Path(str(prefix)+'-intent.json');durable(intent,dict(schema='pow-audit30-ui-storage-intent-v1',plan=plan,planSha256=plan_sha,atUtc=utc(),status='approved-intent',beforeCapacity=before_capacity))
-    completed=[]; removed=collections.Counter(); phase='before-action';current=None
+    intent=Path(str(prefix)+'-intent.json');phase='before-action';current=None
     def progress(status,error=None):
         p=Path(str(prefix)+'-'+str(len(completed)).zfill(3)+'-'+status+'.json')
         try:
@@ -670,10 +754,11 @@ def execute_impl(plan,plan_sha,layout,apply=False):
         except (OSError,ValueError):guards_unchanged=False;missing=None
         if status=='completed' and not guards_unchanged:raise ValueError('Completion guard fence changed')
         after_capacity=resources(layout) if status in ('completed','failed') else None
-        durable(p,dict(schema='pow-audit30-ui-storage-progress-v1',status=status,atUtc=utc(),planSha256=plan_sha,intentPath=str(intent),intentSha256=hash_read(intent,MAX_JSON)[0],completed=completed,currentPath=current,phase=phase,errorClass=error,missingHeldPaths=missing,holdsAndMasksUnchanged=guards_unchanged,beforeCapacity=before_capacity,afterCapacity=after_capacity,observedAvailableRootBytesChange=after_capacity['availableRootBytes']-before_capacity['availableRootBytes'] if after_capacity else None))
+        durable(p,dict(schema='pow-audit30-ui-storage-progress-v1',status=status,atUtc=utc(),planSha256=plan_sha,intentPath=str(intent),intentSha256=hash_read(intent,MAX_JSON)[0],completed=completed,currentPath=current,phase=phase,errorClass=error,missingHeldPaths=missing,holdsAndMasksUnchanged=guards_unchanged,guardBaselinePlanSha256=plan_sha,guardBaseline='fresh-explicitly-reconciled-plan' if 'reconciliation' in plan else 'original-plan',reconciliation=plan.get('reconciliation'),beforeCapacity=before_capacity,afterCapacity=after_capacity,observedAvailableRootBytesChange=after_capacity['availableRootBytes']-before_capacity['availableRootBytes'] if after_capacity else None))
         return p
     try:
-        for r in plan['delete']:
+        durable(intent,dict(schema='pow-audit30-ui-storage-intent-v1',plan=plan,planSha256=plan_sha,atUtc=utc(),status='approved-intent',beforeCapacity=before_capacity))
+        for r in plan['delete'][len(completed):]:
             current=r['path'];phase='immediate-before-retirement'; verify_plan(plan,layout,removed,full=False)
             before=snapshot(Path(current));match_snapshot(before,r['snapshot'],removed);references([current],layout.refs)
             parent=Path(current).parent;fd=os.open(parent,os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW)
@@ -721,15 +806,21 @@ def lock(layout):
     return fd
 
 def main():
-    p=argparse.ArgumentParser(description=__doc__);p.add_argument('command',choices=['plan-cleanup','plan-preservation','plan-inverse','verify','apply'])
+    p=argparse.ArgumentParser(description=__doc__);p.add_argument('command',choices=['plan-cleanup','plan-reconcile','plan-preservation','plan-inverse','verify','apply'])
     p.add_argument('--approval',type=Path,required=True);p.add_argument('--approval-sha256',required=True);p.add_argument('--plan',type=Path);p.add_argument('--plan-sha256')
     p.add_argument('--cleanup-receipt',type=Path);p.add_argument('--cleanup-receipt-sha256');p.add_argument('--preservation-receipt',type=Path);p.add_argument('--preservation-receipt-sha256')
     p.add_argument('--citation-review',type=Path);p.add_argument('--citation-review-sha256')
+    p.add_argument('--reconciliation-review',type=Path);p.add_argument('--reconciliation-review-sha256')
     a=p.parse_args()
     if os.geteuid()!=0:raise ValueError('Production controller requires root')
     layout=Layout();fd=lock(layout);os.nice(15)
     try:
         if bool(a.citation_review)!=bool(a.citation_review_sha256) or a.citation_review and a.command!='plan-cleanup':raise ValueError('Citation path/SHA pair is admitted only by a cleanup plan')
+        if bool(a.reconciliation_review)!=bool(a.reconciliation_review_sha256) or a.reconciliation_review and a.command!='plan-reconcile':raise ValueError('Reconciliation path/SHA pair is admitted only by explicit reconciliation planning')
+        if a.command=='plan-reconcile':
+            approval(a.approval,a.approval_sha256,'cleanup')
+            if not a.reconciliation_review:raise ValueError('Explicit hash-bound reconciliation review required')
+            plan=create_reconciliation_plan(layout,a.approval_sha256,dict(path=str(a.reconciliation_review),sha256=a.reconciliation_review_sha256));print(json.dumps(plan,sort_keys=True));return
         if a.command.startswith('plan-'):
             kind={'plan-cleanup':'cleanup','plan-preservation':'preserve-sources','plan-inverse':'inverse-preservation'}[a.command];approval(a.approval,a.approval_sha256,kind)
             prerequisite=dict(path=str(a.cleanup_receipt),sha256=a.cleanup_receipt_sha256) if a.cleanup_receipt and a.cleanup_receipt_sha256 else None

@@ -6,6 +6,7 @@ import importlib.util
 import json
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import tarfile
 import tempfile
@@ -72,6 +73,131 @@ class StorageTests(unittest.TestCase):
         if os.getuid()==1000 and os.getgid()==1000:self.assertEqual(out[2],'6f17f895f60abdcd311f44782a74945f0591ec2fab36b7db4071447ff927ca7c')
     def cleanup(self):
         plan=self.plan();out=S.execute(plan,S.digest(plan),self.l,True);return dict(path=out['receiptPath'],sha256=out['receiptSha256'])
+    def reconciliation_fixture(self):
+        families=['auth.log','kern.log','syslog','ufw.log'];logs=self.base/'var/log';logs.mkdir(parents=True)
+        for family in families:
+            for suffix in ['','.1',*['.'+str(n)+'.gz' for n in range(2,49)]]:
+                (logs/(family+suffix)).write_text(family+suffix+' preserved log bytes\n');self.review['retain'].append(dict(role='ui',path='/var/log/'+family+suffix,decision='retain'))
+        self.write_review();self.update_held();original=self.plan()
+        old=self.l.evidence/'audit30-private-fixture';old.mkdir();controller=old/'ui-storage.py';controller.write_bytes(Path(S.__file__).read_bytes())
+        planpath=self.l.evidence/'audit30-original-plan.json';S.durable(planpath,original);planhash=S.hash_read(planpath,S.MAX_JSON)[0]
+        intentpath=self.l.evidence/'audit30-cleanup-original-intent.json';S.durable(intentpath,dict(schema='pow-audit30-ui-storage-intent-v1',status='approved-intent',plan=original,planSha256=planhash));intenthash=S.hash_read(intentpath,S.MAX_JSON)[0]
+        completed=[]
+        for row in original['delete'][:38]:
+            path=Path(row['path']);shutil.rmtree(path) if row['kind']=='rollback-root' else path.unlink();completed.append(dict(path=str(path),outcome='retired',snapshotSha256=row['snapshot']['sha256'],atUtc=S.utc()))
+        for family in families:
+            (logs/(family+'.48.gz')).unlink()
+            for n in range(47,1,-1):(logs/(family+'.'+str(n)+'.gz')).rename(logs/(family+'.'+str(n+1)+'.gz'))
+            (logs/(family+'.1')).unlink();(logs/(family+'.2.gz')).write_bytes(b'new compressed previous .1 fixture')
+            (logs/family).rename(logs/(family+'.1'));(logs/family).write_text('new active log\n')
+        failedpath=self.l.evidence/'audit30-cleanup-original-038-failed.json';S.durable(failedpath,dict(schema='pow-audit30-ui-storage-progress-v1',status='failed',planSha256=planhash,intentPath=str(intentpath),intentSha256=intenthash,phase='immediate-before-retirement',currentPath=original['delete'][38]['path'],holdsAndMasksUnchanged=False,missingHeldPaths=original['safeguards']['missingHeldPaths'],completed=completed));failedhash=S.hash_read(failedpath,S.MAX_JSON)[0]
+        evidence=self.l.evidence/'audit30-log-rotation-evidence-v1.json';S.durable(evidence,dict(verifiedConfiguredRoutineRotation=True));configs={}
+        for name in ['/etc/logrotate.d/rsyslog','/etc/logrotate.d/ufw']:
+            config=self.base/name.lstrip('/');config.parent.mkdir(parents=True,exist_ok=True);config.write_text('hourly\nrotate 48\ncompress\ndelaycompress\n');configs[name]=S.hash_read(config)[0]
+        pins=dict(originalPlan=planhash,originalIntent=intenthash,failedReceipt=failedhash,originalController=S.hash_read(controller)[0],rotationEvidence=S.hash_read(evidence)[0]);pinpatch=patch.object(S,'RECONCILIATION_PINS',pins);pinpatch.start();self.addCleanup(pinpatch.stop);configpatch=patch.object(S,'ROTATION_CONFIG_PINS',configs);configpatch.start();self.addCleanup(configpatch.stop)
+        after,_=S.safeguards(self.l);differences=[dict(guard='heldCensus',path=l['path'],expected=l,actual=r) for l,r in zip(original['safeguards']['heldCensus'],after['heldCensus']) if l!=r]
+        value=dict(schema='pow-audit30-cleanup-reconciliation-review-v1',host='77.42.91.106',scopeApprovalSha256=self.auth,classification='configured-logrotate-inode-replacement',originalPlan=dict(path=str(planpath),sha256=planhash),originalIntent=dict(path=str(intentpath),sha256=intenthash),failedReceipt=dict(path=str(failedpath),sha256=failedhash),originalController=dict(path=str(controller),sha256=pins['originalController']),afterGuards=after,approvedDifference=differences,rotationEvidence=[dict(path=str(evidence),sha256=pins['rotationEvidence'])],rotationConfigFiles=[dict(path=str(self.base/p.lstrip('/')),sha256=h) for p,h in configs.items()])
+        reviewpath=self.l.evidence/'audit30-cleanup-reconciliation-review-v1.json';S.durable(reviewpath,value);reviewhash=S.hash_read(reviewpath)[0];pins['reviewManifest']=reviewhash;return dict(path=str(reviewpath),sha256=reviewhash),original
+    def test_explicit_rotation_reconciliation_retires_only_original_two(self):
+        binding,original=self.reconciliation_fixture();plan=S.create_reconciliation_plan(self.l,self.auth,binding);S.validate_plan(plan,self.l,'cleanup',self.auth)
+        self.assertEqual(plan['delete'],original['delete']);self.assertEqual(len(plan['delete']),40)
+        out=S.execute(plan,S.digest(plan),self.l,True);self.assertEqual(out['completedCount'],40)
+        receipt=json.loads(Path(out['receiptPath']).read_bytes());self.assertEqual(receipt['completed'][:38],json.loads(Path(json.loads(Path(binding['path']).read_bytes())['failedReceipt']['path']).read_bytes())['completed']);self.assertTrue(receipt['holdsAndMasksUnchanged']);self.assertEqual(receipt['reconciliation'],binding)
+        self.assertEqual(S.cleanup_prerequisite(Path(out['receiptPath']),out['receiptSha256'],self.l,self.auth)['planSha256'],S.digest(plan));self.assertTrue(self.l.live.exists());self.assertTrue(self.l.hold.exists())
+    def test_reconciliation_reappeared_prefix_and_changed_remaining_refuse(self):
+        binding,original=self.reconciliation_fixture();path=Path(original['delete'][0]['path']);path.mkdir()
+        with self.assertRaisesRegex(ValueError,'reappeared'):S.create_reconciliation_plan(self.l,self.auth,binding)
+        path.rmdir();Path(original['delete'][39]['path']).write_text('changed remaining evidence')
+        with self.assertRaises(ValueError):S.create_reconciliation_plan(self.l,self.auth,binding)
+    def test_reconciliation_wrong_original_receipt_pin_refuses(self):
+        binding,_=self.reconciliation_fixture();value=json.loads(Path(binding['path']).read_bytes());value['failedReceipt']['sha256']='0'*64;path=self.l.evidence/'audit30-cleanup-reconciliation-review-bad.json';S.durable(path,value)
+        with self.assertRaisesRegex(ValueError,'version pin'):S.create_reconciliation_plan(self.l,self.auth,dict(path=str(path),sha256=S.hash_read(path)[0]))
+    def test_reconciliation_extra_guard_or_incomplete_delta_refuses(self):
+        binding,_=self.reconciliation_fixture();value=json.loads(Path(binding['path']).read_bytes());value['afterGuards']['masks'][0]['inode']+=1;path=self.l.evidence/'audit30-cleanup-reconciliation-review-extra.json';S.durable(path,value)
+        h=S.hash_read(path)[0]
+        with patch.dict(S.RECONCILIATION_PINS,reviewManifest=h):
+            with self.assertRaisesRegex(ValueError,'expansion'):S.create_reconciliation_plan(self.l,self.auth,dict(path=str(path),sha256=h))
+        value=json.loads(Path(binding['path']).read_bytes());value['approvedDifference'].pop();path=self.l.evidence/'audit30-cleanup-reconciliation-review-incomplete.json';S.durable(path,value)
+        h=S.hash_read(path)[0]
+        with patch.dict(S.RECONCILIATION_PINS,reviewManifest=h):
+            with self.assertRaisesRegex(ValueError,'196'):S.create_reconciliation_plan(self.l,self.auth,dict(path=str(path),sha256=h))
+    def test_reconciliation_alternate_active_log_baseline_manifest_refused(self):
+        binding,_=self.reconciliation_fixture();value=json.loads(Path(binding['path']).read_bytes());active=self.base/'var/log/auth.log';new=active.with_name('replacement-active');new.write_text('unrelated replacement log');new.replace(active);new_inode=active.lstat().st_ino
+        next(r for r in value['afterGuards']['heldCensus'] if r['path']==str(active))['inode']=new_inode
+        next(r for r in value['approvedDifference'] if r['path']==str(active))['actual']['inode']=new_inode
+        path=self.l.evidence/'audit30-cleanup-reconciliation-review-alternate.json';S.durable(path,value)
+        with self.assertRaisesRegex(ValueError,'review version pin'):S.create_reconciliation_plan(self.l,self.auth,dict(path=str(path),sha256=S.hash_read(path)[0]))
+    def test_reconciliation_rechecks_guard_config_review_and_live_refs(self):
+        binding,original=self.reconciliation_fixture();plan=S.create_reconciliation_plan(self.l,self.auth,binding)
+        config=self.base/'etc/logrotate.d/ufw';before=config.read_bytes();config.write_text('unreviewed changed configuration')
+        with self.assertRaisesRegex(ValueError,'rotation authority'):S.execute(plan,S.digest(plan),self.l,True)
+        config.write_bytes(before);configref=self.base/'runtime-reference';configref.write_text(original['delete'][38]['path']);self.l.refs=[configref]
+        with self.assertRaisesRegex(ValueError,'Active/configuration'):S.execute(plan,S.digest(plan),self.l,True)
+        self.assertTrue(all(os.path.lexists(r['path']) for r in original['delete'][38:]))
+    def test_reconciliation_cannot_expand_plan_or_ignore_later_rotation(self):
+        binding,_=self.reconciliation_fixture();plan=S.create_reconciliation_plan(self.l,self.auth,binding);plan['delete'][38]['snapshot']['entries'][0]['size']+=1
+        with self.assertRaisesRegex(ValueError,'rewrote'):S.execute(plan,S.digest(plan),self.l,True)
+        plan=S.create_reconciliation_plan(self.l,self.auth,binding);active=self.base/'var/log/auth.log';new=active.with_name('new-active');new.write_text('later rotation');new.replace(active)
+        with self.assertRaisesRegex(ValueError,'census changed'):S.execute(plan,S.digest(plan),self.l,True)
+    def test_reconciliation_wrong_review_sha_and_remaining_mode_refuse(self):
+        binding,original=self.reconciliation_fixture()
+        with self.assertRaises(ValueError):S.create_reconciliation_plan(self.l,self.auth,dict(binding,sha256='0'*64))
+        Path(original['delete'][38]['path']).chmod(0o400)
+        with self.assertRaises(ValueError):S.create_reconciliation_plan(self.l,self.auth,binding)
+    def test_reconciliation_changed_protected_source_refuses(self):
+        binding,_=self.reconciliation_fixture();plan=S.create_reconciliation_plan(self.l,self.auth,binding);source=Path(plan['protected']['sources'][0]['path']);(source/'tracked.txt').write_text('unreviewed source modification')
+        with self.assertRaises(ValueError):S.execute(plan,S.digest(plan),self.l,True)
+        self.assertTrue(all(os.path.lexists(r['path']) for r in plan['delete'][38:]))
+    def test_reconciliation_changed_retained_archive_refuses(self):
+        binding,_=self.reconciliation_fixture();plan=S.create_reconciliation_plan(self.l,self.auth,binding);archive=self.l.archives/plan['protected']['current']['fields']['archive_name'];archive.write_bytes(b'corrupt retained recovery archive')
+        with self.assertRaises(ValueError):S.execute(plan,S.digest(plan),self.l,True)
+        self.assertTrue(all(os.path.lexists(r['path']) for r in plan['delete'][38:]))
+    def test_reconciliation_same_bytes_replaced_retained_archive_refuses(self):
+        binding,_=self.reconciliation_fixture();plan=S.create_reconciliation_plan(self.l,self.auth,binding);archive=self.l.archives/plan['protected']['current']['fields']['archive_name'];before=archive.stat();new=archive.with_name('same-bytes-replacement');new.write_bytes(archive.read_bytes());new.chmod(before.st_mode&0o777);os.utime(new,ns=(before.st_atime_ns,before.st_mtime_ns));new.replace(archive)
+        with self.assertRaisesRegex(ValueError,'inode changed'):S.execute(plan,S.digest(plan),self.l,True)
+    def test_reconciliation_guard_config_drift_after_intent_has_failed_38_receipt(self):
+        binding,_=self.reconciliation_fixture();plan=S.create_reconciliation_plan(self.l,self.auth,binding);durable=S.durable
+        def change_after_intent(path,value):
+            durable(path,value)
+            if value.get('status')=='approved-intent':(self.base/'etc/logrotate.d/ufw').write_text('configuration changed after intent')
+        with patch.object(S,'durable',side_effect=change_after_intent):
+            with self.assertRaisesRegex(ValueError,'rotation authority'):S.execute(plan,S.digest(plan),self.l,True)
+        new=[p for p in self.l.evidence.glob('*-038-failed.json') if 'original' not in p.name];self.assertEqual(len(new),1);receipt=json.loads(new[0].read_bytes());self.assertEqual(len(receipt['completed']),38);self.assertEqual(receipt['guardBaseline'],'fresh-explicitly-reconciled-plan');self.assertTrue(Path(receipt['intentPath']).exists());self.assertTrue(all(os.path.lexists(r['path']) for r in plan['delete'][38:]))
+    def test_reconciliation_nonlog_and_mask_drift_refuse(self):
+        binding,_=self.reconciliation_fixture();plan=S.create_reconciliation_plan(self.l,self.auth,binding);before=self.l.roots.stat().st_mode&0o777;self.l.roots.chmod(0o755 if before!=0o755 else 0o700)
+        with self.assertRaises(ValueError):S.execute(plan,S.digest(plan),self.l,True)
+        self.l.roots.chmod(before);mask=self.l.units/'proofofwork-ui-release-prune.timer';mask.unlink();mask.symlink_to('/tmp/unreviewed-mask')
+        with self.assertRaisesRegex(ValueError,'mask changed'):S.execute(plan,S.digest(plan),self.l,True)
+    def test_cleanup_prerequisite_requires_order_snapshot_and_completion_guard(self):
+        done=self.cleanup();value=json.loads(Path(done['path']).read_bytes())
+        for index,changed in enumerate([dict(value,completed=value['completed'][::-1]),dict(value,holdsAndMasksUnchanged=False),dict(value,completed=[dict(value['completed'][0],snapshotSha256='0'*64),*value['completed'][1:]])]):
+            path=self.l.evidence/('audit30-forged-completion-'+str(index)+'.json');S.durable(path,changed)
+            with self.assertRaisesRegex(ValueError,'unfenced'):S.cleanup_prerequisite(path,S.hash_read(path)[0],self.l,self.auth)
+    def test_actual_sigterm_after_reconciled_39_preserves_failure_no_auto_retry(self):
+        code=r'''
+import importlib.machinery,importlib.util,json,os,signal,sys
+from pathlib import Path
+loader=importlib.machinery.SourceFileLoader('reconcile_signal_fixture',sys.argv[1]);spec=importlib.util.spec_from_loader(loader.name,loader);m=importlib.util.module_from_spec(spec);loader.exec_module(m)
+t=m.StorageTests();t.setUp()
+try:
+ binding,original=t.reconciliation_fixture();plan=m.S.create_reconciliation_plan(t.l,t.auth,binding);durable=m.S.durable;signalled=False
+ def interrupt_after_39(path,value):
+  global signalled
+  durable(path,value)
+  if not signalled and value.get('status')=='partial' and len(value.get('completed',[]))==39:
+   signalled=True;os.kill(os.getpid(),signal.SIGTERM)
+ m.S.durable=interrupt_after_39
+ try:m.S.execute(plan,m.S.digest(plan),t.l,True)
+ except InterruptedError:pass
+ failed=list(t.l.evidence.glob('*-039-failed.json'));assert len(failed)==1;value=json.loads(failed[0].read_bytes());assert value['errorClass']=='InterruptedError' and len(value['completed'])==39 and value['holdsAndMasksUnchanged'] is True and value['guardBaseline']=='fresh-explicitly-reconciled-plan'
+ assert not Path(original['delete'][38]['path']).exists() and Path(original['delete'][39]['path']).exists()
+ try:m.S.create_reconciliation_plan(t.l,t.auth,binding)
+ except (ValueError,OSError):pass
+ else:raise AssertionError('Absence silently admitted another resume')
+ print(json.dumps({'actualSigtermAfter39':True,'failedEvidencePreserved':True,'automaticRetryRefused':True}))
+finally:t.tearDown()
+'''
+        out=subprocess.run(['/usr/bin/python3','-I','-B','-c',code,str(Path(__file__).resolve())],capture_output=True,text=True,timeout=45);self.assertEqual(out.returncode,0,out.stderr);self.assertEqual(json.loads(out.stdout),dict(actualSigtermAfter39=True,failedEvidencePreserved=True,automaticRetryRefused=True))
     def citation_manifest(self,kind,candidates,files):
         pair=S.protected_pair(self.l,{});evidence=self.l.evidence/'audit30-semantic-fixture.json'
         if not evidence.exists():S.durable(evidence,dict(classification='Historical release evidence; no active dependencies'))
