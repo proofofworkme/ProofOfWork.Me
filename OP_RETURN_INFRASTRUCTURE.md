@@ -5736,6 +5736,41 @@ hold bytes and masks stay intact. This one-run reconciliation does not create a
 general dynamic-log exemption or automatic resume. A later guard change refuses
 again. The original failure and old/new census remain in execution evidence.
 
+Audit 30's opt-in UI lifecycle now binds future-retention plans to exact compact,
+sorted JSON bytes without a trailing newline. The raw plan SHA equals the digest
+embedded in its approved intent, completion receipt, and original-plan guard baseline.
+The reader requires a successful final-verification receipt with an unchanged guard
+fence, explicit null error, unchanged missing-held obligations, and every ordered
+path/outcome/snapshot record; it also checks the reviewed controller version,
+canonical current/prior archive identities, a monotonic admission and completion-index
+lineage, and eligibility derived only from admitted ordinary assets. The producer also
+refuses an outdated admission index before planning or writing when its latest pair
+differs from the actual verified live pair. Malformed or partial history cannot
+authorize later retention. No production future-retention plan or retirement preceded
+this correction, and sealed bootstrap admissions remain intact. The private policy
+helper correction is recorded separately from the verified frontend
+`11b9daf067d74b2b507f740126204583412d3db0` release; that release's source, manifests,
+and evidence are preserved. Ordinary prune timers remain masked, and this contract
+neither enables historical age-based cleanup nor relaxes the installed capacity, hold,
+pointer, provenance, or current/verified-prior protections.
+
+The approved production cycle completed all 40 original cleanup paths, preserved
+three complete source directories, and retired four subsequently superseded
+ordinary assets after the verified 11b9 publication. Immutable admission index v3
+records that exact completion; a fresh canonical plan reports zero eligible paths.
+The live 11b9 and verified prior 265 recovery pair, both source trees and all
+historical holds remain intact. The final 22:34 UTC census finds one ordinary
+prior root and two ordinary archives, 19.698 GiB available on UI root, and
+0.872 GiB scratch headroom. Per-publication lifecycle calls remain necessary;
+database/cache growth and excluded source/evidence accumulation still need
+their separately scoped work. Accurate monitor failures for unresolved custody
+gaps and the inactive WAL receiver remain open obligations.
+
+The retained 265 prior release preserves its original behavior, including the
+pre-fix AUD30-01 fee arithmetic. Content/provenance verification is not a
+rollback rehearsal or a defect-free certification. Any restoration must
+recheck fee acceptance; the current 11b9 archive is also retained.
+
 Current execution and the numbered follow-up status are recorded in
 [the Audit 30 tracker](audits/2026-10-02-audit30-followup-tracker.md).
 

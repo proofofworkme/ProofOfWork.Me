@@ -384,7 +384,92 @@ finally:t.tearDown()
             if not p.exists():S.durable(p,a)
             rows.append(dict(path=str(p),sha256=S.hash_read(p,S.MAX_JSON)[0]))
         value=dict(schema='pow-audit30-ui-admission-index-v1',scopeApprovalSha256=self.auth,admissions=rows,completedRetirements=retirements or [])
-        p=self.base/('index-'+str(len(list(self.base.glob('index-*'))))+'.json');S.durable(p,value);return dict(path=str(p),sha256=S.hash_read(p,S.MAX_JSON)[0])
+        p=self.l.evidence/('audit30-policy-index-'+str(len(list(self.l.evidence.glob('audit30-policy-index-*'))))+'.json');S.durable(p,value);return dict(path=str(p),sha256=S.hash_read(p,S.MAX_JSON)[0])
+    def publish_policy_fixture(self,rid):
+        os.rename(self.l.live,self.l.roots/('proofofwork-www-pre-'+rid));self.release(self.l.live,rid);source=self.l.scratch/('proofofwork-ui-source-'+rid);source.mkdir();(source/'.git').mkdir();(source/'source').write_text('new immutable source');(source/'node_modules').mkdir();(source/'node_modules'/'dep').write_text('new verified runtime');self.dependency_provenance(self.l.live,rid)
+    def future_completion_fixture(self):
+        pp=patch.object(P,'S',S);pp.start();self.addCleanup(pp.stop)
+        bootstrap=P.admission(self.l,self.auth,True);index=self.policy_index([bootstrap]);self.publish_policy_fixture('abcdef123456-20261002T220000Z');added=P.admission(self.l,self.auth,False,index);index=self.policy_index([bootstrap,added]);scope=P.policy_scope(index,self.l,self.auth);plan=S.create_plan(self.l,'future-retention',self.auth,scope);out=S.execute(plan,S.digest(plan),self.l,True);done=json.loads(Path(out['receiptPath']).read_bytes());intent=json.loads(Path(done['intentPath']).read_bytes());return [bootstrap,added],index,plan,out,done,intent
+    def forged_future_completion(self,admissions,done,intent=None):
+        stamp=str(len(list(self.l.evidence.glob('audit30-forged-*'))))
+        if intent is not None:
+            path=self.l.evidence/('audit30-forged-intent-'+stamp+'.json');S.durable(path,intent);done['intentPath']=str(path);done['intentSha256']=S.hash_read(path,S.MAX_JSON)[0]
+        path=self.l.evidence/('audit30-forged-completion-'+stamp+'.json');S.durable(path,done);return self.policy_index(admissions,[dict(path=str(path),sha256=S.hash_read(path,S.MAX_JSON)[0])])
+    def test_future_reader_rejects_false_guard_snapshot_order_duplicate_and_missing(self):
+        admissions,index,plan,out,good,intent=self.future_completion_fixture()
+        variants=[]
+        for guard in [False,None,1]:variants.append(dict(good,holdsAndMasksUnchanged=guard))
+        variants.extend([dict(good,completed=good['completed'][::-1]),dict(good,completed=[good['completed'][0],*good['completed'][2:],good['completed'][0]]),dict(good,completed=[dict(good['completed'][0],snapshotSha256='0'*64),*good['completed'][1:]]),dict(good,completed=[{k:v for k,v in good['completed'][0].items() if k!='snapshotSha256'},*good['completed'][1:]]),dict(good,phase='retirement'),dict(good,guardBaselinePlanSha256='0'*64),dict(good,guardBaseline='fresh-explicitly-reconciled-plan'),dict(good,errorClass='ValueError'),{k:v for k,v in good.items() if k!='errorClass'},dict(good,missingHeldPaths=['silently changed held obligation'])])
+        for changed in variants:
+            with self.assertRaises(ValueError):P.policy_scope(self.forged_future_completion(admissions,changed),self.l,self.auth)
+        valid=self.policy_index(admissions,[dict(path=out['receiptPath'],sha256=out['receiptSha256'])]);self.assertEqual(P.policy_scope(valid,self.l,self.auth)['eligible'],[])
+    def test_future_reader_rejects_claimed_digest_and_intent_authority_changes(self):
+        admissions,index,plan,out,good,intent=self.future_completion_fixture()
+        for field,value in [('schema','unapproved-intent-v1'),('status','unapproved-intent'),('planSha256','e'*64)]:
+            bad=json.loads(json.dumps(intent));bad[field]=value;done=dict(good)
+            if field=='planSha256':done.update(planSha256=value,guardBaselinePlanSha256=value)
+            with self.assertRaises(ValueError):P.policy_scope(self.forged_future_completion(admissions,done,bad),self.l,self.auth)
+        for field,value in [('kind','cleanup'),('host','wrong-host'),('scopeApprovalSha256','b'*64),('controllerSha256','e'*64)]:
+            bad=json.loads(json.dumps(intent));bad['plan'][field]=value;h=S.digest(bad['plan']);bad['planSha256']=h;done=dict(good,planSha256=h,guardBaselinePlanSha256=h)
+            with self.assertRaises(ValueError):P.policy_scope(self.forged_future_completion(admissions,done,bad),self.l,self.auth)
+    def test_future_reader_preserves_nonempty_historical_missing_obligations(self):
+        self.review['retain'].append(dict(role='ui',path='/var/tmp/proofofwork-deploy/unresolved-historical-evidence.json',decision='retain'));self.write_review();self.update_held();admissions,index,plan,out,good,intent=self.future_completion_fixture();self.assertEqual(len(good['missingHeldPaths']),1)
+        with self.assertRaisesRegex(ValueError,'obligations'):P.policy_scope(self.forged_future_completion(admissions,dict(good,missingHeldPaths=[])),self.l,self.auth)
+        valid=self.policy_index(admissions,[dict(path=out['receiptPath'],sha256=out['receiptSha256'])]);self.assertEqual(P.policy_scope(valid,self.l,self.auth)['eligible'],[])
+    def test_future_reader_rejects_wrong_index_lineage_and_unadmitted_path(self):
+        admissions,index,plan,out,good,intent=self.future_completion_fixture();source=json.loads(Path(index['path']).read_bytes())
+        for changed_source in [dict(source,admissions=source['admissions'][::-1]),dict(source,admissions=source['admissions'][:1]),dict(source,completedRetirements=[dict(path=out['receiptPath'],sha256=out['receiptSha256'])])]:
+            path=self.l.evidence/('audit30-forged-source-index-'+str(len(list(self.l.evidence.glob('audit30-forged-source-index-*'))))+'.json');S.durable(path,changed_source);bad=json.loads(json.dumps(intent));bad['plan']['policyScope']['admissionIndex']=dict(path=str(path),sha256=S.hash_read(path)[0]);h=S.digest(bad['plan']);bad['planSha256']=h
+            with self.assertRaises(ValueError):P.policy_scope(self.forged_future_completion(admissions,dict(good,planSha256=h,guardBaselinePlanSha256=h),bad),self.l,self.auth)
+        bad=json.loads(json.dumps(intent));extra=json.loads(json.dumps(bad['plan']['delete'][0]));extra['path']=str(self.l.roots/'proofofwork-www-pre-0123456789ab-20261002T223000Z');extra['snapshot']['path']=extra['path'];bad['plan']['delete'].append(extra);bad['plan']['policyScope']['eligible'].append(dict(path=extra['path'],kind=extra['kind']));h=S.digest(bad['plan']);bad['planSha256']=h;done=dict(good,planSha256=h,guardBaselinePlanSha256=h,currentPath=extra['path'],completed=[*good['completed'],dict(path=extra['path'],outcome='retired',snapshotSha256=extra['snapshot']['sha256'])])
+        with self.assertRaisesRegex(ValueError,'derive'):P.policy_scope(self.forged_future_completion(admissions,done,bad),self.l,self.auth)
+    def test_future_valid_second_admission_retirement_and_duplicate_history(self):
+        admissions,index,plan,out,good,intent=self.future_completion_fixture();retirements=[dict(path=out['receiptPath'],sha256=out['receiptSha256'])];index=self.policy_index(admissions,retirements);self.publish_policy_fixture('fedcba654321-20261002T230000Z');added=P.admission(self.l,self.auth,False,index);admissions.append(added);index=self.policy_index(admissions,retirements);scope=P.policy_scope(index,self.l,self.auth);self.assertEqual(len(scope['eligible']),4);next_plan=S.create_plan(self.l,'future-retention',self.auth,scope);next_out=S.execute(next_plan,S.digest(next_plan),self.l,True);next_row=dict(path=next_out['receiptPath'],sha256=next_out['receiptSha256']);finished=self.policy_index(admissions,[*retirements,next_row]);self.assertEqual(P.policy_scope(finished,self.l,self.auth)['eligible'],[])
+        with self.assertRaisesRegex(ValueError,'Duplicate'):P.policy_scope(self.policy_index(admissions,[*retirements,next_row,next_row]),self.l,self.auth)
+    def test_future_reader_rejects_coherent_current_and_prior_archive_retirement_forgery(self):
+        admissions,index,plan,out,good,intent=self.future_completion_fixture()
+        for protected in ('current','previous'):
+            bad=json.loads(json.dumps(intent));forged=bad['plan'];rid=forged['protected'][protected]['fields']['release_id'];forged['protected'][protected]['fields']['archive_name']='malformed-'+protected+'-name.tgz'
+            archive=next(r for a in admissions for r in a['archives'] if Path(r['path']).name=='proofofwork-ui-release-'+rid+'.tgz');rows=list(forged['delete'])
+            for fp in [archive['snapshot'],*archive['sidecars']]:rows.append(dict(path=fp['path'],kind='managed-release-archive' if fp['path'].endswith('.tgz') else 'archive-sidecar',snapshot=fp))
+            rows.sort(key=lambda r:(r['kind']!='rollback-root',r['path']));forged['delete']=rows;forged['policyScope']['eligible']=[dict(path=r['path'],kind=r['kind']) for r in rows];h=S.digest(forged);bad['planSha256']=h;done=dict(good,planSha256=h,guardBaselinePlanSha256=h,currentPath=rows[-1]['path'],completed=[dict(path=r['path'],outcome='retired',snapshotSha256=r['snapshot']['sha256']) for r in rows]);ix=self.forged_future_completion(admissions,done,bad)
+            # Exact admitted asset snapshots and coherent canonical claims cannot
+            # turn either retained release's recovery archive into retired history.
+            with self.assertRaisesRegex(ValueError,'archive name'):P.load_index(ix['path'],ix['sha256'],self.l,self.auth)
+            self.assertTrue(Path(archive['path']).exists())
+    def test_future_producer_refuses_stale_index_before_plan_and_accepts_new_admission(self):
+        with patch.object(P,'S',S):
+            bootstrap=P.admission(self.l,self.auth,True);stale=self.policy_index([bootstrap]);self.publish_policy_fixture('abcdef123456-20261002T220000Z');before={str(p):S.snapshot(p)['sha256'] for p in [*self.l.roots.iterdir(),*self.l.archives.iterdir()]}
+            with patch.object(S,'execute',side_effect=AssertionError('Stale index must not reach any writer')):
+                with self.assertRaisesRegex(ValueError,'latest verified admission'):S.execute(S.create_plan(self.l,'future-retention',self.auth,P.policy_scope(stale,self.l,self.auth)),self.auth,self.l,True)
+            self.assertEqual(before,{str(p):S.snapshot(p)['sha256'] for p in [*self.l.roots.iterdir(),*self.l.archives.iterdir()]})
+            added=P.admission(self.l,self.auth,False,stale);fresh=self.policy_index([bootstrap,added]);self.assertEqual(len(P.policy_scope(fresh,self.l,self.auth)['eligible']),4)
+    def test_actual_policy_cli_canonical_stdout_verification_and_completion(self):
+        code=r'''
+import hashlib,importlib.machinery,importlib.util,io,json,os,sys,types
+from pathlib import Path
+from unittest.mock import patch
+loader=importlib.machinery.SourceFileLoader('policy_cli_fixture',sys.argv[1]);spec=importlib.util.spec_from_loader(loader.name,loader);m=importlib.util.module_from_spec(spec);loader.exec_module(m);t=m.StorageTests();t.setUp()
+try:
+ with patch.object(m.P,'S',m.S),patch.object(m.P,'os',types.SimpleNamespace(geteuid=lambda:0,nice=lambda n:None,path=os.path,close=os.close)),patch.object(m.S,'approval'):
+  bootstrap=m.P.admission(t.l,t.auth,True);index=t.policy_index([bootstrap]);t.publish_policy_fixture('abcdef123456-20261002T220000Z');added=m.P.admission(t.l,t.auth,False,index);index=t.policy_index([bootstrap,added])
+  def command(kind,extra=None):
+   sys.argv=['ui-release-policy.py',kind,'--approval',str(t.l.evidence/'fixture-approval.json'),'--approval-sha256',t.auth,'--index',index['path'],'--index-sha256',index['sha256'],*(extra or [])];buffer=io.BytesIO();output=io.TextIOWrapper(buffer,encoding='utf-8')
+   with patch.object(m.P.S,'Layout',return_value=t.l),patch('sys.stdout',output):m.P.main()
+   output.flush();raw=buffer.getvalue();output.detach();return raw
+  raw=command('plan');plan=json.loads(raw);assert raw==m.S.encoded(plan) and not raw.endswith(b'\n');h=hashlib.sha256(raw).hexdigest();assert h==m.S.digest(plan)
+  path=t.l.evidence/'audit30-cli-canonical-plan.json';path.write_bytes(raw);spaced=t.l.evidence/'audit30-cli-noncanonical-plan.json';spaced.write_text(json.dumps(plan,sort_keys=True)+'\n')
+  with patch.object(m.S,'execute',side_effect=AssertionError('No writer may run for noncanonical bytes')):
+   try:command('apply',['--plan',str(spaced),'--plan-sha256',m.S.hash_read(spaced,m.S.MAX_JSON)[0]])
+   except ValueError as e:assert 'canonical' in str(e)
+   else:raise AssertionError('Noncanonical CLI plan admitted')
+  verified=json.loads(command('verify',['--plan',str(path),'--plan-sha256',h]));assert verified['status']=='verified'
+  done=json.loads(command('apply',['--plan',str(path),'--plan-sha256',h]));receipt=json.loads(Path(done['receiptPath']).read_bytes());assert receipt['planSha256']==h and receipt['guardBaselinePlanSha256']==h
+  final=t.policy_index([bootstrap,added],[dict(path=done['receiptPath'],sha256=done['receiptSha256'])]);assert m.P.policy_scope(final,t.l,t.auth)['eligible']==[]
+ print(json.dumps({'actualCliCanonicalBytes':True,'rawShaEqualsEmbeddedDigest':True,'noncanonicalRefusedBeforeWriter':True,'validVerifyApplyAndReader':True}))
+finally:t.tearDown()
+'''
+        out=subprocess.run(['/usr/bin/python3','-I','-B','-c',code,str(Path(__file__).resolve())],capture_output=True,text=True,timeout=60);self.assertEqual(out.returncode,0,out.stderr);self.assertEqual(json.loads(out.stdout),dict(actualCliCanonicalBytes=True,rawShaEqualsEmbeddedDigest=True,noncanonicalRefusedBeforeWriter=True,validVerifyApplyAndReader=True))
     def test_future_bootstrap_chain_exact_policy_and_missing_loss(self):
         with patch.object(P,'S',S):
             bootstrap=P.admission(self.l,self.auth,True);index=self.policy_index([bootstrap])

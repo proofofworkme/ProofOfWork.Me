@@ -22,6 +22,14 @@ def load_storage():
     loader=importlib.machinery.SourceFileLoader('audit30_ui_storage',str(p));spec=importlib.util.spec_from_loader(loader.name,loader);module=importlib.util.module_from_spec(spec);loader.exec_module(module);return module
 S=load_storage()
 BOOTSTRAP_IDS={'26500e4d2ff7-20261002T054938Z','835e30258d23-20261002T052338Z'}
+# Approved historical writer versions remain admitted after later reviewed
+# upgrades; adding another version needs an explicit source review. No future
+# retirement existed before this canonical plan-serialization contract.
+KNOWN_RETIREMENT_CONTROLLERS={'f292da5dcda23393208d05e1cffaea0b50b9a9cc915b81a5b9d55fdd0aa81319'}
+
+def print_plan(plan):
+    """The exact approved stdout bytes must hash like the embedded plan object."""
+    sys.stdout.buffer.write(S.encoded(plan));sys.stdout.buffer.flush()
 
 def logical(fp):
     return S.digest([{k:r[k] for k in ('path','kind','mode','uid','gid','sha256','target','xattrs') if k in r} for r in fp['entries']])
@@ -89,20 +97,46 @@ def load_index(path,expected,layout,approval_sha):
         admissions.append(a)
     if bootstrap_count!=1:raise ValueError('Exactly one immutable bootstrap admission required')
     _,review=S.safeguards(layout);S.held_boundary(list(roots)+list(assets),review,layout)
-    retired=set()
-    for row in index.get('completedRetirements',[]):
+    retired=set();retirements=index.get('completedRetirements',[])
+    if not isinstance(retirements,list) or len(retirements)>256 or len({r['path'] for r in retirements})!=len(retirements):raise ValueError('Duplicate or oversized retirement history')
+    for position,row in enumerate(retirements):
         p=Path(row['path'])
         if p.parent!=layout.evidence:raise ValueError('Retirement receipt outside durable evidence')
         done,_=S.read_json(p,row['sha256'])
-        if done.get('schema')!='pow-audit30-ui-storage-progress-v1' or done.get('status')!='completed':raise ValueError('Partial/failed future retirement needs manual reconciliation')
-        intent,_=S.read_json(Path(done['intentPath']),done['intentSha256']);plan=intent['plan'];S.validate_plan(plan,layout,'future-retention',approval_sha)
+        if done.get('schema')!='pow-audit30-ui-storage-progress-v1' or done.get('status')!='completed' or done.get('holdsAndMasksUnchanged') is not True or done.get('phase')!='final-verification' or done.get('guardBaseline')!='original-plan' or done.get('reconciliation') is not None or 'errorClass' not in done or done['errorClass'] is not None:raise ValueError('Unfenced or partial/failed future retirement needs manual reconciliation')
+        intent_path=Path(done['intentPath'])
+        if intent_path.parent!=layout.evidence:raise ValueError('Retirement intent outside durable evidence')
+        intent,_=S.read_json(intent_path,done['intentSha256']);plan=intent.get('plan',{})
+        if intent.get('schema')!='pow-audit30-ui-storage-intent-v1' or intent.get('status')!='approved-intent':raise ValueError('Wrong future retirement intent authority')
+        S.validate_plan(plan,layout,'future-retention',approval_sha)
+        canonical=S.digest(plan)
+        if done.get('missingHeldPaths')!=plan['safeguards']['missingHeldPaths']:raise ValueError('Future retirement erased or changed held-path obligations')
+        if 'reconciliation' in plan or plan.get('controllerSha256') not in KNOWN_RETIREMENT_CONTROLLERS or intent.get('planSha256')!=canonical or done.get('planSha256')!=canonical or done.get('guardBaselinePlanSha256')!=canonical:raise ValueError('Future retirement embedded plan digest/version/baseline differs')
+        source=plan['policyScope'].get('admissionIndex',{});source_path=Path(source.get('path',''))
+        if source_path.parent!=layout.evidence or not S.SHA.fullmatch(source.get('sha256','')):raise ValueError('Retirement source admission index outside durable authority')
+        source_index,_=S.read_json(source_path,source['sha256']);source_rows=source_index.get('admissions',[])
+        if source_index.get('schema')!='pow-audit30-ui-admission-index-v1' or source_index.get('scopeApprovalSha256')!=approval_sha or not source_rows or len(source_rows)>len(rows) or source_rows!=rows[:len(source_rows)] or source_index.get('completedRetirements',[])!=retirements[:position]:raise ValueError('Retirement admission-index lineage differs')
+        source_admissions=admissions[:len(source_rows)];pair=dict(current=plan['protected']['current']['fields']['release_id'],previous=plan['protected']['previous']['fields']['release_id'])
+        if source_admissions[-1]['retainedPair']!=pair:raise ValueError('Retirement plan uses a stale admitted current/prior pair')
+        if any(plan['protected'][k]['fields']['archive_name']!='proofofwork-ui-release-'+pair[k]+'.tgz' for k in ('current','previous')):raise ValueError('Retained current/prior archive name differs from admitted release identity')
+        source_roots={r['path']:r for a in source_admissions for r in a['roots']};source_assets={fp['path']:fp for a in source_admissions for r in a['archives'] for fp in [r['snapshot'],*r['sidecars']]}
+        keep={plan['protected'][k]['path'] for k in ('current','previous')}|{str(layout.archives/('proofofwork-ui-release-'+pair[k]+'.tgz'))+suffix for k in ('current','previous') for suffix in ('','.sha256','.provenance')}
+        eligible=[dict(path=path,kind='rollback-root') for path in source_roots if path not in keep and path not in retired]+[dict(path=path,kind='managed-release-archive' if path.endswith('.tgz') else 'archive-sidecar') for path in source_assets if path not in keep and path not in retired]
+        eligible.sort(key=lambda r:(r['kind']!='rollback-root',r['path']))
+        if plan['policyScope'].get('eligible')!=eligible:raise ValueError('Retirement plan scope does not derive from admitted ordinary assets')
         wanted={r['path'] for r in plan['delete']};removed=done.get('completed',[])
-        if intent.get('planSha256')!=done.get('planSha256') or len(removed)!=len(wanted) or {r.get('path') for r in removed}!=wanted or any(r.get('outcome')!='retired' for r in removed):raise ValueError('Incomplete retirement authority')
+        if not isinstance(removed,list) or len(removed)!=len(plan['delete']) or any(r.get('path')!=frozen['path'] or r.get('outcome')!='retired' or r.get('snapshotSha256')!=frozen['snapshot']['sha256'] for r,frozen in zip(removed,plan['delete'])) or done.get('currentPath')!=(plan['delete'][-1]['path'] if plan['delete'] else None):raise ValueError('Incomplete, reordered or unbound retirement outcomes')
+        for frozen in plan['delete']:
+            if frozen['kind']=='rollback-root':
+                admitted=source_roots[frozen['path']]
+                if frozen.get('release',{}).get('fields')!=admitted['fields'] or logical(frozen['snapshot'])!=admitted['logicalSha256']:raise ValueError('Retired rollback differs from its admission')
+            elif frozen['snapshot']!=source_assets[frozen['path']]:raise ValueError('Retired archive asset differs from its admitted snapshot')
         retired.update(wanted)
     return dict(indexPath=str(path),indexSha256=h,admissions=admissions,releaseIds=release_ids,roots=roots,assets=assets,retired=retired)
 
 def policy_scope(index,layout,approval_sha):
     data=load_index(index['path'],index['sha256'],layout,approval_sha);cache={};pair=S.protected_pair(layout,cache)
+    if data['admissions'][-1]['retainedPair']!=dict(current=pair['current']['fields']['release_id'],previous=pair['previous']['fields']['release_id']):raise ValueError('Live current/prior pair requires its latest verified admission before retirement planning')
     keep={pair[k]['path'] for k in ('current','previous')}|{str(layout.archives/pair[k]['fields']['archive_name'])+s for k in ('current','previous') for s in ('','.sha256','.provenance')}
     eligible=[]
     for path,r in data['roots'].items():
@@ -146,9 +180,10 @@ def main():
         scope=policy_scope(index,layout,a.approval_sha256)
         if a.command=='plan':
             citation=dict(path=str(a.citation_review),sha256=a.citation_review_sha256) if a.citation_review else None
-            print(json.dumps(S.create_plan(layout,'future-retention',a.approval_sha256,scope,citation_review=citation),sort_keys=True));return
+            print_plan(S.create_plan(layout,'future-retention',a.approval_sha256,scope,citation_review=citation));return
         if not a.plan or not a.plan_sha256:raise ValueError('Exact future plan SHA required')
         plan,h=S.read_json(a.plan,a.plan_sha256);S.validate_plan(plan,layout,'future-retention',a.approval_sha256)
+        if h!=S.digest(plan):raise ValueError('Future plan must use exact canonical policy stdout bytes')
         if plan['policyScope']!=scope:raise ValueError('Fresh eligible per-release scope changed')
         print(json.dumps(S.execute(plan,h,layout,a.command=='apply'),sort_keys=True))
     finally:os.close(fd)

@@ -40,7 +40,49 @@ The immutable versioned index has schema `pow-audit30-ui-admission-index-v1`, `s
 
 Policy `plan`, `verify`, and `apply` take the index path/SHA plus the same approval path/SHA. `verify`/`apply` additionally take the exact reviewed plan path/SHA. The controller re-derives eligible paths from admitted receipts, fully verifies the retained current/prior pair, rejects historical hold conflicts and changed admitted content, and applies the shared complete-proof/durable-receipt retirement path. Only the opt-in policy controller can apply a future plan. Record its completed receipt in the next index version; partial/failure receipts require reconciliation and cannot stand in for completion.
 
+Future-retention plans use one exact byte contract: the policy producer writes
+`S.encoded(plan)` directly, with sorted JSON keys, compact separators, and no trailing
+newline. The SHA-256 of those stdout bytes must equal the embedded plan digest.
+`verify` and `apply` reject a reformatted plan even when it decodes to the same
+object. A completed retirement is admitted into later lifecycle indexes only when its
+approved intent, receipt, and guard-baseline SHA all bind that same canonical plan;
+the plan uses a reviewed controller version and a canonical current/prior archive name
+derived from each bound release ID. The receipt must report
+`phase=final-verification`, `guardBaseline=original-plan`,
+`holdsAndMasksUnchanged=true`, explicit `errorClass=null`, no reconciliation, and the
+frozen `missingHeldPaths` list. Its completed rows must match every planned path,
+retirement outcome, and snapshot SHA in order, without omissions, duplicates, or
+substitutions. Before emitting an eligible scope or invoking a writer, the producer
+requires the latest admitted current/prior pair to match the actual fully verified
+live pair; an outdated index refuses before mutation. The source admission index must
+contain an exact prefix of the admitted release history and exactly the earlier
+completed-retirement prefix. Its latest current/prior pair must match the plan, and
+its admitted ordinary snapshots must derive the entire eligible set after excluding
+that pair and earlier retirements. Root admissions preserve their release fields and
+complete logical fingerprint; archive and sidecar admissions preserve their exact
+snapshots. These checks are nonrecursive and fail closed; a partial, failed,
+contradictory, or unfenced history requires manual reconciliation. No production
+future-retention plan or retirement ran before this reader correction. Previously
+sealed bootstrap admissions remain unchanged. This private operational correction is
+independent of frontend release `11b9daf067d74b2b507f740126204583412d3db0` and does
+not rewrite that release's sealed source or evidence.
+
 Production readiness requires installation with root ownership and safe file modes, production plan review, one-time retirement/preservation evidence, a recorded bootstrap and subsequent per-publication admission/retirement calls. Merely having these source files or passing local tests is not an active policy or a completed item 3.
+
+The 2026-10-02 production cycle is verified: original cleanup 40/40, whole-source
+preservation 3/3, and subsequent ordinary retention 4/4. Index v3 at
+`/var/backups/proofofwork-ui/cleanup-evidence/audit30-policy-admission-index-v3.json`
+has SHA-256 `d61edd55d02c92234983c09c448d8d31d7a0782df769f0f8c599d32e5e7f24c7`.
+Its fresh zero-eligible plan has SHA-256
+`b23ffdcf1cd95ba92e7370c01be48500776fb4fab47634ebfdb0444f366edce5`.
+Current `11b9daf067d7-20261002T211925Z` and verified prior
+`26500e4d2ff7-20261002T054938Z` remain protected. The completed ordinary receipt,
+approved intent, exact plan and immutable index are durable in `cleanup-evidence`;
+the [execution record](../../audits/2026-10-02-audit30-first-batch-execution.evidence.json)
+binds their full paths and hashes. Future releases must run fresh admissions,
+reviews and lifecycle calls, preserve the existing masks/holds, and pass the
+unchanged root/scratch/inode limits. Excluded source/evidence growth remains a
+separate capacity concern; this policy does not make it disposable by age.
 
 Run local fixtures with `python3 -I -B deploy/audit30/check-ui-storage.test.py`. Fixtures use temporary directories and real archives, hardlinks, Git index/configuration, xattrs, atomic renames and actual child-process SIGTERM; no production call, signature or broadcast is involved.
 

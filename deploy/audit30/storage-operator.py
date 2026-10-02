@@ -26,7 +26,7 @@ EVIDENCE='/var/backups/proofofwork-ui/cleanup-evidence'
 AUTH='d99a40236b49b1735c794fb853c4f7f4f0724da8e3f83fab75c7464e0e8ee373'
 PINS={
  'ui-storage.py':('deploy/audit30/ui-storage.py','f292da5dcda23393208d05e1cffaea0b50b9a9cc915b81a5b9d55fdd0aa81319'),
- 'ui-release-policy.py':('deploy/audit30/ui-release-policy.py','f023bd536223437dd2dce5ece6c4c4995cd9d63c648b7fe2f9eabc354a10f22d'),
+ 'ui-release-policy.py':('deploy/audit30/ui-release-policy.py','6b805f2095374640140be23031bbefb7f9e2d05223eb67f0494b1fa12a8d741b'),
  'approval.json':('audits/2026-10-02-audit30-first-batch-approval.json',AUTH),
 }
 SHA=re.compile('[0-9a-f]{64}\\Z')
