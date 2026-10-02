@@ -6160,3 +6160,134 @@ Caddy comparison. Preservation was creation-only and hash-verified under the
 continuous deploy lock, private 0700/0600 modes, and unchanged capacity checks.
 The local preservation receipt SHA-256 is
 `87d29f450ea1c0d11372c79e11c1aab35a069ec423d79e4af13d9313146080a7`.
+
+### Native Computer DNS and namespace search correction — 2026-10-02 UTC
+
+The approved update adds DNS beside IDs in Computer through `?folder=dns`, the
+desktop sidebar and phone More menu. It shares focused DNS claims, owned names,
+registry search and subdomains while keeping the account. AMO keeps
+resolver updates, transfers and sale tickets. Verified coverage, confirmed
+ownership periods, Mainnet gating, local signing and transaction recovery remain
+required; failures remain unavailable or last verified.
+
+Live QA exposed an inherited suffix bug: DNS search used `@proofofwork.me`, so
+bare `work` matched every row and `alice.pow` matched none. Each list now passes
+its displayed suffix: DNS uses `.pow`; IDs retain `@proofofwork.me`. No protocol,
+fee, API/server, schema or signing flow changed. Root registration remains
+1,000 proofs plus miner fee; subdomains remain 546-proof self-payments plus fee.
+
+Initial release `835e30258d23-20261002T052338Z`: commit
+`835e30258d23eb6c5261e41159fec8e3b3245d6e`, tree
+`ed333d82d474456bd88b88d03d4a134385c31328`. Managed archive:
+`/var/backups/proofofwork-ui/releases/proofofwork-ui-release-835e30258d23-20261002T052338Z.tgz`,
+SHA-256 `01ba8b4aae057470e03fb0435b148bc267864cd0677359fb76dcc238e5dcc664`;
+provenance/live-manifest SHA-256
+`d25bf8d360b04d15c0ebfed5b4108f36f768759cd433f5b3a24e2ee2d5f6d1cb`.
+Nine prior rollback roots were preserved; the preceding UI became the tenth at
+`/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-835e30258d23-20261002T052338Z`,
+manifest SHA-256 `63693d8af1dfbd7052b160c5982821ff6a1edca3c28e9a367d49bb1a2c63ebd6`,
+tree SHA-256 `9c8cfc70c236758763978e2469a99f556cbc3f3343011d488f83828ce396f9ce`.
+Initial HTTPS passed 885 public files across 15 roots, apex redirect, sidecar and
+provenance; 59 NFT files passed managed-root verification. Receipt SHA-256:
+`4a7ec6d923cb8336ad295c0c458789cfc90ebeba6bf52518fdfcad9f0f80db5d`.
+The initial release remains history.
+
+Corrective release `26500e4d2ff7-20261002T054938Z`: commit
+`26500e4d2ff743d65a0ca2b4dc06bbd5f62b27ea`, tree
+`1d13d6263b992403c1d58f334c4adc42e3c6d85b`. Managed archive:
+`/var/backups/proofofwork-ui/releases/proofofwork-ui-release-26500e4d2ff7-20261002T054938Z.tgz`,
+SHA-256 `fa49655b7e09949b82eed67da5d0dae7ef1758a46f21c90e21d0da8f6136740c`;
+provenance/live-manifest SHA-256
+`62c9c67a71f7f0366db1e240774780cf5c5df93e2161518c84ce0c0b054d289d`.
+All ten prior rollback roots were preserved; the initial 835 UI became the
+eleventh at
+`/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-26500e4d2ff7-20261002T054938Z`,
+manifest SHA-256 `d25bf8d360b04d15c0ebfed5b4108f36f768759cd433f5b3a24e2ee2d5f6d1cb`,
+tree SHA-256 `f8d0e3c0d7acb7a001482cc49afa8a0c696b2b6d8b0d181a5231286c921a39e9`.
+Publisher-log SHA-256:
+`a2be0b65f67c4fa7d6d24889a99526a2e3d578a1b3d313b687ed8ebf052c81f3`.
+
+Three preservation steps kept the unchanged 5 GiB scratch ceiling. The first
+exact user-approved historical move released 219,947,008 allocated scratch
+bytes by preserving
+`/var/tmp/proofofwork-deploy/proofofwork-ui-surfaces-db853f434f9b-20260930T011125Z`
+at
+`/var/backups/proofofwork-ui/transport-evidence/historical-input-computer-dns-20261002T052000Z/proofofwork-ui-surfaces-db853f434f9b-20260930T011125Z`.
+Exact plan SHA-256:
+`2fb7b0bc20e88ad9760aefbe7781ff198e44e9925fcc0bef92260fc8a282dbf3`;
+successful apply-log SHA-256:
+`ebf714819caeaea3fc70b59a7f1019c0a63ba644a2f89d856d6e998b5ae94c81`.
+
+The corrective receiver verified its input, but the outer `recovery-stage` gate
+refused a 60,170,240-byte deficit before stager/publisher execution. A second
+exact user-approved historical move released 220,930,048 allocated scratch
+bytes by preserving
+`/var/tmp/proofofwork-deploy/proofofwork-ui-surfaces-9d46289661d5-20261001T023414Z`
+at
+`/var/backups/proofofwork-ui/transport-evidence/historical-input-computer-dns-final-20261002T061000Z/proofofwork-ui-surfaces-9d46289661d5-20261001T023414Z`.
+Exact plan SHA-256:
+`3ce5df498ff347e4521d8a68f0b96a6021ec9517e9b1da7d749a6e4f5dc1aa39`;
+successful apply-log SHA-256:
+`af105e69c10ebe0ba2f61f173ee22827e4f4324188beb859d190e9998de0835c`.
+
+The first continuation, plan SHA-256
+`1cd80d94d4f1efc8d73626a9fba4b96c542ee5b36e627382d049d7b122317a78`,
+passed the outer gate but the installed `stage-private-root` guard refused a
+507,904-byte deficit before stage creation/publication. Within the approved DNS
+deployment scope, ten freshly generated completed or failed task proof artifacts
+were preserved at
+`/var/backups/proofofwork-ui/transport-evidence/current-task-computer-dns-final-20261002T114500Z/`.
+Exact plan SHA-256:
+`66aabb73fb6a2c8eb4fd4ae5904b2719ef313e1eb7e34658a4ab21b488eb9729`;
+successful apply-log SHA-256:
+`2fb3605115a9c02ab2af31a0b06704ffde3dbaf44f750eab6b06d355f4934521`.
+The ten moves released 598,016 allocated bytes. All three steps kept continuous deploy locking and
+non-replacing same-filesystem renames, preserving contents and metadata except
+recorded root rename ctimes. Descendant ctimes, live UI, rollback roots, current
+source, candidate authority and Caddy were unchanged. No history was deleted or
+retention/capacity policy loosened; detailed inventories and both failures
+remain protected evidence.
+
+Resume2 passed under staging-only plan SHA-256
+`a76b1cb900524265997dbbc19eca99bbda979a6fb347c8de79fd7b26c58b7118`,
+without repeating transport or overwriting failed attempts. Full source
+verification passed. Source admission, publisher and audits retained the
+original final plan SHA-256
+`0448dfc9153fd7e15976e3e25ee09bd945917e66c4e7bfb57ed8d1571e3310e1`
+and `computer-dns-final` authority.
+
+All 26 native/focused DNS and shared DNS-subdomain browser cases passed,
+covering namespace/owned searches, ID defaults, desktop/phone navigation,
+registry errors, Mainnet/navigation races, AMO reads and receipt restoration.
+TypeScript, UI contracts and feature hygiene passed. Live QA verified Computer
+and focused DNS at 1440/390 widths, bare/full searches, disconnected refresh,
+44px anchors and no document overflow, More focus and AMO handoff, without
+wallet connection or transaction. Four-capture/eleven-check receipt SHA-256:
+`f8baafaeb6124d6c553d549e90f73fed704a0d2f0c59399a7afe204041e8770f`.
+
+Final HTTPS passed all 810 public files across 15 roots, apex redirect, sidecar
+and provenance; 54 NFT files passed managed-root verification. The 885-to-810
+difference is five older duplicate hashed assets per host; served references
+passed and older archives remain retained. HTTPS-receipt SHA-256:
+`87a720f337711875bc29c1205de07d42b9cb69005de528ac31e88e5bd1dc606f`.
+The ordered full/fresh 20-second audit passed all 15 current-run hosts, zero
+reuse and no resume, followed by the ordinary ledger audit at snapshot
+`05168953a03b0a3283e094fb`. Actual surface JSON SHA-256:
+`6ab57648a34f6f4aeb5f0a55ec9c054adc0a60d2335ea570bb837d5f6a5c4790`;
+ordered audit-report SHA-256
+`8a870aa7acda4fcd3514382ab8a0051fbdac186a078c8297d91ba015fe78ec0d`.
+
+The original postflight reader stopped twice at a helper metadata assertion;
+helper bytes were unchanged and an access-time cause was not conclusively
+reproduced. A reviewed creation-only O_NOATIME/O_NOFOLLOW reader with stable
+full-metadata reads passed live/archive/provenance and all eleven rollback
+roots without changing production code/configuration. Postflight SHA-256:
+`4a011d6fb4cf986413379e4b97494343d1f7ed774885753173ba6b6cd27e17cc`.
+Caddy's full runtime/config identity stayed unchanged; comparison SHA-256:
+`0845253914523eb4120ba7f6fe311dc24a2505df659a2d838b4611ee5880d9ce`.
+
+All 32 accepted evidence files (603,642 bytes) were preserved creation-only at
+`/var/tmp/proofofwork-deploy/recovery-publish-26500e4d2ff7-20261002T054938Z-computer-dns-final/public-audit-evidence/`,
+with private 0700/0600 modes, continuous deploy locking, SHA verification and
+unchanged capacity gates. Preservation-receipt SHA-256:
+`fa751f27af530b7d52ee7af2f6513100c2717ae6c1593d6b398789474275ea9b`.
