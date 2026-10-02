@@ -5891,3 +5891,78 @@ in [Audit 29 remediation](audits/2026-10-01-audit29-remediation-release.md).
 Original Audit 29 observations and byte-bound evidence are preserved unchanged.
 Database migrations/compaction, enabling physical checksums, PITR changes, and
 additional protected-data retirement require separate concrete approval.
+
+### Boost tag and profile links release — 2026-10-02 UTC
+
+The approved Boost update is deployed from commit
+`d4d888757a1c44aab3b9690f79e1917935930f0f`, tree
+`4984c4a3143af9d91c1ebc09e2f749dfc8019b29`, as release
+`d4d888757a1c-20261002T013828Z`. Both the API and all managed UI roots use
+that source. The API runtime attestation is
+`14d994a8e92c5033cc2b300b581d3e36165028bc069e63434b678dd938df9c48`.
+The release adds whole-tag search and profile links/previews to Boost text;
+it changes no chain protocol, fee, signing flow, or database schema.
+
+The guarded shadow acceptance passed at checkpoint 969518. The first production
+verification rejected a moving checkpoint (969518 to 969519); its failure
+evidence remains preserved. The bounded production retry passed at stable
+checkpoint 969519, hash
+`00000000000000000001dd3b2150e834f9f98dd4e6a5b03ae2ad0ac47e39c5be`,
+including ID/event/parity gates, exact wallet balance and capacity, six full and
+six display listing pages, and 1,001 independent Core listing anchors. Backup
+quiet checks and guarded runtime identity remained enforced. The accepted
+production receipt is
+`/data/proofofwork-audit29-verify-launch-d4d888757a1c-20261002T013828Z-production-retry1/accepted-receipt.json`,
+SHA-256 `571fed130f19f5dfed0f36509a1a1fd06f6c53faa3b09f158f344d13265c35cf`.
+
+The managed UI archive is
+`/var/backups/proofofwork-ui/releases/proofofwork-ui-release-d4d888757a1c-20261002T013828Z.tgz`,
+SHA-256 `0ad90dcaf48925f77cf7c4b1b9b5e3eeccfde5189c18c1e0ebe5c3ebda098848`.
+Its provenance equals the live manifest, SHA-256
+`a3e437f4f1e72b9f363839472ef04f91679bdb1a8671b87eb26db44110616e37`.
+Off-host HTTPS verification compared all 825 archived public files across 15
+serving roots and checked the apex redirect. The NFT mirror's 55 files are
+covered by the publisher's managed-root verification, rather than this HTTPS
+smoke. All five preceding rollback roots remained preserved; the prior live
+UI became the sixth rollback root at
+`/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-d4d888757a1c-20261002T013828Z`.
+The HTTPS receipt is preserved beside the publisher evidence at
+`/var/tmp/proofofwork-deploy/recovery-publish-d4d888757a1c-20261002T013828Z-boost/https-smoke-receipt.json`,
+SHA-256 `c393bc11a00b7c9d5f71411b2d298a2b0d295b13202f0595b64ba6e62753cbcc`.
+
+Public Boost and Computer feature gates confirmed the complete eight-record
+feed, six `$work` matches, one `$powb` match, one `$incb` match, and zero `#work`
+matches in existing confirmed history. They also verified the current confirmed
+`armyofyouth` owner, raw-address resolution, and rejection of unknown IDs and
+mixed-case Bech32 addresses. In-app browser checks exercised the actual Carbonz
+mention preview, confirmed profile navigation, and `$WORK` search on both
+surfaces. Positive generic hashtag and address-mention coverage came from the
+browser fixtures; no test Boost was broadcast. All 31 relevant browser checks
+passed before publication. Feature receipts and cutover evidence remain in
+`/data/proofofwork-release-backups/boost-tags-controller-d4d888757a1c-20261002T013828Z/`.
+
+The ordered post-publication surface and ledger audits also passed. The surface
+audit retained the initial DNS summary timeout, then passed that check using
+the unchanged fresh/full 20-second limit. Its complete final JSON receipt
+explicitly labels one current observation and fourteen supported reused
+observations; the resumed per-surface checkpoint alone is not the complete
+acceptance record. The final surface receipt SHA-256 is
+`f0d397c7cfa50bb5e0bd316304e7567a6827a1e1d706134241531208a28d9d47`.
+The subsequent public ledger audit passed at snapshot
+`dfba20c6f81aae19d38fc224`. Its log SHA-256 is
+`3ee2d4c9d02723e4a0a8e1749f1fa0c3ad6c3914cf59af57432aa033af7bdf4b`.
+The audit report SHA-256 is
+`8201dca363b6ac55c418dee7ca8b59e7aa7b410d23a6b79ca6f3809757839e60`;
+it and the original/retry evidence are preserved under
+`/var/tmp/proofofwork-deploy/recovery-publish-d4d888757a1c-20261002T013828Z-boost/public-audit-evidence/`.
+
+To admit the release under the unchanged 5 GiB deployment-scratch ceiling,
+six older transport archive/sidecar files were reversibly relocated, under a
+continuous deployment lock, to
+`/var/backups/proofofwork-ui/transport-evidence/historical-archives-boost-20261002T013023Z`.
+The relocation preserved contents, inodes, permissions, owners, and xattrs;
+rename ctime changes are recorded. It moved 580,751,360 allocated bytes without
+deleting history or changing the live UI, rollback roots, or current source.
+The destination retains its plan, intent, move receipts, and restore controls;
+plan SHA-256 is
+`eb9c2fbc74c954cd9b0566cdd1252f84c34c8134d276279b6350018b8a403b19`.
