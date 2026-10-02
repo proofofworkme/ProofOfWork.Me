@@ -5894,11 +5894,11 @@ additional protected-data retirement require separate concrete approval.
 
 ### Boost tag and profile links release — 2026-10-02 UTC
 
-The approved Boost update is deployed from commit
+The approved Boost update was deployed from commit
 `d4d888757a1c44aab3b9690f79e1917935930f0f`, tree
 `4984c4a3143af9d91c1ebc09e2f749dfc8019b29`, as release
-`d4d888757a1c-20261002T013828Z`. Both the API and all managed UI roots use
-that source. The API runtime attestation is
+`d4d888757a1c-20261002T013828Z`. Both the API and all managed UI roots were
+published from that source. The API runtime attestation is
 `14d994a8e92c5033cc2b300b581d3e36165028bc069e63434b678dd938df9c48`.
 The release adds whole-tag search and profile links/previews to Boost text;
 it changes no chain protocol, fee, signing flow, or database schema.
@@ -5966,3 +5966,53 @@ deleting history or changing the live UI, rollback roots, or current source.
 The destination retains its plan, intent, move receipts, and restore controls;
 plan SHA-256 is
 `eb9c2fbc74c954cd9b0566cdd1252f84c34c8134d276279b6350018b8a403b19`.
+
+### Boost search row correction — 2026-10-02 UTC
+
+The follow-up UI correction is deployed from commit
+`d2636f6fb3c56c64ab970a66d3b09bdfdb8be03e`, tree
+`717d37662e911737c34d957ec2f976a511b69ad3`, as release
+`d2636f6fb3c5-20261002T023421Z`. The API remains on the preceding
+`d4d888757a1c44aab3b9690f79e1917935930f0f` source and runtime attestation;
+this correction changes no server code, protocol, fee, wallet flow, or schema.
+
+The active tag-search control previously added a third visible child to the
+two-column icon/input grid, pushing the input onto a second row. Removing the
+redundant span and its unused CSS restores one 46-pixel row while preserving
+the accessible search name, editable query, and tag links. Four geometric
+regressions fail against the previous 70-pixel control and pass against the
+correction. All 17 relevant browser tests, TypeScript, and UI checks passed.
+In-app browser checks confirmed six existing `$work` matches and a contained
+46-pixel search row on Boost and Computer at both 1920- and 390-pixel widths;
+editing the live Boost query to `$powb` returned its one existing match.
+
+The managed UI archive is
+`/var/backups/proofofwork-ui/releases/proofofwork-ui-release-d2636f6fb3c5-20261002T023421Z.tgz`,
+SHA-256 `61623c7bef3d8fd201703a241fcd67fefa99d70b9800df063722c5d48e796d97`.
+Its provenance equals the live manifest, SHA-256
+`3ebd806d1754276784b5ef13c864fc49f949548615b9ed97e700af6a41f8206a`.
+Publication preserved all six preceding rollback roots; the prior live UI
+became the seventh at
+`/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-d2636f6fb3c5-20261002T023421Z`.
+The unchanged 5 GiB scratch ceiling admitted this release without another
+transport relocation or deletion of historical evidence.
+
+Off-host HTTPS verification compared all 825 archived public files across 15
+serving roots and checked the apex redirect. The NFT mirror's 55 files remain
+covered by managed-root publication verification. The HTTPS receipt SHA-256 is
+`cbfca4212f7d5b2979ff71eda524e1b4c8a0ba97a5ad0b4d8554fd30c209b5fd`.
+
+The subsequent full/fresh public surface audit passed all 15 surfaces under
+the unchanged 20-second request limit, with 15 current observations and zero
+reused observations. Its actual final JSON receipt SHA-256 is
+`907bc97ea0840ded96e1b7b5245391c90e77f5480c11dca1e4cbc1bf2eb6032f`;
+the separate resume checkpoint is preserved alongside it.
+The ordered public ledger audit then passed at snapshot
+`aad542811e6ae90e0d506680`; its log SHA-256 is
+`decba02b9d05a76b51aeaea3ba24075a291eb7ed26220e4e7fa99d74bd384ea3`.
+The audit report SHA-256 is
+`91367be631e0684a5fca27fb46760bd5ecebc7b0ad72fc194d914296671ceff0`.
+The HTTPS receipt, final surface JSON, resume checkpoint, report, and both
+audit logs are preserved as hash-verified creation-only evidence under
+`/var/tmp/proofofwork-deploy/recovery-publish-d2636f6fb3c5-20261002T023421Z-boost-search-row/public-audit-evidence/`.
+No retry or changed verification limit was needed.
