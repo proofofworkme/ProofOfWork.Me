@@ -1,0 +1,1 @@
+{"schema": "pow-audit30-logical-backup-rotation-readonly-refused-v1", "errorClass": "ValueError", "reasonSha256": "1ac2938fc30c5c24b1d8dc2d9b0d54d7699bcb04f644c6f15c9aea4250cc79c0", "productionMutation": false, "automaticRetry": false}

@@ -1,0 +1,200 @@
+{
+  "approvalSha256": "6821c987b9a5d110fbe9fb2820955b7cbc26dda9faddb67667fc49e892f5c820",
+  "directory": "/var/tmp/proofofwork-audit30-pin-promotion-20261003T093000Z-preflight",
+  "expectedLive": {
+    "bitcoind.service": {
+      "ActiveState": "active",
+      "InvocationID": "64e1fa7be2e2442d8c7f5763f60b85fb",
+      "LoadState": "loaded",
+      "MainPID": "1324302",
+      "SubState": "running"
+    },
+    "electrs.service": {
+      "ActiveState": "active",
+      "InvocationID": "72418b1c7ab245e4a37685ed868a1084",
+      "LoadState": "loaded",
+      "MainPID": "1324320",
+      "SubState": "running"
+    },
+    "postgresql@16-main.service": {
+      "ActiveState": "active",
+      "InvocationID": "e0bf545f0ad944e89fe1005577e61b9c",
+      "LoadState": "loaded",
+      "MainPID": "1537429",
+      "SubState": "running"
+    },
+    "proofofwork-api.service": {
+      "ActiveState": "active",
+      "InvocationID": "208f8bcbecc54afbb7166754f12065c2",
+      "LoadState": "loaded",
+      "MainPID": "2103747",
+      "SubState": "running"
+    },
+    "proofofwork-indexer-worker.service": {
+      "ActiveState": "active",
+      "InvocationID": "33b3ee25490749db89e0d55fd29d0afb",
+      "LoadState": "loaded",
+      "MainPID": "2103760",
+      "SubState": "running"
+    }
+  },
+  "expectedProtection": {
+    "files": {
+      "/etc/proofofwork-postgres-logical-backup.pins": {
+        "metadata": {
+          "bytes": 39,
+          "ctimeNs": 1790736083442846642,
+          "dev": 64512,
+          "gid": 0,
+          "ino": 3148002,
+          "mode": 420,
+          "mtimeNs": 1790736083442846642,
+          "nlink": 1,
+          "uid": 0
+        },
+        "sha256": "821b5bbfecee75ffb3c4565d3867eb62ac33e65eeb83c0e603c08aa478ff957b"
+      },
+      "/etc/proofofwork-retention/audit28-held-review.json": {
+        "metadata": {
+          "bytes": 1030164,
+          "ctimeNs": 1790833036646778315,
+          "dev": 64512,
+          "gid": 0,
+          "ino": 3147004,
+          "mode": 420,
+          "mtimeNs": 1790833036645778316,
+          "nlink": 1,
+          "uid": 0
+        },
+        "sha256": "c3bd35740d7fcc135839274c8228e38f7a45c23e33567743e0d77151b32451d9"
+      },
+      "/etc/proofofwork-retention/audit28.hold": {
+        "metadata": {
+          "bytes": 81,
+          "ctimeNs": 1790736083441846642,
+          "dev": 64512,
+          "gid": 0,
+          "ino": 3148001,
+          "mode": 384,
+          "mtimeNs": 1790736083441846642,
+          "nlink": 1,
+          "uid": 0
+        },
+        "sha256": "e9aca6e22b1dc36b714ed663051f8bc20d9479efa4173474e0b6b771958ca6a4"
+      },
+      "/etc/systemd/system/proofofwork-postgres-logical-backup.service": {
+        "metadata": {
+          "bytes": 1041,
+          "ctimeNs": 1790833036669778288,
+          "dev": 64512,
+          "gid": 0,
+          "ino": 3148008,
+          "mode": 420,
+          "mtimeNs": 1790833036669778288,
+          "nlink": 1,
+          "uid": 0
+        },
+        "sha256": "ba7af818256aac91e74213b320fc2c994059bf01cb176f6483ffb02ace25ba4d"
+      },
+      "/etc/systemd/system/proofofwork-postgres-logical-backup.timer": {
+        "metadata": {
+          "bytes": 265,
+          "ctimeNs": 1784051189027070538,
+          "dev": 64512,
+          "gid": 0,
+          "ino": 3147227,
+          "mode": 420,
+          "mtimeNs": 1784051189027070538,
+          "nlink": 1,
+          "uid": 0
+        },
+        "sha256": "de62e16ec0d4500f9d39f6a6603f2cea1b99fc9701b4285e53b4acbe135d7841"
+      },
+      "/etc/systemd/system/proofofwork-retention-protection.service": {
+        "metadata": {
+          "bytes": 690,
+          "ctimeNs": 1790970319801036711,
+          "dev": 64512,
+          "gid": 0,
+          "ino": 3147019,
+          "mode": 420,
+          "mtimeNs": 1790970319801036711,
+          "nlink": 1,
+          "uid": 0
+        },
+        "sha256": "8f9c54b522961e26d8f02ed33ad065af70906f1e95ca2ad65edd322c8f758448"
+      },
+      "/usr/local/sbin/proofofwork-postgres-logical-backup": {
+        "metadata": {
+          "bytes": 20691,
+          "ctimeNs": 1790833036658778301,
+          "dev": 64512,
+          "gid": 0,
+          "ino": 6304207,
+          "mode": 493,
+          "mtimeNs": 1790833036658778301,
+          "nlink": 1,
+          "uid": 0
+        },
+        "sha256": "4e5252ed8fcc8ce4ec863d6e027d429f146348f30be23d4eb5fe77cfd013a754"
+      },
+      "/usr/local/sbin/proofofwork-retention-protection": {
+        "metadata": {
+          "bytes": 20677,
+          "ctimeNs": 1790970319800036711,
+          "dev": 64512,
+          "gid": 0,
+          "ino": 6292437,
+          "mode": 493,
+          "mtimeNs": 1790970319800036711,
+          "nlink": 1,
+          "uid": 0
+        },
+        "sha256": "da5d1336ce857acc571ba0849c2b0150ef5fc6dfdacf80e65b9f1d3611c48e8a"
+      }
+    },
+    "mask": {
+      "metadata": {
+        "bytes": 9,
+        "ctimeNs": 1790736083643846636,
+        "dev": 64512,
+        "gid": 0,
+        "ino": 3147953,
+        "mode": 511,
+        "mtimeNs": 1790736083643846636,
+        "nlink": 1,
+        "uid": 0
+      },
+      "target": "/dev/null"
+    },
+    "units": {
+      "pg_receivewal@16-main.service": {
+        "ActiveState": "inactive",
+        "InvocationID": "c3ac4e887abf4887a7fa9d0416730da1",
+        "LoadState": "loaded",
+        "MainPID": "0",
+        "SubState": "dead",
+        "UnitFileState": "disabled"
+      },
+      "proofofwork-node-release-prune.timer": {
+        "ActiveState": "inactive",
+        "InvocationID": "",
+        "LoadState": "masked",
+        "SubState": "dead",
+        "UnitFileState": "masked"
+      },
+      "proofofwork-retention-protection.service": {
+        "ActiveState": "failed",
+        "InvocationID": "a4cf7d1c787f46269fb580e11b17bf64",
+        "LoadState": "loaded",
+        "MainPID": "0",
+        "SubState": "failed",
+        "UnitFileState": "static"
+      }
+    }
+  },
+  "schema": "pow-audit30-oct2-full-read-native-request-v1",
+  "sourceBase64": "aW1wb3J0IGRhdGV0aW1lLGZjbnRsLGhhc2hsaWIsanNvbixvcyxwYXRobGliLHJlLHN0YXQsc3VicHJvY2Vzcyx0aW1lCmZyb20gcGF0aGxpYiBpbXBvcnQgUGF0aApFWFBFQ1RFRD17J2J5dGVzJzogNDA5NiwgJ2N0aW1lTnMnOiAxNzkwOTEyMjQwODEzNDM5MzI4LCAnZGVjbGFyZWRNZW1iZXJTaGEyNTYnOiB7J2dsb2JhbHMuc3FsJzogJ2YzOGE1ODhhZTk1YWE0ZTQxYjA0NGE0MzdmYTliMmE2NWQzMTVjZTkxODc3MjEwYzI2NGM2ZTc1M2QyNWIzZGEnLCAncHJvb2ZfaW5kZXhlci5kdW1wJzogJzg5MzcwMGM0ZmZmMjBlNGJhZDcyMWQxNjE4OGY2N2RkMDRlM2Y0NGVlOWYzZjYzNzg0YzE1YzUxNDg4YTdiMWEnfSwgJ2RldmljZSc6IDY0NTE0LCAnZGlyZWN0b3J5JzogVHJ1ZSwgJ2R1bXBIYXNoUmV2ZXJpZmllZE5vdyc6IEZhbHNlLCAnZ2lkJzogMTEyLCAnaW5vZGUnOiA3NDcxMTA2LCAnbWFuaWZlc3RTaGEyNTYnOiAnNjk5ZDExMTcxM2NmOGJmN2Q4YzY3MjA4N2ZhZWYyNTk5YzMxNDI3MGE2MjJkN2M2NjExMzBhM2Q2OTVhYzg2MCcsICdtZW1iZXJzJzogW3snYnl0ZXMnOiAyMDUyNTk2MzYxNCwgJ2N0aW1lTnMnOiAxNzkwOTEyMjE2MjIyNDA1MTQ4LCAnZGV2aWNlJzogNjQ1MTQsICdkaXJlY3RvcnknOiBGYWxzZSwgJ2dpZCc6IDExMiwgJ2lub2RlJzogNzQ3MTEwOSwgJ21vZGUnOiAnMG82MDAnLCAnbXRpbWVOcyc6IDE3OTA5MTIyMTYyMjI0MDUxNDgsICdwYXRoJzogJy9kYXRhL3Byb29mb2Z3b3JrLXBvc3RncmVzLWJhY2t1cHMvbG9naWNhbC9wcm9vZl9pbmRleGVyLTIwMjYxMDAyVDAzMTg1MVouZHVtcHNldC9wcm9vZl9pbmRleGVyLmR1bXAnLCAncmVndWxhcic6IFRydWUsICdzeW1saW5rJzogRmFsc2UsICd1aWQnOiAxMDh9LCB7J2J5dGVzJzogMTEzNywgJ2N0aW1lTnMnOiAxNzkwOTEyMjE2NTIwNDA1NTY4LCAnZGV2aWNlJzogNjQ1MTQsICdkaXJlY3RvcnknOiBGYWxzZSwgJ2dpZCc6IDExMiwgJ2lub2RlJzogNzQ3MTExNiwgJ21vZGUnOiAnMG82MDAnLCAnbXRpbWVOcyc6IDE3OTA5MTIyMTY1MjA0MDU1NjgsICdwYXRoJzogJy9kYXRhL3Byb29mb2Z3b3JrLXBvc3RncmVzLWJhY2t1cHMvbG9naWNhbC9wcm9vZl9pbmRleGVyLTIwMjYxMDAyVDAzMTg1MVouZHVtcHNldC9nbG9iYWxzLnNxbCcsICdyZWd1bGFyJzogVHJ1ZSwgJ3N5bWxpbmsnOiBGYWxzZSwgJ3VpZCc6IDEwOH0sIHsnYnl0ZXMnOiAxNjMsICdjdGltZU5zJzogMTc5MDkxMjIyOTE0NjQyMzI0MiwgJ2RldmljZSc6IDY0NTE0LCAnZGlyZWN0b3J5JzogRmFsc2UsICdnaWQnOiAxMTIsICdpbm9kZSc6IDc0NzExMTcsICdtb2RlJzogJzBvNjAwJywgJ210aW1lTnMnOiAxNzkwOTEyMjI5MTQ2NDIzMjQyLCAncGF0aCc6ICcvZGF0YS9wcm9vZm9md29yay1wb3N0Z3Jlcy1iYWNrdXBzL2xvZ2ljYWwvcHJvb2ZfaW5kZXhlci0yMDI2MTAwMlQwMzE4NTFaLmR1bXBzZXQvU0hBMjU2U1VNUycsICdyZWd1bGFyJzogVHJ1ZSwgJ3N5bWxpbmsnOiBGYWxzZSwgJ3VpZCc6IDEwOH1dLCAnbW9kZSc6ICcwbzcwMCcsICdtdGltZU5zJzogMTc5MDkxMjI0MDgxMTQzOTMyNSwgJ3BhdGgnOiAnL2RhdGEvcHJvb2ZvZndvcmstcG9zdGdyZXMtYmFja3Vwcy9sb2dpY2FsL3Byb29mX2luZGV4ZXItMjAyNjEwMDJUMDMxODUxWi5kdW1wc2V0JywgJ3JlZ3VsYXInOiBGYWxzZSwgJ3N5bWxpbmsnOiBGYWxzZSwgJ3VpZCc6IDEwOH0KZGVmIGlkZW50aXR5KHApOgogcz1QYXRoKHApLmxzdGF0KCk7YXNzZXJ0IG5vdCBzdGF0LlNfSVNMTksocy5zdF9tb2RlKQogcmV0dXJuIGRpY3QoZGV2aWNlPXMuc3RfZGV2LGlub2RlPXMuc3RfaW5vLG1vZGU9c3RhdC5TX0lNT0RFKHMuc3RfbW9kZSksdWlkPXMuc3RfdWlkLGdpZD1zLnN0X2dpZCxieXRlcz1zLnN0X3NpemUsbXRpbWVOcz1zLnN0X210aW1lX25zLGN0aW1lTnM9cy5zdF9jdGltZV9ucyxubGluaz1zLnN0X25saW5rKQpkZWYgbWF0Y2gocCxvbGQpOgogeD1pZGVudGl0eShwKQogZm9yIGsgaW4gKCdkZXZpY2UnLCdpbm9kZScsJ3VpZCcsJ2dpZCcsJ2J5dGVzJywnbXRpbWVOcycsJ2N0aW1lTnMnKTphc3NlcnQgeFtrXT09b2xkW2tdLCAnYmFja3VwIGlkZW50aXR5IGNoYW5nZWQnCiBhc3NlcnQgeFsnbW9kZSddPT1pbnQob2xkWydtb2RlJ10sOCkKIHJldHVybiB4CnJvb3Q9UGF0aChFWFBFQ1RFRFsncGF0aCddKTthc3NlcnQgcm9vdC5yZXNvbHZlKCk9PXJvb3QKYXNzZXJ0IG9zLmdldGV1aWQoKT09MTA4Cm1hdGNoKHJvb3QsRVhQRUNURUQpCmxvY2twYXRoPVBhdGgoJy9kYXRhL3Byb29mb2Z3b3JrLXBvc3RncmVzLWJhY2t1cHMvbG9naWNhbC8ucHJvb2ZvZndvcmstcG9zdGdyZXMtbG9naWNhbC1iYWNrdXAubG9jaycpCmZkPW9zLm9wZW4obG9ja3BhdGgsb3MuT19SRE9OTFl8b3MuT19OT0ZPTExPVykKZmNudGwuZmxvY2soZmQsZmNudGwuTE9DS19TSHxmY250bC5MT0NLX05CKQp0cnk6CiBtZW1iZXJzPXt9CiByYXdnbG9iYWxzPU5vbmU7cmF3Y2hlY2tzPU5vbmUKIGZvciBvbGQgaW4gRVhQRUNURURbJ21lbWJlcnMnXToKICBwPVBhdGgob2xkWydwYXRoJ10pO2Fzc2VydCBwLnJlc29sdmUoKT09cCBhbmQgcC5wYXJlbnQ9PXJvb3QKICBiZWZvcmU9bWF0Y2gocCxvbGQpO2g9aGFzaGxpYi5zaGEyNTYoKTt0b3RhbD0wO2NodW5rcz1bXQogIGY9b3Mub3BlbihwLG9zLk9fUkRPTkxZfG9zLk9fTk9GT0xMT1d8b3MuT19OT0FUSU1FKQogIHRyeToKICAgd2hpbGUgYjo9b3MucmVhZChmLDEwMjQqMTAyNCk6CiAgICB0b3RhbCs9bGVuKGIpO2gudXBkYXRlKGIpCiAgICBpZiBwLm5hbWUhPSdwcm9vZl9pbmRleGVyLmR1bXAnOmNodW5rcy5hcHBlbmQoYikKICAgYXNzZXJ0IHRvdGFsPT1iZWZvcmVbJ2J5dGVzJ10gYW5kIGlkZW50aXR5KHApPT1iZWZvcmUKICBmaW5hbGx5Om9zLmNsb3NlKGYpCiAgZGlnZXN0PWguaGV4ZGlnZXN0KCkKICBpZiBwLm5hbWUgaW4gRVhQRUNURURbJ2RlY2xhcmVkTWVtYmVyU2hhMjU2J106YXNzZXJ0IGRpZ2VzdD09RVhQRUNURURbJ2RlY2xhcmVkTWVtYmVyU2hhMjU2J11bcC5uYW1lXQogIGVsc2U6YXNzZXJ0IGRpZ2VzdD09RVhQRUNURURbJ21hbmlmZXN0U2hhMjU2J10KICBtZW1iZXJzW3AubmFtZV09eyoqYmVmb3JlLCdzaGEyNTYnOmRpZ2VzdH0KICBpZiBwLm5hbWU9PSdnbG9iYWxzLnNxbCc6cmF3Z2xvYmFscz1iJycuam9pbihjaHVua3MpLmRlY29kZSgpCiAgaWYgcC5uYW1lPT0nU0hBMjU2U1VNUyc6cmF3Y2hlY2tzPWInJy5qb2luKGNodW5rcykuZGVjb2RlKCkKIHRvYz1zdWJwcm9jZXNzLnJ1bihbJy91c3IvbGliL3Bvc3RncmVzcWwvMTYvYmluL3BnX3Jlc3RvcmUnLCctLWxpc3QnLHN0cihyb290Lydwcm9vZl9pbmRleGVyLmR1bXAnKV0sY2FwdHVyZV9vdXRwdXQ9VHJ1ZSxjaGVjaz1UcnVlLHRpbWVvdXQ9MTgwKQogYXNzZXJ0IG5vdCB0b2Muc3RkZXJyIGFuZCBsZW4odG9jLnN0ZG91dCk8MTAyNCoxMDI0CiBlbnRyaWVzPXN1bShib29sKHJlLm1hdGNoKHJiJ15cZCs7JyxsKSkgZm9yIGwgaW4gdG9jLnN0ZG91dC5zcGxpdGxpbmVzKCkpCiBhc3NlcnQgZW50cmllcz4wCiBjb3VudHM9e30KIGZvciBsaW5lIGluIHJhd2dsb2JhbHMuc3BsaXRsaW5lcygpOgogIGxpbmU9bGluZS5zdHJpcCgpCiAgaWYgbm90IGxpbmUgb3IgbGluZS5zdGFydHN3aXRoKCctLScpOmNvbnRpbnVlCiAgaWYgbGluZS5zdGFydHN3aXRoKCdDUkVBVEUgUk9MRSAnKTpraW5kPSdDUkVBVEUgUk9MRScKICBlbGlmIGxpbmUuc3RhcnRzd2l0aCgnQUxURVIgUk9MRSAnKTpraW5kPSdBTFRFUiBST0xFJwogIGVsaWYgbGluZS5zdGFydHN3aXRoKCdHUkFOVCAnKTpraW5kPSdHUkFOVCcKICBlbGlmIGxpbmUuc3RhcnRzd2l0aCgnQ1JFQVRFIFRBQkxFU1BBQ0UgJyk6a2luZD0nQ1JFQVRFIFRBQkxFU1BBQ0UnCiAgZWxpZiBsaW5lLnN0YXJ0c3dpdGgoJ0FMVEVSIFRBQkxFU1BBQ0UgJyk6a2luZD0nQUxURVIgVEFCTEVTUEFDRScKICBlbGlmIGxpbmUuc3RhcnRzd2l0aCgnU0VUICcpOmtpbmQ9J1NFVCcKICBlbGlmIGxpbmUuc3RhcnRzd2l0aCgnU0VMRUNUIHBnX2NhdGFsb2cuc2V0X2NvbmZpZygnKTpraW5kPSdTRVRfQ09ORklHJwogIGVsaWYgbGluZS5zdGFydHN3aXRoKCdcXHJlc3RyaWN0ICcpOmtpbmQ9J1JFU1RSSUNUX0NPTlRST0wnCiAgZWxpZiBsaW5lLnN0YXJ0c3dpdGgoJ1xcdW5yZXN0cmljdCAnKTpraW5kPSdVTlJFU1RSSUNUX0NPTlRST0wnCiAgZWxzZTpraW5kPSdPVEhFUl9SRUZVU0VfVU5USUxfUkVWSUVXRUQnCiAgY291bnRzW2tpbmRdPWNvdW50cy5nZXQoa2luZCwwKSsxCiBhc3NlcnQgaWRlbnRpdHkocm9vdCk9PW1hdGNoKHJvb3QsRVhQRUNURUQpCiBvdXQ9eydzY2hlbWEnOidwb3ctYXVkaXQzMC1sYXRlc3QtYmFja3VwLWZ1bGwtcmVhZC12MScsJ2F0VXRjJzpkYXRldGltZS5kYXRldGltZS5ub3coZGF0ZXRpbWUudGltZXpvbmUudXRjKS5pc29mb3JtYXQoKSwnYmFja3VwJzp7J3BhdGgnOnN0cihyb290KSwnZGlyZWN0b3J5JzppZGVudGl0eShyb290KSwnbWVtYmVycyc6bWVtYmVyc30sJ2JhY2t1cExvY2snOmlkZW50aXR5KGxvY2twYXRoKSwndG9jJzp7J3NoYTI1Nic6aGFzaGxpYi5zaGEyNTYodG9jLnN0ZG91dCkuaGV4ZGlnZXN0KCksJ2J5dGVzJzpsZW4odG9jLnN0ZG91dCksJ2VudHJpZXMnOmVudHJpZXMsJ3RleHQnOnRvYy5zdGRvdXQuZGVjb2RlKCl9LCdjaGVja3N1bU1hbmlmZXN0JzpyYXdjaGVja3MsJ2dsb2JhbHNTdGF0ZW1lbnRDYXRlZ29yeUNvdW50cyc6Y291bnRzLCdnbG9iYWxzQ29udGVudHNFbWl0dGVkJzpGYWxzZSwnZnVsbER1bXBIYXNoUmV2ZXJpZmllZCc6VHJ1ZSwncHJvZHVjdGlvbkRhdGFNdXRhdGlvbic6RmFsc2UsJ3F1YWxpZmljYXRpb24nOidFeGFjdCBzdGFibGUgbGF0ZXN0IGJhY2t1cCBtZW1iZXIgaWRlbnRpdGllcy9oYXNoZXMgYW5kIFRPQyB2ZXJpZmllZCB1bmRlciBleGlzdGluZyBzaGFyZWQgbG9jaywgYm91bmRlZCByZWFkLW9ubHkgdHJhbnNpZW50IHNlcnZpY2UuIE5vIFNRTCBleGVjdXRpb24sIGNyZWRlbnRpYWwgdmFsdWVzIG9yIGdsb2JhbHMgc3RhdGVtZW50cyBlbWl0dGVkLid9CiBwcmludChqc29uLmR1bXBzKG91dCxzb3J0X2tleXM9VHJ1ZSkpCmZpbmFsbHk6b3MuY2xvc2UoZmQpCg==",
+  "sourceSha256": "6bafcdb48b1fd0c8da0c23169906f7cd96fbeb374b0333b9c7ca349988abc869",
+  "unit": "proofofwork-audit30-oct2-full-read-20261003T093000Z.service"
+}

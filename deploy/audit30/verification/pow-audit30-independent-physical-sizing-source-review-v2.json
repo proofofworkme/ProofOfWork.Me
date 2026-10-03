@@ -1,0 +1,83 @@
+{
+  "atUtc": "2026-10-03T09:51:29.766669+00:00",
+  "bindings": [
+    {
+      "bytes": 10556,
+      "path": "/tmp/pow-audit30-production-physical-sizing-leaf-v2.py",
+      "sha256": "6bc7adbb7fcb15266026488c8a6ad216c563be07836f5443d9f94b222559d827"
+    },
+    {
+      "bytes": 9190,
+      "path": "/tmp/pow-audit30-production-physical-sizing-leaf-v2.test.py",
+      "sha256": "7a1841caa41c80fb682b2462d901746858f2858542053eb64d69b0ba21cdebaf"
+    },
+    {
+      "bytes": 11657,
+      "path": "/tmp/pow-audit30-production-physical-sizing-native-v2.py",
+      "sha256": "84a09e2bda07f672562074f8236cfd30eb9613df672232a371810721bd41e493"
+    },
+    {
+      "bytes": 7076,
+      "path": "/tmp/pow-audit30-production-physical-sizing-native-v2.diff",
+      "sha256": "bdd6cb6302c01232bdd6564c6c4a3d28e8d480bfca4e32fbd5f83ae7892fea2b"
+    },
+    {
+      "bytes": 10993,
+      "path": "/tmp/pow-audit30-production-physical-sizing-native-v2.test.py",
+      "sha256": "2d1fcb670c67a658ea47a643cba33b03ca94b2e295cb8b42098281385e77219f"
+    },
+    {
+      "bytes": 16000,
+      "path": "/tmp/pow-audit30-production-physical-sizing-bootstrap-v2.py",
+      "sha256": "86f2e6d7f61d3f3235f084fcf0ab294da32b685ed026e7e22ec7368433d28905"
+    },
+    {
+      "bytes": 1967,
+      "path": "/tmp/pow-audit30-production-physical-sizing-transport-preparation-v2.py",
+      "sha256": "496126fc56851c0f64756925f8b69898c8e000704f25536ad6c289db2af53b44"
+    },
+    {
+      "bytes": 47905,
+      "path": "/tmp/pow-audit30-production-physical-sizing-request-template-v2.json",
+      "sha256": "9fb1d213f5195efd9fa80f162286b5be9583d02d75ce37bbac3e83da23090e77"
+    },
+    {
+      "bytes": 3708,
+      "path": "/tmp/pow-audit30-production-physical-sizing-caller-v2.test.py",
+      "sha256": "3eb93e0bd7f2feb1f9c7725b3cb7e2eddd238c95ff91cfee98f98fe08b5970b4"
+    }
+  ],
+  "capacityCertified": false,
+  "deletionApproved": false,
+  "nativePerformed": false,
+  "qualifications": [
+    "Active filesystem sizes are endpoint samples; SQL and du are not a single atomic snapshot. Native client resource properties do not cap the existing production PostgreSQL backend.",
+    "No sizing native action performed. 193GiB modeled growth plus100GiB reserve requires293GiB; observed272.703GiB does not satisfy that model. An arithmetic clone alone proves no full restore capacity or deletion authority."
+  ],
+  "recoveryActivationApproved": false,
+  "repositoryEdited": false,
+  "review": [
+    "Full leaf/native originals and complete narrow v2 diffs read; both OID JSON projections now cast to bigint, retaining ordered unsigned-range OIDs and refusing string OIDs.",
+    "Native uses exact ad03 helper with timer5/service6 protection schema; all resource/deadline/readonly/catalog/topology/du/capture/owned-stop contracts remain unchanged.",
+    "Bootstrap embeds exact84a09 bytes; request template embeds exactad03/6bc7 sources with fresh five/protection null. Caller RP null refuses before any reads/network. Shared1dedef transport/caps retained."
+  ],
+  "schema": "pow-audit30-independent-physical-sizing-source-review-v2",
+  "status": "accepted-source-only",
+  "tests": [
+    {
+      "command": "python3 -I -B -Werror /tmp/pow-audit30-production-physical-sizing-leaf-v2.test.py",
+      "elapsedSeconds": 0.038,
+      "passed": 15
+    },
+    {
+      "command": "python3 -I -B -Werror /tmp/pow-audit30-production-physical-sizing-native-v2.test.py",
+      "elapsedSeconds": 0.378,
+      "passed": 14
+    },
+    {
+      "command": "python3 -I -B -Werror /tmp/pow-audit30-production-physical-sizing-caller-v2.test.py",
+      "elapsedSeconds": 0.07,
+      "passed": 6
+    }
+  ]
+}

@@ -1,5 +1,5 @@
 {
-  "atUtc": "2026-10-03T09:42:02.342074+00:00",
+  "atUtc": "2026-10-03T10:12:47.148777+00:00",
   "files": [
     {
       "bytes": 19239,
@@ -3238,9 +3238,462 @@
       "purpose": "Byte-preserving encoded representation of the historical raw patch; resolve through global storedRepresentations.",
       "repositoryPath": "deploy/audit30/verification/pow-audit30-treasury-final-closure-native-v1.diff.evidence.json",
       "sha256": "248c2ea554049292c2c5b358d53d28b3c426c05ed6071e71cbbe4cc0a9c67e23"
+    },
+    {
+      "bytes": 4346,
+      "originalPath": "/tmp/pow-audit30-oct2-full-read-current-context-v1.py",
+      "purpose": "Action61 exact public source, request, source-only fixture/review or actual readonly capture; native failure is preserved as failure.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-oct2-full-read-current-context-v1.py",
+      "sha256": "0378a890811ee0e3ac23524a3bda6861e6766406b81952f96674d7108a0aeef4"
+    },
+    {
+      "bytes": 9334,
+      "originalPath": "/tmp/pow-audit30-oct2-full-read-current-context-v1.test.py",
+      "purpose": "Action61 exact public source, request, source-only fixture/review or actual readonly capture; native failure is preserved as failure.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-oct2-full-read-current-context-v1.test.py",
+      "sha256": "74e1c90df8c05940c2ba6812b692a9043b6eebbdfed36fc94ae3db1b3474bf3e"
+    },
+    {
+      "bytes": 33123,
+      "originalPath": "/tmp/pow-audit30-oct2-full-read-current-context-request-v1.json",
+      "purpose": "Action61 exact public source, request, source-only fixture/review or actual readonly capture; native failure is preserved as failure.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-oct2-full-read-current-context-request-v1.json",
+      "sha256": "43d8ec369e27acd8d9eff26976503c8ca769b58c9a9feddf6537cf3848805d45"
+    },
+    {
+      "bytes": 2531,
+      "originalPath": "/tmp/pow-audit30-oct2-full-read-current-context-command-spec-v1.json",
+      "purpose": "Action61 exact public source, request, source-only fixture/review or actual readonly capture; native failure is preserved as failure.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-oct2-full-read-current-context-command-spec-v1.json",
+      "sha256": "4e2796d5a6610340c1529b007a561bd5cc2e025c99b5dc4e2a2fecef1e0b8366"
+    },
+    {
+      "bytes": 1798,
+      "originalPath": "/tmp/pow-audit30-oct2-full-read-current-context-local-preparation-v1.json",
+      "purpose": "Action61 exact public source, request, source-only fixture/review or actual readonly capture; native failure is preserved as failure.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-oct2-full-read-current-context-local-preparation-v1.json",
+      "sha256": "f033f05c0478b51c004bc2ae43d2717a0c3f8dc301ed2823fb6b84442037c5ef"
+    },
+    {
+      "bytes": 1145,
+      "originalPath": "/tmp/pow-audit30-oct2-full-read-current-context-native-v1.json",
+      "purpose": "Action61 exact public source, request, source-only fixture/review or actual readonly capture; native failure is preserved as failure.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-oct2-full-read-current-context-native-v1.json",
+      "sha256": "d3050c719db3c0e69f5760eb3b18d3acb62fcea690ea2d49422a022262ebe39c"
+    },
+    {
+      "bytes": 297,
+      "originalPath": "/tmp/pow-audit30-oct2-full-read-current-context-native-v1.stderr",
+      "purpose": "Action61 exact public source, request, source-only fixture/review or actual readonly capture; native failure is preserved as failure.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-oct2-full-read-current-context-native-v1.stderr.json",
+      "sha256": "cc4647d7865d32f798c7543b285db8000fbd36a87a8ef650cec077056dfb2c12"
+    },
+    {
+      "bytes": 1618,
+      "originalPath": "/tmp/pow-audit30-oct2-context-refusal-source-classification-v1.json",
+      "purpose": "Action61 exact public source, request, source-only fixture/review or actual readonly capture; native failure is preserved as failure.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-oct2-context-refusal-source-classification-v1.json",
+      "sha256": "01d81e6b9357e4a3ce1b3388d39b97923b86d517248e696149394d02ef1b44aa"
+    },
+    {
+      "bytes": 24688,
+      "originalPath": "/tmp/pow-audit30-oct2-full-read-native-v1.py",
+      "purpose": "Action61 exact public source, request, source-only fixture/review or actual readonly capture; native failure is preserved as failure.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-oct2-full-read-native-v1.py",
+      "sha256": "77239102d9fd6a3d10b7dfa4ee0f26055ce0ccc40b15451e888f76e38f4a47f6"
+    },
+    {
+      "bytes": 24954,
+      "originalPath": "/tmp/pow-audit30-oct2-full-read-native-v2.py",
+      "purpose": "Action61 exact public source, request, source-only fixture/review or actual readonly capture; native failure is preserved as failure.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-oct2-full-read-native-v2.py",
+      "sha256": "ad03e5d02e10018fb7c5dd3c118a7ac876331cad240832c52e4838a4bea0ff2a"
+    },
+    {
+      "bytes": 20682,
+      "originalPath": "/tmp/pow-audit30-oct2-full-read-native-v2.test.py",
+      "purpose": "Action61 exact public source, request, source-only fixture/review or actual readonly capture; native failure is preserved as failure.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-oct2-full-read-native-v2.test.py",
+      "sha256": "ba8f78e4471655faec585af6805f6945f522c8d33daf5fcac90d50b865d915de"
+    },
+    {
+      "bytes": 650,
+      "originalPath": "/tmp/pow-audit30-oct2-prune-timer-actual-response-fixture-v1.json",
+      "purpose": "Action61 exact public source, request, source-only fixture/review or actual readonly capture; native failure is preserved as failure.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-oct2-prune-timer-actual-response-fixture-v1.json",
+      "sha256": "c1d4a92b50644dd08df22ad2f11b22378c4318caf002db5ad4a706ba340a8972"
+    },
+    {
+      "bytes": 4368,
+      "originalPath": "/tmp/pow-audit30-oct2-full-read-current-context-v2.py",
+      "purpose": "Action61 exact public source, request, source-only fixture/review or actual readonly capture; native failure is preserved as failure.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-oct2-full-read-current-context-v2.py",
+      "sha256": "69179562d28eeabe1a6bcbf6ba2c506bf95e6d8ce02a79c20fc882dbe741b839"
+    },
+    {
+      "bytes": 10846,
+      "originalPath": "/tmp/pow-audit30-oct2-full-read-current-context-v2.test.py",
+      "purpose": "Action61 exact public source, request, source-only fixture/review or actual readonly capture; native failure is preserved as failure.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-oct2-full-read-current-context-v2.test.py",
+      "sha256": "2d32bd3343489005e0b00c1cfc6e90a7641f8821b01560365fc5d2239b42bbe1"
+    },
+    {
+      "bytes": 33475,
+      "originalPath": "/tmp/pow-audit30-oct2-full-read-current-context-request-v2.json",
+      "purpose": "Action61 exact public source, request, source-only fixture/review or actual readonly capture; native failure is preserved as failure.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-oct2-full-read-current-context-request-v2.json",
+      "sha256": "5b0957e3cce7fb5a64c4d82b58808faedc5d6c0147a874c22d938c05536d44dd"
+    },
+    {
+      "bytes": 3076,
+      "originalPath": "/tmp/pow-audit30-oct2-full-read-current-context-command-spec-v2.json",
+      "purpose": "Action61 exact public source, request, source-only fixture/review or actual readonly capture; native failure is preserved as failure.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-oct2-full-read-current-context-command-spec-v2.json",
+      "sha256": "ccc5b0da3822b4438335f53c2d768069ee0f216b17501fb49da379575b120bc0"
+    },
+    {
+      "bytes": 3513,
+      "originalPath": "/tmp/pow-audit30-oct2-full-read-managed-local-preparation-v2.json",
+      "purpose": "Action61 exact public source, request, source-only fixture/review or actual readonly capture; native failure is preserved as failure.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-oct2-full-read-managed-local-preparation-v2.json",
+      "sha256": "7553fc3bfc73a41a0312015ca02a459bfcc315a349c7f0ab01069ee777b6d67f"
+    },
+    {
+      "bytes": 3126,
+      "originalPath": "/tmp/pow-audit30-independent-oct2-per-unit-source-review-v2.json",
+      "purpose": "Action61 exact public source, request, source-only fixture/review or actual readonly capture; native failure is preserved as failure.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-independent-oct2-per-unit-source-review-v2.json",
+      "sha256": "03679af54ead0550f0caed09b299c7791aac05556bbb5524bbba65dac3a5bbc6"
+    },
+    {
+      "bytes": 1147,
+      "originalPath": "/tmp/pow-audit30-oct2-full-read-current-context-native-v2.json",
+      "purpose": "Action61 exact public source, request, source-only fixture/review or actual readonly capture; native failure is preserved as failure.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-oct2-full-read-current-context-native-v2.json",
+      "sha256": "820ea54885214f414ff0222e5ac4e2efc556c043b32af29d09fc1faa488bb1e6"
+    },
+    {
+      "bytes": 5210,
+      "originalPath": "/tmp/pow-audit30-oct2-full-read-current-context-native-v2.stdout",
+      "purpose": "Action61 exact public source, request, source-only fixture/review or actual readonly capture; native failure is preserved as failure.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-oct2-full-read-current-context-native-v2.stdout.json",
+      "sha256": "b72fef3b0ca4ab6e01a224f9e7d3372fecf8f738ecd757b1b0c454f0341dcae0"
+    },
+    {
+      "bytes": 12928,
+      "originalPath": "/tmp/pow-audit30-oct2-full-read-run-request-v2.json",
+      "purpose": "Action61 exact public source, request, source-only fixture/review or actual readonly capture; native failure is preserved as failure.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-oct2-full-read-run-request-v2.json",
+      "sha256": "8624e4c043fd8b281408e76d8560b3c0ef8ae8d597d29c9f0bde7cd23b4bccc3"
+    },
+    {
+      "bytes": 1188,
+      "originalPath": "/tmp/pow-audit30-oct2-full-read-native-v2.json",
+      "purpose": "Action61 exact public source, request, source-only fixture/review or actual readonly capture; native failure is preserved as failure.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-oct2-full-read-native-v2.json",
+      "sha256": "058a6ebf9c2d64150aab7e0afca8873d86820a7de44ff5bc2c169cd1460778ac"
+    },
+    {
+      "bytes": 207,
+      "originalPath": "/tmp/pow-audit30-oct2-full-read-native-v2.stderr",
+      "purpose": "Action61 exact public source, request, source-only fixture/review or actual readonly capture; native failure is preserved as failure.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-oct2-full-read-native-v2.stderr.json",
+      "sha256": "e8e8571a3b2d6187cb097612a04ae10524ec15ae268255a12c5eed3f8d7f1e37"
+    },
+    {
+      "bytes": 10556,
+      "originalPath": "/tmp/pow-audit30-production-physical-sizing-leaf-v2.py",
+      "purpose": "Action61 exact public source, request, source-only fixture/review or actual readonly capture; native failure is preserved as failure.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-production-physical-sizing-leaf-v2.py",
+      "sha256": "6bc7adbb7fcb15266026488c8a6ad216c563be07836f5443d9f94b222559d827"
+    },
+    {
+      "bytes": 9190,
+      "originalPath": "/tmp/pow-audit30-production-physical-sizing-leaf-v2.test.py",
+      "purpose": "Action61 exact public source, request, source-only fixture/review or actual readonly capture; native failure is preserved as failure.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-production-physical-sizing-leaf-v2.test.py",
+      "sha256": "7a1841caa41c80fb682b2462d901746858f2858542053eb64d69b0ba21cdebaf"
+    },
+    {
+      "bytes": 11657,
+      "originalPath": "/tmp/pow-audit30-production-physical-sizing-native-v2.py",
+      "purpose": "Action61 exact public source, request, source-only fixture/review or actual readonly capture; native failure is preserved as failure.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-production-physical-sizing-native-v2.py",
+      "sha256": "84a09e2bda07f672562074f8236cfd30eb9613df672232a371810721bd41e493"
+    },
+    {
+      "bytes": 10993,
+      "originalPath": "/tmp/pow-audit30-production-physical-sizing-native-v2.test.py",
+      "purpose": "Action61 exact public source, request, source-only fixture/review or actual readonly capture; native failure is preserved as failure.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-production-physical-sizing-native-v2.test.py",
+      "sha256": "2d1fcb670c67a658ea47a643cba33b03ca94b2e295cb8b42098281385e77219f"
+    },
+    {
+      "bytes": 16000,
+      "originalPath": "/tmp/pow-audit30-production-physical-sizing-bootstrap-v2.py",
+      "purpose": "Action61 exact public source, request, source-only fixture/review or actual readonly capture; native failure is preserved as failure.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-production-physical-sizing-bootstrap-v2.py",
+      "sha256": "86f2e6d7f61d3f3235f084fcf0ab294da32b685ed026e7e22ec7368433d28905"
+    },
+    {
+      "bytes": 1967,
+      "originalPath": "/tmp/pow-audit30-production-physical-sizing-transport-preparation-v2.py",
+      "purpose": "Action61 exact public source, request, source-only fixture/review or actual readonly capture; native failure is preserved as failure.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-production-physical-sizing-transport-preparation-v2.py",
+      "sha256": "496126fc56851c0f64756925f8b69898c8e000704f25536ad6c289db2af53b44"
+    },
+    {
+      "bytes": 3708,
+      "originalPath": "/tmp/pow-audit30-production-physical-sizing-caller-v2.test.py",
+      "purpose": "Action61 exact public source, request, source-only fixture/review or actual readonly capture; native failure is preserved as failure.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-production-physical-sizing-caller-v2.test.py",
+      "sha256": "3eb93e0bd7f2feb1f9c7725b3cb7e2eddd238c95ff91cfee98f98fe08b5970b4"
+    },
+    {
+      "bytes": 47905,
+      "originalPath": "/tmp/pow-audit30-production-physical-sizing-request-template-v2.json",
+      "purpose": "Action61 exact public source, request, source-only fixture/review or actual readonly capture; native failure is preserved as failure.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-production-physical-sizing-request-template-v2.json",
+      "sha256": "9fb1d213f5195efd9fa80f162286b5be9583d02d75ce37bbac3e83da23090e77"
+    },
+    {
+      "bytes": 5167,
+      "originalPath": "/tmp/pow-audit30-production-physical-sizing-source-preparation-v2.json",
+      "purpose": "Action61 exact public source, request, source-only fixture/review or actual readonly capture; native failure is preserved as failure.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-production-physical-sizing-source-preparation-v2.json",
+      "sha256": "e1ecc7c0bb6472f517a77dc0a0b6fcbd6d5862d910f64e3a42c62b641d826289"
+    },
+    {
+      "bytes": 3636,
+      "originalPath": "/tmp/pow-audit30-independent-physical-sizing-source-review-v2.json",
+      "purpose": "Action61 exact public source, request, source-only fixture/review or actual readonly capture; native failure is preserved as failure.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-independent-physical-sizing-source-review-v2.json",
+      "sha256": "71077e2aa815c39664f0c6eca5e3591e9ee45db4c6694a40a28d261c109edafc"
+    },
+    {
+      "bytes": 51700,
+      "originalPath": "/tmp/pow-audit30-production-physical-sizing-request-v2.json",
+      "purpose": "Action61 exact public source, request, source-only fixture/review or actual readonly capture; native failure is preserved as failure.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-production-physical-sizing-request-v2.json",
+      "sha256": "c49e40153034daaace69ffbcf30bfc4d222fd627d673781ed5de0f22654644e8"
+    },
+    {
+      "bytes": 1610,
+      "originalPath": "/tmp/pow-audit30-production-physical-sizing-native-v2.json",
+      "purpose": "Action61 exact public source, request, source-only fixture/review or actual readonly capture; native failure is preserved as failure.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-production-physical-sizing-native-v2.json",
+      "sha256": "8df62db532b10e9b1bec4cc6c5912a6dd1eabd33b9de2a552fc0671003c3a424"
+    },
+    {
+      "bytes": 212,
+      "originalPath": "/tmp/pow-audit30-production-physical-sizing-native-v2.stderr",
+      "purpose": "Action61 exact public source, request, source-only fixture/review or actual readonly capture; native failure is preserved as failure.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-production-physical-sizing-native-v2.stderr.json",
+      "sha256": "d13c59ade80b1e7e4ddbb485ff0c57d8f0045e081ea00dd6924846d97f29dc7c"
+    },
+    {
+      "bytes": 1191,
+      "originalPath": "/tmp/pow-audit30-physical-sizing-current-context-v2.json",
+      "purpose": "Action61 exact public source, request, source-only fixture/review or actual readonly capture; native failure is preserved as failure.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-physical-sizing-current-context-v2.json",
+      "sha256": "5a7605bfb25b0a17dbba101fc0bb823e066a8d1bce8f2fe4b511fa3012acdbc2"
+    },
+    {
+      "bytes": 5210,
+      "originalPath": "/tmp/pow-audit30-physical-sizing-current-context-v2.stdout",
+      "purpose": "Action61 exact public source, request, source-only fixture/review or actual readonly capture; native failure is preserved as failure.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-physical-sizing-current-context-v2.stdout.json",
+      "sha256": "a6a5826f6f4cd461a8338b2a289e2e13e3a4171ac78630f9325d3cd7a1924c20"
+    },
+    {
+      "bytes": 15770,
+      "originalPath": "/tmp/pow-audit30-logical-backup-rotation-readonly-v2.py",
+      "purpose": "Action61 exact public source, request, source-only fixture/review or actual readonly capture; native failure is preserved as failure.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-logical-backup-rotation-readonly-v2.py",
+      "sha256": "76f6ccedbcd19c924e7141c3a1e448e254f245b0792d2a0eb81c445d0a1627f4"
+    },
+    {
+      "bytes": 12050,
+      "originalPath": "/tmp/pow-audit30-logical-backup-rotation-readonly-v2.test.py",
+      "purpose": "Action61 exact public source, request, source-only fixture/review or actual readonly capture; native failure is preserved as failure.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-logical-backup-rotation-readonly-v2.test.py",
+      "sha256": "e4e9ef4914aa8daa39b7fb6b5f8b0df3f1d358d56424f52e9c8617b2e5792394"
+    },
+    {
+      "bytes": 37296,
+      "originalPath": "/tmp/pow-audit30-logical-backup-rotation-readonly-request-v2.json",
+      "purpose": "Action61 exact public source, request, source-only fixture/review or actual readonly capture; native failure is preserved as failure.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-logical-backup-rotation-readonly-request-v2.json",
+      "sha256": "c2f6ecfed97a39db3a50d0887d356dd474328d1e46954b744495f2e07d173678"
+    },
+    {
+      "bytes": 1901,
+      "originalPath": "/tmp/pow-audit30-logical-backup-rotation-readonly-command-spec-v2.json",
+      "purpose": "Action61 exact public source, request, source-only fixture/review or actual readonly capture; native failure is preserved as failure.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-logical-backup-rotation-readonly-command-spec-v2.json",
+      "sha256": "45b8df73c26b59663845b978c9414b032a7e03658282955527069e1a6883516b"
+    },
+    {
+      "bytes": 2194,
+      "originalPath": "/tmp/pow-audit30-logical-backup-rotation-readonly-local-preparation-v2.json",
+      "purpose": "Action61 exact public source, request, source-only fixture/review or actual readonly capture; native failure is preserved as failure.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-logical-backup-rotation-readonly-local-preparation-v2.json",
+      "sha256": "972f47c6f74c9ffa28856e880bbad0576c23799be6374e477d60d3e246b7a9f8"
+    },
+    {
+      "bytes": 2525,
+      "originalPath": "/tmp/pow-audit30-independent-logical-rotation-source-review-v2.json",
+      "purpose": "Action61 exact public source, request, source-only fixture/review or actual readonly capture; native failure is preserved as failure.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-independent-logical-rotation-source-review-v2.json",
+      "sha256": "21260f7df436d5bb3af5c7849e1113b77b69de08865dc23db698397fbf78c83c"
+    },
+    {
+      "bytes": 1293,
+      "originalPath": "/tmp/pow-audit30-logical-backup-rotation-readonly-native-v1.json",
+      "purpose": "Action61 exact public source, request, source-only fixture/review or actual readonly capture; native failure is preserved as failure.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-logical-backup-rotation-readonly-native-v1.json",
+      "sha256": "2c657876b49bcb0a065bd5236e3fca1636cbf72cb14874edabe8c40fb1d61fa4"
+    },
+    {
+      "bytes": 236,
+      "originalPath": "/tmp/pow-audit30-logical-backup-rotation-readonly-native-v1.stderr",
+      "purpose": "Action61 exact public source, request, source-only fixture/review or actual readonly capture; native failure is preserved as failure.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-logical-backup-rotation-readonly-native-v1.stderr.json",
+      "sha256": "a41ac22480bda2e26e93526cc65e1f87ed4cba7a1bce54f7a0323082a05612a2"
+    },
+    {
+      "bytes": 2083,
+      "originalPath": "/tmp/pow-audit30-logical-root-metadata-diagnostic-v1.py",
+      "purpose": "Action61 exact public source, request, source-only fixture/review or actual readonly capture; native failure is preserved as failure.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-logical-root-metadata-diagnostic-v1.py",
+      "sha256": "0b85489b700a03f08a32238ce2652e554357f43c897e1002ed73611e204768ae"
+    },
+    {
+      "bytes": 1126,
+      "originalPath": "/tmp/pow-audit30-logical-root-metadata-diagnostic-native-v1.json",
+      "purpose": "Action61 exact public source, request, source-only fixture/review or actual readonly capture; native failure is preserved as failure.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-logical-root-metadata-diagnostic-native-v1.json",
+      "sha256": "c76ff7d3b6666d951519dfd7119f933fcfeeb68521e4d97a24cbeed928ef8fb8"
+    },
+    {
+      "bytes": 1776,
+      "originalPath": "/tmp/pow-audit30-logical-root-metadata-diagnostic-native-v1.stdout",
+      "purpose": "Action61 exact public source, request, source-only fixture/review or actual readonly capture; native failure is preserved as failure.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-logical-root-metadata-diagnostic-native-v1.stdout.json",
+      "sha256": "0c8c58cb65365f2cbb0cf86a9a987f563333b76b0036d34eb3a9036876854aeb"
+    },
+    {
+      "bytes": 15770,
+      "originalPath": "/tmp/pow-audit30-logical-backup-rotation-readonly-v3.py",
+      "purpose": "Action61 exact public source, request, source-only fixture/review or actual readonly capture; native failure is preserved as failure.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-logical-backup-rotation-readonly-v3.py",
+      "sha256": "c4d99e536ea17c628d1d86957e1bad716db8e1629ff413979d2e0284dae69c54"
+    },
+    {
+      "bytes": 15891,
+      "originalPath": "/tmp/pow-audit30-logical-backup-rotation-readonly-v3.test.py",
+      "purpose": "Action61 exact public source, request, source-only fixture/review or actual readonly capture; native failure is preserved as failure.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-logical-backup-rotation-readonly-v3.test.py",
+      "sha256": "a3446393f42ab4346d3aff148176bd5225b414c72dd6c6935cd91fd6b0a9e582"
+    },
+    {
+      "bytes": 39156,
+      "originalPath": "/tmp/pow-audit30-logical-backup-rotation-readonly-request-v3.json",
+      "purpose": "Action61 exact public source, request, source-only fixture/review or actual readonly capture; native failure is preserved as failure.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-logical-backup-rotation-readonly-request-v3.json",
+      "sha256": "a20fa1719319c9a5c0059471bcff75bbe101ee502727dd594ea1615125972c00"
+    },
+    {
+      "bytes": 2597,
+      "originalPath": "/tmp/pow-audit30-logical-backup-rotation-readonly-command-spec-v3.json",
+      "purpose": "Action61 exact public source, request, source-only fixture/review or actual readonly capture; native failure is preserved as failure.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-logical-backup-rotation-readonly-command-spec-v3.json",
+      "sha256": "9784d4c7b6c36e6b7e68e74eea4a1ce5c9677c6056493ef6a9fbf4a39d52c1da"
+    },
+    {
+      "bytes": 3636,
+      "originalPath": "/tmp/pow-audit30-logical-backup-rotation-readonly-local-preparation-v3.json",
+      "purpose": "Action61 exact public source, request, source-only fixture/review or actual readonly capture; native failure is preserved as failure.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-logical-backup-rotation-readonly-local-preparation-v3.json",
+      "sha256": "aa7cd2c7f62e3e4dc4a917bf4c564d63d769f0517f791919a31a5b1925a14547"
+    },
+    {
+      "bytes": 1790,
+      "originalPath": "/tmp/pow-audit30-vps-peer-logical-rotation-source-review-v3.json",
+      "purpose": "Action61 exact public source, request, source-only fixture/review or actual readonly capture; native failure is preserved as failure.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-vps-peer-logical-rotation-source-review-v3.json",
+      "sha256": "325a7a04b25438f9054c4c646621632cde47bf61a4a8b97fff72cd78c3e3f7ae"
+    },
+    {
+      "bytes": 1360,
+      "originalPath": "/tmp/pow-audit30-logical-backup-rotation-readonly-native-v2.json",
+      "purpose": "Action61 exact public source, request, source-only fixture/review or actual readonly capture; native failure is preserved as failure.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-logical-backup-rotation-readonly-native-v2.json",
+      "sha256": "acba1f5ba537b2f11bb04a817637ec2c640db12e1bed072a58aec3b476dda013"
+    },
+    {
+      "bytes": 236,
+      "originalPath": "/tmp/pow-audit30-logical-backup-rotation-readonly-native-v2.stderr",
+      "purpose": "Action61 exact public source, request, source-only fixture/review or actual readonly capture; native failure is preserved as failure.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-logical-backup-rotation-readonly-native-v2.stderr.json",
+      "sha256": "45f52d12fc466f12e4bba9f0380f4a8e94aca8f8c394ad8ee46bb7b3c8a27c43"
+    },
+    {
+      "bytes": 4963,
+      "originalPath": "/tmp/pow-audit30-oct2-full-read-native-v2.diff",
+      "rawBytes": 3529,
+      "rawSha256": "ab317926a4060ef9652ebb87cfc48a804ec784f337451857ee496f153ffbf863",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-oct2-full-read-native-v2.diff.evidence.json",
+      "representation": "closed-base64-envelope-preserves-exact-raw-input",
+      "sha256": "dc0225e9bf756f00430291b42000039688975461face50698e8d6f4071ac09ac"
+    },
+    {
+      "bytes": 5264,
+      "originalPath": "/tmp/pow-audit30-oct2-full-read-current-context-v2.diff",
+      "rawBytes": 3750,
+      "rawSha256": "38ddb3904d992f4b168ecbd3ca009e1167cb4abb002bc634bf2035ab2a3aadc5",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-oct2-full-read-current-context-v2.diff.evidence.json",
+      "representation": "closed-base64-envelope-preserves-exact-raw-input",
+      "sha256": "6d197e7bb55f800eddc70e0c88ffec6924bb50adea2bb46edf4a0b26659ace5b"
+    },
+    {
+      "bytes": 2169,
+      "originalPath": "/tmp/pow-audit30-production-physical-sizing-leaf-v2.diff",
+      "rawBytes": 1426,
+      "rawSha256": "c463d11e4a182ccc9a8c6ac540190bdd62ec2c8797602f4904a14840a9a0b628",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-production-physical-sizing-leaf-v2.diff.evidence.json",
+      "representation": "closed-base64-envelope-preserves-exact-raw-input",
+      "sha256": "5ef7a1bfd53041c3c5d458b14825fe16212b4e011942daedb50bda253d2d878e"
+    },
+    {
+      "bytes": 9703,
+      "originalPath": "/tmp/pow-audit30-production-physical-sizing-native-v2.diff",
+      "rawBytes": 7076,
+      "rawSha256": "bdd6cb6302c01232bdd6564c6c4a3d28e8d480bfca4e32fbd5f83ae7892fea2b",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-production-physical-sizing-native-v2.diff.evidence.json",
+      "representation": "closed-base64-envelope-preserves-exact-raw-input",
+      "sha256": "e86880f43e35ca9ba8818ae2fa8c00ab49cea96c37306e4c5275d96bffcc9365"
+    },
+    {
+      "bytes": 4074,
+      "originalPath": "/tmp/pow-audit30-production-physical-sizing-transport-preparation-v2.diff",
+      "rawBytes": 2842,
+      "rawSha256": "bdfb6e3135189c4dd887f29bac0038e9fff9c53d6b166351e8878358ff60df5e",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-production-physical-sizing-transport-preparation-v2.diff.evidence.json",
+      "representation": "closed-base64-envelope-preserves-exact-raw-input",
+      "sha256": "b26c2d938bd54bee0c9d7cfa4dbdd1e4d39f2626edeeb06271b1f7d17d7cf7ee"
+    },
+    {
+      "bytes": 2570,
+      "originalPath": "/tmp/pow-audit30-logical-backup-rotation-readonly-v3.diff",
+      "rawBytes": 1727,
+      "rawSha256": "d6052b8e6027a7cbce05f05adbb3b3bbad42fd7782509229cfb6e657369adb43",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-logical-backup-rotation-readonly-v3.diff.evidence.json",
+      "representation": "closed-base64-envelope-preserves-exact-raw-input",
+      "sha256": "33e8911d65e939bc01c5960981bd81b1299ed64dadb4b68c05ae280592a4df9a"
     }
   ],
-  "qualification": "Exact public source/fixture custody with preserved earlier failures. No private bodies/environments/catalog/role secrets copied. 38ac stage/shadow pass, full semantic CLI changed-fence refusal then diagnostic first-request503 with no fence preimage and actual stopped unit. Cause and production acceptance remain pending; UI fc5 is staged. Source acceptance is not native acceptance or production-data/recovery/retirement authorization. One archival Python fixture copy removes only a final blank line required by the enabled whitespace hook; its exact original bytes, length and SHA remain losslessly base64-preserved in its manifest row and original /tmp source. Its Python AST is identical. Subsequent v3 original semantic CLI passes full coverage/registry parity at exact969677 with identical fences; other production acceptance gates remain pending. Actual CLI stopped closure and same-candidate readonly lease successor now pass; WORK/bond/strict and production publication remain pending. Mail GET source verification grants no stored-row repair authority. Action55 preserves failed074500 and real26c verifier defect; saved-receipt reconciliation validates privateACKs/fullmail only, with source7-after/offline/currentfence pending. Captured rawdelta/demand census grants no parent/membership/outpoint/financial acceptance. Proposed Oct2 checker and currentb16 selection remain source-only; no pin/activation/deletion authority. Action58 adds accepted public four-target custody with deletionReady=false, immutable treasury package PREPARE with no RPC/unit launch, source-only dependency/late-peer and coupled V1\u2013V3 refusal lineage. No continuous reader/recovery/dependency closure, financial completion, promotion/deletion or final16 production approval is inferred. Subsequent native RPC outcomes are separate actions; reserved final human approval remains pending. Action59 adds exact public/source bytes for final treasury RUN and its fixed saved-outcome reader. The captured 10,232-target canonical, immediate-parent, fee, direct-spend, derived-unspent and balance scope passes with closing fences and current owned-stopped/five-service endpoint proof. FeeProofs5287244 is a summed amount, not a count. No private corpus read/rehash/export, independent whole-chain/history/obligation/financial completeness, new RPC authority, promotion/deletion or final sixteen-record approval is inferred. Coupled V4 source-only PACKAGE/evidence correction and null approval remain qualified; all 58 historical actions and 448 prior custody rows are preserved. Action60 preserves all 469 historical raw custody rows unchanged. For the four forensic raw .diff repository paths listed in global storedRepresentations, resolve the stored .diff.evidence.json envelope when reading Git history: verify storedBytes/storedSha256, decode rawBase64, then verify rawBytes/rawSha256 and originalInput. All decoded bytes equal the original /tmp input and retained untouched local raw workspace file. These raw files remain untracked locally; their absence from a future Git checkout is not missing evidence. Four new custody rows bind the encoded envelope bytes; no raw patch whitespace was normalized and no attributes or hooks were changed. The 5,287,244 proofs sum whole-transaction fees across captured targets; treasury funding shares, expense allocation among funders and liability/obligation reconciliation remain unverified.",
+  "qualification": "Exact public source/fixture custody with preserved earlier failures. No private bodies/environments/catalog/role secrets copied. 38ac stage/shadow pass, full semantic CLI changed-fence refusal then diagnostic first-request503 with no fence preimage and actual stopped unit. Cause and production acceptance remain pending; UI fc5 is staged. Source acceptance is not native acceptance or production-data/recovery/retirement authorization. One archival Python fixture copy removes only a final blank line required by the enabled whitespace hook; its exact original bytes, length and SHA remain losslessly base64-preserved in its manifest row and original /tmp source. Its Python AST is identical. Subsequent v3 original semantic CLI passes full coverage/registry parity at exact969677 with identical fences; other production acceptance gates remain pending. Actual CLI stopped closure and same-candidate readonly lease successor now pass; WORK/bond/strict and production publication remain pending. Mail GET source verification grants no stored-row repair authority. Action55 preserves failed074500 and real26c verifier defect; saved-receipt reconciliation validates privateACKs/fullmail only, with source7-after/offline/currentfence pending. Captured rawdelta/demand census grants no parent/membership/outpoint/financial acceptance. Proposed Oct2 checker and currentb16 selection remain source-only; no pin/activation/deletion authority. Action58 adds accepted public four-target custody with deletionReady=false, immutable treasury package PREPARE with no RPC/unit launch, source-only dependency/late-peer and coupled V1\u2013V3 refusal lineage. No continuous reader/recovery/dependency closure, financial completion, promotion/deletion or final16 production approval is inferred. Subsequent native RPC outcomes are separate actions; reserved final human approval remains pending. Action59 adds exact public/source bytes for final treasury RUN and its fixed saved-outcome reader. The captured 10,232-target canonical, immediate-parent, fee, direct-spend, derived-unspent and balance scope passes with closing fences and current owned-stopped/five-service endpoint proof. FeeProofs5287244 is a summed amount, not a count. No private corpus read/rehash/export, independent whole-chain/history/obligation/financial completeness, new RPC authority, promotion/deletion or final sixteen-record approval is inferred. Coupled V4 source-only PACKAGE/evidence correction and null approval remain qualified; all 58 historical actions and 448 prior custody rows are preserved. Action60 preserves all 469 historical raw custody rows unchanged. For the four forensic raw .diff repository paths listed in global storedRepresentations, resolve the stored .diff.evidence.json envelope when reading Git history: verify storedBytes/storedSha256, decode rawBase64, then verify rawBytes/rawSha256 and originalInput. All decoded bytes equal the original /tmp input and retained untouched local raw workspace file. These raw files remain untracked locally; their absence from a future Git checkout is not missing evidence. Four new custody rows bind the encoded envelope bytes; no raw patch whitespace was normalized and no attributes or hooks were changed. The 5,287,244 proofs sum whole-transaction fees across captured targets; treasury funding shares, expense allocation among funders and liability/obligation reconciliation remain unverified. Action61 preserves the original60 actions/473 rows and exact public source/actual-refusal captures. Missing current Oct2 dump invalidates prospective promotion/retirement; historical restore proofs are not reclassified as failures. The10:05 metadata-only root/set observation is not content/restore equivalence. Journal refusal cause and physical sizing remain unresolved. New raw diffs use individually bound closed base64 envelopes; decode and verify their rawBytes/rawSha256 before replay. No new production-data, recovery, pin/checker or additional-deletion authority.",
   "schema": "pow-audit30-verification-source-custody-v1",
   "storedRepresentations": {
     "deploy/audit30/verification/pow-audit30-coupled-pin-checker-promotion-v2.diff": {

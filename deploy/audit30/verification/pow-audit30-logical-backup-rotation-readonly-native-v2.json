@@ -1,0 +1,37 @@
+{
+  "automaticRetry": false,
+  "captures": {
+    "stderr": {
+      "bytes": 236,
+      "path": "/tmp/pow-audit30-logical-backup-rotation-readonly-native-v2.stderr",
+      "sha256": "45f52d12fc466f12e4bba9f0380f4a8e94aca8f8c394ad8ee46bb7b3c8a27c43"
+    },
+    "stdout": {
+      "bytes": 0,
+      "path": "/tmp/pow-audit30-logical-backup-rotation-readonly-native-v2.stdout",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  },
+  "exitCode": 1,
+  "failure": null,
+  "finishedAtUtc": "2026-10-03T10:09:45.693439+00:00",
+  "inputBindings": {
+    "fixedReadOnlyDistinctOnceGo": true,
+    "peerSHA256": "325a7a04b25438f9054c4c646621632cde47bf61a4a8b97fff72cd78c3e3f7ae",
+    "priorFailurePreservedNotRetried": true,
+    "requestSHA256": "a20fa1719319c9a5c0059471bcff75bbe101ee502727dd594ea1615125972c00",
+    "rootFullSourceTestRequestActualRootMetadataReviewed": true,
+    "sourceSHA256": "c4d99e536ea17c628d1d86957e1bad716db8e1629ff413979d2e0284dae69c54"
+  },
+  "outerDeadlineSeconds": 180,
+  "productionDataMutationRequested": false,
+  "receivedBytes": {
+    "stderr": 236,
+    "stdout": 0
+  },
+  "remoteUnitStoppedCertifiedByTransport": false,
+  "schema": "pow-audit30-readonly-owned-transport-result-v1",
+  "seconds": 2.846819,
+  "startedAtUtc": "2026-10-03T10:09:42.846620+00:00",
+  "typedStdinBytesDelivered": 39156
+}

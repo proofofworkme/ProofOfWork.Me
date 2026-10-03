@@ -1,0 +1,43 @@
+{
+  "atUtc": "2026-10-03T10:01:56.696592+00:00",
+  "bindings": [
+    {
+      "bytes": 15770,
+      "path": "/tmp/pow-audit30-logical-backup-rotation-readonly-v2.py",
+      "sha256": "76f6ccedbcd19c924e7141c3a1e448e254f245b0792d2a0eb81c445d0a1627f4"
+    },
+    {
+      "bytes": 12050,
+      "path": "/tmp/pow-audit30-logical-backup-rotation-readonly-v2.test.py",
+      "sha256": "e4e9ef4914aa8daa39b7fb6b5f8b0df3f1d358d56424f52e9c8617b2e5792394"
+    },
+    {
+      "bytes": 37296,
+      "path": "/tmp/pow-audit30-logical-backup-rotation-readonly-request-v2.json",
+      "sha256": "c2f6ecfed97a39db3a50d0887d356dd474328d1e46954b744495f2e07d173678"
+    },
+    {
+      "bytes": 1901,
+      "path": "/tmp/pow-audit30-logical-backup-rotation-readonly-command-spec-v2.json",
+      "sha256": "45b8df73c26b59663845b978c9414b032a7e03658282955527069e1a6883516b"
+    }
+  ],
+  "nativePerformed": false,
+  "qualification": "Source-only acceptance. Historical journal action statements and checksum-manifest declarations cannot certify currently stored dump bytes or an isolated latest restore. Endpoint equality cannot prove uninterrupted or future exclusion; no promotion/recovery/deletion authority.",
+  "repositoryEdited": false,
+  "review": [
+    "Full source and24 fixtures read; typed request decodes byte-exact ad03 inert definitions and keeps actualb72 five/files/mask/WAL/prune. Only exact six-field idle loaded/static monitor state is freshly selected, then fenced before/after.",
+    "Bounded64-root-entry traversal reads only metadata and at-most256-byte exact two-record checksum manifests. Dump/globals bodies and backup code are never read or executed; declared hashes remain distinguished from current fullhash/TOC/restore proof.",
+    "Fixed Oct3 backup-service journal:4MiB,2048 records plus truncation sentinel,20s absolute child bound. Source-known kept/deleted/preserve patterns expose only public path/count/boolean fields; unknown messages retain hashes. Actual blocked-selector signal fixture reaps only its child.",
+    "No unit create/control,SQL,Core,backup lock,pin/checker/configuration/deletion or retry calls. Current Oct2 absence prevents its prospective promotion; original historic proofs remain preserved."
+  ],
+  "schema": "pow-audit30-independent-rotation-readonly-source-review-v2",
+  "status": "accepted-source-only",
+  "tests": [
+    {
+      "command": "python3 -I -B -Werror /tmp/pow-audit30-logical-backup-rotation-readonly-v2.test.py",
+      "elapsedSeconds": 0.2,
+      "passed": 24
+    }
+  ]
+}

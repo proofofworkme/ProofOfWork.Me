@@ -1,0 +1,35 @@
+{
+  "automaticRetry": false,
+  "captures": {
+    "stderr": {
+      "bytes": 0,
+      "path": "/tmp/pow-audit30-physical-sizing-current-context-v2.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "stdout": {
+      "bytes": 5210,
+      "path": "/tmp/pow-audit30-physical-sizing-current-context-v2.stdout",
+      "sha256": "a6a5826f6f4cd461a8338b2a289e2e13e3a4171ac78630f9325d3cd7a1924c20"
+    }
+  },
+  "exitCode": 0,
+  "failure": null,
+  "finishedAtUtc": "2026-10-03T10:04:58.483450+00:00",
+  "inputBindings": {
+    "metadataOnlyFreshSizingContext": true,
+    "nativeSizingNotRequested": true,
+    "requestSha256": "5b0957e3cce7fb5a64c4d82b58808faedc5d6c0147a874c22d938c05536d44dd",
+    "sourceSha256": "69179562d28eeabe1a6bcbf6ba2c506bf95e6d8ce02a79c20fc882dbe741b839"
+  },
+  "outerDeadlineSeconds": 120,
+  "productionDataMutationRequested": false,
+  "receivedBytes": {
+    "stderr": 0,
+    "stdout": 5210
+  },
+  "remoteUnitStoppedCertifiedByTransport": false,
+  "schema": "pow-audit30-readonly-owned-transport-result-v1",
+  "seconds": 2.256672,
+  "startedAtUtc": "2026-10-03T10:04:56.226778+00:00",
+  "typedStdinBytesDelivered": 33475
+}

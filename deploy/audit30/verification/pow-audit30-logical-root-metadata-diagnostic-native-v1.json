@@ -1,0 +1,35 @@
+{
+  "automaticRetry": false,
+  "captures": {
+    "stderr": {
+      "bytes": 0,
+      "path": "/tmp/pow-audit30-logical-root-metadata-diagnostic-native-v1.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "stdout": {
+      "bytes": 1776,
+      "path": "/tmp/pow-audit30-logical-root-metadata-diagnostic-native-v1.stdout",
+      "sha256": "0c8c58cb65365f2cbb0cf86a9a987f563333b76b0036d34eb3a9036876854aeb"
+    }
+  },
+  "exitCode": 0,
+  "failure": null,
+  "finishedAtUtc": "2026-10-03T10:05:13.000574+00:00",
+  "inputBindings": {
+    "fixedNamedMetadataOnly": true,
+    "rootOnceGo": true,
+    "sourceOnlyPeerAccepted": true,
+    "sourceSha256": "0b85489b700a03f08a32238ce2652e554357f43c897e1002ed73611e204768ae"
+  },
+  "outerDeadlineSeconds": 45,
+  "productionDataMutationRequested": false,
+  "receivedBytes": {
+    "stderr": 0,
+    "stdout": 1776
+  },
+  "remoteUnitStoppedCertifiedByTransport": false,
+  "schema": "pow-audit30-readonly-owned-transport-result-v1",
+  "seconds": 1.83858,
+  "startedAtUtc": "2026-10-03T10:05:11.161994+00:00",
+  "typedStdinBytesDelivered": 0
+}

@@ -1,0 +1,58 @@
+{
+  "currentlyExecutableAuthority": false,
+  "dumpOrGlobalsRead": false,
+  "expectedContext": {
+    "bytes": 5210,
+    "path": "/tmp/pow-audit30-physical-sizing-current-context-v2.stdout",
+    "sha256": "a6a5826f6f4cd461a8338b2a289e2e13e3a4171ac78630f9325d3cd7a1924c20"
+  },
+  "journalMaximumBytes": 4194304,
+  "journalMaximumRecords": 2048,
+  "journalWholeSeconds": 20,
+  "localPrefix": "/tmp/pow-audit30-logical-backup-rotation-readonly-native-v2",
+  "logicalRootMeasuredMetadata": {
+    "bytes": 1776,
+    "path": "/tmp/pow-audit30-logical-root-metadata-diagnostic-native-v1.stdout",
+    "sha256": "0c8c58cb65365f2cbb0cf86a9a987f563333b76b0036d34eb3a9036876854aeb"
+  },
+  "manifestMaximumBytes": 256,
+  "nativeCallPerformed": false,
+  "outerSeconds": 180,
+  "pinCheckerRecoveryOrDeletion": false,
+  "preservedCollectorFailure": {
+    "bytes": 236,
+    "path": "/tmp/pow-audit30-logical-backup-rotation-readonly-native-v1.stderr",
+    "sha256": "a41ac22480bda2e26e93526cc65e1f87ed4cba7a1bce54f7a0323082a05612a2"
+  },
+  "priorFailure": {
+    "bytes": 207,
+    "path": "/tmp/pow-audit30-oct2-full-read-native-v2.stderr",
+    "sha256": "e8e8571a3b2d6187cb097612a04ae10524ec15ae268255a12c5eed3f8d7f1e37"
+  },
+  "qualification": "Only the logical-root0750 mode contract differs from original76f6; exact completed sets remain0700 and members0600. Actual diagnostic0c8c is metadata only. The current10:04:58 actual five/files/mask/WAL/prune remain pinned; only the idle static monitor operational tuple can be freshly chosen. Metadata and retained journal statements cannot certify current dump content, TOC, restore, replacement, promotion, or deletion.",
+  "remoteAddressSpaceBytes": 134217728,
+  "remoteCpuSeconds": 30,
+  "remoteWholeSeconds": 90,
+  "request": {
+    "bytes": 39156,
+    "path": "/tmp/pow-audit30-logical-backup-rotation-readonly-request-v3.json",
+    "sha256": "a20fa1719319c9a5c0059471bcff75bbe101ee502727dd594ea1615125972c00"
+  },
+  "rootMaximumEntries": 64,
+  "rootNativeOnceGoRequired": true,
+  "schema": "pow-audit30-logical-backup-rotation-readonly-command-spec-v1",
+  "source": {
+    "bytes": 15770,
+    "path": "/tmp/pow-audit30-logical-backup-rotation-readonly-v3.py",
+    "sha256": "c4d99e536ea17c628d1d86957e1bad716db8e1629ff413979d2e0284dae69c54"
+  },
+  "sqlOrBackupCodeExecuted": false,
+  "stderrMaximumBytes": 65536,
+  "stdoutMaximumBytes": 65536,
+  "transport": {
+    "bytes": 8396,
+    "path": "/tmp/pow-audit30-readonly-owned-transport-v3.py",
+    "sha256": "1dedef0a6c7021d114017e711ad74f9cfed4e461fc047a2be2c49e590f3da18e"
+  },
+  "unitCreationOrControl": false
+}

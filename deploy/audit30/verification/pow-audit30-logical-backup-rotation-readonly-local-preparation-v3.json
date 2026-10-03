@@ -1,0 +1,88 @@
+{
+  "actualRootMetadata": {
+    "bytes": 1776,
+    "path": "/tmp/pow-audit30-logical-root-metadata-diagnostic-native-v1.stdout",
+    "sha256": "0c8c58cb65365f2cbb0cf86a9a987f563333b76b0036d34eb3a9036876854aeb"
+  },
+  "atUtc": "2026-10-03T10:08:43.993454+00:00",
+  "automaticRetry": false,
+  "commandSpec": {
+    "bytes": 2597,
+    "path": "/tmp/pow-audit30-logical-backup-rotation-readonly-command-spec-v3.json",
+    "sha256": "9784d4c7b6c36e6b7e68e74eea4a1ce5c9677c6056493ef6a9fbf4a39d52c1da"
+  },
+  "completedSetMode": 448,
+  "context": {
+    "bytes": 5210,
+    "path": "/tmp/pow-audit30-physical-sizing-current-context-v2.stdout",
+    "sha256": "a6a5826f6f4cd461a8338b2a289e2e13e3a4171ac78630f9325d3cd7a1924c20"
+  },
+  "currentOct2PromotionBlockedByMissingSource": true,
+  "currentOct2PromotionReady": false,
+  "diff": {
+    "bytes": 1727,
+    "path": "/tmp/pow-audit30-logical-backup-rotation-readonly-v3.diff",
+    "sha256": "d6052b8e6027a7cbce05f05adbb3b3bbad42fd7782509229cfb6e657369adb43"
+  },
+  "exactSourceChanges": "Only two logical ROOT info checks0700\u21920750; source reversal fixture restores original76f6 byte-for-byte.",
+  "managedDefinitions": {
+    "bytes": 24954,
+    "path": "/tmp/pow-audit30-oct2-full-read-native-v2.py",
+    "sha256": "ad03e5d02e10018fb7c5dd3c118a7ac876331cad240832c52e4838a4bea0ff2a"
+  },
+  "memberMode": 384,
+  "nativeCallPerformed": false,
+  "preservedCollectorFailure": {
+    "bytes": 236,
+    "path": "/tmp/pow-audit30-logical-backup-rotation-readonly-native-v1.stderr",
+    "sha256": "a41ac22480bda2e26e93526cc65e1f87ed4cba7a1bce54f7a0323082a05612a2"
+  },
+  "preservedRequest": {
+    "bytes": 37296,
+    "path": "/tmp/pow-audit30-logical-backup-rotation-readonly-request-v2.json",
+    "sha256": "c2f6ecfed97a39db3a50d0887d356dd474328d1e46954b744495f2e07d173678"
+  },
+  "preservedSource": {
+    "bytes": 15770,
+    "path": "/tmp/pow-audit30-logical-backup-rotation-readonly-v2.py",
+    "sha256": "76f6ccedbcd19c924e7141c3a1e448e254f245b0792d2a0eb81c445d0a1627f4"
+  },
+  "preservedTests": {
+    "bytes": 12050,
+    "path": "/tmp/pow-audit30-logical-backup-rotation-readonly-v2.test.py",
+    "sha256": "e4e9ef4914aa8daa39b7fb6b5f8b0df3f1d358d56424f52e9c8617b2e5792394"
+  },
+  "priorFailure": {
+    "bytes": 207,
+    "path": "/tmp/pow-audit30-oct2-full-read-native-v2.stderr",
+    "sha256": "e8e8571a3b2d6187cb097612a04ae10524ec15ae268255a12c5eed3f8d7f1e37"
+  },
+  "productionMutation": false,
+  "remainingGates": [
+    "Independent source peer acceptance",
+    "Root full source/test/request/actual-metadata review and separate once read-only GO",
+    "Actual current metadata/rotation endpoint result",
+    "Separate latest complete dump fullhash/TOC and isolated restore equivalence before any replacement proposal"
+  ],
+  "request": {
+    "bytes": 39156,
+    "path": "/tmp/pow-audit30-logical-backup-rotation-readonly-request-v3.json",
+    "sha256": "a20fa1719319c9a5c0059471bcff75bbe101ee502727dd594ea1615125972c00"
+  },
+  "rootActualMode": 488,
+  "schema": "pow-audit30-logical-backup-rotation-readonly-local-preparation-v1",
+  "source": {
+    "bytes": 15770,
+    "path": "/tmp/pow-audit30-logical-backup-rotation-readonly-v3.py",
+    "sha256": "c4d99e536ea17c628d1d86957e1bad716db8e1629ff413979d2e0284dae69c54"
+  },
+  "sourceOnly": true,
+  "testInvocation": "python3 -I -B -W error /tmp/pow-audit30-logical-backup-rotation-readonly-v3.test.py",
+  "testSeconds": 0.219,
+  "tests": {
+    "bytes": 15891,
+    "path": "/tmp/pow-audit30-logical-backup-rotation-readonly-v3.test.py",
+    "sha256": "a3446393f42ab4346d3aff148176bd5225b414c72dd6c6935cd91fd6b0a9e582"
+  },
+  "testsPassed": 30
+}
