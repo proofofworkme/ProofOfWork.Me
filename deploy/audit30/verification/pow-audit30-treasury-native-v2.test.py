@@ -1,0 +1,116 @@
+#!/usr/bin/python3 -I
+import base64,copy,hashlib,importlib.util,json,os,signal,stat,tempfile,time,types,unittest
+from pathlib import Path
+from unittest.mock import patch
+sp=importlib.util.spec_from_file_location('B','/tmp/pow-audit30-treasury-native-v2.py');B=importlib.util.module_from_spec(sp);sp.loader.exec_module(B)
+PACKAGE=json.loads(Path('/tmp/pow-audit30-treasury-address-package-request-v2.json').read_bytes())
+def request(mode='run'):
+ return {'schema':'pow-audit30-treasury-address-native-request-v1','approvalSha256':B.APPROVAL,'mode':mode,'runId':PACKAGE['runId'],'packageRequest':copy.deepcopy(PACKAGE),'packageRequestSha256':hashlib.sha256((json.dumps(PACKAGE,sort_keys=True,indent=2)+'\n').encode()).hexdigest()}
+def row(unit,e):
+ d={k:''for k in B.FIELDS};d.update(LoadState='loaded',ActiveState='active',SubState='exited',MainPID='0',InvocationID='a'*32,Result='success',ExecMainCode='1',ExecMainStatus='0',User='bitcoin',Group='bitcoin',MemoryMax=str(1024**3),MemoryHigh=str(512*1024**2),MemorySwapMax='0',CPUQuotaPerSecUSec='250ms',CPUWeight='10',IOWeight='10',Nice='15',TasksMax='32',RuntimeMaxUSec='22min',TimeoutStopUSec='30s',KillMode='control-group',Restart='no',NoNewPrivileges='yes',ProtectSystem='strict',ProtectHome='yes',PrivateTmp='yes',PrivateDevices='yes',PrivateIPC='yes',PrivateNetwork='no',RestrictAddressFamilies='AF_UNIX AF_INET AF_INET6',ReadOnlyPaths='/etc/bitcoin /data/bitcoin',InaccessiblePaths='/var/lib/postgresql /run/postgresql /data/proofofwork-postgres-tablespaces /etc/proofofwork-api',StandardInput='null',StandardOutput='append:'+str(e/'corpus.json'),StandardError='append:'+str(e/'stderr.log'),UMask='0077',ControlGroup='/system.slice/'+unit,RemainAfterExit='yes');return d
+class Tests(unittest.TestCase):
+ def test_fixed_typed_request_validates_pinned_raw_bytes_and_calendar(self):
+  rid,files=B.validate_request(request());self.assertEqual(rid,PACKAGE['runId']);self.assertEqual({n:(B.sha(r),len(r))for n,r in files.items()},B.PINS)
+  for change in('approval','field','mode','calendar','packagepath','hash','member','byte','duplicate','launch'):
+   v=request()
+   if change=='approval':v['approvalSha256']='e'*64
+   elif change=='field':v['arbitraryCommand']='touch /tmp/no'
+   elif change=='mode':v['mode']='delete'
+   elif change=='calendar':v['runId']='20260230T031100Z'
+   elif change=='packagepath':v['packageRequest']['packagePath']='/etc/bitcoin'
+   elif change=='hash':v['packageRequestSha256']='e'*64
+   elif change=='member':v['packageRequest']['members'][0]['name']='../else.py'
+   elif change=='byte':v['packageRequest']['members'][0]['rawBase64']=base64.b64encode(b'bad').decode()
+   elif change=='duplicate':v['packageRequest']['members'][1]=v['packageRequest']['members'][0]
+   elif change=='launch':v['packageRequest']['launchRequested']=True
+   with self.subTest(change=change),self.assertRaises(ValueError):B.validate_request(v)
+ def test_creation_exclusive_durable_file_and_reuse_refuse(self):
+  with tempfile.TemporaryDirectory()as t:
+   p=Path(t)/'receipt';h=B.durable(p,{'scope':False});self.assertEqual(h['sha256'],B.sha(p.read_bytes()));self.assertEqual(stat.S_IMODE(p.stat().st_mode),0o600)
+   with self.assertRaises(FileExistsError):B.durable(p,{})
+ def test_read_fence_ignores_only_atime_and_rejects_symlink_or_hardlink(self):
+  with tempfile.TemporaryDirectory()as t:
+   p=Path(t)/'source';p.write_bytes(b'x');p.chmod(0o600);os.utime(p,ns=(1,p.stat().st_mtime_ns));self.assertEqual(B.read_file(p,1)[0],b'x');link=Path(t)/'alias';link.symlink_to(p)
+   with self.assertRaises(ValueError):B.read_file(link,1)
+   link.unlink();os.link(p,link)
+   with self.assertRaises(ValueError):B.read_file(p,1)
+ def test_prepare_only_new_scope_under_restrictive_umask_and_never_reuse(self):
+  with tempfile.TemporaryDirectory()as t:
+   base=Path(t)/'packages';v=request('prepare');v['packageRequest']['packagePath']=str(base/v['runId']);v['packageRequestSha256']=B.sha((json.dumps(v['packageRequest'],sort_keys=True,indent=2)+'\n').encode());saved=os.umask(0o077)
+   try:
+    with patch.object(B,'BASE',base),patch.object(B,'canonical_dir'),patch.object(B.os,'chown'),patch.object(B.os,'fchown'),patch.object(B.pwd,'getpwnam',return_value=types.SimpleNamespace(pw_gid=os.getgid())),patch.object(B,'package_proof',return_value={'qualifiedFixture':True}):
+     r=B.prepare(v);self.assertFalse(r['nativeUnitLaunched']);p=base/v['runId'];self.assertEqual(stat.S_IMODE(base.stat().st_mode),0o755);self.assertEqual(stat.S_IMODE(p.stat().st_mode),0o750)
+     for n,(h,size)in B.PINS.items():self.assertEqual(stat.S_IMODE((p/n).stat().st_mode),0o440);self.assertEqual(B.sha((p/n).read_bytes()),h)
+     with self.assertRaises(ValueError):B.prepare(v)
+   finally:os.umask(saved)
+ def test_existing_parent_symlink_groupwrite_or_wrong_owner_refused(self):
+  with tempfile.TemporaryDirectory()as t:
+   p=Path(t);self.assertEqual(B.canonical_dir(p,os.getuid()).st_uid,os.getuid());p.chmod(0o777)
+   with self.assertRaises(ValueError):B.canonical_dir(p,os.getuid())
+   p.chmod(0o700);alias=p/'alias';alias.symlink_to(p)
+   with self.assertRaises(ValueError):B.canonical_dir(alias,os.getuid())
+ def test_ownership_recorded_before_weakened_resource_refusal(self):
+  with tempfile.TemporaryDirectory()as t:
+   e=Path(t);o=B.Observer('fixture.service',e,time.monotonic()+10);d=row(o.unit,e);d['MemoryMax']='2048'
+   with patch.object(o,'show',return_value=d),self.assertRaises(ValueError):o.observe()
+   self.assertEqual(o.owned,'a'*32);self.assertEqual(len(o.snapshots),1)
+ def test_unknown_or_changed_invocation_never_cleanup_other_unit(self):
+  with tempfile.TemporaryDirectory()as t:
+   o=B.Observer('fixture.service',Path(t),0);o.owned='a'*32;d=row(o.unit,Path(t));d['InvocationID']='b'*32
+   with patch.object(o,'show',return_value=d),patch.object(o,'command')as c,self.assertRaises(ValueError):o.stop_owned()
+   c.assert_not_called()
+ def test_expired_normal_deadline_owned_cleanup_uses_independent_budget_and_gc_qualification(self):
+  with tempfile.TemporaryDirectory()as t:
+   o=B.Observer('fixture.service',Path(t),0);o.owned='a'*32;d=row(o.unit,Path(t));end=copy.deepcopy(d);end.update(LoadState='not-found',InvocationID='',ActiveState='inactive',ControlGroup='',MainPID='0')
+   with patch.object(o,'show',side_effect=[d,end])as show,patch.object(o,'command',return_value=b'')as command:
+    out=o.stop_owned();self.assertTrue(out['attempted']);self.assertEqual(show.call_args_list[0].args,(True,));self.assertTrue(command.call_args.args[-1]);self.assertEqual(command.call_args.args[0],['/usr/bin/systemctl','stop','fixture.service'])
+ def test_all_security_resource_capture_paths_require_exact_fields(self):
+  with tempfile.TemporaryDirectory()as t:
+   e=Path(t);d=row('fixture.service',e);B.validate_properties(d,e)
+   for key,value in [('User','root'),('NoNewPrivileges','no'),('MemorySwapMax','1'),('RuntimeMaxUSec','1h'),('ProtectSystem','full'),('InaccessiblePaths',''),('CapabilityBoundingSet','cap_setuid'),('StandardOutput','append:/etc/bitcoin/bitcoin.conf'),('RemainAfterExit','no'),('PrivateNetwork','yes')]:
+    with self.subTest(key=key),self.assertRaises(ValueError):B.validate_properties(d|{key:value},e)
+ def test_live_snapshot_never_defaults_missing_unit_to_success(self):
+  o=types.SimpleNamespace(command=lambda _:b'LoadState=not-found\nActiveState=inactive\nSubState=dead\nMainPID=0\nInvocationID=\n')
+  with self.assertRaises(ValueError):B.live_snapshot(o)
+ def exercise_run(self,fault=None):
+  t=tempfile.TemporaryDirectory();self.addCleanup(t.cleanup);eparent=Path(t.name);base=eparent/'packages';base.mkdir();v=request();v['packageRequest']['packagePath']=str(base/v['runId']);v['packageRequestSha256']=B.sha((json.dumps(v['packageRequest'],sort_keys=True,indent=2)+'\n').encode());e=eparent/('audit30-treasury-address-'+v['runId']);state={'stops':0,'args':None};originalproof=B.capture_proof
+  def fakeproof(p,bound):
+   raw=p.read_bytes();B.need(len(raw)<=bound,'Fixture capture bound');return {'path':str(p),'bytes':len(raw),'sha256':B.sha(raw)},raw
+  def command(o,args,cleanup=False):
+   if args[0]=='/usr/bin/systemd-run':
+    state['args']=args;raw=json.dumps({'schema':'pow-audit30-treasury-address-corpus-v1','productionMutation':False,'financialReconciliationComplete':False,'obligationReconciliationComplete':False,'may9OperatorConfirmedPaid':True,'may9TransactionIDsRequested':False,'status':'partial-discovery-rpc-or-moving-snapshot','coverage':{},'oracle':{'completeFinancialOrObligationReconciliation':False}}).encode();(e/'corpus.json').write_bytes(raw);return b''
+   if args[1]=='stop':
+    state['stops']+=1
+    if fault=='cleanup':raise OSError('private cleanup sentinel')
+    if fault=='signals':
+     for s in(signal.SIGTERM,signal.SIGINT,signal.SIGHUP):os.kill(os.getpid(),s)
+    return b''
+   raise AssertionError(args)
+  def show(o,cleanup=False):
+   d=row(o.unit,e)
+   if state['stops']:d.update(ActiveState='inactive',SubState='dead')
+   if fault=='memory':d['MemoryMax']='10'
+   return d
+  before={'live':'same'}
+  with patch.object(B,'BASE',base),patch.object(B,'EVIDENCE',eparent),patch.object(B,'canonical_dir'),patch.object(B,'package_proof',return_value={'proof':'same'}),patch.object(B,'live_snapshot',return_value=before),patch.object(B.pwd,'getpwnam',return_value=types.SimpleNamespace(pw_gid=os.getgid())),patch.object(B.Observer,'command',command),patch.object(B.Observer,'show',show),patch.object(B,'capture_proof',fakeproof):
+   if fault in('cleanup','memory'):
+    with self.assertRaises(ValueError):B.run(v)
+   else:result=B.run(v);self.assertFalse(result['financialReconciliationComplete'])
+  receipt=json.loads((e/('failed.json'if fault in('cleanup','memory')else'completed.json')).read_bytes());return receipt,state,e
+ def test_success_retains_unit_snapshot_before_owned_stop_and_partial_status(self):
+  r,s,e=self.exercise_run();self.assertTrue(r['transportAccepted']);self.assertEqual(s['stops'],1);self.assertEqual(r['result']['status'],'partial-discovery-rpc-or-moving-snapshot');self.assertFalse(r['financialReconciliationComplete']);self.assertEqual(r['unitSnapshots'][0]['properties']['InvocationID'],'a'*32);self.assertNotIn('--collect',s['args']);self.assertIn('RemainAfterExit=yes',s['args']);self.assertIn('resource.RLIMIT_FSIZE',s['args'][-1])
+ def test_weakened_resource_is_owned_stopped_and_failure_capture_preserved(self):
+  r,s,e=self.exercise_run('memory');self.assertFalse(r['transportAccepted']);self.assertEqual(s['stops'],1);self.assertIn('corpus.json',r['captureFiles']);self.assertIsNotNone(r['failure']);self.assertFalse(r['autoRetry'])
+ def test_cleanup_refusal_never_completed_false_green(self):
+  r,s,e=self.exercise_run('cleanup');self.assertFalse(r['transportAccepted']);self.assertEqual(r['failure']['phase'],'owned-cleanup');self.assertFalse((e/'completed.json').exists());self.assertNotIn('sentinel',json.dumps(r))
+ def test_repeated_signals_during_cleanup_do_not_skip_receipt_handlers_restored(self):
+  old={s:signal.getsignal(s)for s in(signal.SIGTERM,signal.SIGINT,signal.SIGHUP)};r,s,e=self.exercise_run('signals');self.assertTrue(r['transportAccepted']);self.assertEqual({s:signal.getsignal(s)for s in old},old)
+ def test_root_timeout_admission_installed_before_stdin_and_restored(self):
+  called=[]
+  class Input:
+   def read(self,n):called.append(signal.getsignal(signal.SIGALRM));raise TimeoutError('fixture no stdin')
+  old=signal.getsignal(signal.SIGALRM)
+  with patch.object(B.os,'geteuid',return_value=0),patch.object(B.os,'uname',return_value=types.SimpleNamespace(nodename=B.HOST)),patch.object(B.sys,'argv',['bootstrap']),patch.object(B.sys,'stdin',types.SimpleNamespace(buffer=Input())):
+   with self.assertRaises(TimeoutError):B.main()
+  self.assertNotEqual(called[0],old);self.assertEqual(signal.getsignal(signal.SIGALRM),old)
+if __name__=='__main__':unittest.main()

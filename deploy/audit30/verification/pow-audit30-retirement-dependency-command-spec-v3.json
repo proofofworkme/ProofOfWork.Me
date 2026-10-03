@@ -1,0 +1,69 @@
+{
+  "argv": [
+    "python3",
+    "-I",
+    "-B",
+    "/tmp/pow-audit30-retirement-dependency-native-transport-v3.py"
+  ],
+  "atUtc": "2026-10-03T04:34:59.027991+00:00",
+  "authorTests": {
+    "census": 15,
+    "sharedTransport": 9
+  },
+  "bounds": {
+    "collectorSeconds": 75,
+    "operatorBytes": 201326592,
+    "operatorEntries": 75000,
+    "outerSeconds": 110,
+    "perOperatorFileBytes": 4194304,
+    "procFDEntries": 100000,
+    "procMetadataBytesPerFile": 1048576,
+    "processes": 10000,
+    "stderrBytes": 1048576,
+    "stdoutBytes": 33554432
+  },
+  "claims": {
+    "automaticRetry": false,
+    "deletionAuthorized": false,
+    "financialCompleteness": false,
+    "fullClusterDataHash": false,
+    "productionMutation": false,
+    "recoveryEquivalence": false,
+    "universalDependencyCompleteness": false
+  },
+  "excludedScope": "Historical staged sources and generated/dependency/copied-math/private-plan content are metadata-only exclusions, never no-reference proof.",
+  "freshBackupStatus": null,
+  "freshFiveAfterPhase6": null,
+  "launchApproved": false,
+  "nativeCallsMade": false,
+  "qualification": "Token/reference matches and unreadable/skipped/dynamic/external scopes require separate exact semantic/dependency review. Old dumpset remains pinned and cannot be retired by this census. Source/runtime success alone is not historical custody or stopped-reader acceptance.",
+  "schema": "pow-audit30-retirement-dependency-command-spec-v3",
+  "selectedRoots": "Exact installed systemd/cron/operator roots plus canonical /opt/proofofwork-api and actual loaded live API/worker cwd/argv source roots; those bindings must remain equal before/after.",
+  "sources": [
+    {
+      "bytes": 14192,
+      "path": "/tmp/pow-audit30-retirement-dependency-readonly-census-v3.py",
+      "sha256": "6e4f83a69cc1e3f7e27f56223330d15e3a2d9fe81df248b4b7a4ccca11cf52ea"
+    },
+    {
+      "bytes": 8183,
+      "path": "/tmp/pow-audit30-retirement-dependency-readonly-census-v3.test.py",
+      "sha256": "1484405de89507ab1929f51771c6fee1b8b3e7179852599a07cb719457efaf8c"
+    },
+    {
+      "bytes": 1362,
+      "path": "/tmp/pow-audit30-retirement-dependency-native-transport-v3.py",
+      "sha256": "d5b38deb5fcbdc61fd2f432e2eb22d6932f4979c1f2aa6aa9e90018fd3b5c82a"
+    },
+    {
+      "bytes": 8269,
+      "path": "/tmp/pow-audit30-readonly-owned-transport-v1.py",
+      "sha256": "be541a951fbd22ab18a8e729b6065e8c3001300fd5c3f0f464be8b4803b836c8"
+    },
+    {
+      "bytes": 5337,
+      "path": "/tmp/pow-audit30-readonly-owned-transport-v1.test.py",
+      "sha256": "63bb5d9c9a1edf9bc8b76c38ed47578335a31dcc6906eebc22d7495b846cf129"
+    }
+  ]
+}

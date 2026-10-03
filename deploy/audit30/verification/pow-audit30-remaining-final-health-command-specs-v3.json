@@ -1,0 +1,228 @@
+{
+  "authorityInputs": {
+    "caddyBaseline": {
+      "bytes": 533,
+      "path": "/tmp/pow-audit30-prepublication-caddy-baseline.json",
+      "sha256": "215be2ccabb1c5751d1b60b3c32810ffe30bcb3b4636e6e180f54bf5b6f121b2"
+    },
+    "monitorInstallationReceipts": [
+      {
+        "bytes": 22483,
+        "path": "/tmp/pow-audit30-retention-ui-production-execution.json",
+        "sha256": "b6a043cbc0336682573643e91a78bbdb636b3d982148c5047ec32ec550621762"
+      },
+      {
+        "bytes": 17099,
+        "path": "/tmp/pow-audit30-retention-node-production-execution.json",
+        "sha256": "3e6dc43b84c4d19adb57bfd3f8f6d5b13d4799b215c8add9750d6ddba0233ad9"
+      }
+    ],
+    "preflight": {
+      "bytes": 49052,
+      "path": "/tmp/pow-audit30-ui-publication-preflight-11b9.json",
+      "sha256": "544992c82f35ec6c8cf7b0829339bd2bfa4541ac9407a49f36d069fa67de28ea"
+    },
+    "preservationCompletion": {
+      "bytes": 12398490,
+      "path": "/tmp/pow-audit30-preservation-completed-receipt.json",
+      "sha256": "b95025dff45e2973ea8b149405c2ef48287608e3f2fd50fe82f50b3051162fec"
+    },
+    "publicationPlan": {
+      "bytes": 4697,
+      "path": "/tmp/pow-audit30-ui-publication-plan-11b9.json",
+      "sha256": "b3b3ded43a119d99b53f4987b279181a178d0198a1b1f9477258ca75835899ad"
+    }
+  },
+  "caddyAdminJsonBaseline": {
+    "captured": false,
+    "comparisonFlagIntentionallyAbsent": "--expected-caddy-config-sha256",
+    "qualification": "Baseline hashes the Caddyfile; this is supplied only as an expected installed-file hash. Collector independently observes/hashes admin JSON if reachable, without claiming it matches an uncaptured prepublication admin JSON value. Process continuity is explicitly checked against PID/InvocationID."
+  },
+  "collector": {
+    "bytes": 20039,
+    "path": "/tmp/pow-audit30-final-health-collector-v2.py",
+    "sha256": "1fe766b8a901fc9691262517d9661382644f51be0f61fa10df011b31ca14b849"
+  },
+  "executeOnlyAfter": [
+    "Verified scoped node38ac cutover and fresh worker historical-exclusion guard",
+    "Verified UI fc5 publication and fresh reviewed currentfc5/prior11b9 ordinary lifecycle",
+    "Fresh baseline files/helper hashes and all deployment locks released"
+  ],
+  "executionGuidance": "Do not run from preparation agent. Root may stream exact collector stdin through these fixed SSH argv after final gates. Capture stdout/stderr to exclusive local files, fsync and hash exact bytes. For longer local waits use asynchronous tool yielding at most30seconds so progress remains responsive. No remote files are created by collector; it takes existing locks nonblockingly. Stop on missing expected unit/identity/guard or capacity mismatch; never infer health from absent systemctl defaults.",
+  "firstAttemptFailure": {
+    "captures": [
+      {
+        "bytes": 0,
+        "path": "/tmp/pow-audit30-final-ui-capacity-service-census.json",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "bytes": 239,
+        "path": "/tmp/pow-audit30-final-ui-capacity-service-census.stderr.log",
+        "sha256": "e9a70b15522b86311d9e2983b1a5142d83efc3d25d2fb371fbed77fff15478b2"
+      },
+      {
+        "bytes": 0,
+        "path": "/tmp/pow-audit30-final-node-capacity-service-census.json",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "bytes": 239,
+        "path": "/tmp/pow-audit30-final-node-capacity-service-census.stderr.log",
+        "sha256": "e9a70b15522b86311d9e2983b1a5142d83efc3d25d2fb371fbed77fff15478b2"
+      }
+    ],
+    "collector": {
+      "bytes": 19293,
+      "path": "/tmp/pow-audit30-final-health-collector.py",
+      "sha256": "8b5fe594c42df6ce57a0ebe304df3d2293305dd9d7c280e116f879227372d847"
+    },
+    "qualification": "Both original captured stdout empty;239B stderr ValueError on known mask FragmentPath resolving /dev/null. No production mutation or successful census claimed. Exact original files/pins preserved.",
+    "wrapper": {
+      "bytes": 2119,
+      "path": "/tmp/pow-audit30-final-health-run.py",
+      "sha256": "4cfac6855c2f849604813a3129bef694b6db08b41e64ee861aaf63b77c9ac11a"
+    }
+  },
+  "guidance": {
+    "bytes": 7344,
+    "path": "/tmp/pow-audit30-final-health-collector-guidance-v2.json",
+    "sha256": "d3e94580ff65ca2d3077fca71d786494d17ceda1276490659b62a14415f583e8"
+  },
+  "nodeCandidateAcceptanceRequired": {
+    "actualFreshPostCutoverFiveRequired": true,
+    "candidateTsvSha256": "98343f1ecff80e2b203355a2272df966cc108b0a89890c9d3fabfd5b0b8e084d",
+    "collectorQualification": "Collector has no node commit or PID-baseline argument. Accept current/candidate full-runtime and new API/worker PID/Invocation proof separately; active-state checks alone do not satisfy those proofs.",
+    "commit": "38ac6e2bff2ac16890724e5213346ef8a3ebd186",
+    "release": "38ac6e2bff2a-20261003T042000Z",
+    "runtimeSha256": "13035b6d1fbca1be9c03b1833f3abe578d4ae28331a341b3dea4301cc72b535c",
+    "tree": "8b9b5e3cd47aa8e4204da717350a629176e30da6"
+  },
+  "outputReview": {
+    "knownMonitorFailures": "Existing failed results and old held historical absences remain visible. Monitor namespace static check requires PrivateTmp=yes and exact scratch read-only bind, UI60/node20; reuse sealed full namespace verifier.",
+    "maskedPruneFragment": "Known ROLE_PRUNE masked fragments resolve /dev/null and are mask metadata; all main exact root-owned /dev/null symlink/inactive checks must still pass.",
+    "qualifications": "Capacity/service/manifest census alone is not full application health, source/archive restore or canonical chain/math proof. Combine with sealed execution and audit receipts.",
+    "requireExpectedChecksPassed": true,
+    "uiOrdinaryPair": "currentfc5bd0eee0a6-20261003T004504Z/prior11b9daf067d7-20261002T211925Z; actual singlepriorroot/twoordinaryarchives required",
+    "uiPreservation": "All three originalExists=false,targetExists=true; movement frees scratch, zero root bytes.",
+    "wal": "Observe pg_receivewal@16-main without an invented healthy-state assertion; no PITR success claim."
+  },
+  "preparedAtUtc": "2026-10-03T04:26:57.656012+00:00",
+  "preparedLocallyOnly": true,
+  "productionCalls": false,
+  "roles": {
+    "node": {
+      "executionState": "pending-final-approved-scoped-publication",
+      "expectedFiles": {
+        "/etc/proofofwork-retention/audit28-held-review.json": "c3bd35740d7fcc135839274c8228e38f7a45c23e33567743e0d77151b32451d9",
+        "/etc/proofofwork-retention/audit28.hold": "e9aca6e22b1dc36b714ed663051f8bc20d9479efa4173474e0b6b771958ca6a4",
+        "/etc/systemd/system/proofofwork-retention-protection.service": "8f9c54b522961e26d8f02ed33ad065af70906f1e95ca2ad65edd322c8f758448",
+        "/usr/local/sbin/proofofwork-retention-protection": "da5d1336ce857acc571ba0849c2b0150ef5fc6dfdacf80e65b9f1d3611c48e8a"
+      },
+      "host": "powadmin@65.108.122.87",
+      "qualifiedObservations": "Root/data capacity, memory/load, actual installed authority services, holds/masks/checker unit, current monitor journal only; no new checker execution or database/chain replay.",
+      "remoteArgv": [
+        "sudo",
+        "-n",
+        "/usr/bin/python3",
+        "-I",
+        "-B",
+        "-",
+        "--role",
+        "node",
+        "--expected-files-json",
+        "{\"/etc/proofofwork-retention/audit28-held-review.json\":\"c3bd35740d7fcc135839274c8228e38f7a45c23e33567743e0d77151b32451d9\",\"/etc/proofofwork-retention/audit28.hold\":\"e9aca6e22b1dc36b714ed663051f8bc20d9479efa4173474e0b6b771958ca6a4\",\"/etc/systemd/system/proofofwork-retention-protection.service\":\"8f9c54b522961e26d8f02ed33ad065af70906f1e95ca2ad65edd322c8f758448\",\"/usr/local/sbin/proofofwork-retention-protection\":\"da5d1336ce857acc571ba0849c2b0150ef5fc6dfdacf80e65b9f1d3611c48e8a\"}"
+      ],
+      "remoteCommand": "sudo -n /usr/bin/python3 -I -B - --role node --expected-files-json '{\"/etc/proofofwork-retention/audit28-held-review.json\":\"c3bd35740d7fcc135839274c8228e38f7a45c23e33567743e0d77151b32451d9\",\"/etc/proofofwork-retention/audit28.hold\":\"e9aca6e22b1dc36b714ed663051f8bc20d9479efa4173474e0b6b771958ca6a4\",\"/etc/systemd/system/proofofwork-retention-protection.service\":\"8f9c54b522961e26d8f02ed33ad065af70906f1e95ca2ad65edd322c8f758448\",\"/usr/local/sbin/proofofwork-retention-protection\":\"da5d1336ce857acc571ba0849c2b0150ef5fc6dfdacf80e65b9f1d3611c48e8a\"}'",
+      "sshArgv": [
+        "ssh",
+        "-i",
+        "/home/sixer/.ssh/proofofwork_node_ed25519",
+        "-o",
+        "BatchMode=yes",
+        "-o",
+        "IdentitiesOnly=yes",
+        "-o",
+        "StrictHostKeyChecking=yes",
+        "-o",
+        "ConnectTimeout=15",
+        "powadmin@65.108.122.87",
+        "sudo -n /usr/bin/python3 -I -B - --role node --expected-files-json '{\"/etc/proofofwork-retention/audit28-held-review.json\":\"c3bd35740d7fcc135839274c8228e38f7a45c23e33567743e0d77151b32451d9\",\"/etc/proofofwork-retention/audit28.hold\":\"e9aca6e22b1dc36b714ed663051f8bc20d9479efa4173474e0b6b771958ca6a4\",\"/etc/systemd/system/proofofwork-retention-protection.service\":\"8f9c54b522961e26d8f02ed33ad065af70906f1e95ca2ad65edd322c8f758448\",\"/usr/local/sbin/proofofwork-retention-protection\":\"da5d1336ce857acc571ba0849c2b0150ef5fc6dfdacf80e65b9f1d3611c48e8a\"}'"
+      ],
+      "stderrLocalExclusiveCreate": "/tmp/pow-audit30-remaining-final-node-capacity-service-census-v3.stderr.log",
+      "stdin": {
+        "bytes": 20039,
+        "path": "/tmp/pow-audit30-final-health-collector-v2.py",
+        "sha256": "1fe766b8a901fc9691262517d9661382644f51be0f61fa10df011b31ca14b849"
+      },
+      "stdoutLocalExclusiveCreate": "/tmp/pow-audit30-remaining-final-node-capacity-service-census-v3.json"
+    },
+    "ui": {
+      "executionState": "pending-final-approved-scoped-publication",
+      "expectedFiles": {
+        "/etc/caddy/Caddyfile": "196817a4e50e3198d6c3e0e6c64a95721f637d9f1d0cff7d261bf1260553614f",
+        "/etc/proofofwork-retention/audit28-held-review.json": "c3bd35740d7fcc135839274c8228e38f7a45c23e33567743e0d77151b32451d9",
+        "/etc/proofofwork-retention/audit28.hold": "e9aca6e22b1dc36b714ed663051f8bc20d9479efa4173474e0b6b771958ca6a4",
+        "/etc/systemd/system/proofofwork-retention-protection.service": "14426a6092ca97ab3c3e05e2030cc99912ed03afbbc899a03cafb33960622ea5",
+        "/usr/local/sbin/proofofwork-retention-protection": "da5d1336ce857acc571ba0849c2b0150ef5fc6dfdacf80e65b9f1d3611c48e8a",
+        "/usr/local/sbin/proofofwork-ui-capacity": "ea6745b2519d57fbd08deff723e81540d4dad2b4c649ff7e6c2b060a7e7edbb6",
+        "/usr/local/sbin/proofofwork-ui-release-provenance": "4e083a179a305907760ffe36f6ad00aef9a441279898b903171edea54cb1b9d6",
+        "/usr/local/sbin/proofofwork-ui-release-publish": "5ae1535e668c77ca7234c016ffe3602a3a8a5d930b3a75eefc28bb864a19af76"
+      },
+      "host": "root@77.42.91.106",
+      "qualifiedObservations": "Root/data capacity, memory/load, actual installed authority services, holds/masks/checker unit, current monitor journal only; no new checker execution or database/chain replay.",
+      "remoteArgv": [
+        "/usr/bin/python3",
+        "-I",
+        "-B",
+        "-",
+        "--role",
+        "ui",
+        "--expected-current",
+        "fc5bd0eee0a6-20261003T004504Z",
+        "--expected-prior",
+        "11b9daf067d7-20261002T211925Z",
+        "--expected-caddy-pid",
+        "3092586",
+        "--expected-caddy-invocation",
+        "201feac74de54f1da7b5e304adb1b621",
+        "--expected-files-json",
+        "{\"/etc/caddy/Caddyfile\":\"196817a4e50e3198d6c3e0e6c64a95721f637d9f1d0cff7d261bf1260553614f\",\"/etc/proofofwork-retention/audit28-held-review.json\":\"c3bd35740d7fcc135839274c8228e38f7a45c23e33567743e0d77151b32451d9\",\"/etc/proofofwork-retention/audit28.hold\":\"e9aca6e22b1dc36b714ed663051f8bc20d9479efa4173474e0b6b771958ca6a4\",\"/etc/systemd/system/proofofwork-retention-protection.service\":\"14426a6092ca97ab3c3e05e2030cc99912ed03afbbc899a03cafb33960622ea5\",\"/usr/local/sbin/proofofwork-retention-protection\":\"da5d1336ce857acc571ba0849c2b0150ef5fc6dfdacf80e65b9f1d3611c48e8a\",\"/usr/local/sbin/proofofwork-ui-capacity\":\"ea6745b2519d57fbd08deff723e81540d4dad2b4c649ff7e6c2b060a7e7edbb6\",\"/usr/local/sbin/proofofwork-ui-release-provenance\":\"4e083a179a305907760ffe36f6ad00aef9a441279898b903171edea54cb1b9d6\",\"/usr/local/sbin/proofofwork-ui-release-publish\":\"5ae1535e668c77ca7234c016ffe3602a3a8a5d930b3a75eefc28bb864a19af76\"}"
+      ],
+      "remoteCommand": "/usr/bin/python3 -I -B - --role ui --expected-current fc5bd0eee0a6-20261003T004504Z --expected-prior 11b9daf067d7-20261002T211925Z --expected-caddy-pid 3092586 --expected-caddy-invocation 201feac74de54f1da7b5e304adb1b621 --expected-files-json '{\"/etc/caddy/Caddyfile\":\"196817a4e50e3198d6c3e0e6c64a95721f637d9f1d0cff7d261bf1260553614f\",\"/etc/proofofwork-retention/audit28-held-review.json\":\"c3bd35740d7fcc135839274c8228e38f7a45c23e33567743e0d77151b32451d9\",\"/etc/proofofwork-retention/audit28.hold\":\"e9aca6e22b1dc36b714ed663051f8bc20d9479efa4173474e0b6b771958ca6a4\",\"/etc/systemd/system/proofofwork-retention-protection.service\":\"14426a6092ca97ab3c3e05e2030cc99912ed03afbbc899a03cafb33960622ea5\",\"/usr/local/sbin/proofofwork-retention-protection\":\"da5d1336ce857acc571ba0849c2b0150ef5fc6dfdacf80e65b9f1d3611c48e8a\",\"/usr/local/sbin/proofofwork-ui-capacity\":\"ea6745b2519d57fbd08deff723e81540d4dad2b4c649ff7e6c2b060a7e7edbb6\",\"/usr/local/sbin/proofofwork-ui-release-provenance\":\"4e083a179a305907760ffe36f6ad00aef9a441279898b903171edea54cb1b9d6\",\"/usr/local/sbin/proofofwork-ui-release-publish\":\"5ae1535e668c77ca7234c016ffe3602a3a8a5d930b3a75eefc28bb864a19af76\"}'",
+      "sshArgv": [
+        "ssh",
+        "-i",
+        "/home/sixer/.ssh/proofofwork_me_ed25519",
+        "-o",
+        "BatchMode=yes",
+        "-o",
+        "IdentitiesOnly=yes",
+        "-o",
+        "StrictHostKeyChecking=yes",
+        "-o",
+        "ConnectTimeout=15",
+        "root@77.42.91.106",
+        "/usr/bin/python3 -I -B - --role ui --expected-current fc5bd0eee0a6-20261003T004504Z --expected-prior 11b9daf067d7-20261002T211925Z --expected-caddy-pid 3092586 --expected-caddy-invocation 201feac74de54f1da7b5e304adb1b621 --expected-files-json '{\"/etc/caddy/Caddyfile\":\"196817a4e50e3198d6c3e0e6c64a95721f637d9f1d0cff7d261bf1260553614f\",\"/etc/proofofwork-retention/audit28-held-review.json\":\"c3bd35740d7fcc135839274c8228e38f7a45c23e33567743e0d77151b32451d9\",\"/etc/proofofwork-retention/audit28.hold\":\"e9aca6e22b1dc36b714ed663051f8bc20d9479efa4173474e0b6b771958ca6a4\",\"/etc/systemd/system/proofofwork-retention-protection.service\":\"14426a6092ca97ab3c3e05e2030cc99912ed03afbbc899a03cafb33960622ea5\",\"/usr/local/sbin/proofofwork-retention-protection\":\"da5d1336ce857acc571ba0849c2b0150ef5fc6dfdacf80e65b9f1d3611c48e8a\",\"/usr/local/sbin/proofofwork-ui-capacity\":\"ea6745b2519d57fbd08deff723e81540d4dad2b4c649ff7e6c2b060a7e7edbb6\",\"/usr/local/sbin/proofofwork-ui-release-provenance\":\"4e083a179a305907760ffe36f6ad00aef9a441279898b903171edea54cb1b9d6\",\"/usr/local/sbin/proofofwork-ui-release-publish\":\"5ae1535e668c77ca7234c016ffe3602a3a8a5d930b3a75eefc28bb864a19af76\"}'"
+      ],
+      "stderrLocalExclusiveCreate": "/tmp/pow-audit30-remaining-final-ui-capacity-service-census-v3.stderr.log",
+      "stdin": {
+        "bytes": 20039,
+        "path": "/tmp/pow-audit30-final-health-collector-v2.py",
+        "sha256": "1fe766b8a901fc9691262517d9661382644f51be0f61fa10df011b31ca14b849"
+      },
+      "stdoutLocalExclusiveCreate": "/tmp/pow-audit30-remaining-final-ui-capacity-service-census-v3.json"
+    }
+  },
+  "schema": "pow-audit30-remaining-final-health-command-specs-v3",
+  "supersedes": {
+    "bytes": 15181,
+    "path": "/tmp/pow-audit30-final-health-command-specs-v2.json",
+    "sha256": "61702876325b9faa8285a8049f454d6c5a802cadca34d3257a725683ab43da97"
+  },
+  "supersedesRemainingSpec": {
+    "bytes": 16136,
+    "path": "/tmp/pow-audit30-remaining-final-health-command-specs-v2.json",
+    "sha256": "49f1f978abd35480dc8c356083ec2859d3f3edfb7bc3c5dca7145115dab5c401"
+  }
+}

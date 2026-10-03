@@ -1,0 +1,1684 @@
+{
+  "atUtc": "2026-10-03T04:49:43.078559+00:00",
+  "files": [
+    {
+      "bytes": 19239,
+      "originalPath": "/tmp/pow-audit30-mail-body-census.py",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-mail-body-census.py",
+      "sha256": "818aaf4207ac5f5c627211eec21ed3991f6fd3a8400cce909c64c6be053ce61c"
+    },
+    {
+      "bytes": 18012,
+      "originalPath": "/tmp/pow-audit30-mail-body-private-census.py",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-mail-body-private-census.py",
+      "sha256": "37cb62d6440f21f18f4a0f561a0561fb063156f9cb447d172884142056d77f41"
+    },
+    {
+      "bytes": 9424,
+      "originalPath": "/tmp/pow-audit30-mail-body-repair-plan.py",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-mail-body-repair-plan.py",
+      "sha256": "f8547277a0b11d1db8863276c1186b9bf5a764805047a251d5c529d8023928bb"
+    },
+    {
+      "bytes": 18913,
+      "originalPath": "/tmp/pow-audit30-mail-body-repair-rehearsal.mjs",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-mail-body-repair-rehearsal.mjs",
+      "sha256": "09b3240e45d76278a67053f5fba6009cccce36b00c1b098d38d7435da978dc58"
+    },
+    {
+      "bytes": 24689,
+      "originalPath": "/tmp/pow-audit30-mail-body-root-bootstrap.py",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-mail-body-root-bootstrap.py",
+      "sha256": "a27263acdf394a6dbd651e1de760646c7834d78cb0e89e6169581f1d0a2de018"
+    },
+    {
+      "bytes": 64776,
+      "originalPath": "/tmp/pow-audit30-saved-snapshot-inspect.py",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-saved-snapshot-inspect.py",
+      "sha256": "04a3fae258c177afed591a3d9b3deef3695c23bbcc61e65b5d3cd798831caf54"
+    },
+    {
+      "bytes": 17692,
+      "originalPath": "/tmp/pow-audit30-snapshot-inspect-bootstrap.py",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-snapshot-inspect-bootstrap.py",
+      "sha256": "42aebfa95590a2c57c4427b22395d363f2007dda0dfd4ba5d7e2a9becb09ab1d"
+    },
+    {
+      "bytes": 4062,
+      "originalPath": "/tmp/pow-audit30-inspector-final-preflight.py",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-inspector-final-preflight.py",
+      "sha256": "f34e10c5dbb23e775fd230c970988c5fdc9a0c258c9d3fe44aaf69b773914bfb"
+    },
+    {
+      "bytes": 5480,
+      "originalPath": "/tmp/pow-audit30-inspector-plan-assemble.py",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-inspector-plan-assemble.py",
+      "sha256": "276a4a5a9a7dac213b5eec39037065c650bf503065b275b33bbdb46c8ede48cf"
+    },
+    {
+      "bytes": 16867,
+      "originalPath": "/tmp/pow-audit30-transition-private-sql-v2.py",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-transition-private-sql-v2.py",
+      "sha256": "04dd4714524be4475e21d16321c565ba29039815b9400f9f6f820076a3b7fbbd"
+    },
+    {
+      "bytes": 13977,
+      "originalPath": "/tmp/pow-audit30-transition-chunk-prototype.py",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-transition-chunk-prototype.py",
+      "sha256": "4c08151c0d3cfb5757c0056fef8facf578e57e023bc1bc29f49fdaf7c5e34e9a"
+    },
+    {
+      "bytes": 25065,
+      "originalPath": "/tmp/pow-audit30-transition-independent-oracle-v2.mjs",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-transition-independent-oracle-v2.mjs",
+      "sha256": "a878b728424bf40a4204af72cc404e5390e9f30496c1b98428da21e75d5e779e"
+    },
+    {
+      "bytes": 22444,
+      "originalPath": "/tmp/pow-audit30-item8-ledger-corpus-collector.py",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-item8-ledger-corpus-collector.py",
+      "sha256": "edb7b780f987f9bbaf3432ba473e09e210ecd8ff406d3ce6066b1a511e38db25"
+    },
+    {
+      "bytes": 34250,
+      "originalPath": "/tmp/pow-audit30-item8-ledger-corpus-collector-v2.py",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-item8-ledger-corpus-collector-v2.py",
+      "sha256": "c37fb22836172254baaa8d2da125ff97fa25d7c955a0afa4c6b72accbe29cef7"
+    },
+    {
+      "bytes": 14006,
+      "originalPath": "/tmp/pow-audit30-pg-dependency-closure.py",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-pg-dependency-closure.py",
+      "sha256": "f5d6b5a5e83e3d80f7fed3b8348b6a3889e93c78c846cce11a5866c0dbd71760"
+    },
+    {
+      "bytes": 8457,
+      "originalPath": "/tmp/pow-audit30-mail-body-census.test.py",
+      "purpose": "synthetic refusal/regression fixture; no native private capture",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-mail-body-census.test.py",
+      "sha256": "bb300294855c529d5d4e834680b5b45b054777b2f85ee0e06f2d12100b1e35f1"
+    },
+    {
+      "bytes": 14635,
+      "originalPath": "/tmp/pow-audit30-mail-body-private-census.test.py",
+      "purpose": "synthetic refusal/regression fixture; no native private capture",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-mail-body-private-census.test.py",
+      "sha256": "aa4429e02dd0fca4815602a5aa3589c8adbb4a9dadd70e0109963dd8213c19b9"
+    },
+    {
+      "bytes": 7483,
+      "originalPath": "/tmp/pow-audit30-mail-body-repair-plan.test.py",
+      "purpose": "synthetic refusal/regression fixture; no native private capture",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-mail-body-repair-plan.test.py",
+      "sha256": "64f8fda31de2897fcece4bf2ec37874371190d661e8c8cfbaa23350680d9dae2"
+    },
+    {
+      "bytes": 10378,
+      "originalPath": "/tmp/pow-audit30-mail-body-root-bootstrap.test.py",
+      "purpose": "synthetic refusal/regression fixture; no native private capture",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-mail-body-root-bootstrap.test.py",
+      "sha256": "7a98a846f015afa32c0256455c6bca9da121d32c4a52a04532b3568e7b9d8ff4"
+    },
+    {
+      "bytes": 10964,
+      "originalPath": "/tmp/pow-audit30-mail-body-repair-rehearsal.test.mjs",
+      "purpose": "synthetic refusal/regression fixture; no native private capture",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-mail-body-repair-rehearsal.test.mjs",
+      "sha256": "1f184161513905f3ec534afac7de42634ddc012daf432a67bc572d6e49796679"
+    },
+    {
+      "bytes": 15185,
+      "originalPath": "/tmp/pow-audit30-mail-body-repair-synthetic-plan.json",
+      "purpose": "synthetic refusal/regression fixture; no native private capture",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-mail-body-repair-synthetic-plan.json",
+      "sha256": "392244c42b105627b9379e7835e49715be88a7c9de2a3453fca3c0ed69ccd834"
+    },
+    {
+      "bytes": 28393,
+      "originalPath": "/tmp/pow-audit30-saved-snapshot-inspect.test.py",
+      "purpose": "synthetic refusal/regression fixture; no native private capture",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-saved-snapshot-inspect.test.py",
+      "sha256": "d5c131335ab2d7021e4c9e038042d7965884ed094f6858e4136ad0ea1f948d06"
+    },
+    {
+      "bytes": 9506,
+      "originalPath": "/tmp/pow-audit30-snapshot-inspect-bootstrap.test.py",
+      "purpose": "synthetic refusal/regression fixture; no native private capture",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-snapshot-inspect-bootstrap.test.py",
+      "sha256": "355d9a7d5b902fda96ca11152445d20c1545789ab9a52ba629d252765d265c81"
+    },
+    {
+      "bytes": 5653,
+      "originalPath": "/tmp/pow-audit30-inspector-final-inputs.test.py",
+      "purpose": "synthetic refusal/regression fixture; no native private capture",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-inspector-final-inputs.test.py",
+      "sha256": "2d958f59811c08ab81dd0b8f04d10a054a5c37849c7a09391f7e016f50891bfb"
+    },
+    {
+      "bytes": 5039,
+      "originalPath": "/tmp/pow-audit30-transition-private-sql.test.py",
+      "purpose": "synthetic refusal/regression fixture; no native private capture",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-transition-private-sql.test.py",
+      "sha256": "0d7ada2317a2de2022c71e8fcd8e7eae4761da1c01a3fda057ae04864fb42f11"
+    },
+    {
+      "bytes": 9809,
+      "originalPath": "/tmp/pow-audit30-transition-chunk-prototype.test.py",
+      "purpose": "synthetic refusal/regression fixture; no native private capture",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-transition-chunk-prototype.test.py",
+      "sha256": "ef4c191a7a291a62564b32da1dd34c9c62b9ecba33d0d7ef302e49e3114166b5"
+    },
+    {
+      "bytes": 14236,
+      "originalPath": "/tmp/pow-audit30-transition-independent-oracle-v2.test.mjs",
+      "purpose": "synthetic refusal/regression fixture; no native private capture",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-transition-independent-oracle-v2.test.mjs",
+      "sha256": "1148cb9f38a43a491d8eb52390e6554ca3d0f72fe9773446027abb9a0b547e55"
+    },
+    {
+      "bytes": 13931,
+      "originalPath": "/tmp/pow-audit30-item8-ledger-corpus-collector-v2.test.py",
+      "purpose": "synthetic refusal/regression fixture; no native private capture",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-item8-ledger-corpus-collector-v2.test.py",
+      "sha256": "50e40ae456db296e95660ce835db3d5c0b8c63919ffbadff05637a41ef5eb00a"
+    },
+    {
+      "bytes": 7882,
+      "originalPath": "/tmp/pow-audit30-pg-dependency-closure.test.py",
+      "purpose": "synthetic refusal/regression fixture; no native private capture",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-pg-dependency-closure.test.py",
+      "sha256": "c0d8dea93afe11be9fd23af38cf3f185275cb79615cfe862cc724024c089c25c"
+    },
+    {
+      "bytes": 65458,
+      "originalPath": "/tmp/pow-audit30-saved-snapshot-inspect-v2.py",
+      "purpose": "reviewed versioned successor; original version and failed evidence preserved",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-saved-snapshot-inspect-v2.py",
+      "sha256": "f923766a2dffcfaabd45b3bf4fc4cf975435f2713388ec7930b4d3057fad98ad"
+    },
+    {
+      "bytes": 30395,
+      "originalPath": "/tmp/pow-audit30-saved-snapshot-inspect-v2.test.py",
+      "purpose": "reviewed versioned successor; original version and failed evidence preserved",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-saved-snapshot-inspect-v2.test.py",
+      "sha256": "593146b657bcd74f80c4f1d77f876ed049e3fea8243b4cfeb99071d99bded0be"
+    },
+    {
+      "bytes": 16876,
+      "originalPath": "/tmp/pow-audit30-transition-private-sql-v3.py",
+      "purpose": "reviewed versioned successor; original version and failed evidence preserved",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-transition-private-sql-v3.py",
+      "sha256": "86e69c9cd6f0b9efe5699d969e197f2e0afcd2efc9e414799baf8cb65ef64cc6"
+    },
+    {
+      "bytes": 9009,
+      "originalPath": "/tmp/pow-audit30-transition-private-sql-v3.test.py",
+      "purpose": "reviewed versioned successor; original version and failed evidence preserved",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-transition-private-sql-v3.test.py",
+      "sha256": "71ddf08d54e038a020a7b8639ba90b44fd68959e55ce53e04e4fbaee3081380e"
+    },
+    {
+      "bytes": 17692,
+      "originalPath": "/tmp/pow-audit30-snapshot-inspect-bootstrap-v2.py",
+      "purpose": "reviewed versioned successor; original version and failed evidence preserved",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-snapshot-inspect-bootstrap-v2.py",
+      "sha256": "fdc176ee9c0cd7ad8da6cf3a98525741eb4ebeca243bfcc1dc4c5653d67cc3d8"
+    },
+    {
+      "bytes": 9512,
+      "originalPath": "/tmp/pow-audit30-snapshot-inspect-bootstrap-v2.test.py",
+      "purpose": "reviewed versioned successor; original version and failed evidence preserved",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-snapshot-inspect-bootstrap-v2.test.py",
+      "sha256": "a5017c345f7468619b0e1f8da4bca307a2832656886ea620feaea885363e443a"
+    },
+    {
+      "bytes": 28259,
+      "originalPath": "/tmp/pow-audit30-transition-independent-oracle-v3.mjs",
+      "purpose": "source-reviewed exact historical ALTER-appended layout oracle; native arithmetic acceptance requires separately bound complete captures",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-transition-independent-oracle-v3.mjs",
+      "sha256": "b1d93c6b9f4cf7f1bd839146581f1a1d202b59ff54fa3364e72f1496cbaaee7d"
+    },
+    {
+      "bytes": 16762,
+      "originalPath": "/tmp/pow-audit30-transition-independent-oracle-v3.test.mjs",
+      "purpose": "source-reviewed exact historical ALTER-appended layout oracle; native arithmetic acceptance requires separately bound complete captures",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-transition-independent-oracle-v3.test.mjs",
+      "sha256": "0583bac9f7f070b151952fb48e267d9dbb55e3ab0241badb07d3a39052633374"
+    },
+    {
+      "bytes": 21320,
+      "originalPath": "/tmp/pow-audit30-transition-stream-codec-v2.py",
+      "purpose": "reviewed default32/64MiB streaming source and local fixtures; native full saved-byte, physical allocation and math acceptance remain separate",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-transition-stream-codec-v2.py",
+      "sha256": "3fe9dd87f9f5638b02be858b44c535c1431b1af1e8e4f9d60a1afe295f5179f0"
+    },
+    {
+      "bytes": 26173,
+      "originalPath": "/tmp/pow-audit30-transition-stream-native-v2.py",
+      "purpose": "reviewed default32/64MiB streaming source and local fixtures; native full saved-byte, physical allocation and math acceptance remain separate",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-transition-stream-native-v2.py",
+      "sha256": "523342d30599c793a3503ba1d554fc096fce0be554ae232397c8ea4bcadbbe23"
+    },
+    {
+      "bytes": 12231,
+      "originalPath": "/tmp/pow-audit30-transition-stream-codec-v2.test.py",
+      "purpose": "reviewed default32/64MiB streaming source and local fixtures; native full saved-byte, physical allocation and math acceptance remain separate",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-transition-stream-codec-v2.test.py",
+      "sha256": "d9e4dcd6618fb5ca82094bca00eb33ea9165b90909f94da1059d1912472aeba8"
+    },
+    {
+      "bytes": 12629,
+      "originalPath": "/tmp/pow-audit30-transition-stream-native-v2.test.py",
+      "purpose": "reviewed default32/64MiB streaming source and local fixtures; native full saved-byte, physical allocation and math acceptance remain separate",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-transition-stream-native-v2.test.py",
+      "sha256": "01c10e2bb2e0867d32fe92073d0ce53a13f3f5dc436f6cc98c55c7f73bdf63cf"
+    },
+    {
+      "bytes": 57072,
+      "originalPath": "/tmp/pow-audit30-readiness-closure-collector-v1.py",
+      "purpose": "exact reviewed readiness/body private-clone tool or local fixture; v1 strict23vs21 native refusal preserved, v2 exact5functions/23trigger catalog pass; native16 inverse still separately required",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-readiness-closure-collector-v1.py",
+      "sha256": "c360eaa99b4769153e597e5187aac9fbf2e71e72872dbc0511f72a1803422242"
+    },
+    {
+      "bytes": 6643,
+      "originalPath": "/tmp/pow-audit30-readiness-closure-collector-v1.test.py",
+      "purpose": "exact reviewed readiness/body private-clone tool or local fixture; v1 strict23vs21 native refusal preserved, v2 exact5functions/23trigger catalog pass; native16 inverse still separately required",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-readiness-closure-collector-v1.test.py",
+      "sha256": "a8a2b9246ec28f836fcca3ac58810c2958edf05cecdb1d6f2bf77d19394bfa67"
+    },
+    {
+      "bytes": 11447,
+      "originalPath": "/tmp/pow-audit30-readiness-closure-query-v1.sql",
+      "purpose": "exact reviewed readiness/body private-clone tool or local fixture; v1 strict23vs21 native refusal preserved, v2 exact5functions/23trigger catalog pass; native16 inverse still separately required",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-readiness-closure-query-v1.sql",
+      "sha256": "8f7908ccd977e6bc82d4317b61401aab34d979906cb670ad0ddd28b04b047fcb"
+    },
+    {
+      "bytes": 21133,
+      "originalPath": "/tmp/pow-audit30-readiness-canonical-assertion.sql",
+      "purpose": "exact reviewed readiness/body private-clone tool or local fixture; v1 strict23vs21 native refusal preserved, v2 exact5functions/23trigger catalog pass; native16 inverse still separately required",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-readiness-canonical-assertion.sql",
+      "sha256": "f26f85519e8e5023ecb76e1511309cf9b9835536811926bbf335b5e54c412726"
+    },
+    {
+      "bytes": 61182,
+      "originalPath": "/tmp/pow-audit30-readiness-closure-collector-v2.py",
+      "purpose": "exact reviewed readiness/body private-clone tool or local fixture; v1 strict23vs21 native refusal preserved, v2 exact5functions/23trigger catalog pass; native16 inverse still separately required",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-readiness-closure-collector-v2.py",
+      "sha256": "24516b040d5d91fb2356ee9645e994f2103a34656ed06ad1e384707169bd5061"
+    },
+    {
+      "bytes": 8242,
+      "originalBytes": 8243,
+      "originalContentBase64": "IyEvdXNyL2Jpbi9lbnYgcHl0aG9uMwppbXBvcnQgY29weSxoYXNobGliLGltcG9ydGxpYi51dGlsLGpzb24sb3MscGF0aGxpYixyZSx0ZW1wZmlsZSx1bml0dGVzdApmcm9tIHVuaXR0ZXN0Lm1vY2sgaW1wb3J0IHBhdGNoClA9cGF0aGxpYi5QYXRoKCcvdG1wL3Bvdy1hdWRpdDMwLXJlYWRpbmVzcy1jbG9zdXJlLWNvbGxlY3Rvci12Mi5weScpO3NwZWM9aW1wb3J0bGliLnV0aWwuc3BlY19mcm9tX2ZpbGVfbG9jYXRpb24oJ2Nsb3N1cmUnLFApO009aW1wb3J0bGliLnV0aWwubW9kdWxlX2Zyb21fc3BlYyhzcGVjKTtzcGVjLmxvYWRlci5leGVjX21vZHVsZShNKQpTUkM9cGF0aGxpYi5QYXRoKCcvaG9tZS9zaXhlci9Qcm9vZk9mV29yay5NZS9kZXBsb3kvcHJvb2YtaW5kZXhlci1yZWFkaW5lc3MtZXBvY2guc3FsJykKZGVmIGZpeHR1cmUoKToKIGZzPVtdCiBmb3IgbmFtZSwoaCxuKWluIHNvcnRlZCgoTS5GVU5DVElPTl9IQVNIRVN8TS5NQVJLRVJfSEFTSEVTKS5pdGVtcygpKToKICBtYXJrZXI9bmFtZSBpbiBNLk1BUktFUl9IQVNIRVMKICBmcy5hcHBlbmQoeyduYW1lJzpuYW1lLCdvd25lcic6J3Byb29mX2luZGV4ZXInaWYgbWFya2VyIGVsc2UncHJvb2ZfaW5kZXhlcl9yZWFkaW5lc3Nfb3duZXInLCdsYW5ndWFnZSc6J3BscGdzcWwnLCdzZWN1cml0eURlZmluZXInOm5vdCBtYXJrZXIsJ2NvbmZpZyc6Tm9uZSBpZiBtYXJrZXIgZWxzZVsnc2VhcmNoX3BhdGg9cGdfY2F0YWxvZywgcGdfdGVtcCddLCdraW5kJzonZicsJ2FyZ3VtZW50Q291bnQnOjAsJ3JldHVybnNTZXQnOkZhbHNlLCdyZXR1cm5UeXBlT2lkJzoyMjc5LCd2b2xhdGlsaXR5JzondicsJ3BhcmFsbGVsJzondScsJ3N0cmljdCc6RmFsc2UsJ2xlYWtQcm9vZic6RmFsc2UsJ3N1cHBvcnRPaWQnOjAsJ3NvdXJjZVNoYTI1Nic6aCwnc291cmNlQnl0ZXMnOm4sJ2Nhbm9uaWNhbFNvdXJjZUVxdWFsaXR5JzpUcnVlLCdkZWZpbml0aW9uU2hhMjU2JzonYScqNjQsJ2FjbCc6W3snZ3JhbnRlZSc6eCwnZ3JhbnRvcic6J3Byb29mX2luZGV4ZXInaWYgbWFya2VyIGVsc2UncHJvb2ZfaW5kZXhlcl9yZWFkaW5lc3Nfb3duZXInLCdwcml2aWxlZ2UnOidFWEVDVVRFJywnZ3JhbnRhYmxlJzpGYWxzZX1mb3IgeCBpbihbJ1BVQkxJQycsJ3Byb29mX2luZGV4ZXInXWlmIG1hcmtlciBlbHNlWydwcm9vZl9pbmRleGVyJywncHJvb2ZfaW5kZXhlcl9yZWFkaW5lc3Nfb3duZXInXSldfSkKIHRzPVt7J3JlbGF0aW9uJzpyLCduYW1lJzpuLCdmdW5jdGlvbic6ZiwnZnVuY3Rpb25TY2hlbWEnOidwcm9vZl9pbmRleGVyJywnZW5hYmxlZCc6J08naWYgbiBpbiBNLk1BUktFUl9UUklHR0VSX0hBU0hFUyBlbHNlJ0EnLCd0eXBlJzp0LCdpbnRlcm5hbCc6RmFsc2UsJ2hhc0NvbnN0cmFpbnQnOmQsJ2RlZmVycmFibGUnOmQsJ2luaXRpYWxseURlZmVycmVkJzpkLCdhcmd1bWVudENvdW50JzowLCdhcmd1bWVudEJ5dGVzJzowLCdub0NvbmRpdGlvbic6VHJ1ZSwnb2xkVHJhbnNpdGlvblRhYmxlJzpOb25lLCduZXdUcmFuc2l0aW9uVGFibGUnOk5vbmUsJ25vUGFyZW50JzpUcnVlLCdkZWZpbml0aW9uU2hhMjU2JzpNLk1BUktFUl9UUklHR0VSX0hBU0hFUy5nZXQobiwnYicqNjQpfWZvciByLG4sZix0LGQgaW4gTS5leHBlY3RlZF90cmlnZ2VycygpXQogcnM9W3snbmFtZSc6biwnb3duZXInOidwcm9vZl9pbmRleGVyX3JlYWRpbmVzc19vd25lcidpZiBuLnN0YXJ0c3dpdGgoJ3JlYWRpbmVzc18nKWVsc2UncHJvb2ZfaW5kZXhlcicsJ2tpbmQnOidyJywncGVyc2lzdGVuY2UnOidwJywncmxzJzpGYWxzZSwnZm9yY2VSbHMnOkZhbHNlLCdhY2Nlc3NNZXRob2QnOidoZWFwJywncnVsZUNvdW50JzowLCdpbmhlcml0YW5jZUNvdW50JzowLCdjb2x1bW5zJzpbXSwnY29uc3RyYWludHMnOltdLCdpbmRleGVzJzpbXSwnYWNsJzpbXX1mb3IgbiBpblsnbWFpbF9pdGVtcycsJ21ldGEnLCdyZWFkaW5lc3NfZXBvY2hfcXVldWUnLCdyZWFkaW5lc3NfZXBvY2hfc2hhcmRzJ11dCiByb2xlPXsnbmFtZSc6J3Byb29mX2luZGV4ZXJfcmVhZGluZXNzX293bmVyJywnbG9naW4nOkZhbHNlLCdzdXBlcnVzZXInOkZhbHNlLCdjcmVhdGVSb2xlJzpGYWxzZSwnY3JlYXRlRGInOkZhbHNlLCdyZXBsaWNhdGlvbic6RmFsc2UsJ2J5cGFzc1Jscyc6RmFsc2UsJ2luaGVyaXQnOlRydWUsJ2Nvbm5lY3Rpb25MaW1pdCc6LTEsJ25vRXhwaXJ5JzpUcnVlLCdub0NvbmZpZ3VyYXRpb24nOlRydWUsJ3NjaGVtYVVzYWdlJzpUcnVlLCdtZW1iZXJzaGlwcyc6MH0KIHJldHVybiB7J2Nsb3N1cmUnOnsnc2NoZW1hJzoncG93LWF1ZGl0MzAtcmVhZGluZXNzLXB1YmxpYy1jbG9zdXJlLXYyJywnZnVuY3Rpb25zJzpmcywndHJpZ2dlcnMnOnRzLCdyZWxhdGlvbnMnOnJzLCdvd25lclJvbGUnOnJvbGV9LCdjbG9zdXJlU2hhMjU2JzonYycqNjQsJ3NuYXBzaG90JzonMjoyOicsJ2lkZW50aXR5Jzp7J2RhdGFiYXNlJzoncHJvb2ZfaW5kZXhlcicsJ3VzZXInOidwb3N0Z3JlcycsJ3RyYW5zYWN0aW9uUmVhZE9ubHknOidvbicsJ3NlYXJjaFBhdGgnOidwZ19jYXRhbG9nLCBwZ190ZW1wJywnc2VydmVyVmVyc2lvbic6JzE2MDAxNScsJ21heFByZXBhcmVkVHJhbnNhY3Rpb25zJzonMCd9LCdkYXRhU3VtbWFyeSc6eydxdWV1ZVJvd3MnOjAsJ3NoYXJkUm93cyc6NjQsJ2xpdmVuZXRTaGFyZFJvd3MnOjY0LCd2YWxpZExpdmVuZXRTaGFyZHMnOjY0fX0KY2xhc3MgVGVzdHModW5pdHRlc3QuVGVzdENhc2UpOgogZGVmIHRlc3RfY2Fub25pY2FsX2V4YWN0X2J5dGVzKHNlbGYpOgogIGEsYj1NLmNhbm9uaWNhbF9wYXJ0cyhTUkMucmVhZF9ieXRlcygpKTtzZWxmLmFzc2VydEVxdWFsKE0uc2hhKGEpLE0uQVNTRVJUSU9OX1NIQSk7c2VsZi5hc3NlcnRFcXVhbChsZW4oYiksMykKIGRlZiB0ZXN0X2RkbF9ub3RfaW5fYXNzZXJ0aW9uKHNlbGYpOgogIGEsXz1NLmNhbm9uaWNhbF9wYXJ0cyhTUkMucmVhZF9ieXRlcygpKTt0ZXh0PXJlLnN1YihyIicoPzonJ3xbXiddKSonIiwnJyxhLmRlY29kZSgpKTtzZWxmLmFzc2VydElzTm9uZShyZS5zZWFyY2gocidcYig/OkNSRUFURXxBTFRFUnxEUk9QfElOU0VSVHxVUERBVEV8REVMRVRFfFRSVU5DQVRFfEdSQU5UfFJFVk9LRXxFWEVDVVRFfENBTEwpXGInLHRleHQscmUuSSkpCiBkZWYgdGVzdF9taWdyYXRpb25fdGFtcGVyKHNlbGYpOgogIHdpdGggc2VsZi5hc3NlcnRSYWlzZXMoVmFsdWVFcnJvcik6TS5jYW5vbmljYWxfcGFydHMoU1JDLnJlYWRfYnl0ZXMoKS5yZXBsYWNlKGInUkVUVVJOIE5VTEw7JyxiJ1JFVFVSTiBORVc7JywxKSkKIGRlZiB0ZXN0X3NoYXJlZF9xdWVyeV9leGFjdChzZWxmKToKICBzZWxmLmFzc2VydEVxdWFsKE0uQ0xPU1VSRV9TUUwscGF0aGxpYi5QYXRoKCcvdG1wL3Bvdy1hdWRpdDMwLXJlYWRpbmVzcy1jbG9zdXJlLXF1ZXJ5LXYyLnNxbCcpLnJlYWRfdGV4dCgpKTtzZWxmLmFzc2VydEVxdWFsKE0uc2hhKE0uQ0xPU1VSRV9TUUwuZW5jb2RlKCkpLE0uQ0xPU1VSRV9TUUxfU0hBKTtzZWxmLmFzc2VydEluKCcgQVMgdmFsdWUgRlJPTSBjbG9zdXJlOycsTS5DTE9TVVJFX1NRTCkKIGRlZiB0ZXN0X2VtaXRfcmVhZG9ubHkoc2VsZik6CiAgc3FsPU0uYnVpbGRfc3FsKCk7c2VsZi5hc3NlcnRUcnVlKHNxbC5zdGFydHN3aXRoKCdCRUdJTiBUUkFOU0FDVElPTiBJU09MQVRJT04gTEVWRUwgUkVQRUFUQUJMRSBSRUFEIFJFQUQgT05MWTsnKSk7c2VsZi5hc3NlcnRUcnVlKHNxbC5lbmRzd2l0aCgnUk9MTEJBQ0s7XG4nKSk7c2VsZi5hc3NlcnROb3RJbignQ1JFQVRFIFRBQkxFJyxzcWwpO3NlbGYuYXNzZXJ0SW4oIidjYW5vbmljYWxBc3NlcnRpb25BY2NlcHRlZCcsdHJ1ZSIsc3FsKQogZGVmIHRlc3RfcGFzcyhzZWxmKTpzZWxmLmFzc2VydFRydWUoTS52YWxpZGF0ZV9vYnNlcnZhdGlvbihmaXh0dXJlKCkpWydleGFjdEltbXV0YWJsZU1hcmtlclByb3NyYyddKQogZGVmIHJlZnVzZShzZWxmLGNiKToKICBkPWZpeHR1cmUoKTtjYihkKQogIHdpdGggc2VsZi5hc3NlcnRSYWlzZXMoVmFsdWVFcnJvcik6TS52YWxpZGF0ZV9vYnNlcnZhdGlvbihkKQogZGVmIHRlc3Rfc291cmNlX2hhc2hfZHJpZnQoc2VsZik6c2VsZi5yZWZ1c2UobGFtYmRhIGQ6ZFsnY2xvc3VyZSddWydmdW5jdGlvbnMnXVswXS51cGRhdGUoc291cmNlU2hhMjU2PSdkJyo2NCkpCiBkZWYgdGVzdF9zb3VyY2VfYnl0ZV9jb21wYXJpc29uX2ZhbHNlKHNlbGYpOnNlbGYucmVmdXNlKGxhbWJkYSBkOmRbJ2Nsb3N1cmUnXVsnZnVuY3Rpb25zJ11bMF0udXBkYXRlKGNhbm9uaWNhbFNvdXJjZUVxdWFsaXR5PUZhbHNlKSkKIGRlZiB0ZXN0X3Vua25vd25fZnVuY3Rpb24oc2VsZik6c2VsZi5yZWZ1c2UobGFtYmRhIGQ6ZFsnY2xvc3VyZSddWydmdW5jdGlvbnMnXS5hcHBlbmQoY29weS5kZWVwY29weShkWydjbG9zdXJlJ11bJ2Z1bmN0aW9ucyddWzBdKSkpCiBkZWYgdGVzdF9ncmFudGFibGVfYWNsKHNlbGYpOnNlbGYucmVmdXNlKGxhbWJkYSBkOmRbJ2Nsb3N1cmUnXVsnZnVuY3Rpb25zJ11bMF1bJ2FjbCddWzBdLnVwZGF0ZShncmFudGFibGU9VHJ1ZSkpCiBkZWYgdGVzdF9vd25lcl9jb25maWd1cmF0aW9uKHNlbGYpOnNlbGYucmVmdXNlKGxhbWJkYSBkOmRbJ2Nsb3N1cmUnXVsnb3duZXJSb2xlJ10udXBkYXRlKG5vQ29uZmlndXJhdGlvbj1GYWxzZSkpCiBkZWYgdGVzdF9vd25lcl9tZW1iZXJzaGlwKHNlbGYpOnNlbGYucmVmdXNlKGxhbWJkYSBkOmRbJ2Nsb3N1cmUnXVsnb3duZXJSb2xlJ10udXBkYXRlKG1lbWJlcnNoaXBzPTEpKQogZGVmIHRlc3RfdW5rbm93bl90cmlnZ2VyKHNlbGYpOnNlbGYucmVmdXNlKGxhbWJkYSBkOmRbJ2Nsb3N1cmUnXVsndHJpZ2dlcnMnXS5hcHBlbmQoZGljdChkWydjbG9zdXJlJ11bJ3RyaWdnZXJzJ11bMF0sbmFtZT0nb3RoZXJfdHJpZ2dlcicpKSkKIGRlZiB0ZXN0X2Rpc2FibGVkX3RyaWdnZXIoc2VsZik6c2VsZi5yZWZ1c2UobGFtYmRhIGQ6ZFsnY2xvc3VyZSddWyd0cmlnZ2VycyddWzBdLnVwZGF0ZShlbmFibGVkPSdPJykpCiBkZWYgdGVzdF90cmlnZ2VyX290aGVyX3NjaGVtYShzZWxmKTpzZWxmLnJlZnVzZShsYW1iZGEgZDpkWydjbG9zdXJlJ11bJ3RyaWdnZXJzJ11bMF0udXBkYXRlKGZ1bmN0aW9uU2NoZW1hPSdvdGhlcicpKQogZGVmIHRlc3Rfbm9uX2RlZmVycmVkX3F1ZXVlKHNlbGYpOnNlbGYucmVmdXNlKGxhbWJkYSBkOm5leHQodCBmb3IgdCBpbiBkWydjbG9zdXJlJ11bJ3RyaWdnZXJzJ11pZiB0WydyZWxhdGlvbiddPT0ncmVhZGluZXNzX2Vwb2NoX3F1ZXVlJykudXBkYXRlKGluaXRpYWxseURlZmVycmVkPUZhbHNlKSkKIGRlZiB0ZXN0X3RyaWdnZXJfY29uZGl0aW9uKHNlbGYpOnNlbGYucmVmdXNlKGxhbWJkYSBkOmRbJ2Nsb3N1cmUnXVsndHJpZ2dlcnMnXVswXS51cGRhdGUobm9Db25kaXRpb249RmFsc2UpKQogZGVmIHRlc3RfcmVsYXRpb25fcmxzKHNlbGYpOnNlbGYucmVmdXNlKGxhbWJkYSBkOmRbJ2Nsb3N1cmUnXVsncmVsYXRpb25zJ11bMF0udXBkYXRlKHJscz1UcnVlKSkKIGRlZiB0ZXN0X25vbmVtcHR5X3F1ZXVlKHNlbGYpOnNlbGYucmVmdXNlKGxhbWJkYSBkOmRbJ2RhdGFTdW1tYXJ5J10udXBkYXRlKHF1ZXVlUm93cz0xKSkKIGRlZiB0ZXN0X25vdF9yZWFkb25seShzZWxmKTpzZWxmLnJlZnVzZShsYW1iZGEgZDpkWydpZGVudGl0eSddLnVwZGF0ZSh0cmFuc2FjdGlvblJlYWRPbmx5PSdvZmYnKSkKIGRlZiB0ZXN0X3NvdXJjZV9tZXRhZGF0YV9yZWFkKHNlbGYpOgogIHdpdGggdGVtcGZpbGUuVGVtcG9yYXJ5RGlyZWN0b3J5KClhcyB0OgogICBwPXBhdGhsaWIuUGF0aCh0KS8nc291cmNlLnNxbCc7cC53cml0ZV9ieXRlcyhTUkMucmVhZF9ieXRlcygpKTtwLmNobW9kKDBvNjAwKTtzZWxmLmFzc2VydEVxdWFsKE0uc291cmNlX3Byb29mKHApWydzaGEyNTYnXSxNLkNBTk9OSUNBTF9TSEEpCiBkZWYgdGVzdF9zb3VyY2Vfc3ltbGluayhzZWxmKToKICB3aXRoIHRlbXBmaWxlLlRlbXBvcmFyeURpcmVjdG9yeSgpYXMgdDoKICAgcD1wYXRobGliLlBhdGgodCkvJ3NvdXJjZS5zcWwnO3Auc3ltbGlua190byhTUkMpCiAgIHdpdGggc2VsZi5hc3NlcnRSYWlzZXMoVmFsdWVFcnJvcik6TS5zb3VyY2VfcHJvb2YocCkKIGRlZiB0ZXN0X3NvdXJjZV93cml0YWJsZShzZWxmKToKICB3aXRoIHRlbXBmaWxlLlRlbXBvcmFyeURpcmVjdG9yeSgpYXMgdDoKICAgcD1wYXRobGliLlBhdGgodCkvJ3NvdXJjZS5zcWwnO3Aud3JpdGVfYnl0ZXMoU1JDLnJlYWRfYnl0ZXMoKSk7cC5jaG1vZCgwbzY2NCkKICAgd2l0aCBzZWxmLmFzc2VydFJhaXNlcyhWYWx1ZUVycm9yKTpNLnNvdXJjZV9wcm9vZihwKQogZGVmIHRlc3RfcmVtb3RlX2NvZGVfY29tcGlsZShzZWxmKToKICBjb2RlPU0uZW1pdF9yZW1vdGUoJzIwMjYxMDAzVDAyMDAwMFonKTtjb21waWxlKGNvZGUsJ3JlbW90ZScsJ2V4ZWMnKTtzZWxmLmFzc2VydEluKCdVc2VyPXBvc3RncmVzJyxjb2RlKTtzZWxmLmFzc2VydE5vdEluKCInc3VkbyciLGNvZGUpO3NlbGYuYXNzZXJ0Tm90SW4oJ2NhdGFsb2ctcHJpdmF0ZS5qc29uJyxjb2RlKQogZGVmIHRlc3RfYmFkX2NhbGVuZGFyKHNlbGYpOgogIHdpdGggc2VsZi5hc3NlcnRSYWlzZXMoVmFsdWVFcnJvcik6TS5lbWl0X3JlbW90ZSgnMjAyNjAyMzBUMDIwMDAwWicpCiBkZWYgdGVzdF9vdXRwdXRfY29udGFpbnNfaGFzaGVzX25vdF9zb3VyY2Uoc2VsZik6CiAgcT1NLkNMT1NVUkVfU1FMO3NlbGYuYXNzZXJ0Tm90SW4oJyBBUyBwcm9zcmMnLHEpO3NlbGYuYXNzZXJ0Tm90SW4oJyBBUyBmdW5jdGlvbl9kZWZpbml0aW9uJyxxKTtzZWxmLmFzc2VydE5vdEluKCcgQVMgdHJpZ2dlcl9kZWZpbml0aW9uJyxxKTtzZWxmLmFzc2VydEluKCdjYW5vbmljYWxTb3VyY2VFcXVhbGl0eScscSkKY2xhc3MgTWFya2VyVGVzdHModW5pdHRlc3QuVGVzdENhc2UpOgogcmVmdXNlPVRlc3RzLnJlZnVzZQogZGVmIHRlc3RfbWFya2VyX3NvdXJjZV9vd25lcl9zZWN1cml0eV9hY2woc2VsZik6CiAgZm9yIGNoYW5nZSBpbiBbeydzb3VyY2VTaGEyNTYnOidlJyo2NH0seydzZWN1cml0eURlZmluZXInOlRydWV9LHsnY29uZmlnJzpbJ3NlYXJjaF9wYXRoPXBnX2NhdGFsb2csIHBnX3RlbXAnXX0seydvd25lcic6J3Bvc3RncmVzJ31dOgogICB3aXRoIHNlbGYuc3ViVGVzdChjaGFuZ2U9Y2hhbmdlKTpzZWxmLnJlZnVzZShsYW1iZGEgZDpuZXh0KGYgZm9yIGYgaW4gZFsnY2xvc3VyZSddWydmdW5jdGlvbnMnXWlmIGZbJ25hbWUnXT09J3JlamVjdF93b3JrX3ByZWNpc2lvbl92Ml9tYXJrZXJfbXV0YXRpb24nKS51cGRhdGUoY2hhbmdlKSkKIGRlZiB0ZXN0X21hcmtlcl90cmlnZ2VyX3R5cGVfZW5hYmxlZF9kZWZpbml0aW9uKHNlbGYpOgogIGZvciBjaGFuZ2UgaW4gW3sndHlwZSc6Mjl9LHsnZW5hYmxlZCc6J0EnfSx7J2RlZmluaXRpb25TaGEyNTYnOidjJyo2NH1dOgogICB3aXRoIHNlbGYuc3ViVGVzdChjaGFuZ2U9Y2hhbmdlKTpzZWxmLnJlZnVzZShsYW1iZGEgZDpuZXh0KHQgZm9yIHQgaW4gZFsnY2xvc3VyZSddWyd0cmlnZ2VycyddaWYgdFsnbmFtZSddPT0nd29ya19wcmVjaXNpb25fdjJfbWFya2VyX2ltbXV0YWJsZScpLnVwZGF0ZShjaGFuZ2UpKQogZGVmIHRlc3RfdW5rbm93bl90d2VudHlfZm91cnRoX3RyaWdnZXJfbmV2ZXJfc2tpcHBlZChzZWxmKToKICBzZWxmLnJlZnVzZShsYW1iZGEgZDpkWydjbG9zdXJlJ11bJ3RyaWdnZXJzJ10uYXBwZW5kKGRpY3QoZFsnY2xvc3VyZSddWyd0cmlnZ2VycyddWy0xXSxuYW1lPSd1bmtub3duX21hcmtlcicpKSkKIGRlZiB0ZXN0X2Jhc2Vfc3FsX3NvdXJjZV9leGFjdF9ieXRlX3BhcnNlcihzZWxmKToKICBiYXNlPXBhdGhsaWIuUGF0aCgnL2hvbWUvc2l4ZXIvUHJvb2ZPZldvcmsuTWUvc2VydmVyL3NxbC9wcm9vZi1pbmRleGVyLXYxLnNxbCcpCiAgd2l0aCB0ZW1wZmlsZS5UZW1wb3JhcnlEaXJlY3RvcnkoKWFzIHQ6CiAgIHA9cGF0aGxpYi5QYXRoKHQpLydiYXNlLnNxbCc7cC53cml0ZV9ieXRlcyhiYXNlLnJlYWRfYnl0ZXMoKSk7cC5jaG1vZCgwbzYwMCk7c2VsZi5hc3NlcnRFcXVhbChNLnNvdXJjZV9wcm9vZihwLFRydWUpWydzaGEyNTYnXSxNLkJBU0VfU1FMX1NIQSkKICAgcC53cml0ZV9ieXRlcyhiYXNlLnJlYWRfYnl0ZXMoKS5yZXBsYWNlKGInUkVUVVJOIE9MRDsnLGInUkVUVVJOIE5FVzsnLDEpKQogICB3aXRoIHNlbGYuYXNzZXJ0UmFpc2VzKFZhbHVlRXJyb3IpOk0uc291cmNlX3Byb29mKHAsVHJ1ZSkKaWYgX19uYW1lX189PSdfX21haW5fXyc6dW5pdHRlc3QubWFpbigpCgo=",
+      "originalPath": "/tmp/pow-audit30-readiness-closure-collector-v2.test.py",
+      "originalSHA256": "5ddae212cdeef010f8e8294adbe6b51d29b80a376ee8abddde79ec2a75fad583",
+      "purpose": "exact reviewed readiness/body private-clone tool or local fixture; v1 strict23vs21 native refusal preserved, v2 exact5functions/23trigger catalog pass; native16 inverse still separately required",
+      "repositoryByteNormalization": "Exactly one final blank line removed to satisfy mandatory staged whitespace hook; Python AST byte-derived dumps identical. Exact original source retained losslessly in originalContentBase64 and /tmp. Native fixtures and original source bindings still refer to original bytes.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-readiness-closure-collector-v2.test.py",
+      "sha256": "a56edd97f177342a7b4a0e65ad71f1e12842dde2a296f74df49a004582075944"
+    },
+    {
+      "bytes": 13497,
+      "originalPath": "/tmp/pow-audit30-readiness-closure-query-v2.sql",
+      "purpose": "exact reviewed readiness/body private-clone tool or local fixture; v1 strict23vs21 native refusal preserved, v2 exact5functions/23trigger catalog pass; native16 inverse still separately required",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-readiness-closure-query-v2.sql",
+      "sha256": "602241a7a4f4e90e6288ef02f05d57e1e9f3ded78325f989907300a7bfc99c09"
+    },
+    {
+      "bytes": 52835,
+      "originalPath": "/tmp/pow-audit30-mail-body-repair-rehearsal-v2.mjs",
+      "purpose": "exact reviewed readiness/body private-clone tool or local fixture; v1 strict23vs21 native refusal preserved, v2 exact5functions/23trigger catalog pass; native16 inverse still separately required",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-mail-body-repair-rehearsal-v2.mjs",
+      "sha256": "ea5614fddc0ef7fb696d0159a141b25116fbd6ba2c4b309db171a548b7f8b70c"
+    },
+    {
+      "bytes": 32255,
+      "originalPath": "/tmp/pow-audit30-mail-body-repair-rehearsal-v2.test.mjs",
+      "purpose": "exact reviewed readiness/body private-clone tool or local fixture; v1 strict23vs21 native refusal preserved, v2 exact5functions/23trigger catalog pass; native16 inverse still separately required",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-mail-body-repair-rehearsal-v2.test.mjs",
+      "sha256": "b8ef59753db55c092a267d560aa6457cba9438a2ade274e4146bd6ed86c5fedd"
+    },
+    {
+      "bytes": 1105,
+      "originalPath": "/tmp/pow-audit30-mail-readiness-admission-v2-template.json",
+      "purpose": "exact reviewed readiness/body private-clone tool or local fixture; v1 strict23vs21 native refusal preserved, v2 exact5functions/23trigger catalog pass; native16 inverse still separately required",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-mail-readiness-admission-v2-template.json",
+      "sha256": "a27b614620d29f9142957be064361a0d3b489e87ce4d866c2f0a07c907a59839"
+    },
+    {
+      "bytes": 47050,
+      "originalPath": "/tmp/pow-audit30-transition-stream-controller-v3.py",
+      "qualification": "Reviewed local audit source/fixture. Original preserved; readonly inventory failed before admitted native start, math v1 role/source owner mismatch blocks native acceptance. Source custody is not execution approval or certification.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-transition-stream-controller-v3.py",
+      "sha256": "e6bb6e02e49089c55cf57f5781801ea829df6417bb17a50644166845dc0000aa"
+    },
+    {
+      "bytes": 26937,
+      "originalPath": "/tmp/pow-audit30-transition-stream-controller-v3.test.py",
+      "qualification": "Reviewed local audit source/fixture. Original preserved; readonly inventory failed before admitted native start, math v1 role/source owner mismatch blocks native acceptance. Source custody is not execution approval or certification.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-transition-stream-controller-v3.test.py",
+      "sha256": "04598ab203687995519674070f1b9b0bd1d50ba0e5eacbd052369007d91d518b"
+    },
+    {
+      "bytes": 48054,
+      "originalPath": "/tmp/pow-audit30-transition-stream-controller-v4.py",
+      "qualification": "Reviewed local audit source/fixture. Original preserved; readonly inventory failed before admitted native start, math v1 role/source owner mismatch blocks native acceptance. Source custody is not execution approval or certification.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-transition-stream-controller-v4.py",
+      "sha256": "a0af38ed8fabffdd4369524881adc808e6a94b7d203574118d770f42ed029b65"
+    },
+    {
+      "bytes": 28174,
+      "originalPath": "/tmp/pow-audit30-transition-stream-controller-v4.test.py",
+      "qualification": "Reviewed local audit source/fixture. Original preserved; readonly inventory failed before admitted native start, math v1 role/source owner mismatch blocks native acceptance. Source custody is not execution approval or certification.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-transition-stream-controller-v4.test.py",
+      "sha256": "18e88033b51c3b491a24d1fb2ac98acde55768236dcc7f74c85a9910f06e434b"
+    },
+    {
+      "bytes": 17220,
+      "originalPath": "/tmp/pow-audit30-transition-stream-bootstrap-v2.py",
+      "qualification": "Reviewed local audit source/fixture. Original preserved; readonly inventory failed before admitted native start, math v1 role/source owner mismatch blocks native acceptance. Source custody is not execution approval or certification.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-transition-stream-bootstrap-v2.py",
+      "sha256": "09cda73fbfbfa0765dd9344bcb852779d3b1d7ee5fc875dab0cd5ab3b3739ff1"
+    },
+    {
+      "bytes": 10771,
+      "originalPath": "/tmp/pow-audit30-transition-stream-bootstrap-v2.test.py",
+      "qualification": "Reviewed local audit source/fixture. Original preserved; readonly inventory failed before admitted native start, math v1 role/source owner mismatch blocks native acceptance. Source custody is not execution approval or certification.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-transition-stream-bootstrap-v2.test.py",
+      "sha256": "b2dcc48c8ab1718b64d7fc261687e6a81d119cf2854d9f6d8a7e6316dde875c7"
+    },
+    {
+      "bytes": 5108,
+      "originalPath": "/tmp/pow-audit30-transition-sample-core-witness-v1.py",
+      "qualification": "Reviewed local audit source/fixture. Original preserved; readonly inventory failed before admitted native start, math v1 role/source owner mismatch blocks native acceptance. Source custody is not execution approval or certification.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-transition-sample-core-witness-v1.py",
+      "sha256": "f93ad47098e7279f919e6e85f5e240ffbded8259af7895f7285eefb847f81709"
+    },
+    {
+      "bytes": 20513,
+      "originalPath": "/tmp/pow-audit30-transition-onhost-math-v1.mjs",
+      "qualification": "Reviewed local audit source/fixture. Original preserved; readonly inventory failed before admitted native start, math v1 role/source owner mismatch blocks native acceptance. Source custody is not execution approval or certification.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-transition-onhost-math-v1.mjs",
+      "sha256": "a0b89adb5a778aacbc6ef0dacd6b3ab784a1963a293604eacd143515822c4b37"
+    },
+    {
+      "bytes": 16575,
+      "originalPath": "/tmp/pow-audit30-transition-onhost-math-v1.test.mjs",
+      "qualification": "Reviewed local audit source/fixture. Original preserved; readonly inventory failed before admitted native start, math v1 role/source owner mismatch blocks native acceptance. Source custody is not execution approval or certification.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-transition-onhost-math-v1.test.mjs",
+      "sha256": "a3b6b269fe180fdf910a1b6bc9828a0f26e34d9c0ab17aaa478e56ccfbe28aa0"
+    },
+    {
+      "bytes": 48064,
+      "originalPath": "/tmp/pow-audit30-transition-stream-controller-v5.py",
+      "qualification": "Public reviewed audit tool source/fixtures only. Original inputs, versioned refusals and prior packages preserved. Native execution acceptance requires separate exact request, fresh preflight and actual receipt; no production data or recovery authority is granted by source custody.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-transition-stream-controller-v5.py",
+      "sha256": "e0f265c83b038fc0478d053608d1e968ec762f7f05f3413b129cfcac66464d6b"
+    },
+    {
+      "bytes": 28420,
+      "originalPath": "/tmp/pow-audit30-transition-stream-controller-v5.test.py",
+      "qualification": "Public reviewed audit tool source/fixtures only. Original inputs, versioned refusals and prior packages preserved. Native execution acceptance requires separate exact request, fresh preflight and actual receipt; no production data or recovery authority is granted by source custody.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-transition-stream-controller-v5.test.py",
+      "sha256": "28cf2eebd7745e8ec354296f201c22e1cf3ef2d80217c612b20d50c70a95abd5"
+    },
+    {
+      "bytes": 18114,
+      "originalPath": "/tmp/pow-audit30-transition-stream-bootstrap-v3.py",
+      "qualification": "Public reviewed audit tool source/fixtures only. Original inputs, versioned refusals and prior packages preserved. Native execution acceptance requires separate exact request, fresh preflight and actual receipt; no production data or recovery authority is granted by source custody.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-transition-stream-bootstrap-v3.py",
+      "sha256": "4f55daa7d1c6e7b53fb77e3c654ddf68e2ed6cc8b36baf83dbc6a45e5e35fedf"
+    },
+    {
+      "bytes": 10890,
+      "originalPath": "/tmp/pow-audit30-transition-stream-bootstrap-v3.test.py",
+      "qualification": "Public reviewed audit tool source/fixtures only. Original inputs, versioned refusals and prior packages preserved. Native execution acceptance requires separate exact request, fresh preflight and actual receipt; no production data or recovery authority is granted by source custody.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-transition-stream-bootstrap-v3.test.py",
+      "sha256": "f004308dcc9e6cec8bbb4699b7508b69696b51a81f51d2bba14ad54fb86f264f"
+    },
+    {
+      "bytes": 51341,
+      "originalPath": "/tmp/pow-audit30-transition-stream-controller-v6.py",
+      "qualification": "Public reviewed audit tool source/fixtures only. Original inputs, versioned refusals and prior packages preserved. Native execution acceptance requires separate exact request, fresh preflight and actual receipt; no production data or recovery authority is granted by source custody.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-transition-stream-controller-v6.py",
+      "sha256": "2483419dbb9dc2fa72af4b9bb0db28f9440b40f2fd557cb41bcc781c191e1867"
+    },
+    {
+      "bytes": 30380,
+      "originalPath": "/tmp/pow-audit30-transition-stream-controller-v6.test.py",
+      "qualification": "Public reviewed audit tool source/fixtures only. Original inputs, versioned refusals and prior packages preserved. Native execution acceptance requires separate exact request, fresh preflight and actual receipt; no production data or recovery authority is granted by source custody.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-transition-stream-controller-v6.test.py",
+      "sha256": "3afd0a01b2d36cd5dae010cafc4a68f05d347acaaf9dfcab80f9db11f54e458c"
+    },
+    {
+      "bytes": 18114,
+      "originalPath": "/tmp/pow-audit30-transition-stream-bootstrap-v4.py",
+      "qualification": "Public reviewed audit tool source/fixtures only. Original inputs, versioned refusals and prior packages preserved. Native execution acceptance requires separate exact request, fresh preflight and actual receipt; no production data or recovery authority is granted by source custody.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-transition-stream-bootstrap-v4.py",
+      "sha256": "019ed8c96bb7c74e983faaabfa439327c68a2f4c6ea15897926edc97393a6e2b"
+    },
+    {
+      "bytes": 10890,
+      "originalPath": "/tmp/pow-audit30-transition-stream-bootstrap-v4.test.py",
+      "qualification": "Public reviewed audit tool source/fixtures only. Original inputs, versioned refusals and prior packages preserved. Native execution acceptance requires separate exact request, fresh preflight and actual receipt; no production data or recovery authority is granted by source custody.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-transition-stream-bootstrap-v4.test.py",
+      "sha256": "5cb0905cb89cf2b0edb3f2d3b7d1b982222800f5b7659bf3586ae2bb2074c320"
+    },
+    {
+      "bytes": 3328,
+      "originalPath": "/tmp/pow-audit30-stream-inventory-readonly-diagnostic-v1.py",
+      "qualification": "Public reviewed audit tool source/fixtures only. Original inputs, versioned refusals and prior packages preserved. Native execution acceptance requires separate exact request, fresh preflight and actual receipt; no production data or recovery authority is granted by source custody.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-stream-inventory-readonly-diagnostic-v1.py",
+      "sha256": "4dee8c68a93924764d9f12f4f82fc9d79bbad00e0a4f5f412d9e9edcfb07a27f"
+    },
+    {
+      "bytes": 156714,
+      "originalPath": "/tmp/pow-audit30-candidate-full-id-cli-operator-v3.py",
+      "qualification": "Public reviewed audit tool source/fixtures only. Original inputs, versioned refusals and prior packages preserved. Native execution acceptance requires separate exact request, fresh preflight and actual receipt; no production data or recovery authority is granted by source custody.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-candidate-full-id-cli-operator-v3.py",
+      "sha256": "e9b802c5e04fb19a17771ca0b42f7710b878dbceeb1738947f0a91d49bb65a6a"
+    },
+    {
+      "bytes": 9236,
+      "originalPath": "/tmp/pow-audit30-candidate-full-id-cli-operator-v3.test.py",
+      "qualification": "Public reviewed audit tool source/fixtures only. Original inputs, versioned refusals and prior packages preserved. Native execution acceptance requires separate exact request, fresh preflight and actual receipt; no production data or recovery authority is granted by source custody.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-candidate-full-id-cli-operator-v3.test.py",
+      "sha256": "0306b58443382fea57fe3e7eb76d0ed063bcf5515eadcbfcbd5c13ff5a21a772"
+    },
+    {
+      "bytes": 55466,
+      "originalPath": "/tmp/pow-audit30-transition-stream-controller-v7.py",
+      "qualification": "Reviewed public audit controller or refusal fixture. Source custody retains original versioned failures; exact native request/preflight/receipt remains a separate execution gate. Production data/recovery changes and additional deletion require final approval.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-transition-stream-controller-v7.py",
+      "sha256": "e9801d372d05c94c40b609749e502ab1eb5e06f4f2561fa08d9c6a25c9313599"
+    },
+    {
+      "bytes": 34444,
+      "originalPath": "/tmp/pow-audit30-transition-stream-controller-v7.test.py",
+      "qualification": "Reviewed public audit controller or refusal fixture. Source custody retains original versioned failures; exact native request/preflight/receipt remains a separate execution gate. Production data/recovery changes and additional deletion require final approval.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-transition-stream-controller-v7.test.py",
+      "sha256": "ad6aaa96e995f2582d092fbeb4305e4c40b59cc1cccd92ae4cc7a352408c7a1d"
+    },
+    {
+      "bytes": 18114,
+      "originalPath": "/tmp/pow-audit30-transition-stream-bootstrap-v5.py",
+      "qualification": "Reviewed public audit controller or refusal fixture. Source custody retains original versioned failures; exact native request/preflight/receipt remains a separate execution gate. Production data/recovery changes and additional deletion require final approval.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-transition-stream-bootstrap-v5.py",
+      "sha256": "c9f851afec4990d4d380bc6b4ad9b6eb613f84e2fc041abfa034b3db8412f87c"
+    },
+    {
+      "bytes": 10890,
+      "originalPath": "/tmp/pow-audit30-transition-stream-bootstrap-v5.test.py",
+      "qualification": "Reviewed public audit controller or refusal fixture. Source custody retains original versioned failures; exact native request/preflight/receipt remains a separate execution gate. Production data/recovery changes and additional deletion require final approval.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-transition-stream-bootstrap-v5.test.py",
+      "sha256": "28d580e1deef32ad013266b92fd2c944add79d6aa3cbb3962a4995c6a041cfb1"
+    },
+    {
+      "bytes": 8657,
+      "originalPath": "/tmp/pow-audit30-stream-request-assemble-v4.py",
+      "qualification": "Reviewed public audit controller or refusal fixture. Source custody retains original versioned failures; exact native request/preflight/receipt remains a separate execution gate. Production data/recovery changes and additional deletion require final approval.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-stream-request-assemble-v4.py",
+      "sha256": "db62e7ec8be69d310d2e7babd9c23195627b0d7091c23809bb559e3d3e3e461c"
+    },
+    {
+      "bytes": 12708,
+      "originalPath": "/tmp/pow-audit30-node-stage-04e685-v1.py",
+      "qualification": "Reviewed public audit controller or refusal fixture. Source custody retains original versioned failures; exact native request/preflight/receipt remains a separate execution gate. Production data/recovery changes and additional deletion require final approval.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-node-stage-04e685-v1.py",
+      "sha256": "edc361c3a29688063fb0cd9cf6ed8db8686621bebb88ff4be1ab5db3fb509aa4"
+    },
+    {
+      "bytes": 5766,
+      "originalPath": "/tmp/pow-audit30-node-stage-04e685.test.py",
+      "qualification": "Reviewed public audit controller or refusal fixture. Source custody retains original versioned failures; exact native request/preflight/receipt remains a separate execution gate. Production data/recovery changes and additional deletion require final approval.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-node-stage-04e685.test.py",
+      "sha256": "ded0e757825a55f4c45843d1c2b741b50a89d7133c7a4c9b6a8a131eac5874df"
+    },
+    {
+      "bytes": 9020,
+      "originalPath": "/tmp/pow-audit30-stop-owned-3399-shadow-v1.py",
+      "qualification": "Reviewed public audit controller or refusal fixture. Source custody retains original versioned failures; exact native request/preflight/receipt remains a separate execution gate. Production data/recovery changes and additional deletion require final approval.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-stop-owned-3399-shadow-v1.py",
+      "sha256": "4785133efe29afb1cde5c56ccc640ab1941801cb2d3c4a9b75c4eb69a23aea04"
+    },
+    {
+      "bytes": 4754,
+      "originalPath": "/tmp/pow-audit30-stop-owned-3399-shadow-v1.test.py",
+      "qualification": "Reviewed public audit controller or refusal fixture. Source custody retains original versioned failures; exact native request/preflight/receipt remains a separate execution gate. Production data/recovery changes and additional deletion require final approval.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-stop-owned-3399-shadow-v1.test.py",
+      "sha256": "8d8575314515f464719e5620c8a92ea76f271299aec1a80935dc400635ceb0c6"
+    },
+    {
+      "bytes": 9405,
+      "originalPath": "/tmp/pow-audit30-node-shadow-prepare-04e685-v1.py",
+      "purpose": "Public source/synthetic fixtures retained for recursive audit replay; no native private preimages or environment captures.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-node-shadow-prepare-04e685-v1.py",
+      "sha256": "2c153dcff03ba8b4cec538884ac675eb2f18abaf95d177e37af3cd6430f50a8c"
+    },
+    {
+      "bytes": 2801,
+      "originalPath": "/tmp/pow-audit30-node-shadow-prepare-04e685-v1.test.py",
+      "purpose": "Public source/synthetic fixtures retained for recursive audit replay; no native private preimages or environment captures.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-node-shadow-prepare-04e685-v1.test.py",
+      "sha256": "94360adb1f4755e7847d4555791b1b0d454beb2f8b085d35fb67a9f65e2857b3"
+    },
+    {
+      "bytes": 4545,
+      "originalPath": "/tmp/pow-audit30-candidate-full-id-cli-04e685-v1.py",
+      "purpose": "Public source/synthetic fixtures retained for recursive audit replay; no native private preimages or environment captures.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-candidate-full-id-cli-04e685-v1.py",
+      "sha256": "8c8f4daf98434dc3a975ae2e051a2faee4795455619c08fe9ef567c1ea790892"
+    },
+    {
+      "bytes": 27394,
+      "originalPath": "/tmp/pow-audit30-transition-onhost-math-v2.mjs",
+      "purpose": "Public source/synthetic fixtures retained for recursive audit replay; no native private preimages or environment captures.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-transition-onhost-math-v2.mjs",
+      "sha256": "9794e0307d52fd69e495e475c3b234b532752731fb947cee1bfd5968dfdee7e0"
+    },
+    {
+      "bytes": 20738,
+      "originalPath": "/tmp/pow-audit30-transition-onhost-math-v2.test.mjs",
+      "purpose": "Public source/synthetic fixtures retained for recursive audit replay; no native private preimages or environment captures.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-transition-onhost-math-v2.test.mjs",
+      "sha256": "5202be10744027de850d0304fddf125679650783576c7d780f80568cde376ee0"
+    },
+    {
+      "bytes": 4444,
+      "originalPath": "/tmp/pow-audit30-onhost-source-graph-v1.mjs",
+      "purpose": "Public source/synthetic fixtures retained for recursive audit replay; no native private preimages or environment captures.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-onhost-source-graph-v1.mjs",
+      "sha256": "3a7e462db64580ffac9fdbd39c8ef041973239a6d15891d1c00305a6d291255d"
+    },
+    {
+      "bytes": 2055,
+      "originalPath": "/tmp/pow-audit30-onhost-source-graph-v1.test.mjs",
+      "purpose": "Public source/synthetic fixtures retained for recursive audit replay; no native private preimages or environment captures.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-onhost-source-graph-v1.test.mjs",
+      "sha256": "9a283916a2e65464fb7920263964ef544444fd4d3dd88a108a33bbfe9ec0033d"
+    },
+    {
+      "bytes": 21872,
+      "originalPath": "/tmp/pow-audit30-onhost-math-source-copy-v1.py",
+      "purpose": "Public source/synthetic fixtures retained for recursive audit replay; no native private preimages or environment captures.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-onhost-math-source-copy-v1.py",
+      "sha256": "6b5677bb8edcfa5cedbe09d65644d3fb3a20205d9f863cf1565940ebdf1d5e5c"
+    },
+    {
+      "bytes": 10853,
+      "originalPath": "/tmp/pow-audit30-onhost-math-source-copy-v1.test.py",
+      "purpose": "Public source/synthetic fixtures retained for recursive audit replay; no native private preimages or environment captures.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-onhost-math-source-copy-v1.test.py",
+      "sha256": "be541e6f6499100622648fce1dbae1ad55e0fdce644672d9a82a793d4266c198"
+    },
+    {
+      "bytes": 25411,
+      "originalPath": "/tmp/pow-audit30-onhost-math-source-copy-v2.py",
+      "purpose": "Public source/synthetic fixtures retained for recursive audit replay; no native private preimages or environment captures.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-onhost-math-source-copy-v2.py",
+      "sha256": "dd184842ba6aa8c176568550ee0669a55e2f1606dc348881d195c0a2f6381294"
+    },
+    {
+      "bytes": 12884,
+      "originalPath": "/tmp/pow-audit30-onhost-math-source-copy-v2.test.py",
+      "purpose": "Public source/synthetic fixtures retained for recursive audit replay; no native private preimages or environment captures.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-onhost-math-source-copy-v2.test.py",
+      "sha256": "07f04054025723f51675cee3d66dc5dea78cf4687f676e0e64f9aed1da15d458"
+    },
+    {
+      "bytes": 25553,
+      "originalPath": "/tmp/pow-audit30-onhost-math-source-copy-v3.py",
+      "purpose": "Public source/synthetic fixtures retained for recursive audit replay; no native private preimages or environment captures.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-onhost-math-source-copy-v3.py",
+      "sha256": "379b387e33d08b421e126edd261f63b801d8326bdf24477e6a1a8c012c0e1988"
+    },
+    {
+      "bytes": 14305,
+      "originalPath": "/tmp/pow-audit30-onhost-math-source-copy-v3.test.py",
+      "purpose": "Public source/synthetic fixtures retained for recursive audit replay; no native private preimages or environment captures.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-onhost-math-source-copy-v3.test.py",
+      "sha256": "c6edb38e4223d0bf269c6e95dca0f57985d25fae6a35fe3c38322ad5a6b00bc4"
+    },
+    {
+      "bytes": 9022,
+      "originalPath": "/tmp/pow-audit30-stop-owned-04e685-shadow-v1.py",
+      "purpose": "Public audit source/synthetic fixtures, including superseded or not-yet-native-approved drafts; exact acceptance comes only from versioned execution evidence.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-stop-owned-04e685-shadow-v1.py",
+      "sha256": "6e7aed163374050f636d6c06d1e9d728f38d42fe5f5b1c15eaecf700cd5860da"
+    },
+    {
+      "bytes": 4756,
+      "originalPath": "/tmp/pow-audit30-stop-owned-04e685-shadow-v1.test.py",
+      "purpose": "Public audit source/synthetic fixtures, including superseded or not-yet-native-approved drafts; exact acceptance comes only from versioned execution evidence.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-stop-owned-04e685-shadow-v1.test.py",
+      "sha256": "d1d06fc848bd7b9c4ac8fbcfc7a4d182b70960265432e1c396788afb07023b87"
+    },
+    {
+      "bytes": 2270,
+      "originalPath": "/tmp/pow-audit30-math-readability-unit-diagnostic-v1.py",
+      "purpose": "Public audit source/synthetic fixtures, including superseded or not-yet-native-approved drafts; exact acceptance comes only from versioned execution evidence.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-math-readability-unit-diagnostic-v1.py",
+      "sha256": "ed0b46bd77f2daa0ae821531bafc3aabf6690d71695ddcbd20449a839437d006"
+    },
+    {
+      "bytes": 4525,
+      "originalPath": "/tmp/pow-audit30-id-original-page-profile-v1.sql",
+      "purpose": "Public audit source/synthetic fixtures, including superseded or not-yet-native-approved drafts; exact acceptance comes only from versioned execution evidence.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-id-original-page-profile-v1.sql",
+      "sha256": "fb2ee7903222ab1a6322f069c38c9b42ec1fcd3c4282dc4e1cb59c499ba8daa0"
+    },
+    {
+      "bytes": 4434,
+      "originalPath": "/tmp/pow-audit30-id-original-page-profile-native-v1.py",
+      "purpose": "Public audit source/synthetic fixtures, including superseded or not-yet-native-approved drafts; exact acceptance comes only from versioned execution evidence.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-id-original-page-profile-native-v1.py",
+      "sha256": "050bec3134d685862879ef940a23772c84468712552e7b440dde0001b1efb183"
+    },
+    {
+      "bytes": 23213,
+      "originalPath": "/tmp/pow-audit30-treasury-address-corpus-v1.py",
+      "purpose": "Public audit source/synthetic fixtures, including superseded or not-yet-native-approved drafts; exact acceptance comes only from versioned execution evidence.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-treasury-address-corpus-v1.py",
+      "sha256": "18c8373541fbfb05570a00f34f9854dd15707c2a3f5ceb2651a8bbc1071eb9d9"
+    },
+    {
+      "bytes": 12600,
+      "originalPath": "/tmp/pow-audit30-treasury-address-corpus-v1.test.py",
+      "purpose": "Public audit source/synthetic fixtures, including superseded or not-yet-native-approved drafts; exact acceptance comes only from versioned execution evidence.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-treasury-address-corpus-v1.test.py",
+      "sha256": "366a245512e1940ac69679b0c7e0a44467f6c80368c7c5c1c2fac1bbb8074baf"
+    },
+    {
+      "bytes": 23752,
+      "originalPath": "/tmp/pow-audit30-treasury-address-corpus-v2.py",
+      "purpose": "Public audit source/synthetic fixtures, including superseded or not-yet-native-approved drafts; exact acceptance comes only from versioned execution evidence.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-treasury-address-corpus-v2.py",
+      "sha256": "c75e60cf82ebd15b8716bbc0515f684a80c690ff3cd625e1cc73a0ea15bd0478"
+    },
+    {
+      "bytes": 13894,
+      "originalPath": "/tmp/pow-audit30-treasury-address-corpus-v2.test.py",
+      "purpose": "Public audit source/synthetic fixtures, including superseded or not-yet-native-approved drafts; exact acceptance comes only from versioned execution evidence.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-treasury-address-corpus-v2.test.py",
+      "sha256": "8257146de3ad7fef8e4679202c49441ee52bcc981f2a33bc7d0b0e28a63cf081"
+    },
+    {
+      "bytes": 23960,
+      "originalPath": "/tmp/pow-audit30-treasury-address-corpus-v3.py",
+      "purpose": "Public audit source/synthetic fixtures, including superseded or not-yet-native-approved drafts; exact acceptance comes only from versioned execution evidence.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-treasury-address-corpus-v3.py",
+      "sha256": "b60a0c359104001422c086f8e2df8c4eb9852eca7876fe1f153ff34807eac197"
+    },
+    {
+      "bytes": 14932,
+      "originalPath": "/tmp/pow-audit30-treasury-address-corpus-v3.test.py",
+      "purpose": "Public audit source/synthetic fixtures, including superseded or not-yet-native-approved drafts; exact acceptance comes only from versioned execution evidence.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-treasury-address-corpus-v3.test.py",
+      "sha256": "d9dfdfab74ad0dea810fb509a21753198671e3e8a6f5d55e4e9bc183a5dd4cb8"
+    },
+    {
+      "bytes": 16706,
+      "originalPath": "/tmp/pow-audit30-treasury-native-v2.py",
+      "purpose": "Public audit source/synthetic fixtures, including superseded or not-yet-native-approved drafts; exact acceptance comes only from versioned execution evidence.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-treasury-native-v2.py",
+      "sha256": "471d5619ef9008b4c5536ece59099b6544924e2f9ba39994e6aa80075625c9a4"
+    },
+    {
+      "bytes": 11844,
+      "originalPath": "/tmp/pow-audit30-treasury-native-v2.test.py",
+      "purpose": "Public audit source/synthetic fixtures, including superseded or not-yet-native-approved drafts; exact acceptance comes only from versioned execution evidence.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-treasury-native-v2.test.py",
+      "sha256": "f5e914264dbda92df18a0adfe4ad6edf1b74ed3eaa390d588cfa45c987a752a3"
+    },
+    {
+      "bytes": 5965,
+      "originalPath": "/tmp/pow-audit30-retained-unit-codeonly-probe-v1.py",
+      "purpose": "Exact public audit source and synthetic fixtures; dated execution evidence distinguishes accepted runs, superseded versions and pending drafts.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-retained-unit-codeonly-probe-v1.py",
+      "sha256": "c196bbcde56312a1c98cb9c0fa6daf66e744199808265a60fe5f30bc59709b5e"
+    },
+    {
+      "bytes": 2800,
+      "originalPath": "/tmp/pow-audit30-retained-unit-codeonly-probe-v1.test.py",
+      "purpose": "Exact public audit source and synthetic fixtures; dated execution evidence distinguishes accepted runs, superseded versions and pending drafts.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-retained-unit-codeonly-probe-v1.test.py",
+      "sha256": "be230f45bc50a2e714d914ff6f801a0fdacf37527c012d20337cfe882e91b540"
+    },
+    {
+      "bytes": 5805,
+      "originalPath": "/tmp/pow-audit30-id-pin-branch-native-v1.py",
+      "purpose": "Exact public audit source and synthetic fixtures; dated execution evidence distinguishes accepted runs, superseded versions and pending drafts.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-id-pin-branch-native-v1.py",
+      "sha256": "fea4d54c4ed6fc4879f84ace701aa54cb2345084c940743dbaa452389d6ee990"
+    },
+    {
+      "bytes": 3340,
+      "originalPath": "/tmp/pow-audit30-id-pin-branch-native-v1.test.py",
+      "purpose": "Exact public audit source and synthetic fixtures; dated execution evidence distinguishes accepted runs, superseded versions and pending drafts.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-id-pin-branch-native-v1.test.py",
+      "sha256": "f38d94b2aba1efb6a1dc852626471134f9577e2f549af5655e80b8e09cf097d2"
+    },
+    {
+      "bytes": 19667,
+      "originalPath": "/tmp/pow-audit30-onhost-math-source-finalize-v1.py",
+      "purpose": "Exact public audit source and synthetic fixtures; dated execution evidence distinguishes accepted runs, superseded versions and pending drafts.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-onhost-math-source-finalize-v1.py",
+      "sha256": "3a17322812ea07b3fd25afc74101abf0225210cf20ff04935a2f018bd30be887"
+    },
+    {
+      "bytes": 16303,
+      "originalPath": "/tmp/pow-audit30-onhost-math-source-finalize-v1.test.py",
+      "purpose": "Exact public audit source and synthetic fixtures; dated execution evidence distinguishes accepted runs, superseded versions and pending drafts.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-onhost-math-source-finalize-v1.test.py",
+      "sha256": "214b8949c5b84fbc80acc281be989cb9ab38ede89c0d98a3d521e81b198589f9"
+    },
+    {
+      "bytes": 11992,
+      "originalPath": "/tmp/pow-audit30-worker-mail-exclusion-guard-v2.py",
+      "purpose": "Exact public audit source and synthetic fixtures; dated execution evidence distinguishes accepted runs, superseded versions and pending drafts.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-worker-mail-exclusion-guard-v2.py",
+      "sha256": "8b4929e7a1173ac9f4748aacf14f39d6a07bb417c81cdd3d88953a487eec0854"
+    },
+    {
+      "bytes": 5563,
+      "originalPath": "/tmp/pow-audit30-worker-mail-exclusion-guard-v2.test.py",
+      "purpose": "Exact public audit source and synthetic fixtures; dated execution evidence distinguishes accepted runs, superseded versions and pending drafts.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-worker-mail-exclusion-guard-v2.test.py",
+      "sha256": "7f967ca4f5f438654ff2421d45cea99be693018f18383259d44197d74b94fec2"
+    },
+    {
+      "bytes": 18884,
+      "originalPath": "/tmp/pow-audit30-treasury-native-v3.py",
+      "purpose": "Exact public audit source and synthetic fixtures; dated execution evidence distinguishes accepted runs, superseded versions and pending drafts.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-treasury-native-v3.py",
+      "sha256": "957d13c9d3d8cbb181d652e93e723f32aa480bcbf4b85174b6793b7b4779f69d"
+    },
+    {
+      "bytes": 14807,
+      "originalPath": "/tmp/pow-audit30-treasury-native-v3.test.py",
+      "purpose": "Exact public audit source and synthetic fixtures; dated execution evidence distinguishes accepted runs, superseded versions and pending drafts.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-treasury-native-v3.test.py",
+      "sha256": "1ed20454ad7a18bb64e31944a95cb7fcc1e4343e2b8b8a8630307b7f0ec7f30a"
+    },
+    {
+      "bytes": 9410,
+      "originalPath": "/tmp/pow-audit30-retirement-dependency-readonly-census-v1.py",
+      "purpose": "Exact public audit source and synthetic fixtures; dated execution evidence distinguishes accepted runs, superseded versions and pending drafts.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-retirement-dependency-readonly-census-v1.py",
+      "sha256": "9f33e8062337022fa0a552d49e7102cf704862b5f25d338622c25b3860afc1a3"
+    },
+    {
+      "bytes": 9025,
+      "originalPath": "/tmp/pow-audit30-old-backup-cluster-readonly-proof-v2.py",
+      "purpose": "Exact public audit source and synthetic fixtures; dated execution evidence distinguishes accepted runs, superseded versions and pending drafts.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-old-backup-cluster-readonly-proof-v2.py",
+      "sha256": "e04fb72a039826bc090f7dafd6d9fd347b5a45b688427b74a651cedf83bdaf40"
+    },
+    {
+      "bytes": 22924,
+      "originalPath": "/tmp/pow-audit30-onhost-math-source-finalize-v2.py",
+      "purpose": "Exact public audit source, synthetic fixtures or public code-only typed request; execution evidence qualifies accepted runs, refused native versions and pending drafts.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-onhost-math-source-finalize-v2.py",
+      "sha256": "4d97daaa4c958a92d505c4e79fe9d874b1670e17ec591445dcbcace0586859b3"
+    },
+    {
+      "bytes": 20255,
+      "originalPath": "/tmp/pow-audit30-onhost-math-source-finalize-v2.test.py",
+      "purpose": "Exact public audit source, synthetic fixtures or public code-only typed request; execution evidence qualifies accepted runs, refused native versions and pending drafts.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-onhost-math-source-finalize-v2.test.py",
+      "sha256": "9d5b2a37c7b6a714a72aeaf1b32fe502ad25332a5405ce7bc484077afb324994"
+    },
+    {
+      "bytes": 35807,
+      "originalPath": "/tmp/pow-audit30-onhost-math-source-finalize-request-v1.json",
+      "purpose": "Exact public audit source, synthetic fixtures or public code-only typed request; execution evidence qualifies accepted runs, refused native versions and pending drafts.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-onhost-math-source-finalize-request-v1.json",
+      "sha256": "6ec56daa857bba47bf817b1598b2f4a8df9eadaa6d8a0f6bc628982462b81bcf"
+    },
+    {
+      "bytes": 13199,
+      "originalPath": "/tmp/pow-audit30-worker-mail-exclusion-guard-v3.py",
+      "purpose": "Exact public audit source, synthetic fixtures or public code-only typed request; execution evidence qualifies accepted runs, refused native versions and pending drafts.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-worker-mail-exclusion-guard-v3.py",
+      "sha256": "48001283affb80b3b027dcc93831074aee872fbee649fb14482c32b00eb1c76c"
+    },
+    {
+      "bytes": 6936,
+      "originalPath": "/tmp/pow-audit30-worker-mail-exclusion-guard-v3.test.py",
+      "purpose": "Exact public audit source, synthetic fixtures or public code-only typed request; execution evidence qualifies accepted runs, refused native versions and pending drafts.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-worker-mail-exclusion-guard-v3.test.py",
+      "sha256": "1d22fb226ad30f5d50c106e8d72fc8e010d978392ce103f867c50d56efbc2dbb"
+    },
+    {
+      "bytes": 19430,
+      "originalPath": "/tmp/pow-audit30-treasury-native-v4.py",
+      "purpose": "Exact public audit source, synthetic fixtures or public code-only typed request; execution evidence qualifies accepted runs, refused native versions and pending drafts.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-treasury-native-v4.py",
+      "sha256": "06763b72b2f9af7f838757f182e9b78a36c6545d245d166dbce387fccf0ef492"
+    },
+    {
+      "bytes": 17692,
+      "originalPath": "/tmp/pow-audit30-treasury-native-v4.test.py",
+      "purpose": "Exact public audit source, synthetic fixtures or public code-only typed request; execution evidence qualifies accepted runs, refused native versions and pending drafts.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-treasury-native-v4.test.py",
+      "sha256": "0b8b5147c15cfbe038d35c1d4c84721e022c790b1db7eaaa05f0e4ea062d169f"
+    },
+    {
+      "bytes": 6701,
+      "originalPath": "/tmp/pow-audit30-fresh-resource-sampler-v1.py",
+      "purpose": "Exact public audit source, synthetic fixtures or public code-only typed request; execution evidence qualifies accepted runs, refused native versions and pending drafts.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-fresh-resource-sampler-v1.py",
+      "sha256": "473fb5ca066d08cec8b48771ec4b01b3353c1227d57c5ebcfa72097da871c921"
+    },
+    {
+      "bytes": 3905,
+      "originalPath": "/tmp/pow-audit30-fresh-resource-sampler-v1.test.py",
+      "purpose": "Exact public audit source, synthetic fixtures or public code-only typed request; execution evidence qualifies accepted runs, refused native versions and pending drafts.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-fresh-resource-sampler-v1.test.py",
+      "sha256": "531a0837d707cdcf872a9d2fa008f4abd0d9441fc33ec116e19efa60d397fe83"
+    },
+    {
+      "bytes": 2831,
+      "originalPath": "/tmp/pow-audit30-fresh-resource-native-transport-v1.py",
+      "purpose": "Exact public audit source, synthetic fixtures or public code-only typed request; execution evidence qualifies accepted runs, refused native versions and pending drafts.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-fresh-resource-native-transport-v1.py",
+      "sha256": "14c038fb1854164663bb2fd1df413417aa56826da2ef4b8968a9d075b866995c"
+    },
+    {
+      "bytes": 4404,
+      "originalPath": "/tmp/pow-audit30-math-finalize-failure-readonly-diag-v1.py",
+      "purpose": "Exact public audit source, synthetic fixtures or public code-only typed request; execution evidence qualifies accepted runs, refused native versions and pending drafts.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-math-finalize-failure-readonly-diag-v1.py",
+      "sha256": "13421bd2076de50729d87175ca8c0577cfd14e90303e467d19d9d3850ab34977"
+    },
+    {
+      "bytes": 4406,
+      "originalPath": "/tmp/pow-audit30-id-transition-page-key-cte-v1.sql",
+      "purpose": "Exact public audit source, synthetic fixtures or public code-only typed request; execution evidence qualifies accepted runs, refused native versions and pending drafts.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-id-transition-page-key-cte-v1.sql",
+      "sha256": "ade1f0025a722410dfa3964855b1f95667c6cf9f764d7dc64b07238d5a1769f8"
+    },
+    {
+      "bytes": 24100,
+      "originalPath": "/tmp/pow-audit30-id-page-comparison-v3.sql",
+      "purpose": "Exact public audit source, synthetic fixture or public code-only typed request; evidence distinguishes accepted native runs, refused source-only drafts, preserved failures and pending gates.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-id-page-comparison-v3.sql",
+      "sha256": "096871903b2eb5128055f9d0ad6d9efa6d93943562758515e19a2d50fb3393a8"
+    },
+    {
+      "bytes": 7948,
+      "originalPath": "/tmp/pow-audit30-id-page-comparison-native-v3.py",
+      "purpose": "Exact public audit source, synthetic fixture or public code-only typed request; evidence distinguishes accepted native runs, refused source-only drafts, preserved failures and pending gates.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-id-page-comparison-native-v3.py",
+      "sha256": "970b341808f1fda90d7f0c8ecb3c1f959382316938cf9c567bac38ee69e096d5"
+    },
+    {
+      "bytes": 3097,
+      "originalPath": "/tmp/pow-audit30-id-page-comparison-verifier-v3.py",
+      "purpose": "Exact public audit source, synthetic fixture or public code-only typed request; evidence distinguishes accepted native runs, refused source-only drafts, preserved failures and pending gates.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-id-page-comparison-verifier-v3.py",
+      "sha256": "ac77cafe427f16cf45a521b6c747340ab1a8684e9888de0d895e19dc5e664126"
+    },
+    {
+      "bytes": 6402,
+      "originalPath": "/tmp/pow-audit30-id-page-comparison-v3.test.py",
+      "purpose": "Exact public audit source, synthetic fixture or public code-only typed request; evidence distinguishes accepted native runs, refused source-only drafts, preserved failures and pending gates.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-id-page-comparison-v3.test.py",
+      "sha256": "8d496327bfc782d831727e2c092b3884bd9951b9580bc6d31d55ba277b8afc0f"
+    },
+    {
+      "bytes": 6315,
+      "originalPath": "/tmp/pow-audit30-id-page-comparison-native-v3.test.py",
+      "purpose": "Exact public audit source, synthetic fixture or public code-only typed request; evidence distinguishes accepted native runs, refused source-only drafts, preserved failures and pending gates.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-id-page-comparison-native-v3.test.py",
+      "sha256": "8096ee219718c08918195116d5cac6f27f4bc64aebdda3b170d08a5ee1e1740f"
+    },
+    {
+      "bytes": 12452,
+      "originalPath": "/tmp/pow-audit30-systemd-output-property-probe-v1.py",
+      "purpose": "Exact public audit source, synthetic fixture or public code-only typed request; evidence distinguishes accepted native runs, refused source-only drafts, preserved failures and pending gates.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-systemd-output-property-probe-v1.py",
+      "sha256": "370a9ecdc7ba9b8de3afeac303d26926d046153dc4f9bbb53334d0314765a3dc"
+    },
+    {
+      "bytes": 6687,
+      "originalPath": "/tmp/pow-audit30-systemd-output-property-probe-v1.test.py",
+      "purpose": "Exact public audit source, synthetic fixture or public code-only typed request; evidence distinguishes accepted native runs, refused source-only drafts, preserved failures and pending gates.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-systemd-output-property-probe-v1.test.py",
+      "sha256": "d47a76aba59f588e753a3a465d9dddc0a4104e89ee7ec9bfc1a85f4f85342ae9"
+    },
+    {
+      "bytes": 12491,
+      "originalPath": "/tmp/pow-audit30-systemd-output-property-probe-v2.py",
+      "purpose": "Exact public audit source, synthetic fixture or public code-only typed request; evidence distinguishes accepted native runs, refused source-only drafts, preserved failures and pending gates.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-systemd-output-property-probe-v2.py",
+      "sha256": "fb6eaa96901bfb5b71883ba535e193f8273cbcf973502ed56d50286d09958afd"
+    },
+    {
+      "bytes": 7275,
+      "originalPath": "/tmp/pow-audit30-systemd-output-property-probe-v2.test.py",
+      "purpose": "Exact public audit source, synthetic fixture or public code-only typed request; evidence distinguishes accepted native runs, refused source-only drafts, preserved failures and pending gates.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-systemd-output-property-probe-v2.test.py",
+      "sha256": "594252caf187b33586dc6c4c15bee5874444264d114ec4aca182d6b91cdd4d53"
+    },
+    {
+      "bytes": 223,
+      "originalPath": "/tmp/pow-audit30-systemd-output-property-probe-request-v1.json",
+      "purpose": "Exact public audit source, synthetic fixture or public code-only typed request; evidence distinguishes accepted native runs, refused source-only drafts, preserved failures and pending gates.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-systemd-output-property-probe-request-v1.json",
+      "sha256": "88298cc490da247588b3dd7556590946deed474d547703edd957b7ac49931579"
+    },
+    {
+      "bytes": 27456,
+      "originalPath": "/tmp/pow-audit30-onhost-math-source-finalize-v3.py",
+      "purpose": "Exact public audit source, synthetic fixture or public code-only typed request; evidence distinguishes accepted native runs, refused source-only drafts, preserved failures and pending gates.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-onhost-math-source-finalize-v3.py",
+      "sha256": "256677eaba60acc369f58bbc0c2d28b5ffdf58f1f1a78614f07ccd7d3f124fd7"
+    },
+    {
+      "bytes": 24934,
+      "originalPath": "/tmp/pow-audit30-onhost-math-source-finalize-v3.test.py",
+      "purpose": "Exact public audit source, synthetic fixture or public code-only typed request; evidence distinguishes accepted native runs, refused source-only drafts, preserved failures and pending gates.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-onhost-math-source-finalize-v3.test.py",
+      "sha256": "cab158b6117630af0de312746efb899215fae26410898a97182c7118631fcc10"
+    },
+    {
+      "bytes": 37038,
+      "originalPath": "/tmp/pow-audit30-onhost-math-source-finalize-request-v2.json",
+      "purpose": "Exact public audit source, synthetic fixture or public code-only typed request; evidence distinguishes accepted native runs, refused source-only drafts, preserved failures and pending gates.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-onhost-math-source-finalize-request-v2.json",
+      "sha256": "ce8ea8d18e19361919360a433882f680fd9c6fa3e41aaa9e9f2636645d6f5fb9"
+    },
+    {
+      "bytes": 3342,
+      "originalPath": "/tmp/pow-audit30-math-finalize-native-transport-v3.py",
+      "purpose": "Exact public audit source, synthetic fixture or public code-only typed request; evidence distinguishes accepted native runs, refused source-only drafts, preserved failures and pending gates.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-math-finalize-native-transport-v3.py",
+      "sha256": "99e9a3fff4a172e61277fda4d60efd327d3c89656aca790503767de5efc43098"
+    },
+    {
+      "bytes": 21109,
+      "originalPath": "/tmp/pow-audit30-treasury-native-v6.py",
+      "purpose": "Exact public audit source, synthetic fixture or public code-only typed request; evidence distinguishes accepted native runs, refused source-only drafts, preserved failures and pending gates.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-treasury-native-v6.py",
+      "sha256": "d49c969470e1883a6a19bc382ae3b3ccb901c6cebc69ba56dec689481f3255ca"
+    },
+    {
+      "bytes": 23703,
+      "originalPath": "/tmp/pow-audit30-treasury-native-v6.test.py",
+      "purpose": "Exact public audit source, synthetic fixture or public code-only typed request; evidence distinguishes accepted native runs, refused source-only drafts, preserved failures and pending gates.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-treasury-native-v6.test.py",
+      "sha256": "d525ab79ef7b95bb670e1966ada3b55a2866c241a5399f15d7dec52344e67be8"
+    },
+    {
+      "bytes": 11218,
+      "originalPath": "/tmp/pow-audit30-retirement-dependency-readonly-census-v2.py",
+      "purpose": "Exact public audit source, synthetic fixture or public code-only typed request; evidence distinguishes accepted native runs, refused source-only drafts, preserved failures and pending gates.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-retirement-dependency-readonly-census-v2.py",
+      "sha256": "00b7a273219c14354dc0d8db231badf0c95b84fe888c4bee7d2b966c8dfad6e9"
+    },
+    {
+      "bytes": 4595,
+      "originalPath": "/tmp/pow-audit30-retirement-dependency-readonly-census-v2.test.py",
+      "purpose": "Exact public audit source, synthetic fixture or public code-only typed request; evidence distinguishes accepted native runs, refused source-only drafts, preserved failures and pending gates.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-retirement-dependency-readonly-census-v2.test.py",
+      "sha256": "3d65a95ab921ff2ac0df45109c6ed549115d12e56063925b07c9f2e69e2cc17a"
+    },
+    {
+      "bytes": 2684,
+      "originalPath": "/tmp/pow-audit30-retirement-dependency-native-transport-v2.py",
+      "purpose": "Exact public audit source, synthetic fixture or public code-only typed request; evidence distinguishes accepted native runs, refused source-only drafts, preserved failures and pending gates.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-retirement-dependency-native-transport-v2.py",
+      "sha256": "707e03262a2a01617cad80e68deb8e71d007431b248d1d7f538cb609fdf9d7b9"
+    },
+    {
+      "bytes": 15644,
+      "originalPath": "/tmp/pow-audit30-old-proof-native-controller-v1.py",
+      "purpose": "Exact public audit source, synthetic fixture or public code-only typed request; evidence distinguishes accepted native runs, refused source-only drafts, preserved failures and pending gates.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-old-proof-native-controller-v1.py",
+      "sha256": "b6cdf0f1fe78e4124a3afc1c8abd25247708e32d55cab7a454075bdd082b3837"
+    },
+    {
+      "bytes": 8323,
+      "originalPath": "/tmp/pow-audit30-old-proof-native-controller-v1.test.py",
+      "purpose": "Exact public audit source, synthetic fixture or public code-only typed request; evidence distinguishes accepted native runs, refused source-only drafts, preserved failures and pending gates.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-old-proof-native-controller-v1.test.py",
+      "sha256": "f72a5cc9c9e5bbe6cc4948fe0468e55579adfb9babe9c7a9d31272571b279e2d"
+    },
+    {
+      "bytes": 12442,
+      "originalPath": "/tmp/pow-audit30-old-proof-native-request-v1.json",
+      "purpose": "Exact public audit source, synthetic fixture or public code-only typed request; evidence distinguishes accepted native runs, refused source-only drafts, preserved failures and pending gates.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-old-proof-native-request-v1.json",
+      "sha256": "fcba82240140c66e48e0e644683d4faff4880564e1722c78c4bdf9c24f2781fd"
+    },
+    {
+      "bytes": 3404,
+      "originalPath": "/tmp/pow-audit30-old-proof-native-transport-v1.py",
+      "purpose": "Exact public audit source, synthetic fixture or public code-only typed request; evidence distinguishes accepted native runs, refused source-only drafts, preserved failures and pending gates.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-old-proof-native-transport-v1.py",
+      "sha256": "924aa10bc7aefa84d1d5a9832a67be3d1ef5ea18635d5577786e32c1482d8fb4"
+    },
+    {
+      "bytes": 12706,
+      "originalPath": "/tmp/pow-audit30-node-stage-38ac-v1.py",
+      "purpose": "Exact reviewed public code/test or code-only request; native completion, source-only acceptance and preserved failures are qualified separately in execution evidence.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-node-stage-38ac-v1.py",
+      "sha256": "482ef2ecddcae8cf77db847b0174223fdc0cb393e61ca0a9d44b4603f46ac7cd"
+    },
+    {
+      "bytes": 5764,
+      "originalPath": "/tmp/pow-audit30-node-stage-38ac.test.py",
+      "purpose": "Exact reviewed public code/test or code-only request; native completion, source-only acceptance and preserved failures are qualified separately in execution evidence.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-node-stage-38ac.test.py",
+      "sha256": "0b7fd8057bd35243851293471f5018bfab7e4f6465ac4043719320c18928f5b5"
+    },
+    {
+      "bytes": 81448,
+      "originalPath": "/tmp/pow-audit30-node-stage-38ac-review-request-v1.json",
+      "purpose": "Exact reviewed public code/test or code-only request; native completion, source-only acceptance and preserved failures are qualified separately in execution evidence.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-node-stage-38ac-review-request-v1.json",
+      "sha256": "4c165a9060e1eae742e073858146d39b9b26aa9057a79abc69dac792d6047f74"
+    },
+    {
+      "bytes": 9405,
+      "originalPath": "/tmp/pow-audit30-node-shadow-prepare-38ac-v1.py",
+      "purpose": "Exact reviewed public code/test or code-only request; native completion, source-only acceptance and preserved failures are qualified separately in execution evidence.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-node-shadow-prepare-38ac-v1.py",
+      "sha256": "305c1d316bc292ade08b77f4ac955e7cc7fc2a65cee9a3f461a5ef7b88938e3b"
+    },
+    {
+      "bytes": 2799,
+      "originalPath": "/tmp/pow-audit30-node-shadow-prepare-38ac-v1.test.py",
+      "purpose": "Exact reviewed public code/test or code-only request; native completion, source-only acceptance and preserved failures are qualified separately in execution evidence.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-node-shadow-prepare-38ac-v1.test.py",
+      "sha256": "8bd8f6fa74519fde3e2e264cefe33d63ead6d0dce1faa3327982f239bbd28f1a"
+    },
+    {
+      "bytes": 4545,
+      "originalPath": "/tmp/pow-audit30-candidate-full-id-cli-38ac-v1.py",
+      "purpose": "Exact reviewed public code/test or code-only request; native completion, source-only acceptance and preserved failures are qualified separately in execution evidence.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-candidate-full-id-cli-38ac-v1.py",
+      "sha256": "17fbb425784f00ad0731cd915110b11194b1d2a2d80c80e0d7d3dad4c9cc9ca6"
+    },
+    {
+      "bytes": 2733,
+      "originalPath": "/tmp/pow-audit30-candidate-bond-paging-transport-38ac-v1.py",
+      "purpose": "Exact reviewed public code/test or code-only request; native completion, source-only acceptance and preserved failures are qualified separately in execution evidence.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-candidate-bond-paging-transport-38ac-v1.py",
+      "sha256": "d4d27810f130682d66258aa2da3cdd6ecc4389da24ee72c169d108825d8441df"
+    },
+    {
+      "bytes": 4839,
+      "originalPath": "/tmp/pow-audit30-mail-api-private-input-shape-v1.py",
+      "purpose": "Exact reviewed public code/test or code-only request; native completion, source-only acceptance and preserved failures are qualified separately in execution evidence.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-mail-api-private-input-shape-v1.py",
+      "sha256": "421a332a04aa26fe4d688a909711b802b4c11f30b42b7ef6525f5131b99bdd8d"
+    },
+    {
+      "bytes": 21152,
+      "originalPath": "/tmp/pow-audit30-treasury-native-v7.py",
+      "purpose": "Exact reviewed public code/test or code-only request; native completion, source-only acceptance and preserved failures are qualified separately in execution evidence.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-treasury-native-v7.py",
+      "sha256": "7d6b6fe8337db471b2de3147dcff528916b4d8c7629e4d344803913469084b55"
+    },
+    {
+      "bytes": 24467,
+      "originalPath": "/tmp/pow-audit30-treasury-native-v7.test.py",
+      "purpose": "Exact reviewed public code/test or code-only request; native completion, source-only acceptance and preserved failures are qualified separately in execution evidence.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-treasury-native-v7.test.py",
+      "sha256": "8dd9d9b163d629df57e3348e9f77888564c842df37c80f57eba58155ea4ee2c7"
+    },
+    {
+      "bytes": 22384,
+      "originalPath": "/tmp/pow-audit30-onhost-math-managed-v1.py",
+      "purpose": "Exact reviewed public code/test or code-only request; native completion, source-only acceptance and preserved failures are qualified separately in execution evidence.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-onhost-math-managed-v1.py",
+      "sha256": "e8cead0eefcec92e0c91a64ef95da164e07940028eb59fba381216b242846b78"
+    },
+    {
+      "bytes": 8857,
+      "originalPath": "/tmp/pow-audit30-onhost-math-managed-v1.test.py",
+      "purpose": "Exact reviewed public code/test or code-only request; native completion, source-only acceptance and preserved failures are qualified separately in execution evidence.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-onhost-math-managed-v1.test.py",
+      "sha256": "8c3403b56d8054e8ef1c37a8660c5209c5a19e80ea265fe6f83cf0420215685d"
+    },
+    {
+      "bytes": 22616,
+      "originalPath": "/tmp/pow-audit30-onhost-math-managed-v2.py",
+      "purpose": "Exact reviewed public code/test or code-only request; native completion, source-only acceptance and preserved failures are qualified separately in execution evidence.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-onhost-math-managed-v2.py",
+      "sha256": "0af36bc93d2f8aaa205b26230730d42d6a07fc1dcef17a28c0b53cc60e4d6a47"
+    },
+    {
+      "bytes": 10318,
+      "originalPath": "/tmp/pow-audit30-onhost-math-managed-v2.test.py",
+      "purpose": "Exact reviewed public code/test or code-only request; native completion, source-only acceptance and preserved failures are qualified separately in execution evidence.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-onhost-math-managed-v2.test.py",
+      "sha256": "61dd006e7238ba97777b7de64fdae2e0b7a99996000bea4c17aa6f68ba34463f"
+    },
+    {
+      "bytes": 23006,
+      "originalPath": "/tmp/pow-audit30-onhost-math-managed-v3.py",
+      "purpose": "Exact reviewed public code/test or code-only request; native completion, source-only acceptance and preserved failures are qualified separately in execution evidence.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-onhost-math-managed-v3.py",
+      "sha256": "9c948257ac64de16fb221ac4288fefe1a5d51dc9802bd626862be83bd17acfd9"
+    },
+    {
+      "bytes": 13840,
+      "originalPath": "/tmp/pow-audit30-onhost-math-managed-v3.test.py",
+      "purpose": "Exact reviewed public code/test or code-only request; native completion, source-only acceptance and preserved failures are qualified separately in execution evidence.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-onhost-math-managed-v3.test.py",
+      "sha256": "830bab8433fcd637f2d10642b5dba50e9b5cad509d7ecf6acb0ade2976228201"
+    },
+    {
+      "bytes": 7053,
+      "originalPath": "/tmp/pow-audit30-source-finalize-readonly-census-v1.py",
+      "purpose": "Reviewed public fixed read-only audit source, fixture or code-only request; native results and historical custody qualifications are recorded separately.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-source-finalize-readonly-census-v1.py",
+      "sha256": "b97d301718340f582c781ec6b8450237e97728773d7324e06cdc9ae6449567ca"
+    },
+    {
+      "bytes": 7679,
+      "originalPath": "/tmp/pow-audit30-source-finalize-readonly-census-v1.test.py",
+      "purpose": "Reviewed public fixed read-only audit source, fixture or code-only request; native results and historical custody qualifications are recorded separately.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-source-finalize-readonly-census-v1.test.py",
+      "sha256": "1ca7b9b1edec631501a7fa8ad22ac95691b921bdeb098f74429f14cddcee07b2"
+    },
+    {
+      "bytes": 3401,
+      "originalPath": "/tmp/pow-audit30-source-finalize-readonly-census-request-v1.json",
+      "purpose": "Reviewed public fixed read-only audit source, fixture or code-only request; native results and historical custody qualifications are recorded separately.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-source-finalize-readonly-census-request-v1.json",
+      "sha256": "979aceeb12780a4e0e7ce0405806cbe7d6031834b7379e0c0484a8c7df188696"
+    },
+    {
+      "bytes": 3371,
+      "originalPath": "/tmp/pow-audit30-source-finalize-readonly-census-native-transport-v1.py",
+      "purpose": "Reviewed public fixed read-only audit source, fixture or code-only request; native results and historical custody qualifications are recorded separately.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-source-finalize-readonly-census-native-transport-v1.py",
+      "sha256": "1d18b531e3869996240bdf1a36a5dfa59aa44236014d71b686364a9d982b8d55"
+    },
+    {
+      "bytes": 3176,
+      "originalPath": "/tmp/pow-audit30-full-id-38ac-prelaunch-read-v1.py",
+      "purpose": "Reviewed public fixed read-only audit source, fixture or code-only request; native results and historical custody qualifications are recorded separately.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-full-id-38ac-prelaunch-read-v1.py",
+      "sha256": "f76faa49d4547be06c3424b5bde44c35e467a6b2cf12ae770dba8867e864f5ad"
+    },
+    {
+      "bytes": 2803,
+      "originalPath": "/tmp/pow-audit30-38ac-shadow-startup-classification-native-v1.py",
+      "purpose": "Reviewed public fixed read-only audit source, fixture or code-only request; native results and historical custody qualifications are recorded separately.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-38ac-shadow-startup-classification-native-v1.py",
+      "sha256": "8d8b99e6ca85ef324ac23d6b5977640269211b43c87ef99f959a769c4f0e4984"
+    },
+    {
+      "bytes": 3686,
+      "originalPath": "/tmp/pow-audit30-38ac-shadow-startup-classification-native-v2.py",
+      "purpose": "Exact public fixed journal classifier and fixtures. Only documented event enums, public status/latency and message hashes are exported.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-38ac-shadow-startup-classification-native-v2.py",
+      "sha256": "a4bd6f577e8c9f188f2487a67f0d1f0510e528fcd909aa0e23c28c2d7f967f4e"
+    },
+    {
+      "bytes": 1768,
+      "originalPath": "/tmp/pow-audit30-38ac-shadow-startup-classification-native-v2.test.py",
+      "purpose": "Exact public fixed journal classifier and fixtures. Only documented event enums, public status/latency and message hashes are exported.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-38ac-shadow-startup-classification-native-v2.test.py",
+      "sha256": "dac61239104693db419d02c75894667fc3acd6cb916bb85b980145f6b62484be"
+    },
+    {
+      "bytes": 12706,
+      "originalPath": "/tmp/pow-audit30-node-stage-38ac-v2.py",
+      "purpose": "Exact reviewed public code/test or code-only request; native completion, source-only acceptance and preserved failures are qualified separately in execution evidence.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-node-stage-38ac-v2.py",
+      "sha256": "db14a45bf1be82ad706f40d141759df57113c0a581b6038f80897db52876c846"
+    },
+    {
+      "bytes": 5764,
+      "originalPath": "/tmp/pow-audit30-node-stage-38ac-v2.test.py",
+      "purpose": "Exact reviewed public code/test or code-only request; native completion, source-only acceptance and preserved failures are qualified separately in execution evidence.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-node-stage-38ac-v2.test.py",
+      "sha256": "46b2c5d31c8140c805dc9b4d4c3379fbe1c51e6f520271ab9f8d39a02c411f41"
+    },
+    {
+      "bytes": 81448,
+      "originalPath": "/tmp/pow-audit30-node-stage-38ac-review-request-v2.json",
+      "purpose": "Exact reviewed public code/test or code-only request; native completion, source-only acceptance and preserved failures are qualified separately in execution evidence.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-node-stage-38ac-review-request-v2.json",
+      "sha256": "77e71243d1cf5f7c8e87f89dc85a3ee9fa92c8756278b6493a9edf5853f3e646"
+    },
+    {
+      "bytes": 16256,
+      "originalPath": "/tmp/pow-audit30-node-shadow-prepare-38ac-v2.py",
+      "purpose": "Exact reviewed public code/test or code-only request; native completion, source-only acceptance and preserved failures are qualified separately in execution evidence.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-node-shadow-prepare-38ac-v2.py",
+      "sha256": "2d103a8705b2482eb11828e20f6e10fb51c107208fd6aec8c32206eb17258c3b"
+    },
+    {
+      "bytes": 7765,
+      "originalPath": "/tmp/pow-audit30-node-shadow-prepare-38ac-v2.test.py",
+      "purpose": "Exact reviewed public code/test or code-only request; native completion, source-only acceptance and preserved failures are qualified separately in execution evidence.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-node-shadow-prepare-38ac-v2.test.py",
+      "sha256": "fc4b5a00a908606976435c3240a28c54226a6799697a625339aba02bce8d668b"
+    },
+    {
+      "bytes": 4545,
+      "originalPath": "/tmp/pow-audit30-candidate-full-id-cli-38ac-v2.py",
+      "purpose": "Exact reviewed public code/test or code-only request; native completion, source-only acceptance and preserved failures are qualified separately in execution evidence.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-candidate-full-id-cli-38ac-v2.py",
+      "sha256": "07667986e3a316309706f0d5c3964e9d1ccd23758680d77c41bb4614a2ba0528"
+    },
+    {
+      "bytes": 2733,
+      "originalPath": "/tmp/pow-audit30-candidate-bond-paging-transport-38ac-v2.py",
+      "purpose": "Exact reviewed public code/test or code-only request; native completion, source-only acceptance and preserved failures are qualified separately in execution evidence.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-candidate-bond-paging-transport-38ac-v2.py",
+      "sha256": "fa372ea7b552e45455046109c6381fc1482a04288209f4493221157b1b9c1b0a"
+    },
+    {
+      "bytes": 3176,
+      "originalPath": "/tmp/pow-audit30-full-id-38ac-prelaunch-read-v2.py",
+      "purpose": "Exact reviewed public code/test or code-only request; native completion, source-only acceptance and preserved failures are qualified separately in execution evidence.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-full-id-38ac-prelaunch-read-v2.py",
+      "sha256": "5a388d3c8d78e62468d092f32c7989ad09732e1b7ccfe75260ebfb63da1a7f00"
+    },
+    {
+      "bytes": 6607,
+      "originalPath": "/tmp/pow-audit30-production-health-once-v1.py",
+      "purpose": "Exact reviewed public code/test or code-only request; native completion, source-only acceptance and preserved failures are qualified separately in execution evidence.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-production-health-once-v1.py",
+      "sha256": "15e16332d7b0507e8c58cbaf19c01e0806595193d27912156c1043013c846463"
+    },
+    {
+      "bytes": 2299,
+      "originalPath": "/tmp/pow-audit30-production-health-once-v1.test.py",
+      "purpose": "Exact reviewed public code/test or code-only request; native completion, source-only acceptance and preserved failures are qualified separately in execution evidence.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-production-health-once-v1.test.py",
+      "sha256": "86d66228e38b3247f39ffcc5f0a4bac67a5158ad0ecdca377f3929eace478e29"
+    },
+    {
+      "bytes": 22527,
+      "originalPath": "/tmp/pow-audit30-mail-api-population-v1.py",
+      "purpose": "Exact reviewed public code/test or code-only request; native completion, source-only acceptance and preserved failures are qualified separately in execution evidence.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-mail-api-population-v1.py",
+      "sha256": "8c365b6934f471119833e01a77b8e4a1af20725e9effa644e749b199ce0ec4ba"
+    },
+    {
+      "bytes": 16443,
+      "originalPath": "/tmp/pow-audit30-mail-api-population-v1.test.py",
+      "purpose": "Exact reviewed public code/test or code-only request; native completion, source-only acceptance and preserved failures are qualified separately in execution evidence.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-mail-api-population-v1.test.py",
+      "sha256": "1e12052340745bbdb69f5c2ce6f0e2a93084539167efc7d11bd568f736910d8b"
+    },
+    {
+      "bytes": 24703,
+      "originalPath": "/tmp/pow-audit30-mail-api-population-v2.py",
+      "purpose": "Exact reviewed public code/test or code-only request; native completion, source-only acceptance and preserved failures are qualified separately in execution evidence.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-mail-api-population-v2.py",
+      "sha256": "f481dda3347f928f659b9c43f1c869014f4d0320cdae6cbcd5555b99c4959887"
+    },
+    {
+      "bytes": 20294,
+      "originalPath": "/tmp/pow-audit30-mail-api-population-v2.test.py",
+      "purpose": "Exact reviewed public code/test or code-only request; native completion, source-only acceptance and preserved failures are qualified separately in execution evidence.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-mail-api-population-v2.test.py",
+      "sha256": "0695286b191c35963abf89f7f24e6d3dd7ea19d0f5aa952d5cfe06572c591a9d"
+    },
+    {
+      "bytes": 9493,
+      "originalPath": "/tmp/pow-audit30-onhost-math-plan-assemble-v1.mjs",
+      "purpose": "Exact reviewed public code/test or code-only request; native completion, source-only acceptance and preserved failures are qualified separately in execution evidence.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-onhost-math-plan-assemble-v1.mjs",
+      "sha256": "5723ee58b8e865624aa3563d0486aefb73ceec937c53569b89858a6304dfac90"
+    },
+    {
+      "bytes": 8491,
+      "originalPath": "/tmp/pow-audit30-onhost-math-plan-assemble-v1.test.mjs",
+      "purpose": "Exact reviewed public code/test or code-only request; native completion, source-only acceptance and preserved failures are qualified separately in execution evidence.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-onhost-math-plan-assemble-v1.test.mjs",
+      "sha256": "a3c109c7a039239dfded7af8a63d94b52f3bbe66fcfb0f9f736235ee81f51cf2"
+    },
+    {
+      "bytes": 16136,
+      "originalPath": "/tmp/pow-audit30-remaining-final-health-command-specs-v3.json",
+      "purpose": "Exact reviewed public code/test or code-only request; native completion, source-only acceptance and preserved failures are qualified separately in execution evidence.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-remaining-final-health-command-specs-v3.json",
+      "sha256": "b27ea1f1df48ebd26f5b46502e94b604e8c1a6d11460638966fd00f3a695a4fd"
+    },
+    {
+      "bytes": 3507,
+      "originalPath": "/tmp/pow-audit30-full-id-38ac-stopped-read-v2.py",
+      "purpose": "Exact reviewed public source/test or source-only command specification; native results, conditional peer admission and failures are qualified in execution evidence.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-full-id-38ac-stopped-read-v2.py",
+      "sha256": "54022b92367bb08ed734b77d16f26f17affe462e54e222b085cae15f8cbfb0b9"
+    },
+    {
+      "bytes": 2748,
+      "originalPath": "/tmp/pow-audit30-full-id-38ac-stopped-read-v2.test.py",
+      "purpose": "Exact reviewed public source/test or source-only command specification; native results, conditional peer admission and failures are qualified in execution evidence.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-full-id-38ac-stopped-read-v2.test.py",
+      "sha256": "a36bc3865cde4c8ea802a75f963224dad4301fdb0945f569302c0c6c1f3d1d2f"
+    },
+    {
+      "bytes": 21708,
+      "originalPath": "/tmp/pow-audit30-mail-api-native-v1.py",
+      "purpose": "Exact reviewed public source/test or source-only command specification; native results, conditional peer admission and failures are qualified in execution evidence.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-mail-api-native-v1.py",
+      "sha256": "7d9c5b3d1af3f3a14ee72f693090ac80997500e9009c1d2f098def520ffb382e"
+    },
+    {
+      "bytes": 13637,
+      "originalPath": "/tmp/pow-audit30-mail-api-native-v1.test.py",
+      "purpose": "Exact reviewed public source/test or source-only command specification; native results, conditional peer admission and failures are qualified in execution evidence.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-mail-api-native-v1.test.py",
+      "sha256": "95dc00fffe6e6edab17319ff42af9635c39faa63a5f7a2ce940e250b28a8436a"
+    },
+    {
+      "bytes": 3844,
+      "originalPath": "/tmp/pow-audit30-mail-api-request-assemble-v1.py",
+      "purpose": "Exact reviewed public source/test or source-only command specification; native results, conditional peer admission and failures are qualified in execution evidence.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-mail-api-request-assemble-v1.py",
+      "sha256": "2e41b180245dd76c39e7a93af4548191e2bedd9a7e735e0167530ed0e5896a0c"
+    },
+    {
+      "bytes": 2300,
+      "originalPath": "/tmp/pow-audit30-mail-api-request-assemble-v1.test.py",
+      "purpose": "Exact reviewed public source/test or source-only command specification; native results, conditional peer admission and failures are qualified in execution evidence.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-mail-api-request-assemble-v1.test.py",
+      "sha256": "dae16293a27d91a6f6aa49b1401df5c0e8d04cdd0e220801a118693733aded1b"
+    },
+    {
+      "bytes": 8269,
+      "originalPath": "/tmp/pow-audit30-readonly-owned-transport-v1.py",
+      "purpose": "Exact reviewed public source/test or source-only command specification; native results, conditional peer admission and failures are qualified in execution evidence.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-readonly-owned-transport-v1.py",
+      "sha256": "be541a951fbd22ab18a8e729b6065e8c3001300fd5c3f0f464be8b4803b836c8"
+    },
+    {
+      "bytes": 5337,
+      "originalPath": "/tmp/pow-audit30-readonly-owned-transport-v1.test.py",
+      "purpose": "Exact reviewed public source/test or source-only command specification; native results, conditional peer admission and failures are qualified in execution evidence.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-readonly-owned-transport-v1.test.py",
+      "sha256": "63bb5d9c9a1edf9bc8b76c38ed47578335a31dcc6906eebc22d7495b846cf129"
+    },
+    {
+      "bytes": 5910,
+      "originalPath": "/tmp/pow-audit30-mail-api-native-command-spec-v1.json",
+      "purpose": "Exact reviewed public source/test or source-only command specification; native results, conditional peer admission and failures are qualified in execution evidence.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-mail-api-native-command-spec-v1.json",
+      "sha256": "ac9d6143b991315b1c52d08401e5023d713300a3b1bc5609cd678eb1621c221d"
+    },
+    {
+      "bytes": 8750,
+      "originalPath": "/tmp/pow-audit30-treasury-native-command-specs-v7.json",
+      "purpose": "Exact reviewed public source/test or source-only command specification; native results, conditional peer admission and failures are qualified in execution evidence.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-treasury-native-command-specs-v7.json",
+      "sha256": "0642e115280062a55f38e73b0f0744d7d64a5f55867da1894dec352099fb8959"
+    },
+    {
+      "bytes": 3876,
+      "originalPath": "/tmp/pow-audit30-stream-final-commands-v2.json",
+      "purpose": "Exact reviewed public source/test or source-only command specification; native results, conditional peer admission and failures are qualified in execution evidence.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-stream-final-commands-v2.json",
+      "sha256": "4a80660121baebd4ac5653f0f4978db7d1f8af8c012ca9e823d8f930643776d1"
+    },
+    {
+      "bytes": 3783,
+      "originalPath": "/tmp/pow-audit30-38ac-full-id-http-classification-native-v1.py",
+      "purpose": "Exact public source/test or nonexecuting code-only request; preserved failures, source-only acceptance and actual native results remain separately qualified in execution evidence.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-38ac-full-id-http-classification-native-v1.py",
+      "sha256": "b735399f718198ac2ebc432ed7f195c7ca3855b2cf908bb02a47cf02aec7711e"
+    },
+    {
+      "bytes": 1874,
+      "originalPath": "/tmp/pow-audit30-38ac-full-id-http-classification-native-v1.test.py",
+      "purpose": "Exact public source/test or nonexecuting code-only request; preserved failures, source-only acceptance and actual native results remain separately qualified in execution evidence.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-38ac-full-id-http-classification-native-v1.test.py",
+      "sha256": "0a4e97547235d09d9b6c1642cb12eadba5a67d2a8d961689fa68eaba484bf827"
+    },
+    {
+      "bytes": 164772,
+      "originalPath": "/tmp/pow-audit30-candidate-full-id-cli-fence-diagnostic-v1.py",
+      "purpose": "Exact public source/test or nonexecuting code-only request; preserved failures, source-only acceptance and actual native results remain separately qualified in execution evidence.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-candidate-full-id-cli-fence-diagnostic-v1.py",
+      "sha256": "bf77ef7216ef4d83dd692cda37b2cd754840c285a2e1d0cbab79bded59a6c394"
+    },
+    {
+      "bytes": 164810,
+      "originalPath": "/tmp/pow-audit30-candidate-full-id-cli-fence-diagnostic-v2.py",
+      "purpose": "Exact public source/test or nonexecuting code-only request; preserved failures, source-only acceptance and actual native results remain separately qualified in execution evidence.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-candidate-full-id-cli-fence-diagnostic-v2.py",
+      "sha256": "217950fae9d8c81afe40ac779593d0595a66a9c64b70a8b263028af2b5917354"
+    },
+    {
+      "bytes": 10304,
+      "originalPath": "/tmp/pow-audit30-candidate-full-id-cli-fence-diagnostic-v2.test.py",
+      "purpose": "Exact public source/test or nonexecuting code-only request; preserved failures, source-only acceptance and actual native results remain separately qualified in execution evidence.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-candidate-full-id-cli-fence-diagnostic-v2.test.py",
+      "sha256": "cadab882f0fa69e99fa5ba557d9cc484caa812cbac09c2074999c71a98e1b9f3"
+    },
+    {
+      "bytes": 2826,
+      "originalPath": "/tmp/pow-audit30-id-read-fence-observer-v1.mjs",
+      "purpose": "Exact public source/test or nonexecuting code-only request; preserved failures, source-only acceptance and actual native results remain separately qualified in execution evidence.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-id-read-fence-observer-v1.mjs",
+      "sha256": "a1976a72f783d57d491a67f2262d7a12c4f5ab71594f46210463f9f0ab5aefbe"
+    },
+    {
+      "bytes": 7447,
+      "originalPath": "/tmp/pow-audit30-id-read-fence-observer-v1.test.mjs",
+      "purpose": "Exact public source/test or nonexecuting code-only request; preserved failures, source-only acceptance and actual native results remain separately qualified in execution evidence.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-id-read-fence-observer-v1.test.mjs",
+      "sha256": "dc9977ed6a4810e58fd3a383c0f9040bcafb3cb3a3200b0574322801a3af254e"
+    },
+    {
+      "bytes": 3518,
+      "originalPath": "/tmp/pow-audit30-full-id-fence-diagnostic-prelaunch-v2.py",
+      "purpose": "Exact public source/test or nonexecuting code-only request; preserved failures, source-only acceptance and actual native results remain separately qualified in execution evidence.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-full-id-fence-diagnostic-prelaunch-v2.py",
+      "sha256": "81e28d5f34a8ac812f180cc6675a4139dbfbde26d3f6785c4a41ca81d77cfc0a"
+    },
+    {
+      "bytes": 3804,
+      "originalPath": "/tmp/pow-audit30-full-id-fence-diagnostic-prelaunch-v3.py",
+      "purpose": "Exact public source/test or nonexecuting code-only request; preserved failures, source-only acceptance and actual native results remain separately qualified in execution evidence.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-full-id-fence-diagnostic-prelaunch-v3.py",
+      "sha256": "adc016fd41d72ed720c8f6bbbd34189aeb67060abdfa1086a4a3ce62d432fa61"
+    },
+    {
+      "bytes": 3283,
+      "originalPath": "/tmp/pow-audit30-full-id-fence-diagnostic-prelaunch-v3.test.py",
+      "purpose": "Exact public source/test or nonexecuting code-only request; preserved failures, source-only acceptance and actual native results remain separately qualified in execution evidence.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-full-id-fence-diagnostic-prelaunch-v3.test.py",
+      "sha256": "a1f6a08c318538a25f6d8e7c498740712ab77f022679a82cd0a6701d4fd964e5"
+    },
+    {
+      "bytes": 21759,
+      "originalPath": "/tmp/pow-audit30-mail-api-native-v2.py",
+      "purpose": "Exact public source/test or nonexecuting code-only request; preserved failures, source-only acceptance and actual native results remain separately qualified in execution evidence.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-mail-api-native-v2.py",
+      "sha256": "84a6c0506b025ce516b0db0c5caab1d9b324d5e2e07b2efd1110619f13f32c5a"
+    },
+    {
+      "bytes": 18399,
+      "originalPath": "/tmp/pow-audit30-mail-api-native-v2.test.py",
+      "purpose": "Exact public source/test or nonexecuting code-only request; preserved failures, source-only acceptance and actual native results remain separately qualified in execution evidence.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-mail-api-native-v2.test.py",
+      "sha256": "20c8a763828dc0000019ced2067d3cf9fa6edc7c0d3dec79ce8e9267251df6fb"
+    },
+    {
+      "bytes": 21197,
+      "originalPath": "/tmp/pow-audit30-treasury-native-v8.py",
+      "purpose": "Exact public source/test or nonexecuting code-only request; preserved failures, source-only acceptance and actual native results remain separately qualified in execution evidence.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-treasury-native-v8.py",
+      "sha256": "c95fbcbfcae2c1d66db620b531cedc46425d58968b81f20852a4143936307475"
+    },
+    {
+      "bytes": 27807,
+      "originalPath": "/tmp/pow-audit30-treasury-native-v8.test.py",
+      "purpose": "Exact public source/test or nonexecuting code-only request; preserved failures, source-only acceptance and actual native results remain separately qualified in execution evidence.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-treasury-native-v8.test.py",
+      "sha256": "af771e1a240bb1c9296ae0a0870e692a32eeba779d6e69845833e9823df71a62"
+    },
+    {
+      "bytes": 14008,
+      "originalPath": "/tmp/pow-audit30-onhost-math-safe-input-census-v1.py",
+      "purpose": "Exact public source/test or nonexecuting code-only request; preserved failures, source-only acceptance and actual native results remain separately qualified in execution evidence.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-onhost-math-safe-input-census-v1.py",
+      "sha256": "ab2e695d751f5126ae0a5767d8c705f372cf33e7018d5364ba1ceb60c7925af3"
+    },
+    {
+      "bytes": 10426,
+      "originalPath": "/tmp/pow-audit30-onhost-math-safe-input-census-v1.test.py",
+      "purpose": "Exact public source/test or nonexecuting code-only request; preserved failures, source-only acceptance and actual native results remain separately qualified in execution evidence.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-onhost-math-safe-input-census-v1.test.py",
+      "sha256": "fc6a232874be7c1e5816b4a54cf113f4b633836b8f82715718a23d619a39ee4e"
+    },
+    {
+      "bytes": 5083,
+      "originalPath": "/tmp/pow-audit30-onhost-math-safe-input-native-transport-v1.py",
+      "purpose": "Exact public source/test or nonexecuting code-only request; preserved failures, source-only acceptance and actual native results remain separately qualified in execution evidence.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-onhost-math-safe-input-native-transport-v1.py",
+      "sha256": "6b3fe1505549b535d4b7a273e228d1ac1f41c13535d3e2970031d35d7a577678"
+    },
+    {
+      "bytes": 3682,
+      "originalPath": "/tmp/pow-audit30-onhost-math-safe-input-native-transport-v1.test.py",
+      "purpose": "Exact public source/test or nonexecuting code-only request; preserved failures, source-only acceptance and actual native results remain separately qualified in execution evidence.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-onhost-math-safe-input-native-transport-v1.test.py",
+      "sha256": "d4f0f68fa260f4de994804cbb99daf16c8d1165150618650df7eb198eec597c6"
+    },
+    {
+      "bytes": 65424,
+      "originalPath": "/tmp/pow-audit30-onhost-math-safe-input-request-template-v1.json",
+      "purpose": "Exact public source/test or nonexecuting code-only request; preserved failures, source-only acceptance and actual native results remain separately qualified in execution evidence.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-onhost-math-safe-input-request-template-v1.json",
+      "sha256": "00426ff498cd42ee0e6c4aaabea15c015951c64853405144df7b9417ee3e8ce9"
+    },
+    {
+      "bytes": 14192,
+      "originalPath": "/tmp/pow-audit30-retirement-dependency-readonly-census-v3.py",
+      "purpose": "Exact public source/test or nonexecuting code-only request; preserved failures, source-only acceptance and actual native results remain separately qualified in execution evidence.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-retirement-dependency-readonly-census-v3.py",
+      "sha256": "6e4f83a69cc1e3f7e27f56223330d15e3a2d9fe81df248b4b7a4ccca11cf52ea"
+    },
+    {
+      "bytes": 8183,
+      "originalPath": "/tmp/pow-audit30-retirement-dependency-readonly-census-v3.test.py",
+      "purpose": "Exact public source/test or nonexecuting code-only request; preserved failures, source-only acceptance and actual native results remain separately qualified in execution evidence.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-retirement-dependency-readonly-census-v3.test.py",
+      "sha256": "1484405de89507ab1929f51771c6fee1b8b3e7179852599a07cb719457efaf8c"
+    },
+    {
+      "bytes": 1362,
+      "originalPath": "/tmp/pow-audit30-retirement-dependency-native-transport-v3.py",
+      "purpose": "Exact public source/test or nonexecuting code-only request; preserved failures, source-only acceptance and actual native results remain separately qualified in execution evidence.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-retirement-dependency-native-transport-v3.py",
+      "sha256": "d5b38deb5fcbdc61fd2f432e2eb22d6932f4979c1f2aa6aa9e90018fd3b5c82a"
+    },
+    {
+      "bytes": 2644,
+      "originalPath": "/tmp/pow-audit30-retirement-dependency-command-spec-v3.json",
+      "purpose": "Exact public source/test or nonexecuting code-only request; preserved failures, source-only acceptance and actual native results remain separately qualified in execution evidence.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-retirement-dependency-command-spec-v3.json",
+      "sha256": "dad65c63ce22e2688d5adbd3e12c8c9b97d3efa7c3a46d16f47d781dc9faaab9"
+    },
+    {
+      "bytes": 4368,
+      "originalPath": "/tmp/pow-audit30-38ac-full-id-http-classification-native-v2.py",
+      "purpose": "Reviewed public source/fixture or unexecutable typed specification; native acceptance remains separate.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-38ac-full-id-http-classification-native-v2.py",
+      "sha256": "21c09a5647935abb4ef19c246185b32b83a8efe1b25e652a22292f671d2f2051"
+    },
+    {
+      "bytes": 2801,
+      "originalPath": "/tmp/pow-audit30-38ac-full-id-http-classification-native-v2.test.py",
+      "purpose": "Reviewed public source/fixture or unexecutable typed specification; native acceptance remains separate.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-38ac-full-id-http-classification-native-v2.test.py",
+      "sha256": "d0e54add9602bbb02b30c3c346bbfc122ffa462740c1930f7c110bce9301aed2"
+    },
+    {
+      "bytes": 3659,
+      "originalPath": "/tmp/pow-audit30-full-id-fence-diagnostic-stopped-read-v1.py",
+      "purpose": "Reviewed public source/fixture or unexecutable typed specification; native acceptance remains separate.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-full-id-fence-diagnostic-stopped-read-v1.py",
+      "sha256": "368f7370cab2973421c6abc1a67dcd074990a028d1a176190da78d5b5051f4d7"
+    },
+    {
+      "bytes": 4476,
+      "originalPath": "/tmp/pow-audit30-strict-fresh-capture-root-v1.py",
+      "purpose": "Reviewed public source/fixture or unexecutable typed specification; native acceptance remains separate.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-strict-fresh-capture-root-v1.py",
+      "sha256": "62e8c972a492fd22ebfb90a64396bec1a38466279aadbeb9439dbbb879d1ef68"
+    },
+    {
+      "bytes": 3560,
+      "originalPath": "/tmp/pow-audit30-strict-fresh-capture-root-v2.test.py",
+      "purpose": "Reviewed public source/fixture or unexecutable typed specification; native acceptance remains separate.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-strict-fresh-capture-root-v2.test.py",
+      "sha256": "122ada5960adf9f59b5330d08d3d69e9fcceea91aaaf7d8fa4afb4bc61b8567d"
+    },
+    {
+      "bytes": 8396,
+      "originalPath": "/tmp/pow-audit30-readonly-owned-transport-v3.py",
+      "purpose": "Reviewed public source/fixture or unexecutable typed specification; native acceptance remains separate.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-readonly-owned-transport-v3.py",
+      "sha256": "1dedef0a6c7021d114017e711ad74f9cfed4e461fc047a2be2c49e590f3da18e"
+    },
+    {
+      "bytes": 7500,
+      "originalPath": "/tmp/pow-audit30-readonly-owned-transport-v3.test.py",
+      "purpose": "Reviewed public source/fixture or unexecutable typed specification; native acceptance remains separate.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-readonly-owned-transport-v3.test.py",
+      "sha256": "95d3d56cdf7163aab1606f5ab0414b2b792a48b729ebf7bf6de327b6a76ca283"
+    },
+    {
+      "bytes": 3844,
+      "originalPath": "/tmp/pow-audit30-mail-api-request-assemble-v2.py",
+      "purpose": "Reviewed public source/fixture or unexecutable typed specification; native acceptance remains separate.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-mail-api-request-assemble-v2.py",
+      "sha256": "02d6718b4662fbf560df943d96a990040a26cd030e0fad068ed6496d49523d78"
+    },
+    {
+      "bytes": 2300,
+      "originalPath": "/tmp/pow-audit30-mail-api-request-assemble-v2.test.py",
+      "purpose": "Reviewed public source/fixture or unexecutable typed specification; native acceptance remains separate.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-mail-api-request-assemble-v2.test.py",
+      "sha256": "453e1d55b25193536745b321fe35627e12da34b0ecb9f2d5e96c52f0b086ec9c"
+    },
+    {
+      "bytes": 1362,
+      "originalPath": "/tmp/pow-audit30-retirement-dependency-native-transport-v4.py",
+      "purpose": "Reviewed public source/fixture or unexecutable typed specification; native acceptance remains separate.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-retirement-dependency-native-transport-v4.py",
+      "sha256": "2420d488f86539f0655fe0700fbdb0f2e99818d80c4704bc08b4cc8e9b2f92bf"
+    },
+    {
+      "bytes": 6785,
+      "originalPath": "/tmp/pow-audit30-mail-api-native-command-spec-v2.json",
+      "purpose": "Reviewed public source/fixture or unexecutable typed specification; native acceptance remains separate.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-mail-api-native-command-spec-v2.json",
+      "sha256": "b74e65fb1edcb9ee291148c045d29ba212b9c8bb793d787cc0083134bda88e18"
+    },
+    {
+      "bytes": 9188,
+      "originalPath": "/tmp/pow-audit30-treasury-native-command-specs-v8.json",
+      "purpose": "Reviewed public source/fixture or unexecutable typed specification; native acceptance remains separate.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-treasury-native-command-specs-v8.json",
+      "sha256": "6c39abe1f3cdad678efeb8a02ff323f5a7b25f9d1beefd100e920cfa3a2d2e7b"
+    },
+    {
+      "bytes": 3054,
+      "originalPath": "/tmp/pow-audit30-retirement-dependency-command-spec-v4.json",
+      "purpose": "Reviewed public source/fixture or unexecutable typed specification; native acceptance remains separate.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-retirement-dependency-command-spec-v4.json",
+      "sha256": "59206de500735b920f665a644e166920d8cdc850eef97aa732adcc646996e4b2"
+    }
+  ],
+  "qualification": "Exact public source/fixture custody with preserved earlier failures. No private bodies/environments/catalog/role secrets copied. 38ac stage/shadow pass, full semantic CLI changed-fence refusal then diagnostic first-request503 with no fence preimage and actual stopped unit. Cause and production acceptance remain pending; UI fc5 is staged. Source acceptance is not native acceptance or production-data/recovery/retirement authorization. One archival Python fixture copy removes only a final blank line required by the enabled whitespace hook; its exact original bytes, length and SHA remain losslessly base64-preserved in its manifest row and original /tmp source. Its Python AST is identical.",
+  "schema": "pow-audit30-verification-source-custody-v1",
+  "testExecutionQualification": "Preserved fixtures keep original relative imports and reviewed /tmp bindings. Reproduce in a fresh reviewed scratch package using byte-equal copies at their original expected basenames; refuse collisions. Most inputs are synthetic. Historical-layout oracle/native layout fixtures additionally require exact public metadata witness /tmp/pow-audit30-inspector-id-capture-meta-v1.json SHA69cf431cbede11d4867a85c8611ad932bc125d1c9da1560120ca6a20c4dfabac, preserved in execution evidence; never substitute guessed metadata or a private body capture. Local fixture acceptance and captured native results remain separate. Body/readiness fixtures also reference public native-v1 stdout079048206e4c03a75dc928f59180d906a8f24bfd78cf87a7d0262d6ca7aa57da and native-v2 stdout0f574b8400cf3effc5e0512a7895d6a59c0b500187f51244a9a96fef3226e885. These public normalized receipts are preserved by exact value/bytes/hash in execution evidence; reconstruct only after verifying the exact SHA. They contain no function bodies/private catalog or mail body captures."
+}

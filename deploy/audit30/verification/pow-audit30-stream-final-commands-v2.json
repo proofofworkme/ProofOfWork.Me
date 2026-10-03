@@ -1,0 +1,91 @@
+{
+  "assembler": {
+    "path": "/tmp/pow-audit30-stream-request-assemble-v4.py",
+    "sha256": "db62e7ec8be69d310d2e7babd9c23195627b0d7091c23809bb559e3d3e3e461c"
+  },
+  "bootstrap": {
+    "path": "/tmp/pow-audit30-transition-stream-bootstrap-v5.py",
+    "sha256": "c9f851afec4990d4d380bc6b4ad9b6eb613f84e2fc041abfa034b3db8412f87c",
+    "tests": {
+      "passed": 14,
+      "path": "/tmp/pow-audit30-transition-stream-bootstrap-v5.test.py",
+      "sha256": "28d580e1deef32ad013266b92fd2c944add79d6aa3cbb3962a4995c6a041cfb1"
+    }
+  },
+  "controller": {
+    "path": "/tmp/pow-audit30-transition-stream-controller-v7.py",
+    "sha256": "e9801d372d05c94c40b609749e502ab1eb5e06f4f2561fa08d9c6a25c9313599",
+    "tests": {
+      "passed": 32,
+      "path": "/tmp/pow-audit30-transition-stream-controller-v7.test.py",
+      "sha256": "ad6aaa96e995f2582d092fbeb4305e4c40b59cc1cccd92ae4cc7a352408c7a1d"
+    }
+  },
+  "draft": {
+    "path": "/tmp/pow-audit30-stream-v7-body-v2-final-plan-draft-v1.json",
+    "sha256": "aecf781bbaf4495f0bc5ac5d284e6bf14417b8d06e1063ca86b5625609e762b0"
+  },
+  "executionAuthorizedByThisArtifact": false,
+  "finalNativeInvocation": {
+    "captureExclusive": true,
+    "commandForm": "sudo -n /usr/bin/python3 -I -B -c shlex.quote(EXACT_BOOTSTRAP_BYTES_UTF8)",
+    "executeNow": false,
+    "outerDeadlineSeconds": 1140,
+    "outerMustPinTypedStdinRawSHA256": true,
+    "sshOptions": [
+      "BatchMode=yes",
+      "IdentitiesOnly=yes",
+      "StrictHostKeyChecking=yes",
+      "ConnectTimeout=15"
+    ],
+    "sshRole": "powadmin@65.108.122.87",
+    "stderrCapBytes": 1048576,
+    "stdoutCapBytes": 16777216,
+    "typedStdin": "ACTUAL_EXCLUSIVE_RUN_REQUEST_RAW_BYTES"
+  },
+  "localAssemblyArgv": [
+    "python3",
+    "-I",
+    "-B",
+    "/tmp/pow-audit30-stream-request-assemble-v4.py",
+    "run",
+    "--run-id",
+    "20261003T030000Z",
+    "--inventory",
+    "/tmp/pow-audit30-stream-inventory-030000-full-v1.json",
+    "--inventory-sha256",
+    "e3e55b8d64c3e8628773ed03c236a2bd349f4050118f0fbf578de0eba765ab60",
+    "--prepared",
+    "/tmp/pow-audit30-stream-prepare-native-030000-v1.stdout",
+    "--prepared-sha256",
+    "83cf5c437b6792bea63308f566626fc574a9d4a0f8c359b2775b10e633979a77",
+    "--preflight",
+    "/tmp/pow-audit30-stream-final-preflight-after-phase6-v1.json",
+    "--preflight-sha256",
+    "REQUIRES_ACTUAL_RAW_SHA_AFTER_PHASE6",
+    "--output-prefix",
+    "/tmp/pow-audit30-stream-run-030000-after-phase6-v1"
+  ],
+  "nativeCallsMade": false,
+  "readOnlyFreshPreflight": {
+    "outputFile": "/tmp/pow-audit30-stream-final-preflight-after-phase6-v1.json",
+    "outputSha256": null,
+    "path": "/tmp/pow-audit30-stream-final-preflight-v1.py",
+    "requiresRootGo": true,
+    "sha256": "fda2a3614c41faff1e407cff8eb9048c20985a5751b05b9203588f36dabaa84c"
+  },
+  "requiredGates": [
+    "Phase6 accepted/cutover and fresh exact current five; root reviews actual preflight/raw plan/raw request",
+    "No ordinary backup active; unchanged installed timer; >=30min clear window",
+    "Prepared package and Node/172-dependency bytes unchanged",
+    "No sealed7 start/write; reused014100 stopped, no PID/socket/process; exact reviewed failed-before-update plus empty-temp custody only",
+    "Actual all16 body+inverse+named deferred epoch flush then four restored fingerprints; stream default32/64MiB full bytes; stop/full source checks",
+    "No cap raise, third copy, old evidence rewrite, live repair, timer delay, automatic retry"
+  ],
+  "schema": "pow-audit30-stream-v7-final-command-spec-v2",
+  "supersedes": {
+    "path": "/tmp/pow-audit30-stream-final-commands-v1.json",
+    "qualification": "Command form corrected: frozen bootstrap binds its typed fields and inner plan hash; outer pins raw request bytes, bootstrap has no raw-request argv contract.",
+    "sha256": "7c46489d46391771e2c73acdfabfca64395e4126d7413762ad63bc1e02558873"
+  }
+}

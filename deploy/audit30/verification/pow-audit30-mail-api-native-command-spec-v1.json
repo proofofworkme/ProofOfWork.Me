@@ -1,0 +1,151 @@
+{
+  "atUtc": "2026-10-03T04:33:20.152058+00:00",
+  "authorTests": {
+    "assembler": 5,
+    "collector": 21,
+    "outer": 9,
+    "runner": 13
+  },
+  "automaticRetry": false,
+  "codeMode": "root:root0440",
+  "controllerEnvelope": {
+    "CPUPercent": 25,
+    "decodedBodyTotalBytes": 134217728,
+    "exactActors": 33,
+    "exactRows": 619,
+    "maximumActors": 40,
+    "memoryBytes": 536870912,
+    "nativeStderrMonitoredBytes": 65536,
+    "nativeStdoutPerFileQuotaBytes": 2097152,
+    "nativeUnitSeconds": 660,
+    "outerEachStreamBytes": 1048576,
+    "outerSeconds": 980,
+    "perRequestAbsoluteSeconds": 30,
+    "responseBytes": 16777216,
+    "rootControllerSeconds": 750,
+    "swapBytes": 0,
+    "tasks": 16,
+    "wholeCollectorSeconds": 600
+  },
+  "currentFreshFive": null,
+  "evidenceTemplate": "/data/proofofwork-release-backups/audit30-mail-api-STAGE-RUN",
+  "financialCompleteness": false,
+  "launchApproved": false,
+  "localAssemblyArgv": [
+    "python3",
+    "-I",
+    "-B",
+    "/tmp/pow-audit30-mail-api-request-assemble-v1.py",
+    "--stage",
+    "REQUIRES_ROOT_SELECTED_BASELINE_OR_AFTER",
+    "--run-id",
+    "REQUIRES_NEW_CALENDAR_UTC_RUN",
+    "--live-five",
+    "REQUIRES_ACTUAL_FRESH_FIVE_JSON",
+    "--live-five-sha256",
+    "REQUIRES_RAW_SHA",
+    "--output-prefix",
+    "REQUIRES_EXCLUSIVE_DIRECT_TMP_PREFIX"
+  ],
+  "method": "GET",
+  "nativeCallsMade": false,
+  "origin": "http://127.0.0.1:8081",
+  "packageMode": "root:root0750",
+  "packageTemplate": "/usr/local/lib/proofofwork-audit30-mail-api-population/RUN",
+  "prepareAndRunTransportArgv": [
+    "python3",
+    "-I",
+    "-B",
+    "/tmp/pow-audit30-readonly-owned-transport-v1.py",
+    "mail-api",
+    "--request",
+    "REQUIRES_ACTUAL_PREPARE_OR_RUN_REQUEST",
+    "--request-sha256",
+    "REQUIRES_ACTUAL_RAW_SHA",
+    "--output-prefix",
+    "REQUIRES_DISTINCT_EXCLUSIVE_TMP_PREFIX"
+  ],
+  "privateSource": {
+    "bytes": 8321455,
+    "path": "/data/proofofwork-release-backups/audit30-mail-body-census-20261003T011506Z/preimages.jsonl",
+    "publicFooterSha256": "2de9665f2b93516ca2b366ef9216990d37be1f46d330a4c7f1d9f2709b353dfc",
+    "rawInputExported": false,
+    "sha256": "d71dc1d0cc7a490442092471a30ca388392c9e0ce6a8c33b6c1be22ebedabbe7"
+  },
+  "productionMutation": false,
+  "qualifications": [
+    "All619 are frozen confirmed snapshot witnesses, not all current or pending mail/attachments",
+    "Core proof/footer is previously verified input; no new Core/SQL/auth calls or response/rawbody export",
+    "Transfer budget counts decoded response bodies plus one detection byte, not HTTP header/framing bytes",
+    "Absolute request/whole deadlines refuse/retain partial coverage; no request retry",
+    "Cgroup caps apply collector only, not live backend",
+    "Output includes public txids/body hashes/bytes/address hashes/counts only; addresses/body/capture remain on host",
+    "Transport timeout or SSH loss does not itself prove native unit stopped; root must inspect exact saved owned receipt"
+  ],
+  "query": "fresh=1&network=livenet",
+  "rawPrepareRequest": null,
+  "rawRunRequest": null,
+  "requestMode": "root:root0600",
+  "requiredGates": [
+    "Root/peer reviews exact source and typed requests; source-only acceptance is not native acceptance",
+    "Phase6 quiet window and fresh five exact tuple match; baseline and after use different new run IDs",
+    "Creation-only package first; no unit in prepare, no existing package reuse",
+    "Prelaunch exact unit not-found before intent; typed GetUnit/single exact argv/UserGroup root/Invocation before ownership",
+    "Observer read file enums plus exact root transient fragment file paths; immutable capture inode/owner/mode/link proof",
+    "Baseline can retain discrepancies; after requires ALL619 exact kind/status/address/network/raw memo bytes plus complete coverage",
+    "Only exact owned audit unit stopped; preserved failed receipt/partial captures; no automatic retry"
+  ],
+  "schema": "pow-audit30-mail-api-native-command-spec-v1",
+  "sourceOnlyReview": {
+    "bytes": 1874,
+    "path": "/tmp/pow-audit30-independent-mail-api-population-source-review-v2.json",
+    "sha256": "43b68e60e9d4e4d0013b05875392043ce547f17926b7e7980288be78c35decec"
+  },
+  "sources": {
+    "assembler": {
+      "bytes": 3844,
+      "path": "/tmp/pow-audit30-mail-api-request-assemble-v1.py",
+      "sha256": "2e41b180245dd76c39e7a93af4548191e2bedd9a7e735e0167530ed0e5896a0c"
+    },
+    "assemblerTests": {
+      "bytes": 2300,
+      "path": "/tmp/pow-audit30-mail-api-request-assemble-v1.test.py",
+      "sha256": "dae16293a27d91a6f6aa49b1401df5c0e8d04cdd0e220801a118693733aded1b"
+    },
+    "collector": {
+      "bytes": 24703,
+      "path": "/tmp/pow-audit30-mail-api-population-v2.py",
+      "sha256": "f481dda3347f928f659b9c43f1c869014f4d0320cdae6cbcd5555b99c4959887"
+    },
+    "collectorTests": {
+      "bytes": 20294,
+      "path": "/tmp/pow-audit30-mail-api-population-v2.test.py",
+      "sha256": "0695286b191c35963abf89f7f24e6d3dd7ea19d0f5aa952d5cfe06572c591a9d"
+    },
+    "outer": {
+      "bytes": 8269,
+      "path": "/tmp/pow-audit30-readonly-owned-transport-v1.py",
+      "sha256": "be541a951fbd22ab18a8e729b6065e8c3001300fd5c3f0f464be8b4803b836c8"
+    },
+    "outerTests": {
+      "bytes": 5337,
+      "path": "/tmp/pow-audit30-readonly-owned-transport-v1.test.py",
+      "sha256": "63bb5d9c9a1edf9bc8b76c38ed47578335a31dcc6906eebc22d7495b846cf129"
+    },
+    "runner": {
+      "bytes": 21708,
+      "path": "/tmp/pow-audit30-mail-api-native-v1.py",
+      "sha256": "7d9c5b3d1af3f3a14ee72f693090ac80997500e9009c1d2f098def520ffb382e"
+    },
+    "runnerTests": {
+      "bytes": 13637,
+      "path": "/tmp/pow-audit30-mail-api-native-v1.test.py",
+      "sha256": "95dc00fffe6e6edab17319ff42af9635c39faa63a5f7a2ce940e250b28a8436a"
+    }
+  },
+  "stageScope": [
+    "baseline",
+    "after"
+  ],
+  "unitTemplate": "proofofwork-audit30-mail-api-STAGE-RUN.service"
+}

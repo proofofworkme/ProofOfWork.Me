@@ -1,0 +1,188 @@
+{
+  "atUtc": "2026-10-03T04:43:39.410757+00:00",
+  "bootstrap": {
+    "bytes": 21197,
+    "path": "/tmp/pow-audit30-treasury-native-v8.py",
+    "sha256": "c95fbcbfcae2c1d66db620b531cedc46425d58968b81f20852a4143936307475"
+  },
+  "bootstrapTests": {
+    "bytes": 27807,
+    "path": "/tmp/pow-audit30-treasury-native-v8.test.py",
+    "sha256": "af771e1a240bb1c9296ae0a0870e692a32eeba779d6e69845833e9823df71a62"
+  },
+  "claims": {
+    "financialReconciliationComplete": false,
+    "independentWholeChainAddressHistoryComplete": false,
+    "may9OperatorConfirmedPaid": true,
+    "may9TransactionIDsRequested": false,
+    "obligationReconciliationComplete": false,
+    "productionDataMutation": false
+  },
+  "collector": {
+    "bytes": 23960,
+    "path": "/tmp/pow-audit30-treasury-address-corpus-v3.py",
+    "sha256": "b60a0c359104001422c086f8e2df8c4eb9852eca7876fe1f153ff34807eac197"
+  },
+  "collectorTests": {
+    "bytes": 14932,
+    "path": "/tmp/pow-audit30-treasury-address-corpus-v3.test.py",
+    "sha256": "d9dfdfab74ad0dea810fb509a21753198671e3e8a6f5d55e4e9bc183a5dd4cb8"
+  },
+  "correction": {
+    "previousCollector": {
+      "bytes": 23752,
+      "path": "/tmp/pow-audit30-treasury-address-corpus-v2.py",
+      "sha256": "c75e60cf82ebd15b8716bbc0515f684a80c690ff3cd625e1cc73a0ea15bd0478"
+    },
+    "reason": "Actual bitcoin-cli emits empty stdout for successful null gettxout; v3 method-specific successful empty frame -> None, nonzero/stderr/malformed frames refuse. Actual fake CLI framing fixture added; original v2 preserved. No native treasury attempt occurred."
+  },
+  "freshBaselineQualification": "Fixed native runner captures fresh five-service identity before/after; it does not accept a supplied expected tuple. Root must separately approve the actual current phase6 quiet baseline before RUN, compare the captured tuple afterward, and never waive a change. No native RUN has occurred.",
+  "host": "pow-bitcoin-01",
+  "localTests": {
+    "bootstrap": 35,
+    "bootstrapQualification": "Actual restrictive-umask newfiles, exact source/schema/calendar/tamper guards, nofollow hardlink/atime gates, ownership-before-weak-resource refusal, actual repeated signals during owned cleanup, failed cleanup no falsegreen, independent expired-deadline cleanup, original file custody. Unit/role calls mocked; no native systemd/Core/Electrs.",
+    "collector": 17
+  },
+  "narrowCorrections": [
+    "Ordinary treasury run handler own NativeInterrupted(RuntimeError); rootTimeoutError alarm unchanged; inert7d6 API utility unaffected",
+    "Actual communicate child SIGTERM+reap and SIGINT during ownedcleanup tested; earlier7d6 original/source checkpoint preserved",
+    "Shared outer cleanup mask/handler-finally corrected; runrequest53c/sourceb60/package031100 and read-only corpus bounds unchanged"
+  ],
+  "noNativeExecution": true,
+  "outer": {
+    "argv": [
+      "python3",
+      "-I",
+      "-B",
+      "/tmp/pow-audit30-readonly-owned-transport-v3.py",
+      "treasury",
+      "--output-prefix",
+      "/tmp/pow-audit30-treasury-run-native-v1"
+    ],
+    "automaticRetry": false,
+    "exclusiveCapture": true,
+    "nativeCallsMade": false,
+    "nonBlockingTypedStdinAndBothStreams": true,
+    "passed": 11,
+    "remoteStoppedCertifiedByTransport": false,
+    "seconds": 1650,
+    "source": {
+      "bytes": 8396,
+      "path": "/tmp/pow-audit30-readonly-owned-transport-v3.py",
+      "sha256": "1dedef0a6c7021d114017e711ad74f9cfed4e461fc047a2be2c49e590f3da18e"
+    },
+    "stderrCap": 1048576,
+    "stdoutCap": 1048576,
+    "tests": {
+      "bytes": 7500,
+      "path": "/tmp/pow-audit30-readonly-owned-transport-v3.test.py",
+      "sha256": "95d3d56cdf7163aab1606f5ab0414b2b792a48b729ebf7bf6de327b6a76ca283"
+    }
+  },
+  "peerReview": {
+    "bytes": 1578,
+    "path": "/tmp/pow-audit30-independent-treasury-native-source-review-v8.json",
+    "sha256": "0bf6a868406bce7b89db5bf037a855146d3aa821a83cb4ef0dba8f406979739f"
+  },
+  "pendingRuntimeGate": {
+    "actualOutputPropertyProbe": {
+      "bytes": 22558,
+      "path": "/tmp/pow-audit30-systemd-output-property-probe-native-v1.stdout",
+      "sha256": "a38d26740997f039cf44063f27acba75491fc99ff03f87a522e541eb6e1a59bd"
+    },
+    "actualRetainedUnitControlGroupProofPending": false,
+    "freshCurrentFiveTupleProofRequired": true,
+    "freshFiveBinding": null,
+    "retainedUnitProbeSHA256": "247be39abf08e927c9e14e82c5fb8ac56b1ee91b1e156cd05b3405148147d052",
+    "rootGOForRunRequired": true,
+    "rootQuietPhase6WindowRequired": true
+  },
+  "phaseOrder": [
+    "Root review exact source and typed prepare request; creation-only exclusive new package root:bitcoin750/members440, no unit start",
+    "Root chooses quiet phase6/fullID/bond gate window, verifies exact root-reviewed run request; private root700 evidence exclusive captures then native bitcoin collector",
+    "Observer records owned InvocationID before resource validation; RemainAfterExit=yes prevents successful transient unit disappearance before final snapshot; no --collect",
+    "Stop only exact owned audit unit after full collector/result/properties/livefive/capture checks; preserve before/after owned snapshot and receipt. No live stop/timer/database/config/pin actions"
+  ],
+  "preparedNative": {
+    "coreCalled": false,
+    "sqlCalled": false,
+    "stderr": {
+      "bytes": 0,
+      "path": "/tmp/pow-audit30-treasury-prepare-native-v1.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "stdout": {
+      "bytes": 672,
+      "path": "/tmp/pow-audit30-treasury-prepare-native-v1.stdout",
+      "sha256": "a8ade661488809151e0f8a6ca21833a67f713180916e7f42aaa0ce41a25bf9cb"
+    },
+    "transport": {
+      "bytes": 941,
+      "path": "/tmp/pow-audit30-treasury-prepare-native-v1.json",
+      "sha256": "9bcc4c33752bcdf56b38367b0bc16ab6182a4f3ac64b8e3ecc5bd0a7fda06bbc"
+    },
+    "unitLaunched": false
+  },
+  "productionExecutableApprovedNow": false,
+  "qualifications": [
+    "Transport success can contain partial RPC/moving-discovery coverage; inspect result status/coverage/findings and retain hashes. Never infer full financial/obligation reconciliation.",
+    "RLIMIT_FSIZE enforces256MiB per inherited capture descriptor; stderr8MiB is one-second observed threshold, so overshoot and stop latency remain qualified.",
+    "Abrupt root/collector SIGKILL or power loss can leave intent/captures without completion; preserve all partial evidence, inspect exact owned unit, never automatically retry.",
+    "Initial systemd-run acknowledgement or property observation failure is recorded; cleanup stops only exact observed owned InvocationID. A unit whose identity cannot be proved remains explicitly unresolved for root reconciliation.",
+    "Before/after live five may legitimately change only through another authorized serialized operation; stale tuple is never waived. Root should run after scoped deployment gates.",
+    "Root wrapper passes script source via safely quoted -c argument and typed request via separate stdin; no package install or deployment required."
+  ],
+  "requests": [
+    {
+      "bytes": 78747,
+      "path": "/tmp/pow-audit30-treasury-native-prepare-request-v2.json",
+      "sha256": "b70bead2b41788b15f9fa0cbf33e1419caba0fcedfa676dd45673036be9d679e"
+    },
+    {
+      "bytes": 78743,
+      "path": "/tmp/pow-audit30-treasury-native-run-request-v2.json",
+      "sha256": "53c04e48bb9d7c7aa3adc108ddc875ea724644ab94e33d9a6af7c73732b086d3"
+    }
+  ],
+  "rootArgv": [
+    "/usr/bin/python3",
+    "-I",
+    "-B",
+    "-c",
+    "<EXACT_HASH_VERIFIED_BOOTSTRAP_SOURCE>"
+  ],
+  "schema": "pow-audit30-treasury-native-command-specs-v8",
+  "status": "code-package-prepared-native-run-not-approved",
+  "stdin": "Exact root-reviewed prepare/run request bytes, never Python source on same stdin",
+  "supersedes": {
+    "bytes": 8750,
+    "path": "/tmp/pow-audit30-treasury-native-command-specs-v7.json",
+    "sha256": "0642e115280062a55f38e73b0f0744d7d64a5f55867da1894dec352099fb8959"
+  },
+  "unitObserver": {
+    "RLIMIT_FSIZEBytes": 268435456,
+    "RemainAfterExit": "yes",
+    "captureStderrBytes": 8388608,
+    "captureStdoutBytes": 268435456,
+    "cleanupFixedCommandTimeoutSeconds": 20,
+    "fixedRootTransientFragmentPathsRequired": true,
+    "independentPreStdinAlarmSeconds": 1480,
+    "maximumObserverSnapshots": 1600,
+    "minimumRootTransportDeadlineSeconds": 1650,
+    "observedStandardErrorEnum": "append",
+    "observedStandardOutputEnum": "append",
+    "oneSecondCaptureSampling": true,
+    "ownedFailedEmptyCGCleanupOnly": true,
+    "prelaunchUnitMustBeNotFound": true,
+    "propertySnapshotsCapturedBeforeStop": true,
+    "resourceAuthoritiesExactPinned": true,
+    "roleVerifiedBeforeOwnership": true,
+    "rootWorkDeadlineSeconds": 1450,
+    "standardError": "append:/data/proofofwork-release-backups/audit30-treasury-address-20261003T031100Z/stderr.log",
+    "standardOutput": "append:/data/proofofwork-release-backups/audit30-treasury-address-20261003T031100Z/corpus.json",
+    "stderrLimitIsMonitoredNotPerFileQuota": true,
+    "typedGetUnitAndExactSingleExecStartRequiredBeforeOwnership": true,
+    "unitTransient": "yes",
+    "unitType": "exec"
+  }
+}
