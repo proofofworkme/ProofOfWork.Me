@@ -80,7 +80,11 @@ export function normalizeBoostGrowth(value, checkpoint) {
     economicMetricsVerified: input.economicMetricsVerified === true &&
       BOOST_GROWTH_AMOUNT_FIELDS.every((field) => amounts[field] !== null),
     checkpoint: { ...expected },
-    counts: Object.fromEntries(BOOST_GROWTH_COUNT_FIELDS.map((field) => [field, counts[field]])),
+    counts: {
+      ...Object.fromEntries(BOOST_GROWTH_COUNT_FIELDS.map((field) => [field, counts[field]])),
+      articles: Number.isSafeInteger(counts.articles) && counts.articles >= 0 && counts.articles <= counts.posts
+        ? counts.articles : null,
+    },
     ...amounts,
     metricReasons: reasons,
   };

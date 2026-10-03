@@ -426,7 +426,7 @@ spec = importlib.util.spec_from_file_location("ui_stage_contract", "deploy/proof
 stage = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(stage)
 assert stage.MAXIMUM_DEPENDENCIES == 1024
-assert len(stage.SURFACES) == 16
+assert len(stage.SURFACES) == 17
 publisher = Path("deploy/proofofwork-ui-release-publish.sh").read_text()
 publisher_function = publisher.split("verify_prior_asset_compatibility() {", 1)[1]
 publisher_code = publisher_function.split("<<'PY'\n", 1)[1].split("\nPY\n", 1)[0]
@@ -984,14 +984,15 @@ exec /usr/bin/sort "$@"
     "landing",
     "marketplace",
     "nft",
+    "publish",
     "token",
     "wallet",
     "work",
   ];
-  assert.equal(surfaces.length, 16);
-  assert.equal(new Set(surfaces).size, 16);
-  assert.match(publisher, /surface set must contain exactly 16 entries/u);
-  assert.match(provenance, /surface set must contain exactly 16 entries/u);
+  assert.equal(surfaces.length, 17);
+  assert.equal(new Set(surfaces).size, 17);
+  assert.match(publisher, /surface set must contain exactly 17 entries/u);
+  assert.match(provenance, /surface set must contain exactly 17 entries/u);
   const priorAppAssetName = "App-cafebabefeed.js";
   const priorCssAssetName = "theme-decafbad.css";
   const priorImageAssetName = "pixel-a1b2c3d4.png";
@@ -2133,7 +2134,7 @@ exec /usr/bin/sort "$@"
     mkdirSync(preBoostWww, { recursive: true, mode: 0o755 });
     chmodSync(preBoostWww, 0o755);
     for (const surface of surfaces.filter(
-      (value) => value !== "boost" && value !== "dns",
+      (value) => value !== "boost" && value !== "dns" && value !== "publish",
     )) {
       const directory = join(preBoostWww, `proofofwork-${surface}`);
       mkdirSync(join(directory, "assets"), { recursive: true, mode: 0o755 });

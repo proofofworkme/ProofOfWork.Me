@@ -12,11 +12,15 @@ import "./styles.css";
 
 const appSurface = detectAppSurface();
 const RootApp =
-  detectAppSurface() === "landing"
-    ? lazy(() => import("./features/landing/LandingRoot"))
-    : appSurface === "boost"
-      ? lazy(() => import("./features/boost/BoostRoot"))
-      : lazy(() => import("./App"));
+  appSurface === "identity-bridge"
+    ? lazy(() => import("./features/identity/SocialIdentityBridge"))
+    : appSurface === "publish"
+      ? lazy(() => import("./features/publish/PublishRoot"))
+      : appSurface === "landing"
+        ? lazy(() => import("./features/landing/LandingRoot"))
+        : appSurface === "boost"
+          ? lazy(() => import("./features/boost/BoostRoot"))
+          : lazy(() => import("./App"));
 
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>

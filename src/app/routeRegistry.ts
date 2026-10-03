@@ -6,6 +6,8 @@ export type AppSurface =
   | "desktop"
   | "browser"
   | "boost"
+  | "publish"
+  | "identity-bridge"
   | "marketplace"
   | "token"
   | "wallet"
@@ -88,6 +90,16 @@ export function isBoostRoute() {
   }
 
   return hostname() === "boost.proofofwork.me" || searchFlag("boost");
+}
+
+export function isPublishRoute() {
+  return import.meta.env.VITE_PUBLISH_ONLY === "1" ||
+    hostname() === "publish.proofofwork.me" || searchFlag("publish");
+}
+
+export function isSocialIdentityBridgeRoute() {
+  return (hostname() === "computer.proofofwork.me" || isLocalPreviewHost()) &&
+    window.location.pathname === "/" && window.location.search === "?social-identity-bridge=1";
 }
 
 export function isMarketplaceRoute() {
@@ -185,12 +197,14 @@ export function isGrowthRoute() {
 }
 
 export function detectAppSurface(): AppSurface {
+  if (isSocialIdentityBridgeRoute()) return "identity-bridge";
   if (isLandingRoute()) return "landing";
   if (isIdLaunchRoute()) return "id-launch";
   if (isDnsLaunchRoute()) return "dns-launch";
   if (isDesktopRoute()) return "desktop";
   if (isBrowserRoute()) return "browser";
   if (isBoostRoute()) return "boost";
+  if (isPublishRoute()) return "publish";
   if (isMarketplaceRoute()) return "marketplace";
   if (isTokenRoute()) return "token";
   if (isWalletRoute()) return "wallet";

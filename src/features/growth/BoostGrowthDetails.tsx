@@ -41,6 +41,10 @@ export default function BoostGrowthDetails({ observation }: {
           <div key={label}><dt>{label}</dt><dd>{count.toLocaleString()}</dd></div>
         ))}
       </dl>
+      <p className="field-note">
+        {counts.articles === null ? "Publish article counts are unavailable in this snapshot."
+          : `${counts.articles.toLocaleString()} Publish articles are included in Posts above.`}
+      </p>
       <dl className="growth-assumption-list growth-boost-attribution">
         {amounts.map(({ field, label, work }) => (
           <div key={field}>
@@ -51,7 +55,7 @@ export default function BoostGrowthDetails({ observation }: {
         ))}
       </dl>
       <p className="field-note">
-        These amounts describe Boost transactions. Overlapping Mail/Files payments and companion WORK
+        These amounts describe Boost and Publish transactions. Overlapping Mail/Files payments and companion WORK
         transfers already contribute through their existing records and are not added
         again. A separate Boost contribution to canonical network value has not activated.
       </p>

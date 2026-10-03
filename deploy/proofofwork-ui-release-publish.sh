@@ -282,12 +282,21 @@ surfaces=(
   landing
   marketplace
   nft
+  publish
   token
   wallet
   work
 )
-if ((${#surfaces[@]} != 16)); then
-  echo "UI publisher surface set must contain exactly 16 entries." >&2
+if ((${#surfaces[@]} != 17)); then
+  echo "UI publisher surface set must contain exactly 17 entries." >&2
+  exit 70
+fi
+pre_publish_surfaces=()
+for surface in "${surfaces[@]}"; do
+  [[ "${surface}" == "publish" ]] || pre_publish_surfaces+=("${surface}")
+done
+if ((${#pre_publish_surfaces[@]} != 16)); then
+  echo "UI publisher pre-Publish surface set must contain exactly 16 entries." >&2
   exit 70
 fi
 legacy_surfaces=(
@@ -347,6 +356,8 @@ verify_prior_asset_compatibility() {
     prior_surfaces=("${pre_boost_surfaces[@]}")
   elif [[ ! -e "${www_root}/proofofwork-dns" && ! -L "${www_root}/proofofwork-dns" ]]; then
     prior_surfaces=("${legacy_surfaces[@]}")
+  elif [[ ! -e "${www_root}/proofofwork-publish" && ! -L "${www_root}/proofofwork-publish" ]]; then
+    prior_surfaces=("${pre_publish_surfaces[@]}")
   fi
   # Bound the compatibility scan so a large retained rollback tree cannot
   # hold the deployment lock indefinitely. The manifest-driven checks below

@@ -820,6 +820,7 @@ async function broadcastRawTransaction(
 
 export async function signAndBroadcastBoostPsbt({
   beforeBroadcast,
+  onSigned,
   inputCount,
   network,
   psbtHex,
@@ -828,6 +829,7 @@ export async function signAndBroadcastBoostPsbt({
   wallet,
 }: {
   beforeBroadcast?: () => Promise<void>;
+  onSigned?: (txid: string) => void | Promise<void>;
   inputCount: number;
   network: BitcoinNetwork;
   psbtHex: string;
@@ -886,6 +888,7 @@ export async function signAndBroadcastBoostPsbt({
     expectedIntent,
     rawUnsignedTransactionIntent(signedTransaction),
   );
+  await onSigned?.(signedTransaction.getId());
   await beforeBroadcast?.();
   return broadcastRawTransaction(signedTransaction.toHex(), network);
 }

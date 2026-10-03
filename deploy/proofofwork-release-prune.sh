@@ -119,10 +119,15 @@ ui_surfaces=(
   landing
   marketplace
   nft
+  publish
   token
   wallet
   work
 )
+pre_publish_ui_surfaces=()
+for surface in "${ui_surfaces[@]}"; do
+  [[ "${surface}" == "publish" ]] || pre_publish_ui_surfaces+=("${surface}")
+done
 legacy_ui_surfaces=(
   activity
   browser
@@ -261,6 +266,9 @@ protect_ui_manifest_archive() {
   elif [[ -z "${manifest_values[surface.dns.file_count]:-}" &&
     -z "${manifest_values[surface.dns.sha256]:-}" ]]; then
     manifest_surfaces=("${legacy_ui_surfaces[@]}")
+  elif [[ -z "${manifest_values[surface.publish.file_count]:-}" &&
+    -z "${manifest_values[surface.publish.sha256]:-}" ]]; then
+    manifest_surfaces=("${pre_publish_ui_surfaces[@]}")
   fi
   for surface in "${manifest_surfaces[@]}"; do
     if [[ ! "${manifest_values[surface.${surface}.file_count]:-}" =~ ^[1-9][0-9]*$ ||

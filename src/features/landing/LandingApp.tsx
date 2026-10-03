@@ -20,6 +20,7 @@ import {
 import { useState } from "react";
 import {
   BOOST_APP_URL,
+  PUBLISH_APP_URL,
   BROWSER_APP_URL,
   COMPUTER_APP_URL,
   DESKTOP_APP_URL,
@@ -30,6 +31,7 @@ import {
   INFINITY_APP_URL,
   LOCAL_BROWSER_APP_URL,
   LOCAL_BOOST_APP_URL,
+  LOCAL_PUBLISH_APP_URL,
   LOCAL_COMPUTER_APP_URL,
   LOCAL_DESKTOP_APP_URL,
   LOCAL_DNS_APP_URL,
@@ -115,6 +117,14 @@ const LANDING_APP_GROUPS = [
         icon: Zap,
         label: "Boost",
         localHref: LOCAL_BOOST_APP_URL,
+      },
+      {
+        description:
+          "Publish complete text articles with a shared PowID and Boost replies, likes, and reboosts.",
+        href: PUBLISH_APP_URL,
+        icon: FilePenLine,
+        label: "Publish",
+        localHref: LOCAL_PUBLISH_APP_URL,
       },
     ],
   },

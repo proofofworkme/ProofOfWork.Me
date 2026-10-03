@@ -47,6 +47,7 @@ computer.proofofwork.me
 desktop.proofofwork.me
 browser.proofofwork.me
 boost.proofofwork.me
+publish.proofofwork.me
 amo.proofofwork.me
 marketplace.proofofwork.me -> https://amo.proofofwork.me/
 credit.proofofwork.me
@@ -71,6 +72,7 @@ Production app roles:
 - `desktop.proofofwork.me` is the standalone public read-only file search engine for addresses or confirmed ProofOfWork IDs.
 - `browser.proofofwork.me` is the standalone public HTML renderer for ProofOfWork message bodies or verified file attachments by txid.
 - `boost.proofofwork.me` is the public Proof-ranked social feed for confirmed Boost posts and profiles.
+- `publish.proofofwork.me` is text-only blogging with local drafts, full verified articles and Boost's shared profiles, selected PowIDs and engagement. See [PUBLISH.md](PUBLISH.md).
 - `amo.proofofwork.me` is the canonical Autonomous Money Organization surface. Governed WORK units plus ID, DNS, credit, POWB, and INCB sale-ticket markets share this app.
 - `marketplace.proofofwork.me` is a retained URI-preserving compatibility route to AMO.
 - `credit.proofofwork.me` is the standalone mainnet credit creation and mint app.
@@ -84,12 +86,12 @@ Production app roles:
 - The root landing page can feature public on-chain social proof, with testimonial links pointing directly to their ProofOfWork transactions.
 - The landing page links to the current public YouTube overview video.
 
-Every public app header and footer should expose the current public surfaces: Home, IDs, DNS, Computer, Desktop, Browser, Boost, AMO, Credit, Wallet, WORK, Infinity, Inception, Log, and Growth. Public social links should include X, YouTube, and GitHub.
+Every public app header and footer should expose the current public surfaces: Home, IDs, DNS, Computer, Desktop, Browser, Boost, Publish, AMO, Credit, Wallet, WORK, Infinity, Inception, Log, and Growth. Public social links should include X, YouTube, and GitHub.
 
 ### Audit Workflow
 
 Audit standalone public apps before the full Computer shell: Home, IDs, DNS, Desktop,
-Browser, AMO, Credit, Wallet, WORK, Infinity, Inception, Log, and Growth come
+Browser, Boost, Publish, AMO, Credit, Wallet, WORK, Infinity, Inception, Log, and Growth come
 first. `computer.proofofwork.me` comes last because it embeds and cross-checks
 the same protocols, workspaces, and read models in one integrated ProofOfWork
 Computer.
@@ -392,6 +394,7 @@ https://computer.proofofwork.me/api/*
 https://desktop.proofofwork.me/api/*
 https://browser.proofofwork.me/api/*
 https://boost.proofofwork.me/api/*
+https://publish.proofofwork.me/api/*
 https://amo.proofofwork.me/api/*
 https://credit.proofofwork.me/api/*
 https://wallet.proofofwork.me/api/*
@@ -695,6 +698,7 @@ pwb1:buy5:<listing-txid>:<new-owner-address>
 Rules to preserve:
 
 - Boost and reply text are capped at 140 user-visible characters.
+- Publish articles add a typed commitment to an original Boost post. Their titles retain the short text limit; exact UTF-8 bodies use all remaining space within the aggregate 100,000-byte OP_RETURN script policy. Boost previews and Publish full readers share the original txid, profiles, selected IDs, likes, replies and reboosts. The [Publish specification](PUBLISH.md) defines same-transaction body verification, private drafts, wallet review, recovery and shared identity.
 - Original posts carry a self-directed Proof and/or WORK signal to the author's own ProofOfWork address. They do not require the 546-proof Boost registry fee. A WORK-only original binds its declared Q16 signal to an exact, canonical same-transaction WORK self-transfer. Authors pay the miner fee and any WORK mutation fee.
 - Both the public and Computer-embedded Boost “Post a Boost” and “Review Boost” buttons open the same composer with Proof and WORK signal choices, including WORK-only, and Files attachments. The separate Computer Mail compose Boost ticker retains its positive Proof self-send requirement and optional WORK attachment. Proof signal is the self-send amount; WORK signal uses a canonical local-wallet WORK transfer in the same transaction.
 - Post media uses the existing Mail/Files attachment path. Boost JSON stores file proof metadata and pointers, not duplicate media bytes. A same-transaction media pointer must match exactly one verified Mail attachment by SHA-256, size, MIME type, and name before indexing; the client rechecks those fields and the attachment bytes before rendering. Profile pictures and banners are chosen from confirmed Files on the profile owner's address.
@@ -761,6 +765,14 @@ To preview the public Boost app locally:
 ```text
 http://localhost:5173/?boost=1
 http://localhost:5173/?boost=1&profile=proofofwork
+```
+
+To preview Publish locally:
+
+```text
+http://localhost:5173/?publish=1
+http://localhost:5173/?publish=1&profile=proofofwork
+http://localhost:5173/?folder=publish
 ```
 
 To preview the standalone AMO app locally:

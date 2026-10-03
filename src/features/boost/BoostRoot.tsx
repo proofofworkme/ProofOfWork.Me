@@ -7,9 +7,11 @@ import {
   useState,
 } from "react";
 import { Buffer } from "buffer";
+import * as bitcoin from "bitcoinjs-lib";
 import {
   ArrowUpRight,
   ArrowLeft,
+  BookOpen,
   Clock,
   Home,
   MoreHorizontal,
@@ -96,9 +98,7 @@ import {
   buildBoostReplyPayload,
   buildBoostTransferPayload,
   idsOwnedByAddress,
-  loadBoostIdentityIntent,
   normalizeBoostId,
-  saveBoostIdentityIntent,
   type BoostFeedItem,
   type BoostFeedPayload,
   type BoostFollowAction,
@@ -120,7 +120,17 @@ import {
   signAndBroadcastBoostPsbt,
   type BoostSpentOutpoint,
 } from "./boostWallet";
+import { inspectPreparedPayment } from "../../shared/wallet/paymentReview";
+import { readActionReceipts, saveActionReceipt, type ActionReceipt } from "../../shared/wallet/actionRecovery";
+import { ActionRecoveryPanel } from "../../shared/components/ActionRecoveryPanel";
+import { PublishComposer } from "../publish/PublishComposer";
+import { PublishArticleCard, PublishArticleText } from "../publish/PublishArticle";
+import { publishHref, requirePublishBudget, type PreparedPublish, type PublishPlan } from "../publish/publishProtocol";
+import { normalizeBoostTxid } from "./boostProtocol";
+import { syncSocialIdentityIntent, publishSocialIdentityIntent, subscribeSocialIdentityIntent } from "../identity/socialIdentity";
+import { verifiedSocialIdentityIntent } from "../identity/socialIdentityCore.mjs";
 import "./boost.css";
+import "../publish/publish.css";
 
 type BoostSortMode = "value" | "newest" | "oldest";
 type BoostValueWindow = "hour" | "day" | "week" | "all";
@@ -145,6 +155,7 @@ type PendingBoostPaidAction = {
 };
 
 type RegistryApiPayload = {
+  network?: BitcoinNetwork;
   record?: PowIdRecordLike | null;
   records?: PowIdRecordLike[];
 };
@@ -157,6 +168,7 @@ type BoostOptimisticAction = {
 };
 
 type BoostRootProps = {
+  surface?: "boost" | "publish";
   embedded?: boolean;
   initialAddress?: string;
   initialNetwork?: BitcoinNetwork;
@@ -405,7 +417,7 @@ function boostAmoHref(boostTxid?: string) {
 function boostShareUrl(item: BoostFeedItem, network: BitcoinNetwork) {
   const sharedPost = item.reboostedPost ?? item;
   const postText = sharedPost.text.trim();
-  const txLink = explorerTxUrl(sharedPost.txid, network);
+  const txLink = sharedPost.article ? publishHref({ txid: sharedPost.txid, network }) : explorerTxUrl(sharedPost.txid, network);
   const text = [postText, txLink, "$WORK $POWB $INCB"]
     .filter(Boolean)
     .join("\n");
@@ -632,7 +644,8 @@ function ReboostedPost({
             <span>@{boostAuthorId(post) || shortAddress(post.authorAddress)}</span>
             <span>{formatDate(post.createdAt)}</span>
           </div>
-          {post.text ? <p className="boost-post-text"><BoostText text={post.text} /></p> : null}
+          {post.article ? <PublishArticleCard item={post} network={network} /> :
+            post.text ? <p className="boost-post-text"><BoostText text={post.text} /></p> : null}
           {post.media?.mime && /^(?:image|video)\//iu.test(post.media.mime) ? (
             <BoostMedia item={post} network={network} />
           ) : null}
@@ -683,7 +696,8 @@ function QuotedPost({
       <span className="boost-quoted-post-handle">
         @{boostAuthorId(post) || shortAddress(post.authorAddress)}
       </span>
-      {post.text ? <p><BoostText text={post.text} /></p> : null}
+      {post.article ? <PublishArticleCard item={post} network={network} /> :
+        post.text ? <p><BoostText text={post.text} /></p> : null}
       <a
         className="boost-proof-frame"
         href={explorerTxUrl(post.txid, network)}
@@ -698,6 +712,8 @@ function QuotedPost({
 }
 
 function BoostPost({
+  articleReader = false,
+  publishSurface = false,
   embedded,
   actionBusy,
   activeAddress,
@@ -717,6 +733,8 @@ function BoostPost({
   reboostMenuOpen,
   profileAddress,
 }: {
+  articleReader?: boolean;
+  publishSurface?: boolean;
   embedded: boolean;
   actionBusy: BoostActionBusy;
   activeAddress: string;
@@ -773,9 +791,10 @@ function BoostPost({
 
   return (
     <article
-      className="boost-post"
+      className={articleReader ? "boost-post publish-full-post" : "boost-post"}
       data-testid="boost-post"
       onClick={(event) => {
+        if (articleReader) return;
         const target = event.target as HTMLElement;
         if (target.closest("a,button,input,textarea,select,details,summary")) return;
         onOpen(item);
@@ -786,14 +805,14 @@ function BoostPost({
           onOpen(item);
         }
       }}
-      tabIndex={0}
+      tabIndex={articleReader ? undefined : 0}
     >
       <BoostAvatar item={item} />
       <div className="boost-post-body">
         <div className="boost-post-head">
           <div className="boost-author-line">
             {profileValue ? (
-              <a className="boost-author" href={boostProfileHref(profileValue, embedded)}>
+              <a className="boost-author" href={publishSurface ? publishHref({ profile: profileValue, network, embedded }) : boostProfileHref(profileValue, embedded)}>
                 {authorLabel(item, activeIdentity, activeAddress)}
               </a>
             ) : (
@@ -832,7 +851,9 @@ function BoostPost({
           <ReboostedPost embedded={embedded} network={network} onOpenOriginal={onOpenOriginal} post={item.reboostedPost} />
         ) : (
           <>
-            {item.text ? <p className="boost-post-text"><BoostText text={item.text} /></p> : null}
+            {item.article ? articleReader ? <PublishArticleText item={item} network={network} /> :
+              <PublishArticleCard item={item} network={network} embedded={embedded && window.location.search.includes("folder=publish")} /> :
+              item.text ? <p className="boost-post-text"><BoostText text={item.text} /></p> : null}
 
             {item.media?.mime && /^(?:image|video)\//iu.test(item.media.mime) ? (
               <BoostMedia item={item} network={network} />
@@ -1023,12 +1044,28 @@ function BoostPost({
 }
 
 export default function BoostRoot({
+  surface = "boost",
   embedded = false,
   initialAddress = "",
   initialNetwork = "livenet",
   onComposeBoost,
 }: BoostRootProps = {}) {
-  const [network, setNetwork] = useState<BitcoinNetwork>(() => initialBoostNetwork(initialNetwork));
+  const isPublish = surface === "publish";
+  const surfaceName = isPublish ? "Publish" : "Boost";
+  const [articleRoute] = useState(() => isPublish ? initialSearchParam("article") : "");
+  const articleTxid = normalizeBoostTxid(articleRoute);
+  const [publishComposerOpen, setPublishComposerOpen] = useState(false);
+  const [publishRestoreDraft, setPublishRestoreDraft] = useState<{ title: string; body: string; signal: number; feeRate: number }>();
+  const [publishReceipts, setPublishReceipts] = useState<ActionReceipt[]>([]);
+  const [publishRecoveryError, setPublishRecoveryError] = useState("");
+  const [publishRecoveryChecking, setPublishRecoveryChecking] = useState(false);
+  const publishSigning = useRef(false);
+  const [network, setNetworkState] = useState<BitcoinNetwork>(() => initialBoostNetwork(initialNetwork));
+  const networkRef = useRef(network);
+  const setNetwork = (value: BitcoinNetwork) => {
+    if (value !== networkRef.current) { identityReadRequest.current++; setOwnedIds([]); setActiveIdentity(undefined); setSelectedIdentityId(""); }
+    networkRef.current = value; setNetworkState(value);
+  };
   const previousInitialNetwork = useRef(initialNetwork);
   const [sortMode, setSortMode] = useState<BoostSortMode>("value");
   const [valueWindow, setValueWindow] = useState<BoostValueWindow>("all");
@@ -1060,7 +1097,13 @@ export default function BoostRoot({
   const [busy, setBusy] = useState(false);
   const [actionBusy, setActionBusy] = useState<BoostActionBusy>("");
   const [hasUnisat, setHasUnisat] = useUnisatPresence();
-  const [address, setAddress] = useState(initialAddress);
+  const [address, setAddressState] = useState(initialAddress);
+  const walletAddressRef = useRef(initialAddress);
+  const identityReadRequest = useRef(0);
+  const setAddress = (value: string) => {
+    if (value !== walletAddressRef.current) { setOwnedIds([]); setActiveIdentity(undefined); setSelectedIdentityId(""); }
+    walletAddressRef.current = value; identityReadRequest.current++; setAddressState(value);
+  };
   const [boostRegistryAddress, setBoostRegistryAddress] = useState("");
   const [ownedIds, setOwnedIds] = useState<PowIdRecordLike[]>([]);
   const [imageEditorOpen, setImageEditorOpen] = useState(false);
@@ -1103,11 +1146,14 @@ export default function BoostRoot({
     tone: "idle",
     text: "",
   });
+  const writerScope = JSON.stringify([address, network, activeIdentity?.id ?? ""]);
+  const currentWriterScope = useRef(writerScope);
+  currentWriterScope.current = writerScope;
 
   const isProfileView = Boolean(profileRouteValue.trim());
   const isSearchView = !isProfileView && routeSearchActive;
   const emptySearch = isSearchView && !searchQuery.trim();
-  const readScope = JSON.stringify([address, network, profileRouteValue, profileTab,
+  const readScope = JSON.stringify([surface, address, network, profileRouteValue, profileTab,
     sortMode, isSearchView ? "search" : timelineMode, valueWindow, indexedSearchQuery]);
   const currentReadScope = useRef(readScope);
   currentReadScope.current = readScope;
@@ -1159,7 +1205,7 @@ export default function BoostRoot({
   }, [address, items, profileRouteValue, payload?.profileSubject?.address]);
   const topSignalItems = useMemo(() => visibleItems.slice(0, 3), [visibleItems]);
   const modalOpen = Boolean(
-    directPostOpen || expandedItem || pendingPaidAction || replyTarget,
+    publishComposerOpen || directPostOpen || expandedItem || pendingPaidAction || replyTarget,
   );
   const postWorkSubatoms = workAtomsFromDecimal(postWorkAmount);
   useEffect(() => {
@@ -1197,6 +1243,9 @@ export default function BoostRoot({
     workSubatomsFromCanonicalString(profileSubject?.workSignalSubatoms) ?? 0n;
 
   async function loadBoostRegistryAndIds(walletAddress: string) {
+    const request = ++identityReadRequest.current;
+    const ownsRequest = () => request === identityReadRequest.current &&
+      sameBoostWalletAddress(walletAddressRef.current, walletAddress) && networkRef.current === "livenet";
     const [boostPayload, registryPayload] = await Promise.all([
       fetchProofApiJson<RegistryApiPayload>(
         "/api/v1/ids/boost?current=1&fresh=1",
@@ -1214,14 +1263,15 @@ export default function BoostRoot({
       );
     const registryReceiveAddress =
       boostRecord?.receiveAddress || boostRecord?.ownerAddress || "";
-    setBoostRegistryAddress(registryReceiveAddress);
     const owned = idsOwnedByAddress(
       registryPayload.records ?? [],
       walletAddress,
       "livenet",
     );
+    const storedIdentity = await syncSocialIdentityIntent(walletAddress, "livenet");
+    if (!ownsRequest()) return "";
+    setBoostRegistryAddress(registryReceiveAddress);
     setOwnedIds(owned);
-    const storedIdentity = loadBoostIdentityIntent(walletAddress, "livenet");
     setActiveIdentity(storedIdentity);
     setSelectedIdentityId(
       storedIdentity?.id || normalizeBoostId(owned[0]?.id ?? ""),
@@ -1523,7 +1573,7 @@ export default function BoostRoot({
     if (!nextProfile) {
       return;
     }
-    window.location.href = boostProfileHref(nextProfile, embedded);
+    window.location.href = isPublish ? publishHref({ profile: nextProfile, network, embedded }) : boostProfileHref(nextProfile, embedded);
   }
 
   function selectProfileTab(nextTab: BoostProfileTab) {
@@ -1534,9 +1584,10 @@ export default function BoostRoot({
     const url = new URL(window.location.href);
     if (embedded) {
       url.searchParams.delete("boost");
-      url.searchParams.set("folder", "boost");
+      url.searchParams.set("folder", surface);
     } else {
-      url.searchParams.set("boost", "1");
+      url.searchParams.delete(isPublish ? "boost" : "publish");
+      url.searchParams.set(isPublish ? "publish" : "boost", "1");
     }
     url.searchParams.set("profile", profileRouteValue.trim());
     url.searchParams.set("profileTab", nextTab);
@@ -1600,6 +1651,150 @@ export default function BoostRoot({
       throw new Error("Enter a valid mainnet address or confirmed ProofOfWork ID.");
     }
     return record.ownerAddress;
+  }
+
+  function scopedPublishReceipts() {
+    return readActionReceipts(localStorage).filter(receipt => receipt.key.startsWith("publish:") &&
+      sameBoostWalletAddress(receipt.address, address) && receipt.network === network);
+  }
+
+  function retainPublishReceipt(receipt: ActionReceipt) {
+    const next = saveActionReceipt(localStorage, receipt);
+    setPublishReceipts(next.filter(row => row.key.startsWith("publish:") &&
+      sameBoostWalletAddress(row.address, address) && row.network === network));
+  }
+
+  function assertPublishRecovery(plan: PublishPlan) {
+    const blocker = scopedPublishReceipts().find(receipt => receipt.status === "unknown" ||
+      (receipt.status === "pending" && receipt.key === `publish:${plan.article.sha256}`));
+    if (blocker) throw new Error(`An article transaction is ${blocker.status === "unknown" ? "awaiting a known broadcast outcome" : "pending confirmation"}. Check transaction recovery before preparing another copy.`);
+  }
+
+  async function verifyPublishWriter(walletAddress: string, identityId: string, expectedScope: string, identity?: BoostIdentityIntent) {
+    if (currentWriterScope.current !== expectedScope) throw new Error("Wallet, network, or selected identity changed. Prepare a new article review.");
+    await ensureWalletNetwork(window.unisat!, "livenet", walletAddress);
+    await assertActiveWalletAddress(window.unisat!, walletAddress);
+    if (identityId) {
+      if (!identity || identity.id !== identityId || !verifiedSocialIdentityIntent(identity, walletAddress, "livenet")) {
+        throw new Error("Your selected PowID signature is unavailable or invalid. Select the ID again before publishing.");
+      }
+      const latest = await fetchProofApiJson<RegistryApiPayload>(
+        `/api/v1/ids/${encodeURIComponent(identityId)}?current=1&fresh=1`, "livenet");
+      if (latest.record?.confirmed !== true || normalizeBoostId(latest.record.id) !== identityId ||
+          latest.network !== "livenet" || (latest.record.network && latest.record.network !== "livenet") ||
+          !sameBoostWalletAddress(latest.record.ownerAddress, walletAddress)) {
+        throw new Error("Your selected PowID is no longer confirmed as owned by this wallet. Refresh identity before publishing.");
+      }
+    }
+    if (currentWriterScope.current !== expectedScope) throw new Error("Selected identity changed during verification. Prepare a new article review.");
+  }
+
+  async function verifyPublishFunding(prepared: PreparedPublish) {
+    const utxos = await fetchProofApiJson<Array<{ txid: string; vout: number; status?: { confirmed?: boolean } }>>(
+      `/api/v1/address/${encodeURIComponent(prepared.address)}/utxo`, prepared.network);
+    if (!Array.isArray(utxos)) throw new Error("Fresh article funding evidence is unavailable.");
+    const available = new Set(utxos.filter(utxo => utxo.status?.confirmed === true).map(utxo => `${utxo.txid}:${utxo.vout}`));
+    const reserved = await fetchReservedAmoAnchorOutpoints(prepared.address, prepared.network, boostListingAnchorOutpoints(items));
+    const reservations = new Set(reserved.map(outpoint => `${outpoint.txid}:${outpoint.vout}`));
+    if (prepared.review.evidence!.inputs.some(input => !available.has(input.outpoint) || reservations.has(input.outpoint))) {
+      throw new Error("Reviewed article funding changed or became reserved. Prepare a new transaction review.");
+    }
+  }
+
+  async function preparePublishArticle(plan: PublishPlan, articleFeeRate: number): Promise<PreparedPublish> {
+    if (publishSigning.current || actionBusy) throw new Error("Another wallet action is in progress.");
+    requirePublishBudget(plan);
+    if (network !== "livenet" || !address || !Number.isFinite(articleFeeRate) || articleFeeRate < 0.1) {
+      throw new Error("Connect your mainnet wallet and choose a miner fee of at least 0.1 proofs/vB.");
+    }
+    const expectedScope = writerScope;
+    const identityId = normalizeBoostId(activeIdentity?.id ?? "");
+    publishSigning.current = true;
+    setActionBusy("post");
+    try {
+      assertPublishRecovery(plan);
+      await verifyPublishWriter(address, identityId, expectedScope, plan.identity);
+      const exclusions = await fetchReservedAmoAnchorOutpoints(address, network, boostListingAnchorOutpoints(items));
+      const paymentPsbt = await buildBoostPaymentPsbt({ excludeOutpoints: exclusions,
+        feeRate: articleFeeRate, fromAddress: address, network,
+        payments: [{ address, amountSats: plan.proofSignalSats }], protocolPayloads: plan.payloads });
+      const evidence = inspectPreparedPayment({ psbtHex: paymentPsbt.psbtHex,
+        network: bitcoin.networks.bitcoin, paymentCount: 1, registryPaymentCount: 0,
+        feeSats: paymentPsbt.feeSats, changeSats: paymentPsbt.changeSats });
+      if (JSON.stringify(evidence.records) !== JSON.stringify(plan.payloads)) throw new Error("Prepared article bytes differ from the preview.");
+      await verifyPublishWriter(address, identityId, expectedScope, plan.identity);
+      return { plan, address, network, identityId, feeRate: articleFeeRate, paymentPsbt,
+        review: { title: "Publish article", networkLabel: "Mainnet", feeRate: String(articleFeeRate),
+          dustFeeProofs: String(paymentPsbt.dustFeeSats), evidence, paymentLabels: ["Article proof signal returned to your wallet"],
+          walletSpendProofs: evidence.feeProofs,
+          fields: [["Title", plan.article.title], ["Selected identity", identityId ? `${identityId}@proofofwork.me` : address],
+            ["Text size", `${plan.article.size} UTF-8 bytes`], ["SHA-256", plan.article.sha256],
+            ["Aggregate OP_RETURN scripts", `${plan.carrierBytes} / 100000 bytes`]],
+          explanation: "The complete article is public and permanent. The existing Boost post is its one social and ownership target; replies, likes, reboosts, transfers, and sales use that same transaction. A selected PowID updates your existing shared Boost profile in this transaction; your avatar and banner are preserved." } };
+    } finally { publishSigning.current = false; setActionBusy(""); }
+  }
+
+  async function signPublishArticle(prepared: PreparedPublish, assertCurrent: () => void) {
+    if (publishSigning.current || actionBusy) throw new Error("Another wallet action is in progress.");
+    const expectedScope = JSON.stringify([prepared.address, prepared.network, prepared.identityId]);
+    let receipt: ActionReceipt | undefined;
+    publishSigning.current = true;
+    setActionBusy("post");
+    try {
+      assertCurrent();
+      assertPublishRecovery(prepared.plan);
+      await verifyPublishWriter(prepared.address, prepared.identityId, expectedScope, prepared.plan.identity);
+      await verifyPublishFunding(prepared);
+      assertCurrent();
+      const broadcast = await signAndBroadcastBoostPsbt({
+        inputCount: prepared.paymentPsbt.inputCount, psbtHex: prepared.paymentPsbt.psbtHex,
+        signInputIndexes: prepared.paymentPsbt.walletInputIndexes, network: prepared.network,
+        signingAddress: prepared.address, wallet: window.unisat!,
+        onSigned: txid => {
+          receipt = { txid, address: prepared.address, network: prepared.network, title: "Publish article",
+            key: `publish:${prepared.plan.article.sha256}`, createdAt: new Date().toISOString(), status: "unknown",
+            fields: [["Title", prepared.plan.article.title], ["Body", prepared.plan.body],
+              ["Proof signal", String(prepared.plan.proofSignalSats)], ["Fee rate", String(prepared.feeRate)],
+              ["Selected identity", prepared.identityId], ["SHA-256", prepared.plan.article.sha256]] };
+          retainPublishReceipt(receipt);
+        },
+        beforeBroadcast: async () => {
+          assertCurrent();
+          await verifyPublishWriter(prepared.address, prepared.identityId, expectedScope, prepared.plan.identity);
+          await verifyPublishFunding(prepared);
+          assertCurrent();
+        },
+      });
+      if (receipt) retainPublishReceipt({ ...receipt, status: "pending" });
+      setStatus({ tone: "good", text: "Article broadcast. It will appear in Publish and Boost after confirmation.",
+        links: [{ href: broadcast.url, text: "View TX", title: "View article transaction", ariaLabel: "View article transaction" }] });
+      void refresh(false, true, false);
+      return broadcast.txid;
+    } catch (cause) {
+      const message = cause instanceof Error ? cause.message : "Article could not be signed or broadcast.";
+      setStatus({ tone: "bad", text: receipt ? `${message} Signed transaction evidence is retained in Transaction recovery. Check its status before retrying.` : message });
+      throw cause;
+    } finally { publishSigning.current = false; setActionBusy(""); }
+  }
+
+  async function checkPublishReceipts() {
+    if (publishRecoveryChecking) return;
+    const expectedScope = currentWriterScope.current;
+    setPublishRecoveryChecking(true);
+    setPublishRecoveryError("");
+    try {
+      const current = scopedPublishReceipts();
+      for (let start = 0; start < current.length; start += 4) {
+        await Promise.all(current.slice(start, start + 4).filter(receipt => receipt.status === "unknown" || receipt.status === "pending").map(async receipt => {
+          const response = await fetchProofApiJson<{ status?: string }>(`/api/v1/tx/${receipt.txid}/status`, receipt.network);
+          if (currentWriterScope.current !== expectedScope) return;
+          if (["confirmed", "pending", "dropped"].includes(response.status ?? "")) retainPublishReceipt({ ...receipt, status: response.status as ActionReceipt["status"] });
+          else throw new Error("Article transaction status is unavailable. Recovery evidence and retry protection are retained.");
+        }));
+      }
+    } catch (cause) {
+      if (currentWriterScope.current === expectedScope) setPublishRecoveryError(cause instanceof Error ? cause.message : "Transaction status is unavailable.");
+    } finally { setPublishRecoveryChecking(false); }
   }
 
   async function publishBoostPost(event: FormEvent<HTMLFormElement>) {
@@ -1816,7 +2011,7 @@ export default function BoostRoot({
         id: profileId,
         network: "livenet",
       });
-      const signature = await window.unisat.signMessage(message);
+      const signature = await window.unisat.signMessage(message, /^(?:bc1p|tb1p)/iu.test(address) ? "bip322-simple" : "ecdsa");
       const intent = {
         address,
         createdAt,
@@ -1825,11 +2020,13 @@ export default function BoostRoot({
         network: "livenet" as const,
         signature,
       };
-      saveBoostIdentityIntent(intent);
-      setActiveIdentity(intent);
+      const sharedIntent = await publishSocialIdentityIntent(intent);
+      if (!sharedIntent) throw new Error("Signed ID selection could not be verified against current confirmed ownership.");
+      setActiveIdentity(sharedIntent);
+      setSelectedIdentityId(sharedIntent.id);
       setStatus({
         tone: "good",
-        text: `${profileId}@proofofwork.me selected for Boost.`,
+        text: `${profileId}@proofofwork.me selected for Boost and Publish.`,
       });
     } catch (error) {
       setStatus({
@@ -1906,6 +2103,7 @@ export default function BoostRoot({
         sort: sortMode,
         window: valueWindow,
       });
+      if (isPublish) params.set("format", "article");
       if (indexedSearchQuery) params.set("q", indexedSearchQuery);
       if (fresh) params.set("fresh", "1");
       if (append && payload?.nextCursor) params.set("cursor", payload.nextCursor);
@@ -1955,7 +2153,7 @@ export default function BoostRoot({
       if (announce) {
         setStatus({
           tone: "good",
-          text: `Boost indexed ${total.toLocaleString()} record${total === 1 ? "" : "s"}.`,
+          text: `${surfaceName} indexed ${total.toLocaleString()} record${total === 1 ? "" : "s"}.`,
         });
       }
     } catch (error) {
@@ -2056,6 +2254,23 @@ export default function BoostRoot({
   }, [hasUnisat]);
 
   useEffect(() => {
+    setActiveIdentity(undefined);
+    setSelectedIdentityId("");
+    if (!address) return;
+    return subscribeSocialIdentityIntent(address, network, intent => {
+      setActiveIdentity(intent);
+      setSelectedIdentityId(intent?.id ?? "");
+    });
+  }, [address, network]);
+
+  useEffect(() => {
+    if (!isPublish) return;
+    try { setPublishReceipts(scopedPublishReceipts()); setPublishRecoveryError(""); }
+    catch (cause) { setPublishRecoveryError(cause instanceof Error ? cause.message : "Recovery evidence is unavailable."); }
+    void checkPublishReceipts();
+  }, [address, network, isPublish]);
+
+  useEffect(() => {
     if (!listQuery || listingTarget || items.length === 0) {
       return;
     }
@@ -2136,6 +2351,8 @@ export default function BoostRoot({
     const handleKeyDown = (event: globalThis.KeyboardEvent) => {
       if (event.key === "Escape") {
         event.preventDefault();
+        if (publishSigning.current) return;
+        setPublishComposerOpen(false);
         setDirectPostOpen(false);
         setExpandedItem(undefined);
         setPendingPaidAction(undefined);
@@ -2303,7 +2520,7 @@ export default function BoostRoot({
   }
 
   function renderSearchControl() {
-    const label = isProfileView ? "Search this profile" : "Search Boost";
+    const label = isProfileView ? "Search this profile" : `Search ${surfaceName}`;
     return <form className="boost-search boost-route-search" role="search" aria-label={label}
       onSubmit={event => { event.preventDefault(); setIndexedSearchQuery(searchQuery.trim()); }}>
       <Search size={15} aria-hidden="true" />
@@ -2331,9 +2548,20 @@ export default function BoostRoot({
     setDirectPostOpen(true);
   }
 
-  function renderBoostPost(item: BoostFeedItem) {
+  function openPublishComposer() {
+    setPublishRestoreDraft(undefined);
+    setPublishComposerOpen(true);
+  }
+
+  const timelineHref = isPublish ? publishHref({ network, embedded }) : boostTimelineHref(embedded, network);
+  const myProfileHref = isPublish ? publishHref({ profile: activeIdentity?.id || address, network, embedded }) : boostProfileHref(activeIdentity?.id || address, embedded);
+  const composeSurface = isPublish ? openPublishComposer : onComposeBoost ?? (() => openBoostComposer());
+
+  function renderBoostPost(item: BoostFeedItem, articleReader = false) {
     return (
       <BoostPost
+        articleReader={articleReader}
+        publishSurface={isPublish}
         embedded={embedded}
         actionBusy={actionBusy}
         activeAddress={address}
@@ -2399,6 +2627,7 @@ export default function BoostRoot({
         embedded ? "boost-public-app boost-embedded-app" : "mail-app boost-public-app",
         isProfileView ? "boost-profile-surface" : isSearchView ? "boost-search-surface" : "",
         isProfileView && profileSearchActive ? "boost-profile-search-active" : "",
+        isPublish ? "publish-public-app" : "",
       ].filter(Boolean).join(" ")}
       ref={boostSurfaceRef}
     >
@@ -2412,12 +2641,20 @@ export default function BoostRoot({
           hasUnisat={hasUnisat}
           network={network}
           onNetworkChange={setNetwork}
-          onRefresh={() => void refresh(false, true)}
-          subtitle="Proof-ranked social signal"
-          title="Boost"
+          onRefresh={() => { void refresh(false, true); if (isPublish) void checkPublishReceipts(); }}
+          subtitle={isPublish ? "Stories published on ProofOfWork" : "Proof-ranked social signal"}
+          title={surfaceName}
         />
       )}
       <AppStatusRow persistent status={status} />
+      {isPublish ? <ActionRecoveryPanel receipts={publishReceipts} error={publishRecoveryError}
+        checking={publishRecoveryChecking} restoringDisabled={Boolean(actionBusy)}
+        canRestore={receipt => receipt.status === "dropped"}
+        onRestore={receipt => {
+          const fields = Object.fromEntries(receipt.fields);
+          setPublishRestoreDraft({ title: fields.Title ?? "", body: fields.Body ?? "", signal: Number(fields["Proof signal"] ?? 546), feeRate: Number(fields["Fee rate"] ?? 1) });
+          setPublishComposerOpen(true);
+        }} onCheck={() => void checkPublishReceipts()} workspaceHref={receipt => publishHref({ txid: receipt.txid, network: receipt.network, embedded })} /> : null}
       {!isProfileView ? (
         <details className="boost-network-stats">
           <summary>Network stats</summary>
@@ -2426,7 +2663,7 @@ export default function BoostRoot({
       ) : null}
 
       <div
-        aria-label={embedded ? undefined : isSearchView ? "Boost search" : "Boost timeline"}
+        aria-label={embedded ? undefined : isSearchView ? `${surfaceName} search` : `${surfaceName} timeline`}
         className={
           embedded
             ? "boost-shell boost-shell-instrument is-embedded"
@@ -2442,15 +2679,16 @@ export default function BoostRoot({
             type="button"
           />
         ) : null}
-        <nav className="boost-compact-nav" aria-label="Boost navigation">
-          <a href={boostTimelineHref(embedded, network)} aria-label="Home" title="Home"><Home size={22} /><span>Home</span></a>
-          <a href={boostSearchHref(embedded, network)} aria-label="Search Boost" title="Search Boost" aria-current={isSearchView ? "page" : undefined}><Search size={22} /><span>Search</span></a>
-          {address ? <a href={boostProfileHref(address, embedded)} aria-label="My profile" title="My profile"><UserCircle size={22} /><span>Profile</span></a> :
+        <nav className="boost-compact-nav" aria-label={`${surfaceName} navigation`}>
+          <a href={timelineHref} aria-label="Home" title="Home"><Home size={22} /><span>Home</span></a>
+          <a href={isPublish ? `${publishHref({ network, embedded })}&mode=search` : boostSearchHref(embedded, network)} aria-label={`Search ${surfaceName}`} title={`Search ${surfaceName}`} aria-current={isSearchView ? "page" : undefined}><Search size={22} /><span>Search</span></a>
+          {address ? <a href={myProfileHref} aria-label="My profile" title="My profile"><UserCircle size={22} /><span>Profile</span></a> :
             <button onClick={openTools} type="button" aria-label="Connect profile" title="Connect profile"><UserCircle size={22} /><span>Profile</span></button>}
-          <button className="primary" onClick={onComposeBoost ?? (() => openBoostComposer())} type="button" aria-label="Post a Boost" title="Post a Boost"><Zap size={22} /><span>Post</span></button>
+          <a href={isPublish ? appHref("https://boost.proofofwork.me/", "/?boost=1") : publishHref({ network })} aria-label={isPublish ? "Open Boost" : "Open Publish"} title={isPublish ? "Open Boost" : "Open Publish"}><BookOpen size={22} /><span>{isPublish ? "Boost" : "Publish"}</span></a>
+          <button className="primary" onClick={composeSurface} type="button" aria-label={isPublish ? "Write an article" : "Post a Boost"} title={isPublish ? "Write an article" : "Post a Boost"}><BookOpen size={22} /><span>{isPublish ? "Write" : "Post"}</span></button>
         </nav>
         <aside
-          aria-label="Boost tools"
+          aria-label={`${surfaceName} tools`}
           aria-modal={toolsOpen || undefined}
           className={toolsOpen ? "boost-sidebar is-open" : "boost-sidebar"}
           id="boost-tools-panel"
@@ -2459,7 +2697,7 @@ export default function BoostRoot({
         >
           <div className="boost-sidebar-mobile-head">
             <div>
-              <span>Boost controls</span>
+              <span>{surfaceName} controls</span>
               <strong>Identity & discovery</strong>
             </div>
             <button
@@ -2472,7 +2710,7 @@ export default function BoostRoot({
             </button>
           </div>
           <div className="boost-compose-panel">
-            {onComposeBoost ? (
+            {isPublish ? <button className="primary" onClick={openPublishComposer} type="button"><span className="button-content"><BookOpen size={16} /><span>Write an article</span></span></button> : onComposeBoost ? (
               <button
                 className="primary"
                 onClick={onComposeBoost}
@@ -2509,7 +2747,7 @@ export default function BoostRoot({
           {isProfileView ? (
             <a
               className="secondary link-button boost-profile-timeline-link"
-              href={boostTimelineHref(embedded, network)}
+              href={timelineHref}
             >
               <span className="button-content">
                 <Clock size={16} />
@@ -2672,9 +2910,9 @@ export default function BoostRoot({
             </form>
           ) : null}
 
-          <a className="secondary link-button boost-search-nav-link" href={boostSearchHref(embedded, network)}
+          <a className="secondary link-button boost-search-nav-link" href={isPublish ? `${publishHref({ network, embedded })}&mode=search` : boostSearchHref(embedded, network)}
             aria-current={isSearchView ? "page" : undefined}>
-            <span className="button-content"><Search size={16} /><span>Search Boost</span></span>
+            <span className="button-content"><Search size={16} /><span>Search {surfaceName}</span></span>
           </a>
 
           <form className="boost-profile-filter" onSubmit={openProfileRoute}>
@@ -2714,12 +2952,17 @@ export default function BoostRoot({
         <section className="boost-feed-panel">
           {isSearchView ? (
             <header className="boost-search-head">
-              <a className="secondary small link-button" href={boostTimelineHref(embedded, network)}
+              <a className="secondary small link-button" href={timelineHref}
                 aria-label="Back to timeline" title="Back to timeline"><ArrowLeft size={20} /></a>
               {renderSearchControl()}
             </header>
           ) : null}
-          {isProfileView && connectionsTab ? (
+          {isPublish && articleRoute ? <section className="publish-reader" aria-label="Published article">
+            <div className="boost-profile-titlebar"><a className="secondary small link-button" href={timelineHref}><ArrowLeft size={18} /> Articles</a><strong>Read on ProofOfWork</strong></div>
+            {articleTxid ? <BoostActivity key={`${network}:${articleTxid}`} txid={articleTxid} network={network} viewer={address}
+              renderPost={post => renderBoostPost(post, post.txid === articleTxid)} /> :
+              <div className="publish-read-error" role="alert"><h2>Invalid article transaction</h2><p>Open an article with its full 64-character transaction ID.</p></div>}
+          </section> : isProfileView && connectionsTab ? (
             <BoostConnections profile={profileRouteValue} tab={connectionsTab} onTab={selectConnections}
               network={network} viewer={address} onBack={() => selectConnections()}
               onFollow={(target, id, following) => { if (!actionBusy) void publishFollowTarget(following ? "unfollow" : "follow", target, id); }} />
@@ -2727,12 +2970,12 @@ export default function BoostRoot({
           {isProfileView ? (
             <>
             <div className="boost-profile-titlebar">
-              <a className="secondary small link-button" href={boostTimelineHref(embedded, network)} aria-label="Back to timeline" title="Back to timeline">
+              <a className="secondary small link-button" href={timelineHref} aria-label="Back to timeline" title="Back to timeline">
                 <ArrowLeft size={20} />
               </a>
               <div className="boost-profile-title">
                 <strong title={profileSubjectDisplay(payload)}>{profileSubjectDisplay(payload)}</strong>
-                <span>{profileCount(profileBoostCount)} {profileBoostCount === 1 ? "Boost" : "Boosts"}</span>
+                <span>{profileCount(profileBoostCount)} {isPublish ? profileBoostCount === 1 ? "Article" : "Articles" : profileBoostCount === 1 ? "Boost" : "Boosts"}</span>
               </div>
               <button className="secondary small" onClick={openProfileSearch} ref={profileSearchTriggerRef} type="button" aria-label="Search this profile" title="Search this profile">
                 <Search size={20} />
@@ -2815,7 +3058,7 @@ export default function BoostRoot({
                     tabIndex={profileTab === option.value ? 0 : -1}
                     type="button"
                   >
-                    <span>{option.label}</span>
+                    <span>{isPublish && option.value === "boosts" ? "Articles" : option.label}</span>
                     <strong>{payload?.profileTabs?.[option.value] ?? "—"}</strong>
                   </button>
                 ))}
@@ -2841,7 +3084,7 @@ export default function BoostRoot({
                     tabIndex={timelineMode === option.value ? 0 : -1}
                     type="button"
                   >
-                    {option.label}
+                    {isPublish && option.value === "all" ? "Articles" : option.label}
                   </button>
                 ))}
               </div>
@@ -2852,10 +3095,10 @@ export default function BoostRoot({
                 >
                   {address ? shortAddress(address).slice(0, 2).toUpperCase() : "Po"}
                 </div>
-                {!onComposeBoost ? <label className="boost-inline-draft">
+                {!onComposeBoost && !isPublish ? <label className="boost-inline-draft">
                   <textarea aria-label="Boost text" maxLength={140} placeholder="Share a proof-backed thought" rows={2} value={postText} onChange={(event) => setPostText(event.target.value)} />
                 </label> : null}
-                {onComposeBoost ? (
+                {onComposeBoost && !isPublish ? (
                   <button
                     className="boost-composer-prompt"
                     onClick={onComposeBoost}
@@ -2866,13 +3109,13 @@ export default function BoostRoot({
                 ) : (
                   <button
                     className="boost-composer-prompt"
-                    onClick={() => openBoostComposer()}
+                    onClick={composeSurface}
                     type="button"
                   >
-                    Review Boost
+                    {isPublish ? "Write your next article" : "Review Boost"}
                   </button>
                 )}
-                <p className="boost-composer-hint">140 characters · Proof / WORK · Files</p>
+                <p className="boost-composer-hint">{isPublish ? "Text stories · Shared Boost replies, likes, and reboosts" : "140 characters · Proof / WORK · Files"}</p>
               </div>
             </div>
           ) : null}
@@ -2953,7 +3196,7 @@ export default function BoostRoot({
             {emptySearch ? (
               <div className="boost-empty">
                 <Search size={28} />
-                <h2>Search Boost</h2>
+                <h2>Search {surfaceName}</h2>
                 <p>Find Boosts by keyword, hashtag, or cashtag.</p>
               </div>
             ) : visibleItems.length > 0 ? (
@@ -2962,7 +3205,7 @@ export default function BoostRoot({
               <div className="boost-empty">
                 <Zap size={28} />
                 <h2>
-                  {!payload ? busy || searchPending ? "Loading Boost history" : "Boost history unavailable" : isSearchView
+                  {isPublish ? (!payload ? busy || searchPending ? "Loading articles" : "Article history unavailable" : timelineMode === "following" ? address ? "No articles from followed writers yet" : "Connect to load Following" : "No confirmed articles yet") : !payload ? busy || searchPending ? "Loading Boost history" : "Boost history unavailable" : isSearchView
                     ? "No Boosts match your search"
                     : isProfileView
                     ? profileEmptyTitle(profileTab)
@@ -2976,7 +3219,7 @@ export default function BoostRoot({
             )}
             {payload?.hasMore ? (
               <button className="secondary" disabled={busy} onClick={() => void refresh(true)} type="button">
-                {busy ? "Loading..." : "Load more Boosts"}
+                {busy ? "Loading..." : isPublish ? "Load more articles" : "Load more Boosts"}
               </button>
             ) : null}
           </div>
@@ -2985,7 +3228,7 @@ export default function BoostRoot({
 
         <aside className="boost-right-rail" aria-label="Boost discovery">
           <details className="boost-discovery-details" open={discoveryOpen} onToggle={(event) => setDiscoveryOpen(event.currentTarget.open)}>
-          <summary>Explore Boost</summary>
+          <summary>{isPublish ? "Explore articles" : "Explore Boost"}</summary>
           <div className="boost-discovery-content">
           <section className="boost-rail-panel">
             <div className="boost-rail-head">
@@ -3030,7 +3273,7 @@ export default function BoostRoot({
 
           <section className="boost-rail-panel">
             <div className="boost-rail-head">
-              <strong>Top Boosts</strong>
+              <strong>{isPublish ? "Top articles" : "Top Boosts"}</strong>
               <a href={boostAmoHref()}>AMO</a>
             </div>
             <div className="boost-rail-list">
@@ -3092,7 +3335,7 @@ export default function BoostRoot({
           {activeMarketListings.length > 0 ? (
             <section className="boost-rail-panel">
               <div className="boost-rail-head">
-                <strong>Listed Boosts</strong>
+                <strong>{isPublish ? "Listed articles" : "Listed Boosts"}</strong>
                 <span>{activeMarketListings.length}</span>
               </div>
               <div className="boost-rail-list">
@@ -3119,6 +3362,8 @@ export default function BoostRoot({
             aria-label="Close Boost dialog"
             className="boost-modal-dismiss"
             onClick={() => {
+              if (publishSigning.current) return;
+              setPublishComposerOpen(false);
               setDirectPostOpen(false);
               setExpandedItem(undefined);
               setPendingPaidAction(undefined);
@@ -3127,7 +3372,9 @@ export default function BoostRoot({
             }}
             type="button"
           />
-          {directPostOpen ? (
+          {publishComposerOpen ? <PublishComposer address={address} network={network} identity={activeIdentity}
+            restoreDraft={publishRestoreDraft} onConnect={() => void connectWallet()} onClose={() => setPublishComposerOpen(false)}
+            onPrepare={preparePublishArticle} onSign={signPublishArticle} /> : directPostOpen ? (
             <section
               aria-labelledby="boost-post-dialog-title"
               aria-modal="true"

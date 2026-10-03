@@ -4,6 +4,26 @@ ProofOfWork.Me has a first-party OP_RETURN API layer for the existing `pwm1:` ma
 
 The current product direction is OP_RETURN only. Future protocol work should improve this OP_RETURN indexer and API before introducing any new carrier.
 
+Publish at `publish.proofofwork.me` reuses `pwb1:` social state and exact
+same-transaction `pwm1:m:` article bodies. [PUBLISH.md](PUBLISH.md) specifies
+the 100,000-byte aggregate script budget, compact feed/full detail verification,
+shared identity bridge and nonadditive Growth attribution. The node release
+must include `src/shared/protocol/publishArticle.mjs` and the portable signature
+module in `src/features/identity/` imported by the API/indexer. No schema or
+canonical ID/economic migration is required. Static releases now have sixteen
+primary surfaces plus NFT: seventeen managed roots. Prior fourteen-, fifteen-
+and sixteen-surface archives retain their exact verification compatibility.
+
+The current UI orchestration is `deploy/publish/`: `build.py` creates fresh
+lockfile-installed source and seventeen surface archives plus a build receipt;
+`release.py` records the locked preflight and committed-source plan;
+`transport_preserve.py` dispatches the separately admitted surface and source
+streams; the publisher retains all rollback roots; `collect_verify.py` and
+`https_smoke.py` bind the deployed archive to off-host HTTPS bytes. The phase
+capacity algorithm is committed and hash-bound by the plan, includes Publish,
+and checks the exact installed stager hash. Existing receiver, admission,
+scratch, filesystem, inode and retention-hold controls remain in force.
+
 ## Current Shape
 
 ```text
@@ -4114,7 +4134,7 @@ exchange markers before proceeding.
 The following is the exact no-Node-on-UI-host release procedure. Run the first
 block on the trusted build host only after the approved release is committed.
 It creates a fresh detached checkout, installs the lockfile without lifecycle
-scripts, keeps every build output outside that checkout, builds all 15 primary
+scripts, keeps every build output outside that checkout, builds all 16 primary
 surfaces, and copies Computer as NFT. Do not build from the working tree or
 reuse a prior `dist` directory.
 
@@ -4176,6 +4196,7 @@ build_surface computer https://computer.proofofwork.me
 build_surface desktop https://desktop.proofofwork.me VITE_DESKTOP_ONLY
 build_surface browser https://browser.proofofwork.me VITE_BROWSER_ONLY
 build_surface boost https://boost.proofofwork.me VITE_BOOST_ONLY
+build_surface publish https://publish.proofofwork.me VITE_PUBLISH_ONLY
 build_surface marketplace https://amo.proofofwork.me VITE_MARKETPLACE_ONLY
 build_surface token https://credit.proofofwork.me VITE_TOKEN_ONLY
 build_surface wallet https://wallet.proofofwork.me VITE_WALLET_ONLY

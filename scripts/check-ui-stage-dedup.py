@@ -15,7 +15,7 @@ SPEC = importlib.util.spec_from_file_location("ui_stage_dedup", ROOT / "deploy/p
 stage = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(stage)
 STAMP = 1_700_000_000_000_000_000
-EXPECTED_SURFACES = frozenset('activity boost browser computer desktop dns growth id inception infinity landing marketplace nft token wallet work'.split())
+EXPECTED_SURFACES = frozenset('activity boost browser computer desktop dns growth id inception infinity landing marketplace nft publish token wallet work'.split())
 
 
 def write(path, content=b"same managed content\n", mode=0o644, stamp=STAMP):
@@ -209,6 +209,19 @@ class InternalDedupTests(unittest.TestCase):
 
 
 class StagerIntegrationTests(unittest.TestCase):
+    def test_preserves_all_historical_surface_families(self):
+        with tempfile.TemporaryDirectory(prefix="pow-ui-families-") as name:
+            root = Path(name)
+            for expected, added in [(stage.PRE_BOOST_SURFACES, None),
+                                    (stage.LEGACY_SURFACES, "boost"),
+                                    (stage.PRE_PUBLISH_SURFACES, "dns"),
+                                    (stage.SURFACES, "publish")]:
+                if added:
+                    (root / ("proofofwork-" + added)).mkdir()
+                self.assertEqual(stage.live_surface_names(root), expected)
+            self.assertEqual([len(value) for value in [stage.PRE_BOOST_SURFACES,
+                stage.LEGACY_SURFACES, stage.PRE_PUBLISH_SURFACES, stage.SURFACES]], [14, 15, 16, 17])
+
     def test_default_independence_opt_in_capacity_compatibility_and_archive_bytes(self):
         self.assertEqual(set(stage.SURFACES), EXPECTED_SURFACES)
         self.assertEqual(len(stage.SURFACES), len(EXPECTED_SURFACES), 'surfaces must be unique')

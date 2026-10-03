@@ -2,6 +2,7 @@ import { encodeTextBase64Url } from "../../shared/utils/encoding";
 import type { BitcoinNetwork } from "../../shared/bitcoin/networks";
 import type { MailAttachment } from "../../shared/protocol/mailAttachment";
 import { boostListingPriceSats } from "./boostNumeric";
+import type { PublishArticleMetadata } from "../../shared/protocol/publishArticle.mjs";
 
 export const BOOST_ACTION_PAYMENT_SATS = 546;
 export const BOOST_LISTING_ANCHOR_VALUE_SATS = 546;
@@ -45,6 +46,9 @@ export type BoostProfile = {
 };
 
 export type BoostFeedItem = {
+  article?: PublishArticleMetadata;
+  articleBody?: string;
+  articleVerification?: "canonical-same-tx-pwm1-message-v1";
   eventId?: string | number;
   actionCount?: number;
   actionSignalSats?: number;

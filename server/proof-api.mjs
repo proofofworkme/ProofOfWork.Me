@@ -9,6 +9,10 @@ import {
 } from "./dns-subdomain-discovery.mjs";
 import { reviewedIncbReplayBaselineEvidence, reviewedIncbReplayBaselineFromEvidence } from "./incb-replay-baseline.mjs";
 import { boostTextMatchesTag } from "../src/shared/protocol/boostText.mjs";
+import {
+  normalizePublishArticleMetadata, publishArticleBodyFromRecords,
+  publishArticleDataCarrierBytes, PUBLISH_ARTICLE_VERIFICATION, PUBLISH_DATA_CARRIER_LIMIT,
+} from "../src/shared/protocol/publishArticle.mjs";
 
 import { SCOPED_INCB_ORACLE_PIN, canonicalSummarySnapshotIdOutsideScopedOracle } from "./incb-scoped-oracle.mjs";
 
@@ -53929,6 +53933,12 @@ function boostEventSearchText(item, state, profileState) {
     .join(" ");
 }
 
+function boostArticleMetadata(item) {
+  if (item?.kind !== "boost-post" || !item?.article ||
+      item.articleVerification !== PUBLISH_ARTICLE_VERIFICATION) return null;
+  return normalizePublishArticleMetadata(item.article);
+}
+
 function boostEventPostText(item) {
   return String(item?.kind ?? "").trim().toLowerCase() === "boost-reboost"
     ? "" : String(item?.text ?? item?.memo ?? item?.detail ?? "").trim();
@@ -54326,6 +54336,7 @@ function boostFeedItemFromEvent(
       )
     : null;
   const text = boostEventPostText(item);
+  const article = boostArticleMetadata(item);
   const media = Array.isArray(item?.media)
     ? item.media[0]
     : typeof item?.media === "object" && item.media
@@ -54372,6 +54383,7 @@ function boostFeedItemFromEvent(
 
   return {
     actionType,
+    ...(article ? { article, articleVerification: PUBLISH_ARTICLE_VERIFICATION } : {}),
     eventId: item?.eventId,
     actionCount:
       Number(counter.likes ?? 0) +
@@ -54827,11 +54839,32 @@ async function boostCanonicalMarketTransaction(network, item) {
   return transaction;
 }
 
+async function boostCanonicalArticleBody(network, item) {
+  const article = boostArticleMetadata(item);
+  if (!article) throw boostProjectionError("Confirmed Publish article is unavailable.", 404);
+  const transaction = await boostCanonicalMarketTransaction(network, item);
+  const records = transaction.vout.map((output, voutIndex) => {
+    const record = canonicalProtocolCandidateFromOutput(output);
+    return record ? { ...record, voutIndex } : null;
+  }).filter(Boolean);
+  const original = records.find(record => record.voutIndex === item.protocolVout);
+  const carrierBytes = publishArticleDataCarrierBytes(transaction);
+  const body = publishArticleBodyFromRecords(records, article,
+    bytes => createHash("sha256").update(bytes).digest("hex"));
+  if (carrierBytes === null || carrierBytes > PUBLISH_DATA_CARRIER_LIMIT ||
+      !original || original.decodeValid !== true || typeof item.payload !== "string" ||
+      original.text !== item.payload || body === null) {
+    throw boostProjectionError("Publish article bytes disagree with its confirmed record.");
+  }
+  return body;
+}
+
 async function boostFeedPayload(network, searchParams, fresh = false) {
   const detail = String(searchParams.get("detail") ?? "").trim().toLowerCase();
+  const format = String(searchParams.get("format") ?? "").trim().toLowerCase();
   const connections = searchParams.get("connections") ?? "";
   const activity = searchParams.get("activity") ?? "replies";
-  if ((detail && !/^[0-9a-f]{64}$/u.test(detail)) ||
+  if ((format && format !== "article") || (detail && !/^[0-9a-f]{64}$/u.test(detail)) ||
       (connections && !["followers", "following"].includes(connections)) ||
       (detail && !["replies", "likes", "reboosts"].includes(activity)) ||
       (connections && (!searchParams.get("profile") || detail || searchParams.has("listings")))) {
@@ -55012,6 +55045,7 @@ async function boostFeedPayload(network, searchParams, fresh = false) {
         BOOST_VISIBLE_EVENT_KINDS.has(item.kind) && item.confirmed === true);
       if (!record) throw boostProjectionError("Confirmed Boost record is unavailable.", 404);
       post = toFeedEntry(record)?.feedItem;
+      if (boostArticleMetadata(record)) post.articleBody = await boostCanonicalArticleBody(network, record);
       const activityTarget = record.kind === "boost-reboost" ? boostTargetTxid(record) : detail;
       const kind = { replies: "boost-reply", likes: "boost-like", reboosts: "boost-reboost" }[activity];
       rows = sourceItems.filter(item => item.confirmed === true && item.kind === kind && boostTargetTxid(item) === activityTarget)
@@ -55030,7 +55064,7 @@ async function boostFeedPayload(network, searchParams, fresh = false) {
       });
     }
     const fingerprint = boostProjectionFingerprint({ provenance, detail, connections, activity,
-      profile, viewerAddress, rows, post });
+      profile, viewerAddress, rows, post, format });
     const page = paginateBoostEntries(rows, { limit, cursor, fingerprint, snapshotId: indexedPayload.snapshotId });
     return { ...page, complete: true, provenance, snapshotId: indexedPayload.snapshotId,
       indexedThroughBlock: indexedPayload.indexedThroughBlock, indexedThroughBlockHash: indexedPayload.indexedThroughBlockHash,
@@ -55064,6 +55098,8 @@ async function boostFeedPayload(network, searchParams, fresh = false) {
       const originalProfileState = originalPost
         ? profiles.get(boostAddress(originalPost?.authorAddress ?? originalPost?.actor))
         : null;
+      if (format === "article" && !boostArticleMetadata(item) &&
+          !(originalPost && boostArticleMetadata(originalPost))) return false;
       const authorKey = boostAddress(item?.authorAddress ?? item?.actor);
       if (
         !listingsOnly && !profileSubject &&
@@ -55106,7 +55142,7 @@ async function boostFeedPayload(network, searchParams, fresh = false) {
 
   const fingerprint = boostProjectionFingerprint({
     provenance: { ...indexedPayload.provenance, applicationRejectedEvents: qualification.rejected, applicationRejectedIdentityClaims: identityQualification.rejected, identityRegistry: identityProvenance, registryHistory: registryHistory?.provenance ?? null }, sort, view, profile, profileTab,
-    valueWindow, viewerAddress, query, includePending,
+    valueWindow, viewerAddress, query, includePending, format,
     // Bind ordering to exact valuation as well as event history. A changed
     // WORK floor must restart pagination rather than duplicate/omit posts.
     workValue: boostWorkNetworkValue(workFloor),
@@ -55152,6 +55188,7 @@ async function boostFeedPayload(network, searchParams, fresh = false) {
     mode: listingsOnly ? "listings" : profileSubject ? "profile" : "timeline",
     network,
     profile: profile || undefined,
+    ...(format ? { format } : {}),
     profileSubject: profileSubject
       ? {
           address: profileSubject.address || undefined,

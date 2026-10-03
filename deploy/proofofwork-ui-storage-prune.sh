@@ -84,7 +84,7 @@ fi
 
 now="$(date +%s)"
 max_paths=256
-surface_pattern='activity|browser|boost|computer|desktop|dns|growth|id|inception|infinity|landing|marketplace|nft|token|wallet|work'
+surface_pattern='activity|browser|boost|computer|desktop|dns|growth|id|inception|infinity|landing|marketplace|nft|publish|token|wallet|work'
 # Pre-deploy, previous, and rollback roots are historical recovery evidence.
 # They are intentionally excluded until a retained archive manifest can prove
 # exact coverage for the corresponding release set.

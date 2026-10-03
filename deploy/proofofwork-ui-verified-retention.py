@@ -18,7 +18,10 @@ import subprocess
 
 RELEASE = re.compile(r'[0-9a-f]{7,64}-[0-9]{8}T[0-9]{6}Z\Z')
 STAGE = re.compile(r'proofofwork-ui-(source|surfaces)-([0-9a-f]{7,64}-[0-9]{8}T[0-9]{6}Z)(\.tgz(?:\.sha256)?)?\Z')
-SURFACES = set('activity boost browser computer desktop dns growth id inception infinity landing marketplace nft token wallet work'.split())
+SURFACES = frozenset('activity boost browser computer desktop dns growth id inception infinity landing marketplace nft publish token wallet work'.split())
+
+SURFACE_FAMILIES = {SURFACES, SURFACES - {'publish'}, SURFACES - {'publish', 'dns'},
+                    SURFACES - {'publish', 'dns', 'boost'}}
 
 
 def sha256(path):
@@ -52,9 +55,13 @@ def verified_release(path, archives):
     safe_path(path)
     fields = manifest(path)
     surface_fields = {key.split('.')[1] for key in fields if key.startswith('surface.') and key.endswith('.sha256')}
-    if surface_fields != SURFACES:
+    surface_counts = {key.split('.')[1] for key in fields if key.startswith('surface.') and key.endswith('.file_count')}
+    if frozenset(surface_fields) not in SURFACE_FAMILIES or surface_counts != surface_fields:
         raise ValueError('Incomplete release surface coverage')
-    for surface in sorted(SURFACES):
+    for surface in SURFACES - surface_fields:
+        if os.path.lexists(path / ('proofofwork-' + surface)):
+            raise ValueError('Undeclared release surface: ' + surface)
+    for surface in sorted(surface_fields):
         base = path / ('proofofwork-' + surface)
         safe_path(base)
         files = []

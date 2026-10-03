@@ -440,7 +440,7 @@ expect(
 );
 expect(
   "landing route is selected before the transaction-capable App import",
-  /detectAppSurface\(\) === "landing"[\s\S]*import\("\.\/features\/landing\/LandingRoot"\)[\s\S]*import\("\.\/App"\)/.test(
+  /const appSurface = detectAppSurface\(\);[\s\S]*appSurface === "landing"[\s\S]*import\("\.\/features\/landing\/LandingRoot"\)[\s\S]*import\("\.\/App"\)/.test(
     main,
   ),
 );
@@ -735,9 +735,10 @@ const boostProfileHeadSource = boostRoot.slice(
 expect(
   "Boost profile timeline navigation lives in the left rail",
   /boost-profile-timeline-link/u.test(boostSidebarSource) &&
-    /href=\{boostTimelineHref\(embedded, network\)\}/u.test(
+    /href=\{timelineHref\}/u.test(
       boostSidebarSource,
     ) &&
+    /const timelineHref = isPublish \? publishHref\(\{ network, embedded \}\) : boostTimelineHref\(embedded, network\)/u.test(boostRoot) &&
     /<Clock size=\{16\} \/>/u.test(boostSidebarSource) &&
     /<span>Timeline<\/span>/u.test(boostSidebarSource) &&
     !/Timeline/u.test(boostProfileHeadSource),

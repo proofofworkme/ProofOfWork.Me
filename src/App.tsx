@@ -81,8 +81,10 @@ import {
   INCEPTION_APP_URL,
   INFINITY_APP_URL,
   BOOST_APP_URL,
+  PUBLISH_APP_URL,
   LOCAL_BROWSER_APP_URL,
   LOCAL_BOOST_APP_URL,
+  LOCAL_PUBLISH_APP_URL,
   LOCAL_COMPUTER_APP_URL,
   LOCAL_DESKTOP_APP_URL,
   LOCAL_DNS_APP_URL,
@@ -269,6 +271,7 @@ import {
 } from "./features/boost/boostProtocol";
 
 const BoostRoot = lazy(() => import("./features/boost/BoostRoot"));
+const PublishRoot = lazy(() => import("./features/publish/PublishRoot"));
 const BoostGrowthDetails = lazy(
   () => import("./features/growth/BoostGrowthDetails"),
 );
@@ -378,6 +381,7 @@ type Folder =
   | "desktop"
   | "browser"
   | "boost"
+  | "publish"
   | "ids"
   | "dns"
   | "marketplace"
@@ -402,6 +406,7 @@ const COMPUTER_ROUTE_FOLDERS: Folder[] = [
   "desktop",
   "browser",
   "boost",
+  "publish",
   "ids",
   "dns",
   "marketplace",
@@ -420,6 +425,7 @@ const STANDALONE_ROUTE_PARAMS = [
   "dns-launch",
   "desktop",
   "browser",
+  "publish",
   "marketplace",
   "credit",
   "token",
@@ -4211,6 +4217,8 @@ function folderLabel(folder: Folder) {
     return "Boost";
   }
 
+  if (folder === "publish") return "Publish";
+
   if (folder === "contacts") {
     return "Contacts";
   }
@@ -4290,6 +4298,8 @@ function folderSubtitle(folder: Folder) {
   if (folder === "boost") {
     return "Proof-ranked social timeline";
   }
+
+  if (folder === "publish") return "ProofOfWork articles and shared social activity";
 
   if (folder === "contacts") {
     return "Local address book";
@@ -37300,7 +37310,7 @@ export default function App() {
     activeFolder === "marketplace" ? "is-marketplace-workspace" : "",
     activeFolder === "dns" ? "is-dns-workspace" : "",
     activeFolder === "browser" ? "is-browser-workspace" : "",
-    activeFolder === "boost" ? "is-boost-workspace" : "",
+    activeFolder === "boost" || activeFolder === "publish" ? "is-boost-workspace" : "",
   ]
     .filter(Boolean)
     .join(" ");
@@ -37358,7 +37368,7 @@ export default function App() {
                   return;
                 }
 
-                if (activeFolder === "boost") {
+                if (activeFolder === "boost" || activeFolder === "publish") {
                   return;
                 }
 
@@ -37606,6 +37616,16 @@ export default function App() {
               <span className="folder-label">
                 <MessageSquareQuote size={17} />
                 <span>Boost</span>
+              </span>
+            </button>
+            <button
+              aria-current={activeFolder === "publish"}
+              onClick={() => openFolder("publish")}
+              type="button"
+            >
+              <span className="folder-label">
+                <FileText size={17} />
+                <span>Publish</span>
               </span>
             </button>
             <span className="folder-group-label">Identity &amp; value</span>
@@ -38315,6 +38335,10 @@ export default function App() {
               initialAddress={address}
               initialNetwork={network}
             />
+          </Suspense>
+        ) : activeFolder === "publish" ? (
+          <Suspense fallback={<div role="status" aria-busy="true">Loading Publish tools…</div>}>
+            <PublishRoot embedded initialAddress={address} initialNetwork={network} />
           </Suspense>
         ) : activeFolder === "log" ? (
           <ActivityWorkspace
@@ -48850,7 +48874,7 @@ function GrowthWorkspace({
             The candle-gold line is modeled ProofOfWork Computer network value. The
             olive line is real confirmed mainnet value from IDs, Mail, Infinity
             Bonds, Inception Bonds, Drive, DNS, AMO, Browser, Credits, and Wallet.
-            The forecast includes Boost, bonds, credit activity, and transfers with shared payments counted once.
+            The forecast includes Boost, Publish articles, bonds, credit activity, and transfers with shared payments counted once.
           </p>
         </div>
         <div className="growth-model-card">
@@ -49222,8 +49246,8 @@ function GrowthWorkspace({
             modelLabel="scenario value"
             modelOneYear={forecastVersion === "all-products" ? growthSats(oneYear.boostSats) : "Not modeled"}
             modelOneYearLabel={forecastVersion === "all-products" ? growthUsdForSats(oneYear.boostSats) : "Original baseline"}
-            name="Boost"
-            note="Social activity and sale-ticket flow, with shared Mail and WORK value counted once."
+            name="Boost & Publish"
+            note="Posts, articles, shared social activity, and sale-ticket flow. Articles are part of the existing Boost scenario; shared Mail and WORK value is counted once."
           >
             <Suspense
               fallback={<p className="field-note" role="status">Loading verified Boost detail…</p>}
@@ -49232,6 +49256,9 @@ function GrowthWorkspace({
             </Suspense>
             <a className="secondary small growth-boost-link" href={appHref(BOOST_APP_URL, LOCAL_BOOST_APP_URL)}>
               Open Boost
+            </a>
+            <a className="secondary small growth-boost-link" href={appHref(PUBLISH_APP_URL, LOCAL_PUBLISH_APP_URL)}>
+              Open Publish
             </a>
           </GrowthProductCard>
           <GrowthProductCard

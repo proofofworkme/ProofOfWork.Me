@@ -1,4 +1,8 @@
 import {
+  normalizePublishArticleMetadata, publishArticleBodyFromRecords,
+  publishArticleDataCarrierBytes, PUBLISH_ARTICLE_VERIFICATION, PUBLISH_DATA_CARRIER_LIMIT,
+} from "../src/shared/protocol/publishArticle.mjs";
+import {
   DNS_SUBDOMAIN_ACTIVATION_HEIGHT, DNS_SUBDOMAIN_PREFIX,
   dnsSubdomainSelfSendAuthor,
 } from "../src/shared/protocol/dnsSubdomains.mjs";
@@ -4969,6 +4973,8 @@ function boostPostItemFromJson(tx, message, action, post) {
   const sender = senderAddressFromTx(tx);
   const text = boostText(post?.text ?? post?.body ?? post?.message);
   const media = boostMediaPointer(post?.media ?? post?.attachment);
+  const articleDeclared = Object.prototype.hasOwnProperty.call(post ?? {}, "article");
+  const article = articleDeclared ? normalizePublishArticleMetadata(post.article) : null;
   const quoteTxid = boostTxidText(
     post?.quoteTxid ?? post?.quotedTxid ?? post?.quoteTargetTxid,
   );
@@ -4985,22 +4991,32 @@ function boostPostItemFromJson(tx, message, action, post) {
   const item = {
     ...base,
     action,
+    ...(article ? { article, articleVerification: PUBLISH_ARTICLE_VERIFICATION } : {}),
     authorAddress: sender,
     boostTxid: tx.txid,
     currentOwnerAddress: sender,
-    detail: text,
+    detail: article ? `${article.title} · ${article.size} UTF-8 bytes` : text,
     media: media ?? undefined,
     parentTxid: parentTxid || undefined,
     proofSignalSats: boostSignalSats(base, action === "reply"),
     quoteTxid: quoteTxid || undefined,
     registryFeeSats: action === "reply" ? BOOST_ACTION_REGISTRY_FEE_SATS : 0,
     signalSats: boostSignalSats(base, action === "reply"),
-    tags: ["Boost", action === "reply" ? "Reply" : "Post"],
+    tags: article ? ["Boost", "Publish", "Article"] : ["Boost", action === "reply" ? "Reply" : "Post"],
     targetTxid: parentTxid || undefined,
     text,
-    title: text ? text.slice(0, 90) : action === "reply" ? "Boost reply" : "Boost post",
+    title: article ? "Publish article" : (text ? text.slice(0, 90) : action === "reply" ? "Boost reply" : "Boost post"),
     workSignalSubatoms: workSignalSubatoms || undefined,
   };
+  if (articleDeclared) {
+    const carrierBytes = publishArticleDataCarrierBytes(tx);
+    if (action !== "post" || post?.v !== 1 || !article || media ||
+        carrierBytes === null || carrierBytes > PUBLISH_DATA_CARRIER_LIMIT ||
+        publishArticleBodyFromRecords(protocolMessagesFromTx(tx), article,
+          bytes => createHash("sha256").update(bytes).digest("hex")) === null) {
+      return invalidProtocolItem(item, "Publish article requires one exact, hash-verified same-transaction text body within the aggregate OP_RETURN limit.");
+    }
+  }
   if (workSignalDeclared && workSignalText !== "0" && !workSignalSubatoms) {
     return invalidProtocolItem(
       item,

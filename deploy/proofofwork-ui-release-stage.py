@@ -37,13 +37,15 @@ SURFACES = (
     "landing",
     "marketplace",
     "nft",
+    "publish",
     "token",
     "wallet",
     "work",
 )
-LEGACY_SURFACES = tuple(surface for surface in SURFACES if surface != "dns")
+PRE_PUBLISH_SURFACES = tuple(surface for surface in SURFACES if surface != "publish")
+LEGACY_SURFACES = tuple(surface for surface in SURFACES if surface not in {"dns", "publish"})
 PRE_BOOST_SURFACES = tuple(
-    surface for surface in SURFACES if surface not in {"boost", "dns"}
+    surface for surface in SURFACES if surface not in {"boost", "dns", "publish"}
 )
 COMPATIBILITY_MODEL = "proofofwork-ui-prior-asset-closure-v1"
 MAXIMUM_INDEX_BYTES = 2 * 1024 * 1024
@@ -609,6 +611,8 @@ def live_surface_names(root: Path) -> tuple[str, ...]:
     dns = root / "proofofwork-dns"
     if not os.path.lexists(dns):
         return LEGACY_SURFACES
+    if not os.path.lexists(root / "proofofwork-publish"):
+        return PRE_PUBLISH_SURFACES
     return SURFACES
 
 

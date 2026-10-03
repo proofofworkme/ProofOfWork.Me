@@ -79,3 +79,13 @@ test("display preserves full Q16 quantities and proofs above Number precision", 
   assert.equal(boostWorkDisplay(null), "Unavailable");
   assert.equal(boostProofsDisplay(null), "Unavailable");
 });
+
+test("Publish counts are a verified subset of posts and legacy omission stays unavailable", () => {
+  assert.equal(normalizeBoostGrowth(fixture(), checkpoint).counts.articles, null);
+  for (const articles of [-1, 2, "1", undefined]) {
+    const input = fixture(); input.counts.articles = articles;
+    assert.equal(normalizeBoostGrowth(input, checkpoint).counts.articles, null);
+  }
+  const input = fixture(); input.counts.articles = 1;
+  assert.equal(normalizeBoostGrowth(input, checkpoint).counts.articles, 1);
+});

@@ -144,12 +144,21 @@ surfaces=(
   landing
   marketplace
   nft
+  publish
   token
   wallet
   work
 )
-if ((${#surfaces[@]} != 16)); then
-  echo "UI provenance surface set must contain exactly 16 entries." >&2
+if ((${#surfaces[@]} != 17)); then
+  echo "UI provenance surface set must contain exactly 17 entries." >&2
+  exit 70
+fi
+pre_publish_surfaces=()
+for surface in "${surfaces[@]}"; do
+  [[ "${surface}" == "publish" ]] || pre_publish_surfaces+=("${surface}")
+done
+if ((${#pre_publish_surfaces[@]} != 16)); then
+  echo "UI provenance pre-Publish surface set must contain exactly 16 entries." >&2
   exit 70
 fi
 legacy_surfaces=(
@@ -202,7 +211,7 @@ for surface in "${surfaces[@]}"; do
   surface_seen["${surface}"]=1
 done
 unset surface_seen surface
-surface_pattern='activity|browser|boost|computer|desktop|dns|growth|id|inception|infinity|landing|marketplace|nft|token|wallet|work'
+surface_pattern='activity|browser|boost|computer|desktop|dns|growth|id|inception|infinity|landing|marketplace|nft|publish|token|wallet|work'
 
 surface_directory() {
   printf '%s/proofofwork-%s\n' "${ui_root}" "$1"
@@ -830,6 +839,9 @@ verify_archive_payload() {
   local -n expected_digests="${digests_name}"
   local -a archive_surfaces=("${surfaces[@]}")
 
+  if [[ -z "${expected_counts[publish]:-}" && -z "${expected_digests[publish]:-}" ]]; then
+    archive_surfaces=("${pre_publish_surfaces[@]}")
+  fi
   if [[ -z "${expected_counts[dns]:-}" && -z "${expected_digests[dns]:-}" ]]; then
     archive_surfaces=("${legacy_surfaces[@]}")
   fi
@@ -961,10 +973,13 @@ verify_archive_payload() {
       echo "Release archive must contain only the surfaces root." >&2
       exit 1
     fi
-    if [[ -z "${expected_counts[boost]:-}" && -e "${extraction_root}/surfaces/boost" ]]; then
-      echo "Legacy release archive contains unexpected Boost surface evidence." >&2
-      exit 1
-    fi
+    for surface in boost dns publish; do
+      if [[ -z "${expected_counts[${surface}]:-}" &&
+        -e "${extraction_root}/surfaces/${surface}" ]]; then
+        echo "Legacy release archive contains unexpected ${surface} surface evidence." >&2
+        exit 1
+      fi
+    done
     for surface in "${archive_surfaces[@]}"; do
       archive_surface="${extraction_root}/surfaces/${surface}"
       if ! validate_surface_directory "${surface}" "${archive_surface}"; then
@@ -1040,6 +1055,8 @@ record_rollback_evidence() {
     record_surfaces=("${pre_boost_surfaces[@]}")
   elif [[ ! -e "$(surface_directory dns)" && ! -L "$(surface_directory dns)" ]]; then
     record_surfaces=("${legacy_surfaces[@]}")
+  elif [[ ! -e "$(surface_directory publish)" && ! -L "$(surface_directory publish)" ]]; then
+    record_surfaces=("${pre_publish_surfaces[@]}")
   fi
 
   for surface in "${record_surfaces[@]}"; do
@@ -1405,6 +1422,13 @@ verify_manifest() {
     echo "Active UI release manifest does not preserve the NFT compatibility alias." >&2
     exit 1
   fi
+  if [[ -z "${values[surface.publish.file_count]:-}" && -z "${values[surface.publish.sha256]:-}" ]]; then
+    if [[ -e "$(surface_directory publish)" || -L "$(surface_directory publish)" ]]; then
+      echo "Active UI release manifest is missing surface evidence: publish" >&2
+      exit 1
+    fi
+    manifest_surfaces=("${pre_publish_surfaces[@]}")
+  fi
   if [[ -z "${values[surface.dns.file_count]:-}" && -z "${values[surface.dns.sha256]:-}" ]]; then
     if [[ -e "$(surface_directory dns)" || -L "$(surface_directory dns)" ]]; then
       echo "Active UI release manifest is missing surface evidence: dns" >&2
@@ -1528,6 +1552,13 @@ verify_rollback_evidence() {
     "${values[surface.nft.sha256]:-}" != "${values[surface.computer.sha256]:-}" ]]; then
     echo "UI rollback evidence does not preserve the NFT compatibility alias." >&2
     exit 1
+  fi
+  if [[ -z "${values[surface.publish.file_count]:-}" && -z "${values[surface.publish.sha256]:-}" ]]; then
+    if [[ -e "$(surface_directory publish)" || -L "$(surface_directory publish)" ]]; then
+      echo "UI rollback evidence is missing surface evidence: publish" >&2
+      exit 1
+    fi
+    evidence_surfaces=("${pre_publish_surfaces[@]}")
   fi
   if [[ -z "${values[surface.dns.file_count]:-}" && -z "${values[surface.dns.sha256]:-}" ]]; then
     if [[ -e "$(surface_directory dns)" || -L "$(surface_directory dns)" ]]; then

@@ -41,6 +41,21 @@
 		Referrer-Policy "strict-origin-when-cross-origin"
 		Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=(), usb=()"
 	}
+	@socialIdentityParents host boost.proofofwork.me publish.proofofwork.me
+	header @socialIdentityParents {
+		defer
+		Content-Security-Policy "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; media-src 'self' data: blob: https:; font-src 'self' data:; connect-src 'self' https://*.proofofwork.me wss://*.proofofwork.me; frame-src 'self' https://computer.proofofwork.me; worker-src 'self' blob:; manifest-src 'self'; upgrade-insecure-requests"
+	}
+	@socialIdentityBridge {
+		host computer.proofofwork.me
+		path /
+		expression `{http.request.uri.query} == "social-identity-bridge=1"`
+	}
+	header @socialIdentityBridge {
+		defer
+		-X-Frame-Options
+		Content-Security-Policy "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors https://boost.proofofwork.me https://publish.proofofwork.me https://computer.proofofwork.me; form-action 'none'; script-src 'self'; style-src 'self'; img-src 'none'; media-src 'none'; font-src 'self'; connect-src 'self'; frame-src 'none'; worker-src 'none'; manifest-src 'none'; upgrade-insecure-requests"
+	}
 }
 
 (landing_headers) {
@@ -152,6 +167,15 @@
 	}
 }
 
+(common_publish_app) {
+	import common_static_policy
+	handle {
+		root * /var/www/proofofwork-publish
+		try_files {path} /index.html
+		file_server
+	}
+}
+
 (common_marketplace_app) {
 	import common_static_policy
 	handle {
@@ -194,6 +218,7 @@ http://computer.proofofwork.me,
 http://desktop.proofofwork.me,
 http://browser.proofofwork.me,
 http://boost.proofofwork.me,
+http://publish.proofofwork.me,
 http://amo.proofofwork.me,
 http://marketplace.proofofwork.me,
 http://growth.proofofwork.me,
@@ -250,6 +275,10 @@ browser.proofofwork.me {
 
 boost.proofofwork.me {
 	import common_boost_app
+}
+
+publish.proofofwork.me {
+	import common_publish_app
 }
 
 amo.proofofwork.me {

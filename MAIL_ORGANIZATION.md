@@ -27,6 +27,7 @@ computer.proofofwork.me     full mailbox/computer app
 desktop.proofofwork.me      public read-only file desktop
 browser.proofofwork.me      public HTML browser by txid
 boost.proofofwork.me        public Proof-ranked social feed
+publish.proofofwork.me      text-only articles with shared Boost identity and engagement
 amo.proofofwork.me          canonical Autonomous Money Organization
 marketplace.proofofwork.me  compatibility route to AMO
 credit.proofofwork.me       standalone credit creation and mint app
@@ -294,6 +295,17 @@ browser.proofofwork.me
 ```
 
 This route should stay compatible with the current Computer mail/file protocol. HTML pages are messages or files, not a new external carrier.
+
+## Publish drafts and shared social identity
+
+Publish is a Computer workspace and standalone article surface, not a mailbox
+organization folder. Article bodies reuse the exact same-transaction `pwm1:m`
+carrier and one `pwb1:post` commitment. Drafts are browser-local and scoped to
+wallet/network. Boost and Publish share signed ID selection through the narrow
+Computer bridge, and share confirmed public profiles, images, follows and all
+article engagement. Public identity remains confirmed-chain state; a local
+choice never changes the ID registry. [PUBLISH.md](PUBLISH.md) defines the
+body budget, transaction review, receipt recovery and reader verification.
 
 ## Boost Profile Images
 

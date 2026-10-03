@@ -1,3 +1,8 @@
+import { createHash } from "node:crypto";
+import {
+  normalizePublishArticleMetadata, publishArticleBodyFromRecords,
+  publishArticleDataCarrierBytes, PUBLISH_DATA_CARRIER_LIMIT,
+} from "../src/shared/protocol/publishArticle.mjs";
 import { decodeCanonicalOpReturnOutput } from "./canonical-op-return.mjs";
 import { WORK_TOKEN_ID } from "./work-units.mjs";
 import { address as bitcoinAddress, networks, Transaction } from "bitcoinjs-lib";
@@ -58,6 +63,8 @@ export function boostGrowthObservedAction(payload) {
       (target(media.txid) || target(media.sha256) ||
         [media.mime, media.name, media.source].some((value) => typeof value === "string" && value.trim()) ||
         (integer(media.size) ?? 0n) > 0n);
+    if (Object.prototype.hasOwnProperty.call(post, "article") &&
+        (action !== "post" || post.v !== 1 || hasMedia || !normalizePublishArticleMetadata(post.article))) return null;
     if ((!text && !hasMedia) || text.length > 140) return null;
     return action;
   }
@@ -157,7 +164,7 @@ function replayOutput(event) {
 export function createBoostGrowthObservation(checkpoint) {
   const result = unavailableBoostGrowth(checkpoint, null);
   result.counts = Object.fromEntries([
-    "events", "transactions", ...Object.values(ACTION_COUNTS), "socialActions",
+    "events", "transactions", ...Object.values(ACTION_COUNTS), "socialActions", "articles",
   ].map((field) => [field, 0]));
   const totals = Object.fromEntries(BOOST_GROWTH_EXACT_FIELDS.map((field) => [field, 0n]));
   const seenTransactions = new Set();
@@ -190,6 +197,18 @@ export function createBoostGrowthObservation(checkpoint) {
             (Array.isArray(event.validation_errors) && event.validation_errors.length > 0)) continue;
         const action = boostGrowthObservedAction(event.raw_payload);
         if (!action) continue;
+        const article = action === "post" ? jsonField(String(event.raw_payload).split(":")[2])?.article : null;
+        if (article) {
+          const carrierBytes = publishArticleDataCarrierBytes(tx);
+          const records = (tx?.vout ?? []).map((output, voutIndex) => ({
+            ...decodeCanonicalOpReturnOutput(output), voutIndex,
+          })).filter(record => record.prefix);
+          if (!boundRawRecord(tx, event) || carrierBytes === null || carrierBytes > PUBLISH_DATA_CARRIER_LIMIT ||
+              publishArticleBodyFromRecords(records, article,
+                bytes => createHash("sha256").update(bytes).digest("hex")) === null) {
+            throw new Error("Exact confirmed Publish article body evidence is unavailable.");
+          }
+        }
         const expectedKind = `boost-${{ t: "transfer", list5: "list", seal5: "seal", delist5: "delist", buy5: "buy" }[action] ?? action}`;
         if (event.kind !== expectedKind) continue;
         if (!Number.isSafeInteger(event.op_return_vout) || event.op_return_vout < 0 ||
@@ -202,6 +221,7 @@ export function createBoostGrowthObservation(checkpoint) {
         observed.push({ action, event });
         result.counts.events += 1;
         result.counts[ACTION_COUNTS[action]] += 1;
+        if (article) result.counts.articles += 1;
         if (SOCIAL_ACTIONS.has(action)) result.counts.socialActions += 1;
       }
       if (observed.length === 0) return;

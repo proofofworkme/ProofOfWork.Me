@@ -28,7 +28,7 @@ class VerifiedRetention(unittest.TestCase):
     def tearDown(self):
         self.temporary.cleanup()
 
-    def release(self, root, release):
+    def release(self, root, release, surfaces=None):
         root.mkdir(mode=0o755)
         fields = {'format': 'proofofwork-ui-release-v3', 'release_id': release,
                   'archive_name': 'proofofwork-ui-release-' + release + '.tgz'}
@@ -36,7 +36,7 @@ class VerifiedRetention(unittest.TestCase):
         archive.write_bytes(('archive-' + release).encode())
         archive.chmod(0o644)
         fields['archive_sha256'] = retention.sha256(archive)
-        for surface in retention.SURFACES:
+        for surface in retention.SURFACES if surfaces is None else surfaces:
             directory = root / ('proofofwork-' + surface)
             directory.mkdir(mode=0o755)
             file = directory / 'index.html'
@@ -56,6 +56,18 @@ class VerifiedRetention(unittest.TestCase):
         self.assertEqual(previous['release_id'], self.previous)
         self.assertEqual([row['path'] for row in plan], [str(old)])
         self.assertTrue(self.latest.exists())
+
+    def test_historical_surface_families_remain_verifiable(self):
+        self.assertEqual(sorted(map(len, retention.SURFACE_FAMILIES)), [14, 15, 16, 17])
+        for surfaces in retention.SURFACE_FAMILIES:
+            root = self.root / ('family-' + str(len(surfaces)))
+            release = ('c' * 12) + '-20260929T18000' + str(len(surfaces) - 14) + 'Z'
+            self.release(root, release, surfaces)
+            self.assertEqual(retention.verified_release(root, self.archives)['release_id'], release)
+            if 'publish' not in surfaces:
+                (root / 'proofofwork-publish').mkdir(mode=0o755)
+                with self.assertRaisesRegex(ValueError, 'Undeclared'):
+                    retention.verified_release(root, self.archives)
 
     def test_corrupt_current_bytes_refuse_plan(self):
         (self.www / 'proofofwork-dns/index.html').write_text('corrupt')
