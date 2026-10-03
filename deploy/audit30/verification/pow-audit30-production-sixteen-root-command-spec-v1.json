@@ -1,0 +1,102 @@
+{
+  "atUtc": "2026-10-03T07:34:31.563078+00:00",
+  "envelope": {
+    "request": {
+      "approval": "Exact root700 authoritydirectory/root600 canonical human receipt path+rawSHA",
+      "captureHelperBase64": "Exact33c3c65c reviewed helper",
+      "guardBase64": "Exact48001283 stateless guard",
+      "mode": "prepare then separately run with exactsameallfields except mode",
+      "operation": "apply OR separately approved inverse; never both in one invocation",
+      "priorApply": "null for apply; for inverse separately provided acknowledged apply completed.json path+rawSHA",
+      "privateProof": "Original future private supervisor-completed path+rawSHA; currently unmet",
+      "projection": "Original9fe430c focused-public completion path+rawSHA",
+      "rootControlSHA256": "5af78120b09c19a72d8687d7ef961f562b6644c9fe4bf08f3cb999cde3ca9991",
+      "runId": "New valid RUN per explicit apply or inverse invocation",
+      "schema": "pow-audit30-production-sixteen-root-request-v1",
+      "sourcesBase64": "Exactly5 PINS code members; no arbitrary members"
+    },
+    "rootControlBase64": "Base64 of exact5af78120 source only; no substitutions",
+    "schema": "pow-audit30-production-sixteen-root-envelope-v1"
+  },
+  "failure": [
+    "Never automaticretry or inverse",
+    "UncertainCOMMIT or lost transport requires exact existingreceipt/unit/DB reconciliation; failure is not proofnochange",
+    "Known committed receipt followed by failedpostguard remains acknowledged action plus failedacceptance; no automatic inverse",
+    "Partial PREPARE namespace remains preserved; no overwrite or cleanup",
+    "Conditionalinverse only separately invoked, binds sameapproval+generatedwriter and exactrawacknowledgedapply/sameDB/postimages, beforecutoveroldfive"
+  ],
+  "humanApprovalExists": false,
+  "localTransport": {
+    "interface": "Bound bootstrap/envelope by SHA, then execute(remote_command(bootstrapBytes),envelopeBytes,newExclusivePrefix,420,stdout_cap=65536,stderr_cap=65536,bindings=allsourceAndEnvelopeSHAs)",
+    "nativeCommand": "sudo -n /usr/bin/python3 -I -B -c exact reviewed bootstrap source; typed envelope through stdin only",
+    "source": {
+      "bytes": 8396,
+      "path": "/tmp/pow-audit30-readonly-owned-transport-v3.py",
+      "sha256": "1dedef0a6c7021d114017e711ad74f9cfed4e461fc047a2be2c49e590f3da18e"
+    },
+    "sshIdentity": "powadmin@65.108.122.87 via proofofwork_node_ed25519, IdentitiesOnly+StrictHostKeyChecking+BatchMode",
+    "transportDoesNotProveOwnedUnitStopped": true
+  },
+  "nativeActionExecuted": false,
+  "prerequisites": [
+    "A separately accepted actual isolated acknowledged16 forwardCOMMIT plus separate inverse and stopped/source7/accounting proof",
+    "Root-issued canonical human approval receipt from the final explicit approval, exact4ac3/8d5/16targetSHA and original2e9+2e1+480 code pins",
+    "Exact future production DB identity bound by that receipt and checked under original library transaction",
+    "Fresh same originalfive, scheduledbackupinactive, nextbackup>=420s, existingopslock identity and100GiBdata/10GiBroot reserves",
+    "No competing audit/privatePG/API/Core lane; unique root700/PG700 operation evidence and missing fixed native unit"
+  ],
+  "productionDataMutation": false,
+  "productionWriterGenerated": false,
+  "qualification": [
+    "No future human approval/proof was fabricated and no executable native request was generated",
+    "27 localcontroller+9 localbootstrap cases; mockednative sequence is not a realprivateCOMMIT/inverse proof",
+    "Actual SIGTERM tested only against harmless compiled in-memory bootstrap stub",
+    "Focused619 observation9fe is point-in-time06:51 data, not a continuous source guarantee",
+    "Stateless480 observations are point-in-time and shallowlookback-qualified; nofullPWT witness/replay certification",
+    "Ordinarynewmail before source-preservingcutover could produce a new mismatch; exact16 scope cannot silentlyexpand"
+  ],
+  "schema": "pow-audit30-proposed-production-sixteen-root-command-spec-v1",
+  "sequence": [
+    "PREPARE only creates immutable exact code/proof/dependency package; actualhuman/rawprivateproof are mandatory and noPG unit starts",
+    "RUN takes existingopslock, repeats pins/reserves/five/backup, creates exclusive receipts, executes exact480 BEFORE",
+    "One typed PG108:112 nativecaller7328 apply OR inverse; original2e9 SQL/preimages/closure/unknown-COMMIT unchanged",
+    "Exactowned Invocation/ExecStart and terminalMainPID0 or qualifiedGC through33c; acknowledged rawreceipt equals nativeCLI SHA",
+    "Exact480 AFTER; originalfive/authority/source/dependency rechecks; durable root outcome",
+    "After approved apply, strict full parity mustPASS before separate protected API/worker cutover; no circular strict prerequisite in repair path"
+  ],
+  "sources": [
+    {
+      "bytes": 22041,
+      "path": "/tmp/pow-audit30-production-sixteen-root-control-v1.py",
+      "sha256": "5af78120b09c19a72d8687d7ef961f562b6644c9fe4bf08f3cb999cde3ca9991"
+    },
+    {
+      "bytes": 16242,
+      "path": "/tmp/pow-audit30-production-sixteen-root-control-v1.test.py",
+      "sha256": "a78f5d1f8322064cfb87cbe4c25e21d359253ad48442920f7c9c6406d99c2437"
+    },
+    {
+      "bytes": 2636,
+      "path": "/tmp/pow-audit30-production-sixteen-root-bootstrap-v1.py",
+      "sha256": "4e6f5f56aed94bc9c814256f10f25080c491175c3ea66c108be6d41addc266d3"
+    },
+    {
+      "bytes": 3395,
+      "path": "/tmp/pow-audit30-production-sixteen-root-bootstrap-v1.test.py",
+      "sha256": "6bfd6001103b63aafcfc561958698d731a4d8f018bea6a06da97e75ea23d7012"
+    }
+  ],
+  "status": "source-only-proposal-not-authority",
+  "transaction": {
+    "clientCapsDoNotLimitProductionPostgresBackend": true,
+    "clientCgroupMemoryGiB": 2,
+    "clientHeapMiB": 128,
+    "clientUnitRuntimeSeconds": 120,
+    "cpuQuotaPercent": 50,
+    "libraryWholeSeconds": 45,
+    "outerTransportProposedSeconds": 420,
+    "ownedCaptureSeconds": 150,
+    "postgresLockSeconds": 3,
+    "postgresStatementSeconds": 30
+  }
+}

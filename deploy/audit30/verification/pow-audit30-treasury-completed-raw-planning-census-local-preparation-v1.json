@@ -1,0 +1,36 @@
+{
+  "actualCompletedBytes": 150537,
+  "actualCompletedSha256": "72c801e3caa6837e8e5c121542dceb3e624abc971cfd136d32075b9ce6e915e9",
+  "atUtc": "2026-10-03T07:52:35.330590+00:00",
+  "files": [
+    {
+      "bytes": 20330,
+      "path": "/tmp/pow-audit30-treasury-completed-raw-planning-census-v1.py",
+      "sha256": "570ba11d9f567fed0d16fe122783a5d7aa92d6e1dff3bf0582745e09b461d75f"
+    },
+    {
+      "bytes": 8098,
+      "path": "/tmp/pow-audit30-treasury-completed-raw-planning-census-v1.test.py",
+      "sha256": "cc81552aa4cea1c168373c34b44da106df502c70922c13f4b92e122fb561b824"
+    }
+  ],
+  "financialReconciliationComplete": false,
+  "nativeExecuted": false,
+  "nextChunkAuthorized": false,
+  "originalFailedCorpusSha256": "8eeb467bf3468734beee934d884148b7045ed28803045a2b66ac51ca0f1e2596",
+  "passed": true,
+  "rawDataExported": false,
+  "repositoryEdited": false,
+  "resources": {
+    "addressSpaceBytes": 536870912,
+    "cpuSeconds": 40,
+    "proposedChannelsBytes": 65536,
+    "proposedOuterSeconds": 90,
+    "wholeSeconds": 60
+  },
+  "rpcCalls": 0,
+  "schema": "pow-audit30-completed-raw-planning-census-local-preparation-v1",
+  "testCases": 15,
+  "testQualification": "Independent real-raw/header/Merkle fixture functions from reviewed3900; only count and missing-set data-authority constants rebound in small local merge fixture. Production6650 constants and exact embedded3900 bytes are separately asserted. No production data or network involved.",
+  "testSeconds": 0.007
+}

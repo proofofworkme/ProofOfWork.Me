@@ -1,0 +1,43 @@
+{
+  "atUtc": "2026-10-03T08:00:15.915466+00:00",
+  "files": [
+    {
+      "bytes": 8960,
+      "path": "/tmp/pow-audit30-private-sixteen-reconcile-readonly-v1.py",
+      "sha256": "aa75ae88d380b03ed86962ec3df6dcf391a25b8db4ddf5314ad198ec973a679e"
+    },
+    {
+      "bytes": 8131,
+      "path": "/tmp/pow-audit30-private-sixteen-reconcile-readonly-v1.test.py",
+      "sha256": "648646a2adb939bb6457d370dc870e004d3356c1903f066e0766d228bb7d0d10"
+    }
+  ],
+  "independentTests": {
+    "command": "python3 -I -B -W error /tmp/pow-audit30-private-sixteen-reconcile-readonly-v1.test.py",
+    "passed": 14,
+    "seconds": 0.129
+  },
+  "knownFindingClosure": "Metadata-only expected dictionary caused real frozen hash_file KeyError(sha256). Intentional expected=None discovery now has original metadata fence, pinned second hash and JSON read fence; real helper fixtures exercise both defective and corrected contracts.",
+  "nativeCalls": 0,
+  "productionMutation": false,
+  "qualifications": [
+    "Source/fixtures only; native saved receipt ownership/content/acknowledgments remain a separate actual action gate.",
+    "No commit is repeated and no failed original rewritten. Unknown dynamic receipt digest is independently discovered and rebound before parsing, with whole-set end fences.",
+    "The result explicitly leaves source7 full hash, offline private-page checks, current database fence and continuous reader exclusion false. It is not yet the complete supervisor proof or production approval.",
+    "No source/repository edits, native calls, data/config/service/timer changes, private payload export or deletion by this review."
+  ],
+  "schema": "pow-audit30-integrity-peer-private-sixteen-saved-receipt-reconciliation-v1",
+  "sourceReview": {
+    "canonicalAdapterRawProofAndBothAcknowledgedTransactions": true,
+    "exactOriginalB1fWithSoleUnknownDigestCallCorrection": true,
+    "fullAllNetworkMailCrossTransactionFingerprintRestored": true,
+    "fullOperativeSourceAndTestsRead": true,
+    "journalMetadataQueueContinuityAndTwoRecordedEpochInvalidations": true,
+    "noRuntimeExecuteWriterSQLOrPrivateStartInvoked": true,
+    "original26cDefinitionsAndRealHashContractPreserved": true,
+    "originalFailedAndIntentExactRawBindingsPreserved": true,
+    "sameDatabaseExactOrderedSixteenAndSeparateInverseApplyBinding": true,
+    "savedFiveReceiptSetDiscoveryAndWholeEndReread": true
+  },
+  "status": "accepted-source-only"
+}

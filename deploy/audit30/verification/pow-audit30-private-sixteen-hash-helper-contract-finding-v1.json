@@ -1,0 +1,38 @@
+{
+  "atUtc": "2026-10-03T07:53:22.972217+00:00",
+  "frozenGuardSHA256": "26c7656b2e751c6de50122c65f8af73686c2d2674bee8be86a3c5648b7fcc80e",
+  "independentLocalActualHelperVectors": {
+    "count": 3,
+    "exactGuardBytesPinned": true,
+    "functions": "AST-extracted byte-identical metadata,canonical_path,hash_file",
+    "realExpectedNoneStableDigestAndMetadataEquality": true,
+    "realMetadataOnlyExpectedRaises": "KeyError(sha256)",
+    "realPinnedSecondRead": true
+  },
+  "nativeAccess": false,
+  "preservedPriorSourceOnlyPeerSHA256": "4fc4440cf127fcc763fe0fe27025c01f47bcd469081075cede5c3df541ab0715",
+  "productionMutation": false,
+  "qualifications": [
+    "Native error/sourcephase and receipt existence were reported by VPS; this independent work inspected source and reproduced the helper contract locally only.",
+    "No native acknowledged receipt contents were independently loaded by this receipt, and no successful private/full source/offline proof is inferred."
+  ],
+  "repositoryEdits": false,
+  "resolutionScope": "Read-only saved acknowledged receipts reconciliation with real helper contract and stable metadata. Preserve original failed attempt, both transaction receipts and original source. No transaction redo or automatic retry. Complete later saved-fence/offline/private-stop/full sealed-source proof separately.",
+  "schema": "pow-audit30-private-sixteen-hash-helper-contract-finding-v1",
+  "sourceFinding": "proof_result line143 supplies metadata-only expected to frozen hash_file, whose conditional digest comparison accesses expected.sha256. This raises KeyError after reading a receipt; authorfixture mocked helper and missed the contract.",
+  "status": "concrete-source-compatibility-defect",
+  "supervisorSHA256": "b1f10c63ac7e0de179215993529708e082073b0fd25bd6d36a4a7200870d4544",
+  "writerJournalCompatible": {
+    "exactFields": [
+      "beforeMail",
+      "afterMail"
+    ],
+    "fingerprintFields": [
+      "count",
+      "logical_bytes",
+      "sha256"
+    ],
+    "librarySHA256": "2e9a7fb67616e46b3b14d1074dc5206eb280df6868cc249943645b8d8ab685da",
+    "writerChangeRequired": false
+  }
+}

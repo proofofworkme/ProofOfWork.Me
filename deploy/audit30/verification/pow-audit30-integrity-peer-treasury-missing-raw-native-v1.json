@@ -1,0 +1,51 @@
+{
+  "atUtc": "2026-10-03T07:41:32.689170+00:00",
+  "exactInheritedFunctions": [
+    "Observer",
+    "validate_properties",
+    "live_snapshot",
+    "require_absent",
+    "capture_proof",
+    "read_file",
+    "canonical_dir"
+  ],
+  "fullOperativeSourceRead": true,
+  "limitations": [
+    "No nativePREPARE/RUN orRPC performed by this reviewer",
+    "Actualmanagerunit/resources/bitcoin-role graph readability andfreshcontext remain runtimegates",
+    "Source rawacquisition is nofinancial/outpoint/balance certificate; unresolved parent coverage remains explicit",
+    "RuntimeMax andPythoncleanup provide boundedordinaryfailure custody; SIGKILL/hostloss/lostSSH still require actualownedunit/evidence reconciliation",
+    "Clientcgroupcaps do not cap productionCoreRPC backend"
+  ],
+  "nativeCalls": false,
+  "newScopeChecked": [
+    "Only exact3 reviewedcode files and same17,672,203-byte8eeb failedseed copied to newroot:bitcoin750/440 package",
+    "Seedoriginal uid0gid0mode600+nlink1+metadata+O_NOATIME/fullSHA checked beforeafter; nooriginalrewrite",
+    "PREPARE validatesauthorityshape withoutfreshness assertion and starts nounit;RUN requiresfresh<=900s five+backup>=1800s equality beforelaunch and exactclosing source/seed/context",
+    "Exact6650targetset/rawacquiredcount withclosingfences,boundedcalls+bytes/capture; processpasscannotfinancialparentmembershipoutpointbalancecomplete",
+    "ExistingownedtypedInvocation/argv/outputfragment/resource/refusal/signalcleanup preserved; ordinarytimer/core/PG/app units uncontrolled",
+    "May9 settlement attestation preserved,transactionIDs not requested"
+  ],
+  "productionMutation": false,
+  "repositoryEdits": false,
+  "schema": "pow-audit30-integrity-peer-treasury-missing-raw-native-v1",
+  "sources": [
+    {
+      "bytes": 27262,
+      "path": "/tmp/pow-audit30-treasury-missing-raw-native-v1.py",
+      "sha256": "302767f392aaaa3eb4c291d38a4f2956f48110b41d4e3bcb3912f2d83197ff0f"
+    },
+    {
+      "bytes": 35253,
+      "path": "/tmp/pow-audit30-treasury-missing-raw-native-v1.test.py",
+      "sha256": "b22f264ab63e1d636387dc8c73fdf8b55848a53059e453110a1bec9821b9a26f"
+    }
+  ],
+  "tests": {
+    "command": "python3 -I -B -W error /tmp/pow-audit30-treasury-missing-raw-native-v1.test.py",
+    "passed": 42,
+    "seconds": 0.601,
+    "tests": 42
+  },
+  "verdict": "accepted-source-only"
+}

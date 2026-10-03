@@ -1,0 +1,70 @@
+{
+  "approvalExists": false,
+  "atUtc": "2026-10-03T07:36:20.567298+00:00",
+  "covered": [
+    "exactreviewedsource andexplicitoneoperation typedrequest",
+    "sameapproval/preparedscope/duplicateJSON/unsafeextra source refusal",
+    "nativeacknowledgement action/approval/writer/manifest/rootworkerreceipt/count/epoch/noinverse bindings",
+    "actualboundedregular read,atimeonlyallowance,symlink/hardlink/groupwrite/size/hash/contentdrift refusal",
+    "genuinepostflock inode replacement refuses andcloses FD,original lockbytes unchanged",
+    "fixed nativeUserPG capsnone AF_UNIX privateNetworkcleanenv andonlynewevidence writable",
+    "mocked onebefore480\u2192onecapturedsingleoperation\u2192oneafter480 flow",
+    "capture failure/afterack failedpostguard durablefailed reconciliation/noautomaticretry/inverse",
+    "compiled harmlessbootstrap actualSIGTERM propagation andstdin/handlerrestoration"
+  ],
+  "nativeAction": false,
+  "nativeRequestGenerated": false,
+  "notCovered": [
+    "Actualproduction approval or data mutation",
+    "Actualprivate acknowledgedCOMMIT/inverse; current071500 failedbeforeintent andrequiredproof unmet",
+    "Live nativeunit permissions/readability/tablepreimages/runtimeDBidentity are future gates",
+    "Trustedrootbootstrap capture andfuturehumanreceipt provenance are required; sourceSHA fields are not human authorization",
+    "SIGKILL/powerloss/networkloss doesnot guarantee aPythonfinalreceipt; immutabletransaction/commitintent and exactunit/DBreconciliation required"
+  ],
+  "productionMutation": false,
+  "repositoryEdits": false,
+  "schema": "pow-audit30-proposed-production-sixteen-root-local-validation-v1",
+  "sources": [
+    {
+      "bytes": 22041,
+      "path": "/tmp/pow-audit30-production-sixteen-root-control-v1.py",
+      "sha256": "5af78120b09c19a72d8687d7ef961f562b6644c9fe4bf08f3cb999cde3ca9991"
+    },
+    {
+      "bytes": 16242,
+      "path": "/tmp/pow-audit30-production-sixteen-root-control-v1.test.py",
+      "sha256": "a78f5d1f8322064cfb87cbe4c25e21d359253ad48442920f7c9c6406d99c2437"
+    },
+    {
+      "bytes": 2636,
+      "path": "/tmp/pow-audit30-production-sixteen-root-bootstrap-v1.py",
+      "sha256": "4e6f5f56aed94bc9c814256f10f25080c491175c3ea66c108be6d41addc266d3"
+    },
+    {
+      "bytes": 3395,
+      "path": "/tmp/pow-audit30-production-sixteen-root-bootstrap-v1.test.py",
+      "sha256": "6bfd6001103b63aafcfc561958698d731a4d8f018bea6a06da97e75ea23d7012"
+    },
+    {
+      "bytes": 6029,
+      "path": "/tmp/pow-audit30-production-sixteen-root-command-spec-v1.json",
+      "sha256": "a024be575535236e9239ddc994f6944903ae3c05100d5c4992e6edf69aea1efb"
+    }
+  ],
+  "status": "local-source-fixtures-pass-awaiting-peer-and-real-prerequisites",
+  "tests": [
+    {
+      "command": "python3 -I -B -W error /tmp/pow-audit30-production-sixteen-root-control-v1.test.py",
+      "passed": 27,
+      "seconds": 0.046,
+      "tests": 27
+    },
+    {
+      "command": "python3 -I -B -W error /tmp/pow-audit30-production-sixteen-root-bootstrap-v1.test.py",
+      "passed": 9,
+      "seconds": 0.007,
+      "tests": 9
+    }
+  ],
+  "writerGenerated": false
+}

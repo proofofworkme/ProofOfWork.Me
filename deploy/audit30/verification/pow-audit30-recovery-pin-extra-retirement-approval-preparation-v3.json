@@ -1,0 +1,479 @@
+{
+  "activationAuthorized": false,
+  "approvalOnly": true,
+  "atUtc": "2026-10-03T07:47:14.935261+00:00",
+  "currentRecoveryInputSelection": {
+    "activationApproved": false,
+    "binding": {
+      "bytes": 1191,
+      "path": "/tmp/pow-audit30-recovery-current-input-selection-v2.json",
+      "sha256": "9673fd362488bc1dec558c82bd39b43ead589f9d98ff0accd58d435669840707"
+    },
+    "currentInput": "recovery-controller-v2.py",
+    "guardSha256": "26c7656b2e751c6de50122c65f8af73686c2d2674bee8be86a3c5648b7fcc80e",
+    "installation": "Exact b16 successor bytes copied into new creation-only absent per-unit package; no existing canonical install overwrite. Old b603 remains historical.",
+    "installedFilenameIfSeparatelyApproved": "recovery-controller.py",
+    "peer": {
+      "bytes": 2277,
+      "path": "/tmp/pow-audit30-independent-recovery-signal-successor-review-v1.json",
+      "sha256": "09d8804bd25365e02059e71e84ee2c015cec13e50df6ee60eace36832b404975"
+    },
+    "proposal": {
+      "bytes": 11171,
+      "path": "/home/sixer/ProofOfWork.Me/deploy/audit30/recovery/PROPOSAL-v2.md",
+      "sha256": "06598f0bb202794328a35a30a247ab8b0a12daf834c56f63786eb3c2529a4eaf"
+    },
+    "source": {
+      "bytes": 30211,
+      "path": "/home/sixer/ProofOfWork.Me/deploy/audit30/recovery/recovery-controller-v2.py",
+      "sha256": "b16ee1a596e0b33ef921dad7f8778019e906c7b1261d3d251089a21e1670acf2"
+    },
+    "sourceFixturesPassed": 22
+  },
+  "deletionAuthorized": false,
+  "extraRetirement": {
+    "deletionAuthorized": false,
+    "exactCandidateDirectory": "/data/proofofwork-postgres-backups/logical/proof_indexer-20260929T031853Z.dumpset",
+    "exactMembers": [
+      "/data/proofofwork-postgres-backups/logical/proof_indexer-20260929T031853Z.dumpset/proof_indexer.dump",
+      "/data/proofofwork-postgres-backups/logical/proof_indexer-20260929T031853Z.dumpset/globals.sql",
+      "/data/proofofwork-postgres-backups/logical/proof_indexer-20260929T031853Z.dumpset/SHA256SUMS"
+    ],
+    "heldIntersections": [
+      {
+        "changedFields": [],
+        "currentMetadata": {
+          "device": 64514,
+          "exists": true,
+          "inode": 7471107,
+          "mode": "0o750",
+          "mtimeNs": 1790653013480172956,
+          "path": "/data/proofofwork-postgres-backups/logical",
+          "size": 4096,
+          "symlink": false,
+          "uid": 108
+        },
+        "decision": "retain",
+        "host": "65.108.122.87",
+        "originalMetadata": {
+          "device": 64514,
+          "inode": 7471107,
+          "mode": "0o750",
+          "mtimeNs": 1790653013480172956,
+          "size": 4096,
+          "symlink": false,
+          "uid": 108
+        },
+        "originalReason": "Recovery/replay/database/backup evidence; equivalence, isolated restore and dependency proof incomplete.",
+        "path": "/data/proofofwork-postgres-backups/logical",
+        "releaseGate": "Exact content/provenance, recovery equivalence and live dependency checks; separately approved deletion manifest required.",
+        "retentionClass": "recovery-replay-backup-evidence",
+        "retentionPolicy": "No automatic expiry; preserve until the exact recovery/history/dependency release gate is proved and separately approved.",
+        "role": "node"
+      }
+    ],
+    "heldQualification": "Known protected parent container /data/proofofwork-postgres-backups/logical remains held. This candidate child has no individually matching held row in frozenc3bd; fresh reviewed authority still required. No blanket container exemption/removal.",
+    "observedAllocatedBytes": 19363807232,
+    "oldRestoreReplayJobsDeletionAuthorized": false,
+    "originalMetadataProof": {
+      "bytes": 4096,
+      "ctimeNs": 1790652982656174884,
+      "declaredMemberSha256": {
+        "globals.sql": "ec6fe5b2e0b460e873739e4d0d31e103e38e8142d3695fc2cfb5c2600d1ae7f8",
+        "proof_indexer.dump": "6bb26e725f1178f25720eadc46801975b987587578fbf7018203cddc65601031"
+      },
+      "device": 64514,
+      "directory": true,
+      "dumpHashReverifiedNow": false,
+      "gid": 112,
+      "inode": 7471118,
+      "manifestSha256": "645bc0ced92fcb7383f8dafda3a54d00f960ab24a29021cd8b938b6dd2a74031",
+      "members": [
+        {
+          "bytes": 19363782935,
+          "ctimeNs": 1790652951942177202,
+          "device": 64514,
+          "directory": false,
+          "gid": 112,
+          "inode": 7471119,
+          "mode": "0o600",
+          "mtimeNs": 1790652951942177202,
+          "nlink": 1,
+          "path": "/data/proofofwork-postgres-backups/logical/proof_indexer-20260929T031853Z.dumpset/proof_indexer.dump",
+          "regular": true,
+          "symlink": false,
+          "uid": 108
+        },
+        {
+          "bytes": 1137,
+          "ctimeNs": 1790652952099177189,
+          "device": 64514,
+          "directory": false,
+          "gid": 112,
+          "inode": 7471120,
+          "mode": "0o600",
+          "mtimeNs": 1790652952099177189,
+          "nlink": 1,
+          "path": "/data/proofofwork-postgres-backups/logical/proof_indexer-20260929T031853Z.dumpset/globals.sql",
+          "regular": true,
+          "symlink": false,
+          "uid": 108
+        },
+        {
+          "bytes": 163,
+          "ctimeNs": 1790652967354175988,
+          "device": 64514,
+          "directory": false,
+          "gid": 112,
+          "inode": 7471121,
+          "mode": "0o600",
+          "mtimeNs": 1790652967354175988,
+          "nlink": 1,
+          "path": "/data/proofofwork-postgres-backups/logical/proof_indexer-20260929T031853Z.dumpset/SHA256SUMS",
+          "regular": true,
+          "symlink": false,
+          "uid": 108
+        }
+      ],
+      "mode": "0o700",
+      "mtimeNs": 1790652952119177187,
+      "nlink": 2,
+      "path": "/data/proofofwork-postgres-backups/logical/proof_indexer-20260929T031853Z.dumpset",
+      "regular": false,
+      "symlink": false,
+      "uid": 108
+    },
+    "replacementVerified": "/data/proofofwork-postgres-backups/logical/proof_indexer-20261002T031851Z.dumpset",
+    "requiredProofs": [
+      "Exact fresh complete child tree/bytes/type/mode/owner/link/xattr/mount hashes and allocated totals; no unlisted child.",
+      "Latest logical backup pin promotion completed and new full isolatedrestore proof accepted; preserved original pin/manifest/restore receipts remain durable.",
+      "Fresh all liveProcess/FD/cwd/maps/config/installed operator/cron/Git/source/restore/dependency/semantic historical refs; named old backup remains recoverable history if unique dependent evidence exists.",
+      "Explicit scoped release of this one child under held parent through immutable reviewed cleanup manifest; no generic hold deletion/mask relaxation.",
+      "Fresh capacity/guard/lock/backup idle/no readers; durable exact intent/completion; only approved three members+empty candidate dir removed."
+    ],
+    "status": "candidate-specific-manifest-required-not-ready-to-execute",
+    "unqualifiedOldCachesDeletionAuthorized": false
+  },
+  "historicalRecoverySourceFilesPreserved": [
+    {
+      "bytes": 8997,
+      "path": "/home/sixer/ProofOfWork.Me/deploy/audit30/recovery/PROPOSAL.md",
+      "sha256": "ac76720d97107cd402d7faa28d6cb72299194119a247cd9281046f543da9e473"
+    },
+    {
+      "bytes": 17918,
+      "path": "/home/sixer/ProofOfWork.Me/deploy/audit30/recovery/check-recovery.test.py",
+      "sha256": "ac65976695714a6e065d27b999ab3f181cf903a033f32f882c073587248bbcbf"
+    },
+    {
+      "bytes": 1608,
+      "path": "/home/sixer/ProofOfWork.Me/deploy/audit30/recovery/proofofwork-audit30-basebackup@.service",
+      "sha256": "45a570fdfe778f41693c86051d0bfa2aaf947562c08772b66a23252477e6762b"
+    },
+    {
+      "bytes": 1601,
+      "path": "/home/sixer/ProofOfWork.Me/deploy/audit30/recovery/proofofwork-audit30-receivewal.service",
+      "sha256": "9ed1b9bbdfded39a6c17df28fc1869eb502685847bd289563520e1934af7f547"
+    },
+    {
+      "bytes": 30074,
+      "path": "/home/sixer/ProofOfWork.Me/deploy/audit30/recovery/recovery-controller.py",
+      "sha256": "b6030864e8df04baadce008a166f2ad7dfebb53b1ad16d87142e3fd5132a6530"
+    },
+    {
+      "bytes": 1180,
+      "path": "/home/sixer/ProofOfWork.Me/deploy/audit30/recovery/reserve-slot.sql",
+      "sha256": "56934371b398b2a518e3defaaebfe400dfbeb07137147450b5a9cbc44c029373"
+    }
+  ],
+  "inputs": [
+    {
+      "bytes": 10587,
+      "path": "/tmp/pow-audit30-recovery-readonly-baseline-v1.json",
+      "sha256": "91f8b632dcfcef746a9193019929c5ef835d1867881b10cf4aee1d062dae726e"
+    },
+    {
+      "bytes": 1983,
+      "path": "/tmp/pow-audit30-legacy-physical-mount-readonly-v1.json",
+      "sha256": "9b74d3c77613f38cba2f5c094aa9bcd29d6eafd8fd75e22823cb5d5039681946"
+    },
+    {
+      "bytes": 5553,
+      "path": "/tmp/pow-audit30-recovery-proposal-author-fresh-review-v1.json",
+      "sha256": "3275711748bd04774ea34c8a61ba6d26912e16f7daca5fb1bc7c49cfe4c2021e"
+    },
+    {
+      "bytes": 6792,
+      "path": "/tmp/pow-audit30-math-review-recovery-proposal-source-acceptance-v1.json",
+      "sha256": "31252e8247fee3559830ba7b1d6703a11cbe95a5f07188b050b81ca8ef53d6b3"
+    },
+    {
+      "bytes": 10756,
+      "path": "/tmp/pow-audit30-remaining-node-preflight-v4.json",
+      "sha256": "ed6e2f52d3f27e59745ab763fecae48dac8b0aeccef574ffe3cfaaec6710411f"
+    },
+    {
+      "bytes": 112271,
+      "path": "/tmp/pow-audit30-vps/vps-health-summary.json",
+      "sha256": "08b7332d69e16ad352da1a5dfcfc3e32002901506fea3e010ab8ddea44d5645b"
+    },
+    {
+      "bytes": 1030164,
+      "path": "/home/sixer/ProofOfWork.Me/audits/2026-09-29-audit28-held-review.json",
+      "sha256": "c3bd35740d7fcc135839274c8228e38f7a45c23e33567743e0d77151b32451d9"
+    },
+    {
+      "bytes": 440008,
+      "path": "/tmp/pow-audit30-cluster-inventory-native-v1.json",
+      "sha256": "f30301ca4f4769cfbbd995dc7627580be543e6cddfc1f5b3ff4aba033a48f572"
+    }
+  ],
+  "logicalPinTransition": {
+    "afterRawSha256": "29a4616225d59aa7740a24d29c7447f32cccf44db3c9a6f021e4483f2dba6e7a",
+    "afterRawUtf8": "proof_indexer-20261002T031851Z.dumpset\n",
+    "automaticDeleteAfterPin": false,
+    "basisLatest": "/data/proofofwork-postgres-backups/logical/proof_indexer-20261002T031851Z.dumpset",
+    "before": {
+      "bytes": 39,
+      "ctimeNs": 1790736083442846642,
+      "device": 64512,
+      "directory": false,
+      "gid": 0,
+      "inode": 3148002,
+      "mode": "0o644",
+      "mtimeNs": 1790736083442846642,
+      "nlink": 1,
+      "path": "/etc/proofofwork-postgres-logical-backup.pins",
+      "regular": true,
+      "sha256": "821b5bbfecee75ffb3c4565d3867eb62ac33e65eeb83c0e603c08aa478ff957b",
+      "symlink": false,
+      "uid": 0
+    },
+    "expectedBeforeRawSha256": "821b5bbfecee75ffb3c4565d3867eb62ac33e65eeb83c0e603c08aa478ff957b",
+    "latestDumpSha256": "893700c4fff20e4bad721d16188f67dd04e3f44ee9f3f63784c15c51488a7b1a",
+    "latestManifestSha256": "699d111713cf8bf7d8c672087faef2599c314270a622d7c661130a3d695ac860",
+    "mode": "0644 root:root",
+    "pageCheckSha256": "617941865701c62045a343ce92b4d1d6427edc7c40c634426fbc6daa6db4529c",
+    "path": "/etc/proofofwork-postgres-logical-backup.pins",
+    "prerequisites": [
+      "Exact fresh unchanged latest dump/globals/manifest/TOC and full completion inputs including ownerACL/roles/sequences/accounting/amcheck private acceptance; keep original pin+backup until explicit retirement.",
+      "Fresh exclusive approved backup-policy/deployment lock; no current backup/restore/inspection readers; 0600 immutable intent/source/masks/holds before+after proof.",
+      "Explicit authorization to replace only this exact39-byte pin content; preserve mode/owner and old bytes in durable evidence; no generic hold or timer changes."
+    ],
+    "preserveOriginalPinBytes": true,
+    "restoreCompletedSha256": "47ec15376cab23ec705e494195d7b836fa2674450e5ee9f7d761e7f6dbb709dd",
+    "rowParitySha256": "abd70cf572c37cb9d39ef8e26df6bf197b3f9862c58f4ed78fd934134872bcd2",
+    "savedFenceSha256": "a299d498d31f5709e92621e9b97f3c1b732f2cad6bd1f523048f0f3f92556b10",
+    "status": "approval-only-newer-backup-now-isolated-restore-verified"
+  },
+  "metadataOnlyManagedRecoveryGate": {
+    "approvedNative": false,
+    "forbidden": [
+      "SQL",
+      "Core",
+      "livePGsocket",
+      "slotcreation",
+      "receivewal",
+      "basebackup",
+      "newrecoveryroot",
+      "restart",
+      "timeractivation",
+      "expiry",
+      "deletion"
+    ],
+    "implemented": false,
+    "package": "Creation-only root:112750 directories and root:112440 source/guard; reviewed-plan root600; no candidate chmod.",
+    "purpose": "Exact scoped PG108:112 code readability/managedcredential/unit resources/capture/ownedstop only, without slot/base/WAL/SQL/live connection.",
+    "reuse": "Frozen26c native root440/parent550 readonly tmpfs credential +adjacent root600 plan contract; accepted actual a38d enum/fragment/retainedemptycgroup/typedowncleanup contracts. Any new source/request must separately be root-reviewed/admitted."
+  },
+  "nonReadyCandidates": {
+    "nodeArchiveQualification": "Audit30 baseline only; current/prior changes after new API release require fresh source/runtime/recovery equivalence. No deletion manifest approved.",
+    "nodeArchives": [
+      "/data/proofofwork-release-backups/managed/proofofwork-node-release-527e4cb-20261001T062733Z.tgz",
+      "/data/proofofwork-release-backups/managed/proofofwork-node-release-993523c-20260930T045021Z.tgz"
+    ],
+    "sourceAndInputAndAuditEvidence": "Keep all held history, current/prior release dependencies, new39.65GiB verified stopped restore, future inspector and all failed attempts until separate exact preservation/retirement gates.",
+    "status": "retain-until-content-and-dependency-closure"
+  },
+  "productionCalls": false,
+  "recoveryActivation": {
+    "actions": [
+      "Fresh root-side physical allocated/tablespace/domain/inode/mount + actual role/slot/senders/quorum/settings/hold/mask/current livePID proofs; fit fixed ceilings.",
+      "Explicit creation-only new root/dirs/lock/packages and dedicated physical slot, before/after durable receipts; retain all logical/old physical/evidence.",
+      "Launch only exact newly pinned synchronous local-Unix receivewal --no-loop with measured resource/slot/archive continuity monitor; no change to synchronous primary commit quorum.",
+      "After durable receiver/file/feedback acceptance, run exactly one new mapped plain basebackup with SHA256 manifest and pg_verifybackup; source checksumOFF qualification stays.",
+      "Later separately reviewed private target recovery with complete hashed physical+WAL source and exact paused target/snapshot/amcheck/stop; only actual results can certify recoverability."
+    ],
+    "automaticDeletion": false,
+    "automaticRestart": false,
+    "automaticTimerActivation": false,
+    "controllerInput": {
+      "bytes": 30211,
+      "path": "/home/sixer/ProofOfWork.Me/deploy/audit30/recovery/recovery-controller-v2.py",
+      "sha256": "b16ee1a596e0b33ef921dad7f8778019e906c7b1261d3d251089a21e1670acf2"
+    },
+    "effectiveSlotCapPreserved": "max_slot_wal_keep_size=16384MB",
+    "legacyNativeWrapperUsed": false,
+    "limits": {
+      "baseBytes": 85899345920,
+      "baseClearBackupWindow": "2h15m",
+      "baseRuntime": "2h",
+      "cpuQuota": "50%",
+      "dataReserveBytes": 107374182400,
+      "evidenceBytes": 1073741824,
+      "liveRootReserveBytes": 10737418240,
+      "memoryHigh": 1073741824,
+      "memoryMax": 2147483648,
+      "tasksMax": 32,
+      "walBytes": 34359738368
+    },
+    "mode": "0700",
+    "newDirectories": [
+      "wal",
+      "bases",
+      "evidence"
+    ],
+    "newDropinScope": "Only exact root-owned raw plan SHA environment per-unit; no generic service or old native unit edits.",
+    "newExclusiveLock": ".base-admission.lock",
+    "newInstalledUnits": [
+      "/etc/systemd/system/proofofwork-audit30-receivewal.service",
+      "/etc/systemd/system/proofofwork-audit30-basebackup@.service"
+    ],
+    "newPackages": [
+      "/usr/local/lib/proofofwork-audit30-recovery/receivewal",
+      "/usr/local/lib/proofofwork-audit30-recovery/basebackup/RUN"
+    ],
+    "newPerUnitSources": [
+      "recovery-controller.py",
+      "restore-latest-logical.py",
+      "reviewed-plan.json"
+    ],
+    "newPhysicalSlot": "pow_audit30_receivewal",
+    "newRoot": "/data/proofofwork-postgres-recovery-audit30",
+    "owner": "postgres:postgres",
+    "qualifications": [
+      "22 synthetic/local source fixtures and earlier named isolated synthetic PITR/native credential mechanics are separate proofs; none certify current production base/WAL continuity, RPO or production physical-page checksums.",
+      "Existing16GiB max_slot_wal cap is already installed; no duplicate configuration or restart. New80GiB base/32GiB archive allocations have monitored bounds and stop latency, not filesystem quota.",
+      "Only the new nonaliased recovery root may be proposed; deleted-empty legacy mount/Expire wrapper never reused. Activation/slot/pin/extra deletion remain distinct final-human actions."
+    ],
+    "refusalGates": [
+      "Unknown/nonempty/new-root alias, unexpected tablespace, source/unit/credential/hold/mask drift",
+      "Existing slot collision, missing16GiB source cap, synchronous quorum interference, invalid/lost slot",
+      "Missed receiver feedback/WAL metadata gap/truncated complete segment/watchdog loss/resource reserve",
+      "Source base >80GiB or archive >32GiB or <100GiBdata/<10GiBroot; polling is monitored with stop latency, not quota",
+      "Missing2h15m clear logical backup window; retain all partial/new/old jobs and do not retry implicitly"
+    ],
+    "settingsChanges": [],
+    "slotSqlSha256": "56934371b398b2a518e3defaaebfe400dfbeb07137147450b5a9cbc44c029373",
+    "sourceGuard": "Exact reviewed26c native credential helper or separately frozen equivalent, adjacent root600 reviewed-plan; no mutable-helper fallback.",
+    "status": "requires-explicit-final-approval-and-fresh-bound-plan"
+  },
+  "recoverySourceFiles": [
+    {
+      "bytes": 11171,
+      "path": "/home/sixer/ProofOfWork.Me/deploy/audit30/recovery/PROPOSAL-v2.md",
+      "sha256": "06598f0bb202794328a35a30a247ab8b0a12daf834c56f63786eb3c2529a4eaf"
+    },
+    {
+      "bytes": 21618,
+      "path": "/home/sixer/ProofOfWork.Me/deploy/audit30/recovery/check-recovery-v2.test.py",
+      "sha256": "58dfb5d5a80352d3c2a0c61c977901734e428a08434aa16d8ee20e8ce6faa984"
+    },
+    {
+      "bytes": 30211,
+      "path": "/home/sixer/ProofOfWork.Me/deploy/audit30/recovery/recovery-controller-v2.py",
+      "sha256": "b16ee1a596e0b33ef921dad7f8778019e906c7b1261d3d251089a21e1670acf2"
+    },
+    {
+      "bytes": 1608,
+      "path": "/home/sixer/ProofOfWork.Me/deploy/audit30/recovery/proofofwork-audit30-basebackup@.service",
+      "sha256": "45a570fdfe778f41693c86051d0bfa2aaf947562c08772b66a23252477e6762b"
+    },
+    {
+      "bytes": 1601,
+      "path": "/home/sixer/ProofOfWork.Me/deploy/audit30/recovery/proofofwork-audit30-receivewal.service",
+      "sha256": "9ed1b9bbdfded39a6c17df28fc1869eb502685847bd289563520e1934af7f547"
+    },
+    {
+      "bytes": 1180,
+      "path": "/home/sixer/ProofOfWork.Me/deploy/audit30/recovery/reserve-slot.sql",
+      "sha256": "56934371b398b2a518e3defaaebfe400dfbeb07137147450b5a9cbc44c029373"
+    }
+  ],
+  "repositoryEdits": false,
+  "retentionMonitorTransition": {
+    "backupToolHashChanged": false,
+    "candidate": {
+      "bytes": 20677,
+      "path": "/tmp/pow-audit30-retention-protection-oct2-candidate-v1.py",
+      "sha256": "e8e0771335c10e79a75a7671539de8597bc02dca61b0e936768ba378bc252dad"
+    },
+    "currentSourceBytes": 20677,
+    "currentSourcePath": "/home/sixer/ProofOfWork.Me/scripts/check-retention-protection.py",
+    "currentSourceSha256": "da5d1336ce857acc571ba0849c2b0150ef5fc6dfdacf80e65b9f1d3611c48e8a",
+    "historicalAudit28FilesChanged": false,
+    "independentAuthorTestPassed": 8,
+    "installedFileChanged": false,
+    "installedPath": "/usr/local/sbin/proofofwork-retention-protection",
+    "monitorUnitChanged": false,
+    "notReplacementAuthority": "Unrestored Oct3 routine backup is not a verified pin replacement. Existing Sept29 provenance/restore/source/evidence stays historical and preserved.",
+    "onlyCandidateDiff": [
+      "EXPECTED_LOGICAL_PIN Sep29\u2192proof_indexer-20261002T031851Z.dumpset",
+      "Expected dump bytes19363782935\u219220525963614"
+    ],
+    "pinChanged": false,
+    "pollIntervalChanged": false,
+    "prerequisites": [
+      "Fresh exact Oct2 dump/globals/SHA256SUMS/TOC hash and full directory metadata equal accepted full-read/isolated restore authority. Routine scheduled backup inactive with unchanged timer; no service-delay authority.",
+      "Fresh installed monitor metadata/whole bytes exactly da5d baseline, root-owned regular no aliases or hardlinks, no unexpected dropins/unit changes. Stage only this exact candidate separately; no installed overwrite until final human approval.",
+      "Final human approval must separately name both pin content and retention-monitor expected name/size update. Preserve complete prior pin and installed checker bytes/identity in durable exclusive evidence; preserve all Audit28 restore/tests and held/mask records.",
+      "Before/after verify actual monitor/service namespace and retained-pin/file predicates without changing20-second node monitor or60-second UI interval. Generic holds/masks and known absences remain explicitly qualified.",
+      "If approved, atomically replace each exact file after before-identity checks, keeping root-owned permissions; immediate exact pin/tool/Oct2 metadata verification. A name/stat check is not a full dump hash or restore proof. Failure must retain evidence and require explicit reconciliation, not silent automatic mutation.",
+      "Any later Sep29 retirement still requires separately approved exact content/stopped-reader/dependency/recoverability/hold review; pin promotion alone is not deletion authority."
+    ],
+    "prospectivePinRawUtf8": "proof_indexer-20261002T031851Z.dumpset\n",
+    "tests": {
+      "bytes": 4427,
+      "path": "/tmp/pow-audit30-retention-protection-oct2-candidate-v1.test.py",
+      "sha256": "6a294cd02ad84e6b75ef6db1bb31d759a49bb5990fcee5dbf579ec09960f1f34"
+    },
+    "verificationQualification": "8 local mocked actual-main/pin/mode/owner/dump-size/masks fixtures passed; independent full-file reverse-diff proves ONLY two literal expected-identity changes. Existing function remains metadata/name/tool-hash monitor, not periodic20GB cryptographic verification or universal recovery certificate. Whole actual node held inventory may retain known absences; this candidate does not waive them."
+  },
+  "schema": "pow-audit30-recovery-pin-extra-retirement-approval-preparation-v3",
+  "sourceQualifiers": {
+    "continuousProductionPitrCertified": false,
+    "latestRestoreSavedFence": {
+      "canonicalBlock": {
+        "hash": "00000000000000000001c495201991943ae88860aeaca7db34c37e210e765ee0",
+        "height": 969526
+      },
+      "confirmedTransactionMaxHeight": 969511,
+      "precisionActivationHeight": "960601",
+      "precisionMarkerStatus": "complete",
+      "transitionMaxHash": "00000000000000000001c495201991943ae88860aeaca7db34c37e210e765ee0",
+      "transitionMaxHeight": 969526
+    },
+    "oldNativeMount": "Active /var/backups/postgresql bind references deleted empty backing directory; preserve native unit/mount; new root must be nonaliased.",
+    "privateChecksumsOn": true,
+    "productionPhysicalChecksumsOn": false,
+    "productionPhysicalPageCertified": false
+  },
+  "status": "source-only-final-human-approval-prerequisites-open",
+  "supersedesBinding": {
+    "bytes": 20106,
+    "path": "/tmp/pow-audit30-recovery-pin-extra-retirement-approval-preparation-v2.json",
+    "sha256": "bdeb6efb88df133f0a94c31330e6dcedf255d2e99851278519693e7b5e8576e1"
+  },
+  "verifiedOct2Authority": {
+    "dumpBytes": 20525963614,
+    "dumpSha256": "893700c4fff20e4bad721d16188f67dd04e3f44ee9f3f63784c15c51488a7b1a",
+    "fullRead": {
+      "bytes": 21613,
+      "path": "/tmp/pow-audit30-latest-backup-full-read-v2.json",
+      "sha256": "cd18bed6a2141f500dc446d1ab167acbd8043b28c482b5e3d364f93abc67f5a2"
+    },
+    "qualification": "The source restore completed and was stopped; fresh raw hashes/metadata are final action gates, not implied by this historical binding.",
+    "restoreCompletedSha256": "47ec15376cab23ec705e494195d7b836fa2674450e5ee9f7d761e7f6dbb709dd",
+    "restoredJob": "/data/proofofwork-audit30-restore-20261002T234651Z"
+  }
+}

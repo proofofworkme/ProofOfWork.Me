@@ -1,5 +1,5 @@
 {
-  "atUtc": "2026-10-03T07:21:49.253645+00:00",
+  "atUtc": "2026-10-03T08:04:28.657592+00:00",
   "files": [
     {
       "bytes": 19239,
@@ -2327,9 +2327,247 @@
       "purpose": "Exact public audit source/fixture custody. Actual scope, acceptance/refusal, sample limits and pending live authority are recorded separately; source custody never grants production approval.",
       "repositoryPath": "deploy/audit30/verification/pow-audit30-retirement-extensionless-public-supplement-v1.py",
       "sha256": "cb72d5e1760bd3dfa4c62b73d586c75b99962923301347a617253931a849ff09"
+    },
+    {
+      "bytes": 7858,
+      "originalPath": "/tmp/pow-audit30-private-sixteen-failed-observer-v1.py",
+      "purpose": "Exact public read-only failed/admission source custody; actual endpoint/refusal and test scopes are separately qualified in execution evidence. No production authority.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-private-sixteen-failed-observer-v1.py",
+      "sha256": "c6e49525f16dc0f8101fbd611bc0a457db03a17ee8086347940244c6f9912974"
+    },
+    {
+      "bytes": 32635,
+      "originalPath": "/tmp/pow-audit30-private-sixteen-admission-diagnostic-v1.py",
+      "purpose": "Exact public read-only failed/admission source custody; actual endpoint/refusal and test scopes are separately qualified in execution evidence. No production authority.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-private-sixteen-admission-diagnostic-v1.py",
+      "sha256": "f75e81ef68fa4bbb427f0eca54c5b215f795c9eea6a144c50b37b7e13e1e88a9"
+    },
+    {
+      "bytes": 3846,
+      "originalPath": "/tmp/pow-audit30-private-sixteen-admission-diagnostic-v1.test.py",
+      "purpose": "Exact public read-only failed/admission source custody; actual endpoint/refusal and test scopes are separately qualified in execution evidence. No production authority.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-private-sixteen-admission-diagnostic-v1.test.py",
+      "sha256": "10eb68ff2848e6cc531fca7db392569a705567bf56e7009ad2786c07d7bd457e"
+    },
+    {
+      "bytes": 4067,
+      "originalPath": "/tmp/pow-audit30-private-sixteen-math-allocation-observer-v1.py",
+      "purpose": "Exact public source/fixture custody. Source-only production proposals confer no authority; native acceptance and failed audit-tool diagnostics are qualified separately.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-private-sixteen-math-allocation-observer-v1.py",
+      "sha256": "1d6945a049e881980cfffe6e1c4575568b4598d939c80fac0ddc414de5dd08ab"
+    },
+    {
+      "bytes": 2266,
+      "originalPath": "/tmp/pow-audit30-private-sixteen-math-allocation-observer-v1.test.py",
+      "purpose": "Exact public source/fixture custody. Source-only production proposals confer no authority; native acceptance and failed audit-tool diagnostics are qualified separately.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-private-sixteen-math-allocation-observer-v1.test.py",
+      "sha256": "d79a53eebc3753c7d18b48e3c34c21e771f9209067ba20587334c819ae032f2c"
+    },
+    {
+      "bytes": 22041,
+      "originalPath": "/tmp/pow-audit30-production-sixteen-root-control-v1.py",
+      "purpose": "Exact public source/fixture custody. Source-only production proposals confer no authority; native acceptance and failed audit-tool diagnostics are qualified separately.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-production-sixteen-root-control-v1.py",
+      "sha256": "5af78120b09c19a72d8687d7ef961f562b6644c9fe4bf08f3cb999cde3ca9991"
+    },
+    {
+      "bytes": 16242,
+      "originalPath": "/tmp/pow-audit30-production-sixteen-root-control-v1.test.py",
+      "purpose": "Exact public source/fixture custody. Source-only production proposals confer no authority; native acceptance and failed audit-tool diagnostics are qualified separately.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-production-sixteen-root-control-v1.test.py",
+      "sha256": "a78f5d1f8322064cfb87cbe4c25e21d359253ad48442920f7c9c6406d99c2437"
+    },
+    {
+      "bytes": 2636,
+      "originalPath": "/tmp/pow-audit30-production-sixteen-root-bootstrap-v1.py",
+      "purpose": "Exact public source/fixture custody. Source-only production proposals confer no authority; native acceptance and failed audit-tool diagnostics are qualified separately.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-production-sixteen-root-bootstrap-v1.py",
+      "sha256": "4e6f5f56aed94bc9c814256f10f25080c491175c3ea66c108be6d41addc266d3"
+    },
+    {
+      "bytes": 3395,
+      "originalPath": "/tmp/pow-audit30-production-sixteen-root-bootstrap-v1.test.py",
+      "purpose": "Exact public source/fixture custody. Source-only production proposals confer no authority; native acceptance and failed audit-tool diagnostics are qualified separately.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-production-sixteen-root-bootstrap-v1.test.py",
+      "sha256": "6bfd6001103b63aafcfc561958698d731a4d8f018bea6a06da97e75ea23d7012"
+    },
+    {
+      "bytes": 6029,
+      "originalPath": "/tmp/pow-audit30-production-sixteen-root-command-spec-v1.json",
+      "purpose": "Exact public source/fixture custody. Source-only production proposals confer no authority; native acceptance and failed audit-tool diagnostics are qualified separately.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-production-sixteen-root-command-spec-v1.json",
+      "sha256": "a024be575535236e9239ddc994f6944903ae3c05100d5c4992e6edf69aea1efb"
+    },
+    {
+      "bytes": 3131,
+      "originalPath": "/tmp/pow-audit30-production-sixteen-root-local-validation-v1.json",
+      "purpose": "Exact public source/fixture custody. Source-only production proposals confer no authority; native acceptance and failed audit-tool diagnostics are qualified separately.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-production-sixteen-root-local-validation-v1.json",
+      "sha256": "1b8ae216489af405478ad1559b538a19f8bd6bb0ce377dfd265b2e184524fee6"
+    },
+    {
+      "bytes": 4073,
+      "originalPath": "/tmp/pow-audit30-stream-final-preflight-v1.py",
+      "purpose": "Exact public source/fixture custody; approved isolated proof and read-only public-chain scopes only. No production authority, automatic continuation, raw private data export or financial completeness is granted by this source.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-stream-final-preflight-v1.py",
+      "sha256": "fda2a3614c41faff1e407cff8eb9048c20985a5751b05b9203588f36dabaa84c"
+    },
+    {
+      "bytes": 26380,
+      "originalPath": "/tmp/pow-audit30-private-sixteen-supervisor-v3.py",
+      "purpose": "Exact public source/fixture custody; approved isolated proof and read-only public-chain scopes only. No production authority, automatic continuation, raw private data export or financial completeness is granted by this source.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-private-sixteen-supervisor-v3.py",
+      "sha256": "b1f10c63ac7e0de179215993529708e082073b0fd25bd6d36a4a7200870d4544"
+    },
+    {
+      "bytes": 23832,
+      "originalPath": "/tmp/pow-audit30-private-sixteen-supervisor-v3.test.py",
+      "purpose": "Exact public source/fixture custody; approved isolated proof and read-only public-chain scopes only. No production authority, automatic continuation, raw private data export or financial completeness is granted by this source.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-private-sixteen-supervisor-v3.test.py",
+      "sha256": "16ebc95b6a6ac0b843a90646eab293ebf8d24141c7508104256df8df701a781d"
+    },
+    {
+      "bytes": 26446,
+      "originalPath": "/tmp/pow-audit30-private-sixteen-bootstrap-v3.py",
+      "purpose": "Exact public source/fixture custody; approved isolated proof and read-only public-chain scopes only. No production authority, automatic continuation, raw private data export or financial completeness is granted by this source.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-private-sixteen-bootstrap-v3.py",
+      "sha256": "ca1b042b2733b4f10c61d739994cfe1b4826ded5f0b2c819caef6857ce9494e7"
+    },
+    {
+      "bytes": 16690,
+      "originalPath": "/tmp/pow-audit30-private-sixteen-bootstrap-v3.test.py",
+      "purpose": "Exact public source/fixture custody; approved isolated proof and read-only public-chain scopes only. No production authority, automatic continuation, raw private data export or financial completeness is granted by this source.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-private-sixteen-bootstrap-v3.test.py",
+      "sha256": "218d3f6b66e5b90230a23e669b5d541ce537e66b06709e33f54fe1336a203387"
+    },
+    {
+      "bytes": 13980,
+      "originalPath": "/tmp/pow-audit30-treasury-missing-raw-targets-v1.py",
+      "purpose": "Exact public source/fixture custody; approved isolated proof and read-only public-chain scopes only. No production authority, automatic continuation, raw private data export or financial completeness is granted by this source.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-treasury-missing-raw-targets-v1.py",
+      "sha256": "02fc3a54c231c85bd1beab9307a9959bf2092bb169bdc603de64960830781130"
+    },
+    {
+      "bytes": 12768,
+      "originalPath": "/tmp/pow-audit30-treasury-missing-raw-targets-v1.test.py",
+      "purpose": "Exact public source/fixture custody; approved isolated proof and read-only public-chain scopes only. No production authority, automatic continuation, raw private data export or financial completeness is granted by this source.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-treasury-missing-raw-targets-v1.test.py",
+      "sha256": "7000994f09618b1e4e14808cc0903161997b477794e02aaae2599284483046b5"
+    },
+    {
+      "bytes": 27262,
+      "originalPath": "/tmp/pow-audit30-treasury-missing-raw-native-v1.py",
+      "purpose": "Exact public source/fixture custody; approved isolated proof and read-only public-chain scopes only. No production authority, automatic continuation, raw private data export or financial completeness is granted by this source.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-treasury-missing-raw-native-v1.py",
+      "sha256": "302767f392aaaa3eb4c291d38a4f2956f48110b41d4e3bcb3912f2d83197ff0f"
+    },
+    {
+      "bytes": 35253,
+      "originalPath": "/tmp/pow-audit30-treasury-missing-raw-native-v1.test.py",
+      "purpose": "Exact public source/fixture custody; approved isolated proof and read-only public-chain scopes only. No production authority, automatic continuation, raw private data export or financial completeness is granted by this source.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-treasury-missing-raw-native-v1.test.py",
+      "sha256": "b22f264ab63e1d636387dc8c73fdf8b55848a53059e453110a1bec9821b9a26f"
+    },
+    {
+      "bytes": 2128,
+      "originalPath": "/tmp/pow-audit30-private-sixteen-hash-helper-contract-finding-v1.json",
+      "purpose": "Action55 public source/test/peer custody only; saved-receipt reconciliation, captured raw-demand planning and proposed pin/checker/recovery scope. No native authority, private payload export, production approval, financial completeness or retirement permission.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-private-sixteen-hash-helper-contract-finding-v1.json",
+      "sha256": "4261eb84c9febef42d4b0aa5fc997ee97e843d1e2d67db94cc8e95ee260b499e"
+    },
+    {
+      "bytes": 8960,
+      "originalPath": "/tmp/pow-audit30-private-sixteen-reconcile-readonly-v1.py",
+      "purpose": "Action55 public source/test/peer custody only; saved-receipt reconciliation, captured raw-demand planning and proposed pin/checker/recovery scope. No native authority, private payload export, production approval, financial completeness or retirement permission.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-private-sixteen-reconcile-readonly-v1.py",
+      "sha256": "aa75ae88d380b03ed86962ec3df6dcf391a25b8db4ddf5314ad198ec973a679e"
+    },
+    {
+      "bytes": 8131,
+      "originalPath": "/tmp/pow-audit30-private-sixteen-reconcile-readonly-v1.test.py",
+      "purpose": "Action55 public source/test/peer custody only; saved-receipt reconciliation, captured raw-demand planning and proposed pin/checker/recovery scope. No native authority, private payload export, production approval, financial completeness or retirement permission.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-private-sixteen-reconcile-readonly-v1.test.py",
+      "sha256": "648646a2adb939bb6457d370dc870e004d3356c1903f066e0766d228bb7d0d10"
+    },
+    {
+      "bytes": 2433,
+      "originalPath": "/tmp/pow-audit30-integrity-peer-private-sixteen-saved-receipt-reconciliation-v1.json",
+      "purpose": "Action55 public source/test/peer custody only; saved-receipt reconciliation, captured raw-demand planning and proposed pin/checker/recovery scope. No native authority, private payload export, production approval, financial completeness or retirement permission.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-integrity-peer-private-sixteen-saved-receipt-reconciliation-v1.json",
+      "sha256": "340aded37465f258793bd6c18615741c6253e8f169c2b4e5dddc928d4b7ae6dc"
+    },
+    {
+      "bytes": 7858,
+      "originalPath": "/tmp/pow-audit30-private-sixteen-failed-observer-v2.py",
+      "purpose": "Action55 public source/test/peer custody only; saved-receipt reconciliation, captured raw-demand planning and proposed pin/checker/recovery scope. No native authority, private payload export, production approval, financial completeness or retirement permission.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-private-sixteen-failed-observer-v2.py",
+      "sha256": "55511abf1da4d47555b70369e686add5e7cbb90178623c4374022c8a82d12a91"
+    },
+    {
+      "bytes": 20677,
+      "originalPath": "/tmp/pow-audit30-retention-protection-oct2-candidate-v1.py",
+      "purpose": "Action55 public source/test/peer custody only; saved-receipt reconciliation, captured raw-demand planning and proposed pin/checker/recovery scope. No native authority, private payload export, production approval, financial completeness or retirement permission.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-retention-protection-oct2-candidate-v1.py",
+      "sha256": "e8e0771335c10e79a75a7671539de8597bc02dca61b0e936768ba378bc252dad"
+    },
+    {
+      "bytes": 4427,
+      "originalPath": "/tmp/pow-audit30-retention-protection-oct2-candidate-v1.test.py",
+      "purpose": "Action55 public source/test/peer custody only; saved-receipt reconciliation, captured raw-demand planning and proposed pin/checker/recovery scope. No native authority, private payload export, production approval, financial completeness or retirement permission.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-retention-protection-oct2-candidate-v1.test.py",
+      "sha256": "6a294cd02ad84e6b75ef6db1bb31d759a49bb5990fcee5dbf579ec09960f1f34"
+    },
+    {
+      "bytes": 24536,
+      "originalPath": "/tmp/pow-audit30-recovery-pin-extra-retirement-approval-preparation-v3.json",
+      "purpose": "Action55 public source/test/peer custody only; saved-receipt reconciliation, captured raw-demand planning and proposed pin/checker/recovery scope. No native authority, private payload export, production approval, financial completeness or retirement permission.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-recovery-pin-extra-retirement-approval-preparation-v3.json",
+      "sha256": "0b5a8f7b2af6fa371369e3445cd9b55305faf73fb732c433338a8fe91efb6536"
+    },
+    {
+      "bytes": 3831,
+      "originalPath": "/tmp/pow-audit30-integrity-peer-retention-monitor-oct2-v1.json",
+      "purpose": "Action55 public source/test/peer custody only; saved-receipt reconciliation, captured raw-demand planning and proposed pin/checker/recovery scope. No native authority, private payload export, production approval, financial completeness or retirement permission.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-integrity-peer-retention-monitor-oct2-v1.json",
+      "sha256": "9f08b23cfbdd07645d2398eb84990a864498e03865e5002ff8876e740a8347d5"
+    },
+    {
+      "bytes": 1367,
+      "originalPath": "/tmp/pow-audit30-integrity-peer-retirement-retained-evidence-boundary-v1.json",
+      "purpose": "Action55 public source/test/peer custody only; saved-receipt reconciliation, captured raw-demand planning and proposed pin/checker/recovery scope. No native authority, private payload export, production approval, financial completeness or retirement permission.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-integrity-peer-retirement-retained-evidence-boundary-v1.json",
+      "sha256": "64ad67f0cda17cfa427873011b35a07a0bacbb9f8e72f8c46c331d78de98a897"
+    },
+    {
+      "bytes": 2356,
+      "originalPath": "/tmp/pow-audit30-integrity-peer-treasury-missing-raw-native-v1.json",
+      "purpose": "Action55 public source/test/peer custody only; saved-receipt reconciliation, captured raw-demand planning and proposed pin/checker/recovery scope. No native authority, private payload export, production approval, financial completeness or retirement permission.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-integrity-peer-treasury-missing-raw-native-v1.json",
+      "sha256": "504be76084db2bfba134b9e01b7824a72a4b54f88ca1a8eaba37eac953a18274"
+    },
+    {
+      "bytes": 20330,
+      "originalPath": "/tmp/pow-audit30-treasury-completed-raw-planning-census-v1.py",
+      "purpose": "Action55 public source/test/peer custody only; saved-receipt reconciliation, captured raw-demand planning and proposed pin/checker/recovery scope. No native authority, private payload export, production approval, financial completeness or retirement permission.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-treasury-completed-raw-planning-census-v1.py",
+      "sha256": "570ba11d9f567fed0d16fe122783a5d7aa92d6e1dff3bf0582745e09b461d75f"
+    },
+    {
+      "bytes": 8098,
+      "originalPath": "/tmp/pow-audit30-treasury-completed-raw-planning-census-v1.test.py",
+      "purpose": "Action55 public source/test/peer custody only; saved-receipt reconciliation, captured raw-demand planning and proposed pin/checker/recovery scope. No native authority, private payload export, production approval, financial completeness or retirement permission.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-treasury-completed-raw-planning-census-v1.test.py",
+      "sha256": "cc81552aa4cea1c168373c34b44da106df502c70922c13f4b92e122fb561b824"
+    },
+    {
+      "bytes": 1488,
+      "originalPath": "/tmp/pow-audit30-treasury-completed-raw-planning-census-local-preparation-v1.json",
+      "purpose": "Action55 public source/test/peer custody only; saved-receipt reconciliation, captured raw-demand planning and proposed pin/checker/recovery scope. No native authority, private payload export, production approval, financial completeness or retirement permission.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-treasury-completed-raw-planning-census-local-preparation-v1.json",
+      "sha256": "330d070a0ddcebec80415f2c8de236db6e897daeb9a6c9de3194a7c596a47d0f"
     }
   ],
-  "qualification": "Exact public source/fixture custody with preserved earlier failures. No private bodies/environments/catalog/role secrets copied. 38ac stage/shadow pass, full semantic CLI changed-fence refusal then diagnostic first-request503 with no fence preimage and actual stopped unit. Cause and production acceptance remain pending; UI fc5 is staged. Source acceptance is not native acceptance or production-data/recovery/retirement authorization. One archival Python fixture copy removes only a final blank line required by the enabled whitespace hook; its exact original bytes, length and SHA remain losslessly base64-preserved in its manifest row and original /tmp source. Its Python AST is identical. Subsequent v3 original semantic CLI passes full coverage/registry parity at exact969677 with identical fences; other production acceptance gates remain pending. Actual CLI stopped closure and same-candidate readonly lease successor now pass; WORK/bond/strict and production publication remain pending. Mail GET source verification grants no stored-row repair authority.",
+  "qualification": "Exact public source/fixture custody with preserved earlier failures. No private bodies/environments/catalog/role secrets copied. 38ac stage/shadow pass, full semantic CLI changed-fence refusal then diagnostic first-request503 with no fence preimage and actual stopped unit. Cause and production acceptance remain pending; UI fc5 is staged. Source acceptance is not native acceptance or production-data/recovery/retirement authorization. One archival Python fixture copy removes only a final blank line required by the enabled whitespace hook; its exact original bytes, length and SHA remain losslessly base64-preserved in its manifest row and original /tmp source. Its Python AST is identical. Subsequent v3 original semantic CLI passes full coverage/registry parity at exact969677 with identical fences; other production acceptance gates remain pending. Actual CLI stopped closure and same-candidate readonly lease successor now pass; WORK/bond/strict and production publication remain pending. Mail GET source verification grants no stored-row repair authority. Action55 preserves failed074500 and real26c verifier defect; saved-receipt reconciliation validates privateACKs/fullmail only, with source7-after/offline/currentfence pending. Captured rawdelta/demand census grants no parent/membership/outpoint/financial acceptance. Proposed Oct2 checker and currentb16 selection remain source-only; no pin/activation/deletion authority.",
   "schema": "pow-audit30-verification-source-custody-v1",
   "testExecutionQualification": "Preserved fixtures keep original relative imports and reviewed /tmp bindings. Reproduce in a fresh reviewed scratch package using byte-equal copies at their original expected basenames; refuse collisions. Most inputs are synthetic. Historical-layout oracle/native layout fixtures additionally require exact public metadata witness /tmp/pow-audit30-inspector-id-capture-meta-v1.json SHA69cf431cbede11d4867a85c8611ad932bc125d1c9da1560120ca6a20c4dfabac, preserved in execution evidence; never substitute guessed metadata or a private body capture. Local fixture acceptance and captured native results remain separate. Body/readiness fixtures also reference public native-v1 stdout079048206e4c03a75dc928f59180d906a8f24bfd78cf87a7d0262d6ca7aa57da and native-v2 stdout0f574b8400cf3effc5e0512a7895d6a59c0b500187f51244a9a96fef3226e885. These public normalized receipts are preserved by exact value/bytes/hash in execution evidence; reconstruct only after verifying the exact SHA. They contain no function bodies/private catalog or mail body captures."
 }

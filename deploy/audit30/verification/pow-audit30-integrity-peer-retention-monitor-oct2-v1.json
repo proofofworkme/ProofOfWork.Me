@@ -1,0 +1,72 @@
+{
+  "atUtc": "2026-10-03T07:51:09.657086+00:00",
+  "canonicalMonitorSHA256": "da5d1336ce857acc571ba0849c2b0150ef5fc6dfdacf80e65b9f1d3611c48e8a",
+  "currentRecoverySelection": "b16ee1a596e0b33ef921dad7f8778019e906c7b1261d3d251089a21e1670acf2",
+  "exactInverseDiff": true,
+  "fourTargetChecklist": {
+    "allNineFinalGatesOpen": true,
+    "allNotDeletionReady": true,
+    "deletionControllerImplemented": false,
+    "exactThreePrivateGeneratedClusterDirectoriesAndOneThreeMemberSep29DumpSet": true
+  },
+  "historicalRecoveryB603Preserved": true,
+  "independentTests": {
+    "command": "python3 -I -B -W error /tmp/pow-audit30-retention-protection-oct2-candidate-v1.test.py",
+    "passed": 8,
+    "seconds": 0.021
+  },
+  "inputMetadataAndHashesMatch": true,
+  "onlyChanges": [
+    "EXPECTED_LOGICAL_PIN proof_indexer-20260929T031853Z.dumpset to proof_indexer-20261002T031851Z.dumpset",
+    "Expected proof_indexer.dump bytes19363782935 to20525963614"
+  ],
+  "qualifications": [
+    "No native access, repository/source change, installed checker change, pin promotion, recovery activation, timer/mask/hold change, or deletion performed.",
+    "The candidate preserves all original functions and security checks; it is a name/metadata/tool-hash monitor, not periodic full dump hash verification or a restore certificate.",
+    "The historical Oct2 captured backup and complete/stopped restore proof bind the proposed replacement. Fresh exact backup/source/readers/namespace/lock/five/capacity/hold proofs remain final action gates.",
+    "The current Sep29 pin and checker stay protected until explicitly approved coupled pin-content and checker name/size changes, with durable original preimages and failure reconciliation. Pin promotion alone does not release the old dump or held parent.",
+    "The exact4-target retirement checklist remains pending: no parent/job/evidence/Oct2 deletion authority, no universal dependency or recovery certification.",
+    "Current b16 is the proposed recovery input; historical b603 and its evidence are preserved. Synthetic fixtures do not certify production physical continuity/PITR/checksums."
+  ],
+  "reviewedFiles": [
+    {
+      "bytes": 20677,
+      "path": "/tmp/pow-audit30-retention-protection-oct2-candidate-v1.py",
+      "sha256": "e8e0771335c10e79a75a7671539de8597bc02dca61b0e936768ba378bc252dad"
+    },
+    {
+      "bytes": 4427,
+      "path": "/tmp/pow-audit30-retention-protection-oct2-candidate-v1.test.py",
+      "sha256": "6a294cd02ad84e6b75ef6db1bb31d759a49bb5990fcee5dbf579ec09960f1f34"
+    },
+    {
+      "bytes": 24536,
+      "path": "/tmp/pow-audit30-recovery-pin-extra-retirement-approval-preparation-v3.json",
+      "sha256": "0b5a8f7b2af6fa371369e3445cd9b55305faf73fb732c433338a8fe91efb6536"
+    },
+    {
+      "bytes": 22690,
+      "path": "/tmp/pow-audit30-final-recovery-pin-retirement-checklist-v2.json",
+      "sha256": "28fd22cbf545ad40936dadbe7b6fb90ab9b3c9842a66456d967c23eb4c09f2cb"
+    },
+    {
+      "bytes": 21613,
+      "path": "/tmp/pow-audit30-latest-backup-full-read-v2.json",
+      "sha256": "cd18bed6a2141f500dc446d1ab167acbd8043b28c482b5e3d364f93abc67f5a2"
+    },
+    {
+      "bytes": 10499,
+      "path": "/tmp/pow-audit30-restore-progress-v11.json",
+      "sha256": "6f02e650234f6fb2d2eb75d7bbbba2710203936ac9d32bff9986770ed2092715"
+    }
+  ],
+  "schema": "pow-audit30-integrity-peer-retention-monitor-oct2-v1",
+  "status": "accepted-source-only",
+  "verifiedBackupBinding": {
+    "dumpBytes": 20525963614,
+    "dumpSHA256": "893700c4fff20e4bad721d16188f67dd04e3f44ee9f3f63784c15c51488a7b1a",
+    "historicalCapturedCompletionPassedAndStopped": true,
+    "path": "/data/proofofwork-postgres-backups/logical/proof_indexer-20261002T031851Z.dumpset",
+    "restoreCompletedSHA256": "47ec15376cab23ec705e494195d7b836fa2674450e5ee9f7d761e7f6dbb709dd"
+  }
+}
