@@ -1,0 +1,108 @@
+{
+  "actualObservationKeptSeparate": {
+    "currentlyInstalledCheckerIsOriginalDa5d": true,
+    "currentlyInstalledPinIsOld39BytesOnly": true,
+    "reviewPath": "/tmp/pow-audit30-independent-coupled-promotion-state-actual-review-v1.json",
+    "reviewSha256": "da1559f7cc478864d586c38c015512698f00c609fd0ed92251ebb5309eea39b9"
+  },
+  "atUtc": "2026-10-03T12:22:51.460673+00:00",
+  "bindings": [
+    {
+      "bytes": 25752,
+      "path": "/tmp/pow-audit30-coupled-pin-checker-promotion-v6.py",
+      "sha256": "dfa403996e776a8ed192a024848b06f71b5fa041a24bf5b9687ff04ce3714535"
+    },
+    {
+      "bytes": 3354,
+      "path": "/tmp/pow-audit30-coupled-pin-checker-promotion-v6.diff",
+      "sha256": "c72d22aa6f673092ec0ae79017f2558b4ff0122105bc506183e765cc54558926"
+    },
+    {
+      "bytes": 20718,
+      "path": "/tmp/pow-audit30-retention-protection-oct3-dual-pin-candidate-v1.py",
+      "sha256": "795f1308b74ddc69a022ce7e1413fb4698a82e6cfb14265931d1951ee603c908"
+    },
+    {
+      "bytes": 895,
+      "path": "/tmp/pow-audit30-retention-protection-oct3-dual-pin-candidate-v1.diff",
+      "sha256": "784603ab74ec34130c5c32bcbc2543b68fcdf0d6bc640d858d19676c32e2b693"
+    },
+    {
+      "bytes": 2391,
+      "path": "/tmp/pow-audit30-coupled-pin-checker-promotion-plan-template-v6.json",
+      "sha256": "7dac36c440b96174bde59c14dc19de17d111bd95e86fc7bb5eaa61c0bd4249dc"
+    },
+    {
+      "bytes": 27492,
+      "path": "/tmp/pow-audit30-coupled-pin-checker-promotion-v6.test.py",
+      "sha256": "dff5978a05855b77885d0b5d9ec2e9808e0d2193d153fcbf5257043ff504889d"
+    }
+  ],
+  "claims": {
+    "backupDeletionAuthorized": false,
+    "fullWorkflowComplete": false,
+    "humanApprovalCreated": false,
+    "productionMutation": false,
+    "promotionPerformed": false,
+    "recoveryActivated": false,
+    "retirementPlanAdmitted": false
+  },
+  "limitations": [
+    "V5 single-pin action is withdrawn; V6 keeps the exact Sep29 pin and adds Oct3. No pin/checker file has been installed by this source review.",
+    "Candidate validates ordered pin membership and the unchanged Oct3 directory/dump metadata literals; it does not independently full-hash or restore Sep29.",
+    "Frozen single-pin retirement consumers cannot admit the staged dual-pin receipt. Consumer-fragment synthetic tests check shape only and do not constitute deletion admission.",
+    "The existing accepted fresh full-read timestamp12:01:36.156678 expires at12:16:36.156678 under the unchanged900-second gate. The12:17:47 saved state observation is already later; a future action must obtain a separately accepted fresh full-read and exact current metadata/proof/approval bindings.",
+    "Two individual replacements are not jointly atomic. Mixed-version visibility and unknown-byte failures retain explicit review/qualified inverse requirements.",
+    "Known18 historical absences and capacity/global dependency/full-chain/PITR gates remain unresolved; no deletion, live recovery or completion authority follows."
+  ],
+  "review": {
+    "atomicPairInversePreimageLocksProfilesStaticBackupProofMonitorAnd120SecondsUnchanged": true,
+    "callerFunctionASTsEqualV5AfterFilenameReversal": true,
+    "callerFunctionClassCount": 23,
+    "checkerFunctionClassCount": 12,
+    "checkerOtherFunctionASTsEqualV5Candidate": true,
+    "concreteSourceBlockerFound": false,
+    "dualPinBytes": 78,
+    "dualPinSha256": "22f66cac8419985c544d4b41c6ea9cd400fc99805c588694a9a619a3f120d09b",
+    "exactDirectHumanCallerScopeSourceMessageApprovalStillMandatory": true,
+    "finalHumanApprovalRemainsNull": true,
+    "fullV5ToV6DiffAndChangedOperativeSourceRead": true,
+    "futureRestoreRawHashesMetadataRemainNull": true,
+    "nullTemplateRefusesBeforeExecution": true,
+    "oldCheckerReversalRetainsOnlyApprovedThreeTargetedChanges": true,
+    "onlyCallerFunctionASTChange": "execute: exact candidate basename only",
+    "onlyCheckerFunctionASTChange": "logical_pin_protection_is_valid: exact ordered Sep29 plus Oct3 pair",
+    "orderedPinNames": [
+      "proof_indexer-20260929T031853Z.dumpset",
+      "proof_indexer-20261003T031852Z.dumpset"
+    ],
+    "scopeDerivedFromExactNewPinAndCheckerBytes": true,
+    "scopeSha256": "fe09d0ba6c9c1e561a569fb425c9812f9b077cb646fbdd615768e0546ead0437",
+    "sourceOnlyNoNativeNoRepositoryMutation": true
+  },
+  "schema": "pow-audit30-independent-coupled-pin-checker-promotion-source-review-v6",
+  "status": "accepted-source-only",
+  "verification": {
+    "command": [
+      "python3",
+      "-I",
+      "-B",
+      "-W",
+      "error",
+      "/tmp/pow-audit30-coupled-pin-checker-promotion-v6.test.py"
+    ],
+    "exitCode": 0,
+    "independentTests": 40,
+    "reportedElapsedSeconds": 0.463,
+    "vectors": [
+      "real temporary-file replacements/fsync/flock and failure/inverse paths with synthetic root owner fields",
+      "preimage mutation during long callback refuses unknown-byte overwrite",
+      "actual SIGINT/SIGTERM and repeated cleanup signals preserve known inverse and first failure",
+      "exact human source/caller/scope/two replacements/inverse/no expanded approval",
+      "strict six-field services, six-field backup timer, five-field prune timer and malformed wire refusals",
+      "exact future Oct3 restore-plan/member/197-TOC/hash/metadata negative proofs",
+      "ordered78-byte dual pin and rejection of reversed, missing, duplicate, extra and old-only names",
+      "function AST reversals and null template refusal"
+    ]
+  }
+}

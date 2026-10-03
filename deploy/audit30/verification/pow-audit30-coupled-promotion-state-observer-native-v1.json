@@ -1,0 +1,47 @@
+{
+  "automaticRetry": false,
+  "captures": {
+    "stderr": {
+      "bytes": 0,
+      "path": "/tmp/pow-audit30-coupled-promotion-state-observer-native-v1.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "stdout": {
+      "bytes": 8370,
+      "path": "/tmp/pow-audit30-coupled-promotion-state-observer-native-v1.stdout",
+      "sha256": "00ac40c9e3f8287ea708a9b90890edff3590e97fe09e584f8c5582565d3a6e92"
+    }
+  },
+  "exitCode": 0,
+  "failure": null,
+  "finishedAtUtc": "2026-10-03T12:17:47.250571+00:00",
+  "inputBindings": {
+    "additionalDeletion": false,
+    "addressSpaceBytes": 268435456,
+    "checkerSeconds": 20,
+    "contextStdoutSha256": "92d976261c28b0c6782d2c15ec9b5c9217cd19f1d4034db9b89946e15de6ffac",
+    "cpuSeconds": 30,
+    "definitionsOnlyV5": true,
+    "productionMutation": false,
+    "promotionAuthorized": false,
+    "recoveryActivation": false,
+    "requestSha256": "da4794e527239dda342afb318cae726a4fa36116a53322cf609ed86d8557d928",
+    "rootFixturesPassed": 15,
+    "rootOnceReadonlyGo": true,
+    "singlePinV5ActionWithdrawn": true,
+    "sourcePeerSha256": "879c3f9b341370ec693b8d79d0f9c4f0b1ce503ebd4d7b1527c52be01acdd009",
+    "sourceSha256": "47b822552521ccff65a8e1b32157091d01d0a68130971bd2da402102b20c5dec",
+    "wholeSeconds": 60
+  },
+  "outerDeadlineSeconds": 90,
+  "productionDataMutationRequested": false,
+  "receivedBytes": {
+    "stderr": 0,
+    "stdout": 8370
+  },
+  "remoteUnitStoppedCertifiedByTransport": false,
+  "schema": "pow-audit30-readonly-owned-transport-result-v1",
+  "seconds": 4.353449,
+  "startedAtUtc": "2026-10-03T12:17:42.897122+00:00",
+  "typedStdinBytesDelivered": 6899
+}

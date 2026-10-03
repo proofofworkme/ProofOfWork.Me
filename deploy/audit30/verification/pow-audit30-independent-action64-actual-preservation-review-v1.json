@@ -1,0 +1,138 @@
+{
+  "acceptedScope": {
+    "aclStatements": 52,
+    "exactCreditDefinitions": 238,
+    "exactIndependentReviewSha256": "546b52deb647199cc8a3acb6642116853dc05cfcd2ecf8d1c3f14f97a1aa9612",
+    "exactPostStopSha256": "01e918aa40408550dbd8c1cbe2f71b508566c6f499c38332a90becaa005dc58c",
+    "exactRootReviewSha256": "fbac8b76c0ce44de997c8585cd6031354fe8bcd722ee09f0b02ec94f05d6a9ba",
+    "isolatedRestoredPageChecksumsOnly": true,
+    "mode": "accepted-current-oct3-logical-snapshot-only",
+    "originalFiveAndPrivateEndpointAbsenceScopeFromExactPostStop": true,
+    "roles": 3,
+    "sequences": 1,
+    "tableRows": 429732,
+    "tables": 24,
+    "threeReviewedValuesAndBindingsEmbeddedExact": true
+  },
+  "actualAppendAtUtc": "2026-10-03T11:51:11.464787+00:00",
+  "actualDocumentBindings": [
+    {
+      "bytes": 16637332,
+      "path": "/home/sixer/ProofOfWork.Me/audits/2026-10-02-audit30-remaining-phase-execution.evidence.json",
+      "sha256": "c58f1dea28776fe72e7840a2f654aed7bfba75953784ec2f81cefc4fc88dabaa"
+    },
+    {
+      "bytes": 354375,
+      "path": "/home/sixer/ProofOfWork.Me/deploy/audit30/verification/source-custody.json",
+      "sha256": "f7a1935af6c05aff567f6309cc2d30b307a197ddb0d1c529e69c95020e77474e"
+    },
+    {
+      "bytes": 79895,
+      "path": "/home/sixer/ProofOfWork.Me/audits/2026-10-02-audit30-followup-tracker.md",
+      "sha256": "9f2d5ac777b9d81deb8176a11609e9f45b1d5e89d00d07553888c0707523a7cb"
+    }
+  ],
+  "atUtc": "2026-10-03T11:54:35.190125+00:00",
+  "baseGitRevision": "c33e83fa1659b63160615bf7adca7ef42a0d1188",
+  "bindings": {
+    "actualAppendReceipt": {
+      "bytes": 39633,
+      "path": "/tmp/pow-audit30-action64-public-custody-preservation-v1.json",
+      "sha256": "84d5aca9330383e9c4e79f453ce121b85721998155a2dd255e816a7f5a3f4b64"
+    },
+    "explicitExtraList": {
+      "bytes": 10616,
+      "path": "/tmp/pow-audit30-action64-extra-public-bindings-v1.json",
+      "sha256": "edf8f435eba7f9950ac6310450ca752183103b4124b3b2c51367465670d413af"
+    },
+    "fixedInventory": {
+      "bytes": 94469,
+      "path": "/tmp/pow-audit30-action64-fixed-public-inventory-v2.json",
+      "sha256": "eebd6404834952fe3fbce240328d46c1fb4faf6b56cf0c9ec23fd0503fa34760"
+    },
+    "helper": {
+      "bytes": 21939,
+      "path": "/tmp/pow-audit30-append-action64-v3.py",
+      "sha256": "a171c5bf9b3090226a7e8331e8676a4fcf2a2d2d0bf39e135611dd89783e041c"
+    },
+    "helperSourcePeer": {
+      "bytes": 5182,
+      "path": "/tmp/pow-audit30-independent-action64-helper-source-review-v3.json",
+      "sha256": "6e8dad86944203b494d1214fe5623e14b50e8cc155e57551c7e9e32a1a1c17ed"
+    },
+    "independentLogicalSnapshotReview": {
+      "bytes": 10494,
+      "path": "/tmp/pow-audit30-independent-oct3-restore-actual-result-review-v1.json",
+      "sha256": "546b52deb647199cc8a3acb6642116853dc05cfcd2ecf8d1c3f14f97a1aa9612"
+    },
+    "intent": {
+      "bytes": 40917,
+      "path": "/tmp/pow-audit30-action64-public-custody-intent-v1.json",
+      "sha256": "1448adad06e296a2b730df6ff85ee8297283030682721c6bd593227c9a3f33c7"
+    },
+    "postStop": {
+      "bytes": 8915,
+      "path": "/tmp/pow-audit30-oct3-restore-poststop-native-v2.stdout",
+      "sha256": "01e918aa40408550dbd8c1cbe2f71b508566c6f499c38332a90becaa005dc58c"
+    },
+    "rootLogicalSnapshotReview": {
+      "bytes": 4097,
+      "path": "/tmp/pow-audit30-root-oct3-restore-actual-acceptance-v1.json",
+      "sha256": "fbac8b76c0ce44de997c8585cd6031354fe8bcd722ee09f0b02ec94f05d6a9ba"
+    }
+  },
+  "observedHead": "4df964287d9f326845bc22d5d4f454f7a2cadf74",
+  "qualifications": [
+    "This review independently validates the actual local bookkeeping append and byte preservation; it did not rerun/import the helper, write repository files or contact the native host.",
+    "The extra-list semantic peer was intentionally outside this frozen selection to avoid circular custody. This receipt does not claim it was included; a future checkpoint must preserve it separately.",
+    "Current Oct3 snapshot restoration is scoped; no universal chain/history/math, production-page, live PITR, global financial, continuous-reader or universal dependency certificate is inferred.",
+    "Known16 production text defects remain; recovery293GiB capacity source is undeployed, actual235.0093536376953GiB observation does not fit293GiB. No reduced ceiling or automatic retirement is authorized.",
+    "No production data/configuration/pin/checker/recovery activation/API-worker-UI cutover/additional deletion was performed or approved by the append.",
+    "First inspector pass chose the original-row path for4 historical global representations and refused; corrected read follows their unchanged storedRepresentations repositoryPath, verifies storedbytes/hash then decoded rawbytes/hash. This was an inspector path-selection error, not artifact drift."
+  ],
+  "reviewOperations": {
+    "helperExecution": false,
+    "nativeOrNetworkCalls": 0,
+    "newFixtureExecution": false,
+    "repositoryEdits": 0,
+    "restoreOrRecoveryOrPromotionOrDeletionActions": 0
+  },
+  "reviewer": "/root/vps_health",
+  "schema": "pow-audit30-independent-action64-actual-preservation-review-v1",
+  "status": "accepted-actual-bookkeeping-preservation-only",
+  "verification": {
+    "109SelectedInputRawBindingsStillMatch": true,
+    "actionsNow": 64,
+    "all111NewStoredBytesAndDecodedRawBytesMatchFixedTmpInputs": true,
+    "all4HistoricalGlobalRepresentationStoredHashesAndDecodedRawHashesVerified": true,
+    "all761DeclaredCustodyHashesAndLengthsVerified": true,
+    "approvalMutationRetirementRequestAndOtherTopLevelObjectsValueExact": true,
+    "custodyRowsNow": 761,
+    "fourHistoricalRawDiffUntrackedPathsPreserved": true,
+    "globalStoredRepresentationsValueExact": true,
+    "intentOldAndNewDocumentByteBindingsVerified": true,
+    "inventoryAndExtraRawBytesPreservedAsTwoAdditionalCopies": true,
+    "item7OnlyStatusAndOneProgressCheckpointChanged": true,
+    "newCustodyRows": 111,
+    "newExactCopies": 93,
+    "newLosslessJsonlPlainEmptyNativeChannelEnvelopes": 8,
+    "newLosslessRawDiffEnvelopes": 10,
+    "newRowsAgreeAcrossIntentReceiptActionAndCustody": true,
+    "oldActionsPreservedValueExact": 63,
+    "oldCustodyRowsPreservedValueExact": 650,
+    "oldItem7ProgressCheckpointsValueExact": true,
+    "onlyOneCurrentTrackerRowReplacedPlusExactActionParagraphAppended": true,
+    "otherItemsValueExact": true,
+    "priorItem7ReferenceMatchesGitBaseCanonicalJson": {
+      "canonicalBytes": 1005744,
+      "canonicalSha256": "05c0576152993a104e8694d4ad457b568abd58901a8d9738bc5894fed150620b",
+      "gitRevision": "c33e83fa1659b63160615bf7adca7ef42a0d1188",
+      "jsonPointer": "/items/7",
+      "qualification": "Exact prior typed value preserved in the immutable verified Git baseline; avoid duplicating its large payload in each append.",
+      "repositoryPath": "audits/2026-10-02-audit30-remaining-phase-execution.evidence.json"
+    },
+    "trackedChangesComparedToBase": 114,
+    "trackedChangesExactlyThreeBookkeepingDocumentsPlus111Copies": true,
+    "trackedDeletionsComparedToBase": []
+  }
+}

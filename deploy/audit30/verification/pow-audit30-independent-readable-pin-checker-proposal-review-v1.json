@@ -1,0 +1,126 @@
+{
+  "atUtc": "2026-10-03T12:30:50.171442+00:00",
+  "claims": {
+    "deletionAuthorized": false,
+    "humanApprovalCreated": false,
+    "humanApprovalRequestedByReviewer": false,
+    "productionMutation": false,
+    "promotionAuthorized": false,
+    "recoveryActivated": false
+  },
+  "findings": [
+    {
+      "current": "The controller also creates its small root-owned implementation/approval/evidence package",
+      "kind": "documentation-precision",
+      "line": 18,
+      "sourceFact": "Frozen V6 execute requires the immutable implementation/approval package already to exist; it validates those members and creates only the evidence child/receipts. No package creator is exercised or supplied by this review.",
+      "suggested": "The approved workflow requires a creation-only root-owned implementation/approval package; the controller validates it and creates its evidence child."
+    },
+    {
+      "kind": "requested-final-gate-clarity",
+      "line": 40,
+      "sourceFact": "Frozen main requires raw plan canonical compact JSON equality and actual source/plan SHA. Root e8ef explicitly requires the approval-bound canonical final plan and reviewed typed native admission; the pretty observed9111B plan is not main input.",
+      "suggested": "State explicitly that final canonical compact raw plan/source hashes and the separately reviewed native request/package admission are mandatory before invocation."
+    }
+  ],
+  "limitations": [
+    "Review accepts the exact draft scope and saved qualified evidence; it does not approve production action.",
+    "Current full-read proof remains expired, final direct-human approval remains absent, package/native request remains unprepared/unadmitted.",
+    "Relative links are future planned artifact paths; existence and target byte bindings must be checked after Root appends them.",
+    "Findings are prose precision only; V6 source/guards/authority remain unchanged."
+  ],
+  "proposal": {
+    "bytes": 8922,
+    "path": "/tmp/pow-audit30-oct3-pin-checker-promotion-proposal-v1.md",
+    "sha256": "aaeaf202b141a38780a99b8e51d781e0935280b4ff77b5a6bf778c646f6d0440"
+  },
+  "reviewOperations": {
+    "localPublicReadsOnly": true,
+    "mainOrExecuteOrApplyCalls": 0,
+    "nativeCalls": 0,
+    "networkCalls": 0,
+    "repositoryEdits": 0,
+    "sourceEdits": 0,
+    "testExecutions": 0
+  },
+  "reviewer": "/root/vps_health",
+  "rootReview": {
+    "bytes": 4750,
+    "path": "/tmp/pow-audit30-root-coupled-protection-proposal-review-v6.json",
+    "sha256": "e8ef04b4bcc6c7d6692fa0bb3a40375b28dfe213b30c25ca8365a42b878190c3"
+  },
+  "rootReviewBindingsRehashedExact": {
+    "actualStatePeer": {
+      "bytes": 4789,
+      "path": "/tmp/pow-audit30-independent-coupled-promotion-state-actual-review-v1.json",
+      "sha256": "da1559f7cc478864d586c38c015512698f00c609fd0ed92251ebb5309eea39b9"
+    },
+    "actualStateStdout": {
+      "bytes": 8370,
+      "path": "/tmp/pow-audit30-coupled-promotion-state-observer-native-v1.stdout",
+      "sha256": "00ac40c9e3f8287ea708a9b90890edff3590e97fe09e584f8c5582565d3a6e92"
+    },
+    "actualStateTransport": {
+      "bytes": 1684,
+      "path": "/tmp/pow-audit30-coupled-promotion-state-observer-native-v1.json",
+      "sha256": "320f354aebe2d106ee09ca78b04a0cbabfd7bb844e762e32563619a0b77ee451"
+    },
+    "candidate": {
+      "bytes": 20718,
+      "path": "/tmp/pow-audit30-retention-protection-oct3-dual-pin-candidate-v1.py",
+      "sha256": "795f1308b74ddc69a022ce7e1413fb4698a82e6cfb14265931d1951ee603c908"
+    },
+    "controller": {
+      "bytes": 25752,
+      "path": "/tmp/pow-audit30-coupled-pin-checker-promotion-v6.py",
+      "sha256": "dfa403996e776a8ed192a024848b06f71b5fa041a24bf5b9687ff04ce3714535"
+    },
+    "observedReviewPlan": {
+      "bytes": 9111,
+      "path": "/tmp/pow-audit30-coupled-pin-checker-observed-review-plan-v6.json",
+      "sha256": "911a77fc317f4a7a8c388e424172a0a4afe88fd8861efb7c9b0b979ab79431dc"
+    },
+    "pinPolicyRiskPeer": {
+      "bytes": 3394,
+      "path": "/tmp/pow-audit30-independent-single-pin-unprotection-risk-review-v1.json",
+      "sha256": "8cb9a289c7ecdf5d67bd17cb1fdf026954394df5c946a9212a4fe8625713575d"
+    },
+    "proposalDraft": {
+      "bytes": 8922,
+      "path": "/tmp/pow-audit30-oct3-pin-checker-promotion-proposal-v1.md",
+      "sha256": "aaeaf202b141a38780a99b8e51d781e0935280b4ff77b5a6bf778c646f6d0440"
+    },
+    "reviewPlanPeer": {
+      "bytes": 6963,
+      "path": "/tmp/pow-audit30-independent-coupled-observed-review-plan-v6.json",
+      "sha256": "2e6a77b6e017599fdea1e45d0ba4c323edf523f46d712237138284546757b8e9"
+    },
+    "sourcePeer": {
+      "bytes": 5451,
+      "path": "/tmp/pow-audit30-independent-coupled-pin-checker-promotion-source-review-v6.json",
+      "sha256": "39d49acbecdce34149190330f9b75991e88fc26dc7255d430794087f5ac449d3"
+    }
+  },
+  "schema": "pow-audit30-independent-readable-protection-proposal-review-v1",
+  "status": "exact-scope-evidence-accepted-with-two-documentation-clarifications",
+  "verified": {
+    "actualFullRead21733All3Hashes197TocHistoricalAndExpiredExplicit": true,
+    "actualRestore24Tables429732Rows1Sequence3Roles52Acl238Credits4789921PrivateBlocksQualified": true,
+    "actualStateTenUnits18NamesUnresolvedFailedMonitorQualified": true,
+    "exact20718Byte795fDualCheckerAndRootModes0644And0755": true,
+    "exact78ByteOrderedSep29Oct3PinAnd22f66Sha": true,
+    "exactV6CallerDfaAndFixedScopeFe09": true,
+    "freshReceiptPackageActionIdentityGuardsExplicit": true,
+    "knownByteConfigurationFailureInverseOnlyNotBodyInverseOrRetry": true,
+    "nativeOwnedStopCertificateProducerQualificationExplicit": true,
+    "noClaimWholePhaseMathPitrFinancialDependenciesOrDeletionComplete": true,
+    "observedPlanFinalHumanApprovalNullAndUnexecutable": true,
+    "preserveSep29ProtectionNoRetirementApproval": true,
+    "relativeLinksArePlannedArtifactTargetsOnlyPostappendValidationDeferredToRoot": true,
+    "separate293Versus235GiBCapacityAnd57_99GiBDeficit": true,
+    "timersHoldMasksWalBackupToolUnchanged": true,
+    "twoIndividualAtomicSwapsNotJointAtomicity": true,
+    "twoReplacementsOnly": true,
+    "withdrawnSinglePinFutureOrdinaryRetentionRiskAccurate": true
+  }
+}

@@ -1,0 +1,135 @@
+{
+  "actual": {
+    "exitCode": 0,
+    "finishedAtUtc": "2026-10-03T12:26:03.387484+00:00",
+    "seconds": 5.570746,
+    "startedAtUtc": "2026-10-03T12:25:57.816738+00:00",
+    "stderrBytes": 0
+  },
+  "atUtc": "2026-10-03T12:39:33.969144+00:00",
+  "bindings": [
+    {
+      "bytes": 60114,
+      "path": "/tmp/pow-audit30-retained-repair-dependency-bridge-native-current4-v5.stdout",
+      "sha256": "285dfa1b5349f2408e8366a0341920152588145e22edb43f570f9aa027519090"
+    },
+    {
+      "bytes": 1708,
+      "path": "/tmp/pow-audit30-retained-repair-dependency-bridge-native-current4-v5.json",
+      "sha256": "7438ccbdaacac34ab96814be810b6c00e0675acb8043f8b35820e619a91791e4"
+    },
+    {
+      "bytes": 105726,
+      "path": "/tmp/pow-audit30-retained-repair-dependency-bridge-request-current4-v5.json",
+      "sha256": "cb88b80632bdfb31dc192f9404a53086afcfff3b78154c03c4d434ce5ff0a9f8"
+    },
+    {
+      "bytes": 6900,
+      "path": "/tmp/pow-audit30-independent-retained-repair-bridge-actual-review-v5.json",
+      "sha256": "05d0a2e251651647d3fb370f4b3b5be542d6b09a55444b8e83a7eb3c65a6025d"
+    }
+  ],
+  "claims": {
+    "additionalDeletion": false,
+    "allDependenciesClosed": false,
+    "completeItem7": false,
+    "completeItem8": false,
+    "fullRetirementDependencyAdmissionExecuted": false,
+    "productionDataMutation": false
+  },
+  "localReceiptPreparationCorrection": "Two initial local preparation assertions refused before file creation: the native status literal is observed-fixed-retained-dependency-compatibility, files is a23-element list rather than count, and coreRequests is integer0. Correct fields checked directly against native JSON before this receipt. No native call was repeated.",
+  "qualification": "Root accepts the exact frozen producer and independent pure request/inventory reconstruction. This observes only named retained files and172 PostgreSQL dependency entries; it does not reread cluster data or close skipped/unknown dependencies. Three old owner/size compatibility blockers remain in the saved actual result. Source-only V4 retirement compatibility successor is a separately reviewed local change, not native deletion readiness.",
+  "schema": "pow-audit30-root-retained-repair-bridge-actual-acceptance-v5",
+  "status": "accepted-fixed-readonly-observation-with-three-contract-blockers",
+  "verifiedObservation": {
+    "aggregate192MiBCapBytes": 201326592,
+    "aggregateLogicalBytes": 132695960,
+    "aggregateWithinCap": true,
+    "compatibilityBlockers": [
+      {
+        "metadata": {
+          "bytes": 10029,
+          "ctimeNs": 1791009948537706755,
+          "device": 64514,
+          "gid": 112,
+          "inode": 11142815,
+          "mode": 384,
+          "mtimeNs": 1791009948537706755,
+          "nlink": 1,
+          "uid": 108
+        },
+        "path": "/data/proofofwork-audit30-inspect-20261003T014100Z/stream-completion-v2/completed.json",
+        "reason": "GENERIC_OWNER_REFUSED",
+        "sha256": "974e16cfb288e19e7320fa87687d32cff65b2a58296b4e94893ddbdfaea3c841"
+      },
+      {
+        "metadata": {
+          "bytes": 5364,
+          "ctimeNs": 1791009910744703753,
+          "device": 64514,
+          "gid": 112,
+          "inode": 11142810,
+          "mode": 384,
+          "mtimeNs": 1791009910744703753,
+          "nlink": 1,
+          "uid": 108
+        },
+        "path": "/data/proofofwork-audit30-inspect-20261003T014100Z/stream-completion-v2/intent.json",
+        "reason": "GENERIC_OWNER_REFUSED",
+        "sha256": "121d96aaf3af0eae662e1d602b304d54e3db4c5185059e8386164e540d1cf8f3"
+      },
+      {
+        "metadata": {
+          "bytes": 123655872,
+          "ctimeNs": 1783987646454677986,
+          "device": 64512,
+          "gid": 0,
+          "inode": 537530,
+          "mode": 493,
+          "mtimeNs": 1782236933000000000,
+          "nlink": 1,
+          "uid": 0
+        },
+        "path": "/opt/node-v24.18.0-linux-x64/bin/node",
+        "reason": "GENERIC_SIZE_REFUSED",
+        "sha256": "41a74efb34cbde5c7632cdac0cf8bd1a14d0b8d73dc1e82755014d9a9ce70f5c"
+      }
+    ],
+    "exactFixedFileMembership": true,
+    "genericPgOwnersCompatible": true,
+    "manifestEqualsOriginalInventorySha256": true,
+    "namedFiles": 23,
+    "noSqlCoreClusterReadPrivateCaptureCreationMutationOrGlobalClosure": true,
+    "nodeHashEqualsFrozenRootNodeSha256": true,
+    "oneExplicitMonitorStartRefresh": {
+      "capturedAtObservationStart": {
+        "ActiveState": "failed",
+        "InvocationID": "93b2f1ec75034372a243ccdfefc5b73d",
+        "LoadState": "loaded",
+        "MainPID": "0",
+        "SubState": "failed",
+        "UnitFileState": "static"
+      },
+      "capturedSha256": "5b68beff42bfbc9aa0a0a85a0f711d84dc1a413baae9e81d0a928209cb6049f2",
+      "explicitRefreshRequested": true,
+      "externalExpected": {
+        "ActiveState": "failed",
+        "InvocationID": "d8e5ae8ffc6844cf947102e522502ef9",
+        "LoadState": "loaded",
+        "MainPID": "0",
+        "SubState": "failed",
+        "UnitFileState": "static"
+      },
+      "unit": "proofofwork-retention-protection.service"
+    },
+    "pgDirectories": 33,
+    "pgEntries": 172,
+    "pgOwnerModesParentOrderingAndEntryHashMatch": true,
+    "pgRegularBytes": 443205,
+    "pgRegularFiles": 139,
+    "pureFrozenRetirementCompatibilityRecomputedExactly": true,
+    "reconstructedCanonicalManifestSha256": "706203173b849a71e4a22000adba45003672504cbbd582eaa19f157c91d1c51e",
+    "sourceGatedOriginalFiveProtectionQuietBackupLockEndpointsPassed": true,
+    "testedFiles": 162
+  }
+}

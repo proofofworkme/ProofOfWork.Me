@@ -1,0 +1,167 @@
+{
+  "actual": {
+    "allThreeMemberHashesVerified": true,
+    "checksumManifestRawHashVerified": true,
+    "directoryMembersLockBeforeAfterMatchFrozenLeaf": true,
+    "finishedAtUtc": "2026-10-03T12:01:37.403863+00:00",
+    "freshLeafProofAtUtc": "2026-10-03T12:01:36.156678+00:00",
+    "fullDurableCompletedRawFileIndependentlyReadByReviewer": false,
+    "fullToc": {
+      "bytes": 19253,
+      "entries": 197,
+      "sha256": "f4dc249de036377ec96f8f15eeff26b4ff12dd9f2f6dd8ea541847e7310eb19b"
+    },
+    "globalsContentsEmitted": false,
+    "globalsStatementCategoryCounts": {
+      "ALTER ROLE": 3,
+      "CREATE ROLE": 3,
+      "CREATE TABLESPACE": 1,
+      "RESTRICT_CONTROL": 1,
+      "SET": 3,
+      "UNRESTRICT_CONTROL": 1
+    },
+    "jsonlRecords": 1,
+    "leafDefaultSortedJsonPlusNewlineExactlyReconstructed": true,
+    "nativeAndOuterStderrEmpty": true,
+    "nativeDeclaredDurableCompletedReference": {
+      "bytes": 221713,
+      "path": "/var/tmp/proofofwork-audit30-pin-promotion-20261003T120000Z-preflight/completed.json",
+      "sha256": "06a3666b89ef0215dcaf584928af2aafaeaa214c6c4b6f95aaf17baee09f3349"
+    },
+    "nativeExplicitOwnedUnitStopCertificate": true,
+    "nativeProofMetadataRoot600SingleLink": true,
+    "nativeStopCertificateAcceptedFromExactSourceGatedTypedOwnershipAndCleanup": true,
+    "reconstructedLeafRawProof": {
+      "metadata": {
+        "bytes": 21733,
+        "ctimeNs": 1791028896231672368,
+        "dev": 64512,
+        "gid": 0,
+        "ino": 2005927,
+        "mode": 384,
+        "mtimeNs": 1791028896231672368,
+        "nlink": 1,
+        "uid": 0
+      },
+      "path": "/var/tmp/proofofwork-audit30-pin-promotion-20261003T120000Z-preflight/full-read.json",
+      "sha256": "0e6ad763e4a1088911d89fac7d18786bd69ded8a94be203827ec348bfc9084ab"
+    },
+    "seconds": 77.825972,
+    "startedAtUtc": "2026-10-03T12:00:19.577891+00:00",
+    "threeMemberBytesAndHashes": {
+      "SHA256SUMS": {
+        "bytes": 163,
+        "sha256": "303c15ad27e464abafe2561299d3f5470bc2efb2f873c03f3b924092a21f0683"
+      },
+      "globals.sql": {
+        "bytes": 1137,
+        "sha256": "ae3c770e540348966326a1a0da0e2a003ec59918b3ca609de70f9ae302850bfa"
+      },
+      "proof_indexer.dump": {
+        "bytes": 20878072656,
+        "sha256": "1fd052a6f4aa8b02faeb3c46a3ff186de224a37c276bdfbc780850e9696f08f6"
+      }
+    },
+    "transportExitCode": 0,
+    "transportIndependentlyCertifiesRemoteStop": false
+  },
+  "atUtc": "2026-10-03T12:06:51.581127+00:00",
+  "bindings": {
+    "context": {
+      "bytes": 5210,
+      "path": "/tmp/pow-audit30-retained-repair-context-native-v3.stdout",
+      "sha256": "ba2aeb80552cbba4d2737a69120c3906368c019a5661a90ab9f00ae428dc21b4"
+    },
+    "leafSource": {
+      "bytes": 6197,
+      "path": "/tmp/pow-audit30-oct3-latest-backup-full-read-v1.py",
+      "sha256": "01b80fd9b4a3a92893c06f288b3d3bdc90e05b7ed6f7c6f25bebc21c1ecc56a3"
+    },
+    "nativeSource": {
+      "bytes": 26984,
+      "path": "/tmp/pow-audit30-promotion-full-read-native-v1.py",
+      "sha256": "d07cb8d37eb2920578a2db009030b79ab27100345258e5b72f341f3d88ed54e8"
+    },
+    "request": {
+      "bytes": 14381,
+      "path": "/tmp/pow-audit30-promotion-full-read-request-current2-v1.json",
+      "sha256": "eda065722223635f6fdd11a7e3e601d8d24188074cd09dba5837a736f9de9fb6"
+    },
+    "requestPeer": {
+      "bytes": 4137,
+      "path": "/tmp/pow-audit30-independent-current2-request-binding-review-v1.json",
+      "sha256": "d42e6fa1bc6cc59fd3d82e8e8fad24f1218f9b6c3d117227f0818c0ee15528cc"
+    },
+    "stderr": {
+      "bytes": 0,
+      "path": "/tmp/pow-audit30-promotion-full-read-native-120000-current2-v1.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "stdout": {
+      "bytes": 32091,
+      "path": "/tmp/pow-audit30-promotion-full-read-native-120000-current2-v1.stdout",
+      "sha256": "92d976261c28b0c6782d2c15ec9b5c9217cd19f1d4034db9b89946e15de6ffac"
+    },
+    "transport": {
+      "bytes": 1986,
+      "path": "/tmp/pow-audit30-promotion-full-read-native-120000-current2-v1.json",
+      "sha256": "84ccf0d32fc05f6e1e7a95a94132b921c49070f6641d5979f23f290f9e348abe"
+    }
+  },
+  "claims": {
+    "allDependenciesClosed": false,
+    "deletionAuthorized": false,
+    "financialOrObligationCompleteness": false,
+    "fullChainMathCertified": false,
+    "livePagesOrPitrCertified": false,
+    "pinCheckerChanged": false,
+    "productionDataMutation": false,
+    "promotionAuthorized": false,
+    "recoveryActivated": false
+  },
+  "endpointChecks": {
+    "financialOrCustodyAbsencesResolved": false,
+    "knownHeldAbsencesUnresolved": 18,
+    "monitorInvocationDiffersFromRequestContextWithinExplicitApprovedRoleSplit": true,
+    "monitorMatchesApprovedIdleStaticRole": true,
+    "monitorOperationalObservedAfter": {
+      "ActiveState": "failed",
+      "InvocationID": "d8e5ae8ffc6844cf947102e522502ef9",
+      "LoadState": "loaded",
+      "MainPID": "0",
+      "SubState": "failed",
+      "UnitFileState": "static"
+    },
+    "monitorOperationalObservedBefore": {
+      "ActiveState": "failed",
+      "InvocationID": "d8e5ae8ffc6844cf947102e522502ef9",
+      "LoadState": "loaded",
+      "MainPID": "0",
+      "SubState": "failed",
+      "UnitFileState": "static"
+    },
+    "ordinaryBackupServiceTimerBeforeAfterEqual": true,
+    "originalFiveBeforeAfterExactRequestAndContext": true,
+    "originalPinAndCheckerUnchanged": true,
+    "staticEightFilesMaskWalPruneBeforeAfterExact": true
+  },
+  "qualifications": [
+    "This verifies actual fresh Oct3 full member hashes, fixed input identities and bounded catalog proof only. Earlier accepted isolated restoration remains a distinct receipt; this fresh read alone is not restore/equivalence, canonical chain/history/math, production page or WAL/PITR certification.",
+    "The exact leaf raw21733B proof was independently reconstructed from public result fields and frozen source serialization and matched its native metadata/hash; the on-host raw221713B durable outcome was not separately fetched or rehashed here.",
+    "unitStopVerified=true is an explicit native certificate gated by exact typed owned-unit identity, same invocation and stop verification in unchanged source. The slim output does not export its full cleanup/resources/snapshots or owned invocation, and transport explicitly makes no remote-stop certificate.",
+    "Protection monitor invocation d8e5 is separately observed idle/static at both endpoints, allowed to differ from prior e19df context; static8/mask/WAL/prune and originalfive remain strict. This is not monitor success or resolution of18 held absences.",
+    "Endpoint identity equality and shared lock/file fences do not prove continuous or future exclusion. The fresh proof timestamp is historical after review and must meet each future operator freshness gate.",
+    "No native invocation, SQL/Core calls, pin/checker/config/data mutation, promotion/recovery/deletion approval, resource cap change or automatic retry was performed or supplied by this review."
+  ],
+  "reviewOperations": {
+    "leafOrManagedMainExecutions": 0,
+    "localPublicFilesOnly": true,
+    "nativeCalls": 0,
+    "networkCalls": 0,
+    "repositoryEdits": 0,
+    "testsRepeated": 0
+  },
+  "reviewer": "/root/math_review",
+  "schema": "pow-audit30-independent-fresh-oct3-full-read-actual-review-v1",
+  "status": "accepted-current-oct3-readonly-member-hash-toc-proof"
+}

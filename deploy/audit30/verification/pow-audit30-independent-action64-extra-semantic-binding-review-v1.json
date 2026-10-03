@@ -1,0 +1,523 @@
+{
+  "atUtc": "2026-10-03T11:50:48.888423+00:00",
+  "bindings": {
+    "extraList": {
+      "bytes": 10616,
+      "path": "/tmp/pow-audit30-action64-extra-public-bindings-v1.json",
+      "sha256": "edf8f435eba7f9950ac6310450ca752183103b4124b3b2c51367465670d413af"
+    },
+    "finalHelper": {
+      "bytes": 21939,
+      "path": "/tmp/pow-audit30-append-action64-v3.py",
+      "sha256": "a171c5bf9b3090226a7e8331e8676a4fcf2a2d2d0bf39e135611dd89783e041c"
+    },
+    "fixedInventory": {
+      "bytes": 94469,
+      "path": "/tmp/pow-audit30-action64-fixed-public-inventory-v2.json",
+      "sha256": "eebd6404834952fe3fbce240328d46c1fb4faf6b56cf0c9ec23fd0503fa34760"
+    },
+    "helperSourcePeer": {
+      "bytes": 5182,
+      "path": "/tmp/pow-audit30-independent-action64-helper-source-review-v3.json",
+      "sha256": "6e8dad86944203b494d1214fe5623e14b50e8cc155e57551c7e9e32a1a1c17ed"
+    }
+  },
+  "claims": {
+    "allPhasesComplete": false,
+    "humanSixteenApprovalAnswered": false,
+    "newDeletionAuthority": false,
+    "newPinOrCheckerOrRecoveryInstalled": false,
+    "productionMutation": false
+  },
+  "failedFollowupsPreserved": {
+    "bridgeV3": {
+      "dependencyResultAccepted": false,
+      "exitCode": 1,
+      "reason": "Protection unit drift",
+      "stdoutBytes": 0,
+      "whichTupleDriftedEstablished": false
+    },
+    "promotionReadV1": {
+      "correctedCallerV2SourceOnlyExecuted": false,
+      "exitCode": 1,
+      "freshProofAccepted": false,
+      "missingRequestShaArgvInActualCaller": true,
+      "reason": "Fixed isolated root role",
+      "stdoutBytes": 0
+    },
+    "rootQualificationSha256": "d189b1f3dfdfddb977e020036990224aed371d5bdf3fbfa6588fe88b7493dc21"
+  },
+  "fixedExtraChecks": {
+    "42NewRepresentationBasenamesUnique": true,
+    "all109CurrentSourceBytesAndHashesVerified": true,
+    "allCanonicalRegularSingleLinkStableReads": true,
+    "extraAndInventoryPathsDisjoint": true,
+    "extraCount": 42,
+    "extraPathsUnique": true,
+    "extraRawBytes": 389622,
+    "finalHelperExactSourceIncluded": true,
+    "fixedPublicNature": "Explicit public operator/test sources and byte-bound public plans, hashes/counts/metadata/closed errors; no secret environment, wallet data, raw COPY, private roles or private corpus.",
+    "inventoryCount": 67,
+    "inventoryPathsUnique": true,
+    "inventoryRawBytes": 992534,
+    "noExtraListOrInventoryV2CircularPath": true,
+    "plannedRepresentationTypes": {
+      "closed-lossless-base64-envelope": 6,
+      "raw-public-json-or-source": 36
+    },
+    "publicTypes": {
+      "json-public-receipt": 21,
+      "native-capture-stderr": 4,
+      "native-capture-stdout": 4,
+      "python-source": 10,
+      "python-test-source": 1,
+      "raw-diff": 2
+    },
+    "rawDiffPlainJsonlAndEmptyChannelsLosslessRoundtrip": true,
+    "threeAcceptanceRolesDistinctExplicitExtraMembers": true
+  },
+  "helperStaticReview": {
+    "all63ActionValues650CustodyRowsGlobalRepresentationsGuarded": true,
+    "nonemptyAcceptanceJsonHelperCheckIsNotSemanticCertification": "Semantic checks supplied by this exact final list review and Root review; no helper execution occurred.",
+    "oldItem7LargeValueUsesExactImmutableGitBasePointerHash": true,
+    "otherItemsReservedApprovalMutationRetirementRequestListsGuarded": true,
+    "prewriteEvidence32MiBCustodyTracker2MiBAndPublicArtifact2MiBGates": true
+  },
+  "qualifications": [
+    "Inventory V2 retains its earlier pending/unprepared checkpoint statements as historical evidence; the exact newer extra receipts record actual snapshot acceptance and subsequent failures. Do not rewrite or reinterpret the old checkpoint as current pass.",
+    "The restore verifies saved archive restoration and isolated new checksummed pages; it does not independently identify or repair the known16 mail-body defects or certify current chain, full-history/math, production pages, WAL/PITR, full recovery, global dependencies, finance or obligations.",
+    "Current post-stop01e918 is an endpoint observation, not continuous or future process/read exclusion.",
+    "Final helper was fully read and statically inspected; it was not imported or run. No actual append/preservation, final output-cap or partial-write outcome is claimed by this review.",
+    "Source-only corrected promotion caller remains unexecuted; distinct fresh actual metadata and explicit Root once GO are still required.",
+    "Parent-directory power-loss durability and joint atomicity of the three document replacements are not certified; retained intent and explicit-review-only partial handling remain.",
+    "This review receipt is outside the frozen42 extras and may be preserved by a later noncircular action; it does not mutate the frozen list."
+  ],
+  "reviewOperations": {
+    "helperExecutions": 0,
+    "nativeCalls": 0,
+    "networkCalls": 0,
+    "newFrameworksOrTests": 0,
+    "repositoryEdits": 0,
+    "repositoryExecutions": 0
+  },
+  "reviewer": "/root/math_review",
+  "schema": "pow-audit30-independent-action64-extra-semantic-binding-review-v1",
+  "semanticAcceptance": {
+    "293GiBRecoveryPeakStillSeparate": true,
+    "actualRestoreRawReceiptHashesAgree": true,
+    "currentDataFreeBytesFromPostStop": 252339372032,
+    "exactCreditDefinitions": 238,
+    "isolatedSnapshotRows": 429732,
+    "isolatedSnapshotTables": 24,
+    "item7FullyComplete": false,
+    "knownSixteenRepairClaim": false,
+    "mode": "accepted-current-oct3-logical-snapshot-only",
+    "ownerAclStatements": 52,
+    "peerReview": {
+      "bytes": 10494,
+      "path": "/tmp/pow-audit30-independent-oct3-restore-actual-result-review-v1.json",
+      "sha256": "546b52deb647199cc8a3acb6642116853dc05cfcd2ecf8d1c3f14f97a1aa9612",
+      "type": "json-public-receipt"
+    },
+    "postStop": {
+      "bytes": 8915,
+      "path": "/tmp/pow-audit30-oct3-restore-poststop-native-v2.stdout",
+      "sha256": "01e918aa40408550dbd8c1cbe2f71b508566c6f499c38332a90becaa005dc58c",
+      "type": "native-capture-stdout"
+    },
+    "postStopFourRawReceiptHashesAndPG108112600CustodyMatchActualPeer": true,
+    "postStopOriginalTwoPidsThreePidSocketPathsAndCgroupAbsent": true,
+    "postStopQualifiedGarbageCollectedUnitAndExactOriginalFive": true,
+    "remainingWholeRecoveryCapacityDeficitBytes": 62266982400,
+    "roles": 3,
+    "rootReview": {
+      "bytes": 4097,
+      "path": "/tmp/pow-audit30-root-oct3-restore-actual-acceptance-v1.json",
+      "sha256": "fbac8b76c0ce44de997c8585cd6031354fe8bcd722ee09f0b02ec94f05d6a9ba",
+      "type": "json-public-receipt"
+    },
+    "sequences": 1,
+    "universalChainMathOrLivePagesOrPitrClaim": false
+  },
+  "status": "accepted-fixed-public-extras-and-scoped-acceptance",
+  "verifiedExtraBindings": [
+    {
+      "bytes": 92953,
+      "canonicalRegularSingleLinkStableReadVerified": true,
+      "path": "/tmp/pow-audit30-action64-fixed-public-inventory-v1.json",
+      "representationKind": "raw-public-json-or-source",
+      "sha256": "40581e32ed65ce9f8bc846ebcc00fc7d472b03c5ea06f74233f8feb6cf1bf86d",
+      "storedBasename": "pow-audit30-action64-fixed-public-inventory-v1.json",
+      "type": "json-public-receipt"
+    },
+    {
+      "bytes": 20450,
+      "canonicalRegularSingleLinkStableReadVerified": true,
+      "path": "/tmp/pow-audit30-append-action64-v1.py",
+      "representationKind": "raw-public-json-or-source",
+      "sha256": "691ec58be195db9556fe7f31c6887906887ffaf6872044d08973d52025065d1e",
+      "storedBasename": "pow-audit30-append-action64-v1.py",
+      "type": "python-source"
+    },
+    {
+      "bytes": 21392,
+      "canonicalRegularSingleLinkStableReadVerified": true,
+      "path": "/tmp/pow-audit30-append-action64-v2.py",
+      "representationKind": "raw-public-json-or-source",
+      "sha256": "ad890c8bebddfb15e4a011b0299c6c28ea6f42260e4267c7f267d407bea126a4",
+      "storedBasename": "pow-audit30-append-action64-v2.py",
+      "type": "python-source"
+    },
+    {
+      "bytes": 21939,
+      "canonicalRegularSingleLinkStableReadVerified": true,
+      "path": "/tmp/pow-audit30-append-action64-v3.py",
+      "representationKind": "raw-public-json-or-source",
+      "sha256": "a171c5bf9b3090226a7e8331e8676a4fcf2a2d2d0bf39e135611dd89783e041c",
+      "storedBasename": "pow-audit30-append-action64-v3.py",
+      "type": "python-source"
+    },
+    {
+      "bytes": 1424,
+      "canonicalRegularSingleLinkStableReadVerified": true,
+      "path": "/tmp/pow-audit30-append-action64-v2.diff",
+      "representationKind": "closed-lossless-base64-envelope",
+      "sha256": "137688a35d430a728f510cd51e9375549b57e9cd9df2b8bf9e2330d2424a7172",
+      "storedBasename": "pow-audit30-append-action64-v2.diff.evidence.json",
+      "type": "raw-diff"
+    },
+    {
+      "bytes": 3790,
+      "canonicalRegularSingleLinkStableReadVerified": true,
+      "path": "/tmp/pow-audit30-append-action64-v3.diff",
+      "representationKind": "closed-lossless-base64-envelope",
+      "sha256": "3b5f4a4a422c26eafbc79ff4df8ffaece55ae1d3e148bfd02d1f943951a5923d",
+      "storedBasename": "pow-audit30-append-action64-v3.diff.evidence.json",
+      "type": "raw-diff"
+    },
+    {
+      "bytes": 13410,
+      "canonicalRegularSingleLinkStableReadVerified": true,
+      "path": "/tmp/pow-audit30-action64-preappend-source-inspection-v1.json",
+      "representationKind": "raw-public-json-or-source",
+      "sha256": "0bd525843af79eca68a82b726a55c2b819836af2406932e9faf1fc10b210b066",
+      "storedBasename": "pow-audit30-action64-preappend-source-inspection-v1.json",
+      "type": "json-public-receipt"
+    },
+    {
+      "bytes": 4112,
+      "canonicalRegularSingleLinkStableReadVerified": true,
+      "path": "/tmp/pow-audit30-independent-action64-helper-source-review-checkpoint-v1.json",
+      "representationKind": "raw-public-json-or-source",
+      "sha256": "42bf90ad6eb0a0fdf1eab4e9712e46f311409296103329e1bc20cb116090311b",
+      "storedBasename": "pow-audit30-independent-action64-helper-source-review-checkpoint-v1.json",
+      "type": "json-public-receipt"
+    },
+    {
+      "bytes": 5182,
+      "canonicalRegularSingleLinkStableReadVerified": true,
+      "path": "/tmp/pow-audit30-independent-action64-helper-source-review-v3.json",
+      "representationKind": "raw-public-json-or-source",
+      "sha256": "6e8dad86944203b494d1214fe5623e14b50e8cc155e57551c7e9e32a1a1c17ed",
+      "storedBasename": "pow-audit30-independent-action64-helper-source-review-v3.json",
+      "type": "json-public-receipt"
+    },
+    {
+      "bytes": 1085,
+      "canonicalRegularSingleLinkStableReadVerified": true,
+      "path": "/tmp/pow-audit30-root-bridge-v3-and-promotion-full-read-source-review-v1.json",
+      "representationKind": "raw-public-json-or-source",
+      "sha256": "b31f9f526aa29b84486001f89ff3a8a1650f6c5598f379bbba0a0ab7c28df85e",
+      "storedBasename": "pow-audit30-root-bridge-v3-and-promotion-full-read-source-review-v1.json",
+      "type": "json-public-receipt"
+    },
+    {
+      "bytes": 6398,
+      "canonicalRegularSingleLinkStableReadVerified": true,
+      "path": "/tmp/pow-audit30-oct3-restore-poststop-observer-v1.py",
+      "representationKind": "raw-public-json-or-source",
+      "sha256": "67ec1992aeb6f2f5fcc4ab488ef90e99d74f728c4bd728ac15afdc1b445fa315",
+      "storedBasename": "pow-audit30-oct3-restore-poststop-observer-v1.py",
+      "type": "python-source"
+    },
+    {
+      "bytes": 6694,
+      "canonicalRegularSingleLinkStableReadVerified": true,
+      "path": "/tmp/pow-audit30-oct3-restore-poststop-observer-v2.py",
+      "representationKind": "raw-public-json-or-source",
+      "sha256": "a55a22e74d75c74954954d2cf79827c91f3240065bafb7581c4c5015ef0095ae",
+      "storedBasename": "pow-audit30-oct3-restore-poststop-observer-v2.py",
+      "type": "python-source"
+    },
+    {
+      "bytes": 4543,
+      "canonicalRegularSingleLinkStableReadVerified": true,
+      "path": "/tmp/pow-audit30-independent-oct3-poststop-source-review-v2.json",
+      "representationKind": "raw-public-json-or-source",
+      "sha256": "7eaf4a8bf4aed8ca6f96fad7584c7600b5f84f6f9e4eca62c756606ca85af830",
+      "storedBasename": "pow-audit30-independent-oct3-poststop-source-review-v2.json",
+      "type": "json-public-receipt"
+    },
+    {
+      "bytes": 7526,
+      "canonicalRegularSingleLinkStableReadVerified": true,
+      "path": "/tmp/pow-audit30-oct3-restore-poststop-observer-v2.peer-test.py",
+      "representationKind": "raw-public-json-or-source",
+      "sha256": "2084474fb69af8a4621f2660df17ac874181973d9752b1302f9ac30fac4f321e",
+      "storedBasename": "pow-audit30-oct3-restore-poststop-observer-v2.peer-test.py",
+      "type": "python-test-source"
+    },
+    {
+      "bytes": 1206,
+      "canonicalRegularSingleLinkStableReadVerified": true,
+      "path": "/tmp/pow-audit30-oct3-poststop-observer-gc-shape-peer-repro-v1.json",
+      "representationKind": "raw-public-json-or-source",
+      "sha256": "44759433a30c70825aa0dad98ad3c3834a170d37f914e478c8627a61d5903855",
+      "storedBasename": "pow-audit30-oct3-poststop-observer-gc-shape-peer-repro-v1.json",
+      "type": "json-public-receipt"
+    },
+    {
+      "bytes": 1491,
+      "canonicalRegularSingleLinkStableReadVerified": true,
+      "path": "/tmp/pow-audit30-root-oct3-poststop-once-v2.py",
+      "representationKind": "raw-public-json-or-source",
+      "sha256": "746d8bfc846c9ac8d69bdb0ccb952566af5e0f21632e8ff45a6d6f7f24c4f325",
+      "storedBasename": "pow-audit30-root-oct3-poststop-once-v2.py",
+      "type": "python-source"
+    },
+    {
+      "bytes": 1514,
+      "canonicalRegularSingleLinkStableReadVerified": true,
+      "path": "/tmp/pow-audit30-oct3-restore-poststop-native-v2.json",
+      "representationKind": "raw-public-json-or-source",
+      "sha256": "7398283b3ff498a67a764dc910307be641d0348d51f5d3733c82fbc482c4a192",
+      "storedBasename": "pow-audit30-oct3-restore-poststop-native-v2.json",
+      "type": "json-public-receipt"
+    },
+    {
+      "bytes": 8915,
+      "canonicalRegularSingleLinkStableReadVerified": true,
+      "path": "/tmp/pow-audit30-oct3-restore-poststop-native-v2.stdout",
+      "representationKind": "raw-public-json-or-source",
+      "sha256": "01e918aa40408550dbd8c1cbe2f71b508566c6f499c38332a90becaa005dc58c",
+      "storedBasename": "pow-audit30-oct3-restore-poststop-native-v2.stdout.json",
+      "type": "native-capture-stdout"
+    },
+    {
+      "bytes": 0,
+      "canonicalRegularSingleLinkStableReadVerified": true,
+      "path": "/tmp/pow-audit30-oct3-restore-poststop-native-v2.stderr",
+      "representationKind": "closed-lossless-base64-envelope",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "storedBasename": "pow-audit30-oct3-restore-poststop-native-v2.stderr.evidence.json",
+      "type": "native-capture-stderr"
+    },
+    {
+      "bytes": 10494,
+      "canonicalRegularSingleLinkStableReadVerified": true,
+      "path": "/tmp/pow-audit30-independent-oct3-restore-actual-result-review-v1.json",
+      "representationKind": "raw-public-json-or-source",
+      "sha256": "546b52deb647199cc8a3acb6642116853dc05cfcd2ecf8d1c3f14f97a1aa9612",
+      "storedBasename": "pow-audit30-independent-oct3-restore-actual-result-review-v1.json",
+      "type": "json-public-receipt"
+    },
+    {
+      "bytes": 4097,
+      "canonicalRegularSingleLinkStableReadVerified": true,
+      "path": "/tmp/pow-audit30-root-oct3-restore-actual-acceptance-v1.json",
+      "representationKind": "raw-public-json-or-source",
+      "sha256": "fbac8b76c0ce44de997c8585cd6031354fe8bcd722ee09f0b02ec94f05d6a9ba",
+      "storedBasename": "pow-audit30-root-oct3-restore-actual-acceptance-v1.json",
+      "type": "json-public-receipt"
+    },
+    {
+      "bytes": 1953,
+      "canonicalRegularSingleLinkStableReadVerified": true,
+      "path": "/tmp/pow-audit30-retained-repair-context-transport-preparation-v2.py",
+      "representationKind": "raw-public-json-or-source",
+      "sha256": "434ffddf2da192c291e6e894a8a7b2164e96f6a62e3ae9bf58911592ca58f047",
+      "storedBasename": "pow-audit30-retained-repair-context-transport-preparation-v2.py",
+      "type": "python-source"
+    },
+    {
+      "bytes": 823,
+      "canonicalRegularSingleLinkStableReadVerified": true,
+      "path": "/tmp/pow-audit30-root-fresh-context-caller-prefix-preparation-v1.json",
+      "representationKind": "raw-public-json-or-source",
+      "sha256": "fd7aa7420c5b816815d6e98bcca4b2919381953f77c81627b323995bfbbab86b",
+      "storedBasename": "pow-audit30-root-fresh-context-caller-prefix-preparation-v1.json",
+      "type": "json-public-receipt"
+    },
+    {
+      "bytes": 1727,
+      "canonicalRegularSingleLinkStableReadVerified": true,
+      "path": "/tmp/pow-audit30-retained-repair-context-native-v2.json",
+      "representationKind": "raw-public-json-or-source",
+      "sha256": "d5edfb8c8fd3fe689239fef20b1a22e064faa141f280ecc7e7b63ec2ea75e02c",
+      "storedBasename": "pow-audit30-retained-repair-context-native-v2.json",
+      "type": "json-public-receipt"
+    },
+    {
+      "bytes": 5210,
+      "canonicalRegularSingleLinkStableReadVerified": true,
+      "path": "/tmp/pow-audit30-retained-repair-context-native-v2.stdout",
+      "representationKind": "raw-public-json-or-source",
+      "sha256": "6915ba8a73a823fa648b49054760778723a36a3a7e5455bc5f8f027374f186d3",
+      "storedBasename": "pow-audit30-retained-repair-context-native-v2.stdout.json",
+      "type": "native-capture-stdout"
+    },
+    {
+      "bytes": 0,
+      "canonicalRegularSingleLinkStableReadVerified": true,
+      "path": "/tmp/pow-audit30-retained-repair-context-native-v2.stderr",
+      "representationKind": "closed-lossless-base64-envelope",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "storedBasename": "pow-audit30-retained-repair-context-native-v2.stderr.evidence.json",
+      "type": "native-capture-stderr"
+    },
+    {
+      "bytes": 105682,
+      "canonicalRegularSingleLinkStableReadVerified": true,
+      "path": "/tmp/pow-audit30-retained-repair-dependency-bridge-request-v3.json",
+      "representationKind": "raw-public-json-or-source",
+      "sha256": "f73c32dd5d7b62ea614720cef32a69564967b060527925769b338e611f19d86c",
+      "storedBasename": "pow-audit30-retained-repair-dependency-bridge-request-v3.json",
+      "type": "json-public-receipt"
+    },
+    {
+      "bytes": 1000,
+      "canonicalRegularSingleLinkStableReadVerified": true,
+      "path": "/tmp/pow-audit30-root-retained-repair-v3-request-binding-v1.json",
+      "representationKind": "raw-public-json-or-source",
+      "sha256": "c45609f72f8f7528e055e3a60d2b24f775aa1dad3b9a71be3748c671715ea152",
+      "storedBasename": "pow-audit30-root-retained-repair-v3-request-binding-v1.json",
+      "type": "json-public-receipt"
+    },
+    {
+      "bytes": 5750,
+      "canonicalRegularSingleLinkStableReadVerified": true,
+      "path": "/tmp/pow-audit30-independent-fresh-bridge-promotion-request-binding-review-v1.json",
+      "representationKind": "raw-public-json-or-source",
+      "sha256": "2de795a3a15b70be70f23a5a6deb516a5f15c0f35591b6ce09e2d3d9ea690369",
+      "storedBasename": "pow-audit30-independent-fresh-bridge-promotion-request-binding-review-v1.json",
+      "type": "json-public-receipt"
+    },
+    {
+      "bytes": 2160,
+      "canonicalRegularSingleLinkStableReadVerified": true,
+      "path": "/tmp/pow-audit30-root-retained-repair-bridge-once-v3.py",
+      "representationKind": "raw-public-json-or-source",
+      "sha256": "66a50252070067d59290ff23b598951243fc68b6d03ecf11f0f409d7ea462e65",
+      "storedBasename": "pow-audit30-root-retained-repair-bridge-once-v3.py",
+      "type": "python-source"
+    },
+    {
+      "bytes": 1686,
+      "canonicalRegularSingleLinkStableReadVerified": true,
+      "path": "/tmp/pow-audit30-retained-repair-dependency-bridge-native-v3.json",
+      "representationKind": "raw-public-json-or-source",
+      "sha256": "8afc295f9923521ce520a04f72122a1103e43986dc60aedbc9bc22a78556e029",
+      "storedBasename": "pow-audit30-retained-repair-dependency-bridge-native-v3.json",
+      "type": "json-public-receipt"
+    },
+    {
+      "bytes": 212,
+      "canonicalRegularSingleLinkStableReadVerified": true,
+      "path": "/tmp/pow-audit30-retained-repair-dependency-bridge-native-v3.stderr",
+      "representationKind": "raw-public-json-or-source",
+      "sha256": "c9f5cf00e00edc42fd3e9d643acf51c9bea657867457f1ecdac9794e9e5639b6",
+      "storedBasename": "pow-audit30-retained-repair-dependency-bridge-native-v3.stderr.json",
+      "type": "native-capture-stderr"
+    },
+    {
+      "bytes": 0,
+      "canonicalRegularSingleLinkStableReadVerified": true,
+      "path": "/tmp/pow-audit30-retained-repair-dependency-bridge-native-v3.stdout",
+      "representationKind": "closed-lossless-base64-envelope",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "storedBasename": "pow-audit30-retained-repair-dependency-bridge-native-v3.stdout.evidence.json",
+      "type": "native-capture-stdout"
+    },
+    {
+      "bytes": 14381,
+      "canonicalRegularSingleLinkStableReadVerified": true,
+      "path": "/tmp/pow-audit30-promotion-full-read-request-v1.json",
+      "representationKind": "raw-public-json-or-source",
+      "sha256": "b9b7fb0c49b677e708efdf3d908908ec70697a8866534f24ab0f52dea2f3d750",
+      "storedBasename": "pow-audit30-promotion-full-read-request-v1.json",
+      "type": "json-public-receipt"
+    },
+    {
+      "bytes": 1131,
+      "canonicalRegularSingleLinkStableReadVerified": true,
+      "path": "/tmp/pow-audit30-root-promotion-full-read-request-binding-v1.json",
+      "representationKind": "raw-public-json-or-source",
+      "sha256": "3ced1d058078f743d13a04c4bd760882c2eb0021294b18ca0356bbc3b7c56046",
+      "storedBasename": "pow-audit30-root-promotion-full-read-request-binding-v1.json",
+      "type": "json-public-receipt"
+    },
+    {
+      "bytes": 2106,
+      "canonicalRegularSingleLinkStableReadVerified": true,
+      "path": "/tmp/pow-audit30-root-promotion-full-read-once-v1.py",
+      "representationKind": "raw-public-json-or-source",
+      "sha256": "dd5059f4616bb4cda93ecb2ea537ae246addc61357e75a10fd8ecede995c074d",
+      "storedBasename": "pow-audit30-root-promotion-full-read-once-v1.py",
+      "type": "python-source"
+    },
+    {
+      "bytes": 2109,
+      "canonicalRegularSingleLinkStableReadVerified": true,
+      "path": "/tmp/pow-audit30-root-promotion-full-read-once-v2.py",
+      "representationKind": "raw-public-json-or-source",
+      "sha256": "73da660d4fd3f7bb9e198b7b799acc31f7867d1663e270750cf8674143d12320",
+      "storedBasename": "pow-audit30-root-promotion-full-read-once-v2.py",
+      "type": "python-source"
+    },
+    {
+      "bytes": 1963,
+      "canonicalRegularSingleLinkStableReadVerified": true,
+      "path": "/tmp/pow-audit30-promotion-full-read-native-120000-v1.json",
+      "representationKind": "raw-public-json-or-source",
+      "sha256": "60558e3cf9f71104c3a04f71998ec1e9864db2f8286dd7ee017da93092a5a6ae",
+      "storedBasename": "pow-audit30-promotion-full-read-native-120000-v1.json",
+      "type": "json-public-receipt"
+    },
+    {
+      "bytes": 0,
+      "canonicalRegularSingleLinkStableReadVerified": true,
+      "path": "/tmp/pow-audit30-promotion-full-read-native-120000-v1.stdout",
+      "representationKind": "closed-lossless-base64-envelope",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "storedBasename": "pow-audit30-promotion-full-read-native-120000-v1.stdout.evidence.json",
+      "type": "native-capture-stdout"
+    },
+    {
+      "bytes": 200,
+      "canonicalRegularSingleLinkStableReadVerified": true,
+      "path": "/tmp/pow-audit30-promotion-full-read-native-120000-v1.stderr",
+      "representationKind": "raw-public-json-or-source",
+      "sha256": "acc1df9287a23fa26c4d4a2ed926f9469cdb161f0a31706eb2481a2d542a5f71",
+      "storedBasename": "pow-audit30-promotion-full-read-native-120000-v1.stderr.json",
+      "type": "native-capture-stderr"
+    },
+    {
+      "bytes": 1522,
+      "canonicalRegularSingleLinkStableReadVerified": true,
+      "path": "/tmp/pow-audit30-root-postrestore-followup-refusals-v1.json",
+      "representationKind": "raw-public-json-or-source",
+      "sha256": "d189b1f3dfdfddb977e020036990224aed371d5bdf3fbfa6588fe88b7493dc21",
+      "storedBasename": "pow-audit30-root-postrestore-followup-refusals-v1.json",
+      "type": "json-public-receipt"
+    },
+    {
+      "bytes": 1392,
+      "canonicalRegularSingleLinkStableReadVerified": true,
+      "path": "/tmp/pow-audit30-root-action64-preappend-source-review-v1.json",
+      "representationKind": "raw-public-json-or-source",
+      "sha256": "c2b0594525e3f26c65f31907c845f2fb1918c68a254bfbfc6751393bf4e48d2b",
+      "storedBasename": "pow-audit30-root-action64-preappend-source-review-v1.json",
+      "type": "json-public-receipt"
+    }
+  ]
+}

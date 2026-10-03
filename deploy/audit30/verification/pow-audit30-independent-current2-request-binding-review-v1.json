@@ -1,0 +1,96 @@
+{
+  "atUtc": "2026-10-03T11:59:27.992910+00:00",
+  "bridge": {
+    "bootstrap": {
+      "bytes": 23132,
+      "path": "/tmp/pow-audit30-retained-repair-dependency-bridge-bootstrap-v3.py",
+      "sha256": "3a2a6d2caaa694eed6e96b2f7a5e4626a2d66e14b8d33123674b48266b423437"
+    },
+    "nullTemplate": {
+      "bytes": 100048,
+      "path": "/tmp/pow-audit30-retained-repair-dependency-bridge-request-template-v3.json",
+      "sha256": "3af2bdd9dad6d22915b5eb0120263b2e82b18e97b9227cf2dc1ea3048e2e8348"
+    },
+    "request": {
+      "bytes": 105682,
+      "path": "/tmp/pow-audit30-retained-repair-dependency-bridge-request-current2-v3.json",
+      "sha256": "cd8911fe048dea68b9bc31c355c77c0807ca2e52e088d6a6ce79269a3e3e08ad"
+    },
+    "source": {
+      "bytes": 17036,
+      "path": "/tmp/pow-audit30-retained-repair-dependency-bridge-v3.py",
+      "sha256": "e821dec229bb409c4b90a93a8a17db21722af520362862826b2ec388766e76f2"
+    }
+  },
+  "checks": {
+    "bridgeEmbeddedSourcesByteExact": true,
+    "bridgeExactClosedDecodePassedDefinitionsOnly": true,
+    "bridgeOriginalBackupLockAnd172DependencyGuardProfileUnchanged": true,
+    "nullTemplatesStillNullOnDisk": true,
+    "onlyProtectedDeltaIsIdleMonitorInvocation": true,
+    "originalFiveStaticEightAndMaskUnchanged": true,
+    "promotionExactClosedDecodePassedDefinitionsOnly": true,
+    "promotionFrozenLeafByteExact": true,
+    "sourceSuitesNotRepeated": true,
+    "twoNullFieldsOnlyFilledFromActualCurrentContext": true,
+    "unchangedSourceGuardAndNamespaceBindings": true
+  },
+  "context": {
+    "bytes": 5210,
+    "path": "/tmp/pow-audit30-retained-repair-context-native-v3.stdout",
+    "sha256": "ba2aeb80552cbba4d2737a69120c3906368c019a5661a90ab9f00ae428dc21b4"
+  },
+  "contextAtUtc": "2026-10-03T11:57:59.115192+00:00",
+  "observedProtectionDeltas": [
+    {
+      "after": "e19df10288054d60bff3af34a525b4c1",
+      "before": "556930a0b10d45bd92644d7f6dd7a5a3",
+      "field": "InvocationID",
+      "unit": "proofofwork-retention-protection.service"
+    }
+  ],
+  "operations": {
+    "helperExecutions": 0,
+    "nativeCalls": 0,
+    "networkCalls": 0,
+    "repositoryEdits": 0,
+    "sourceDefinitionsOnlyPureDecode": true
+  },
+  "previousContext": {
+    "bytes": 5210,
+    "path": "/tmp/pow-audit30-retained-repair-context-native-v2.stdout",
+    "sha256": "6915ba8a73a823fa648b49054760778723a36a3a7e5455bc5f8f027374f186d3"
+  },
+  "promotionFullRead": {
+    "nullTemplate": {
+      "bytes": 8747,
+      "path": "/tmp/pow-audit30-promotion-full-read-request-template-v1.json",
+      "sha256": "14dca513bb975a98a0c12d76d86c1ef5f4c53b7e97c13fe0f8cb92e391ac07b0"
+    },
+    "request": {
+      "bytes": 14381,
+      "path": "/tmp/pow-audit30-promotion-full-read-request-current2-v1.json",
+      "sha256": "eda065722223635f6fdd11a7e3e601d8d24188074cd09dba5837a736f9de9fb6"
+    },
+    "source": {
+      "bytes": 26984,
+      "path": "/tmp/pow-audit30-promotion-full-read-native-v1.py",
+      "sha256": "d07cb8d37eb2920578a2db009030b79ab27100345258e5b72f341f3d88ed54e8"
+    }
+  },
+  "qualifications": [
+    "Local binding review only; no native execution, dependency acceptance, fresh full-backup read, promotion readiness or new approval.",
+    "Current captured context at11:57:59 is an endpoint observation; both operators must recheck actual near-launch live/protection/backup guards.",
+    "Corrected promotion caller must include the reviewed request SHA argv. Previous caller role refusal occurred before unit/evidence absence gates; it is not current absence certification.",
+    "Previous Protection unit drift and missing-SHA-argv refusals remain preserved failures; the fresh request does not erase or certify their outcomes.",
+    "No recovery, pin/checker, production, SQL/Core, deletion or automatic retry authority is supplied."
+  ],
+  "reviewer": "/root/math_review",
+  "rootBinding": {
+    "bytes": 1952,
+    "path": "/tmp/pow-audit30-current2-request-binding-v1.json",
+    "sha256": "bc15f67fb58d474d1325019082984663d1e1999cf0cdf142d8d0d9bc4fc731ff"
+  },
+  "schema": "pow-audit30-independent-current2-request-binding-review-v1",
+  "status": "accepted-pure-bindings"
+}

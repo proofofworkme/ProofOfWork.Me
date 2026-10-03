@@ -1,0 +1,142 @@
+{
+  "atUtc": "2026-10-03T12:14:23.873286+00:00",
+  "concreteRequestBinding": {
+    "callerRPRemainsNull": true,
+    "expectedLiveEqualsCapturedResultLiveAfter": true,
+    "expectedProtectionEqualsCapturedResultProtectionAfter": true,
+    "externalMonitorInvocationId": "d8e5ae8ffc6844cf947102e522502ef9",
+    "inertDecodePass": true,
+    "onlyFilledTemplateFields": [
+      "expectedLive",
+      "expectedProtection"
+    ],
+    "refreshMonitorAtObservationStart": true,
+    "requestBytes": 105726,
+    "requestSha256": "cfcc84161e368e5fe7fed2e7c7d9e2a9d7d85d8c418c2dd1f7615b89eeda653d",
+    "sourceCapture": {
+      "bytes": 32091,
+      "path": "/tmp/pow-audit30-promotion-full-read-native-120000-current2-v1.stdout",
+      "sha256": "92d976261c28b0c6782d2c15ec9b5c9217cd19f1d4034db9b89946e15de6ffac"
+    },
+    "templateOtherFieldsExact": true
+  },
+  "files": [
+    {
+      "bytes": 18621,
+      "path": "/tmp/pow-audit30-retained-repair-dependency-bridge-v4.py",
+      "sha256": "f07f5b8971b98f98013a56da1e054bbf786fac8ee02cafbf4ed1308d9ad0768b"
+    },
+    {
+      "bytes": 10729,
+      "path": "/tmp/pow-audit30-retained-repair-dependency-bridge-v4.diff",
+      "sha256": "6823f6edf317a0030b1a0776c76ca2ba55b8e50c38e7a98f8816803d4814d796"
+    },
+    {
+      "bytes": 26710,
+      "path": "/tmp/pow-audit30-retained-repair-dependency-bridge-v4.test.py",
+      "sha256": "de1cbe03c4ccc2ff8a1b02dfb8b563ae8c13151348ce69e95207ad9440eb34ec"
+    },
+    {
+      "bytes": 25244,
+      "path": "/tmp/pow-audit30-retained-repair-dependency-bridge-bootstrap-v4.py",
+      "sha256": "2b036f39e8f76bfa0a6f50f9054393442744c4b3d8a08a00a74a1f6d0d29a6f0"
+    },
+    {
+      "bytes": 2015,
+      "path": "/tmp/pow-audit30-retained-repair-dependency-bridge-transport-preparation-v4.py",
+      "sha256": "0de8f91b5b7908664950bc8cff2043e12d2b7f42d6ae76049cddd0dffb159c2e"
+    },
+    {
+      "bytes": 3095,
+      "path": "/tmp/pow-audit30-retained-repair-dependency-bridge-caller-v4.test.py",
+      "sha256": "e6f1f63aacc7a48bd6e4a6cb5d77933e35a58dc5eb3ea83098155cd9f69d1195"
+    },
+    {
+      "bytes": 100092,
+      "path": "/tmp/pow-audit30-retained-repair-dependency-bridge-request-template-v4.json",
+      "sha256": "5081ab84c156b5aaf3d31d15cb8e397f4e7bd13cade22c5b017fd88ad7c9d2e2"
+    },
+    {
+      "bytes": 105726,
+      "path": "/tmp/pow-audit30-retained-repair-dependency-bridge-request-current3-v4.json",
+      "sha256": "cfcc84161e368e5fe7fed2e7c7d9e2a9d7d85d8c418c2dd1f7615b89eeda653d"
+    }
+  ],
+  "qualifications": [
+    "The prior actual refusal identified Protection unit drift; this review does not identify which unit changed in that attempt. Separate saved contexts show monitor InvocationID churn.",
+    "A failed/failed idle monitor shape is accepted operational metadata, not a retention-health PASS.",
+    "The once-captured tuple remains subject to exact initial and final protection guards; endpoint equality cannot certify continuous or future exclusion.",
+    "Only the named saved dependency files and original172 verifier are observed. Job-root and cluster membership, universal dependency closure, restore equivalence, retirement readiness and deletion authority remain unproven.",
+    "The concrete request is reviewed as data; runtime must independently recheck actual five/static/lock/protection state. No native GO, remote call, SQL/Core/backup/slot/config/cluster read, unit action, repository edit or deletion was performed or authorized by this peer."
+  ],
+  "review": {
+    "allOtherFunctionClassASTsExactV3": true,
+    "bootstrapEmbedsExact18621ByteBridge": true,
+    "exactProtectionBeforeAfterChecksUnchanged": true,
+    "explicitRefreshBooleanMustBeTrue": true,
+    "externalAndCapturedMonitorMustBeLoadedStaticIdleMainPidZero": true,
+    "externalRequestNotMutated": true,
+    "fullBridgeAndActualV3DiffRead": true,
+    "fullCallerAndBootstrapOperativeRead": true,
+    "fullChangedAndRetainedFixtureSourceRead": true,
+    "midrunMonitorDriftRefusesWithoutRefreshRetry": true,
+    "monitorCapturedOnceAtStartAndOnlyItsBoundTupleReplacedInMemory": true,
+    "noConcreteSourceBlockerFound": true,
+    "onlyAddedFunctionASTs": [
+      "idle_monitor",
+      "refresh_monitor"
+    ],
+    "onlyChangedExistingFunctionASTs": [
+      "validate_authority",
+      "decode",
+      "main"
+    ],
+    "originalFiveStatic8MaskWalPruneLockRemainExternallyExact": true,
+    "runningOrMissingMonitorRefuses": true,
+    "sourcePinsAndSavedLockAuthorityUnchanged": true,
+    "writeClusterSocketProcessStdinAndDeadlineCapsUnchanged": true
+  },
+  "schema": "pow-audit30-independent-retained-repair-bridge-source-review-v4",
+  "status": "accepted-source-and-concrete-binding-only",
+  "verification": {
+    "commands": [
+      {
+        "argv": [
+          "python3",
+          "-I",
+          "-B",
+          "-W",
+          "error",
+          "/tmp/pow-audit30-retained-repair-dependency-bridge-v4.test.py"
+        ],
+        "exitCode": 0,
+        "reportedElapsedSeconds": 1.044,
+        "tests": 42
+      },
+      {
+        "argv": [
+          "python3",
+          "-I",
+          "-B",
+          "-W",
+          "error",
+          "/tmp/pow-audit30-retained-repair-dependency-bridge-caller-v4.test.py"
+        ],
+        "exitCode": 0,
+        "reportedElapsedSeconds": 0.081,
+        "tests": 6
+      }
+    ],
+    "meaningfulVectors": [
+      "actual blocked metadata child SIGINT/SIGTERM, owned reap and repeated cleanup signals",
+      "actual original DEVNULL O_RDWR refusal and two EOF-only metadata children under unchanged audit write ban",
+      "duplicate typed keys and exact sources, original five and per-unit fields",
+      "observed07824 lock timestamps, boolean and stale-timestamp refusals",
+      "loaded/static/MainPID0 external and captured monitor shape",
+      "unchanged actual ad03 predicate permits one start refresh then refuses midrun drift",
+      "static-file, WAL and prune drift still refused",
+      "null template/unbound caller refusal and exact bootstrap bridge binding"
+    ],
+    "noNativeOrRepositoryActions": true
+  }
+}

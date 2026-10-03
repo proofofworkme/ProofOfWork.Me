@@ -1,0 +1,121 @@
+{
+  "approvalRequestedOrReceived": false,
+  "capacityQualification": {
+    "capacityIsCurrent": false,
+    "dataAvailableBytes": 252339372032,
+    "dataAvailableGiB": "235.0093536376953",
+    "deficitBytes": 62266982400,
+    "deficitGiB": "57.99064636230469",
+    "deletionApproved": false,
+    "fullRecoveryRequirementBytes": 314606354432,
+    "recoveryActivationApproved": false,
+    "reducedCapsSelected": false,
+    "requirementGiB": "293",
+    "snapshotAt": "2026-10-03T11:39 endpoint",
+    "snapshotSource": {
+      "bytes": 8915,
+      "path": "/tmp/pow-audit30-oct3-restore-poststop-native-v2.stdout",
+      "sha256": "01e918aa40408550dbd8c1cbe2f71b508566c6f499c38332a90becaa005dc58c"
+    }
+  },
+  "draft": true,
+  "explicitExclusions": [
+    "No immediate or future automatic deletion authority supplied by this draft",
+    "No Sep29 pin withdrawal",
+    "No final audit-cluster deletion plan",
+    "No recovery receiver/base backup/slot/timer activation",
+    "No global/PITR/full-chain/math/financial completeness claim",
+    "No production data repair or code cutover approval",
+    "No direct file/unit/native action or actual human approval generated"
+  ],
+  "knownEvidence": {
+    "fullRead": "Actual current2 reader accepted all3 Oct3 full member hashes and exact197-entry TOC; its raw leaf age must remain<=900seconds at the chosen action. No old proof timestamp may be refreshed by copying.",
+    "installedPreimages": "Original Sep29-only39-byte pin821b5bbfecee75ffb3c4565d3867eb62ac33e65eeb83c0e603c08aa478ff957b and da5d20677-byte checker must still match at action.",
+    "restoreCompleted": "Actual isolated Oct3 restore was accepted against6f870:24tables,429732rows,1sequence,3roles/52ACL records,238-credit recomputation and4,789,921 private checksum blocks/zero bad. This is logical-snapshot/private integrity proof only."
+  },
+  "missingObservationsOrApprovals": [
+    {
+      "current": "Source and15 fixtures independently accepted; actual native observation is not supplied in this draft.",
+      "id": "stateObserver",
+      "required": "Root-accepted actual readonly47b observer result: exact installed2/static6 bytes/hash/fullmeta/xattrs, mask, zero-byte OPS+backup lock metadata, allten per-unit property sets including actually measured UnitFileState for five live services and backup service. No defaulted missing fields."
+    },
+    {
+      "current": "Observer can return this safely; no actual projection is filled here.",
+      "id": "monitorProjection",
+      "required": "Actual installed da5d checker node-only projection canonicalSHA plus explicit18 finding names,521held and issue-shape validation; source shape/count checks alone are not independent name-set closure."
+    },
+    {
+      "current": "Accepted current2 leaf at12:01:36.156678 exists. It must not be treated as fresh after12:16:36.156678; any future once-read/new namespace needs separate Root admission.",
+      "id": "freshFullRead",
+      "required": "Root600 raw leaf full-read.json metadata/SHA at exact plan path, current Oct3 member identity/three raw hashes/197TOC and age<=900seconds at action."
+    },
+    {
+      "current": "Rootfbac/peer546b/poststop01e918 accepted; mandatory plan fields remain null.",
+      "id": "restoreReceiptFences",
+      "required": "Exact four completed/parity/offline/fence receipt metadata and rawSHA from104500 accepted restore, reread/fenced at action."
+    },
+    {
+      "current": "Current accepted oldfive is evidence only, not a waiver for later identity changes.",
+      "id": "chosenActionContext",
+      "required": "Exact chosen-action livefive (postcutover only if action follows cutover), backup window>120seconds, WAL/prune/holds/masks/static authority and independent monitor loaded/static/Main0/idle profile at both endpoints."
+    },
+    {
+      "current": "No promotion package is created and no filled native request exists.",
+      "id": "immutablePackage",
+      "required": "Creation-only absent package/evidence proof, restrictive root ancestor checks, exact V6 caller/install-retention/dual checker/plan bytes and modes; root600 actual approval/source-message files only after human approval."
+    },
+    {
+      "current": "Absent. This proposal text is not such a message or receipt.",
+      "id": "humanApproval",
+      "required": "Direct human source message and closed approval receipt bound exact V6 caller SHA, noncircular scopeSHA, two paths/old/new rawSHA/modes and conditional known-byte inverse; source-message and receipt rawSHA independently pinned."
+    }
+  ],
+  "nativeExecuted": false,
+  "nextDecision": "Review the V6 exact source/tests/template and actual readonly observer. Gather only missing chosen-action observations under separate Root native admission, then form a concrete final-gated plan; final human approval precedes any production replacement.",
+  "operationSemantics": {
+    "durableOriginalPreimagesRequired": true,
+    "individualAtomicReplacements": true,
+    "inverseKnownOriginalOrCandidateBytesOnly": true,
+    "jointAtomicTransaction": false,
+    "noAutomaticRetry": true,
+    "ordinarySignalMaskDuringInverse": true,
+    "successMeansBothAdmittedPostimagesVerified": true,
+    "unknownConcurrentBytesNeverOverwritten": true
+  },
+  "ordinaryRetentionImpact": "The unchanged ordinary backup job preserves every listed pin. Keeping Sep29 listed avoids the V5 single-pin risk. A later Sep29 pin withdrawal could permit ordinary retention deletion and requires distinct human approval and separately current evidence; this draft grants neither.",
+  "productionActionApproved": false,
+  "proposedApprovalWording": "Approve only the staged two-file protection change: retain proof_indexer-20260929T031853Z.dumpset as the first pin and append proof_indexer-20261003T031852Z.dumpset as the second pin (78 exact bytes, SHA25622f66cac8419985c544d4b41c6ea9cd400fc99805c588694a9a619a3f120d09b), and install the exact20718-byte dual-pin checker795f1308b74ddc69a022ce7e1413fb4698a82e6cfb14265931d1951ee603c908. Permit conditional inverse to the exact original pin/checker bytes if a known-byte failure occurs. Keep backup script, timers, audit holds, prune masks and recovery configuration unchanged. This approves no immediate deletion, later Sep29 pin withdrawal, audit-cluster retirement, recovery activation, data repair or cutover.",
+  "proposedScope": "Stage protection of the retained Sep29 backup and verified Oct3 backup by replacing only the pin file and retention checker after exact chosen-action observations and separate direct human approval.",
+  "replacements": {
+    "checker": {
+      "gid": 0,
+      "mode": 493,
+      "newBytes": 20718,
+      "newSha256": "795f1308b74ddc69a022ce7e1413fb4698a82e6cfb14265931d1951ee603c908",
+      "oldBytes": 20677,
+      "oldSha256": "da5d1336ce857acc571ba0849c2b0150ef5fc6dfdacf80e65b9f1d3611c48e8a",
+      "path": "/usr/local/sbin/proofofwork-retention-protection",
+      "uid": 0
+    },
+    "pin": {
+      "gid": 0,
+      "mode": 420,
+      "newBytes": 78,
+      "newSha256": "22f66cac8419985c544d4b41c6ea9cd400fc99805c588694a9a619a3f120d09b",
+      "oldBytes": 39,
+      "oldSha256": "821b5bbfecee75ffb3c4565d3867eb62ac33e65eeb83c0e603c08aa478ff957b",
+      "orderedNames": [
+        "proof_indexer-20260929T031853Z.dumpset",
+        "proof_indexer-20261003T031852Z.dumpset"
+      ],
+      "path": "/etc/proofofwork-postgres-logical-backup.pins",
+      "uid": 0
+    }
+  },
+  "schema": "pow-audit30-dual-logical-pin-checker-human-proposal-draft-v6",
+  "sourcePreparation": {
+    "bytes": 7938,
+    "path": "/tmp/pow-audit30-coupled-pin-checker-dual-pin-local-preparation-v6.json",
+    "sha256": "84a5a98b79e392391dd61999452038bff2b0e862d616b0c64344ba3ca960d475"
+  }
+}

@@ -1,0 +1,70 @@
+{
+  "actual": {
+    "allThreeHashesVerified": true,
+    "durableCompletedIndependentlyFetched": false,
+    "finishedAtUtc": "2026-10-03T12:01:37.403863+00:00",
+    "fullReadAtUtc": "2026-10-03T12:01:36.156678+00:00",
+    "inputFdPathLockIdentityEndpointsEqual": true,
+    "knownHeldAbsencesUnresolved": 18,
+    "nativeDurableCompletedReference": {
+      "bytes": 221713,
+      "path": "/var/tmp/proofofwork-audit30-pin-promotion-20261003T120000Z-preflight/completed.json",
+      "sha256": "06a3666b89ef0215dcaf584928af2aafaeaa214c6c4b6f95aaf17baee09f3349"
+    },
+    "ordinaryBackupWindowUnchanged": true,
+    "originalFiveUnchanged": true,
+    "seconds": 77.825972,
+    "startedAtUtc": "2026-10-03T12:00:19.577891+00:00",
+    "staticEightMaskWalPruneUnchanged": true,
+    "tocEntries": 197,
+    "tocSha256": "f4dc249de036377ec96f8f15eeff26b4ff12dd9f2f6dd8ea541847e7310eb19b",
+    "transportCertifiesRemoteStop": false,
+    "unitStopVerifiedByNative": true
+  },
+  "atUtc": "2026-10-03T12:07:43.422479+00:00",
+  "bindings": {
+    "exactReconstructedLeaf": {
+      "bytes": 21733,
+      "path": "/tmp/pow-audit30-oct3-promotion-full-read-leaf-120000-reconstructed-v1.json",
+      "sha256": "0e6ad763e4a1088911d89fac7d18786bd69ded8a94be203827ec348bfc9084ab"
+    },
+    "nativeStdout": {
+      "bytes": 32091,
+      "path": "/tmp/pow-audit30-promotion-full-read-native-120000-current2-v1.stdout",
+      "sha256": "92d976261c28b0c6782d2c15ec9b5c9217cd19f1d4034db9b89946e15de6ffac"
+    },
+    "nativeTransport": {
+      "bytes": 1986,
+      "path": "/tmp/pow-audit30-promotion-full-read-native-120000-current2-v1.json",
+      "sha256": "84ccf0d32fc05f6e1e7a95a94132b921c49070f6641d5979f23f290f9e348abe"
+    },
+    "peer": {
+      "bytes": 7428,
+      "path": "/tmp/pow-audit30-independent-fresh-oct3-full-read-actual-review-v1.json",
+      "sha256": "c7296b9a6c4e11d24157c5ac4c1b83ffe2a403f87573c966cfe378c334f01f19"
+    },
+    "request": {
+      "bytes": 14381,
+      "path": "/tmp/pow-audit30-promotion-full-read-request-current2-v1.json",
+      "sha256": "eda065722223635f6fdd11a7e3e601d8d24188074cd09dba5837a736f9de9fb6"
+    },
+    "source": {
+      "bytes": 26984,
+      "path": "/tmp/pow-audit30-promotion-full-read-native-v1.py",
+      "sha256": "d07cb8d37eb2920578a2db009030b79ab27100345258e5b72f341f3d88ed54e8"
+    }
+  },
+  "claims": {
+    "additionalDeletion": false,
+    "allDependenciesClosed": false,
+    "completeItem7": false,
+    "fullChainMathCertified": false,
+    "liveProductionPagesOrPitrCertified": false,
+    "pinCheckerPromotion": false,
+    "productionDataMutation": false,
+    "recoveryActivation": false
+  },
+  "qualification": "Exact native result and independently reconstructed raw leaf plus peer accept only Oct3 all3 member hashes and bounded catalog. Typed owned-stop certificate is accepted from frozen producer; full on-host durable resource/cleanup output is a declared reference, not separately fetched. Earlier accepted isolated snapshot restore is separate. Timestamp is historical and cannot be redated or substituted for a future freshness gate. Endpoints do not certify continuous exclusion.",
+  "schema": "pow-audit30-root-fresh-oct3-full-read-acceptance-v1",
+  "status": "accepted-readonly-exact-oct3-member-hash-and-catalog-proof"
+}

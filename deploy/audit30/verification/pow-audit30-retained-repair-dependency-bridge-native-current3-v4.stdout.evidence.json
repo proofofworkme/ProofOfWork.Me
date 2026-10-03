@@ -1,0 +1,9 @@
+{
+  "encoding": "base64",
+  "kind": "exact-native-channel",
+  "originalInput": "/tmp/pow-audit30-retained-repair-dependency-bridge-native-current3-v4.stdout",
+  "rawBase64": "",
+  "rawBytes": 0,
+  "rawSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "schema": "pow-audit30-exact-public-byte-custody-v1"
+}

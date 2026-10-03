@@ -1,0 +1,56 @@
+{
+  "authorityQualification": "Fresh Oct3 member hashes/TOC are separately bounded and reviewed; actual104500 restore must bind exact6f870 plan and future raw receipts; pin promotion never authorizes retirement or live recovery.",
+  "evidenceRoot": "/usr/local/lib/proofofwork-audit30-pin-promotion/20261003T120000Z/evidence",
+  "expectedMonitorProjectionSha256": null,
+  "finalHumanApproval": null,
+  "freshFullRead": {
+    "metadata": null,
+    "path": "/var/tmp/proofofwork-audit30-pin-promotion-20261003T120000Z-preflight/full-read.json",
+    "sha256": null
+  },
+  "installed": {
+    "/etc/proofofwork-postgres-logical-backup.pins": null,
+    "/usr/local/sbin/proofofwork-retention-protection": null
+  },
+  "lockMetadata": {
+    "/data/proofofwork-postgres-backups/logical/.proofofwork-postgres-logical-backup.lock": null,
+    "/run/proofofwork-audit29-ops.lock": null
+  },
+  "mask": null,
+  "package": "/usr/local/lib/proofofwork-audit30-pin-promotion/20261003T120000Z",
+  "restoreProofMetadata": {
+    "completed.json": null,
+    "offline-page-check.json": null,
+    "saved-snapshot-fence.json": null,
+    "table-row-parity.json": null
+  },
+  "restoreProofSha256": {
+    "completed.json": null,
+    "offline-page-check.json": null,
+    "saved-snapshot-fence.json": null,
+    "table-row-parity.json": null
+  },
+  "reviewedScopeSha256": "fe09d0ba6c9c1e561a569fb425c9812f9b077cb646fbdd615768e0546ead0437",
+  "run": "20261003T120000Z",
+  "schema": "pow-audit30-coupled-pin-checker-promotion-plan-v3",
+  "static": {
+    "/etc/proofofwork-retention/audit28-held-review.json": null,
+    "/etc/proofofwork-retention/audit28.hold": null,
+    "/etc/systemd/system/proofofwork-postgres-logical-backup.service": null,
+    "/etc/systemd/system/proofofwork-postgres-logical-backup.timer": null,
+    "/etc/systemd/system/proofofwork-retention-protection.service": null,
+    "/usr/local/sbin/proofofwork-postgres-logical-backup": null
+  },
+  "units": {
+    "bitcoind.service": null,
+    "electrs.service": null,
+    "pg_receivewal@16-main.service": null,
+    "postgresql@16-main.service": null,
+    "proofofwork-api.service": null,
+    "proofofwork-indexer-worker.service": null,
+    "proofofwork-node-release-prune.timer": null,
+    "proofofwork-postgres-logical-backup.service": null,
+    "proofofwork-postgres-logical-backup.timer": null,
+    "proofofwork-retention-protection.service": null
+  }
+}

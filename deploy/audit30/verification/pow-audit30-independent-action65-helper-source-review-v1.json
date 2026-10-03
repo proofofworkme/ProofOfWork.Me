@@ -1,0 +1,53 @@
+{
+  "atUtc": "2026-10-03T12:12:59.419800+00:00",
+  "baselineAuthority": {
+    "gitRevision": "4df964287d9f326845bc22d5d4f454f7a2cadf74",
+    "priorActions": 64,
+    "priorCustodyRows": 761,
+    "runtimeBaselineVerificationRequired": true
+  },
+  "failureReasoning": [
+    "Source/helper/HEAD/baseline/custody/manifest/role/proposal/cardinality/collision/output-cap refusals occur before intent and document writes.",
+    "A refusal after exclusive intent or artifact creation leaves an explicit partial namespace; automatic retries are denied and require independent review.",
+    "Each of four document renames is atomic separately; the intent records pre/post hashes but the group is not jointly atomic. A later replacement/readback/receipt failure can leave a partial checkpoint.",
+    "File data is fsynced by reused create(); parent-directory fsync is not implemented, so this source review does not certify power-loss durability of directory entries.",
+    "Base64 stored representations may be larger than their bounded raw inputs. Actual manifest review must check every planned stored target is within the reused 2 MiB readback cap; otherwise readback refuses after creation."
+  ],
+  "qualifications": [
+    "No actual Action65 manifest, acceptance-role contents, proposal, or planned artifact list was supplied or approved by this source review. These require separate exact binding and semantic review before execution.",
+    "The historical 64/761 values and custody bytes are enforced by the helper at execution; this source review does not assert a new executed custody check.",
+    "No production action, native action, pin/checker promotion, deletion, deployment, hygiene, commit, or push is authorized or performed."
+  ],
+  "review": {
+    "allOtherAuthorizationObjectsAndGlobalRepresentationsPreserved": true,
+    "checkpointRequiresCompleteFalseAndNoMutationDeletion": true,
+    "collisionRefusalAndExclusiveCreation": true,
+    "concreteBlockingSourceErrorFound": false,
+    "explicitPublicManifestRawShaAndBoundedFileListRequired": true,
+    "fourDocumentOutputCapsCheckedBeforeWrite": true,
+    "fullHelperSourceRead": true,
+    "helperNotImportedOrExecuted": true,
+    "hexArgumentPatternOfflineChecked": true,
+    "intentBeforeCopiesAndDocumentReplacement": true,
+    "noRepositoryOrRemoteOperation": true,
+    "oneFixedNewProposalAndExplicitHygieneClassification": true,
+    "onlyItems7And8AppendCheckpoints": true,
+    "priorActionsAndCustodyPrefixValueChecks": true,
+    "reusedReadPublicBindingRepresentationPriorCustodyCreateGitDefinitionsRead": true,
+    "sourceAndBaselineRereadsBeforeReplacement": true
+  },
+  "schema": "pow-audit30-independent-action65-helper-source-review-v1",
+  "sources": [
+    {
+      "bytes": 9557,
+      "path": "/tmp/pow-audit30-append-action65-v1.py",
+      "sha256": "ec066ac798c896bdb19463b9718ae6f82874ed85ce793ae3bfd80add8d805c1f"
+    },
+    {
+      "bytes": 21939,
+      "path": "/home/sixer/ProofOfWork.Me/deploy/audit30/verification/pow-audit30-append-action64-v3.py",
+      "sha256": "a171c5bf9b3090226a7e8331e8676a4fcf2a2d2d0bf39e135611dd89783e041c"
+    }
+  ],
+  "status": "accepted-source-only"
+}

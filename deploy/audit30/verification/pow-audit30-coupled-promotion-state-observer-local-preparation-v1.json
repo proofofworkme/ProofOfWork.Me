@@ -1,0 +1,87 @@
+{
+  "atUtc": "2026-10-03T12:14:27.613032+00:00",
+  "bindings": [
+    {
+      "bytes": 43767,
+      "path": "/tmp/pow-audit30-coupled-promotion-state-observer-v1.py",
+      "sha256": "47b822552521ccff65a8e1b32157091d01d0a68130971bd2da402102b20c5dec"
+    },
+    {
+      "bytes": 7695,
+      "path": "/tmp/pow-audit30-coupled-promotion-state-observer-v1.test.py",
+      "sha256": "e07a8143bee7b2baddd1eb6a3ed8e9a7f3fc107c54562a1716366aa9022fce1a"
+    },
+    {
+      "bytes": 6899,
+      "path": "/tmp/pow-audit30-coupled-promotion-state-observer-request-v1.json",
+      "sha256": "da4794e527239dda342afb318cae726a4fa36116a53322cf609ed86d8557d928"
+    },
+    {
+      "bytes": 43527,
+      "path": "/tmp/pow-audit30-coupled-promotion-state-observer-v1.initial-draft.py",
+      "sha256": "c0b8d72bb87400b832ec817b3898147c207ee052f2639c1bb57f636aa4a0414e"
+    },
+    {
+      "bytes": 7320,
+      "path": "/tmp/pow-audit30-coupled-promotion-state-observer-v1.initial-test-draft.py",
+      "sha256": "52756c01e8154614e8fd26104fac3dbba84cff547000fc7f896c67b2185fec35"
+    },
+    {
+      "bytes": 823,
+      "path": "/tmp/pow-audit30-coupled-promotion-state-observer-v1.initial-fixture-checkpoint.json",
+      "sha256": "719f9e20420a1190e3acf0a81356231e67ec3c15db7923a4b0f5034d7736db1f"
+    }
+  ],
+  "expectedPublicContext": {
+    "bytes": 32091,
+    "path": "/tmp/pow-audit30-promotion-full-read-native-120000-current2-v1.stdout",
+    "sha256": "92d976261c28b0c6782d2c15ec9b5c9217cd19f1d4034db9b89946e15de6ffac"
+  },
+  "frozenDefinitions": {
+    "bytes": 25733,
+    "path": "/tmp/pow-audit30-coupled-pin-checker-promotion-v5.py",
+    "sha256": "7e878f987524dce2583b348964032af62491ce3cabcdc49adc359b36b7fc5bd4"
+  },
+  "nativeAuthorized": false,
+  "nativeExecuted": false,
+  "nativeProposalOnly": {
+    "addressSpaceBytes": 268435456,
+    "cleanupReapSeconds": 5,
+    "cpuSeconds": 30,
+    "env": "fixed PATH and LC_ALL only",
+    "installedReadonlyCheckerSeconds": 20,
+    "outerSeconds": 90,
+    "rootIsolated": "-I -B",
+    "rootWholeSeconds": 60,
+    "source": "fixed literal source through unchanged1dedef; no package/unit creation",
+    "stderrBytes": 65536,
+    "stdoutBytes": 65536,
+    "systemctlChildSeconds": 5,
+    "typedStdinSha256": "da4794e527239dda342afb318cae726a4fa36116a53322cf609ed86d8557d928"
+  },
+  "qualification": [
+    "No caller main/execute/apply, replacement, exclusive lock, unit control/create, SQL/Core/privatePG, backup body/global read, human approval or promotion performed.",
+    "Embedded V5 supplies readonly definitions only. Single-pin V5 action is withdrawn pending separate retirement approval; this observer requires the original Sep29-only pin and da5d checker and supplies no V5 action authority.",
+    "No current fullphase/PITR/recovery/deletion, continuous readers or universal dependencies certificate.",
+    "V6 ordered78B dual-pin source preparation is separate, unexecuted and not part of this observer."
+  ],
+  "repositoryEdits": 0,
+  "schema": "pow-audit30-coupled-promotion-state-observer-source-preparation-v1",
+  "scope": [
+    "Fixed installed pin/checker plus six static files; sourceV5 NOFOLLOW/O_NOATIME FD/path/metadata/xattr/hash fences.",
+    "Exact mask and two zero-byte lock files are read only; no flock. OPS role0:0/mode0600or0644, backup lock exact current2 PG108:1120600.",
+    "Exact ten per-unit property sets; five live and backup-service missing UnitFileState actually measured, never synthesized.",
+    "Monitor operational tuple is refreshed once at observation start and required static/Main0/idle at both endpoints, drift reported separately; nonmonitor endpoints remain exact.",
+    "Only installed original checker --role node invoked once under20seconds; exact node/521held/18uniqueabsences/noextraissue projection canonicalSHA returned; immutable authority checked before/after."
+  ],
+  "sourceOnly": true,
+  "tests": {
+    "actualLocalChildTimeoutAndSignalReaping": true,
+    "cases": 15,
+    "command": "python3 -I -B -Werror /tmp/pow-audit30-coupled-promotion-state-observer-v1.test.py",
+    "initialFixtureRefusalPreserved": true,
+    "pass": true,
+    "repeatedSignalSentOnlyAfterActualProtectedWaitReadiness": true,
+    "seconds": 0.36
+  }
+}

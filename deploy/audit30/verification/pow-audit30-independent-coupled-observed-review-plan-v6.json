@@ -1,0 +1,159 @@
+{
+  "atUtc": "2026-10-03T12:27:55.510732+00:00",
+  "bindings": {
+    "caller": {
+      "bytes": 25752,
+      "path": "/tmp/pow-audit30-coupled-pin-checker-promotion-v6.py",
+      "sha256": "dfa403996e776a8ed192a024848b06f71b5fa041a24bf5b9687ff04ce3714535"
+    },
+    "fullRead": {
+      "bytes": 32091,
+      "path": "/tmp/pow-audit30-promotion-full-read-native-120000-current2-v1.stdout",
+      "sha256": "92d976261c28b0c6782d2c15ec9b5c9217cd19f1d4034db9b89946e15de6ffac"
+    },
+    "fullReadPeer": {
+      "bytes": 7428,
+      "path": "/tmp/pow-audit30-independent-fresh-oct3-full-read-actual-review-v1.json",
+      "sha256": "c7296b9a6c4e11d24157c5ac4c1b83ffe2a403f87573c966cfe378c334f01f19"
+    },
+    "leafSource": {
+      "bytes": 6197,
+      "path": "/tmp/pow-audit30-oct3-latest-backup-full-read-v1.py",
+      "sha256": "01b80fd9b4a3a92893c06f288b3d3bdc90e05b7ed6f7c6f25bebc21c1ecc56a3"
+    },
+    "nullTemplate": {
+      "bytes": 2391,
+      "path": "/tmp/pow-audit30-coupled-pin-checker-promotion-plan-template-v6.json",
+      "sha256": "7dac36c440b96174bde59c14dc19de17d111bd95e86fc7bb5eaa61c0bd4249dc"
+    },
+    "observer": {
+      "bytes": 8370,
+      "path": "/tmp/pow-audit30-coupled-promotion-state-observer-native-v1.stdout",
+      "sha256": "00ac40c9e3f8287ea708a9b90890edff3590e97fe09e584f8c5582565d3a6e92"
+    },
+    "observerPeer": {
+      "bytes": 4789,
+      "path": "/tmp/pow-audit30-independent-coupled-promotion-state-actual-review-v1.json",
+      "sha256": "da1559f7cc478864d586c38c015512698f00c609fd0ed92251ebb5309eea39b9"
+    },
+    "plan": {
+      "bytes": 9111,
+      "path": "/tmp/pow-audit30-coupled-pin-checker-observed-review-plan-v6.json",
+      "sha256": "911a77fc317f4a7a8c388e424172a0a4afe88fd8861efb7c9b0b979ab79431dc"
+    },
+    "poststop": {
+      "bytes": 8915,
+      "path": "/tmp/pow-audit30-oct3-restore-poststop-native-v2.stdout",
+      "sha256": "01e918aa40408550dbd8c1cbe2f71b508566c6f499c38332a90becaa005dc58c"
+    },
+    "rootRestoreAcceptance": {
+      "bytes": 4097,
+      "path": "/tmp/pow-audit30-root-oct3-restore-actual-acceptance-v1.json",
+      "sha256": "fbac8b76c0ce44de997c8585cd6031354fe8bcd722ee09f0b02ec94f05d6a9ba"
+    }
+  },
+  "claims": {
+    "deletionAuthorized": false,
+    "fullPhaseChainMathPitrFinancialDependencyOrContinuousReaderClosure": false,
+    "humanApprovalCreated": false,
+    "pinCheckerChanged": false,
+    "productionDataMutation": false,
+    "promotionAuthorized": false,
+    "recoveryActivated": false
+  },
+  "comparisons": {
+    "all18OrderedNamesIndependentlyBoundByDa155Peer": true,
+    "changedTopLevelFieldsOnly": [
+      "expectedMonitorProjectionSha256",
+      "freshFullRead",
+      "installed",
+      "lockMetadata",
+      "mask",
+      "restoreProofMetadata",
+      "restoreProofSha256",
+      "static",
+      "units"
+    ],
+    "exact78ByteOrderedDualPin": true,
+    "fourRawRestoreReceiptsCanonicalBytesAndMetadataExact": {
+      "completed.json": {
+        "bytes": 646,
+        "metadataExact": true,
+        "sha256": "206f9d76eb5df9d05ca0c12b47e99c3dcb280b558bdbda760cb5fad4c57c3562"
+      },
+      "offline-page-check.json": {
+        "bytes": 304,
+        "metadataExact": true,
+        "sha256": "6dbe7303362f23138ecf269f24412a4eb50dae2808437e1329d61b660de8759f"
+      },
+      "saved-snapshot-fence.json": {
+        "bytes": 585,
+        "metadataExact": true,
+        "sha256": "db67874c0a5f1dff3d42acba88f1d0bd6ee43bd98a987e0659afeeb7361873a9"
+      },
+      "table-row-parity.json": {
+        "bytes": 3903,
+        "metadataExact": true,
+        "sha256": "fa6057e02efce49595a8ac445dd8d3b2ab84d0816257700640230a9b46af8ccc"
+      }
+    },
+    "installedStaticMaskLockUnitRowsExactActualObserver": true,
+    "leafAll3HashesAnd197TocExact": true,
+    "leafMetadataAliasesConvertedWithoutInventingFields": true,
+    "leafRawDefaultSortedJsonNewlineReconstructedExactly": true,
+    "projectionShaAndValueExactActualObserver": true,
+    "restoredCompletedExact6f870PrivateFlagsOnly": true,
+    "scopeAutomaticDeletionAndRecoveryActivationFalse": true,
+    "scopeSha256": "fe09d0ba6c9c1e561a569fb425c9812f9b077cb646fbdd615768e0546ead0437",
+    "tenStrictUnitFieldProfilesIncludingActuallyMeasuredUnitFileState": true,
+    "unchangedTemplateScopePackageRunEvidenceQualifierSchemaAndNullApproval": true
+  },
+  "formatQualification": {
+    "finalCanonicalRawPlanAndShaMustBeReviewedAfterActualApprovalBinding": true,
+    "observedReviewRawBytes": 9111,
+    "rawIsCallerCanonicalCompactPlan": false,
+    "readyForMain": false
+  },
+  "freshness": {
+    "currentlyExpired": true,
+    "expiredAtUtc": "2026-10-03T12:16:36.156678+00:00",
+    "historicalLeafAtUtc": "2026-10-03T12:01:36.156678+00:00",
+    "maxAgeSeconds": 900,
+    "usedAsApplyAuthority": false
+  },
+  "missingGates": [
+    "Direct human source message and closed approval receipt with exact caller/scope/two-path byte hashes/modes/conditional known-byte inverse, independently raw-pinned; finalHumanApproval remains null.",
+    "Fresh exact plan-path full-read receipt within900seconds at action; historical current2 leaf is expired and cannot be copy-refreshed.",
+    "Creation-only restrictive immutable package/evidence custody with V6 caller, exact cd9 install helper and795f dual-pin checker; package is not installed or sealed by this review.",
+    "Fresh chosen-action livefive/static/mask/WAL/prune/monitor/window and exact lock/file/restore-receipt identity fencing; endpoint observations do not waive future drift.",
+    "Final actual approval-bound canonical compact raw plan/source/request review and separate explicitly scoped native admission."
+  ],
+  "pureSyntaxChecks": {
+    "actualPlanRefusal": "Final human approval remains required",
+    "inertDefinitionsLoaded": true,
+    "mainExecuteApplyBackupCheckMonitorNotInvoked": true,
+    "malformedApprovalVectorsRefuse": 3,
+    "syntheticApprovalFilesCreated": 0,
+    "syntheticApprovalRowInMemoryOnlyValidatesClosedPlanSyntax": true,
+    "unitStateRequireOnSameSavedPlanPass": true
+  },
+  "qualification": [
+    "Partial plan binds observed metadata and accepted isolated logical restore only; syntax validation is not human approval or runtime execution.",
+    "Saved observer monitor remains failed with18 unresolved historical held absences; no finding was removed.",
+    "Two staged pins preserve ordinary-retention protection for Sep29 and Oct3; this is not single-pin retirement consumer admission.",
+    "Reviewer used local public artifacts and pure definition validators only; no remote/production or repository action."
+  ],
+  "reviewOperations": {
+    "actualApprovalOrPlanFileWrites": 0,
+    "applyCalls": 0,
+    "executeCalls": 0,
+    "mainCalls": 0,
+    "nativeCalls": 0,
+    "networkCalls": 0,
+    "remoteFileReads": 0,
+    "repositoryEdits": 0
+  },
+  "reviewer": "/root/vps_health",
+  "schema": "pow-audit30-independent-observed-review-plan-source-review-v6",
+  "status": "accepted-partial-observational-plan-only"
+}

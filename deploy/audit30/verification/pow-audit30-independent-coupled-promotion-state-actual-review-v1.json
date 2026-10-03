@@ -1,0 +1,94 @@
+{
+  "actualWindow": {
+    "exitCode": 0,
+    "finishedAtUtc": "2026-10-03T12:17:47.250571+00:00",
+    "seconds": 4.353449,
+    "startedAtUtc": "2026-10-03T12:17:42.897122+00:00",
+    "stderrBytes": 0
+  },
+  "atUtc": "2026-10-03T12:21:49.605540+00:00",
+  "bindings": [
+    {
+      "bytes": 8370,
+      "path": "/tmp/pow-audit30-coupled-promotion-state-observer-native-v1.stdout",
+      "sha256": "00ac40c9e3f8287ea708a9b90890edff3590e97fe09e584f8c5582565d3a6e92"
+    },
+    {
+      "bytes": 0,
+      "path": "/tmp/pow-audit30-coupled-promotion-state-observer-native-v1.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 1684,
+      "path": "/tmp/pow-audit30-coupled-promotion-state-observer-native-v1.json",
+      "sha256": "320f354aebe2d106ee09ca78b04a0cbabfd7bb844e762e32563619a0b77ee451"
+    },
+    {
+      "bytes": 43767,
+      "path": "/tmp/pow-audit30-coupled-promotion-state-observer-v1.py",
+      "sha256": "47b822552521ccff65a8e1b32157091d01d0a68130971bd2da402102b20c5dec"
+    },
+    {
+      "bytes": 6899,
+      "path": "/tmp/pow-audit30-coupled-promotion-state-observer-request-v1.json",
+      "sha256": "da4794e527239dda342afb318cae726a4fa36116a53322cf609ed86d8557d928"
+    }
+  ],
+  "claims": {
+    "allDependenciesClosed": false,
+    "allHeldAbsencesResolved": false,
+    "continuousOrFutureExclusionProven": false,
+    "deletionAuthorized": false,
+    "productionDataMutation": false,
+    "promotionAuthorized": false,
+    "recoveryActivated": false
+  },
+  "limitations": [
+    "Accepted saved endpoint observation only; reviewer made no remote calls and did not reread installed host files. Raw live file custody is attested by the exact frozen observer guards and successful result.",
+    "The producer monitor predicate requires a unique count of18 but does not hardcode their names. This independent review separately compares all18 names in order against the preserved public Oct2 node receipt.",
+    "The monitor remains failed with the historical-held-path-missing-or-retirement-invalid issue; this is not a monitor health PASS.",
+    "No lock was acquired, no new unit was created, and successful bounded child exit does not provide a continuous-reader or future idle guarantee. Transport explicitly does not certify remote unit stop.",
+    "Current pin remains only Sep29 and installed checker remains original; this observation does not apply either V5 or V6. All final human approval, executable plan, fresh full-read-age and runtime admission gates remain separate."
+  ],
+  "schema": "pow-audit30-independent-coupled-promotion-state-actual-review-v1",
+  "status": "accepted-readonly-actual-observation",
+  "verified": {
+    "allEighteenNamesMatchPriorPublicOrderedList": true,
+    "backupServiceInactiveMainZeroTimerWaiting": true,
+    "knownHeldPaths": 521,
+    "maskAndBackupLockExact": true,
+    "monitorBothEndpointsIdleStaticFailedMainZero": true,
+    "monitorInvocationId": "f639bbc9f65f45dda4fcaa5417023e9c",
+    "monitorOperationalTupleUnchanged": true,
+    "noNewApprovalPromotionBackupDeletionRecoveryOrProductionMutationClaimed": true,
+    "nonMonitorUnitFieldsMatchBoundPriorContext": true,
+    "originalFiveMatchBoundPriorContext": true,
+    "priorNameListBinding": {
+      "bytes": 881270,
+      "jsonPointer": "/finalProductionClosure/health/node/census/monitorJournal/jsonReceipts/0/checkerReceipt/historicalHeldInventory/missingHeldPaths",
+      "orderedListSha256": "c65bcff3423fabddd24c628292f6368609e6152913a18b2d05a1949f918dc685",
+      "path": "/home/sixer/ProofOfWork.Me/audits/2026-10-02-audit30-first-batch-execution.evidence.json",
+      "sha256": "7c30b7ea7368b10012dd96b6716583d538911f9f9468412cb1c2e491aeae687f"
+    },
+    "projectionSha256": "702807238008a596ee3361aac2076bd541a546c4fe7675b008d0b565a35778aa",
+    "sixFieldServiceFiveFieldPruneSixFieldBackupTimerProfiles": true,
+    "sourceRechecksFileMetadataAndRawHashesAtBothEndpoints": true,
+    "staticSixPlusOriginalPinAndCheckerEightFilesMatch": true,
+    "tenExactUnitProfiles": true,
+    "timersHaveNoInventedMainPID": true,
+    "twoLockFilesObservedEmptyCanonicalSingleLinkButNotAcquired": true,
+    "unitFileStatesMeasuredNotDefaulted": {
+      "bitcoind.service": "enabled",
+      "electrs.service": "enabled",
+      "pg_receivewal@16-main.service": "disabled",
+      "postgresql@16-main.service": "enabled-runtime",
+      "proofofwork-api.service": "enabled",
+      "proofofwork-indexer-worker.service": "enabled",
+      "proofofwork-node-release-prune.timer": "masked",
+      "proofofwork-postgres-logical-backup.service": "static",
+      "proofofwork-postgres-logical-backup.timer": "enabled",
+      "proofofwork-retention-protection.service": "static"
+    },
+    "unresolvedHeldAbsences": 18
+  }
+}

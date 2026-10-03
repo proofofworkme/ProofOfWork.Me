@@ -1,0 +1,32 @@
+{
+  "additionalDeletion": false,
+  "atUtc": "2026-10-03T12:25:52.085965+00:00",
+  "caller": {
+    "bytes": 2169,
+    "path": "/tmp/pow-audit30-root-retained-repair-bridge-once-current4-v5.py",
+    "sha256": "1ca0d1752545fb448d7a102fc1b12a283658e1d129353b14cbc9a733ea21e37c"
+  },
+  "nativeAlreadyExecutedAtSourceReview": false,
+  "operativeChange": "Only fixed systemstdlib sqlite3 definitions preload after existing alarm/AS/hash-verified decode, before byte-equal restrictive audit installation. No SQL connection or additional directory scan permitted.",
+  "peerSha256": "880983270ae09082fee9091024654e52c2d4f153b2d2a61476c64659c9093c5f",
+  "productionMutation": false,
+  "qualification": "NativeV4 stderr maps fixed-directory predicate without naming directory. Exact pinned local fresh-process reproduction found SQLite definition import; this remains an inference about same-attempt cause. This source acceptance permits one separately invoked read-only observation, not retry/global closure/deletion/promotion/recovery authority.",
+  "requestBytes": 105726,
+  "requestDerivation": "Exact previously reviewed cfcc request except schema-v5; expectedLive/protection remain exact accepted92d976 endpoints, subsequently corroborated by00ac observation. No implicit monitor waiver; only reviewed one start capture.",
+  "requestSha256": "cb88b80632bdfb31dc192f9404a53086afcfff3b78154c03c4d434ce5ff0a9f8",
+  "rootFixtureResults": {
+    "bridge": {
+      "cases": 46,
+      "passed": true,
+      "seconds": 1.403
+    },
+    "caller": {
+      "cases": 6,
+      "passed": true,
+      "seconds": 0.079
+    }
+  },
+  "schema": "pow-audit30-root-retained-repair-bridge-source-review-v5",
+  "sourceBytes": 18866,
+  "sourceSha256": "b8605128bd99a2b64ab13f1c33a3b5d6907802df8e453c31a93fbbd9a308d5b6"
+}

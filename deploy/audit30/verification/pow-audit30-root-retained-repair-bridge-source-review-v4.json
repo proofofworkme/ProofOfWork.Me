@@ -1,0 +1,48 @@
+{
+  "additionalDeletion": false,
+  "atUtc": "2026-10-03T12:15:30.392504+00:00",
+  "caller": {
+    "bytes": 2169,
+    "path": "/tmp/pow-audit30-root-retained-repair-bridge-once-current3-v4.py",
+    "sha256": "085b160705ecda3ee8512ee4412e643555dc56798480d1c27f52ea36bfe96ab5"
+  },
+  "operativeChanges": [
+    "closed explicitTrue refresh flag",
+    "external and new start idle loaded/static/Main0 monitor role",
+    "one in-memory monitor tuple capture immediately before unchanged exact ad03 endpoint guards",
+    "additive actual monitor refresh audit fields and schema4"
+  ],
+  "peerSha256": "a36e8d3011fe63b748beb29b349d7a073e5ee5b24a12324f3bf833704f630d9d",
+  "productionMutation": false,
+  "promotionOrRecoveryApproval": false,
+  "qualification": "Review permits one separately invoked bounded read-only observation; no retry or universal dependency closure. Running or changed monitor during observation still refuses. No native call has yet occurred at this source review.",
+  "requestBytes": 105726,
+  "requestSha256": "cfcc84161e368e5fe7fed2e7c7d9e2a9d7d85d8c418c2dd1f7615b89eeda653d",
+  "rootFixtureResults": {
+    "bridge": {
+      "cases": 42,
+      "passed": true,
+      "seconds": 1.051
+    },
+    "caller": {
+      "cases": 6,
+      "passed": true,
+      "seconds": 0.078
+    }
+  },
+  "schema": "pow-audit30-root-retained-repair-bridge-source-review-v4",
+  "sourceBytes": 18621,
+  "sourceSha256": "f07f5b8971b98f98013a56da1e054bbf786fac8ee02cafbf4ed1308d9ad0768b",
+  "unchangedGuards": [
+    "originalfive exactPID/Invocation",
+    "static8 bytes andmetadata",
+    "mask/WAL/prune exactstate",
+    "oldthree cluster/socket all read/stat banned",
+    "all file/process/write/socket policies",
+    "originalfixed23+172 verifier twice",
+    "oldlock intrinsic+current exactobserved FD/pathmetadata",
+    "typedrequestrawSHA+bounded stdin EOF",
+    "owned systemctl children kill/reap",
+    "CPU/AS/whole/outer/public channel caps"
+  ]
+}

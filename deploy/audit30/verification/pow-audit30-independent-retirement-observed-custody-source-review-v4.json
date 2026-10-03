@@ -1,0 +1,72 @@
+{
+  "artifacts": {
+    "actualPublicObservation": {
+      "bytes": 60114,
+      "path": "/tmp/pow-audit30-retained-repair-dependency-bridge-native-current4-v5.stdout",
+      "sha256": "285dfa1b5349f2408e8366a0341920152588145e22edb43f570f9aa027519090"
+    },
+    "authorPreparation": {
+      "bytes": 8361,
+      "path": "/tmp/pow-audit30-retirement-observed-custody-exceptions-source-preparation-v4.json",
+      "sha256": "3921630a4ad381aa18383d55330625dd301585960df9d1a6622cff13f8ec3d3e"
+    },
+    "diff": {
+      "bytes": 2783,
+      "path": "/tmp/pow-audit30-retire-exact-four-v4.diff",
+      "sha256": "7ca87c957e84016eecff76bb3885de348b4721abfd89305da161230c86f06ca4"
+    },
+    "priorSource": {
+      "bytes": 27456,
+      "path": "/tmp/pow-audit30-retire-exact-four-v3.py",
+      "sha256": "e35bd34050f4b0b36c9bfbe5b1461e901edd44ed13756cc9e3a2075e28fa2f50"
+    },
+    "source": {
+      "bytes": 29153,
+      "path": "/tmp/pow-audit30-retire-exact-four-v4.py",
+      "sha256": "fba702f9b5eaab27e5fc8850260b86609eb1fb1690b1d5b8cbc17659512a14e5"
+    },
+    "tests": {
+      "bytes": 33063,
+      "path": "/tmp/pow-audit30-retire-exact-four-v4.test.py",
+      "sha256": "263f4dc093d625647200706630b3259aad3bd0417e297aa58bb5f24e0a941d48"
+    }
+  },
+  "atUtc": "2026-10-03T12:36:16.409465+00:00",
+  "findings": [
+    "Three optional exact path/SHA/nine-integer-metadata exceptions admit only the previously observed two PG-owned stream receipts and the fixed Node runtime. Metadata shape, nonboolean integer typing and complete equality refuse rebinding.",
+    "The two original KNOWN_DEPENDENCIES remain mandatory; optional-three absence proves no manifest completeness.",
+    "Generic 4 MiB size/UID 0 or 1000 and cumulative 192 MiB limits remain unchanged. Full FD/path/metadata/SHA/nlink/xattr checks remain unchanged and apply to observed exceptions.",
+    "All signal, unlink, approval, target, custody and other function/class source ASTs remain unchanged. No concrete source blocker found in this narrow successor."
+  ],
+  "independentVerification": {
+    "addedMeaningfulFixturesRead": true,
+    "allOtherFunctionAndClassASTsIdentical": true,
+    "diffRecomputedByteExact": true,
+    "exactThreeObservedDeclarationsMatchActualPublicBlocks": true,
+    "frozenHashesAndByteCountsVerified": true,
+    "fullNarrowDiffRead": true,
+    "onlyChangedFunction": "dependency_contract",
+    "tests": {
+      "command": "python3 -I -B -W error /tmp/pow-audit30-retire-exact-four-v4.test.py",
+      "elapsedSeconds": 1.432,
+      "passed": 47,
+      "qualification": "Local temporary-file, pure-contract and harmless child/signal fixtures only; no actual retirement invocation."
+    }
+  },
+  "qualifications": [
+    "The saved 162 declarations becoming compatible is a pure declared-contract result; no current full retirement dependency fence was executed by this review.",
+    "Logical byte totals are not filesystem allocation or reclaimable savings.",
+    "Historical Oct2/single-pin/promotion consumers remain unchanged; this source review does not admit a current Oct3 or staged dual-pin deletion plan.",
+    "No actual final manifest, direct-human apply approval, full global dependency closure, recovery equivalence or deletion authority is supplied."
+  ],
+  "reviewerActions": {
+    "allDependenciesClosed": false,
+    "deletionAuthorized": false,
+    "nativeJobs": false,
+    "remoteCalls": false,
+    "repositoryEdits": false,
+    "retirementMainOrApplyInvoked": false
+  },
+  "schema": "pow-audit30-independent-retirement-observed-custody-source-review-v4",
+  "status": "accepted-source-only"
+}

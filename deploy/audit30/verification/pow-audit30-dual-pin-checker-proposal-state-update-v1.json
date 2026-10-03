@@ -1,0 +1,60 @@
+{
+  "actualStateObservation": {
+    "bytes": 8370,
+    "path": "/tmp/pow-audit30-coupled-promotion-state-observer-native-v1.stdout",
+    "sha256": "00ac40c9e3f8287ea708a9b90890edff3590e97fe09e584f8c5582565d3a6e92"
+  },
+  "actualStatePeer": {
+    "bytes": 4789,
+    "path": "/tmp/pow-audit30-independent-coupled-promotion-state-actual-review-v1.json",
+    "sha256": "da1559f7cc478864d586c38c015512698f00c609fd0ed92251ebb5309eea39b9"
+  },
+  "actualStateQualification": {
+    "allEighteenOrderedNamesIndependentlyMatchPriorPublicReceipt": true,
+    "knownHeldPaths": 521,
+    "knownUnresolvedHeldAbsences": 18,
+    "locksAcquired": false,
+    "monitorBothEndpoints": "loaded/static/failed/failed/MainPID0",
+    "monitorOperationalTupleUnchanged": true,
+    "monitorProjectionSha256": "702807238008a596ee3361aac2076bd541a546c4fe7675b008d0b565a35778aa",
+    "originalFiveAndStaticAuthorityMatch": true,
+    "runtimeOrFutureIdentityWaiver": false,
+    "tenExactPerUnitProfiles": true,
+    "unitFileStateActuallyMeasured": true
+  },
+  "approvalRequestedOrReceived": false,
+  "atUtc": "2026-10-03T12:23:44.569810+00:00",
+  "capacityNote": "The prior11:39 snapshot remains235.0093536376953GiB available against293GiB unchanged recovery peak/reserve requirement, deficit57.99064636230469GiB; this update adds no capacity sample or recovery approval.",
+  "nativeExecutedByThisAgent": false,
+  "newlySatisfiedObservationalRows": [
+    "stateObserver",
+    "monitorProjection"
+  ],
+  "preservedExclusions": [
+    "V5 single-pin action remains withdrawn",
+    "Sep29 remains the first pin in exact proposed78-byte pair",
+    "No later Sep29 withdrawal, audit-cluster retirement, immediate deletion or recovery activation approved",
+    "V6 evidence does not admit frozen single-Oct3 retirement consumer",
+    "No full-chain/PITR/replay/financial/dependency/continuous-reader closure",
+    "Existing18 monitor findings are unresolved"
+  ],
+  "priorDraft": {
+    "bytes": 7725,
+    "path": "/tmp/pow-audit30-dual-pin-checker-human-proposal-draft-v6.json",
+    "sha256": "c301a7b4f24d0236c77f8ff54a5a2d425ac273d2f55309c43267ffe98a6aa2bb"
+  },
+  "productionActionApproved": false,
+  "schema": "pow-audit30-dual-pin-checker-proposal-state-update-v1",
+  "sourceOnly": true,
+  "stillMissingBeforeExecutableFinalGatedPlan": [
+    "Fresh plan-path full-read proof metadata/raw SHA within900seconds at the chosen action; the12:01:36.156678 current2 proof is now expired and cannot be copy-refreshed.",
+    "Exact four accepted104500 restore receipt metadata/rawSHA fenced at action and filled into the plan.",
+    "Fresh chosen-action live-five/window/static/mask/WAL/prune/locks/monitor endpoint admission; if action follows cutover, bind actual new identities.",
+    "Creation-only restrictive immutable V6 package/evidence and exact plan/member custody, then actual direct-human source message/closed approval receipt bound to this precise dual-pin/checker/inverse scope."
+  ],
+  "v6Peer": {
+    "bytes": 5451,
+    "path": "/tmp/pow-audit30-independent-coupled-pin-checker-promotion-source-review-v6.json",
+    "sha256": "39d49acbecdce34149190330f9b75991e88fc26dc7255d430794087f5ac449d3"
+  }
+}

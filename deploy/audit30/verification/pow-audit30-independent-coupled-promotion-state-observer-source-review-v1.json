@@ -1,0 +1,94 @@
+{
+  "actions": {
+    "allDependenciesClosed": false,
+    "apiRequests": 0,
+    "approvalCreated": false,
+    "checkerChanged": false,
+    "coreRequests": 0,
+    "deletionAuthorized": false,
+    "flockAcquired": false,
+    "nativeExecuted": false,
+    "pinChanged": false,
+    "productionMutation": false,
+    "repoEdited": false,
+    "sourceEdited": false,
+    "sqlExecuted": false,
+    "unitControl": false
+  },
+  "bindings": [
+    {
+      "bytes": 43767,
+      "path": "/tmp/pow-audit30-coupled-promotion-state-observer-v1.py",
+      "sha256": "47b822552521ccff65a8e1b32157091d01d0a68130971bd2da402102b20c5dec"
+    },
+    {
+      "bytes": 7695,
+      "path": "/tmp/pow-audit30-coupled-promotion-state-observer-v1.test.py",
+      "sha256": "e07a8143bee7b2baddd1eb6a3ed8e9a7f3fc107c54562a1716366aa9022fce1a"
+    },
+    {
+      "bytes": 6899,
+      "path": "/tmp/pow-audit30-coupled-promotion-state-observer-request-v1.json",
+      "sha256": "da4794e527239dda342afb318cae726a4fa36116a53322cf609ed86d8557d928"
+    },
+    {
+      "bytes": 32091,
+      "path": "/tmp/pow-audit30-promotion-full-read-native-120000-current2-v1.stdout",
+      "sha256": "92d976261c28b0c6782d2c15ec9b5c9217cd19f1d4034db9b89946e15de6ffac"
+    }
+  ],
+  "frozenV5Bytes": {
+    "bytes": 25733,
+    "exactInertEmbeddedOriginal": true,
+    "mainExecuteApplyPairNeverInvoked": true,
+    "sha256": "7e878f987524dce2583b348964032af62491ce3cabcdc49adc359b36b7fc5bd4"
+  },
+  "independentValidation": {
+    "child64KiBRefusalPassed": true,
+    "closedPerUnitMissingDuplicateUnknownFieldsRefuse": true,
+    "localTests": 15,
+    "passed": true,
+    "realTimeoutAndRepeatedSignalOwnedChildKillReapPassed": true,
+    "requestExpectedAndContextTamperRefuse": true,
+    "seconds": 0.359,
+    "staticMetadataAndExternalPidDriftRefuse": true
+  },
+  "qualifications": [
+    "No native observation was made by this peer. Root must separately authorize and inspect the exact once result/current tuple before further source bindings.",
+    "The frozen known18 projection checks issue/count/uniqueness, not an independently pinned identity-set equality. Output names/hash must be reviewed; it does not resolve the18 absences or prove all dependencies closed.",
+    "Monitor operational equality is reported without a continuous-exclusion claim. Newly measured UnitFileState values are observations, not an admission waiver or producer of configured defaults.",
+    "Embedded V5 is used only for definitions. It remains a blocked single-pin proposal; this observer does not authorize that proposal, coupled replacement, Sep29 unpin, retirement, recovery activation, or timers/holds changes. VPS authors separate V6 dualpin.",
+    "Child channel caps are checked after communicate under bounded fixed commands and parent alarm/address-space limit; no server/backend resource claim is made."
+  ],
+  "requestBinding": {
+    "backupLockExactAfterMetadataKeyRename": true,
+    "eightFilesAndMaskExactAfterMetadataKeyRename": true,
+    "expectedCanonicalSha256": "5c85f5859add108480f4e31e5f9e50a8c8a2774e38a9d1bc9e7615c39390f92e",
+    "expectedTenUnitCombinationExact": true,
+    "productionActionApproved": false,
+    "sourceContextExact": true
+  },
+  "schema": "pow-audit30-independent-coupled-promotion-state-observer-source-review-v1",
+  "sourceScope": {
+    "channelsBytes": 65536,
+    "checkerProjection": "Exact original checker hash verified before/after; exit1/no stderr and frozen node/one historical-held issue/521 held/18 unique missing/no unexpected retired-or-relocated present predicate. Returned names and projection digest remain actual observations.",
+    "checkerSeconds": 20,
+    "children": [
+      "fixed /usr/bin/systemctl show ten per-unit profiles",
+      "byte-verified /usr/bin/python3 -I -B /usr/local/sbin/proofofwork-retention-protection --role node"
+    ],
+    "cpuSeconds": 30,
+    "monitor": "Fixed loaded/static authority, both endpoints MainPID0 idle inactive/dead or failed/failed; operational tuples separately reported and equality boolean reflects actual endpoint change.",
+    "opsAndBackupLocks": "Canonical empty regular read-only descriptor/metadata/xattr observations; no flock or write.",
+    "originalFiveAndEveryNonMonitorExpectedFieldExact": true,
+    "outerProposedSeconds": 90,
+    "ownedCleanupReapSeconds": 5,
+    "perMetadataChildSeconds": 5,
+    "pinCheckerAndEightFilesMaskMetadataHashesBeforeAfter": true,
+    "previouslyMissingUnitFileStateFields": "Observed from complete actual profile for original five and backup service, not fabricated or defaulted; included in before/after equality and public result.",
+    "rootAddressSpaceBytes": 268435456,
+    "rootSeconds": 60,
+    "signalHandlers": "RuntimeError subclass; first failure preserved through ordinary signal shielding and exact owned process-group kill/reap."
+  },
+  "status": "accepted-source-only-readonly-observation"
+}

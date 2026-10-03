@@ -1,0 +1,67 @@
+{
+  "actions": {
+    "additionalRetirementApproved": false,
+    "allDependenciesClosed": false,
+    "checkerChanged": false,
+    "deletionPerformed": false,
+    "nativeExecuted": false,
+    "pinChanged": false,
+    "productionMutation": false,
+    "sourceEdited": false
+  },
+  "findings": {
+    "currentCompletedSetPreserved": true,
+    "otherUnpinnedVerifiedCompleteSetDeletionPath": true,
+    "pinMembershipPreservesNamedOldSet": true,
+    "policyAuthority": "canonical regular non-symlink root owner mode0644",
+    "policyByteLimit": 4096,
+    "policyFile": "/etc/proofofwork-postgres-logical-backup.pins",
+    "policyLineLimit": 16,
+    "replacementItselfImmediatelyDeletesSep29": false,
+    "retentionChecksAudit28HoldMarker": false,
+    "retentionChecksPersistentPruneTimerMask": false,
+    "retentionLines": [
+      369,
+      440
+    ],
+    "risk": "At a subsequent ordinary backup or retain-existing retention pass, Sep29 can be deleted if full checksum/catalog/ownership/canonical identity/no-open-reader verification succeeds. Pin replacement therefore changes deletion eligibility even though the promotion caller performs no deletion.",
+    "v5SingleNewPinRemovesSep29FromSkipSet": true
+  },
+  "minimumSafePreparation": {
+    "backupScriptChangeNeeded": false,
+    "bytes": 78,
+    "checkerRequirement": "Exactly these two names in this order; reject missing, extra, duplicate or reordered names. Bind the exact78 raw pin bytes and checker hash in the promotion plan/approval/completion and downstream consumer.",
+    "exactPinText": "proof_indexer-20260929T031853Z.dumpset\nproof_indexer-20261003T031852Z.dumpset\n",
+    "orderedNames": [
+      "proof_indexer-20260929T031853Z.dumpset",
+      "proof_indexer-20261003T031852Z.dumpset"
+    ],
+    "sep29RemovalAuthority": "Keep the Sep29 pin until separately reviewed direct-human approval names its unpin/retirement and all required gates. Dualpin promotion alone does not approve any deletion.",
+    "sha256": "22f66cac8419985c544d4b41c6ea9cd400fc99805c588694a9a619a3f120d09b",
+    "timerHoldChangesNeeded": false
+  },
+  "qualifications": [
+    "This is an exact source-level eligibility finding. No native filesystem state, future backup deletion outcome, recovery equivalence or universal dependency absence is proved.",
+    "The existing guarded backup deletion checks remain required; this review does not claim Sep29 is certain to be deleted or is unsafe.",
+    "V5 and its source history remain unchanged. VPS authors the narrow V6; this reviewer changed no proposal/source/config/pin/timer/hold, ran no native/backup/retention command, and issued no approval."
+  ],
+  "schema": "pow-audit30-single-pin-unprotection-source-risk-review-v1",
+  "sourceBindings": [
+    {
+      "bytes": 20691,
+      "path": "/home/sixer/ProofOfWork.Me/deploy/proofofwork-postgres-logical-backup.sh",
+      "sha256": "4e5252ed8fcc8ce4ec863d6e027d429f146348f30be23d4eb5fe77cfd013a754"
+    },
+    {
+      "bytes": 25733,
+      "path": "/tmp/pow-audit30-coupled-pin-checker-promotion-v5.py",
+      "sha256": "7e878f987524dce2583b348964032af62491ce3cabcdc49adc359b36b7fc5bd4"
+    },
+    {
+      "bytes": 20677,
+      "path": "/tmp/pow-audit30-retention-protection-oct3-candidate-v1.py",
+      "sha256": "f40b25f46c86541766c3e8694cf677b551fe489887dab72b4084991100d308d0"
+    }
+  ],
+  "status": "source-only-confirmed-risk-minimal-dualpin-proposed"
+}

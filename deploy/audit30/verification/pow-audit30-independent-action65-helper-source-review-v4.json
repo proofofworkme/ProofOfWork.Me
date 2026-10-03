@@ -1,0 +1,60 @@
+{
+  "artifacts": {
+    "diff": {
+      "bytes": 2539,
+      "path": "/tmp/pow-audit30-append-action65-v4.diff",
+      "sha256": "6f36688322b283d216e45d54b7fa2df0c7c6a8f419a87c65631c26691809dc77"
+    },
+    "priorPeer": {
+      "bytes": 1938,
+      "path": "/tmp/pow-audit30-independent-action65-helper-source-review-v3.json",
+      "sha256": "8a75340d4cc15f57fdc237d6db3db83c666f540378903300910b3f12c71aacf4"
+    },
+    "priorSource": {
+      "bytes": 9925,
+      "path": "/tmp/pow-audit30-append-action65-v3.py",
+      "sha256": "bda019726b87188725686f8b16a4959cefc498f8ed57501aa67cf76473120fb1"
+    },
+    "source": {
+      "bytes": 9925,
+      "path": "/tmp/pow-audit30-append-action65-v4.py",
+      "sha256": "9423a4f147f22eb9cba32571c11f1066b546f710991b5f943e1c209cf677515f"
+    }
+  },
+  "atUtc": "2026-10-03T12:37:45.019640+00:00",
+  "findings": [
+    "No concrete source blocker found in the two narrow binding changes. The increased count permits more exact public custody entries and grants no new production, promotion, deletion or native authority."
+  ],
+  "qualification": "This receipt reviews helper source only. Actual manifest, its fixed public contents and proposal semantics remain a separate gate; helper was not executed and repository files were not edited.",
+  "reviewerActions": {
+    "helperExecuted": false,
+    "mutationAuthorityGranted": false,
+    "nativeJobs": false,
+    "remoteCalls": false,
+    "repositoryEdits": false
+  },
+  "schema": "pow-audit30-independent-action65-helper-source-review-v4",
+  "status": "accepted-source-only",
+  "verification": {
+    "baseline": {
+      "actions": 64,
+      "custodyRows": 761,
+      "gitHead": "4df964287d9f326845bc22d5d4f454f7a2cadf74"
+    },
+    "changes": [
+      "Closed public files-list ceiling 100 to 125.",
+      "Fixed proposal input basename v1 to v2; repository destination unchanged."
+    ],
+    "diffRecomputedByteExact": true,
+    "exactTwoChangeReversalToAcceptedV3": true,
+    "fullCurrentSourceAndDiffRead": true,
+    "pythonASTParsePassed": true,
+    "unchanged": [
+      "Public-binding closed schema, per-input/representation 2MiB and output document limits.",
+      "Exact manifest SHA, source copies and review-role scope gates; current manifest still must receive independent review.",
+      "Historical64 actions/761 rows/all approval-mutation-retirement-final-request objects/global representations/item values.",
+      "Creation-only artifacts/proposal, durable intent and directory fsync, no automatic retry after partial write.",
+      "Four separately atomic document replacements remain qualified as non-joint-atomic."
+    ]
+  }
+}

@@ -1,0 +1,162 @@
+{
+  "actualWindow": {
+    "exitCode": 0,
+    "finishedAtUtc": "2026-10-03T12:26:03.387484+00:00",
+    "seconds": 5.570746,
+    "startedAtUtc": "2026-10-03T12:25:57.816738+00:00",
+    "stderrBytes": 0
+  },
+  "atUtc": "2026-10-03T12:32:23.773778+00:00",
+  "bindings": [
+    {
+      "bytes": 60114,
+      "path": "/tmp/pow-audit30-retained-repair-dependency-bridge-native-current4-v5.stdout",
+      "sha256": "285dfa1b5349f2408e8366a0341920152588145e22edb43f570f9aa027519090"
+    },
+    {
+      "bytes": 0,
+      "path": "/tmp/pow-audit30-retained-repair-dependency-bridge-native-current4-v5.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 1708,
+      "path": "/tmp/pow-audit30-retained-repair-dependency-bridge-native-current4-v5.json",
+      "sha256": "7438ccbdaacac34ab96814be810b6c00e0675acb8043f8b35820e619a91791e4"
+    },
+    {
+      "bytes": 105726,
+      "path": "/tmp/pow-audit30-retained-repair-dependency-bridge-request-current4-v5.json",
+      "sha256": "cb88b80632bdfb31dc192f9404a53086afcfff3b78154c03c4d434ce5ff0a9f8"
+    },
+    {
+      "bytes": 1790,
+      "path": "/tmp/pow-audit30-root-retained-repair-bridge-source-review-v5.json",
+      "sha256": "986e147d2881ba03f740f77776f7b856391d01de72e43de8382fbcaf17688eb7"
+    },
+    {
+      "bytes": 2169,
+      "path": "/tmp/pow-audit30-root-retained-repair-bridge-once-current4-v5.py",
+      "sha256": "1ca0d1752545fb448d7a102fc1b12a283658e1d129353b14cbc9a733ea21e37c"
+    }
+  ],
+  "claims": {
+    "allDependenciesClosed": false,
+    "deletionAuthorized": false,
+    "productionMutation": false,
+    "recoveryEquivalenceProven": false,
+    "retirementReady": false,
+    "sqlExecuted": false
+  },
+  "limitations": [
+    "Successful observation is not successful retirement admission. Three exact declared rows fail the frozen generic owner/size contract; no exception or plan was applied.",
+    "All23 host raw hashes/metadata and the twice-observed172-entry closure are attested by the exact frozen producer. Reviewer reconstructed its public canonical inventory and pure contract decisions locally without remote file rereads.",
+    "The aggregate is logical bytes across named paths/devices, including repeated code copies; it is not physical allocation, database capacity or reclaimable savings.",
+    "Monitor93b2 captured at observation start differs from externald8e5; both are permitted idle/static/Main0 shapes. Exact captured protection endpoints are source-gated; neither continuous monitor exclusion nor health PASS follows.",
+    "Transport peerRequestBindingSha256 points to the source-only peer880983, not a preexisting separate cb88 request peer. This receipt supplies the independently checked pure request derivation now; Root986e separately reviewed request/caller before invocation.",
+    "Job-root/cluster membership, all unknown/skipped readers/dependencies, survivor retention, promotion, deletion, live recovery and full workflow completion remain outside this observation. No native or repository operation was performed by reviewer."
+  ],
+  "requestReview": {
+    "V5NullTemplateOnlyExpectedLiveProtectionFilled": true,
+    "current3V4OnlySchemaSuffixChanged": true,
+    "externalEndpointsExactAccepted92d976": true,
+    "inertClosedDecodePass": true,
+    "noSourceOrGuardChangeInBinding": true
+  },
+  "schema": "pow-audit30-independent-retained-repair-bridge-actual-review-v5",
+  "sourcePeer": {
+    "path": "/tmp/pow-audit30-independent-retained-repair-bridge-source-review-v5.json",
+    "sha256": "880983270ae09082fee9091024654e52c2d4f153b2d2a61476c64659c9093c5f"
+  },
+  "status": "accepted-observation-with-three-compatibility-blockers",
+  "verifiedObservation": {
+    "aggregate192MiBCapBytes": 201326592,
+    "aggregateLogicalBytes": 132695960,
+    "aggregateWithinCap": true,
+    "compatibilityBlockers": [
+      {
+        "metadata": {
+          "bytes": 10029,
+          "ctimeNs": 1791009948537706755,
+          "device": 64514,
+          "gid": 112,
+          "inode": 11142815,
+          "mode": 384,
+          "mtimeNs": 1791009948537706755,
+          "nlink": 1,
+          "uid": 108
+        },
+        "path": "/data/proofofwork-audit30-inspect-20261003T014100Z/stream-completion-v2/completed.json",
+        "reason": "GENERIC_OWNER_REFUSED",
+        "sha256": "974e16cfb288e19e7320fa87687d32cff65b2a58296b4e94893ddbdfaea3c841"
+      },
+      {
+        "metadata": {
+          "bytes": 5364,
+          "ctimeNs": 1791009910744703753,
+          "device": 64514,
+          "gid": 112,
+          "inode": 11142810,
+          "mode": 384,
+          "mtimeNs": 1791009910744703753,
+          "nlink": 1,
+          "uid": 108
+        },
+        "path": "/data/proofofwork-audit30-inspect-20261003T014100Z/stream-completion-v2/intent.json",
+        "reason": "GENERIC_OWNER_REFUSED",
+        "sha256": "121d96aaf3af0eae662e1d602b304d54e3db4c5185059e8386164e540d1cf8f3"
+      },
+      {
+        "metadata": {
+          "bytes": 123655872,
+          "ctimeNs": 1783987646454677986,
+          "device": 64512,
+          "gid": 0,
+          "inode": 537530,
+          "mode": 493,
+          "mtimeNs": 1782236933000000000,
+          "nlink": 1,
+          "uid": 0
+        },
+        "path": "/opt/node-v24.18.0-linux-x64/bin/node",
+        "reason": "GENERIC_SIZE_REFUSED",
+        "sha256": "41a74efb34cbde5c7632cdac0cf8bd1a14d0b8d73dc1e82755014d9a9ce70f5c"
+      }
+    ],
+    "exactFixedFileMembership": true,
+    "genericPgOwnersCompatible": true,
+    "manifestEqualsOriginalInventorySha256": true,
+    "namedFiles": 23,
+    "noSqlCoreClusterReadPrivateCaptureCreationMutationOrGlobalClosure": true,
+    "nodeHashEqualsFrozenRootNodeSha256": true,
+    "oneExplicitMonitorStartRefresh": {
+      "capturedAtObservationStart": {
+        "ActiveState": "failed",
+        "InvocationID": "93b2f1ec75034372a243ccdfefc5b73d",
+        "LoadState": "loaded",
+        "MainPID": "0",
+        "SubState": "failed",
+        "UnitFileState": "static"
+      },
+      "capturedSha256": "5b68beff42bfbc9aa0a0a85a0f711d84dc1a413baae9e81d0a928209cb6049f2",
+      "explicitRefreshRequested": true,
+      "externalExpected": {
+        "ActiveState": "failed",
+        "InvocationID": "d8e5ae8ffc6844cf947102e522502ef9",
+        "LoadState": "loaded",
+        "MainPID": "0",
+        "SubState": "failed",
+        "UnitFileState": "static"
+      },
+      "unit": "proofofwork-retention-protection.service"
+    },
+    "pgDirectories": 33,
+    "pgEntries": 172,
+    "pgOwnerModesParentOrderingAndEntryHashMatch": true,
+    "pgRegularBytes": 443205,
+    "pgRegularFiles": 139,
+    "pureFrozenRetirementCompatibilityRecomputedExactly": true,
+    "reconstructedCanonicalManifestSha256": "706203173b849a71e4a22000adba45003672504cbbd582eaa19f157c91d1c51e",
+    "sourceGatedOriginalFiveProtectionQuietBackupLockEndpointsPassed": true,
+    "testedFiles": 162
+  }
+}

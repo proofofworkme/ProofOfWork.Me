@@ -1,0 +1,57 @@
+{
+  "atUtc": "2026-10-03T12:39:33.969144+00:00",
+  "bindings": [
+    {
+      "bytes": 29153,
+      "path": "/tmp/pow-audit30-retire-exact-four-v4.py",
+      "sha256": "fba702f9b5eaab27e5fc8850260b86609eb1fb1690b1d5b8cbc17659512a14e5"
+    },
+    {
+      "bytes": 2783,
+      "path": "/tmp/pow-audit30-retire-exact-four-v4.diff",
+      "sha256": "7ca87c957e84016eecff76bb3885de348b4721abfd89305da161230c86f06ca4"
+    },
+    {
+      "bytes": 33063,
+      "path": "/tmp/pow-audit30-retire-exact-four-v4.test.py",
+      "sha256": "263f4dc093d625647200706630b3259aad3bd0417e297aa58bb5f24e0a941d48"
+    },
+    {
+      "bytes": 8361,
+      "path": "/tmp/pow-audit30-retirement-observed-custody-exceptions-source-preparation-v4.json",
+      "sha256": "3921630a4ad381aa18383d55330625dd301585960df9d1a6622cff13f8ec3d3e"
+    },
+    {
+      "bytes": 3604,
+      "path": "/tmp/pow-audit30-independent-retirement-observed-custody-source-review-v4.json",
+      "sha256": "2efae4bf0257998c2f70736b17cb7e4a3d684632309cc09784baef80b0404949"
+    },
+    {
+      "bytes": 6900,
+      "path": "/tmp/pow-audit30-independent-retained-repair-bridge-actual-review-v5.json",
+      "sha256": "05d0a2e251651647d3fb370f4b3b5be542d6b09a55444b8e83a7eb3c65a6025d"
+    }
+  ],
+  "claims": {
+    "additionalDeletion": false,
+    "allDependenciesClosed": false,
+    "completeItem8": false,
+    "nativeExecuted": false,
+    "productionDataMutation": false,
+    "retirementReady": false
+  },
+  "qualification": "Source-only exact optional exceptions remove the three known generic incompatibilities when explicitly declared; their absence never establishes completeness. Old Oct2/single-pin promotion/retirement guards remain unchanged and cannot admit current Oct3/dual-pin retirement. No final manifest, human approval or native invocation was created.",
+  "review": {
+    "changedDefinitions": [
+      "dependency_contract"
+    ],
+    "exactOptionalThreeCapturedMetadataDeclarations": true,
+    "generic4MiBOwner0or1000And192MiBUnchanged": true,
+    "originalMandatoryTwoPreserved": true,
+    "rootTestSeconds": 1.434,
+    "testsPassed": 47,
+    "unchangedDefinitions": 30
+  },
+  "schema": "pow-audit30-root-retirement-observed-custody-source-review-v4",
+  "status": "source-only-accepted-unexecuted"
+}

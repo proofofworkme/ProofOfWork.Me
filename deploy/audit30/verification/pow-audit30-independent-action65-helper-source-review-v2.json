@@ -1,0 +1,50 @@
+{
+  "atUtc": "2026-10-03T12:15:04.119208+00:00",
+  "newFixtureFrameworkOrDuplicateTestsCreated": false,
+  "previousReview": {
+    "path": "/tmp/pow-audit30-independent-action65-helper-source-review-v1.json",
+    "sha256": "298847d7ac9395b49cfe4fbfb97fc9a0aa6b944f0210daac2e82456cc42fc3fc"
+  },
+  "qualifications": [
+    "The V1 late stored-envelope-size refusal edge and missing parent-directory fsync qualification are addressed by the narrow V2 changes.",
+    "Four document renames remain individually atomic rather than one joint transaction; an intermediate refusal still requires explicit intent/baseline/planned-hash review and no automatic retry.",
+    "A directory fsync failure after a write can leave partial durable state; the operator preserves its exclusive intent/partial files and cannot claim a completed checkpoint from that failure.",
+    "Actual public manifest, proposal and acceptance-role semantic/binding review remains separate and required; no execution approval is implied.",
+    "No production mutation, native action, pin/checker promotion, deletion, hygiene, commit or push was performed or authorized by this source peer."
+  ],
+  "review": {
+    "allStoredTargetsCappedByReusedReadbackMaximumBeforeIntent": true,
+    "authorizationGlobalRepresentationsAndItemScopeUnchanged": true,
+    "baseline64And761AndHeadUnchanged": true,
+    "concreteBlockingSourceErrorFound": false,
+    "createdArtifactParentDirectoriesFsyncedBeforeDocumentReplacement": true,
+    "diffRecomputedExact": true,
+    "directoryDescriptorIsReadOnlyDirectoryNoFollowAndFinallyClosed": true,
+    "eachAtomicDocumentRenameParentFsynced": true,
+    "fullV2SourceAndExactV1DiffRead": true,
+    "helperNotImportedOrExecuted": true,
+    "intentParentDirectoryFsyncedBeforeCopies": true,
+    "noRepositoryNativeOrRemoteAction": true,
+    "parsePass": true,
+    "receiptParentFsyncedBeforeSuccessOutput": true
+  },
+  "schema": "pow-audit30-independent-action65-helper-source-review-v2",
+  "sources": [
+    {
+      "bytes": 9924,
+      "path": "/tmp/pow-audit30-append-action65-v2.py",
+      "sha256": "0584216e1275a0a111b2090e772df6b514cee61fcf6c09ccf979a5a6ca3c4963"
+    },
+    {
+      "bytes": 9557,
+      "path": "/tmp/pow-audit30-append-action65-v1.py",
+      "sha256": "ec066ac798c896bdb19463b9718ae6f82874ed85ce793ae3bfd80add8d805c1f"
+    },
+    {
+      "bytes": 3292,
+      "path": "/tmp/pow-audit30-append-action65-v2.diff",
+      "sha256": "3f79b2f7c04726eb603aa08e69efa0000e5e9d71a7db850fbc8683a075a10101"
+    }
+  ],
+  "status": "accepted-source-only"
+}

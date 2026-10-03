@@ -1,0 +1,46 @@
+{
+  "atUtc": "2026-10-03T12:30:59.567961+00:00",
+  "bindings": [
+    {
+      "bytes": 9925,
+      "path": "/tmp/pow-audit30-append-action65-v3.py",
+      "sha256": "bda019726b87188725686f8b16a4959cefc498f8ed57501aa67cf76473120fb1"
+    },
+    {
+      "bytes": 1013,
+      "path": "/tmp/pow-audit30-append-action65-v3.diff",
+      "sha256": "39aa09cc6a3aa24d9f4074588a13cec85f0de07faf88f466eee791a9f0bafefa"
+    }
+  ],
+  "claims": {
+    "deletionAuthorized": false,
+    "nativeActionPerformed": false,
+    "productionMutation": false,
+    "promotionAuthorized": false,
+    "repositoryMutationPerformed": false
+  },
+  "limitations": [
+    "This reviews only the bounded source cap change; the forthcoming approximately90 explicit public files, proposal and acceptance roles have not been approved by this receipt.",
+    "Four individually atomic document updates still require explicit partial-intent review on failure and have no automatic retry; parent fsync and prewrite artifact caps remain as accepted V2."
+  ],
+  "previousReview": {
+    "path": "/tmp/pow-audit30-independent-action65-helper-source-review-v2.json",
+    "sha256": "7f1e00ce2b88dfbe2fd235491636bacfbae4f2b4f0c8c0290ea6b67d83fd8626"
+  },
+  "schema": "pow-audit30-independent-action65-helper-source-review-v3",
+  "status": "accepted-source-only",
+  "verified": {
+    "actualManifestRequiresSeparateExactPublicBindingAndSemanticReview": true,
+    "allPrewriteCapsCollisionBaselinePrefixApprovalAndFsyncGuardsUnchanged": true,
+    "custodyTrackerHygieneOutputCapsBytes": 2097152,
+    "entireSourceExactV2ExceptFileListUpperBound": true,
+    "evidenceOutputCapBytes": 33554432,
+    "explicitFileListMaximum": 100,
+    "explicitFileListMinimum": 1,
+    "helperNotImportedOrExecuted": true,
+    "historicalActions64AndRows761Unchanged": true,
+    "inputAndStoredRepresentationCapBytes": 2097152,
+    "noConcreteSourceBlockerFound": true,
+    "noNewTestsOrFramework": true
+  }
+}

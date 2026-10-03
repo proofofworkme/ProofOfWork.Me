@@ -1,0 +1,176 @@
+{
+  "bindings": [
+    {
+      "bytes": 17036,
+      "path": "/tmp/pow-audit30-retained-repair-dependency-bridge-v3.py",
+      "sha256": "e821dec229bb409c4b90a93a8a17db21722af520362862826b2ec388766e76f2"
+    },
+    {
+      "bytes": 18621,
+      "path": "/tmp/pow-audit30-retained-repair-dependency-bridge-v4.py",
+      "sha256": "f07f5b8971b98f98013a56da1e054bbf786fac8ee02cafbf4ed1308d9ad0768b"
+    },
+    {
+      "bytes": 10729,
+      "path": "/tmp/pow-audit30-retained-repair-dependency-bridge-v4.diff",
+      "sha256": "6823f6edf317a0030b1a0776c76ca2ba55b8e50c38e7a98f8816803d4814d796"
+    },
+    {
+      "bytes": 26710,
+      "path": "/tmp/pow-audit30-retained-repair-dependency-bridge-v4.test.py",
+      "sha256": "de1cbe03c4ccc2ff8a1b02dfb8b563ae8c13151348ce69e95207ad9440eb34ec"
+    },
+    {
+      "bytes": 25244,
+      "path": "/tmp/pow-audit30-retained-repair-dependency-bridge-bootstrap-v4.py",
+      "sha256": "2b036f39e8f76bfa0a6f50f9054393442744c4b3d8a08a00a74a1f6d0d29a6f0"
+    },
+    {
+      "bytes": 48219,
+      "path": "/tmp/pow-audit30-retained-repair-dependency-bridge-bootstrap-v4.diff",
+      "sha256": "134d05b5b0c8b4729a7125f054e12a5d1ab4bd48eb3a68935fc18b6895ca72a5"
+    },
+    {
+      "bytes": 2015,
+      "path": "/tmp/pow-audit30-retained-repair-dependency-bridge-transport-preparation-v4.py",
+      "sha256": "0de8f91b5b7908664950bc8cff2043e12d2b7f42d6ae76049cddd0dffb159c2e"
+    },
+    {
+      "bytes": 2762,
+      "path": "/tmp/pow-audit30-retained-repair-dependency-bridge-transport-preparation-v4.diff",
+      "sha256": "b6270030d384430a530c5e9ff321838af7c928962681d3647b63b72fa872a75c"
+    },
+    {
+      "bytes": 3095,
+      "path": "/tmp/pow-audit30-retained-repair-dependency-bridge-caller-v4.test.py",
+      "sha256": "e6f1f63aacc7a48bd6e4a6cb5d77933e35a58dc5eb3ea83098155cd9f69d1195"
+    },
+    {
+      "bytes": 100092,
+      "path": "/tmp/pow-audit30-retained-repair-dependency-bridge-request-template-v4.json",
+      "sha256": "5081ab84c156b5aaf3d31d15cb8e397f4e7bd13cade22c5b017fd88ad7c9d2e2"
+    }
+  ],
+  "candidate": {
+    "automaticRetry": false,
+    "beforeAfterPredicate": "unchanged ad03 protection requires the captured tuple exactly before and after dependency reads",
+    "explicitTypedFlag": "refreshMonitorAtObservationStart",
+    "externalExpectedMonitorScope": "exact six fields; loaded/static/MainPID0; inactive/dead or failed/failed; empty or canonical32hex InvocationID",
+    "externallyExactAuthorityRetained": [
+      "original five PID/Invocation identities",
+      "eight static file hashes and metadata",
+      "prune /dev/null symlink metadata",
+      "WAL receiver tuple",
+      "prune timer tuple",
+      "07824 current backup lock intrinsic metadata and nanoseconds"
+    ],
+    "guardWaiver": false,
+    "internalBinding": "replace only the monitor tuple in a new in-memory request object",
+    "noRefreshDuringObservation": true,
+    "oneInitialCapture": "same fixed unit and field profile only, under the unchanged metadata process/audit restrictions",
+    "outerMaximumSeconds": 90,
+    "requiredValue": true,
+    "rootAddressSpaceBytes": 402653184,
+    "rootMaximumSeconds": 60,
+    "stdinDescriptor": 0,
+    "streamCapBytes": 65536,
+    "timerPauseResetOrControl": false,
+    "writeOrReadPermissionExceptionsAdded": false
+  },
+  "execution": {
+    "allDependenciesClosed": false,
+    "allUnknownOrSkippedDependenciesResolved": false,
+    "apiRequests": 0,
+    "callerRequestPin": null,
+    "concreteV4RequestCreated": false,
+    "coreRequests": 0,
+    "deletionAuthorized": false,
+    "nativeExecutedByAuthor": false,
+    "productionMutation": false,
+    "retirementReady": false,
+    "sqlExecuted": false,
+    "templateExpectedLive": null,
+    "templateExpectedProtection": null
+  },
+  "qualifications": [
+    "This is source preparation, not a current metadata or dependency compatibility result. Original V3 requests/refusals and all earlier versions remain unchanged.",
+    "A running monitor or any change during the observation still refuses; no future stability or continuous exclusion is promised. It can honestly remain unresolved if no admitted idle interval succeeds.",
+    "The bridge never reads cluster/socket paths, invokes runtime/source/clone guards, starts PG, alters a timer, or authorizes repair, recovery, promotion or retirement."
+  ],
+  "schema": "pow-audit30-retained-repair-bridge-monitor-binding-source-preparation-v4",
+  "sourceDiagnosis": {
+    "actualSavedCurrent2Refusal": {
+      "bytes": 212,
+      "path": "/tmp/pow-audit30-retained-repair-dependency-bridge-native-current2-v3.stderr",
+      "reasonSha256": "8b2d4bebec48e3783a98db49950351d8791eabe0c1cf1ad6e1e2d52424aeb624",
+      "sha256": "c9f5cf00e00edc42fd3e9d643acf51c9bea657867457f1ecdac9794e9e5639b6"
+    },
+    "actualSavedCurrent2Request": {
+      "bytes": 105682,
+      "path": "/tmp/pow-audit30-retained-repair-dependency-bridge-request-current2-v3.json",
+      "sha256": "cd8911fe048dea68b9bc31c355c77c0807ca2e52e088d6a6ce79269a3e3e08ad"
+    },
+    "closedGuardLiteral": "Protection unit drift",
+    "exactChangedUnitDuringFailedAttempt": "unknown; discarded native details do not name the changed unit",
+    "managedPredicate": "protection compares the complete three-unit dictionary to external expected units before return",
+    "managedSourceSha256": "ad03e5d02e10018fb7c5dd3c118a7ac876331cad240832c52e4838a4bea0ff2a",
+    "observedBetweenContexts": "monitor InvocationID changed while both named observations were loaded/static/MainPID0/failed/failed",
+    "requestMonitor": {
+      "ActiveState": "failed",
+      "InvocationID": "e19df10288054d60bff3af34a525b4c1",
+      "LoadState": "loaded",
+      "MainPID": "0",
+      "SubState": "failed",
+      "UnitFileState": "static"
+    },
+    "scopeInference": "Capture-to-binding/review-to-launch delay permits a routine monitor invocation change; the V3 refusal is correct for its external tuple.",
+    "twoAcceptedContextMonitorObservations": [
+      {
+        "atUtc": "2026-10-03T11:37:34.215426+00:00",
+        "bytes": 5210,
+        "monitor": {
+          "ActiveState": "failed",
+          "InvocationID": "556930a0b10d45bd92644d7f6dd7a5a3",
+          "LoadState": "loaded",
+          "MainPID": "0",
+          "SubState": "failed",
+          "UnitFileState": "static"
+        },
+        "path": "/tmp/pow-audit30-retained-repair-context-native-v2.stdout",
+        "sha256": "6915ba8a73a823fa648b49054760778723a36a3a7e5455bc5f8f027374f186d3"
+      },
+      {
+        "atUtc": "2026-10-03T11:57:59.115192+00:00",
+        "bytes": 5210,
+        "monitor": {
+          "ActiveState": "failed",
+          "InvocationID": "e19df10288054d60bff3af34a525b4c1",
+          "LoadState": "loaded",
+          "MainPID": "0",
+          "SubState": "failed",
+          "UnitFileState": "static"
+        },
+        "path": "/tmp/pow-audit30-retained-repair-context-native-v3.stdout",
+        "sha256": "ba2aeb80552cbba4d2737a69120c3906368c019a5661a90ab9f00ae428dc21b4"
+      }
+    ]
+  },
+  "status": "source-only-tested-pending-independent-review-and-root-admission",
+  "validation": {
+    "bridgeTestSeconds": 1.041,
+    "bridgeTests": 42,
+    "bridgeTestsPassed": true,
+    "callerTestSeconds": 0.075,
+    "callerTests": 6,
+    "callerTestsPassed": true,
+    "meaningfulCases": [
+      "stale prior idle monitor can bind one fresh idle tuple",
+      "external or current running/static/PID profile drift refuses",
+      "static files, WAL and prune changed observations refuse through actual unchanged ad03 protection",
+      "midrun monitor InvocationID change refuses rather than refresh",
+      "original five replacement refuses",
+      "actual EOF/stdin write-ban and ordinary signal/owned-child cleanup inherited"
+    ],
+    "preservedFixtureToolingFinding": "First added constant-comparison fixture attempted literal_eval of existing dict(...) source. Preserved initial fixture, corrected test only to AST comparison; runtime source unchanged."
+  }
+}

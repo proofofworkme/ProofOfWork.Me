@@ -1,0 +1,91 @@
+{
+  "atUtc": "2026-10-03T12:37:46.581060+00:00",
+  "bindings": {
+    "exactTwoCorrectionDiff": {
+      "bytes": 4462,
+      "path": "/tmp/pow-audit30-readable-pin-checker-proposal-text-v2.diff",
+      "sha256": "b0d8242da2c28d2f0b75c6efc52ffcb74e38f19f11084610b059a497c19d9f1e"
+    },
+    "losslessV1PreimageCapsule": {
+      "bytes": 12673,
+      "path": "/tmp/pow-audit30-readable-pin-checker-proposal-preimage-v1.json",
+      "sha256": "08b262f4d6111d8be6aa2e6255bd64cca383577538cdb2bec782d6280168daa0"
+    },
+    "preservedProposalV1": {
+      "bytes": 8922,
+      "path": "/tmp/pow-audit30-oct3-pin-checker-promotion-proposal-v1.md",
+      "sha256": "aaeaf202b141a38780a99b8e51d781e0935280b4ff77b5a6bf778c646f6d0440"
+    },
+    "priorIndependentReviewWithTwoFindings": {
+      "bytes": 6188,
+      "path": "/tmp/pow-audit30-independent-readable-pin-checker-proposal-review-v1.json",
+      "sha256": "10dd7b5c3f0b55d155a73103f3b40276506960a618340f14e8f4b08117b3142b"
+    },
+    "proposalV2": {
+      "bytes": 9457,
+      "path": "/tmp/pow-audit30-oct3-pin-checker-promotion-proposal-v2.md",
+      "sha256": "cd5852c4b9415f60104b6bc72c82e580e003f000219844ef3a694d6ae86507ec"
+    },
+    "rootPriorScopeEvidenceReview": {
+      "bytes": 4750,
+      "path": "/tmp/pow-audit30-root-coupled-protection-proposal-review-v6.json",
+      "sha256": "e8ef04b4bcc6c7d6692fa0bb3a40375b28dfe213b30c25ca8365a42b878190c3"
+    }
+  },
+  "claims": {
+    "deletionAuthorized": false,
+    "humanApprovalCreated": false,
+    "productionMutation": false,
+    "promotionAuthorized": false,
+    "promotionPerformed": false,
+    "recoveryActivated": false,
+    "wholePhaseOrPitrOrMathComplete": false
+  },
+  "findings": [],
+  "limitations": [
+    "This is a reviewed human-readable proposal, not direct human approval or permission to execute.",
+    "Historical full-read proof is expired; new actual proof and fresh chosen-action fencing remain mandatory.",
+    "Actual approval message/receipt, sealed package, final canonical plan and native admission remain absent/pending.",
+    "Relative links name future planned artifacts; Root must validate target existence and byte pins after append.",
+    "Source/controller/checker behavior and all historical evidence remain unchanged; no extra action scope is approved."
+  ],
+  "resolvedV1Findings": [
+    "Controller uses precreated implementation/approval package and creates only evidence child/receipts; final creator/native admission not claimed tested.",
+    "Final approval-bound canonical compact raw plan/source SHA and separately reviewed typed native/package request explicitly mandatory."
+  ],
+  "reviewOperations": {
+    "localPublicReadsOnly": true,
+    "mainExecuteApplyCalls": 0,
+    "nativeCalls": 0,
+    "networkCalls": 0,
+    "repositoryEdits": 0,
+    "sourceEdits": 0,
+    "testExecutions": 0
+  },
+  "reviewer": "/root/vps_health",
+  "schema": "pow-audit30-independent-readable-pin-checker-proposal-review-v2",
+  "status": "accepted-exact-scope-qualified-proposal-only",
+  "verified": {
+    "293Vs235GiBCapacitySeparateNoReducedCapsOrDeletionAssumption": true,
+    "actualTenUnitState18OrderedNamesRemainUnresolvedQualified": true,
+    "approvalBoundCanonicalCompactRawPlanSourceShaTypedRequestGateExplicit": true,
+    "exact78ByteOrderedSep29Oct3Pin22f66And795fDualCheckerRootModes": true,
+    "exactDiffRecomputedByteForByte": true,
+    "exactFe09ScopeAndDfaV6Caller": true,
+    "fiveRelativeLinksUnchangedFuturePlannedTargets": true,
+    "fullV2TextRead": true,
+    "historicalFullRead21733All3Hashes197TocExpiredExplicit": true,
+    "isolatedRestore24Tables429732RowsAndPublicReceiptsQualified": true,
+    "knownByteConfigurationInverseOnlyNotAutomaticBodyInverse": true,
+    "losslessBase64V1CapsuleMatchesOriginalAndBothPins": true,
+    "noFullPhaseChainMathPitrFinancialDependencyOrDeletionClosureClaim": true,
+    "observedPlanNullHumanApprovalUnexecutableAndExpiredProofExplicit": true,
+    "onlyTwoRequestedProseCorrections": true,
+    "packageCreatorAndTypedNativeAdmissionExplicitlyPending": true,
+    "precreatedPackageValidationAndEvidenceChildCreationAccurate": true,
+    "prettyObservedPlanNotCallerMainInput": true,
+    "singlePinRiskWithdrawnNoSep29Unprotection": true,
+    "twoIndividualAtomicSwapsNotJointAtomicity": true,
+    "unchangedTimersHoldsMasksWalBackupTool": true
+  }
+}

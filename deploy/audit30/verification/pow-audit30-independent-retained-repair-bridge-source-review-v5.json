@@ -1,0 +1,130 @@
+{
+  "atUtc": "2026-10-03T12:24:29.042462+00:00",
+  "bindings": [
+    {
+      "bytes": 18866,
+      "path": "/tmp/pow-audit30-retained-repair-dependency-bridge-v5.py",
+      "sha256": "b8605128bd99a2b64ab13f1c33a3b5d6907802df8e453c31a93fbbd9a308d5b6"
+    },
+    {
+      "bytes": 7292,
+      "path": "/tmp/pow-audit30-retained-repair-dependency-bridge-v5.diff",
+      "sha256": "08f6dc0e5c1fec1ec460b250bd6576095b8bdfb8b192b6167a74838189030135"
+    },
+    {
+      "bytes": 33335,
+      "path": "/tmp/pow-audit30-retained-repair-dependency-bridge-v5.test.py",
+      "sha256": "ff5d9f94238d047498caec4872d235e63348408bc46b41cc8ce569478073295f"
+    },
+    {
+      "bytes": 25572,
+      "path": "/tmp/pow-audit30-retained-repair-dependency-bridge-bootstrap-v5.py",
+      "sha256": "4e0cfdf0fd7ce87312810fb11bf1027194c955afd6ced18a9f2b50c44e9f8972"
+    },
+    {
+      "bytes": 2015,
+      "path": "/tmp/pow-audit30-retained-repair-dependency-bridge-transport-preparation-v5.py",
+      "sha256": "a115acc82c09e66e06c69727d29dcff20367d786729dec5d8c99013573e778f9"
+    },
+    {
+      "bytes": 3095,
+      "path": "/tmp/pow-audit30-retained-repair-dependency-bridge-caller-v5.test.py",
+      "sha256": "071f94ab51bb7d8e2a6564ea2e09e0dcd2366d2a76e752126be0007a6b994dbb"
+    },
+    {
+      "bytes": 100092,
+      "path": "/tmp/pow-audit30-retained-repair-dependency-bridge-request-template-v5.json",
+      "sha256": "4d721585c9149cb161d4764a73c23cb2d2cf2b2be28b8d044fef0c5c0d44633d"
+    },
+    {
+      "bytes": 7218,
+      "path": "/tmp/pow-audit30-retained-repair-bridge-sqlite-definition-source-preparation-v5.json",
+      "sha256": "33d1dcf869cc958865ec6f388634f023c685bc5f420d23121aea226b0830b1af"
+    }
+  ],
+  "claims": {
+    "allDependenciesClosed": false,
+    "clusterPathsRead": false,
+    "coreRequested": false,
+    "deletionAuthorized": false,
+    "newNativeAuthority": false,
+    "productionMutation": false,
+    "recoveryEquivalenceProven": false,
+    "sqlExecuted": false
+  },
+  "previousSourceReview": {
+    "path": "/tmp/pow-audit30-independent-retained-repair-bridge-source-review-v4.json",
+    "sha256": "a36e8d3011fe63b748beb29b349d7a073e5ee5b24a12324f3bf833704f630d9d"
+  },
+  "qualifications": [
+    "Native discarded stderr did not identify its actual directory. The actual fresh local pinned-chain reproduction establishes the SQLite import barrier locally and does not retrospectively prove the same-attempt native cause.",
+    "SQLite is imported for fixed codec definitions only under the existing deadline/resource guard; all post-hook SQLite connections remain forbidden.",
+    "No concrete V5 request is present in this review. Null template/unbound caller remain unexecutable; any later actual request and current runtime gates require separate exact binding and Root GO.",
+    "This remains a twice-observed named dependency compatibility check, not frozen job/cluster membership, universal dependency closure, retirement readiness or continuous/future monitor exclusion.",
+    "No new directory permission, backup/slot/config/unit action, repository edit, live recovery, production data mutation or deletion was performed or approved."
+  ],
+  "review": {
+    "auditWriteSqliteSocketClusterProcessAndStatGuardsExactV4": true,
+    "bootstrapExact18866ByteBridge": true,
+    "callerRPNullAndOriginalSharedTransportOnly": true,
+    "entireSourceByteReversalEqualsV4ExceptFixedImportCommentsAndThreeSchemaSuffixes": true,
+    "fullActualV4ToV5DiffAndNewFixtureSourceRead": true,
+    "noAdditionalPostHookDirectoryReadPermission": true,
+    "noConcreteSourceBlockerFound": true,
+    "oneStartMonitorBindingAndExactProtectionEndpointsUnchanged": true,
+    "onlyOperationalChangeFixedSqlite3DefinitionsPreload": true,
+    "originalFiveStatic8MaskWalPruneSavedLockAndOriginal172VerifierUnchanged": true,
+    "preloadAfterAlarmAddressSpaceCapBoundedShaVerifiedStdinAndDecode": true,
+    "preloadBeforeUnchangedAuditHook": true,
+    "sourceNeverCallsSqlite3Connect": true,
+    "templateChangesOnlySchemaFromV4": true,
+    "templateLiveProtectionNullAndRefreshTrue": true
+  },
+  "schema": "pow-audit30-independent-retained-repair-bridge-source-review-v5",
+  "status": "accepted-source-only",
+  "verification": {
+    "commands": [
+      {
+        "argv": [
+          "python3",
+          "-I",
+          "-B",
+          "-W",
+          "error",
+          "/tmp/pow-audit30-retained-repair-dependency-bridge-v5.test.py"
+        ],
+        "exitCode": 0,
+        "reportedElapsedSeconds": 1.378,
+        "tests": 46
+      },
+      {
+        "argv": [
+          "python3",
+          "-I",
+          "-B",
+          "-W",
+          "error",
+          "/tmp/pow-audit30-retained-repair-dependency-bridge-caller-v5.test.py"
+        ],
+        "exitCode": 0,
+        "reportedElapsedSeconds": 0.086,
+        "tests": 6
+      }
+    ],
+    "newMeaningfulVectors": [
+      "fresh-process exact seven-module pinned definition chain reproduces V4 SQLite stdlib directory refusal without runtime",
+      "actual V5 main import AST preload allows all seven definition imports under the unchanged audit hook",
+      "both in-memory and file SQLite connections refuse and sentinel database bytes remain unchanged",
+      "general stdlib/sqlite3 directory scan, write, cluster read and socket creation remain refused",
+      "preload order after existing alarm/resource/typed request and before audit",
+      "entire source reversal and exact bootstrap/template/caller bindings"
+    ],
+    "noReviewerNativeOrRepositoryAction": true,
+    "retainedVectors": [
+      "real blocked-child SIGINT/SIGTERM/repeated cleanup/reap",
+      "original DEVNULL refusal and two EOF metadata children",
+      "fixed source/original five/lock/shape/schema refusals",
+      "one monitor refresh, static/WAL/prune and midrun monitor drift refusals"
+    ]
+  }
+}

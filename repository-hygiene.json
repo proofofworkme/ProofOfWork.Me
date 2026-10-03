@@ -1,15 +1,4 @@
 {
-  "version": 1,
-  "requiredDocuments": [
-    "SOUL.md",
-    "README.md",
-    "PROOFOFWORK_IDS.md",
-    "PROOFOFWORK_DNS.md",
-    "MARKETPLACE.md",
-    "OP_RETURN_INFRASTRUCTURE.md",
-    "MAIL_ORGANIZATION.md",
-    "REPOSITORY_HYGIENE.md"
-  ],
   "agentInstructionFiles": [
     "AGENTS.md",
     "CLAUDE.md",
@@ -17,7 +6,79 @@
     ".cursor/rules/proofofwork-soul.mdc",
     ".github/copilot-instructions.md"
   ],
+  "forbiddenTrackedBasenames": [
+    ".DS_Store",
+    "Thumbs.db"
+  ],
+  "forbiddenTrackedExtensions": [
+    ".tmp",
+    ".temp",
+    ".bak",
+    ".old",
+    ".orig",
+    ".rej",
+    ".log"
+  ],
+  "forbiddenTrackedPrefixes": [
+    "dist/",
+    ".vite/",
+    ".pow-api-cache/",
+    "node_modules/",
+    "coverage/",
+    "playwright-report/",
+    "test-results/",
+    "output/screenshots/",
+    "output/id-map/"
+  ],
+  "generatedArtifacts": [
+    {
+      "generator": "scripts/build-general-deck.mjs",
+      "inputs": [
+        "PROOFOFWORK_GENERAL_DECK.md"
+      ],
+      "outputs": [
+        "output/proofofwork-general-deck.pptx",
+        "public/proofofwork-general-deck.pptx"
+      ]
+    },
+    {
+      "generator": "scripts/generate-proofofwork-computer-model.mjs",
+      "outputs": [
+        "output/historical/2026-05-13/proofofwork-computer-agent-adoption-model.md",
+        "output/historical/2026-05-13/proofofwork-computer-growth-model.json",
+        "output/historical/2026-05-13/proofofwork-computer-model-blockspace.svg",
+        "output/historical/2026-05-13/proofofwork-computer-model-compounding.svg",
+        "output/historical/2026-05-13/proofofwork-computer-model-dollar-growth.svg",
+        "output/historical/2026-05-13/proofofwork-computer-model-product-split.svg",
+        "output/historical/2026-05-13/proofofwork-computer-model-volatility.svg"
+      ]
+    },
+    {
+      "generator": "scripts/generate-growth-forecast.mjs",
+      "inputs": [
+        "src/features/growth/growthForecast.mjs"
+      ],
+      "outputs": [
+        "output/proofofwork-computer-agent-adoption-model.md",
+        "output/proofofwork-computer-growth-model.json",
+        "output/proofofwork-computer-model-blockspace.svg",
+        "output/proofofwork-computer-model-compounding.svg",
+        "output/proofofwork-computer-model-dollar-growth.svg",
+        "output/proofofwork-computer-model-product-split.svg",
+        "output/proofofwork-computer-model-volatility.svg",
+        "output/proofofwork-computer-growth-model-2026-09-05-boost-v1.json",
+        "output/proofofwork-computer-growth-model-2026-09-05-boost-v1.md"
+      ]
+    }
+  ],
   "noteInventory": {
+    "agent-instructions": [
+      "AGENTS.md",
+      "CLAUDE.md",
+      ".cursorrules",
+      ".cursor/rules/proofofwork-soul.mdc",
+      ".github/copilot-instructions.md"
+    ],
     "canonical": [
       "SOUL.md",
       "README.md",
@@ -27,13 +88,6 @@
       "OP_RETURN_INFRASTRUCTURE.md",
       "MAIL_ORGANIZATION.md",
       "REPOSITORY_HYGIENE.md"
-    ],
-    "agent-instructions": [
-      "AGENTS.md",
-      "CLAUDE.md",
-      ".cursorrules",
-      ".cursor/rules/proofofwork-soul.mdc",
-      ".github/copilot-instructions.md"
     ],
     "ledger-and-audit-evidence": [
       "audits/2026-08-23-read-only-health-data-event-ui-audit.md",
@@ -124,7 +178,15 @@
       "audits/2026-10-02-audit30-first-batch-execution.evidence.json",
       "audits/2026-10-02-audit30-remaining-phase-approval.json",
       "audits/2026-10-02-audit30-remaining-phase-execution.evidence.json",
-      "audits/2026-10-03-audit30-exact-sixteen-body-repair-proposal.md"
+      "audits/2026-10-03-audit30-exact-sixteen-body-repair-proposal.md",
+      "audits/2026-10-03-audit30-oct3-pin-checker-promotion-proposal.md"
+    ],
+    "presentation-and-generated-notes": [
+      "PROOFOFWORK_GENERAL_DECK.md",
+      "output/proofofwork-computer-agent-adoption-model.md",
+      "output/proofofwork-computer-growth-model-2026-09-05-boost-v1.md",
+      "output/historical/2026-05-13/README.md",
+      "output/historical/2026-05-13/proofofwork-computer-agent-adoption-model.md"
     ],
     "staged-or-future-protocol-notes": [
       "CHAIN_CONTENT.md",
@@ -135,13 +197,6 @@
       "chained-mint-templates/TX_REVIEW.md",
       "BOOST_GROWTH_ACCOUNTING_PROPOSAL.md"
     ],
-    "presentation-and-generated-notes": [
-      "PROOFOFWORK_GENERAL_DECK.md",
-      "output/proofofwork-computer-agent-adoption-model.md",
-      "output/proofofwork-computer-growth-model-2026-09-05-boost-v1.md",
-      "output/historical/2026-05-13/README.md",
-      "output/historical/2026-05-13/proofofwork-computer-agent-adoption-model.md"
-    ],
     "support-notes": [
       "TRADEMARKS.md",
       "test-api/README.md",
@@ -151,6 +206,28 @@
       "deploy/audit30/recovery/PROPOSAL-v2.md"
     ]
   },
+  "protectedTrackedPaths": [
+    "WORK_MARKET_V1_REFUNDS_959061.json",
+    "WORK_MARKET_V2_STALE_REFUND_REVIEW_959301.json",
+    "BUG_BOUNTY_LEDGER.md",
+    "ID_REFUNDS.md",
+    "TREASURY_LEDGER.md"
+  ],
+  "protectedTrackedPrefixes": [
+    "output/",
+    "public/",
+    "deploy/"
+  ],
+  "requiredDocuments": [
+    "SOUL.md",
+    "README.md",
+    "PROOFOFWORK_IDS.md",
+    "PROOFOFWORK_DNS.md",
+    "MARKETPLACE.md",
+    "OP_RETURN_INFRASTRUCTURE.md",
+    "MAIL_ORGANIZATION.md",
+    "REPOSITORY_HYGIENE.md"
+  ],
   "safeCleanupPaths": [
     "dist",
     ".vite",
@@ -165,81 +242,5 @@
     "^npm-debug\\.log.*$",
     "^dev-server\\..*\\.log$"
   ],
-  "forbiddenTrackedPrefixes": [
-    "dist/",
-    ".vite/",
-    ".pow-api-cache/",
-    "node_modules/",
-    "coverage/",
-    "playwright-report/",
-    "test-results/",
-    "output/screenshots/",
-    "output/id-map/"
-  ],
-  "forbiddenTrackedBasenames": [
-    ".DS_Store",
-    "Thumbs.db"
-  ],
-  "forbiddenTrackedExtensions": [
-    ".tmp",
-    ".temp",
-    ".bak",
-    ".old",
-    ".orig",
-    ".rej",
-    ".log"
-  ],
-  "protectedTrackedPaths": [
-    "WORK_MARKET_V1_REFUNDS_959061.json",
-    "WORK_MARKET_V2_STALE_REFUND_REVIEW_959301.json",
-    "BUG_BOUNTY_LEDGER.md",
-    "ID_REFUNDS.md",
-    "TREASURY_LEDGER.md"
-  ],
-  "protectedTrackedPrefixes": [
-    "output/",
-    "public/",
-    "deploy/"
-  ],
-  "generatedArtifacts": [
-    {
-      "generator": "scripts/build-general-deck.mjs",
-      "inputs": [
-        "PROOFOFWORK_GENERAL_DECK.md"
-      ],
-      "outputs": [
-        "output/proofofwork-general-deck.pptx",
-        "public/proofofwork-general-deck.pptx"
-      ]
-    },
-    {
-      "generator": "scripts/generate-proofofwork-computer-model.mjs",
-      "outputs": [
-        "output/historical/2026-05-13/proofofwork-computer-agent-adoption-model.md",
-        "output/historical/2026-05-13/proofofwork-computer-growth-model.json",
-        "output/historical/2026-05-13/proofofwork-computer-model-blockspace.svg",
-        "output/historical/2026-05-13/proofofwork-computer-model-compounding.svg",
-        "output/historical/2026-05-13/proofofwork-computer-model-dollar-growth.svg",
-        "output/historical/2026-05-13/proofofwork-computer-model-product-split.svg",
-        "output/historical/2026-05-13/proofofwork-computer-model-volatility.svg"
-      ]
-    },
-    {
-      "generator": "scripts/generate-growth-forecast.mjs",
-      "inputs": [
-        "src/features/growth/growthForecast.mjs"
-      ],
-      "outputs": [
-        "output/proofofwork-computer-agent-adoption-model.md",
-        "output/proofofwork-computer-growth-model.json",
-        "output/proofofwork-computer-model-blockspace.svg",
-        "output/proofofwork-computer-model-compounding.svg",
-        "output/proofofwork-computer-model-dollar-growth.svg",
-        "output/proofofwork-computer-model-product-split.svg",
-        "output/proofofwork-computer-model-volatility.svg",
-        "output/proofofwork-computer-growth-model-2026-09-05-boost-v1.json",
-        "output/proofofwork-computer-growth-model-2026-09-05-boost-v1.md"
-      ]
-    }
-  ]
+  "version": 1
 }

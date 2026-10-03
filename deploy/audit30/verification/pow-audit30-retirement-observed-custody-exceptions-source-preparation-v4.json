@@ -1,0 +1,223 @@
+{
+  "actualBridgeObservation": {
+    "compatibilityDeclarations": 162,
+    "elapsedSeconds": 5.570746,
+    "endUtc": "2026-10-03T12:26:03.387484+00:00",
+    "exitCode": 0,
+    "fixedProofAndCodeFiles": 23,
+    "fullRetirementDependencyAdmissionExecuted": false,
+    "pgDirectories": 33,
+    "pgEntries": 172,
+    "pgLogicalBytes": 443205,
+    "pgRegularFiles": 139,
+    "priorExactContractBlocks": [
+      {
+        "metadata": {
+          "bytes": 10029,
+          "ctimeNs": 1791009948537706755,
+          "device": 64514,
+          "gid": 112,
+          "inode": 11142815,
+          "mode": 384,
+          "mtimeNs": 1791009948537706755,
+          "nlink": 1,
+          "uid": 108
+        },
+        "path": "/data/proofofwork-audit30-inspect-20261003T014100Z/stream-completion-v2/completed.json",
+        "reason": "GENERIC_OWNER_REFUSED",
+        "sha256": "974e16cfb288e19e7320fa87687d32cff65b2a58296b4e94893ddbdfaea3c841"
+      },
+      {
+        "metadata": {
+          "bytes": 5364,
+          "ctimeNs": 1791009910744703753,
+          "device": 64514,
+          "gid": 112,
+          "inode": 11142810,
+          "mode": 384,
+          "mtimeNs": 1791009910744703753,
+          "nlink": 1,
+          "uid": 108
+        },
+        "path": "/data/proofofwork-audit30-inspect-20261003T014100Z/stream-completion-v2/intent.json",
+        "reason": "GENERIC_OWNER_REFUSED",
+        "sha256": "121d96aaf3af0eae662e1d602b304d54e3db4c5185059e8386164e540d1cf8f3"
+      },
+      {
+        "metadata": {
+          "bytes": 123655872,
+          "ctimeNs": 1783987646454677986,
+          "device": 64512,
+          "gid": 0,
+          "inode": 537530,
+          "mode": 493,
+          "mtimeNs": 1782236933000000000,
+          "nlink": 1,
+          "uid": 0
+        },
+        "path": "/opt/node-v24.18.0-linux-x64/bin/node",
+        "reason": "GENERIC_SIZE_REFUSED",
+        "sha256": "41a74efb34cbde5c7632cdac0cf8bd1a14d0b8d73dc1e82755014d9a9ce70f5c"
+      }
+    ],
+    "rootExecutedSeparately": true,
+    "startUtc": "2026-10-03T12:25:57.816738+00:00",
+    "stderrBytes": 0,
+    "stdoutBytes": 60114,
+    "stdoutSHA256": "285dfa1b5349f2408e8366a0341920152588145e22edb43f570f9aa027519090",
+    "uniqueLogicalBytes": 132695960
+  },
+  "authority": {
+    "allDependenciesClosed": false,
+    "allUnknownOrSkippedDependenciesResolved": false,
+    "fullRetirementDependencyAdmissionExecuted": false,
+    "humanApprovalFabricated": false,
+    "nativeDeletion": false,
+    "nativeExecutedByThisAgent": false,
+    "pinCheckerOrUnpinPerformed": false,
+    "productionDataMutation": false,
+    "repoMutation": false,
+    "retireManifestCreated": false,
+    "retirementReady": false,
+    "timerHoldPruneChanged": false,
+    "wholeJobDeletionRequested": false
+  },
+  "bindings": {
+    "/tmp/pow-audit30-production-sixteen-root-control-v3.py": {
+      "bytes": 22040,
+      "sha256": "b989a3f2395e7cbf13cb2d3dbd2d258a3fd21867131e41644c094772aba11168"
+    },
+    "/tmp/pow-audit30-retained-repair-dependency-bridge-native-current4-v5.json": {
+      "bytes": 1708,
+      "sha256": "7438ccbdaacac34ab96814be810b6c00e0675acb8043f8b35820e619a91791e4"
+    },
+    "/tmp/pow-audit30-retained-repair-dependency-bridge-native-current4-v5.stdout": {
+      "bytes": 60114,
+      "sha256": "285dfa1b5349f2408e8366a0341920152588145e22edb43f570f9aa027519090"
+    },
+    "/tmp/pow-audit30-retained-repair-dependency-bridge-v5.py": {
+      "bytes": 18866,
+      "sha256": "b8605128bd99a2b64ab13f1c33a3b5d6907802df8e453c31a93fbbd9a308d5b6"
+    },
+    "/tmp/pow-audit30-retire-exact-four-v3.py": {
+      "bytes": 27456,
+      "sha256": "e35bd34050f4b0b36c9bfbe5b1461e901edd44ed13756cc9e3a2075e28fa2f50"
+    },
+    "/tmp/pow-audit30-retire-exact-four-v3.test.py": {
+      "bytes": 25511,
+      "sha256": "4ae0684f6da5ca7c8df05b07b62225005d094bc21b839ee1f68eae8d75c60d73"
+    },
+    "/tmp/pow-audit30-retire-exact-four-v4.diff": {
+      "bytes": 2783,
+      "sha256": "7ca87c957e84016eecff76bb3885de348b4721abfd89305da161230c86f06ca4"
+    },
+    "/tmp/pow-audit30-retire-exact-four-v4.py": {
+      "bytes": 29153,
+      "sha256": "fba702f9b5eaab27e5fc8850260b86609eb1fb1690b1d5b8cbc17659512a14e5"
+    },
+    "/tmp/pow-audit30-retire-exact-four-v4.test.py": {
+      "bytes": 33063,
+      "sha256": "263f4dc093d625647200706630b3259aad3bd0417e297aa58bb5f24e0a941d48"
+    }
+  },
+  "minimalSourceChange": {
+    "absenceIsCompletenessProof": false,
+    "allOtherDefinitionsByteASTEqual": true,
+    "allPreviousVersionsAndActualFailureLineagePreserved": true,
+    "cumulativeMaximumBytes": 201326592,
+    "genericOwners": [
+      0,
+      1000
+    ],
+    "genericPerFileMaximumBytes": 4194304,
+    "observedCustodyExceptions": {
+      "/data/proofofwork-audit30-inspect-20261003T014100Z/stream-completion-v2/completed.json": {
+        "metadata": {
+          "bytes": 10029,
+          "ctimeNs": 1791009948537706755,
+          "device": 64514,
+          "gid": 112,
+          "inode": 11142815,
+          "mode": 384,
+          "mtimeNs": 1791009948537706755,
+          "nlink": 1,
+          "uid": 108
+        },
+        "sha256": "974e16cfb288e19e7320fa87687d32cff65b2a58296b4e94893ddbdfaea3c841"
+      },
+      "/data/proofofwork-audit30-inspect-20261003T014100Z/stream-completion-v2/intent.json": {
+        "metadata": {
+          "bytes": 5364,
+          "ctimeNs": 1791009910744703753,
+          "device": 64514,
+          "gid": 112,
+          "inode": 11142810,
+          "mode": 384,
+          "mtimeNs": 1791009910744703753,
+          "nlink": 1,
+          "uid": 108
+        },
+        "sha256": "121d96aaf3af0eae662e1d602b304d54e3db4c5185059e8386164e540d1cf8f3"
+      },
+      "/opt/node-v24.18.0-linux-x64/bin/node": {
+        "metadata": {
+          "bytes": 123655872,
+          "ctimeNs": 1783987646454677986,
+          "device": 64512,
+          "gid": 0,
+          "inode": 537530,
+          "mode": 493,
+          "mtimeNs": 1782236933000000000,
+          "nlink": 1,
+          "uid": 0
+        },
+        "sha256": "41a74efb34cbde5c7632cdac0cf8bd1a14d0b8d73dc1e82755014d9a9ce70f5c"
+      }
+    },
+    "observedExceptionPresence": "optional in controller contract; if declared exact full metadata and rawSHA are mandatory",
+    "observedNineMetadataFieldsHardPinned": true,
+    "originalMandatoryDependencies": {
+      "/data/proofofwork-audit30-inspect-20261003T014100Z/exact-sixteen-readonly-finalization-v1/completed.json": {
+        "bytes": 7010,
+        "gid": 112,
+        "mode": 384,
+        "nlink": 1,
+        "sha256": "d818545fa493f1032b3b6bfb7b1ba4b8738e3b15968c3f0ed949a0d1bb09bce8",
+        "uid": 108
+      },
+      "/usr/local/lib/proofofwork-audit30-transition-stream/20261003T030000Z/phase4-private-plan.json": {
+        "bytes": 6713728,
+        "gid": 112,
+        "mode": 288,
+        "nlink": 1,
+        "sha256": "4ac3a8d9b4b79befd36abc590731b1bc8f2e6c83919d5f6427c34c58a6ddba00",
+        "uid": 0
+      }
+    },
+    "originalMandatoryPresenceGuardUnchanged": true,
+    "sourceNodeSHAEqualsRootV3NodeSHA": true
+  },
+  "remainingRequirements": [
+    "Future fresh reviewed dependency manifest must explicitly include all actually required files; optional exception admission does not validate omissions.",
+    "Actual stable full metadata/content reads under retirement dependency_fence remain required.",
+    "The controller still carries historical Oct2/promotion prerequisite contracts; this compatibility-only successor does not establish a current survivor or coupled-promotion acceptance.",
+    "Fresh custody/FD-map/mount/xattr/hardlink/hold/mask/reader/capacity/lock/source/five proof and reserved direct-human named retirement approval remain required."
+  ],
+  "schema": "pow-audit30-retirement-fixed-observed-custody-source-preparation-v4",
+  "status": "source-only-prepared-unexecuted",
+  "tests": {
+    "command": "python3 -I -B -W error /tmp/pow-audit30-retire-exact-four-v4.test.py",
+    "newMeaningfulTests": 10,
+    "original37RetargetedOnlySourcePath": true,
+    "passed": 47,
+    "realVectors": [
+      "full read 4MiB+1 exact locally bound exception",
+      "same large file with generic limit refuses",
+      "fresh metadata cannot rebind exact exception",
+      "hardlink and symlink refuse",
+      "sparse real file 192MiB+1 cumulative limit refuses"
+    ],
+    "savedPublicRowsOwnerSizeCompatibilityOnly": true,
+    "seconds": 1.446
+  }
+}

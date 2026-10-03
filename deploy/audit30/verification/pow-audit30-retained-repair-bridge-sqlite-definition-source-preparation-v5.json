@@ -1,0 +1,167 @@
+{
+  "authority": {
+    "allDependenciesClosed": false,
+    "allUnknownOrSkippedDependenciesResolved": false,
+    "humanApprovalFabricated": false,
+    "nativeExecuted": false,
+    "oct2SurvivorClaim": false,
+    "productionDataMutations": false,
+    "recoveryEquivalence": false,
+    "repoMutations": false,
+    "retirementApproval": false
+  },
+  "limitations": [
+    "Local import reproduction identifies the frozen definition-loading path; native stderr did not name its directory.",
+    "Source preparation and local fixtures are not a retained-dependency completion.",
+    "Fresh actual context, exact typed request, independent peer and Root full source review/once GO remain required.",
+    "Current native compatibility beyond the demonstrated codec import has not been observed."
+  ],
+  "localTests": [
+    {
+      "passed": 46,
+      "path": "/tmp/pow-audit30-retained-repair-dependency-bridge-v5.test.py",
+      "scope": "original42 retargeted unchanged plus four actual fresh-process/AST/reversal tests",
+      "seconds": 1.477
+    },
+    {
+      "passed": 6,
+      "path": "/tmp/pow-audit30-retained-repair-dependency-bridge-caller-v5.test.py",
+      "scope": "original6 retargeted version/source/bootstrap/null bindings only",
+      "seconds": 0.075
+    }
+  ],
+  "meaningfulNegativeVectors": [
+    "sqlite3.connect(:memory:) refused before connection",
+    "sqlite3.connect(fixed temporary sentinel path) refused before connection",
+    "database sentinel write refused and original bytes preserved",
+    "private cluster file read refused before filesystem read",
+    "general standard-library and sqlite3 directory scans refused",
+    "actual socket construction refused",
+    "other original source/process/signal/five/static/mask/WAL/prune/midrun monitor drift refusals retained"
+  ],
+  "minimalSuccessor": {
+    "allThreeTemplateEmbeddedSourcesAndLockPreserved": true,
+    "auditDirectoryPredicateByteASTUnchanged": true,
+    "bootstrapDecodedSourceByteExact": true,
+    "callerRequestPin": null,
+    "fixedImport": "sqlite3",
+    "monitorRefreshAndAllEndpointGuardsUnchanged": true,
+    "noConcreteRequestCreated": true,
+    "noDirectoryAllowanceAdded": true,
+    "outerTransportMaximumSeconds": 90,
+    "placement": "main after existing alarm/address-space limit and verified typed decode, immediately before audit hook",
+    "rootAddressSpaceBytes": 402653184,
+    "rootMaximumSeconds": 60,
+    "socketWriteClusterGuardsUnchanged": true,
+    "sourceNeverCallsSqliteConnect": true,
+    "sqliteConnectionAuditBanUnchanged": true,
+    "templateExpectedLive": null,
+    "templateExpectedProtection": null
+  },
+  "offlineDiagnosis": {
+    "actualFreshLocalProcessReproducedRefusal": true,
+    "codecRuntimeNeverInvoked": true,
+    "firstRefusedLocalDirectory": "/usr/lib/python3.12/sqlite3",
+    "fixedCallgraph": [
+      "RootV3.dependency_context",
+      "B.load",
+      "C.load",
+      "S.load",
+      "N.load_codec",
+      "compile exact 3fe9 codec definitions",
+      "top-level import sqlite3"
+    ],
+    "nativeFailingDirectoryNotIndependentlyObserved": true,
+    "precedingSixDefinitionModulesCompiled": true
+  },
+  "pinnedCallgraphSourceBindings": {
+    "/home/sixer/ProofOfWork.Me/deploy/audit30/restore-latest-logical.py": {
+      "bytes": 61051,
+      "sha256": "26c7656b2e751c6de50122c65f8af73686c2d2674bee8be86a3c5648b7fcc80e"
+    },
+    "/tmp/pow-audit30-private-sixteen-supervisor-v3.py": {
+      "bytes": 26380,
+      "sha256": "b1f10c63ac7e0de179215993529708e082073b0fd25bd6d36a4a7200870d4544"
+    },
+    "/tmp/pow-audit30-production-sixteen-root-control-v3.py": {
+      "bytes": 22040,
+      "sha256": "b989a3f2395e7cbf13cb2d3dbd2d258a3fd21867131e41644c094772aba11168"
+    },
+    "/tmp/pow-audit30-saved-snapshot-inspect-v2.py": {
+      "bytes": 65458,
+      "sha256": "f923766a2dffcfaabd45b3bf4fc4cf975435f2713388ec7930b4d3057fad98ad"
+    },
+    "/tmp/pow-audit30-stream-complete-retained-v5.py": {
+      "bytes": 26605,
+      "sha256": "ecb2b237b93ebd0bde96e5d7d690abbda5b9fa92aaeb0fea47c23e169acf4e8e"
+    },
+    "/tmp/pow-audit30-transition-stream-codec-v2.py": {
+      "bytes": 21320,
+      "sha256": "3fe9dd87f9f5638b02be858b44c535c1431b1af1e8e4f9d60a1afe295f5179f0"
+    },
+    "/tmp/pow-audit30-transition-stream-controller-v7.py": {
+      "bytes": 55466,
+      "sha256": "e9801d372d05c94c40b609749e502ab1eb5e06f4f2561fa08d9c6a25c9313599"
+    },
+    "/tmp/pow-audit30-transition-stream-native-v2.py": {
+      "bytes": 26173,
+      "sha256": "523342d30599c793a3503ba1d554fc096fce0be554ae232397c8ea4bcadbbe23"
+    }
+  },
+  "priorActualFailure": {
+    "closedReason": "FIXED_DEPENDENCY_DIRECTORY_ONLY",
+    "closedReasonSHA256": "ad9773e0b3b95fd5561e2a0f528db48092e8b92cd2d6b6d056c1aca57e6af721",
+    "exactNativeDirectoryWasNotCaptured": true,
+    "exitCode": 1,
+    "prefix": "/tmp/pow-audit30-retained-repair-dependency-bridge-native-current3-v4",
+    "priorSourceAndCapturesPreserved": true,
+    "stderrBytes": 212,
+    "stderrSHA256": "3c674fd090b91c467943e16e66d5f88418b801f0dca65e62a8bc0e5bc3e49427",
+    "stdoutBytes": 0,
+    "transportReceiptSHA256": "b5e26f3706c3ce9fd0f80d0c64628b48a34958be87377572bd4b53345a1c1c64"
+  },
+  "schema": "pow-audit30-retained-repair-bridge-sqlite-definition-source-preparation-v5",
+  "sourceBindings": {
+    "/tmp/pow-audit30-retained-repair-dependency-bridge-bootstrap-v5.diff": {
+      "bytes": 50659,
+      "sha256": "75d953e5c6d1df312a86f6a53d26fd13fbfc4404fe6eb031ee3cedf26e86d85b"
+    },
+    "/tmp/pow-audit30-retained-repair-dependency-bridge-bootstrap-v5.py": {
+      "bytes": 25572,
+      "sha256": "4e0cfdf0fd7ce87312810fb11bf1027194c955afd6ced18a9f2b50c44e9f8972"
+    },
+    "/tmp/pow-audit30-retained-repair-dependency-bridge-caller-v5.test.py": {
+      "bytes": 3095,
+      "sha256": "071f94ab51bb7d8e2a6564ea2e09e0dcd2366d2a76e752126be0007a6b994dbb"
+    },
+    "/tmp/pow-audit30-retained-repair-dependency-bridge-request-template-v5.json": {
+      "bytes": 100092,
+      "sha256": "4d721585c9149cb161d4764a73c23cb2d2cf2b2be28b8d044fef0c5c0d44633d"
+    },
+    "/tmp/pow-audit30-retained-repair-dependency-bridge-transport-preparation-v5.diff": {
+      "bytes": 2762,
+      "sha256": "12e499522ccd514072b57e806b1f58a2f72fa3715b5db438b287a87bb8aae487"
+    },
+    "/tmp/pow-audit30-retained-repair-dependency-bridge-transport-preparation-v5.py": {
+      "bytes": 2015,
+      "sha256": "a115acc82c09e66e06c69727d29dcff20367d786729dec5d8c99013573e778f9"
+    },
+    "/tmp/pow-audit30-retained-repair-dependency-bridge-v4.py": {
+      "bytes": 18621,
+      "sha256": "f07f5b8971b98f98013a56da1e054bbf786fac8ee02cafbf4ed1308d9ad0768b"
+    },
+    "/tmp/pow-audit30-retained-repair-dependency-bridge-v5.diff": {
+      "bytes": 7292,
+      "sha256": "08f6dc0e5c1fec1ec460b250bd6576095b8bdfb8b192b6167a74838189030135"
+    },
+    "/tmp/pow-audit30-retained-repair-dependency-bridge-v5.py": {
+      "bytes": 18866,
+      "sha256": "b8605128bd99a2b64ab13f1c33a3b5d6907802df8e453c31a93fbbd9a308d5b6"
+    },
+    "/tmp/pow-audit30-retained-repair-dependency-bridge-v5.test.py": {
+      "bytes": 33335,
+      "sha256": "ff5d9f94238d047498caec4872d235e63348408bc46b41cc8ce569478073295f"
+    }
+  },
+  "status": "source-only-prepared-unexecuted"
+}

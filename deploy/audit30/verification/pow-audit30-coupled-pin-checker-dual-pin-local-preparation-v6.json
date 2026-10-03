@@ -1,0 +1,181 @@
+{
+  "actualEvidenceBindings": [
+    {
+      "bytes": 4097,
+      "path": "/tmp/pow-audit30-root-oct3-restore-actual-acceptance-v1.json",
+      "sha256": "fbac8b76c0ce44de997c8585cd6031354fe8bcd722ee09f0b02ec94f05d6a9ba"
+    },
+    {
+      "bytes": 10494,
+      "path": "/tmp/pow-audit30-independent-oct3-restore-actual-result-review-v1.json",
+      "sha256": "546b52deb647199cc8a3acb6642116853dc05cfcd2ecf8d1c3f14f97a1aa9612"
+    },
+    {
+      "bytes": 8915,
+      "path": "/tmp/pow-audit30-oct3-restore-poststop-native-v2.stdout",
+      "sha256": "01e918aa40408550dbd8c1cbe2f71b508566c6f499c38332a90becaa005dc58c"
+    },
+    {
+      "bytes": 32091,
+      "path": "/tmp/pow-audit30-promotion-full-read-native-120000-current2-v1.stdout",
+      "sha256": "92d976261c28b0c6782d2c15ec9b5c9217cd19f1d4034db9b89946e15de6ffac"
+    },
+    {
+      "bytes": 7428,
+      "path": "/tmp/pow-audit30-independent-fresh-oct3-full-read-actual-review-v1.json",
+      "sha256": "c7296b9a6c4e11d24157c5ac4c1b83ffe2a403f87573c966cfe378c334f01f19"
+    }
+  ],
+  "atUtc": "2026-10-03T12:19:45.041133+00:00",
+  "bindings": [
+    {
+      "bytes": 25752,
+      "path": "/tmp/pow-audit30-coupled-pin-checker-promotion-v6.py",
+      "sha256": "dfa403996e776a8ed192a024848b06f71b5fa041a24bf5b9687ff04ce3714535"
+    },
+    {
+      "bytes": 20718,
+      "path": "/tmp/pow-audit30-retention-protection-oct3-dual-pin-candidate-v1.py",
+      "sha256": "795f1308b74ddc69a022ce7e1413fb4698a82e6cfb14265931d1951ee603c908"
+    },
+    {
+      "bytes": 2391,
+      "path": "/tmp/pow-audit30-coupled-pin-checker-promotion-plan-template-v6.json",
+      "sha256": "7dac36c440b96174bde59c14dc19de17d111bd95e86fc7bb5eaa61c0bd4249dc"
+    },
+    {
+      "bytes": 27492,
+      "path": "/tmp/pow-audit30-coupled-pin-checker-promotion-v6.test.py",
+      "sha256": "dff5978a05855b77885d0b5d9ec2e9808e0d2193d153fcbf5257043ff504889d"
+    },
+    {
+      "bytes": 3354,
+      "path": "/tmp/pow-audit30-coupled-pin-checker-promotion-v6.diff",
+      "sha256": "c72d22aa6f673092ec0ae79017f2558b4ff0122105bc506183e765cc54558926"
+    },
+    {
+      "bytes": 895,
+      "path": "/tmp/pow-audit30-retention-protection-oct3-dual-pin-candidate-v1.diff",
+      "sha256": "784603ab74ec34130c5c32bcbc2543b68fcdf0d6bc640d858d19676c32e2b693"
+    }
+  ],
+  "canonicalInstalledSources": [
+    {
+      "bytes": 20677,
+      "path": "/home/sixer/ProofOfWork.Me/scripts/check-retention-protection.py",
+      "sha256": "da5d1336ce857acc571ba0849c2b0150ef5fc6dfdacf80e65b9f1d3611c48e8a"
+    },
+    {
+      "bytes": 20691,
+      "path": "/home/sixer/ProofOfWork.Me/deploy/proofofwork-postgres-logical-backup.sh",
+      "sha256": "4e5252ed8fcc8ce4ec863d6e027d429f146348f30be23d4eb5fe77cfd013a754"
+    },
+    {
+      "bytes": 12913,
+      "path": "/home/sixer/ProofOfWork.Me/deploy/audit30/install-retention.py",
+      "sha256": "cd9c266e938d22949c9f0c6a48853933d9bcbb58368071b2da4027f13411eaa5"
+    }
+  ],
+  "checker": {
+    "gid": 0,
+    "mode": 493,
+    "newBytes": 20718,
+    "newSha256": "795f1308b74ddc69a022ce7e1413fb4698a82e6cfb14265931d1951ee603c908",
+    "oldBytes": 20677,
+    "oldSha256": "da5d1336ce857acc571ba0849c2b0150ef5fc6dfdacf80e65b9f1d3611c48e8a",
+    "path": "/usr/local/sbin/proofofwork-retention-protection",
+    "uid": 0
+  },
+  "exactChanges": [
+    "Caller constants select the ordered old Sep29 plus Oct3 78-byte pin and exact dual-pin checker candidate; docstring states staged protection.",
+    "Only execute definition changes, by exact checker member filename. Reversing that filename restores all23 V5 function/class ASTs.",
+    "Only logical_pin_protection_is_valid changes among12 checker definitions relative to f40b single-Oct3 candidate: accepts exactly ordered Sep29+Oct3 and rejects single, reverse, duplicate or extra pins.",
+    "Candidate retains two previously reviewed Oct3 literals: expected name and dump size20878072656. Reversing those and the single predicate edit restores exact installed da5d bytes."
+  ],
+  "futureReadiness": {
+    "actualInstalledPostimages": null,
+    "actualPromotionReceipt": null,
+    "chosenActionMetadataStillRequired": true,
+    "filledNativeRequest": null,
+    "freshLeafAgeMustBeRecheckedAtAction": true,
+    "humanApproval": null,
+    "restoreActualAccepted": true,
+    "templateContainsNullMandatoryRows": true
+  },
+  "localValidation": {
+    "addedCases": 4,
+    "cases": 40,
+    "command": "python3 -I -B -Werror /tmp/pow-audit30-coupled-pin-checker-promotion-v6.test.py",
+    "nativeFixtures": false,
+    "pass": true,
+    "seconds": 0.575,
+    "toolExitCode": 0
+  },
+  "nativeApproved": false,
+  "nativeExecuted": false,
+  "pin": {
+    "gid": 0,
+    "mode": 420,
+    "newBytes": 78,
+    "newSha256": "22f66cac8419985c544d4b41c6ea9cd400fc99805c588694a9a619a3f120d09b",
+    "oldBytes": 39,
+    "oldSha256": "821b5bbfecee75ffb3c4565d3867eb62ac33e65eeb83c0e603c08aa478ff957b",
+    "orderedNames": [
+      "proof_indexer-20260929T031853Z.dumpset",
+      "proof_indexer-20261003T031852Z.dumpset"
+    ],
+    "path": "/etc/proofofwork-postgres-logical-backup.pins",
+    "uid": 0
+  },
+  "preservedHistoricalBindings": [
+    {
+      "bytes": 25733,
+      "path": "/tmp/pow-audit30-coupled-pin-checker-promotion-v5.py",
+      "sha256": "7e878f987524dce2583b348964032af62491ce3cabcdc49adc359b36b7fc5bd4"
+    },
+    {
+      "bytes": 20677,
+      "path": "/tmp/pow-audit30-retention-protection-oct3-candidate-v1.py",
+      "sha256": "f40b25f46c86541766c3e8694cf677b551fe489887dab72b4084991100d308d0"
+    },
+    {
+      "bytes": 2391,
+      "path": "/tmp/pow-audit30-coupled-pin-checker-promotion-plan-template-v5.json",
+      "sha256": "4d06401c5458163c5d237db25139b6a980b09ba9e96897bd403afe39588569c7"
+    },
+    {
+      "bytes": 6560,
+      "path": "/tmp/pow-audit30-independent-coupled-pin-checker-source-review-v5.json",
+      "sha256": "ba335df9cc96c2f1dd67263de9cf40e2db00178363a72fcab18fd1f5214350ea"
+    },
+    {
+      "bytes": 3394,
+      "path": "/tmp/pow-audit30-independent-single-pin-unprotection-risk-review-v1.json",
+      "sha256": "8cb9a289c7ecdf5d67bd17cb1fdf026954394df5c946a9212a4fe8625713575d"
+    }
+  ],
+  "productionMutationApproved": false,
+  "qualification": [
+    "Source/testing only, not permission to install or invoke.",
+    "Dual-pin completed evidence is not compatible with frozen single-Oct3 retirement consumer; no executable final deletion plan is supplied.",
+    "Named pin preservation establishes ordinary-retention protection while installed; it is not full chain/PITR/replay/financial/dependency/continuous-reader closure.",
+    "Existing known18 monitor findings remain explicit; code repair, cutover and recovery activation are separate scopes.",
+    "All preserved V5 source/evidence and single-pin risk remain historical; no old file was overwritten."
+  ],
+  "reason": "Ordinary installed backup retention removes safe older unpinned completed sets and does not consult audit28 hold. V5 single-Oct3 pin action is withdrawn because it would permit later ordinary Sep29 deletion before separate retirement approval.",
+  "repositoryEdits": 0,
+  "schema": "pow-audit30-coupled-pin-checker-dual-pin-source-preparation-v6",
+  "sourceOnly": true,
+  "unchangedGuards": [
+    "Human approval closed schema and source-message custody",
+    "After-long-check installed preimage bytes/full identity/nlink/xattrs",
+    "Known-byte-only failure inverse and signal masking",
+    "Exact ten per-unit fields without MainPID for timers, strict duplicate/missing/unknown rejection",
+    "Current monitor static idle profile and separately qualified operational endpoints",
+    "Static files, masks, WAL, prune, holds, exact lock metadata/flock",
+    "120-second caller and20-second checker bounds",
+    "Fresh full-read age<=900 seconds and four exact restore receipts",
+    "Restrictive package/evidence ancestor ownership and modes",
+    "No timer, script, hold or mask mutation; no deletion/recovery activation"
+  ]
+}

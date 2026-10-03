@@ -1,0 +1,11 @@
+{
+  "atUtc": "2026-10-03T12:11:27.013962+00:00",
+  "initialTestBytes": 7320,
+  "initialTestSha256": "52756c01e8154614e8fd26104fac3dbba84cff547000fc7f896c67b2185fec35",
+  "nativeCalls": 0,
+  "qualification": "Second SIGINT was sent immediately after SIGTERM with no protected-cleanup readiness marker; it can occur after cleanup handlers are restored. This is a fixture-timing gap, not native evidence. Preserve before revising to signal at an actual protected wait marker.",
+  "result": "14 passed; immediate double-signal fixture reported ignored Popen destructor exception while first-refusal file and reaping checks had passed",
+  "schema": "pow-audit30-promotion-state-observer-local-fixture-checkpoint-v1",
+  "sourceBytes": 43767,
+  "sourceSha256": "47b822552521ccff65a8e1b32157091d01d0a68130971bd2da402102b20c5dec"
+}

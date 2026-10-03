@@ -1,0 +1,306 @@
+{
+  "authorityQualification": "Fresh Oct3 member hashes/TOC are separately bounded and reviewed; actual104500 restore must bind exact6f870 plan and future raw receipts; pin promotion never authorizes retirement or live recovery.",
+  "evidenceRoot": "/usr/local/lib/proofofwork-audit30-pin-promotion/20261003T120000Z/evidence",
+  "expectedMonitorProjectionSha256": "702807238008a596ee3361aac2076bd541a546c4fe7675b008d0b565a35778aa",
+  "finalHumanApproval": null,
+  "freshFullRead": {
+    "metadata": {
+      "bytes": 21733,
+      "ctimeNs": 1791028896231672368,
+      "device": 64512,
+      "gid": 0,
+      "inode": 2005927,
+      "mode": 384,
+      "mtimeNs": 1791028896231672368,
+      "nlink": 1,
+      "uid": 0
+    },
+    "path": "/var/tmp/proofofwork-audit30-pin-promotion-20261003T120000Z-preflight/full-read.json",
+    "sha256": "0e6ad763e4a1088911d89fac7d18786bd69ded8a94be203827ec348bfc9084ab"
+  },
+  "installed": {
+    "/etc/proofofwork-postgres-logical-backup.pins": {
+      "bytes": 39,
+      "ctimeNs": 1790736083442846642,
+      "device": 64512,
+      "gid": 0,
+      "inode": 3148002,
+      "mode": 420,
+      "mtimeNs": 1790736083442846642,
+      "nlink": 1,
+      "uid": 0
+    },
+    "/usr/local/sbin/proofofwork-retention-protection": {
+      "bytes": 20677,
+      "ctimeNs": 1790970319800036711,
+      "device": 64512,
+      "gid": 0,
+      "inode": 6292437,
+      "mode": 493,
+      "mtimeNs": 1790970319800036711,
+      "nlink": 1,
+      "uid": 0
+    }
+  },
+  "lockMetadata": {
+    "/data/proofofwork-postgres-backups/logical/.proofofwork-postgres-logical-backup.lock": {
+      "bytes": 0,
+      "ctimeNs": 1790997532936269129,
+      "device": 64514,
+      "gid": 112,
+      "inode": 7471419,
+      "mode": 384,
+      "mtimeNs": 1790997532936269129,
+      "nlink": 1,
+      "uid": 108
+    },
+    "/run/proofofwork-audit29-ops.lock": {
+      "bytes": 0,
+      "ctimeNs": 1790833036576778398,
+      "device": 25,
+      "gid": 0,
+      "inode": 12570164,
+      "mode": 384,
+      "mtimeNs": 1790833036576778398,
+      "nlink": 1,
+      "uid": 0
+    }
+  },
+  "mask": {
+    "metadata": {
+      "bytes": 9,
+      "ctimeNs": 1790736083643846636,
+      "device": 64512,
+      "gid": 0,
+      "inode": 3147953,
+      "mode": 511,
+      "mtimeNs": 1790736083643846636,
+      "nlink": 1,
+      "uid": 0
+    },
+    "target": "/dev/null"
+  },
+  "package": "/usr/local/lib/proofofwork-audit30-pin-promotion/20261003T120000Z",
+  "restoreProofMetadata": {
+    "completed.json": {
+      "bytes": 646,
+      "ctimeNs": 1791027129121490633,
+      "device": 64514,
+      "gid": 112,
+      "inode": 58197390,
+      "mode": 384,
+      "mtimeNs": 1791027129121490633,
+      "nlink": 1,
+      "uid": 108
+    },
+    "offline-page-check.json": {
+      "bytes": 304,
+      "ctimeNs": 1791027124264489747,
+      "device": 64514,
+      "gid": 112,
+      "inode": 58196973,
+      "mode": 384,
+      "mtimeNs": 1791027124264489747,
+      "nlink": 1,
+      "uid": 108
+    },
+    "saved-snapshot-fence.json": {
+      "bytes": 585,
+      "ctimeNs": 1791026865744436305,
+      "device": 64514,
+      "gid": 112,
+      "inode": 58197612,
+      "mode": 384,
+      "mtimeNs": 1791026865744436305,
+      "nlink": 1,
+      "uid": 108
+    },
+    "table-row-parity.json": {
+      "bytes": 3903,
+      "ctimeNs": 1791026865476436242,
+      "device": 64514,
+      "gid": 112,
+      "inode": 58197608,
+      "mode": 384,
+      "mtimeNs": 1791026865476436242,
+      "nlink": 1,
+      "uid": 108
+    }
+  },
+  "restoreProofSha256": {
+    "completed.json": "206f9d76eb5df9d05ca0c12b47e99c3dcb280b558bdbda760cb5fad4c57c3562",
+    "offline-page-check.json": "6dbe7303362f23138ecf269f24412a4eb50dae2808437e1329d61b660de8759f",
+    "saved-snapshot-fence.json": "db67874c0a5f1dff3d42acba88f1d0bd6ee43bd98a987e0659afeeb7361873a9",
+    "table-row-parity.json": "fa6057e02efce49595a8ac445dd8d3b2ab84d0816257700640230a9b46af8ccc"
+  },
+  "reviewedScopeSha256": "fe09d0ba6c9c1e561a569fb425c9812f9b077cb646fbdd615768e0546ead0437",
+  "run": "20261003T120000Z",
+  "schema": "pow-audit30-coupled-pin-checker-promotion-plan-v3",
+  "static": {
+    "/etc/proofofwork-retention/audit28-held-review.json": {
+      "metadata": {
+        "bytes": 1030164,
+        "ctimeNs": 1790833036646778315,
+        "device": 64512,
+        "gid": 0,
+        "inode": 3147004,
+        "mode": 420,
+        "mtimeNs": 1790833036645778316,
+        "nlink": 1,
+        "uid": 0
+      },
+      "sha256": "c3bd35740d7fcc135839274c8228e38f7a45c23e33567743e0d77151b32451d9"
+    },
+    "/etc/proofofwork-retention/audit28.hold": {
+      "metadata": {
+        "bytes": 81,
+        "ctimeNs": 1790736083441846642,
+        "device": 64512,
+        "gid": 0,
+        "inode": 3148001,
+        "mode": 384,
+        "mtimeNs": 1790736083441846642,
+        "nlink": 1,
+        "uid": 0
+      },
+      "sha256": "e9aca6e22b1dc36b714ed663051f8bc20d9479efa4173474e0b6b771958ca6a4"
+    },
+    "/etc/systemd/system/proofofwork-postgres-logical-backup.service": {
+      "metadata": {
+        "bytes": 1041,
+        "ctimeNs": 1790833036669778288,
+        "device": 64512,
+        "gid": 0,
+        "inode": 3148008,
+        "mode": 420,
+        "mtimeNs": 1790833036669778288,
+        "nlink": 1,
+        "uid": 0
+      },
+      "sha256": "ba7af818256aac91e74213b320fc2c994059bf01cb176f6483ffb02ace25ba4d"
+    },
+    "/etc/systemd/system/proofofwork-postgres-logical-backup.timer": {
+      "metadata": {
+        "bytes": 265,
+        "ctimeNs": 1784051189027070538,
+        "device": 64512,
+        "gid": 0,
+        "inode": 3147227,
+        "mode": 420,
+        "mtimeNs": 1784051189027070538,
+        "nlink": 1,
+        "uid": 0
+      },
+      "sha256": "de62e16ec0d4500f9d39f6a6603f2cea1b99fc9701b4285e53b4acbe135d7841"
+    },
+    "/etc/systemd/system/proofofwork-retention-protection.service": {
+      "metadata": {
+        "bytes": 690,
+        "ctimeNs": 1790970319801036711,
+        "device": 64512,
+        "gid": 0,
+        "inode": 3147019,
+        "mode": 420,
+        "mtimeNs": 1790970319801036711,
+        "nlink": 1,
+        "uid": 0
+      },
+      "sha256": "8f9c54b522961e26d8f02ed33ad065af70906f1e95ca2ad65edd322c8f758448"
+    },
+    "/usr/local/sbin/proofofwork-postgres-logical-backup": {
+      "metadata": {
+        "bytes": 20691,
+        "ctimeNs": 1790833036658778301,
+        "device": 64512,
+        "gid": 0,
+        "inode": 6304207,
+        "mode": 493,
+        "mtimeNs": 1790833036658778301,
+        "nlink": 1,
+        "uid": 0
+      },
+      "sha256": "4e5252ed8fcc8ce4ec863d6e027d429f146348f30be23d4eb5fe77cfd013a754"
+    }
+  },
+  "units": {
+    "bitcoind.service": {
+      "ActiveState": "active",
+      "InvocationID": "64e1fa7be2e2442d8c7f5763f60b85fb",
+      "LoadState": "loaded",
+      "MainPID": "1324302",
+      "SubState": "running",
+      "UnitFileState": "enabled"
+    },
+    "electrs.service": {
+      "ActiveState": "active",
+      "InvocationID": "72418b1c7ab245e4a37685ed868a1084",
+      "LoadState": "loaded",
+      "MainPID": "1324320",
+      "SubState": "running",
+      "UnitFileState": "enabled"
+    },
+    "pg_receivewal@16-main.service": {
+      "ActiveState": "inactive",
+      "InvocationID": "c3ac4e887abf4887a7fa9d0416730da1",
+      "LoadState": "loaded",
+      "MainPID": "0",
+      "SubState": "dead",
+      "UnitFileState": "disabled"
+    },
+    "postgresql@16-main.service": {
+      "ActiveState": "active",
+      "InvocationID": "e0bf545f0ad944e89fe1005577e61b9c",
+      "LoadState": "loaded",
+      "MainPID": "1537429",
+      "SubState": "running",
+      "UnitFileState": "enabled-runtime"
+    },
+    "proofofwork-api.service": {
+      "ActiveState": "active",
+      "InvocationID": "208f8bcbecc54afbb7166754f12065c2",
+      "LoadState": "loaded",
+      "MainPID": "2103747",
+      "SubState": "running",
+      "UnitFileState": "enabled"
+    },
+    "proofofwork-indexer-worker.service": {
+      "ActiveState": "active",
+      "InvocationID": "33b3ee25490749db89e0d55fd29d0afb",
+      "LoadState": "loaded",
+      "MainPID": "2103760",
+      "SubState": "running",
+      "UnitFileState": "enabled"
+    },
+    "proofofwork-node-release-prune.timer": {
+      "ActiveState": "inactive",
+      "InvocationID": "",
+      "LoadState": "masked",
+      "SubState": "dead",
+      "UnitFileState": "masked"
+    },
+    "proofofwork-postgres-logical-backup.service": {
+      "ActiveState": "inactive",
+      "InvocationID": "dfda5fa3574144958b948f8b5920b4d0",
+      "LoadState": "loaded",
+      "MainPID": "0",
+      "SubState": "dead",
+      "UnitFileState": "static"
+    },
+    "proofofwork-postgres-logical-backup.timer": {
+      "ActiveState": "active",
+      "InvocationID": "469de932a143489e8d4128e2cab382bf",
+      "LoadState": "loaded",
+      "NextElapseUSecRealtime": "Sun 2026-10-04 03:18:48 UTC",
+      "SubState": "waiting",
+      "UnitFileState": "enabled"
+    },
+    "proofofwork-retention-protection.service": {
+      "ActiveState": "failed",
+      "InvocationID": "f639bbc9f65f45dda4fcaa5417023e9c",
+      "LoadState": "loaded",
+      "MainPID": "0",
+      "SubState": "failed",
+      "UnitFileState": "static"
+    }
+  }
+}

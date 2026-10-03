@@ -1,0 +1,99 @@
+{
+  "actualState": {
+    "exact18MissingNamesEqualPriorFirstBatchReceipt": true,
+    "exactTenUnitProfiles": true,
+    "finishedAtUtc": "2026-10-03T12:17:47.250571+00:00",
+    "knownHeldAbsencesResolved": false,
+    "missingSixUnitFileStatesActuallyObserved": true,
+    "monitorHealthy": false,
+    "originalFiveAndAllNonMonitorUnitEndpointsEqual": true,
+    "projectionSha256": "702807238008a596ee3361aac2076bd541a546c4fe7675b008d0b565a35778aa",
+    "seconds": 4.353449,
+    "startedAtUtc": "2026-10-03T12:17:42.897122+00:00",
+    "staticFileMaskLockEndpointsEqual": true
+  },
+  "atUtc": "2026-10-03T12:29:25.707098+00:00",
+  "bindings": {
+    "actualStatePeer": {
+      "bytes": 4789,
+      "path": "/tmp/pow-audit30-independent-coupled-promotion-state-actual-review-v1.json",
+      "sha256": "da1559f7cc478864d586c38c015512698f00c609fd0ed92251ebb5309eea39b9"
+    },
+    "actualStateStdout": {
+      "bytes": 8370,
+      "path": "/tmp/pow-audit30-coupled-promotion-state-observer-native-v1.stdout",
+      "sha256": "00ac40c9e3f8287ea708a9b90890edff3590e97fe09e584f8c5582565d3a6e92"
+    },
+    "actualStateTransport": {
+      "bytes": 1684,
+      "path": "/tmp/pow-audit30-coupled-promotion-state-observer-native-v1.json",
+      "sha256": "320f354aebe2d106ee09ca78b04a0cbabfd7bb844e762e32563619a0b77ee451"
+    },
+    "candidate": {
+      "bytes": 20718,
+      "path": "/tmp/pow-audit30-retention-protection-oct3-dual-pin-candidate-v1.py",
+      "sha256": "795f1308b74ddc69a022ce7e1413fb4698a82e6cfb14265931d1951ee603c908"
+    },
+    "controller": {
+      "bytes": 25752,
+      "path": "/tmp/pow-audit30-coupled-pin-checker-promotion-v6.py",
+      "sha256": "dfa403996e776a8ed192a024848b06f71b5fa041a24bf5b9687ff04ce3714535"
+    },
+    "observedReviewPlan": {
+      "bytes": 9111,
+      "path": "/tmp/pow-audit30-coupled-pin-checker-observed-review-plan-v6.json",
+      "sha256": "911a77fc317f4a7a8c388e424172a0a4afe88fd8861efb7c9b0b979ab79431dc"
+    },
+    "pinPolicyRiskPeer": {
+      "bytes": 3394,
+      "path": "/tmp/pow-audit30-independent-single-pin-unprotection-risk-review-v1.json",
+      "sha256": "8cb9a289c7ecdf5d67bd17cb1fdf026954394df5c946a9212a4fe8625713575d"
+    },
+    "proposalDraft": {
+      "bytes": 8922,
+      "path": "/tmp/pow-audit30-oct3-pin-checker-promotion-proposal-v1.md",
+      "sha256": "aaeaf202b141a38780a99b8e51d781e0935280b4ff77b5a6bf778c646f6d0440"
+    },
+    "reviewPlanPeer": {
+      "bytes": 6963,
+      "path": "/tmp/pow-audit30-independent-coupled-observed-review-plan-v6.json",
+      "sha256": "2e6a77b6e017599fdea1e45d0ba4c323edf523f46d712237138284546757b8e9"
+    },
+    "sourcePeer": {
+      "bytes": 5451,
+      "path": "/tmp/pow-audit30-independent-coupled-pin-checker-promotion-source-review-v6.json",
+      "sha256": "39d49acbecdce34149190330f9b75991e88fc26dc7255d430794087f5ac449d3"
+    }
+  },
+  "claims": {
+    "additionalDeletion": false,
+    "chainMathOrProductionPagesOrPitrCertified": false,
+    "completeItem7": false,
+    "globalDependenciesClosed": false,
+    "humanApprovalCreated": false,
+    "productionMutation": false,
+    "promotionPerformed": false,
+    "recoveryActivation": false
+  },
+  "qualification": "V6 temporarypair retains Sep29 protection and adds reviewed Oct3; frozen old singlepin retirementconsumer cannotaccept this dualpinevidence. The9111B observedreviewplan is pretty/noncanonical, HumanNULL, expiredleaf\u2014not a runnable plan. Databody repair, newphysicalrecoverycapacity, exactretirement andphase5 integrationremain separate gates. No production operation or authorization is inferred from read-only/source acceptance.",
+  "remainingActionGates": [
+    "direct human exactscope/caller/source-message approval",
+    "genuinely new accepted fullread<=900seconds, no redating",
+    "fresh chosen-action tenunit/file/mask/twoexistinglock/4restorereceipt identities",
+    "restrictive creation-only implementation/approval/evidence package custody",
+    "approval-bound canonical compact finalplan and typed reviewed nativeadmission",
+    "existing OPS+backup lock acquisition and unchanged postprojection under controller"
+  ],
+  "rootSourceReview": {
+    "allV5CallerFunctionClassASTsUnchangedExceptExecuteFilename": true,
+    "checkerOnlyOrderedPairPredicateChangedFromOct3Candidate": true,
+    "dualPinSha256": "22f66cac8419985c544d4b41c6ea9cd400fc99805c588694a9a619a3f120d09b",
+    "orderedDualPinBytes": 78,
+    "rootFixtureCases": 40,
+    "rootFixtureSeconds": 0.565,
+    "rootFixturesPassed": true,
+    "scopeSha256": "fe09d0ba6c9c1e561a569fb425c9812f9b077cb646fbdd615768e0546ead0437"
+  },
+  "schema": "pow-audit30-root-coupled-protection-proposal-review-v6",
+  "status": "accepted-exact-scope-source-tests-and-historical-observation-for-final-human-review"
+}
