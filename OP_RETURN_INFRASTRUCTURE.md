@@ -5183,6 +5183,19 @@ protocol rules; it does not assert that PostgreSQL avoids every TOAST read.
 Database timing and complete semantic acceptance within the existing bounded
 runtime belong to the release audit; a smaller read result alone is not a
 latency proof.
+The two full raw-registry replay calls explicitly use the shared current-block
+context after AMO activation when valid precision declaration pins are
+configured. That context checks the preceding database
+checkpoint against fresh Core, reads every current-block carrier in canonical
+position order, and uses the complete opening accumulator and shared protocol
+projection. It avoids reloading the historical transaction prefix for each
+PWID block. Pre-activation, unconfigured precision, and other callers retain the
+full historical context and declaration discovery.
+At a configured precision activation, this audit path requires the persistent
+Q16 latch and migration marker before projection; unavailable or mismatched
+evidence refuses even if a legacy payload would otherwise match. Exact full
+stored-payload parity, carrier positions, and final chain fences remain required.
+Run `npm run check:id-audit` for the registry and current-context refusal checks.
 It is intentionally unavailable through Caddy. `npm run audit:ids` combines
 that coverage proof with all confirmed address pages and fails on any coverage
 or registry-stat mismatch; report writing remains explicit opt-in.

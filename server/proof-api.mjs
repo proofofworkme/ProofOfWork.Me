@@ -70054,18 +70054,46 @@ async function completeIdVerifierStateBundle(
   requiredBlockHeight,
   expectedBlockHash = "",
   expectedPreviousBlockHash = "",
+  { auditCurrentBlockOnly = false } = {},
 ) {
   const registryAddress = registryAddressForNetwork(network);
   if (!registryAddress) {
     throw new Error("ProofOfWork ID registry is not configured.");
   }
-  const context = await canonicalVerifierContextFromCheckpoint(
+  const precisionDeclaration = auditCurrentBlockOnly === true
+    ? configuredWorkAmoV8Declaration()
+    : null;
+  const precisionActivationHeight = Number(precisionDeclaration?.activationHeight);
+  const currentBlockAudit = auditCurrentBlockOnly === true &&
+    requiredBlockHeight >= WORK_AMO_V5_ACTIVATION_HEIGHT &&
+    Number.isSafeInteger(precisionActivationHeight) &&
+    precisionActivationHeight >= 2;
+  const contextLoader = currentBlockAudit
+    ? canonicalVerifierCurrentBlockContextFromCheckpoint
+    : canonicalVerifierContextFromCheckpoint;
+  const context = await contextLoader(
     network,
     requiredBlockHeight,
     expectedBlockHash,
     expectedPreviousBlockHash,
   );
   if (requiredBlockHeight >= WORK_AMO_V5_ACTIVATION_HEIGHT) {
+    if (currentBlockAudit && requiredBlockHeight >= precisionActivationHeight) {
+      const precisionLatch = await proofIndexWorkAmoV8ActivationLatch(
+        network,
+        precisionDeclaration,
+      ).catch(() => null);
+      if (
+        precisionLatch?.reached !== true ||
+        precisionLatch?.markerReady !== true ||
+        Number(precisionLatch?.activationHeight) !== precisionActivationHeight ||
+        Number(precisionLatch?.pins?.activationHeight) !== precisionActivationHeight
+      ) {
+        throw new Error(
+          "Canonical ID audit requires the active persistent Q16 migration latch.",
+        );
+      }
+    }
     const projection = await cachedWorkAmoV5BlockProjection(
       context,
       network,
@@ -76662,6 +76690,7 @@ async function registryAuditCanonicalRawReplay(network, checkpoint) {
               stored.blockHeight,
               stored.blockHash,
               stored.previousBlockHash,
+              { auditCurrentBlockOnly: true },
             );
             const transition = bundle?.workAmoV5BlockTransition;
             if (
@@ -76807,6 +76836,7 @@ async function registryAuditCanonicalRawReplay(network, checkpoint) {
     checkpoint.height,
     checkpoint.blockHash,
     tipTransition.previousBlockHash,
+    { auditCurrentBlockOnly: true },
   );
   if (
     tipBundle?.canonicalCoverage !== true ||
