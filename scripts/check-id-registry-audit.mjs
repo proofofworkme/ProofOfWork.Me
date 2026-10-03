@@ -711,6 +711,7 @@ const pwidFenceFixtures = nonPwidFull.slice(0, 3).map((transition, index) => ({
     }],
   },
 }));
+let mockAuditTransitions = pwidFenceFixtures;
 const fenceReadCalls = [];
 const emittedPages = [];
 const exactInteger = (value, minimum = 0) => {
@@ -727,12 +728,39 @@ const scanTip = pwidFenceFixtures.at(-1);
 const mockClient = {
   async query(sql, params) {
     if (sql.includes("FROM proof_indexer.work_amo_block_transitions transition")) {
+      const query = sql.trim();
+      assert.equal(createHash("sha256").update(`${query}\n`).digest("hex"),
+        "ade1f0025a722410dfa3964855b1f95667c6cf9f764d7dc64b07238d5a1769f8",
+        "The reader must execute the exact native-parity-tested key-page query.");
+      const [keyPage, hydrated] = query.split(")\nSELECT\n");
+      assert.match(keyPage, /^WITH audit_page_keys AS MATERIALIZED \(/u);
+      assert.match(keyPage, /SELECT transition\.network, transition\.block_height/u);
+      assert.doesNotMatch(keyPage, /payload|jsonb|DISTINCT/u,
+        "Selecting canonical keys must not evaluate or hide any payload rows.");
+      assert.match(keyPage, /ORDER BY transition\.block_height\s+LIMIT \$4/u);
+      assert.match(hydrated,
+        /FROM audit_page_keys\s+JOIN proof_indexer\.work_amo_block_transitions transition\s+ON transition\.network = audit_page_keys\.network\s+AND transition\.block_height = audit_page_keys\.block_height/u);
+      const projection = `SELECT\n${hydrated.split("\n          FROM audit_page_keys")[0]}`;
+      assert.equal(createHash("sha256").update(projection).digest("hex"),
+        "b41b1c0fc1713acf100d7c2e3b8853919ce5692d0a1d5d0775e738bd400f63be",
+        "All 26 selected columns and CASE bytes must remain unchanged.");
+      for (const eligibility of [
+        "transition_block.block_hash = transition.block_hash",
+        "transition_block.previous_block_hash =",
+        "transition_block.canonical = true",
+        "previous_block.block_hash = transition.previous_block_hash",
+        "previous_block.canonical = true",
+        "transition.block_height > $2",
+        "transition.block_height <= $3",
+      ]) assert.equal(query.split(eligibility).length - 1, 2,
+        `${eligibility} must apply to both page keys and hydrated rows.`);
       assert.match(sql, /WHEN transition\.block_height = \$5\s+THEN transition\.payload/u);
       assert.match(sql, /CASE WHEN \$6::boolean THEN jsonb_path_exists\([\s\S]*ELSE false END/u);
       assert.equal(params.length, 6);
       assert.equal(typeof params[5], "boolean");
       fenceReadCalls.push(params[5]);
-      const rows = pwidFenceFixtures.filter((item) => item.blockHeight > params[1]);
+      const rows = mockAuditTransitions.filter((item) =>
+        item.blockHeight > params[1] && item.blockHeight <= params[2]).slice(0, params[3]);
       return { rows: rows.map((item) => databaseTransition({
         ...item,
         payload: params[5] || item.blockHeight === params[4] ? item.payload :
@@ -806,6 +834,35 @@ const finalReaderAudit = await stream("livenet", {
 });
 assert.deepEqual(fenceReadCalls, [false]);
 assertIdRegistryAuditFinalFence(fullReaderAudit.fence, finalReaderAudit.fence);
+// The key page still carries limit+1 and hydrates every record across real
+// reader page boundaries; changing the page size cannot change either fence.
+fenceReadCalls.length = 0;
+const singleTransitionPages = [];
+const singlePageAudit = await stream("livenet", {
+  ...streamOptions, transitionPageSize: 1, onPage: (page) => {
+    if (page.kind === "transitions") singleTransitionPages.push(page.transitions);
+  },
+});
+assert.deepEqual(singleTransitionPages.map((page) => page.length), [1, 1, 1]);
+assert.deepEqual(singleTransitionPages.flat().map((row) => row.payload),
+  pwidFenceFixtures.map((row) => row.payload));
+assert.deepEqual(fenceReadCalls, [true, true, true, false, false, false]);
+assertIdRegistryAuditFinalFence(fullReaderAudit.fence, singlePageAudit.fence);
+for (const malformed of [
+  [pwidFenceFixtures[0], pwidFenceFixtures[0], ...pwidFenceFixtures.slice(1)],
+  [pwidFenceFixtures[0], pwidFenceFixtures[2]],
+]) {
+  mockAuditTransitions = malformed;
+  try {
+    await assert.rejects(stream("livenet", {
+      ...streamOptions, verifyFinalFence: false,
+    }), /contiguous|keyset|gap/u,
+    "Duplicate or omitted transition rows must refuse the exact chain.");
+  } finally {
+    mockAuditTransitions = pwidFenceFixtures;
+  }
+}
+
 for (const invalid of [
   { fenceOnlyTransitionRead: true },
   { verifyFinalFence: false, fenceOnlyTransitionRead: true, onPage() {} },

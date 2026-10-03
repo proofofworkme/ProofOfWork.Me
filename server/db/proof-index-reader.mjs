@@ -37527,13 +37527,36 @@ async function idRegistryAuditSnapshotPass(
     });
     let transitionCursor = PWID_RAW_REPLAY_ACTIVATION_HEIGHT - 1;
     while (transitionCursor < expectedHeight) {
+      // Materialize only the exact canonical page keys before any payload
+      // projection. The same joins are repeated during primary-key hydration.
       // Every transition/header/replay record still enters the two audit fences.
       // The first Core replay keeps every PWID preimage. The explicitly scoped
       // final fence needs the same headers, records and commitments, while only
       // precision-boundary validation still consumes the full state preimages.
       const result = await client.query(
         `
-          SELECT
+          WITH audit_page_keys AS MATERIALIZED (
+  SELECT transition.network, transition.block_height
+  FROM proof_indexer.work_amo_block_transitions transition
+          JOIN proof_indexer.blocks transition_block
+            ON transition_block.network = transition.network
+           AND transition_block.height = transition.block_height
+           AND transition_block.block_hash = transition.block_hash
+           AND transition_block.previous_block_hash =
+             transition.previous_block_hash
+           AND transition_block.canonical = true
+          JOIN proof_indexer.blocks previous_block
+            ON previous_block.network = transition.network
+           AND previous_block.height = transition.block_height - 1
+           AND previous_block.block_hash = transition.previous_block_hash
+           AND previous_block.canonical = true
+          WHERE transition.network = $1
+            AND transition.block_height > $2
+            AND transition.block_height <= $3
+          ORDER BY transition.block_height
+          LIMIT $4
+)
+SELECT
             transition.network,
             transition.block_height,
             lower(transition.block_hash) AS block_hash,
@@ -37583,7 +37606,10 @@ async function idRegistryAuditSnapshotPass(
                   transition.raw_protocol_candidate_count
               )
             END AS payload
-          FROM proof_indexer.work_amo_block_transitions transition
+          FROM audit_page_keys
+          JOIN proof_indexer.work_amo_block_transitions transition
+            ON transition.network = audit_page_keys.network
+           AND transition.block_height = audit_page_keys.block_height
           JOIN proof_indexer.blocks transition_block
             ON transition_block.network = transition.network
            AND transition_block.height = transition.block_height
@@ -37600,7 +37626,6 @@ async function idRegistryAuditSnapshotPass(
             AND transition.block_height > $2
             AND transition.block_height <= $3
           ORDER BY transition.block_height
-          LIMIT $4
         `,
         [
           network,
