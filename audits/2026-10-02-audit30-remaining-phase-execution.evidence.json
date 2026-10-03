@@ -175954,6 +175954,20 @@
       "atUtc": "2026-10-03T08:04:28.657592+00:00",
       "productionDataMutation": false,
       "recoveryConfigurationMutation": false
+    },
+    {
+      "action": "Action55 and all prior actions remain unchanged. Earlier Root7 tooling refusal and public reader6e19 wrong simple-four-field snapshot assumption are preserved; authoritativef303 rich-six-field producer corrects only the reader.080600 read-only finalization RUN passes88.761s and exact74017/GCMain0; later accepted28b2 public read binds actual7010-byte d818 completion, original074500FAILED, both acknowledged saved operations, restored619/1798351B/2075 mailbox, queue0/shards64/meta14, rich969526 snapshot, source7fullbefore/at-stop/offline/stopped/five/window/accounting. No writer/apply/inverse was invoked by finalization. FreshV5 once passes08:37:08/2.757s/rc0/stderr0:619events/mail/transactions, only original16body_text mismatches/set1815490, all missing-extra-duplicate-invalid-volatile counts0, native108:112 READONLY and actual nine-field production identity with checksumsOFF/defaultreadonlyOFF. Exactd818 metadata/SHA and source/dependency/five/timer guards remainunchanged; childstopped. Unchanged adapterV2 validates d818+d3b1; source31+11 RootV3 tests pass after sole projectionpath/bootstrapsha retarget; adapter48/caller31 sourcechecks remainaccepted. Nonexecutable JSON and readable proposed16repair(+18UTF8B;11mail/3files/2reply;exactNULL inverse) bind these proofs; humanapproval/generatedwriter/request absent. Canonical trigger invalidates one readiness shard per separately committed apply/inverse; no epoch rewind. Repair-first stateless guard avoids circular strict prerequisite; strict full parity stillrequired after approved repair before sourcecutover. First8000 parentraw RUNf21a passes78.444627s; acceptedf8d2 closes exact8000acquired/8007Core/20Electrs/ownedstop/five with2569remainingparents608eed. Rawpresence remainsnotcanonicalmembership; allparent/outpoint/fee/balance/obligation/financial/wholechain acceptancefalse. RetirementV2 fixes only signal exception category;25localfixtures include real captured-helper SIGINT/TERM and repeateddurablefailure signals; no deletion authority or nativeaction. Production data/recovery/pin/additionalretirements/deployment remainunchanged.",
+      "additionalDeletion": false,
+      "atUtc": "2026-10-03T08:42:30.691599+00:00",
+      "productionDataMutation": false,
+      "recoveryConfigurationMutation": false
+    },
+    {
+      "action": "Root independently verifies all407 source-custody byte lengths/SHA and unchanged55 action/custody368 prefixes; reserved mutations and authority lists remain untouched. FocusedV5 saved and printed public JSON use identical sorted encoding/newline, local exact reconstruction equals actual9302-byte d3b1 capture; receipt83c2 preserves no independent remote metadata claim. Final16 production-data approval requested through accepted async tool against exact readable2d29/source-templateaa4d plan; no reply, receipt, generated writer or native production request exists at this checkpoint. Hygiene fix finds no allowlisted removals; new protected audit proposal classified in existing repository-hygiene inventory without changing cleanup policy. Subsequent source-only coupled promotion peer finds preimage-race/human-content validation blockers; no promotion/deletion admitted.",
+      "additionalDeletion": false,
+      "atUtc": "2026-10-03T08:45:28.525918+00:00",
+      "productionDataMutation": false,
+      "recoveryConfigurationMutation": false
     }
   ],
   "additionalRetirements": [],
@@ -175961,20 +175975,370 @@
     "path": "audits/2026-10-02-audit30-remaining-phase-approval.json",
     "sha256": "6821c987b9a5d110fbe9fb2820955b7cbc26dda9faddb67667fc49e892f5c820"
   },
-  "finalApprovalRequests": [],
+  "finalApprovalRequests": [
+    {
+      "additionalDeletionAuthorized": false,
+      "atUtc": "2026-10-03T08:45:28.525918+00:00",
+      "humanResponseReceived": false,
+      "options": [
+        "Approve repair and conditional rollback",
+        "Keep production data unchanged"
+      ],
+      "productionApprovalReceiptCreated": false,
+      "productionDataMutation": false,
+      "proposalPath": "audits/2026-10-03-audit30-exact-sixteen-body-repair-proposal.md",
+      "proposalSHA256": "2d29c5a8a37c1aa42631dc615f8847640bdd4ce074b1c48524271ea40f96cadc",
+      "question": "You reserved final approval for production-data changes. Approve the tested repair in /home/sixer/ProofOfWork.Me/audits/2026-10-03-audit30-exact-sixteen-body-repair-proposal.md: restore only body_text on the original 16 records (11 messages, 3 files, 2 replies; +18 UTF-8 bytes), plus a separately invoked conditional rollback to their exact preimages before code cutover? Each committed operation causes one normal readiness invalidation. There is no automatic retry or rollback; full strict parity must pass before the already-approved deployment. This approval excludes backup deletion and recovery configuration.",
+      "recoveryConfigurationAuthorized": false,
+      "sourceTemplateSHA256": "aa4d02bbd6669073856850dc4049dda565a751459ed7980285e528ce740a4400",
+      "status": "requested-awaiting-human-response",
+      "tool": "functions.request_user_input_async",
+      "toolAccepted": true
+    }
+  ],
   "items": {
     "4": {
-      "finalApprovalPlans": [],
+      "finalApprovalPlans": [
+        {
+          "bytes": 8530,
+          "path": "/tmp/pow-audit30-exact-sixteen-final-review-plan-source-template-v3.json",
+          "sha256": "aa4d02bbd6669073856850dc4049dda565a751459ed7980285e528ce740a4400",
+          "value": {
+            "approvalDraft": {
+              "authority": "human",
+              "authorizedOperations": [
+                "apply",
+                "inverse"
+              ],
+              "automaticRetryAllowed": false,
+              "canonicalReadinessInvalidationApproved": false,
+              "conditionalInverseRequiresAcknowledgedApply": true,
+              "expectedDatabaseIdentity": {
+                "checksums": "off",
+                "dataDirectory": "/var/lib/postgresql/16/main",
+                "database": "proof_indexer",
+                "listenAddresses": "localhost",
+                "port": "5432",
+                "readOnly": "off",
+                "serverAddress": null,
+                "socket": "/var/run/postgresql",
+                "user": "postgres"
+              },
+              "freshMailProjectionReceiptSHA256": "d3b1c6f7b5aae0873fb98ed7b07c47948326ee6832e3b7cec7b363870bcab40c",
+              "humanApprovalEvidenceSHA256": null,
+              "inverseRequiresSeparateInvocation": true,
+              "manifestSHA256": "8d5d347aea2d398d75e69631f90b3efdd1c3254cfdbf3864015199b078699c50",
+              "network": "livenet",
+              "onlyMailItemsBodyText": true,
+              "operationalEpochRewindAllowed": false,
+              "orderedTargetTxids": [
+                "1ecf14fbbba8e5fb9bfbde9bde35b10f932c79bb4f979d3e0e477226855c7712",
+                "2e152c36edfc5e52c4fa02700cd37b9bfdfe56d13679c90f156589a29286f478",
+                "5fbf753385cd9739dc3b242c7e3d5dbb0aad950b1445152d387fd717ac75d413",
+                "66f01e4f56fee253b4d5c853dcb92042e210eaf9e8eef032600dc229fe6e275f",
+                "73046937a1a00ab59f4ea198f1a6a92d2e5b75a4f054f51609868bfc578640a4",
+                "7850146cb24dbb862bd9745fd7ea5599e69a46925c3d36ac530413fd72e9f09c",
+                "8c2fd17b10a6550896035b9f725054d3c6e10c314911808d8f7aaa2955c3015b",
+                "91a754469f5efcbf4312a71a11352fa3141eef19a6ace923ad22b16250c05e37",
+                "97fef0f049d61b59050867bf9ce1976d51edab39ebddd50ca00168033d20da94",
+                "a28bc98f6a48a3a30b17949d7955937264c9de7a5039ef9f3e267ca4c623c608",
+                "b2875f7260a142d8720fd74a7d2536fb4ddc5c98cfbc16960527ba0f66365b32",
+                "b5d39e3e995207d150c9027d81395d23f58af8bbc54547bf6c0df67d256ee984",
+                "b78f8180a9f942ae84915372d8416a614e58674f704c969e5e3ea7f9bf9c5cf5",
+                "cabbb019fbce9e3ffbef601e63bb9b866b2983ad0ba770841b22a7f622a10f69",
+                "d7abb3e35783e91112310053a25c7f251d26c3432296454af383925e30be6178",
+                "e6ad5d7c10e19bd3e34155061ba05ed4862b2aecf35ae4dc5f59a10aedaf22a1"
+              ],
+              "originalPlanSHA256": "4ac3a8d9b4b79befd36abc590731b1bc8f2e6c83919d5f6427c34c58a6ddba00",
+              "privateCommitInverseProofReceiptSHA256": "d818545fa493f1032b3b6bfb7b1ba4b8738e3b15968c3f0ed949a0d1bb09bce8",
+              "productionAdapterSHA256": "bb81dd2ee7fdefed19605fc47ed8bdd309b1bd531fea47fa548c27bdbdeeeb20",
+              "productionDataChangeApproved": false,
+              "readinessClosureSHA256": "6ff26ebf45fd6471e3124929128b06ca3cf20c53fdf03b12255029faca62e670",
+              "schema": "pow-audit30-exact-sixteen-production-approval-v1",
+              "status": "pending-final-human-approval",
+              "targetCount": 16,
+              "workerPreservationGuardSHA256": "48001283affb80b3b027dcc93831074aee872fbee649fb14482c32b00eb1c76c",
+              "writerTemplateSHA256": "2e9a7fb67616e46b3b14d1074dc5206eb280df6868cc249943645b8d8ab685da"
+            },
+            "approvalReceiptExists": false,
+            "draftFinalQuestion": "Approve the exact16 body_text repair and a separately invoked conditional exact inverse before code cutover, bound to the reviewed original manifest and tested writer. Each committed transaction legitimately invalidates one readiness shard; no epoch rewind or automatic retry. Strict parity must pass after repair before normal source cutover.",
+            "freshProjectionAdmission": {
+              "actualProductionDatabaseIdentity": {
+                "checksums": "off",
+                "dataDirectory": "/var/lib/postgresql/16/main",
+                "database": "proof_indexer",
+                "listenAddresses": "localhost",
+                "port": "5432",
+                "readOnly": "off",
+                "serverAddress": null,
+                "socket": "/var/run/postgresql",
+                "user": "postgres"
+              },
+              "actualRawSHA256": "d3b1c6f7b5aae0873fb98ed7b07c47948326ee6832e3b7cec7b363870bcab40c",
+              "atUtc": "2026-10-03T08:37:08.075728+00:00",
+              "expectedFieldHistogram": {
+                "body_text": 16
+              },
+              "expectedKnownTargetSetSHA256": "1815490ac19cb744738be9bd9cd2a500233abef737eb810c04c38cd47beca48f",
+              "expectedMismatchCount": 16,
+              "expectedPopulation": 619,
+              "identitySQLSourceSHA256": "ea5614fddc0ef7fb696d0159a141b25116fbd6ba2c4b309db171a548b7f8b70c",
+              "path": "/data/proofofwork-release-backups/audit30-node-release-38ac6e2bff2a-20261003T042000Z/focused-mail-projection-v5/completed.json",
+              "pointInTimeOnly": true,
+              "publicExactCapture": {
+                "bytes": 9302,
+                "path": "/tmp/pow-audit30-mail-projection-focused-native-v5.stdout",
+                "sha256": "d3b1c6f7b5aae0873fb98ed7b07c47948326ee6832e3b7cec7b363870bcab40c"
+              },
+              "requiredSchema": "pow-audit30-focused-mail-readonly-completed-v4",
+              "rootActualAccepted": true,
+              "status": "accepted-once-fresh-v5-readonly-capture",
+              "zeroOtherDifferenceCategories": true
+            },
+            "generatedWriterExists": false,
+            "operationalEffects": {
+              "mailItemsBodyTextTargets": 16,
+              "otherSourceProtocolLedgerOrParticipantWrites": false,
+              "postCommitObservationNotIndefiniteEpochEquality": true,
+              "readinessInvalidationsPerCommittedTransaction": 1,
+              "unrelatedWorkerMayAdvanceEpochAfterCommit": true
+            },
+            "productionDataMutation": false,
+            "productionRequestExists": false,
+            "proofAdmission": {
+              "acknowledgedApplyAndInverseReconciledCitationSHA256": "79d4eb412b9c34825c3c88758088fdd5f5a29eeb9844d158036b0168990b4901",
+              "actualRawSHA256": "d818545fa493f1032b3b6bfb7b1ba4b8738e3b15968c3f0ed949a0d1bb09bce8",
+              "original074500AttemptRemainsFailed": true,
+              "path": "/data/proofofwork-audit30-inspect-20261003T014100Z/exact-sixteen-readonly-finalization-v1/completed.json",
+              "publicExactByteImage": {
+                "bytes": 7010,
+                "path": "/tmp/pow-audit30-private-sixteen-readonly-finalization-completed-public-v1.json",
+                "sha256": "d818545fa493f1032b3b6bfb7b1ba4b8738e3b15968c3f0ed949a0d1bb09bce8"
+              },
+              "requiredSchema": "pow-audit30-private-sixteen-readonly-finalization-completed-v1",
+              "rootActualClosureAccepted": true
+            },
+            "qualification": "This is a nonexecutable source template. Pending fields cannot satisfy the existing f6f25 approval validator. Actual fresh evidence and direct human approval remain required; no production action is authorized by this file.",
+            "requiredBeforeFinalQuestion": [
+              "Accepted d818 readonly finalization binds saved separate acknowledged apply/inverse and fresh restored fingerprint, stopped/checksum/source7/five/accounting closure; original074500 FAILED stays failed.",
+              "Accepted fresh V5 read-only capture d3b1 confirms exact619 rows and only original16 body_text differences; actual state remains point-in-time and future apply repeats source/preimage/worker fences.",
+              "Nine-field production PG identity observed inside that same RR transaction and bound here, including actual default readOnly=off/checksums=off; direct human receipt has not been created.",
+              "Root and independent peer source acceptance of unchanged original writer plus actual v2 binding."
+            ],
+            "schema": "pow-audit30-exact-sixteen-final-review-plan-source-template-v3",
+            "sequence": [
+              "One final direct-human approval names the16 original-manifest targets, apply and separately invoked conditional exact inverse.",
+              "Immutable root-managed preparation binds exact approved canonical bytes and generates original2e9 by replacing only LIVE_APPROVAL_PIN; no other writer bytes change.",
+              "Root executes stateless480 before repair without a strict-accepted prerequisite; normal worker checkpoint minus144 must remain above962933, original sources/phases/five unchanged.",
+              "One SERIALIZABLE45s writer transaction locks fixed source/journal tables BEFORE reads, proves exact preimages/nonbody/nontarget/readiness closure, updates only16 existing body_text values and flushes one legitimate readiness invalidation.",
+              "Acknowledged action followed by Root480 AFTER and owned-unit stopped/source/five proofs; unknown COMMIT stops for explicit reconciliation, no automatic retry or inverse.",
+              "Fresh mail619 byte parity and strict full parity rerun must pass before separately authorized API/worker code cutover; no parity gate is waived.",
+              "Conditional inverse, if separately invoked BEFORE code cutover, uses same approval/generated writer and exact acknowledged apply raw hash, current exact postimages and same database; another legitimate shard increment, never an epoch rewind."
+            ],
+            "sources": [
+              {
+                "bytes": 16143,
+                "path": "/tmp/pow-audit30-production-sixteen-adapter-v2.mjs",
+                "sha256": "bb81dd2ee7fdefed19605fc47ed8bdd309b1bd531fea47fa548c27bdbdeeeb20"
+              },
+              {
+                "bytes": 9347,
+                "path": "/tmp/pow-audit30-production-sixteen-native-caller-v2.mjs",
+                "sha256": "18323f53e92bd6cf1a4d5945e2f630db6eeb884f065f22bbede07b9515e96e4f"
+              },
+              {
+                "bytes": 22040,
+                "path": "/tmp/pow-audit30-production-sixteen-root-control-v3.py",
+                "sha256": "b989a3f2395e7cbf13cb2d3dbd2d258a3fd21867131e41644c094772aba11168"
+              },
+              {
+                "bytes": 2636,
+                "path": "/tmp/pow-audit30-production-sixteen-root-bootstrap-v3.py",
+                "sha256": "eac18d7cdc8570875e55e36672d6419c857aa9e7fff7c1cbe8f92263bf25f1d4"
+              },
+              {
+                "bytes": 5139,
+                "path": "/tmp/pow-audit30-production-sixteen-approval-binding-v2.mjs",
+                "sha256": "f6f25ef5bfddf534d8b21d65ced4ff0d02b134a7b77114e41a16ac6e1787b286"
+              }
+            ],
+            "status": "source-only-tested-actual-private-and-fresh-population-accepted-final-human-approval-absent"
+          }
+        },
+        {
+          "bytes": 7207,
+          "path": "/tmp/pow-audit30-production-sixteen-root-command-spec-v4.json",
+          "sha256": "718d2f55f87dea08942bd3b6b03424f0784d12538b59646d7515991783149cce",
+          "value": {
+            "actualFreshProjection": {
+              "bytes": 9302,
+              "path": "/data/proofofwork-release-backups/audit30-node-release-38ac6e2bff2a-20261003T042000Z/focused-mail-projection-v5/completed.json",
+              "pointInTimeOnly": true,
+              "productionDatabaseIdentity": {
+                "checksums": "off",
+                "dataDirectory": "/var/lib/postgresql/16/main",
+                "database": "proof_indexer",
+                "listenAddresses": "localhost",
+                "port": "5432",
+                "readOnly": "off",
+                "serverAddress": null,
+                "socket": "/var/run/postgresql",
+                "user": "postgres"
+              },
+              "rootAccepted": true,
+              "sha256": "d3b1c6f7b5aae0873fb98ed7b07c47948326ee6832e3b7cec7b363870bcab40c"
+            },
+            "actualPrivateClosure": {
+              "bytes": 7010,
+              "original074500AttemptRemainsFailed": true,
+              "path": "/data/proofofwork-audit30-inspect-20261003T014100Z/exact-sixteen-readonly-finalization-v1/completed.json",
+              "readonlyFinalizationInvokedWriter": false,
+              "rootAccepted": true,
+              "sha256": "d818545fa493f1032b3b6bfb7b1ba4b8738e3b15968c3f0ed949a0d1bb09bce8"
+            },
+            "atUtc": "2026-10-03T08:39:14.819972+00:00",
+            "envelope": {
+              "request": {
+                "approval": "Exact root700 authoritydirectory/root600 canonical human receipt path+rawSHA",
+                "captureHelperBase64": "Exact33c3c65c reviewed helper",
+                "guardBase64": "Exact48001283 stateless guard",
+                "mode": "prepare then separately run with exactsameallfields except mode",
+                "operation": "apply OR separately approved inverse; never both in one invocation",
+                "priorApply": "null for apply; for inverse separately provided acknowledged apply completed.json path+rawSHA",
+                "privateProof": "Exact readonly finalization completed.json path, rawd818 SHA and native metadata; original074500 FAILED preserved",
+                "projection": "Exact focused-mail-projection-v5/completed.json rawd3b1 SHA, same public completed-v4 schema; Root accepted actual619/16-only at08:37",
+                "rootControlSHA256": "b989a3f2395e7cbf13cb2d3dbd2d258a3fd21867131e41644c094772aba11168",
+                "runId": "New valid RUN per explicit apply or inverse invocation",
+                "schema": "pow-audit30-production-sixteen-root-request-v1",
+                "sourcesBase64": "Exactly5 v2 PINS members, including adapter-v2; no arbitrary members"
+              },
+              "rootControlBase64": "Base64 of exactb989a3f2 root-control-v3 only",
+              "schema": "pow-audit30-production-sixteen-root-envelope-v1"
+            },
+            "failure": [
+              "Never automaticretry or inverse",
+              "UncertainCOMMIT or lost transport requires exact existingreceipt/unit/DB reconciliation; failure is not proofnochange",
+              "Known committed receipt followed by failedpostguard remains acknowledged action plus failedacceptance; no automatic inverse",
+              "Partial PREPARE namespace remains preserved; no overwrite or cleanup",
+              "Conditionalinverse only separately invoked, binds sameapproval+generatedwriter and exactrawacknowledgedapply/sameDB/postimages, beforecutoveroldfive"
+            ],
+            "humanApprovalExists": false,
+            "localTransport": {
+              "interface": "Bound bootstrap/envelope by SHA, then execute(remote_command(bootstrapBytes),envelopeBytes,newExclusivePrefix,420,stdout_cap=65536,stderr_cap=65536,bindings=allsourceAndEnvelopeSHAs)",
+              "nativeCommand": "sudo -n /usr/bin/python3 -I -B -c exact reviewed bootstrap source; typed envelope through stdin only",
+              "source": {
+                "bytes": 8396,
+                "path": "/tmp/pow-audit30-readonly-owned-transport-v3.py",
+                "sha256": "1dedef0a6c7021d114017e711ad74f9cfed4e461fc047a2be2c49e590f3da18e"
+              },
+              "sshIdentity": "powadmin@65.108.122.87 via proofofwork_node_ed25519, IdentitiesOnly+StrictHostKeyChecking+BatchMode",
+              "transportDoesNotProveOwnedUnitStopped": true
+            },
+            "nativeActionExecuted": false,
+            "prerequisites": [
+              "A separately accepted actual isolated acknowledged16 forwardCOMMIT plus separate inverse and stopped/source7/accounting proof",
+              "Root-issued canonical human approval receipt from the final explicit approval, exact4ac3/8d5/16targetSHA and original2e9+bb81dd2e+480 code pins",
+              "Exact future production DB identity bound by that receipt and checked under original library transaction",
+              "Fresh same originalfive, scheduledbackupinactive, nextbackup>=420s, existingopslock identity and100GiBdata/10GiBroot reserves",
+              "No competing audit/privatePG/API/Core lane; unique root700/PG700 operation evidence and missing fixed native unit"
+            ],
+            "productionDataMutation": false,
+            "productionWriterGenerated": false,
+            "qualification": [
+              "No future human approval/proof was fabricated and no executable native request was generated",
+              "27 localcontroller+9 localbootstrap cases; mockednative sequence is not a realprivateCOMMIT/inverse proof",
+              "Actual SIGTERM tested only against harmless compiled in-memory bootstrap stub",
+              "Focused619 observation9fe is point-in-time06:51 data, not a continuous source guarantee",
+              "Stateless480 observations are point-in-time and shallowlookback-qualified; nofullPWT witness/replay certification",
+              "Ordinarynewmail before source-preservingcutover could produce a new mismatch; exact16 scope cannot silentlyexpand",
+              "V2 binds readonly finalization as closure and actual074500/b1f as definitions-only dependency source. No original074500 runtime or broken proof_result invocation.",
+              "48 adapter+31 caller assertions and31 root+11 bootstrap cases pass. Actual d818+d3b1 validate through unchanged adapterV2; direct human approval and executable production request remain absent."
+            ],
+            "schema": "pow-audit30-proposed-production-sixteen-root-command-spec-v4",
+            "sequence": [
+              "PREPARE only creates immutable exact code/proof/dependency package; actualhuman/rawprivateproof are mandatory and noPG unit starts",
+              "RUN takes existingopslock, repeats pins/reserves/five/backup, creates exclusive receipts, executes exact480 BEFORE",
+              "One typed PG108:112 nativecaller18323f53 apply OR inverse; original2e9 SQL/preimages/closure/unknown-COMMIT unchanged",
+              "Exactowned Invocation/ExecStart and terminalMainPID0 or qualifiedGC through33c; acknowledged rawreceipt equals nativeCLI SHA",
+              "Exact480 AFTER; originalfive/authority/source/dependency rechecks; durable root outcome",
+              "After approved apply, strict full parity mustPASS before separate protected API/worker cutover; no circular strict prerequisite in repair path"
+            ],
+            "sources": [
+              {
+                "bytes": 22040,
+                "path": "/tmp/pow-audit30-production-sixteen-root-control-v3.py",
+                "sha256": "b989a3f2395e7cbf13cb2d3dbd2d258a3fd21867131e41644c094772aba11168"
+              },
+              {
+                "bytes": 18449,
+                "path": "/tmp/pow-audit30-production-sixteen-root-control-v3.test.py",
+                "sha256": "f423634ae7130f80be5bb15182f19b94edc70c073b187e790486171a1cfb94ec"
+              },
+              {
+                "bytes": 2636,
+                "path": "/tmp/pow-audit30-production-sixteen-root-bootstrap-v3.py",
+                "sha256": "eac18d7cdc8570875e55e36672d6419c857aa9e7fff7c1cbe8f92263bf25f1d4"
+              },
+              {
+                "bytes": 3950,
+                "path": "/tmp/pow-audit30-production-sixteen-root-bootstrap-v3.test.py",
+                "sha256": "00192cfb17c4533685c02771446ada66291159e447d1bbb4dde912a2c7b4dd2a"
+              },
+              {
+                "bytes": 9347,
+                "path": "/tmp/pow-audit30-production-sixteen-native-caller-v2.mjs",
+                "sha256": "18323f53e92bd6cf1a4d5945e2f630db6eeb884f065f22bbede07b9515e96e4f"
+              },
+              {
+                "bytes": 16143,
+                "path": "/tmp/pow-audit30-production-sixteen-adapter-v2.mjs",
+                "sha256": "bb81dd2ee7fdefed19605fc47ed8bdd309b1bd531fea47fa548c27bdbdeeeb20"
+              }
+            ],
+            "status": "source-only-tested-actual-private-and-fresh-population-accepted-direct-human-approval-absent",
+            "transaction": {
+              "clientCapsDoNotLimitProductionPostgresBackend": true,
+              "clientCgroupMemoryGiB": 2,
+              "clientHeapMiB": 128,
+              "clientUnitRuntimeSeconds": 120,
+              "cpuQuotaPercent": 50,
+              "libraryWholeSeconds": 45,
+              "outerTransportProposedSeconds": 420,
+              "ownedCaptureSeconds": 150,
+              "postgresLockSeconds": 3,
+              "postgresStatementSeconds": 30
+            }
+          }
+        }
+      ],
       "nativeCensus": {
         "allMailKeys": 619,
         "bodyOnlyProposedTargets": 16,
         "byteEqual": 603,
-        "nativeInverse": "passed-all16-ea56-761ms-forward-exactinverse-namedqueue-fourfingerprints-ROLLBACK-only; separatecommittedinverse remainspending",
+        "freshProjectionSHA256": "d3b1c6f7b5aae0873fb98ed7b07c47948326ee6832e3b7cec7b363870bcab40c",
+        "nativeInverse": "Acknowledged separate isolated apply/inverse reconciled79d4 and read-only-finalizedd818; all619 restored. Original074500 post-commit verifier attempt remainsfailed. No production inverse.",
         "privatePlanSha256": "4ac3a8d9b4b79befd36abc590731b1bc8f2e6c83919d5f6427c34c58a6ddba00",
+        "privateReadOnlyClosureSHA256": "d818545fa493f1032b3b6bfb7b1ba4b8738e3b15968c3f0ed949a0d1bb09bce8",
         "productionDataMutationApproved": false,
-        "status": "pass-core-backed-same16-historical-targets"
+        "productionDatabaseIdentity": {
+          "checksums": "off",
+          "dataDirectory": "/var/lib/postgresql/16/main",
+          "database": "proof_indexer",
+          "listenAddresses": "localhost",
+          "port": "5432",
+          "readOnly": "off",
+          "serverAddress": null,
+          "socket": "/var/run/postgresql",
+          "user": "postgres"
+        },
+        "status": "accepted-core-backed-original16-and-fresh-v5-exact619-body-only"
       },
       "productionDataMutationApproved": false,
+      "publicProposedPlan": {
+        "bytes": 4594,
+        "path": "/home/sixer/ProofOfWork.Me/audits/2026-10-03-audit30-exact-sixteen-body-repair-proposal.md",
+        "sha256": "2d29c5a8a37c1aa42631dc615f8847640bdd4ce074b1c48524271ea40f96cadc"
+      },
       "readOnlyProgressAndDiagnosis": [
         {
           "bytes": 22984,
@@ -182658,9 +183022,698 @@
             "startedAtUtc": "2026-10-03T08:01:19.539778+00:00",
             "typedStdinBytesDelivered": 0
           }
+        },
+        {
+          "bytes": 7010,
+          "path": "/tmp/pow-audit30-private-sixteen-readonly-finalization-completed-public-v1.json",
+          "sha256": "d818545fa493f1032b3b6bfb7b1ba4b8738e3b15968c3f0ed949a0d1bb09bce8",
+          "value": {
+            "adapterProof": {
+              "admissionSHA256": "23f2d831c0b974821759d27a8678cdaa1e9d295f347618d0d1dfe95217011cab",
+              "applyReceiptSHA256": "a79a9a114a10f1703cbccec0e6880ac7794b855b93929b779fa43ff8a28622cc",
+              "automaticRetry": false,
+              "bodyPreimagesRestored": true,
+              "ea56SHA256": "ea5614fddc0ef7fb696d0159a141b25116fbd6ba2c4b309db171a548b7f8b70c",
+              "forwardCommitAcknowledged": true,
+              "inverseReceiptSHA256": "19603e725da7c51faba14b926481c78a87d18f75df5d0aab9c6a93b82945366f",
+              "librarySHA256": "2e9a7fb67616e46b3b14d1074dc5206eb280df6868cc249943645b8d8ab685da",
+              "liveApproval": false,
+              "manifestSHA256": "8d5d347aea2d398d75e69631f90b3efdd1c3254cfdbf3864015199b078699c50",
+              "newCoreReplayClaimed": false,
+              "nonbodyNontargetUnchangedInEachTransaction": true,
+              "operationalEpochRewind": false,
+              "originalEngineSHA256": "09b3240e45d76278a67053f5fba6009cccce36b00c1b098d38d7435da978dc58",
+              "originalPlanSHA256": "4ac3a8d9b4b79befd36abc590731b1bc8f2e6c83919d5f6427c34c58a6ddba00",
+              "privateJob": "/data/proofofwork-audit30-inspect-20261003T014100Z",
+              "productionApplyApproved": false,
+              "productionMutation": false,
+              "readinessInvalidationPerCommittedTransaction": true,
+              "schema": "pow-audit30-private-exact-sixteen-commit-inverse-proof-v1",
+              "separateInverseCommitAcknowledged": true,
+              "source7Accessed": false,
+              "status": "passed",
+              "targetCount": 16
+            },
+            "applyInvoked": false,
+            "automaticRetry": false,
+            "backupWindowRecheckedAtStop": true,
+            "crossTransactionFullMailFingerprintRestored": true,
+            "currentReadOnlyState": {
+              "currentCompleteMailFingerprint": {
+                "count": 619,
+                "logical_bytes": "1798351",
+                "sha256": "2075b8261fdd5f09b2c04370dcd0014c0d25e240f249966baf66a9952696e181"
+              },
+              "currentJournalFingerprint": {
+                "meta": {
+                  "count": 14,
+                  "logical_bytes": "5954795",
+                  "sha256": "aab668ccd1346bf886d99cfae9de5d363a275d509d5cf8d2a97fa43ab4a58a29"
+                },
+                "queue": {
+                  "count": 0,
+                  "logical_bytes": "0",
+                  "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+                },
+                "shards": {
+                  "count": 64,
+                  "logical_bytes": "6447",
+                  "sha256": "e5641b476e928188d019e5896c6a0574614e33a52c9792077fcdc68cd6eedf76"
+                }
+              },
+              "currentSavedFence": {
+                "canonicalBlock": {
+                  "hash": "00000000000000000001c495201991943ae88860aeaca7db34c37e210e765ee0",
+                  "height": 969526
+                },
+                "confirmedTransactionMaxHeight": 969511,
+                "precisionActivationHeight": "960601",
+                "precisionMarkerStatus": "complete",
+                "transitionMaxHash": "00000000000000000001c495201991943ae88860aeaca7db34c37e210e765ee0",
+                "transitionMaxHeight": 969526
+              },
+              "explicitReadOnlyTransaction": true,
+              "samePrivateDatabaseIdentity": true
+            },
+            "inverseInvoked": false,
+            "liveServicesUnchanged": true,
+            "mathCompletedSha256": "3d65f98e03aa341eed849d1506339ccd66af443d6fcf9cf33e794cd4073edcaf",
+            "offlinePrivatePagesChecked": true,
+            "operationalEpochRewind": false,
+            "operationalReadinessTwoLegitimateInvalidations": true,
+            "originalAttemptRemainsFailed": true,
+            "originalFailureBindings": {
+              "failed": {
+                "metadata": {
+                  "bytes": 336,
+                  "ctimeNs": 1791013638831970848,
+                  "device": 64514,
+                  "gid": 112,
+                  "inode": 11142843,
+                  "mode": 384,
+                  "mtimeNs": 1791013638831970848,
+                  "nlink": 1,
+                  "uid": 108
+                },
+                "path": "/data/proofofwork-audit30-inspect-20261003T014100Z/exact-sixteen-write-proof-v1/supervisor-failed.json",
+                "sha256": "ceb1ba4a373c1b46f5bae86e773e0d9b49e96d334b07001ce5227ecfde643666"
+              },
+              "intent": {
+                "metadata": {
+                  "bytes": 3209,
+                  "ctimeNs": 1791013636203969701,
+                  "device": 64514,
+                  "gid": 112,
+                  "inode": 11142839,
+                  "mode": 384,
+                  "mtimeNs": 1791013636203969701,
+                  "nlink": 1,
+                  "uid": 108
+                },
+                "path": "/data/proofofwork-audit30-inspect-20261003T014100Z/exact-sixteen-write-proof-v1/supervisor-intent.json",
+                "sha256": "40a3ac3e885cd5092cc67f693baa60a2be3ffec01bc5a653d04d917882060151"
+              }
+            },
+            "planSha256": "bc8803c60e4f1cb2615bf6e6258ec10b04ff7c40a9a2f951dc4bafb42056acdc",
+            "privateClusterStopped": true,
+            "productionMutation": false,
+            "reconciliationReceiptSha256": "79d4eb412b9c34825c3c88758088fdd5f5a29eeb9844d158036b0168990b4901",
+            "rootPrivateMathAccounting": {
+              "allocatedBytes": 28672,
+              "completedMetadata": {
+                "allocatedBytes": 12288,
+                "bytes": 11774,
+                "ctimeNs": 1791011380067192039,
+                "device": 64514,
+                "gid": 0,
+                "inode": 11142836,
+                "mode": 384,
+                "mtimeNs": 1791011380067192039,
+                "nlink": 1,
+                "uid": 0
+              },
+              "completedSha256": "3d65f98e03aa341eed849d1506339ccd66af443d6fcf9cf33e794cd4073edcaf",
+              "entries": 5,
+              "metadata": {
+                "allocatedBytes": 4096,
+                "bytes": 4096,
+                "ctimeNs": 1791011380067192039,
+                "device": 64514,
+                "gid": 0,
+                "inode": 11142816,
+                "mode": 448,
+                "mtimeNs": 1791011380067192039,
+                "nlink": 2,
+                "uid": 0
+              },
+              "nestedMounts": 0,
+              "noHardlinkedFiles": true,
+              "noSymlinks": true,
+              "noXattrs": true,
+              "path": "/data/proofofwork-audit30-inspect-20261003T014100Z/stream-completion-v2/onhost-math-completion-v2",
+              "regularBytes": 20813,
+              "rootPrivateOnly": true,
+              "treeSha256": "b50a31503907f52ebde1e8b383e0cbef8cc58e528367767c6db31fa7560fc10e"
+            },
+            "rootPrivateMathFullAllocationCharged": true,
+            "savedReceiptBindings": {
+              "apply-commit-intent.json": {
+                "metadata": {
+                  "bytes": 1354,
+                  "ctimeNs": 1791013637273970168,
+                  "device": 64514,
+                  "gid": 112,
+                  "inode": 11142851,
+                  "mode": 384,
+                  "mtimeNs": 1791013637273970168,
+                  "nlink": 1,
+                  "uid": 108
+                },
+                "path": "/data/proofofwork-audit30-inspect-20261003T014100Z/exact-sixteen-write-proof-v1/apply-commit-intent.json",
+                "sha256": "91621fd7f06e219ab012fec9246ecd2ff256321a4755c616b28d32cde19b07f4"
+              },
+              "apply-completed.json": {
+                "metadata": {
+                  "bytes": 2231,
+                  "ctimeNs": 1791013637299970180,
+                  "device": 64514,
+                  "gid": 112,
+                  "inode": 11142847,
+                  "mode": 384,
+                  "mtimeNs": 1791013637299970180,
+                  "nlink": 1,
+                  "uid": 108
+                },
+                "path": "/data/proofofwork-audit30-inspect-20261003T014100Z/exact-sixteen-write-proof-v1/apply-completed.json",
+                "sha256": "a79a9a114a10f1703cbccec0e6880ac7794b855b93929b779fa43ff8a28622cc"
+              },
+              "inverse-commit-intent.json": {
+                "metadata": {
+                  "bytes": 1356,
+                  "ctimeNs": 1791013638014970492,
+                  "device": 64514,
+                  "gid": 112,
+                  "inode": 11142855,
+                  "mode": 384,
+                  "mtimeNs": 1791013638014970492,
+                  "nlink": 1,
+                  "uid": 108
+                },
+                "path": "/data/proofofwork-audit30-inspect-20261003T014100Z/exact-sixteen-write-proof-v1/inverse-commit-intent.json",
+                "sha256": "2b9b0912e330612e8e15446ea7c8242efdb128a358ca1d693452529ac33f0d31"
+              },
+              "inverse-completed.json": {
+                "metadata": {
+                  "bytes": 2233,
+                  "ctimeNs": 1791013638021970495,
+                  "device": 64514,
+                  "gid": 112,
+                  "inode": 11142849,
+                  "mode": 384,
+                  "mtimeNs": 1791013638021970495,
+                  "nlink": 1,
+                  "uid": 108
+                },
+                "path": "/data/proofofwork-audit30-inspect-20261003T014100Z/exact-sixteen-write-proof-v1/inverse-completed.json",
+                "sha256": "19603e725da7c51faba14b926481c78a87d18f75df5d0aab9c6a93b82945366f"
+              },
+              "proof-completed.json": {
+                "metadata": {
+                  "bytes": 1251,
+                  "ctimeNs": 1791013638025970497,
+                  "device": 64514,
+                  "gid": 112,
+                  "inode": 11142852,
+                  "mode": 384,
+                  "mtimeNs": 1791013638025970497,
+                  "nlink": 1,
+                  "uid": 108
+                },
+                "path": "/data/proofofwork-audit30-inspect-20261003T014100Z/exact-sixteen-write-proof-v1/proof-completed.json",
+                "sha256": "84fb37833d7c326f689beeb6d8552dbb921beda147114e7bf844a5b2d2d2594d"
+              }
+            },
+            "schema": "pow-audit30-private-sixteen-readonly-finalization-completed-v1",
+            "sealedSourceFullHashVerifiedAtStop": true,
+            "sealedSourceFullHashVerifiedBeforeStart": true,
+            "sealedSourceStarted": false,
+            "sourceAndAllEvidenceRetained": true,
+            "status": "passed",
+            "storage": {
+              "atUtc": "2026-10-03T08:14:18.781972+00:00",
+              "dataAvailableBytes": 292892233728,
+              "jobAllocatedBytes": 39838683136,
+              "rootAvailableBytes": 67069751296,
+              "rootPrivateMathAllocatedBytes": 28672
+            },
+            "streamCompletedSha256": "974e16cfb288e19e7320fa87687d32cff65b2a58296b4e94893ddbdfaea3c841",
+            "wholeSeconds": 85.13568171299994,
+            "writerInvoked": false
+          }
+        },
+        {
+          "bytes": 9302,
+          "path": "/tmp/pow-audit30-mail-projection-focused-native-v5.stdout",
+          "sha256": "d3b1c6f7b5aae0873fb98ed7b07c47948326ee6832e3b7cec7b363870bcab40c",
+          "value": {
+            "apiRequests": 0,
+            "atUtc": "2026-10-03T08:37:08.075728+00:00",
+            "automaticRetry": false,
+            "candidateModuleMetadata": {
+              "server/db/postgres.mjs": {
+                "bytes": "1510",
+                "ctimeNs": "1791001227817753294",
+                "dev": "64512",
+                "gid": 1000,
+                "ino": "1195791",
+                "mode": 416,
+                "mtimeNs": "1791001227817753294",
+                "nlink": "1",
+                "uid": 1000
+              },
+              "server/proof-index-mail-projection.mjs": {
+                "bytes": "11172",
+                "ctimeNs": "1791001227825753295",
+                "dev": "64512",
+                "gid": 1000,
+                "ino": "1195810",
+                "mode": 416,
+                "mtimeNs": "1791001227825753295",
+                "nlink": "1",
+                "uid": 1000
+              }
+            },
+            "childExitCode": 0,
+            "childStopped": true,
+            "coreRequests": 0,
+            "directDatabaseWrites": false,
+            "freshMailProjection": {
+              "moduleGraphReadableBeforeDatabase": true,
+              "nativeGid": 112,
+              "nativeUid": 108,
+              "parity": {
+                "allMismatchTxidsInKnownSixteen": true,
+                "allMismatchesBodyOnly": true,
+                "duplicateObservedCount": 0,
+                "exactKnownSixteen": true,
+                "expectedCount": 619,
+                "expectedSha256": "5f67795035764a0c10831a030476ea3371a6f936b7d6b90d3bb9a68df6ba4f4f",
+                "extraCount": 0,
+                "extraSha256": "b9925bb3af96f4ad85539adb4a87cdc133e0494b2759c0f7221b0f4c44b50bed",
+                "fieldHistogram": {
+                  "body_text": 16
+                },
+                "invalidEventCount": 0,
+                "invalidEventSha256": "3ae3706486ee12d6d16a59a486ba4d5e9eb91aac88427bef4bc9550513993245",
+                "knownSixteenTxidSetSHA256": "1815490ac19cb744738be9bd9cd2a500233abef737eb810c04c38cd47beca48f",
+                "mismatchSampleComplete": true,
+                "mismatchedCount": 16,
+                "mismatchedSha256": "54b322de7dbf8ff7e70df03deb5b3b0be2d27b6f3d5e4bad26faaa07871c2ae2",
+                "mismatchedTxidSHA256": [
+                  {
+                    "fields": [
+                      "body_text"
+                    ],
+                    "txidSHA256": "c3db94e5e4d7d7b6e54b611d2621be4bc86fc4f402df4a72fbff33dca68e32c9"
+                  },
+                  {
+                    "fields": [
+                      "body_text"
+                    ],
+                    "txidSHA256": "50f8b1828e52154118b4e62f9447ce7a059e5b3828399af3d9f3cf2b43738c38"
+                  },
+                  {
+                    "fields": [
+                      "body_text"
+                    ],
+                    "txidSHA256": "cb7b10b6ce14f9d478315fb912cc4ae363ff27bd4e95588aaf9fc267c2f91893"
+                  },
+                  {
+                    "fields": [
+                      "body_text"
+                    ],
+                    "txidSHA256": "ce509aa5823d9753e10088930846c72d2832219cb9c9f7b63db4ffdfb8e0c031"
+                  },
+                  {
+                    "fields": [
+                      "body_text"
+                    ],
+                    "txidSHA256": "321440656d647336f85c9ba9e8033027ca62a7bb4ca37eaa814b406067ac3d25"
+                  },
+                  {
+                    "fields": [
+                      "body_text"
+                    ],
+                    "txidSHA256": "f07d575fa75e9c3243d867ca504755e5a188ac14a5635e9a1afff181b69b6366"
+                  },
+                  {
+                    "fields": [
+                      "body_text"
+                    ],
+                    "txidSHA256": "799f45f5067c822b383cceb3f5aba381e4de155bc0773f4dd58f14d205d4e9ad"
+                  },
+                  {
+                    "fields": [
+                      "body_text"
+                    ],
+                    "txidSHA256": "a67a645b802ed0b516863670bbbb52c518ccf18172956bb76553b325a0077354"
+                  },
+                  {
+                    "fields": [
+                      "body_text"
+                    ],
+                    "txidSHA256": "2566959b8ae656a4775c51e7eaf2458f6e46e878125660573fbe05734eb1d133"
+                  },
+                  {
+                    "fields": [
+                      "body_text"
+                    ],
+                    "txidSHA256": "607ba5688fe3ae1bf7c00f74db77529bc97cd872350fad3c9f059ec372aef206"
+                  },
+                  {
+                    "fields": [
+                      "body_text"
+                    ],
+                    "txidSHA256": "d9bbefe44a72447534d68eefc0e25c76abe55d7200ef2f9e7c0655970efab61c"
+                  },
+                  {
+                    "fields": [
+                      "body_text"
+                    ],
+                    "txidSHA256": "851805d66fbcc0f28d41cc7952dd14ad6962d2dd8a5298a6d15dc21fde13909e"
+                  },
+                  {
+                    "fields": [
+                      "body_text"
+                    ],
+                    "txidSHA256": "dac229452dddbd2acc75abf5755c28dfe8835086ee79eaf2d030ae1dda2b078d"
+                  },
+                  {
+                    "fields": [
+                      "body_text"
+                    ],
+                    "txidSHA256": "ea36ffacc920515f1fd50b34418ed667c53d3e91e7d2e6065605a37c015dfc58"
+                  },
+                  {
+                    "fields": [
+                      "body_text"
+                    ],
+                    "txidSHA256": "6b582b64cb99e057dbeb88e7b52a5f8b53da83152d362672e6e64a75d4caaa98"
+                  },
+                  {
+                    "fields": [
+                      "body_text"
+                    ],
+                    "txidSHA256": "bec337a1a52691f26929590ba067dda31934d2d49c53e0217f824198e0121888"
+                  }
+                ],
+                "mismatchedTxidSetSHA256": "1815490ac19cb744738be9bd9cd2a500233abef737eb810c04c38cd47beca48f",
+                "missingCount": 0,
+                "missingSha256": "2a783ad388e30cc7fed9734f59f6718085770ee730ff4aadde402d3bacb70061",
+                "model": "canonical-proof-index-rendered-mail-projection-parity-v1",
+                "observedCount": 619,
+                "observedSha256": "00a2788428940abc2d7cc5e52413a384bf66010e1cde8d5f3c1c59a93f32a874",
+                "ready": false,
+                "volatileTransactionOverlayCount": 0,
+                "volatileTransactionOverlaySha256": "4a238e37122c141474422cb478efa7e5ce95a865f4ed17313e4167324291b56e"
+              },
+              "population": {
+                "eventRows": 619,
+                "mailRows": 619,
+                "transactionRows": 619
+              },
+              "productionDatabaseIdentity": {
+                "checksums": "off",
+                "dataDirectory": "/var/lib/postgresql/16/main",
+                "database": "proof_indexer",
+                "listenAddresses": "localhost",
+                "port": "5432",
+                "readOnly": "off",
+                "serverAddress": null,
+                "socket": "/var/run/postgresql",
+                "user": "postgres"
+              },
+              "readOnly": true,
+              "snapshotSHA256": "596e3b6b793d79ba4acce9dac66f30a0475367938a84e0e8f8f6733059d96c39"
+            },
+            "knownSixteenManifestSHA256": "8d5d347aea2d398d75e69631f90b3efdd1c3254cfdbf3864015199b078699c50",
+            "liveFiveUnchanged": true,
+            "newModulePackage": {
+              "entries": {
+                ".": {
+                  "bytes": "4096",
+                  "ctimeNs": "1791016627596176125",
+                  "dev": "64512",
+                  "gid": 112,
+                  "ino": "1091195",
+                  "mode": 488,
+                  "mtimeNs": "1791016627596176125",
+                  "nlink": "3",
+                  "uid": 0
+                },
+                "node_modules": {
+                  "metadata": {
+                    "bytes": "69",
+                    "ctimeNs": "1791016627596176125",
+                    "dev": "64512",
+                    "gid": 112,
+                    "ino": "1091200",
+                    "mode": 511,
+                    "mtimeNs": "1791016627596176125",
+                    "nlink": "1",
+                    "uid": 0
+                  },
+                  "target": "/usr/local/lib/proofofwork-audit30-onhost-math/v2/source/node_modules"
+                },
+                "server": {
+                  "bytes": "4096",
+                  "ctimeNs": "1791016627596176125",
+                  "dev": "64512",
+                  "gid": 112,
+                  "ino": "1091196",
+                  "mode": 488,
+                  "mtimeNs": "1791016627596176125",
+                  "nlink": "3",
+                  "uid": 0
+                },
+                "server/db": {
+                  "bytes": "4096",
+                  "ctimeNs": "1791016627595176126",
+                  "dev": "64512",
+                  "gid": 112,
+                  "ino": "1091197",
+                  "mode": 488,
+                  "mtimeNs": "1791016627595176126",
+                  "nlink": "2",
+                  "uid": 0
+                },
+                "server/db/postgres.mjs": {
+                  "bytes": "1510",
+                  "ctimeNs": "1791016627595176126",
+                  "dev": "64512",
+                  "gid": 112,
+                  "ino": "1091198",
+                  "mode": 288,
+                  "mtimeNs": "1791016627595176126",
+                  "nlink": "1",
+                  "uid": 0
+                },
+                "server/proof-index-mail-projection.mjs": {
+                  "bytes": "11172",
+                  "ctimeNs": "1791016627596176125",
+                  "dev": "64512",
+                  "gid": 112,
+                  "ino": "1091199",
+                  "mode": 288,
+                  "mtimeNs": "1791016627596176125",
+                  "nlink": "1",
+                  "uid": 0
+                }
+              },
+              "exactFileSHA256": {
+                "server/db/postgres.mjs": "2b959860e0513907447459c1b196bfaaf81fba5131bfa050e528f911c18e616c",
+                "server/proof-index-mail-projection.mjs": "bc3c4efa87e3a9b7c0918d340d5626ca08491d7c6695f8951ce2c817c88f900c"
+              },
+              "existingDependencyTreeModified": false,
+              "package": "/usr/local/lib/proofofwork-audit30-mail-projection-focused-v5",
+              "sourceBytesPreserved": true
+            },
+            "privateContentsExported": false,
+            "privateReadOnlyClosure": {
+              "metadata": {
+                "bytes": "7010",
+                "ctimeNs": "1791015261650974438",
+                "dev": "64514",
+                "gid": 112,
+                "ino": "11142862",
+                "mode": 384,
+                "mtimeNs": "1791015261650974438",
+                "nlink": "1",
+                "uid": 108
+              },
+              "originalAttemptRemainsFailed": true,
+              "path": "/data/proofofwork-audit30-inspect-20261003T014100Z/exact-sixteen-readonly-finalization-v1/completed.json",
+              "sha256": "d818545fa493f1032b3b6bfb7b1ba4b8738e3b15968c3f0ed949a0d1bb09bce8"
+            },
+            "qualification": "Fresh RR, not strict capture/Core replay. Prior6141 hash proof; fresh pg/fourdirs, not whole-tree rehash. Two exact new modules+confined link preserve original bytes/permissions. Actual108:112 imports precede DB.256MiB caps client only; PG20s/3s/work8MiB/temp32MiB.",
+            "savedStrictCheckSeverities": {
+              "blockingErrorCount": 1,
+              "failed": [
+                {
+                  "name": "work-amo-v5-migration",
+                  "ok": false,
+                  "severity": "warning"
+                },
+                {
+                  "name": "work-amo-v5-usd-quote-head",
+                  "ok": false,
+                  "severity": "warning"
+                },
+                {
+                  "name": "rendered-mail-projection-semantic-parity",
+                  "ok": false,
+                  "severity": "error"
+                }
+              ],
+              "historicalWarningCount": 2,
+              "qualification": "Original saved strict attempt check severities; quote-required boolean is inferred from the byte-pinned parity source conditional, not a fresh environment census.",
+              "workAmoV5ReadinessRequiredByQuoteSeverity": false
+            },
+            "savedStrictReceiptSHA256": "52e0b8b20d939e07f13bd2f1d90be0d8655f11176a0ddce7e57eb1549f8c427c",
+            "schema": "pow-audit30-focused-mail-readonly-completed-v4",
+            "seconds": 0.48,
+            "sourceCopy": {
+              "completionSHA256": "dc9e158445be2a176ef683ae7b3b5df40a44480f77ef9a57def85826d0225ff1",
+              "freshSelectedMembers": {
+                "node_modules/pg/lib/index.js": "3fad6e6d3d976edbabe0cbc9e1d39f4340bcb719bbbb186a0d3a24f3dbd4a94c"
+              },
+              "freshSelectedMetadata": {
+                ".": {
+                  "bytes": "4096",
+                  "ctimeNs": "1790997156991190992",
+                  "dev": "64512",
+                  "gid": 112,
+                  "ino": "435378",
+                  "mode": 488,
+                  "mtimeNs": "1790997156991190992",
+                  "nlink": "6",
+                  "uid": 0
+                },
+                "node_modules": {
+                  "bytes": "4096",
+                  "ctimeNs": "1790997156979190990",
+                  "dev": "64512",
+                  "gid": 112,
+                  "ino": "435379",
+                  "mode": 488,
+                  "mtimeNs": "1790997156979190990",
+                  "nlink": "61",
+                  "uid": 0
+                },
+                "node_modules/pg": {
+                  "bytes": "4096",
+                  "ctimeNs": "1790997156743190943",
+                  "dev": "64512",
+                  "gid": 112,
+                  "ino": "1090474",
+                  "mode": 488,
+                  "mtimeNs": "1790997156743190943",
+                  "nlink": "4",
+                  "uid": 0
+                },
+                "node_modules/pg/lib": {
+                  "bytes": "4096",
+                  "ctimeNs": "1790997156743190943",
+                  "dev": "64512",
+                  "gid": 112,
+                  "ino": "1090581",
+                  "mode": 488,
+                  "mtimeNs": "1790997156743190943",
+                  "nlink": "4",
+                  "uid": 0
+                },
+                "node_modules/pg/lib/index.js": {
+                  "bytes": "1810",
+                  "ctimeNs": "1790997156741190943",
+                  "dev": "64512",
+                  "gid": 112,
+                  "ino": "1090590",
+                  "mode": 288,
+                  "mtimeNs": "1790997156741190943",
+                  "nlink": "1",
+                  "uid": 0
+                }
+              },
+              "freshWholeTreeRehashed": false,
+              "manifestSHA256": "e904b0379dd6c80f68eebbb556b5bd5caa8619aa79df89f03ed16ebbeb6db977",
+              "packageMetadata": {
+                "bytes": "4096",
+                "ctimeNs": "1791011367064190744",
+                "dev": "64512",
+                "gid": 112,
+                "ino": "435369",
+                "mode": 488,
+                "mtimeNs": "1791011367064190744",
+                "nlink": "3",
+                "uid": 0
+              },
+              "priorNativeStopped": true,
+              "priorNativeWholeTreeReadableEntries": 6141
+            },
+            "stderrBytes": 0,
+            "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stdoutBytes": 3423,
+            "stdoutSHA256": "a5d840f275229e02ceb740c31fcaf59504f259b1e22bb66231e8f0445ef5035e",
+            "timerUnchanged": true
+          }
+        },
+        {
+          "bytes": 1429,
+          "path": "/tmp/pow-audit30-production-sixteen-actual-public-proof-validation-v1.json",
+          "sha256": "12b9f8adf68ff90aa72518ca9afd1ccd058fb3235eba32f7a61ba33b912a25de",
+          "value": {
+            "adapter": {
+              "bytes": 16143,
+              "path": "/tmp/pow-audit30-production-sixteen-adapter-v2.mjs",
+              "sha256": "bb81dd2ee7fdefed19605fc47ed8bdd309b1bd531fea47fa548c27bdbdeeeb20"
+            },
+            "atUtc": "2026-10-03T08:39:14.820489+00:00",
+            "exactBodyMismatchCount": 16,
+            "expectedPopulation": 619,
+            "freshProjection": {
+              "bytes": 9302,
+              "path": "/tmp/pow-audit30-mail-projection-focused-native-v5.stdout",
+              "sha256": "d3b1c6f7b5aae0873fb98ed7b07c47948326ee6832e3b7cec7b363870bcab40c"
+            },
+            "generatedApprovedWriterExists": false,
+            "humanApprovalExists": false,
+            "original074500AttemptRemainsFailed": true,
+            "privateProof": {
+              "bytes": 7010,
+              "path": "/tmp/pow-audit30-private-sixteen-readonly-finalization-completed-public-v1.json",
+              "sha256": "d818545fa493f1032b3b6bfb7b1ba4b8738e3b15968c3f0ed949a0d1bb09bce8"
+            },
+            "productionDataMutation": false,
+            "productionDatabaseIdentity": {
+              "checksums": "off",
+              "dataDirectory": "/var/lib/postgresql/16/main",
+              "database": "proof_indexer",
+              "listenAddresses": "localhost",
+              "port": "5432",
+              "readOnly": "off",
+              "serverAddress": null,
+              "socket": "/var/run/postgresql",
+              "user": "postgres"
+            },
+            "productionRequestExists": false,
+            "qualification": "Raw public actual proof validation only; no bindApprovedTemplate, approval fabrication, database connection or writer invocation. Actual readonly closure and fresh population Root accepted separately.",
+            "schema": "pow-audit30-production-sixteen-actual-public-proof-validation-v1",
+            "status": "passed-source-contract-only",
+            "testedFunction": "validateReviewProofs"
+          }
         }
       ],
-      "status": "Exactly16 known body-only discrepancies remain. Private074500 RUN ended07:47:18 in39.042s with KeyError during post-commit receipt validation; stopped endpoint/samefive/timer verified. Real26c hash_file metadata-only expected argument reproduces the verifier defect; originalfailedb1f/ceb1/intent40a3 remain unchanged. One read-only aa75 reconciliation passes08:01:22/2.463s: both acknowledged transactions, separate inverse, ordered16/sameDB, pinned NULL/body/nonbody authority, full619-mail fingerprint restored and two legitimate readiness invalidations/journal continuity. Final source7 after-hash, current private saved-fence and offline checks remain pending. Complete private finalization, fresh619, final human production approval, strict rerun and cutover remain gated."
+      "status": "Accepted separately acknowledged isolated16 apply/inverse, saved reconciliation79d4 and read-only finalizationd818 restore all619 mail fingerprints with exact rich saved snapshot, journal, source7 before/at-stop hashes, offline/stopped/five/accounting closure. Original074500 failed remains failed. Fresh V5 d3b1 confirms exact619/only16 body_text differences and nine-field production identity. Tested repair-first plan/rootV3 is ready for final human review; approval/generated writer/production request absent. Fresh live preimages/worker/source/five and unwaived strict after approved repair remain required before code cutover."
     },
     "5": {
       "finalApprovalPlans": [
@@ -189947,7 +191000,7 @@
       "currentCandidateSourceCommit": "38ac6e2bff2ac16890724e5213346ef8a3ebd186",
       "finalApprovalPlans": [],
       "nativeCandidateQualifications": {
-        "38acStrict": "Failed strict parity gate; stable969680, ID587 and49event checks pass. No acceptedreceipt. Falsecheck hashes statically map two historicalAMO checks and mailprojection; severity/details still being diagnosed.",
+        "38acStrict": "Original failed strict receipt preserved: two historical AMO warnings and one blocking rendered-mail parity error; stable969680, ID587/49events pass, timer restored/ownedunit stopped/five unchanged. FreshV5 shows exact16 original body-only discrepancies. No rerun or waiver.",
         "fc5CompleteIdCli": "failed UND_ERR_HEADERS_TIMEOUT before semantic output; preserved",
         "fc5PositiveWorkFullAuthority": "200 at8.417s/2.151s;16 predicates/exactQ16/42 reservations",
         "fc5ScopedBonds": "complete POWB1 and INCB0, one page each;stable Core;not independently repeated each gettxout",
@@ -207809,7 +208862,7 @@
         }
       ],
       "sourceCommit": "3399d767103ebfde7b1a1a56dd2b877f79b71a76",
-      "status": "Full original semantic ID CLI, positiveWORK Q16 and scopedPOWB/INCB candidate checks pass. Existing-production mailbox baseline619 rows has only13 memo differences within known16 trim targets; strict candidate blocking error is rendered-mail parity. Fresh focused619 confirms exact16 body-only differences. Stateless normal-worker/Core/source/five guard passes969692 with6615-block shallow-replay margin above latest target. Exact approved repair must precede unwaived strict rerun and normal code cutover; no cutover/UI publication/data repair performed."
+      "status": "Full ID, positiveWORK Q16 and scopedPOWB/INCB candidate checks remain accepted; stored known16 body differences keep strict source cutover held. Fresh V5 RR confirms exact619/16-only and accepted private d818 closure. Concrete tested repair-first proposal awaits reserved final human approval, then strict full parity and separately authorized cutover/actual production/UI acceptance; no repair or publication performed."
     },
     "7": {
       "finalApprovalPlans": [
@@ -220423,11 +221476,11 @@
           }
         }
       ],
-      "status": "Latest20261002T031851Z full logical backup passes native isolated restore, all-table COPY/sequence hashes, exact238-credit accounting/source-population counters, roles/memberships/ownerACL, amcheck and offline checksums4,709,345blocks/0bad. Cluster stopped, all5production services unchanged. Synthetic PITR mechanics passed separately; production WAL continuity/currentphysicalpages and pinreplacement remain finalapproval. Source-only current recovery input is b16/PROPOSAL-v2; historical b603 preserved. Proposed Oct2 checker e8e changes only the verified pin name and20525963614-byte expectation; no actual pin/monitor change or recovery/deletion approval. Four-target custody and a deletion controller remain pending."
+      "status": "Latest20261002T031851Z full logical backup passes native isolated restore, all-table COPY/sequence hashes, exact238-credit accounting/source-population counters, roles/memberships/ownerACL, amcheck and offline checksums4,709,345blocks/0bad. Cluster stopped, all5production services unchanged. Synthetic PITR mechanics passed separately; production WAL continuity/currentphysicalpages and pinreplacement remain finalapproval. Source-only current recovery input is b16/PROPOSAL-v2; historical b603 preserved. Proposed Oct2 checker e8e changes only the verified pin name and20525963614-byte expectation; no actual pin/monitor change or recovery/deletion approval. A fixed-four source-only retirement adapter is prepared; custom RuntimeError signal correction and25 local fixtures are preserved for peer review. Exact custody, coupled pin/checker promotion and separate human deletion approval remain pending; no retirement occurred."
     },
     "8": {
       "finalApprovalPlans": [],
-      "financialReconciliationQualification": "165/166 known targets canonical; one unavailable notice witness; ordinary treasury sweep outside protocol index; all94 protected listing positions match59seal/35opening. Full treasury address/outpoint/obligation history not certified. Action55 raw-demand census establishes captured target-raw presence only;10569 parent raws, canonical membership and10860 treasury outpoint/spend checks remain open, with no accepted balance/fee/obligation claim.",
+      "financialReconciliationQualification": "First8000 parentraw chunk acquired with8007 Core/20 Electrs calls and closing reserves; remaining2569 requiredparents set608eed.567 targetblockgroups/10860 treasuryoutpoints remain planning demands; rawpresence is not membership or spend proof. All parent/membership/outpoint/fee/balance/obligation/wholechain acceptancefalse; operatorMay9 settlement preserved.",
       "may9RefundSettlement": {
         "humanMessageVerbatim": "they are already paid, we don't need the ids",
         "independentOnChainPayoutWitnessClaimed": false,
@@ -243064,9 +244117,813 @@
             "startedAtUtc": "2026-10-03T07:53:26.703444+00:00",
             "typedStdinBytesDelivered": 0
           }
+        },
+        {
+          "bytes": 15856,
+          "path": "/tmp/pow-audit30-treasury-parent-chunk1-completed-demand-native-v1.stdout",
+          "sha256": "f8d2bf97bbc7c8a371e631c9a50cc5e41bd637b97e70daadc6171780ac67e518",
+          "value": {
+            "actualMissingParentsForUncapturedTargetsUnknown": false,
+            "allRequestedRawTargetsCovered": true,
+            "allUniqueRawCacheRows": 19704,
+            "allUniqueRawCacheSetSha256": "3f8022b89cdde901f7c9cc208b7a66eaf469b3ddef4561614a07a33d7530fd27",
+            "atUtc": "2026-10-03T08:36:17.429003+00:00",
+            "automaticNextChunk": false,
+            "automaticRetry": false,
+            "balanceComparisonPerformed": false,
+            "cachedBlockHeaderRows": 652,
+            "cachedParentRows": 11878,
+            "cachedTargetBlockGroupSizeHistogram": [
+              {
+                "groups": 231,
+                "size": 1
+              },
+              {
+                "groups": 55,
+                "size": 2
+              },
+              {
+                "groups": 29,
+                "size": 3
+              },
+              {
+                "groups": 21,
+                "size": 4
+              },
+              {
+                "groups": 12,
+                "size": 5
+              },
+              {
+                "groups": 11,
+                "size": 6
+              },
+              {
+                "groups": 10,
+                "size": 7
+              },
+              {
+                "groups": 6,
+                "size": 8
+              },
+              {
+                "groups": 10,
+                "size": 9
+              },
+              {
+                "groups": 10,
+                "size": 10
+              },
+              {
+                "groups": 9,
+                "size": 11
+              },
+              {
+                "groups": 10,
+                "size": 12
+              },
+              {
+                "groups": 9,
+                "size": 13
+              },
+              {
+                "groups": 9,
+                "size": 14
+              },
+              {
+                "groups": 5,
+                "size": 15
+              },
+              {
+                "groups": 4,
+                "size": 16
+              },
+              {
+                "groups": 6,
+                "size": 17
+              },
+              {
+                "groups": 3,
+                "size": 18
+              },
+              {
+                "groups": 2,
+                "size": 19
+              },
+              {
+                "groups": 8,
+                "size": 20
+              },
+              {
+                "groups": 5,
+                "size": 21
+              },
+              {
+                "groups": 1,
+                "size": 22
+              },
+              {
+                "groups": 3,
+                "size": 23
+              },
+              {
+                "groups": 2,
+                "size": 24
+              },
+              {
+                "groups": 6,
+                "size": 25
+              },
+              {
+                "groups": 3,
+                "size": 26
+              },
+              {
+                "groups": 2,
+                "size": 27
+              },
+              {
+                "groups": 3,
+                "size": 29
+              },
+              {
+                "groups": 1,
+                "size": 30
+              },
+              {
+                "groups": 1,
+                "size": 31
+              },
+              {
+                "groups": 3,
+                "size": 32
+              },
+              {
+                "groups": 2,
+                "size": 33
+              },
+              {
+                "groups": 2,
+                "size": 35
+              },
+              {
+                "groups": 2,
+                "size": 36
+              },
+              {
+                "groups": 1,
+                "size": 37
+              },
+              {
+                "groups": 2,
+                "size": 40
+              },
+              {
+                "groups": 1,
+                "size": 42
+              },
+              {
+                "groups": 1,
+                "size": 43
+              },
+              {
+                "groups": 1,
+                "size": 44
+              },
+              {
+                "groups": 3,
+                "size": 46
+              },
+              {
+                "groups": 3,
+                "size": 47
+              },
+              {
+                "groups": 1,
+                "size": 48
+              },
+              {
+                "groups": 1,
+                "size": 49
+              },
+              {
+                "groups": 3,
+                "size": 50
+              },
+              {
+                "groups": 1,
+                "size": 51
+              },
+              {
+                "groups": 1,
+                "size": 56
+              },
+              {
+                "groups": 2,
+                "size": 58
+              },
+              {
+                "groups": 1,
+                "size": 59
+              },
+              {
+                "groups": 2,
+                "size": 62
+              },
+              {
+                "groups": 1,
+                "size": 64
+              },
+              {
+                "groups": 1,
+                "size": 65
+              },
+              {
+                "groups": 1,
+                "size": 68
+              },
+              {
+                "groups": 1,
+                "size": 69
+              },
+              {
+                "groups": 3,
+                "size": 75
+              },
+              {
+                "groups": 1,
+                "size": 76
+              },
+              {
+                "groups": 2,
+                "size": 78
+              },
+              {
+                "groups": 1,
+                "size": 79
+              },
+              {
+                "groups": 2,
+                "size": 80
+              },
+              {
+                "groups": 1,
+                "size": 81
+              },
+              {
+                "groups": 1,
+                "size": 88
+              },
+              {
+                "groups": 1,
+                "size": 89
+              },
+              {
+                "groups": 2,
+                "size": 90
+              },
+              {
+                "groups": 1,
+                "size": 91
+              },
+              {
+                "groups": 1,
+                "size": 92
+              },
+              {
+                "groups": 1,
+                "size": 93
+              },
+              {
+                "groups": 2,
+                "size": 94
+              },
+              {
+                "groups": 2,
+                "size": 100
+              },
+              {
+                "groups": 1,
+                "size": 101
+              },
+              {
+                "groups": 2,
+                "size": 102
+              },
+              {
+                "groups": 1,
+                "size": 105
+              },
+              {
+                "groups": 1,
+                "size": 115
+              },
+              {
+                "groups": 1,
+                "size": 124
+              },
+              {
+                "groups": 1,
+                "size": 125
+              },
+              {
+                "groups": 1,
+                "size": 133
+              },
+              {
+                "groups": 1,
+                "size": 134
+              },
+              {
+                "groups": 1,
+                "size": 146
+              },
+              {
+                "groups": 1,
+                "size": 147
+              },
+              {
+                "groups": 1,
+                "size": 150
+              },
+              {
+                "groups": 1,
+                "size": 151
+              },
+              {
+                "groups": 1,
+                "size": 171
+              },
+              {
+                "groups": 2,
+                "size": 192
+              },
+              {
+                "groups": 1,
+                "size": 206
+              },
+              {
+                "groups": 1,
+                "size": 262
+              },
+              {
+                "groups": 1,
+                "size": 274
+              },
+              {
+                "groups": 1,
+                "size": 300
+              },
+              {
+                "groups": 1,
+                "size": 327
+              },
+              {
+                "groups": 1,
+                "size": 552
+              }
+            ],
+            "cachedTargetConfirmedBlockGroups": 567,
+            "cachedTargetGroupsWithoutHeader": 215,
+            "cachedTargetOfflineSingleMerkleProofs": 1388,
+            "cachedTargetRows": 8038,
+            "cachedTargetTreasuryOutputCount": 10860,
+            "cachedTargetTreasuryOutputSetSha256": "7faf42c33bad5ac2e30a013818cc50f09b3904abe6db235e7206856ac3b135e0",
+            "cachedTargetsRequiringMerkleProof": 8844,
+            "canonicalMembershipCoverageAccepted": false,
+            "checkpoint": {
+              "hash": "00000000000000000000c7704c9be76e6725b983edc5a3d91e03681fe4b89999",
+              "height": 969687
+            },
+            "completeParentDemandNowKnown": true,
+            "completedOwnedStop": {
+              "after": {
+                "ActiveState": "inactive",
+                "AmbientCapabilities": "",
+                "CPUQuotaPerSecUSec": "infinity",
+                "CPUWeight": "[not set]",
+                "CapabilityBoundingSet": "cap_chown cap_dac_override cap_dac_read_search cap_fowner cap_fsetid cap_kill cap_setgid cap_setuid cap_setpcap cap_linux_immutable cap_net_bind_service cap_net_broadcast cap_net_admin cap_net_raw cap_ipc_lock cap_ipc_owner cap_sys_module cap_sys_rawio cap_sys_chroot cap_sys_ptrace cap_sys_pacct cap_sys_admin cap_sys_boot cap_sys_nice cap_sys_resource cap_sys_time cap_sys_tty_config cap_mknod cap_lease cap_audit_write cap_audit_control cap_setfcap cap_mac_override cap_mac_admin cap_syslog cap_wake_alarm cap_block_suspend cap_audit_read cap_perfmon cap_bpf cap_checkpoint_restore",
+                "ControlGroup": "",
+                "DropInPaths": "",
+                "ExecMainCode": "0",
+                "ExecMainStatus": "0",
+                "FragmentPath": "",
+                "Group": "",
+                "IOWeight": "[not set]",
+                "InaccessiblePaths": "",
+                "InvocationID": "",
+                "KillMode": "control-group",
+                "LoadState": "not-found",
+                "MainPID": "0",
+                "MemoryHigh": "infinity",
+                "MemoryMax": "infinity",
+                "MemorySwapMax": "infinity",
+                "Nice": "0",
+                "NoNewPrivileges": "no",
+                "PrivateDevices": "no",
+                "PrivateIPC": "no",
+                "PrivateNetwork": "no",
+                "PrivateTmp": "no",
+                "ProtectHome": "no",
+                "ProtectSystem": "no",
+                "ReadOnlyPaths": "",
+                "ReadWritePaths": "",
+                "RemainAfterExit": "no",
+                "Restart": "no",
+                "RestrictAddressFamilies": "~",
+                "Result": "success",
+                "RuntimeMaxUSec": "infinity",
+                "SourcePath": "",
+                "StandardError": "inherit",
+                "StandardInput": "null",
+                "StandardOutput": "inherit",
+                "SubState": "dead",
+                "TasksMax": "153399",
+                "TimeoutStopUSec": "1min 30s",
+                "Transient": "no",
+                "Type": "",
+                "UMask": "0022",
+                "User": ""
+              },
+              "attempted": true,
+              "before": {
+                "ActiveState": "active",
+                "AmbientCapabilities": "",
+                "CPUQuotaPerSecUSec": "250ms",
+                "CPUWeight": "10",
+                "CapabilityBoundingSet": "",
+                "ControlGroup": "",
+                "DropInPaths": "",
+                "ExecMainCode": "1",
+                "ExecMainStatus": "0",
+                "FragmentPath": "/run/systemd/transient/proofofwork-audit30-treasury-parent-chunk1-20261003T083000Z.service",
+                "Group": "bitcoin",
+                "IOWeight": "10",
+                "InaccessiblePaths": "/var/lib/postgresql /run/postgresql /data/proofofwork-postgres-tablespaces /etc/proofofwork-api",
+                "InvocationID": "25704eb5ea97458c9ecafcd3ab768c5f",
+                "KillMode": "control-group",
+                "LoadState": "loaded",
+                "MainPID": "0",
+                "MemoryHigh": "536870912",
+                "MemoryMax": "1073741824",
+                "MemorySwapMax": "0",
+                "Nice": "15",
+                "NoNewPrivileges": "yes",
+                "PrivateDevices": "yes",
+                "PrivateIPC": "yes",
+                "PrivateNetwork": "no",
+                "PrivateTmp": "yes",
+                "ProtectHome": "yes",
+                "ProtectSystem": "strict",
+                "ReadOnlyPaths": "/etc/bitcoin /data/bitcoin",
+                "ReadWritePaths": "",
+                "RemainAfterExit": "yes",
+                "Restart": "no",
+                "RestrictAddressFamilies": "AF_INET AF_INET6 AF_UNIX",
+                "Result": "success",
+                "RuntimeMaxUSec": "22min",
+                "SourcePath": "",
+                "StandardError": "append",
+                "StandardInput": "null",
+                "StandardOutput": "append",
+                "SubState": "exited",
+                "TasksMax": "32",
+                "TimeoutStopUSec": "30s",
+                "Transient": "yes",
+                "Type": "exec",
+                "UMask": "0077",
+                "User": "bitcoin"
+              },
+              "typedExecStart": {
+                "argvSha256": "583af3607dffe4e5281529d58a74233acfed275f569fbdda23c219a04eb6e786",
+                "fixedCodeSha256": "b874f5604e02872d13b2c0352ae142a4cecca0921f6a24be0fb6d5812d3e46eb",
+                "objectPath": "/org/freedesktop/systemd1/unit/proofofwork_2daudit30_2dtreasury_2dparent_2dchunk1_2d20261003T083000Z_2eservice"
+              }
+            },
+            "completedParentChunkCount": 8000,
+            "completedParentChunkSetSha256": "119db07675acae962b23c1991f17bf3d7aa9ad5c7c85a301e91bc634174efae2",
+            "currentBalanceClaim": false,
+            "currentContextAfter": {
+              "backupService": {
+                "ActiveState": "inactive",
+                "InvocationID": "dfda5fa3574144958b948f8b5920b4d0",
+                "LoadState": "loaded",
+                "MainPID": "0",
+                "Result": "success",
+                "SubState": "dead"
+              },
+              "backupTimer": {
+                "ActiveState": "active",
+                "InvocationID": "469de932a143489e8d4128e2cab382bf",
+                "LoadState": "loaded",
+                "NextElapseUSecRealtime": "Sun 2026-10-04 03:18:48 UTC",
+                "SubState": "waiting",
+                "UnitFileState": "enabled"
+              },
+              "freshMetadataObservationOnly": true,
+              "liveFive": {
+                "bitcoind.service": {
+                  "ActiveState": "active",
+                  "InvocationID": "64e1fa7be2e2442d8c7f5763f60b85fb",
+                  "LoadState": "loaded",
+                  "MainPID": "1324302",
+                  "SubState": "running"
+                },
+                "electrs.service": {
+                  "ActiveState": "active",
+                  "InvocationID": "72418b1c7ab245e4a37685ed868a1084",
+                  "LoadState": "loaded",
+                  "MainPID": "1324320",
+                  "SubState": "running"
+                },
+                "postgresql@16-main.service": {
+                  "ActiveState": "active",
+                  "InvocationID": "e0bf545f0ad944e89fe1005577e61b9c",
+                  "LoadState": "loaded",
+                  "MainPID": "1537429",
+                  "SubState": "running"
+                },
+                "proofofwork-api.service": {
+                  "ActiveState": "active",
+                  "InvocationID": "208f8bcbecc54afbb7166754f12065c2",
+                  "LoadState": "loaded",
+                  "MainPID": "2103747",
+                  "SubState": "running"
+                },
+                "proofofwork-indexer-worker.service": {
+                  "ActiveState": "active",
+                  "InvocationID": "33b3ee25490749db89e0d55fd29d0afb",
+                  "LoadState": "loaded",
+                  "MainPID": "2103760",
+                  "SubState": "running"
+                }
+              },
+              "nextBackupAtUtc": "2026-10-04T03:18:48+00:00",
+              "ownedStopped": true,
+              "ownedUnits": {
+                "proofofwork-audit30-treasury-missing-raw-20261003T080000Z.service": {
+                  "ActiveState": "inactive",
+                  "InvocationID": "",
+                  "LoadState": "not-found",
+                  "MainPID": "0",
+                  "SubState": "dead"
+                },
+                "proofofwork-audit30-treasury-parent-chunk1-20261003T083000Z.service": {
+                  "ActiveState": "inactive",
+                  "InvocationID": "",
+                  "LoadState": "not-found",
+                  "MainPID": "0",
+                  "SubState": "dead"
+                }
+              }
+            },
+            "currentContextBefore": {
+              "backupService": {
+                "ActiveState": "inactive",
+                "InvocationID": "dfda5fa3574144958b948f8b5920b4d0",
+                "LoadState": "loaded",
+                "MainPID": "0",
+                "Result": "success",
+                "SubState": "dead"
+              },
+              "backupTimer": {
+                "ActiveState": "active",
+                "InvocationID": "469de932a143489e8d4128e2cab382bf",
+                "LoadState": "loaded",
+                "NextElapseUSecRealtime": "Sun 2026-10-04 03:18:48 UTC",
+                "SubState": "waiting",
+                "UnitFileState": "enabled"
+              },
+              "freshMetadataObservationOnly": true,
+              "liveFive": {
+                "bitcoind.service": {
+                  "ActiveState": "active",
+                  "InvocationID": "64e1fa7be2e2442d8c7f5763f60b85fb",
+                  "LoadState": "loaded",
+                  "MainPID": "1324302",
+                  "SubState": "running"
+                },
+                "electrs.service": {
+                  "ActiveState": "active",
+                  "InvocationID": "72418b1c7ab245e4a37685ed868a1084",
+                  "LoadState": "loaded",
+                  "MainPID": "1324320",
+                  "SubState": "running"
+                },
+                "postgresql@16-main.service": {
+                  "ActiveState": "active",
+                  "InvocationID": "e0bf545f0ad944e89fe1005577e61b9c",
+                  "LoadState": "loaded",
+                  "MainPID": "1537429",
+                  "SubState": "running"
+                },
+                "proofofwork-api.service": {
+                  "ActiveState": "active",
+                  "InvocationID": "208f8bcbecc54afbb7166754f12065c2",
+                  "LoadState": "loaded",
+                  "MainPID": "2103747",
+                  "SubState": "running"
+                },
+                "proofofwork-indexer-worker.service": {
+                  "ActiveState": "active",
+                  "InvocationID": "33b3ee25490749db89e0d55fd29d0afb",
+                  "LoadState": "loaded",
+                  "MainPID": "2103760",
+                  "SubState": "running"
+                }
+              },
+              "nextBackupAtUtc": "2026-10-04T03:18:48+00:00",
+              "ownedStopped": true,
+              "ownedUnits": {
+                "proofofwork-audit30-treasury-missing-raw-20261003T080000Z.service": {
+                  "ActiveState": "inactive",
+                  "InvocationID": "",
+                  "LoadState": "not-found",
+                  "MainPID": "0",
+                  "SubState": "dead"
+                },
+                "proofofwork-audit30-treasury-parent-chunk1-20261003T083000Z.service": {
+                  "ActiveState": "inactive",
+                  "InvocationID": "",
+                  "LoadState": "not-found",
+                  "MainPID": "0",
+                  "SubState": "dead"
+                }
+              }
+            },
+            "duplicateRawCacheKeys": 212,
+            "feeReconciliationComplete": false,
+            "financialReconciliationComplete": false,
+            "historyResponses": [
+              {
+                "indexReportedConfirmedBalanceProofs": 0,
+                "rows": 4191,
+                "storedUnspentProofs": 0,
+                "storedUnspentRows": 0,
+                "txidSetSha256": "4ab7808248e3cc51da03885bdcb2f37b65421b0310d78fabbf3ea841384ca2e6"
+              },
+              {
+                "indexReportedConfirmedBalanceProofs": 0,
+                "rows": 3850,
+                "storedUnspentProofs": 0,
+                "storedUnspentRows": 0,
+                "txidSetSha256": "41a616b44c4b40909c3e700c3249f309d31c4e1f6304310b238386cf1afca916"
+              },
+              {
+                "indexReportedConfirmedBalanceProofs": 546,
+                "rows": 2212,
+                "storedUnspentProofs": 546,
+                "storedUnspentRows": 1,
+                "txidSetSha256": "7f3e3fcfa9d3c627dff2ec0ebd2f29c0e8e404f07a81c609fb30128a9c1e44a5"
+              }
+            ],
+            "independentWholeChainAddressHistoryComplete": false,
+            "knownTargetRequiredParentsCached": 19695,
+            "knownTargetRequiredParentsMissing": 2569,
+            "knownTargetRequiredParentsMissingSetSha256": "608eed04fff7e8e28c6396fc743dd15834219adebfc2c8fef7e03efe8251dbff",
+            "knownTargetRequiredUniqueParentTxids": 22264,
+            "knownTargetRequiredUniquePrevouts": 32516,
+            "may9OperatorSettlementPreserved": true,
+            "may9TransactionIDsRequested": false,
+            "missingTargetRawRows": 0,
+            "missingTargetRawSetSha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+            "nextChunkAuthorized": false,
+            "obligationReconciliationComplete": false,
+            "originalBlocksWithoutClosingHash": 652,
+            "originalFailedAttemptRemainsFailed": true,
+            "outpointCoverageAccepted": false,
+            "parentCoverageAccepted": false,
+            "parentDeltaCoverage": {
+              "acquired": 8000,
+              "acquiredParentSetSha256": "119db07675acae962b23c1991f17bf3d7aa9ad5c7c85a301e91bc634174efae2",
+              "closingReservedCoreBytes": 67633152,
+              "closingReservedCoreCalls": 4,
+              "closingReservedElectrsBytes": 21626880,
+              "closingReservedElectrsCalls": 10,
+              "closingReservedSeconds": 180,
+              "coreBytes": 26798181,
+              "coreCalls": 8007,
+              "electrsBytes": 1949595,
+              "electrsCalls": 20,
+              "remaining": 0,
+              "remainingParentSetSha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+              "requested": 8000,
+              "serializedRawRecordsBytes": 14406009,
+              "spoolReservedBytes": 1048576,
+              "wholeSeconds": 72.74569706059992
+            },
+            "parentRawPresenceIsCanonicalMembershipProof": false,
+            "planningOnly": true,
+            "priorMissingParentCount": 10569,
+            "priorMissingParentSetSha256": "dd402962c0c54b43d9a08dff0dbfefa9e8e22a667c10fdcb24fd809344583998",
+            "priorRawCompletion": {
+              "bytes": 150537,
+              "metadata": {
+                "bytes": 150537,
+                "ctimeNs": 1791013573685942007,
+                "device": 64514,
+                "gid": 0,
+                "inode": 76809544,
+                "mode": 384,
+                "mtimeNs": 1791013573685942007,
+                "nlink": 1,
+                "uid": 0
+              },
+              "path": "/data/proofofwork-release-backups/audit30-treasury-missing-raw-20261003T080000Z/completed.json",
+              "sha256": "72c801e3caa6837e8e5c121542dceb3e624abc971cfd136d32075b9ce6e915e9"
+            },
+            "productionMutation": false,
+            "publicCompletion": {
+              "bytes": 184511,
+              "metadata": {
+                "bytes": 184511,
+                "ctimeNs": 1791016133090995223,
+                "device": 64514,
+                "gid": 0,
+                "inode": 76809549,
+                "mode": 384,
+                "mtimeNs": 1791016133090995223,
+                "nlink": 1,
+                "uid": 0
+              },
+              "path": "/data/proofofwork-release-backups/audit30-treasury-parent-chunk1-20261003T083000Z/completed.json",
+              "sha256": "bfcdfbf4ae20ec16076e9648f70b956125e12ed6b3cb095573a2702996df54a8"
+            },
+            "rawCorpusPreserved": true,
+            "rawParentDeltaBytes": 14436219,
+            "rawParentDeltaMetadata": {
+              "bytes": 14436219,
+              "ctimeNs": 1791016131950998104,
+              "device": 64514,
+              "gid": 0,
+              "inode": 76809547,
+              "mode": 384,
+              "mtimeNs": 1791016131950998104,
+              "nlink": 1,
+              "uid": 0
+            },
+            "rawParentDeltaSha256": "9e4736cce51b351926754021f11b23a738a506440fccfe747bbd1dab71e01f89",
+            "rawSeedMetadata": {
+              "bytes": 17672203,
+              "ctimeNs": 1791009664395750415,
+              "device": 64514,
+              "gid": 0,
+              "inode": 76809529,
+              "mode": 384,
+              "mtimeNs": 1791009664395750415,
+              "nlink": 1,
+              "uid": 0
+            },
+            "rawSeedSha256": "8eeb467bf3468734beee934d884148b7045ed28803045a2b66ac51ca0f1e2596",
+            "rawTargetDeltaBytes": 17722465,
+            "rawTargetDeltaMetadata": {
+              "bytes": 17722465,
+              "ctimeNs": 1791013573152941767,
+              "device": 64514,
+              "gid": 0,
+              "inode": 76809542,
+              "mode": 384,
+              "mtimeNs": 1791013573152941767,
+              "nlink": 1,
+              "uid": 0
+            },
+            "rawTargetDeltaRemainsAccepted": true,
+            "rawTargetDeltaSha256": "e5e2b45bc4156bb1e018809ed047a336fb55183c6934c3836c345a5d1231caaf",
+            "rawTargetPresenceIsCanonicalMembershipProof": false,
+            "rawTargetsReusableAfterNewMembershipGate": 10232,
+            "rawTransactionsExported": false,
+            "remainingParentCount": 2569,
+            "remainingParentSetSha256": "608eed04fff7e8e28c6396fc743dd15834219adebfc2c8fef7e03efe8251dbff",
+            "rpcCalls": 0,
+            "schema": "pow-audit30-completed-parent-chunk-planning-census-v1",
+            "sourcePlanningUtilitySha256": "3900e99884011cff01daeba7597bf862dab92b810c3ddd6b9e0250f3a5ac0002",
+            "sourcePriorReaderSha256": "570ba11d9f567fed0d16fe122783a5d7aa92d6e1dff3bf0582745e09b461d75f",
+            "sqlExecuted": false,
+            "storedActualNativeResult": "parent-raw-chunk-complete-with-closing-fences",
+            "storedBackupWindowAfter": {
+              "observedAtUtc": "2026-10-03T08:28:52.631692+00:00",
+              "service": "inactive",
+              "timer": {
+                "ActiveState": "active",
+                "NextElapseUSecRealtime": "Sun 2026-10-04 03:18:48 UTC"
+              }
+            },
+            "storedBackupWindowBefore": {
+              "observedAtUtc": "2026-10-03T08:27:37.396574+00:00",
+              "service": "inactive",
+              "timer": {
+                "ActiveState": "active",
+                "NextElapseUSecRealtime": "Sun 2026-10-04 03:18:48 UTC"
+              }
+            },
+            "targetIdsAlreadyInParentCache": 2406,
+            "unionTargetCount": 10232,
+            "unionTargetSetSha256": "2d7c5334be64f01fdc95fae58a96f7ae993f32e38c8454f1fbfe61d53581eb0d",
+            "upperBound64TargetMembershipProofCallsForCachedTargets": 1288
+          }
         }
       ],
-      "status": "Index mode repair/runtime attestation and qualified dependency censuses remain accepted. Original10000-call complete-address failure and invalid partial balances remain preserved. Raw-only continuation completes exact6650 targets with6657 Core/20 Electrs calls and closing fences; owned unit stopped/qualified GC, seed/raw corpus retained. Planning08e4 proves10232 captured target raws covered with10569 still-missing parent demands,567 confirmed block groups and10860 treasury outpoint demands. Raw presence is not canonical membership. Parent, membership, outpoint, fee, balance, obligation and independentwholechain acceptance remain false; no automatic continuation. Exact4-target custody/controller/final pin/recovery/deletion gates remain open."
+      "status": "Captured raw-target delta and first8000 parent-raw chunk pass, with closing fences/ownedstop/five/backup context. Completed demand readerf8d2 finds19695 cached of22264 required parenttxids and2569 missing (set608eed); all10232 requested targetraws present. Presence is not canonical membership. Parent/membership/outpoint/fee/balance/obligation/wholechain acceptance remainsfalse; no automatic nextchunk or financial finding. Four-target source-only retirement candidate/hold/custody/promotion/human approval remaingated."
     }
   },
   "priorCompletedFirstBatchEvidence": {
@@ -243083,5 +244940,5 @@
     5,
     8
   ],
-  "updatedAtUtc": "2026-10-03T08:04:28.657592+00:00"
+  "updatedAtUtc": "2026-10-03T08:45:28.525918+00:00"
 }

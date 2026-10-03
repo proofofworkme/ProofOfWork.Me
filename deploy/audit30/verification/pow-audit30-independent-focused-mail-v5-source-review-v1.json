@@ -1,0 +1,25 @@
+{
+  "acceptedSourceOnly": true,
+  "files": {
+    "bootstrap-v5.py": "96d67f74cb512e3ae0183d1639c929b25fd537d1b85bb488c96fe10247dd0cd9",
+    "leaf-v5.mjs": "ac37be8c62908ca09e965fa04f219247652f1b52377c51951e14dbcd786a6708",
+    "request-v5.json": "9446ef433d6ede178fac1fa86d98c94ae2ab251441d73b2b6e75dbf3ac69879e",
+    "root-v5.py": "428722c174d433948bc4fb9202f38ce930a37b1abcfcc9b6b7e4fc126b16eb74",
+    "transport-v5.py": "c45d538003318e92ac730262f36503287819564ea782e763e217f11fbcad240a"
+  },
+  "productionMutation": false,
+  "qualifications": [
+    "No native call by this reviewer.",
+    "Same 90-second child/256-MiB heap and transaction limits; no API/Core requests.",
+    "Fresh RR observation is not strict capture or chain replay.",
+    "Actual typed request and separate root GO remain required."
+  ],
+  "schema": "pow-audit30-independent-focused-mail-v5-source-review-v1",
+  "scope": "Same read-only mail population queries and projection helper; additional nine-field production identity SELECT byte-bound to ea56 contract, exact d818 private completed SHA/full metadata before and after, new separate v5 module package, fixed decompression cap/eof/tail refusals. Original V4 preserved.",
+  "validation": {
+    "bootstrapTests": 12,
+    "nodeAssertions": 24,
+    "requestSourcesByteExact": true,
+    "rootTests": 26
+  }
+}

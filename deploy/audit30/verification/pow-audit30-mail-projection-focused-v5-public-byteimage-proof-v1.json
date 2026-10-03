@@ -1,0 +1,18 @@
+{
+  "actualStdoutExactProducerSaveEncoding": true,
+  "atUtc": "2026-10-03T08:43:57.013119+00:00",
+  "bytes": 9302,
+  "completedPublicByteImagePath": "/tmp/pow-audit30-mail-projection-focused-v5-completed-public-v1.json",
+  "independentRemoteFileReadPerformed": false,
+  "newNativeCalls": false,
+  "noMutationBetweenSavedAndPrintedResult": true,
+  "publicResultOnly": true,
+  "qualification": "Exact reconstructed public bytes equal actual stdout and byte-pinned save/print producer encodings. No separate remote metadata/read census is claimed.",
+  "remoteCompletedPath": "/data/proofofwork-release-backups/audit30-node-release-38ac6e2bff2a-20261003T042000Z/focused-mail-projection-v5/completed.json",
+  "sameResultSavedThenPrinted": true,
+  "schema": "pow-audit30-focused-v5-public-byteimage-proof-v1",
+  "sha256": "d3b1c6f7b5aae0873fb98ed7b07c47948326ee6832e3b7cec7b363870bcab40c",
+  "sourceSHA256": "428722c174d433948bc4fb9202f38ce930a37b1abcfcc9b6b7e4fc126b16eb74",
+  "status": "passed",
+  "stdoutPath": "/tmp/pow-audit30-mail-projection-focused-native-v5.stdout"
+}

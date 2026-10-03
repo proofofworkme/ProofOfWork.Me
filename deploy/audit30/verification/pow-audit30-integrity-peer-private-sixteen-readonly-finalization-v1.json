@@ -1,0 +1,62 @@
+{
+  "acceptedPredicates": [
+    "Exact fixed014100 clone, source7 never started, no live mutation authority",
+    "No adapter/writer/apply/inverse argv or execution; only frozen ea56-equivalent full mailbox/journal/identity SQL under explicit RR READ ONLY",
+    "Exact five acknowledged saved receipts plus original failed/intent metadata and hashes rechecked, original attempt remains failed",
+    "Actual26c unknown digest discovery corrected with metadata fence and pinned second read",
+    "Current full mailbox/journal equality to saved inverse after-state plus saved snapshot before/after and same private DB",
+    "Whole sealed source before private start and at stop; own identity-qualified private stop, offline checksum and watch/storage/window/live-five/package/dependency fences",
+    "Exact root700 math subtree excluded only from PG traversal, all28672 allocated bytes charged and root whole tree rehashed before/after",
+    "Typed owned transient unit/captured invocation, bounded streams and cleanup outcome, no retry"
+  ],
+  "approvalCreated": false,
+  "atUtc": "2026-10-03T08:08:10.665577+00:00",
+  "deletionAuthorized": false,
+  "independentTests": [
+    {
+      "command": "python3 -I -B /tmp/pow-audit30-private-sixteen-readonly-finalization-v1.test.py",
+      "count": 31,
+      "seconds": 0.272,
+      "status": "passed"
+    },
+    {
+      "command": "python3 -I -B /tmp/pow-audit30-private-sixteen-readonly-finalization-bootstrap-v1.test.py",
+      "count": 23,
+      "seconds": 0.187,
+      "status": "passed"
+    }
+  ],
+  "lineageQualification": "79d4 is the fixed root-accepted saved reconciliation citation; its exact five receiptBindings and two prior identities are embedded and the actual underlying saved seven objects are verified. This does not create or rerun that reconciliation, and source fixtures are not a native completion proof.",
+  "nativeCallsMade": false,
+  "productionMutation": false,
+  "runtimeGates": [
+    "Fresh actual typed plan and immutable package admission",
+    "Native readonly current-state comparison, controlled stop, offline pages and source7 full before/at-stop hashes",
+    "Actual root capture endpoint/whole math subtree preservation and live-five/window continuity",
+    "Production proof rebind only to actual passed finalization schema/raw receipt and original failed links"
+  ],
+  "schema": "pow-audit30-integrity-private-sixteen-readonly-finalization-source-review-v1",
+  "sources": [
+    {
+      "bytes": 34143,
+      "path": "/tmp/pow-audit30-private-sixteen-readonly-finalization-v1.py",
+      "sha256": "526444998a823cdc889473238642f42ea6355bb699027d014fab3951de45834b"
+    },
+    {
+      "bytes": 26654,
+      "path": "/tmp/pow-audit30-private-sixteen-readonly-finalization-v1.test.py",
+      "sha256": "fe6abece454b3bfa3a0e07f96e536f932aa26cc8566e403babe2342c0d350267"
+    },
+    {
+      "bytes": 26632,
+      "path": "/tmp/pow-audit30-private-sixteen-readonly-finalization-bootstrap-v1.py",
+      "sha256": "cc2bdba21bc9fb0c2b00f1b04e3fe197b43521eab63b364bbbb5cd5d2634273e"
+    },
+    {
+      "bytes": 16745,
+      "path": "/tmp/pow-audit30-private-sixteen-readonly-finalization-bootstrap-v1.test.py",
+      "sha256": "047d3385fe2f5c3a907fcb357f8df3a00fa9c27d2dc76c45d9ae80d3ebf8d3bb"
+    }
+  ],
+  "verdict": "accepted-source-only"
+}

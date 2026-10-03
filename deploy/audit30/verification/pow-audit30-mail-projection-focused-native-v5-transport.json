@@ -1,0 +1,38 @@
+{
+  "automaticRetry": false,
+  "captures": {
+    "stderr": {
+      "bytes": 0,
+      "path": "/tmp/pow-audit30-mail-projection-focused-native-v5.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "stdout": {
+      "bytes": 9302,
+      "path": "/tmp/pow-audit30-mail-projection-focused-native-v5.stdout",
+      "sha256": "d3b1c6f7b5aae0873fb98ed7b07c47948326ee6832e3b7cec7b363870bcab40c"
+    }
+  },
+  "exitCode": 0,
+  "failure": null,
+  "finishedAtUtc": "2026-10-03T08:37:08.150373+00:00",
+  "inputBindings": {
+    "apiRequests": 0,
+    "bootstrapSHA256": "96d67f74cb512e3ae0183d1639c929b25fd537d1b85bb488c96fe10247dd0cd9",
+    "childReadOnlyMaximumSeconds": 90,
+    "coreRequests": 0,
+    "directDatabaseWrites": false,
+    "requestSHA256": "9446ef433d6ede178fac1fa86d98c94ae2ab251441d73b2b6e75dbf3ac69879e",
+    "utilitySHA256": "1dedef0a6c7021d114017e711ad74f9cfed4e461fc047a2be2c49e590f3da18e"
+  },
+  "outerDeadlineSeconds": 180,
+  "productionDataMutationRequested": false,
+  "receivedBytes": {
+    "stderr": 0,
+    "stdout": 9302
+  },
+  "remoteUnitStoppedCertifiedByTransport": false,
+  "schema": "pow-audit30-readonly-owned-transport-result-v1",
+  "seconds": 2.757198,
+  "startedAtUtc": "2026-10-03T08:37:05.393175+00:00",
+  "typedStdinBytesDelivered": 13985
+}

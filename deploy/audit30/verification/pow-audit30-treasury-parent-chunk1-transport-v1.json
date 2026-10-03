@@ -1,0 +1,34 @@
+{
+  "automaticRetry": false,
+  "captures": {
+    "stderr": {
+      "bytes": 0,
+      "path": "/tmp/pow-audit30-treasury-parent-chunk1-run-native-v1.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "stdout": {
+      "bytes": 401,
+      "path": "/tmp/pow-audit30-treasury-parent-chunk1-run-native-v1.stdout",
+      "sha256": "f21a77cf4a68101894dfbb83939c0fd43dd69470d5951ad6d084dc44e0281d2a"
+    }
+  },
+  "exitCode": 0,
+  "failure": null,
+  "finishedAtUtc": "2026-10-03T08:28:53.184633+00:00",
+  "inputBindings": {
+    "requestSha256": "c877ba4fdf1bd27a1bf5e0423d98b32765e3cfc2a86a8e87bfe5c1a34633270a",
+    "scope": "root-once-approved-readonly-exact-first8000-parent-raws-no-followup-authority",
+    "sourceSha256": "0311e00069f4faf86d68f1e5cb7326a1f7fe0cd766ad8f34349c751e3e04c9c7"
+  },
+  "outerDeadlineSeconds": 1530,
+  "productionDataMutationRequested": false,
+  "receivedBytes": {
+    "stderr": 0,
+    "stdout": 401
+  },
+  "remoteUnitStoppedCertifiedByTransport": false,
+  "schema": "pow-audit30-readonly-owned-transport-result-v1",
+  "seconds": 78.444627,
+  "startedAtUtc": "2026-10-03T08:27:34.740006+00:00",
+  "typedStdinBytesDelivered": 14640
+}

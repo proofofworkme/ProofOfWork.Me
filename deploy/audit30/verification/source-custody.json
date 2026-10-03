@@ -1,5 +1,5 @@
 {
-  "atUtc": "2026-10-03T08:04:28.657592+00:00",
+  "atUtc": "2026-10-03T08:45:28.525918+00:00",
   "files": [
     {
       "bytes": 19239,
@@ -2565,6 +2565,285 @@
       "purpose": "Action55 public source/test/peer custody only; saved-receipt reconciliation, captured raw-demand planning and proposed pin/checker/recovery scope. No native authority, private payload export, production approval, financial completeness or retirement permission.",
       "repositoryPath": "deploy/audit30/verification/pow-audit30-treasury-completed-raw-planning-census-local-preparation-v1.json",
       "sha256": "330d070a0ddcebec80415f2c8de236db6e897daeb9a6c9de3194a7c596a47d0f"
+    },
+    {
+      "bytes": 7010,
+      "originalPath": "/tmp/pow-audit30-private-sixteen-readonly-finalization-completed-public-v1.json",
+      "purpose": "Action56 public source/test/proof custody only; accepted read-only private closure and fresh exact16/619 proposal, qualified raw-parent acquisition and tested source-only controls. No human approval, production data mutation, private payload export, financial completeness, recovery/pin activation or retirement authority.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-private-sixteen-readonly-finalization-completed-public-v1.json",
+      "sha256": "d818545fa493f1032b3b6bfb7b1ba4b8738e3b15968c3f0ed949a0d1bb09bce8"
+    },
+    {
+      "bytes": 34143,
+      "originalPath": "/tmp/pow-audit30-private-sixteen-readonly-finalization-v1.py",
+      "purpose": "Action56 public source/test/proof custody only; accepted read-only private closure and fresh exact16/619 proposal, qualified raw-parent acquisition and tested source-only controls. No human approval, production data mutation, private payload export, financial completeness, recovery/pin activation or retirement authority.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-private-sixteen-readonly-finalization-v1.py",
+      "sha256": "526444998a823cdc889473238642f42ea6355bb699027d014fab3951de45834b"
+    },
+    {
+      "bytes": 26654,
+      "originalPath": "/tmp/pow-audit30-private-sixteen-readonly-finalization-v1.test.py",
+      "purpose": "Action56 public source/test/proof custody only; accepted read-only private closure and fresh exact16/619 proposal, qualified raw-parent acquisition and tested source-only controls. No human approval, production data mutation, private payload export, financial completeness, recovery/pin activation or retirement authority.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-private-sixteen-readonly-finalization-v1.test.py",
+      "sha256": "fe6abece454b3bfa3a0e07f96e536f932aa26cc8566e403babe2342c0d350267"
+    },
+    {
+      "bytes": 26632,
+      "originalPath": "/tmp/pow-audit30-private-sixteen-readonly-finalization-bootstrap-v1.py",
+      "purpose": "Action56 public source/test/proof custody only; accepted read-only private closure and fresh exact16/619 proposal, qualified raw-parent acquisition and tested source-only controls. No human approval, production data mutation, private payload export, financial completeness, recovery/pin activation or retirement authority.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-private-sixteen-readonly-finalization-bootstrap-v1.py",
+      "sha256": "cc2bdba21bc9fb0c2b00f1b04e3fe197b43521eab63b364bbbb5cd5d2634273e"
+    },
+    {
+      "bytes": 16745,
+      "originalPath": "/tmp/pow-audit30-private-sixteen-readonly-finalization-bootstrap-v1.test.py",
+      "purpose": "Action56 public source/test/proof custody only; accepted read-only private closure and fresh exact16/619 proposal, qualified raw-parent acquisition and tested source-only controls. No human approval, production data mutation, private payload export, financial completeness, recovery/pin activation or retirement authority.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-private-sixteen-readonly-finalization-bootstrap-v1.test.py",
+      "sha256": "047d3385fe2f5c3a907fcb357f8df3a00fa9c27d2dc76c45d9ae80d3ebf8d3bb"
+    },
+    {
+      "bytes": 3312,
+      "originalPath": "/tmp/pow-audit30-integrity-peer-private-sixteen-readonly-finalization-v1.json",
+      "purpose": "Action56 public source/test/proof custody only; accepted read-only private closure and fresh exact16/619 proposal, qualified raw-parent acquisition and tested source-only controls. No human approval, production data mutation, private payload export, financial completeness, recovery/pin activation or retirement authority.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-integrity-peer-private-sixteen-readonly-finalization-v1.json",
+      "sha256": "3e7974d109d1bd8bfec4f4a194339a80ead1c9066e782c4de17389d95245a220"
+    },
+    {
+      "bytes": 13309,
+      "originalPath": "/tmp/pow-audit30-private-sixteen-readonly-finalization-public-reader-v3.py",
+      "purpose": "Action56 public source/test/proof custody only; accepted read-only private closure and fresh exact16/619 proposal, qualified raw-parent acquisition and tested source-only controls. No human approval, production data mutation, private payload export, financial completeness, recovery/pin activation or retirement authority.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-private-sixteen-readonly-finalization-public-reader-v3.py",
+      "sha256": "6e196957291399b2280c9eb7d4d6dcab46b0b8d70e6c9b9b77e4dd20a5bb5c2d"
+    },
+    {
+      "bytes": 13452,
+      "originalPath": "/tmp/pow-audit30-private-sixteen-readonly-finalization-public-reader-v4.py",
+      "purpose": "Action56 public source/test/proof custody only; accepted read-only private closure and fresh exact16/619 proposal, qualified raw-parent acquisition and tested source-only controls. No human approval, production data mutation, private payload export, financial completeness, recovery/pin activation or retirement authority.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-private-sixteen-readonly-finalization-public-reader-v4.py",
+      "sha256": "9e40e37e17eedf38bfca064553a3d9be44327969b44c67fa0e1430e6cb188eb5"
+    },
+    {
+      "bytes": 5879,
+      "originalPath": "/tmp/pow-audit30-private-sixteen-readonly-finalization-public-reader-v4.test.py",
+      "purpose": "Action56 public source/test/proof custody only; accepted read-only private closure and fresh exact16/619 proposal, qualified raw-parent acquisition and tested source-only controls. No human approval, production data mutation, private payload export, financial completeness, recovery/pin activation or retirement authority.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-private-sixteen-readonly-finalization-public-reader-v4.test.py",
+      "sha256": "693183a3b3367d5fc992dd886b8e2cca94477b63612c80e242aaffe7b40cff11"
+    },
+    {
+      "bytes": 20281,
+      "originalPath": "/tmp/pow-audit30-mail-projection-focused-root-v5.py",
+      "purpose": "Action56 public source/test/proof custody only; accepted read-only private closure and fresh exact16/619 proposal, qualified raw-parent acquisition and tested source-only controls. No human approval, production data mutation, private payload export, financial completeness, recovery/pin activation or retirement authority.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-mail-projection-focused-root-v5.py",
+      "sha256": "428722c174d433948bc4fb9202f38ce930a37b1abcfcc9b6b7e4fc126b16eb74"
+    },
+    {
+      "bytes": 6754,
+      "originalPath": "/tmp/pow-audit30-mail-projection-focused-leaf-v5.mjs",
+      "purpose": "Action56 public source/test/proof custody only; accepted read-only private closure and fresh exact16/619 proposal, qualified raw-parent acquisition and tested source-only controls. No human approval, production data mutation, private payload export, financial completeness, recovery/pin activation or retirement authority.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-mail-projection-focused-leaf-v5.mjs",
+      "sha256": "ac37be8c62908ca09e965fa04f219247652f1b52377c51951e14dbcd786a6708"
+    },
+    {
+      "bytes": 1400,
+      "originalPath": "/tmp/pow-audit30-mail-projection-focused-bootstrap-v5.py",
+      "purpose": "Action56 public source/test/proof custody only; accepted read-only private closure and fresh exact16/619 proposal, qualified raw-parent acquisition and tested source-only controls. No human approval, production data mutation, private payload export, financial completeness, recovery/pin activation or retirement authority.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-mail-projection-focused-bootstrap-v5.py",
+      "sha256": "96d67f74cb512e3ae0183d1639c929b25fd537d1b85bb488c96fe10247dd0cd9"
+    },
+    {
+      "bytes": 13985,
+      "originalPath": "/tmp/pow-audit30-mail-projection-focused-request-v5.json",
+      "purpose": "Action56 public source/test/proof custody only; accepted read-only private closure and fresh exact16/619 proposal, qualified raw-parent acquisition and tested source-only controls. No human approval, production data mutation, private payload export, financial completeness, recovery/pin activation or retirement authority.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-mail-projection-focused-request-v5.json",
+      "sha256": "9446ef433d6ede178fac1fa86d98c94ae2ab251441d73b2b6e75dbf3ac69879e"
+    },
+    {
+      "bytes": 1328,
+      "originalPath": "/tmp/pow-audit30-mail-projection-focused-transport-v5.py",
+      "purpose": "Action56 public source/test/proof custody only; accepted read-only private closure and fresh exact16/619 proposal, qualified raw-parent acquisition and tested source-only controls. No human approval, production data mutation, private payload export, financial completeness, recovery/pin activation or retirement authority.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-mail-projection-focused-transport-v5.py",
+      "sha256": "c45d538003318e92ac730262f36503287819564ea782e763e217f11fbcad240a"
+    },
+    {
+      "bytes": 11902,
+      "originalPath": "/tmp/pow-audit30-mail-projection-focused-root-v5.test.py",
+      "purpose": "Action56 public source/test/proof custody only; accepted read-only private closure and fresh exact16/619 proposal, qualified raw-parent acquisition and tested source-only controls. No human approval, production data mutation, private payload export, financial completeness, recovery/pin activation or retirement authority.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-mail-projection-focused-root-v5.test.py",
+      "sha256": "2fa7b4f9a0ffde6637bbab0566ce373737e637866e7f77cc9d5e6f39adbc38d2"
+    },
+    {
+      "bytes": 4659,
+      "originalPath": "/tmp/pow-audit30-mail-projection-focused-bootstrap-v5.test.py",
+      "purpose": "Action56 public source/test/proof custody only; accepted read-only private closure and fresh exact16/619 proposal, qualified raw-parent acquisition and tested source-only controls. No human approval, production data mutation, private payload export, financial completeness, recovery/pin activation or retirement authority.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-mail-projection-focused-bootstrap-v5.test.py",
+      "sha256": "76f22b25f2abc7d261bee63651e6ba1f59a4b66c686d584696741354cb18a945"
+    },
+    {
+      "bytes": 4428,
+      "originalPath": "/tmp/pow-audit30-mail-projection-focused-v5.test.mjs",
+      "purpose": "Action56 public source/test/proof custody only; accepted read-only private closure and fresh exact16/619 proposal, qualified raw-parent acquisition and tested source-only controls. No human approval, production data mutation, private payload export, financial completeness, recovery/pin activation or retirement authority.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-mail-projection-focused-v5.test.mjs",
+      "sha256": "d4c07bd28a0d743066abd5fc071cdbebb225646eda9feaf3843ce6c1b2f396fe"
+    },
+    {
+      "bytes": 1334,
+      "originalPath": "/tmp/pow-audit30-independent-focused-mail-v5-source-review-v1.json",
+      "purpose": "Action56 public source/test/proof custody only; accepted read-only private closure and fresh exact16/619 proposal, qualified raw-parent acquisition and tested source-only controls. No human approval, production data mutation, private payload export, financial completeness, recovery/pin activation or retirement authority.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-independent-focused-mail-v5-source-review-v1.json",
+      "sha256": "e5c2c0aa3e9100357e2d947666f001916f10fe5df0286d90c8526206666fbd8e"
+    },
+    {
+      "bytes": 16143,
+      "originalPath": "/tmp/pow-audit30-production-sixteen-adapter-v2.mjs",
+      "purpose": "Action56 public source/test/proof custody only; accepted read-only private closure and fresh exact16/619 proposal, qualified raw-parent acquisition and tested source-only controls. No human approval, production data mutation, private payload export, financial completeness, recovery/pin activation or retirement authority.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-production-sixteen-adapter-v2.mjs",
+      "sha256": "bb81dd2ee7fdefed19605fc47ed8bdd309b1bd531fea47fa548c27bdbdeeeb20"
+    },
+    {
+      "bytes": 8131,
+      "originalPath": "/tmp/pow-audit30-production-sixteen-adapter-v2.test.mjs",
+      "purpose": "Action56 public source/test/proof custody only; accepted read-only private closure and fresh exact16/619 proposal, qualified raw-parent acquisition and tested source-only controls. No human approval, production data mutation, private payload export, financial completeness, recovery/pin activation or retirement authority.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-production-sixteen-adapter-v2.test.mjs",
+      "sha256": "ede46e63b1507ae5942351ee93318dfe52bf73a5c82c7eccd21151a35fab99a3"
+    },
+    {
+      "bytes": 9347,
+      "originalPath": "/tmp/pow-audit30-production-sixteen-native-caller-v2.mjs",
+      "purpose": "Action56 public source/test/proof custody only; accepted read-only private closure and fresh exact16/619 proposal, qualified raw-parent acquisition and tested source-only controls. No human approval, production data mutation, private payload export, financial completeness, recovery/pin activation or retirement authority.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-production-sixteen-native-caller-v2.mjs",
+      "sha256": "18323f53e92bd6cf1a4d5945e2f630db6eeb884f065f22bbede07b9515e96e4f"
+    },
+    {
+      "bytes": 3073,
+      "originalPath": "/tmp/pow-audit30-production-sixteen-native-caller-v2.test.mjs",
+      "purpose": "Action56 public source/test/proof custody only; accepted read-only private closure and fresh exact16/619 proposal, qualified raw-parent acquisition and tested source-only controls. No human approval, production data mutation, private payload export, financial completeness, recovery/pin activation or retirement authority.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-production-sixteen-native-caller-v2.test.mjs",
+      "sha256": "84b54af3cc70ac756fb09065c3d3954a26f3d18091bd071ad10d69fac2351743"
+    },
+    {
+      "bytes": 22040,
+      "originalPath": "/tmp/pow-audit30-production-sixteen-root-control-v3.py",
+      "purpose": "Action56 public source/test/proof custody only; accepted read-only private closure and fresh exact16/619 proposal, qualified raw-parent acquisition and tested source-only controls. No human approval, production data mutation, private payload export, financial completeness, recovery/pin activation or retirement authority.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-production-sixteen-root-control-v3.py",
+      "sha256": "b989a3f2395e7cbf13cb2d3dbd2d258a3fd21867131e41644c094772aba11168"
+    },
+    {
+      "bytes": 18449,
+      "originalPath": "/tmp/pow-audit30-production-sixteen-root-control-v3.test.py",
+      "purpose": "Action56 public source/test/proof custody only; accepted read-only private closure and fresh exact16/619 proposal, qualified raw-parent acquisition and tested source-only controls. No human approval, production data mutation, private payload export, financial completeness, recovery/pin activation or retirement authority.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-production-sixteen-root-control-v3.test.py",
+      "sha256": "f423634ae7130f80be5bb15182f19b94edc70c073b187e790486171a1cfb94ec"
+    },
+    {
+      "bytes": 2636,
+      "originalPath": "/tmp/pow-audit30-production-sixteen-root-bootstrap-v3.py",
+      "purpose": "Action56 public source/test/proof custody only; accepted read-only private closure and fresh exact16/619 proposal, qualified raw-parent acquisition and tested source-only controls. No human approval, production data mutation, private payload export, financial completeness, recovery/pin activation or retirement authority.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-production-sixteen-root-bootstrap-v3.py",
+      "sha256": "eac18d7cdc8570875e55e36672d6419c857aa9e7fff7c1cbe8f92263bf25f1d4"
+    },
+    {
+      "bytes": 3950,
+      "originalPath": "/tmp/pow-audit30-production-sixteen-root-bootstrap-v3.test.py",
+      "purpose": "Action56 public source/test/proof custody only; accepted read-only private closure and fresh exact16/619 proposal, qualified raw-parent acquisition and tested source-only controls. No human approval, production data mutation, private payload export, financial completeness, recovery/pin activation or retirement authority.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-production-sixteen-root-bootstrap-v3.test.py",
+      "sha256": "00192cfb17c4533685c02771446ada66291159e447d1bbb4dde912a2c7b4dd2a"
+    },
+    {
+      "bytes": 2890,
+      "originalPath": "/tmp/pow-audit30-independent-production-sixteen-root-source-review-v2.json",
+      "purpose": "Action56 public source/test/proof custody only; accepted read-only private closure and fresh exact16/619 proposal, qualified raw-parent acquisition and tested source-only controls. No human approval, production data mutation, private payload export, financial completeness, recovery/pin activation or retirement authority.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-independent-production-sixteen-root-source-review-v2.json",
+      "sha256": "68e74b596eef996e851ec433c9d18daa35972d5e49161c6a8f5d8225654d9f14"
+    },
+    {
+      "bytes": 1429,
+      "originalPath": "/tmp/pow-audit30-production-sixteen-actual-public-proof-validation-v1.json",
+      "purpose": "Action56 public source/test/proof custody only; accepted read-only private closure and fresh exact16/619 proposal, qualified raw-parent acquisition and tested source-only controls. No human approval, production data mutation, private payload export, financial completeness, recovery/pin activation or retirement authority.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-production-sixteen-actual-public-proof-validation-v1.json",
+      "sha256": "12b9f8adf68ff90aa72518ca9afd1ccd058fb3235eba32f7a61ba33b912a25de"
+    },
+    {
+      "bytes": 8530,
+      "originalPath": "/tmp/pow-audit30-exact-sixteen-final-review-plan-source-template-v3.json",
+      "purpose": "Action56 public source/test/proof custody only; accepted read-only private closure and fresh exact16/619 proposal, qualified raw-parent acquisition and tested source-only controls. No human approval, production data mutation, private payload export, financial completeness, recovery/pin activation or retirement authority.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-exact-sixteen-final-review-plan-source-template-v3.json",
+      "sha256": "aa4d02bbd6669073856850dc4049dda565a751459ed7980285e528ce740a4400"
+    },
+    {
+      "bytes": 7207,
+      "originalPath": "/tmp/pow-audit30-production-sixteen-root-command-spec-v4.json",
+      "purpose": "Action56 public source/test/proof custody only; accepted read-only private closure and fresh exact16/619 proposal, qualified raw-parent acquisition and tested source-only controls. No human approval, production data mutation, private payload export, financial completeness, recovery/pin activation or retirement authority.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-production-sixteen-root-command-spec-v4.json",
+      "sha256": "718d2f55f87dea08942bd3b6b03424f0784d12538b59646d7515991783149cce"
+    },
+    {
+      "bytes": 26198,
+      "originalPath": "/tmp/pow-audit30-retire-exact-four-v2.py",
+      "purpose": "Action56 public source/test/proof custody only; accepted read-only private closure and fresh exact16/619 proposal, qualified raw-parent acquisition and tested source-only controls. No human approval, production data mutation, private payload export, financial completeness, recovery/pin activation or retirement authority.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-retire-exact-four-v2.py",
+      "sha256": "1abba9db552854d37973e3f297010bbd4f6a48a7c340ab673622d5ec1a51815c"
+    },
+    {
+      "bytes": 18336,
+      "originalPath": "/tmp/pow-audit30-retire-exact-four-v2.test.py",
+      "purpose": "Action56 public source/test/proof custody only; accepted read-only private closure and fresh exact16/619 proposal, qualified raw-parent acquisition and tested source-only controls. No human approval, production data mutation, private payload export, financial completeness, recovery/pin activation or retirement authority.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-retire-exact-four-v2.test.py",
+      "sha256": "6a117026bf9571edb90823728ef1fe4ad835f7ba8ec27200bed9b6876c58238a"
+    },
+    {
+      "bytes": 12929,
+      "originalPath": "/tmp/pow-audit30-private-sixteen-readonly-finalization-public-native-v2.stdout",
+      "purpose": "Action56 public source/test/proof custody only; accepted read-only private closure and fresh exact16/619 proposal, qualified raw-parent acquisition and tested source-only controls. No human approval, production data mutation, private payload export, financial completeness, recovery/pin activation or retirement authority.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-private-sixteen-readonly-finalization-public-capture-v1.json",
+      "sha256": "28b2b90516ffb5954b47de2366d22dd45c7ea93dd5b527ccdd7b0813b11fbe50"
+    },
+    {
+      "bytes": 9302,
+      "originalPath": "/tmp/pow-audit30-mail-projection-focused-native-v5.stdout",
+      "purpose": "Action56 public source/test/proof custody only; accepted read-only private closure and fresh exact16/619 proposal, qualified raw-parent acquisition and tested source-only controls. No human approval, production data mutation, private payload export, financial completeness, recovery/pin activation or retirement authority.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-mail-projection-focused-native-v5-public-capture.json",
+      "sha256": "d3b1c6f7b5aae0873fb98ed7b07c47948326ee6832e3b7cec7b363870bcab40c"
+    },
+    {
+      "bytes": 1318,
+      "originalPath": "/tmp/pow-audit30-mail-projection-focused-native-v5.json",
+      "purpose": "Action56 public source/test/proof custody only; accepted read-only private closure and fresh exact16/619 proposal, qualified raw-parent acquisition and tested source-only controls. No human approval, production data mutation, private payload export, financial completeness, recovery/pin activation or retirement authority.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-mail-projection-focused-native-v5-transport.json",
+      "sha256": "a0d1716bb885397c7df51adbda78011dfaa1db3b01f99e6eff2e172b32d5302d"
+    },
+    {
+      "bytes": 15856,
+      "originalPath": "/tmp/pow-audit30-treasury-parent-chunk1-completed-demand-native-v1.stdout",
+      "purpose": "Action56 public source/test/proof custody only; accepted read-only private closure and fresh exact16/619 proposal, qualified raw-parent acquisition and tested source-only controls. No human approval, production data mutation, private payload export, financial completeness, recovery/pin activation or retirement authority.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-treasury-parent-chunk1-completed-demand-public-v1.json",
+      "sha256": "f8d2bf97bbc7c8a371e631c9a50cc5e41bd637b97e70daadc6171780ac67e518"
+    },
+    {
+      "bytes": 401,
+      "originalPath": "/tmp/pow-audit30-treasury-parent-chunk1-run-native-v1.stdout",
+      "purpose": "Action56 public source/test/proof custody only; accepted read-only private closure and fresh exact16/619 proposal, qualified raw-parent acquisition and tested source-only controls. No human approval, production data mutation, private payload export, financial completeness, recovery/pin activation or retirement authority.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-treasury-parent-chunk1-run-public-v1.json",
+      "sha256": "f21a77cf4a68101894dfbb83939c0fd43dd69470d5951ad6d084dc44e0281d2a"
+    },
+    {
+      "bytes": 1207,
+      "originalPath": "/tmp/pow-audit30-treasury-parent-chunk1-run-native-v1.json",
+      "purpose": "Action56 public source/test/proof custody only; accepted read-only private closure and fresh exact16/619 proposal, qualified raw-parent acquisition and tested source-only controls. No human approval, production data mutation, private payload export, financial completeness, recovery/pin activation or retirement authority.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-treasury-parent-chunk1-transport-v1.json",
+      "sha256": "fb33e032dad3a976ecaff12592990e5adcc436947e1fc679564b38a6fc5b652f"
+    },
+    {
+      "bytes": 4594,
+      "originalPath": "/home/sixer/ProofOfWork.Me/audits/2026-10-03-audit30-exact-sixteen-body-repair-proposal.md",
+      "purpose": "Action56 public source/test/proof custody only; accepted read-only private closure and fresh exact16/619 proposal, qualified raw-parent acquisition and tested source-only controls. No human approval, production data mutation, private payload export, financial completeness, recovery/pin activation or retirement authority.",
+      "repositoryPath": "audits/2026-10-03-audit30-exact-sixteen-body-repair-proposal.md",
+      "sha256": "2d29c5a8a37c1aa42631dc615f8847640bdd4ce074b1c48524271ea40f96cadc"
+    },
+    {
+      "bytes": 1070,
+      "originalPath": "/tmp/pow-audit30-mail-projection-focused-v5-public-byteimage-proof-v1.json",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-mail-projection-focused-v5-public-byteimage-proof-v1.json",
+      "sha256": "83c2a889220d7991f0d496355cb16813712f9599ded8544065684b97b032ea40"
     }
   ],
   "qualification": "Exact public source/fixture custody with preserved earlier failures. No private bodies/environments/catalog/role secrets copied. 38ac stage/shadow pass, full semantic CLI changed-fence refusal then diagnostic first-request503 with no fence preimage and actual stopped unit. Cause and production acceptance remain pending; UI fc5 is staged. Source acceptance is not native acceptance or production-data/recovery/retirement authorization. One archival Python fixture copy removes only a final blank line required by the enabled whitespace hook; its exact original bytes, length and SHA remain losslessly base64-preserved in its manifest row and original /tmp source. Its Python AST is identical. Subsequent v3 original semantic CLI passes full coverage/registry parity at exact969677 with identical fences; other production acceptance gates remain pending. Actual CLI stopped closure and same-candidate readonly lease successor now pass; WORK/bond/strict and production publication remain pending. Mail GET source verification grants no stored-row repair authority. Action55 preserves failed074500 and real26c verifier defect; saved-receipt reconciliation validates privateACKs/fullmail only, with source7-after/offline/currentfence pending. Captured rawdelta/demand census grants no parent/membership/outpoint/financial acceptance. Proposed Oct2 checker and currentb16 selection remain source-only; no pin/activation/deletion authority.",

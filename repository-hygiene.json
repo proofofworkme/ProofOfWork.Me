@@ -123,7 +123,8 @@
       "audits/2026-10-02-audit30-ui-monitor-deadline-approval.json",
       "audits/2026-10-02-audit30-first-batch-execution.evidence.json",
       "audits/2026-10-02-audit30-remaining-phase-approval.json",
-      "audits/2026-10-02-audit30-remaining-phase-execution.evidence.json"
+      "audits/2026-10-02-audit30-remaining-phase-execution.evidence.json",
+      "audits/2026-10-03-audit30-exact-sixteen-body-repair-proposal.md"
     ],
     "staged-or-future-protocol-notes": [
       "CHAIN_CONTENT.md",

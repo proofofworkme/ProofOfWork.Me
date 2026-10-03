@@ -1,0 +1,71 @@
+{
+  "files": [
+    {
+      "bytes": 16143,
+      "path": "/tmp/pow-audit30-production-sixteen-adapter-v2.mjs",
+      "sha256": "bb81dd2ee7fdefed19605fc47ed8bdd309b1bd531fea47fa548c27bdbdeeeb20"
+    },
+    {
+      "bytes": 9347,
+      "path": "/tmp/pow-audit30-production-sixteen-native-caller-v2.mjs",
+      "sha256": "18323f53e92bd6cf1a4d5945e2f630db6eeb884f065f22bbede07b9515e96e4f"
+    },
+    {
+      "bytes": 22040,
+      "path": "/tmp/pow-audit30-production-sixteen-root-control-v2.py",
+      "sha256": "88e12b38b50243b754796de922ea914299993a2a3a3fc9933080a73cd5677bf8"
+    },
+    {
+      "bytes": 2636,
+      "path": "/tmp/pow-audit30-production-sixteen-root-bootstrap-v2.py",
+      "sha256": "f0d05704a8c7ce4315fe338012e9bdb01938bb957b9447e38af8933c72af2f97"
+    }
+  ],
+  "qualifications": [
+    "This review does not fabricate or accept the forthcoming actual readonly-finalization completion. Root must read exact actual producer/receipt bytes, stopped state and fresh focused619/known16 proof before any final human approval.",
+    "No actual human approval, production request, generated writer, native SQL or COMMIT was created or executed.",
+    "Root480 executes before and after the native operation. Each native original-writer hook rereads the immutable age<=120s root-before proof plus one fresh systemctl five observation; it does not execute a new480/Core census per hook.",
+    "Original template transaction/unknown-COMMIT/conditional inverse controls remain mandatory; inverse is separately invoked and bound to its acknowledged apply receipt.",
+    "V1 files and failed071500/074500 history remain preserved; b1f supplies audited definitions, never a fabricated successful proof."
+  ],
+  "review": {
+    "adapterAndCallerFullV2Read": true,
+    "bootstrapExactRootSourceBindingUnchanged": true,
+    "completeMailAndJournalFingerprintRequired": true,
+    "entireV1ToV2DiffsRead": true,
+    "exactFiveAcknowledgedReceiptAndTwoFailedHistoryCustodyRequired": true,
+    "nanosecondLexemesRetainedByJSONParseSourceContext": true,
+    "original2e9WriterUnchanged": true,
+    "privateBridge074500B1fDefinitionsOnly": true,
+    "readonlyFinalizationRequired": true,
+    "richSixFieldSavedFenceRequired": true,
+    "rootV1PriorAcceptedReviewReceipt": "1fca1949f233916fc9bbeedf5d68ee09327381621910752df9d6c1b19b1bfe0f"
+  },
+  "schema": "pow-audit30-independent-production-sixteen-source-review-v2",
+  "sourceAccepted": true,
+  "sourceOnly": true,
+  "tests": [
+    {
+      "assertions": 48,
+      "name": "adapter-v2",
+      "passed": true
+    },
+    {
+      "assertions": 31,
+      "name": "native-caller-v2",
+      "passed": true
+    },
+    {
+      "definedTests": 29,
+      "name": "root-control-v2",
+      "passed": true,
+      "seconds": 0.063
+    },
+    {
+      "definedTests": 9,
+      "name": "root-bootstrap-v2",
+      "passed": true,
+      "seconds": 0.008
+    }
+  ]
+}
