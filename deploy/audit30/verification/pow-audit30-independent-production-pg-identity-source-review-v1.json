@@ -1,0 +1,74 @@
+{
+  "atUtc": "2026-10-03T10:38:44.241706+00:00",
+  "independentTests": [
+    {
+      "passed": 24,
+      "path": "/tmp/pow-audit30-production-pg-identity-readonly-v1.test.py",
+      "seconds": 2.163
+    },
+    {
+      "passed": 4,
+      "path": "/tmp/pow-audit30-production-pg-identity-readonly-caller-v1.test.py",
+      "seconds": 0.042
+    }
+  ],
+  "nativePerformed": false,
+  "qualifications": [
+    "Source review and local fixtures are not production identity evidence. Root must separately admit the fixed once native observation.",
+    "Client resource caps do not constrain production PG backend; fixed server statement/lock/idle limits apply to this metadata transaction.",
+    "If query refuses, output reports closed refusal/hash metadata without raw stderr, guessed sysID, sizing success or automatic retry.",
+    "Owned client reap is not continuous backend/process exclusion, production physical size, recovery capacity/equivalence, slot/WAL/PITR or retirement authority."
+  ],
+  "repositoryEdits": false,
+  "review": [
+    "Full source/caller/tests/request read; exact a282 request inert decoder passes, ad03 embedded byte-exact, original-five/static protection equal actual9d24 observer.",
+    "Only one fixed public identity SELECT with BEGIN RR READ ONLY, PGOPTIONS default_transaction_read_only=on, server5s statement/2s lock/10s idle, no table/size scan. Clean env-i fixed local socket5432/nativePG16/postgres roles; current production dataDirectory, local null inet address, metadata types/ranges and transaction readonly ON required. System identifier is observed rather than hardcoded or borrowed from private clones.",
+    "Metadata SHOW communicator permits only exact property profiles. Fresh five/window/static8/mask/inactiveWAL/prune stay strict beforeafter; current idle static Main0 monitor tuple observed separately and equality reported.",
+    "Root60s/128MiB AS/30CPU with pre-stdin alarm, identity client20s and closed131072/65536 capture bounds. Actual blocked-client alarm and ignoredTERM->KILL/reap fixtures passed; cleanup masks repeated ordinary signals and restores handlers.",
+    "Caller retains shared1dedef90s/64KiB channels, exclusive new local capture namespace; no new service/evidence directory/unit control, sizing/private/fullroot/corpus calls or mutation."
+  ],
+  "schema": "pow-audit30-independent-production-pg-identity-source-review-v1",
+  "sourcesAndEvidence": [
+    {
+      "bytes": 11273,
+      "path": "/tmp/pow-audit30-production-pg-identity-readonly-v1.py",
+      "sha256": "73b0951f338909824a794973502c13cd44921140ac601d053bd2e9165c8b2110"
+    },
+    {
+      "bytes": 1843,
+      "path": "/tmp/pow-audit30-production-pg-identity-readonly-caller-v1.py",
+      "sha256": "59a68fed275dfc0975dfa4f3c48da8f14d94e416349f501b55c0ff6e2502c032"
+    },
+    {
+      "bytes": 37284,
+      "path": "/tmp/pow-audit30-production-pg-identity-readonly-request-v1.json",
+      "sha256": "a282861e4708eca86254dda7ecec906a84e97ad89d4f9e789ff8d027699bcb63"
+    },
+    {
+      "bytes": 6516,
+      "path": "/tmp/pow-audit30-production-pg-identity-readonly-v1.test.py",
+      "sha256": "0a4fce82b6e231117541aec78e110d965077b811d5fbd2fe3bde4e966866eb35"
+    },
+    {
+      "bytes": 1026,
+      "path": "/tmp/pow-audit30-production-pg-identity-readonly-caller-v1.test.py",
+      "sha256": "08481d86f9e83c5367e3e71218458430ff9cbb5e411354ed0ebbddef9c16dea9"
+    },
+    {
+      "bytes": 33509,
+      "path": "/tmp/pow-audit30-production-pg-identity-readonly-request-template-v1.json",
+      "sha256": "f794f54470a572ecf09f2d72744093423178a4104470c93ccfa8bfc06576a1d5"
+    },
+    {
+      "bytes": 2728,
+      "path": "/tmp/pow-audit30-production-pg-identity-readonly-source-preparation-v1.json",
+      "sha256": "a3b2fdbc74bfdc24e01243c707011673f95ec549dc495bc570a1b5ce8ad32eb9"
+    },
+    {
+      "bytes": 9346,
+      "path": "/tmp/pow-audit30-physical-sizing-failure-observer-native-v2.stdout",
+      "sha256": "9d24e778c541e062985d070cc733937c6ca87dccca150041b302233198571c40"
+    }
+  ],
+  "verdict": "accepted-source-and-exact-request-binding"
+}

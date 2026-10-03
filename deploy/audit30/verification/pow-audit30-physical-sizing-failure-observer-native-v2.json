@@ -1,0 +1,41 @@
+{
+  "automaticRetry": false,
+  "captures": {
+    "stderr": {
+      "bytes": 0,
+      "path": "/tmp/pow-audit30-physical-sizing-failure-observer-native-v2.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "stdout": {
+      "bytes": 9346,
+      "path": "/tmp/pow-audit30-physical-sizing-failure-observer-native-v2.stdout",
+      "sha256": "9d24e778c541e062985d070cc733937c6ca87dccca150041b302233198571c40"
+    }
+  },
+  "exitCode": 0,
+  "failure": null,
+  "finishedAtUtc": "2026-10-03T10:30:23.048577+00:00",
+  "inputBindings": {
+    "coreRequests": 0,
+    "inheritedAddressSpaceBytes": 134217728,
+    "requestSHA256": "776b518a08f9bcd0c86500d6b8f9115430d6140422495d74d74b610ba5123013",
+    "rootWholeSeconds": 60,
+    "sizingResultAccepted": false,
+    "sourceOnlyGOStillSeparate": true,
+    "sourceSHA256": "dda2f87913b45c2d8054ff2cd0ec9b790b547ecb54a4b40218f598c9fa4545df",
+    "sqlExecuted": false,
+    "unitCreationOrControl": false,
+    "utilitySHA256": "1dedef0a6c7021d114017e711ad74f9cfed4e461fc047a2be2c49e590f3da18e"
+  },
+  "outerDeadlineSeconds": 90,
+  "productionDataMutationRequested": false,
+  "receivedBytes": {
+    "stderr": 0,
+    "stdout": 9346
+  },
+  "remoteUnitStoppedCertifiedByTransport": false,
+  "schema": "pow-audit30-readonly-owned-transport-result-v1",
+  "seconds": 2.879302,
+  "startedAtUtc": "2026-10-03T10:30:20.169275+00:00",
+  "typedStdinBytesDelivered": 51700
+}

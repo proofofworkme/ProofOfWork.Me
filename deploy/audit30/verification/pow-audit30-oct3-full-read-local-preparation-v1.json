@@ -1,0 +1,106 @@
+{
+  "actualMetadataAuthority": {
+    "bytes": 12502,
+    "path": "/tmp/pow-audit30-logical-backup-journal-refusal-diagnostic-native-v1.stdout",
+    "sha256": "07824e0892583ee7d0370f2f6f97e85e7376502d23e7895fbadd0b1b7ca320cc"
+  },
+  "atUtc": "2026-10-03T10:25:28.695377+00:00",
+  "commandSpec": {
+    "bytes": 3536,
+    "path": "/tmp/pow-audit30-oct3-full-read-command-spec-v1.json",
+    "sha256": "101b185005795024a54923ea3430eb5c049f6b483ed5081f0c1c87960777a6b0"
+  },
+  "deletionAuthorized": false,
+  "fullDumpHashOrTocObserved": false,
+  "leaf": {
+    "bytes": 6197,
+    "path": "/tmp/pow-audit30-oct3-latest-backup-full-read-v1.py",
+    "sha256": "01b80fd9b4a3a92893c06f288b3d3bdc90e05b7ed6f7c6f25bebc21c1ecc56a3"
+  },
+  "native": {
+    "bytes": 26947,
+    "path": "/tmp/pow-audit30-oct3-full-read-native-v1.py",
+    "sha256": "d9c19bedb3b2baf7a4d5b1a2beca8a9617d05c1074449834c8c05ebc93cb3c48"
+  },
+  "nativeCallPerformed": false,
+  "nativeGO": false,
+  "newLogicalRestoreRequestConstructed": false,
+  "nullTemplate": {
+    "bytes": 8739,
+    "path": "/tmp/pow-audit30-oct3-full-read-request-template-v1.json",
+    "sha256": "b2d460b2150ed128a9c0739f2d2d0ff32c8aadab045462eed0e8336f1ea6dfd5"
+  },
+  "pinChanged": false,
+  "preservedSources": [
+    {
+      "bytes": 5113,
+      "path": "/tmp/pow-audit30-latest-backup-full-read-v1.py",
+      "sha256": "6bafcdb48b1fd0c8da0c23169906f7cd96fbeb374b0333b9c7ca349988abc869"
+    },
+    {
+      "bytes": 24954,
+      "path": "/tmp/pow-audit30-oct2-full-read-native-v2.py",
+      "sha256": "ad03e5d02e10018fb7c5dd3c118a7ac876331cad240832c52e4838a4bea0ff2a"
+    },
+    {
+      "bytes": 61051,
+      "path": "/home/sixer/ProofOfWork.Me/deploy/audit30/restore-latest-logical.py",
+      "sha256": "26c7656b2e751c6de50122c65f8af73686c2d2674bee8be86a3c5648b7fcc80e"
+    },
+    {
+      "bytes": 25221,
+      "path": "/tmp/pow-audit30-oct3-full-read-native-v1.initial-draft.py",
+      "sha256": "0728a5709d8df2e8793afa9f3f5d5336049e22a63ec98d95fe4465e75edad4e7"
+    }
+  ],
+  "qualifications": [
+    "Actual07824 metadata and declared checksums bind selection but do not themselves certify current content/TOC",
+    "No Oct2 hashes/197-entry catalog/restore window borrowed",
+    "First discovered fullTOC text/hash/count returned for subsequent new Oct3 restore plan; no isolated restore or promotion/deletion approval",
+    "Periodic monitor idle operation separately observed before/after; report actual tuple equality rather than assert immutable InvocationID",
+    "Original5/static8/mask/inactiveWAL/prune/pin/checker preserved; known18 findings unresolved"
+  ],
+  "recoveryActivationApproved": false,
+  "runtimeTuplePolicy": "Only exact idle loaded/static monitor six-field operational observation can differ at endpoint. Original five/static8/mask/WAL/prune remain unchanged.",
+  "schema": "pow-audit30-oct3-full-read-source-preparation-v1",
+  "sourceDiffs": [
+    {
+      "bytes": 8338,
+      "path": "/tmp/pow-audit30-oct3-full-read-leaf-v1.diff",
+      "sha256": "9a47cd447b5fba008c73a89d76023c03645e37a5fcb73489236293f01a23f187"
+    },
+    {
+      "bytes": 23410,
+      "path": "/tmp/pow-audit30-oct3-full-read-native-v1.diff",
+      "sha256": "930ccd20428416c1174fe84eed03cc383d6473c2760559fcc20852f9322c7f1b"
+    }
+  ],
+  "sourceOnly": true,
+  "testInvocation": "python3 -I -B -W error TEST_PATH",
+  "tests": [
+    {
+      "passed": 10,
+      "seconds": 0.169,
+      "source": {
+        "bytes": 8368,
+        "path": "/tmp/pow-audit30-oct3-latest-backup-full-read-v1.test.py",
+        "sha256": "bbe8889777b8209945386603e564df66f8412becb7e30cf7fa8c8f7085807556"
+      }
+    },
+    {
+      "passed": 32,
+      "seconds": 0.134,
+      "source": {
+        "bytes": 24863,
+        "path": "/tmp/pow-audit30-oct3-full-read-native-v1.test.py",
+        "sha256": "b9cfd3cc095666828afe74e792ae90ad06a71856d6cc2d9cfe34b32fe13b6dfc"
+      }
+    }
+  ],
+  "testsPassed": 42,
+  "typedDraft": {
+    "bytes": 14373,
+    "path": "/tmp/pow-audit30-oct3-full-read-draft-request-v1.json",
+    "sha256": "5b727dee2608d7a5841254133a90e748344b0c41a2902d14857e8e46c53182e4"
+  }
+}

@@ -1,0 +1,40 @@
+{
+  "automaticRetry": false,
+  "captures": {
+    "stderr": {
+      "bytes": 212,
+      "path": "/tmp/pow-audit30-production-physical-sizing-native-v3.stderr",
+      "sha256": "e45ee7484b07046f4e1ad025aedca1b51536c8bfc7a081d2c3ea5100dc8bcf3f"
+    },
+    "stdout": {
+      "bytes": 0,
+      "path": "/tmp/pow-audit30-production-physical-sizing-native-v3.stdout",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  },
+  "exitCode": 1,
+  "failure": null,
+  "finishedAtUtc": "2026-10-03T10:18:10.920611+00:00",
+  "inputBindings": {
+    "automaticRetry": false,
+    "bootstrapSHA256": "86f2e6d7f61d3f3235f084fcf0ab294da32b685ed026e7e22ec7368433d28905",
+    "freshActualContextSHA256": "07824e0892583ee7d0370f2f6f97e85e7376502d23e7895fbadd0b1b7ca320cc",
+    "nativeSourceSHA256": "84a09e2bda07f672562074f8236cfd30eb9613df672232a371810721bd41e493",
+    "oldPrelaunchUnitAndEvidenceAbsenceObserved": true,
+    "productionMutation": false,
+    "recoveryActivation": false,
+    "requestSHA256": "776b518a08f9bcd0c86500d6b8f9115430d6140422495d74d74b610ba5123013",
+    "rootReviewedUnchangedSourceAndDistinctFreshRequestOnceGo": true
+  },
+  "outerDeadlineSeconds": 600,
+  "productionDataMutationRequested": false,
+  "receivedBytes": {
+    "stderr": 212,
+    "stdout": 0
+  },
+  "remoteUnitStoppedCertifiedByTransport": false,
+  "schema": "pow-audit30-readonly-owned-transport-result-v1",
+  "seconds": 3.541542,
+  "startedAtUtc": "2026-10-03T10:18:07.379069+00:00",
+  "typedStdinBytesDelivered": 51700
+}

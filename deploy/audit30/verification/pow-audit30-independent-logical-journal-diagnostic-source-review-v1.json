@@ -1,0 +1,72 @@
+{
+  "allocationFailureCauseProven": false,
+  "atUtc": "2026-10-03T10:16:01.756889+00:00",
+  "caller": {
+    "bytes": 1776,
+    "path": "/tmp/pow-audit30-logical-backup-journal-refusal-diagnostic-caller-v1.py",
+    "sha256": "45fa4dda26752c20af9a21c4767a1c2a776db050d893783d5c021905e88e0d3f"
+  },
+  "callerTests": {
+    "bytes": 1744,
+    "path": "/tmp/pow-audit30-logical-backup-journal-refusal-diagnostic-caller-v1.test.py",
+    "sha256": "f788cc9a5ac04169cd49d870c1b851dd563838062fbb8e84eff93f24561edf75"
+  },
+  "deletionAuthorized": false,
+  "findings": [
+    "Exact c4d99 embedded source decoded byte-for-byte and loaded as definitions; original root750/sets700/members600 and fixed metadata/script/Oct2/093000 attempt readers reused without C.collect/main/journal_classification.",
+    "Exactly one original closed journal command, original128MiB AS/30CPU/90s whole and20s child/4MiBstdout/64KiBstderr remain. Only exit/count/SHA and fixed stderr categories are returned; no raw journal/error contents.",
+    "Signals propagate custom RuntimeError through capture; only the existing owned journal child is terminated/reaped by original frozen capture cleanup. No service action or new launch.",
+    "Original five, static8 files/mask/WAL/prune and quiet window compared at two endpoints. Fresh idle static monitor tuple is observed separately at return and may differ; that qualification does not waive other guards.",
+    "Fixed095500 sizing unit/evidence endpoint metadata and known paths only; source does not retry or alter either failed attempt. Caller binds exactf722/a20fa/1dedef and120s64KiB exclusive output prefix."
+  ],
+  "fullSourceAndCallerRead": true,
+  "journalHistoryCertified": false,
+  "localIndependentTests": [
+    {
+      "invocation": "python3 -I -B -W error /tmp/pow-audit30-logical-backup-journal-refusal-diagnostic-v1.test.py",
+      "passed": 17,
+      "seconds": 0.077
+    },
+    {
+      "invocation": "python3 -I -B -W error /tmp/pow-audit30-logical-backup-journal-refusal-diagnostic-caller-v1.test.py",
+      "passed": 3,
+      "seconds": 0.006
+    }
+  ],
+  "nativeCallPerformed": false,
+  "originalCollector": {
+    "bytes": 15770,
+    "path": "/tmp/pow-audit30-logical-backup-rotation-readonly-v3.py",
+    "sha256": "c4d99e536ea17c628d1d86957e1bad716db8e1629ff413979d2e0284dae69c54"
+  },
+  "originalRequest": {
+    "bytes": 39156,
+    "path": "/tmp/pow-audit30-logical-backup-rotation-readonly-request-v3.json",
+    "sha256": "a20fa1719319c9a5c0059471bcff75bbe101ee502727dd594ea1615125972c00"
+  },
+  "qualifications": [
+    "The diagnostic is not rotation PASS even if a fresh command returns exit0/empty stderr; no journal record framing/classification occurs.",
+    "Resource/integrity cause flags remain false. A fresh observed error cannot reconstruct original c4d99 discarded stderr or establish that RLIMIT_AS was its sole cause.",
+    "Metadata/declared checksums and calendar names do not verify current dump content, TOC, isolation restore, backup replacement, recovery, promotion or retirement.",
+    "No native/network/SQL/Core/unit-control or repository action by reviewer; Root once actual request admission remains separate."
+  ],
+  "rotationCollectorPassed": false,
+  "schema": "pow-audit30-independent-logical-journal-diagnostic-source-review-v1",
+  "sharedTransport": {
+    "bytes": 8396,
+    "path": "/tmp/pow-audit30-readonly-owned-transport-v3.py",
+    "sha256": "1dedef0a6c7021d114017e711ad74f9cfed4e461fc047a2be2c49e590f3da18e"
+  },
+  "source": {
+    "bytes": 29315,
+    "path": "/tmp/pow-audit30-logical-backup-journal-refusal-diagnostic-v1.py",
+    "sha256": "f722e8280597c2754ad6b08f394a85771a3faa5f1852d064b0034c60bf56a737"
+  },
+  "tests": {
+    "bytes": 7427,
+    "path": "/tmp/pow-audit30-logical-backup-journal-refusal-diagnostic-v1.test.py",
+    "sha256": "6a5d0358cfda9a89e369a294c06acdf5509972783504e37719099f9227256495"
+  },
+  "testsPassed": 20,
+  "verdict": "accepted-source-only"
+}

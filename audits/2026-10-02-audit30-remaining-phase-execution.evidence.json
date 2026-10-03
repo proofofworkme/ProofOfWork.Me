@@ -176738,6 +176738,1028 @@
         },
         "schema": "pow-audit30-logical-root-metadata-diagnostic-v1"
       }
+    },
+    {
+      "action": "Action62 preserves all61 prior action values and536 custody rows. Actual10:17 fixed diagnostic proves Oct2-read and first-sizing prelaunch unit/evidence absence only at that endpoint; its fixed journal read exits0 with236B allocation/mapping-warning stderr, not an accepted clean selection or sole-cause certificate. Actual10:27 audit-only1GiB bounded journal read exits0 with empty stderr, using the unchanged fixed parser. Its selected scheduled dfda5 backup invocation reports keeping Oct3, deleting Oct2 and preserving pinned Sep29; this is a qualified historical action report plus current absence, not a full journal-history certificate. No agent backup deletion or pin/checker change occurred. The distinct10:18 sizing attempt creates a failed audit job. Actual10:30 fixed saved-outcome observer proves its cleanup verified and the same704282 invocation stopped with MainPID0/empty ControlGroup; no accepted sizing result. Closed leaf failure is FIXED_LIVE_PG16_IDENTITY. The audit source incorrectly borrowed systemIdentifier7692221671691040144 from private clones. A separate10:39 READ ONLY identity observation confirms production7652445986754609384/160015/timeline1, transaction readOnly on, originalfive/static endpoints unchanged and owned client reaped. It does not retroactively observe every failed conjunct or measure physical size. Actual10:31:39-10:32:57 full Oct3 read passes in78.020104s: all three exact member hashes, stable FD/path/lock metadata and first discovered197-entry catalog f4dc249; managed audit unit stopped and originalfive/static protection unchanged. This is content/catalog proof, not restore equivalence. Tested signal successor753a and byte-equal fd946 combined creator bind the new104500 isolated restore plan6f870/requestcaf75 and the actual Oct3 source. At10:38 the exact new322aeb unit is observed active/running/MainPID3106608 with MemoryMax8GiB/RuntimeMax2h. Full restore, roles/ACL/allrows/credit/page/offline/private-stop/capacity receipts remain pending; no current restore PASS. Oct2-specific promotion/retirement plans stay blocked, and any replacement survivor-specific promotion/recovery/additional deletion still requires final approval. All failures and raw diffs are preserved as exact public evidence/envelopes. The first local custody helper refuses an atime-inclusive stat comparison after partial public copies; the corrected helper preserves those copies, verifies exact bytes, and excludes only access time from the stability comparison. No remote operation was repeated. Exact16 final production-data approval remains requested and unanswered; May9 operator-paid/noIDs remains unchanged. No production repair, API/worker/UI cutover, live recovery activation, extra retirement, global dependency closure or automatic retry occurred.",
+      "actualReadonlyTransportReceipts": {
+        "pow-audit30-logical-backup-journal-bounded-native-v1.json": {
+          "automaticRetry": false,
+          "captures": {
+            "stderr": {
+              "bytes": 0,
+              "path": "/tmp/pow-audit30-logical-backup-journal-bounded-native-v1.stderr",
+              "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+            },
+            "stdout": {
+              "bytes": 15617,
+              "path": "/tmp/pow-audit30-logical-backup-journal-bounded-native-v1.stdout",
+              "sha256": "669e1bad01c01dda645f1a780e9ec7d912f0705b7effd92fdd216fe457265438"
+            }
+          },
+          "exitCode": 0,
+          "failure": null,
+          "finishedAtUtc": "2026-10-03T10:27:36.195570+00:00",
+          "inputBindings": {
+            "coreRequests": 0,
+            "fixedJournalWholeSeconds": 20,
+            "inheritedAddressSpaceBytes": 1073741824,
+            "requestSHA256": "a20fa1719319c9a5c0059471bcff75bbe101ee502727dd594ea1615125972c00",
+            "rootWholeSeconds": 90,
+            "rotationPASSClaimed": false,
+            "sourceOnlyGOStillSeparate": true,
+            "sourceSHA256": "2ee1325efd52165b50af455b9ace39f6b377757237a5bdf427eb4cbcaee117fa",
+            "sqlExecuted": false,
+            "unitCreationOrControl": false,
+            "utilitySHA256": "1dedef0a6c7021d114017e711ad74f9cfed4e461fc047a2be2c49e590f3da18e"
+          },
+          "outerDeadlineSeconds": 120,
+          "productionDataMutationRequested": false,
+          "receivedBytes": {
+            "stderr": 0,
+            "stdout": 15617
+          },
+          "remoteUnitStoppedCertifiedByTransport": false,
+          "schema": "pow-audit30-readonly-owned-transport-result-v1",
+          "seconds": 3.422746,
+          "startedAtUtc": "2026-10-03T10:27:32.772824+00:00",
+          "typedStdinBytesDelivered": 39156
+        },
+        "pow-audit30-logical-backup-journal-refusal-diagnostic-native-v1.json": {
+          "automaticRetry": false,
+          "captures": {
+            "stderr": {
+              "bytes": 0,
+              "path": "/tmp/pow-audit30-logical-backup-journal-refusal-diagnostic-native-v1.stderr",
+              "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+            },
+            "stdout": {
+              "bytes": 12502,
+              "path": "/tmp/pow-audit30-logical-backup-journal-refusal-diagnostic-native-v1.stdout",
+              "sha256": "07824e0892583ee7d0370f2f6f97e85e7376502d23e7895fbadd0b1b7ca320cc"
+            }
+          },
+          "exitCode": 0,
+          "failure": null,
+          "finishedAtUtc": "2026-10-03T10:17:02.575754+00:00",
+          "inputBindings": {
+            "coreRequests": 0,
+            "fixedJournalWholeSeconds": 20,
+            "inheritedAddressSpaceBytes": 134217728,
+            "requestSHA256": "a20fa1719319c9a5c0059471bcff75bbe101ee502727dd594ea1615125972c00",
+            "rootWholeSeconds": 90,
+            "rotationPASSClaimed": false,
+            "sourceOnlyGOStillSeparate": true,
+            "sourceSHA256": "f722e8280597c2754ad6b08f394a85771a3faa5f1852d064b0034c60bf56a737",
+            "sqlExecuted": false,
+            "unitCreationOrControl": false,
+            "utilitySHA256": "1dedef0a6c7021d114017e711ad74f9cfed4e461fc047a2be2c49e590f3da18e"
+          },
+          "outerDeadlineSeconds": 120,
+          "productionDataMutationRequested": false,
+          "receivedBytes": {
+            "stderr": 0,
+            "stdout": 12502
+          },
+          "remoteUnitStoppedCertifiedByTransport": false,
+          "schema": "pow-audit30-readonly-owned-transport-result-v1",
+          "seconds": 3.068988,
+          "startedAtUtc": "2026-10-03T10:16:59.506766+00:00",
+          "typedStdinBytesDelivered": 39156
+        },
+        "pow-audit30-oct3-full-read-native-102500-v1.json": {
+          "automaticRetry": false,
+          "captures": {
+            "stderr": {
+              "bytes": 0,
+              "path": "/tmp/pow-audit30-oct3-full-read-native-102500-v1.stderr",
+              "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+            },
+            "stdout": {
+              "bytes": 32094,
+              "path": "/tmp/pow-audit30-oct3-full-read-native-102500-v1.stdout",
+              "sha256": "db8f00d8c61aa4aa6d9ed4ad13d7a6b5b67faf160d925526f869d5859d9a1147"
+            }
+          },
+          "exitCode": 0,
+          "failure": null,
+          "finishedAtUtc": "2026-10-03T10:32:57.513504+00:00",
+          "inputBindings": {
+            "additionalDeletionAuthorized": false,
+            "isolatedRestoreOrPromotionClaimed": false,
+            "ownedUnitRuntimeSeconds": 360,
+            "peerSha256": "3f8e4d6b92bc28a3f967cc30e8e139e7918790af3e506a98e6c31ba8168db3fa",
+            "requestSha256": "5f33aff2257632f48427955e0021ded8f2eef4b03e5efd87ec079e27d4ea286d",
+            "rootOnceReadonlyGo": true,
+            "rootWholeSeconds": 420,
+            "sourceSha256": "d9c19bedb3b2baf7a4d5b1a2beca8a9617d05c1074449834c8c05ebc93cb3c48"
+          },
+          "outerDeadlineSeconds": 480,
+          "productionDataMutationRequested": false,
+          "receivedBytes": {
+            "stderr": 0,
+            "stdout": 32094
+          },
+          "remoteUnitStoppedCertifiedByTransport": false,
+          "schema": "pow-audit30-readonly-owned-transport-result-v1",
+          "seconds": 78.020104,
+          "startedAtUtc": "2026-10-03T10:31:39.493400+00:00",
+          "typedStdinBytesDelivered": 14373
+        },
+        "pow-audit30-physical-sizing-failure-observer-native-v2.json": {
+          "automaticRetry": false,
+          "captures": {
+            "stderr": {
+              "bytes": 0,
+              "path": "/tmp/pow-audit30-physical-sizing-failure-observer-native-v2.stderr",
+              "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+            },
+            "stdout": {
+              "bytes": 9346,
+              "path": "/tmp/pow-audit30-physical-sizing-failure-observer-native-v2.stdout",
+              "sha256": "9d24e778c541e062985d070cc733937c6ca87dccca150041b302233198571c40"
+            }
+          },
+          "exitCode": 0,
+          "failure": null,
+          "finishedAtUtc": "2026-10-03T10:30:23.048577+00:00",
+          "inputBindings": {
+            "coreRequests": 0,
+            "inheritedAddressSpaceBytes": 134217728,
+            "requestSHA256": "776b518a08f9bcd0c86500d6b8f9115430d6140422495d74d74b610ba5123013",
+            "rootWholeSeconds": 60,
+            "sizingResultAccepted": false,
+            "sourceOnlyGOStillSeparate": true,
+            "sourceSHA256": "dda2f87913b45c2d8054ff2cd0ec9b790b547ecb54a4b40218f598c9fa4545df",
+            "sqlExecuted": false,
+            "unitCreationOrControl": false,
+            "utilitySHA256": "1dedef0a6c7021d114017e711ad74f9cfed4e461fc047a2be2c49e590f3da18e"
+          },
+          "outerDeadlineSeconds": 90,
+          "productionDataMutationRequested": false,
+          "receivedBytes": {
+            "stderr": 0,
+            "stdout": 9346
+          },
+          "remoteUnitStoppedCertifiedByTransport": false,
+          "schema": "pow-audit30-readonly-owned-transport-result-v1",
+          "seconds": 2.879302,
+          "startedAtUtc": "2026-10-03T10:30:20.169275+00:00",
+          "typedStdinBytesDelivered": 51700
+        },
+        "pow-audit30-production-pg-identity-readonly-native-v1.json": {
+          "automaticRetry": false,
+          "captures": {
+            "stderr": {
+              "bytes": 0,
+              "path": "/tmp/pow-audit30-production-pg-identity-readonly-native-v1.stderr",
+              "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+            },
+            "stdout": {
+              "bytes": 5986,
+              "path": "/tmp/pow-audit30-production-pg-identity-readonly-native-v1.stdout",
+              "sha256": "0d6b69eb45fd5f67fd4cda34ba4942fe54884ef20feeefb9a20d1c9b0d773c2a"
+            }
+          },
+          "exitCode": 0,
+          "failure": null,
+          "finishedAtUtc": "2026-10-03T10:39:15.085199+00:00",
+          "inputBindings": {
+            "clientWholeSeconds": 20,
+            "coreRequests": 0,
+            "fixedReadOnlyIdentityQueries": 1,
+            "inheritedAddressSpaceBytes": 134217728,
+            "noUnitOrEvidenceDirectory": true,
+            "requestSHA256": "a282861e4708eca86254dda7ecec906a84e97ad89d4f9e789ff8d027699bcb63",
+            "rootCPUSeconds": 30,
+            "rootWholeSeconds": 60,
+            "serverIdleSeconds": 10,
+            "serverLockSeconds": 2,
+            "serverStatementSeconds": 5,
+            "sizingResultAccepted": false,
+            "sourceOnlyGOStillSeparate": true,
+            "sourceSHA256": "73b0951f338909824a794973502c13cd44921140ac601d053bd2e9165c8b2110",
+            "unitCreationOrControl": false,
+            "utilitySHA256": "1dedef0a6c7021d114017e711ad74f9cfed4e461fc047a2be2c49e590f3da18e"
+          },
+          "outerDeadlineSeconds": 90,
+          "productionDataMutationRequested": false,
+          "receivedBytes": {
+            "stderr": 0,
+            "stdout": 5986
+          },
+          "remoteUnitStoppedCertifiedByTransport": false,
+          "schema": "pow-audit30-readonly-owned-transport-result-v1",
+          "seconds": 3.22593,
+          "startedAtUtc": "2026-10-03T10:39:11.859269+00:00",
+          "typedStdinBytesDelivered": 37284
+        },
+        "pow-audit30-production-physical-sizing-native-v3.json": {
+          "automaticRetry": false,
+          "captures": {
+            "stderr": {
+              "bytes": 212,
+              "path": "/tmp/pow-audit30-production-physical-sizing-native-v3.stderr",
+              "sha256": "e45ee7484b07046f4e1ad025aedca1b51536c8bfc7a081d2c3ea5100dc8bcf3f"
+            },
+            "stdout": {
+              "bytes": 0,
+              "path": "/tmp/pow-audit30-production-physical-sizing-native-v3.stdout",
+              "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+            }
+          },
+          "exitCode": 1,
+          "failure": null,
+          "finishedAtUtc": "2026-10-03T10:18:10.920611+00:00",
+          "inputBindings": {
+            "automaticRetry": false,
+            "bootstrapSHA256": "86f2e6d7f61d3f3235f084fcf0ab294da32b685ed026e7e22ec7368433d28905",
+            "freshActualContextSHA256": "07824e0892583ee7d0370f2f6f97e85e7376502d23e7895fbadd0b1b7ca320cc",
+            "nativeSourceSHA256": "84a09e2bda07f672562074f8236cfd30eb9613df672232a371810721bd41e493",
+            "oldPrelaunchUnitAndEvidenceAbsenceObserved": true,
+            "productionMutation": false,
+            "recoveryActivation": false,
+            "requestSHA256": "776b518a08f9bcd0c86500d6b8f9115430d6140422495d74d74b610ba5123013",
+            "rootReviewedUnchangedSourceAndDistinctFreshRequestOnceGo": true
+          },
+          "outerDeadlineSeconds": 600,
+          "productionDataMutationRequested": false,
+          "receivedBytes": {
+            "stderr": 212,
+            "stdout": 0
+          },
+          "remoteUnitStoppedCertifiedByTransport": false,
+          "schema": "pow-audit30-readonly-owned-transport-result-v1",
+          "seconds": 3.541542,
+          "startedAtUtc": "2026-10-03T10:18:07.379069+00:00",
+          "typedStdinBytesDelivered": 51700
+        }
+      },
+      "additionalDeletion": false,
+      "atUtc": "2026-10-03T10:46:26.936559+00:00",
+      "currentOct3ContentProof": {
+        "allThreeMemberHashesVerified": true,
+        "auditUnitStopVerified": true,
+        "catalogEntries": 197,
+        "catalogSha256": "f4dc249de036377ec96f8f15eeff26b4ff12dd9f2f6dd8ea541847e7310eb19b",
+        "isolatedRestoreEquivalent": false,
+        "outcomeBinding": {
+          "bytes": 218995,
+          "path": "/var/tmp/proofofwork-audit30-oct3-full-read-20261003T102500Z-preflight/completed.json",
+          "sha256": "76ffa8c036ccdd407c1469b85feeff0584c8e35ad1b3ed24e474c7173e56d71b"
+        },
+        "transportSeconds": 78.020104
+      },
+      "newIsolatedRestoreRunningObservation": {
+        "additionalDeletion": false,
+        "atUtcRecorded": "2026-10-03T10:40:27.808754+00:00",
+        "commandKind": "fixed15s-systemctl-show-only",
+        "newUnitRunningObserved": true,
+        "observedAtUtc": "2026-10-03T10:38:18+00:00",
+        "pinChanged": false,
+        "productionMutation": false,
+        "productionRecordRepairApproved": false,
+        "properties": {
+          "ActiveState": "active",
+          "ControlGroup": "/system.slice/proofofwork-audit30-logical-restore-20261003T104500Z.service",
+          "ExecMainStatus": "0",
+          "InvocationID": "322aeb150b664d7fa8380b8f6c7ed1f1",
+          "LoadState": "loaded",
+          "MainPID": "3106608",
+          "MemoryCurrent": "6441725952",
+          "MemoryMax": "8589934592",
+          "Result": "success",
+          "RuntimeMaxUSec": "2h",
+          "SubState": "running",
+          "User": "postgres"
+        },
+        "qualification": "A new audit-unit metadata observation only. The isolated controller remains running; final restore/table/role/credit/page/offline/private-stop/five/capacity receipts are pending. MemoryCurrent is an instantaneous cgroup sample, not a peak or guarantee.",
+        "recoveryActivated": false,
+        "restoreCompleted": false,
+        "restoreEquivalenceCertified": false,
+        "schema": "pow-audit30-new-oct3-restore-running-observation-v1",
+        "toolStdoutSha256": "1c9bb65874f65ddcc51779234891d9a0b1fe756fd16fc2ad57dcc773856b45d9",
+        "toolStdoutText": "RuntimeMaxUSec=2h\nMainPID=3106608\nResult=success\nExecMainStatus=0\nControlGroup=/system.slice/proofofwork-audit30-logical-restore-20261003T104500Z.service\nMemoryCurrent=6441725952\nMemoryMax=8589934592\nUser=postgres\nLoadState=loaded\nActiveState=active\nSubState=running\nInvocationID=322aeb150b664d7fa8380b8f6c7ed1f1\n",
+        "unit": "proofofwork-audit30-logical-restore-20261003T104500Z.service"
+      },
+      "productionDataMutation": false,
+      "productionIdentityObservation": {
+        "backendPid": 3107781,
+        "currentUser": "postgres",
+        "dataDirectory": "/var/lib/postgresql/16/main",
+        "database": "postgres",
+        "port": "5432",
+        "readOnly": "on",
+        "serverAddress": null,
+        "serverVersionNum": "160015",
+        "sessionUser": "postgres",
+        "socket": "/var/run/postgresql",
+        "systemIdentifier": "7652445986754609384",
+        "timeline": 1
+      },
+      "publicSourceCustodyAdded": [
+        {
+          "bytes": 11321,
+          "originalPath": "/tmp/pow-audit30-append-action62-v1.py",
+          "repositoryPath": "deploy/audit30/verification/pow-audit30-append-action62-v1.py",
+          "sha256": "eef1e6291d6fed29240a291da3fd319c49761fa4cfaf4890d57700e196f76cb8"
+        },
+        {
+          "bytes": 11877,
+          "originalPath": "/tmp/pow-audit30-append-action62-v2.py",
+          "repositoryPath": "deploy/audit30/verification/pow-audit30-append-action62-v2.py",
+          "sha256": "59601193264a9dd801b5de3ef3ecc0c546c904a7fc6b8a48aaa3dce2fda883b5"
+        },
+        {
+          "bytes": 3953,
+          "originalPath": "/tmp/pow-audit30-independent-logical-journal-diagnostic-source-review-v1.json",
+          "repositoryPath": "deploy/audit30/verification/pow-audit30-independent-logical-journal-diagnostic-source-review-v1.json",
+          "sha256": "87cf57925e198d4f764786d1cbe661b4ed8db5e003c23a89d40c5050d4ecda7a"
+        },
+        {
+          "bytes": 3788,
+          "originalPath": "/tmp/pow-audit30-independent-logical-restore-signal-source-review-v2.json",
+          "repositoryPath": "deploy/audit30/verification/pow-audit30-independent-logical-restore-signal-source-review-v2.json",
+          "sha256": "a8bc03d7f44056b4812d9c9284239d9a183f4f2dd738c873f8bc44acb17bd7b4"
+        },
+        {
+          "bytes": 3016,
+          "originalPath": "/tmp/pow-audit30-independent-oct3-concrete-restore-binding-review-v1.json",
+          "repositoryPath": "deploy/audit30/verification/pow-audit30-independent-oct3-concrete-restore-binding-review-v1.json",
+          "sha256": "7d5fc4a9e480673913cbd2aaa19e24e27649388bc30d8feebd3501b3cd318838"
+        },
+        {
+          "bytes": 1344,
+          "originalPath": "/tmp/pow-audit30-independent-oct3-full-read-actual-request-review-v1.json",
+          "repositoryPath": "deploy/audit30/verification/pow-audit30-independent-oct3-full-read-actual-request-review-v1.json",
+          "sha256": "a074a1c1f6ff9ad6cf6b889d16a1a7df989e9b48116e72aefd946ff6c0fe1dfe"
+        },
+        {
+          "bytes": 4895,
+          "originalPath": "/tmp/pow-audit30-independent-oct3-full-read-source-review-v1.json",
+          "repositoryPath": "deploy/audit30/verification/pow-audit30-independent-oct3-full-read-source-review-v1.json",
+          "sha256": "3f8e4d6b92bc28a3f967cc30e8e139e7918790af3e506a98e6c31ba8168db3fa"
+        },
+        {
+          "bytes": 3064,
+          "originalPath": "/tmp/pow-audit30-independent-oct3-restore-template-review-v1.json",
+          "repositoryPath": "deploy/audit30/verification/pow-audit30-independent-oct3-restore-template-review-v1.json",
+          "sha256": "c75c32dc80442b146c6dee3ff58bf16013093a87378afe5478944ef38d306b62"
+        },
+        {
+          "bytes": 4380,
+          "originalPath": "/tmp/pow-audit30-independent-physical-sizing-failure-observer-source-review-v2.json",
+          "repositoryPath": "deploy/audit30/verification/pow-audit30-independent-physical-sizing-failure-observer-source-review-v2.json",
+          "sha256": "9aec610f8552871f7c004de6e2081fafc509e44d1d06b24f1f9bec47bcbac426"
+        },
+        {
+          "bytes": 4082,
+          "originalPath": "/tmp/pow-audit30-independent-production-pg-identity-source-review-v1.json",
+          "repositoryPath": "deploy/audit30/verification/pow-audit30-independent-production-pg-identity-source-review-v1.json",
+          "sha256": "822b4214b54b894cf96f997a627af992501b5d3f3786b82720251b4cb86f366b"
+        },
+        {
+          "bytes": 2159,
+          "originalPath": "/tmp/pow-audit30-latest-logical-restore-signal-actual-repro-v2.json",
+          "repositoryPath": "deploy/audit30/verification/pow-audit30-latest-logical-restore-signal-actual-repro-v2.json",
+          "sha256": "9d71edff51a4620db9830790f66e0341234e30b5a4399492dc35a73ea791adc8"
+        },
+        {
+          "bytes": 3596,
+          "originalPath": "/tmp/pow-audit30-latest-logical-restore-signal-successor-local-preparation-v2.json",
+          "repositoryPath": "deploy/audit30/verification/pow-audit30-latest-logical-restore-signal-successor-local-preparation-v2.json",
+          "sha256": "2916554c0317163d38d2401edec369c59a35058019df8dff50e7d624f4299aa6"
+        },
+        {
+          "bytes": 2085,
+          "originalPath": "/tmp/pow-audit30-latest-logical-restore-signal-successor-v1.diff",
+          "rawBytes": 1357,
+          "rawSha256": "047e1764ae76125d05c8d358cb034538eae6e9a538c5bebbb045512c79e47c74",
+          "repositoryPath": "deploy/audit30/verification/pow-audit30-latest-logical-restore-signal-successor-v1.diff.evidence.json",
+          "representation": "closed-base64-envelope-preserves-exact-raw-input",
+          "sha256": "33901eb31be1961e403ab0750e2654e3c08e1dc6467bcd6e0eb0f66c8bbac3f3"
+        },
+        {
+          "bytes": 61183,
+          "originalPath": "/tmp/pow-audit30-latest-logical-restore-signal-successor-v1.py",
+          "repositoryPath": "deploy/audit30/verification/pow-audit30-latest-logical-restore-signal-successor-v1.py",
+          "sha256": "a9c9d91dac1876710535140c2b13777b4cd2e8fc0e2e9d4a0a2f88df5a319982"
+        },
+        {
+          "bytes": 3540,
+          "originalPath": "/tmp/pow-audit30-latest-logical-restore-signal-successor-v2-v1.diff",
+          "rawBytes": 2447,
+          "rawSha256": "1c9646d184ceb3af89737fe6a84ec56ae07b7d24a9c82310cf2c3d2d1c3d4d5a",
+          "repositoryPath": "deploy/audit30/verification/pow-audit30-latest-logical-restore-signal-successor-v2-v1.diff.evidence.json",
+          "representation": "closed-base64-envelope-preserves-exact-raw-input",
+          "sha256": "7ada57f8a24d6e26c2fb3643ca045310237a288f364f82bd5ad5daaa603286ae"
+        },
+        {
+          "bytes": 5169,
+          "originalPath": "/tmp/pow-audit30-latest-logical-restore-signal-successor-v2.diff",
+          "rawBytes": 3670,
+          "rawSha256": "c5f3fa19129e9d5dfa4768f5083c8aa4755cd2ead101199c71d70fe85927b5e7",
+          "repositoryPath": "deploy/audit30/verification/pow-audit30-latest-logical-restore-signal-successor-v2.diff.evidence.json",
+          "representation": "closed-base64-envelope-preserves-exact-raw-input",
+          "sha256": "861a9eb48e3a404d5dc01b7cd56613a2e8bb453a4022cebb652a249561ab8160"
+        },
+        {
+          "bytes": 9015,
+          "originalPath": "/tmp/pow-audit30-latest-logical-restore-signal-successor-v2.initial-fixtures.test.py",
+          "repositoryPath": "deploy/audit30/verification/pow-audit30-latest-logical-restore-signal-successor-v2.initial-fixtures.test.py",
+          "sha256": "baeb95c1a03b88a226e89f0d6d2732a0fc718b0f409e1bf3d0ae116a33a60f35"
+        },
+        {
+          "bytes": 27974,
+          "originalPath": "/tmp/pow-audit30-latest-logical-restore-signal-successor-v2.original-fixtures.test.py",
+          "repositoryPath": "deploy/audit30/verification/pow-audit30-latest-logical-restore-signal-successor-v2.original-fixtures.test.py",
+          "sha256": "2911d163afbd5afc1309566ddcdbc014ad2dd832b63aa64412b0177c5fd37970"
+        },
+        {
+          "bytes": 62005,
+          "originalPath": "/tmp/pow-audit30-latest-logical-restore-signal-successor-v2.py",
+          "repositoryPath": "deploy/audit30/verification/pow-audit30-latest-logical-restore-signal-successor-v2.py",
+          "sha256": "753a97754697ba185d4c79658ecad9c09ad8e07729f50fce78595fc42dd9041c"
+        },
+        {
+          "bytes": 9227,
+          "originalPath": "/tmp/pow-audit30-latest-logical-restore-signal-successor-v2.test.py",
+          "repositoryPath": "deploy/audit30/verification/pow-audit30-latest-logical-restore-signal-successor-v2.test.py",
+          "sha256": "8eb40ab3e58aa85fca22cd8c25d7e5ce33a5828494c3d043e0f68d91984c7934"
+        },
+        {
+          "bytes": 1755,
+          "originalPath": "/tmp/pow-audit30-logical-backup-journal-bounded-caller-v1.py",
+          "repositoryPath": "deploy/audit30/verification/pow-audit30-logical-backup-journal-bounded-caller-v1.py",
+          "sha256": "d995e5b86c655037ec8704c8bbf3d4f37d93c46850f10664133be90c1bb500bf"
+        },
+        {
+          "bytes": 1722,
+          "originalPath": "/tmp/pow-audit30-logical-backup-journal-bounded-caller-v1.test.py",
+          "repositoryPath": "deploy/audit30/verification/pow-audit30-logical-backup-journal-bounded-caller-v1.test.py",
+          "sha256": "1af98998207e44a5d5fabdd16abc24823ebe867039eb47030afa3e6a91ba3ded"
+        },
+        {
+          "bytes": 4979,
+          "originalPath": "/tmp/pow-audit30-logical-backup-journal-bounded-local-preparation-v1.json",
+          "repositoryPath": "deploy/audit30/verification/pow-audit30-logical-backup-journal-bounded-local-preparation-v1.json",
+          "sha256": "afc572cf1ef6038712d6eadbceb34820fd817e822dec224bdfe03ff297d4a84b"
+        },
+        {
+          "bytes": 1480,
+          "originalPath": "/tmp/pow-audit30-logical-backup-journal-bounded-native-v1.json",
+          "repositoryPath": "deploy/audit30/verification/pow-audit30-logical-backup-journal-bounded-native-v1.json",
+          "sha256": "55bdfffebb189e83ca8c90fc8b358af542683c906a5ce275d66cf45206ee55a2"
+        },
+        {
+          "bytes": 15617,
+          "originalPath": "/tmp/pow-audit30-logical-backup-journal-bounded-native-v1.stdout",
+          "repositoryPath": "deploy/audit30/verification/pow-audit30-logical-backup-journal-bounded-native-v1.stdout.json",
+          "sha256": "669e1bad01c01dda645f1a780e9ec7d912f0705b7effd92fdd216fe457265438"
+        },
+        {
+          "bytes": 12164,
+          "originalPath": "/tmp/pow-audit30-logical-backup-journal-bounded-v1.diff",
+          "rawBytes": 8924,
+          "rawSha256": "1e656e591b2e47fb98b6cd12160ea86f45dc5c18d51dce84e032503ef16859f5",
+          "repositoryPath": "deploy/audit30/verification/pow-audit30-logical-backup-journal-bounded-v1.diff.evidence.json",
+          "representation": "closed-base64-envelope-preserves-exact-raw-input",
+          "sha256": "96e73acd36ca8f91d1302311df70147c5e1a191efc31f771e1986c10e30ceb8b"
+        },
+        {
+          "bytes": 29709,
+          "originalPath": "/tmp/pow-audit30-logical-backup-journal-bounded-v1.py",
+          "repositoryPath": "deploy/audit30/verification/pow-audit30-logical-backup-journal-bounded-v1.py",
+          "sha256": "2ee1325efd52165b50af455b9ace39f6b377757237a5bdf427eb4cbcaee117fa"
+        },
+        {
+          "bytes": 12622,
+          "originalPath": "/tmp/pow-audit30-logical-backup-journal-bounded-v1.test.py",
+          "repositoryPath": "deploy/audit30/verification/pow-audit30-logical-backup-journal-bounded-v1.test.py",
+          "sha256": "fdba54036ca91c700282b72091e60d9557fb7b99fe8d5e98ee5be73d9fa2afef"
+        },
+        {
+          "bytes": 1776,
+          "originalPath": "/tmp/pow-audit30-logical-backup-journal-refusal-diagnostic-caller-v1.py",
+          "repositoryPath": "deploy/audit30/verification/pow-audit30-logical-backup-journal-refusal-diagnostic-caller-v1.py",
+          "sha256": "45fa4dda26752c20af9a21c4767a1c2a776db050d893783d5c021905e88e0d3f"
+        },
+        {
+          "bytes": 1744,
+          "originalPath": "/tmp/pow-audit30-logical-backup-journal-refusal-diagnostic-caller-v1.test.py",
+          "repositoryPath": "deploy/audit30/verification/pow-audit30-logical-backup-journal-refusal-diagnostic-caller-v1.test.py",
+          "sha256": "f788cc9a5ac04169cd49d870c1b851dd563838062fbb8e84eff93f24561edf75"
+        },
+        {
+          "bytes": 1501,
+          "originalPath": "/tmp/pow-audit30-logical-backup-journal-refusal-diagnostic-native-v1.json",
+          "repositoryPath": "deploy/audit30/verification/pow-audit30-logical-backup-journal-refusal-diagnostic-native-v1.json",
+          "sha256": "68b8a65e45a958c82ab22210194c83607e88cf45210fd07e6b9de67becde2e72"
+        },
+        {
+          "bytes": 12502,
+          "originalPath": "/tmp/pow-audit30-logical-backup-journal-refusal-diagnostic-native-v1.stdout",
+          "repositoryPath": "deploy/audit30/verification/pow-audit30-logical-backup-journal-refusal-diagnostic-native-v1.stdout.json",
+          "sha256": "07824e0892583ee7d0370f2f6f97e85e7376502d23e7895fbadd0b1b7ca320cc"
+        },
+        {
+          "bytes": 2804,
+          "originalPath": "/tmp/pow-audit30-logical-backup-journal-refusal-diagnostic-source-preparation-v1.json",
+          "repositoryPath": "deploy/audit30/verification/pow-audit30-logical-backup-journal-refusal-diagnostic-source-preparation-v1.json",
+          "sha256": "b2187e1ac02f98eb26eed445b197253425e04673681b53788d2b35e4324333b8"
+        },
+        {
+          "bytes": 29315,
+          "originalPath": "/tmp/pow-audit30-logical-backup-journal-refusal-diagnostic-v1.py",
+          "repositoryPath": "deploy/audit30/verification/pow-audit30-logical-backup-journal-refusal-diagnostic-v1.py",
+          "sha256": "f722e8280597c2754ad6b08f394a85771a3faa5f1852d064b0034c60bf56a737"
+        },
+        {
+          "bytes": 7427,
+          "originalPath": "/tmp/pow-audit30-logical-backup-journal-refusal-diagnostic-v1.test.py",
+          "repositoryPath": "deploy/audit30/verification/pow-audit30-logical-backup-journal-refusal-diagnostic-v1.test.py",
+          "sha256": "6a5d0358cfda9a89e369a294c06acdf5509972783504e37719099f9227256495"
+        },
+        {
+          "bytes": 6557,
+          "originalPath": "/tmp/pow-audit30-new-oct3-logical-restore-contract-preparation-v1.json",
+          "repositoryPath": "deploy/audit30/verification/pow-audit30-new-oct3-logical-restore-contract-preparation-v1.json",
+          "sha256": "d394ddbd1467d8d23cfefb3459967aafa541af1f3e3e727589c1b34c5a036fd8"
+        },
+        {
+          "bytes": 1726,
+          "originalPath": "/tmp/pow-audit30-new-oct3-restore-running-observation-v1.json",
+          "repositoryPath": "deploy/audit30/verification/pow-audit30-new-oct3-restore-running-observation-v1.json",
+          "sha256": "02a53ba442ca71ea66482365d0d0abb0015b0336821dd88d1c7f30252a5f349c"
+        },
+        {
+          "bytes": 3536,
+          "originalPath": "/tmp/pow-audit30-oct3-full-read-command-spec-v1.json",
+          "repositoryPath": "deploy/audit30/verification/pow-audit30-oct3-full-read-command-spec-v1.json",
+          "sha256": "101b185005795024a54923ea3430eb5c049f6b483ed5081f0c1c87960777a6b0"
+        },
+        {
+          "bytes": 14373,
+          "originalPath": "/tmp/pow-audit30-oct3-full-read-draft-request-v1.json",
+          "repositoryPath": "deploy/audit30/verification/pow-audit30-oct3-full-read-draft-request-v1.json",
+          "sha256": "5b727dee2608d7a5841254133a90e748344b0c41a2902d14857e8e46c53182e4"
+        },
+        {
+          "bytes": 11373,
+          "originalPath": "/tmp/pow-audit30-oct3-full-read-leaf-v1.diff",
+          "rawBytes": 8338,
+          "rawSha256": "9a47cd447b5fba008c73a89d76023c03645e37a5fcb73489236293f01a23f187",
+          "repositoryPath": "deploy/audit30/verification/pow-audit30-oct3-full-read-leaf-v1.diff.evidence.json",
+          "representation": "closed-base64-envelope-preserves-exact-raw-input",
+          "sha256": "154bfe514d0bfaec7c485377facd9e689a1570da96a66bf0d2be6e8f88395956"
+        },
+        {
+          "bytes": 4107,
+          "originalPath": "/tmp/pow-audit30-oct3-full-read-local-preparation-v1.json",
+          "repositoryPath": "deploy/audit30/verification/pow-audit30-oct3-full-read-local-preparation-v1.json",
+          "sha256": "fb47790449e3520ed6b2208695b3e8f83c86bd161af96e5a89f23fa45ad68ba4"
+        },
+        {
+          "bytes": 1380,
+          "originalPath": "/tmp/pow-audit30-oct3-full-read-native-102500-v1.json",
+          "repositoryPath": "deploy/audit30/verification/pow-audit30-oct3-full-read-native-102500-v1.json",
+          "sha256": "e8dfb0b32b97ef5f4f2f8d4ac6fe4d7b5a2cdcc51ec4d489c37c36899a8b0710"
+        },
+        {
+          "bytes": 32094,
+          "originalPath": "/tmp/pow-audit30-oct3-full-read-native-102500-v1.stdout",
+          "repositoryPath": "deploy/audit30/verification/pow-audit30-oct3-full-read-native-102500-v1.stdout.json",
+          "sha256": "db8f00d8c61aa4aa6d9ed4ad13d7a6b5b67faf160d925526f869d5859d9a1147"
+        },
+        {
+          "bytes": 31472,
+          "originalPath": "/tmp/pow-audit30-oct3-full-read-native-v1.diff",
+          "rawBytes": 23410,
+          "rawSha256": "930ccd20428416c1174fe84eed03cc383d6473c2760559fcc20852f9322c7f1b",
+          "repositoryPath": "deploy/audit30/verification/pow-audit30-oct3-full-read-native-v1.diff.evidence.json",
+          "representation": "closed-base64-envelope-preserves-exact-raw-input",
+          "sha256": "73e4dd2ddadbd54dd83c3b598111af55862cb90fd772b1690cf9402d4d0a134b"
+        },
+        {
+          "bytes": 25221,
+          "originalPath": "/tmp/pow-audit30-oct3-full-read-native-v1.initial-draft.py",
+          "repositoryPath": "deploy/audit30/verification/pow-audit30-oct3-full-read-native-v1.initial-draft.py",
+          "sha256": "0728a5709d8df2e8793afa9f3f5d5336049e22a63ec98d95fe4465e75edad4e7"
+        },
+        {
+          "bytes": 26947,
+          "originalPath": "/tmp/pow-audit30-oct3-full-read-native-v1.py",
+          "repositoryPath": "deploy/audit30/verification/pow-audit30-oct3-full-read-native-v1.py",
+          "sha256": "d9c19bedb3b2baf7a4d5b1a2beca8a9617d05c1074449834c8c05ebc93cb3c48"
+        },
+        {
+          "bytes": 24863,
+          "originalPath": "/tmp/pow-audit30-oct3-full-read-native-v1.test.py",
+          "repositoryPath": "deploy/audit30/verification/pow-audit30-oct3-full-read-native-v1.test.py",
+          "sha256": "b9cfd3cc095666828afe74e792ae90ad06a71856d6cc2d9cfe34b32fe13b6dfc"
+        },
+        {
+          "bytes": 8739,
+          "originalPath": "/tmp/pow-audit30-oct3-full-read-request-template-v1.json",
+          "repositoryPath": "deploy/audit30/verification/pow-audit30-oct3-full-read-request-template-v1.json",
+          "sha256": "b2d460b2150ed128a9c0739f2d2d0ff32c8aadab045462eed0e8336f1ea6dfd5"
+        },
+        {
+          "bytes": 14373,
+          "originalPath": "/tmp/pow-audit30-oct3-full-read-run-request-v1.json",
+          "repositoryPath": "deploy/audit30/verification/pow-audit30-oct3-full-read-run-request-v1.json",
+          "sha256": "5f33aff2257632f48427955e0021ded8f2eef4b03e5efd87ec079e27d4ea286d"
+        },
+        {
+          "bytes": 6197,
+          "originalPath": "/tmp/pow-audit30-oct3-latest-backup-full-read-v1.py",
+          "repositoryPath": "deploy/audit30/verification/pow-audit30-oct3-latest-backup-full-read-v1.py",
+          "sha256": "01b80fd9b4a3a92893c06f288b3d3bdc90e05b7ed6f7c6f25bebc21c1ecc56a3"
+        },
+        {
+          "bytes": 8368,
+          "originalPath": "/tmp/pow-audit30-oct3-latest-backup-full-read-v1.test.py",
+          "repositoryPath": "deploy/audit30/verification/pow-audit30-oct3-latest-backup-full-read-v1.test.py",
+          "sha256": "bbe8889777b8209945386603e564df66f8412becb7e30cf7fa8c8f7085807556"
+        },
+        {
+          "bytes": 6532,
+          "originalPath": "/tmp/pow-audit30-oct3-logical-restore-creator-v1.py",
+          "repositoryPath": "deploy/audit30/verification/pow-audit30-oct3-logical-restore-creator-v1.py",
+          "sha256": "fd946bd2aef7f3c5710b6ef8ff905cbae1f6adcc6ac702ace201080244d32ea1"
+        },
+        {
+          "bytes": 1737,
+          "originalPath": "/tmp/pow-audit30-oct3-logical-restore-package-plan-v1.json",
+          "repositoryPath": "deploy/audit30/verification/pow-audit30-oct3-logical-restore-package-plan-v1.json",
+          "sha256": "5f0e6ca8a2950c0a54001baf1c3e7b1ddc6157dbcc252b81e8b17d821b2b4cc7"
+        },
+        {
+          "bytes": 2528,
+          "originalPath": "/tmp/pow-audit30-oct3-logical-restore-plan-template-v1.json",
+          "repositoryPath": "deploy/audit30/verification/pow-audit30-oct3-logical-restore-plan-template-v1.json",
+          "sha256": "ec4781ce855c22a79736c7c2945de4174c5798955e42c3f88adba1c3e6f19d70"
+        },
+        {
+          "bytes": 3003,
+          "originalPath": "/tmp/pow-audit30-oct3-logical-restore-plan-v1.json",
+          "repositoryPath": "deploy/audit30/verification/pow-audit30-oct3-logical-restore-plan-v1.json",
+          "sha256": "6f87050e6b44c74cd6c6ba61fb9c8c922ba8436ee4111e31c1e8bcd3f1d8cfee"
+        },
+        {
+          "bytes": 83131,
+          "originalPath": "/tmp/pow-audit30-oct3-logical-restore-request-template-v1.json",
+          "repositoryPath": "deploy/audit30/verification/pow-audit30-oct3-logical-restore-request-template-v1.json",
+          "sha256": "958879110f08cba3a225dc46b3dacc8c2ee3e104fb18189d557dd6805a52712e"
+        },
+        {
+          "bytes": 87195,
+          "originalPath": "/tmp/pow-audit30-oct3-logical-restore-run-request-v1.json",
+          "repositoryPath": "deploy/audit30/verification/pow-audit30-oct3-logical-restore-run-request-v1.json",
+          "sha256": "caf75d5dea6fef956a6db000203632d0eb72a32d2bf8e83b1348a989aa3ce78e"
+        },
+        {
+          "bytes": 885,
+          "originalPath": "/tmp/pow-audit30-oct3-logical-restore-template-binding-check-v1.json",
+          "repositoryPath": "deploy/audit30/verification/pow-audit30-oct3-logical-restore-template-binding-check-v1.json",
+          "sha256": "6c9e30c6564614944972f6ddd075d04c63d8b09972fb1d92e1491ffdd087a23a"
+        },
+        {
+          "bytes": 5489,
+          "originalPath": "/tmp/pow-audit30-oct3-new-logical-restore-local-preparation-v1.json",
+          "repositoryPath": "deploy/audit30/verification/pow-audit30-oct3-new-logical-restore-local-preparation-v1.json",
+          "sha256": "f942325345b9110d3feadfbacb95c2ad1f85daff3366e1ce116cb17dd2f07ae1"
+        },
+        {
+          "bytes": 1679,
+          "originalPath": "/tmp/pow-audit30-physical-sizing-failure-observer-caller-v1.py",
+          "repositoryPath": "deploy/audit30/verification/pow-audit30-physical-sizing-failure-observer-caller-v1.py",
+          "sha256": "a0709340cc75bfbe33b237bbf9e559f86914107145334771d7de9637d9b4e784"
+        },
+        {
+          "bytes": 1029,
+          "originalPath": "/tmp/pow-audit30-physical-sizing-failure-observer-caller-v1.test.py",
+          "repositoryPath": "deploy/audit30/verification/pow-audit30-physical-sizing-failure-observer-caller-v1.test.py",
+          "sha256": "9ab4745635f9e3b2b275a84d85cbd52674c20690e3b4d568a871782f39c09a05"
+        },
+        {
+          "bytes": 1679,
+          "originalPath": "/tmp/pow-audit30-physical-sizing-failure-observer-caller-v2.py",
+          "repositoryPath": "deploy/audit30/verification/pow-audit30-physical-sizing-failure-observer-caller-v2.py",
+          "sha256": "0f23da4b20600c2d37dd2c60a68db8ac623fdde0323c73183b9527e095680917"
+        },
+        {
+          "bytes": 1029,
+          "originalPath": "/tmp/pow-audit30-physical-sizing-failure-observer-caller-v2.test.py",
+          "repositoryPath": "deploy/audit30/verification/pow-audit30-physical-sizing-failure-observer-caller-v2.test.py",
+          "sha256": "d28a63d621596dfd7976ca545b3587183115e53aeb012029d25701fde57d8253"
+        },
+        {
+          "bytes": 1445,
+          "originalPath": "/tmp/pow-audit30-physical-sizing-failure-observer-native-v2.json",
+          "repositoryPath": "deploy/audit30/verification/pow-audit30-physical-sizing-failure-observer-native-v2.json",
+          "sha256": "1cd962091b7c02732277a691e16d5f27594ea331bdf05399c53ba5ab2f5053e5"
+        },
+        {
+          "bytes": 9346,
+          "originalPath": "/tmp/pow-audit30-physical-sizing-failure-observer-native-v2.stdout",
+          "repositoryPath": "deploy/audit30/verification/pow-audit30-physical-sizing-failure-observer-native-v2.stdout.json",
+          "sha256": "9d24e778c541e062985d070cc733937c6ca87dccca150041b302233198571c40"
+        },
+        {
+          "bytes": 1639,
+          "originalPath": "/tmp/pow-audit30-physical-sizing-failure-observer-source-preparation-v1.json",
+          "repositoryPath": "deploy/audit30/verification/pow-audit30-physical-sizing-failure-observer-source-preparation-v1.json",
+          "sha256": "3950262f4ef944009341698e5adfacfd89b3f83d41e3921851d33cc8ba1e3e87"
+        },
+        {
+          "bytes": 2135,
+          "originalPath": "/tmp/pow-audit30-physical-sizing-failure-observer-source-preparation-v2.json",
+          "repositoryPath": "deploy/audit30/verification/pow-audit30-physical-sizing-failure-observer-source-preparation-v2.json",
+          "sha256": "ca08c1f0f69622e4d041b92b7385c6c64942f4e26c653f0149b3478cb9dd76b9"
+        },
+        {
+          "bytes": 27552,
+          "originalPath": "/tmp/pow-audit30-physical-sizing-failure-observer-v1.py",
+          "repositoryPath": "deploy/audit30/verification/pow-audit30-physical-sizing-failure-observer-v1.py",
+          "sha256": "8eb8efde79b28b49f70791b77b8bfd0feb5270daf9ad99b8bd1d6f1e4d015d4e"
+        },
+        {
+          "bytes": 5482,
+          "originalPath": "/tmp/pow-audit30-physical-sizing-failure-observer-v1.test.py",
+          "repositoryPath": "deploy/audit30/verification/pow-audit30-physical-sizing-failure-observer-v1.test.py",
+          "sha256": "771dad0a5d2cf3de1153021cbb4f9bf379f1dc4bc8f729eabfdeefad3f636e6b"
+        },
+        {
+          "bytes": 9501,
+          "originalPath": "/tmp/pow-audit30-physical-sizing-failure-observer-v2-source.diff",
+          "rawBytes": 6920,
+          "rawSha256": "c4704cfa34dce554521603ee736fe2ab85e6b0183ba78a32233a2766a71bf138",
+          "repositoryPath": "deploy/audit30/verification/pow-audit30-physical-sizing-failure-observer-v2-source.diff.evidence.json",
+          "representation": "closed-base64-envelope-preserves-exact-raw-input",
+          "sha256": "2cf7f8102ac16830261ad224158237a599d07d67b2938c5b1f14b161aa0fba80"
+        },
+        {
+          "bytes": 27618,
+          "originalPath": "/tmp/pow-audit30-physical-sizing-failure-observer-v2.py",
+          "repositoryPath": "deploy/audit30/verification/pow-audit30-physical-sizing-failure-observer-v2.py",
+          "sha256": "dda2f87913b45c2d8054ff2cd0ec9b790b547ecb54a4b40218f598c9fa4545df"
+        },
+        {
+          "bytes": 6049,
+          "originalPath": "/tmp/pow-audit30-physical-sizing-failure-observer-v2.test.py",
+          "repositoryPath": "deploy/audit30/verification/pow-audit30-physical-sizing-failure-observer-v2.test.py",
+          "sha256": "74294e21f7910d493d797146172f86714665e012d089115c68c58efbe9b44f53"
+        },
+        {
+          "bytes": 3748,
+          "originalPath": "/tmp/pow-audit30-physical-sizing-identity-binding-diagnosis-v1.json",
+          "repositoryPath": "deploy/audit30/verification/pow-audit30-physical-sizing-identity-binding-diagnosis-v1.json",
+          "sha256": "de36937e27569d78a75552c0032f214e9781b9d9b03ba2dfa5ab2a17c3727116"
+        },
+        {
+          "bytes": 1843,
+          "originalPath": "/tmp/pow-audit30-production-pg-identity-readonly-caller-v1.py",
+          "repositoryPath": "deploy/audit30/verification/pow-audit30-production-pg-identity-readonly-caller-v1.py",
+          "sha256": "59a68fed275dfc0975dfa4f3c48da8f14d94e416349f501b55c0ff6e2502c032"
+        },
+        {
+          "bytes": 1026,
+          "originalPath": "/tmp/pow-audit30-production-pg-identity-readonly-caller-v1.test.py",
+          "repositoryPath": "deploy/audit30/verification/pow-audit30-production-pg-identity-readonly-caller-v1.test.py",
+          "sha256": "08481d86f9e83c5367e3e71218458430ff9cbb5e411354ed0ebbddef9c16dea9"
+        },
+        {
+          "bytes": 1640,
+          "originalPath": "/tmp/pow-audit30-production-pg-identity-readonly-native-v1.json",
+          "repositoryPath": "deploy/audit30/verification/pow-audit30-production-pg-identity-readonly-native-v1.json",
+          "sha256": "88e733584afb334d65cbe41894cf6de3d4554ddee79a32e41d6c5d7f7239f4e9"
+        },
+        {
+          "bytes": 5986,
+          "originalPath": "/tmp/pow-audit30-production-pg-identity-readonly-native-v1.stdout",
+          "repositoryPath": "deploy/audit30/verification/pow-audit30-production-pg-identity-readonly-native-v1.stdout.json",
+          "sha256": "0d6b69eb45fd5f67fd4cda34ba4942fe54884ef20feeefb9a20d1c9b0d773c2a"
+        },
+        {
+          "bytes": 33509,
+          "originalPath": "/tmp/pow-audit30-production-pg-identity-readonly-request-template-v1.json",
+          "repositoryPath": "deploy/audit30/verification/pow-audit30-production-pg-identity-readonly-request-template-v1.json",
+          "sha256": "f794f54470a572ecf09f2d72744093423178a4104470c93ccfa8bfc06576a1d5"
+        },
+        {
+          "bytes": 37284,
+          "originalPath": "/tmp/pow-audit30-production-pg-identity-readonly-request-v1.json",
+          "repositoryPath": "deploy/audit30/verification/pow-audit30-production-pg-identity-readonly-request-v1.json",
+          "sha256": "a282861e4708eca86254dda7ecec906a84e97ad89d4f9e789ff8d027699bcb63"
+        },
+        {
+          "bytes": 2728,
+          "originalPath": "/tmp/pow-audit30-production-pg-identity-readonly-source-preparation-v1.json",
+          "repositoryPath": "deploy/audit30/verification/pow-audit30-production-pg-identity-readonly-source-preparation-v1.json",
+          "sha256": "a3b2fdbc74bfdc24e01243c707011673f95ec549dc495bc570a1b5ce8ad32eb9"
+        },
+        {
+          "bytes": 11273,
+          "originalPath": "/tmp/pow-audit30-production-pg-identity-readonly-v1.py",
+          "repositoryPath": "deploy/audit30/verification/pow-audit30-production-pg-identity-readonly-v1.py",
+          "sha256": "73b0951f338909824a794973502c13cd44921140ac601d053bd2e9165c8b2110"
+        },
+        {
+          "bytes": 6516,
+          "originalPath": "/tmp/pow-audit30-production-pg-identity-readonly-v1.test.py",
+          "repositoryPath": "deploy/audit30/verification/pow-audit30-production-pg-identity-readonly-v1.test.py",
+          "sha256": "0a4fce82b6e231117541aec78e110d965077b811d5fbd2fe3bde4e966866eb35"
+        },
+        {
+          "bytes": 1529,
+          "originalPath": "/tmp/pow-audit30-production-physical-sizing-native-v3.json",
+          "repositoryPath": "deploy/audit30/verification/pow-audit30-production-physical-sizing-native-v3.json",
+          "sha256": "dbc0eb1a4673d8433a45884a696ebf3edeefb27757da858cfa6f9f70532cd6aa"
+        },
+        {
+          "bytes": 212,
+          "originalPath": "/tmp/pow-audit30-production-physical-sizing-native-v3.stderr",
+          "repositoryPath": "deploy/audit30/verification/pow-audit30-production-physical-sizing-native-v3.stderr.json",
+          "sha256": "e45ee7484b07046f4e1ad025aedca1b51536c8bfc7a081d2c3ea5100dc8bcf3f"
+        },
+        {
+          "bytes": 51700,
+          "originalPath": "/tmp/pow-audit30-production-physical-sizing-request-v3.json",
+          "repositoryPath": "deploy/audit30/verification/pow-audit30-production-physical-sizing-request-v3.json",
+          "sha256": "776b518a08f9bcd0c86500d6b8f9115430d6140422495d74d74b610ba5123013"
+        },
+        {
+          "bytes": 3001,
+          "originalPath": "/tmp/pow-audit30-vps-peer-logical-journal-bounded-source-review-v1.json",
+          "repositoryPath": "deploy/audit30/verification/pow-audit30-vps-peer-logical-journal-bounded-source-review-v1.json",
+          "sha256": "8e8b758d0b1d53d0d61c1cd2fcf0fb39dccf3d84c71a3e88dac18643a0b557b5"
+        }
+      ],
+      "recoveryConfigurationMutation": false,
+      "scheduledBackupRotationSelection": {
+        "argv": [
+          "/usr/bin/journalctl",
+          "--unit=proofofwork-postgres-logical-backup.service",
+          "--since=2026-10-03 00:00:00 UTC",
+          "--until=2026-10-04 00:00:00 UTC",
+          "--lines=2049",
+          "--no-pager",
+          "--all",
+          "--output=json"
+        ],
+        "capturedJournalBytes": 10025,
+        "capturedJournalSha256": "1f779347aabdcfd3910f0690c8251709bdf7b2a8b44e330c5845292dfec53378",
+        "classifiedCounts": {
+          "backup-retention-deleted": 1,
+          "backup-retention-kept": 1,
+          "backup-retention-preserve": 1,
+          "other-message-hash-only": 5
+        },
+        "fullBackupJournalHistoryCertified": false,
+        "maximumRecords": 2048,
+        "publicRotationActions": [
+          {
+            "action": "kept",
+            "atRealtimeUsec": 1790998690057801,
+            "candidate": "/data/proofofwork-postgres-backups/logical/proof_indexer-20261003T031852Z.dumpset",
+            "invocationId": "dfda5fa3574144958b948f8b5920b4d0",
+            "journalReportsRestoreCatalog": true,
+            "journalReportsVerifiedSha256": true,
+            "messageSha256": "6f143b654361f4396c8acd9fc52e6aa37b5895449be116b867213ba83ff7b08b",
+            "reportedBytes": 20878073956
+          },
+          {
+            "action": "deleted",
+            "atRealtimeUsec": 1790998710039376,
+            "candidate": "/data/proofofwork-postgres-backups/logical/proof_indexer-20261002T031851Z.dumpset",
+            "invocationId": "dfda5fa3574144958b948f8b5920b4d0",
+            "journalReportsRestoreCatalog": true,
+            "journalReportsVerifiedSha256": true,
+            "messageSha256": "06b96f619f35ce0410223e78c7a6f5aa6d0d8cdc7796524e91a5ab786f3ca3b6",
+            "reportedBytes": 20525964914
+          },
+          {
+            "action": "preserve",
+            "atRealtimeUsec": 1790998710039650,
+            "candidate": "/data/proofofwork-postgres-backups/logical/proof_indexer-20260929T031853Z.dumpset",
+            "invocationId": "dfda5fa3574144958b948f8b5920b4d0",
+            "messageSha256": "7c27b19bb9137ef3767bf0b49635969f1f7d9c315ac8127d1e86657bad53cd83",
+            "reasonClass": "operator-pin-or-unavailable-policy"
+          }
+        ],
+        "qualification": "Bounded fixed-unit Oct3 journal selection; records may already be missing from journal retention. Reported checksums/catalog flags are historical action statements, not independent current content verification.",
+        "range": "2026-10-03T00:00:00Z through2026-10-04T00:00:00Z",
+        "rawJournalMessagesExported": false,
+        "recognizedRetentionMessageCoverageCompleteWithinCapturedSelection": true,
+        "recordLimitReached": false,
+        "records": 8,
+        "unrecognizedRetentionMessages": []
+      },
+      "sizingFailureAndCurrentCleanup": {
+        "endpointAbsentOrExactOwnedStopped": true,
+        "savedCleanupVerified": true,
+        "savedOutcome": {
+          "cleanup": {
+            "after": {
+              "ActiveState": "failed",
+              "AmbientCapabilities": "",
+              "CapabilityBoundingSet": "",
+              "ControlGroup": "",
+              "ExecMainStatus": "1",
+              "Group": "postgres",
+              "InvocationID": "704282d2260d4db9829151142eea6c85",
+              "LoadState": "loaded",
+              "MainPID": "0",
+              "MemoryMax": "134217728",
+              "NoNewPrivileges": "yes",
+              "RemainAfterExit": "yes",
+              "Result": "exit-code",
+              "RuntimeMaxUSec": "6min",
+              "SubState": "failed",
+              "TasksMax": "16",
+              "TimeoutStopUSec": "30s",
+              "Transient": "yes",
+              "Type": "exec",
+              "User": "postgres"
+            },
+            "before": {
+              "ActiveState": "failed",
+              "AmbientCapabilities": "",
+              "CapabilityBoundingSet": "",
+              "ControlGroup": "",
+              "ExecMainStatus": "1",
+              "Group": "postgres",
+              "InvocationID": "704282d2260d4db9829151142eea6c85",
+              "LoadState": "loaded",
+              "MainPID": "0",
+              "MemoryMax": "134217728",
+              "NoNewPrivileges": "yes",
+              "RemainAfterExit": "yes",
+              "Result": "exit-code",
+              "RuntimeMaxUSec": "6min",
+              "SubState": "failed",
+              "TasksMax": "16",
+              "TimeoutStopUSec": "30s",
+              "Transient": "yes",
+              "Type": "exec",
+              "User": "postgres"
+            },
+            "ownedInvocation": "704282d2260d4db9829151142eea6c85",
+            "typed": {
+              "argvSha256": "98e6d33d64345c5312decca18feb09d6e5d38758fe99290740e0c8e9e1c6587a",
+              "objectPath": "/org/freedesktop/systemd1/unit/proofofwork_2daudit30_2dphysical_2dsizing_2d20261003T095500Z_2eservice"
+            },
+            "verified": true
+          },
+          "failure": {
+            "errorClass": "ValueError",
+            "reasonSha256": "81d6cb3dcaf74b141a6d6111ce21257dc1735170f62a283281c926813500a2eb"
+          },
+          "resourceSnapshotCount": 1,
+          "resourceSnapshots": [
+            {
+              "argvSha256": "98e6d33d64345c5312decca18feb09d6e5d38758fe99290740e0c8e9e1c6587a",
+              "atUtc": "2026-10-03T10:18:09.823418+00:00",
+              "fragmentSha256": "f6477e10508d975f9681e94bfea967a526e41c91a44c5fe1e2608f200ad9d544",
+              "properties": {
+                "ActiveState": "activating",
+                "AmbientCapabilities": "",
+                "CapabilityBoundingSet": "",
+                "ControlGroup": "/system.slice/proofofwork-audit30-physical-sizing-20261003T095500Z.service",
+                "ExecMainStatus": "0",
+                "Group": "postgres",
+                "InvocationID": "704282d2260d4db9829151142eea6c85",
+                "LoadState": "loaded",
+                "MainPID": "3097751",
+                "MemoryMax": "134217728",
+                "NoNewPrivileges": "yes",
+                "RemainAfterExit": "yes",
+                "Result": "success",
+                "RuntimeMaxUSec": "6min",
+                "SubState": "start",
+                "TasksMax": "16",
+                "TimeoutStopUSec": "30s",
+                "Transient": "yes",
+                "Type": "exec",
+                "User": "postgres"
+              }
+            }
+          ],
+          "resultPresent": false,
+          "status": "failed"
+        },
+        "stderrSourceGuard": "FIXED_LIVE_PG16_IDENTITY",
+        "stderrSummary": {
+          "bytes": 205,
+          "jsonGuard": "CLOSED_LEAF_REFUSAL",
+          "rawExported": false,
+          "refusal": {
+            "errorClass": "ValueError",
+            "reasonSha256": "1e78a5d35f6ac7b8a25a8814515654f0d7681c0b4076b8805e32450a20926a4f"
+          },
+          "sha256": "6537ffd6cbb52ab37b9788d74e51eb8bbfb156ec52149a8e1a8ad004c12b19d9"
+        }
+      }
     }
   ],
   "additionalRetirements": [],
@@ -217280,6 +218302,19 @@
         }
       ],
       "productionDataMutationApproved": false,
+      "progressCheckpoints": [
+        {
+          "action": 62,
+          "atUtc": "2026-10-03T10:46:26.936559+00:00",
+          "currentOct3ContentVerified": true,
+          "currentOct3RestorePassed": false,
+          "finalRecoveryPromotionAndRetirementApprovalPending": true,
+          "newRestoreRunningObserved": true,
+          "physicalSizeMeasured": false,
+          "productionIdentityObserved": true,
+          "sizingAuditSourcePrivateIdentifierDefect": true
+        }
+      ],
       "readOnlyProgressAndDiagnosis": [
         {
           "bytes": 5609,
@@ -223438,7 +224473,7 @@
           }
         }
       ],
-      "status": "Historical Oct2 logical restore and synthetic PITR mechanics remain dated accepted proofs; the Oct2 dumpset is now absent. Its prospective pin/checker promotion and all four-target retirement are blocked. Sep29 pin/checker, all three private clusters and retained evidence remain untouched. Oct3 directory metadata is observed but current full dump hashes, catalog and isolated restore remain required. Journal-read cause and physical size remain unresolved after preserved read-only prelaunch/refusal outcomes. No live recovery, new pin/checker or retirement is approved or performed."
+      "status": "Historical Oct2 restore remains dated valid; its current source is absent and its old promotion/retirement plans stay blocked. Scheduled backup journal reports Oct3-kept/Oct2-deleted/Sep29-pinned. Current Oct3 all-three hashes/catalog pass; new isolated104500 restore was observed running at10:38 UTC; final equivalence/private-stop/capacity receipts remain pending. Original Sep29 pin/checker and three earlier private clusters/evidence remain untouched. Failed sizing job is observed stopped; audit-tool private-identifier binding defect is identified and production identity observed separately, while physical size remains unmeasured. No production repair, recovery activation, new pin/checker or additional retirement approval/action."
     },
     "8": {
       "finalApprovalPlans": [],
@@ -249237,5 +250272,5 @@
     5,
     8
   ],
-  "updatedAtUtc": "2026-10-03T10:12:47.148777+00:00"
+  "updatedAtUtc": "2026-10-03T10:46:26.936559+00:00"
 }

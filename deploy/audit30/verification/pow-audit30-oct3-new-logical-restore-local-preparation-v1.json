@@ -1,0 +1,123 @@
+{
+  "atUtc": "2026-10-03T10:30:07.567456+00:00",
+  "automaticRetry": false,
+  "concreteNativeRequest": null,
+  "contract": {
+    "bytes": 6557,
+    "path": "/tmp/pow-audit30-new-oct3-logical-restore-contract-preparation-v1.json",
+    "sha256": "d394ddbd1467d8d23cfefb3459967aafa541af1f3e3e727589c1b34c5a036fd8"
+  },
+  "controller": {
+    "bytes": 62005,
+    "path": "/tmp/pow-audit30-latest-logical-restore-signal-successor-v2.py",
+    "sha256": "753a97754697ba185d4c79658ecad9c09ad8e07729f50fce78595fc42dd9041c"
+  },
+  "creator": {
+    "bytes": 6532,
+    "path": "/tmp/pow-audit30-oct3-logical-restore-creator-v1.py",
+    "sha256": "fd946bd2aef7f3c5710b6ef8ff905cbae1f6adcc6ac702ace201080244d32ea1"
+  },
+  "creatorByteEqual": true,
+  "currentFullHashProof": null,
+  "currentTocProof": null,
+  "deletionAuthorized": false,
+  "freshFive": null,
+  "freshWindow": null,
+  "frozenOriginalGuard": {
+    "bytes": 61051,
+    "path": "/home/sixer/ProofOfWork.Me/deploy/audit30/restore-latest-logical.py",
+    "sha256": "26c7656b2e751c6de50122c65f8af73686c2d2674bee8be86a3c5648b7fcc80e"
+  },
+  "independentSignalPeer": {
+    "bytes": 3788,
+    "path": "/tmp/pow-audit30-independent-logical-restore-signal-source-review-v2.json",
+    "sha256": "a8bc03d7f44056b4812d9c9284239d9a183f4f2dd738c873f8bc44acb17bd7b4"
+  },
+  "metadataSelectionOnly": {
+    "bytes": 12502,
+    "path": "/tmp/pow-audit30-logical-backup-journal-refusal-diagnostic-native-v1.stdout",
+    "sha256": "07824e0892583ee7d0370f2f6f97e85e7376502d23e7895fbadd0b1b7ca320cc"
+  },
+  "nativeCallPerformed": false,
+  "nativeGO": false,
+  "newRunId": "20261003T104500Z",
+  "originalCreator": {
+    "bytes": 6532,
+    "path": "/home/sixer/ProofOfWork.Me/deploy/audit30/bootstrap-private.py",
+    "sha256": "fd946bd2aef7f3c5710b6ef8ff905cbae1f6adcc6ac702ace201080244d32ea1"
+  },
+  "packagePlan": {
+    "bytes": 1737,
+    "path": "/tmp/pow-audit30-oct3-logical-restore-package-plan-v1.json",
+    "sha256": "5f0e6ca8a2950c0a54001baf1c3e7b1ddc6157dbcc252b81e8b17d821b2b4cc7"
+  },
+  "pinOrCheckerChanged": false,
+  "planTemplate": {
+    "bytes": 2528,
+    "path": "/tmp/pow-audit30-oct3-logical-restore-plan-template-v1.json",
+    "sha256": "ec4781ce855c22a79736c7c2945de4174c5798955e42c3f88adba1c3e6f19d70"
+  },
+  "postconditions": [
+    "Exactnew saved source alltables/sequence/roles/ACL/accounting/credit/parity/checksums proofs; saved snapshot fence only",
+    "Native guard watched80GiB allocation+100GiB/10GiB reserves and actual8GiB runtime shape",
+    "New completed receipt requires private stopped/offline/finalsource/livefences; transport alone not independently stoppedPG proof",
+    "If failure/timeout preserve all original/new files and exact owned-unit/PID/socket endpoint before any followup; no automatic retry"
+  ],
+  "productionMutation": false,
+  "qualifications": [
+    "20.9GB dump metadata is not restored physical size or recovery capacity certification",
+    "3308s historicalOct2 elapsed is an estimate only; no55min new run started",
+    "OriginalOct2f303/source7/clones/evidence remain untouched; no temporary pin or hold/timer/mask changes",
+    "Oct3 remains unpinned and subject to ordinary newest-set rotation until separately approved verified handoff; this source preparation does not prevent/alter rotation",
+    "No productionDB/schema/role/liveCore/API/service/pin/checker/recovery/retirement mutation"
+  ],
+  "requestTemplate": {
+    "bytes": 83131,
+    "path": "/tmp/pow-audit30-oct3-logical-restore-request-template-v1.json",
+    "sha256": "958879110f08cba3a225dc46b3dacc8c2ee3e104fb18189d557dd6805a52712e"
+  },
+  "requiredBeforeConcreteAssembly": [
+    "Root accepted actual Oct3 all3 full content hashes/stable metadata/whole first TOC and managed owned-stop/public receipt; metadata+declaredSHA alone insufficient",
+    "Fresh source/path/member/lock endpoints from same Oct3 full proof and new guard rehash/catalog verification; no Oct2 field reuse",
+    "Fresh actual five/window/capacity at chosen action with >=8100 clear seconds and <=900 preflight age",
+    "Root review exact canonical plan/controller/creator/raw typed request/sourcebyte closure",
+    "Explicit once combined creation+RUN admission, no borrowed creator PREPARE authority"
+  ],
+  "runtime": {
+    "clearBackupWindowSeconds": 8100,
+    "cpuPercent": 100,
+    "dataReserveBytes": 107374182400,
+    "initialDataAvailableMinimumBytes": 193273528320,
+    "jobMaximumAllocatedBytes": 85899345920,
+    "memoryHighBytes": 6442450944,
+    "memoryMaximumBytes": 8589934592,
+    "nativePythonIsolated": true,
+    "nativePythonNoBytecode": true,
+    "preflightMaximumAgeSeconds": 900,
+    "privateNoTcp": true,
+    "privatePort": 55432,
+    "rootReserveBytes": 10737418240,
+    "seconds": 7200,
+    "source7Accessed": false,
+    "sourceReadonlyPath": "/data/proofofwork-postgres-backups/logical",
+    "stopTimeoutSeconds": 90,
+    "tasks": 64,
+    "watcherDeathRefuses": true,
+    "watcherIntervalSeconds": 5
+  },
+  "schema": "pow-audit30-oct3-new-logical-restore-source-preparation-v1",
+  "selectedSource": "/data/proofofwork-postgres-backups/logical/proof_indexer-20261003T031852Z.dumpset",
+  "sourceOnly": true,
+  "temporaryPinApproved": false,
+  "unadmittedNullFields": [
+    "backup.members.*.sha256",
+    "toc.sha256",
+    "toc.entries",
+    "backupWindow.preflightAtUtc",
+    "backupWindow.nextScheduledAtUtc",
+    "liveServices.*.MainPID",
+    "liveServices.*.InvocationID",
+    "request.planBase64",
+    "request.planSha256"
+  ]
+}

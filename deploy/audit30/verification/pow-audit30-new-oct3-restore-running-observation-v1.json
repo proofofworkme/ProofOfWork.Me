@@ -1,0 +1,32 @@
+{
+  "additionalDeletion": false,
+  "atUtcRecorded": "2026-10-03T10:40:27.808754+00:00",
+  "commandKind": "fixed15s-systemctl-show-only",
+  "newUnitRunningObserved": true,
+  "observedAtUtc": "2026-10-03T10:38:18+00:00",
+  "pinChanged": false,
+  "productionMutation": false,
+  "productionRecordRepairApproved": false,
+  "properties": {
+    "ActiveState": "active",
+    "ControlGroup": "/system.slice/proofofwork-audit30-logical-restore-20261003T104500Z.service",
+    "ExecMainStatus": "0",
+    "InvocationID": "322aeb150b664d7fa8380b8f6c7ed1f1",
+    "LoadState": "loaded",
+    "MainPID": "3106608",
+    "MemoryCurrent": "6441725952",
+    "MemoryMax": "8589934592",
+    "Result": "success",
+    "RuntimeMaxUSec": "2h",
+    "SubState": "running",
+    "User": "postgres"
+  },
+  "qualification": "A new audit-unit metadata observation only. The isolated controller remains running; final restore/table/role/credit/page/offline/private-stop/five/capacity receipts are pending. MemoryCurrent is an instantaneous cgroup sample, not a peak or guarantee.",
+  "recoveryActivated": false,
+  "restoreCompleted": false,
+  "restoreEquivalenceCertified": false,
+  "schema": "pow-audit30-new-oct3-restore-running-observation-v1",
+  "toolStdoutSha256": "1c9bb65874f65ddcc51779234891d9a0b1fe756fd16fc2ad57dcc773856b45d9",
+  "toolStdoutText": "RuntimeMaxUSec=2h\nMainPID=3106608\nResult=success\nExecMainStatus=0\nControlGroup=/system.slice/proofofwork-audit30-logical-restore-20261003T104500Z.service\nMemoryCurrent=6441725952\nMemoryMax=8589934592\nUser=postgres\nLoadState=loaded\nActiveState=active\nSubState=running\nInvocationID=322aeb150b664d7fa8380b8f6c7ed1f1\n",
+  "unit": "proofofwork-audit30-logical-restore-20261003T104500Z.service"
+}

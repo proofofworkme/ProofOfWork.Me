@@ -1,0 +1,21 @@
+{
+  "atUtc": "2026-10-03T10:32:35.069189+00:00",
+  "checks": {
+    "controllerPlanAndPackageConsistent": true,
+    "creatorByteExactOriginal": true,
+    "embeddedControllerByteExact753a": true,
+    "freshContentCatalogWindowFiveRemainNull": true,
+    "nullPlanRefusesActualValidator": true,
+    "nullRequestCannotDecodePlan": true,
+    "originalResourceConstantsUnchanged": true,
+    "soleCredentialAdjacentPlanConsistent": true,
+    "sourcesCompile": true
+  },
+  "nativeCallPerformed": false,
+  "qualifications": [
+    "Definitions-only validator execution. No creator main, filesystem package creation, subprocess, service, SQL, backup content read, native or network execution.",
+    "Metadata plus declared hashes have not been promoted to current full-content or TOC evidence."
+  ],
+  "schema": "pow-audit30-oct3-logical-restore-template-binding-check-v1",
+  "sourceOnly": true
+}

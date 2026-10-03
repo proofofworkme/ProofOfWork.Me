@@ -1,0 +1,83 @@
+{
+  "actualAttemptRequest": {
+    "bytes": 51700,
+    "path": "/tmp/pow-audit30-production-physical-sizing-request-v3.json",
+    "sha256": "776b518a08f9bcd0c86500d6b8f9115430d6140422495d74d74b610ba5123013"
+  },
+  "atUtc": "2026-10-03T10:28:14.561700+00:00",
+  "caller": {
+    "bytes": 1679,
+    "path": "/tmp/pow-audit30-physical-sizing-failure-observer-caller-v2.py",
+    "sha256": "0f23da4b20600c2d37dd2c60a68db8ac623fdde0323c73183b9527e095680917"
+  },
+  "callerTests": {
+    "bytes": 1029,
+    "path": "/tmp/pow-audit30-physical-sizing-failure-observer-caller-v2.test.py",
+    "sha256": "d28a63d621596dfd7976ca545b3587183115e53aeb012029d25701fde57d8253"
+  },
+  "diff": {
+    "bytes": 6920,
+    "path": "/tmp/pow-audit30-physical-sizing-failure-observer-v2-source.diff",
+    "sha256": "c4704cfa34dce554521603ee736fe2ab85e6b0183ba78a32233a2766a71bf138"
+  },
+  "findings": [
+    "Exact84a09 decoded as definitions; request776b embeds exact6bc7 leaf/ad03 helper and is parsed without invoking native main/leaf/SQL/runtime.",
+    "Only fixed root600 failed.json and stderr.log read twice under FD/path/hash/metadata fences; exact failed schema/request/source/unit and result=None required. Only public closed failure/cleanup/resource properties and digests returned.",
+    "Reason hashes map only to fixed uppercase need labels from byte-bound native/leaf source. Unknown stderr contents remain hash-only, no raw errors/payload.",
+    "Current exact owned stopped-positive branch requires saved InvocationID, MainPID0, terminal inactive/failed AND empty ControlGroup. Qualified GC branch requires not-found/MainPID0/emptyInvocation/emptyControlGroup. This is endpoint metadata, not backend or continuous exclusion proof.",
+    "Current originalfive/static8/mask/WAL/prune/quiet preserved; idle-static periodic monitor current tuple separately observed. No unit control, new launch, SQL/Core or sizing result acceptance.",
+    "Fixed systemctl-show communicator clean environment/deadline/channel checks and only its owned child group reap; actual local blocked helper signal fixture reaped. Shared1dedef caller90s/64KiB binding and newexclusive namespace remain."
+  ],
+  "fullNarrowV2DiffRead": true,
+  "fullV1SourceAndActualRequestRead": true,
+  "inertNative": {
+    "bytes": 11657,
+    "path": "/tmp/pow-audit30-production-physical-sizing-native-v2.py",
+    "sha256": "84a09e2bda07f672562074f8236cfd30eb9613df672232a371810721bd41e493"
+  },
+  "localIndependentTests": [
+    {
+      "invocation": "python3 -I -B -W error /tmp/pow-audit30-physical-sizing-failure-observer-v2.test.py",
+      "passed": 18,
+      "seconds": 0.07
+    },
+    {
+      "invocation": "python3 -I -B -W error /tmp/pow-audit30-physical-sizing-failure-observer-caller-v2.test.py",
+      "passed": 4,
+      "seconds": 0.051
+    }
+  ],
+  "nativeCallPerformed": false,
+  "preservedV1": {
+    "bytes": 27552,
+    "path": "/tmp/pow-audit30-physical-sizing-failure-observer-v1.py",
+    "sha256": "8eb8efde79b28b49f70791b77b8bfd0feb5270daf9ad99b8bd1d6f1e4d015d4e"
+  },
+  "productionMutation": false,
+  "qualifications": [
+    "Source-only acceptance; no native/network or repository action by reviewer.",
+    "Saved cleanup and new endpoint are distinct facts. Garbage-collected resource defaults are not current native resource proof; no backend integrity/stop claim.",
+    "V1 remains preserved/unrun; V2 change adds emptyCG condition and versioned schemas/namespace only.",
+    "No full production physical-size result, restore/capacity/PITR, promotion or retirement authority. Root separate once GO remains required."
+  ],
+  "schema": "pow-audit30-independent-physical-sizing-failure-observer-source-review-v2",
+  "sharedTransport": {
+    "bytes": 8396,
+    "path": "/tmp/pow-audit30-readonly-owned-transport-v3.py",
+    "sha256": "1dedef0a6c7021d114017e711ad74f9cfed4e461fc047a2be2c49e590f3da18e"
+  },
+  "sizingResultAccepted": false,
+  "source": {
+    "bytes": 27618,
+    "path": "/tmp/pow-audit30-physical-sizing-failure-observer-v2.py",
+    "sha256": "dda2f87913b45c2d8054ff2cd0ec9b790b547ecb54a4b40218f598c9fa4545df"
+  },
+  "tests": {
+    "bytes": 6049,
+    "path": "/tmp/pow-audit30-physical-sizing-failure-observer-v2.test.py",
+    "sha256": "74294e21f7910d493d797146172f86714665e012d089115c68c58efbe9b44f53"
+  },
+  "testsPassed": 22,
+  "unitControlPerformed": false,
+  "verdict": "accepted-source-only"
+}

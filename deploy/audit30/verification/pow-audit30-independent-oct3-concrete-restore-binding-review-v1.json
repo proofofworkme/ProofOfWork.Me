@@ -1,0 +1,64 @@
+{
+  "atUtc": "2026-10-03T10:36:04.784680+00:00",
+  "bindings": [
+    {
+      "bytes": 3003,
+      "path": "/tmp/pow-audit30-oct3-logical-restore-plan-v1.json",
+      "sha256": "6f87050e6b44c74cd6c6ba61fb9c8c922ba8436ee4111e31c1e8bcd3f1d8cfee"
+    },
+    {
+      "bytes": 87195,
+      "path": "/tmp/pow-audit30-oct3-logical-restore-run-request-v1.json",
+      "sha256": "caf75d5dea6fef956a6db000203632d0eb72a32d2bf8e83b1348a989aa3ce78e"
+    },
+    {
+      "bytes": 32094,
+      "path": "/tmp/pow-audit30-oct3-full-read-native-102500-v1.stdout",
+      "sha256": "db8f00d8c61aa4aa6d9ed4ad13d7a6b5b67faf160d925526f869d5859d9a1147"
+    },
+    {
+      "bytes": 62005,
+      "path": "/tmp/pow-audit30-latest-logical-restore-signal-successor-v2.py",
+      "sha256": "753a97754697ba185d4c79658ecad9c09ad8e07729f50fce78595fc42dd9041c"
+    },
+    {
+      "bytes": 6532,
+      "path": "/tmp/pow-audit30-oct3-logical-restore-creator-v1.py",
+      "sha256": "fd946bd2aef7f3c5710b6ef8ff905cbae1f6adcc6ac702ace201080244d32ea1"
+    }
+  ],
+  "creatorExecuted": false,
+  "nativePerformed": false,
+  "qualifications": [
+    "Structure assembly timestamp10:34:52 is later than actual source/service/window observation10:32:56; it is not a new native observation. Runtime original guards must recheck source, live five, capacity and window.",
+    "fd946 is combined creation plus private RUN, requiring explicit once Root admission. Source review alone performs no creation or private launch.",
+    "Accepted full source hash/TOC is not isolated restore equivalence, production physical size, PITR/WAL continuity, full replay or retirement certification.",
+    "Original80GiB allocation ceiling,100GiB data/10GiB root reserves and8GiB native memory guards remain;193GiB production growth/293GiB requirement is a separate sizing gate.",
+    "No pin/checker/config/timer/deletion authority, automatic retry or replacement of preserved prior evidence."
+  ],
+  "repositoryEdits": false,
+  "schema": "pow-audit30-independent-oct3-concrete-restore-binding-review-v1",
+  "timestamps": {
+    "assemblyIsLaterThanActualObservationBySeconds": 115.794512,
+    "clearSecondsFromAssembly": 60235.583291,
+    "nextScheduledAtUtc": "2026-10-04T03:18:48+00:00",
+    "sourceAndServiceObservationUtc": "2026-10-03T10:32:56.622197+00:00",
+    "structureAssemblyPreflightAtUtc": "2026-10-03T10:34:52.416709+00:00"
+  },
+  "verdict": "accepted-exact-plan-request-binding",
+  "verified": {
+    "actualFullReadPassed": true,
+    "actualOwnedStopFlag": true,
+    "allThreeContentHashesVerifiedUnderExactFrozenLeaf": true,
+    "controllerValidatePlanPassed": true,
+    "liveEqualsActualAfter": true,
+    "memberDirectoryLockMetadataEqualsInputsAfter": true,
+    "newJobUnitPackageConsistent": true,
+    "nextScheduleEqualsActualAfter": true,
+    "onlyNullTemplatePlanFieldsFilled": true,
+    "originalCreatorByteExact": true,
+    "requestEmbeddedControllerByteExact": true,
+    "requestEmbeddedPlanByteExact": true,
+    "tocHashBytesCountEqualsActual": true
+  }
+}

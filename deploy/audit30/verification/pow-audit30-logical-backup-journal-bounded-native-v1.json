@@ -1,0 +1,42 @@
+{
+  "automaticRetry": false,
+  "captures": {
+    "stderr": {
+      "bytes": 0,
+      "path": "/tmp/pow-audit30-logical-backup-journal-bounded-native-v1.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "stdout": {
+      "bytes": 15617,
+      "path": "/tmp/pow-audit30-logical-backup-journal-bounded-native-v1.stdout",
+      "sha256": "669e1bad01c01dda645f1a780e9ec7d912f0705b7effd92fdd216fe457265438"
+    }
+  },
+  "exitCode": 0,
+  "failure": null,
+  "finishedAtUtc": "2026-10-03T10:27:36.195570+00:00",
+  "inputBindings": {
+    "coreRequests": 0,
+    "fixedJournalWholeSeconds": 20,
+    "inheritedAddressSpaceBytes": 1073741824,
+    "requestSHA256": "a20fa1719319c9a5c0059471bcff75bbe101ee502727dd594ea1615125972c00",
+    "rootWholeSeconds": 90,
+    "rotationPASSClaimed": false,
+    "sourceOnlyGOStillSeparate": true,
+    "sourceSHA256": "2ee1325efd52165b50af455b9ace39f6b377757237a5bdf427eb4cbcaee117fa",
+    "sqlExecuted": false,
+    "unitCreationOrControl": false,
+    "utilitySHA256": "1dedef0a6c7021d114017e711ad74f9cfed4e461fc047a2be2c49e590f3da18e"
+  },
+  "outerDeadlineSeconds": 120,
+  "productionDataMutationRequested": false,
+  "receivedBytes": {
+    "stderr": 0,
+    "stdout": 15617
+  },
+  "remoteUnitStoppedCertifiedByTransport": false,
+  "schema": "pow-audit30-readonly-owned-transport-result-v1",
+  "seconds": 3.422746,
+  "startedAtUtc": "2026-10-03T10:27:32.772824+00:00",
+  "typedStdinBytesDelivered": 39156
+}

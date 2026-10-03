@@ -1,0 +1,50 @@
+{
+  "files": [
+    {
+      "bytes": 27552,
+      "path": "/tmp/pow-audit30-physical-sizing-failure-observer-v1.py",
+      "sha256": "8eb8efde79b28b49f70791b77b8bfd0feb5270daf9ad99b8bd1d6f1e4d015d4e"
+    },
+    {
+      "bytes": 5482,
+      "path": "/tmp/pow-audit30-physical-sizing-failure-observer-v1.test.py",
+      "sha256": "771dad0a5d2cf3de1153021cbb4f9bf379f1dc4bc8f729eabfdeefad3f636e6b"
+    },
+    {
+      "bytes": 1679,
+      "path": "/tmp/pow-audit30-physical-sizing-failure-observer-caller-v1.py",
+      "sha256": "a0709340cc75bfbe33b237bbf9e559f86914107145334771d7de9637d9b4e784"
+    },
+    {
+      "bytes": 1029,
+      "path": "/tmp/pow-audit30-physical-sizing-failure-observer-caller-v1.test.py",
+      "sha256": "9ab4745635f9e3b2b275a84d85cbd52674c20690e3b4d568a871782f39c09a05"
+    }
+  ],
+  "limits": {
+    "addressSpaceBytes": 134217728,
+    "metadataCommandSeconds": 10,
+    "outerSharedTransportSeconds": 90,
+    "ownedMetadataTransportReapSeconds": 3,
+    "publicCaptureBytes": 65536,
+    "rootSeconds": 60
+  },
+  "nativeExecuted": false,
+  "priorAttemptsPreserved": true,
+  "productionMutation": false,
+  "request": {
+    "path": "/tmp/pow-audit30-production-physical-sizing-request-v3.json",
+    "sha256": "776b518a08f9bcd0c86500d6b8f9115430d6140422495d74d74b610ba5123013"
+  },
+  "schema": "pow-audit30-physical-sizing-failure-observer-source-preparation-v1",
+  "sizingAccepted": false,
+  "sqlExecuted": false,
+  "status": "source-only-tested-pending-root-readonly-go",
+  "tests": {
+    "callerCases": 4,
+    "observerCases": 17,
+    "passed": true,
+    "realBlockedChildAlarmReap": true
+  },
+  "unitControl": false
+}

@@ -1,0 +1,70 @@
+{
+  "atUtc": "2026-10-03T10:22:42.315387+00:00",
+  "automaticRetry": false,
+  "checks": [
+    "Full f722 successor diff and affected test/caller source reviewed",
+    "Only audit address-space ceiling1GiB changes; existing30CPU/90whole/20child/channel caps unchanged",
+    "Exact c4d99 parser called only after fresh exit0 and empty stderr; malformed/duplicate/overlimit refusal preserved",
+    "Embedded original/source/request pins unchanged and inert; five/static8/mask/WAL/prune exact, idle monitor separately observed",
+    "Actual07824 earlier refusal and real readonly sparse mmap vector preserve observational qualification"
+  ],
+  "findings": [],
+  "nativeCallPerformed": false,
+  "productionMutation": false,
+  "qualifications": [
+    "No native authority/execution or sole prior resource-cause conclusion",
+    "Bounded parsed journal selection does not certify journal integrity, rotation collector PASS, current dump content/catalog/restore, promotion, retirement or deletion",
+    "Raw journal/messages/stderr remain unexported; source-bound public action classifications only"
+  ],
+  "schema": "pow-audit30-vps-peer-logical-journal-bounded-source-review-v1",
+  "sourceBindings": [
+    {
+      "bytes": 29709,
+      "path": "/tmp/pow-audit30-logical-backup-journal-bounded-v1.py",
+      "sha256": "2ee1325efd52165b50af455b9ace39f6b377757237a5bdf427eb4cbcaee117fa"
+    },
+    {
+      "bytes": 8924,
+      "path": "/tmp/pow-audit30-logical-backup-journal-bounded-v1.diff",
+      "sha256": "1e656e591b2e47fb98b6cd12160ea86f45dc5c18d51dce84e032503ef16859f5"
+    },
+    {
+      "bytes": 12622,
+      "path": "/tmp/pow-audit30-logical-backup-journal-bounded-v1.test.py",
+      "sha256": "fdba54036ca91c700282b72091e60d9557fb7b99fe8d5e98ee5be73d9fa2afef"
+    },
+    {
+      "bytes": 1755,
+      "path": "/tmp/pow-audit30-logical-backup-journal-bounded-caller-v1.py",
+      "sha256": "d995e5b86c655037ec8704c8bbf3d4f37d93c46850f10664133be90c1bb500bf"
+    },
+    {
+      "bytes": 1722,
+      "path": "/tmp/pow-audit30-logical-backup-journal-bounded-caller-v1.test.py",
+      "sha256": "1af98998207e44a5d5fabdd16abc24823ebe867039eb47030afa3e6a91ba3ded"
+    },
+    {
+      "bytes": 4979,
+      "path": "/tmp/pow-audit30-logical-backup-journal-bounded-local-preparation-v1.json",
+      "sha256": "afc572cf1ef6038712d6eadbceb34820fd817e822dec224bdfe03ff297d4a84b"
+    },
+    {
+      "bytes": 39156,
+      "path": "/tmp/pow-audit30-logical-backup-rotation-readonly-request-v3.json",
+      "sha256": "a20fa1719319c9a5c0059471bcff75bbe101ee502727dd594ea1615125972c00"
+    },
+    {
+      "bytes": 12502,
+      "path": "/tmp/pow-audit30-logical-backup-journal-refusal-diagnostic-native-v1.stdout",
+      "sha256": "07824e0892583ee7d0370f2f6f97e85e7376502d23e7895fbadd0b1b7ca320cc"
+    }
+  ],
+  "status": "accepted-source-only",
+  "tests": {
+    "callerPassed": 3,
+    "callerSeconds": 0.004,
+    "invocation": "python3 -I -B -W error TEST_PATH",
+    "journalPassed": 23,
+    "journalSeconds": 0.222
+  }
+}

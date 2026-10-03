@@ -1,0 +1,29 @@
+{
+  "actualMetadataAuthority": {
+    "bytes": 9346,
+    "observedAtUtc": "2026-10-03T10:30:22.963399+00:00",
+    "path": "/tmp/pow-audit30-physical-sizing-failure-observer-native-v2.stdout",
+    "sha256": "9d24e778c541e062985d070cc733937c6ca87dccca150041b302233198571c40"
+  },
+  "atUtc": "2026-10-03T10:32:02.402541+00:00",
+  "decodedLeafByteExact": true,
+  "exactSourceDecoderPassed": true,
+  "freshFieldsByteValueEqualToActualObserver": true,
+  "nativePerformed": false,
+  "onlyChangedTemplateFields": [
+    "expectedLive",
+    "expectedProtection"
+  ],
+  "qualification": "Root separate once native admission required. Request pins current chosen five and actual static protection metadata; periodic idle static monitor is observed separately per reviewed source. No current fullhash/TOC, restore or promotion authority inferred.",
+  "request": {
+    "bytes": 14373,
+    "path": "/tmp/pow-audit30-oct3-full-read-run-request-v1.json",
+    "sha256": "5f33aff2257632f48427955e0021ded8f2eef4b03e5efd87ec079e27d4ea286d"
+  },
+  "schema": "pow-audit30-independent-oct3-full-read-actual-request-review-v1",
+  "sourceReview": {
+    "path": "/tmp/pow-audit30-independent-oct3-full-read-source-review-v1.json",
+    "sha256": "3f8e4d6b92bc28a3f967cc30e8e139e7918790af3e506a98e6c31ba8168db3fa"
+  },
+  "verdict": "accepted-source-and-data-binding-only"
+}

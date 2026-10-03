@@ -1,0 +1,93 @@
+{
+  "authorSourceOnly": true,
+  "automaticRetry": false,
+  "bindings": {
+    "leaf": {
+      "bytes": 10556,
+      "path": "/tmp/pow-audit30-production-physical-sizing-leaf-v2.py",
+      "sha256": "6bc7adbb7fcb15266026488c8a6ad216c563be07836f5443d9f94b222559d827"
+    },
+    "managed": {
+      "bytes": 24954,
+      "path": "/tmp/pow-audit30-oct2-full-read-native-v2.py",
+      "sha256": "ad03e5d02e10018fb7c5dd3c118a7ac876331cad240832c52e4838a4bea0ff2a"
+    },
+    "priorProductionIdentity": {
+      "bytes": 9302,
+      "path": "/tmp/pow-audit30-mail-projection-focused-native-v5.stdout",
+      "sha256": "d3b1c6f7b5aae0873fb98ed7b07c47948326ee6832e3b7cec7b363870bcab40c"
+    },
+    "privateControlPublicEvidence": {
+      "bytes": 20362,
+      "path": "/tmp/pow-audit30-retirement-custody-public-detail-native-v1.stdout",
+      "sha256": "b02abd0ef9c5c0769fd0945c277343d37e42c82d203fbcc0c72f4d91db2fdd55"
+    },
+    "sizingFailureObservation": {
+      "bytes": 9346,
+      "path": "/tmp/pow-audit30-physical-sizing-failure-observer-native-v2.stdout",
+      "sha256": "9d24e778c541e062985d070cc733937c6ca87dccca150041b302233198571c40"
+    }
+  },
+  "demonstratedSourceDefect": {
+    "defaultReadOnlyOffIsDifferentSetting": true,
+    "priorV5ContainsSystemIdentifierVersionTimeline": false,
+    "priorV5ProductionIdentity": {
+      "checksums": "off",
+      "dataDirectory": "/var/lib/postgresql/16/main",
+      "database": "proof_indexer",
+      "listenAddresses": "localhost",
+      "port": "5432",
+      "readOnly": "off",
+      "serverAddress": null,
+      "socket": "/var/run/postgresql",
+      "user": "postgres"
+    },
+    "privateControlEvidenceCount": 3,
+    "privateSystemIdentifierHardcodedIntoProductionLeaf": "7692221671691040144",
+    "productionAuthorityForHardcodedValueFound": false,
+    "transactionReadOnlyOnMustRemain": true
+  },
+  "integrityFailureClaimed": false,
+  "knownEndpoint": {
+    "currentMainPidZeroEmptyCgroup": true,
+    "ownedInvocation": "704282d2260d4db9829151142eea6c85",
+    "savedCleanupVerified": true,
+    "unitControlByObserver": false
+  },
+  "minimalNextGate": {
+    "blindSizingRetryAuthorized": false,
+    "productionSystemIdentifier": null,
+    "productionTimeline": null,
+    "proposedScope": "One fixed public identity projection under original15s statement2s lock RR READ ONLY; no size/du/catalog enumeration or changes. Native source/request approval still required. Then bind exact observed production identifier in a successor rather than accept a generic identifier.",
+    "serverVersionNum": null
+  },
+  "nativeExecutedByAuthor": false,
+  "priorSourcesAndCapturesPreserved": true,
+  "productionMutation": false,
+  "retirementAuthority": false,
+  "savedLeafGuard": {
+    "conjuncts": [
+      "closed catalog fieldset",
+      "transaction readOnly on",
+      "dataDirectory fixed production path",
+      "serverVersionNum PG16 syntax",
+      "systemIdentifier exact7692221671691040144",
+      "timeline positive integer"
+    ],
+    "name": "FIXED_LIVE_PG16_IDENTITY",
+    "reasonSha256": "1e78a5d35f6ac7b8a25a8814515654f0d7681c0b4076b8805e32450a20926a4f",
+    "sameAttemptFailedConjunctObserved": false,
+    "sourceLine": 42
+  },
+  "savedNativeGuard": {
+    "exactStaticMessage": "Exact owned audit unit identity",
+    "qualification": "Closed static hash match only; saved root error does not replace the leaf refusal.",
+    "reasonSha256": "81d6cb3dcaf74b141a6d6111ce21257dc1735170f62a283281c926813500a2eb",
+    "source": "managed ad03 identity()",
+    "sourceLine": 57
+  },
+  "schema": "pow-audit30-physical-sizing-identity-binding-diagnosis-v1",
+  "sizeMeasurementAccepted": false,
+  "sqlExecutedByAuthor": false,
+  "status": "source-binding-defect-production-system-identifier-unobserved"
+}

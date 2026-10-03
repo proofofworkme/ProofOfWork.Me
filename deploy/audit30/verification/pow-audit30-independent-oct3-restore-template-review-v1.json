@@ -1,0 +1,65 @@
+{
+  "atUtc": "2026-10-03T10:33:54.361844+00:00",
+  "bindings": [
+    {
+      "bytes": 6532,
+      "path": "/tmp/pow-audit30-oct3-logical-restore-creator-v1.py",
+      "sha256": "fd946bd2aef7f3c5710b6ef8ff905cbae1f6adcc6ac702ace201080244d32ea1"
+    },
+    {
+      "bytes": 62005,
+      "path": "/tmp/pow-audit30-latest-logical-restore-signal-successor-v2.py",
+      "sha256": "753a97754697ba185d4c79658ecad9c09ad8e07729f50fce78595fc42dd9041c"
+    },
+    {
+      "bytes": 2528,
+      "path": "/tmp/pow-audit30-oct3-logical-restore-plan-template-v1.json",
+      "sha256": "ec4781ce855c22a79736c7c2945de4174c5798955e42c3f88adba1c3e6f19d70"
+    },
+    {
+      "bytes": 83131,
+      "path": "/tmp/pow-audit30-oct3-logical-restore-request-template-v1.json",
+      "sha256": "958879110f08cba3a225dc46b3dacc8c2ee3e104fb18189d557dd6805a52712e"
+    },
+    {
+      "bytes": 1737,
+      "path": "/tmp/pow-audit30-oct3-logical-restore-package-plan-v1.json",
+      "sha256": "5f0e6ca8a2950c0a54001baf1c3e7b1ddc6157dbcc252b81e8b17d821b2b4cc7"
+    },
+    {
+      "bytes": 5489,
+      "path": "/tmp/pow-audit30-oct3-new-logical-restore-local-preparation-v1.json",
+      "sha256": "f942325345b9110d3feadfbacb95c2ad1f85daff3366e1ce116cb17dd2f07ae1"
+    },
+    {
+      "bytes": 885,
+      "path": "/tmp/pow-audit30-oct3-logical-restore-template-binding-check-v1.json",
+      "sha256": "6c9e30c6564614944972f6ddd075d04c63d8b09972fb1d92e1491ffdd087a23a"
+    }
+  ],
+  "checksPassed": 9,
+  "creatorExecuted": false,
+  "independentChecks": {
+    "controllerPlanAndPackageConsistent": true,
+    "creatorByteExactOriginal": true,
+    "embeddedControllerByteExact753a": true,
+    "freshContentCatalogWindowFiveRemainNull": true,
+    "nullPlanRefusesActualValidator": true,
+    "nullRequestCannotDecodePlan": true,
+    "originalResourceConstantsUnchanged": true,
+    "soleCredentialAdjacentPlanConsistent": true,
+    "sourcesCompile": true
+  },
+  "metadataEqualSelectedOct3Leaf": true,
+  "nativePerformed": false,
+  "qualification": [
+    "Original fd946 is byte-exact combined creation+RUN creator, not a creation-only PREPARE operator. Separate Root admission must explicitly authorize the private launch.",
+    "753a signal successor source peer and original guard controls are retained; no controller source re-review or tests repeated gratuitously.",
+    "All current-content hashes/TOC/five/window and executable request plan bindings remain null until actual accepted full Oct3 proof and fresh admission. Actual metadata alone is not current full-content/restore capacity authority.",
+    "No package creation, source read beyond local public artifacts, PG/SQL/Core/native, pin/timer/checker/config mutation or deletion authority.",
+    "80GiB restore allocation ceiling plus100GiB/10GiB reserves certifies only an admitted isolated restore attempt; it does not certify production sizing193GiB growth or293GiB requirement."
+  ],
+  "repositoryEdits": false,
+  "schema": "pow-audit30-independent-oct3-restore-template-review-v1",
+  "verdict": "accepted-source-template-consistency-only"
+}

@@ -1,0 +1,58 @@
+{
+  "files": [
+    {
+      "bytes": 27618,
+      "path": "/tmp/pow-audit30-physical-sizing-failure-observer-v2.py",
+      "sha256": "dda2f87913b45c2d8054ff2cd0ec9b790b547ecb54a4b40218f598c9fa4545df"
+    },
+    {
+      "bytes": 6049,
+      "path": "/tmp/pow-audit30-physical-sizing-failure-observer-v2.test.py",
+      "sha256": "74294e21f7910d493d797146172f86714665e012d089115c68c58efbe9b44f53"
+    },
+    {
+      "bytes": 1679,
+      "path": "/tmp/pow-audit30-physical-sizing-failure-observer-caller-v2.py",
+      "sha256": "0f23da4b20600c2d37dd2c60a68db8ac623fdde0323c73183b9527e095680917"
+    },
+    {
+      "bytes": 1029,
+      "path": "/tmp/pow-audit30-physical-sizing-failure-observer-caller-v2.test.py",
+      "sha256": "d28a63d621596dfd7976ca545b3587183115e53aeb012029d25701fde57d8253"
+    },
+    {
+      "bytes": 6920,
+      "path": "/tmp/pow-audit30-physical-sizing-failure-observer-v2-source.diff",
+      "sha256": "c4704cfa34dce554521603ee736fe2ab85e6b0183ba78a32233a2766a71bf138"
+    }
+  ],
+  "limits": {
+    "addressSpaceBytes": 134217728,
+    "metadataCommandSeconds": 10,
+    "outerSharedTransportSeconds": 90,
+    "ownedMetadataTransportReapSeconds": 3,
+    "publicCaptureBytes": 65536,
+    "rootSeconds": 60
+  },
+  "nativeExecuted": false,
+  "preservedPriorObserverSha256": "8eb8efde79b28b49f70791b77b8bfd0feb5270daf9ad99b8bd1d6f1e4d015d4e",
+  "priorAttemptsPreserved": true,
+  "productionMutation": false,
+  "qualification": "GC and exact loaded terminal endpoint are metadata observations; no independent backend process census or native stop action.",
+  "request": {
+    "path": "/tmp/pow-audit30-production-physical-sizing-request-v3.json",
+    "sha256": "776b518a08f9bcd0c86500d6b8f9115430d6140422495d74d74b610ba5123013"
+  },
+  "schema": "pow-audit30-physical-sizing-failure-observer-source-preparation-v2",
+  "sizingAccepted": false,
+  "sqlExecuted": false,
+  "status": "source-only-tested-awaiting-root-readonly-go",
+  "tests": {
+    "callerCases": 4,
+    "nonemptyCgroupStoppedFlagRefused": true,
+    "observerCases": 18,
+    "passed": true,
+    "realBlockedChildAlarmReap": true
+  },
+  "unitControl": false
+}

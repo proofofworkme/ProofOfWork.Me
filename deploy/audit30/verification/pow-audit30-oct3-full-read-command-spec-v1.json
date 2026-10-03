@@ -1,0 +1,89 @@
+{
+  "automaticRetry": false,
+  "currentMetadataAuthority": {
+    "bytes": 12502,
+    "path": "/tmp/pow-audit30-logical-backup-journal-refusal-diagnostic-native-v1.stdout",
+    "sha256": "07824e0892583ee7d0370f2f6f97e85e7376502d23e7895fbadd0b1b7ca320cc"
+  },
+  "deletionAuthorized": false,
+  "leaf": {
+    "bytes": 6197,
+    "path": "/tmp/pow-audit30-oct3-latest-backup-full-read-v1.py",
+    "sha256": "01b80fd9b4a3a92893c06f288b3d3bdc90e05b7ed6f7c6f25bebc21c1ecc56a3"
+  },
+  "native": {
+    "cpuPercent": 25,
+    "evidence": "/var/tmp/proofofwork-audit30-oct3-full-read-20261003T102500Z-preflight",
+    "exactBackupLockSharedNonblocking": true,
+    "fullContentMembers": [
+      "proof_indexer.dump",
+      "globals.sql",
+      "SHA256SUMS"
+    ],
+    "gid": 112,
+    "globalsSqlContentsExported": false,
+    "host": "pow-bitcoin-01",
+    "memoryBytes": 134217728,
+    "memoryHighBytes": 100663296,
+    "onlyPgRestoreList": true,
+    "privatePgOrSqlStarted": false,
+    "swapBytes": 0,
+    "tasks": 16,
+    "tocMaximumBytes": 1048575,
+    "tocMaximumEntries": 10000,
+    "uid": 108,
+    "unit": "proofofwork-audit30-oct3-full-read-20261003T102500Z.service",
+    "unitRuntimeSeconds": 360,
+    "user": "postgres",
+    "wholeRootSeconds": 420
+  },
+  "nativeGO": false,
+  "nullRequestTemplate": {
+    "bytes": 8739,
+    "path": "/tmp/pow-audit30-oct3-full-read-request-template-v1.json",
+    "sha256": "b2d460b2150ed128a9c0739f2d2d0ff32c8aadab045462eed0e8336f1ea6dfd5"
+  },
+  "pinChanged": false,
+  "productionMutation": false,
+  "qualifications": [
+    "Actual07824 metadata and declared checksums bind selection but do not themselves certify current content/TOC",
+    "No Oct2 hashes/197-entry catalog/restore window borrowed",
+    "First discovered fullTOC text/hash/count returned for subsequent new Oct3 restore plan; no isolated restore or promotion/deletion approval",
+    "Periodic monitor idle operation separately observed before/after; report actual tuple equality rather than assert immutable InvocationID",
+    "Original5/static8/mask/inactiveWAL/prune/pin/checker preserved; known18 findings unresolved"
+  ],
+  "recoveryActivationApproved": false,
+  "remainingAdmission": [
+    "Root full source/diff/test/template and draft request decode review",
+    "Independent source review",
+    "Root once native GO for exact source/request/outer; no automatic retry",
+    "Runtime fresh five/window and chosen-action idle static monitor observation; static8/mask/WAL/prune/source/lock remains exact"
+  ],
+  "schema": "pow-audit30-oct3-full-read-command-spec-v1",
+  "sharedTransport": {
+    "bytes": 8396,
+    "path": "/tmp/pow-audit30-readonly-owned-transport-v3.py",
+    "sha256": "1dedef0a6c7021d114017e711ad74f9cfed4e461fc047a2be2c49e590f3da18e"
+  },
+  "source": {
+    "bytes": 26947,
+    "path": "/tmp/pow-audit30-oct3-full-read-native-v1.py",
+    "sha256": "d9c19bedb3b2baf7a4d5b1a2beca8a9617d05c1074449834c8c05ebc93cb3c48"
+  },
+  "sourceOnly": true,
+  "transport": {
+    "exclusiveCaptures": true,
+    "nativePrefix": "/tmp/pow-audit30-oct3-full-read-native-102500-v1",
+    "outerSeconds": 480,
+    "remoteCommand": "shared.remote_command(exact native bytes, exact raw typed request SHA)",
+    "sourceRawHashBound": true,
+    "stderrMaximumBytes": 65536,
+    "stdoutMaximumBytes": 2097152,
+    "typedStdinSeparate": true
+  },
+  "typedRequestDraft": {
+    "bytes": 14373,
+    "path": "/tmp/pow-audit30-oct3-full-read-draft-request-v1.json",
+    "sha256": "5b727dee2608d7a5841254133a90e748344b0c41a2902d14857e8e46c53182e4"
+  }
+}

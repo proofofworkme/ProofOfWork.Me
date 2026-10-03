@@ -1,0 +1,112 @@
+{
+  "actualPriorDiagnostic": {
+    "bytes": 12502,
+    "path": "/tmp/pow-audit30-logical-backup-journal-refusal-diagnostic-native-v1.stdout",
+    "sha256": "07824e0892583ee7d0370f2f6f97e85e7376502d23e7895fbadd0b1b7ca320cc"
+  },
+  "atUtc": "2026-10-03T10:21:58.880696+00:00",
+  "automaticRetry": false,
+  "caller": {
+    "bytes": 1755,
+    "path": "/tmp/pow-audit30-logical-backup-journal-bounded-caller-v1.py",
+    "sha256": "d995e5b86c655037ec8704c8bbf3d4f37d93c46850f10664133be90c1bb500bf"
+  },
+  "callerTests": {
+    "bytes": 1722,
+    "path": "/tmp/pow-audit30-logical-backup-journal-bounded-caller-v1.test.py",
+    "sha256": "1af98998207e44a5d5fabdd16abc24823ebe867039eb47030afa3e6a91ba3ded"
+  },
+  "diff": {
+    "bytes": 8924,
+    "path": "/tmp/pow-audit30-logical-backup-journal-bounded-v1.diff",
+    "sha256": "1e656e591b2e47fb98b6cd12160ea86f45dc5c18d51dce84e032503ef16859f5"
+  },
+  "exactScope": "The fresh fixed Oct3 journal command and c4d99.journal_classification are unchanged. Only this audit process RLIMIT_AS ceiling grows128MiB\u21921GiB; every CPU/time/channel/selection cap remains. Parse only after fresh exit0 AND empty stderr; malformed/duplicate/capped framing still refuses. No original collector PASS, journal-history/resource/integrity cause certificate, current dump fullhash/TOC/restore or pin/recovery/delete authority.",
+  "limits": {
+    "auditAddressSpaceBytes": 1073741824,
+    "childJournalWholeSeconds": 20,
+    "cpuSeconds": 30,
+    "journalStderrBytes": 65536,
+    "journalStdoutBytes": 4194304,
+    "maximumRecords": 2048,
+    "outerSeconds": 120,
+    "publicStderrBytes": 65536,
+    "publicStdoutBytes": 65536,
+    "rootWholeSeconds": 90
+  },
+  "localMmapReproduction": {
+    "claimedPriorJournalSoleCause": false,
+    "largerLimitBytes": 1073741824,
+    "largerLimitMapped": true,
+    "limitInheritedAcrossChildExec": true,
+    "mappingBytes": 268435456,
+    "method": "test_real_inherited_as_readonly_sparse_mmap_reproduction",
+    "readOnly": true,
+    "scope": "Ephemeral sparse public fixture and isolated literal wrapper/child only; no journal/VPS calls",
+    "smallerLimitBytes": 134217728,
+    "smallerLimitErrno": 12,
+    "smallerLimitMapped": false
+  },
+  "localPrefix": "/tmp/pow-audit30-logical-backup-journal-bounded-native-v1",
+  "nativeCallPerformed": false,
+  "preservedDiagnostic": {
+    "bytes": 29315,
+    "path": "/tmp/pow-audit30-logical-backup-journal-refusal-diagnostic-v1.py",
+    "sha256": "f722e8280597c2754ad6b08f394a85771a3faa5f1852d064b0034c60bf56a737"
+  },
+  "preservedRotationCollector": {
+    "bytes": 15770,
+    "path": "/tmp/pow-audit30-logical-backup-rotation-readonly-v3.py",
+    "sha256": "c4d99e536ea17c628d1d86957e1bad716db8e1629ff413979d2e0284dae69c54"
+  },
+  "productionMutation": false,
+  "remainingGates": [
+    "Independent source/test/caller acceptance",
+    "Root full operative diff/source/request review and separate once native GO",
+    "Actual fresh exit0 empty-stderr framing/selected-action result under stated limits",
+    "Separate current complete backup fullhash/TOC/isolated restore before any replacement proposal"
+  ],
+  "rootNativeAdmission": false,
+  "schema": "pow-audit30-logical-backup-journal-bounded-source-preparation-v1",
+  "source": {
+    "bytes": 29709,
+    "path": "/tmp/pow-audit30-logical-backup-journal-bounded-v1.py",
+    "sha256": "2ee1325efd52165b50af455b9ace39f6b377757237a5bdf427eb4cbcaee117fa"
+  },
+  "sourceOnly": true,
+  "testResults": [
+    {
+      "invocation": "python3 -I -B -W error /tmp/pow-audit30-logical-backup-journal-bounded-v1.test.py",
+      "passed": 23,
+      "seconds": 0.207
+    },
+    {
+      "invocation": "python3 -I -B -W error /tmp/pow-audit30-logical-backup-journal-bounded-caller-v1.test.py",
+      "passed": 3,
+      "seconds": 0.005
+    }
+  ],
+  "tests": {
+    "bytes": 12622,
+    "path": "/tmp/pow-audit30-logical-backup-journal-bounded-v1.test.py",
+    "sha256": "fdba54036ca91c700282b72091e60d9557fb7b99fe8d5e98ee5be73d9fa2afef"
+  },
+  "testsPassed": 26,
+  "unchangedGuards": [
+    "Original live five and static8 metadata/bytes, pin/checker/mask/WAL/prune and backup quiet window strict at endpoints",
+    "Current idle static periodic monitor observed before/after separately; operational tuple may differ and is explicitly reported",
+    "Exact093000 Oct2 and095500 sizing unit/evidence metadata endpoints; no actions",
+    "Originalroot750/dumpsets700/members600 and checksum-manifest-only content scope",
+    "Only existing owned journal child process group cleanup from embeddedc4d99; no existing unit control"
+  ],
+  "unchangedRequest": {
+    "bytes": 39156,
+    "path": "/tmp/pow-audit30-logical-backup-rotation-readonly-request-v3.json",
+    "sha256": "a20fa1719319c9a5c0059471bcff75bbe101ee502727dd594ea1615125972c00"
+  },
+  "unchangedTransport": {
+    "bytes": 8396,
+    "path": "/tmp/pow-audit30-readonly-owned-transport-v3.py",
+    "sha256": "1dedef0a6c7021d114017e711ad74f9cfed4e461fc047a2be2c49e590f3da18e"
+  }
+}

@@ -1,0 +1,70 @@
+{
+  "activationApproved": false,
+  "atUtc": "2026-10-03T10:12:58.815045+00:00",
+  "authorReproduction": {
+    "bytes": 2159,
+    "path": "/tmp/pow-audit30-latest-logical-restore-signal-actual-repro-v2.json",
+    "sha256": "9d71edff51a4620db9830790f66e0341234e30b5a4399492dc35a73ea791adc8"
+  },
+  "diff": {
+    "bytes": 3670,
+    "path": "/tmp/pow-audit30-latest-logical-restore-signal-successor-v2.diff",
+    "sha256": "c5f3fa19129e9d5dfa4768f5083c8aa4755cd2ead101199c71d70fe85927b5e7"
+  },
+  "findings": [
+    "RestoreInterrupted(RuntimeError) propagates through selector-backed waits where original InterruptedError is retried. Actual literal original/helper reproduction reaches timeout; successor raises immediately and reaps owned helper.",
+    "Runner failure cleanup masks ordinary SIGINT/SIGTERM/SIGHUP while terminating and waiting for only its existing child process group, tolerates ProcessLookupError on that same owned group, and restores prior handlers.",
+    "Execute failure cleanup masks repeated ordinary signals through private-stop/watchdog/durable failed receipt and existing final lock/handler restoration. Actual local fixture preserves first ValueError, failed receipt, lock release and literal stop-helper reap.",
+    "All other top-level definitions AST-equivalent; only Runner, execute and new exception class differ. Original26c and a9c9 preserved."
+  ],
+  "fullNarrowDiffRead": true,
+  "limits": [
+    "Source-only acceptance does not authorize native restore, source selection, controller installation, namespace creation or any existing unit action.",
+    "No PG/systemd/network/restore was invoked by reviewer. Local execute fixture mocks admission and private-stop to a harmless literal child; it is not a native cleanup certificate.",
+    "Future restore must bind the new full source SHA in a separately reviewed actual plan/request and resources. Current/latest logical backup bytes, fullhash/TOC, capacity and isolated restore gates remain independent and unmet here.",
+    "No slot/WAL continuity, production PITR, production mutation, promotion or deletion certification."
+  ],
+  "localIndependentTests": [
+    {
+      "invocation": "python3 -I -B -W error /tmp/pow-audit30-latest-logical-restore-signal-successor-v2.test.py",
+      "passed": 7,
+      "seconds": 7.083
+    },
+    {
+      "invocation": "python3 -I -B -W error /tmp/pow-audit30-latest-logical-restore-signal-successor-v2.original-fixtures.test.py",
+      "passed": 29,
+      "seconds": 0.569
+    }
+  ],
+  "nativeCallPerformed": false,
+  "newFixtures": {
+    "bytes": 9227,
+    "path": "/tmp/pow-audit30-latest-logical-restore-signal-successor-v2.test.py",
+    "sha256": "8eb40ab3e58aa85fca22cd8c25d7e5ce33a5828494c3d043e0f68d91984c7934"
+  },
+  "original": {
+    "bytes": 61051,
+    "path": "/home/sixer/ProofOfWork.Me/deploy/audit30/restore-latest-logical.py",
+    "sha256": "26c7656b2e751c6de50122c65f8af73686c2d2674bee8be86a3c5648b7fcc80e"
+  },
+  "preservedV1": {
+    "bytes": 61183,
+    "path": "/tmp/pow-audit30-latest-logical-restore-signal-successor-v1.py",
+    "sha256": "a9c9d91dac1876710535140c2b13777b4cd2e8fc0e2e9d4a0a2f88df5a319982"
+  },
+  "productionMutation": false,
+  "restorePassed": false,
+  "retargetedOriginalFixtures": {
+    "bytes": 27974,
+    "path": "/tmp/pow-audit30-latest-logical-restore-signal-successor-v2.original-fixtures.test.py",
+    "sha256": "2911d163afbd5afc1309566ddcdbc014ad2dd832b63aa64412b0177c5fd37970"
+  },
+  "schema": "pow-audit30-independent-logical-restore-signal-source-review-v2",
+  "source": {
+    "bytes": 62005,
+    "path": "/tmp/pow-audit30-latest-logical-restore-signal-successor-v2.py",
+    "sha256": "753a97754697ba185d4c79658ecad9c09ad8e07729f50fce78595fc42dd9041c"
+  },
+  "testsPassed": 36,
+  "verdict": "accepted-source-only"
+}

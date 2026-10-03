@@ -1,0 +1,60 @@
+{
+  "actualNativeCall": false,
+  "atUtc": "2026-10-03T10:15:50.350821+00:00",
+  "coreRequests": 0,
+  "files": {
+    "/tmp/pow-audit30-logical-backup-journal-refusal-diagnostic-caller-v1.py": {
+      "bytes": 1776,
+      "sha256": "45fa4dda26752c20af9a21c4767a1c2a776db050d893783d5c021905e88e0d3f"
+    },
+    "/tmp/pow-audit30-logical-backup-journal-refusal-diagnostic-caller-v1.test.py": {
+      "bytes": 1744,
+      "sha256": "f788cc9a5ac04169cd49d870c1b851dd563838062fbb8e84eff93f24561edf75"
+    },
+    "/tmp/pow-audit30-logical-backup-journal-refusal-diagnostic-v1.py": {
+      "bytes": 29315,
+      "sha256": "f722e8280597c2754ad6b08f394a85771a3faa5f1852d064b0034c60bf56a737"
+    },
+    "/tmp/pow-audit30-logical-backup-journal-refusal-diagnostic-v1.test.py": {
+      "bytes": 7427,
+      "sha256": "6a5d0358cfda9a89e369a294c06acdf5509972783504e37719099f9227256495"
+    },
+    "/tmp/pow-audit30-logical-backup-rotation-readonly-request-v3.json": {
+      "bytes": 39156,
+      "sha256": "a20fa1719319c9a5c0059471bcff75bbe101ee502727dd594ea1615125972c00"
+    }
+  },
+  "limits": {
+    "addressSpaceBytes": 134217728,
+    "cpuSeconds": 30,
+    "journalStderrBytes": 65536,
+    "journalStdoutBytes": 4194304,
+    "journalWholeSeconds": 20,
+    "outerSeconds": 120,
+    "publicStderrBytes": 65536,
+    "publicStdoutBytes": 65536,
+    "rootWholeSeconds": 90
+  },
+  "localCases": {
+    "caller": 3,
+    "diagnostic": 17,
+    "passed": true
+  },
+  "managedSourceSha256": "ad03e5d02e10018fb7c5dd3c118a7ac876331cad240832c52e4838a4bea0ff2a",
+  "nativeGo": false,
+  "originalSourceSha256": "c4d99e536ea17c628d1d86957e1bad716db8e1629ff413979d2e0284dae69c54",
+  "productionMutation": false,
+  "qualification": [
+    "Fresh separate diagnostic, not reconstruction of prior c4d99 command stderr discarded at its fixed journal read refusal. Original failure remains preserved.",
+    "Only named metadata/checksum manifests and backup script static byte hashes, same original-five/static8/mask/WAL/prune authority, chosen idle static monitor at both endpoints and fresh return tuple.",
+    "No rotation PASS despite transport/diagnostic success; original predicate requires code0 and empty stderr.",
+    "Closed stderr allocation/mapping/access/integrity/warning enums plus exact streams exit/count/hash. No raw journal or stderr, no resource increase or causal/integrity conclusion.",
+    "No source release, dump content/TOC/latest restore/recovery survivor/promotion or retirement claim."
+  ],
+  "rotationCollectorPassed": false,
+  "schema": "pow-audit30-logical-backup-journal-refusal-diagnostic-source-preparation-v1",
+  "sqlExecuted": false,
+  "status": "source-only-prepared-unexecuted",
+  "transportSha256": "1dedef0a6c7021d114017e711ad74f9cfed4e461fc047a2be2c49e590f3da18e",
+  "unitCreationOrControl": false
+}

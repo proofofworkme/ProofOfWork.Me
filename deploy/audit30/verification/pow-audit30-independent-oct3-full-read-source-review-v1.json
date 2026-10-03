@@ -1,0 +1,106 @@
+{
+  "atUtc": "2026-10-03T10:31:06.022512+00:00",
+  "contracts": [
+    "Actual07824 metadata and declared hashes select exact Oct3 directory and three members; metadata does not certify content. Independent fixture confirms exact actual directory/member/lock identities and checksum declarations.",
+    "Leaf full-streams all three members under exact shared backup lock FD/path fence; O_NOFOLLOW/O_NOATIME, canonical path, nlink/xattr, bytecount and before/after FD/path identity checks. Full bounded pg_restore --list TOC is discovered rather than borrowed from Oct2.",
+    "Raw dump and globals statements remain on host. Only checksum manifest, full bounded TOC, global statement category counts, hashes and public identities are emitted.",
+    "Managed original resource/typed ExecStart/fragment/output/capture/owned-cleanup contracts remain. Six-minute unit, 420-second root, 128MiB/Swap0/25percentCPU/Tasks16, read-only backup/lock namespace and denied private/live roots.",
+    "Fresh chosen five, static8/mask/WAL/prune/pin/checker equality remains strict; idle loaded/static Main0 monitor operational tuple is observed separately at both endpoints, may differ and is explicitly qualified.",
+    "Real local file drift, hardlink/symlink/xattr, lock replacement/contention, TOC invalidity, signal propagation/owned child reap and closed source/request/profile refusals passed. Synthetic owner fields in filesystem fixtures and pg_restore TOC mocks do not constitute native proof."
+  ],
+  "independentTests": [
+    {
+      "command": "python3 -I -B -Werror TEST",
+      "passed": 10,
+      "path": "/tmp/pow-audit30-oct3-latest-backup-full-read-v1.test.py",
+      "seconds": 0.148
+    },
+    {
+      "command": "python3 -I -B -Werror TEST",
+      "passed": 32,
+      "path": "/tmp/pow-audit30-oct3-full-read-native-v1.test.py",
+      "seconds": 0.129
+    }
+  ],
+  "nativePerformed": false,
+  "qualifications": [
+    "No current backup fullhash/TOC/isolated restore result accepted by this source review.",
+    "No Oct2 content/catalog/restore proof borrowed, pin/checker promotion, recovery activation, deletion or next job authority.",
+    "Draft metadata and null template are source preparation; Root must separately admit exact fresh actual request and native once-GO.",
+    "Existing 18 held absence findings remain unresolved; no broad financial or custody certificate."
+  ],
+  "repositoryEdits": false,
+  "review": {
+    "changedFunctions": [
+      "decode_request",
+      "backup_metadata",
+      "proof_result",
+      "main"
+    ],
+    "draftDecodedLeafByteExact": true,
+    "fullAffectedSourceDiffRead": true,
+    "fullLeafAndManagedSourceRead": true,
+    "newFunctions": [
+      "chosen_protection",
+      "static_protection"
+    ],
+    "nullTemplateNotExecutable": true,
+    "testSourcesRead": true,
+    "unchangedFunctionsAstVerified": true
+  },
+  "reviewer": "math_review",
+  "schema": "pow-audit30-independent-oct3-full-read-source-review-v1",
+  "sourcesAndEvidence": [
+    {
+      "bytes": 6197,
+      "path": "/tmp/pow-audit30-oct3-latest-backup-full-read-v1.py",
+      "sha256": "01b80fd9b4a3a92893c06f288b3d3bdc90e05b7ed6f7c6f25bebc21c1ecc56a3"
+    },
+    {
+      "bytes": 26947,
+      "path": "/tmp/pow-audit30-oct3-full-read-native-v1.py",
+      "sha256": "d9c19bedb3b2baf7a4d5b1a2beca8a9617d05c1074449834c8c05ebc93cb3c48"
+    },
+    {
+      "bytes": 8368,
+      "path": "/tmp/pow-audit30-oct3-latest-backup-full-read-v1.test.py",
+      "sha256": "bbe8889777b8209945386603e564df66f8412becb7e30cf7fa8c8f7085807556"
+    },
+    {
+      "bytes": 24863,
+      "path": "/tmp/pow-audit30-oct3-full-read-native-v1.test.py",
+      "sha256": "b9cfd3cc095666828afe74e792ae90ad06a71856d6cc2d9cfe34b32fe13b6dfc"
+    },
+    {
+      "bytes": 8338,
+      "path": "/tmp/pow-audit30-oct3-full-read-leaf-v1.diff",
+      "sha256": "9a47cd447b5fba008c73a89d76023c03645e37a5fcb73489236293f01a23f187"
+    },
+    {
+      "bytes": 23410,
+      "path": "/tmp/pow-audit30-oct3-full-read-native-v1.diff",
+      "sha256": "930ccd20428416c1174fe84eed03cc383d6473c2760559fcc20852f9322c7f1b"
+    },
+    {
+      "bytes": 14373,
+      "path": "/tmp/pow-audit30-oct3-full-read-draft-request-v1.json",
+      "sha256": "5b727dee2608d7a5841254133a90e748344b0c41a2902d14857e8e46c53182e4"
+    },
+    {
+      "bytes": 8739,
+      "path": "/tmp/pow-audit30-oct3-full-read-request-template-v1.json",
+      "sha256": "b2d460b2150ed128a9c0739f2d2d0ff32c8aadab045462eed0e8336f1ea6dfd5"
+    },
+    {
+      "bytes": 3536,
+      "path": "/tmp/pow-audit30-oct3-full-read-command-spec-v1.json",
+      "sha256": "101b185005795024a54923ea3430eb5c049f6b483ed5081f0c1c87960777a6b0"
+    },
+    {
+      "bytes": 4107,
+      "path": "/tmp/pow-audit30-oct3-full-read-local-preparation-v1.json",
+      "sha256": "fb47790449e3520ed6b2208695b3e8f83c86bd161af96e5a89f23fa45ad68ba4"
+    }
+  ],
+  "verdict": "accepted-source-only"
+}

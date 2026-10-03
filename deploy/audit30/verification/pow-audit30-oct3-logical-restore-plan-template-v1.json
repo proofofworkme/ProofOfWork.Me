@@ -1,0 +1,102 @@
+{
+  "approvalSha256": "6821c987b9a5d110fbe9fb2820955b7cbc26dda9faddb67667fc49e892f5c820",
+  "backup": {
+    "directory": {
+      "bytes": 4096,
+      "ctimeNs": 1790998679134600840,
+      "device": 64514,
+      "gid": 112,
+      "inode": 7471122,
+      "mode": 448,
+      "mtimeNs": 1790998679132600841,
+      "nlink": 2,
+      "uid": 108
+    },
+    "members": {
+      "SHA256SUMS": {
+        "bytes": 163,
+        "ctimeNs": 1790998667126603136,
+        "device": 64514,
+        "gid": 112,
+        "inode": 7471151,
+        "mode": 384,
+        "mtimeNs": 1790998667126603136,
+        "nlink": 1,
+        "sha256": null,
+        "uid": 108
+      },
+      "globals.sql": {
+        "bytes": 1137,
+        "ctimeNs": 1790998653636605791,
+        "device": 64514,
+        "gid": 112,
+        "inode": 7471124,
+        "mode": 384,
+        "mtimeNs": 1790998653636605791,
+        "nlink": 1,
+        "sha256": null,
+        "uid": 108
+      },
+      "proof_indexer.dump": {
+        "bytes": 20878072656,
+        "ctimeNs": 1790998653465605825,
+        "device": 64514,
+        "gid": 112,
+        "inode": 7471123,
+        "mode": 384,
+        "mtimeNs": 1790998653465605825,
+        "nlink": 1,
+        "sha256": null,
+        "uid": 108
+      }
+    },
+    "path": "/data/proofofwork-postgres-backups/logical/proof_indexer-20261003T031852Z.dumpset"
+  },
+  "backupLock": {
+    "bytes": 0,
+    "ctimeNs": 1790997532936269129,
+    "device": 64514,
+    "gid": 112,
+    "inode": 7471419,
+    "mode": 384,
+    "mtimeNs": 1790997532936269129,
+    "nlink": 1,
+    "uid": 108
+  },
+  "backupWindow": {
+    "nextScheduledAtUtc": null,
+    "preflightAtUtc": null
+  },
+  "controllerSha256": "753a97754697ba185d4c79658ecad9c09ad8e07729f50fce78595fc42dd9041c",
+  "host": "pow-bitcoin-01",
+  "job": "/data/proofofwork-audit30-restore-20261003T104500Z",
+  "liveServices": {
+    "bitcoind.service": {
+      "InvocationID": null,
+      "MainPID": null
+    },
+    "electrs.service": {
+      "InvocationID": null,
+      "MainPID": null
+    },
+    "postgresql@16-main.service": {
+      "InvocationID": null,
+      "MainPID": null
+    },
+    "proofofwork-api.service": {
+      "InvocationID": null,
+      "MainPID": null
+    },
+    "proofofwork-indexer-worker.service": {
+      "InvocationID": null,
+      "MainPID": null
+    }
+  },
+  "runId": "20261003T104500Z",
+  "schema": "pow-audit30-latest-logical-restore-plan-v1",
+  "toc": {
+    "entries": null,
+    "sha256": null
+  },
+  "unit": "proofofwork-audit30-logical-restore-20261003T104500Z.service"
+}

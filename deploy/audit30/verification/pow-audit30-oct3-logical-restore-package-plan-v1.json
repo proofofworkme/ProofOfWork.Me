@@ -1,0 +1,53 @@
+{
+  "creator": {
+    "bytes": 6532,
+    "path": "/tmp/pow-audit30-oct3-logical-restore-creator-v1.py",
+    "sha256": "fd946bd2aef7f3c5710b6ef8ff905cbae1f6adcc6ac702ace201080244d32ea1"
+  },
+  "creatorBehavior": "Same exactfd946 combined creation+private RUN. No creation-only PREPARE mode; once authority must explicitly admit the private launch.",
+  "directory": {
+    "gid": 112,
+    "mode": 488,
+    "uid": 0
+  },
+  "job": {
+    "gid": 112,
+    "mode": 448,
+    "mustBeAbsent": true,
+    "mustBeEmptyInitially": true,
+    "path": "/data/proofofwork-audit30-restore-20261003T104500Z",
+    "uid": 108
+  },
+  "members": {
+    "restore-latest-logical.py": {
+      "gid": 112,
+      "mode": 288,
+      "source": {
+        "bytes": 62005,
+        "path": "/tmp/pow-audit30-latest-logical-restore-signal-successor-v2.py",
+        "sha256": "753a97754697ba185d4c79658ecad9c09ad8e07729f50fce78595fc42dd9041c"
+      },
+      "uid": 0
+    },
+    "reviewed-plan.json": {
+      "bytes": null,
+      "gid": 0,
+      "mode": 384,
+      "rawSha256": null,
+      "uid": 0
+    }
+  },
+  "nativeGO": false,
+  "package": "/data/proofofwork-audit30-phase7-tools-restore-20261003T104500Z",
+  "runId": "20261003T104500Z",
+  "schema": "pow-audit30-oct3-logical-restore-package-source-plan-v1",
+  "sourceOnly": true,
+  "sourcesPinnedButNativeRequestUnadmitted": true,
+  "unit": {
+    "credentialName": "restore-plan",
+    "credentialPath": "/run/credentials/proofofwork-audit30-logical-restore-20261003T104500Z.service/restore-plan",
+    "mustBeNotFound": true,
+    "name": "proofofwork-audit30-logical-restore-20261003T104500Z.service",
+    "soleLoadCredentialSource": "/data/proofofwork-audit30-phase7-tools-restore-20261003T104500Z/reviewed-plan.json"
+  }
+}
