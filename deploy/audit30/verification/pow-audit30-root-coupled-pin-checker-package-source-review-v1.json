@@ -1,0 +1,80 @@
+{
+  "atUtc": "2026-10-03T12:51:06.191998+00:00",
+  "bindings": [
+    {
+      "bytes": 8259,
+      "path": "/tmp/pow-audit30-coupled-pin-checker-package-source-preparation-v1.json",
+      "sha256": "848200cd794f642dfa988ff2a2283d7b26c78b79896e02f118ed0369c684dcc8"
+    },
+    {
+      "bytes": 6581,
+      "path": "/tmp/pow-audit30-independent-coupled-pin-checker-package-source-review-v1.json",
+      "sha256": "ad45b0358a8841b37b2988a2f126cd202c011c7d680fb9e5b8b186509ca51859"
+    },
+    {
+      "bytes": 11860,
+      "path": "/tmp/pow-audit30-coupled-pin-checker-package-creator-v1.py",
+      "sha256": "8056f85ba5e5d45057df5233e7ed4cb880aa2687f6d8895a8ed647ff2902b9ff"
+    },
+    {
+      "bytes": 12796,
+      "path": "/tmp/pow-audit30-coupled-pin-checker-package-creator-v1.test.py",
+      "sha256": "a68f1e336892c6db658ca48b994f783b479438c94481ef5c88110764d768f78c"
+    },
+    {
+      "bytes": 16571,
+      "path": "/tmp/pow-audit30-coupled-pin-checker-package-bootstrap-v1.py",
+      "sha256": "9ab89e78425903054b9343266c0e22c61fcccf29cf18641be1cedc2a46924d73"
+    },
+    {
+      "bytes": 1850,
+      "path": "/tmp/pow-audit30-coupled-pin-checker-package-transport-preparation-v1.py",
+      "sha256": "c9a3d2bad52fb9214ef366e17dedc64dffec436279cf5c22dfa875cb3824792e"
+    },
+    {
+      "bytes": 79922,
+      "path": "/tmp/pow-audit30-coupled-pin-checker-package-request-template-v1.json",
+      "sha256": "acdec2b44ee480d367d674016259773575f449c5b55769500027b9fec52fd6f8"
+    },
+    {
+      "bytes": 3280,
+      "path": "/tmp/pow-audit30-coupled-pin-checker-package-caller-v1.test.py",
+      "sha256": "c514696e1ae99646a659618f382047fabc701a2c220ad81b988a66d0ee141142"
+    }
+  ],
+  "claims": {
+    "additionalDeletion": false,
+    "completeItem7": false,
+    "humanApprovalFabricated": false,
+    "nativeExecuted": false,
+    "packageCreated": false,
+    "productionDataMutation": false,
+    "recoveryConfigurationMutation": false
+  },
+  "qualification": "This additive source review supersedes Action65 creator-unfinished preparation status only. No actual approval/message/plan/request payload, remote package, promotion, recovery activation, deletion or production-data operation was created. Existing16body approval and all other gates remain unchanged.",
+  "remainingActionGates": [
+    "Reserved explicit final configscope approval with Root-custodied human message and canonical receipt.",
+    "Genuinely new fullread proof plus fresh metadata/base/unit/static/mask/restore/lock fences; historical expired proof is not reused or redated.",
+    "Final canonical plan/creator-request raw bytes and hashes require independent review before one native admission.",
+    "Creation success is not promotion; unchanged V6 independently revalidates before any exact two-file replacement."
+  ],
+  "rootTests": {
+    "callerPassed": 6,
+    "creatorPassed": 16,
+    "creatorSeconds": 0.855
+  },
+  "schema": "pow-audit30-root-coupled-pin-checker-package-source-review-v1",
+  "sourceReview": {
+    "actualHumanMessageProvenanceRequired": true,
+    "canonicalPlanAndTypedRequestHashRequired": true,
+    "fixedV6AndInstallerAndCandidateBytes": true,
+    "fresh900SecondProofAndFourActualRestoreProofsRequired": true,
+    "intentBeforePackageMembersAndFsyncCompletion": true,
+    "noExecuteApplyMainConsumerCalls": true,
+    "positiveLocalPrivilegeAndAdmissionFixturesAreSynthetic": true,
+    "refusesUnknownDriftNoResumeOrAutomaticRetry": true,
+    "sixRoot600FilesAndRoot700PackageOnly": true,
+    "strictCurrentStaticUnitMaskLockChecksBeforeAndAfter": true
+  },
+  "status": "source-only-reviewed-and-tested-ready-for-final-scope-approval"
+}

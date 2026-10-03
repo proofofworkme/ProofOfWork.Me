@@ -1,0 +1,118 @@
+{
+  "atUtc": "2026-10-03T12:44:29.316626+00:00",
+  "checkpointChecks": {
+    "293VsDated235_01CapacityQualified": true,
+    "bodyCardStillPending": true,
+    "finalHumanApprovalNullAndNoNewFinalRequest": true,
+    "historicalFullReadExpired": true,
+    "item7And8Incomplete": true,
+    "packageCreatorNativeAdmissionPending": true,
+    "retirementManifestNotPreparedOrReady": true
+  },
+  "links": [
+    {
+      "actualTarget": {
+        "bytes": 4594,
+        "path": "/home/sixer/ProofOfWork.Me/audits/2026-10-03-audit30-exact-sixteen-body-repair-proposal.md",
+        "sha256": "2d29c5a8a37c1aa42631dc615f8847640bdd4ce074b1c48524271ea40f96cadc"
+      },
+      "href": "2026-10-03-audit30-exact-sixteen-body-repair-proposal.md",
+      "label": "16-record production text repair",
+      "manifestMember": null,
+      "repositoryTarget": "audits/2026-10-03-audit30-exact-sixteen-body-repair-proposal.md",
+      "resolution": "existing canonical repository file"
+    },
+    {
+      "actualTarget": {
+        "bytes": 25752,
+        "path": "/home/sixer/ProofOfWork.Me/deploy/audit30/verification/pow-audit30-coupled-pin-checker-promotion-v6.py",
+        "sha256": "dfa403996e776a8ed192a024848b06f71b5fa041a24bf5b9687ff04ce3714535"
+      },
+      "href": "../deploy/audit30/verification/pow-audit30-coupled-pin-checker-promotion-v6.py",
+      "label": "source-only V6 controller",
+      "manifestMember": {
+        "bytes": 25752,
+        "path": "/tmp/pow-audit30-coupled-pin-checker-promotion-v6.py",
+        "sha256": "dfa403996e776a8ed192a024848b06f71b5fa041a24bf5b9687ff04ce3714535",
+        "type": "python-source"
+      },
+      "repositoryTarget": "deploy/audit30/verification/pow-audit30-coupled-pin-checker-promotion-v6.py",
+      "resolution": "exact manifest member and currently visible target byte match"
+    },
+    {
+      "actualTarget": {
+        "bytes": 20691,
+        "path": "/home/sixer/ProofOfWork.Me/deploy/proofofwork-postgres-logical-backup.sh",
+        "sha256": "4e5252ed8fcc8ce4ec863d6e027d429f146348f30be23d4eb5fe77cfd013a754"
+      },
+      "href": "../deploy/proofofwork-postgres-logical-backup.sh",
+      "label": "the repository script",
+      "manifestMember": null,
+      "repositoryTarget": "deploy/proofofwork-postgres-logical-backup.sh",
+      "resolution": "existing canonical repository file"
+    },
+    {
+      "actualTarget": {
+        "bytes": 5451,
+        "path": "/home/sixer/ProofOfWork.Me/deploy/audit30/verification/pow-audit30-independent-coupled-pin-checker-promotion-source-review-v6.json",
+        "sha256": "39d49acbecdce34149190330f9b75991e88fc26dc7255d430794087f5ac449d3"
+      },
+      "href": "../deploy/audit30/verification/pow-audit30-independent-coupled-pin-checker-promotion-source-review-v6.json",
+      "label": "Independent V6 source review",
+      "manifestMember": {
+        "bytes": 5451,
+        "path": "/tmp/pow-audit30-independent-coupled-pin-checker-promotion-source-review-v6.json",
+        "sha256": "39d49acbecdce34149190330f9b75991e88fc26dc7255d430794087f5ac449d3",
+        "type": "json-public-receipt"
+      },
+      "repositoryTarget": "deploy/audit30/verification/pow-audit30-independent-coupled-pin-checker-promotion-source-review-v6.json",
+      "resolution": "exact manifest member and currently visible target byte match"
+    },
+    {
+      "actualTarget": {
+        "bytes": 9111,
+        "path": "/home/sixer/ProofOfWork.Me/deploy/audit30/verification/pow-audit30-coupled-pin-checker-observed-review-plan-v6.json",
+        "sha256": "911a77fc317f4a7a8c388e424172a0a4afe88fd8861efb7c9b0b979ab79431dc"
+      },
+      "href": "../deploy/audit30/verification/pow-audit30-coupled-pin-checker-observed-review-plan-v6.json",
+      "label": "observed review plan",
+      "manifestMember": {
+        "bytes": 9111,
+        "path": "/tmp/pow-audit30-coupled-pin-checker-observed-review-plan-v6.json",
+        "sha256": "911a77fc317f4a7a8c388e424172a0a4afe88fd8861efb7c9b0b979ab79431dc",
+        "type": "json-public-receipt"
+      },
+      "repositoryTarget": "deploy/audit30/verification/pow-audit30-coupled-pin-checker-observed-review-plan-v6.json",
+      "resolution": "exact manifest member and currently visible target byte match"
+    }
+  ],
+  "manifest": {
+    "bytes": 32389,
+    "path": "/tmp/pow-audit30-action65-fixed-public-manifest-v1.json",
+    "sha256": "1232acc23a1d04e83e206b282489253673972cda18b1a5d6597093dbe2314f24"
+  },
+  "manifestFileRows": 109,
+  "proposalRepositoryTarget": {
+    "bytes": 9457,
+    "path": "/home/sixer/ProofOfWork.Me/audits/2026-10-03-audit30-oct3-pin-checker-promotion-proposal.md",
+    "sha256": "cd5852c4b9415f60104b6bc72c82e580e003f000219844ef3a694d6ae86507ec"
+  },
+  "proposalSource": {
+    "bytes": 9457,
+    "path": "/tmp/pow-audit30-oct3-pin-checker-promotion-proposal-v2.md",
+    "sha256": "cd5852c4b9415f60104b6bc72c82e580e003f000219844ef3a694d6ae86507ec"
+  },
+  "qualification": [
+    "Targets resolved against exact planned manifest plus existing canonical source/body proposal; this is link/source binding only, not append preservation or production acceptance.",
+    "Read occurred after Root reported append; currently visible target bytes match plan, but this receipt supplies no native approval or mutation authority.",
+    "External verification receipt is not added to the frozen manifest and must wait for a later checkpoint."
+  ],
+  "reviewOperations": {
+    "helperExecutions": 0,
+    "nativeCalls": 0,
+    "networkCalls": 0,
+    "repositoryEdits": 0
+  },
+  "schema": "pow-audit30-independent-action65-proposal-links-review-v1",
+  "status": "accepted-fixed-manifest-links-and-qualified-text"
+}

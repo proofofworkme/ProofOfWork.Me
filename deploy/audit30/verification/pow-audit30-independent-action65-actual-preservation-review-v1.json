@@ -1,0 +1,225 @@
+{
+  "atUtc": "2026-10-03T12:47:51.238675+00:00",
+  "baseHead": "4df964287d9f326845bc22d5d4f454f7a2cadf74",
+  "bindings": {
+    "helper": {
+      "bytes": 9925,
+      "path": "/tmp/pow-audit30-append-action65-v4.py",
+      "sha256": "9423a4f147f22eb9cba32571c11f1066b546f710991b5f943e1c209cf677515f"
+    },
+    "intent": {
+      "bytes": 41972,
+      "path": "/tmp/pow-audit30-action65-public-custody-intent-v1.json",
+      "sha256": "2e6afee037cb0d6d006560771d39e341a5241de7a3dd8deb0dfd192f1aa4ca40"
+    },
+    "manifest": {
+      "bytes": 32389,
+      "path": "/tmp/pow-audit30-action65-fixed-public-manifest-v1.json",
+      "sha256": "1232acc23a1d04e83e206b282489253673972cda18b1a5d6597093dbe2314f24"
+    },
+    "preservation": {
+      "bytes": 40464,
+      "path": "/tmp/pow-audit30-action65-public-custody-preservation-v1.json",
+      "sha256": "c672fbce47a3ef641281e1822ce5d7bcc3ecb6f3db51d6523bc3e05c1b71f765"
+    },
+    "proposalLinksPeer": {
+      "bytes": 5632,
+      "path": "/tmp/pow-audit30-independent-action65-proposal-links-review-v1.json",
+      "sha256": "5d73c90889630c2ca85f711f5616dedea48f70e6904cb3a30f4ef059f82b401c"
+    }
+  },
+  "counts": {
+    "currentActions": 65,
+    "currentCustodyRows": 872,
+    "exactTrackedChanges": 115,
+    "explicitOldAndNewBase64RepresentationsDecoded": 53,
+    "fixedManifestFiles": 109,
+    "newRows": 111,
+    "oldActions": 64,
+    "oldCustodyRows": 761,
+    "retainedUntrackedRawDiffs": 4,
+    "trackedDeletions": 0
+  },
+  "newLosslessEnvelopes": [
+    {
+      "kind": "raw-diff",
+      "rawBytes": 3292,
+      "rawSha256": "3f79b2f7c04726eb603aa08e69efa0000e5e9d71a7db850fbc8683a075a10101",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-append-action65-v2.diff.evidence.json"
+    },
+    {
+      "kind": "raw-diff",
+      "rawBytes": 1013,
+      "rawSha256": "39aa09cc6a3aa24d9f4074588a13cec85f0de07faf88f466eee791a9f0bafefa",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-append-action65-v3.diff.evidence.json"
+    },
+    {
+      "kind": "raw-diff",
+      "rawBytes": 2539,
+      "rawSha256": "6f36688322b283d216e45d54b7fa2df0c7c6a8f419a87c65631c26691809dc77",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-append-action65-v4.diff.evidence.json"
+    },
+    {
+      "kind": "raw-diff",
+      "rawBytes": 3354,
+      "rawSha256": "c72d22aa6f673092ec0ae79017f2558b4ff0122105bc506183e765cc54558926",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-coupled-pin-checker-promotion-v6.diff.evidence.json"
+    },
+    {
+      "kind": "exact-native-channel",
+      "rawBytes": 0,
+      "rawSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-coupled-promotion-state-observer-native-v1.stderr.evidence.json"
+    },
+    {
+      "kind": "exact-native-channel",
+      "rawBytes": 0,
+      "rawSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-promotion-full-read-native-120000-current2-v1.stderr.evidence.json"
+    },
+    {
+      "kind": "raw-diff",
+      "rawBytes": 4462,
+      "rawSha256": "b0d8242da2c28d2f0b75c6efc52ffcb74e38f19f11084610b059a497c19d9f1e",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-readable-pin-checker-proposal-text-v2.diff.evidence.json"
+    },
+    {
+      "kind": "exact-native-channel",
+      "rawBytes": 0,
+      "rawSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-retained-repair-context-native-v3.stderr.evidence.json"
+    },
+    {
+      "kind": "raw-diff",
+      "rawBytes": 48219,
+      "rawSha256": "134d05b5b0c8b4729a7125f054e12a5d1ab4bd48eb3a68935fc18b6895ca72a5",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-retained-repair-dependency-bridge-bootstrap-v4.diff.evidence.json"
+    },
+    {
+      "kind": "raw-diff",
+      "rawBytes": 50659,
+      "rawSha256": "75d953e5c6d1df312a86f6a53d26fd13fbfc4404fe6eb031ee3cedf26e86d85b",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-retained-repair-dependency-bridge-bootstrap-v5.diff.evidence.json"
+    },
+    {
+      "kind": "exact-native-channel",
+      "rawBytes": 0,
+      "rawSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-retained-repair-dependency-bridge-native-current2-v3.stdout.evidence.json"
+    },
+    {
+      "kind": "exact-native-channel",
+      "rawBytes": 0,
+      "rawSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-retained-repair-dependency-bridge-native-current3-v4.stdout.evidence.json"
+    },
+    {
+      "kind": "exact-native-channel",
+      "rawBytes": 0,
+      "rawSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-retained-repair-dependency-bridge-native-current4-v5.stderr.evidence.json"
+    },
+    {
+      "kind": "raw-diff",
+      "rawBytes": 2762,
+      "rawSha256": "b6270030d384430a530c5e9ff321838af7c928962681d3647b63b72fa872a75c",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-retained-repair-dependency-bridge-transport-preparation-v4.diff.evidence.json"
+    },
+    {
+      "kind": "raw-diff",
+      "rawBytes": 2762,
+      "rawSha256": "12e499522ccd514072b57e806b1f58a2f72fa3715b5db438b287a87bb8aae487",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-retained-repair-dependency-bridge-transport-preparation-v5.diff.evidence.json"
+    },
+    {
+      "kind": "raw-diff",
+      "rawBytes": 10729,
+      "rawSha256": "6823f6edf317a0030b1a0776c76ca2ba55b8e50c38e7a98f8816803d4814d796",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-retained-repair-dependency-bridge-v4.diff.evidence.json"
+    },
+    {
+      "kind": "raw-diff",
+      "rawBytes": 7292,
+      "rawSha256": "08f6dc0e5c1fec1ec460b250bd6576095b8bdfb8b192b6167a74838189030135",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-retained-repair-dependency-bridge-v5.diff.evidence.json"
+    },
+    {
+      "kind": "raw-diff",
+      "rawBytes": 895,
+      "rawSha256": "784603ab74ec34130c5c32bcbc2543b68fcdf0d6bc640d858d19676c32e2b693",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-retention-protection-oct3-dual-pin-candidate-v1.diff.evidence.json"
+    },
+    {
+      "kind": "raw-diff",
+      "rawBytes": 2783,
+      "rawSha256": "7ca87c957e84016eecff76bb3885de348b4721abfd89305da161230c86f06ca4",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-retire-exact-four-v4.diff.evidence.json"
+    }
+  ],
+  "newRepresentationKinds": {
+    "exact-native-channel": 6,
+    "raw-byte-copy": 92,
+    "raw-diff": 13
+  },
+  "qualifications": [
+    "Hygiene normalized noteInventory ordering only; rawHY can differ from helper pre-hygiene output while all values except the one new protected proposal path remain preserved.",
+    "Earlier base64 capsules omit newer optional encoding/kind fields; their exact bytes and decoded identities remain preserved without changing historical schemas.",
+    "This accepts the actual local public audit append and byte custody only, not production/native execution or any human approval.",
+    "Source and actual observer evidence remain qualified: expired full-read freshness, NULL approval, unfinished package creator/native admission, unresolved18 paths and separate293GiB capacity gate.",
+    "External independent verification receipt is not part of frozen Action65 manifest; it is held for a future checkpoint."
+  ],
+  "rawOutputComparison": {
+    "C": {
+      "actualBytes": 394259,
+      "actualSha256": "d5da7713b93c4d3c07414702632b32ec7bc940edb8119d922a6e02d2ef0d2767",
+      "matchesHelperPlannedRaw": true
+    },
+    "E": {
+      "actualBytes": 16685751,
+      "actualSha256": "85377fd5acb6d1ed2041258e1e2da6a475a22e6ecb81f82333374b187df48935",
+      "matchesHelperPlannedRaw": true
+    },
+    "HY": {
+      "actualBytes": 10997,
+      "actualSha256": "d29d8aa82cb812ccbb5b450ad4d17d5cedbabf1c6abcc11c5e45e147d673c75a",
+      "matchesHelperPlannedRaw": true
+    },
+    "T": {
+      "actualBytes": 82079,
+      "actualSha256": "67e9b13502e35f4765345ffb6ca3a0180978b2b1445b1cf411a69ff3f5128696",
+      "matchesHelperPlannedRaw": true
+    }
+  },
+  "reviewOperations": {
+    "helperMainExecutions": 0,
+    "localPublicAndGitReadsOnly": true,
+    "nativeCalls": 0,
+    "networkCalls": 0,
+    "productionActions": 0,
+    "repositoryEdits": 0
+  },
+  "schema": "pow-audit30-independent-action65-actual-preservation-review-v1",
+  "status": "accepted-actual-local-audit-append-only",
+  "verified": {
+    "all111NewRawOrLosslessInputsEqualTmp": true,
+    "all64OldActionValuesExact": true,
+    "all761OldCustodyRowValuesExact": true,
+    "all872DeclaredStoredByteHashesExact": true,
+    "allFiveProposalLinksAlreadyIndependentlyAccepted": true,
+    "allGlobalStoredRepresentationsExact": true,
+    "allOldApprovalMutationRetirementRequestsExact": true,
+    "allOldItemsExactAfterRemovingOnlyNew7And8Checkpoint": true,
+    "bodyRepairApprovalStillPending": true,
+    "expiredHistoricalLeafNullApprovalUnfinishedCreatorAndNoNewFinalRequestQualified": true,
+    "hygieneOnlyOneProtectedNoteAddedAndOrderNormalization": true,
+    "intentBaselineHashesMatchExactGitBase": true,
+    "items7And8IncompleteAndNoNewDeletionOrRecoveryClosure": true,
+    "newActionAndBothCheckpointValuesExactManifest": true,
+    "newProposalCd585RawAndLedgerAuditEvidenceClassification": true,
+    "old4RawDiffsAndLosslessEnvelopesUnchanged": true,
+    "only111AdditionsAnd4DocumentModifications": true,
+    "priorItem7GitPointerCanonicalBytesAndShaExact": true,
+    "storedOutputsEctMatchHelperPlannedBytes": true,
+    "trackerOldPrefixAndExactManifestAppend": true
+  }
+}

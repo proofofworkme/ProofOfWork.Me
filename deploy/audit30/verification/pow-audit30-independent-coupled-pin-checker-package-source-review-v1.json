@@ -1,0 +1,107 @@
+{
+  "artifacts": {
+    "/home/sixer/ProofOfWork.Me/deploy/audit30/install-retention.py": {
+      "bytes": 12913,
+      "sha256": "cd9c266e938d22949c9f0c6a48853933d9bcbb58368071b2da4027f13411eaa5"
+    },
+    "/tmp/pow-audit30-coupled-pin-checker-observed-review-plan-v6.json": {
+      "bytes": 9111,
+      "sha256": "911a77fc317f4a7a8c388e424172a0a4afe88fd8861efb7c9b0b979ab79431dc"
+    },
+    "/tmp/pow-audit30-coupled-pin-checker-package-bootstrap-v1.py": {
+      "bytes": 16571,
+      "sha256": "9ab89e78425903054b9343266c0e22c61fcccf29cf18641be1cedc2a46924d73"
+    },
+    "/tmp/pow-audit30-coupled-pin-checker-package-caller-v1.test.py": {
+      "bytes": 3280,
+      "sha256": "c514696e1ae99646a659618f382047fabc701a2c220ad81b988a66d0ee141142"
+    },
+    "/tmp/pow-audit30-coupled-pin-checker-package-creator-v1.initial-test-draft.py": {
+      "bytes": 12751,
+      "sha256": "8ea8041dbc43863bdd50938c2c1f5aceb35dfbe7dea438ef16a2b4a086a68110"
+    },
+    "/tmp/pow-audit30-coupled-pin-checker-package-creator-v1.py": {
+      "bytes": 11860,
+      "sha256": "8056f85ba5e5d45057df5233e7ed4cb880aa2687f6d8895a8ed647ff2902b9ff"
+    },
+    "/tmp/pow-audit30-coupled-pin-checker-package-creator-v1.test.py": {
+      "bytes": 12796,
+      "sha256": "a68f1e336892c6db658ca48b994f783b479438c94481ef5c88110764d768f78c"
+    },
+    "/tmp/pow-audit30-coupled-pin-checker-package-request-template-v1.json": {
+      "bytes": 79922,
+      "sha256": "acdec2b44ee480d367d674016259773575f449c5b55769500027b9fec52fd6f8"
+    },
+    "/tmp/pow-audit30-coupled-pin-checker-package-source-preparation-v1.json": {
+      "bytes": 8259,
+      "sha256": "848200cd794f642dfa988ff2a2283d7b26c78b79896e02f118ed0369c684dcc8"
+    },
+    "/tmp/pow-audit30-coupled-pin-checker-package-transport-preparation-v1.py": {
+      "bytes": 1850,
+      "sha256": "c9a3d2bad52fb9214ef366e17dedc64dffec436279cf5c22dfa875cb3824792e"
+    },
+    "/tmp/pow-audit30-coupled-pin-checker-promotion-v6.py": {
+      "bytes": 25752,
+      "sha256": "dfa403996e776a8ed192a024848b06f71b5fa041a24bf5b9687ff04ce3714535"
+    },
+    "/tmp/pow-audit30-oct3-pin-checker-promotion-proposal-v2.md": {
+      "bytes": 9457,
+      "sha256": "cd5852c4b9415f60104b6bc72c82e580e003f000219844ef3a694d6ae86507ec"
+    },
+    "/tmp/pow-audit30-retention-protection-oct3-dual-pin-candidate-v1.py": {
+      "bytes": 20718,
+      "sha256": "795f1308b74ddc69a022ce7e1413fb4698a82e6cfb14265931d1951ee603c908"
+    }
+  },
+  "atUtc": "2026-10-03T12:50:39.155492+00:00",
+  "claims": {
+    "actualRequestCreated": false,
+    "deletionAuthorized": false,
+    "humanApprovalManufactured": false,
+    "nativeExecutedByReviewer": false,
+    "packageCreatedOnNode": false,
+    "productionDataMutation": false,
+    "promotionExecuted": false,
+    "repositoryEdits": false
+  },
+  "findings": [
+    "No concrete source or V6 consumer gating incompatibility found. Creator never calls promotion execute/apply/main; it loads only exact inert V6 and installer definitions.",
+    "Before any directory creation: closed six-member request/fixed code SHA, aggregate262144B, canonical plan/rawSHA, exact Root-trusted actual human receipt/message/SCOPE/caller binding, safe base/absent unique paths, fresh<=900s proof/four restore hashes and metadata, original installed/static/unit/mask/inactiveWAL/backup window/lock identities are required. Admission repeats after existing nonblocking locks and after file creation.",
+    "Exact six new regular root0600 nlink1/xattr-free member files in root0700 package use O_EXCL/fsync and stable FD/path/full-byte verification. Sibling run.creation custody preserves intent/partial failure/completion and leaves package/evidence absent for the V6 consumer.",
+    "Custom RuntimeError ordinary-signal category propagates out of captured metadata children; cleanup masks repeated ordinary signals while retaining first failure. Failures preserve partial bytes and unique paths; no deletion, overwrite, automatic retry or resume.",
+    "Bootstrap supplies request-SHA argv to exact creator and exact shared transport. Caller remains RP=None; later reviewed action has120s root/128MiB AS/60CPU,150s outer and64KiB output channels.",
+    "V6 can consume canonical plan.json and root0600 promotion.py/candidate/installer without execute bits; it must independently recheck all action-time guards before its two config replacements. No functional V6 change is needed."
+  ],
+  "independentVerification": {
+    "allListedFrozenBytesHashesVerified": true,
+    "bootstrapPayloadByteEqualExact8056": true,
+    "callerRequestPinNullAndConcreteRequestAbsent": true,
+    "fixtures": [
+      {
+        "command": "python3 -I -B -W error /tmp/pow-audit30-coupled-pin-checker-package-creator-v1.test.py",
+        "elapsedSeconds": 0.863,
+        "passed": 16,
+        "path": "/tmp/pow-audit30-coupled-pin-checker-package-creator-v1.test.py"
+      },
+      {
+        "command": "python3 -I -B -W error /tmp/pow-audit30-coupled-pin-checker-package-caller-v1.test.py",
+        "elapsedSeconds": 0.12,
+        "passed": 6,
+        "path": "/tmp/pow-audit30-coupled-pin-checker-package-caller-v1.test.py"
+      }
+    ],
+    "fullCreatorTestsBootstrapCallerPreparationRead": true,
+    "sharedTransportSHAExact": true,
+    "templateApprovalMessagePlanAndPlanSHAUnadmittedNull": true,
+    "threeTemplateCodePayloadsByteEqualPinnedSources": true
+  },
+  "qualifications": [
+    "Positive fixture admission, ownership and filesystem ancestors are deliberately synthetic/temp-user-owned. Actual root-owned node package and actual human provenance are not proven by local fixtures.",
+    "Source schema authentication cannot establish direct-human provenance by itself; Root must bind the actual human message/receipt before any concrete request. No real approval was manufactured.",
+    "Historical full-read expired at12:16:36.156678; observed pretty911a plan is review-only, not executable canonical input. New accepted action-time proof/metadata are mandatory.",
+    "Partial failure before durable custody initialization or custody-storage failure may leave preserved partial directory evidence; no green completion is emitted and automatic retry stays forbidden.",
+    "Configuration creation-only source acceptance is not promotion execution, retirement/unpinning, recovery activation, production repair/cutover or deletion admission. Frozen current Oct3/dual-pin retirement consumer remains a separate gate."
+  ],
+  "schema": "pow-audit30-independent-coupled-pin-checker-package-source-review-v1",
+  "status": "accepted-source-only-tested-creation-preparation"
+}

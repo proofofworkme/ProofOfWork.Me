@@ -1,0 +1,146 @@
+{
+  "baseHead": "87c16cbaad1cb6e22eda78cf6686d9094953638e",
+  "files": [
+    {
+      "bytes": 6450,
+      "path": "/tmp/pow-audit30-independent-action65-manifest-semantic-review-v1.json",
+      "sha256": "e34c08a87706445d8ae3cca1995e2caceed14d7a16a97595b6cccaf9308ea1ff",
+      "type": "json-public-receipt"
+    },
+    {
+      "bytes": 5632,
+      "path": "/tmp/pow-audit30-independent-action65-proposal-links-review-v1.json",
+      "sha256": "5d73c90889630c2ca85f711f5616dedea48f70e6904cb3a30f4ef059f82b401c",
+      "type": "json-public-receipt"
+    },
+    {
+      "bytes": 9981,
+      "path": "/tmp/pow-audit30-independent-action65-actual-preservation-review-v1.json",
+      "sha256": "91beae6e4b669fb39973702b2f6b1f1ae951b92ee01b8d0a434b9bc05736a574",
+      "type": "json-public-receipt"
+    },
+    {
+      "bytes": 41972,
+      "path": "/tmp/pow-audit30-action65-public-custody-intent-v1.json",
+      "sha256": "2e6afee037cb0d6d006560771d39e341a5241de7a3dd8deb0dfd192f1aa4ca40",
+      "type": "json-public-receipt"
+    },
+    {
+      "bytes": 40464,
+      "path": "/tmp/pow-audit30-action65-public-custody-preservation-v1.json",
+      "sha256": "c672fbce47a3ef641281e1822ce5d7bcc3ecb6f3db51d6523bc3e05c1b71f765",
+      "type": "json-public-receipt"
+    },
+    {
+      "bytes": 16571,
+      "path": "/tmp/pow-audit30-coupled-pin-checker-package-bootstrap-v1.py",
+      "sha256": "9ab89e78425903054b9343266c0e22c61fcccf29cf18641be1cedc2a46924d73",
+      "type": "python-source"
+    },
+    {
+      "bytes": 3280,
+      "path": "/tmp/pow-audit30-coupled-pin-checker-package-caller-v1.test.py",
+      "sha256": "c514696e1ae99646a659618f382047fabc701a2c220ad81b988a66d0ee141142",
+      "type": "python-test-source"
+    },
+    {
+      "bytes": 12751,
+      "path": "/tmp/pow-audit30-coupled-pin-checker-package-creator-v1.initial-test-draft.py",
+      "sha256": "8ea8041dbc43863bdd50938c2c1f5aceb35dfbe7dea438ef16a2b4a086a68110",
+      "type": "python-test-source"
+    },
+    {
+      "bytes": 11860,
+      "path": "/tmp/pow-audit30-coupled-pin-checker-package-creator-v1.py",
+      "sha256": "8056f85ba5e5d45057df5233e7ed4cb880aa2687f6d8895a8ed647ff2902b9ff",
+      "type": "python-source"
+    },
+    {
+      "bytes": 12796,
+      "path": "/tmp/pow-audit30-coupled-pin-checker-package-creator-v1.test.py",
+      "sha256": "a68f1e336892c6db658ca48b994f783b479438c94481ef5c88110764d768f78c",
+      "type": "python-test-source"
+    },
+    {
+      "bytes": 79922,
+      "path": "/tmp/pow-audit30-coupled-pin-checker-package-request-template-v1.json",
+      "sha256": "acdec2b44ee480d367d674016259773575f449c5b55769500027b9fec52fd6f8",
+      "type": "json-public-receipt"
+    },
+    {
+      "bytes": 1850,
+      "path": "/tmp/pow-audit30-coupled-pin-checker-package-transport-preparation-v1.py",
+      "sha256": "c9a3d2bad52fb9214ef366e17dedc64dffec436279cf5c22dfa875cb3824792e",
+      "type": "python-source"
+    },
+    {
+      "bytes": 8259,
+      "path": "/tmp/pow-audit30-coupled-pin-checker-package-source-preparation-v1.json",
+      "sha256": "848200cd794f642dfa988ff2a2283d7b26c78b79896e02f118ed0369c684dcc8",
+      "type": "json-public-receipt"
+    },
+    {
+      "bytes": 6581,
+      "path": "/tmp/pow-audit30-independent-coupled-pin-checker-package-source-review-v1.json",
+      "sha256": "ad45b0358a8841b37b2988a2f126cd202c011c7d680fb9e5b8b186509ca51859",
+      "type": "json-public-receipt"
+    },
+    {
+      "bytes": 3640,
+      "path": "/tmp/pow-audit30-root-coupled-pin-checker-package-source-review-v1.json",
+      "sha256": "30362c99a4d983111b0bb9133564979262ed6fb626328332e56af08cc2c34391",
+      "type": "json-public-receipt"
+    },
+    {
+      "bytes": 2238,
+      "path": "/tmp/pow-audit30-dual-pin-checker-final-approval-request-v1.json",
+      "sha256": "ab1b143642833c3a727b4d648f5814add94ed3575cc8e5073338f3ff99371c49",
+      "type": "json-public-receipt"
+    },
+    {
+      "bytes": 7764,
+      "path": "/tmp/pow-audit30-append-action66-v1.py",
+      "sha256": "68cd36dabd0109afff4b5c124c10c45677e2907c9afdbb70127e3688cac06337",
+      "type": "python-source"
+    }
+  ],
+  "item7Checkpoint": {
+    "actualHumanReceiptCreated": false,
+    "additionalDeletion": false,
+    "canonicalFinalPlanRequestCreated": false,
+    "complete": false,
+    "creatorPeerReview": {
+      "bytes": 6581,
+      "path": "/tmp/pow-audit30-independent-coupled-pin-checker-package-source-review-v1.json",
+      "sha256": "ad45b0358a8841b37b2988a2f126cd202c011c7d680fb9e5b8b186509ca51859",
+      "type": "json-public-receipt"
+    },
+    "creatorRootReview": {
+      "bytes": 3640,
+      "path": "/tmp/pow-audit30-root-coupled-pin-checker-package-source-review-v1.json",
+      "sha256": "30362c99a4d983111b0bb9133564979262ed6fb626328332e56af08cc2c34391",
+      "type": "json-public-receipt"
+    },
+    "finalRequestReceipt": {
+      "bytes": 2238,
+      "path": "/tmp/pow-audit30-dual-pin-checker-final-approval-request-v1.json",
+      "sha256": "ab1b143642833c3a727b4d648f5814add94ed3575cc8e5073338f3ff99371c49",
+      "type": "json-public-receipt"
+    },
+    "historicalFullReadFreshnessExpired": true,
+    "nativePackageCreated": false,
+    "productionDataMutation": false,
+    "promotionPerformed": false,
+    "recoveryConfigurationMutation": false,
+    "status": "creation-only-package-source-tested-and-independently-reviewed;final-two-file-config-approval-requested-pending"
+  },
+  "requestReceipt": {
+    "bytes": 2238,
+    "path": "/tmp/pow-audit30-dual-pin-checker-final-approval-request-v1.json",
+    "sha256": "ab1b143642833c3a727b4d648f5814add94ed3575cc8e5073338f3ff99371c49",
+    "type": "json-public-receipt"
+  },
+  "schema": "pow-audit30-action66-fixed-public-manifest-v1",
+  "summary": "Record independently accepted creation-only V6 package preparation and the actual dispatched final two-file recovery-protection approval request. The exact six root0600 members/root0700 package and sibling O_EXCL creation custody are tested with16+6 fixtures; privilege and positive admission fixtures remain explicitly synthetic. Fresh actual human message/receipt, canonical plan/request, new900-second proof and current four restore/static/unit/mask/lock metadata remain mandatory before native admission. No actual payload/package/config change exists. This supersedes only Action65 unfinished creator-source preparation status, without rewriting that historical checkpoint. Preserve Action65 external semantic/actual/link/intent/receipt evidence and all65 prior actions/872 custody rows/one prior body16 request/allauthorization and global representations. New request dispatch is not approval; both approvals are pending. No production data/configuration, API/worker/UI cutover, recovery activation or additional deletion performed. Allremaining4\u20138 stay incomplete.",
+  "trackerNote": "- Action 66: The small creation-only package wrapper for the [reviewed two-file backup-protection proposal](2026-10-03-audit30-oct3-pin-checker-promotion-proposal.md) has now passed Root and independent review, with 16 creator and 6 caller fixtures. It creates only six root-owned files in an unused private package plus separate creation receipts, and never invokes promotion. Positive local privilege/admission fixtures are synthetic. This closes Action 65\u2019s creator-source preparation gap; its earlier status remains dated evidence. Actual human provenance, a new fresh backup proof, current file/service/lock and four restore-receipt fences, and an independently reviewed final canonical plan/request are still required before native admission. Root presented the exact reserved configuration scope through the accepted approval tool: preserve September 29, add verified October 3, update only the reviewed checker, and allow only its recognized-byte configuration failure inverse. The request is pending; tool acceptance is not human approval. The separate 16-body repair request remains pending. Neither request authorizes deletion or WAL/PITR activation. All prior actions, custody, authorizations and May 9 operator-confirmed paid/no-IDs status are preserved. Items 4\u20138 remain incomplete; no production data, configuration, deployment or deletion changed."
+}

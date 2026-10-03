@@ -1,0 +1,158 @@
+{
+  "admissionBeforeAnyCreation": [
+    "Root-custodied actual direct-human message raw SHA and closed canonical approval receipt bound to V6 caller/SCOPE/inverse/no expanded authority.",
+    "Exact fixed controller, candidate and installer bytes; exact six payload names, aggregate/individual length and SHA constraints.",
+    "Canonical compact plan and separately Root-reviewed typed raw plan/request hashes; closed public metadata-only plan fields.",
+    "Actual chosen base absence or full metadata, safe canonical root ancestors and unique package/custody paths.",
+    "Fresh bounded Oct3 full-read receipt age<=900 seconds; exact four accepted restore receipt raw hashes and metadata.",
+    "Current original installed Sep29 pin/checker, static files, prune mask, idle monitor, original five, inactive WAL and ordinary-backup window via unchanged V6 guards.",
+    "Exact current OPS/backup lock metadata, existing nonblocking locks with postflock path/descriptor identity."
+  ],
+  "authority": {
+    "deletionAuthorized": false,
+    "humanApprovalFabricated": false,
+    "nativeExecuted": false,
+    "packageCreatedOnNode": false,
+    "productionDataMutations": false,
+    "promotionExecuted": false,
+    "repoMutations": false,
+    "timerHoldPruneOrWALChange": false
+  },
+  "bindings": {
+    "/home/sixer/ProofOfWork.Me/deploy/audit30/install-retention.py": {
+      "bytes": 12913,
+      "sha256": "cd9c266e938d22949c9f0c6a48853933d9bcbb58368071b2da4027f13411eaa5"
+    },
+    "/tmp/pow-audit30-coupled-pin-checker-observed-review-plan-v6.json": {
+      "bytes": 9111,
+      "sha256": "911a77fc317f4a7a8c388e424172a0a4afe88fd8861efb7c9b0b979ab79431dc"
+    },
+    "/tmp/pow-audit30-coupled-pin-checker-package-bootstrap-v1.py": {
+      "bytes": 16571,
+      "sha256": "9ab89e78425903054b9343266c0e22c61fcccf29cf18641be1cedc2a46924d73"
+    },
+    "/tmp/pow-audit30-coupled-pin-checker-package-caller-v1.test.py": {
+      "bytes": 3280,
+      "sha256": "c514696e1ae99646a659618f382047fabc701a2c220ad81b988a66d0ee141142"
+    },
+    "/tmp/pow-audit30-coupled-pin-checker-package-creator-v1.initial-test-draft.py": {
+      "bytes": 12751,
+      "sha256": "8ea8041dbc43863bdd50938c2c1f5aceb35dfbe7dea438ef16a2b4a086a68110"
+    },
+    "/tmp/pow-audit30-coupled-pin-checker-package-creator-v1.py": {
+      "bytes": 11860,
+      "sha256": "8056f85ba5e5d45057df5233e7ed4cb880aa2687f6d8895a8ed647ff2902b9ff"
+    },
+    "/tmp/pow-audit30-coupled-pin-checker-package-creator-v1.test.py": {
+      "bytes": 12796,
+      "sha256": "a68f1e336892c6db658ca48b994f783b479438c94481ef5c88110764d768f78c"
+    },
+    "/tmp/pow-audit30-coupled-pin-checker-package-request-template-v1.json": {
+      "bytes": 79922,
+      "sha256": "acdec2b44ee480d367d674016259773575f449c5b55769500027b9fec52fd6f8"
+    },
+    "/tmp/pow-audit30-coupled-pin-checker-package-transport-preparation-v1.py": {
+      "bytes": 1850,
+      "sha256": "c9a3d2bad52fb9214ef366e17dedc64dffec436279cf5c22dfa875cb3824792e"
+    },
+    "/tmp/pow-audit30-coupled-pin-checker-promotion-v6.py": {
+      "bytes": 25752,
+      "sha256": "dfa403996e776a8ed192a024848b06f71b5fa041a24bf5b9687ff04ce3714535"
+    },
+    "/tmp/pow-audit30-oct3-pin-checker-promotion-proposal-v2.md": {
+      "bytes": 9457,
+      "sha256": "cd5852c4b9415f60104b6bc72c82e580e003f000219844ef3a694d6ae86507ec"
+    },
+    "/tmp/pow-audit30-retention-protection-oct3-dual-pin-candidate-v1.py": {
+      "bytes": 20718,
+      "sha256": "795f1308b74ddc69a022ce7e1413fb4698a82e6cfb14265931d1951ee603c908"
+    }
+  },
+  "creationAndClosure": [
+    "Create only exact new root700 base if typed as absent, unique root700 package and sibling creation custody.",
+    "Reuse raw-pinned reviewed I.directory/I.exclusive/fsync primitives; six O_EXCL root600 regular files and bounded stable descriptor/name/full-byte verification.",
+    "Durable O_EXCL intent before package members; durable completion only after exact six-member tree, fresh repeated admission and source bytes still match.",
+    "On failure retain all evidence/partial package and emit durable failure when owned custody remains available; no removal, overwrite, resume or automatic retry.",
+    "Custom RuntimeError signals during metadata children and ordinary signal masking during failure custody; no remote-stop assertion from outer transport."
+  ],
+  "firstFixtureCorrection": {
+    "initialCases": 16,
+    "initialDraftPreserved": "/tmp/pow-audit30-coupled-pin-checker-package-creator-v1.initial-test-draft.py",
+    "initialErrors": 3,
+    "initialFailures": 2,
+    "nativeFailure": false,
+    "reason": "Temporary test OPS/BACKUP paths were retargeted without corresponding synthetic plan lockMetadata keys. Fixture mapping corrected; creator source was unchanged by this correction."
+  },
+  "futureReadiness": {
+    "actualRequestCreated": false,
+    "approvalPayload": null,
+    "bootstrapExactSourceVerified": true,
+    "callerRequestPin": null,
+    "canonicalPlanPayload": null,
+    "freshNativeAdmissionAccepted": false,
+    "independentPeerPending": true,
+    "messagePayload": null,
+    "rootFullFreezeReviewPending": true
+  },
+  "limits": {
+    "boundedUnitMetadataChildrenSeconds": 5,
+    "decodedAggregateMaximumBytes": 262144,
+    "eachOutputMaximumBytes": 65536,
+    "noNewSupervisorOrUnitCreated": true,
+    "onlyExistingCheckerSeconds": 20,
+    "outerSharedTransportSeconds": 150,
+    "rootAddressSpaceBytes": 134217728,
+    "rootCPUSeconds": 60,
+    "rootWholeSeconds": 120,
+    "typedInputMaximumBytes": 524288
+  },
+  "remainingConcreteBlockers": [
+    "Actual user decision/message/receipt and canonical approved plan/typed request do not exist. Root must authenticate actual human provenance; closed schemas alone are not authentication.",
+    "Observed historical21733-byte full-read expired at12:16:36.156678 UTC. A genuinely new reviewed bounded proof and fresh action-time metadata are required; dates are not rewritten.",
+    "Actual root-owned base presence/metadata and native package creation/closure remain unobserved. Local positive fixtures deliberately substitute a temporary user-owned filesystem and synthetic admission.",
+    "The original V6 execute must independently revalidate freshness, all static/unit/mask/lock predicates, package bytes and current authority before any replacement. Creation success is not promotion execution authority.",
+    "Reserved configuration failure inverse is known-byte-only; retirement, unpinning Sep29, recovery activation, production body repair and service cutover remain separate gates."
+  ],
+  "reviewedNativeConsumer": {
+    "controllerSha256": "dfa403996e776a8ed192a024848b06f71b5fa041a24bf5b9687ff04ce3714535",
+    "creationCustodySibling": "<fresh-approved-run>.creation",
+    "evidenceChildMustRemainAbsent": true,
+    "exactSixMemberNames": [
+      "promotion.py",
+      "retention-checker-oct3-dual-pin.py",
+      "install-retention.py",
+      "approval.json",
+      "human-approval-message.txt",
+      "plan.json"
+    ],
+    "fileMode": 384,
+    "gid": 0,
+    "nlink": 1,
+    "package": "/usr/local/lib/proofofwork-audit30-pin-promotion/<fresh-approved-run>",
+    "packageMode": 448,
+    "promotionNotInvokedByCreator": true,
+    "uid": 0
+  },
+  "schema": "pow-audit30-coupled-pin-checker-package-source-preparation-v1",
+  "status": "source-only-tested-native-unexecuted",
+  "tests": [
+    {
+      "meaningfulActualVectors": [
+        "O_EXCL overwrite refusal, type/alias/hardlink/mode/full-byte verification",
+        "six-file creation with promotion evidence absent",
+        "partial member and post-admission failure durable intent/failed and no completed",
+        "SIGINT/SIGTERM terminate and reap a blocked child, repeated cleanup signals ignored"
+      ],
+      "passed": 16,
+      "path": "/tmp/pow-audit30-coupled-pin-checker-package-creator-v1.test.py",
+      "scope": "synthetic in-memory approval and temporary user-owned filesystem, mock admission/owners; no native root authority",
+      "seconds": 0.872
+    },
+    {
+      "passed": 6,
+      "path": "/tmp/pow-audit30-coupled-pin-checker-package-caller-v1.test.py",
+      "scope": "exact decoded bootstrap/source/template/shared-helper/null caller plus actual local null-caller refusal process",
+      "seconds": 0.119
+    }
+  ]
+}

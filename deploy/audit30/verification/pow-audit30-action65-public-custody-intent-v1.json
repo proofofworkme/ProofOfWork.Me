@@ -1,0 +1,777 @@
+{
+  "atUtc": "2026-10-03T12:43:40.891067+00:00",
+  "baseHead": "4df964287d9f326845bc22d5d4f454f7a2cadf74",
+  "baseline": [
+    {
+      "bytes": 16637332,
+      "path": "/home/sixer/ProofOfWork.Me/audits/2026-10-02-audit30-remaining-phase-execution.evidence.json",
+      "sha256": "c58f1dea28776fe72e7840a2f654aed7bfba75953784ec2f81cefc4fc88dabaa"
+    },
+    {
+      "bytes": 354375,
+      "path": "/home/sixer/ProofOfWork.Me/deploy/audit30/verification/source-custody.json",
+      "sha256": "f7a1935af6c05aff567f6309cc2d30b307a197ddb0d1c529e69c95020e77474e"
+    },
+    {
+      "bytes": 79895,
+      "path": "/home/sixer/ProofOfWork.Me/audits/2026-10-02-audit30-followup-tracker.md",
+      "sha256": "9f2d5ac777b9d81deb8176a11609e9f45b1d5e89d00d07553888c0707523a7cb"
+    },
+    {
+      "bytes": 10923,
+      "path": "/home/sixer/ProofOfWork.Me/repository-hygiene.json",
+      "sha256": "8ba228d9365585e412172c50fab0a59f2337f298f6f6626e9cf2e91002482bdf"
+    }
+  ],
+  "manifestSha256": "1232acc23a1d04e83e206b282489253673972cda18b1a5d6597093dbe2314f24",
+  "newRows": [
+    {
+      "bytes": 40917,
+      "originalPath": "/tmp/pow-audit30-action64-public-custody-intent-v1.json",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-action64-public-custody-intent-v1.json",
+      "sha256": "1448adad06e296a2b730df6ff85ee8297283030682721c6bd593227c9a3f33c7"
+    },
+    {
+      "bytes": 39633,
+      "originalPath": "/tmp/pow-audit30-action64-public-custody-preservation-v1.json",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-action64-public-custody-preservation-v1.json",
+      "sha256": "84d5aca9330383e9c4e79f453ce121b85721998155a2dd255e816a7f5a3f4b64"
+    },
+    {
+      "bytes": 32389,
+      "originalPath": "/tmp/pow-audit30-action65-fixed-public-manifest-v1.json",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-action65-fixed-public-manifest-v1.json",
+      "sha256": "1232acc23a1d04e83e206b282489253673972cda18b1a5d6597093dbe2314f24"
+    },
+    {
+      "bytes": 9557,
+      "originalPath": "/tmp/pow-audit30-append-action65-v1.py",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-append-action65-v1.py",
+      "sha256": "ec066ac798c896bdb19463b9718ae6f82874ed85ce793ae3bfd80add8d805c1f"
+    },
+    {
+      "bytes": 4682,
+      "originalPath": "/tmp/pow-audit30-append-action65-v2.diff",
+      "rawBytes": 3292,
+      "rawSha256": "3f79b2f7c04726eb603aa08e69efa0000e5e9d71a7db850fbc8683a075a10101",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-append-action65-v2.diff.evidence.json",
+      "representation": "closed-base64-envelope-preserves-exact-raw-input",
+      "sha256": "bf053b829fe73c068ec8b66825b24f5f4197026e1886568464931b44201e3a2e"
+    },
+    {
+      "bytes": 9924,
+      "originalPath": "/tmp/pow-audit30-append-action65-v2.py",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-append-action65-v2.py",
+      "sha256": "0584216e1275a0a111b2090e772df6b514cee61fcf6c09ccf979a5a6ca3c4963"
+    },
+    {
+      "bytes": 1642,
+      "originalPath": "/tmp/pow-audit30-append-action65-v3.diff",
+      "rawBytes": 1013,
+      "rawSha256": "39aa09cc6a3aa24d9f4074588a13cec85f0de07faf88f466eee791a9f0bafefa",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-append-action65-v3.diff.evidence.json",
+      "representation": "closed-base64-envelope-preserves-exact-raw-input",
+      "sha256": "5f2d7be6cec9216170ba4662c886a0c934930c049bb4a6e068b4f1916fb5a853"
+    },
+    {
+      "bytes": 9925,
+      "originalPath": "/tmp/pow-audit30-append-action65-v3.py",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-append-action65-v3.py",
+      "sha256": "bda019726b87188725686f8b16a4959cefc498f8ed57501aa67cf76473120fb1"
+    },
+    {
+      "bytes": 3678,
+      "originalPath": "/tmp/pow-audit30-append-action65-v4.diff",
+      "rawBytes": 2539,
+      "rawSha256": "6f36688322b283d216e45d54b7fa2df0c7c6a8f419a87c65631c26691809dc77",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-append-action65-v4.diff.evidence.json",
+      "representation": "closed-base64-envelope-preserves-exact-raw-input",
+      "sha256": "1beb00f91a13a74afa8409287cd552ae66c65463942e2b30daca55f19ef96683"
+    },
+    {
+      "bytes": 9925,
+      "originalPath": "/tmp/pow-audit30-append-action65-v4.py",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-append-action65-v4.py",
+      "sha256": "9423a4f147f22eb9cba32571c11f1066b546f710991b5f943e1c209cf677515f"
+    },
+    {
+      "bytes": 5825,
+      "originalPath": "/tmp/pow-audit30-build-dual-pin-promotion-v6.py",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-build-dual-pin-promotion-v6.py",
+      "sha256": "1e2c40dada19968d45bcc4c288eb1d1719bcb4bd4c57b5512e1339cfc344c0fe"
+    },
+    {
+      "bytes": 7938,
+      "originalPath": "/tmp/pow-audit30-coupled-pin-checker-dual-pin-local-preparation-v6.json",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-coupled-pin-checker-dual-pin-local-preparation-v6.json",
+      "sha256": "84a5a98b79e392391dd61999452038bff2b0e862d616b0c64344ba3ca960d475"
+    },
+    {
+      "bytes": 9111,
+      "originalPath": "/tmp/pow-audit30-coupled-pin-checker-observed-review-plan-v6.json",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-coupled-pin-checker-observed-review-plan-v6.json",
+      "sha256": "911a77fc317f4a7a8c388e424172a0a4afe88fd8861efb7c9b0b979ab79431dc"
+    },
+    {
+      "bytes": 2391,
+      "originalPath": "/tmp/pow-audit30-coupled-pin-checker-promotion-plan-template-v6.json",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-coupled-pin-checker-promotion-plan-template-v6.json",
+      "sha256": "7dac36c440b96174bde59c14dc19de17d111bd95e86fc7bb5eaa61c0bd4249dc"
+    },
+    {
+      "bytes": 4776,
+      "originalPath": "/tmp/pow-audit30-coupled-pin-checker-promotion-v6.diff",
+      "rawBytes": 3354,
+      "rawSha256": "c72d22aa6f673092ec0ae79017f2558b4ff0122105bc506183e765cc54558926",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-coupled-pin-checker-promotion-v6.diff.evidence.json",
+      "representation": "closed-base64-envelope-preserves-exact-raw-input",
+      "sha256": "733ca92b202c55812d64b47124de79d854d97df4ffa36b4799c114fb1c80ad54"
+    },
+    {
+      "bytes": 25752,
+      "originalPath": "/tmp/pow-audit30-coupled-pin-checker-promotion-v6.py",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-coupled-pin-checker-promotion-v6.py",
+      "sha256": "dfa403996e776a8ed192a024848b06f71b5fa041a24bf5b9687ff04ce3714535"
+    },
+    {
+      "bytes": 27492,
+      "originalPath": "/tmp/pow-audit30-coupled-pin-checker-promotion-v6.test.py",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-coupled-pin-checker-promotion-v6.test.py",
+      "sha256": "dff5978a05855b77885d0b5d9ec2e9808e0d2193d153fcbf5257043ff504889d"
+    },
+    {
+      "bytes": 4219,
+      "originalPath": "/tmp/pow-audit30-coupled-promotion-state-observer-local-preparation-v1.json",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-coupled-promotion-state-observer-local-preparation-v1.json",
+      "sha256": "218052de9e6ef86b29e6116e6e501ca1506d80f4e166c80ae5e381255e1324f1"
+    },
+    {
+      "bytes": 1684,
+      "originalPath": "/tmp/pow-audit30-coupled-promotion-state-observer-native-v1.json",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-coupled-promotion-state-observer-native-v1.json",
+      "sha256": "320f354aebe2d106ee09ca78b04a0cbabfd7bb844e762e32563619a0b77ee451"
+    },
+    {
+      "bytes": 325,
+      "originalPath": "/tmp/pow-audit30-coupled-promotion-state-observer-native-v1.stderr",
+      "rawBytes": 0,
+      "rawSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-coupled-promotion-state-observer-native-v1.stderr.evidence.json",
+      "representation": "closed-base64-envelope-preserves-exact-raw-input",
+      "sha256": "7502b87cc15585a3a59de66cbd8306c53a40d93aedf16a82ca6514f3027b32aa"
+    },
+    {
+      "bytes": 8370,
+      "originalPath": "/tmp/pow-audit30-coupled-promotion-state-observer-native-v1.stdout",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-coupled-promotion-state-observer-native-v1.stdout.json",
+      "sha256": "00ac40c9e3f8287ea708a9b90890edff3590e97fe09e584f8c5582565d3a6e92"
+    },
+    {
+      "bytes": 6899,
+      "originalPath": "/tmp/pow-audit30-coupled-promotion-state-observer-request-v1.json",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-coupled-promotion-state-observer-request-v1.json",
+      "sha256": "da4794e527239dda342afb318cae726a4fa36116a53322cf609ed86d8557d928"
+    },
+    {
+      "bytes": 43527,
+      "originalPath": "/tmp/pow-audit30-coupled-promotion-state-observer-v1.initial-draft.py",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-coupled-promotion-state-observer-v1.initial-draft.py",
+      "sha256": "c0b8d72bb87400b832ec817b3898147c207ee052f2639c1bb57f636aa4a0414e"
+    },
+    {
+      "bytes": 823,
+      "originalPath": "/tmp/pow-audit30-coupled-promotion-state-observer-v1.initial-fixture-checkpoint.json",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-coupled-promotion-state-observer-v1.initial-fixture-checkpoint.json",
+      "sha256": "719f9e20420a1190e3acf0a81356231e67ec3c15db7923a4b0f5034d7736db1f"
+    },
+    {
+      "bytes": 7320,
+      "originalPath": "/tmp/pow-audit30-coupled-promotion-state-observer-v1.initial-test-draft.py",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-coupled-promotion-state-observer-v1.initial-test-draft.py",
+      "sha256": "52756c01e8154614e8fd26104fac3dbba84cff547000fc7f896c67b2185fec35"
+    },
+    {
+      "bytes": 43767,
+      "originalPath": "/tmp/pow-audit30-coupled-promotion-state-observer-v1.py",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-coupled-promotion-state-observer-v1.py",
+      "sha256": "47b822552521ccff65a8e1b32157091d01d0a68130971bd2da402102b20c5dec"
+    },
+    {
+      "bytes": 7695,
+      "originalPath": "/tmp/pow-audit30-coupled-promotion-state-observer-v1.test.py",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-coupled-promotion-state-observer-v1.test.py",
+      "sha256": "e07a8143bee7b2baddd1eb6a3ed8e9a7f3fc107c54562a1716366aa9022fce1a"
+    },
+    {
+      "bytes": 1952,
+      "originalPath": "/tmp/pow-audit30-current2-request-binding-v1.json",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-current2-request-binding-v1.json",
+      "sha256": "bc15f67fb58d474d1325019082984663d1e1999cf0cdf142d8d0d9bc4fc731ff"
+    },
+    {
+      "bytes": 7725,
+      "originalPath": "/tmp/pow-audit30-dual-pin-checker-human-proposal-draft-v6.json",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-dual-pin-checker-human-proposal-draft-v6.json",
+      "sha256": "c301a7b4f24d0236c77f8ff54a5a2d425ac273d2f55309c43267ffe98a6aa2bb"
+    },
+    {
+      "bytes": 3173,
+      "originalPath": "/tmp/pow-audit30-dual-pin-checker-proposal-state-update-v1.json",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-dual-pin-checker-proposal-state-update-v1.json",
+      "sha256": "1f606af7b0a2c1a4f81acf54af8427a259b0424923403bdf92f5e6b832ae73f8"
+    },
+    {
+      "bytes": 7081,
+      "originalPath": "/tmp/pow-audit30-independent-action64-actual-preservation-review-v1.json",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-independent-action64-actual-preservation-review-v1.json",
+      "sha256": "b33cd813ea24bbfac8850c82f989ace780d69c580ec0e396d4a12790caa7d7d6"
+    },
+    {
+      "bytes": 24776,
+      "originalPath": "/tmp/pow-audit30-independent-action64-extra-semantic-binding-review-v1.json",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-independent-action64-extra-semantic-binding-review-v1.json",
+      "sha256": "2111297d53e14024c042fba2aa2d580baa597a26ee0ae83959c91a2b229d0c9c"
+    },
+    {
+      "bytes": 3164,
+      "originalPath": "/tmp/pow-audit30-independent-action65-helper-source-review-v1.json",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-independent-action65-helper-source-review-v1.json",
+      "sha256": "298847d7ac9395b49cfe4fbfb97fc9a0aa6b944f0210daac2e82456cc42fc3fc"
+    },
+    {
+      "bytes": 2558,
+      "originalPath": "/tmp/pow-audit30-independent-action65-helper-source-review-v2.json",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-independent-action65-helper-source-review-v2.json",
+      "sha256": "7f1e00ce2b88dfbe2fd235491636bacfbae4f2b4f0c8c0290ea6b67d83fd8626"
+    },
+    {
+      "bytes": 1938,
+      "originalPath": "/tmp/pow-audit30-independent-action65-helper-source-review-v3.json",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-independent-action65-helper-source-review-v3.json",
+      "sha256": "8a75340d4cc15f57fdc237d6db3db83c666f540378903300910b3f12c71aacf4"
+    },
+    {
+      "bytes": 2634,
+      "originalPath": "/tmp/pow-audit30-independent-action65-helper-source-review-v4.json",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-independent-action65-helper-source-review-v4.json",
+      "sha256": "8fd8526f7ca84dfe73b154b89897743f9b869f5eb170cc5a7fea7c78f0938ea7"
+    },
+    {
+      "bytes": 6963,
+      "originalPath": "/tmp/pow-audit30-independent-coupled-observed-review-plan-v6.json",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-independent-coupled-observed-review-plan-v6.json",
+      "sha256": "2e6a77b6e017599fdea1e45d0ba4c323edf523f46d712237138284546757b8e9"
+    },
+    {
+      "bytes": 5451,
+      "originalPath": "/tmp/pow-audit30-independent-coupled-pin-checker-promotion-source-review-v6.json",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-independent-coupled-pin-checker-promotion-source-review-v6.json",
+      "sha256": "39d49acbecdce34149190330f9b75991e88fc26dc7255d430794087f5ac449d3"
+    },
+    {
+      "bytes": 4789,
+      "originalPath": "/tmp/pow-audit30-independent-coupled-promotion-state-actual-review-v1.json",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-independent-coupled-promotion-state-actual-review-v1.json",
+      "sha256": "da1559f7cc478864d586c38c015512698f00c609fd0ed92251ebb5309eea39b9"
+    },
+    {
+      "bytes": 4883,
+      "originalPath": "/tmp/pow-audit30-independent-coupled-promotion-state-observer-source-review-v1.json",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-independent-coupled-promotion-state-observer-source-review-v1.json",
+      "sha256": "879c3f9b341370ec693b8d79d0f9c4f0b1ce503ebd4d7b1527c52be01acdd009"
+    },
+    {
+      "bytes": 4137,
+      "originalPath": "/tmp/pow-audit30-independent-current2-request-binding-review-v1.json",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-independent-current2-request-binding-review-v1.json",
+      "sha256": "d42e6fa1bc6cc59fd3d82e8e8fad24f1218f9b6c3d117227f0818c0ee15528cc"
+    },
+    {
+      "bytes": 7428,
+      "originalPath": "/tmp/pow-audit30-independent-fresh-oct3-full-read-actual-review-v1.json",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-independent-fresh-oct3-full-read-actual-review-v1.json",
+      "sha256": "c7296b9a6c4e11d24157c5ac4c1b83ffe2a403f87573c966cfe378c334f01f19"
+    },
+    {
+      "bytes": 6188,
+      "originalPath": "/tmp/pow-audit30-independent-readable-pin-checker-proposal-review-v1.json",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-independent-readable-pin-checker-proposal-review-v1.json",
+      "sha256": "10dd7b5c3f0b55d155a73103f3b40276506960a618340f14e8f4b08117b3142b"
+    },
+    {
+      "bytes": 4345,
+      "originalPath": "/tmp/pow-audit30-independent-readable-pin-checker-proposal-review-v2.json",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-independent-readable-pin-checker-proposal-review-v2.json",
+      "sha256": "89039d08fd906a6f6d591f0adc1f85c11c53d3ea5c4d9a1ced665b8706eeed30"
+    },
+    {
+      "bytes": 6900,
+      "originalPath": "/tmp/pow-audit30-independent-retained-repair-bridge-actual-review-v5.json",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-independent-retained-repair-bridge-actual-review-v5.json",
+      "sha256": "05d0a2e251651647d3fb370f4b3b5be542d6b09a55444b8e83a7eb3c65a6025d"
+    },
+    {
+      "bytes": 6067,
+      "originalPath": "/tmp/pow-audit30-independent-retained-repair-bridge-source-review-v4.json",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-independent-retained-repair-bridge-source-review-v4.json",
+      "sha256": "a36e8d3011fe63b748beb29b349d7a073e5ee5b24a12324f3bf833704f630d9d"
+    },
+    {
+      "bytes": 5831,
+      "originalPath": "/tmp/pow-audit30-independent-retained-repair-bridge-source-review-v5.json",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-independent-retained-repair-bridge-source-review-v5.json",
+      "sha256": "880983270ae09082fee9091024654e52c2d4f153b2d2a61476c64659c9093c5f"
+    },
+    {
+      "bytes": 3604,
+      "originalPath": "/tmp/pow-audit30-independent-retirement-observed-custody-source-review-v4.json",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-independent-retirement-observed-custody-source-review-v4.json",
+      "sha256": "2efae4bf0257998c2f70736b17cb7e4a3d684632309cc09784baef80b0404949"
+    },
+    {
+      "bytes": 3394,
+      "originalPath": "/tmp/pow-audit30-independent-single-pin-unprotection-risk-review-v1.json",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-independent-single-pin-unprotection-risk-review-v1.json",
+      "sha256": "8cb9a289c7ecdf5d67bd17cb1fdf026954394df5c946a9212a4fe8625713575d"
+    },
+    {
+      "bytes": 21733,
+      "originalPath": "/tmp/pow-audit30-oct3-promotion-full-read-leaf-120000-reconstructed-v1.json",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-oct3-promotion-full-read-leaf-120000-reconstructed-v1.json",
+      "sha256": "0e6ad763e4a1088911d89fac7d18786bd69ded8a94be203827ec348bfc9084ab"
+    },
+    {
+      "bytes": 1986,
+      "originalPath": "/tmp/pow-audit30-promotion-full-read-native-120000-current2-v1.json",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-promotion-full-read-native-120000-current2-v1.json",
+      "sha256": "84ccf0d32fc05f6e1e7a95a94132b921c49070f6641d5979f23f290f9e348abe"
+    },
+    {
+      "bytes": 328,
+      "originalPath": "/tmp/pow-audit30-promotion-full-read-native-120000-current2-v1.stderr",
+      "rawBytes": 0,
+      "rawSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-promotion-full-read-native-120000-current2-v1.stderr.evidence.json",
+      "representation": "closed-base64-envelope-preserves-exact-raw-input",
+      "sha256": "3bd89a69e95fcb68cb133596d0b3cbabd6c840aa5fe7d7d950a565a2716ef8b7"
+    },
+    {
+      "bytes": 32091,
+      "originalPath": "/tmp/pow-audit30-promotion-full-read-native-120000-current2-v1.stdout",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-promotion-full-read-native-120000-current2-v1.stdout.json",
+      "sha256": "92d976261c28b0c6782d2c15ec9b5c9217cd19f1d4034db9b89946e15de6ffac"
+    },
+    {
+      "bytes": 14381,
+      "originalPath": "/tmp/pow-audit30-promotion-full-read-request-current2-v1.json",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-promotion-full-read-request-current2-v1.json",
+      "sha256": "eda065722223635f6fdd11a7e3e601d8d24188074cd09dba5837a736f9de9fb6"
+    },
+    {
+      "bytes": 12673,
+      "originalPath": "/tmp/pow-audit30-readable-pin-checker-proposal-preimage-v1.json",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-readable-pin-checker-proposal-preimage-v1.json",
+      "sha256": "08b262f4d6111d8be6aa2e6255bd64cca383577538cdb2bec782d6280168daa0"
+    },
+    {
+      "bytes": 6261,
+      "originalPath": "/tmp/pow-audit30-readable-pin-checker-proposal-text-v2.diff",
+      "rawBytes": 4462,
+      "rawSha256": "b0d8242da2c28d2f0b75c6efc52ffcb74e38f19f11084610b059a497c19d9f1e",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-readable-pin-checker-proposal-text-v2.diff.evidence.json",
+      "representation": "closed-base64-envelope-preserves-exact-raw-input",
+      "sha256": "e71ec2f54c5c713bec763bef1430341d84297762fea4b617d337ec106dd7b6e1"
+    },
+    {
+      "bytes": 7970,
+      "originalPath": "/tmp/pow-audit30-retained-repair-bridge-monitor-binding-source-preparation-v4.json",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-retained-repair-bridge-monitor-binding-source-preparation-v4.json",
+      "sha256": "a5e901090cbf5a57de2ddbc4c813608b913563607fcf5d1a5b43e71a46417a52"
+    },
+    {
+      "bytes": 7218,
+      "originalPath": "/tmp/pow-audit30-retained-repair-bridge-sqlite-definition-source-preparation-v5.json",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-retained-repair-bridge-sqlite-definition-source-preparation-v5.json",
+      "sha256": "33d1dcf869cc958865ec6f388634f023c685bc5f420d23121aea226b0830b1af"
+    },
+    {
+      "bytes": 1727,
+      "originalPath": "/tmp/pow-audit30-retained-repair-context-native-v3.json",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-retained-repair-context-native-v3.json",
+      "sha256": "f6729296d7479df615a796833e96f56be38c6b65b4090eabb04bb73e141351f3"
+    },
+    {
+      "bytes": 316,
+      "originalPath": "/tmp/pow-audit30-retained-repair-context-native-v3.stderr",
+      "rawBytes": 0,
+      "rawSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-retained-repair-context-native-v3.stderr.evidence.json",
+      "representation": "closed-base64-envelope-preserves-exact-raw-input",
+      "sha256": "19c967c59ac17d6d16524191a710a402def9f50352aa9ec915e0952b4f49de40"
+    },
+    {
+      "bytes": 5210,
+      "originalPath": "/tmp/pow-audit30-retained-repair-context-native-v3.stdout",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-retained-repair-context-native-v3.stdout.json",
+      "sha256": "ba2aeb80552cbba4d2737a69120c3906368c019a5661a90ab9f00ae428dc21b4"
+    },
+    {
+      "bytes": 1953,
+      "originalPath": "/tmp/pow-audit30-retained-repair-context-transport-preparation-v3.py",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-retained-repair-context-transport-preparation-v3.py",
+      "sha256": "a381dd96808e6f18f9924cea684ebe254ecf7126078b46ef9aacac64edead11c"
+    },
+    {
+      "bytes": 64611,
+      "originalPath": "/tmp/pow-audit30-retained-repair-dependency-bridge-bootstrap-v4.diff",
+      "rawBytes": 48219,
+      "rawSha256": "134d05b5b0c8b4729a7125f054e12a5d1ab4bd48eb3a68935fc18b6895ca72a5",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-retained-repair-dependency-bridge-bootstrap-v4.diff.evidence.json",
+      "representation": "closed-base64-envelope-preserves-exact-raw-input",
+      "sha256": "b63f5d7a4edd54fb3cc46249752800d540d9248e6f4cbc9fe7a5b9643537363c"
+    },
+    {
+      "bytes": 25244,
+      "originalPath": "/tmp/pow-audit30-retained-repair-dependency-bridge-bootstrap-v4.py",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-retained-repair-dependency-bridge-bootstrap-v4.py",
+      "sha256": "2b036f39e8f76bfa0a6f50f9054393442744c4b3d8a08a00a74a1f6d0d29a6f0"
+    },
+    {
+      "bytes": 67867,
+      "originalPath": "/tmp/pow-audit30-retained-repair-dependency-bridge-bootstrap-v5.diff",
+      "rawBytes": 50659,
+      "rawSha256": "75d953e5c6d1df312a86f6a53d26fd13fbfc4404fe6eb031ee3cedf26e86d85b",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-retained-repair-dependency-bridge-bootstrap-v5.diff.evidence.json",
+      "representation": "closed-base64-envelope-preserves-exact-raw-input",
+      "sha256": "841b2079d4bf1b7ee83236037d2e05c006eee21bbd28e480547c6a18ef2aa054"
+    },
+    {
+      "bytes": 25572,
+      "originalPath": "/tmp/pow-audit30-retained-repair-dependency-bridge-bootstrap-v5.py",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-retained-repair-dependency-bridge-bootstrap-v5.py",
+      "sha256": "4e0cfdf0fd7ce87312810fb11bf1027194c955afd6ced18a9f2b50c44e9f8972"
+    },
+    {
+      "bytes": 3095,
+      "originalPath": "/tmp/pow-audit30-retained-repair-dependency-bridge-caller-v4.test.py",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-retained-repair-dependency-bridge-caller-v4.test.py",
+      "sha256": "e6f1f63aacc7a48bd6e4a6cb5d77933e35a58dc5eb3ea83098155cd9f69d1195"
+    },
+    {
+      "bytes": 3095,
+      "originalPath": "/tmp/pow-audit30-retained-repair-dependency-bridge-caller-v5.test.py",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-retained-repair-dependency-bridge-caller-v5.test.py",
+      "sha256": "071f94ab51bb7d8e2a6564ea2e09e0dcd2366d2a76e752126be0007a6b994dbb"
+    },
+    {
+      "bytes": 1704,
+      "originalPath": "/tmp/pow-audit30-retained-repair-dependency-bridge-native-current2-v3.json",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-retained-repair-dependency-bridge-native-current2-v3.json",
+      "sha256": "9f0c1d998ff1ae24f8e0e76fd44960aeb851e314270dc91202a02668528584da"
+    },
+    {
+      "bytes": 212,
+      "originalPath": "/tmp/pow-audit30-retained-repair-dependency-bridge-native-current2-v3.stderr",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-retained-repair-dependency-bridge-native-current2-v3.stderr.json",
+      "sha256": "c9f5cf00e00edc42fd3e9d643acf51c9bea657867457f1ecdac9794e9e5639b6"
+    },
+    {
+      "bytes": 335,
+      "originalPath": "/tmp/pow-audit30-retained-repair-dependency-bridge-native-current2-v3.stdout",
+      "rawBytes": 0,
+      "rawSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-retained-repair-dependency-bridge-native-current2-v3.stdout.evidence.json",
+      "representation": "closed-base64-envelope-preserves-exact-raw-input",
+      "sha256": "7fea1deea970bbcdd9df9dfe529189bea839229383a64230d93dfd0eb5e841e2"
+    },
+    {
+      "bytes": 1704,
+      "originalPath": "/tmp/pow-audit30-retained-repair-dependency-bridge-native-current3-v4.json",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-retained-repair-dependency-bridge-native-current3-v4.json",
+      "sha256": "b5e26f3706c3ce9fd0f80d0c64628b48a34958be87377572bd4b53345a1c1c64"
+    },
+    {
+      "bytes": 212,
+      "originalPath": "/tmp/pow-audit30-retained-repair-dependency-bridge-native-current3-v4.stderr",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-retained-repair-dependency-bridge-native-current3-v4.stderr.json",
+      "sha256": "3c674fd090b91c467943e16e66d5f88418b801f0dca65e62a8bc0e5bc3e49427"
+    },
+    {
+      "bytes": 335,
+      "originalPath": "/tmp/pow-audit30-retained-repair-dependency-bridge-native-current3-v4.stdout",
+      "rawBytes": 0,
+      "rawSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-retained-repair-dependency-bridge-native-current3-v4.stdout.evidence.json",
+      "representation": "closed-base64-envelope-preserves-exact-raw-input",
+      "sha256": "d3b1cc7d9f79e099a00d9ff825535c99b4cec503358c51a981a8748aa807855e"
+    },
+    {
+      "bytes": 1708,
+      "originalPath": "/tmp/pow-audit30-retained-repair-dependency-bridge-native-current4-v5.json",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-retained-repair-dependency-bridge-native-current4-v5.json",
+      "sha256": "7438ccbdaacac34ab96814be810b6c00e0675acb8043f8b35820e619a91791e4"
+    },
+    {
+      "bytes": 335,
+      "originalPath": "/tmp/pow-audit30-retained-repair-dependency-bridge-native-current4-v5.stderr",
+      "rawBytes": 0,
+      "rawSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-retained-repair-dependency-bridge-native-current4-v5.stderr.evidence.json",
+      "representation": "closed-base64-envelope-preserves-exact-raw-input",
+      "sha256": "9a34812d6e13389dcf167f1fe989438bda21a920957f58451ebfda414ccfb33c"
+    },
+    {
+      "bytes": 60114,
+      "originalPath": "/tmp/pow-audit30-retained-repair-dependency-bridge-native-current4-v5.stdout",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-retained-repair-dependency-bridge-native-current4-v5.stdout.json",
+      "sha256": "285dfa1b5349f2408e8366a0341920152588145e22edb43f570f9aa027519090"
+    },
+    {
+      "bytes": 105682,
+      "originalPath": "/tmp/pow-audit30-retained-repair-dependency-bridge-request-current2-v3.json",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-retained-repair-dependency-bridge-request-current2-v3.json",
+      "sha256": "cd8911fe048dea68b9bc31c355c77c0807ca2e52e088d6a6ce79269a3e3e08ad"
+    },
+    {
+      "bytes": 105726,
+      "originalPath": "/tmp/pow-audit30-retained-repair-dependency-bridge-request-current3-v4.json",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-retained-repair-dependency-bridge-request-current3-v4.json",
+      "sha256": "cfcc84161e368e5fe7fed2e7c7d9e2a9d7d85d8c418c2dd1f7615b89eeda653d"
+    },
+    {
+      "bytes": 105726,
+      "originalPath": "/tmp/pow-audit30-retained-repair-dependency-bridge-request-current4-v5.json",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-retained-repair-dependency-bridge-request-current4-v5.json",
+      "sha256": "cb88b80632bdfb31dc192f9404a53086afcfff3b78154c03c4d434ce5ff0a9f8"
+    },
+    {
+      "bytes": 100092,
+      "originalPath": "/tmp/pow-audit30-retained-repair-dependency-bridge-request-template-v4.json",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-retained-repair-dependency-bridge-request-template-v4.json",
+      "sha256": "5081ab84c156b5aaf3d31d15cb8e397f4e7bd13cade22c5b017fd88ad7c9d2e2"
+    },
+    {
+      "bytes": 100092,
+      "originalPath": "/tmp/pow-audit30-retained-repair-dependency-bridge-request-template-v5.json",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-retained-repair-dependency-bridge-request-template-v5.json",
+      "sha256": "4d721585c9149cb161d4764a73c23cb2d2cf2b2be28b8d044fef0c5c0d44633d"
+    },
+    {
+      "bytes": 4014,
+      "originalPath": "/tmp/pow-audit30-retained-repair-dependency-bridge-transport-preparation-v4.diff",
+      "rawBytes": 2762,
+      "rawSha256": "b6270030d384430a530c5e9ff321838af7c928962681d3647b63b72fa872a75c",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-retained-repair-dependency-bridge-transport-preparation-v4.diff.evidence.json",
+      "representation": "closed-base64-envelope-preserves-exact-raw-input",
+      "sha256": "aab66b7888670010292f9ee09689060daf0c7a3f9ddbb22b895ff7412942d4d2"
+    },
+    {
+      "bytes": 2015,
+      "originalPath": "/tmp/pow-audit30-retained-repair-dependency-bridge-transport-preparation-v4.py",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-retained-repair-dependency-bridge-transport-preparation-v4.py",
+      "sha256": "0de8f91b5b7908664950bc8cff2043e12d2b7f42d6ae76049cddd0dffb159c2e"
+    },
+    {
+      "bytes": 4014,
+      "originalPath": "/tmp/pow-audit30-retained-repair-dependency-bridge-transport-preparation-v5.diff",
+      "rawBytes": 2762,
+      "rawSha256": "12e499522ccd514072b57e806b1f58a2f72fa3715b5db438b287a87bb8aae487",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-retained-repair-dependency-bridge-transport-preparation-v5.diff.evidence.json",
+      "representation": "closed-base64-envelope-preserves-exact-raw-input",
+      "sha256": "5beac1f9b939201c999cd4cace6ff2841f09234e8d48f44e5cf9646cfe379cb8"
+    },
+    {
+      "bytes": 2015,
+      "originalPath": "/tmp/pow-audit30-retained-repair-dependency-bridge-transport-preparation-v5.py",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-retained-repair-dependency-bridge-transport-preparation-v5.py",
+      "sha256": "a115acc82c09e66e06c69727d29dcff20367d786729dec5d8c99013573e778f9"
+    },
+    {
+      "bytes": 26693,
+      "originalPath": "/tmp/pow-audit30-retained-repair-dependency-bridge-v4-initial.test.py",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-retained-repair-dependency-bridge-v4-initial.test.py",
+      "sha256": "0b42b77b33e2446cc735e81b581022bf97f48596c6794db640108395f2a179d2"
+    },
+    {
+      "bytes": 14617,
+      "originalPath": "/tmp/pow-audit30-retained-repair-dependency-bridge-v4.diff",
+      "rawBytes": 10729,
+      "rawSha256": "6823f6edf317a0030b1a0776c76ca2ba55b8e50c38e7a98f8816803d4814d796",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-retained-repair-dependency-bridge-v4.diff.evidence.json",
+      "representation": "closed-base64-envelope-preserves-exact-raw-input",
+      "sha256": "da11eb873afe7838b4673c2ee98c873facfc85764b348502c09949ecf498b11a"
+    },
+    {
+      "bytes": 18621,
+      "originalPath": "/tmp/pow-audit30-retained-repair-dependency-bridge-v4.py",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-retained-repair-dependency-bridge-v4.py",
+      "sha256": "f07f5b8971b98f98013a56da1e054bbf786fac8ee02cafbf4ed1308d9ad0768b"
+    },
+    {
+      "bytes": 26710,
+      "originalPath": "/tmp/pow-audit30-retained-repair-dependency-bridge-v4.test.py",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-retained-repair-dependency-bridge-v4.test.py",
+      "sha256": "de1cbe03c4ccc2ff8a1b02dfb8b563ae8c13151348ce69e95207ad9440eb34ec"
+    },
+    {
+      "bytes": 10032,
+      "originalPath": "/tmp/pow-audit30-retained-repair-dependency-bridge-v5.diff",
+      "rawBytes": 7292,
+      "rawSha256": "08f6dc0e5c1fec1ec460b250bd6576095b8bdfb8b192b6167a74838189030135",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-retained-repair-dependency-bridge-v5.diff.evidence.json",
+      "representation": "closed-base64-envelope-preserves-exact-raw-input",
+      "sha256": "b1ebe1de935ba7fe8f4fac4c6e64fb3cf9075139f5f24ab00ebb9fdd4fac79da"
+    },
+    {
+      "bytes": 18866,
+      "originalPath": "/tmp/pow-audit30-retained-repair-dependency-bridge-v5.py",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-retained-repair-dependency-bridge-v5.py",
+      "sha256": "b8605128bd99a2b64ab13f1c33a3b5d6907802df8e453c31a93fbbd9a308d5b6"
+    },
+    {
+      "bytes": 33335,
+      "originalPath": "/tmp/pow-audit30-retained-repair-dependency-bridge-v5.test.py",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-retained-repair-dependency-bridge-v5.test.py",
+      "sha256": "ff5d9f94238d047498caec4872d235e63348408bc46b41cc8ce569478073295f"
+    },
+    {
+      "bytes": 1514,
+      "originalPath": "/tmp/pow-audit30-retention-protection-oct3-dual-pin-candidate-v1.diff",
+      "rawBytes": 895,
+      "rawSha256": "784603ab74ec34130c5c32bcbc2543b68fcdf0d6bc640d858d19676c32e2b693",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-retention-protection-oct3-dual-pin-candidate-v1.diff.evidence.json",
+      "representation": "closed-base64-envelope-preserves-exact-raw-input",
+      "sha256": "bae4fdd199060dad1450ceb6017b119123dc3905855b070e122be7cbe3212d89"
+    },
+    {
+      "bytes": 20718,
+      "originalPath": "/tmp/pow-audit30-retention-protection-oct3-dual-pin-candidate-v1.py",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-retention-protection-oct3-dual-pin-candidate-v1.py",
+      "sha256": "795f1308b74ddc69a022ce7e1413fb4698a82e6cfb14265931d1951ee603c908"
+    },
+    {
+      "bytes": 4004,
+      "originalPath": "/tmp/pow-audit30-retire-exact-four-v4.diff",
+      "rawBytes": 2783,
+      "rawSha256": "7ca87c957e84016eecff76bb3885de348b4721abfd89305da161230c86f06ca4",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-retire-exact-four-v4.diff.evidence.json",
+      "representation": "closed-base64-envelope-preserves-exact-raw-input",
+      "sha256": "9a0c977ed442a28c2489c30550bf86466377c5128aaf82adf6803c863b3ca69a"
+    },
+    {
+      "bytes": 29153,
+      "originalPath": "/tmp/pow-audit30-retire-exact-four-v4.py",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-retire-exact-four-v4.py",
+      "sha256": "fba702f9b5eaab27e5fc8850260b86609eb1fb1690b1d5b8cbc17659512a14e5"
+    },
+    {
+      "bytes": 33063,
+      "originalPath": "/tmp/pow-audit30-retire-exact-four-v4.test.py",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-retire-exact-four-v4.test.py",
+      "sha256": "263f4dc093d625647200706630b3259aad3bd0417e297aa58bb5f24e0a941d48"
+    },
+    {
+      "bytes": 8361,
+      "originalPath": "/tmp/pow-audit30-retirement-observed-custody-exceptions-source-preparation-v4.json",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-retirement-observed-custody-exceptions-source-preparation-v4.json",
+      "sha256": "3921630a4ad381aa18383d55330625dd301585960df9d1a6622cff13f8ec3d3e"
+    },
+    {
+      "bytes": 2027,
+      "originalPath": "/tmp/pow-audit30-root-coupled-promotion-state-observer-once-v1.py",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-root-coupled-promotion-state-observer-once-v1.py",
+      "sha256": "c6245a16cdde6147b05e39902037a36b08a6db7f5a050b93fe67aeaf651bfd9e"
+    },
+    {
+      "bytes": 4750,
+      "originalPath": "/tmp/pow-audit30-root-coupled-protection-proposal-review-v6.json",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-root-coupled-protection-proposal-review-v6.json",
+      "sha256": "e8ef04b4bcc6c7d6692fa0bb3a40375b28dfe213b30c25ca8365a42b878190c3"
+    },
+    {
+      "bytes": 3272,
+      "originalPath": "/tmp/pow-audit30-root-fresh-oct3-full-read-acceptance-v1.json",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-root-fresh-oct3-full-read-acceptance-v1.json",
+      "sha256": "ad56b57361b6737714bf740e7942c75f64278d7a8af0b1f59c8e8512b4c4e96d"
+    },
+    {
+      "bytes": 2113,
+      "originalPath": "/tmp/pow-audit30-root-promotion-full-read-once-current2-v1.py",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-root-promotion-full-read-once-current2-v1.py",
+      "sha256": "f932cd51529d6a5dbf2f7e808211ff54698e9c44d84746fa79810beb611845f5"
+    },
+    {
+      "bytes": 5532,
+      "originalPath": "/tmp/pow-audit30-root-retained-repair-bridge-actual-acceptance-v5.json",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-root-retained-repair-bridge-actual-acceptance-v5.json",
+      "sha256": "6704efa459c997a8211aca87a14920b143421dad9226236091d3eb3967590882"
+    },
+    {
+      "bytes": 2164,
+      "originalPath": "/tmp/pow-audit30-root-retained-repair-bridge-once-current2-v3.py",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-root-retained-repair-bridge-once-current2-v3.py",
+      "sha256": "63414e93dc45494e937b567e99ed5cbba86e027ebc9fc7fa390a911f8f191efe"
+    },
+    {
+      "bytes": 2169,
+      "originalPath": "/tmp/pow-audit30-root-retained-repair-bridge-once-current3-v4.py",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-root-retained-repair-bridge-once-current3-v4.py",
+      "sha256": "085b160705ecda3ee8512ee4412e643555dc56798480d1c27f52ea36bfe96ab5"
+    },
+    {
+      "bytes": 2169,
+      "originalPath": "/tmp/pow-audit30-root-retained-repair-bridge-once-current4-v5.py",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-root-retained-repair-bridge-once-current4-v5.py",
+      "sha256": "1ca0d1752545fb448d7a102fc1b12a283658e1d129353b14cbc9a733ea21e37c"
+    },
+    {
+      "bytes": 1949,
+      "originalPath": "/tmp/pow-audit30-root-retained-repair-bridge-source-review-v4.json",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-root-retained-repair-bridge-source-review-v4.json",
+      "sha256": "4a08f8286443d4fe11723ed54dda78551619aa3fb3e5f976a7321a22a7e4c7f8"
+    },
+    {
+      "bytes": 1790,
+      "originalPath": "/tmp/pow-audit30-root-retained-repair-bridge-source-review-v5.json",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-root-retained-repair-bridge-source-review-v5.json",
+      "sha256": "986e147d2881ba03f740f77776f7b856391d01de72e43de8382fbcaf17688eb7"
+    },
+    {
+      "bytes": 2266,
+      "originalPath": "/tmp/pow-audit30-root-retirement-observed-custody-source-review-v4.json",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-root-retirement-observed-custody-source-review-v4.json",
+      "sha256": "2a51c14db920f211678976a52bdd22f1c9bcc38f096992510334d41528948f73"
+    },
+    {
+      "bytes": 9457,
+      "originalPath": "/tmp/pow-audit30-oct3-pin-checker-promotion-proposal-v2.md",
+      "repositoryPath": "audits/2026-10-03-audit30-oct3-pin-checker-promotion-proposal.md",
+      "sha256": "cd5852c4b9415f60104b6bc72c82e580e003f000219844ef3a694d6ae86507ec"
+    }
+  ],
+  "partialWriteRequiresExplicitReviewNotAutomaticRetry": true,
+  "plannedOutputs": [
+    {
+      "bytes": 16685751,
+      "path": "/home/sixer/ProofOfWork.Me/audits/2026-10-02-audit30-remaining-phase-execution.evidence.json",
+      "sha256": "85377fd5acb6d1ed2041258e1e2da6a475a22e6ecb81f82333374b187df48935"
+    },
+    {
+      "bytes": 394259,
+      "path": "/home/sixer/ProofOfWork.Me/deploy/audit30/verification/source-custody.json",
+      "sha256": "d5da7713b93c4d3c07414702632b32ec7bc940edb8119d922a6e02d2ef0d2767"
+    },
+    {
+      "bytes": 82079,
+      "path": "/home/sixer/ProofOfWork.Me/audits/2026-10-02-audit30-followup-tracker.md",
+      "sha256": "67e9b13502e35f4765345ffb6ca3a0180978b2b1445b1cf411a69ff3f5128696"
+    },
+    {
+      "bytes": 10997,
+      "path": "/home/sixer/ProofOfWork.Me/repository-hygiene.json",
+      "sha256": "d29d8aa82cb812ccbb5b450ad4d17d5cedbabf1c6abcc11c5e45e147d673c75a"
+    }
+  ],
+  "productionMutation": false,
+  "schema": "pow-audit30-action65-public-custody-intent-v1"
+}

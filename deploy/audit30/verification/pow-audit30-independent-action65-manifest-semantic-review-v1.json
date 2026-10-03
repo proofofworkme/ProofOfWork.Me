@@ -1,0 +1,123 @@
+{
+  "artifacts": {
+    "actualBridgePeer": {
+      "bytes": 6900,
+      "path": "/tmp/pow-audit30-independent-retained-repair-bridge-actual-review-v5.json",
+      "sha256": "05d0a2e251651647d3fb370f4b3b5be542d6b09a55444b8e83a7eb3c65a6025d"
+    },
+    "actualBridgeRoot": {
+      "bytes": 5532,
+      "path": "/tmp/pow-audit30-root-retained-repair-bridge-actual-acceptance-v5.json",
+      "sha256": "6704efa459c997a8211aca87a14920b143421dad9226236091d3eb3967590882"
+    },
+    "actualStatePeer": {
+      "bytes": 4789,
+      "path": "/tmp/pow-audit30-independent-coupled-promotion-state-actual-review-v1.json",
+      "sha256": "da1559f7cc478864d586c38c015512698f00c609fd0ed92251ebb5309eea39b9"
+    },
+    "fullReadPeer": {
+      "bytes": 7428,
+      "path": "/tmp/pow-audit30-independent-fresh-oct3-full-read-actual-review-v1.json",
+      "sha256": "c7296b9a6c4e11d24157c5ac4c1b83ffe2a403f87573c966cfe378c334f01f19"
+    },
+    "fullReadRoot": {
+      "bytes": 3272,
+      "path": "/tmp/pow-audit30-root-fresh-oct3-full-read-acceptance-v1.json",
+      "sha256": "ad56b57361b6737714bf740e7942c75f64278d7a8af0b1f59c8e8512b4c4e96d"
+    },
+    "helper": {
+      "bytes": 9925,
+      "path": "/tmp/pow-audit30-append-action65-v4.py",
+      "sha256": "9423a4f147f22eb9cba32571c11f1066b546f710991b5f943e1c209cf677515f"
+    },
+    "helperPeer": {
+      "bytes": 2634,
+      "path": "/tmp/pow-audit30-independent-action65-helper-source-review-v4.json",
+      "sha256": "8fd8526f7ca84dfe73b154b89897743f9b869f5eb170cc5a7fea7c78f0938ea7"
+    },
+    "manifest": {
+      "bytes": 32389,
+      "path": "/tmp/pow-audit30-action65-fixed-public-manifest-v1.json",
+      "sha256": "1232acc23a1d04e83e206b282489253673972cda18b1a5d6597093dbe2314f24"
+    },
+    "observedV6Plan": {
+      "bytes": 9111,
+      "path": "/tmp/pow-audit30-coupled-pin-checker-observed-review-plan-v6.json",
+      "sha256": "911a77fc317f4a7a8c388e424172a0a4afe88fd8861efb7c9b0b979ab79431dc"
+    },
+    "proposal": {
+      "bytes": 9457,
+      "path": "/tmp/pow-audit30-oct3-pin-checker-promotion-proposal-v2.md",
+      "sha256": "cd5852c4b9415f60104b6bc72c82e580e003f000219844ef3a694d6ae86507ec"
+    }
+  },
+  "atUtc": "2026-10-03T12:43:16.665252+00:00",
+  "baseline": {
+    "actions": 64,
+    "gitHead": "4df964287d9f326845bc22d5d4f454f7a2cadf74",
+    "sourceCustodyRows": 761
+  },
+  "claims": {
+    "additionalDeletion": false,
+    "allDependenciesClosed": false,
+    "completeItems7Or8": false,
+    "nativeExecutionByReviewer": false,
+    "pinCheckerPromotion": false,
+    "productionDataMutation": false,
+    "recoveryConfigurationMutation": false
+  },
+  "dryValidation": {
+    "all109BindingsClosedTypesCanonicalRegularSingleLinkStableFDPathBytesHashesVerified": true,
+    "all761PriorRowsDecodedAsRequiredAndHashVerified": true,
+    "allEnvelopeDecodesByteExact": true,
+    "allOutputCapsPassed": true,
+    "currentFourBaselineDocumentsByteEqualFixedGitHead": true,
+    "eachStoredArtifactWithin2MiB": true,
+    "existingBindingsSkipped": 0,
+    "helperExecuted": false,
+    "intentReceiptPathsAbsent": true,
+    "largestStoredArtifactBytes": 105726,
+    "losslessEnvelopes": 19,
+    "newRowsIncludingManifestAndProposal": 111,
+    "old64Actions761RowsAuthorizationMutationRetirementFinalRequestsGlobalRepresentationsAllHistoricalItemValuesPreserved": true,
+    "onlyProgressCheckpointAppendsToItems7And8AndOneClassifiedProposal": true,
+    "plannedActionCount": 65,
+    "plannedSourceCustodyRowCount": 872,
+    "proposedDocumentBytes": {
+      "audits/2026-10-02-audit30-followup-tracker.md": 82079,
+      "audits/2026-10-02-audit30-remaining-phase-execution.evidence.json": 16685751,
+      "deploy/audit30/verification/source-custody.json": 394259,
+      "repository-hygiene.json": 10997
+    },
+    "pythonSourcesParseAndJsonArtifactsParse": true,
+    "raw109InputBytes": 1585107,
+    "repositoryWrites": false,
+    "selectedIncludingManifest": 110,
+    "stored109ArtifactsBytes": 1638032,
+    "storedAllTargetsIncludingManifestAndProposalBytes": 1679878,
+    "targetsAbsentDistinctAndCreationOnly": true,
+    "typeCounts": {
+      "json-public-receipt": 53,
+      "native-capture-stderr": 6,
+      "native-capture-stdout": 6,
+      "python-source": 22,
+      "python-test-source": 9,
+      "raw-diff": 13
+    }
+  },
+  "qualifications": [
+    "Dry output construction was performed in memory only; helper main was not executed. The helper must still recheck current immutable inputs, baseline and absent targets at actual append.",
+    "This receipt is external to the immutable manifest to avoid circular SHA binding; preservation in a later checkpoint is separate.",
+    "No native/promotion/config/data/recovery/deletion authority, current retirement admission, global dependency closure, full-chain math or complete phase4-8 claim is granted."
+  ],
+  "schema": "pow-audit30-independent-action65-manifest-semantic-review-v1",
+  "semanticFindings": [
+    "Exact full-read Rootad56 and independentc729 roles are fixed, preserved and restricted to dated Oct3 member/catalog proof; original full-read timestamp remains expired after900 seconds, with no fresh-action substitution.",
+    "Actual retained-dependency Root6704/independent05d0 and actual installed-state reviewda155 are correctly referenced. Named23/172 observation and saved162 declared-contract comparison remain scoped, with three saved generic blockers and source-only exact exceptions separately qualified.",
+    "V6 dual-pin source/tests/review and observed review plan are public preparation. finalHumanApproval remains null; final immutable package creator/typed native admission is unfinished and no final config approval request is appended.",
+    "The 18 known historical paths, 11 UI absences, pending16-body approval, unchanged293GiB recovery model versus dated235.01GiB free, and current Oct3/dual-pin retirement manifest/dependency/global closure gates remain unresolved.",
+    "Proposal full text accurately limits future authority to exact two-file dual pins/checker plus recognized-byte configuration failure inverse; it preserves Sep29 protection and distinguishes individual atomic replacements from a joint transaction.",
+    "No private COPY, raw roles, mail bodies, credentials or arbitrary remote files are included; fixed code/tests/diffs and known public metadata/capture/review artifacts remain on the public custody surface."
+  ],
+  "status": "accepted-fixed-public-manifest-source-and-semantics"
+}

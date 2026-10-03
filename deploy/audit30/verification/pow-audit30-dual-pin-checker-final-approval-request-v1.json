@@ -1,0 +1,26 @@
+{
+  "additionalDeletionAuthorized": false,
+  "atUtc": "2026-10-03T12:52:46.641596+00:00",
+  "humanResponseReceived": false,
+  "nativeInvoked": false,
+  "options": [
+    "Approve exact backup-protection change",
+    "Keep configuration unchanged"
+  ],
+  "productionApprovalReceiptCreated": false,
+  "productionDataMutation": false,
+  "proposalPath": "audits/2026-10-03-audit30-oct3-pin-checker-promotion-proposal.md",
+  "proposalSHA256": "cd5852c4b9415f60104b6bc72c82e580e003f000219844ef3a694d6ae86507ec",
+  "qualification": "Accepted tool dispatch is not human approval. This snapshot records the newly presented exact scope. Actual human response and all fresh native-admission prerequisites remain absent; body16 approval remains a separate pending request.",
+  "question": "You reserved final approval for recovery-configuration changes. Approve the tested proposal at /home/sixer/ProofOfWork.Me/audits/2026-10-03-audit30-oct3-pin-checker-promotion-proposal.md: add the verified October 3 backup to the pin file while preserving the September 29 pin, install the exact reviewed retention checker, and permit its recognized-byte configuration failure inverse? Scope SHA-256: fe09d0ba6c9c1e561a569fb425c9812f9b077cb646fbdd615768e0546ead0437. The creation-only installation wrapper is tested and independently reviewed. Fresh backup/file/service/lock evidence and a reviewed final request are required before execution. This approval authorizes no deletion, production-data repair, service deployment, or WAL/PITR activation.",
+  "recoveryConfigurationAuthorized": false,
+  "reviewedScopeSHA256": "fe09d0ba6c9c1e561a569fb425c9812f9b077cb646fbdd615768e0546ead0437",
+  "schema": "pow-audit30-dual-pin-checker-final-approval-request-v1",
+  "sourceControllerSHA256": "dfa403996e776a8ed192a024848b06f71b5fa041a24bf5b9687ff04ce3714535",
+  "sourceCreatorSHA256": "8056f85ba5e5d45057df5233e7ed4cb880aa2687f6d8895a8ed647ff2902b9ff",
+  "sourcePeerReviewSHA256": "ad45b0358a8841b37b2988a2f126cd202c011c7d680fb9e5b8b186509ca51859",
+  "sourceRootReviewSHA256": "30362c99a4d983111b0bb9133564979262ed6fb626328332e56af08cc2c34391",
+  "status": "requested-awaiting-human-response",
+  "tool": "functions.request_user_input_async",
+  "toolAccepted": true
+}
