@@ -146,7 +146,8 @@
       "test-api/README.md",
       "deploy/audit29/INVOCATION.md",
       "deploy/audit30/STORAGE.md",
-      "deploy/audit30/recovery/PROPOSAL.md"
+      "deploy/audit30/recovery/PROPOSAL.md",
+      "deploy/audit30/recovery/PROPOSAL-v2.md"
     ]
   },
   "safeCleanupPaths": [
