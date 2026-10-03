@@ -1,0 +1,20 @@
+Action74 consumes a later actual public handoff receipt. No example receipt or future commit/post value is created by this preparation.
+
+Receipt schema: pow-audit30-item2-release-handoff-observed-v1.
+Required fields:
+- rootVerified: true, after Root verifies every bound actual outcome.
+- observedAtUtc: the actual UTC handoff observation, after runtime acceptance.
+- primaryCommit: the actual primary release commit (40 lowercase hexadecimal characters).
+- branch: codex/audit30-remaining-phase.
+- push: remote origin, that branch and commit, remoteRefVerified true.
+- announcement: account proofofworkme, actual https://x.com/proofofworkme/status/<numeric-id> URL, publishedAndVerified true.
+- hygiene: fixPassed, checkPassed and semanticReviewComplete true for the actual primary release review.
+- sourceCustodyComplete and canonicalDocumentationReconciled: true for actual release bookkeeping.
+- evidence: primaryCommit, push, announcement, hygiene and sourceCustody objects, each with an actual durable public path under deploy/audit30/verification/, bytes and SHA-256.
+
+The helper independently checks the current local HEAD, required review trailers, ancestry from the deployed38ac candidate and the exact bytes of all durable proof files. Push and announcement verification are Root's actual observations; the helper performs no network request and makes no repository change.
+
+After Root supplies and reviews this actual receipt:
+python3 -I -B /tmp/pow-audit30-item2-handoff-action74-preview-v1.py --receipt <actual-public-receipt-path> --receipt-sha256 <actual-receipt-sha256> --output-dir /tmp/pow-audit30-action74-<unique-preview-name>
+
+The two creation-only previews preserve all73 actions and all other remaining checklist items, change only the current scoped item2 status, append Action74 and update the current MD row/timestamp. Earlier dated paragraphs remain historical. The preview marks scoped release acceptance true and globalAudit30ClosureComplete false. Root must review both exact preview hashes before applying their bytes to the two tracked files. The later closure bookkeeping commit is verified externally; it does not require embedding its own hash, another Action75, deployment or announcement.

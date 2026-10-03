@@ -188897,6 +188897,112 @@
         "tree": "8b9b5e3cd47aa8e4204da717350a629176e30da6"
       },
       "uiPublicationPerformed": true
+    },
+    {
+      "action": "Record actual scoped item2 release handoff after primary commit, push and announcement verification. Preserve all73 earlier action objects and the other remaining items.",
+      "actualHandoffReceipt": {
+        "bytes": 3361,
+        "path": "/tmp/pow-audit30-item2-release-handoff-observed-v1.json",
+        "sha256": "53a80312005399e75c194684db5bbed90f929fa2b8a1b9cea18198caff817c3b"
+      },
+      "additionalDeletion": false,
+      "announcementUrl": "https://x.com/proofofworkme/status/2106494475979612449",
+      "atUtc": "2026-10-03T21:21:09.541144+00:00",
+      "branch": "codex/audit30-remaining-phase",
+      "globalAudit30ClosureComplete": false,
+      "handoffEvidence": {
+        "announcement": {
+          "account": "proofofworkme",
+          "body": "619 confirmed messages. Exact chain bytes.\n\nThe ProofOfWork Computer release is live: WORK balance checks passed, complete scoped POWB/INCB listings verified, and every published UI file checked byte for byte.\n\n$WORK $POWB $INCB",
+          "observedBrowserDetailTimestamp": "5:19 PM \u00b7 Oct 3, 2026",
+          "profilePostCountAfter": 593,
+          "profilePostCountBefore": 592,
+          "publicationCount": 1,
+          "publishedAndVerified": true,
+          "screenshot": {
+            "bytes": 78199,
+            "path": "/home/sixer/.codex/visualizations/2026/10/03/01a10273-4268-72a1-8cc7-793edfbdbbfc/audit30-item2-release-post.jpg",
+            "sha256": "82011c7fe9bf6223021c66a9a8a64095198026f4220fa7b92e944cc16d46c9bd"
+          },
+          "url": "https://x.com/proofofworkme/status/2106494475979612449"
+        },
+        "branch": "codex/audit30-remaining-phase",
+        "canonicalDocumentationReconciled": true,
+        "evidence": {
+          "announcement": {
+            "bytes": 3043,
+            "path": "/home/sixer/ProofOfWork.Me/deploy/audit30/verification/pow-audit30-item2-root-handoff-proof-v1.json",
+            "sha256": "732cb2b64cb75dffa877eedf7b87e46d0858231994cd18e3624757fd116c4612"
+          },
+          "hygiene": {
+            "bytes": 3043,
+            "path": "/home/sixer/ProofOfWork.Me/deploy/audit30/verification/pow-audit30-item2-root-handoff-proof-v1.json",
+            "sha256": "732cb2b64cb75dffa877eedf7b87e46d0858231994cd18e3624757fd116c4612"
+          },
+          "primaryCommit": {
+            "bytes": 3043,
+            "path": "/home/sixer/ProofOfWork.Me/deploy/audit30/verification/pow-audit30-item2-root-handoff-proof-v1.json",
+            "sha256": "732cb2b64cb75dffa877eedf7b87e46d0858231994cd18e3624757fd116c4612"
+          },
+          "push": {
+            "bytes": 3043,
+            "path": "/home/sixer/ProofOfWork.Me/deploy/audit30/verification/pow-audit30-item2-root-handoff-proof-v1.json",
+            "sha256": "732cb2b64cb75dffa877eedf7b87e46d0858231994cd18e3624757fd116c4612"
+          },
+          "sourceCustody": {
+            "bytes": 3043,
+            "path": "/home/sixer/ProofOfWork.Me/deploy/audit30/verification/pow-audit30-item2-root-handoff-proof-v1.json",
+            "sha256": "732cb2b64cb75dffa877eedf7b87e46d0858231994cd18e3624757fd116c4612"
+          }
+        },
+        "globalAudit30ClosureComplete": false,
+        "hygiene": {
+          "checkPassed": true,
+          "checkResult": "repository state check passed",
+          "fixPassed": true,
+          "fixResult": "no allowlisted rebuildable state found",
+          "noTrackedFileDeletion": true,
+          "reviewedCanonicalDocs": [
+            "SOUL.md",
+            "README.md",
+            "PROOFOFWORK_IDS.md",
+            "PROOFOFWORK_DNS.md",
+            "MARKETPLACE.md",
+            "OP_RETURN_INFRASTRUCTURE.md",
+            "MAIL_ORGANIZATION.md",
+            "REPOSITORY_HYGIENE.md"
+          ],
+          "semanticReviewComplete": true,
+          "stagedDiffCheckPassed": true,
+          "trackedNotesAndGeneratedArtifactsReviewed": true
+        },
+        "observedAtUtc": "2026-10-03T21:21:09.541144+00:00",
+        "primaryCommit": "30499f7b0da78e3bd5472c424a861bfed7a6b602",
+        "push": {
+          "branch": "codex/audit30-remaining-phase",
+          "commit": "30499f7b0da78e3bd5472c424a861bfed7a6b602",
+          "remote": "origin",
+          "remoteRefObserved": "30499f7b0da78e3bd5472c424a861bfed7a6b602\trefs/heads/codex/audit30-remaining-phase",
+          "remoteRefVerified": true,
+          "toolExitCode": 0
+        },
+        "rootVerified": true,
+        "schema": "pow-audit30-item2-release-handoff-observed-v1",
+        "sourceCustodyComplete": true
+      },
+      "historicalActionsPreserved": 73,
+      "newAnnouncementPerformedByThisAppend": false,
+      "nextRequired": "Human items3\u20135 and later global item6 closure remain pending.",
+      "overallApiAcceptance": true,
+      "overallReleaseAcceptance": true,
+      "primaryCommit": "30499f7b0da78e3bd5472c424a861bfed7a6b602",
+      "productionCallsPerformedByThisAppend": false,
+      "productionDataMutation": false,
+      "qualification": "Scoped item2 API/mail/UI release, documentation, custody, primary commit/push and one verified announcement are complete. Human items3\u20135 and their later global item6 closure remain pending. This append records closure bookkeeping; its own commit hash is verified externally and is not embedded in itself. No second deployment or announcement is required.",
+      "runtimeAcceptanceActionOrdinal": 73,
+      "runtimeAcceptanceComplete": true,
+      "schema": "pow-audit30-action74-item2-release-handoff-v1",
+      "status": "scoped-item2-complete-global-gates-pending"
     }
   ],
   "additionalRetirements": [],
@@ -188905,16 +189011,16 @@
     "sha256": "6821c987b9a5d110fbe9fb2820955b7cbc26dda9faddb67667fc49e892f5c820"
   },
   "currentContinuation": {
-    "atUtc": "2026-10-03T21:04:38.270Z",
+    "atUtc": "2026-10-03T21:21:09.541144+00:00",
     "canonicalItem4Qualification": "Exact original16 chain-body repair, actual fresh DB619/619 zero-error projection, and now actual new-source public HTTPS619/619/33actor/rawUTF8 plus derivedHTML1/1 acceptance jointly complete this scoped mailbox finding. Pending mail/post-snapshot larger corpora/explicit attachment rendering/financial completeness are excluded.",
     "currentApiEvidence": {
-      "acceptanceStatus": "production-api-mail-ui-passed-release-handoff-pending",
-      "actionOrdinal": 73,
+      "acceptanceStatus": "scoped-item2-complete-global-gates-pending",
+      "actionOrdinal": 74,
       "blockingCheck": null,
       "blockingCheckQualification": "The historical scratch capacity refusals remain dated Action72 evidence. The separately guarded evidence-stage/source/publication continuation succeeded without changing limits or deleting historical artifacts.",
       "canonicalMailItem4Qualification": "Exact original16 chain-body repair, actual fresh DB619/619 zero-error projection, and now actual new-source public HTTPS619/619/33actor/rawUTF8 plus derivedHTML1/1 acceptance jointly complete this scoped mailbox finding. Pending mail/post-snapshot larger corpora/explicit attachment rendering/financial completeness are excluded.",
       "canonicalMailItem4Status": "complete",
-      "currentAcceptanceQualification": "Actual production API/mail and frontend publication/HTTPS/guest browser acceptance passed. Release-specific documentation, source custody, hygiene, commit, push and one release announcement/handoff remain; global migration, physical/PITR/capacity and custody/dependency work are separate.",
+      "currentAcceptanceQualification": "Scoped item2 API/mail/UI release, documentation, custody, primary commit/push and one verified announcement are complete. Human items3\u20135 and their later global item6 closure remain pending. This append records closure bookkeeping; its own commit hash is verified externally and is not embedded in itself. No second deployment or announcement is required.",
       "currentAcceptanceScope": "Current live production; earlier shadow positive/scoped passes are preserved as historical evidence.",
       "currentPositiveWorkAcceptance": true,
       "currentScopedBondAcceptance": true,
@@ -188925,8 +189031,8 @@
         "phase": "complete",
         "productionAndMailAndUiAcceptanceComplete": true,
         "productionCodeCutoverPerformed": true,
-        "qualification": "Actual production API/mail and frontend publication/HTTPS/guest browser acceptance passed. Release-specific documentation, source custody, hygiene, commit, push and one release announcement/handoff remain; global migration, physical/PITR/capacity and custody/dependency work are separate.",
-        "qualificationObservedThroughUtc": "2026-10-03T21:04:38.270Z",
+        "qualification": "Scoped item2 API/mail/UI release, documentation, custody, primary commit/push and one verified announcement are complete. Human items3\u20135 and their later global item6 closure remain pending. This append records closure bookkeeping; its own commit hash is verified externally and is not embedded in itself. No second deployment or announcement is required.",
+        "qualificationObservedThroughUtc": "2026-10-03T21:21:09.541144+00:00",
         "recoveryRemoved": false,
         "shadowAcceptanceChecksPassed": true
       },
@@ -188958,7 +189064,7 @@
         "status": "actual-pass"
       },
       "fullStrictAcceptance": true,
-      "fullStrictStatus": "production-strict-v2-pass; node-cutover-complete; production-api-mail-ui-pass; release-handoff-pending",
+      "fullStrictStatus": "production-strict-v2-pass; node-cutover-complete; production-api-mail-ui-pass; scoped-release-handoff-complete",
       "gateResults": {
         "events": {
           "after": {
@@ -189039,6 +189145,7 @@
         "parity": true
       },
       "gatesQualification": "Actual accepted production strict-v2 gates at stable969758, with only two preserved historical warning checks false.",
+      "globalAudit30ClosureComplete": false,
       "historicalAction70Evidence": {
         "actionOrdinal": 70,
         "actualFailedV2GateResults": {
@@ -189669,7 +189776,7 @@
         "timerRestoredReceiptSHA256": "7f9dc2e814ac2d8b016816be71a83e71dac1c1adaa809e63943903eb8b44b308",
         "unit": "proofofwork-audit29-verify-38ac6e2bff2a-20261003T042000Z-shadow-strict-v3.service"
       },
-      "nextRequired": "Preserve the exact final public receipts and source custody; append dated operational documentation, review final scope and semantic hygiene, run hygiene:fix then hygiene:check, commit and push with required trailers, publish and verify one release announcement, and record exact handoff. Human items 3\u20135 and their later global closure remain pending.",
+      "nextRequired": "Human items3\u20135 and later global item6 closure remain pending.",
       "nodeCutoverEvidence": {
         "atUtc": "2026-10-03T19:54:53.534866+00:00",
         "authorityServicesModified": false,
@@ -189860,9 +189967,9 @@
           "sha256": "0627f1ebe7fc559c8e3067ea64d2093ad93255625cd14dca4bdad79aa422ec57"
         }
       },
-      "overallApiAcceptance": false,
-      "overallApiAcceptanceQualification": "The existing overall release checklist flag remains incomplete only pending release-specific repository and announcement handoff; actual production API/mail/UI acceptance is independently complete.",
-      "overallReleaseAcceptance": false,
+      "overallApiAcceptance": true,
+      "overallApiAcceptanceQualification": "Scoped item2 API/mail/UI release, documentation, custody, primary commit/push and one verified announcement are complete. Human items3\u20135 and their later global item6 closure remain pending. This append records closure bookkeeping; its own commit hash is verified externally and is not embedded in itself. No second deployment or announcement is required.",
+      "overallReleaseAcceptance": true,
       "positiveScopedMilestone": {
         "atUtc": "2026-10-03T19:33:03.733580+00:00",
         "automaticRetry": false,
@@ -191596,6 +191703,16 @@
       },
       "productionMailRawHtmlAcceptance": true,
       "productionUiAcceptanceComplete": true,
+      "releaseHandoff": {
+        "announcementUrl": "https://x.com/proofofworkme/status/2106494475979612449",
+        "evidence": {
+          "bytes": 3361,
+          "path": "/tmp/pow-audit30-item2-release-handoff-observed-v1.json",
+          "sha256": "53a80312005399e75c194684db5bbed90f929fa2b8a1b9cea18198caff817c3b"
+        },
+        "observedAtUtc": "2026-10-03T21:21:09.541144+00:00",
+        "primaryCommit": "30499f7b0da78e3bd5472c424a861bfed7a6b602"
+      },
       "retentionLocalValidation": {
         "atUtc": "2026-10-03T20:34:19Z",
         "historicalSinglePinEvidencePreserved": true,
@@ -191637,6 +191754,7 @@
         "hash": "000000000000000000003e5a6b77578b091ec4bda168e01da9377a6904d9937b",
         "height": 969752
       },
+      "status": "complete",
       "strictEvidence": {
         "accepted": {
           "bytes": 31141,
@@ -192590,16 +192708,16 @@
       "5": "canonical8-custody-dependencies",
       "6": "global-closure-after-human3-through5"
     },
-    "observedThroughUtc": "2026-10-03T21:04:38.270Z",
-    "statusQualification": "Actual production API/mail and frontend publication/HTTPS/guest browser acceptance passed. Release-specific documentation, source custody, hygiene, commit, push and one release announcement/handoff remain; global migration, physical/PITR/capacity and custody/dependency work are separate.",
+    "observedThroughUtc": "2026-10-03T21:21:09.541144+00:00",
+    "statusQualification": "Scoped item2 API/mail/UI release, documentation, custody, primary commit/push and one verified announcement are complete. Human items3\u20135 and their later global item6 closure remain pending. This append records closure bookkeeping; its own commit hash is verified externally and is not embedded in itself. No second deployment or announcement is required.",
     "userRemainingChecklist": {
       "1": {
         "status": "complete",
         "work": "exact16 mail repair and fresh619 verification"
       },
       "2": {
-        "acceptanceStatus": "production-api-mail-ui-passed-release-handoff-pending",
-        "actionOrdinal": 73,
+        "acceptanceStatus": "scoped-item2-complete-global-gates-pending",
+        "actionOrdinal": 74,
         "actualFailedV2GateResults": {
           "events": {
             "checkCount": 49,
@@ -192717,7 +192835,7 @@
         "blockingCheckQualification": "The historical scratch capacity refusals remain dated Action72 evidence. The separately guarded evidence-stage/source/publication continuation succeeded without changing limits or deleting historical artifacts.",
         "canonicalMailItem4Qualification": "Exact original16 chain-body repair, actual fresh DB619/619 zero-error projection, and now actual new-source public HTTPS619/619/33actor/rawUTF8 plus derivedHTML1/1 acceptance jointly complete this scoped mailbox finding. Pending mail/post-snapshot larger corpora/explicit attachment rendering/financial completeness are excluded.",
         "canonicalMailItem4Status": "complete",
-        "currentAcceptanceQualification": "Actual production API/mail and frontend publication/HTTPS/guest browser acceptance passed. Release-specific documentation, source custody, hygiene, commit, push and one release announcement/handoff remain; global migration, physical/PITR/capacity and custody/dependency work are separate.",
+        "currentAcceptanceQualification": "Scoped item2 API/mail/UI release, documentation, custody, primary commit/push and one verified announcement are complete. Human items3\u20135 and their later global item6 closure remain pending. This append records closure bookkeeping; its own commit hash is verified externally and is not embedded in itself. No second deployment or announcement is required.",
         "currentAcceptanceScope": "Current live production; earlier shadow positive/scoped passes are preserved as historical evidence.",
         "currentPositiveWorkAcceptance": true,
         "currentScopedBondAcceptance": true,
@@ -192728,8 +192846,8 @@
           "phase": "complete",
           "productionAndMailAndUiAcceptanceComplete": true,
           "productionCodeCutoverPerformed": true,
-          "qualification": "Actual production API/mail and frontend publication/HTTPS/guest browser acceptance passed. Release-specific documentation, source custody, hygiene, commit, push and one release announcement/handoff remain; global migration, physical/PITR/capacity and custody/dependency work are separate.",
-          "qualificationObservedThroughUtc": "2026-10-03T21:04:38.270Z",
+          "qualification": "Scoped item2 API/mail/UI release, documentation, custody, primary commit/push and one verified announcement are complete. Human items3\u20135 and their later global item6 closure remain pending. This append records closure bookkeeping; its own commit hash is verified externally and is not embedded in itself. No second deployment or announcement is required.",
+          "qualificationObservedThroughUtc": "2026-10-03T21:21:09.541144+00:00",
           "recoveryRemoved": false,
           "shadowAcceptanceChecksPassed": true
         },
@@ -192761,7 +192879,7 @@
           "status": "actual-pass"
         },
         "fullStrictAcceptance": true,
-        "fullStrictStatus": "production-strict-v2-pass; node-cutover-complete; production-api-mail-ui-pass; release-handoff-pending",
+        "fullStrictStatus": "production-strict-v2-pass; node-cutover-complete; production-api-mail-ui-pass; scoped-release-handoff-complete",
         "gateResults": {
           "events": {
             "after": {
@@ -192842,6 +192960,7 @@
           "parity": true
         },
         "gatesQualification": "Actual accepted production strict-v2 gates at stable969758, with only two preserved historical warning checks false.",
+        "globalAudit30ClosureComplete": false,
         "historicalProductionAcceptanceAttempts": {
           "mailHttpsAndDerivedHtml": {
             "atUtc": "2026-10-03T20:05:22.948494+00:00",
@@ -193832,7 +193951,7 @@
             "verificationStatus": "known-unresolved-availability"
           }
         },
-        "nextRequired": "Preserve the exact final public receipts and source custody; append dated operational documentation, review final scope and semantic hygiene, run hygiene:fix then hygiene:check, commit and push with required trailers, publish and verify one release announcement, and record exact handoff. Human items 3\u20135 and their later global closure remain pending.",
+        "nextRequired": "Human items3\u20135 and later global item6 closure remain pending.",
         "nodeCutoverEvidence": {
           "atUtc": "2026-10-03T19:54:53.534866+00:00",
           "authorityServicesModified": false,
@@ -194023,9 +194142,9 @@
             "sha256": "0627f1ebe7fc559c8e3067ea64d2093ad93255625cd14dca4bdad79aa422ec57"
           }
         },
-        "overallApiAcceptance": false,
-        "overallApiAcceptanceQualification": "The existing overall release checklist flag remains incomplete only pending release-specific repository and announcement handoff; actual production API/mail/UI acceptance is independently complete.",
-        "overallReleaseAcceptance": false,
+        "overallApiAcceptance": true,
+        "overallApiAcceptanceQualification": "Scoped item2 API/mail/UI release, documentation, custody, primary commit/push and one verified announcement are complete. Human items3\u20135 and their later global item6 closure remain pending. This append records closure bookkeeping; its own commit hash is verified externally and is not embedded in itself. No second deployment or announcement is required.",
+        "overallReleaseAcceptance": true,
         "postcutoverProductionStrictAcceptance": true,
         "preparedUiBuildEvidence": {
           "bytes": 822,
@@ -195372,6 +195491,16 @@
         },
         "productionMailRawHtmlAcceptance": true,
         "productionUiAcceptanceComplete": true,
+        "releaseHandoff": {
+          "announcementUrl": "https://x.com/proofofworkme/status/2106494475979612449",
+          "evidence": {
+            "bytes": 3361,
+            "path": "/tmp/pow-audit30-item2-release-handoff-observed-v1.json",
+            "sha256": "53a80312005399e75c194684db5bbed90f929fa2b8a1b9cea18198caff817c3b"
+          },
+          "observedAtUtc": "2026-10-03T21:21:09.541144+00:00",
+          "primaryCommit": "30499f7b0da78e3bd5472c424a861bfed7a6b602"
+        },
         "retentionLocalValidation": {
           "atUtc": "2026-10-03T20:34:19Z",
           "historicalSinglePinEvidencePreserved": true,
@@ -195409,7 +195538,7 @@
             "sha256": "ea501b2206eb24fd1e0b62c7ca9858985faf082e092283d4afe39b3ea0f927a7"
           }
         },
-        "status": "in-progress",
+        "status": "complete",
         "uiAcceptance": {
           "activeManifest": {
             "archiveSha256": "cad4db706607add7e11e3e829824d2a496f3c94ab74ada0285931cff64a8e0a9",
@@ -269144,5 +269273,5 @@
     5,
     8
   ],
-  "updatedAtUtc": "2026-10-03T21:04:38.270Z"
+  "updatedAtUtc": "2026-10-03T21:21:09.541144+00:00"
 }

@@ -1,0 +1,72 @@
+{
+  "announcement": {
+    "account": "proofofworkme",
+    "body": "619 confirmed messages. Exact chain bytes.\n\nThe ProofOfWork Computer release is live: WORK balance checks passed, complete scoped POWB/INCB listings verified, and every published UI file checked byte for byte.\n\n$WORK $POWB $INCB",
+    "observedBrowserDetailTimestamp": "5:19 PM \u00b7 Oct 3, 2026",
+    "profilePostCountAfter": 593,
+    "profilePostCountBefore": 592,
+    "publicationCount": 1,
+    "publishedAndVerified": true,
+    "screenshot": {
+      "bytes": 78199,
+      "path": "/home/sixer/.codex/visualizations/2026/10/03/01a10273-4268-72a1-8cc7-793edfbdbbfc/audit30-item2-release-post.jpg",
+      "sha256": "82011c7fe9bf6223021c66a9a8a64095198026f4220fa7b92e944cc16d46c9bd"
+    },
+    "url": "https://x.com/proofofworkme/status/2106494475979612449"
+  },
+  "globalAudit30ClosureComplete": false,
+  "hookResults": [
+    "no allowlisted rebuildable state found",
+    "staged tree check passed",
+    "commit handoff trailers verified"
+  ],
+  "hygiene": {
+    "checkPassed": true,
+    "checkResult": "repository state check passed",
+    "fixPassed": true,
+    "fixResult": "no allowlisted rebuildable state found",
+    "noTrackedFileDeletion": true,
+    "reviewedCanonicalDocs": [
+      "SOUL.md",
+      "README.md",
+      "PROOFOFWORK_IDS.md",
+      "PROOFOFWORK_DNS.md",
+      "MARKETPLACE.md",
+      "OP_RETURN_INFRASTRUCTURE.md",
+      "MAIL_ORGANIZATION.md",
+      "REPOSITORY_HYGIENE.md"
+    ],
+    "semanticReviewComplete": true,
+    "stagedDiffCheckPassed": true,
+    "trackedNotesAndGeneratedArtifactsReviewed": true
+  },
+  "observedAtUtc": "2026-10-03T21:21:09.541144+00:00",
+  "observer": "Root",
+  "primaryCommit": "30499f7b0da78e3bd5472c424a861bfed7a6b602",
+  "primaryCommitToolExitCode": 0,
+  "primaryCommitTrailers": {
+    "Documentation-Impact": "updated",
+    "Repository-Hygiene": "reviewed"
+  },
+  "push": {
+    "branch": "codex/audit30-remaining-phase",
+    "commit": "30499f7b0da78e3bd5472c424a861bfed7a6b602",
+    "remote": "origin",
+    "remoteRefObserved": "30499f7b0da78e3bd5472c424a861bfed7a6b602\trefs/heads/codex/audit30-remaining-phase",
+    "remoteRefVerified": true,
+    "toolExitCode": 0
+  },
+  "qualification": "Actual Root tool observations. The primary release was committed and pushed after verified production API/mail/UI acceptance. The single public announcement was verified on its profile and permalink in the in-app browser. This proof records no further production mutation and does not close human items3\u20136.",
+  "runtimeAcceptanceActionOrdinal": 73,
+  "schema": "pow-audit30-item2-root-handoff-proof-v1",
+  "sourceCustody": {
+    "allCustodyEntriesHaveDurableStagedBytes": true,
+    "allStoredMappingsDecodedExact": true,
+    "bytes": 698750,
+    "historicalRowsAndMappingsPreserved": true,
+    "path": "/home/sixer/ProofOfWork.Me/deploy/audit30/verification/source-custody.json",
+    "rows": 1418,
+    "sha256": "723e7b864175e4f2f313d21fc16f83f12a9f9a9e4b7c99a975de90537e451eec",
+    "storedRepresentations": 8
+  }
+}

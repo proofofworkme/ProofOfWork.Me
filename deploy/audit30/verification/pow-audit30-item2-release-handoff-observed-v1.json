@@ -1,0 +1,80 @@
+{
+  "announcement": {
+    "account": "proofofworkme",
+    "body": "619 confirmed messages. Exact chain bytes.\n\nThe ProofOfWork Computer release is live: WORK balance checks passed, complete scoped POWB/INCB listings verified, and every published UI file checked byte for byte.\n\n$WORK $POWB $INCB",
+    "observedBrowserDetailTimestamp": "5:19 PM \u00b7 Oct 3, 2026",
+    "profilePostCountAfter": 593,
+    "profilePostCountBefore": 592,
+    "publicationCount": 1,
+    "publishedAndVerified": true,
+    "screenshot": {
+      "bytes": 78199,
+      "path": "/home/sixer/.codex/visualizations/2026/10/03/01a10273-4268-72a1-8cc7-793edfbdbbfc/audit30-item2-release-post.jpg",
+      "sha256": "82011c7fe9bf6223021c66a9a8a64095198026f4220fa7b92e944cc16d46c9bd"
+    },
+    "url": "https://x.com/proofofworkme/status/2106494475979612449"
+  },
+  "branch": "codex/audit30-remaining-phase",
+  "canonicalDocumentationReconciled": true,
+  "evidence": {
+    "announcement": {
+      "bytes": 3043,
+      "path": "/home/sixer/ProofOfWork.Me/deploy/audit30/verification/pow-audit30-item2-root-handoff-proof-v1.json",
+      "sha256": "732cb2b64cb75dffa877eedf7b87e46d0858231994cd18e3624757fd116c4612"
+    },
+    "hygiene": {
+      "bytes": 3043,
+      "path": "/home/sixer/ProofOfWork.Me/deploy/audit30/verification/pow-audit30-item2-root-handoff-proof-v1.json",
+      "sha256": "732cb2b64cb75dffa877eedf7b87e46d0858231994cd18e3624757fd116c4612"
+    },
+    "primaryCommit": {
+      "bytes": 3043,
+      "path": "/home/sixer/ProofOfWork.Me/deploy/audit30/verification/pow-audit30-item2-root-handoff-proof-v1.json",
+      "sha256": "732cb2b64cb75dffa877eedf7b87e46d0858231994cd18e3624757fd116c4612"
+    },
+    "push": {
+      "bytes": 3043,
+      "path": "/home/sixer/ProofOfWork.Me/deploy/audit30/verification/pow-audit30-item2-root-handoff-proof-v1.json",
+      "sha256": "732cb2b64cb75dffa877eedf7b87e46d0858231994cd18e3624757fd116c4612"
+    },
+    "sourceCustody": {
+      "bytes": 3043,
+      "path": "/home/sixer/ProofOfWork.Me/deploy/audit30/verification/pow-audit30-item2-root-handoff-proof-v1.json",
+      "sha256": "732cb2b64cb75dffa877eedf7b87e46d0858231994cd18e3624757fd116c4612"
+    }
+  },
+  "globalAudit30ClosureComplete": false,
+  "hygiene": {
+    "checkPassed": true,
+    "checkResult": "repository state check passed",
+    "fixPassed": true,
+    "fixResult": "no allowlisted rebuildable state found",
+    "noTrackedFileDeletion": true,
+    "reviewedCanonicalDocs": [
+      "SOUL.md",
+      "README.md",
+      "PROOFOFWORK_IDS.md",
+      "PROOFOFWORK_DNS.md",
+      "MARKETPLACE.md",
+      "OP_RETURN_INFRASTRUCTURE.md",
+      "MAIL_ORGANIZATION.md",
+      "REPOSITORY_HYGIENE.md"
+    ],
+    "semanticReviewComplete": true,
+    "stagedDiffCheckPassed": true,
+    "trackedNotesAndGeneratedArtifactsReviewed": true
+  },
+  "observedAtUtc": "2026-10-03T21:21:09.541144+00:00",
+  "primaryCommit": "30499f7b0da78e3bd5472c424a861bfed7a6b602",
+  "push": {
+    "branch": "codex/audit30-remaining-phase",
+    "commit": "30499f7b0da78e3bd5472c424a861bfed7a6b602",
+    "remote": "origin",
+    "remoteRefObserved": "30499f7b0da78e3bd5472c424a861bfed7a6b602\trefs/heads/codex/audit30-remaining-phase",
+    "remoteRefVerified": true,
+    "toolExitCode": 0
+  },
+  "rootVerified": true,
+  "schema": "pow-audit30-item2-release-handoff-observed-v1",
+  "sourceCustodyComplete": true
+}

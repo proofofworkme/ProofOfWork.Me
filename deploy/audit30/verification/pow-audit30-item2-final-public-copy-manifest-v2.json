@@ -1,0 +1,80 @@
+{
+  "deletionRequested": false,
+  "members": [
+    {
+      "original": {
+        "bytes": 2917,
+        "path": "/tmp/pow-audit30-action73-human-tracker-append-v1.md",
+        "sha256": "129ce3418cdc1a0b6b4d241db3a8b3a2a21341ef08ea696414dad528abb79a99"
+      },
+      "privateDataIncluded": false,
+      "proposedRepositoryPath": "deploy/audit30/verification/pow-audit30-action73-human-tracker-append-v1.md.txt",
+      "purpose": "preserve-approved-public-document-fragment-exact-text"
+    },
+    {
+      "original": {
+        "bytes": 7613,
+        "path": "/tmp/pow-audit30-item2-custody-actual-finalize-local-v1.py",
+        "sha256": "24401ebbc2cc0dbf835ac3c9639e29d4b2c88ba0e3d3807a3891e926afc3dc40"
+      },
+      "privateDataIncluded": false,
+      "proposedRepositoryPath": "deploy/audit30/verification/pow-audit30-item2-custody-actual-finalize-local-v1.py",
+      "purpose": "preserve-reviewed-final-bookkeeping-source-or-dated-manifest"
+    },
+    {
+      "original": {
+        "bytes": 2333,
+        "path": "/tmp/pow-audit30-item2-final-bookkeeping-review-v1.json",
+        "sha256": "f98af0e4ab24057d98fac916ff057c925f8e82a058a66620271dbeccf7a9ee1a"
+      },
+      "privateDataIncluded": false,
+      "proposedRepositoryPath": "deploy/audit30/verification/pow-audit30-item2-final-bookkeeping-review-v1.json",
+      "purpose": "preserve-reviewed-final-bookkeeping-source-or-dated-manifest"
+    },
+    {
+      "original": {
+        "bytes": 25888,
+        "path": "/tmp/pow-audit30-item2-final-public-copy-manifest-v1.json",
+        "sha256": "5999e4b339605156b93893bc10ec1ada9bf96ca634aeeb6460b9411dadf98440"
+      },
+      "privateDataIncluded": false,
+      "proposedRepositoryPath": "deploy/audit30/verification/pow-audit30-item2-final-public-copy-manifest-v1.json",
+      "purpose": "preserve-reviewed-final-bookkeeping-source-or-dated-manifest"
+    },
+    {
+      "original": {
+        "bytes": 2942,
+        "path": "/tmp/pow-audit30-item2-operational-doc-append-final-v1.md",
+        "sha256": "97ebf99bbd8a2393c267f92cc40fa20f246ed9477f30952898efd5a1ad956b64"
+      },
+      "privateDataIncluded": false,
+      "proposedRepositoryPath": "deploy/audit30/verification/pow-audit30-item2-operational-doc-append-final-v1.md.txt",
+      "purpose": "preserve-approved-public-document-fragment-exact-text"
+    },
+    {
+      "original": {
+        "bytes": 2957,
+        "path": "/tmp/pow-audit30-item2-operational-doc-append-final-v2.md",
+        "sha256": "14db99a575fb5f1a697418fd5422ed499a2f3569842e540645b1043cf3fc1675"
+      },
+      "privateDataIncluded": false,
+      "proposedRepositoryPath": "deploy/audit30/verification/pow-audit30-item2-operational-doc-append-final-v2.md.txt",
+      "purpose": "preserve-approved-public-document-fragment-exact-text"
+    },
+    {
+      "original": {
+        "bytes": 238890,
+        "path": "/tmp/pow-audit30-item2-source-custody-final-manifest-v1.json",
+        "sha256": "b7e4da26c36eca987d15b4e7ae84a6af464e9874de6cf2ae9e208ae3590b780c"
+      },
+      "privateDataIncluded": false,
+      "proposedRepositoryPath": "deploy/audit30/verification/pow-audit30-item2-source-custody-final-manifest-v1.json",
+      "purpose": "preserve-reviewed-final-bookkeeping-source-or-dated-manifest"
+    }
+  ],
+  "privateCapturesBodiesOrRawAddressesIncluded": false,
+  "productionCalls": false,
+  "qualification": "Explicit final missing public files only; all existing targets were verified exact. Three .md originals copy byte-for-byte to .md.txt targets. No blanket staging, raw Markdown rewrite/deletion or historical custody change.",
+  "schema": "pow-audit30-action73-proposed-public-custody-manifest-v1",
+  "trackerMutationPerformed": false
+}

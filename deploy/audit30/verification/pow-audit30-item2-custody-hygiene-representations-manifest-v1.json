@@ -1,0 +1,134 @@
+{
+  "additionalQualification": "Four already preserved public raw artifacts (three bounded refusal/stage logs and the exact executed parser fixture source) now have closed lossless base64 public representations. All1414 existing rows and four original raw-diff mappings remain exactly unchanged; four new mappings support the retained untracked raw artifacts and four envelope rows are added. No original byte was edited/deleted/rerun, no production operation or hook/ignore-policy change is performed by this custody update.",
+  "atUtc": "2026-10-03T21:17:21.976895+00:00",
+  "custodyPreimage": {
+    "bytes": 691229,
+    "path": "deploy/audit30/verification/source-custody.json",
+    "rows": 1414,
+    "sha256": "5682da2d3753766be7e2df501622f8bc9ce1bd98cc3d576711f8c20532321dfe",
+    "storedRepresentations": 4
+  },
+  "files": [
+    {
+      "bytes": 466,
+      "originalPath": "/tmp/pow-audit30-item2-ui-refusal-exact-receive-admission.log",
+      "purpose": "preserve-exact-executed-public-source-or-log-without-transient-or-whitespace-formatting",
+      "qualification": "Closed lossless base64 representation; original public /tmp and retained raw repository bytes stay unchanged and untracked. No rerun, edit, deletion, acceptance or cleanup claim.",
+      "rawBytes": 148,
+      "rawSha256": "651f59222a471759ecacf8e0a1d9035c179913e3a41e8df08bf391dce4b747ae",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-item2-ui-refusal-exact-receive-admission.log.evidence.json",
+      "representation": "closed-base64-envelope-preserves-exact-raw-input",
+      "sha256": "c891e4f32911a8541b677eed3e3c2daddf997c34e8f8713f946e890b65ddd8a4"
+    },
+    {
+      "bytes": 725,
+      "originalPath": "/tmp/pow-audit30-item2-ui-refusal-exact-receiver.log",
+      "purpose": "preserve-exact-executed-public-source-or-log-without-transient-or-whitespace-formatting",
+      "qualification": "Closed lossless base64 representation; original public /tmp and retained raw repository bytes stay unchanged and untracked. No rerun, edit, deletion, acceptance or cleanup claim.",
+      "rawBytes": 349,
+      "rawSha256": "e5d4860608f45275ff4661893e81d2d623ab953da37985aab865905e8f519e40",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-item2-ui-refusal-exact-receiver.log.evidence.json",
+      "representation": "closed-base64-envelope-preserves-exact-raw-input",
+      "sha256": "017d02adfba3228090d6038a3bb05637b8a7164bdad8eff7dc64829ee8da3893"
+    },
+    {
+      "bytes": 964,
+      "originalPath": "/tmp/pow-audit30-item2-ui-surfaces-stage-v1.log",
+      "purpose": "preserve-exact-executed-public-source-or-log-without-transient-or-whitespace-formatting",
+      "qualification": "Closed lossless base64 representation; original public /tmp and retained raw repository bytes stay unchanged and untracked. No rerun, edit, deletion, acceptance or cleanup claim.",
+      "rawBytes": 533,
+      "rawSha256": "80880387c742c85fa2642002ab6666d6139adc19f3b00baef24918cd156d4f8c",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-item2-ui-surfaces-stage-v1.log.evidence.json",
+      "representation": "closed-base64-envelope-preserves-exact-raw-input",
+      "sha256": "186b9f26b250d27bd79c3fe42e6ace944dd9a4f3b16e0b95b989cda384a5a1d8"
+    },
+    {
+      "bytes": 9444,
+      "originalPath": "/tmp/pow-audit30-production-v2-passive-read-v1.test.py",
+      "purpose": "preserve-exact-executed-public-source-or-log-without-transient-or-whitespace-formatting",
+      "qualification": "Closed lossless base64 representation; original public /tmp and retained raw repository bytes stay unchanged and untracked. No rerun, edit, deletion, acceptance or cleanup claim.",
+      "rawBytes": 6888,
+      "rawSha256": "8b6d8fce41a9b6c31a3e7351c959392f42b736b4147b35b2173052f213d7d7fc",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-production-v2-passive-read-v1.test.py.evidence.json",
+      "representation": "closed-base64-envelope-preserves-exact-raw-input",
+      "sha256": "63a04d1220d4656abd9af7776d35011370e231ee5bf635e50bdfd133558f4282"
+    }
+  ],
+  "privateDataIncluded": false,
+  "publicReviewed": true,
+  "schema": "pow-audit30-item2-custody-hygiene-representations-v1",
+  "storedRepresentationAdditions": {
+    "deploy/audit30/verification/pow-audit30-item2-ui-refusal-exact-receive-admission.log": {
+      "decodedIdentity": {
+        "byteEqualToOriginalInput": true,
+        "byteEqualToRetainedRawRepositoryFile": true,
+        "originalInput": "/tmp/pow-audit30-item2-ui-refusal-exact-receive-admission.log",
+        "rawBytes": 148,
+        "rawSha256": "651f59222a471759ecacf8e0a1d9035c179913e3a41e8df08bf391dce4b747ae"
+      },
+      "encoding": "base64",
+      "originalInputRetainedUnchanged": true,
+      "rawBytes": 148,
+      "rawRepositoryTracking": "retained-untracked-local",
+      "rawSha256": "651f59222a471759ecacf8e0a1d9035c179913e3a41e8df08bf391dce4b747ae",
+      "rawWorkspaceRetainedUnchanged": true,
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-item2-ui-refusal-exact-receive-admission.log.evidence.json",
+      "storedBytes": 466,
+      "storedSha256": "c891e4f32911a8541b677eed3e3c2daddf997c34e8f8713f946e890b65ddd8a4"
+    },
+    "deploy/audit30/verification/pow-audit30-item2-ui-refusal-exact-receiver.log": {
+      "decodedIdentity": {
+        "byteEqualToOriginalInput": true,
+        "byteEqualToRetainedRawRepositoryFile": true,
+        "originalInput": "/tmp/pow-audit30-item2-ui-refusal-exact-receiver.log",
+        "rawBytes": 349,
+        "rawSha256": "e5d4860608f45275ff4661893e81d2d623ab953da37985aab865905e8f519e40"
+      },
+      "encoding": "base64",
+      "originalInputRetainedUnchanged": true,
+      "rawBytes": 349,
+      "rawRepositoryTracking": "retained-untracked-local",
+      "rawSha256": "e5d4860608f45275ff4661893e81d2d623ab953da37985aab865905e8f519e40",
+      "rawWorkspaceRetainedUnchanged": true,
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-item2-ui-refusal-exact-receiver.log.evidence.json",
+      "storedBytes": 725,
+      "storedSha256": "017d02adfba3228090d6038a3bb05637b8a7164bdad8eff7dc64829ee8da3893"
+    },
+    "deploy/audit30/verification/pow-audit30-item2-ui-surfaces-stage-v1.log": {
+      "decodedIdentity": {
+        "byteEqualToOriginalInput": true,
+        "byteEqualToRetainedRawRepositoryFile": true,
+        "originalInput": "/tmp/pow-audit30-item2-ui-surfaces-stage-v1.log",
+        "rawBytes": 533,
+        "rawSha256": "80880387c742c85fa2642002ab6666d6139adc19f3b00baef24918cd156d4f8c"
+      },
+      "encoding": "base64",
+      "originalInputRetainedUnchanged": true,
+      "rawBytes": 533,
+      "rawRepositoryTracking": "retained-untracked-local",
+      "rawSha256": "80880387c742c85fa2642002ab6666d6139adc19f3b00baef24918cd156d4f8c",
+      "rawWorkspaceRetainedUnchanged": true,
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-item2-ui-surfaces-stage-v1.log.evidence.json",
+      "storedBytes": 964,
+      "storedSha256": "186b9f26b250d27bd79c3fe42e6ace944dd9a4f3b16e0b95b989cda384a5a1d8"
+    },
+    "deploy/audit30/verification/pow-audit30-production-v2-passive-read-v1.test.py": {
+      "decodedIdentity": {
+        "byteEqualToOriginalInput": true,
+        "byteEqualToRetainedRawRepositoryFile": true,
+        "originalInput": "/tmp/pow-audit30-production-v2-passive-read-v1.test.py",
+        "rawBytes": 6888,
+        "rawSha256": "8b6d8fce41a9b6c31a3e7351c959392f42b736b4147b35b2173052f213d7d7fc"
+      },
+      "encoding": "base64",
+      "originalInputRetainedUnchanged": true,
+      "rawBytes": 6888,
+      "rawRepositoryTracking": "retained-untracked-local",
+      "rawSha256": "8b6d8fce41a9b6c31a3e7351c959392f42b736b4147b35b2173052f213d7d7fc",
+      "rawWorkspaceRetainedUnchanged": true,
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-production-v2-passive-read-v1.test.py.evidence.json",
+      "storedBytes": 9444,
+      "storedSha256": "63a04d1220d4656abd9af7776d35011370e231ee5bf635e50bdfd133558f4282"
+    }
+  }
+}
