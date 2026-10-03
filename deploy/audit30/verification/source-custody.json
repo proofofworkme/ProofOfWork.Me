@@ -1,5 +1,5 @@
 {
-  "atUtc": "2026-10-03T07:03:39.996236+00:00",
+  "atUtc": "2026-10-03T07:21:49.253645+00:00",
   "files": [
     {
       "bytes": 19239,
@@ -2173,6 +2173,160 @@
       "purpose": "Exact public verification source/test. Actual native scope, sample limits, preserved failures and pending arithmetic are recorded separately in the execution evidence.",
       "repositoryPath": "deploy/audit30/verification/pow-audit30-treasury-failed-corpus-public-observer-v1.py",
       "sha256": "b6b3dba3f9881738a545b2d7f71545a1244e19fece7806596f18fd6995b8bc34"
+    },
+    {
+      "bytes": 5970,
+      "originalPath": "/tmp/pow-audit30-single-math-operator-create-v2.py",
+      "purpose": "Exact public audit source/fixture custody. Actual scope, acceptance/refusal, sample limits and pending live authority are recorded separately; source custody never grants production approval.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-single-math-operator-create-v2.py",
+      "sha256": "9aae44cf9523bc192d280eb8ffe4c9ba65db8188bb6a7bf111fc93c72ab5646a"
+    },
+    {
+      "bytes": 1709,
+      "originalPath": "/tmp/pow-audit30-math-completed-fixed-metadata-v2.py",
+      "purpose": "Exact public audit source/fixture custody. Actual scope, acceptance/refusal, sample limits and pending live authority are recorded separately; source custody never grants production approval.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-math-completed-fixed-metadata-v2.py",
+      "sha256": "57c26db664fe549779e20f823c7b7e425fd32fa226a163c34a999d656e4e6946"
+    },
+    {
+      "bytes": 3514,
+      "originalPath": "/tmp/pow-audit30-repair-first-worker-observation-root-v1.py",
+      "purpose": "Exact public audit source/fixture custody. Actual scope, acceptance/refusal, sample limits and pending live authority are recorded separately; source custody never grants production approval.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-repair-first-worker-observation-root-v1.py",
+      "sha256": "721d3359d368bf13f626567cde6cda8e8e9a5c400a9f32724641e096ea403f70"
+    },
+    {
+      "bytes": 1975,
+      "originalPath": "/tmp/pow-audit30-repair-first-worker-observation-root-v1.test.py",
+      "purpose": "Exact public audit source/fixture custody. Actual scope, acceptance/refusal, sample limits and pending live authority are recorded separately; source custody never grants production approval.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-repair-first-worker-observation-root-v1.test.py",
+      "sha256": "79754a33d0bcb99079e06afe547487138fd1a9ef8930394ef363510260bfce13"
+    },
+    {
+      "bytes": 1760,
+      "originalPath": "/tmp/pow-audit30-repair-first-worker-observation-transport-v1.py",
+      "purpose": "Exact public audit source/fixture custody. Actual scope, acceptance/refusal, sample limits and pending live authority are recorded separately; source custody never grants production approval.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-repair-first-worker-observation-transport-v1.py",
+      "sha256": "495117776aff598cb99545d57b9107a71e749e27c13375f63be97a23b3ceb465"
+    },
+    {
+      "bytes": 21870,
+      "originalPath": "/tmp/pow-audit30-private-sixteen-supervisor-e43056d-initial-source.py",
+      "purpose": "Exact public audit source/fixture custody. Actual scope, acceptance/refusal, sample limits and pending live authority are recorded separately; source custody never grants production approval.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-private-sixteen-supervisor-e43056d-initial-source.py",
+      "sha256": "e43056d3931c9f202418c70c6c8fdf8927564c6a567c8e0ee231f178e18547c4"
+    },
+    {
+      "bytes": 17529,
+      "originalPath": "/tmp/pow-audit30-private-sixteen-supervisor-6ce6826-initial-test.py",
+      "purpose": "Exact public audit source/fixture custody. Actual scope, acceptance/refusal, sample limits and pending live authority are recorded separately; source custody never grants production approval.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-private-sixteen-supervisor-6ce6826-initial-test.py",
+      "sha256": "6ce6826917f161545cd96ddab4fc42534f9d89155ee48d7090c8c5f5be2d1a58"
+    },
+    {
+      "bytes": 18383,
+      "originalPath": "/tmp/pow-audit30-private-sixteen-bootstrap-d6be147-initial-source.py",
+      "purpose": "Exact public audit source/fixture custody. Actual scope, acceptance/refusal, sample limits and pending live authority are recorded separately; source custody never grants production approval.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-private-sixteen-bootstrap-d6be147-initial-source.py",
+      "sha256": "d6be1471ff79e5c7644b426399dabf7896e12401dd3edb99362ac5b7ded491fc"
+    },
+    {
+      "bytes": 22845,
+      "originalPath": "/tmp/pow-audit30-private-sixteen-supervisor-v2.py",
+      "purpose": "Exact public audit source/fixture custody. Actual scope, acceptance/refusal, sample limits and pending live authority are recorded separately; source custody never grants production approval.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-private-sixteen-supervisor-v2.py",
+      "sha256": "891a14878e9496ff83acb53c547c0c3a23a733389e27fc7a00489b6a335495fe"
+    },
+    {
+      "bytes": 19199,
+      "originalPath": "/tmp/pow-audit30-private-sixteen-supervisor-v2.test.py",
+      "purpose": "Exact public audit source/fixture custody. Actual scope, acceptance/refusal, sample limits and pending live authority are recorded separately; source custody never grants production approval.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-private-sixteen-supervisor-v2.test.py",
+      "sha256": "626ee259dd511afccb80815ff88011468e834c5ec9dde940ca3001c54c9f84d4"
+    },
+    {
+      "bytes": 19001,
+      "originalPath": "/tmp/pow-audit30-private-sixteen-bootstrap-v2.py",
+      "purpose": "Exact public audit source/fixture custody. Actual scope, acceptance/refusal, sample limits and pending live authority are recorded separately; source custody never grants production approval.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-private-sixteen-bootstrap-v2.py",
+      "sha256": "33c3c65c079901022850d4407c4df460b6924196d077061ba86d0d27ef385729"
+    },
+    {
+      "bytes": 14902,
+      "originalPath": "/tmp/pow-audit30-private-sixteen-bootstrap-v2.test.py",
+      "purpose": "Exact public audit source/fixture custody. Actual scope, acceptance/refusal, sample limits and pending live authority are recorded separately; source custody never grants production approval.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-private-sixteen-bootstrap-v2.test.py",
+      "sha256": "190d3d9cbae9375b52a053e31020921e7d0eab1471804fbafae5552305b39903"
+    },
+    {
+      "bytes": 5139,
+      "originalPath": "/tmp/pow-audit30-production-sixteen-approval-binding-v2.mjs",
+      "purpose": "Exact public audit source/fixture custody. Actual scope, acceptance/refusal, sample limits and pending live authority are recorded separately; source custody never grants production approval.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-production-sixteen-approval-binding-v2.mjs",
+      "sha256": "f6f25ef5bfddf534d8b21d65ced4ff0d02b134a7b77114e41a16ac6e1787b286"
+    },
+    {
+      "bytes": 4152,
+      "originalPath": "/tmp/pow-audit30-production-sixteen-approval-binding-v2.test.mjs",
+      "purpose": "Exact public audit source/fixture custody. Actual scope, acceptance/refusal, sample limits and pending live authority are recorded separately; source custody never grants production approval.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-production-sixteen-approval-binding-v2.test.mjs",
+      "sha256": "63cbe044b325a37a69dd6ff6c100cfdc13f3ce447a29cb4038aa8bdcb9063bf6"
+    },
+    {
+      "bytes": 10460,
+      "originalPath": "/tmp/pow-audit30-production-sixteen-adapter-v1.mjs",
+      "purpose": "Exact public audit source/fixture custody. Actual scope, acceptance/refusal, sample limits and pending live authority are recorded separately; source custody never grants production approval.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-production-sixteen-adapter-v1.mjs",
+      "sha256": "2e1cd11ef57bf4882670d31bd16498dd3aa12328d483cd4aa4d6f8deb6433dd1"
+    },
+    {
+      "bytes": 5592,
+      "originalPath": "/tmp/pow-audit30-production-sixteen-adapter-v1.test.mjs",
+      "purpose": "Exact public audit source/fixture custody. Actual scope, acceptance/refusal, sample limits and pending live authority are recorded separately; source custody never grants production approval.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-production-sixteen-adapter-v1.test.mjs",
+      "sha256": "89d1f1f32318fd3e0d7a12f6f4b1f6863b61ee9f244cea398e29f3d912dbc697"
+    },
+    {
+      "bytes": 9347,
+      "originalPath": "/tmp/pow-audit30-production-sixteen-native-caller-v1.mjs",
+      "purpose": "Exact public audit source/fixture custody. Actual scope, acceptance/refusal, sample limits and pending live authority are recorded separately; source custody never grants production approval.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-production-sixteen-native-caller-v1.mjs",
+      "sha256": "7328a8231b5e9a6e70ebe73539418c7aa33c3ab2900187ceaaf30dba86588767"
+    },
+    {
+      "bytes": 3073,
+      "originalPath": "/tmp/pow-audit30-production-sixteen-native-caller-v1.test.mjs",
+      "purpose": "Exact public audit source/fixture custody. Actual scope, acceptance/refusal, sample limits and pending live authority are recorded separately; source custody never grants production approval.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-production-sixteen-native-caller-v1.test.mjs",
+      "sha256": "561e563d444def32bdb21d8d703151952911a874caa5690fc8a43503922428a8"
+    },
+    {
+      "bytes": 1507,
+      "originalPath": "/tmp/pow-audit30-treasury-failed-discovery-scalar-observer-v1.py",
+      "purpose": "Exact public audit source/fixture custody. Actual scope, acceptance/refusal, sample limits and pending live authority are recorded separately; source custody never grants production approval.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-treasury-failed-discovery-scalar-observer-v1.py",
+      "sha256": "07c3fdfeafb0bff6e309f67e8376bdf059cb95e1ddd016293f2c63a99fb7dd7e"
+    },
+    {
+      "bytes": 7682,
+      "originalPath": "/tmp/pow-audit30-treasury-continuation-planning-census-v1.py",
+      "purpose": "Exact public audit source/fixture custody. Actual scope, acceptance/refusal, sample limits and pending live authority are recorded separately; source custody never grants production approval.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-treasury-continuation-planning-census-v1.py",
+      "sha256": "3900e99884011cff01daeba7597bf862dab92b810c3ddd6b9e0250f3a5ac0002"
+    },
+    {
+      "bytes": 4893,
+      "originalPath": "/tmp/pow-audit30-treasury-continuation-planning-census-v1.test.py",
+      "purpose": "Exact public audit source/fixture custody. Actual scope, acceptance/refusal, sample limits and pending live authority are recorded separately; source custody never grants production approval.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-treasury-continuation-planning-census-v1.test.py",
+      "sha256": "4d4a686a258a8038447523adcf533297de8f3684f37a1de0cf6e4bf7d0aa71ec"
+    },
+    {
+      "bytes": 3498,
+      "originalPath": "/tmp/pow-audit30-retirement-extensionless-public-supplement-v1.py",
+      "purpose": "Exact public audit source/fixture custody. Actual scope, acceptance/refusal, sample limits and pending live authority are recorded separately; source custody never grants production approval.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-retirement-extensionless-public-supplement-v1.py",
+      "sha256": "cb72d5e1760bd3dfa4c62b73d586c75b99962923301347a617253931a849ff09"
     }
   ],
   "qualification": "Exact public source/fixture custody with preserved earlier failures. No private bodies/environments/catalog/role secrets copied. 38ac stage/shadow pass, full semantic CLI changed-fence refusal then diagnostic first-request503 with no fence preimage and actual stopped unit. Cause and production acceptance remain pending; UI fc5 is staged. Source acceptance is not native acceptance or production-data/recovery/retirement authorization. One archival Python fixture copy removes only a final blank line required by the enabled whitespace hook; its exact original bytes, length and SHA remain losslessly base64-preserved in its manifest row and original /tmp source. Its Python AST is identical. Subsequent v3 original semantic CLI passes full coverage/registry parity at exact969677 with identical fences; other production acceptance gates remain pending. Actual CLI stopped closure and same-candidate readonly lease successor now pass; WORK/bond/strict and production publication remain pending. Mail GET source verification grants no stored-row repair authority.",
