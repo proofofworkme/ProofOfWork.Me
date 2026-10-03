@@ -14,6 +14,7 @@ import json
 import os
 from pathlib import Path
 import subprocess
+import sys
 import tarfile
 import tempfile
 import types
@@ -722,6 +723,47 @@ class PreservedTransport(unittest.TestCase):
                 self.assertIn('preserved-stage-resume-completed-v1.service', command)
                 self.assertIn('Transport unit namespace occupied', command)
         finally: os.umask(previous_umask)
+
+    def test_isolated_installed_stager_loader_preserves_path_for_original_sibling_capacity_helper(self):
+        phase = safe_module('phase_capacity.py')
+        stager_path = ROOT.parents[1] / 'deploy/proofofwork-ui-release-stage.py'
+        lock = self.base / 'loader-deploy.lock'; lock.write_bytes(b''); lock.chmod(0o600)
+        descriptor = os.open(lock, os.O_RDONLY)
+        actual_lstat, actual_fstat = Path.lstat, os.fstat
+        def owned(details):
+            row = types.SimpleNamespace(**{key: getattr(details, key) for key in dir(details) if key.startswith('st_')})
+            row.st_uid = row.st_gid = 0
+            # The source checkout may be group writable; installed production
+            # helpers use safe modes, independently tested by this loader.
+            row.st_mode &= ~0o022
+            return row
+        def local_path(value):
+            return {'/run/proofofwork-ui/deploy.lock': lock,
+                    '/usr/local/sbin/proofofwork-ui-release-stage': stager_path}.get(str(value), Path(value))
+        namespace = phase.locked_installed_stager.__globals__
+        namespace['Path'] = local_path
+        namespace['EXPECTED_STAGER_SHA256'] = self.release.digest(stager_path)
+        flags = types.SimpleNamespace(**{key: getattr(sys.flags, key) for key in dir(sys.flags) if not key.startswith('_') and not callable(getattr(sys.flags, key))})
+        flags.isolated = 1
+        try:
+            with patch.object(Path, 'lstat', lambda path: owned(actual_lstat(path))), \
+                 patch.object(os, 'fstat', lambda fd: owned(actual_fstat(fd))), \
+                 patch.object(os, 'geteuid', return_value=0), patch.object(sys, 'flags', flags), \
+                 patch.dict(os.environ, {'POW_UI_DEPLOY_LOCK_FD': str(descriptor)}):
+                installed = phase.locked_installed_stager()
+                self.assertEqual(installed.__file__, str(stager_path))
+                namespace['EXPECTED_STAGER_SHA256'] = '0'*64
+                with self.assertRaisesRegex(ValueError, 'differs from the reviewed'):
+                    phase.locked_installed_stager()
+            # The unchanged capacity helper resolves beside the hash-verified
+            # module, with every original constant and full tree-bound behavior.
+            helper = installed.capacity_helper()
+            self.assertEqual(helper.MAX_DEPLOY_SCRATCH_BYTES, 5*1024**3)
+            self.assertEqual(helper.ROOT_RESERVE_BYTES, 10*1024**3)
+            bound = helper.tree_bound(self.base, self.base)
+            self.assertGreater(bound['additionalBytes'], 0)
+        finally:
+            os.close(descriptor)
 
     def test_new_record_hash_is_bounded_before_read_and_refuses_linked_or_oversized_records(self):
         namespace = functions_only('remote_transport.py', {'bounded_record', 'identity'})

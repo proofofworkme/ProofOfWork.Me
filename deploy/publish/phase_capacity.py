@@ -342,6 +342,7 @@ def locked_installed_stager():
     if hashlib.sha256(code).hexdigest() != EXPECTED_STAGER_SHA256:
         raise ValueError('Installed stager differs from the reviewed phase model')
     module = types.ModuleType('audit5_installed_stager')
+    module.__file__ = str(path)
     sys.modules[module.__name__] = module
     exec(compile(code, str(path), 'exec'), module.__dict__)
     return module
