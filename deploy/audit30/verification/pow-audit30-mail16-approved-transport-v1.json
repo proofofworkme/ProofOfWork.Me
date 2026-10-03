@@ -1,0 +1,32 @@
+{
+  "schema": "audit30-mail16-current-chat-approved-transport-v1",
+  "exitCode": 0,
+  "elapsedSeconds": 109.318899,
+  "automaticRetry": false,
+  "stdout": {
+    "bytes": 502,
+    "sha256": "1cfca1aa3d3c1a1eec383f247d39605054ae60e911238af395a02b4720920b5e",
+    "jsonLines": [
+      {
+        "schema": "audit30-mail16-idle-scheduling-v1",
+        "atUtc": "2026-10-03T16:13:05.122849+00:00",
+        "samples": 100,
+        "finishedAgeSeconds": 0.314841,
+        "writerInvocationsSoFar": 0
+      },
+      {
+        "approvalSHA256": "f37e16a1d9b8c6f52081a7c44d01d8a5142051770d7d16aafe9fcaa9e5354c42",
+        "automaticRetry": false,
+        "operation": "apply",
+        "ownedUnitStopped": true,
+        "rootCompletedPath": "/usr/local/lib/proofofwork-audit30-production-sixteen/20261003T160000Z/root-completed.json",
+        "status": "committed",
+        "strictRerunStillRequired": true
+      }
+    ]
+  },
+  "stderr": {
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  }
+}

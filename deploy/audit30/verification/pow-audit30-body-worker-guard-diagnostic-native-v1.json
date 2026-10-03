@@ -1,0 +1,36 @@
+{
+  "automaticRetry": false,
+  "captures": {
+    "stderr": {
+      "bytes": 0,
+      "path": "/tmp/pow-audit30-body-worker-guard-diagnostic-native-v1.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "stdout": {
+      "bytes": 5767,
+      "path": "/tmp/pow-audit30-body-worker-guard-diagnostic-native-v1.stdout",
+      "sha256": "70cd1cd2be29c2e78b6fec7192c88a795914abdf64d21984f9c3cd56bc61bda8"
+    }
+  },
+  "exitCode": 0,
+  "failure": null,
+  "finishedAtUtc": "2026-10-03T15:00:06.432259+00:00",
+  "inputBindings": {
+    "nativeStopNotInferredFromTransport": true,
+    "readonlyOriginal480DiagnosticOnly": true,
+    "requestSHA256": "37b3d8e58fcca371ec952c12207efbe2b2a9feb58b755452b69616346fc252a6",
+    "sourceSHA256": "c9840bcfc92049acafc7b5f1746e0f0834c26030ccc0bf00a55c7a9ba184a254",
+    "transportSHA256": "1dedef0a6c7021d114017e711ad74f9cfed4e461fc047a2be2c49e590f3da18e"
+  },
+  "outerDeadlineSeconds": 120,
+  "productionDataMutationRequested": false,
+  "receivedBytes": {
+    "stderr": 0,
+    "stdout": 5767
+  },
+  "remoteUnitStoppedCertifiedByTransport": false,
+  "schema": "pow-audit30-readonly-owned-transport-result-v1",
+  "seconds": 2.874059,
+  "startedAtUtc": "2026-10-03T15:00:03.558200+00:00",
+  "typedStdinBytesDelivered": 142727
+}

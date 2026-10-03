@@ -1,0 +1,21 @@
+{
+  "releaseId": "38ac6e2bff2a-20261003T190512Z",
+  "commit": "38ac6e2bff2ac16890724e5213346ef8a3ebd186",
+  "tree": "8b9b5e3cd47aa8e4204da717350a629176e30da6",
+  "buildRoot": "/tmp/proofofwork-ui-release.sWTw59PgNe",
+  "node": "/usr/bin/node",
+  "nodeVersion": "v22.23.3",
+  "bundles": {
+    "source": {
+      "path": "/tmp/proofofwork-ui-release.sWTw59PgNe/proofofwork-ui-source-38ac6e2bff2a-20261003T190512Z.tgz",
+      "bytes": 105032111,
+      "sha256": "e8a92e9ddcd81ec352e5c4e4684d238780f02378285b315614976c85e4c43903"
+    },
+    "surfaces": {
+      "path": "/tmp/proofofwork-ui-release.sWTw59PgNe/proofofwork-ui-surfaces-38ac6e2bff2a-20261003T190512Z.tgz",
+      "bytes": 195313712,
+      "sha256": "6849138b5b313ea6e134f3367892691b80174a2f3d12fac278047f6df0fc9b19"
+    }
+  },
+  "sourceAllocatedBytes": 270946304
+}

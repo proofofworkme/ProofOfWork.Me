@@ -1,0 +1,184 @@
+{
+  "deletionPerformed": false,
+  "manifestSHA256": "05677aadbf2e3d4d0c79ba0563e04fd15cfb6df2d007963ee1c2a1ed545d4805",
+  "memberCount": 29,
+  "members": [
+    {
+      "bytes": 1769,
+      "originalPath": "/tmp/pow-audit30-strict-v2-progress-20261003T190751Z.json",
+      "path": "deploy/audit30/verification/pow-audit30-strict-v2-passive-progress-v1.json",
+      "sha256": "e19520d713d81300b9bec9057ce93805ebba1fc6055cd3d4b45272b09c38c6de"
+    },
+    {
+      "bytes": 822,
+      "originalPath": "/tmp/proofofwork-ui-release.sWTw59PgNe/build-receipt.json",
+      "path": "deploy/audit30/verification/pow-audit30-item2-ui-build-38ac-v1.json",
+      "sha256": "75c45b805e4e67ef44ddf6bc7b54a817b08a6226262f40596b697f1cdb183d5e"
+    },
+    {
+      "bytes": 49052,
+      "originalPath": "/tmp/pow-audit30-item2-ui-preflight-38ac-v1.json",
+      "path": "deploy/audit30/verification/pow-audit30-item2-ui-preflight-38ac-v1.json",
+      "sha256": "1ea1eb8220005396939ac78b417d3ea9847f596d90997e6d670cbb0659dea6d2"
+    },
+    {
+      "bytes": 4695,
+      "originalPath": "/tmp/pow-audit30-item2-ui-plan-38ac-v1.json",
+      "path": "deploy/audit30/verification/pow-audit30-item2-ui-plan-38ac-v1.json",
+      "sha256": "e9f0ad26dbfb1364119f9bd51ba0b12d38b9d9eb2b1902baf2726a66a46a4643"
+    },
+    {
+      "bytes": 17811,
+      "originalPath": "/tmp/pow-audit30-item2-node-cutover.py",
+      "path": "deploy/audit30/verification/pow-audit30-item2-node-cutover-v1.py",
+      "sha256": "fcac13f0dfd68f0549c902b6680d8d09d5600bb1cb4e521f69ce615ac92a73b1"
+    },
+    {
+      "bytes": 3331,
+      "originalPath": "/tmp/pow-audit30-item2-node-cutover.test.py",
+      "path": "deploy/audit30/verification/pow-audit30-item2-node-cutover-v1.test.py",
+      "sha256": "11e2425300c78adaf76e69462caa979b7843f602a4db1a6f8ddc5adfeaf8bf07"
+    },
+    {
+      "bytes": 2327,
+      "originalPath": "/tmp/pow-audit30-item2-ui-release-38ac-v1/bindings.json",
+      "path": "deploy/audit30/verification/pow-audit30-item2-ui-wrapper-binding-v1.json",
+      "sha256": "d894f7cf00c3be20aaf6365be49a2d7991b4e3f57f50268602e3eb710b4152b7"
+    },
+    {
+      "bytes": 1809,
+      "originalPath": "/tmp/pow-audit30-strict-v2-work-predicate-read-result-v1.stdout",
+      "path": "deploy/audit30/verification/pow-audit30-strict-v2-work-predicate-read-result-v1.stdout.json",
+      "sha256": "38dc163338f1122ff458eecee2ed7169d5fd5e7945b4e8edf6a7856ee01a804c"
+    },
+    {
+      "bytes": 4238,
+      "originalPath": "/tmp/pow-audit30-strict-v2-work-predicate-read.py",
+      "path": "deploy/audit30/verification/pow-audit30-strict-v2-work-predicate-read-v1.py",
+      "sha256": "0052ce722c7303967053e513c7a773f26150527e2cb3c1ad6eea635d8fb29ad7"
+    },
+    {
+      "bytes": 411,
+      "originalPath": "/tmp/pow-audit30-strict-v2-work-predicate-read-result-v1.json",
+      "path": "deploy/audit30/verification/pow-audit30-strict-v2-work-predicate-read-result-v1.json",
+      "sha256": "208af9633ac8e9d13020f8d0cd5377fbf4d83a81755e5549780af360f0598836"
+    },
+    {
+      "bytes": 11365,
+      "originalPath": "/tmp/pow-audit30-item2-node-launch.py",
+      "path": "deploy/audit30/verification/pow-audit30-item2-node-launch-v1.py",
+      "sha256": "7079c7c01210ee336062ef675e40c88d6f1d588452b150b7ce083c2097e9a4ff"
+    },
+    {
+      "bytes": 3478,
+      "originalPath": "/tmp/pow-audit30-item2-node-launch.test.py",
+      "path": "deploy/audit30/verification/pow-audit30-item2-node-launch-v1.test.py",
+      "sha256": "dd2ba53d4ae293e6515ac8e59969d54d36bbe760ac63357bd7fe57e1ccfbf279"
+    },
+    {
+      "bytes": 4330,
+      "originalPath": "/tmp/pow-audit30-strict-v3-progress-20261003T192149Z.json",
+      "path": "deploy/audit30/verification/pow-audit30-strict-v3-progress-192149-v1.json",
+      "sha256": "cc34f4e55d14da7232c963a8ef8e51c572e1f878d631c3688968343be07f0184"
+    },
+    {
+      "bytes": 533,
+      "originalPath": "/tmp/pow-audit30-acceptance-strict-v3-native-v1.json",
+      "path": "deploy/audit30/verification/pow-audit30-strict-v3-preflight-refusal-transport-v1.json",
+      "sha256": "0b9debd66be9d3292c81f005a5f2ccafe372499e0dbba1a107d1613e41b07b15"
+    },
+    {
+      "bytes": 63,
+      "originalPath": "/tmp/pow-audit30-acceptance-strict-v3-native-v1.stderr",
+      "path": "deploy/audit30/verification/pow-audit30-strict-v3-preflight-refusal-error-v1.json",
+      "sha256": "d4b81e51b3c31af676feeb4fbf76478c369faed9d390bbbb8e45dfb2d82b121c"
+    },
+    {
+      "bytes": 2704,
+      "originalPath": "/tmp/pow-audit30-strict-v2-prior-check-shape-read.py",
+      "path": "deploy/audit30/verification/pow-audit30-strict-v2-prior-check-shape-read-v1.py",
+      "sha256": "f2999f8d34c48c09e25bb5c964b78471475420fe0a5277f9fcd9c359a49dd386"
+    },
+    {
+      "bytes": 6774,
+      "originalPath": "/tmp/pow-audit30-strict-v2-prior-check-shape-result-v1.stdout",
+      "path": "deploy/audit30/verification/pow-audit30-strict-v2-prior-check-shape-result-v1.stdout.json",
+      "sha256": "1e7a3dc1f4396f4463f7027bb888d0bf0e6b5a038492dd02d8841530cc377016"
+    },
+    {
+      "bytes": 348,
+      "originalPath": "/tmp/pow-audit30-strict-v2-prior-check-shape-result-v1.json",
+      "path": "deploy/audit30/verification/pow-audit30-strict-v2-prior-check-shape-result-v1.json",
+      "sha256": "9818b82ac000819bb383a83e29cfa7aeed71726c530a81d7a7d7a0561cfcd8ad"
+    },
+    {
+      "bytes": 5510,
+      "originalPath": "/tmp/pow-audit30-strict-v3-progress-read.py",
+      "path": "deploy/audit30/verification/pow-audit30-strict-v3-progress-read-v1.py",
+      "sha256": "4eeb66e81a824fdc4dd9b521f93320f6503cca69411391b4ace900996d02bb0b"
+    },
+    {
+      "bytes": 1807,
+      "originalPath": "/tmp/pow-audit30-strict-v3-progress-read.test.py",
+      "path": "deploy/audit30/verification/pow-audit30-strict-v3-progress-read-v1.test.py",
+      "sha256": "e35041ec6ef900f7f3d56dd722e5a9a29ae167c4e756efada624761ba46a7775"
+    },
+    {
+      "bytes": 12039,
+      "originalPath": "/tmp/pow-audit30-item2-ui-release-38ac-v1/release.py",
+      "path": "deploy/audit30/verification/item2-ui-release-38ac-v1/release.py",
+      "sha256": "a70d791921ece41ff3fb86b2e3dce816c99f3fabd1fe6ed97843e761f342f5bd"
+    },
+    {
+      "bytes": 6165,
+      "originalPath": "/tmp/pow-audit30-item2-ui-release-38ac-v1/preflight.py",
+      "path": "deploy/audit30/verification/item2-ui-release-38ac-v1/preflight.py",
+      "sha256": "a7f672dcf4e6f3c5187c858143ad3cd4c87deb5fb3f0b244130a4826d72b6b84"
+    },
+    {
+      "bytes": 8593,
+      "originalPath": "/tmp/pow-audit30-item2-ui-release-38ac-v1/publish.py",
+      "path": "deploy/audit30/verification/item2-ui-release-38ac-v1/publish.py",
+      "sha256": "d285f986463eb5253f6669ceaf552e0a773222ae80431bc868ba92d853ff7b3d"
+    },
+    {
+      "bytes": 16802,
+      "originalPath": "/tmp/pow-audit30-item2-ui-release-38ac-v1/remote_transport.py",
+      "path": "deploy/audit30/verification/item2-ui-release-38ac-v1/remote_transport.py",
+      "sha256": "7153e99661b7c05b31c6d789b0546f0c130af4e60cbd9d47dd63f83198b93d28"
+    },
+    {
+      "bytes": 2366,
+      "originalPath": "/tmp/pow-audit30-item2-ui-release-38ac-v1/transport_preserve.py",
+      "path": "deploy/audit30/verification/item2-ui-release-38ac-v1/transport_preserve.py",
+      "sha256": "98e083a9ece551dea8efe591541e7f2702e2426ca7788e828deaa4207550d1fe"
+    },
+    {
+      "bytes": 3348,
+      "originalPath": "/tmp/pow-audit30-item2-ui-release-38ac-v1/collect_verify.py",
+      "path": "deploy/audit30/verification/item2-ui-release-38ac-v1/collect_verify.py",
+      "sha256": "dd898d0a1642f9715f806b52d66fd173445bb4dd81ea3e904934dc73a43b7f04"
+    },
+    {
+      "bytes": 15072,
+      "originalPath": "/tmp/pow-audit30-item2-ui-release-38ac-v1/https_smoke.py",
+      "path": "deploy/audit30/verification/item2-ui-release-38ac-v1/https_smoke.py",
+      "sha256": "4c422a3fb3e29b21706f344491eb2ebcec3552f8b9dc8b67f56b913697135b23"
+    },
+    {
+      "bytes": 5466,
+      "originalPath": "/tmp/pow-audit30-append-action70-v1.py",
+      "path": "deploy/audit30/verification/pow-audit30-append-action70-v1.py",
+      "sha256": "7fc140b44dbf4d3f74b3a635e140a1265253b14b16dce54b816cafda184172b4"
+    },
+    {
+      "bytes": 56802,
+      "originalPath": "/tmp/pow-audit30-action70-proposed-update-v7.json",
+      "path": "deploy/audit30/verification/pow-audit30-action70-proposed-update-v7.json",
+      "sha256": "ca4ac2aa71bb6f249add331e3f9b47ab9d8ab8257613f0663631244c6e5d3306"
+    }
+  ],
+  "privateBodiesOrEnvironmentsIncluded": false,
+  "productionCalls": false,
+  "schema": "pow-audit30-action70-public-custody-preserved-v1"
+}

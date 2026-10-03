@@ -1,0 +1,449 @@
+{
+  "schema": "pow-audit30-item2-ui-preserved-public-source-manifest-v2",
+  "previousManifestSha256": "ea501b2206eb24fd1e0b62c7ca9858985faf082e092283d4afe39b3ea0f927a7",
+  "previousSourceRowsPreserved": 22,
+  "nativeInvocationsByThisAgent": 0,
+  "sources": [
+    {
+      "path": "/tmp/pow-audit30-item2-ui-preserved-stager-v1.py",
+      "bytes": 58447,
+      "sha256": "ed73a1bd5cec051ed093c96fbf0fabc47042a7da4ad6c6e8cd8e1359c71d64e7",
+      "publicReviewed": true,
+      "privateDataIncluded": false,
+      "contentClass": "current-public-source-or-typed-request",
+      "executionQualification": "Prepared locally only by this agent; root owns any native invocation and publication remains conditional on production acceptance."
+    },
+    {
+      "path": "/tmp/pow-audit30-item2-ui-preserved-source-receiver-v1.py",
+      "bytes": 8449,
+      "sha256": "7e40dc14691d3c239c242ee2f543093856cbf84450094deb1b0edb06669b0d7f",
+      "publicReviewed": true,
+      "privateDataIncluded": false,
+      "contentClass": "current-public-source-or-typed-request",
+      "executionQualification": "Prepared locally only by this agent; root owns any native invocation and publication remains conditional on production acceptance."
+    },
+    {
+      "path": "/tmp/pow-audit30-item2-ui-preserved-provenance-v1.sh",
+      "bytes": 66546,
+      "sha256": "9435b88c43e1a16313c3a90ccb2e142b110bae8e1642ceb655caf73c2e4a0522",
+      "publicReviewed": true,
+      "privateDataIncluded": false,
+      "contentClass": "current-public-source-or-typed-request",
+      "executionQualification": "Prepared locally only by this agent; root owns any native invocation and publication remains conditional on production acceptance."
+    },
+    {
+      "path": "/tmp/pow-audit30-item2-ui-preserved-publisher-v1.sh",
+      "bytes": 39438,
+      "sha256": "f92db85d8d134959b95132494a3888bdb33f29251751a1b46b66a85ea1aee98a",
+      "publicReviewed": true,
+      "privateDataIncluded": false,
+      "contentClass": "current-public-source-or-typed-request",
+      "executionQualification": "Prepared locally only by this agent; root owns any native invocation and publication remains conditional on production acceptance."
+    },
+    {
+      "path": "/tmp/pow-audit30-item2-ui-preserved-paths-v1.test.py",
+      "bytes": 8913,
+      "sha256": "394527fc177e0470500d07bc6423008a385a00d1cc6ae4284ad29587276fc0b5",
+      "publicReviewed": true,
+      "privateDataIncluded": false,
+      "contentClass": "current-public-source-or-typed-request",
+      "executionQualification": "Prepared locally only by this agent; root owns any native invocation and publication remains conditional on production acceptance."
+    },
+    {
+      "path": "/tmp/pow-audit30-item2-ui-preserved-paths-six-fixture-historical-v1.test.py",
+      "bytes": 4964,
+      "sha256": "dd2a4830a1f9c1f33a017f8512400d20cc94c50d628197992f6a907dff9ce70d",
+      "publicReviewed": true,
+      "privateDataIncluded": false,
+      "contentClass": "historical-public-source",
+      "executionQualification": "Prepared locally only by this agent; root owns any native invocation and publication remains conditional on production acceptance."
+    },
+    {
+      "path": "/tmp/pow-audit30-item2-ui-expected-payload-fingerprint-v1.json",
+      "bytes": 528,
+      "sha256": "88e88a4eb4f24007fea908b9396e91d252734e96e673768be0035905916d2524",
+      "publicReviewed": true,
+      "privateDataIncluded": false,
+      "contentClass": "current-public-source-or-typed-request",
+      "executionQualification": "Prepared locally only by this agent; root owns any native invocation and publication remains conditional on production acceptance."
+    },
+    {
+      "path": "/tmp/pow-audit30-item2-ui-preserved-continuation-v1.py",
+      "bytes": 27125,
+      "sha256": "b5f2f246e77bec854de7dc0bff7d7be1dd25034864d8fc89b44354c0a3a64b77",
+      "publicReviewed": true,
+      "privateDataIncluded": false,
+      "contentClass": "current-public-source-or-typed-request",
+      "executionQualification": "Prepared locally only by this agent; root owns any native invocation and publication remains conditional on production acceptance."
+    },
+    {
+      "path": "/tmp/pow-audit30-item2-ui-preserved-continuation-v1.test.py",
+      "bytes": 9473,
+      "sha256": "c855d29e8cfaf82f248381442f680f85d3202e0ce3dc222638cc91a303f3cc24",
+      "publicReviewed": true,
+      "privateDataIncluded": false,
+      "contentClass": "current-public-source-or-typed-request",
+      "executionQualification": "Prepared locally only by this agent; root owns any native invocation and publication remains conditional on production acceptance."
+    },
+    {
+      "path": "/tmp/pow-audit30-item2-ui-preserved-continuation-four-receipt-historical-v1.py",
+      "bytes": 27028,
+      "sha256": "fc97754db6dfddf7e06d0ba43bddf4ef4c831efb07412df3c46a0f307a5c2ea7",
+      "publicReviewed": true,
+      "privateDataIncluded": false,
+      "contentClass": "historical-public-source",
+      "executionQualification": "Prepared locally only by this agent; root owns any native invocation and publication remains conditional on production acceptance."
+    },
+    {
+      "path": "/tmp/pow-audit30-item2-ui-preserved-transport-atime-historical-v1.py",
+      "bytes": 7845,
+      "sha256": "e096348af1c9ade6d2ca901daf20b82ea41d4c39cf9f48da70521bb0d13330c9",
+      "publicReviewed": true,
+      "privateDataIncluded": false,
+      "contentClass": "historical-public-source",
+      "executionQualification": "Prepared locally only by this agent; root owns any native invocation and publication remains conditional on production acceptance."
+    },
+    {
+      "path": "/tmp/pow-audit30-item2-ui-preserved-transport-v1.py",
+      "bytes": 8175,
+      "sha256": "2413a7dd6cee66c200b4750251f2b1f49c2c0069199f5dc0b7d4a8c62a195bd4",
+      "publicReviewed": true,
+      "privateDataIncluded": false,
+      "contentClass": "current-public-source-or-typed-request",
+      "executionQualification": "Prepared locally only by this agent; root owns any native invocation and publication remains conditional on production acceptance."
+    },
+    {
+      "path": "/tmp/pow-audit30-item2-ui-preserved-transport-v1.test.py",
+      "bytes": 4078,
+      "sha256": "fb236c37a952cac56b17a3f33824baece8a0f0d510f206a5de8618cc088a8f2c",
+      "publicReviewed": true,
+      "privateDataIncluded": false,
+      "contentClass": "current-public-source-or-typed-request",
+      "executionQualification": "Prepared locally only by this agent; root owns any native invocation and publication remains conditional on production acceptance."
+    },
+    {
+      "path": "/tmp/pow-audit30-item2-ui-preserved-transport-v2.py",
+      "bytes": 8116,
+      "sha256": "1dd7c0dae1ccad7604446c558e8c760b746f4d420dacd5c58f0f41c8a210d88b",
+      "publicReviewed": true,
+      "privateDataIncluded": false,
+      "contentClass": "current-public-source-or-typed-request",
+      "executionQualification": "Prepared locally only by this agent; root owns any native invocation and publication remains conditional on production acceptance."
+    },
+    {
+      "path": "/tmp/pow-audit30-item2-ui-preserved-transport-v2.test.py",
+      "bytes": 4078,
+      "sha256": "95c10f18542c55f5b137a9cd46ac3ffe048d7a9f53a10061ef6120b1c9f6f563",
+      "publicReviewed": true,
+      "privateDataIncluded": false,
+      "contentClass": "current-public-source-or-typed-request",
+      "executionQualification": "Prepared locally only by this agent; root owns any native invocation and publication remains conditional on production acceptance."
+    },
+    {
+      "path": "/tmp/pow-audit30-item2-ui-preserved-prepare-request-v1.json",
+      "bytes": 230917,
+      "sha256": "edf32f8c9db2b8fc2460e2edbb18ffd3c5b9535126ec1c3ae2e49af3e063da7e",
+      "publicReviewed": true,
+      "privateDataIncluded": false,
+      "contentClass": "current-public-source-or-typed-request",
+      "executionQualification": "Prepared locally only by this agent; root owns any native invocation and publication remains conditional on production acceptance."
+    },
+    {
+      "path": "/tmp/pow-audit30-item2-ui-preserved-stage-request-v1.json",
+      "bytes": 230924,
+      "sha256": "565811a670362753fd25fd3bc6fa7561d066b45684ebc2e1d2037bfead65d35a",
+      "publicReviewed": true,
+      "privateDataIncluded": false,
+      "contentClass": "current-public-source-or-typed-request",
+      "executionQualification": "Prepared locally only by this agent; root owns any native invocation and publication remains conditional on production acceptance."
+    },
+    {
+      "path": "/tmp/pow-audit30-item2-ui-preserved-source-request-v1.json",
+      "bytes": 230916,
+      "sha256": "f8c0f8a77cac017e43e9b64d353a11c2b21cb2840c5d3e47262182fdfcee80a2",
+      "publicReviewed": true,
+      "privateDataIncluded": false,
+      "contentClass": "current-public-source-or-typed-request",
+      "executionQualification": "Prepared locally only by this agent; root owns any native invocation and publication remains conditional on production acceptance."
+    },
+    {
+      "path": "/tmp/pow-audit30-item2-ui-preserved-publish-owner-v1.py",
+      "bytes": 10153,
+      "sha256": "8f6c92d5e7b207ed935a9be52b4ac6cb42de03a446badc073b3daa3a89a1fc21",
+      "publicReviewed": true,
+      "privateDataIncluded": false,
+      "contentClass": "current-public-source-or-typed-request",
+      "executionQualification": "Prepared locally only by this agent; root owns any native invocation and publication remains conditional on production acceptance."
+    },
+    {
+      "path": "/tmp/pow-audit30-item2-ui-preserved-publish-owner-v1.test.py",
+      "bytes": 3979,
+      "sha256": "490e83d7a35e529ae564d177ae62b4954cb59d3e82b40456026aa20782a76210",
+      "publicReviewed": true,
+      "privateDataIncluded": false,
+      "contentClass": "current-public-source-or-typed-request",
+      "executionQualification": "Prepared locally only by this agent; root owns any native invocation and publication remains conditional on production acceptance."
+    },
+    {
+      "path": "/tmp/pow-audit30-item2-ui-preserved-publish-transport-v1.py",
+      "bytes": 4485,
+      "sha256": "8b09c7421eae50546f8ae7d34af341c068281f21f5d8d208df234935459aaa08",
+      "publicReviewed": true,
+      "privateDataIncluded": false,
+      "contentClass": "current-public-source-or-typed-request",
+      "executionQualification": "Prepared locally only by this agent; root owns any native invocation and publication remains conditional on production acceptance."
+    },
+    {
+      "path": "/tmp/pow-audit30-item2-ui-preserved-publish-transport-v1.test.py",
+      "bytes": 2783,
+      "sha256": "fec9f909e6164bc4915412fac7df5c3e55cdf8315e3e5f90430f606a7bd23173",
+      "publicReviewed": true,
+      "privateDataIncluded": false,
+      "contentClass": "current-public-source-or-typed-request",
+      "executionQualification": "Prepared locally only by this agent; root owns any native invocation and publication remains conditional on production acceptance."
+    },
+    {
+      "path": "/tmp/pow-audit30-item2-ui-preserved-continuation-v2.py",
+      "bytes": 29984,
+      "sha256": "e8250ca01a8d84dfb3dba80ad7b845ab506b7152ef6a2fe2236a4fe1d88ed2b4",
+      "publicReviewed": true,
+      "privateDataIncluded": false,
+      "contentClass": "current-public-source-or-typed-request",
+      "executionQualification": "Prepared locally only by this agent; root owns any native invocation. Versioned sources preserve prior reviewed bytes, proofs and all old paths. Publication remains conditional on actual accepted stage/source and completed production API/mail acceptance."
+    },
+    {
+      "path": "/tmp/pow-audit30-item2-ui-preserved-continuation-v2.test.py",
+      "bytes": 8891,
+      "sha256": "d6f2c917a14e7efac7c5af9d3e2ee5be892fdd68cbe5991528d12eda9075ba32",
+      "publicReviewed": true,
+      "privateDataIncluded": false,
+      "contentClass": "current-public-source-or-typed-request",
+      "executionQualification": "Prepared locally only by this agent; root owns any native invocation. Versioned sources preserve prior reviewed bytes, proofs and all old paths. Publication remains conditional on actual accepted stage/source and completed production API/mail acceptance."
+    },
+    {
+      "path": "/tmp/pow-audit30-item2-ui-preserved-transport-v3.py",
+      "bytes": 8271,
+      "sha256": "88d7ca29e9929e5ee361b1b7590c7b307f3d9b7c3ffd2a678330b6a61443ba68",
+      "publicReviewed": true,
+      "privateDataIncluded": false,
+      "contentClass": "current-public-source-or-typed-request",
+      "executionQualification": "Prepared locally only by this agent; root owns any native invocation. Versioned sources preserve prior reviewed bytes, proofs and all old paths. Publication remains conditional on actual accepted stage/source and completed production API/mail acceptance."
+    },
+    {
+      "path": "/tmp/pow-audit30-item2-ui-preserved-transport-v3.test.py",
+      "bytes": 4044,
+      "sha256": "dd02a8d1cb39a427243dc7aecdb546a037149235916008550f2880cb60f4630f",
+      "publicReviewed": true,
+      "privateDataIncluded": false,
+      "contentClass": "current-public-source-or-typed-request",
+      "executionQualification": "Prepared locally only by this agent; root owns any native invocation. Versioned sources preserve prior reviewed bytes, proofs and all old paths. Publication remains conditional on actual accepted stage/source and completed production API/mail acceptance."
+    },
+    {
+      "path": "/tmp/pow-audit30-item2-ui-preserved-restage-request-v2.json",
+      "bytes": 249320,
+      "sha256": "6f87ac8bbeacc1aba8fca80fea9504cb17f384befbde1cd5e4dae56c47072e7e",
+      "publicReviewed": true,
+      "privateDataIncluded": false,
+      "contentClass": "current-public-source-or-typed-request",
+      "executionQualification": "Prepared locally only by this agent; root owns any native invocation. Versioned sources preserve prior reviewed bytes, proofs and all old paths. Publication remains conditional on actual accepted stage/source and completed production API/mail acceptance."
+    },
+    {
+      "path": "/tmp/pow-audit30-item2-ui-preserved-source-request-v2.json",
+      "bytes": 249319,
+      "sha256": "5a5bcfd57f68faae5b59ee3c7d7916b859596fc7df5f62c46ebddb1c50bad0d8",
+      "publicReviewed": true,
+      "privateDataIncluded": false,
+      "contentClass": "current-public-source-or-typed-request",
+      "executionQualification": "Prepared locally only by this agent; root owns any native invocation. Versioned sources preserve prior reviewed bytes, proofs and all old paths. Publication remains conditional on actual accepted stage/source and completed production API/mail acceptance."
+    },
+    {
+      "path": "/tmp/pow-audit30-item2-ui-preserved-stage-refusal-read-v1.py",
+      "bytes": 43913,
+      "sha256": "ac4171e3b4e87cb60f6a2d985a8725616c9261c33a753b45d0aaea274b12f5c1",
+      "publicReviewed": true,
+      "privateDataIncluded": false,
+      "contentClass": "current-public-source-or-typed-request",
+      "executionQualification": "Prepared locally only by this agent; root owns any native invocation. Versioned sources preserve prior reviewed bytes, proofs and all old paths. Publication remains conditional on actual accepted stage/source and completed production API/mail acceptance."
+    },
+    {
+      "path": "/tmp/pow-audit30-item2-ui-preserved-stage-refusal-read-v1.test.py",
+      "bytes": 2880,
+      "sha256": "214e8ddc71449468e65aae6649fbc4686f1dc2a93927535b8d0542b6f16285a1",
+      "publicReviewed": true,
+      "privateDataIncluded": false,
+      "contentClass": "current-public-source-or-typed-request",
+      "executionQualification": "Prepared locally only by this agent; root owns any native invocation. Versioned sources preserve prior reviewed bytes, proofs and all old paths. Publication remains conditional on actual accepted stage/source and completed production API/mail acceptance."
+    },
+    {
+      "path": "/tmp/pow-audit30-item2-ui-preserved-stage-refusal-read-local-v1.py",
+      "bytes": 1960,
+      "sha256": "adae94fb6f67582cab5cdb5241ef662e8cb3fe1cce1c2fb07f7269f6bbb33c8f",
+      "publicReviewed": true,
+      "privateDataIncluded": false,
+      "contentClass": "current-public-source-or-typed-request",
+      "executionQualification": "Prepared locally only by this agent; root owns any native invocation. Versioned sources preserve prior reviewed bytes, proofs and all old paths. Publication remains conditional on actual accepted stage/source and completed production API/mail acceptance."
+    },
+    {
+      "path": "/tmp/pow-audit30-item2-ui-restage-v2-current-task-census-read-v1.py",
+      "bytes": 52783,
+      "sha256": "6ad677ad3119e2228d3aa628318baf57447ef43dd63dfb272eeb3146506823e0",
+      "publicReviewed": true,
+      "privateDataIncluded": false,
+      "contentClass": "current-public-source-or-typed-request",
+      "executionQualification": "Prepared locally only by this agent; root owns any native invocation. Versioned sources preserve prior reviewed bytes, proofs and all old paths. Publication remains conditional on actual accepted stage/source and completed production API/mail acceptance."
+    },
+    {
+      "path": "/tmp/pow-audit30-item2-ui-restage-v2-current-task-census-read-v1.test.py",
+      "bytes": 4790,
+      "sha256": "705c300c08f22b8e14bb73682d941c54475e7d77ea8c1c57c475af3389f41c44",
+      "publicReviewed": true,
+      "privateDataIncluded": false,
+      "contentClass": "current-public-source-or-typed-request",
+      "executionQualification": "Prepared locally only by this agent; root owns any native invocation. Versioned sources preserve prior reviewed bytes, proofs and all old paths. Publication remains conditional on actual accepted stage/source and completed production API/mail acceptance."
+    },
+    {
+      "path": "/tmp/pow-audit30-item2-ui-restage-v2-current-task-census-read-local-v1.py",
+      "bytes": 1981,
+      "sha256": "475741419be4e43bbb32e8f8394298600a524ebb3c379393e2f0fb07c294110d",
+      "publicReviewed": true,
+      "privateDataIncluded": false,
+      "contentClass": "current-public-source-or-typed-request",
+      "executionQualification": "Prepared locally only by this agent; root owns any native invocation. Versioned sources preserve prior reviewed bytes, proofs and all old paths. Publication remains conditional on actual accepted stage/source and completed production API/mail acceptance."
+    },
+    {
+      "path": "/tmp/pow-audit30-item2-ui-evidence-stage-stager-v2.py",
+      "bytes": 59017,
+      "sha256": "4158d7898c4a90d3adfc9bb7e8160054f7c6b4e1f4b36cc42b2504faef0f6beb",
+      "publicReviewed": true,
+      "privateDataIncluded": false,
+      "contentClass": "current-public-source-or-typed-request",
+      "executionQualification": "Prepared locally only by this agent; root owns any native invocation. Versioned sources preserve prior reviewed bytes, proofs and all old paths. Publication remains conditional on actual accepted stage/source and completed production API/mail acceptance."
+    },
+    {
+      "path": "/tmp/pow-audit30-item2-ui-evidence-stage-provenance-v2.sh",
+      "bytes": 66706,
+      "sha256": "ac22cacbfcb94311efc05e9e4e10edd18a54216b617f4b33f952a3c645b26af1",
+      "publicReviewed": true,
+      "privateDataIncluded": false,
+      "contentClass": "current-public-source-or-typed-request",
+      "executionQualification": "Prepared locally only by this agent; root owns any native invocation. Versioned sources preserve prior reviewed bytes, proofs and all old paths. Publication remains conditional on actual accepted stage/source and completed production API/mail acceptance."
+    },
+    {
+      "path": "/tmp/pow-audit30-item2-ui-evidence-stage-publisher-v2.sh",
+      "bytes": 39763,
+      "sha256": "e5a1f4782954ba83cd4c128c14541061dc1f74c5d8ec289c6154a44e086bb043",
+      "publicReviewed": true,
+      "privateDataIncluded": false,
+      "contentClass": "current-public-source-or-typed-request",
+      "executionQualification": "Prepared locally only by this agent; root owns any native invocation. Versioned sources preserve prior reviewed bytes, proofs and all old paths. Publication remains conditional on actual accepted stage/source and completed production API/mail acceptance."
+    },
+    {
+      "path": "/tmp/pow-audit30-item2-ui-evidence-stage-v2.test.py",
+      "bytes": 6666,
+      "sha256": "934ad7526af0882a764f52d029d3dfe0954daf09686463829fdb69f9dfc23795",
+      "publicReviewed": true,
+      "privateDataIncluded": false,
+      "contentClass": "current-public-source-or-typed-request",
+      "executionQualification": "Prepared locally only by this agent; root owns any native invocation. Versioned sources preserve prior reviewed bytes, proofs and all old paths. Publication remains conditional on actual accepted stage/source and completed production API/mail acceptance."
+    },
+    {
+      "path": "/tmp/pow-audit30-item2-ui-evidence-stage-continuation-v3.py",
+      "bytes": 34513,
+      "sha256": "e5b633762db48055d4c1f62677213c06387efcf6759e341f6ace428586082949",
+      "publicReviewed": true,
+      "privateDataIncluded": false,
+      "contentClass": "current-public-source-or-typed-request",
+      "executionQualification": "Prepared locally only by this agent; root owns any native invocation. Versioned sources preserve prior reviewed bytes, proofs and all old paths. Publication remains conditional on actual accepted stage/source and completed production API/mail acceptance."
+    },
+    {
+      "path": "/tmp/pow-audit30-item2-ui-evidence-stage-continuation-v3.test.py",
+      "bytes": 9474,
+      "sha256": "9614e299767a0cb86ad41434c7196a7a8a114842856a0402b6a1f755eea72dab",
+      "publicReviewed": true,
+      "privateDataIncluded": false,
+      "contentClass": "current-public-source-or-typed-request",
+      "executionQualification": "Prepared locally only by this agent; root owns any native invocation. Versioned sources preserve prior reviewed bytes, proofs and all old paths. Publication remains conditional on actual accepted stage/source and completed production API/mail acceptance."
+    },
+    {
+      "path": "/tmp/pow-audit30-item2-ui-evidence-stage-transport-v4.py",
+      "bytes": 8372,
+      "sha256": "5938bbbb62d3de77220bbad01816a36bc8cbbfedce89695b5f1985babdc449d9",
+      "publicReviewed": true,
+      "privateDataIncluded": false,
+      "contentClass": "current-public-source-or-typed-request",
+      "executionQualification": "Prepared locally only by this agent; root owns any native invocation. Versioned sources preserve prior reviewed bytes, proofs and all old paths. Publication remains conditional on actual accepted stage/source and completed production API/mail acceptance."
+    },
+    {
+      "path": "/tmp/pow-audit30-item2-ui-evidence-stage-transport-v4.test.py",
+      "bytes": 4041,
+      "sha256": "29cc6903f20b5b79030737b0867d7fcb8af9b0308f9c1906dd131204bb49c19d",
+      "publicReviewed": true,
+      "privateDataIncluded": false,
+      "contentClass": "current-public-source-or-typed-request",
+      "executionQualification": "Prepared locally only by this agent; root owns any native invocation. Versioned sources preserve prior reviewed bytes, proofs and all old paths. Publication remains conditional on actual accepted stage/source and completed production API/mail acceptance."
+    },
+    {
+      "path": "/tmp/pow-audit30-item2-ui-evidence-stage-stage-request-v3.json",
+      "bytes": 251007,
+      "sha256": "1d3adae362d867787d03ddb31c9d6bc12ad0e11252e7fd4091dda79b1ad8d489",
+      "publicReviewed": true,
+      "privateDataIncluded": false,
+      "contentClass": "current-public-source-or-typed-request",
+      "executionQualification": "Prepared locally only by this agent; root owns any native invocation. Versioned sources preserve prior reviewed bytes, proofs and all old paths. Publication remains conditional on actual accepted stage/source and completed production API/mail acceptance."
+    },
+    {
+      "path": "/tmp/pow-audit30-item2-ui-evidence-stage-source-request-v3.json",
+      "bytes": 251008,
+      "sha256": "614758bd56a3b734289e70c310f9b158c229b7d754b9951f3d4c9c698c9b2905",
+      "publicReviewed": true,
+      "privateDataIncluded": false,
+      "contentClass": "current-public-source-or-typed-request",
+      "executionQualification": "Prepared locally only by this agent; root owns any native invocation. Versioned sources preserve prior reviewed bytes, proofs and all old paths. Publication remains conditional on actual accepted stage/source and completed production API/mail acceptance."
+    },
+    {
+      "path": "/tmp/pow-audit30-item2-ui-evidence-stage-helper-package-manifest-v3.json",
+      "bytes": 1162,
+      "sha256": "a24cd53068d11ddd546a2e76192530118aad9f4e2227ab6bd9b2362fb1d93f13",
+      "publicReviewed": true,
+      "privateDataIncluded": false,
+      "contentClass": "current-public-source-or-typed-request",
+      "executionQualification": "Prepared locally only by this agent; root owns any native invocation. Versioned sources preserve prior reviewed bytes, proofs and all old paths. Publication remains conditional on actual accepted stage/source and completed production API/mail acceptance."
+    },
+    {
+      "path": "/tmp/pow-audit30-item2-ui-evidence-stage-publish-owner-v2.py",
+      "bytes": 11084,
+      "sha256": "0d7e5ac2934bfc18a234c1c6725d85d13fe9c6b8b985052507104a6fbeb80351",
+      "publicReviewed": true,
+      "privateDataIncluded": false,
+      "contentClass": "current-public-source-or-typed-request",
+      "executionQualification": "Prepared locally only by this agent; root owns any native invocation. Versioned sources preserve prior reviewed bytes, proofs and all old paths. Publication remains conditional on actual accepted stage/source and completed production API/mail acceptance."
+    },
+    {
+      "path": "/tmp/pow-audit30-item2-ui-evidence-stage-publish-owner-v2.test.py",
+      "bytes": 5197,
+      "sha256": "6282c7e8f7b3059a1f4fec0cadfe1b29a7ee3d0374c80e1f2e5c782f64705525",
+      "publicReviewed": true,
+      "privateDataIncluded": false,
+      "contentClass": "current-public-source-or-typed-request",
+      "executionQualification": "Prepared locally only by this agent; root owns any native invocation. Versioned sources preserve prior reviewed bytes, proofs and all old paths. Publication remains conditional on actual accepted stage/source and completed production API/mail acceptance."
+    },
+    {
+      "path": "/tmp/pow-audit30-item2-ui-evidence-stage-publish-transport-v2.py",
+      "bytes": 4495,
+      "sha256": "264aba9c8fb205d090fb3df9d8b2187be061b361a50b95cace37a941a9f0e850",
+      "publicReviewed": true,
+      "privateDataIncluded": false,
+      "contentClass": "current-public-source-or-typed-request",
+      "executionQualification": "Prepared locally only by this agent; root owns any native invocation. Versioned sources preserve prior reviewed bytes, proofs and all old paths. Publication remains conditional on actual accepted stage/source and completed production API/mail acceptance."
+    },
+    {
+      "path": "/tmp/pow-audit30-item2-ui-evidence-stage-publish-transport-v2.test.py",
+      "bytes": 2788,
+      "sha256": "c15a33c6cfa695b4fe739e972eac79c0051feec8e27e1aeb1d28c1a5196b05c6",
+      "publicReviewed": true,
+      "privateDataIncluded": false,
+      "contentClass": "current-public-source-or-typed-request",
+      "executionQualification": "Prepared locally only by this agent; root owns any native invocation. Versioned sources preserve prior reviewed bytes, proofs and all old paths. Publication remains conditional on actual accepted stage/source and completed production API/mail acceptance."
+    }
+  ]
+}

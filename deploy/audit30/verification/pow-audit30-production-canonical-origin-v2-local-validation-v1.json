@@ -1,0 +1,129 @@
+{
+  "schema": "pow-audit30-production-canonical-origin-v2-local-validation-v1",
+  "atUtc": "2026-10-03T20:21:52.323115+00:00",
+  "canonicalProductionOrigin": "https://computer.proofofwork.me",
+  "canonicalDocumentation": [
+    "OP_RETURN_INFRASTRUCTURE.md:4954",
+    "OP_RETURN_INFRASTRUCTURE.md:5044"
+  ],
+  "changeScope": [
+    "strict production URL and unique v2 attempt/receipt paths",
+    "leaf production URL only",
+    "owner exact successor source pins/leaf length/virtual filename and production v2 paths, shadow v1 paths preserved",
+    "transport exact successor source pins/paths and production v2 namespace"
+  ],
+  "existingPrivateVerifierSHA256": "8a569828272b10abc8848dd01678a1a3b45002acd489802f89b6e056de3e0c1e",
+  "existingStrictDriverSHA256": "bbded71fa88cfc108c611b3beddd3a6c693b38477c356b682caed8985976abda",
+  "originalSourcesPreserved": {
+    "pow-audit30-postcutover-production-strict-v1.py": "4eed6eae5b5a4bd7cd5a29c500b90cdf748dda7ffaab4f90b79daeffc01ed6a4",
+    "pow-audit30-positive-work-scoped-leaf-v1.mjs": "42b7ccbe8c4bf22d05bc8b808dabad72cb2cb09455f1156c10cd313001fbea06",
+    "pow-audit30-positive-work-scoped-owner-v1.py": "28bd89f9e0e9abf953a579018d1224bc51b00a5615dc42812f321050ac598cd9",
+    "pow-audit30-production-acceptance-transport-v1.py": "86600e33618c5c7474c6ef4be152ed4dc6570c905963f68dfc2d587fd166c4f1"
+  },
+  "commands": [
+    {
+      "command": "python3 -I -B /tmp/pow-audit30-postcutover-production-strict-v2.test.py",
+      "passingTests": 9,
+      "exitCode": 0
+    },
+    {
+      "command": "python3 -I -B /tmp/pow-audit30-positive-work-scoped-owner-v2.test.py",
+      "passingTests": 6,
+      "exitCode": 0
+    },
+    {
+      "command": "python3 -I -B /tmp/pow-audit30-production-acceptance-transport-v2.test.py",
+      "passingTests": 5,
+      "exitCode": 0
+    },
+    {
+      "command": "node /tmp/pow-audit30-positive-work-scoped-leaf-v2.test.mjs",
+      "passingTests": 16,
+      "exitCode": 0
+    },
+    {
+      "command": "python3 -I -B /tmp/pow-audit30-production-origin-v2-diff.test.py",
+      "passingTests": 5,
+      "exitCode": 0
+    }
+  ],
+  "passingTestTotal": 41,
+  "initialLocalFixtureFailure": {
+    "command": "python3 -I -B /tmp/pow-audit30-production-origin-v2-diff.test.py",
+    "exitCode": 1,
+    "errorClass": "AttributeError",
+    "qualification": "The additional origin admission fixture initially called nonexistent checked_mode. It was corrected to the existing role function before final fixture handback; no native source changed for that fixture correction."
+  },
+  "validationQualification": "Counts/exits observed in tool results. No saved raw command output hashes or timings are asserted. This evidence covers local source/contracts only and does not claim any native production acceptance.",
+  "files": [
+    {
+      "path": "/tmp/pow-audit30-postcutover-production-strict-v2.py",
+      "bytes": 17288,
+      "sha256": "24136b6787754a2f9958b2a48ede208fcf8c9b546dbef7a4fb9be2033f8df1a9"
+    },
+    {
+      "path": "/tmp/pow-audit30-positive-work-scoped-leaf-v2.mjs",
+      "bytes": 37077,
+      "sha256": "ba9d8f33b315e297dcf9239dffe943de275cc3dc2c2de67b5ae58ad02b14c18c"
+    },
+    {
+      "path": "/tmp/pow-audit30-positive-work-scoped-owner-v2.py",
+      "bytes": 13956,
+      "sha256": "cc345910263fcc788a2548253ee5fa21a59f50620eb99fc779d9684b82a320f1"
+    },
+    {
+      "path": "/tmp/pow-audit30-production-acceptance-transport-v2.py",
+      "bytes": 9285,
+      "sha256": "c16fd09ea1a164b630d483be481b09993ae83c29763b7e3124021c2b3cccbbe1"
+    },
+    {
+      "path": "/tmp/pow-audit30-postcutover-production-strict-v2.test.py",
+      "bytes": 6804,
+      "sha256": "7b8ac59604f8050a3160dd470bef0fb5ce0f08a5b7342a732b3651cf1c19e5f6"
+    },
+    {
+      "path": "/tmp/pow-audit30-positive-work-scoped-leaf-v2.test.mjs",
+      "bytes": 9609,
+      "sha256": "5b1baa09f7326cc28c346eebaa73062b93cff0560de44eca7fee086c23c72452"
+    },
+    {
+      "path": "/tmp/pow-audit30-positive-work-scoped-owner-v2.test.py",
+      "bytes": 4207,
+      "sha256": "54e670c19c17020507309c83fd77f126eab7e255b6b43158cde8a347d2fb3920"
+    },
+    {
+      "path": "/tmp/pow-audit30-production-acceptance-transport-v2.test.py",
+      "bytes": 2695,
+      "sha256": "d60855a2844692d826c2df7d6e86469b96f261bd941aa7db2a5fc870ade1f8ff"
+    },
+    {
+      "path": "/tmp/pow-audit30-production-origin-v2-diff.test.py",
+      "bytes": 3490,
+      "sha256": "602bb1ef079415b830d69f0254d4c308bdd64059df0fab937feb7bd218e8706f"
+    },
+    {
+      "path": "/tmp/pow-audit30-production-strict-request-v2.json",
+      "bytes": 249,
+      "sha256": "82ae89d287afb0277a858bc258df7f0799718bd27f8b9c7d75b2b11ec8059eb1"
+    },
+    {
+      "path": "/tmp/pow-audit30-production-strict-envelope-v2.json",
+      "bytes": 23661,
+      "sha256": "2048db3e7861639b1e19e6aca320150a36d2743ab1e262bb713fa906ac477cfa"
+    },
+    {
+      "path": "/tmp/pow-audit30-production-positive-request-v2.json",
+      "bytes": 72801,
+      "sha256": "99eb2dcb64642a201baea71175a21f6ec9202889ccfad17bfa8d5f3fb1b3f2d7"
+    },
+    {
+      "path": "/tmp/pow-audit30-production-positive-envelope-v2.json",
+      "bytes": 115955,
+      "sha256": "8a6b7e6d0762ed26ca6a0aef4727d8f8d33607dcde6965a2d432230c937cc61f"
+    }
+  ],
+  "nativeInvocationsByPreparingAgent": 0,
+  "privateDataIncluded": false,
+  "apiSourceOrProductionConfigModified": false,
+  "gateOrTimeBudgetRelaxation": false
+}

@@ -1,0 +1,42 @@
+{
+  "automaticRetry": false,
+  "captures": {
+    "stderr": {
+      "bytes": 0,
+      "path": "/tmp/pow-audit30-coupled-pin-checker-promotion-native-144000-v1.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "stdout": {
+      "bytes": 245,
+      "path": "/tmp/pow-audit30-coupled-pin-checker-promotion-native-144000-v1.stdout",
+      "sha256": "b3e9fae59c3b2663dc8ea8a53c7f1f34ead7c26f82a58e2b87cac87968cb4762"
+    }
+  },
+  "exitCode": 0,
+  "failure": null,
+  "finishedAtUtc": "2026-10-03T14:37:14.354292+00:00",
+  "inputBindings": {
+    "actualCreatorStdoutSHA256": "5f9a8bb610f3ad8dbe17c74c3fbd6c277f437289faaa69a30e73ad2572b602f0",
+    "actualDirectHumanProvenanceSHA256": "184065046a3b6031ca0b47e5e1932321bab2672298a7da1fc9654c6d3a3fec49",
+    "additionalDeletionAuthorized": false,
+    "approvalSHA256": "46c60e55ab4b95a4b0f51d2efa17969466417c0ad53b8542a0de26667825b089",
+    "controllerSHA256": "dfa403996e776a8ed192a024848b06f71b5fa041a24bf5b9687ff04ce3714535",
+    "exactTwoFilePromotionAuthorized": true,
+    "knownByteFailureInverseAuthorized": true,
+    "planSHA256": "7d50940fe5c2087cdc169fc14e27c006220dce12b91d2b15bcbb2bc4b9a6c2ee",
+    "productionDatabaseMutationRequested": false,
+    "recoveryActivationAuthorized": false,
+    "rootGO": true
+  },
+  "outerDeadlineSeconds": 150,
+  "productionDataMutationRequested": false,
+  "receivedBytes": {
+    "stderr": 0,
+    "stdout": 245
+  },
+  "remoteUnitStoppedCertifiedByTransport": false,
+  "schema": "pow-audit30-readonly-owned-transport-result-v1",
+  "seconds": 2.241727,
+  "startedAtUtc": "2026-10-03T14:37:12.112565+00:00",
+  "typedStdinBytesDelivered": 0
+}

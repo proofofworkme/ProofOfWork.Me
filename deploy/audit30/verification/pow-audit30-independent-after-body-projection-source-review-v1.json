@@ -1,0 +1,85 @@
+{
+  "bindings": [
+    {
+      "bytes": 20323,
+      "path": "/tmp/pow-audit30-mail-projection-after-body-root-v1.py",
+      "sha256": "17fb453fa53a82962f75fd4bdf1870b3ffb6df29176a40db76a80c9fe1830f3e"
+    },
+    {
+      "bytes": 6788,
+      "path": "/tmp/pow-audit30-mail-projection-after-body-leaf-v1.mjs",
+      "sha256": "8f6ea102f8fd5d5290a3bf50b77b7eedec25196d83535b1259e139587a675acc"
+    },
+    {
+      "bytes": 1411,
+      "path": "/tmp/pow-audit30-mail-projection-after-body-bootstrap-v1.py",
+      "sha256": "62a142dedc2a4c717b55ef5e6ab1535715435e7bbc8fb24ba278f852ab75d925"
+    },
+    {
+      "bytes": 14032,
+      "path": "/tmp/pow-audit30-mail-projection-after-body-request-v1.json",
+      "sha256": "1801335b74aacd40782b8d6d91b4d3ecab589b9ac0589e16f2ee7f70a4eea4dd"
+    },
+    {
+      "bytes": 1337,
+      "path": "/tmp/pow-audit30-mail-projection-after-body-transport-v1.py",
+      "sha256": "c4b8b6785cf5ed9ad0bbe7bb70d82ccf6d80e8d60b987d27bbe72facf32a16d2"
+    },
+    {
+      "bytes": 11996,
+      "path": "/tmp/pow-audit30-mail-projection-after-body-root-v1.test.py",
+      "sha256": "aed8aee90f210519645e1514af68015c1be1eb30f643e70834a165790606d8c7"
+    },
+    {
+      "bytes": 4691,
+      "path": "/tmp/pow-audit30-mail-projection-after-body-bootstrap-v1.test.py",
+      "sha256": "45a5b0ead4e07ee9b693a0bd4cf10d341a04061708e2e05c46d5888f8c0ba36b"
+    },
+    {
+      "bytes": 5320,
+      "path": "/tmp/pow-audit30-mail-projection-after-body-v1.test.mjs",
+      "sha256": "d97a84d5dd1dd2f8dfb3f1201bdba8459c01cfef04dc990fc52bfa68a53898b1"
+    },
+    {
+      "bytes": 4230,
+      "path": "/tmp/pow-audit30-mail-projection-after-body-root-v1.diff",
+      "sha256": "eafca14daffeccfdc6e541fff9451fb01e612a88671ce5ef44d8456568320d44"
+    },
+    {
+      "bytes": 1105,
+      "path": "/tmp/pow-audit30-mail-projection-after-body-leaf-v1.diff",
+      "sha256": "2038dd9e07db4dbded6a5077bfd25cffe302afc3f3e8a6b8851ba9e740a220ff"
+    }
+  ],
+  "checks": {
+    "allRootFunctionAndClassASTsEqualFocusedV5": true,
+    "boundedZlibTypedSourcesByteEqualExactPinsAndEOF": true,
+    "completeLiteralReversalEqualsPreservedV5Bytes": true,
+    "mandatoryRequestSHAArgvAndActualLowercaseTransportPrefixValid": true,
+    "onlyThreeRootConstantBindingsAndTwoLeafImportsChanged": true
+  },
+  "nativeCallsByReviewer": false,
+  "qualifications": [
+    "Source-only retarget creates two immutable copied modules and a new evidence namespace under existing approved pattern; original source/dependency tree stays unchanged.",
+    "Same RR read-only SQL/settings, native108:112 role, client256MiB heap/90s and outer180s bounds; no API/Core requests.",
+    "Original strict warning/error severities remain historical. No successful body apply, current zero-mismatch projection or fresh strict/chain parity is inferred.",
+    "Root owns separate native admission after actual body reconciliation."
+  ],
+  "repositoryEditedByReviewer": false,
+  "reviewedAtUtc": "2026-10-03T14:48:30.624718+00:00",
+  "schema": "pow-audit30-independent-after-body-projection-source-review-v1",
+  "status": "accepted-source-only",
+  "tests": {
+    "bootstrapPythonIsolatedWarningsError": {
+      "passed": 12,
+      "seconds": 0.1
+    },
+    "directNodePureAndFakeClientAssertions": {
+      "passed": 32
+    },
+    "rootPythonIsolatedWarningsError": {
+      "passed": 26,
+      "seconds": 0.632
+    }
+  }
+}

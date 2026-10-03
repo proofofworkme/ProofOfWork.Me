@@ -1,0 +1,65 @@
+{
+  "bindings": [
+    {
+      "bytes": 6397,
+      "path": "/tmp/pow-audit30-body-worker-guard-readonly-diagnostic-v1.py",
+      "sha256": "c9840bcfc92049acafc7b5f1746e0f0834c26030ccc0bf00a55c7a9ba184a254"
+    },
+    {
+      "bytes": 4164,
+      "path": "/tmp/pow-audit30-body-worker-guard-readonly-diagnostic-v1.test.py",
+      "sha256": "9a65d41ec3f04a27cd01be4f37e93584cb14a506731eba7bfc8f3182a91c2d59"
+    },
+    {
+      "bytes": 1486,
+      "path": "/tmp/pow-audit30-body-worker-guard-diagnostic-owned-caller-v1.py",
+      "sha256": "f74f86ed08ad949ae98520987b95a447d875d3946a84bc85d9e98815345994f9"
+    },
+    {
+      "bytes": 142727,
+      "path": "/tmp/pow-audit30-body-run-envelope-20261003T145500Z-v1.json",
+      "sha256": "37b3d8e58fcca371ec952c12207efbe2b2a9feb58b755452b69616346fc252a6"
+    },
+    {
+      "bytes": 13199,
+      "path": "/tmp/pow-audit30-worker-mail-exclusion-guard-v3.py",
+      "sha256": "48001283affb80b3b027dcc93831074aee872fbee649fb14482c32b00eb1c76c"
+    },
+    {
+      "bytes": 19001,
+      "path": "/tmp/pow-audit30-private-sixteen-bootstrap-v2.py",
+      "sha256": "33c3c65c079901022850d4407c4df460b6924196d077061ba86d0d27ef385729"
+    }
+  ],
+  "checks": {
+    "GCObservationExplicitlyLeavesInvocationOwnershipUnresolved": true,
+    "PID0EmptyCGRequiredForOwnedStoppedFlag": true,
+    "actualLowercaseCapturePrefixAndNoSHAArgvContractValid": true,
+    "exactOriginal480And33cBytesFrom37bSourceEnvelope": true,
+    "interruptionTimeoutRethrownBeforePostDeadlineCommands": true,
+    "knownGuardCodesOrUnknownReasonHashOnly": true,
+    "loadedUnitTypedExecStartRoleLaunchFloorAndTerminalObservation": true,
+    "mutatingCaptureHelperEntriesBlocked": true,
+    "newFixed150500ReadonlyUnitOnly": true,
+    "originalExecuteAndSQLPredicatesNotRewritten": true,
+    "originalFiveComparedAtEndpoint": true,
+    "originalSubprocessArgsAndKeywordArgumentsForwardedUnchanged": true
+  },
+  "nativeCallsByReviewer": false,
+  "qualifications": [
+    "Original480 may create one bounded read-only PG SQL unit with30s runtime,20s statement and3s lock timeout; Core calls remain the original read-only methods. No body writer, inverse or existing production service control.",
+    "New observation can identify a current guard; it cannot recover discarded145500 same-attempt error detail or certify a body commit/global database outcome.",
+    "Endpoint GC absence is distinct from an independently retained owned invocation; transport cleanup is not native-stop certification.",
+    "Fixtures use synthetic guard outcomes and mocked command/typed-owner observations, not native action authority. Root owns separate single admission; no reviewer native or repository edit."
+  ],
+  "repositoryEditedByReviewer": false,
+  "reviewedAtUtc": "2026-10-03T15:00:53.448877+00:00",
+  "schema": "pow-audit30-independent-original-worker-guard-diagnostic-source-review-v1",
+  "status": "accepted-source-only-original-readonly-guard-observation",
+  "tests": {
+    "isolatedPythonWarningsError": {
+      "passed": 8,
+      "seconds": 0.101
+    }
+  }
+}

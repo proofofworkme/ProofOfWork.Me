@@ -1,0 +1,125 @@
+{
+  "actionsNow": 66,
+  "atUtc": "2026-10-03T12:56:19.819061+00:00",
+  "baseHead": "87c16cbaad1cb6e22eda78cf6686d9094953638e",
+  "custodyRowsNow": 890,
+  "hygieneCommitPushPending": true,
+  "manifestSha256": "bb6da4627829c725041c5a302cc883a67ccacbdfd705fdd05f33e099172ac809",
+  "nativeExecution": false,
+  "newRequestIsDispatchNotHumanApproval": true,
+  "newRows": [
+    {
+      "bytes": 41972,
+      "originalPath": "/tmp/pow-audit30-action65-public-custody-intent-v1.json",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-action65-public-custody-intent-v1.json",
+      "sha256": "2e6afee037cb0d6d006560771d39e341a5241de7a3dd8deb0dfd192f1aa4ca40"
+    },
+    {
+      "bytes": 40464,
+      "originalPath": "/tmp/pow-audit30-action65-public-custody-preservation-v1.json",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-action65-public-custody-preservation-v1.json",
+      "sha256": "c672fbce47a3ef641281e1822ce5d7bcc3ecb6f3db51d6523bc3e05c1b71f765"
+    },
+    {
+      "bytes": 8170,
+      "originalPath": "/tmp/pow-audit30-action66-fixed-public-manifest-v1.json",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-action66-fixed-public-manifest-v1.json",
+      "sha256": "bb6da4627829c725041c5a302cc883a67ccacbdfd705fdd05f33e099172ac809"
+    },
+    {
+      "bytes": 7764,
+      "originalPath": "/tmp/pow-audit30-append-action66-v1.py",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-append-action66-v1.py",
+      "sha256": "68cd36dabd0109afff4b5c124c10c45677e2907c9afdbb70127e3688cac06337"
+    },
+    {
+      "bytes": 16571,
+      "originalPath": "/tmp/pow-audit30-coupled-pin-checker-package-bootstrap-v1.py",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-coupled-pin-checker-package-bootstrap-v1.py",
+      "sha256": "9ab89e78425903054b9343266c0e22c61fcccf29cf18641be1cedc2a46924d73"
+    },
+    {
+      "bytes": 3280,
+      "originalPath": "/tmp/pow-audit30-coupled-pin-checker-package-caller-v1.test.py",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-coupled-pin-checker-package-caller-v1.test.py",
+      "sha256": "c514696e1ae99646a659618f382047fabc701a2c220ad81b988a66d0ee141142"
+    },
+    {
+      "bytes": 12751,
+      "originalPath": "/tmp/pow-audit30-coupled-pin-checker-package-creator-v1.initial-test-draft.py",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-coupled-pin-checker-package-creator-v1.initial-test-draft.py",
+      "sha256": "8ea8041dbc43863bdd50938c2c1f5aceb35dfbe7dea438ef16a2b4a086a68110"
+    },
+    {
+      "bytes": 11860,
+      "originalPath": "/tmp/pow-audit30-coupled-pin-checker-package-creator-v1.py",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-coupled-pin-checker-package-creator-v1.py",
+      "sha256": "8056f85ba5e5d45057df5233e7ed4cb880aa2687f6d8895a8ed647ff2902b9ff"
+    },
+    {
+      "bytes": 12796,
+      "originalPath": "/tmp/pow-audit30-coupled-pin-checker-package-creator-v1.test.py",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-coupled-pin-checker-package-creator-v1.test.py",
+      "sha256": "a68f1e336892c6db658ca48b994f783b479438c94481ef5c88110764d768f78c"
+    },
+    {
+      "bytes": 79922,
+      "originalPath": "/tmp/pow-audit30-coupled-pin-checker-package-request-template-v1.json",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-coupled-pin-checker-package-request-template-v1.json",
+      "sha256": "acdec2b44ee480d367d674016259773575f449c5b55769500027b9fec52fd6f8"
+    },
+    {
+      "bytes": 8259,
+      "originalPath": "/tmp/pow-audit30-coupled-pin-checker-package-source-preparation-v1.json",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-coupled-pin-checker-package-source-preparation-v1.json",
+      "sha256": "848200cd794f642dfa988ff2a2283d7b26c78b79896e02f118ed0369c684dcc8"
+    },
+    {
+      "bytes": 1850,
+      "originalPath": "/tmp/pow-audit30-coupled-pin-checker-package-transport-preparation-v1.py",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-coupled-pin-checker-package-transport-preparation-v1.py",
+      "sha256": "c9a3d2bad52fb9214ef366e17dedc64dffec436279cf5c22dfa875cb3824792e"
+    },
+    {
+      "bytes": 2238,
+      "originalPath": "/tmp/pow-audit30-dual-pin-checker-final-approval-request-v1.json",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-dual-pin-checker-final-approval-request-v1.json",
+      "sha256": "ab1b143642833c3a727b4d648f5814add94ed3575cc8e5073338f3ff99371c49"
+    },
+    {
+      "bytes": 9981,
+      "originalPath": "/tmp/pow-audit30-independent-action65-actual-preservation-review-v1.json",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-independent-action65-actual-preservation-review-v1.json",
+      "sha256": "91beae6e4b669fb39973702b2f6b1f1ae951b92ee01b8d0a434b9bc05736a574"
+    },
+    {
+      "bytes": 6450,
+      "originalPath": "/tmp/pow-audit30-independent-action65-manifest-semantic-review-v1.json",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-independent-action65-manifest-semantic-review-v1.json",
+      "sha256": "e34c08a87706445d8ae3cca1995e2caceed14d7a16a97595b6cccaf9308ea1ff"
+    },
+    {
+      "bytes": 5632,
+      "originalPath": "/tmp/pow-audit30-independent-action65-proposal-links-review-v1.json",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-independent-action65-proposal-links-review-v1.json",
+      "sha256": "5d73c90889630c2ca85f711f5616dedea48f70e6904cb3a30f4ef059f82b401c"
+    },
+    {
+      "bytes": 6581,
+      "originalPath": "/tmp/pow-audit30-independent-coupled-pin-checker-package-source-review-v1.json",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-independent-coupled-pin-checker-package-source-review-v1.json",
+      "sha256": "ad45b0358a8841b37b2988a2f126cd202c011c7d680fb9e5b8b186509ca51859"
+    },
+    {
+      "bytes": 3640,
+      "originalPath": "/tmp/pow-audit30-root-coupled-pin-checker-package-source-review-v1.json",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-root-coupled-pin-checker-package-source-review-v1.json",
+      "sha256": "30362c99a4d983111b0bb9133564979262ed6fb626328332e56af08cc2c34391"
+    }
+  ],
+  "oldActionsPreserved": 65,
+  "oldCustodyRowsPreserved": 872,
+  "oldFinalApprovalRequestsPreserved": 1,
+  "productionMutation": false,
+  "schema": "pow-audit30-action66-public-custody-preservation-v1"
+}

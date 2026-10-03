@@ -1,0 +1,44 @@
+{
+  "privateContentsExported": false,
+  "productionWrites": false,
+  "receipts": {
+    "intent.json": {
+      "bytes": 366,
+      "path": "/var/tmp/proofofwork-deploy/recovery-transport-38ac6e2bff2a-20261003T190512Z-surfaces-stage/intent.json",
+      "sha256": "776b8fe83b2b0f6c198245c9ab80cd9bfcaa90c9d49190be535d2b31120149c3",
+      "localPath": "/tmp/pow-audit30-item2-ui-refusal-exact-intent.json"
+    },
+    "live-manifest": {
+      "bytes": 2513,
+      "path": "/var/www/.proofofwork-ui-release",
+      "sha256": "9c41304450787cfc4ec6fe806e63a76e95fdd1238e20b011269ead038dd3d1ff",
+      "localPath": "/tmp/pow-audit30-item2-ui-refusal-exact-live-manifest"
+    },
+    "receive-admission.log": {
+      "bytes": 148,
+      "path": "/var/tmp/proofofwork-deploy/recovery-transport-38ac6e2bff2a-20261003T190512Z-surfaces-stage/receive-admission.log",
+      "sha256": "651f59222a471759ecacf8e0a1d9035c179913e3a41e8df08bf391dce4b747ae",
+      "localPath": "/tmp/pow-audit30-item2-ui-refusal-exact-receive-admission.log"
+    },
+    "receiver.log": {
+      "bytes": 349,
+      "path": "/var/tmp/proofofwork-deploy/recovery-transport-38ac6e2bff2a-20261003T190512Z-surfaces-stage/receiver.log",
+      "sha256": "e5d4860608f45275ff4661893e81d2d623ab953da37985aab865905e8f519e40",
+      "localPath": "/tmp/pow-audit30-item2-ui-refusal-exact-receiver.log"
+    },
+    "stage-check-scratch.json": {
+      "bytes": 219,
+      "path": "/var/tmp/proofofwork-deploy/recovery-transport-38ac6e2bff2a-20261003T190512Z-surfaces-stage/stage-check-scratch.json",
+      "sha256": "77e7c0f296b2dd65945b4b05c469f1ba0454f008849ddfe51f2265b75201d4ba",
+      "localPath": "/tmp/pow-audit30-item2-ui-refusal-exact-stage-check-scratch.json"
+    },
+    "stage-model.json": {
+      "bytes": 6361,
+      "path": "/var/tmp/proofofwork-deploy/recovery-transport-38ac6e2bff2a-20261003T190512Z-surfaces-stage/stage-model.json",
+      "sha256": "be542139575ae3c00c7d5445fcabe45c3968de3c9be04f1d656eba0572fe8679",
+      "localPath": "/tmp/pow-audit30-item2-ui-refusal-exact-stage-model.json"
+    }
+  },
+  "schema": "pow-audit30-item2-ui-stage-refusal-public-read-v1",
+  "unitState": "MainPID=0\nResult=exit-code\nLoadState=loaded\nActiveState=failed\nSubState=failed\nInvocationID=fae6a6f75dbe40478391132a25a0ba1a\n"
+}

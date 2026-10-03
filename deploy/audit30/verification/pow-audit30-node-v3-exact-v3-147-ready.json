@@ -1,0 +1,190 @@
+{
+  "at": "2026-10-03T19:54:35.794575+00:00",
+  "health": {
+    "available": true,
+    "backend": "electrum",
+    "checks": {
+      "addressIndex": {
+        "canary": {
+          "confirmedSats": 0,
+          "scripthash": "8f52010f55361085b1806ee106632dd610d3a6587284138d06065d584bab8d21",
+          "unconfirmedSats": 0
+        },
+        "error": "",
+        "ok": true,
+        "source": "electrum://172.27.0.1:50001",
+        "timedOut": false
+      },
+      "backend": {
+        "ok": true,
+        "timedOut": false
+      },
+      "database": {
+        "canonicalMetaOk": true,
+        "ok": true,
+        "required": true,
+        "timedOut": false
+      },
+      "disk": {
+        "cache": {
+          "availableBytes": 252254269440,
+          "maxUsedPercent": 90,
+          "minFreeBytes": 5368709120,
+          "ok": true,
+          "path": "/data/proofofwork-api-cache",
+          "probePath": "/data/proofofwork-api-cache",
+          "totalBytes": 1764768071680,
+          "usedPercent": 85.70609512445098
+        },
+        "ok": true,
+        "root": {
+          "availableBytes": 66915528704,
+          "maxUsedPercent": 90,
+          "minFreeBytes": 5368709120,
+          "ok": true,
+          "path": "/",
+          "probePath": "/",
+          "totalBytes": 105089261568,
+          "usedPercent": 36.325055761571754
+        }
+      },
+      "electrum": {
+        "configured": true,
+        "error": "",
+        "headerHash": "000000000000000000009feed9faf73f5184cb7acab3461a79e6ecd07cea4ad0",
+        "headerHeight": 969756,
+        "ok": true,
+        "timedOut": false,
+        "atTip": true
+      },
+      "index": {
+        "aheadBlocks": 0,
+        "checkpointHash": "000000000000000000009feed9faf73f5184cb7acab3461a79e6ecd07cea4ad0",
+        "complete": true,
+        "canonicalState": {
+          "fault": {},
+          "ok": true,
+          "rebuild": {
+            "active": false,
+            "status": "complete",
+            "network": "livenet",
+            "complete": true,
+            "startedAt": "2026-09-15T18:22:43.424Z",
+            "updatedAt": "2026-10-03T19:53:14.256Z",
+            "fromHeight": 948000,
+            "completedAt": "2026-10-03T19:53:14.256Z",
+            "bootstrapHash": "000000000000000000004238bec59ce46cd5b28982efe2b90071a51168d67986",
+            "bootstrapHeight": 947999,
+            "indexedThroughBlock": 969756,
+            "indexedThroughBlockHash": "000000000000000000009feed9faf73f5184cb7acab3461a79e6ecd07cea4ad0",
+            "transactionNormalization": "canonical-raw-tx-only"
+          }
+        },
+        "checkpointCanonical": true,
+        "canonicalCheckpointHash": "000000000000000000009feed9faf73f5184cb7acab3461a79e6ecd07cea4ad0",
+        "indexedThroughBlock": 969756,
+        "lagBlocks": 0,
+        "available": true,
+        "ok": true,
+        "readModels": {
+          "confirmedIds": {
+            "count": 508,
+            "maxBlock": 969060
+          },
+          "confirmedTransfers": {
+            "count": 268,
+            "maxBlock": 969510
+          },
+          "confirmedEvents": {
+            "count": 26638,
+            "maxBlock": 969650
+          }
+        },
+        "summarySnapshot": {
+          "blockHash": "000000000000000000009feed9faf73f5184cb7acab3461a79e6ecd07cea4ad0",
+          "coverageByKey": {
+            "growthSummary": 969756,
+            "inceptionSummary": 969756,
+            "infinitySummary": 969756,
+            "logSummary": 969756,
+            "marketplaceSummary": 969756,
+            "tokenSummary": 969756,
+            "workFloor": 969756,
+            "workSummary": 969756
+          },
+          "eligible": true,
+          "generatedAt": "2026-10-03T19:53:31.825Z",
+          "indexedAt": "2026-10-03T19:53:31.825Z",
+          "indexedThroughBlock": 969756,
+          "payloadBytes": 5765899,
+          "snapshotId": "a3952e8d0c1685b636b6d52b",
+          "ok": true
+        },
+        "scanTipHeight": 969756,
+        "stopReason": ""
+      },
+      "node": {
+        "bestBlockHash": "000000000000000000009feed9faf73f5184cb7acab3461a79e6ecd07cea4ad0",
+        "chain": "main",
+        "headers": 969756,
+        "initialBlockDownload": false,
+        "ok": true,
+        "pruned": false,
+        "tipHeight": 969756,
+        "txindexHeight": 969756,
+        "txindexSynced": true,
+        "verificationProgress": 1
+      },
+      "worker": {
+        "ageMs": 14495,
+        "containment": {
+          "active": false,
+          "checkpointHash": "000000000000000000009feed9faf73f5184cb7acab3461a79e6ecd07cea4ad0",
+          "checkpointHeight": 969756,
+          "failingBlockHeight": null,
+          "fingerprint": "",
+          "network": "livenet",
+          "nextRetryAt": null,
+          "reason": "canonical-scan-success",
+          "repeatCount": 0,
+          "txid": ""
+        },
+        "consecutiveFailures": 0,
+        "error": "",
+        "lastSuccessAt": "2026-10-03T19:54:21.298Z",
+        "maxAgeMs": 600000,
+        "ok": true,
+        "proofReady": true,
+        "proofSource": "last-success-confirmed-replay",
+        "pendingEvents": {
+          "globalUnresolved": 0,
+          "model": "bounded-best-effort-pending-event-health-v1",
+          "ok": true,
+          "q16PendingUnresolved": 0,
+          "required": true,
+          "scope": "all-observed-pending-protocol-events",
+          "status": {
+            "checked": 23,
+            "deferred": 0,
+            "errors": 0,
+            "ok": true,
+            "q16ParentDeferred": 0,
+            "staleCandidates": 23,
+            "unavailable": false,
+            "unavailableValid": true
+          }
+        },
+        "phase": "running"
+      }
+    },
+    "indexedAt": "2026-10-03T19:54:35.793Z",
+    "indexedThroughBlock": 969756,
+    "lagBlocks": 0,
+    "mempoolBase": "http://127.0.0.1:8080",
+    "ok": true,
+    "ready": true,
+    "service": "proofofwork-op-return-api",
+    "tipHeight": 969756,
+    "mode": "readiness"
+  }
+}

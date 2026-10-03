@@ -1,0 +1,18 @@
+{
+  "recordedAt": "2026-10-03T16:10:15Z",
+  "authority": "human-user-current-chat",
+  "userResponse": "I approve item 1",
+  "approvedQuestion": "Do you approve item 1: one guarded production transaction repairing only body_text in the original 16 mail records to the exact chain bytes, followed by verification of all 619 mail records? A conditional undo would run separately only if needed after a confirmed repair.",
+  "status": "approved",
+  "userRemainingItem": 1,
+  "auditTrackerItem": 4,
+  "targetCount": 16,
+  "allowedColumn": "mail_items.body_text",
+  "verificationPopulation": 619,
+  "automaticRetry": false,
+  "conditionalInverse": "separate invocation only after acknowledged apply, if needed",
+  "runId": "20261003T160000Z",
+  "reviewedRootControlSha256": "b989a3f2395e7cbf13cb2d3dbd2d258a3fd21867131e41644c094772aba11168",
+  "envelopeSha256": "cbc06a7966022acd2a8b07b66a96c3ccdca79b257fd6dbad45f70a5bfaaa2577",
+  "schedulerSha256": "5f4a4e5dc650c38905bea353bf922f9d9ec7725e9b3d9a6bb6425c0670bb4a1a"
+}

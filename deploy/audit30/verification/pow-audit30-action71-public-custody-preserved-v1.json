@@ -1,0 +1,118 @@
+{
+  "schema": "pow-audit30-action71-public-custody-preserved-v1",
+  "manifestSHA256": "15a113f5359eae47cf6c64276767c74363490ad4ca4708239b7426718b1357d9",
+  "memberCount": 18,
+  "members": [
+    {
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-strict-v3-exact-accepted-v1.json",
+      "bytes": 31141,
+      "sha256": "3524a1f5a72ad4dfeb4c48727f9af6a4d92258f49d631f9c74dd0fe76e96dc4c",
+      "originalPath": "/tmp/pow-audit30-strict-v3-exact-accepted-v1.json"
+    },
+    {
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-strict-v3-exact-completed-v1.json",
+      "bytes": 5633,
+      "sha256": "3aa9e3981c1fc60aec3f54021abbc458b0cacbb7775403f6ed28474aafb0712c",
+      "originalPath": "/tmp/pow-audit30-strict-v3-exact-completed-v1.json"
+    },
+    {
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-strict-v3-public-receipts-export-v1.json",
+      "bytes": 1201,
+      "sha256": "eef70aea70dc0082ba828d4d71e3ab76fdf52f73f77540745ecad8953b5921a6",
+      "originalPath": "/tmp/pow-audit30-strict-v3-public-receipts-export-v1.json"
+    },
+    {
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-strict-v3-exact-lease-v1.json",
+      "bytes": 13021,
+      "sha256": "553c801d62e48305ac9957ccea495b87081d69269ea7e36d82d7c01e5534d087",
+      "originalPath": "/tmp/pow-audit30-strict-v3-exact-lease-v1.json"
+    },
+    {
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-positive-shadow-exact-child-v1.json",
+      "bytes": 12018,
+      "sha256": "0647c7a70391d5caf6ff1d45667cbcde73dd47a423be4c4ef1df00241b23b4ef",
+      "originalPath": "/tmp/pow-audit30-positive-shadow-exact-child-v1.json"
+    },
+    {
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-positive-shadow-exact-owner-v1.json",
+      "bytes": 2836,
+      "sha256": "7b2bab1d1abe56a71888c809a7c562e756bb3ea3de2260a4c5aa673196b6163c",
+      "originalPath": "/tmp/pow-audit30-positive-shadow-exact-owner-v1.json"
+    },
+    {
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-positive-shadow-public-export-v1.json",
+      "bytes": 935,
+      "sha256": "fcfbfde729f04c3499843e63d65411d3a9ea9c438267f92fad43437f53b0980c",
+      "originalPath": "/tmp/pow-audit30-positive-shadow-public-export-v1.json"
+    },
+    {
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-positive-shadow-native-v1.json",
+      "bytes": 532,
+      "sha256": "bf3e86611b818264aca0ca49d1beea451d9cc7687322494edb2a55bc17b50b43",
+      "originalPath": "/tmp/pow-audit30-positive-shadow-native-v1.json"
+    },
+    {
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-positive-shadow-public-export-remote-v1.py",
+      "bytes": 2230,
+      "sha256": "2098bc9dff78ae208f3b39b0b8140856e00b041c4fe1de69284880dd5947d903",
+      "originalPath": "/tmp/pow-audit30-positive-shadow-public-export-remote-v1.py"
+    },
+    {
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-positive-work-scoped-build-v1.cjs",
+      "bytes": 2279,
+      "sha256": "cc8e37b678d4bbe8e325d3e37fc00fe3bca7c8c904ff0b18186bce536f0e668b",
+      "originalPath": "/tmp/pow-audit30-positive-work-scoped-build-v1.cjs"
+    },
+    {
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-positive-work-scoped-leaf-v1.mjs",
+      "bytes": 37072,
+      "sha256": "42b7ccbe8c4bf22d05bc8b808dabad72cb2cb09455f1156c10cd313001fbea06",
+      "originalPath": "/tmp/pow-audit30-positive-work-scoped-leaf-v1.mjs"
+    },
+    {
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-positive-work-scoped-leaf-v1.test.mjs",
+      "bytes": 9609,
+      "sha256": "a614235346107b1a16ad0a76dbdec63168f60a4a436b6950e67aa0220d154e41",
+      "originalPath": "/tmp/pow-audit30-positive-work-scoped-leaf-v1.test.mjs"
+    },
+    {
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-positive-work-scoped-owner-v1.py",
+      "bytes": 13892,
+      "sha256": "28bd89f9e0e9abf953a579018d1224bc51b00a5615dc42812f321050ac598cd9",
+      "originalPath": "/tmp/pow-audit30-positive-work-scoped-owner-v1.py"
+    },
+    {
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-positive-work-scoped-owner-v1.test.py",
+      "bytes": 4207,
+      "sha256": "181281e9dde6d3646286ea1157f269927b719f5bb741a47608cc4cdbdb2bd973",
+      "originalPath": "/tmp/pow-audit30-positive-work-scoped-owner-v1.test.py"
+    },
+    {
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-positive-shadow-launch-remote-v1.py",
+      "bytes": 20382,
+      "sha256": "887005f83f81294f37b0cf4aef584b6dcfb71fdd50e59a23d7000a615ef61ee2",
+      "originalPath": "/tmp/pow-audit30-positive-shadow-launch-remote-v1.py"
+    },
+    {
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-positive-scoped-shadow-request-v1.json",
+      "bytes": 73023,
+      "sha256": "230ddaddbcfb3db8576c587dfdcb9cef2f05cae3175635e4a0b8f40852cbac9e",
+      "originalPath": "/tmp/pow-audit30-positive-scoped-shadow-request-v1.json"
+    },
+    {
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-action71-proposed-update-v2.json",
+      "bytes": 110232,
+      "sha256": "b426abbdf43d11fb85f3691bc63f5338828a97c258d4d3ee6f295aed262e07bc",
+      "originalPath": "/tmp/pow-audit30-action71-proposed-update-v2.json"
+    },
+    {
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-append-action71-v2.py",
+      "bytes": 8160,
+      "sha256": "40d48839e5f0763027f5fa6783b7acc2cdd99f7b42ee5b9d845b7c5608f62480",
+      "originalPath": "/tmp/pow-audit30-append-action71-v2.py"
+    }
+  ],
+  "privateContentsExported": false,
+  "productionCalls": false,
+  "deletion": false
+}

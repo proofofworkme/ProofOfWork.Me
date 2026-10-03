@@ -1,0 +1,35 @@
+{
+  "at": "2026-10-03T19:47:09.767143+00:00",
+  "client": "/usr/lib/postgresql/16/bin/psql",
+  "clientSha256": "df8031178589c31c7bc20aa2adf902e1cc3f0aa9ea12428aa5db3d476cbcac1a",
+  "uid": 108,
+  "gid": 112,
+  "version": "psql (PostgreSQL) 16.15 (Ubuntu 16.15-0ubuntu0.24.04.1)",
+  "state": {
+    "role": "postgres",
+    "sessionRole": "postgres",
+    "database": "proof_indexer",
+    "readOnly": "on",
+    "statementTimeout": "30s",
+    "lockTimeout": "5s",
+    "sessions": 16,
+    "rebuild": {
+      "active": false,
+      "status": "complete",
+      "network": "livenet",
+      "complete": true,
+      "startedAt": "2026-09-15T18:22:43.424Z",
+      "updatedAt": "2026-10-03T19:45:58.490Z",
+      "fromHeight": 948000,
+      "completedAt": "2026-10-03T19:45:58.490Z",
+      "bootstrapHash": "000000000000000000004238bec59ce46cd5b28982efe2b90071a51168d67986",
+      "bootstrapHeight": 947999,
+      "indexedThroughBlock": 969755,
+      "indexedThroughBlockHash": "0000000000000000000140f86cbe2f0b19a5dec8ed5bd169f5cbe15ae30fcb8a",
+      "transactionNormalization": "canonical-raw-tx-only"
+    }
+  },
+  "nativeCredentials": true,
+  "rootLockDescriptorsInherited": false,
+  "applicationServicesStopped": false
+}

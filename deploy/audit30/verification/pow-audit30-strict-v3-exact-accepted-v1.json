@@ -1,0 +1,1079 @@
+{
+  "format": "audit29-candidate-readonly-v1",
+  "ok": true,
+  "network": "livenet",
+  "startedAt": "2026-10-03T19:20:54.560Z",
+  "candidate": {
+    "commit": "38ac6e2bff2ac16890724e5213346ef8a3ebd186",
+    "tree": "8b9b5e3cd47aa8e4204da717350a629176e30da6",
+    "runtimeSha256": "13035b6d1fbca1be9c03b1833f3abe578d4ae28331a341b3dea4301cc72b535c"
+  },
+  "mode": "shadow",
+  "base": "http://127.0.0.1:18081",
+  "authority": "http://127.0.0.1:18081",
+  "limits": {
+    "pageRows": 200,
+    "pagesPerInventory": 32,
+    "listingRows": 2000,
+    "httpRequests": 96,
+    "coreRequests": 2100,
+    "bodyBytes": 33554432,
+    "httpBytes": 201326592,
+    "gateBytes": 67108864,
+    "milliseconds": 900000
+  },
+  "gates": {
+    "ids": true,
+    "events": true,
+    "parity": true
+  },
+  "gateReceipts": {
+    "ids": {
+      "exitCode": 0,
+      "stdoutBytes": 6581,
+      "stderrBytes": 0,
+      "stdoutSha256": "e47b39e1ba8b2791ca1f8dcf098ede747d2c0c244a541b6495d48e1f3554d518",
+      "scriptSha256": "d7bbe914e3db45fcebac174dc182146f988547fb8d94ffa65f8286cebd50a825",
+      "startedAt": "2026-10-03T19:20:54.758Z",
+      "completedAt": "2026-10-03T19:22:57.717Z",
+      "before": {
+        "height": 969752,
+        "hash": "000000000000000000003e5a6b77578b091ec4bda168e01da9377a6904d9937b"
+      },
+      "after": {
+        "height": 969752,
+        "hash": "000000000000000000003e5a6b77578b091ec4bda168e01da9377a6904d9937b"
+      },
+      "checkpointStable": true,
+      "counts": {
+        "Fetched transactions": 587,
+        "Confirmed winners": 508,
+        "Pending candidates": 20,
+        "Covered confirmed registry transactions": 565,
+        "Covered pending registry transactions": 22
+      }
+    },
+    "events": {
+      "exitCode": 0,
+      "stdoutBytes": 54141,
+      "stderrBytes": 0,
+      "stdoutSha256": "610f1865e48792a58ef8a4f69a7b2c3239fc716212a4e453aee98db911580024",
+      "scriptSha256": "a5a82730ab8d7edde3d617362c960aa64155dbb090e5676a0906306d6a6d0bce",
+      "startedAt": "2026-10-03T19:22:57.745Z",
+      "completedAt": "2026-10-03T19:23:30.425Z",
+      "before": {
+        "height": 969752,
+        "hash": "000000000000000000003e5a6b77578b091ec4bda168e01da9377a6904d9937b"
+      },
+      "after": {
+        "height": 969752,
+        "hash": "000000000000000000003e5a6b77578b091ec4bda168e01da9377a6904d9937b"
+      },
+      "checkpointStable": true,
+      "checks": [
+        {
+          "name": "api-health-ok",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "ledger-green",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "ledger-covers-node-tip",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "ledger-has-no-missing-log-events",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "ledger-has-required-log-coverage-checks",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "db-confirmed-transactions-cover-canonical-action-txids",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "db-events-cover-ledger-confirmed-activity",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "all-confirmed-events-have-transaction-row",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "all-confirmed-events-join-confirmed-transaction",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "all-confirmed-events-have-raw-transaction-or-payload",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "all-confirmed-transactions-have-raw-transaction",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "event-search-index-populated",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "recent-confirmed-transactions-have-block-metadata",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "all-confirmed-transactions-have-block-metadata",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "op-return-table-populated",
+          "ok": true,
+          "severity": "warning"
+        },
+        {
+          "name": "work-growth-network-value-match",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "marketplace-work-network-value-match",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "inception-launch-ready",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "infinity-nonzero",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "reported-tx-db-reported WORK buy 8429",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "reported-tx-log-reported WORK buy 8429",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "reported-tx-history-reported WORK buy 8429",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "reported-tx-db-reported WORK buy 5dcd",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "reported-tx-log-reported WORK buy 5dcd",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "reported-tx-history-reported WORK buy 5dcd",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "reported-tx-db-reported WORK buy d946",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "reported-tx-log-reported WORK buy d946",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "reported-tx-history-reported WORK buy d946",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "reported-tx-db-reported WORK buy 4e59",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "reported-tx-log-reported WORK buy 4e59",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "reported-tx-history-reported WORK buy 4e59",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "reported-tx-db-reported WORK buy 2e57",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "reported-tx-log-reported WORK buy 2e57",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "reported-tx-history-reported WORK buy 2e57",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "reported-tx-db-Carbonz reported WORK buy",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "reported-tx-log-Carbonz reported WORK buy",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "reported-tx-history-Carbonz reported WORK buy",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "reported-tx-db-Carbonz delayed WORK transfer",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "reported-tx-log-Carbonz delayed WORK transfer",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "reported-tx-history-Carbonz delayed WORK transfer",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "reported-tx-db-Carbonz POWB transfer",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "reported-tx-log-Carbonz POWB transfer",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "reported-tx-history-Carbonz POWB transfer",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "reported-tx-db-Gullish POWB listing",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "reported-tx-log-Gullish POWB listing",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "reported-tx-history-Gullish POWB listing",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "reported-tx-db-spent seal listing closure",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "reported-tx-log-spent seal listing closure",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "reported-tx-history-spent seal listing closure",
+          "ok": true,
+          "severity": "error"
+        }
+      ],
+      "checkCount": 49
+    },
+    "parity": {
+      "exitCode": 0,
+      "stdoutBytes": 34398068,
+      "stderrBytes": 0,
+      "stdoutSha256": "1ae5481b823688f943998cb5334083430b0f488bf0709ccb2f11f2a7170c82ff",
+      "scriptSha256": "450e5361ae5ecdd8dde6e434723366e3d4cc1cafae4675e9e7760c3d1cac90ac",
+      "startedAt": "2026-10-03T19:23:30.453Z",
+      "completedAt": "2026-10-03T19:24:20.544Z",
+      "before": {
+        "height": 969752,
+        "hash": "000000000000000000003e5a6b77578b091ec4bda168e01da9377a6904d9937b"
+      },
+      "after": {
+        "height": 969752,
+        "hash": "000000000000000000003e5a6b77578b091ec4bda168e01da9377a6904d9937b"
+      },
+      "checkpointStable": true,
+      "checks": [
+        {
+          "name": "work-amo-v5-declaration-evidence",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "work-amo-v5-canonical-positions",
+          "ok": true,
+          "severity": "warning"
+        },
+        {
+          "name": "work-amo-v5-migration",
+          "ok": false,
+          "severity": "warning"
+        },
+        {
+          "name": "work-amo-v5-usd-quote-head",
+          "ok": false,
+          "severity": "warning"
+        },
+        {
+          "name": "work-amo-v5-write-readiness",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "canonical-ledger-green",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "canonical-log-complete",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "database-has-canonical-summary-snapshot",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "canonical-summary-snapshot-current",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "transactions-cover-canonical-activity-txids",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "confirmed-transaction-status-lag",
+          "ok": true,
+          "severity": "warning"
+        },
+        {
+          "name": "confirmed-transactions-have-canonical-block-proof",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "nonconfirmed-transactions-have-no-block-metadata",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "confirmed-events-match-canonical-parent-metadata",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "nonconfirmed-events-have-no-block-metadata",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "canonical-confirmed-transactions-own-no-volatile-pwid-events",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "event-payload-status-matches-relational-status",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "events-cover-canonical-activity",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "credit-definitions-match-canonical",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "event-search-index-populated",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "rendered-event-participant-semantic-parity",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "rendered-event-reference-semantic-parity",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "rendered-mail-projection-semantic-parity",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "work-delist-regression-transaction-indexed",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "work-delist-regression-event-indexed",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "holder-projections-present",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "log-history-first-page-read-eligibility",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "log-history-first-page-read-reason",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "log-history-kind-token-sale-read-eligibility",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "log-history-kind-token-sale-read-reason",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "log-history-kind-token-sale-snapshot-pinned",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "log-history-query-infinity-bond-read-eligibility",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "log-history-query-infinity-bond-read-reason",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "log-history-query-infinity-bond-snapshot-pinned",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "log-history-query-pagination-gap-infinity-bond-read-eligibility",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "log-history-query-pagination-gap-infinity-bond-read-reason",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "log-history-query-pagination-gap-infinity-bond-snapshot-pinned",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "log-history-query-work-transfer-read-eligibility",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "log-history-query-work-transfer-read-reason",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "log-history-query-work-transfer-snapshot-pinned",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "log-history-query-work-delist-read-eligibility",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "log-history-query-work-delist-read-reason",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "log-history-query-work-delist-snapshot-pinned",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "log-history-paginated-history-read-eligibility",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "log-history-paginated-history-read-reason",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "log-history-paginated-history-snapshot-pinned",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "log-history-snapshot-cursor-stability",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "registry-canonical-fresh-authority",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "registry-history-records-parity",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "registry-history-records-current-relational",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "registry-history-listings-parity",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "registry-history-listings-current-relational",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "registry-history-sales-parity",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "registry-history-sales-current-relational",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "registry-history-activity-parity",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "registry-history-activity-current-relational",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "registry-history-records-search-parity",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "registry-history-records-search-current-relational",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "registry-history-records-page-2-parity",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "registry-history-records-page-2-current-relational",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "registry-confirmed-records-semantic-parity",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "registry-confirmed-listings-semantic-parity",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "registry-confirmed-sales-semantic-parity",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "registry-confirmed-activity-semantic-parity",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "registry-pending-visibility-parity",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "registry-confirmed-raw-evidence-complete",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "registry-payload-current-relational",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "growth-summary-snapshot-parity",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "inception-summary-snapshot-parity",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "infinity-summary-snapshot-parity",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "marketplace-summary-snapshot-parity",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "work-floor-snapshot-parity",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "work-summary-snapshot-parity",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "token-state-read-eligibility",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "token-state-current-relational",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "marketplace-token-state-lifecycle-present",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "work-token-state-current-relational",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "event-history-mail-protocol-db-page",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "event-history-credit-protocol-db-page",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "event-history-id-protocol-db-page",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "event-history-work-transfer-search-db-page",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "event-history-work-delist-search-db-page",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "address-mail-otc-db-page",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "address-mail-carbonz-db-page",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "address-mail-pinoratiko-db-page",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "token-history-all-mints-read-eligibility",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "token-history-all-mints-current-relational",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "token-history-all-transfers-read-eligibility",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "token-history-all-transfers-current-relational",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "token-history-work-transfer-query-read-eligibility",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "token-history-work-transfer-query-current-relational",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "token-history-all-invalid-events-read-eligibility",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "token-history-all-invalid-events-current-relational",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "token-history-work-holders-read-eligibility",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "token-history-work-holders-current-relational",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "token-history-work-market-log-read-eligibility",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "token-history-work-market-log-current-relational",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "token-history-work-delist-closed-query-read-eligibility",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "token-history-work-delist-closed-query-contains-expected-event",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "token-history-work-delist-closed-query-current-relational",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "token-history-non-work-holders-current-relational",
+          "ok": true,
+          "severity": "error"
+        },
+        {
+          "name": "tx-status-confirmed-sample-parity",
+          "ok": true,
+          "severity": "error"
+        }
+      ],
+      "checkCount": 102
+    }
+  },
+  "reads": [
+    {
+      "route": "/api/v1/internal/registry-parity",
+      "status": 200,
+      "bytes": 1930167,
+      "sha256": "4ff64890b954cab9937937a0cbc1ceefafd4aceca4bb57772af3a410c87b2b72"
+    },
+    {
+      "route": "/api/v1/ids/ross",
+      "status": 200,
+      "bytes": 1436,
+      "sha256": "0cde8c25e31b95d6a0c4ea7459837c185daa9f974cacbf5b5ca134bf84ece2bf"
+    },
+    {
+      "route": "/api/v1/token",
+      "status": 503,
+      "bytes": 255,
+      "sha256": "259e768df9ac23b096324a88a5f6f7d5279f2411757525bfdde94c3d20772a0a"
+    },
+    {
+      "route": "/api/v1/token-history",
+      "status": 200,
+      "bytes": 6771607,
+      "sha256": "606488ab19f1f272b10e321c892be836b1a850a0571a9d50dbd9483eef0a61b6"
+    },
+    {
+      "route": "/api/v1/token-history",
+      "status": 200,
+      "bytes": 6766321,
+      "sha256": "92e2dd9aad711264cb6f77e546aa248cb16d6ce51a44607d346841fd0f30c71d"
+    },
+    {
+      "route": "/api/v1/token-history",
+      "status": 200,
+      "bytes": 6761786,
+      "sha256": "0ec1498ccf7b69c8a7bb3b84c62115288cfc21e35ba88a25a58568f653ea88c8"
+    },
+    {
+      "route": "/api/v1/token-history",
+      "status": 200,
+      "bytes": 6771605,
+      "sha256": "04413e6d60415ecc3bf348865166a38780ac9515ac680d3a9b8b618beda50e82"
+    },
+    {
+      "route": "/api/v1/token-history",
+      "status": 200,
+      "bytes": 6778265,
+      "sha256": "6b464c41d7bb6bf7e31dcde46b1d66626241274f2e68213e4a1a7508a2530d29"
+    },
+    {
+      "route": "/api/v1/token-history",
+      "status": 200,
+      "bytes": 206381,
+      "sha256": "0817017ebf2c8c5d23c9a3021774d301156321738a04b04c08c29018b624358c"
+    },
+    {
+      "route": "/api/v1/token-history",
+      "status": 200,
+      "bytes": 3253709,
+      "sha256": "d82c3390063d72c88459a9673a4a83731e1912711773290db9ce52dfe01e5246"
+    },
+    {
+      "route": "/api/v1/token-history",
+      "status": 200,
+      "bytes": 3249254,
+      "sha256": "c03a32111dbcdce8e8aab18de2c4469ecd0854490948d5a35b73d6b10668b0c7"
+    },
+    {
+      "route": "/api/v1/token-history",
+      "status": 200,
+      "bytes": 3246603,
+      "sha256": "fd2589c7ae019ae8d9e7bf6d68abe433698fe73f5e9c65b97c71e286a0f7877f"
+    },
+    {
+      "route": "/api/v1/token-history",
+      "status": 200,
+      "bytes": 3251656,
+      "sha256": "51b0ce66d14e4b92f0d936278f7fd28a67f4d81fe4e8b3fe61b63170153fb0d8"
+    },
+    {
+      "route": "/api/v1/token-history",
+      "status": 200,
+      "bytes": 3257103,
+      "sha256": "59db82d937ad7b9e947833c070e2364d55efa4b9d855644d28395a6c4ad511ed"
+    },
+    {
+      "route": "/api/v1/token-history",
+      "status": 200,
+      "bytes": 100722,
+      "sha256": "324ea329a635e785bd3bc2cefedd9db3d086a48f48f2a3d9eabe17f6a6b2baed"
+    },
+    {
+      "route": "/api/v1/token-history",
+      "status": 200,
+      "bytes": 3253709,
+      "sha256": "d82c3390063d72c88459a9673a4a83731e1912711773290db9ce52dfe01e5246"
+    }
+  ],
+  "backupQuietChecks": [
+    {
+      "checkedAt": "2026-10-03T19:20:54.703Z",
+      "inactive": true,
+      "noPgDumpWriter": true
+    },
+    {
+      "checkedAt": "2026-10-03T19:20:54.756Z",
+      "inactive": true,
+      "noPgDumpWriter": true
+    },
+    {
+      "checkedAt": "2026-10-03T19:22:57.743Z",
+      "inactive": true,
+      "noPgDumpWriter": true
+    },
+    {
+      "checkedAt": "2026-10-03T19:23:30.450Z",
+      "inactive": true,
+      "noPgDumpWriter": true
+    },
+    {
+      "checkedAt": "2026-10-03T19:24:28.807Z",
+      "inactive": true,
+      "noPgDumpWriter": true
+    }
+  ],
+  "qualification": "Candidate runtime identity is supplied by the guarded launcher and separately bound by the release controller; this driver performs no signing, broadcast, replay repair or data writes.",
+  "checkpointBefore": {
+    "height": 969752,
+    "hash": "000000000000000000003e5a6b77578b091ec4bda168e01da9377a6904d9937b"
+  },
+  "pendingDates": {
+    "pendingRecords": 20,
+    "historicalAuditBaseline": 20,
+    "deltaFromAuditBaseline": 0,
+    "recordsSha256": "28243fc2b065752d8a8ffad3e416f56f35a36478582f53e467ab1745412254f8",
+    "confirmedRecords": 508,
+    "qualification": "Retained indexed event time is checked separately from current Core admission; it is not proof of first-ever network observation."
+  },
+  "exactId": {
+    "id": "ross",
+    "confirmed": false,
+    "status": "pending",
+    "payloadSha256": "c4e270e94ccbef5994a78af30b029d7bf13390d68975d8d1059d80968ef796b3"
+  },
+  "wallet": {
+    "ready": false,
+    "balanceVerified": false,
+    "capacityVerified": false,
+    "status": 503,
+    "verificationStatus": "known-unresolved-availability",
+    "code": "CANONICAL_WALLET_INDEX_UNAVAILABLE",
+    "requiredSource": "proof-indexer-wallet-token-overlay",
+    "payloadSha256": "259e768df9ac23b096324a88a5f6f7d5279f2411757525bfdde94c3d20772a0a",
+    "knownIssueGroups": [
+      "H24-01",
+      "AUD26-02",
+      "AUD26-03",
+      "PERF-27"
+    ],
+    "qualification": "The exact existing fail-closed unavailable response is retained as unresolved availability. Neither wallet balance nor transfer capacity passed verification; inspect bounded private wallet-token-overlay-unavailable diagnostics.",
+    "checkpoint": {
+      "before": {
+        "height": 969752,
+        "hash": "000000000000000000003e5a6b77578b091ec4bda168e01da9377a6904d9937b"
+      },
+      "after": {
+        "height": 969752,
+        "hash": "000000000000000000003e5a6b77578b091ec4bda168e01da9377a6904d9937b"
+      },
+      "stable": true
+    }
+  },
+  "book": {
+    "listings": 1006,
+    "fullRowsSha256": "ff898c04ba8f511336436a8ccea15382bce9778fa30aba69d2a1ad66228a9f80",
+    "savedRowBytes": 17698334,
+    "commitmentReconstruction": {
+      "model": "source-declared-lifecycle-and-seal-patch-v1",
+      "possibleSealPatchForms": 2,
+      "missingSealAtReconstructedNull": 22,
+      "qualification": "The wire omits undefined sealAt. Only the source-declared absent-patch or owned-null commitment is selected by each full-record hash; membership and snapshot are independently recomputed."
+    },
+    "sourceDigestQualification": "Bound to full-route snapshot; excluded historical source rows are not independently replayed.",
+    "fullPages": 6,
+    "displayPages": 6,
+    "historicalAuditBaseline": 999,
+    "deltaFromAuditBaseline": 7,
+    "independentCoreAnchors": 1006,
+    "independentCoreSha256": "7f32fcde8016da6404f93cd4c88aced7cd33c33f9b513a1d0dc12548e2fdb4b2",
+    "membershipRecheckedAfterCore": true
+  },
+  "checkpointAfter": {
+    "height": 969752,
+    "hash": "000000000000000000003e5a6b77578b091ec4bda168e01da9377a6904d9937b"
+  },
+  "stableCheckpoint": {
+    "height": 969752,
+    "hash": "000000000000000000003e5a6b77578b091ec4bda168e01da9377a6904d9937b"
+  },
+  "walletQualification": "known-unresolved-availability-balance-and-capacity-not-verified",
+  "completedAt": "2026-10-03T19:25:58.846Z",
+  "counters": {
+    "httpCalls": 16,
+    "coreCalls": 1016,
+    "bytes": 56089250
+  },
+  "privateLauncher": {
+    "unit": "proofofwork-audit29-verify-38ac6e2bff2a-20261003T042000Z-shadow-strict-v3.service",
+    "captureId": "38ac6e2bff2a-20261003T192052Z",
+    "captureApiSha256": "327427c12f187d5b200a9a2323025bd659688e72c3e10faac24545fc514fdb5c",
+    "sourceIdentity": {
+      "unit": "proofofwork-api.service",
+      "pid": 2103747,
+      "exe": "/opt/node-v24.18.0-linux-x64/bin/node",
+      "cwd": "/opt/proofofwork-api",
+      "uid": 1000,
+      "gid": 1000,
+      "startTicks": 1257243956,
+      "cgroups": [
+        "0::/system.slice/proofofwork-api.service"
+      ]
+    },
+    "driverReceiptSha256": "39a571cece917878e276d5eb1d83e0c78b0c3b75e8b9c0da7c1ba130216b9c8f",
+    "scriptSha256": "bbded71fa88cfc108c611b3beddd3a6c693b38477c356b682caed8985976abda"
+  }
+}

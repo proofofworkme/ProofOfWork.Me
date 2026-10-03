@@ -1,0 +1,87 @@
+{
+  "schema": "pow-audit30-postcutover-mail-html-local-source-contract-v1",
+  "status": "prepared-for-root-review-no-native-execution",
+  "sources": {
+    "/tmp/pow-audit30-postcutover-mail-html-leaf-v1.mjs": "c9537fbb7b023559ab3b10f0b83b09cca3eb393cd4da8b99ebd77322d696eda7",
+    "/tmp/pow-audit30-postcutover-mail-html-collector-v1.py": "3bcc3e071222de97529cd54bf045885ffdac2f2f2f305cbb471561dedf7f4dff",
+    "/tmp/pow-audit30-postcutover-mail-html-native-v1.py": "63bef564fc34e390e1b4ca70c95079ebd8be684dbe07854a5f4dc1071b5ecdc8",
+    "/tmp/pow-audit30-postcutover-mail-html-assemble-v1.py": "031c45fdf291ad667efb827d1d691fc69c49e221906e7d537b5fb95aea7b0082",
+    "/tmp/pow-audit30-postcutover-mail-html-transport-v1.py": "d2a453ec2a5e69fc5bf56cedf6b35e96329ca3140a627ee8911f0541875fde30",
+    "/home/sixer/ProofOfWork.Me/deploy/audit30/verification/pow-audit30-treasury-native-v7.py": "7d6b6fe8337db471b2de3147dcff528916b4d8c7629e4d344803913469084b55"
+  },
+  "validation": {
+    "collectorFixtures": {
+      "path": "/tmp/pow-audit30-postcutover-mail-html-v1.test.py",
+      "sha256": "76999ae8983da65325daaa532ce2a9c5c54c4ceafa79b3b5ab1f0d5bc4f5e7ce",
+      "passed": 6,
+      "failed": 0
+    },
+    "assemblerFixtures": {
+      "path": "/tmp/pow-audit30-postcutover-mail-html-assemble-v1.test.py",
+      "sha256": "0802a59576a5077e9b247c421d7a2077b67915be848f19cdc68b851032ebd4cf",
+      "passed": 6,
+      "failed": 0
+    },
+    "preservedOriginalTransportFunctionsAST": true,
+    "preservedOriginalCollectorCanonicalComparisonFunctionsAST": true,
+    "preservedOriginalNativeOwnerAndCleanupFunctionsAST": true,
+    "explicitAttachmentTruthiness": "Matches JavaScript: even empty objects and arrays remain explicit attachments."
+  },
+  "requiredRootObservedInputs": {
+    "freshLiveFive": "Exact JSON map of the five service names to string MainPID and InvocationID, plus SHA256 of these exact local bytes. The original Core, electrs, and PostgreSQL identities must match; API and worker must each have a new PID and InvocationID. Native collection rechecks actual five before and after.",
+    "cutoverFinal": "Exact local bytes and SHA256 of the successful primary /data/proofofwork-audit29-cutover-38ac6e2bff2a-20261003T042000Z-<attempt>/NNN-final.json. Requires complete=true behavior via ok:true/phase:complete/commit:38ac6e2bff2ac16890724e5213346ef8a3ebd186, authorityServicesModified:false, recoveryRemoved:false, and at <=1800 seconds old.",
+    "uniqueRunId": "UTC 20261003T<HHMMSS>Z with all local and remote output names unused.",
+    "noFabricatedInvocationID": "Installed private-env proc_identity does not export InvocationID; root must observe actual systemctl state."
+  },
+  "localAssemblyArgvTemplate": [
+    "python3", "-I", "-B", "/tmp/pow-audit30-postcutover-mail-html-assemble-v1.py",
+    "--run-id", "<uniqueUTC>",
+    "--live-five", "<absoluteExactLocalFiveJson>",
+    "--live-five-sha256", "<exactFiveBytesSHA256>",
+    "--cutover-final", "<absoluteExactLocalPrimaryFinalJson>",
+    "--cutover-final-sha256", "<exactFinalBytesSHA256>",
+    "--cutover-receipt-path", "<canonicalPrimaryRemoteFinalPath>",
+    "--output-prefix", "/tmp/pow-audit30-mail-html-<uniqueLowercaseSuffix>"
+  ],
+  "rootTransportArgvTemplate": [
+    "python3", "-I", "-B", "/tmp/pow-audit30-postcutover-mail-html-transport-v1.py", "mail-api",
+    "--request", "<reviewedExclusivePrepareOrRunRequestJson>",
+    "--request-sha256", "<exactRequestBytesSHA256>",
+    "--output-prefix", "/tmp/pow-audit30-mail-html-<uniqueLowercasePrepareOrRunSuffix>"
+  ],
+  "executionOrder": [
+    "Root obtains actual successful primary cutover final and actual current five.",
+    "Run local assembler, inspect emitted collector/prepare/run requests and input SHA bindings.",
+    "Root invokes prepare once and checks package/source manifest receipt.",
+    "Root invokes run once and requires the native stopped-owned-unit receipt and successful aggregate collector result. Transport success alone does not certify remote unit stopped."
+  ],
+  "readOnlyScope": {
+    "publicOrigin": "https://api.proofofwork.me",
+    "certificateValidation": "Python default HTTPS certificate validation",
+    "freshActorGetRequests": 33,
+    "savedConfirmedCanonicalMailRowsRequired": 619,
+    "newCoreCalls": 0,
+    "sqlCalls": 0,
+    "proxyRedirectRetry": false,
+    "rawMailExported": false,
+    "sourcePins": "Actual candidate App.tsx, encoding.ts, API source, and Node bytes before/FD/after",
+    "rawUtf8BodyComparison": "All 619 saved canonical witnesses must match the fresh public API response memo bytes and identity.",
+    "derivedHTMLComparison": "Actual candidate UI body classifier and attachment helper; raw UTF8 byte length, SHA256, MIME type, and decoded base64 exact-byte equality. Only derived HTML; explicit attachment rendering is excluded.",
+    "latency": "Aggregate count/min/median/p95/max seconds for the 33 actual HTTPS requests."
+  },
+  "resourceBounds": {
+    "nativeMemory": "512M",
+    "nativeSwap": 0,
+    "nativeCPU": "25%",
+    "nativeTasks": 16,
+    "nativeRuntimeSeconds": 660,
+    "wholeCollectorDeadlineSeconds": 600,
+    "singleRequestDeadlineSeconds": 30,
+    "singleResponseBytes": 16777216,
+    "allResponseBytes": 134217728,
+    "nodeHeapMiB": 128,
+    "capabilityBoundingSet": "",
+    "ambientCapabilities": ""
+  },
+  "qualification": "This run verifies all 619 saved confirmed canonical mailbox witnesses over fresh public HTTPS and source-bound derived HTML helpers. It consumes the frozen canonical Core source-script proof. Pair it with the actual fresh current-619 DB projection to establish current corpus equality. It does not prove a post-snapshot larger corpus, pending mail, explicit attachment rendering, deployed frontend bundle identity, or backend-wide resource certification. No native run has been made by this preparation agent."
+}

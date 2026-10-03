@@ -1,0 +1,36 @@
+{
+  "automaticRetry": false,
+  "captures": {
+    "stderr": {
+      "bytes": 0,
+      "path": "/tmp/pow-audit30-body-human-authority-install-native-v1.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "stdout": {
+      "bytes": 261,
+      "path": "/tmp/pow-audit30-body-human-authority-install-native-v1.stdout",
+      "sha256": "0906328eab256c3a7e358095206a4ec6eea86b36225948d9cc3f71c6a925d911"
+    }
+  },
+  "exitCode": 0,
+  "failure": null,
+  "finishedAtUtc": "2026-10-03T14:38:09.104816+00:00",
+  "inputBindings": {
+    "nativeStopNotInferredFromTransport": true,
+    "operation": "install",
+    "requestSHA256": "dbf50b04aad837714af813e0f65f1ca2bc15d74990243e635206207e9634a606",
+    "sourceSHA256": "511c01dd8d7cfb5808038498cb45788720d34aac9ff29e7793374f761d9b3119",
+    "transportSHA256": "1dedef0a6c7021d114017e711ad74f9cfed4e461fc047a2be2c49e590f3da18e"
+  },
+  "outerDeadlineSeconds": 90,
+  "productionDataMutationRequested": false,
+  "receivedBytes": {
+    "stderr": 0,
+    "stdout": 261
+  },
+  "remoteUnitStoppedCertifiedByTransport": false,
+  "schema": "pow-audit30-readonly-owned-transport-result-v1",
+  "seconds": 2.453167,
+  "startedAtUtc": "2026-10-03T14:38:06.651649+00:00",
+  "typedStdinBytesDelivered": 31260
+}

@@ -1,0 +1,7 @@
+{
+  "originalInput": "/tmp/pow-audit30-item2-ui-refusal-exact-receiver.log",
+  "rawBase64": "eyJzdGF0dXMiOiAidmVyaWZpZWQiLCAia2luZCI6ICJzdXJmYWNlcyIsICJyZWxlYXNlSWQiOiAiMzhhYzZlMmJmZjJhLTIwMjYxMDAzVDE5MDUxMloiLCAiYXJjaGl2ZVNoYTI1NiI6ICI2ODQ5MTM4YjViMzEzZWE2ZTEzNGYzMzY3ODkyNjkxYjgwMTc0YTJmM2QxMmZhYzI3ODA0N2Y2ZGYwZmM5YjE5IiwgImNvbXByZXNzZWRCeXRlcyI6IDE5NTMxMzcxMiwgImVudHJpZXMiOiA4MTgsICJsb2dpY2FsQnl0ZXMiOiAyMTk5OTc0MTcsICJleHRyYWN0ZWRSb290IjogIi92YXIvdG1wL3Byb29mb2Z3b3JrLWRlcGxveS9wcm9vZm9md29yay11aS1zdXJmYWNlcy0zOGFjNmUyYmZmMmEtMjAyNjEwMDNUMTkwNTEyWiJ9Cg==",
+  "rawBytes": 349,
+  "rawSha256": "e5d4860608f45275ff4661893e81d2d623ab953da37985aab865905e8f519e40",
+  "schema": "pow-audit30-public-source-byte-evidence-v1"
+}

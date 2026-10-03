@@ -1,0 +1,70 @@
+{
+  "schema": "pow-audit30-item2-semantic-hygiene-custody-review-v1",
+  "status": "read-only-review-no-repository-mutation",
+  "observedGitHead": "6b121b8c1ddc8befbcfa09ae652ce71e82b34fe0",
+  "candidateImplementationCommit": "38ac6e2bff2ac16890724e5213346ef8a3ebd186",
+  "candidateRuntimeProvenanceQualification": "The later documentation/custody handoff commit must not be substituted for the exact source commit installed by the guarded release.",
+  "custodyPreimage": {
+    "repositoryPath": "deploy/audit30/verification/source-custody.json",
+    "bytes": 447848,
+    "sha256": "5f23d7b72cb3a4beb91456598e3492eb9f484a529f858bbb55e006ae023c61aa",
+    "files": 1027,
+    "uniqueRepositoryPaths": 1027,
+    "missingFiles": 0,
+    "mismatchedBytesOrHashes": 0,
+    "headPrefixRows": 890,
+    "headPrefixPreserved": true,
+    "storedRepresentations": 4,
+    "storedRepresentationsUnchangedFromHead": true,
+    "allFourDecodedOriginalLengthsAndHashesVerified": true
+  },
+  "sourceCustodyAppendPlan": [
+    "Root coordinates one custody writer after all final public source/receipt copies are reviewed; this reviewer makes no repository edits.",
+    "Pin the exact current custody preimage above; refuse drift and reconcile a new preimage instead of overwriting another agent's append.",
+    "Use an explicit manifest of approved public sources, fixtures, redacted receipts and release records. Preserve every existing row object and row order; append new rows only, with exact originalPath, repositoryPath, bytes and SHA256.",
+    "Read each source and destination with canonical-path, regular-file, single-link and stable before/FD/after checks; creation-only copy new destination bytes and verify equality. Reject duplicate repositoryPath, destination collision or private capture/environment/catalog/role data.",
+    "Keep all four storedRepresentations objects exactly unchanged. Stage each encoded .diff.evidence.json envelope, while retaining the four original raw .diff files untracked locally without normalization or deletion.",
+    "Do not self-bind source-custody.json into its own files list. Update only its current timestamp and append a dated qualification paragraph if needed; retain prior failure and authority qualifications.",
+    "Produce a /tmp preview first. Require preview.files[:1027] == original.files and preview.storedRepresentations == original.storedRepresentations, then validate all rows and four decoded envelopes.",
+    "After Root's exact preview review, re-read the pinned preimage, write/fsync an exclusive same-directory temporary file, replace atomically and fsync the directory. Verify the exact accepted postimage SHA and the 1027-row prefix afterward.",
+    "Stage explicit approved paths only. Do not use a blanket git add -A or stage the retained raw .diff originals."
+  ],
+  "semanticDocumentationReview": {
+    "SOUL.md": "Already accurate: confirmed chain truth, exact integer math, local wallet signing, full verified books, mail subject/body separation, historical evidence preservation, guarded online production and mandatory hygiene. No diary/no-op edit is warranted.",
+    "README.md": "Already documents exact Node/Unicode runtime, bounded relational wallet fail-closed reads and links Audit30 production acceptance to its tracker. Reconcile only if actual deployment changes a documented operating contract.",
+    "PROOFOFWORK_IDS.md": "No ID registry, fee, ownership, receiver or signing protocol change in item2.",
+    "PROOFOFWORK_DNS.md": "No DNS registration, child record, ownership or signing protocol change in item2.",
+    "MARKETPLACE.md": "Exact Q16, reservation and Core-reconciled complete-book semantics remain; item2 does not change protocol economics or settlement authority.",
+    "MAIL_ORGANIZATION.md": "Lines78-82 already require exact decoded UTF8 bytes in stored bodies/API memos/derived HTML and separate approval for historical repair. Keep explicit attachment rendering separate from derived HTML verification.",
+    "OP_RETURN_INFRASTRUCTURE.md": "Append the actual guarded item2 release outcome only after primary cutover and required postchecks/UI verification exist: exact installed commit/tree/runtime, process/source attestation, actual acceptance predicates, restore/quiet proofs, public mail/helper and UI scope, limitations and protected recovery unchanged.",
+    "auditTracker": "Reconcile current remaining-list item2 and tracker item4/item6 to actual evidence. Preserve v2 failure, v3 preflight refusal, accepted v3 known503 qualification and the later independently positive WORK/scoped success. Do not invent the earlier503 cause; do not mark production checks complete from local preparation."
+  },
+  "observedUncommittedScope": {
+    "stagedFiles": 0,
+    "modifiedTrackedFiles": [
+      "audits/2026-10-02-audit30-followup-tracker.md",
+      "audits/2026-10-02-audit30-remaining-phase-execution.evidence.json",
+      "deploy/audit30/verification/source-custody.json",
+      "scripts/check-audit28-persistent-retention.py",
+      "scripts/check-retention-protection.py"
+    ],
+    "untrackedVerificationFilesAtReview": 191,
+    "newVerificationFilesWithoutCustodyRowsAtReview": 50,
+    "qualification": "The working tree may gain new accepted item2 outputs during release. This is a review-time observation, not a blanket staging authorization. The two checker edits belong to the separately approved dual-pin protection and must retain its promotion/readback proof."
+  },
+  "mandatoryHygieneContract": {
+    "source": "REPOSITORY_HYGIENE.md:11",
+    "steps": [
+      "Finish actual outcome/document/custody reconciliation and review the exact proposed staging scope.",
+      "Run npm run hygiene:fix before final staging/commit and review its cleanup report and semantic decisions.",
+      "Run only relevant changed-source and necessary release checks, then npm run hygiene:check.",
+      "Inspect git status --short, git status --short --ignored and final staged diff; inspect unexpected secrets/local/rebuildable artifacts.",
+      "Commit with Documentation-Impact: updated and Repository-Hygiene: reviewed when the release docs/tracker change. No deletion trailers are needed if no tracked paths are deleted.",
+      "Push after the approved commit and publish one verified release announcement only after production verification, deployment, commit and push, under the existing standing user workflow. Documentation-only follow-up does not trigger a second post."
+    ],
+    "safeCleanupAllowlist": ["dist", ".vite", ".pow-api-cache", "node_modules/.vite", "node_modules/.vite-temp", "coverage", "playwright-report", "test-results", "configured root npm/debug development log patterns"],
+    "forbiddenAutomaticCleanup": "Historical audit evidence, release/recovery artifacts, raw forensic diffs, canonical data, ledgers, wallet/environment files, node_modules itself and all paths outside the exact allowlist.",
+    "newMarkdownClassification": "Any newly tracked Markdown/MDC/Cursor note must be classified in repository-hygiene.json in the same commit; the current new source/receipt JSON/Python files do not themselves create a new note class requirement."
+  },
+  "actionsPerformedByReviewer": {"repositoryEdits": false, "hygieneFix": false, "staging": false, "commit": false, "push": false, "remoteCalls": false, "deployment": false}
+}

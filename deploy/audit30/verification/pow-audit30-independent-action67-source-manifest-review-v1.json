@@ -1,0 +1,67 @@
+{
+  "baseHead": "6b121b8c1ddc8befbcfa09ae652ce71e82b34fe0",
+  "baseline": {
+    "actions": 66,
+    "bindings": [
+      {
+        "bytes": 16697483,
+        "path": "/home/sixer/ProofOfWork.Me/audits/2026-10-02-audit30-remaining-phase-execution.evidence.json",
+        "sha256": "00d44f1e390f755511956d5c2e6dd2752d33b44754b5da08c54171b4ea0b4dce"
+      },
+      {
+        "bytes": 400084,
+        "path": "/home/sixer/ProofOfWork.Me/deploy/audit30/verification/source-custody.json",
+        "sha256": "b7c0fedb714908d50a8e549753ceb7df02393544fb3e4099343cd1a56e7d8c51"
+      },
+      {
+        "bytes": 83448,
+        "path": "/home/sixer/ProofOfWork.Me/audits/2026-10-02-audit30-followup-tracker.md",
+        "sha256": "d9dd4d34b1c21501e66d96c0b635f129eabf78ebeaa5eb97fb2dfcee0aa13e89"
+      }
+    ],
+    "custodyRows": 890,
+    "historicalRequests": 2
+  },
+  "dryChecks": {
+    "V6CompletedReadbackAndTwoPostimagesMatch": true,
+    "all890PriorCustodyByteHashesPreserved": true,
+    "allIndividualAndPrewriteDocumentCapsPass": true,
+    "allOldItemsAuthorizationMutationRetirementRequestAndRepresentationValuesPreserved": true,
+    "bodyFailedReconciliationAndRootPeerQualificationsMatch": true,
+    "includingManifest": 100,
+    "knownExistingUnchanged": 3,
+    "literalPublicFiles": 99,
+    "losslessEnvelopes": 14,
+    "newStoredBytes": 997403,
+    "newTargetsDistinctAndAbsent": 97,
+    "originalTwoProposalsAndExactHuman9BytesMatch": true,
+    "plannedActions": 67,
+    "plannedCustodyRows": 987,
+    "plannedDocumentBytes": {
+      "/home/sixer/ProofOfWork.Me/audits/2026-10-02-audit30-followup-tracker.md": 84251,
+      "/home/sixer/ProofOfWork.Me/audits/2026-10-02-audit30-remaining-phase-execution.evidence.json": 16743279,
+      "/home/sixer/ProofOfWork.Me/deploy/audit30/verification/source-custody.json": 433615
+    },
+    "rawSelectedBytes": 1019837
+  },
+  "manifest": {
+    "bytes": 35415,
+    "path": "/tmp/pow-audit30-action67-fixed-public-manifest-v1.json",
+    "sha256": "169604054e41df8b92238500a89751fe61a63d3ae2766864235a55cd6d7ed8aa"
+  },
+  "qualifications": [
+    "Frozen Action67 reports observations through14:55; later150500 guard pass and152000 namespace preparation are not included and need a later checkpoint.",
+    "Writer-not-reached is source-ordering inference; no global DB/COMMIT certificate, recovered original guard reason, repair success, retry/inverse or cutover.",
+    "Actual human response is appended separately; two old pending-request objects remain historical snapshots unchanged.",
+    "Configuration promotion is verified exacttwofile scope, not item7 completion, PITR/recovery/page/capacity/fullfinancial/deletion authority.",
+    "Reviewer called only frozen read/hash/representation definitions and independently modeled preservation in memory; append helper main was never executed, no repository writes/native actions."
+  ],
+  "reviewedAtUtc": "2026-10-03T15:09:42.228254+00:00",
+  "schema": "pow-audit30-independent-action67-source-manifest-review-v1",
+  "source": {
+    "bytes": 19772,
+    "path": "/tmp/pow-audit30-append-action67-v3.py",
+    "sha256": "7efda97c89f584a602b5ba53c4f8d9b062f46637cf05ee6300d967fb4ebb639e"
+  },
+  "status": "accepted-source-only-public-preservation-packet"
+}

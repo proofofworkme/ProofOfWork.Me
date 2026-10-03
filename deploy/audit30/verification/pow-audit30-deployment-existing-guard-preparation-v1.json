@@ -1,0 +1,264 @@
+{
+  "atUtc": "2026-10-03T14:41:51.226522+00:00",
+  "authority": {
+    "nativeOrDeploymentPerformed": false,
+    "newDeletionOrRecoveryAuthority": false,
+    "newRuntimeRequestCreated": false,
+    "scope": "Existing human-approved implementation/testing/scoped deployment, gated by Root exact once request/runtime admission and fresh repair/strict acceptance.",
+    "templatesExecutable": false
+  },
+  "candidate": {
+    "candidateAttestationSha256": "98343f1ecff80e2b203355a2272df966cc108b0a89890c9d3fabfd5b0b8e084d",
+    "commit": "38ac6e2bff2ac16890724e5213346ef8a3ebd186",
+    "oldAttestationSha256": "ecb2f2b7dde7253af35252109aab003666dca54b51ff6c81f719315fb2dc6bf6",
+    "qualification": "Stored source bindings, not a fresh current staged-tree or production acceptance certificate.",
+    "releaseId": "38ac6e2bff2a-20261003T042000Z",
+    "runtimeSha256": "13035b6d1fbca1be9c03b1833f3abe578d4ae28331a341b3dea4301cc72b535c",
+    "tree": "8b9b5e3cd47aa8e4204da717350a629176e30da6"
+  },
+  "localReceiptAssemblyRefusal": "An initial local assembly used an incorrect request-member key; it refused before creating a file. Actual plan.json binding is now checked.",
+  "mode": "Local existing-source/public-evidence reads only. No controller main, native, network, repository edits or fixture repeats.",
+  "nextInputs": [
+    {
+      "required": "Root-accepted exact16 production repair/current old-five endpoint/acknowledged completion; no repair occurred assertion here.",
+      "step": "Repair acceptance"
+    },
+    {
+      "preservedBounds": "20min/4GiB/swap0/CPU100/tasks128; all three strict gates, native stopped proof and original timer/lock restoration required. Raw private capture stays onhost.",
+      "required": "New immutable attempt/namespace, fresh owned readonly38ac shadow lease with >=1320+30s remaining, private-env capture <=120s, current five/window and full source/helper/Node/runtime/candidate pins. Old b3/e6/287 package and lease21e18 are historical and cannot be reused as fresh.",
+      "step": "Fresh strict"
+    },
+    {
+      "preservedBounds": "PG-native30s/128MiB/swap0/CPU50/tasks16.",
+      "required": "Reuse 480 guard through fresh strict-dependent6019 namespace and fresh strict raw hashes. Output at the cutover-consumed worker path; completion age <=120s. Current worker argv/cwd/source, no replay/rebuild/manual repair flags, Core/checkpoint and scan exclusion must pass. Earlier repair-first721d output uses a different path.",
+      "step": "Worker guard"
+    },
+    {
+      "required": "Reviewed binding-only b504/f533 successors for new strict/worker paths and raw hashes, fresh exact owned-lease stopper, absent attempt/unit/package and all current quiet jobs. Old strict-v1 paths/stopper and zero strict SHA are inadmissible.",
+      "reusable": "release09afe/private-verify8a569. Preserve old/candidate attestation, source bundle, old managed archive/provenance, PostgreSQL RO preflight before stop, drain, atomic exchange, ready/lag0, managed archive publication and original timers/holds.",
+      "step": "Node cutover"
+    },
+    {
+      "required": "Fresh actual API/worker PID+Invocation/current source/API SHA/private-env capture. Old d4/five are not postcutover authority. Existing production verifier and positive WORK/Q16/bond/API619/public HTTPS checks remain separate gates.",
+      "step": "After node exchange"
+    },
+    {
+      "existingCommandTemplates": [
+        "release.py preflight <fresh-preflight.json>",
+        "release.py upload-plan <fresh-reviewed-plan.json>",
+        "transport_preserve.py <plan> surfaces-stage <exclusive-log>",
+        "transport_preserve.py <plan> source <exclusive-log>",
+        "release.py publish <plan> <exclusive-log>",
+        "collect_verify.py <plan> <publish-log> <new-evidence-directory>"
+      ],
+      "preservedBounds": "Current capacity/helper/source/archive checks, all rollback roots, original root reserve and full HTTPS byte verification. No prune authority.",
+      "required": "Preserved FC5 build/bundles with fresh UI preflight/root fingerprint/helper pins/capacity and absent publication attempt. Current release.py make-plan requires HEAD/tree equal build commit and clean; audit HEAD advanced. Root needs reviewed binding-only plan assembly or the exact approved build checkout, not a silent rebuild or relaxed HEAD gate.",
+      "step": "UI publication"
+    }
+  ],
+  "parallelPurePromotionBinding": {
+    "allSixStateFieldsMatchActualE6a6": true,
+    "baseMetadataNullMustBeAbsent": true,
+    "embeddedCanonicalPlanByteExact": true,
+    "inertCreatorDecodeOnly": true,
+    "inputs": [
+      {
+        "bytes": 7189,
+        "path": "/tmp/pow-audit30-coupled-pin-checker-promotion-plan-144000-v6.json",
+        "sha256": "7d50940fe5c2087cdc169fc14e27c006220dce12b91d2b15bcbb2bc4b9a6c2ee"
+      },
+      {
+        "bytes": 91426,
+        "path": "/tmp/pow-audit30-coupled-pin-checker-package-request-144000-v1.json",
+        "sha256": "f91ba6037c3a24e3b92ee2c9218ded603998c6c0c443e0702d7a5ef7c17d3c1a"
+      },
+      {
+        "bytes": 8361,
+        "path": "/tmp/pow-audit30-coupled-promotion-state-observer-native-144000-v2.stdout",
+        "sha256": "e6a6ce3c6f6a21c1c7296dd5a63d57a50871634cf2c20775493b623228bd8973"
+      },
+      {
+        "bytes": 32091,
+        "path": "/tmp/pow-audit30-promotion-full-read-native-144000-v2.stdout",
+        "sha256": "6304338f8004b3af1b1425e047dac193b52106dd7f496ffa46c0f355c992a369"
+      }
+    ],
+    "leafPathHashNormalizedMetadataMatchActual6304": true,
+    "qualification": "Independent existing binding checkpoint only; Root owns creator and action. No actual remote package/promotion claim.",
+    "scopeSha256": "fe09d0ba6c9c1e561a569fb425c9812f9b077cb646fbdd615768e0546ead0437"
+  },
+  "protectionCompatibility": {
+    "actualPromotionReceiptReviewedHere": false,
+    "coreReleaseAndVerifierNeedNoCodeChangeSolelyForV6": true,
+    "installOpsMainMustNotBeRun": "COMMON mapping would reinstall scripts/check-retention-protection.py over the approved checker; definitions such as backup_install_window are reusable only.",
+    "minimumSourceDelta": "Exactly replace the two approved byte/SHA expectations; bind actual V6 completion and fresh inode/times/ownership, then rebind managed source/request pins. Keep other six static authorities, holds, prune mask, WAL state, per-unit closed fields, locks and chosen-action five strict. No arbitrary old/new allowlist or omitted guard.",
+    "oldAd03ContextAndBridgeRefuseV6": true
+  },
+  "qualifications": [
+    "No current repair/strict/cutover/UI pass is inferred.",
+    "All historical attempts/sources/evidence preserved; no retries/overwrites performed.",
+    "Known held absences/recovery/deletion/full-history financial or replay completeness remain separate.",
+    "Postcutover identity changes need fresh metadata, not a waiver of the old tuple."
+  ],
+  "schema": "pow-audit30-existing-deployment-guard-preparation-v1",
+  "sourceBindings": [
+    {
+      "bytes": 49334,
+      "path": "/home/sixer/ProofOfWork.Me/deploy/audit29/release.py",
+      "sha256": "09afe5ddd243a796ea9c830b0041924747eb77a3803a3cfe56a3279cd24bf670"
+    },
+    {
+      "bytes": 21502,
+      "path": "/home/sixer/ProofOfWork.Me/deploy/audit29/private-verify.py",
+      "sha256": "8a569828272b10abc8848dd01678a1a3b45002acd489802f89b6e056de3e0c1e"
+    },
+    {
+      "bytes": 27153,
+      "path": "/home/sixer/ProofOfWork.Me/deploy/audit29/verify-candidate.mjs",
+      "sha256": "bbded71fa88cfc108c611b3beddd3a6c693b38477c356b682caed8985976abda"
+    },
+    {
+      "bytes": 11505,
+      "path": "/home/sixer/ProofOfWork.Me/deploy/audit29/install-ops.py",
+      "sha256": "f8dcc8489537a3ddefa392cb586857fdab88874e6b3c7a2f61a69ec45b0b7c25"
+    },
+    {
+      "bytes": 12002,
+      "path": "/home/sixer/ProofOfWork.Me/deploy/audit30/ui-release/release.py",
+      "sha256": "652170dfeb01b47c0c0102665744b6aee713457db6c186483dff6e2bcd66fdc5"
+    },
+    {
+      "bytes": 6165,
+      "path": "/home/sixer/ProofOfWork.Me/deploy/audit30/ui-release/preflight.py",
+      "sha256": "a7f672dcf4e6f3c5187c858143ad3cd4c87deb5fb3f0b244130a4826d72b6b84"
+    },
+    {
+      "bytes": 16802,
+      "path": "/home/sixer/ProofOfWork.Me/deploy/audit30/ui-release/remote_transport.py",
+      "sha256": "7153e99661b7c05b31c6d789b0546f0c130af4e60cbd9d47dd63f83198b93d28"
+    },
+    {
+      "bytes": 2366,
+      "path": "/home/sixer/ProofOfWork.Me/deploy/audit30/ui-release/transport_preserve.py",
+      "sha256": "98e083a9ece551dea8efe591541e7f2702e2426ca7788e828deaa4207550d1fe"
+    },
+    {
+      "bytes": 8593,
+      "path": "/home/sixer/ProofOfWork.Me/deploy/audit30/ui-release/publish.py",
+      "sha256": "d285f986463eb5253f6669ceaf552e0a773222ae80431bc868ba92d853ff7b3d"
+    },
+    {
+      "bytes": 3348,
+      "path": "/home/sixer/ProofOfWork.Me/deploy/audit30/ui-release/collect_verify.py",
+      "sha256": "dd898d0a1642f9715f806b52d66fd173445bb4dd81ea3e904934dc73a43b7f04"
+    },
+    {
+      "bytes": 15072,
+      "path": "/home/sixer/ProofOfWork.Me/deploy/audit30/ui-release/https_smoke.py",
+      "sha256": "4c422a3fb3e29b21706f344491eb2ebcec3552f8b9dc8b67f56b913697135b23"
+    },
+    {
+      "bytes": 12706,
+      "path": "/tmp/pow-audit30-node-stage-38ac-v2.py",
+      "sha256": "db14a45bf1be82ad706f40d141759df57113c0a581b6038f80897db52876c846"
+    },
+    {
+      "bytes": 13461,
+      "path": "/tmp/pow-audit30-strict-shadow-native-assembly-v1.py",
+      "sha256": "b3c71c2a48ffb59a297c0fa7264fd417b498b0464d34577859c6bb0ee17fb1c9"
+    },
+    {
+      "bytes": 4476,
+      "path": "/tmp/pow-audit30-strict-fresh-capture-root-v1.py",
+      "sha256": "62e8c972a492fd22ebfb90a64396bec1a38466279aadbeb9439dbbb879d1ef68"
+    },
+    {
+      "bytes": 3014,
+      "path": "/tmp/pow-audit30-strict-shadow-native-bootstrap-v1.py",
+      "sha256": "e6d22f961e3ef883aed4ebfa96b781382b4ffb2ec81b417430612d65635529d9"
+    },
+    {
+      "bytes": 1719,
+      "path": "/tmp/pow-audit30-strict-shadow-native-transport-v2.py",
+      "sha256": "287148d323d4b50ce72ec91c89b0ce5839dae0ece7b4c5b528ea85ea16cf048c"
+    },
+    {
+      "bytes": 22338,
+      "path": "/tmp/pow-audit30-node-shadow-lease-38ac-v1.py",
+      "sha256": "02dc0c234f51a4dab94c8b7ecc4eac390bc96b3db7b4f486deedcdc0efe45331"
+    },
+    {
+      "bytes": 13199,
+      "path": "/tmp/pow-audit30-worker-mail-exclusion-guard-v3.py",
+      "sha256": "48001283affb80b3b027dcc93831074aee872fbee649fb14482c32b00eb1c76c"
+    },
+    {
+      "bytes": 4220,
+      "path": "/tmp/pow-audit30-worker-mail-exclusion-native-root-v1.py",
+      "sha256": "6019d86a8168ef13c7f3d9f3fde14d9244f7e7799002f700927aa500f551ee57"
+    },
+    {
+      "bytes": 1759,
+      "path": "/tmp/pow-audit30-worker-mail-exclusion-native-transport-v1.py",
+      "sha256": "39dbe942ed0b8c45533b0021530358fb5db4ce37df03dbd8be1bd27376e975c8"
+    },
+    {
+      "bytes": 3514,
+      "path": "/tmp/pow-audit30-repair-first-worker-observation-root-v1.py",
+      "sha256": "721d3359d368bf13f626567cde6cda8e8e9a5c400a9f32724641e096ea403f70"
+    },
+    {
+      "bytes": 2950,
+      "path": "/tmp/pow-audit30-node-cutover-command-v1.py",
+      "sha256": "b504aeff5622897ed0fb1879db8ec52fda86d68df35ad2a8eb192adbe1aa2d00"
+    },
+    {
+      "bytes": 7601,
+      "path": "/tmp/pow-audit30-node-cutover-native-root-v1.py",
+      "sha256": "f53311ed3cb09e167eec6a9f320f46467ec660d0aab2d27964312c03d7d6c5fe"
+    },
+    {
+      "bytes": 24954,
+      "path": "/tmp/pow-audit30-oct2-full-read-native-v2.py",
+      "sha256": "ad03e5d02e10018fb7c5dd3c118a7ac876331cad240832c52e4838a4bea0ff2a"
+    },
+    {
+      "bytes": 18866,
+      "path": "/tmp/pow-audit30-retained-repair-dependency-bridge-v5.py",
+      "sha256": "b8605128bd99a2b64ab13f1c33a3b5d6907802df8e453c31a93fbbd9a308d5b6"
+    },
+    {
+      "bytes": 4694,
+      "path": "/tmp/pow-audit30-ui-release-fc5-plan-v1.json",
+      "sha256": "b8603f66e75ec8400bed9c7992a39766a25f06cb07ee559794e3ddfb4255a4a0"
+    },
+    {
+      "bytes": 821,
+      "path": "/tmp/proofofwork-ui-release.6bYKmyvmBa/build-receipt.json",
+      "sha256": "5ae4066d3c9aabd84b49337a74b67e9bcd702a2803035c62b408b883145c91c5"
+    }
+  ],
+  "status": "source-only-preparation",
+  "v6Postimages": {
+    "checker": {
+      "mode": 493,
+      "newBytes": 20718,
+      "newSha256": "795f1308b74ddc69a022ce7e1413fb4698a82e6cfb14265931d1951ee603c908",
+      "oldBytes": 20677,
+      "oldSha256": "da5d1336ce857acc571ba0849c2b0150ef5fc6dfdacf80e65b9f1d3611c48e8a",
+      "path": "/usr/local/sbin/proofofwork-retention-protection"
+    },
+    "pin": {
+      "mode": 420,
+      "newBytes": 78,
+      "newSha256": "22f66cac8419985c544d4b41c6ea9cd400fc99805c588694a9a619a3f120d09b",
+      "oldBytes": 39,
+      "oldSha256": "821b5bbfecee75ffb3c4565d3867eb62ac33e65eeb83c0e603c08aa478ff957b",
+      "orderedNames": [
+        "proof_indexer-20260929T031853Z.dumpset",
+        "proof_indexer-20261003T031852Z.dumpset"
+      ],
+      "path": "/etc/proofofwork-postgres-logical-backup.pins"
+    }
+  }
+}

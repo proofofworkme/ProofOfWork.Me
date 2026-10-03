@@ -1,0 +1,42 @@
+{
+  "automaticRetry": false,
+  "captures": {
+    "stderr": {
+      "bytes": 0,
+      "path": "/tmp/pow-audit30-coupled-pin-checker-package-native-144000-v1.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "stdout": {
+      "bytes": 3108,
+      "path": "/tmp/pow-audit30-coupled-pin-checker-package-native-144000-v1.stdout",
+      "sha256": "5f9a8bb610f3ad8dbe17c74c3fbd6c277f437289faaa69a30e73ad2572b602f0"
+    }
+  },
+  "exitCode": 0,
+  "failure": null,
+  "finishedAtUtc": "2026-10-03T14:36:13.790502+00:00",
+  "inputBindings": {
+    "bootstrapSHA256": "9ab89e78425903054b9343266c0e22c61fcccf29cf18641be1cedc2a46924d73",
+    "coreRequests": 0,
+    "creationOnly": true,
+    "creatorSHA256": "8056f85ba5e5d45057df5233e7ed4cb880aa2687f6d8895a8ed647ff2902b9ff",
+    "deletionAuthorized": false,
+    "promotionExecuted": false,
+    "requestSHA256": "f91ba6037c3a24e3b92ee2c9218ded603998c6c0c443e0702d7a5ef7c17d3c1a",
+    "rootAddressSpaceBytes": 134217728,
+    "rootMaximumSeconds": 120,
+    "sharedTransportSHA256": "1dedef0a6c7021d114017e711ad74f9cfed4e461fc047a2be2c49e590f3da18e",
+    "sqlExecuted": false
+  },
+  "outerDeadlineSeconds": 150,
+  "productionDataMutationRequested": false,
+  "receivedBytes": {
+    "stderr": 0,
+    "stdout": 3108
+  },
+  "remoteUnitStoppedCertifiedByTransport": false,
+  "schema": "pow-audit30-readonly-owned-transport-result-v1",
+  "seconds": 2.739429,
+  "startedAtUtc": "2026-10-03T14:36:11.051073+00:00",
+  "typedStdinBytesDelivered": 91426
+}

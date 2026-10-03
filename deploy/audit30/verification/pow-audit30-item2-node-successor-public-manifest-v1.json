@@ -1,0 +1,163 @@
+{
+  "deletionRequested": false,
+  "independentPeerReviewed": true,
+  "members": [
+    {
+      "original": {
+        "bytes": 23510,
+        "path": "/tmp/pow-audit30-item2-node-cutover-v2.py",
+        "sha256": "5b06e0a510f6014375a2457ae08a2cd8a665eab38807471a2fa640bd1f5c0b22"
+      },
+      "proposedRepositoryPath": "deploy/audit30/verification/pow-audit30-item2-node-cutover-v2.py",
+      "repositoryPathAlreadyExists": false
+    },
+    {
+      "original": {
+        "bytes": 5955,
+        "path": "/tmp/pow-audit30-item2-node-cutover-v2.test.py",
+        "sha256": "b29e986cc569c76a1a074693a44359437c16ffb3bb5d76eeb9d2122b867e9e12"
+      },
+      "proposedRepositoryPath": "deploy/audit30/verification/pow-audit30-item2-node-cutover-v2.test.py",
+      "repositoryPathAlreadyExists": false
+    },
+    {
+      "original": {
+        "bytes": 12261,
+        "path": "/tmp/pow-audit30-item2-node-launch-v2.py",
+        "sha256": "90d73c9a5d86205db7ab46cb4032ac88c422fc1b31293c8b707be66458001019"
+      },
+      "proposedRepositoryPath": "deploy/audit30/verification/pow-audit30-item2-node-launch-v2.py",
+      "repositoryPathAlreadyExists": false
+    },
+    {
+      "original": {
+        "bytes": 3484,
+        "path": "/tmp/pow-audit30-item2-node-launch-v2.test.py",
+        "sha256": "c7c03c0700fc66f52daa26eb41af12b11c3edc017cbf2a9c1e5e4ed60e2af1b1"
+      },
+      "proposedRepositoryPath": "deploy/audit30/verification/pow-audit30-item2-node-launch-v2.test.py",
+      "repositoryPathAlreadyExists": false
+    },
+    {
+      "original": {
+        "bytes": 483,
+        "path": "/tmp/pow-audit30-item2-cutover-v1-exact-failed.json",
+        "sha256": "d0a94c8adbdad30a60166ba407eced6735656199395cac166e9de0a111826b3e"
+      },
+      "proposedRepositoryPath": "deploy/audit30/verification/pow-audit30-item2-cutover-v1-exact-failed.json",
+      "repositoryPathAlreadyExists": false
+    },
+    {
+      "original": {
+        "bytes": 1760,
+        "path": "/tmp/pow-audit30-item2-cutover-v1-exact-failure-observation.json",
+        "sha256": "10fc72ec6c2af8c366a795e1a9d70fffd42377fd824eefbe3d4b97ae357ac19e"
+      },
+      "proposedRepositoryPath": "deploy/audit30/verification/pow-audit30-item2-cutover-v1-exact-failure-observation.json",
+      "repositoryPathAlreadyExists": false
+    },
+    {
+      "original": {
+        "bytes": 894,
+        "path": "/tmp/pow-audit30-item2-cutover-v1-exact-bindings.json",
+        "sha256": "005b236bb654fca06075b8d1b09f78e6370994c34026ec9c64fb97daad9f5f40"
+      },
+      "proposedRepositoryPath": "deploy/audit30/verification/pow-audit30-item2-cutover-v1-exact-bindings.json",
+      "repositoryPathAlreadyExists": false
+    },
+    {
+      "original": {
+        "bytes": 19143,
+        "path": "/tmp/pow-audit30-item2-cutover-v1-exact-request.json",
+        "sha256": "fb14b50bc9480755700d22f7bc481c6ca73a5039571793c7368597b0ce6e8e8f"
+      },
+      "proposedRepositoryPath": "deploy/audit30/verification/pow-audit30-item2-cutover-v1-exact-request.json",
+      "repositoryPathAlreadyExists": false
+    },
+    {
+      "original": {
+        "bytes": 200,
+        "path": "/tmp/pow-audit30-item2-cutover-v1-exact-idle-scheduling.json",
+        "sha256": "ab157768c77bdf3cee7fce2a907bee1d87b0cc3511bbbeb9c7f912664108dcd0"
+      },
+      "proposedRepositoryPath": "deploy/audit30/verification/pow-audit30-item2-cutover-v1-exact-idle-scheduling.json",
+      "repositoryPathAlreadyExists": false
+    },
+    {
+      "original": {
+        "bytes": 3703,
+        "path": "/tmp/pow-audit30-item2-cutover-v1-exact-worker-guard.json",
+        "sha256": "ed2a5ca9a8a895bc958912429850d5b8ce85861c61685be948f8ca8538a25514"
+      },
+      "proposedRepositoryPath": "deploy/audit30/verification/pow-audit30-item2-cutover-v1-exact-worker-guard.json",
+      "repositoryPathAlreadyExists": false
+    },
+    {
+      "original": {
+        "bytes": 4709,
+        "path": "/tmp/pow-audit30-item2-cutover-v1-refusal-reconciliation-v1.json",
+        "sha256": "80786209f69d3c114efa2ca2e0fa86bee8d31554850dd98338c36d427ed085cb"
+      },
+      "proposedRepositoryPath": "deploy/audit30/verification/pow-audit30-item2-cutover-v1-refusal-reconciliation-v1.json",
+      "repositoryPathAlreadyExists": false
+    },
+    {
+      "original": {
+        "bytes": 676,
+        "path": "/tmp/pow-audit30-item2-node-native-v1.json",
+        "sha256": "7874caa76606cf40d9e0bb240e0325bf85f84b149b5dc5bad58e6d350c14e83f"
+      },
+      "proposedRepositoryPath": "deploy/audit30/verification/pow-audit30-item2-node-native-v1.json",
+      "repositoryPathAlreadyExists": false
+    },
+    {
+      "original": {
+        "bytes": 293,
+        "path": "/tmp/pow-audit30-item2-node-native-v1.stdout",
+        "sha256": "742a66d7a0d1080aae733824d21985451a973f9a6ab373a0748e69111c54c9a5"
+      },
+      "proposedRepositoryPath": "deploy/audit30/verification/pow-audit30-item2-node-native-v1.stdout.json",
+      "repositoryPathAlreadyExists": false
+    },
+    {
+      "original": {
+        "bytes": 1760,
+        "path": "/tmp/pow-audit30-item2-node-native-v1.stderr",
+        "sha256": "10fc72ec6c2af8c366a795e1a9d70fffd42377fd824eefbe3d4b97ae357ac19e"
+      },
+      "proposedRepositoryPath": "deploy/audit30/verification/pow-audit30-item2-node-native-v1.stderr.json",
+      "repositoryPathAlreadyExists": false
+    },
+    {
+      "original": {
+        "bytes": 19111,
+        "path": "/tmp/pow-audit30-item2-node-request-v2.json",
+        "sha256": "63af4f7b869d4d7f7eaef85a195149c4179dacceb07327ebcc00076c0af84200"
+      },
+      "proposedRepositoryPath": "deploy/audit30/verification/pow-audit30-item2-node-first-executed-request-v1.json",
+      "repositoryPathAlreadyExists": false
+    },
+    {
+      "original": {
+        "bytes": 49491,
+        "path": "/tmp/pow-audit30-item2-node-envelope-v2.json",
+        "sha256": "1ba55ff00cd7808fcdb389cbc121d680ea42510154b4facfe1d1b0684482272d"
+      },
+      "proposedRepositoryPath": "deploy/audit30/verification/pow-audit30-item2-node-first-executed-envelope-v1.json",
+      "repositoryPathAlreadyExists": false
+    }
+  ],
+  "newAttemptRequired": "item2-v2",
+  "newNativeInvocationsByPreparer": 0,
+  "originalCanonicalMainInvoked": false,
+  "originalControllerSHA256": "fcac13f0dfd68f0549c902b6680d8d09d5600bb1cb4e521f69ce615ac92a73b1",
+  "originalFailureRemainsFailed": true,
+  "originalLauncherSHA256": "7079c7c01210ee336062ef675e40c88d6f1d588452b150b7ce083c2097e9a4ff",
+  "privateCaptureBodiesOrEnvironmentIncluded": false,
+  "pureTestsPassed": {
+    "launcher": 4,
+    "wrapper": 12
+  },
+  "schema": "pow-audit30-item2-node-successor-custody-manifest-v1",
+  "status": "prepared-not-launched-no-copies-performed"
+}

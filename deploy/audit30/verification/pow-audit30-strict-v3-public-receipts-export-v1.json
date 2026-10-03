@@ -1,0 +1,25 @@
+{
+  "schema": "pow-audit30-strict-v3-public-receipts-export-v1",
+  "sourceSHA256": "1ef0f5cf7b6d35e07c305ee0effe3dd714daf42c5b391a962ff0490cdf88b1e6",
+  "receipts": {
+    "accepted": {
+      "bytes": 31141,
+      "path": "/data/proofofwork-audit29-verify-launch-38ac6e2bff2a-20261003T042000Z-shadow-strict-v3/accepted-receipt.json",
+      "sha256": "3524a1f5a72ad4dfeb4c48727f9af6a4d92258f49d631f9c74dd0fe76e96dc4c",
+      "localPath": "/tmp/pow-audit30-strict-v3-exact-accepted-v1.json"
+    },
+    "completed": {
+      "bytes": 5633,
+      "path": "/data/proofofwork-release-backups/audit30-node-release-38ac6e2bff2a-20261003T042000Z/strict-native-v3-completed.json",
+      "sha256": "3aa9e3981c1fc60aec3f54021abbc458b0cacbb7775403f6ed28474aafb0712c",
+      "localPath": "/tmp/pow-audit30-strict-v3-exact-completed-v1.json"
+    },
+    "lease": {
+      "bytes": 13021,
+      "path": "/data/proofofwork-release-backups/audit30-node-release-38ac6e2bff2a-20261003T042000Z/shadow-lease-v3-prepared.json",
+      "sha256": "553c801d62e48305ac9957ccea495b87081d69269ea7e36d82d7c01e5534d087",
+      "localPath": "/tmp/pow-audit30-strict-v3-exact-lease-v1.json"
+    }
+  },
+  "privateContentsExported": false
+}

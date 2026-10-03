@@ -1,0 +1,95 @@
+{
+  "schema": "audit30-api-local-validation-v1",
+  "recordedAtUtc": "2026-10-03T19:00:27Z",
+  "status": "focused-local-validation-passed",
+  "userRemainingItem": 2,
+  "auditTrackerItem": 6,
+  "approvalReceipt": "deploy/audit30/verification/pow-audit30-api-current-chat-approval-20261003.json",
+  "source": {
+    "head": "6b121b8c1ddc8befbcfa09ae652ce71e82b34fe0",
+    "headTree": "d5be6ada5826bbb778bb1415eef70a469680ca54",
+    "candidateCommit": "38ac6e2bff2ac16890724e5213346ef8a3ebd186",
+    "candidateTree": "8b9b5e3cd47aa8e4204da717350a629176e30da6",
+    "equalityCommand": "git diff --name-only 38ac6e2bff2ac16890724e5213346ef8a3ebd186 HEAD -- server scripts src package.json",
+    "equalityCommandExitCode": 0,
+    "changedPathsInComparedImplementationScope": [],
+    "qualification": "Tracked implementation in the compared paths matches the approved candidate. The complete repository trees differ because subsequent evidence and recovery tooling exist. This does not certify production deployment."
+  },
+  "executedCommands": [
+    {
+      "command": "node scripts/check-id-registry-audit.mjs",
+      "exitCode": 0,
+      "reportedResult": "ID registry audit contract checks passed.",
+      "reportedAssertionCount": null
+    },
+    {
+      "command": "node --test scripts/check-id-audit-current-context.test.mjs scripts/check-id-audit-loopback-transport.test.mjs scripts/check-marketplace-read-budget.test.mjs scripts/check-pending-readiness-diagnostics.test.mjs",
+      "exitCode": 1,
+      "reportedFileTests": 4,
+      "passedFileTests": 3,
+      "failedFileTests": 1,
+      "qualification": "The loopback fixture file failed because sandboxed synthetic HTTP server binding to 127.0.0.1 was denied with EPERM. The other three file suites passed."
+    },
+    {
+      "command": "node scripts/check-mail-body-preservation.mjs",
+      "exitCode": 0,
+      "reportedOk": true,
+      "reportedAssertions": 295,
+      "qualification": "Actual projection, reader and UI byte constructor with synthetic UTF-8 fixtures; no database, signing or network calls."
+    },
+    {
+      "command": "node --test deploy/audit29/verify-candidate.test.mjs",
+      "exitCode": 0,
+      "reportedFileTests": 1,
+      "passedFileTests": 1,
+      "failedFileTests": 0,
+      "reportedInnerAssertionCount": null
+    },
+    {
+      "command": "node scripts/check-id-audit-loopback-transport.test.mjs",
+      "executionContext": "default-sandbox",
+      "exitCode": 1,
+      "reportedTests": 14,
+      "passedTests": 3,
+      "failedTests": 11,
+      "failure": "EPERM: operation not permitted 127.0.0.1",
+      "qualification": "All eleven failures occurred when binding the local synthetic HTTP fixture server. Pure URL-contract cases passed. This was a local test-environment failure, not a production acceptance result."
+    },
+    {
+      "command": "node scripts/check-id-audit-loopback-transport.test.mjs",
+      "executionContext": "approved-require-escalated-local-loopback-fixture",
+      "exitCode": 0,
+      "reportedTests": 14,
+      "passedTests": 14,
+      "failedTests": 0,
+      "qualification": "The same local-only synthetic HTTP fixture suite passed once server binding was permitted. No production requests were made."
+    },
+    {
+      "command": "python3 -I -B deploy/audit29/check-private-verify.test.py",
+      "exitCode": 0,
+      "reportedTests": 9,
+      "passedTests": 9,
+      "failedTests": 0
+    }
+  ],
+  "testOutputProvenance": {
+    "source": "Observed exec_command and write_stdin tool outputs in the current agent session",
+    "rawOutputFilesSaved": false,
+    "rawOutputSha256": null,
+    "qualification": "Counts and exit codes are the observed command reports. No raw output digest, start/end time or unreported inner assertion count is inferred."
+  },
+  "sourceCustody": {
+    "path": "deploy/audit30/verification/source-custody.json",
+    "sha256": "5f23d7b72cb3a4beb91456598e3492eb9f484a529f858bbb55e006ae023c61aa",
+    "bytes": 447848,
+    "fileRows": 1027,
+    "uniqueOriginalPaths": 1027,
+    "storedFileBytes": 13441941,
+    "storedRepresentations": 4,
+    "validation": "Every stored file row matched its recorded byte count and SHA-256. Each of the four evidence envelopes matched its stored identity, decoded to the recorded raw identity, and was byte-equal to its retained raw repository file.",
+    "errors": [],
+    "qualification": "The four raw diffs remain retained locally; validation does not authorize deleting or staging them."
+  },
+  "progressQualification": "This receipt records focused local validation only. Fresh full production API acceptance, scoped deployment, production verification, repository hygiene and release completion are recorded separately. It does not mark all remaining Audit 30 work complete.",
+  "canonicalDocumentationReview": "Current implementation matches the approved candidate. No protocol or product semantics changed in this local validation step; the current approval receipt and existing progress tracker carry the approval and execution status."
+}

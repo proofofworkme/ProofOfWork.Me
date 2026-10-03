@@ -1,0 +1,353 @@
+{
+  "baseHead": "6b121b8c1ddc8befbcfa09ae652ce71e82b34fe0",
+  "files": [
+    {
+      "bytes": 14573,
+      "path": "/tmp/pow-audit30-append-action68-v1.py",
+      "sha256": "e5ce2d3f9d833116ac29ff00e33b91e800dec8d2cb3e939a8e754a891a38a9f2",
+      "type": "python-source"
+    },
+    {
+      "bytes": 35469,
+      "path": "/tmp/pow-audit30-action67-public-custody-intent-v1.json",
+      "sha256": "c3d4ea8680bdb96f9d3f1607c2c08a3c88c0c504d2668ada7c217b380d816d8c",
+      "type": "json-public-receipt"
+    },
+    {
+      "bytes": 34198,
+      "path": "/tmp/pow-audit30-action67-public-custody-preservation-v1.json",
+      "sha256": "b9f5bb44d570d7d4f02a3a77b541a506d5bb89b76de5927633c9aa0fe6838fa8",
+      "type": "json-public-receipt"
+    },
+    {
+      "bytes": 3245,
+      "path": "/tmp/pow-audit30-independent-action67-source-manifest-review-v1.json",
+      "sha256": "e5072fd71f24742e4d031b7ab8b0e6616c6b409f5074eee10941acad428f7f5a",
+      "type": "json-public-receipt"
+    },
+    {
+      "bytes": 3996,
+      "path": "/tmp/pow-audit30-independent-action67-actual-preservation-review-v1.json",
+      "sha256": "e9f89bf599f324c1357c14d58d6bb92e8d6544e91ce371a92c69f4128aba7ea4",
+      "type": "json-public-receipt"
+    },
+    {
+      "bytes": 6397,
+      "path": "/tmp/pow-audit30-body-worker-guard-readonly-diagnostic-v1.py",
+      "sha256": "c9840bcfc92049acafc7b5f1746e0f0834c26030ccc0bf00a55c7a9ba184a254",
+      "type": "python-source"
+    },
+    {
+      "bytes": 4164,
+      "path": "/tmp/pow-audit30-body-worker-guard-readonly-diagnostic-v1.test.py",
+      "sha256": "9a65d41ec3f04a27cd01be4f37e93584cb14a506731eba7bfc8f3182a91c2d59",
+      "type": "python-test-source"
+    },
+    {
+      "bytes": 1486,
+      "path": "/tmp/pow-audit30-body-worker-guard-diagnostic-owned-caller-v1.py",
+      "sha256": "f74f86ed08ad949ae98520987b95a447d875d3946a84bc85d9e98815345994f9",
+      "type": "python-source"
+    },
+    {
+      "bytes": 5767,
+      "path": "/tmp/pow-audit30-body-worker-guard-diagnostic-native-v1.stdout",
+      "sha256": "70cd1cd2be29c2e78b6fec7192c88a795914abdf64d21984f9c3cd56bc61bda8",
+      "type": "native-capture-stdout"
+    },
+    {
+      "bytes": 0,
+      "path": "/tmp/pow-audit30-body-worker-guard-diagnostic-native-v1.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "type": "native-capture-stderr"
+    },
+    {
+      "bytes": 1304,
+      "path": "/tmp/pow-audit30-body-worker-guard-diagnostic-native-v1.json",
+      "sha256": "6030e6b2fcd261b4b41b33b2ded3d9234c1edd2dab98122d16de467bffeb1b71",
+      "type": "json-public-receipt"
+    },
+    {
+      "bytes": 945,
+      "path": "/tmp/pow-audit30-root-original-worker-guard-current-result-review-v1.json",
+      "sha256": "c884e889487e02d92b28dfb377f869ebbb491c60ac79d7edc3e709ce7e36a0db",
+      "type": "json-public-receipt"
+    },
+    {
+      "bytes": 2607,
+      "path": "/tmp/pow-audit30-independent-original-worker-guard-actual-review-v1.json",
+      "sha256": "e535d9ea61523f12f222b281496ccd46623435dd95e1c7c283660bb2e87f7f24",
+      "type": "json-public-receipt"
+    },
+    {
+      "bytes": 3059,
+      "path": "/tmp/pow-audit30-independent-original-worker-guard-diagnostic-source-review-v1.json",
+      "sha256": "c37b9aaf61e93b325ad426e6f9d4e6f846c964771d3d7dc22ee24487549173d5",
+      "type": "json-public-receipt"
+    },
+    {
+      "bytes": 3451,
+      "path": "/tmp/pow-audit30-body-152000-namespace-binding-source-review-v1.json",
+      "sha256": "2cf482a3afde9df3a55ce63535254a736ce705d87e5774b7d6b50eb2abaeb8d6",
+      "type": "json-public-receipt"
+    },
+    {
+      "bytes": 2129,
+      "path": "/tmp/pow-audit30-independent-body152000-namespace-binding-review-v1.json",
+      "sha256": "2526ef9bdb32de4c9ca32839f0a608709be1175bff3d9ec705bd2fb22da4e2e7",
+      "type": "json-public-receipt"
+    },
+    {
+      "bytes": 142731,
+      "path": "/tmp/pow-audit30-body-prepare-envelope-20261003T152000Z-v1.json",
+      "sha256": "08eb30a24b7b4f564e50f2ddfa765ee9ade236d081da94c4a54335d9519607cb",
+      "type": "json-public-receipt"
+    },
+    {
+      "bytes": 142727,
+      "path": "/tmp/pow-audit30-body-run-envelope-20261003T152000Z-v1.json",
+      "sha256": "f97ce8dbd4cdc00ad4f591a02aee4ec99478cb2e4fb9e96742d43802e5a95b31",
+      "type": "json-public-receipt"
+    },
+    {
+      "bytes": 1526,
+      "path": "/tmp/pow-audit30-body-prepare-owned-caller-152000-v1.py",
+      "sha256": "319c392580d9de503f840fa876d28fdcde6a43510edd46e7144d01b2e4ad7ef9",
+      "type": "python-source"
+    },
+    {
+      "bytes": 1510,
+      "path": "/tmp/pow-audit30-body-run-owned-caller-152000-v1.py",
+      "sha256": "bffb725e3cc4d75f814903de16880ddee8200c0942e97b6770854328ef21c1bc",
+      "type": "python-source"
+    },
+    {
+      "bytes": 1246,
+      "path": "/tmp/pow-audit30-body-prepare-owned-caller-152000-v1.diff",
+      "sha256": "f38b76e8af8c1c47e99d6208e8ae6e9352abc94f1b22fde9e9f4ef11a2660f47",
+      "type": "raw-diff"
+    },
+    {
+      "bytes": 1222,
+      "path": "/tmp/pow-audit30-body-run-owned-caller-152000-v1.diff",
+      "sha256": "4c7a53151715fc633970f58e0956d7bcf1801177b4d2f1c4b81259b5c6dd2f0d",
+      "type": "raw-diff"
+    },
+    {
+      "bytes": 2874,
+      "path": "/tmp/pow-audit30-body-152000-namespace-binding-v1.test.py",
+      "sha256": "f1567cbf4fcfb073a01ad80ad248906394a987fc01a683303138255c1c5dc06b",
+      "type": "python-test-source"
+    },
+    {
+      "bytes": 199,
+      "path": "/tmp/pow-audit30-body-prepare-native-20261003t152000z-v1.stdout",
+      "sha256": "1ed661b33e23bd536d0ea1f1d60e2d9b2e98ebad5e1e4328dd42b846f7a91bca",
+      "type": "native-capture-stdout"
+    },
+    {
+      "bytes": 0,
+      "path": "/tmp/pow-audit30-body-prepare-native-20261003t152000z-v1.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "type": "native-capture-stderr"
+    },
+    {
+      "bytes": 1285,
+      "path": "/tmp/pow-audit30-body-prepare-native-20261003t152000z-v1.json",
+      "sha256": "2f56a7cf6236b5c74f7f4330bbda5bb267144e3900981052bf006634bb84dfcc",
+      "type": "json-public-receipt"
+    },
+    {
+      "bytes": 0,
+      "path": "/tmp/pow-audit30-body-run-native-20261003t152000z-v1.stdout",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "type": "native-capture-stdout"
+    },
+    {
+      "bytes": 255,
+      "path": "/tmp/pow-audit30-body-run-native-20261003t152000z-v1.stderr",
+      "sha256": "517533e3432576cd309ef260397f1fdcaf5bbde0a32b0e02e94ee9c52cf0d9a0",
+      "type": "native-capture-stderr"
+    },
+    {
+      "bytes": 1273,
+      "path": "/tmp/pow-audit30-body-run-native-20261003t152000z-v1.json",
+      "sha256": "38a68482a4d7750ef29b9bac75797785aec0f2b974ff2f768b61578b03e5087a",
+      "type": "json-public-receipt"
+    },
+    {
+      "bytes": 10452,
+      "path": "/tmp/pow-audit30-body-run-reconciliation-readonly-152000-v1.py",
+      "sha256": "4830e876f8cfd2c2130c079630b20560c5ac78231732328bbbf652208cacb901",
+      "type": "python-source"
+    },
+    {
+      "bytes": 2633,
+      "path": "/tmp/pow-audit30-body-run-reconciliation-readonly-152000-v1.diff",
+      "sha256": "e7ef42cb20658f6b61d6400fb7dedc7283018615ef84882defebf56c3cfa5e6a",
+      "type": "raw-diff"
+    },
+    {
+      "bytes": 3886,
+      "path": "/tmp/pow-audit30-body-run-reconciliation-readonly-152000-v1.test.py",
+      "sha256": "ca9fed75e0af50a395a38dba45a41f4e08baa2987bc17aa6eab6660dcd78b72e",
+      "type": "python-test-source"
+    },
+    {
+      "bytes": 1475,
+      "path": "/tmp/pow-audit30-body-run-reconciliation-owned-caller-152000-v1.py",
+      "sha256": "4222201106ef536bb9896af2eddfb41b33560fb838e4ddfcb9a3f43a09b78a97",
+      "type": "python-source"
+    },
+    {
+      "bytes": 7206,
+      "path": "/tmp/pow-audit30-body-run-reconciliation-native-152000-v1.stdout",
+      "sha256": "8f1ec874de90d6fbcc5e5bf03dc03a372ba1c0fc87dec6d231d024721034c67e",
+      "type": "native-capture-stdout"
+    },
+    {
+      "bytes": 0,
+      "path": "/tmp/pow-audit30-body-run-reconciliation-native-152000-v1.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "type": "native-capture-stderr"
+    },
+    {
+      "bytes": 1300,
+      "path": "/tmp/pow-audit30-body-run-reconciliation-native-152000-v1.json",
+      "sha256": "b64d426c17fecec22dc2c57f94a33f972d23fb3471c4712e54515f6d78577473",
+      "type": "json-public-receipt"
+    },
+    {
+      "bytes": 1276,
+      "path": "/tmp/pow-audit30-root-body-refusal-reconciliation-152000-acceptance-v1.json",
+      "sha256": "b9de7f98b7808bc3bd85bb0d336e48079ff9b8fc8477bfaaa9076903de56c007",
+      "type": "json-public-receipt"
+    },
+    {
+      "bytes": 2794,
+      "path": "/tmp/pow-audit30-independent-body152000-reconciliation-source-review-v1.json",
+      "sha256": "5e979d729764ad78d1e78746c1cc7576629a4d9318ce0c8356ece5b7eeb9d390",
+      "type": "json-public-receipt"
+    },
+    {
+      "bytes": 3015,
+      "path": "/tmp/pow-audit30-independent-body152000-reconciliation-actual-review-v1.json",
+      "sha256": "d09e0875df1760894708c716d57453d561b99eda04f613aa828b19f715b7f8ac",
+      "type": "json-public-receipt"
+    }
+  ],
+  "item4Checkpoint": {
+    "attemptExitCode": 1,
+    "attemptReceipt": {
+      "bytes": 1273,
+      "path": "/tmp/pow-audit30-body-run-native-20261003t152000z-v1.json",
+      "sha256": "38a68482a4d7750ef29b9bac75797785aec0f2b974ff2f768b61578b03e5087a",
+      "type": "json-public-receipt"
+    },
+    "attemptRunId": "20261003T152000Z",
+    "automaticRetry": false,
+    "complete": false,
+    "cutoverExecuted": false,
+    "databaseCommitOutcomeCertified": false,
+    "inverseExecuted": false,
+    "lockedContextDiagnosisCertified": false,
+    "operativeReconciliationSourceFullyReviewedBeforeInvocation": true,
+    "originalGuardReasonRecovered": false,
+    "peerReview": {
+      "bytes": 3015,
+      "path": "/tmp/pow-audit30-independent-body152000-reconciliation-actual-review-v1.json",
+      "sha256": "d09e0875df1760894708c716d57453d561b99eda04f613aa828b19f715b7f8ac",
+      "type": "json-public-receipt"
+    },
+    "productionDataMutation": false,
+    "productionRepairAccepted": false,
+    "qualification": "The standalone unlocked original480 observation passed at its current snapshot. The second approved operation again refused before worker-before/native writer markers; immutable b989 ordering supports writer-route-not-reached, without a global DB/COMMIT certificate or recovered discarded guard conjunct. Current prepared/package fences and original five match. All three relevant units are observed qualified GC not-found/PID0/empty Invocation and control group; this does not establish observed Invocation ownership or continuous stop. A locked-context comparison is pending, not a proven cause. No third writer attempt, inverse, strict retry or cutover is admitted by this bookkeeping packet.",
+    "reconciliationReceipt": {
+      "bytes": 7206,
+      "path": "/tmp/pow-audit30-body-run-reconciliation-native-152000-v1.stdout",
+      "sha256": "8f1ec874de90d6fbcc5e5bf03dc03a372ba1c0fc87dec6d231d024721034c67e",
+      "type": "native-capture-stdout"
+    },
+    "rootAcceptance": {
+      "bytes": 1276,
+      "path": "/tmp/pow-audit30-root-body-refusal-reconciliation-152000-acceptance-v1.json",
+      "sha256": "b9de7f98b7808bc3bd85bb0d336e48079ff9b8fc8477bfaaa9076903de56c007",
+      "type": "json-public-receipt"
+    },
+    "standaloneOriginalGuardPassed": true,
+    "standaloneOriginalGuardReceipt": {
+      "bytes": 5767,
+      "path": "/tmp/pow-audit30-body-worker-guard-diagnostic-native-v1.stdout",
+      "sha256": "70cd1cd2be29c2e78b6fec7192c88a795914abdf64d21984f9c3cd56bc61bda8",
+      "type": "native-capture-stdout"
+    },
+    "standalonePeerAcceptance": {
+      "bytes": 2607,
+      "path": "/tmp/pow-audit30-independent-original-worker-guard-actual-review-v1.json",
+      "sha256": "e535d9ea61523f12f222b281496ccd46623435dd95e1c7c283660bb2e87f7f24",
+      "type": "json-public-receipt"
+    },
+    "standaloneRootAcceptance": {
+      "bytes": 945,
+      "path": "/tmp/pow-audit30-root-original-worker-guard-current-result-review-v1.json",
+      "sha256": "c884e889487e02d92b28dfb377f869ebbb491c60ac79d7edc3e709ce7e36a0db",
+      "type": "json-public-receipt"
+    },
+    "status": "exact-repair-approved;two-attempts-failed-before-writer-inferred;standalone-original-guard-passed;locked-context-diagnosis-pending",
+    "thirdAttemptExecuted": false,
+    "writerNotReachedInferred": true
+  },
+  "lockedContextDiagnostic": {
+    "status": "pending-not-certified"
+  },
+  "schema": "pow-audit30-action68-fixed-public-manifest-v1",
+  "secondAttemptReceipt": {
+    "bytes": 1273,
+    "path": "/tmp/pow-audit30-body-run-native-20261003t152000z-v1.json",
+    "sha256": "38a68482a4d7750ef29b9bac75797785aec0f2b974ff2f768b61578b03e5087a",
+    "type": "json-public-receipt"
+  },
+  "secondPeerAcceptance": {
+    "bytes": 3015,
+    "path": "/tmp/pow-audit30-independent-body152000-reconciliation-actual-review-v1.json",
+    "sha256": "d09e0875df1760894708c716d57453d561b99eda04f613aa828b19f715b7f8ac",
+    "type": "json-public-receipt"
+  },
+  "secondReconciliationReceipt": {
+    "bytes": 7206,
+    "path": "/tmp/pow-audit30-body-run-reconciliation-native-152000-v1.stdout",
+    "sha256": "8f1ec874de90d6fbcc5e5bf03dc03a372ba1c0fc87dec6d231d024721034c67e",
+    "type": "native-capture-stdout"
+  },
+  "secondRootAcceptance": {
+    "bytes": 1276,
+    "path": "/tmp/pow-audit30-root-body-refusal-reconciliation-152000-acceptance-v1.json",
+    "sha256": "b9de7f98b7808bc3bd85bb0d336e48079ff9b8fc8477bfaaa9076903de56c007",
+    "type": "json-public-receipt"
+  },
+  "standaloneGuardReceipt": {
+    "bytes": 5767,
+    "path": "/tmp/pow-audit30-body-worker-guard-diagnostic-native-v1.stdout",
+    "sha256": "70cd1cd2be29c2e78b6fec7192c88a795914abdf64d21984f9c3cd56bc61bda8",
+    "type": "native-capture-stdout"
+  },
+  "standalonePeerAcceptance": {
+    "bytes": 2607,
+    "path": "/tmp/pow-audit30-independent-original-worker-guard-actual-review-v1.json",
+    "sha256": "e535d9ea61523f12f222b281496ccd46623435dd95e1c7c283660bb2e87f7f24",
+    "type": "json-public-receipt"
+  },
+  "standaloneRootAcceptance": {
+    "bytes": 945,
+    "path": "/tmp/pow-audit30-root-original-worker-guard-current-result-review-v1.json",
+    "sha256": "c884e889487e02d92b28dfb377f869ebbb491c60ac79d7edc3e709ce7e36a0db",
+    "type": "json-public-receipt"
+  },
+  "summary": "Preserve the original frozen480 standalone current guard PASS at 15:00, the separately reviewed 152000 namespace preparation and second failed repair invocation, and its accepted same-attempt read-only reconciliation. The original approved exact16 repair and conditional inverse remain incomplete. Source ordering plus absent worker-before/native/write receipts support a pre-writer failure inference; no global database/COMMIT certificate or precise discarded predicate was recovered. Locked-context diagnosis remains pending; no third attempt, inverse, strict or cutover is claimed or authorized here.",
+  "tableUpdate": {
+    "item": "4",
+    "newLine": "| 4 | Preserve mail bytes, AUD28-04 | Exact repair/conditional inverse approved; two attempts failed before writer by source-ordering inference | Direct human approved only exact16 body-only repair and separate conditional inverse; no automatic retry | Standalone original480 current guard PASS; second same-attempt reconciliation preserves failure/current fences/absent native evidence. No global DB/COMMIT certificate or recovered guard conjunct. Locked-context diagnosis pending; repair, strict and cutover remain held; no third attempt |",
+    "oldLine": "| 4 | Preserve mail bytes, AUD28-04 | Exact repair/conditional inverse approved; first attempt failed before writer by source-ordering inference | Direct human approved only exact16 body-only repair and separate conditional inverse; no automatic retry | Accepted same-attempt read-only reconciliation preserves failure/current fences/absent native evidence; writer not reached inferred, guard reason/global DB/COMMIT not certified. Prelude-only checks pass; remaining worker guard blocks repair, strict and cutover |"
+  },
+  "trackerNote": "### Action68: standalone guard PASS and second qualified pre-writer refusal\n\nThe standalone original480 guard passed at 15:00 without invoking the writer. The distinct152000 approved operation then refused; its accepted read-only reconciliation retains the durable intent/failure, current prepared/package fences, absent worker-before/native/write receipts, original five endpoints and three qualified GC endpoints. Immutable source ordering supports writer not reached for this attempt; the discarded guard predicate and global DB/COMMIT outcome remain uncertified. The first refused attempt and Action67 snapshot through14:55 are preserved. Locked-context diagnosis is pending and will require its own accepted evidence. Exact16 repair, fresh mail619, full strict and cutover remain incomplete. This append performs no retry, inverse, production write, configuration change, deletion or new approval."
+}

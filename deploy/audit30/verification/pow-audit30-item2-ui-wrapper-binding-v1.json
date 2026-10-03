@@ -1,0 +1,53 @@
+{
+  "schema": "pow-audit30-item2-ui-local-wrapper-binding-v1",
+  "directory": "/tmp/pow-audit30-item2-ui-release-38ac-v1",
+  "checkout": "/home/sixer/.codex/worktrees/audit30-api-release/ProofOfWork.Me",
+  "commit": "38ac6e2bff2ac16890724e5213346ef8a3ebd186",
+  "tree": "8b9b5e3cd47aa8e4204da717350a629176e30da6",
+  "pins": {
+    "release.py": {
+      "sourceSHA256": "652170dfeb01b47c0c0102665744b6aee713457db6c186483dff6e2bcd66fdc5",
+      "successorSHA256": "a70d791921ece41ff3fb86b2e3dce816c99f3fabd1fe6ed97843e761f342f5bd",
+      "bytes": 12039,
+      "onlyDelta": "REPO exact clean managed checkout binding"
+    },
+    "preflight.py": {
+      "sourceSHA256": "a7f672dcf4e6f3c5187c858143ad3cd4c87deb5fb3f0b244130a4826d72b6b84",
+      "successorSHA256": "a7f672dcf4e6f3c5187c858143ad3cd4c87deb5fb3f0b244130a4826d72b6b84",
+      "bytes": 6165,
+      "onlyDelta": "byte-identical"
+    },
+    "publish.py": {
+      "sourceSHA256": "d285f986463eb5253f6669ceaf552e0a773222ae80431bc868ba92d853ff7b3d",
+      "successorSHA256": "d285f986463eb5253f6669ceaf552e0a773222ae80431bc868ba92d853ff7b3d",
+      "bytes": 8593,
+      "onlyDelta": "byte-identical"
+    },
+    "remote_transport.py": {
+      "sourceSHA256": "7153e99661b7c05b31c6d789b0546f0c130af4e60cbd9d47dd63f83198b93d28",
+      "successorSHA256": "7153e99661b7c05b31c6d789b0546f0c130af4e60cbd9d47dd63f83198b93d28",
+      "bytes": 16802,
+      "onlyDelta": "byte-identical"
+    },
+    "transport_preserve.py": {
+      "sourceSHA256": "98e083a9ece551dea8efe591541e7f2702e2426ca7788e828deaa4207550d1fe",
+      "successorSHA256": "98e083a9ece551dea8efe591541e7f2702e2426ca7788e828deaa4207550d1fe",
+      "bytes": 2366,
+      "onlyDelta": "byte-identical"
+    },
+    "collect_verify.py": {
+      "sourceSHA256": "dd898d0a1642f9715f806b52d66fd173445bb4dd81ea3e904934dc73a43b7f04",
+      "successorSHA256": "dd898d0a1642f9715f806b52d66fd173445bb4dd81ea3e904934dc73a43b7f04",
+      "bytes": 3348,
+      "onlyDelta": "byte-identical"
+    },
+    "https_smoke.py": {
+      "sourceSHA256": "4c422a3fb3e29b21706f344491eb2ebcec3552f8b9dc8b67f56b913697135b23",
+      "successorSHA256": "4c422a3fb3e29b21706f344491eb2ebcec3552f8b9dc8b67f56b913697135b23",
+      "bytes": 15072,
+      "onlyDelta": "byte-identical"
+    }
+  },
+  "cleanHeadGatePreserved": true,
+  "productionInvoked": false
+}

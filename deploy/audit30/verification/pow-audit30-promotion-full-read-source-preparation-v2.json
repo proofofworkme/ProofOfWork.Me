@@ -1,0 +1,59 @@
+{
+  "actualContext": {
+    "bytes": 5210,
+    "observedAtUtc": "2026-10-03T14:29:52.063576+00:00",
+    "path": "/tmp/pow-audit30-retained-repair-context-native-142900-v1.stdout",
+    "sha256": "fd12f5bfb20ee9532facf54b0798888790911cdc5f007b616bddaf57a2b6d48e"
+  },
+  "actualRequest": {
+    "bytes": 14381,
+    "path": "/tmp/pow-audit30-promotion-full-read-request-144000-v2.json",
+    "sha256": "fc319aa87b59622363741fd751353b10a055ba31343fcdb09a849ee6279ea021"
+  },
+  "atUtc": "2026-10-03T14:31:10.864476+00:00",
+  "authority": "Root must full-review source/request/caller then issue a separate once read-only native admission. Source fixtures prove no current or future native unit/path absence; runtime checks both before creation.",
+  "caller": {
+    "bytes": 1930,
+    "path": "/tmp/pow-audit30-promotion-full-read-transport-preparation-v2.py",
+    "sha256": "3116686be22e8197fb45ba34e77e6370ed6b1a9f410d6c17c8fd3c6d5f29d625"
+  },
+  "checks": {
+    "all26FunctionsClassesASTEqual": true,
+    "allOtherModuleASTExactAfterSingleLiteralReversal": true,
+    "byteExactSingleRIDReversal": true,
+    "callerBoundExactSharedTransport": true,
+    "callerPassesRequestSHAArgv": true,
+    "inertDecodePassed": true,
+    "negativeCases": [
+      "old-unit-refuses",
+      "old-directory-refuses",
+      "null-current-guards-refuse"
+    ],
+    "newNamespaceNativeAbsenceObserved": false,
+    "nullTemplateOnlyUnitDirectoryChanged": true,
+    "requestOnlyTwoNullFieldsFilledFromExactActualContext": true
+  },
+  "humanApprovalCreated": false,
+  "leafUnchangedSha256": "01b80fd9b4a3a92893c06f288b3d3bdc90e05b7ed6f7c6f25bebc21c1ecc56a3",
+  "nativeActionPerformed": false,
+  "nullTemplate": {
+    "bytes": 8747,
+    "path": "/tmp/pow-audit30-promotion-full-read-request-template-v2.json",
+    "sha256": "9bb6ec99e4aad5139aeba7fb85117387f2841efdfebd54886b0acf7b156b7846"
+  },
+  "pinOrCheckerChanged": false,
+  "preservedOriginalSourceSha256": "d07cb8d37eb2920578a2db009030b79ab27100345258e5b72f341f3d88ed54e8",
+  "run": "20261003T144000Z",
+  "schema": "pow-audit30-promotion-full-read-source-preparation-v2",
+  "source": {
+    "bytes": 26984,
+    "path": "/tmp/pow-audit30-promotion-full-read-native-v2.py",
+    "sha256": "0cac910d1b74513499911fce6fabcf745442a6c3ba93b4c5d3c7fcf0e6ad9e15"
+  },
+  "sourceDiff": {
+    "bytes": 1101,
+    "path": "/tmp/pow-audit30-promotion-full-read-native-v2.diff",
+    "sha256": "ba39dd958a435765a0f407c4229b692a71ffeaff4dbc742b050e49d336ea5c07"
+  },
+  "status": "source-and-actual-context-request-prepared-not-executed"
+}

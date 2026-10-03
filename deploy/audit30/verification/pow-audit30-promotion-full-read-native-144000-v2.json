@@ -1,0 +1,45 @@
+{
+  "automaticRetry": false,
+  "captures": {
+    "stderr": {
+      "bytes": 0,
+      "path": "/tmp/pow-audit30-promotion-full-read-native-144000-v2.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "stdout": {
+      "bytes": 32091,
+      "path": "/tmp/pow-audit30-promotion-full-read-native-144000-v2.stdout",
+      "sha256": "6304338f8004b3af1b1425e047dac193b52106dd7f496ffa46c0f355c992a369"
+    }
+  },
+  "exitCode": 0,
+  "failure": null,
+  "finishedAtUtc": "2026-10-03T14:33:16.485003+00:00",
+  "inputBindings": {
+    "actualContextStdoutSha256": "fd12f5bfb20ee9532facf54b0798888790911cdc5f007b616bddaf57a2b6d48e",
+    "additionalDeletionAuthorized": false,
+    "checkerChangeRequested": false,
+    "fullReadLeafSha256": "01b80fd9b4a3a92893c06f288b3d3bdc90e05b7ed6f7c6f25bebc21c1ecc56a3",
+    "pinChangeRequested": false,
+    "productionMutation": false,
+    "recoveryActivationRequested": false,
+    "requestSha256": "fc319aa87b59622363741fd751353b10a055ba31343fcdb09a849ee6279ea021",
+    "rootSeconds": 420,
+    "sourceSha256": "0cac910d1b74513499911fce6fabcf745442a6c3ba93b4c5d3c7fcf0e6ad9e15",
+    "unitCpuPercent": 25,
+    "unitMemoryMaxBytes": 134217728,
+    "unitSeconds": 360,
+    "unitSwapMaxBytes": 0
+  },
+  "outerDeadlineSeconds": 480,
+  "productionDataMutationRequested": false,
+  "receivedBytes": {
+    "stderr": 0,
+    "stdout": 32091
+  },
+  "remoteUnitStoppedCertifiedByTransport": false,
+  "schema": "pow-audit30-readonly-owned-transport-result-v1",
+  "seconds": 76.909942,
+  "startedAtUtc": "2026-10-03T14:31:59.575061+00:00",
+  "typedStdinBytesDelivered": 14381
+}

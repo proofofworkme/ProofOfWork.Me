@@ -1,0 +1,79 @@
+{
+  "atUtc": "2026-10-03T15:13:11.872225+00:00",
+  "baseHead": "6b121b8c1ddc8befbcfa09ae652ce71e82b34fe0",
+  "checks": {
+    "actualHumanResponseAddedSeparately": true,
+    "all97NewRepositoryCopiesAnd14LosslessEnvelopesRawExact": true,
+    "all987CurrentCustodyRowsBytesShaVerified": true,
+    "all99ManifestInputsPlusManifestBytesShaVerified": true,
+    "allOldAuthorizationMutationRetirementObjectsPreserved": true,
+    "allPriorItemValuesPreservedWithOnlyNew4And7Checkpoints": true,
+    "canonicalTwoScriptsEqualRootApprovedPostimages": true,
+    "fourGlobalRepresentationsValueExact": true,
+    "fourHistoricalRawDiffFilesPreserved": true,
+    "intentPlannedOutputBytesAndShaEqualActual": true,
+    "noTrackedDeletionObserved": true,
+    "old66ActionsValueExact": true,
+    "old890CustodyRowsValueExact": true,
+    "snapshotCutoff1455RemainsUnchanged": true,
+    "trackerOnlyThreeSpecifiedRowsAndAppendedNote": true,
+    "twoHistoricalApprovalRequestsValueExact": true
+  },
+  "counts": {
+    "actions": 67,
+    "custodyRows": 987,
+    "historicalRequests": 2,
+    "newLosslessEnvelopes": 14,
+    "newResponses": 1,
+    "newRows": 97,
+    "newStoredBytes": 997403,
+    "selectedIncludingManifest": 100
+  },
+  "helper": {
+    "bytes": 19772,
+    "path": "/tmp/pow-audit30-append-action67-v3.py",
+    "sha256": "7efda97c89f584a602b5ba53c4f8d9b062f46637cf05ee6300d967fb4ebb639e"
+  },
+  "intent": {
+    "bytes": 35469,
+    "path": "/tmp/pow-audit30-action67-public-custody-intent-v1.json",
+    "sha256": "c3d4ea8680bdb96f9d3f1607c2c08a3c88c0c504d2668ada7c217b380d816d8c"
+  },
+  "manifest": {
+    "bytes": 35415,
+    "path": "/tmp/pow-audit30-action67-fixed-public-manifest-v1.json",
+    "sha256": "169604054e41df8b92238500a89751fe61a63d3ae2766864235a55cd6d7ed8aa"
+  },
+  "observedDocuments": [
+    {
+      "bytes": 16743339,
+      "path": "/home/sixer/ProofOfWork.Me/audits/2026-10-02-audit30-remaining-phase-execution.evidence.json",
+      "sha256": "69e81ac31062118ea6ab8664d8af0391c1f917cdfb0cdd92fae0e59d25aeff7a"
+    },
+    {
+      "bytes": 433625,
+      "path": "/home/sixer/ProofOfWork.Me/deploy/audit30/verification/source-custody.json",
+      "sha256": "d515bffd0323a2728d45f2bba69371015bc098e29d1b62248b464d75e0fc37cb"
+    },
+    {
+      "bytes": 84251,
+      "path": "/home/sixer/ProofOfWork.Me/audits/2026-10-02-audit30-followup-tracker.md",
+      "sha256": "ceaaa8bd80c4ea578fbb6ec258bc0e92ce63432512280f5799cd8f3fbf01eeae"
+    }
+  ],
+  "preservationReceipt": {
+    "bytes": 34198,
+    "path": "/tmp/pow-audit30-action67-public-custody-preservation-v1.json",
+    "sha256": "b9f5bb44d570d7d4f02a3a77b541a506d5bb89b76de5927633c9aa0fe6838fa8"
+  },
+  "qualifications": [
+    "Independent of actual append execution; authored helper was never invoked by this reviewer. Fixed frozen helper definitions were loaded inertly only for stable reads/representation verification.",
+    "Actual two-file dual-pin/checker protection and installed-byte readback are accepted only within reviewed producer/observer scope; no timer/deletion/recovery activation or universal continuous-state proof.",
+    "Body first attempt is failed; writer-not-reached is the Root-reviewed source-ordering inference. No global DB/COMMIT certificate or recovered original guard reason; exact63f full review followed invocation.",
+    "Action67 snapshot stops at14:55 prelude. Later original480 diagnostic and152000 refusal belong to future checkpoints.",
+    "No private body/preimage/COPY/environment/credential artifact was selected. Public executable source envelopes carry only reviewed code and metadata references; no private source reads occurred in this review.",
+    "No native/network/service/configuration/data/repository write, test repetition, staging, commit or approval by this reviewer. No full phase/PITR/financial/recovery-equivalence/deletion closure inferred."
+  ],
+  "schema": "pow-audit30-independent-action67-actual-preservation-review-v1",
+  "status": "passed-read-only-actual-preservation"
+}

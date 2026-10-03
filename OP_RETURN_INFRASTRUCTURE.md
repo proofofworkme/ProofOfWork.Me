@@ -6417,3 +6417,47 @@ All 32 accepted evidence files (603,642 bytes) were preserved creation-only at
 with private 0700/0600 modes, continuous deploy locking, SHA verification and
 unchanged capacity gates. Preservation-receipt SHA-256:
 `fa751f27af530b7d52ee7af2f6513100c2717ae6c1593d6b398789474275ea9b`.
+
+### Audit 30 production release (2026-10-03)
+
+Commit `38ac6e2bff2ac16890724e5213346ef8a3ebd186` and tree
+`8b9b5e3cd47aa8e4204da717350a629176e30da6` are the source of the deployed
+API/worker and frontend. Node release `38ac6e2bff2a-20261003T042000Z` completed
+its guarded exchange at 19:54:53 UTC. Core, electrs and PostgreSQL retained their
+process identities; the API and worker acquired new identities. Recovery material,
+ordered Sep29/Oct3 backup pins and the V6 retention checker remain protected.
+Earlier refusal and rollback receipts remain dated history.
+
+Production acceptance passed at 20:22–20:27 UTC: 587 fetched ID transactions,
+508 confirmed winners, 20 pending candidates, 565 confirmed and 22 pending registry
+transactions covered; 49 event checks passed, and 102 parity checks passed their
+acceptance gates with the two historical AMO warnings retained. At stable Core
+969758, the wallet returned HTTP 200 with readiness, balance and capacity verified.
+WORK verification covered 1,006 rows, six full/display levels and 1,006 independent
+Core anchors. Both positive WORK reads passed all sixteen predicates; complete
+scoped POWB/INCB listings contained one/zero records. Both production acceptance readers stopped
+and restored their backup timer windows.
+
+The original sixteen mailbox bodies were repaired to exact chain bytes. Fresh
+DB parity and subsequent public HTTPS verified all 619 confirmed bodies and
+identities across 33 actors. The pinned frontend helpers verified the one classified
+HTML body and its derived attachment while preserving raw bytes. Explicit attachment
+rendering, pending mail and broader financial completeness remain outside this scope.
+
+Frontend release `38ac6e2bff2a-20261003T190512Z` published at 20:58:18 UTC. Its
+manifest is `11b64113fde307747331cde063c79e9846a28d43d169b82f93eea356b3c0d29d`;
+archive SHA-256 is `cad4db706607add7e11e3e829824d2a496f3c94ab74ada0285931cff64a8e0a9`.
+At 21:04:38 UTC, HTTPS verified 810/810 public files, fifteen hostname roots and
+the apex redirect against matching archive provenance. All sixteen source surfaces,
+818 protected input entries and prior rollback roots remained preserved. Guest
+browser smoke loaded Mail, IDs, Credit and complete scoped bond histories at Core
+969761: POWB Open 1/Sealed 0 and empty INCB. Caddy remained unchanged. Full-copy
+5 GiB evidence-stage and separate global scratch gates, root-filesystem 10 GiB
+free-space/64 MiB growth/128-inode reserves stayed enforced; no historical deletion
+or limit reduction occurred.
+
+[Action 72 API/mail evidence](audits/2026-10-02-audit30-remaining-phase-execution.evidence.json)
+and [final HTTPS receipt](deploy/audit30/verification/pow-audit30-item2-ui-https-smoke-exact-v1.json)
+record these scoped results. Release handoff does not close the separate migration,
+physical/PITR/capacity, custody/dependency or final global Audit 30 gates. Earlier dated
+11b9, 265 and d4 sections remain operational history.

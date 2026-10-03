@@ -1,0 +1,31 @@
+{
+  "bindings": [
+    {
+      "bytes": 20718,
+      "path": "/home/sixer/ProofOfWork.Me/scripts/check-retention-protection.py",
+      "sha256": "795f1308b74ddc69a022ce7e1413fb4698a82e6cfb14265931d1951ee603c908"
+    },
+    {
+      "bytes": 4289,
+      "path": "/home/sixer/ProofOfWork.Me/scripts/check-audit28-persistent-retention.py",
+      "sha256": "2adfcc7d670cfdbaadc0ac59290578bb97dc3c1d46a74df49887ce8dbe18048f"
+    },
+    {
+      "bytes": 20718,
+      "path": "/tmp/pow-audit30-retention-protection-oct3-dual-pin-candidate-v1.py",
+      "sha256": "795f1308b74ddc69a022ce7e1413fb4698a82e6cfb14265931d1951ee603c908"
+    }
+  ],
+  "checks": {
+    "canonicalCheckerByteEquals795fProductionPostimage": true,
+    "eitherSinglePinAndReversedOrderRefuse": true,
+    "maintainedPersistentRetentionTestChangesOnlyCurrent78BytePairAndTwoSinglePinRefusals": true,
+    "orderedDualPinPredicatePasses": true
+  },
+  "diffBytes": 4029,
+  "diffSha256": "8cc5b5e9b1e6cd8236dbca3c0be848e168528ad0a2e9d2374c0c0facd7663d11",
+  "qualification": "Read-only source review and direct pure predicate checks; Root already reported persistent6/logicalpins8/namespace6 passes, not independently repeated. No deployment, control, or repository edit by reviewer.",
+  "reviewedAtUtc": "2026-10-03T14:47:23.909949+00:00",
+  "schema": "pow-audit30-independent-canonical-dual-pin-checker-source-review-v1",
+  "status": "accepted-source-equals-verified-production-postimage"
+}

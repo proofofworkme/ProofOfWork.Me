@@ -1,0 +1,52 @@
+{
+  "bindings": [
+    {
+      "bytes": 10452,
+      "path": "/tmp/pow-audit30-body-run-reconciliation-readonly-v1.py",
+      "sha256": "63f1835722103730f2e336e270c770afe73c97db290cb5c37489a944d368fcc3"
+    },
+    {
+      "bytes": 3879,
+      "path": "/tmp/pow-audit30-body-run-reconciliation-readonly-v1.test.py",
+      "sha256": "df2c6f1c3766b1bb44cfcbc607dd518082e7d629babc019a423071fc76480f99"
+    },
+    {
+      "bytes": 1461,
+      "path": "/tmp/pow-audit30-body-run-reconciliation-owned-caller-v1.py",
+      "sha256": "6534f0a7df147e3c9c7eb6a240d52d94c8abfabcf928264b3a35e58d736a3ec4"
+    },
+    {
+      "bytes": 142727,
+      "path": "/tmp/pow-audit30-body-run-envelope-20261003T145500Z-v1.json",
+      "sha256": "37b3d8e58fcca371ec952c12207efbe2b2a9feb58b755452b69616346fc252a6"
+    }
+  ],
+  "checks": {
+    "exactFailedRunEnvelopeAndInertRootSourceDecode": true,
+    "lowercasePrefixPassesExactFrozenSharedTransportGuard": true,
+    "mutatorEntryPointsExplicitlyBlocked": true,
+    "onlyFixedPublicReceiptMetadataClosedFieldsAndUnitShow": true,
+    "preparedReadAndPackageFenceOnlyReadPinnedDefinitionsAndFileDependencies": true,
+    "privateSelectedPreimagesExistsOnly": true,
+    "requestNoSHAArgvMatchesSourceStdinContract": true,
+    "serviceFieldsAndOwnedPID0EmptyCGStopPredicatePreserved": true,
+    "timerSixFieldsNoInventedPIDOrControlGroup": true
+  },
+  "nativeCallsByReviewer": false,
+  "qualifications": [
+    "Observer reports current stopped/GC and package/source predicates; discarded same-attempt reason cannot be reconstructed, and commitOutcomeCertified is always false.",
+    "Immutable receipt read includes hashes of stdout/stderr and filters only closed enums/counts/bools/hashes; raw body/preimage/database credentials never exported.",
+    "Metadata-child cleanup fixture uses a mocked harmless child rather than a new native process; source communicates only fixed systemctl show and reaps its own child on interruption.",
+    "No retry, inverse, unit start/stop, SQL/API/Core, package mutation or production outcome acceptance. Root owns separate single read-only admission."
+  ],
+  "repositoryEditedByReviewer": false,
+  "reviewedAtUtc": "2026-10-03T14:50:34.246669+00:00",
+  "schema": "pow-audit30-independent-body-run-reconciliation-source-review-v1",
+  "status": "accepted-fixed-readonly-source",
+  "tests": {
+    "isolatedPythonWarningsError": {
+      "passed": 10,
+      "seconds": 0.045
+    }
+  }
+}

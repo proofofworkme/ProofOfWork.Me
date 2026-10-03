@@ -1,0 +1,63 @@
+{
+  "acknowledgedReceiptSha256": "6efa91957f742b02e13e21697025000af7782c3e615bd68f0e45625eb5191e24",
+  "allTransactionNonbodyAndNontargetRowsUnchanged": true,
+  "atUtc": "2026-10-03T16:16:10.677079+00:00",
+  "auditTrackerItem": 4,
+  "automaticInverse": false,
+  "automaticRetry": false,
+  "bodyOnly": true,
+  "codeCutoverPerformed": false,
+  "commitAcknowledged": true,
+  "commitIntentSha256": "c1667b59570836a48c812b01e8e9cb68385d3d1edbb3479a793afbc73a3e0a91",
+  "currentChatApprovalPath": "deploy/audit30/verification/pow-audit30-mail16-current-chat-approval-20261003.json",
+  "freshExpectedRows": 619,
+  "freshMailRows": 619,
+  "freshMismatches": 0,
+  "freshObservationSha256": "9b50c663b203589a2118f9917b296db46a09146d4887e3f8c3d04757d7d65758",
+  "freshObservedRows": 619,
+  "freshProjectionReady": true,
+  "liveFiveUnchanged": true,
+  "productionDataMutation": true,
+  "qualification": "Completes the user remaining-list item1 exact16 production repair and fresh619 mail verification. Byte-preserving candidate code release and full strict acceptance remain under item2. Historical failed attempts and approvals stay preserved; no inverse, production configuration change, additional deletion or deployment occurred.",
+  "readinessInvalidationPerCommittedTransaction": 1,
+  "receiptObservationSha256": "524aa113d18cd00c48e16cb9a4a8e3faa01b0cb08c010baebc24b4e051ad31ea",
+  "retainedPublicFiles": [
+    {
+      "bytes": 4601,
+      "path": "deploy/audit30/verification/pow-audit30-mail16-idle-launcher-v1.py",
+      "sha256": "5f4a4e5dc650c38905bea353bf922f9d9ec7725e9b3d9a6bb6425c0670bb4a1a"
+    },
+    {
+      "bytes": 10827,
+      "path": "deploy/audit30/verification/pow-audit30-mail16-receipt-observer-160000-v1.py",
+      "sha256": "e09c94c16e6a10f9dbac530ac43c3882e39540c2441bcd6e5e3b693d2741b323"
+    },
+    {
+      "bytes": 4759,
+      "path": "deploy/audit30/verification/pow-audit30-mail16-fresh-parity-v1.py",
+      "sha256": "c3c0db7b2e385d8872148790dea930d713d4d06e0886c5e37a72f8e209e71ca3"
+    },
+    {
+      "bytes": 11724,
+      "path": "deploy/audit30/verification/pow-audit30-mail16-receipt-observation-v1.json",
+      "sha256": "524aa113d18cd00c48e16cb9a4a8e3faa01b0cb08c010baebc24b4e051ad31ea"
+    },
+    {
+      "bytes": 2983,
+      "path": "deploy/audit30/verification/pow-audit30-mail16-fresh-parity-observation-v1.json",
+      "sha256": "9b50c663b203589a2118f9917b296db46a09146d4887e3f8c3d04757d7d65758"
+    },
+    {
+      "bytes": 1031,
+      "path": "deploy/audit30/verification/pow-audit30-mail16-approved-transport-v1.json",
+      "sha256": "6d917948e257409f6071297fb6eff015a11f7b56a4e3bcffaaa4710245a7e4e4"
+    }
+  ],
+  "rootCompletedSha256": "a6933190262ee58c743cf23e3598efeab6c587fa14344387e759282ebd769a8e",
+  "runId": "20261003T160000Z",
+  "schema": "audit30-mail16-current-chat-completion-v1",
+  "status": "production-repair-and-fresh619-verification-complete",
+  "strictRerunStillRequired": true,
+  "targetCount": 16,
+  "userRemainingItem": 1
+}

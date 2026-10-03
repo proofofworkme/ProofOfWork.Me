@@ -1,0 +1,74 @@
+{
+  "atUtc": "2026-10-03T15:06:25.467168+00:00",
+  "automaticInverse": false,
+  "automaticRetry": false,
+  "bindings": [
+    {
+      "bytes": 142731,
+      "path": "/tmp/pow-audit30-body-prepare-envelope-20261003T152000Z-v1.json",
+      "sha256": "08eb30a24b7b4f564e50f2ddfa765ee9ade236d081da94c4a54335d9519607cb"
+    },
+    {
+      "bytes": 142727,
+      "path": "/tmp/pow-audit30-body-run-envelope-20261003T152000Z-v1.json",
+      "sha256": "f97ce8dbd4cdc00ad4f591a02aee4ec99478cb2e4fb9e96742d43802e5a95b31"
+    },
+    {
+      "bytes": 1526,
+      "path": "/tmp/pow-audit30-body-prepare-owned-caller-152000-v1.py",
+      "sha256": "319c392580d9de503f840fa876d28fdcde6a43510edd46e7144d01b2e4ad7ef9"
+    },
+    {
+      "bytes": 1510,
+      "path": "/tmp/pow-audit30-body-run-owned-caller-152000-v1.py",
+      "sha256": "bffb725e3cc4d75f814903de16880ddee8200c0942e97b6770854328ef21c1bc"
+    },
+    {
+      "bytes": 1246,
+      "path": "/tmp/pow-audit30-body-prepare-owned-caller-152000-v1.diff",
+      "sha256": "f38b76e8af8c1c47e99d6208e8ae6e9352abc94f1b22fde9e9f4ef11a2660f47"
+    },
+    {
+      "bytes": 1222,
+      "path": "/tmp/pow-audit30-body-run-owned-caller-152000-v1.diff",
+      "sha256": "4c7a53151715fc633970f58e0956d7bcf1801177b4d2f1c4b81259b5c6dd2f0d"
+    },
+    {
+      "bytes": 2874,
+      "path": "/tmp/pow-audit30-body-152000-namespace-binding-v1.test.py",
+      "sha256": "f1567cbf4fcfb073a01ad80ad248906394a987fc01a683303138255c1c5dc06b"
+    }
+  ],
+  "changes": [
+    "Each envelope changes only request.runId; exact single-literal reversal recovers original raw envelope bytes.",
+    "Each caller changes only fixed request filename/rawSHA and lowercase local capture prefix; exact reversal recovers original accepted V2 caller bytes."
+  ],
+  "nativeCallsByAuthor": false,
+  "newHumanApprovalGenerated": false,
+  "newRunId": "20261003T152000Z",
+  "oldRunId": "20261003T145500Z",
+  "operation": "apply",
+  "preservedOriginalFailure": "Root reconciled145500 writer route not reached; original worker failed conjunct remains unknown. A separate current150500 original480 read-only diagnostic passed. No older failed receipt or evidence is overwritten and no same-attempt guard cause is claimed.",
+  "priorApply": null,
+  "productionMutation": false,
+  "rootFreshNativeGatesStillRequired": [
+    "Exact new package/evidence/unit/capture absence; local preparation does not certify on-host namespace unused.",
+    "Same actual human authority/currentimmutableproofs/source/package/dependency identities.",
+    "Original five/backup window/capacity/opslock and original480before/after checks.",
+    "Acknowledged writer receipt plus fresh postbody619 capture and fullstrict before production source cutover."
+  ],
+  "schema": "pow-audit30-body-152000-namespace-binding-source-review-v1",
+  "status": "source-only-prepared-not-executed",
+  "tests": {
+    "actualFrozenTransportPrefixGuardAST": true,
+    "count": 5,
+    "inertExactRootDecode": true,
+    "seconds": 0.064,
+    "status": "passed",
+    "transportInvoked": false
+  },
+  "unchangedHumanAuthoritySHA256": "f37e16a1d9b8c6f52081a7c44d01d8a5142051770d7d16aafe9fcaa9e5354c42",
+  "unchangedRootBootstrapSHA256": "eac18d7cdc8570875e55e36672d6419c857aa9e7fff7c1cbe8f92263bf25f1d4",
+  "unchangedRootControlSHA256": "b989a3f2395e7cbf13cb2d3dbd2d258a3fd21867131e41644c094772aba11168",
+  "unchangedWorkerGuardSHA256": "48001283affb80b3b027dcc93831074aee872fbee649fb14482c32b00eb1c76c"
+}

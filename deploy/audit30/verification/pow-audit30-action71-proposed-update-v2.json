@@ -1,0 +1,2421 @@
+{
+  "preparedAtUtc": "2026-10-03T19:40:30.767532+00:00",
+  "preservation": {
+    "existingItem1CompleteUnchanged": true,
+    "historicalFailuresAndWarningsRetained": true,
+    "newDeletionAuthority": false,
+    "original70ActionsUnchanged": true,
+    "otherChecklistItemsUnchanged": true,
+    "productionCallsPerformedByDraft": false
+  },
+  "proposedAction": {
+    "action": "Record the separately admitted strict-v3 milestone pass at 19:25 UTC and the later positive WORK/scoped bond shadow pass at 19:33 UTC. Strict-v3 retains its exact known HTTP 503 wallet observation at checkpoint 969752; the separate later read verifies HTTP 200, all 16 positive WORK predicates on both requests, and complete POWB/INCB scopes at checkpoint 969753. Preserve failed histories and completed exact16 body repair. Shadow acceptance passes; guarded production cutover and production/mail/UI acceptance remain pending.",
+    "additionalDeletion": false,
+    "atUtc": "2026-10-03T19:33:03.733580+00:00",
+    "automaticRetry": false,
+    "candidate": {
+      "commit": "38ac6e2bff2ac16890724e5213346ef8a3ebd186",
+      "runtimeSha256": "13035b6d1fbca1be9c03b1833f3abe578d4ae28331a341b3dea4301cc72b535c",
+      "tree": "8b9b5e3cd47aa8e4204da717350a629176e30da6"
+    },
+    "codeCutoverPerformed": false,
+    "currentAcceptanceQualification": "Current positive WORK/scoped flags refer to actual candidate shadow checks at 19:33 UTC. Overall release acceptance remains incomplete until actual production, mail and UI acceptance/deployment finish.",
+    "currentPositiveWorkAcceptance": true,
+    "currentScopedBondAcceptance": true,
+    "cutoverStatus": {
+      "freshOwnedIdentityAndWorkerGuardRequired": true,
+      "observedThroughUtc": "2026-10-03T19:33:03.733580+00:00",
+      "productionAndMailAndUiAcceptanceComplete": false,
+      "productionCodeCutoverPerformed": false,
+      "separateNativeAdmissionRequired": true,
+      "shadowAcceptanceChecksPassed": true
+    },
+    "exactIdObservation": {
+      "confirmed": false,
+      "id": "ross",
+      "payloadSha256": "c4e270e94ccbef5994a78af30b029d7bf13390d68975d8d1059d80968ef796b3",
+      "status": "pending"
+    },
+    "fullStrictAcceptance": true,
+    "gateResults": {
+      "events": {
+        "checkCount": 49,
+        "childStdoutSHA256": "610f1865e48792a58ef8a4f69a7b2c3239fc716212a4e453aee98db911580024",
+        "passed": true
+      },
+      "ids": {
+        "childStdoutSHA256": "e47b39e1ba8b2791ca1f8dcf098ede747d2c0c244a541b6495d48e1f3554d518",
+        "counts": {
+          "Confirmed winners": 508,
+          "Covered confirmed registry transactions": 565,
+          "Covered pending registry transactions": 22,
+          "Fetched transactions": 587,
+          "Pending candidates": 20
+        },
+        "passed": true
+      },
+      "parity": {
+        "blockingErrors": [],
+        "checkCount": 102,
+        "childStdoutSHA256": "1ae5481b823688f943998cb5334083430b0f488bf0709ccb2f11f2a7170c82ff",
+        "historicalWarnings": [
+          {
+            "name": "work-amo-v5-migration",
+            "ok": false,
+            "severity": "warning"
+          },
+          {
+            "name": "work-amo-v5-usd-quote-head",
+            "ok": false,
+            "severity": "warning"
+          }
+        ],
+        "passed": true,
+        "qualification": "All strict parity acceptance predicates pass; the two preserved historical warning checks remain false warning observations."
+      }
+    },
+    "historicalAction70MustRemainDatedThrough": "2026-10-03T19:21:49.291059+00:00",
+    "nextRequired": "Separately admit the guarded API/worker cutover with fresh owned process identities and worker guard; verify actual production strict, positive WORK/scoped bond, all619 canonical mail and derived HTML behavior, and frontend release surfaces. Preserve each launch/failure/completion as its own dated event. Finish approved release hygiene, commit, deployment verification and handoff.",
+    "overallApiAcceptance": false,
+    "positiveScopedMilestone": {
+      "atUtc": "2026-10-03T19:33:03.733580+00:00",
+      "automaticRetry": false,
+      "candidate": {
+        "commit": "38ac6e2bff2ac16890724e5213346ef8a3ebd186",
+        "runtimeSha256": "13035b6d1fbca1be9c03b1833f3abe578d4ae28331a341b3dea4301cc72b535c",
+        "tree": "8b9b5e3cd47aa8e4204da717350a629176e30da6"
+      },
+      "childElapsedMilliseconds": 12253,
+      "childReturncode": 0,
+      "completedAt": "2026-10-03T19:33:02.655Z",
+      "counters": {
+        "bytes": 3293037,
+        "coreCalls": 8,
+        "httpCalls": 4
+      },
+      "evidence": {
+        "child": {
+          "bytes": 12018,
+          "path": "deploy/audit30/verification/pow-audit30-positive-shadow-exact-child-v1.json",
+          "sha256": "0647c7a70391d5caf6ff1d45667cbcde73dd47a423be4c4ef1df00241b23b4ef"
+        },
+        "owner": {
+          "bytes": 2836,
+          "path": "deploy/audit30/verification/pow-audit30-positive-shadow-exact-owner-v1.json",
+          "sha256": "7b2bab1d1abe56a71888c809a7c562e756bb3ea3de2260a4c5aa673196b6163c"
+        },
+        "pow-audit30-positive-scoped-shadow-request-v1.json": {
+          "bytes": 73023,
+          "path": "deploy/audit30/verification/pow-audit30-positive-scoped-shadow-request-v1.json",
+          "sha256": "230ddaddbcfb3db8576c587dfdcb9cef2f05cae3175635e4a0b8f40852cbac9e"
+        },
+        "pow-audit30-positive-shadow-launch-remote-v1.py": {
+          "bytes": 20382,
+          "path": "deploy/audit30/verification/pow-audit30-positive-shadow-launch-remote-v1.py",
+          "sha256": "887005f83f81294f37b0cf4aef584b6dcfb71fdd50e59a23d7000a615ef61ee2"
+        },
+        "pow-audit30-positive-shadow-public-export-remote-v1.py": {
+          "bytes": 2230,
+          "path": "deploy/audit30/verification/pow-audit30-positive-shadow-public-export-remote-v1.py",
+          "sha256": "2098bc9dff78ae208f3b39b0b8140856e00b041c4fe1de69284880dd5947d903"
+        },
+        "pow-audit30-positive-work-scoped-build-v1.cjs": {
+          "bytes": 2279,
+          "path": "deploy/audit30/verification/pow-audit30-positive-work-scoped-build-v1.cjs",
+          "sha256": "cc8e37b678d4bbe8e325d3e37fc00fe3bca7c8c904ff0b18186bce536f0e668b"
+        },
+        "pow-audit30-positive-work-scoped-leaf-v1.mjs": {
+          "bytes": 37072,
+          "path": "deploy/audit30/verification/pow-audit30-positive-work-scoped-leaf-v1.mjs",
+          "sha256": "42b7ccbe8c4bf22d05bc8b808dabad72cb2cb09455f1156c10cd313001fbea06"
+        },
+        "pow-audit30-positive-work-scoped-leaf-v1.test.mjs": {
+          "bytes": 9609,
+          "path": "deploy/audit30/verification/pow-audit30-positive-work-scoped-leaf-v1.test.mjs",
+          "sha256": "a614235346107b1a16ad0a76dbdec63168f60a4a436b6950e67aa0220d154e41"
+        },
+        "pow-audit30-positive-work-scoped-owner-v1.py": {
+          "bytes": 13892,
+          "path": "deploy/audit30/verification/pow-audit30-positive-work-scoped-owner-v1.py",
+          "sha256": "28bd89f9e0e9abf953a579018d1224bc51b00a5615dc42812f321050ac598cd9"
+        },
+        "pow-audit30-positive-work-scoped-owner-v1.test.py": {
+          "bytes": 4207,
+          "path": "deploy/audit30/verification/pow-audit30-positive-work-scoped-owner-v1.test.py",
+          "sha256": "181281e9dde6d3646286ea1157f269927b719f5bb741a47608cc4cdbdb2bd973"
+        },
+        "publicExport": {
+          "bytes": 935,
+          "path": "deploy/audit30/verification/pow-audit30-positive-shadow-public-export-v1.json",
+          "sha256": "fcfbfde729f04c3499843e63d65411d3a9ea9c438267f92fad43437f53b0980c"
+        },
+        "transport": {
+          "bytes": 532,
+          "path": "deploy/audit30/verification/pow-audit30-positive-shadow-native-v1.json",
+          "sha256": "bf3e86611b818264aca0ca49d1beea451d9cc7687322494edb2a55bc17b50b43"
+        }
+      },
+      "invocationID": "78573673e98945ee945fc1d2e61edb5a",
+      "limits": {
+        "bodyBytes": 3145728,
+        "coreRequests": 8,
+        "httpBytes": 201326592,
+        "httpRequests": 96,
+        "overallMilliseconds": 330000,
+        "pageRows": 200,
+        "pagesPerScope": 100,
+        "scopeMilliseconds": 120000,
+        "walletMilliseconds": 20000
+      },
+      "liveFiveUnchanged": true,
+      "mode": "shadow",
+      "ok": true,
+      "ownedUnitAfterExport": {
+        "ActiveState": "inactive",
+        "InvocationID": "",
+        "LoadState": "not-found",
+        "MainPID": "0",
+        "Result": "success",
+        "SubState": "dead"
+      },
+      "ownedUnitQualification": "The unique completed unit was auto-reaped after the acknowledged owner success; export observes inactive/not-found/MainPID0. Prior owner invocation is preserved separately.",
+      "positiveWork": [
+        {
+          "balanceVerified": true,
+          "capacityVerified": true,
+          "checkpoint": {
+            "after": {
+              "hash": "00000000000000000000c55e9c08d89c7fdaec656e0c49132e4c853d363f8b4e",
+              "height": 969753
+            },
+            "before": {
+              "hash": "00000000000000000000c55e9c08d89c7fdaec656e0c49132e4c853d363f8b4e",
+              "height": 969753
+            },
+            "stable": true
+          },
+          "confirmedBalanceSubatoms": "9999997003878536",
+          "decimals": 16,
+          "holderBalanceDecimal": "0.9999997003878536",
+          "holderPendingDeltaDecimal": "0",
+          "httpAndFenceSeconds": 8.631,
+          "label": "first-request",
+          "maximumResponseBytes": 3145728,
+          "maximumStageSeconds": 20,
+          "payloadSha256": "578f1c73a986b23d56fc8fcc32be669f9a7ffb2d506503270e82d1aa81db07c8",
+          "pendingDeltaSubatoms": "0",
+          "positiveConfirmed": true,
+          "predicateCount": 16,
+          "predicates": {
+            "authoritative-wallet": true,
+            "capacity-scope-model-checkpoint": true,
+            "complete-checkpoint": true,
+            "envelope-q16-model": true,
+            "exact-current-checkpoint": true,
+            "exact-q16-conservation": true,
+            "exact-unique-reservation-conservation": true,
+            "holder-decimals-match-subatoms": true,
+            "http-200-required": true,
+            "livenet-scope": true,
+            "one-canonical-q16-token": true,
+            "one-exact-capacity": true,
+            "one-exact-holder": true,
+            "positive-confirmed-exact-holder": true,
+            "snapshot-present": true,
+            "stable-core-fence": true
+          },
+          "ready": true,
+          "reservationCount": 42,
+          "reservationMembershipSha256": "5d2d1a0a13ab0b18371baa18a1b680286d4a7b4d64b2bf18e8c0d57930078dac",
+          "reservedBalanceSubatoms": "26915978817",
+          "snapshotId": "26ffd86b955e1ec5a55460f0",
+          "spendableBalanceSubatoms": "9999970087899719",
+          "status": 200,
+          "unitScale": "10000000000000000",
+          "verificationStatus": "passed"
+        },
+        {
+          "balanceVerified": true,
+          "capacityVerified": true,
+          "checkpoint": {
+            "after": {
+              "hash": "00000000000000000000c55e9c08d89c7fdaec656e0c49132e4c853d363f8b4e",
+              "height": 969753
+            },
+            "before": {
+              "hash": "00000000000000000000c55e9c08d89c7fdaec656e0c49132e4c853d363f8b4e",
+              "height": 969753
+            },
+            "stable": true
+          },
+          "confirmedBalanceSubatoms": "9999997003878536",
+          "decimals": 16,
+          "holderBalanceDecimal": "0.9999997003878536",
+          "holderPendingDeltaDecimal": "0",
+          "httpAndFenceSeconds": 2.408,
+          "label": "second-request",
+          "maximumResponseBytes": 3145728,
+          "maximumStageSeconds": 20,
+          "payloadSha256": "3586cd24819da35a6c45455db12aecec6296313fae7845bd06b0dcf0cfc22e43",
+          "pendingDeltaSubatoms": "0",
+          "positiveConfirmed": true,
+          "predicateCount": 16,
+          "predicates": {
+            "authoritative-wallet": true,
+            "capacity-scope-model-checkpoint": true,
+            "complete-checkpoint": true,
+            "envelope-q16-model": true,
+            "exact-current-checkpoint": true,
+            "exact-q16-conservation": true,
+            "exact-unique-reservation-conservation": true,
+            "holder-decimals-match-subatoms": true,
+            "http-200-required": true,
+            "livenet-scope": true,
+            "one-canonical-q16-token": true,
+            "one-exact-capacity": true,
+            "one-exact-holder": true,
+            "positive-confirmed-exact-holder": true,
+            "snapshot-present": true,
+            "stable-core-fence": true
+          },
+          "ready": true,
+          "reservationCount": 42,
+          "reservationMembershipSha256": "5d2d1a0a13ab0b18371baa18a1b680286d4a7b4d64b2bf18e8c0d57930078dac",
+          "reservedBalanceSubatoms": "26915978817",
+          "snapshotId": "26ffd86b955e1ec5a55460f0",
+          "spendableBalanceSubatoms": "9999970087899719",
+          "status": 200,
+          "unitScale": "10000000000000000",
+          "verificationStatus": "passed"
+        }
+      ],
+      "privateContentsExported": false,
+      "productionMutation": false,
+      "qualification": "Fresh observed conservation and per-read/per-scope Core fences are binding. Historical balances/counts are baseline only. First and second reads do not assert an empty cache. Raw listing membership is checked without frontend normalization. API supplies Core outpoint authority; individual gettxout results are not repeated. Actual API identity and fresh private environment custody must be bound by the reviewed owner.",
+      "scopedListings": [
+        {
+          "asset": "a3d0bc8528f91dfc52400a885bed7e49235396aa82aa9f95db41be629f1d5562",
+          "checkpoint": {
+            "hash": "00000000000000000000c55e9c08d89c7fdaec656e0c49132e4c853d363f8b4e",
+            "height": 969753
+          },
+          "complete": true,
+          "coreAfter": {
+            "hash": "00000000000000000000c55e9c08d89c7fdaec656e0c49132e4c853d363f8b4e",
+            "height": 969753
+          },
+          "coreBefore": {
+            "hash": "00000000000000000000c55e9c08d89c7fdaec656e0c49132e4c853d363f8b4e",
+            "height": 969753
+          },
+          "historicalCountBaseline": 1,
+          "indexedAt": "2026-10-03T19:28:59.335Z",
+          "listingIdsSha256": "efd63d3659cf8ac5bed5abb2dfc79628b26d7b69f3b363a23382d989492ab6e0",
+          "pages": [
+            {
+              "checkpoint": {
+                "hash": "00000000000000000000c55e9c08d89c7fdaec656e0c49132e4c853d363f8b4e",
+                "height": 969753
+              },
+              "complete": true,
+              "indexedAt": "2026-10-03T19:28:59.335Z",
+              "snapshotId": "7cedcee2e8acccf4432ad03453e73fcc009ae3b404b5a7f1e924117a0a00e238",
+              "totalCount": 1,
+              "verifiedThrough": 1
+            }
+          ],
+          "ready": true,
+          "snapshotId": "7cedcee2e8acccf4432ad03453e73fcc009ae3b404b5a7f1e924117a0a00e238",
+          "symbol": "POWB",
+          "totalCount": 1
+        },
+        {
+          "asset": "3cb25745f937f2b4e5508e5400189fe8fe679cd8e84bfa1e9176d70c9761f15d",
+          "checkpoint": {
+            "hash": "00000000000000000000c55e9c08d89c7fdaec656e0c49132e4c853d363f8b4e",
+            "height": 969753
+          },
+          "complete": true,
+          "coreAfter": {
+            "hash": "00000000000000000000c55e9c08d89c7fdaec656e0c49132e4c853d363f8b4e",
+            "height": 969753
+          },
+          "coreBefore": {
+            "hash": "00000000000000000000c55e9c08d89c7fdaec656e0c49132e4c853d363f8b4e",
+            "height": 969753
+          },
+          "historicalCountBaseline": 0,
+          "indexedAt": "2026-10-03T19:28:59.335Z",
+          "listingIdsSha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+          "pages": [
+            {
+              "checkpoint": {
+                "hash": "00000000000000000000c55e9c08d89c7fdaec656e0c49132e4c853d363f8b4e",
+                "height": 969753
+              },
+              "complete": true,
+              "indexedAt": "2026-10-03T19:28:59.335Z",
+              "snapshotId": "997572a20fc108ef2967ad095000195280a7a9b2f188dcd11ab25f7fc4c5bbe1",
+              "totalCount": 0,
+              "verifiedThrough": 0
+            }
+          ],
+          "ready": true,
+          "snapshotId": "997572a20fc108ef2967ad095000195280a7a9b2f188dcd11ab25f7fc4c5bbe1",
+          "symbol": "INCB",
+          "totalCount": 0
+        }
+      ],
+      "seconds": 14.798,
+      "shadowUnchanged": true,
+      "sourceBindings": {
+        "extraction": "exact named AST functions, TypeScript syntax erased locally; no application startup",
+        "files": {
+          "deploy/audit29/verify-candidate.mjs": "bbded71fa88cfc108c611b3beddd3a6c693b38477c356b682caed8985976abda",
+          "deploy/audit5/probe-candidate.mjs": "edc672e0327248c55eb073f4d720e37a8ea0ac33f61027456b8cf19609aa6ab1",
+          "server/proof-api.mjs": "9ab92c0fe3cb358fcaacccd62915eabc4c9ee75e42d29c6c989259b1305436f4",
+          "server/work-wallet-capacity.mjs": "98d9ad4071d6b34b8439c59b461eae073584d58ce43140f4214ea129ebce2d86",
+          "src/App.tsx": "87fd17ac3ade8eff1a5beae96f0bac6b43866d16ac8487d9bc347aa01b2a7ca2",
+          "src/shared/api/surfaceReadState.ts": "7c7ceed06f321a5b595a471efa2f9e10e37c64008cd99ed4039f0cad98775b4e"
+        },
+        "frozenCodeSha256": "37baad290031edee701ce664e9159798249d83e32cff14c1735168a7b3fe8d59",
+        "helpers": [
+          {
+            "end": 1313,
+            "name": "requireFact",
+            "path": "deploy/audit5/probe-candidate.mjs",
+            "sha256": "431157a02c5899b06a52c0a10f687cebe061a8c202f1baf0f9a0904b3a15a01d",
+            "start": 1238
+          },
+          {
+            "end": 1811,
+            "name": "canonicalJson",
+            "path": "deploy/audit5/probe-candidate.mjs",
+            "sha256": "c8f038bfeb82bab7d42424742463d8a73b92563405bc17edef87c4bec634f2dd",
+            "start": 1314
+          },
+          {
+            "end": 3522,
+            "name": "digest",
+            "path": "deploy/audit5/probe-candidate.mjs",
+            "sha256": "fd9868af9487f704feac82bc7aded917ddc164be0ec7e472900b9a031289b80c",
+            "start": 3425
+          },
+          {
+            "end": 4141,
+            "name": "decimalQ8",
+            "path": "deploy/audit5/probe-candidate.mjs",
+            "sha256": "299b6ce40f91a31d6f005a3d0e990991831e653640bb0428eff24f6aa8f67a6e",
+            "start": 3757
+          },
+          {
+            "end": 5538,
+            "name": "sameTip",
+            "path": "deploy/audit29/verify-candidate.mjs",
+            "sha256": "11fa5d724316fb762c00b56d8316c3f20e9da21f4b27c5dd83df5c0f094fd67e",
+            "start": 5369
+          },
+          {
+            "end": 9920,
+            "name": "verifyWalletResponse",
+            "path": "deploy/audit29/verify-candidate.mjs",
+            "sha256": "9d91e692c560e7d61125972b3250597eb1c0435bdb34976961eb7f3d9b088ca3",
+            "start": 7103
+          },
+          {
+            "end": 10190,
+            "name": "verifyFencedWalletRead",
+            "path": "deploy/audit29/verify-candidate.mjs",
+            "sha256": "44b86008570ee542985453b6ca7097b5c227d51e17dc3a6f8b05b7cb0d2d31b0",
+            "start": 9922
+          },
+          {
+            "end": 15744,
+            "name": "makeIO",
+            "path": "deploy/audit29/verify-candidate.mjs",
+            "sha256": "c3880d1725f1ec296ae672a7f0a51f22964b8efd13d6dc16a92f951ca9bf9bd2",
+            "start": 12607
+          },
+          {
+            "end": 4014,
+            "name": "listingDisplayProjectionFingerprint",
+            "path": "src/shared/api/surfaceReadState.ts",
+            "sha256": "94f6f7cdc87a570fbf2ed6dbcfb5745c4c832bee229210643e1c1fa92c69ab47",
+            "start": 2040
+          },
+          {
+            "end": 521644,
+            "name": "fetchCompleteTokenListings",
+            "path": "src/App.tsx",
+            "sha256": "ecc31902e89f2b14d8f5e8719b7f1b03ddc88a90ab44a4c6196c0e508ded370f",
+            "start": 511759
+          }
+        ]
+      },
+      "startedAt": "2026-10-03T19:32:50.402Z",
+      "timerAfter": {
+        "ActiveState": "active",
+        "LoadState": "loaded",
+        "SubState": "waiting",
+        "UnitFileState": "enabled"
+      },
+      "timerBefore": {
+        "ActiveState": "active",
+        "LoadState": "loaded",
+        "SubState": "waiting",
+        "UnitFileState": "enabled"
+      },
+      "timerRestored": true,
+      "timerRestoredReceiptSHA256": "7f9dc2e814ac2d8b016816be71a83e71dac1c1adaa809e63943903eb8b44b308",
+      "unit": "proofofwork-audit30-positive-scoped-38ac6e2bff2a-20261003T042000Z-shadow-v1.service"
+    },
+    "priorFailedAttemptsPreserved": {
+      "action70AtUtc": "2026-10-03T19:21:49.291059+00:00",
+      "actionOrdinal": 70,
+      "noRetroactiveRewrite": true,
+      "preflightRefusalRemainsRefused": true,
+      "strictV2RemainsFailed": true
+    },
+    "priorMailRepairCompletionPreserved": {
+      "bytes": 2984,
+      "path": "deploy/audit30/verification/pow-audit30-mail16-completed-v1.json",
+      "sha256": "3092d25b775051d14aa9a51315028fde54fdd7ee9c32689f912cdd5ecfe03b4e"
+    },
+    "privateCaptureOrRawChildOutputIncluded": false,
+    "productionDataMutation": false,
+    "publicSourceCustodyAdded": [
+      {
+        "bytes": 31141,
+        "originalPath": "/tmp/pow-audit30-strict-v3-exact-accepted-v1.json",
+        "repositoryPath": "deploy/audit30/verification/pow-audit30-strict-v3-exact-accepted-v1.json",
+        "sha256": "3524a1f5a72ad4dfeb4c48727f9af6a4d92258f49d631f9c74dd0fe76e96dc4c"
+      },
+      {
+        "bytes": 5633,
+        "originalPath": "/tmp/pow-audit30-strict-v3-exact-completed-v1.json",
+        "repositoryPath": "deploy/audit30/verification/pow-audit30-strict-v3-exact-completed-v1.json",
+        "sha256": "3aa9e3981c1fc60aec3f54021abbc458b0cacbb7775403f6ed28474aafb0712c"
+      },
+      {
+        "bytes": 1201,
+        "originalPath": "/tmp/pow-audit30-strict-v3-public-receipts-export-v1.json",
+        "repositoryPath": "deploy/audit30/verification/pow-audit30-strict-v3-public-receipts-export-v1.json",
+        "sha256": "eef70aea70dc0082ba828d4d71e3ab76fdf52f73f77540745ecad8953b5921a6"
+      },
+      {
+        "bytes": 13021,
+        "originalPath": "/tmp/pow-audit30-strict-v3-exact-lease-v1.json",
+        "repositoryPath": "deploy/audit30/verification/pow-audit30-strict-v3-exact-lease-v1.json",
+        "sha256": "553c801d62e48305ac9957ccea495b87081d69269ea7e36d82d7c01e5534d087"
+      },
+      {
+        "bytes": 12018,
+        "originalPath": "/tmp/pow-audit30-positive-shadow-exact-child-v1.json",
+        "repositoryPath": "deploy/audit30/verification/pow-audit30-positive-shadow-exact-child-v1.json",
+        "sha256": "0647c7a70391d5caf6ff1d45667cbcde73dd47a423be4c4ef1df00241b23b4ef"
+      },
+      {
+        "bytes": 2836,
+        "originalPath": "/tmp/pow-audit30-positive-shadow-exact-owner-v1.json",
+        "repositoryPath": "deploy/audit30/verification/pow-audit30-positive-shadow-exact-owner-v1.json",
+        "sha256": "7b2bab1d1abe56a71888c809a7c562e756bb3ea3de2260a4c5aa673196b6163c"
+      },
+      {
+        "bytes": 935,
+        "originalPath": "/tmp/pow-audit30-positive-shadow-public-export-v1.json",
+        "repositoryPath": "deploy/audit30/verification/pow-audit30-positive-shadow-public-export-v1.json",
+        "sha256": "fcfbfde729f04c3499843e63d65411d3a9ea9c438267f92fad43437f53b0980c"
+      },
+      {
+        "bytes": 532,
+        "originalPath": "/tmp/pow-audit30-positive-shadow-native-v1.json",
+        "repositoryPath": "deploy/audit30/verification/pow-audit30-positive-shadow-native-v1.json",
+        "sha256": "bf3e86611b818264aca0ca49d1beea451d9cc7687322494edb2a55bc17b50b43"
+      },
+      {
+        "bytes": 2230,
+        "originalPath": "/tmp/pow-audit30-positive-shadow-public-export-remote-v1.py",
+        "repositoryPath": "deploy/audit30/verification/pow-audit30-positive-shadow-public-export-remote-v1.py",
+        "sha256": "2098bc9dff78ae208f3b39b0b8140856e00b041c4fe1de69284880dd5947d903"
+      },
+      {
+        "bytes": 2279,
+        "originalPath": "/tmp/pow-audit30-positive-work-scoped-build-v1.cjs",
+        "repositoryPath": "deploy/audit30/verification/pow-audit30-positive-work-scoped-build-v1.cjs",
+        "sha256": "cc8e37b678d4bbe8e325d3e37fc00fe3bca7c8c904ff0b18186bce536f0e668b"
+      },
+      {
+        "bytes": 37072,
+        "originalPath": "/tmp/pow-audit30-positive-work-scoped-leaf-v1.mjs",
+        "repositoryPath": "deploy/audit30/verification/pow-audit30-positive-work-scoped-leaf-v1.mjs",
+        "sha256": "42b7ccbe8c4bf22d05bc8b808dabad72cb2cb09455f1156c10cd313001fbea06"
+      },
+      {
+        "bytes": 9609,
+        "originalPath": "/tmp/pow-audit30-positive-work-scoped-leaf-v1.test.mjs",
+        "repositoryPath": "deploy/audit30/verification/pow-audit30-positive-work-scoped-leaf-v1.test.mjs",
+        "sha256": "a614235346107b1a16ad0a76dbdec63168f60a4a436b6950e67aa0220d154e41"
+      },
+      {
+        "bytes": 13892,
+        "originalPath": "/tmp/pow-audit30-positive-work-scoped-owner-v1.py",
+        "repositoryPath": "deploy/audit30/verification/pow-audit30-positive-work-scoped-owner-v1.py",
+        "sha256": "28bd89f9e0e9abf953a579018d1224bc51b00a5615dc42812f321050ac598cd9"
+      },
+      {
+        "bytes": 4207,
+        "originalPath": "/tmp/pow-audit30-positive-work-scoped-owner-v1.test.py",
+        "repositoryPath": "deploy/audit30/verification/pow-audit30-positive-work-scoped-owner-v1.test.py",
+        "sha256": "181281e9dde6d3646286ea1157f269927b719f5bb741a47608cc4cdbdb2bd973"
+      },
+      {
+        "bytes": 20382,
+        "originalPath": "/tmp/pow-audit30-positive-shadow-launch-remote-v1.py",
+        "repositoryPath": "deploy/audit30/verification/pow-audit30-positive-shadow-launch-remote-v1.py",
+        "sha256": "887005f83f81294f37b0cf4aef584b6dcfb71fdd50e59a23d7000a615ef61ee2"
+      },
+      {
+        "bytes": 73023,
+        "originalPath": "/tmp/pow-audit30-positive-scoped-shadow-request-v1.json",
+        "repositoryPath": "deploy/audit30/verification/pow-audit30-positive-scoped-shadow-request-v1.json",
+        "sha256": "230ddaddbcfb3db8576c587dfdcb9cef2f05cae3175635e4a0b8f40852cbac9e"
+      }
+    ],
+    "recoveryConfigurationMutation": false,
+    "schema": "pow-audit30-action71-strict-v3-milestone-v1",
+    "shadowApiAcceptance": true,
+    "source": {
+      "bytes": 21068,
+      "path": "deploy/audit30/verification/pow-audit30-acceptance-strict-v3.py",
+      "sha256": "1ef0f5cf7b6d35e07c305ee0effe3dd714daf42c5b391a962ff0490cdf88b1e6"
+    },
+    "stableCheckpoint": {
+      "hash": "000000000000000000003e5a6b77578b091ec4bda168e01da9377a6904d9937b",
+      "height": 969752
+    },
+    "status": "actual-shadow-acceptance-pass-production-cutover-pending",
+    "strictEvidence": {
+      "accepted": {
+        "bytes": 31141,
+        "path": "deploy/audit30/verification/pow-audit30-strict-v3-exact-accepted-v1.json",
+        "sha256": "3524a1f5a72ad4dfeb4c48727f9af6a4d92258f49d631f9c74dd0fe76e96dc4c"
+      },
+      "completed": {
+        "bytes": 5633,
+        "path": "deploy/audit30/verification/pow-audit30-strict-v3-exact-completed-v1.json",
+        "sha256": "3aa9e3981c1fc60aec3f54021abbc458b0cacbb7775403f6ed28474aafb0712c"
+      },
+      "exportManifest": {
+        "bytes": 1201,
+        "path": "deploy/audit30/verification/pow-audit30-strict-v3-public-receipts-export-v1.json",
+        "sha256": "eef70aea70dc0082ba828d4d71e3ab76fdf52f73f77540745ecad8953b5921a6"
+      },
+      "lease": {
+        "bytes": 13021,
+        "path": "deploy/audit30/verification/pow-audit30-strict-v3-exact-lease-v1.json",
+        "sha256": "553c801d62e48305ac9957ccea495b87081d69269ea7e36d82d7c01e5534d087"
+      }
+    },
+    "strictExecution": {
+      "directDatabaseWrites": false,
+      "invocationID": "a230a1f4b038451a840d24ca23f8cd88",
+      "liveFiveUnchanged": true,
+      "productionStop": false,
+      "returncode": 0,
+      "seconds": 307.735,
+      "shadowUnchanged": true,
+      "stopped": true,
+      "timerRestored": true,
+      "timerRestoredReceiptSHA256": "7f9dc2e814ac2d8b016816be71a83e71dac1c1adaa809e63943903eb8b44b308",
+      "unit": "proofofwork-audit29-verify-38ac6e2bff2a-20261003T042000Z-shadow-strict-v3.service"
+    },
+    "strictMilestoneAtUtc": "2026-10-03T19:25:59.887195+00:00",
+    "strictMilestoneCutoverHold": {
+      "approvedToCutoverByThisMilestone": false,
+      "qualification": "This hold applied to the strict-only receipt at 19:25 UTC; the later positive milestone satisfies its required shadow checks. Fresh guarded native admission remains required.",
+      "reason": "Full strict acceptance retains unresolved wallet availability and does not verify positive wallet balance or capacity.",
+      "requiredHttpStatus": 200,
+      "requiredPositiveWorkActualPass": true,
+      "requiredPositiveWorkPredicateCount": 16,
+      "requiredScopedBondActualPass": true
+    },
+    "uiPublicationPerformed": false,
+    "walletAvailability": {
+      "balanceVerified": false,
+      "capacityVerified": false,
+      "checkpoint": {
+        "after": {
+          "hash": "000000000000000000003e5a6b77578b091ec4bda168e01da9377a6904d9937b",
+          "height": 969752
+        },
+        "before": {
+          "hash": "000000000000000000003e5a6b77578b091ec4bda168e01da9377a6904d9937b",
+          "height": 969752
+        },
+        "stable": true
+      },
+      "code": "CANONICAL_WALLET_INDEX_UNAVAILABLE",
+      "knownIssueGroups": [
+        "H24-01",
+        "AUD26-02",
+        "AUD26-03",
+        "PERF-27"
+      ],
+      "payloadSha256": "259e768df9ac23b096324a88a5f6f7d5279f2411757525bfdde94c3d20772a0a",
+      "qualification": "The exact existing fail-closed unavailable response is retained as unresolved availability. Neither wallet balance nor transfer capacity passed verification; inspect bounded private wallet-token-overlay-unavailable diagnostics.",
+      "ready": false,
+      "requiredSource": "proof-indexer-wallet-token-overlay",
+      "status": 503,
+      "verificationStatus": "known-unresolved-availability"
+    },
+    "walletAvailabilityQualification": "Historical strict-v3 observation at checkpoint 969752 and 19:25 UTC only. The separate later positive milestone below passes at checkpoint 969753; this strict receipt is not rewritten.",
+    "walletQualification": "known-unresolved-availability-balance-and-capacity-not-verified",
+    "workBook": {
+      "commitmentReconstruction": {
+        "missingSealAtReconstructedNull": 22,
+        "model": "source-declared-lifecycle-and-seal-patch-v1",
+        "possibleSealPatchForms": 2,
+        "qualification": "The wire omits undefined sealAt. Only the source-declared absent-patch or owned-null commitment is selected by each full-record hash; membership and snapshot are independently recomputed."
+      },
+      "deltaFromAuditBaseline": 7,
+      "displayPages": 6,
+      "fullPages": 6,
+      "fullRowsSha256": "ff898c04ba8f511336436a8ccea15382bce9778fa30aba69d2a1ad66228a9f80",
+      "historicalAuditBaseline": 999,
+      "independentCoreAnchors": 1006,
+      "independentCoreSha256": "7f32fcde8016da6404f93cd4c88aced7cd33c33f9b513a1d0dc12548e2fdb4b2",
+      "listings": 1006,
+      "membershipRecheckedAfterCore": true,
+      "savedRowBytes": 17698334,
+      "sourceDigestQualification": "Bound to full-route snapshot; excluded historical source rows are not independently replayed."
+    }
+  },
+  "proposedActionOrdinal": 71,
+  "proposedCurrentContinuation": {
+    "atUtc": "2026-10-03T19:33:03.733580+00:00",
+    "canonicalItem4Qualification": "Production body repair is complete; byte-preserving candidate code cutover remains pending under API release item6.",
+    "currentApiEvidence": {
+      "actionOrdinal": 71,
+      "blockingCheck": null,
+      "blockingCheckQualification": "No remaining blocking shadow check in these exact receipts. Actual guarded production cutover and production/mail/UI acceptance remain pending.",
+      "currentAcceptanceQualification": "Current positive WORK/scoped flags refer to actual candidate shadow checks at 19:33 UTC. Overall release acceptance remains incomplete until actual production, mail and UI acceptance/deployment finish.",
+      "currentPositiveWorkAcceptance": true,
+      "currentScopedBondAcceptance": true,
+      "cutoverStatus": {
+        "freshOwnedIdentityAndWorkerGuardRequired": true,
+        "observedThroughUtc": "2026-10-03T19:33:03.733580+00:00",
+        "productionAndMailAndUiAcceptanceComplete": false,
+        "productionCodeCutoverPerformed": false,
+        "separateNativeAdmissionRequired": true,
+        "shadowAcceptanceChecksPassed": true
+      },
+      "fullStrictAcceptance": true,
+      "fullStrictStatus": "actual-strict-v3-pass-followed-by-positive-work-and-scoped-bond-shadow-pass",
+      "gateResults": {
+        "events": {
+          "checkCount": 49,
+          "childStdoutSHA256": "610f1865e48792a58ef8a4f69a7b2c3239fc716212a4e453aee98db911580024",
+          "passed": true
+        },
+        "ids": {
+          "childStdoutSHA256": "e47b39e1ba8b2791ca1f8dcf098ede747d2c0c244a541b6495d48e1f3554d518",
+          "counts": {
+            "Confirmed winners": 508,
+            "Covered confirmed registry transactions": 565,
+            "Covered pending registry transactions": 22,
+            "Fetched transactions": 587,
+            "Pending candidates": 20
+          },
+          "passed": true
+        },
+        "parity": {
+          "blockingErrors": [],
+          "checkCount": 102,
+          "childStdoutSHA256": "1ae5481b823688f943998cb5334083430b0f488bf0709ccb2f11f2a7170c82ff",
+          "historicalWarnings": [
+            {
+              "name": "work-amo-v5-migration",
+              "ok": false,
+              "severity": "warning"
+            },
+            {
+              "name": "work-amo-v5-usd-quote-head",
+              "ok": false,
+              "severity": "warning"
+            }
+          ],
+          "passed": true,
+          "qualification": "All strict parity acceptance predicates pass; the two preserved historical warning checks remain false warning observations."
+        }
+      },
+      "historicalAction70Evidence": {
+        "actionOrdinal": 70,
+        "actualFailedV2GateResults": {
+          "events": {
+            "checkCount": 49,
+            "passed": true
+          },
+          "ids": {
+            "confirmedWinners": 508,
+            "coveredConfirmedRegistryTransactions": 565,
+            "coveredPendingRegistryTransactions": 22,
+            "fetchedTransactions": 587,
+            "passed": true,
+            "pendingCandidates": 20
+          },
+          "machineBinding": {
+            "bytes": 4330,
+            "path": "deploy/audit30/verification/pow-audit30-strict-v3-progress-192149-v1.json",
+            "sha256": "cc34f4e55d14da7232c963a8ef8e51c572e1f878d631c3688968343be07f0184"
+          },
+          "parity": {
+            "blockingErrors": [
+              {
+                "name": "work-token-state-current-relational",
+                "ok": false,
+                "severity": "error"
+              }
+            ],
+            "checkCount": 102,
+            "historicalWarnings": [
+              {
+                "name": "work-amo-v5-migration",
+                "ok": false,
+                "severity": "warning"
+              },
+              {
+                "name": "work-amo-v5-usd-quote-head",
+                "ok": false,
+                "severity": "warning"
+              }
+            ],
+            "passed": false
+          },
+          "priorFailedAttempt": {
+            "driverReceiptPath": "/data/proofofwork-audit29-verify-output-38ac6e2bff2a-20261003T042000Z-shadow-strict-v2/attempt/receipt.json",
+            "driverReceiptSHA256": "0f77ed860b40e4762f4ad0962dbc66faded888d6db865bd44e542842eff5689c",
+            "failure": "STRICT_GATE_FAILED",
+            "gateReceipts": {
+              "events": {
+                "checkCount": 49,
+                "checkpointStable": true,
+                "exitCode": 0,
+                "failedChecks": [],
+                "scriptSha256": "a5a82730ab8d7edde3d617362c960aa64155dbb090e5676a0906306d6a6d0bce",
+                "stderrBytes": 0,
+                "stdoutBytes": 54116,
+                "stdoutSha256": "0d298c1e3a9d238f22b7b6f0be7b28331297ae65920635c8fe6891501701907f"
+              },
+              "ids": {
+                "checkpointStable": true,
+                "counts": {
+                  "Confirmed winners": 508,
+                  "Covered confirmed registry transactions": 565,
+                  "Covered pending registry transactions": 22,
+                  "Fetched transactions": 587,
+                  "Pending candidates": 20
+                },
+                "exitCode": 0,
+                "scriptSha256": "d7bbe914e3db45fcebac174dc182146f988547fb8d94ffa65f8286cebd50a825",
+                "stderrBytes": 0,
+                "stdoutBytes": 6581,
+                "stdoutSha256": "e47b39e1ba8b2791ca1f8dcf098ede747d2c0c244a541b6495d48e1f3554d518"
+              },
+              "parity": {
+                "checkCount": 102,
+                "checkpointStable": true,
+                "exitCode": 1,
+                "failedChecks": [
+                  {
+                    "name": "work-token-state-current-relational",
+                    "ok": false,
+                    "severity": "error"
+                  },
+                  {
+                    "name": "work-amo-v5-migration",
+                    "ok": false,
+                    "severity": "warning"
+                  },
+                  {
+                    "name": "work-amo-v5-usd-quote-head",
+                    "ok": false,
+                    "severity": "warning"
+                  }
+                ],
+                "scriptSha256": "450e5361ae5ecdd8dde6e434723366e3d4cc1cafae4675e9e7760c3d1cac90ac",
+                "stderrBytes": 0,
+                "stdoutBytes": 34398426,
+                "stdoutSha256": "ec50562b99352e81312bd4e146d3ffc8721fe2cb4e1b2991ea79e8f2d2e68f31"
+              }
+            },
+            "gates": {
+              "events": true,
+              "ids": true,
+              "parity": false
+            },
+            "privateContentsExported": false,
+            "rawChildOutputExported": false,
+            "schema": "audit30-strict-v2-bounded-failure-evidence-v1",
+            "timerRestored": true,
+            "unitStopped": true
+          },
+          "qualification": "Exact bounded projection of the preserved native strict-v2 receipt and hash-bound child results. All raw child output/private capture remains on host.",
+          "status": "actual-failed"
+        },
+        "blockingCheck": "work-token-state-current-relational",
+        "currentStrictV3Admission": {
+          "activeGateScripts": [
+            "audit-id-registry.mjs",
+            "verify-candidate.mjs"
+          ],
+          "currentBackupServiceState": {
+            "ActiveState": "inactive",
+            "InvocationID": "dfda5fa3574144958b948f8b5920b4d0",
+            "LoadState": "loaded",
+            "MainPID": "0",
+            "Result": "success",
+            "RuntimeMaxUSec": "infinity",
+            "SubState": "dead"
+          },
+          "currentBackupTimerState": {
+            "ActiveState": "inactive",
+            "InvocationID": "3b2511dfe4ca48e0a0596bc0225e1c1d",
+            "LoadState": "loaded",
+            "Result": "success",
+            "SubState": "dead"
+          },
+          "cutoverPerformed": false,
+          "fullStrictAcceptance": false,
+          "intentSHA256": "6aa975f6ba9dd1860b68c7380fdac468cc691b0aa2a30ecc95e1ff41cb138a96",
+          "observedAtUtc": "2026-10-03T19:21:49.291059+00:00",
+          "progress": {
+            "bytes": 4330,
+            "path": "deploy/audit30/verification/pow-audit30-strict-v3-progress-192149-v1.json",
+            "sha256": "cc34f4e55d14da7232c963a8ef8e51c572e1f878d631c3688968343be07f0184"
+          },
+          "qualification": "An actual separately admitted managed strict-v3 run is active at this bounded observation. Its source and intent are preserved; no completion, restoration or acceptance is inferred.",
+          "source": {
+            "bytes": 21068,
+            "path": "deploy/audit30/verification/pow-audit30-acceptance-strict-v3.py",
+            "sha256": "1ef0f5cf7b6d35e07c305ee0effe3dd714daf42c5b391a962ff0490cdf88b1e6"
+          },
+          "state": {
+            "ActiveState": "active",
+            "InvocationID": "a230a1f4b038451a840d24ca23f8cd88",
+            "LoadState": "loaded",
+            "MainPID": "3344618",
+            "Result": "success",
+            "RuntimeMaxUSec": "20min",
+            "SubState": "running"
+          },
+          "status": "in-progress-no-acceptance",
+          "unit": "proofofwork-audit29-verify-38ac6e2bff2a-20261003T042000Z-shadow-strict-v3.service"
+        },
+        "fullStrictStatus": "failed-v2; separate-v3-in-progress-without-acceptance",
+        "laterNarrowWorkDiagnostic": {
+          "actualApiIdentityUnchanged": true,
+          "currentPredicatePassed": true,
+          "fullStrictAcceptance": false,
+          "observedScopedWork": {
+            "holders": 388,
+            "indexedThroughBlock": 969752,
+            "indexedThroughBlockHash": "000000000000000000003e5a6b77578b091ec4bda168e01da9377a6904d9937b",
+            "listings": 1006,
+            "mints": 21000,
+            "returned": true,
+            "snapshotId": null,
+            "source": "proof-indexer-token-state-tables",
+            "tokens": 1,
+            "transfers": 261
+          },
+          "observedSummary": {
+            "holders": 0,
+            "indexedThroughBlock": 969752,
+            "indexedThroughBlockHash": "000000000000000000003e5a6b77578b091ec4bda168e01da9377a6904d9937b",
+            "listings": 0,
+            "mints": 0,
+            "returned": true,
+            "snapshotId": "6ff36eccc72c9cc0ea052bc7",
+            "source": null,
+            "tokens": 0,
+            "transfers": 0
+          },
+          "observedUnscoped": {
+            "holders": 436,
+            "indexedThroughBlock": 969752,
+            "indexedThroughBlockHash": "000000000000000000003e5a6b77578b091ec4bda168e01da9377a6904d9937b",
+            "listings": 1008,
+            "mints": 21877,
+            "returned": true,
+            "snapshotId": null,
+            "source": "proof-indexer-token-state-tables",
+            "tokens": 238,
+            "transfers": 268
+          },
+          "predicate": "work-token-state-current-relational",
+          "predicateSource": {
+            "bytes": 94409,
+            "path": "scripts/check-proof-indexer-parity.mjs",
+            "sha256": "450e5361ae5ecdd8dde6e434723366e3d4cc1cafae4675e9e7760c3d1cac90ac"
+          },
+          "productionMutation": false,
+          "qualification": "A later independent read-only observation passes the exact current scoped WORK relational-state predicate. It is not a retroactive explanation of strict-v2 failure and does not constitute full strict acceptance or authorize deployment.",
+          "readiness": {
+            "active": true,
+            "evidenceComplete": true,
+            "parityReady": true,
+            "pendingReadinessDiagnostics": {
+              "evaluation": "ordered-first-failure",
+              "failedCategories": [],
+              "model": "proof-index-work-q16-pending-readiness-diagnostic-v1"
+            },
+            "pendingReady": true,
+            "pendingValidThrough": "2026-10-03T19:20:40.289Z",
+            "ready": true,
+            "replayReady": true,
+            "tipHash": "000000000000000000003e5a6b77578b091ec4bda168e01da9377a6904d9937b",
+            "tipHeight": 969752
+          },
+          "result": {
+            "bytes": 1809,
+            "path": "deploy/audit30/verification/pow-audit30-strict-v2-work-predicate-read-result-v1.stdout.json",
+            "sha256": "38dc163338f1122ff458eecee2ed7169d5fd5e7945b4e8edf6a7856ee01a804c"
+          },
+          "source": {
+            "bytes": 4238,
+            "path": "deploy/audit30/verification/pow-audit30-strict-v2-work-predicate-read-v1.py",
+            "sha256": "0052ce722c7303967053e513c7a773f26150527e2cb3c1ad6eea635d8fb29ad7"
+          },
+          "sourceReader": {
+            "bytes": 1533661,
+            "path": "server/db/proof-index-reader.mjs",
+            "sha256": "9278b81473c23a2c9d06c6b1306268c360539f833cdd7967b73fd99a35275b87"
+          },
+          "sqlReadOnly": {
+            "default_read_only": "on",
+            "read_only": "on"
+          },
+          "status": "current-predicate-pass",
+          "strictFailureRemainsFailed": true,
+          "transport": {
+            "bytes": 411,
+            "path": "deploy/audit30/verification/pow-audit30-strict-v2-work-predicate-read-result-v1.json",
+            "sha256": "208af9633ac8e9d13020f8d0cd5377fbf4d83a81755e5549780af360f0598836"
+          }
+        },
+        "productionCodeCutoverPerformed": false,
+        "strictEvidence": {
+          "detailedFailedAttemptBinding": {
+            "bytes": 4330,
+            "path": "deploy/audit30/verification/pow-audit30-strict-v3-progress-192149-v1.json",
+            "sha256": "cc34f4e55d14da7232c963a8ef8e51c572e1f878d631c3688968343be07f0184"
+          },
+          "nativeProofHashes": {
+            "driver-receipt.json": {
+              "errorClass": null,
+              "failure": "STRICT_GATE_FAILED",
+              "gates": {
+                "events": true,
+                "ids": true,
+                "parity": false
+              },
+              "ok": false,
+              "sha256": "0f77ed860b40e4762f4ad0962dbc66faded888d6db865bd44e542842eff5689c"
+            },
+            "launcher-final.json": {
+              "errorClass": "RuntimeError",
+              "failure": null,
+              "gates": null,
+              "ok": false,
+              "sha256": "e6d1c1cc45880ee6f086f2919f1292f77b8dda2277d7d2886e501700711cfdef"
+            },
+            "strict-native-v2-failed.json": {
+              "errorClass": "ValueError",
+              "failure": null,
+              "gates": null,
+              "ok": null,
+              "sha256": "34be3fcd5727cca1a8c7aa97167e036b8fba84371d632368d8403e024b0d9c6e"
+            }
+          },
+          "passiveProgress": {
+            "bytes": 1769,
+            "path": "deploy/audit30/verification/pow-audit30-strict-v2-passive-progress-v1.json",
+            "sha256": "e19520d713d81300b9bec9057ce93805ebba1fc6055cd3d4b45272b09c38c6de"
+          },
+          "qualification": "Actual failed driver/stopped proof plus the later bounded machine extraction of exact strict-v2 counters, child-output hashes, sole blocking error, historical warnings and restoration.",
+          "refusal": {
+            "bytes": 206,
+            "path": "deploy/audit30/verification/pow-audit30-acceptance-strict-v2-refusal-v1.json",
+            "sha256": "a7ac467182335b0594f58ff91f8c60767986116308fd085e142888b384b68f8a"
+          },
+          "transport": {
+            "bytes": 445,
+            "path": "deploy/audit30/verification/pow-audit30-acceptance-strict-v2-transport-v1.json",
+            "sha256": "59bc4634d685f7891838adccf10b9002a565702c37715a88f6ad49cca374aea0"
+          }
+        },
+        "uiPublicationPerformed": false
+      },
+      "historicalEvidenceQualification": "Action70 observations end at19:21:49.291059Z; failed-v2, later narrow current predicate pass, preflight refusal and in-progress v3 admission remain historical. Action71 records the later exact v3 completion separately.",
+      "overallApiAcceptance": false,
+      "positiveScopedMilestone": {
+        "atUtc": "2026-10-03T19:33:03.733580+00:00",
+        "automaticRetry": false,
+        "candidate": {
+          "commit": "38ac6e2bff2ac16890724e5213346ef8a3ebd186",
+          "runtimeSha256": "13035b6d1fbca1be9c03b1833f3abe578d4ae28331a341b3dea4301cc72b535c",
+          "tree": "8b9b5e3cd47aa8e4204da717350a629176e30da6"
+        },
+        "childElapsedMilliseconds": 12253,
+        "childReturncode": 0,
+        "completedAt": "2026-10-03T19:33:02.655Z",
+        "counters": {
+          "bytes": 3293037,
+          "coreCalls": 8,
+          "httpCalls": 4
+        },
+        "evidence": {
+          "child": {
+            "bytes": 12018,
+            "path": "deploy/audit30/verification/pow-audit30-positive-shadow-exact-child-v1.json",
+            "sha256": "0647c7a70391d5caf6ff1d45667cbcde73dd47a423be4c4ef1df00241b23b4ef"
+          },
+          "owner": {
+            "bytes": 2836,
+            "path": "deploy/audit30/verification/pow-audit30-positive-shadow-exact-owner-v1.json",
+            "sha256": "7b2bab1d1abe56a71888c809a7c562e756bb3ea3de2260a4c5aa673196b6163c"
+          },
+          "pow-audit30-positive-scoped-shadow-request-v1.json": {
+            "bytes": 73023,
+            "path": "deploy/audit30/verification/pow-audit30-positive-scoped-shadow-request-v1.json",
+            "sha256": "230ddaddbcfb3db8576c587dfdcb9cef2f05cae3175635e4a0b8f40852cbac9e"
+          },
+          "pow-audit30-positive-shadow-launch-remote-v1.py": {
+            "bytes": 20382,
+            "path": "deploy/audit30/verification/pow-audit30-positive-shadow-launch-remote-v1.py",
+            "sha256": "887005f83f81294f37b0cf4aef584b6dcfb71fdd50e59a23d7000a615ef61ee2"
+          },
+          "pow-audit30-positive-shadow-public-export-remote-v1.py": {
+            "bytes": 2230,
+            "path": "deploy/audit30/verification/pow-audit30-positive-shadow-public-export-remote-v1.py",
+            "sha256": "2098bc9dff78ae208f3b39b0b8140856e00b041c4fe1de69284880dd5947d903"
+          },
+          "pow-audit30-positive-work-scoped-build-v1.cjs": {
+            "bytes": 2279,
+            "path": "deploy/audit30/verification/pow-audit30-positive-work-scoped-build-v1.cjs",
+            "sha256": "cc8e37b678d4bbe8e325d3e37fc00fe3bca7c8c904ff0b18186bce536f0e668b"
+          },
+          "pow-audit30-positive-work-scoped-leaf-v1.mjs": {
+            "bytes": 37072,
+            "path": "deploy/audit30/verification/pow-audit30-positive-work-scoped-leaf-v1.mjs",
+            "sha256": "42b7ccbe8c4bf22d05bc8b808dabad72cb2cb09455f1156c10cd313001fbea06"
+          },
+          "pow-audit30-positive-work-scoped-leaf-v1.test.mjs": {
+            "bytes": 9609,
+            "path": "deploy/audit30/verification/pow-audit30-positive-work-scoped-leaf-v1.test.mjs",
+            "sha256": "a614235346107b1a16ad0a76dbdec63168f60a4a436b6950e67aa0220d154e41"
+          },
+          "pow-audit30-positive-work-scoped-owner-v1.py": {
+            "bytes": 13892,
+            "path": "deploy/audit30/verification/pow-audit30-positive-work-scoped-owner-v1.py",
+            "sha256": "28bd89f9e0e9abf953a579018d1224bc51b00a5615dc42812f321050ac598cd9"
+          },
+          "pow-audit30-positive-work-scoped-owner-v1.test.py": {
+            "bytes": 4207,
+            "path": "deploy/audit30/verification/pow-audit30-positive-work-scoped-owner-v1.test.py",
+            "sha256": "181281e9dde6d3646286ea1157f269927b719f5bb741a47608cc4cdbdb2bd973"
+          },
+          "publicExport": {
+            "bytes": 935,
+            "path": "deploy/audit30/verification/pow-audit30-positive-shadow-public-export-v1.json",
+            "sha256": "fcfbfde729f04c3499843e63d65411d3a9ea9c438267f92fad43437f53b0980c"
+          },
+          "transport": {
+            "bytes": 532,
+            "path": "deploy/audit30/verification/pow-audit30-positive-shadow-native-v1.json",
+            "sha256": "bf3e86611b818264aca0ca49d1beea451d9cc7687322494edb2a55bc17b50b43"
+          }
+        },
+        "invocationID": "78573673e98945ee945fc1d2e61edb5a",
+        "limits": {
+          "bodyBytes": 3145728,
+          "coreRequests": 8,
+          "httpBytes": 201326592,
+          "httpRequests": 96,
+          "overallMilliseconds": 330000,
+          "pageRows": 200,
+          "pagesPerScope": 100,
+          "scopeMilliseconds": 120000,
+          "walletMilliseconds": 20000
+        },
+        "liveFiveUnchanged": true,
+        "mode": "shadow",
+        "ok": true,
+        "ownedUnitAfterExport": {
+          "ActiveState": "inactive",
+          "InvocationID": "",
+          "LoadState": "not-found",
+          "MainPID": "0",
+          "Result": "success",
+          "SubState": "dead"
+        },
+        "ownedUnitQualification": "The unique completed unit was auto-reaped after the acknowledged owner success; export observes inactive/not-found/MainPID0. Prior owner invocation is preserved separately.",
+        "positiveWork": [
+          {
+            "balanceVerified": true,
+            "capacityVerified": true,
+            "checkpoint": {
+              "after": {
+                "hash": "00000000000000000000c55e9c08d89c7fdaec656e0c49132e4c853d363f8b4e",
+                "height": 969753
+              },
+              "before": {
+                "hash": "00000000000000000000c55e9c08d89c7fdaec656e0c49132e4c853d363f8b4e",
+                "height": 969753
+              },
+              "stable": true
+            },
+            "confirmedBalanceSubatoms": "9999997003878536",
+            "decimals": 16,
+            "holderBalanceDecimal": "0.9999997003878536",
+            "holderPendingDeltaDecimal": "0",
+            "httpAndFenceSeconds": 8.631,
+            "label": "first-request",
+            "maximumResponseBytes": 3145728,
+            "maximumStageSeconds": 20,
+            "payloadSha256": "578f1c73a986b23d56fc8fcc32be669f9a7ffb2d506503270e82d1aa81db07c8",
+            "pendingDeltaSubatoms": "0",
+            "positiveConfirmed": true,
+            "predicateCount": 16,
+            "predicates": {
+              "authoritative-wallet": true,
+              "capacity-scope-model-checkpoint": true,
+              "complete-checkpoint": true,
+              "envelope-q16-model": true,
+              "exact-current-checkpoint": true,
+              "exact-q16-conservation": true,
+              "exact-unique-reservation-conservation": true,
+              "holder-decimals-match-subatoms": true,
+              "http-200-required": true,
+              "livenet-scope": true,
+              "one-canonical-q16-token": true,
+              "one-exact-capacity": true,
+              "one-exact-holder": true,
+              "positive-confirmed-exact-holder": true,
+              "snapshot-present": true,
+              "stable-core-fence": true
+            },
+            "ready": true,
+            "reservationCount": 42,
+            "reservationMembershipSha256": "5d2d1a0a13ab0b18371baa18a1b680286d4a7b4d64b2bf18e8c0d57930078dac",
+            "reservedBalanceSubatoms": "26915978817",
+            "snapshotId": "26ffd86b955e1ec5a55460f0",
+            "spendableBalanceSubatoms": "9999970087899719",
+            "status": 200,
+            "unitScale": "10000000000000000",
+            "verificationStatus": "passed"
+          },
+          {
+            "balanceVerified": true,
+            "capacityVerified": true,
+            "checkpoint": {
+              "after": {
+                "hash": "00000000000000000000c55e9c08d89c7fdaec656e0c49132e4c853d363f8b4e",
+                "height": 969753
+              },
+              "before": {
+                "hash": "00000000000000000000c55e9c08d89c7fdaec656e0c49132e4c853d363f8b4e",
+                "height": 969753
+              },
+              "stable": true
+            },
+            "confirmedBalanceSubatoms": "9999997003878536",
+            "decimals": 16,
+            "holderBalanceDecimal": "0.9999997003878536",
+            "holderPendingDeltaDecimal": "0",
+            "httpAndFenceSeconds": 2.408,
+            "label": "second-request",
+            "maximumResponseBytes": 3145728,
+            "maximumStageSeconds": 20,
+            "payloadSha256": "3586cd24819da35a6c45455db12aecec6296313fae7845bd06b0dcf0cfc22e43",
+            "pendingDeltaSubatoms": "0",
+            "positiveConfirmed": true,
+            "predicateCount": 16,
+            "predicates": {
+              "authoritative-wallet": true,
+              "capacity-scope-model-checkpoint": true,
+              "complete-checkpoint": true,
+              "envelope-q16-model": true,
+              "exact-current-checkpoint": true,
+              "exact-q16-conservation": true,
+              "exact-unique-reservation-conservation": true,
+              "holder-decimals-match-subatoms": true,
+              "http-200-required": true,
+              "livenet-scope": true,
+              "one-canonical-q16-token": true,
+              "one-exact-capacity": true,
+              "one-exact-holder": true,
+              "positive-confirmed-exact-holder": true,
+              "snapshot-present": true,
+              "stable-core-fence": true
+            },
+            "ready": true,
+            "reservationCount": 42,
+            "reservationMembershipSha256": "5d2d1a0a13ab0b18371baa18a1b680286d4a7b4d64b2bf18e8c0d57930078dac",
+            "reservedBalanceSubatoms": "26915978817",
+            "snapshotId": "26ffd86b955e1ec5a55460f0",
+            "spendableBalanceSubatoms": "9999970087899719",
+            "status": 200,
+            "unitScale": "10000000000000000",
+            "verificationStatus": "passed"
+          }
+        ],
+        "privateContentsExported": false,
+        "productionMutation": false,
+        "qualification": "Fresh observed conservation and per-read/per-scope Core fences are binding. Historical balances/counts are baseline only. First and second reads do not assert an empty cache. Raw listing membership is checked without frontend normalization. API supplies Core outpoint authority; individual gettxout results are not repeated. Actual API identity and fresh private environment custody must be bound by the reviewed owner.",
+        "scopedListings": [
+          {
+            "asset": "a3d0bc8528f91dfc52400a885bed7e49235396aa82aa9f95db41be629f1d5562",
+            "checkpoint": {
+              "hash": "00000000000000000000c55e9c08d89c7fdaec656e0c49132e4c853d363f8b4e",
+              "height": 969753
+            },
+            "complete": true,
+            "coreAfter": {
+              "hash": "00000000000000000000c55e9c08d89c7fdaec656e0c49132e4c853d363f8b4e",
+              "height": 969753
+            },
+            "coreBefore": {
+              "hash": "00000000000000000000c55e9c08d89c7fdaec656e0c49132e4c853d363f8b4e",
+              "height": 969753
+            },
+            "historicalCountBaseline": 1,
+            "indexedAt": "2026-10-03T19:28:59.335Z",
+            "listingIdsSha256": "efd63d3659cf8ac5bed5abb2dfc79628b26d7b69f3b363a23382d989492ab6e0",
+            "pages": [
+              {
+                "checkpoint": {
+                  "hash": "00000000000000000000c55e9c08d89c7fdaec656e0c49132e4c853d363f8b4e",
+                  "height": 969753
+                },
+                "complete": true,
+                "indexedAt": "2026-10-03T19:28:59.335Z",
+                "snapshotId": "7cedcee2e8acccf4432ad03453e73fcc009ae3b404b5a7f1e924117a0a00e238",
+                "totalCount": 1,
+                "verifiedThrough": 1
+              }
+            ],
+            "ready": true,
+            "snapshotId": "7cedcee2e8acccf4432ad03453e73fcc009ae3b404b5a7f1e924117a0a00e238",
+            "symbol": "POWB",
+            "totalCount": 1
+          },
+          {
+            "asset": "3cb25745f937f2b4e5508e5400189fe8fe679cd8e84bfa1e9176d70c9761f15d",
+            "checkpoint": {
+              "hash": "00000000000000000000c55e9c08d89c7fdaec656e0c49132e4c853d363f8b4e",
+              "height": 969753
+            },
+            "complete": true,
+            "coreAfter": {
+              "hash": "00000000000000000000c55e9c08d89c7fdaec656e0c49132e4c853d363f8b4e",
+              "height": 969753
+            },
+            "coreBefore": {
+              "hash": "00000000000000000000c55e9c08d89c7fdaec656e0c49132e4c853d363f8b4e",
+              "height": 969753
+            },
+            "historicalCountBaseline": 0,
+            "indexedAt": "2026-10-03T19:28:59.335Z",
+            "listingIdsSha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+            "pages": [
+              {
+                "checkpoint": {
+                  "hash": "00000000000000000000c55e9c08d89c7fdaec656e0c49132e4c853d363f8b4e",
+                  "height": 969753
+                },
+                "complete": true,
+                "indexedAt": "2026-10-03T19:28:59.335Z",
+                "snapshotId": "997572a20fc108ef2967ad095000195280a7a9b2f188dcd11ab25f7fc4c5bbe1",
+                "totalCount": 0,
+                "verifiedThrough": 0
+              }
+            ],
+            "ready": true,
+            "snapshotId": "997572a20fc108ef2967ad095000195280a7a9b2f188dcd11ab25f7fc4c5bbe1",
+            "symbol": "INCB",
+            "totalCount": 0
+          }
+        ],
+        "seconds": 14.798,
+        "shadowUnchanged": true,
+        "sourceBindings": {
+          "extraction": "exact named AST functions, TypeScript syntax erased locally; no application startup",
+          "files": {
+            "deploy/audit29/verify-candidate.mjs": "bbded71fa88cfc108c611b3beddd3a6c693b38477c356b682caed8985976abda",
+            "deploy/audit5/probe-candidate.mjs": "edc672e0327248c55eb073f4d720e37a8ea0ac33f61027456b8cf19609aa6ab1",
+            "server/proof-api.mjs": "9ab92c0fe3cb358fcaacccd62915eabc4c9ee75e42d29c6c989259b1305436f4",
+            "server/work-wallet-capacity.mjs": "98d9ad4071d6b34b8439c59b461eae073584d58ce43140f4214ea129ebce2d86",
+            "src/App.tsx": "87fd17ac3ade8eff1a5beae96f0bac6b43866d16ac8487d9bc347aa01b2a7ca2",
+            "src/shared/api/surfaceReadState.ts": "7c7ceed06f321a5b595a471efa2f9e10e37c64008cd99ed4039f0cad98775b4e"
+          },
+          "frozenCodeSha256": "37baad290031edee701ce664e9159798249d83e32cff14c1735168a7b3fe8d59",
+          "helpers": [
+            {
+              "end": 1313,
+              "name": "requireFact",
+              "path": "deploy/audit5/probe-candidate.mjs",
+              "sha256": "431157a02c5899b06a52c0a10f687cebe061a8c202f1baf0f9a0904b3a15a01d",
+              "start": 1238
+            },
+            {
+              "end": 1811,
+              "name": "canonicalJson",
+              "path": "deploy/audit5/probe-candidate.mjs",
+              "sha256": "c8f038bfeb82bab7d42424742463d8a73b92563405bc17edef87c4bec634f2dd",
+              "start": 1314
+            },
+            {
+              "end": 3522,
+              "name": "digest",
+              "path": "deploy/audit5/probe-candidate.mjs",
+              "sha256": "fd9868af9487f704feac82bc7aded917ddc164be0ec7e472900b9a031289b80c",
+              "start": 3425
+            },
+            {
+              "end": 4141,
+              "name": "decimalQ8",
+              "path": "deploy/audit5/probe-candidate.mjs",
+              "sha256": "299b6ce40f91a31d6f005a3d0e990991831e653640bb0428eff24f6aa8f67a6e",
+              "start": 3757
+            },
+            {
+              "end": 5538,
+              "name": "sameTip",
+              "path": "deploy/audit29/verify-candidate.mjs",
+              "sha256": "11fa5d724316fb762c00b56d8316c3f20e9da21f4b27c5dd83df5c0f094fd67e",
+              "start": 5369
+            },
+            {
+              "end": 9920,
+              "name": "verifyWalletResponse",
+              "path": "deploy/audit29/verify-candidate.mjs",
+              "sha256": "9d91e692c560e7d61125972b3250597eb1c0435bdb34976961eb7f3d9b088ca3",
+              "start": 7103
+            },
+            {
+              "end": 10190,
+              "name": "verifyFencedWalletRead",
+              "path": "deploy/audit29/verify-candidate.mjs",
+              "sha256": "44b86008570ee542985453b6ca7097b5c227d51e17dc3a6f8b05b7cb0d2d31b0",
+              "start": 9922
+            },
+            {
+              "end": 15744,
+              "name": "makeIO",
+              "path": "deploy/audit29/verify-candidate.mjs",
+              "sha256": "c3880d1725f1ec296ae672a7f0a51f22964b8efd13d6dc16a92f951ca9bf9bd2",
+              "start": 12607
+            },
+            {
+              "end": 4014,
+              "name": "listingDisplayProjectionFingerprint",
+              "path": "src/shared/api/surfaceReadState.ts",
+              "sha256": "94f6f7cdc87a570fbf2ed6dbcfb5745c4c832bee229210643e1c1fa92c69ab47",
+              "start": 2040
+            },
+            {
+              "end": 521644,
+              "name": "fetchCompleteTokenListings",
+              "path": "src/App.tsx",
+              "sha256": "ecc31902e89f2b14d8f5e8719b7f1b03ddc88a90ab44a4c6196c0e508ded370f",
+              "start": 511759
+            }
+          ]
+        },
+        "startedAt": "2026-10-03T19:32:50.402Z",
+        "timerAfter": {
+          "ActiveState": "active",
+          "LoadState": "loaded",
+          "SubState": "waiting",
+          "UnitFileState": "enabled"
+        },
+        "timerBefore": {
+          "ActiveState": "active",
+          "LoadState": "loaded",
+          "SubState": "waiting",
+          "UnitFileState": "enabled"
+        },
+        "timerRestored": true,
+        "timerRestoredReceiptSHA256": "7f9dc2e814ac2d8b016816be71a83e71dac1c1adaa809e63943903eb8b44b308",
+        "unit": "proofofwork-audit30-positive-scoped-38ac6e2bff2a-20261003T042000Z-shadow-v1.service"
+      },
+      "productionCodeCutoverPerformed": false,
+      "shadowApiAcceptance": true,
+      "stableCheckpoint": {
+        "hash": "000000000000000000003e5a6b77578b091ec4bda168e01da9377a6904d9937b",
+        "height": 969752
+      },
+      "strictEvidence": {
+        "accepted": {
+          "bytes": 31141,
+          "path": "deploy/audit30/verification/pow-audit30-strict-v3-exact-accepted-v1.json",
+          "sha256": "3524a1f5a72ad4dfeb4c48727f9af6a4d92258f49d631f9c74dd0fe76e96dc4c"
+        },
+        "completed": {
+          "bytes": 5633,
+          "path": "deploy/audit30/verification/pow-audit30-strict-v3-exact-completed-v1.json",
+          "sha256": "3aa9e3981c1fc60aec3f54021abbc458b0cacbb7775403f6ed28474aafb0712c"
+        },
+        "exportManifest": {
+          "bytes": 1201,
+          "path": "deploy/audit30/verification/pow-audit30-strict-v3-public-receipts-export-v1.json",
+          "sha256": "eef70aea70dc0082ba828d4d71e3ab76fdf52f73f77540745ecad8953b5921a6"
+        },
+        "lease": {
+          "bytes": 13021,
+          "path": "deploy/audit30/verification/pow-audit30-strict-v3-exact-lease-v1.json",
+          "sha256": "553c801d62e48305ac9957ccea495b87081d69269ea7e36d82d7c01e5534d087"
+        }
+      },
+      "strictExecution": {
+        "directDatabaseWrites": false,
+        "invocationID": "a230a1f4b038451a840d24ca23f8cd88",
+        "liveFiveUnchanged": true,
+        "productionStop": false,
+        "returncode": 0,
+        "seconds": 307.735,
+        "shadowUnchanged": true,
+        "stopped": true,
+        "timerRestored": true,
+        "timerRestoredReceiptSHA256": "7f9dc2e814ac2d8b016816be71a83e71dac1c1adaa809e63943903eb8b44b308",
+        "unit": "proofofwork-audit29-verify-38ac6e2bff2a-20261003T042000Z-shadow-strict-v3.service"
+      },
+      "strictMilestoneAtUtc": "2026-10-03T19:25:59.887195+00:00",
+      "strictMilestoneCutoverHold": {
+        "approvedToCutoverByThisMilestone": false,
+        "qualification": "This hold applied to the strict-only receipt at 19:25 UTC; the later positive milestone satisfies its required shadow checks. Fresh guarded native admission remains required.",
+        "reason": "Full strict acceptance retains unresolved wallet availability and does not verify positive wallet balance or capacity.",
+        "requiredHttpStatus": 200,
+        "requiredPositiveWorkActualPass": true,
+        "requiredPositiveWorkPredicateCount": 16,
+        "requiredScopedBondActualPass": true
+      },
+      "uiPublicationPerformed": false,
+      "walletAvailability": {
+        "balanceVerified": false,
+        "capacityVerified": false,
+        "checkpoint": {
+          "after": {
+            "hash": "000000000000000000003e5a6b77578b091ec4bda168e01da9377a6904d9937b",
+            "height": 969752
+          },
+          "before": {
+            "hash": "000000000000000000003e5a6b77578b091ec4bda168e01da9377a6904d9937b",
+            "height": 969752
+          },
+          "stable": true
+        },
+        "code": "CANONICAL_WALLET_INDEX_UNAVAILABLE",
+        "knownIssueGroups": [
+          "H24-01",
+          "AUD26-02",
+          "AUD26-03",
+          "PERF-27"
+        ],
+        "payloadSha256": "259e768df9ac23b096324a88a5f6f7d5279f2411757525bfdde94c3d20772a0a",
+        "qualification": "The exact existing fail-closed unavailable response is retained as unresolved availability. Neither wallet balance nor transfer capacity passed verification; inspect bounded private wallet-token-overlay-unavailable diagnostics.",
+        "ready": false,
+        "requiredSource": "proof-indexer-wallet-token-overlay",
+        "status": 503,
+        "verificationStatus": "known-unresolved-availability"
+      },
+      "walletAvailabilityQualification": "Historical strict-v3 observation at checkpoint 969752 and 19:25 UTC only. The separate later positive milestone below passes at checkpoint 969753; this strict receipt is not rewritten.",
+      "workBook": {
+        "commitmentReconstruction": {
+          "missingSealAtReconstructedNull": 22,
+          "model": "source-declared-lifecycle-and-seal-patch-v1",
+          "possibleSealPatchForms": 2,
+          "qualification": "The wire omits undefined sealAt. Only the source-declared absent-patch or owned-null commitment is selected by each full-record hash; membership and snapshot are independently recomputed."
+        },
+        "deltaFromAuditBaseline": 7,
+        "displayPages": 6,
+        "fullPages": 6,
+        "fullRowsSha256": "ff898c04ba8f511336436a8ccea15382bce9778fa30aba69d2a1ad66228a9f80",
+        "historicalAuditBaseline": 999,
+        "independentCoreAnchors": 1006,
+        "independentCoreSha256": "7f32fcde8016da6404f93cd4c88aced7cd33c33f9b513a1d0dc12548e2fdb4b2",
+        "listings": 1006,
+        "membershipRecheckedAfterCore": true,
+        "savedRowBytes": 17698334,
+        "sourceDigestQualification": "Bound to full-route snapshot; excluded historical source rows are not independently replayed."
+      }
+    },
+    "currentMailRepairEvidence": {
+      "bytes": 2984,
+      "path": "deploy/audit30/verification/pow-audit30-mail16-completed-v1.json",
+      "sha256": "3092d25b775051d14aa9a51315028fde54fdd7ee9c32689f912cdd5ecfe03b4e"
+    },
+    "historicalItemsAndActionsPreserved": true,
+    "userRemainingChecklist": {
+      "1": {
+        "status": "complete",
+        "work": "exact16 mail repair and fresh619 verification"
+      },
+      "2": {
+        "acceptanceStatus": "strict-and-positive-work-scoped-bond-shadow-passed-production-cutover-pending",
+        "actualFailedV2GateResults": {
+          "events": {
+            "checkCount": 49,
+            "passed": true
+          },
+          "ids": {
+            "confirmedWinners": 508,
+            "coveredConfirmedRegistryTransactions": 565,
+            "coveredPendingRegistryTransactions": 22,
+            "fetchedTransactions": 587,
+            "passed": true,
+            "pendingCandidates": 20
+          },
+          "machineBinding": {
+            "bytes": 4330,
+            "path": "deploy/audit30/verification/pow-audit30-strict-v3-progress-192149-v1.json",
+            "sha256": "cc34f4e55d14da7232c963a8ef8e51c572e1f878d631c3688968343be07f0184"
+          },
+          "parity": {
+            "blockingErrors": [
+              {
+                "name": "work-token-state-current-relational",
+                "ok": false,
+                "severity": "error"
+              }
+            ],
+            "checkCount": 102,
+            "historicalWarnings": [
+              {
+                "name": "work-amo-v5-migration",
+                "ok": false,
+                "severity": "warning"
+              },
+              {
+                "name": "work-amo-v5-usd-quote-head",
+                "ok": false,
+                "severity": "warning"
+              }
+            ],
+            "passed": false
+          },
+          "priorFailedAttempt": {
+            "driverReceiptPath": "/data/proofofwork-audit29-verify-output-38ac6e2bff2a-20261003T042000Z-shadow-strict-v2/attempt/receipt.json",
+            "driverReceiptSHA256": "0f77ed860b40e4762f4ad0962dbc66faded888d6db865bd44e542842eff5689c",
+            "failure": "STRICT_GATE_FAILED",
+            "gateReceipts": {
+              "events": {
+                "checkCount": 49,
+                "checkpointStable": true,
+                "exitCode": 0,
+                "failedChecks": [],
+                "scriptSha256": "a5a82730ab8d7edde3d617362c960aa64155dbb090e5676a0906306d6a6d0bce",
+                "stderrBytes": 0,
+                "stdoutBytes": 54116,
+                "stdoutSha256": "0d298c1e3a9d238f22b7b6f0be7b28331297ae65920635c8fe6891501701907f"
+              },
+              "ids": {
+                "checkpointStable": true,
+                "counts": {
+                  "Confirmed winners": 508,
+                  "Covered confirmed registry transactions": 565,
+                  "Covered pending registry transactions": 22,
+                  "Fetched transactions": 587,
+                  "Pending candidates": 20
+                },
+                "exitCode": 0,
+                "scriptSha256": "d7bbe914e3db45fcebac174dc182146f988547fb8d94ffa65f8286cebd50a825",
+                "stderrBytes": 0,
+                "stdoutBytes": 6581,
+                "stdoutSha256": "e47b39e1ba8b2791ca1f8dcf098ede747d2c0c244a541b6495d48e1f3554d518"
+              },
+              "parity": {
+                "checkCount": 102,
+                "checkpointStable": true,
+                "exitCode": 1,
+                "failedChecks": [
+                  {
+                    "name": "work-token-state-current-relational",
+                    "ok": false,
+                    "severity": "error"
+                  },
+                  {
+                    "name": "work-amo-v5-migration",
+                    "ok": false,
+                    "severity": "warning"
+                  },
+                  {
+                    "name": "work-amo-v5-usd-quote-head",
+                    "ok": false,
+                    "severity": "warning"
+                  }
+                ],
+                "scriptSha256": "450e5361ae5ecdd8dde6e434723366e3d4cc1cafae4675e9e7760c3d1cac90ac",
+                "stderrBytes": 0,
+                "stdoutBytes": 34398426,
+                "stdoutSha256": "ec50562b99352e81312bd4e146d3ffc8721fe2cb4e1b2991ea79e8f2d2e68f31"
+              }
+            },
+            "gates": {
+              "events": true,
+              "ids": true,
+              "parity": false
+            },
+            "privateContentsExported": false,
+            "rawChildOutputExported": false,
+            "schema": "audit30-strict-v2-bounded-failure-evidence-v1",
+            "timerRestored": true,
+            "unitStopped": true
+          },
+          "qualification": "Exact bounded projection of the preserved native strict-v2 receipt and hash-bound child results. All raw child output/private capture remains on host.",
+          "status": "actual-failed"
+        },
+        "approvalReceiptPath": "deploy/audit30/verification/pow-audit30-api-current-chat-approval-20261003.json",
+        "blockingCheck": null,
+        "blockingCheckQualification": "No remaining blocking shadow check in these exact receipts. Actual guarded production cutover and production/mail/UI acceptance remain pending.",
+        "currentAcceptanceQualification": "Current positive WORK/scoped flags refer to actual candidate shadow checks at 19:33 UTC. Overall release acceptance remains incomplete until actual production, mail and UI acceptance/deployment finish.",
+        "currentPositiveWorkAcceptance": true,
+        "currentScopedBondAcceptance": true,
+        "fullStrictAcceptance": true,
+        "gates": {
+          "events": true,
+          "ids": true,
+          "parity": true
+        },
+        "historicalStrictV3Admission": {
+          "activeGateScripts": [
+            "audit-id-registry.mjs",
+            "verify-candidate.mjs"
+          ],
+          "currentBackupServiceState": {
+            "ActiveState": "inactive",
+            "InvocationID": "dfda5fa3574144958b948f8b5920b4d0",
+            "LoadState": "loaded",
+            "MainPID": "0",
+            "Result": "success",
+            "RuntimeMaxUSec": "infinity",
+            "SubState": "dead"
+          },
+          "currentBackupTimerState": {
+            "ActiveState": "inactive",
+            "InvocationID": "3b2511dfe4ca48e0a0596bc0225e1c1d",
+            "LoadState": "loaded",
+            "Result": "success",
+            "SubState": "dead"
+          },
+          "cutoverPerformed": false,
+          "fullStrictAcceptance": false,
+          "intentSHA256": "6aa975f6ba9dd1860b68c7380fdac468cc691b0aa2a30ecc95e1ff41cb138a96",
+          "observedAtUtc": "2026-10-03T19:21:49.291059+00:00",
+          "progress": {
+            "bytes": 4330,
+            "path": "deploy/audit30/verification/pow-audit30-strict-v3-progress-192149-v1.json",
+            "sha256": "cc34f4e55d14da7232c963a8ef8e51c572e1f878d631c3688968343be07f0184"
+          },
+          "qualification": "An actual separately admitted managed strict-v3 run is active at this bounded observation. Its source and intent are preserved; no completion, restoration or acceptance is inferred.",
+          "source": {
+            "bytes": 21068,
+            "path": "deploy/audit30/verification/pow-audit30-acceptance-strict-v3.py",
+            "sha256": "1ef0f5cf7b6d35e07c305ee0effe3dd714daf42c5b391a962ff0490cdf88b1e6"
+          },
+          "state": {
+            "ActiveState": "active",
+            "InvocationID": "a230a1f4b038451a840d24ca23f8cd88",
+            "LoadState": "loaded",
+            "MainPID": "3344618",
+            "Result": "success",
+            "RuntimeMaxUSec": "20min",
+            "SubState": "running"
+          },
+          "status": "in-progress-no-acceptance",
+          "unit": "proofofwork-audit29-verify-38ac6e2bff2a-20261003T042000Z-shadow-strict-v3.service"
+        },
+        "laterNarrowWorkDiagnostic": {
+          "actualApiIdentityUnchanged": true,
+          "currentPredicatePassed": true,
+          "fullStrictAcceptance": false,
+          "observedScopedWork": {
+            "holders": 388,
+            "indexedThroughBlock": 969752,
+            "indexedThroughBlockHash": "000000000000000000003e5a6b77578b091ec4bda168e01da9377a6904d9937b",
+            "listings": 1006,
+            "mints": 21000,
+            "returned": true,
+            "snapshotId": null,
+            "source": "proof-indexer-token-state-tables",
+            "tokens": 1,
+            "transfers": 261
+          },
+          "observedSummary": {
+            "holders": 0,
+            "indexedThroughBlock": 969752,
+            "indexedThroughBlockHash": "000000000000000000003e5a6b77578b091ec4bda168e01da9377a6904d9937b",
+            "listings": 0,
+            "mints": 0,
+            "returned": true,
+            "snapshotId": "6ff36eccc72c9cc0ea052bc7",
+            "source": null,
+            "tokens": 0,
+            "transfers": 0
+          },
+          "observedUnscoped": {
+            "holders": 436,
+            "indexedThroughBlock": 969752,
+            "indexedThroughBlockHash": "000000000000000000003e5a6b77578b091ec4bda168e01da9377a6904d9937b",
+            "listings": 1008,
+            "mints": 21877,
+            "returned": true,
+            "snapshotId": null,
+            "source": "proof-indexer-token-state-tables",
+            "tokens": 238,
+            "transfers": 268
+          },
+          "predicate": "work-token-state-current-relational",
+          "predicateSource": {
+            "bytes": 94409,
+            "path": "scripts/check-proof-indexer-parity.mjs",
+            "sha256": "450e5361ae5ecdd8dde6e434723366e3d4cc1cafae4675e9e7760c3d1cac90ac"
+          },
+          "productionMutation": false,
+          "qualification": "A later independent read-only observation passes the exact current scoped WORK relational-state predicate. It is not a retroactive explanation of strict-v2 failure and does not constitute full strict acceptance or authorize deployment.",
+          "readiness": {
+            "active": true,
+            "evidenceComplete": true,
+            "parityReady": true,
+            "pendingReadinessDiagnostics": {
+              "evaluation": "ordered-first-failure",
+              "failedCategories": [],
+              "model": "proof-index-work-q16-pending-readiness-diagnostic-v1"
+            },
+            "pendingReady": true,
+            "pendingValidThrough": "2026-10-03T19:20:40.289Z",
+            "ready": true,
+            "replayReady": true,
+            "tipHash": "000000000000000000003e5a6b77578b091ec4bda168e01da9377a6904d9937b",
+            "tipHeight": 969752
+          },
+          "result": {
+            "bytes": 1809,
+            "path": "deploy/audit30/verification/pow-audit30-strict-v2-work-predicate-read-result-v1.stdout.json",
+            "sha256": "38dc163338f1122ff458eecee2ed7169d5fd5e7945b4e8edf6a7856ee01a804c"
+          },
+          "source": {
+            "bytes": 4238,
+            "path": "deploy/audit30/verification/pow-audit30-strict-v2-work-predicate-read-v1.py",
+            "sha256": "0052ce722c7303967053e513c7a773f26150527e2cb3c1ad6eea635d8fb29ad7"
+          },
+          "sourceReader": {
+            "bytes": 1533661,
+            "path": "server/db/proof-index-reader.mjs",
+            "sha256": "9278b81473c23a2c9d06c6b1306268c360539f833cdd7967b73fd99a35275b87"
+          },
+          "sqlReadOnly": {
+            "default_read_only": "on",
+            "read_only": "on"
+          },
+          "status": "current-predicate-pass",
+          "strictFailureRemainsFailed": true,
+          "transport": {
+            "bytes": 411,
+            "path": "deploy/audit30/verification/pow-audit30-strict-v2-work-predicate-read-result-v1.json",
+            "sha256": "208af9633ac8e9d13020f8d0cd5377fbf4d83a81755e5549780af360f0598836"
+          }
+        },
+        "latestFailedStrictEvidence": {
+          "detailedFailedAttemptBinding": {
+            "bytes": 4330,
+            "path": "deploy/audit30/verification/pow-audit30-strict-v3-progress-192149-v1.json",
+            "sha256": "cc34f4e55d14da7232c963a8ef8e51c572e1f878d631c3688968343be07f0184"
+          },
+          "nativeProofHashes": {
+            "driver-receipt.json": {
+              "errorClass": null,
+              "failure": "STRICT_GATE_FAILED",
+              "gates": {
+                "events": true,
+                "ids": true,
+                "parity": false
+              },
+              "ok": false,
+              "sha256": "0f77ed860b40e4762f4ad0962dbc66faded888d6db865bd44e542842eff5689c"
+            },
+            "launcher-final.json": {
+              "errorClass": "RuntimeError",
+              "failure": null,
+              "gates": null,
+              "ok": false,
+              "sha256": "e6d1c1cc45880ee6f086f2919f1292f77b8dda2277d7d2886e501700711cfdef"
+            },
+            "strict-native-v2-failed.json": {
+              "errorClass": "ValueError",
+              "failure": null,
+              "gates": null,
+              "ok": null,
+              "sha256": "34be3fcd5727cca1a8c7aa97167e036b8fba84371d632368d8403e024b0d9c6e"
+            }
+          },
+          "passiveProgress": {
+            "bytes": 1769,
+            "path": "deploy/audit30/verification/pow-audit30-strict-v2-passive-progress-v1.json",
+            "sha256": "e19520d713d81300b9bec9057ce93805ebba1fc6055cd3d4b45272b09c38c6de"
+          },
+          "qualification": "Actual failed driver/stopped proof plus the later bounded machine extraction of exact strict-v2 counters, child-output hashes, sole blocking error, historical warnings and restoration.",
+          "refusal": {
+            "bytes": 206,
+            "path": "deploy/audit30/verification/pow-audit30-acceptance-strict-v2-refusal-v1.json",
+            "sha256": "a7ac467182335b0594f58ff91f8c60767986116308fd085e142888b384b68f8a"
+          },
+          "transport": {
+            "bytes": 445,
+            "path": "deploy/audit30/verification/pow-audit30-acceptance-strict-v2-transport-v1.json",
+            "sha256": "59bc4634d685f7891838adccf10b9002a565702c37715a88f6ad49cca374aea0"
+          }
+        },
+        "latestPositiveScopedMilestone": {
+          "atUtc": "2026-10-03T19:33:03.733580+00:00",
+          "automaticRetry": false,
+          "candidate": {
+            "commit": "38ac6e2bff2ac16890724e5213346ef8a3ebd186",
+            "runtimeSha256": "13035b6d1fbca1be9c03b1833f3abe578d4ae28331a341b3dea4301cc72b535c",
+            "tree": "8b9b5e3cd47aa8e4204da717350a629176e30da6"
+          },
+          "childElapsedMilliseconds": 12253,
+          "childReturncode": 0,
+          "completedAt": "2026-10-03T19:33:02.655Z",
+          "counters": {
+            "bytes": 3293037,
+            "coreCalls": 8,
+            "httpCalls": 4
+          },
+          "evidence": {
+            "child": {
+              "bytes": 12018,
+              "path": "deploy/audit30/verification/pow-audit30-positive-shadow-exact-child-v1.json",
+              "sha256": "0647c7a70391d5caf6ff1d45667cbcde73dd47a423be4c4ef1df00241b23b4ef"
+            },
+            "owner": {
+              "bytes": 2836,
+              "path": "deploy/audit30/verification/pow-audit30-positive-shadow-exact-owner-v1.json",
+              "sha256": "7b2bab1d1abe56a71888c809a7c562e756bb3ea3de2260a4c5aa673196b6163c"
+            },
+            "pow-audit30-positive-scoped-shadow-request-v1.json": {
+              "bytes": 73023,
+              "path": "deploy/audit30/verification/pow-audit30-positive-scoped-shadow-request-v1.json",
+              "sha256": "230ddaddbcfb3db8576c587dfdcb9cef2f05cae3175635e4a0b8f40852cbac9e"
+            },
+            "pow-audit30-positive-shadow-launch-remote-v1.py": {
+              "bytes": 20382,
+              "path": "deploy/audit30/verification/pow-audit30-positive-shadow-launch-remote-v1.py",
+              "sha256": "887005f83f81294f37b0cf4aef584b6dcfb71fdd50e59a23d7000a615ef61ee2"
+            },
+            "pow-audit30-positive-shadow-public-export-remote-v1.py": {
+              "bytes": 2230,
+              "path": "deploy/audit30/verification/pow-audit30-positive-shadow-public-export-remote-v1.py",
+              "sha256": "2098bc9dff78ae208f3b39b0b8140856e00b041c4fe1de69284880dd5947d903"
+            },
+            "pow-audit30-positive-work-scoped-build-v1.cjs": {
+              "bytes": 2279,
+              "path": "deploy/audit30/verification/pow-audit30-positive-work-scoped-build-v1.cjs",
+              "sha256": "cc8e37b678d4bbe8e325d3e37fc00fe3bca7c8c904ff0b18186bce536f0e668b"
+            },
+            "pow-audit30-positive-work-scoped-leaf-v1.mjs": {
+              "bytes": 37072,
+              "path": "deploy/audit30/verification/pow-audit30-positive-work-scoped-leaf-v1.mjs",
+              "sha256": "42b7ccbe8c4bf22d05bc8b808dabad72cb2cb09455f1156c10cd313001fbea06"
+            },
+            "pow-audit30-positive-work-scoped-leaf-v1.test.mjs": {
+              "bytes": 9609,
+              "path": "deploy/audit30/verification/pow-audit30-positive-work-scoped-leaf-v1.test.mjs",
+              "sha256": "a614235346107b1a16ad0a76dbdec63168f60a4a436b6950e67aa0220d154e41"
+            },
+            "pow-audit30-positive-work-scoped-owner-v1.py": {
+              "bytes": 13892,
+              "path": "deploy/audit30/verification/pow-audit30-positive-work-scoped-owner-v1.py",
+              "sha256": "28bd89f9e0e9abf953a579018d1224bc51b00a5615dc42812f321050ac598cd9"
+            },
+            "pow-audit30-positive-work-scoped-owner-v1.test.py": {
+              "bytes": 4207,
+              "path": "deploy/audit30/verification/pow-audit30-positive-work-scoped-owner-v1.test.py",
+              "sha256": "181281e9dde6d3646286ea1157f269927b719f5bb741a47608cc4cdbdb2bd973"
+            },
+            "publicExport": {
+              "bytes": 935,
+              "path": "deploy/audit30/verification/pow-audit30-positive-shadow-public-export-v1.json",
+              "sha256": "fcfbfde729f04c3499843e63d65411d3a9ea9c438267f92fad43437f53b0980c"
+            },
+            "transport": {
+              "bytes": 532,
+              "path": "deploy/audit30/verification/pow-audit30-positive-shadow-native-v1.json",
+              "sha256": "bf3e86611b818264aca0ca49d1beea451d9cc7687322494edb2a55bc17b50b43"
+            }
+          },
+          "invocationID": "78573673e98945ee945fc1d2e61edb5a",
+          "limits": {
+            "bodyBytes": 3145728,
+            "coreRequests": 8,
+            "httpBytes": 201326592,
+            "httpRequests": 96,
+            "overallMilliseconds": 330000,
+            "pageRows": 200,
+            "pagesPerScope": 100,
+            "scopeMilliseconds": 120000,
+            "walletMilliseconds": 20000
+          },
+          "liveFiveUnchanged": true,
+          "mode": "shadow",
+          "ok": true,
+          "ownedUnitAfterExport": {
+            "ActiveState": "inactive",
+            "InvocationID": "",
+            "LoadState": "not-found",
+            "MainPID": "0",
+            "Result": "success",
+            "SubState": "dead"
+          },
+          "ownedUnitQualification": "The unique completed unit was auto-reaped after the acknowledged owner success; export observes inactive/not-found/MainPID0. Prior owner invocation is preserved separately.",
+          "positiveWork": [
+            {
+              "balanceVerified": true,
+              "capacityVerified": true,
+              "checkpoint": {
+                "after": {
+                  "hash": "00000000000000000000c55e9c08d89c7fdaec656e0c49132e4c853d363f8b4e",
+                  "height": 969753
+                },
+                "before": {
+                  "hash": "00000000000000000000c55e9c08d89c7fdaec656e0c49132e4c853d363f8b4e",
+                  "height": 969753
+                },
+                "stable": true
+              },
+              "confirmedBalanceSubatoms": "9999997003878536",
+              "decimals": 16,
+              "holderBalanceDecimal": "0.9999997003878536",
+              "holderPendingDeltaDecimal": "0",
+              "httpAndFenceSeconds": 8.631,
+              "label": "first-request",
+              "maximumResponseBytes": 3145728,
+              "maximumStageSeconds": 20,
+              "payloadSha256": "578f1c73a986b23d56fc8fcc32be669f9a7ffb2d506503270e82d1aa81db07c8",
+              "pendingDeltaSubatoms": "0",
+              "positiveConfirmed": true,
+              "predicateCount": 16,
+              "predicates": {
+                "authoritative-wallet": true,
+                "capacity-scope-model-checkpoint": true,
+                "complete-checkpoint": true,
+                "envelope-q16-model": true,
+                "exact-current-checkpoint": true,
+                "exact-q16-conservation": true,
+                "exact-unique-reservation-conservation": true,
+                "holder-decimals-match-subatoms": true,
+                "http-200-required": true,
+                "livenet-scope": true,
+                "one-canonical-q16-token": true,
+                "one-exact-capacity": true,
+                "one-exact-holder": true,
+                "positive-confirmed-exact-holder": true,
+                "snapshot-present": true,
+                "stable-core-fence": true
+              },
+              "ready": true,
+              "reservationCount": 42,
+              "reservationMembershipSha256": "5d2d1a0a13ab0b18371baa18a1b680286d4a7b4d64b2bf18e8c0d57930078dac",
+              "reservedBalanceSubatoms": "26915978817",
+              "snapshotId": "26ffd86b955e1ec5a55460f0",
+              "spendableBalanceSubatoms": "9999970087899719",
+              "status": 200,
+              "unitScale": "10000000000000000",
+              "verificationStatus": "passed"
+            },
+            {
+              "balanceVerified": true,
+              "capacityVerified": true,
+              "checkpoint": {
+                "after": {
+                  "hash": "00000000000000000000c55e9c08d89c7fdaec656e0c49132e4c853d363f8b4e",
+                  "height": 969753
+                },
+                "before": {
+                  "hash": "00000000000000000000c55e9c08d89c7fdaec656e0c49132e4c853d363f8b4e",
+                  "height": 969753
+                },
+                "stable": true
+              },
+              "confirmedBalanceSubatoms": "9999997003878536",
+              "decimals": 16,
+              "holderBalanceDecimal": "0.9999997003878536",
+              "holderPendingDeltaDecimal": "0",
+              "httpAndFenceSeconds": 2.408,
+              "label": "second-request",
+              "maximumResponseBytes": 3145728,
+              "maximumStageSeconds": 20,
+              "payloadSha256": "3586cd24819da35a6c45455db12aecec6296313fae7845bd06b0dcf0cfc22e43",
+              "pendingDeltaSubatoms": "0",
+              "positiveConfirmed": true,
+              "predicateCount": 16,
+              "predicates": {
+                "authoritative-wallet": true,
+                "capacity-scope-model-checkpoint": true,
+                "complete-checkpoint": true,
+                "envelope-q16-model": true,
+                "exact-current-checkpoint": true,
+                "exact-q16-conservation": true,
+                "exact-unique-reservation-conservation": true,
+                "holder-decimals-match-subatoms": true,
+                "http-200-required": true,
+                "livenet-scope": true,
+                "one-canonical-q16-token": true,
+                "one-exact-capacity": true,
+                "one-exact-holder": true,
+                "positive-confirmed-exact-holder": true,
+                "snapshot-present": true,
+                "stable-core-fence": true
+              },
+              "ready": true,
+              "reservationCount": 42,
+              "reservationMembershipSha256": "5d2d1a0a13ab0b18371baa18a1b680286d4a7b4d64b2bf18e8c0d57930078dac",
+              "reservedBalanceSubatoms": "26915978817",
+              "snapshotId": "26ffd86b955e1ec5a55460f0",
+              "spendableBalanceSubatoms": "9999970087899719",
+              "status": 200,
+              "unitScale": "10000000000000000",
+              "verificationStatus": "passed"
+            }
+          ],
+          "privateContentsExported": false,
+          "productionMutation": false,
+          "qualification": "Fresh observed conservation and per-read/per-scope Core fences are binding. Historical balances/counts are baseline only. First and second reads do not assert an empty cache. Raw listing membership is checked without frontend normalization. API supplies Core outpoint authority; individual gettxout results are not repeated. Actual API identity and fresh private environment custody must be bound by the reviewed owner.",
+          "scopedListings": [
+            {
+              "asset": "a3d0bc8528f91dfc52400a885bed7e49235396aa82aa9f95db41be629f1d5562",
+              "checkpoint": {
+                "hash": "00000000000000000000c55e9c08d89c7fdaec656e0c49132e4c853d363f8b4e",
+                "height": 969753
+              },
+              "complete": true,
+              "coreAfter": {
+                "hash": "00000000000000000000c55e9c08d89c7fdaec656e0c49132e4c853d363f8b4e",
+                "height": 969753
+              },
+              "coreBefore": {
+                "hash": "00000000000000000000c55e9c08d89c7fdaec656e0c49132e4c853d363f8b4e",
+                "height": 969753
+              },
+              "historicalCountBaseline": 1,
+              "indexedAt": "2026-10-03T19:28:59.335Z",
+              "listingIdsSha256": "efd63d3659cf8ac5bed5abb2dfc79628b26d7b69f3b363a23382d989492ab6e0",
+              "pages": [
+                {
+                  "checkpoint": {
+                    "hash": "00000000000000000000c55e9c08d89c7fdaec656e0c49132e4c853d363f8b4e",
+                    "height": 969753
+                  },
+                  "complete": true,
+                  "indexedAt": "2026-10-03T19:28:59.335Z",
+                  "snapshotId": "7cedcee2e8acccf4432ad03453e73fcc009ae3b404b5a7f1e924117a0a00e238",
+                  "totalCount": 1,
+                  "verifiedThrough": 1
+                }
+              ],
+              "ready": true,
+              "snapshotId": "7cedcee2e8acccf4432ad03453e73fcc009ae3b404b5a7f1e924117a0a00e238",
+              "symbol": "POWB",
+              "totalCount": 1
+            },
+            {
+              "asset": "3cb25745f937f2b4e5508e5400189fe8fe679cd8e84bfa1e9176d70c9761f15d",
+              "checkpoint": {
+                "hash": "00000000000000000000c55e9c08d89c7fdaec656e0c49132e4c853d363f8b4e",
+                "height": 969753
+              },
+              "complete": true,
+              "coreAfter": {
+                "hash": "00000000000000000000c55e9c08d89c7fdaec656e0c49132e4c853d363f8b4e",
+                "height": 969753
+              },
+              "coreBefore": {
+                "hash": "00000000000000000000c55e9c08d89c7fdaec656e0c49132e4c853d363f8b4e",
+                "height": 969753
+              },
+              "historicalCountBaseline": 0,
+              "indexedAt": "2026-10-03T19:28:59.335Z",
+              "listingIdsSha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+              "pages": [
+                {
+                  "checkpoint": {
+                    "hash": "00000000000000000000c55e9c08d89c7fdaec656e0c49132e4c853d363f8b4e",
+                    "height": 969753
+                  },
+                  "complete": true,
+                  "indexedAt": "2026-10-03T19:28:59.335Z",
+                  "snapshotId": "997572a20fc108ef2967ad095000195280a7a9b2f188dcd11ab25f7fc4c5bbe1",
+                  "totalCount": 0,
+                  "verifiedThrough": 0
+                }
+              ],
+              "ready": true,
+              "snapshotId": "997572a20fc108ef2967ad095000195280a7a9b2f188dcd11ab25f7fc4c5bbe1",
+              "symbol": "INCB",
+              "totalCount": 0
+            }
+          ],
+          "seconds": 14.798,
+          "shadowUnchanged": true,
+          "sourceBindings": {
+            "extraction": "exact named AST functions, TypeScript syntax erased locally; no application startup",
+            "files": {
+              "deploy/audit29/verify-candidate.mjs": "bbded71fa88cfc108c611b3beddd3a6c693b38477c356b682caed8985976abda",
+              "deploy/audit5/probe-candidate.mjs": "edc672e0327248c55eb073f4d720e37a8ea0ac33f61027456b8cf19609aa6ab1",
+              "server/proof-api.mjs": "9ab92c0fe3cb358fcaacccd62915eabc4c9ee75e42d29c6c989259b1305436f4",
+              "server/work-wallet-capacity.mjs": "98d9ad4071d6b34b8439c59b461eae073584d58ce43140f4214ea129ebce2d86",
+              "src/App.tsx": "87fd17ac3ade8eff1a5beae96f0bac6b43866d16ac8487d9bc347aa01b2a7ca2",
+              "src/shared/api/surfaceReadState.ts": "7c7ceed06f321a5b595a471efa2f9e10e37c64008cd99ed4039f0cad98775b4e"
+            },
+            "frozenCodeSha256": "37baad290031edee701ce664e9159798249d83e32cff14c1735168a7b3fe8d59",
+            "helpers": [
+              {
+                "end": 1313,
+                "name": "requireFact",
+                "path": "deploy/audit5/probe-candidate.mjs",
+                "sha256": "431157a02c5899b06a52c0a10f687cebe061a8c202f1baf0f9a0904b3a15a01d",
+                "start": 1238
+              },
+              {
+                "end": 1811,
+                "name": "canonicalJson",
+                "path": "deploy/audit5/probe-candidate.mjs",
+                "sha256": "c8f038bfeb82bab7d42424742463d8a73b92563405bc17edef87c4bec634f2dd",
+                "start": 1314
+              },
+              {
+                "end": 3522,
+                "name": "digest",
+                "path": "deploy/audit5/probe-candidate.mjs",
+                "sha256": "fd9868af9487f704feac82bc7aded917ddc164be0ec7e472900b9a031289b80c",
+                "start": 3425
+              },
+              {
+                "end": 4141,
+                "name": "decimalQ8",
+                "path": "deploy/audit5/probe-candidate.mjs",
+                "sha256": "299b6ce40f91a31d6f005a3d0e990991831e653640bb0428eff24f6aa8f67a6e",
+                "start": 3757
+              },
+              {
+                "end": 5538,
+                "name": "sameTip",
+                "path": "deploy/audit29/verify-candidate.mjs",
+                "sha256": "11fa5d724316fb762c00b56d8316c3f20e9da21f4b27c5dd83df5c0f094fd67e",
+                "start": 5369
+              },
+              {
+                "end": 9920,
+                "name": "verifyWalletResponse",
+                "path": "deploy/audit29/verify-candidate.mjs",
+                "sha256": "9d91e692c560e7d61125972b3250597eb1c0435bdb34976961eb7f3d9b088ca3",
+                "start": 7103
+              },
+              {
+                "end": 10190,
+                "name": "verifyFencedWalletRead",
+                "path": "deploy/audit29/verify-candidate.mjs",
+                "sha256": "44b86008570ee542985453b6ca7097b5c227d51e17dc3a6f8b05b7cb0d2d31b0",
+                "start": 9922
+              },
+              {
+                "end": 15744,
+                "name": "makeIO",
+                "path": "deploy/audit29/verify-candidate.mjs",
+                "sha256": "c3880d1725f1ec296ae672a7f0a51f22964b8efd13d6dc16a92f951ca9bf9bd2",
+                "start": 12607
+              },
+              {
+                "end": 4014,
+                "name": "listingDisplayProjectionFingerprint",
+                "path": "src/shared/api/surfaceReadState.ts",
+                "sha256": "94f6f7cdc87a570fbf2ed6dbcfb5745c4c832bee229210643e1c1fa92c69ab47",
+                "start": 2040
+              },
+              {
+                "end": 521644,
+                "name": "fetchCompleteTokenListings",
+                "path": "src/App.tsx",
+                "sha256": "ecc31902e89f2b14d8f5e8719b7f1b03ddc88a90ab44a4c6196c0e508ded370f",
+                "start": 511759
+              }
+            ]
+          },
+          "startedAt": "2026-10-03T19:32:50.402Z",
+          "timerAfter": {
+            "ActiveState": "active",
+            "LoadState": "loaded",
+            "SubState": "waiting",
+            "UnitFileState": "enabled"
+          },
+          "timerBefore": {
+            "ActiveState": "active",
+            "LoadState": "loaded",
+            "SubState": "waiting",
+            "UnitFileState": "enabled"
+          },
+          "timerRestored": true,
+          "timerRestoredReceiptSHA256": "7f9dc2e814ac2d8b016816be71a83e71dac1c1adaa809e63943903eb8b44b308",
+          "unit": "proofofwork-audit30-positive-scoped-38ac6e2bff2a-20261003T042000Z-shadow-v1.service"
+        },
+        "latestStrictV3Milestone": {
+          "accepted": {
+            "bytes": 31141,
+            "path": "deploy/audit30/verification/pow-audit30-strict-v3-exact-accepted-v1.json",
+            "sha256": "3524a1f5a72ad4dfeb4c48727f9af6a4d92258f49d631f9c74dd0fe76e96dc4c"
+          },
+          "actionOrdinal": 71,
+          "atUtc": "2026-10-03T19:25:59.887195+00:00",
+          "completed": {
+            "bytes": 5633,
+            "path": "deploy/audit30/verification/pow-audit30-strict-v3-exact-completed-v1.json",
+            "sha256": "3aa9e3981c1fc60aec3f54021abbc458b0cacbb7775403f6ed28474aafb0712c"
+          },
+          "cutoverHold": {
+            "approvedToCutoverByThisMilestone": false,
+            "qualification": "Historical strict-only hold at 19:25 UTC, subsequently satisfied by the separate positive shadow pass at 19:33 UTC; fresh guarded cutover still pending.",
+            "reason": "Full strict acceptance retains unresolved wallet availability and does not verify positive wallet balance or capacity.",
+            "requiredHttpStatus": 200,
+            "requiredPositiveWorkActualPass": true,
+            "requiredPositiveWorkPredicateCount": 16,
+            "requiredScopedBondActualPass": true
+          },
+          "gateResults": {
+            "events": {
+              "checkCount": 49,
+              "childStdoutSHA256": "610f1865e48792a58ef8a4f69a7b2c3239fc716212a4e453aee98db911580024",
+              "passed": true
+            },
+            "ids": {
+              "childStdoutSHA256": "e47b39e1ba8b2791ca1f8dcf098ede747d2c0c244a541b6495d48e1f3554d518",
+              "counts": {
+                "Confirmed winners": 508,
+                "Covered confirmed registry transactions": 565,
+                "Covered pending registry transactions": 22,
+                "Fetched transactions": 587,
+                "Pending candidates": 20
+              },
+              "passed": true
+            },
+            "parity": {
+              "blockingErrors": [],
+              "checkCount": 102,
+              "childStdoutSHA256": "1ae5481b823688f943998cb5334083430b0f488bf0709ccb2f11f2a7170c82ff",
+              "historicalWarnings": [
+                {
+                  "name": "work-amo-v5-migration",
+                  "ok": false,
+                  "severity": "warning"
+                },
+                {
+                  "name": "work-amo-v5-usd-quote-head",
+                  "ok": false,
+                  "severity": "warning"
+                }
+              ],
+              "passed": true,
+              "qualification": "All strict parity acceptance predicates pass; the two preserved historical warning checks remain false warning observations."
+            }
+          },
+          "strictExecution": {
+            "directDatabaseWrites": false,
+            "invocationID": "a230a1f4b038451a840d24ca23f8cd88",
+            "liveFiveUnchanged": true,
+            "productionStop": false,
+            "returncode": 0,
+            "seconds": 307.735,
+            "shadowUnchanged": true,
+            "stopped": true,
+            "timerRestored": true,
+            "timerRestoredReceiptSHA256": "7f9dc2e814ac2d8b016816be71a83e71dac1c1adaa809e63943903eb8b44b308",
+            "unit": "proofofwork-audit29-verify-38ac6e2bff2a-20261003T042000Z-shadow-strict-v3.service"
+          },
+          "walletAvailability": {
+            "balanceVerified": false,
+            "capacityVerified": false,
+            "checkpoint": {
+              "after": {
+                "hash": "000000000000000000003e5a6b77578b091ec4bda168e01da9377a6904d9937b",
+                "height": 969752
+              },
+              "before": {
+                "hash": "000000000000000000003e5a6b77578b091ec4bda168e01da9377a6904d9937b",
+                "height": 969752
+              },
+              "stable": true
+            },
+            "code": "CANONICAL_WALLET_INDEX_UNAVAILABLE",
+            "knownIssueGroups": [
+              "H24-01",
+              "AUD26-02",
+              "AUD26-03",
+              "PERF-27"
+            ],
+            "payloadSha256": "259e768df9ac23b096324a88a5f6f7d5279f2411757525bfdde94c3d20772a0a",
+            "qualification": "The exact existing fail-closed unavailable response is retained as unresolved availability. Neither wallet balance nor transfer capacity passed verification; inspect bounded private wallet-token-overlay-unavailable diagnostics.",
+            "ready": false,
+            "requiredSource": "proof-indexer-wallet-token-overlay",
+            "status": 503,
+            "verificationStatus": "known-unresolved-availability"
+          }
+        },
+        "nextRequired": "Separately admit the guarded API/worker cutover with fresh owned process identities and worker guard; verify actual production strict, positive WORK/scoped bond, all619 canonical mail and derived HTML behavior, and frontend release surfaces. Preserve each launch/failure/completion as its own dated event. Finish approved release hygiene, commit, deployment verification and handoff.",
+        "overallApiAcceptance": false,
+        "preparedUiBuildEvidence": {
+          "bytes": 822,
+          "path": "deploy/audit30/verification/pow-audit30-item2-ui-build-38ac-v1.json",
+          "sha256": "75c45b805e4e67ef44ddf6bc7b54a817b08a6226262f40596b697f1cdb183d5e"
+        },
+        "productionCodeCutoverPerformed": false,
+        "shadowApiAcceptance": true,
+        "status": "in-progress",
+        "uiPublicationPerformed": false,
+        "work": "full API/code acceptance and deployment"
+      },
+      "3": {
+        "status": "pending",
+        "work": "full database-growth migration"
+      },
+      "4": {
+        "status": "pending",
+        "work": "physical integrity, PITR and capacity"
+      },
+      "5": {
+        "status": "pending",
+        "work": "custody, financial and dependency closure"
+      },
+      "6": {
+        "status": "pending",
+        "work": "final release hygiene, commit and handoff"
+      }
+    }
+  },
+  "qualification": "Exact strict-v3 and separate later positive shadow receipts are reconciled. Earlier strict wallet503 and later actual positive200/scoped checkpoints are kept distinct. Shadow API acceptance passes; overall production/mail/UI release acceptance remains incomplete. Root must preserve/hash-check all listed custody files and review this exact draft before append. No tracker or production action performed by this draft.",
+  "requiredRootReconciliation": [
+    "Review exact draft, dated milestones and every receipt/source binding before append.",
+    "Preserve every public source custody file byte-for-byte in listed verification paths; do not export private capture/environment or raw child bodies.",
+    "Require fresh guarded native admission and actual production/mail/UI acceptance after this shadow milestone.",
+    "Preserve original70 actions and completed item1; finish hygiene under the approved update."
+  ],
+  "rootReconciliationStatus": "machine-reconciled-awaiting-root-review",
+  "schema": "pow-audit30-action71-proposed-update-v1",
+  "status": "draft-not-applied",
+  "trackerMutationPerformed": false,
+  "trackerPreimage": {
+    "actionCount": 70,
+    "bytes": 16824125,
+    "path": "audits/2026-10-02-audit30-remaining-phase-execution.evidence.json",
+    "sha256": "95760ccc16d409737985b843e71beba8394ecd71131957d1cb24c945c03bf106"
+  }
+}

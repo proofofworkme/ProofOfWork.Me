@@ -1,0 +1,61 @@
+{
+  "browserScreenshotBinding": {
+    "bytes": 102413,
+    "path": "/home/sixer/.codex/visualizations/2026/10/03/01a10273-4268-72a1-8cc7-793edfbdbbfc/audit30-item2-live-ui.jpg",
+    "sha256": "6e44b32e56fc556d569fa237c6e4cbcad596c3340aa3981d4d8455ecd52be3dc"
+  },
+  "browserVisibleObservation": {
+    "completeCoreReconciledHistoryLoaded": true,
+    "height": 969761,
+    "historicalSealTxLinkVisible": true,
+    "listingLogStatus": "Waiting for seal",
+    "powbOpenTickets": 1,
+    "powbSealedDisplayed": 0
+  },
+  "existingSourceSemantics": {
+    "confirmedSealPredicateLine": 9764,
+    "confirmedSealRequirement": "sealConfirmed===true and a recognized signed sale-ticket anchor",
+    "historicalLinkRequirement": "sealTxid exists, independent of confirmed-seal status",
+    "historicalSealLinkLine": 52539,
+    "recognizedAnchorPredicateLine": 9555,
+    "scopedSealedCountLine": 52096,
+    "statusLabelLine": 50800
+  },
+  "nativePublicReceiptBinding": {
+    "bytes": 30477,
+    "path": "/tmp/pow-audit30-production-v2-passive-read-native-v1.stdout",
+    "sha256": "0e550832b47fd82d7115fe2583290124f68f6c9b06970acf70571b35c15ae0f0"
+  },
+  "nativeScopeFacts": [
+    {
+      "checkpoint": {
+        "hash": "00000000000000000001040227843ad767fd64a490c923de13fabaf711b564ed",
+        "height": 969758
+      },
+      "complete": true,
+      "sealedCountExported": false,
+      "symbol": "POWB",
+      "totalCount": 1
+    },
+    {
+      "checkpoint": {
+        "hash": "00000000000000000001040227843ad767fd64a490c923de13fabaf711b564ed",
+        "height": 969758
+      },
+      "complete": true,
+      "sealedCountExported": false,
+      "symbol": "INCB",
+      "totalCount": 0
+    }
+  ],
+  "newNativeCalls": 0,
+  "privateDataIncluded": false,
+  "qualification": "Complete scoped listing membership does not assert any confirmed sealed ticket. The later browser Open1/Sealed0 and historical Seal TX link are consistent with the existing separate status/link predicates. No bug, current on-chain seal, signing, migration, or new scope is established by this observation.",
+  "reviewType": "local-readonly-source-and-existing-public-receipts",
+  "schema": "pow-audit30-item2-scoped-bond-ui-seal-qualification-v1",
+  "sourceBinding": {
+    "bytes": 2009129,
+    "path": "src/App.tsx",
+    "sha256": "87fd17ac3ade8eff1a5beae96f0bac6b43866d16ac8487d9bc347aa01b2a7ca2"
+  }
+}

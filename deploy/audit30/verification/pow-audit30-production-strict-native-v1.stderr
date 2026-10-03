@@ -1,0 +1,5 @@
+Traceback (most recent call last):
+  File "<string>", line 17, in <module>
+  File "/reviewed/postcutover-production-strict-v1.py", line 131, in main
+  File "/reviewed/postcutover-production-strict-v1.py", line 25, in need
+ValueError: STRICT_DRIVER_REFUSED

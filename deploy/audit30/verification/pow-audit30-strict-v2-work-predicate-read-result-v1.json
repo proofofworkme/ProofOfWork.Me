@@ -1,0 +1,10 @@
+{
+  "schema": "pow-audit30-narrow-work-predicate-transport-v1",
+  "sourceSHA256": "0052ce722c7303967053e513c7a773f26150527e2cb3c1ad6eea635d8fb29ad7",
+  "exitCode": 0,
+  "elapsedSeconds": 12.409,
+  "stdoutBytes": 1809,
+  "stdoutSHA256": "38dc163338f1122ff458eecee2ed7169d5fd5e7945b4e8edf6a7856ee01a804c",
+  "stderrBytes": 0,
+  "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}

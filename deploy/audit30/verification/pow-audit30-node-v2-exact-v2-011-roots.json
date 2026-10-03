@@ -1,0 +1,27 @@
+{
+  "at": "2026-10-03T19:47:14.163894+00:00",
+  "live": [
+    64512,
+    434755
+  ],
+  "stage": [
+    64512,
+    1195113
+  ],
+  "old": [
+    "d4d888757a1c44aab3b9690f79e1917935930f0f",
+    "4984c4a3143af9d91c1ebc09e2f749dfc8019b29",
+    "6811",
+    "207234653",
+    "14d994a8e92c5033cc2b300b581d3e36165028bc069e63434b678dd938df9c48"
+  ],
+  "candidate": [
+    "38ac6e2bff2ac16890724e5213346ef8a3ebd186",
+    "8b9b5e3cd47aa8e4204da717350a629176e30da6",
+    "6857",
+    "212132087",
+    "13035b6d1fbca1be9c03b1833f3abe578d4ae28331a341b3dea4301cc72b535c"
+  ],
+  "recoveryArchive": "/data/proofofwork-release-backups/managed/proofofwork-node-release-d4d8887-20261002T013828Z.tgz",
+  "recoverySha256": "19786a7927bdda2aa5be82e16e17832e9612628f3241329ceb3e42bfc84ba3f8"
+}

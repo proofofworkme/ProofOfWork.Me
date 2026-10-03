@@ -1,0 +1,65 @@
+{
+  "bindings": [
+    {
+      "bytes": 6926,
+      "path": "/tmp/pow-audit30-dual-pin-promotion-completed-read-v1.py",
+      "sha256": "e2888101f3e00da5a3e4ca94965a2d950b4a143030cd7d10c56ce6bb96b7adaf"
+    },
+    {
+      "bytes": 4792,
+      "path": "/tmp/pow-audit30-dual-pin-promotion-completed-read-native-v1.stdout",
+      "sha256": "5421a9fd55eb3a63cce35d03ec592515708a0d7aa22de4a6c0a847fbf96e60ae"
+    },
+    {
+      "bytes": 0,
+      "path": "/tmp/pow-audit30-dual-pin-promotion-completed-read-native-v1.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 1148,
+      "path": "/tmp/pow-audit30-dual-pin-promotion-completed-read-native-v1.json",
+      "sha256": "1567f02b1fe2f11e78e4f6f0404bb6fb4b2435447883688666e01757d099a071"
+    },
+    {
+      "bytes": 1934,
+      "path": "/tmp/pow-audit30-coupled-pin-checker-production-completed-public-v1.json",
+      "sha256": "70c15c91665c1fb7ba62675b0809d2a67f6971eb1f2c215595505f28eb6000f3"
+    },
+    {
+      "bytes": 7189,
+      "path": "/tmp/pow-audit30-coupled-pin-checker-promotion-plan-144000-v6.json",
+      "sha256": "7d50940fe5c2087cdc169fc14e27c006220dce12b91d2b15bcbb2bc4b9a6c2ee"
+    },
+    {
+      "bytes": 1097,
+      "path": "/tmp/pow-audit30-coupled-pin-checker-direct-human-approval-144000-v1.json",
+      "sha256": "46c60e55ab4b95a4b0f51d2efa17969466417c0ad53b8542a0de26667825b089"
+    },
+    {
+      "bytes": 20718,
+      "path": "/tmp/pow-audit30-retention-protection-oct3-dual-pin-candidate-v1.py",
+      "sha256": "795f1308b74ddc69a022ce7e1413fb4698a82e6cfb14265931d1951ee603c908"
+    }
+  ],
+  "checks": {
+    "actualPlanApprovalAndCheckerSourcePinsMatch": true,
+    "currentTwoInstalledNineFieldMetadataEqualsProducerRows": true,
+    "frozenReaderClosedValidationPassed": true,
+    "recoveredBase64EqualsExactCanonicalPublicCompletedBytes": true,
+    "root600Completed1934Bytes": true,
+    "root644OrderedSep29AndOct3Pin78Bytes": true,
+    "root755Checker20718BytesExact795f": true,
+    "transportExitZeroAndEmptyStderr": true
+  },
+  "knownHeldAbsencesUnresolved": 18,
+  "nativeCallsByReviewer": false,
+  "qualifications": [
+    "Actual fixed readback endpoint at 2026-10-03T14:40:39.645785+00:00; no continuous future-state claim.",
+    "Other static/unit/known18 checks are authenticated producer completion declarations; this receiver freshly verifies only the receipt and two installed files.",
+    "Two individual atomic replacements, not a joint transaction. No data mutation, recovery activation, retirement/PITR/deletion authorization, or body repair outcome inferred."
+  ],
+  "repositoryEditedByReviewer": false,
+  "reviewedAtUtc": "2026-10-03T14:46:48.952866+00:00",
+  "schema": "pow-audit30-independent-dual-pin-promotion-actual-result-review-v1",
+  "status": "accepted-actual-public-completion-and-two-installed-postimages"
+}

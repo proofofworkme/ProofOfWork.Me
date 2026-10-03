@@ -1,0 +1,194 @@
+{
+  "privateContentsExported": false,
+  "productionWrites": false,
+  "receipts": {
+    "item2-cutover-admission-item2-v2/014-postgres-preflight.json": {
+      "bytes": 1210,
+      "path": "/data/proofofwork-release-backups/audit30-node-release-38ac6e2bff2a-20261003T042000Z/item2-cutover-admission-item2-v2/014-postgres-preflight.json",
+      "sha256": "19bca6991fbcea85d144d21b1a20f9289fec8db57ff45df32bf6bcf682f030e5",
+      "localPath": "/tmp/pow-audit30-node-v2-exact-v2-014-postgres-preflight.json"
+    },
+    "item2-cutover-admission-item2-v2/bindings.json": {
+      "bytes": 894,
+      "path": "/data/proofofwork-release-backups/audit30-node-release-38ac6e2bff2a-20261003T042000Z/item2-cutover-admission-item2-v2/bindings.json",
+      "sha256": "8814890b172d6479e04419be25689142cc7bae2fff7a228108abc45acae95924",
+      "localPath": "/tmp/pow-audit30-node-v2-exact-v2-bindings.json"
+    },
+    "item2-cutover-admission-item2-v2/failed.json": {
+      "bytes": 478,
+      "path": "/data/proofofwork-release-backups/audit30-node-release-38ac6e2bff2a-20261003T042000Z/item2-cutover-admission-item2-v2/failed.json",
+      "sha256": "7acceb126cdb03f823c18a4179b67bdf7b7e0da2421ec91ed0268ad7d0f49181",
+      "localPath": "/tmp/pow-audit30-node-v2-exact-v2-failed.json"
+    },
+    "item2-cutover-admission-item2-v2/failure-observation.json": {
+      "bytes": 1755,
+      "path": "/data/proofofwork-release-backups/audit30-node-release-38ac6e2bff2a-20261003T042000Z/item2-cutover-admission-item2-v2/failure-observation.json",
+      "sha256": "74e6410b60f3d089c7c6d6ae14a26d78e78347d84f022738b62530ef616b2660",
+      "localPath": "/tmp/pow-audit30-node-v2-exact-v2-failure-observation.json"
+    },
+    "item2-cutover-admission-item2-v2/idle-scheduling.json": {
+      "bytes": 200,
+      "path": "/data/proofofwork-release-backups/audit30-node-release-38ac6e2bff2a-20261003T042000Z/item2-cutover-admission-item2-v2/idle-scheduling.json",
+      "sha256": "f4bff10e3e82f97a0a329de55a883b54b90d7071129e1e8c6cc482bdc37ac8d9",
+      "localPath": "/tmp/pow-audit30-node-v2-exact-v2-idle-scheduling.json"
+    },
+    "item2-cutover-admission-item2-v2/lease-stopped.json": {
+      "bytes": 1218,
+      "path": "/data/proofofwork-release-backups/audit30-node-release-38ac6e2bff2a-20261003T042000Z/item2-cutover-admission-item2-v2/lease-stopped.json",
+      "sha256": "3b20ca301b2eb69ccbcd88cb71821be8800e5652a4418b348b8a477fc3c58d60",
+      "localPath": "/tmp/pow-audit30-node-v2-exact-v2-lease-stopped.json"
+    },
+    "item2-cutover-admission-item2-v2/prior-lease-stop-bound.json": {
+      "bytes": 1541,
+      "path": "/data/proofofwork-release-backups/audit30-node-release-38ac6e2bff2a-20261003T042000Z/item2-cutover-admission-item2-v2/prior-lease-stop-bound.json",
+      "sha256": "88dd76b3c6434ba8943bbd1ca3053eab970c6d1a3b9fb941accd28c97207d072",
+      "localPath": "/tmp/pow-audit30-node-v2-exact-v2-prior-lease-stop-bound.json"
+    },
+    "item2-cutover-admission-item2-v2/request.json": {
+      "bytes": 20194,
+      "path": "/data/proofofwork-release-backups/audit30-node-release-38ac6e2bff2a-20261003T042000Z/item2-cutover-admission-item2-v2/request.json",
+      "sha256": "06a87175bd0e2dcb93862cc7f1198ab01e8d3d680acb703a7195a89a4567531c",
+      "localPath": "/tmp/pow-audit30-node-v2-exact-v2-request.json"
+    },
+    "item2-cutover-admission-item2-v2/worker-guard.json": {
+      "bytes": 3703,
+      "path": "/data/proofofwork-release-backups/audit30-node-release-38ac6e2bff2a-20261003T042000Z/item2-cutover-admission-item2-v2/worker-guard.json",
+      "sha256": "b0f4b31dc23fb73f87502e3108697cf4c6aab5629b3fb76687420b9878d8f617",
+      "localPath": "/tmp/pow-audit30-node-v2-exact-v2-worker-guard.json"
+    },
+    "proofofwork-audit29-cutover-38ac6e2bff2a-20261003T042000Z-item2-v2/002-bindings.json": {
+      "bytes": 570,
+      "path": "/data/proofofwork-audit29-cutover-38ac6e2bff2a-20261003T042000Z-item2-v2/002-bindings.json",
+      "sha256": "4975b30cb7a5e490d158d1c8274dc7306bebd039b11151d17fb0f9665678aeeb",
+      "localPath": "/tmp/pow-audit30-node-v2-exact-v2-002-bindings.json"
+    },
+    "proofofwork-audit29-cutover-38ac6e2bff2a-20261003T042000Z-item2-v2/006-postgres-preflight.json": {
+      "bytes": 1210,
+      "path": "/data/proofofwork-audit29-cutover-38ac6e2bff2a-20261003T042000Z-item2-v2/006-postgres-preflight.json",
+      "sha256": "54b996ffcc55b8222604b00b19b4e9684d7da5df2b0e9283ffaf8bce20b3c0cf",
+      "localPath": "/tmp/pow-audit30-node-v2-exact-v2-006-postgres-preflight.json"
+    },
+    "proofofwork-audit29-cutover-38ac6e2bff2a-20261003T042000Z-item2-v2/007-archive-request-identity.json": {
+      "bytes": 331,
+      "path": "/data/proofofwork-audit29-cutover-38ac6e2bff2a-20261003T042000Z-item2-v2/007-archive-request-identity.json",
+      "sha256": "a95bd12f0e42472f6d99bda4df4f157657b5d8788a7256842d053d38db7a9e12",
+      "localPath": "/tmp/pow-audit30-node-v2-exact-v2-007-archive-request-identity.json"
+    },
+    "proofofwork-audit29-cutover-38ac6e2bff2a-20261003T042000Z-item2-v2/008-shadow-accepted.json": {
+      "bytes": 526,
+      "path": "/data/proofofwork-audit29-cutover-38ac6e2bff2a-20261003T042000Z-item2-v2/008-shadow-accepted.json",
+      "sha256": "040b5571556f99b0af2f1e79d219cda27ed1a053242d78c41ece748dc7b95d25",
+      "localPath": "/tmp/pow-audit30-node-v2-exact-v2-008-shadow-accepted.json"
+    },
+    "proofofwork-audit29-cutover-38ac6e2bff2a-20261003T042000Z-item2-v2/011-roots.json": {
+      "bytes": 765,
+      "path": "/data/proofofwork-audit29-cutover-38ac6e2bff2a-20261003T042000Z-item2-v2/011-roots.json",
+      "sha256": "ca0926e63fdda936bd039dffc9145c0894a69e535dcf1e1de4b120c68cbc3bf2",
+      "localPath": "/tmp/pow-audit30-node-v2-exact-v2-011-roots.json"
+    },
+    "proofofwork-audit29-cutover-38ac6e2bff2a-20261003T042000Z-item2-v2/046-before.json": {
+      "bytes": 10019,
+      "path": "/data/proofofwork-audit29-cutover-38ac6e2bff2a-20261003T042000Z-item2-v2/046-before.json",
+      "sha256": "c7591c4547fff71f44fc03f05d98186d5a056faa06a6f94d8ef25e6048d4c07b",
+      "localPath": "/tmp/pow-audit30-node-v2-exact-v2-046-before.json"
+    },
+    "proofofwork-audit29-cutover-38ac6e2bff2a-20261003T042000Z-item2-v2/086-held.json": {
+      "bytes": 10922,
+      "path": "/data/proofofwork-audit29-cutover-38ac6e2bff2a-20261003T042000Z-item2-v2/086-held.json",
+      "sha256": "239ce0f9afff693288f5920195a543c07cf1d3e963b67e072c70c2ab93ec859e",
+      "localPath": "/tmp/pow-audit30-node-v2-exact-v2-086-held.json"
+    },
+    "proofofwork-audit29-cutover-38ac6e2bff2a-20261003T042000Z-item2-v2/090-failure.json": {
+      "bytes": 115,
+      "path": "/data/proofofwork-audit29-cutover-38ac6e2bff2a-20261003T042000Z-item2-v2/090-failure.json",
+      "sha256": "48bf889458763f03649007f243222fa26bd32541aea6afcfa799367f7e5ac832",
+      "localPath": "/tmp/pow-audit30-node-v2-exact-v2-090-failure.json"
+    },
+    "proofofwork-audit29-cutover-38ac6e2bff2a-20261003T042000Z-item2-v2/091-failure-root-position.json": {
+      "bytes": 103,
+      "path": "/data/proofofwork-audit29-cutover-38ac6e2bff2a-20261003T042000Z-item2-v2/091-failure-root-position.json",
+      "sha256": "f4ccee20b5173b7e652d4a85dba9807c80870bd16d0e7ef9c2cf4da808573506",
+      "localPath": "/tmp/pow-audit30-node-v2-exact-v2-091-failure-root-position.json"
+    },
+    "proofofwork-audit29-cutover-38ac6e2bff2a-20261003T042000Z-item2-v2/093-ready.json": {
+      "bytes": 5937,
+      "path": "/data/proofofwork-audit29-cutover-38ac6e2bff2a-20261003T042000Z-item2-v2/093-ready.json",
+      "sha256": "829ac83bd52be54611b8600c539372e355f41d06cf89d4498d2e61ef55fdf27b",
+      "localPath": "/tmp/pow-audit30-node-v2-exact-v2-093-ready.json"
+    },
+    "proofofwork-audit29-cutover-38ac6e2bff2a-20261003T042000Z-item2-v2/098-timer-restoration-intent.json": {
+      "bytes": 73,
+      "path": "/data/proofofwork-audit29-cutover-38ac6e2bff2a-20261003T042000Z-item2-v2/098-timer-restoration-intent.json",
+      "sha256": "9367fdfe0935bdee81acd46f8ec7c47fde16ef999b1df668011341a82570785b",
+      "localPath": "/tmp/pow-audit30-node-v2-exact-v2-098-timer-restoration-intent.json"
+    },
+    "proofofwork-audit29-cutover-38ac6e2bff2a-20261003T042000Z-item2-v2/116-timers-restored.json": {
+      "bytes": 1451,
+      "path": "/data/proofofwork-audit29-cutover-38ac6e2bff2a-20261003T042000Z-item2-v2/116-timers-restored.json",
+      "sha256": "5a4edad29e2d89b899449a6c5d57b40b1c062021b204a1b4cc31e7472d63a60f",
+      "localPath": "/tmp/pow-audit30-node-v2-exact-v2-116-timers-restored.json"
+    },
+    "proofofwork-audit29-cutover-38ac6e2bff2a-20261003T042000Z-item2-v2/117-final.json": {
+      "bytes": 210,
+      "path": "/data/proofofwork-audit29-cutover-38ac6e2bff2a-20261003T042000Z-item2-v2/117-final.json",
+      "sha256": "16ffbb490cab2da985df2d91d9dfcd47944bc56303d6a01ca4e2c6c7356d862e",
+      "localPath": "/tmp/pow-audit30-node-v2-exact-v2-117-final.json"
+    }
+  },
+  "schema": "pow-audit30-item2-node-v2-public-reconciliation-v1",
+  "serviceStates": {
+    "bitcoind.service": {
+      "ActiveState": "active",
+      "InvocationID": "64e1fa7be2e2442d8c7f5763f60b85fb",
+      "LoadState": "loaded",
+      "MainPID": "1324302",
+      "Result": "success",
+      "SubState": "running",
+      "UnitFileState": "enabled"
+    },
+    "electrs.service": {
+      "ActiveState": "active",
+      "InvocationID": "72418b1c7ab245e4a37685ed868a1084",
+      "LoadState": "loaded",
+      "MainPID": "1324320",
+      "Result": "success",
+      "SubState": "running",
+      "UnitFileState": "enabled"
+    },
+    "postgresql@16-main.service": {
+      "ActiveState": "active",
+      "InvocationID": "e0bf545f0ad944e89fe1005577e61b9c",
+      "LoadState": "loaded",
+      "MainPID": "1537429",
+      "Result": "success",
+      "SubState": "running",
+      "UnitFileState": "enabled-runtime"
+    },
+    "proofofwork-api.service": {
+      "ActiveState": "active",
+      "InvocationID": "208f8bcbecc54afbb7166754f12065c2",
+      "LoadState": "loaded",
+      "MainPID": "2103747",
+      "Result": "success",
+      "SubState": "running",
+      "UnitFileState": "enabled"
+    },
+    "proofofwork-indexer-worker.service": {
+      "ActiveState": "active",
+      "InvocationID": "33b3ee25490749db89e0d55fd29d0afb",
+      "LoadState": "loaded",
+      "MainPID": "2103760",
+      "Result": "success",
+      "SubState": "running",
+      "UnitFileState": "enabled"
+    },
+    "proofofwork-postgres-logical-backup.timer": {
+      "ActiveState": "active",
+      "InvocationID": "ba911fbd3c8a45838f41605f1578e702",
+      "LoadState": "loaded",
+      "Result": "success",
+      "SubState": "waiting",
+      "UnitFileState": "enabled"
+    }
+  }
+}

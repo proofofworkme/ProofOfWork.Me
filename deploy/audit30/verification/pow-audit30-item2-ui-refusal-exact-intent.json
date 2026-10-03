@@ -1,0 +1,10 @@
+{
+  "releaseId": "38ac6e2bff2a-20261003T190512Z",
+  "commit": "38ac6e2bff2ac16890724e5213346ef8a3ebd186",
+  "tree": "8b9b5e3cd47aa8e4204da717350a629176e30da6",
+  "phase": "surfaces-stage",
+  "planSha256": "ebb2f481c499f5e25d0787fd59c537b4ebff30c2c6afc93959361370eda07104",
+  "continuousParentLock": true,
+  "historicalDeletion": false,
+  "retentionDeferred": true
+}

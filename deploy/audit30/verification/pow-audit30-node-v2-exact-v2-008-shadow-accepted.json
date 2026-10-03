@@ -1,0 +1,14 @@
+{
+  "at": "2026-10-03T19:47:12.228965+00:00",
+  "sha256": "3524a1f5a72ad4dfeb4c48727f9af6a4d92258f49d631f9c74dd0fe76e96dc4c",
+  "candidate": {
+    "commit": "38ac6e2bff2ac16890724e5213346ef8a3ebd186",
+    "tree": "8b9b5e3cd47aa8e4204da717350a629176e30da6",
+    "runtimeSha256": "13035b6d1fbca1be9c03b1833f3abe578d4ae28331a341b3dea4301cc72b535c"
+  },
+  "stableCheckpoint": {
+    "height": 969752,
+    "hash": "000000000000000000003e5a6b77578b091ec4bda168e01da9377a6904d9937b"
+  },
+  "completedAt": "2026-10-03T19:25:58.846Z"
+}

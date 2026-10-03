@@ -1,0 +1,52 @@
+{
+  "actualFullRead": {
+    "bytes": 32091,
+    "expiresAtUtc": "2026-10-03T14:48:15.911065+00:00",
+    "leafAtUtc": "2026-10-03T14:33:15.911065+00:00",
+    "leafRawSha256": "ed91015b2456ad5958a7e144a3c3176d9cbdb229dde5111b60c9da2d46a40be3",
+    "path": "/tmp/pow-audit30-promotion-full-read-native-144000-v2.stdout",
+    "sha256": "6304338f8004b3af1b1425e047dac193b52106dd7f496ffa46c0f355c992a369"
+  },
+  "actualState": {
+    "atUtc": "2026-10-03T14:33:45.879152+00:00",
+    "bytes": 8361,
+    "path": "/tmp/pow-audit30-coupled-promotion-state-observer-native-144000-v2.stdout",
+    "sha256": "e6a6ce3c6f6a21c1c7296dd5a63d57a50871634cf2c20775493b623228bd8973"
+  },
+  "approvalRawSha256": "46c60e55ab4b95a4b0f51d2efa17969466417c0ad53b8542a0de26667825b089",
+  "atUtc": "2026-10-03T14:35:15.985156+00:00",
+  "baseAbsenceObserved": false,
+  "baseMustBeAbsent": true,
+  "caller": {
+    "bytes": 1925,
+    "path": "/tmp/pow-audit30-coupled-pin-checker-package-transport-144000-v1.py",
+    "sha256": "519f31a2355302f4dc7658a5264619b43dc4c70fadea4fdfe3c7e13e4d8480bf"
+  },
+  "canonicalPlanByteEquality": true,
+  "controllerSha256": "dfa403996e776a8ed192a024848b06f71b5fa041a24bf5b9687ff04ce3714535",
+  "creatorSha256": "8056f85ba5e5d45057df5233e7ed4cb880aa2687f6d8895a8ed647ff2902b9ff",
+  "deletionAuthorized": false,
+  "exactCreatorRequestDecodePassed": true,
+  "humanMessageRawSha256": "d93213cc5dec29d6c4aaf3178f76597665211100423e41d61d60fd163dfb5dcf",
+  "humanProvenanceRawSha256": "184065046a3b6031ca0b47e5e1932321bab2672298a7da1fc9654c6d3a3fec49",
+  "inertV6PlanHumanAndStateValidationPassed": true,
+  "nativeCallPerformed": false,
+  "packageCreated": false,
+  "pinOrCheckerChanged": false,
+  "plan": {
+    "bytes": 7189,
+    "path": "/tmp/pow-audit30-coupled-pin-checker-promotion-plan-144000-v6.json",
+    "sha256": "7d50940fe5c2087cdc169fc14e27c006220dce12b91d2b15bcbb2bc4b9a6c2ee"
+  },
+  "qualification": "Only local canonical assembly from Root-authored actual human authority and reviewed public endpoint captures. baseMetadata=null is a must-absent runtime guard, not an observed absence. The four restore metadata rows remain immutable expected guards; creator and promotion independently re-read all four before and after. Root must review these exact files before one creation-only native action, accept its actual outcome, and separately admit exact promotion.",
+  "request": {
+    "bytes": 91426,
+    "path": "/tmp/pow-audit30-coupled-pin-checker-package-request-144000-v1.json",
+    "sha256": "f91ba6037c3a24e3b92ee2c9218ded603998c6c0c443e0702d7a5ef7c17d3c1a"
+  },
+  "restoreExpectedMetadataSourceSha256": "911a77fc317f4a7a8c388e424172a0a4afe88fd8861efb7c9b0b979ab79431dc",
+  "restoreFilesFreshlyObservedByThisAssembly": false,
+  "restoreFilesRecheckedByCreatorAndPromotion": true,
+  "schema": "pow-audit30-approved-coupled-package-local-assembly-v1",
+  "sourceCodesAndOldTemplatesUnchanged": true
+}

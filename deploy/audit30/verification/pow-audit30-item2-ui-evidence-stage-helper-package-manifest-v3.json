@@ -1,0 +1,30 @@
+{
+  "schema": "pow-audit30-item2-ui-evidence-stage-helper-package-v3",
+  "releaseId": "38ac6e2bff2a-20261003T190512Z",
+  "exactStageRoot": "/var/backups/proofofwork-ui/transport-evidence/38ac6e2bff2a-20261003T190512Z/proofofwork-www-stage-38ac6e2bff2a-20261003T190512Z",
+  "exactStageAllocationParent": "/var/backups/proofofwork-ui/transport-evidence/38ac6e2bff2a-20261003T190512Z",
+  "installedHelpersModified": false,
+  "capacityBodiesAndLimitsUnchanged": true,
+  "files": {
+    "proofofwork-ui-capacity.py": {
+      "bytes": 13570,
+      "sha256": "ea6745b2519d57fbd08deff723e81540d4dad2b4c649ff7e6c2b060a7e7edbb6"
+    },
+    "stager.py": {
+      "bytes": 59017,
+      "sha256": "4158d7898c4a90d3adfc9bb7e8160054f7c6b4e1f4b36cc42b2504faef0f6beb"
+    },
+    "receiver.py": {
+      "bytes": 8449,
+      "sha256": "7e40dc14691d3c239c242ee2f543093856cbf84450094deb1b0edb06669b0d7f"
+    },
+    "provenance.sh": {
+      "bytes": 66706,
+      "sha256": "ac22cacbfcb94311efc05e9e4e10edd18a54216b617f4b33f952a3c645b26af1"
+    },
+    "publisher.sh": {
+      "bytes": 39763,
+      "sha256": "e5a1f4782954ba83cd4c128c14541061dc1f74c5d8ec289c6154a44e086bb043"
+    }
+  }
+}

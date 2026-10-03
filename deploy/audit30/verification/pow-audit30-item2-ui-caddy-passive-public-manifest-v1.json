@@ -1,0 +1,49 @@
+{
+  "nativeInvocationsByPreparingAgent": 0,
+  "privateDataIncluded": false,
+  "publicFiles": [
+    {
+      "bytes": 8875,
+      "destination": "deploy/audit30/verification/pow-audit30-item2-ui-caddy-passive-read-v1.py",
+      "privateDataIncluded": false,
+      "sha256": "f56e7050ba8f569ad7a00cd5698e3c8225e00a3f3fcecd1287d791dafe641729",
+      "source": "/tmp/pow-audit30-item2-ui-caddy-passive-read-v1.py"
+    },
+    {
+      "bytes": 4342,
+      "destination": "deploy/audit30/verification/pow-audit30-item2-ui-caddy-passive-read-local-v1.py",
+      "privateDataIncluded": false,
+      "sha256": "a2908b97b56638ca94457ac35acc99d4cecdb6da3a6766c5ad9cee2a8e4ed7f7",
+      "source": "/tmp/pow-audit30-item2-ui-caddy-passive-read-local-v1.py"
+    },
+    {
+      "bytes": 7111,
+      "destination": "deploy/audit30/verification/pow-audit30-item2-ui-caddy-passive-read-v1.test.py",
+      "privateDataIncluded": false,
+      "sha256": "c5b17144b40020773504f10e6e0b42f4b7e06340ad2ea35b99d3a14b1f0e9629",
+      "source": "/tmp/pow-audit30-item2-ui-caddy-passive-read-v1.test.py"
+    },
+    {
+      "bytes": 0,
+      "destination": "deploy/audit30/verification/pow-audit30-item2-ui-caddy-passive-local-test-v1.stdout",
+      "privateDataIncluded": false,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "source": "/tmp/pow-audit30-item2-ui-caddy-passive-local-test-v1.stdout"
+    },
+    {
+      "bytes": 107,
+      "destination": "deploy/audit30/verification/pow-audit30-item2-ui-caddy-passive-local-test-v1.stderr",
+      "privateDataIncluded": false,
+      "sha256": "c9f2c1b54e73f254402bb1a5b42d7d0ba1341d1dcb01aa3cc77c43238566aaf5",
+      "source": "/tmp/pow-audit30-item2-ui-caddy-passive-local-test-v1.stderr"
+    },
+    {
+      "bytes": 1903,
+      "destination": "deploy/audit30/verification/pow-audit30-item2-ui-caddy-passive-local-validation-v1.json",
+      "privateDataIncluded": false,
+      "sha256": "2c2d3bd6c526d92349074bdc8505ec1b6ef2f6a0f49cd33a0f5d456eceae0553",
+      "source": "/tmp/pow-audit30-item2-ui-caddy-passive-local-validation-v1.json"
+    }
+  ],
+  "schema": "pow-audit30-item2-ui-caddy-passive-public-manifest-v1"
+}

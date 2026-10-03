@@ -1,0 +1,34 @@
+{
+  "automaticRetry": false,
+  "captures": {
+    "stderr": {
+      "bytes": 0,
+      "path": "/tmp/pow-audit30-postcutover-mail-html-run-native-v3.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "stdout": {
+      "bytes": 969,
+      "path": "/tmp/pow-audit30-postcutover-mail-html-run-native-v3.stdout",
+      "sha256": "c0c2a4a5ab78ab9e70a36b5d5e3c016704f2f3d08730b6b30735ceb9a3400c3d"
+    }
+  },
+  "exitCode": 0,
+  "failure": null,
+  "finishedAtUtc": "2026-10-03T20:27:22.465139+00:00",
+  "inputBindings": {
+    "requestBytes": 77820,
+    "requestSha256": "d8a456455ca7642ce3b3a663c5fa640f591a300965f6b9136ff1d352b6dff0b6",
+    "sourceSha256": "b0c4ca5c0cb94bef317b13ea57857a5edbac2b08095969a56489ca2c0209a844"
+  },
+  "outerDeadlineSeconds": 980,
+  "productionDataMutationRequested": false,
+  "receivedBytes": {
+    "stderr": 0,
+    "stdout": 969
+  },
+  "remoteUnitStoppedCertifiedByTransport": false,
+  "schema": "pow-audit30-readonly-owned-transport-result-v1",
+  "seconds": 321.907411,
+  "startedAtUtc": "2026-10-03T20:22:00.557728+00:00",
+  "typedStdinBytesDelivered": 77820
+}

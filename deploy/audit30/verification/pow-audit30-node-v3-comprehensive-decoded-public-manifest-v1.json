@@ -1,0 +1,242 @@
+{
+  "atUtc": "2026-10-03T20:04:08.333155+00:00",
+  "controller": {
+    "ActiveState": "inactive",
+    "InvocationID": "",
+    "LoadState": "not-found",
+    "MainPID": "0",
+    "Result": "success",
+    "SubState": "dead"
+  },
+  "currentTimers": {
+    "pg_basebackup@16-main.timer": {
+      "ActiveState": "inactive",
+      "LoadState": "loaded",
+      "SubState": "dead",
+      "UnitFileState": "disabled"
+    },
+    "pg_compresswal@16-main.timer": {
+      "ActiveState": "inactive",
+      "LoadState": "loaded",
+      "SubState": "dead",
+      "UnitFileState": "disabled"
+    },
+    "proofofwork-cache-prune.timer": {
+      "ActiveState": "active",
+      "LoadState": "loaded",
+      "SubState": "waiting",
+      "UnitFileState": "enabled"
+    },
+    "proofofwork-node-release-health.timer": {
+      "ActiveState": "active",
+      "LoadState": "loaded",
+      "SubState": "waiting",
+      "UnitFileState": "enabled"
+    },
+    "proofofwork-node-release-prune.timer": {
+      "ActiveState": "inactive",
+      "LoadState": "masked",
+      "SubState": "dead",
+      "UnitFileState": "masked"
+    },
+    "proofofwork-postgres-logical-backup.timer": {
+      "ActiveState": "active",
+      "LoadState": "loaded",
+      "SubState": "waiting",
+      "UnitFileState": "enabled"
+    },
+    "proofofwork-postgres-query-health.timer": {
+      "ActiveState": "active",
+      "LoadState": "loaded",
+      "SubState": "waiting",
+      "UnitFileState": "enabled"
+    },
+    "proofofwork-worker-recovery-watch.timer": {
+      "ActiveState": "active",
+      "LoadState": "loaded",
+      "SubState": "waiting",
+      "UnitFileState": "enabled"
+    }
+  },
+  "liveFive": {
+    "bitcoind.service": {
+      "ActiveState": "active",
+      "InvocationID": "64e1fa7be2e2442d8c7f5763f60b85fb",
+      "LoadState": "loaded",
+      "MainPID": "1324302",
+      "Result": "success",
+      "SubState": "running"
+    },
+    "electrs.service": {
+      "ActiveState": "active",
+      "InvocationID": "72418b1c7ab245e4a37685ed868a1084",
+      "LoadState": "loaded",
+      "MainPID": "1324320",
+      "Result": "success",
+      "SubState": "running"
+    },
+    "postgresql@16-main.service": {
+      "ActiveState": "active",
+      "InvocationID": "e0bf545f0ad944e89fe1005577e61b9c",
+      "LoadState": "loaded",
+      "MainPID": "1537429",
+      "Result": "success",
+      "SubState": "running"
+    },
+    "proofofwork-api.service": {
+      "ActiveState": "active",
+      "InvocationID": "546739c810df48d4956961b0931b6fc5",
+      "LoadState": "loaded",
+      "MainPID": "3372731",
+      "Result": "success",
+      "SubState": "running"
+    },
+    "proofofwork-indexer-worker.service": {
+      "ActiveState": "active",
+      "InvocationID": "b2dc36ef816c4311b4c9aa0740d781a9",
+      "LoadState": "loaded",
+      "MainPID": "3372743",
+      "Result": "success",
+      "SubState": "running"
+    }
+  },
+  "privateContentsExported": false,
+  "productionMutationsPerformedByDecoder": false,
+  "protections": {
+    "/etc/proofofwork-postgres-logical-backup.pins": {
+      "bytes": 78,
+      "sha256": "22f66cac8419985c544d4b41c6ea9cd400fc99805c588694a9a619a3f120d09b",
+      "stamp": [
+        64512,
+        3147976,
+        33188,
+        0,
+        0,
+        1,
+        78,
+        1791038234172129395,
+        1791038234172129395
+      ]
+    },
+    "/usr/local/sbin/proofofwork-retention-protection": {
+      "bytes": 20718,
+      "sha256": "795f1308b74ddc69a022ce7e1413fb4698a82e6cfb14265931d1951ee603c908",
+      "stamp": [
+        64512,
+        6292440,
+        33261,
+        0,
+        0,
+        1,
+        20718,
+        1791038234205129387,
+        1791038234205129387
+      ]
+    }
+  },
+  "receipts": [
+    {
+      "bytes": 10340,
+      "key": "before",
+      "path": "/tmp/pow-audit30-node-v3-exact-v3-047-before.json",
+      "remotePath": "/data/proofofwork-audit29-cutover-38ac6e2bff2a-20261003T042000Z-item2-v3/047-before.json",
+      "sha256": "86bb3f0be65510d23c68fb1ef815241746636cf9b5e225b961de70bfe86676b7"
+    },
+    {
+      "bytes": 206,
+      "key": "final",
+      "path": "/tmp/pow-audit30-node-v3-exact-v3-177-final.json",
+      "remotePath": "/data/proofofwork-audit29-cutover-38ac6e2bff2a-20261003T042000Z-item2-v3/177-final.json",
+      "sha256": "c61ddaac5d1b3e47c880806010f41f8d16a1de0817d4654c9c238705f21a2d80"
+    },
+    {
+      "bytes": 5950,
+      "key": "ready",
+      "path": "/tmp/pow-audit30-node-v3-exact-v3-147-ready.json",
+      "remotePath": "/data/proofofwork-audit29-cutover-38ac6e2bff2a-20261003T042000Z-item2-v3/147-ready.json",
+      "sha256": "615a1d48cc028ee723bcdc26d03d2ca0d2dcab5fd9759b86488c119c437059e1"
+    },
+    {
+      "bytes": 2687,
+      "key": "rootCompleted",
+      "path": "/tmp/pow-audit30-node-v3-exact-v3-completed.json",
+      "remotePath": "/data/proofofwork-release-backups/audit30-node-release-38ac6e2bff2a-20261003T042000Z/item2-cutover-admission-item2-v3/completed.json",
+      "sha256": "c7007b02c71e0fa9ae8fcc6e6d94c5ff800292e66031eb9b6a16bded7c72cd13"
+    },
+    {
+      "bytes": 1451,
+      "key": "timersRestored",
+      "path": "/tmp/pow-audit30-node-v3-exact-v3-176-timers-restored.json",
+      "remotePath": "/data/proofofwork-audit29-cutover-38ac6e2bff2a-20261003T042000Z-item2-v3/176-timers-restored.json",
+      "sha256": "1a22f78bf7ccbb50f3d45e28f5e029a4736c1fb1bee84d88fe07391b938f2ccf"
+    }
+  ],
+  "schema": "pow-audit30-node-v3-comprehensive-decoded-public-manifest-v1",
+  "source": {
+    "bytes": 32814,
+    "path": "/tmp/pow-audit30-item2-node-v3-comprehensive-v2.stdout",
+    "sha256": "ae4f1e6d7606073bec9bfff2723f40226de545804e1db87bac88d1209f6e99a1"
+  },
+  "sourcePins": {
+    "/opt/proofofwork-api/scripts/backfill-proof-indexer.mjs": {
+      "bytes": 1318676,
+      "sha256": "fab9f9540d2e59cb76fba915ed7ac8ef962df6a38c3b2a5d24773cd4e4b08c15",
+      "stamp": [
+        64512,
+        1195635,
+        33184,
+        1000,
+        1000,
+        1,
+        1318676,
+        1791001227800753293,
+        1791001227800753293
+      ]
+    },
+    "/opt/proofofwork-api/scripts/run-proof-indexer-worker.mjs": {
+      "bytes": 239199,
+      "sha256": "83175cbbb7bfff7062ffe2d8ba1cb8ee390968930234ff0c7bceca79595c5758",
+      "stamp": [
+        64512,
+        1195770,
+        33184,
+        1000,
+        1000,
+        1,
+        239199,
+        1791001227816753294,
+        1791001227816753294
+      ]
+    },
+    "/opt/proofofwork-api/server/db/proof-index-reader.mjs": {
+      "bytes": 1533661,
+      "sha256": "9278b81473c23a2c9d06c6b1306268c360539f833cdd7967b73fd99a35275b87",
+      "stamp": [
+        64512,
+        1195792,
+        33184,
+        1000,
+        1000,
+        1,
+        1533661,
+        1791001227819753294,
+        1791001227819753294
+      ]
+    },
+    "/opt/proofofwork-api/server/proof-api.mjs": {
+      "bytes": 2592744,
+      "sha256": "9ab92c0fe3cb358fcaacccd62915eabc4c9ee75e42d29c6c989259b1305436f4",
+      "stamp": [
+        64512,
+        1195808,
+        33184,
+        1000,
+        1000,
+        1,
+        2592744,
+        1791001227825753295,
+        1791001227825753295
+      ]
+    }
+  }
+}

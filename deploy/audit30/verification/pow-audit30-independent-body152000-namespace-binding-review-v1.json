@@ -1,0 +1,51 @@
+{
+  "bindings": [
+    {
+      "bytes": 142731,
+      "path": "/tmp/pow-audit30-body-prepare-envelope-20261003T152000Z-v1.json",
+      "sha256": "08eb30a24b7b4f564e50f2ddfa765ee9ade236d081da94c4a54335d9519607cb"
+    },
+    {
+      "bytes": 1526,
+      "path": "/tmp/pow-audit30-body-prepare-owned-caller-152000-v1.py",
+      "sha256": "319c392580d9de503f840fa876d28fdcde6a43510edd46e7144d01b2e4ad7ef9"
+    },
+    {
+      "bytes": 142727,
+      "path": "/tmp/pow-audit30-body-run-envelope-20261003T152000Z-v1.json",
+      "sha256": "f97ce8dbd4cdc00ad4f591a02aee4ec99478cb2e4fb9e96742d43802e5a95b31"
+    },
+    {
+      "bytes": 1510,
+      "path": "/tmp/pow-audit30-body-run-owned-caller-152000-v1.py",
+      "sha256": "bffb725e3cc4d75f814903de16880ddee8200c0942e97b6770854328ef21c1bc"
+    },
+    {
+      "bytes": 2874,
+      "path": "/tmp/pow-audit30-body-152000-namespace-binding-v1.test.py",
+      "sha256": "f1567cbf4fcfb073a01ad80ad248906394a987fc01a683303138255c1c5dc06b"
+    }
+  ],
+  "checks": {
+    "actualFrozen1dedefPrefixASTPredicatePasses": true,
+    "callersOnlyRequestPathSHAAndLowercasePrefixChanged": true,
+    "envelopeSingleRIDReversalByteEqualsPreserved145500": true,
+    "prepareRunDifferOnlyMode": true,
+    "rootb989SourceAndDecodeUnchanged": true,
+    "sameHumanf37eAllWriterProofAndInverseBindings": true
+  },
+  "qualifications": [
+    "Distinct152000 namespace preserves failed145500 package/evidence; no current absence or action-time live/worker/Core admission inferred. Original runtime checks still execute.",
+    "All approved writer/manifest/source/proof/authority/caps remain byte-identical; no new body algorithm, protocol, inverse or automatic retry authority.",
+    "Root owns separate PREPARE and RUN admission and actual result reconciliation. Reviewer made no native or repository changes."
+  ],
+  "reviewedAtUtc": "2026-10-03T15:08:02.369594+00:00",
+  "schema": "pow-audit30-independent-body152000-namespace-binding-review-v1",
+  "status": "accepted-source-only-exact-namespace-retarget",
+  "tests": {
+    "isolatedPythonWarningsError": {
+      "passed": 5,
+      "seconds": 0.024
+    }
+  }
+}

@@ -1,0 +1,458 @@
+{
+  "baseHead": "6b121b8c1ddc8befbcfa09ae652ce71e82b34fe0",
+  "bodyApprovalReceipt": {
+    "bytes": 2651,
+    "path": "/tmp/pow-audit30-body-human-approval-20261003T142900Z.json",
+    "sha256": "f37e16a1d9b8c6f52081a7c44d01d8a5142051770d7d16aafe9fcaa9e5354c42",
+    "type": "json-public-receipt"
+  },
+  "bodyAttemptReceipt": {
+    "bytes": 1273,
+    "path": "/tmp/pow-audit30-body-run-native-20261003t145500z-v1.json",
+    "sha256": "a42cf07298cffe914132eb25376b860d4b875ac59f60e2152e547ff23cab0d71",
+    "type": "json-public-receipt"
+  },
+  "bodyReconciliationReceipt": null,
+  "configApprovalReceipt": {
+    "bytes": 1097,
+    "path": "/tmp/pow-audit30-coupled-pin-checker-direct-human-approval-144000-v1.json",
+    "sha256": "46c60e55ab4b95a4b0f51d2efa17969466417c0ad53b8542a0de26667825b089",
+    "type": "json-public-receipt"
+  },
+  "configPeerAcceptance": {
+    "bytes": 2880,
+    "path": "/tmp/pow-audit30-independent-dual-pin-promotion-actual-result-review-v1.json",
+    "sha256": "33a14d6bae84fd5cc272e6e568e16e341fcf6c9096cfba2cb967d12bf4e501bc",
+    "type": "json-public-receipt"
+  },
+  "configRootAcceptance": {
+    "bytes": 1907,
+    "path": "/tmp/pow-audit30-root-dual-pin-production-acceptance-v1.json",
+    "sha256": "e6f2f0be1f179a7b67d3bd0e5ac06ecd9ccd84ff9df83a4ed0b58e757bbf0f02",
+    "type": "json-public-receipt"
+  },
+  "configurationCompletedReceipt": {
+    "bytes": 1934,
+    "path": "/tmp/pow-audit30-coupled-pin-checker-production-completed-public-v1.json",
+    "sha256": "70c15c91665c1fb7ba62675b0809d2a67f6971eb1f2c215595505f28eb6000f3",
+    "type": "json-public-receipt"
+  },
+  "configurationReadbackReceipt": {
+    "bytes": 4792,
+    "path": "/tmp/pow-audit30-dual-pin-promotion-completed-read-native-v1.stdout",
+    "sha256": "5421a9fd55eb3a63cce35d03ec592515708a0d7aa22de4a6c0a847fbf96e60ae",
+    "type": "native-capture-stdout"
+  },
+  "files": [
+    {
+      "bytes": 9146,
+      "path": "/tmp/pow-audit30-independent-action66-source-manifest-review-v1.json",
+      "sha256": "1b47e72a7cf10f896e3c4b3dc29b74d55040c03cfbfbc2ce5d88024e18dfa8ab",
+      "type": "json-public-receipt"
+    },
+    {
+      "bytes": 6525,
+      "path": "/tmp/pow-audit30-independent-action66-actual-preservation-review-v1.json",
+      "sha256": "a712a437046c0fee798b42ce16a485f360b0d8c46e485e32d1e3ed9778d9cc52",
+      "type": "json-public-receipt"
+    },
+    {
+      "bytes": 7477,
+      "path": "/tmp/pow-audit30-action66-public-custody-intent-v1.json",
+      "sha256": "9665914097a5a1a919dc857c96ba1499da60f34d4b2357f76fd6052749db8ed0",
+      "type": "json-public-receipt"
+    },
+    {
+      "bytes": 6400,
+      "path": "/tmp/pow-audit30-action66-public-custody-preservation-v1.json",
+      "sha256": "2e30248b30602d4e835873b53ac258059e8b7749a6db6146808177cf94917464",
+      "type": "json-public-receipt"
+    },
+    {
+      "bytes": 1404,
+      "path": "/tmp/pow-audit30-direct-human-approval-20261003T142900Z.json",
+      "sha256": "184065046a3b6031ca0b47e5e1932321bab2672298a7da1fc9654c6d3a3fec49",
+      "type": "json-public-receipt"
+    },
+    {
+      "bytes": 336,
+      "path": "/tmp/pow-audit30-direct-human-message-20261003T142900Z.evidence.json",
+      "sha256": "7b5e05d981ad6c675f3bacfd52fc69f18db73f113472611652ac3e3bfec3ffcd",
+      "type": "json-public-receipt"
+    },
+    {
+      "bytes": 2651,
+      "path": "/tmp/pow-audit30-body-human-approval-20261003T142900Z.json",
+      "sha256": "f37e16a1d9b8c6f52081a7c44d01d8a5142051770d7d16aafe9fcaa9e5354c42",
+      "type": "json-public-receipt"
+    },
+    {
+      "bytes": 1097,
+      "path": "/tmp/pow-audit30-coupled-pin-checker-direct-human-approval-144000-v1.json",
+      "sha256": "46c60e55ab4b95a4b0f51d2efa17969466417c0ad53b8542a0de26667825b089",
+      "type": "json-public-receipt"
+    },
+    {
+      "bytes": 26984,
+      "path": "/tmp/pow-audit30-promotion-full-read-native-v2.py",
+      "sha256": "0cac910d1b74513499911fce6fabcf745442a6c3ba93b4c5d3c7fcf0e6ad9e15",
+      "type": "python-source"
+    },
+    {
+      "bytes": 2543,
+      "path": "/tmp/pow-audit30-promotion-full-read-source-preparation-v2.json",
+      "sha256": "0582efca4f5ee517de0629bbbb0b662a4826b13bee33d10879e36e42815fef58",
+      "type": "json-public-receipt"
+    },
+    {
+      "bytes": 14381,
+      "path": "/tmp/pow-audit30-promotion-full-read-request-144000-v2.json",
+      "sha256": "fc319aa87b59622363741fd751353b10a055ba31343fcdb09a849ee6279ea021",
+      "type": "json-public-receipt"
+    },
+    {
+      "bytes": 1930,
+      "path": "/tmp/pow-audit30-promotion-full-read-transport-preparation-v2.py",
+      "sha256": "3116686be22e8197fb45ba34e77e6370ed6b1a9f410d6c17c8fd3c6d5f29d625",
+      "type": "python-source"
+    },
+    {
+      "bytes": 7698,
+      "path": "/tmp/pow-audit30-prepare-promotion-full-read-144000-v2.py",
+      "sha256": "82c2b19515054e09806b5e5b4f473a846cc85f1949d7552286550943a3cea812",
+      "type": "python-source"
+    },
+    {
+      "bytes": 1637,
+      "path": "/tmp/pow-audit30-promotion-full-read-native-144000-v2.json",
+      "sha256": "2956a21311c255b375d56fea2cb79fde9997c683266a2c2d493333e7ff0b9047",
+      "type": "json-public-receipt"
+    },
+    {
+      "bytes": 32091,
+      "path": "/tmp/pow-audit30-promotion-full-read-native-144000-v2.stdout",
+      "sha256": "6304338f8004b3af1b1425e047dac193b52106dd7f496ffa46c0f355c992a369",
+      "type": "native-capture-stdout"
+    },
+    {
+      "bytes": 0,
+      "path": "/tmp/pow-audit30-promotion-full-read-native-144000-v2.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "type": "native-capture-stderr"
+    },
+    {
+      "bytes": 992,
+      "path": "/tmp/pow-audit30-root-actual-full-read-144000-review-v1.json",
+      "sha256": "271bd281b87feacdeec220e728586292a622bdc60a8f69ae3009996c419573bb",
+      "type": "json-public-receipt"
+    },
+    {
+      "bytes": 43758,
+      "path": "/tmp/pow-audit30-coupled-promotion-state-observer-v2.py",
+      "sha256": "acefcb16c9352276a22ff3cb7f4f960ddccbcbf740a7c8b68cc2a69af5974dd0",
+      "type": "python-source"
+    },
+    {
+      "bytes": 35104,
+      "path": "/tmp/pow-audit30-coupled-promotion-state-observer-v2.diff",
+      "sha256": "a6271c7b4fa7cbd985e81ccda3949fbe8cd5cc1c15a568bf31db62628d72088e",
+      "type": "raw-diff"
+    },
+    {
+      "bytes": 6890,
+      "path": "/tmp/pow-audit30-coupled-promotion-state-observer-request-v2.json",
+      "sha256": "6ae63710968325b89290e1c89c6ec8d6b42b7cf72a8b50a2a764df034d5ad82e",
+      "type": "json-public-receipt"
+    },
+    {
+      "bytes": 6921,
+      "path": "/tmp/pow-audit30-prepare-promotion-state-observer-144000-v2.py",
+      "sha256": "92cd13956a02e5265e9476fbdf47d3545e4e426514c49e8242ced9f692257b0c",
+      "type": "python-source"
+    },
+    {
+      "bytes": 1544,
+      "path": "/tmp/pow-audit30-coupled-promotion-state-observer-native-144000-v2.json",
+      "sha256": "8a14ba19227d2635b9755aea166e0152d339799a74a8557724dce80802725ea6",
+      "type": "json-public-receipt"
+    },
+    {
+      "bytes": 8361,
+      "path": "/tmp/pow-audit30-coupled-promotion-state-observer-native-144000-v2.stdout",
+      "sha256": "e6a6ce3c6f6a21c1c7296dd5a63d57a50871634cf2c20775493b623228bd8973",
+      "type": "native-capture-stdout"
+    },
+    {
+      "bytes": 0,
+      "path": "/tmp/pow-audit30-coupled-promotion-state-observer-native-144000-v2.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "type": "native-capture-stderr"
+    },
+    {
+      "bytes": 7189,
+      "path": "/tmp/pow-audit30-coupled-pin-checker-promotion-plan-144000-v6.json",
+      "sha256": "7d50940fe5c2087cdc169fc14e27c006220dce12b91d2b15bcbb2bc4b9a6c2ee",
+      "type": "json-public-receipt"
+    },
+    {
+      "bytes": 91426,
+      "path": "/tmp/pow-audit30-coupled-pin-checker-package-request-144000-v1.json",
+      "sha256": "f91ba6037c3a24e3b92ee2c9218ded603998c6c0c443e0702d7a5ef7c17d3c1a",
+      "type": "json-public-receipt"
+    },
+    {
+      "bytes": 2912,
+      "path": "/tmp/pow-audit30-coupled-pin-checker-approved-package-assembly-144000-v1.json",
+      "sha256": "db509bb2e1689245ac8298318e7aa7838e483b58d25a3f0b433363c3669124b7",
+      "type": "json-public-receipt"
+    },
+    {
+      "bytes": 8269,
+      "path": "/tmp/pow-audit30-assemble-coupled-plan-request-144000-v1.py",
+      "sha256": "f0bfe00090d8edd3cf6caf649e0e063681da9ac27240afdd96b2becccc9f13c2",
+      "type": "python-source"
+    },
+    {
+      "bytes": 1925,
+      "path": "/tmp/pow-audit30-coupled-pin-checker-package-transport-144000-v1.py",
+      "sha256": "519f31a2355302f4dc7658a5264619b43dc4c70fadea4fdfe3c7e13e4d8480bf",
+      "type": "python-source"
+    },
+    {
+      "bytes": 1529,
+      "path": "/tmp/pow-audit30-coupled-pin-checker-package-native-144000-v1.json",
+      "sha256": "0a24e5025e26e81038cac664d9dbe3ef98f6bea40630fd50fb2232627a3d2b54",
+      "type": "json-public-receipt"
+    },
+    {
+      "bytes": 3108,
+      "path": "/tmp/pow-audit30-coupled-pin-checker-package-native-144000-v1.stdout",
+      "sha256": "5f9a8bb610f3ad8dbe17c74c3fbd6c277f437289faaa69a30e73ad2572b602f0",
+      "type": "native-capture-stdout"
+    },
+    {
+      "bytes": 0,
+      "path": "/tmp/pow-audit30-coupled-pin-checker-package-native-144000-v1.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "type": "native-capture-stderr"
+    },
+    {
+      "bytes": 2207,
+      "path": "/tmp/pow-audit30-root-coupled-promotion-once-144000-v1.py",
+      "sha256": "58115e388dacab272de6aa40d0aecf1ffd66e8f904e043e49d8d6fb42743bb94",
+      "type": "python-source"
+    },
+    {
+      "bytes": 1676,
+      "path": "/tmp/pow-audit30-coupled-pin-checker-promotion-native-144000-v1.json",
+      "sha256": "c9f8b9461ad8d6eeb8ac1e52e737cfb6eb5ec820cf316fca7d1fe850c84f8e24",
+      "type": "json-public-receipt"
+    },
+    {
+      "bytes": 245,
+      "path": "/tmp/pow-audit30-coupled-pin-checker-promotion-native-144000-v1.stdout",
+      "sha256": "b3e9fae59c3b2663dc8ea8a53c7f1f34ead7c26f82a58e2b87cac87968cb4762",
+      "type": "native-capture-stdout"
+    },
+    {
+      "bytes": 0,
+      "path": "/tmp/pow-audit30-coupled-pin-checker-promotion-native-144000-v1.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "type": "native-capture-stderr"
+    },
+    {
+      "bytes": 1934,
+      "path": "/tmp/pow-audit30-coupled-pin-checker-production-completed-public-v1.json",
+      "sha256": "70c15c91665c1fb7ba62675b0809d2a67f6971eb1f2c215595505f28eb6000f3",
+      "type": "json-public-receipt"
+    },
+    {
+      "bytes": 6926,
+      "path": "/tmp/pow-audit30-dual-pin-promotion-completed-read-v1.py",
+      "sha256": "e2888101f3e00da5a3e4ca94965a2d950b4a143030cd7d10c56ce6bb96b7adaf",
+      "type": "python-source"
+    },
+    {
+      "bytes": 4001,
+      "path": "/tmp/pow-audit30-dual-pin-promotion-completed-read-v1.test.py",
+      "sha256": "4d1fcabe216847343b20dd26b1dc924e0aca6caa147e155fb2c44c48131d2a58",
+      "type": "python-test-source"
+    },
+    {
+      "bytes": 2026,
+      "path": "/tmp/pow-audit30-independent-dual-pin-completion-reader-source-review-v1.json",
+      "sha256": "960ca07ca9d0bc58ecb91d6f1415119e5a7be3b786f64f13b2fc38037ea11952",
+      "type": "json-public-receipt"
+    },
+    {
+      "bytes": 1148,
+      "path": "/tmp/pow-audit30-dual-pin-promotion-completed-read-native-v1.json",
+      "sha256": "1567f02b1fe2f11e78e4f6f0404bb6fb4b2435447883688666e01757d099a071",
+      "type": "json-public-receipt"
+    },
+    {
+      "bytes": 4792,
+      "path": "/tmp/pow-audit30-dual-pin-promotion-completed-read-native-v1.stdout",
+      "sha256": "5421a9fd55eb3a63cce35d03ec592515708a0d7aa22de4a6c0a847fbf96e60ae",
+      "type": "native-capture-stdout"
+    },
+    {
+      "bytes": 0,
+      "path": "/tmp/pow-audit30-dual-pin-promotion-completed-read-native-v1.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "type": "native-capture-stderr"
+    },
+    {
+      "bytes": 1907,
+      "path": "/tmp/pow-audit30-root-dual-pin-production-acceptance-v1.json",
+      "sha256": "e6f2f0be1f179a7b67d3bd0e5ac06ecd9ccd84ff9df83a4ed0b58e757bbf0f02",
+      "type": "json-public-receipt"
+    },
+    {
+      "bytes": 2880,
+      "path": "/tmp/pow-audit30-independent-dual-pin-promotion-actual-result-review-v1.json",
+      "sha256": "33a14d6bae84fd5cc272e6e568e16e341fcf6c9096cfba2cb967d12bf4e501bc",
+      "type": "json-public-receipt"
+    },
+    {
+      "bytes": 1447,
+      "path": "/tmp/pow-audit30-independent-canonical-dual-pin-checker-source-review-v1.json",
+      "sha256": "ac2737b7f205033479b4b54cb164bcca887a341f163da35afda200a31f5ef636",
+      "type": "json-public-receipt"
+    },
+    {
+      "bytes": 6359,
+      "path": "/tmp/pow-audit30-independent-approved-body-authority-source-review-v1.json",
+      "sha256": "09c3f51676e61dcb1a31ec7a492bd61ea0d74d873fd28e0fcf400a4d21e37697",
+      "type": "json-public-receipt"
+    },
+    {
+      "bytes": 3376,
+      "path": "/tmp/pow-audit30-independent-after-body-projection-source-review-v1.json",
+      "sha256": "35c57bd08d6fae3f6ca152f5d46d2a9b5224311c4b81db0fde9dc7726f7d8de0",
+      "type": "json-public-receipt"
+    },
+    {
+      "bytes": 1804,
+      "path": "/tmp/pow-audit30-independent-body-caller-prefix-review-v2.json",
+      "sha256": "deba4b7ace1f3b0cf5b684ec46d1e274495dc7369c79602824b69c0c4464f7a5",
+      "type": "json-public-receipt"
+    },
+    {
+      "bytes": 2440,
+      "path": "/tmp/pow-audit30-independent-body-run-reconciliation-source-review-v1.json",
+      "sha256": "6e6e146a2474d824e69ea5db2260914ac6d78b31137781aec4d87a706d7a292f",
+      "type": "json-public-receipt"
+    },
+    {
+      "bytes": 12984,
+      "path": "/tmp/pow-audit30-deployment-existing-guard-preparation-v1.json",
+      "sha256": "f2b1df4c828cb7494973b07740f890109f15bfc02632177d26a0264003be3f34",
+      "type": "json-public-receipt"
+    },
+    {
+      "bytes": 1273,
+      "path": "/tmp/pow-audit30-body-run-native-20261003t145500z-v1.json",
+      "sha256": "a42cf07298cffe914132eb25376b860d4b875ac59f60e2152e547ff23cab0d71",
+      "type": "json-public-receipt"
+    },
+    {
+      "bytes": 0,
+      "path": "/tmp/pow-audit30-body-run-native-20261003t145500z-v1.stdout",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "type": "native-capture-stdout"
+    },
+    {
+      "bytes": 255,
+      "path": "/tmp/pow-audit30-body-run-native-20261003t145500z-v1.stderr",
+      "sha256": "517533e3432576cd309ef260397f1fdcaf5bbde0a32b0e02e94ee9c52cf0d9a0",
+      "type": "native-capture-stderr"
+    },
+    {
+      "bytes": 20718,
+      "path": "/tmp/pow-audit30-canonical-dual-pin-retention-checker-v1.py",
+      "sha256": "795f1308b74ddc69a022ce7e1413fb4698a82e6cfb14265931d1951ee603c908",
+      "type": "python-source"
+    },
+    {
+      "bytes": 4289,
+      "path": "/tmp/pow-audit30-canonical-dual-pin-persistent-retention-tests-v1.py",
+      "sha256": "2adfcc7d670cfdbaadc0ac59290578bb97dc3c1d46a74df49887ce8dbe18048f",
+      "type": "python-test-source"
+    },
+    {
+      "bytes": 16065,
+      "path": "/tmp/pow-audit30-append-action67-v1.py",
+      "sha256": "1f6229c42b1602462f0fca3d2c127e5dba8e0b51cfa10c40a0244c619dff6386",
+      "type": "python-source"
+    }
+  ],
+  "humanMessageCapsule": {
+    "bytes": 336,
+    "path": "/tmp/pow-audit30-direct-human-message-20261003T142900Z.evidence.json",
+    "sha256": "7b5e05d981ad6c675f3bacfd52fc69f18db73f113472611652ac3e3bfec3ffcd",
+    "type": "json-public-receipt"
+  },
+  "humanResponseReceipt": {
+    "bytes": 1404,
+    "path": "/tmp/pow-audit30-direct-human-approval-20261003T142900Z.json",
+    "sha256": "184065046a3b6031ca0b47e5e1932321bab2672298a7da1fc9654c6d3a3fec49",
+    "type": "json-public-receipt"
+  },
+  "item4Checkpoint": {
+    "attemptExitCode": 1,
+    "attemptReceipt": {
+      "bytes": 1273,
+      "path": "/tmp/pow-audit30-body-run-native-20261003t145500z-v1.json",
+      "sha256": "a42cf07298cffe914132eb25376b860d4b875ac59f60e2152e547ff23cab0d71",
+      "type": "json-public-receipt"
+    },
+    "automaticRetry": false,
+    "complete": false,
+    "productionApprovalReceipt": {
+      "bytes": 2651,
+      "path": "/tmp/pow-audit30-body-human-approval-20261003T142900Z.json",
+      "sha256": "f37e16a1d9b8c6f52081a7c44d01d8a5142051770d7d16aafe9fcaa9e5354c42",
+      "type": "json-public-receipt"
+    },
+    "productionDataMutation": null,
+    "productionRepairAccepted": false,
+    "qualification": "Transport refusal alone does not establish stage/commit/data outcome or owned-stop closure.",
+    "status": "direct-human-approved-exact16;first-attempt-refused-awaiting-readonly-reconciliation"
+  },
+  "item7Checkpoint": {
+    "additionalDeletion": false,
+    "checkerBytes": 20718,
+    "checkerSha256": "795f1308b74ddc69a022ce7e1413fb4698a82e6cfb14265931d1951ee603c908",
+    "complete": false,
+    "knownHeldAbsencesUnresolved": 18,
+    "pinBytes": 78,
+    "pinSha256": "22f66cac8419985c544d4b41c6ea9cd400fc99805c588694a9a619a3f120d09b",
+    "productionDataMutation": false,
+    "promotionPerformed": true,
+    "qualification": "Exact protection change only; no production-page/PITR/capacity/financial completeness or retirement certification.",
+    "recoveryActivation": false,
+    "recoveryConfigurationMutation": true,
+    "status": "actual-V6-dual-pin-checker-and-current-byte-readback-accepted;live-recovery-unactivated"
+  },
+  "schema": "pow-audit30-action67-fixed-public-manifest-v1",
+  "summary": "DRAFT: Preserve actual direct human approval of both exact proposals without rewriting the two prior pending-request snapshots. Record independently accepted V6 dual-pin/checker promotion and repeated installed-byte readback: Sep29 remains protected alongside Oct3. Retain fresh full-read/state/creator/plan/message/source and priorAction66 external custody. The14:41 exact16 body invocation refused; its data/commit/stop outcome awaits reviewed read-only reconciliation. No retry, repair success or unchanged-data conclusion. Record the separately approved canonical checker/test sync without writing those sources. Item7 remains incomplete beyond accepted snapshot/protection; all global history and other gates remain. Final manifest requires bodyReconciliationReceipt and Root review.",
+  "tableUpdates": [
+    {
+      "item": "4",
+      "newLine": "| 4 | Preserve mail bytes, AUD28-04 | Exact production repair and separate conditional inverse approved; first attempt refused, awaiting read-only outcome reconciliation | Direct human approved only exact16 body-only proposal and conditional inverse; no automatic retry | Original private proof retained; failed14:41 production transport preserved. No production repair success, unchanged-data conclusion, strict rerun or cutover inferred |",
+      "oldLine": "| 4 | Preserve mail bytes, AUD28-04 | Isolated acknowledged apply/inverse and stopped-source/offline closure accepted; fresh619 has only16 known body differences | Remaining phase approved; exact production body-only repair awaits final human approval | Original074500 failure preserved; d818 read-only closure and d3b1 fresh census accepted. Concrete repair-first proposal restores18 UTF-8 bytes, including exact NULL inverse; strict rerun and code cutover remain gated |"
+    },
+    {
+      "item": "7",
+      "newLine": "| 7 | Backup restoration, physical integrity and PITR | Current Oct3 logical snapshot restored; dual-pin/checker promotion completed and read back; live recovery remains gated | Direct human approved only two-file backup protection and recognized-byte failure inverse; no activation/deletion approval | Exact78-byte ordered Sep29+Oct3 pair and checker795f/current readback accepted. 24 tables/429,732 rows, roles/ACL/238 credits and private checksums remain snapshot scope. 293GiB recovery peak, PITR and production-page gates remain |",
+      "oldLine": "| 7 | Backup restoration, physical integrity and PITR | Current Oct3 logical snapshot restore passed; live recovery and survivor promotion remain gated | Isolated restore/testing approved; final recovery/pin changes remain gated | 24 tables/429,732 rows, one sequence, three roles/52 ACL statements, 238 exact credit definitions and isolated checksums pass. Original private PIDs/socket/cgroup absent; original five unchanged. Known16 text defects remain. Full293GiB recovery peak, production pages/PITR, promotion and retirement remain unresolved; Oct2 historical proof preserved/source absent |"
+    },
+    {
+      "item": "8",
+      "newLine": "| 8 | Recovery custody, runtime attestation, node inventory and ledger assurance | Captured-history treasury/four-target custody accepted; broader completeness/dependency/retirement unresolved | Reconciliation/mode repair approved; dual backup protection performed; additional retirement still gated | 10,232 canonical targets/567groups/644proofs and scoped fee/spend closure retained; expense/liability completeness false. 18node/11UI absences and exact retirement/recovery-equivalence gates remain; no backup/cluster deletion |",
+      "oldLine": "| 8 | Recovery custody, runtime attestation, node inventory and ledger assurance | Attestation, four-target custody and captured-history treasury closure pass; broader financial/obligation and retirement gates remain | Reconciliation and exact Git-index mode repair approved; pin changes and additional retirements remain gated | All 2,569 remaining parents and 10,232 canonical targets pass across 567 groups/644 proofs; integer fees/direct spends and one derived-unspent Core check/balance comparison accepted within captured-history scope. Summed whole-transaction fees: 5,287,244 proofs; treasury funding shares and expense/liability allocation remain unverified. Broad completeness remains false; 18 node/11 UI absences and four-target dependency/recovery/deletion gates remain. Sep29 pin/monitor/history preserved |"
+    }
+  ],
+  "trackerNote": "- Action67 DRAFT: Actual human nine-byte approval covers the two exact linked proposals; prior pending requests remain dated and unchanged. The config action completed14:37 and its public completion/current installed bytes were read back14:40: exact78-byte Sep29+Oct3 pair and20718-byte checker795f. Both backups remain protected, with no deletion or live recovery activation. Root synchronized the canonical checker and its two-pin/singleton-refusal tests. The first16-body production invocation refused14:41 and its outcome/owned-stop reconciliation is pending; no repair success or unchanged database is inferred and no retry is admitted. No API/worker/UI cutover, PITR or additional deletion. Items4\u20138 remain incomplete."
+}

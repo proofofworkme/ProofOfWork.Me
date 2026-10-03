@@ -1,0 +1,14 @@
+{
+  "at": "2026-10-03T19:47:12.100133+00:00",
+  "command": "node",
+  "release": "38ac6e2bff2a-20261003T042000Z",
+  "attempt": "item2-v2",
+  "controllerSourceSha256": "09afe5ddd243a796ea9c830b0041924747eb77a3803a3cfe56a3279cd24bf670",
+  "helpers": {
+    "attestor": "4bec20fa1e5931636e3bfc84f617f005a7b1b71e752dc7f7c9b8bea23014be38",
+    "exchange": "2c8ae0549a707640c3a11a8b6a03fd888c9ef4e5fbe6afded7b7d3866f1754c5",
+    "publisher": "42ad099555cee0257572dd348a85a9f684005aba4f9c8f8077ea9aa67d68df78"
+  },
+  "productionDataChanges": false,
+  "retentionDeferred": true
+}

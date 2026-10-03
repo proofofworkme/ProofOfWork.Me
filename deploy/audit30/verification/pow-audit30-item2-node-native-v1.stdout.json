@@ -1,0 +1,1 @@
+{"schema": "pow-audit30-item2-prelaunch-idle-v1", "idle": {"schema": "pow-audit30-item2-idle-scheduling-v1", "atUtc": "2026-10-03T19:39:46.557244+00:00", "samples": 10, "finishedAgeSeconds": 0.306235, "guardInvocationsSoFar": 0, "cutoverInvocationsSoFar": 0}, "controllerInvocationsSoFar": 0}

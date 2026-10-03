@@ -1,0 +1,124 @@
+{
+  "schema": "proof-of-work-audit29-ui-transport-plan-v1",
+  "releaseId": "38ac6e2bff2a-20261003T190512Z",
+  "commit": "38ac6e2bff2ac16890724e5213346ef8a3ebd186",
+  "tree": "8b9b5e3cd47aa8e4204da717350a629176e30da6",
+  "sourceAllocatedBytes": 270946304,
+  "admissions": {
+    "source-receive": {
+      "bytes": 315842560,
+      "inodes": 15000
+    },
+    "surfaces-receive": {
+      "bytes": 241844224,
+      "inodes": 4000
+    }
+  },
+  "helperSha256": {
+    "controller": "098ca423e57f33d2a3a2c318995935a4000596536b59e460da4ccc996bcb25ac",
+    "receiver": "28c5dc45f75184a0cb3138df52b3558b0ebcb0c3d8c59233ae261fdbd812817b",
+    "stage-shell": "2f5f80b8065170c10b00f83363f2f1fb429dfbea6ce7237fb4ec311b74e264ff",
+    "phase-capacity": "0df38e794a8504ac576c86e79877d8c9a35b2c216b1cbc340587a4f6c7c5df40",
+    "capacity": "ea6745b2519d57fbd08deff723e81540d4dad2b4c649ff7e6c2b060a7e7edbb6",
+    "retained": "6421d58ec8a2259cc21512679db05654b2a138a6e6f56d3656c0287b934ddd9e"
+  },
+  "oldLiveManifestSha256": "9c41304450787cfc4ec6fe806e63a76e95fdd1238e20b011269ead038dd3d1ff",
+  "oldFullRootTreeSha256": "3a67ee12f3b4f5cc8e285616011f5879bbc423aeb61e80fda3cc56130924444a",
+  "installedStagerSha256": "c6f7a20f0f53d0e0871c3e024a4ea5d1b7c95f9f9788064a723f2b115d27000a",
+  "stageInodes": 10000,
+  "retainedRoots": [
+    {
+      "format": "proofofwork-ui-retained-root-v1",
+      "classification": "retain",
+      "root": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-11b9daf067d7-20261002T211925Z",
+      "manifestSha256": "62c9c67a71f7f0366db1e240774780cf5c5df93e2161518c84ce0c0b054d289d",
+      "treeSha256": "0b4fdc218f39274b218d495b2ddb62c904a2d43fb3f092dd22857ea5521a5c9e",
+      "entries": 1264,
+      "regularBytes": 429194569
+    }
+  ],
+  "controllerUsage": "reviewed installed admit-ui only",
+  "publicationHelpers": {
+    "retained": {
+      "path": "/usr/local/sbin/proofofwork-ui-retained-root",
+      "sha256": "6421d58ec8a2259cc21512679db05654b2a138a6e6f56d3656c0287b934ddd9e",
+      "mode": "0o755",
+      "uid": 0,
+      "gid": 0
+    },
+    "capacity": {
+      "path": "/usr/local/sbin/proofofwork-ui-capacity",
+      "sha256": "ea6745b2519d57fbd08deff723e81540d4dad2b4c649ff7e6c2b060a7e7edbb6",
+      "mode": "0o755",
+      "uid": 0,
+      "gid": 0
+    },
+    "publisher": {
+      "path": "/usr/local/sbin/proofofwork-ui-release-publish",
+      "sha256": "5ae1535e668c77ca7234c016ffe3602a3a8a5d930b3a75eefc28bb864a19af76",
+      "mode": "0o755",
+      "uid": 0,
+      "gid": 0
+    },
+    "stager": {
+      "path": "/usr/local/sbin/proofofwork-ui-release-stage",
+      "sha256": "c6f7a20f0f53d0e0871c3e024a4ea5d1b7c95f9f9788064a723f2b115d27000a",
+      "mode": "0o755",
+      "uid": 0,
+      "gid": 0
+    },
+    "provenance": {
+      "path": "/usr/local/sbin/proofofwork-ui-release-provenance",
+      "sha256": "4e083a179a305907760ffe36f6ad00aef9a441279898b903171edea54cb1b9d6",
+      "mode": "0o755",
+      "uid": 0,
+      "gid": 0
+    }
+  },
+  "publicationWrapperSha256": "d285f986463eb5253f6669ceaf552e0a773222ae80431bc868ba92d853ff7b3d",
+  "publicationAttempt": "item2-v1",
+  "transportHelper": {
+    "path": "/var/tmp/proofofwork-deploy/audit29-tools/ui-transport.py",
+    "sha256": "a0c022d2071ad1f949c2bd7304cc5a3d8f1368bb3d71cb710b5d709956f7bdd9",
+    "mode": "0o600",
+    "uid": 0,
+    "gid": 0
+  },
+  "localBundles": {
+    "source": "/tmp/proofofwork-ui-release.sWTw59PgNe/proofofwork-ui-source-38ac6e2bff2a-20261003T190512Z.tgz",
+    "surfaces": "/tmp/proofofwork-ui-release.sWTw59PgNe/proofofwork-ui-surfaces-38ac6e2bff2a-20261003T190512Z.tgz"
+  },
+  "preflightSha256": "1ea1eb8220005396939ac78b417d3ea9847f596d90997e6d670cbb0659dea6d2",
+  "buildReceiptSha256": "75c45b805e4e67ef44ddf6bc7b54a817b08a6226262f40596b697f1cdb183d5e",
+  "preservingTransportSha256": "7153e99661b7c05b31c6d789b0546f0c130af4e60cbd9d47dd63f83198b93d28",
+  "retentionDeferred": true,
+  "frontendOnly": true,
+  "source": {
+    "compressedBytes": 105032111,
+    "sha256": "e8a92e9ddcd81ec352e5c4e4684d238780f02378285b315614976c85e4c43903"
+  },
+  "surfaces": {
+    "compressedBytes": 195313712,
+    "sha256": "6849138b5b313ea6e134f3367892691b80174a2f3d12fac278047f6df0fc9b19"
+  },
+  "stageArchiveUpperBoundBytes": 493224843,
+  "allocationDerivation": {
+    "oldManaged": {
+      "entries": 912,
+      "logicalBytes": 236129954,
+      "regularFiles": 880
+    },
+    "newLogicalBytes": {
+      "source": 252641340,
+      "surfaces": 219997417
+    },
+    "newEntries": {
+      "source": 6897,
+      "surfaces": 818
+    },
+    "receiveMetadataBytesPerEntry": 4096,
+    "receiveFixedMarginBytes": 16777216,
+    "archiveFixedMarginBytes": 33554432,
+    "archivePaddingBytesPerEntry": 2048
+  }
+}

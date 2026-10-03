@@ -1,0 +1,70 @@
+{
+  "schema": "pow-audit30-postcutover-mail-html-public-source-manifest-v1",
+  "nativeInvocationsByThisAgent": 0,
+  "sources": [
+    {
+      "path": "/tmp/pow-audit30-postcutover-mail-html-assemble-v1.py",
+      "bytes": 6158,
+      "sha256": "031c45fdf291ad667efb827d1d691fc69c49e221906e7d537b5fb95aea7b0082",
+      "publicReviewed": true,
+      "privateDataIncluded": false,
+      "contentClass": "public-source-or-contract"
+    },
+    {
+      "path": "/tmp/pow-audit30-postcutover-mail-html-assemble-v1.test.py",
+      "bytes": 3195,
+      "sha256": "0802a59576a5077e9b247c421d7a2077b67915be848f19cdc68b851032ebd4cf",
+      "publicReviewed": true,
+      "privateDataIncluded": false,
+      "contentClass": "public-source-or-contract"
+    },
+    {
+      "path": "/tmp/pow-audit30-postcutover-mail-html-collector-v1.py",
+      "bytes": 36022,
+      "sha256": "3bcc3e071222de97529cd54bf045885ffdac2f2f2f305cbb471561dedf7f4dff",
+      "publicReviewed": true,
+      "privateDataIncluded": false,
+      "contentClass": "public-source-or-contract"
+    },
+    {
+      "path": "/tmp/pow-audit30-postcutover-mail-html-contract-v1.json",
+      "bytes": 5860,
+      "sha256": "71777f569f862734286a7e0485252f8b1cb59d3085264d0e95d1262a8eda7b87",
+      "publicReviewed": true,
+      "privateDataIncluded": false,
+      "contentClass": "public-source-or-contract"
+    },
+    {
+      "path": "/tmp/pow-audit30-postcutover-mail-html-leaf-v1.mjs",
+      "bytes": 4519,
+      "sha256": "c9537fbb7b023559ab3b10f0b83b09cca3eb393cd4da8b99ebd77322d696eda7",
+      "publicReviewed": true,
+      "privateDataIncluded": false,
+      "contentClass": "public-source-or-contract"
+    },
+    {
+      "path": "/tmp/pow-audit30-postcutover-mail-html-native-v1.py",
+      "bytes": 22015,
+      "sha256": "63bef564fc34e390e1b4ca70c95079ebd8be684dbe07854a5f4dc1071b5ecdc8",
+      "publicReviewed": true,
+      "privateDataIncluded": false,
+      "contentClass": "public-source-or-contract"
+    },
+    {
+      "path": "/tmp/pow-audit30-postcutover-mail-html-transport-v1.py",
+      "bytes": 8409,
+      "sha256": "d2a453ec2a5e69fc5bf56cedf6b35e96329ca3140a627ee8911f0541875fde30",
+      "publicReviewed": true,
+      "privateDataIncluded": false,
+      "contentClass": "public-source-or-contract"
+    },
+    {
+      "path": "/tmp/pow-audit30-postcutover-mail-html-v1.test.py",
+      "bytes": 6291,
+      "sha256": "76999ae8983da65325daaa532ce2a9c5c54c4ceafa79b3b5ab1f0d5bc4f5e7ce",
+      "publicReviewed": true,
+      "privateDataIncluded": false,
+      "contentClass": "public-source-or-contract"
+    }
+  ]
+}

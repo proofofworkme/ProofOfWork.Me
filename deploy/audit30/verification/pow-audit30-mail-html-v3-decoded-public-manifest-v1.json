@@ -1,0 +1,316 @@
+{
+  "atUtc": "2026-10-03T20:31:17.307503+00:00",
+  "completedPublicProjection": {
+    "automaticRetry": false,
+    "backendResourceCapClaimed": false,
+    "cleanup": {
+      "after": {
+        "ActiveState": "inactive",
+        "AmbientCapabilities": "",
+        "CPUQuotaPerSecUSec": "infinity",
+        "CapabilityBoundingSet": "cap_chown cap_dac_override cap_dac_read_search cap_fowner cap_fsetid cap_kill cap_setgid cap_setuid cap_setpcap cap_linux_immutable cap_net_bind_service cap_net_broadcast cap_net_admin cap_net_raw cap_ipc_lock cap_ipc_owner cap_sys_module cap_sys_rawio cap_sys_chroot cap_sys_ptrace cap_sys_pacct cap_sys_admin cap_sys_boot cap_sys_nice cap_sys_resource cap_sys_time cap_sys_tty_config cap_mknod cap_lease cap_audit_write cap_audit_control cap_setfcap cap_mac_override cap_mac_admin cap_syslog cap_wake_alarm cap_block_suspend cap_audit_read cap_perfmon cap_bpf cap_checkpoint_restore",
+        "ControlGroup": "",
+        "ExecMainStatus": "0",
+        "Group": "",
+        "InaccessiblePaths": "",
+        "InvocationID": "",
+        "KillMode": "control-group",
+        "LoadState": "not-found",
+        "MainPID": "0",
+        "MemoryMax": "infinity",
+        "MemorySwapMax": "infinity",
+        "NoNewPrivileges": "no",
+        "PrivateDevices": "no",
+        "PrivateIPC": "no",
+        "PrivateNetwork": "no",
+        "PrivateTmp": "no",
+        "ProtectHome": "no",
+        "ProtectSystem": "no",
+        "ReadOnlyPaths": "",
+        "ReadWritePaths": "",
+        "RestrictAddressFamilies": "~",
+        "Result": "success",
+        "RuntimeMaxUSec": "infinity",
+        "SubState": "dead",
+        "SupplementaryGroups": "",
+        "TasksMax": "153399",
+        "User": ""
+      },
+      "attempted": true,
+      "before": {
+        "ActiveState": "active",
+        "AmbientCapabilities": "",
+        "CPUQuotaPerSecUSec": "250ms",
+        "CapabilityBoundingSet": "",
+        "ControlGroup": "",
+        "ExecMainStatus": "0",
+        "Group": "root",
+        "InaccessiblePaths": "/run/postgresql /var/lib/postgresql /data/bitcoin /etc/bitcoin /etc/proofofwork-api",
+        "InvocationID": "9a82d60de1b04b00bf7d0845408da177",
+        "KillMode": "control-group",
+        "LoadState": "loaded",
+        "MainPID": "0",
+        "MemoryMax": "536870912",
+        "MemorySwapMax": "0",
+        "NoNewPrivileges": "yes",
+        "PrivateDevices": "yes",
+        "PrivateIPC": "yes",
+        "PrivateNetwork": "no",
+        "PrivateTmp": "yes",
+        "ProtectHome": "yes",
+        "ProtectSystem": "strict",
+        "ReadOnlyPaths": "/usr/local/lib/proofofwork-audit30-mail-api-html-population/20261003T202300Z /data/proofofwork-release-backups/audit30-mail-body-census-20261003T011506Z",
+        "ReadWritePaths": "",
+        "RestrictAddressFamilies": "AF_INET AF_UNIX",
+        "Result": "success",
+        "RuntimeMaxUSec": "11min",
+        "SubState": "exited",
+        "SupplementaryGroups": "1000",
+        "TasksMax": "16",
+        "User": "root"
+      },
+      "verified": true
+    },
+    "inlineExecOrSourceOrEnvironmentExported": false,
+    "lastRetainedProperties": {
+      "ActiveState": "active",
+      "AmbientCapabilities": "",
+      "CPUQuotaPerSecUSec": "250ms",
+      "CapabilityBoundingSet": "",
+      "ControlGroup": "",
+      "ExecMainStatus": "0",
+      "Group": "root",
+      "InaccessiblePaths": "/run/postgresql /var/lib/postgresql /data/bitcoin /etc/bitcoin /etc/proofofwork-api",
+      "InvocationID": "9a82d60de1b04b00bf7d0845408da177",
+      "KillMode": "control-group",
+      "LoadState": "loaded",
+      "MainPID": "0",
+      "MemoryMax": "536870912",
+      "MemorySwapMax": "0",
+      "NoNewPrivileges": "yes",
+      "PrivateDevices": "yes",
+      "PrivateIPC": "yes",
+      "PrivateNetwork": "no",
+      "PrivateTmp": "yes",
+      "ProtectHome": "yes",
+      "ProtectSystem": "strict",
+      "ReadOnlyPaths": "/usr/local/lib/proofofwork-audit30-mail-api-html-population/20261003T202300Z /data/proofofwork-release-backups/audit30-mail-body-census-20261003T011506Z",
+      "ReadWritePaths": "",
+      "RestrictAddressFamilies": "AF_INET AF_UNIX",
+      "Result": "success",
+      "RuntimeMaxUSec": "11min",
+      "SubState": "exited",
+      "SupplementaryGroups": "1000",
+      "TasksMax": "16",
+      "User": "root"
+    },
+    "liveFiveUnchangedBeforeThroughAfterCleanup": true,
+    "packageAfterCleanup": {
+      "collector.py": {
+        "bytes": 36211,
+        "metadata": [
+          64512,
+          1203019,
+          33056,
+          0,
+          0,
+          1,
+          36211,
+          1791058901476433000,
+          1791058901476433000
+        ],
+        "sha256": "8c95837d43e994d906cc4bbebb8a443bede34802d5eaf5d93cd2f61f60ef86db"
+      },
+      "owner-utility.py": {
+        "bytes": 21152,
+        "metadata": [
+          64512,
+          1203020,
+          33056,
+          0,
+          0,
+          1,
+          21152,
+          1791058901477433000,
+          1791058901477433000
+        ],
+        "sha256": "7d6b6fe8337db471b2de3147dcff528916b4d8c7629e4d344803913469084b55"
+      },
+      "request.json": {
+        "bytes": 766,
+        "metadata": [
+          64512,
+          1203021,
+          33152,
+          0,
+          0,
+          1,
+          766,
+          1791058901477433000,
+          1791058901477433000
+        ],
+        "sha256": "654c8e2295817ef116017c9a09593e19bdccfb81583760ec1717a8a069c1a25e"
+      }
+    },
+    "productionMutation": false,
+    "requestSha256": "d8a456455ca7642ce3b3a663c5fa640f591a300965f6b9136ff1d352b6dff0b6",
+    "schema": "pow-audit30-mail-api-native-outcome-v1",
+    "status": "passed",
+    "unitSnapshotCount": 621
+  },
+  "currentFive": {
+    "bitcoind.service": {
+      "ActiveState": "active",
+      "InvocationID": "64e1fa7be2e2442d8c7f5763f60b85fb",
+      "LoadState": "loaded",
+      "MainPID": "1324302",
+      "Result": "success",
+      "SubState": "running"
+    },
+    "electrs.service": {
+      "ActiveState": "active",
+      "InvocationID": "72418b1c7ab245e4a37685ed868a1084",
+      "LoadState": "loaded",
+      "MainPID": "1324320",
+      "Result": "success",
+      "SubState": "running"
+    },
+    "postgresql@16-main.service": {
+      "ActiveState": "active",
+      "InvocationID": "e0bf545f0ad944e89fe1005577e61b9c",
+      "LoadState": "loaded",
+      "MainPID": "1537429",
+      "Result": "success",
+      "SubState": "running"
+    },
+    "proofofwork-api.service": {
+      "ActiveState": "active",
+      "InvocationID": "546739c810df48d4956961b0931b6fc5",
+      "LoadState": "loaded",
+      "MainPID": "3372731",
+      "Result": "success",
+      "SubState": "running"
+    },
+    "proofofwork-indexer-worker.service": {
+      "ActiveState": "active",
+      "InvocationID": "b2dc36ef816c4311b4c9aa0740d781a9",
+      "LoadState": "loaded",
+      "MainPID": "3372743",
+      "Result": "success",
+      "SubState": "running"
+    }
+  },
+  "currentFiveUnchangedDuringRead": true,
+  "privateBodyOrAddressOrEnvironmentExported": false,
+  "productionMutation": false,
+  "schema": "pow-audit30-mail-html-v3-passive-read-v1",
+  "serviceControl": false,
+  "stderrHashOnly": {
+    "bytes": 0,
+    "rawExported": false,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "unitState": {
+    "ActiveState": "inactive",
+    "InvocationID": "",
+    "LoadState": "not-found",
+    "MainPID": "0",
+    "Result": "success",
+    "SubState": "dead"
+  },
+  "files": {
+    "completed.json": {
+      "bytes": 3384589,
+      "path": "/data/proofofwork-release-backups/audit30-mail-api-html-after-20261003T202300Z/completed.json",
+      "sha256": "eff1c27b17ef0984abaa030241f3723c5126b969aa6bfdd8b8f1eec517d9cf2c",
+      "stamp": [
+        64514,
+        76809680,
+        33152,
+        0,
+        0,
+        1,
+        3384589,
+        1791059242348277703,
+        1791059242348277703
+      ]
+    },
+    "public-result.json": {
+      "bytes": 310437,
+      "path": "/data/proofofwork-release-backups/audit30-mail-api-html-after-20261003T202300Z/public-result.json",
+      "sha256": "63c0e7206051c162a0a1d94a86c6ba01802816e47137144a405096cb2a22b051",
+      "stamp": [
+        64514,
+        76809677,
+        33152,
+        0,
+        0,
+        1,
+        310437,
+        1791059241880278299,
+        1791059241880278299
+      ]
+    }
+  },
+  "publicResultLocal": {
+    "sourcePath": "/tmp/pow-audit30-mail-html-v3-exact-public-result-v1.json",
+    "repositoryPath": "deploy/audit30/verification/pow-audit30-mail-html-v3-exact-public-result-v1.json",
+    "bytes": 310437,
+    "sha256": "63c0e7206051c162a0a1d94a86c6ba01802816e47137144a405096cb2a22b051"
+  },
+  "nativePublicExport": {
+    "path": "/tmp/pow-audit30-mail-html-v3-passive-read-native-v1.stdout",
+    "bytes": 420517,
+    "sha256": "a8f870f307493a5b82974bbeb26ffd9a6e3828dccab63ee970845a629f75648c"
+  },
+  "acceptedAggregate": {
+    "schema": "pow-audit30-mail-api-population-result-v1",
+    "stage": "after",
+    "status": "passed",
+    "populationRows": 619,
+    "actorCount": 33,
+    "actorsAttempted": 33,
+    "rowsChecked": 619,
+    "rowsMatchingRawAndIdentity": 619,
+    "rowsWithDiscrepancies": 0,
+    "completeExpectedCorpusCoverage": true,
+    "allExpectedRowsVerified": true,
+    "afterCutoverAccepted": true,
+    "publicHTTPSAll619Verified": true,
+    "publicHTTPSOrigin": "https://computer.proofofwork.me",
+    "responseBytes": 1111590,
+    "latencySeconds": {
+      "max": 16.442614,
+      "median": 10.350725,
+      "min": 3.035627,
+      "p95": 13.926848,
+      "requests": 33
+    },
+    "atUtc": "2026-10-03T20:27:21.879019+00:00",
+    "privateCaptureUnchanged": true,
+    "sourceUnchanged": true,
+    "liveFiveUnchanged": true,
+    "newCoreCalls": 0,
+    "sqlCalls": 0,
+    "financialCompleteness": false,
+    "productionMutation": false,
+    "privatePayloadExported": false,
+    "addressesExported": false,
+    "sourceSha256": "8c95837d43e994d906cc4bbebb8a443bede34802d5eaf5d93cd2f61f60ef86db",
+    "actualApiSourceSha256": "9ab92c0fe3cb358fcaacccd62915eabc4c9ee75e42d29c6c989259b1305436f4",
+    "uiHelperAppSourceSha256": "87fd17ac3ade8eff1a5beae96f0bac6b43866d16ac8487d9bc347aa01b2a7ca2",
+    "uiHelperEncodingSourceSha256": "ab938b32d9884bd20ad33658aeb0fa1cc79e4d8576529f7127e266f3b06b4ca9",
+    "uiHelperLeafSha256": "c9537fbb7b023559ab3b10f0b83b09cca3eb393cd4da8b99ebd77322d696eda7",
+    "qualification": "All619 saved confirmed canonical mailbox witnesses over33 fresh public HTTPS GETs; exact current App body classifier/attachment helper bytes for derived HTML only. Consumes frozen canonical source-script proof; excludes post-snapshot corpus, pending mail, explicit attachment rendering and backend-wide resource certification.",
+    "derivedHTML": {
+      "attachmentRenderingCertified": false,
+      "derivedBodyAttachmentsVerified": 1,
+      "explicitAttachmentHtmlBodiesExcluded": 0,
+      "htmlBodiesClassified": 1,
+      "populationRows": 619,
+      "privateMemoExported": false,
+      "rawBytesPreserved": true,
+      "schema": "pow-audit30-derived-html-body-hashes-v1"
+    }
+  }
+}

@@ -1,0 +1,190 @@
+{
+  "at": "2026-10-03T19:47:14.884911+00:00",
+  "health": {
+    "available": true,
+    "backend": "electrum",
+    "checks": {
+      "addressIndex": {
+        "canary": {
+          "confirmedSats": 0,
+          "scripthash": "8f52010f55361085b1806ee106632dd610d3a6587284138d06065d584bab8d21",
+          "unconfirmedSats": 0
+        },
+        "error": "",
+        "ok": true,
+        "source": "electrum://172.27.0.1:50001",
+        "timedOut": false
+      },
+      "backend": {
+        "ok": true,
+        "timedOut": false
+      },
+      "database": {
+        "canonicalMetaOk": true,
+        "ok": true,
+        "required": true,
+        "timedOut": false
+      },
+      "disk": {
+        "cache": {
+          "availableBytes": 252259631104,
+          "maxUsedPercent": 90,
+          "minFreeBytes": 5368709120,
+          "ok": true,
+          "path": "/data/proofofwork-api-cache",
+          "probePath": "/data/proofofwork-api-cache",
+          "totalBytes": 1764768071680,
+          "usedPercent": 85.70579130753102
+        },
+        "ok": true,
+        "root": {
+          "availableBytes": 66924892160,
+          "maxUsedPercent": 90,
+          "minFreeBytes": 5368709120,
+          "ok": true,
+          "path": "/",
+          "probePath": "/",
+          "totalBytes": 105089261568,
+          "usedPercent": 36.31614575891279
+        }
+      },
+      "electrum": {
+        "configured": true,
+        "error": "",
+        "headerHash": "0000000000000000000140f86cbe2f0b19a5dec8ed5bd169f5cbe15ae30fcb8a",
+        "headerHeight": 969755,
+        "ok": true,
+        "timedOut": false,
+        "atTip": true
+      },
+      "index": {
+        "aheadBlocks": 0,
+        "checkpointHash": "0000000000000000000140f86cbe2f0b19a5dec8ed5bd169f5cbe15ae30fcb8a",
+        "complete": true,
+        "canonicalState": {
+          "fault": {},
+          "ok": true,
+          "rebuild": {
+            "active": false,
+            "status": "complete",
+            "network": "livenet",
+            "complete": true,
+            "startedAt": "2026-09-15T18:22:43.424Z",
+            "updatedAt": "2026-10-03T19:45:58.490Z",
+            "fromHeight": 948000,
+            "completedAt": "2026-10-03T19:45:58.490Z",
+            "bootstrapHash": "000000000000000000004238bec59ce46cd5b28982efe2b90071a51168d67986",
+            "bootstrapHeight": 947999,
+            "indexedThroughBlock": 969755,
+            "indexedThroughBlockHash": "0000000000000000000140f86cbe2f0b19a5dec8ed5bd169f5cbe15ae30fcb8a",
+            "transactionNormalization": "canonical-raw-tx-only"
+          }
+        },
+        "checkpointCanonical": true,
+        "canonicalCheckpointHash": "0000000000000000000140f86cbe2f0b19a5dec8ed5bd169f5cbe15ae30fcb8a",
+        "indexedThroughBlock": 969755,
+        "lagBlocks": 0,
+        "available": true,
+        "ok": true,
+        "readModels": {
+          "confirmedIds": {
+            "count": 508,
+            "maxBlock": 969060
+          },
+          "confirmedTransfers": {
+            "count": 268,
+            "maxBlock": 969510
+          },
+          "confirmedEvents": {
+            "count": 26638,
+            "maxBlock": 969650
+          }
+        },
+        "summarySnapshot": {
+          "blockHash": "0000000000000000000140f86cbe2f0b19a5dec8ed5bd169f5cbe15ae30fcb8a",
+          "coverageByKey": {
+            "growthSummary": 969755,
+            "inceptionSummary": 969755,
+            "infinitySummary": 969755,
+            "logSummary": 969755,
+            "marketplaceSummary": 969755,
+            "tokenSummary": 969755,
+            "workFloor": 969755,
+            "workSummary": 969755
+          },
+          "eligible": true,
+          "generatedAt": "2026-10-03T19:46:15.671Z",
+          "indexedAt": "2026-10-03T19:46:15.671Z",
+          "indexedThroughBlock": 969755,
+          "payloadBytes": 5765899,
+          "snapshotId": "c055989b9d51051b419eaece",
+          "ok": true
+        },
+        "scanTipHeight": 969755,
+        "stopReason": ""
+      },
+      "node": {
+        "bestBlockHash": "0000000000000000000140f86cbe2f0b19a5dec8ed5bd169f5cbe15ae30fcb8a",
+        "chain": "main",
+        "headers": 969755,
+        "initialBlockDownload": false,
+        "ok": true,
+        "pruned": false,
+        "tipHeight": 969755,
+        "txindexHeight": 969755,
+        "txindexSynced": true,
+        "verificationProgress": 1
+      },
+      "worker": {
+        "ageMs": 5764,
+        "containment": {
+          "active": false,
+          "checkpointHash": "0000000000000000000140f86cbe2f0b19a5dec8ed5bd169f5cbe15ae30fcb8a",
+          "checkpointHeight": 969755,
+          "failingBlockHeight": null,
+          "fingerprint": "",
+          "network": "livenet",
+          "nextRetryAt": null,
+          "reason": "canonical-scan-success",
+          "repeatCount": 0,
+          "txid": ""
+        },
+        "consecutiveFailures": 0,
+        "error": "",
+        "lastSuccessAt": "2026-10-03T19:47:09.120Z",
+        "maxAgeMs": 600000,
+        "ok": true,
+        "proofReady": true,
+        "proofSource": "idle-confirmed-replay",
+        "pendingEvents": {
+          "globalUnresolved": 0,
+          "model": "bounded-best-effort-pending-event-health-v1",
+          "ok": true,
+          "q16PendingUnresolved": 0,
+          "required": true,
+          "scope": "all-observed-pending-protocol-events",
+          "status": {
+            "checked": 23,
+            "deferred": 0,
+            "errors": 0,
+            "ok": true,
+            "q16ParentDeferred": 0,
+            "staleCandidates": 23,
+            "unavailable": false,
+            "unavailableValid": true
+          }
+        },
+        "phase": "idle"
+      }
+    },
+    "indexedAt": "2026-10-03T19:47:14.884Z",
+    "indexedThroughBlock": 969755,
+    "lagBlocks": 0,
+    "mempoolBase": "http://127.0.0.1:8080",
+    "ok": true,
+    "ready": true,
+    "service": "proofofwork-op-return-api",
+    "tipHeight": 969755,
+    "mode": "readiness"
+  }
+}

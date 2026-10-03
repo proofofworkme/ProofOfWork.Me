@@ -1,0 +1,60 @@
+{
+  "bindings": [
+    {
+      "bytes": 7206,
+      "path": "/tmp/pow-audit30-body-run-reconciliation-native-v1.stdout",
+      "sha256": "c58e4abf4cccb21efdc6b9d8119ba84a0774ead15c353eb7ce131df1e6c79e91"
+    },
+    {
+      "bytes": 0,
+      "path": "/tmp/pow-audit30-body-run-reconciliation-native-v1.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 1286,
+      "path": "/tmp/pow-audit30-body-run-reconciliation-native-v1.json",
+      "sha256": "e45d7694c2a6be5da5469e8ec781047f5a2ffe828858a269fcba03e3988d9924"
+    },
+    {
+      "bytes": 10452,
+      "path": "/tmp/pow-audit30-body-run-reconciliation-readonly-v1.py",
+      "sha256": "63f1835722103730f2e336e270c770afe73c97db290cb5c37489a944d368fcc3"
+    },
+    {
+      "bytes": 1461,
+      "path": "/tmp/pow-audit30-body-run-reconciliation-owned-caller-v1.py",
+      "sha256": "6534f0a7df147e3c9c7eb6a240d52d94c8abfabcf928264b3a35e58d736a3ec4"
+    },
+    {
+      "bytes": 22040,
+      "path": "/tmp/pow-audit30-production-sixteen-root-control-v3.py",
+      "sha256": "b989a3f2395e7cbf13cb2d3dbd2d258a3fd21867131e41644c094772aba11168"
+    },
+    {
+      "bytes": 142727,
+      "path": "/tmp/pow-audit30-body-run-envelope-20261003T145500Z-v1.json",
+      "sha256": "37b3d8e58fcca371ec952c12207efbe2b2a9feb58b755452b69616346fc252a6"
+    }
+  ],
+  "checks": {
+    "currentPreparedAndImmutablePackageFencesPass": true,
+    "durableRootIntentAndValueErrorFailureExist": true,
+    "exitZeroEmptyStderr": true,
+    "nativeAndBothGuardUnitsQualifiedNotFoundPID0EmptyInvocationCG": true,
+    "originalFiveExactAtObservation": true,
+    "transportBindsActual63fCorrectedTimerSourceAnd37bRequest": true,
+    "workerBeforeCaptureNativeFourReceiptsAndCompletionAbsent": true
+  },
+  "nativeCallsByReviewer": false,
+  "qualifications": [
+    "No same-attempt discarded error detail recovered; no commitOutcomeCertified, successful apply, inverse, automatic retry or global database certificate.",
+    "Current not-found units are endpoint observations, not adoption of default GC metadata as successful execution.",
+    "Actual transport identifies corrected63f source despite earlier dispatch timing uncertainty. Root separately reports its final timer diff review occurred after execution; this peer does not backdate pre-execution review.",
+    "Observation is 2026-10-03T14:49:57.395419+00:00; no continuous-state claim."
+  ],
+  "repositoryEditedByReviewer": false,
+  "reviewedAtUtc": "2026-10-03T14:53:31.677068+00:00",
+  "schema": "pow-audit30-independent-body-run-reconciliation-actual-review-v1",
+  "sourceOrderingInference": "Under the authenticated b989 normal execution route, root intent precedes worker guard execution; durable root-worker-before must be created before command construction and native capture. Its absence together with no native capture/intent/preimages/commit receipts supports failure before reaching the body writer route. It does not identify the failed worker conjunct or prove database-wide historical immutability.",
+  "status": "accepted-observation-with-pre-writer-source-ordering"
+}

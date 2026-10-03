@@ -1,0 +1,36 @@
+{
+  "atUtc": "2026-10-03T14:42:32.616907+00:00",
+  "configurationChanged": false,
+  "nativeExecuted": false,
+  "qualifications": [
+    "Future actual output must be inspected before accepting current installed postimages.",
+    "Other static/unit/known18 fields are authenticated producer properties, not new observations here.",
+    "Individual atomic replacements are not a joint transaction; no continuous state, dependency, retirement or PITR/deletion certificate."
+  ],
+  "repoChanged": false,
+  "reviewed": [
+    "Fixed 144000 public completed receipt only plus exact installed78B ordered pair22f66 and20718B checker795f.",
+    "Duplicate/unknown receipt keys and canonical producer bytes, exact approval/message/scope/caller/plan pins, installed ordered rows and current repeated metadata are enforced.",
+    "Root ancestry/no writable parent, root0:0 regular/no aliases/nlink1/modes, stable NOFOLLOW+NOATIME FD/path metadata and leaf xattrs are checked.",
+    "No children, controls, locks, or file changes. Root whole30s/128MiB/10CPU and64KiB public output bound; custom RuntimeError interruption avoids selectors problem."
+  ],
+  "schema": "pow-audit30-independent-dual-pin-completion-reader-source-review-v1",
+  "source": {
+    "bytes": 6926,
+    "path": "/tmp/pow-audit30-dual-pin-promotion-completed-read-v1.py",
+    "sha256": "e2888101f3e00da5a3e4ca94965a2d950b4a143030cd7d10c56ce6bb96b7adaf"
+  },
+  "status": "accepted-source-only",
+  "tests": {
+    "bytes": 4001,
+    "path": "/tmp/pow-audit30-dual-pin-promotion-completed-read-v1.test.py",
+    "sha256": "4d1fcabe216847343b20dd26b1dc924e0aca6caa147e155fb2c44c48131d2a58"
+  },
+  "validation": {
+    "command": "python3 -I -B -W error /tmp/pow-audit30-dual-pin-promotion-completed-read-v1.test.py",
+    "elapsedSeconds": 0.007,
+    "exitCode": 0,
+    "passed": 8,
+    "qualification": "Actual local syntax/predicate fixtures including the frozen V6 producer completed expression; no reader main, native files, remote calls, SQL or configuration actions."
+  }
+}

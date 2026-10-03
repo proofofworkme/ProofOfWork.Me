@@ -1,0 +1,10 @@
+{
+  "exitCode": 1,
+  "elapsedSeconds": 202.687331,
+  "sourceSha256": "8f079ba24c5a1ba63454944aeab0de258c73418fe05cf914009bab0a9879f25f",
+  "captureSourceSha256": "62e8c972a492fd22ebfb90a64396bec1a38466279aadbeb9439dbbb879d1ef68",
+  "stdoutBytes": 0,
+  "stdoutSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "stderrBytes": 206,
+  "stderrSha256": "a7ac467182335b0594f58ff91f8c60767986116308fd085e142888b384b68f8a"
+}

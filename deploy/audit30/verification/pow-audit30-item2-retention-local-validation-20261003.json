@@ -1,0 +1,18 @@
+{
+  "schema": "pow-audit30-item2-retention-local-validation-v1",
+  "observedAtUtc": "2026-10-03T20:34:19Z",
+  "repository": "/home/sixer/ProofOfWork.Me",
+  "scope": "Local retention predicates after the separately approved exact dual-pin promotion; no remote operations",
+  "commands": [
+    {"command": "python3 -I -B scripts/check-audit28-persistent-retention.py", "exitCode": 0, "tests": 6},
+    {"command": "python3 -I -B scripts/check-retention-service-namespace.py", "exitCode": 0, "tests": 6},
+    {"command": "python3 -I -B deploy/audit30/check-install-retention.test.py", "exitCode": 0, "tests": 19}
+  ],
+  "totalTests": 31,
+  "allPassed": true,
+  "remoteInvocations": 0,
+  "rawOutputHashesInvented": false,
+  "historicalSinglePinEvidencePreserved": true,
+  "currentOrderedPairRequired": ["proof_indexer-20260929T031853Z.dumpset", "proof_indexer-20261003T031852Z.dumpset"],
+  "singlePinInputsRejected": true
+}

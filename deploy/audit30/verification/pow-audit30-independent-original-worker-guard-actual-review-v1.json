@@ -1,0 +1,54 @@
+{
+  "bindings": [
+    {
+      "bytes": 5767,
+      "path": "/tmp/pow-audit30-body-worker-guard-diagnostic-native-v1.stdout",
+      "sha256": "70cd1cd2be29c2e78b6fec7192c88a795914abdf64d21984f9c3cd56bc61bda8"
+    },
+    {
+      "bytes": 0,
+      "path": "/tmp/pow-audit30-body-worker-guard-diagnostic-native-v1.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 1304,
+      "path": "/tmp/pow-audit30-body-worker-guard-diagnostic-native-v1.json",
+      "sha256": "6030e6b2fcd261b4b41b33b2ded3d9234c1edd2dab98122d16de467bffeb1b71"
+    },
+    {
+      "bytes": 6397,
+      "path": "/tmp/pow-audit30-body-worker-guard-readonly-diagnostic-v1.py",
+      "sha256": "c9840bcfc92049acafc7b5f1746e0f0834c26030ccc0bf00a55c7a9ba184a254"
+    },
+    {
+      "bytes": 13199,
+      "path": "/tmp/pow-audit30-worker-mail-exclusion-guard-v3.py",
+      "sha256": "48001283affb80b3b027dcc93831074aee872fbee649fb14482c32b00eb1c76c"
+    },
+    {
+      "bytes": 142727,
+      "path": "/tmp/pow-audit30-body-run-envelope-20261003T145500Z-v1.json",
+      "sha256": "37b3d8e58fcca371ec952c12207efbe2b2a9feb58b755452b69616346fc252a6"
+    }
+  ],
+  "checks": {
+    "actualReadonlySQLAndSourceHashesMatchFrozen480": true,
+    "checkpointAndCoreTipSame969738Hash": true,
+    "fixed150500UnitNotFoundPID0EmptyInvocationCG": true,
+    "marginAfter144BlockLookback": 6661,
+    "noRuntimeRepairOverrideAndStoredWorkerPhasesComplete": true,
+    "normalFirst969739AndShallowLowest969594ExcludeMaxTarget962933": true,
+    "original480PureObservationValidatorPassedOnActualSQLRow": true,
+    "originalFiveEqualAtObservation": true,
+    "transportExitZeroEmptyStderrAndExactSourceRequestPins": true
+  },
+  "qualifications": [
+    "Fresh observation at 2026-10-03T15:00:06.354962+00:00 passed the unchanged original guard; discarded earlier145500 failure conjunct remains unknown.",
+    "Unit GC endpoint is absent; Invocation ownership remains unresolved, observedInvocation null, exactOwnedStopped false. No adopted GC defaults or transport stop claim.",
+    "Guard proves the observed normal/reorg-height exclusion, runtime/source/phase state and shallow PWT completion shape only; no full preserved witness, universal math, historical chain, body commit or production repair certificate.",
+    "No retry, inverse, source rewrite or reviewer native/repository action."
+  ],
+  "reviewedAtUtc": "2026-10-03T15:06:04.293161+00:00",
+  "schema": "pow-audit30-independent-original-worker-guard-actual-review-v1",
+  "status": "accepted-current-readonly-guard-pass-with-qualified-GC"
+}

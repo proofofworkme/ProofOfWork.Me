@@ -1,0 +1,138 @@
+{
+  "actualAppend": {
+    "actions": 66,
+    "affectedPaths": 21,
+    "atUtc": "2026-10-03T12:56:19.819061+00:00",
+    "changedTrackedDocuments": 3,
+    "currentArtifactBindings": {
+      "audits/2026-10-02-audit30-followup-tracker.md": {
+        "bytes": 83448,
+        "sha256": "d9dd4d34b1c21501e66d96c0b635f129eabf78ebeaa5eb97fb2dfcee0aa13e89"
+      },
+      "audits/2026-10-02-audit30-remaining-phase-execution.evidence.json": {
+        "bytes": 16697483,
+        "sha256": "00d44f1e390f755511956d5c2e6dd2752d33b44754b5da08c54171b4ea0b4dce"
+      },
+      "audits/2026-10-03-audit30-oct3-pin-checker-promotion-proposal.md": {
+        "bytes": 9457,
+        "sha256": "cd5852c4b9415f60104b6bc72c82e580e003f000219844ef3a694d6ae86507ec"
+      },
+      "deploy/audit30/verification/source-custody.json": {
+        "bytes": 400084,
+        "sha256": "b7c0fedb714908d50a8e549753ceb7df02393544fb3e4099343cd1a56e7d8c51"
+      },
+      "repository-hygiene.json": {
+        "bytes": 10997,
+        "sha256": "d29d8aa82cb812ccbb5b450ad4d17d5cedbabf1c6abcc11c5e45e147d673c75a"
+      }
+    },
+    "custodyRows": 890,
+    "envelopesAdded": 0,
+    "finalRequests": 2,
+    "newRawArtifactBytes": 280181,
+    "newRawArtifacts": 18
+  },
+  "artifacts": {
+    "helper": {
+      "bytes": 7764,
+      "path": "/tmp/pow-audit30-append-action66-v1.py",
+      "sha256": "68cd36dabd0109afff4b5c124c10c45677e2907c9afdbb70127e3688cac06337"
+    },
+    "intent": {
+      "bytes": 7477,
+      "path": "/tmp/pow-audit30-action66-public-custody-intent-v1.json",
+      "sha256": "9665914097a5a1a919dc857c96ba1499da60f34d4b2357f76fd6052749db8ed0"
+    },
+    "manifest": {
+      "bytes": 8170,
+      "path": "/tmp/pow-audit30-action66-fixed-public-manifest-v1.json",
+      "sha256": "bb6da4627829c725041c5a302cc883a67ccacbdfd705fdd05f33e099172ac809"
+    },
+    "preservation": {
+      "bytes": 6400,
+      "path": "/tmp/pow-audit30-action66-public-custody-preservation-v1.json",
+      "sha256": "2e30248b30602d4e835873b53ac258059e8b7749a6db6146808177cf94917464"
+    },
+    "requestDispatch": {
+      "bytes": 2238,
+      "path": "/tmp/pow-audit30-dual-pin-checker-final-approval-request-v1.json",
+      "sha256": "ab1b143642833c3a727b4d648f5814add94ed3575cc8e5073338f3ff99371c49"
+    },
+    "sourceManifestPeer": {
+      "bytes": 9146,
+      "path": "/tmp/pow-audit30-independent-action66-source-manifest-review-v1.json",
+      "sha256": "1b47e72a7cf10f896e3c4b3dc29b74d55040c03cfbfbc2ce5d88024e18dfa8ab"
+    }
+  },
+  "atUtc": "2026-10-03T12:59:01.425410+00:00",
+  "baseline": {
+    "actions": 65,
+    "custodyRows": 872,
+    "gitHead": "87c16cbaad1cb6e22eda78cf6686d9094953638e",
+    "priorPendingBodyApprovalRequests": 1
+  },
+  "claims": {
+    "additionalDeletion": false,
+    "allDependenciesClosed": false,
+    "helperExecutedByReviewer": false,
+    "nativeCallsByReviewer": false,
+    "phaseCompletion": false,
+    "productionDataMutation": false,
+    "promotionAuthorized": false,
+    "recoveryConfigurationMutation": false,
+    "repositoryEditsByReviewer": false,
+    "sqlOrCoreCalls": false
+  },
+  "independentChecks": {
+    "all18PublicOriginalTmpRepositoryBytesHashesEqual": true,
+    "all18RowsExactlyMatchIntentPreservationAndManifestPlusManifestSelf": true,
+    "all890RawCustodyHashesValidatedIncludingPriorMappings": true,
+    "allOtherAuthorizationMutationRetirementListsGlobalRepresentationsAndHistoricalItemsExact": true,
+    "current21IndexEntriesByteEqualWorkspaceAndNoDeletes": true,
+    "fourOriginalRawDiffsUntrackedAndUnchangedWithTmpRawIdentity": true,
+    "intentBaselinesMatchGitBaseAndPlannedOutputHashesMatchActualThreeDocs": true,
+    "newActionAndCheckpointByteSemanticValuesMatchManifest": true,
+    "noHelperImportOrExecutionByReviewer": true,
+    "old65ActionValuesAnd872CustodyRowsExactPrefix": true,
+    "oldFirstBodyRequestExactAndUnanswered": true,
+    "onlyItem7CheckpointAddedAndRequestDispatchSecondEntry": true,
+    "proposalCd585AndHygieneByteEqualGitBase": true,
+    "stagedStatusObservedAfterRootStaging": true,
+    "trackerIsExactAppendOfManifestNote": true
+  },
+  "preservedRawDiffs": [
+    {
+      "bytes": 9348,
+      "gitState": "untracked-preserved",
+      "path": "deploy/audit30/verification/pow-audit30-coupled-pin-checker-promotion-v2.diff",
+      "sha256": "9e480dd7408d97d31267270010d423b307b5474bfab32d4db7ff3102e1ad73d6"
+    },
+    {
+      "bytes": 4645,
+      "gitState": "untracked-preserved",
+      "path": "deploy/audit30/verification/pow-audit30-coupled-pin-checker-promotion-v3.diff",
+      "sha256": "85109c62041d9c06ed621478ba43c89d7d8577b9507aec538106a010f01ab381"
+    },
+    {
+      "bytes": 2027,
+      "gitState": "untracked-preserved",
+      "path": "deploy/audit30/verification/pow-audit30-coupled-pin-checker-promotion-v4.diff",
+      "sha256": "6a65b16bc34da16a5208229ce2fa575e5a0fb1f969c7b97b0ae95294a4b20740"
+    },
+    {
+      "bytes": 28829,
+      "gitState": "untracked-preserved",
+      "path": "deploy/audit30/verification/pow-audit30-treasury-final-closure-native-v1.diff",
+      "sha256": "762a6a3c5c06a07d546975eee07d93f88295cfd668cf6626da31835b30be6554"
+    }
+  ],
+  "schema": "pow-audit30-independent-action66-actual-preservation-review-v1",
+  "semanticQualification": [
+    "The new ab1b record documents Root-custodied accepted tool dispatch of the exact dual-pin/checker scope. humanResponseReceived, productionApprovalReceiptCreated and recoveryConfigurationAuthorized remain false; a dispatch is not a human response or action approval.",
+    "Both the original production16-body request and new recovery-configuration request remain pending. Actual human receipt/message, new fresh fullread, canonical plan/request and action-time state/restore/locks remain absent prerequisites.",
+    "Creator preparation/source/test/caller/null-template evidence is public. Local positive fixtures remain synthetic; no actual node package, promotion evidence, native invocation or production config/data action is supplied by this append.",
+    "Historical expired proof, incomplete items4-8, unresolved18node/11UI findings, 293GiB recovery envelope and open retirement/global-dependency gates remain qualified.",
+    "During review Root staged the21 intended paths; the first status-only assertion expecting untracked new paths refused on concurrent index-state timing after content checks passed. Final index is measured as3M+18A; four older rawdiffs stayuntracked. No helper/source failure or retry occurred."
+  ],
+  "status": "accepted-actual-public-append-preservation"
+}

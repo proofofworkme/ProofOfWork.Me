@@ -1,0 +1,1313 @@
+{
+  "preparedAtUtc": "2026-10-03T19:13:31.914113+00:00",
+  "preservation": {
+    "existingItem1CompleteUnchanged": true,
+    "historicalFailuresAndWarningsRetained": true,
+    "newDeletionAuthority": false,
+    "original69ActionsUnchanged": true,
+    "otherChecklistItemsUnchanged": true,
+    "productionCallsPerformedByDraft": false
+  },
+  "proposedAction": {
+    "action": "Preserve actual failed strict-v2 ID/events PASS and parity failure at work-token-state-current-relational with two historical AMO warnings, restored timer and stopped unit. Preserve the later independent current WORK predicate PASS without changing that failed event. Retain the separately refused v3 preflight/source/name classifier and separately admitted strict-v3 run as in progress only. Exact38ac16-surface UI build and guarded release sources/plans remain prepared; no production cutover or UI publication occurred.",
+    "actualGateResults": {
+      "events": {
+        "checkCount": 49,
+        "passed": true
+      },
+      "ids": {
+        "confirmedWinners": 508,
+        "coveredConfirmedRegistryTransactions": 565,
+        "coveredPendingRegistryTransactions": 22,
+        "fetchedTransactions": 587,
+        "passed": true,
+        "pendingCandidates": 20
+      },
+      "machineBinding": {
+        "bytes": 4330,
+        "path": "deploy/audit30/verification/pow-audit30-strict-v3-progress-192149-v1.json",
+        "sha256": "cc34f4e55d14da7232c963a8ef8e51c572e1f878d631c3688968343be07f0184"
+      },
+      "parity": {
+        "blockingErrors": [
+          {
+            "name": "work-token-state-current-relational",
+            "ok": false,
+            "severity": "error"
+          }
+        ],
+        "checkCount": 102,
+        "historicalWarnings": [
+          {
+            "name": "work-amo-v5-migration",
+            "ok": false,
+            "severity": "warning"
+          },
+          {
+            "name": "work-amo-v5-usd-quote-head",
+            "ok": false,
+            "severity": "warning"
+          }
+        ],
+        "passed": false
+      },
+      "priorFailedAttempt": {
+        "driverReceiptPath": "/data/proofofwork-audit29-verify-output-38ac6e2bff2a-20261003T042000Z-shadow-strict-v2/attempt/receipt.json",
+        "driverReceiptSHA256": "0f77ed860b40e4762f4ad0962dbc66faded888d6db865bd44e542842eff5689c",
+        "failure": "STRICT_GATE_FAILED",
+        "gateReceipts": {
+          "events": {
+            "checkCount": 49,
+            "checkpointStable": true,
+            "exitCode": 0,
+            "failedChecks": [],
+            "scriptSha256": "a5a82730ab8d7edde3d617362c960aa64155dbb090e5676a0906306d6a6d0bce",
+            "stderrBytes": 0,
+            "stdoutBytes": 54116,
+            "stdoutSha256": "0d298c1e3a9d238f22b7b6f0be7b28331297ae65920635c8fe6891501701907f"
+          },
+          "ids": {
+            "checkpointStable": true,
+            "counts": {
+              "Confirmed winners": 508,
+              "Covered confirmed registry transactions": 565,
+              "Covered pending registry transactions": 22,
+              "Fetched transactions": 587,
+              "Pending candidates": 20
+            },
+            "exitCode": 0,
+            "scriptSha256": "d7bbe914e3db45fcebac174dc182146f988547fb8d94ffa65f8286cebd50a825",
+            "stderrBytes": 0,
+            "stdoutBytes": 6581,
+            "stdoutSha256": "e47b39e1ba8b2791ca1f8dcf098ede747d2c0c244a541b6495d48e1f3554d518"
+          },
+          "parity": {
+            "checkCount": 102,
+            "checkpointStable": true,
+            "exitCode": 1,
+            "failedChecks": [
+              {
+                "name": "work-token-state-current-relational",
+                "ok": false,
+                "severity": "error"
+              },
+              {
+                "name": "work-amo-v5-migration",
+                "ok": false,
+                "severity": "warning"
+              },
+              {
+                "name": "work-amo-v5-usd-quote-head",
+                "ok": false,
+                "severity": "warning"
+              }
+            ],
+            "scriptSha256": "450e5361ae5ecdd8dde6e434723366e3d4cc1cafae4675e9e7760c3d1cac90ac",
+            "stderrBytes": 0,
+            "stdoutBytes": 34398426,
+            "stdoutSha256": "ec50562b99352e81312bd4e146d3ffc8721fe2cb4e1b2991ea79e8f2d2e68f31"
+          }
+        },
+        "gates": {
+          "events": true,
+          "ids": true,
+          "parity": false
+        },
+        "privateContentsExported": false,
+        "rawChildOutputExported": false,
+        "schema": "audit30-strict-v2-bounded-failure-evidence-v1",
+        "timerRestored": true,
+        "unitStopped": true
+      },
+      "qualification": "Exact bounded projection of the preserved native strict-v2 receipt and hash-bound child results. All raw child output/private capture remains on host.",
+      "status": "actual-failed"
+    },
+    "additionalDeletion": false,
+    "atUtc": "2026-10-03T19:21:49.291059+00:00",
+    "automaticRetry": false,
+    "codeCutoverPerformed": false,
+    "currentStrictV3Admission": {
+      "activeGateScripts": [
+        "audit-id-registry.mjs",
+        "verify-candidate.mjs"
+      ],
+      "currentBackupServiceState": {
+        "ActiveState": "inactive",
+        "InvocationID": "dfda5fa3574144958b948f8b5920b4d0",
+        "LoadState": "loaded",
+        "MainPID": "0",
+        "Result": "success",
+        "RuntimeMaxUSec": "infinity",
+        "SubState": "dead"
+      },
+      "currentBackupTimerState": {
+        "ActiveState": "inactive",
+        "InvocationID": "3b2511dfe4ca48e0a0596bc0225e1c1d",
+        "LoadState": "loaded",
+        "Result": "success",
+        "SubState": "dead"
+      },
+      "cutoverPerformed": false,
+      "fullStrictAcceptance": false,
+      "intentSHA256": "6aa975f6ba9dd1860b68c7380fdac468cc691b0aa2a30ecc95e1ff41cb138a96",
+      "observedAtUtc": "2026-10-03T19:21:49.291059+00:00",
+      "progress": {
+        "bytes": 4330,
+        "path": "deploy/audit30/verification/pow-audit30-strict-v3-progress-192149-v1.json",
+        "sha256": "cc34f4e55d14da7232c963a8ef8e51c572e1f878d631c3688968343be07f0184"
+      },
+      "qualification": "An actual separately admitted managed strict-v3 run is active at this bounded observation. Its source and intent are preserved; no completion, restoration or acceptance is inferred.",
+      "source": {
+        "bytes": 21068,
+        "path": "deploy/audit30/verification/pow-audit30-acceptance-strict-v3.py",
+        "sha256": "1ef0f5cf7b6d35e07c305ee0effe3dd714daf42c5b391a962ff0490cdf88b1e6"
+      },
+      "state": {
+        "ActiveState": "active",
+        "InvocationID": "a230a1f4b038451a840d24ca23f8cd88",
+        "LoadState": "loaded",
+        "MainPID": "3344618",
+        "Result": "success",
+        "RuntimeMaxUSec": "20min",
+        "SubState": "running"
+      },
+      "status": "in-progress-no-acceptance",
+      "unit": "proofofwork-audit29-verify-38ac6e2bff2a-20261003T042000Z-shadow-strict-v3.service"
+    },
+    "failure": {
+      "driverFailure": "STRICT_GATE_FAILED",
+      "elapsedSeconds": 202.687331,
+      "nativeGuardCode": "STRICT_DRIVER_REFUSED",
+      "transportExitCode": 1
+    },
+    "fullStrictAcceptance": false,
+    "laterNarrowWorkDiagnostic": {
+      "actualApiIdentityUnchanged": true,
+      "currentPredicatePassed": true,
+      "fullStrictAcceptance": false,
+      "observedScopedWork": {
+        "holders": 388,
+        "indexedThroughBlock": 969752,
+        "indexedThroughBlockHash": "000000000000000000003e5a6b77578b091ec4bda168e01da9377a6904d9937b",
+        "listings": 1006,
+        "mints": 21000,
+        "returned": true,
+        "snapshotId": null,
+        "source": "proof-indexer-token-state-tables",
+        "tokens": 1,
+        "transfers": 261
+      },
+      "observedSummary": {
+        "holders": 0,
+        "indexedThroughBlock": 969752,
+        "indexedThroughBlockHash": "000000000000000000003e5a6b77578b091ec4bda168e01da9377a6904d9937b",
+        "listings": 0,
+        "mints": 0,
+        "returned": true,
+        "snapshotId": "6ff36eccc72c9cc0ea052bc7",
+        "source": null,
+        "tokens": 0,
+        "transfers": 0
+      },
+      "observedUnscoped": {
+        "holders": 436,
+        "indexedThroughBlock": 969752,
+        "indexedThroughBlockHash": "000000000000000000003e5a6b77578b091ec4bda168e01da9377a6904d9937b",
+        "listings": 1008,
+        "mints": 21877,
+        "returned": true,
+        "snapshotId": null,
+        "source": "proof-indexer-token-state-tables",
+        "tokens": 238,
+        "transfers": 268
+      },
+      "predicate": "work-token-state-current-relational",
+      "predicateSource": {
+        "bytes": 94409,
+        "path": "scripts/check-proof-indexer-parity.mjs",
+        "sha256": "450e5361ae5ecdd8dde6e434723366e3d4cc1cafae4675e9e7760c3d1cac90ac"
+      },
+      "productionMutation": false,
+      "qualification": "A later independent read-only observation passes the exact current scoped WORK relational-state predicate. It is not a retroactive explanation of strict-v2 failure and does not constitute full strict acceptance or authorize deployment.",
+      "readiness": {
+        "active": true,
+        "evidenceComplete": true,
+        "parityReady": true,
+        "pendingReadinessDiagnostics": {
+          "evaluation": "ordered-first-failure",
+          "failedCategories": [],
+          "model": "proof-index-work-q16-pending-readiness-diagnostic-v1"
+        },
+        "pendingReady": true,
+        "pendingValidThrough": "2026-10-03T19:20:40.289Z",
+        "ready": true,
+        "replayReady": true,
+        "tipHash": "000000000000000000003e5a6b77578b091ec4bda168e01da9377a6904d9937b",
+        "tipHeight": 969752
+      },
+      "result": {
+        "bytes": 1809,
+        "path": "deploy/audit30/verification/pow-audit30-strict-v2-work-predicate-read-result-v1.stdout.json",
+        "sha256": "38dc163338f1122ff458eecee2ed7169d5fd5e7945b4e8edf6a7856ee01a804c"
+      },
+      "source": {
+        "bytes": 4238,
+        "path": "deploy/audit30/verification/pow-audit30-strict-v2-work-predicate-read-v1.py",
+        "sha256": "0052ce722c7303967053e513c7a773f26150527e2cb3c1ad6eea635d8fb29ad7"
+      },
+      "sourceReader": {
+        "bytes": 1533661,
+        "path": "server/db/proof-index-reader.mjs",
+        "sha256": "9278b81473c23a2c9d06c6b1306268c360539f833cdd7967b73fd99a35275b87"
+      },
+      "sqlReadOnly": {
+        "default_read_only": "on",
+        "read_only": "on"
+      },
+      "status": "current-predicate-pass",
+      "strictFailureRemainsFailed": true,
+      "transport": {
+        "bytes": 411,
+        "path": "deploy/audit30/verification/pow-audit30-strict-v2-work-predicate-read-result-v1.json",
+        "sha256": "208af9633ac8e9d13020f8d0cd5377fbf4d83a81755e5549780af360f0598836"
+      }
+    },
+    "nextRequired": "Preserve strict-v2 as a failed historical event and the later current WORK predicate PASS separately. A fresh full strict attempt must pass all three gates in its own immutable namespace before scoped cutover and actual production/UI acceptance; no gate waiver or retrospective success.",
+    "ownedShadowLease": {
+      "lastObservedAtUtc": "2026-10-03T19:21:49.291059+00:00",
+      "name": "proofofwork-audit29-shadow-38ac6e2bff2a-20261003T042000Z-lease-v3.service",
+      "qualification": "Owned active at this observation only; no assertion of current activity beyond the recorded observation.",
+      "state": {
+        "ActiveState": "active",
+        "InvocationID": "81830a503c894319920fd097de890a9a",
+        "LoadState": "loaded",
+        "MainPID": "3333259",
+        "Result": "success",
+        "RuntimeMaxUSec": "45min",
+        "SubState": "running"
+      }
+    },
+    "preparedNodeCutover": {
+      "freshFullStrictPassRequired": true,
+      "nativeInvocations": 0,
+      "pureTestSource": {
+        "bytes": 3331,
+        "path": "deploy/audit30/verification/pow-audit30-item2-node-cutover-v1.test.py",
+        "sha256": "11e2425300c78adaf76e69462caa979b7843f602a4db1a6f8ddc5adfeaf8bf07"
+      },
+      "pureTestsPassed": 5,
+      "source": {
+        "bytes": 17811,
+        "path": "deploy/audit30/verification/pow-audit30-item2-node-cutover-v1.py",
+        "sha256": "fcac13f0dfd68f0549c902b6680d8d09d5600bb1cb4e521f69ce615ac92a73b1"
+      }
+    },
+    "preparedUiBuild": {
+      "allSurfaceBuildsPassed": true,
+      "buildExited": 0,
+      "bundles": {
+        "source": {
+          "bytes": 105032111,
+          "path": "/tmp/proofofwork-ui-release.sWTw59PgNe/proofofwork-ui-source-38ac6e2bff2a-20261003T190512Z.tgz",
+          "sha256": "e8a92e9ddcd81ec352e5c4e4684d238780f02378285b315614976c85e4c43903"
+        },
+        "surfaces": {
+          "bytes": 195313712,
+          "path": "/tmp/proofofwork-ui-release.sWTw59PgNe/proofofwork-ui-surfaces-38ac6e2bff2a-20261003T190512Z.tgz",
+          "sha256": "6849138b5b313ea6e134f3367892691b80174a2f3d12fac278047f6df0fc9b19"
+        }
+      },
+      "commit": "38ac6e2bff2ac16890724e5213346ef8a3ebd186",
+      "deploymentStatus": "prepared-not-deployed",
+      "receipt": {
+        "bytes": 822,
+        "path": "deploy/audit30/verification/pow-audit30-item2-ui-build-38ac-v1.json",
+        "sha256": "75c45b805e4e67ef44ddf6bc7b54a817b08a6226262f40596b697f1cdb183d5e"
+      },
+      "releaseId": "38ac6e2bff2a-20261003T190512Z",
+      "surfaceCount": 16,
+      "tree": "8b9b5e3cd47aa8e4204da717350a629176e30da6",
+      "typeScriptPassed": true
+    },
+    "preparedUiPlan": {
+      "plan": {
+        "bytes": 4695,
+        "path": "deploy/audit30/verification/pow-audit30-item2-ui-plan-38ac-v1.json",
+        "sha256": "e9f0ad26dbfb1364119f9bd51ba0b12d38b9d9eb2b1902baf2726a66a46a4643"
+      },
+      "preflight": {
+        "bytes": 49052,
+        "path": "deploy/audit30/verification/pow-audit30-item2-ui-preflight-38ac-v1.json",
+        "sha256": "1ea1eb8220005396939ac78b417d3ea9847f596d90997e6d670cbb0659dea6d2"
+      },
+      "publishPerformed": false,
+      "stagePerformed": false,
+      "uploadPerformed": false,
+      "wrapperBindings": {
+        "bytes": 2327,
+        "path": "deploy/audit30/verification/pow-audit30-item2-ui-wrapper-binding-v1.json",
+        "sha256": "d894f7cf00c3be20aaf6365be49a2d7991b4e3f57f50268602e3eb710b4152b7"
+      }
+    },
+    "priorMailRepairCompletionPreserved": {
+      "bytes": 2984,
+      "path": "deploy/audit30/verification/pow-audit30-mail16-completed-v1.json",
+      "sha256": "3092d25b775051d14aa9a51315028fde54fdd7ee9c32689f912cdd5ecfe03b4e"
+    },
+    "productionDataMutation": false,
+    "publicSourceCustodyAdded": [
+      {
+        "bytes": 1769,
+        "originalPath": "/tmp/pow-audit30-strict-v2-progress-20261003T190751Z.json",
+        "repositoryPath": "deploy/audit30/verification/pow-audit30-strict-v2-passive-progress-v1.json",
+        "sha256": "e19520d713d81300b9bec9057ce93805ebba1fc6055cd3d4b45272b09c38c6de"
+      },
+      {
+        "bytes": 822,
+        "originalPath": "/tmp/proofofwork-ui-release.sWTw59PgNe/build-receipt.json",
+        "repositoryPath": "deploy/audit30/verification/pow-audit30-item2-ui-build-38ac-v1.json",
+        "sha256": "75c45b805e4e67ef44ddf6bc7b54a817b08a6226262f40596b697f1cdb183d5e"
+      },
+      {
+        "bytes": 49052,
+        "originalPath": "/tmp/pow-audit30-item2-ui-preflight-38ac-v1.json",
+        "repositoryPath": "deploy/audit30/verification/pow-audit30-item2-ui-preflight-38ac-v1.json",
+        "sha256": "1ea1eb8220005396939ac78b417d3ea9847f596d90997e6d670cbb0659dea6d2"
+      },
+      {
+        "bytes": 4695,
+        "originalPath": "/tmp/pow-audit30-item2-ui-plan-38ac-v1.json",
+        "repositoryPath": "deploy/audit30/verification/pow-audit30-item2-ui-plan-38ac-v1.json",
+        "sha256": "e9f0ad26dbfb1364119f9bd51ba0b12d38b9d9eb2b1902baf2726a66a46a4643"
+      },
+      {
+        "bytes": 17811,
+        "originalPath": "/tmp/pow-audit30-item2-node-cutover.py",
+        "repositoryPath": "deploy/audit30/verification/pow-audit30-item2-node-cutover-v1.py",
+        "sha256": "fcac13f0dfd68f0549c902b6680d8d09d5600bb1cb4e521f69ce615ac92a73b1"
+      },
+      {
+        "bytes": 3331,
+        "originalPath": "/tmp/pow-audit30-item2-node-cutover.test.py",
+        "repositoryPath": "deploy/audit30/verification/pow-audit30-item2-node-cutover-v1.test.py",
+        "sha256": "11e2425300c78adaf76e69462caa979b7843f602a4db1a6f8ddc5adfeaf8bf07"
+      },
+      {
+        "bytes": 2327,
+        "originalPath": "/tmp/pow-audit30-item2-ui-release-38ac-v1/bindings.json",
+        "repositoryPath": "deploy/audit30/verification/pow-audit30-item2-ui-wrapper-binding-v1.json",
+        "sha256": "d894f7cf00c3be20aaf6365be49a2d7991b4e3f57f50268602e3eb710b4152b7"
+      },
+      {
+        "bytes": 1809,
+        "originalPath": "/tmp/pow-audit30-strict-v2-work-predicate-read-result-v1.stdout",
+        "repositoryPath": "deploy/audit30/verification/pow-audit30-strict-v2-work-predicate-read-result-v1.stdout.json",
+        "sha256": "38dc163338f1122ff458eecee2ed7169d5fd5e7945b4e8edf6a7856ee01a804c"
+      },
+      {
+        "bytes": 4238,
+        "originalPath": "/tmp/pow-audit30-strict-v2-work-predicate-read.py",
+        "repositoryPath": "deploy/audit30/verification/pow-audit30-strict-v2-work-predicate-read-v1.py",
+        "sha256": "0052ce722c7303967053e513c7a773f26150527e2cb3c1ad6eea635d8fb29ad7"
+      },
+      {
+        "bytes": 411,
+        "originalPath": "/tmp/pow-audit30-strict-v2-work-predicate-read-result-v1.json",
+        "repositoryPath": "deploy/audit30/verification/pow-audit30-strict-v2-work-predicate-read-result-v1.json",
+        "sha256": "208af9633ac8e9d13020f8d0cd5377fbf4d83a81755e5549780af360f0598836"
+      },
+      {
+        "bytes": 11365,
+        "originalPath": "/tmp/pow-audit30-item2-node-launch.py",
+        "repositoryPath": "deploy/audit30/verification/pow-audit30-item2-node-launch-v1.py",
+        "sha256": "7079c7c01210ee336062ef675e40c88d6f1d588452b150b7ce083c2097e9a4ff"
+      },
+      {
+        "bytes": 3478,
+        "originalPath": "/tmp/pow-audit30-item2-node-launch.test.py",
+        "repositoryPath": "deploy/audit30/verification/pow-audit30-item2-node-launch-v1.test.py",
+        "sha256": "dd2ba53d4ae293e6515ac8e59969d54d36bbe760ac63357bd7fe57e1ccfbf279"
+      },
+      {
+        "bytes": 4330,
+        "originalPath": "/tmp/pow-audit30-strict-v3-progress-20261003T192149Z.json",
+        "repositoryPath": "deploy/audit30/verification/pow-audit30-strict-v3-progress-192149-v1.json",
+        "sha256": "cc34f4e55d14da7232c963a8ef8e51c572e1f878d631c3688968343be07f0184"
+      },
+      {
+        "bytes": 533,
+        "originalPath": "/tmp/pow-audit30-acceptance-strict-v3-native-v1.json",
+        "repositoryPath": "deploy/audit30/verification/pow-audit30-strict-v3-preflight-refusal-transport-v1.json",
+        "sha256": "0b9debd66be9d3292c81f005a5f2ccafe372499e0dbba1a107d1613e41b07b15"
+      },
+      {
+        "bytes": 63,
+        "originalPath": "/tmp/pow-audit30-acceptance-strict-v3-native-v1.stderr",
+        "repositoryPath": "deploy/audit30/verification/pow-audit30-strict-v3-preflight-refusal-error-v1.json",
+        "sha256": "d4b81e51b3c31af676feeb4fbf76478c369faed9d390bbbb8e45dfb2d82b121c"
+      },
+      {
+        "bytes": 2704,
+        "originalPath": "/tmp/pow-audit30-strict-v2-prior-check-shape-read.py",
+        "repositoryPath": "deploy/audit30/verification/pow-audit30-strict-v2-prior-check-shape-read-v1.py",
+        "sha256": "f2999f8d34c48c09e25bb5c964b78471475420fe0a5277f9fcd9c359a49dd386"
+      },
+      {
+        "bytes": 6774,
+        "originalPath": "/tmp/pow-audit30-strict-v2-prior-check-shape-result-v1.stdout",
+        "repositoryPath": "deploy/audit30/verification/pow-audit30-strict-v2-prior-check-shape-result-v1.stdout.json",
+        "sha256": "1e7a3dc1f4396f4463f7027bb888d0bf0e6b5a038492dd02d8841530cc377016"
+      },
+      {
+        "bytes": 348,
+        "originalPath": "/tmp/pow-audit30-strict-v2-prior-check-shape-result-v1.json",
+        "repositoryPath": "deploy/audit30/verification/pow-audit30-strict-v2-prior-check-shape-result-v1.json",
+        "sha256": "9818b82ac000819bb383a83e29cfa7aeed71726c530a81d7a7d7a0561cfcd8ad"
+      },
+      {
+        "bytes": 5510,
+        "originalPath": "/tmp/pow-audit30-strict-v3-progress-read.py",
+        "repositoryPath": "deploy/audit30/verification/pow-audit30-strict-v3-progress-read-v1.py",
+        "sha256": "4eeb66e81a824fdc4dd9b521f93320f6503cca69411391b4ace900996d02bb0b"
+      },
+      {
+        "bytes": 1807,
+        "originalPath": "/tmp/pow-audit30-strict-v3-progress-read.test.py",
+        "repositoryPath": "deploy/audit30/verification/pow-audit30-strict-v3-progress-read-v1.test.py",
+        "sha256": "e35041ec6ef900f7f3d56dd722e5a9a29ae167c4e756efada624761ba46a7775"
+      },
+      {
+        "bytes": 12039,
+        "originalPath": "/tmp/pow-audit30-item2-ui-release-38ac-v1/release.py",
+        "repositoryPath": "deploy/audit30/verification/item2-ui-release-38ac-v1/release.py",
+        "sha256": "a70d791921ece41ff3fb86b2e3dce816c99f3fabd1fe6ed97843e761f342f5bd"
+      },
+      {
+        "bytes": 6165,
+        "originalPath": "/tmp/pow-audit30-item2-ui-release-38ac-v1/preflight.py",
+        "repositoryPath": "deploy/audit30/verification/item2-ui-release-38ac-v1/preflight.py",
+        "sha256": "a7f672dcf4e6f3c5187c858143ad3cd4c87deb5fb3f0b244130a4826d72b6b84"
+      },
+      {
+        "bytes": 8593,
+        "originalPath": "/tmp/pow-audit30-item2-ui-release-38ac-v1/publish.py",
+        "repositoryPath": "deploy/audit30/verification/item2-ui-release-38ac-v1/publish.py",
+        "sha256": "d285f986463eb5253f6669ceaf552e0a773222ae80431bc868ba92d853ff7b3d"
+      },
+      {
+        "bytes": 16802,
+        "originalPath": "/tmp/pow-audit30-item2-ui-release-38ac-v1/remote_transport.py",
+        "repositoryPath": "deploy/audit30/verification/item2-ui-release-38ac-v1/remote_transport.py",
+        "sha256": "7153e99661b7c05b31c6d789b0546f0c130af4e60cbd9d47dd63f83198b93d28"
+      },
+      {
+        "bytes": 2366,
+        "originalPath": "/tmp/pow-audit30-item2-ui-release-38ac-v1/transport_preserve.py",
+        "repositoryPath": "deploy/audit30/verification/item2-ui-release-38ac-v1/transport_preserve.py",
+        "sha256": "98e083a9ece551dea8efe591541e7f2702e2426ca7788e828deaa4207550d1fe"
+      },
+      {
+        "bytes": 3348,
+        "originalPath": "/tmp/pow-audit30-item2-ui-release-38ac-v1/collect_verify.py",
+        "repositoryPath": "deploy/audit30/verification/item2-ui-release-38ac-v1/collect_verify.py",
+        "sha256": "dd898d0a1642f9715f806b52d66fd173445bb4dd81ea3e904934dc73a43b7f04"
+      },
+      {
+        "bytes": 15072,
+        "originalPath": "/tmp/pow-audit30-item2-ui-release-38ac-v1/https_smoke.py",
+        "repositoryPath": "deploy/audit30/verification/item2-ui-release-38ac-v1/https_smoke.py",
+        "sha256": "4c422a3fb3e29b21706f344491eb2ebcec3552f8b9dc8b67f56b913697135b23"
+      },
+      {
+        "bytes": 5466,
+        "originalPath": "/tmp/pow-audit30-append-action70-v1.py",
+        "repositoryPath": "deploy/audit30/verification/pow-audit30-append-action70-v1.py",
+        "sha256": "7fc140b44dbf4d3f74b3a635e140a1265253b14b16dce54b816cafda184172b4"
+      }
+    ],
+    "recoveryConfigurationMutation": false,
+    "schema": "pow-audit30-current-api-strict-v2-failed-action-v1",
+    "strictReceipt": {
+      "detailedFailedAttemptBinding": {
+        "bytes": 4330,
+        "path": "deploy/audit30/verification/pow-audit30-strict-v3-progress-192149-v1.json",
+        "sha256": "cc34f4e55d14da7232c963a8ef8e51c572e1f878d631c3688968343be07f0184"
+      },
+      "nativeProofHashes": {
+        "driver-receipt.json": {
+          "errorClass": null,
+          "failure": "STRICT_GATE_FAILED",
+          "gates": {
+            "events": true,
+            "ids": true,
+            "parity": false
+          },
+          "ok": false,
+          "sha256": "0f77ed860b40e4762f4ad0962dbc66faded888d6db865bd44e542842eff5689c"
+        },
+        "launcher-final.json": {
+          "errorClass": "RuntimeError",
+          "failure": null,
+          "gates": null,
+          "ok": false,
+          "sha256": "e6d1c1cc45880ee6f086f2919f1292f77b8dda2277d7d2886e501700711cfdef"
+        },
+        "strict-native-v2-failed.json": {
+          "errorClass": "ValueError",
+          "failure": null,
+          "gates": null,
+          "ok": null,
+          "sha256": "34be3fcd5727cca1a8c7aa97167e036b8fba84371d632368d8403e024b0d9c6e"
+        }
+      },
+      "passiveProgress": {
+        "bytes": 1769,
+        "path": "deploy/audit30/verification/pow-audit30-strict-v2-passive-progress-v1.json",
+        "sha256": "e19520d713d81300b9bec9057ce93805ebba1fc6055cd3d4b45272b09c38c6de"
+      },
+      "qualification": "Actual failed driver/stopped proof plus the later bounded machine extraction of exact strict-v2 counters, child-output hashes, sole blocking error, historical warnings and restoration.",
+      "refusal": {
+        "bytes": 206,
+        "path": "deploy/audit30/verification/pow-audit30-acceptance-strict-v2-refusal-v1.json",
+        "sha256": "a7ac467182335b0594f58ff91f8c60767986116308fd085e142888b384b68f8a"
+      },
+      "transport": {
+        "bytes": 445,
+        "path": "deploy/audit30/verification/pow-audit30-acceptance-strict-v2-transport-v1.json",
+        "sha256": "59bc4634d685f7891838adccf10b9002a565702c37715a88f6ad49cca374aea0"
+      }
+    },
+    "strictUnit": {
+      "name": "proofofwork-audit29-verify-38ac6e2bff2a-20261003T042000Z-shadow-strict-v2.service",
+      "state": {
+        "ActiveState": "failed",
+        "InvocationID": "3fe0b89885a64594a3feaaca0a8a1219",
+        "LoadState": "loaded",
+        "MainPID": "0",
+        "Result": "exit-code",
+        "RuntimeMaxUSec": "20min",
+        "SubState": "failed"
+      },
+      "stopped": true
+    },
+    "strictV3PreflightRefusal": {
+      "actualErrorCode": "PRIOR_CHECK_SHAPE",
+      "classifier": {
+        "explanation": "Thirty documented event check names contain spaces; their entries, boolean pass flags and severity are valid. The draft name regexp rejects them. Parity entry shapes pass. The successor accepts the documented printable bounded names without waiving failed gates.",
+        "invalidDraftNameCount": 30,
+        "result": {
+          "bytes": 6774,
+          "path": "deploy/audit30/verification/pow-audit30-strict-v2-prior-check-shape-result-v1.stdout.json",
+          "sha256": "1e7a3dc1f4396f4463f7027bb888d0bf0e6b5a038492dd02d8841530cc377016"
+        },
+        "source": {
+          "bytes": 2704,
+          "path": "deploy/audit30/verification/pow-audit30-strict-v2-prior-check-shape-read-v1.py",
+          "sha256": "f2999f8d34c48c09e25bb5c964b78471475420fe0a5277f9fcd9c359a49dd386"
+        },
+        "transport": {
+          "bytes": 348,
+          "path": "deploy/audit30/verification/pow-audit30-strict-v2-prior-check-shape-result-v1.json",
+          "sha256": "9818b82ac000819bb383a83e29cfa7aeed71726c530a81d7a7d7a0561cfcd8ad"
+        }
+      },
+      "elapsedSeconds": 2.183485,
+      "error": {
+        "bytes": 63,
+        "path": "deploy/audit30/verification/pow-audit30-strict-v3-preflight-refusal-error-v1.json",
+        "sha256": "d4b81e51b3c31af676feeb4fbf76478c369faed9d390bbbb8e45dfb2d82b121c"
+      },
+      "exitCode": 1,
+      "qualification": "This preparation refuses the prior-check evidence-name parser. No fresh strict-v3 native intent or acceptance was produced by this refused source; preserve the later separately admitted source independently.",
+      "source": {
+        "bytes": 21042,
+        "path": "deploy/audit30/verification/pow-audit30-acceptance-strict-v3-preflight-refused-source.py",
+        "sha256": "338f9f4952758850b257bf5968733db8a15297e752cc9a1fcdfdad0c5860a275"
+      },
+      "status": "refused-before-current-native-admission",
+      "transport": {
+        "bytes": 533,
+        "path": "deploy/audit30/verification/pow-audit30-strict-v3-preflight-refusal-transport-v1.json",
+        "sha256": "0b9debd66be9d3292c81f005a5f2ccafe372499e0dbba1a107d1613e41b07b15"
+      }
+    },
+    "timerRestored": true,
+    "timerRestoredQualification": "Actual prior strict-v2 timerRestored:true and unitStopped:true in the bounded machine extraction. This does not certify restoration of the separately running strict-v3 attempt.",
+    "uiPublicationPerformed": false
+  },
+  "proposedActionOrdinal": 70,
+  "proposedCurrentContinuation": {
+    "atUtc": "2026-10-03T19:21:49.291059+00:00",
+    "canonicalItem4Qualification": "Production body repair is complete; byte-preserving candidate code cutover remains pending under API release item6.",
+    "currentApiEvidence": {
+      "actionOrdinal": 70,
+      "actualFailedV2GateResults": {
+        "events": {
+          "checkCount": 49,
+          "passed": true
+        },
+        "ids": {
+          "confirmedWinners": 508,
+          "coveredConfirmedRegistryTransactions": 565,
+          "coveredPendingRegistryTransactions": 22,
+          "fetchedTransactions": 587,
+          "passed": true,
+          "pendingCandidates": 20
+        },
+        "machineBinding": {
+          "bytes": 4330,
+          "path": "deploy/audit30/verification/pow-audit30-strict-v3-progress-192149-v1.json",
+          "sha256": "cc34f4e55d14da7232c963a8ef8e51c572e1f878d631c3688968343be07f0184"
+        },
+        "parity": {
+          "blockingErrors": [
+            {
+              "name": "work-token-state-current-relational",
+              "ok": false,
+              "severity": "error"
+            }
+          ],
+          "checkCount": 102,
+          "historicalWarnings": [
+            {
+              "name": "work-amo-v5-migration",
+              "ok": false,
+              "severity": "warning"
+            },
+            {
+              "name": "work-amo-v5-usd-quote-head",
+              "ok": false,
+              "severity": "warning"
+            }
+          ],
+          "passed": false
+        },
+        "priorFailedAttempt": {
+          "driverReceiptPath": "/data/proofofwork-audit29-verify-output-38ac6e2bff2a-20261003T042000Z-shadow-strict-v2/attempt/receipt.json",
+          "driverReceiptSHA256": "0f77ed860b40e4762f4ad0962dbc66faded888d6db865bd44e542842eff5689c",
+          "failure": "STRICT_GATE_FAILED",
+          "gateReceipts": {
+            "events": {
+              "checkCount": 49,
+              "checkpointStable": true,
+              "exitCode": 0,
+              "failedChecks": [],
+              "scriptSha256": "a5a82730ab8d7edde3d617362c960aa64155dbb090e5676a0906306d6a6d0bce",
+              "stderrBytes": 0,
+              "stdoutBytes": 54116,
+              "stdoutSha256": "0d298c1e3a9d238f22b7b6f0be7b28331297ae65920635c8fe6891501701907f"
+            },
+            "ids": {
+              "checkpointStable": true,
+              "counts": {
+                "Confirmed winners": 508,
+                "Covered confirmed registry transactions": 565,
+                "Covered pending registry transactions": 22,
+                "Fetched transactions": 587,
+                "Pending candidates": 20
+              },
+              "exitCode": 0,
+              "scriptSha256": "d7bbe914e3db45fcebac174dc182146f988547fb8d94ffa65f8286cebd50a825",
+              "stderrBytes": 0,
+              "stdoutBytes": 6581,
+              "stdoutSha256": "e47b39e1ba8b2791ca1f8dcf098ede747d2c0c244a541b6495d48e1f3554d518"
+            },
+            "parity": {
+              "checkCount": 102,
+              "checkpointStable": true,
+              "exitCode": 1,
+              "failedChecks": [
+                {
+                  "name": "work-token-state-current-relational",
+                  "ok": false,
+                  "severity": "error"
+                },
+                {
+                  "name": "work-amo-v5-migration",
+                  "ok": false,
+                  "severity": "warning"
+                },
+                {
+                  "name": "work-amo-v5-usd-quote-head",
+                  "ok": false,
+                  "severity": "warning"
+                }
+              ],
+              "scriptSha256": "450e5361ae5ecdd8dde6e434723366e3d4cc1cafae4675e9e7760c3d1cac90ac",
+              "stderrBytes": 0,
+              "stdoutBytes": 34398426,
+              "stdoutSha256": "ec50562b99352e81312bd4e146d3ffc8721fe2cb4e1b2991ea79e8f2d2e68f31"
+            }
+          },
+          "gates": {
+            "events": true,
+            "ids": true,
+            "parity": false
+          },
+          "privateContentsExported": false,
+          "rawChildOutputExported": false,
+          "schema": "audit30-strict-v2-bounded-failure-evidence-v1",
+          "timerRestored": true,
+          "unitStopped": true
+        },
+        "qualification": "Exact bounded projection of the preserved native strict-v2 receipt and hash-bound child results. All raw child output/private capture remains on host.",
+        "status": "actual-failed"
+      },
+      "blockingCheck": "work-token-state-current-relational",
+      "currentStrictV3Admission": {
+        "activeGateScripts": [
+          "audit-id-registry.mjs",
+          "verify-candidate.mjs"
+        ],
+        "currentBackupServiceState": {
+          "ActiveState": "inactive",
+          "InvocationID": "dfda5fa3574144958b948f8b5920b4d0",
+          "LoadState": "loaded",
+          "MainPID": "0",
+          "Result": "success",
+          "RuntimeMaxUSec": "infinity",
+          "SubState": "dead"
+        },
+        "currentBackupTimerState": {
+          "ActiveState": "inactive",
+          "InvocationID": "3b2511dfe4ca48e0a0596bc0225e1c1d",
+          "LoadState": "loaded",
+          "Result": "success",
+          "SubState": "dead"
+        },
+        "cutoverPerformed": false,
+        "fullStrictAcceptance": false,
+        "intentSHA256": "6aa975f6ba9dd1860b68c7380fdac468cc691b0aa2a30ecc95e1ff41cb138a96",
+        "observedAtUtc": "2026-10-03T19:21:49.291059+00:00",
+        "progress": {
+          "bytes": 4330,
+          "path": "deploy/audit30/verification/pow-audit30-strict-v3-progress-192149-v1.json",
+          "sha256": "cc34f4e55d14da7232c963a8ef8e51c572e1f878d631c3688968343be07f0184"
+        },
+        "qualification": "An actual separately admitted managed strict-v3 run is active at this bounded observation. Its source and intent are preserved; no completion, restoration or acceptance is inferred.",
+        "source": {
+          "bytes": 21068,
+          "path": "deploy/audit30/verification/pow-audit30-acceptance-strict-v3.py",
+          "sha256": "1ef0f5cf7b6d35e07c305ee0effe3dd714daf42c5b391a962ff0490cdf88b1e6"
+        },
+        "state": {
+          "ActiveState": "active",
+          "InvocationID": "a230a1f4b038451a840d24ca23f8cd88",
+          "LoadState": "loaded",
+          "MainPID": "3344618",
+          "Result": "success",
+          "RuntimeMaxUSec": "20min",
+          "SubState": "running"
+        },
+        "status": "in-progress-no-acceptance",
+        "unit": "proofofwork-audit29-verify-38ac6e2bff2a-20261003T042000Z-shadow-strict-v3.service"
+      },
+      "fullStrictStatus": "failed-v2; separate-v3-in-progress-without-acceptance",
+      "laterNarrowWorkDiagnostic": {
+        "actualApiIdentityUnchanged": true,
+        "currentPredicatePassed": true,
+        "fullStrictAcceptance": false,
+        "observedScopedWork": {
+          "holders": 388,
+          "indexedThroughBlock": 969752,
+          "indexedThroughBlockHash": "000000000000000000003e5a6b77578b091ec4bda168e01da9377a6904d9937b",
+          "listings": 1006,
+          "mints": 21000,
+          "returned": true,
+          "snapshotId": null,
+          "source": "proof-indexer-token-state-tables",
+          "tokens": 1,
+          "transfers": 261
+        },
+        "observedSummary": {
+          "holders": 0,
+          "indexedThroughBlock": 969752,
+          "indexedThroughBlockHash": "000000000000000000003e5a6b77578b091ec4bda168e01da9377a6904d9937b",
+          "listings": 0,
+          "mints": 0,
+          "returned": true,
+          "snapshotId": "6ff36eccc72c9cc0ea052bc7",
+          "source": null,
+          "tokens": 0,
+          "transfers": 0
+        },
+        "observedUnscoped": {
+          "holders": 436,
+          "indexedThroughBlock": 969752,
+          "indexedThroughBlockHash": "000000000000000000003e5a6b77578b091ec4bda168e01da9377a6904d9937b",
+          "listings": 1008,
+          "mints": 21877,
+          "returned": true,
+          "snapshotId": null,
+          "source": "proof-indexer-token-state-tables",
+          "tokens": 238,
+          "transfers": 268
+        },
+        "predicate": "work-token-state-current-relational",
+        "predicateSource": {
+          "bytes": 94409,
+          "path": "scripts/check-proof-indexer-parity.mjs",
+          "sha256": "450e5361ae5ecdd8dde6e434723366e3d4cc1cafae4675e9e7760c3d1cac90ac"
+        },
+        "productionMutation": false,
+        "qualification": "A later independent read-only observation passes the exact current scoped WORK relational-state predicate. It is not a retroactive explanation of strict-v2 failure and does not constitute full strict acceptance or authorize deployment.",
+        "readiness": {
+          "active": true,
+          "evidenceComplete": true,
+          "parityReady": true,
+          "pendingReadinessDiagnostics": {
+            "evaluation": "ordered-first-failure",
+            "failedCategories": [],
+            "model": "proof-index-work-q16-pending-readiness-diagnostic-v1"
+          },
+          "pendingReady": true,
+          "pendingValidThrough": "2026-10-03T19:20:40.289Z",
+          "ready": true,
+          "replayReady": true,
+          "tipHash": "000000000000000000003e5a6b77578b091ec4bda168e01da9377a6904d9937b",
+          "tipHeight": 969752
+        },
+        "result": {
+          "bytes": 1809,
+          "path": "deploy/audit30/verification/pow-audit30-strict-v2-work-predicate-read-result-v1.stdout.json",
+          "sha256": "38dc163338f1122ff458eecee2ed7169d5fd5e7945b4e8edf6a7856ee01a804c"
+        },
+        "source": {
+          "bytes": 4238,
+          "path": "deploy/audit30/verification/pow-audit30-strict-v2-work-predicate-read-v1.py",
+          "sha256": "0052ce722c7303967053e513c7a773f26150527e2cb3c1ad6eea635d8fb29ad7"
+        },
+        "sourceReader": {
+          "bytes": 1533661,
+          "path": "server/db/proof-index-reader.mjs",
+          "sha256": "9278b81473c23a2c9d06c6b1306268c360539f833cdd7967b73fd99a35275b87"
+        },
+        "sqlReadOnly": {
+          "default_read_only": "on",
+          "read_only": "on"
+        },
+        "status": "current-predicate-pass",
+        "strictFailureRemainsFailed": true,
+        "transport": {
+          "bytes": 411,
+          "path": "deploy/audit30/verification/pow-audit30-strict-v2-work-predicate-read-result-v1.json",
+          "sha256": "208af9633ac8e9d13020f8d0cd5377fbf4d83a81755e5549780af360f0598836"
+        }
+      },
+      "productionCodeCutoverPerformed": false,
+      "strictEvidence": {
+        "detailedFailedAttemptBinding": {
+          "bytes": 4330,
+          "path": "deploy/audit30/verification/pow-audit30-strict-v3-progress-192149-v1.json",
+          "sha256": "cc34f4e55d14da7232c963a8ef8e51c572e1f878d631c3688968343be07f0184"
+        },
+        "nativeProofHashes": {
+          "driver-receipt.json": {
+            "errorClass": null,
+            "failure": "STRICT_GATE_FAILED",
+            "gates": {
+              "events": true,
+              "ids": true,
+              "parity": false
+            },
+            "ok": false,
+            "sha256": "0f77ed860b40e4762f4ad0962dbc66faded888d6db865bd44e542842eff5689c"
+          },
+          "launcher-final.json": {
+            "errorClass": "RuntimeError",
+            "failure": null,
+            "gates": null,
+            "ok": false,
+            "sha256": "e6d1c1cc45880ee6f086f2919f1292f77b8dda2277d7d2886e501700711cfdef"
+          },
+          "strict-native-v2-failed.json": {
+            "errorClass": "ValueError",
+            "failure": null,
+            "gates": null,
+            "ok": null,
+            "sha256": "34be3fcd5727cca1a8c7aa97167e036b8fba84371d632368d8403e024b0d9c6e"
+          }
+        },
+        "passiveProgress": {
+          "bytes": 1769,
+          "path": "deploy/audit30/verification/pow-audit30-strict-v2-passive-progress-v1.json",
+          "sha256": "e19520d713d81300b9bec9057ce93805ebba1fc6055cd3d4b45272b09c38c6de"
+        },
+        "qualification": "Actual failed driver/stopped proof plus the later bounded machine extraction of exact strict-v2 counters, child-output hashes, sole blocking error, historical warnings and restoration.",
+        "refusal": {
+          "bytes": 206,
+          "path": "deploy/audit30/verification/pow-audit30-acceptance-strict-v2-refusal-v1.json",
+          "sha256": "a7ac467182335b0594f58ff91f8c60767986116308fd085e142888b384b68f8a"
+        },
+        "transport": {
+          "bytes": 445,
+          "path": "deploy/audit30/verification/pow-audit30-acceptance-strict-v2-transport-v1.json",
+          "sha256": "59bc4634d685f7891838adccf10b9002a565702c37715a88f6ad49cca374aea0"
+        }
+      },
+      "uiPublicationPerformed": false
+    },
+    "currentMailRepairEvidence": {
+      "bytes": 2984,
+      "path": "deploy/audit30/verification/pow-audit30-mail16-completed-v1.json",
+      "sha256": "3092d25b775051d14aa9a51315028fde54fdd7ee9c32689f912cdd5ecfe03b4e"
+    },
+    "historicalItemsAndActionsPreserved": true,
+    "userRemainingChecklist": {
+      "1": {
+        "status": "complete",
+        "work": "exact16 mail repair and fresh619 verification"
+      },
+      "2": {
+        "acceptanceStatus": "strict-v3-in-progress-after-failed-v2",
+        "actualFailedV2GateResults": {
+          "events": {
+            "checkCount": 49,
+            "passed": true
+          },
+          "ids": {
+            "confirmedWinners": 508,
+            "coveredConfirmedRegistryTransactions": 565,
+            "coveredPendingRegistryTransactions": 22,
+            "fetchedTransactions": 587,
+            "passed": true,
+            "pendingCandidates": 20
+          },
+          "machineBinding": {
+            "bytes": 4330,
+            "path": "deploy/audit30/verification/pow-audit30-strict-v3-progress-192149-v1.json",
+            "sha256": "cc34f4e55d14da7232c963a8ef8e51c572e1f878d631c3688968343be07f0184"
+          },
+          "parity": {
+            "blockingErrors": [
+              {
+                "name": "work-token-state-current-relational",
+                "ok": false,
+                "severity": "error"
+              }
+            ],
+            "checkCount": 102,
+            "historicalWarnings": [
+              {
+                "name": "work-amo-v5-migration",
+                "ok": false,
+                "severity": "warning"
+              },
+              {
+                "name": "work-amo-v5-usd-quote-head",
+                "ok": false,
+                "severity": "warning"
+              }
+            ],
+            "passed": false
+          },
+          "priorFailedAttempt": {
+            "driverReceiptPath": "/data/proofofwork-audit29-verify-output-38ac6e2bff2a-20261003T042000Z-shadow-strict-v2/attempt/receipt.json",
+            "driverReceiptSHA256": "0f77ed860b40e4762f4ad0962dbc66faded888d6db865bd44e542842eff5689c",
+            "failure": "STRICT_GATE_FAILED",
+            "gateReceipts": {
+              "events": {
+                "checkCount": 49,
+                "checkpointStable": true,
+                "exitCode": 0,
+                "failedChecks": [],
+                "scriptSha256": "a5a82730ab8d7edde3d617362c960aa64155dbb090e5676a0906306d6a6d0bce",
+                "stderrBytes": 0,
+                "stdoutBytes": 54116,
+                "stdoutSha256": "0d298c1e3a9d238f22b7b6f0be7b28331297ae65920635c8fe6891501701907f"
+              },
+              "ids": {
+                "checkpointStable": true,
+                "counts": {
+                  "Confirmed winners": 508,
+                  "Covered confirmed registry transactions": 565,
+                  "Covered pending registry transactions": 22,
+                  "Fetched transactions": 587,
+                  "Pending candidates": 20
+                },
+                "exitCode": 0,
+                "scriptSha256": "d7bbe914e3db45fcebac174dc182146f988547fb8d94ffa65f8286cebd50a825",
+                "stderrBytes": 0,
+                "stdoutBytes": 6581,
+                "stdoutSha256": "e47b39e1ba8b2791ca1f8dcf098ede747d2c0c244a541b6495d48e1f3554d518"
+              },
+              "parity": {
+                "checkCount": 102,
+                "checkpointStable": true,
+                "exitCode": 1,
+                "failedChecks": [
+                  {
+                    "name": "work-token-state-current-relational",
+                    "ok": false,
+                    "severity": "error"
+                  },
+                  {
+                    "name": "work-amo-v5-migration",
+                    "ok": false,
+                    "severity": "warning"
+                  },
+                  {
+                    "name": "work-amo-v5-usd-quote-head",
+                    "ok": false,
+                    "severity": "warning"
+                  }
+                ],
+                "scriptSha256": "450e5361ae5ecdd8dde6e434723366e3d4cc1cafae4675e9e7760c3d1cac90ac",
+                "stderrBytes": 0,
+                "stdoutBytes": 34398426,
+                "stdoutSha256": "ec50562b99352e81312bd4e146d3ffc8721fe2cb4e1b2991ea79e8f2d2e68f31"
+              }
+            },
+            "gates": {
+              "events": true,
+              "ids": true,
+              "parity": false
+            },
+            "privateContentsExported": false,
+            "rawChildOutputExported": false,
+            "schema": "audit30-strict-v2-bounded-failure-evidence-v1",
+            "timerRestored": true,
+            "unitStopped": true
+          },
+          "qualification": "Exact bounded projection of the preserved native strict-v2 receipt and hash-bound child results. All raw child output/private capture remains on host.",
+          "status": "actual-failed"
+        },
+        "approvalReceiptPath": "deploy/audit30/verification/pow-audit30-api-current-chat-approval-20261003.json",
+        "blockingCheck": "work-token-state-current-relational",
+        "blockingCheckQualification": "Last completed full strict-v2 attempt; the later narrow predicate passes and strict-v3 remains in progress without acceptance.",
+        "currentStrictV3Admission": {
+          "activeGateScripts": [
+            "audit-id-registry.mjs",
+            "verify-candidate.mjs"
+          ],
+          "currentBackupServiceState": {
+            "ActiveState": "inactive",
+            "InvocationID": "dfda5fa3574144958b948f8b5920b4d0",
+            "LoadState": "loaded",
+            "MainPID": "0",
+            "Result": "success",
+            "RuntimeMaxUSec": "infinity",
+            "SubState": "dead"
+          },
+          "currentBackupTimerState": {
+            "ActiveState": "inactive",
+            "InvocationID": "3b2511dfe4ca48e0a0596bc0225e1c1d",
+            "LoadState": "loaded",
+            "Result": "success",
+            "SubState": "dead"
+          },
+          "cutoverPerformed": false,
+          "fullStrictAcceptance": false,
+          "intentSHA256": "6aa975f6ba9dd1860b68c7380fdac468cc691b0aa2a30ecc95e1ff41cb138a96",
+          "observedAtUtc": "2026-10-03T19:21:49.291059+00:00",
+          "progress": {
+            "bytes": 4330,
+            "path": "deploy/audit30/verification/pow-audit30-strict-v3-progress-192149-v1.json",
+            "sha256": "cc34f4e55d14da7232c963a8ef8e51c572e1f878d631c3688968343be07f0184"
+          },
+          "qualification": "An actual separately admitted managed strict-v3 run is active at this bounded observation. Its source and intent are preserved; no completion, restoration or acceptance is inferred.",
+          "source": {
+            "bytes": 21068,
+            "path": "deploy/audit30/verification/pow-audit30-acceptance-strict-v3.py",
+            "sha256": "1ef0f5cf7b6d35e07c305ee0effe3dd714daf42c5b391a962ff0490cdf88b1e6"
+          },
+          "state": {
+            "ActiveState": "active",
+            "InvocationID": "a230a1f4b038451a840d24ca23f8cd88",
+            "LoadState": "loaded",
+            "MainPID": "3344618",
+            "Result": "success",
+            "RuntimeMaxUSec": "20min",
+            "SubState": "running"
+          },
+          "status": "in-progress-no-acceptance",
+          "unit": "proofofwork-audit29-verify-38ac6e2bff2a-20261003T042000Z-shadow-strict-v3.service"
+        },
+        "gates": {
+          "events": true,
+          "ids": true,
+          "parity": false
+        },
+        "laterNarrowWorkDiagnostic": {
+          "actualApiIdentityUnchanged": true,
+          "currentPredicatePassed": true,
+          "fullStrictAcceptance": false,
+          "observedScopedWork": {
+            "holders": 388,
+            "indexedThroughBlock": 969752,
+            "indexedThroughBlockHash": "000000000000000000003e5a6b77578b091ec4bda168e01da9377a6904d9937b",
+            "listings": 1006,
+            "mints": 21000,
+            "returned": true,
+            "snapshotId": null,
+            "source": "proof-indexer-token-state-tables",
+            "tokens": 1,
+            "transfers": 261
+          },
+          "observedSummary": {
+            "holders": 0,
+            "indexedThroughBlock": 969752,
+            "indexedThroughBlockHash": "000000000000000000003e5a6b77578b091ec4bda168e01da9377a6904d9937b",
+            "listings": 0,
+            "mints": 0,
+            "returned": true,
+            "snapshotId": "6ff36eccc72c9cc0ea052bc7",
+            "source": null,
+            "tokens": 0,
+            "transfers": 0
+          },
+          "observedUnscoped": {
+            "holders": 436,
+            "indexedThroughBlock": 969752,
+            "indexedThroughBlockHash": "000000000000000000003e5a6b77578b091ec4bda168e01da9377a6904d9937b",
+            "listings": 1008,
+            "mints": 21877,
+            "returned": true,
+            "snapshotId": null,
+            "source": "proof-indexer-token-state-tables",
+            "tokens": 238,
+            "transfers": 268
+          },
+          "predicate": "work-token-state-current-relational",
+          "predicateSource": {
+            "bytes": 94409,
+            "path": "scripts/check-proof-indexer-parity.mjs",
+            "sha256": "450e5361ae5ecdd8dde6e434723366e3d4cc1cafae4675e9e7760c3d1cac90ac"
+          },
+          "productionMutation": false,
+          "qualification": "A later independent read-only observation passes the exact current scoped WORK relational-state predicate. It is not a retroactive explanation of strict-v2 failure and does not constitute full strict acceptance or authorize deployment.",
+          "readiness": {
+            "active": true,
+            "evidenceComplete": true,
+            "parityReady": true,
+            "pendingReadinessDiagnostics": {
+              "evaluation": "ordered-first-failure",
+              "failedCategories": [],
+              "model": "proof-index-work-q16-pending-readiness-diagnostic-v1"
+            },
+            "pendingReady": true,
+            "pendingValidThrough": "2026-10-03T19:20:40.289Z",
+            "ready": true,
+            "replayReady": true,
+            "tipHash": "000000000000000000003e5a6b77578b091ec4bda168e01da9377a6904d9937b",
+            "tipHeight": 969752
+          },
+          "result": {
+            "bytes": 1809,
+            "path": "deploy/audit30/verification/pow-audit30-strict-v2-work-predicate-read-result-v1.stdout.json",
+            "sha256": "38dc163338f1122ff458eecee2ed7169d5fd5e7945b4e8edf6a7856ee01a804c"
+          },
+          "source": {
+            "bytes": 4238,
+            "path": "deploy/audit30/verification/pow-audit30-strict-v2-work-predicate-read-v1.py",
+            "sha256": "0052ce722c7303967053e513c7a773f26150527e2cb3c1ad6eea635d8fb29ad7"
+          },
+          "sourceReader": {
+            "bytes": 1533661,
+            "path": "server/db/proof-index-reader.mjs",
+            "sha256": "9278b81473c23a2c9d06c6b1306268c360539f833cdd7967b73fd99a35275b87"
+          },
+          "sqlReadOnly": {
+            "default_read_only": "on",
+            "read_only": "on"
+          },
+          "status": "current-predicate-pass",
+          "strictFailureRemainsFailed": true,
+          "transport": {
+            "bytes": 411,
+            "path": "deploy/audit30/verification/pow-audit30-strict-v2-work-predicate-read-result-v1.json",
+            "sha256": "208af9633ac8e9d13020f8d0cd5377fbf4d83a81755e5549780af360f0598836"
+          }
+        },
+        "latestFailedStrictEvidence": {
+          "detailedFailedAttemptBinding": {
+            "bytes": 4330,
+            "path": "deploy/audit30/verification/pow-audit30-strict-v3-progress-192149-v1.json",
+            "sha256": "cc34f4e55d14da7232c963a8ef8e51c572e1f878d631c3688968343be07f0184"
+          },
+          "nativeProofHashes": {
+            "driver-receipt.json": {
+              "errorClass": null,
+              "failure": "STRICT_GATE_FAILED",
+              "gates": {
+                "events": true,
+                "ids": true,
+                "parity": false
+              },
+              "ok": false,
+              "sha256": "0f77ed860b40e4762f4ad0962dbc66faded888d6db865bd44e542842eff5689c"
+            },
+            "launcher-final.json": {
+              "errorClass": "RuntimeError",
+              "failure": null,
+              "gates": null,
+              "ok": false,
+              "sha256": "e6d1c1cc45880ee6f086f2919f1292f77b8dda2277d7d2886e501700711cfdef"
+            },
+            "strict-native-v2-failed.json": {
+              "errorClass": "ValueError",
+              "failure": null,
+              "gates": null,
+              "ok": null,
+              "sha256": "34be3fcd5727cca1a8c7aa97167e036b8fba84371d632368d8403e024b0d9c6e"
+            }
+          },
+          "passiveProgress": {
+            "bytes": 1769,
+            "path": "deploy/audit30/verification/pow-audit30-strict-v2-passive-progress-v1.json",
+            "sha256": "e19520d713d81300b9bec9057ce93805ebba1fc6055cd3d4b45272b09c38c6de"
+          },
+          "qualification": "Actual failed driver/stopped proof plus the later bounded machine extraction of exact strict-v2 counters, child-output hashes, sole blocking error, historical warnings and restoration.",
+          "refusal": {
+            "bytes": 206,
+            "path": "deploy/audit30/verification/pow-audit30-acceptance-strict-v2-refusal-v1.json",
+            "sha256": "a7ac467182335b0594f58ff91f8c60767986116308fd085e142888b384b68f8a"
+          },
+          "transport": {
+            "bytes": 445,
+            "path": "deploy/audit30/verification/pow-audit30-acceptance-strict-v2-transport-v1.json",
+            "sha256": "59bc4634d685f7891838adccf10b9002a565702c37715a88f6ad49cca374aea0"
+          }
+        },
+        "nextRequired": "Preserve strict-v2 as a failed historical event and the later current WORK predicate PASS separately. A fresh full strict attempt must pass all three gates in its own immutable namespace before scoped cutover and actual production/UI acceptance; no gate waiver or retrospective success.",
+        "preparedUiBuildEvidence": {
+          "bytes": 822,
+          "path": "deploy/audit30/verification/pow-audit30-item2-ui-build-38ac-v1.json",
+          "sha256": "75c45b805e4e67ef44ddf6bc7b54a817b08a6226262f40596b697f1cdb183d5e"
+        },
+        "productionCodeCutoverPerformed": false,
+        "status": "in-progress",
+        "uiPublicationPerformed": false,
+        "work": "full API/code acceptance and deployment"
+      },
+      "3": {
+        "status": "pending",
+        "work": "full database-growth migration"
+      },
+      "4": {
+        "status": "pending",
+        "work": "physical integrity, PITR and capacity"
+      },
+      "5": {
+        "status": "pending",
+        "work": "custody, financial and dependency closure"
+      },
+      "6": {
+        "status": "pending",
+        "work": "final release hygiene, commit and handoff"
+      }
+    }
+  },
+  "qualification": "Exact machine evidence and prospective durable repository references are reconciled. Root must preserve/hash-check every listed public custody member and review this exact draft before explicit append. No tracker or production action has been performed.",
+  "requiredRootReconciliation": [],
+  "rootReconciliationStatus": "machine-reconciled-awaiting-root-review",
+  "schema": "pow-audit30-action70-proposed-update-v1",
+  "status": "draft-not-applied",
+  "trackerMutationPerformed": false,
+  "trackerPreimage": {
+    "actionCount": 69,
+    "bytes": 16768508,
+    "path": "audits/2026-10-02-audit30-remaining-phase-execution.evidence.json",
+    "sha256": "3aa142f19067544948d86fb1b8f94e66061e3bff698c030df110e1f713825131"
+  }
+}

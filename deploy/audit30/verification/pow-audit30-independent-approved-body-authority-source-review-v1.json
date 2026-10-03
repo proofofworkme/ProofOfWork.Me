@@ -1,0 +1,158 @@
+{
+  "additionalDeletionOrRecoveryAuthority": false,
+  "atUtc": "2026-10-03T14:37:17.904039+00:00",
+  "bindings": [
+    {
+      "bytes": 6130,
+      "path": "/tmp/pow-audit30-body-human-authority-install-v1.py",
+      "sha256": "511c01dd8d7cfb5808038498cb45788720d34aac9ff29e7793374f761d9b3119"
+    },
+    {
+      "bytes": 31260,
+      "path": "/tmp/pow-audit30-body-human-authority-install-request-v1.json",
+      "sha256": "dbf50b04aad837714af813e0f65f1ca2bc15d74990243e635206207e9634a606"
+    },
+    {
+      "bytes": 3684,
+      "path": "/tmp/pow-audit30-body-approved-install-v1.test.py",
+      "sha256": "8984845fd4b7b46f20248cb402ccf29102aeeb607d080544a81a31fb4a63677f"
+    },
+    {
+      "bytes": 2360,
+      "path": "/tmp/pow-audit30-body-owned-caller-v1.test.py",
+      "sha256": "1a4421e7df5792dcb2100ff0aae33ece26bddd737fd5bb8d18306a133b63eace"
+    },
+    {
+      "bytes": 1516,
+      "path": "/tmp/pow-audit30-body-install-owned-caller-v1.py",
+      "sha256": "1e738c48408381f8acdab904cac5257bf8d914d9be674b6751475d8879a46bc4"
+    },
+    {
+      "bytes": 1526,
+      "path": "/tmp/pow-audit30-body-prepare-owned-caller-v1.py",
+      "sha256": "fffbf4e64fc0872f31f002a2cd5994bc5c5e5e303b312aaaaeaba45e821133a4"
+    },
+    {
+      "bytes": 1510,
+      "path": "/tmp/pow-audit30-body-run-owned-caller-v1.py",
+      "sha256": "e8371a35752f2405dcbdac8ce1858787c1c96b0bf6897c3f5343e92b39ee9e89"
+    },
+    {
+      "bytes": 142731,
+      "path": "/tmp/pow-audit30-body-prepare-envelope-20261003T145500Z-v1.json",
+      "sha256": "007df61f711b6dcbdd5e2422c406c1334d30d9420d1f9fb4b48ae855183c9960"
+    },
+    {
+      "bytes": 142727,
+      "path": "/tmp/pow-audit30-body-run-envelope-20261003T145500Z-v1.json",
+      "sha256": "37b3d8e58fcca371ec952c12207efbe2b2a9feb58b755452b69616346fc252a6"
+    },
+    {
+      "bytes": 2651,
+      "path": "/tmp/pow-audit30-body-human-approval-20261003T142900Z.json",
+      "sha256": "f37e16a1d9b8c6f52081a7c44d01d8a5142051770d7d16aafe9fcaa9e5354c42"
+    },
+    {
+      "bytes": 1404,
+      "path": "/tmp/pow-audit30-direct-human-approval-20261003T142900Z.json",
+      "sha256": "184065046a3b6031ca0b47e5e1932321bab2672298a7da1fc9654c6d3a3fec49"
+    },
+    {
+      "bytes": 9,
+      "path": "/tmp/pow-audit30-direct-human-message-20261003T142900Z.txt",
+      "sha256": "d93213cc5dec29d6c4aaf3178f76597665211100423e41d61d60fd163dfb5dcf"
+    },
+    {
+      "bytes": 12632,
+      "path": "/tmp/pow-audit30-approved-body-sixteen-execution-preparation-v1.json",
+      "sha256": "9d80a56d6a0b067873b70c56445ac5a0f812737a7faf709bbaae123a50486fe4"
+    },
+    {
+      "bytes": 2636,
+      "path": "/tmp/pow-audit30-production-sixteen-root-bootstrap-v3.py",
+      "sha256": "eac18d7cdc8570875e55e36672d6419c857aa9e7fff7c1cbe8f92263bf25f1d4"
+    },
+    {
+      "bytes": 22040,
+      "path": "/tmp/pow-audit30-production-sixteen-root-control-v3.py",
+      "sha256": "b989a3f2395e7cbf13cb2d3dbd2d258a3fd21867131e41644c094772aba11168"
+    },
+    {
+      "bytes": 19001,
+      "path": "/tmp/pow-audit30-private-sixteen-bootstrap-v2.py",
+      "sha256": "33c3c65c079901022850d4407c4df460b6924196d077061ba86d0d27ef385729"
+    }
+  ],
+  "limits": {
+    "installerASBytes": 134217728,
+    "installerCPUSeconds": 15,
+    "installerOuterSeconds": 90,
+    "installerWholeSeconds": 30,
+    "nativeStopNotInferredFromTransport": true,
+    "nativeTransportMasksAndReapsSameOwnedClientOnly": true,
+    "prepareRunOuterSeconds": 420,
+    "stdoutStderrCapsEach": 65536
+  },
+  "qualifications": [
+    "Human authority/proposal interpretation and provenance originate from Root and the human message; schema/hash checks alone are not proof of human identity.",
+    "d818/d3b1 are accepted saved point-in-time review inputs. No fresh619 projection, worker/Core observation, readiness closure, production transaction, COMMIT outcome or postacceptance is claimed by this local review.",
+    "Installer/native package readiness and source hooks must pass actual Root-owned runtime guards. PREPARE and RUN remain separate actual admissions; uncertain COMMIT requires reconciliation, no automatic retry or inverse."
+  ],
+  "review": {
+    "actualBodyApprovalCanonical24Fields": true,
+    "actualInstallRequestDecodedThreeExactMembers": true,
+    "actualTExitCodeFailureInterfaceChecked": true,
+    "approvalProvenanceRecordAndMessageRawPinsMatch": true,
+    "controllerMainOrExecuteCalled": false,
+    "embeddedB989RootControlBytesExact": true,
+    "existingAuthorityRefusesBeforeFilesystemHelperWrites": true,
+    "filesystemFunctionsUsed": [
+      "newdir",
+      "create",
+      "record"
+    ],
+    "frozen33cFilesystemHelperBytesUnchanged": true,
+    "fullInstallerAndBothAffectedSuitesRead": true,
+    "fullThreeTransportCallersRead": true,
+    "generatedWriterFileWrittenByReviewer": false,
+    "inMemoryGeneratedWriterSha256": "9d7aacb32545e4cae6fb133a19f27bb7af3e2e9cbf69ae55d3ce7da66c09c90c",
+    "inertBootstrapDecodeBothPassed": true,
+    "installCreatesOnlyNewAuthorityDirectoryAndDurableReceiptMembers": true,
+    "inverseRequiresSeparateInvocationAndActualAcknowledgedApplyReceipt": true,
+    "noRequestSHAArgvForTheseFrozenMainContracts": true,
+    "noRetryResumeOverwriteOrDelete": true,
+    "onlyChangedDraftFields": [
+      "canonicalReadinessInvalidationApproved",
+      "humanApprovalEvidenceSHA256",
+      "productionDataChangeApproved",
+      "status"
+    ],
+    "onlyLiveApprovalConstantReplacement": true,
+    "ordinarySignalsDeferredOnlyAcrossDirectoryIdentityAndIntent": true,
+    "prepareRunEnvelopesDifferOnlyMode": true,
+    "pureOriginalF6BindingValidationPassed": true,
+    "rootParentIdentityAndMemberFDHashTypeOwnerModeGuardsPreserved": true,
+    "separateApplyPriorReceiptNull": true
+  },
+  "reviewerNativeCall": false,
+  "reviewerProductionDataOrConfigurationChange": false,
+  "reviewerRepositoryEdit": false,
+  "schema": "pow-audit30-independent-approved-body-authority-source-review-v1",
+  "status": "accepted-source-and-actual-local-binding-only",
+  "tests": {
+    "callerCases": 4,
+    "callerExitCode": 0,
+    "callerSeconds": 0.064,
+    "commandFlags": [
+      "-I",
+      "-B",
+      "-W",
+      "error"
+    ],
+    "fixturesAreLocalSyntheticFilesystemAndMockedTransport": true,
+    "installerCases": 10,
+    "installerExitCode": 0,
+    "installerSeconds": 0.015,
+    "originalBroadSourceSuitesRepeated": false
+  }
+}

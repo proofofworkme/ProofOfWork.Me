@@ -1,0 +1,11 @@
+{
+  "exitCode": 0,
+  "elapsedSeconds": 17.273931,
+  "ownerSHA256": "28bd89f9e0e9abf953a579018d1224bc51b00a5615dc42812f321050ac598cd9",
+  "requestSHA256": "230ddaddbcfb3db8576c587dfdcb9cef2f05cae3175635e4a0b8f40852cbac9e",
+  "remoteLauncherSHA256": "887005f83f81294f37b0cf4aef584b6dcfb71fdd50e59a23d7000a615ef61ee2",
+  "stdoutBytes": 2836,
+  "stdoutSHA256": "7b2bab1d1abe56a71888c809a7c562e756bb3ea3de2260a4c5aa673196b6163c",
+  "stderrBytes": 0,
+  "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}

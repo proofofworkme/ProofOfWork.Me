@@ -1,0 +1,27 @@
+{
+  "schema": "audit30-api-current-chat-approval-v1",
+  "recordedAtUtc": "2026-10-03T18:57:12Z",
+  "authority": "human-user-current-chat",
+  "userResponse": "i approve 2.",
+  "status": "approved",
+  "userRemainingItem": 2,
+  "auditTrackerItem": 6,
+  "scope": "Full API acceptance followed by the scoped production code deployment if checks pass, with tracker updates.",
+  "candidateCommit": "38ac6e2bff2ac16890724e5213346ef8a3ebd186",
+  "priorScopeReceipt": "audits/2026-10-02-audit30-remaining-phase-approval.json",
+  "supportingActions": [
+    "Fresh bounded candidate verification and shadow lease",
+    "Source/test/deployment-tool corrections within the approved API/mail release scope",
+    "Controlled API/indexer-worker code deployment and necessary restarts",
+    "Scoped frontend publication and production verification",
+    "Repository hygiene, enabled hooks, commits and pushes",
+    "Standing release announcement after committed, pushed, deployed and verified release"
+  ],
+  "separateGatesPreserved": [
+    "No additional production mail/database/schema/storage rebuild or migration",
+    "No WAL/PITR activation, new backup-pin change or PostgreSQL/full-node restart",
+    "No additional backup/node artifact retirement",
+    "No mutation of protected historical or ledger records"
+  ],
+  "item1CompletionEvidence": "deploy/audit30/verification/pow-audit30-mail16-completed-v1.json"
+}

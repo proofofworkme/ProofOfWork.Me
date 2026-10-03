@@ -1,0 +1,7 @@
+{
+  "at": "2026-10-03T19:47:12.122243+00:00",
+  "request": "/var/tmp/proofofwork-deploy/proofofwork-node-release-38ac6e2-20261003T042000Z.tgz",
+  "managedArchive": "/data/proofofwork-release-backups/managed/proofofwork-node-release-38ac6e2-20261003T042000Z.tgz",
+  "commitToken": "38ac6e2",
+  "applicationServicesStopped": false
+}

@@ -1,0 +1,330 @@
+{
+  "schema": "pow-audit30-positive-work-complete-scoped-listings-v1",
+  "ok": true,
+  "candidate": {
+    "commit": "38ac6e2bff2ac16890724e5213346ef8a3ebd186",
+    "tree": "8b9b5e3cd47aa8e4204da717350a629176e30da6",
+    "runtimeSha256": "13035b6d1fbca1be9c03b1833f3abe578d4ae28331a341b3dea4301cc72b535c"
+  },
+  "mode": "shadow",
+  "base": "http://127.0.0.1:18081",
+  "authority": "http://127.0.0.1:18081",
+  "network": "livenet",
+  "startedAt": "2026-10-03T19:32:50.402Z",
+  "limits": {
+    "httpRequests": 96,
+    "coreRequests": 8,
+    "bodyBytes": 3145728,
+    "httpBytes": 201326592,
+    "overallMilliseconds": 330000,
+    "walletMilliseconds": 20000,
+    "scopeMilliseconds": 120000,
+    "pagesPerScope": 100,
+    "pageRows": 200
+  },
+  "reads": [
+    {
+      "route": "/api/v1/token",
+      "status": 200,
+      "bytes": 1640574,
+      "sha256": "5b47f686f89e1499376a639056b0b32c10ce960be9932cfdbf0a947c9f4317e9"
+    },
+    {
+      "route": "/api/v1/token",
+      "status": 200,
+      "bytes": 1640551,
+      "sha256": "4d3ea1906ce77ce43a45fdff0ccf9fab8642a821592fdfd9a94872984dd11eeb"
+    },
+    {
+      "route": "/api/v1/token-history",
+      "status": 200,
+      "bytes": 6296,
+      "sha256": "953dcb0c775c0b4230a51bdcc7924e6ba2187cbbe5a80095a85d3258d3c6360f"
+    },
+    {
+      "route": "/api/v1/token-history",
+      "status": 200,
+      "bytes": 1424,
+      "sha256": "93a1b820b17216e836b9298a0b3534e830ce85aeb67cb813abe513dbe2c218d4"
+    }
+  ],
+  "positiveWork": [
+    {
+      "label": "first-request",
+      "ready": true,
+      "balanceVerified": true,
+      "capacityVerified": true,
+      "verificationStatus": "passed",
+      "status": 200,
+      "confirmedBalanceSubatoms": "9999997003878536",
+      "spendableBalanceSubatoms": "9999970087899719",
+      "reservedBalanceSubatoms": "26915978817",
+      "pendingDeltaSubatoms": "0",
+      "payloadSha256": "578f1c73a986b23d56fc8fcc32be669f9a7ffb2d506503270e82d1aa81db07c8",
+      "checkpoint": {
+        "before": {
+          "height": 969753,
+          "hash": "00000000000000000000c55e9c08d89c7fdaec656e0c49132e4c853d363f8b4e"
+        },
+        "after": {
+          "height": 969753,
+          "hash": "00000000000000000000c55e9c08d89c7fdaec656e0c49132e4c853d363f8b4e"
+        },
+        "stable": true
+      },
+      "predicates": {
+        "http-200-required": true,
+        "livenet-scope": true,
+        "authoritative-wallet": true,
+        "complete-checkpoint": true,
+        "stable-core-fence": true,
+        "exact-current-checkpoint": true,
+        "snapshot-present": true,
+        "envelope-q16-model": true,
+        "one-canonical-q16-token": true,
+        "one-exact-holder": true,
+        "one-exact-capacity": true,
+        "capacity-scope-model-checkpoint": true,
+        "positive-confirmed-exact-holder": true,
+        "exact-q16-conservation": true,
+        "holder-decimals-match-subatoms": true,
+        "exact-unique-reservation-conservation": true
+      },
+      "predicateCount": 16,
+      "positiveConfirmed": true,
+      "holderBalanceDecimal": "0.9999997003878536",
+      "holderPendingDeltaDecimal": "0",
+      "decimals": 16,
+      "unitScale": "10000000000000000",
+      "snapshotId": "26ffd86b955e1ec5a55460f0",
+      "reservationCount": 42,
+      "reservationMembershipSha256": "5d2d1a0a13ab0b18371baa18a1b680286d4a7b4d64b2bf18e8c0d57930078dac",
+      "httpAndFenceSeconds": 8.631,
+      "maximumStageSeconds": 20,
+      "maximumResponseBytes": 3145728
+    },
+    {
+      "label": "second-request",
+      "ready": true,
+      "balanceVerified": true,
+      "capacityVerified": true,
+      "verificationStatus": "passed",
+      "status": 200,
+      "confirmedBalanceSubatoms": "9999997003878536",
+      "spendableBalanceSubatoms": "9999970087899719",
+      "reservedBalanceSubatoms": "26915978817",
+      "pendingDeltaSubatoms": "0",
+      "payloadSha256": "3586cd24819da35a6c45455db12aecec6296313fae7845bd06b0dcf0cfc22e43",
+      "checkpoint": {
+        "before": {
+          "height": 969753,
+          "hash": "00000000000000000000c55e9c08d89c7fdaec656e0c49132e4c853d363f8b4e"
+        },
+        "after": {
+          "height": 969753,
+          "hash": "00000000000000000000c55e9c08d89c7fdaec656e0c49132e4c853d363f8b4e"
+        },
+        "stable": true
+      },
+      "predicates": {
+        "http-200-required": true,
+        "livenet-scope": true,
+        "authoritative-wallet": true,
+        "complete-checkpoint": true,
+        "stable-core-fence": true,
+        "exact-current-checkpoint": true,
+        "snapshot-present": true,
+        "envelope-q16-model": true,
+        "one-canonical-q16-token": true,
+        "one-exact-holder": true,
+        "one-exact-capacity": true,
+        "capacity-scope-model-checkpoint": true,
+        "positive-confirmed-exact-holder": true,
+        "exact-q16-conservation": true,
+        "holder-decimals-match-subatoms": true,
+        "exact-unique-reservation-conservation": true
+      },
+      "predicateCount": 16,
+      "positiveConfirmed": true,
+      "holderBalanceDecimal": "0.9999997003878536",
+      "holderPendingDeltaDecimal": "0",
+      "decimals": 16,
+      "unitScale": "10000000000000000",
+      "snapshotId": "26ffd86b955e1ec5a55460f0",
+      "reservationCount": 42,
+      "reservationMembershipSha256": "5d2d1a0a13ab0b18371baa18a1b680286d4a7b4d64b2bf18e8c0d57930078dac",
+      "httpAndFenceSeconds": 2.408,
+      "maximumStageSeconds": 20,
+      "maximumResponseBytes": 3145728
+    }
+  ],
+  "scopedListings": [
+    {
+      "symbol": "POWB",
+      "asset": "a3d0bc8528f91dfc52400a885bed7e49235396aa82aa9f95db41be629f1d5562",
+      "complete": true,
+      "ready": true,
+      "checkpoint": {
+        "height": 969753,
+        "hash": "00000000000000000000c55e9c08d89c7fdaec656e0c49132e4c853d363f8b4e"
+      },
+      "coreBefore": {
+        "height": 969753,
+        "hash": "00000000000000000000c55e9c08d89c7fdaec656e0c49132e4c853d363f8b4e"
+      },
+      "coreAfter": {
+        "height": 969753,
+        "hash": "00000000000000000000c55e9c08d89c7fdaec656e0c49132e4c853d363f8b4e"
+      },
+      "indexedAt": "2026-10-03T19:28:59.335Z",
+      "snapshotId": "7cedcee2e8acccf4432ad03453e73fcc009ae3b404b5a7f1e924117a0a00e238",
+      "pages": [
+        {
+          "complete": true,
+          "verifiedThrough": 1,
+          "totalCount": 1,
+          "indexedAt": "2026-10-03T19:28:59.335Z",
+          "snapshotId": "7cedcee2e8acccf4432ad03453e73fcc009ae3b404b5a7f1e924117a0a00e238",
+          "checkpoint": {
+            "height": 969753,
+            "hash": "00000000000000000000c55e9c08d89c7fdaec656e0c49132e4c853d363f8b4e"
+          }
+        }
+      ],
+      "totalCount": 1,
+      "listingIdsSha256": "efd63d3659cf8ac5bed5abb2dfc79628b26d7b69f3b363a23382d989492ab6e0",
+      "historicalCountBaseline": 1
+    },
+    {
+      "symbol": "INCB",
+      "asset": "3cb25745f937f2b4e5508e5400189fe8fe679cd8e84bfa1e9176d70c9761f15d",
+      "complete": true,
+      "ready": true,
+      "checkpoint": {
+        "height": 969753,
+        "hash": "00000000000000000000c55e9c08d89c7fdaec656e0c49132e4c853d363f8b4e"
+      },
+      "coreBefore": {
+        "height": 969753,
+        "hash": "00000000000000000000c55e9c08d89c7fdaec656e0c49132e4c853d363f8b4e"
+      },
+      "coreAfter": {
+        "height": 969753,
+        "hash": "00000000000000000000c55e9c08d89c7fdaec656e0c49132e4c853d363f8b4e"
+      },
+      "indexedAt": "2026-10-03T19:28:59.335Z",
+      "snapshotId": "997572a20fc108ef2967ad095000195280a7a9b2f188dcd11ab25f7fc4c5bbe1",
+      "pages": [
+        {
+          "complete": true,
+          "verifiedThrough": 0,
+          "totalCount": 0,
+          "indexedAt": "2026-10-03T19:28:59.335Z",
+          "snapshotId": "997572a20fc108ef2967ad095000195280a7a9b2f188dcd11ab25f7fc4c5bbe1",
+          "checkpoint": {
+            "height": 969753,
+            "hash": "00000000000000000000c55e9c08d89c7fdaec656e0c49132e4c853d363f8b4e"
+          }
+        }
+      ],
+      "totalCount": 0,
+      "listingIdsSha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "historicalCountBaseline": 0
+    }
+  ],
+  "productionMutation": false,
+  "timerChanges": false,
+  "privateContentsExported": false,
+  "qualification": "Fresh observed conservation and per-read/per-scope Core fences are binding. Historical balances/counts are baseline only. First and second reads do not assert an empty cache. Raw listing membership is checked without frontend normalization. API supplies Core outpoint authority; individual gettxout results are not repeated. Actual API identity and fresh private environment custody must be bound by the reviewed owner.",
+  "sourceBindings": {
+    "files": {
+      "server/proof-api.mjs": "9ab92c0fe3cb358fcaacccd62915eabc4c9ee75e42d29c6c989259b1305436f4",
+      "src/App.tsx": "87fd17ac3ade8eff1a5beae96f0bac6b43866d16ac8487d9bc347aa01b2a7ca2",
+      "src/shared/api/surfaceReadState.ts": "7c7ceed06f321a5b595a471efa2f9e10e37c64008cd99ed4039f0cad98775b4e",
+      "deploy/audit29/verify-candidate.mjs": "bbded71fa88cfc108c611b3beddd3a6c693b38477c356b682caed8985976abda",
+      "deploy/audit5/probe-candidate.mjs": "edc672e0327248c55eb073f4d720e37a8ea0ac33f61027456b8cf19609aa6ab1",
+      "server/work-wallet-capacity.mjs": "98d9ad4071d6b34b8439c59b461eae073584d58ce43140f4214ea129ebce2d86"
+    },
+    "helpers": [
+      {
+        "path": "deploy/audit5/probe-candidate.mjs",
+        "name": "requireFact",
+        "start": 1238,
+        "end": 1313,
+        "sha256": "431157a02c5899b06a52c0a10f687cebe061a8c202f1baf0f9a0904b3a15a01d"
+      },
+      {
+        "path": "deploy/audit5/probe-candidate.mjs",
+        "name": "canonicalJson",
+        "start": 1314,
+        "end": 1811,
+        "sha256": "c8f038bfeb82bab7d42424742463d8a73b92563405bc17edef87c4bec634f2dd"
+      },
+      {
+        "path": "deploy/audit5/probe-candidate.mjs",
+        "name": "digest",
+        "start": 3425,
+        "end": 3522,
+        "sha256": "fd9868af9487f704feac82bc7aded917ddc164be0ec7e472900b9a031289b80c"
+      },
+      {
+        "path": "deploy/audit5/probe-candidate.mjs",
+        "name": "decimalQ8",
+        "start": 3757,
+        "end": 4141,
+        "sha256": "299b6ce40f91a31d6f005a3d0e990991831e653640bb0428eff24f6aa8f67a6e"
+      },
+      {
+        "path": "deploy/audit29/verify-candidate.mjs",
+        "name": "sameTip",
+        "start": 5369,
+        "end": 5538,
+        "sha256": "11fa5d724316fb762c00b56d8316c3f20e9da21f4b27c5dd83df5c0f094fd67e"
+      },
+      {
+        "path": "deploy/audit29/verify-candidate.mjs",
+        "name": "verifyWalletResponse",
+        "start": 7103,
+        "end": 9920,
+        "sha256": "9d91e692c560e7d61125972b3250597eb1c0435bdb34976961eb7f3d9b088ca3"
+      },
+      {
+        "path": "deploy/audit29/verify-candidate.mjs",
+        "name": "verifyFencedWalletRead",
+        "start": 9922,
+        "end": 10190,
+        "sha256": "44b86008570ee542985453b6ca7097b5c227d51e17dc3a6f8b05b7cb0d2d31b0"
+      },
+      {
+        "path": "deploy/audit29/verify-candidate.mjs",
+        "name": "makeIO",
+        "start": 12607,
+        "end": 15744,
+        "sha256": "c3880d1725f1ec296ae672a7f0a51f22964b8efd13d6dc16a92f951ca9bf9bd2"
+      },
+      {
+        "path": "src/shared/api/surfaceReadState.ts",
+        "name": "listingDisplayProjectionFingerprint",
+        "start": 2040,
+        "end": 4014,
+        "sha256": "94f6f7cdc87a570fbf2ed6dbcfb5745c4c832bee229210643e1c1fa92c69ab47"
+      },
+      {
+        "path": "src/App.tsx",
+        "name": "fetchCompleteTokenListings",
+        "start": 511759,
+        "end": 521644,
+        "sha256": "ecc31902e89f2b14d8f5e8719b7f1b03ddc88a90ab44a4c6196c0e508ded370f"
+      }
+    ],
+    "frozenCodeSha256": "37baad290031edee701ce664e9159798249d83e32cff14c1735168a7b3fe8d59",
+    "extraction": "exact named AST functions, TypeScript syntax erased locally; no application startup"
+  },
+  "completedAt": "2026-10-03T19:33:02.655Z",
+  "elapsedMilliseconds": 12253,
+  "counters": {
+    "httpCalls": 4,
+    "coreCalls": 8,
+    "bytes": 3293037
+  }
+}

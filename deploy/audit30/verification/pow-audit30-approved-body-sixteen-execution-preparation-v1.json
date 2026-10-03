@@ -1,0 +1,202 @@
+{
+  "approvalChangesRequired": {
+    "canonicalReadinessInvalidationApproved": true,
+    "humanApprovalEvidenceSHA256": "ACTUAL_ROOT_CAPTURED_HUMAN_PROVENANCE_RAW_SHA256",
+    "productionDataChangeApproved": true,
+    "status": "approved"
+  },
+  "atUtc": "2026-10-03T14:26:48.557698+00:00",
+  "authorizationContext": {
+    "actualHumanMessageCapturedByThisAgent": false,
+    "additionalDeletionPITRMigrationApproved": false,
+    "rootInstructionReportsHumanApprovedBothLinkedProposals": true,
+    "rootOwnsActualHumanProvenanceAndAllNativeCalls": true,
+    "scope": "exact16 body_text apply and separately invoked conditional inverse; dual-pin/checker handled separately"
+  },
+  "expectedDatabaseIdentity": {
+    "checksums": "off",
+    "dataDirectory": "/var/lib/postgresql/16/main",
+    "database": "proof_indexer",
+    "listenAddresses": "localhost",
+    "port": "5432",
+    "readOnly": "off",
+    "serverAddress": null,
+    "socket": "/var/run/postgresql",
+    "user": "postgres"
+  },
+  "freshGuards": {
+    "backupAndReserves": "Scheduled logical backup inactive; timer active/waiting and next ordinary backup >=420seconds; rootfree>=10GiB/datafree>=100GiB; existingroot0600 opslock with FD/name postflock equality; fixed operation unit absent/new evidence path absent. No timer pause or capacity waiver.",
+    "current619": "d3b1 is frozen reviewed point-in-time evidence, not continuous population proof. Root should inspect current same-schema projection before apply as needed; sealed RootV3 hardcodes that original proof path and approval binds rawd3b1. Do not overwrite frozen evidence or silently expand16 targets. Writer independently checks current full target source/preimages and all-network nontarget/nonbody invariance inside locked transaction; after apply complete mailbox parity must pass. Any substantive proof-path rebinding requires explicit reviewed narrow successor.",
+    "eachWriterHook": "Immutable root-before480 public receipt no older than120seconds, source/package/dependency identity and a newly read exact live-five at original hooks. No new Core query at each hook. Transaction exact source/preimage/closure and locks remain authority.",
+    "normalWorker": "Execute exact480 before and after; old live worker argv/cwd/sourceSHA/allowlisted env; exact confirmed block-scan plus best-effort-pending mempool-scan; q16 definition, no repair/rebuild/fault/active range replay; canonical checkpoint hash and Core tip before/after unchanged per observation; checkpoint minus144 strictly above962933",
+    "originalFive": "Exact frozen PID/Invocation tuples; guards do not admit changed production services",
+    "privateProofDependencies": "d818 retained public receipt plus original seven saved private receipts and source/dependency package; accepted readonly closure cites prior ACK forward/inverse while original074500 FAILED stays failed. PREPARE uses definitions-only b1f/oldstream/172 closure; never starts original clone.",
+    "transaction": "One SERIALIZABLE READ WRITE45second library budget, statements30seconds/locks3seconds. Fixed source/journal locks before all reads. Native SQL exact9database identity; exact canonical five-function/23-trigger readiness closure; exact16 existing-body updates; full nontarget/nonbody invariance; named queue flush and one legitimate readiness shard increment per committed apply/inverse. No epoch rewind."
+  },
+  "minimalSteps": [
+    {
+      "action": "Capture actual approved human message with original linked proposal context in durable evidence. Bind its exact rawSHA as humanApprovalEvidenceSHA256; this agent creates no message/receipt.",
+      "actor": "Root",
+      "step": 1
+    },
+    {
+      "action": "Build canonical compact sorted-key no-newline approval JSON from sealed approvalDraft. Change only pending status to approved, humanApprovalEvidenceSHA256 to actual evidence rawSHA, productionDataChangeApproved and canonicalReadinessInvalidationApproved to true. Preserve all exact16 identifiers/manifest/source/private/projection/readiness/identity/conditional-inverse/no-retry/no-epoch-rewind fields.",
+      "actor": "Root",
+      "step": 2
+    },
+    {
+      "action": "Create new /data/proofofwork-release-backups/audit30-mail-body-authority-RUN directory root0700 and human-approval.json root0600 using existing O_EXCL/create/fsync custody helpers; hash the canonical raw receipt. Preserve originals.",
+      "actor": "Root",
+      "step": 3
+    },
+    {
+      "action": "Assemble root envelope with exact b989 source base64 and typed PREPARE request: new calendar runId; operation apply; priorApply null; approval actual fixed-path/rawSHA; fixed d818 and d3b1 proof paths/rawSHAs; exact33c helper,480 guard and exactly five PINS members. No extra argv. Separate outer/shared transport source/capture absence and hash bindings.",
+      "actor": "Root",
+      "step": 4
+    },
+    {
+      "action": "Invoke reviewed eac18 bootstrap with typed stdin through exact1dedef owned transport once in PREPARE. Existing RootV3 creates root:1120750 immutable package, root:1120440 code/proof/generated members, root0600 prepared request/record, exact172 pg closure. Its generation checks only LIVE_APPROVAL_PIN constant replacement and reverse byte identity. PREPARE starts no PG unit and writes no production data.",
+      "actor": "Root",
+      "step": 5
+    },
+    {
+      "action": "Read and accept actual prepared package/hash/absence proofs. Invoke RUN separately with same all request fields except mode=run, same chosen runId/operation/approval; no retry or restaging over partial namespace.",
+      "actor": "Root",
+      "step": 6
+    },
+    {
+      "action": "Accept exact owned-unit/Invocation stopped proof, canonical completed apply rawSHA and Root480-after/five/source/authority postguards. An acknowledged apply with failed postacceptance stays acknowledged; any uncertainCOMMIT/losttransport requires explicit reconciliation, never automatic retry or inverse.",
+      "actor": "Root",
+      "step": 7
+    },
+    {
+      "action": "Run fresh complete mailbox byte parity and unwaived full strict verification before separate approved API/worker cutover. For conditional inverse before cutover, use a new operation runId, same approval/generated writer, inverse with exact acknowledged apply completed.json path/rawSHA and current exact postimages/same nine-field database identity; separately PREPARE then RUN.",
+      "actor": "Root",
+      "step": 8
+    }
+  ],
+  "placeholdersStillOwnedByRoot": [
+    "actual human raw evidence bytes/hash/provenance",
+    "actual canonical approval receipt bytes/rawSHA/private rootauthoritypath",
+    "new unique actual apply runId",
+    "actual typed prepare/run envelope paths/rawSHAs and exclusive captures",
+    "actual freshly observed before480/Core/worker/five/backup/reserves",
+    "actual generated writer rawSHA and exact prepared package/dependency/absence result",
+    "if inverse: actual acknowledged apply completed rawSHA/path plus fresh sameDB/postimages"
+  ],
+  "preservedApprovalFields": [
+    "authority",
+    "authorizedOperations",
+    "automaticRetryAllowed",
+    "conditionalInverseRequiresAcknowledgedApply",
+    "expectedDatabaseIdentity",
+    "freshMailProjectionReceiptSHA256",
+    "inverseRequiresSeparateInvocation",
+    "manifestSHA256",
+    "network",
+    "onlyMailItemsBodyText",
+    "operationalEpochRewindAllowed",
+    "orderedTargetTxids",
+    "originalPlanSHA256",
+    "privateCommitInverseProofReceiptSHA256",
+    "productionAdapterSHA256",
+    "readinessClosureSHA256",
+    "schema",
+    "targetCount",
+    "workerPreservationGuardSHA256",
+    "writerTemplateSHA256"
+  ],
+  "rolesAndCommands": {
+    "database": "Cleanenv; local /var/run/postgresql5432 proof_indexer userpostgres, no passwords/DSN/env export",
+    "outer": "Root via sudo -n /usr/bin/python3 -I -B -c exacteac18 bootstrap, typed envelope stdin only, shared1dedef execute(...,420,stdout_cap=65536,stderr_cap=65536,bindings=allactualsource/envelopeSHAs)",
+    "pgCaller": "Userpostgres UID108/GID112, fixedNode41a74 --max-old-space-size=128 PACKAGE/native-caller.mjs callerSHA approvalSHA rootWorkerBeforeSHA pgEntrySHA apply none; inverse lastargs inverse priorAcknowledgedApplySHA",
+    "prepare": "Rootcontrol modeprepare; generated writer uses fixed Node --input-type=module -e exact GENERATOR; this does not connect to DB",
+    "run": "Rootcontrol mode run, exact own production-sixteen-RUN-apply.service or separatelyinverse.service",
+    "unit": "PrivateNetwork AF_UNIX, capabilitysets empty, strict protection, client2GiB/50percent120secondunit/150secondcapture; clientcaps do not cap existing PostgreSQL backend"
+  },
+  "schema": "pow-audit30-approved-body-sixteen-execution-preparation-v1",
+  "scopeLimits": {
+    "additionalDeletionOrRecoveryAuthority": false,
+    "databaseConnection": false,
+    "executableRequestCreated": false,
+    "generatedLiveWriterCreated": false,
+    "humanApprovalReceiptCreated": false,
+    "nativeRunByThisAgent": false,
+    "productionMutation": false,
+    "remoteCall": false,
+    "repositoryChanges": false
+  },
+  "sourceBindings": [
+    {
+      "bytes": 7207,
+      "path": "/home/sixer/ProofOfWork.Me/deploy/audit30/verification/pow-audit30-production-sixteen-root-command-spec-v4.json",
+      "sha256": "718d2f55f87dea08942bd3b6b03424f0784d12538b59646d7515991783149cce"
+    },
+    {
+      "bytes": 22040,
+      "path": "/home/sixer/ProofOfWork.Me/deploy/audit30/verification/pow-audit30-production-sixteen-root-control-v3.py",
+      "sha256": "b989a3f2395e7cbf13cb2d3dbd2d258a3fd21867131e41644c094772aba11168"
+    },
+    {
+      "bytes": 5139,
+      "path": "/home/sixer/ProofOfWork.Me/deploy/audit30/verification/pow-audit30-production-sixteen-approval-binding-v2.mjs",
+      "sha256": "f6f25ef5bfddf534d8b21d65ced4ff0d02b134a7b77114e41a16ac6e1787b286"
+    },
+    {
+      "bytes": 16143,
+      "path": "/home/sixer/ProofOfWork.Me/deploy/audit30/verification/pow-audit30-production-sixteen-adapter-v2.mjs",
+      "sha256": "bb81dd2ee7fdefed19605fc47ed8bdd309b1bd531fea47fa548c27bdbdeeeb20"
+    },
+    {
+      "bytes": 2636,
+      "path": "/home/sixer/ProofOfWork.Me/deploy/audit30/verification/pow-audit30-production-sixteen-root-bootstrap-v3.py",
+      "sha256": "eac18d7cdc8570875e55e36672d6419c857aa9e7fff7c1cbe8f92263bf25f1d4"
+    },
+    {
+      "bytes": 9347,
+      "path": "/home/sixer/ProofOfWork.Me/deploy/audit30/verification/pow-audit30-production-sixteen-native-caller-v2.mjs",
+      "sha256": "18323f53e92bd6cf1a4d5945e2f630db6eeb884f065f22bbede07b9515e96e4f"
+    },
+    {
+      "bytes": 8530,
+      "path": "/home/sixer/ProofOfWork.Me/deploy/audit30/verification/pow-audit30-exact-sixteen-final-review-plan-source-template-v3.json",
+      "sha256": "aa4d02bbd6669073856850dc4049dda565a751459ed7980285e528ce740a4400"
+    },
+    {
+      "bytes": 12324,
+      "path": "/home/sixer/ProofOfWork.Me/deploy/audit30/verification/pow-audit30-mail-body-exact-sixteen-write-candidate-v1.mjs",
+      "sha256": "2e9a7fb67616e46b3b14d1074dc5206eb280df6868cc249943645b8d8ab685da"
+    },
+    {
+      "bytes": 52835,
+      "path": "/home/sixer/ProofOfWork.Me/deploy/audit30/verification/pow-audit30-mail-body-repair-rehearsal-v2.mjs",
+      "sha256": "ea5614fddc0ef7fb696d0159a141b25116fbd6ba2c4b309db171a548b7f8b70c"
+    },
+    {
+      "bytes": 8923,
+      "path": "/home/sixer/ProofOfWork.Me/deploy/audit30/verification/pow-audit30-private-sixteen-commit-inverse-adapter-v1.mjs",
+      "sha256": "4e569cfba47b82ead715a2fba8b9f84c5c113f12dbbbb4986dc5fd8921adc498"
+    },
+    {
+      "bytes": 13199,
+      "path": "/home/sixer/ProofOfWork.Me/deploy/audit30/verification/pow-audit30-worker-mail-exclusion-guard-v3.py",
+      "sha256": "48001283affb80b3b027dcc93831074aee872fbee649fb14482c32b00eb1c76c"
+    },
+    {
+      "bytes": 19001,
+      "path": "/home/sixer/ProofOfWork.Me/deploy/audit30/verification/pow-audit30-private-sixteen-bootstrap-v2.py",
+      "sha256": "33c3c65c079901022850d4407c4df460b6924196d077061ba86d0d27ef385729"
+    }
+  ],
+  "status": "read-only-source-inspection-complete-root-provenance-and-native-inputs-pending",
+  "verification": {
+    "actualSavedPrivateProofSHA256": "d818545fa493f1032b3b6bfb7b1ba4b8738e3b15968c3f0ed949a0d1bb09bce8",
+    "actualSavedProjectionProofSHA256": "d3b1c6f7b5aae0873fb98ed7b07c47948326ee6832e3b7cec7b363870bcab40c",
+    "proofOnlyNotCurrentLiveObservation": true,
+    "pureUnchangedAdapterReviewValidation": true,
+    "repositorySourceCustodyMatches": 12,
+    "savedProjectionBodyOnlyMismatches": 16,
+    "savedProjectionExpectedPopulation": 619,
+    "sourceTestsRepeated": false
+  }
+}

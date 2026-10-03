@@ -1,0 +1,40 @@
+{
+  "actualFiles": {
+    "OP_RETURN_INFRASTRUCTURE.md": {
+      "bytes": 414225,
+      "path": "/home/sixer/ProofOfWork.Me/OP_RETURN_INFRASTRUCTURE.md",
+      "sha256": "c2101293a0385e749ff8ee0778258f4cbae385637c301f1fda5341694ef536d3"
+    },
+    "audits/2026-10-02-audit30-followup-tracker.md": {
+      "bytes": 99894,
+      "path": "/home/sixer/ProofOfWork.Me/audits/2026-10-02-audit30-followup-tracker.md",
+      "sha256": "234811de86241cc7126eb2c570e77d020d1daa65a67d5f2401c33928ed2063a5"
+    },
+    "audits/2026-10-02-audit30-remaining-phase-execution.evidence.json": {
+      "bytes": 17434663,
+      "path": "/home/sixer/ProofOfWork.Me/audits/2026-10-02-audit30-remaining-phase-execution.evidence.json",
+      "sha256": "4dc1fd489c257094a234ae1c47138404d67ec0d86a0b2ef8a270bf9435409833"
+    },
+    "deploy/audit30/verification/pow-audit30-action73-public-custody-preserved-final-v1.json": {
+      "bytes": 21002,
+      "path": "/home/sixer/ProofOfWork.Me/deploy/audit30/verification/pow-audit30-action73-public-custody-preserved-final-v1.json",
+      "sha256": "842042a722331fa08ddb7266ae06085edfab1f315153a43f36cc2e942edfbb36"
+    }
+  },
+  "currentContinuationPrecedenceExplicit": true,
+  "draftPlainTextRepresentationsExact": true,
+  "executionActionCount": 73,
+  "historical72ActionsPreservedByExactAppender": true,
+  "humanItem1Complete": true,
+  "humanItems3Through6UnchangedByAction73": true,
+  "humanTrackerHistoricalTextPreservedApartFromCurrentTimestampAndTableRow6": true,
+  "item2ReleaseHandoffComplete": false,
+  "noProductionCallsOrGitMutationsByThisReview": true,
+  "observedAtUtc": "2026-10-03T21:13:30.081376+00:00",
+  "operationalDocExactReviewedV2Suffix": true,
+  "qualification": "Root applied the exact peer-reviewed Action73 and56 public copies, and appended the exact approved OP v2. This agent made only the authorized human tracker table/timestamp/dated append. The current runtime acceptance is complete while release-specific hygiene/commit/push/announcement handoff remains pending; global humanitems3\u20135/6 closure stays separate. No broader canonical-document change or production test was performed.",
+  "rawMarkdownDraftsRetainedUnchangedUnstaged": true,
+  "rootCopy56AllExact": true,
+  "runtimeApiMailUiAcceptanceComplete": true,
+  "schema": "pow-audit30-item2-final-bookkeeping-review-v1"
+}

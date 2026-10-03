@@ -1,0 +1,47 @@
+{
+  "captures": [
+    {
+      "bytes": 0,
+      "path": "/tmp/pow-audit30-item2-ui-caddy-passive-local-test-v1.stdout",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 107,
+      "path": "/tmp/pow-audit30-item2-ui-caddy-passive-local-test-v1.stderr",
+      "sha256": "c9f2c1b54e73f254402bb1a5b42d7d0ba1341d1dcb01aa3cc77c43238566aaf5"
+    }
+  ],
+  "elapsedSeconds": 0.15768845499769668,
+  "executedCommand": [
+    "/usr/bin/python3",
+    "-I",
+    "-B",
+    "/tmp/pow-audit30-item2-ui-caddy-passive-read-v1.test.py"
+  ],
+  "exitCode": 0,
+  "finishedAtUtc": "2026-10-03T20:57:26.313344+00:00",
+  "initialFixtureFailuresQualification": "Before source handback two local fixture assertions failed: newly created local source mode664 was rejected by the transport custody guard and was changed to600; a test incorrectly classified hash/length uses of a local raw variable as raw export and was corrected to assert returned keys/direct values. Reader source bytes did not change. The subsequent nine tests passed.",
+  "nativeInvocationsByPreparingAgent": 0,
+  "privateDataIncluded": false,
+  "remoteMutations": false,
+  "schema": "pow-audit30-item2-ui-caddy-passive-local-validation-v1",
+  "sources": [
+    {
+      "bytes": 8875,
+      "path": "/tmp/pow-audit30-item2-ui-caddy-passive-read-v1.py",
+      "sha256": "f56e7050ba8f569ad7a00cd5698e3c8225e00a3f3fcecd1287d791dafe641729"
+    },
+    {
+      "bytes": 4342,
+      "path": "/tmp/pow-audit30-item2-ui-caddy-passive-read-local-v1.py",
+      "sha256": "a2908b97b56638ca94457ac35acc99d4cecdb6da3a6766c5ad9cee2a8e4ed7f7"
+    },
+    {
+      "bytes": 7111,
+      "path": "/tmp/pow-audit30-item2-ui-caddy-passive-read-v1.test.py",
+      "sha256": "c5b17144b40020773504f10e6e0b42f4b7e06340ad2ea35b99d3a14b1f0e9629"
+    }
+  ],
+  "startedAtUtc": "2026-10-03T20:57:26.155629+00:00",
+  "testCount": 9
+}

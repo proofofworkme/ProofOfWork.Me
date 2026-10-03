@@ -1,0 +1,35 @@
+{
+  "automaticRetry": false,
+  "captures": {
+    "stderr": {
+      "bytes": 0,
+      "path": "/tmp/pow-audit30-dual-pin-promotion-completed-read-native-v1.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "stdout": {
+      "bytes": 4792,
+      "path": "/tmp/pow-audit30-dual-pin-promotion-completed-read-native-v1.stdout",
+      "sha256": "5421a9fd55eb3a63cce35d03ec592515708a0d7aa22de4a6c0a847fbf96e60ae"
+    }
+  },
+  "exitCode": 0,
+  "failure": null,
+  "finishedAtUtc": "2026-10-03T14:40:39.719569+00:00",
+  "inputBindings": {
+    "exactCompletedReceiptAndTwoInstalledPostimages": true,
+    "productionMutation": false,
+    "readOnly": true,
+    "sourceSha256": "e2888101f3e00da5a3e4ca94965a2d950b4a143030cd7d10c56ce6bb96b7adaf"
+  },
+  "outerDeadlineSeconds": 90,
+  "productionDataMutationRequested": false,
+  "receivedBytes": {
+    "stderr": 0,
+    "stdout": 4792
+  },
+  "remoteUnitStoppedCertifiedByTransport": false,
+  "schema": "pow-audit30-readonly-owned-transport-result-v1",
+  "seconds": 2.077598,
+  "startedAtUtc": "2026-10-03T14:40:37.641971+00:00",
+  "typedStdinBytesDelivered": 0
+}

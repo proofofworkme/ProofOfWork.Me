@@ -1,0 +1,465 @@
+{
+  "schema": "pow-audit30-action73-public-custody-preserved-v1",
+  "status": "preserved",
+  "manifest": {
+    "path": "/tmp/pow-audit30-item2-final-public-copy-manifest-v1.json",
+    "sha256": "5999e4b339605156b93893bc10ec1ada9bf96ca634aeeb6460b9411dadf98440",
+    "bytes": 25888
+  },
+  "members": [
+    {
+      "sourcePath": "/tmp/pow-audit30-action73-prepare-local-v1.py",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-action73-prepare-local-v1.py",
+      "bytes": 13126,
+      "sha256": "1678e716d48680f304787de2c51c14bc39c6560066c990aac17a6df389e2122d",
+      "alreadyExisted": false,
+      "copied": true
+    },
+    {
+      "sourcePath": "/tmp/pow-audit30-action73-proposed-public-custody-manifest-v1.json",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-action73-proposed-public-custody-manifest-v1.json",
+      "bytes": 37596,
+      "sha256": "92a25170e580aa42c5f0ccaf564bba3bcc1678fae0222362d6ac9162d435c73e",
+      "alreadyExisted": false,
+      "copied": true
+    },
+    {
+      "sourcePath": "/tmp/pow-audit30-action73-proposed-update-v1.json",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-action73-proposed-update-v1.json",
+      "bytes": 425677,
+      "sha256": "42c6d6d24a0f7f081a7b96526f9d4b662e54b4d757d7142e016c99d006e5780d",
+      "alreadyExisted": false,
+      "copied": true
+    },
+    {
+      "sourcePath": "/tmp/pow-audit30-action73-public-preserve-v1.py",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-action73-public-preserve-v1.py",
+      "bytes": 4189,
+      "sha256": "8c1b3ce80a6283c4f4e1e9e88f703488dfb52606f52966706d887fee9f1a11fc",
+      "alreadyExisted": false,
+      "copied": true
+    },
+    {
+      "sourcePath": "/tmp/pow-audit30-append-action73-v1.py",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-append-action73-v1.py",
+      "bytes": 7023,
+      "sha256": "e62bd07c77435ebb8a22bf6ba4cecea0baf86e4c5727b57471713579102ce958",
+      "alreadyExisted": false,
+      "copied": true
+    },
+    {
+      "sourcePath": "/tmp/pow-audit30-item2-browser-smoke-observed-v1.json",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-item2-browser-smoke-observed-v1.json",
+      "bytes": 1596,
+      "sha256": "c4537f4a9572757cc389118b33df682d90a7517c9b6bbf521e3a92a967d89781",
+      "alreadyExisted": false,
+      "copied": true
+    },
+    {
+      "sourcePath": "/tmp/pow-audit30-item2-operational-doc-append-final-v1.md",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-item2-operational-doc-append-final-v1.md",
+      "bytes": 2942,
+      "sha256": "97ebf99bbd8a2393c267f92cc40fa20f246ed9477f30952898efd5a1ad956b64",
+      "alreadyExisted": false,
+      "copied": true
+    },
+    {
+      "sourcePath": "/tmp/pow-audit30-item2-scoped-bond-ui-seal-qualification-v1.json",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-item2-scoped-bond-ui-seal-qualification-v1.json",
+      "bytes": 2365,
+      "sha256": "8d5be930f4aed933a05e005ddd6d36be5de580acf1e145c29f7094b0df77e353",
+      "alreadyExisted": false,
+      "copied": true
+    },
+    {
+      "sourcePath": "/tmp/pow-audit30-item2-semantic-hygiene-custody-review-v1.json",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-item2-semantic-hygiene-custody-review-v1.json",
+      "bytes": 7341,
+      "sha256": "c1dfb65db447a07e3d21c8cba2fbe4b7e46bc36eb371b242c2d4ba6381cfec35",
+      "alreadyExisted": false,
+      "copied": true
+    },
+    {
+      "sourcePath": "/tmp/pow-audit30-item2-source-custody-append-v1.py",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-item2-source-custody-append-v1.py",
+      "bytes": 10852,
+      "sha256": "c7f601d88a4dfa2b18e84f16b2918dad98a26d092d67bc136d86789f4e6756fc",
+      "alreadyExisted": false,
+      "copied": true
+    },
+    {
+      "sourcePath": "/tmp/pow-audit30-item2-source-custody-append-v1.test.py",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-item2-source-custody-append-v1.test.py",
+      "bytes": 6379,
+      "sha256": "6a49b055e4dd6e0e3c5c922980cebde3d34503d025f39b8eae1390e7eb0041df",
+      "alreadyExisted": false,
+      "copied": true
+    },
+    {
+      "sourcePath": "/tmp/pow-audit30-item2-source-custody-append-v2.py",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-item2-source-custody-append-v2.py",
+      "bytes": 11656,
+      "sha256": "bac817b056b7c5c8f1a3cf658c8f17cf4b88b9ff6ea6bec54247e3c8959d455b",
+      "alreadyExisted": false,
+      "copied": true
+    },
+    {
+      "sourcePath": "/tmp/pow-audit30-item2-source-custody-append-v2.test.py",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-item2-source-custody-append-v2.test.py",
+      "bytes": 9011,
+      "sha256": "8c1c91d2df47988f37658d71530c94edce340ecd03e0c1a7d92a86e37f383709",
+      "alreadyExisted": false,
+      "copied": true
+    },
+    {
+      "sourcePath": "/tmp/pow-audit30-item2-source-custody-finalize-local-v1.py",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-item2-source-custody-finalize-local-v1.py",
+      "bytes": 4298,
+      "sha256": "b8a8e96d4fca131eb6a1908b9b187d03e467c240e1e7245133bf0fd7a2d258f7",
+      "alreadyExisted": false,
+      "copied": true
+    },
+    {
+      "sourcePath": "/tmp/pow-audit30-item2-source-custody-manifest-prepare-local-v1.py",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-item2-source-custody-manifest-prepare-local-v1.py",
+      "bytes": 7949,
+      "sha256": "faa48b3f8fe9db80394af46dd55989d3bd60d78aee5dde4b2b28fa47ecb22a16",
+      "alreadyExisted": false,
+      "copied": true
+    },
+    {
+      "sourcePath": "/tmp/pow-audit30-item2-source-custody-prior-read-only-v2.json",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-item2-source-custody-prior-read-only-v2.json",
+      "bytes": 466,
+      "sha256": "7eaf2e610ac01da5a04e6fc31857eedce5f858dd3efc9bf2e69b007ab533c880",
+      "alreadyExisted": false,
+      "copied": true
+    },
+    {
+      "sourcePath": "/tmp/pow-audit30-item2-ui-active-provenance-exact-v1.json",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-item2-ui-active-provenance-exact-v1.json",
+      "bytes": 2513,
+      "sha256": "11b64113fde307747331cde063c79e9846a28d43d169b82f93eea356b3c0d29d",
+      "alreadyExisted": false,
+      "copied": true
+    },
+    {
+      "sourcePath": "/tmp/pow-audit30-item2-ui-caddy-passive-local-test-v1.stderr",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-item2-ui-caddy-passive-local-test-v1.stderr",
+      "bytes": 107,
+      "sha256": "c9f2c1b54e73f254402bb1a5b42d7d0ba1341d1dcb01aa3cc77c43238566aaf5",
+      "alreadyExisted": false,
+      "copied": true
+    },
+    {
+      "sourcePath": "/tmp/pow-audit30-item2-ui-caddy-passive-local-test-v1.stdout",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-item2-ui-caddy-passive-local-test-v1.stdout",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "alreadyExisted": false,
+      "copied": true
+    },
+    {
+      "sourcePath": "/tmp/pow-audit30-item2-ui-caddy-passive-local-validation-v1.json",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-item2-ui-caddy-passive-local-validation-v1.json",
+      "bytes": 1903,
+      "sha256": "2c2d3bd6c526d92349074bdc8505ec1b6ef2f6a0f49cd33a0f5d456eceae0553",
+      "alreadyExisted": false,
+      "copied": true
+    },
+    {
+      "sourcePath": "/tmp/pow-audit30-item2-ui-caddy-passive-native-v1.json",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-item2-ui-caddy-passive-native-v1.json",
+      "bytes": 937,
+      "sha256": "f17e9f9398219d077143355712f46c3bd914a5a94318be14ca72324f124b39d2",
+      "alreadyExisted": false,
+      "copied": true
+    },
+    {
+      "sourcePath": "/tmp/pow-audit30-item2-ui-caddy-passive-native-v1.stderr",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-item2-ui-caddy-passive-native-v1.stderr",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "alreadyExisted": false,
+      "copied": true
+    },
+    {
+      "sourcePath": "/tmp/pow-audit30-item2-ui-caddy-passive-native-v1.stdout",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-item2-ui-caddy-passive-native-v1.stdout",
+      "bytes": 2575,
+      "sha256": "a0ffd4a3c047e86d1cfc7f94d6090f713c422d47bc9d348ad95b6b6040104691",
+      "alreadyExisted": false,
+      "copied": true
+    },
+    {
+      "sourcePath": "/tmp/pow-audit30-item2-ui-caddy-passive-public-manifest-v1.json",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-item2-ui-caddy-passive-public-manifest-v1.json",
+      "bytes": 2181,
+      "sha256": "d9debd18b83b7a25fa91c7f4ef4913205132950bf5c4ba0d8ca98a39dc747683",
+      "alreadyExisted": false,
+      "copied": true
+    },
+    {
+      "sourcePath": "/tmp/pow-audit30-item2-ui-caddy-passive-read-local-v1.py",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-item2-ui-caddy-passive-read-local-v1.py",
+      "bytes": 4342,
+      "sha256": "a2908b97b56638ca94457ac35acc99d4cecdb6da3a6766c5ad9cee2a8e4ed7f7",
+      "alreadyExisted": false,
+      "copied": true
+    },
+    {
+      "sourcePath": "/tmp/pow-audit30-item2-ui-caddy-passive-read-v1.py",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-item2-ui-caddy-passive-read-v1.py",
+      "bytes": 8875,
+      "sha256": "f56e7050ba8f569ad7a00cd5698e3c8225e00a3f3fcecd1287d791dafe641729",
+      "alreadyExisted": false,
+      "copied": true
+    },
+    {
+      "sourcePath": "/tmp/pow-audit30-item2-ui-caddy-passive-read-v1.test.py",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-item2-ui-caddy-passive-read-v1.test.py",
+      "bytes": 7111,
+      "sha256": "c5b17144b40020773504f10e6e0b42f4b7e06340ad2ea35b99d3a14b1f0e9629",
+      "alreadyExisted": false,
+      "copied": true
+    },
+    {
+      "sourcePath": "/tmp/pow-audit30-item2-ui-evidence-stage-continuation-v3.py",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-item2-ui-evidence-stage-continuation-v3.py",
+      "bytes": 34513,
+      "sha256": "e5b633762db48055d4c1f62677213c06387efcf6759e341f6ace428586082949",
+      "alreadyExisted": false,
+      "copied": true
+    },
+    {
+      "sourcePath": "/tmp/pow-audit30-item2-ui-evidence-stage-continuation-v3.test.py",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-item2-ui-evidence-stage-continuation-v3.test.py",
+      "bytes": 9474,
+      "sha256": "9614e299767a0cb86ad41434c7196a7a8a114842856a0402b6a1f755eea72dab",
+      "alreadyExisted": false,
+      "copied": true
+    },
+    {
+      "sourcePath": "/tmp/pow-audit30-item2-ui-evidence-stage-helper-package-manifest-v3.json",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-item2-ui-evidence-stage-helper-package-manifest-v3.json",
+      "bytes": 1162,
+      "sha256": "a24cd53068d11ddd546a2e76192530118aad9f4e2227ab6bd9b2362fb1d93f13",
+      "alreadyExisted": false,
+      "copied": true
+    },
+    {
+      "sourcePath": "/tmp/pow-audit30-item2-ui-evidence-stage-publication-native-v2.json",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-item2-ui-evidence-stage-publication-native-v2.json",
+      "bytes": 881,
+      "sha256": "caa5dbde6b49cb6be957b1de71d778aa685a5f02db5d93ff2950dbe42c38d2f6",
+      "alreadyExisted": false,
+      "copied": true
+    },
+    {
+      "sourcePath": "/tmp/pow-audit30-item2-ui-evidence-stage-publication-native-v2.stderr",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-item2-ui-evidence-stage-publication-native-v2.stderr",
+      "bytes": 329,
+      "sha256": "a6205f2fe07a19cddcc1f1920d496ff5f9ccb41071feab28ecc9ecae3f68b825",
+      "alreadyExisted": false,
+      "copied": true
+    },
+    {
+      "sourcePath": "/tmp/pow-audit30-item2-ui-evidence-stage-publication-native-v2.stdout",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-item2-ui-evidence-stage-publication-native-v2.stdout",
+      "bytes": 1089,
+      "sha256": "d6d9dd29074f1148a5492670c6e0abe9426a666aa10cc92d5ef23e5b55e379ce",
+      "alreadyExisted": false,
+      "copied": true
+    },
+    {
+      "sourcePath": "/tmp/pow-audit30-item2-ui-evidence-stage-publish-owner-v2.py",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-item2-ui-evidence-stage-publish-owner-v2.py",
+      "bytes": 11084,
+      "sha256": "0d7e5ac2934bfc18a234c1c6725d85d13fe9c6b8b985052507104a6fbeb80351",
+      "alreadyExisted": false,
+      "copied": true
+    },
+    {
+      "sourcePath": "/tmp/pow-audit30-item2-ui-evidence-stage-publish-owner-v2.test.py",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-item2-ui-evidence-stage-publish-owner-v2.test.py",
+      "bytes": 5197,
+      "sha256": "6282c7e8f7b3059a1f4fec0cadfe1b29a7ee3d0374c80e1f2e5c782f64705525",
+      "alreadyExisted": false,
+      "copied": true
+    },
+    {
+      "sourcePath": "/tmp/pow-audit30-item2-ui-evidence-stage-publish-transport-v2.py",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-item2-ui-evidence-stage-publish-transport-v2.py",
+      "bytes": 4495,
+      "sha256": "264aba9c8fb205d090fb3df9d8b2187be061b361a50b95cace37a941a9f0e850",
+      "alreadyExisted": false,
+      "copied": true
+    },
+    {
+      "sourcePath": "/tmp/pow-audit30-item2-ui-evidence-stage-publish-transport-v2.test.py",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-item2-ui-evidence-stage-publish-transport-v2.test.py",
+      "bytes": 2788,
+      "sha256": "c15a33c6cfa695b4fe739e972eac79c0051feec8e27e1aeb1d28c1a5196b05c6",
+      "alreadyExisted": false,
+      "copied": true
+    },
+    {
+      "sourcePath": "/tmp/pow-audit30-item2-ui-evidence-stage-receipt-read-local-v1.py",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-item2-ui-evidence-stage-receipt-read-local-v1.py",
+      "bytes": 2083,
+      "sha256": "3d4a27af01aa61a96417f5e19f19c211ee6f77565b2c59029092fa3e65360579",
+      "alreadyExisted": false,
+      "copied": true
+    },
+    {
+      "sourcePath": "/tmp/pow-audit30-item2-ui-evidence-stage-receipt-read-publication-native-v1.json",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-item2-ui-evidence-stage-receipt-read-publication-native-v1.json",
+      "bytes": 771,
+      "sha256": "0f7706946ed73ccd718339622e1cded3eb7f4cc394796535e8b995d8453afb47",
+      "alreadyExisted": false,
+      "copied": true
+    },
+    {
+      "sourcePath": "/tmp/pow-audit30-item2-ui-evidence-stage-receipt-read-publication-native-v1.stderr",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-item2-ui-evidence-stage-receipt-read-publication-native-v1.stderr",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "alreadyExisted": false,
+      "copied": true
+    },
+    {
+      "sourcePath": "/tmp/pow-audit30-item2-ui-evidence-stage-receipt-read-publication-native-v1.stdout",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-item2-ui-evidence-stage-receipt-read-publication-native-v1.stdout",
+      "bytes": 9675,
+      "sha256": "33312f06cd87fbca27a0eac1c360944a5a3e3896c7c94fa1b43fae3bc5594d46",
+      "alreadyExisted": false,
+      "copied": true
+    },
+    {
+      "sourcePath": "/tmp/pow-audit30-item2-ui-evidence-stage-receipt-read-v1.py",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-item2-ui-evidence-stage-receipt-read-v1.py",
+      "bytes": 64325,
+      "sha256": "3c654986d5db675b74c146b0d0f3849fa35630c12fb0db670592d598c1c405d8",
+      "alreadyExisted": false,
+      "copied": true
+    },
+    {
+      "sourcePath": "/tmp/pow-audit30-item2-ui-evidence-stage-receipt-read-v1.test.py",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-item2-ui-evidence-stage-receipt-read-v1.test.py",
+      "bytes": 7313,
+      "sha256": "cca6375bf562f9f8264cbbca6519e773e27feace2246c3eadaa5c2586f2cf99b",
+      "alreadyExisted": false,
+      "copied": true
+    },
+    {
+      "sourcePath": "/tmp/pow-audit30-item2-ui-evidence-stage-source-native-v3.json",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-item2-ui-evidence-stage-source-native-v3.json",
+      "bytes": 915,
+      "sha256": "bdd9a9c2c5a572b3ec2a4972202d9f0e91b9e870bca589fced8abc8885c9f1c7",
+      "alreadyExisted": false,
+      "copied": true
+    },
+    {
+      "sourcePath": "/tmp/pow-audit30-item2-ui-evidence-stage-source-native-v3.stderr",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-item2-ui-evidence-stage-source-native-v3.stderr",
+      "bytes": 294,
+      "sha256": "3fd35d92fe8712ed5b6015734a77a7e5d47d3032549be604f97017e0e588924c",
+      "alreadyExisted": false,
+      "copied": true
+    },
+    {
+      "sourcePath": "/tmp/pow-audit30-item2-ui-evidence-stage-source-native-v3.stdout",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-item2-ui-evidence-stage-source-native-v3.stdout",
+      "bytes": 917,
+      "sha256": "da3fdce5dc2745642ccd6414e91a3349b768e396576e52db878fbc7cf8c5082d",
+      "alreadyExisted": false,
+      "copied": true
+    },
+    {
+      "sourcePath": "/tmp/pow-audit30-item2-ui-evidence-stage-source-request-v3.json",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-item2-ui-evidence-stage-source-request-v3.json",
+      "bytes": 251008,
+      "sha256": "614758bd56a3b734289e70c310f9b158c229b7d754b9951f3d4c9c698c9b2905",
+      "alreadyExisted": false,
+      "copied": true
+    },
+    {
+      "sourcePath": "/tmp/pow-audit30-item2-ui-evidence-stage-stage-native-v3.json",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-item2-ui-evidence-stage-stage-native-v3.json",
+      "bytes": 914,
+      "sha256": "8f0e62cef63e276bf0108328dff7983a2f410200098139d9c87f2702a674169b",
+      "alreadyExisted": false,
+      "copied": true
+    },
+    {
+      "sourcePath": "/tmp/pow-audit30-item2-ui-evidence-stage-stage-native-v3.stderr",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-item2-ui-evidence-stage-stage-native-v3.stderr",
+      "bytes": 293,
+      "sha256": "a57102bf1645515e175d056e5de1fb23379617f0d160de7e30aa283c0ddd74e3",
+      "alreadyExisted": false,
+      "copied": true
+    },
+    {
+      "sourcePath": "/tmp/pow-audit30-item2-ui-evidence-stage-stage-native-v3.stdout",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-item2-ui-evidence-stage-stage-native-v3.stdout",
+      "bytes": 8642,
+      "sha256": "53b0fd2fcfa63138847f874794220b0d899e9a903f64488d8fe98652dc8e7671",
+      "alreadyExisted": false,
+      "copied": true
+    },
+    {
+      "sourcePath": "/tmp/pow-audit30-item2-ui-evidence-stage-stage-request-v3.json",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-item2-ui-evidence-stage-stage-request-v3.json",
+      "bytes": 251007,
+      "sha256": "1d3adae362d867787d03ddb31c9d6bc12ad0e11252e7fd4091dda79b1ad8d489",
+      "alreadyExisted": false,
+      "copied": true
+    },
+    {
+      "sourcePath": "/tmp/pow-audit30-item2-ui-evidence-stage-transport-v4.py",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-item2-ui-evidence-stage-transport-v4.py",
+      "bytes": 8372,
+      "sha256": "5938bbbb62d3de77220bbad01816a36bc8cbbfedce89695b5f1985babdc449d9",
+      "alreadyExisted": false,
+      "copied": true
+    },
+    {
+      "sourcePath": "/tmp/pow-audit30-item2-ui-evidence-stage-transport-v4.test.py",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-item2-ui-evidence-stage-transport-v4.test.py",
+      "bytes": 4041,
+      "sha256": "29cc6903f20b5b79030737b0867d7fcb8af9b0308f9c1906dd131204bb49c19d",
+      "alreadyExisted": false,
+      "copied": true
+    },
+    {
+      "sourcePath": "/tmp/pow-audit30-item2-ui-https-smoke-exact-v1.json",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-item2-ui-https-smoke-exact-v1.json",
+      "bytes": 958,
+      "sha256": "ca3bd4619cacf5a05ac2c940d158690dcb3f7a6f643de55d829be649850988bd",
+      "alreadyExisted": false,
+      "copied": true
+    },
+    {
+      "sourcePath": "/tmp/pow-audit30-item2-ui-preserved-public-source-manifest-v2.json",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-item2-ui-preserved-public-source-manifest-v2.json",
+      "bytes": 27650,
+      "sha256": "7754fd058161a1521bedb2797ac4108be7acb3db460f03dd84cf4629b1acb398",
+      "alreadyExisted": false,
+      "copied": true
+    },
+    {
+      "sourcePath": "/tmp/pow-audit30-item2-ui-preserved-public-source-manifest-v3.json",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-item2-ui-preserved-public-source-manifest-v3.json",
+      "bytes": 29201,
+      "sha256": "ca63cb86817c73bc38b1095d0ba9d0d0e5449c61b7ca067ffa1c6b3872defc45",
+      "alreadyExisted": false,
+      "copied": true
+    }
+  ],
+  "allExact": true,
+  "privateCapturesBodiesOrRawAddressesIncluded": false,
+  "deletionPerformed": false,
+  "trackerChanged": false,
+  "gitChanged": false,
+  "productionCalls": false
+}

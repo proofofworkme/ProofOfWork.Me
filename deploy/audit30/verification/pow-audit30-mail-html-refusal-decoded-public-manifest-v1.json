@@ -1,0 +1,84 @@
+{
+  "schema": "pow-audit30-mail-html-refusal-decoded-public-manifest-v1",
+  "nativeExport": {
+    "path": "/tmp/pow-audit30-mail-html-refusal-public-native-v1.stdout",
+    "bytes": 19528,
+    "sha256": "e804e66b04b28363d2e3905f70d65c9da2b3a3c2f1916b51057c98c92364e902"
+  },
+  "atUtc": "2026-10-03T20:09:54.264908+00:00",
+  "files": [
+    {
+      "sourcePath": "/tmp/pow-audit30-mail-html-refusal-exact-v1-failed.json",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-mail-html-refusal-exact-v1-failed.json",
+      "remotePath": "/data/proofofwork-release-backups/audit30-mail-api-html-after-20261003T200200Z/failed.json",
+      "bytes": 12786,
+      "sha256": "3366a1a31e3e208220674e93255ac05fb66c3b8d8db1947a1f2a125d52d87b0d"
+    },
+    {
+      "sourcePath": "/tmp/pow-audit30-mail-html-refusal-exact-v1-public-result.json",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-mail-html-refusal-exact-v1-public-result.json",
+      "remotePath": "/data/proofofwork-release-backups/audit30-mail-api-html-after-20261003T200200Z/public-result.json",
+      "bytes": 285,
+      "sha256": "0a176bbdf6c6948b601fc99eab3003b7559519596be30c0897051cc769de167c"
+    }
+  ],
+  "stderrHashOnly": {
+    "bytes": 0,
+    "path": "/data/proofofwork-release-backups/audit30-mail-api-html-after-20261003T200200Z/stderr.log",
+    "rawExported": false,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "unitState": {
+    "ActiveState": "failed",
+    "InvocationID": "3738769c37e344fd842750c2818eb60f",
+    "LoadState": "loaded",
+    "MainPID": "0",
+    "Result": "exit-code",
+    "SubState": "failed"
+  },
+  "liveFive": {
+    "bitcoind.service": {
+      "ActiveState": "active",
+      "InvocationID": "64e1fa7be2e2442d8c7f5763f60b85fb",
+      "LoadState": "loaded",
+      "MainPID": "1324302",
+      "Result": "success",
+      "SubState": "running"
+    },
+    "electrs.service": {
+      "ActiveState": "active",
+      "InvocationID": "72418b1c7ab245e4a37685ed868a1084",
+      "LoadState": "loaded",
+      "MainPID": "1324320",
+      "Result": "success",
+      "SubState": "running"
+    },
+    "postgresql@16-main.service": {
+      "ActiveState": "active",
+      "InvocationID": "e0bf545f0ad944e89fe1005577e61b9c",
+      "LoadState": "loaded",
+      "MainPID": "1537429",
+      "Result": "success",
+      "SubState": "running"
+    },
+    "proofofwork-api.service": {
+      "ActiveState": "active",
+      "InvocationID": "546739c810df48d4956961b0931b6fc5",
+      "LoadState": "loaded",
+      "MainPID": "3372731",
+      "Result": "success",
+      "SubState": "running"
+    },
+    "proofofwork-indexer-worker.service": {
+      "ActiveState": "active",
+      "InvocationID": "b2dc36ef816c4311b4c9aa0740d781a9",
+      "LoadState": "loaded",
+      "MainPID": "3372743",
+      "Result": "success",
+      "SubState": "running"
+    }
+  },
+  "liveFiveUnchanged": true,
+  "privateBodiesOrAddressesExported": false,
+  "productionMutationsPerformedByDecoder": false
+}

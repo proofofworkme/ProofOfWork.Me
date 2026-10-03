@@ -1,0 +1,272 @@
+{
+  "deletionRequested": false,
+  "independentPeerReviewed": true,
+  "members": [
+    {
+      "original": {
+        "bytes": 29020,
+        "path": "/tmp/pow-audit30-item2-node-cutover-v3.py",
+        "sha256": "87f61f895d24e83d7c20037d7dae50ded7af014f5a0a2134e8cdd6a48936df3c"
+      },
+      "proposedRepositoryPath": "deploy/audit30/verification/pow-audit30-item2-node-cutover-v3.py",
+      "repositoryPathAlreadyExists": false
+    },
+    {
+      "original": {
+        "bytes": 7867,
+        "path": "/tmp/pow-audit30-item2-node-cutover-v3.test.py",
+        "sha256": "b52610815d226c4d1fc4c92271dfdfe011f41edee395c6c245b0d5230eb04285"
+      },
+      "proposedRepositoryPath": "deploy/audit30/verification/pow-audit30-item2-node-cutover-v3.test.py",
+      "repositoryPathAlreadyExists": false
+    },
+    {
+      "original": {
+        "bytes": 13017,
+        "path": "/tmp/pow-audit30-item2-node-launch-v3.py",
+        "sha256": "d0e208d8328b31bcc48ad4c494259bf68830ee724fab3237d309a40e9bbc3427"
+      },
+      "proposedRepositoryPath": "deploy/audit30/verification/pow-audit30-item2-node-launch-v3.py",
+      "repositoryPathAlreadyExists": false
+    },
+    {
+      "original": {
+        "bytes": 3484,
+        "path": "/tmp/pow-audit30-item2-node-launch-v3.test.py",
+        "sha256": "5aa51dc1341fc41f539ee449ba8cfa03262356b65f8aa07e561c05bd18d65a7e"
+      },
+      "proposedRepositoryPath": "deploy/audit30/verification/pow-audit30-item2-node-launch-v3.test.py",
+      "repositoryPathAlreadyExists": false
+    },
+    {
+      "original": {
+        "bytes": 1083,
+        "path": "/tmp/pow-audit30-canonical-old-shadow-state-v1.json",
+        "sha256": "02b003534706a0e5a516193927c42c2217d3e2a19b520f5d7c9915a40215b4b1"
+      },
+      "proposedRepositoryPath": "deploy/audit30/verification/pow-audit30-canonical-old-shadow-state-v1.json",
+      "repositoryPathAlreadyExists": false
+    },
+    {
+      "original": {
+        "bytes": 10637,
+        "path": "/tmp/pow-audit30-item2-node-v2-public-reconciliation-v1.json",
+        "sha256": "0b3a6150d65063d22fadb8945f8265c400de911b44269b5e4db046cb8b436905"
+      },
+      "proposedRepositoryPath": "deploy/audit30/verification/pow-audit30-item2-node-v2-public-reconciliation-v1.json",
+      "repositoryPathAlreadyExists": false
+    },
+    {
+      "original": {
+        "bytes": 570,
+        "path": "/tmp/pow-audit30-node-v2-exact-v2-002-bindings.json",
+        "sha256": "4975b30cb7a5e490d158d1c8274dc7306bebd039b11151d17fb0f9665678aeeb"
+      },
+      "proposedRepositoryPath": "deploy/audit30/verification/pow-audit30-node-v2-exact-v2-002-bindings.json",
+      "repositoryPathAlreadyExists": false
+    },
+    {
+      "original": {
+        "bytes": 1210,
+        "path": "/tmp/pow-audit30-node-v2-exact-v2-006-postgres-preflight.json",
+        "sha256": "54b996ffcc55b8222604b00b19b4e9684d7da5df2b0e9283ffaf8bce20b3c0cf"
+      },
+      "proposedRepositoryPath": "deploy/audit30/verification/pow-audit30-node-v2-exact-v2-006-postgres-preflight.json",
+      "repositoryPathAlreadyExists": false
+    },
+    {
+      "original": {
+        "bytes": 331,
+        "path": "/tmp/pow-audit30-node-v2-exact-v2-007-archive-request-identity.json",
+        "sha256": "a95bd12f0e42472f6d99bda4df4f157657b5d8788a7256842d053d38db7a9e12"
+      },
+      "proposedRepositoryPath": "deploy/audit30/verification/pow-audit30-node-v2-exact-v2-007-archive-request-identity.json",
+      "repositoryPathAlreadyExists": false
+    },
+    {
+      "original": {
+        "bytes": 526,
+        "path": "/tmp/pow-audit30-node-v2-exact-v2-008-shadow-accepted.json",
+        "sha256": "040b5571556f99b0af2f1e79d219cda27ed1a053242d78c41ece748dc7b95d25"
+      },
+      "proposedRepositoryPath": "deploy/audit30/verification/pow-audit30-node-v2-exact-v2-008-shadow-accepted.json",
+      "repositoryPathAlreadyExists": false
+    },
+    {
+      "original": {
+        "bytes": 765,
+        "path": "/tmp/pow-audit30-node-v2-exact-v2-011-roots.json",
+        "sha256": "ca0926e63fdda936bd039dffc9145c0894a69e535dcf1e1de4b120c68cbc3bf2"
+      },
+      "proposedRepositoryPath": "deploy/audit30/verification/pow-audit30-node-v2-exact-v2-011-roots.json",
+      "repositoryPathAlreadyExists": false
+    },
+    {
+      "original": {
+        "bytes": 1210,
+        "path": "/tmp/pow-audit30-node-v2-exact-v2-014-postgres-preflight.json",
+        "sha256": "19bca6991fbcea85d144d21b1a20f9289fec8db57ff45df32bf6bcf682f030e5"
+      },
+      "proposedRepositoryPath": "deploy/audit30/verification/pow-audit30-node-v2-exact-v2-014-postgres-preflight.json",
+      "repositoryPathAlreadyExists": false
+    },
+    {
+      "original": {
+        "bytes": 10019,
+        "path": "/tmp/pow-audit30-node-v2-exact-v2-046-before.json",
+        "sha256": "c7591c4547fff71f44fc03f05d98186d5a056faa06a6f94d8ef25e6048d4c07b"
+      },
+      "proposedRepositoryPath": "deploy/audit30/verification/pow-audit30-node-v2-exact-v2-046-before.json",
+      "repositoryPathAlreadyExists": false
+    },
+    {
+      "original": {
+        "bytes": 10922,
+        "path": "/tmp/pow-audit30-node-v2-exact-v2-086-held.json",
+        "sha256": "239ce0f9afff693288f5920195a543c07cf1d3e963b67e072c70c2ab93ec859e"
+      },
+      "proposedRepositoryPath": "deploy/audit30/verification/pow-audit30-node-v2-exact-v2-086-held.json",
+      "repositoryPathAlreadyExists": false
+    },
+    {
+      "original": {
+        "bytes": 115,
+        "path": "/tmp/pow-audit30-node-v2-exact-v2-090-failure.json",
+        "sha256": "48bf889458763f03649007f243222fa26bd32541aea6afcfa799367f7e5ac832"
+      },
+      "proposedRepositoryPath": "deploy/audit30/verification/pow-audit30-node-v2-exact-v2-090-failure.json",
+      "repositoryPathAlreadyExists": false
+    },
+    {
+      "original": {
+        "bytes": 103,
+        "path": "/tmp/pow-audit30-node-v2-exact-v2-091-failure-root-position.json",
+        "sha256": "f4ccee20b5173b7e652d4a85dba9807c80870bd16d0e7ef9c2cf4da808573506"
+      },
+      "proposedRepositoryPath": "deploy/audit30/verification/pow-audit30-node-v2-exact-v2-091-failure-root-position.json",
+      "repositoryPathAlreadyExists": false
+    },
+    {
+      "original": {
+        "bytes": 5937,
+        "path": "/tmp/pow-audit30-node-v2-exact-v2-093-ready.json",
+        "sha256": "829ac83bd52be54611b8600c539372e355f41d06cf89d4498d2e61ef55fdf27b"
+      },
+      "proposedRepositoryPath": "deploy/audit30/verification/pow-audit30-node-v2-exact-v2-093-ready.json",
+      "repositoryPathAlreadyExists": false
+    },
+    {
+      "original": {
+        "bytes": 73,
+        "path": "/tmp/pow-audit30-node-v2-exact-v2-098-timer-restoration-intent.json",
+        "sha256": "9367fdfe0935bdee81acd46f8ec7c47fde16ef999b1df668011341a82570785b"
+      },
+      "proposedRepositoryPath": "deploy/audit30/verification/pow-audit30-node-v2-exact-v2-098-timer-restoration-intent.json",
+      "repositoryPathAlreadyExists": false
+    },
+    {
+      "original": {
+        "bytes": 1451,
+        "path": "/tmp/pow-audit30-node-v2-exact-v2-116-timers-restored.json",
+        "sha256": "5a4edad29e2d89b899449a6c5d57b40b1c062021b204a1b4cc31e7472d63a60f"
+      },
+      "proposedRepositoryPath": "deploy/audit30/verification/pow-audit30-node-v2-exact-v2-116-timers-restored.json",
+      "repositoryPathAlreadyExists": false
+    },
+    {
+      "original": {
+        "bytes": 210,
+        "path": "/tmp/pow-audit30-node-v2-exact-v2-117-final.json",
+        "sha256": "16ffbb490cab2da985df2d91d9dfcd47944bc56303d6a01ca4e2c6c7356d862e"
+      },
+      "proposedRepositoryPath": "deploy/audit30/verification/pow-audit30-node-v2-exact-v2-117-final.json",
+      "repositoryPathAlreadyExists": false
+    },
+    {
+      "original": {
+        "bytes": 894,
+        "path": "/tmp/pow-audit30-node-v2-exact-v2-bindings.json",
+        "sha256": "8814890b172d6479e04419be25689142cc7bae2fff7a228108abc45acae95924"
+      },
+      "proposedRepositoryPath": "deploy/audit30/verification/pow-audit30-node-v2-exact-v2-bindings.json",
+      "repositoryPathAlreadyExists": false
+    },
+    {
+      "original": {
+        "bytes": 478,
+        "path": "/tmp/pow-audit30-node-v2-exact-v2-failed.json",
+        "sha256": "7acceb126cdb03f823c18a4179b67bdf7b7e0da2421ec91ed0268ad7d0f49181"
+      },
+      "proposedRepositoryPath": "deploy/audit30/verification/pow-audit30-node-v2-exact-v2-failed.json",
+      "repositoryPathAlreadyExists": false
+    },
+    {
+      "original": {
+        "bytes": 1755,
+        "path": "/tmp/pow-audit30-node-v2-exact-v2-failure-observation.json",
+        "sha256": "74e6410b60f3d089c7c6d6ae14a26d78e78347d84f022738b62530ef616b2660"
+      },
+      "proposedRepositoryPath": "deploy/audit30/verification/pow-audit30-node-v2-exact-v2-failure-observation.json",
+      "repositoryPathAlreadyExists": false
+    },
+    {
+      "original": {
+        "bytes": 200,
+        "path": "/tmp/pow-audit30-node-v2-exact-v2-idle-scheduling.json",
+        "sha256": "f4bff10e3e82f97a0a329de55a883b54b90d7071129e1e8c6cc482bdc37ac8d9"
+      },
+      "proposedRepositoryPath": "deploy/audit30/verification/pow-audit30-node-v2-exact-v2-idle-scheduling.json",
+      "repositoryPathAlreadyExists": false
+    },
+    {
+      "original": {
+        "bytes": 1218,
+        "path": "/tmp/pow-audit30-node-v2-exact-v2-lease-stopped.json",
+        "sha256": "3b20ca301b2eb69ccbcd88cb71821be8800e5652a4418b348b8a477fc3c58d60"
+      },
+      "proposedRepositoryPath": "deploy/audit30/verification/pow-audit30-node-v2-exact-v2-lease-stopped.json",
+      "repositoryPathAlreadyExists": false
+    },
+    {
+      "original": {
+        "bytes": 1541,
+        "path": "/tmp/pow-audit30-node-v2-exact-v2-prior-lease-stop-bound.json",
+        "sha256": "88dd76b3c6434ba8943bbd1ca3053eab970c6d1a3b9fb941accd28c97207d072"
+      },
+      "proposedRepositoryPath": "deploy/audit30/verification/pow-audit30-node-v2-exact-v2-prior-lease-stop-bound.json",
+      "repositoryPathAlreadyExists": false
+    },
+    {
+      "original": {
+        "bytes": 20194,
+        "path": "/tmp/pow-audit30-node-v2-exact-v2-request.json",
+        "sha256": "06a87175bd0e2dcb93862cc7f1198ab01e8d3d680acb703a7195a89a4567531c"
+      },
+      "proposedRepositoryPath": "deploy/audit30/verification/pow-audit30-node-v2-exact-v2-request.json",
+      "repositoryPathAlreadyExists": false
+    },
+    {
+      "original": {
+        "bytes": 3703,
+        "path": "/tmp/pow-audit30-node-v2-exact-v2-worker-guard.json",
+        "sha256": "b0f4b31dc23fb73f87502e3108697cf4c6aab5629b3fb76687420b9878d8f617"
+      },
+      "proposedRepositoryPath": "deploy/audit30/verification/pow-audit30-node-v2-exact-v2-worker-guard.json",
+      "repositoryPathAlreadyExists": false
+    }
+  ],
+  "newAttemptRequired": "item2-v3",
+  "newNativeInvocationsByPreparer": 0,
+  "newOperation": "One reset-failed of the exact historically failed canonical shadow unit, after immutable custody and exact fresh identity/source checks; then one unchanged canonical controller invocation.",
+  "originalFailuresRemainFailed": true,
+  "originalV1ControllerSHA256": "fcac13f0dfd68f0549c902b6680d8d09d5600bb1cb4e521f69ce615ac92a73b1",
+  "originalV2ControllerSHA256": "5b06e0a510f6014375a2457ae08a2cd8a665eab38807471a2fa640bd1f5c0b22",
+  "originalV2LauncherSHA256": "90d73c9a5d86205db7ab46cb4032ac88c422fc1b31293c8b707be66458001019",
+  "privateCaptureBodiesOrEnvironmentIncluded": false,
+  "pureTestsPassed": {
+    "launcher": 4,
+    "wrapper": 17
+  },
+  "schema": "pow-audit30-item2-node-v3-custody-manifest-v1",
+  "status": "prepared-not-launched-no-copies-performed"
+}

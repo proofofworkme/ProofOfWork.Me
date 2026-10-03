@@ -1,0 +1,111 @@
+{
+  "schema": "pow-audit30-mail-html-v3-public-source-request-manifest-v1",
+  "files": [
+    {
+      "path": "/tmp/pow-audit30-postcutover-mail-html-collector-v2.py",
+      "bytes": 36032,
+      "sha256": "fdfd4dce27aa01245d199b9d0fd665a33ce14502262c49d71e3b8041c3e7d807",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-postcutover-mail-html-collector-v2.py",
+      "qualification": "source-only/preparation; no native execution by preparation agent"
+    },
+    {
+      "path": "/tmp/pow-audit30-postcutover-mail-html-native-v2.py",
+      "bytes": 22015,
+      "sha256": "ac86c35576ce51805ca2699114e271a2d8441f5ac1cad9817ab38f679204b357",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-postcutover-mail-html-native-v2.py",
+      "qualification": "source-only/preparation; no native execution by preparation agent"
+    },
+    {
+      "path": "/tmp/pow-audit30-postcutover-mail-html-assemble-v2.py",
+      "bytes": 6158,
+      "sha256": "506619478cf4f28da7712a2238c1425ab931ee5b831553f09edf5f751acd7c89",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-postcutover-mail-html-assemble-v2.py",
+      "qualification": "source-only/preparation; no native execution by preparation agent"
+    },
+    {
+      "path": "/tmp/pow-audit30-postcutover-mail-html-transport-v2.py",
+      "bytes": 8409,
+      "sha256": "2b7105000b80d32167e6970826ce637aa2cbc8bfafe0976bb8f7a5dbec59eaa4",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-postcutover-mail-html-transport-v2.py",
+      "qualification": "source-only/preparation; no native execution by preparation agent"
+    },
+    {
+      "path": "/tmp/pow-audit30-postcutover-mail-html-collector-v3.py",
+      "bytes": 36211,
+      "sha256": "8c95837d43e994d906cc4bbebb8a443bede34802d5eaf5d93cd2f61f60ef86db",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-postcutover-mail-html-collector-v3.py",
+      "qualification": "source-only/preparation; no native execution by preparation agent"
+    },
+    {
+      "path": "/tmp/pow-audit30-postcutover-mail-html-native-v3.py",
+      "bytes": 22120,
+      "sha256": "b0c4ca5c0cb94bef317b13ea57857a5edbac2b08095969a56489ca2c0209a844",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-postcutover-mail-html-native-v3.py",
+      "qualification": "source-only/preparation; no native execution by preparation agent"
+    },
+    {
+      "path": "/tmp/pow-audit30-postcutover-mail-html-assemble-v3.py",
+      "bytes": 6158,
+      "sha256": "200c7fd3a6c279e46b43a162aed1395d534fafe6eff523bac201ccfa9a8159ab",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-postcutover-mail-html-assemble-v3.py",
+      "qualification": "source-only/preparation; no native execution by preparation agent"
+    },
+    {
+      "path": "/tmp/pow-audit30-postcutover-mail-html-transport-v3.py",
+      "bytes": 8409,
+      "sha256": "d95770a5208500a9ddee654b5a8f59f1e66106fad274e6f32fe7b00cda91af02",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-postcutover-mail-html-transport-v3.py",
+      "qualification": "source-only/preparation; no native execution by preparation agent"
+    },
+    {
+      "path": "/tmp/pow-audit30-postcutover-mail-html-v3.test.py",
+      "bytes": 6261,
+      "sha256": "9a3012cce46701aadd61abbc1054036c7245a4c30c283c9b4fc82b38d7d63a7b",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-postcutover-mail-html-v3.test.py",
+      "qualification": "source-only/preparation; no native execution by preparation agent"
+    },
+    {
+      "path": "/tmp/pow-audit30-postcutover-mail-html-assemble-v3.test.py",
+      "bytes": 3195,
+      "sha256": "03bc87dcc111686737cd6566020c422f8f45b0182622de91390ee2224d2a2752",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-postcutover-mail-html-assemble-v3.test.py",
+      "qualification": "source-only/preparation; no native execution by preparation agent"
+    },
+    {
+      "path": "/tmp/pow-audit30-postcutover-mail-html-v3-narrow-diff.test.py",
+      "bytes": 3381,
+      "sha256": "655892274055bd4829ff8c2d00052a3dfffa22f11acc76dfae32ec5f3bfd5919",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-postcutover-mail-html-v3-narrow-diff.test.py",
+      "qualification": "source-only/preparation; no native execution by preparation agent"
+    },
+    {
+      "path": "/tmp/pow-audit30-postcutover-mail-html-202300-v3.collector-request.json",
+      "bytes": 766,
+      "sha256": "654c8e2295817ef116017c9a09593e19bdccfb81583760ec1717a8a069c1a25e",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-postcutover-mail-html-202300-v3.collector-request.json",
+      "qualification": "creation-only typed request for root review, unique202300 namespace"
+    },
+    {
+      "path": "/tmp/pow-audit30-postcutover-mail-html-202300-v3.prepare-request.json",
+      "bytes": 77824,
+      "sha256": "9e73e5b08dc26ee31242c7a18ff0c275e5879c45b2ba22723dd9eaade6fc9208",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-postcutover-mail-html-202300-v3.prepare-request.json",
+      "qualification": "creation-only typed request for root review, unique202300 namespace"
+    },
+    {
+      "path": "/tmp/pow-audit30-postcutover-mail-html-202300-v3.run-request.json",
+      "bytes": 77820,
+      "sha256": "d8a456455ca7642ce3b3a663c5fa640f591a300965f6b9136ff1d352b6dff0b6",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-postcutover-mail-html-202300-v3.run-request.json",
+      "qualification": "creation-only typed request for root review, unique202300 namespace"
+    }
+  ],
+  "testCount": 17,
+  "allFixturesPassed": true,
+  "canonicalPublicOrigin": "https://computer.proofofwork.me",
+  "supplementaryGroup": "1000",
+  "capabilitiesRemainEmpty": true,
+  "productionDataMutation": false,
+  "nativeCallsMadeByPreparationAgent": false,
+  "sourceApproval": "Root approved bounded origin and exact public-group1000 tooling correction; public modes and private source authority untouched"
+}

@@ -1,0 +1,13 @@
+{
+  "archiveBytes": 195313712,
+  "archiveSHA256": "6849138b5b313ea6e134f3367892691b80174a2f3d12fac278047f6df0fc9b19",
+  "nativeCallsMade": false,
+  "payloadFingerprint": {
+    "entries": 818,
+    "regularBytes": 219997417,
+    "sha256": "701e484a90883cdd1a3d9c015f54ba25d6f804460e4943dcdd0c78f0bfa0b5e5"
+  },
+  "releaseId": "38ac6e2bff2a-20261003T190512Z",
+  "rootOwnerNormalization": "receiver forces uid/gid0; archived modes and exact file bytes retained",
+  "schema": "pow-audit30-item2-ui-expected-payload-fingerprint-v1"
+}

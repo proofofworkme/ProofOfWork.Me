@@ -1,0 +1,7 @@
+{
+  "originalInput": "/tmp/pow-audit30-item2-ui-refusal-exact-receive-admission.log",
+  "rawBase64": "eyJvayI6IHRydWUsICJwaGFzZSI6ICJwcmVmbGlnaHQiLCAicmVjZWlwdHMiOiAiL3Zhci90bXAvcHJvb2ZvZndvcmstZGVwbG95L2F1ZGl0MjktYWRtaXQtMzhhYzZlMmJmZjJhLTIwMjYxMDAzVDE5MDUxMlotcmVjb3Zlcnktc3VyZmFjZXMtcmVjZWl2ZSJ9Cg==",
+  "rawBytes": 148,
+  "rawSha256": "651f59222a471759ecacf8e0a1d9035c179913e3a41e8df08bf391dce4b747ae",
+  "schema": "pow-audit30-public-source-byte-evidence-v1"
+}

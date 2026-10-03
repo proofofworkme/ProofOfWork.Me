@@ -1,0 +1,13 @@
+Running as unit: proofofwork-audit30-item2-ui-preserved-38ac6e2bff2a-20261003T190512Z-restage-v2.service
+Traceback (most recent call last):
+  File "<string>", line 500, in <module>
+  File "<string>", line 483, in main
+  File "<string>", line 347, in restage
+  File "<string>", line 136, in run
+AssertionError: stager.log
+Finished with result: exit-code
+Main processes terminated with: code=exited/status=1
+Service runtime: 1min 30.909s
+CPU time consumed: 1min 30.425s
+Memory peak: 10.5M
+Memory swap peak: 0B

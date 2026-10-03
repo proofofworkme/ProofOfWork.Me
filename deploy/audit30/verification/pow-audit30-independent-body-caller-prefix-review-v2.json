@@ -1,0 +1,34 @@
+{
+  "bindings": [
+    {
+      "actualFrozenTransportPrefixPredicatePasses": true,
+      "bytes": 1526,
+      "oldSourceSHA256": "fffbf4e64fc0872f31f002a2cd5994bc5c5e5e303b312aaaaeaba45e821133a4",
+      "path": "/tmp/pow-audit30-body-prepare-owned-caller-v2.py",
+      "prefix": "/tmp/pow-audit30-body-prepare-native-20261003t145500z-v1",
+      "sha256": "254e782a678b775fea172cec29b04c6ac253298eb174b3f392b91148e40a6ce2"
+    },
+    {
+      "actualFrozenTransportPrefixPredicatePasses": true,
+      "bytes": 1510,
+      "oldSourceSHA256": "e8371a35752f2405dcbdac8ce1858787c1c96b0bf6897c3f5343e92b39ee9e89",
+      "path": "/tmp/pow-audit30-body-run-owned-caller-v2.py",
+      "prefix": "/tmp/pow-audit30-body-run-native-20261003t145500z-v1",
+      "sha256": "12dcc4c227937e9ad70632a5f3c317aa28b697959bf5e3cb36834accd44159dd"
+    }
+  ],
+  "checks": {
+    "actualSharedTransportPrefixPredicatePasses": true,
+    "allSourceRequestDeadlineCapBindingsUnchanged": true,
+    "onlyPrefixTimestampCaseChanged": true
+  },
+  "qualification": "Prior caller fixtures mocked T.execute and missed the real lowercase prefix guard; prior peer shares that test limitation. V2 correction independently matches exact shared guard without calling execute, opening captures or contacting SSH. Root already accepted and executed V2; subsequent native RUN refusal is separate and not explained by prefix.",
+  "reviewedAtUtc": "2026-10-03T14:49:04.744106+00:00",
+  "schema": "pow-audit30-independent-body-caller-prefix-successor-review-v2",
+  "sharedTransport": {
+    "actualExecuteFullmatchPattern": "pow-audit30-[a-z0-9-]+",
+    "path": "/tmp/pow-audit30-readonly-owned-transport-v3.py",
+    "sha256": "1dedef0a6c7021d114017e711ad74f9cfed4e461fc047a2be2c49e590f3da18e"
+  },
+  "status": "accepted-source-only-prefix-correction"
+}

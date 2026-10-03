@@ -1,0 +1,23 @@
+{
+  "schema": "pow-audit30-item2-browser-smoke-observed-v1",
+  "recordedAtUtc": "2026-10-03T21:03:51Z",
+  "observer": "Root using the logged-in in-app browser",
+  "url": "https://computer.proofofwork.me/",
+  "releaseScriptObserved": "/assets/index-DtxmrCgB.js",
+  "mail": {"loaded": true, "guestAccountPromptObserved": true},
+  "ids": {"loaded": true, "registrationFeeProofs": 1000, "managementFeeProofs": 546, "registryConfirmed": 508, "registryPending": 20},
+  "credit": {"loaded": true, "statusObserved": "Credit market loaded. 238 confirmed credits, 1,008 open listings, 91 confirmed sales, 0 pending listings."},
+  "inception": {"completeHistoryLoaded": true, "coreBlock": 969761, "emptyTicketAndMarketHistoryStatesVerified": true},
+  "infinity": {"completeHistoryLoaded": true, "coreBlock": 969761, "openTicketsDisplayed": 1, "sealedTicketsDisplayed": 0},
+  "browserErrorLogObserved": [],
+  "walletConnected": false,
+  "signingOrTransactionsPerformed": false,
+  "accountBalanceAcceptanceClaimed": false,
+  "attachmentRenderingCertified": false,
+  "screenshot": {
+    "path": "/home/sixer/.codex/visualizations/2026/10/03/01a10273-4268-72a1-8cc7-793edfbdbbfc/audit30-item2-live-ui.jpg",
+    "bytes": 102413,
+    "sha256": "6e44b32e56fc556d569fa237c6e4cbcad596c3340aa3981d4d8455ecd52be3dc"
+  },
+  "qualification": "Observed guest UI navigation and explicit complete scoped bond-history controls. Native acceptance and HTTPS byte verification are separate receipts. This observation does not certify private wallet actions, explicit attachment rendering, or broader financial completeness."
+}

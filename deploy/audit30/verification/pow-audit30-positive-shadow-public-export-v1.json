@@ -1,0 +1,26 @@
+{
+  "ownedUnitState": {
+    "ActiveState": "inactive",
+    "InvocationID": "",
+    "LoadState": "not-found",
+    "MainPID": "0",
+    "Result": "success",
+    "SubState": "dead"
+  },
+  "privateContentsExported": false,
+  "receipts": {
+    "child": {
+      "bytes": 12018,
+      "path": "/data/proofofwork-audit30-positive-scoped-output-38ac6e2bff2a-20261003T042000Z-shadow-v1/receipt.json",
+      "sha256": "0647c7a70391d5caf6ff1d45667cbcde73dd47a423be4c4ef1df00241b23b4ef",
+      "localPath": "/tmp/pow-audit30-positive-shadow-exact-child-v1.json"
+    },
+    "owner": {
+      "bytes": 2836,
+      "path": "/data/proofofwork-audit30-positive-scoped-38ac6e2bff2a-20261003T042000Z-shadow-v1/completed.json",
+      "sha256": "7b2bab1d1abe56a71888c809a7c562e756bb3ea3de2260a4c5aa673196b6163c",
+      "localPath": "/tmp/pow-audit30-positive-shadow-exact-owner-v1.json"
+    }
+  },
+  "schema": "pow-audit30-positive-shadow-public-export-v1"
+}
