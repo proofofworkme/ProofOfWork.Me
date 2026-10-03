@@ -1,0 +1,96 @@
+{
+  "atUtc": "2026-10-03T11:38:11.231892+00:00",
+  "bindings": {
+    "actualRestoreStdout": {
+      "bytes": 71673,
+      "path": "/tmp/pow-audit30-oct3-isolated-restore-native-104500-v1.stdout",
+      "sha256": "3a53ab1325bf9110445da746452a24865e6069fa9e7fdbe0e28b09af2f1574ba"
+    },
+    "fixture": {
+      "bytes": 7526,
+      "path": "/tmp/pow-audit30-oct3-restore-poststop-observer-v2.peer-test.py",
+      "sha256": "2084474fb69af8a4621f2660df17ac874181973d9752b1302f9ac30fac4f321e"
+    },
+    "preservedSourceV1": {
+      "bytes": 6398,
+      "path": "/tmp/pow-audit30-oct3-restore-poststop-observer-v1.py",
+      "sha256": "67ec1992aeb6f2f5fcc4ab488ef90e99d74f728c4bd728ac15afdc1b445fa315"
+    },
+    "preservedV1ShapeRepro": {
+      "bytes": 1206,
+      "path": "/tmp/pow-audit30-oct3-poststop-observer-gc-shape-peer-repro-v1.json",
+      "sha256": "44759433a30c70825aa0dad98ad3c3834a170d37f914e478c8627a61d5903855"
+    },
+    "restorePlan": {
+      "bytes": 3003,
+      "path": "/tmp/pow-audit30-oct3-logical-restore-plan-v1.json",
+      "sha256": "6f87050e6b44c74cd6c6ba61fb9c8c922ba8436ee4111e31c1e8bcd3f1d8cfee"
+    },
+    "source": {
+      "bytes": 6694,
+      "path": "/tmp/pow-audit30-oct3-restore-poststop-observer-v2.py",
+      "sha256": "a55a22e74d75c74954954d2cf79827c91f3240065bafb7581c4c5015ef0095ae"
+    }
+  },
+  "bounds": {
+    "commands": [
+      "systemctl show exactfixed six service profiles",
+      "df fixed/data and/"
+    ],
+    "eachCommandStdoutMaximumBytes": 16384,
+    "eachFixedCommandSeconds": 8,
+    "eachReceiptMaximumBytes": 65536,
+    "onlyFourExactPublicReceipts": true,
+    "productionControl": false,
+    "receiptNoFollowNoAtimeFdPathMetadataHashFences": true,
+    "rootWholeSeconds": 50
+  },
+  "fixedV1Finding": {
+    "finding": "V1 incorrectly accepted not-found with failed/failed and nonempty InvocationID/ControlGroup. V2 now requires inactive/dead/MainPID0/empty InvocationID/ControlGroup; loaded branch also strictly admits inactive/dead/exact322a/success/status0/empty-or-fixedCG only.",
+    "preservedV1": true,
+    "reproSha256": "44759433a30c70825aa0dad98ad3c3834a170d37f914e478c8627a61d5903855"
+  },
+  "nativeActionPerformed": false,
+  "pinOrRecoveryOrDeletionAuthority": false,
+  "productionMutation": false,
+  "qualifications": [
+    "Garbage-collected unit result/default fields are not historical resource/result proof; actual preserved managed outcome and fixed receipt producer carry that separate history.",
+    "Observer gives endpoint PID/socket/cgroup/current-five observations and public receipt custody only. It does not prove continuous or future process exclusion or full current database/chain parity.",
+    "Current live pages/PITR/global financial/dependency/deletion closure remain false or outside scope.",
+    "No native GO is inferred from peer acceptance; Root reviews/adopts exact source/transport separately."
+  ],
+  "repositoryEdited": false,
+  "review": {
+    "allFourReceiptRawHashesMatchActual3a53": true,
+    "completeV1V2DiffRead": true,
+    "completedSchemaPlanStatusStopMutationFlagsMatchActual": true,
+    "exactFivePidInvocationPinsMatch6f870": true,
+    "fullSourceRead": true,
+    "onlyClosedGuardProfileAndObservationRefusalVersionChanged": true,
+    "unchangedHelperAst": true
+  },
+  "reviewer": "vps_health",
+  "schema": "pow-audit30-independent-oct3-poststop-source-review-v2",
+  "status": "accepted-source-only",
+  "tests": {
+    "command": [
+      "python3",
+      "-I",
+      "-B",
+      "-W",
+      "error",
+      "/tmp/pow-audit30-oct3-restore-poststop-observer-v2.peer-test.py"
+    ],
+    "coverage": [
+      "Actual four receipt pins/new6f870 plan and public completed producer fields.",
+      "Exact GC profile, loaded own successful stopped profile, invalid shapes including the formerly accepted vector.",
+      "Original two process PIDs and three pid/socket paths, fixed cgroup nonempty refusal, original-five tuple role drift, wrong completed fields.",
+      "Strict missing/unknown/duplicate systemctl wire profiles and unchanged helpers/no controls.",
+      "Real blocked local literal helper interrupted by exact main50-second TimeoutError handler after readiness; subprocess.run killed/reaped child and handler restored."
+    ],
+    "exitCode": 0,
+    "passed": 12,
+    "qualification": "Unit/file endpoint fixtures are mocked using actual accepted public receipt values; real blocked-child alarm fixture is local only. No native endpoint, arbitrary tool or private content read was performed.",
+    "reportedSeconds": 0.136
+  }
+}

@@ -1,0 +1,2050 @@
+{
+  "action63Custody": {
+    "bytes": 315335,
+    "currentByteEqualToBase": true,
+    "historicalActionsAndRowsMustRemainImmutable": true,
+    "path": "deploy/audit30/verification/source-custody.json",
+    "rows": 650,
+    "sha256": "764ef1375625ecc98ac08cceff033f68d13fb415a2e63876bfc7ef60f605ce29"
+  },
+  "artifactCount": 67,
+  "atUtc": "2026-10-03T11:35:57.435042+00:00",
+  "baseHead": "c33e83fa1659b63160615bf7adca7ef42a0d1188",
+  "captureRelationships": [
+    {
+      "channels": [
+        {
+          "bytes": 5210,
+          "captureBindingMatches": true,
+          "channel": "stdout",
+          "path": "/tmp/pow-audit30-retained-repair-context-native-v1.stdout",
+          "sha256": "b78fe2459c2b6b4568423f01f2e4acb25922224027d9e5cd82059d56c60d82cf"
+        },
+        {
+          "bytes": 0,
+          "captureBindingMatches": true,
+          "channel": "stderr",
+          "path": "/tmp/pow-audit30-retained-repair-context-native-v1.stderr",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      ],
+      "exitCode": 0,
+      "finishedAtUtc": "2026-10-03T11:15:16.562888+00:00",
+      "qualification": "exit0 context observation, not dependency closure",
+      "remoteUnitStoppedCertifiedByTransport": false,
+      "seconds": 3.500137,
+      "transportJson": "/tmp/pow-audit30-retained-repair-context-native-v1.json"
+    },
+    {
+      "channels": [
+        {
+          "bytes": 0,
+          "captureBindingMatches": true,
+          "channel": "stdout",
+          "path": "/tmp/pow-audit30-retained-repair-dependency-bridge-native-v2.stdout",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "bytes": 212,
+          "captureBindingMatches": true,
+          "channel": "stderr",
+          "path": "/tmp/pow-audit30-retained-repair-dependency-bridge-native-v2.stderr",
+          "sha256": "ca43acc77e3a67704e283e9fe57dd4779c2a1261c9963ba904b27d2ffb5bfb72"
+        }
+      ],
+      "exitCode": 1,
+      "finishedAtUtc": "2026-10-03T11:19:18.775885+00:00",
+      "qualification": "exit1 refusal retained as failure",
+      "remoteUnitStoppedCertifiedByTransport": false,
+      "seconds": 3.014836,
+      "transportJson": "/tmp/pow-audit30-retained-repair-dependency-bridge-native-v2.json"
+    },
+    {
+      "channels": [
+        {
+          "bytes": 71673,
+          "captureBindingMatches": true,
+          "channel": "stdout",
+          "path": "/tmp/pow-audit30-oct3-isolated-restore-native-104500-v1.stdout",
+          "sha256": "3a53ab1325bf9110445da746452a24865e6069fa9e7fdbe0e28b09af2f1574ba"
+        },
+        {
+          "bytes": 267,
+          "captureBindingMatches": true,
+          "channel": "stderr",
+          "path": "/tmp/pow-audit30-oct3-isolated-restore-native-104500-v1.stderr",
+          "sha256": "eb3759ef2b58c39f44134270cf0d4570052d3afc88eb80c0bf635bc52386380d"
+        }
+      ],
+      "exitCode": 0,
+      "finishedAtUtc": "2026-10-03T11:32:09.796896+00:00",
+      "qualification": "exit0 return, creator JSONL; acceptance/post-stop still pending",
+      "remoteUnitStoppedCertifiedByTransport": false,
+      "seconds": 3313.588926,
+      "transportJson": "/tmp/pow-audit30-oct3-isolated-restore-native-104500-v1.json"
+    }
+  ],
+  "exactMissingArtifacts": [],
+  "files": [
+    {
+      "authority": "inventory-only; no execution or acceptance authority",
+      "bytes": 30266,
+      "exists": true,
+      "fileType": "regular",
+      "group": "recovery-capacity-v3",
+      "path": "/tmp/pow-audit30-recovery-controller-capacity-v3.py",
+      "postAction63NotPreviouslyCustodialized": true,
+      "sha256": "40a44c52f13f90a764287c689d5d175d8b5fd895131a624f74cd06dfcd3f9e80",
+      "suggestedRepositoryPath": "deploy/audit30/verification/pow-audit30-recovery-controller-capacity-v3.py",
+      "type": "python-source"
+    },
+    {
+      "authority": "inventory-only; no execution or acceptance authority",
+      "bytes": 1325,
+      "exists": true,
+      "fileType": "regular",
+      "group": "recovery-capacity-v3",
+      "path": "/tmp/pow-audit30-recovery-controller-capacity-v3.diff",
+      "postAction63NotPreviouslyCustodialized": true,
+      "representationRequired": "closed lossless base64 envelope binding originalInput/rawBytes/rawSha256/rawBase64; retain raw untouched",
+      "sha256": "ba18222ac5997d483e09ac8d1d55f176a169741a4ff2fbbf5aad58d343725a1e",
+      "suggestedRepositoryPath": "deploy/audit30/verification/pow-audit30-recovery-controller-capacity-v3.diff.evidence.json",
+      "type": "raw-diff"
+    },
+    {
+      "authority": "inventory-only; no execution or acceptance authority",
+      "bytes": 5745,
+      "exists": true,
+      "fileType": "regular",
+      "group": "recovery-capacity-v3",
+      "path": "/tmp/pow-audit30-recovery-controller-capacity-v3.test.py",
+      "postAction63NotPreviouslyCustodialized": true,
+      "sha256": "96efd3a57f643ee406ebe116aec6aa5cb9faef877bac23f04d4b9eac8d3da3a2",
+      "suggestedRepositoryPath": "deploy/audit30/verification/pow-audit30-recovery-controller-capacity-v3.test.py",
+      "type": "python-test-source"
+    },
+    {
+      "authority": "inventory-only; no execution or acceptance authority",
+      "bytes": 21682,
+      "exists": true,
+      "fileType": "regular",
+      "group": "recovery-capacity-v3",
+      "path": "/tmp/pow-audit30-recovery-controller-capacity-v3.original-fixtures.test.py",
+      "postAction63NotPreviouslyCustodialized": true,
+      "sha256": "9c325ba6b8097ce4b292441acc8b2d8d03afabf472d5038e47eeb6f558ebdd20",
+      "suggestedRepositoryPath": "deploy/audit30/verification/pow-audit30-recovery-controller-capacity-v3.original-fixtures.test.py",
+      "type": "python-test-source"
+    },
+    {
+      "authority": "inventory-only; no execution or acceptance authority",
+      "bytes": 21701,
+      "exists": true,
+      "fileType": "regular",
+      "group": "recovery-capacity-v3",
+      "path": "/tmp/pow-audit30-recovery-controller-capacity-v3.original-fixtures-v2.test.py",
+      "postAction63NotPreviouslyCustodialized": true,
+      "sha256": "426907f9fd1a9f67e3c4173304d7d1a96c825db0d1204e2395593b55e66bdeae",
+      "suggestedRepositoryPath": "deploy/audit30/verification/pow-audit30-recovery-controller-capacity-v3.original-fixtures-v2.test.py",
+      "type": "python-test-source"
+    },
+    {
+      "authority": "inventory-only; no execution or acceptance authority",
+      "bytes": 1321,
+      "exists": true,
+      "fileType": "regular",
+      "group": "recovery-capacity-v3",
+      "path": "/tmp/pow-audit30-recovery-controller-capacity-v3.fixture-checkpoint-v1.json",
+      "postAction63NotPreviouslyCustodialized": true,
+      "sha256": "c5adf59d5c6a32f971a0e7cb35a32fb550de7a54ab97879878118c0bce512d25",
+      "suggestedRepositoryPath": "deploy/audit30/verification/pow-audit30-recovery-controller-capacity-v3.fixture-checkpoint-v1.json",
+      "type": "json-public-receipt"
+    },
+    {
+      "authority": "inventory-only; no execution or acceptance authority",
+      "bytes": 7157,
+      "exists": true,
+      "fileType": "regular",
+      "group": "recovery-capacity-v3",
+      "path": "/tmp/pow-audit30-recovery-controller-capacity-v3-local-preparation-v1.json",
+      "postAction63NotPreviouslyCustodialized": true,
+      "sha256": "9da0bfbea9533245c67f3c14d74cf7c222db2060d004c244f4d66a2e6b2f3621",
+      "suggestedRepositoryPath": "deploy/audit30/verification/pow-audit30-recovery-controller-capacity-v3-local-preparation-v1.json",
+      "type": "json-public-receipt"
+    },
+    {
+      "authority": "inventory-only; no execution or acceptance authority",
+      "bytes": 5532,
+      "exists": true,
+      "fileType": "regular",
+      "group": "recovery-capacity-v3",
+      "path": "/tmp/pow-audit30-independent-recovery-capacity-source-review-v3.json",
+      "postAction63NotPreviouslyCustodialized": true,
+      "sha256": "ec25b1721666e3947825e006c4f7c107e68c75709d3bd2e1ebed3fc8c78f751c",
+      "suggestedRepositoryPath": "deploy/audit30/verification/pow-audit30-independent-recovery-capacity-source-review-v3.json",
+      "type": "json-public-receipt"
+    },
+    {
+      "authority": "inventory-only; no execution or acceptance authority",
+      "bytes": 4052,
+      "exists": true,
+      "fileType": "regular",
+      "group": "restore-stage-metadata",
+      "path": "/tmp/pow-audit30-oct3-restore-public-stage-metadata-v2.json",
+      "postAction63NotPreviouslyCustodialized": true,
+      "sha256": "95e327235490d3fdb8e8dead3899b549e46ef24a21dae9ac6cc8e57de84a9432",
+      "suggestedRepositoryPath": "deploy/audit30/verification/pow-audit30-oct3-restore-public-stage-metadata-v2.json",
+      "type": "json-public-receipt"
+    },
+    {
+      "authority": "inventory-only; no execution or acceptance authority",
+      "bytes": 4492,
+      "exists": true,
+      "fileType": "regular",
+      "group": "restore-stage-metadata",
+      "path": "/tmp/pow-audit30-oct3-restore-public-stage-metadata-v3.json",
+      "postAction63NotPreviouslyCustodialized": true,
+      "sha256": "ccd352ddb4df367d37fb8d30e4fad47da2b6438b9cca12be17d8e5947dc48c1b",
+      "suggestedRepositoryPath": "deploy/audit30/verification/pow-audit30-oct3-restore-public-stage-metadata-v3.json",
+      "type": "json-public-receipt"
+    },
+    {
+      "authority": "inventory-only; no execution or acceptance authority",
+      "bytes": 1953,
+      "exists": true,
+      "fileType": "regular",
+      "group": "retained-repair-context",
+      "path": "/tmp/pow-audit30-retained-repair-context-transport-preparation-v1.py",
+      "postAction63NotPreviouslyCustodialized": true,
+      "sha256": "c5c7a3ba24ff4039d3280363c9579f1ffd94c85d035d1f12fd2aaa61dfd4400a",
+      "suggestedRepositoryPath": "deploy/audit30/verification/pow-audit30-retained-repair-context-transport-preparation-v1.py",
+      "type": "python-source"
+    },
+    {
+      "authority": "inventory-only; no execution or acceptance authority",
+      "bytes": 4272,
+      "exists": true,
+      "fileType": "regular",
+      "group": "retained-repair-context",
+      "path": "/tmp/pow-audit30-retained-repair-context-caller-v1.test.py",
+      "postAction63NotPreviouslyCustodialized": true,
+      "sha256": "629814c95d844f5a2b5e0855b53ab4389ab626e2ef9e72783a4cbd643384060f",
+      "suggestedRepositoryPath": "deploy/audit30/verification/pow-audit30-retained-repair-context-caller-v1.test.py",
+      "type": "python-test-source"
+    },
+    {
+      "authority": "inventory-only; no execution or acceptance authority",
+      "bytes": 7575,
+      "exists": true,
+      "fileType": "regular",
+      "group": "retained-repair-context",
+      "path": "/tmp/pow-audit30-retained-repair-context-caller-preparation-v1.json",
+      "postAction63NotPreviouslyCustodialized": true,
+      "sha256": "1d67129d90108c8f32720c920b446dd311547e1a95f66d1b010a272009e126ee",
+      "suggestedRepositoryPath": "deploy/audit30/verification/pow-audit30-retained-repair-context-caller-preparation-v1.json",
+      "type": "json-public-receipt"
+    },
+    {
+      "authority": "inventory-only; no execution or acceptance authority",
+      "bytes": 4126,
+      "exists": true,
+      "fileType": "regular",
+      "group": "retained-repair-context",
+      "path": "/tmp/pow-audit30-independent-retained-repair-context-caller-review-v1.json",
+      "postAction63NotPreviouslyCustodialized": true,
+      "sha256": "8a90d3bf3b057835a26f1faf01095a5419074441b5ea8feaaf902a1809ab4890",
+      "suggestedRepositoryPath": "deploy/audit30/verification/pow-audit30-independent-retained-repair-context-caller-review-v1.json",
+      "type": "json-public-receipt"
+    },
+    {
+      "authority": "inventory-only; no execution or acceptance authority",
+      "bytes": 1727,
+      "exists": true,
+      "fileType": "regular",
+      "group": "retained-repair-context",
+      "path": "/tmp/pow-audit30-retained-repair-context-native-v1.json",
+      "postAction63NotPreviouslyCustodialized": true,
+      "sha256": "fb363acbdfe73b5cae5ee9587f1bd5878d1eecc24b08c0bc49e281a7e4657ddc",
+      "suggestedRepositoryPath": "deploy/audit30/verification/pow-audit30-retained-repair-context-native-v1.json",
+      "type": "json-public-receipt"
+    },
+    {
+      "authority": "inventory-only; no execution or acceptance authority",
+      "bytes": 5210,
+      "contentFormat": "json",
+      "exists": true,
+      "fileType": "regular",
+      "group": "retained-repair-context",
+      "path": "/tmp/pow-audit30-retained-repair-context-native-v1.stdout",
+      "postAction63NotPreviouslyCustodialized": true,
+      "sha256": "b78fe2459c2b6b4568423f01f2e4acb25922224027d9e5cd82059d56c60d82cf",
+      "suggestedRepositoryPath": "deploy/audit30/verification/pow-audit30-retained-repair-context-native-v1.stdout.json",
+      "type": "native-capture-stdout"
+    },
+    {
+      "authority": "inventory-only; no execution or acceptance authority",
+      "bytes": 0,
+      "contentFormat": "empty",
+      "exists": true,
+      "fileType": "regular",
+      "group": "retained-repair-context",
+      "path": "/tmp/pow-audit30-retained-repair-context-native-v1.stderr",
+      "postAction63NotPreviouslyCustodialized": true,
+      "representationRequired": "closed lossless byte envelope; do not normalize/merge/parse-reserialize channel bytes",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "suggestedRepositoryPath": "deploy/audit30/verification/pow-audit30-retained-repair-context-native-v1.stderr.evidence.json",
+      "type": "native-capture-stderr"
+    },
+    {
+      "authority": "inventory-only; no execution or acceptance authority",
+      "bytes": 16890,
+      "exists": true,
+      "fileType": "regular",
+      "group": "retained-repair-bridge-v2",
+      "path": "/tmp/pow-audit30-retained-repair-dependency-bridge-v2.py",
+      "postAction63NotPreviouslyCustodialized": true,
+      "sha256": "75643490cfb52f800b73dc0aa38fdcbb7e74dbbc0ab8f811733d946fefb6ff4e",
+      "suggestedRepositoryPath": "deploy/audit30/verification/pow-audit30-retained-repair-dependency-bridge-v2.py",
+      "type": "python-source"
+    },
+    {
+      "authority": "inventory-only; no execution or acceptance authority",
+      "bytes": 15003,
+      "exists": true,
+      "fileType": "regular",
+      "group": "retained-repair-bridge-v2",
+      "path": "/tmp/pow-audit30-retained-repair-dependency-bridge-v2.test.py",
+      "postAction63NotPreviouslyCustodialized": true,
+      "sha256": "4cd846b3bd586843b522241741e42d32f84d69bab4d8e5b09a1d20246a822d78",
+      "suggestedRepositoryPath": "deploy/audit30/verification/pow-audit30-retained-repair-dependency-bridge-v2.test.py",
+      "type": "python-test-source"
+    },
+    {
+      "authority": "inventory-only; no execution or acceptance authority",
+      "bytes": 22936,
+      "exists": true,
+      "fileType": "regular",
+      "group": "retained-repair-bridge-v2",
+      "path": "/tmp/pow-audit30-retained-repair-dependency-bridge-bootstrap-v2.py",
+      "postAction63NotPreviouslyCustodialized": true,
+      "sha256": "230fd581ad97b596a0a716eb331fff7cec1ad0ef76dd460d1873aee9e1172e8f",
+      "suggestedRepositoryPath": "deploy/audit30/verification/pow-audit30-retained-repair-dependency-bridge-bootstrap-v2.py",
+      "type": "python-source"
+    },
+    {
+      "authority": "inventory-only; no execution or acceptance authority",
+      "bytes": 2015,
+      "exists": true,
+      "fileType": "regular",
+      "group": "retained-repair-bridge-v2",
+      "path": "/tmp/pow-audit30-retained-repair-dependency-bridge-transport-preparation-v2.py",
+      "postAction63NotPreviouslyCustodialized": true,
+      "sha256": "689e58b4521a49fa1f945daf4f9d25ca8895dbdc4d13c034fa6e29ecf388c4ec",
+      "suggestedRepositoryPath": "deploy/audit30/verification/pow-audit30-retained-repair-dependency-bridge-transport-preparation-v2.py",
+      "type": "python-source"
+    },
+    {
+      "authority": "inventory-only; no execution or acceptance authority",
+      "bytes": 3095,
+      "exists": true,
+      "fileType": "regular",
+      "group": "retained-repair-bridge-v2",
+      "path": "/tmp/pow-audit30-retained-repair-dependency-bridge-caller-v2.test.py",
+      "postAction63NotPreviouslyCustodialized": true,
+      "sha256": "86a464657b250cf2c3bb57df338e70ba3b3fef7bdb2adcd2d411d1ce0b572b73",
+      "suggestedRepositoryPath": "deploy/audit30/verification/pow-audit30-retained-repair-dependency-bridge-caller-v2.test.py",
+      "type": "python-test-source"
+    },
+    {
+      "authority": "inventory-only; no execution or acceptance authority",
+      "bytes": 100048,
+      "exists": true,
+      "fileType": "regular",
+      "group": "retained-repair-bridge-v2",
+      "path": "/tmp/pow-audit30-retained-repair-dependency-bridge-request-template-v2.json",
+      "postAction63NotPreviouslyCustodialized": true,
+      "sha256": "1694b0d4a2bf716d236944eda283f5d2b0d6b3adc575b90cf359d2a2487a04f8",
+      "suggestedRepositoryPath": "deploy/audit30/verification/pow-audit30-retained-repair-dependency-bridge-request-template-v2.json",
+      "type": "json-public-receipt"
+    },
+    {
+      "authority": "inventory-only; no execution or acceptance authority",
+      "bytes": 10579,
+      "exists": true,
+      "fileType": "regular",
+      "group": "retained-repair-bridge-v2",
+      "path": "/tmp/pow-audit30-retained-repair-dependency-bridge-v2-source.diff",
+      "postAction63NotPreviouslyCustodialized": true,
+      "representationRequired": "closed lossless base64 envelope binding originalInput/rawBytes/rawSha256/rawBase64; retain raw untouched",
+      "sha256": "3936f8e8df5c5959307d369acd07aed34fb8591464e1df585015be591df70fca",
+      "suggestedRepositoryPath": "deploy/audit30/verification/pow-audit30-retained-repair-dependency-bridge-v2-source.diff.evidence.json",
+      "type": "raw-diff"
+    },
+    {
+      "authority": "inventory-only; no execution or acceptance authority",
+      "bytes": 2894,
+      "exists": true,
+      "fileType": "regular",
+      "group": "retained-repair-bridge-v2",
+      "path": "/tmp/pow-audit30-retained-repair-dependency-bridge-v2-caller.diff",
+      "postAction63NotPreviouslyCustodialized": true,
+      "representationRequired": "closed lossless base64 envelope binding originalInput/rawBytes/rawSha256/rawBase64; retain raw untouched",
+      "sha256": "0e0054b84ba250133e4f5199feff18ef8835219a6fdb88fc3bd5ade29d3e2709",
+      "suggestedRepositoryPath": "deploy/audit30/verification/pow-audit30-retained-repair-dependency-bridge-v2-caller.diff.evidence.json",
+      "type": "raw-diff"
+    },
+    {
+      "authority": "inventory-only; no execution or acceptance authority",
+      "bytes": 3406,
+      "exists": true,
+      "fileType": "regular",
+      "group": "retained-repair-bridge-v2",
+      "path": "/tmp/pow-audit30-retained-repair-dependency-bridge-source-preparation-v2.json",
+      "postAction63NotPreviouslyCustodialized": true,
+      "sha256": "c8f147b01101307747f2bf7fbb8a38605e5e5a1f99cdedfde79cde25671d3ba6",
+      "suggestedRepositoryPath": "deploy/audit30/verification/pow-audit30-retained-repair-dependency-bridge-source-preparation-v2.json",
+      "type": "json-public-receipt"
+    },
+    {
+      "authority": "inventory-only; no execution or acceptance authority",
+      "bytes": 3861,
+      "exists": true,
+      "fileType": "regular",
+      "group": "retained-repair-bridge-v2",
+      "path": "/tmp/pow-audit30-independent-retained-repair-dependency-bridge-source-review-v2.json",
+      "postAction63NotPreviouslyCustodialized": true,
+      "sha256": "de4eaac81a79d85f1c90a1dddca5540bcb0b727d83fa08394035879e2f91ed84",
+      "suggestedRepositoryPath": "deploy/audit30/verification/pow-audit30-independent-retained-repair-dependency-bridge-source-review-v2.json",
+      "type": "json-public-receipt"
+    },
+    {
+      "authority": "inventory-only; no execution or acceptance authority",
+      "bytes": 105682,
+      "exists": true,
+      "fileType": "regular",
+      "group": "retained-repair-bridge-v2",
+      "path": "/tmp/pow-audit30-retained-repair-dependency-bridge-request-v2.json",
+      "postAction63NotPreviouslyCustodialized": true,
+      "sha256": "340f422c1ba7b1b9756726afc4cafab43f845ef11571ac0221d8083af9aeac44",
+      "suggestedRepositoryPath": "deploy/audit30/verification/pow-audit30-retained-repair-dependency-bridge-request-v2.json",
+      "type": "json-public-receipt"
+    },
+    {
+      "authority": "inventory-only; no execution or acceptance authority",
+      "bytes": 4587,
+      "exists": true,
+      "fileType": "regular",
+      "group": "retained-repair-bridge-v2",
+      "path": "/tmp/pow-audit30-retained-repair-dependency-bridge-request-binding-v2.json",
+      "postAction63NotPreviouslyCustodialized": true,
+      "sha256": "d1aa5fbf628e785b0d55cd77c9cddce4e240141ce80da03a4bed923741c830a0",
+      "suggestedRepositoryPath": "deploy/audit30/verification/pow-audit30-retained-repair-dependency-bridge-request-binding-v2.json",
+      "type": "json-public-receipt"
+    },
+    {
+      "authority": "inventory-only; no execution or acceptance authority",
+      "bytes": 3545,
+      "exists": true,
+      "fileType": "regular",
+      "group": "retained-repair-bridge-v2",
+      "path": "/tmp/pow-audit30-independent-retained-repair-request-binding-review-v2.json",
+      "postAction63NotPreviouslyCustodialized": true,
+      "sha256": "216a93cbc729276cc332d4a82bd3fbe3ad7090d0c2e771fb078e7e286b0234e0",
+      "suggestedRepositoryPath": "deploy/audit30/verification/pow-audit30-independent-retained-repair-request-binding-review-v2.json",
+      "type": "json-public-receipt"
+    },
+    {
+      "authority": "inventory-only; no execution or acceptance authority",
+      "bytes": 2153,
+      "exists": true,
+      "fileType": "regular",
+      "group": "retained-repair-bridge-v2",
+      "path": "/tmp/pow-audit30-root-retained-repair-bridge-once-v2.py",
+      "postAction63NotPreviouslyCustodialized": true,
+      "sha256": "b7f26e7b74ff4e4b2d891840fc78aacfc53c0a95b9082fa013a18daea823e80d",
+      "suggestedRepositoryPath": "deploy/audit30/verification/pow-audit30-root-retained-repair-bridge-once-v2.py",
+      "type": "python-source"
+    },
+    {
+      "authority": "inventory-only; no execution or acceptance authority",
+      "bytes": 1686,
+      "exists": true,
+      "fileType": "regular",
+      "group": "retained-repair-bridge-v2",
+      "path": "/tmp/pow-audit30-retained-repair-dependency-bridge-native-v2.json",
+      "postAction63NotPreviouslyCustodialized": true,
+      "sha256": "06a5ef9ce5f227f35faeea4bc3d819c0334d86962d843b7aabf1d48db1e68abe",
+      "suggestedRepositoryPath": "deploy/audit30/verification/pow-audit30-retained-repair-dependency-bridge-native-v2.json",
+      "type": "json-public-receipt"
+    },
+    {
+      "authority": "inventory-only; no execution or acceptance authority",
+      "bytes": 0,
+      "contentFormat": "empty",
+      "exists": true,
+      "fileType": "regular",
+      "group": "retained-repair-bridge-v2",
+      "path": "/tmp/pow-audit30-retained-repair-dependency-bridge-native-v2.stdout",
+      "postAction63NotPreviouslyCustodialized": true,
+      "representationRequired": "closed lossless byte envelope; do not normalize/merge/parse-reserialize channel bytes",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "suggestedRepositoryPath": "deploy/audit30/verification/pow-audit30-retained-repair-dependency-bridge-native-v2.stdout.evidence.json",
+      "type": "native-capture-stdout"
+    },
+    {
+      "authority": "inventory-only; no execution or acceptance authority",
+      "bytes": 212,
+      "contentFormat": "json",
+      "exists": true,
+      "fileType": "regular",
+      "group": "retained-repair-bridge-v2",
+      "path": "/tmp/pow-audit30-retained-repair-dependency-bridge-native-v2.stderr",
+      "postAction63NotPreviouslyCustodialized": true,
+      "sha256": "ca43acc77e3a67704e283e9fe57dd4779c2a1261c9963ba904b27d2ffb5bfb72",
+      "suggestedRepositoryPath": "deploy/audit30/verification/pow-audit30-retained-repair-dependency-bridge-native-v2.stderr.json",
+      "type": "native-capture-stderr"
+    },
+    {
+      "authority": "inventory-only; no execution or acceptance authority",
+      "bytes": 17036,
+      "exists": true,
+      "fileType": "regular",
+      "group": "retained-repair-bridge-v3-source-only",
+      "path": "/tmp/pow-audit30-retained-repair-dependency-bridge-v3.py",
+      "postAction63NotPreviouslyCustodialized": true,
+      "sha256": "e821dec229bb409c4b90a93a8a17db21722af520362862826b2ec388766e76f2",
+      "suggestedRepositoryPath": "deploy/audit30/verification/pow-audit30-retained-repair-dependency-bridge-v3.py",
+      "type": "python-source"
+    },
+    {
+      "authority": "inventory-only; no execution or acceptance authority",
+      "bytes": 20676,
+      "exists": true,
+      "fileType": "regular",
+      "group": "retained-repair-bridge-v3-source-only",
+      "path": "/tmp/pow-audit30-retained-repair-dependency-bridge-v3.test.py",
+      "postAction63NotPreviouslyCustodialized": true,
+      "sha256": "819a938520cd93af3e7713cfd4bf503857506d1e26a7d788e4efb8e741e992ec",
+      "suggestedRepositoryPath": "deploy/audit30/verification/pow-audit30-retained-repair-dependency-bridge-v3.test.py",
+      "type": "python-test-source"
+    },
+    {
+      "authority": "inventory-only; no execution or acceptance authority",
+      "bytes": 7960,
+      "exists": true,
+      "fileType": "regular",
+      "group": "retained-repair-bridge-v3-source-only",
+      "path": "/tmp/pow-audit30-retained-repair-dependency-bridge-v3.diff",
+      "postAction63NotPreviouslyCustodialized": true,
+      "representationRequired": "closed lossless base64 envelope binding originalInput/rawBytes/rawSha256/rawBase64; retain raw untouched",
+      "sha256": "d308f34f7e46302ff2bb707d5626a2e4838f9a0dfd8c1274a523bc91b45990f0",
+      "suggestedRepositoryPath": "deploy/audit30/verification/pow-audit30-retained-repair-dependency-bridge-v3.diff.evidence.json",
+      "type": "raw-diff"
+    },
+    {
+      "authority": "inventory-only; no execution or acceptance authority",
+      "bytes": 23132,
+      "exists": true,
+      "fileType": "regular",
+      "group": "retained-repair-bridge-v3-source-only",
+      "path": "/tmp/pow-audit30-retained-repair-dependency-bridge-bootstrap-v3.py",
+      "postAction63NotPreviouslyCustodialized": true,
+      "sha256": "3a2a6d2caaa694eed6e96b2f7a5e4626a2d66e14b8d33123674b48266b423437",
+      "suggestedRepositoryPath": "deploy/audit30/verification/pow-audit30-retained-repair-dependency-bridge-bootstrap-v3.py",
+      "type": "python-source"
+    },
+    {
+      "authority": "inventory-only; no execution or acceptance authority",
+      "bytes": 45925,
+      "exists": true,
+      "fileType": "regular",
+      "group": "retained-repair-bridge-v3-source-only",
+      "path": "/tmp/pow-audit30-retained-repair-dependency-bridge-bootstrap-v3.diff",
+      "postAction63NotPreviouslyCustodialized": true,
+      "representationRequired": "closed lossless base64 envelope binding originalInput/rawBytes/rawSha256/rawBase64; retain raw untouched",
+      "sha256": "932fb3a23535f53c9f4dfc2f8ca5acd834a236b7c7aa511289dd34a876299859",
+      "suggestedRepositoryPath": "deploy/audit30/verification/pow-audit30-retained-repair-dependency-bridge-bootstrap-v3.diff.evidence.json",
+      "type": "raw-diff"
+    },
+    {
+      "authority": "inventory-only; no execution or acceptance authority",
+      "bytes": 2015,
+      "exists": true,
+      "fileType": "regular",
+      "group": "retained-repair-bridge-v3-source-only",
+      "path": "/tmp/pow-audit30-retained-repair-dependency-bridge-transport-preparation-v3.py",
+      "postAction63NotPreviouslyCustodialized": true,
+      "sha256": "f90068400b7fb009c6df136275ac1fed5fcc2dfb4c1e8ab1b8738e8dd824cb33",
+      "suggestedRepositoryPath": "deploy/audit30/verification/pow-audit30-retained-repair-dependency-bridge-transport-preparation-v3.py",
+      "type": "python-source"
+    },
+    {
+      "authority": "inventory-only; no execution or acceptance authority",
+      "bytes": 2776,
+      "exists": true,
+      "fileType": "regular",
+      "group": "retained-repair-bridge-v3-source-only",
+      "path": "/tmp/pow-audit30-retained-repair-dependency-bridge-transport-preparation-v3.diff",
+      "postAction63NotPreviouslyCustodialized": true,
+      "representationRequired": "closed lossless base64 envelope binding originalInput/rawBytes/rawSha256/rawBase64; retain raw untouched",
+      "sha256": "a936d49657de7fcdd0011933172d3b61572683ff1fff4af7accf9fcbe86a52cb",
+      "suggestedRepositoryPath": "deploy/audit30/verification/pow-audit30-retained-repair-dependency-bridge-transport-preparation-v3.diff.evidence.json",
+      "type": "raw-diff"
+    },
+    {
+      "authority": "inventory-only; no execution or acceptance authority",
+      "bytes": 100048,
+      "exists": true,
+      "fileType": "regular",
+      "group": "retained-repair-bridge-v3-source-only",
+      "path": "/tmp/pow-audit30-retained-repair-dependency-bridge-request-template-v3.json",
+      "postAction63NotPreviouslyCustodialized": true,
+      "sha256": "3af2bdd9dad6d22915b5eb0120263b2e82b18e97b9227cf2dc1ea3048e2e8348",
+      "suggestedRepositoryPath": "deploy/audit30/verification/pow-audit30-retained-repair-dependency-bridge-request-template-v3.json",
+      "type": "json-public-receipt"
+    },
+    {
+      "authority": "inventory-only; no execution or acceptance authority",
+      "bytes": 3095,
+      "exists": true,
+      "fileType": "regular",
+      "group": "retained-repair-bridge-v3-source-only",
+      "path": "/tmp/pow-audit30-retained-repair-dependency-bridge-caller-v3.test.py",
+      "postAction63NotPreviouslyCustodialized": true,
+      "sha256": "a108f3a34bb1e03a8937c24d233485df5dfdbcd9080e3024fd113df44043e7a8",
+      "suggestedRepositoryPath": "deploy/audit30/verification/pow-audit30-retained-repair-dependency-bridge-caller-v3.test.py",
+      "type": "python-test-source"
+    },
+    {
+      "authority": "inventory-only; no execution or acceptance authority",
+      "bytes": 5325,
+      "exists": true,
+      "fileType": "regular",
+      "group": "retained-repair-bridge-v3-source-only",
+      "path": "/tmp/pow-audit30-retained-repair-dependency-bridge-source-preparation-v3.json",
+      "postAction63NotPreviouslyCustodialized": true,
+      "sha256": "ed5788d12ee1677af853552709b710b00e61eb3fc0c4bef47f06e5f4ab83a229",
+      "suggestedRepositoryPath": "deploy/audit30/verification/pow-audit30-retained-repair-dependency-bridge-source-preparation-v3.json",
+      "type": "json-public-receipt"
+    },
+    {
+      "authority": "inventory-only; no execution or acceptance authority",
+      "bytes": 4996,
+      "exists": true,
+      "fileType": "regular",
+      "group": "retained-repair-bridge-v3-source-only",
+      "path": "/tmp/pow-audit30-independent-retained-repair-bridge-source-review-v3.json",
+      "postAction63NotPreviouslyCustodialized": true,
+      "sha256": "9e35368d2dc607fc272c69bf78b053eda2d08eba4932cb5df3ebe708ace757b5",
+      "suggestedRepositoryPath": "deploy/audit30/verification/pow-audit30-independent-retained-repair-bridge-source-review-v3.json",
+      "type": "json-public-receipt"
+    },
+    {
+      "authority": "inventory-only; no execution or acceptance authority",
+      "bytes": 25733,
+      "exists": true,
+      "fileType": "regular",
+      "group": "coupled-promotion-v5-source-only",
+      "path": "/tmp/pow-audit30-coupled-pin-checker-promotion-v5.py",
+      "postAction63NotPreviouslyCustodialized": true,
+      "sha256": "7e878f987524dce2583b348964032af62491ce3cabcdc49adc359b36b7fc5bd4",
+      "suggestedRepositoryPath": "deploy/audit30/verification/pow-audit30-coupled-pin-checker-promotion-v5.py",
+      "type": "python-source"
+    },
+    {
+      "authority": "inventory-only; no execution or acceptance authority",
+      "bytes": 24865,
+      "exists": true,
+      "fileType": "regular",
+      "group": "coupled-promotion-v5-source-only",
+      "path": "/tmp/pow-audit30-coupled-pin-checker-promotion-v5.test.py",
+      "postAction63NotPreviouslyCustodialized": true,
+      "sha256": "93208b23e2841571657cae526502e3a8e184f7a9f862a2315a19535fa472ec2e",
+      "suggestedRepositoryPath": "deploy/audit30/verification/pow-audit30-coupled-pin-checker-promotion-v5.test.py",
+      "type": "python-test-source"
+    },
+    {
+      "authority": "inventory-only; no execution or acceptance authority",
+      "bytes": 17578,
+      "exists": true,
+      "fileType": "regular",
+      "group": "coupled-promotion-v5-source-only",
+      "path": "/tmp/pow-audit30-coupled-pin-checker-promotion-v5.diff",
+      "postAction63NotPreviouslyCustodialized": true,
+      "representationRequired": "closed lossless base64 envelope binding originalInput/rawBytes/rawSha256/rawBase64; retain raw untouched",
+      "sha256": "f9f88193b442dab332c74012139c559ee16db46b108be836cdb7538f2ada70bb",
+      "suggestedRepositoryPath": "deploy/audit30/verification/pow-audit30-coupled-pin-checker-promotion-v5.diff.evidence.json",
+      "type": "raw-diff"
+    },
+    {
+      "authority": "inventory-only; no execution or acceptance authority",
+      "bytes": 24749,
+      "exists": true,
+      "fileType": "regular",
+      "group": "coupled-promotion-v5-source-only",
+      "path": "/tmp/pow-audit30-coupled-pin-checker-promotion-v5.initial-test-draft.py",
+      "postAction63NotPreviouslyCustodialized": true,
+      "sha256": "f392ee90350469ffadcfa178280b8987cfd726fe1e2b41e0350c7159d4738d23",
+      "suggestedRepositoryPath": "deploy/audit30/verification/pow-audit30-coupled-pin-checker-promotion-v5.initial-test-draft.py",
+      "type": "python-test-source"
+    },
+    {
+      "authority": "inventory-only; no execution or acceptance authority",
+      "bytes": 766,
+      "exists": true,
+      "fileType": "regular",
+      "group": "coupled-promotion-v5-source-only",
+      "path": "/tmp/pow-audit30-coupled-pin-checker-promotion-v5-initial-fixture-refusal-v1.json",
+      "postAction63NotPreviouslyCustodialized": true,
+      "sha256": "dfc0bb5418aaa0654125627dc8c193d8610a03585d203a74332bddb42e7ac93e",
+      "suggestedRepositoryPath": "deploy/audit30/verification/pow-audit30-coupled-pin-checker-promotion-v5-initial-fixture-refusal-v1.json",
+      "type": "json-public-receipt"
+    },
+    {
+      "authority": "inventory-only; no execution or acceptance authority",
+      "bytes": 9164,
+      "exists": true,
+      "fileType": "regular",
+      "group": "coupled-promotion-v5-source-only",
+      "path": "/tmp/pow-audit30-coupled-pin-checker-local-preparation-v5.json",
+      "postAction63NotPreviouslyCustodialized": true,
+      "sha256": "a3d76da246ed927e28e76a8695ff533cdd8fb9f54f29c81aebaa941cfa466957",
+      "suggestedRepositoryPath": "deploy/audit30/verification/pow-audit30-coupled-pin-checker-local-preparation-v5.json",
+      "type": "json-public-receipt"
+    },
+    {
+      "authority": "inventory-only; no execution or acceptance authority",
+      "bytes": 6560,
+      "exists": true,
+      "fileType": "regular",
+      "group": "coupled-promotion-v5-source-only",
+      "path": "/tmp/pow-audit30-independent-coupled-pin-checker-source-review-v5.json",
+      "postAction63NotPreviouslyCustodialized": true,
+      "sha256": "ba335df9cc96c2f1dd67263de9cf40e2db00178363a72fcab18fd1f5214350ea",
+      "suggestedRepositoryPath": "deploy/audit30/verification/pow-audit30-independent-coupled-pin-checker-source-review-v5.json",
+      "type": "json-public-receipt"
+    },
+    {
+      "authority": "inventory-only; no execution or acceptance authority",
+      "bytes": 2391,
+      "exists": true,
+      "fileType": "regular",
+      "group": "coupled-promotion-v5-source-only",
+      "path": "/tmp/pow-audit30-coupled-pin-checker-promotion-plan-template-v5.json",
+      "postAction63NotPreviouslyCustodialized": true,
+      "sha256": "4d06401c5458163c5d237db25139b6a980b09ba9e96897bd403afe39588569c7",
+      "suggestedRepositoryPath": "deploy/audit30/verification/pow-audit30-coupled-pin-checker-promotion-plan-template-v5.json",
+      "type": "json-public-receipt"
+    },
+    {
+      "authority": "inventory-only; no execution or acceptance authority",
+      "bytes": 1526,
+      "exists": true,
+      "fileType": "regular",
+      "group": "coupled-promotion-v5-source-only",
+      "path": "/tmp/pow-audit30-coupled-pin-checker-v5-source-only-handoff-v1.json",
+      "postAction63NotPreviouslyCustodialized": true,
+      "sha256": "f67c8eeb4d3e4585ae79b63f816c2bb6cf1530754d76b990d231ca2e8e2a8203",
+      "suggestedRepositoryPath": "deploy/audit30/verification/pow-audit30-coupled-pin-checker-v5-source-only-handoff-v1.json",
+      "type": "json-public-receipt"
+    },
+    {
+      "authority": "inventory-only; no execution or acceptance authority",
+      "bytes": 20677,
+      "exists": true,
+      "fileType": "regular",
+      "group": "coupled-promotion-v5-source-only",
+      "path": "/tmp/pow-audit30-retention-protection-oct3-candidate-v1.py",
+      "postAction63NotPreviouslyCustodialized": true,
+      "sha256": "f40b25f46c86541766c3e8694cf677b551fe489887dab72b4084991100d308d0",
+      "suggestedRepositoryPath": "deploy/audit30/verification/pow-audit30-retention-protection-oct3-candidate-v1.py",
+      "type": "python-source"
+    },
+    {
+      "authority": "inventory-only; no execution or acceptance authority",
+      "bytes": 26984,
+      "exists": true,
+      "fileType": "regular",
+      "group": "promotion-full-read-namespace-successor-source-only",
+      "path": "/tmp/pow-audit30-promotion-full-read-native-v1.py",
+      "postAction63NotPreviouslyCustodialized": true,
+      "sha256": "d07cb8d37eb2920578a2db009030b79ab27100345258e5b72f341f3d88ed54e8",
+      "suggestedRepositoryPath": "deploy/audit30/verification/pow-audit30-promotion-full-read-native-v1.py",
+      "type": "python-source"
+    },
+    {
+      "authority": "inventory-only; no execution or acceptance authority",
+      "bytes": 1456,
+      "exists": true,
+      "fileType": "regular",
+      "group": "promotion-full-read-namespace-successor-source-only",
+      "path": "/tmp/pow-audit30-promotion-full-read-native-v1.diff",
+      "postAction63NotPreviouslyCustodialized": true,
+      "representationRequired": "closed lossless base64 envelope binding originalInput/rawBytes/rawSha256/rawBase64; retain raw untouched",
+      "sha256": "6ab04cd6cb468cb563420adca779a287f87510f14970b3b73b9d5fcbd7bb7e4e",
+      "suggestedRepositoryPath": "deploy/audit30/verification/pow-audit30-promotion-full-read-native-v1.diff.evidence.json",
+      "type": "raw-diff"
+    },
+    {
+      "authority": "inventory-only; no execution or acceptance authority",
+      "bytes": 29545,
+      "exists": true,
+      "fileType": "regular",
+      "group": "promotion-full-read-namespace-successor-source-only",
+      "path": "/tmp/pow-audit30-promotion-full-read-native-v1.test.py",
+      "postAction63NotPreviouslyCustodialized": true,
+      "sha256": "44a793249d8520ed21f794b83796caa85ac6d37006a20f3f0899ae5c320583d8",
+      "suggestedRepositoryPath": "deploy/audit30/verification/pow-audit30-promotion-full-read-native-v1.test.py",
+      "type": "python-test-source"
+    },
+    {
+      "authority": "inventory-only; no execution or acceptance authority",
+      "bytes": 8747,
+      "exists": true,
+      "fileType": "regular",
+      "group": "promotion-full-read-namespace-successor-source-only",
+      "path": "/tmp/pow-audit30-promotion-full-read-request-template-v1.json",
+      "postAction63NotPreviouslyCustodialized": true,
+      "sha256": "14dca513bb975a98a0c12d76d86c1ef5f4c53b7e97c13fe0f8cb92e391ac07b0",
+      "suggestedRepositoryPath": "deploy/audit30/verification/pow-audit30-promotion-full-read-request-template-v1.json",
+      "type": "json-public-receipt"
+    },
+    {
+      "authority": "inventory-only; no execution or acceptance authority",
+      "bytes": 6544,
+      "exists": true,
+      "fileType": "regular",
+      "group": "promotion-full-read-namespace-successor-source-only",
+      "path": "/tmp/pow-audit30-promotion-full-read-local-preparation-v1.json",
+      "postAction63NotPreviouslyCustodialized": true,
+      "sha256": "3e2300595f15993839906876463a980175591b79b8d3684e7f57a63e0952897b",
+      "suggestedRepositoryPath": "deploy/audit30/verification/pow-audit30-promotion-full-read-local-preparation-v1.json",
+      "type": "json-public-receipt"
+    },
+    {
+      "authority": "inventory-only; no execution or acceptance authority",
+      "bytes": 4343,
+      "exists": true,
+      "fileType": "regular",
+      "group": "promotion-full-read-namespace-successor-source-only",
+      "path": "/tmp/pow-audit30-independent-promotion-full-read-source-review-v1.json",
+      "postAction63NotPreviouslyCustodialized": true,
+      "sha256": "e828fa397f74d582895bdc7bcbf43276f122adfb8e36f263c8032a458da4cfbc",
+      "suggestedRepositoryPath": "deploy/audit30/verification/pow-audit30-independent-promotion-full-read-source-review-v1.json",
+      "type": "json-public-receipt"
+    },
+    {
+      "authority": "inventory-only; no execution or acceptance authority",
+      "bytes": 3970,
+      "exists": true,
+      "fileType": "regular",
+      "group": "root-source-only-review",
+      "path": "/tmp/pow-audit30-root-source-only-recovery-capacity-and-bridge-review-v1.json",
+      "postAction63NotPreviouslyCustodialized": true,
+      "sha256": "6a38f0197cd95f79015aef2e1d31434c22c4f9d9c91dc55b32ed3abf85d733be",
+      "suggestedRepositoryPath": "deploy/audit30/verification/pow-audit30-root-source-only-recovery-capacity-and-bridge-review-v1.json",
+      "type": "json-public-receipt"
+    },
+    {
+      "authority": "inventory-only; no execution or acceptance authority",
+      "bytes": 1720,
+      "exists": true,
+      "fileType": "regular",
+      "group": "oct3-restore-returned-awaiting-acceptance",
+      "path": "/tmp/pow-audit30-oct3-isolated-restore-native-104500-v1.json",
+      "postAction63NotPreviouslyCustodialized": true,
+      "sha256": "2eb4ea418ac0fc600ac8d07c6eec1dc75c0c35a2b0deda02097350d825b3a6de",
+      "suggestedRepositoryPath": "deploy/audit30/verification/pow-audit30-oct3-isolated-restore-native-104500-v1.json",
+      "type": "json-public-receipt"
+    },
+    {
+      "authority": "inventory-only; no execution or acceptance authority",
+      "bytes": 71673,
+      "contentFormat": "jsonl",
+      "exists": true,
+      "fileType": "regular",
+      "group": "oct3-restore-returned-awaiting-acceptance",
+      "jsonDocumentCount": 3,
+      "path": "/tmp/pow-audit30-oct3-isolated-restore-native-104500-v1.stdout",
+      "postAction63NotPreviouslyCustodialized": true,
+      "representationRequired": "closed lossless byte envelope; do not normalize/merge/parse-reserialize channel bytes",
+      "sha256": "3a53ab1325bf9110445da746452a24865e6069fa9e7fdbe0e28b09af2f1574ba",
+      "suggestedRepositoryPath": "deploy/audit30/verification/pow-audit30-oct3-isolated-restore-native-104500-v1.stdout.evidence.json",
+      "type": "native-capture-stdout"
+    },
+    {
+      "authority": "inventory-only; no execution or acceptance authority",
+      "bytes": 267,
+      "contentFormat": "utf8-text",
+      "exists": true,
+      "fileType": "regular",
+      "group": "oct3-restore-returned-awaiting-acceptance",
+      "path": "/tmp/pow-audit30-oct3-isolated-restore-native-104500-v1.stderr",
+      "postAction63NotPreviouslyCustodialized": true,
+      "representationRequired": "closed lossless byte envelope; do not normalize/merge/parse-reserialize channel bytes",
+      "sha256": "eb3759ef2b58c39f44134270cf0d4570052d3afc88eb80c0bf635bc52386380d",
+      "suggestedRepositoryPath": "deploy/audit30/verification/pow-audit30-oct3-isolated-restore-native-104500-v1.stderr.evidence.json",
+      "type": "native-capture-stderr"
+    },
+    {
+      "authority": "inventory-only; predecessor/embedded-source custody grants no execution/deletion/acceptance authority",
+      "bytes": 16108,
+      "exists": true,
+      "fileType": "regular",
+      "group": "exact-public-bridge-source-dependencies",
+      "path": "/tmp/pow-audit30-retained-repair-dependency-bridge-v1.py",
+      "postAction63NotPreviouslyCustodialized": true,
+      "sha256": "62de429d610986d7a48137cee890b2867f20704c051440b69f9862057271fad4",
+      "suggestedRepositoryPath": "deploy/audit30/verification/pow-audit30-retained-repair-dependency-bridge-v1.py",
+      "type": "python-source"
+    },
+    {
+      "authority": "inventory-only; predecessor/embedded-source custody grants no execution/deletion/acceptance authority",
+      "bytes": 27456,
+      "exists": true,
+      "fileType": "regular",
+      "group": "exact-public-bridge-source-dependencies",
+      "path": "/tmp/pow-audit30-retire-exact-four-v3.py",
+      "postAction63NotPreviouslyCustodialized": true,
+      "sha256": "e35bd34050f4b0b36c9bfbe5b1461e901edd44ed13756cc9e3a2075e28fa2f50",
+      "suggestedRepositoryPath": "deploy/audit30/verification/pow-audit30-retire-exact-four-v3.py",
+      "type": "python-source"
+    }
+  ],
+  "futureRequestsNotMissingArtifacts": [
+    "BridgeV3 concrete request remains unprepared/unbound; no V3 native acceptance",
+    "CoupledV5 approval/plan template remains unbound; no installation or retirement authority",
+    "Promotion-full-read request remains null/unbound; future native capture is not a current artifact"
+  ],
+  "inlineMetadataRelationships": [
+    {
+      "embeddedStdoutBytes": 819,
+      "embeddedStdoutSha256": "f356700d0f9da2a38031a2faee9cb27d2eef0f94e2883f271c6d3f5073edc84f",
+      "json": "/tmp/pow-audit30-oct3-restore-public-stage-metadata-v2.json",
+      "restoreCompletedAccepted": false,
+      "sourceBytes": 825,
+      "sourceRecoverableFromCommandWithoutExecution": true,
+      "sourceSha256": "8dd39a5f6c2e2964111b53ddf0c8ccdf9250570b1cccf6f216133b486232d354",
+      "standaloneStdoutOrSourceNotMissing": true,
+      "stdoutBindingMatches": true
+    },
+    {
+      "embeddedStdoutBytes": 955,
+      "embeddedStdoutSha256": "2ecf52694ca94c117a71e207d614047a6ac7a922feb01a3c08698c97cb50fe3e",
+      "json": "/tmp/pow-audit30-oct3-restore-public-stage-metadata-v3.json",
+      "restoreCompletedAccepted": false,
+      "sourceBytes": 825,
+      "sourceRecoverableFromCommandWithoutExecution": true,
+      "sourceSha256": "8dd39a5f6c2e2964111b53ddf0c8ccdf9250570b1cccf6f216133b486232d354",
+      "standaloneStdoutOrSourceNotMissing": true,
+      "stdoutBindingMatches": true
+    }
+  ],
+  "observedHead": "c33e83fa1659b63160615bf7adca7ef42a0d1188",
+  "onlyNewWrite": "/tmp/pow-audit30-action64-fixed-public-inventory-v2.json",
+  "preservedV1": {
+    "bytes": 92953,
+    "path": "/tmp/pow-audit30-action64-fixed-public-inventory-v1.json",
+    "sha256": "40581e32ed65ce9f8bc846ebcc00fc7d472b03c5ea06f74233f8feb6cf1bf86d"
+  },
+  "readOnlyRepositoryAndNative": true,
+  "receiptBindingChecks": [
+    {
+      "field": ".initialRetargetedFixture",
+      "matches": true,
+      "owner": "/tmp/pow-audit30-recovery-controller-capacity-v3.fixture-checkpoint-v1.json",
+      "path": "/tmp/pow-audit30-recovery-controller-capacity-v3.original-fixtures.test.py"
+    },
+    {
+      "basis": "immutable Action63 raw custody binding; file not reread",
+      "field": ".actualCurrentMetadataAuthority",
+      "matches": true,
+      "owner": "/tmp/pow-audit30-recovery-controller-capacity-v3-local-preparation-v1.json",
+      "path": "/tmp/pow-audit30-oct3-restore-capacity-running-observation-v2.json"
+    },
+    {
+      "field": ".candidate",
+      "matches": true,
+      "owner": "/tmp/pow-audit30-recovery-controller-capacity-v3-local-preparation-v1.json",
+      "path": "/tmp/pow-audit30-recovery-controller-capacity-v3.py"
+    },
+    {
+      "basis": "immutable Action63 raw custody binding; file not reread",
+      "field": ".currentBoundCapacityDelta",
+      "matches": true,
+      "owner": "/tmp/pow-audit30-recovery-controller-capacity-v3-local-preparation-v1.json",
+      "path": "/tmp/pow-audit30-recovery-measured-capacity-delta-v2.json"
+    },
+    {
+      "field": ".exactDiff",
+      "matches": true,
+      "owner": "/tmp/pow-audit30-recovery-controller-capacity-v3-local-preparation-v1.json",
+      "path": "/tmp/pow-audit30-recovery-controller-capacity-v3.diff"
+    },
+    {
+      "field": ".initialFixtureLocationRefusalPreserved",
+      "matches": true,
+      "owner": "/tmp/pow-audit30-recovery-controller-capacity-v3-local-preparation-v1.json",
+      "path": "/tmp/pow-audit30-recovery-controller-capacity-v3.fixture-checkpoint-v1.json"
+    },
+    {
+      "field": ".initialRetargetedFixturePreserved",
+      "matches": true,
+      "owner": "/tmp/pow-audit30-recovery-controller-capacity-v3-local-preparation-v1.json",
+      "path": "/tmp/pow-audit30-recovery-controller-capacity-v3.original-fixtures.test.py"
+    },
+    {
+      "field": ".meaningfulTests[0].source",
+      "matches": true,
+      "owner": "/tmp/pow-audit30-recovery-controller-capacity-v3-local-preparation-v1.json",
+      "path": "/tmp/pow-audit30-recovery-controller-capacity-v3.test.py"
+    },
+    {
+      "field": ".meaningfulTests[1].source",
+      "matches": true,
+      "owner": "/tmp/pow-audit30-recovery-controller-capacity-v3-local-preparation-v1.json",
+      "path": "/tmp/pow-audit30-recovery-controller-capacity-v3.original-fixtures-v2.test.py"
+    },
+    {
+      "basis": "immutable Action63 raw custody binding; file not reread",
+      "field": ".preservedHistoricalCapacity10Tests",
+      "matches": true,
+      "owner": "/tmp/pow-audit30-recovery-controller-capacity-v3-local-preparation-v1.json",
+      "path": "/tmp/pow-audit30-recovery-measured-capacity-qualification-v1.test.py"
+    },
+    {
+      "basis": "immutable Action63 raw custody binding; file not reread",
+      "field": ".preservedHistoricalCapacityQualification",
+      "matches": true,
+      "owner": "/tmp/pow-audit30-recovery-controller-capacity-v3-local-preparation-v1.json",
+      "path": "/tmp/pow-audit30-recovery-measured-capacity-qualification-v1.json"
+    },
+    {
+      "basis": "immutable Action63 raw custody binding; file not reread",
+      "field": ".inputs.actualCurrentMetadataAuthority",
+      "matches": true,
+      "owner": "/tmp/pow-audit30-independent-recovery-capacity-source-review-v3.json",
+      "path": "/tmp/pow-audit30-oct3-restore-capacity-running-observation-v2.json"
+    },
+    {
+      "field": ".inputs.authorPreparation",
+      "matches": true,
+      "owner": "/tmp/pow-audit30-independent-recovery-capacity-source-review-v3.json",
+      "path": "/tmp/pow-audit30-recovery-controller-capacity-v3-local-preparation-v1.json"
+    },
+    {
+      "field": ".inputs.candidate",
+      "matches": true,
+      "owner": "/tmp/pow-audit30-independent-recovery-capacity-source-review-v3.json",
+      "path": "/tmp/pow-audit30-recovery-controller-capacity-v3.py"
+    },
+    {
+      "basis": "immutable Action63 raw custody binding; file not reread",
+      "field": ".inputs.currentBoundCapacityDelta",
+      "matches": true,
+      "owner": "/tmp/pow-audit30-independent-recovery-capacity-source-review-v3.json",
+      "path": "/tmp/pow-audit30-recovery-measured-capacity-delta-v2.json"
+    },
+    {
+      "field": ".inputs.exactDiff",
+      "matches": true,
+      "owner": "/tmp/pow-audit30-independent-recovery-capacity-source-review-v3.json",
+      "path": "/tmp/pow-audit30-recovery-controller-capacity-v3.diff"
+    },
+    {
+      "field": ".inputs.initialFixtureLocationRefusalPreserved",
+      "matches": true,
+      "owner": "/tmp/pow-audit30-independent-recovery-capacity-source-review-v3.json",
+      "path": "/tmp/pow-audit30-recovery-controller-capacity-v3.fixture-checkpoint-v1.json"
+    },
+    {
+      "field": ".inputs.initialRetargetedFixturePreserved",
+      "matches": true,
+      "owner": "/tmp/pow-audit30-independent-recovery-capacity-source-review-v3.json",
+      "path": "/tmp/pow-audit30-recovery-controller-capacity-v3.original-fixtures.test.py"
+    },
+    {
+      "field": ".tests[0].source",
+      "matches": true,
+      "owner": "/tmp/pow-audit30-independent-recovery-capacity-source-review-v3.json",
+      "path": "/tmp/pow-audit30-recovery-controller-capacity-v3.test.py"
+    },
+    {
+      "field": ".tests[1].source",
+      "matches": true,
+      "owner": "/tmp/pow-audit30-independent-recovery-capacity-source-review-v3.json",
+      "path": "/tmp/pow-audit30-recovery-controller-capacity-v3.original-fixtures-v2.test.py"
+    },
+    {
+      "field": ".caller",
+      "matches": true,
+      "owner": "/tmp/pow-audit30-retained-repair-context-caller-preparation-v1.json",
+      "path": "/tmp/pow-audit30-retained-repair-context-transport-preparation-v1.py"
+    },
+    {
+      "field": ".callerTests",
+      "matches": true,
+      "owner": "/tmp/pow-audit30-retained-repair-context-caller-preparation-v1.json",
+      "path": "/tmp/pow-audit30-retained-repair-context-caller-v1.test.py"
+    },
+    {
+      "basis": "immutable Action63 raw custody binding; file not reread",
+      "field": ".contextSourceRequestAndManagedEqualRepositoryCustody[0]",
+      "matches": true,
+      "owner": "/tmp/pow-audit30-retained-repair-context-caller-preparation-v1.json",
+      "path": "/tmp/pow-audit30-oct2-full-read-current-context-v2.py"
+    },
+    {
+      "basis": "immutable Action63 raw custody binding; file not reread",
+      "field": ".contextSourceRequestAndManagedEqualRepositoryCustody[1]",
+      "matches": true,
+      "owner": "/tmp/pow-audit30-retained-repair-context-caller-preparation-v1.json",
+      "path": "/tmp/pow-audit30-oct2-full-read-current-context-request-v2.json"
+    },
+    {
+      "basis": "immutable Action63 raw custody binding; file not reread",
+      "field": ".contextSourceRequestAndManagedEqualRepositoryCustody[2]",
+      "matches": true,
+      "owner": "/tmp/pow-audit30-retained-repair-context-caller-preparation-v1.json",
+      "path": "/tmp/pow-audit30-oct2-full-read-native-v2.py"
+    },
+    {
+      "basis": "immutable Action63 raw custody binding; file not reread",
+      "field": ".existingFixedContextRequest",
+      "matches": true,
+      "owner": "/tmp/pow-audit30-retained-repair-context-caller-preparation-v1.json",
+      "path": "/tmp/pow-audit30-oct2-full-read-current-context-request-v2.json"
+    },
+    {
+      "basis": "immutable Action63 raw custody binding; file not reread",
+      "field": ".existingFixedContextSource",
+      "matches": true,
+      "owner": "/tmp/pow-audit30-retained-repair-context-caller-preparation-v1.json",
+      "path": "/tmp/pow-audit30-oct2-full-read-current-context-v2.py"
+    },
+    {
+      "basis": "immutable Action63 raw custody binding; file not reread",
+      "field": ".managedInertSource",
+      "matches": true,
+      "owner": "/tmp/pow-audit30-retained-repair-context-caller-preparation-v1.json",
+      "path": "/tmp/pow-audit30-oct2-full-read-native-v2.py"
+    },
+    {
+      "field": ".preservedUnboundBridge.caller",
+      "matches": true,
+      "owner": "/tmp/pow-audit30-retained-repair-context-caller-preparation-v1.json",
+      "path": "/tmp/pow-audit30-retained-repair-dependency-bridge-transport-preparation-v2.py"
+    },
+    {
+      "field": ".preservedUnboundBridge.requestTemplate",
+      "matches": true,
+      "owner": "/tmp/pow-audit30-retained-repair-context-caller-preparation-v1.json",
+      "path": "/tmp/pow-audit30-retained-repair-dependency-bridge-request-template-v2.json"
+    },
+    {
+      "field": ".preservedUnboundBridge.source",
+      "matches": true,
+      "owner": "/tmp/pow-audit30-retained-repair-context-caller-preparation-v1.json",
+      "path": "/tmp/pow-audit30-retained-repair-dependency-bridge-v2.py"
+    },
+    {
+      "basis": "immutable Action63 raw custody binding; file not reread",
+      "field": ".sharedOwnedTransport",
+      "matches": true,
+      "owner": "/tmp/pow-audit30-retained-repair-context-caller-preparation-v1.json",
+      "path": "/tmp/pow-audit30-readonly-owned-transport-v3.py"
+    },
+    {
+      "field": ".inputs.caller",
+      "matches": true,
+      "owner": "/tmp/pow-audit30-independent-retained-repair-context-caller-review-v1.json",
+      "path": "/tmp/pow-audit30-retained-repair-context-transport-preparation-v1.py"
+    },
+    {
+      "field": ".inputs.callerPreparation",
+      "matches": true,
+      "owner": "/tmp/pow-audit30-independent-retained-repair-context-caller-review-v1.json",
+      "path": "/tmp/pow-audit30-retained-repair-context-caller-preparation-v1.json"
+    },
+    {
+      "field": ".inputs.callerTests",
+      "matches": true,
+      "owner": "/tmp/pow-audit30-independent-retained-repair-context-caller-review-v1.json",
+      "path": "/tmp/pow-audit30-retained-repair-context-caller-v1.test.py"
+    },
+    {
+      "basis": "immutable Action63 raw custody binding; file not reread",
+      "field": ".inputs.existingFixedContextRequest",
+      "matches": true,
+      "owner": "/tmp/pow-audit30-independent-retained-repair-context-caller-review-v1.json",
+      "path": "/tmp/pow-audit30-oct2-full-read-current-context-request-v2.json"
+    },
+    {
+      "basis": "immutable Action63 raw custody binding; file not reread",
+      "field": ".inputs.existingFixedContextSource",
+      "matches": true,
+      "owner": "/tmp/pow-audit30-independent-retained-repair-context-caller-review-v1.json",
+      "path": "/tmp/pow-audit30-oct2-full-read-current-context-v2.py"
+    },
+    {
+      "basis": "immutable Action63 raw custody binding; file not reread",
+      "field": ".inputs.managedInertSource",
+      "matches": true,
+      "owner": "/tmp/pow-audit30-independent-retained-repair-context-caller-review-v1.json",
+      "path": "/tmp/pow-audit30-oct2-full-read-native-v2.py"
+    },
+    {
+      "basis": "immutable Action63 raw custody binding; file not reread",
+      "field": ".inputs.sharedOwnedTransport",
+      "matches": true,
+      "owner": "/tmp/pow-audit30-independent-retained-repair-context-caller-review-v1.json",
+      "path": "/tmp/pow-audit30-readonly-owned-transport-v3.py"
+    },
+    {
+      "field": ".captures.stderr",
+      "matches": true,
+      "owner": "/tmp/pow-audit30-retained-repair-context-native-v1.json",
+      "path": "/tmp/pow-audit30-retained-repair-context-native-v1.stderr"
+    },
+    {
+      "field": ".captures.stdout",
+      "matches": true,
+      "owner": "/tmp/pow-audit30-retained-repair-context-native-v1.json",
+      "path": "/tmp/pow-audit30-retained-repair-context-native-v1.stdout"
+    },
+    {
+      "field": ".files[0]",
+      "matches": true,
+      "owner": "/tmp/pow-audit30-retained-repair-dependency-bridge-source-preparation-v2.json",
+      "path": "/tmp/pow-audit30-retained-repair-dependency-bridge-v2.py"
+    },
+    {
+      "field": ".files[1]",
+      "matches": true,
+      "owner": "/tmp/pow-audit30-retained-repair-dependency-bridge-source-preparation-v2.json",
+      "path": "/tmp/pow-audit30-retained-repair-dependency-bridge-v2.test.py"
+    },
+    {
+      "field": ".files[2]",
+      "matches": true,
+      "owner": "/tmp/pow-audit30-retained-repair-dependency-bridge-source-preparation-v2.json",
+      "path": "/tmp/pow-audit30-retained-repair-dependency-bridge-bootstrap-v2.py"
+    },
+    {
+      "field": ".files[3]",
+      "matches": true,
+      "owner": "/tmp/pow-audit30-retained-repair-dependency-bridge-source-preparation-v2.json",
+      "path": "/tmp/pow-audit30-retained-repair-dependency-bridge-transport-preparation-v2.py"
+    },
+    {
+      "field": ".files[4]",
+      "matches": true,
+      "owner": "/tmp/pow-audit30-retained-repair-dependency-bridge-source-preparation-v2.json",
+      "path": "/tmp/pow-audit30-retained-repair-dependency-bridge-caller-v2.test.py"
+    },
+    {
+      "field": ".files[5]",
+      "matches": true,
+      "owner": "/tmp/pow-audit30-retained-repair-dependency-bridge-source-preparation-v2.json",
+      "path": "/tmp/pow-audit30-retained-repair-dependency-bridge-request-template-v2.json"
+    },
+    {
+      "field": ".files[6]",
+      "matches": true,
+      "owner": "/tmp/pow-audit30-retained-repair-dependency-bridge-source-preparation-v2.json",
+      "path": "/tmp/pow-audit30-retained-repair-dependency-bridge-v2-source.diff"
+    },
+    {
+      "field": ".files[7]",
+      "matches": true,
+      "owner": "/tmp/pow-audit30-retained-repair-dependency-bridge-source-preparation-v2.json",
+      "path": "/tmp/pow-audit30-retained-repair-dependency-bridge-v2-caller.diff"
+    },
+    {
+      "field": ".sourcesAndEvidence[0]",
+      "matches": true,
+      "owner": "/tmp/pow-audit30-independent-retained-repair-dependency-bridge-source-review-v2.json",
+      "path": "/tmp/pow-audit30-retained-repair-dependency-bridge-v2.py"
+    },
+    {
+      "field": ".sourcesAndEvidence[1]",
+      "matches": true,
+      "owner": "/tmp/pow-audit30-independent-retained-repair-dependency-bridge-source-review-v2.json",
+      "path": "/tmp/pow-audit30-retained-repair-dependency-bridge-v2-source.diff"
+    },
+    {
+      "field": ".sourcesAndEvidence[2]",
+      "matches": true,
+      "owner": "/tmp/pow-audit30-independent-retained-repair-dependency-bridge-source-review-v2.json",
+      "path": "/tmp/pow-audit30-retained-repair-dependency-bridge-v2.test.py"
+    },
+    {
+      "field": ".sourcesAndEvidence[3]",
+      "matches": true,
+      "owner": "/tmp/pow-audit30-independent-retained-repair-dependency-bridge-source-review-v2.json",
+      "path": "/tmp/pow-audit30-retained-repair-dependency-bridge-bootstrap-v2.py"
+    },
+    {
+      "field": ".sourcesAndEvidence[4]",
+      "matches": true,
+      "owner": "/tmp/pow-audit30-independent-retained-repair-dependency-bridge-source-review-v2.json",
+      "path": "/tmp/pow-audit30-retained-repair-dependency-bridge-transport-preparation-v2.py"
+    },
+    {
+      "field": ".sourcesAndEvidence[5]",
+      "matches": true,
+      "owner": "/tmp/pow-audit30-independent-retained-repair-dependency-bridge-source-review-v2.json",
+      "path": "/tmp/pow-audit30-retained-repair-dependency-bridge-caller-v2.test.py"
+    },
+    {
+      "field": ".sourcesAndEvidence[6]",
+      "matches": true,
+      "owner": "/tmp/pow-audit30-independent-retained-repair-dependency-bridge-source-review-v2.json",
+      "path": "/tmp/pow-audit30-retained-repair-dependency-bridge-request-template-v2.json"
+    },
+    {
+      "field": ".acceptedContextBinding",
+      "matches": true,
+      "owner": "/tmp/pow-audit30-retained-repair-dependency-bridge-request-binding-v2.json",
+      "path": "/tmp/pow-audit30-retained-repair-context-native-v1.stdout"
+    },
+    {
+      "field": ".acceptedContextTransportBinding",
+      "matches": true,
+      "owner": "/tmp/pow-audit30-retained-repair-dependency-bridge-request-binding-v2.json",
+      "path": "/tmp/pow-audit30-retained-repair-context-native-v1.json"
+    },
+    {
+      "field": ".concreteRequestBinding",
+      "matches": true,
+      "owner": "/tmp/pow-audit30-retained-repair-dependency-bridge-request-binding-v2.json",
+      "path": "/tmp/pow-audit30-retained-repair-dependency-bridge-request-v2.json"
+    },
+    {
+      "field": ".decoderBinding",
+      "matches": true,
+      "owner": "/tmp/pow-audit30-retained-repair-dependency-bridge-request-binding-v2.json",
+      "path": "/tmp/pow-audit30-retained-repair-dependency-bridge-v2.py"
+    },
+    {
+      "basis": "immutable Action63 raw custody binding; file not reread",
+      "field": ".embeddedSourceBindings[0]",
+      "matches": true,
+      "owner": "/tmp/pow-audit30-retained-repair-dependency-bridge-request-binding-v2.json",
+      "path": "/tmp/pow-audit30-production-sixteen-root-control-v3.py"
+    },
+    {
+      "basis": "immutable Action63 raw custody binding; file not reread",
+      "field": ".embeddedSourceBindings[1]",
+      "matches": true,
+      "owner": "/tmp/pow-audit30-retained-repair-dependency-bridge-request-binding-v2.json",
+      "path": "/tmp/pow-audit30-oct2-full-read-native-v2.py"
+    },
+    {
+      "field": ".templateBinding",
+      "matches": true,
+      "owner": "/tmp/pow-audit30-retained-repair-dependency-bridge-request-binding-v2.json",
+      "path": "/tmp/pow-audit30-retained-repair-dependency-bridge-request-template-v2.json"
+    },
+    {
+      "field": ".unchangedUnboundCallerBinding",
+      "matches": true,
+      "owner": "/tmp/pow-audit30-retained-repair-dependency-bridge-request-binding-v2.json",
+      "path": "/tmp/pow-audit30-retained-repair-dependency-bridge-transport-preparation-v2.py"
+    },
+    {
+      "field": ".actualContext",
+      "matches": true,
+      "owner": "/tmp/pow-audit30-independent-retained-repair-request-binding-review-v2.json",
+      "path": "/tmp/pow-audit30-retained-repair-context-native-v1.stdout"
+    },
+    {
+      "field": ".actualContextTransport",
+      "matches": true,
+      "owner": "/tmp/pow-audit30-independent-retained-repair-request-binding-review-v2.json",
+      "path": "/tmp/pow-audit30-retained-repair-context-native-v1.json"
+    },
+    {
+      "field": ".bindingPreparation",
+      "matches": true,
+      "owner": "/tmp/pow-audit30-independent-retained-repair-request-binding-review-v2.json",
+      "path": "/tmp/pow-audit30-retained-repair-dependency-bridge-request-binding-v2.json"
+    },
+    {
+      "field": ".decoder",
+      "matches": true,
+      "owner": "/tmp/pow-audit30-independent-retained-repair-request-binding-review-v2.json",
+      "path": "/tmp/pow-audit30-retained-repair-dependency-bridge-v2.py"
+    },
+    {
+      "basis": "immutable Action63 raw custody binding; file not reread",
+      "field": ".embeddedSources[0]",
+      "matches": true,
+      "owner": "/tmp/pow-audit30-independent-retained-repair-request-binding-review-v2.json",
+      "path": "/tmp/pow-audit30-production-sixteen-root-control-v3.py"
+    },
+    {
+      "basis": "immutable Action63 raw custody binding; file not reread",
+      "field": ".embeddedSources[1]",
+      "matches": true,
+      "owner": "/tmp/pow-audit30-independent-retained-repair-request-binding-review-v2.json",
+      "path": "/tmp/pow-audit30-oct2-full-read-native-v2.py"
+    },
+    {
+      "field": ".preservedNullTemplate",
+      "matches": true,
+      "owner": "/tmp/pow-audit30-independent-retained-repair-request-binding-review-v2.json",
+      "path": "/tmp/pow-audit30-retained-repair-dependency-bridge-request-template-v2.json"
+    },
+    {
+      "field": ".request",
+      "matches": true,
+      "owner": "/tmp/pow-audit30-independent-retained-repair-request-binding-review-v2.json",
+      "path": "/tmp/pow-audit30-retained-repair-dependency-bridge-request-v2.json"
+    },
+    {
+      "field": ".unboundCaller",
+      "matches": true,
+      "owner": "/tmp/pow-audit30-independent-retained-repair-request-binding-review-v2.json",
+      "path": "/tmp/pow-audit30-retained-repair-dependency-bridge-transport-preparation-v2.py"
+    },
+    {
+      "field": ".captures.stderr",
+      "matches": true,
+      "owner": "/tmp/pow-audit30-retained-repair-dependency-bridge-native-v2.json",
+      "path": "/tmp/pow-audit30-retained-repair-dependency-bridge-native-v2.stderr"
+    },
+    {
+      "field": ".captures.stdout",
+      "matches": true,
+      "owner": "/tmp/pow-audit30-retained-repair-dependency-bridge-native-v2.json",
+      "path": "/tmp/pow-audit30-retained-repair-dependency-bridge-native-v2.stdout"
+    },
+    {
+      "field": ".sourceBindings[0]",
+      "matches": true,
+      "owner": "/tmp/pow-audit30-retained-repair-dependency-bridge-source-preparation-v3.json",
+      "path": "/tmp/pow-audit30-retained-repair-dependency-bridge-v2.py"
+    },
+    {
+      "field": ".sourceBindings[1]",
+      "matches": true,
+      "owner": "/tmp/pow-audit30-retained-repair-dependency-bridge-source-preparation-v3.json",
+      "path": "/tmp/pow-audit30-retained-repair-dependency-bridge-v3.py"
+    },
+    {
+      "field": ".sourceBindings[2]",
+      "matches": true,
+      "owner": "/tmp/pow-audit30-retained-repair-dependency-bridge-source-preparation-v3.json",
+      "path": "/tmp/pow-audit30-retained-repair-dependency-bridge-v3.test.py"
+    },
+    {
+      "field": ".sourceBindings[3]",
+      "matches": true,
+      "owner": "/tmp/pow-audit30-retained-repair-dependency-bridge-source-preparation-v3.json",
+      "path": "/tmp/pow-audit30-retained-repair-dependency-bridge-v3.diff"
+    },
+    {
+      "field": ".sourceBindings[4]",
+      "matches": true,
+      "owner": "/tmp/pow-audit30-retained-repair-dependency-bridge-source-preparation-v3.json",
+      "path": "/tmp/pow-audit30-retained-repair-dependency-bridge-bootstrap-v3.py"
+    },
+    {
+      "field": ".sourceBindings[5]",
+      "matches": true,
+      "owner": "/tmp/pow-audit30-retained-repair-dependency-bridge-source-preparation-v3.json",
+      "path": "/tmp/pow-audit30-retained-repair-dependency-bridge-bootstrap-v3.diff"
+    },
+    {
+      "field": ".sourceBindings[6]",
+      "matches": true,
+      "owner": "/tmp/pow-audit30-retained-repair-dependency-bridge-source-preparation-v3.json",
+      "path": "/tmp/pow-audit30-retained-repair-dependency-bridge-transport-preparation-v3.py"
+    },
+    {
+      "field": ".sourceBindings[7]",
+      "matches": true,
+      "owner": "/tmp/pow-audit30-retained-repair-dependency-bridge-source-preparation-v3.json",
+      "path": "/tmp/pow-audit30-retained-repair-dependency-bridge-transport-preparation-v3.diff"
+    },
+    {
+      "field": ".sourceBindings[8]",
+      "matches": true,
+      "owner": "/tmp/pow-audit30-retained-repair-dependency-bridge-source-preparation-v3.json",
+      "path": "/tmp/pow-audit30-retained-repair-dependency-bridge-request-template-v3.json"
+    },
+    {
+      "field": ".sourceBindings[9]",
+      "matches": true,
+      "owner": "/tmp/pow-audit30-retained-repair-dependency-bridge-source-preparation-v3.json",
+      "path": "/tmp/pow-audit30-retained-repair-dependency-bridge-caller-v3.test.py"
+    },
+    {
+      "field": ".sourceBindings[10]",
+      "matches": true,
+      "owner": "/tmp/pow-audit30-retained-repair-dependency-bridge-source-preparation-v3.json",
+      "path": "/tmp/pow-audit30-retained-repair-dependency-bridge-native-v2.json"
+    },
+    {
+      "field": ".sourceBindings[11]",
+      "matches": true,
+      "owner": "/tmp/pow-audit30-retained-repair-dependency-bridge-source-preparation-v3.json",
+      "path": "/tmp/pow-audit30-retained-repair-dependency-bridge-native-v2.stderr"
+    },
+    {
+      "field": ".inputs[0]",
+      "matches": true,
+      "owner": "/tmp/pow-audit30-independent-retained-repair-bridge-source-review-v3.json",
+      "path": "/tmp/pow-audit30-retained-repair-dependency-bridge-v2.py"
+    },
+    {
+      "field": ".inputs[1]",
+      "matches": true,
+      "owner": "/tmp/pow-audit30-independent-retained-repair-bridge-source-review-v3.json",
+      "path": "/tmp/pow-audit30-retained-repair-dependency-bridge-v3.py"
+    },
+    {
+      "field": ".inputs[2]",
+      "matches": true,
+      "owner": "/tmp/pow-audit30-independent-retained-repair-bridge-source-review-v3.json",
+      "path": "/tmp/pow-audit30-retained-repair-dependency-bridge-v3.test.py"
+    },
+    {
+      "field": ".inputs[3]",
+      "matches": true,
+      "owner": "/tmp/pow-audit30-independent-retained-repair-bridge-source-review-v3.json",
+      "path": "/tmp/pow-audit30-retained-repair-dependency-bridge-v3.diff"
+    },
+    {
+      "field": ".inputs[4]",
+      "matches": true,
+      "owner": "/tmp/pow-audit30-independent-retained-repair-bridge-source-review-v3.json",
+      "path": "/tmp/pow-audit30-retained-repair-dependency-bridge-bootstrap-v3.py"
+    },
+    {
+      "field": ".inputs[5]",
+      "matches": true,
+      "owner": "/tmp/pow-audit30-independent-retained-repair-bridge-source-review-v3.json",
+      "path": "/tmp/pow-audit30-retained-repair-dependency-bridge-bootstrap-v3.diff"
+    },
+    {
+      "field": ".inputs[6]",
+      "matches": true,
+      "owner": "/tmp/pow-audit30-independent-retained-repair-bridge-source-review-v3.json",
+      "path": "/tmp/pow-audit30-retained-repair-dependency-bridge-transport-preparation-v3.py"
+    },
+    {
+      "field": ".inputs[7]",
+      "matches": true,
+      "owner": "/tmp/pow-audit30-independent-retained-repair-bridge-source-review-v3.json",
+      "path": "/tmp/pow-audit30-retained-repair-dependency-bridge-transport-preparation-v3.diff"
+    },
+    {
+      "field": ".inputs[8]",
+      "matches": true,
+      "owner": "/tmp/pow-audit30-independent-retained-repair-bridge-source-review-v3.json",
+      "path": "/tmp/pow-audit30-retained-repair-dependency-bridge-request-template-v3.json"
+    },
+    {
+      "field": ".inputs[9]",
+      "matches": true,
+      "owner": "/tmp/pow-audit30-independent-retained-repair-bridge-source-review-v3.json",
+      "path": "/tmp/pow-audit30-retained-repair-dependency-bridge-caller-v3.test.py"
+    },
+    {
+      "field": ".inputs[10]",
+      "matches": true,
+      "owner": "/tmp/pow-audit30-independent-retained-repair-bridge-source-review-v3.json",
+      "path": "/tmp/pow-audit30-retained-repair-dependency-bridge-native-v2.json"
+    },
+    {
+      "field": ".inputs[11]",
+      "matches": true,
+      "owner": "/tmp/pow-audit30-independent-retained-repair-bridge-source-review-v3.json",
+      "path": "/tmp/pow-audit30-retained-repair-dependency-bridge-native-v2.stderr"
+    },
+    {
+      "field": ".preparation",
+      "matches": true,
+      "owner": "/tmp/pow-audit30-independent-retained-repair-bridge-source-review-v3.json",
+      "path": "/tmp/pow-audit30-retained-repair-dependency-bridge-source-preparation-v3.json"
+    },
+    {
+      "basis": "immutable Action63 raw custody binding; file not reread",
+      "field": ".bindings.actualOct3FullRead",
+      "matches": true,
+      "owner": "/tmp/pow-audit30-coupled-pin-checker-local-preparation-v5.json",
+      "path": "/tmp/pow-audit30-oct3-full-read-native-102500-v1.stdout"
+    },
+    {
+      "basis": "immutable Action63 raw custody binding; file not reread",
+      "field": ".bindings.actualOct3RestorePlan",
+      "matches": true,
+      "owner": "/tmp/pow-audit30-coupled-pin-checker-local-preparation-v5.json",
+      "path": "/tmp/pow-audit30-oct3-logical-restore-plan-v1.json"
+    },
+    {
+      "basis": "immutable Action63 raw custody binding; file not reread",
+      "field": ".bindings.actualTimerRegressionSource",
+      "matches": true,
+      "owner": "/tmp/pow-audit30-coupled-pin-checker-local-preparation-v5.json",
+      "path": "/tmp/pow-audit30-oct2-full-read-current-context-native-v2.stdout"
+    },
+    {
+      "basis": "immutable Action63 raw custody binding; file not reread",
+      "field": ".bindings.callerV4",
+      "matches": true,
+      "owner": "/tmp/pow-audit30-coupled-pin-checker-local-preparation-v5.json",
+      "path": "/tmp/pow-audit30-coupled-pin-checker-promotion-v4.py"
+    },
+    {
+      "field": ".bindings.callerV5",
+      "matches": true,
+      "owner": "/tmp/pow-audit30-coupled-pin-checker-local-preparation-v5.json",
+      "path": "/tmp/pow-audit30-coupled-pin-checker-promotion-v5.py"
+    },
+    {
+      "field": ".bindings.callerV5Diff",
+      "matches": true,
+      "owner": "/tmp/pow-audit30-coupled-pin-checker-local-preparation-v5.json",
+      "path": "/tmp/pow-audit30-coupled-pin-checker-promotion-v5.diff"
+    },
+    {
+      "field": ".bindings.callerV5Tests",
+      "matches": true,
+      "owner": "/tmp/pow-audit30-coupled-pin-checker-local-preparation-v5.json",
+      "path": "/tmp/pow-audit30-coupled-pin-checker-promotion-v5.test.py"
+    },
+    {
+      "basis": "immutable Action63 raw custody binding; file not reread",
+      "field": ".bindings.checkerOct2CandidateHistorical",
+      "matches": true,
+      "owner": "/tmp/pow-audit30-coupled-pin-checker-local-preparation-v5.json",
+      "path": "/tmp/pow-audit30-retention-protection-oct2-candidate-v1.py"
+    },
+    {
+      "field": ".bindings.checkerOct3Candidate",
+      "matches": true,
+      "owner": "/tmp/pow-audit30-coupled-pin-checker-local-preparation-v5.json",
+      "path": "/tmp/pow-audit30-retention-protection-oct3-candidate-v1.py"
+    },
+    {
+      "field": ".bindings.initialFixtureCheckpoint",
+      "matches": true,
+      "owner": "/tmp/pow-audit30-coupled-pin-checker-local-preparation-v5.json",
+      "path": "/tmp/pow-audit30-coupled-pin-checker-promotion-v5-initial-fixture-refusal-v1.json"
+    },
+    {
+      "field": ".bindings.initialFixturePreserved",
+      "matches": true,
+      "owner": "/tmp/pow-audit30-coupled-pin-checker-local-preparation-v5.json",
+      "path": "/tmp/pow-audit30-coupled-pin-checker-promotion-v5.initial-test-draft.py"
+    },
+    {
+      "basis": "immutable Action63 raw custody binding; file not reread",
+      "field": ".bindings.planTemplateV4",
+      "matches": true,
+      "owner": "/tmp/pow-audit30-coupled-pin-checker-local-preparation-v5.json",
+      "path": "/tmp/pow-audit30-coupled-pin-checker-promotion-plan-template-v4.json"
+    },
+    {
+      "field": ".bindings.planTemplateV5",
+      "matches": true,
+      "owner": "/tmp/pow-audit30-coupled-pin-checker-local-preparation-v5.json",
+      "path": "/tmp/pow-audit30-coupled-pin-checker-promotion-plan-template-v5.json"
+    },
+    {
+      "field": ".authorPreparation",
+      "matches": true,
+      "owner": "/tmp/pow-audit30-independent-coupled-pin-checker-source-review-v5.json",
+      "path": "/tmp/pow-audit30-coupled-pin-checker-local-preparation-v5.json"
+    },
+    {
+      "basis": "immutable Action63 raw custody binding; file not reread",
+      "field": ".inputs.actualOct3FullRead",
+      "matches": true,
+      "owner": "/tmp/pow-audit30-independent-coupled-pin-checker-source-review-v5.json",
+      "path": "/tmp/pow-audit30-oct3-full-read-native-102500-v1.stdout"
+    },
+    {
+      "basis": "immutable Action63 raw custody binding; file not reread",
+      "field": ".inputs.actualOct3RestorePlan",
+      "matches": true,
+      "owner": "/tmp/pow-audit30-independent-coupled-pin-checker-source-review-v5.json",
+      "path": "/tmp/pow-audit30-oct3-logical-restore-plan-v1.json"
+    },
+    {
+      "basis": "immutable Action63 raw custody binding; file not reread",
+      "field": ".inputs.actualTimerRegressionSource",
+      "matches": true,
+      "owner": "/tmp/pow-audit30-independent-coupled-pin-checker-source-review-v5.json",
+      "path": "/tmp/pow-audit30-oct2-full-read-current-context-native-v2.stdout"
+    },
+    {
+      "basis": "immutable Action63 raw custody binding; file not reread",
+      "field": ".inputs.callerV4",
+      "matches": true,
+      "owner": "/tmp/pow-audit30-independent-coupled-pin-checker-source-review-v5.json",
+      "path": "/tmp/pow-audit30-coupled-pin-checker-promotion-v4.py"
+    },
+    {
+      "field": ".inputs.callerV5",
+      "matches": true,
+      "owner": "/tmp/pow-audit30-independent-coupled-pin-checker-source-review-v5.json",
+      "path": "/tmp/pow-audit30-coupled-pin-checker-promotion-v5.py"
+    },
+    {
+      "field": ".inputs.callerV5Diff",
+      "matches": true,
+      "owner": "/tmp/pow-audit30-independent-coupled-pin-checker-source-review-v5.json",
+      "path": "/tmp/pow-audit30-coupled-pin-checker-promotion-v5.diff"
+    },
+    {
+      "field": ".inputs.callerV5Tests",
+      "matches": true,
+      "owner": "/tmp/pow-audit30-independent-coupled-pin-checker-source-review-v5.json",
+      "path": "/tmp/pow-audit30-coupled-pin-checker-promotion-v5.test.py"
+    },
+    {
+      "basis": "immutable Action63 raw custody binding; file not reread",
+      "field": ".inputs.checkerOct2CandidateHistorical",
+      "matches": true,
+      "owner": "/tmp/pow-audit30-independent-coupled-pin-checker-source-review-v5.json",
+      "path": "/tmp/pow-audit30-retention-protection-oct2-candidate-v1.py"
+    },
+    {
+      "field": ".inputs.checkerOct3Candidate",
+      "matches": true,
+      "owner": "/tmp/pow-audit30-independent-coupled-pin-checker-source-review-v5.json",
+      "path": "/tmp/pow-audit30-retention-protection-oct3-candidate-v1.py"
+    },
+    {
+      "field": ".inputs.initialFixtureCheckpoint",
+      "matches": true,
+      "owner": "/tmp/pow-audit30-independent-coupled-pin-checker-source-review-v5.json",
+      "path": "/tmp/pow-audit30-coupled-pin-checker-promotion-v5-initial-fixture-refusal-v1.json"
+    },
+    {
+      "field": ".inputs.initialFixturePreserved",
+      "matches": true,
+      "owner": "/tmp/pow-audit30-independent-coupled-pin-checker-source-review-v5.json",
+      "path": "/tmp/pow-audit30-coupled-pin-checker-promotion-v5.initial-test-draft.py"
+    },
+    {
+      "basis": "immutable Action63 raw custody binding; file not reread",
+      "field": ".inputs.planTemplateV4",
+      "matches": true,
+      "owner": "/tmp/pow-audit30-independent-coupled-pin-checker-source-review-v5.json",
+      "path": "/tmp/pow-audit30-coupled-pin-checker-promotion-plan-template-v4.json"
+    },
+    {
+      "field": ".inputs.planTemplateV5",
+      "matches": true,
+      "owner": "/tmp/pow-audit30-independent-coupled-pin-checker-source-review-v5.json",
+      "path": "/tmp/pow-audit30-coupled-pin-checker-promotion-plan-template-v5.json"
+    },
+    {
+      "field": ".independentPeer",
+      "matches": true,
+      "owner": "/tmp/pow-audit30-coupled-pin-checker-v5-source-only-handoff-v1.json",
+      "path": "/tmp/pow-audit30-independent-coupled-pin-checker-source-review-v5.json"
+    },
+    {
+      "field": ".preparation",
+      "matches": true,
+      "owner": "/tmp/pow-audit30-coupled-pin-checker-v5-source-only-handoff-v1.json",
+      "path": "/tmp/pow-audit30-coupled-pin-checker-local-preparation-v5.json"
+    },
+    {
+      "field": ".bindings.coupledNullTemplate",
+      "matches": true,
+      "owner": "/tmp/pow-audit30-promotion-full-read-local-preparation-v1.json",
+      "path": "/tmp/pow-audit30-coupled-pin-checker-promotion-plan-template-v5.json"
+    },
+    {
+      "field": ".bindings.coupledV5",
+      "matches": true,
+      "owner": "/tmp/pow-audit30-promotion-full-read-local-preparation-v1.json",
+      "path": "/tmp/pow-audit30-coupled-pin-checker-promotion-v5.py"
+    },
+    {
+      "field": ".bindings.diff",
+      "matches": true,
+      "owner": "/tmp/pow-audit30-promotion-full-read-local-preparation-v1.json",
+      "path": "/tmp/pow-audit30-promotion-full-read-native-v1.diff"
+    },
+    {
+      "basis": "immutable Action63 raw custody binding; file not reread",
+      "field": ".bindings.historicalFullReadResult",
+      "matches": true,
+      "owner": "/tmp/pow-audit30-promotion-full-read-local-preparation-v1.json",
+      "path": "/tmp/pow-audit30-oct3-full-read-native-102500-v1.stdout"
+    },
+    {
+      "field": ".bindings.native",
+      "matches": true,
+      "owner": "/tmp/pow-audit30-promotion-full-read-local-preparation-v1.json",
+      "path": "/tmp/pow-audit30-promotion-full-read-native-v1.py"
+    },
+    {
+      "field": ".bindings.nullTemplate",
+      "matches": true,
+      "owner": "/tmp/pow-audit30-promotion-full-read-local-preparation-v1.json",
+      "path": "/tmp/pow-audit30-promotion-full-read-request-template-v1.json"
+    },
+    {
+      "basis": "immutable Action63 raw custody binding; file not reread",
+      "field": ".bindings.originalNative",
+      "matches": true,
+      "owner": "/tmp/pow-audit30-promotion-full-read-local-preparation-v1.json",
+      "path": "/tmp/pow-audit30-oct3-full-read-native-v1.py"
+    },
+    {
+      "basis": "immutable Action63 raw custody binding; file not reread",
+      "field": ".bindings.originalTemplate",
+      "matches": true,
+      "owner": "/tmp/pow-audit30-promotion-full-read-local-preparation-v1.json",
+      "path": "/tmp/pow-audit30-oct3-full-read-request-template-v1.json"
+    },
+    {
+      "basis": "immutable Action63 raw custody binding; file not reread",
+      "field": ".bindings.sharedTransport",
+      "matches": true,
+      "owner": "/tmp/pow-audit30-promotion-full-read-local-preparation-v1.json",
+      "path": "/tmp/pow-audit30-readonly-owned-transport-v3.py"
+    },
+    {
+      "field": ".bindings.tests",
+      "matches": true,
+      "owner": "/tmp/pow-audit30-promotion-full-read-local-preparation-v1.json",
+      "path": "/tmp/pow-audit30-promotion-full-read-native-v1.test.py"
+    },
+    {
+      "basis": "immutable Action63 raw custody binding; file not reread",
+      "field": ".bindings.unchangedLeaf",
+      "matches": true,
+      "owner": "/tmp/pow-audit30-promotion-full-read-local-preparation-v1.json",
+      "path": "/tmp/pow-audit30-oct3-latest-backup-full-read-v1.py"
+    },
+    {
+      "basis": "immutable Action63 raw custody binding; file not reread",
+      "field": ".futureTransport.source",
+      "matches": true,
+      "owner": "/tmp/pow-audit30-promotion-full-read-local-preparation-v1.json",
+      "path": "/tmp/pow-audit30-readonly-owned-transport-v3.py"
+    },
+    {
+      "field": ".inputs.coupledNullTemplate",
+      "matches": true,
+      "owner": "/tmp/pow-audit30-independent-promotion-full-read-source-review-v1.json",
+      "path": "/tmp/pow-audit30-coupled-pin-checker-promotion-plan-template-v5.json"
+    },
+    {
+      "field": ".inputs.coupledV5",
+      "matches": true,
+      "owner": "/tmp/pow-audit30-independent-promotion-full-read-source-review-v1.json",
+      "path": "/tmp/pow-audit30-coupled-pin-checker-promotion-v5.py"
+    },
+    {
+      "field": ".inputs.diff",
+      "matches": true,
+      "owner": "/tmp/pow-audit30-independent-promotion-full-read-source-review-v1.json",
+      "path": "/tmp/pow-audit30-promotion-full-read-native-v1.diff"
+    },
+    {
+      "basis": "immutable Action63 raw custody binding; file not reread",
+      "field": ".inputs.historicalFullReadResult",
+      "matches": true,
+      "owner": "/tmp/pow-audit30-independent-promotion-full-read-source-review-v1.json",
+      "path": "/tmp/pow-audit30-oct3-full-read-native-102500-v1.stdout"
+    },
+    {
+      "field": ".inputs.native",
+      "matches": true,
+      "owner": "/tmp/pow-audit30-independent-promotion-full-read-source-review-v1.json",
+      "path": "/tmp/pow-audit30-promotion-full-read-native-v1.py"
+    },
+    {
+      "field": ".inputs.nullTemplate",
+      "matches": true,
+      "owner": "/tmp/pow-audit30-independent-promotion-full-read-source-review-v1.json",
+      "path": "/tmp/pow-audit30-promotion-full-read-request-template-v1.json"
+    },
+    {
+      "basis": "immutable Action63 raw custody binding; file not reread",
+      "field": ".inputs.originalNative",
+      "matches": true,
+      "owner": "/tmp/pow-audit30-independent-promotion-full-read-source-review-v1.json",
+      "path": "/tmp/pow-audit30-oct3-full-read-native-v1.py"
+    },
+    {
+      "basis": "immutable Action63 raw custody binding; file not reread",
+      "field": ".inputs.originalTemplate",
+      "matches": true,
+      "owner": "/tmp/pow-audit30-independent-promotion-full-read-source-review-v1.json",
+      "path": "/tmp/pow-audit30-oct3-full-read-request-template-v1.json"
+    },
+    {
+      "basis": "immutable Action63 raw custody binding; file not reread",
+      "field": ".inputs.sharedTransport",
+      "matches": true,
+      "owner": "/tmp/pow-audit30-independent-promotion-full-read-source-review-v1.json",
+      "path": "/tmp/pow-audit30-readonly-owned-transport-v3.py"
+    },
+    {
+      "field": ".inputs.tests",
+      "matches": true,
+      "owner": "/tmp/pow-audit30-independent-promotion-full-read-source-review-v1.json",
+      "path": "/tmp/pow-audit30-promotion-full-read-native-v1.test.py"
+    },
+    {
+      "basis": "immutable Action63 raw custody binding; file not reread",
+      "field": ".inputs.unchangedLeaf",
+      "matches": true,
+      "owner": "/tmp/pow-audit30-independent-promotion-full-read-source-review-v1.json",
+      "path": "/tmp/pow-audit30-oct3-latest-backup-full-read-v1.py"
+    },
+    {
+      "field": ".preparation",
+      "matches": true,
+      "owner": "/tmp/pow-audit30-independent-promotion-full-read-source-review-v1.json",
+      "path": "/tmp/pow-audit30-promotion-full-read-local-preparation-v1.json"
+    },
+    {
+      "field": ".fileBindings[0]",
+      "matches": true,
+      "owner": "/tmp/pow-audit30-root-source-only-recovery-capacity-and-bridge-review-v1.json",
+      "path": "/tmp/pow-audit30-recovery-controller-capacity-v3.py"
+    },
+    {
+      "field": ".fileBindings[1]",
+      "matches": true,
+      "owner": "/tmp/pow-audit30-root-source-only-recovery-capacity-and-bridge-review-v1.json",
+      "path": "/tmp/pow-audit30-recovery-controller-capacity-v3.diff"
+    },
+    {
+      "field": ".fileBindings[2]",
+      "matches": true,
+      "owner": "/tmp/pow-audit30-root-source-only-recovery-capacity-and-bridge-review-v1.json",
+      "path": "/tmp/pow-audit30-recovery-controller-capacity-v3-local-preparation-v1.json"
+    },
+    {
+      "field": ".fileBindings[3]",
+      "matches": true,
+      "owner": "/tmp/pow-audit30-root-source-only-recovery-capacity-and-bridge-review-v1.json",
+      "path": "/tmp/pow-audit30-independent-recovery-capacity-source-review-v3.json"
+    },
+    {
+      "field": ".fileBindings[4]",
+      "matches": true,
+      "owner": "/tmp/pow-audit30-root-source-only-recovery-capacity-and-bridge-review-v1.json",
+      "path": "/tmp/pow-audit30-retained-repair-dependency-bridge-v2.py"
+    },
+    {
+      "field": ".fileBindings[5]",
+      "matches": true,
+      "owner": "/tmp/pow-audit30-root-source-only-recovery-capacity-and-bridge-review-v1.json",
+      "path": "/tmp/pow-audit30-independent-retained-repair-dependency-bridge-source-review-v2.json"
+    },
+    {
+      "field": ".captures.stderr",
+      "matches": true,
+      "owner": "/tmp/pow-audit30-oct3-isolated-restore-native-104500-v1.json",
+      "path": "/tmp/pow-audit30-oct3-isolated-restore-native-104500-v1.stderr"
+    },
+    {
+      "field": ".captures.stdout",
+      "matches": true,
+      "owner": "/tmp/pow-audit30-oct3-isolated-restore-native-104500-v1.json",
+      "path": "/tmp/pow-audit30-oct3-isolated-restore-native-104500-v1.stdout"
+    },
+    {
+      "basis": "V2 exact referenced public source added and matched receipt size/SHA",
+      "field": ".sourcesAndEvidence[7]",
+      "matches": true,
+      "owner": "/tmp/pow-audit30-independent-retained-repair-dependency-bridge-source-review-v2.json",
+      "path": "/tmp/pow-audit30-retained-repair-dependency-bridge-v1.py"
+    },
+    {
+      "basis": "V2 exact referenced public source added and matched receipt size/SHA",
+      "field": ".embeddedSourceBindings[2]",
+      "matches": true,
+      "owner": "/tmp/pow-audit30-retained-repair-dependency-bridge-request-binding-v2.json",
+      "path": "/tmp/pow-audit30-retire-exact-four-v3.py"
+    },
+    {
+      "basis": "V2 exact referenced public source added and matched receipt size/SHA",
+      "field": ".embeddedSources[2]",
+      "matches": true,
+      "owner": "/tmp/pow-audit30-independent-retained-repair-request-binding-review-v2.json",
+      "path": "/tmp/pow-audit30-retire-exact-four-v3.py"
+    }
+  ],
+  "receiptBindingMismatches": [],
+  "referencedDependenciesOutsideNewInventory": [
+    {
+      "classification": "existing tracked repository dependency; outside new fixed inventory",
+      "field": ".preservedControllerV2",
+      "owner": "/tmp/pow-audit30-recovery-controller-capacity-v3-local-preparation-v1.json",
+      "path": "/home/sixer/ProofOfWork.Me/deploy/audit30/recovery/recovery-controller-v2.py"
+    },
+    {
+      "classification": "existing tracked repository dependency; outside new fixed inventory",
+      "field": ".preservedGuard26c",
+      "owner": "/tmp/pow-audit30-recovery-controller-capacity-v3-local-preparation-v1.json",
+      "path": "/home/sixer/ProofOfWork.Me/deploy/audit30/restore-latest-logical.py"
+    },
+    {
+      "classification": "existing tracked repository dependency; outside new fixed inventory",
+      "field": ".preservedProposalV2",
+      "owner": "/tmp/pow-audit30-recovery-controller-capacity-v3-local-preparation-v1.json",
+      "path": "/home/sixer/ProofOfWork.Me/deploy/audit30/recovery/PROPOSAL-v2.md"
+    },
+    {
+      "classification": "existing tracked repository dependency; outside new fixed inventory",
+      "field": ".inputs.preservedControllerV2",
+      "owner": "/tmp/pow-audit30-independent-recovery-capacity-source-review-v3.json",
+      "path": "/home/sixer/ProofOfWork.Me/deploy/audit30/recovery/recovery-controller-v2.py"
+    },
+    {
+      "classification": "existing tracked repository dependency; outside new fixed inventory",
+      "field": ".inputs.preservedGuard26c",
+      "owner": "/tmp/pow-audit30-independent-recovery-capacity-source-review-v3.json",
+      "path": "/home/sixer/ProofOfWork.Me/deploy/audit30/restore-latest-logical.py"
+    },
+    {
+      "classification": "existing tracked repository dependency; outside new fixed inventory",
+      "field": ".inputs.preservedProposalV2",
+      "owner": "/tmp/pow-audit30-independent-recovery-capacity-source-review-v3.json",
+      "path": "/home/sixer/ProofOfWork.Me/deploy/audit30/recovery/PROPOSAL-v2.md"
+    },
+    {
+      "classification": "existing tracked repository dependency; outside new fixed inventory",
+      "field": ".bindings.installHelper",
+      "owner": "/tmp/pow-audit30-coupled-pin-checker-local-preparation-v5.json",
+      "path": "/home/sixer/ProofOfWork.Me/deploy/audit30/install-retention.py"
+    },
+    {
+      "classification": "existing tracked repository dependency; outside new fixed inventory",
+      "field": ".bindings.originalCheckerSource",
+      "owner": "/tmp/pow-audit30-coupled-pin-checker-local-preparation-v5.json",
+      "path": "/home/sixer/ProofOfWork.Me/scripts/check-retention-protection.py"
+    },
+    {
+      "classification": "existing tracked repository dependency; outside new fixed inventory",
+      "field": ".inputs.installHelper",
+      "owner": "/tmp/pow-audit30-independent-coupled-pin-checker-source-review-v5.json",
+      "path": "/home/sixer/ProofOfWork.Me/deploy/audit30/install-retention.py"
+    },
+    {
+      "classification": "existing tracked repository dependency; outside new fixed inventory",
+      "field": ".inputs.originalCheckerSource",
+      "owner": "/tmp/pow-audit30-independent-coupled-pin-checker-source-review-v5.json",
+      "path": "/home/sixer/ProofOfWork.Me/scripts/check-retention-protection.py"
+    }
+  ],
+  "restoreQualification": "Updated parent observation reports actual Oct3 restore return exit0 at11:32:09.796896 with exact public captures. Inventory is not root/peer acceptance, post-stop certification, PITR/physical-production assurance or final promotion/deletion approval.",
+  "schema": "pow-audit30-action64-fixed-public-inventory-v2",
+  "selection": "Explicit filename lists only. No wildcard includes; no private contents read or native execution. Additional entries require new explicit inventory version. V2 adds only two exact public predecessor/embedded-source paths already named and hash-bound by the selected bridge receipts; no directory or wildcard expansion.",
+  "totalExistingBytes": 992534
+}

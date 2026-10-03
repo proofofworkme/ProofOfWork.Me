@@ -1,0 +1,28 @@
+{
+  "atUtc": "2026-10-03T11:35:47.898091+00:00",
+  "bridge": {
+    "exactOperationalDelta": "stdin subprocess.DEVNULL to fd0 after verified input EOF; closed schema suffixes and explanatory comments",
+    "independentPeerSha256": "9e35368d2dc607fc272c69bf78b053eda2d08eba4932cb5df3ebe708ace757b5",
+    "reverseEditByteEqualsV2": true,
+    "rootTests": {
+      "bridge": 35,
+      "caller": 6,
+      "callerSeconds": 0.104,
+      "passed": true,
+      "seconds": 0.893
+    },
+    "sourceSha256": "e821dec229bb409c4b90a93a8a17db21722af520362862826b2ec388766e76f2"
+  },
+  "nativeExecutedByThisReview": false,
+  "productionMutation": false,
+  "promotionFreshRead": {
+    "all26FunctionClassASTsUnchanged": true,
+    "independentPeerSha256": "e828fa397f74d582895bdc7bcbf43276f122adfb8e36f263c8032a458da4cfbc",
+    "rootTests": 38,
+    "seconds": 0.214,
+    "sourceSha256": "d07cb8d37eb2920578a2db009030b79ab27100345258e5b72f341f3d88ed54e8"
+  },
+  "retirementAuthorized": false,
+  "schema": "pow-audit30-root-bridge-v3-and-promotion-full-read-source-review-v1",
+  "templatesUnbound": true
+}

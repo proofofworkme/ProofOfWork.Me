@@ -1,0 +1,23 @@
+{
+  "actualContextAtUtc": "2026-10-03T11:37:34.215426+00:00",
+  "actualContextStdoutSha256": "6915ba8a73a823fa648b49054760778723a36a3a7e5455bc5f8f027374f186d3",
+  "allDependenciesClosed": false,
+  "atUtc": "2026-10-03T11:38:09.746556+00:00",
+  "bridgeSourcePeerSha256": "9e35368d2dc607fc272c69bf78b053eda2d08eba4932cb5df3ebe708ace757b5",
+  "bridgeSourceSha256": "e821dec229bb409c4b90a93a8a17db21722af520362862826b2ec388766e76f2",
+  "closedV3DecodePassed": true,
+  "deletionAuthorized": false,
+  "nativeExecuted": false,
+  "nullTemplateSha256": "3af2bdd9dad6d22915b5eb0120263b2e82b18e97b9227cf2dc1ea3048e2e8348",
+  "onlyTemplateFieldsFilled": [
+    "expectedLive",
+    "expectedProtection"
+  ],
+  "productionMutation": false,
+  "request": {
+    "bytes": 105682,
+    "path": "/tmp/pow-audit30-retained-repair-dependency-bridge-request-v3.json",
+    "sha256": "f73c32dd5d7b62ea614720cef32a69564967b060527925769b338e611f19d86c"
+  },
+  "schema": "pow-audit30-root-retained-repair-v3-request-binding-v1"
+}

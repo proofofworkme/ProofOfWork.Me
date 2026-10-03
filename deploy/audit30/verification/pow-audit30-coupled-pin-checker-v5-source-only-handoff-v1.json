@@ -1,0 +1,32 @@
+{
+  "atUtc": "2026-10-03T11:18:21.062972+00:00",
+  "checkerInstalled": false,
+  "independentPeer": {
+    "bytes": 6560,
+    "path": "/tmp/pow-audit30-independent-coupled-pin-checker-source-review-v5.json",
+    "reportedSeconds": 0.908,
+    "sha256": "ba335df9cc96c2f1dd67263de9cf40e2db00178363a72fcab18fd1f5214350ea",
+    "tests": 36
+  },
+  "nativeActionPerformed": false,
+  "nativeRequestPrepared": false,
+  "pinChanged": false,
+  "preparation": {
+    "bytes": 9164,
+    "path": "/tmp/pow-audit30-coupled-pin-checker-local-preparation-v5.json",
+    "sha256": "a3d76da246ed927e28e76a8695ff533cdd8fb9f54f29c81aebaa941cfa466957"
+  },
+  "productionOrRecoveryOrDeletionAuthority": false,
+  "qualification": "Accepted Oct3 content/catalog and exact6f870 plan are retained source authority; current104500 completion absent from this handoff. Four new restore raw receipts/metadata, chosen-action fresh backup/fullcatalog/units/installed/static/locks and human approval are still required. No historical Oct2 restore equivalence substituted.",
+  "repoEdited": false,
+  "retirementPlanPrepared": false,
+  "schema": "pow-audit30-coupled-pin-checker-v5-source-only-handoff-v1",
+  "status": "source-only-independent-peer-accepted-template-unbound",
+  "template": {
+    "executable": false,
+    "finalHumanApprovalBound": false,
+    "path": "/tmp/pow-audit30-coupled-pin-checker-promotion-plan-template-v5.json",
+    "restoreEquivalenceBound": false,
+    "sha256": "4d06401c5458163c5d237db25139b6a980b09ba9e96897bd403afe39588569c7"
+  }
+}

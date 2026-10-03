@@ -1,0 +1,31 @@
+{
+  "actualStdoutSha256": "3a53ab1325bf9110445da746452a24865e6069fa9e7fdbe0e28b09af2f1574ba",
+  "nativeAction": false,
+  "qualification": "Mocked systemctl/public-file endpoint behavior only, using actual completed public values. No native observation/control/read or producer evidence changed.",
+  "recommendedCorrection": "For not-found require exact inactive/dead/MainPID0/InvocationIDempty/ControlGroupempty; retain preserved actual managed outcome as historical Invocation/result authority.",
+  "schema": "pow-audit30-oct3-poststop-gc-shape-source-only-repro-v1",
+  "source": {
+    "bytes": 6398,
+    "path": "/tmp/pow-audit30-oct3-restore-poststop-observer-v1.py",
+    "sha256": "67ec1992aeb6f2f5fcc4ab488ef90e99d74f728c4bd728ac15afdc1b445fa315"
+  },
+  "vectors": [
+    {
+      "accepted": true,
+      "garbageCollected": true,
+      "status": "passed-fixed-poststop-observation",
+      "vector": "valid-gc"
+    },
+    {
+      "accepted": true,
+      "garbageCollected": true,
+      "status": "passed-fixed-poststop-observation",
+      "vector": "invalid-gc-shape"
+    },
+    {
+      "accepted": false,
+      "reason": "OWNED_INVOCATION_RESULT",
+      "vector": "loaded-wrong-invocation"
+    }
+  ]
+}

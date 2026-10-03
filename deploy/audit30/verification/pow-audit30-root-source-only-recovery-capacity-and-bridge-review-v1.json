@@ -1,0 +1,83 @@
+{
+  "additionalDeletionPerformed": false,
+  "atUtc": "2026-10-03T11:07:18.159236+00:00",
+  "capacityTwoEditReversalByteEqualsB16": true,
+  "fileBindings": [
+    {
+      "bytes": 30266,
+      "path": "/tmp/pow-audit30-recovery-controller-capacity-v3.py",
+      "sha256": "40a44c52f13f90a764287c689d5d175d8b5fd895131a624f74cd06dfcd3f9e80"
+    },
+    {
+      "bytes": 1325,
+      "path": "/tmp/pow-audit30-recovery-controller-capacity-v3.diff",
+      "sha256": "ba18222ac5997d483e09ac8d1d55f176a169741a4ff2fbbf5aad58d343725a1e"
+    },
+    {
+      "bytes": 7157,
+      "path": "/tmp/pow-audit30-recovery-controller-capacity-v3-local-preparation-v1.json",
+      "sha256": "9da0bfbea9533245c67f3c14d74cf7c222db2060d004c244f4d66a2e6b2f3621"
+    },
+    {
+      "bytes": 5532,
+      "path": "/tmp/pow-audit30-independent-recovery-capacity-source-review-v3.json",
+      "sha256": "ec25b1721666e3947825e006c4f7c107e68c75709d3bd2e1ebed3fc8c78f751c"
+    },
+    {
+      "bytes": 16890,
+      "path": "/tmp/pow-audit30-retained-repair-dependency-bridge-v2.py",
+      "sha256": "75643490cfb52f800b73dc0aa38fdcbb7e74dbbc0ab8f811733d946fefb6ff4e"
+    },
+    {
+      "bytes": 3861,
+      "path": "/tmp/pow-audit30-independent-retained-repair-dependency-bridge-source-review-v2.json",
+      "sha256": "de4eaac81a79d85f1c90a1dddca5540bcb0b727d83fa08394035879e2f91ed84"
+    }
+  ],
+  "fullBridgeOperativeSourceRead": true,
+  "nativeExecuted": false,
+  "onlyChangedFunction": "storage",
+  "productionRepairPerformed": false,
+  "qualifications": [
+    "V3 admission requires293GiB under unchanged80+80+32+1+100 envelope; current capacity refuses only in an offline test, no native activation was attempted.",
+    "Private80 constant reserves initial capacity; it neither implements a private recovery quota nor proves future recovery or continuous/future storage exclusion.",
+    "Bridge observes only fixed retained repair files and172 installed dependencies if later admitted; no fresh runtime request/native result or global dependency closure is claimed.",
+    "Final recovery/promotion/additional deletion and production-data approvals remain reserved; old source/proposal/failures preserved."
+  ],
+  "recoveryConfigurationActivated": false,
+  "restoreCompletedAccepted": false,
+  "rootEarlierThisTurnBridgeOfflineTests": {
+    "bridgeCases": 30,
+    "callerCases": 6,
+    "passed": true,
+    "qualification": "Tool-returned local unittest summaries; source-only, no native context/request/run."
+  },
+  "rootOfflineNewCapacityTests": [
+    {
+      "cases": 14,
+      "exitCode": 0,
+      "path": "/tmp/pow-audit30-recovery-controller-capacity-v3.test.py",
+      "seconds": 0.16685320698888972,
+      "sourceSha256": "96efd3a57f643ee406ebe116aec6aa5cb9faef877bac23f04d4b9eac8d3da3a2",
+      "startedAtUtc": "2026-10-03T11:07:17.642746+00:00",
+      "stderrSha256": "2000499d9ae498d46cfd2c697264dc8ad198bdc30b71cba5fca9cecb2f0e494f",
+      "stderrText": "..............\n----------------------------------------------------------------------\nRan 14 tests in 0.060s\n\nOK\n",
+      "stdoutBytes": 0,
+      "stdoutSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "cases": 22,
+      "exitCode": 0,
+      "path": "/tmp/pow-audit30-recovery-controller-capacity-v3.original-fixtures-v2.test.py",
+      "seconds": 0.3493240980315022,
+      "sourceSha256": "426907f9fd1a9f67e3c4173304d7d1a96c825db0d1204e2395593b55e66bdeae",
+      "startedAtUtc": "2026-10-03T11:07:17.809746+00:00",
+      "stderrSha256": "21b18ddafafb76eb215073cf3c58a3049c86f819cb6f68b4d638b8389bafd3f7",
+      "stderrText": "......................\n----------------------------------------------------------------------\nRan 22 tests in 0.214s\n\nOK\n",
+      "stdoutBytes": 0,
+      "stdoutSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  ],
+  "schema": "pow-audit30-root-source-only-recovery-capacity-and-bridge-review-v1",
+  "sourceOnly": true
+}

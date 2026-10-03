@@ -1,0 +1,122 @@
+{
+  "activationApproved": false,
+  "atUtc": "2026-10-03T11:06:24.769807+00:00",
+  "capsReduced": false,
+  "deletionAuthority": false,
+  "independentTestsPassed": 36,
+  "inputs": {
+    "actualCurrentMetadataAuthority": {
+      "bytes": 2950,
+      "path": "/tmp/pow-audit30-oct3-restore-capacity-running-observation-v2.json",
+      "sha256": "f4c8da6e852661d3fe875e398071a15d22288f7144a3bd2b0b3a023531c93000"
+    },
+    "authorPreparation": {
+      "bytes": 7157,
+      "path": "/tmp/pow-audit30-recovery-controller-capacity-v3-local-preparation-v1.json",
+      "sha256": "9da0bfbea9533245c67f3c14d74cf7c222db2060d004c244f4d66a2e6b2f3621"
+    },
+    "candidate": {
+      "bytes": 30266,
+      "path": "/tmp/pow-audit30-recovery-controller-capacity-v3.py",
+      "sha256": "40a44c52f13f90a764287c689d5d175d8b5fd895131a624f74cd06dfcd3f9e80"
+    },
+    "currentBoundCapacityDelta": {
+      "bytes": 3783,
+      "path": "/tmp/pow-audit30-recovery-measured-capacity-delta-v2.json",
+      "sha256": "7dc43345ac2fd6be9334fa046cf4faf26ff239d0e11a93e3cbe44f31ae519e71"
+    },
+    "exactDiff": {
+      "bytes": 1325,
+      "path": "/tmp/pow-audit30-recovery-controller-capacity-v3.diff",
+      "sha256": "ba18222ac5997d483e09ac8d1d55f176a169741a4ff2fbbf5aad58d343725a1e"
+    },
+    "initialFixtureLocationRefusalPreserved": {
+      "bytes": 1321,
+      "path": "/tmp/pow-audit30-recovery-controller-capacity-v3.fixture-checkpoint-v1.json",
+      "sha256": "c5adf59d5c6a32f971a0e7cb35a32fb550de7a54ab97879878118c0bce512d25"
+    },
+    "initialRetargetedFixturePreserved": {
+      "bytes": 21682,
+      "path": "/tmp/pow-audit30-recovery-controller-capacity-v3.original-fixtures.test.py",
+      "sha256": "9c325ba6b8097ce4b292441acc8b2d8d03afabf472d5038e47eeb6f558ebdd20"
+    },
+    "preservedControllerV2": {
+      "bytes": 30211,
+      "path": "/home/sixer/ProofOfWork.Me/deploy/audit30/recovery/recovery-controller-v2.py",
+      "sha256": "b16ee1a596e0b33ef921dad7f8778019e906c7b1261d3d251089a21e1670acf2"
+    },
+    "preservedGuard26c": {
+      "bytes": 61051,
+      "path": "/home/sixer/ProofOfWork.Me/deploy/audit30/restore-latest-logical.py",
+      "sha256": "26c7656b2e751c6de50122c65f8af73686c2d2674bee8be86a3c5648b7fcc80e"
+    },
+    "preservedProposalV2": {
+      "bytes": 11171,
+      "path": "/home/sixer/ProofOfWork.Me/deploy/audit30/recovery/PROPOSAL-v2.md",
+      "sha256": "06598f0bb202794328a35a30a247ab8b0a12daf834c56f63786eb3c2529a4eaf"
+    }
+  },
+  "installed": false,
+  "nativePerformed": false,
+  "qualifications": [
+    "PRIVATE_RECOVERY_MAX is an admission reservation allowance only. It does not implement a private recovery operation, enforce a native private-copy quota or prove future backup/WAL/target recovery demand.",
+    "Capacity tests execute the actual storage predicate while mocking root/authority/allocation/statvfs/cluster/archive gates. This is not a native activation or refusal receipt.",
+    "Runtime polling, shutdown latency and existing measured overshoot qualifications are unchanged. Fresh action-time capacity and complete source/native/approval gates remain necessary.",
+    "No reduced caps, shared allocation, release, pin/slot/unit/configuration changes or deletion authority follow. Frozen b16,26c,proposal and original failed fixture checkpoint remain preserved."
+  ],
+  "recoveryComplete": false,
+  "repositoryEdited": false,
+  "review": {
+    "currentCapturedAvailableBytes": 259876732928,
+    "exactTwoEditReverseByteEqualsFrozenB16": true,
+    "fullTwoEditDiffReviewed": true,
+    "historicalFrozen212GiBPredicatePassesSameSnapshot": true,
+    "inadequateCapacityRefusesBeforeStorageClusterFenceAndWalInventoryCalls": true,
+    "initialAdmissionRequiredBytes": 314606354432,
+    "initialAdmissionRequiredGiB": 293,
+    "initialCompositionGiB": {
+      "base": 80,
+      "dataReserve": 100,
+      "evidence": 1,
+      "separatePrivateRecoveryAllowance": 80,
+      "walArchive": 32
+    },
+    "offline293GiBBoundaryPlusMinusOneByteVerified": true,
+    "offlineNewAdmissionRefusesCurrentCapturedSnapshot": true,
+    "onlyChangedFunction": "storage",
+    "originalFixturesRetargetOnlySourcePathAndAdjacentPlanExpectation": true,
+    "otherFunctionAndClassAstIdenticalCount": 33,
+    "realLocalSigintSigtermChildReapFailedReceiptAndLockFixturesRetained": true,
+    "runtimeBaseCeilingGiB": 80,
+    "runtimeDataReserveGiB": 100,
+    "runtimeRecoveryRootTotalCeilingGiB": 113,
+    "runtimeRootReserveGiB": 10,
+    "runtimeWalCeilingGiB": 32,
+    "unchangedReceiverContinuityCallContractVerified": true
+  },
+  "reviewer": "math_review",
+  "schema": "pow-audit30-independent-recovery-capacity-source-review-v3",
+  "status": "source-only-accepted",
+  "tests": [
+    {
+      "independentPassed": 14,
+      "independentSeconds": 0.066,
+      "invocation": "python3 -I -B -W error /tmp/pow-audit30-recovery-controller-capacity-v3.test.py",
+      "source": {
+        "bytes": 5745,
+        "path": "/tmp/pow-audit30-recovery-controller-capacity-v3.test.py",
+        "sha256": "96efd3a57f643ee406ebe116aec6aa5cb9faef877bac23f04d4b9eac8d3da3a2"
+      }
+    },
+    {
+      "independentPassed": 22,
+      "independentSeconds": 0.216,
+      "invocation": "python3 -I -B -W error /tmp/pow-audit30-recovery-controller-capacity-v3.original-fixtures-v2.test.py",
+      "source": {
+        "bytes": 21701,
+        "path": "/tmp/pow-audit30-recovery-controller-capacity-v3.original-fixtures-v2.test.py",
+        "sha256": "426907f9fd1a9f67e3c4173304d7d1a96c825db0d1204e2395593b55e66bdeae"
+      }
+    }
+  ]
+}

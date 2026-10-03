@@ -1,0 +1,25 @@
+{
+  "atUtc": "2026-10-03T11:04:43.674933+00:00",
+  "fixtureOnlyCorrection": "The controller was explicitly retargeted into/tmp, so its exact adjacent source plan is derived from Path(C.__file__).parent. Original fixture HERE denotes the repository for loading frozen26c. The new fixture corrects only this expected adjacent-plan location.",
+  "guardCredentialContractRelaxed": false,
+  "initialRetargetedFixture": {
+    "bytes": 21682,
+    "path": "/tmp/pow-audit30-recovery-controller-capacity-v3.original-fixtures.test.py",
+    "sha256": "9c325ba6b8097ce4b292441acc8b2d8d03afabf472d5038e47eeb6f558ebdd20"
+  },
+  "initialRun": {
+    "actualCorrectSourcePlan": "/tmp/reviewed-plan.json",
+    "expectedSourcePlan": "/home/sixer/ProofOfWork.Me/deploy/audit30/recovery/reviewed-plan.json",
+    "failed": 1,
+    "failedTest": "test_native_managed_credential_calls_attestor_and_rehashes",
+    "invocation": "python3 -I -B -W error /tmp/pow-audit30-recovery-controller-capacity-v3.original-fixtures.test.py",
+    "passed": 21,
+    "seconds": 0.23,
+    "tests": 22
+  },
+  "nativePerformed": false,
+  "schema": "pow-audit30-recovery-capacity-v3-retargeted-fixture-checkpoint-v1",
+  "sourceChanged": false,
+  "sourceSHA256": "40a44c52f13f90a764287c689d5d175d8b5fd895131a624f74cd06dfcd3f9e80",
+  "successClaimBeforeRerun": false
+}

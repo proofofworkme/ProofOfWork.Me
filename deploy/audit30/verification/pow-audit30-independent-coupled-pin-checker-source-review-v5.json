@@ -1,0 +1,138 @@
+{
+  "actualRestoreReceiptSupplied": false,
+  "atUtc": "2026-10-03T11:17:27.139520+00:00",
+  "authorPreparation": {
+    "bytes": 9164,
+    "path": "/tmp/pow-audit30-coupled-pin-checker-local-preparation-v5.json",
+    "sha256": "a3d76da246ed927e28e76a8695ff533cdd8fb9f54f29c81aebaa941cfa466957"
+  },
+  "deletionAuthority": false,
+  "humanApprovalCreated": false,
+  "independentTests": {
+    "command": "python3 -I -B -Werror /tmp/pow-audit30-coupled-pin-checker-promotion-v5.test.py",
+    "nativeOwnershipAndRestoreReceiptsSynthetic": true,
+    "passed": 36,
+    "seconds": 0.908
+  },
+  "inputs": {
+    "actualOct3FullRead": {
+      "bytes": 32094,
+      "path": "/tmp/pow-audit30-oct3-full-read-native-102500-v1.stdout",
+      "sha256": "db8f00d8c61aa4aa6d9ed4ad13d7a6b5b67faf160d925526f869d5859d9a1147"
+    },
+    "actualOct3RestorePlan": {
+      "bytes": 3003,
+      "path": "/tmp/pow-audit30-oct3-logical-restore-plan-v1.json",
+      "sha256": "6f87050e6b44c74cd6c6ba61fb9c8c922ba8436ee4111e31c1e8bcd3f1d8cfee"
+    },
+    "actualTimerRegressionSource": {
+      "bytes": 5210,
+      "path": "/tmp/pow-audit30-oct2-full-read-current-context-native-v2.stdout",
+      "sha256": "b72fef3b0ca4ab6e01a224f9e7d3372fecf8f738ecd757b1b0c454f0341dcae0"
+    },
+    "callerV4": {
+      "bytes": 24388,
+      "path": "/tmp/pow-audit30-coupled-pin-checker-promotion-v4.py",
+      "sha256": "22ff26dd61144d857453ec1ed6d445bdbf96b724799ed366c9df1ad418e9b745"
+    },
+    "callerV5": {
+      "bytes": 25733,
+      "path": "/tmp/pow-audit30-coupled-pin-checker-promotion-v5.py",
+      "sha256": "7e878f987524dce2583b348964032af62491ce3cabcdc49adc359b36b7fc5bd4"
+    },
+    "callerV5Diff": {
+      "bytes": 17578,
+      "path": "/tmp/pow-audit30-coupled-pin-checker-promotion-v5.diff",
+      "sha256": "f9f88193b442dab332c74012139c559ee16db46b108be836cdb7538f2ada70bb"
+    },
+    "callerV5Tests": {
+      "bytes": 24865,
+      "path": "/tmp/pow-audit30-coupled-pin-checker-promotion-v5.test.py",
+      "sha256": "93208b23e2841571657cae526502e3a8e184f7a9f862a2315a19535fa472ec2e"
+    },
+    "checkerOct2CandidateHistorical": {
+      "bytes": 20677,
+      "path": "/tmp/pow-audit30-retention-protection-oct2-candidate-v1.py",
+      "sha256": "e8e0771335c10e79a75a7671539de8597bc02dca61b0e936768ba378bc252dad"
+    },
+    "checkerOct3Candidate": {
+      "bytes": 20677,
+      "path": "/tmp/pow-audit30-retention-protection-oct3-candidate-v1.py",
+      "sha256": "f40b25f46c86541766c3e8694cf677b551fe489887dab72b4084991100d308d0"
+    },
+    "initialFixtureCheckpoint": {
+      "bytes": 766,
+      "path": "/tmp/pow-audit30-coupled-pin-checker-promotion-v5-initial-fixture-refusal-v1.json",
+      "sha256": "dfc0bb5418aaa0654125627dc8c193d8610a03585d203a74332bddb42e7ac93e"
+    },
+    "initialFixturePreserved": {
+      "bytes": 24749,
+      "path": "/tmp/pow-audit30-coupled-pin-checker-promotion-v5.initial-test-draft.py",
+      "sha256": "f392ee90350469ffadcfa178280b8987cfd726fe1e2b41e0350c7159d4738d23"
+    },
+    "installHelper": {
+      "bytes": 12913,
+      "path": "/home/sixer/ProofOfWork.Me/deploy/audit30/install-retention.py",
+      "sha256": "cd9c266e938d22949c9f0c6a48853933d9bcbb58368071b2da4027f13411eaa5"
+    },
+    "originalCheckerSource": {
+      "bytes": 20677,
+      "path": "/home/sixer/ProofOfWork.Me/scripts/check-retention-protection.py",
+      "sha256": "da5d1336ce857acc571ba0849c2b0150ef5fc6dfdacf80e65b9f1d3611c48e8a"
+    },
+    "planTemplateV4": {
+      "bytes": 2150,
+      "path": "/tmp/pow-audit30-coupled-pin-checker-promotion-plan-template-v4.json",
+      "sha256": "23a7d8d231efb60864ab596b501abadc1b477a1293917820486a804427388243"
+    },
+    "planTemplateV5": {
+      "bytes": 2391,
+      "path": "/tmp/pow-audit30-coupled-pin-checker-promotion-plan-template-v5.json",
+      "sha256": "4d06401c5458163c5d237db25139b6a980b09ba9e96897bd403afe39588569c7"
+    }
+  },
+  "nativeExecuted": false,
+  "pinOrCheckerInstalled": false,
+  "promotionApproved": false,
+  "qualifications": [
+    "Source-only acceptance does not supply the missing actual104500 completed/table parity/offline/saved fence receipts, their reviewed raw hashes/metadata, fresh full-read authority, action-time unit/static/lock observations, or direct human approval.",
+    "The earlier db8f content proof is exact historical authority; caller still requires a freshly bounded full-read receipt within900 seconds with stable current backup member identities.",
+    "The four future restore files must come from the fixed104500 source job; the completed schema/status/exact6f870 plan and role/table/amcheck/offline/stopped/live flags are mandatory. Synthetic fixture flags are not native success.",
+    "The frozen1abba consumer fixture executes only its completion-field predicate fragment with synthetic Oct3 variables. Its full loader/deletion plan remains Oct2-specific and is not admitted here.",
+    "Known18 held absences remain unresolved; no global dependency, PITR, capacity, financial, deletion or recovery authority follows. Existing pin/checker are preserved until a separately authorized concrete action."
+  ],
+  "repositoryEdited": false,
+  "reviewer": "math_review",
+  "schema": "pow-audit30-independent-coupled-pin-checker-source-review-v5",
+  "status": "source-only-accepted",
+  "verification": {
+    "actualDb8fThreeMembersAnd197TocMatch": true,
+    "all15PreparationPinsVerified": true,
+    "backupTimerFields": 6,
+    "candidateTwoLiteralReverseByteEqualsDa5d": true,
+    "changedFunctions": [
+      "validate",
+      "unit_states",
+      "state_require",
+      "backup_check",
+      "execute"
+    ],
+    "completedRequiresRestorePlanSha256": "6f87050e6b44c74cd6c6ba61fb9c8c922ba8436ee4111e31c1e8bcd3f1d8cfee",
+    "dumpBytes": 20878072656,
+    "executeOnlyCandidateBasenameChanged": true,
+    "finalHumanApprovalNull": true,
+    "fullCallerDiffPreparationTemplateAndAllTestsRead": true,
+    "futureRestoreRawHashesAndMetadataAllNull": true,
+    "knownUnknownPreimagePostimageAndSignalsPreserved": true,
+    "newSurvivor": "proof_indexer-20261003T031852Z.dumpset",
+    "otherFunctionClassAstIdenticalCount": 18,
+    "pairInverseLocksStaticMonitorAnd120SecondContractUnchanged": true,
+    "pruneTimerFields": 5,
+    "serviceFields": 6,
+    "templateActuallyRefusesValidation": true,
+    "timersOmitMainPidServicesRetainMainPid": true,
+    "tocSha256": "f4dc249de036377ec96f8f15eeff26b4ff12dd9f2f6dd8ea541847e7310eb19b",
+    "twoReplacementsIndividuallyAtomicJointAtomicityFalse": true,
+    "wireUnknownDuplicateMissingMalformedAndPlanShapeRefusalsTested": true
+  }
+}

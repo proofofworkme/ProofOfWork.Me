@@ -1,0 +1,409 @@
+{
+  "actionCount": 63,
+  "atUtc": "2026-10-03T11:39:42.791367+00:00",
+  "baseHead": "c33e83fa1659b63160615bf7adca7ef42a0d1188",
+  "baseline": [
+    {
+      "byteEqualToBase": true,
+      "bytes": 16555074,
+      "path": "audits/2026-10-02-audit30-remaining-phase-execution.evidence.json",
+      "sha256": "4555102a6352b8e98f2c26b9d6fa7bc20dc4b6e5ccabde5d714f2cf57a9a1ff1"
+    },
+    {
+      "byteEqualToBase": true,
+      "bytes": 315335,
+      "path": "deploy/audit30/verification/source-custody.json",
+      "sha256": "764ef1375625ecc98ac08cceff033f68d13fb415a2e63876bfc7ef60f605ce29"
+    },
+    {
+      "byteEqualToBase": true,
+      "bytes": 78469,
+      "path": "audits/2026-10-02-audit30-followup-tracker.md",
+      "sha256": "45c032a05eb0e2a4fc6e98c7c6d8492751a3d7906df9d844584aa24c2195ccc3"
+    }
+  ],
+  "custodyRows": 650,
+  "globalRepresentationObjectsPreservedByDraftAssertions": true,
+  "helper": {
+    "bytes": 20450,
+    "executed": false,
+    "path": "/tmp/pow-audit30-append-action64-v1.py",
+    "pythonAstParsed": true,
+    "sha256": "691ec58be195db9556fe7f31c6887906887ffaf6872044d08973d52025065d1e"
+  },
+  "inputs": [
+    {
+      "bindingMatches": true,
+      "exists": true,
+      "path": "/tmp/pow-audit30-recovery-controller-capacity-v3.py"
+    },
+    {
+      "bindingMatches": true,
+      "exists": true,
+      "path": "/tmp/pow-audit30-recovery-controller-capacity-v3.diff"
+    },
+    {
+      "bindingMatches": true,
+      "exists": true,
+      "path": "/tmp/pow-audit30-recovery-controller-capacity-v3.test.py"
+    },
+    {
+      "bindingMatches": true,
+      "exists": true,
+      "path": "/tmp/pow-audit30-recovery-controller-capacity-v3.original-fixtures.test.py"
+    },
+    {
+      "bindingMatches": true,
+      "exists": true,
+      "path": "/tmp/pow-audit30-recovery-controller-capacity-v3.original-fixtures-v2.test.py"
+    },
+    {
+      "bindingMatches": true,
+      "exists": true,
+      "path": "/tmp/pow-audit30-recovery-controller-capacity-v3.fixture-checkpoint-v1.json"
+    },
+    {
+      "bindingMatches": true,
+      "exists": true,
+      "path": "/tmp/pow-audit30-recovery-controller-capacity-v3-local-preparation-v1.json"
+    },
+    {
+      "bindingMatches": true,
+      "exists": true,
+      "path": "/tmp/pow-audit30-independent-recovery-capacity-source-review-v3.json"
+    },
+    {
+      "bindingMatches": true,
+      "exists": true,
+      "path": "/tmp/pow-audit30-oct3-restore-public-stage-metadata-v2.json"
+    },
+    {
+      "bindingMatches": true,
+      "exists": true,
+      "path": "/tmp/pow-audit30-oct3-restore-public-stage-metadata-v3.json"
+    },
+    {
+      "bindingMatches": true,
+      "exists": true,
+      "path": "/tmp/pow-audit30-retained-repair-context-transport-preparation-v1.py"
+    },
+    {
+      "bindingMatches": true,
+      "exists": true,
+      "path": "/tmp/pow-audit30-retained-repair-context-caller-v1.test.py"
+    },
+    {
+      "bindingMatches": true,
+      "exists": true,
+      "path": "/tmp/pow-audit30-retained-repair-context-caller-preparation-v1.json"
+    },
+    {
+      "bindingMatches": true,
+      "exists": true,
+      "path": "/tmp/pow-audit30-independent-retained-repair-context-caller-review-v1.json"
+    },
+    {
+      "bindingMatches": true,
+      "exists": true,
+      "path": "/tmp/pow-audit30-retained-repair-context-native-v1.json"
+    },
+    {
+      "bindingMatches": true,
+      "exists": true,
+      "path": "/tmp/pow-audit30-retained-repair-context-native-v1.stdout"
+    },
+    {
+      "bindingMatches": true,
+      "exists": true,
+      "path": "/tmp/pow-audit30-retained-repair-context-native-v1.stderr"
+    },
+    {
+      "bindingMatches": true,
+      "exists": true,
+      "path": "/tmp/pow-audit30-retained-repair-dependency-bridge-v2.py"
+    },
+    {
+      "bindingMatches": true,
+      "exists": true,
+      "path": "/tmp/pow-audit30-retained-repair-dependency-bridge-v2.test.py"
+    },
+    {
+      "bindingMatches": true,
+      "exists": true,
+      "path": "/tmp/pow-audit30-retained-repair-dependency-bridge-bootstrap-v2.py"
+    },
+    {
+      "bindingMatches": true,
+      "exists": true,
+      "path": "/tmp/pow-audit30-retained-repair-dependency-bridge-transport-preparation-v2.py"
+    },
+    {
+      "bindingMatches": true,
+      "exists": true,
+      "path": "/tmp/pow-audit30-retained-repair-dependency-bridge-caller-v2.test.py"
+    },
+    {
+      "bindingMatches": true,
+      "exists": true,
+      "path": "/tmp/pow-audit30-retained-repair-dependency-bridge-request-template-v2.json"
+    },
+    {
+      "bindingMatches": true,
+      "exists": true,
+      "path": "/tmp/pow-audit30-retained-repair-dependency-bridge-v2-source.diff"
+    },
+    {
+      "bindingMatches": true,
+      "exists": true,
+      "path": "/tmp/pow-audit30-retained-repair-dependency-bridge-v2-caller.diff"
+    },
+    {
+      "bindingMatches": true,
+      "exists": true,
+      "path": "/tmp/pow-audit30-retained-repair-dependency-bridge-source-preparation-v2.json"
+    },
+    {
+      "bindingMatches": true,
+      "exists": true,
+      "path": "/tmp/pow-audit30-independent-retained-repair-dependency-bridge-source-review-v2.json"
+    },
+    {
+      "bindingMatches": true,
+      "exists": true,
+      "path": "/tmp/pow-audit30-retained-repair-dependency-bridge-request-v2.json"
+    },
+    {
+      "bindingMatches": true,
+      "exists": true,
+      "path": "/tmp/pow-audit30-retained-repair-dependency-bridge-request-binding-v2.json"
+    },
+    {
+      "bindingMatches": true,
+      "exists": true,
+      "path": "/tmp/pow-audit30-independent-retained-repair-request-binding-review-v2.json"
+    },
+    {
+      "bindingMatches": true,
+      "exists": true,
+      "path": "/tmp/pow-audit30-root-retained-repair-bridge-once-v2.py"
+    },
+    {
+      "bindingMatches": true,
+      "exists": true,
+      "path": "/tmp/pow-audit30-retained-repair-dependency-bridge-native-v2.json"
+    },
+    {
+      "bindingMatches": true,
+      "exists": true,
+      "path": "/tmp/pow-audit30-retained-repair-dependency-bridge-native-v2.stdout"
+    },
+    {
+      "bindingMatches": true,
+      "exists": true,
+      "path": "/tmp/pow-audit30-retained-repair-dependency-bridge-native-v2.stderr"
+    },
+    {
+      "bindingMatches": true,
+      "exists": true,
+      "path": "/tmp/pow-audit30-retained-repair-dependency-bridge-v3.py"
+    },
+    {
+      "bindingMatches": true,
+      "exists": true,
+      "path": "/tmp/pow-audit30-retained-repair-dependency-bridge-v3.test.py"
+    },
+    {
+      "bindingMatches": true,
+      "exists": true,
+      "path": "/tmp/pow-audit30-retained-repair-dependency-bridge-v3.diff"
+    },
+    {
+      "bindingMatches": true,
+      "exists": true,
+      "path": "/tmp/pow-audit30-retained-repair-dependency-bridge-bootstrap-v3.py"
+    },
+    {
+      "bindingMatches": true,
+      "exists": true,
+      "path": "/tmp/pow-audit30-retained-repair-dependency-bridge-bootstrap-v3.diff"
+    },
+    {
+      "bindingMatches": true,
+      "exists": true,
+      "path": "/tmp/pow-audit30-retained-repair-dependency-bridge-transport-preparation-v3.py"
+    },
+    {
+      "bindingMatches": true,
+      "exists": true,
+      "path": "/tmp/pow-audit30-retained-repair-dependency-bridge-transport-preparation-v3.diff"
+    },
+    {
+      "bindingMatches": true,
+      "exists": true,
+      "path": "/tmp/pow-audit30-retained-repair-dependency-bridge-request-template-v3.json"
+    },
+    {
+      "bindingMatches": true,
+      "exists": true,
+      "path": "/tmp/pow-audit30-retained-repair-dependency-bridge-caller-v3.test.py"
+    },
+    {
+      "bindingMatches": true,
+      "exists": true,
+      "path": "/tmp/pow-audit30-retained-repair-dependency-bridge-source-preparation-v3.json"
+    },
+    {
+      "bindingMatches": true,
+      "exists": true,
+      "path": "/tmp/pow-audit30-independent-retained-repair-bridge-source-review-v3.json"
+    },
+    {
+      "bindingMatches": true,
+      "exists": true,
+      "path": "/tmp/pow-audit30-coupled-pin-checker-promotion-v5.py"
+    },
+    {
+      "bindingMatches": true,
+      "exists": true,
+      "path": "/tmp/pow-audit30-coupled-pin-checker-promotion-v5.test.py"
+    },
+    {
+      "bindingMatches": true,
+      "exists": true,
+      "path": "/tmp/pow-audit30-coupled-pin-checker-promotion-v5.diff"
+    },
+    {
+      "bindingMatches": true,
+      "exists": true,
+      "path": "/tmp/pow-audit30-coupled-pin-checker-promotion-v5.initial-test-draft.py"
+    },
+    {
+      "bindingMatches": true,
+      "exists": true,
+      "path": "/tmp/pow-audit30-coupled-pin-checker-promotion-v5-initial-fixture-refusal-v1.json"
+    },
+    {
+      "bindingMatches": true,
+      "exists": true,
+      "path": "/tmp/pow-audit30-coupled-pin-checker-local-preparation-v5.json"
+    },
+    {
+      "bindingMatches": true,
+      "exists": true,
+      "path": "/tmp/pow-audit30-independent-coupled-pin-checker-source-review-v5.json"
+    },
+    {
+      "bindingMatches": true,
+      "exists": true,
+      "path": "/tmp/pow-audit30-coupled-pin-checker-promotion-plan-template-v5.json"
+    },
+    {
+      "bindingMatches": true,
+      "exists": true,
+      "path": "/tmp/pow-audit30-coupled-pin-checker-v5-source-only-handoff-v1.json"
+    },
+    {
+      "bindingMatches": true,
+      "exists": true,
+      "path": "/tmp/pow-audit30-retention-protection-oct3-candidate-v1.py"
+    },
+    {
+      "bindingMatches": true,
+      "exists": true,
+      "path": "/tmp/pow-audit30-promotion-full-read-native-v1.py"
+    },
+    {
+      "bindingMatches": true,
+      "exists": true,
+      "path": "/tmp/pow-audit30-promotion-full-read-native-v1.diff"
+    },
+    {
+      "bindingMatches": true,
+      "exists": true,
+      "path": "/tmp/pow-audit30-promotion-full-read-native-v1.test.py"
+    },
+    {
+      "bindingMatches": true,
+      "exists": true,
+      "path": "/tmp/pow-audit30-promotion-full-read-request-template-v1.json"
+    },
+    {
+      "bindingMatches": true,
+      "exists": true,
+      "path": "/tmp/pow-audit30-promotion-full-read-local-preparation-v1.json"
+    },
+    {
+      "bindingMatches": true,
+      "exists": true,
+      "path": "/tmp/pow-audit30-independent-promotion-full-read-source-review-v1.json"
+    },
+    {
+      "bindingMatches": true,
+      "exists": true,
+      "path": "/tmp/pow-audit30-root-source-only-recovery-capacity-and-bridge-review-v1.json"
+    },
+    {
+      "bindingMatches": true,
+      "exists": true,
+      "path": "/tmp/pow-audit30-oct3-isolated-restore-native-104500-v1.json"
+    },
+    {
+      "bindingMatches": true,
+      "exists": true,
+      "path": "/tmp/pow-audit30-oct3-isolated-restore-native-104500-v1.stdout"
+    },
+    {
+      "bindingMatches": true,
+      "exists": true,
+      "path": "/tmp/pow-audit30-oct3-isolated-restore-native-104500-v1.stderr"
+    },
+    {
+      "bindingMatches": true,
+      "exists": true,
+      "path": "/tmp/pow-audit30-retained-repair-dependency-bridge-v1.py"
+    },
+    {
+      "bindingMatches": true,
+      "exists": true,
+      "path": "/tmp/pow-audit30-retire-exact-four-v3.py"
+    }
+  ],
+  "inventory": {
+    "allExactBindingsMatch": true,
+    "bytes": 94469,
+    "fixedArtifactCount": 67,
+    "path": "/tmp/pow-audit30-action64-fixed-public-inventory-v2.json",
+    "sha256": "eebd6404834952fe3fbce240328d46c1fb4faf6b56cf0c9ec23fd0503fa34760"
+  },
+  "nativeExecuted": false,
+  "observedHead": "c33e83fa1659b63160615bf7adca7ef42a0d1188",
+  "qualifications": [
+    "AST/data-only inspection is not an executed helper test or append acceptance.",
+    "Root must independently review and bind this exact helper and extra list before execution.",
+    "Root-reviewed acceptance mode is the semantic certification authority; the helper cannot independently infer recovery equivalence from arbitrary review JSON.",
+    "Current Oct3 return is actual; full Root/peer/current-stop acceptance remains pending until their exact receipts are supplied.",
+    "No chain/math/PITR/live physical-page/global financial/dependency or full item7 certificate."
+  ],
+  "repositoryEditedByInspector": false,
+  "requiredRootExtraList": {
+    "closedSchema": "pow-audit30-action64-extra-public-bindings-v1; exactly schema/files/acceptance; each binding exactly path/bytes/sha256/type; helper itself must be pinned",
+    "exists": false,
+    "path": "/tmp/pow-audit30-action64-extra-public-bindings-v1.json"
+  },
+  "schema": "pow-audit30-action64-preappend-source-inspection-v1",
+  "sourceInspection": {
+    "acceptanceNeedsThreeDistinctRootPeerPostStopJsonBindingsInReviewedExtraList": true,
+    "allDiffsAndNonSingleJsonChannelsLosslesslyEnveloped": true,
+    "creationOnlyPublicCopiesAndIntent": "Existing target or existing intent/receipt refuses; partial writes are retained and need explicit review; no rollback/delete/retry",
+    "defaultAcceptancePending": true,
+    "exitZeroDoesNotAutoAccept": true,
+    "fixed67InputsPlusOnlyRootExplicitExtraList": true,
+    "noPrivateOrNetworkOrNativeMethods": true,
+    "onlyRepositoryMutationsIfExecuted": "New exact public custody files plus atomic writes to execution evidence, custody manifest, appended tracker paragraph; source remains a draft and has not executed",
+    "otherItemsUnchanged": true,
+    "postCopySourcesAnd650RowsRevalidatedBeforeDocumentWrites": true,
+    "prior63Actions650RowsPreserved": true,
+    "priorApprovalMutationRequestRetirementAndGlobalRepresentationObjectsPreserved": true,
+    "priorItem7CompleteValueStoredInActionBeforeBoundedStatusUpdate": true
+  }
+}

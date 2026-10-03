@@ -1,0 +1,85 @@
+{
+  "atUtc": "2026-10-03T11:46:02.576233+00:00",
+  "bindings": {
+    "candidate": {
+      "bytes": 21392,
+      "path": "/tmp/pow-audit30-append-action64-v2.py",
+      "sha256": "ad890c8bebddfb15e4a011b0299c6c28ea6f42260e4267c7f267d407bea126a4"
+    },
+    "diff": {
+      "bytes": 1424,
+      "path": "/tmp/pow-audit30-append-action64-v2.diff",
+      "sha256": "137688a35d430a728f510cd51e9375549b57e9cd9df2b8bf9e2330d2424a7172"
+    },
+    "independentActualReview": {
+      "bytes": 10494,
+      "path": "/tmp/pow-audit30-independent-oct3-restore-actual-result-review-v1.json",
+      "sha256": "546b52deb647199cc8a3acb6642116853dc05cfcd2ecf8d1c3f14f97a1aa9612"
+    },
+    "inventory": {
+      "bytes": 94469,
+      "path": "/tmp/pow-audit30-action64-fixed-public-inventory-v2.json",
+      "sha256": "eebd6404834952fe3fbce240328d46c1fb4faf6b56cf0c9ec23fd0503fa34760"
+    },
+    "original": {
+      "bytes": 20450,
+      "path": "/tmp/pow-audit30-append-action64-v1.py",
+      "sha256": "691ec58be195db9556fe7f31c6887906887ffaf6872044d08973d52025065d1e"
+    },
+    "preinspection": {
+      "bytes": 13410,
+      "path": "/tmp/pow-audit30-action64-preappend-source-inspection-v1.json",
+      "sha256": "0bd525843af79eca68a82b726a55c2b819836af2406932e9faf1fc10b210b066"
+    },
+    "rootActualReview": {
+      "bytes": 4097,
+      "path": "/tmp/pow-audit30-root-oct3-restore-actual-acceptance-v1.json",
+      "sha256": "fbac8b76c0ce44de997c8585cd6031354fe8bcd722ee09f0b02ec94f05d6a9ba"
+    }
+  },
+  "checks": {
+    "all650PriorCustodyBytesAndGlobalDecodedEnvelopesMatch": true,
+    "all67FixedArtifactBytesAndShaMatch": true,
+    "baseHeadMatches": true,
+    "baselineActions": 63,
+    "baselineCustodyRows": 650,
+    "expectedNonSingleJsonNativeChannelEnvelopes": 4,
+    "expectedRawDiffEnvelopes": 8,
+    "expectedSingleJsonNativeChannels": 2,
+    "fixedRawArtifactBytes": 992534,
+    "fullOriginalAndCandidateSourceRead": true,
+    "oneCurrentTrackerItem7RowAndSingleExactOccurrence": true,
+    "onlyMainAstChanged": true,
+    "threeBaselineFilesByteEqualBase": true,
+    "trackedDeletions": []
+  },
+  "fakeHelperExecutionTests": 0,
+  "findings": [
+    {
+      "actualBaselineBytes": 16555074,
+      "actualEncodedPriorItem7Bytes": 1005744,
+      "file": "/tmp/pow-audit30-append-action64-v2.py",
+      "maximumReadBytes": 16777216,
+      "minimalRequiredAddedActionSerializedDocumentBytes": 17643748,
+      "minimumExceededBytes": 866532,
+      "priority": 1,
+      "reason": "Current evidence is within222142B of its16MiB read limit, but action64 duplicates the full prior item7 checkpoint; the final read refuses after document replacements. A minimal data-only serialization with only that new required field already exceeds the final guard.",
+      "requiredCorrection": "Versioned bounded bookkeeping-document read ceiling and a complete output-size check before intent/copies/replacements. Preserve V1/V2 and no helper execution before successor source review.",
+      "where": "main outputs/final read guard"
+    }
+  ],
+  "helperExecuted": false,
+  "nativeCalls": 0,
+  "qualifications": [
+    "This is source/data-only inspection, not an executed append or preservation receipt.",
+    "Root explicit reviewed extra list remains missing and must be separately byte/hash/schema and semantic reviewed before execution.",
+    "Three acceptance JSON bindings are nonempty and explicit; their semantic certification comes from Root-reviewed selection, not generic helper inference.",
+    "Only current Oct3 logical snapshot/isolated pages/stop are accepted in known Root and independent reviews. No live physical pages, universal history/math, PITR, financial completeness, dependency closure, promotion or deletion authority.",
+    "Per-document replacements are atomic; no joint bookkeeping transaction or power-loss directory durability is claimed; partial writes require explicit review."
+  ],
+  "repositoryEdits": 0,
+  "reviewer": "/root/vps_health",
+  "schema": "pow-audit30-independent-action64-helper-source-review-checkpoint-v1",
+  "sourceOnly": true,
+  "status": "source-blocked-document-size-guard"
+}

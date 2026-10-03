@@ -1,0 +1,183 @@
+{
+  "actualAuthority": {
+    "backupName": "proof_indexer-20261003T031852Z.dumpset",
+    "dumpBytes": 20878072656,
+    "oct3FullMemberContentHashesAndCatalogAccepted": true,
+    "qualification": "Observed running104500 restore and accepted content/catalog proof are distinct. Future raw completed/parity/offline/fence receipts remain missing here; no historical Oct2 success substitution.",
+    "restoreCompletedReceiptReceived": false,
+    "restoreJob": "/data/proofofwork-audit30-restore-20261003T104500Z",
+    "restorePlanSha256": "6f87050e6b44c74cd6c6ba61fb9c8c922ba8436ee4111e31c1e8bcd3f1d8cfee"
+  },
+  "atUtc": "2026-10-03T11:15:40.279162+00:00",
+  "backupOrTimerControl": false,
+  "bindings": {
+    "actualOct3FullRead": {
+      "bytes": 32094,
+      "path": "/tmp/pow-audit30-oct3-full-read-native-102500-v1.stdout",
+      "sha256": "db8f00d8c61aa4aa6d9ed4ad13d7a6b5b67faf160d925526f869d5859d9a1147"
+    },
+    "actualOct3RestorePlan": {
+      "bytes": 3003,
+      "path": "/tmp/pow-audit30-oct3-logical-restore-plan-v1.json",
+      "sha256": "6f87050e6b44c74cd6c6ba61fb9c8c922ba8436ee4111e31c1e8bcd3f1d8cfee"
+    },
+    "actualTimerRegressionSource": {
+      "bytes": 5210,
+      "path": "/tmp/pow-audit30-oct2-full-read-current-context-native-v2.stdout",
+      "sha256": "b72fef3b0ca4ab6e01a224f9e7d3372fecf8f738ecd757b1b0c454f0341dcae0"
+    },
+    "callerV4": {
+      "bytes": 24388,
+      "path": "/tmp/pow-audit30-coupled-pin-checker-promotion-v4.py",
+      "sha256": "22ff26dd61144d857453ec1ed6d445bdbf96b724799ed366c9df1ad418e9b745"
+    },
+    "callerV5": {
+      "bytes": 25733,
+      "path": "/tmp/pow-audit30-coupled-pin-checker-promotion-v5.py",
+      "sha256": "7e878f987524dce2583b348964032af62491ce3cabcdc49adc359b36b7fc5bd4"
+    },
+    "callerV5Diff": {
+      "bytes": 17578,
+      "path": "/tmp/pow-audit30-coupled-pin-checker-promotion-v5.diff",
+      "sha256": "f9f88193b442dab332c74012139c559ee16db46b108be836cdb7538f2ada70bb"
+    },
+    "callerV5Tests": {
+      "bytes": 24865,
+      "path": "/tmp/pow-audit30-coupled-pin-checker-promotion-v5.test.py",
+      "sha256": "93208b23e2841571657cae526502e3a8e184f7a9f862a2315a19535fa472ec2e"
+    },
+    "checkerOct2CandidateHistorical": {
+      "bytes": 20677,
+      "path": "/tmp/pow-audit30-retention-protection-oct2-candidate-v1.py",
+      "sha256": "e8e0771335c10e79a75a7671539de8597bc02dca61b0e936768ba378bc252dad"
+    },
+    "checkerOct3Candidate": {
+      "bytes": 20677,
+      "path": "/tmp/pow-audit30-retention-protection-oct3-candidate-v1.py",
+      "sha256": "f40b25f46c86541766c3e8694cf677b551fe489887dab72b4084991100d308d0"
+    },
+    "initialFixtureCheckpoint": {
+      "bytes": 766,
+      "path": "/tmp/pow-audit30-coupled-pin-checker-promotion-v5-initial-fixture-refusal-v1.json",
+      "sha256": "dfc0bb5418aaa0654125627dc8c193d8610a03585d203a74332bddb42e7ac93e"
+    },
+    "initialFixturePreserved": {
+      "bytes": 24749,
+      "path": "/tmp/pow-audit30-coupled-pin-checker-promotion-v5.initial-test-draft.py",
+      "sha256": "f392ee90350469ffadcfa178280b8987cfd726fe1e2b41e0350c7159d4738d23"
+    },
+    "installHelper": {
+      "bytes": 12913,
+      "path": "/home/sixer/ProofOfWork.Me/deploy/audit30/install-retention.py",
+      "sha256": "cd9c266e938d22949c9f0c6a48853933d9bcbb58368071b2da4027f13411eaa5"
+    },
+    "originalCheckerSource": {
+      "bytes": 20677,
+      "path": "/home/sixer/ProofOfWork.Me/scripts/check-retention-protection.py",
+      "sha256": "da5d1336ce857acc571ba0849c2b0150ef5fc6dfdacf80e65b9f1d3611c48e8a"
+    },
+    "planTemplateV4": {
+      "bytes": 2150,
+      "path": "/tmp/pow-audit30-coupled-pin-checker-promotion-plan-template-v4.json",
+      "sha256": "23a7d8d231efb60864ab596b501abadc1b477a1293917820486a804427388243"
+    },
+    "planTemplateV5": {
+      "bytes": 2391,
+      "path": "/tmp/pow-audit30-coupled-pin-checker-promotion-plan-template-v5.json",
+      "sha256": "4d06401c5458163c5d237db25139b6a980b09ba9e96897bd403afe39588569c7"
+    }
+  },
+  "capacityQualification": "No reduced caps, recovery activation/PITR/global/financial/evidence/dependency equivalence or deletion-ready result; measured capacity notes and later native guards remain independent.",
+  "checkerInstalled": false,
+  "consumerQualification": "The frozen retirement1abba full producer/loader bindings remain Oct2-specific. Tests execute only its completion-field predicate fragment with synthetic variables; they do not prepare or admit an executable Oct3 deletion plan.",
+  "deletionAuthorized": false,
+  "functionClassAstComparison": {
+    "changed": [
+      "backup_check",
+      "execute",
+      "state_require",
+      "unit_states",
+      "validate"
+    ],
+    "executeOnlyChange": "retention-checker-oct2.py to retention-checker-oct3.py",
+    "unchanged": [
+      "PromotionInterrupted",
+      "apply_pair",
+      "canonical",
+      "load_install",
+      "lock",
+      "main",
+      "mask_state",
+      "meta",
+      "monitor",
+      "monitor_projection",
+      "need",
+      "pairs",
+      "read",
+      "sha",
+      "stat_meta",
+      "static_check",
+      "utc",
+      "validate_human_value"
+    ],
+    "unchangedCount": 18
+  },
+  "independentPeer": "pending math_review",
+  "nativeActionPerformed": false,
+  "pinChanged": false,
+  "preserved": {
+    "failedHistoryPreserved": true,
+    "knownHeldAbsencesUnresolved": 18,
+    "oldCheckerSha256": "da5d1336ce857acc571ba0849c2b0150ef5fc6dfdacf80e65b9f1d3611c48e8a",
+    "oldOct2Candidate": true,
+    "oldPinSha256": "821b5bbfecee75ffb3c4565d3867eb62ac33e65eeb83c0e603c08aa478ff957b",
+    "oldRestoreControllerAndProposalUnchanged": true,
+    "oldV4SourceAndTemplate": true
+  },
+  "productionConfigurationMutation": false,
+  "repoEdited": false,
+  "requiredBeforeNative": [
+    "Actual complete104500 restore with four exact rawSHA/metadata pins, completed.planSHA exactly6f870, original passed role/table/amcheck/offline/stopped/live flags; full source custody and any additional needed restore review remain separate.",
+    "Fresh bounded Oct3 all-three content rehash/197 catalog proof within900seconds at chosen action; original accepted10:32db8f is historical content authority and not a future freshness assertion.",
+    "Fresh actual installed old pin/checker identities, static six hashes/metadata, exact prune mask/WAL and all ten per-unit states; fresh five at chosen action, postcutover identities only if the action follows cutover.",
+    "Exact ops/backup lock metadata/FD/path fence and original backup clear-window protections; restrictive immutable package ancestry/root plan/source guards.",
+    "Direct human approval closed schema/raw source-message/caller/scope pins after concrete final result review; no approval receipt is created here."
+  ],
+  "schema": "pow-audit30-coupled-pin-checker-source-preparation-v5",
+  "scope": "Two exact future replacements: Sep29 pin to actual Oct3 survivor and da5d checker to f40b two-literal candidate. No native package/request, installation or promotion.",
+  "sourceChanges": [
+    "Survivor name/path/dump size, exact accepted Oct3 globals/manifest/dump hashes and full197 TOC replace unavailable Oct2 bindings.",
+    "Fixed104500 source job and completed raw planSHA6f870; four future receipt raw hashes/metadata required as closed typed plan fields and currently null.",
+    "Exact backup timer six fields excluding MainPID; prune timer five fields excluding MainPID; every service six fields retaining MainPID; strict unknown/missing/duplicate wire and planned-field refusal.",
+    "Plan schema version3 and Oct3 candidate package basename only; completed promotion receipt contract unchanged."
+  ],
+  "status": "source-only-tested-template-unbound",
+  "template": {
+    "actualRestoreProofBound": false,
+    "executable": false,
+    "finalHumanApprovalBound": false,
+    "nativeRequestPrepared": false,
+    "path": "/tmp/pow-audit30-coupled-pin-checker-promotion-plan-template-v5.json"
+  },
+  "testResult": {
+    "command": [
+      "python3",
+      "-I",
+      "-B",
+      "-W",
+      "error",
+      "/tmp/pow-audit30-coupled-pin-checker-promotion-v5.test.py"
+    ],
+    "coverage": [
+      "26 preserved pair/durability/preimage/inverse/direct-human/sticky-ancestry/signal tests retargeted only to the survivor candidate.",
+      "Captured native timer rows have no MainPID; old V4 observer refuses them and new V5 observer accepts exact profiles; constructed argv and duplicate/missing/unknown/malformed wire refusal.",
+      "Services retain required MainPID, exact prune masked/inactive/dead/emptyInvocation, and exact planned-state shapes.",
+      "NULL four future restore hash/metadata placeholders refuse; synthetic completed proof with exact6f870 schema/flags passes; historical plan/status/false flags and Oct2 catalog/path refuse.",
+      "Actual db8f and6f870 raw bytes/hash/member/canonical catalog bindings plus unchanged guard AST and exact two-literal checker reversal."
+    ],
+    "exitCode": 0,
+    "qualification": "Local synthetic root ownership/backup/restore receipts are test fixtures. No actual restore-equivalence or production action is supplied by tests.",
+    "reportedSeconds": 0.527,
+    "tests": 36
+  }
+}

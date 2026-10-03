@@ -1,0 +1,126 @@
+{
+  "actualContext": {
+    "bytes": 5210,
+    "path": "/tmp/pow-audit30-retained-repair-context-native-v2.stdout",
+    "sha256": "6915ba8a73a823fa648b49054760778723a36a3a7e5455bc5f8f027374f186d3"
+  },
+  "actualContextTransport": {
+    "bytes": 1727,
+    "path": "/tmp/pow-audit30-retained-repair-context-native-v2.json",
+    "sha256": "d5edfb8c8fd3fe689239fef20b1a22e064faa141f280ecc7e7b63ec2ea75e02c"
+  },
+  "atUtc": "2026-10-03T11:41:32.498640+00:00",
+  "bridge": {
+    "bootstrap": {
+      "bytes": 23132,
+      "path": "/tmp/pow-audit30-retained-repair-dependency-bridge-bootstrap-v3.py",
+      "sha256": "3a2a6d2caaa694eed6e96b2f7a5e4626a2d66e14b8d33123674b48266b423437"
+    },
+    "callerPreparation": {
+      "bytes": 2015,
+      "path": "/tmp/pow-audit30-retained-repair-dependency-bridge-transport-preparation-v3.py",
+      "sha256": "f90068400b7fb009c6df136275ac1fed5fcc2dfb4c1e8ab1b8738e8dd824cb33"
+    },
+    "request": {
+      "bytes": 105682,
+      "path": "/tmp/pow-audit30-retained-repair-dependency-bridge-request-v3.json",
+      "sha256": "f73c32dd5d7b62ea614720cef32a69564967b060527925769b338e611f19d86c"
+    },
+    "rootBinding": {
+      "bytes": 1000,
+      "path": "/tmp/pow-audit30-root-retained-repair-v3-request-binding-v1.json",
+      "sha256": "c45609f72f8f7528e055e3a60d2b24f775aa1dad3b9a71be3748c671715ea152"
+    },
+    "source": {
+      "bytes": 17036,
+      "path": "/tmp/pow-audit30-retained-repair-dependency-bridge-v3.py",
+      "sha256": "e821dec229bb409c4b90a93a8a17db21722af520362862826b2ec388766e76f2"
+    },
+    "sourcePeer": {
+      "bytes": 4996,
+      "path": "/tmp/pow-audit30-independent-retained-repair-bridge-source-review-v3.json",
+      "sha256": "9e35368d2dc607fc272c69bf78b053eda2d08eba4932cb5df3ebe708ace757b5"
+    },
+    "template": {
+      "bytes": 100048,
+      "path": "/tmp/pow-audit30-retained-repair-dependency-bridge-request-template-v3.json",
+      "sha256": "3af2bdd9dad6d22915b5eb0120263b2e82b18e97b9227cf2dc1ea3048e2e8348"
+    }
+  },
+  "checks": {
+    "bothNullTemplatesRemainNullOnDisk": true,
+    "bothRequestsExactlyUseActualCapturedContextFields": true,
+    "bridge07824LockIdentityAndTimestampsUnchanged": true,
+    "bridgeAllThreeEmbeddedSourcesByteExactLocalFrozenFiles": true,
+    "bridgeCallerPreparationRequestPinStillNull": true,
+    "bridgeExactClosedDecodePassedDefinitionsOnly": true,
+    "contextCallerOnlyCapturePrefixChanged": true,
+    "contextTransportExitedZeroAndMatchesCapture": true,
+    "eachRequestChangesOnlyExpectedLiveAndExpectedProtection": true,
+    "existingSourceTestsNotRepeated": true,
+    "priorSourceReviewsRemainHashExact": true,
+    "promotionEmbeddedOct3LeafByteExact": true,
+    "promotionExactClosedDecodePassedDefinitionsOnly": true,
+    "promotionNamespace120000Exact": true
+  },
+  "claims": {
+    "allDependenciesClosed": false,
+    "deletionAuthorized": false,
+    "nativeExecuted": false,
+    "networkExecuted": false,
+    "newBackupFullReadPassed": false,
+    "pinOrCheckerChanged": false,
+    "productionMutation": false,
+    "sqlExecuted": false
+  },
+  "contextAtUtc": "2026-10-03T11:37:34.215426+00:00",
+  "contextPrefixOnlyCaller": {
+    "bytes": 1953,
+    "path": "/tmp/pow-audit30-retained-repair-context-transport-preparation-v2.py",
+    "sha256": "434ffddf2da192c291e6e894a8a7b2164e96f6a62e3ae9bf58911592ca58f047"
+  },
+  "promotionFullRead": {
+    "request": {
+      "bytes": 14381,
+      "path": "/tmp/pow-audit30-promotion-full-read-request-v1.json",
+      "sha256": "b9b7fb0c49b677e708efdf3d908908ec70697a8866534f24ab0f52dea2f3d750"
+    },
+    "rootBinding": {
+      "bytes": 1131,
+      "path": "/tmp/pow-audit30-root-promotion-full-read-request-binding-v1.json",
+      "sha256": "3ced1d058078f743d13a04c4bd760882c2eb0021294b18ca0356bbc3b7c56046"
+    },
+    "source": {
+      "bytes": 26984,
+      "path": "/tmp/pow-audit30-promotion-full-read-native-v1.py",
+      "sha256": "d07cb8d37eb2920578a2db009030b79ab27100345258e5b72f341f3d88ed54e8"
+    },
+    "sourcePeer": {
+      "bytes": 4343,
+      "path": "/tmp/pow-audit30-independent-promotion-full-read-source-review-v1.json",
+      "sha256": "e828fa397f74d582895bdc7bcbf43276f122adfb8e36f263c8032a458da4cfbc"
+    },
+    "template": {
+      "bytes": 8747,
+      "path": "/tmp/pow-audit30-promotion-full-read-request-template-v1.json",
+      "sha256": "14dca513bb975a98a0c12d76d86c1ef5f4c53b7e97c13fe0f8cb92e391ac07b0"
+    }
+  },
+  "qualifications": [
+    "This is local exact request binding review, not an executed bridge or fresh full-backup-read proof.",
+    "The actual metadata context is an endpoint observation at11:37:34.215426 UTC; reviewed native sources must still enforce current live/protection/backup gates at execution.",
+    "The bridge remains definitions-only scoped dependency compatibility; no all-dependencies-closed, cluster/runtime/PITR/recovery/promotion/deletion conclusion.",
+    "The promotion full-read request prepares one fresh hash/TOC observation; it grants no pin/checker promotion or deletion authority and does not fabricate a new restore or refresh prior db8f result.",
+    "Current monitor role may rotate within the exact approved idle-static profile; file/mask/WAL/prune and chosen five guards remain strict.",
+    "The bridge prepared caller RP remains None; separate concrete source/command binding and Root once native GO remain necessary."
+  ],
+  "repositoryEdits": 0,
+  "reviewer": "/root/math_review",
+  "schema": "pow-audit30-independent-fresh-bridge-promotion-request-binding-review-v1",
+  "sharedTransport": {
+    "bytes": 8396,
+    "path": "/tmp/pow-audit30-readonly-owned-transport-v3.py",
+    "sha256": "1dedef0a6c7021d114017e711ad74f9cfed4e461fc047a2be2c49e590f3da18e"
+  },
+  "status": "accepted-two-pure-request-bindings"
+}

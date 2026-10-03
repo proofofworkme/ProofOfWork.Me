@@ -1,0 +1,25 @@
+{
+  "actualContextAtUtc": "2026-10-03T11:37:34.215426+00:00",
+  "actualContextStdoutSha256": "6915ba8a73a823fa648b49054760778723a36a3a7e5455bc5f8f027374f186d3",
+  "atUtc": "2026-10-03T11:40:05.354926+00:00",
+  "closedRequestDecodePassed": true,
+  "deletionAuthorized": false,
+  "nativeExecuted": false,
+  "nativeSourcePeerSha256": "e828fa397f74d582895bdc7bcbf43276f122adfb8e36f263c8032a458da4cfbc",
+  "nativeSourceSha256": "d07cb8d37eb2920578a2db009030b79ab27100345258e5b72f341f3d88ed54e8",
+  "nullTemplateSha256": "14dca513bb975a98a0c12d76d86c1ef5f4c53b7e97c13fe0f8cb92e391ac07b0",
+  "onlyTemplateFieldsFilled": [
+    "expectedLive",
+    "expectedProtection"
+  ],
+  "pinChanged": false,
+  "productionMutation": false,
+  "request": {
+    "bytes": 14381,
+    "path": "/tmp/pow-audit30-promotion-full-read-request-v1.json",
+    "sha256": "b9b7fb0c49b677e708efdf3d908908ec70697a8866534f24ab0f52dea2f3d750"
+  },
+  "restoreActualReturnedPassed": true,
+  "restoreIndependentPostStopStdoutSha256": "01e918aa40408550dbd8c1cbe2f71b508566c6f499c38332a90becaa005dc58c",
+  "schema": "pow-audit30-root-promotion-full-read-request-binding-v1"
+}

@@ -1,0 +1,101 @@
+{
+  "atUtc": "2026-10-03T11:47:16.685151+00:00",
+  "bindings": {
+    "diff": {
+      "bytes": 3790,
+      "path": "/tmp/pow-audit30-append-action64-v3.diff",
+      "sha256": "3b5f4a4a422c26eafbc79ff4df8ffaece55ae1d3e148bfd02d1f943951a5923d"
+    },
+    "fixedInventory": {
+      "bytes": 94469,
+      "path": "/tmp/pow-audit30-action64-fixed-public-inventory-v2.json",
+      "sha256": "eebd6404834952fe3fbce240328d46c1fb4faf6b56cf0c9ec23fd0503fa34760"
+    },
+    "independentActualReview": {
+      "bytes": 10494,
+      "path": "/tmp/pow-audit30-independent-oct3-restore-actual-result-review-v1.json",
+      "sha256": "546b52deb647199cc8a3acb6642116853dc05cfcd2ecf8d1c3f14f97a1aa9612"
+    },
+    "preinspection": {
+      "bytes": 13410,
+      "path": "/tmp/pow-audit30-action64-preappend-source-inspection-v1.json",
+      "sha256": "0bd525843af79eca68a82b726a55c2b819836af2406932e9faf1fc10b210b066"
+    },
+    "preservedBlockedCheckpoint": {
+      "bytes": 4112,
+      "path": "/tmp/pow-audit30-independent-action64-helper-source-review-checkpoint-v1.json",
+      "sha256": "42bf90ad6eb0a0fdf1eab4e9712e46f311409296103329e1bc20cb116090311b"
+    },
+    "preservedV1": {
+      "bytes": 20450,
+      "path": "/tmp/pow-audit30-append-action64-v1.py",
+      "sha256": "691ec58be195db9556fe7f31c6887906887ffaf6872044d08973d52025065d1e"
+    },
+    "preservedV2": {
+      "bytes": 21392,
+      "path": "/tmp/pow-audit30-append-action64-v2.py",
+      "sha256": "ad890c8bebddfb15e4a011b0299c6c28ea6f42260e4267c7f267d407bea126a4"
+    },
+    "rootActualReview": {
+      "bytes": 4097,
+      "path": "/tmp/pow-audit30-root-oct3-restore-actual-acceptance-v1.json",
+      "sha256": "fbac8b76c0ce44de997c8585cd6031354fe8bcd722ee09f0b02ec94f05d6a9ba"
+    },
+    "source": {
+      "bytes": 21939,
+      "path": "/tmp/pow-audit30-append-action64-v3.py",
+      "sha256": "a171c5bf9b3090226a7e8331e8676a4fcf2a2d2d0bf39e135611dd89783e041c"
+    }
+  },
+  "qualifications": [
+    "This receipt accepts source only; no helper/import/main executed and no append/preservation acceptance is inferred.",
+    "Root must review the exact closed extra list, helper binding and three distinct Root/peer/post-stop JSON bindings before execution. The nonempty generic JSON check supplies a byte-bound selection; semantic acceptance comes from the explicit Root-reviewed receipts.",
+    "The reviewed actual receipts certify only the current Oct3 logical snapshot and isolated pages/roles/accounting/stop scope, with known16 defects and293GiB capacity/PITR/live pages/history/financial/dependency/promotion/retirement gates still open.",
+    "New files are exclusive and file-fsynced; each document replacement is atomic. No joint transaction or parent-directory power-loss durability is claimed; partial append has retained intent and requires explicit review, not automatic retry.",
+    "Actual extra artifact representations and final output sizes remain execution-time gates; existing target/intent/receipt or drift refuses.",
+    "No native, service/configuration, pin/checker, recovery, cutover, production data or additional deletion authority is supplied."
+  ],
+  "resolvedFinding": {
+    "late16MiBEvidenceReadRefusal": "Resolved by explicit32MiB evidence limit, bounded prewrite encoded outputs, and avoiding the1MiB item7 duplication with exact immutable Git-baseline value binding.",
+    "preservedCheckpointSha256": "42bf90ad6eb0a0fdf1eab4e9712e46f311409296103329e1bc20cb116090311b"
+  },
+  "review": {
+    "all3BaselineFilesByteEqualGitBase": true,
+    "all650ExistingCustodyRowsAndHistoricalDecodedGlobalRepresentationsVerified": true,
+    "allDocumentRereadsUseSameExplicitLimits": true,
+    "allNewDiffJsonlPlainEmptyRepresentationsLosslessByConstruction": true,
+    "completeEncodedDocumentLimitsCheckedBeforeAnyIntentOrCopyOrReplacement": true,
+    "currentTrackerOneExactRowOccurrenceConfirmed": true,
+    "defaultPublicArtifactMaximumBytes": 2097152,
+    "documentMaximumBytes": {
+      "custody": 2097152,
+      "evidence": 33554432,
+      "tracker": 2097152
+    },
+    "exactDiffMatchesActualSources": true,
+    "fakeHelperExecutionTests": false,
+    "fixed67InputsBytesAndShaVerified": true,
+    "fixed67RawBytes": 992534,
+    "fullV1V2SourceAndFullV3DiffRead": true,
+    "functionClassAstCount": 12,
+    "helperExecuted": false,
+    "nativeCalls": 0,
+    "newWriteMethods": false,
+    "old63ActionValues650CustodyRowsAndGlobalRepresentationsGuarded": true,
+    "otherItemValuesAndOldItem7CheckpointsGuarded": true,
+    "priorApprovalMutationRetirementRequestListsGuarded": true,
+    "priorItem7ArchiveReference": {
+      "canonicalBytes": 1005744,
+      "canonicalSha256": "05c0576152993a104e8694d4ad457b568abd58901a8d9738bc5894fed150620b",
+      "gitRevision": "c33e83fa1659b63160615bf7adca7ef42a0d1188",
+      "jsonPointer": "/items/7",
+      "repositoryPath": "audits/2026-10-02-audit30-remaining-phase-execution.evidence.json"
+    },
+    "repositoryWrites": 0,
+    "trackedDeletionsObserved": [],
+    "unchangedFunctionClassAstsExceptMain": 11
+  },
+  "reviewer": "/root/vps_health",
+  "schema": "pow-audit30-independent-action64-helper-source-review-v3",
+  "status": "accepted-source-only"
+}

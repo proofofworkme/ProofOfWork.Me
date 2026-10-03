@@ -1,0 +1,80 @@
+{
+  "allDependenciesClosed": false,
+  "atUtc": "2026-10-03T10:32:55.661392+00:00",
+  "changedFunctions": [
+    "validate_authority",
+    "decode",
+    "backup_lock",
+    "main"
+  ],
+  "independentTests": [
+    {
+      "passed": 30,
+      "path": "/tmp/pow-audit30-retained-repair-dependency-bridge-v2.test.py",
+      "seconds": 0.649
+    },
+    {
+      "passed": 6,
+      "path": "/tmp/pow-audit30-retained-repair-dependency-bridge-caller-v2.test.py",
+      "seconds": 0.087
+    }
+  ],
+  "nativePerformed": false,
+  "qualifications": [
+    "No Root.main/private PG/source7 verifier/SQL/Core/unit/capture creation.",
+    "This bridge reports named retained dependency compatibility, including generic owner/size refusal rows; it does not execute full retirement admission.",
+    "No unknown membership/global dependency closure, future exclusion guarantee, Oct2 survivor, restore equivalence or retirement-ready claim.",
+    "Original source and all prior failure/evidence remain preserved; native once-GO requires separately reviewed fresh actual request."
+  ],
+  "repositoryEdits": false,
+  "review": [
+    "Full affected V1-to-V2 source and test changes read; prior V1 full source acceptance retained. Unchanged function AST comparison confirms only validate_authority/decode/backup_lock/main changed.",
+    "Backup lock device/inode/uid/gid/mode/nlink/bytes stay identical to original helper. Only mtime/ctime rebind to exact saved07824 actual observation, with new observation SHA and closed request/result schemas. Boolean metadata, old timestamps, changed timestamps and wrong observation digest refuse.",
+    "Bootstrap embedded bytes equal exact75643490 source; caller pins shared1dedef unchanged with null requestSHA. Template expectedLive/expectedProtection are null and refuses. No actual request or native authority inferred.",
+    "Definitions-only b989/ad03/e35 and original172 dependency verifier remain; fixed named-file hash/metadata reads and endpoint equality, audit writes/socket/cluster barriers, closed SHOW child and signal-masked owned-group cleanup unchanged."
+  ],
+  "schema": "pow-audit30-independent-retained-repair-dependency-bridge-source-review-v2",
+  "sourcesAndEvidence": [
+    {
+      "bytes": 16890,
+      "path": "/tmp/pow-audit30-retained-repair-dependency-bridge-v2.py",
+      "sha256": "75643490cfb52f800b73dc0aa38fdcbb7e74dbbc0ab8f811733d946fefb6ff4e"
+    },
+    {
+      "bytes": 10579,
+      "path": "/tmp/pow-audit30-retained-repair-dependency-bridge-v2-source.diff",
+      "sha256": "3936f8e8df5c5959307d369acd07aed34fb8591464e1df585015be591df70fca"
+    },
+    {
+      "bytes": 15003,
+      "path": "/tmp/pow-audit30-retained-repair-dependency-bridge-v2.test.py",
+      "sha256": "4cd846b3bd586843b522241741e42d32f84d69bab4d8e5b09a1d20246a822d78"
+    },
+    {
+      "bytes": 22936,
+      "path": "/tmp/pow-audit30-retained-repair-dependency-bridge-bootstrap-v2.py",
+      "sha256": "230fd581ad97b596a0a716eb331fff7cec1ad0ef76dd460d1873aee9e1172e8f"
+    },
+    {
+      "bytes": 2015,
+      "path": "/tmp/pow-audit30-retained-repair-dependency-bridge-transport-preparation-v2.py",
+      "sha256": "689e58b4521a49fa1f945daf4f9d25ca8895dbdc4d13c034fa6e29ecf388c4ec"
+    },
+    {
+      "bytes": 3095,
+      "path": "/tmp/pow-audit30-retained-repair-dependency-bridge-caller-v2.test.py",
+      "sha256": "86a464657b250cf2c3bb57df338e70ba3b3fef7bdb2adcd2d411d1ce0b572b73"
+    },
+    {
+      "bytes": 100048,
+      "path": "/tmp/pow-audit30-retained-repair-dependency-bridge-request-template-v2.json",
+      "sha256": "1694b0d4a2bf716d236944eda283f5d2b0d6b3adc575b90cf359d2a2487a04f8"
+    },
+    {
+      "bytes": 16108,
+      "path": "/tmp/pow-audit30-retained-repair-dependency-bridge-v1.py",
+      "sha256": "62de429d610986d7a48137cee890b2867f20704c051440b69f9862057271fad4"
+    }
+  ],
+  "verdict": "accepted-source-only"
+}

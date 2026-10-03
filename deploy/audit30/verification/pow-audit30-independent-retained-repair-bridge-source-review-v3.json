@@ -1,0 +1,117 @@
+{
+  "allDependenciesClosed": false,
+  "atUtc": "2026-10-03T11:29:31.389700+00:00",
+  "concreteV3RequestCreated": false,
+  "deletionAuthority": false,
+  "independentTests": [
+    {
+      "command": "python3 -I -B -Werror /tmp/pow-audit30-retained-repair-dependency-bridge-v3.test.py",
+      "passed": 35,
+      "seconds": 0.842
+    },
+    {
+      "command": "python3 -I -B -Werror /tmp/pow-audit30-retained-repair-dependency-bridge-caller-v3.test.py",
+      "passed": 6,
+      "seconds": 0.098
+    }
+  ],
+  "inputs": [
+    {
+      "bytes": 16890,
+      "path": "/tmp/pow-audit30-retained-repair-dependency-bridge-v2.py",
+      "sha256": "75643490cfb52f800b73dc0aa38fdcbb7e74dbbc0ab8f811733d946fefb6ff4e"
+    },
+    {
+      "bytes": 17036,
+      "path": "/tmp/pow-audit30-retained-repair-dependency-bridge-v3.py",
+      "sha256": "e821dec229bb409c4b90a93a8a17db21722af520362862826b2ec388766e76f2"
+    },
+    {
+      "bytes": 20676,
+      "path": "/tmp/pow-audit30-retained-repair-dependency-bridge-v3.test.py",
+      "sha256": "819a938520cd93af3e7713cfd4bf503857506d1e26a7d788e4efb8e741e992ec"
+    },
+    {
+      "bytes": 7960,
+      "path": "/tmp/pow-audit30-retained-repair-dependency-bridge-v3.diff",
+      "sha256": "d308f34f7e46302ff2bb707d5626a2e4838f9a0dfd8c1274a523bc91b45990f0"
+    },
+    {
+      "bytes": 23132,
+      "path": "/tmp/pow-audit30-retained-repair-dependency-bridge-bootstrap-v3.py",
+      "sha256": "3a2a6d2caaa694eed6e96b2f7a5e4626a2d66e14b8d33123674b48266b423437"
+    },
+    {
+      "bytes": 45925,
+      "path": "/tmp/pow-audit30-retained-repair-dependency-bridge-bootstrap-v3.diff",
+      "sha256": "932fb3a23535f53c9f4dfc2f8ca5acd834a236b7c7aa511289dd34a876299859"
+    },
+    {
+      "bytes": 2015,
+      "path": "/tmp/pow-audit30-retained-repair-dependency-bridge-transport-preparation-v3.py",
+      "sha256": "f90068400b7fb009c6df136275ac1fed5fcc2dfb4c1e8ab1b8738e8dd824cb33"
+    },
+    {
+      "bytes": 2776,
+      "path": "/tmp/pow-audit30-retained-repair-dependency-bridge-transport-preparation-v3.diff",
+      "sha256": "a936d49657de7fcdd0011933172d3b61572683ff1fff4af7accf9fcbe86a52cb"
+    },
+    {
+      "bytes": 100048,
+      "path": "/tmp/pow-audit30-retained-repair-dependency-bridge-request-template-v3.json",
+      "sha256": "3af2bdd9dad6d22915b5eb0120263b2e82b18e97b9227cf2dc1ea3048e2e8348"
+    },
+    {
+      "bytes": 3095,
+      "path": "/tmp/pow-audit30-retained-repair-dependency-bridge-caller-v3.test.py",
+      "sha256": "a108f3a34bb1e03a8937c24d233485df5dfdbcd9080e3024fd113df44043e7a8"
+    },
+    {
+      "bytes": 1686,
+      "path": "/tmp/pow-audit30-retained-repair-dependency-bridge-native-v2.json",
+      "sha256": "06a5ef9ce5f227f35faeea4bc3d819c0334d86962d843b7aabf1d48db1e68abe"
+    },
+    {
+      "bytes": 212,
+      "path": "/tmp/pow-audit30-retained-repair-dependency-bridge-native-v2.stderr",
+      "sha256": "ca43acc77e3a67704e283e9fe57dd4779c2a1261c9963ba904b27d2ffb5bfb72"
+    }
+  ],
+  "nativePerformed": false,
+  "preparation": {
+    "bytes": 5325,
+    "path": "/tmp/pow-audit30-retained-repair-dependency-bridge-source-preparation-v3.json",
+    "sha256": "ed5788d12ee1677af853552709b710b00e61eb3fc0c4bef47f06e5f4ab83a229"
+  },
+  "qualifications": [
+    "The local Python child substitutions are explicit fixtures only. Production allowed_process still permits only exact systemctl-show metadata profiles, with no command expansion.",
+    "No later hidden native refusal or dependency result is inferred from the preserved V2 write-open refusal.",
+    "A fresh accepted context and exact typed V3 request/caller binding still require separate Root review and once-GO.",
+    "Endpoint-only named dependency compatibility does not close unknown/skipped membership, continuous/future reads, restore/PITR, repair approval or retirement gates."
+  ],
+  "repositoryEdited": false,
+  "retirementReady": false,
+  "reviewer": "math_review",
+  "schema": "pow-audit30-independent-retained-repair-bridge-source-review-v3",
+  "status": "source-only-accepted",
+  "verified": {
+    "07824LockIntrinsicAndNanosecondAuthorityUnchanged": true,
+    "addressSpaceBytes": 402653184,
+    "allAuditClusterProcessAuthorityAndDependencyGuardsUnchanged": true,
+    "bootstrapEncodedSourceByteExact": true,
+    "callerRequestShaStillNull": true,
+    "cleanupSignalAndExactOwnedReapContractUnchanged": true,
+    "fullOperationalDiffCallerDiffBootstrapAndAddedActualChildFixturesReviewed": true,
+    "mainReadsBoundedHashVerifiedInputToEofBeforeAuditAndMetadata": true,
+    "onlyOperationalChangePopenStdinDevnullToFd0": true,
+    "otherChangesOnlyCommentsAndVersionBindings": true,
+    "outerSeconds": 90,
+    "publicStreamCapsBytes": 65536,
+    "realV2DevnullReadWriteAuditRefusalBeforeChildSpawnReproduced": true,
+    "rootWorkSeconds": 60,
+    "templateOnlySchemaChangedExpectedLiveProtectionNull": true,
+    "threeInertEmbeddedDependencySourcesUnchanged": true,
+    "twoRealLocalV3ChildrenSeeOnlyEof": true,
+    "writeOpenAuditGuardStillRefuses": true
+  }
+}

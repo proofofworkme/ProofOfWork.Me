@@ -1,0 +1,49 @@
+{
+  "automaticRetry": false,
+  "captures": {
+    "stderr": {
+      "bytes": 200,
+      "path": "/tmp/pow-audit30-promotion-full-read-native-120000-v1.stderr",
+      "sha256": "acc1df9287a23fa26c4d4a2ed926f9469cdb161f0a31706eb2481a2d542a5f71"
+    },
+    "stdout": {
+      "bytes": 0,
+      "path": "/tmp/pow-audit30-promotion-full-read-native-120000-v1.stdout",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  },
+  "exitCode": 1,
+  "failure": null,
+  "finishedAtUtc": "2026-10-03T11:43:18.614888+00:00",
+  "inputBindings": {
+    "acceptedRestoreRootReviewSha256": "fbac8b76c0ce44de997c8585cd6031354fe8bcd722ee09f0b02ec94f05d6a9ba",
+    "actualContextStdoutSha256": "6915ba8a73a823fa648b49054760778723a36a3a7e5455bc5f8f027374f186d3",
+    "additionalDeletionAuthorized": false,
+    "checkerChangeRequested": false,
+    "fullReadLeafSha256": "01b80fd9b4a3a92893c06f288b3d3bdc90e05b7ed6f7c6f25bebc21c1ecc56a3",
+    "pinChangeRequested": false,
+    "productionMutation": false,
+    "recoveryActivationRequested": false,
+    "requestBindingPeerSha256": "2de795a3a15b70be70f23a5a6deb516a5f15c0f35591b6ce09e2d3d9ea690369",
+    "requestSha256": "b9b7fb0c49b677e708efdf3d908908ec70697a8866534f24ab0f52dea2f3d750",
+    "rootOnceReadonlyGo": true,
+    "rootSeconds": 420,
+    "sourcePeerSha256": "e828fa397f74d582895bdc7bcbf43276f122adfb8e36f263c8032a458da4cfbc",
+    "sourceSha256": "d07cb8d37eb2920578a2db009030b79ab27100345258e5b72f341f3d88ed54e8",
+    "unitCpuPercent": 25,
+    "unitMemoryMaxBytes": 134217728,
+    "unitSeconds": 360,
+    "unitSwapMaxBytes": 0
+  },
+  "outerDeadlineSeconds": 480,
+  "productionDataMutationRequested": false,
+  "receivedBytes": {
+    "stderr": 200,
+    "stdout": 0
+  },
+  "remoteUnitStoppedCertifiedByTransport": false,
+  "schema": "pow-audit30-readonly-owned-transport-result-v1",
+  "seconds": 2.257422,
+  "startedAtUtc": "2026-10-03T11:43:16.357466+00:00",
+  "typedStdinBytesDelivered": 14381
+}

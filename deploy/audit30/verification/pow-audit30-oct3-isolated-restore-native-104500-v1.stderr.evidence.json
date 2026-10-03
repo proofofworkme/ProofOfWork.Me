@@ -1,0 +1,9 @@
+{
+  "encoding": "base64",
+  "kind": "exact-native-channel",
+  "originalInput": "/tmp/pow-audit30-oct3-isolated-restore-native-104500-v1.stderr",
+  "rawBase64": "UnVubmluZyBhcyB1bml0OiBwcm9vZm9md29yay1hdWRpdDMwLWxvZ2ljYWwtcmVzdG9yZS0yMDI2MTAwM1QxMDQ1MDBaLnNlcnZpY2UKRmluaXNoZWQgd2l0aCByZXN1bHQ6IHN1Y2Nlc3MKTWFpbiBwcm9jZXNzZXMgdGVybWluYXRlZCB3aXRoOiBjb2RlPWV4aXRlZC9zdGF0dXM9MApTZXJ2aWNlIHJ1bnRpbWU6IDU1bWluIDEwLjY2OXMKQ1BVIHRpbWUgY29uc3VtZWQ6IDU0bWluIDU2LjIxNXMKTWVtb3J5IHBlYWs6IDYuMEcKTWVtb3J5IHN3YXAgcGVhazogNTAuOU0K",
+  "rawBytes": 267,
+  "rawSha256": "eb3759ef2b58c39f44134270cf0d4570052d3afc88eb80c0bf635bc52386380d",
+  "schema": "pow-audit30-exact-public-byte-custody-v1"
+}

@@ -1,0 +1,91 @@
+{
+  "actualFinishedAtUtc": "2026-10-03T11:32:09.796896+00:00",
+  "actualSeconds": 3313.588926,
+  "actualTransportStdoutSha256": "3a53ab1325bf9110445da746452a24865e6069fa9e7fdbe0e28b09af2f1574ba",
+  "additionalDeletionAuthorized": false,
+  "all13CanonicalPublicReceiptBytesReconstructedExactly": {
+    "accounting-mail-observations.json": {
+      "bytes": 7445,
+      "sha256": "44e29e4b30ea127e982aa829ef70bfd49cc2be877b7abcd81ebdd725efdcbc8a"
+    },
+    "completed.json": {
+      "bytes": 646,
+      "sha256": "206f9d76eb5df9d05ca0c12b47e99c3dcb280b558bdbda760cb5fad4c57c3562"
+    },
+    "credit-source-integrity.json": {
+      "bytes": 552,
+      "sha256": "20672171f6819e686821196d2e8401c58d284c7c6974827b41ae575eb192fe8c"
+    },
+    "exact-credit-invariants.json": {
+      "bytes": 43906,
+      "sha256": "b54d123b8978dda96d32a3d720f5e043aba1779ad28c5a73dc09c5c58ea8286d"
+    },
+    "intent.json": {
+      "bytes": 2498,
+      "sha256": "76bcc386d13b235136b13a7993cae2c183825699212520b354e8e27ba10ba129"
+    },
+    "offline-page-check.json": {
+      "bytes": 304,
+      "sha256": "6dbe7303362f23138ecf269f24412a4eb50dae2808437e1329d61b660de8759f"
+    },
+    "owner-acl-parity.json": {
+      "bytes": 438,
+      "sha256": "86a97f08703d5877669b37b0f75f37bef69c74380be486a0d1a06827ed30b741"
+    },
+    "private-start-identity.json": {
+      "bytes": 1245,
+      "sha256": "21b8529c96a05f32dbb47f99b8cd2abe281e144722d36c8d8b085de1234a51f4"
+    },
+    "role-verification.json": {
+      "bytes": 322,
+      "sha256": "f0c408d2f25981e1a7cb6ca7a17788882adc93544d6a7e8e7ddb545aa0c1952b"
+    },
+    "saved-snapshot-fence.json": {
+      "bytes": 585,
+      "sha256": "db67874c0a5f1dff3d42acba88f1d0bd6ee43bd98a987e0659afeeb7361873a9"
+    },
+    "source-verification.json": {
+      "bytes": 507,
+      "sha256": "797689069e3bde5b54e3075bcf17dbd6dbffc89a468d91276ccb06fbbfe4332c"
+    },
+    "table-row-parity.json": {
+      "bytes": 3903,
+      "sha256": "fa6057e02efce49595a8ac445dd8d3b2ab84d0816257700640230a9b46af8ccc"
+    },
+    "watchdog-stop-requested.json": {
+      "bytes": 64,
+      "sha256": "0520e21064a582923de0a3c11ce6ac644b9b84d455913c10ed1118156a1e303c"
+    }
+  },
+  "allDependenciesClosed": false,
+  "atUtc": "2026-10-03T11:41:47.307249+00:00",
+  "confirmedCreditDefinitions": 238,
+  "finalDataAvailableBytes": 252339372032,
+  "finalDataAvailableGiB": 235.0093536376953,
+  "freshPostStopAtUtc": "2026-10-03T11:39:04.193883+00:00",
+  "freshPostStopStdoutSha256": "01e918aa40408550dbd8c1cbe2f71b508566c6f499c38332a90becaa005dc58c",
+  "fullHistoricalProtocolMathCertified": false,
+  "fullRecoveryCapacityDeficitBytes": 62266982400,
+  "independentResultReviewSha256": "546b52deb647199cc8a3acb6642116853dc05cfcd2ecf8d1c3f14f97a1aa9612",
+  "item7FullyComplete": false,
+  "knownSixteenBodyDefectsRepaired": false,
+  "livePitrCertified": false,
+  "liveProductionPageIntegrityCertified": false,
+  "logicalBackupSnapshotAccepted": true,
+  "logicalSnapshotOnly": true,
+  "newRecoveryCapacityV3SourceOnly": true,
+  "originalFiveUnchanged": true,
+  "ownedAuditUnitGarbageCollectedWithPreservedInvocationAndManagedOutcome": true,
+  "planSha256": "6f87050e6b44c74cd6c6ba61fb9c8c922ba8436ee4111e31c1e8bcd3f1d8cfee",
+  "privateOriginalPidAndSocketAbsencesAccepted": true,
+  "productionMutation": false,
+  "promotionAuthorized": false,
+  "qualification": "Snapshot content restoration and new private checksummed pages only; the known16 defects remain in production/source. Fresh fixed post-stop lstat/receipt/5 endpoints passed; no live-page, WAL/PITR or full-chain/math certification. Source-only293GiB initial capacity correction remains undeployed; current235.009GiB snapshot does not fit. No production data/configuration, pin/checker, API/worker/UI cutover or additional deletion occurred.",
+  "schema": "pow-audit30-root-oct3-logical-snapshot-restore-acceptance-v1",
+  "sequences": 1,
+  "status": "accepted-scoped-logical-snapshot-restoration",
+  "tableCount": 24,
+  "tableRows": 429732,
+  "unchangedFullRecoveryPeakPlusReserveBytes": 314606354432,
+  "universalCanonicalChainParityCertified": false
+}

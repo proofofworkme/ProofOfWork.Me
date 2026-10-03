@@ -1,0 +1,14 @@
+{
+  "atUtc": "2026-10-03T11:37:19.441524+00:00",
+  "bridgeV3BootstrapDecodedExact": true,
+  "exactPrefixReverseEqualsOriginal": true,
+  "nativeExecuted": false,
+  "originalSourceSha256": "c5c7a3ba24ff4039d3280363c9579f1ffd94c85d035d1f12fd2aaa61dfd4400a",
+  "qualification": "Only exclusive local capture prefix changed; remote fixed context source/request/guards/caps remain byte-identical. Initial local AST inspection failed on a nonliteral assignment before any new file or native action; corrected filter selects only constant assignments.",
+  "schema": "pow-audit30-root-fresh-context-caller-prefix-successor-v1",
+  "source": {
+    "bytes": 1953,
+    "path": "/tmp/pow-audit30-retained-repair-context-transport-preparation-v2.py",
+    "sha256": "434ffddf2da192c291e6e894a8a7b2164e96f6a62e3ae9bf58911592ca58f047"
+  }
+}

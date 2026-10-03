@@ -1,0 +1,109 @@
+{
+  "acceptedContextBinding": {
+    "bytes": 5210,
+    "path": "/tmp/pow-audit30-retained-repair-context-native-v1.stdout",
+    "sha256": "b78fe2459c2b6b4568423f01f2e4acb25922224027d9e5cd82059d56c60d82cf"
+  },
+  "acceptedContextTransportBinding": {
+    "bytes": 1727,
+    "path": "/tmp/pow-audit30-retained-repair-context-native-v1.json",
+    "sha256": "fb363acbdfe73b5cae5ee9587f1bd5878d1eecc24b08c0bc49e281a7e4657ddc"
+  },
+  "allDependenciesClosed": false,
+  "allExactMonitorPredicatesPreserved": true,
+  "atUtc": "2026-10-03T11:16:45.870880+00:00",
+  "authorNativeCalls": false,
+  "automaticRetry": false,
+  "backupLock": {
+    "bytes": 0,
+    "ctimeNs": 1790997532936269129,
+    "dev": 64514,
+    "gid": 112,
+    "ino": 7471419,
+    "mode": 384,
+    "mtimeNs": 1790997532936269129,
+    "nlink": 1,
+    "uid": 108
+  },
+  "backupLockObservationSha256": "07824e0892583ee7d0370f2f6f97e85e7376502d23e7895fbadd0b1b7ca320cc",
+  "callerRequestPin": null,
+  "changedTemplateKeysOnly": [
+    "expectedLive",
+    "expectedProtection"
+  ],
+  "clusterPathsReadOrWritten": false,
+  "concreteRequestBinding": {
+    "bytes": 105682,
+    "path": "/tmp/pow-audit30-retained-repair-dependency-bridge-request-v2.json",
+    "sha256": "340f422c1ba7b1b9756726afc4cafab43f845ef11571ac0221d8083af9aeac44"
+  },
+  "contextDoesNotReproveLockTimestamp": true,
+  "contextNativeWasPerformedByParent": true,
+  "contextObservedAtUtc": "2026-10-03T11:15:16.483700+00:00",
+  "contextTransportSeconds": 3.500137,
+  "decodeValidated": true,
+  "decoderBinding": {
+    "bytes": 16890,
+    "path": "/tmp/pow-audit30-retained-repair-dependency-bridge-v2.py",
+    "sha256": "75643490cfb52f800b73dc0aa38fdcbb7e74dbbc0ab8f811733d946fefb6ff4e"
+  },
+  "embeddedSourceBindings": [
+    {
+      "bytes": 22040,
+      "path": "/tmp/pow-audit30-production-sixteen-root-control-v3.py",
+      "sha256": "b989a3f2395e7cbf13cb2d3dbd2d258a3fd21867131e41644c094772aba11168"
+    },
+    {
+      "bytes": 24954,
+      "path": "/tmp/pow-audit30-oct2-full-read-native-v2.py",
+      "sha256": "ad03e5d02e10018fb7c5dd3c118a7ac876331cad240832c52e4838a4bea0ff2a"
+    },
+    {
+      "bytes": 27456,
+      "path": "/tmp/pow-audit30-retire-exact-four-v3.py",
+      "sha256": "e35bd34050f4b0b36c9bfbe5b1461e901edd44ed13756cc9e3a2075e28fa2f50"
+    }
+  ],
+  "expectedMonitorTuple": {
+    "ActiveState": "failed",
+    "InvocationID": "d7485ce6e5814b16a35a215d88362461",
+    "LoadState": "loaded",
+    "MainPID": "0",
+    "SubState": "failed",
+    "UnitFileState": "static"
+  },
+  "inertDefinitionsOnly": true,
+  "productionMutation": false,
+  "qualifications": [
+    "The concrete request copies only actual accepted11:15:16 current context expectedLive/protection; it is not a future stability or continuous exclusion proof.",
+    "All three embedded sources and exact07824 backup-lock intrinsics/timestamps remain identical to the frozen1694 template. The context did not read/reprove that lock; bridge action-time stat-only before/after checks remain required.",
+    "The existing bridge callerRP is stillnull and unexecutable. Root must separately review/approve a binding-only caller successor and one exact native action; this preparation invokes no bridge execute/main/native command.",
+    "Monitor identity/state remains exactly bound to the accepted context; drift must refuse, with no predicate weakening/default/fabrication/automatic retry.",
+    "No current restore/PITR equivalence, production repair/human approval, allDependenciesClosed, unknown/skipped resolution or named retirement authority is asserted."
+  ],
+  "resources": {
+    "bridgeAddressSpaceBytes": 402653184,
+    "contextAddressSpaceBytesSeparate": 134217728,
+    "outerTransportSeconds": 90,
+    "rootWorkMaximumSeconds": 60,
+    "stderrCapBytes": 65536,
+    "stdoutCapBytes": 65536
+  },
+  "retirementReady": false,
+  "rootMainRuntimeOrClusterMethodsInvoked": false,
+  "rootOnceGo": false,
+  "schema": "pow-audit30-retained-repair-dependency-bridge-concrete-request-binding-v2",
+  "slotOrConfigurationAction": false,
+  "sqlExecuted": false,
+  "status": "source-only-concrete-request-validated-awaiting-root-once-go",
+  "templateBinding": {
+    "bytes": 100048,
+    "path": "/tmp/pow-audit30-retained-repair-dependency-bridge-request-template-v2.json",
+    "sha256": "1694b0d4a2bf716d236944eda283f5d2b0d6b3adc575b90cf359d2a2487a04f8"
+  },
+  "unchangedUnboundCallerBinding": {
+    "bytes": 2015,
+    "path": "/tmp/pow-audit30-retained-repair-dependency-bridge-transport-preparation-v2.py",
+    "sha256": "689e58b4521a49fa1f945daf4f9d25ca8895dbdc4d13c034fa6e29ecf388c4ec"
+  }
+}

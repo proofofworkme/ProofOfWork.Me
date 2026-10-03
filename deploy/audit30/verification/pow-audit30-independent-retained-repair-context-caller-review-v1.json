@@ -1,0 +1,84 @@
+{
+  "allDependenciesClosed": false,
+  "atUtc": "2026-10-03T11:14:44.449289+00:00",
+  "bridgeBindingsChanged": false,
+  "deletionAuthority": false,
+  "independentTests": {
+    "command": "python3 -I -B -Werror /tmp/pow-audit30-retained-repair-context-caller-v1.test.py",
+    "nativeTransportMocked": true,
+    "passed": 6,
+    "seconds": 0.04
+  },
+  "inputs": {
+    "caller": {
+      "bytes": 1953,
+      "path": "/tmp/pow-audit30-retained-repair-context-transport-preparation-v1.py",
+      "sha256": "c5c7a3ba24ff4039d3280363c9579f1ffd94c85d035d1f12fd2aaa61dfd4400a"
+    },
+    "callerPreparation": {
+      "bytes": 7575,
+      "path": "/tmp/pow-audit30-retained-repair-context-caller-preparation-v1.json",
+      "sha256": "1d67129d90108c8f32720c920b446dd311547e1a95f66d1b010a272009e126ee"
+    },
+    "callerTests": {
+      "bytes": 4272,
+      "path": "/tmp/pow-audit30-retained-repair-context-caller-v1.test.py",
+      "sha256": "629814c95d844f5a2b5e0855b53ab4389ab626e2ef9e72783a4cbd643384060f"
+    },
+    "existingFixedContextRequest": {
+      "bytes": 33475,
+      "path": "/tmp/pow-audit30-oct2-full-read-current-context-request-v2.json",
+      "sha256": "5b0957e3cce7fb5a64c4d82b58808faedc5d6c0147a874c22d938c05536d44dd"
+    },
+    "existingFixedContextSource": {
+      "bytes": 4368,
+      "path": "/tmp/pow-audit30-oct2-full-read-current-context-v2.py",
+      "sha256": "69179562d28eeabe1a6bcbf6ba2c506bf95e6d8ce02a79c20fc882dbe741b839"
+    },
+    "managedInertSource": {
+      "bytes": 24954,
+      "path": "/tmp/pow-audit30-oct2-full-read-native-v2.py",
+      "sha256": "ad03e5d02e10018fb7c5dd3c118a7ac876331cad240832c52e4838a4bea0ff2a"
+    },
+    "sharedOwnedTransport": {
+      "bytes": 8396,
+      "path": "/tmp/pow-audit30-readonly-owned-transport-v3.py",
+      "sha256": "1dedef0a6c7021d114017e711ad74f9cfed4e461fc047a2be2c49e590f3da18e"
+    }
+  },
+  "nativeExecutedByReviewer": false,
+  "qualifications": [
+    "Fresh endpoints are observations, not continuous or future exclusion, backup/PITR equivalence, all dependencies closed or recovery/retirement admission.",
+    "This historical namespace is only a label; the missing Oct2 dump is not accessed or certified by this context.",
+    "Actual action-time monitor/static/five/window profiles remain strict native gates; source acceptance supplies no successful native result.",
+    "Separate Root once-GO is needed for context execution. A later accepted fresh result may bind only a new immutable bridge request after separate review; current bridge remains unbound."
+  ],
+  "recoveryApproved": false,
+  "repositoryEdited": false,
+  "retirementAdmission": false,
+  "reviewer": "math_review",
+  "schema": "pow-audit30-independent-retained-repair-context-caller-review-v1",
+  "scope": "Fixed metadata-only live-five/backup-window/static protected file hashes, root prune-mask metadata/link and per-unit public systemd fields at endpoints. Managed definitions are imported inertly; their native main/run/backup leaf is not invoked. No backup/globals bodies, SQL/Core/socket, cluster content, slot/configuration/unit creation or control.",
+  "status": "source-only-accepted",
+  "verified": {
+    "bridge07824LockIntrinsicAndTimestampBindingsUnchanged": true,
+    "bridgeAddressSpaceBytesSeparatelyUnchanged": 402653184,
+    "bridgeCallerRequestShaStillNull": true,
+    "bridgeExpectedLiveAndProtectionStillNull": true,
+    "closedRequestDecodesExactAd03DefinitionsOnly": true,
+    "contextAddressSpaceBytes": 134217728,
+    "contextCpuSeconds": 30,
+    "contextDoesNotAcquireOrReproveBackupLock": true,
+    "exclusiveCapturePrefix": "/tmp/pow-audit30-retained-repair-context-native-v1",
+    "fullCallerPreparationTestsAndContextSourceRead": true,
+    "isolatedExtraArgRefusesBeforeTransport": true,
+    "outerMaximumSeconds": 90,
+    "remoteCommandUsesExactContextSourceWithoutRequestShaArgv": true,
+    "remoteRequiresArgvLength": 1,
+    "rootMaximumSeconds": 60,
+    "sourceDriftRefuses": true,
+    "sourceNamespaceHistoricalLabel": "20261003T093000Z",
+    "sourceRequestManagedByteEqualRepositoryCustody": true,
+    "stdoutAndStderrCapsBytes": 65536
+  }
+}

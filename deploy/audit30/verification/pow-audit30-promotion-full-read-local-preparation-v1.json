@@ -1,0 +1,150 @@
+{
+  "astIdentity": {
+    "allUnchanged": true,
+    "functionAndClassCount": 26,
+    "guardBehaviorChanged": false
+  },
+  "atUtc": "2026-10-03T11:27:33.224106+00:00",
+  "bindings": {
+    "coupledNullTemplate": {
+      "bytes": 2391,
+      "path": "/tmp/pow-audit30-coupled-pin-checker-promotion-plan-template-v5.json",
+      "sha256": "4d06401c5458163c5d237db25139b6a980b09ba9e96897bd403afe39588569c7"
+    },
+    "coupledV5": {
+      "bytes": 25733,
+      "path": "/tmp/pow-audit30-coupled-pin-checker-promotion-v5.py",
+      "sha256": "7e878f987524dce2583b348964032af62491ce3cabcdc49adc359b36b7fc5bd4"
+    },
+    "diff": {
+      "bytes": 1456,
+      "path": "/tmp/pow-audit30-promotion-full-read-native-v1.diff",
+      "sha256": "6ab04cd6cb468cb563420adca779a287f87510f14970b3b73b9d5fcbd7bb7e4e"
+    },
+    "historicalFullReadResult": {
+      "bytes": 32094,
+      "path": "/tmp/pow-audit30-oct3-full-read-native-102500-v1.stdout",
+      "sha256": "db8f00d8c61aa4aa6d9ed4ad13d7a6b5b67faf160d925526f869d5859d9a1147"
+    },
+    "native": {
+      "bytes": 26984,
+      "path": "/tmp/pow-audit30-promotion-full-read-native-v1.py",
+      "sha256": "d07cb8d37eb2920578a2db009030b79ab27100345258e5b72f341f3d88ed54e8"
+    },
+    "nullTemplate": {
+      "bytes": 8747,
+      "path": "/tmp/pow-audit30-promotion-full-read-request-template-v1.json",
+      "sha256": "14dca513bb975a98a0c12d76d86c1ef5f4c53b7e97c13fe0f8cb92e391ac07b0"
+    },
+    "originalNative": {
+      "bytes": 26947,
+      "path": "/tmp/pow-audit30-oct3-full-read-native-v1.py",
+      "sha256": "d9c19bedb3b2baf7a4d5b1a2beca8a9617d05c1074449834c8c05ebc93cb3c48"
+    },
+    "originalTemplate": {
+      "bytes": 8739,
+      "path": "/tmp/pow-audit30-oct3-full-read-request-template-v1.json",
+      "sha256": "b2d460b2150ed128a9c0739f2d2d0ff32c8aadab045462eed0e8336f1ea6dfd5"
+    },
+    "sharedTransport": {
+      "bytes": 8396,
+      "path": "/tmp/pow-audit30-readonly-owned-transport-v3.py",
+      "sha256": "1dedef0a6c7021d114017e711ad74f9cfed4e461fc047a2be2c49e590f3da18e"
+    },
+    "tests": {
+      "bytes": 29545,
+      "path": "/tmp/pow-audit30-promotion-full-read-native-v1.test.py",
+      "sha256": "44a793249d8520ed21f794b83796caa85ac6d37006a20f3f0899ae5c320583d8"
+    },
+    "unchangedLeaf": {
+      "bytes": 6197,
+      "path": "/tmp/pow-audit30-oct3-latest-backup-full-read-v1.py",
+      "sha256": "01b80fd9b4a3a92893c06f288b3d3bdc90e05b7ed6f7c6f25bebc21c1ecc56a3"
+    }
+  },
+  "checkerInstalled": false,
+  "deletionAuthorized": false,
+  "directory": "/var/tmp/proofofwork-audit30-pin-promotion-20261003T120000Z-preflight",
+  "futureTransport": {
+    "exclusivePrefix": "/tmp/pow-audit30-promotion-full-read-native-120000-v1",
+    "outerSeconds": 480,
+    "qualified": "Review-only proposed contract; no actual command/request or capture is created.",
+    "source": {
+      "bytes": 8396,
+      "path": "/tmp/pow-audit30-readonly-owned-transport-v3.py",
+      "sha256": "1dedef0a6c7021d114017e711ad74f9cfed4e461fc047a2be2c49e590f3da18e"
+    },
+    "stderrMaximumBytes": 65536,
+    "stdoutMaximumBytes": 2097152,
+    "typedStdinSeparate": true
+  },
+  "historicalQualification": "The10:32 db8f result remains historical content/catalog authority. It is never copied or re-dated to satisfy freshness; unchanged leaf stamps actual time only after actual full hashes and pg_restore--list. This preparation asserts no directory/unit creation, new full-read result, restore equivalence, promotion or deletion.",
+  "independentPeer": "pending math_review",
+  "nativeCallPerformed": false,
+  "nativeRuntime": {
+    "cpuPercent": 25,
+    "deniedOriginalThreeClonesAndLivePgCoreApi": true,
+    "gid": 112,
+    "memoryHighBytes": 100663296,
+    "memoryMaxBytes": 134217728,
+    "rawGlobalsContentsEmitted": false,
+    "readOnlyExactOct3Members": true,
+    "rootWholeSeconds": 420,
+    "sharedNonblockingExistingBackupLock": true,
+    "swapBytes": 0,
+    "tasks": 16,
+    "uid": 108,
+    "unitSeconds": 360,
+    "user": "postgres"
+  },
+  "newPackageOrUnitCreated": false,
+  "output": "/var/tmp/proofofwork-audit30-pin-promotion-20261003T120000Z-preflight/full-read.json",
+  "pinChanged": false,
+  "preserved": {
+    "allFiveCurrentChosenActionFence": true,
+    "knownHeldAbsencesUnresolved": 18,
+    "monitorIdleStaticOperationalObservationSeparate": true,
+    "old102500EvidenceAndSource": true,
+    "oldDa5dChecker": true,
+    "oldSep29Pin": true,
+    "staticEightFilesAndMasksWalPrune": true
+  },
+  "productionMutation": false,
+  "recoveryActivation": false,
+  "remainingGates": [
+    "Actual104500 restore must pass and its four receipts/custody be separately reviewed before a concrete promotion plan may be assembled.",
+    "Fresh chosen-action exact five/static8/mask/inactiveWAL/prune/idle-static-monitor authority must bind the null request fields and be accepted by Root.",
+    "Exact wrapper/source/request/transport review and a separate once read-only native GO; no automatic retry.",
+    "Actual fresh all-three full content hash/catalog result and raw output SHA/root600 metadata must be reviewed and fit900-second V5 freshness at the later chosen action.",
+    "Separate direct human approval is required for any coupled promotion; this source preparation creates none."
+  ],
+  "request": {
+    "expectedLive": null,
+    "expectedProtection": null,
+    "filledRequestPrepared": false,
+    "humanApprovalCreated": false,
+    "nativeGO": false
+  },
+  "run": "20261003T120000Z",
+  "schema": "pow-audit30-promotion-fresh-full-read-source-preparation-v1",
+  "sourceChanges": [
+    "Fixed RID102500 to unused future120000; fixed unit prefix becomes pin-promotion-full-read; fixed evidence prefix becomes pin-promotion, matching the exact V5 freshFullRead path.",
+    "Documentation line only. Every function/class AST remains identical to d9c, and exact01b leaf bytes remain unchanged."
+  ],
+  "status": "source-only-tested-null-request",
+  "tests": {
+    "command": [
+      "python3",
+      "-I",
+      "-B",
+      "-W",
+      "error",
+      "/tmp/pow-audit30-promotion-full-read-native-v1.test.py"
+    ],
+    "exitCode": 0,
+    "passed": 38,
+    "qualification": "32 retargeted accepted wrapper tests plus six namespace/null-template/reversal/unchanged-guard/stale-historical-date fixtures. Local unit observations/resources are mocked; real signal/reap and file alias checks remain. No native execution or future current authority is supplied by fixtures.",
+    "reportedSeconds": 0.182
+  },
+  "unit": "proofofwork-audit30-pin-promotion-full-read-20261003T120000Z.service"
+}

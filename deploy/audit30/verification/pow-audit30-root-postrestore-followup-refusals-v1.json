@@ -1,0 +1,35 @@
+{
+  "additionalDeletion": false,
+  "allDependenciesClosed": false,
+  "atUtc": "2026-10-03T11:45:24.782847+00:00",
+  "bridgeAttempt": {
+    "automaticRetry": false,
+    "closedLiteral": "Protection unit drift",
+    "closedLiteralLinesInExactEmbeddedAd03": [
+      124
+    ],
+    "dependencyVerificationAccepted": false,
+    "stderrSha256": "c9f5cf00e00edc42fd3e9d643acf51c9bea657867457f1ecdac9794e9e5639b6",
+    "whichProtectedTupleChangedEstablished": false
+  },
+  "productionMutation": false,
+  "promotionPlanReady": false,
+  "promotionReadAttempt": {
+    "automaticRetry": false,
+    "closedLiteral": "Fixed isolated root role",
+    "configurationOrPinMutationRequested": false,
+    "correctedCaller": {
+      "bytes": 2109,
+      "path": "/tmp/pow-audit30-root-promotion-full-read-once-v2.py",
+      "sha256": "73da660d4fd3f7bb9e198b7b799acc31f7867d1663e270750cf8674143d12320"
+    },
+    "correctedCallerExecuted": false,
+    "freshProofAccepted": false,
+    "localCallerRequiredArgumentOmitted": true,
+    "requiredBeforeDistinctExecution": "Fresh exact metadata request and fixed new unit/evidence absence; corrected request-hash argument; same source/caps/guards, no silent reuse of stale context.",
+    "stderrSha256": "acc1df9287a23fa26c4d4a2ed926f9469cdb161f0a31706eb2481a2d542a5f71",
+    "unitAbsenceCurrentlyObserved": false
+  },
+  "restoreSnapshotAcceptanceUnaffectedSha256": "fbac8b76c0ce44de997c8585cd6031354fe8bcd722ee09f0b02ec94f05d6a9ba",
+  "schema": "pow-audit30-root-postrestore-followup-refusals-v1"
+}

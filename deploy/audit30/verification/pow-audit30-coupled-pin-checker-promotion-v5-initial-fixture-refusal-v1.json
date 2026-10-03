@@ -1,0 +1,12 @@
+{
+  "failure": "Test mutated fresh proof TOC/path after computing its fixture raw hash; the mock correctly refused its hash mismatch before reaching the target TOC gate.",
+  "failures": 1,
+  "fixturePreservedAt": "/tmp/pow-audit30-coupled-pin-checker-promotion-v5.initial-test-draft.py",
+  "fixtureSha256": "f392ee90350469ffadcfa178280b8987cfd726fe1e2b41e0350c7159d4738d23",
+  "nativeAction": false,
+  "passed": 35,
+  "qualification": "Fixture-only fix recomputes the synthetic raw hash after mutation; operative successor bytes remain unchanged. No native action or actual restore receipt.",
+  "schema": "pow-audit30-coupled-v5-initial-fixture-checkpoint-v1",
+  "sourceSha256": "7e878f987524dce2583b348964032af62491ce3cabcdc49adc359b36b7fc5bd4",
+  "testsRun": 36
+}

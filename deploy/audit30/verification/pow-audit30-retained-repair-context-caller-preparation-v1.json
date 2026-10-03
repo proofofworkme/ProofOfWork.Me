@@ -1,0 +1,150 @@
+{
+  "allDependenciesClosed": false,
+  "atUtc": "2026-10-03T11:12:20.539910+00:00",
+  "authorNativeCalls": false,
+  "automaticRetry": false,
+  "caller": {
+    "bytes": 1953,
+    "path": "/tmp/pow-audit30-retained-repair-context-transport-preparation-v1.py",
+    "sha256": "c5c7a3ba24ff4039d3280363c9579f1ffd94c85d035d1f12fd2aaa61dfd4400a"
+  },
+  "callerTests": {
+    "bytes": 4272,
+    "path": "/tmp/pow-audit30-retained-repair-context-caller-v1.test.py",
+    "sha256": "629814c95d844f5a2b5e0855b53ab4389ab626e2ef9e72783a4cbd643384060f"
+  },
+  "capturesAbsentAtLocalPreparation": true,
+  "clusterPathsReadOrWritten": false,
+  "contextSourceRequestAndManagedEqualRepositoryCustody": [
+    {
+      "bytes": 4368,
+      "originalPath": "/tmp/pow-audit30-oct2-full-read-current-context-v2.py",
+      "purpose": "Action61 exact public source, request, source-only fixture/review or actual readonly capture; native failure is preserved as failure.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-oct2-full-read-current-context-v2.py",
+      "sha256": "69179562d28eeabe1a6bcbf6ba2c506bf95e6d8ce02a79c20fc882dbe741b839"
+    },
+    {
+      "bytes": 33475,
+      "originalPath": "/tmp/pow-audit30-oct2-full-read-current-context-request-v2.json",
+      "purpose": "Action61 exact public source, request, source-only fixture/review or actual readonly capture; native failure is preserved as failure.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-oct2-full-read-current-context-request-v2.json",
+      "sha256": "5b0957e3cce7fb5a64c4d82b58808faedc5d6c0147a874c22d938c05536d44dd"
+    },
+    {
+      "bytes": 24954,
+      "originalPath": "/tmp/pow-audit30-oct2-full-read-native-v2.py",
+      "purpose": "Action61 exact public source, request, source-only fixture/review or actual readonly capture; native failure is preserved as failure.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-oct2-full-read-native-v2.py",
+      "sha256": "ad03e5d02e10018fb7c5dd3c118a7ac876331cad240832c52e4838a4bea0ff2a"
+    }
+  ],
+  "exclusiveCapturePrefix": "/tmp/pow-audit30-retained-repair-context-native-v1",
+  "existingFixedContextRequest": {
+    "bytes": 33475,
+    "path": "/tmp/pow-audit30-oct2-full-read-current-context-request-v2.json",
+    "sha256": "5b0957e3cce7fb5a64c4d82b58808faedc5d6c0147a874c22d938c05536d44dd"
+  },
+  "existingFixedContextSource": {
+    "bytes": 4368,
+    "path": "/tmp/pow-audit30-oct2-full-read-current-context-v2.py",
+    "sha256": "69179562d28eeabe1a6bcbf6ba2c506bf95e6d8ce02a79c20fc882dbe741b839"
+  },
+  "historical093000NamespaceIsLabelOnly": true,
+  "laterBindingSequence": [
+    "Root separately reviews and admits one exact metadata context caller; this preparation does not launch it.",
+    "If the one context succeeds, Root verifies source/request/capture hashes, output schema, complete five/service-timer profiles, all eight static files/mask/WAL/prune, clear logical-backup window and endpoint equality. Failure is retained; no automatic retry.",
+    "Only that accepted fresh result may populate a NEW immutable bridge request expectedLive/expectedProtection. Preserve exact07824 lock timestamp/intrinsics; no fabricated default or timestamp waiver.",
+    "Bridge template and existing caller remain unchanged/null until the new request and caller binding receive a separate Root onceGO; no bridge or retirement admission is inferred."
+  ],
+  "managedInertSource": {
+    "bytes": 24954,
+    "path": "/tmp/pow-audit30-oct2-full-read-native-v2.py",
+    "sha256": "ad03e5d02e10018fb7c5dd3c118a7ac876331cad240832c52e4838a4bea0ff2a"
+  },
+  "preservedUnboundBridge": {
+    "backupLock": {
+      "bytes": 0,
+      "ctimeNs": 1790997532936269129,
+      "dev": 64514,
+      "gid": 112,
+      "ino": 7471419,
+      "mode": 384,
+      "mtimeNs": 1790997532936269129,
+      "nlink": 1,
+      "uid": 108
+    },
+    "backupLockObservationSha256": "07824e0892583ee7d0370f2f6f97e85e7376502d23e7895fbadd0b1b7ca320cc",
+    "caller": {
+      "bytes": 2015,
+      "path": "/tmp/pow-audit30-retained-repair-dependency-bridge-transport-preparation-v2.py",
+      "sha256": "689e58b4521a49fa1f945daf4f9d25ca8895dbdc4d13c034fa6e29ecf388c4ec"
+    },
+    "callerRequestSha256": null,
+    "contextDoesNotReadOrReproveBackupLock": true,
+    "expectedLive": null,
+    "expectedProtection": null,
+    "laterBridgeStatOnlyValidationStillRequired": true,
+    "requestTemplate": {
+      "bytes": 100048,
+      "path": "/tmp/pow-audit30-retained-repair-dependency-bridge-request-template-v2.json",
+      "sha256": "1694b0d4a2bf716d236944eda283f5d2b0d6b3adc575b90cf359d2a2487a04f8"
+    },
+    "source": {
+      "bytes": 16890,
+      "path": "/tmp/pow-audit30-retained-repair-dependency-bridge-v2.py",
+      "sha256": "75643490cfb52f800b73dc0aa38fdcbb7e74dbbc0ab8f811733d946fefb6ff4e"
+    }
+  },
+  "productionMutation": false,
+  "qualifications": [
+    "Context source name/request run retains historical093000 namespace; collect invokes metadata-only live/quiet/static/protection definitions, not backup leaf/runtime/main, absentOct2 dump, PG/SQL/Core/cluster paths or newunit/control.",
+    "Chosen current five/window/static protection output is a point-in-time endpoint observation; no continuous or future exclusion, current backup equivalence or complete dependency closure follows.",
+    "Native context128MiB and bridge384MiB bounds are separate reviewed source limits, both with60s root work and90s shared outer transport. The caller does not relax either.",
+    "The periodic monitor must satisfy the unchanged managed per-unit profile during the context. Drift or active monitor refusal is retained, not ignored or fabricated.",
+    "Root must retain original live five/source/static/mask/WAL/prune approval gates while the separate104500 restore is running. No current restore/PITR acceptance or recovery/retirement/human repair authority is supplied."
+  ],
+  "remoteArgvContract": {
+    "command": "sudo -n /usr/bin/python3 -I -B -c <exact shlex-quoted69179562 source>",
+    "contextRequiresArgvLength": 1,
+    "outputSchema": "pow-audit30-oct2-full-read-current-context-v1",
+    "requestSchema": "pow-audit30-oct2-full-read-current-context-request-v1",
+    "requestShaArgv": null,
+    "typedStdinBytes": 33475,
+    "typedStdinSha256": "5b0957e3cce7fb5a64c4d82b58808faedc5d6c0147a874c22d938c05536d44dd"
+  },
+  "repositoryModified": false,
+  "resourceDistinction": {
+    "bridgeAddressSpaceBytes": 402653184,
+    "bridgeOuterTransportSeconds": 90,
+    "bridgeRootMaximumSeconds": 60,
+    "capsNotInterchangeable": true,
+    "contextAddressSpaceBytes": 134217728,
+    "contextAlarmInstalledBeforeStdin": true,
+    "contextCpuSeconds": 30,
+    "contextOuterTransportSeconds": 90,
+    "contextRootMaximumSeconds": 60,
+    "contextStderrCapBytes": 65536,
+    "contextStdoutCapBytes": 65536
+  },
+  "rootOnceGo": false,
+  "schema": "pow-audit30-retained-repair-fresh-context-caller-preparation-v1",
+  "sharedOwnedTransport": {
+    "bytes": 8396,
+    "path": "/tmp/pow-audit30-readonly-owned-transport-v3.py",
+    "sha256": "1dedef0a6c7021d114017e711ad74f9cfed4e461fc047a2be2c49e590f3da18e"
+  },
+  "slotOrConfigurationAction": false,
+  "sqlExecuted": false,
+  "status": "source-only-awaiting-peer-and-root-once-go",
+  "tests": {
+    "affectedCallerCases": 6,
+    "bridgeNullLockPreservation": true,
+    "exactCustodyBinding": true,
+    "extraArgRefusalBeforeTransport": true,
+    "fixedMockTransportOnlyNoSSH": true,
+    "nativeDefinitionsOnlyLoad": true,
+    "passed": true,
+    "seconds": 0.028,
+    "sourceDriftRefusal": true
+  }
+}

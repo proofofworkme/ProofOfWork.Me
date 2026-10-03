@@ -1,0 +1,136 @@
+{
+  "activationApproved": false,
+  "actualCurrentMetadataAuthority": {
+    "bytes": 2950,
+    "path": "/tmp/pow-audit30-oct3-restore-capacity-running-observation-v2.json",
+    "sha256": "f4c8da6e852661d3fe875e398071a15d22288f7144a3bd2b0b3a023531c93000"
+  },
+  "atUtc": "2026-10-03T11:05:23.327956+00:00",
+  "candidate": {
+    "bytes": 30266,
+    "path": "/tmp/pow-audit30-recovery-controller-capacity-v3.py",
+    "sha256": "40a44c52f13f90a764287c689d5d175d8b5fd895131a624f74cd06dfcd3f9e80"
+  },
+  "capsReduced": false,
+  "currentBoundCapacityDelta": {
+    "bytes": 3783,
+    "path": "/tmp/pow-audit30-recovery-measured-capacity-delta-v2.json",
+    "sha256": "7dc43345ac2fd6be9334fa046cf4faf26ff239d0e11a93e3cbe44f31ae519e71"
+  },
+  "currentCapacityImplication": {
+    "actualAvailableBytes": 259876732928,
+    "futureCapacityNotGuaranteed": true,
+    "newInitialAdmissionRefusesCurrentSnapshot": true,
+    "oldInitialAdmission212GiBStillPassesHistorically": true,
+    "required293GiBBytes": 314606354432,
+    "shortfallBytes": 54729621504
+  },
+  "deletionAuthority": false,
+  "exactChanges": [
+    "Add PRIVATE_RECOVERY_MAX=80*GIB as the already proposed separate private recovery admission allowance.",
+    "Initial storage admission changes from DATA_MIN+BASE_MAX+WAL_MAX=212GiB to DATA_MIN+BASE_MAX+PRIVATE_RECOVERY_MAX+WAL_MAX+GIB=293GiB."
+  ],
+  "exactDiff": {
+    "bytes": 1325,
+    "path": "/tmp/pow-audit30-recovery-controller-capacity-v3.diff",
+    "sha256": "ba18222ac5997d483e09ac8d1d55f176a169741a4ff2fbbf5aad58d343725a1e"
+  },
+  "futureBindingRequirements": [
+    "Independent source review and Root acceptance of exact successor rawSHA before any final managed plan/package binding.",
+    "Any future creation-only package canonical recovery-controller.py must contain these exact candidatebytes; new plans sourceSha256 and actual native source hashes must agree, with unchanged26c adjacent source-plan credential contracts.",
+    "Fresh actual capacity/five/window/lock/protection at chosen action; preserve current incomplete104500 restore and all original failed/accepted proofs.",
+    "Final human recovery/configuration/deletion approval remains separate. This source preparation does not grant root/slot/receiver/base/private recovery creation or execution."
+  ],
+  "initialFixtureLocationRefusalPreserved": {
+    "bytes": 1321,
+    "path": "/tmp/pow-audit30-recovery-controller-capacity-v3.fixture-checkpoint-v1.json",
+    "sha256": "c5adf59d5c6a32f971a0e7cb35a32fb550de7a54ab97879878118c0bce512d25"
+  },
+  "initialRetargetedFixturePreserved": {
+    "bytes": 21682,
+    "path": "/tmp/pow-audit30-recovery-controller-capacity-v3.original-fixtures.test.py",
+    "sha256": "9c325ba6b8097ce4b292441acc8b2d8d03afabf472d5038e47eeb6f558ebdd20"
+  },
+  "installOrConfigurationChanges": false,
+  "invariants": {
+    "allOtherFunctionsAndClassesAstIdentical": true,
+    "baseCeilingGiB": 80,
+    "evidenceCeilingGiB": 1,
+    "initialDataAdmissionGiB": 293,
+    "nativePrivateRecoverySizeNotProvenByNewConstant": true,
+    "planSchemaUnchanged": true,
+    "runtimeDataMinimumGiB": 100,
+    "runtimeRecoveryRootTotalCeilingGiB": 113,
+    "runtimeRootMinimumGiB": 10,
+    "separatePrivateAdmissionAllowanceGiB": 80,
+    "timerSlotWalCoverageSqlAuthorityResourcesCleanupOrdinarySignalBehaviorUnchanged": true,
+    "twoEditReverseByteEqualsOriginalB16": true,
+    "walCeilingGiB": 32
+  },
+  "meaningfulTests": [
+    {
+      "coverage": [
+        "Exact captured242.029GiB current capacity refuses new initial admission while oldb16 initial212 predicate passes.",
+        "Prior249.925GiB also refuses;293GiB exact passes, onebytebelow refuses, onebyteabove passes.",
+        "Runtime100GiB and root10GiB boundaries preserved;80base/32WAL/113aggregate caps preserved.",
+        "Initial refusal occurs before cluster SQL/wal inventory; receiver continuity call contract retained.",
+        "Exact two-edit reversal plus all other function/class AST equality proves no broader operative change."
+      ],
+      "invocation": "python3 -I -B -W error /tmp/pow-audit30-recovery-controller-capacity-v3.test.py",
+      "passed": 14,
+      "qualification": "Frozen actual storage function executed locally with only allocation/statvfs and root/authority/SQL/native fences mocked. No native, live socket or slot/base/receiver call.",
+      "seconds": 0.061,
+      "source": {
+        "bytes": 5745,
+        "path": "/tmp/pow-audit30-recovery-controller-capacity-v3.test.py",
+        "sha256": "96efd3a57f643ee406ebe116aec6aa5cb9faef877bac23f04d4b9eac8d3da3a2"
+      }
+    },
+    {
+      "invocation": "python3 -I -B -W error /tmp/pow-audit30-recovery-controller-capacity-v3.original-fixtures-v2.test.py",
+      "passed": 22,
+      "qualification": "Original proposal22 fixtures retarget sourceonly; real local SIGINT/SIGTERM child/reaping/locks/receipt cases retained. Sole corrected expectation derives adjacent reviewed-plan from copied controller__file__; native credential is mocked as before.",
+      "seconds": 0.218,
+      "source": {
+        "bytes": 21701,
+        "path": "/tmp/pow-audit30-recovery-controller-capacity-v3.original-fixtures-v2.test.py",
+        "sha256": "426907f9fd1a9f67e3c4173304d7d1a96c825db0d1204e2395593b55e66bdeae"
+      }
+    }
+  ],
+  "nativePerformed": false,
+  "preservedControllerV2": {
+    "bytes": 30211,
+    "path": "/home/sixer/ProofOfWork.Me/deploy/audit30/recovery/recovery-controller-v2.py",
+    "sha256": "b16ee1a596e0b33ef921dad7f8778019e906c7b1261d3d251089a21e1670acf2"
+  },
+  "preservedGuard26c": {
+    "bytes": 61051,
+    "path": "/home/sixer/ProofOfWork.Me/deploy/audit30/restore-latest-logical.py",
+    "sha256": "26c7656b2e751c6de50122c65f8af73686c2d2674bee8be86a3c5648b7fcc80e"
+  },
+  "preservedHistoricalCapacity10Tests": {
+    "bytes": 3931,
+    "path": "/tmp/pow-audit30-recovery-measured-capacity-qualification-v1.test.py",
+    "sha256": "c478c7521e47f9c889bbc29f17ed4dffa7db42c332711bedfaefb1a807b2d85c"
+  },
+  "preservedHistoricalCapacityQualification": {
+    "bytes": 10627,
+    "path": "/tmp/pow-audit30-recovery-measured-capacity-qualification-v1.json",
+    "sha256": "f04664490ac4d7fde5deef91cbb3f3528716049b88de025b23a6ba6f3a78ac2c"
+  },
+  "preservedProposalV2": {
+    "bytes": 11171,
+    "path": "/home/sixer/ProofOfWork.Me/deploy/audit30/recovery/PROPOSAL-v2.md",
+    "sha256": "06598f0bb202794328a35a30a247ab8b0a12daf834c56f63786eb3c2529a4eaf"
+  },
+  "qualifications": [
+    "Existing80base+80private+32WAL+1evidence+100reserve remains unchanged. No smaller envelope or shared allocation/release is chosen.",
+    "New constant reserves admission space only; it is not a new private recovery implementation, quota, native backup/WAL/target-recovery equivalence, RPO or production page checksum certificate.",
+    "All runtime storage samples still require100GiB data and10GiB root; five-second polling and shutdown latency remain monitored overshoot qualifications.",
+    "Current293GiB refusal is an offline predicate result, not an observed native activation/refusal."
+  ],
+  "schema": "pow-audit30-recovery-capacity-v3-source-preparation-v1",
+  "sourceOnly": true,
+  "testsPassedFinal": 36
+}
