@@ -1,0 +1,88 @@
+{
+  "atUtc": "2026-10-03T10:49:11.853391+00:00",
+  "baselineCommit": "33feaac67faff89e5f4fb1a3038bb8263dfa57aa",
+  "checks": {
+    "allCurrentRepositoryCustodyBytesSha256Match": true,
+    "approvalProductionMutationAdditionalRetirementFinalApprovalListsUnchanged": true,
+    "currentActions": 62,
+    "currentCustodyRows": 622,
+    "fourPriorRawDiffsUntrackedAndExactTmp": true,
+    "item7PriorValuesAndCheckpointPrefixPreserved": true,
+    "newArtifactTotalBytes": 1044794,
+    "newExactRawDiffEnvelopes": 7,
+    "newMaximumArtifactBytes": 87195,
+    "newPathsExactRawOrEnvelopeTmp": 86,
+    "newRows": 86,
+    "otherItemValuesUnchanged": true,
+    "priorActionsExactTypedCanonical": 61,
+    "priorCustodyRowsExactTypedCanonical": 536,
+    "storedRepresentationsUnchanged": true,
+    "trackedChangesOnlyThreeBookkeepingFiles": true,
+    "trackedDeletionNone": true,
+    "trackerPreviousBytesExactPrefix": true
+  },
+  "deletionAuthority": false,
+  "findings": [
+    {
+      "finding": "The status says the new isolated104500 restore is running. The authoritative action and running observation establish only the dated10:38 endpoint. Completion/private-stop/resource receipts remain pending.",
+      "jsonPointer": "/items/7/status",
+      "path": "audits/2026-10-02-audit30-remaining-phase-execution.evidence.json",
+      "priority": "low",
+      "recommendation": "Use was observed running at10:38; final receipts pending, or equivalent dated wording. No PASS overclaim exists in the action/checkpoint booleans."
+    }
+  ],
+  "inputs": [
+    {
+      "bytes": 16512808,
+      "path": "/home/sixer/ProofOfWork.Me/audits/2026-10-02-audit30-remaining-phase-execution.evidence.json",
+      "sha256": "25ea0e4a26258344e207ed97b88934278f2fa917a4ee2ca7efab824cf6f9db48"
+    },
+    {
+      "bytes": 305729,
+      "path": "/home/sixer/ProofOfWork.Me/deploy/audit30/verification/source-custody.json",
+      "sha256": "ad76754bc2a81b04d3c6a96a8e30797acf7368585f1b2ca9cb220a0f059c2e5d"
+    },
+    {
+      "bytes": 76094,
+      "path": "/home/sixer/ProofOfWork.Me/audits/2026-10-02-audit30-followup-tracker.md",
+      "sha256": "1bd6fda6388d05a0f4cf5dcca6518003f808a8a07b01dd1655d27f2e18b9e448"
+    },
+    {
+      "bytes": 11877,
+      "path": "/tmp/pow-audit30-append-action62-v2.py",
+      "sha256": "59601193264a9dd801b5de3ef3ecc0c546c904a7fc6b8a48aaa3dce2fda883b5"
+    },
+    {
+      "bytes": 37665,
+      "path": "/tmp/pow-audit30-action62-public-custody-preservation-v1.json",
+      "sha256": "08ef268fe052cc2fe78c82bb934021855c0d16e507bd28feafea1458f8155bd3"
+    }
+  ],
+  "nativeCallsByReviewer": 0,
+  "productionMutation": false,
+  "qualification": "Review is bounded to the checkpoint bytes above and previous33feaac values. It does not independently rerun any native probe, prove current restore state, or grant promotion/recovery/deletion authority.",
+  "repositoryWritesByReviewer": 0,
+  "restoreCompletionOrRuntimeCurrentlyCertified": false,
+  "reviewer": "vps_health",
+  "schema": "pow-audit30-independent-action62-preservation-review-v1",
+  "semanticReview": {
+    "currentOct3ContentHashAnd197EntryTocPassedOnly": true,
+    "embeddedEncodingInventory": {
+      "closedMetadataRestorePlan": 1,
+      "exactDiffBytes": 7,
+      "pythonSource": 9
+    },
+    "failed095500SizingOwnStopVerifiedNoSizingAccepted": true,
+    "globalDependencyPitrFullFinancialClosureNotClaimed": true,
+    "new104500RestoreOnlyObservedRunningAt1038": true,
+    "newRestorePassOrStopNotClaimed": true,
+    "noAccidentallyCopiedPrivateBodyEnvCredentialPayloadIdentified": true,
+    "private7692221671691040144VersusProduction7652445986754609384SourceDefectQualified": true,
+    "productionRepairRecoveryPinAdditionalDeletionApprovalAndActualMutationNotClaimed": true,
+    "reviewedNewArtifactContentPublicCodeTestsAndMetadataHashCountTocOnly": true,
+    "selectedDfda5JournalReportsOrdinaryBackupDeletedOct2NotRootDeletion": true,
+    "selectedJournalNotFullHistoryOrSoleCauseProof": true,
+    "sourceEncodingAndPublicMetadataReviewIsNotGeneralSecretOrGlobalDependencyCertificate": true
+  },
+  "status": "preservation-accepted-with-one-textual-qualification"
+}

@@ -1,0 +1,66 @@
+{
+  "command": "sudo -n /usr/bin/timeout 15s /usr/bin/python3 -I -B -c 'import json,os,stat\nfrom pathlib import Path\nroot=Path('\"'\"'/data/proofofwork-audit30-restore-20261003T104500Z'\"'\"')\nnames=['\"'\"'intent.json'\"'\"','\"'\"'source-verification.json'\"'\"','\"'\"'private-start-identity.json'\"'\"','\"'\"'role-verification.json'\"'\"','\"'\"'owner-acl-parity.json'\"'\"','\"'\"'table-row-parity.json'\"'\"','\"'\"'offline-page-check.json'\"'\"','\"'\"'failed.json'\"'\"','\"'\"'completed.json'\"'\"']\nrows=[]\nfor name in names:\n p=root/name\n try:s=p.lstat()\n except FileNotFoundError:rows.append({'\"'\"'name'\"'\"':name,'\"'\"'exists'\"'\"':False});continue\n assert stat.S_ISREG(s.st_mode) and s.st_uid==108 and s.st_gid==112 and stat.S_IMODE(s.st_mode)==384 and s.st_nlink==1\n rows.append({'\"'\"'name'\"'\"':name,'\"'\"'exists'\"'\"':True,'\"'\"'bytes'\"'\"':s.st_size,'\"'\"'mtimeNs'\"'\"':s.st_mtime_ns})\nprint(json.dumps({'\"'\"'schema'\"'\"':'\"'\"'pow-audit30-fixed-public-stage-metadata-v1'\"'\"','\"'\"'rows'\"'\"':rows,'\"'\"'privateDataContentsRead'\"'\"':False,'\"'\"'restoreEquivalenceCertified'\"'\"':False},sort_keys=True))\n'",
+  "exitCode": 0,
+  "finishedAtUtc": "2026-10-03T11:01:06.780206+00:00",
+  "productionMutation": false,
+  "qualification": "Presence and metadata of fixed public stage receipts only; no file contents, private COPY bytes, overall restore completion or stop acceptance.",
+  "restoreCompletedAccepted": false,
+  "result": {
+    "privateDataContentsRead": false,
+    "restoreEquivalenceCertified": false,
+    "rows": [
+      {
+        "bytes": 2498,
+        "exists": true,
+        "mtimeNs": 1791023818898905737,
+        "name": "intent.json"
+      },
+      {
+        "bytes": 507,
+        "exists": true,
+        "mtimeNs": 1791023835972909800,
+        "name": "source-verification.json"
+      },
+      {
+        "bytes": 1245,
+        "exists": true,
+        "mtimeNs": 1791023836624909956,
+        "name": "private-start-identity.json"
+      },
+      {
+        "bytes": 322,
+        "exists": true,
+        "mtimeNs": 1791023837044910056,
+        "name": "role-verification.json"
+      },
+      {
+        "exists": false,
+        "name": "owner-acl-parity.json"
+      },
+      {
+        "exists": false,
+        "name": "table-row-parity.json"
+      },
+      {
+        "exists": false,
+        "name": "offline-page-check.json"
+      },
+      {
+        "exists": false,
+        "name": "failed.json"
+      },
+      {
+        "exists": false,
+        "name": "completed.json"
+      }
+    ],
+    "schema": "pow-audit30-fixed-public-stage-metadata-v1"
+  },
+  "schema": "pow-audit30-oct3-restore-public-stage-metadata-transport-v1",
+  "sourceBytes": 825,
+  "sourceSha256": "8dd39a5f6c2e2964111b53ddf0c8ccdf9250570b1cccf6f216133b486232d354",
+  "startedAtUtc": "2026-10-03T11:01:04.588031+00:00",
+  "stderrBytes": 0,
+  "stdoutSha256": "2ff976cb0a86294123d77a1b6ab38a115c5bfc6bb9e537373bfb6027f4c7a39a",
+  "stdoutText": "{\"privateDataContentsRead\": false, \"restoreEquivalenceCertified\": false, \"rows\": [{\"bytes\": 2498, \"exists\": true, \"mtimeNs\": 1791023818898905737, \"name\": \"intent.json\"}, {\"bytes\": 507, \"exists\": true, \"mtimeNs\": 1791023835972909800, \"name\": \"source-verification.json\"}, {\"bytes\": 1245, \"exists\": true, \"mtimeNs\": 1791023836624909956, \"name\": \"private-start-identity.json\"}, {\"bytes\": 322, \"exists\": true, \"mtimeNs\": 1791023837044910056, \"name\": \"role-verification.json\"}, {\"exists\": false, \"name\": \"owner-acl-parity.json\"}, {\"exists\": false, \"name\": \"table-row-parity.json\"}, {\"exists\": false, \"name\": \"offline-page-check.json\"}, {\"exists\": false, \"name\": \"failed.json\"}, {\"exists\": false, \"name\": \"completed.json\"}], \"schema\": \"pow-audit30-fixed-public-stage-metadata-v1\"}\n"
+}

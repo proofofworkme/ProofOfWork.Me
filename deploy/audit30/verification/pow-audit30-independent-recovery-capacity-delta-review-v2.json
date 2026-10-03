@@ -1,0 +1,36 @@
+{
+  "activationApproved": false,
+  "atUtc": "2026-10-03T11:01:05.475127+00:00",
+  "checks": {
+    "dataAvailableBytes": 259876732928,
+    "declineBytes": 8478724096,
+    "derivedIntegerArithmetic": true,
+    "embeddedPublicStdoutBytesAndHashes": true,
+    "initial212GiBPredicatePasses": true,
+    "initialHeadroomBytes": 32243466240,
+    "nineDecimalGiBRowsChecked": 6,
+    "restoreCompleted": false,
+    "sameUnitStillRunning": true,
+    "whole293GiBShortfallBytes": 54729621504,
+    "whole293GiBShortfallGiB": "50.970932007"
+  },
+  "deletionAuthority": false,
+  "delta": {
+    "bytes": 3783,
+    "path": "/tmp/pow-audit30-recovery-measured-capacity-delta-v2.json",
+    "sha256": "7dc43345ac2fd6be9334fa046cf4faf26ff239d0e11a93e3cbe44f31ae519e71"
+  },
+  "nativeCallPerformed": false,
+  "publicObservation": {
+    "bytes": 2950,
+    "path": "/tmp/pow-audit30-oct3-restore-capacity-running-observation-v2.json",
+    "sha256": "f4c8da6e852661d3fe875e398071a15d22288f7144a3bd2b0b3a023531c93000"
+  },
+  "qualification": "Observed free space is an instantaneous supplied public record. No decline cause is attributed. Active source sizing and WAL counted once remain v1-qualified; whole workflow does not fit unchanged caps at this snapshot. Result=success while active/running does not certify completion.",
+  "reviewer": "math_review",
+  "schema": "pow-audit30-independent-recovery-capacity-delta-review-v2",
+  "smallerCapsSelected": false,
+  "sourceOrUnitEdited": false,
+  "status": "source-only-accepted",
+  "v1PeerReceiptSha256": "20485a3e4478726c2061e799801887a58e601f6fc65ad499a88c34040d58842f"
+}

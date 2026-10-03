@@ -1,0 +1,120 @@
+{
+  "actualIdentityAuthority": {
+    "bytes": 5986,
+    "dataDirectory": "/var/lib/postgresql/16/main",
+    "path": "/tmp/pow-audit30-production-pg-identity-readonly-native-v1.stdout",
+    "serverVersionNum": "160015",
+    "sha256": "0d6b69eb45fd5f67fd4cda34ba4942fe54884ef20feeefb9a20d1c9b0d773c2a",
+    "systemIdentifier": "7652445986754609384",
+    "timeline": 1,
+    "transactionReadOnly": "on"
+  },
+  "automaticRetry": false,
+  "backupOrSlotCreated": false,
+  "callerRequestPin": null,
+  "files": [
+    {
+      "bytes": 10684,
+      "path": "/tmp/pow-audit30-production-physical-sizing-leaf-v3.py",
+      "sha256": "92c54c1f689a1f7d9f80a40c3b42944c9ee007a03438d550d5049584c2070d5c"
+    },
+    {
+      "bytes": 10077,
+      "path": "/tmp/pow-audit30-production-physical-sizing-leaf-v3.test.py",
+      "sha256": "4f879d1f52e466d5e1daeb89aa37b8372a13926731c0bf9130c25d930c4595a1"
+    },
+    {
+      "bytes": 1921,
+      "path": "/tmp/pow-audit30-production-physical-sizing-leaf-v3.diff",
+      "sha256": "b90e53caad57dc6876b37ff0b49efd905cde181337bee65612b9067e0055ad44"
+    },
+    {
+      "bytes": 13045,
+      "path": "/tmp/pow-audit30-production-physical-sizing-native-v3.py",
+      "sha256": "e0f4da80928bde3d201f27823d301c40b19575785d232c542b701b68aeb90777"
+    },
+    {
+      "bytes": 12674,
+      "path": "/tmp/pow-audit30-production-physical-sizing-native-v3.test.py",
+      "sha256": "35f05d15b862fcdc91068b3af25adb61f66cddbb49afd3c30c3b6cdc5e1c6a94"
+    },
+    {
+      "bytes": 11255,
+      "path": "/tmp/pow-audit30-production-physical-sizing-native-v3.diff",
+      "sha256": "0dff9fb76f4b12c9c2eb778925cc0011f1fe14094ccdeffff6495eff6ff3882b"
+    },
+    {
+      "bytes": 17830,
+      "path": "/tmp/pow-audit30-production-physical-sizing-bootstrap-v3.py",
+      "sha256": "3112ac9b91a421135034c8e646d213aa89792ed63800546816a41a3e553f615d"
+    },
+    {
+      "bytes": 1974,
+      "path": "/tmp/pow-audit30-production-physical-sizing-transport-preparation-v3.py",
+      "sha256": "f714c99e7ec63c500e55f8b95bb431337c7b6173248f331b90b1fe9cc051be23"
+    },
+    {
+      "bytes": 2937,
+      "path": "/tmp/pow-audit30-production-physical-sizing-transport-preparation-v3.diff",
+      "sha256": "54278318718f1f4f73e010cc35e57047c7566c19baa80ec853bbe090a1ad5cf7"
+    },
+    {
+      "bytes": 3708,
+      "path": "/tmp/pow-audit30-production-physical-sizing-caller-v3.test.py",
+      "sha256": "148ba6fb88c8ddb4484abbd5df00d8be96e3f4aace37ea2ac3c7ef0b03a534c3"
+    },
+    {
+      "bytes": 48217,
+      "path": "/tmp/pow-audit30-production-physical-sizing-request-template-v3.json",
+      "sha256": "c59bdcd133d1a90f1e4a56e5a36f7a69d6a43a2ad0807743119a7d1f11c4ed2d"
+    },
+    {
+      "bytes": 51968,
+      "path": "/tmp/pow-audit30-production-physical-sizing-request-104000-v3.json",
+      "sha256": "0eb805e7653ecddcc892a4f8d441b2d27fe424892871d80c3c6cdfc098e24d64"
+    }
+  ],
+  "monitorScope": {
+    "currentLoadedStaticIdlePidZeroRequired": true,
+    "fullEqualityRecordedTruthfully": true,
+    "onlyOperationalTupleCanDifferBeforeAfter": true,
+    "otherFiveStaticEightMaskWalPruneRemainExact": true
+  },
+  "nativeExecuted": false,
+  "newRid": "20261003T104000Z",
+  "preservedPriorNativeSourceSha256": "84a09e2bda07f672562074f8236cfd30eb9613df672232a371810721bd41e493",
+  "preservedPriorRid": "20261003T095500Z",
+  "preservedWrongIdentityLeafSha256": "6bc7adbb7fcb15266026488c8a6ad216c563be07836f5443d9f94b222559d827",
+  "productionMutation": false,
+  "recoveryActivated": false,
+  "retirementAuthority": false,
+  "schema": "pow-audit30-production-physical-sizing-source-preparation-v3",
+  "sizeMeasured": false,
+  "status": "source-only-tested-awaiting-peer-root-once-go",
+  "tests": {
+    "actualCapturedIdentityFixture": true,
+    "callerCases": 6,
+    "leafCases": 18,
+    "monitorActiveOrNonstaticRefused": true,
+    "nativeCases": 17,
+    "passed": true,
+    "priorPrivateIdentifierRefused": true,
+    "versionTimelineDriftRefused": true
+  },
+  "unchanged": {
+    "catalogAllDatabaseTablespaces": true,
+    "clientCapsDoNotBoundPostgresBackend": true,
+    "duAllocatedAndApparentNonaliasRules": true,
+    "leafSeconds": 150,
+    "managedAd03RawSha256": "ad03e5d02e10018fb7c5dd3c118a7ac876331cad240832c52e4838a4bea0ff2a",
+    "nativeUnitSeconds": 360,
+    "rootSeconds": 420,
+    "serverLockSeconds": 2,
+    "serverStatementSeconds": 15,
+    "serverTempFileLimitMB": 32,
+    "serverWorkMemMB": 8,
+    "sqlReadOnly": true,
+    "unitCpuQuotaPercent": 25,
+    "unitMemoryMax": 134217728
+  }
+}

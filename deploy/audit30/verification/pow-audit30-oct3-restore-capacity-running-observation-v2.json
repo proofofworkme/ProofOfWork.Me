@@ -1,0 +1,63 @@
+{
+  "capacitySnapshotNotFutureGuarantee": true,
+  "filesystems": [
+    {
+      "availableBytes": 67003199488,
+      "roundedUsedPercent": 33,
+      "source": "/dev/mapper/vg0-root",
+      "target": "/",
+      "totalBytes": 105089261568,
+      "usedBytes": 32700575744
+    },
+    {
+      "availableBytes": 259876732928,
+      "roundedUsedPercent": 86,
+      "source": "/dev/mapper/vg0-data",
+      "target": "/data",
+      "totalBytes": 1764768071680,
+      "usedBytes": 1495904161792
+    }
+  ],
+  "newUnitRunningObserved": true,
+  "observations": {
+    "capacity": {
+      "command": "/usr/bin/timeout 15s /usr/bin/df -B1 --output=source,size,used,avail,pcent,target / /data",
+      "exitCode": 0,
+      "finishedAtUtc": "2026-10-03T10:57:56.491906+00:00",
+      "startedAtUtc": "2026-10-03T10:57:53.796701+00:00",
+      "stderrBytes": 0,
+      "stdoutBytes": 220,
+      "stdoutSha256": "adfb60acb96ee209faf17e1cdcf2dc1ee7b563627a7e9d1d67e73f36f78c99d2",
+      "stdoutText": "Filesystem               1B-blocks          Used        Avail Use% Mounted on\n/dev/mapper/vg0-root  105089261568   32700575744  67003199488  33% /\n/dev/mapper/vg0-data 1764768071680 1495904161792 259876732928  86% /data\n"
+    },
+    "unit": {
+      "command": "sudo -n /usr/bin/timeout 15s /usr/bin/systemctl show proofofwork-audit30-logical-restore-20261003T104500Z.service --no-pager --property=LoadState --property=ActiveState --property=SubState --property=MainPID --property=InvocationID --property=ControlGroup --property=MemoryCurrent --property=MemoryMax --property=RuntimeMaxUSec --property=Result --property=ExecMainStatus",
+      "exitCode": 0,
+      "finishedAtUtc": "2026-10-03T10:57:53.796662+00:00",
+      "startedAtUtc": "2026-10-03T10:57:51.524442+00:00",
+      "stderrBytes": 0,
+      "stdoutBytes": 299,
+      "stdoutSha256": "87468cb8e21f49240d197a9b2e7b4550af3a930228b2e279b92f2e8393f7d7f8",
+      "stdoutText": "RuntimeMaxUSec=2h\nMainPID=3106608\nResult=success\nExecMainStatus=0\nControlGroup=/system.slice/proofofwork-audit30-logical-restore-20261003T104500Z.service\nMemoryCurrent=6381068288\nMemoryMax=8589934592\nLoadState=loaded\nActiveState=active\nSubState=running\nInvocationID=322aeb150b664d7fa8380b8f6c7ed1f1\n"
+    }
+  },
+  "productionMutation": false,
+  "properties": {
+    "ActiveState": "active",
+    "ControlGroup": "/system.slice/proofofwork-audit30-logical-restore-20261003T104500Z.service",
+    "ExecMainStatus": "0",
+    "InvocationID": "322aeb150b664d7fa8380b8f6c7ed1f1",
+    "LoadState": "loaded",
+    "MainPID": "3106608",
+    "MemoryCurrent": "6381068288",
+    "MemoryMax": "8589934592",
+    "Result": "success",
+    "RuntimeMaxUSec": "2h",
+    "SubState": "running"
+  },
+  "restoreCompleted": false,
+  "restoreEquivalenceCertified": false,
+  "schema": "pow-audit30-oct3-restore-capacity-running-observation-v2",
+  "serviceControlPerformed": false,
+  "unit": "proofofwork-audit30-logical-restore-20261003T104500Z.service"
+}

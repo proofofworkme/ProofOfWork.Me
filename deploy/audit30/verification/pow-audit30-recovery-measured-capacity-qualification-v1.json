@@ -1,0 +1,226 @@
+{
+  "activationApproved": false,
+  "atUtc": "2026-10-03T10:54:48.674585+00:00",
+  "currentFreeSpacePlanningObservation": {
+    "dataAvailable": {
+      "GiBDecimal": "249.925495148",
+      "GiBExactFraction": "65516469/262144",
+      "bytes": 268355457024
+    },
+    "dataTotalBytes": 1764768071680,
+    "dataUsedBytes": 1487425437696,
+    "dfRoundedUsePercent": 85,
+    "instantaneousOnly": true,
+    "logicalRestoreStillRunningAtParentObservation": {
+      "InvocationID": "322aeb150b664d7fa8380b8f6c7ed1f1",
+      "MainPID": "3106608",
+      "MemoryCurrent": 6401454080,
+      "MemoryMax": 8589934592,
+      "restoreCompleted": false,
+      "unit": "proofofwork-audit30-logical-restore-20261003T104500Z.service"
+    },
+    "observedAtUtc": "2026-10-03T10:51:00Z",
+    "qualification": "Already consumed logical-restore allocation is reflected in available bytes; do not subtract it again. Remaining restore growth and other future allocations are not measured by this snapshot and can reduce capacity.",
+    "rootAvailable": {
+      "GiBDecimal": "62.402248383",
+      "GiBExactFraction": "16358375/262144",
+      "bytes": 67003904000
+    },
+    "source": "Parent Root supplied10:51 df metadata; no additional native measurement or durable raw observation pin is asserted by this note.",
+    "usedOverTotalPercent": "84.284471233"
+  },
+  "deletionAuthority": false,
+  "exactExistingGuardDistinction": {
+    "controllerFunction": "storage(p,admission=True)",
+    "currentAdmissionPredicate": "dataAvailable >= DATA_MIN + BASE_MAX + WAL_MAX",
+    "currentInitialPredicateHeadroom": {
+      "GiBDecimal": "37.925495148",
+      "GiBExactFraction": "9941941/262144",
+      "bytes": 40722190336
+    },
+    "currentSnapshotPassesInitial212GiBPredicate": true,
+    "evidence1GiBNotReservedAtInitialPredicate": true,
+    "initialAdmissionRequired": {
+      "GiBDecimal": "212.000000000",
+      "GiBExactFraction": "212",
+      "bytes": 227633266688
+    },
+    "requiredFinalPlanBehavior": "Before activation, separately require the approved retained-base+WAL+evidence+private-recovery peak plus100GiB reserve against fresh actual available space, including other remaining concurrent allocations. Refuse at the present snapshot under the unchanged193GiB envelope. Later runtime/storage checks remain mandatory; they do not make initial incomplete peak accounting sufficient.",
+    "runtimePredicate": "base<=80GiB;wal<=32GiB;totalRecoveryRoot<=113GiB;dataAvailable>=100GiB;rootAvailable>=10GiB",
+    "separatePrivate80GiBNotReservedAtInitialPredicate": true,
+    "wholeWorkflow193Plus100GateCurrentlyImplementedByB16Alone": false
+  },
+  "frozenEnvelope": {
+    "baseCeiling": {
+      "GiBDecimal": "80.000000000",
+      "GiBExactFraction": "80",
+      "bytes": 85899345920
+    },
+    "currentSnapshotShortfall": {
+      "GiBDecimal": "43.074504852",
+      "GiBExactFraction": "11291723/262144",
+      "bytes": 46250897408
+    },
+    "dataReserve": {
+      "GiBDecimal": "100.000000000",
+      "GiBExactFraction": "100",
+      "bytes": 107374182400
+    },
+    "fitsCurrentSnapshotWith100GiBReserve": false,
+    "noApprovedSharedAllocationOrInputRelease": true,
+    "peakAdditionalAllocated": {
+      "GiBDecimal": "193.000000000",
+      "GiBExactFraction": "193",
+      "bytes": 207232172032
+    },
+    "peakPlusDataReserveRequired": {
+      "GiBDecimal": "293.000000000",
+      "GiBExactFraction": "293",
+      "bytes": 314606354432
+    },
+    "qualification": "The retained plain physical base and separate private recovery copy are independently allocated. No hardlink/reflink deduplication, input expiry/release, timer/hold relaxation, or private audit-cluster retirement is approved or used in this arithmetic.",
+    "recoveryEvidenceCeiling": {
+      "GiBDecimal": "1.000000000",
+      "GiBExactFraction": "1",
+      "bytes": 1073741824
+    },
+    "remainingIfEveryCeilingFilled": {
+      "GiBDecimal": "56.925495148",
+      "GiBExactFraction": "14922677/262144",
+      "bytes": 61123284992
+    },
+    "rootReserve": {
+      "GiBDecimal": "10.000000000",
+      "GiBExactFraction": "10",
+      "bytes": 10737418240
+    },
+    "separatePrivateRecoveryCeiling": {
+      "GiBDecimal": "80.000000000",
+      "GiBExactFraction": "80",
+      "bytes": 85899345920
+    },
+    "walArchiveCeiling": {
+      "GiBDecimal": "32.000000000",
+      "GiBExactFraction": "32",
+      "bytes": 34359738368
+    }
+  },
+  "futureSmallerEnvelopePlanningBoundOnly": {
+    "combinedBaseAndPrivateMaximumAtThisInstant": {
+      "GiBDecimal": "116.925495148",
+      "GiBExactFraction": "30651317/262144",
+      "bytes": 125547794432
+    },
+    "currentActualSourceAllocatedGiBDecimal": "37.392288208",
+    "noPromiseOrActivationAuthority": true,
+    "notASelectedCeiling": true,
+    "notFutureBackupOrRestoreCapacityProof": true,
+    "requiredBeforeAnyReducedCapProposal": [
+      "Fresh production identity/tablespace/source sizes and capacity with current action-time five/window/lock/static/protection receipts.",
+      "Source-reviewed lower base/private caps and explicit aggregate peak accounting; preserved original80/32/1proposal remains historical.",
+      "Meaningful capacity-boundary/refusal tests plus an actual bounded native physical backup, pg_verifybackup and later exact private target recovery using fresh mapped tablespaces/WAL/manifest/identity and resource/stop/source fences.",
+      "Independent source/native review and final human approval before any recovery root/slot/unit/receiver/base activation or pin/retirement change."
+    ],
+    "symmetricUpperBoundEachBytes": 62773897216,
+    "symmetricUpperBoundEachGiBDecimal": "58.462747574"
+  },
+  "measuredBaseline": {
+    "allRootTotalsDoNotDoubleCountWal": true,
+    "allocatedPhysicalRoots": {
+      "GiBDecimal": "37.392288208",
+      "GiBExactFraction": "2450541/65536",
+      "bytes": 40149663744
+    },
+    "apparentPhysicalRoots": {
+      "GiBDecimal": "37.391464732",
+      "GiBExactFraction": "40148779543/1073741824",
+      "bytes": 40148779543
+    },
+    "atUtc": "2026-10-03T10:49:02.763939+00:00",
+    "backupCreated": false,
+    "catalogTablespaceCount": 3,
+    "databaseCount": 4,
+    "externalTablespaceAllocated": {
+      "GiBDecimal": "36.733196259",
+      "GiBExactFraction": "9629387/262144",
+      "bytes": 39441969152
+    },
+    "externalTablespacePathCount": 1,
+    "pageIntegrityVerified": false,
+    "pgdataAllocated": {
+      "GiBDecimal": "0.659091949",
+      "GiBExactFraction": "172777/262144",
+      "bytes": 707694592
+    },
+    "producerCompleted": {
+      "bytes": 20763,
+      "path": "/data/proofofwork-release-backups/audit30-physical-sizing-20261003T104000Z/completed.json",
+      "sha256": "0922c9130e6ec5daf5782406f66f6200a11414f131d7e2c2decf3e11afafdd94"
+    },
+    "productionPitrEquivalent": false,
+    "publicOutcome": {
+      "bytes": 12721,
+      "path": "/tmp/pow-audit30-production-physical-sizing-native-104000-v3.stdout",
+      "sha256": "8ff3cf502b4ebeb3722d6b859396f985883397fb47514f9b3acd7f962bcaf132"
+    },
+    "qualification": "Catalog totals and du snapshots observe an active tree at different times. Files may grow or disappear; command errors refuse, but successful observations are not an atomic filesystem snapshot or guaranteed future base/WAL capacity. WAL sample runs separately from PGDATA; do not subtract it as an exact coherent base size.",
+    "readonlyCatalogAndDuObservations": true,
+    "snapshotRawBinding": {
+      "bytes": 5684,
+      "metadata": {
+        "bytes": 5684,
+        "ctimeNs": 1791024542763681118,
+        "dev": 64514,
+        "gid": 0,
+        "ino": 76809565,
+        "mode": 384,
+        "mtimeNs": 1791024542763681118,
+        "nlink": 1,
+        "uid": 0
+      },
+      "path": "/data/proofofwork-release-backups/audit30-physical-sizing-20261003T104000Z/snapshot.json",
+      "sha256": "7bafe61ac7e09f00ab807bce9b162e05297dc2c4d0434779f8852c9494c706a3"
+    },
+    "systemIdentifier": "7652445986754609384",
+    "walDifferentDeviceFromPgdata": false,
+    "walSampleIncludedAlreadyInPgdata": {
+      "GiBDecimal": "0.078197479",
+      "GiBExactFraction": "20499/262144",
+      "bytes": 83963904
+    }
+  },
+  "nativeCallPerformedByAuthor": false,
+  "offlinePredicateTests": {
+    "invocation": "python3 -I -B -W error /tmp/pow-audit30-recovery-measured-capacity-qualification-v1.test.py",
+    "passed": 10,
+    "qualification": "Loads exact frozenb16 definitions and tests its real storage capacity predicate with mocked allocation/statvfs and other authority/SQL/root gates; no native or full activation acceptance.",
+    "seconds": 0.015,
+    "source": {
+      "bytes": 3931,
+      "path": "/tmp/pow-audit30-recovery-measured-capacity-qualification-v1.test.py",
+      "sha256": "c478c7521e47f9c889bbc29f17ed4dffa7db42c332711bedfaefb1a807b2d85c"
+    }
+  },
+  "originalController": {
+    "bytes": 30211,
+    "path": "/home/sixer/ProofOfWork.Me/deploy/audit30/recovery/recovery-controller-v2.py",
+    "sha256": "b16ee1a596e0b33ef921dad7f8778019e906c7b1261d3d251089a21e1670acf2"
+  },
+  "originalProposal": {
+    "bytes": 11171,
+    "path": "/home/sixer/ProofOfWork.Me/deploy/audit30/recovery/PROPOSAL-v2.md",
+    "sha256": "06598f0bb202794328a35a30a247ab8b0a12daf834c56f63786eb3c2529a4eaf"
+  },
+  "productionMutation": false,
+  "safeOrderingPrerequisites": [
+    "Current104500 logical restore remains incomplete; preserve its partial job, sourceOct3, source7 and all prior evidence. Await its actual completion/stop and then freshly measure available space before any recovery activation plan.",
+    "Choose an exact approved envelope and prove the full retained-base/private/WAL/evidence peak fits with100GiB data/10GiB root reserves. Under unchanged80+80+32+1, the current snapshot is short43.074504852GiB; no activation ready claim.",
+    "If a future separately approved retirement changes capacity, preserve dependency-required packages/captures and unique history and obtain fresh post-action allocation/reader/dependency evidence; this note does not authorize or require deletion.",
+    "If a smaller envelope is proposed from the37.392GiB source measurement, test the native backup/private recovery path and growth/extraWAL before calling the plan executable; do not substitute measured live source bytes for capped future demand.",
+    "At the chosen action, freshly bind actual five; API/worker identities may change if repair/strict/cutover later occurs. Do not borrow this oldfive into later approval."
+  ],
+  "schema": "pow-audit30-recovery-measured-capacity-qualification-v1",
+  "smallerCeilingSelectedOrApproved": false,
+  "sourceOnly": true,
+  "sourceOrUnitEdited": false
+}

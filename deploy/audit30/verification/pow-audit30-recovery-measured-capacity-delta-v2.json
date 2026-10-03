@@ -1,0 +1,80 @@
+{
+  "activationApproved": false,
+  "actualNewObservation": {
+    "bytes": 2950,
+    "capacityStdoutSha256": "adfb60acb96ee209faf17e1cdcf2dc1ee7b563627a7e9d1d67e73f36f78c99d2",
+    "finishedAtUtc": "2026-10-03T10:57:56.491906+00:00",
+    "path": "/tmp/pow-audit30-oct3-restore-capacity-running-observation-v2.json",
+    "sha256": "f4c8da6e852661d3fe875e398071a15d22288f7144a3bd2b0b3a023531c93000",
+    "unitStdoutSha256": "87468cb8e21f49240d197a9b2e7b4550af3a930228b2e279b92f2e8393f7d7f8"
+  },
+  "atUtc": "2026-10-03T10:59:35.822827+00:00",
+  "controllerProposalOrCapsChanged": false,
+  "current": {
+    "dataAvailable": {
+      "GiBDecimal": "242.029067993",
+      "bytes": 259876732928
+    },
+    "dataTotalBytes": 1764768071680,
+    "dataUsedBytes": 1495904161792,
+    "dfRoundedDataUsedPercent": 86,
+    "existingInitialPredicatePasses": true,
+    "existingRoot10GiBPredicatePasses": true,
+    "remainingAfterFull193GiBPeak": {
+      "GiBDecimal": "49.029067993",
+      "bytes": 52644560896
+    },
+    "rootAvailable": {
+      "GiBDecimal": "62.401592255",
+      "bytes": 67003199488
+    },
+    "unchanged212GiBInitialPredicateHeadroom": {
+      "GiBDecimal": "30.029067993",
+      "bytes": 32243466240
+    },
+    "unchanged293GiBPeakPlusReserveDeficit": {
+      "GiBDecimal": "50.970932007",
+      "bytes": 54729621504
+    },
+    "wholeEnvelopeFits": false
+  },
+  "deletionAuthority": false,
+  "deltaFromPriorPlanningObservation": {
+    "causeNotIndependentlyAttributed": true,
+    "dataAvailableDecline": {
+      "GiBDecimal": "7.896427155",
+      "bytes": 8478724096
+    },
+    "deficitIncreaseSameBytes": 8478724096
+  },
+  "localChecks": "Exact observation/raw stdout hashes, same running unit, preserved v1 envelopes, integer capacity arithmetic and boundary inequalities checked without native execution.",
+  "measuredSourceAllocatedBytes": 40149663744,
+  "measuredSourceAllocatedGiBDecimal": "37.392288208",
+  "nativeCallPerformedByAuthor": false,
+  "preservedV1": {
+    "bytes": 10627,
+    "path": "/tmp/pow-audit30-recovery-measured-capacity-qualification-v1.json",
+    "sha256": "f04664490ac4d7fde5deef91cbb3f3528716049b88de025b23a6ba6f3a78ac2c"
+  },
+  "qualifications": [
+    "The37.392GiB active source footprint is the prior READ ONLY sizing observation. It is not a guarantee or tested smaller base/private ceiling; WAL83,963,904B is already included in PGDATA and is not added again.",
+    "At10:57:53 the same322aeb/Main3106608 unit was observed active/running. Result=success/ExecMainStatus=0 is not restore completion. All restore acceptance/private-stop/capacity receipts remain pending.",
+    "Available capacity can change while the logical restore continues. This delta preserves the original193GiB envelope and100GiB reserve; no approved shared allocation, input release or retirement is assumed.",
+    "b16 initial212GiB storage predicate still passes by30.029067993GiB, while the whole293GiB retained-base/private/WAL/evidence-plus-reserve requirement is short50.970932007GiB. A final whole-workflow activation plan must refuse under unchanged caps at this snapshot.",
+    "Fresh chosen-action capacity/five/window/lock/protection and tested source/native plan remain prerequisites. No recovery equivalence, PITR, financial/global dependency closure or deletion authority is supplied."
+  ],
+  "schema": "pow-audit30-recovery-measured-capacity-delta-v2",
+  "smallerCeilingSelectedOrApproved": false,
+  "sourceOnly": true,
+  "sourceSizingOutcomeSHA256": "8ff3cf502b4ebeb3722d6b859396f985883397fb47514f9b3acd7f962bcaf132",
+  "unchangedEnvelopeGiB": {
+    "additionalPeak": 193,
+    "b16InitialAdmissionRequired": 212,
+    "base": 80,
+    "dataReserve": 100,
+    "evidence": 1,
+    "requiredTotal": 293,
+    "separatePrivateRecovery": 80,
+    "wal": 32
+  }
+}

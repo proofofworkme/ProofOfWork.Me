@@ -1,0 +1,43 @@
+{
+  "automaticRetry": false,
+  "captures": {
+    "stderr": {
+      "bytes": 0,
+      "path": "/tmp/pow-audit30-production-physical-sizing-native-104000-v3.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "stdout": {
+      "bytes": 12721,
+      "path": "/tmp/pow-audit30-production-physical-sizing-native-104000-v3.stdout",
+      "sha256": "8ff3cf502b4ebeb3722d6b859396f985883397fb47514f9b3acd7f962bcaf132"
+    }
+  },
+  "exitCode": 0,
+  "failure": null,
+  "finishedAtUtc": "2026-10-03T10:49:03.827495+00:00",
+  "inputBindings": {
+    "additionalDeletionAuthorized": false,
+    "clientCapsDoNotBoundProductionBackend": true,
+    "identityObservationSha256": "0d6b69eb45fd5f67fd4cda34ba4942fe54884ef20feeefb9a20d1c9b0d773c2a",
+    "leafWholeSeconds": 150,
+    "peerSha256": "4060c071dcab2e95fec4ca5852b1edc71a3c3c1304e6230f556143739bc20e04",
+    "recoveryActivated": false,
+    "requestSha256": "0eb805e7653ecddcc892a4f8d441b2d27fe424892871d80c3c6cdfc098e24d64",
+    "rootOnceReadonlyGo": true,
+    "rootWholeSeconds": 420,
+    "serverLockMaximumSeconds": 2,
+    "serverStatementMaximumSeconds": 15,
+    "sourceSha256": "e0f4da80928bde3d201f27823d301c40b19575785d232c542b701b68aeb90777"
+  },
+  "outerDeadlineSeconds": 600,
+  "productionDataMutationRequested": false,
+  "receivedBytes": {
+    "stderr": 0,
+    "stdout": 12721
+  },
+  "remoteUnitStoppedCertifiedByTransport": false,
+  "schema": "pow-audit30-readonly-owned-transport-result-v1",
+  "seconds": 4.427663,
+  "startedAtUtc": "2026-10-03T10:48:59.399832+00:00",
+  "typedStdinBytesDelivered": 51968
+}

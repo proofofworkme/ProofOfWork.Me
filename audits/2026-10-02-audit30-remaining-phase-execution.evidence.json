@@ -177760,6 +177760,913 @@
           "sha256": "6537ffd6cbb52ab37b9788d74e51eb8bbfb156ec52149a8e1a8ad004c12b19d9"
         }
       }
+    },
+    {
+      "action": "Action63 preserves all62 prior action values and622 custody rows. After independently verifying the actual production identity, the corrected strict104000 sizing source executes once10:48:59-10:49:03 and passes in4.427663s with empty stderr and its managed audit unit stopped. Four database and three tablespace catalogs match before/after, including one external tablespace. Allocated PGDATA+external roots total40,149,663,744bytes; proof_indexer catalog size40,023,374,871bytes. The separately sampled83,963,904-byte WAL is already included in PGDATA and is not counted twice. This is an active-tree READ ONLY catalog/du snapshot, not an atomic snapshot, live-page integrity, future growth, physical backup or PITR certificate. Originalfive/static protection/tools remain unchanged. At10:57UTC the exact322aeb/Main3106608 isolated Oct3 restore unit is observed active/running under8GiB/2h; no completed restore result is claimed. The separate df command finishes10:57:56 with node/data availability259,876,732,928bytes (86percent df-rounded use), root67,003,199,488bytes. The unchanged80base+80private+32WAL+1evidence envelope plus100GiBreserve needs293GiB, exceeding this snapshot by54,729,621,504bytes. The preserved b16 controller initial admission checks only212GiB and would pass this snapshot; a final whole-workflow plan must separately account for all193GiB peak allocations and refuse unchanged activation here. No smaller ceilings are selected from measured source size, and ongoing restore growth remains unknown. Earlier capacity observations/refusals remain dated evidence. The original Oct2 survivor is still absent, so its promotion/retirement plans remain blocked; Oct3 hashes/catalog pass but current full restore equivalence/private-stop/capacity receipts remain pending. Exact16 production repair approval remains requested and unanswered; no production-data change, recovery configuration, pin/checker promotion, additional deletion or API/worker/UI cutover occurred. All source tests, peer reviews, public receipts and raw diffs are preserved exactly; prior approval/mutation/request lists and May9 operator-paid/noIDs finding remain unchanged.",
+      "actualReadonlySizingOutcome": {
+        "automaticRetry": false,
+        "outcomeBinding": {
+          "bytes": 20763,
+          "path": "/data/proofofwork-release-backups/audit30-physical-sizing-20261003T104000Z/completed.json",
+          "sha256": "0922c9130e6ec5daf5782406f66f6200a11414f131d7e2c2decf3e11afafdd94"
+        },
+        "productionMutation": false,
+        "recoveryActivation": false,
+        "result": {
+          "afterFive": {
+            "bitcoind.service": {
+              "ActiveState": "active",
+              "InvocationID": "64e1fa7be2e2442d8c7f5763f60b85fb",
+              "LoadState": "loaded",
+              "MainPID": "1324302",
+              "SubState": "running"
+            },
+            "electrs.service": {
+              "ActiveState": "active",
+              "InvocationID": "72418b1c7ab245e4a37685ed868a1084",
+              "LoadState": "loaded",
+              "MainPID": "1324320",
+              "SubState": "running"
+            },
+            "postgresql@16-main.service": {
+              "ActiveState": "active",
+              "InvocationID": "e0bf545f0ad944e89fe1005577e61b9c",
+              "LoadState": "loaded",
+              "MainPID": "1537429",
+              "SubState": "running"
+            },
+            "proofofwork-api.service": {
+              "ActiveState": "active",
+              "InvocationID": "208f8bcbecc54afbb7166754f12065c2",
+              "LoadState": "loaded",
+              "MainPID": "2103747",
+              "SubState": "running"
+            },
+            "proofofwork-indexer-worker.service": {
+              "ActiveState": "active",
+              "InvocationID": "33b3ee25490749db89e0d55fd29d0afb",
+              "LoadState": "loaded",
+              "MainPID": "2103760",
+              "SubState": "running"
+            }
+          },
+          "backendResourceQualification": "Client unit CPU/memory/IO caps do not constrain existing production PostgreSQL backends; fixed READ ONLY catalog SQL is bounded by15s statement/2s lock and8MB work_mem/32MB temp.",
+          "backupBefore": {
+            "service": {
+              "ActiveState": "inactive",
+              "InvocationID": "dfda5fa3574144958b948f8b5920b4d0",
+              "LoadState": "loaded",
+              "MainPID": "0",
+              "SubState": "dead"
+            },
+            "timer": {
+              "ActiveState": "active",
+              "InvocationID": "469de932a143489e8d4128e2cab382bf",
+              "LoadState": "loaded",
+              "NextElapseUSecRealtime": "Sun 2026-10-04 03:18:48 UTC",
+              "SubState": "waiting",
+              "UnitFileState": "enabled"
+            }
+          },
+          "beforeFive": {
+            "bitcoind.service": {
+              "ActiveState": "active",
+              "InvocationID": "64e1fa7be2e2442d8c7f5763f60b85fb",
+              "LoadState": "loaded",
+              "MainPID": "1324302",
+              "SubState": "running"
+            },
+            "electrs.service": {
+              "ActiveState": "active",
+              "InvocationID": "72418b1c7ab245e4a37685ed868a1084",
+              "LoadState": "loaded",
+              "MainPID": "1324320",
+              "SubState": "running"
+            },
+            "postgresql@16-main.service": {
+              "ActiveState": "active",
+              "InvocationID": "e0bf545f0ad944e89fe1005577e61b9c",
+              "LoadState": "loaded",
+              "MainPID": "1537429",
+              "SubState": "running"
+            },
+            "proofofwork-api.service": {
+              "ActiveState": "active",
+              "InvocationID": "208f8bcbecc54afbb7166754f12065c2",
+              "LoadState": "loaded",
+              "MainPID": "2103747",
+              "SubState": "running"
+            },
+            "proofofwork-indexer-worker.service": {
+              "ActiveState": "active",
+              "InvocationID": "33b3ee25490749db89e0d55fd29d0afb",
+              "LoadState": "loaded",
+              "MainPID": "2103760",
+              "SubState": "running"
+            }
+          },
+          "monitorOperationalTupleUnchanged": true,
+          "protectionAfter": {
+            "files": {
+              "/etc/proofofwork-postgres-logical-backup.pins": {
+                "metadata": {
+                  "bytes": 39,
+                  "ctimeNs": 1790736083442846642,
+                  "dev": 64512,
+                  "gid": 0,
+                  "ino": 3148002,
+                  "mode": 420,
+                  "mtimeNs": 1790736083442846642,
+                  "nlink": 1,
+                  "uid": 0
+                },
+                "sha256": "821b5bbfecee75ffb3c4565d3867eb62ac33e65eeb83c0e603c08aa478ff957b"
+              },
+              "/etc/proofofwork-retention/audit28-held-review.json": {
+                "metadata": {
+                  "bytes": 1030164,
+                  "ctimeNs": 1790833036646778315,
+                  "dev": 64512,
+                  "gid": 0,
+                  "ino": 3147004,
+                  "mode": 420,
+                  "mtimeNs": 1790833036645778316,
+                  "nlink": 1,
+                  "uid": 0
+                },
+                "sha256": "c3bd35740d7fcc135839274c8228e38f7a45c23e33567743e0d77151b32451d9"
+              },
+              "/etc/proofofwork-retention/audit28.hold": {
+                "metadata": {
+                  "bytes": 81,
+                  "ctimeNs": 1790736083441846642,
+                  "dev": 64512,
+                  "gid": 0,
+                  "ino": 3148001,
+                  "mode": 384,
+                  "mtimeNs": 1790736083441846642,
+                  "nlink": 1,
+                  "uid": 0
+                },
+                "sha256": "e9aca6e22b1dc36b714ed663051f8bc20d9479efa4173474e0b6b771958ca6a4"
+              },
+              "/etc/systemd/system/proofofwork-postgres-logical-backup.service": {
+                "metadata": {
+                  "bytes": 1041,
+                  "ctimeNs": 1790833036669778288,
+                  "dev": 64512,
+                  "gid": 0,
+                  "ino": 3148008,
+                  "mode": 420,
+                  "mtimeNs": 1790833036669778288,
+                  "nlink": 1,
+                  "uid": 0
+                },
+                "sha256": "ba7af818256aac91e74213b320fc2c994059bf01cb176f6483ffb02ace25ba4d"
+              },
+              "/etc/systemd/system/proofofwork-postgres-logical-backup.timer": {
+                "metadata": {
+                  "bytes": 265,
+                  "ctimeNs": 1784051189027070538,
+                  "dev": 64512,
+                  "gid": 0,
+                  "ino": 3147227,
+                  "mode": 420,
+                  "mtimeNs": 1784051189027070538,
+                  "nlink": 1,
+                  "uid": 0
+                },
+                "sha256": "de62e16ec0d4500f9d39f6a6603f2cea1b99fc9701b4285e53b4acbe135d7841"
+              },
+              "/etc/systemd/system/proofofwork-retention-protection.service": {
+                "metadata": {
+                  "bytes": 690,
+                  "ctimeNs": 1790970319801036711,
+                  "dev": 64512,
+                  "gid": 0,
+                  "ino": 3147019,
+                  "mode": 420,
+                  "mtimeNs": 1790970319801036711,
+                  "nlink": 1,
+                  "uid": 0
+                },
+                "sha256": "8f9c54b522961e26d8f02ed33ad065af70906f1e95ca2ad65edd322c8f758448"
+              },
+              "/usr/local/sbin/proofofwork-postgres-logical-backup": {
+                "metadata": {
+                  "bytes": 20691,
+                  "ctimeNs": 1790833036658778301,
+                  "dev": 64512,
+                  "gid": 0,
+                  "ino": 6304207,
+                  "mode": 493,
+                  "mtimeNs": 1790833036658778301,
+                  "nlink": 1,
+                  "uid": 0
+                },
+                "sha256": "4e5252ed8fcc8ce4ec863d6e027d429f146348f30be23d4eb5fe77cfd013a754"
+              },
+              "/usr/local/sbin/proofofwork-retention-protection": {
+                "metadata": {
+                  "bytes": 20677,
+                  "ctimeNs": 1790970319800036711,
+                  "dev": 64512,
+                  "gid": 0,
+                  "ino": 6292437,
+                  "mode": 493,
+                  "mtimeNs": 1790970319800036711,
+                  "nlink": 1,
+                  "uid": 0
+                },
+                "sha256": "da5d1336ce857acc571ba0849c2b0150ef5fc6dfdacf80e65b9f1d3611c48e8a"
+              }
+            },
+            "mask": {
+              "metadata": {
+                "bytes": 9,
+                "ctimeNs": 1790736083643846636,
+                "dev": 64512,
+                "gid": 0,
+                "ino": 3147953,
+                "mode": 511,
+                "mtimeNs": 1790736083643846636,
+                "nlink": 1,
+                "uid": 0
+              },
+              "target": "/dev/null"
+            },
+            "units": {
+              "pg_receivewal@16-main.service": {
+                "ActiveState": "inactive",
+                "InvocationID": "c3ac4e887abf4887a7fa9d0416730da1",
+                "LoadState": "loaded",
+                "MainPID": "0",
+                "SubState": "dead",
+                "UnitFileState": "disabled"
+              },
+              "proofofwork-node-release-prune.timer": {
+                "ActiveState": "inactive",
+                "InvocationID": "",
+                "LoadState": "masked",
+                "SubState": "dead",
+                "UnitFileState": "masked"
+              },
+              "proofofwork-retention-protection.service": {
+                "ActiveState": "failed",
+                "InvocationID": "d091a36762a44a60b9efeab64df343ee",
+                "LoadState": "loaded",
+                "MainPID": "0",
+                "SubState": "failed",
+                "UnitFileState": "static"
+              }
+            }
+          },
+          "protectionBeforeAfterEqual": true,
+          "snapshot": {
+            "activeTreeGrowthQualification": "Catalog totals and du snapshots observe an active tree at different times. Files may grow or disappear; command errors refuse, but successful observations are not an atomic filesystem snapshot or guaranteed future base/WAL capacity.",
+            "atUtc": "2026-10-03T10:49:02.763939+00:00",
+            "backendResourceQualification": "Client unit CPU/memory/IO caps do not constrain existing production PostgreSQL backends; fixed READ ONLY catalog SQL is bounded by15s statement/2s lock and8MB work_mem/32MB temp.",
+            "backupCreated": false,
+            "catalogAfter": {
+              "dataDirectory": "/var/lib/postgresql/16/main",
+              "databaseCount": 4,
+              "databases": [
+                {
+                  "bytes": 7748631,
+                  "name": "template1",
+                  "oid": 1
+                },
+                {
+                  "bytes": 7520783,
+                  "name": "template0",
+                  "oid": 4
+                },
+                {
+                  "bytes": 7748631,
+                  "name": "postgres",
+                  "oid": 5
+                },
+                {
+                  "bytes": 40023374871,
+                  "name": "proof_indexer",
+                  "oid": 789821
+                }
+              ],
+              "readOnly": "on",
+              "serverVersionNum": "160015",
+              "systemIdentifier": "7652445986754609384",
+              "tablespaceCount": 3,
+              "tablespaces": [
+                {
+                  "bytes": 604718676,
+                  "name": "pg_default",
+                  "oid": 1663,
+                  "path": ""
+                },
+                {
+                  "bytes": 684560,
+                  "name": "pg_global",
+                  "oid": 1664,
+                  "path": ""
+                },
+                {
+                  "bytes": 39441764352,
+                  "name": "proof_indexer_large_state_v1",
+                  "oid": 486390,
+                  "path": "/data/proofofwork-postgres-tablespaces/proof_indexer_large_state_v1"
+                }
+              ],
+              "timeline": 1
+            },
+            "catalogBefore": {
+              "dataDirectory": "/var/lib/postgresql/16/main",
+              "databaseCount": 4,
+              "databases": [
+                {
+                  "bytes": 7748631,
+                  "name": "template1",
+                  "oid": 1
+                },
+                {
+                  "bytes": 7520783,
+                  "name": "template0",
+                  "oid": 4
+                },
+                {
+                  "bytes": 7748631,
+                  "name": "postgres",
+                  "oid": 5
+                },
+                {
+                  "bytes": 40023374871,
+                  "name": "proof_indexer",
+                  "oid": 789821
+                }
+              ],
+              "readOnly": "on",
+              "serverVersionNum": "160015",
+              "systemIdentifier": "7652445986754609384",
+              "tablespaceCount": 3,
+              "tablespaces": [
+                {
+                  "bytes": 604718676,
+                  "name": "pg_default",
+                  "oid": 1663,
+                  "path": ""
+                },
+                {
+                  "bytes": 684560,
+                  "name": "pg_global",
+                  "oid": 1664,
+                  "path": ""
+                },
+                {
+                  "bytes": 39441764352,
+                  "name": "proof_indexer_large_state_v1",
+                  "oid": 486390,
+                  "path": "/data/proofofwork-postgres-tablespaces/proof_indexer_large_state_v1"
+                }
+              ],
+              "timeline": 1
+            },
+            "duSizes": {
+              "allocatedBytes": {
+                "/data/proofofwork-postgres-tablespaces/proof_indexer_large_state_v1": 39441969152,
+                "/var/lib/postgresql/16/main": 707694592,
+                "/var/lib/postgresql/16/main/pg_wal": 83963904
+              },
+              "apparentBytes": {
+                "/data/proofofwork-postgres-tablespaces/proof_indexer_large_state_v1": 39441760256,
+                "/var/lib/postgresql/16/main": 707019287,
+                "/var/lib/postgresql/16/main/pg_wal": 83886080
+              }
+            },
+            "filesystemAfter": {
+              "directoryMetadata": {
+                "/data/proofofwork-postgres-tablespaces/proof_indexer_large_state_v1": {
+                  "bytes": 4096,
+                  "ctimeNs": 1785818192675611002,
+                  "device": 64514,
+                  "gid": 112,
+                  "inode": 100532226,
+                  "mode": 448,
+                  "mtimeNs": 1785818192675611002,
+                  "nlink": 3,
+                  "uid": 108
+                },
+                "/var/lib/postgresql/16/main": {
+                  "bytes": 4096,
+                  "ctimeNs": 1790835870803227647,
+                  "device": 64512,
+                  "gid": 112,
+                  "inode": 2883592,
+                  "mode": 448,
+                  "mtimeNs": 1790835870803227647,
+                  "nlink": 19,
+                  "uid": 108
+                },
+                "/var/lib/postgresql/16/main/pg_tblspc": {
+                  "bytes": 4096,
+                  "ctimeNs": 1785818192675611002,
+                  "device": 64512,
+                  "gid": 112,
+                  "inode": 2883609,
+                  "mode": 448,
+                  "mtimeNs": 1785818192675611002,
+                  "nlink": 2,
+                  "uid": 108
+                },
+                "/var/lib/postgresql/16/main/pg_wal": {
+                  "bytes": 69632,
+                  "ctimeNs": 1791024321360946605,
+                  "device": 64512,
+                  "gid": 112,
+                  "inode": 2883593,
+                  "mode": 448,
+                  "mtimeNs": 1791024321360946605,
+                  "nlink": 3,
+                  "uid": 108
+                }
+              },
+              "mountinfoSha256": "3560a9814381871797fcba41e260d4aa5a24ba890164bbacdaff0d8567f097d1",
+              "roots": [
+                "/var/lib/postgresql/16/main",
+                "/data/proofofwork-postgres-tablespaces/proof_indexer_large_state_v1"
+              ],
+              "selectedMounts": [],
+              "tablespaceSymlinks": {
+                "/var/lib/postgresql/16/main/pg_tblspc/486390": {
+                  "metadata": {
+                    "bytes": 67,
+                    "ctimeNs": 1785818192675611002,
+                    "device": 64512,
+                    "gid": 112,
+                    "inode": 2889039,
+                    "mode": 511,
+                    "mtimeNs": 1785818192675611002,
+                    "nlink": 1,
+                    "uid": 108
+                  },
+                  "target": "/data/proofofwork-postgres-tablespaces/proof_indexer_large_state_v1"
+                }
+              },
+              "walDifferentDevice": false,
+              "walPath": "/var/lib/postgresql/16/main/pg_wal"
+            },
+            "filesystemBefore": {
+              "directoryMetadata": {
+                "/data/proofofwork-postgres-tablespaces/proof_indexer_large_state_v1": {
+                  "bytes": 4096,
+                  "ctimeNs": 1785818192675611002,
+                  "device": 64514,
+                  "gid": 112,
+                  "inode": 100532226,
+                  "mode": 448,
+                  "mtimeNs": 1785818192675611002,
+                  "nlink": 3,
+                  "uid": 108
+                },
+                "/var/lib/postgresql/16/main": {
+                  "bytes": 4096,
+                  "ctimeNs": 1790835870803227647,
+                  "device": 64512,
+                  "gid": 112,
+                  "inode": 2883592,
+                  "mode": 448,
+                  "mtimeNs": 1790835870803227647,
+                  "nlink": 19,
+                  "uid": 108
+                },
+                "/var/lib/postgresql/16/main/pg_tblspc": {
+                  "bytes": 4096,
+                  "ctimeNs": 1785818192675611002,
+                  "device": 64512,
+                  "gid": 112,
+                  "inode": 2883609,
+                  "mode": 448,
+                  "mtimeNs": 1785818192675611002,
+                  "nlink": 2,
+                  "uid": 108
+                },
+                "/var/lib/postgresql/16/main/pg_wal": {
+                  "bytes": 69632,
+                  "ctimeNs": 1791024321360946605,
+                  "device": 64512,
+                  "gid": 112,
+                  "inode": 2883593,
+                  "mode": 448,
+                  "mtimeNs": 1791024321360946605,
+                  "nlink": 3,
+                  "uid": 108
+                }
+              },
+              "mountinfoSha256": "3560a9814381871797fcba41e260d4aa5a24ba890164bbacdaff0d8567f097d1",
+              "roots": [
+                "/var/lib/postgresql/16/main",
+                "/data/proofofwork-postgres-tablespaces/proof_indexer_large_state_v1"
+              ],
+              "selectedMounts": [],
+              "tablespaceSymlinks": {
+                "/var/lib/postgresql/16/main/pg_tblspc/486390": {
+                  "metadata": {
+                    "bytes": 67,
+                    "ctimeNs": 1785818192675611002,
+                    "device": 64512,
+                    "gid": 112,
+                    "inode": 2889039,
+                    "mode": 511,
+                    "mtimeNs": 1785818192675611002,
+                    "nlink": 1,
+                    "uid": 108
+                  },
+                  "target": "/data/proofofwork-postgres-tablespaces/proof_indexer_large_state_v1"
+                }
+              },
+              "walDifferentDevice": false,
+              "walPath": "/var/lib/postgresql/16/main/pg_wal"
+            },
+            "pageIntegrityVerified": false,
+            "physicalRootsTotals": {
+              "allocatedBytes": 40149663744,
+              "apparentBytes": 40148779543
+            },
+            "productionMutation": false,
+            "schema": "pow-audit30-production-physical-sizing-snapshot-v1",
+            "slotCreated": false,
+            "sqlSha256": "f9a34e5affead4675249d42765780e94247fc26fc38a8df33e9d5ddd53f2f4d3",
+            "startedAtUtc": "2026-10-03T10:49:02.657624+00:00",
+            "status": "measured-readonly-snapshot",
+            "walIncludedInPgdataSameFilesystemTotal": true,
+            "walSeparateSampleQualification": "WAL sample runs separately from PGDATA; do not subtract it as an exact coherent base size."
+          },
+          "snapshotBinding": {
+            "bytes": 5684,
+            "metadata": {
+              "bytes": 5684,
+              "ctimeNs": 1791024542763681118,
+              "dev": 64514,
+              "gid": 0,
+              "ino": 76809565,
+              "mode": 384,
+              "mtimeNs": 1791024542763681118,
+              "nlink": 1,
+              "uid": 0
+            },
+            "path": "/data/proofofwork-release-backups/audit30-physical-sizing-20261003T104000Z/snapshot.json",
+            "sha256": "7bafe61ac7e09f00ab807bce9b162e05297dc2c4d0434779f8852c9494c706a3"
+          },
+          "staticProtectionBeforeAfterEqual": true,
+          "stderrBinding": {
+            "bytes": 0,
+            "metadata": {
+              "bytes": 0,
+              "ctimeNs": 1791024542518681351,
+              "dev": 64514,
+              "gid": 0,
+              "ino": 76809566,
+              "mode": 384,
+              "mtimeNs": 1791024542518681351,
+              "nlink": 1,
+              "uid": 0
+            },
+            "path": "/data/proofofwork-release-backups/audit30-physical-sizing-20261003T104000Z/stderr.log",
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          "toolsBeforeAfterEqual": {
+            "/usr/bin/du": {
+              "bytes": 100872,
+              "metadata": {
+                "bytes": 100872,
+                "ctimeNs": 1788331760433195721,
+                "dev": 64512,
+                "gid": 0,
+                "ino": 6304045,
+                "mode": 493,
+                "mtimeNs": 1787670543000000000,
+                "nlink": 1,
+                "uid": 0
+              },
+              "sha256": "872ef616defa9ecfc93c50a8da5d6144b4dfc93378882ad82198369433bd16c1"
+            },
+            "/usr/lib/postgresql/16/bin/psql": {
+              "bytes": 790104,
+              "metadata": {
+                "bytes": 790104,
+                "ctimeNs": 1787379296171216283,
+                "dev": 64512,
+                "gid": 0,
+                "ino": 405043,
+                "mode": 493,
+                "mtimeNs": 1786648363000000000,
+                "nlink": 1,
+                "uid": 0
+              },
+              "sha256": "df8031178589c31c7bc20aa2adf902e1cc3f0aa9ea12428aa5db3d476cbcac1a"
+            }
+          }
+        },
+        "schema": "pow-audit30-production-physical-sizing-native-outcome-v3",
+        "status": "passed",
+        "unitStopVerified": true
+      },
+      "actualReadonlySizingTransportReceipt": {
+        "automaticRetry": false,
+        "captures": {
+          "stderr": {
+            "bytes": 0,
+            "path": "/tmp/pow-audit30-production-physical-sizing-native-104000-v3.stderr",
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          "stdout": {
+            "bytes": 12721,
+            "path": "/tmp/pow-audit30-production-physical-sizing-native-104000-v3.stdout",
+            "sha256": "8ff3cf502b4ebeb3722d6b859396f985883397fb47514f9b3acd7f962bcaf132"
+          }
+        },
+        "exitCode": 0,
+        "failure": null,
+        "finishedAtUtc": "2026-10-03T10:49:03.827495+00:00",
+        "inputBindings": {
+          "additionalDeletionAuthorized": false,
+          "clientCapsDoNotBoundProductionBackend": true,
+          "identityObservationSha256": "0d6b69eb45fd5f67fd4cda34ba4942fe54884ef20feeefb9a20d1c9b0d773c2a",
+          "leafWholeSeconds": 150,
+          "peerSha256": "4060c071dcab2e95fec4ca5852b1edc71a3c3c1304e6230f556143739bc20e04",
+          "recoveryActivated": false,
+          "requestSha256": "0eb805e7653ecddcc892a4f8d441b2d27fe424892871d80c3c6cdfc098e24d64",
+          "rootOnceReadonlyGo": true,
+          "rootWholeSeconds": 420,
+          "serverLockMaximumSeconds": 2,
+          "serverStatementMaximumSeconds": 15,
+          "sourceSha256": "e0f4da80928bde3d201f27823d301c40b19575785d232c542b701b68aeb90777"
+        },
+        "outerDeadlineSeconds": 600,
+        "productionDataMutationRequested": false,
+        "receivedBytes": {
+          "stderr": 0,
+          "stdout": 12721
+        },
+        "remoteUnitStoppedCertifiedByTransport": false,
+        "schema": "pow-audit30-readonly-owned-transport-result-v1",
+        "seconds": 4.427663,
+        "startedAtUtc": "2026-10-03T10:48:59.399832+00:00",
+        "typedStdinBytesDelivered": 51968
+      },
+      "additionalDeletion": false,
+      "atUtc": "2026-10-03T11:03:35.045849+00:00",
+      "newRestoreAndCapacityObservation": {
+        "capacitySnapshotNotFutureGuarantee": true,
+        "filesystems": [
+          {
+            "availableBytes": 67003199488,
+            "roundedUsedPercent": 33,
+            "source": "/dev/mapper/vg0-root",
+            "target": "/",
+            "totalBytes": 105089261568,
+            "usedBytes": 32700575744
+          },
+          {
+            "availableBytes": 259876732928,
+            "roundedUsedPercent": 86,
+            "source": "/dev/mapper/vg0-data",
+            "target": "/data",
+            "totalBytes": 1764768071680,
+            "usedBytes": 1495904161792
+          }
+        ],
+        "newUnitRunningObserved": true,
+        "observations": {
+          "capacity": {
+            "command": "/usr/bin/timeout 15s /usr/bin/df -B1 --output=source,size,used,avail,pcent,target / /data",
+            "exitCode": 0,
+            "finishedAtUtc": "2026-10-03T10:57:56.491906+00:00",
+            "startedAtUtc": "2026-10-03T10:57:53.796701+00:00",
+            "stderrBytes": 0,
+            "stdoutBytes": 220,
+            "stdoutSha256": "adfb60acb96ee209faf17e1cdcf2dc1ee7b563627a7e9d1d67e73f36f78c99d2",
+            "stdoutText": "Filesystem               1B-blocks          Used        Avail Use% Mounted on\n/dev/mapper/vg0-root  105089261568   32700575744  67003199488  33% /\n/dev/mapper/vg0-data 1764768071680 1495904161792 259876732928  86% /data\n"
+          },
+          "unit": {
+            "command": "sudo -n /usr/bin/timeout 15s /usr/bin/systemctl show proofofwork-audit30-logical-restore-20261003T104500Z.service --no-pager --property=LoadState --property=ActiveState --property=SubState --property=MainPID --property=InvocationID --property=ControlGroup --property=MemoryCurrent --property=MemoryMax --property=RuntimeMaxUSec --property=Result --property=ExecMainStatus",
+            "exitCode": 0,
+            "finishedAtUtc": "2026-10-03T10:57:53.796662+00:00",
+            "startedAtUtc": "2026-10-03T10:57:51.524442+00:00",
+            "stderrBytes": 0,
+            "stdoutBytes": 299,
+            "stdoutSha256": "87468cb8e21f49240d197a9b2e7b4550af3a930228b2e279b92f2e8393f7d7f8",
+            "stdoutText": "RuntimeMaxUSec=2h\nMainPID=3106608\nResult=success\nExecMainStatus=0\nControlGroup=/system.slice/proofofwork-audit30-logical-restore-20261003T104500Z.service\nMemoryCurrent=6381068288\nMemoryMax=8589934592\nLoadState=loaded\nActiveState=active\nSubState=running\nInvocationID=322aeb150b664d7fa8380b8f6c7ed1f1\n"
+          }
+        },
+        "productionMutation": false,
+        "properties": {
+          "ActiveState": "active",
+          "ControlGroup": "/system.slice/proofofwork-audit30-logical-restore-20261003T104500Z.service",
+          "ExecMainStatus": "0",
+          "InvocationID": "322aeb150b664d7fa8380b8f6c7ed1f1",
+          "LoadState": "loaded",
+          "MainPID": "3106608",
+          "MemoryCurrent": "6381068288",
+          "MemoryMax": "8589934592",
+          "Result": "success",
+          "RuntimeMaxUSec": "2h",
+          "SubState": "running"
+        },
+        "restoreCompleted": false,
+        "restoreEquivalenceCertified": false,
+        "schema": "pow-audit30-oct3-restore-capacity-running-observation-v2",
+        "serviceControlPerformed": false,
+        "unit": "proofofwork-audit30-logical-restore-20261003T104500Z.service"
+      },
+      "productionDataMutation": false,
+      "publicSourceCustodyAdded": [
+        {
+          "bytes": 1178,
+          "originalPath": "/tmp/pow-audit30-action63-extra-public-bindings-v1.json",
+          "repositoryPath": "deploy/audit30/verification/pow-audit30-action63-extra-public-bindings-v1.json",
+          "sha256": "3de4f7696b34e2e281711842a259eac39c5bebc1a4116ff68dfb41003bc8794c"
+        },
+        {
+          "bytes": 11888,
+          "originalPath": "/tmp/pow-audit30-append-action63-v1.py",
+          "repositoryPath": "deploy/audit30/verification/pow-audit30-append-action63-v1.py",
+          "sha256": "ba4c6b8e851c3b71da44a7b23e72dab4acffc3c30893b1795c4a57888fb8bf4b"
+        },
+        {
+          "bytes": 4984,
+          "originalPath": "/tmp/pow-audit30-independent-action63-append-source-review-v1.json",
+          "repositoryPath": "deploy/audit30/verification/pow-audit30-independent-action63-append-source-review-v1.json",
+          "sha256": "2ceb07eff587a5dda2b352f05afe4a89070471d5db683f2c275159499f00d373"
+        },
+        {
+          "bytes": 6167,
+          "originalPath": "/tmp/pow-audit30-independent-physical-sizing-native-and-running-capacity-review-v1.json",
+          "repositoryPath": "deploy/audit30/verification/pow-audit30-independent-physical-sizing-native-and-running-capacity-review-v1.json",
+          "sha256": "d7e73af724f4c0e407fdcdd941a75f96e5bd5d1587f33e52b2dc49c3ff658056"
+        },
+        {
+          "bytes": 5273,
+          "originalPath": "/tmp/pow-audit30-independent-physical-sizing-source-review-v3.json",
+          "repositoryPath": "deploy/audit30/verification/pow-audit30-independent-physical-sizing-source-review-v3.json",
+          "sha256": "4060c071dcab2e95fec4ca5852b1edc71a3c3c1304e6230f556143739bc20e04"
+        },
+        {
+          "bytes": 1600,
+          "originalPath": "/tmp/pow-audit30-independent-recovery-capacity-delta-review-v2.json",
+          "repositoryPath": "deploy/audit30/verification/pow-audit30-independent-recovery-capacity-delta-review-v2.json",
+          "sha256": "e0b920b495de756a2221d02fb2c3553ddd12b9ffddf4a61a1047fbfcad8b0609"
+        },
+        {
+          "bytes": 4136,
+          "originalPath": "/tmp/pow-audit30-independent-recovery-measured-capacity-review-v1.json",
+          "repositoryPath": "deploy/audit30/verification/pow-audit30-independent-recovery-measured-capacity-review-v1.json",
+          "sha256": "20485a3e4478726c2061e799801887a58e601f6fc65ad499a88c34040d58842f"
+        },
+        {
+          "bytes": 2950,
+          "originalPath": "/tmp/pow-audit30-oct3-restore-capacity-running-observation-v2.json",
+          "repositoryPath": "deploy/audit30/verification/pow-audit30-oct3-restore-capacity-running-observation-v2.json",
+          "sha256": "f4c8da6e852661d3fe875e398071a15d22288f7144a3bd2b0b3a023531c93000"
+        },
+        {
+          "bytes": 3837,
+          "originalPath": "/tmp/pow-audit30-oct3-restore-public-stage-metadata-v1.json",
+          "repositoryPath": "deploy/audit30/verification/pow-audit30-oct3-restore-public-stage-metadata-v1.json",
+          "sha256": "44bb6c6e523365874f2b9be9be48f3890a6a14cddb97b0f371674c5e2791d6bb"
+        },
+        {
+          "bytes": 17830,
+          "originalPath": "/tmp/pow-audit30-production-physical-sizing-bootstrap-v3.py",
+          "repositoryPath": "deploy/audit30/verification/pow-audit30-production-physical-sizing-bootstrap-v3.py",
+          "sha256": "3112ac9b91a421135034c8e646d213aa89792ed63800546816a41a3e553f615d"
+        },
+        {
+          "bytes": 3708,
+          "originalPath": "/tmp/pow-audit30-production-physical-sizing-caller-v3.test.py",
+          "repositoryPath": "deploy/audit30/verification/pow-audit30-production-physical-sizing-caller-v3.test.py",
+          "sha256": "148ba6fb88c8ddb4484abbd5df00d8be96e3f4aace37ea2ac3c7ef0b03a534c3"
+        },
+        {
+          "bytes": 2829,
+          "originalPath": "/tmp/pow-audit30-production-physical-sizing-leaf-v3.diff",
+          "rawBytes": 1921,
+          "rawSha256": "b90e53caad57dc6876b37ff0b49efd905cde181337bee65612b9067e0055ad44",
+          "repositoryPath": "deploy/audit30/verification/pow-audit30-production-physical-sizing-leaf-v3.diff.evidence.json",
+          "representation": "closed-base64-envelope-preserves-exact-raw-input",
+          "sha256": "a4e66b120e88530bb7738cebb0cbbef310362a1ade1e85fe3ddbbb70f163aedb"
+        },
+        {
+          "bytes": 10684,
+          "originalPath": "/tmp/pow-audit30-production-physical-sizing-leaf-v3.py",
+          "repositoryPath": "deploy/audit30/verification/pow-audit30-production-physical-sizing-leaf-v3.py",
+          "sha256": "92c54c1f689a1f7d9f80a40c3b42944c9ee007a03438d550d5049584c2070d5c"
+        },
+        {
+          "bytes": 10077,
+          "originalPath": "/tmp/pow-audit30-production-physical-sizing-leaf-v3.test.py",
+          "repositoryPath": "deploy/audit30/verification/pow-audit30-production-physical-sizing-leaf-v3.test.py",
+          "sha256": "4f879d1f52e466d5e1daeb89aa37b8372a13926731c0bf9130c25d930c4595a1"
+        },
+        {
+          "bytes": 1608,
+          "originalPath": "/tmp/pow-audit30-production-physical-sizing-native-104000-v3.json",
+          "repositoryPath": "deploy/audit30/verification/pow-audit30-production-physical-sizing-native-104000-v3.json",
+          "sha256": "e1d261925594336832b07375537ea66faacd32cc5832db07e42b00378c2c7886"
+        },
+        {
+          "bytes": 12721,
+          "originalPath": "/tmp/pow-audit30-production-physical-sizing-native-104000-v3.stdout",
+          "repositoryPath": "deploy/audit30/verification/pow-audit30-production-physical-sizing-native-104000-v3.stdout.json",
+          "sha256": "8ff3cf502b4ebeb3722d6b859396f985883397fb47514f9b3acd7f962bcaf132"
+        },
+        {
+          "bytes": 15276,
+          "originalPath": "/tmp/pow-audit30-production-physical-sizing-native-v3.diff",
+          "rawBytes": 11255,
+          "rawSha256": "0dff9fb76f4b12c9c2eb778925cc0011f1fe14094ccdeffff6495eff6ff3882b",
+          "repositoryPath": "deploy/audit30/verification/pow-audit30-production-physical-sizing-native-v3.diff.evidence.json",
+          "representation": "closed-base64-envelope-preserves-exact-raw-input",
+          "sha256": "24146affe79c4f2f660548b19fde68117c9568f8084b5230f89714bdcda35a3f"
+        },
+        {
+          "bytes": 13045,
+          "originalPath": "/tmp/pow-audit30-production-physical-sizing-native-v3.py",
+          "repositoryPath": "deploy/audit30/verification/pow-audit30-production-physical-sizing-native-v3.py",
+          "sha256": "e0f4da80928bde3d201f27823d301c40b19575785d232c542b701b68aeb90777"
+        },
+        {
+          "bytes": 12674,
+          "originalPath": "/tmp/pow-audit30-production-physical-sizing-native-v3.test.py",
+          "repositoryPath": "deploy/audit30/verification/pow-audit30-production-physical-sizing-native-v3.test.py",
+          "sha256": "35f05d15b862fcdc91068b3af25adb61f66cddbb49afd3c30c3b6cdc5e1c6a94"
+        },
+        {
+          "bytes": 51968,
+          "originalPath": "/tmp/pow-audit30-production-physical-sizing-request-104000-v3.json",
+          "repositoryPath": "deploy/audit30/verification/pow-audit30-production-physical-sizing-request-104000-v3.json",
+          "sha256": "0eb805e7653ecddcc892a4f8d441b2d27fe424892871d80c3c6cdfc098e24d64"
+        },
+        {
+          "bytes": 48217,
+          "originalPath": "/tmp/pow-audit30-production-physical-sizing-request-template-v3.json",
+          "repositoryPath": "deploy/audit30/verification/pow-audit30-production-physical-sizing-request-template-v3.json",
+          "sha256": "c59bdcd133d1a90f1e4a56e5a36f7a69d6a43a2ad0807743119a7d1f11c4ed2d"
+        },
+        {
+          "bytes": 4499,
+          "originalPath": "/tmp/pow-audit30-production-physical-sizing-source-preparation-v3.json",
+          "repositoryPath": "deploy/audit30/verification/pow-audit30-production-physical-sizing-source-preparation-v3.json",
+          "sha256": "c3b3aa455c9a4405c45d5798c8baa3f8de41edbdb29221acfda3095bd6f0f3a3"
+        },
+        {
+          "bytes": 4198,
+          "originalPath": "/tmp/pow-audit30-production-physical-sizing-transport-preparation-v3.diff",
+          "rawBytes": 2937,
+          "rawSha256": "54278318718f1f4f73e010cc35e57047c7566c19baa80ec853bbe090a1ad5cf7",
+          "repositoryPath": "deploy/audit30/verification/pow-audit30-production-physical-sizing-transport-preparation-v3.diff.evidence.json",
+          "representation": "closed-base64-envelope-preserves-exact-raw-input",
+          "sha256": "ab74a0b7305e412e37f4c81439af12a439a7647bb28d771133515710b69e0627"
+        },
+        {
+          "bytes": 1974,
+          "originalPath": "/tmp/pow-audit30-production-physical-sizing-transport-preparation-v3.py",
+          "repositoryPath": "deploy/audit30/verification/pow-audit30-production-physical-sizing-transport-preparation-v3.py",
+          "sha256": "f714c99e7ec63c500e55f8b95bb431337c7b6173248f331b90b1fe9cc051be23"
+        },
+        {
+          "bytes": 3783,
+          "originalPath": "/tmp/pow-audit30-recovery-measured-capacity-delta-v2.json",
+          "repositoryPath": "deploy/audit30/verification/pow-audit30-recovery-measured-capacity-delta-v2.json",
+          "sha256": "7dc43345ac2fd6be9334fa046cf4faf26ff239d0e11a93e3cbe44f31ae519e71"
+        },
+        {
+          "bytes": 10627,
+          "originalPath": "/tmp/pow-audit30-recovery-measured-capacity-qualification-v1.json",
+          "repositoryPath": "deploy/audit30/verification/pow-audit30-recovery-measured-capacity-qualification-v1.json",
+          "sha256": "f04664490ac4d7fde5deef91cbb3f3528716049b88de025b23a6ba6f3a78ac2c"
+        },
+        {
+          "bytes": 3931,
+          "originalPath": "/tmp/pow-audit30-recovery-measured-capacity-qualification-v1.test.py",
+          "repositoryPath": "deploy/audit30/verification/pow-audit30-recovery-measured-capacity-qualification-v1.test.py",
+          "sha256": "c478c7521e47f9c889bbc29f17ed4dffa7db42c332711bedfaefb1a807b2d85c"
+        },
+        {
+          "bytes": 4139,
+          "originalPath": "/tmp/pow-audit30-vps-independent-action62-preservation-review-v1.json",
+          "repositoryPath": "deploy/audit30/verification/pow-audit30-vps-independent-action62-preservation-review-v1.json",
+          "sha256": "1604c6d83bc15bcc4582c0bec62a0cb8faf563212de4561998c12a9ae52a25ef"
+        }
+      ],
+      "recoveryCapacityQualification": {
+        "currentDataAvailableBytes": 259876732928,
+        "existingInitialPredicateBytes": 227633266688,
+        "existingInitialPredicatePassesSnapshot": true,
+        "requiredWholePeakPlusReserveBytes": 314606354432,
+        "shortfallBytes": 54729621504,
+        "smallerCapsSelected": false,
+        "wholeWorkflowPeakGateImplementedByOriginalB16": false
+      },
+      "recoveryConfigurationMutation": false
     }
   ],
   "additionalRetirements": [],
@@ -218313,6 +219220,20 @@
           "physicalSizeMeasured": false,
           "productionIdentityObserved": true,
           "sizingAuditSourcePrivateIdentifierDefect": true
+        },
+        {
+          "action": 63,
+          "atUtc": "2026-10-03T11:03:35.045849+00:00",
+          "currentOct3ContentVerified": true,
+          "currentOct3RestorePassed": false,
+          "currentWholeRecoveryPeakFits": false,
+          "existingInitialRecoveryPredicateInsufficientForWholePeak": true,
+          "finalRecoveryPromotionAndRetirementApprovalPending": true,
+          "livePageIntegrityCertified": false,
+          "newRestoreRunningObserved": true,
+          "physicalRootAllocatedBytes": 40149663744,
+          "physicalSizeMeasured": true,
+          "recoveryEquivalentCertified": false
         }
       ],
       "readOnlyProgressAndDiagnosis": [
@@ -224473,7 +225394,7 @@
           }
         }
       ],
-      "status": "Historical Oct2 restore remains dated valid; its current source is absent and its old promotion/retirement plans stay blocked. Scheduled backup journal reports Oct3-kept/Oct2-deleted/Sep29-pinned. Current Oct3 all-three hashes/catalog pass; new isolated104500 restore was observed running at10:38 UTC; final equivalence/private-stop/capacity receipts remain pending. Original Sep29 pin/checker and three earlier private clusters/evidence remain untouched. Failed sizing job is observed stopped; audit-tool private-identifier binding defect is identified and production identity observed separately, while physical size remains unmeasured. No production repair, recovery activation, new pin/checker or additional retirement approval/action."
+      "status": "Historical Oct2 restore remains dated valid; current Oct2 source is absent and old promotion/retirement plans stay blocked. Current Oct3 hashes/catalog pass; its new104500 restore was observed running at10:57 UTC, final equivalence/private-stop/capacity receipts pending. Corrected strict production physical sizing104000 passes READ ONLY:40,149,663,744 allocated root bytes including WAL once. Live-page/PITR/future growth remain uncertified. Whole293GiB recovery peak does not fit current242.029GiB free; original controller212GiB initial guard would pass and final full-peak admission needs correction. Sep29 pin/checker and three earlier private clusters/evidence untouched. Production repair, recovery activation, promotion and additional retirement remain gated."
     },
     "8": {
       "finalApprovalPlans": [],
@@ -250272,5 +251193,5 @@
     5,
     8
   ],
-  "updatedAtUtc": "2026-10-03T10:46:26.936559+00:00"
+  "updatedAtUtc": "2026-10-03T11:03:35.045849+00:00"
 }

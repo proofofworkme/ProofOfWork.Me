@@ -1,0 +1,131 @@
+{
+  "atUtc": "2026-10-03T11:01:02.853165+00:00",
+  "authorNativeCalls": false,
+  "bindings": [
+    {
+      "bytes": 12721,
+      "path": "/tmp/pow-audit30-production-physical-sizing-native-104000-v3.stdout",
+      "sha256": "8ff3cf502b4ebeb3722d6b859396f985883397fb47514f9b3acd7f962bcaf132"
+    },
+    {
+      "bytes": 1608,
+      "path": "/tmp/pow-audit30-production-physical-sizing-native-104000-v3.json",
+      "sha256": "e1d261925594336832b07375537ea66faacd32cc5832db07e42b00378c2c7886"
+    },
+    {
+      "bytes": 51968,
+      "path": "/tmp/pow-audit30-production-physical-sizing-request-104000-v3.json",
+      "sha256": "0eb805e7653ecddcc892a4f8d441b2d27fe424892871d80c3c6cdfc098e24d64"
+    },
+    {
+      "bytes": 5273,
+      "path": "/tmp/pow-audit30-independent-physical-sizing-source-review-v3.json",
+      "sha256": "4060c071dcab2e95fec4ca5852b1edc71a3c3c1304e6230f556143739bc20e04"
+    },
+    {
+      "bytes": 4499,
+      "path": "/tmp/pow-audit30-production-physical-sizing-source-preparation-v3.json",
+      "sha256": "c3b3aa455c9a4405c45d5798c8baa3f8de41edbdb29221acfda3095bd6f0f3a3"
+    },
+    {
+      "bytes": 5986,
+      "path": "/tmp/pow-audit30-production-pg-identity-readonly-native-v1.stdout",
+      "sha256": "0d6b69eb45fd5f67fd4cda34ba4942fe54884ef20feeefb9a20d1c9b0d773c2a"
+    },
+    {
+      "bytes": 2950,
+      "path": "/tmp/pow-audit30-oct3-restore-capacity-running-observation-v2.json",
+      "sha256": "f4c8da6e852661d3fe875e398071a15d22288f7144a3bd2b0b3a023531c93000"
+    },
+    {
+      "bytes": 10627,
+      "path": "/tmp/pow-audit30-recovery-measured-capacity-qualification-v1.json",
+      "sha256": "f04664490ac4d7fde5deef91cbb3f3528716049b88de025b23a6ba6f3a78ac2c"
+    }
+  ],
+  "checks": {
+    "allFourDatabasesAndThreeTablespacesRetained": true,
+    "capacityCommandTextHashesAndPropertiesMatch": true,
+    "catalogAndRootTopologyBeforeAfterEqual": true,
+    "controllerUnitStopVerified": true,
+    "embeddedLeafAndManagedBytesMatch": true,
+    "frozenSourceAndRequestAndPeerRawHashesMatch": true,
+    "originalFiveAndStaticEightMaskWalPruneGuardsPass": true,
+    "publicSnapshotByteImageMatchesOnhostBinding": true,
+    "strictProductionIdentityAndSqlShaMatch": true,
+    "transportDoesNotIndependentlyCertifyRemoteStop": true,
+    "transportInputPinsAndCaptureHashesMatch": true
+  },
+  "productionMutation": false,
+  "qualifications": [
+    "Sizing is an active-tree read-only measurement, not an atomic filesystem snapshot, page-integrity check, production physical backup, PITR equivalence or future growth/capacity guarantee.",
+    "WAL is already included once in same-filesystem PGDATA; its separate sample is not an exact coherent subtractable base size.",
+    "Client unit resource caps do not constrain existing production PostgreSQL backends; fixed READ ONLY SQL has separate15s statement/2s lock/work8MB/temp32MB bounds.",
+    "Capacity and unit observations occur at separate times. Existing restore allocations are already reflected in df available bytes; do not subtract them again. Remaining growth and unrelated allocations are unmeasured.",
+    "The earlier268355457024-byte free value is a parent-supplied10:51 planning observation preserved in a hash-bound qualification note, not a new raw df capture.",
+    "The10:57 running unit observation proves neither completed restore nor full restore/PITR/page integrity. No slot, backup, recovery activation, pin promotion, deletion or production write is authorized by this review."
+  ],
+  "runningRestoreAndCapacity": {
+    "capacityObservedFinishedAtUtc": "2026-10-03T10:57:56.491906+00:00",
+    "dataAvailableBytes": 259876732928,
+    "decreaseBytes": 8478724096,
+    "decreaseCauseUnclassified": true,
+    "invocationId": "322aeb150b664d7fa8380b8f6c7ed1f1",
+    "mainPid": 3106608,
+    "previousParentObservationAtUtc": "2026-10-03T10:51:00Z",
+    "previousParentReportedAvailableBytes": 268355457024,
+    "restoreCompleted": false,
+    "restoreEquivalenceCertified": false,
+    "resultSuccessAndExecStatusZeroDoNotCertifyCompletionWhileRunning": true,
+    "state": "loaded-active-running",
+    "unit": "proofofwork-audit30-logical-restore-20261003T104500Z.service",
+    "unitObservedFinishedAtUtc": "2026-10-03T10:57:53.796662+00:00"
+  },
+  "schema": "pow-audit30-independent-physical-sizing-native-and-running-capacity-review-v1",
+  "sizing": {
+    "actualMonitorBeforeAfterUnchanged": true,
+    "allocatedPhysicalRootsBytes": 40149663744,
+    "apparentPhysicalRootsBytes": 40148779543,
+    "atUtc": "2026-10-03T10:49:02.763939+00:00",
+    "databaseCount": 4,
+    "externalTablespaceAllocatedBytes": 39441969152,
+    "externalTablespaceRootCount": 1,
+    "onhostCompletedRawBinding": {
+      "bytes": 20763,
+      "path": "/data/proofofwork-release-backups/audit30-physical-sizing-20261003T104000Z/completed.json",
+      "sha256": "0922c9130e6ec5daf5782406f66f6200a11414f131d7e2c2decf3e11afafdd94"
+    },
+    "onhostOutcomeWasNotIndependentlyReadByThisLocalReview": true,
+    "pgdataAllocatedBytes": 707694592,
+    "proofIndexerCatalogBytes": 40023374871,
+    "requestEarlierIdleMonitorInvocation": "c8474744f10743d5bbd1e0f534b0bbfe",
+    "reviewedDynamicIdleMonitorSelectionPreserved": true,
+    "serverVersionNum": "160015",
+    "sizingIdleMonitorInvocation": "d091a36762a44a60b9efeab64df343ee",
+    "snapshotRawBinding": {
+      "bytes": 5684,
+      "metadata": {
+        "bytes": 5684,
+        "ctimeNs": 1791024542763681118,
+        "dev": 64514,
+        "gid": 0,
+        "ino": 76809565,
+        "mode": 384,
+        "mtimeNs": 1791024542763681118,
+        "nlink": 1,
+        "uid": 0
+      },
+      "path": "/data/proofofwork-release-backups/audit30-physical-sizing-20261003T104000Z/snapshot.json",
+      "sha256": "7bafe61ac7e09f00ab807bce9b162e05297dc2c4d0434779f8852c9494c706a3"
+    },
+    "systemIdentifier": "7652445986754609384",
+    "tablespaceCount": 3,
+    "timeline": 1,
+    "transactionReadOnly": "on",
+    "walAllocatedBytes": 83963904,
+    "walIncludedOnceInPgdataTotal": true
+  },
+  "sourcesOrRequestsModified": false,
+  "testsRepeated": false,
+  "verdict": "accepted-saved-readonly-sizing-and-qualified-running-capacity-observation"
+}

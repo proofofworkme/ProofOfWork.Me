@@ -1,0 +1,32 @@
+{
+  "files": [
+    {
+      "bytes": 3783,
+      "path": "/tmp/pow-audit30-recovery-measured-capacity-delta-v2.json",
+      "sha256": "7dc43345ac2fd6be9334fa046cf4faf26ff239d0e11a93e3cbe44f31ae519e71"
+    },
+    {
+      "bytes": 4136,
+      "path": "/tmp/pow-audit30-independent-recovery-measured-capacity-review-v1.json",
+      "sha256": "20485a3e4478726c2061e799801887a58e601f6fc65ad499a88c34040d58842f"
+    },
+    {
+      "bytes": 1600,
+      "path": "/tmp/pow-audit30-independent-recovery-capacity-delta-review-v2.json",
+      "sha256": "e0b920b495de756a2221d02fb2c3553ddd12b9ffddf4a61a1047fbfcad8b0609"
+    },
+    {
+      "bytes": 6167,
+      "path": "/tmp/pow-audit30-independent-physical-sizing-native-and-running-capacity-review-v1.json",
+      "sha256": "d7e73af724f4c0e407fdcdd941a75f96e5bd5d1587f33e52b2dc49c3ff658056"
+    },
+    {
+      "bytes": 3837,
+      "path": "/tmp/pow-audit30-oct3-restore-public-stage-metadata-v1.json",
+      "sha256": "44bb6c6e523365874f2b9be9be48f3890a6a14cddb97b0f371674c5e2791d6bb"
+    }
+  ],
+  "privateContentIncluded": false,
+  "schema": "pow-audit30-action63-extra-public-bindings-v1",
+  "sourceOnlyAndReadonlyPublicReceipts": true
+}

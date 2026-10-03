@@ -1,0 +1,81 @@
+{
+  "activationApproved": false,
+  "atUtc": "2026-10-03T11:00:26.906892+00:00",
+  "backupOrRecoveryCompleted": false,
+  "deletionAuthority": false,
+  "findings": {
+    "actualInitialPredicatePassesAtStatedSnapshot": true,
+    "combinedSmallerBasePrivateBoundOnlyBytes": 125547794432,
+    "initialControllerRequiredBytes": 227633266688,
+    "initialControllerRequiredGiB": 212,
+    "initialHeadroomBytes": 40722190336,
+    "measuredAllocatedSourceBytes": 40149663744,
+    "measuredAllocatedSourceGiB": "37.392288208",
+    "remainingAfterPeakBytes": 61123284992,
+    "remainingAfterPeakGiB": "56.925495148",
+    "statedAvailableBytes": 268355457024,
+    "statedAvailableGiB": "249.925495148",
+    "symmetricSmallerBoundOnlyBytes": 62773897216,
+    "walCountedOnce": true,
+    "walSampleBytesAlreadyIncludedInPgdata": 83963904,
+    "wholeWorkflowFitsAtStatedSnapshot": false,
+    "wholeWorkflowGateImplementedByFrozenControllerAlone": false,
+    "wholeWorkflowPeakAdditionalBytes": 207232172032,
+    "wholeWorkflowPeakAdditionalGiB": 193,
+    "wholeWorkflowPlusReserveBytes": 314606354432,
+    "wholeWorkflowPlusReserveGiB": 293,
+    "wholeWorkflowShortfallBytes": 46250897408,
+    "wholeWorkflowShortfallGiB": "43.074504852"
+  },
+  "inputs": {
+    "acceptedPublicSizing": {
+      "bytes": 12721,
+      "path": "/tmp/pow-audit30-production-physical-sizing-native-104000-v3.stdout",
+      "sha256": "8ff3cf502b4ebeb3722d6b859396f985883397fb47514f9b3acd7f962bcaf132"
+    },
+    "frozenController": {
+      "bytes": 30211,
+      "path": "/home/sixer/ProofOfWork.Me/deploy/audit30/recovery/recovery-controller-v2.py",
+      "sha256": "b16ee1a596e0b33ef921dad7f8778019e906c7b1261d3d251089a21e1670acf2"
+    },
+    "offlineTests": {
+      "bytes": 3931,
+      "path": "/tmp/pow-audit30-recovery-measured-capacity-qualification-v1.test.py",
+      "sha256": "c478c7521e47f9c889bbc29f17ed4dffa7db42c332711bedfaefb1a807b2d85c"
+    },
+    "originalProposal": {
+      "bytes": 11171,
+      "path": "/home/sixer/ProofOfWork.Me/deploy/audit30/recovery/PROPOSAL-v2.md",
+      "sha256": "06598f0bb202794328a35a30a247ab8b0a12daf834c56f63786eb3c2529a4eaf"
+    },
+    "qualification": {
+      "bytes": 10627,
+      "path": "/tmp/pow-audit30-recovery-measured-capacity-qualification-v1.json",
+      "sha256": "f04664490ac4d7fde5deef91cbb3f3528716049b88de025b23a6ba6f3a78ac2c"
+    }
+  },
+  "nativeCallPerformed": false,
+  "productionMutation": false,
+  "qualifications": [
+    "The 10:51 free-space record is attributed to Root; this peer does not independently certify its native observation or current available space.",
+    "Active catalog and du measurements are not an atomic snapshot, page-integrity proof or guarantee of future retained base, separate private copy, growth or archived WAL demand.",
+    "Already allocated concurrent logical-restore bytes are reflected in stated available space; future growth is unknown. No double subtraction is applied.",
+    "Initial admission reserves 100+80+32 GiB. It does not reserve the separate private 80 GiB and 1 GiB evidence allowance. Runtime limits do not establish the complete initial peak reservation.",
+    "The arithmetic bound for smaller caps is planning only; no lower cap has been selected or approved. The original controller, proposal and all operational limits remain unchanged.",
+    "Offline tests mock root/authority, allocation, statvfs, SQL/cluster and archive gates; no activation, backup, recovery, slot or private-target acceptance follows."
+  ],
+  "repositoryEdited": false,
+  "reviewer": "math_review",
+  "schema": "pow-audit30-independent-recovery-measured-capacity-review-v1",
+  "smallerCapsSelected": false,
+  "sourceOrUnitEdited": false,
+  "status": "source-only-accepted",
+  "verification": {
+    "exactByteFractionAndNineDecimalGiBRowsVerified": 20,
+    "offlineTestCommand": "python3 -I -B -Werror /tmp/pow-audit30-recovery-measured-capacity-qualification-v1.test.py",
+    "offlineTestSeconds": 0.015,
+    "offlineTestsPassed": 10,
+    "realFrozenStoragePredicateWithMockedNativeAuthorityAllocationSqlAndStatvfs": true,
+    "sourceAndPublicSnapshotHashesVerified": true
+  }
+}
