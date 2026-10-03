@@ -388,9 +388,55 @@ print(f"{entry_count}\t{regular_bytes}\t{tree_hash.hexdigest()}")
 PY
 }
 
+validate_preserved_source_checkout() {
+  local source_checkout="$1"
+  local release_id="$2"
+  /usr/bin/python3 -I - "${source_checkout}" "${release_id}" "${ui_root}" \
+    "${POW_UI_MOUNTINFO_PATH:-/proc/self/mountinfo}" "${POW_UI_ALLOW_TEST_ROOTS:-}" <<'PY'
+import os
+from pathlib import Path
+import stat
+import sys
+
+source, release, reference, mountinfo, test_roots = sys.argv[1:]
+source = Path(source)
+evidence = Path("/var/backups/proofofwork-ui/transport-evidence")
+release_root = evidence / release
+expected = release_root / ("proofofwork-ui-source-" + release)
+if source != expected:
+    raise SystemExit("Preserved UI source must use the exact release-bound path.")
+owner, group = (os.geteuid(), os.getegid()) if test_roots == "1" else (0, 0)
+device = Path(reference).stat().st_dev
+backup_root = evidence.parent.parent
+ancestors = tuple(reversed(source.parents[:len(source.parts) - len(backup_root.parts)]))
+for directory in (*ancestors, source):
+    details = directory.lstat()
+    if (directory.resolve() != directory or not stat.S_ISDIR(details.st_mode)
+            or details.st_uid != owner or details.st_gid != group
+            or details.st_mode & 0o7022 or details.st_dev != device):
+        raise SystemExit("Preserved UI source ancestors must be canonical, owner/group-controlled and on the UI filesystem.")
+metadata = Path(mountinfo)
+if mountinfo != "/proc/self/mountinfo" and test_roots != "1":
+    raise SystemExit("Non-production mount metadata requires POW_UI_ALLOW_TEST_ROOTS=1.")
+details = metadata.lstat()
+if not stat.S_ISREG(details.st_mode) or stat.S_ISLNK(details.st_mode):
+    raise SystemExit("Mount metadata must be a regular, non-symlink file.")
+with metadata.open(encoding="utf-8") as stream:
+    for line in stream:
+        fields = line.split()
+        if len(fields) < 5:
+            raise SystemExit("Mount metadata contains a malformed record.")
+        mounted = Path(fields[4].replace("\\040", " ").replace("\\011", "\t")
+                       .replace("\\012", "\n").replace("\\134", "\\")).resolve()
+        if mounted in ancestors or mounted == release_root or release_root in mounted.parents:
+            raise SystemExit("Preserved UI source contains a mounted ancestor or nested mount.")
+PY
+}
+
 attest_source_checkout() {
   local source_checkout="$1"
   local expected_commit="$2"
+  local release_id="$3"
   local source_commit source_tree untracked ignored_path dependency_attestation
   local untracked_inventory ignored_inventory tree_inventory inventory_error=""
   local tree_record metadata tracked_path
@@ -403,13 +449,12 @@ attest_source_checkout() {
     return 1
   fi
   if [[ "${POW_UI_ALLOW_TEST_ROOTS:-}" != "1" ]]; then
-    case "${source_checkout}" in
-      /var/tmp/proofofwork-deploy/*) ;;
-      *)
-        echo "UI source checkout must be staged under /var/tmp/proofofwork-deploy." >&2
-        return 1
-        ;;
-    esac
+    if [[ "${source_checkout}" == "/var/backups/proofofwork-ui/transport-evidence/${release_id}/proofofwork-ui-source-${release_id}" ]]; then
+      validate_preserved_source_checkout "${source_checkout}" "${release_id}" || return 1
+    elif [[ "${source_checkout}" != "/var/tmp/proofofwork-deploy/proofofwork-ui-source-${release_id}" ]]; then
+      echo "UI source checkout must use an exact release-bound staging or transport-evidence path." >&2
+      return 1
+    fi
   fi
   if [[ "$(/usr/bin/git -c safe.directory="${source_checkout}" -C "${source_checkout}" rev-parse --show-toplevel)" != "${source_checkout}" ]]; then
     echo "UI source path is not its Git checkout root." >&2
@@ -1199,7 +1244,7 @@ process_release_manifest() {
     echo "UI source checkout path must be canonical." >&2
     exit 64
   fi
-  attest_source_checkout "${source_checkout}" "${commit}"
+  attest_source_checkout "${source_checkout}" "${commit}" "${release_id}"
   if [[ -z "${archive}" ]]; then
     echo "Release archive is required." >&2
     exit 64
@@ -1246,7 +1291,7 @@ process_release_manifest() {
     original_dependency_entry_count="${attested_dependency_entry_count}"
     original_dependency_bytes="${attested_dependency_bytes}"
     original_dependency_sha256="${attested_dependency_sha256}"
-    attest_source_checkout "${source_checkout}" "${commit}"
+    attest_source_checkout "${source_checkout}" "${commit}" "${release_id}"
     if [[ "${attested_source_commit}" != "${original_source_commit}" ||
       "${attested_source_tree}" != "${original_source_tree}" ||
       "${attested_dependency_entry_count}" != "${original_dependency_entry_count}" ||
@@ -1309,7 +1354,7 @@ process_release_manifest() {
   original_dependency_entry_count="${attested_dependency_entry_count}"
   original_dependency_bytes="${attested_dependency_bytes}"
   original_dependency_sha256="${attested_dependency_sha256}"
-  attest_source_checkout "${source_checkout}" "${commit}"
+  attest_source_checkout "${source_checkout}" "${commit}" "${release_id}"
   if [[ "${attested_source_commit}" != "${original_source_commit}" ||
     "${attested_source_tree}" != "${original_source_tree}" ||
     "${attested_dependency_entry_count}" != "${original_dependency_entry_count}" ||

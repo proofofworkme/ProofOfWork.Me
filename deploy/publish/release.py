@@ -16,6 +16,7 @@ import stat
 import subprocess
 import sys
 import tarfile
+from pathlib import PurePosixPath
 
 ROOT = Path(__file__).resolve().parent
 REPO = ROOT.parents[1]
@@ -26,6 +27,105 @@ HEX40 = re.compile('[0-9a-f]{40}')
 HEX64 = re.compile('[0-9a-f]{64}')
 RELEASE = re.compile('[0-9a-f]{12}-[0-9]{8}T[0-9]{6}Z')
 SURFACES = 'activity boost browser computer desktop dns growth id inception infinity landing marketplace nft publish token wallet work'.split()
+DEPLOYMENT_ONLY_PATHS = frozenset({
+    'deploy/proofofwork-ui-release-stage.py',
+    'deploy/proofofwork-ui-release-provenance.sh',
+    'deploy/proofofwork-ui-release-publish.sh',
+    'deploy/publish/release.py', 'deploy/publish/remote_transport.py',
+    'deploy/publish/transport_preserve.py', 'deploy/publish/publish.py',
+    'deploy/publish/check-ui-release.test.py',
+    'scripts/check-ui-stage-dedup.py',
+    'scripts/check-ui-preserved-paths.py',
+    'OP_RETURN_INFRASTRUCTURE.md', 'repository-hygiene.json',
+})
+
+
+def artifact_tooling_binding(commit, tree):
+    """A later tooling commit may reuse artifacts only for this exact repair scope."""
+    head = subprocess.check_output(['git', '-C', str(REPO), 'rev-parse', 'HEAD'], text=True).strip()
+    head_tree = subprocess.check_output(['git', '-C', str(REPO), 'rev-parse', 'HEAD^{tree}'], text=True).strip()
+    artifact_tree = subprocess.check_output(['git', '-C', str(REPO), 'rev-parse', commit + '^{tree}'], text=True).strip()
+    assert artifact_tree == tree, 'Artifact tree differs from its commit'
+    subprocess.check_output(['git', '-C', str(REPO), 'merge-base', '--is-ancestor', commit, head])
+    changed = subprocess.check_output(['git', '-C', str(REPO), 'diff', '--name-only', '--no-renames',
+                                       commit, head, '--'], text=True).splitlines()
+    assert set(changed) <= DEPLOYMENT_ONLY_PATHS, 'Artifact reuse includes changes outside deployment-only repair'
+    assert not subprocess.check_output(['git', '-C', str(REPO), 'status', '--porcelain', '--untracked-files=all'])
+    return {'toolingCommit': head, 'toolingTree': head_tree, 'deploymentOnlyChanges': changed}
+
+
+def bundle_payload_fingerprint(path, release):
+    """Independently bind extracted bytes/modes to the already SHA-pinned local tar."""
+    prefix = 'proofofwork-ui-surfaces-' + release
+    rows, seen, total = [], set(), 0
+    with tarfile.open(path, 'r:gz') as archive:
+        for member in archive:
+            name = member.name.rstrip('/')
+            relative = PurePosixPath(name)
+            assert name and name == relative.as_posix() and not relative.is_absolute()
+            assert relative.parts[0] == prefix and '..' not in relative.parts and '\\' not in name
+            assert all(ord(c) >= 32 and ord(c) != 127 for c in name)
+            assert name not in seen and not member.issparse() and member.size >= 0
+            assert member.isdir() or member.isfile()
+            assert not member.mode & 0o7022 and member.size <= 96*1024**2
+            seen.add(name); total += member.size
+            assert len(seen) <= 30000 and total <= 512*1024**2
+            digest_value = None
+            if member.isfile():
+                with archive.extractfile(member) as source:
+                    digest_value = hashlib.file_digest(source, 'sha256').hexdigest()
+            else:
+                assert member.size == 0
+            rel = relative.relative_to(prefix).as_posix()
+            rows.append([rel, 'directory' if member.isdir() else 'file', member.mode,
+                         0, 0, member.size if member.isfile() else 0, digest_value])
+    by_path = {row[0]: row for row in rows}
+    assert by_path.get('.', [None, None])[1] == 'directory'
+    assert by_path.get('surfaces', [None, None])[1] == 'directory'
+    assert {row[0].split('/')[1] for row in rows if row[0].startswith('surfaces/')} == set(SURFACES)
+    assert all(row[0] in ('.', 'surfaces') or row[0].startswith('surfaces/') for row in rows)
+    for row in rows:
+        if row[0] != '.':
+            assert by_path[PurePosixPath(row[0]).parent.as_posix()][1] == 'directory'
+    rows.sort(key=lambda row: (row[0] != '.', PurePosixPath(row[0]).parts))
+    return {'sha256': hashlib.sha256(json.dumps(rows, separators=(',', ':')).encode()).hexdigest(),
+            'entries': len(rows), 'regularBytes': sum(row[5] for row in rows)}
+
+
+def surface_resume_binding(args, current):
+    original, original_sha, _ = load_plan(args.resume_plan)
+    evidence = json.loads(Path(args.resume_evidence).read_bytes())
+    inventory = json.loads(Path(args.resume_inventory).read_bytes())
+    assert original['publicationAttempt'] != current['publicationAttempt'], 'Resume requires a fresh attempt'
+    for key in ('releaseId', 'commit', 'tree', 'source', 'surfaces', 'oldLiveManifestSha256', 'oldFullRootTreeSha256', 'retainedRoots'):
+        assert original[key] == current[key], 'Resume changes the received artifact binding'
+    failed_root = '/var/tmp/proofofwork-deploy/recovery-transport-' + current['releaseId'] + '-surfaces-stage'
+    assert evidence['evidence'] == failed_root
+    receipt = inventory['surfaceReceiverReceipt']
+    assert receipt['status'] == 'verified' and receipt['kind'] == 'surfaces'
+    assert receipt['releaseId'] == current['releaseId']
+    assert receipt['archiveSha256'] == current['surfaces']['sha256']
+    assert receipt['compressedBytes'] == current['surfaces']['compressedBytes']
+    assert receipt['entries'] == current['surfacesPayloadFingerprint']['entries']
+    assert receipt['logicalBytes'] == current['surfacesPayloadFingerprint']['regularBytes']
+    assert inventory['stageExists'] is False and inventory['sourceExists'] is False
+    records = evidence['records']
+    assert records['intent.json']['value']['planSha256'] == original_sha
+    failure = records['stage-check-scratch.json']['value']
+    assert failure.startswith('UI deployment scratch review required ')
+    refusal = json.loads(failure[len('UI deployment scratch review required '):])
+    assert refusal['maximumBytes'] == 5*1024**3 and refusal['cleanupApproved'] is False
+    assert refusal['phase'] == 'recovery-stage'
+    assert 'stager.log' not in records and 'receipt.json' not in records
+    pins = {name: {'sha256': records[name]['sha256'], 'bytes': records[name]['bytes']}
+            for name in ('intent.json', 'receive-admission.log', 'receiver.log',
+                         'stage-model.json', 'stage-check-scratch.json')}
+    for pin in pins.values(): assert HEX64.fullmatch(pin['sha256']) and 0 < pin['bytes'] <= 65536
+    assert HEX64.fullmatch(inventory['receiverReceiptSha256'])
+    return {'failedPlanPath': remote_plan(original), 'failedPlanSha256': original_sha,
+            'failedEvidence': failed_root, 'failedRecords': pins,
+            'receiverReceiptPath': '/var/tmp/proofofwork-deploy/audit5-stream-surfaces-' + current['releaseId'] + '.json',
+            'receiverReceiptSha256': inventory['receiverReceiptSha256']}
 
 def digest(path):
     with Path(path).open('rb') as source:
@@ -89,9 +189,7 @@ def make_plan(args):
     assert HEX40.fullmatch(b['commit']) and HEX40.fullmatch(b['tree']) and RELEASE.fullmatch(b['releaseId'])
     assert b['releaseId'].startswith(b['commit'][:12] + '-') and p['retentionDeferred'] is True
     assert all(item['exitCode'] == 0 for item in p['checks'])
-    assert subprocess.check_output(['git', '-C', str(REPO), 'rev-parse', 'HEAD'], text=True).strip() == b['commit']
-    assert subprocess.check_output(['git', '-C', str(REPO), 'rev-parse', 'HEAD^{tree}'], text=True).strip() == b['tree']
-    assert not subprocess.check_output(['git', '-C', str(REPO), 'status', '--porcelain', '--untracked-files=all'])
+    tooling_binding = artifact_tooling_binding(b['commit'], b['tree'])
     wrapper_sources = committed_wrapper_sources()
     assert 0 < b['sourceAllocatedBytes'] <= 1024**3
     assert len(p['retained']) <= 16
@@ -114,7 +212,11 @@ def make_plan(args):
          'httpsSmokeSha256': digest(ROOT / 'https_smoke.py'),
          'phaseCapacity': {'sha256': digest(ROOT / 'phase_capacity.py'),
                            'source': (ROOT / 'phase_capacity.py').read_text()},
-         'retentionDeferred': True, 'frontendOnly': True}
+         'retentionDeferred': True, 'frontendOnly': True,
+         **tooling_binding,
+         'inputStorage': 'release-evidence-v1',
+         'preservedSourceCheckout': '/var/backups/proofofwork-ui/transport-evidence/' + b['releaseId'] + '/proofofwork-ui-source-' + b['releaseId'],
+         'preservedSurfacesRoot': '/var/backups/proofofwork-ui/transport-evidence/' + b['releaseId'] + '/proofofwork-ui-surfaces-' + b['releaseId'] + '/surfaces'}
     logical = {}; entries = {}
     for kind, record in b['bundles'].items():
         assert kind in ('source', 'surfaces')
@@ -129,12 +231,17 @@ def make_plan(args):
             roots = {v.name[len(expected):].split('/')[0] for v in members if v.name.startswith(expected)}
             assert roots == set(SURFACES)
         c[kind] = {'compressedBytes': record['bytes'], 'sha256': record['sha256']}
+        if kind == 'surfaces':
+            c['surfacesPayloadFingerprint'] = bundle_payload_fingerprint(path, b['releaseId'])
         inode_budget = max(15000 if kind == 'source' else 4000,
                            len(members) + (256 if kind == 'source' else 128))
         assert inode_budget <= 100000
         c['admissions'][kind+'-receive'] = {'bytes': rounded + len(members)*4096 + 16*1024**2,
                                          'inodes': inode_budget}
     assert set(logical) == {'source', 'surfaces'}
+    resume_args = [getattr(args, name, None) for name in ('resume_plan', 'resume_evidence', 'resume_inventory')]
+    assert all(resume_args) or not any(resume_args), 'Resume requires plan, failed evidence and inventory'
+    if all(resume_args): c['resumeSurfaces'] = surface_resume_binding(args, c)
     old = p['oldManaged']
     c['stageArchiveUpperBoundBytes'] = old['logicalBytes'] + logical['surfaces'] + (old['entries']+entries['surfaces'])*2048 + 32*1024**2
     c['allocationDerivation'] = {'oldManaged': old, 'newLogicalBytes': logical, 'newEntries': entries,
@@ -206,7 +313,8 @@ def main():
     parser.add_argument('--repo', type=Path, default=REPO, help='Exact clean committed release checkout')
     sub = parser.add_subparsers(dest='command', required=True)
     p = sub.add_parser('preflight'); p.add_argument('output'); p.set_defaults(fn=preflight)
-    p = sub.add_parser('make-plan'); p.add_argument('build_receipt'); p.add_argument('preflight'); p.add_argument('output'); p.add_argument('--attempt', default='initial'); p.set_defaults(fn=make_plan)
+    p = sub.add_parser('make-plan'); p.add_argument('build_receipt'); p.add_argument('preflight'); p.add_argument('output'); p.add_argument('--attempt', default='initial')
+    p.add_argument('--resume-plan'); p.add_argument('--resume-evidence'); p.add_argument('--resume-inventory'); p.set_defaults(fn=make_plan)
     p = sub.add_parser('upload-plan'); p.add_argument('plan'); p.set_defaults(fn=upload_plan)
     p = sub.add_parser('publish'); p.add_argument('plan'); p.add_argument('log'); p.set_defaults(fn=publish)
     args = parser.parse_args()

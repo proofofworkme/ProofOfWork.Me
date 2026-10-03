@@ -60,6 +60,7 @@ def write_tar(path, members):
         for name, content, kind in members:
             member = tarfile.TarInfo(name)
             member.type = kind
+            member.mode = 0o755 if kind == tarfile.DIRTYPE else 0o644
             if kind == tarfile.REGTYPE:
                 member.size = len(content)
                 archive.addfile(member, io.BytesIO(content))
@@ -133,9 +134,13 @@ class ReleaseRefusals(unittest.TestCase):
         source = self.base / 'source.tgz'
         surfaces = self.base / 'surfaces.tgz'
         write_tar(source, [('source/README.md', b'local source', tarfile.REGTYPE)])
-        prefix = 'proofofwork-ui-surfaces-' + RELEASE + '/surfaces/'
-        write_tar(surfaces, [(prefix + name + '/index.html', name.encode(), tarfile.REGTYPE)
-                             for name in self.release.SURFACES])
+        top = 'proofofwork-ui-surfaces-' + RELEASE
+        prefix = top + '/surfaces/'
+        members = [(top, b'', tarfile.DIRTYPE), (top + '/surfaces', b'', tarfile.DIRTYPE)]
+        for name in self.release.SURFACES:
+            members.extend([(prefix + name, b'', tarfile.DIRTYPE),
+                            (prefix + name + '/index.html', name.encode(), tarfile.REGTYPE)])
+        write_tar(surfaces, members)
         bundles = {kind: {'path': str(path), 'bytes': path.stat().st_size,
                           'sha256': self.release.digest(path)}
                    for kind, path in [('source', source), ('surfaces', surfaces)]}
@@ -158,7 +163,7 @@ class ReleaseRefusals(unittest.TestCase):
     def git_output(self, argv, **kwargs):
         if argv[-1] == 'HEAD':
             return COMMIT + '\n'
-        if argv[-1] == 'HEAD^{tree}':
+        if argv[-1] in ('HEAD^{tree}', COMMIT + '^{tree}'):
             return TREE + '\n'
         if 'show' in argv:
             return (ROOT / argv[-1].rsplit('/', 1)[-1]).read_bytes()
@@ -434,6 +439,234 @@ class PublishCapacity(unittest.TestCase):
             exec(code, namespace)
             self.assertEqual(namespace['old_managed']['regularFiles'], 17)
             self.assertEqual(namespace['old_managed']['logicalBytes'], 53)
+
+
+class PreservedTransport(unittest.TestCase):
+    def setUp(self):
+        self.temporary = tempfile.TemporaryDirectory(prefix='pow-preserved-transport-', dir='/tmp')
+        self.base = Path(self.temporary.name).resolve()
+        self.release = safe_module('release.py')
+
+    def tearDown(self): self.temporary.cleanup()
+
+    def surfaces(self):
+        top = 'proofofwork-ui-surfaces-' + RELEASE
+        members = [(top, b'', tarfile.DIRTYPE), (top + '/surfaces', b'', tarfile.DIRTYPE)]
+        for name in self.release.SURFACES:
+            members += [(top + '/surfaces/' + name, b'', tarfile.DIRTYPE),
+                        (top + '/surfaces/' + name + '/index.html', name.encode(), tarfile.REGTYPE)]
+        path = self.base / 'surfaces.tgz'; write_tar(path, members)
+        return path, members
+
+    def test_independent_archive_fingerprint_matches_actual_extracted_payload(self):
+        path, _ = self.surfaces()
+        expected = self.release.bundle_payload_fingerprint(path, RELEASE)
+        receiver_path = ROOT.parents[1] / 'deploy/audit5/stream-ui-bundle.py'
+        receiver = {'__name__': '_pinned_surface_receiver_fixture'}
+        exec(compile(receiver_path.read_bytes(), str(receiver_path), 'exec'), receiver)
+        lock = self.base/'deploy.lock'; lock.write_bytes(b''); lock.chmod(0o600)
+        raw = path.read_bytes()
+        receiver['receive']('surfaces', RELEASE, len(raw), hashlib.sha256(raw).hexdigest(),
+                            io.BytesIO(raw), self.base, lock, owner=os.geteuid(), floor=0)
+        namespace = functions_only('remote_transport.py', {'payload_fingerprint', 'identity'})
+        root = self.base / ('proofofwork-ui-surfaces-' + RELEASE)
+        original_lstat, original_fstat = Path.lstat, os.fstat
+        def owned(details):
+            row = types.SimpleNamespace(**{k: getattr(details, k) for k in dir(details) if k.startswith('st_')})
+            row.st_uid = row.st_gid = 0
+            return row
+        with patch.object(Path, 'lstat', lambda p: owned(original_lstat(p))), patch.object(os, 'fstat', lambda fd: owned(original_fstat(fd))):
+            self.assertEqual(namespace['payload_fingerprint'](root), expected)
+            (root / 'surfaces/publish/index.html').write_bytes(b'changed')
+            self.assertNotEqual(namespace['payload_fingerprint'](root), expected)
+
+    def test_archive_fingerprint_refuses_links_duplicates_escapes_and_extra_roots(self):
+        path, members = self.surfaces()
+        top = 'proofofwork-ui-surfaces-' + RELEASE
+        for extra in [(top + '/surfaces/publish/link', b'', tarfile.SYMTYPE),
+                      (top + '/surfaces/publish/index.html', b'duplicate', tarfile.REGTYPE),
+                      (top + '/surfaces/../escape', b'escape', tarfile.REGTYPE),
+                      (top + '/other', b'extra', tarfile.REGTYPE)]:
+            with self.subTest(extra=extra):
+                write_tar(path, members + [extra])
+                with self.assertRaises(AssertionError): self.release.bundle_payload_fingerprint(path, RELEASE)
+
+    def test_deployment_only_artifact_reuse_rejects_any_application_change(self):
+        tooling_commit, tooling_tree = 'c'*40, 'd'*40
+        def git(argv, **kwargs):
+            if argv[-1] == 'HEAD': return tooling_commit + '\n'
+            if argv[-1] == 'HEAD^{tree}': return tooling_tree + '\n'
+            if argv[-1] == COMMIT + '^{tree}': return TREE + '\n'
+            if 'diff' in argv: return self.changed + '\n'
+            return b''
+        with patch.object(subprocess, 'check_output', side_effect=git):
+            self.changed = 'deploy/publish/remote_transport.py'
+            binding = self.release.artifact_tooling_binding(COMMIT, TREE)
+            self.assertEqual(binding['toolingCommit'], tooling_commit)
+            self.assertEqual(binding['toolingTree'], tooling_tree)
+            for self.changed in ('src/BoostRoot.tsx', 'package-lock.json', 'deploy/Caddyfile', 'assets/hidden.js', 'server/proof-api.mjs'):
+                with self.subTest(path=self.changed), self.assertRaisesRegex(AssertionError, 'outside deployment-only'):
+                    self.release.artifact_tooling_binding(COMMIT, TREE)
+            self.changed = 'deploy/publish/remote_transport.py'
+            with self.assertRaisesRegex(AssertionError, 'Artifact tree'):
+                self.release.artifact_tooling_binding(COMMIT, 'f'*40)
+
+    def resume_fixture(self):
+        namespace = functions_only('remote_transport.py', {'validate_resume'})
+        namespace.update(BASE=self.base, directory=lambda path: path.resolve(strict=True))
+        original = {'releaseId': RELEASE, 'commit': COMMIT, 'tree': TREE, 'publicationAttempt': 'initial',
+                    'source': {'sha256': '1'*64}, 'surfaces': {'sha256': '2'*64},
+                    'oldLiveManifestSha256': '3'*64, 'oldFullRootTreeSha256': '4'*64, 'retainedRoots': []}
+        failed_plan = self.base / ('recovery-plan-' + RELEASE + '-initial.json')
+        failed_plan.write_bytes(raw_json(original)); plan_sha = hashlib.sha256(failed_plan.read_bytes()).hexdigest()
+        failed = self.base / ('recovery-transport-' + RELEASE + '-surfaces-stage'); failed.mkdir(mode=0o700)
+        receipt = {'status': 'verified', 'kind': 'surfaces', 'releaseId': RELEASE}
+        receiver = self.base / ('audit5-stream-surfaces-' + RELEASE + '.json'); receiver.write_bytes(raw_json(receipt))
+        values = {'intent.json': raw_json({'planSha256': plan_sha, 'phase': 'surfaces-stage'}),
+                  'receive-admission.log': b'exact admission\n', 'receiver.log': raw_json(receipt),
+                  'stage-model.json': b'{"inputStabilityVerified":true}\n',
+                  'stage-check-scratch.json': b'UI deployment scratch review required ' + raw_json({
+                      'maximumBytes': 5*1024**3, 'allocatedBytes': 5*1024**3-100,
+                      'additionalBytes': 200, 'cleanupApproved': False, 'phase': 'recovery-stage', 'path': str(self.base)})}
+        for name, raw in values.items(): (failed / name).write_bytes(raw)
+        def bound(path, sha, maximum):
+            raw = Path(path).read_bytes()
+            assert len(raw) <= maximum and hashlib.sha256(raw).hexdigest() == sha
+            return raw
+        namespace['bound'] = bound
+        current = {**original, 'publicationAttempt': 'preserved-v1', 'resumeSurfaces': {
+            'failedPlanPath': str(failed_plan), 'failedPlanSha256': plan_sha, 'failedEvidence': str(failed),
+            'failedRecords': {name: {'sha256': hashlib.sha256(raw).hexdigest(), 'bytes': len(raw)} for name, raw in values.items()},
+            'receiverReceiptPath': str(receiver), 'receiverReceiptSha256': hashlib.sha256(receiver.read_bytes()).hexdigest()}}
+        return namespace['validate_resume'], current, failed, receiver
+
+    def test_resume_recognizes_only_exact_failed_admission_and_preserves_old_evidence(self):
+        validate, plan, failed, receiver = self.resume_fixture()
+        before = {path.name: path.read_bytes() for path in failed.iterdir()}
+        self.assertEqual(validate(plan), json.loads(receiver.read_bytes()))
+        self.assertEqual(before, {path.name: path.read_bytes() for path in failed.iterdir()})
+        for key in ('failedPlanSha256', 'receiverReceiptSha256'):
+            bad = copy.deepcopy(plan); bad['resumeSurfaces'][key] = '0'*64
+            with self.subTest(key=key), self.assertRaises(AssertionError): validate(bad)
+        for name in ('stager.log', 'receipt.json'):
+            path = failed / name; path.write_bytes(b'evidence of attempted staging')
+            with self.assertRaises(AssertionError): validate(plan)
+            path.unlink()
+        bad = copy.deepcopy(plan); bad['publicationAttempt'] = 'initial'
+        with self.assertRaises(AssertionError): validate(bad)
+        receiver.write_bytes(b'changed')
+        with self.assertRaises(AssertionError): validate(plan)
+
+    def test_resume_dispatch_uses_fresh_unit_without_another_payload_stream(self):
+        bundle = self.base / 'bundle.tgz'; bundle.write_bytes(b'exact approved archive')
+        transport = safe_module('transport_preserve.py')
+        plan = {'releaseId': RELEASE, 'publicationAttempt': 'preserved-v1', 'inputStorage': 'release-evidence-v1',
+                'resumeSurfaces': {'verified': True}, 'preservingTransportSha256': self.release.digest(ROOT/'remote_transport.py'),
+                'localBundles': {'surfaces': str(bundle)}, 'surfaces': {'compressedBytes': bundle.stat().st_size, 'sha256': self.release.digest(bundle)}}
+        path = self.base / 'plan.json'; path.write_bytes(raw_json(plan)); log = self.base / 'resume.log'
+        previous_umask = os.umask(0o022)
+        try:
+            with patch('sys.argv', ['transport_preserve.py', str(path), 'surfaces-stage-resume', str(log)]), patch.object(subprocess, 'run') as run:
+                transport.main()
+                self.assertEqual(run.call_args.kwargs['stdin'], subprocess.DEVNULL)
+                command = run.call_args.args[0][-1]
+                self.assertIn('surfaces-stage-resume-preserved-v1.service', command)
+                self.assertIn('Transport unit namespace occupied', command)
+        finally: os.umask(previous_umask)
+
+    def test_original_pinned_receiver_preserves_source_pool_and_refuses_changed_stream(self):
+        receiver_path = ROOT.parents[1] / 'deploy/audit5/stream-ui-bundle.py'
+        namespace = {'__name__': '_pinned_receiver_fixture'}
+        exec(compile(receiver_path.read_bytes(), str(receiver_path), 'exec'), namespace)
+        pool = self.base / 'evidence'; pool.mkdir(mode=0o700)
+        lock = self.base / 'deploy.lock'; lock.write_bytes(b''); lock.chmod(0o600)
+        top = 'proofofwork-ui-source-' + RELEASE
+        tar = self.base / 'source.tgz'; write_tar(tar, [(top, b'', tarfile.DIRTYPE), (top+'/README.md', b'pinned source', tarfile.REGTYPE)])
+        raw = tar.read_bytes(); sha = hashlib.sha256(raw).hexdigest()
+        receipt = namespace['receive']('source', RELEASE, len(raw), sha, io.BytesIO(raw), pool, lock,
+                                      owner=os.geteuid(), floor=0)
+        self.assertEqual(receipt['extractedRoot'], str(pool/top))
+        self.assertEqual((pool/top/'README.md').read_bytes(), b'pinned source')
+        self.assertFalse((self.base/top).exists())
+        second = self.base/'failed-pool'; second.mkdir(mode=0o700)
+        with self.assertRaisesRegex(RuntimeError, 'digest mismatch'):
+            namespace['receive']('source', RELEASE, len(raw), '0'*64, io.BytesIO(raw), second, lock,
+                                 owner=os.geteuid(), floor=0)
+        self.assertTrue((second/('.audit5-stream-source-'+RELEASE)/top/'README.md').exists())
+        self.assertFalse((second/top).exists())
+
+    def test_capacity_trajectory_charges_only_preserved_source_to_disk(self):
+        base, payload, candidate, peak, source = 5171429376, 236478464, 261242880, 264581120, 365621248
+        reserve = 32*1024**2
+        namespace = {'__name__': '_pinned_capacity_fixture'}
+        helper = ROOT.parents[1]/'deploy/proofofwork-ui-capacity.py'
+        exec(compile(helper.read_bytes(), str(helper), 'exec'), namespace)
+        def measured(amount):
+            return patch.object(subprocess, 'run', return_value=types.SimpleNamespace(stdout=(str(amount)+'\t'+str(self.base)+'\n').encode()))
+        with measured(base), self.assertRaisesRegex(namespace['CapacityError'], 'scratch review'):
+            namespace['check_deploy_scratch'](self.base, peak+reserve, 'stage')
+        with measured(base-payload):
+            namespace['check_deploy_scratch'](self.base, peak+reserve, 'stage')
+        with measured(base-payload+candidate):
+            with self.assertRaisesRegex(namespace['CapacityError'], 'scratch review'):
+                namespace['check_deploy_scratch'](self.base, source+reserve, 'source-in-scratch')
+            namespace['check_deploy_scratch'](self.base, reserve, 'source-in-evidence')
+        disk_after_peak = 19012272128-(peak+507226197+source+2*reserve)
+        vfs = types.SimpleNamespace(f_bavail=disk_after_peak, f_frsize=1, f_favail=100000)
+        with patch.object(os, 'statvfs', return_value=vfs):
+            namespace['check_capacity'](self.base, 0, 10000, 'release-trajectory')
+        vfs.f_bavail = 10*1024**3
+        with patch.object(os, 'statvfs', return_value=vfs), self.assertRaisesRegex(namespace['CapacityError'], 'capacity refused'):
+            namespace['check_capacity'](self.base, 0, 10000, 'root-reserve')
+
+    def test_current_input_preservation_is_inode_preserving_and_never_replaces_evidence(self):
+        namespace = functions_only('remote_transport.py', {'rename_new', 'sync'})
+        source = self.base/'current-input'; source.mkdir(mode=0o700); (source/'index.html').write_bytes(b'exact input')
+        pool = self.base/'evidence'; pool.mkdir(mode=0o700); target = pool/source.name
+        inode = source.stat().st_ino; file_inode = (source/'index.html').stat().st_ino
+        namespace['rename_new'](source, target)
+        self.assertFalse(source.exists()); self.assertEqual(target.stat().st_ino, inode)
+        self.assertEqual((target/'index.html').stat().st_ino, file_inode)
+        source.mkdir(mode=0o700); (source/'index.html').write_bytes(b'second attempt')
+        with self.assertRaises(AssertionError): namespace['rename_new'](source, target)
+        self.assertEqual((target/'index.html').read_bytes(), b'exact input')
+        self.assertEqual((source/'index.html').read_bytes(), b'second attempt')
+
+    def test_evidence_ancestor_admission_refuses_alias_modes_devices_and_mounts_before_writes(self):
+        namespace = functions_only('remote_transport.py', {'validate_evidence_ancestors'})
+        backups = self.base/'backups'; backups.mkdir(mode=0o700)
+        parent = backups/'proofofwork-ui'; parent.mkdir(mode=0o700)
+        evidence = parent/'transport-evidence'; evidence.mkdir(mode=0o700)
+        release_root = evidence/RELEASE; release_root.mkdir(mode=0o700)
+        mountinfo = self.base/'mountinfo'; mountinfo.write_text('1 0 0:1 / / rw - ext4 root rw\n')
+        namespace.update(BASE=self.base, EVIDENCE=evidence)
+        original_lstat = Path.lstat
+        wrong_device = None
+        def owned(path):
+            details = original_lstat(path)
+            row = types.SimpleNamespace(**{k:getattr(details,k) for k in dir(details) if k.startswith('st_')})
+            row.st_uid = row.st_gid = 0
+            if path == wrong_device: row.st_dev += 1
+            return row
+        with patch.object(Path, 'lstat', owned):
+            namespace['validate_evidence_ancestors'](RELEASE, require_release=True, mountinfo=mountinfo)
+            before = sorted(path.relative_to(self.base).as_posix() for path in self.base.rglob('*'))
+            for target in (backups, parent, evidence, release_root):
+                target.chmod(0o777)
+                with self.assertRaises(AssertionError): namespace['validate_evidence_ancestors'](RELEASE, require_release=True, mountinfo=mountinfo)
+                target.chmod(0o700)
+                wrong_device = target
+                with self.assertRaisesRegex(AssertionError, 'filesystem'): namespace['validate_evidence_ancestors'](RELEASE, require_release=True, mountinfo=mountinfo)
+                wrong_device = None
+                mountinfo.write_text('1 0 0:1 / '+str(target)+' rw - ext4 fixture rw\n')
+                with self.assertRaisesRegex(AssertionError, 'Mounted'): namespace['validate_evidence_ancestors'](RELEASE, require_release=True, mountinfo=mountinfo)
+            mountinfo.write_text('1 0 0:1 / '+str(release_root/'nested')+' rw - ext4 fixture rw\n')
+            with self.assertRaisesRegex(AssertionError, 'Mounted'): namespace['validate_evidence_ancestors'](RELEASE, require_release=True, mountinfo=mountinfo)
+            mountinfo.write_text('1 0 0:1 / / rw - ext4 root rw\n')
+            saved = self.base/'saved-release'; release_root.rename(saved); release_root.symlink_to(saved, target_is_directory=True)
+            with self.assertRaises(AssertionError): namespace['validate_evidence_ancestors'](RELEASE, require_release=True, mountinfo=mountinfo)
+            release_root.unlink(); saved.rename(release_root)
+            self.assertEqual(before, sorted(path.relative_to(self.base).as_posix() for path in self.base.rglob('*')))
 
 
 class HttpsRefusals(unittest.TestCase):

@@ -17,12 +17,40 @@ and sixteen-surface archives retain their exact verification compatibility.
 The current UI orchestration is `deploy/publish/`: `build.py` creates fresh
 lockfile-installed source and seventeen surface archives plus a build receipt;
 `release.py` records the locked preflight and committed-source plan;
-`transport_preserve.py` dispatches the separately admitted surface and source
-streams; the publisher retains all rollback roots; `collect_verify.py` and
+`transport_preserve.py` dispatches the surface and source phases; the publisher
+retains all rollback roots; `collect_verify.py` and
 `https_smoke.py` bind the deployed archive to off-host HTTPS bytes. The phase
 capacity algorithm is committed and hash-bound by the plan, includes Publish,
 and checks the exact installed stager hash. Existing receiver, admission,
 scratch, filesystem, inode and retention-hold controls remain in force.
+
+Current incoming payloads are preserved by a non-replacing, inode-preserving
+rename into `/var/backups/proofofwork-ui/transport-evidence/RELEASE/` before
+staging. Source streams use the existing pinned receiver function directly in
+that same release pool. The stager admits only the exact release-bound scratch
+or evidence input path; the publisher and provenance helper likewise admit
+only the exact release-bound source path. Stage output stays in the existing
+scratch root. Evidence remains charged to filesystem capacity, while its
+durable inputs do not count as another scratch copy. The 5 GiB scratch ceiling,
+10 GiB root reserve plus growth headroom, shared deploy lock, stream/expansion
+bounds, detached Git source attestation and archive checks are unchanged.
+
+A verified surface receipt that stopped at scratch admission can continue only
+through the explicit `surfaces-stage-resume` phase with a fresh attempt/unit
+and receipt directory. Its plan pins the original plan, receiver receipt and
+every failed phase record, and independently derives the payload fingerprint
+from the exact local archive. It refuses prior staging/publication, changed
+inputs and occupied namespaces; failed evidence remains untouched. Plan
+creation requires all three `--resume-plan`, `--resume-evidence` and
+`--resume-inventory` inputs. The resume sends no second surface stream.
+
+An already built application commit/tree may be reused by a later clean
+deployment-tooling commit only when Git proves ancestry and every changed path
+belongs to the explicit helper/wrapper/test/deployment-doc/hygiene allowlist.
+The plan separately pins `commit`/`tree` for artifacts and
+`toolingCommit`/`toolingTree` for orchestration, with committed wrapper hashes.
+Application, dependency, assets, protocol and Caddy changes reject artifact
+reuse. The preserved source checkout remains the exact application commit.
 
 ## Current Shape
 

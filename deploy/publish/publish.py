@@ -45,7 +45,9 @@ roots=sorted(pathlib.Path('/var/backups/proofofwork-ui/rollback-roots').glob('pr
 assert [str(p) for p in roots]==[r['root'] for r in plan['retainedRoots']]
 for p,r in zip(roots,plan['retainedRoots']):
  current=ns['fingerprint'](p);assert current['manifestSha256']==r['manifestSha256'] and current['treeSha256']==r['treeSha256']
-source='/var/tmp/proofofwork-deploy/proofofwork-ui-source-'+release
+assert plan['inputStorage']=='release-evidence-v1'
+source='/var/backups/proofofwork-ui/transport-evidence/'+release+'/proofofwork-ui-source-'+release
+assert plan['preservedSourceCheckout']==source
 for ref,expected in [('HEAD',commit),('HEAD^{tree}',tree)]:
  assert subprocess.check_output(['git','-C',source,'rev-parse',ref],env=env,timeout=20,text=True).strip()==expected
 assert subprocess.run(['git','-C',source,'symbolic-ref','-q','HEAD'],env=env,stdout=subprocess.DEVNULL,timeout=20).returncode==1

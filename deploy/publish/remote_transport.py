@@ -38,7 +38,7 @@ def bound(path, expected, maximum=2*1024**2):
     assert path.resolve() == path and stat.S_ISREG(before.st_mode)
     assert before.st_uid == before.st_gid == 0 and before.st_nlink == 1
     assert not before.st_mode & 0o7022 and before.st_size <= maximum
-    with os.fdopen(os.open(path, os.O_RDONLY | os.O_NOFOLLOW), 'rb') as source:
+    with os.fdopen(os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NOATIME), 'rb') as source:
         assert identity(os.fstat(source.fileno())) == identity(before)
         raw = source.read(maximum + 1)
         assert identity(os.fstat(source.fileno())) == identity(before)
@@ -56,6 +56,32 @@ def directory(path, create=False):
     assert s.st_uid == s.st_gid == 0 and not s.st_mode & 0o7022
     assert s.st_dev == BASE.stat().st_dev
     return path
+
+
+def validate_evidence_ancestors(release, *, require_release=False, mountinfo=Path('/proc/self/mountinfo')):
+    """Admit the exact evidence pool before mkdir, rename or extraction."""
+    assert re.fullmatch('[0-9a-f]{12}-[0-9]{8}T[0-9]{6}Z', release)
+    release_root = EVIDENCE / release
+    ancestors = (EVIDENCE.parent.parent, EVIDENCE.parent, EVIDENCE, release_root)
+    device = BASE.stat().st_dev
+    for index, path in enumerate(ancestors):
+        if not os.path.lexists(path):
+            assert index >= 2 and not require_release, 'Required evidence ancestor missing'
+            assert path.resolve() == path
+            continue
+        details = path.lstat()
+        assert path.resolve() == path and stat.S_ISDIR(details.st_mode)
+        assert details.st_uid == details.st_gid == 0 and not details.st_mode & 0o7022
+        assert details.st_dev == device, 'Evidence ancestor crosses the UI filesystem'
+    details = mountinfo.lstat()
+    assert stat.S_ISREG(details.st_mode) and not stat.S_ISLNK(details.st_mode)
+    with mountinfo.open(encoding='utf-8') as stream:
+        for line in stream:
+            fields = line.split(); assert len(fields) >= 5
+            mounted = Path(fields[4].replace('\\040', ' ').replace('\\011', '\t')
+                           .replace('\\012', '\n').replace('\\134', '\\')).resolve()
+            assert mounted not in ancestors and mounted != release_root and release_root not in mounted.parents, 'Mounted evidence ancestor or nested release path'
+    return release_root
 
 
 def sync(path):
@@ -97,8 +123,10 @@ def payload_fingerprint(root):
         sha = None
         if kind == 'file':
             assert s.st_nlink == 1
-            with path.open('rb') as source:
+            with os.fdopen(os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NOATIME), 'rb') as source:
+                assert identity(os.fstat(source.fileno())) == identity(s)
                 sha = hashlib.file_digest(source, 'sha256').hexdigest()
+                assert identity(os.fstat(source.fileno())) == identity(s)
             assert identity(path.lstat()) == identity(s)
         rows.append([path.relative_to(root).as_posix(), kind, stat.S_IMODE(s.st_mode),
                      s.st_uid, s.st_gid, s.st_size if kind == 'file' else 0, sha])
@@ -150,16 +178,67 @@ def capacity(command, path, amount, phase, inodes=10000):
     return json.loads((out / name).read_bytes())
 
 
+def validate_resume(plan):
+    """Recognize one exact failed admission; no broad retry or namespace reuse."""
+    resume = plan['resumeSurfaces']; release = plan['releaseId']
+    failed_root = BASE / ('recovery-transport-' + release + '-surfaces-stage')
+    assert resume['failedEvidence'] == str(failed_root)
+    directory(failed_root)
+    original = json.loads(bound(resume['failedPlanPath'], resume['failedPlanSha256'], 65536))
+    assert resume['failedPlanPath'] == str(BASE / ('recovery-plan-' + release + '-' + original['publicationAttempt'] + '.json'))
+    assert original['publicationAttempt'] != plan['publicationAttempt']
+    for key in ('releaseId', 'commit', 'tree', 'source', 'surfaces', 'oldLiveManifestSha256', 'oldFullRootTreeSha256', 'retainedRoots'):
+        assert original[key] == plan[key]
+    expected = {'intent.json', 'receive-admission.log', 'receiver.log', 'stage-model.json', 'stage-check-scratch.json'}
+    assert set(resume['failedRecords']) == expected
+    records = {}
+    for name, pin in resume['failedRecords'].items():
+        raw = bound(failed_root / name, pin['sha256'], 65536)
+        assert len(raw) == pin['bytes']; records[name] = raw
+    assert not os.path.lexists(failed_root / 'stager.log') and not os.path.lexists(failed_root / 'receipt.json')
+    intent = json.loads(records['intent.json'])
+    assert intent['planSha256'] == resume['failedPlanSha256'] and intent['phase'] == 'surfaces-stage'
+    failure = records['stage-check-scratch.json'].decode()
+    prefix = 'UI deployment scratch review required '
+    assert failure.startswith(prefix)
+    admission = json.loads(failure[len(prefix):])
+    assert admission['maximumBytes'] == 5*1024**3 and admission['cleanupApproved'] is False
+    assert admission['phase'] == 'recovery-stage' and admission['path'] == str(BASE)
+    assert admission['allocatedBytes'] + admission['additionalBytes'] > admission['maximumBytes']
+    receipt_path = BASE / ('audit5-stream-surfaces-' + release + '.json')
+    assert resume['receiverReceiptPath'] == str(receipt_path)
+    receipt = json.loads(bound(receipt_path, resume['receiverReceiptSha256'], 65536))
+    assert json.loads(records['receiver.log']) == receipt
+    return receipt
+
+
+def source_receiver_code(receiver_path, receiver_sha, evidence_root):
+    """Invoke the unmodified pinned receiver function in its exact release pool."""
+    receiver = bound(receiver_path, receiver_sha)
+    return "__name__ = '_pinned_preserved_source_receiver'\n" + receiver.decode() + "\n" + (
+        "assert os.geteuid() == os.getegid() == 0\n"
+        "mode, release, length, expected, parent = sys.argv[1:]\n"
+        "assert mode == 'source' and RELEASE.fullmatch(release)\n"
+        "assert parent == '/var/backups/proofofwork-ui/transport-evidence/' + release\n"
+        "print(json.dumps(receive(mode, release, int(length), expected, sys.stdin.buffer, Path(parent), "
+        "Path('/run/proofofwork-ui/deploy.lock'))))\n")
+
+
 assert sys.flags.isolated and os.geteuid() == os.getegid() == 0
 os.umask(0o077); resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
 plan_path, plan_sha, phase = sys.argv[1:]
-assert phase in ('surfaces-stage', 'source')
+assert phase in ('surfaces-stage', 'surfaces-stage-resume', 'source')
 p = json.loads(bound(plan_path, plan_sha, 65536)); release = p['releaseId']
 assert re.fullmatch('[0-9a-f]{12}-[0-9]{8}T[0-9]{6}Z', release)
 assert release.startswith(p['commit'][:12] + '-')
 assert p['frontendOnly'] is True and p['retentionDeferred'] is True
+assert p['inputStorage'] == 'release-evidence-v1'
+evidence_root = EVIDENCE / release
+assert p['preservedSourceCheckout'] == str(evidence_root / ('proofofwork-ui-source-' + release))
+assert p['preservedSurfacesRoot'] == str(evidence_root / ('proofofwork-ui-surfaces-' + release) / 'surfaces')
+assert re.fullmatch('[a-z0-9][a-z0-9-]{0,30}', p['publicationAttempt'])
 assert plan_path == str(BASE / ('recovery-plan-' + release + '-' + p['publicationAttempt'] + '.json'))
-unit = 'proofofwork-recovery-ui-transport-' + release + '-' + phase + '.service'
+unit = 'proofofwork-recovery-ui-transport-' + release + '-' + phase + '-' + p['publicationAttempt'] + '.service'
 fields = dict(line.split('=', 1) for line in subprocess.check_output([
     '/usr/bin/systemctl', 'show', unit, '-p', 'ActiveState', '-p', 'MainPID',
     '-p', 'KillMode', '-p', 'RuntimeMaxUSec', '-p', 'ControlGroup'], env=ENV, text=True, timeout=10).splitlines())
@@ -189,7 +268,12 @@ exec(compile(bound(helpers['retained']['path'], helpers['retained']['sha256']),
              helpers['retained']['path'], 'exec'), namespace)
 live = namespace['fingerprint'](Path('/var/www'))
 assert live['manifestSha256'] == p['oldLiveManifestSha256'] and live['treeSha256'] == p['oldFullRootTreeSha256']
-out = BASE / ('recovery-transport-' + release + '-' + phase)
+retained = sorted(Path('/var/backups/proofofwork-ui/rollback-roots').glob('proofofwork-www-pre-*'))
+assert [str(path) for path in retained] == [record['root'] for record in p['retainedRoots']]
+for path, record in zip(retained, p['retainedRoots']):
+    value = namespace['fingerprint'](path)
+    assert value['manifestSha256'] == record['manifestSha256'] and value['treeSha256'] == record['treeSha256']
+out = BASE / ('recovery-transport-' + release + '-' + phase + '-' + p['publicationAttempt'])
 assert not os.path.lexists(out)
 # Existing installed capacity checks run before this bounded receipt directory.
 for command in ('check-scratch', 'check'):
@@ -201,51 +285,71 @@ out.mkdir(mode=0o700); sync(BASE)
 durable_json(out / 'intent.json', {'releaseId': release, 'commit': p['commit'], 'tree': p['tree'],
     'phase': phase, 'planSha256': plan_sha, 'continuousParentLock': True,
     'historicalDeletion': False, 'retentionDeferred': True})
-kind = 'surfaces' if phase == 'surfaces-stage' else 'source'
+kind = 'source' if phase == 'source' else 'surfaces'
 allocation = p['admissions'][kind + '-receive']
-run(['/usr/bin/python3', '-I', '-B', str(tools / 'release.py'), 'admit-ui',
-    '--release-id', release, '--lock-fd', str(lock_fd), '--admission-id', 'recovery-' + kind + '-receive',
-    '--additional-bytes', str(allocation['bytes']), '--additional-inodes', str(allocation['inodes']),
-    '--helper-sha', 'capacity=' + helpers['capacity']['sha256']], 'receive-admission.log', timeout=120)
 archive = ARCHIVES / ('proofofwork-ui-release-' + release + '.tgz')
+part = p[kind]
 if phase == 'source':
     checksum = Path(str(archive) + '.sha256').read_text().split()
     assert len(checksum) == 2 and checksum[1] == archive.name
     bound(archive, checksum[0], 2*1024**3)
-part = p[kind]
-run(['/usr/bin/python3', '-I', '-B', str(tools / 'stream-ui-bundle.py'), kind, release,
-    str(part['compressedBytes']), part['sha256']], 'receiver.log',
-    source=sys.stdin.buffer, length=part['compressedBytes'])
+    validate_evidence_ancestors(release, require_release=True)
+    directory(EVIDENCE.parent); directory(EVIDENCE); directory(evidence_root)
+    # Source extraction is durable evidence, charged to disk but never scratch.
+    capacity('check-scratch', BASE, EVIDENCE_RESERVE, 'source-evidence', inodes=32)
+    capacity('check', evidence_root, allocation['bytes'] + EVIDENCE_RESERVE, 'source-receive', inodes=allocation['inodes'])
+    receiver_code = source_receiver_code(tools / 'stream-ui-bundle.py', p['helperSha256']['receiver'], evidence_root)
+    run(['/usr/bin/python3', '-I', '-B', '-c', receiver_code, kind, release,
+         str(part['compressedBytes']), part['sha256'], str(evidence_root)], 'receiver.log',
+         source=sys.stdin.buffer, length=part['compressedBytes'])
+elif phase == 'surfaces-stage':
+    assert 'resumeSurfaces' not in p
+    run(['/usr/bin/python3', '-I', '-B', str(tools / 'release.py'), 'admit-ui',
+        '--release-id', release, '--lock-fd', str(lock_fd), '--admission-id', 'recovery-' + kind + '-receive-' + p['publicationAttempt'],
+        '--additional-bytes', str(allocation['bytes']), '--additional-inodes', str(allocation['inodes']),
+        '--helper-sha', 'capacity=' + helpers['capacity']['sha256']], 'receive-admission.log', timeout=120)
+    run(['/usr/bin/python3', '-I', '-B', str(tools / 'stream-ui-bundle.py'), kind, release,
+         str(part['compressedBytes']), part['sha256']], 'receiver.log',
+         source=sys.stdin.buffer, length=part['compressedBytes'])
 assert sys.stdin.buffer.read(1) == b'', 'Extra transport bytes'
 stage = BASE / ('proofofwork-www-stage-' + release)
-if phase == 'surfaces-stage':
+if phase != 'source':
     payload = BASE / ('proofofwork-ui-surfaces-' + release)
-    receipt = json.loads((BASE / ('audit5-stream-surfaces-' + release + '.json')).read_bytes())
+    receipt = validate_resume(p) if phase == 'surfaces-stage-resume' else json.loads((BASE / ('audit5-stream-surfaces-' + release + '.json')).read_bytes())
     assert receipt['status'] == 'verified' and receipt['archiveSha256'] == part['sha256']
     assert receipt['compressedBytes'] == part['compressedBytes'] and receipt['releaseId'] == release
+    assert receipt['kind'] == 'surfaces' and receipt['extractedRoot'] == str(payload)
+    assert not os.path.lexists(stage)
+    for target in (archive, Path(str(archive)+'.sha256'), Path(str(archive)+'.provenance')):
+        assert not os.path.lexists(target)
     input_before = payload_fingerprint(payload)
-    run(['/usr/bin/python3', '-I', '-B', '-c', phase_capacity_source, 'stage', str(payload / 'surfaces'), helpers['stager']['sha256']], 'stage-model.json')
-    model = json.loads((out / 'stage-model.json').read_bytes())
-    assert model['inputStabilityVerified'] is True and model['installedStagerSha256'] == helpers['stager']['sha256']
-    # The release archive lives outside scratch. Charge it only to actual disk.
-    capacity('check-scratch', BASE, model['peakAdditionalBytes'] + EVIDENCE_RESERVE, 'stage')
-    capacity('check', BASE, model['peakAdditionalBytes'] + p['stageArchiveUpperBoundBytes'] + EVIDENCE_RESERVE, 'stage')
-    run([helpers['stager']['path'], '--release-id', release, '--surfaces-root', str(payload / 'surfaces'),
-         '--stage-root', str(stage), '--deduplicate-managed-files'], 'stager.log', timeout=900)
-    assert payload_fingerprint(payload) == input_before
+    assert input_before == p['surfacesPayloadFingerprint'], 'Received surface bytes differ from pinned local archive'
+    assert receipt['entries'] == input_before['entries'] and receipt['logicalBytes'] == input_before['regularBytes']
+    validate_evidence_ancestors(release)
     capacity('check', ARCHIVES, 65536, 'input-evidence', inodes=16)
-    directory(EVIDENCE.parent)
-    directory(EVIDENCE, create=True)
-    evidence_root = EVIDENCE / release
+    directory(EVIDENCE.parent); directory(EVIDENCE, create=True)
     assert not os.path.lexists(evidence_root)
     evidence_root.mkdir(mode=0o700); sync(EVIDENCE)
+    validate_evidence_ancestors(release, require_release=True)
     preserved = evidence_root / payload.name
+    durable_json(evidence_root / 'incoming-intent.json', {'releaseId': release, 'planSha256': plan_sha,
+        'oldPath': str(payload), 'preservedPath': str(preserved), 'payloadFingerprint': input_before,
+        'historicalDeletion': False})
     rename_new(payload, preserved)
     assert payload_fingerprint(preserved) == input_before
     durable_json(evidence_root / 'incoming-receipt.json', {'format': 'proof-of-work-ui-incoming-evidence-v1',
         'releaseId': release, 'commit': p['commit'], 'tree': p['tree'], 'planSha256': plan_sha,
         'receiverReceipt': receipt, 'preservedPath': str(preserved), 'payloadFingerprint': input_before,
         'movePreservedInodes': True, 'historicalDeletion': False, 'allPriorEvidencePreserved': True})
+    run(['/usr/bin/python3', '-I', '-B', '-c', phase_capacity_source, 'stage', str(preserved / 'surfaces'), helpers['stager']['sha256']], 'stage-model.json')
+    model = json.loads((out / 'stage-model.json').read_bytes())
+    assert model['inputStabilityVerified'] is True and model['installedStagerSha256'] == helpers['stager']['sha256']
+    # The release archive lives outside scratch. Charge it only to actual disk.
+    capacity('check-scratch', BASE, model['peakAdditionalBytes'] + EVIDENCE_RESERVE, 'stage')
+    capacity('check', BASE, model['peakAdditionalBytes'] + p['stageArchiveUpperBoundBytes'] + EVIDENCE_RESERVE, 'stage')
+    run([helpers['stager']['path'], '--release-id', release, '--surfaces-root', str(preserved / 'surfaces'),
+         '--stage-root', str(stage), '--deduplicate-managed-files'], 'stager.log', timeout=900)
+    assert payload_fingerprint(preserved) == input_before
     run(['/usr/bin/python3', '-I', '-B', '-c', phase_capacity_source, 'managed', str(stage)], 'managed-model.json')
     managed = json.loads((out / 'managed-model.json').read_bytes())
     upper = managed['archiveUpperBoundBytes']; assert upper <= p['stageArchiveUpperBoundBytes']
@@ -269,14 +373,21 @@ if phase == 'surfaces-stage':
     checksum_temporary.chmod(0o644); sync(temporary)
     rename_new(checksum_temporary, Path(str(archive)+'.sha256'))
     rename_new(temporary, archive)
-    capacity('check-scratch', BASE, p['admissions']['source-receive']['bytes'] + EVIDENCE_RESERVE, 'next-source')
-    capacity('check', BASE, p['admissions']['source-receive']['bytes'] + EVIDENCE_RESERVE, 'next-source')
+    capacity('check-scratch', BASE, EVIDENCE_RESERVE, 'next-source', inodes=32)
+    capacity('check', evidence_root, p['admissions']['source-receive']['bytes'] + EVIDENCE_RESERVE, 'next-source',
+             inodes=p['admissions']['source-receive']['inodes'])
     durable_json(out / 'receipt.json', {'ok': True, 'releaseId': release, 'phase': phase,
         'managedArchive': str(archive), 'archiveSha256': archive_sha, 'preservedInput': str(preserved),
         'inputFingerprint': input_before, 'stageModel': model, 'productionPublished': False,
         'historicalDeletion': False})
 else:
-    source = BASE / ('proofofwork-ui-source-' + release)
+    source = Path(p['preservedSourceCheckout'])
+    source_receipt_path = evidence_root / ('audit5-stream-source-' + release + '.json')
+    source_receipt = json.loads(source_receipt_path.read_bytes())
+    assert source_receipt['status'] == 'verified' and source_receipt['kind'] == 'source'
+    assert source_receipt['releaseId'] == release and source_receipt['extractedRoot'] == str(source)
+    assert source_receipt['compressedBytes'] == p['source']['compressedBytes']
+    assert source_receipt['archiveSha256'] == p['source']['sha256']
     for ref, expected in [('HEAD', p['commit']), ('HEAD^{tree}', p['tree'])]:
         run(['/usr/bin/git', '-C', str(source), 'rev-parse', ref], 'git-' + ('commit' if ref == 'HEAD' else 'tree') + '.txt', timeout=30)
         assert (out / ('git-' + ('commit' if ref == 'HEAD' else 'tree') + '.txt')).read_text().strip() == expected
@@ -289,7 +400,12 @@ else:
         'candidate-provenance.log', extra={'POW_UI_WWW_ROOT': str(stage), 'POW_UI_STAGED_ROOT': '1'}, timeout=600)
     durable_json(out / 'receipt.json', {'ok': True, 'releaseId': release, 'phase': phase,
         'commit': p['commit'], 'tree': p['tree'], 'detachedSourceClean': True,
+        'sourceCheckout': str(source), 'receiverReceipt': source_receipt,
+        'receiverReceiptSha256': hashlib.sha256(source_receipt_path.read_bytes()).hexdigest(),
         'candidateProvenanceVerified': True, 'productionPublished': False, 'historicalDeletion': False})
 assert namespace['fingerprint'](Path('/var/www')) == live
+for path, record in zip(retained, p['retainedRoots']):
+    value = namespace['fingerprint'](path)
+    assert value['manifestSha256'] == record['manifestSha256'] and value['treeSha256'] == record['treeSha256']
 print(json.dumps({'ok': True, 'releaseId': release, 'phase': phase, 'evidence': str(out),
                   'productionPublished': False, 'historicalDeletion': False}))

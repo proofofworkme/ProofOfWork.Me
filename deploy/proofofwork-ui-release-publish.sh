@@ -101,10 +101,12 @@ fi
 stage_root="${staging_root}/proofofwork-www-stage-${release_id}"
 rollback_root="${rollback_root_parent}/proofofwork-www-pre-${release_id}"
 expected_source_checkout="${staging_root}/proofofwork-ui-source-${release_id}"
+preserved_source_checkout="/var/backups/proofofwork-ui/transport-evidence/${release_id}/proofofwork-ui-source-${release_id}"
 expected_archive="${archive_root}/proofofwork-ui-release-${release_id}.tgz"
 
-if [[ "${source_checkout}" != "${expected_source_checkout}" ]]; then
-  echo "Source checkout must use the exact release-bound staging path: ${expected_source_checkout}" >&2
+if [[ "${source_checkout}" != "${expected_source_checkout}" &&
+  "${source_checkout}" != "${preserved_source_checkout}" ]]; then
+  echo "Source checkout must use an exact release-bound staging or transport-evidence path." >&2
   exit 64
 fi
 if [[ "${archive}" != "${expected_archive}" ]]; then
@@ -267,6 +269,55 @@ PY
 reject_nested_mounts "${www_root}"
 reject_nested_mounts "${stage_root}"
 reject_nested_mounts "${rollback_root_parent}"
+
+validate_preserved_source_checkout() {
+  local source_checkout="$1"
+  local release_id="$2"
+  /usr/bin/python3 -I - "${source_checkout}" "${release_id}" "${www_root}" \
+    "${POW_UI_MOUNTINFO_PATH:-/proc/self/mountinfo}" "${POW_UI_ALLOW_TEST_ROOTS:-}" <<'PY'
+import os
+from pathlib import Path
+import stat
+import sys
+
+source, release, reference, mountinfo, test_roots = sys.argv[1:]
+source = Path(source)
+evidence = Path("/var/backups/proofofwork-ui/transport-evidence")
+release_root = evidence / release
+expected = release_root / ("proofofwork-ui-source-" + release)
+if source != expected:
+    raise SystemExit("Preserved UI source must use the exact release-bound path.")
+owner, group = (os.geteuid(), os.getegid()) if test_roots == "1" else (0, 0)
+device = Path(reference).stat().st_dev
+backup_root = evidence.parent.parent
+ancestors = tuple(reversed(source.parents[:len(source.parts) - len(backup_root.parts)]))
+for directory in (*ancestors, source):
+    details = directory.lstat()
+    if (directory.resolve() != directory or not stat.S_ISDIR(details.st_mode)
+            or details.st_uid != owner or details.st_gid != group
+            or details.st_mode & 0o7022 or details.st_dev != device):
+        raise SystemExit("Preserved UI source ancestors must be canonical, owner/group-controlled and on the UI filesystem.")
+metadata = Path(mountinfo)
+if mountinfo != "/proc/self/mountinfo" and test_roots != "1":
+    raise SystemExit("Non-production mount metadata requires POW_UI_ALLOW_TEST_ROOTS=1.")
+details = metadata.lstat()
+if not stat.S_ISREG(details.st_mode) or stat.S_ISLNK(details.st_mode):
+    raise SystemExit("Mount metadata must be a regular, non-symlink file.")
+with metadata.open(encoding="utf-8") as stream:
+    for line in stream:
+        fields = line.split()
+        if len(fields) < 5:
+            raise SystemExit("Mount metadata contains a malformed record.")
+        mounted = Path(fields[4].replace("\\040", " ").replace("\\011", "\t")
+                       .replace("\\012", "\n").replace("\\134", "\\")).resolve()
+        if mounted in ancestors or mounted == release_root or release_root in mounted.parents:
+            raise SystemExit("Preserved UI source contains a mounted ancestor or nested mount.")
+PY
+}
+
+if [[ "${source_checkout}" == "${preserved_source_checkout}" ]]; then
+  validate_preserved_source_checkout "${source_checkout}" "${release_id}"
+fi
 
 surfaces=(
   activity

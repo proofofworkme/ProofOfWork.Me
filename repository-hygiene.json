@@ -72,6 +72,9 @@
     }
   ],
   "noteInventory": {
+    "deployment-verification-source": [
+      "scripts/check-ui-preserved-paths.py"
+    ],
     "agent-instructions": [
       "AGENTS.md",
       "CLAUDE.md",

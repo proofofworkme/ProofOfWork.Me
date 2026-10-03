@@ -64,6 +64,7 @@ MAXIMUM_REFERENCE_CANDIDATES = 1048576
 MAXIMUM_PAYLOAD_ENTRIES = 10000
 MAXIMUM_PAYLOAD_BYTES = 1024 * 1024 * 1024
 MANIFEST_NAME = ".proofofwork-ui-release"
+TRANSPORT_EVIDENCE_ROOT = Path("/var/backups/proofofwork-ui/transport-evidence")
 
 QUOTED_REFERENCE_PATTERN = re.compile(
     rb'''["'`](?P<reference>[^"'`?#\x00-\x20]+)'''
@@ -391,7 +392,9 @@ def mount_path(value: str) -> Path:
     ).resolve()
 
 
-def reject_nested_mounts(directory: Path, mountinfo: Path) -> None:
+def reject_nested_mounts(
+    directory: Path, mountinfo: Path, *, protected_ancestors: tuple[Path, ...] = ()
+) -> None:
     try:
         mount_details = mountinfo.lstat()
     except FileNotFoundError as error:
@@ -409,8 +412,30 @@ def reject_nested_mounts(directory: Path, mountinfo: Path) -> None:
                 nested = mounted == root or os.path.commonpath((root, mounted)) == str(root)
             except ValueError:
                 nested = False
-            if nested:
+            if nested or mounted in protected_ancestors:
                 fail(f"UI release tree contains a nested mount: {mounted}")
+
+
+def validate_preserved_surfaces_root(
+    surfaces_root: Path,
+    release_id: str,
+    expected_owner: int,
+    expected_group: int,
+    expected_device: int,
+    mountinfo: Path,
+) -> None:
+    """Admit only the exact release input with safe, same-device ancestors."""
+    release_root = TRANSPORT_EVIDENCE_ROOT / release_id
+    expected = release_root / f"proofofwork-ui-surfaces-{release_id}" / "surfaces"
+    if surfaces_root != expected:
+        fail(f"Preserved surfaces must use the exact release-bound path: {expected}")
+    backup_root = TRANSPORT_EVIDENCE_ROOT.parent.parent
+    ancestors = tuple(reversed(surfaces_root.parents[: len(surfaces_root.parts) - len(backup_root.parts)]))
+    for directory in (*ancestors, surfaces_root):
+        details = canonical_safe_directory(directory, "Preserved UI input ancestor", expected_owner)
+        if details.st_gid != expected_group or details.st_dev != expected_device:
+            fail(f"Preserved UI input ancestors must use the expected group and filesystem: {directory}")
+    reject_nested_mounts(release_root, mountinfo, protected_ancestors=ancestors)
 
 
 def add_field(digest: "hashlib._Hash", value: bytes) -> None:
@@ -1129,9 +1154,13 @@ def main() -> int:
     expected_surfaces_root = (
         staging_root / f"proofofwork-ui-surfaces-{arguments.release_id}" / "surfaces"
     )
+    preserved_surfaces_root = (
+        TRANSPORT_EVIDENCE_ROOT / arguments.release_id
+        / f"proofofwork-ui-surfaces-{arguments.release_id}" / "surfaces"
+    )
     expected_stage_root = staging_root / f"proofofwork-www-stage-{arguments.release_id}"
-    if surfaces_root != expected_surfaces_root:
-        fail(f"Surfaces root must use the exact release-bound path: {expected_surfaces_root}")
+    if surfaces_root not in (expected_surfaces_root, preserved_surfaces_root):
+        fail("Surfaces root must use an exact release-bound staging or transport-evidence path.")
     if stage_root != expected_stage_root:
         fail(f"Stage root must use the exact release-bound path: {expected_stage_root}")
     if os.path.lexists(stage_root):
@@ -1142,6 +1171,11 @@ def main() -> int:
     canonical_safe_directory(surfaces_root, "New-build UI surfaces root", expected_owner)
     if www_details.st_dev != staging_details.st_dev:
         fail("UI live and staged roots must share one filesystem.")
+    if surfaces_root == preserved_surfaces_root:
+        validate_preserved_surfaces_root(
+            surfaces_root, arguments.release_id, expected_owner,
+            os.getegid() if allow_test_roots else 0, www_details.st_dev, mountinfo,
+        )
     reject_nested_mounts(www_root, mountinfo)
     reject_nested_mounts(surfaces_root, mountinfo)
     validate_exact_surfaces_root(
