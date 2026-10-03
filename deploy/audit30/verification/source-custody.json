@@ -1,5 +1,5 @@
 {
-  "atUtc": "2026-10-03T06:16:31.403789+00:00",
+  "atUtc": "2026-10-03T07:03:39.996236+00:00",
   "files": [
     {
       "bytes": 19239,
@@ -1872,6 +1872,307 @@
       "purpose": "Executed fixed read-only original strict severity/pre-child classifier; no child, SQL, API, Core or filesystem mutation. Original focused child cause remains unknown.",
       "repositoryPath": "deploy/audit30/verification/pow-audit30-focused-mail-refusal-transport-v1.py",
       "sha256": "bdfce4c32e313f115f6d1388e4c8b9a6305d9a93d8f133eebf508c0101d01075"
+    },
+    {
+      "bytes": 7085,
+      "originalPath": "/tmp/pow-audit30-mail-import-readonly-diagnostic-v1.py",
+      "purpose": "Preserved reviewed Audit30 helper source/fixture. Native import/path observations and failed isolated completion are qualified separately; sixteen-row writer/adapter are source-only, with no live data authority.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-mail-import-readonly-diagnostic-v1.py",
+      "sha256": "a22d3e024a59a7dc036c73011e95f1ac7fa38588c1cd583108a269276f82c5df"
+    },
+    {
+      "bytes": 6428,
+      "originalPath": "/tmp/pow-audit30-mail-import-readonly-diagnostic-v1.test.py",
+      "purpose": "Preserved reviewed Audit30 helper source/fixture. Native import/path observations and failed isolated completion are qualified separately; sixteen-row writer/adapter are source-only, with no live data authority.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-mail-import-readonly-diagnostic-v1.test.py",
+      "sha256": "48ea617f83183c040ca9052c01f120454541a20eec98257ec253409c2f385ebf"
+    },
+    {
+      "bytes": 10935,
+      "originalPath": "/tmp/pow-audit30-mail-import-readonly-bootstrap-v1.py",
+      "purpose": "Preserved reviewed Audit30 helper source/fixture. Native import/path observations and failed isolated completion are qualified separately; sixteen-row writer/adapter are source-only, with no live data authority.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-mail-import-readonly-bootstrap-v1.py",
+      "sha256": "6c84cbe63a9f9b7734aeb40464e336ceede71a68aa3f850c13087e51bbe7b1d8"
+    },
+    {
+      "bytes": 1407,
+      "originalPath": "/tmp/pow-audit30-mail-import-readonly-transport-v1.py",
+      "purpose": "Preserved reviewed Audit30 helper source/fixture. Native import/path observations and failed isolated completion are qualified separately; sixteen-row writer/adapter are source-only, with no live data authority.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-mail-import-readonly-transport-v1.py",
+      "sha256": "44366eeb70577723b0da48e4674e8ca149e36612b2fe63fece7449a96c4e4846"
+    },
+    {
+      "bytes": 7488,
+      "originalPath": "/tmp/pow-audit30-mail-import-path-metadata-v1.py",
+      "purpose": "Preserved reviewed Audit30 helper source/fixture. Native import/path observations and failed isolated completion are qualified separately; sixteen-row writer/adapter are source-only, with no live data authority.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-mail-import-path-metadata-v1.py",
+      "sha256": "9bc2b9e4c53a5ce3df83304fba15525bc792ff259359c67a716b4627d82a82a9"
+    },
+    {
+      "bytes": 4114,
+      "originalPath": "/tmp/pow-audit30-mail-import-path-metadata-v1.test.py",
+      "purpose": "Preserved reviewed Audit30 helper source/fixture. Native import/path observations and failed isolated completion are qualified separately; sixteen-row writer/adapter are source-only, with no live data authority.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-mail-import-path-metadata-v1.test.py",
+      "sha256": "ea1e3e53b557359146d24eb17a17df21fef2d491af4249659742c91d570718b9"
+    },
+    {
+      "bytes": 21123,
+      "originalPath": "/tmp/pow-audit30-mail-import-path-bootstrap-v2.py",
+      "purpose": "Preserved reviewed Audit30 helper source/fixture. Native import/path observations and failed isolated completion are qualified separately; sixteen-row writer/adapter are source-only, with no live data authority.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-mail-import-path-bootstrap-v2.py",
+      "sha256": "fed07e058f5df2166fc2cee144b4da0f4ba35b80914fe73e7854d6707c7b8596"
+    },
+    {
+      "bytes": 1399,
+      "originalPath": "/tmp/pow-audit30-mail-import-path-transport-v2.py",
+      "purpose": "Preserved reviewed Audit30 helper source/fixture. Native import/path observations and failed isolated completion are qualified separately; sixteen-row writer/adapter are source-only, with no live data authority.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-mail-import-path-transport-v2.py",
+      "sha256": "f8b2f7cf78a31dd2dd9894331d7fb84120daafb39afedda3ec6bfcec01443f90"
+    },
+    {
+      "bytes": 23689,
+      "originalPath": "/tmp/pow-audit30-stream-complete-retained-v4.py",
+      "purpose": "Preserved reviewed Audit30 helper source/fixture. Native import/path observations and failed isolated completion are qualified separately; sixteen-row writer/adapter are source-only, with no live data authority.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-stream-complete-retained-v4.py",
+      "sha256": "3279e56248627c55b3785c3558546de0c0f599c1c17a378c2dbbc6c7cf4c4310"
+    },
+    {
+      "bytes": 19692,
+      "originalPath": "/tmp/pow-audit30-stream-complete-retained-v4.test.py",
+      "purpose": "Preserved reviewed Audit30 helper source/fixture. Native import/path observations and failed isolated completion are qualified separately; sixteen-row writer/adapter are source-only, with no live data authority.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-stream-complete-retained-v4.test.py",
+      "sha256": "742a288a009172daca6e90583632b2df5612590ce037c19b98d3bc03cf3682cb"
+    },
+    {
+      "bytes": 6063,
+      "originalPath": "/tmp/pow-audit30-retained-completion-input-census-v1.py",
+      "purpose": "Preserved reviewed Audit30 helper source/fixture. Native import/path observations and failed isolated completion are qualified separately; sixteen-row writer/adapter are source-only, with no live data authority.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-retained-completion-input-census-v1.py",
+      "sha256": "1046bf51e7df465eab0b8c4231c6f02fcdb3992ad1bea4856e13e3e1995a9d15"
+    },
+    {
+      "bytes": 16248,
+      "originalPath": "/tmp/pow-audit30-retained-completion-bootstrap-v4.py",
+      "purpose": "Preserved reviewed Audit30 helper source/fixture. Native import/path observations and failed isolated completion are qualified separately; sixteen-row writer/adapter are source-only, with no live data authority.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-retained-completion-bootstrap-v4.py",
+      "sha256": "d17cfdc01a943c50d8eedfc7f49d8d2d333946bb3268ff16e0d3727a2911ad13"
+    },
+    {
+      "bytes": 10492,
+      "originalPath": "/tmp/pow-audit30-retained-completion-bootstrap-v4.test.py",
+      "purpose": "Preserved reviewed Audit30 helper source/fixture. Native import/path observations and failed isolated completion are qualified separately; sixteen-row writer/adapter are source-only, with no live data authority.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-retained-completion-bootstrap-v4.test.py",
+      "sha256": "512fb4ad36b11f7ce2d2e27004f20d11ac59a442c67b9443b8a8ea0e8b183f2e"
+    },
+    {
+      "bytes": 4858,
+      "originalPath": "/tmp/pow-audit30-retained-completion-failed-observer-v1.py",
+      "purpose": "Preserved reviewed Audit30 helper source/fixture. Native import/path observations and failed isolated completion are qualified separately; sixteen-row writer/adapter are source-only, with no live data authority.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-retained-completion-failed-observer-v1.py",
+      "sha256": "61843741224cd4aae3b5af4e87c6995566edc4ba050ab28784d6f24b7daf209b"
+    },
+    {
+      "bytes": 12324,
+      "originalPath": "/tmp/pow-audit30-mail-body-exact-sixteen-write-candidate-v1.mjs",
+      "purpose": "Preserved reviewed Audit30 helper source/fixture. Native import/path observations and failed isolated completion are qualified separately; sixteen-row writer/adapter are source-only, with no live data authority.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-mail-body-exact-sixteen-write-candidate-v1.mjs",
+      "sha256": "2e9a7fb67616e46b3b14d1074dc5206eb280df6868cc249943645b8d8ab685da"
+    },
+    {
+      "bytes": 23566,
+      "originalPath": "/tmp/pow-audit30-mail-body-exact-sixteen-write-candidate-v1.test.mjs",
+      "purpose": "Preserved reviewed Audit30 helper source/fixture. Native import/path observations and failed isolated completion are qualified separately; sixteen-row writer/adapter are source-only, with no live data authority.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-mail-body-exact-sixteen-write-candidate-v1.test.mjs",
+      "sha256": "63feeac48192e36742e5627885f8ccb7fb0b2f4a7c582d7017f0f9498fdfdc0f"
+    },
+    {
+      "bytes": 8923,
+      "originalPath": "/tmp/pow-audit30-private-sixteen-commit-inverse-adapter-v1.mjs",
+      "purpose": "Preserved reviewed Audit30 helper source/fixture. Native import/path observations and failed isolated completion are qualified separately; sixteen-row writer/adapter are source-only, with no live data authority.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-private-sixteen-commit-inverse-adapter-v1.mjs",
+      "sha256": "4e569cfba47b82ead715a2fba8b9f84c5c113f12dbbbb4986dc5fd8921adc498"
+    },
+    {
+      "bytes": 3940,
+      "originalPath": "/tmp/pow-audit30-private-sixteen-commit-inverse-adapter-v1.test.mjs",
+      "purpose": "Preserved reviewed Audit30 helper source/fixture. Native import/path observations and failed isolated completion are qualified separately; sixteen-row writer/adapter are source-only, with no live data authority.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-private-sixteen-commit-inverse-adapter-v1.test.mjs",
+      "sha256": "ab719c5aecd649aba9c55d053b3b1fc7a4c5ca7ecf38f37696d851328b092a3c"
+    },
+    {
+      "bytes": 26605,
+      "originalPath": "/tmp/pow-audit30-stream-complete-retained-v5.py",
+      "purpose": "Exact public verification source/test. Actual native scope, sample limits, preserved failures and pending arithmetic are recorded separately in the execution evidence.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-stream-complete-retained-v5.py",
+      "sha256": "ecb2b237b93ebd0bde96e5d7d690abbda5b9fa92aaeb0fea47c23e169acf4e8e"
+    },
+    {
+      "bytes": 24076,
+      "originalPath": "/tmp/pow-audit30-stream-complete-retained-v5.test.py",
+      "purpose": "Exact public verification source/test. Actual native scope, sample limits, preserved failures and pending arithmetic are recorded separately in the execution evidence.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-stream-complete-retained-v5.test.py",
+      "sha256": "06ab0e88f1bce0e3dd2edfc4b7f01e51c433ea5f60d22486ef3325389a1ddb6e"
+    },
+    {
+      "bytes": 16326,
+      "originalPath": "/tmp/pow-audit30-retained-completion-bootstrap-v5.py",
+      "purpose": "Exact public verification source/test. Actual native scope, sample limits, preserved failures and pending arithmetic are recorded separately in the execution evidence.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-retained-completion-bootstrap-v5.py",
+      "sha256": "847dcbec2b58e30f6c5a742ee1441c05151a62ed240af64839499fd7a53a64ff"
+    },
+    {
+      "bytes": 10848,
+      "originalPath": "/tmp/pow-audit30-retained-completion-bootstrap-v5.test.py",
+      "purpose": "Exact public verification source/test. Actual native scope, sample limits, preserved failures and pending arithmetic are recorded separately in the execution evidence.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-retained-completion-bootstrap-v5.test.py",
+      "sha256": "30200ac5b009e885610d96ca3ae14e2c4e79aab2e39336c35658afa8ae478d7e"
+    },
+    {
+      "bytes": 6827,
+      "originalPath": "/tmp/pow-audit30-retained-completion-input-census-v2.py",
+      "purpose": "Exact public verification source/test. Actual native scope, sample limits, preserved failures and pending arithmetic are recorded separately in the execution evidence.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-retained-completion-input-census-v2.py",
+      "sha256": "06056f4af66ddc0ec04df81f4207ceecc14e20458f0cdaed785d8a5952d5d465"
+    },
+    {
+      "bytes": 8390,
+      "originalPath": "/tmp/pow-audit30-retained-completion-public-observer-v1.py",
+      "purpose": "Exact public verification source/test. Actual native scope, sample limits, preserved failures and pending arithmetic are recorded separately in the execution evidence.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-retained-completion-public-observer-v1.py",
+      "sha256": "5bdadccd2c0d8d4296b755b50cc7c771c40ed2800ea0dccf67ae00ef77ccae29"
+    },
+    {
+      "bytes": 5405,
+      "originalPath": "/tmp/pow-audit30-mail-projection-focused-leaf-v4.mjs",
+      "purpose": "Exact public verification source/test. Actual native scope, sample limits, preserved failures and pending arithmetic are recorded separately in the execution evidence.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-mail-projection-focused-leaf-v4.mjs",
+      "sha256": "82d0c4ec91899a874bf72187e3ed49ce9f4fbc0b4a81e05c1297d99db8fbc223"
+    },
+    {
+      "bytes": 3477,
+      "originalPath": "/tmp/pow-audit30-mail-projection-focused-v4.test.mjs",
+      "purpose": "Exact public verification source/test. Actual native scope, sample limits, preserved failures and pending arithmetic are recorded separately in the execution evidence.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-mail-projection-focused-v4.test.mjs",
+      "sha256": "42b690781fefac6a80c8beaec477df7d1e7dc9edfd4a7ba584edbd31bab11933"
+    },
+    {
+      "bytes": 18921,
+      "originalPath": "/tmp/pow-audit30-mail-projection-focused-root-v4.py",
+      "purpose": "Exact public verification source/test. Actual native scope, sample limits, preserved failures and pending arithmetic are recorded separately in the execution evidence.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-mail-projection-focused-root-v4.py",
+      "sha256": "189e7e513d596be856b28f1adacf027ed32a77f4b51e3be4bc14f083fca4eba7"
+    },
+    {
+      "bytes": 9062,
+      "originalPath": "/tmp/pow-audit30-mail-projection-focused-root-v4.test.py",
+      "purpose": "Exact public verification source/test. Actual native scope, sample limits, preserved failures and pending arithmetic are recorded separately in the execution evidence.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-mail-projection-focused-root-v4.test.py",
+      "sha256": "b19f93332da89a9bd023238bfe9f0585dc01a15ffea40914b8f6bac0a9c3ed85"
+    },
+    {
+      "bytes": 1234,
+      "originalPath": "/tmp/pow-audit30-mail-projection-focused-bootstrap-v4.py",
+      "purpose": "Exact public verification source/test. Actual native scope, sample limits, preserved failures and pending arithmetic are recorded separately in the execution evidence.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-mail-projection-focused-bootstrap-v4.py",
+      "sha256": "967513f9742ab368ebb859d062bef2fd2967655b7c446b382affae6d69804e98"
+    },
+    {
+      "bytes": 1859,
+      "originalPath": "/tmp/pow-audit30-mail-projection-focused-bootstrap-v4.test.py",
+      "purpose": "Exact public verification source/test. Actual native scope, sample limits, preserved failures and pending arithmetic are recorded separately in the execution evidence.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-mail-projection-focused-bootstrap-v4.test.py",
+      "sha256": "3717cefe7d35962f46bf2d9a2bebdf11acf32e5f62b326a465b4a262f3c4a607"
+    },
+    {
+      "bytes": 1328,
+      "originalPath": "/tmp/pow-audit30-mail-projection-focused-transport-v4.py",
+      "purpose": "Exact public verification source/test. Actual native scope, sample limits, preserved failures and pending arithmetic are recorded separately in the execution evidence.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-mail-projection-focused-transport-v4.py",
+      "sha256": "72318f4de83780d8518c003615d017ef9bea343a95212d1c549c51514df24b72"
+    },
+    {
+      "bytes": 27410,
+      "originalPath": "/tmp/pow-audit30-transition-onhost-math-completion-v2.mjs",
+      "purpose": "Exact public verification source/test. Actual native scope, sample limits, preserved failures and pending arithmetic are recorded separately in the execution evidence.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-transition-onhost-math-completion-v2.mjs",
+      "sha256": "9faae94cebbedad8f02db55f2545e80dc2f7e0d937aa6cea149532577a7abee6"
+    },
+    {
+      "bytes": 21466,
+      "originalPath": "/tmp/pow-audit30-transition-onhost-math-completion-v2.test.mjs",
+      "purpose": "Exact public verification source/test. Actual native scope, sample limits, preserved failures and pending arithmetic are recorded separately in the execution evidence.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-transition-onhost-math-completion-v2.test.mjs",
+      "sha256": "833ef3ac54dbac6b3a746e246281b279acc74d41c78b956bde518f29f22d4247"
+    },
+    {
+      "bytes": 30140,
+      "originalPath": "/tmp/pow-audit30-onhost-math-managed-completion-v2.py",
+      "purpose": "Exact public verification source/test. Actual native scope, sample limits, preserved failures and pending arithmetic are recorded separately in the execution evidence.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-onhost-math-managed-completion-v2.py",
+      "sha256": "d4fe4226207d8a89ef5b47947fdcf390ac6d8864285664bc07f8e8689fb5310b"
+    },
+    {
+      "bytes": 24560,
+      "originalPath": "/tmp/pow-audit30-onhost-math-managed-completion-v2.test.py",
+      "purpose": "Exact public verification source/test. Actual native scope, sample limits, preserved failures and pending arithmetic are recorded separately in the execution evidence.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-onhost-math-managed-completion-v2.test.py",
+      "sha256": "78d226b553725aa01ff8533acfc15b654fe0da7b2371ecd17a78a18ebb34df0b"
+    },
+    {
+      "bytes": 14184,
+      "originalPath": "/tmp/pow-audit30-onhost-math-safe-input-census-completion-v2.py",
+      "purpose": "Exact public verification source/test. Actual native scope, sample limits, preserved failures and pending arithmetic are recorded separately in the execution evidence.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-onhost-math-safe-input-census-completion-v2.py",
+      "sha256": "670318f80fe3c357abec3c5d09808e5ca718251aab15ab9b1f76899dad54f9ba"
+    },
+    {
+      "bytes": 12137,
+      "originalPath": "/tmp/pow-audit30-onhost-math-safe-input-census-completion-v2.test.py",
+      "purpose": "Exact public verification source/test. Actual native scope, sample limits, preserved failures and pending arithmetic are recorded separately in the execution evidence.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-onhost-math-safe-input-census-completion-v2.test.py",
+      "sha256": "cf292c207c4334dc4f039221443518fd74ea3d88da4a47d46feb7a224dd927b3"
+    },
+    {
+      "bytes": 9559,
+      "originalPath": "/tmp/pow-audit30-onhost-math-plan-assemble-completion-v2.mjs",
+      "purpose": "Exact public verification source/test. Actual native scope, sample limits, preserved failures and pending arithmetic are recorded separately in the execution evidence.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-onhost-math-plan-assemble-completion-v2.mjs",
+      "sha256": "343f993633d3b3796a27f748be56f78910fd1977869c6048511bdb6342036cfb"
+    },
+    {
+      "bytes": 8899,
+      "originalPath": "/tmp/pow-audit30-onhost-math-plan-assemble-completion-v2.test.mjs",
+      "purpose": "Exact public verification source/test. Actual native scope, sample limits, preserved failures and pending arithmetic are recorded separately in the execution evidence.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-onhost-math-plan-assemble-completion-v2.test.mjs",
+      "sha256": "813efbdabc72d40dce626d94573446af4211049f35becc4cd2e3bb08a68e8ed7"
+    },
+    {
+      "bytes": 2292,
+      "originalPath": "/tmp/pow-audit30-onhost-math-safe-input-native-transport-completion-v2.py",
+      "purpose": "Exact public verification source/test. Actual native scope, sample limits, preserved failures and pending arithmetic are recorded separately in the execution evidence.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-onhost-math-safe-input-native-transport-completion-v2.py",
+      "sha256": "58fbced8f9520fbacd6705389a6efaac18105a1a6a6178754ed639eaf98d37fa"
+    },
+    {
+      "bytes": 2750,
+      "originalPath": "/tmp/pow-audit30-onhost-math-safe-input-native-transport-completion-v2.test.py",
+      "purpose": "Exact public verification source/test. Actual native scope, sample limits, preserved failures and pending arithmetic are recorded separately in the execution evidence.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-onhost-math-safe-input-native-transport-completion-v2.test.py",
+      "sha256": "f4e71346e746e50fdb235b8bf7ce0747779242b5257d22783b8ac200ca9a39d8"
+    },
+    {
+      "bytes": 1611,
+      "originalPath": "/tmp/pow-audit30-treasury-failed-receipt-public-observer-v1.py",
+      "purpose": "Exact public verification source/test. Actual native scope, sample limits, preserved failures and pending arithmetic are recorded separately in the execution evidence.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-treasury-failed-receipt-public-observer-v1.py",
+      "sha256": "21cc15c65c59237a9358003490b5338da58d69b6cad88bec9ec99fb90ffe2e25"
+    },
+    {
+      "bytes": 2843,
+      "originalPath": "/tmp/pow-audit30-treasury-failed-corpus-public-observer-v1.py",
+      "purpose": "Exact public verification source/test. Actual native scope, sample limits, preserved failures and pending arithmetic are recorded separately in the execution evidence.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-treasury-failed-corpus-public-observer-v1.py",
+      "sha256": "b6b3dba3f9881738a545b2d7f71545a1244e19fece7806596f18fd6995b8bc34"
     }
   ],
   "qualification": "Exact public source/fixture custody with preserved earlier failures. No private bodies/environments/catalog/role secrets copied. 38ac stage/shadow pass, full semantic CLI changed-fence refusal then diagnostic first-request503 with no fence preimage and actual stopped unit. Cause and production acceptance remain pending; UI fc5 is staged. Source acceptance is not native acceptance or production-data/recovery/retirement authorization. One archival Python fixture copy removes only a final blank line required by the enabled whitespace hook; its exact original bytes, length and SHA remain losslessly base64-preserved in its manifest row and original /tmp source. Its Python AST is identical. Subsequent v3 original semantic CLI passes full coverage/registry parity at exact969677 with identical fences; other production acceptance gates remain pending. Actual CLI stopped closure and same-candidate readonly lease successor now pass; WORK/bond/strict and production publication remain pending. Mail GET source verification grants no stored-row repair authority.",
