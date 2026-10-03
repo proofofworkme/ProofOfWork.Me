@@ -37293,6 +37293,7 @@ async function idRegistryAuditSnapshotPass(
     expectedHash,
     expectedHeight,
     onPage,
+    retainTransitionPreimages = true,
     rowPageSize,
     transitionPageSize,
   },
@@ -37527,8 +37528,9 @@ async function idRegistryAuditSnapshotPass(
     let transitionCursor = PWID_RAW_REPLAY_ACTIVATION_HEIGHT - 1;
     while (transitionCursor < expectedHeight) {
       // Every transition/header/replay record still enters the two audit fences.
-      // Only non-PWID blocks omit unused state preimages from the read result;
-      // PWID Core parity and precision-boundary validation keep the full body.
+      // The first Core replay keeps every PWID preimage. The explicitly scoped
+      // final fence needs the same headers, records and commitments, while only
+      // precision-boundary validation still consumes the full state preimages.
       const result = await client.query(
         `
           SELECT
@@ -37562,10 +37564,10 @@ async function idRegistryAuditSnapshotPass(
               THEN transition.payload
               WHEN transition.raw_protocol_candidate_count > 0
               THEN CASE
-                WHEN jsonb_path_exists(
-                    transition.payload,
-                    '$.replayRecords[*] ? (@.protocol == "pwid1" && @.rawCandidate == true)'
-                  )
+                WHEN CASE WHEN $6::boolean THEN jsonb_path_exists(
+                      transition.payload,
+                      '$.replayRecords[*] ? (@.protocol == "pwid1" && @.rawCandidate == true)'
+                    ) ELSE false END
                 THEN transition.payload
                 ELSE transition.payload - ARRAY[
                   'openingSufficientState', 'closingSufficientState',
@@ -37606,6 +37608,7 @@ async function idRegistryAuditSnapshotPass(
           expectedHeight,
           transitionPageSize + 1,
           precisionMigrationActivationHeight ?? 0,
+          retainTransitionPreimages,
         ],
       );
       const hasMore = result.rows.length > transitionPageSize;
@@ -37707,6 +37710,12 @@ export async function proofIndexIdRegistryAuditStream(
   network,
   options = {},
 ) {
+  if (
+    options.fenceOnlyTransitionRead === true &&
+    (options.verifyFinalFence !== false || typeof options.onPage === "function")
+  ) {
+    throw new Error("An ID audit fence-only read cannot supply Core replay pages.");
+  }
   const pool = proofIndexPool();
   const expectedHeight = idRegistryAuditExactInteger(options.expectedHeight, 1);
   const expectedHash = normalizedLowerText(options.expectedHash);
@@ -37735,6 +37744,7 @@ export async function proofIndexIdRegistryAuditStream(
     expectedHash,
     expectedHeight,
     onPage: options.onPage,
+    retainTransitionPreimages: options.fenceOnlyTransitionRead !== true,
     rowPageSize,
     transitionPageSize,
   };
@@ -37749,6 +37759,7 @@ export async function proofIndexIdRegistryAuditStream(
   const final = await idRegistryAuditSnapshotPass(pool, network, {
     ...passOptions,
     onPage: null,
+    retainTransitionPreimages: false,
   });
   assertIdRegistryAuditFinalFence(initial.fence, final.fence);
   return initial;

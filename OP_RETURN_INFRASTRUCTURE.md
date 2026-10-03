@@ -5170,14 +5170,19 @@ PWID block replay. The post-activation audit covers every physical `pwid1`
 carrier and replay outcome in canonical position order, including multiple
 carriers in one transaction and zero-payment invalid attempts. Pre-activation
 ambiguity remains fail-closed.
-The read projection retains every transition header, commitment and replay
-record in both full fences. Precision-boundary and raw-PWID blocks retain full
-payloads for boundary validation and fresh Core parity. Other positive-candidate
-blocks omit only unused state preimages from the read result; zero-candidate
-blocks use the existing column envelope without accessing the payload. This
-changes read materialization only, never persisted transition bytes or protocol
-rules. Database timing and complete semantic acceptance belong to the release
-audit; a smaller read result alone is not a latency proof.
+The read projection retains every transition header, commitment, descriptor
+and replay record in both full fences. The first Core replay keeps full state
+preimages for every raw-PWID block. Other positive-candidate blocks omit only
+six unused state preimages. The explicitly requested final relational fence
+also omits those six preimages from non-boundary PWID blocks. The precision
+activation boundary remains a full payload in both passes, and zero-candidate
+blocks use the existing column envelope without accessing the payload. A
+fence-only read cannot provide Core replay pages or replace the first replay.
+This changes read materialization only, never persisted transition bytes or
+protocol rules; it does not assert that PostgreSQL avoids every TOAST read.
+Database timing and complete semantic acceptance within the existing bounded
+runtime belong to the release audit; a smaller read result alone is not a
+latency proof.
 It is intentionally unavailable through Caddy. `npm run audit:ids` combines
 that coverage proof with all confirmed address pages and fails on any coverage
 or registry-stat mismatch; report writing remains explicit opt-in.

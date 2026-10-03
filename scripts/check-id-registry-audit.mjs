@@ -26,6 +26,7 @@ import {
   createIdRegistryAuditRollingHash,
   createIdRegistryAuditTransitionChain,
   finalizeIdRegistryAuditTransitionChain,
+  idRegistryAuditRollingHashFingerprint,
   qualifiedLegacyPwidOutcome,
   qualifiedPostActivationPwidOutcome,
 } from "../server/id-registry-audit-contract.mjs";
@@ -685,6 +686,184 @@ assert.throws(
     ),
   /drifted/u,
 );
+
+// Exercise the actual reader calls and SQL parameter binding. The first pass
+// supplies full PWID pages to its consumer; the second pass only returns a fence.
+const readerParsed = ts.createSourceFile(
+  "proof-index-reader.mjs", readerSource, ts.ScriptTarget.Latest, true,
+);
+function isolatedAuditReader(name, dependencies) {
+  const nodes = readerParsed.statements.filter((node) =>
+    ts.isFunctionDeclaration(node) && node.name?.text === name);
+  assert.equal(nodes.length, 1);
+  return Function(...Object.keys(dependencies),
+    `"use strict"; return (${nodes[0].getText(readerParsed).replace(/^export /u, "")});`,
+  )(...Object.values(dependencies));
+}
+const pwidFenceFixtures = nonPwidFull.slice(0, 3).map((transition, index) => ({
+  ...transition,
+  payload: {
+    ...transition.payload,
+    replayRecords: [{
+      protocol: "pwid1", rawCandidate: true, protocolVout: 1,
+      recordOrdinal: index, attemptedKind: index === 0 ? "malformed" : "register",
+      outcome: { valid: index === 2, reasonCode: index === 0 ? "malformed" : "fixture" },
+    }],
+  },
+}));
+const fenceReadCalls = [];
+const emittedPages = [];
+const exactInteger = (value, minimum = 0) => {
+  const result = Number(value);
+  return Number.isSafeInteger(result) && result >= minimum ? result : null;
+};
+const lower = (value) => String(value ?? "").trim().toLowerCase();
+const databaseTransition = (transition) => Object.fromEntries(
+  Object.entries(transition).map(([key, value]) => [
+    key.replace(/[A-Z]/gu, (character) => `_${character.toLowerCase()}`), value,
+  ]),
+);
+const scanTip = pwidFenceFixtures.at(-1);
+const mockClient = {
+  async query(sql, params) {
+    if (sql.includes("FROM proof_indexer.work_amo_block_transitions transition")) {
+      assert.match(sql, /WHEN transition\.block_height = \$5\s+THEN transition\.payload/u);
+      assert.match(sql, /CASE WHEN \$6::boolean THEN jsonb_path_exists\([\s\S]*ELSE false END/u);
+      assert.equal(params.length, 6);
+      assert.equal(typeof params[5], "boolean");
+      fenceReadCalls.push(params[5]);
+      const rows = pwidFenceFixtures.filter((item) => item.blockHeight > params[1]);
+      return { rows: rows.map((item) => databaseTransition({
+        ...item,
+        payload: params[5] || item.blockHeight === params[4] ? item.payload :
+          Object.fromEntries(Object.entries(item.payload).filter(
+            ([key]) => !unusedIdAuditPreimages.includes(key),
+          )),
+      })) };
+    }
+    if (sql.includes("SELECT block_hash")) return {
+      rowCount: 1, rows: [{ block_hash: scanTip.blockHash }],
+    };
+    if (sql.includes("outside_count")) return { rows: [{ outside_count: "0" }] };
+    if (sql.includes("exact_row_count")) return {
+      rows: [{ row_count: "0", exact_row_count: "0" }],
+    };
+    return { rows: [] };
+  },
+  release() {},
+};
+const pool = { async connect() { return mockClient; } };
+const transform = isolatedAuditReader("idRegistryAuditTransitionFromDatabase", {
+  objectRecord: (value) => value ?? {}, normalizedLowerText: lower,
+  idRegistryAuditExactInteger: exactInteger,
+});
+const pass = isolatedAuditReader("idRegistryAuditSnapshotPass", {
+  objectRecord: (value) => value ?? {}, normalizedLowerText: lower,
+  idRegistryAuditExactInteger: exactInteger,
+  latestProofIndexScanMetadata: async () => ({
+    snapshot_id: "fixture-current-scan", indexed_through_block: scanTip.blockHeight,
+    payload: { complete: true, tipHeight: scanTip.blockHeight,
+      indexedThroughBlockHash: scanTip.blockHash },
+    consistency: { ok: true, status: "block-scan-current" },
+  }),
+  configuredWorkPrecisionV2ReaderPins: () => null,
+  PWID_RAW_REPLAY_ACTIVATION_HEIGHT,
+  ID_REGISTRY_AUDIT_TRANSITION_ENVELOPE_MODEL,
+  ID_REGISTRY_AUDIT_ROW_PAGE_SQL: "fixture rows",
+  idRegistryAuditDatabaseRow: (row) => row,
+  compareIdRegistryAuditRowCursor: () => 1,
+  idRegistryAuditRowCursor: () => ({}),
+  idRegistryAuditTransitionFromDatabase: transform,
+  createIdRegistryAuditRollingHash, advanceIdRegistryAuditRollingHash,
+  idRegistryAuditRollingHashFingerprint,
+  createIdRegistryAuditTransitionChain, advanceIdRegistryAuditTransitionChain,
+  finalizeIdRegistryAuditTransitionChain,
+});
+const stream = isolatedAuditReader("proofIndexIdRegistryAuditStream", {
+  proofIndexPool: () => pool, idRegistryAuditExactInteger: exactInteger,
+  normalizedLowerText: lower, PWID_RAW_REPLAY_ACTIVATION_HEIGHT,
+  boundedInteger: (value, fallback) => value ?? fallback,
+  ID_REGISTRY_AUDIT_TRANSITION_PAGE_SIZE: 100,
+  ID_REGISTRY_AUDIT_ROW_PAGE_SIZE: 100,
+  ID_REGISTRY_AUDIT_MAX_PAGE_SIZE: 1000,
+  idRegistryAuditSnapshotPass: pass, assertIdRegistryAuditFinalFence,
+});
+const streamOptions = {
+  expectedHash: scanTip.blockHash, expectedHeight: scanTip.blockHeight,
+};
+const fullReaderAudit = await stream("livenet", {
+  ...streamOptions, onPage: (page) => {
+    if (page.kind === "transitions") emittedPages.push(page.transitions);
+  },
+});
+assert.deepEqual(fenceReadCalls, [true, false]);
+assert.equal(emittedPages.length, 1);
+assert.deepEqual(emittedPages[0].map((row) => row.payload),
+  pwidFenceFixtures.map((row) => row.payload));
+fenceReadCalls.length = 0;
+const finalReaderAudit = await stream("livenet", {
+  ...streamOptions, verifyFinalFence: false, fenceOnlyTransitionRead: true,
+});
+assert.deepEqual(fenceReadCalls, [false]);
+assertIdRegistryAuditFinalFence(fullReaderAudit.fence, finalReaderAudit.fence);
+for (const invalid of [
+  { fenceOnlyTransitionRead: true },
+  { verifyFinalFence: false, fenceOnlyTransitionRead: true, onPage() {} },
+]) {
+  fenceReadCalls.length = 0;
+  await assert.rejects(stream("livenet", { ...streamOptions, ...invalid }),
+    /cannot supply Core replay pages/u);
+  assert.deepEqual(fenceReadCalls, []);
+}
+// Default callback-free initial callers keep their original full-read behavior.
+fenceReadCalls.length = 0;
+await stream("livenet", { ...streamOptions, verifyFinalFence: false });
+assert.deepEqual(fenceReadCalls, [true]);
+const pwidFenceRead = pwidFenceFixtures.map((row) => ({ ...row,
+  payload: Object.fromEntries(Object.entries(row.payload).filter(
+    ([key]) => !unusedIdAuditPreimages.includes(key),
+  )),
+}));
+assert.deepEqual(readProjectionFence(pwidFenceRead), readProjectionFence(pwidFenceFixtures));
+assert.deepEqual(pwidFenceRead.map((row) => row.payload.replayRecords),
+  pwidFenceFixtures.map((row) => row.payload.replayRecords));
+assert.ok(JSON.stringify(pwidFenceRead).length < JSON.stringify(pwidFenceFixtures).length);
+const descriptorDrift = structuredClone(pwidFenceRead);
+descriptorDrift[1].payload.replayDescriptorCommitment.sha256 = auditHash(333_333);
+assert.throws(() => assertIdRegistryAuditFinalFence(
+  readProjectionFence(pwidFenceFixtures), readProjectionFence(descriptorDrift),
+), /drifted/u);
+assert.match(serverSource,
+  /const finalIndexAudit = await proofIndexIdRegistryAuditStream\(network, \{[\s\S]*?fenceOnlyTransitionRead: true/u);
+assert.equal((serverSource.match(/fenceOnlyTransitionRead: true/gu) ?? []).length, 2);
+
+const apiFenceParsed = ts.createSourceFile(
+  "proof-api-fence.mjs", serverSource, ts.ScriptTarget.Latest, true,
+);
+const apiStreamCalls = [];
+function findApiStreamCalls(node) {
+  if (ts.isCallExpression(node) &&
+      node.expression.getText(apiFenceParsed) === "proofIndexIdRegistryAuditStream") {
+    const options = node.arguments[1];
+    assert.ok(ts.isObjectLiteralExpression(options));
+    const fields = new Map(options.properties.map((property) => [
+      property.name?.getText(apiFenceParsed), property.initializer,
+    ]));
+    apiStreamCalls.push(fields);
+  }
+  ts.forEachChild(node, findApiStreamCalls);
+}
+findApiStreamCalls(apiFenceParsed);
+assert.equal(apiStreamCalls.length, 4);
+assert.equal(apiStreamCalls[0].get("fenceOnlyTransitionRead"), undefined);
+assert.ok(ts.isArrowFunction(apiStreamCalls[0].get("onPage")));
+assert.equal(apiStreamCalls[2].get("fenceOnlyTransitionRead"), undefined);
+assert.equal(apiStreamCalls[2].get("onPage"), undefined);
+for (const fields of [apiStreamCalls[1], apiStreamCalls[3]]) {
+  assert.equal(fields.get("fenceOnlyTransitionRead")?.kind, ts.SyntaxKind.TrueKeyword);
+  assert.equal(fields.get("verifyFinalFence")?.kind, ts.SyntaxKind.FalseKeyword);
+  assert.equal(fields.get("onPage"), undefined);
+}
 
 const omittedZeroPaymentAttempt = {
   amountSats: 0,

@@ -10266,8 +10266,8 @@ check("ID audit transition stream keeps non-PWID transition pages compact", () =
   );
   assert.match(
     source,
-    /CASE\s+WHEN transition\.block_height = \$5\s+THEN transition\.payload\s+WHEN transition\.raw_protocol_candidate_count > 0\s+THEN CASE\s+WHEN jsonb_path_exists\([\s\S]*@\.protocol == "pwid1" && @\.rawCandidate == true[\s\S]*THEN transition\.payload\s+ELSE transition\.payload - ARRAY\[[\s\S]*END\s+ELSE jsonb_build_object\(/u,
-    "precision/PWID blocks keep full bodies, non-PWID candidates keep every replay record/header, zero-candidate pages avoid payload access",
+    /CASE\s+WHEN transition\.block_height = \$5\s+THEN transition\.payload\s+WHEN transition\.raw_protocol_candidate_count > 0\s+THEN CASE\s+WHEN CASE WHEN \$6::boolean THEN jsonb_path_exists\([\s\S]*@\.protocol == "pwid1" && @\.rawCandidate == true[\s\S]*ELSE false END\s+THEN transition\.payload\s+ELSE transition\.payload - ARRAY\[[\s\S]*END\s+ELSE jsonb_build_object\(/u,
+    "precision blocks remain full; initial PWID replay keeps preimages, final fences retain every record/header while zero-candidate pages avoid payload access",
   );
   assert.match(
     source,

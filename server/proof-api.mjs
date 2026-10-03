@@ -78373,6 +78373,7 @@ async function buildInternalIdRegistryAuditPayload(network) {
     expectedHash: initialTip.blockHash,
     expectedHeight: initialTip.height,
     verifyFinalFence: false,
+    fenceOnlyTransitionRead: true,
   });
   if (!finalIndexAudit) {
     throw new Error("The final ID relational fence is unavailable.");
@@ -78807,6 +78808,7 @@ async function buildInternalIdRegistryAuditFencePayload(network) {
     expectedHash: initialTip.blockHash,
     expectedHeight: initialTip.height,
     verifyFinalFence: false,
+    fenceOnlyTransitionRead: true,
   });
   if (!finalIndexAudit) {
     throw new Error("The final lightweight ID relational fence is unavailable.");
