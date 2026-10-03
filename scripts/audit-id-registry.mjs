@@ -3,6 +3,7 @@
 import * as bitcoin from "bitcoinjs-lib";
 import * as ecc from "@bitcoinerlab/secp256k1";
 import { createHash } from "node:crypto";
+import { request as httpRequest, validateHeaderValue } from "node:http";
 import { writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -101,9 +102,141 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+const LOOPBACK_AUDIT_RESPONSE_LIMIT = 64 * 1024 * 1024;
+
+// Node's fetch transport has a separate 300-second header deadline. Use a
+// dedicated connection for these two explicitly approved long loopback reads;
+// the configured coverage deadline still bounds the entire request and body.
+export function isExactLoopbackAuditCoverageUrl(value, config) {
+  try {
+    const url = new URL(value);
+    const base = new URL(config.apiBase);
+    return config.production === true &&
+      url.protocol === "http:" && url.hostname === "127.0.0.1" &&
+      String(value).startsWith("http://127.0.0.1") &&
+      !url.username && !url.password && !url.hash &&
+      base.protocol === "http:" && base.hostname === "127.0.0.1" &&
+      !base.username && !base.password && !base.search && !base.hash &&
+      url.origin === base.origin &&
+      ["id-registry-audit", "id-registry-audit-fence"].some((endpoint) =>
+        url.pathname === new URL(
+          `${config.apiBase}/api/v1/internal/${endpoint}`,
+        ).pathname
+      ) &&
+      url.searchParams.size === 1 &&
+      url.searchParams.get("network") === NETWORK;
+  } catch {
+    return false;
+  }
+}
+
+export async function fetchLoopbackAuditCoverageResponse(
+  value,
+  config,
+  timeoutMs,
+) {
+  if (
+    !isExactLoopbackAuditCoverageUrl(value, config) ||
+    !Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 600_000 ||
+    typeof config.internalVerifierToken !== "string" ||
+    Buffer.byteLength(config.internalVerifierToken) < 32 ||
+    /[\r\n]/u.test(config.internalVerifierToken)
+  ) {
+    throw new Error("Invalid bounded loopback ID audit request.");
+  }
+  try {
+    validateHeaderValue("x-pow-internal-verifier", config.internalVerifierToken);
+  } catch {
+    throw new Error("Invalid bounded loopback ID audit header.");
+  }
+  const signal = AbortSignal.timeout(timeoutMs);
+  const deadline = performance.now() + timeoutMs;
+  return new Promise((resolve, reject) => {
+    let response;
+    let settled = false;
+    let request;
+    const finish = (error, result) => {
+      if (settled) return;
+      settled = true;
+      signal.removeEventListener("abort", abort);
+      response?.destroy();
+      request?.destroy();
+      if (error) reject(error);
+      else resolve(result);
+    };
+    const abort = () => finish(signal.reason);
+    const checkDeadline = () => {
+      if (signal.aborted || performance.now() >= deadline) {
+        finish(signal.reason ?? new DOMException("ID audit deadline elapsed.", "TimeoutError"));
+        return false;
+      }
+      return true;
+    };
+    signal.addEventListener("abort", abort, { once: true });
+    request = httpRequest(new URL(value), {
+      method: "GET",
+      agent: false,
+      family: 4,
+      maxHeaderSize: 16 * 1024,
+      headers: {
+        Accept: "application/json",
+        "x-pow-internal-verifier": config.internalVerifierToken,
+      },
+    }, (incoming) => {
+      response = incoming;
+      if (!checkDeadline()) return;
+      const status = incoming.statusCode ?? 0;
+      if (status >= 300 && status < 400) {
+        finish(new TypeError("ID audit redirects are refused."));
+        return;
+      }
+      if (status < 200 || status >= 300) {
+        finish(null, { ok: false, status });
+        return;
+      }
+      const declaredBytes = incoming.headers["content-length"];
+      if (
+        declaredBytes !== undefined &&
+        (!/^(?:0|[1-9]\d*)$/u.test(declaredBytes) ||
+          BigInt(declaredBytes) > BigInt(LOOPBACK_AUDIT_RESPONSE_LIMIT))
+      ) {
+        finish(new Error("ID audit response byte bound exceeded."));
+        return;
+      }
+      const chunks = [];
+      let bytes = 0;
+      incoming.on("data", (chunk) => {
+        if (!checkDeadline()) return;
+        bytes += chunk.length;
+        if (bytes > LOOPBACK_AUDIT_RESPONSE_LIMIT) {
+          finish(new Error("ID audit response byte bound exceeded."));
+          return;
+        }
+        chunks.push(chunk);
+      });
+      incoming.on("aborted", () => finish(new Error("ID audit response was interrupted.")));
+      incoming.on("error", (error) => finish(signal.aborted ? signal.reason : error));
+      incoming.on("end", () => {
+        if (!checkDeadline()) return;
+        try {
+          const payload = JSON.parse(Buffer.concat(chunks, bytes).toString("utf8"));
+          if (checkDeadline()) finish(null, { ok: true, status, json: async () => payload });
+        } catch (error) {
+          finish(error);
+        }
+      });
+    });
+    request.on("error", (error) => finish(signal.aborted ? signal.reason : error));
+    request.end();
+  });
+}
+
 async function fetchJson(url, config, attempt = 0, timeoutMs = config.timeoutMs) {
   try {
-    const response = await fetch(url, {
+    const response = timeoutMs > 300_000 &&
+      isExactLoopbackAuditCoverageUrl(url, config)
+      ? await fetchLoopbackAuditCoverageResponse(url, config, timeoutMs)
+      : await fetch(url, {
       headers: {
         Accept: "application/json",
         ...(config.internalVerifierToken &&

@@ -5186,6 +5186,15 @@ latency proof.
 It is intentionally unavailable through Caddy. `npm run audit:ids` combines
 that coverage proof with all confirmed address pages and fails on any coverage
 or registry-stat mismatch; report writing remains explicit opt-in.
+For an explicitly configured coverage deadline above 300 seconds, the CLI uses
+a dedicated numeric-loopback HTTP connection for only these two internal audit
+routes. One absolute deadline covers headers and the complete JSON body, with
+16 KiB headers and a 64 MiB response ceiling. Redirects are refused and the
+verifier token stays on the configured origin. The default remains 300 seconds
+and the maximum remains 600 seconds; public and other reads retain their
+existing fetch transport. This avoids Node's separate five-minute fetch header
+timer without extending the audit budget or relaxing any chain or replay fence.
+Run `npm run check:id-audit-loopback` for the transport refusal fixtures.
 
 The registry endpoint:
 
