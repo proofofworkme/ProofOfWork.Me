@@ -391,6 +391,13 @@ false, `pendingProjection.status` is `unverified-last-observed`; consumers must
 not present those pending rows as currently verified. `/health/live` remains
 the application-availability probe while strict `/health` remains the
 correctness/readiness probe.
+When a full pending audit refuses, its existing API warning includes a fixed,
+sanitized category for the first failed predicate group. The diagnostic follows
+the original short-circuit order; later groups remain unchecked. It adds no
+database scan, changes no acceptance rule, and exposes no address, body or raw
+error. Compact cached checks may lack this full-audit diagnostic. An intermittent
+503 followed by a successful exact read remains an observed readiness transition,
+not proof that a truth or latency defect has been corrected.
 `event-history`
 serves DB-backed protocol/event search for indexed registry, credit,
 marketplace, mail/file, seeded, and broader Computer events. Each page is read
@@ -5163,6 +5170,14 @@ PWID block replay. The post-activation audit covers every physical `pwid1`
 carrier and replay outcome in canonical position order, including multiple
 carriers in one transaction and zero-payment invalid attempts. Pre-activation
 ambiguity remains fail-closed.
+The read projection retains every transition header, commitment and replay
+record in both full fences. Precision-boundary and raw-PWID blocks retain full
+payloads for boundary validation and fresh Core parity. Other positive-candidate
+blocks omit only unused state preimages from the read result; zero-candidate
+blocks use the existing column envelope without accessing the payload. This
+changes read materialization only, never persisted transition bytes or protocol
+rules. Database timing and complete semantic acceptance belong to the release
+audit; a smaller read result alone is not a latency proof.
 It is intentionally unavailable through Caddy. `npm run audit:ids` combines
 that coverage proof with all confirmed address pages and fails on any coverage
 or registry-stat mismatch; report writing remains explicit opt-in.

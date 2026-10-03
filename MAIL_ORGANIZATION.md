@@ -75,6 +75,11 @@ Mail organization features that are already implemented in the full app:
   and proof-index participants to repair stale projection rows at read time.
   The chain transaction remains the authority; the repair is a projection fix,
   not a new mailbox rule.
+- Decoded message-body text retains its exact UTF-8 bytes, including leading
+  spaces, trailing newlines and whitespace-only content. Subject and bond
+  classification may normalize a separate copy; stored bodies, API memos and
+  derived HTML files must preserve the original. Existing historical body
+  projection differences require a separately approved, chain-verified repair.
 - Confirmed Log/Event History, credit history, marketplace state, WORK/Growth
   network value, Wallet, Infinity, and Inception views must agree with first-party
   full-node confirmed tx truth before production changes ship. If a stable

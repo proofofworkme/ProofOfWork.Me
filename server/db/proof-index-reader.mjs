@@ -2886,6 +2886,13 @@ async function payloadWithCurrentWorkPrecisionReadPolicy(
       evidenceComplete: readiness?.evidenceComplete === true,
       parityReady: readiness?.parityReady === true,
       pendingReady: readiness?.pendingReady === true,
+      ...(readiness?.pendingReadinessDiagnostics
+        ? {
+            pendingReadinessDiagnostics: workQ16PendingReadinessDiagnosticForRead(
+              readiness.pendingReadinessDiagnostics,
+            ),
+          }
+        : {}),
       replayReady: readiness?.replayReady === true,
       ready: readiness?.ready === true,
       payloadExact: readinessAvailable ? payloadExact : null,
@@ -4930,6 +4937,51 @@ function canonicalWorkQ16PendingAttemptForRead(
   return { ...attempt, initialMempool };
 }
 
+// Diagnostic labels describe the first failed group in the existing ordered
+// audit. They do not admit pending data or evaluate skipped predicates.
+const WORK_Q16_PENDING_READINESS_FAILURE_CATEGORIES = Object.freeze([
+  "shape-attempt",
+  "stage-code",
+  "tip",
+  "age",
+  "membership",
+  "projection",
+  "mail-parity",
+  "confirmed-base",
+]);
+
+function workQ16PendingReadinessPredicate(diagnostics, category, ready) {
+  if (
+    diagnostics &&
+    ready === false &&
+    diagnostics.failedCategories.length === 0
+  ) {
+    diagnostics.failedCategories.push(category);
+  }
+  return ready;
+}
+
+function workQ16PendingReadinessDiagnosticForRead(value) {
+  const diagnostic = objectRecord(value);
+  if (
+    !exactObjectKeys(diagnostic, ["model", "evaluation", "failedCategories"]) ||
+    diagnostic.model !== "proof-index-work-q16-pending-readiness-diagnostic-v1" ||
+    diagnostic.evaluation !== "ordered-first-failure" ||
+    !Array.isArray(diagnostic.failedCategories) ||
+    diagnostic.failedCategories.length > 1 ||
+    diagnostic.failedCategories.some((category) =>
+      !WORK_Q16_PENDING_READINESS_FAILURE_CATEGORIES.includes(category)
+    )
+  ) {
+    return null;
+  }
+  return {
+    model: diagnostic.model,
+    evaluation: diagnostic.evaluation,
+    failedCategories: [...diagnostic.failedCategories],
+  };
+}
+
 function workQ16PendingVerifierStageTxids(value) {
   if (
     !Array.isArray(value) ||
@@ -5103,6 +5155,7 @@ function workQ16PendingVerifierStageReady(
     eventRows,
     membershipTxids,
     network,
+    pendingReadinessDiagnostics,
     tipHash,
     tipHeight,
   } = {},
@@ -5234,9 +5287,13 @@ function workQ16PendingVerifierStageReady(
         "ABSENCE-EVIDENCE",
         stage.absenceEvidence,
       ) ||
-    !workQ16PendingVerifierStageConfirmedBaseReady(
-      stage.confirmedBaseCommitment,
-      expectedTokenStateCommitment,
+    !workQ16PendingReadinessPredicate(
+      pendingReadinessDiagnostics,
+      "confirmed-base",
+      workQ16PendingVerifierStageConfirmedBaseReady(
+        stage.confirmedBaseCommitment,
+        expectedTokenStateCommitment,
+      ),
     ) ||
     !workQ16PendingVerifierStageAbsenceReady(stage.absenceEvidence, {
       confirmedRemovalTxids,
@@ -8200,14 +8257,21 @@ async function proofIndexWorkPrecisionV2MigrationReadinessFullAudit(
     String(pendingWitness.generatedAt ?? ""),
   );
   let pendingReady = false;
-  if (
+  const pendingReadinessDiagnostics = {
+    model: "proof-index-work-q16-pending-readiness-diagnostic-v1",
+    evaluation: "ordered-first-failure",
+    failedCategories: [],
+  };
+  if (workQ16PendingReadinessPredicate(
+    pendingReadinessDiagnostics,
+    "shape-attempt",
     pendingWitnessResult.rows.length === 2 &&
     pendingMeta.size === 2 &&
     Boolean(pendingAttempt) &&
     Boolean(publicationReadinessEpochCheckpoint) &&
     Boolean(readinessEpochCheckpoint) &&
-    pendingMembershipTxidsCanonical
-  ) {
+    pendingMembershipTxidsCanonical,
+  )) {
     const pendingBalanceResult = await client.query(
       `
           SELECT address, pending_delta::text
@@ -8619,150 +8683,195 @@ async function proofIndexWorkPrecisionV2MigrationReadinessFullAudit(
       transactions: pendingTransactionResult.rows,
     });
     pendingReady =
-      exactObjectKeys(pendingWitness, [
-        "activationHeight",
-        "amountStorageModel",
-        "canonicalTip",
-        "declarationTxid",
-        "generatedAt",
-        "invalidLegacyMutationCount",
-        "membershipSnapshot",
-        "mempoolSnapshot",
-        "model",
-        "network",
-        "parity",
-        "precisionModel",
+      workQ16PendingReadinessPredicate(
+        pendingReadinessDiagnostics,
+        "shape-attempt",
+        exactObjectKeys(pendingWitness, [
+          "activationHeight",
+          "amountStorageModel",
+          "canonicalTip",
+          "declarationTxid",
+          "generatedAt",
+          "invalidLegacyMutationCount",
+          "membershipSnapshot",
+          "mempoolSnapshot",
+          "model",
+          "network",
+          "parity",
+          "precisionModel",
+          "projection",
+          "ready",
+          "scan",
+          "verifierStage",
+        ]) &&
+        exactObjectKeys(pendingTip, ["hash", "height"]) &&
+        exactObjectKeys(pendingMempool, ["count", "model", "sha256"]) &&
+        exactObjectKeys(pendingMembershipSnapshot, [
+          "count",
+          "model",
+          "sha256",
+          "txids",
+        ]) &&
+        exactObjectKeys(pendingProjection, [
+          "balances",
+          "commitmentSha256",
+          "eventParticipants",
+          "eventRefs",
+          "events",
+          "listings",
+          "mailItems",
+          "model",
+          "transactions",
+        ]) &&
+        exactObjectKeys(pendingScan, [
+          "canonicalDeferred",
+          "complete",
+          "completeModel",
+          "discoveryModel",
+          "globalUnresolved",
+          "inspectedTxids",
+          "mempoolMembershipCount",
+          "protocolTxids",
+          "q16PendingUnresolved",
+          "scanned",
+          "stopReason",
+        ]) &&
+        pendingWitness.model ===
+          WORK_Q16_PENDING_REBUILD_MODEL &&
+        pendingWitness.network === network &&
+        pendingWitness.ready === true &&
+        Number(pendingWitness.activationHeight) ===
+          pins.activationHeight &&
+        normalizedLowerText(pendingWitness.declarationTxid) ===
+          pins.declarationTxid &&
+        pendingWitness.amountStorageModel ===
+          WORK_SUBATOM_PROJECTION_MODEL &&
+        pendingWitness.precisionModel ===
+          WORK_AMO_V8_GLOBAL_PRECISION_MODEL &&
+        Number(pendingWitness.invalidLegacyMutationCount) === 0 &&
+        Number(pendingInvalidLegacyResult.rows[0]?.invalid_count) === 0,
+      ) &&
+      workQ16PendingReadinessPredicate(
+        pendingReadinessDiagnostics,
+        "tip",
+        Number(pendingTip.height) === tipHeight &&
+        normalizedLowerText(pendingTip.hash) === tipHash,
+      ) &&
+      workQ16PendingReadinessPredicate(
+        pendingReadinessDiagnostics,
+        "shape-attempt",
+        pendingAttempt.stageSha256 === pendingVerifierStage.stageSha256 &&
+        pendingAttempt.witnessGeneratedAt === pendingWitness.generatedAt,
+      ) &&
+      workQ16PendingReadinessPredicate(
+        pendingReadinessDiagnostics,
+        "stage-code",
+        workQ16PendingVerifierStageReady(pendingVerifierStage, {
+          confirmedRemovalRows: pendingConfirmedRemovalResult.rows,
+          expectedTokenStateCommitment: closingTokenStateCommitment,
+          eventRows: pendingEventResult.rows,
+          membershipTxids: pendingMembershipTxids,
+          network,
+          pendingReadinessDiagnostics,
+          tipHash,
+          tipHeight,
+        }),
+      ) &&
+      workQ16PendingReadinessPredicate(
+        pendingReadinessDiagnostics,
+        "shape-attempt",
+        pendingMempool.model === WORK_Q16_PENDING_MEMPOOL_MODEL &&
+        Number.isSafeInteger(pendingMempool.count) &&
+        pendingMempool.count >= 0 &&
+        /^[0-9a-f]{64}$/u.test(
+          normalizedLowerText(pendingMempool.sha256),
+        ),
+      ) &&
+      workQ16PendingReadinessPredicate(
+        pendingReadinessDiagnostics,
+        "membership",
+        pendingMembershipSnapshot.model === pendingMembership.model &&
+        Number.isSafeInteger(pendingMembershipSnapshot.count) &&
+        pendingMembershipSnapshot.count ===
+          pendingMembershipTxids.length &&
+        normalizedLowerText(pendingMembershipSnapshot.sha256) ===
+          pendingMembership.expectedTxidsSha256 &&
+        stableWorkPrecisionJson(pendingMembershipSnapshot.txids) ===
+          stableWorkPrecisionJson(pendingMembership.expectedTxids),
+      ) &&
+      workQ16PendingReadinessPredicate(
+        pendingReadinessDiagnostics,
         "projection",
-        "ready",
-        "scan",
-        "verifierStage",
-      ]) &&
-      exactObjectKeys(pendingTip, ["hash", "height"]) &&
-      exactObjectKeys(pendingMempool, ["count", "model", "sha256"]) &&
-      exactObjectKeys(pendingMembershipSnapshot, [
-        "count",
-        "model",
-        "sha256",
-        "txids",
-      ]) &&
-      exactObjectKeys(pendingProjection, [
-        "balances",
-        "commitmentSha256",
-        "eventParticipants",
-        "eventRefs",
-        "events",
-        "listings",
-        "mailItems",
-        "model",
-        "transactions",
-      ]) &&
-      exactObjectKeys(pendingScan, [
-        "canonicalDeferred",
-        "complete",
-        "completeModel",
-        "discoveryModel",
-        "globalUnresolved",
-        "inspectedTxids",
-        "mempoolMembershipCount",
-        "protocolTxids",
-        "q16PendingUnresolved",
-        "scanned",
-        "stopReason",
-      ]) &&
-      pendingWitness.model ===
-        WORK_Q16_PENDING_REBUILD_MODEL &&
-      pendingWitness.network === network &&
-      pendingWitness.ready === true &&
-      Number(pendingWitness.activationHeight) ===
-        pins.activationHeight &&
-      normalizedLowerText(pendingWitness.declarationTxid) ===
-        pins.declarationTxid &&
-      pendingWitness.amountStorageModel ===
-        WORK_SUBATOM_PROJECTION_MODEL &&
-      pendingWitness.precisionModel ===
-        WORK_AMO_V8_GLOBAL_PRECISION_MODEL &&
-      Number(pendingWitness.invalidLegacyMutationCount) === 0 &&
-      Number(pendingInvalidLegacyResult.rows[0]?.invalid_count) === 0 &&
-      Number(pendingTip.height) === tipHeight &&
-      normalizedLowerText(pendingTip.hash) === tipHash &&
-      pendingAttempt.stageSha256 === pendingVerifierStage.stageSha256 &&
-      pendingAttempt.witnessGeneratedAt === pendingWitness.generatedAt &&
-      workQ16PendingVerifierStageReady(pendingVerifierStage, {
-        confirmedRemovalRows: pendingConfirmedRemovalResult.rows,
-        expectedTokenStateCommitment: closingTokenStateCommitment,
-        eventRows: pendingEventResult.rows,
-        membershipTxids: pendingMembershipTxids,
-        network,
-        tipHash,
-        tipHeight,
-      }) &&
-      pendingMempool.model === WORK_Q16_PENDING_MEMPOOL_MODEL &&
-      Number.isSafeInteger(pendingMempool.count) &&
-      pendingMempool.count >= 0 &&
-      /^[0-9a-f]{64}$/u.test(
-        normalizedLowerText(pendingMempool.sha256),
+        pendingProjection.model ===
+          WORK_Q16_PENDING_PROJECTION_MODEL &&
+        pendingParity.ready === true,
       ) &&
-      pendingMembershipSnapshot.model === pendingMembership.model &&
-      Number.isSafeInteger(pendingMembershipSnapshot.count) &&
-      pendingMembershipSnapshot.count ===
-        pendingMembershipTxids.length &&
-      normalizedLowerText(pendingMembershipSnapshot.sha256) ===
-        pendingMembership.expectedTxidsSha256 &&
-      stableWorkPrecisionJson(pendingMembershipSnapshot.txids) ===
-        stableWorkPrecisionJson(pendingMembership.expectedTxids) &&
-      pendingProjection.model ===
-        WORK_Q16_PENDING_PROJECTION_MODEL &&
-      pendingParity.ready === true &&
-      pendingMailProjectionReady &&
-      pendingTransactionProjectionRows.every(
-        (row) => row.volatileOverlayAbsent === true,
+      workQ16PendingReadinessPredicate(
+        pendingReadinessDiagnostics,
+        "mail-parity",
+        pendingMailProjectionReady,
       ) &&
-      stableWorkPrecisionJson(
-        objectRecord(pendingWitness.parity),
-      ) === stableWorkPrecisionJson(pendingParity) &&
-      stableWorkPrecisionJson({
-        balances: pendingProjection.balances,
-        eventParticipants: pendingProjection.eventParticipants,
-        eventRefs: pendingProjection.eventRefs,
-        events: pendingProjection.events,
-        listings: pendingProjection.listings,
-        mailItems: pendingProjection.mailItems,
-        transactions: pendingProjection.transactions,
-      }) === stableWorkPrecisionJson(pendingProjectionParts) &&
-      normalizedLowerText(
-        pendingProjection.commitmentSha256,
-      ) ===
-        workQ16PendingCommitment(
-          "PROJECTION",
-          pendingProjectionParts,
+      workQ16PendingReadinessPredicate(
+        pendingReadinessDiagnostics,
+        "projection",
+        pendingTransactionProjectionRows.every(
+          (row) => row.volatileOverlayAbsent === true,
         ) &&
-      pendingScan.complete === true &&
-      pendingScan.completeModel ===
-        "atomic-staged-pending-work-projection-audit-v1" &&
-      pendingScan.discoveryModel ===
-        "bounded-best-effort-unconfirmed-discovery-v1" &&
-      Number.isSafeInteger(pendingScan.canonicalDeferred) &&
-      pendingScan.canonicalDeferred >= 0 &&
-      Number.isSafeInteger(pendingScan.globalUnresolved) &&
-      pendingScan.globalUnresolved >= 0 &&
-      Number.isSafeInteger(pendingScan.q16PendingUnresolved) &&
-      pendingScan.q16PendingUnresolved === 0 &&
-      pendingScan.stopReason === "" &&
-      Number.isSafeInteger(pendingScan.mempoolMembershipCount) &&
-      pendingScan.mempoolMembershipCount === pendingMempool.count &&
-      Number.isSafeInteger(pendingScan.inspectedTxids) &&
-      pendingScan.inspectedTxids >= 0 &&
-      pendingScan.inspectedTxids <= pendingMempool.count &&
-      Number.isSafeInteger(pendingScan.protocolTxids) &&
-      pendingScan.protocolTxids >= 0 &&
-      Number.isSafeInteger(pendingScan.scanned) &&
-      pendingScan.scanned >= 0 &&
-      Number.isFinite(pendingGeneratedAtMs) &&
-      new Date(pendingGeneratedAtMs).toISOString() ===
-        pendingWitness.generatedAt &&
-      Date.now() >= pendingGeneratedAtMs &&
-      Date.now() - pendingGeneratedAtMs <=
-        WORK_Q16_PENDING_WITNESS_MAX_AGE_MS;
+        stableWorkPrecisionJson(
+          objectRecord(pendingWitness.parity),
+        ) === stableWorkPrecisionJson(pendingParity) &&
+        stableWorkPrecisionJson({
+          balances: pendingProjection.balances,
+          eventParticipants: pendingProjection.eventParticipants,
+          eventRefs: pendingProjection.eventRefs,
+          events: pendingProjection.events,
+          listings: pendingProjection.listings,
+          mailItems: pendingProjection.mailItems,
+          transactions: pendingProjection.transactions,
+        }) === stableWorkPrecisionJson(pendingProjectionParts) &&
+        normalizedLowerText(
+          pendingProjection.commitmentSha256,
+        ) ===
+          workQ16PendingCommitment(
+            "PROJECTION",
+            pendingProjectionParts,
+          ),
+      ) &&
+      workQ16PendingReadinessPredicate(
+        pendingReadinessDiagnostics,
+        "shape-attempt",
+        pendingScan.complete === true &&
+        pendingScan.completeModel ===
+          "atomic-staged-pending-work-projection-audit-v1" &&
+        pendingScan.discoveryModel ===
+          "bounded-best-effort-unconfirmed-discovery-v1" &&
+        Number.isSafeInteger(pendingScan.canonicalDeferred) &&
+        pendingScan.canonicalDeferred >= 0 &&
+        Number.isSafeInteger(pendingScan.globalUnresolved) &&
+        pendingScan.globalUnresolved >= 0 &&
+        Number.isSafeInteger(pendingScan.q16PendingUnresolved) &&
+        pendingScan.q16PendingUnresolved === 0 &&
+        pendingScan.stopReason === "" &&
+        Number.isSafeInteger(pendingScan.mempoolMembershipCount) &&
+        pendingScan.mempoolMembershipCount === pendingMempool.count &&
+        Number.isSafeInteger(pendingScan.inspectedTxids) &&
+        pendingScan.inspectedTxids >= 0 &&
+        pendingScan.inspectedTxids <= pendingMempool.count &&
+        Number.isSafeInteger(pendingScan.protocolTxids) &&
+        pendingScan.protocolTxids >= 0 &&
+        Number.isSafeInteger(pendingScan.scanned) &&
+        pendingScan.scanned >= 0,
+      ) &&
+      workQ16PendingReadinessPredicate(
+        pendingReadinessDiagnostics,
+        "age",
+        Number.isFinite(pendingGeneratedAtMs) &&
+        new Date(pendingGeneratedAtMs).toISOString() ===
+          pendingWitness.generatedAt &&
+        Date.now() >= pendingGeneratedAtMs &&
+        Date.now() - pendingGeneratedAtMs <=
+          WORK_Q16_PENDING_WITNESS_MAX_AGE_MS,
+      );
   }
   const expectedTransitionCount =
     Number.isSafeInteger(tipHeight) &&
@@ -8876,6 +8985,7 @@ async function proofIndexWorkPrecisionV2MigrationReadinessFullAudit(
     parityReady: stateCommitmentsReady,
     pendingAttempt,
     pendingReady,
+    pendingReadinessDiagnostics,
     pendingValidThrough: Number.isFinite(pendingGeneratedAtMs)
       ? new Date(
           pendingGeneratedAtMs +
@@ -37416,6 +37526,9 @@ async function idRegistryAuditSnapshotPass(
     });
     let transitionCursor = PWID_RAW_REPLAY_ACTIVATION_HEIGHT - 1;
     while (transitionCursor < expectedHeight) {
+      // Every transition/header/replay record still enters the two audit fences.
+      // Only non-PWID blocks omit unused state preimages from the read result;
+      // PWID Core parity and precision-boundary validation keep the full body.
       const result = await client.query(
         `
           SELECT
@@ -37446,8 +37559,20 @@ async function idRegistryAuditSnapshotPass(
             transition.complete,
             CASE
               WHEN transition.block_height = $5
-                OR transition.raw_protocol_candidate_count > 0
               THEN transition.payload
+              WHEN transition.raw_protocol_candidate_count > 0
+              THEN CASE
+                WHEN jsonb_path_exists(
+                    transition.payload,
+                    '$.replayRecords[*] ? (@.protocol == "pwid1" && @.rawCandidate == true)'
+                  )
+                THEN transition.payload
+                ELSE transition.payload - ARRAY[
+                  'openingSufficientState', 'closingSufficientState',
+                  'closingTokenState', 'closingIdState',
+                  'closingGenericTokenState', 'closingWorkProjection'
+                ]::text[]
+              END
               ELSE jsonb_build_object(
                 'idRegistryAuditEnvelopeModel',
                   '${ID_REGISTRY_AUDIT_TRANSITION_ENVELOPE_MODEL}',
@@ -39948,17 +40073,17 @@ function subjectOnlyMailBody(value) {
 function mailMemoFromEvent(row, payload) {
   const payloadBody = String(
     payload.body ?? payload.message ?? payload.memo ?? "",
-  ).trim();
+  );
   if (payloadBody) {
     return payloadBody;
   }
 
-  const storedBody = String(row.body_text ?? "").trim();
+  const storedBody = String(row.body_text ?? "");
   if (storedBody && !subjectOnlyMailBody(storedBody)) {
     return storedBody;
   }
 
-  const detail = String(payload.detail ?? "").trim();
+  const detail = String(payload.detail ?? "");
   if (detail && !subjectOnlyMailBody(detail)) {
     return detail;
   }

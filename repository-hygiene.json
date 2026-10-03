@@ -121,7 +121,9 @@
       "audits/2026-10-02-audit30-first-batch-preparation.evidence.json",
       "audits/2026-10-02-audit30-first-batch-approval.json",
       "audits/2026-10-02-audit30-ui-monitor-deadline-approval.json",
-      "audits/2026-10-02-audit30-first-batch-execution.evidence.json"
+      "audits/2026-10-02-audit30-first-batch-execution.evidence.json",
+      "audits/2026-10-02-audit30-remaining-phase-approval.json",
+      "audits/2026-10-02-audit30-remaining-phase-execution.evidence.json"
     ],
     "staged-or-future-protocol-notes": [
       "CHAIN_CONTENT.md",
@@ -143,7 +145,8 @@
       "TRADEMARKS.md",
       "test-api/README.md",
       "deploy/audit29/INVOCATION.md",
-      "deploy/audit30/STORAGE.md"
+      "deploy/audit30/STORAGE.md",
+      "deploy/audit30/recovery/PROPOSAL.md"
     ]
   },
   "safeCleanupPaths": [

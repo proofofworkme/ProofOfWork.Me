@@ -17502,6 +17502,10 @@ async function fetchCompleteTokenListings(
     tokenScope?: string;
   } = {},
 ): Promise<CompleteTokenListingHistory> {
+  const tokenScope = options.tokenScope?.trim().toLowerCase() ?? "";
+  if (tokenScope && !/^[0-9a-f]{64}$/u.test(tokenScope)) {
+    throw new Error("The complete credit listing scope is invalid.");
+  }
   const deadline = AbortSignal.timeout(120_000);
   const signal = options.signal
     ? AbortSignal.any([options.signal, deadline])
@@ -17531,9 +17535,10 @@ async function fetchCompleteTokenListings(
         cursor: cursor || undefined,
         fresh: options.fresh,
         pageSize: TOKEN_HISTORY_PAGE_SIZE,
-        tokenScope: options.tokenScope,
+        tokenScope: tokenScope || undefined,
       },
     );
+    signal.throwIfAborted();
     const pageIndexedAt = String(page.indexedAt ?? "").trim();
     const pageIndexedThroughBlock = Number(page.indexedThroughBlock);
     const pageIndexedThroughBlockHash = String(
@@ -17577,7 +17582,7 @@ async function fetchCompleteTokenListings(
       .trim()
       .toLowerCase();
     const broadUnfilteredBook =
-      !options.address?.trim() && !options.tokenScope?.trim();
+      !options.address?.trim() && !tokenScope;
     if (
       !pageIndexedAt ||
       !Number.isFinite(Date.parse(pageIndexedAt)) ||
@@ -17633,7 +17638,9 @@ async function fetchCompleteTokenListings(
       (broadUnfilteredBook && pageTotalCount !== projectionActiveCount) ||
       pageItems.some(
         (listing) =>
-          listing.network !== targetNetwork || listing.confirmed !== true,
+          listing.network !== targetNetwork ||
+          listing.confirmed !== true ||
+          (tokenScope !== "" && listing.tokenId !== tokenScope),
       )
     ) {
       throw new Error(
@@ -22464,7 +22471,15 @@ export default function App() {
     useRef<CompleteTokenListingHistory | undefined>();
   const completeMarketplaceListingHistoryInFlightRef =
     useRef<Promise<CompleteTokenListingHistory> | null>(null);
-  const completeListingBookLoadInFlightRef = useRef<Promise<void> | null>(null);
+  const completeBondListingHistoryRef = useRef(
+    new Map<string, CompleteTokenListingHistory>(),
+  );
+  const completeBondListingHistoryInFlightRef = useRef(
+    new Map<string, Promise<CompleteTokenListingHistory>>(),
+  );
+  const completeListingBookLoadInFlightRef = useRef(
+    new Map<string, Promise<void>>(),
+  );
   const infinityRefreshInFlightRef =
     useRef<Promise<InfinitySummarySnapshot | undefined> | null>(null);
   const infinityRefreshInFlightFreshRef = useRef(false);
@@ -22810,31 +22825,89 @@ export default function App() {
     return tokenStateWithCompleteTokenListings(state, history);
   }
 
+  async function currentCompleteBondTokenListings(
+    state: PowTokenState,
+    tokenScope: string,
+    fresh = false,
+    onVerifiedPage?: (progress: TokenListingHistoryProgress) => void,
+    signal?: AbortSignal,
+  ) {
+    signal?.throwIfAborted();
+    const scope = tokenScope.trim().toLowerCase();
+    if (!/^[0-9a-f]{64}$/u.test(scope)) {
+      throw new Error("The complete bond listing scope is invalid.");
+    }
+    const scopeKey = `livenet:${scope}`;
+    const retained = completeBondListingHistoryRef.current.get(scopeKey);
+    if (
+      !fresh &&
+      retained &&
+      retained.indexedAt === state.indexedAt &&
+      completeTokenListingHistoryMatchesState(retained, state)
+    ) {
+      return retained;
+    }
+
+    // Scoped books never join another asset or caller's cancellation lifetime.
+    let request = signal || fresh
+      ? undefined
+      : completeBondListingHistoryInFlightRef.current.get(scopeKey);
+    if (!request) {
+      request = fetchCompleteTokenListings("livenet", {
+        tokenScope: scope,
+        fresh,
+        onVerifiedPage,
+        signal,
+      });
+      if (!signal && !fresh) {
+        completeBondListingHistoryInFlightRef.current.set(scopeKey, request);
+      }
+    }
+    try {
+      const history = await request;
+      signal?.throwIfAborted();
+      if (
+        !completeTokenListingHistoryMatchesState(history, state) ||
+        history.items.some((listing) => listing.tokenId !== scope)
+      ) {
+        throw new Error(
+          "The complete bond listing book does not match its asset and indexed summary snapshot.",
+        );
+      }
+      completeBondListingHistoryRef.current.set(scopeKey, history);
+      return history;
+    } finally {
+      if (completeBondListingHistoryInFlightRef.current.get(scopeKey) === request) {
+        completeBondListingHistoryInFlightRef.current.delete(scopeKey);
+      }
+    }
+  }
+
   async function tokenStateWithCurrentCompleteBondListings(
     state: PowTokenState,
     tokenScope: string,
     fresh = false,
     onVerifiedPage?: (progress: TokenListingHistoryProgress) => void,
+    signal?: AbortSignal,
   ) {
-    const globalHistory = await currentCompleteGlobalTokenListings(
+    const history = await currentCompleteBondTokenListings(
       state,
+      tokenScope,
       fresh,
       onVerifiedPage,
+      signal,
     );
     return tokenStateWithCompleteTokenBondListings(
       state,
       tokenScope,
-      globalHistory,
+      history,
     );
   }
 
   async function loadCompleteTokenListingBook(tokenScope = "") {
-    const inFlight = completeListingBookLoadInFlightRef.current;
-    if (inFlight) {
-      await inFlight;
+    if (network !== "livenet") {
       return;
     }
-
     const normalizedScope = tokenScope.trim().toLowerCase();
     const bondConfig = normalizedScope
       ? [INFINITY_BOND_UI, INCEPTION_BOND_UI].find(
@@ -22847,7 +22920,13 @@ export default function App() {
       );
       return;
     }
-
+    const requestWorkspaceKey = activeWorkspaceStatusKeyRef.current;
+    const loadScopeKey = `livenet:${normalizedScope}:${requestWorkspaceKey}`;
+    const inFlight = completeListingBookLoadInFlightRef.current.get(loadScopeKey);
+    if (inFlight) {
+      await inFlight;
+      return;
+    }
     let targetSnapshot = bondConfig
       ? acceptedBondSummariesRef.current.get(bondConfig.tokenId)
       : acceptedMarketplaceSnapshotRef.current;
@@ -22863,6 +22942,12 @@ export default function App() {
       );
       return;
     }
+    if (
+      activeWorkspaceStatusKeyRef.current !== requestWorkspaceKey ||
+      !marketplaceReadContextRef.current.startsWith("livenet:")
+    ) {
+      return;
+    }
     if (targetSnapshot.token.listingBookComplete === true) {
       setCompleteListingBookError("");
       return;
@@ -22870,7 +22955,17 @@ export default function App() {
 
     setCompleteListingBookLoading(true);
     setCompleteListingBookError("");
-    const requestWorkspaceKey = activeWorkspaceStatusKeyRef.current;
+    const controller = new AbortController();
+    const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(120_000)]);
+    const abortObsoleteContext = () => {
+      if (
+        activeWorkspaceStatusKeyRef.current !== requestWorkspaceKey ||
+        !marketplaceReadContextRef.current.startsWith("livenet:")
+      ) {
+        controller.abort(new DOMException("Market history workspace changed.", "AbortError"));
+      }
+    };
+    const scopeWatch = setInterval(abortObsoleteContext, 100);
     const sameAcceptedSnapshot = (
       currentSnapshot:
         | MarketplaceSummarySnapshot
@@ -22888,6 +22983,10 @@ export default function App() {
     const acceptVerifiedProgress = (
       progress: TokenListingHistoryProgress,
     ) => {
+      abortObsoleteContext();
+      if (signal.aborted) {
+        return;
+      }
       const currentSnapshot = bondConfig
         ? acceptedBondSummariesRef.current.get(bondConfig.tokenId)
         : acceptedMarketplaceSnapshotRef.current;
@@ -22952,18 +23051,24 @@ export default function App() {
     };
     const promise = (async () => {
       try {
+        abortObsoleteContext();
+        signal.throwIfAborted();
         const completeTokenState = bondConfig
           ? await tokenStateWithCurrentCompleteBondListings(
               targetSnapshot.token,
               bondConfig.tokenId,
               false,
               acceptVerifiedProgress,
+              signal,
             )
           : await tokenStateWithCurrentCompleteMarketplaceListings(
               targetSnapshot.token,
               false,
               acceptVerifiedProgress,
+              signal,
             );
+        abortObsoleteContext();
+        signal.throwIfAborted();
         const scopeKey = tokenStateScopeKey({
           network: "livenet",
           tokenScope: bondConfig?.tokenId ?? "",
@@ -23020,7 +23125,10 @@ export default function App() {
           });
         }
         setTokenMarketHistoryRefreshNonce((current) => current + 1);
-        if (activeWorkspaceStatusKeyRef.current === requestWorkspaceKey) {
+        if (
+          activeWorkspaceStatusKeyRef.current === requestWorkspaceKey &&
+          marketplaceReadContextRef.current.startsWith("livenet:")
+        ) {
           setStatusForWorkspace(requestWorkspaceKey, {
             tone: "good",
             text: `Complete Core-reconciled sale-ticket history loaded at block ${Number(acceptedTokenState.indexedThroughBlock).toLocaleString()}.`,
@@ -23031,26 +23139,30 @@ export default function App() {
           error,
           "Complete sale-ticket history could not be verified.",
         );
-        setCompleteListingBookError(
-          `The verified preview remains visible. ${message}`,
-        );
-        if (activeWorkspaceStatusKeyRef.current === requestWorkspaceKey) {
+        if (
+          activeWorkspaceStatusKeyRef.current === requestWorkspaceKey &&
+          marketplaceReadContextRef.current.startsWith("livenet:")
+        ) {
+          setCompleteListingBookError(
+            `The verified preview remains visible. ${message}`,
+          );
           setStatusForWorkspace(requestWorkspaceKey, {
             tone: "idle",
             text: "The verified market preview remains available; complete sale-ticket history could not be verified.",
           });
         }
       } finally {
-        setCompleteListingBookLoading(false);
+        clearInterval(scopeWatch);
       }
     })();
-    completeListingBookLoadInFlightRef.current = promise;
+    completeListingBookLoadInFlightRef.current.set(loadScopeKey, promise);
     try {
       await promise;
     } finally {
-      if (completeListingBookLoadInFlightRef.current === promise) {
-        completeListingBookLoadInFlightRef.current = null;
+      if (completeListingBookLoadInFlightRef.current.get(loadScopeKey) === promise) {
+        completeListingBookLoadInFlightRef.current.delete(loadScopeKey);
       }
+      setCompleteListingBookLoading(completeListingBookLoadInFlightRef.current.size > 0);
     }
   }
 

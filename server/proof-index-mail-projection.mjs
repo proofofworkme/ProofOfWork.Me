@@ -87,13 +87,15 @@ function subjectOnlyMailBody(value) {
 }
 
 function mailBodyText(payload) {
-  const direct = normalizedText(
+  // Body whitespace belongs to the immutable message. Normalize only metadata
+  // classification, never the string that is stored or rendered.
+  const direct = String(
     payload?.body ?? payload?.message ?? payload?.memo ?? "",
   );
   if (direct) {
     return direct;
   }
-  const detail = normalizedText(payload?.detail ?? "");
+  const detail = String(payload?.detail ?? "");
   return detail && !subjectOnlyMailBody(detail) ? detail : null;
 }
 

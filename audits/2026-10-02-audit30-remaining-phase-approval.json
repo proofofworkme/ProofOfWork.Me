@@ -1,0 +1,58 @@
+{
+  "schema": "pow-audit30-remaining-phase-human-approval-v1",
+  "recordedAtUtc": "2026-10-02T22:58:44.525866+00:00",
+  "dateTimezone": "America/Toronto",
+  "humanMessage": "Approve the remaining phase 7 → 6 → 4 → 5 → 8 as described, including implementation, testing, scoped deployments and audit tracking. Bring the tested production-data, recovery-configuration and additional-deletion plans back for final approval.",
+  "humanMessageUtf8Sha256": "498abffbfdd7a2c6029d03fd9f3abd964722acfc1827054344ebae459e24ff92",
+  "order": [
+    7,
+    6,
+    4,
+    5,
+    8
+  ],
+  "sourceHandoffCommit": "9d596900679054d2c75e350dba77e9a26a1b3ac4",
+  "preApprovalTracker": {
+    "path": "audits/2026-10-02-audit30-followup-tracker.md",
+    "bytes": 27566,
+    "sha256": "2cfe5ef3c8fbce4e2e4ddad68685ba5cfde21d89821c582c4cb794dfe186fe0f"
+  },
+  "approvedScope": {
+    "7": "Latest logical backup restored only into an isolated PostgreSQL cluster; verify rows, roles, accounting, replay and integrity. Prepare and test recovery/PITR plan. Retain last restore-proven backup until replacement is proven; no pin change without final approval.",
+    "6": "Diagnose and implement documented Wallet WORK timeout, ID semantics, bond pagination and positive-WORK rendering corrections; tests and scoped production code releases.",
+    "4": "Correct byte-preserving mail parsing, storage preparation and rendering; prepare exact affected-record projection-rebuild plan.",
+    "5": "Isolated lossless transition-storage prototype and deterministic exact math/replay equivalence; prepare migration and rollback.",
+    "8": "Missing artifact custody and treasury/refund/bounty reconciliation; capture exact node Git index path/bytes/owners/prior metadata and repair only documented0664-to0600 mode defect; prepare exact safe node cleanup."
+  },
+  "approvedSupportingActions": [
+    "Relevant source/configuration/test/deployment tooling edits",
+    "Controlled API/indexer-worker code deployments and necessary restarts",
+    "Local and production verification preserving existing protocol/accounting rules",
+    "Repository hygiene and enabled commit hooks",
+    "Commits and pushes",
+    "Audit and tracker updates",
+    "Standing release announcements after committed/pushed/deployed/verified updates"
+  ],
+  "finalApprovalRequired": [
+    "Production mail projection or database/schema/storage rebuild or migration",
+    "Production WAL/PITR activation, backup-pin changes or PostgreSQL/full-node restart",
+    "Additional backup/node artifact retirement outside existing explicitly approved policy",
+    "Correction or mutation of protected historical/ledger records"
+  ],
+  "persistentConstraints": [
+    "Canonical protocol forms, Q8/Q16 exact math, immutable chain history and1000/546 proof rules preserved",
+    "Existing holds, masks, pins and capacity guards preserved",
+    "Recovery verification precedes production data rebuilds/migrations",
+    "Unknown or failed evidence remains qualified; do not invent recovery/custody/retirement",
+    "Wallet authority and signing remain local to the human"
+  ],
+  "isolatedRestoreBoundaries": {
+    "maximumJobBytes": 85899345920,
+    "dataReserveBytes": 107374182400,
+    "rootReserveBytes": 10737418240,
+    "network": "private Unix socket, no TCP listener",
+    "liveDatabaseAndTablespaces": "inaccessible to isolated unit",
+    "backupSource": "fresh verified latest complete set under existing shared backup lock; exact byte/metadata plan before run",
+    "evidence": "preserve old scripts, failed jobs, backups and all receipts; no data deletion"
+  }
+}

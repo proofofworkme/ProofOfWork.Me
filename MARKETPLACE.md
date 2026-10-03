@@ -1428,6 +1428,13 @@ limits rendered rows, not searchable inventory. Market-log rows
 remain lifecycle history and cannot manufacture active inventory. Wallet-owned
 listing hydration uses the same complete cursor contract.
 
+Infinity and Inception complete books request their exact token scope instead
+of loading and filtering the whole WORK book. Each page must contain only that
+asset and retain the same complete Core authority, projection digest, cursor,
+cardinality and summary-checkpoint checks. Scoped caches and concurrent loads
+cannot cross assets or obsolete workspaces. The public AMO book and wallet
+ownership/reservation reconciliation retain their complete broader coverage.
+
 A public complete-book read is scoped to its network and workspace, not the
 connected account. Connecting a wallet does not cancel public inventory
 verification. Network/workspace changes still cancel obsolete reads; wallet-owned

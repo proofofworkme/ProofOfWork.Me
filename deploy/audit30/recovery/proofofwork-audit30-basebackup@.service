@@ -1,0 +1,46 @@
+# Candidate only. %i is a reviewed UTC run ID; plan and raw SHA are per-run.
+[Unit]
+Description=ProofOfWork Audit30 one guarded physical base backup %i
+After=postgresql@16-main.service proofofwork-audit30-receivewal.service
+Requisite=postgresql@16-main.service proofofwork-audit30-receivewal.service
+ConditionPathIsDirectory=/data/proofofwork-postgres-recovery-audit30/bases
+
+[Service]
+Type=exec
+User=postgres
+Group=postgres
+Slice=system.slice
+UMask=0077
+LoadCredential=recovery-plan:/usr/local/lib/proofofwork-audit30-recovery/basebackup/%i/reviewed-plan.json
+ExecStart=/usr/bin/python3 -I -B /usr/local/lib/proofofwork-audit30-recovery/basebackup/%i/recovery-controller.py run --plan /run/credentials/proofofwork-audit30-basebackup@%i.service/recovery-plan --plan-sha256 ${AUDIT30_PLAN_SHA256}
+Restart=no
+KillMode=control-group
+TimeoutStopSec=75s
+RuntimeMaxSec=2h
+CPUQuota=50%
+CPUWeight=10
+IOWeight=10
+Nice=15
+MemoryHigh=1G
+MemoryMax=2G
+TasksMax=32
+PrivateNetwork=true
+PrivateTmp=true
+PrivateIPC=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+NoNewPrivileges=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_UNIX
+CapabilityBoundingSet=
+AmbientCapabilities=
+ReadWritePaths=/data/proofofwork-postgres-recovery-audit30
+ReadOnlyPaths=/run/postgresql
+InaccessiblePaths=/var/lib/postgresql /data/proofofwork-postgres-tablespaces /var/backups/postgresql -/data/proofofwork-postgres-backups/physical /etc/proofofwork-api
+StandardOutput=journal
+StandardError=journal
+
+# One explicit run. No [Install], timer, repeat, deletion or expiry.

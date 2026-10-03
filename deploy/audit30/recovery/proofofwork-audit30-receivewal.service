@@ -1,0 +1,47 @@
+# Candidate only: activation requires a reviewed root0600 plan, its raw SHA
+# supplied by an exact root-owned drop-in, a newly qualified root and slot.
+[Unit]
+Description=ProofOfWork Audit30 guarded slot-backed WAL receiver
+After=postgresql@16-main.service
+Requisite=postgresql@16-main.service
+ConditionPathIsDirectory=/data/proofofwork-postgres-recovery-audit30/wal
+
+[Service]
+Type=exec
+User=postgres
+Group=postgres
+Slice=system.slice
+UMask=0077
+LoadCredential=recovery-plan:/usr/local/lib/proofofwork-audit30-recovery/receivewal/reviewed-plan.json
+ExecStart=/usr/bin/python3 -I -B /usr/local/lib/proofofwork-audit30-recovery/receivewal/recovery-controller.py run --plan /run/credentials/proofofwork-audit30-receivewal.service/recovery-plan --plan-sha256 ${AUDIT30_PLAN_SHA256}
+Restart=no
+KillMode=control-group
+TimeoutStopSec=75s
+RuntimeMaxSec=infinity
+CPUQuota=50%
+CPUWeight=10
+IOWeight=10
+Nice=15
+MemoryHigh=1G
+MemoryMax=2G
+TasksMax=32
+PrivateNetwork=true
+PrivateTmp=true
+PrivateIPC=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+NoNewPrivileges=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_UNIX
+CapabilityBoundingSet=
+AmbientCapabilities=
+ReadWritePaths=/data/proofofwork-postgres-recovery-audit30
+ReadOnlyPaths=/run/postgresql
+InaccessiblePaths=/var/lib/postgresql /data/proofofwork-postgres-tablespaces /var/backups/postgresql -/data/proofofwork-postgres-backups/physical /etc/proofofwork-api
+StandardOutput=journal
+StandardError=journal
+
+# No [Install], timer, automatic restart, native wrapper or expiry hook.

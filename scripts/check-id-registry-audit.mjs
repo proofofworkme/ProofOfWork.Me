@@ -269,6 +269,47 @@ for (let offset = 0; offset < transitionCount; offset += 1) {
   previousHash = hash;
   openingStateSha256 = closingStateSha256;
 }
+
+// Non-PWID read projection omits only unused state preimages. The independent
+// chain contract must retain identical counts, commitments and rolling fence.
+const unusedIdAuditPreimages = [
+  "openingSufficientState", "closingSufficientState", "closingTokenState",
+  "closingIdState", "closingGenericTokenState", "closingWorkProjection",
+];
+const nonPwidFull = transitions.map((transition) => ({
+  ...transition,
+  eventCount: 1,
+  protocolRecordCount: 1,
+  rawProtocolCandidateCount: 1,
+  transactionCount: 1,
+  payload: {
+    ...transition.payload,
+    eventCount: 1,
+    protocolRecordCount: 1,
+    rawProtocolCandidateCount: 1,
+    transactionCount: 1,
+    replayRecords: [{ protocol: "pwt1", rawCandidate: true }],
+    ...Object.fromEntries(unusedIdAuditPreimages.map((key) => [
+      key, { exact: "90071992547409930000000000000000", body: "  untouched\n" },
+    ])),
+  },
+}));
+const nonPwidRead = nonPwidFull.map((transition) => ({
+  ...transition,
+  payload: Object.fromEntries(Object.entries(transition.payload).filter(
+    ([key]) => !unusedIdAuditPreimages.includes(key),
+  )),
+}));
+const readProjectionFence = (rows) => finalizeIdRegistryAuditTransitionChain(
+  advanceIdRegistryAuditTransitionChain(createIdRegistryAuditTransitionChain({
+    checkpointHash: rows.at(-1).blockHash,
+    checkpointHeight: rows.at(-1).blockHeight,
+  }), rows),
+);
+assert.deepEqual(readProjectionFence(nonPwidRead), readProjectionFence(nonPwidFull));
+assert.deepEqual(nonPwidRead[0].payload.replayRecords, nonPwidFull[0].payload.replayRecords);
+assert.match(readerSource, /transition\.block_height = \$5[\s\S]*jsonb_path_exists\([\s\S]*@\.protocol == "pwid1" && @\.rawCandidate == true[\s\S]*THEN transition\.payload/u);
+for (const key of unusedIdAuditPreimages) assert(readerSource.includes(`'${key}'`));
 let transitionState = createIdRegistryAuditTransitionChain({
   checkpointHash: transitions.at(-1).blockHash,
   checkpointHeight: transitions.at(-1).blockHeight,

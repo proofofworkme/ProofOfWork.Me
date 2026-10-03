@@ -3546,8 +3546,8 @@ expect(
 );
 
 expect(
-  "Bond and wallet listings derive from the shared exact global book",
-  /const globalHistory = await currentCompleteGlobalTokenListings\([\s\S]*state,[\s\S]*fresh,[\s\S]*onVerifiedPage/.test(
+  "Bond listings use an asset-scoped complete book while wallet listings retain global ownership reconciliation",
+  /const history = await currentCompleteBondTokenListings\([\s\S]*state,[\s\S]*tokenScope,[\s\S]*fresh,[\s\S]*onVerifiedPage,[\s\S]*signal/.test(
     tokenStateWithCurrentCompleteBondListingsBlock,
   ) &&
     /globalHistory\.items\.filter\([\s\S]*listing\.tokenId === scope/.test(

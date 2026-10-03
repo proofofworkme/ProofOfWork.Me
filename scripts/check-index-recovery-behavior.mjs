@@ -10266,8 +10266,8 @@ check("ID audit transition stream keeps non-PWID transition pages compact", () =
   );
   assert.match(
     source,
-    /CASE\s+WHEN transition\.block_height = \$5[\s\S]*OR transition\.raw_protocol_candidate_count > 0[\s\S]*THEN transition\.payload[\s\S]*ELSE jsonb_build_object\(/u,
-    "the precision boundary and raw-protocol-candidate transition heights keep full payloads, ordinary transition pages stay compact",
+    /CASE\s+WHEN transition\.block_height = \$5\s+THEN transition\.payload\s+WHEN transition\.raw_protocol_candidate_count > 0\s+THEN CASE\s+WHEN jsonb_path_exists\([\s\S]*@\.protocol == "pwid1" && @\.rawCandidate == true[\s\S]*THEN transition\.payload\s+ELSE transition\.payload - ARRAY\[[\s\S]*END\s+ELSE jsonb_build_object\(/u,
+    "precision/PWID blocks keep full bodies, non-PWID candidates keep every replay record/header, zero-candidate pages avoid payload access",
   );
   assert.match(
     source,
@@ -40191,7 +40191,7 @@ check("canonical Mail projection rejects every field, membership, identity, and 
   const expected = proofIndexCanonicalMailProjectionRows([event]);
   assert.equal(expected.invalid.length, 0);
   assert.equal(expected.rows.length, 1);
-  assert.equal(expected.rows[0].body_text, "exact body");
+  assert.equal(expected.rows[0].body_text, "  exact body  ");
   assert.equal(expected.rows[0].subject, null);
   const exact = proofIndexCanonicalMailProjectionParity({
     eventRows: [event],

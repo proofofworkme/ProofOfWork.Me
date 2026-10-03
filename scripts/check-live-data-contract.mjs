@@ -3333,7 +3333,7 @@ expectAll("summary route readiness separates staleness, latency, and V8 parity",
 ]);
 
 expectAll("endpoint caches cannot bypass the ledger", server, [
-  /jsonResponse\(\s*response,\s*200,\s*await mergedLogActivityPayload\(network\)/,
+  /jsonResponse\(\s*response,\s*200,\s*await logPayloadWithDnsSubdomainAuthority\(await mergedLogActivityPayload\(network\),\s*network\)/,
   /summaryPayloadWithCanonicalProvenance\(\s*await growthSummaryPayload\(network,\s*freshRead\)/,
   /attachLedgerMetadata\(\s*\{[\s\S]*?ledgerTokenStateForScope\(ledger,\s*scope\)[\s\S]*?indexedAt:\s*ledger\.generatedAt[\s\S]*?\},\s*ledger,?\s*\)/,
   /return payload\.snapshotId[\s\S]*?\.\.\.page[\s\S]*?ledgerGeneratedAt:\s*payload\.ledgerGeneratedAt[\s\S]*?snapshotId:\s*payload\.snapshotId/,
