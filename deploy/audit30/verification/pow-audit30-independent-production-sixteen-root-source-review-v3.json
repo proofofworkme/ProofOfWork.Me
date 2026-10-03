@@ -1,0 +1,14 @@
+{
+  "bootstrapSha256": "eac18d7cdc8570875e55e36672d6419c857aa9e7fff7c1cbe8f92263bf25f1d4",
+  "humanApprovalGenerated": false,
+  "nativeAuthority": false,
+  "productionMutation": false,
+  "schema": "pow-audit30-independent-production-root-binding-source-review-v3",
+  "scope": "Only projection proof path focusedv4 to focusedv5 and bootstrap root source SHA; existing adapter/caller/writer and root control unchanged.",
+  "sourceAccepted": true,
+  "sourceControlSha256": "b989a3f2395e7cbf13cb2d3dbd2d258a3fd21867131e41644c094772aba11168",
+  "tests": {
+    "bootstrap": 11,
+    "control": 31
+  }
+}

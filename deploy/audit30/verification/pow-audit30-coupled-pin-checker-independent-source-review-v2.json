@@ -1,0 +1,87 @@
+{
+  "atUtc": "2026-10-03T08:54:20.335061+00:00",
+  "closedFindings": [
+    {
+      "correction": "After each long before-replace guard, full stableFD/path/nlink/xattr content read must still equal original bytes and original inode/metadata identity before arming replacement. Real changed-preimage callback refuses with no caller mutation and unknown bytes preserved.",
+      "originalReproduction": "/tmp/pow-audit30-coupled-promotion-independent-preimage-drift-repro-v1.json",
+      "originalReproductionSHA256": "d4df991ae3ccfc467b90e2e0450fcfb87e798191b993d08c6a77839646fa5c98"
+    },
+    {
+      "correction": "V2 validates canonical direct-human approved receipt, exact callerSHA+noncircular fixed scopeSHA, exact2 path/old/new bytes+mode/owner fields, raw human-messageSHA, conditional known-byte failure inverse, no timer/hold/deletion/recovery authority. Adjacent immutable root600 approval/message are required; null draft refuses.",
+      "originalFinding": "V1 read only approval raw hash without closed content validation"
+    }
+  ],
+  "downstreamBlocker": {
+    "consumer": "retire-exact-four-v2.proofs lines106-108",
+    "consumerRequiredStatus": "completed",
+    "currentProducerField": "installed[]",
+    "currentProducerStatus": "passed",
+    "effect": "Current completed.json cannot satisfy retirement admission; preserve V2 and add only independently reviewed actual receipt succession or projection before final4 plan.",
+    "requiredMissingFields": [
+      "pinPath",
+      "oldPin",
+      "newPin",
+      "checkerPath",
+      "oldCheckerSha256",
+      "newCheckerSha256",
+      "pinAndCheckerCoupled",
+      "oldPinBytesPreserved",
+      "holdAndMasksUnchanged",
+      "ordinaryTimersUnchanged",
+      "deletionAuthorized",
+      "approvalReceiptSha256"
+    ]
+  },
+  "files": [
+    {
+      "bytes": 23321,
+      "path": "/tmp/pow-audit30-coupled-pin-checker-promotion-v2.py",
+      "sha256": "0fccc8c192aae797b5e0469c8edc77156549ad9b6c775887d25fea3e0e39bd4d"
+    },
+    {
+      "bytes": 10400,
+      "path": "/tmp/pow-audit30-coupled-pin-checker-promotion-v2.test.py",
+      "sha256": "6dbc11dd5ecaf15461b7fc46df60288da112507f842dca7b925ee53be471ef4d"
+    },
+    {
+      "bytes": 9348,
+      "path": "/tmp/pow-audit30-coupled-pin-checker-promotion-v2.diff",
+      "sha256": "9e480dd7408d97d31267270010d423b307b5474bfab32d4db7ff3102e1ad73d6"
+    },
+    {
+      "bytes": 1893,
+      "path": "/tmp/pow-audit30-coupled-pin-checker-promotion-plan-template-v2.json",
+      "sha256": "8c46eb940c47c4e89c40b051b40ecb95ecbd50a424f8e7dd7e2ebf3fc1b69ecb"
+    },
+    {
+      "bytes": 26198,
+      "path": "/tmp/pow-audit30-retire-exact-four-v2.py",
+      "sha256": "1abba9db552854d37973e3f297010bbd4f6a48a7c340ab673622d5ec1a51815c"
+    },
+    {
+      "bytes": 12913,
+      "path": "/home/sixer/ProofOfWork.Me/deploy/audit30/install-retention.py",
+      "sha256": "cd9c266e938d22949c9f0c6a48853933d9bcbb58368071b2da4027f13411eaa5"
+    }
+  ],
+  "independentFixtures": {
+    "cases": 22,
+    "command": "python3 -I -B -W error /tmp/pow-audit30-coupled-pin-checker-promotion-v2.test.py",
+    "exitCode": 0,
+    "result": "PASS",
+    "seconds": 0.398
+  },
+  "nativeCalls": false,
+  "productionAuthority": false,
+  "qualifications": [
+    "Tests use actual local temporary-file rename/fsync and signals with synthetic root-owner metadata; no production paths or approval exercised.",
+    "The two individual replacements are not jointly atomic. Long-guard drift finding is closed; no universal exclusion of another privileged writer is claimed.",
+    "Known candidate bytes only may be restored on failure. Unknown bytes remain for explicit reconciliation; ordinary repeated cleanup signals are tested.",
+    "18 known held absences remain unresolved; candidate monitor projection retains this qualification.",
+    "Actual fresh typed plan, human source receipt, current fullOct2 bytes/TOC/restore proof, fixed five/locks/monitor/window admission and native result still required.",
+    "Source-only approval contract is trusted root custody of actual human evidence; no actual human receipt generated."
+  ],
+  "repositoryEdits": false,
+  "schema": "pow-audit30-independent-coupled-promotion-source-review-v2",
+  "status": "source-only-caller-accepted-downstream-retirement-receipt-contract-pending"
+}

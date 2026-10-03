@@ -1,0 +1,36 @@
+{
+  "acceptedScope": [
+    "Exact two files; existing Oct2 full-read and restore predicates; originalSep29 backup retained",
+    "Both locks postflock FD/name identity; canonical source and metadata/xattr readers",
+    "Known-byte-only inverse on pair failure; repeated ordinary signals masked during failure custody",
+    "No timer/hold/deletion/recoveryactivation operations"
+  ],
+  "approvalCustodyQuestion": {
+    "current": "Root600 raw approval file is pinned but its contents are discarded; no direct-human approved/exact plan/controller/two-target binding in this source",
+    "required": "Root confirms already trusted external custody or author adds strict closed receipt scope validation before mutation"
+  },
+  "atUtc": "2026-10-03T08:45:39.613768+00:00",
+  "blockingFinding": {
+    "actual": "Concurrent unknown temporary pin bytes introduced by callback were overwritten; apply_pair returnedpassed/completed",
+    "expected": "After before-replace callback, immediately revalidate exact old bytes/identity/nlink/xattrs before arming and os.replace",
+    "id": "post-supervision-preimage-not-revalidated",
+    "reproductionReceiptSHA256": "d4df991ae3ccfc467b90e2e0450fcfb87e798191b993d08c6a77839646fa5c98"
+  },
+  "nativeCalls": false,
+  "productionMutation": false,
+  "qualification": "Root can resolve narrow source findings before separate final human approval; this is not a coupled-promotion acceptance.",
+  "schema": "pow-audit30-coupled-pin-checker-independent-source-review-v1",
+  "source": {
+    "bytes": 20595,
+    "path": "/tmp/pow-audit30-coupled-pin-checker-promotion-v1.py",
+    "sha256": "fd3ad4b9158ce270efbbe96c7243f472d77bb6a3b0b57b145a1e653e0cf7b47f"
+  },
+  "status": "blocked-source-only",
+  "tests": {
+    "cases": 20,
+    "pass": true,
+    "path": "/tmp/pow-audit30-coupled-pin-checker-promotion-v1.test.py",
+    "qualification": "Independent local temporary-file fixture execution, no native approval or action",
+    "seconds": 0.39
+  }
+}

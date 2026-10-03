@@ -1,0 +1,44 @@
+{
+  "atUtc": "2026-10-03T09:03:57.281525+00:00",
+  "qualifications": {
+    "financialReconciliationComplete": false,
+    "futureCollectionAuthorized": false,
+    "nativeAccepted": false,
+    "nativeOrRPCByReviewer": false,
+    "productionMutation": false,
+    "systemdOwnerResourceChecksLocallyMocked": true
+  },
+  "review": [
+    "Full changed prior_authority/selection_authority/validate_delta/prepare/run and final result wiring read. Exact root cache identities and previous first8000 selection retained.",
+    "Root revalidates all2569 new parent raw commitments and all10232 targets across567 canonical headers/644 exact Core+offlineMerkle batches; fee summary retains scoped integer source coverage rather than independent full financial claim.",
+    "Fixed same-role managed Observer, enum+transientfragment capture paths, owned invocation cleanup, resource/currentfive/window methods are byte-identical to previously accepted0311."
+  ],
+  "schema": "pow-audit30-vps-peer-final-treasury-native-source-review-v1",
+  "source": {
+    "bytes": 35454,
+    "path": "/tmp/pow-audit30-treasury-final-closure-native-v1.py",
+    "sha256": "78e0a05c9875f30542ab013307cc9bb05eeb4f637a8518c2ba0951bef2bb2b54"
+  },
+  "status": "accepted-source-only",
+  "testResult": {
+    "command": "python3 -I -B -Werror /tmp/pow-audit30-treasury-final-closure-native-v1.test.py",
+    "passed": 21,
+    "seconds": 2.063
+  },
+  "tests": {
+    "bytes": 23978,
+    "path": "/tmp/pow-audit30-treasury-final-closure-native-v1.test.py",
+    "sha256": "66241da5b4f25377fbcfff8ea4baf52e45a4f5f72301de771b36289fc0cec84f"
+  },
+  "unchangedMethodsAgainst0311": [
+    "Observer",
+    "validate_properties",
+    "live_snapshot",
+    "fixed_argv",
+    "require_absent",
+    "main",
+    "validate_live_authority",
+    "validate_window_authority",
+    "check_window"
+  ]
+}

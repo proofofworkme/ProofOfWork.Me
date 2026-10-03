@@ -1,0 +1,48 @@
+{
+  "atUtc": "2026-10-03T09:20:10.790792+00:00",
+  "files": {
+    "/tmp/pow-audit30-coupled-pin-checker-promotion-plan-template-v4.json": {
+      "bytes": 2150,
+      "sha256": "23a7d8d231efb60864ab596b501abadc1b477a1293917820486a804427388243"
+    },
+    "/tmp/pow-audit30-coupled-pin-checker-promotion-v4.diff": {
+      "bytes": 2027,
+      "sha256": "6a65b16bc34da16a5208229ce2fa575e5a0fb1f969c7b97b0ae95294a4b20740"
+    },
+    "/tmp/pow-audit30-coupled-pin-checker-promotion-v4.py": {
+      "bytes": 24388,
+      "sha256": "22ff26dd61144d857453ec1ed6d445bdbf96b724799ed366c9df1ad418e9b745"
+    },
+    "/tmp/pow-audit30-coupled-pin-checker-promotion-v4.test.py": {
+      "bytes": 13893,
+      "sha256": "6fd53a2692ec85d277a798bd80951d8acc218b746a88499d5470dab5561ae41d"
+    }
+  },
+  "independentTests": {
+    "command": "python3 -I -B -Werror /tmp/pow-audit30-coupled-pin-checker-promotion-v4.test.py",
+    "passed": 26,
+    "seconds": 0.449
+  },
+  "predicates": {
+    "actualFrozenRetirementConsumerPredicateAcceptsCompletedFixture": true,
+    "afterLongGuardFreshPreimageRaceRefusalUnchanged": true,
+    "completeV3ToV4SourceDiffRead": true,
+    "evidenceDirectoryExclusive0700CreationAndParentFsync": true,
+    "evidenceExactlyReviewedPackageChild": true,
+    "exactDirectHumanScopeAndFiveCompletionPinsUnchanged": true,
+    "frozenDirectoryAncestryGuardUnchanged": true,
+    "noJointAtomicityClaim": true,
+    "noSourcePackageMemberListingWaiver": true,
+    "sourceByteReversalEqualsV3": true,
+    "stickyWritableAncestorActualLocalRefusal": true,
+    "templateOnlyEvidencePathChanged": true
+  },
+  "qualifications": [
+    "Independent local source and fixture acceptance only; modeled root ownership in local fixtures does not attest actual native package ancestry.",
+    "V3 /var/tmp evidence ancestry refusal is preserved and superseded without helper or permission relaxation; V4 deliberately creates only the exact evidence child inside the reviewed package.",
+    "Actual source/package/plan custody, fresh full Oct2 hash/restore authority, old/new pin/checker identities, holds/masks/ordinary timer/five state and explicit direct-human promotion/inverse receipt remain native admission gates.",
+    "No approval message or receipt fabricated; no native call, pin/checker/timer/hold mutation, recovery activation or deletion by this reviewer."
+  ],
+  "schema": "pow-audit30-integrity-coupled-pin-checker-source-review-v4",
+  "status": "accepted-source-only"
+}

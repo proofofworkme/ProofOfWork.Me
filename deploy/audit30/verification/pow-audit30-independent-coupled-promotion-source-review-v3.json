@@ -1,0 +1,38 @@
+{
+  "files": [
+    {
+      "bytes": 24418,
+      "path": "/tmp/pow-audit30-coupled-pin-checker-promotion-v3.py",
+      "sha256": "9f4a61984b12ad0e308be8e03b7bba5dba56d7dcada4b9039509d50768ac87f3"
+    },
+    {
+      "bytes": 4645,
+      "path": "/tmp/pow-audit30-coupled-pin-checker-promotion-v3.diff",
+      "sha256": "85109c62041d9c06ed621478ba43c89d7d8577b9507aec538106a010f01ab381"
+    },
+    {
+      "bytes": 12563,
+      "path": "/tmp/pow-audit30-coupled-pin-checker-promotion-v3.test.py",
+      "sha256": "3af9c57ab51ef6bf5e202b5e173d6d9da7f405d0f18709c89c36839fdfc98c60"
+    },
+    {
+      "bytes": 26198,
+      "path": "/tmp/pow-audit30-retire-exact-four-v2.py",
+      "sha256": "1abba9db552854d37973e3f297010bbd4f6a48a7c340ab673622d5ec1a51815c"
+    }
+  ],
+  "qualification": "Real local FD/rename/fsync/flock/signal fixtures with synthetic root owner fields; consumer exact AST predicates run without input reader/deletion. No actual proof admission/human approval/promotion/deletion or native authority.",
+  "review": [
+    "Full v2-to-v3 diff read against prior full operative v2 acceptance",
+    "Closed five raw completion pins required before replacement; execute supplies actual plan/caller/human-receipt/scope/source-message pins",
+    "Completed receipt exactly matches frozen retirement consumer schema/status/type/approval predicates",
+    "Durable original preimages rechecked after pair before completed receipt",
+    "Known failure inverse and nonjoint atomicity unchanged"
+  ],
+  "schema": "pow-audit30-independent-coupled-promotion-source-review-v3",
+  "sourceOnlyAccepted": true,
+  "tests": {
+    "passed": 24,
+    "seconds": 0.447
+  }
+}

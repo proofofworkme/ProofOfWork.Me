@@ -1,0 +1,72 @@
+{
+  "allHistoricalClosingCallsReserved": 571,
+  "automaticNextChunk": false,
+  "automaticRetry": false,
+  "baselineSha256": "0311e00069f4faf86d68f1e5cb7326a1f7fe0cd766ad8f34349c751e3e04c9c7",
+  "batches": 644,
+  "blocks": 567,
+  "canonicalTargets": 10232,
+  "collectorWholeSeconds": 1200,
+  "coreMaxBytes": 268435456,
+  "coreMaxCalls": 10000,
+  "files": [
+    {
+      "bytes": 35454,
+      "path": "/tmp/pow-audit30-treasury-final-closure-native-v1.py",
+      "sha256": "78e0a05c9875f30542ab013307cc9bb05eeb4f637a8518c2ba0951bef2bb2b54"
+    },
+    {
+      "bytes": 23978,
+      "path": "/tmp/pow-audit30-treasury-final-closure-native-v1.test.py",
+      "sha256": "66241da5b4f25377fbcfff8ea4baf52e45a4f5f72301de771b36289fc0cec84f"
+    },
+    {
+      "bytes": 28829,
+      "path": "/tmp/pow-audit30-treasury-final-closure-native-v1.diff",
+      "sha256": "762a6a3c5c06a07d546975eee07d93f88295cfd668cf6626da31835b30be6554"
+    },
+    {
+      "bytes": 32765,
+      "path": "/tmp/pow-audit30-treasury-final-closure-prepare-request-v1.json",
+      "sha256": "6ff12a4f30fb816cf4c5ebae5bdfdcfc33cb8bf5d789e9d287c059295b95286d"
+    },
+    {
+      "bytes": 30701,
+      "path": "/tmp/pow-audit30-treasury-final-closure-package-request-v1.json",
+      "sha256": "9d82a7d8a43141c9948717d9a5b557f6e43f40b6b391b7687756d0cbdcd28975"
+    },
+    {
+      "bytes": 31585,
+      "path": "/tmp/pow-audit30-treasury-final-closure-run-request-template-v1.json",
+      "sha256": "2f44120e292943f2a940e3a1f85c1a391eae90e0d69c3614d7345777efce149d"
+    }
+  ],
+  "financialReconciliationComplete": false,
+  "nativeAuthorized": false,
+  "newRemainingParents": 2569,
+  "packageMembers": [
+    "collector.py",
+    "parent-chunk1-corpus.json"
+  ],
+  "prepareAuthority": "creation-only pending Root explicit once GO",
+  "prepareStoredWindowFreshAtRunNotClaimed": true,
+  "productionMutation": false,
+  "requiredBaseCoreCalls": 6132,
+  "runId": "20261003T090000Z",
+  "runRequestTemplateExecutable": false,
+  "schema": "pow-audit30-treasury-final-closure-native-source-preparation-v1",
+  "sourceInputs": [
+    "8eeb467bf3468734beee934d884148b7045ed28803045a2b66ac51ca0f1e2596",
+    "e5e2b45bc4156bb1e018809ed047a336fb55183c6934c3836c345a5d1231caaf",
+    "9e4736cce51b351926754021f11b23a738a506440fccfe747bbd1dab71e01f89",
+    "bfcdfbf4ae20ec16076e9648f70b956125e12ed6b3cb095573a2702996df54a8"
+  ],
+  "tests": {
+    "cases": 21,
+    "command": "python3 -I -B -Werror /tmp/pow-audit30-treasury-final-closure-native-v1.test.py",
+    "passed": true,
+    "qualification": "Real synthetic full-size2569 parent parser/10232 targets/567 headers/644 partialMerkle proofs, real local signal helper reap; root systemd/ownership/native custody mocked. No actual treasury corpus/RPC.",
+    "seconds": 2.036
+  },
+  "unchangedNativeResourceAndObserver": true
+}

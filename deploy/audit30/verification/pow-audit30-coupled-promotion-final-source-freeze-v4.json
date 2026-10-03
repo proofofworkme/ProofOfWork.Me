@@ -1,0 +1,59 @@
+{
+  "actualDeletionReceipt": null,
+  "actualPromotionReceipt": null,
+  "actualRecoveryActivationReceipt": null,
+  "atUtc": "2026-10-03T09:17:18.896066+00:00",
+  "authorFixtures": {
+    "passed": 26,
+    "seconds": 0.44
+  },
+  "bindings": [
+    {
+      "bytes": 24388,
+      "path": "/tmp/pow-audit30-coupled-pin-checker-promotion-v4.py",
+      "sha256": "22ff26dd61144d857453ec1ed6d445bdbf96b724799ed366c9df1ad418e9b745"
+    },
+    {
+      "bytes": 13893,
+      "path": "/tmp/pow-audit30-coupled-pin-checker-promotion-v4.test.py",
+      "sha256": "6fd53a2692ec85d277a798bd80951d8acc218b746a88499d5470dab5561ae41d"
+    },
+    {
+      "bytes": 2027,
+      "path": "/tmp/pow-audit30-coupled-pin-checker-promotion-v4.diff",
+      "sha256": "6a65b16bc34da16a5208229ce2fa575e5a0fb1f969c7b97b0ae95294a4b20740"
+    },
+    {
+      "bytes": 2150,
+      "path": "/tmp/pow-audit30-coupled-pin-checker-promotion-plan-template-v4.json",
+      "sha256": "23a7d8d231efb60864ab596b501abadc1b477a1293917820486a804427388243"
+    },
+    {
+      "bytes": 1559,
+      "path": "/tmp/pow-audit30-independent-coupled-promotion-source-review-v4.json",
+      "sha256": "4eb2523b24ed980d8fe6a71d1a5e7d2af7c15bf432bc008d13dd2d518ed796a4"
+    },
+    {
+      "bytes": 4322,
+      "path": "/tmp/pow-audit30-coupled-pin-checker-local-preparation-v4.json",
+      "sha256": "498b898b5e06e87718fe0a64622a9dee101298e27d40b721cf7799dc5f1a2092"
+    },
+    {
+      "bytes": 22178,
+      "path": "/tmp/pow-audit30-custody-retirement-recovery-capacity-preparation-v4.json",
+      "sha256": "1e9443cc154d09dbb612cf92215526c50aed026796732ae2aff88e02acbb0377"
+    }
+  ],
+  "independentFixtures": {
+    "passed": 26,
+    "seconds": 0.458
+  },
+  "nativeCalls": false,
+  "preservedV1RaceReproduction": true,
+  "preservedV1V2V3Sources": true,
+  "productionMutation": false,
+  "repositoryEdits": false,
+  "requiredFinalNativeApprovalStillNull": true,
+  "schema": "pow-audit30-coupled-promotion-final-source-freeze-v4",
+  "status": "source-only-peer-accepted"
+}

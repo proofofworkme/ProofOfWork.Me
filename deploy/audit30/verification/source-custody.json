@@ -1,5 +1,5 @@
 {
-  "atUtc": "2026-10-03T08:45:28.525918+00:00",
+  "atUtc": "2026-10-03T09:42:02.342074+00:00",
   "files": [
     {
       "bytes": 19239,
@@ -2844,9 +2844,477 @@
       "originalPath": "/tmp/pow-audit30-mail-projection-focused-v5-public-byteimage-proof-v1.json",
       "repositoryPath": "deploy/audit30/verification/pow-audit30-mail-projection-focused-v5-public-byteimage-proof-v1.json",
       "sha256": "83c2a889220d7991f0d496355cb16813712f9599ded8544065684b97b032ea40"
+    },
+    {
+      "bytes": 1168,
+      "originalPath": "/tmp/pow-audit30-retirement-custody-public-detail-native-v1.json",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-retirement-custody-public-detail-native-v1.json",
+      "sha256": "7317e1cd13f003c86b3349591743cf392af6bcab41cb3d2fa7fb85b3c614002d"
+    },
+    {
+      "bytes": 20362,
+      "originalPath": "/tmp/pow-audit30-retirement-custody-public-detail-native-v1.stdout",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-retirement-custody-public-detail-native-result-v1.json",
+      "sha256": "b02abd0ef9c5c0769fd0945c277343d37e42c82d203fbcc0c72f4d91db2fdd55"
+    },
+    {
+      "bytes": 11527,
+      "originalPath": "/tmp/pow-audit30-retirement-custody-public-outcome-reader-v1.py",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-retirement-custody-public-outcome-reader-v1.py",
+      "sha256": "c94f65a78179e6d8460033869a4e9b76b51d4a8baca1f482264d4b712659eed7"
+    },
+    {
+      "bytes": 5189,
+      "originalPath": "/tmp/pow-audit30-retirement-custody-public-outcome-reader-v1.test.py",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-retirement-custody-public-outcome-reader-v1.test.py",
+      "sha256": "f8ad3b0d754d059956099ece64ca9a72b02b6094237ff0a90929093a39b9df93"
+    },
+    {
+      "bytes": 2811,
+      "originalPath": "/tmp/pow-audit30-treasury-final-closure-native-source-preparation-v1.json",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-treasury-final-closure-native-source-preparation-v1.json",
+      "sha256": "36b5a2ec0ac64b7ee2c5a52fd441667262741694799261a8466c5a30b5044444"
+    },
+    {
+      "bytes": 28829,
+      "originalPath": "/tmp/pow-audit30-treasury-final-closure-native-v1.diff",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-treasury-final-closure-native-v1.diff",
+      "sha256": "762a6a3c5c06a07d546975eee07d93f88295cfd668cf6626da31835b30be6554"
+    },
+    {
+      "bytes": 35454,
+      "originalPath": "/tmp/pow-audit30-treasury-final-closure-native-v1.py",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-treasury-final-closure-native-v1.py",
+      "sha256": "78e0a05c9875f30542ab013307cc9bb05eeb4f637a8518c2ba0951bef2bb2b54"
+    },
+    {
+      "bytes": 23978,
+      "originalPath": "/tmp/pow-audit30-treasury-final-closure-native-v1.test.py",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-treasury-final-closure-native-v1.test.py",
+      "sha256": "66241da5b4f25377fbcfff8ea4baf52e45a4f5f72301de771b36289fc0cec84f"
+    },
+    {
+      "bytes": 30701,
+      "originalPath": "/tmp/pow-audit30-treasury-final-closure-package-request-v1.json",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-treasury-final-closure-package-request-v1.json",
+      "sha256": "9d82a7d8a43141c9948717d9a5b557f6e43f40b6b391b7687756d0cbdcd28975"
+    },
+    {
+      "bytes": 1181,
+      "originalPath": "/tmp/pow-audit30-treasury-final-closure-prepare-native-v1.json",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-treasury-final-closure-prepare-native-v1.json",
+      "sha256": "54d09a46bbf81ae6ca3778341b8a6805e67c4acfcf52509bee0a42a955656e61"
+    },
+    {
+      "bytes": 205,
+      "originalPath": "/tmp/pow-audit30-treasury-final-closure-prepare-native-v1.stderr",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-treasury-final-closure-prepare-native-refusal-public-v1.json",
+      "sha256": "704b71d57c2279fdf907e3c9324115a41ceac67c5825966084f170784960ea36"
+    },
+    {
+      "bytes": 1221,
+      "originalPath": "/tmp/pow-audit30-treasury-final-closure-prepare-native-v2.json",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-treasury-final-closure-prepare-native-v2.json",
+      "sha256": "22306ed7009ebc1b98cc46bfc82e722187af82a4fcd0cd57757ac3c8d5ee54de"
+    },
+    {
+      "bytes": 1294,
+      "originalPath": "/tmp/pow-audit30-treasury-final-closure-prepare-native-v2.stdout",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-treasury-final-closure-prepare-native-result-v2.json",
+      "sha256": "00d4a83a805b24dde4d0f8c54ea8d6265d817852142490af1cbed4ea47fe8ace"
+    },
+    {
+      "bytes": 32765,
+      "originalPath": "/tmp/pow-audit30-treasury-final-closure-prepare-request-v1.json",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-treasury-final-closure-prepare-request-v1.json",
+      "sha256": "6ff12a4f30fb816cf4c5ebae5bdfdcfc33cb8bf5d789e9d287c059295b95286d"
+    },
+    {
+      "bytes": 31585,
+      "originalPath": "/tmp/pow-audit30-treasury-final-closure-run-request-template-v1.json",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-treasury-final-closure-run-request-template-v1.json",
+      "sha256": "2f44120e292943f2a940e3a1f85c1a391eae90e0d69c3614d7345777efce149d"
+    },
+    {
+      "bytes": 2530,
+      "originalPath": "/tmp/pow-audit30-treasury-final-parent-membership-source-preparation-v1.json",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-treasury-final-parent-membership-source-preparation-v1.json",
+      "sha256": "e635274943d5eda9c2ded5eea47f835044faa8504e3ece7f128cee0659c55c55"
+    },
+    {
+      "bytes": 22596,
+      "originalPath": "/tmp/pow-audit30-treasury-final-parent-membership-v1.py",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-treasury-final-parent-membership-v1.py",
+      "sha256": "6ccffbfa1f83f048ce839e8432f8f70242510c79c5585cb6565e13cc2e7c775b"
+    },
+    {
+      "bytes": 14395,
+      "originalPath": "/tmp/pow-audit30-treasury-final-parent-membership-v1.test.py",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-treasury-final-parent-membership-v1.test.py",
+      "sha256": "9f42132397ad3da6b63b12a8379480a8a9bcdfa8bd43317151b8fa8ed3efa339"
+    },
+    {
+      "bytes": 1837,
+      "originalPath": "/tmp/pow-audit30-vps-peer-final-treasury-native-source-v1.json",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-vps-peer-final-treasury-native-source-v1.json",
+      "sha256": "894578fbf402fc039d6e105b9a8c621c4e6655e96f211bb69a9001ff6f114472"
+    },
+    {
+      "bytes": 9004,
+      "originalPath": "/tmp/pow-audit30-treasury-missing-parents-chunk1-v1.py",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-treasury-missing-parents-chunk1-v1.py",
+      "sha256": "19a1b97f2519926bb6c22b2e95b848accb0938a8c32df611facbfefc8c722a09"
+    },
+    {
+      "bytes": 30390,
+      "originalPath": "/tmp/pow-audit30-treasury-missing-parents-native-v1.py",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-treasury-missing-parents-native-v1.py",
+      "sha256": "0311e00069f4faf86d68f1e5cb7326a1f7fe0cd766ad8f34349c751e3e04c9c7"
+    },
+    {
+      "bytes": 31057,
+      "originalPath": "/tmp/pow-audit30-treasury-completed-parent-planning-census-v1.py",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-treasury-completed-parent-planning-census-v1.py",
+      "sha256": "ff9d406be4b2fcb4169d87ff2e2ed4e8a2cb45accf13ff5b556661844c77322b"
+    },
+    {
+      "bytes": 596,
+      "originalPath": "/tmp/pow-audit30-independent-production-sixteen-root-source-review-v3.json",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-independent-production-sixteen-root-source-review-v3.json",
+      "sha256": "21058f6abbb2a64a28e6cecc000f820b579a5c6506f9b028979da6d59dd92b27"
+    },
+    {
+      "bytes": 1052,
+      "originalPath": "/tmp/pow-audit30-independent-retire-four-source-review-v2.json",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-independent-retire-four-source-review-v2.json",
+      "sha256": "d2bae5d0ba1be10b89974ca730754ceb3be1210180bed1f47553f4479098e2db"
+    },
+    {
+      "bytes": 8456,
+      "originalPath": "/tmp/pow-audit30-retirement-repair-dependency-trace-v1.json",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-retirement-repair-dependency-trace-v1.json",
+      "sha256": "802d7d72e8b33e705501d66d8ed503b61d2f38bb15cc735e1052a50319f3415e"
+    },
+    {
+      "bytes": 20595,
+      "originalPath": "/tmp/pow-audit30-coupled-pin-checker-promotion-v1.py",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-coupled-pin-checker-promotion-v1.py",
+      "sha256": "fd3ad4b9158ce270efbbe96c7243f472d77bb6a3b0b57b145a1e653e0cf7b47f"
+    },
+    {
+      "bytes": 8504,
+      "originalPath": "/tmp/pow-audit30-coupled-pin-checker-promotion-v1.test.py",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-coupled-pin-checker-promotion-v1.test.py",
+      "sha256": "4de3cf97c02c2857a9610b1694f7986864f8f36e233644e5d5b8e850423988bf"
+    },
+    {
+      "bytes": 1804,
+      "originalPath": "/tmp/pow-audit30-coupled-pin-checker-promotion-plan-template-v1.json",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-coupled-pin-checker-promotion-plan-template-v1.json",
+      "sha256": "a44a2bdeab2f7db22430e119626f9e0f23c1c8855d3df0d52f005ab5af1089f9"
+    },
+    {
+      "bytes": 630,
+      "originalPath": "/tmp/pow-audit30-coupled-promotion-independent-preimage-drift-repro-v1.json",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-coupled-promotion-independent-preimage-drift-repro-v1.json",
+      "sha256": "d4df991ae3ccfc467b90e2e0450fcfb87e798191b993d08c6a77839646fa5c98"
+    },
+    {
+      "bytes": 1974,
+      "originalPath": "/tmp/pow-audit30-coupled-pin-checker-independent-source-review-v1.json",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-coupled-pin-checker-independent-source-review-v1.json",
+      "sha256": "1f63bb9d40c223b269871b24fde94180cdc50d2a7509fdf2a4f938ad8bde9580"
+    },
+    {
+      "bytes": 23321,
+      "originalPath": "/tmp/pow-audit30-coupled-pin-checker-promotion-v2.py",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-coupled-pin-checker-promotion-v2.py",
+      "sha256": "0fccc8c192aae797b5e0469c8edc77156549ad9b6c775887d25fea3e0e39bd4d"
+    },
+    {
+      "bytes": 10400,
+      "originalPath": "/tmp/pow-audit30-coupled-pin-checker-promotion-v2.test.py",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-coupled-pin-checker-promotion-v2.test.py",
+      "sha256": "6dbc11dd5ecaf15461b7fc46df60288da112507f842dca7b925ee53be471ef4d"
+    },
+    {
+      "bytes": 9348,
+      "originalPath": "/tmp/pow-audit30-coupled-pin-checker-promotion-v2.diff",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-coupled-pin-checker-promotion-v2.diff",
+      "sha256": "9e480dd7408d97d31267270010d423b307b5474bfab32d4db7ff3102e1ad73d6"
+    },
+    {
+      "bytes": 1893,
+      "originalPath": "/tmp/pow-audit30-coupled-pin-checker-promotion-plan-template-v2.json",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-coupled-pin-checker-promotion-plan-template-v2.json",
+      "sha256": "8c46eb940c47c4e89c40b051b40ecb95ecbd50a424f8e7dd7e2ebf3fc1b69ecb"
+    },
+    {
+      "bytes": 4307,
+      "originalPath": "/tmp/pow-audit30-coupled-pin-checker-independent-source-review-v2.json",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-coupled-pin-checker-independent-source-review-v2.json",
+      "sha256": "97eed17f97e278c11bcef981be4a348e8d04175f64bf714979643bb2f7d28be9"
+    },
+    {
+      "bytes": 1566,
+      "originalPath": "/tmp/pow-audit30-independent-coupled-promotion-source-review-v2.json",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-independent-coupled-promotion-source-review-v2.json",
+      "sha256": "b4544468ef490ce98f282801f964df025875e6e29e226ebc4b38a7eed7f7f38f"
+    },
+    {
+      "bytes": 24418,
+      "originalPath": "/tmp/pow-audit30-coupled-pin-checker-promotion-v3.py",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-coupled-pin-checker-promotion-v3.py",
+      "sha256": "9f4a61984b12ad0e308be8e03b7bba5dba56d7dcada4b9039509d50768ac87f3"
+    },
+    {
+      "bytes": 12563,
+      "originalPath": "/tmp/pow-audit30-coupled-pin-checker-promotion-v3.test.py",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-coupled-pin-checker-promotion-v3.test.py",
+      "sha256": "3af9c57ab51ef6bf5e202b5e173d6d9da7f405d0f18709c89c36839fdfc98c60"
+    },
+    {
+      "bytes": 4645,
+      "originalPath": "/tmp/pow-audit30-coupled-pin-checker-promotion-v3.diff",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-coupled-pin-checker-promotion-v3.diff",
+      "sha256": "85109c62041d9c06ed621478ba43c89d7d8577b9507aec538106a010f01ab381"
+    },
+    {
+      "bytes": 1663,
+      "originalPath": "/tmp/pow-audit30-independent-coupled-promotion-source-review-v3.json",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-independent-coupled-promotion-source-review-v3.json",
+      "sha256": "21708755649730a3db25cc9c9efbeb69889266492f4ea4438a6e51a6cf29cbee"
+    },
+    {
+      "bytes": 12929,
+      "originalPath": "/tmp/pow-audit30-treasury-final-fresh-five-window-native-v1.stdout",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-treasury-final-fresh-five-window-public-v1.json",
+      "sha256": "ccbe855cebd0920e9d19c6bf801e0ac01a9df49c91cc2259b73084ac4c53bdbf"
+    },
+    {
+      "bytes": 1056,
+      "originalPath": "/tmp/pow-audit30-treasury-final-fresh-five-window-native-v1.json",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-treasury-final-fresh-five-window-native-v1.json",
+      "sha256": "f436b052332d8b1b6a59e1dbaf8f85c8db2c77fb10ce74d3f6dc69cb8392f790"
+    },
+    {
+      "bytes": 32761,
+      "originalPath": "/tmp/pow-audit30-treasury-final-closure-run-request-v1.json",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-treasury-final-closure-run-request-v1.json",
+      "sha256": "a8f0e2131a14bef4fba903365914901cf8a4322a34bcfa27633ca43ceaa8162a"
+    },
+    {
+      "bytes": 411,
+      "originalPath": "/tmp/pow-audit30-treasury-final-closure-run-native-v1.stdout",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-treasury-final-closure-run-public-v1.json",
+      "sha256": "911b528a545e4092d1b3494fd4af5058a18e02daddcf069a87cbff7d0a022430"
+    },
+    {
+      "bytes": 1140,
+      "originalPath": "/tmp/pow-audit30-treasury-final-closure-run-native-v1.json",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-treasury-final-closure-run-native-v1.json",
+      "sha256": "3c082c9c387d3483cc37487f0134c115daaa1feff46f9d59907255866be8c439"
+    },
+    {
+      "bytes": 11072,
+      "originalPath": "/tmp/pow-audit30-treasury-final-outcome-read-v1.py",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-treasury-final-outcome-read-v1.py",
+      "sha256": "f78a269b6d13fdea4f85fb9182d02d97c40d4c070d43306e119ea44d1df93cda"
+    },
+    {
+      "bytes": 9954,
+      "originalPath": "/tmp/pow-audit30-treasury-final-outcome-read-v1.test.py",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-treasury-final-outcome-read-v1.test.py",
+      "sha256": "4effe31397a145f201b4880e33a1100b67c3d0d62633b4cdd100bebb4d528a4d"
+    },
+    {
+      "bytes": 47546,
+      "originalPath": "/tmp/pow-audit30-treasury-final-outcome-read-request-v1.json",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-treasury-final-outcome-read-request-v1.json",
+      "sha256": "19a5e25d71145018fcac0e50cf92bc234ea609ee977d9b019790dd27c93ef2ce"
+    },
+    {
+      "bytes": 1395,
+      "originalPath": "/tmp/pow-audit30-vps-peer-treasury-final-outcome-read-v1.json",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-vps-peer-treasury-final-outcome-read-v1.json",
+      "sha256": "55e91dd5cd7beddb8f4cd5b784c35d93d4779d795e4b6024913a449d6d085c7a"
+    },
+    {
+      "bytes": 1555,
+      "originalPath": "/tmp/pow-audit30-treasury-final-outcome-read-source-preparation-v1.json",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-treasury-final-outcome-read-source-preparation-v1.json",
+      "sha256": "799063f7438bfcfb58d1dac545ab1fc808d2fd3197f78c66c13e5cc98a8e1173"
+    },
+    {
+      "bytes": 10642,
+      "originalPath": "/tmp/pow-audit30-treasury-final-outcome-read-native-v1.stdout",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-treasury-final-outcome-public-v1.json",
+      "sha256": "7c044bc807235aaf9ccd6e20ac5821b6289aacfe0faf9707199a87d2290e0575"
+    },
+    {
+      "bytes": 1144,
+      "originalPath": "/tmp/pow-audit30-treasury-final-outcome-read-native-v1.json",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-treasury-final-outcome-read-native-v1.json",
+      "sha256": "a0497d22138171d2c838cba52580703a074fbd589ee2ffec5efb751a261ac854"
+    },
+    {
+      "bytes": 24388,
+      "originalPath": "/tmp/pow-audit30-coupled-pin-checker-promotion-v4.py",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-coupled-pin-checker-promotion-v4.py",
+      "sha256": "22ff26dd61144d857453ec1ed6d445bdbf96b724799ed366c9df1ad418e9b745"
+    },
+    {
+      "bytes": 13893,
+      "originalPath": "/tmp/pow-audit30-coupled-pin-checker-promotion-v4.test.py",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-coupled-pin-checker-promotion-v4.test.py",
+      "sha256": "6fd53a2692ec85d277a798bd80951d8acc218b746a88499d5470dab5561ae41d"
+    },
+    {
+      "bytes": 2027,
+      "originalPath": "/tmp/pow-audit30-coupled-pin-checker-promotion-v4.diff",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-coupled-pin-checker-promotion-v4.diff",
+      "sha256": "6a65b16bc34da16a5208229ce2fa575e5a0fb1f969c7b97b0ae95294a4b20740"
+    },
+    {
+      "bytes": 2150,
+      "originalPath": "/tmp/pow-audit30-coupled-pin-checker-promotion-plan-template-v4.json",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-coupled-pin-checker-promotion-plan-template-v4.json",
+      "sha256": "23a7d8d231efb60864ab596b501abadc1b477a1293917820486a804427388243"
+    },
+    {
+      "bytes": 22178,
+      "originalPath": "/tmp/pow-audit30-custody-retirement-recovery-capacity-preparation-v4.json",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-custody-retirement-recovery-capacity-preparation-v4.json",
+      "sha256": "1e9443cc154d09dbb612cf92215526c50aed026796732ae2aff88e02acbb0377"
+    },
+    {
+      "bytes": 4322,
+      "originalPath": "/tmp/pow-audit30-coupled-pin-checker-local-preparation-v4.json",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-coupled-pin-checker-local-preparation-v4.json",
+      "sha256": "498b898b5e06e87718fe0a64622a9dee101298e27d40b721cf7799dc5f1a2092"
+    },
+    {
+      "bytes": 2011,
+      "originalPath": "/tmp/pow-audit30-coupled-promotion-final-source-freeze-v4.json",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-coupled-promotion-final-source-freeze-v4.json",
+      "sha256": "744afd9de80c6696b9d5930a64497a3c10f37a2bf961db2858539dd8a1603008"
+    },
+    {
+      "bytes": 1559,
+      "originalPath": "/tmp/pow-audit30-independent-coupled-promotion-source-review-v4.json",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-independent-coupled-promotion-source-review-v4.json",
+      "sha256": "4eb2523b24ed980d8fe6a71d1a5e7d2af7c15bf432bc008d13dd2d518ed796a4"
+    },
+    {
+      "bytes": 2472,
+      "originalPath": "/tmp/pow-audit30-coupled-pin-checker-independent-source-review-v4.json",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-coupled-pin-checker-independent-source-review-v4.json",
+      "sha256": "38f5685e9cc9ccb61c6ed0cf028bc5876c9919d95046f93e38653d8396aed0a8"
+    },
+    {
+      "bytes": 12723,
+      "originalPath": "/tmp/pow-audit30-coupled-pin-checker-promotion-v2.diff.evidence.json",
+      "purpose": "Byte-preserving encoded representation of the historical raw patch; resolve through global storedRepresentations.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-coupled-pin-checker-promotion-v2.diff.evidence.json",
+      "sha256": "3f766f892fa0d0a4cab546fe85fe38fd4690076a4f6103179ce18887d93b1347"
+    },
+    {
+      "bytes": 6455,
+      "originalPath": "/tmp/pow-audit30-coupled-pin-checker-promotion-v3.diff.evidence.json",
+      "purpose": "Byte-preserving encoded representation of the historical raw patch; resolve through global storedRepresentations.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-coupled-pin-checker-promotion-v3.diff.evidence.json",
+      "sha256": "bbb1d284387929bc6d7894cd61188b15c4a9c582e18d59ae245d9a1e8661f7a4"
+    },
+    {
+      "bytes": 2963,
+      "originalPath": "/tmp/pow-audit30-coupled-pin-checker-promotion-v4.diff.evidence.json",
+      "purpose": "Byte-preserving encoded representation of the historical raw patch; resolve through global storedRepresentations.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-coupled-pin-checker-promotion-v4.diff.evidence.json",
+      "sha256": "119d9484d2fef569fb0294ea4c44a36faaa5f401403cd2a0085ad05b0230ffa1"
+    },
+    {
+      "bytes": 38700,
+      "originalPath": "/tmp/pow-audit30-treasury-final-closure-native-v1.diff.evidence.json",
+      "purpose": "Byte-preserving encoded representation of the historical raw patch; resolve through global storedRepresentations.",
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-treasury-final-closure-native-v1.diff.evidence.json",
+      "sha256": "248c2ea554049292c2c5b358d53d28b3c426c05ed6071e71cbbe4cc0a9c67e23"
     }
   ],
-  "qualification": "Exact public source/fixture custody with preserved earlier failures. No private bodies/environments/catalog/role secrets copied. 38ac stage/shadow pass, full semantic CLI changed-fence refusal then diagnostic first-request503 with no fence preimage and actual stopped unit. Cause and production acceptance remain pending; UI fc5 is staged. Source acceptance is not native acceptance or production-data/recovery/retirement authorization. One archival Python fixture copy removes only a final blank line required by the enabled whitespace hook; its exact original bytes, length and SHA remain losslessly base64-preserved in its manifest row and original /tmp source. Its Python AST is identical. Subsequent v3 original semantic CLI passes full coverage/registry parity at exact969677 with identical fences; other production acceptance gates remain pending. Actual CLI stopped closure and same-candidate readonly lease successor now pass; WORK/bond/strict and production publication remain pending. Mail GET source verification grants no stored-row repair authority. Action55 preserves failed074500 and real26c verifier defect; saved-receipt reconciliation validates privateACKs/fullmail only, with source7-after/offline/currentfence pending. Captured rawdelta/demand census grants no parent/membership/outpoint/financial acceptance. Proposed Oct2 checker and currentb16 selection remain source-only; no pin/activation/deletion authority.",
+  "qualification": "Exact public source/fixture custody with preserved earlier failures. No private bodies/environments/catalog/role secrets copied. 38ac stage/shadow pass, full semantic CLI changed-fence refusal then diagnostic first-request503 with no fence preimage and actual stopped unit. Cause and production acceptance remain pending; UI fc5 is staged. Source acceptance is not native acceptance or production-data/recovery/retirement authorization. One archival Python fixture copy removes only a final blank line required by the enabled whitespace hook; its exact original bytes, length and SHA remain losslessly base64-preserved in its manifest row and original /tmp source. Its Python AST is identical. Subsequent v3 original semantic CLI passes full coverage/registry parity at exact969677 with identical fences; other production acceptance gates remain pending. Actual CLI stopped closure and same-candidate readonly lease successor now pass; WORK/bond/strict and production publication remain pending. Mail GET source verification grants no stored-row repair authority. Action55 preserves failed074500 and real26c verifier defect; saved-receipt reconciliation validates privateACKs/fullmail only, with source7-after/offline/currentfence pending. Captured rawdelta/demand census grants no parent/membership/outpoint/financial acceptance. Proposed Oct2 checker and currentb16 selection remain source-only; no pin/activation/deletion authority. Action58 adds accepted public four-target custody with deletionReady=false, immutable treasury package PREPARE with no RPC/unit launch, source-only dependency/late-peer and coupled V1\u2013V3 refusal lineage. No continuous reader/recovery/dependency closure, financial completion, promotion/deletion or final16 production approval is inferred. Subsequent native RPC outcomes are separate actions; reserved final human approval remains pending. Action59 adds exact public/source bytes for final treasury RUN and its fixed saved-outcome reader. The captured 10,232-target canonical, immediate-parent, fee, direct-spend, derived-unspent and balance scope passes with closing fences and current owned-stopped/five-service endpoint proof. FeeProofs5287244 is a summed amount, not a count. No private corpus read/rehash/export, independent whole-chain/history/obligation/financial completeness, new RPC authority, promotion/deletion or final sixteen-record approval is inferred. Coupled V4 source-only PACKAGE/evidence correction and null approval remain qualified; all 58 historical actions and 448 prior custody rows are preserved. Action60 preserves all 469 historical raw custody rows unchanged. For the four forensic raw .diff repository paths listed in global storedRepresentations, resolve the stored .diff.evidence.json envelope when reading Git history: verify storedBytes/storedSha256, decode rawBase64, then verify rawBytes/rawSha256 and originalInput. All decoded bytes equal the original /tmp input and retained untouched local raw workspace file. These raw files remain untracked locally; their absence from a future Git checkout is not missing evidence. Four new custody rows bind the encoded envelope bytes; no raw patch whitespace was normalized and no attributes or hooks were changed. The 5,287,244 proofs sum whole-transaction fees across captured targets; treasury funding shares, expense allocation among funders and liability/obligation reconciliation remain unverified.",
   "schema": "pow-audit30-verification-source-custody-v1",
+  "storedRepresentations": {
+    "deploy/audit30/verification/pow-audit30-coupled-pin-checker-promotion-v2.diff": {
+      "decodedIdentity": {
+        "byteEqualToOriginalInput": true,
+        "byteEqualToRetainedRawRepositoryFile": true,
+        "originalInput": "/tmp/pow-audit30-coupled-pin-checker-promotion-v2.diff",
+        "rawBytes": 9348,
+        "rawSha256": "9e480dd7408d97d31267270010d423b307b5474bfab32d4db7ff3102e1ad73d6"
+      },
+      "encoding": "base64",
+      "originalInputRetainedUnchanged": true,
+      "rawBytes": 9348,
+      "rawRepositoryTracking": "retained-untracked-local",
+      "rawSha256": "9e480dd7408d97d31267270010d423b307b5474bfab32d4db7ff3102e1ad73d6",
+      "rawWorkspaceRetainedUnchanged": true,
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-coupled-pin-checker-promotion-v2.diff.evidence.json",
+      "storedBytes": 12723,
+      "storedSha256": "3f766f892fa0d0a4cab546fe85fe38fd4690076a4f6103179ce18887d93b1347"
+    },
+    "deploy/audit30/verification/pow-audit30-coupled-pin-checker-promotion-v3.diff": {
+      "decodedIdentity": {
+        "byteEqualToOriginalInput": true,
+        "byteEqualToRetainedRawRepositoryFile": true,
+        "originalInput": "/tmp/pow-audit30-coupled-pin-checker-promotion-v3.diff",
+        "rawBytes": 4645,
+        "rawSha256": "85109c62041d9c06ed621478ba43c89d7d8577b9507aec538106a010f01ab381"
+      },
+      "encoding": "base64",
+      "originalInputRetainedUnchanged": true,
+      "rawBytes": 4645,
+      "rawRepositoryTracking": "retained-untracked-local",
+      "rawSha256": "85109c62041d9c06ed621478ba43c89d7d8577b9507aec538106a010f01ab381",
+      "rawWorkspaceRetainedUnchanged": true,
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-coupled-pin-checker-promotion-v3.diff.evidence.json",
+      "storedBytes": 6455,
+      "storedSha256": "bbb1d284387929bc6d7894cd61188b15c4a9c582e18d59ae245d9a1e8661f7a4"
+    },
+    "deploy/audit30/verification/pow-audit30-coupled-pin-checker-promotion-v4.diff": {
+      "decodedIdentity": {
+        "byteEqualToOriginalInput": true,
+        "byteEqualToRetainedRawRepositoryFile": true,
+        "originalInput": "/tmp/pow-audit30-coupled-pin-checker-promotion-v4.diff",
+        "rawBytes": 2027,
+        "rawSha256": "6a65b16bc34da16a5208229ce2fa575e5a0fb1f969c7b97b0ae95294a4b20740"
+      },
+      "encoding": "base64",
+      "originalInputRetainedUnchanged": true,
+      "rawBytes": 2027,
+      "rawRepositoryTracking": "retained-untracked-local",
+      "rawSha256": "6a65b16bc34da16a5208229ce2fa575e5a0fb1f969c7b97b0ae95294a4b20740",
+      "rawWorkspaceRetainedUnchanged": true,
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-coupled-pin-checker-promotion-v4.diff.evidence.json",
+      "storedBytes": 2963,
+      "storedSha256": "119d9484d2fef569fb0294ea4c44a36faaa5f401403cd2a0085ad05b0230ffa1"
+    },
+    "deploy/audit30/verification/pow-audit30-treasury-final-closure-native-v1.diff": {
+      "decodedIdentity": {
+        "byteEqualToOriginalInput": true,
+        "byteEqualToRetainedRawRepositoryFile": true,
+        "originalInput": "/tmp/pow-audit30-treasury-final-closure-native-v1.diff",
+        "rawBytes": 28829,
+        "rawSha256": "762a6a3c5c06a07d546975eee07d93f88295cfd668cf6626da31835b30be6554"
+      },
+      "encoding": "base64",
+      "originalInputRetainedUnchanged": true,
+      "rawBytes": 28829,
+      "rawRepositoryTracking": "retained-untracked-local",
+      "rawSha256": "762a6a3c5c06a07d546975eee07d93f88295cfd668cf6626da31835b30be6554",
+      "rawWorkspaceRetainedUnchanged": true,
+      "repositoryPath": "deploy/audit30/verification/pow-audit30-treasury-final-closure-native-v1.diff.evidence.json",
+      "storedBytes": 38700,
+      "storedSha256": "248c2ea554049292c2c5b358d53d28b3c426c05ed6071e71cbbe4cc0a9c67e23"
+    }
+  },
   "testExecutionQualification": "Preserved fixtures keep original relative imports and reviewed /tmp bindings. Reproduce in a fresh reviewed scratch package using byte-equal copies at their original expected basenames; refuse collisions. Most inputs are synthetic. Historical-layout oracle/native layout fixtures additionally require exact public metadata witness /tmp/pow-audit30-inspector-id-capture-meta-v1.json SHA69cf431cbede11d4867a85c8611ad932bc125d1c9da1560120ca6a20c4dfabac, preserved in execution evidence; never substitute guessed metadata or a private body capture. Local fixture acceptance and captured native results remain separate. Body/readiness fixtures also reference public native-v1 stdout079048206e4c03a75dc928f59180d906a8f24bfd78cf87a7d0262d6ca7aa57da and native-v2 stdout0f574b8400cf3effc5e0512a7895d6a59c0b500187f51244a9a96fef3226e885. These public normalized receipts are preserved by exact value/bytes/hash in execution evidence; reconstruct only after verifying the exact SHA. They contain no function bodies/private catalog or mail body captures."
 }

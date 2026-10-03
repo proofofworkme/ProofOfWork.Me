@@ -1,0 +1,35 @@
+{
+  "automaticRetry": false,
+  "captures": {
+    "stderr": {
+      "bytes": 205,
+      "path": "/tmp/pow-audit30-treasury-final-closure-prepare-native-v1.stderr",
+      "sha256": "704b71d57c2279fdf907e3c9324115a41ceac67c5825966084f170784960ea36"
+    },
+    "stdout": {
+      "bytes": 0,
+      "path": "/tmp/pow-audit30-treasury-final-closure-prepare-native-v1.stdout",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  },
+  "exitCode": 1,
+  "failure": null,
+  "finishedAtUtc": "2026-10-03T09:08:22.362301+00:00",
+  "inputBindings": {
+    "creationOnly": true,
+    "requestSHA256": "6ff12a4f30fb816cf4c5ebae5bdfdcfc33cb8bf5d789e9d287c059295b95286d",
+    "rootSourceSHA256": "78e0a05c9875f30542ab013307cc9bb05eeb4f637a8518c2ba0951bef2bb2b54",
+    "rpcLaunchRequested": false
+  },
+  "outerDeadlineSeconds": 120,
+  "productionDataMutationRequested": false,
+  "receivedBytes": {
+    "stderr": 205,
+    "stdout": 0
+  },
+  "remoteUnitStoppedCertifiedByTransport": false,
+  "schema": "pow-audit30-readonly-owned-transport-result-v1",
+  "seconds": 3.06565,
+  "startedAtUtc": "2026-10-03T09:08:19.296651+00:00",
+  "typedStdinBytesDelivered": 32765
+}

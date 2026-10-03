@@ -1,0 +1,35 @@
+{
+  "automaticRetry": false,
+  "captures": {
+    "stderr": {
+      "bytes": 0,
+      "path": "/tmp/pow-audit30-retirement-custody-public-detail-native-v1.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "stdout": {
+      "bytes": 20362,
+      "path": "/tmp/pow-audit30-retirement-custody-public-detail-native-v1.stdout",
+      "sha256": "b02abd0ef9c5c0769fd0945c277343d37e42c82d203fbcc0c72f4d91db2fdd55"
+    }
+  },
+  "exitCode": 0,
+  "failure": null,
+  "finishedAtUtc": "2026-10-03T08:49:20.155564+00:00",
+  "inputBindings": {
+    "noRetry": true,
+    "readerSHA256": "c94f65a78179e6d8460033869a4e9b76b51d4a8baca1f482264d4b712659eed7",
+    "readonly": true,
+    "transportSHA256": "1dedef0a6c7021d114017e711ad74f9cfed4e461fc047a2be2c49e590f3da18e"
+  },
+  "outerDeadlineSeconds": 120,
+  "productionDataMutationRequested": false,
+  "receivedBytes": {
+    "stderr": 0,
+    "stdout": 20362
+  },
+  "remoteUnitStoppedCertifiedByTransport": false,
+  "schema": "pow-audit30-readonly-owned-transport-result-v1",
+  "seconds": 2.132549,
+  "startedAtUtc": "2026-10-03T08:49:18.023015+00:00",
+  "typedStdinBytesDelivered": 0
+}

@@ -1,0 +1,34 @@
+{
+  "automaticRetry": false,
+  "captures": {
+    "stderr": {
+      "bytes": 0,
+      "path": "/tmp/pow-audit30-treasury-final-closure-run-native-v1.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "stdout": {
+      "bytes": 411,
+      "path": "/tmp/pow-audit30-treasury-final-closure-run-native-v1.stdout",
+      "sha256": "911b528a545e4092d1b3494fd4af5058a18e02daddcf069a87cbff7d0a022430"
+    }
+  },
+  "exitCode": 0,
+  "failure": null,
+  "finishedAtUtc": "2026-10-03T09:18:22.151066+00:00",
+  "inputBindings": {
+    "requestBytes": 32761,
+    "requestSha256": "a8f0e2131a14bef4fba903365914901cf8a4322a34bcfa27633ca43ceaa8162a",
+    "sourceSha256": "78e0a05c9875f30542ab013307cc9bb05eeb4f637a8518c2ba0951bef2bb2b54"
+  },
+  "outerDeadlineSeconds": 1530,
+  "productionDataMutationRequested": false,
+  "receivedBytes": {
+    "stderr": 0,
+    "stdout": 411
+  },
+  "remoteUnitStoppedCertifiedByTransport": false,
+  "schema": "pow-audit30-readonly-owned-transport-result-v1",
+  "seconds": 58.481841,
+  "startedAtUtc": "2026-10-03T09:17:23.669225+00:00",
+  "typedStdinBytesDelivered": 32761
+}

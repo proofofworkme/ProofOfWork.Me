@@ -1,0 +1,56 @@
+{
+  "automaticNextChunk": false,
+  "bounds": {
+    "closingBytes": 146595840,
+    "closingHardDeadlineSeconds": 180,
+    "coreBytes": 268435456,
+    "coreCalls": 10000,
+    "electrsBytes": 33554432,
+    "electrsCalls": 24,
+    "frozenSelectorOvershootEachPipe": 65536,
+    "mediumReplies": 16384,
+    "perChannelOriginalMaximum": 8388608,
+    "smallReplies": 4096,
+    "wholeSeconds": 1200
+  },
+  "immutableInputs": {
+    "originalCorpusSha256": "8eeb467bf3468734beee934d884148b7045ed28803045a2b66ac51ca0f1e2596",
+    "parentChunk1CompletedSha256": "bfcdfbf4ae20ec16076e9648f70b956125e12ed6b3cb095573a2702996df54a8",
+    "parentChunk1Sha256": "9e4736cce51b351926754021f11b23a738a506440fccfe747bbd1dab71e01f89",
+    "remainingParentCount": 2569,
+    "remainingParentSetSha256": "608eed04fff7e8e28c6396fc743dd15834219adebfc2c8fef7e03efe8251dbff",
+    "targetDeltaSha256": "e5e2b45bc4156bb1e018809ed047a336fb55183c6934c3836c345a5d1231caaf"
+  },
+  "nativeExecutionRequested": false,
+  "qualifications": [
+    "Only derived remainder is checked with gettxout(false,true), entire stage prebudgeted.",
+    "Alltarget Core/offlineMerkle and historical closing hashes plus complete immediate integerprevouts before scoped fee/spend/balance green.",
+    "Best-effort moving mempool/null/outpoint bestblock advancement is MovingSnapshot, not assumed corrupt history.",
+    "Financial/obligation/independent wholehistory/signing completeness remain false even when scoped knownhistory gates pass.",
+    "Real literal child tests exercise exact frozen c37 selector small-response bound/SIGINT/SIGTERM/reap; fixtures otherwise mock Core/Electrs and rebind only small algorithm data authorities.",
+    "No immutable native package/request or RPC execution authorized by this source preparation."
+  ],
+  "schema": "pow-audit30-final-treasury-source-preparation-v1",
+  "scope": {
+    "baseCoreCalls": 6132,
+    "canonicalBlockGroups": 567,
+    "closingCoreCalls": 571,
+    "immediateUniqueParents": 22264,
+    "openingCoreCalls": 3,
+    "proofBatchMaximum": 64,
+    "proofBatches": 644,
+    "targets": 10232,
+    "uniquePrevouts": 32516
+  },
+  "source": {
+    "bytes": 22596,
+    "path": "/tmp/pow-audit30-treasury-final-parent-membership-v1.py",
+    "sha256": "6ccffbfa1f83f048ce839e8432f8f70242510c79c5585cb6565e13cc2e7c775b"
+  },
+  "tests": {
+    "bytes": 14395,
+    "passed": 17,
+    "path": "/tmp/pow-audit30-treasury-final-parent-membership-v1.test.py",
+    "sha256": "9f42132397ad3da6b63b12a8379480a8a9bcdfa8bd43317151b8fa8ed3efa339"
+  }
+}

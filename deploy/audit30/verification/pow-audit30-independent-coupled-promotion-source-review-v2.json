@@ -1,0 +1,36 @@
+{
+  "files": [
+    {
+      "bytes": 23321,
+      "path": "/tmp/pow-audit30-coupled-pin-checker-promotion-v2.py",
+      "sha256": "0fccc8c192aae797b5e0469c8edc77156549ad9b6c775887d25fea3e0e39bd4d"
+    },
+    {
+      "bytes": 9348,
+      "path": "/tmp/pow-audit30-coupled-pin-checker-promotion-v2.diff",
+      "sha256": "9e480dd7408d97d31267270010d423b307b5474bfab32d4db7ff3102e1ad73d6"
+    },
+    {
+      "bytes": 10400,
+      "path": "/tmp/pow-audit30-coupled-pin-checker-promotion-v2.test.py",
+      "sha256": "6dbc11dd5ecaf15461b7fc46df60288da112507f842dca7b925ee53be471ef4d"
+    }
+  ],
+  "qualifications": [
+    "Synthetic root owner fields only; real local FD/rename/fsync/flock/signal fixtures",
+    "No actual proof admission, human approval, native execution, pin/checker/config changes, retirement or deletion authority"
+  ],
+  "review": [
+    "Full operative caller and complete v1-to-v2 diff read",
+    "Fresh bounded preimage reread after long guards refuses unknown content before replacement",
+    "Closed human scope binds exact two old/new paths, caller source and separate source-message rawSHA; null template remains unexecutable",
+    "Two individual atomic renames, qualified mixed-version window, preserved first failure and known-byte inverse remain explicit",
+    "Existing installer definitions only; main not invoked; all backup/five/static/holds and restore gates retained"
+  ],
+  "schema": "pow-audit30-independent-coupled-promotion-source-review-v2",
+  "sourceOnlyAccepted": true,
+  "tests": {
+    "passed": 22,
+    "seconds": 0.398
+  }
+}

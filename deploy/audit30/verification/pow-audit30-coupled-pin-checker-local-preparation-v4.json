@@ -1,0 +1,85 @@
+{
+  "actualPromotionReceipt": null,
+  "additionalBoundaryCorrection": "Frozen I.directory refuses writable/sticky ancestry. The candidate evidence directory is now creation-only exact PACKAGE/evidence (root700), leaving all package code-member bytes unchanged and explicitly adding a private evidence child. No helper or permission waiver. Local sticky-parent test was real; native parent mode was not freshly observed. InitialV4 fixture read preservedV2 template and safely refused at pathguard; correctedfixture only, all26 pass.",
+  "atUtc": "2026-10-03T09:15:04.181024+00:00",
+  "deletionAuthorized": false,
+  "finalHumanApproval": null,
+  "nativeInvocationApproved": false,
+  "preserved": [
+    {
+      "bytes": 20595,
+      "path": "/tmp/pow-audit30-coupled-pin-checker-promotion-v1.py",
+      "sha256": "fd3ad4b9158ce270efbbe96c7243f472d77bb6a3b0b57b145a1e653e0cf7b47f"
+    },
+    {
+      "bytes": 23321,
+      "path": "/tmp/pow-audit30-coupled-pin-checker-promotion-v2.py",
+      "sha256": "0fccc8c192aae797b5e0469c8edc77156549ad9b6c775887d25fea3e0e39bd4d"
+    },
+    {
+      "bytes": 630,
+      "path": "/tmp/pow-audit30-coupled-promotion-independent-preimage-drift-repro-v1.json",
+      "sha256": "d4df991ae3ccfc467b90e2e0450fcfb87e798191b993d08c6a77839646fa5c98"
+    },
+    {
+      "bytes": 24418,
+      "path": "/tmp/pow-audit30-coupled-pin-checker-promotion-v3.py",
+      "sha256": "9f4a61984b12ad0e308be8e03b7bba5dba56d7dcada4b9039509d50768ac87f3"
+    }
+  ],
+  "productionMutation": false,
+  "receiptConsumerCompatibility": "Actual frozen1abba consumer expected-field/type AST predicates pass on the local candidate completed receipt. V3 preserves pair individual atomicity and jointAtomicTransaction=false; approvalReceiptSha256/caller/plan/human-source/scope hashes are mandatory and threaded from authenticated execute inputs.",
+  "recoveryActivationAuthorized": false,
+  "requiredBeforeNative": [
+    "Independent source peer + exact final typed plan/package/request root review.",
+    "Fresh actual postcutover installed pin/checker/parent identities, staticprotected paths/holds/masks/timers and all five-service tuple.",
+    "Separately bounded fresh fullOct2 member hashes/TOC/metadata plus unchanged actual isolatedrestore47ec/abd70/617941/a299 receipts.",
+    "Actual direct-human exact two-file/inverse approval source message and closed approved receipt bound rawSHA; null template cannot validate.",
+    "Creation-only package/evidence and exact ops/backup locks; known18 unresolved historical held absences remain."
+  ],
+  "schema": "pow-audit30-coupled-pin-checker-source-preparation-v4",
+  "sources": [
+    {
+      "bytes": 24388,
+      "path": "/tmp/pow-audit30-coupled-pin-checker-promotion-v4.py",
+      "sha256": "22ff26dd61144d857453ec1ed6d445bdbf96b724799ed366c9df1ad418e9b745"
+    },
+    {
+      "bytes": 13893,
+      "path": "/tmp/pow-audit30-coupled-pin-checker-promotion-v4.test.py",
+      "sha256": "6fd53a2692ec85d277a798bd80951d8acc218b746a88499d5470dab5561ae41d"
+    },
+    {
+      "bytes": 2027,
+      "path": "/tmp/pow-audit30-coupled-pin-checker-promotion-v4.diff",
+      "sha256": "6a65b16bc34da16a5208229ce2fa575e5a0fb1f969c7b97b0ae95294a4b20740"
+    },
+    {
+      "bytes": 2150,
+      "path": "/tmp/pow-audit30-coupled-pin-checker-promotion-plan-template-v4.json",
+      "sha256": "23a7d8d231efb60864ab596b501abadc1b477a1293917820486a804427388243"
+    },
+    {
+      "bytes": 12913,
+      "path": "/home/sixer/ProofOfWork.Me/deploy/audit30/install-retention.py",
+      "sha256": "cd9c266e938d22949c9f0c6a48853933d9bcbb58368071b2da4027f13411eaa5"
+    },
+    {
+      "bytes": 26198,
+      "path": "/tmp/pow-audit30-retire-exact-four-v2.py",
+      "sha256": "1abba9db552854d37973e3f297010bbd4f6a48a7c340ab673622d5ec1a51815c"
+    }
+  ],
+  "status": "proposal-only-null-final-approval",
+  "supersedesBinding": {
+    "bytes": 3429,
+    "path": "/tmp/pow-audit30-coupled-pin-checker-local-preparation-v3.json",
+    "sha256": "990918766289b581a6e235662d4d6b9f423f3ecf1587f12b8cc335c0c406f53f"
+  },
+  "tests": {
+    "command": "python3 -I -B -Werror /tmp/pow-audit30-coupled-pin-checker-promotion-v4.test.py",
+    "passed": 26,
+    "scope": "Real local files/rename/fsync/locks/signals; synthetic root-owner fields. No native or actual human approval.",
+    "seconds": 0.44
+  }
+}

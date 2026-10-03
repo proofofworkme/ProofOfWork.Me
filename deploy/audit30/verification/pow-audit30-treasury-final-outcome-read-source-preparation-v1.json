@@ -1,0 +1,41 @@
+{
+  "automaticRetry": false,
+  "exactOutcomeBytes": 138003,
+  "exactOutcomeRawSha256": "a850e98deb0600c5943b6f4baeee699d49868f9b65a46ce9ca1759d4868ad50c",
+  "files": [
+    {
+      "bytes": 11072,
+      "path": "/tmp/pow-audit30-treasury-final-outcome-read-v1.py",
+      "sha256": "f78a269b6d13fdea4f85fb9182d02d97c40d4c070d43306e119ea44d1df93cda"
+    },
+    {
+      "bytes": 9954,
+      "path": "/tmp/pow-audit30-treasury-final-outcome-read-v1.test.py",
+      "sha256": "4effe31397a145f201b4880e33a1100b67c3d0d62633b4cdd100bebb4d528a4d"
+    },
+    {
+      "bytes": 47546,
+      "path": "/tmp/pow-audit30-treasury-final-outcome-read-request-v1.json",
+      "sha256": "19a5e25d71145018fcac0e50cf92bc234ea609ee977d9b019790dd27c93ef2ce"
+    }
+  ],
+  "financialReconciliationComplete": false,
+  "frozenDefinitionsSha256": "78e0a05c9875f30542ab013307cc9bb05eeb4f637a8518c2ba0951bef2bb2b54",
+  "independentWholeChainAddressHistoryComplete": false,
+  "nativeAuthorized": false,
+  "obligationReconciliationComplete": false,
+  "outcomeReads": 2,
+  "privateCorpusReads": 0,
+  "rawTransactionsExported": false,
+  "readOnly": true,
+  "rpcCalls": 0,
+  "schema": "pow-audit30-final-treasury-outcome-reader-source-preparation-v1",
+  "serviceControlPerformed": false,
+  "sqlExecuted": false,
+  "tests": {
+    "cases": 11,
+    "passed": true,
+    "qualification": "Real local FD/NOATIME/hash/hardlink and literal observer child SIGINT/TERM/reap; root owner fields modeled; saved outcome and current service metadata synthetic; no native calls.",
+    "seconds": 0.079
+  }
+}

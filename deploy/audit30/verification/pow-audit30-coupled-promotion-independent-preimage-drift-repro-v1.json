@@ -1,0 +1,17 @@
+{
+  "actualResult": "passed",
+  "atUtc": "2026-10-03T08:44:49.114101+00:00",
+  "callbackStages": [
+    "before-replace",
+    "before-replace",
+    "after-pair"
+  ],
+  "completedReceiptExists": true,
+  "expected": "Refuse changed first preimage immediately after check and before replace; never overwrite unreviewed bytes.",
+  "localTemporaryFilesOnly": true,
+  "nativeCalls": false,
+  "productionMutation": false,
+  "schema": "pow-audit30-coupled-promotion-independent-preimage-drift-repro-v1",
+  "sourceSHA256": "fd3ad4b9158ce270efbbe96c7243f472d77bb6a3b0b57b145a1e653e0cf7b47f",
+  "unreviewedChangedPreimageOverwritten": true
+}

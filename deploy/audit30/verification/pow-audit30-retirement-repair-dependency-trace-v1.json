@@ -1,0 +1,146 @@
+{
+  "atUtc": "2026-10-03T08:52:40.325678+00:00",
+  "conclusions": {
+    "clusterOnlyRemovalBreaksTracedRepairDependencies": false,
+    "conditionalInverseStillBeforeApiWorkerCutover": true,
+    "directClusterAccessFromRootV3ApplyOrInverse": false,
+    "jobRootOrEvidenceRemovalWouldBreakAdmission": true,
+    "strictAndProtectedCutoverExplicitClusterDependencyObserved": false
+  },
+  "deletionAuthorized": false,
+  "narrowPrerequisite": [
+    "Preserve the exact listed installed packages, full172 dependency membership and named014100 proof files. Bind actual hashes/metadata and evidence custody in the final fixed4 review; preserve entire noncluster job evidence as already proposed.",
+    "A source-bound definitions-only RootV3 dependency_context + original172 verification is a narrow future before/after compatibility check; it must not call original private runtime or restart any cluster.",
+    "Do not replace this concrete prerequisite with repair-complete or strict-complete Boolean flags. The traced paths do not force the cluster retirement to wait for approved16 repair; preserving these files permits the separately approved conditional inverse until code cutover.",
+    "Sep29 dump retirement remains separately gated on actual directly approved coupled pin/checker promotion and Oct2 proof. The traced repair path does not read Sep29 dump members.",
+    "Retirement V2 dependencyFiles reader currently permits only root/powadmin owned <=4MiB files. That generic file set alone cannot represent PG-owned d818 or original6.7MiB private plan. Those must be bound through exact existing proof/custody/member verifiers or a narrowly reviewed extension; do not assert complete dependency coverage from the current list alone."
+  ],
+  "nativeCalls": false,
+  "notInvokedOnRepairPath": [
+    "private runtime/execute",
+    "private package/admission/math_proof",
+    "C.previous/previous_completion/inputs",
+    "S.clone_stopped",
+    "S.unchanged",
+    "I.verify_source",
+    "G.private_postmaster/start/stop",
+    "private SQL/offline checks"
+  ],
+  "operativeCallChain": [
+    "RootV3.dependency_context -> exact b1f definitions import -> b1f.load -> exact C.load -> S.load -> I.load_guard and N.load_codec",
+    "b1f.completed_lineage reads only saved stream-completion-v2 completed/intent; canonical plan and flags are validated",
+    "C.package checks installed completion members, original S.checked_package and saved stopped-clone-inventory; S.validate_inventory operates only on saved JSON rows",
+    "Root dependency_copy and package_fence enforce original172 pg closure and copied production closure",
+    "Production native caller reads only its immutable production package/evidence and actual production PG; private proof is a byte-pinned copied JSON object"
+  ],
+  "qualifications": [
+    "Source-only path trace; no on-host existence/access/after-retirement compatibility execution or universal dependency scan performed.",
+    "No conclusion that18 held missing paths or11 skipped source dependencies are resolved; no recovery-equivalence or whole financial/math claim.",
+    "Removing clusters prevents future private restart/offline/page/hash reruns of those clusters. Existing accepted immutable receipts retain historical assertions; they do not become a current cluster proof after deletion.",
+    "RootV3 requires original API/worker live tuple at every action. Production cutover ends this exact old-tuple conditional-inverse admission even if cluster/evidence remains."
+  ],
+  "repositoryEdits": false,
+  "requiredDirectoryContracts": [
+    "Installed private/completion/030000 package canonical root:1120750 identity shape; exact named members root:1120440/nlink1 and byte hashes. Parent package membership is not a universal no-extra-file census.",
+    "/usr/local/lib/proofofwork-audit30-transition-stream/20261003T030000Z/pg-dependencies: exact172 sorted manifest rows,443205 regular bytes, all file/directory native metadata+bytes/hash, no links/xattrs, canonical paths, exact per-directory child membership; production copies portable content/modes and recensus.",
+    "Keep014100 jobroot and proof subdirectories accessible/canonical. This bridge does not freeze whole jobroot metadata or membership; cluster-only unlink changes parent nlink/mtime/ctime but no required file bytes or its inode.",
+    "Each separately invoked inverse prepares and fences the same dependency chain again; a previously prepared apply package does not remove the external provenance dependency."
+  ],
+  "requiredExistingFiles": {
+    "/data/proofofwork-audit30-inspect-20261003T014100Z": [
+      "stream-completion-v2/completed.json",
+      "stream-completion-v2/intent.json",
+      "exact-sixteen-readonly-finalization-v1/completed.json"
+    ],
+    "/data/proofofwork-release-backups/audit30-node-release-38ac6e2bff2a-20261003T042000Z": [
+      "focused-mail-projection-v5/completed.json"
+    ],
+    "/usr/local/lib/proofofwork-audit30-private-sixteen/20261003T074500Z": [
+      "controller.py",
+      "restore-latest-logical.py"
+    ],
+    "/usr/local/lib/proofofwork-audit30-stream-completion/20261003T064500Z": [
+      "controller.py",
+      "restore-latest-logical.py",
+      "original-plan.json",
+      "sealed-logical-inventory.json"
+    ],
+    "/usr/local/lib/proofofwork-audit30-transition-stream/20261003T030000Z": [
+      "controller-v7.py",
+      "pow-audit30-saved-snapshot-inspect-v2.py",
+      "restore-latest-logical.py",
+      "pow-audit30-transition-stream-codec-v2.py",
+      "pow-audit30-transition-stream-native-v2.py",
+      "stopped-clone-inventory.json",
+      "sealed-logical-inventory.json",
+      "prior-clone-admission.json",
+      "pow-audit30-mail-body-repair-rehearsal-v2.mjs",
+      "original-transaction-engine.mjs",
+      "phase4-private-plan.json",
+      "phase4-pg-dependency-inventory.json",
+      "phase4-readiness-admission-v2.json"
+    ]
+  },
+  "schema": "pow-audit30-source-only-retirement-repair-dependency-trace-v1",
+  "scope": {
+    "clusterTargets": [
+      "/data/proofofwork-audit30-restore-20261002T234651Z/cluster",
+      "/data/proofofwork-audit30-inspect-20261003T005512Z/cluster",
+      "/data/proofofwork-audit30-inspect-20261003T014100Z/cluster"
+    ],
+    "dumpSet": "/data/proofofwork-postgres-backups/logical/proof_indexer-20260929T031853Z.dumpset"
+  },
+  "sources": {
+    "inspector": {
+      "bytes": 65458,
+      "path": "/tmp/pow-audit30-saved-snapshot-inspect-v2.py",
+      "sha256": "f923766a2dffcfaabd45b3bf4fc4cf975435f2713388ec7930b4d3057fad98ad"
+    },
+    "nativeCaller": {
+      "bytes": 9347,
+      "path": "/tmp/pow-audit30-production-sixteen-native-caller-v2.mjs",
+      "sha256": "18323f53e92bd6cf1a4d5945e2f630db6eeb884f065f22bbede07b9515e96e4f"
+    },
+    "nativeCodecLoader": {
+      "bytes": 26173,
+      "path": "/tmp/pow-audit30-transition-stream-native-v2.py",
+      "sha256": "523342d30599c793a3503ba1d554fc096fce0be554ae232397c8ea4bcadbbe23"
+    },
+    "privateSupervisor": {
+      "bytes": 26380,
+      "path": "/tmp/pow-audit30-private-sixteen-supervisor-v3.py",
+      "sha256": "b1f10c63ac7e0de179215993529708e082073b0fd25bd6d36a4a7200870d4544"
+    },
+    "productionAdapter": {
+      "bytes": 16143,
+      "path": "/tmp/pow-audit30-production-sixteen-adapter-v2.mjs",
+      "sha256": "bb81dd2ee7fdefed19605fc47ed8bdd309b1bd531fea47fa548c27bdbdeeeb20"
+    },
+    "retainedCompletion": {
+      "bytes": 26605,
+      "path": "/tmp/pow-audit30-stream-complete-retained-v5.py",
+      "sha256": "ecb2b237b93ebd0bde96e5d7d690abbda5b9fa92aaeb0fea47c23e169acf4e8e"
+    },
+    "retirementAdapter": {
+      "bytes": 26198,
+      "path": "/tmp/pow-audit30-retire-exact-four-v2.py",
+      "sha256": "1abba9db552854d37973e3f297010bbd4f6a48a7c340ab673622d5ec1a51815c"
+    },
+    "rootControl": {
+      "bytes": 22040,
+      "path": "/tmp/pow-audit30-production-sixteen-root-control-v3.py",
+      "sha256": "b989a3f2395e7cbf13cb2d3dbd2d258a3fd21867131e41644c094772aba11168"
+    },
+    "strictAssembly": {
+      "bytes": 13461,
+      "path": "/tmp/pow-audit30-strict-shadow-native-assembly-v1.py",
+      "sha256": "b3c71c2a48ffb59a297c0fa7264fd417b498b0464d34577859c6bb0ee17fb1c9"
+    },
+    "transitionController": {
+      "bytes": 55466,
+      "path": "/tmp/pow-audit30-transition-stream-controller-v7.py",
+      "sha256": "e9801d372d05c94c40b609749e502ab1eb5e06f4f2561fa08d9c6a25c9313599"
+    }
+  },
+  "status": "completed-source-only-scoped-dependency-trace"
+}

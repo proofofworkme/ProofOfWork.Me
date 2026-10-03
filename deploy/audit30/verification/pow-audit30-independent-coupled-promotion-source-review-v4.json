@@ -1,0 +1,37 @@
+{
+  "files": [
+    {
+      "bytes": 24388,
+      "path": "/tmp/pow-audit30-coupled-pin-checker-promotion-v4.py",
+      "sha256": "22ff26dd61144d857453ec1ed6d445bdbf96b724799ed366c9df1ad418e9b745"
+    },
+    {
+      "bytes": 2027,
+      "path": "/tmp/pow-audit30-coupled-pin-checker-promotion-v4.diff",
+      "sha256": "6a65b16bc34da16a5208229ce2fa575e5a0fb1f969c7b97b0ae95294a4b20740"
+    },
+    {
+      "bytes": 13893,
+      "path": "/tmp/pow-audit30-coupled-pin-checker-promotion-v4.test.py",
+      "sha256": "6fd53a2692ec85d277a798bd80951d8acc218b746a88499d5470dab5561ae41d"
+    },
+    {
+      "bytes": 2150,
+      "path": "/tmp/pow-audit30-coupled-pin-checker-promotion-plan-template-v4.json",
+      "sha256": "23a7d8d231efb60864ab596b501abadc1b477a1293917820486a804427388243"
+    }
+  ],
+  "qualification": "Actual local writable temporary ancestry tested with synthetic root ownership; native package/ancestry not observed, no authority/promotion/native action/deletion.",
+  "review": [
+    "Full narrow v3-to-v4 diff read; sole operational change exact package/evidence path",
+    "Frozen installer directory() rejects root ancestry writable/sticky/setid bits and aliases; helper not modified",
+    "Root evidence directory remains exclusive0700 with durable exclusive preimages/receipts",
+    "Null human approval remains unexecutable; all caller/inverse/consumer predicates retained"
+  ],
+  "schema": "pow-audit30-independent-coupled-promotion-source-review-v4",
+  "sourceOnlyAccepted": true,
+  "tests": {
+    "passed": 26,
+    "seconds": 0.458
+  }
+}
