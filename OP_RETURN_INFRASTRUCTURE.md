@@ -44,6 +44,31 @@ inputs and occupied namespaces; failed evidence remains untouched. Plan
 creation requires all three `--resume-plan`, `--resume-evidence` and
 `--resume-inventory` inputs. The resume sends no second surface stream.
 
+If that preserved-input attempt stopped at the stager's independent full
+logical-copy scratch guard before allocating any candidate, the explicit
+`preserved-stage-resume` phase can build in the same current-release evidence
+pool. Plan creation requires `--preserved-plan`, `--preserved-evidence`,
+`--preserved-incoming-receipt` and `--preserved-inventory`. It pins the exact
+prior plan, all failed records, immutable incoming receipt, independently
+verified payload fingerprint and full-copy refusal, and requires a fresh
+attempt/unit/private namespace. It reuses the already preserved input without
+another stream or move. Every original full logical-copy filesystem/inode
+guard remains active on the actual evidence filesystem before allocation and
+each copy; the phase model reports this independent full-copy bound as well.
+
+After all copies, internal deduplication and integrity checks complete, the
+opted-in stager measures the completed candidate's stable unique inodes,
+charging the greater of physical allocation or rounded logical size plus
+conservative per-entry and attribute metadata. External hardlink aliases,
+changed identities and mounted/unsafe ancestors refuse the move. The unchanged
+5 GiB scratch gate admits that measured amount immediately before an atomic
+non-replacing rename into the standard stage root, followed by a snapshot
+recheck. This gives no credit for future deduplication. Private candidates and
+allocation reports remain current-release evidence after refusal; successful
+moves retain the report. Default scratch staging is unchanged, and no earlier
+release/evidence path is moved or deleted. Source extraction, archive creation
+and subsequent publication still use their existing capacity and proof gates.
+
 An already built application commit/tree may be reused by a later clean
 deployment-tooling commit only when Git proves ancestry and every changed path
 belongs to the explicit helper/wrapper/test/deployment-doc/hygiene allowlist.

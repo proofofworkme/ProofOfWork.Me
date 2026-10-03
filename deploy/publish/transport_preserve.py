@@ -15,7 +15,7 @@ ROOT = Path(__file__).resolve().parent
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('plan', type=Path)
-    parser.add_argument('phase', choices=('surfaces-stage', 'surfaces-stage-resume', 'source'))
+    parser.add_argument('phase', choices=('surfaces-stage', 'surfaces-stage-resume', 'preserved-stage-resume', 'source'))
     parser.add_argument('log', type=Path)
     args = parser.parse_args()
     os.umask(0o077)
@@ -29,10 +29,13 @@ def main():
     assert bundle.stat().st_size == p[kind]['compressedBytes']
     with bundle.open('rb') as source:
         assert hashlib.file_digest(source, 'sha256').hexdigest() == p[kind]['sha256']
-    if args.phase == 'surfaces-stage-resume':
+    if args.phase == 'preserved-stage-resume':
+        assert p['preservedStageResume'] and p['inputStorage'] == 'release-evidence-v1'
+        assert 'resumeSurfaces' not in p
+    elif args.phase == 'surfaces-stage-resume':
         assert p['resumeSurfaces'] and p['inputStorage'] == 'release-evidence-v1'
     elif args.phase == 'surfaces-stage':
-        assert 'resumeSurfaces' not in p
+        assert 'resumeSurfaces' not in p and 'preservedStageResume' not in p
     remote_plan = '/var/tmp/proofofwork-deploy/recovery-plan-' + p['releaseId'] + '-' + p['publicationAttempt'] + '.json'
     unit = 'proofofwork-recovery-ui-transport-' + p['releaseId'] + '-' + args.phase + '-' + p['publicationAttempt'] + '.service'
     argv = ['/usr/bin/systemd-run', '--unit=' + unit,
@@ -45,7 +48,7 @@ def main():
         '-o', 'IdentitiesOnly=yes', '-o', 'StrictHostKeyChecking=yes', '-o', 'ConnectTimeout=10',
         'root@77.42.91.106', shlex.join(['/usr/bin/python3', '-I', '-B', '-c', bootstrap, unit, *argv])]
     assert args.log.resolve() == args.log and str(args.log).startswith('/tmp/')
-    context = contextlib.nullcontext(subprocess.DEVNULL) if args.phase == 'surfaces-stage-resume' else bundle.open('rb')
+    context = contextlib.nullcontext(subprocess.DEVNULL) if args.phase in ('surfaces-stage-resume', 'preserved-stage-resume') else bundle.open('rb')
     with context as source, args.log.open('xb') as log:
         subprocess.run(ssh, stdin=source, stdout=log, stderr=subprocess.STDOUT, timeout=1230, check=True)
 

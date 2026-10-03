@@ -11,6 +11,7 @@ import fcntl
 import hashlib
 import importlib.machinery
 import importlib.util
+import json
 import os
 import re
 import shutil
@@ -436,6 +437,142 @@ def validate_preserved_surfaces_root(
         if details.st_gid != expected_group or details.st_dev != expected_device:
             fail(f"Preserved UI input ancestors must use the expected group and filesystem: {directory}")
     reject_nested_mounts(release_root, mountinfo, protected_ancestors=ancestors)
+
+
+def preserved_input_receipt(surfaces_root: Path, release_id: str, expected_sha: str, owner: int) -> dict:
+    if not re.fullmatch("[0-9a-f]{64}", expected_sha):
+        fail("Preserved staging requires an exact incoming receipt SHA256.")
+    receipt = TRANSPORT_EVIDENCE_ROOT / release_id / "incoming-receipt.json"
+    details = canonical_safe_regular_file(receipt, "Preserved incoming receipt", owner)
+    if details.st_gid != os.getegid() or details.st_nlink != 1 or details.st_size > 65536:
+        fail("Preserved incoming receipt metadata is unsafe.")
+    descriptor = os.open(receipt, os.O_RDONLY | os.O_NOFOLLOW | os.O_NOATIME)
+    with os.fdopen(descriptor, "rb") as source:
+        raw = source.read(65537)
+        if allocation_identity(os.fstat(source.fileno())) != allocation_identity(details):
+            fail("Preserved incoming receipt changed while reading.")
+    if allocation_identity(receipt.lstat()) != allocation_identity(details) or hashlib.sha256(raw).hexdigest() != expected_sha:
+        fail("Preserved incoming receipt changed or its hash differs.")
+    try:
+        value = json.loads(raw)
+    except (ValueError, UnicodeDecodeError) as error:
+        raise StageError("Preserved incoming receipt is invalid JSON.") from error
+    payload = surfaces_root.parent
+    paths, pending, input_snapshot = [], [payload], {}
+    while pending:
+        path = pending.pop()
+        if len(paths) >= MAXIMUM_PAYLOAD_ENTRIES + 2:
+            fail("Preserved incoming payload exceeds the entry bound.")
+        entry = path.lstat()
+        input_snapshot[path] = allocation_identity(entry)
+        paths.append(path)
+        if stat.S_ISDIR(entry.st_mode) and path.resolve() == path:
+            for child in path.iterdir():
+                if len(paths) + len(pending) >= MAXIMUM_PAYLOAD_ENTRIES + 2:
+                    fail("Preserved incoming payload exceeds the entry bound.")
+                pending.append(child)
+    rows = []
+    for path in [payload, *sorted(path for path in paths if path != payload)]:
+        s = path.lstat()
+        if len(rows) >= MAXIMUM_PAYLOAD_ENTRIES + 2 or path.resolve() != path:
+            fail("Preserved incoming payload exceeds bounds or contains an alias.")
+        if s.st_uid != owner or s.st_gid != os.getegid() or s.st_mode & 0o7022 or s.st_dev != details.st_dev:
+            fail("Preserved incoming payload metadata is unsafe.")
+        digest = None
+        if stat.S_ISREG(s.st_mode) and s.st_nlink == 1:
+            digest, _ = digest_regular_file(path, s)
+            digest = digest.hex()
+        elif not stat.S_ISDIR(s.st_mode):
+            fail("Preserved incoming payload contains a link or unsupported entry.")
+        rows.append([path.relative_to(payload).as_posix(), "directory" if stat.S_ISDIR(s.st_mode) else "file",
+                     stat.S_IMODE(s.st_mode), s.st_uid, s.st_gid, s.st_size if digest else 0, digest])
+    if any(allocation_identity(path.lstat()) != expected for path, expected in input_snapshot.items()):
+        fail("Preserved incoming payload changed during verification.")
+    fingerprint = {"sha256": hashlib.sha256(json.dumps(rows, separators=(",", ":")).encode()).hexdigest(),
+                   "entries": len(rows), "regularBytes": sum(row[5] for row in rows)}
+    if (value.get("format") != "proof-of-work-ui-incoming-evidence-v1"
+            or value.get("releaseId") != release_id or value.get("preservedPath") != str(payload)
+            or value.get("payloadFingerprint") != fingerprint
+            or value.get("movePreservedInodes") is not True or value.get("historicalDeletion") is not False):
+        fail("Preserved incoming receipt does not bind the exact validated payload.")
+    return value
+
+
+def allocation_identity(details: os.stat_result) -> tuple:
+    return tuple(getattr(details, key) for key in ("st_dev", "st_ino", "st_mode", "st_uid", "st_gid",
+        "st_nlink", "st_size", "st_blocks", "st_mtime_ns", "st_ctime_ns"))
+
+
+def candidate_allocation(root: Path, owner: int) -> tuple[dict, dict]:
+    """Charge completed candidate inodes once, plus conservative entry metadata."""
+    helper = capacity_helper(); block = helper.allocation_block(root)
+    device = root.lstat().st_dev
+    snapshots, aliases, unique, attribute_bytes = {}, {}, {}, 0
+    pending = [root]
+    while pending:
+        path = pending.pop(); details = path.lstat()
+        if len(snapshots) >= helper.MAX_TREE_ENTRIES:
+            fail("Completed candidate allocation entry bound exceeded.")
+        if details.st_dev != device or details.st_mode & 0o7022:
+            fail("Completed candidate allocation mode or device is unsafe.")
+        attrs = ()
+        if stat.S_ISDIR(details.st_mode):
+            if not path_is_canonical_directory(path):
+                fail("Completed candidate allocation directory is not canonical.")
+            for child in path.iterdir():
+                if len(snapshots) + len(pending) + 1 >= helper.MAX_TREE_ENTRIES:
+                    fail("Completed candidate allocation entry bound exceeded.")
+                pending.append(child)
+            attrs = tuple((name, os.getxattr(path, name, follow_symlinks=False)) for name in sorted(os.listxattr(path, follow_symlinks=False)))
+        elif stat.S_ISREG(details.st_mode):
+            if path.resolve() != path:
+                fail("Completed candidate allocation file is not canonical.")
+            fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_NOATIME)
+            try:
+                if allocation_identity(os.fstat(fd)) != allocation_identity(details):
+                    fail("Completed candidate changed before allocation inspection.")
+                attrs = tuple((name, os.getxattr(fd, name)) for name in sorted(os.listxattr(fd)))
+                if allocation_identity(os.fstat(fd)) != allocation_identity(details):
+                    fail("Completed candidate changed during allocation inspection.")
+            finally:
+                os.close(fd)
+        else:
+            # Match existing passthrough fingerprints: regular files/directories.
+            fail("Completed candidate allocation contains an unsupported entry.")
+        if allocation_identity(path.lstat()) != allocation_identity(details):
+            fail("Completed candidate changed during allocation inspection.")
+        snapshots[path] = (allocation_identity(details), attrs)
+        inode = (details.st_dev, details.st_ino)
+        aliases[inode] = aliases.get(inode, 0) + 1
+        unique[inode] = max(details.st_blocks * 512, helper.rounded(details.st_size, block))
+        attribute_bytes += sum(len(os.fsencode(name)) + len(value) + block for name, value in attrs)
+    for identity, _ in snapshots.values():
+        if not stat.S_ISDIR(identity[2]) and aliases[identity[:2]] != identity[5]:
+            fail("Completed candidate allocation has a hardlink outside the private candidate.")
+    overhead = (len(snapshots) + 4) * helper.entry_bytes(0, block) + helper.rounded(attribute_bytes, block)
+    report = {"model": "completed-candidate-unique-inodes-v1", "entries": len(snapshots),
+              "uniqueInodes": len(unique), "allocatedOrRoundedBytes": sum(unique.values()),
+              "metadataOverheadBytes": overhead, "additionalBytes": sum(unique.values()) + overhead}
+    verify_candidate_allocation(snapshots)
+    return report, snapshots
+
+
+def verify_candidate_allocation(snapshots: dict) -> None:
+    for path, (expected, attrs) in snapshots.items():
+        if allocation_identity(path.lstat()) != expected:
+            fail("Completed candidate changed after allocation measurement.")
+        if stat.S_ISREG(expected[2]):
+            fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_NOATIME)
+            try:
+                current = tuple((name, os.getxattr(fd, name)) for name in sorted(os.listxattr(fd)))
+                if allocation_identity(os.fstat(fd)) != expected or current != attrs:
+                    fail("Completed candidate attributes changed after allocation measurement.")
+            finally:
+                os.close(fd)
+        elif stat.S_ISDIR(expected[2]):
+            current = tuple((name, os.getxattr(path, name, follow_symlinks=False)) for name in sorted(os.listxattr(path, follow_symlinks=False)))
+            if current != attrs or allocation_identity(path.lstat()) != expected:
+                fail("Completed candidate directory changed after allocation measurement.")
 
 
 def add_field(digest: "hashlib._Hash", value: bytes) -> None:
@@ -1094,6 +1231,8 @@ def parse_arguments() -> argparse.Namespace:
         "--deduplicate-managed-files", action="store_true",
         help="Hardlink identical fresh candidate managed files internally; never link to another release or the source payload.",
     )
+    parser.add_argument("--preserved-build-attempt", help="Build one completed candidate in this exact release evidence pool before scratch admission.")
+    parser.add_argument("--preserved-input-receipt-sha256", help="Exact SHA256 of the immutable current-release incoming receipt.")
     return parser.parse_args()
 
 
@@ -1129,6 +1268,11 @@ def main() -> int:
         fail("UI release staging must run as root.")
     if not safe_release_id(arguments.release_id):
         fail("Release id must use 1-128 safe filename characters.")
+    preserved_build = arguments.preserved_build_attempt is not None
+    if preserved_build != (arguments.preserved_input_receipt_sha256 is not None):
+        fail("Preserved candidate build requires both exact attempt and incoming receipt SHA256.")
+    if preserved_build and not re.fullmatch(r"[a-z0-9][a-z0-9-]{0,30}", arguments.preserved_build_attempt):
+        fail("Preserved candidate build requires a safe exact attempt.")
     maximum_payload_entries, maximum_payload_bytes = configured_payload_limits(
         allow_test_roots
     )
@@ -1161,6 +1305,8 @@ def main() -> int:
     expected_stage_root = staging_root / f"proofofwork-www-stage-{arguments.release_id}"
     if surfaces_root not in (expected_surfaces_root, preserved_surfaces_root):
         fail("Surfaces root must use an exact release-bound staging or transport-evidence path.")
+    if preserved_build and surfaces_root != preserved_surfaces_root:
+        fail("Preserved candidate build requires the exact preserved release input.")
     if stage_root != expected_stage_root:
         fail(f"Stage root must use the exact release-bound path: {expected_stage_root}")
     if os.path.lexists(stage_root):
@@ -1187,6 +1333,7 @@ def main() -> int:
 
     lock_descriptor = acquire_deploy_lock(deploy_lock, allow_test_roots)
     temporary_parent: Path | None = None
+    private_identity = None
     deduplicator: CandidateManagedDeduplicator | None = None
     try:
         root_identity = (www_details.st_dev, www_details.st_ino)
@@ -1216,13 +1363,31 @@ def main() -> int:
         # Guard before creating private scratch, then refresh immediately before
         # every real copy. Do not assume future deduplication or removals reclaim
         # any bytes; only a new statvfs measurement can observe released space.
-        copy_capacity_guard(www_root, staging_root, "stage-private-root", extra_entries=2, scratch_budget=True)
-        temporary_parent = Path(
-            tempfile.mkdtemp(
-                prefix=f".proofofwork-ui-stage-{arguments.release_id}.",
-                dir=staging_root,
+        if preserved_build:
+            validate_preserved_surfaces_root(surfaces_root, arguments.release_id, expected_owner,
+                os.getegid() if allow_test_roots else 0, www_details.st_dev, mountinfo)
+            preserved_input_receipt(surfaces_root, arguments.release_id,
+                arguments.preserved_input_receipt_sha256, expected_owner)
+            reject_nested_mounts(staging_root, mountinfo)
+            evidence_parent = TRANSPORT_EVIDENCE_ROOT / arguments.release_id
+            temporary_parent = evidence_parent / f".proofofwork-ui-stage-{arguments.release_id}.{arguments.preserved_build_attempt}"
+            if os.path.lexists(temporary_parent):
+                fail("Refusing an occupied preserved candidate attempt namespace.")
+            # The original full logical-copy guard charges the real allocation
+            # filesystem. No deduplication savings enter a pre-copy guard.
+            copy_capacity_guard(www_root, evidence_parent, "stage-private-root", extra_entries=2)
+            temporary_parent.mkdir(mode=0o700)
+            private = temporary_parent.lstat()
+            private_identity = (private.st_dev, private.st_ino, private.st_uid, private.st_gid, stat.S_IMODE(private.st_mode))
+            fsync_directory(evidence_parent)
+        else:
+            copy_capacity_guard(www_root, staging_root, "stage-private-root", extra_entries=2, scratch_budget=True)
+            temporary_parent = Path(
+                tempfile.mkdtemp(
+                    prefix=f".proofofwork-ui-stage-{arguments.release_id}.",
+                    dir=staging_root,
+                )
             )
-        )
         candidate = temporary_parent / "candidate"
         copy_capacity_guard(www_root, temporary_parent, "stage-live-copy")
         run_checked(
@@ -1349,16 +1514,68 @@ def main() -> int:
         if os.path.lexists(stage_root):
             fail(f"UI stage root appeared concurrently: {stage_root}")
 
-        capacity_guard(staging_root,
-                       capacity_helper().entry_bytes(0, capacity_helper().allocation_block(staging_root)),
-                       1, "stage-atomic-publication")
-        run_checked(["/usr/bin/sync", "--file-system", str(candidate)])
+        if preserved_build:
+            validate_preserved_surfaces_root(surfaces_root, arguments.release_id, expected_owner,
+                os.getegid() if allow_test_roots else 0, www_details.st_dev, mountinfo)
+            private = canonical_safe_directory(temporary_parent, "Preserved candidate private parent", expected_owner)
+            if (private.st_dev, private.st_ino, private.st_uid, private.st_gid, stat.S_IMODE(private.st_mode)) != private_identity:
+                fail("Preserved candidate private parent identity changed.")
+            allocation, snapshots = candidate_allocation(candidate, expected_owner)
+            allocation.update({"releaseId": arguments.release_id, "attempt": arguments.preserved_build_attempt,
+                "incomingReceiptSha256": arguments.preserved_input_receipt_sha256,
+                "candidate": str(candidate), "stageRoot": str(stage_root), "historicalDeletion": False})
+            report_path = temporary_parent / "completed-candidate-allocation.json"
+            # The report is outside the candidate but remains durable evidence.
+            capacity_guard(temporary_parent, 65536, 1, "stage-allocation-evidence")
+            with report_path.open("x") as output:
+                os.fchmod(output.fileno(), 0o600)
+                json.dump(allocation, output, sort_keys=True); output.write("\n")
+                output.flush(); os.fsync(output.fileno())
+            fsync_directory(temporary_parent)
+            run_checked(["/usr/bin/sync", "--file-system", str(candidate)])
+            preserved_input_receipt(surfaces_root, arguments.release_id,
+                arguments.preserved_input_receipt_sha256, expected_owner)
+            validate_preserved_surfaces_root(surfaces_root, arguments.release_id, expected_owner,
+                os.getegid() if allow_test_roots else 0, www_details.st_dev, mountinfo)
+            private = canonical_safe_directory(temporary_parent, "Preserved candidate private parent", expected_owner)
+            if (private.st_dev, private.st_ino, private.st_uid, private.st_gid, stat.S_IMODE(private.st_mode)) != private_identity:
+                fail("Preserved candidate private parent identity changed before rename.")
+            reject_nested_mounts(staging_root, mountinfo)
+            try:
+                capacity_helper().check_deploy_scratch(staging_root, allocation["additionalBytes"],
+                    "stage-completed-candidate-admission")
+            except (capacity_helper().CapacityError, OSError, subprocess.SubprocessError, UnicodeError) as error:
+                raise StageError(str(error)) from error
+            capacity_guard(staging_root, capacity_helper().entry_bytes(0, capacity_helper().allocation_block(staging_root)),
+                           1, "stage-atomic-publication")
+            verify_candidate_allocation(snapshots)
+            if os.path.lexists(stage_root):
+                fail("UI stage root appeared after completed candidate admission.")
+        else:
+            capacity_guard(staging_root,
+                           capacity_helper().entry_bytes(0, capacity_helper().allocation_block(staging_root)),
+                           1, "stage-atomic-publication")
+            run_checked(["/usr/bin/sync", "--file-system", str(candidate)])
         rename_directory_noreplace(candidate, stage_root)
+        if preserved_build:
+            translated = {}
+            for original_path, (expected, attrs) in snapshots.items():
+                published_path = stage_root / original_path.relative_to(candidate)
+                if original_path == candidate:
+                    current = allocation_identity(published_path.lstat())
+                    # rename changes only the moved directory's ctime.
+                    if current[:-1] != expected[:-1]:
+                        fail("Completed candidate root changed during no-replace rename.")
+                    expected = current
+                translated[published_path] = (expected, attrs)
+            verify_candidate_allocation(translated)
         # Never remove the release-bound stage after this atomic publication;
         # a later durability or final-validation error leaves exact bytes for
         # explicit operator retry or classification.
         fsync_directory(staging_root)
-        temporary_parent.rmdir()
+        fsync_directory(temporary_parent)
+        if not preserved_build:
+            temporary_parent.rmdir()
         temporary_parent = None
 
         final_details = canonical_safe_directory(stage_root, "Published UI stage root", expected_owner)
@@ -1381,6 +1598,7 @@ def main() -> int:
             f"final_bytes={final_regular_bytes} "
             f"deduplicated_files={deduplicator.linked_files if deduplicator else 0} "
             f"deduplicated_bytes={deduplicator.saved_bytes if deduplicator else 0} "
+            f"candidate_storage={'release-evidence-v1' if preserved_build else 'deploy-scratch'} "
             f"stage_root={stage_root}"
         )
         return 0
@@ -1388,8 +1606,10 @@ def main() -> int:
         try:
             if deduplicator is not None:
                 deduplicator.close()
-            if temporary_parent is not None and temporary_parent.exists():
+            if not preserved_build and temporary_parent is not None and temporary_parent.exists():
                 shutil.rmtree(temporary_parent)
+            # An opted-in current-release candidate and its report are retained
+            # after every failure; no previous evidence namespace is cleaned.
         finally:
             if not os.environ.get("POW_UI_DEPLOY_LOCK_FD"):
                 os.close(lock_descriptor)

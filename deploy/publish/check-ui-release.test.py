@@ -595,6 +595,149 @@ class PreservedTransport(unittest.TestCase):
         self.assertTrue((second/('.audit5-stream-source-'+RELEASE)/top/'README.md').exists())
         self.assertFalse((second/top).exists())
 
+    def preserved_stage_fixture(self):
+        validate_initial, original, first_failed, receiver = self.resume_fixture()
+        evidence = self.base / 'evidence'; evidence.mkdir(mode=0o700)
+        release_root = evidence / RELEASE; release_root.mkdir(mode=0o700)
+        original.update(inputStorage='release-evidence-v1',
+            preservedSurfacesRoot=str(release_root / ('proofofwork-ui-surfaces-' + RELEASE) / 'surfaces'),
+            preservedSourceCheckout=str(release_root / ('proofofwork-ui-source-' + RELEASE)),
+            surfacesPayloadFingerprint={'sha256': '8'*64, 'entries': 2, 'regularBytes': 12})
+        original_path = self.base / ('recovery-plan-' + RELEASE + '-preserved-v1.json')
+        original_path.write_bytes(raw_json(original)); original_sha = self.release.digest(original_path)
+        incoming = {'format': 'proof-of-work-ui-incoming-evidence-v1', 'releaseId': RELEASE,
+            'commit': COMMIT, 'tree': TREE, 'planSha256': original_sha,
+            'payloadFingerprint': original['surfacesPayloadFingerprint'],
+            'preservedPath': str(Path(original['preservedSurfacesRoot']).parent),
+            'movePreservedInodes': True, 'historicalDeletion': False,
+            'receiverReceipt': validate_initial(original)}
+        incoming_path = release_root / 'incoming-receipt.json'; incoming_path.write_bytes(raw_json(incoming))
+        failed = self.base / ('recovery-transport-' + RELEASE + '-surfaces-stage-resume-preserved-v1'); failed.mkdir(mode=0o700)
+        refusal = {'maximumBytes': 5*1024**3, 'allocatedBytes': 5*1024**3-100,
+                   'additionalBytes': 200, 'cleanupApproved': False, 'phase': 'stage-private-root', 'path': str(self.base)}
+        values = {'intent.json': raw_json({'planSha256': original_sha, 'phase': 'surfaces-stage-resume'}),
+            'input-evidence-check.json': raw_json({'status': 'sufficient'}),
+            'stage-model.json': raw_json({'inputStabilityVerified': True}),
+            'stage-check-scratch.json': raw_json({'status': 'sufficient'}),
+            'stage-check.json': raw_json({'status': 'sufficient'}),
+            'stager.log': b'UI deployment scratch review required ' + raw_json(refusal)}
+        for name, raw in values.items(): (failed / name).write_bytes(raw)
+        current = {**original, 'publicationAttempt': 'completed-v1'}; del current['resumeSurfaces']
+        private = release_root / ('.proofofwork-ui-stage-' + RELEASE + '.completed-v1')
+        current['preservedStageResume'] = {'failedPlanPath': str(original_path), 'failedPlanSha256': original_sha,
+            'failedEvidence': str(failed), 'failedRecords': {name: {'sha256': hashlib.sha256(raw).hexdigest(), 'bytes': len(raw)} for name, raw in values.items()},
+            'incomingReceiptPath': str(incoming_path), 'incomingReceiptSha256': self.release.digest(incoming_path),
+            'incomingReceiptBytes': incoming_path.stat().st_size, 'fullCopyRefusal': refusal,
+            'candidateStorage': 'release-evidence-v1', 'privateCandidateParent': str(private)}
+        namespace = functions_only('remote_transport.py', {'validate_preserved_stage', 'validate_resume'})
+        def bound(path, sha, maximum):
+            raw = Path(path).read_bytes(); assert len(raw) <= maximum and hashlib.sha256(raw).hexdigest() == sha
+            return raw
+        namespace.update(BASE=self.base, EVIDENCE=evidence, bound=bound,
+                         directory=lambda path: Path(path).resolve(strict=True),
+                         validate_evidence_ancestors=lambda *args, **kwargs: release_root)
+        return namespace['validate_preserved_stage'], current, incoming_path, failed, private
+
+    def test_preserved_resume_binds_refusal_receipt_and_fresh_namespace_without_replaying_input_move(self):
+        validate, plan, incoming, failed, private = self.preserved_stage_fixture()
+        original = {path.name: path.read_bytes() for path in failed.iterdir()}; receipt = incoming.read_bytes()
+        self.assertEqual(validate(plan), json.loads(receipt))
+        self.assertEqual(receipt, incoming.read_bytes()); self.assertEqual(original, {path.name: path.read_bytes() for path in failed.iterdir()})
+        self.assertFalse(private.exists())
+        for key in ('incomingReceiptSha256', 'failedPlanSha256'):
+            bad = copy.deepcopy(plan); bad['preservedStageResume'][key] = '0'*64
+            with self.subTest(key=key), self.assertRaises(AssertionError): validate(bad)
+        for key, value in (('candidateStorage', 'deploy-scratch'), ('privateCandidateParent', str(private)+'-sibling')):
+            bad = copy.deepcopy(plan); bad['preservedStageResume'][key] = value
+            with self.subTest(key=key), self.assertRaises(AssertionError): validate(bad)
+        bad = copy.deepcopy(plan); bad['preservedStageResume']['fullCopyRefusal']['maximumBytes'] += 1
+        with self.assertRaises(AssertionError): validate(bad)
+        private.mkdir(mode=0o700)
+        with self.assertRaises(AssertionError): validate(plan)
+        self.assertEqual(receipt, incoming.read_bytes()); self.assertEqual(original, {path.name: path.read_bytes() for path in failed.iterdir()})
+
+    def test_preserved_resume_refuses_any_changed_or_extra_failure_record(self):
+        validate, plan, incoming, failed, private = self.preserved_stage_fixture()
+        stager = failed / 'stager.log'; before = stager.read_bytes(); stager.write_bytes(before+b'changed')
+        with self.assertRaises(AssertionError): validate(plan)
+        stager.write_bytes(before)
+        (failed / 'receipt.json').write_bytes(b'previous success')
+        with self.assertRaises(AssertionError): validate(plan)
+        self.assertFalse(private.exists())
+
+    def test_plan_binding_requires_exact_original_preserved_failure_receipt_and_inventory(self):
+        _, local_plan, incoming_path, failed, _ = self.preserved_stage_fixture()
+        release_root = '/var/backups/proofofwork-ui/transport-evidence/' + RELEASE
+        original = json.loads(Path(local_plan['preservedStageResume']['failedPlanPath']).read_bytes())
+        original.update(schema='proof-of-work-audit29-ui-transport-plan-v1',
+            preservedSurfacesRoot=release_root + '/proofofwork-ui-surfaces-' + RELEASE + '/surfaces',
+            preservedSourceCheckout=release_root + '/proofofwork-ui-source-' + RELEASE)
+        original_path = self.base / 'original-plan-local.json'; original_path.write_bytes(raw_json(original))
+        original_sha = self.release.digest(original_path)
+        current = {**original, 'publicationAttempt': 'completed-v1'}; del current['resumeSurfaces']
+        records = {}
+        for path in failed.iterdir():
+            raw = path.read_bytes(); value = raw.decode() if path.name == 'stager.log' else json.loads(raw)
+            if path.name == 'intent.json': value['planSha256'] = original_sha
+            if path.name == 'stager.log':
+                prefix = 'UI deployment scratch review required '
+                refusal = json.loads(value[len(prefix):]); refusal['path'] = '/var/tmp/proofofwork-deploy'
+                value = prefix + raw_json(refusal).decode(); raw = value.encode()
+            else: raw = raw_json(value)
+            records[path.name] = {'value': value, 'sha256': hashlib.sha256(raw).hexdigest(), 'bytes': len(raw)}
+        evidence = {'evidence': '/var/tmp/proofofwork-deploy/recovery-transport-' + RELEASE + '-surfaces-stage-resume-preserved-v1',
+                    'stageExists': False, 'sourceExists': False, 'privateStages': [], 'preservedInputExists': True, 'records': records}
+        incoming = json.loads(incoming_path.read_bytes()); incoming.update(planSha256=original_sha,
+            preservedPath=str(Path(original['preservedSurfacesRoot']).parent))
+        incoming_raw = raw_json(incoming)
+        incoming_record = {'path': release_root+'/incoming-receipt.json', 'value': incoming,
+            'sha256': hashlib.sha256(incoming_raw).hexdigest(), 'bytes': len(incoming_raw)}
+        inventory = {'stageExists': False, 'sourceExists': False, 'privateStages': [], 'allLiveAndRetainedRootsUnchanged': True,
+            'live': {'manifestSha256': original['oldLiveManifestSha256'], 'treeSha256': original['oldFullRootTreeSha256']}, 'retained': original['retainedRoots']}
+        paths = [self.base / name for name in ('refusal-evidence.json', 'incoming-record.json', 'root-proof.json')]
+        for path, value in zip(paths, (evidence, incoming_record, inventory)): path.write_bytes(raw_json(value))
+        args = types.SimpleNamespace(preserved_plan=original_path, preserved_evidence=paths[0],
+            preserved_incoming_receipt=paths[1], preserved_inventory=paths[2])
+        binding = self.release.preserved_stage_binding(args, current)
+        self.assertEqual(binding['incomingReceiptSha256'], incoming_record['sha256'])
+        self.assertEqual(binding['privateCandidateParent'], release_root + '/.proofofwork-ui-stage-' + RELEASE + '.completed-v1')
+        bad = {**current, 'publicationAttempt': 'preserved-v1'}
+        with self.assertRaisesRegex(AssertionError, 'fresh attempt'): self.release.preserved_stage_binding(args, bad)
+        inventory['stageExists'] = True; paths[2].write_bytes(raw_json(inventory))
+        with self.assertRaises(AssertionError): self.release.preserved_stage_binding(args, current)
+
+    def test_preserved_stage_dispatch_has_no_stream_and_exact_new_phase_unit(self):
+        bundle = self.base / 'bundle.tgz'; bundle.write_bytes(b'exact approved archive')
+        transport = safe_module('transport_preserve.py')
+        plan = {'releaseId': RELEASE, 'publicationAttempt': 'completed-v1', 'inputStorage': 'release-evidence-v1',
+                'preservedStageResume': {'verified': True}, 'preservingTransportSha256': self.release.digest(ROOT/'remote_transport.py'),
+                'localBundles': {'surfaces': str(bundle)}, 'surfaces': {'compressedBytes': bundle.stat().st_size, 'sha256': self.release.digest(bundle)}}
+        path = self.base / 'preserved-plan.json'; path.write_bytes(raw_json(plan)); log = self.base / 'preserved-resume.log'
+        previous_umask = os.umask(0o022)
+        try:
+            with patch('sys.argv', ['transport_preserve.py', str(path), 'preserved-stage-resume', str(log)]), patch.object(subprocess, 'run') as run:
+                transport.main()
+                self.assertEqual(run.call_args.kwargs['stdin'], subprocess.DEVNULL)
+                command = run.call_args.args[0][-1]
+                self.assertIn('preserved-stage-resume-completed-v1.service', command)
+                self.assertIn('Transport unit namespace occupied', command)
+        finally: os.umask(previous_umask)
+
+    def test_new_record_hash_is_bounded_before_read_and_refuses_linked_or_oversized_records(self):
+        namespace = functions_only('remote_transport.py', {'bounded_record', 'identity'})
+        path = self.base / 'record.json'; path.write_bytes(b'bounded record'); path.chmod(0o600)
+        original_lstat, original_fstat = Path.lstat, os.fstat
+        def owned(details):
+            row = types.SimpleNamespace(**{k: getattr(details, k) for k in dir(details) if k.startswith('st_')})
+            row.st_uid = row.st_gid = 0; return row
+        with patch.object(Path, 'lstat', lambda p: owned(original_lstat(p))), patch.object(os, 'fstat', lambda fd: owned(original_fstat(fd))):
+            self.assertEqual(namespace['bounded_record'](path), (b'bounded record', hashlib.sha256(b'bounded record').hexdigest()))
+            path.write_bytes(b'x'*65537)
+            with patch.object(os, 'open') as opened, self.assertRaises(AssertionError): namespace['bounded_record'](path)
+            opened.assert_not_called()
+            path.write_bytes(b'restored'); os.link(path, self.base/'alias')
+            with self.assertRaises(AssertionError): namespace['bounded_record'](path)
+
     def test_capacity_trajectory_charges_only_preserved_source_to_disk(self):
         base, payload, candidate, peak, source = 5171429376, 236478464, 261242880, 264581120, 365621248
         reserve = 32*1024**2

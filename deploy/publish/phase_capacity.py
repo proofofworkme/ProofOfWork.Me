@@ -162,7 +162,7 @@ def file_row(path, relative, details, stager, *, copy_xattrs=True):
             'gid': details.st_gid, 'xattrs': attrs, 'sha256': digest.hex()}
 
 
-def stage_budget(incoming_root, live_root, stager, *, owner=0):
+def stage_budget(incoming_root, live_root, stager, *, owner=0, allocation_parent=None):
     """Read-only collector; caller holds the deployment lock through staging."""
     incoming_root, live_root = Path(incoming_root), Path(live_root)
     stager.canonical_safe_directory(live_root, 'Live capacity root', owner)
@@ -295,6 +295,18 @@ def stage_budget(incoming_root, live_root, stager, *, owner=0):
     result.update({'initialCopyUpperBytes': initial, 'exclusiveOldContributionBytes': sum(old_exclusive.values()),
                    'compatibilityCounters': counters, 'perSurfaceCounters': per_surface,
                    'blockSize': block, 'inputStabilityVerified': True})
+    if allocation_parent is not None:
+        allocation_parent = Path(allocation_parent)
+        stager.canonical_safe_directory(allocation_parent, 'Evidence candidate allocation parent', owner)
+        if allocation_parent.stat().st_dev != live_root.stat().st_dev:
+            raise ValueError('Evidence candidate allocation filesystem differs')
+        helper = stager.capacity_helper()
+        full_copy = helper.tree_bound(live_root, allocation_parent)
+        result['canonicalFullLogicalCopyBound'] = {**full_copy, 'allocationPath': str(allocation_parent),
+            'additionalBytes': full_copy['additionalBytes'] + 2*helper.entry_bytes(0, helper.allocation_block(allocation_parent))}
+        result['candidateStorage'] = 'release-evidence-v1'
+        result['finalScratchAdmission'] = 'completed-candidate-unique-inodes-v1'
+        check_snapshot(snapshot)
     return result
 
 
@@ -336,12 +348,13 @@ def locked_installed_stager():
 
 
 if __name__ == '__main__':
-    if len(sys.argv) not in (3, 4) or sys.argv[1] not in ('incoming', 'managed', 'stage') or (
-            sys.argv[1] == 'stage' and len(sys.argv) != 4):
+    if len(sys.argv) not in (3, 4, 5) or sys.argv[1] not in ('incoming', 'managed', 'stage') or (
+            sys.argv[1] == 'stage' and len(sys.argv) not in (4, 5)):
         raise SystemExit('Usage: phase_capacity.py incoming|managed CANONICAL_ROOT | stage CANONICAL_ROOT EXPECTED_STAGER_SHA256')
     if sys.argv[1] == 'stage':
         EXPECTED_STAGER_SHA256 = sys.argv[3]
-        result = stage_budget(sys.argv[2], '/var/www', locked_installed_stager())
+        result = stage_budget(sys.argv[2], '/var/www', locked_installed_stager(),
+                              allocation_parent=sys.argv[4] if len(sys.argv) == 5 else None)
         result['installedStagerSha256'] = EXPECTED_STAGER_SHA256
         print(json.dumps(result))
     else:
