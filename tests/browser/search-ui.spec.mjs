@@ -90,6 +90,47 @@ test("query, protocol, action and network filters are shareable and restored by 
   await expect(page).toHaveURL(/search-app=1/);
 });
 
+test("highlighted result titles keep words together at desktop and mobile widths", async ({ page }) => {
+  const title = "ProofOfWork.Me WORK Precision Protocol V2 and AMO Unit Protocol V8 Declaration";
+  await fixture(page, async (route, url) => {
+    if (url.pathname !== "/api/v1/search") return false;
+    await route.fulfill({ json: response({ q: "WORK", results: [{ ...record, title }] }) });
+    return true;
+  });
+  for (const { width, embedded } of [{ width: 390, embedded: false }, { width: 1440, embedded: false }, { width: 390, embedded: true }]) {
+    await page.setViewportSize({ width, height: 1000 });
+    await page.goto(embedded ? "/?folder=search&q=WORK" : "/?search-app=1&q=WORK");
+    const heading = page.locator(".search-result h2 button").first();
+    await expect(heading).toHaveText(title);
+    await page.evaluate(() => document.fonts.ready);
+    const layout = await heading.evaluate(button => {
+      const walker = document.createTreeWalker(button, NodeFilter.SHOW_TEXT);
+      const letters = [];
+      let node;
+      while ((node = walker.nextNode()) && letters.length < "ProofOfWork.Me".length) {
+        for (let offset = 0; offset < node.textContent.length && letters.length < "ProofOfWork.Me".length; offset += 1) {
+          const range = document.createRange();
+          range.setStart(node, offset); range.setEnd(node, offset + 1);
+          const rect = range.getBoundingClientRect();
+          letters.push({ top: rect.top, left: rect.left, right: rect.right });
+        }
+      }
+      return { letters, markHeight: button.querySelector("mark").getBoundingClientRect().height,
+        lineHeight: Number.parseFloat(getComputedStyle(button).lineHeight),
+        width: button.getBoundingClientRect().width, pageWidth: document.documentElement.scrollWidth };
+    });
+    expect(layout.letters).toHaveLength("ProofOfWork.Me".length);
+    expect(Math.max(...layout.letters.map(letter => letter.top)) - Math.min(...layout.letters.map(letter => letter.top))).toBeLessThanOrEqual(1);
+    for (let index = 1; index < layout.letters.length; index += 1) {
+      expect(layout.letters[index].left - layout.letters[index - 1].right).toBeLessThanOrEqual(2);
+    }
+    expect(layout.markHeight).toBeLessThanOrEqual(layout.lineHeight * 1.2);
+    expect(layout.pageWidth).toBeLessThanOrEqual(width + 1);
+    expect(layout.width).toBeLessThanOrEqual(width);
+    await page.locator(".search-result").first().screenshot({ path: `/tmp/pow-search-title-wrap-${width}${embedded ? "-computer" : "-standalone"}.png` });
+  }
+});
+
 test("leaving public Search restores Computer's network and clears Search filters", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 900 });
   await fixture(page);

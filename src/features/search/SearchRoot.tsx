@@ -244,7 +244,7 @@ export default function SearchRoot({ embedded = false, initialNetwork = "livenet
         {loading && <div className="search-loading"><span className="search-loading-line" /><span className="search-loading-line" /><span className="search-loading-line" /><p>Reading the public search index…</p></div>}
         {active?.rows.map(record => <article className="search-result" key={record.id}>
           <RecordBadges record={record} />
-          <h2><button type="button" onClick={() => writeLocation(query, record.id)}><Highlight text={record.title || record.kind} query={query.q} /><ArrowUpRight size={18} aria-hidden="true" /></button></h2>
+          <h2><button type="button" onClick={() => writeLocation(query, record.id)}><span className="search-result-title"><Highlight text={record.title || record.kind} query={query.q} /></span><ArrowUpRight size={18} aria-hidden="true" /></button></h2>
           {record.excerpt && <p className="search-excerpt"><Highlight text={record.excerpt.slice(0, 800)} query={query.q} /></p>}
           {record.file && <div className="search-file-meta"><FileText size={14} />{record.file.name} · {record.file.mimeType} · {record.file.size.toLocaleString("en-US")} bytes</div>}
           <div className="search-result-meta"><span className="search-proofs">{exactProofs(record.amountSats)} <span>proofs</span></span><time>{readableDate(record.timestamp)}</time>{record.blockHeight != null && <span>Block {record.blockHeight.toLocaleString("en-US")}</span>}<a href={explorerTxUrl(record.txid, query.network)} target="_blank" rel="noreferrer" aria-label={`Transaction ${record.txid}`}>{compact(record.txid)} <ArrowUpRight size={12} /></a></div>
