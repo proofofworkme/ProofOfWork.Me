@@ -80,10 +80,10 @@ assert active_manifest['format'] == 'proofofwork-ui-release-v3'
 hold = Path('/etc/proofofwork-retention/audit28.hold')
 assert hold.is_file() and not hold.is_symlink() and hold.stat().st_uid == 0
 old_managed = {'entries':0, 'logicalBytes':0, 'regularFiles':0}
-for name in 'activity boost browser computer desktop dns growth id inception infinity landing marketplace nft publish token wallet work'.split():
+for name in 'activity boost browser computer desktop dns growth id inception infinity landing marketplace nft publish search token wallet work'.split():
     root = Path('/var/www/proofofwork-'+name)
-    if name == 'publish' and not os.path.lexists(root):
-        assert 'surface.publish.sha256' not in active_manifest
+    if name in ('publish', 'search') and not os.path.lexists(root):
+        assert 'surface.' + name + '.sha256' not in active_manifest
         continue
     for p in [root, *root.rglob('*')]:
         info = p.lstat(); assert not p.is_symlink() and (stat.S_ISDIR(info.st_mode) or stat.S_ISREG(info.st_mode))

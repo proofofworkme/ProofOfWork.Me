@@ -1,0 +1,11 @@
+[Unit]
+Description=Refresh the additive ProofOfWork Search projection every thirty seconds
+
+[Timer]
+OnBootSec=30s
+OnUnitInactiveSec=30s
+AccuracySec=1s
+Unit=proofofwork-search-index.service
+
+[Install]
+WantedBy=timers.target

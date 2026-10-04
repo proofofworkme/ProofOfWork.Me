@@ -58,14 +58,14 @@ class VerifiedRetention(unittest.TestCase):
         self.assertTrue(self.latest.exists())
 
     def test_historical_surface_families_remain_verifiable(self):
-        self.assertEqual(sorted(map(len, retention.SURFACE_FAMILIES)), [14, 15, 16, 17])
+        self.assertEqual(sorted(map(len, retention.SURFACE_FAMILIES)), [14, 15, 16, 17, 18])
         for surfaces in retention.SURFACE_FAMILIES:
             root = self.root / ('family-' + str(len(surfaces)))
             release = ('c' * 12) + '-20260929T18000' + str(len(surfaces) - 14) + 'Z'
             self.release(root, release, surfaces)
             self.assertEqual(retention.verified_release(root, self.archives)['release_id'], release)
-            if 'publish' not in surfaces:
-                (root / 'proofofwork-publish').mkdir(mode=0o755)
+            if 'search' not in surfaces:
+                (root / 'proofofwork-search').mkdir(mode=0o755)
                 with self.assertRaisesRegex(ValueError, 'Undeclared'):
                     retention.verified_release(root, self.archives)
 

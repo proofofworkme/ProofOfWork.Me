@@ -1,5 +1,47 @@
 # ProofOfWork OP_RETURN Infrastructure
 
+## Search projection and release contract
+
+Search exposes `/api/v1/search` and `/api/v1/search/detail` through the same
+first-party API. Its additive `proof-search-v1` schema stores disposable
+documents and bounded index generations. Existing transactions, OP_RETURN
+carriers, validator events, participants, references and verified attachment
+bytes remain the sources. Search changes no canonical registry or economic
+projection. See [SEARCH.md](SEARCH.md) for query and coverage semantics.
+
+Confirmed Search coverage requires the complete source witness at a hash-bound
+scan checkpoint, exact normalized raw transaction/carrier coverage and a
+matching first-party full-node hash. Reader transactions are repeatable-read
+and read-only; statement and connection bounds keep failed queries explicit.
+Search counts and copies never contribute a second payment to Growth or WORK.
+The separate bounded Search service/timer cannot delay the canonical worker's
+confirmed summary publication.
+
+The active UI release tooling includes eighteen managed roots: seventeen
+public surfaces plus NFT's retained Computer alias. Historical fourteen,
+fifteen, sixteen and seventeen-root manifests remain verifiable rollback
+material. `deploy/search/install-ui.py` promotes only exact pinned
+stager/provenance/publisher bytes, preserves the earlier files, and reloads
+the pinned Caddy configuration only after the complete eighteen-root release
+is serving and verified. Its failure path restores prior bytes. Existing
+retention holds, timers and recovery roots remain protected.
+
+Future Node cutovers hold the independent Search job with the exact pinned
+`deploy/search/hold-node-timer.py` helper before invoking the existing guarded
+release controller, and restore it in the operator's finalization path. The
+helper preserves enablement, captures prior activation in immutable receipts,
+stops only Search's timer/service, and verifies authority and economic-worker
+identities. It does not replace or relax the audited Node controller. Search
+units must be installed transactionally, with exact-byte rollback on partial
+creation or timer activation failure.
+
+Read-only preflight on 2026-10-04 found 79,097 source documents at checkpoint
+969829. Confirmed raw OP_RETURN coverage had 26,081 outputs and no missing or
+mismatched normalized scripts. The optimized source witness took 2.049 seconds;
+a bounded 200-event source page took 168 milliseconds. These are preflight
+measurements, not a claim that Search has already passed production rollout.
+Exact release identities and live verification will be recorded at handoff.
+
 ProofOfWork.Me has a first-party OP_RETURN API layer for the existing `pwm1:` mail/files protocol, `pwid1:` ID registry protocol, `pwdns1:` DNS registry protocol, and `pwt1:` credit protocol.
 
 The current product direction is OP_RETURN only. Future protocol work should improve this OP_RETURN indexer and API before introducing any new carrier.

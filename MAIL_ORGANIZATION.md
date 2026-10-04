@@ -28,6 +28,7 @@ desktop.proofofwork.me      public read-only file desktop
 browser.proofofwork.me      public HTML browser by txid
 boost.proofofwork.me        public Proof-ranked social feed
 publish.proofofwork.me      text-only articles with shared Boost identity and engagement
+search.proofofwork.me       public metaprotocol and data search
 amo.proofofwork.me          canonical Autonomous Money Organization
 marketplace.proofofwork.me  compatibility route to AMO
 credit.proofofwork.me       standalone credit creation and mint app
@@ -56,6 +57,7 @@ Mail organization features that are already implemented in the full app:
 - Connected mainnet senders with authoritative spendable WORK can attach canonical WORK credit to a message. The message remains normal mail, while the same tx also carries the WORK registry mutation payment and era-valid atomic WORK payloads for the mail recipients: historical Q8 `pwt1:send2`, then Q16 `pwt1:send3` only after the approved V8 precision declaration confirms in block `D` and activates at `D+1`. The V7 proposal never activated and its empty pins cannot authorize `send3`. A multi-recipient attachment uses one exact `546 * recipientCount` WORK-registry output after the `pwm1:` mail envelope and before every same-era WORK transfer record; replay attributes exactly 546 proofs to each transfer while claiming the physical output once. Raw legacy attachments retain their original scale.
 - Files view for confirmed attachments.
 - Desktop search for confirmed public attachments by address or confirmed ProofOfWork ID.
+- Search workspace at `/?folder=search` for protocol records, public content, verified readable file text and transaction evidence. It requires no wallet. Confirmed valid results are the default; explicit status and validity filters expose pending, historical invalid and raw-carrier records. Filters and source selection are shareable URL state, not mailbox organization. See [SEARCH.md](SEARCH.md).
 - Browser view for HTML message bodies or verified `text/html` attachments by txid, rendered in a sandboxed iframe.
 - Browser-rendered HTML stays separate from wallet signing.
 - The canonical `Welcome to ProofOfWork.Me.html` system reference is pinned by txid. Files/Desktop may show it only after fetching and verifying its actual chain-backed bytes; label it as a system reference and show an explicit unavailable state when it cannot be verified.

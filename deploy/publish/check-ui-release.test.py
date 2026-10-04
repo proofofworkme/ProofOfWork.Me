@@ -81,6 +81,28 @@ class ReleaseRefusals(unittest.TestCase):
     def tearDown(self):
         self.temp.cleanup()
 
+    def test_every_current_surface_vector_includes_the_same_eighteen_roots(self):
+        expected = set(self.release.SURFACES)
+        self.assertEqual(len(expected), 18)
+        self.assertIn('search', expected)
+        vectors = [('build.py', 'SURFACES'), ('remote_transport.py', 'SURFACES'),
+                   ('phase_capacity.py', 'SURFACES'), ('https_smoke.py', 'HOSTS'),
+                   ('../search/install-ui.py', 'SURFACES'),
+                   ('../proofofwork-ui-release-stage.py', 'SURFACES'),
+                   ('../proofofwork-ui-verified-retention.py', 'SURFACES')]
+        for name, variable in vectors:
+            with self.subTest(module=name):
+                tree = ast.parse((ROOT / name).read_bytes())
+                assignment = next(node for node in tree.body if isinstance(node, ast.Assign)
+                    and any(isinstance(target, ast.Name) and target.id == variable
+                            for target in node.targets))
+                namespace = {}
+                exec(compile(ast.Module(body=[assignment], type_ignores=[]), name, 'exec'), namespace)
+                actual = set(namespace[variable])
+                if variable == 'HOSTS' or name == 'build.py':
+                    actual.add('nft')
+                self.assertEqual(actual, expected)
+
     def plan(self):
         return {'schema': 'proof-of-work-audit29-ui-transport-plan-v1',
                 'releaseId': RELEASE, 'commit': COMMIT, 'tree': TREE,
@@ -186,9 +208,10 @@ class ReleaseRefusals(unittest.TestCase):
             self.assertGreaterEqual(plan['admissions'][kind + '-receive']['inodes'], 4000)
         self.assertGreater(plan['stageArchiveUpperBoundBytes'], 123456 + 32 * 1024**2)
 
-    def test_17_surface_plan_binds_phase_capacity_and_committed_wrapper_sources(self):
-        self.assertEqual(len(self.release.SURFACES), 17)
+    def test_18_surface_plan_binds_phase_capacity_and_committed_wrapper_sources(self):
+        self.assertEqual(len(self.release.SURFACES), 18)
         self.assertIn('publish', self.release.SURFACES)
+        self.assertIn('search', self.release.SURFACES)
         self.assertEqual(self.release.REPO, ROOT.parents[1])
         build, previous, args = self.build_inputs()
         with patch.object(subprocess, 'check_output', side_effect=self.git_output), contextlib.redirect_stdout(io.StringIO()):
@@ -358,13 +381,14 @@ class ReleaseRefusals(unittest.TestCase):
 
 
 class PublishProvenance(unittest.TestCase):
-    def test_actual_helper_records_and_verifies_14_15_16_17_surface_history(self):
+    def test_actual_helper_records_and_verifies_14_15_16_17_18_surface_history(self):
         surfaces = safe_module('release.py').SURFACES
         capacity = ROOT.parents[1] / 'deploy/proofofwork-ui-capacity.py'
         provenance = ROOT.parents[1] / 'deploy/proofofwork-ui-release-provenance.sh'
         with tempfile.TemporaryDirectory(prefix='pow-publish-history-', dir='/tmp') as name:
             base = Path(name).resolve()
-            for omitted in ({'publish', 'dns', 'boost'}, {'publish', 'dns'}, {'publish'}, set()):
+            for omitted in ({'search', 'publish', 'dns', 'boost'}, {'search', 'publish', 'dns'},
+                            {'search', 'publish'}, {'search'}, set()):
                 included = [surface for surface in surfaces if surface not in omitted]
                 case = base / str(len(included)); case.mkdir(mode=0o700)
                 www, archives, scratch = [case / label for label in ('www', 'archives', 'scratch')]
@@ -393,11 +417,12 @@ class PublishProvenance(unittest.TestCase):
                 manifest = (www / '.proofofwork-ui-release').read_text()
                 self.assertEqual(sum(line.endswith('.file_count=2') for line in manifest.splitlines()), len(included))
                 self.assertEqual('surface.publish.sha256=' in manifest, 'publish' in included)
+                self.assertEqual('surface.search.sha256=' in manifest, 'search' in included)
                 self.assertEqual(list(scratch.iterdir()), [])
 
 
 class PublishCapacity(unittest.TestCase):
-    def test_all_17_incoming_roots_are_required_and_links_refused(self):
+    def test_all_18_incoming_roots_are_required_and_links_refused(self):
         capacity = safe_module('phase_capacity.py')
         with tempfile.TemporaryDirectory(prefix='pow-publish-capacity-', dir='/tmp') as name:
             root = Path(name).resolve()
@@ -407,8 +432,8 @@ class PublishCapacity(unittest.TestCase):
                 (target / 'index.html').write_bytes(b'exact UI')
                 (target / 'index.html').chmod(0o644)
             result = capacity.tree_budget(root, owner=os.geteuid())
-            self.assertGreater(result['archiveUpperBoundBytes'], 17 * len(b'exact UI'))
-            omitted = root / 'publish'
+            self.assertGreater(result['archiveUpperBoundBytes'], 18 * len(b'exact UI'))
+            omitted = root / 'search'
             omitted.rename(root / 'other')
             with self.assertRaisesRegex(ValueError, 'complete managed set'):
                 capacity.tree_budget(root, owner=os.geteuid())
@@ -418,12 +443,12 @@ class PublishCapacity(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'link|Unsafe'):
                 capacity.tree_budget(root, owner=os.geteuid())
 
-    def test_preflight_accounts_current_16_and_next_17_surface_roots(self):
+    def test_preflight_accounts_historical_16_current_17_and_next_18_surface_roots(self):
         code = statement_range('preflight.py', 'old_managed', 'storage')
         with tempfile.TemporaryDirectory(prefix='pow-publish-preflight-', dir='/tmp') as name:
             root = Path(name).resolve()
             for surface in safe_module('release.py').SURFACES:
-                if surface == 'publish': continue
+                if surface in ('publish', 'search'): continue
                 target = root / ('proofofwork-' + surface)
                 target.mkdir()
                 (target / 'index.html').write_bytes(b'123')
@@ -440,6 +465,11 @@ class PublishCapacity(unittest.TestCase):
             exec(code, namespace)
             self.assertEqual(namespace['old_managed']['regularFiles'], 17)
             self.assertEqual(namespace['old_managed']['logicalBytes'], 53)
+            (root / 'proofofwork-search').mkdir()
+            (root / 'proofofwork-search/index.html').write_bytes(b'1234567')
+            exec(code, namespace)
+            self.assertEqual(namespace['old_managed']['regularFiles'], 18)
+            self.assertEqual(namespace['old_managed']['logicalBytes'], 60)
 
 
 class PreservedTransport(unittest.TestCase):
@@ -1068,10 +1098,10 @@ class HttpsRefusals(unittest.TestCase):
         args, receipt = self.archive()
         with patch.dict(self.smoke.check.__globals__, compare_https=lambda url, body, timeout, **kw: len(body)):
             self.smoke.check(args, receipt)
-        self.assertEqual(receipt['publicSurfaces'], 16)
+        self.assertEqual(receipt['publicSurfaces'], 17)
         self.assertEqual(receipt['archiveFilesSkippedNft'], 1)
-        self.assertEqual(receipt['archivedFilesChecked'], 16)
-        self.assertEqual(receipt['hostnameRootsChecked'], 16)
+        self.assertEqual(receipt['archivedFilesChecked'], 17)
+        self.assertEqual(receipt['hostnameRootsChecked'], 17)
         self.assertTrue(receipt['apexRedirectVerified'] and receipt['finalLocalEvidenceReverified'])
 
     def test_archive_traversal_duplicates_links_unknown_or_missing_root_refuse(self):
@@ -1079,7 +1109,7 @@ class HttpsRefusals(unittest.TestCase):
                    ([('surfaces/work/index.html', b'other', tarfile.REGTYPE)], ()),
                    ([('surfaces/work/link', b'', tarfile.SYMTYPE)], ()),
                    ([('surfaces/unknown/index.html', b'x', tarfile.REGTYPE)], ()),
-                   ([], ('nft',)), ([], ('computer',))]
+                   ([], ('nft',)), ([], ('computer',)), ([], ('search',))]
         for extra, omit in changes:
             with self.subTest(extra=extra, omit=omit):
                 args, receipt = self.archive(extra, omit)

@@ -86,6 +86,9 @@ assert.match(
   /http:\/\/proofofwork\.me,[\s\S]*http:\/\/inception\.proofofwork\.me \{\s+import common_access_log\s+redir https:\/\/\{host\}\{uri\} 308\s+\}/u,
 );
 assert.doesNotMatch(caddy, /log_credentials|sampling\s*\{/u);
+assert.match(caddy, /http:\/\/search\.proofofwork\.me,/u);
+assert.match(caddy, /\(common_search_app\) \{\s+import common_static_policy[\s\S]*?root \* \/var\/www\/proofofwork-search/u);
+assert.match(caddy, /\nsearch\.proofofwork\.me \{\s+import common_search_app\s+\}/u);
 assert.match(caddyService, /^UMask=0077$/mu);
 assert.match(read("deploy/apport-disable.conf"), /^enabled=0$/mu);
 assert.match(read("deploy/apport-hardening.conf"), /^LimitCORE=0$/mu);
@@ -426,7 +429,7 @@ spec = importlib.util.spec_from_file_location("ui_stage_contract", "deploy/proof
 stage = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(stage)
 assert stage.MAXIMUM_DEPENDENCIES == 1024
-assert len(stage.SURFACES) == 17
+assert len(stage.SURFACES) == 18
 publisher = Path("deploy/proofofwork-ui-release-publish.sh").read_text()
 publisher_function = publisher.split("verify_prior_asset_compatibility() {", 1)[1]
 publisher_code = publisher_function.split("<<'PY'\n", 1)[1].split("\nPY\n", 1)[0]
@@ -985,14 +988,15 @@ exec /usr/bin/sort "$@"
     "marketplace",
     "nft",
     "publish",
+    "search",
     "token",
     "wallet",
     "work",
   ];
-  assert.equal(surfaces.length, 17);
-  assert.equal(new Set(surfaces).size, 17);
-  assert.match(publisher, /surface set must contain exactly 17 entries/u);
-  assert.match(provenance, /surface set must contain exactly 17 entries/u);
+  assert.equal(surfaces.length, 18);
+  assert.equal(new Set(surfaces).size, 18);
+  assert.match(publisher, /surface set must contain exactly 18 entries/u);
+  assert.match(provenance, /surface set must contain exactly 18 entries/u);
   const priorAppAssetName = "App-cafebabefeed.js";
   const priorCssAssetName = "theme-decafbad.css";
   const priorImageAssetName = "pixel-a1b2c3d4.png";
@@ -2134,7 +2138,7 @@ exec /usr/bin/sort "$@"
     mkdirSync(preBoostWww, { recursive: true, mode: 0o755 });
     chmodSync(preBoostWww, 0o755);
     for (const surface of surfaces.filter(
-      (value) => value !== "boost" && value !== "dns" && value !== "publish",
+      (value) => value !== "boost" && value !== "dns" && value !== "publish" && value !== "search",
     )) {
       const directory = join(preBoostWww, `proofofwork-${surface}`);
       mkdirSync(join(directory, "assets"), { recursive: true, mode: 0o755 });

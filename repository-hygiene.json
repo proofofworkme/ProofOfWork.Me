@@ -91,6 +91,7 @@
       "OP_RETURN_INFRASTRUCTURE.md",
       "MAIL_ORGANIZATION.md",
       "PUBLISH.md",
+      "SEARCH.md",
       "REPOSITORY_HYGIENE.md"
     ],
     "ledger-and-audit-evidence": [

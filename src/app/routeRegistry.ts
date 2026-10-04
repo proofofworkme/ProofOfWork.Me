@@ -7,6 +7,7 @@ export type AppSurface =
   | "browser"
   | "boost"
   | "publish"
+  | "search"
   | "identity-bridge"
   | "marketplace"
   | "token"
@@ -95,6 +96,11 @@ export function isBoostRoute() {
 export function isPublishRoute() {
   return import.meta.env.VITE_PUBLISH_ONLY === "1" ||
     hostname() === "publish.proofofwork.me" || searchFlag("publish");
+}
+
+export function isSearchRoute() {
+  return import.meta.env.VITE_SEARCH_ONLY === "1" ||
+    hostname() === "search.proofofwork.me" || searchFlag("search-app");
 }
 
 export function isSocialIdentityBridgeRoute() {
@@ -205,6 +211,7 @@ export function detectAppSurface(): AppSurface {
   if (isBrowserRoute()) return "browser";
   if (isBoostRoute()) return "boost";
   if (isPublishRoute()) return "publish";
+  if (isSearchRoute()) return "search";
   if (isMarketplaceRoute()) return "marketplace";
   if (isTokenRoute()) return "token";
   if (isWalletRoute()) return "wallet";

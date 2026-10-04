@@ -334,16 +334,25 @@ surfaces=(
   marketplace
   nft
   publish
+  search
   token
   wallet
   work
 )
-if ((${#surfaces[@]} != 17)); then
-  echo "UI publisher surface set must contain exactly 17 entries." >&2
+if ((${#surfaces[@]} != 18)); then
+  echo "UI publisher surface set must contain exactly 18 entries." >&2
+  exit 70
+fi
+pre_search_surfaces=()
+for surface in "${surfaces[@]}"; do
+  [[ "${surface}" == "search" ]] || pre_search_surfaces+=("${surface}")
+done
+if ((${#pre_search_surfaces[@]} != 17)); then
+  echo "UI publisher pre-Search surface set must contain exactly 17 entries." >&2
   exit 70
 fi
 pre_publish_surfaces=()
-for surface in "${surfaces[@]}"; do
+for surface in "${pre_search_surfaces[@]}"; do
   [[ "${surface}" == "publish" ]] || pre_publish_surfaces+=("${surface}")
 done
 if ((${#pre_publish_surfaces[@]} != 16)); then
@@ -409,6 +418,8 @@ verify_prior_asset_compatibility() {
     prior_surfaces=("${legacy_surfaces[@]}")
   elif [[ ! -e "${www_root}/proofofwork-publish" && ! -L "${www_root}/proofofwork-publish" ]]; then
     prior_surfaces=("${pre_publish_surfaces[@]}")
+  elif [[ ! -e "${www_root}/proofofwork-search" && ! -L "${www_root}/proofofwork-search" ]]; then
+    prior_surfaces=("${pre_search_surfaces[@]}")
   fi
   # Bound the compatibility scan so a large retained rollback tree cannot
   # hold the deployment lock indefinitely. The manifest-driven checks below

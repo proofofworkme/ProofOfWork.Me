@@ -307,6 +307,7 @@ import {
   incbReplaySnapshotFingerprint,
   normalizeIncbReplaySnapshotDescriptor,
 } from "./incb-range-replay-witness.mjs";
+import { searchPayload, searchDetailPayload } from "./db/search-reader.mjs";
 import {
   compareProofIndexHistoryPayloads,
   proofIndexActivityPayload,
@@ -80865,6 +80866,21 @@ async function handleRequest(request, response) {
         }
       }
       errorResponse(response, 404, "Database event history is not available.");
+      return;
+    }
+
+    if (url.pathname === "/api/v1/search" || url.pathname === "/api/v1/search/detail") {
+      const options = {
+        verifyCheckpoint: async (height) => {
+          if (network !== "livenet") return null;
+          const result = await bitcoinRpc("getblockhash", [height]);
+          return result?.ok ? result.result : null;
+        },
+      };
+      const payload = url.pathname === "/api/v1/search/detail"
+        ? await searchDetailPayload(network, url.searchParams.get("id"), url.searchParams, options)
+        : await searchPayload(network, url.searchParams, options);
+      jsonResponse(response, 200, payload, "no-store");
       return;
     }
 

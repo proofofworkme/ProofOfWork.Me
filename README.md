@@ -48,6 +48,7 @@ desktop.proofofwork.me
 browser.proofofwork.me
 boost.proofofwork.me
 publish.proofofwork.me
+search.proofofwork.me
 amo.proofofwork.me
 marketplace.proofofwork.me -> https://amo.proofofwork.me/
 credit.proofofwork.me
@@ -73,6 +74,7 @@ Production app roles:
 - `browser.proofofwork.me` is the standalone public HTML renderer for ProofOfWork message bodies or verified file attachments by txid.
 - `boost.proofofwork.me` is the public Proof-ranked social feed for confirmed Boost posts and profiles.
 - `publish.proofofwork.me` is text-only blogging with a dedicated `/write` page, local drafts, full verified articles and Boost's shared profiles, selected PowIDs and engagement. Mail Compose opens the same writer; self-sent articles appear in Inbox and Sent. See [PUBLISH.md](PUBLISH.md).
+- `search.proofofwork.me` is read-only discovery across Computer metaprotocols, public content, verified readable files and source transaction evidence. The same workspace lives at Computer's `?folder=search`. See [SEARCH.md](SEARCH.md).
 - `amo.proofofwork.me` is the canonical Autonomous Money Organization surface. Governed WORK units plus ID, DNS, credit, POWB, and INCB sale-ticket markets share this app.
 - `marketplace.proofofwork.me` is a retained URI-preserving compatibility route to AMO.
 - `credit.proofofwork.me` is the standalone mainnet credit creation and mint app.
@@ -86,12 +88,12 @@ Production app roles:
 - The root landing page can feature public on-chain social proof, with testimonial links pointing directly to their ProofOfWork transactions.
 - The landing page links to the current public YouTube overview video.
 
-Every public app header and footer should expose the current public surfaces: Home, IDs, DNS, Computer, Desktop, Browser, Boost, Publish, AMO, Credit, Wallet, WORK, Infinity, Inception, Log, and Growth. Public social links should include X, YouTube, and GitHub.
+Every public app header and footer should expose the current public surfaces: Home, IDs, DNS, Computer, Desktop, Browser, Boost, Publish, Search, AMO, Credit, Wallet, WORK, Infinity, Inception, Log, and Growth. Public social links should include X, YouTube, and GitHub.
 
 ### Audit Workflow
 
 Audit standalone public apps before the full Computer shell: Home, IDs, DNS, Desktop,
-Browser, Boost, Publish, AMO, Credit, Wallet, WORK, Infinity, Inception, Log, and Growth come
+Browser, Boost, Publish, Search, AMO, Credit, Wallet, WORK, Infinity, Inception, Log, and Growth come
 first. `computer.proofofwork.me` comes last because it embeds and cross-checks
 the same protocols, workspaces, and read models in one integrated ProofOfWork
 Computer.

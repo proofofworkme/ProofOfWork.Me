@@ -275,6 +275,7 @@ import { mailArticleFromTransaction, verifiedMailArticle, type MailArticleEviden
 
 const BoostRoot = lazy(() => import("./features/boost/BoostRoot"));
 const PublishRoot = lazy(() => import("./features/publish/PublishRoot"));
+const SearchRoot = lazy(() => import("./features/search/SearchRoot"));
 const BoostGrowthDetails = lazy(
   () => import("./features/growth/BoostGrowthDetails"),
 );
@@ -385,6 +386,7 @@ type Folder =
   | "browser"
   | "boost"
   | "publish"
+  | "search"
   | "ids"
   | "dns"
   | "marketplace"
@@ -410,6 +412,7 @@ const COMPUTER_ROUTE_FOLDERS: Folder[] = [
   "browser",
   "boost",
   "publish",
+  "search",
   "ids",
   "dns",
   "marketplace",
@@ -429,6 +432,7 @@ const STANDALONE_ROUTE_PARAMS = [
   "desktop",
   "browser",
   "publish",
+  "search-app",
   "marketplace",
   "credit",
   "token",
@@ -4221,6 +4225,7 @@ function folderLabel(folder: Folder) {
   }
 
   if (folder === "publish") return "Publish";
+  if (folder === "search") return "Search";
 
   if (folder === "contacts") {
     return "Contacts";
@@ -4303,6 +4308,7 @@ function folderSubtitle(folder: Folder) {
   }
 
   if (folder === "publish") return "ProofOfWork articles and shared social activity";
+  if (folder === "search") return "Search Computer protocols and public data";
 
   if (folder === "contacts") {
     return "Local address book";
@@ -28050,6 +28056,10 @@ export default function App() {
     const url = new URL(window.location.href);
     STANDALONE_ROUTE_PARAMS.forEach((param) => url.searchParams.delete(param));
     ["write", "article", "profile", "profileTab"].forEach(param => url.searchParams.delete(param));
+    if (activeFolder === "search" && folder !== "search") {
+      ["q", "protocol", "kind", "status", "valid", "sort", "record", "cursor"].forEach(param => url.searchParams.delete(param));
+      url.searchParams.set("network", network);
+    }
     if (folder === "inbox") {
       url.searchParams.delete("folder");
     } else {
@@ -37384,6 +37394,7 @@ export default function App() {
     activeFolder === "marketplace" ? "is-marketplace-workspace" : "",
     activeFolder === "dns" ? "is-dns-workspace" : "",
     activeFolder === "browser" ? "is-browser-workspace" : "",
+    activeFolder === "search" ? "is-search-workspace" : "",
     activeFolder === "boost" || activeFolder === "publish" ? "is-boost-workspace" : "",
   ]
     .filter(Boolean)
@@ -37442,7 +37453,7 @@ export default function App() {
                   return;
                 }
 
-                if (activeFolder === "boost" || activeFolder === "publish") {
+                if (activeFolder === "boost" || activeFolder === "publish" || activeFolder === "search") {
                   return;
                 }
 
@@ -37700,6 +37711,16 @@ export default function App() {
               <span className="folder-label">
                 <FileText size={17} />
                 <span>Publish</span>
+              </span>
+            </button>
+            <button
+              aria-current={activeFolder === "search"}
+              onClick={() => openFolder("search")}
+              type="button"
+            >
+              <span className="folder-label">
+                <Search size={17} />
+                <span>Search</span>
               </span>
             </button>
             <span className="folder-group-label">Identity &amp; value</span>
@@ -38413,6 +38434,10 @@ export default function App() {
         ) : activeFolder === "publish" ? (
           <Suspense fallback={<div role="status" aria-busy="true">Loading Publish tools…</div>}>
             <PublishRoot embedded initialAddress={address} initialNetwork={network} />
+          </Suspense>
+        ) : activeFolder === "search" ? (
+          <Suspense fallback={<div role="status" aria-busy="true">Loading Search…</div>}>
+            <SearchRoot embedded initialNetwork={network} />
           </Suspense>
         ) : activeFolder === "log" ? (
           <ActivityWorkspace

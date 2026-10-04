@@ -19,6 +19,10 @@ It is distilled from current repository docs and public launch memory captured t
 
 ## One Sentence
 
+Search adds `search.proofofwork.me` to the public Computer surfaces. Its
+coverage and source evidence are product state; searches themselves create no
+protocol action or second network-value contribution.
+
 ProofOfWork.Me is the ProofOfWork Computer: a local-first, on-chain, agent-readable computer where ProofOfWork transactions become mail, identity, files, applications, proposals, payments, and proofs of work.
 
 ## Core Thesis
@@ -36,6 +40,13 @@ The project turns attention, communication, identity, and application distributi
 - If a proposal matters, it can be signaled with proofs.
 
 ## Product Beliefs
+
+Search is the read-only discovery layer for the Computer's metaprotocols and
+their public data, at `search.proofofwork.me` and inside Computer. Its derived
+index must expose source evidence, preserve historical forms, distinguish
+confirmed validity from raw decoding, and report incomplete coverage. Search
+adds no protocol payment or network-value contribution; indexed copies never
+create a second economic event. Public file text requires verified bytes.
 
 1. The source of truth is the chain.
 2. Confirmed records are canonical. Pending mempool visibility is useful gossip.

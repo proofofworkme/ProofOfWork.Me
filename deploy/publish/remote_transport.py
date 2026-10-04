@@ -21,7 +21,7 @@ import time
 BASE = Path('/var/tmp/proofofwork-deploy')
 EVIDENCE = Path('/var/backups/proofofwork-ui/transport-evidence')
 ARCHIVES = Path('/var/backups/proofofwork-ui/releases')
-SURFACES = 'activity boost browser computer desktop dns growth id inception infinity landing marketplace nft publish token wallet work'.split()
+SURFACES = 'activity boost browser computer desktop dns growth id inception infinity landing marketplace nft publish search token wallet work'.split()
 ENV = {'PATH': '/usr/sbin:/usr/bin:/sbin:/bin', 'LC_ALL': 'C', 'GIT_OPTIONAL_LOCKS': '0'}
 EVIDENCE_RESERVE = 32*1024**2
 TOTAL_LOG_CEILING = 16*1024**2

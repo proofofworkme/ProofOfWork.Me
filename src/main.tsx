@@ -16,6 +16,8 @@ const RootApp =
     ? lazy(() => import("./features/identity/SocialIdentityBridge"))
     : appSurface === "publish"
       ? lazy(() => import("./features/publish/PublishRoot"))
+      : appSurface === "search"
+        ? lazy(() => import("./features/search/SearchRoot"))
       : appSurface === "landing"
         ? lazy(() => import("./features/landing/LandingRoot"))
         : appSurface === "boost"
