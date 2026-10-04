@@ -44,6 +44,24 @@ async function storeDocuments(client,network,runId,rows) {
       amount_proofs=EXCLUDED.amount_proofs,record=EXCLUDED.record,payload=EXCLUDED.payload,
       raw_payload=EXCLUDED.raw_payload,evidence=EXCLUDED.evidence,search_text=EXCLUDED.search_text`,params);
 }
+export async function copyConfirmedSearchBatch(client,{network,runId,fromRunId,after='',batchSize=200}) {
+  // Copy only a bounded keyset. Cursor and rows commit together so a timeout or
+  // process stop cannot skip evidence or repeat a partially committed copy.
+  await client.query('BEGIN');
+  try {
+    const result=await client.query(`WITH copied AS (
+      INSERT INTO proof_indexer.search_documents(network,run_id,id,source_hash,protocol,kind,status,valid,canonical,block_height,block_index,vout,ordinal,amount_proofs,record,payload,raw_payload,evidence,search_text)
+      SELECT network,$2,id,source_hash,protocol,kind,status,valid,canonical,block_height,block_index,vout,ordinal,amount_proofs,record,payload,raw_payload,evidence,search_text
+      FROM proof_indexer.search_documents WHERE network=$1 AND run_id=$3 AND status='confirmed'
+        AND id COLLATE "C" > $4 COLLATE "C" ORDER BY id COLLATE "C" LIMIT $5
+      RETURNING id
+    ) SELECT count(*)::integer AS count,max(id COLLATE "C") AS cursor FROM copied`,[network,runId,fromRunId,after,batchSize]);
+    const count=Number(result.rows[0].count),cursor=result.rows[0].cursor??after,complete=count<batchSize;
+    await client.query(`UPDATE proof_indexer.search_runs SET copy_cursor=$2,copy_complete=$3,updated_at=now() WHERE run_id=$1`,[runId,cursor,complete]);
+    await client.query('COMMIT');
+    return {count,cursor,complete};
+  } catch(error) {await client.query('ROLLBACK').catch(()=>{});throw error;}
+}
 export async function pruneSearchGenerations(client,network) {
   // These tables contain only reproducible Search copies. All canonical source
   // rows, protocol history, evidence, snapshots and economic state are retained.
@@ -96,19 +114,21 @@ export async function runSearchBackfill({pool,network='livenet',batchSize=200,ma
       const runId=randomUUID();
       await client.query('BEGIN');
       try {
-        await client.query(`INSERT INTO proof_indexer.search_runs(run_id,network,index_version,state,checkpoint_height,checkpoint_hash,source_witness,volatile_only,source_floor_height)
-          VALUES($1,$2,$3,'building',$4,$5,$6::jsonb,$7,$8)`,[runId,network,SEARCH_INDEX_VERSION,checkpoint.height,checkpoint.hash,JSON.stringify(witness),Boolean(sameCheckpoint),copyConfirmed?Number(ready.checkpoint_height):0]);
-        if (copyConfirmed) {
-          await client.query(`INSERT INTO proof_indexer.search_documents(network,run_id,id,source_hash,protocol,kind,status,valid,canonical,block_height,block_index,vout,ordinal,amount_proofs,record,payload,raw_payload,evidence,search_text)
-            SELECT network,$1,id,source_hash,protocol,kind,status,valid,canonical,block_height,block_index,vout,ordinal,amount_proofs,record,payload,raw_payload,evidence,search_text
-            FROM proof_indexer.search_documents WHERE network=$2 AND run_id=$3 AND status='confirmed'`,[runId,network,ready.run_id]);
-        }
+        await client.query(`INSERT INTO proof_indexer.search_runs(run_id,network,index_version,state,checkpoint_height,checkpoint_hash,source_witness,volatile_only,source_floor_height,copy_from_run_id,copy_complete)
+          VALUES($1,$2,$3,'building',$4,$5,$6::jsonb,$7,$8,$9,$10)`,[runId,network,SEARCH_INDEX_VERSION,checkpoint.height,checkpoint.hash,JSON.stringify(witness),Boolean(sameCheckpoint),copyConfirmed?Number(ready.checkpoint_height):0,copyConfirmed?ready.run_id:null,!copyConfirmed]);
         await client.query('COMMIT');
       } catch(error) { await client.query('ROLLBACK'); throw error; }
       run=(await client.query('SELECT * FROM proof_indexer.search_runs WHERE run_id=$1',[runId])).rows[0];
     }
+    let copyCursor=run.copy_cursor??'',copyComplete=run.copy_complete!==false,copied=0,copyBatches=0;
+    // The historical source-batch cap remains separate. Derived-copy progress
+    // uses the same overall time budget, with at most 1,000 bounded statements.
+    while (!copyComplete && copyBatches<1000 && Date.now()-started<budgetMs) {
+      const batch=await copyConfirmedSearchBatch(client,{network,runId:run.run_id,fromRunId:run.copy_from_run_id,after:copyCursor,batchSize});
+      copyCursor=batch.cursor;copyComplete=batch.complete;copied+=batch.count;copyBatches+=1;
+    }
     let cursor=run.source_cursor,batches=0,processed=0,exhausted=false;
-    while (batches<maxBatches && Date.now()-started<budgetMs) {
+    while (copyComplete && batches<maxBatches && Date.now()-started<budgetMs) {
       const rows=await readSearchSources(client,network,Number(run.checkpoint_height),cursor,batchSize,run.volatile_only,Number(run.source_floor_height??0));
       if (!rows.length) {exhausted=true;break;}
       await client.query('BEGIN');
@@ -133,7 +153,7 @@ export async function runSearchBackfill({pool,network='livenet',batchSize=200,ma
     }
     await pruneSearchGenerations(client,network);
     return {ok:true,ready,building:!ready,runId:run.run_id,indexVersion:SEARCH_INDEX_VERSION,checkpointHeight:Number(run.checkpoint_height),checkpointHash:run.checkpoint_hash,
-      batches,processed,sourceCursor:cursor,sourceCounts:{total:witness.total,confirmed:witness.confirmedRecords},missingRawTransactions:witness.missingRawTransactions,
+      batches,processed,sourceCursor:cursor,copied,copyBatches,copyCursor,copyComplete,sourceCounts:{total:witness.total,confirmed:witness.confirmedRecords},missingRawTransactions:witness.missingRawTransactions,
       missingRawCarriers:witness.missingRawCarriers,elapsedMs:Date.now()-started};
   } finally {
     if (lock) await client.query("SELECT pg_advisory_unlock(hashtext('proof-search-v1'),hashtext($1))",[network]).catch(()=>{});

@@ -10,6 +10,9 @@ CREATE TABLE IF NOT EXISTS proof_indexer.search_runs (
   source_cursor text NOT NULL DEFAULT '',
   volatile_only boolean NOT NULL DEFAULT false,
   source_floor_height integer NOT NULL DEFAULT 0,
+  copy_from_run_id text,
+  copy_cursor text NOT NULL DEFAULT '',
+  copy_complete boolean NOT NULL DEFAULT true,
   projected_count integer NOT NULL DEFAULT 0,
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now(),
@@ -17,6 +20,9 @@ CREATE TABLE IF NOT EXISTS proof_indexer.search_runs (
 );
 ALTER TABLE proof_indexer.search_runs ADD COLUMN IF NOT EXISTS volatile_only boolean NOT NULL DEFAULT false;
 ALTER TABLE proof_indexer.search_runs ADD COLUMN IF NOT EXISTS source_floor_height integer NOT NULL DEFAULT 0;
+ALTER TABLE proof_indexer.search_runs ADD COLUMN IF NOT EXISTS copy_from_run_id text;
+ALTER TABLE proof_indexer.search_runs ADD COLUMN IF NOT EXISTS copy_cursor text NOT NULL DEFAULT '';
+ALTER TABLE proof_indexer.search_runs ADD COLUMN IF NOT EXISTS copy_complete boolean NOT NULL DEFAULT true;
 CREATE INDEX IF NOT EXISTS search_runs_ready_idx ON proof_indexer.search_runs
   (network, index_version, completed_at DESC) WHERE state = 'ready';
 CREATE TABLE IF NOT EXISTS proof_indexer.search_documents (

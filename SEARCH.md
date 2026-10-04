@@ -78,6 +78,15 @@ verified prior generation may supply unchanged confirmed history when its
 earlier source witness still agrees. Reorgs and changed historical semantics
 require a fresh verified projection.
 
+Reusing confirmed history copies at most the configured batch size per
+statement (200 records by default). Its separate copy cursor commits with each
+batch and resumes after interruption; it never advances the source cursor or
+the count of newly projected sources. Copy work shares the thirty-second job
+budget and stops after at most 1,000 bounded batches per cycle. The existing
+ready generation remains available while its replacement builds. This avoids
+a whole-corpus copy exceeding the fifteen-second statement limit. Projection
+or codec changes must increment the index version to rebuild derived documents.
+
 Only the newest two ready generations and one building generation are retained.
 Removing superseded Search copies preserves every underlying transaction,
 event, file and canonical economic record. Expired cursors return a conflict.
