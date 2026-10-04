@@ -125,7 +125,9 @@ import { readActionReceipts, saveActionReceipt, type ActionReceipt } from "../..
 import { ActionRecoveryPanel } from "../../shared/components/ActionRecoveryPanel";
 import { PublishComposer } from "../publish/PublishComposer";
 import { PublishArticleCard, PublishArticleText } from "../publish/PublishArticle";
-import { publishHref, requirePublishBudget, type PreparedPublish, type PublishPlan } from "../publish/publishProtocol";
+import { isPublishWriterLocation, publishHref, publishWriteHref, publishWriterHistoryState,
+  publishWriterReturn as readPublishWriterReturn, requirePublishBudget,
+  type PreparedPublish, type PublishPlan } from "../publish/publishProtocol";
 import { normalizeBoostTxid } from "./boostProtocol";
 import { syncSocialIdentityIntent, publishSocialIdentityIntent, subscribeSocialIdentityIntent } from "../identity/socialIdentity";
 import { verifiedSocialIdentityIntent } from "../identity/socialIdentityCore.mjs";
@@ -1052,10 +1054,15 @@ export default function BoostRoot({
 }: BoostRootProps = {}) {
   const isPublish = surface === "publish";
   const surfaceName = isPublish ? "Publish" : "Boost";
-  const [articleRoute] = useState(() => isPublish ? initialSearchParam("article") : "");
+  const [articleRoute] = useState(() => isPublish && !isPublishWriterLocation() ? initialSearchParam("article") : "");
   const articleTxid = normalizeBoostTxid(articleRoute);
-  const [publishComposerOpen, setPublishComposerOpen] = useState(false);
-  const [publishRestoreDraft, setPublishRestoreDraft] = useState<{ title: string; body: string; signal: number; feeRate: number }>();
+  const [publishWriterOpen, setPublishWriterOpen] = useState(() => isPublish && isPublishWriterLocation());
+  const [publishWriterReturn, setPublishWriterReturn] = useState(() => readPublishWriterReturn(window.history.state));
+  const publishWriterLeaveGuard = useRef<(() => boolean) | undefined>(undefined);
+  const publishWriterOpenRef = useRef(publishWriterOpen);
+  publishWriterOpenRef.current = publishWriterOpen;
+  const [publishRestoreDraft, setPublishRestoreDraft] = useState<{ address: string; network: BitcoinNetwork;
+    draft: { title: string; body: string; signal: number; feeRate: number } }>();
   const [publishReceipts, setPublishReceipts] = useState<ActionReceipt[]>([]);
   const [publishRecoveryError, setPublishRecoveryError] = useState("");
   const [publishRecoveryChecking, setPublishRecoveryChecking] = useState(false);
@@ -1071,7 +1078,7 @@ export default function BoostRoot({
   const [valueWindow, setValueWindow] = useState<BoostValueWindow>("all");
   const [timelineMode, setTimelineMode] =
     useState<BoostTimelineMode>("all");
-  const [profileRouteValue] = useState(() => initialSearchParam("profile"));
+  const [profileRouteValue] = useState(() => isPublish && isPublishWriterLocation() ? "" : initialSearchParam("profile"));
   const [connectionsTab, setConnectionsTab] = useState<ConnectionTab | undefined>(() => {
     const value = initialSearchParam("connections");
     return value === "followers" || value === "following" ? value : undefined;
@@ -1089,7 +1096,7 @@ export default function BoostRoot({
   const [listQuery] = useState(() => initialSearchParam("list"));
   const [searchQuery, setSearchQuery] = useState(() => initialSearchParam("q") || initialSearchParam("search"));
   const [indexedSearchQuery, setIndexedSearchQuery] = useState(() => initialSearchParam("q") || initialSearchParam("search"));
-  const [routeSearchActive] = useState(initialSearchView);
+  const [routeSearchActive] = useState(() => !(isPublish && isPublishWriterLocation()) && initialSearchView());
   const [profileSearchActive, setProfileSearchActive] = useState(initialSearchView);
   const [storedPayload, setPayload] = useState<BoostFeedPayload | undefined>();
   const [payloadScope, setPayloadScope] = useState("");
@@ -1205,7 +1212,7 @@ export default function BoostRoot({
   }, [address, items, profileRouteValue, payload?.profileSubject?.address]);
   const topSignalItems = useMemo(() => visibleItems.slice(0, 3), [visibleItems]);
   const modalOpen = Boolean(
-    publishComposerOpen || directPostOpen || expandedItem || pendingPaidAction || replyTarget,
+    directPostOpen || expandedItem || pendingPaidAction || replyTarget,
   );
   const postWorkSubatoms = workAtomsFromDecimal(postWorkAmount);
   useEffect(() => {
@@ -2271,6 +2278,36 @@ export default function BoostRoot({
   }, [address, network, isPublish]);
 
   useEffect(() => {
+    if (!isPublish) return;
+    const restoreWriterLocation = (event: PopStateEvent) => {
+      const nextWriting = isPublishWriterLocation();
+      if (publishWriterOpenRef.current && !nextWriting && publishWriterLeaveGuard.current && !publishWriterLeaveGuard.current()) {
+        event.stopImmediatePropagation();
+        const destination = window.location.href;
+        const mailReturn = Boolean(window.history.state?.proofOfWorkMailCompose);
+        const state = publishWriterHistoryState(destination, mailReturn ? "Mail" : "Articles");
+        window.history.pushState(state, "", publishWriteHref({ network: networkRef.current, embedded }));
+        setPublishWriterReturn(readPublishWriterReturn(state));
+        return;
+      }
+      setPublishWriterOpen(nextWriting);
+      setPublishWriterReturn(readPublishWriterReturn(window.history.state));
+      setPublishRestoreDraft(undefined);
+      setToolsOpen(false);
+      clearSocialOverlays();
+    };
+    const beforeWriterLeave = (event: Event) => {
+      if (publishWriterOpenRef.current && publishWriterLeaveGuard.current && !publishWriterLeaveGuard.current()) event.preventDefault();
+    };
+    window.addEventListener("popstate", restoreWriterLocation, true);
+    window.addEventListener("proofofwork:before-publish-writer-leave", beforeWriterLeave);
+    return () => {
+      window.removeEventListener("popstate", restoreWriterLocation, true);
+      window.removeEventListener("proofofwork:before-publish-writer-leave", beforeWriterLeave);
+    };
+  }, [isPublish, embedded]);
+
+  useEffect(() => {
     if (!listQuery || listingTarget || items.length === 0) {
       return;
     }
@@ -2352,7 +2389,6 @@ export default function BoostRoot({
       if (event.key === "Escape") {
         event.preventDefault();
         if (publishSigning.current) return;
-        setPublishComposerOpen(false);
         setDirectPostOpen(false);
         setExpandedItem(undefined);
         setPendingPaidAction(undefined);
@@ -2549,8 +2585,64 @@ export default function BoostRoot({
   }
 
   function openPublishComposer() {
+    if (publishSigning.current) return;
     setPublishRestoreDraft(undefined);
-    setPublishComposerOpen(true);
+    openPublishWriter();
+  }
+
+  function openPublishWriter() {
+    setToolsOpen(false);
+    clearSocialOverlays();
+    if (!isPublishWriterLocation()) {
+      const state = publishWriterHistoryState(window.location.href);
+      window.history.pushState({ ...window.history.state, ...state }, "", publishWriteHref({ network, embedded }));
+    }
+    setPublishWriterReturn(readPublishWriterReturn(window.history.state));
+    setPublishWriterOpen(true);
+  }
+
+  function clearSocialOverlays() {
+    setImageEditorOpen(false);
+    setDirectPostOpen(false);
+    setExpandedItem(undefined);
+    setPendingPaidAction(undefined);
+    setReplyTarget(undefined);
+    setQuoteTarget(undefined);
+  }
+
+  function closePublishWriter() {
+    if (publishSigning.current) return;
+    setPublishRestoreDraft(undefined);
+    if (readPublishWriterReturn(window.history.state)) {
+      window.history.back();
+      return;
+    }
+    window.history.replaceState(null, "", publishHref({ network, embedded }));
+    setPublishWriterReturn(undefined);
+    setPublishWriterOpen(false);
+  }
+
+  function renderIdentityControls() {
+    return <section className="boost-action-panel">
+      <div className="boost-action-panel-head"><strong>Identity</strong>
+        {activeIdentity ? <span>{activeIdentity.id}@proofofwork.me</span> : null}</div>
+      {address ? ownedIds.length > 0 ? <>
+        <label>ID<select disabled={Boolean(actionBusy)} onChange={event => setSelectedIdentityId(event.target.value)} value={selectedIdentityId}>
+          {ownedIds.map(record => { const id = normalizeBoostId(record.id); return <option key={id} value={id}>{id}@proofofwork.me</option>; })}
+        </select></label>
+        <div className="boost-action-buttons">
+          <button className="secondary small" disabled={Boolean(actionBusy) || !selectedIdentityId} onClick={() => void signIdentityIntent()} type="button">
+            <span className="button-content"><UserCircle size={15} /><span>{actionBusy === "identity" ? "Signing" : "Sign ID"}</span></span>
+          </button>
+          {publishWriterOpen ? null : <button className="secondary small" disabled={Boolean(actionBusy) || !activeIdentity} onClick={() => void publishProfileIntent()} type="button">
+            <span className="button-content"><Send size={15} /><span>{actionBusy === "profile" ? "Publishing" : "Publish"}</span></span>
+          </button>}
+        </div>
+      </> : <p className="field-note">This wallet has no confirmed IDs.</p> :
+        <button className="secondary small" disabled={Boolean(actionBusy)} onClick={() => void connectWallet()} type="button">
+          <span className="button-content"><UserCircle size={15} /><span>Connect</span></span>
+        </button>}
+    </section>;
   }
 
   const timelineHref = isPublish ? publishHref({ network, embedded }) : boostTimelineHref(embedded, network);
@@ -2652,9 +2744,19 @@ export default function BoostRoot({
         canRestore={receipt => receipt.status === "dropped"}
         onRestore={receipt => {
           const fields = Object.fromEntries(receipt.fields);
-          setPublishRestoreDraft({ title: fields.Title ?? "", body: fields.Body ?? "", signal: Number(fields["Proof signal"] ?? 546), feeRate: Number(fields["Fee rate"] ?? 1) });
-          setPublishComposerOpen(true);
+          setPublishRestoreDraft({ address: receipt.address, network: receipt.network,
+            draft: { title: fields.Title ?? "", body: fields.Body ?? "", signal: Number(fields["Proof signal"] ?? 546), feeRate: Number(fields["Fee rate"] ?? 1) } });
+          openPublishWriter();
         }} onCheck={() => void checkPublishReceipts()} workspaceHref={receipt => publishHref({ txid: receipt.txid, network: receipt.network, embedded })} /> : null}
+      {isPublish && publishWriterOpen ? <section className="publish-writer-workspace" aria-label="Article writer" role={embedded ? undefined : "main"}>
+        {address ? <details className="publish-writer-identity"><summary>Byline identity · {activeIdentity?.id ? `${activeIdentity.id}@proofofwork.me` : shortAddress(address)}</summary>{renderIdentityControls()}</details> : null}
+        <PublishComposer address={address} network={network} identity={activeIdentity}
+          returnLabel={publishWriterReturn?.returnLabel}
+          restoreDraft={publishRestoreDraft && sameBoostWalletAddress(publishRestoreDraft.address, address) && publishRestoreDraft.network === network ? publishRestoreDraft.draft : undefined}
+          onConnect={() => void connectWallet()} onClose={closePublishWriter}
+          onLeaveGuardChange={guard => { publishWriterLeaveGuard.current = guard; }}
+          onPrepare={preparePublishArticle} onSign={signPublishArticle} />
+      </section> : <>
       {!isProfileView ? (
         <details className="boost-network-stats">
           <summary>Network stats</summary>
@@ -2756,80 +2858,7 @@ export default function BoostRoot({
             </a>
           ) : null}
 
-          <section className="boost-action-panel">
-            <div className="boost-action-panel-head">
-              <strong>Identity</strong>
-              {activeIdentity ? (
-                <span>{activeIdentity.id}@proofofwork.me</span>
-              ) : null}
-            </div>
-            {address ? (
-              ownedIds.length > 0 ? (
-                <>
-                  <label>
-                    ID
-                    <select
-                      onChange={(event) =>
-                        setSelectedIdentityId(event.target.value)
-                      }
-                      value={selectedIdentityId}
-                    >
-                      {ownedIds.map((record) => {
-                        const id = normalizeBoostId(record.id);
-                        return (
-                          <option key={id} value={id}>
-                            {id}@proofofwork.me
-                          </option>
-                        );
-                      })}
-                    </select>
-                  </label>
-                  <div className="boost-action-buttons">
-                    <button
-                      className="secondary small"
-                      disabled={Boolean(actionBusy) || !selectedIdentityId}
-                      onClick={() => void signIdentityIntent()}
-                      type="button"
-                    >
-                      <span className="button-content">
-                        <UserCircle size={15} />
-                        <span>
-                          {actionBusy === "identity" ? "Signing" : "Sign ID"}
-                        </span>
-                      </span>
-                    </button>
-                    <button
-                      className="secondary small"
-                      disabled={Boolean(actionBusy) || !activeIdentity}
-                      onClick={() => void publishProfileIntent()}
-                      type="button"
-                    >
-                      <span className="button-content">
-                        <Send size={15} />
-                        <span>
-                          {actionBusy === "profile" ? "Publishing" : "Publish"}
-                        </span>
-                      </span>
-                    </button>
-                  </div>
-                </>
-              ) : (
-                <p className="field-note">This wallet has no confirmed IDs.</p>
-              )
-            ) : (
-              <button
-                className="secondary small"
-                disabled={Boolean(actionBusy)}
-                onClick={() => void connectWallet()}
-                type="button"
-              >
-                <span className="button-content">
-                  <UserCircle size={15} />
-                  <span>Connect</span>
-                </span>
-              </button>
-            )}
-          </section>
+          {renderIdentityControls()}
 
           {address ? <button className="secondary" type="button" disabled={Boolean(actionBusy)} onClick={() => setImageEditorOpen(true)}>Profile images</button> : null}
 
@@ -3363,7 +3392,6 @@ export default function BoostRoot({
             className="boost-modal-dismiss"
             onClick={() => {
               if (publishSigning.current) return;
-              setPublishComposerOpen(false);
               setDirectPostOpen(false);
               setExpandedItem(undefined);
               setPendingPaidAction(undefined);
@@ -3372,9 +3400,7 @@ export default function BoostRoot({
             }}
             type="button"
           />
-          {publishComposerOpen ? <PublishComposer address={address} network={network} identity={activeIdentity}
-            restoreDraft={publishRestoreDraft} onConnect={() => void connectWallet()} onClose={() => setPublishComposerOpen(false)}
-            onPrepare={preparePublishArticle} onSign={signPublishArticle} /> : directPostOpen ? (
+          {directPostOpen ? (
             <section
               aria-labelledby="boost-post-dialog-title"
               aria-modal="true"
@@ -3677,6 +3703,7 @@ export default function BoostRoot({
           ) : null}
         </div>
       ) : null}
+      </>}
 
       {embedded ? null : <SocialFooter quiet />}
     </div>

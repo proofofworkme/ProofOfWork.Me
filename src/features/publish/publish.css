@@ -8,13 +8,21 @@
 .publish-article-card p { color: var(--text-muted); font-size: 13px; margin-block: 8px; }
 .publish-article-card:hover h2 { color: var(--accent); }
 .publish-article-card .publish-read-link { display: inline-flex; align-items: center; gap: 5px; font-size: 13px; color: var(--accent); }
-.publish-composer { width: min(940px, calc(100vw - 32px)); max-height: calc(100dvh - 40px); }
-.publish-composer form { gap: 22px; }
+.publish-writer-workspace { box-sizing: border-box; width: min(1040px, 100%); min-width: 0; margin: 0 auto; padding: 32px clamp(20px, 4vw, 52px) 64px; }
+.publish-writer-identity { margin-bottom: 24px; color: var(--text-muted); font-size: 13px; }
+.publish-writer-identity summary { cursor: pointer; padding-block: 10px; }
+.publish-writer-identity .boost-action-panel { margin-top: 12px; max-width: 420px; }
+.publish-composer { width: 100%; min-width: 0; }
+.publish-composer form { display: grid; gap: 22px; }
+.publish-writer-head { display: grid; gap: 24px; margin-bottom: 26px; }
+.publish-writer-head > button { justify-self: start; display: inline-flex; align-items: center; gap: 8px; }
+.publish-writer-head > div > span { color: var(--text-muted); font-size: 13px; }
+.publish-writer-head h1 { margin: 8px 0 0; font-size: clamp(27px, 4vw, 38px); letter-spacing: -.03em; }
 .publish-editor-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 16px; color: var(--text-muted); font-size: 13px; }
 .publish-title-label, .publish-body-label { display: grid; gap: 9px; }
 .publish-title-label > span, .publish-body-label > span { color: var(--text-muted); font-size: 12px; letter-spacing: .06em; text-transform: uppercase; }
 .publish-composer .publish-title-input { background: transparent; border: 0; border-bottom: 1px solid var(--border); border-radius: 0; padding: 12px 0 20px; font-size: clamp(26px, 4vw, 38px); line-height: 1.3; font-weight: 700; letter-spacing: -.03em; }
-.publish-composer .publish-body-input { background: transparent; border: 0; border-radius: 0; padding: 0; min-height: 350px; resize: vertical; font-family: Georgia, "Times New Roman", serif; font-size: 20px; line-height: 1.8; }
+.publish-composer .publish-body-input { background: transparent; border: 0; border-radius: 0; padding: 0; min-height: 350px; resize: vertical; font-family: Georgia, "Times New Roman", serif; font-size: 20px; font-weight: 400; line-height: 1.8; }
 .publish-composer .publish-body-input:focus { outline: 1px solid var(--border); outline-offset: 8px; }
 .publish-budget { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; padding: 14px 0; border-top: 1px solid var(--border); font-size: 13px; }
 .publish-budget progress { width: 100%; height: 5px; accent-color: var(--accent); }
@@ -30,7 +38,7 @@
 .publish-byline { color: var(--text-muted); font-size: 13px; line-height: 1.7; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 30px; }
 .publish-byline a { color: inherit; text-decoration: none; }
 .publish-byline a:hover { text-decoration: underline; }
-.publish-article-body { white-space: pre-wrap; overflow-wrap: anywhere; font-family: Georgia, "Times New Roman", serif; font-size: clamp(18px, 2vw, 21px); line-height: 1.85; }
+.publish-article-body { white-space: pre-wrap; overflow-wrap: anywhere; font-family: Georgia, "Times New Roman", serif; font-size: clamp(18px, 2vw, 21px); font-weight: 400; line-height: 1.85; }
 .publish-preview { padding: 16px 0; }
 .publish-reader > .boost-profile-titlebar { border-bottom: 1px solid var(--border); }
 .publish-reader .boost-post { margin-top: 16px; }
@@ -41,7 +49,7 @@
 .publish-reader-proof code { display: block; overflow-wrap: anywhere; margin-top: 10px; }
 .publish-reader-proof a { color: inherit; }
 @media (max-width: 1150px) { .publish-public-app .boost-shell-instrument { grid-template-columns: minmax(190px, 230px) minmax(0, 1fr); } }
-@media (max-width: 800px) { .publish-public-app .boost-shell-instrument { display: block; } .publish-composer { width: calc(100vw - 16px); padding: 20px; } .publish-composer .publish-body-input { min-height: 290px; font-size: 18px; } .publish-reading { padding: 28px 20px; } }
+@media (max-width: 800px) { .publish-public-app .boost-shell-instrument { display: block; } .publish-writer-workspace { padding: 24px 20px 48px; } .publish-composer .publish-body-input { min-height: 290px; font-size: 18px; } .publish-reading { padding: 28px 20px; } }
 
 .publish-public-app .boost-shell-instrument .publish-full-post { box-sizing: border-box; display: block; width: 100%; min-width: 0; padding: 22px 0; cursor: default; }
 .publish-public-app .boost-shell-instrument .publish-full-post:hover { background: transparent; }

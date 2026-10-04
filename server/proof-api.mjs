@@ -11,6 +11,7 @@ import { reviewedIncbReplayBaselineEvidence, reviewedIncbReplayBaselineFromEvide
 import { boostTextMatchesTag } from "../src/shared/protocol/boostText.mjs";
 import {
   normalizePublishArticleMetadata, publishArticleBodyFromRecords,
+  publishArticleMetadataFromPayload,
   publishArticleDataCarrierBytes, PUBLISH_ARTICLE_VERIFICATION, PUBLISH_DATA_CARRIER_LIMIT,
 } from "../src/shared/protocol/publishArticle.mjs";
 
@@ -310,6 +311,8 @@ import {
   compareProofIndexHistoryPayloads,
   proofIndexActivityPayload,
   proofIndexAddressMailPayload,
+  verifiedMailArticleFields,
+  revalidateMailArticleMessage,
   proofIndexActiveCreditListingAnchorMatches,
   proofIndexCanonicalActivityPayload,
   proofIndexCanonicalIncbReplayBindingPayload,
@@ -16439,8 +16442,27 @@ function extractProtocolMemo(vout) {
     entries.find((entry) => entry.message.startsWith(PROTOCOL_PREFIX));
   return {
     ...parsed,
+    ...(entries.some(entry => entry.message.startsWith("pwb1:post:"))
+      ? rawMailArticleCommitment(vout, parsed.memo) : {}),
     ...canonicalEventIdentityDetails(positionedEntry),
   };
+}
+
+function rawMailArticleCommitment(vout, memo) {
+  const records = vout.map((output, voutIndex) => {
+    const candidate = canonicalProtocolCandidateFromOutput(output);
+    return candidate ? { ...candidate, voutIndex } : null;
+  }).filter(Boolean);
+  const originals = records.filter(record => record.prefix === "pwb1:" &&
+    String(record.text).startsWith("pwb1:post:"));
+  if (originals.length !== 1) return {};
+  const article = publishArticleMetadataFromPayload(originals[0].text);
+  const carrierBytes = publishArticleDataCarrierBytes({ vout });
+  const body = publishArticleBodyFromRecords(records, article,
+    bytes => createHash("sha256").update(bytes).digest("hex"));
+  if (!article || carrierBytes === null || carrierBytes > PUBLISH_DATA_CARRIER_LIMIT ||
+      body === null || body !== memo) return {};
+  return { article, articleVerification: PUBLISH_ARTICLE_VERIFICATION };
 }
 
 function workMarketV4DeclarationRegistryPaymentSats(vout) {
@@ -34410,6 +34432,13 @@ function inboxMessagesFromTransactions(txs, address, network) {
       to: address,
       txid: transactionTxid(tx),
     };
+    if (confirmed && protocolMessage.article) {
+      Object.assign(message, verifiedMailArticleFields(message, {
+        txid: message.txid, kind: "boost-post", confirmed: true,
+        text: protocolMessage.article.title, article: protocolMessage.article,
+        articleVerification: protocolMessage.articleVerification,
+      }));
+    }
 
     if (!message.txid) {
       return [];
@@ -34558,6 +34587,13 @@ function sentMessagesFromTransactions(txs, address, network) {
 
     return [
       {
+        ...(confirmed && protocolMessage.article
+          ? verifiedMailArticleFields({ txid, memo: protocolMessage.memo,
+            attachment: protocolMessage.attachment, status: "confirmed" }, {
+            txid, kind: "boost-post", confirmed: true,
+            text: protocolMessage.article.title, article: protocolMessage.article,
+            articleVerification: protocolMessage.articleVerification,
+          }) : {}),
         amountSats: recipients.reduce(
           (total, recipient) => total + recipient.amountSats,
           0,
@@ -63639,7 +63675,7 @@ function mergeMailMessageLists(indexedMessages, scannedMessages) {
               ? current.attachedCredits
               : message.attachedCredits)
           : primary.attachedCredits ?? secondary.attachedCredits;
-    merged.set(message.txid, {
+    const combined = {
       ...secondary,
       ...primary,
       attachedCredits,
@@ -63653,7 +63689,9 @@ function mergeMailMessageLists(indexedMessages, scannedMessages) {
       replyTo: primary.replyTo || secondary.replyTo,
       subject: primary.subject ?? secondary.subject,
       to: primary.to || secondary.to,
-    });
+    };
+    merged.set(message.txid, primary.article || secondary.article
+      ? revalidateMailArticleMessage(combined, [primary, secondary]) : combined);
   }
 
   return [...merged.values()].sort(
@@ -63730,10 +63768,10 @@ function mergeRepairedMailMessage(message, recovered) {
   const hasRecoveredBody = mailMessageHasRealBody(recovered);
   const recoveredAttachment = recovered?.attachment;
   if (!hasRecoveredBody && !recoveredAttachment) {
-    return message;
+    return message?.article ? revalidateMailArticleMessage(message, [message]) : message;
   }
 
-  return {
+  const combined = {
     ...message,
     attachedCredits: recovered?.attachedCredits ?? message.attachedCredits,
     attachment: recoveredAttachment ?? message.attachment,
@@ -63750,6 +63788,8 @@ function mergeRepairedMailMessage(message, recovered) {
       ? { from: recovered.from }
       : {}),
   };
+  return message?.article || recovered?.article
+    ? revalidateMailArticleMessage(combined, [recovered, message]) : combined;
 }
 
 function mailMessageNeedsPendingWorkRepair(message, folder) {

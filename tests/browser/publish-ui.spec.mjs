@@ -34,7 +34,7 @@ async function fixture(page, { wallet = false, alteredBody = false, recovery = f
     window.unisat = { getAccounts: async () => [address], requestAccounts: async () => [address],
       getNetwork: async () => "livenet", getBitcoinUtxos: async () => [utxo], on() {}, removeListener() {},
       signPsbt: async () => { window.publishSignatureCalls++; throw new Error("Rejected by test wallet"); } };
-    if (recovery) localStorage.setItem("proofofwork-action-receipts-v1", JSON.stringify([{ txid: "d".repeat(64), address, network: "livenet", title: "Publish article", key: "publish:unknown", createdAt: "2026-10-03T12:00:00Z", status: "unknown", fields: [["Title", "Retained article"], ["Body", "Retained work"]] }]));
+    if (recovery) localStorage.setItem("proofofwork-action-receipts-v1", JSON.stringify([{ txid: "d".repeat(64), address, network: "livenet", title: "Publish article", key: "publish:unknown", createdAt: "2026-10-03T12:00:00Z", status: recovery === "dropped" ? "dropped" : "unknown", fields: [["Title", "Retained article"], ["Body", "Retained work"]] }]));
     if (identity) localStorage.setItem("proofofwork.boost.profileIntent.v1", JSON.stringify({ [`livenet:${address}`]: identity }));
     if (emptyWalletDraft) localStorage.setItem(`proofofwork.publish.draft.v1:livenet:${address}`, JSON.stringify({ title: "", body: "", signal: 546, feeRate: 1 }));
   }, { address, utxo: fundingUtxo, recovery, identity: selectedIdentity ? signedIdentity : null, emptyWalletDraft });
@@ -89,9 +89,108 @@ test("full text drafts autosave, preview, and enforce the complete carrier budge
   await page.getByRole("button", { name: "Edit", exact: true }).click();
   await page.getByRole("textbox", { name: "Article text", exact: true }).fill("x".repeat(100_000));
   await expect(page.locator(".publish-budget")).toHaveClass(/is-over/);
-  await page.getByRole("button", { name: "Save draft and close" }).click();
+  await page.getByRole("button", { name: "Save draft and back" }).click();
   await page.getByRole("button", { name: "Write your next article" }).click();
   await expect(page.getByRole("textbox", { name: "Article text", exact: true })).toHaveValue("x".repeat(100_000));
+});
+
+for (const width of [390, 1440]) {
+  test(`writer is a normal page with draft-preserving history at ${width}px`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 800 });
+    await fixture(page);
+    await page.goto("/?publish=1");
+    await page.getByRole("button", { name: "Write your next article" }).click();
+    await expect(page).toHaveURL(/publish=1.*write=1/);
+    await expect(page.getByRole("heading", { name: "New article", exact: true })).toBeVisible();
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    await expect(page.locator(".boost-modal-backdrop")).toHaveCount(0);
+    await expect(page.locator(".boost-feed-panel")).toHaveCount(0);
+    await page.getByRole("textbox", { name: "Article title", exact: true }).fill(article.title);
+    await page.getByRole("textbox", { name: "Article text", exact: true }).fill(body);
+    await page.getByRole("button", { name: "Preview", exact: true }).click();
+    await expect(page.locator(".publish-article-body")).toHaveText(body);
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    await page.keyboard.press("Escape");
+    await expect(page.getByRole("heading", { name: "Preview your article", exact: true })).toBeVisible();
+    const layout = await page.evaluate(() => ({ width: document.documentElement.scrollWidth,
+      bodyOverflow: getComputedStyle(document.body).overflow, scrollHeight: document.documentElement.scrollHeight }));
+    expect(layout.width).toBeLessThanOrEqual(width + 1);
+    expect(layout.bodyOverflow).not.toBe("hidden");
+    expect(layout.scrollHeight).toBeGreaterThan(800);
+    await page.goBack();
+    await expect(page.getByRole("button", { name: "Write your next article" })).toBeVisible();
+    await page.getByRole("button", { name: "Reply, 2 replies", exact: true }).click();
+    await expect(page.getByRole("dialog", { name: "Replying to Boost" })).toBeVisible();
+    await page.goForward();
+    await expect(page.getByRole("textbox", { name: "Article text", exact: true })).toHaveValue(body);
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    expect(await page.evaluate(() => document.body.style.overflow)).not.toBe("hidden");
+    await page.reload();
+    await expect(page.getByRole("textbox", { name: "Article text", exact: true })).toHaveValue(body);
+    await page.getByRole("button", { name: "Back to Articles", exact: true }).click();
+    await expect(page.getByRole("button", { name: "Write your next article" })).toBeVisible();
+  });
+}
+
+test("direct writer path restores the scoped draft and has a safe Articles fallback", async ({ page }) => {
+  await fixture(page);
+  await page.goto(`/write?publish=1&network=livenet&profile=writer&article=${txid}&q=story`);
+  await expect(page.getByRole("textbox", { name: "Article title", exact: true })).toBeVisible();
+  await page.getByRole("textbox", { name: "Article title", exact: true }).fill(article.title);
+  await page.getByRole("textbox", { name: "Article text", exact: true }).fill(body);
+  await page.reload();
+  await expect(page.getByRole("textbox", { name: "Article text", exact: true })).toHaveValue(body);
+  await page.evaluate(() => history.replaceState({ proofOfWorkPublishWriter: { v: 1,
+    returnHref: "https://outside.example/", returnLabel: "Mail" } }, ""));
+  await page.getByRole("button", { name: "Back to Articles", exact: true }).click();
+  await expect(page).toHaveURL(/\/\?publish=1&network=livenet$/);
+  await expect(page.getByRole("button", { name: "Write your next article" })).toBeVisible();
+});
+
+test("a dropped publication restores into the writer without reviving stale recovery text on Forward", async ({ page }) => {
+  await fixture(page, { wallet: true, recovery: "dropped" });
+  await page.goto("/?publish=1");
+  await page.getByRole("button", { name: "Connect UniSat", exact: true }).click();
+  await page.getByText("Transaction recovery · 0 unresolved · 1 resolved", { exact: true }).click();
+  await page.getByText("Resolved transaction history (1)", { exact: true }).click();
+  await page.getByRole("button", { name: "Restore task fields", exact: true }).click();
+  await expect(page).toHaveURL(/write=1/);
+  await expect(page.getByRole("textbox", { name: "Article text", exact: true })).toHaveValue("Retained work");
+  await page.getByRole("textbox", { name: "Article text", exact: true }).fill("Continued recovered article");
+  await page.getByRole("button", { name: "Save draft and back", exact: true }).click();
+  await page.goForward();
+  await expect(page.getByRole("textbox", { name: "Article text", exact: true })).toHaveValue("Continued recovered article");
+  expect(await page.evaluate(() => window.publishSignatureCalls)).toBe(0);
+});
+
+test("storage failure preserves unsaved article text through manual, browser, and workspace Back", async ({ page }) => {
+  await fixture(page);
+  await page.goto("/?publish=1");
+  await page.getByRole("button", { name: "Write your next article" }).click();
+  await page.getByRole("textbox", { name: "Article title", exact: true }).fill(article.title);
+  await page.evaluate(() => {
+    window.publishOriginalSetItem = Storage.prototype.setItem;
+    Storage.prototype.setItem = function(key, value) {
+      if (key.startsWith("proofofwork.publish.draft.v1:")) throw new DOMException("Fixture storage full", "QuotaExceededError");
+      return window.publishOriginalSetItem.call(this, key, value);
+    };
+  });
+  await page.getByRole("textbox", { name: "Article text", exact: true }).fill(body);
+  await expect(page.getByRole("alert").filter({ hasText: "autosave is unavailable" })).toBeVisible();
+  await page.getByRole("button", { name: "Save draft and back", exact: true }).click();
+  await expect(page).toHaveURL(/write=1/);
+  await expect(page.getByRole("textbox", { name: "Article text", exact: true })).toHaveValue(body);
+  expect(await page.evaluate(() => window.dispatchEvent(new Event("proofofwork:before-publish-writer-leave", { cancelable: true })))).toBe(false);
+  await page.goBack();
+  await expect(page).toHaveURL(/write=1/);
+  await expect(page.getByRole("textbox", { name: "Article text", exact: true })).toHaveValue(body);
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await page.evaluate(() => { Storage.prototype.setItem = window.publishOriginalSetItem; });
+  await page.getByRole("button", { name: "Save draft and back", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Write your next article" })).toBeVisible();
+  await page.getByRole("button", { name: "Write your next article" }).click();
+  await expect(page.getByRole("textbox", { name: "Article text", exact: true })).toHaveValue(body);
+  await expect(page.getByRole("alert").filter({ hasText: "autosave is unavailable" })).toHaveCount(0);
 });
 
 test("article reader refuses text that does not match its exact on-chain commitment", async ({ page }) => {

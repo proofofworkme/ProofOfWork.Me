@@ -4,6 +4,10 @@ import {
   scopedIncbOracleLedgerPayload, storedScopedIncbOracle,
 } from "../incb-scoped-oracle.mjs";
 import { createHash } from "node:crypto";
+import {
+  normalizePublishArticleMetadata, publishArticleBodyBytes,
+  PUBLISH_ARTICLE_VERIFICATION,
+} from "../../src/shared/protocol/publishArticle.mjs";
 import { compareCanonicalUtf8 } from "../canonical-order.mjs";
 import { decodeCanonicalOpReturnOutput } from "../canonical-op-return.mjs";
 import { readBoostGrowthObservation } from "./boost-growth-reader.mjs";
@@ -40045,6 +40049,42 @@ const ADDRESS_MAIL_EVENT_KINDS = [
   "inception-bond",
   "infinity-bond",
 ];
+
+// The companion post is qualified by its canonical transaction in the query
+// below. Keep the body in the existing Mail carrier and verify that exact text
+// before exposing its compact article commitment to mailbox readers.
+export function verifiedMailArticleFields(message, companion) {
+  if (!message || (message.confirmed !== true && message.status !== "confirmed") ||
+      message.attachment || !companion || companion.kind !== "boost-post" ||
+      companion.confirmed !== true || companion.valid === false ||
+      companion.articleVerification !== PUBLISH_ARTICLE_VERIFICATION ||
+      !/^[0-9a-f]{64}$/u.test(String(message.txid ?? "")) ||
+      companion.txid !== message.txid) return {};
+  const article = normalizePublishArticleMetadata(companion.article);
+  const bytes = publishArticleBodyBytes(message.memo);
+  // Event display text is historically trimmed; the verified commitment keeps
+  // the complete title. Compare that display form without changing the title.
+  if (!article || typeof companion.text !== "string" ||
+      companion.text.trim() !== article.title.trim() || !bytes ||
+      bytes.length !== article.size ||
+      createHash("sha256").update(bytes).digest("hex") !== article.sha256) return {};
+  return { socialMode: true, article, articleVerification: PUBLISH_ARTICLE_VERIFICATION };
+}
+
+export function revalidateMailArticleMessage(message, sources) {
+  const { article: _article, articleVerification: _verification, ...plain } = message;
+  for (const source of sources) {
+    if (!source?.article) continue;
+    const fields = verifiedMailArticleFields(plain, {
+      txid: source.txid, kind: "boost-post",
+      confirmed: source.confirmed === true || source.status === "confirmed",
+      text: source.article.title, article: source.article,
+      articleVerification: source.articleVerification,
+    });
+    if (fields.article) return { ...plain, ...fields };
+  }
+  return plain;
+}
 const HISTORICAL_DROPPED_MAIL_OUTBOX_WITNESSES = Object.freeze([
   Object.freeze({
     network: "livenet",
@@ -40476,11 +40516,17 @@ function addressMailRowPayloads(row, address, network) {
   const payloadAttachment = objectRecord(payload.attachment);
   const attachment = payloadAttachment;
   const items = [];
+  const companionPosts = Array.isArray(row.canonical_boost_posts)
+    ? row.canonical_boost_posts : [];
+  const articleFields = companionPosts.length === 1
+    ? verifiedMailArticleFields({ txid: row.txid, memo, attachment: Object.keys(attachment).length ? attachment : undefined,
+      confirmed }, companionPosts[0]) : {};
 
   if (actorKey && actorKey === targetKey) {
     items.push({
       folder: "sent",
       message: {
+        ...articleFields,
         amountSats: totalAmountSats,
         attachedCredits:
           attachedCredits.length > 0 ? attachedCredits : undefined,
@@ -40523,6 +40569,7 @@ function addressMailRowPayloads(row, address, network) {
     items.push({
       folder: "inbox",
       message: {
+        ...articleFields,
         amountSats:
           targetRecipientAmountSats ||
           positiveNumber(targetRecipient?.amountSats) ||
@@ -40642,7 +40689,7 @@ function mergeMailProjectionMessage(current, incoming) {
             ? current.attachedCredits
             : incoming.attachedCredits)
         : primary.attachedCredits ?? secondary.attachedCredits;
-  return {
+  const combined = {
     ...secondary,
     ...primary,
     attachedCredits,
@@ -40657,6 +40704,8 @@ function mergeMailProjectionMessage(current, incoming) {
     subject: primary.subject ?? secondary.subject,
     to: primary.to || secondary.to,
   };
+  return primary.article || secondary.article
+    ? revalidateMailArticleMessage(combined, [primary, secondary]) : combined;
 }
 
 function dedupeMailProjectionMessages(messages) {
@@ -40744,6 +40793,37 @@ export async function proofIndexAddressMailPayload(network, address) {
         SELECT DISTINCT network, txid
         FROM candidate_mail_events
       ),
+      canonical_boost_posts AS (
+        SELECT
+          post.network, post.txid, post.block_height, post.block_index,
+          jsonb_agg(post.payload || jsonb_build_object(
+            'kind', post.kind, 'txid', post.txid, 'confirmed', true,
+            'valid', true
+          ) ORDER BY post.op_return_vout, post.record_ordinal, post.event_id) AS records
+        FROM proof_indexer.events post
+        JOIN candidate_mail_transactions candidate_mail
+          ON candidate_mail.network = post.network
+         AND candidate_mail.txid = post.txid
+        JOIN proof_indexer.transactions transaction_record
+          ON transaction_record.network = post.network
+         AND transaction_record.txid = post.txid
+         AND transaction_record.status = 'confirmed'
+         AND transaction_record.block_height = post.block_height
+         AND transaction_record.block_index = post.block_index
+        JOIN proof_indexer.blocks canonical_block
+          ON canonical_block.network = transaction_record.network
+         AND canonical_block.block_hash = transaction_record.block_hash
+         AND canonical_block.height = transaction_record.block_height
+         AND canonical_block.canonical = true
+        WHERE post.network = $1
+          AND post.protocol = 'pwb1'
+          AND post.kind = 'boost-post'
+          AND post.valid = true
+          AND post.status = 'confirmed'
+          AND post.op_return_vout IS NOT NULL
+          AND post.record_ordinal IS NOT NULL
+        GROUP BY post.network, post.txid, post.block_height, post.block_index
+      ),
       canonical_work_attachments AS (
         SELECT
           transfer_event.network,
@@ -40812,6 +40892,7 @@ export async function proofIndexAddressMailPayload(network, address) {
         m.parent_txid,
         m.body_text,
         m.amount_sats,
+        canonical_boost_posts.records AS canonical_boost_posts,
         COALESCE(
           canonical_work_attachments.attached_credit_events,
           '[]'::jsonb
@@ -40836,6 +40917,11 @@ export async function proofIndexAddressMailPayload(network, address) {
       LEFT JOIN canonical_work_attachments
         ON canonical_work_attachments.network = e.network
        AND canonical_work_attachments.txid = e.txid
+      LEFT JOIN canonical_boost_posts
+        ON canonical_boost_posts.network = e.network
+       AND canonical_boost_posts.txid = e.txid
+       AND canonical_boost_posts.block_height = e.block_height
+       AND canonical_boost_posts.block_index = e.block_index
       JOIN candidate_mail_events ce
         ON ce.event_id = e.event_id
       WHERE e.network = $1
@@ -40857,6 +40943,7 @@ export async function proofIndexAddressMailPayload(network, address) {
         m.parent_txid,
         m.body_text,
         m.amount_sats,
+        canonical_boost_posts.records,
         canonical_work_attachments.attached_credit_events
       ORDER BY
         COALESCE(e.event_time, e.block_time, e.created_at) DESC,

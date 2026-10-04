@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { createHash } from "node:crypto";
 import * as bitcoin from "bitcoinjs-lib";
 
 const NOW = "2026-08-01T12:00:00.000Z";
@@ -43,6 +44,96 @@ fundingTransaction.addOutput(
 const FUNDING_TXID = fundingTransaction.getId();
 const FUNDING_HEX = fundingTransaction.toHex();
 
+test("Mail Compose opens the shared Publish page and restores the complete private Mail draft", async ({ page }) => {
+  await installWallet(page);
+  await installApiFixtures(page);
+  await openConnectedCompose(page);
+  await page.getByLabel("To", { exact: true }).fill(RECIPIENT);
+  await page.getByLabel("CC", { exact: true }).fill(SENDER);
+  await page.getByLabel("Subject", { exact: true }).fill("Private Mail subject");
+  await page.getByLabel("Message", { exact: true }).fill("Private message stays in Mail.  \n");
+  await page.getByLabel("Proofs each", { exact: true }).fill("765");
+  await page.getByLabel("WORK each", { exact: true }).fill("0.1234567890123456");
+  await page.locator('form.compose-pane input[type="file"]').setInputFiles({
+    name: "mail-only.txt", mimeType: "text/plain", buffer: Buffer.from("Private attachment"),
+  });
+  await expect(page.locator(".compose-pane")).toContainText("mail-only.txt");
+  await page.evaluate(sender => localStorage.setItem(`proofofwork.publish.draft.v1:livenet:${sender}`,
+    JSON.stringify({title:"Existing article",body:"Article draft stays separate",signal:546,feeRate:1})), SENDER);
+  await page.getByLabel("Compose type").selectOption("publish");
+  await expect(page).toHaveURL(/folder=publish.*write=1/);
+  await expect(page.getByLabel("Article title", { exact: true })).toHaveValue("Existing article");
+  await expect(page.getByLabel("Article text", { exact: true })).toHaveValue("Article draft stays separate");
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await page.getByLabel("Article text", { exact: true }).fill("Article draft revised.  \n");
+  await page.getByRole("button", { name: "Back to Mail", exact: true }).click();
+  await expect(page.getByLabel("Compose type")).toHaveValue("mail");
+  await expect(page.getByLabel("To", { exact: true })).toHaveValue(RECIPIENT);
+  await expect(page.getByLabel("CC", { exact: true })).toHaveValue(SENDER);
+  await expect(page.getByLabel("Subject", { exact: true })).toHaveValue("Private Mail subject");
+  await expect(page.locator(".compose-pane textarea")).toHaveValue("Private message stays in Mail.  \n");
+  await expect(page.getByLabel("Proofs each", { exact: true })).toHaveValue("765");
+  await expect(page.getByLabel("WORK each", { exact: true })).toHaveValue("0.1234567890123456");
+  await expect(page.locator(".compose-pane")).toContainText("mail-only.txt");
+  await expect(page).not.toHaveURL(/write=1/);
+  await page.goForward();
+  await expect(page.getByLabel("Article text", { exact: true })).toHaveValue("Article draft revised.  \n");
+  expect(await page.evaluate(() => window.__mailComposeFixture.signCalls)).toBe(0);
+});
+
+test("Mail Compose keeps Boost self-send mode and refuses Publish handoff when saving fails", async ({ page }) => {
+  await installWallet(page); await installApiFixtures(page); await openConnectedCompose(page);
+  await page.getByLabel("Compose type").selectOption("boost");
+  await expect(page.getByLabel("To", { exact: true })).toHaveValue(SENDER);
+  await expect(page.getByLabel("To", { exact: true })).toHaveAttribute("readonly", "");
+  await expect(page.getByLabel("Message", { exact: true })).toHaveAttribute("maxlength", "140");
+  await page.getByLabel("Compose type").selectOption("mail");
+  await page.getByLabel("Message", { exact: true }).fill("Keep this unsaved Mail text");
+  await page.evaluate(() => { const original = Storage.prototype.setItem;
+    Storage.prototype.setItem = function(key,value) {
+      if(key.startsWith("proofofwork.draft.v1:")) throw new Error("Fixture storage full");
+      return original.call(this,key,value);
+    };
+  });
+  await page.getByLabel("Compose type").selectOption("publish");
+  await expect(page.locator(".compose-pane textarea")).toHaveValue("Keep this unsaved Mail text");
+  await expect(page).not.toHaveURL(/folder=publish/);
+  await expect(page.locator(".status-text")).toContainText("Fixture storage full");
+});
+
+for (const corruption of ["none", "body", "network"]) test(`Mail Publish reader ${corruption === "none" ? "shows verified full article in Inbox and Sent" : `refuses changed ${corruption} evidence`}`, async ({page}) => {
+  await installWallet(page); await installApiFixtures(page);
+  const body = "  Article body with café and 東京.\n\nFull text.  \n";
+  const article = {v:1,title:"Canonical article title",source:"same-tx-pwm1-message",
+    size:Buffer.byteLength(body),sha256:createHash("sha256").update(body).digest("hex")};
+  const txid = "e".repeat(64);
+  const mail = {txid,from:SENDER,to:SENDER,recipients:[{address:SENDER,amountSats:546}],network:"livenet",
+    createdAt:NOW,memo:body,amountSats:546,socialMode:true,article,
+    articleVerification:"canonical-same-tx-pwm1-message-v1",replyTo:SENDER};
+  await page.route(`**/api/v1/address/${SENDER}/mail*`,route=>route.fulfill({contentType:"application/json",body:JSON.stringify({
+    address:SENDER,network:"livenet",inboxMessages:[{...mail,confirmed:true}],sentMessages:[{...mail,status:"confirmed",feeRate:1}],
+    historyCoverage:{complete:true,model:"proof-index-address-mail-complete-v1"},
+  })}));
+  await page.route("**/api/v1/boost?**",route=>route.fulfill({contentType:"application/json",body:JSON.stringify({
+    complete:true,mode:"detail",snapshotId:HASH,network:corruption === "network" ? "testnet4" : "livenet",post:{...mail,kind:"boost-post",confirmed:true,
+      authorAddress:SENDER,text:article.title,articleBody:corruption === "body"?body+"changed":body},items:[],totalCount:0,
+  })}));
+  await page.goto("/");
+  await page.locator(".onboarding-pane").getByRole("button",{name:"Connect UniSat"}).click();
+  await page.locator(".message-row").filter({hasText:article.title}).first().click();
+  await expect(page.locator(".reader h2")).toHaveText(article.title);
+  await expect(page.getByRole("link",{name:"Open Publish",exact:true})).toHaveAttribute("href",new RegExp(`article=${txid}`));
+  if(corruption !== "none"){
+    await expect(page.locator(".reader [role=alert]")).toContainText("Article text unavailable");
+    await expect(page.locator(".reader > pre")).toHaveCount(0);
+  }else{
+    await expect(page.locator(".reader > pre")).toHaveText(body);
+    await page.locator(".sidebar").getByRole("button",{name:/^Sent/}).click();
+    await page.locator(".message-row").filter({hasText:article.title}).first().click();
+    await expect(page.locator(".reader > pre")).toHaveText(body);
+  }
+});
+
 function workTokenDefinition() {
   return {
     amountStorageModel: WORK_STORAGE_MODEL,
@@ -65,6 +156,74 @@ function workTokenDefinition() {
     unitScale: WORK_UNIT_SCALE,
   };
 }
+
+test("Mail to Publish history restores only the current account's draft", async ({page}) => {
+  await installWallet(page); await installApiFixtures(page); await openConnectedCompose(page);
+  await page.getByLabel("Message", {exact:true}).fill("Original account private draft");
+  await page.getByLabel("Compose type").selectOption("publish");
+  await expect(page.getByLabel("Article title", {exact:true})).toBeVisible();
+  await page.evaluate(({sender, next}) => {
+    localStorage.setItem(`proofofwork.draft.v1:livenet:${next}`, JSON.stringify({
+      from:next,network:"livenet",recipient:sender,ccRecipient:"",subject:"Other account",memo:"Other account draft",
+      amountSats:546,feeRate:1,workAmount:"0",updatedAt:new Date().toISOString(),
+    }));
+    window.unisat.getAccounts = async () => [next];
+    window.__mailComposeFixture.emit("accountsChanged");
+  }, {sender:SENDER,next:RECIPIENT});
+  await expect(page.locator(".topbar-wallet-button")).toContainText("1F1p9UEH");
+  await page.getByRole("button",{name:"Back to Mail",exact:true}).click();
+  await expect(page.locator(".compose-pane textarea")).toHaveValue("Other account draft");
+  expect(await page.evaluate(sender=>JSON.parse(localStorage.getItem(`proofofwork.draft.v1:livenet:${sender}`)).memo,SENDER))
+    .toBe("Original account private draft");
+});
+
+test("Mail raw article fallback verifies multichunk UTF-8 and refuses malformed or ambiguous envelopes", async ({page}) => {
+  await installApiFixtures(page); await page.goto("/?publish=1");
+  const body = "  First paragraph café.\n\n東京 🧭 trailing.  \n";
+  const article = {v:1,title:"Raw article",source:"same-tx-pwm1-message",size:Buffer.byteLength(body),
+    sha256:createHash("sha256").update(body).digest("hex")};
+  const post = `pwb1:post:${Buffer.from(JSON.stringify({v:1,text:article.title,article})).toString("base64url")}`;
+  const output = text => ({scriptpubkey:Buffer.from(bitcoin.payments.embed({data:[Buffer.from(text)]}).output).toString("hex")});
+  const tx = {status:{confirmed:true},vout:[output(post),output(`pwm1:m:${body.slice(0,23)}`),output(`pwm1:m:${body.slice(23)}`)]};
+  const cases = [tx,{...tx,status:{confirmed:false}}, {...tx,vout:[...tx.vout,output(post)]},
+    {...tx,vout:[...tx.vout,output("pwm1:a:extra")]},
+    {...tx,vout:[tx.vout[0],tx.vout[1],output("pwb1:like:unrelated"),tx.vout[2]]},
+    {...tx,vout:[tx.vout[0],tx.vout[1],output("pwm1:m:bad"),tx.vout[2]]},
+    {...tx,vout:[output("\uFEFF"+post),tx.vout[1],tx.vout[2]]}];
+  const unrelated = {...tx,vout:[tx.vout[0],tx.vout[1],{scriptpubkey:"6a01ff"},
+    {scriptpubkey:"6a"},output("unrelated text"),tx.vout[2]]};
+  const results = await page.evaluate(async cases => {
+    const {mailArticleFromTransaction} = await import("/src/features/publish/publishMail.ts");
+    return cases.map(tx=>mailArticleFromTransaction(tx));
+  }, cases);
+  expect(results[0].article).toEqual(article);
+  for(const result of results.slice(1)) expect(result).toEqual({});
+  expect(await page.evaluate(async tx => {
+    const {mailArticleFromTransaction} = await import("/src/features/publish/publishMail.ts");
+    return mailArticleFromTransaction(tx).article;
+  },unrelated)).toEqual(article);
+});
+
+test("Publish round trip preserves a Mail reply draft and an intentionally empty new composition", async ({page}) => {
+  await installWallet(page); await installApiFixtures(page); await openConnectedCompose(page);
+  await page.evaluate(sender => localStorage.setItem(`proofofwork.draft.v1:livenet:${sender}`, JSON.stringify({
+    from:sender,network:"livenet",recipient:sender,amountSats:546,feeRate:0.5,workAmount:"0",
+    memo:"Reply draft",subject:"Reply subject",parentTxid:"7".repeat(64),updatedAt:new Date().toISOString(),
+  })), SENDER);
+  await page.locator(".sidebar").getByRole("button",{name:/^Drafts/}).click();
+  await expect(page.locator(".reply-banner")).toContainText("7".repeat(64));
+  await page.getByLabel("Compose type").selectOption("publish");
+  await page.getByRole("button",{name:"Back to Mail",exact:true}).click();
+  await expect(page.locator(".reply-banner")).toContainText("7".repeat(64));
+  await expect(page.getByLabel("Fee proofs/vB",{exact:true})).toHaveValue("0.5");
+  await page.locator(".sidebar").getByRole("button",{name:"Compose",exact:true}).click();
+  await expect(page.locator(".compose-pane textarea")).toHaveValue("");
+  await page.getByLabel("Compose type").selectOption("publish");
+  await page.getByRole("button",{name:"Back to Mail",exact:true}).click();
+  await expect(page.locator(".compose-pane textarea")).toHaveValue("");
+  await expect(page.getByLabel("Subject",{exact:true})).toHaveValue("");
+  await expect(page.locator(".reply-banner")).toHaveCount(0);
+});
 
 function v8AmoListing({
   createdAt = NOW,
@@ -539,15 +698,18 @@ async function installWallet(page) {
     window.__mailComposeFixture = {
       psbtHexes: [],
       signCalls: 0,
-      emit: (event) => listeners.get(event)?.(),
+      emit: (event) => { for (const listener of [...(listeners.get(event) ?? [])]) listener(); },
     };
     window.confirm = () => true;
     window.unisat = {
       getAccounts: async () => [sender],
       getChain: async () => ({ enum: "BITCOIN_MAINNET" }),
       getNetwork: async () => "livenet",
-      on: (event, listener) => listeners.set(event, listener),
-      removeListener: (event) => listeners.delete(event),
+      on: (event, listener) => {
+        if (!listeners.has(event)) listeners.set(event, new Set());
+        listeners.get(event).add(listener);
+      },
+      removeListener: (event, listener) => listeners.get(event)?.delete(listener),
       requestAccounts: async () => [sender],
       signPsbt: async (psbtHex) => {
         window.__mailComposeFixture.signCalls += 1;
@@ -596,6 +758,9 @@ async function installApiFixtures(
 
     if (pathname.endsWith(`/address/${SENDER}/mail`)) {
       json = {
+        address: SENDER,
+        network: "livenet",
+        historyCoverage: { complete: true, model: "proof-index-address-mail-complete-v1" },
         inboxMessages: inboxMessage
           ? [
               {

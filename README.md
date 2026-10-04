@@ -72,7 +72,7 @@ Production app roles:
 - `desktop.proofofwork.me` is the standalone public read-only file search engine for addresses or confirmed ProofOfWork IDs.
 - `browser.proofofwork.me` is the standalone public HTML renderer for ProofOfWork message bodies or verified file attachments by txid.
 - `boost.proofofwork.me` is the public Proof-ranked social feed for confirmed Boost posts and profiles.
-- `publish.proofofwork.me` is text-only blogging with local drafts, full verified articles and Boost's shared profiles, selected PowIDs and engagement. See [PUBLISH.md](PUBLISH.md).
+- `publish.proofofwork.me` is text-only blogging with a dedicated `/write` page, local drafts, full verified articles and Boost's shared profiles, selected PowIDs and engagement. Mail Compose opens the same writer; self-sent articles appear in Inbox and Sent. See [PUBLISH.md](PUBLISH.md).
 - `amo.proofofwork.me` is the canonical Autonomous Money Organization surface. Governed WORK units plus ID, DNS, credit, POWB, and INCB sale-ticket markets share this app.
 - `marketplace.proofofwork.me` is a retained URI-preserving compatibility route to AMO.
 - `credit.proofofwork.me` is the standalone mainnet credit creation and mint app.

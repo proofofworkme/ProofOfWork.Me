@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
-import { ArrowLeft, BookOpen, Eye, PenLine, RefreshCw, Send, X } from "lucide-react";
+import { ArrowLeft, BookOpen, Eye, PenLine, RefreshCw, Send } from "lucide-react";
 import type { BitcoinNetwork } from "../../shared/bitcoin/networks";
 import { FeeRateControl } from "../../shared/components/FeeRateControl";
 import { ActionTransactionReview } from "../../shared/components/ActionTransactionReview";
@@ -11,12 +11,14 @@ import "./publish.css";
 type Draft = { title: string; body: string; signal: number; feeRate: number };
 const emptyDraft: Draft = { title: "", body: "", signal: 546, feeRate: 1 };
 
-export function PublishComposer({ address, network, identity, onConnect, onClose, onPrepare, onSign, restoreDraft }: {
+export function PublishComposer({ address, network, identity, onConnect, onClose, onPrepare, onSign, restoreDraft, returnLabel = "Articles", onLeaveGuardChange }: {
   address: string; network: BitcoinNetwork; identity?: BoostIdentityIntent;
   onConnect: () => void; onClose: () => void;
   onPrepare: (plan: PublishPlan, feeRate: number) => Promise<PreparedPublish>;
   onSign: (prepared: PreparedPublish, assertCurrent: () => void) => Promise<string>;
   restoreDraft?: Draft;
+  returnLabel?: "Articles" | "Mail";
+  onLeaveGuardChange?: (guard?: () => boolean) => void;
 }) {
   const identityId = identity?.id ?? "";
   const storageKey = `proofofwork.publish.draft.v1:${network}:${address || "disconnected"}`;
@@ -27,6 +29,7 @@ export function PublishComposer({ address, network, identity, onConnect, onClose
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [saveError, setSaveError] = useState("");
+  const [loadError, setLoadError] = useState("");
   const [draftNotice, setDraftNotice] = useState("");
   const flight = useRef(false);
   const alive = useRef(true);
@@ -39,6 +42,7 @@ export function PublishComposer({ address, network, identity, onConnect, onClose
     setPrepared(undefined);
     setError("");
     setSaveError("");
+    setLoadError("");
     setDraftNotice("");
     try {
       const raw = localStorage.getItem(storageKey);
@@ -58,10 +62,12 @@ export function PublishComposer({ address, network, identity, onConnect, onClose
       setDraft(restoreDraft ?? candidate);
     } catch (cause) {
       setDraft(emptyDraft);
-      setSaveError(cause instanceof Error ? cause.message : "The saved draft could not be read.");
+      const message = cause instanceof Error ? cause.message : "The saved draft could not be read.";
+      setLoadError(message);
+      setSaveError(message);
     }
     setLoadedKey(storageKey);
-  }, [storageKey]);
+  }, [storageKey, restoreDraft]);
   useEffect(() => {
     if (loadedKey !== storageKey || saveError) return;
     try { localStorage.setItem(storageKey, JSON.stringify(draft)); }
@@ -76,6 +82,40 @@ export function PublishComposer({ address, network, identity, onConnect, onClose
   const overBudget = Boolean(budget.plan && budget.plan.carrierBytes > PUBLISH_DATA_CARRIER_LIMIT);
   const words = draft.body.trim() ? draft.body.trim().split(/\s+/u).length : 0;
   const update = (patch: Partial<Draft>) => { setDraft(value => ({ ...value, ...patch })); setError(""); };
+
+  function preserveDraftBeforeExit() {
+    if (flight.current || loadedKey !== storageKey) {
+      setError("Wait for the current wallet or draft operation before leaving this editor.");
+      return false;
+    }
+    if (loadError) { setSaveError(loadError); return false; }
+    try {
+      localStorage.setItem(storageKey, JSON.stringify(draft));
+      setSaveError("");
+      return true;
+    } catch {
+      setSaveError("Draft autosave is unavailable. Copy your text before leaving this editor. Saving must succeed before Back can leave this page.");
+      return false;
+    }
+  }
+
+  useEffect(() => {
+    onLeaveGuardChange?.(preserveDraftBeforeExit);
+    const beforeUnload = (event: BeforeUnloadEvent) => {
+      if (preserveDraftBeforeExit()) return;
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", beforeUnload);
+    return () => {
+      onLeaveGuardChange?.();
+      window.removeEventListener("beforeunload", beforeUnload);
+    };
+  });
+
+  function leaveWriter() {
+    if (preserveDraftBeforeExit()) onClose();
+  }
 
   async function prepare(event: FormEvent) {
     event.preventDefault();
@@ -111,10 +151,10 @@ export function PublishComposer({ address, network, identity, onConnect, onClose
   if (prepared) return <ActionTransactionReview review={prepared.review} returnFocus={null}
     onCancel={() => { if (!flight.current) setPrepared(undefined); }} onApprove={() => void sign()} />;
 
-  return <section className="boost-modal publish-composer" role="dialog" aria-modal="true" aria-labelledby="publish-composer-title">
-    <div className="boost-modal-head">
-      <div><span>Write on ProofOfWork</span><strong id="publish-composer-title">{preview ? "Preview your article" : "New article"}</strong></div>
-      <button aria-label="Close article editor" className="secondary small" disabled={busy} onClick={onClose} type="button"><X size={18} /></button>
+  return <section className="publish-composer" aria-labelledby="publish-composer-title">
+    <div className="publish-writer-head">
+      <button className="secondary small" disabled={busy} onClick={leaveWriter} type="button"><ArrowLeft size={18} /> Back to {returnLabel}</button>
+      <div><span>Write on ProofOfWork</span><h1 id="publish-composer-title">{preview ? "Preview your article" : "New article"}</h1></div>
     </div>
     <form onSubmit={prepare}>
       <div className="publish-editor-toolbar">
@@ -144,7 +184,7 @@ export function PublishComposer({ address, network, identity, onConnect, onClose
       {draftNotice ? <p className="field-note" role="status">{draftNotice}</p> : null}
       {error || overBudget ? <p className="field-note bad" role="alert">{error || "This article exceeds the available transaction budget. Shorten it before publishing."}</p> : null}
       {network !== "livenet" ? <p className="field-note">Article publishing uses mainnet. Switch to mainnet to prepare a review.</p> : null}
-      <div className="publish-editor-actions"><button className="secondary" onClick={onClose} type="button" disabled={busy}><ArrowLeft size={16} /> Save draft and close</button>
+      <div className="publish-editor-actions"><button className="secondary" onClick={leaveWriter} type="button" disabled={busy}><ArrowLeft size={16} /> Save draft and back</button>
         {!address ? <button className="primary" onClick={onConnect} type="button"><BookOpen size={16} /> Connect to publish</button> : <button className="primary" type="submit" disabled={busy || !budget.plan || overBudget || network !== "livenet" || loadedKey !== storageKey}>
           {busy ? <RefreshCw className="refresh-spin" size={16} /> : <Send size={16} />} {busy ? "Preparing…" : "Review publication"}</button>}
       </div>

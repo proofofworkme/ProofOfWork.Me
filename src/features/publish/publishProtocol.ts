@@ -1,6 +1,6 @@
 import * as bitcoin from "bitcoinjs-lib";
 import { Buffer } from "buffer";
-import { appHref } from "../../app/routeRegistry";
+import { appHref, isLocalPreviewHost } from "../../app/routeRegistry";
 import type { BitcoinNetwork } from "../../shared/bitcoin/networks";
 import { encodeTextBase64Url, sha256Hex } from "../../shared/utils/encoding";
 import {
@@ -91,4 +91,36 @@ export function publishHref(params: { txid?: string; profile?: string; network?:
   if (params.profile) url.searchParams.set("profile", params.profile);
   if (params.network) url.searchParams.set("network", params.network);
   return url.toString();
+}
+
+export function publishWriteHref(params: { network?: BitcoinNetwork; embedded?: boolean } = {}) {
+  const url = new URL(publishHref(params));
+  if (params.embedded || isLocalPreviewHost()) url.searchParams.set("write", "1");
+  else url.pathname = "/write";
+  return url.toString();
+}
+
+export function isPublishWriterLocation() {
+  return window.location.pathname.replace(/\/$/u, "") === "/write" ||
+    new URLSearchParams(window.location.search).get("write") === "1";
+}
+
+type PublishWriterReturn = { v: 1; returnHref: string; returnLabel: "Articles" | "Mail" };
+
+/** Routing metadata only. Draft text and signed identity stay in their local stores. */
+export function publishWriterHistoryState(returnHref: string, returnLabel: PublishWriterReturn["returnLabel"] = "Articles") {
+  return { proofOfWorkPublishWriter: { v: 1, returnHref, returnLabel } };
+}
+
+export function publishWriterReturn(state: unknown): PublishWriterReturn | undefined {
+  if (!state || typeof state !== "object" || !("proofOfWorkPublishWriter" in state)) return;
+  const value = state.proofOfWorkPublishWriter;
+  if (!value || typeof value !== "object" || !("v" in value) || value.v !== 1 ||
+      !("returnHref" in value) || typeof value.returnHref !== "string" ||
+      !("returnLabel" in value) || (value.returnLabel !== "Articles" && value.returnLabel !== "Mail")) return;
+  try {
+    const url = new URL(value.returnHref);
+    if (url.origin !== window.location.origin) return;
+    return { v: 1, returnHref: url.href, returnLabel: value.returnLabel };
+  } catch { return; }
 }

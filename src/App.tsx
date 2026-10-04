@@ -267,8 +267,11 @@ import {
   boostMarketplaceListingsFromItems,
   boostRouteHref,
   type BoostFeedPayload,
+  type BoostFeedItem,
   type BoostMarketplaceListing,
 } from "./features/boost/boostProtocol";
+import { publishHref, publishWriteHref, publishWriterHistoryState } from "./features/publish/publishProtocol";
+import { mailArticleFromTransaction, verifiedMailArticle, type MailArticleEvidence } from "./features/publish/publishMail";
 
 const BoostRoot = lazy(() => import("./features/boost/BoostRoot"));
 const PublishRoot = lazy(() => import("./features/publish/PublishRoot"));
@@ -617,7 +620,7 @@ type UnisatWallet = {
   getUtxos?: () => Promise<Array<Record<string, unknown>>>;
 };
 
-type SentMessage = {
+type SentMessage = MailArticleEvidence & {
   txid: string;
   network: BitcoinNetwork;
   from: string;
@@ -657,7 +660,7 @@ type BroadcastCheckSummary = {
   results: BroadcastCheckResult[];
 };
 
-type InboxMessage = {
+type InboxMessage = MailArticleEvidence & {
   txid: string;
   network: BitcoinNetwork;
   from: string;
@@ -4352,7 +4355,13 @@ function messageSubject(message: {
   attachment?: MailAttachment;
   memo: string;
   subject?: string;
+  article?: MailArticleEvidence["article"];
+  articleVerification?: MailArticleEvidence["articleVerification"];
+  confirmed?: boolean;
+  status?: string;
 }) {
+  const article = verifiedMailArticle(message);
+  if (article) return article.title;
   const subject =
     normalizeSubject(message.subject ?? "") || mailSubject(message.memo);
   if (subject !== "OP_RETURN message") {
@@ -5957,6 +5966,9 @@ function loadSentMessages(): SentMessage[] {
           parentTxid:
             typeof sent.parentTxid === "string" ? sent.parentTxid : undefined,
           socialMode: sent.socialMode === true,
+          ...(verifiedMailArticle(sent as SentMessage) ? {
+            article: sent.article, articleVerification: sent.articleVerification,
+          } : {}),
           recipients: recipients.length > 0 ? recipients : undefined,
           subject:
             typeof sent.subject === "string"
@@ -13709,6 +13721,7 @@ function inboxMessagesFromTransactions(
         sender === "Unknown" ? (protocolMessage.replyTo ?? "Unknown") : sender,
       recipients: recipients.length > 0 ? recipients : undefined,
       socialMode: protocolMessage.socialMode === true,
+      ...mailArticleFromTransaction(tx),
       confirmed: Boolean(status?.confirmed),
       createdAt: new Date(blockTime).toISOString(),
     };
@@ -13778,6 +13791,7 @@ function sentMessagesFromTransactions(
         recipients,
         subject: protocolMessage.subject,
         socialMode: protocolMessage.socialMode === true,
+        ...mailArticleFromTransaction(tx),
         replyTo: targetAddress,
         status: confirmed ? "confirmed" : "pending",
         to: recipientSummary(recipients, payment.address),
@@ -26248,6 +26262,20 @@ export default function App() {
     const restoreComputerLocation = () => {
       const folder = computerFolderFromSearch() ?? "inbox";
       const asset = tokenRouteTarget();
+      const mailCompose = window.history.state?.proofOfWorkMailCompose;
+      if (mailCompose && folder !== "publish") {
+        const draft = address ? loadDraft(address, network) : undefined;
+        if (draft) {
+          const sameScope = mailCompose.address === address && mailCompose.network === network;
+          setSavedDraft(draft);
+          if (!sameScope) rememberComputerFolder("drafts");
+          applyDraft(draft, sameScope ? folder : "drafts");
+        } else {
+          composeNew();
+        }
+        setSidebarExpanded(false);
+        return;
+      }
       setActiveFolder(folder);
       setActiveCustomFolderId("");
       setComposeOpen(false);
@@ -26276,6 +26304,8 @@ export default function App() {
     tokenMode,
     walletMode,
     workTokenMode,
+    address,
+    network,
   ]);
 
   useEffect(() => {
@@ -27735,7 +27765,7 @@ export default function App() {
     workTokenMode,
   ]);
 
-  function applyDraft(draft: DraftMessage) {
+  function applyDraft(draft: DraftMessage, folder: Folder = "drafts") {
     setRecipient(draft.recipient);
     setCcRecipient(draft.ccRecipient ?? "");
     setAmountSats(draft.amountSats);
@@ -27746,7 +27776,7 @@ export default function App() {
     setAttachment(draft.attachment);
     setReplyParentTxid(draft.parentTxid);
     setSocialMode(draft.socialMode === true);
-    setActiveFolder("drafts");
+    setActiveFolder(folder);
     setComposeOpen(true);
     setSelectedKey("draft");
   }
@@ -28019,6 +28049,7 @@ export default function App() {
 
     const url = new URL(window.location.href);
     STANDALONE_ROUTE_PARAMS.forEach((param) => url.searchParams.delete(param));
+    ["write", "article", "profile", "profileTab"].forEach(param => url.searchParams.delete(param));
     if (folder === "inbox") {
       url.searchParams.delete("folder");
     } else {
@@ -28071,7 +28102,11 @@ export default function App() {
   }
 
   function openFolder(folder: Folder) {
+    if (!canLeavePublishWriter()) return;
     rememberComputerFolder(folder);
+    if (activeFolder === "publish" && folder === "publish") {
+      window.dispatchEvent(new PopStateEvent("popstate", { state: window.history.state }));
+    }
     setSidebarExpanded(false);
 
     if (folder === "drafts") {
@@ -28163,6 +28198,8 @@ export default function App() {
   }
 
   function composeNew() {
+    if (!canLeavePublishWriter()) return;
+    rememberComputerFolder("inbox");
     setSidebarExpanded(false);
     setRecipient("");
     setCcRecipient("");
@@ -28176,6 +28213,43 @@ export default function App() {
     setSocialMode(false);
     setActiveFolder("inbox");
     setComposeOpen(true);
+  }
+
+  function canLeavePublishWriter() {
+    return activeFolder !== "publish" || window.dispatchEvent(
+      new Event("proofofwork:before-publish-writer-leave", { cancelable: true }),
+    );
+  }
+
+  function composePublish() {
+    if (!address || mailSendBusy) return;
+    const draft: DraftMessage = {
+      amountSats, attachment, ccRecipient, feeRate, from: address, memo, network,
+      parentTxid: replyParentTxid, recipient, socialMode, subject,
+      updatedAt: new Date().toISOString(),
+      workAmount: workDecimalFromAtoms(messageWorkAmountAtoms),
+    };
+    try {
+      // Save the whole Mail composition before changing workspace. Publish
+      // opens its own scoped draft; private Mail text is never imported.
+      saveDraft(draft);
+      setSavedDraft(draft);
+      const url = new URL(window.location.href);
+      ["write", "article", "profile", "profileTab"].forEach(param => url.searchParams.delete(param));
+      if (activeFolder === "inbox") url.searchParams.delete("folder");
+      else url.searchParams.set("folder", activeFolder);
+      window.history.replaceState({ ...window.history.state,
+        proofOfWorkMailCompose: { address, network },
+      }, "", `${url.pathname}${url.search}${url.hash}`);
+      window.history.pushState(publishWriterHistoryState(url.href, "Mail"), "",
+        publishWriteHref({ embedded: true, network }));
+      setActiveFolder("publish");
+      setSidebarExpanded(false);
+      setComposeOpen(false);
+      setSelectedKey("");
+    } catch (error) {
+      setStatus({ tone: "bad", text: errorMessage(error, "Save your Mail draft before opening Publish.") });
+    }
   }
 
   function discardDraft() {
@@ -38521,6 +38595,7 @@ export default function App() {
                   feeRate={feeRate}
                   memo={memo}
                   network={network}
+                  onPublish={composePublish}
                   ccRecipient={ccRecipient}
                   ccRecipientError={Boolean(ccRecipientResolution.error)}
                   ccRecipientNote={ccRecipientNote}
@@ -38580,6 +38655,7 @@ export default function App() {
                   memo={memo}
                   dataCarrierBytes={composeDataCarrierBytes}
                   network={network}
+                  onPublish={composePublish}
                   ccRecipient={ccRecipient}
                   ccRecipientError={Boolean(ccRecipientResolution.error)}
                   ccRecipientNote={ccRecipientNote}
@@ -60209,6 +60285,7 @@ function ComposePane({
   memo,
   network,
   onDiscardDraft,
+  onPublish,
   parentTxid,
   recipient,
   recipientError,
@@ -60248,6 +60325,7 @@ function ComposePane({
   memo: string;
   network: BitcoinNetwork;
   onDiscardDraft?: () => void;
+  onPublish: () => void;
   parentTxid?: string;
   recipient: string;
   recipientError: boolean;
@@ -60366,11 +60444,18 @@ function ComposePane({
         <input readOnly value={sender || "Not connected"} />
       </label>
 
-      <label className="compose-social-toggle">
-        <input
-          checked={socialMode}
+      <label>
+        Compose
+        <select
+          aria-label="Compose type"
+          disabled={busy}
+          value={socialMode ? "boost" : "mail"}
           onChange={(event) => {
-            const checked = event.target.checked;
+            if (event.target.value === "publish") {
+              onPublish();
+              return;
+            }
+            const checked = event.target.value === "boost";
             setSocialMode(checked);
             if (checked) {
               setRecipient(sender);
@@ -60378,12 +60463,11 @@ function ComposePane({
               setParentTxid(undefined);
             }
           }}
-          type="checkbox"
-        />
-        <span className="button-content">
-          <Tag size={16} />
-          <span>Boost</span>
-        </span>
+        >
+          <option value="mail">Mail</option>
+          <option value="boost">Boost</option>
+          <option value="publish">Publish</option>
+        </select>
       </label>
 
       <label>
@@ -60676,6 +60760,33 @@ function Reader({
   onRestoreDraft: (message: MailMessage) => void;
   threadMessages: MailMessage[];
 }) {
+  const article = verifiedMailArticle(message);
+  const hasArticleEvidence = Boolean(message.article || message.articleVerification);
+  const articleScope = JSON.stringify([message.txid, message.network, message.memo, article]);
+  const [articleRead, setArticleRead] = useState<{ scope: string; status: "loading" | "verified" | "unavailable" }>();
+  const [articleRetry, setArticleRetry] = useState(0);
+  useEffect(() => {
+    if (!article) return;
+    const controller = new AbortController();
+    setArticleRead({ scope: articleScope, status: "loading" });
+    void fetchProofApiJson<{ complete?: boolean; mode?: string; snapshotId?: string; network?: BitcoinNetwork; post?: BoostFeedItem }>(
+      `/api/v1/boost?detail=${encodeURIComponent(message.txid)}&fresh=1`, message.network,
+      { signal: controller.signal, timeoutMs: 60_000 },
+    ).then(payload => {
+      const post = payload.post;
+      const freshArticle = post ? verifiedMailArticle({ ...post, memo: post.articleBody ?? "" }) : null;
+      if (payload.complete !== true || payload.mode !== "detail" || !payload.snapshotId || payload.network !== message.network ||
+          post?.txid !== message.txid || post.kind !== "boost-post" ||
+          post.articleBody !== message.memo || JSON.stringify(freshArticle) !== JSON.stringify(article)) {
+        throw new Error("Article evidence does not match this Mail record.");
+      }
+      if (!controller.signal.aborted) setArticleRead({ scope: articleScope, status: "verified" });
+    }).catch(() => {
+      if (!controller.signal.aborted) setArticleRead({ scope: articleScope, status: "unavailable" });
+    });
+    return () => controller.abort();
+  }, [articleScope, articleRetry]);
+  const articleStatus = articleRead?.scope === articleScope ? articleRead.status : "loading";
   const peerLabel = message.folder === "sent" ? "To" : "From";
   const peer =
     message.folder === "sent"
@@ -60705,6 +60816,7 @@ function Reader({
           <span>
             {formatDate(message.createdAt)}
             {message.parentTxid ? " · Reply" : ""}
+            {article ? " · Publish article" : ""}
           </span>
         </div>
         <div className="reader-actions">
@@ -60818,7 +60930,13 @@ function Reader({
               </span>
             </button>
           ) : null}
-          {message.socialMode ? (
+          {article ? (
+            <a className="secondary small link-button"
+              href={publishHref({ txid: message.txid, network: message.network })}>
+              <span className="button-content"><FileText size={15} /><span>Open Publish</span></span>
+            </a>
+          ) : null}
+          {message.socialMode || article ? (
             <>
               <a
                 className="secondary small link-button"
@@ -60841,7 +60959,7 @@ function Reader({
               <a
                 className="secondary small link-button"
                 href={boostTwitterShareUrl({
-                  memo: message.memo,
+                  memo: article?.title ?? message.memo,
                   network: explorerNetwork,
                   txid: message.txid,
                 })}
@@ -60927,7 +61045,18 @@ function Reader({
         ) : null}
       </dl>
 
-      <pre>{message.memo}</pre>
+      {hasArticleEvidence ? (
+        article && articleStatus === "verified" ? (
+          <><p className="field-note">Confirmed article · Exact text verified</p><pre>{message.memo}</pre></>
+        ) : article && articleStatus === "loading" ? (
+          <p role="status">Verifying article text…</p>
+        ) : (
+          <div role="alert"><p>Article text unavailable. Its confirmed text could not be verified.</p>
+            {article ? <button className="secondary small" type="button"
+              onClick={() => setArticleRetry(value => value + 1)}>Retry article read</button> : null}
+          </div>
+        )
+      ) : <pre>{message.memo}</pre>}
 
       {message.attachment ? (
         <AttachmentCard attachment={message.attachment} />

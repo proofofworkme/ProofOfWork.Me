@@ -7,6 +7,18 @@ transaction, and sign locally. Readers discover articles, follow authors, open
 author archives, and read complete verified text. Confirmed records are
 canonical; a broadcast receipt or pending transaction is visibility only.
 
+The writer is a dedicated page at `publish.proofofwork.me/write`, with local
+preview at `/?publish=1&write=1` and Computer at `/?folder=publish&write=1`.
+Editing and preview use normal page scrolling and Back/Forward navigation.
+Only the exact transaction consent review opens a dialog. Reload restores the
+current wallet/network article draft.
+
+Mail Compose offers Mail, Boost and Publish. Selecting Publish saves every
+field of the Mail draft before opening this same writer and its separate
+article draft. Back restores Mail under the current wallet/network; a changed
+account cannot restore another account's composition. Mail text, attachments,
+recipients and reply context are not imported into the public article.
+
 ## One article, one social record
 
 An article is an additive original `pwb1:post`, keyed by its transaction ID.
@@ -41,6 +53,14 @@ The feed carries compact metadata only; it does not load every article body.
 pagination. `profile=<address-or-id>&profileTab=boosts&format=article` reads an
 author archive. Existing exact-txid detail reads return verified `articleBody`.
 Invalid or unavailable body evidence never becomes rendered article text.
+
+The article's self-payment and existing Mail envelope also produce normal
+Inbox and Sent records. Their canonical companion Boost post supplies compact
+article metadata; the body remains the exact `memo`, without another body
+copy or payment. Mail uses the verified article title and an Open Publish link.
+Its reader requests fresh exact-txid Boost detail and renders article text only
+when confirmed metadata, UTF-8 size, SHA-256 and the full body agree. Malformed,
+pending or unavailable evidence does not establish a verified Mail article.
 
 ## Shared people and engagement
 

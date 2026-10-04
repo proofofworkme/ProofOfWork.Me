@@ -307,6 +307,22 @@ article engagement. Public identity remains confirmed-chain state; a local
 choice never changes the ID registry. [PUBLISH.md](PUBLISH.md) defines the
 body budget, transaction review, receipt recovery and reader verification.
 
+Mail Compose exposes Mail, Boost and Publish as mutually exclusive choices.
+Publish opens the shared dedicated article writer in Computer; it saves the
+complete current Mail draft first, including recipients, attachment, reply,
+proofs, WORK and fee fields. The writer opens its separate article draft without
+copying private Mail content. Back restores the current wallet/network Mail
+draft. Selecting Boost retains the existing short-post self-send behavior and
+legacy `socialMode` drafts.
+
+Publish articles self-send at least 546 proofs. The existing Mail projection
+places their confirmed transaction in both Inbox and Sent, with its exact full
+text in `memo`. Verified compact metadata from the canonical companion Boost
+post supplies the article title and Publish link. Opening the Mail reader also
+checks fresh exact-txid confirmed article evidence before rendering the full
+text. Body bytes, whitespace, attachments and ordinary Mail behavior remain
+subject to their existing rules; social actions are not new Mail event kinds.
+
 ## Boost Profile Images
 
 Boost's Profile images picker reuses confirmed Inbox/Sent attachments, including images received from another sender. It deduplicates self-sends by file transaction/hash and excludes pending or dropped mail. PNG, JPEG, GIF, WebP, and AVIF previews require matching hash, size, MIME, and name. A missing file library offers guidance to send an image to the connected address and wait for confirmation.
