@@ -5752,7 +5752,7 @@ After changing the API or production build, verify:
 - Public Desktop can search a raw address or confirmed ProofOfWork ID and returns only confirmed attachments.
 - Browser can load a txid with HTML in the message body or a verified `text/html` attachment, render it in a sandbox, and reject non-HTML message/attachment data.
 - Boost can load `/api/v1/boost`, rank confirmed `pwb1:` posts by value or time, show For You/all and viewer-scoped Following timelines, show total proof-equivalent signal, direct proof signal, attached WORK signal, and total USD value, expose profile-filtered views, connect UniSat for paid actions/listing/profile intent/following, and provide Twitter/X share links with mempool.space tx URLs.
-- Both public and Computer-embedded Boost compose buttons publish originals with positive Proof and/or verified WORK self-transfer signal and Files-backed media in the same transaction. The separate Computer Mail compose Boost ticker retains its positive Proof self-send and optional WORK attachment path. Text remains capped at 140 characters; the Twitter/X share intent opens after broadcast.
+- Both public and Computer-embedded Boost compose buttons publish originals with positive Proof and/or verified WORK self-transfer signal and Files-backed media in the same transaction. The separate Computer Mail compose Boost option retains its positive Proof self-send and optional WORK attachment path. Text remains capped at 140 characters; the Twitter/X share intent opens after broadcast.
 - Boost writers pay likes, replies, and reboosts directly to the current confirmed Boost owner; each confirmed payment contributes its exact amount to the original Boost's proof signal. Follows pay 546 proofs to the followed profile, self-follow is invalid, and unfollows keep the profile-target rule. The Boost composer, replies, likes, and reboosts use the shared selectable miner fee-rate control. Only direct transfers and listing-sale mutations pay the 546-proof Boost registry fee. The feed binds each engagement action to the current confirmed owner, so purchases and transfers route future engagement revenue to the new owner without changing confirmed history. AMO reads active Boost sale tickets from the replayed Boost feed state and displays them with the other asset books.
 - Standalone AMO can list, seal, delist, and buy confirmed IDs through the same registry API.
 - Credit, Wallet, and AMO transaction buttons can load UTXOs, previous transaction hex, and listing-anchor outspends through the first-party API before opening UniSat.
@@ -6596,3 +6596,75 @@ timers retain their documented protections. No historical deletion occurred.
 record final scope, refusals and receipt pins. Release announcement:
 [verified X post](https://x.com/proofofworkme/status/2106537799943868594). Prior dated release sections remain the
 state observed at their own handoffs, rather than current serving authority.
+
+### Publish writer and Mail follow-up — 2026-10-04 UTC
+
+Application `eb5e8c70cb0df99fa50ff4d94be1f3ab69546d09`, tree
+`ee3b85ea5ac58c30e31ff5e6774d01fad6303f4d`, is now serving as
+`eb5e8c70cb0d-20261004T005638Z`. Deployment-only recovery tooling remains
+separately pinned to `8062c68a4df570904fbb700c96bfee0764f6f309`, tree
+`2bb63c280f748b11ac3422b88c87003bd7271019`; it does not relabel the app.
+The serving/provenance manifest is
+`b9e89168f9763a04fe3b3f9122303933e3a18bff4d7f354de71f10d4bf0427c2`.
+This dated handoff supersedes the prior Publish section's serving identity;
+its original release and evidence remain preserved.
+
+The article writer uses normal page flow at `publish.proofofwork.me/write`
+and Computer's `?folder=publish&write=1` route. Mail Compose selects Mail,
+Boost or Publish. Publish preserves the complete scoped Mail composition before
+opening its separate article draft. Confirmed article self-sends project through
+the existing Inbox/Sent path with compact verified metadata and exact full text;
+the reader requires fresh matching transaction evidence. The existing Boost
+identity and engagement protocol, local signing, payment lanes and aggregate
+100,000-byte OP_RETURN script budget remain authoritative.
+
+Node production acceptance
+`74fe79da0eb11c71d469037e0d4f9cc0ee84b2ba3406c5552924d20ff69d93f4`
+passed at
+`969783/00000000000000000001f5156b6bd78db9a946ea0e74f086e2379b6495e33982`
+with runtime
+`0c2c42c315a24c534c4c6741d6faca413dab14eb93dfb322791a1572b1f4f4ae`.
+Final Node closeout
+`c8139babec89e9a40493ba811085c42a831c3edb89ed32d565e4fb471b618725`
+verified IDs, 49 event checks, 102 parity checks and all 1,006 independently
+anchored WORK listing rows. Core, Electrs, PostgreSQL, timer states, retention
+holds and prior recovery material remained protected.
+
+UI staging admitted the measured completed candidate at 263,041,024 conservative
+bytes under the unchanged 5 GiB scratch ceiling. The original 478,883,840-byte
+full-copy guard was retained on the evidence filesystem. The initial staging
+refusal and all eight records remain preserved. The first source attempt
+refused the exclusive deployment lock before creating source outputs or reading
+its input; its historical lock holder is unknown. A fresh source-only attempt
+passed without replaying staging. The clean detached source and candidate
+provenance verified the exact application commit/tree.
+
+The managed UI archive is 211,800,485 bytes, SHA-256
+`789e5969e4348d4c9d8d328fb6d04ff94f555071012e253ce51f1e078b5d6319`.
+Guarded UI publication completed at 01:45:59 UTC with all three prior rollback
+roots unchanged and a new rollback root exactly matching the prior live UI.
+Installed helpers and Caddy configuration remain at the pins in the preceding
+Publish handoff; no Caddy reload or historical deletion was required.
+
+Off-host HTTPS receipt
+`9d159c1eb160ac8cad5c4bffd0570b48ca5657b76ac755e70677481962de9d82`
+verified all 992 public files across sixteen hostnames, the apex redirect,
+archive, checksum and provenance. The seventeen managed roots include NFT's
+62 archived alias files, which are excluded from public hostname requests.
+Focused public verification
+`c1e37a11a987ed571b58dec0af301981c709fd8df9fe4bf696be29aa8058ebe9`
+passed 16 checks / 21 requests, including writer routes, exact build assets and
+identity bridge policies. Guest browser receipt
+`2f54b659aa91717a086945647d50f15d0011d58b8cd05fad9a4b0d534311143f`
+verified inline preview, reload, Back/Forward, normal document scrolling and
+restoration of the original empty draft. Connected Mail handoff and confirmed
+article detail/self Inbox/Sent remain live-unexercised because the browser was
+a guest and the complete article feed contained no confirmed articles. Local
+fixture tests cover those paths; no production signing or broadcast occurred.
+
+The [follow-up release audit](audits/2026-10-04-publish-writer-mail-release.md)
+and [compact evidence](audits/2026-10-04-publish-writer-mail-release.evidence.json)
+retain exact bindings, tests, refusals and qualifications. The single verified
+[follow-up announcement](https://x.com/proofofworkme/status/2106562933551436262)
+was published at 01:51:56 UTC. Documentation-only closeout does not create a
+second announcement or relabel the deployed application.

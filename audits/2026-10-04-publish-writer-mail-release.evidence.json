@@ -1,0 +1,1738 @@
+{
+  "schema": "proof-of-work-publish-followup-release-evidence-v1",
+  "status": "production-verified-and-announced",
+  "updatedAt": "2026-10-04T01:55:15.891841+00:00",
+  "releaseId": "eb5e8c70cb0d-20261004T005638Z",
+  "releaseDates": {
+    "applicationCommitUtc": "2026-10-04",
+    "localCalendarDate": "2026-10-03",
+    "localTimezone": "America/Toronto",
+    "finalPublicVerificationUtc": "2026-10-04T01:50:51.063Z",
+    "closeoutPending": false,
+    "announcementPublishedUtc": "2026-10-04T01:51:56.000Z",
+    "repositoryBookkeepingPending": true
+  },
+  "application": {
+    "commit": "eb5e8c70cb0df99fa50ff4d94be1f3ab69546d09",
+    "tree": "ee3b85ea5ac58c30e31ff5e6774d01fad6303f4d",
+    "branch": "codex/publish",
+    "pushStatus": "pushed-reported-by-root",
+    "commitTreeObservedLocally": true,
+    "priorCloseoutCommit": "4f7af6daa47539cf34cf0e3757b830ad5f64df94",
+    "trackedChangedFiles": 16,
+    "trackedFileDeletions": 0
+  },
+  "product": {
+    "dedicatedWriter": {
+      "public": "https://publish.proofofwork.me/write",
+      "local": "/?publish=1&write=1",
+      "computer": "/?folder=publish&write=1",
+      "normalDocumentScrolling": true,
+      "writerAndPreviewModal": false,
+      "exactTransactionConsentDialogRetained": true
+    },
+    "navigation": "Same-origin history returns to originating Articles or Mail context; direct writer links use safe Articles fallback. Browser Back/Forward/reload preserve local scoped drafts.",
+    "drafts": "Browser-local, wallet/network scoped, including guest-to-wallet continuity and scoped dropped-receipt restoration. Manual Back, browser Back, workspace leave and hard unload use the synchronous save guard.",
+    "mailHandoff": "Mail Compose offers mutually exclusive Mail, Boost and Publish choices. Handoff saves the complete Mail composition before opening its separate article draft. Mail text/attachments/recipients/reply context are not imported into an article. Changed-account Back restores only the current account/network draft and aligns the Drafts route.",
+    "mailProjection": "Existing confirmed article self-send remains Inbox and Sent. Indexed/raw Mail attach compact article metadata only when the exact confirmed companion root and body commitment agree. Reader fetches fresh exact-txid body evidence; malformed/pending/ambiguous/wrong-network/mismatched evidence does not establish a verified article.",
+    "preserved": [
+      "Local wallet signing",
+      "Exact OP_RETURN budget and transaction review",
+      "Signed txid receipt before broadcast and uncertain-status protection",
+      "Signed PowID selection bridge with no article text relay",
+      "Existing confirmed Boost social identity and engagement",
+      "Historical Mail, Boost and canonical registry/economic forms"
+    ]
+  },
+  "localValidation": {
+    "focusedBrowser": {
+      "status": "passed",
+      "selectedCount": 37,
+      "passedCount": 37,
+      "failedCount": 0,
+      "durationDisplay": "1.8m",
+      "breakdown": {
+        "Publish": 13,
+        "BoostSocialUi": 5,
+        "Mail": 19,
+        "MailNewIntegrationChecksWithinMail": 8
+      },
+      "evidenceRefs": [
+        "focusedBrowserLog",
+        "focusedBrowserSelection"
+      ],
+      "qualification": "Vite observed a late App.tsx update during this run. The final current-account history change was independently retested after source freeze. This focused pass does not convert the broader run into a pass."
+    },
+    "finalFrozenAccountHistory": {
+      "status": "passed",
+      "selectedCount": 1,
+      "passedCount": 1,
+      "durationSeconds": 9.5,
+      "title": "Mail to Publish history restores only the current account's draft",
+      "purpose": "Final route alignment for changed-account Back to current-scope Drafts",
+      "evidenceRefs": [
+        "frozenAccountBrowserLog",
+        "frozenAccountBrowserSelection",
+        "frozenAccountSourceHashes"
+      ],
+      "serverStopped": true,
+      "serverHmrObserved": false
+    },
+    "finalCommittedInboxFixture": {
+      "status": "passed",
+      "selectedCount": 1,
+      "passedCount": 1,
+      "durationSeconds": 8.5,
+      "title": "Inbox WORK admission hydrates fresh authority and explains a paused send",
+      "evidenceRefs": [
+        "frozenInboxBrowserLog",
+        "frozenInboxBrowserSelection"
+      ],
+      "serverStopped": true,
+      "serverHmrObserved": false,
+      "repositoryEdited": false
+    },
+    "typeScript": {
+      "status": "passed",
+      "command": "npx tsc --noEmit",
+      "exitCode": 0,
+      "logEmptyOnSuccess": true,
+      "evidenceRef": "frozenTypeScriptLog"
+    },
+    "uiContract": {
+      "status": "passed",
+      "command": "npm run check:ui",
+      "evidenceRef": "lockedDependencyUiContractLog"
+    },
+    "publishChecks": {
+      "status": "passed",
+      "command": "npm run check:publish",
+      "directlyVisibleParentFilePasses": 2,
+      "directlyVisibleIdentityPasses": 8,
+      "directlyVisibleSignedRecoveryPasses": 5,
+      "evidenceRef": "lockedDependencyPublishChecksLog",
+      "qualification": "The immutable TAP log reports two parent file wrappers for the article protocol script and Mail projection file. Internal article assertions are not added to the parent count."
+    },
+    "mailArticleProjection": {
+      "status": "passed",
+      "directlyVisibleParentFilePasses": 1,
+      "file": "server/mail-article-projection.test.mjs",
+      "declaredFixtureGroupCount": 8,
+      "declaredFixtureGroups": [
+        "compact article fields require the exact confirmed txid, title and body commitment",
+        "indexed Mail retains exact body and the same self-send independently in Inbox and Sent",
+        "indexed Mail omits article claims for ambiguous roots, pending state or changed carrier bytes",
+        "raw Mail verifies complete same-tx article bytes and matches indexed self-send metadata",
+        "raw Mail refuses pending, duplicate, incomplete, attachment, invalid UTF-8 and over-budget article evidence",
+        "overlay and body repair retain only article metadata matching the final exact body",
+        "canonical display normalization does not change a valid article title or raw body",
+        "ordinary Mail and legacy Boost self-sends retain their original projection behavior"
+      ],
+      "groupCountBasis": "Exact committed test-source declarations; immutable run log exposes one parent file wrapper, not a separate child assertion total.",
+      "evidenceRefs": [
+        "mailArticleProjectionFinalLog",
+        "mailProjectionTestSource"
+      ]
+    },
+    "mailIndexRecoveryRegression": {
+      "status": "passed",
+      "directlyVisibleBehaviorChecksPassed": 552,
+      "directlyVisibleBehaviorChecksTotal": 552,
+      "evidenceRef": "mailIndexRecoveryRegressionLog"
+    },
+    "build": {
+      "status": "passed",
+      "evidenceRef": "buildAndCheckFinalLog",
+      "qualification": "Build log includes the existing large-chunk size warning; the build completed successfully."
+    },
+    "dependencyInstall": {
+      "status": "completed-reported-by-root",
+      "method": "Fresh locked node_modules before final frozen account and committed Inbox retests",
+      "evidenceRef": "dependencyInstallLog"
+    },
+    "broadBrowserOriginal": {
+      "status": "failed-retained",
+      "selectedCount": 92,
+      "passedCount": 88,
+      "failedCount": 4,
+      "durationDisplay": "6.2m",
+      "evidenceRef": "broadBrowserOriginalLog",
+      "fontWarnings": "Original symlinked dependency Vite preview also recorded font allow-list warnings; final dedicated checks used corrected isolated previews/fresh locked dependencies.",
+      "failures": [
+        {
+          "title": "Inbox WORK admission hydrates fresh authority and explains a paused send",
+          "originalStatus": "failed",
+          "classification": "fixture-scope-corrected",
+          "qualification": "Original API fixture lacked the canonical address/network shape. The retained original failure is preserved. Exactly one corrected test passed on the committed follow-up source.",
+          "resolutionEvidenceRef": "frozenInboxBrowserLog",
+          "resolutionPassCount": 1
+        },
+        {
+          "title": "Unknown Mail broadcast persists its txid and draft until a status check resolves it",
+          "originalStatus": "failed",
+          "classification": "fixture-scope-corrected",
+          "qualification": "Original API fixture lacked the canonical address/network shape. The corrected test passed within the exact 37-test focused run; the original failure remains retained.",
+          "resolutionEvidenceRef": "focusedBrowserLog",
+          "resolutionPassCount": null
+        },
+        {
+          "title": "standalone INCB clears its compact preview after filtering the exact global listing book",
+          "originalStatus": "failed",
+          "classification": "same-assertion-reproduced-on-retained-d5-build",
+          "qualification": "After Refresh, .desktop-route-status.status.good is absent; expected Inception Bond loaded.",
+          "baselineEvidenceRef": "incbBaselineReceipt",
+          "broaderProductCorrectnessEstablished": false
+        },
+        {
+          "title": "standalone INCB stays idle with a labeled preview on scoped checkpoint and count mismatch",
+          "originalStatus": "failed",
+          "classification": "same-assertion-reproduced-on-retained-d5-build",
+          "qualification": "Expected exact indexed summary snapshot; actual error is The verified preview remains visible. The complete bond listing book does not match its asset and indexed summary snapshot.",
+          "baselineEvidenceRef": "incbBaselineReceipt",
+          "broaderProductCorrectnessEstablished": false
+        }
+      ],
+      "all92Passed": false
+    },
+    "incbBaseline": {
+      "status": "same-two-assertion-failures-reproduced",
+      "baselineCommit": "d5a8493119baf48231cab2db34883169399a41be",
+      "baselineTree": "938354edb5174f320fbcf284e66a1c5532885a1d",
+      "baselineReleaseId": "d5a8493119ba-20261003T222517Z",
+      "selectedCount": 2,
+      "failedCount": 2,
+      "exitCode": 1,
+      "sameSelectedTestBodies": true,
+      "computerSurfaceArchiveMatch": {
+        "files": 54,
+        "logicalBytes": 13791030,
+        "allExtractedFilesByteEqual": true
+      },
+      "evidenceRefs": [
+        "incbBaselineReceipt",
+        "incbBaselineBrowserLog",
+        "incbBaselineBuildReceipt"
+      ],
+      "qualification": "Baseline reproduces the same selected test assertions. It does not certify every unrelated INCB product behavior or convert the broad 92-test run into a pass."
+    },
+    "uiReleaseWrapper": {
+      "status": "passed",
+      "count": 43,
+      "seconds": 119.948,
+      "evidenceRef": "uiWrapperFinalLog"
+    },
+    "initialUiRecoveryFocused": {
+      "status": "passed",
+      "count": 22,
+      "historicalChecksRetained": 15,
+      "newChecks": 7,
+      "evidenceRef": "initialUiFocusedTests"
+    },
+    "initialUiActualCapturedBinding": {
+      "status": "passed-offline-actual-captured-binding",
+      "noRemoteExecution": true,
+      "evidenceRef": "initialUiActualCapturedBinding",
+      "qualification": "This local offline binding check is not a completed remote UI stage or publication acceptance."
+    },
+    "initialUiIndependentReview": {
+      "status": "approved-no-blocker-or-guard-relaxation",
+      "patchSha256": "3b15f391be49f261c4d740d5114f2ae92126f578b6df2d21c8fee9324c784d3a",
+      "allOtherHelperModuleAstUnchangedAgainstEb5": true,
+      "legacyValidateResumeUnchanged": true,
+      "evidenceRef": "initialUiIndependentReview"
+    }
+  },
+  "verificationScope": {
+    "localPositiveArticleBodies": "Synthetic fixture evidence",
+    "walletSigning": "Fixture rejection/signing and actual local test PSBT coverage; no production wallet signature claimed",
+    "likesRepliesReboosts": "Shared fixture/UI coverage; no new production social transaction claimed",
+    "productionFinancialBroadcastsPerformedForThisLocalValidation": false,
+    "productionArticleOrMailConfirmationExercised": false,
+    "productionClaimsPending": false,
+    "nodeProductionAcceptanceRecorded": true,
+    "productionConnectedMailComposerHandoffExercised": false,
+    "productionGuestWriterExercised": true,
+    "productionSocialTransactionExercised": false,
+    "liveFixtureQualification": "Public read-only contracts and guest writer navigation verified; confirmed article detail and Inbox/Sent article evidence, connected Mail composer handoff, wallet signing and social transactions remain unexercised live. Positive versions retain focused fixture coverage."
+  },
+  "preservation": {
+    "initialPublishAuditUnchanged": [
+      {
+        "path": "audits/2026-10-03-publish-product-release.md",
+        "unchangedFromPriorCloseout": true,
+        "sha256": "458ca56ede01ecede3c8a5a85a11de819da46ad51cafd6287b140f6bb1e0acaa"
+      },
+      {
+        "path": "audits/2026-10-03-publish-product-release.evidence.json",
+        "unchangedFromPriorCloseout": true,
+        "sha256": "32b5bdef97baddf9d86d1c7c75f3b3c9cab17de12c6b9f9240d8d78b6b3796a7"
+      }
+    ],
+    "trackedFileDeletions": 0,
+    "broadFailureLogRetained": true,
+    "baselineFailuresRetained": true,
+    "initialReleaseEvidenceRewrittenOrDeleted": false,
+    "productionProtectedStateAttestation": "node-authorities-and-ui-live-retained-rollback-state-verified",
+    "originalUiCapacityRefusalRetained": true,
+    "originalSourceLockRefusalRetained": true,
+    "sourceLockHistoricalHolderCause": "unknown",
+    "initialAndSecondLocalDraftsPreserved": true
+  },
+  "production": {
+    "status": "node-ui-https-and-browser-verified",
+    "nodeRelease": {
+      "status": "complete",
+      "candidate": {
+        "commit": "eb5e8c70cb0df99fa50ff4d94be1f3ab69546d09",
+        "tree": "ee3b85ea5ac58c30e31ff5e6774d01fad6303f4d",
+        "runtimeSha256": "0c2c42c315a24c534c4c6741d6faca413dab14eb93dfb322791a1572b1f4f4ae"
+      },
+      "observedAt": "2026-10-04T01:19:46.787610+00:00",
+      "liveAttestation": [
+        "eb5e8c70cb0df99fa50ff4d94be1f3ab69546d09",
+        "ee3b85ea5ac58c30e31ff5e6774d01fad6303f4d",
+        "8321",
+        "249627461",
+        "0c2c42c315a24c534c4c6741d6faca413dab14eb93dfb322791a1572b1f4f4ae"
+      ],
+      "oldAttestation": [
+        "d5a8493119baf48231cab2db34883169399a41be",
+        "938354edb5174f320fbcf284e66a1c5532885a1d",
+        "8316",
+        "249403631",
+        "f7fe0b8ed5484d641c35fd416a41e7b179429802419a76db4712f61f92219ea3"
+      ],
+      "controllerRoot": "/data/proofofwork-audit29-cutover-eb5e8c70cb0d-20261004T005638Z",
+      "controllerSha256": "09afe5ddd243a796ea9c830b0041924747eb77a3803a3cfe56a3279cd24bf670",
+      "newArchive": {
+        "path": "/data/proofofwork-release-backups/managed/proofofwork-node-release-eb5e8c7-20261004T005638Z.tgz",
+        "bytes": 115417869,
+        "sha256": "4151391e6d5151ebcba8e73e495671579384609670c1649aec10b8de37531f56",
+        "mode": "0o600",
+        "uid": 0,
+        "gid": 0,
+        "noFollowNoAtimeStableRead": true
+      },
+      "newArchiveProvenance": {
+        "path": "/data/proofofwork-release-backups/managed/proofofwork-node-release-eb5e8c7-20261004T005638Z.tgz.provenance",
+        "bytes": 508,
+        "sha256": "bad6dc7a90827679e483372aab18ffcb627edaf8f160b2b933f0346512529097",
+        "mode": "0o600",
+        "uid": 0,
+        "gid": 0,
+        "noFollowNoAtimeStableRead": true
+      },
+      "evidenceRef": "nodeFinalSummary"
+    },
+    "nodeAcceptance": {
+      "status": "passed",
+      "stableCheckpoint": {
+        "height": 969783,
+        "hash": "00000000000000000001f5156b6bd78db9a946ea0e74f086e2379b6495e33982"
+      },
+      "acceptedReceipt": {
+        "path": "/data/proofofwork-audit29-verify-launch-eb5e8c70cb0d-20261004T005638Z-production-initial/accepted-receipt.json",
+        "bytes": 30825,
+        "sha256": "74fe79da0eb11c71d469037e0d4f9cc0ee84b2ba3406c5552924d20ff69d93f4",
+        "mode": "0o600",
+        "uid": 0,
+        "gid": 0,
+        "noFollowNoAtimeStableRead": true
+      },
+      "publicBase": "https://computer.proofofwork.me",
+      "startedAt": "2026-10-04T01:05:44.761Z",
+      "completedAt": "2026-10-04T01:10:08.346Z",
+      "gates": {
+        "ids": true,
+        "events": true,
+        "parity": true
+      },
+      "gateReceipts": {
+        "ids": {
+          "exitCode": 0,
+          "checkCount": null,
+          "counts": {
+            "Fetched transactions": 587,
+            "Confirmed winners": 508,
+            "Pending candidates": 20,
+            "Covered confirmed registry transactions": 565,
+            "Covered pending registry transactions": 22
+          },
+          "scriptSha256": "d7bbe914e3db45fcebac174dc182146f988547fb8d94ffa65f8286cebd50a825",
+          "stdoutBytes": 6580,
+          "stdoutSha256": "734121aa2310f6c85d1ef786f74831603c8e93980c9fdf045a62560966b5c760",
+          "stderrBytes": 0,
+          "startedAt": "2026-10-04T01:05:45.004Z",
+          "completedAt": "2026-10-04T01:07:30.951Z",
+          "checkpointStable": true
+        },
+        "events": {
+          "exitCode": 0,
+          "checkCount": 49,
+          "counts": null,
+          "scriptSha256": "a5a82730ab8d7edde3d617362c960aa64155dbb090e5676a0906306d6a6d0bce",
+          "stdoutBytes": 54137,
+          "stdoutSha256": "741a9ebcd854afb121288dcb2b7b083b9a72066f69383b00711ae26d5ebc679c",
+          "stderrBytes": 0,
+          "startedAt": "2026-10-04T01:07:30.978Z",
+          "completedAt": "2026-10-04T01:07:59.768Z",
+          "checkpointStable": true
+        },
+        "parity": {
+          "exitCode": 0,
+          "checkCount": 102,
+          "counts": null,
+          "scriptSha256": "450e5361ae5ecdd8dde6e434723366e3d4cc1cafae4675e9e7760c3d1cac90ac",
+          "stdoutBytes": 34398067,
+          "stdoutSha256": "fba0dd36469f132f8979f0d598f6a269942a99aeca0be44c4242eca69ad3ee9b",
+          "stderrBytes": 0,
+          "startedAt": "2026-10-04T01:07:59.797Z",
+          "completedAt": "2026-10-04T01:08:45.446Z",
+          "checkpointStable": true
+        }
+      },
+      "pendingDates": {
+        "pendingRecords": 20,
+        "confirmedRecords": 508,
+        "recordsSha256": "28243fc2b065752d8a8ffad3e416f56f35a36478582f53e467ab1745412254f8"
+      },
+      "exactId": {
+        "id": "ross",
+        "confirmed": false,
+        "status": "pending",
+        "payloadSha256": "2eef0fed30c7a9f121dc995ef65a6158773fe4e95008120fcd457df675547966"
+      },
+      "wallet": {
+        "ready": true,
+        "balanceVerified": true,
+        "capacityVerified": true,
+        "status": 200,
+        "verificationStatus": "passed",
+        "code": null,
+        "requiredSource": null,
+        "knownIssueGroups": null
+      },
+      "walletQualification": "exact-balance-and-capacity-verified",
+      "book": {
+        "listings": 1006,
+        "fullPages": 6,
+        "displayPages": 6,
+        "fullRowsSha256": "ff898c04ba8f511336436a8ccea15382bce9778fa30aba69d2a1ad66228a9f80",
+        "independentCoreAnchors": 1006,
+        "independentCoreSha256": "7f32fcde8016da6404f93cd4c88aced7cd33c33f9b513a1d0dc12548e2fdb4b2",
+        "membershipRecheckedAfterCore": true,
+        "historicalAuditBaseline": 999,
+        "deltaFromAuditBaseline": 7
+      },
+      "privateLauncher": {
+        "unit": "proofofwork-audit29-verify-eb5e8c70cb0d-20261004T005638Z-production-initial.service",
+        "captureId": "eb5e8c70cb0d-20261004T010540Z",
+        "captureApiSha256": "95e57f7f47e9c7b1116683fc2f4f0d481c9810f17d61a0e73f17fd9f0da83a3b",
+        "driverReceiptSha256": "249e945c893fed40531326e7edfdc021af7dcf87340c22f7d7d8ba232177e266",
+        "scriptSha256": "bbded71fa88cfc108c611b3beddd3a6c693b38477c356b682caed8985976abda"
+      },
+      "counters": {
+        "httpCalls": 16,
+        "coreCalls": 1016,
+        "bytes": 60417790
+      },
+      "evidenceRef": "nodeFinalSummary"
+    },
+    "uiRelease": {
+      "status": "published-and-publicly-verified",
+      "applicationCommit": "eb5e8c70cb0df99fa50ff4d94be1f3ab69546d09",
+      "applicationTree": "ee3b85ea5ac58c30e31ff5e6774d01fad6303f4d",
+      "manifestSha256": "b9e89168f9763a04fe3b3f9122303933e3a18bff4d7f354de71f10d4bf0427c2",
+      "managedArchive": {
+        "path": "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-eb5e8c70cb0d-20261004T005638Z.tgz",
+        "bytes": 211800485,
+        "sha256": "789e5969e4348d4c9d8d328fb6d04ff94f555071012e253ce51f1e078b5d6319",
+        "checksumSha256": "c34105887eb8db41071e068b622d282001eb71e1cd51e3b67febde53f64799f6"
+      },
+      "managedSurfaces": 17,
+      "managedRegularFiles": 1054,
+      "publicSurfaces": 16,
+      "publicRegularFiles": 992,
+      "preservedNftArchivedAliasFiles": 62,
+      "evidenceRefs": [
+        "completedUiStageReceipts",
+        "publicManagedUiArchiveProvenance",
+        "publicAllFileHttpsReceipt"
+      ]
+    },
+    "uiProvenance": {
+      "status": "passed",
+      "sourceAttempt": "source-retry1",
+      "sourcePlanSha256": "72298173f738b9743ec0331048dd4d133faa1bf5cdf4aecb003192a21bd84673",
+      "sourceReceiptSha256": "8888e91b2f924c97018c461a57f6998a8637ce9508e78d7de86c48c0574870b1",
+      "detachedSourceClean": true,
+      "candidateProvenanceVerified": true,
+      "receiverReceipt": {
+        "status": "verified",
+        "kind": "source",
+        "releaseId": "eb5e8c70cb0d-20261004T005638Z",
+        "archiveSha256": "991052ec328ad7b67226ce82a8186d787afe2b5d5dd1a2dc1a2f4a1923370c45",
+        "compressedBytes": 116049793,
+        "entries": 8373,
+        "logicalBytes": 293646001,
+        "extractedRoot": "/var/backups/proofofwork-ui/transport-evidence/eb5e8c70cb0d-20261004T005638Z/proofofwork-ui-source-eb5e8c70cb0d-20261004T005638Z"
+      },
+      "receiverReceiptSha256": "e8578949228fb4b93344ab79ca873d174363ae06f2af47e0102c1546f6f7a803",
+      "candidateProvenanceLogBytes": 53349,
+      "candidateProvenanceLogSha256": "8526d411c007d8f6f15a7f12e54b411474730103940f2d46e1151794308c2922",
+      "evidenceRefs": [
+        "sourceRetryReceipts",
+        "sourceRetryHandoff"
+      ]
+    },
+    "uiPublication": {
+      "status": "passed",
+      "attempt": "completed-v1",
+      "publicationPlanSha256": "0cb275b4f776dc7f78b15309c370e1c9ab393869aa81f821bfcd5a3a3cc2c122",
+      "sourceReceiptSeparatelyBoundFromAttempt": "source-retry1",
+      "exitCode": 0,
+      "finishedAt": "2026-10-04T01:45:59Z",
+      "publisherLogSha256": "380c12f3fd1ef0fc088c816cf0a06941720583588476739c7af1f58b841aa1c7",
+      "capturedLogBytes": 211694,
+      "manifestSha256": "b9e89168f9763a04fe3b3f9122303933e3a18bff4d7f354de71f10d4bf0427c2",
+      "archiveSha256": "789e5969e4348d4c9d8d328fb6d04ff94f555071012e253ce51f1e078b5d6319",
+      "allPriorRootsPreserved": true,
+      "newRollbackRoot": {
+        "format": "proofofwork-ui-retained-root-v1",
+        "classification": "retain",
+        "root": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-eb5e8c70cb0d-20261004T005638Z",
+        "manifestSha256": "201fcf4897c1eaf9cd0062476ed00f00fa277af10d3c9f3628d1df6ce10425b6",
+        "treeSha256": "c038882738369d2fa03c0338eb32eca5758468f293f07f6270b73462d6ac8f2d",
+        "entries": 1512,
+        "regularBytes": 450784841
+      },
+      "evidenceRef": "uiPublicationLocalLog"
+    },
+    "httpsVerification": {
+      "format": "publish-ui-https-byte-smoke-v1",
+      "ok": true,
+      "releaseId": "eb5e8c70cb0d-20261004T005638Z",
+      "commit": "eb5e8c70cb0df99fa50ff4d94be1f3ab69546d09",
+      "tree": "ee3b85ea5ac58c30e31ff5e6774d01fad6303f4d",
+      "archiveSha256": "789e5969e4348d4c9d8d328fb6d04ff94f555071012e253ce51f1e078b5d6319",
+      "startedAt": "2026-10-04T01:47:01.241Z",
+      "workers": 8,
+      "perRequestSocketTimeoutSeconds": 30.0,
+      "overallTimeoutSeconds": 900.0,
+      "archivedFilesChecked": 992,
+      "hostnameRootsChecked": 16,
+      "verifiedResponseBytes": 237576152,
+      "apexRedirectVerified": true,
+      "manifestSha256": "b9e89168f9763a04fe3b3f9122303933e3a18bff4d7f354de71f10d4bf0427c2",
+      "archiveBytes": 211800485,
+      "sidecarAndProvenanceVerified": true,
+      "archiveEntries": 1089,
+      "archiveFilesSkippedNft": 62,
+      "expectedPublicFiles": 992,
+      "publicSurfaces": 16,
+      "finalLocalEvidenceReverified": true,
+      "finishedAt": "2026-10-04T01:50:51.063Z",
+      "durationSeconds": 229.822,
+      "evidenceRef": "publicAllFileHttpsReceipt"
+    },
+    "liveBrowserVerification": {
+      "schema": "proofofwork-publish-followup-browser-verification-v1",
+      "status": "passed-guest-writer-verification",
+      "releaseId": "eb5e8c70cb0d-20261004T005638Z",
+      "application": {
+        "commit": "eb5e8c70cb0df99fa50ff4d94be1f3ab69546d09",
+        "tree": "ee3b85ea5ac58c30e31ff5e6774d01fad6303f4d"
+      },
+      "verifiedAt": "2026-10-04T01:49:58Z",
+      "browser": "logged-in Codex in-app browser; guest application wallet",
+      "checks": {
+        "directWriterRoute": true,
+        "normalDocumentPage": true,
+        "dialogCount": 0,
+        "documentOverflowY": "auto",
+        "articleBodyFontWeight": "400",
+        "inlinePreviewExactTemporaryText": true,
+        "reloadRetainedExactDraft": true,
+        "directEntryBackFallbackArticles": true,
+        "articlesWriteButtonOpenedWriterRoute": true,
+        "browserBackReturnedArticles": true,
+        "browserForwardRestoredExactDraft": true,
+        "originalEmptyGuestDraftRestoredAndReloadVerified": true,
+        "titleLengthAfterRestore": 0,
+        "bodyLengthAfterRestore": 0
+      },
+      "mailBrowserScope": {
+        "account": "Not connected",
+        "composeActionOpenedGuestConnectState": true,
+        "connectedMailComposerHandoff": "unexercised_without_wallet; covered by focused fixture tests"
+      },
+      "confirmedArticleScope": "unexercised_no_confirmed_articles",
+      "productionWalletSigning": false,
+      "productionBroadcast": false,
+      "articlePublished": false,
+      "screenshot": {
+        "path": "/home/sixer/.codex/visualizations/2026/10/01/01a0f9e1-4153-7b70-bce7-eb6d55609578/publish-writer-eb5e8c70cb0d.jpg",
+        "bytes": 79192,
+        "sha256": "59cd2e4cdeeb71348d6e843199fe2035596a3e3ef8f2d151fbaef69953625dc9"
+      },
+      "evidenceRef": "publicGuestWriterBrowserReceipt"
+    },
+    "apiVerification": {
+      "status": "passed-read-only-focused-contracts",
+      "startedAt": "2026-10-04T01:46:42.108Z",
+      "finishedAt": "2026-10-04T01:47:03.710Z",
+      "checksPassed": 16,
+      "httpsResponses": 21,
+      "allResponsesStatus200": true,
+      "verifierSha256": "d3f9af6fcfa31c60f29f23e5490eee81c07a3360b394f3d2e1f1ac04cdc85968",
+      "buildReceiptSha256": "93b68dee20a57a3dd6d4c719baf56604dec7f6baf92748ecc82f6710e421b6f2",
+      "checks": [
+        {
+          "name": "computer-bridge",
+          "ok": true,
+          "result": {
+            "frameAncestors": [
+              "https://boost.proofofwork.me",
+              "https://publish.proofofwork.me",
+              "https://computer.proofofwork.me"
+            ],
+            "frameSrc": [
+              "'none'"
+            ],
+            "rootMatchesCommittedBuild": true,
+            "singleCsp": true,
+            "surface": "computer",
+            "xFrameOptions": []
+          }
+        },
+        {
+          "name": "computer-duplicate-query",
+          "ok": true,
+          "result": {
+            "frameAncestors": [
+              "'none'"
+            ],
+            "frameSrc": [
+              "'self'"
+            ],
+            "rootMatchesCommittedBuild": true,
+            "singleCsp": true,
+            "surface": "computer",
+            "xFrameOptions": [
+              "DENY"
+            ]
+          }
+        },
+        {
+          "name": "computer-ordinary",
+          "ok": true,
+          "result": {
+            "frameAncestors": [
+              "'none'"
+            ],
+            "frameSrc": [
+              "'self'"
+            ],
+            "rootMatchesCommittedBuild": true,
+            "singleCsp": true,
+            "surface": "computer",
+            "xFrameOptions": [
+              "DENY"
+            ]
+          }
+        },
+        {
+          "name": "computer-folder-query",
+          "ok": true,
+          "result": {
+            "frameAncestors": [
+              "'none'"
+            ],
+            "frameSrc": [
+              "'self'"
+            ],
+            "rootMatchesCommittedBuild": true,
+            "singleCsp": true,
+            "surface": "computer",
+            "xFrameOptions": [
+              "DENY"
+            ]
+          }
+        },
+        {
+          "name": "boost-parent",
+          "ok": true,
+          "result": {
+            "frameAncestors": [
+              "'none'"
+            ],
+            "frameSrc": [
+              "'self'",
+              "https://computer.proofofwork.me"
+            ],
+            "rootMatchesCommittedBuild": true,
+            "singleCsp": true,
+            "surface": "boost",
+            "xFrameOptions": [
+              "DENY"
+            ]
+          }
+        },
+        {
+          "name": "computer-other-path",
+          "ok": true,
+          "result": {
+            "frameAncestors": [
+              "'none'"
+            ],
+            "frameSrc": [
+              "'self'"
+            ],
+            "rootMatchesCommittedBuild": true,
+            "singleCsp": true,
+            "surface": "computer",
+            "xFrameOptions": [
+              "DENY"
+            ]
+          }
+        },
+        {
+          "name": "computer-embedded-publish-writer",
+          "ok": true,
+          "result": {
+            "frameAncestors": [
+              "'none'"
+            ],
+            "frameSrc": [
+              "'self'"
+            ],
+            "rootMatchesCommittedBuild": true,
+            "singleCsp": true,
+            "surface": "computer",
+            "xFrameOptions": [
+              "DENY"
+            ]
+          }
+        },
+        {
+          "name": "publish-parent",
+          "ok": true,
+          "result": {
+            "frameAncestors": [
+              "'none'"
+            ],
+            "frameSrc": [
+              "'self'",
+              "https://computer.proofofwork.me"
+            ],
+            "rootMatchesCommittedBuild": true,
+            "singleCsp": true,
+            "surface": "publish",
+            "xFrameOptions": [
+              "DENY"
+            ]
+          }
+        },
+        {
+          "name": "publish-dedicated-writer",
+          "ok": true,
+          "result": {
+            "frameAncestors": [
+              "'none'"
+            ],
+            "frameSrc": [
+              "'self'",
+              "https://computer.proofofwork.me"
+            ],
+            "rootMatchesCommittedBuild": true,
+            "singleCsp": true,
+            "surface": "publish",
+            "xFrameOptions": [
+              "DENY"
+            ]
+          }
+        },
+        {
+          "name": "computer-entry-navigation",
+          "ok": true,
+          "result": {
+            "assets": [
+              {
+                "kind": "entry",
+                "path": "/assets/index-BvZZeIMa.js",
+                "sha256": "2d5bbb4ad8f88ba1e4a469d6c694cbe8eb1fe143a47310cb160650e1e5e36293"
+              },
+              {
+                "kind": "navigation",
+                "path": "/assets/networks-Qn_KcPYy.js",
+                "sha256": "01981542933159ca14f888b7b1a2fc8a8c70d95160ca514dbbbc2af499df24e3"
+              }
+            ],
+            "publishNavigationPresent": true
+          }
+        },
+        {
+          "name": "boost-entry-navigation",
+          "ok": true,
+          "result": {
+            "assets": [
+              {
+                "kind": "entry",
+                "path": "/assets/index-2sxyKbQd.js",
+                "sha256": "e196d6cc92352b70a3c05d0f9be04bce088a25ab12ee1ccff8a8255c59d3b479"
+              },
+              {
+                "kind": "navigation",
+                "path": "/assets/networks-CRTWwoTn.js",
+                "sha256": "2800debb01890bb3abad38fa6eb2c76fdb4786759ab2346d0fedc12f37ac5469"
+              }
+            ],
+            "publishNavigationPresent": true
+          }
+        },
+        {
+          "name": "publish-entry-navigation",
+          "ok": true,
+          "result": {
+            "assets": [
+              {
+                "kind": "entry",
+                "path": "/assets/index-C4xV67s9.js",
+                "sha256": "f2148fc580adcce9a696e5c94082c22391c77fec8c676100b9f3d1536e9c0d7d"
+              },
+              {
+                "kind": "navigation",
+                "path": "/assets/networks-CybRTf_l.js",
+                "sha256": "9ea859549312bc4072c089f3bfb031d5e7dae73e75fd4c93112d2370e02dd76a"
+              }
+            ],
+            "publishNavigationPresent": true
+          }
+        },
+        {
+          "name": "publish-publish-writer-assets",
+          "ok": true,
+          "result": {
+            "assets": [
+              {
+                "kind": "wrapper",
+                "path": "/assets/PublishRoot-DnpP2bQO.js",
+                "sha256": "6a954fad30c4f340ed03a254faeb5bc4b65267f5ebc7886ffa48947c3d374aba"
+              },
+              {
+                "kind": "writer",
+                "path": "/assets/BoostRoot-pyNFO5yi.js",
+                "sha256": "52c1227fdef13002bcfcfd034ba00090bcb56caaa344575a9f260bd1ad996d0b"
+              }
+            ],
+            "dedicatedWriter": true,
+            "sharedSurface": "publish"
+          }
+        },
+        {
+          "name": "computer-publish-writer-assets",
+          "ok": true,
+          "result": {
+            "assets": [
+              {
+                "kind": "wrapper",
+                "path": "/assets/PublishRoot-D1yXUo_t.js",
+                "sha256": "877359b38ba61056598798a5897e2e1404609f91111be3b65e3bc67166cf16cd"
+              },
+              {
+                "kind": "writer",
+                "path": "/assets/BoostRoot-DTCkBQBl.js",
+                "sha256": "2dab9c402e1c29ef9b24db3dc9cc2d47588e6206d819da0358a7efb609b149fe"
+              }
+            ],
+            "dedicatedWriter": true,
+            "sharedSurface": "publish"
+          }
+        },
+        {
+          "name": "publish-article-api",
+          "ok": true,
+          "result": {
+            "articleItems": 0,
+            "compactBodyless": true,
+            "complete": true,
+            "hasMore": false,
+            "items": 0,
+            "ordinaryItems": 0,
+            "totalCount": 0
+          }
+        },
+        {
+          "name": "ordinary-boost-api",
+          "ok": true,
+          "result": {
+            "articleItems": 0,
+            "compactBodyless": true,
+            "complete": true,
+            "hasMore": false,
+            "items": 8,
+            "ordinaryItems": 8,
+            "sharedKindsAndCountsPreserved": true,
+            "textCapUtf16": 140,
+            "totalCount": 8
+          }
+        }
+      ],
+      "detailVerification": "unexercised_no_confirmed_articles",
+      "mailArticleVerification": "unexercised_no_confirmed_articles",
+      "evidenceRef": "publicFocusedReceipt",
+      "retainedResponseBodiesIndependentlyHashChecked": 21,
+      "network": "livenet"
+    },
+    "protectedStateAttestation": {
+      "node": {
+        "authorityPidsPreservedAgainstPreflight": true,
+        "authorityServiceIdentityPreservedAgainstController": true,
+        "timerStatesPreserved": true,
+        "retentionHoldsPreserved": true,
+        "oldCheckoutPreserved": "/opt/proofofwork-api-stage-eb5e8c70cb0d-20261004T005638Z",
+        "oldRecoveryArchivePreserved": {
+          "path": "/data/proofofwork-release-backups/managed/proofofwork-node-release-d5a8493-20261003T222517Z.tgz",
+          "bytes": 115108281,
+          "sha256": "917e64525fa3d1167ffdfd53077f93fe09d1ac15518d45af95e29c96a3dcd347",
+          "mode": "0o600",
+          "uid": 0,
+          "gid": 0,
+          "noFollowNoAtimeStableRead": true
+        },
+        "oldRecoveryProvenancePreserved": {
+          "path": "/data/proofofwork-release-backups/managed/proofofwork-node-release-d5a8493-20261003T222517Z.tgz.provenance",
+          "bytes": 508,
+          "sha256": "ae697f69ff793d32a4cfa17e8be0b5d088d0fe35f7c15f681a878c1df01a688a",
+          "mode": "0o600",
+          "uid": 0,
+          "gid": 0,
+          "noFollowNoAtimeStableRead": true
+        },
+        "allPriorReceiptsRetained": true,
+        "services": {
+          "bitcoind.service": {
+            "MainPID": "1324302",
+            "NRestarts": "0",
+            "ExecMainStartTimestamp": "Sat 2026-09-12 06:24:39 UTC",
+            "LoadState": "loaded",
+            "ActiveState": "active",
+            "SubState": "running",
+            "UnitFileState": "enabled"
+          },
+          "electrs.service": {
+            "MainPID": "1324320",
+            "NRestarts": "0",
+            "ExecMainStartTimestamp": "Sat 2026-09-12 06:24:39 UTC",
+            "LoadState": "loaded",
+            "ActiveState": "active",
+            "SubState": "running",
+            "UnitFileState": "enabled"
+          },
+          "postgresql@16-main.service": {
+            "MainPID": "1537429",
+            "NRestarts": "0",
+            "ExecMainStartTimestamp": "Thu 2026-10-01 06:24:32 UTC",
+            "LoadState": "loaded",
+            "ActiveState": "active",
+            "SubState": "running",
+            "UnitFileState": "enabled-runtime"
+          },
+          "proofofwork-api.service": {
+            "MainPID": "3707887",
+            "NRestarts": "0",
+            "ExecMainStartTimestamp": "Sun 2026-10-04 01:04:42 UTC",
+            "LoadState": "loaded",
+            "ActiveState": "active",
+            "SubState": "running",
+            "UnitFileState": "enabled"
+          },
+          "proofofwork-indexer-worker.service": {
+            "MainPID": "3707900",
+            "NRestarts": "0",
+            "ExecMainStartTimestamp": "Sun 2026-10-04 01:04:42 UTC",
+            "LoadState": "loaded",
+            "ActiveState": "active",
+            "SubState": "running",
+            "UnitFileState": "enabled"
+          }
+        },
+        "basis": "Pinned Node final summary; UI root preservation is independently recorded below"
+      },
+      "ui": {
+        "allThreePriorRetainedRootsPreserved": true,
+        "newRollbackRootMatchesPriorLive": {
+          "format": "proofofwork-ui-retained-root-v1",
+          "classification": "retain",
+          "root": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-eb5e8c70cb0d-20261004T005638Z",
+          "manifestSha256": "201fcf4897c1eaf9cd0062476ed00f00fa277af10d3c9f3628d1df6ce10425b6",
+          "treeSha256": "c038882738369d2fa03c0338eb32eca5758468f293f07f6270b73462d6ac8f2d",
+          "entries": 1512,
+          "regularBytes": 450784841
+        },
+        "stageSourceCollectorsAttestLiveAndRetainedRootsUnchangedBeforePublication": true,
+        "historicalDeletion": false,
+        "evidenceRefs": [
+          "completedUiStageReceipts",
+          "sourceRetryReceipts",
+          "uiPublicationLocalLog"
+        ]
+      }
+    },
+    "productionVerified": true,
+    "nodePrivacy": {
+      "rawPrivateStreamsExported": false,
+      "privateControllerCommandContentRead": false,
+      "financialTransactionsOrBroadcasts": false,
+      "allPriorReceiptsRetained": true
+    }
+  },
+  "announcement": {
+    "status": "published-and-permalink-verified",
+    "published": true,
+    "url": "https://x.com/proofofworkme/status/2106562933551436262",
+    "postedAt": "2026-10-04T01:51:56.000Z",
+    "account": "@proofofworkme",
+    "preparedText": "Publish has room to write.\n\nA dedicated article page. Publish in Mail Compose. Articles self-send into Inbox and Sent with verified full text.\n\nSame PowID, likes, replies and reboosts.\n\nhttps://publish.proofofwork.me/write\n$WORK $POWB $INCB",
+    "verification": {
+      "visibleAuthorAndText": true,
+      "visibleWriterLink": true,
+      "cashtags": [
+        "$WORK",
+        "$POWB",
+        "$INCB"
+      ],
+      "firstButtonClick": "composer retained; fresh profile showed no new post",
+      "successfulSubmission": "same retained draft via Enter on Post; progress100 then composer closed",
+      "newProfileStatusLinkVerified": true,
+      "dedicatedPermalinkVerified": true,
+      "duplicateAnnouncement": false
+    },
+    "receipt": {
+      "path": "/tmp/publish-followup-evidence-eb5e8c70cb0d-20261004T005638Z/announcement-verification-completed-v1.json",
+      "bytes": 1471,
+      "sha256": "cb7c314e7d5e15914643d168bafb3851f80f15ca166254bedbfa0d8f01d15d92"
+    },
+    "screenshot": {
+      "path": "/home/sixer/.codex/visualizations/2026/10/01/01a0f9e1-4153-7b70-bce7-eb6d55609578/publish-mail-announcement-eb5e8c70cb0d.jpg",
+      "bytes": 87141,
+      "sha256": "938c21d6bbc6b0b3ecd0df6243a726e1b9ea02514295ec4ac9265d91beb47d3a"
+    },
+    "qualification": "One verified release post after production verification. First click retained the composer and fresh profile showed no new post; the same retained draft submitted via Enter and its dedicated permalink was verified. No documentation-only second post."
+  },
+  "bookkeeping": {
+    "repositoryAuditFilesWritten": true,
+    "repositoryHygieneFinalization": "reviewed; hygiene fix and final repository state check passed",
+    "documentationOnly": true,
+    "deployedApplicationRelabeled": false,
+    "secondDocumentationOnlyAnnouncement": false,
+    "repositoryAuditFiles": [
+      "audits/2026-10-04-publish-writer-mail-release.md",
+      "audits/2026-10-04-publish-writer-mail-release.evidence.json"
+    ],
+    "semanticReview": {
+      "operatingMemory": "SOUL.md reviewed; dedicated writer and shared identity memory already accurate",
+      "currentProductDocs": "README.md, PUBLISH.md and MAIL_ORGANIZATION.md reviewed; historical Boost ticker wording reconciled with compose selector",
+      "protocolDocs": "ID, DNS and Marketplace rules reviewed; no registry, ownership, fee or economic migration",
+      "infrastructure": "Current dated release handoff added; older release evidence preserved",
+      "classifiedNotes": "New audit Markdown and JSON classified as protected ledger-and-audit-evidence",
+      "generatedArtifacts": "Deterministic generated artifacts passed hygiene state check; no tracked generated outputs changed",
+      "safeCleanupAllowlist": "Reviewed; hygiene fix found no rebuildable state to clean",
+      "gitScope": "Only approved documentation, classification and new audit evidence; no tracked deletions",
+      "validation": "Existing product/recovery/browser/deployment tests and actual production receipts reviewed; no extra implementation tests for documentation-only closeout"
+    },
+    "commitHooksRequired": true,
+    "trackedDeletions": []
+  },
+  "evidenceRefs": {
+    "focusedBrowserLog": {
+      "path": "/tmp/publish-followup-focused-browser.log",
+      "bytes": 5332,
+      "sha256": "a22db1bd4dc41818f86ab49f655aae59291e738c9a1cbda3d5caa00662ba90b3"
+    },
+    "focusedBrowserSelection": {
+      "path": "/tmp/publish-followup-focused-browser-selection.txt",
+      "bytes": 3921,
+      "sha256": "857d5c05216de5b7677233e4b8fd2ac4e40f9cce7786a5ba827626704005aea8"
+    },
+    "frozenAccountBrowserLog": {
+      "path": "/tmp/publish-followup-frozen-account.log",
+      "bytes": 335,
+      "sha256": "93d443748ac9160ca265ca682dbf75b23ac4becc2eaa19919ed9d08bfb57444f"
+    },
+    "frozenAccountBrowserSelection": {
+      "path": "/tmp/publish-followup-frozen-account-selection.txt",
+      "bytes": 139,
+      "sha256": "36f9bdce4e4ba285ce54bfda0e7886a0bb8dffa4d2304cda8cdf714daa9b64ee"
+    },
+    "frozenAccountSourceHashes": {
+      "path": "/tmp/publish-followup-frozen-account-source.sha256",
+      "bytes": 675,
+      "sha256": "5ad397ef00cd46377adc3a434a9f3906909a80e3370fa61b43643ef317093d62"
+    },
+    "frozenTypeScriptLog": {
+      "path": "/tmp/publish-followup-frozen-tsc.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "frozenInboxBrowserLog": {
+      "path": "/tmp/publish-followup-frozen-inbox.log",
+      "bytes": 343,
+      "sha256": "d290efe328c851f7a5aaeaa7a2f76f5036528fc06de0af1fa435d2cc06f3994d"
+    },
+    "frozenInboxBrowserSelection": {
+      "path": "/tmp/publish-followup-frozen-inbox-selection.txt",
+      "bytes": 147,
+      "sha256": "8c7f231738ac44f527c7c237e66a383d7d572144dec6ea8296072b0ae023859d"
+    },
+    "broadBrowserOriginalLog": {
+      "path": "/tmp/publish-followup-mail-browser-final.log",
+      "bytes": 107178,
+      "sha256": "67ad35b426d81e580eb74ace05229b8e74e040e0eea6f638361b4c3636290451"
+    },
+    "incbBaselineReceipt": {
+      "path": "/tmp/publish-followup-incb-baseline-d5-receipt.json",
+      "bytes": 2404,
+      "sha256": "6b8f7f73d41955c6983a240d26f8fb0a0d75d16b9ef9cef247b0ba43f769d0f6"
+    },
+    "incbBaselineBrowserLog": {
+      "path": "/tmp/publish-followup-incb-baseline-d5-browser.log",
+      "bytes": 6729,
+      "sha256": "0642c71eaaa396f61540036027d1b8bc26a70c93b7233a838ca8149f7f1ddd5c"
+    },
+    "incbBaselineBuildReceipt": {
+      "path": "/tmp/publish-production-build-d5a8493119ba-20261003T222517Z/build-receipt.json",
+      "bytes": 1148,
+      "sha256": "05c47faea271e900edadb23f29efaf3c54c642c8709e5d7be492d1ceaa8a3618"
+    },
+    "mailArticleProjectionFinalLog": {
+      "path": "/tmp/publish-mail-article-tests-final.log",
+      "bytes": 271,
+      "sha256": "8f9bf90fe7c4d36dd20b2b1eff9fefc2d25660a87db7045a694a32e093d39a90"
+    },
+    "mailIndexRecoveryRegressionLog": {
+      "path": "/tmp/publish-mail-index-recovery-regression.log",
+      "bytes": 41161,
+      "sha256": "dd28e4d38cb3934fa473b7ad0e8e739772efd28ad5ebb810ef78104aef88684c"
+    },
+    "lockedDependencyPublishChecksLog": {
+      "path": "/tmp/publish-followup-locked-deps-publish.log",
+      "bytes": 3761,
+      "sha256": "aaac5b0c3024c2eba3e0050306be396ad8be7fc95b3e8e73e51e07ed294b3410"
+    },
+    "lockedDependencyUiContractLog": {
+      "path": "/tmp/publish-followup-locked-deps-ui.log",
+      "bytes": 97,
+      "sha256": "a1b6a72ad3aa48c75291cc5682fc612c0789615343aca0e78e5db2d8d1d0e404"
+    },
+    "buildAndCheckFinalLog": {
+      "path": "/tmp/publish-followup-build-check-final.log",
+      "bytes": 4212,
+      "sha256": "616d39c74e494f64302b2e4e50626dc43f7dddbb56eb2ed916407171de138b83"
+    },
+    "dependencyInstallLog": {
+      "path": "/tmp/publish-followup-test-deps-install.log",
+      "bytes": 26,
+      "sha256": "c752a97a442039c48f42776f82812685a35e8edf6255567e07aad5b3735fe6fe"
+    },
+    "initialPublishAudit": {
+      "path": "/tmp/proofofwork-publish/audits/2026-10-03-publish-product-release.md",
+      "bytes": 6285,
+      "sha256": "458ca56ede01ecede3c8a5a85a11de819da46ad51cafd6287b140f6bb1e0acaa"
+    },
+    "initialPublishAuditEvidence": {
+      "path": "/tmp/proofofwork-publish/audits/2026-10-03-publish-product-release.evidence.json",
+      "bytes": 47271,
+      "sha256": "32b5bdef97baddf9d86d1c7c75f3b3c9cab17de12c6b9f9240d8d78b6b3796a7"
+    },
+    "mailProjectionTestSource": {
+      "path": "/tmp/proofofwork-publish/server/mail-article-projection.test.mjs",
+      "bytes": 13634,
+      "sha256": "a306027bc324d5a9527c1dd96dd1a0dded90b98d24926f877cd9a4789cef7403"
+    },
+    "priorLocalAuditDraft": {
+      "path": "/tmp/publish-followup-release-audit-draft.md",
+      "bytes": 5466,
+      "sha256": "51109a4c1b0f9997d94c7df0a8cfeaf80c366ede47205089deeabf5fb4f93a34"
+    },
+    "priorLocalAuditDraftEvidence": {
+      "path": "/tmp/publish-followup-release-audit-draft.evidence.json",
+      "bytes": 17071,
+      "sha256": "c429cdd8d30be8982f440fd3e6f7f744dbfacdf85821f39e60f23961c788300d"
+    },
+    "nodeFinalSummary": {
+      "path": "/tmp/publish-followup-node-eb5e8c70cb0d-20261004T005638Z/node-final-summary.json",
+      "bytes": 48605,
+      "sha256": "c8139babec89e9a40493ba811085c42a831c3edb89ed32d565e4fb471b618725"
+    },
+    "uiWrapperFinalLog": {
+      "path": "/tmp/publish-followup-ui-wrapper-final.log",
+      "bytes": 7703,
+      "sha256": "edc08d94e7e357ab108c9ea06063983c9a025f65578704872e2b8aa5ecef1531"
+    },
+    "initialUiRefusalEvidence": {
+      "path": "/tmp/publish-followup-evidence-eb5e8c70cb0d-20261004T005638Z/initial-failure-evidence.json",
+      "bytes": 15348,
+      "sha256": "98313a5a9f10a30bca2a12c94109e705859bfcad8c242c6e764fa4de3714f990"
+    },
+    "initialUiRefusalInventory": {
+      "path": "/tmp/publish-followup-evidence-eb5e8c70cb0d-20261004T005638Z/initial-inventory.json",
+      "bytes": 2358,
+      "sha256": "fd17be4a732fb91274404d743a608413f0d90f8accf1ac4ba219c3e4292bb9bc"
+    },
+    "initialUiIncomingReceiptRecord": {
+      "path": "/tmp/publish-followup-evidence-eb5e8c70cb0d-20261004T005638Z/initial-incoming-record.json",
+      "bytes": 1394,
+      "sha256": "81de155165687977ea51686b5241716276424833274a84f78994ff557d64dba8"
+    },
+    "initialUiReceiverReceiptRecord": {
+      "path": "/tmp/publish-followup-evidence-eb5e8c70cb0d-20261004T005638Z/initial-receiver-record.json",
+      "bytes": 595,
+      "sha256": "a815fb5aebd0fbb8e523925253d1137e7864696b9f318083fd08bd72c74b1b38"
+    },
+    "initialUiFailedUnit": {
+      "path": "/tmp/publish-followup-evidence-eb5e8c70cb0d-20261004T005638Z/initial-failed-unit.json",
+      "bytes": 176,
+      "sha256": "42920c52739e33c5fad3a45e4eebafec0767a3256a1ac8cdd2b459c13591a6ac"
+    },
+    "initialUiFrozenPatch": {
+      "path": "/tmp/publish-followup-initial-preserved-proposal/initial-preserved-refusal.patch",
+      "bytes": 24830,
+      "sha256": "3b15f391be49f261c4d740d5114f2ae92126f578b6df2d21c8fee9324c784d3a"
+    },
+    "initialUiFocusedTests": {
+      "path": "/tmp/publish-followup-initial-preserved-proposal/focused-tests-final.log",
+      "bytes": 4435,
+      "sha256": "6ee96b7d9952bce1316603ebb6cf4f83123ab153a1690971f355e115fbad9b67"
+    },
+    "initialUiActualCapturedBinding": {
+      "path": "/tmp/publish-followup-initial-preserved-proposal/actual-captured-binding-result.json",
+      "bytes": 3222,
+      "sha256": "c9f0e870ea158a084fab2a47285abf98b8f6e143abb8d20e0308919ab98f3139"
+    },
+    "initialUiIndependentReview": {
+      "path": "/tmp/publish-followup-initial-preserved-independent-review.json",
+      "bytes": 2591,
+      "sha256": "99855224bef82c3178cd29d84b4758aeaaac8f5b2529220bc4af5747c897d5e6"
+    },
+    "completedUiPreflight": {
+      "path": "/tmp/publish-followup-evidence-eb5e8c70cb0d-20261004T005638Z/preflight-completed-v1.json",
+      "bytes": 51180,
+      "sha256": "3fda5177e1be187575eecc9f9e5cbb2aa44cf150d580d06b6fc3381160a5ddcf"
+    },
+    "completedUiPreflightDispatch": {
+      "path": "/tmp/publish-followup-evidence-eb5e8c70cb0d-20261004T005638Z/preflight-completed-v1-dispatch.log",
+      "bytes": 3166,
+      "sha256": "d183478edd775242aa67725889b541cdd96bea42ebb75993c4dbcfc387bace82"
+    },
+    "completedUiLocalSummaryRefusal": {
+      "path": "/tmp/publish-followup-evidence-eb5e8c70cb0d-20261004T005638Z/preflight-completed-v1-local-summary-refusal.json",
+      "bytes": 1110,
+      "sha256": "48aa8c8cbb63d6f20a7d98d7dd3a71a9973bb835709dfbd4f98a47530d230289"
+    },
+    "completedUiPlanBoundedReview": {
+      "path": "/tmp/publish-followup-evidence-eb5e8c70cb0d-20261004T005638Z/plan-completed-v1-review.json",
+      "bytes": 5905,
+      "sha256": "5d8e67a76b8d7d85b34d72897704af2f079b425a2129801ff29658b5205c1304"
+    },
+    "nodePhase-prepare-initial.json": {
+      "path": "/tmp/publish-followup-node-eb5e8c70cb0d-20261004T005638Z/prepare-initial.json",
+      "bytes": 641,
+      "sha256": "db2ff0c94e39e1cd2eab2d7143a727175a5e486ace34e2576579e382f9de7025"
+    },
+    "nodePhase-preflight-initial.json": {
+      "path": "/tmp/publish-followup-node-eb5e8c70cb0d-20261004T005638Z/preflight-initial.json",
+      "bytes": 1742,
+      "sha256": "8ed6dcb836d4548922cd4793b1333d0775fc76a7a5e04223e2cbae1d04840e9b"
+    },
+    "nodePhase-upload-initial.json": {
+      "path": "/tmp/publish-followup-node-eb5e8c70cb0d-20261004T005638Z/upload-initial.json",
+      "bytes": 833,
+      "sha256": "0803b92510e5557617b632ffdabc8aab69e74feceb6600a1b9933920be3ab8f7"
+    },
+    "nodePhase-stage-initial.json": {
+      "path": "/tmp/publish-followup-node-eb5e8c70cb0d-20261004T005638Z/stage-initial.json",
+      "bytes": 1486,
+      "sha256": "4d2e2c98e707e9d2fe67024b439273d44e345f4a13206fc4bf18fcd7472b43af"
+    },
+    "nodePhase-shadow-initial.json": {
+      "path": "/tmp/publish-followup-node-eb5e8c70cb0d-20261004T005638Z/shadow-initial.json",
+      "bytes": 934,
+      "sha256": "e213f6be951e6213ab9e4965123191a1daf4f3c582a431428769ed6a41bd4daa"
+    },
+    "nodePhase-accept-initial.json": {
+      "path": "/tmp/publish-followup-node-eb5e8c70cb0d-20261004T005638Z/accept-initial.json",
+      "bytes": 1595,
+      "sha256": "37178b10b271e354863845f3f952a15f9d2eadbd2434b1a520f0f774b70b11f8"
+    },
+    "nodePhase-cutover-initial.json": {
+      "path": "/tmp/publish-followup-node-eb5e8c70cb0d-20261004T005638Z/cutover-initial.json",
+      "bytes": 1221,
+      "sha256": "ba584edaf41bd779f8451447d4d11c1ac62c3a85f583ae8c35b41b04eace4e2c"
+    },
+    "nodePhase-production-initial.json": {
+      "path": "/tmp/publish-followup-node-eb5e8c70cb0d-20261004T005638Z/production-initial.json",
+      "bytes": 1620,
+      "sha256": "cde0705920fef4b6e7050b18c540b0aaa414a6e6d6981674f585c99e30fedd7a"
+    },
+    "priorSecondLocalAuditDraft": {
+      "path": "/tmp/publish-followup-release-audit-draft-v2.md",
+      "bytes": 9265,
+      "sha256": "47be03e4a533a7e992489580ca8dca8993f01e8955925d2ee8fe250646ad5207"
+    },
+    "priorSecondLocalAuditDraftEvidence": {
+      "path": "/tmp/publish-followup-release-audit-draft-v2.evidence.json",
+      "bytes": 39005,
+      "sha256": "6c0a11ed543dfae2c4525444287e4aec40e48fad25114e903a7b6d43fe238dea"
+    },
+    "completedUiPlan": {
+      "path": "/tmp/publish-followup-evidence-eb5e8c70cb0d-20261004T005638Z/plan-completed-v1.json",
+      "bytes": 29935,
+      "sha256": "0cb275b4f776dc7f78b15309c370e1c9ab393869aa81f821bfcd5a3a3cc2c122"
+    },
+    "completedUiUploadResult": {
+      "path": "/tmp/publish-followup-evidence-eb5e8c70cb0d-20261004T005638Z/upload-plan-completed-v1-local-result.json",
+      "bytes": 511,
+      "sha256": "f8dfe491ac317767c4fcc90921ae21ea4581bbb459239e33b8d0e8f9f98fadb1"
+    },
+    "completedUiStageLocalResult": {
+      "path": "/tmp/publish-followup-evidence-eb5e8c70cb0d-20261004T005638Z/preserved-stage-resume-completed-v1-local-result.json",
+      "bytes": 821,
+      "sha256": "2e76fc1f82dae2e4c4b4c734a8dab6463dcdefa2e09bbf9ff625cff19a5aad5f"
+    },
+    "completedUiStageLog": {
+      "path": "/tmp/publish-followup-evidence-eb5e8c70cb0d-20261004T005638Z/preserved-stage-resume-completed-v1.log",
+      "bytes": 640,
+      "sha256": "a1aa23c9de53a43075828e1961a3549240c62f5f0a33d8db7da37023e3ecb506"
+    },
+    "completedUiStageReceipts": {
+      "path": "/tmp/publish-followup-evidence-eb5e8c70cb0d-20261004T005638Z/preserved-stage-resume-completed-v1-receipts.json",
+      "bytes": 36471,
+      "sha256": "1ad3f7e0575af1c0b22971a093a07da67505155298026a9e2e8b3b805558d4a3"
+    },
+    "originalSourceLockRefusalLog": {
+      "path": "/tmp/publish-followup-evidence-eb5e8c70cb0d-20261004T005638Z/source-completed-v1.log",
+      "bytes": 468,
+      "sha256": "0dc4cfda5bc863ecae2c36c0785c07492b709ada4afb6475276776bd044adfc6"
+    },
+    "originalSourceLockRefusalDispatch": {
+      "path": "/tmp/publish-followup-evidence-eb5e8c70cb0d-20261004T005638Z/source-completed-v1-dispatch.log",
+      "bytes": 46624,
+      "sha256": "01af3be477949400a4885b41a57dfbcd6a974f4b349790e7faf956dd37e2bcd6"
+    },
+    "originalSourceLockRefusalLocalResult": {
+      "path": "/tmp/publish-followup-evidence-eb5e8c70cb0d-20261004T005638Z/source-completed-v1-local-result.json",
+      "bytes": 743,
+      "sha256": "ad3d3310f5e00c5cbb83ad6ef552721148c95274eb5f8826c37d1074e53b3823"
+    },
+    "originalSourceLockRefusalCensus": {
+      "path": "/tmp/publish-followup-evidence-eb5e8c70cb0d-20261004T005638Z/source-completed-v1-refusal-census.json",
+      "bytes": 3361,
+      "sha256": "c2c0b0ce12c87e2d9988bf7e0b2871ad874009a3cdf6ef9b652b451c73434e49"
+    },
+    "sourceRetryFreshPreflight": {
+      "path": "/tmp/publish-followup-evidence-eb5e8c70cb0d-20261004T005638Z/preflight-source-retry1.json",
+      "bytes": 51180,
+      "sha256": "d7eaab28eaaf89bace4e7b9d4ddf7e043315c9ceb06720ed2c277fe46ef323a7"
+    },
+    "sourceRetryFreshPreflightLocalResult": {
+      "path": "/tmp/publish-followup-evidence-eb5e8c70cb0d-20261004T005638Z/preflight-source-retry1-local-result.json",
+      "bytes": 874,
+      "sha256": "f6963b5fd6a1731813220c0442207b8f06b82d4dc2a3e60a7481071dc5e0392b"
+    },
+    "sourceRetryPlan": {
+      "path": "/tmp/publish-followup-evidence-eb5e8c70cb0d-20261004T005638Z/plan-source-retry1.json",
+      "bytes": 27442,
+      "sha256": "72298173f738b9743ec0331048dd4d133faa1bf5cdf4aecb003192a21bd84673"
+    },
+    "sourceRetryPlanBoundedReview": {
+      "path": "/tmp/publish-followup-evidence-eb5e8c70cb0d-20261004T005638Z/plan-source-retry1-review.json",
+      "bytes": 4602,
+      "sha256": "ac6da70bf05eae8bdf0d02bf03d60b9de2ea9ee5441034b38b49873b25b69df6"
+    },
+    "sourceRetryUploadResult": {
+      "path": "/tmp/publish-followup-evidence-eb5e8c70cb0d-20261004T005638Z/upload-plan-source-retry1-local-result.json",
+      "bytes": 514,
+      "sha256": "8ddc33871e71d54c8a9b2301da5ab814aa0262e265e09e3353857729cd6dc600"
+    },
+    "sourceRetryLocalResult": {
+      "path": "/tmp/publish-followup-evidence-eb5e8c70cb0d-20261004T005638Z/source-source-retry1-local-result.json",
+      "bytes": 746,
+      "sha256": "cf892f92aca5c848ca345f1c0f64037a721add86a78902948b0fa10f43602d0c"
+    },
+    "sourceRetryLog": {
+      "path": "/tmp/publish-followup-evidence-eb5e8c70cb0d-20261004T005638Z/source-source-retry1.log",
+      "bytes": 594,
+      "sha256": "107433f7778e8d6c81105f39444312b0dbfc574fdf694e1cd4aa42a1a3a88e6a"
+    },
+    "sourceRetryReceipts": {
+      "path": "/tmp/publish-followup-evidence-eb5e8c70cb0d-20261004T005638Z/source-source-retry1-receipts.json",
+      "bytes": 66609,
+      "sha256": "27777421c87d24793d00493bfedb9f0a07cbd5b3f4eb8d333288ee26543cfefd"
+    },
+    "sourceRetryHandoff": {
+      "path": "/tmp/publish-followup-evidence-eb5e8c70cb0d-20261004T005638Z/source-source-retry1-handoff.json",
+      "bytes": 2269,
+      "sha256": "146d75297064b2097d08d007526ec8a23cb49d5e0c6640b061562d5fc46cc0f2"
+    },
+    "uiPublicationLocalLog": {
+      "path": "/tmp/publish-followup-evidence-eb5e8c70cb0d-20261004T005638Z/publish-completed-v1.log",
+      "bytes": 1383,
+      "sha256": "119f2caff6870bd791d888d3a1757d8055273da9d305d3febd260fa83334c36e"
+    },
+    "publicAllFileHttpsReceipt": {
+      "path": "/tmp/publish-followup-evidence-eb5e8c70cb0d-20261004T005638Z/public-verification-completed-v1/https-smoke-receipt.json",
+      "bytes": 957,
+      "sha256": "9d159c1eb160ac8cad5c4bffd0570b48ca5657b76ac755e70677481962de9d82"
+    },
+    "publicManagedUiArchive": {
+      "path": "/tmp/publish-followup-evidence-eb5e8c70cb0d-20261004T005638Z/public-verification-completed-v1/proofofwork-ui-release-eb5e8c70cb0d-20261004T005638Z.tgz",
+      "bytes": 211800485,
+      "sha256": "789e5969e4348d4c9d8d328fb6d04ff94f555071012e253ce51f1e078b5d6319"
+    },
+    "publicManagedUiArchiveSidecar": {
+      "path": "/tmp/publish-followup-evidence-eb5e8c70cb0d-20261004T005638Z/public-verification-completed-v1/proofofwork-ui-release-eb5e8c70cb0d-20261004T005638Z.tgz.sha256",
+      "bytes": 123,
+      "sha256": "c34105887eb8db41071e068b622d282001eb71e1cd51e3b67febde53f64799f6"
+    },
+    "publicManagedUiArchiveProvenance": {
+      "path": "/tmp/publish-followup-evidence-eb5e8c70cb0d-20261004T005638Z/public-verification-completed-v1/proofofwork-ui-release-eb5e8c70cb0d-20261004T005638Z.tgz.provenance",
+      "bytes": 2631,
+      "sha256": "b9e89168f9763a04fe3b3f9122303933e3a18bff4d7f354de71f10d4bf0427c2"
+    },
+    "publicFocusedReceipt": {
+      "path": "/tmp/publish-followup-public-focused-eb5e8c70cb0d-20261004T005638Z/receipt.json",
+      "bytes": 57168,
+      "sha256": "c1e37a11a987ed571b58dec0af301981c709fd8df9fe4bf696be29aa8058ebe9"
+    },
+    "publicGuestWriterBrowserReceipt": {
+      "path": "/tmp/publish-followup-evidence-eb5e8c70cb0d-20261004T005638Z/browser-verification-completed-v1.json",
+      "bytes": 1607,
+      "sha256": "2f54b659aa91717a086945647d50f15d0011d58b8cd05fad9a4b0d534311143f"
+    },
+    "publicGuestWriterScreenshot": {
+      "path": "/home/sixer/.codex/visualizations/2026/10/01/01a0f9e1-4153-7b70-bce7-eb6d55609578/publish-writer-eb5e8c70cb0d.jpg",
+      "bytes": 79192,
+      "sha256": "59cd2e4cdeeb71348d6e843199fe2035596a3e3ef8f2d151fbaef69953625dc9"
+    },
+    "publishedAnnouncementReceipt": {
+      "path": "/tmp/publish-followup-evidence-eb5e8c70cb0d-20261004T005638Z/announcement-verification-completed-v1.json",
+      "bytes": 1471,
+      "sha256": "cb7c314e7d5e15914643d168bafb3851f80f15ca166254bedbfa0d8f01d15d92"
+    },
+    "publishedAnnouncementScreenshot": {
+      "path": "/home/sixer/.codex/visualizations/2026/10/01/01a0f9e1-4153-7b70-bce7-eb6d55609578/publish-mail-announcement-eb5e8c70cb0d.jpg",
+      "bytes": 87141,
+      "sha256": "938c21d6bbc6b0b3ecd0df6243a726e1b9ea02514295ec4ac9265d91beb47d3a"
+    },
+    "priorThirdLocalAuditDraft": {
+      "path": "/tmp/publish-followup-release-audit-draft-v3.md",
+      "bytes": 15627,
+      "sha256": "fd9a8e45d728a08d1751945e2a61051f07f216b8c39358ac0ecf3713d156449b"
+    },
+    "priorThirdLocalAuditDraftEvidence": {
+      "path": "/tmp/publish-followup-release-audit-draft-v3.evidence.json",
+      "bytes": 69482,
+      "sha256": "67d9f695dda5b513414a3867dc01a84f442205952d6388b45a55021c28e0d56e"
+    },
+    "finalHygieneFix": {
+      "path": "/tmp/publish-followup-final-hygiene-fix.log",
+      "bytes": 141,
+      "sha256": "fb44bc081ea22069e5f4b902f9c06bafa235d46d283b584ccc0e5c1a00c78b1a"
+    },
+    "initialCloseoutHygieneCheck": {
+      "path": "/tmp/publish-followup-final-hygiene-check-initial.log",
+      "bytes": 134,
+      "sha256": "c501942de5d3c65c2445bb7178083e0794cc7491a71a7ba3a354acef2a10a8bb"
+    },
+    "finalCloseoutHygieneCheck": {
+      "path": "/tmp/publish-followup-final-hygiene-check.log",
+      "bytes": 134,
+      "sha256": "c501942de5d3c65c2445bb7178083e0794cc7491a71a7ba3a354acef2a10a8bb"
+    },
+    "nodeCloseoutInitialOperator": {
+      "path": "/tmp/publish-followup-node-closeout.py",
+      "bytes": 14469,
+      "sha256": "e9720c721c63bf587289664ca3fdc837af852245d34685be983a2937f7f3b796"
+    },
+    "nodeCloseoutInitialRefusal": {
+      "path": "/tmp/publish-followup-node-closeout-initial.log",
+      "bytes": 1115,
+      "sha256": "263576f9445d8dc8d5e379f6e0aaed5caa9561bbaffa5ae1733238163443147d"
+    },
+    "nodeCloseoutMetadataDiagnostic": {
+      "path": "/tmp/publish-followup-node-closeout-diagnostic1.json",
+      "bytes": 434,
+      "sha256": "2ad14a75fba34629998af02ada9aa14d403e51d7b1f74fd6b637be027f390bd1"
+    },
+    "nodeCloseoutControllerDirectoryMetadata": {
+      "path": "/tmp/publish-followup-node-closeout-controller-directory.json",
+      "bytes": 522,
+      "sha256": "901ddd45c233bfa3b3c2f5251c9f6439146ed49b23ef294a0a94bc26f134306b"
+    },
+    "nodeCloseoutV2Operator": {
+      "path": "/tmp/publish-followup-node-closeout-v2.py",
+      "bytes": 15456,
+      "sha256": "7b86b1f31ae5daf761ccefac9aa9458d6d26861daa11bf9928cc135c5be7b7dd"
+    },
+    "nodeCloseoutV2Refusal": {
+      "path": "/tmp/publish-followup-node-closeout-v2-initial.log",
+      "bytes": 1118,
+      "sha256": "fc1f0d825e0078744a308b90d8ebf92ea40b067364aab004b862d3204adda0e5"
+    },
+    "nodeCloseoutV3Operator": {
+      "path": "/tmp/publish-followup-node-closeout-v3.py",
+      "bytes": 16181,
+      "sha256": "8916b052c036e59cf9b51221d543aeb184cd02c6a1868d7c88485642b5cf54c2"
+    },
+    "nodeCloseoutV3SuccessLog": {
+      "path": "/tmp/publish-followup-node-closeout-v3-initial.log",
+      "bytes": 2548,
+      "sha256": "8ab052ba5cb9c3db22fde554b4eb0150c4a0485a3c16bd8d300dd1600765ade7"
+    }
+  },
+  "priorDraftsPreserved": {
+    "markdown": {
+      "path": "/tmp/publish-followup-release-audit-draft.md",
+      "bytes": 5466,
+      "sha256": "51109a4c1b0f9997d94c7df0a8cfeaf80c366ede47205089deeabf5fb4f93a34"
+    },
+    "evidence": {
+      "path": "/tmp/publish-followup-release-audit-draft.evidence.json",
+      "bytes": 17071,
+      "sha256": "c429cdd8d30be8982f440fd3e6f7f744dbfacdf85821f39e60f23961c788300d"
+    },
+    "rewritten": false,
+    "secondMarkdown": {
+      "path": "/tmp/publish-followup-release-audit-draft-v2.md",
+      "bytes": 9265,
+      "sha256": "47be03e4a533a7e992489580ca8dca8993f01e8955925d2ee8fe250646ad5207"
+    },
+    "secondEvidence": {
+      "path": "/tmp/publish-followup-release-audit-draft-v2.evidence.json",
+      "bytes": 39005,
+      "sha256": "6c0a11ed543dfae2c4525444287e4aec40e48fad25114e903a7b6d43fe238dea"
+    },
+    "thirdMarkdown": {
+      "path": "/tmp/publish-followup-release-audit-draft-v3.md",
+      "bytes": 15627,
+      "sha256": "fd9a8e45d728a08d1751945e2a61051f07f216b8c39358ac0ecf3713d156449b"
+    },
+    "thirdEvidence": {
+      "path": "/tmp/publish-followup-release-audit-draft-v3.evidence.json",
+      "bytes": 69482,
+      "sha256": "67d9f695dda5b513414a3867dc01a84f442205952d6388b45a55021c28e0d56e"
+    }
+  },
+  "deploymentTooling": {
+    "commit": "8062c68a4df570904fbb700c96bfee0764f6f309",
+    "tree": "2bb63c280f748b11ac3422b88c87003bd7271019",
+    "purpose": "Recognize the exact durable initial eight-record full-copy refusal as an additional preserved-stage resume case",
+    "allowedChangedFiles": [
+      "OP_RETURN_INFRASTRUCTURE.md",
+      "deploy/publish/check-ui-release.test.py",
+      "deploy/publish/release.py",
+      "deploy/publish/remote_transport.py"
+    ],
+    "applicationArtifactsUnchanged": true,
+    "noInstalledHelperChangesReportedByRoot": true,
+    "installedHelperStateQualification": "The patch updates local committed wrapper/validation source and tests, not an installed-helper promotion. No new helper installation is inferred."
+  },
+  "uiInitialRefusal": {
+    "status": "refused-retained",
+    "phase": "stage-private-root",
+    "initialAttempt": "initial",
+    "failedEvidence": "/var/tmp/proofofwork-deploy/recovery-transport-eb5e8c70cb0d-20261004T005638Z-surfaces-stage-initial",
+    "scratchRefusal": {
+      "additionalBytes": 478883840,
+      "allocatedBytes": 4936785920,
+      "cleanupApproved": false,
+      "maximumBytes": 5368709120,
+      "path": "/var/tmp/proofofwork-deploy",
+      "phase": "stage-private-root"
+    },
+    "failedRecordCount": 8,
+    "failedRecords": {
+      "receive-admission.log": {
+        "sha256": "02fe3bcd407511ddb11fd39ffa173be4357b2c37cfb7d3ae8e7e1f9bbe605b3c",
+        "bytes": 156
+      },
+      "input-evidence-check.json": {
+        "sha256": "1be6170e28dd3de4ee958b71faee35b98e16207453afdcbcd152f0594579cd11",
+        "bytes": 373
+      },
+      "stage-check-scratch.json": {
+        "sha256": "f241f36d73b75e7fed9c911223fb35568b3661901bddbf0b39f74396cae03de5",
+        "bytes": 205
+      },
+      "intent.json": {
+        "sha256": "224db9b6c693a546d6ec15733e06d320e91077a8acb88f2ac5aaae1c4da9cf4a",
+        "bytes": 366
+      },
+      "stage-model.json": {
+        "sha256": "16fe563a62545810fee52b0b776eed2a0643036df048a5b08685e02c2de57a2d",
+        "bytes": 6745
+      },
+      "stage-check.json": {
+        "sha256": "2c402539ae9a99845019a4bc3a02565d966c66a72cfc20288c67e0757401972c",
+        "bytes": 364
+      },
+      "stager.log": {
+        "sha256": "0dc324d922e1eb8f46ca44c7bc2e3de02aa1bcb572a6344b189baef191541fec",
+        "bytes": 223
+      },
+      "receiver.log": {
+        "sha256": "144a4c69fbe7b8502d452465223c10957e00fdd66beb8a5263a6cf8c32b03fda",
+        "bytes": 349
+      }
+    },
+    "preservedInputExists": true,
+    "preservedInputInodeMoveReceipt": {
+      "path": "/var/backups/proofofwork-ui/transport-evidence/eb5e8c70cb0d-20261004T005638Z/incoming-receipt.json",
+      "bytes": 1120,
+      "sha256": "9d3f8f5000eee12d2e1204152be8844dab610cb7f34c000791bf89bbeb447fae"
+    },
+    "independentCanonicalReceiverReceipt": {
+      "path": "/var/tmp/proofofwork-deploy/audit5-stream-surfaces-eb5e8c70cb0d-20261004T005638Z.json",
+      "sha256": "0aadc6a604e60bd33520c489d25c8efddc32341dad6562764c52c4992dde3e98"
+    },
+    "stageExists": false,
+    "sourceExists": false,
+    "privateStages": [],
+    "initialLiveAndRetainedRootsUnchanged": true,
+    "retainedRootCount": 3,
+    "initialLiveManifestSha256": "201fcf4897c1eaf9cd0062476ed00f00fa277af10d3c9f3628d1df6ce10425b6",
+    "initialLiveRootTreeSha256": "c038882738369d2fa03c0338eb32eca5758468f293f07f6270b73462d6ac8f2d",
+    "recovery": "Fresh completed-v1 attempt binds the exact initial eight records, initial plan, independent canonical receiver, incoming receipt, payload and unchanged live/retained roots. Historical six-record surfaces-stage-resume remains supported.",
+    "scratchLimitChanged": false,
+    "capacityRootReserveOrInodeChecksWeakened": false,
+    "sourceAuthorityProvenanceOrLockGuardsWeakened": false,
+    "historicalCleanupApproved": false,
+    "newInstalledHelpers": false,
+    "newInstalledHelpersBasis": "Reported by root; wrapper/source comparison shows only the four deployment/documentation paths above.",
+    "evidenceRefs": [
+      "initialUiRefusalEvidence",
+      "initialUiRefusalInventory",
+      "initialUiIncomingReceiptRecord",
+      "initialUiReceiverReceiptRecord",
+      "initialUiFailedUnit",
+      "initialUiActualCapturedBinding"
+    ],
+    "recoveryOutcome": "Exact initial eight-record binding accepted by completed-v1 stage; source-only retry1 passed; original completed-v1 publication passed. Initial refusal and immutable evidence preserved."
+  },
+  "uiCompletedPreflight": {
+    "status": "passed",
+    "allChecksExitZero": true,
+    "checkCount": 2,
+    "retentionDeferred": true,
+    "evidenceRef": "completedUiPreflight",
+    "summaryOnlyRefusal": {
+      "classification": "operator-local-summary-refusal",
+      "failure": "KeyError: storage",
+      "remotePreflightStatus": "passed",
+      "officialPreflightRerun": false,
+      "productionMutation": false,
+      "evidenceRef": "completedUiLocalSummaryRefusal"
+    },
+    "qualification": "A local postprocessing KeyError on absent storage did not invalidate the already saved passing official preflight; its own failure evidence remains retained."
+  },
+  "uiCompletedStage": {
+    "status": "passed",
+    "attempt": "completed-v1",
+    "planSha256": "0cb275b4f776dc7f78b15309c370e1c9ab393869aa81f821bfcd5a3a3cc2c122",
+    "receiptSha256": "e4ad8ead68a544fc4cba1e39fd3ede6e605947e5e4ab7de009888efd96bbd067",
+    "managedArchive": {
+      "path": "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-eb5e8c70cb0d-20261004T005638Z.tgz",
+      "bytes": 211800485,
+      "sha256": "789e5969e4348d4c9d8d328fb6d04ff94f555071012e253ce51f1e078b5d6319",
+      "checksumSha256": "c34105887eb8db41071e068b622d282001eb71e1cd51e3b67febde53f64799f6"
+    },
+    "completedCandidate": {
+      "additionalBytes": 263041024,
+      "allocatedOrRoundedBytes": 239136768,
+      "attempt": "completed-v1",
+      "candidate": "/var/backups/proofofwork-ui/transport-evidence/eb5e8c70cb0d-20261004T005638Z/.proofofwork-ui-stage-eb5e8c70cb0d-20261004T005638Z.completed-v1/candidate",
+      "entries": 1455,
+      "historicalDeletion": false,
+      "incomingReceiptSha256": "9d3f8f5000eee12d2e1204152be8844dab610cb7f34c000791bf89bbeb447fae",
+      "metadataOverheadBytes": 23904256,
+      "model": "completed-candidate-unique-inodes-v1",
+      "releaseId": "eb5e8c70cb0d-20261004T005638Z",
+      "stageRoot": "/var/tmp/proofofwork-deploy/proofofwork-www-stage-eb5e8c70cb0d-20261004T005638Z",
+      "uniqueInodes": 717,
+      "measurementSha256": "c79eb1ff471e3997e76d37f5fa12404ba15990712255e103519c17495cb4bb97"
+    },
+    "allLiveAndRetainedRootsUnchangedBeforePublication": true,
+    "historicalDeletion": false,
+    "capacityOrAuthorizationGuardsWeakened": false,
+    "evidenceRef": "completedUiStageReceipts"
+  },
+  "uiSourceLockRefusal": {
+    "status": "retained-original-refusal",
+    "attempt": "completed-v1",
+    "class": "nonblocking-exclusive-deploy-lock-EAGAIN",
+    "location": "remote_transport.py exclusive LOCK_EX|LOCK_NB before output namespace, input read or extraction",
+    "currentHolderAtCensus": "none",
+    "historicalHolderCause": "unknown",
+    "allSourceOutputPathsAbsentAtCensus": true,
+    "stageStillPresent": true,
+    "allLiveAndRetainedRootsAndInputUnchangedAtCensus": true,
+    "unsafeBypassOrHolderTermination": false,
+    "evidenceRefs": [
+      "originalSourceLockRefusalLog",
+      "originalSourceLockRefusalDispatch",
+      "originalSourceLockRefusalLocalResult",
+      "originalSourceLockRefusalCensus"
+    ]
+  },
+  "uiSourceRetry": {
+    "status": "passed",
+    "attempt": "source-retry1",
+    "freshPreflightPassed": true,
+    "planSha256": "72298173f738b9743ec0331048dd4d133faa1bf5cdf4aecb003192a21bd84673",
+    "onlyPlanChanges": [
+      "publicationAttempt",
+      "freshPreflightSha256",
+      "remove preservedStageResume"
+    ],
+    "applicationToolingArtifactsInputAndOldRootsUnchanged": true,
+    "sourceReceiptSha256": "8888e91b2f924c97018c461a57f6998a8637ce9508e78d7de86c48c0574870b1",
+    "noSurfaceStageReplay": true,
+    "noApplicationOrInstalledHelperChanges": true,
+    "publicationUsesOriginalCompletedV1Plan": true,
+    "evidenceRefs": [
+      "sourceRetryFreshPreflight",
+      "sourceRetryPlanBoundedReview",
+      "sourceRetryReceipts",
+      "sourceRetryHandoff"
+    ]
+  },
+  "independentReadOnlyReview": {
+    "remoteSshPerformed": false,
+    "remoteMutationsPerformed": false,
+    "repositoryEditsPerformed": false,
+    "stageRecordValueHashReconstructions": 12,
+    "sourceRecordValueHashReconstructions": 9,
+    "sourceCanonicalReceiverReconstructedBytes": 413,
+    "sourceCanonicalReceiverSha256": "e8578949228fb4b93344ab79ca873d174363ae06f2af47e0102c1546f6f7a803",
+    "focusedResponseBodyHashesVerified": 21,
+    "archiveSidecarProvenanceAndScreenshotPinsVerified": true,
+    "allEvidenceRefsVerifiedAtFreeze": true
+  },
+  "preparedFromDraftVersion": 3,
+  "preparedDraft": {
+    "markdownSha256": "67bd1120a58d32f5cd51f802a190d429111b9ffdc53636550801750c30471c4b",
+    "evidenceSha256": "312aa3f3f8d1eb779c4c4a32eb025189eba0fb7bd44f12b3ca17c6c670e090e7",
+    "originalDraftsPreserved": true
+  },
+  "nodeCloseoutCollectorQualification": {
+    "readOnly": true,
+    "initialRefusal": "The controller directory exceeded the initial collector assumption of at most 64 JSON-only entries; read-only metadata inspection identified 145 entries. No Node acceptance or deployment retry occurred.",
+    "v2Refusal": "A bounded metadata-only collector admitted at most 256 entries, retained command logs as metadata only, then refused with NameError because the TREE pin was absent.",
+    "v3": "The corrected explicit application-tree pin passed the read-only closeout. It collected 16 JSON receipts and metadata only for 129 private command logs.",
+    "privateCommandContentsRead": false,
+    "rawPrivateStreamsExported": false,
+    "controllerOrProductionStateChanged": false,
+    "originalCollectorsAndRefusalsPreserved": true
+  }
+}
