@@ -183,7 +183,9 @@
       "audits/2026-10-02-audit30-remaining-phase-approval.json",
       "audits/2026-10-02-audit30-remaining-phase-execution.evidence.json",
       "audits/2026-10-03-audit30-exact-sixteen-body-repair-proposal.md",
-      "audits/2026-10-03-audit30-oct3-pin-checker-promotion-proposal.md"
+      "audits/2026-10-03-audit30-oct3-pin-checker-promotion-proposal.md",
+      "audits/2026-10-03-publish-product-release.md",
+      "audits/2026-10-03-publish-product-release.evidence.json"
     ],
     "presentation-and-generated-notes": [
       "PROOFOFWORK_GENERAL_DECK.md",

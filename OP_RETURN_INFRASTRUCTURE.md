@@ -4035,11 +4035,11 @@ bytes; do not weaken those pins or reuse them as current installers. Before any
 approved helper installation, compare the deployed helper with the repository
 and preserve separately reviewed production differences.
 
-Build the 15 primary surfaces from one detached source checkout and copy
+Build the 16 primary surfaces from one detached source checkout and copy
 Computer byte-for-byte as the `nft` compatibility alias. Prepare one complete
 staged clone of `/var/www` at the publisher's release-bound path, remove the
 copied `.proofofwork-ui-release` manifest (the publisher recreates it from the
-new archive and source attestation), and replace only the 16 managed roots in
+new archive and source attestation), and replace only the 17 managed roots in
 that clone. A fresh managed output must also copy
 the immediate prior asset dependency closure under the original relative paths.
 The closure begins with same-surface root-relative references (including
@@ -4085,12 +4085,12 @@ The root-only stager is the canonical constructor for that full candidate. It
 takes the canonical live `/var/www`, an exact release-bound `surfaces` payload,
 and the exact release-bound stage path. It copies every non-managed passthrough
 path with its type, mode, uid, gid, and bytes; removes the copied active
-manifest; replaces exactly the 16 managed roots; and copies only the bounded
+manifest; replaces exactly the 17 managed roots; and copies only the bounded
 immediate-prior dependency closure above. It rejects links, special files,
 nested mounts, unsafe modes or ownership, differing path collisions, a
 Computer/NFT mismatch, concurrent live/payload changes, and any pre-existing
 stage target. Before copying, it counts the common `surfaces/` archive root,
-all 16 surface roots, and every descendant directory or regular file and
+all 17 surface roots, and every descendant directory or regular file and
 requires no more than 10,000 total entries and 1 GiB of regular-file bytes. It
 repeats the same provenance-equivalent aggregate proof after adding the prior
 compatibility closure, so neither the incoming payload nor the final archive
@@ -4103,13 +4103,14 @@ importing a mutable runtime module. `npm run check:ui-ops` contract-tests the
 two implementations by passing
 a stager-built candidate through every publisher pre-exchange proof, as well as
 testing stale-asset omission, collision rejection, and link rejection.
-The first Boost and DNS cutovers preserve rollback safety across the
+The Boost, DNS and Publish cutovers preserve rollback safety across the
 surface-count boundaries: active or rollback manifests created before Boost may
 verify with the legacy 14-surface set only when `/var/www/proofofwork-boost` is
-absent, and manifests created before DNS may verify with the legacy 15-surface
-set only when `/var/www/proofofwork-dns` is absent. New candidates, active
-releases after publication, and any manifest with DNS evidence remain
-16-surface strict.
+absent, manifests created before DNS may verify with the legacy 15-surface set
+only when `/var/www/proofofwork-dns` is absent, and pre-Publish manifests may
+verify with the legacy 16-surface set only when `/var/www/proofofwork-publish`
+is absent. New candidates, active releases after Publish publication, and any
+manifest with Publish evidence remain 17-surface strict.
 
 For an approved capacity-constrained release, the stager accepts
 `--deduplicate-managed-files`. It hardlinks identical regular files only within
@@ -4356,7 +4357,7 @@ the historical root has no valid v3 or legacy evidence, stop here. Preserve an
 invalid existing manifest with an exact checksum using the incident procedure
 below, then execute the one-time legacy bytes-only bootstrap block; do not
 invent a commit claim for mixed historical bytes. After `verify-rollback`
-passes, construct the candidate and archive the candidate's exact 16 managed
+passes, construct the candidate and archive the candidate's exact 17 managed
 roots, not the clean input payload:
 
 ```bash
@@ -4392,7 +4393,7 @@ fi
   --additional-bytes 65536 --additional-inodes 4 --phase archive-payload-directory
 archive_payload="$(mktemp -d "${deploy_root}/.archive-${release_id}.XXXXXXXXXX")"
 install -d -o root -g root -m 0700 "${archive_payload}/surfaces"
-for surface in activity browser boost computer desktop dns growth id inception infinity landing marketplace nft token wallet work; do
+for surface in activity browser boost computer desktop dns growth id inception infinity landing marketplace nft publish token wallet work; do
   /usr/bin/python3 -I -B /usr/local/sbin/proofofwork-ui-capacity check-copy \
     --source "${stage_root}/proofofwork-${surface}" \
     --path "${archive_payload}/surfaces" --phase "archive-copy-${surface}"
@@ -4454,12 +4455,12 @@ systemctl enable --now proofofwork-ui-release-provenance.timer \
 ```
 
 The archive must be a gzip-compressed tar with exactly one top-level
-`surfaces/` directory and exactly the 16 named surface directories beneath it;
+`surfaces/` directory and exactly the 17 named surface directories beneath it;
 it must not contain `/var/www` passthrough data or the active manifest. The v3
 root manifest and archive-adjacent `.provenance` must be byte-equal and bind the
 release id, full commit and tree, detached-source model, recursive
 `node_modules` entry count/bytes/digest, archive name/digest/payload model, all
-16 surface counts and mode-sensitive digests, Computer/NFT identity, and the
+17 surface counts and mode-sensitive digests, Computer/NFT identity, and the
 post-exchange deployment time. It is exact source-and-served-byte evidence, not
 a claim that the build itself was reproducible.
 
@@ -4467,7 +4468,7 @@ Immediately after publication, run the following from a host outside the UI
 VPS. It checksum-verifies the retained archive, requires the active and adjacent
 provenance to be byte-equal, and byte-compares every archived regular file for
 the public surfaces -- including the retained prior dependency closure -- with
-its HTTPS response on all 15 canonical public surface hostnames. It separately
+its HTTPS response on all 16 canonical public surface hostnames. It separately
 checks each public hostname root and the apex-to-`www` redirect. Do not classify
 the rollback root or release scratch as removable until this is green.
 
@@ -4512,6 +4513,7 @@ hosts = {
     "infinity": "infinity.proofofwork.me",
     "landing": "www.proofofwork.me",
     "marketplace": "amo.proofofwork.me",
+    "publish": "publish.proofofwork.me",
     "token": "credit.proofofwork.me",
     "wallet": "wallet.proofofwork.me",
     "work": "work.proofofwork.me",
@@ -6535,3 +6537,58 @@ and [final HTTPS receipt](deploy/audit30/verification/pow-audit30-item2-ui-https
 record these scoped results. Release handoff does not close the separate migration,
 physical/PITR/capacity, custody/dependency or final global Audit 30 gates. Earlier dated
 11b9, 265 and d4 sections remain operational history.
+
+### Publish production release — began 2026-10-03 UTC; final verification 2026-10-04 UTC
+
+Application commit `d5a8493119baf48231cab2db34883169399a41be`, tree
+`938354edb5174f320fbcf284e66a1c5532885a1d`, is published as release
+`d5a8493119ba-20261003T222517Z`. Deployment-only tooling is separately pinned
+to `b35829846c105cfa5e9b50e7df3de1a1ebfbe738`, tree
+`f7f6f57bc1f9d3dbd780c892a5ccdb5c1af53017`; tooling does not relabel the app.
+The final current serving/provenance receipt is `201fcf4897c1eaf9cd0062476ed00f00fa277af10d3c9f3628d1df6ce10425b6`.
+The fresh managed archive is 213,287,253 bytes, SHA-256
+`fc4f3d4d61ead3b3bac5dac1c9d967bcee6992bcd79b1759130b15fe43a3ca66`,
+with seventeen managed roots and sixteen public hostnames; NFT remains
+Computer's verified alias. UI publication receipt is `5555b7346e2c423fc7861933ff34121fcf2592105315fe5a3494bff562a37ce2`.
+
+The Node guarded exchange completed at 23:02:26 UTC; final production
+acceptance `6f8a8327a4442547d54eea2e4d52feca0cb04ca20ddc5a8e4a86ed33169f4121` passed at `969778/000000000000000000003a2ca37e47607a8f2aa0ddc296786bcdafee61507b34`.
+The current release-controller SHA-256 is
+`09afe5ddd243a796ea9c830b0041924747eb77a3803a3cfe56a3279cd24bf670`.
+Current UI stager/provenance/publisher hashes are respectively
+`9b3f8dbf789051e6700542e38da479f7fd312bc8f52679dcdc40a1fffe2d3687`,
+`5fc8a909bcc80e459f1ecff07418ab1998dd5121f96db0598cce25898b34deca`, and
+`1dcea307e0c769aade93878efebc1a6c5cb0c1f8cf8522998c7a1f80df77bb29`.
+Their preserved promotion evidence is linked in the release audit; older dated
+helper tables and Audit 5 pins remain historical evidence.
+
+Caddy config `07498aaf20376c0aa3f3de1802337fa5a657288ec743a08dd2ba04cf1c250c58` passed `5e4e3c0e8b34399a5cf6fe06ee050b437e0b44a56547ece6e469ce1d3bded9df`.
+Only the exact Computer bridge route permits the three trusted framing origins;
+ordinary Computer remains denied, and Boost/Publish can frame Computer.
+Off-host HTTPS `1d8a378c80e92835a508d02619d1aa180e1b1e29d74db530c3001af1fe3b2cac` compared `1,044` files,
+all sixteen public roots and the apex redirect with the exact managed archive.
+Focused public verification passed 13 checks / 16 requests, receipt
+`a83a4fc8caf84dd9b0a7312b6295a30b1c0db8b6df794fe8a0ad3894d6b9dac8`.
+NFT's 66 archived alias files retain their prior verified Computer alias proof and
+were excluded from public hostname requests. The original collector exit 143
+produced no receipt; its SIGTERM trigger remains unknown. The same committed
+verifier/settings passed the tty retry with retained pinned inputs.
+Production guest-editor/browser preview verification is `85c941d43e9350012e6e9b5ff0c879e94c2c7e687285c9cc3224fbda3adb5ec5`.
+The confirmed article-detail limitation is `not exercised: no confirmed articles available`;
+local synthetic body/review tests do not substitute for a live article receipt.
+No production wallet/identity signing or transaction was exercised. The initial
+Caddy version-pin refusal stopped before mutation and remains preserved separately
+from the later exact-version/binary-pinned successful retry.
+
+Original stage refusals, checkpoint/origin refusals, inputs and helper bytes
+remain preserved. The completed candidate admitted 262,606,848 measured
+conservative bytes without changing the 5 GiB scratch ceiling or original
+452,718,592-byte full-copy guard on the evidence filesystem. All retained roots,
+Core/Electrs/PostgreSQL identities, recovery material, holds and masked prune
+timers retain their documented protections. No historical deletion occurred.
+
+[Publish release audit](audits/2026-10-03-publish-product-release.md) and its
+[compact evidence](audits/2026-10-03-publish-product-release.evidence.json)
+record final scope, refusals and receipt pins. Release announcement:
+[verified X post](https://x.com/proofofworkme/status/2106537799943868594). Prior dated release sections remain the
+state observed at their own handoffs, rather than current serving authority.
