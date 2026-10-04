@@ -95,5 +95,9 @@ thirty seconds; its service is limited to one database connection, fifteen-secon
 statements, 512 MiB memory and a forty-five-second runtime. Its failures leave
 the canonical economic worker running.
 
-Release verification and exact deployment identities will be recorded after
-the approved 2026-10-04 rollout passes production checks.
+Search launched on 2026-10-04 with corrected UI release
+`471a30c41991-20261004T122500Z` and Node/API release
+`92eb5fbdaacf-20261004T111041Z`. The [release audit](audits/2026-10-04-search-product-release.md)
+and [compact evidence](audits/2026-10-04-search-product-release.evidence.json)
+bind their separate source identities, verified coverage, production checks
+and reused original Search Caddy/helper installation.

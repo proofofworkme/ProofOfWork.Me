@@ -39,8 +39,10 @@ Read-only preflight on 2026-10-04 found 79,097 source documents at checkpoint
 969829. Confirmed raw OP_RETURN coverage had 26,081 outputs and no missing or
 mismatched normalized scripts. The optimized source witness took 2.049 seconds;
 a bounded 200-event source page took 168 milliseconds. These are preflight
-measurements, not a claim that Search has already passed production rollout.
-Exact release identities and live verification will be recorded at handoff.
+measurements. Search's completed production rollout uses corrected UI release
+`471a30c41991-20261004T122500Z` and Node/API release
+`92eb5fbdaacf-20261004T111041Z`; its [release audit](audits/2026-10-04-search-product-release.md)
+records the separate source identities, live verification and preserved history.
 
 ProofOfWork.Me has a first-party OP_RETURN API layer for the existing `pwm1:` mail/files protocol, `pwid1:` ID registry protocol, `pwdns1:` DNS registry protocol, and `pwt1:` credit protocol.
 
@@ -52,17 +54,21 @@ the 100,000-byte aggregate script budget, compact feed/full detail verification,
 shared identity bridge and nonadditive Growth attribution. The node release
 must include `src/shared/protocol/publishArticle.mjs` and the portable signature
 module in `src/features/identity/` imported by the API/indexer. No schema or
-canonical ID/economic migration is required. Static releases now have sixteen
-primary surfaces plus NFT: seventeen managed roots. Prior fourteen-, fifteen-
-and sixteen-surface archives retain their exact verification compatibility.
+canonical ID/economic migration is required. The prior Publish rollout used
+sixteen public surfaces plus NFT: seventeen managed roots. Search adds the
+seventeenth public surface, bringing current releases to eighteen managed
+roots. Historical fourteen- through seventeen-root archives retain their
+exact verification compatibility.
 
 The current UI orchestration is `deploy/publish/`: `build.py` creates fresh
-lockfile-installed source and seventeen surface archives plus a build receipt;
+lockfile-installed source, seventeen public surface builds and the copied
+NFT Computer alias. It emits one eighteen-root surfaces bundle, a separate
+source bundle and a build receipt;
 `release.py` records the locked preflight and committed-source plan;
 `transport_preserve.py` dispatches the surface and source phases; the publisher
 retains all rollback roots; `collect_verify.py` and
 `https_smoke.py` bind the deployed archive to off-host HTTPS bytes. The phase
-capacity algorithm is committed and hash-bound by the plan, includes Publish,
+capacity algorithm is committed and hash-bound by the plan, includes Publish and Search,
 and checks the exact installed stager hash. Existing receiver, admission,
 scratch, filesystem, inode and retention-hold controls remain in force.
 
@@ -6746,3 +6752,46 @@ the exact receipts, qualifications and unmodified screenshots. The single
 [verified announcement](https://x.com/proofofworkme/status/2106577338561626243)
 was published at 02:49:10 UTC. Documentation-only closeout does not relabel the
 application or create another announcement.
+
+### Search product production release — 2026-10-04 UTC
+
+Search is live at `search.proofofwork.me` and Computer's `/?folder=search`.
+Corrected UI commit `471a30c419913286ee939c9d4c6c9d9c49c1405f`, tree
+`f549a2e83a4df08054e01df3988e6814c0ed0ced`, published as
+`471a30c41991-20261004T122500Z` at 12:56:14 UTC. Node/API remains commit
+`92eb5fbdaacfd05955dae6d994586850f93944b9`, tree
+`38f8a52eddd109fafcc88eddbd6c7b970ae6aa93`, release
+`92eb5fbdaacf-20261004T111041Z`.
+
+The unchanged strict production IDs, events and parity gates passed at stable
+checkpoint 969838. The independent Search HTTPS API matrix passed six
+assertions at that checkpoint; the corrected guest browser matrix passed seven
+assertions and four desktop/phone captures through checkpoint 969844. The full
+HTTPS asset verifier passed 1122/1122 files across 17 public hosts at
+13:02:12.390 UTC, binding the final eighteen-root archive and serving manifest.
+These are dated observations, not a permanent tip or mempool-completeness claim.
+
+The independent `proofofwork-search-index.timer` is installed, active and
+enabled. Node release `92eb5fbdaacf-20261004T111041Z` bounded the generation
+copy and preserved the earlier ready index under the existing statement/runtime
+limits. Search's derived schema,
+copies and retention do not change canonical registry/economic history or
+gate the economic worker. Authority/economic-service identities, previous
+timer states, retention holds and earlier Node archives remain preserved.
+
+The corrected UI reuses the Search Caddy/helper installation from release
+`9d64a4668a9a-20261004T105542Z`. Exact corrected source bytes, prepublication
+helper pins and a fresh postpublication Caddy file/version identity proof
+verify that reuse; this correction performed no new helper/Caddy installation
+or reload. All six earlier retained UI roots were preserved, and the former
+live UI became the final release's additional rollback root. The separate
+same-commit `471a30c41991-20261004T120555Z` attempt remains a preserved
+pre-intake lock refusal, with no new inputs/archive or live-root change.
+
+The [Search release audit](audits/2026-10-04-search-product-release.md) and
+[compact evidence](audits/2026-10-04-search-product-release.evidence.json)
+retain exact application/installation identities, producer hashes and all
+failure qualifications. The single [verified announcement](https://x.com/proofofworkme/status/2106731874592723185)
+displayed 09:03 America/Toronto (13:03 UTC, minute precision) and was verified
+at 13:04:04 UTC. Documentation-only closeout does not relabel the deployed
+applications or publish a second announcement.

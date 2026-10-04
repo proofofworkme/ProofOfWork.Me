@@ -15,13 +15,9 @@ It is distilled from current repository docs and public launch memory captured t
 - Public archives reviewed: `/home/sixer/Downloads/twitter-2026-05-19-4780579747040c69c6ee36267c276b61d1375ffa6de1fde07a0d945892fafea7`, `/home/sixer/Downloads/twitter-2026-06-09-4780579747040c69c6ee36267c276b61d1375ffa6de1fde07a0d945892fafea7`, `/home/sixer/Downloads/twitter-2026-07-14-4780579747040c69c6ee36267c276b61d1375ffa6de1fde07a0d945892fafea7`, `/home/sixer/Downloads/twitter-2026-08-19-4780579747040c69c6ee36267c276b61d1375ffa6de1fde07a0d945892fafea7`
 - 2026-07-14 archive inventory reviewed without sampling: 2,486 active tweet records, 39 deleted-tweet records, 67 long-form Note Tweet records, 2,486 active headers, and 39 deleted headers. Active and deleted tweet IDs were each unique; 271 active records were retweets.
 - 2026-08-19 archive inventory reviewed with full file inventory and targeted public-record sampling: 3,195 active tweet records, 10 deleted-tweet records, 167 long-form Note Tweet records, 3,195 active headers, 10 deleted headers, 417 active tweet media files, and 4 deleted-tweet media files. Active and deleted tweet IDs were each unique; 35 active records were retweets. Active public tweet records span 2026-05-08 through 2026-08-19, while Note Tweet records span 2026-07-16 through 2026-08-17.
-- Core domains: `www.proofofwork.me`, `proofofwork.me`, `id.proofofwork.me`, `dns.proofofwork.me`, `domain.proofofwork.me`, `domains.proofofwork.me`, `computer.proofofwork.me`, `desktop.proofofwork.me`, `browser.proofofwork.me`, `boost.proofofwork.me`, `publish.proofofwork.me`, `amo.proofofwork.me`, legacy `marketplace.proofofwork.me`, `credit.proofofwork.me`, `token.proofofwork.me`, `tokens.proofofwork.me`, `wallet.proofofwork.me`, `work.proofofwork.me`, `infinity.proofofwork.me`, `inception.proofofwork.me`, `log.proofofwork.me`, `growth.proofofwork.me`
+- Core domains: `www.proofofwork.me`, `proofofwork.me`, `id.proofofwork.me`, `dns.proofofwork.me`, `domain.proofofwork.me`, `domains.proofofwork.me`, `computer.proofofwork.me`, `desktop.proofofwork.me`, `browser.proofofwork.me`, `boost.proofofwork.me`, `publish.proofofwork.me`, `search.proofofwork.me`, `amo.proofofwork.me`, legacy `marketplace.proofofwork.me`, `credit.proofofwork.me`, `token.proofofwork.me`, `tokens.proofofwork.me`, `wallet.proofofwork.me`, `work.proofofwork.me`, `infinity.proofofwork.me`, `inception.proofofwork.me`, `log.proofofwork.me`, `growth.proofofwork.me`
 
 ## One Sentence
-
-Search adds `search.proofofwork.me` to the public Computer surfaces. Its
-coverage and source evidence are product state; searches themselves create no
-protocol action or second network-value contribution.
 
 ProofOfWork.Me is the ProofOfWork Computer: a local-first, on-chain, agent-readable computer where ProofOfWork transactions become mail, identity, files, applications, proposals, payments, and proofs of work.
 
@@ -42,11 +38,12 @@ The project turns attention, communication, identity, and application distributi
 ## Product Beliefs
 
 Search is the read-only discovery layer for the Computer's metaprotocols and
-their public data, at `search.proofofwork.me` and inside Computer. Its derived
-index must expose source evidence, preserve historical forms, distinguish
-confirmed validity from raw decoding, and report incomplete coverage. Search
-adds no protocol payment or network-value contribution; indexed copies never
-create a second economic event. Public file text requires verified bytes.
+their public data, at `search.proofofwork.me` and inside Computer. Coverage and
+source evidence are product state. Its derived index must expose that evidence,
+preserve historical forms, distinguish confirmed validity from raw decoding,
+and report incomplete coverage. Search adds no protocol action, payment or
+network-value contribution; indexed copies never create a second economic event.
+Public file text requires verified bytes.
 
 1. The source of truth is the chain.
 2. Confirmed records are canonical. Pending mempool visibility is useful gossip.

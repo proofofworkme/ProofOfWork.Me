@@ -190,7 +190,9 @@
       "audits/2026-10-04-publish-writer-mail-release.md",
       "audits/2026-10-04-publish-writer-mail-release.evidence.json",
       "audits/2026-10-04-publish-layout-release.md",
-      "audits/2026-10-04-publish-layout-release.evidence.json"
+      "audits/2026-10-04-publish-layout-release.evidence.json",
+      "audits/2026-10-04-search-product-release.md",
+      "audits/2026-10-04-search-product-release.evidence.json"
     ],
     "presentation-and-generated-notes": [
       "PROOFOFWORK_GENERAL_DECK.md",
