@@ -6668,3 +6668,39 @@ retain exact bindings, tests, refusals and qualifications. The single verified
 [follow-up announcement](https://x.com/proofofworkme/status/2106562933551436262)
 was published at 01:51:56 UTC. Documentation-only closeout does not create a
 second announcement or relabel the deployed application.
+
+### Publish responsive layout fix — 2026-10-04 UTC
+
+Frontend application `331f80cd56f5340d010e01bd8987d482a1fd5c5d`, tree
+`47e3328003ac4c45b6542af0550e1d98a0424458`, is serving as
+`331f80cd56f5-20261004T021259Z`. Its serving/provenance manifest is
+`d23ef1a49e26cc95e6543d1e63fb201c1bb109a1050a8ecdfe6fde766e70920c`;
+the 211,682,419-byte managed archive is
+`364d171f273f3b9b8b828a91bc01fd61b2183760d064594ed3159d22897dc716`.
+This dated UI handoff supersedes the prior section's UI serving identity. This
+release performed no Node, Caddy/configuration or installed-helper deployment.
+
+Publish inherits Boost's responsive shell instead of overriding its navigation
+tracks. Live 960px verification observed the rail shrink from 230px to 76px and
+the article column grow from 715px to 869px. Tablet and mobile navigation passed;
+the writer remained a standalone page. Twenty focused browser checks and the UI
+contract passed. The exact clean seventeen-root build and source attestation
+passed; publication completed at 02:43:28 UTC with all four prior rollback roots
+preserved and the previous live UI retained as a fifth root. The unchanged HTTPS
+verifier checked 992 public files across sixteen hosts, exact archive/manifest
+bindings and the apex redirect. NFT's 62 archived alias files remain separate
+from public hostname checks.
+
+The initial full-copy scratch refusal and eight evidence records are preserved.
+The supported recovery admitted the measured 263,602,176-byte candidate under the
+unchanged 5 GiB ceiling, retaining the original full-copy guard on the evidence
+filesystem. No historical cleanup or guard relaxation occurred. Production
+browser checks used a guest wallet; no signing, broadcast or confirmed article
+detail was exercised, and the article feed remained empty.
+
+The [layout release audit](audits/2026-10-04-publish-layout-release.md) and
+[compact evidence](audits/2026-10-04-publish-layout-release.evidence.json) retain
+the exact receipts, qualifications and unmodified screenshots. The single
+[verified announcement](https://x.com/proofofworkme/status/2106577338561626243)
+was published at 02:49:10 UTC. Documentation-only closeout does not relabel the
+application or create another announcement.

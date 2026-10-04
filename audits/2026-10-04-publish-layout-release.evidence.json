@@ -1,0 +1,292 @@
+{
+  "schema": "proofofwork-publish-layout-release-v1",
+  "releaseId": "331f80cd56f5-20261004T021259Z",
+  "applicationCommit": "331f80cd56f5340d010e01bd8987d482a1fd5c5d",
+  "applicationTree": "47e3328003ac4c45b6542af0550e1d98a0424458",
+  "frontendOnly": true,
+  "productionVerified": true,
+  "publication": {
+    "attempt": "completed-v1",
+    "releaseId": "331f80cd56f5-20261004T021259Z",
+    "commit": "331f80cd56f5340d010e01bd8987d482a1fd5c5d",
+    "tree": "47e3328003ac4c45b6542af0550e1d98a0424458",
+    "exitCode": 0,
+    "failure": null,
+    "capturedLogBytes": 229427,
+    "evidence": "/var/tmp/proofofwork-deploy/recovery-publish-331f80cd56f5-20261004T021259Z-completed-v1",
+    "finishedAt": "2026-10-04T02:43:28Z",
+    "publisherLogSha256": "b470a7079a29682b18e4e2269ff134f3f6b010b974989c03276f15b58375cdd0"
+  },
+  "servingManifestSha256": "d23ef1a49e26cc95e6543d1e63fb201c1bb109a1050a8ecdfe6fde766e70920c",
+  "archive": {
+    "path": "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-331f80cd56f5-20261004T021259Z.tgz",
+    "bytes": 211682419,
+    "sha256": "364d171f273f3b9b8b828a91bc01fd61b2183760d064594ed3159d22897dc716",
+    "checksumSha256": "dfb5f004ff366cd19e7f091892b4852c30167544dc1914cfe9d3ded811ea38f1"
+  },
+  "sourceReceiptSha256": "583dd0217bc70c298c280c8b4813543a4ab7431a8f947ce21cbeb6f488979b21",
+  "sourceCollection": {
+    "path": "/tmp/publish-layout-evidence-331f80cd56f5-20261004T021259Z/source-completed-v1-receipts.json",
+    "bytes": 67043,
+    "sha256": "4b2ae82abca4dc51a84a5d94ec2f8bb53310dd39ef23701e5e5901042098b15d"
+  },
+  "stageReceiptSha256": "b1f73ff1a55bdb62839ccd0d484ad504e15fd6776b5a47a5dcc5b002b904c3df",
+  "initialRefusal": "UI deployment scratch review required {\"additionalBytes\": 473272320, \"allocatedBytes\": 4937326592, \"cleanupApproved\": false, \"maximumBytes\": 5368709120, \"path\": \"/var/tmp/proofofwork-deploy\", \"phase\": \"stage-private-root\"}\n",
+  "measuredCandidateCharge": 263602176,
+  "allPriorRootsPreserved": true,
+  "priorRootCount": 4,
+  "newRollbackRoot": {
+    "format": "proofofwork-ui-retained-root-v1",
+    "classification": "retain",
+    "root": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-331f80cd56f5-20261004T021259Z",
+    "manifestSha256": "b9e89168f9763a04fe3b3f9122303933e3a18bff4d7f354de71f10d4bf0427c2",
+    "treeSha256": "652d2e3ab8a9a0e13b5c794551af785c2207bafcd25140c613215efac9f89b39",
+    "entries": 1456,
+    "regularBytes": 446186907
+  },
+  "https": {
+    "format": "publish-ui-https-byte-smoke-v1",
+    "ok": true,
+    "releaseId": "331f80cd56f5-20261004T021259Z",
+    "commit": "331f80cd56f5340d010e01bd8987d482a1fd5c5d",
+    "tree": "47e3328003ac4c45b6542af0550e1d98a0424458",
+    "archiveSha256": "364d171f273f3b9b8b828a91bc01fd61b2183760d064594ed3159d22897dc716",
+    "startedAt": "2026-10-04T02:44:57.019Z",
+    "workers": 8,
+    "perRequestSocketTimeoutSeconds": 30.0,
+    "overallTimeoutSeconds": 900.0,
+    "archivedFilesChecked": 992,
+    "hostnameRootsChecked": 16,
+    "verifiedResponseBytes": 237694696,
+    "apexRedirectVerified": true,
+    "manifestSha256": "d23ef1a49e26cc95e6543d1e63fb201c1bb109a1050a8ecdfe6fde766e70920c",
+    "archiveBytes": 211682419,
+    "sidecarAndProvenanceVerified": true,
+    "archiveEntries": 1089,
+    "archiveFilesSkippedNft": 62,
+    "expectedPublicFiles": 992,
+    "publicSurfaces": 16,
+    "finalLocalEvidenceReverified": true,
+    "finishedAt": "2026-10-04T02:47:56.667Z",
+    "durationSeconds": 179.648
+  },
+  "browser": {
+    "schema": "proofofwork-publish-layout-production-browser-v1",
+    "observedAt": "2026-10-04T02:46:37.182285+00:00",
+    "releaseId": "331f80cd56f5-20261004T021259Z",
+    "url": "https://publish.proofofwork.me/",
+    "measurements": [
+      {
+        "viewport": 960,
+        "documentWidth": 945,
+        "shell": "76px 869px",
+        "navWidth": 76,
+        "feedWidth": 869,
+        "feedLeft": 76
+      },
+      {
+        "viewport": 768,
+        "documentWidth": 753,
+        "shell": "76px 677px",
+        "navWidth": 76,
+        "feedWidth": 677
+      },
+      {
+        "viewport": 390,
+        "documentWidth": 375,
+        "shell": "375px",
+        "navWidth": 375,
+        "navPosition": "fixed",
+        "feedWidth": 375
+      }
+    ],
+    "writer": {
+      "url": "https://publish.proofofwork.me/write?network=livenet",
+      "dialogs": 0,
+      "feedPanels": 0
+    },
+    "confirmedArticleCount": 0,
+    "walletSigning": false,
+    "broadcast": false,
+    "viewportOverrideReset": true,
+    "screenshot": {
+      "path": "/home/sixer/.codex/visualizations/2026/10/01/01a0f9e1-4153-7b70-bce7-eb6d55609578/publish-layout-331f80cd56f5.jpg",
+      "bytes": 35407,
+      "sha256": "7352e963a233815eae80dc30bffb213bd1ba03a61ba15f26d2b89af69af47589"
+    }
+  },
+  "announcement": {
+    "schema": "proofofwork-release-announcement-v1",
+    "account": "@proofofworkme",
+    "url": "https://x.com/proofofworkme/status/2106577338561626243",
+    "publishedAt": "2026-10-04T02:49:10.000Z",
+    "text": "More room to read.\n\nPublish now shares Boost's compact navigation, giving articles their space back in Publish and Computer. Mobile gets the same bottom navigation.\n\nThe writer keeps its own page.\n\nhttps://publish.proofofwork.me/\n$WORK $POWB $INCB",
+    "verifiedOnFreshProfileAndPermalink": true,
+    "publishedCount": 1,
+    "submission": "Post button Enter; completion observed before fresh profile/permalink verification",
+    "screenshot": {
+      "path": "/home/sixer/.codex/visualizations/2026/10/01/01a0f9e1-4153-7b70-bce7-eb6d55609578/publish-layout-announcement-331f80cd56f5.jpg",
+      "bytes": 79197,
+      "sha256": "1659ee117792a3c9162b26a8e33baf996f9f0adcd77f2dc04e162daa6830709d"
+    }
+  },
+  "validation": {
+    "beforeFixGeometryFailures": 5,
+    "afterFixFocusedBrowserPassed": 20,
+    "uiContract": "passed",
+    "applicationHygiene": "passed"
+  },
+  "qualifications": [
+    "No Node, Caddy/configuration or installed-helper deployment was performed.",
+    "No production wallet signing, identity signing, broadcast or confirmed article detail was exercised; the live article count was zero.",
+    "The v2 read-only collector refused before SSH because its local worktree source mode was 0664; v3 used identical pinned source from the clean official build with unchanged guards.",
+    "The initial guarded full-copy refusal and all historical evidence were preserved."
+  ],
+  "references": [
+    {
+      "path": "/tmp/publish-layout-build-331f80cd56f5-20261004T021259Z/build-receipt.json",
+      "bytes": 1136,
+      "sha256": "ce1685f657135749d6936967b21d449f4d3a7e7b7f0ec020240c8582cec8b0cb"
+    },
+    {
+      "path": "/tmp/publish-layout-build-331f80cd56f5-20261004T021259Z/build.log",
+      "bytes": 116006,
+      "sha256": "dc420df265f5e10ff9cbe93b40f5dbe3d9f9f91b00511aee867eeee8fddf50da"
+    },
+    {
+      "path": "/tmp/publish-layout-evidence-331f80cd56f5-20261004T021259Z/plan-initial.json",
+      "bytes": 27716,
+      "sha256": "86b2f7354cd090fd5d583e8277abe74ac5d619c9d26d85b4dc0429e4f242a868"
+    },
+    {
+      "path": "/tmp/publish-layout-evidence-331f80cd56f5-20261004T021259Z/plan-completed-v1.json",
+      "bytes": 30215,
+      "sha256": "71ca9419e8c164e2e31854f97c400edf04116c5702f8e7f8b2d19bc1a0642552"
+    },
+    {
+      "path": "/tmp/publish-layout-evidence-331f80cd56f5-20261004T021259Z/failed-stage-evidence.json",
+      "bytes": 15764,
+      "sha256": "99d40a79b5cc6a42b0eb6cfa77ceb19e06e45d64e52fef4cc824cc7040b81da8"
+    },
+    {
+      "path": "/tmp/publish-layout-evidence-331f80cd56f5-20261004T021259Z/incoming-receipt.json",
+      "bytes": 1394,
+      "sha256": "e99c27991767c504f1bf1da8be3dc33853554c2244de921d0050b1bd4304a7b5"
+    },
+    {
+      "path": "/tmp/publish-layout-evidence-331f80cd56f5-20261004T021259Z/failed-stage-inventory.json",
+      "bytes": 3571,
+      "sha256": "b6eece5ad4293949345ad1b7830f589effe7e7cc5f8b204988504d280d820a7a"
+    },
+    {
+      "path": "/tmp/publish-layout-evidence-331f80cd56f5-20261004T021259Z/stage-initial.log",
+      "bytes": 486,
+      "sha256": "01e8d058d116620b64b1e30c9e4fa1474b1d2126c5068fde2464379af3f23c1c"
+    },
+    {
+      "path": "/tmp/publish-layout-evidence-331f80cd56f5-20261004T021259Z/stage-completed-v1.log",
+      "bytes": 641,
+      "sha256": "2750021dd3da4c222245e28e861ce75e3cb3ef079af8411fbf37457093d6499f"
+    },
+    {
+      "path": "/tmp/publish-layout-evidence-331f80cd56f5-20261004T021259Z/source-completed-v1.log",
+      "bytes": 543,
+      "sha256": "133acbb0ee09cd6e69de1c863cff7d0aa8bbe0dc620b15a457424352b3694f0f"
+    },
+    {
+      "path": "/tmp/publish-layout-evidence-331f80cd56f5-20261004T021259Z/preserved-stage-resume-completed-v1-receipts.json",
+      "bytes": 36914,
+      "sha256": "dd5664ce1fe203a046259d9ac98be4f712af7f3cfe5e96b50fdd341cc3a1cf38"
+    },
+    {
+      "path": "/tmp/publish-layout-evidence-331f80cd56f5-20261004T021259Z/source-completed-v1-receipts.json",
+      "bytes": 67043,
+      "sha256": "4b2ae82abca4dc51a84a5d94ec2f8bb53310dd39ef23701e5e5901042098b15d"
+    },
+    {
+      "path": "/tmp/publish-layout-evidence-331f80cd56f5-20261004T021259Z/publish-completed-v1.log",
+      "bytes": 1380,
+      "sha256": "9da07f0013a443f92eefceb66aaaaef6c4524c6e6a6c8c4ad4c43ade3a144208"
+    },
+    {
+      "path": "/tmp/publish-layout-evidence-331f80cd56f5-20261004T021259Z/production-browser.json",
+      "bytes": 1185,
+      "sha256": "8de9d61e60f4719076f4e1ba2de0129fe172d708e32016acba833e5238e134ca"
+    },
+    {
+      "path": "/tmp/publish-layout-evidence-331f80cd56f5-20261004T021259Z/announcement.json",
+      "bytes": 902,
+      "sha256": "2ae5c6ba425135c2a0f7c3a5fa8daa686998b2eb2f81df65fd96662b7d5c55bb"
+    },
+    {
+      "path": "/tmp/publish-layout-evidence-331f80cd56f5-20261004T021259Z/live-verify/https-smoke-receipt.json",
+      "bytes": 957,
+      "sha256": "bc39dab11f9755d2ec6c2435eb0d290358d5758be7512e659dc008f97013d5ba"
+    },
+    {
+      "path": "/tmp/publish-layout-evidence-331f80cd56f5-20261004T021259Z/live-verify/.proofofwork-ui-release",
+      "bytes": 2631,
+      "sha256": "d23ef1a49e26cc95e6543d1e63fb201c1bb109a1050a8ecdfe6fde766e70920c"
+    },
+    {
+      "path": "/tmp/publish-layout-evidence-331f80cd56f5-20261004T021259Z/live-verify/proofofwork-ui-release-331f80cd56f5-20261004T021259Z.tgz.provenance",
+      "bytes": 2631,
+      "sha256": "d23ef1a49e26cc95e6543d1e63fb201c1bb109a1050a8ecdfe6fde766e70920c"
+    },
+    {
+      "path": "/tmp/publish-layout-preflight-20261004T021120Z.json",
+      "bytes": 51623,
+      "sha256": "b548a102d082bf1940c65c82c026e585154e3f85cf6e00314b40eca90947c31d"
+    },
+    {
+      "path": "/tmp/publish-layout-baseline-20261004T021120Z.json",
+      "bytes": 809,
+      "sha256": "774d600d075e597af48b923795480fa706ab1a584491f34b60b2f745a2685fd3"
+    },
+    {
+      "path": "/tmp/publish-layout-browser-20261004T021120Z.log",
+      "bytes": 3133,
+      "sha256": "8b0a2cc10b3ede8040d53e8b50309e9971e67e8b998ac801f6824385e860847b"
+    },
+    {
+      "path": "/tmp/publish-layout-ui-contract-20261004T021120Z.log",
+      "bytes": 97,
+      "sha256": "a1b6a72ad3aa48c75291cc5682fc612c0789615343aca0e78e5db2d8d1d0e404"
+    },
+    {
+      "path": "/tmp/publish-layout-hygiene-fix-20261004T021120Z.log",
+      "bytes": 211,
+      "sha256": "2aa761d31cbd0e77576be336b8323cd83d93acc034942dc4323f75251b6a9f44"
+    },
+    {
+      "path": "/tmp/publish-layout-hygiene-check-20261004T021120Z.log",
+      "bytes": 134,
+      "sha256": "c501942de5d3c65c2445bb7178083e0794cc7491a71a7ba3a354acef2a10a8bb"
+    },
+    {
+      "path": "/tmp/publish-layout-initial-refusal-collect-v2.py",
+      "bytes": 20438,
+      "sha256": "165b3ef7e521dd09c11a9c2d20f65616887229ab51fd31d058744c6907ca8de4"
+    },
+    {
+      "path": "/tmp/publish-layout-initial-refusal-collect-v3.py",
+      "bytes": 20521,
+      "sha256": "4332b891c03ddcb02bcf89da8ef91e651962ddc4c6e2941e86fdaa34e2d29017"
+    },
+    {
+      "path": "/tmp/publish-layout-completed-collect.py",
+      "bytes": 6677,
+      "sha256": "511a5eca79e5683b75f3960e54ed02176ac471a56f3446ae3ce8ffe5e371480b"
+    },
+    {
+      "path": "/home/sixer/.codex/visualizations/2026/10/01/01a0f9e1-4153-7b70-bce7-eb6d55609578/publish-layout-331f80cd56f5.jpg",
+      "bytes": 35407,
+      "sha256": "7352e963a233815eae80dc30bffb213bd1ba03a61ba15f26d2b89af69af47589"
+    },
+    {
+      "path": "/home/sixer/.codex/visualizations/2026/10/01/01a0f9e1-4153-7b70-bce7-eb6d55609578/publish-layout-announcement-331f80cd56f5.jpg",
+      "bytes": 79197,
+      "sha256": "1659ee117792a3c9162b26a8e33baf996f9f0adcd77f2dc04e162daa6830709d"
+    }
+  ]
+}
