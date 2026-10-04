@@ -13,6 +13,11 @@ Editing and preview use normal page scrolling and Back/Forward navigation.
 Only the exact transaction consent review opens a dialog. Reload restores the
 current wallet/network article draft.
 
+The article feed, search and author archives use Boost's shared responsive
+shell: compact side navigation follows the available surface width, including
+Computer workspaces, and becomes bottom navigation on mobile. Publish's reader
+and writer typography do not override that navigation layout.
+
 Mail Compose offers Mail, Boost and Publish. Selecting Publish saves every
 field of the Mail draft before opening this same writer and its separate
 article draft. Back restores Mail under the current wallet/network; a changed

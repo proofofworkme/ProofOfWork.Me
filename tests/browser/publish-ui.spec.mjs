@@ -52,6 +52,37 @@ async function fixture(page, { wallet = false, alteredBody = false, recovery = f
   });
 }
 
+for (const { width, embedded } of [
+  { width: 390, embedded: false },
+  { width: 768, embedded: false },
+  { width: 960, embedded: false },
+  { width: 1440, embedded: false },
+  { width: 1280, embedded: true },
+]) {
+  test(`Publish shares Boost navigation geometry at ${width}px${embedded ? " in Computer" : ""}`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 900 });
+    await fixture(page);
+    const layouts = [];
+    for (const surface of ["boost", "publish"]) {
+      await page.goto(`/?${embedded ? `folder=${surface}` : `${surface}=1`}`);
+      await expect(page.locator(".boost-feed-panel")).toBeVisible();
+      layouts.push(await page.evaluate(() => {
+        const shell = document.querySelector(".boost-shell-instrument");
+        const feed = document.querySelector(".boost-feed-panel").getBoundingClientRect();
+        const nav = document.querySelector(".boost-compact-nav");
+        const navBox = nav.getBoundingClientRect();
+        return { display: getComputedStyle(shell).display,
+          columns: getComputedStyle(shell).gridTemplateColumns,
+          feedLeft: feed.left, feedWidth: feed.width,
+          navWidth: navBox.width, navPosition: getComputedStyle(nav).position,
+          documentWidth: document.documentElement.scrollWidth };
+      }));
+    }
+    expect(layouts[1]).toEqual(layouts[0]);
+    expect(layouts[1].documentWidth).toBeLessThanOrEqual(width + 1);
+  });
+}
+
 for (const width of [390, 1440]) {
   test(`articles share Boost engagement and fit ${width}px`, async ({ page }) => {
     await page.setViewportSize({ width, height: 1000 });
