@@ -231,14 +231,19 @@ def validate_preserved_stage(plan):
     original = json.loads(bound(resume['failedPlanPath'], resume['failedPlanSha256'], 65536))
     assert resume['failedPlanPath'] == str(BASE / ('recovery-plan-' + release + '-' + original['publicationAttempt'] + '.json'))
     assert original['publicationAttempt'] != plan['publicationAttempt']
-    assert original['inputStorage'] == 'release-evidence-v1' and original['resumeSurfaces']
+    assert original['inputStorage'] == 'release-evidence-v1'
     assert 'preservedStageResume' not in original
+    initial = 'resumeSurfaces' not in original
+    if initial: assert original['publicationAttempt'] == 'initial'
+    else: assert original['resumeSurfaces']
+    failed_phase = 'surfaces-stage' if initial else 'surfaces-stage-resume'
     for key in ('releaseId', 'commit', 'tree', 'source', 'surfaces', 'surfacesPayloadFingerprint',
                 'preservedSurfacesRoot', 'preservedSourceCheckout', 'oldLiveManifestSha256', 'oldFullRootTreeSha256', 'retainedRoots'):
         assert original[key] == plan[key]
-    failed = BASE / ('recovery-transport-' + release + '-surfaces-stage-resume-' + original['publicationAttempt'])
+    failed = BASE / ('recovery-transport-' + release + '-' + failed_phase + '-' + original['publicationAttempt'])
     assert resume['failedEvidence'] == str(failed); directory(failed)
     names = {'intent.json', 'input-evidence-check.json', 'stage-model.json', 'stage-check-scratch.json', 'stage-check.json', 'stager.log'}
+    if initial: names |= {'receive-admission.log', 'receiver.log'}
     assert set(resume['failedRecords']) == names
     records = {}
     for name, pin in resume['failedRecords'].items():
@@ -246,7 +251,7 @@ def validate_preserved_stage(plan):
         assert len(raw) == pin['bytes']; records[name] = raw
     assert {path.name for path in failed.iterdir()} == names
     intent = json.loads(records['intent.json'])
-    assert intent['planSha256'] == resume['failedPlanSha256'] and intent['phase'] == 'surfaces-stage-resume'
+    assert intent['planSha256'] == resume['failedPlanSha256'] and intent['phase'] == failed_phase
     prefix = 'UI deployment scratch review required '
     refusal = records['stager.log'].decode(); assert refusal.startswith(prefix)
     refusal = json.loads(refusal[len(prefix):])
@@ -272,7 +277,20 @@ def validate_preserved_stage(plan):
     assert incoming['payloadFingerprint'] == plan['surfacesPayloadFingerprint']
     assert incoming['preservedPath'] == str(Path(plan['preservedSurfacesRoot']).parent)
     assert incoming['movePreservedInodes'] is True and incoming['historicalDeletion'] is False
-    assert incoming['receiverReceipt'] == validate_resume(original)
+    if initial:
+        receiver_path = BASE / ('audit5-stream-surfaces-' + release + '.json')
+        assert resume['receiverReceiptPath'] == str(receiver_path)
+        receiver = json.loads(bound(receiver_path, resume['receiverReceiptSha256'], 65536))
+        assert receiver == json.loads(records['receiver.log']) == incoming['receiverReceipt']
+        assert receiver['status'] == 'verified' and receiver['kind'] == 'surfaces'
+        assert receiver['releaseId'] == release
+        assert receiver['archiveSha256'] == plan['surfaces']['sha256']
+        assert receiver['compressedBytes'] == plan['surfaces']['compressedBytes']
+        assert receiver['entries'] == plan['surfacesPayloadFingerprint']['entries']
+        assert receiver['logicalBytes'] == plan['surfacesPayloadFingerprint']['regularBytes']
+        assert receiver['extractedRoot'] == str(BASE / ('proofofwork-ui-surfaces-' + release))
+    else:
+        assert incoming['receiverReceipt'] == validate_resume(original)
     assert not os.path.lexists(BASE / ('proofofwork-ui-surfaces-' + release))
     assert not list((EVIDENCE / release).glob('.proofofwork-ui-stage-*'))
     return incoming

@@ -134,12 +134,16 @@ def preserved_stage_binding(args, current):
     incoming = json.loads(Path(args.preserved_incoming_receipt).read_bytes())
     inventory = json.loads(Path(args.preserved_inventory).read_bytes())
     assert original['publicationAttempt'] != current['publicationAttempt'], 'Preserved stage requires a fresh attempt'
-    assert original['inputStorage'] == 'release-evidence-v1' and original['resumeSurfaces']
+    assert original['inputStorage'] == 'release-evidence-v1'
     assert 'preservedStageResume' not in original
+    initial = 'resumeSurfaces' not in original
+    if initial: assert original['publicationAttempt'] == 'initial'
+    else: assert original['resumeSurfaces']
+    failed_phase = 'surfaces-stage' if initial else 'surfaces-stage-resume'
     for key in ('releaseId', 'commit', 'tree', 'source', 'surfaces', 'surfacesPayloadFingerprint',
                 'preservedSurfacesRoot', 'preservedSourceCheckout', 'oldLiveManifestSha256', 'oldFullRootTreeSha256', 'retainedRoots'):
         assert original[key] == current[key], 'Preserved stage changes the artifact binding'
-    failed_root = '/var/tmp/proofofwork-deploy/recovery-transport-' + current['releaseId'] + '-surfaces-stage-resume-' + original['publicationAttempt']
+    failed_root = '/var/tmp/proofofwork-deploy/recovery-transport-' + current['releaseId'] + '-' + failed_phase + '-' + original['publicationAttempt']
     assert evidence['evidence'] == failed_root
     assert evidence['stageExists'] is False and evidence['sourceExists'] is False and evidence['privateStages'] == []
     assert evidence['preservedInputExists'] is True
@@ -149,9 +153,10 @@ def preserved_stage_binding(args, current):
     assert inventory['live']['treeSha256'] == current['oldFullRootTreeSha256']
     assert inventory['retained'] == current['retainedRoots']
     names = {'intent.json', 'input-evidence-check.json', 'stage-model.json', 'stage-check-scratch.json', 'stage-check.json', 'stager.log'}
+    if initial: names |= {'receive-admission.log', 'receiver.log'}
     records = evidence['records']; assert set(records) == names
     assert records['intent.json']['value']['planSha256'] == original_sha
-    assert records['intent.json']['value']['phase'] == 'surfaces-stage-resume'
+    assert records['intent.json']['value']['phase'] == failed_phase
     refusal_raw = records['stager.log']['value']; prefix = 'UI deployment scratch review required '
     assert refusal_raw.startswith(prefix)
     refusal = json.loads(refusal_raw[len(prefix):])
@@ -174,8 +179,23 @@ def preserved_stage_binding(args, current):
     assert value['planSha256'] == original_sha and value['payloadFingerprint'] == current['surfacesPayloadFingerprint']
     assert value['preservedPath'] == str(Path(current['preservedSurfacesRoot']).parent)
     assert value['movePreservedInodes'] is True and value['historicalDeletion'] is False
+    receiver_binding = {}
+    if initial:
+        receiver = inventory['surfaceReceiverReceipt']
+        assert receiver == records['receiver.log']['value'] == value['receiverReceipt']
+        assert receiver['status'] == 'verified' and receiver['kind'] == 'surfaces'
+        assert receiver['releaseId'] == current['releaseId']
+        assert receiver['archiveSha256'] == current['surfaces']['sha256']
+        assert receiver['compressedBytes'] == current['surfaces']['compressedBytes']
+        assert receiver['entries'] == current['surfacesPayloadFingerprint']['entries']
+        assert receiver['logicalBytes'] == current['surfacesPayloadFingerprint']['regularBytes']
+        assert receiver['extractedRoot'] == '/var/tmp/proofofwork-deploy/proofofwork-ui-surfaces-' + current['releaseId']
+        assert HEX64.fullmatch(inventory['receiverReceiptSha256'])
+        receiver_binding = {
+            'receiverReceiptPath': '/var/tmp/proofofwork-deploy/audit5-stream-surfaces-' + current['releaseId'] + '.json',
+            'receiverReceiptSha256': inventory['receiverReceiptSha256']}
     return {'failedPlanPath': remote_plan(original), 'failedPlanSha256': original_sha,
-            'failedEvidence': failed_root, 'failedRecords': pins,
+            'failedEvidence': failed_root, 'failedRecords': pins, **receiver_binding,
             'incomingReceiptPath': receipt_path, 'incomingReceiptSha256': incoming['sha256'],
             'incomingReceiptBytes': incoming['bytes'], 'fullCopyRefusal': refusal,
             'candidateStorage': 'release-evidence-v1',

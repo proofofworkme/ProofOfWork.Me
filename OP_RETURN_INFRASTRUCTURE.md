@@ -44,14 +44,18 @@ inputs and occupied namespaces; failed evidence remains untouched. Plan
 creation requires all three `--resume-plan`, `--resume-evidence` and
 `--resume-inventory` inputs. The resume sends no second surface stream.
 
-If that preserved-input attempt stopped at the stager's independent full
-logical-copy scratch guard before allocating any candidate, the explicit
+If a fresh `surfaces-stage` attempt or its preserved-input continuation stopped
+at the stager's independent full logical-copy scratch guard before allocating
+any candidate, the explicit
 `preserved-stage-resume` phase can build in the same current-release evidence
 pool. Plan creation requires `--preserved-plan`, `--preserved-evidence`,
 `--preserved-incoming-receipt` and `--preserved-inventory`. It pins the exact
 prior plan, all failed records, immutable incoming receipt, independently
 verified payload fingerprint and full-copy refusal, and requires a fresh
-attempt/unit/private namespace. It reuses the already preserved input without
+attempt/unit/private namespace. A fresh initial refusal has exactly eight
+records, including its receive admission and receiver log, and separately binds
+the canonical receiver receipt. The historical continuation keeps its exact
+six-record binding. It reuses the already preserved input without
 another stream or move. Every original full logical-copy filesystem/inode
 guard remains active on the actual evidence filesystem before allocation and
 each copy; the phase model reports this independent full-copy bound as well.
