@@ -6829,3 +6829,43 @@ resolves it. Failed status reads preserve evidence. Confirmation, pending and
 dropped status remain distinct; wallet rejection retains the entered amount.
 The article reader has a spaced header and an accessible Back to articles arrow
 on standalone Publish and Computer.
+
+## Content tipping release — 2026-10-06
+
+Release `7bad9495d118-20261006T180919Z` serves the exact clean source
+`7bad9495d11866cd9e8a177b39769e4ae47875b6`, tree
+`4fd21d3828974cc5ef465e4af654e13baee5fc88`. Its eighteen managed roots
+include Boost, Publish, Search and Computer. Production HTTPS verification
+passed for all 1,224 public files and seventeen hostname roots at
+18:46:24.850 UTC. The managed archive SHA-256 is
+`36b1a072ed28d174cb338a454d3998be4656678ea0a3655be13cbbc98848501e`;
+the serving manifest SHA-256 is
+`6cfcd207286449e9a3d5474b00e8eb3f03a96ad7b83f7320edb8c4fb1128853a`.
+
+The node update overlays only five existing runtime modules and one new tip
+protocol helper. Existing active audit changes were preserved; all 188 expected
+source hashes matched afterward and API/indexer services remained active.
+Rollback preimages and the scoped controller receipt are retained under
+`/data/proofofwork-release-backups/content-tips-20261006T181034Z`. Canonical
+Mail accounting remains the sole payment-flow contribution for the app's tip
+transaction; the Boost tip record adds no second economic delta.
+
+The initial source phase ran before the required staged archive existed and
+stopped before live mutation. Initial full-copy staging then correctly refused
+the five-GiB scratch ceiling. The supported preserved-input continuation built
+the candidate in evidence storage and admitted its measured allocation, without
+changing capacity guards or deleting history. All prior UI roots and failed
+attempts remain retained, with the previous live UI preserved under
+`proofofwork-www-pre-7bad9495d118-20261006T180919Z`.
+
+Live browser checks covered Boost and Computer Tip controls, Publish's default
+546 and exact custom 1,234 amount, article header spacing and Back navigation.
+A checkpoint transition initially failed closed; fresh reads and the visible
+Refresh/Retry controls restored verified article evidence. No live financial
+transaction was broadcast. Full source bindings, local regressions, browser
+checks and production receipts are recorded in
+`audits/2026-10-06-content-tips-release.evidence.json`.
+
+The single verified release announcement is
+https://x.com/proofofworkme/status/2107543307748348184. Documentation-only
+release bookkeeping does not publish a second announcement.

@@ -1,6 +1,6 @@
 {
   "schema": "proof-of-work-content-tips-release-v1",
-  "status": "local-verified-not-yet-deployed",
+  "status": "production-verified",
   "approvedScope": "Go for it, ship the full scope",
   "baselineUiCommit": "471a30c419913286ee939c9d4c6c9d9c49c1405f",
   "baselineNodeHead": "92eb5fbdaacfd05955dae6d994586850f93944b9",
@@ -45,7 +45,153 @@
     "walletFinancialBroadcasts": 0,
     "apiTruth": "passed for clean source and production-overlay candidate with active Audit31 diagnostic harness",
     "workV8": "passed",
-    "canonicalAccounting": "passed using active Audit31 diagnostic harness"
+    "canonicalAccounting": "passed using active Audit31 diagnostic harness",
+    "productionBrowser": [
+      "Publish article heading spacing and back navigation",
+      "Publish default 546 and exact custom 1234 tip input without signing",
+      "Boost timeline Tip action",
+      "Computer Publish article Back and Tip actions"
+    ],
+    "checkpointTransition": "Initial article load failed closed at a new checkpoint; fresh reads, Refresh and Retry from first page restored complete confirmed article evidence.",
+    "https": {
+      "format": "publish-ui-https-byte-smoke-v1",
+      "ok": true,
+      "releaseId": "7bad9495d118-20261006T180919Z",
+      "commit": "7bad9495d11866cd9e8a177b39769e4ae47875b6",
+      "tree": "4fd21d3828974cc5ef465e4af654e13baee5fc88",
+      "archiveSha256": "36b1a072ed28d174cb338a454d3998be4656678ea0a3655be13cbbc98848501e",
+      "startedAt": "2026-10-06T18:39:54.139Z",
+      "workers": 8,
+      "perRequestSocketTimeoutSeconds": 30.0,
+      "overallTimeoutSeconds": 900.0,
+      "archivedFilesChecked": 1224,
+      "hostnameRootsChecked": 17,
+      "verifiedResponseBytes": 256500611,
+      "apexRedirectVerified": true,
+      "manifestSha256": "6cfcd207286449e9a3d5474b00e8eb3f03a96ad7b83f7320edb8c4fb1128853a",
+      "archiveBytes": 225315229,
+      "sidecarAndProvenanceVerified": true,
+      "archiveEntries": 1333,
+      "archiveFilesSkippedNft": 72,
+      "expectedPublicFiles": 1224,
+      "publicSurfaces": 17,
+      "finalLocalEvidenceReverified": true,
+      "finishedAt": "2026-10-06T18:46:24.850Z",
+      "durationSeconds": 390.711
+    }
   },
-  "controllerSha256": "43893021ec3ad0a038d61043a3ece544abdbdf631f694aefbbfc6a0b3c96ef96"
+  "controllerSha256": "43893021ec3ad0a038d61043a3ece544abdbdf631f694aefbbfc6a0b3c96ef96",
+  "sourceCommit": "7bad9495d11866cd9e8a177b39769e4ae47875b6",
+  "releaseId": "7bad9495d118-20261006T180919Z",
+  "nodeDeployment": {
+    "format": "proof-of-work-tipping-scoped-runtime-v1",
+    "startedAt": "20261006T181034Z",
+    "sourceCommit": "7bad9495d11866cd9e8a177b39769e4ae47875b6",
+    "approval": "Go for it, ship the full scope",
+    "baselineHead": "92eb5fbdaacfd05955dae6d994586850f93944b9",
+    "manifestSha256": "c282ba038332482bda47ef656da2b80d5519460071c4d2bbc95f6316eb928e18",
+    "rollbackRoot": "/data/proofofwork-release-backups/content-tips-20261006T181034Z",
+    "dependencyCount": 187,
+    "installed": true,
+    "rolledBack": false,
+    "authorityPids": {
+      "bitcoind.service": "1324302",
+      "electrs.service": "1324320",
+      "postgresql@16-main.service": "1537429"
+    },
+    "sources": [
+      {
+        "path": "server/proof-api.mjs",
+        "before": "a4a94ccb63c88836bb1dbbb458169c878c08a4435761ccf5f0e7001182d7ba74",
+        "after": "0deb5b4bb2d708e82222e1efb88e41e97700a493cc45f782839ea2a658e3e95b"
+      },
+      {
+        "path": "server/db/proof-index-reader.mjs",
+        "before": "d9f1c0c25324e2fab70851836330c17976f3293aed719197cb69f02db91bee9c",
+        "after": "9691aa8bf9205ad55775a100a21604bc93a2cd91bc3aec4382acc4538dd1376a"
+      },
+      {
+        "path": "scripts/backfill-proof-indexer.mjs",
+        "before": "5b18759530c62389f0add139edeb6d1bb72dd85a07fce775808a2140456acea8",
+        "after": "bf01e646372b96e13a7b5138dfacb55d6814a952c1b685224df01e93b123c26f"
+      },
+      {
+        "path": "server/boost-projection.mjs",
+        "before": "4d8aeb95296d22aa53c8c55becd86824601d6a0e1dfa195ba2118428f502e4a4",
+        "after": "a43d217b383443d4f539ae3993e9aa6afeebd9d7118bd459af0baac12ddc5c14"
+      },
+      {
+        "path": "server/boost-growth.mjs",
+        "before": "4aa352d9bb6916208d77cfc47d538790a620348af1b227c126d7613dc3f42032",
+        "after": "1e1003eae9f9df306df4360ccd9171dedcfe5e524edcd8a69deb48f4dc3b0d9d"
+      },
+      {
+        "path": "src/shared/protocol/boostTip.mjs",
+        "before": null,
+        "after": "0364779d50c4d71bc56924c2c3eff6cd92c7137b04c54440b1d95f1c3e17561d"
+      }
+    ],
+    "stopRequested": true,
+    "completedAt": "2026-10-06T18:10:34.703557+00:00"
+  },
+  "nodeProductionVerification": {
+    "mismatchedSources": [],
+    "verifiedSourceCount": 188,
+    "services": {
+      "proofofwork-api.service": "active",
+      "proofofwork-indexer-worker.service": "active"
+    }
+  },
+  "uiPublication": {
+    "receipt": {
+      "attempt": "preserved-v1",
+      "releaseId": "7bad9495d118-20261006T180919Z",
+      "commit": "7bad9495d11866cd9e8a177b39769e4ae47875b6",
+      "tree": "4fd21d3828974cc5ef465e4af654e13baee5fc88",
+      "exitCode": 0,
+      "failure": null,
+      "capturedLogBytes": 189332,
+      "evidence": "/var/tmp/proofofwork-deploy/recovery-publish-7bad9495d118-20261006T180919Z-preserved-v1",
+      "finishedAt": "2026-10-06T18:37:53Z",
+      "publisherLogSha256": "8ef9120203c53b93f0647e3a2e7a0434f1b3ebfc757da299284eb0506161bda5"
+    },
+    "preservationProof": {
+      "ok": true,
+      "manifestSha256": "6cfcd207286449e9a3d5474b00e8eb3f03a96ad7b83f7320edb8c4fb1128853a",
+      "archiveSha256": "36b1a072ed28d174cb338a454d3998be4656678ea0a3655be13cbbc98848501e",
+      "allPriorRootsPreserved": true,
+      "newRollbackRoot": {
+        "format": "proofofwork-ui-retained-root-v1",
+        "classification": "retain",
+        "root": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-7bad9495d118-20261006T180919Z",
+        "manifestSha256": "fac80919ccaa762f08d29a06a00f5bd8ee0be5bb72774edca1ab63449204b6c2",
+        "treeSha256": "ade09b730d176fd07f4cfc320edb411fd2bf878cda13813e954a03fbb9f1c1c0",
+        "entries": 1592,
+        "regularBytes": 461754870
+      }
+    },
+    "planSha256": "b70020f3db53fd44ab788286f8b2ec49f721106742a126eb21fc83dbf2d5128d",
+    "preservedStageResume": true,
+    "historicalDeletions": 0,
+    "initialSourceRefusal": "source ran before the required surfaces archive existed; no live mutation",
+    "initialStageRefusal": {
+      "additionalBytes": 491294720,
+      "allocatedBytes": 4939280384,
+      "cleanupApproved": false,
+      "maximumBytes": 5368709120,
+      "path": "/var/tmp/proofofwork-deploy",
+      "phase": "stage-private-root"
+    }
+  },
+  "releaseAnnouncement": {
+    "url": "https://x.com/proofofworkme/status/2107543307748348184",
+    "account": "@proofofworkme",
+    "verifiedPublished": true,
+    "cashtags": [
+      "$WORK",
+      "$POWB",
+      "$INCB"
+    ],
+    "duplicateAnnouncements": 0
+  }
 }
