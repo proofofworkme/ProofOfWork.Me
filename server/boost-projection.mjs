@@ -174,7 +174,7 @@ export function paginateBoostEntries(entries, { limit, cursor, fingerprint, snap
 }
 
 const BOOST_PAID_KINDS = new Set([
-  "boost-like", "boost-reply", "boost-reboost", "boost-follow", "boost-unfollow",
+  "boost-tip", "boost-like", "boost-reply", "boost-reboost", "boost-follow", "boost-unfollow",
   "boost-transfer", "boost-list", "boost-seal", "boost-delist", "boost-buy",
 ]);
 
@@ -183,7 +183,7 @@ const BOOST_REGISTRY_FEE_KINDS = new Set([
 ]);
 
 const BOOST_OWNER_PAYMENT_KINDS = new Set([
-  "boost-like", "boost-reply", "boost-reboost", "boost-follow", "boost-unfollow",
+  "boost-tip", "boost-like", "boost-reply", "boost-reboost", "boost-follow", "boost-unfollow",
 ]);
 
 export function boostNeedsRegistryHistory(items) {
@@ -272,14 +272,17 @@ export function qualifyBoostPaidActions(items, registryItems, ownerByEvent = new
         : String(ownerByEvent.get(String(item.eventId ?? item.txid)) ?? "").trim())
       : "";
     const directOwnerPayment = ownerReceiver && payments
-      ? (payments.get(boostAddressIdentityKey(ownerReceiver)) ?? 0n) >= 546n
+      ? (item.kind === "boost-tip"
+        ? /^[1-9]\d*$/u.test(String(item.tipAmountSats ?? "")) &&
+          (payments.get(boostAddressIdentityKey(ownerReceiver)) ?? 0n) === BigInt(item.tipAmountSats)
+        : (payments.get(boostAddressIdentityKey(ownerReceiver)) ?? 0n) >= 546n)
       : false;
     // Existing confirmed events used the original registry-fee lane. Preserve
     // them as replayable history while all new writers use the owner lane.
     const registryPayment = registryReceiver && payments
       ? (payments.get(boostAddressIdentityKey(registryReceiver)) ?? 0n) >= 546n
       : false;
-    const legacySocialPayment = BOOST_OWNER_PAYMENT_KINDS.has(item.kind)
+    const legacySocialPayment = item.kind !== "boost-tip" && BOOST_OWNER_PAYMENT_KINDS.has(item.kind)
       ? item.kind === "boost-follow"
         ? Boolean(registryReceiver && payments && target) &&
           (boostAddressIdentityKey(target) === boostAddressIdentityKey(registryReceiver)

@@ -1,3 +1,4 @@
+import { parseBoostTip } from "../src/shared/protocol/boostTip.mjs";
 import { createHash } from "node:crypto";
 import {
   normalizePublishArticleMetadata, publishArticleBodyFromRecords,
@@ -12,16 +13,16 @@ export const BOOST_GROWTH_SOURCE = "proof-indexer-confirmed-boost-growth";
 const HEX_TXID = /^[0-9a-f]{64}$/u;
 const INTEGER = /^(?:0|[1-9][0-9]*)$/u;
 const ACTION_COUNTS = Object.freeze({
-  post: "posts", reply: "replies", like: "likes", reboost: "reboosts",
+  post: "posts", reply: "replies", like: "likes", reboost: "reboosts", tip: "tips",
   follow: "follows", unfollow: "unfollows", profile: "profiles", hide: "hides",
   t: "transfers", list5: "listings", seal5: "seals", delist5: "delistings",
   buy5: "sales",
 });
 const PAID_ACTIONS = new Set([
-  "reply", "like", "reboost", "follow", "unfollow", "t", "list5", "seal5",
+  "tip", "reply", "like", "reboost", "follow", "unfollow", "t", "list5", "seal5",
   "delist5", "buy5",
 ]);
-const SOCIAL_ACTIONS = new Set(["reply", "like", "reboost", "follow", "unfollow"]);
+const SOCIAL_ACTIONS = new Set(["tip", "reply", "like", "reboost", "follow", "unfollow"]);
 export const BOOST_GROWTH_EXACT_FIELDS = Object.freeze([
   "directProofSignalSats", "registryFeeSats", "saleVolumeSats",
   "attachedWorkSubatoms", "attributedMailSats", "attributedWorkSubatoms",
@@ -51,6 +52,7 @@ export function boostGrowthObservedAction(payload) {
   if (parts[0] !== "pwb1") return null;
   const action = parts[1] === "repost" ? "reboost" : parts[1];
   if (!ACTION_COUNTS[action]) return null;
+  if (action === "tip") return parseBoostTip(payload) ? "tip" : null;
   const target = (value) => HEX_TXID.test(value ?? "");
   if (action === "post" || action === "reply") {
     if (parts.length !== (action === "post" ? 3 : 4)) return null;

@@ -1,3 +1,4 @@
+import { parseBoostTip } from "../src/shared/protocol/boostTip.mjs";
 import {
   normalizePublishArticleMetadata, publishArticleBodyFromRecords,
   publishArticleDataCarrierBytes, PUBLISH_ARTICLE_VERIFICATION, PUBLISH_DATA_CARRIER_LIMIT,
@@ -420,6 +421,7 @@ const PUBLIC_LOG_EVENT_KINDS = new Set([
   "boost-delist",
   "boost-follow",
   "boost-hide",
+  "boost-tip",
   "boost-like",
   "boost-list",
   "boost-post",
@@ -5073,6 +5075,20 @@ function boostItemFromMessage(tx, message) {
     "t",
     "unfollow",
   ].includes(action);
+
+  if (action === "tip") {
+    const tip = parseBoostTip(message.text);
+    const item = { ...base, action, authorAddress: sender, boostTxid: targetTxid,
+      targetTxid, tipAmountSats: tip?.amountSats?.toString(), registryFeeSats: 0,
+      proofSignalSats: tip?.amountSats ?? 0, signalSats: tip?.amountSats ?? 0,
+      title: "Boost tip", detail: `Tip ${tip?.amountSats ?? 0} proofs for ${targetTxid}`,
+      tags: ["Boost", "Tip"] };
+    const tips = protocolMessagesFromTx(tx).filter(record => String(record.text).startsWith("pwb1:tip:"));
+    // Only one tip per transaction can claim its payment outputs.
+    return tip && tips.length === 1 && BigInt(base.amountSats ?? 0) >= BigInt(tip.amountSats)
+      ? [{ ...item, valid: true }]
+      : [invalidProtocolItem(item, "Tip requires one valid carrier and its exact positive payment before OP_RETURN.")];
+  }
 
   if (action === "profile" && parts.length === 3) {
     const profile = boostJsonPayload(parts[2]);

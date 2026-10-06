@@ -13,7 +13,7 @@ export const BOOST_PROFILE_INTENT_STORAGE_KEY =
   "proofofwork.boost.profileIntent.v1";
 export const BOOST_SALE_AUTH_VERSION = "pwb-sale-v1";
 
-export type BoostPaidAction = "like" | "reboost";
+export type BoostPaidAction = "like" | "reboost" | "tip";
 export type BoostFollowAction = "follow" | "unfollow";
 export type BoostFeedMode = "timeline" | "profile" | "listings";
 export type BoostProfileTab =
@@ -93,6 +93,8 @@ export type BoostFeedItem = {
   replyCount?: number;
   reboostCount?: number;
   likeCount?: number;
+  tipCount?: number;
+  tipSatsExact?: string;
   network?: BitcoinNetwork;
   signalSats?: number;
   signalUsd?: number;

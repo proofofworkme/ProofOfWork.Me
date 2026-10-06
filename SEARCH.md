@@ -101,3 +101,9 @@ Search launched on 2026-10-04 with corrected UI release
 and [compact evidence](audits/2026-10-04-search-product-release.evidence.json)
 bind their separate source identities, verified coverage, production checks
 and reused original Search Caddy/helper installation.
+
+Content tips are indexed as `pwb1` / `boost-tip` events with target transaction,
+exact amount, payer and recipient evidence. Their companion Mail and raw carriers
+remain separately inspectable source records; multiple Search results do not
+represent multiple payments. The existing bounded Search job discovers new tips
+without a schema or historical corpus migration.

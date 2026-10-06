@@ -1,7 +1,7 @@
 export type BoostGrowthCounts = Record<
   "events" | "transactions" | "posts" | "replies" | "likes" | "reboosts" |
   "follows" | "unfollows" | "profiles" | "hides" | "transfers" | "listings" |
-  "seals" | "delistings" | "sales" | "socialActions", number> & { articles: number | null };
+  "seals" | "delistings" | "sales" | "socialActions", number> & { articles: number | null; tips: number | null };
 export type BoostGrowthAmount = "directProofSignalSats" | "registryFeeSats" |
   "saleVolumeSats" | "attachedWorkSubatoms" | "attributedMailSats" | "attributedWorkSubatoms";
 export type BoostGrowthCheckpoint = { blockHeight: number; blockHash: string; snapshotId: string };

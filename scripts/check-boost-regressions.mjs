@@ -1312,3 +1312,65 @@ test("connection lists use latest confirmed edges and show qualified IDs, relati
   }
   await assert.rejects(api.boostFeedPayload("livenet", new URLSearchParams({ connections: "followers" })), /Invalid/u);
 });
+
+test("tips bind exact owner payments at chain position and accumulate once on content", async () => {
+  const original = event(1);
+  const tip = event(2, "boost-tip", { targetTxid: txid(1), authorAddress: "reader", tipAmountSats: "12345",
+    recipients: [{ address: "owner", amountSats: "12345", vout: 0 }] });
+  const moved = event(3, "boost-transfer", { newOwnerAddress: "buyer", targetTxid: txid(1), authorAddress: "owner" });
+  const later = event(4, "boost-tip", { targetTxid: txid(1), authorAddress: "reader", tipAmountSats: "1",
+    recipients: [{ address: "buyer", amountSats: "1", vout: 0 }] });
+  const wrong = event(5, "boost-tip", { ...later, eventId: 5, txid: txid(5), recipients: [{ address: "owner", amountSats: "1", vout: 0 }] });
+  const excess = event(6, "boost-tip", { ...later, eventId: 6, txid: txid(6), recipients: [{ address: "buyer", amountSats: "2", vout: 0 }] });
+  const pending = event(7, "boost-tip", { ...later, eventId: 7, txid: txid(7), confirmed: false });
+  const api = server(reader([original, tip, moved, later, wrong, excess, pending]).read, { proofIndexRegistryPayload: async () => identityRegistry([]) });
+  const feed = await api.boostFeedPayload("livenet", new URLSearchParams());
+  assert.equal(feed.items.length, 1);
+  assert.equal(feed.items[0].tipCount, 2);
+  assert.equal(feed.items[0].replyCount, 0);
+  assert.equal(feed.items[0].likeCount, 0);
+  assert.equal(feed.items[0].reboostCount, 0);
+  assert.equal(feed.items[0].tipSatsExact, "12346");
+  assert.equal(feed.items[0].proofSignalSatsExact, "12892");
+  assert.equal(feed.items[0].currentOwnerAddress, "buyer");
+  assert.equal(feed.provenance.applicationRejectedEvents.length, 2);
+  const detail = await api.boostFeedPayload("livenet", new URLSearchParams({ detail: txid(1), activity: "tips" }));
+  assert.equal(detail.totalCount, 2);
+  assert.deepEqual(Array.from(detail.items, item => item.amountSatsExact), ["12345", "1"]);
+  assert.ok(detail.items.every(item => item.targetTxid === txid(1) && item.confirmed));
+});
+
+test("tip parser rejects malformed, unpaid and duplicate tip carriers", async () => {
+  const { parseBoostTip } = await import("../src/shared/protocol/boostTip.mjs");
+  const source = await readFile(new URL("./backfill-proof-indexer.mjs", import.meta.url), "utf8");
+  const start = source.indexOf("function boostItemFromMessage(");
+  const end = source.indexOf("\nfunction ", start + 1);
+  const context = vm.createContext({ parseBoostTip, normalizedLowerText: value => String(value).toLowerCase(),
+    normalizedText: value => String(value ?? "").trim(), boostTxidText: value => /^[0-9a-f]{64}$/.test(value ?? "") ? value : "",
+    baseProtocolItem: (tx, message, kind) => ({ kind, amountSats: tx.amountSats, recipients: tx.recipients }),
+    senderAddressFromTx: () => "reader", protocolMessagesFromTx: tx => tx.records,
+    invalidProtocolItem: (item, reason) => ({ ...item, valid: false, reason }) });
+  vm.runInContext(source.slice(start, end) + "\nthis.parse = boostItemFromMessage;", context);
+  const message = { text: `pwb1:tip:${txid(1)}:12345` };
+  const tx = { amountSats: "12345", records: [message] };
+  assert.equal(context.parse(tx, message)[0].valid, true);
+  assert.equal(context.parse({ ...tx, amountSats: "12344" }, message)[0].valid, false);
+  assert.equal(context.parse({ ...tx, records: [message, message] }, message)[0].valid, false);
+  for (const amount of ["0", "-1", "1.5", "01", "1e3", "2100000000000001"]) {
+    assert.equal(context.parse(tx, { text: `pwb1:tip:${txid(1)}:${amount}` })[0].valid, false);
+  }
+});
+
+test("tip associations add no second canonical Growth payment over their Mail companion", () => {
+  const context = vm.createContext({ numericValue: value => Number(value) || 0,
+    uniqueMarketplaceMutationActivity: () => [], MARKETPLACE_MUTATION_KINDS: new Set(),
+    ID_MARKETPLACE_MUTATION_KINDS: new Set(), TOKEN_MARKETPLACE_MUTATION_KINDS: new Set(),
+    GROWTH_MODEL_INPUTS: { valueMultiple: 5 }, INFINITY_BOND_KIND: "infinity-bond", INCEPTION_BOND_KIND: "inception-bond" });
+  vm.runInContext(definition("BOOST_EVENT_KINDS") + "\n" + definition("growthDeltaForProofIndexEvents") + "\nthis.delta = growthDeltaForProofIndexEvents;", context);
+  const mail = { kind: "mail", totalSats: 12345 };
+  const tip = { kind: "boost-tip", totalSats: 12345 };
+  assert.deepEqual(context.delta([mail, tip]), context.delta([mail]));
+  assert.equal(context.delta([mail, tip]).mailFlowSats, 12345);
+  assert.equal(context.delta([mail, tip]).totalSats, 61725);
+  assert.equal(context.delta([tip]).totalSats, 0);
+});

@@ -17,11 +17,11 @@ function moveTab(event: import("react").KeyboardEvent<HTMLButtonElement>) {
     : event.key === "Home" ? 0 : event.key === "End" ? tabs.length - 1 : -1;
   if (next >= 0 && tabs[next]) { event.preventDefault(); tabs[next].focus(); tabs[next].click(); }
 }
-type ActivityTab = "replies" | "likes" | "reboosts";
+type ActivityTab = "replies" | "likes" | "reboosts" | "tips";
 type Person = { address: string; id?: string; displayName: string; profile?: BoostProfile;
   viewerFollowsProfile?: boolean; followsViewer?: boolean };
 type SocialRecord = Person & { txid: string; eventId?: string | number; createdAt: string;
-  confirmed: boolean; kind: string; post?: BoostFeedItem };
+  confirmed: boolean; kind: string; amountSatsExact?: string; post?: BoostFeedItem };
 type SocialPayload = { complete: boolean; snapshotId: string; mode: string;
   items: SocialRecord[]; totalCount: number; hasMore: boolean; nextCursor: string;
   start: number; post?: BoostFeedItem; profileSubject?: Person };
@@ -92,6 +92,7 @@ function PersonRow({ row, network, viewer, onFollow }: { row: SocialRecord; netw
       <span>{row.id ? `${row.id}@proofofwork.me` : row.address}</span>
       {row.followsViewer ? <span>Follows you</span> : null}
       {row.viewerFollowsProfile ? <span>Following</span> : null}
+      {row.amountSatsExact ? <span>{row.amountSatsExact} proofs tipped</span> : null}
       <div className="boost-person-meta"><details><summary>Proof details</summary><span className="boost-person-address">{row.address}</span>
         <span>{formatDate(row.createdAt)} · Confirmed</span>
       </details>
@@ -132,10 +133,10 @@ export function BoostActivity({ txid, network, viewer, renderPost }: { txid: str
   return <>
     {records.payload?.post ? renderPost(records.payload.post) : null}
     <div className="boost-profile-tabs" role="tablist" aria-label="Boost activity">
-      {(["replies", "likes", "reboosts"] as const).map(value => <button key={value} type="button" role="tab" onKeyDown={moveTab} aria-selected={tab === value}
+      {(["replies", "likes", "reboosts", "tips"] as const).map(value => <button key={value} type="button" role="tab" onKeyDown={moveTab} aria-selected={tab === value}
         id={`boost-activity-${value}`} aria-controls="boost-activity-panel" onClick={() => setTab(value)}>
-        {value === "replies" ? "Replies" : value === "likes" ? "Likes" : "Reboosts"}
-        {records.payload?.post ? ` ${value === "replies" ? records.payload.post.replyCount : value === "likes" ? records.payload.post.likeCount : records.payload.post.reboostCount}` : ""}
+        {value === "replies" ? "Replies" : value === "likes" ? "Likes" : value === "tips" ? "Tips" : "Reboosts"}
+        {records.payload?.post ? ` ${value === "replies" ? records.payload.post.replyCount : value === "likes" ? records.payload.post.likeCount : value === "tips" ? records.payload.post.tipCount ?? 0 : records.payload.post.reboostCount}` : ""}
       </button>)}
     </div>
     <div className="boost-detail-replies" id="boost-activity-panel" role="tabpanel" aria-labelledby={`boost-activity-${tab}`}>

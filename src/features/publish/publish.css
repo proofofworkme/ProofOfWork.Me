@@ -39,7 +39,11 @@
 .publish-byline a:hover { text-decoration: underline; }
 .publish-article-body { white-space: pre-wrap; overflow-wrap: anywhere; font-family: Georgia, "Times New Roman", serif; font-size: clamp(18px, 2vw, 21px); font-weight: 400; line-height: 1.85; }
 .publish-preview { padding: 16px 0; }
-.publish-reader > .boost-profile-titlebar { border-bottom: 1px solid var(--border); }
+.publish-reader-titlebar { display: flex; align-items: center; gap: 16px; min-height: 64px; padding: 12px 20px; box-sizing: border-box; border-bottom: 1px solid var(--border); }
+.publish-reader-titlebar > a { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 36px; width: 36px; height: 36px; padding: 0; }
+.publish-reader-titlebar > strong { line-height: 1.4; }
+.boost-tip-amount { display: grid; gap: 8px; margin: 16px 0; }
+.boost-tip-amount small { color: var(--text-muted); line-height: 1.5; }
 .publish-reader .boost-post { margin-top: 16px; }
 .publish-reader .boost-activity-header { margin-top: 24px; padding-inline: 24px; color: var(--text-muted); }
 .publish-read-error { padding: 36px 24px; }

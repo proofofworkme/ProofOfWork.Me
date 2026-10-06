@@ -458,6 +458,7 @@ export const PUBLIC_LOG_EVENT_KINDS = new Set([
   "boost-delist",
   "boost-follow",
   "boost-hide",
+  "boost-tip",
   "boost-like",
   "boost-list",
   "boost-post",

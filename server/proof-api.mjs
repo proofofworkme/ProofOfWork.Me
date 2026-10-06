@@ -1510,6 +1510,7 @@ const BOOST_EVENT_KINDS = new Set([
   "boost-delist",
   "boost-follow",
   "boost-hide",
+  "boost-tip",
   "boost-like",
   "boost-list",
   "boost-post",
@@ -54086,6 +54087,8 @@ function boostOwnershipState(items, verifiedClosures = new Set(), network = "liv
     }
     const next = {
       likes: 0,
+      tips: 0,
+      tipSats: 0n,
       ownerSignalSats: 0n,
       reboosts: 0,
       replies: 0,
@@ -54114,7 +54117,7 @@ function boostOwnershipState(items, verifiedClosures = new Set(), network = "liv
       continue;
     }
 
-    if (["boost-like", "boost-reply", "boost-reboost"].includes(kind)) {
+    if (["boost-tip", "boost-like", "boost-reply", "boost-reboost"].includes(kind)) {
       const targetState = ensureState(boostTargetTxid(item));
       const owner = boostAddress(targetState?.ownerAddress);
       if (owner) {
@@ -54178,6 +54181,16 @@ function boostOwnershipState(items, verifiedClosures = new Set(), network = "liv
           ),
           profileId: profileId || previous?.profileId,
         });
+      }
+      continue;
+    }
+
+    if (kind === "boost-tip") {
+      const counter = ensureCounts(boostTargetTxid(item));
+      if (counter) {
+        counter.tips += 1;
+        counter.tipSats += boostOwnerSignalSats(item);
+        counter.ownerSignalSats += boostOwnerSignalSats(item);
       }
       continue;
     }
@@ -54285,7 +54298,7 @@ function boostOwnershipState(items, verifiedClosures = new Set(), network = "liv
   for (const item of items) {
     if (item?.confirmed !== false || item?.valid === false) continue;
     const kind = String(item?.kind ?? "").trim().toLowerCase();
-    if (!["boost-like", "boost-reply", "boost-reboost"].includes(kind)) continue;
+    if (!["boost-tip", "boost-like", "boost-reply", "boost-reboost"].includes(kind)) continue;
     const owner = boostAddress(states.get(boostTargetTxid(item))?.ownerAddress);
     if (owner) actionOwners.set(String(item.eventId ?? item.txid), owner);
   }
@@ -54394,7 +54407,7 @@ function boostFeedItemFromEvent(
   const workSignal = boostWorkSignalDisplay(item);
   const workSignalSubatoms = boostWorkSignalSubatoms(item);
   const workSignalValue = boostWorkSignalValue(workSignalSubatoms, workFloor);
-  const socialAction = ["boost-like", "boost-reply", "boost-reboost"].includes(kind);
+  const socialAction = ["boost-tip", "boost-like", "boost-reply", "boost-reboost"].includes(kind);
   const actionSignalSats = socialAction && item?.confirmed === true
     ? boostActionSignalSats(item)
     : 0n;
@@ -54425,7 +54438,7 @@ function boostFeedItemFromEvent(
     actionCount:
       Number(counter.likes ?? 0) +
       Number(counter.reboosts ?? 0) +
-      Number(counter.replies ?? 0),
+      Number(counter.replies ?? 0) + Number(counter.tips ?? 0),
     authorId: profileId,
     authorAddress,
     authorDisplay: boostDisplayName(profileName, profileId, authorAddress, item?.actor),
@@ -54435,6 +54448,8 @@ function boostFeedItemFromEvent(
     currentOwnerAddress: ownerAddress,
     kind,
     likeCount: Number(counter.likes ?? 0),
+    tipCount: Number(counter.tips ?? 0),
+    tipSatsExact: String(counter.tipSats ?? 0n),
     listing: state?.listing ?? null,
     listingPriceSats: state?.listing?.priceSats ?? 0,
     media: media
@@ -54903,7 +54918,7 @@ async function boostFeedPayload(network, searchParams, fresh = false) {
   const activity = searchParams.get("activity") ?? "replies";
   if ((format && format !== "article") || (detail && !/^[0-9a-f]{64}$/u.test(detail)) ||
       (connections && !["followers", "following"].includes(connections)) ||
-      (detail && !["replies", "likes", "reboosts"].includes(activity)) ||
+      (detail && !["replies", "likes", "reboosts", "tips"].includes(activity)) ||
       (connections && (!searchParams.get("profile") || detail || searchParams.has("listings")))) {
     throw boostProjectionError("Invalid Boost detail or connections query.", 400);
   }
@@ -55084,10 +55099,11 @@ async function boostFeedPayload(network, searchParams, fresh = false) {
       post = toFeedEntry(record)?.feedItem;
       if (boostArticleMetadata(record)) post.articleBody = await boostCanonicalArticleBody(network, record);
       const activityTarget = record.kind === "boost-reboost" ? boostTargetTxid(record) : detail;
-      const kind = { replies: "boost-reply", likes: "boost-like", reboosts: "boost-reboost" }[activity];
+      const kind = { replies: "boost-reply", likes: "boost-like", reboosts: "boost-reboost", tips: "boost-tip" }[activity];
       rows = sourceItems.filter(item => item.confirmed === true && item.kind === kind && boostTargetTxid(item) === activityTarget)
         .sort(compareBoostCanonicalEvents).map(item => ({ ...person(item.authorAddress ?? item.actor),
           eventId: item.eventId, txid: item.txid, createdAt: item.createdAt, confirmed: true, kind: item.kind,
+          ...(activity === "tips" ? { amountSatsExact: boostOwnerSignalSats(item).toString(), targetTxid: activityTarget } : {}),
           ...(activity === "replies" ? { post: { ...toFeedEntry(item)?.feedItem,
             authorId: person(item.authorAddress ?? item.actor).id || undefined } } : {}) }));
     } else {

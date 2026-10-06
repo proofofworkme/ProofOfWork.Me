@@ -82,6 +82,7 @@ export function normalizeBoostGrowth(value, checkpoint) {
     checkpoint: { ...expected },
     counts: {
       ...Object.fromEntries(BOOST_GROWTH_COUNT_FIELDS.map((field) => [field, counts[field]])),
+      tips: Number.isSafeInteger(counts.tips) && counts.tips >= 0 ? counts.tips : null,
       articles: Number.isSafeInteger(counts.articles) && counts.articles >= 0 && counts.articles <= counts.posts
         ? counts.articles : null,
     },

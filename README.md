@@ -1205,3 +1205,37 @@ ID times, Desktop/AMO account projections, the full accounting gate, backup
 supervision, and exact approved-retirement boundaries. Release outcomes and
 remaining approval plans are recorded in
 [audit remediation evidence](audits/2026-10-01-audit29-remediation-release.md).
+
+## Content tips
+
+Boost, Publish articles, and their Computer workspaces share a Tip action next
+to replies, likes, and reboosts. The default is 546 proofs; a custom positive
+whole-proof amount is preserved exactly, subject to funding and network dust
+rules. Miner fees are separate. Tips pay the target's current confirmed content
+owner, consistent with existing engagement routing, not a stale displayed ID.
+Ownership is checked before signing and before broadcast. Wallet signing stays
+local; the prepared outputs and payloads must survive signing unchanged.
+
+The wire record is `pwb1:tip:<target-txid>:<exact-proof-amount>`. A transaction
+contains at most one tip; its pre-carrier payments to the historical confirmed
+owner must equal that amount. There is no Boost registry fee or legacy
+registry-paid tip fallback. Repeated tips in separate transactions are allowed.
+Confirmed tips appear in content activity with payer, amount and transaction,
+contribute once to the target's signal and existing profile totals, and remain
+inspectable in Log and Search. Pending tips cannot establish confirmed totals.
+
+The app also writes one `pwm1:m:Tip <amount> proofs for ProofOfWork content
+<target-txid>` in the same transaction. That ordinary Mail envelope owns the
+existing canonical payment-flow/network-value contribution. The Boost record
+and Search are associations and observations, never extra economic deltas.
+Growth reports tip records and its existing Mail overlap diagnostics; this does
+not activate the separate Boost accounting proposal or rewrite historical H-1
+values, WORK terms or INCB issuance. A standalone historical tip carrier without
+Mail can be inspected but gains no new canonical Boost economic contribution.
+
+A signed tip txid is persisted before broadcast in Transaction recovery. An
+unknown outcome blocks another tip to that target until first-party status
+resolves it. Failed status reads preserve evidence. Confirmation, pending and
+dropped status remain distinct; wallet rejection retains the entered amount.
+The article reader has a spaced header and an accessible Back to articles arrow
+on standalone Publish and Computer.

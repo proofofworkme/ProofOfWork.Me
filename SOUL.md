@@ -614,3 +614,10 @@ The founder voice says: attention should not be stolen, work should be proved, a
 This project is a computer for people and agents who want to walk the walk on chain.
 
 Boost profile pictures and banners are selections from confirmed ProofOfWork Files, published as address-authored `pwb1:profile` references through a local wallet. Keep image bytes in Files, verify their transaction and hash before rendering, and preserve prior images when only the display ID changes. The profile avatar must stay opaque above the banner.
+
+Content tips share Boost and Publish's current confirmed owner routing. Default
+to 546 proofs while allowing exact custom whole-proof amounts and keeping miner
+fees separate. A `pwb1:tip` identifies the target and amount; its same-transaction
+Mail carrier owns canonical economics once. Tip observations never activate a
+separate Boost accounting version. Persist signed transaction evidence before
+broadcast and preserve unknown-outcome retry protection.

@@ -708,3 +708,11 @@ prior evidence is labeled last verified. Confirmed, spendable, and reserved
 amounts retain their separate exact accounting meaning. Overlapping account
 refreshes coalesce, and obsolete account/network requests are aborted and cannot
 commit late results.
+
+### Content tip Mail records
+
+A Boost/Publish tip writes its target and exact proof amount in `pwb1:tip` and
+one ordinary same-transaction `pwm1:m` message. The single owner-directed payment
+uses existing Mail economics and appears in Inbox/Sent; tip, Log, Search and
+Growth projections never add a second payment or canonical value contribution.
+Unknown signed tips retain local Transaction recovery evidence before retry.
