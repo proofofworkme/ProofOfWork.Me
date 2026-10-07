@@ -173,6 +173,25 @@ must expose their verified boundary and lag. Cursors bind to a coherent
 snapshot and changed checkpoints require restarting pagination. Incomplete
 reads cannot claim no repositories, full history or an authoritative head.
 
+The bounded discovery bootstrap scans every Core block from height one with
+authenticated `getblock(hash, 0)`. A server-only walker verifies the requested
+header hash, predecessor hash, canonical CompactSize framing and complete byte
+consumption for legacy and witness transactions. It examines exact output-script
+boundaries with the existing raw OP_RETURN decoder, including split/nonminimal
+pushes, malformed scripts and invalid UTF-8 candidates. A raw byte substring
+search cannot establish a negative result.
+
+Blocks with no Code candidates skip verbose transaction JSON. Positive blocks
+still fetch `getblock(hash, 2)`, require the canonical block envelope and exact
+raw/decoded candidate transaction IDs, output positions and scripts, then use
+the unchanged prevout hydration, candidate digest and sealed-event closure.
+Core remains the authenticated body/consensus authority, as in the original
+verbose scanner; the negative walker does not claim independent transaction
+Merkle or witness-root verification. Unsupported, oversized or malformed raw
+framing refuses discovery rather than becoming negative evidence. Existing
+per-block canonical-hash rechecks, target hash, atomic marker persistence,
+resumption and historical seal/replay requirements remain mandatory.
+
 ## Product integration and validation
 
 Code is an additive product surface with shared navigation and a Computer
