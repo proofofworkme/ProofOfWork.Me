@@ -64,6 +64,20 @@ def native_jobs_overlay(raw, active_indexer):
     fragment = fragment.replace(old, new).replace(query, replacement)
     return (source[:start]+fragment+source[end:]).encode(), True
 
+def resolve_jobs_activation_import_conflict(raw):
+    """Resolve only the independently reviewed additive first-line imports."""
+    active = ("import { assertNativeTransitionStorageContract } from '../server/db/native-transition-storage.mjs';\n"
+        'import { measurePrivatePhase } from "../server/wallet-read-observation.mjs";\n').encode()
+    jobs = b'import { JOBS_ACTIVATION_HEIGHT, JOBS_ACTIVATION_PREVIOUS_BLOCK_HASH } from "../src/shared/protocol/jobs.mjs";\n'
+    pattern = (br'\A<<<<<<< [^\n]+\.active\n'+re.escape(active)+
+        br'\|\|\|\|\|\|\| [^\n]+\.base\n=======\n'+re.escape(jobs)+br'>>>>>>> [^\n]+\.jobs\n')
+    match = re.match(pattern, raw)
+    if match is None: raise ValueError('Unreviewed Jobs merge conflict')
+    result = active+jobs+raw[match.end():]
+    if re.search(br'(?m)^(<<<<<<< |\|\|\|\|\|\|\| |=======\s*$|>>>>>>> )', result):
+        raise ValueError('Additional Jobs merge conflict')
+    return result
+
 def plan(args):
     private_output(args.output); repo = args.repository.resolve(strict=True); ns = controller()
     if not re.fullmatch('[0-9a-f]{40}', args.commit) or git(repo, 'rev-parse', 'HEAD').decode().strip() != args.commit:
@@ -94,7 +108,7 @@ def plan(args):
         current = snapshot['sources'].get(name)
         if name in ns.NEW:
             if current is not None: raise ValueError('New Jobs helper already exists: '+name)
-            merged = candidate; before = None; conflict = False
+            merged = candidate; before = None; conflict = False; resolved = False
         else:
             if current is None: raise ValueError('Missing active source: '+name)
             before = current['sha256']; base = git(repo, 'show', args.base_commit+':'+name)
@@ -103,8 +117,13 @@ def plan(args):
                 save(location.with_name(location.name+'.'+suffix), raw)
             result = subprocess.run(['git','merge-file','--stdout','--diff3',str(location)+'.active',str(location)+'.base',str(location)+'.jobs'],capture_output=True)
             merged = result.stdout; conflict = result.returncode != 0
+            resolved = False
+            if conflict:
+                save(location.with_name(location.name+'.conflicted'), merged)
+                if name != 'scripts/backfill-proof-indexer.mjs' or result.returncode != 1:
+                    raise ValueError('Jobs merge requires review: '+name)
+                merged = resolve_jobs_activation_import_conflict(merged); resolved = True
             save(location, merged)
-            if conflict: raise ValueError('Jobs merge requires review: '+name)
         adapted = False
         if name == 'scripts/backfill-proof-indexer.mjs':
             merged, adapted = native_jobs_overlay(merged, (active_root/name).read_bytes())
@@ -113,7 +132,8 @@ def plan(args):
         candidates[name] = merged
         rows.append({'path':name,'before':before,'after':sha(merged),'base64':base64.b64encode(merged).decode()})
         reviews.append({'path':name,'before':before,'after':sha(merged),'repositoryCandidateSha256':sha(candidate),
-            'preservedNativeOverlay':adapted,'cleanThreeWayMerge':not conflict,'syntaxVerified':True})
+            'preservedNativeOverlay':adapted,'cleanThreeWayMerge':not conflict,
+            'reviewedAdditiveImportConflict':resolved,'syntaxVerified':True})
     deps = {name:snapshot['sources'][name]['sha256'] for name in snapshot['dependencyPaths']}
     for row in rows:
         if row['before'] is not None: deps[row['path']] = row['before']

@@ -75,6 +75,21 @@ class RolloutTests(unittest.TestCase):
             run.assert_not_called()
 
 class LocalPlanTests(unittest.TestCase):
+    def test_only_reviewed_additive_activation_import_conflict_can_be_resolved(self):
+        raw=(b'<<<<<<< /tmp/review/indexer.active\n'
+            b"import { assertNativeTransitionStorageContract } from '../server/db/native-transition-storage.mjs';\n"
+            b'import { measurePrivatePhase } from "../server/wallet-read-observation.mjs";\n'
+            b'||||||| /tmp/review/indexer.base\n'
+            b'=======\n'
+            b'import { JOBS_ACTIVATION_HEIGHT, JOBS_ACTIVATION_PREVIOUS_BLOCK_HASH } from "../src/shared/protocol/jobs.mjs";\n'
+            b'>>>>>>> /tmp/review/indexer.jobs\n'
+            b"const acceptedRuntimeBody = 'unchanged';\n")
+        result=R.resolve_jobs_activation_import_conflict(raw)
+        self.assertEqual(result.count(b'import '),3)
+        self.assertTrue(result.endswith(b"const acceptedRuntimeBody = 'unchanged';\n"))
+        self.assertNotIn(b'<<<<<<<',result)
+        with self.assertRaisesRegex(ValueError,'Unreviewed'):R.resolve_jobs_activation_import_conflict(raw.replace(b'measurePrivatePhase',b'unknownRuntimePatch'))
+        with self.assertRaisesRegex(ValueError,'Additional'):R.resolve_jobs_activation_import_conflict(raw+b'<<<<<<< unrelated\n')
     def test_native_overlay_changes_only_jobs_closure_and_reuses_accepted_contract(self):
         old=b'''const untouched = 'accepted audit bytes';
 async function storedJobsCandidateEventClosure(client, tx, position) {
