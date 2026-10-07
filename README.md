@@ -53,6 +53,7 @@ boost.proofofwork.me
 publish.proofofwork.me
 search.proofofwork.me
 code.proofofwork.me
+jobs.proofofwork.me         public work briefs, delivery and payment receipts
 amo.proofofwork.me
 marketplace.proofofwork.me -> https://amo.proofofwork.me/
 credit.proofofwork.me
@@ -80,6 +81,7 @@ Production app roles:
 - `publish.proofofwork.me` is text-only blogging with a dedicated `/write` page, local drafts, full verified articles and Boost's shared profiles, selected PowIDs and engagement. Mail Compose opens the same writer; self-sent articles appear in Inbox and Sent. See [PUBLISH.md](PUBLISH.md).
 - `search.proofofwork.me` is read-only discovery across Computer metaprotocols, public content, verified readable files and source transaction evidence. The same workspace lives at Computer's `?folder=search`. See [SEARCH.md](SEARCH.md).
 - `code.proofofwork.me` is public source repositories with one confirmed main history, exact UTF-8 file commits, verified source/history/diffs and ZIP downloads. The same workspace lives at Computer's `?folder=code`. See [CODE.md](CODE.md).
+- `jobs.proofofwork.me` is public work briefs, proposals, assignment, delivery and client-approved direct proof payments, with the same workspace at Computer `/?folder=jobs`. See [JOBS.md](JOBS.md).
 - `amo.proofofwork.me` is the canonical Autonomous Money Organization surface. Governed WORK units plus ID, DNS, credit, POWB, and INCB sale-ticket markets share this app.
 - `marketplace.proofofwork.me` is a retained URI-preserving compatibility route to AMO.
 - `credit.proofofwork.me` is the standalone mainnet credit creation and mint app.
@@ -158,6 +160,8 @@ independent fresh public Code reads passed at that exact boundary /
 After publication, they passed again at 970328 /
 `00000000000000000000989d8a9d2814d1ff919799b7b4aa3e214dcdcf6a8bf1` at 10:17:44 UTC. Wallet signing stays local. Live Code signing
 and broadcast were not exercised during release verification.
+
+Jobs changes also require [JOBS.md](JOBS.md), its exact body schema and authority/replay rules. Jobs uses ordinary Mail/Files payments once and introduces no escrow, registry fee or economic formula.
 
 ### Audit Workflow
 

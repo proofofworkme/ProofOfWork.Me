@@ -30,6 +30,7 @@ HOSTS = {
     'landing':'www.proofofwork.me', 'marketplace':'amo.proofofwork.me',
     'publish':'publish.proofofwork.me', 'token':'credit.proofofwork.me', 'wallet':'wallet.proofofwork.me',
     'search':'search.proofofwork.me', 'code':'code.proofofwork.me',
+    'jobs':'jobs.proofofwork.me',
     'work':'work.proofofwork.me',
 }
 MAX_FILE_BYTES = 64*1024**2

@@ -6983,3 +6983,30 @@ checks and production receipts are recorded in
 The single verified release announcement is
 https://x.com/proofofworkme/status/2107543307748348184. Documentation-only
 release bookkeeping does not publish a second announcement.
+
+
+### Jobs v1 infrastructure contract — 2026-10-07
+
+Jobs uses `jobs.proofofwork.me` and Computer's `/?folder=jobs`. The additive
+`pwj1` version-one body is ordinary `pwm1:m:` Mail with optional normal Files,
+not another OP_RETURN family or economic contribution. See [JOBS.md](JOBS.md)
+for the frozen agreement, signer authority, lifecycle and exact accepted reward
+rules. Confirmed replay begins at admission height 970404, with independently
+Core-verified parent 970403 /
+`00000000000000000000cf98017be585521a2a84e4030e20021565479c6218fe`.
+Earlier Mail remains historical Mail without retroactive Jobs authority.
+
+`/api/v1/jobs` and `/api/v1/job` require complete raw candidate discovery and
+canonical Mail evidence at one authenticated checkpoint. The supervised
+`--bootstrap-jobs-candidates` scan covers every block from the admission boundary
+to its exact checkpoint; hot indexing advances the marker contiguously. Missing
+coverage stays unavailable rather than reporting a zero-job success. Invalid
+records remain inspectable and do not alter accepted state. Log adds Jobs
+validation alongside existing Mail identity; Growth observes confirmed Jobs
+payments without counting them twice.
+
+The [Jobs release runbook](deploy/jobs/README.md) preserves current node overlays
+with a hash-pinned scoped merge and Search hold. UI publication adds the twentieth
+managed root, nineteenth public build, complete prior-asset closure and guarded
+Caddy host activation. This section describes the implementation contract;
+production acceptance is recorded separately after the release gates pass.

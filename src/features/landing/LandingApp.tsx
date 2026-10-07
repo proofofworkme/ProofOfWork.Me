@@ -3,6 +3,7 @@ import {
   AtSign,
   Clock,
   Code2,
+  CheckSquare,
   FilePenLine,
   FileText,
   GitBranch,
@@ -25,6 +26,7 @@ import {
   PUBLISH_APP_URL,
   SEARCH_APP_URL,
   CODE_APP_URL,
+  JOBS_APP_URL,
   BROWSER_APP_URL,
   COMPUTER_APP_URL,
   DESKTOP_APP_URL,
@@ -38,6 +40,7 @@ import {
   LOCAL_PUBLISH_APP_URL,
   LOCAL_SEARCH_APP_URL,
   LOCAL_CODE_APP_URL,
+  LOCAL_JOBS_APP_URL,
   LOCAL_COMPUTER_APP_URL,
   LOCAL_DESKTOP_APP_URL,
   LOCAL_DNS_APP_URL,
@@ -65,6 +68,7 @@ import { AppHeader } from "../../shared/components/AppHeader";
 import { AppStatusRow } from "../../shared/components/AppStatusRow";
 import { SocialFooter } from "../../shared/components/SocialFooter";
 import CodeActivitySummary from "../growth/CodeActivitySummary";
+import JobsActivitySummary from "../growth/JobsActivitySummary";
 import "./landing.css";
 
 type LandingRegistryCounts = {
@@ -146,6 +150,10 @@ const LANDING_APP_GROUPS = [
         icon: Code2,
         label: "Code",
         localHref: LOCAL_CODE_APP_URL,
+      },
+      {
+        description: "Commission work, deliver evidence, and pay in proofs with an inspectable public receipt.",
+        href: JOBS_APP_URL, icon: CheckSquare, label: "Jobs", localHref: LOCAL_JOBS_APP_URL,
       },
     ],
   },
@@ -501,6 +509,10 @@ export function LandingApp({
               </section>
             ))}
           </div>
+          <section aria-label="Jobs activity">
+            <h3>Work on chain</h3>
+            <JobsActivitySummary network="livenet" refreshing={registryLoading || dnsRegistryLoading} />
+          </section>
           <section aria-label="Code activity">
             <h3>Code on chain</h3>
             <CodeActivitySummary network="livenet" refreshing={registryLoading || dnsRegistryLoading} />

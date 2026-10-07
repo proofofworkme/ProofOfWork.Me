@@ -1,5 +1,7 @@
+import { JOBS_ACTIVATION_HEIGHT, JOBS_ACTIVATION_PREVIOUS_BLOCK_HASH } from "../src/shared/protocol/jobs.mjs";
 import { parseBoostTip } from "../src/shared/protocol/boostTip.mjs";
 import { verifyCodeTransaction } from "../src/shared/protocol/codeRepository.mjs";
+import { JOBS_DISCOVERY_MODEL, JOBS_DISCOVERY_META_KEY, JOBS_DISCOVERY_EMPTY_SHA256, advanceJobsCandidateDigest, jobsCandidateParts, isJobsCandidatePart, jobsCandidateEventClosure } from "../server/jobs.mjs";
 import { CODE_DISCOVERY_MODEL, CODE_DISCOVERY_META_KEY, CODE_DISCOVERY_EMPTY_SHA256, advanceCodeCandidateDigest, exactCodeOutputProofs, codeCandidateEventClosure, prefilterCodeRawBlock, assertCodeRawBlockCandidatesMatch } from "../server/code-repositories.mjs";
 import {
   normalizePublishArticleMetadata, publishArticleBodyFromRecords,
@@ -944,6 +946,7 @@ const MEMPOOL_SCAN_SEEN_LIMIT = Number(
 // Only protocols with a canonical block-scan parser/verifier belong here.
 const PROTOCOL_PREFIXES = ["pwm1:", "pwa1:", "pwid1:", "pwdns1:", "pwb1:", "pwt1:", "pwc1:"];
 const BOOTSTRAP_CODE_CANDIDATES_ONLY = process.argv.includes("--bootstrap-code-candidates");
+const BOOTSTRAP_JOBS_CANDIDATES_ONLY = process.argv.includes("--bootstrap-jobs-candidates");
 const MAIL_ATTACHMENT_MAX_BYTES = 60_000;
 const INCLUDE_SCOPED_HOLDERS = !/^(?:0|false|no)$/iu.test(
   String(process.env.POW_INDEX_BACKFILL_HOLDERS ?? "1"),
@@ -1123,6 +1126,7 @@ function assertCanonicalRebuildConfiguration() {
     REBUILD_CREDIT_BALANCES_ONLY;
   const exclusiveMaintenanceModes = [
     BOOTSTRAP_CODE_CANDIDATES_ONLY,
+    BOOTSTRAP_JOBS_CANDIDATES_ONLY,
     HYDRATE_TRANSACTION_DETAILS_ONLY,
     PREPARE_CANONICAL_REBUILD_ONLY,
     PREPARE_CANONICAL_PWT_RANGE_REPLAY_ONLY,
@@ -1147,8 +1151,8 @@ function assertCanonicalRebuildConfiguration() {
       "Indexer audit, migration, rebuild, bootstrap, hydration, and repair modes are mutually exclusive.",
     );
   }
-  if (BOOTSTRAP_CODE_CANDIDATES_ONLY && ((!DRY_RUN && !BITCOIN_RPC_URL) || CANONICAL_REBUILD || /^(?:1|true|yes)$/iu.test(String(process.env.POW_INDEX_DB_SUMMARY_REPAIR ?? "")))) {
-    throw new Error("Code discovery bootstrap requires Core RPC and is exclusive with canonical rebuild or summary repair.");
+  if ((BOOTSTRAP_CODE_CANDIDATES_ONLY || BOOTSTRAP_JOBS_CANDIDATES_ONLY) && ((!DRY_RUN && !BITCOIN_RPC_URL) || CANONICAL_REBUILD || /^(?:1|true|yes)$/iu.test(String(process.env.POW_INDEX_DB_SUMMARY_REPAIR ?? "")))) {
+    throw new Error("Code/Jobs discovery bootstrap requires Core RPC and is exclusive with canonical rebuild or summary repair.");
   }
   if (
     repairCanonicalMailProjectionOnly !== repairCanonicalMailProjectionApply
@@ -1599,7 +1603,7 @@ function pendingOnlyBackfillMaintenanceMode() {
     typeof REPAIR_MARKETPLACE_PROJECTIONS_ONLY !== "undefined" &&
     REPAIR_MARKETPLACE_PROJECTIONS_ONLY;
   return (
-    BOOTSTRAP_CODE_CANDIDATES_ONLY ||
+    BOOTSTRAP_CODE_CANDIDATES_ONLY || BOOTSTRAP_JOBS_CANDIDATES_ONLY ||
     HYDRATE_TRANSACTION_DETAILS_ONLY ||
     PREPARE_CANONICAL_REBUILD_ONLY ||
     PREPARE_CANONICAL_PWT_RANGE_REPLAY_ONLY ||
@@ -25447,6 +25451,128 @@ async function bootstrapCodeCandidates(client) {
   } finally { await client.query("SELECT pg_advisory_unlock(hashtext($1),hashtext($2))", [CODE_DISCOVERY_META_KEY, NETWORK]); }
 }
 
+async function advanceJobsDiscoveryCheckpoint(client, { height, blockHash, previousBlockHash, candidates }) {
+  // Bootstrap holds this same session lock. Read only after acquiring it so a
+  // live block cannot overwrite a concurrently completed discovery commitment.
+  await client.query("SELECT pg_advisory_xact_lock(hashtext($1),hashtext($2))", [JOBS_DISCOVERY_META_KEY, NETWORK]);
+  const marker = await proofIndexerMetaValue(client, JOBS_DISCOVERY_META_KEY);
+  if (marker?.model !== JOBS_DISCOVERY_MODEL || marker?.network !== NETWORK || marker?.complete !== true ||
+      marker.fromHeight !== JOBS_ACTIVATION_HEIGHT || !Number.isSafeInteger(marker.candidateCount) || marker.candidateCount < 0 ||
+      !/^[0-9a-f]{64}$/u.test(marker.candidateSha256) || height < JOBS_ACTIVATION_HEIGHT ||
+      marker.indexedThroughBlock !== height - 1 || marker.indexedThroughBlockHash !== previousBlockHash) return;
+  await storeProofIndexerMeta(client, JOBS_DISCOVERY_META_KEY, { ...marker,
+    indexedThroughBlock: height, indexedThroughBlockHash: blockHash,
+    candidateCount: marker.candidateCount + candidates.length,
+    candidateSha256: candidates.reduce(advanceJobsCandidateDigest, marker.candidateSha256), generatedAt: new Date().toISOString() });
+}
+
+/** Cold discovery from the first-admission boundary; it never resets sealed AMO. */
+async function storedJobsCandidateEventClosure(client, tx, position) {
+  const [events, transition] = await Promise.all([
+    client.query("SELECT * FROM proof_indexer.events WHERE network=$1 AND txid=$2 AND protocol='pwm1'", [NETWORK, tx.txid]),
+    client.query("SELECT block_height,block_hash,payload FROM proof_indexer.work_amo_block_transitions WHERE network=$1 AND block_height=$2 AND block_hash=$3", [NETWORK, position.blockHeight, position.blockHash]),
+  ]);
+  return transition.rows.length === 1 && jobsCandidateEventClosure(tx, events.rows, position, transition.rows[0]);
+}
+
+async function bootstrapJobsCandidates(client) {
+  const locked = await client.query("SELECT pg_try_advisory_lock(hashtext($1),hashtext($2)) AS locked", [JOBS_DISCOVERY_META_KEY, NETWORK]);
+  if (locked.rows[0]?.locked !== true) throw new Error("Another Jobs discovery bootstrap is active.");
+  try {
+    if (String(await bitcoinRpc("getblockhash", [JOBS_ACTIVATION_HEIGHT - 1])) !== JOBS_ACTIVATION_PREVIOUS_BLOCK_HASH) throw new Error("Jobs activation parent is not canonical; preserve evidence for operator review.");
+    const target = await latestBlockScanCheckpoint(client, { useStoredCheckpoint: true });
+    if (target.height < JOBS_ACTIVATION_HEIGHT - 1 || (target.height === JOBS_ACTIVATION_HEIGHT - 1 && target.blockHash !== JOBS_ACTIVATION_PREVIOUS_BLOCK_HASH)) throw new Error("Jobs discovery target precedes or differs from its canonical activation parent.");
+    const targetBlock = await client.query("SELECT height,block_hash FROM proof_indexer.blocks WHERE network=$1 AND height=$2 AND block_hash=$3 AND canonical=true", [NETWORK, target.height, target.blockHash]);
+    if (targetBlock.rows.length !== 1 || String(await bitcoinRpc("getblockhash", [target.height])) !== target.blockHash) throw new Error("Jobs discovery target lacks the exact canonical database/Core checkpoint.");
+    let marker = await proofIndexerMetaValue(client, JOBS_DISCOVERY_META_KEY);
+    const hadMarker = Boolean(marker);
+    if (marker && (marker.model !== JOBS_DISCOVERY_MODEL || marker.network !== NETWORK || marker.fromHeight !== JOBS_ACTIVATION_HEIGHT ||
+        !Number.isSafeInteger(marker.indexedThroughBlock) || marker.indexedThroughBlock < JOBS_ACTIVATION_HEIGHT - 1 ||
+        !/^[0-9a-f]{64}$/u.test(marker.indexedThroughBlockHash) || !Number.isSafeInteger(marker.candidateCount) || marker.candidateCount < 0 ||
+        !/^[0-9a-f]{64}$/u.test(marker.candidateSha256))) throw new Error("Unknown Jobs discovery metadata; preserve it for operator review.");
+    if (!marker) marker = { model: JOBS_DISCOVERY_MODEL, network: NETWORK, fromHeight: JOBS_ACTIVATION_HEIGHT,
+      indexedThroughBlock: JOBS_ACTIVATION_HEIGHT - 1, indexedThroughBlockHash: JOBS_ACTIVATION_PREVIOUS_BLOCK_HASH,
+      candidateCount: 0, candidateSha256: JOBS_DISCOVERY_EMPTY_SHA256, complete: target.height === JOBS_ACTIVATION_HEIGHT - 1, blockedCandidates: [],
+      generatedAt: new Date().toISOString() };
+    if (String(await bitcoinRpc("getblockhash", [marker.indexedThroughBlock])) !== marker.indexedThroughBlockHash) throw new Error("Jobs discovery checkpoint was reorganized; preserve witnesses and perform supervised replay.");
+    if (!hadMarker && marker.complete) {
+      // The exact pinned parent proves the complete empty admission interval.
+      // Earlier Jobs-shaped Mail remains raw history and receives no authority.
+      await storeProofIndexerMeta(client, JOBS_DISCOVERY_META_KEY, marker);
+    }
+    if (marker.complete === true && marker.indexedThroughBlock === target.height && marker.indexedThroughBlockHash === target.blockHash) return marker;
+    const lastGood = marker.complete === true ? marker : marker.lastGood;
+    const maxBlocks = Math.max(1, Math.min(10_000, Math.floor(Number(process.env.POW_INDEX_JOBS_BOOTSTRAP_MAX_BLOCKS ?? 1000))));
+    if (!Number.isSafeInteger(maxBlocks)) throw new Error("Invalid Jobs bootstrap block budget.");
+    let scanned = 0;
+    while (marker.indexedThroughBlock < target.height && scanned < maxBlocks) {
+      const height = marker.indexedThroughBlock + 1;
+      const hash = String(await bitcoinRpc("getblockhash", [height])).toLowerCase();
+      const prefilter = prefilterCodeRawBlock(await bitcoinRpc("getblock", [hash, 0]), {
+        blockHash: hash, previousBlockHash: marker.indexedThroughBlockHash, candidatePredicate: isJobsCandidatePart,
+      });
+      // Negatives have complete Core byte coverage. Positives keep the original
+      // decoded transaction, prevout and sealed-event path, with exact parity.
+      const block = prefilter.noCodeCandidates ? { hash, previousblockhash: prefilter.previousBlockHash,
+        time: prefilter.time, tx: [] } : await bitcoinRpc("getblock", [hash, 2]);
+      if (!prefilter.noCodeCandidates) {
+        assertCanonicalBlockEnvelope(block, height, hash);
+        assertCodeRawBlockCandidatesMatch(prefilter, block, isJobsCandidatePart);
+      }
+      if (String(block.previousblockhash) !== marker.indexedThroughBlockHash) throw new Error("Jobs discovery encountered a chain discontinuity.");
+      const candidates = [];
+      const blockedCandidates = [...(marker.blockedCandidates ?? [])];
+      for (const [index, tx] of (block.tx ?? []).entries()) {
+        const messages = protocolMessagesFromTx(tx).filter(message => isJobsCandidatePart({ payloadHex: message.payloadHex ?? Buffer.from(message.text ?? "").toString("hex") }));
+        if (!messages.length) continue;
+        const raw = await transactionWithInputPrevouts({ ...tx, height, _powBlockIndex: index, _powBlockHash: hash, blocktime: block.time });
+        candidates.push({ raw, messages: protocolMessagesFromTx(raw).filter(message => message.prefix === "pwm1:") });
+        if (height >= WORK_AMO_V5_ACTIVATION_HEIGHT) {
+          const closed = await storedJobsCandidateEventClosure(client, raw, { blockHeight: height, blockHash: hash, blockTransactionIndex: index });
+          if (!closed && !blockedCandidates.includes(tx.txid)) blockedCandidates.push(tx.txid);
+        }
+      }
+      if (String(await bitcoinRpc("getblockhash", [height])) !== hash) throw new Error("Jobs discovery block changed before witness persistence.");
+      if (height === target.height && hash !== target.blockHash) throw new Error("Jobs discovery target checkpoint changed; preserve witnesses and restart supervised discovery.");
+      await client.query("BEGIN");
+      try {
+        // Existing blocks/transactions remain canonical evidence. Only newly
+        // discovered candidate details are hydrated; post-V5 event seals are
+        // admitted exclusively by the ordinary canonical block sequencer.
+        for (const { raw, messages } of candidates) {
+          await persistCanonicalBlock(client, block, height, hash);
+          await persistCanonicalRawTransaction(client, raw, { blockHash: hash, blockTime: block.time, height });
+          if (height < WORK_AMO_V5_ACTIVATION_HEIGHT) {
+            await persistPreparedProtocolItems(client, rawProtocolItemsForTx(raw, messages).map(item => ({ item, sourceLabel: "log" })));
+          }
+        }
+        marker = { ...marker, ...(lastGood ? { lastGood } : {}), indexedThroughBlock: height, indexedThroughBlockHash: hash,
+          candidateCount: marker.candidateCount + candidates.length,
+          candidateSha256: candidates.map(candidate => candidate.raw).reduce(advanceJobsCandidateDigest, marker.candidateSha256),
+          blockedCandidates, complete: height === target.height && blockedCandidates.length === 0,
+          targetHeight: target.height, targetHash: target.blockHash, generatedAt: new Date().toISOString(),
+          reason: blockedCandidates.length ? "historical-jobs-amo-closure-requires-supervised-canonical-replay" : height < target.height ? "jobs-discovery-in-progress" : "" };
+        await storeProofIndexerMeta(client, JOBS_DISCOVERY_META_KEY, marker);
+        await client.query("COMMIT");
+      } catch (error) { await client.query("ROLLBACK"); throw error; }
+      scanned++;
+    }
+    // A resumed supervised replay can close previously discovered records
+    // without rescanning or erasing the historical discovery evidence.
+    if (marker.indexedThroughBlock === target.height && marker.blockedCandidates?.length) {
+      const rows = await client.query("SELECT txid,raw_tx,block_height,block_hash,block_index FROM proof_indexer.transactions WHERE network=$1 AND txid=ANY($2::text[])", [NETWORK, marker.blockedCandidates]);
+      let closed = rows.rows.length === marker.blockedCandidates.length;
+      for (const row of rows.rows) closed = await storedJobsCandidateEventClosure(client, row.raw_tx,
+        { blockHeight: Number(row.block_height), blockHash: row.block_hash, blockTransactionIndex: Number(row.block_index) }) && closed;
+      if (closed) {
+        marker = { ...marker, complete: true, blockedCandidates: [], reason: "", generatedAt: new Date().toISOString() };
+        await storeProofIndexerMeta(client, JOBS_DISCOVERY_META_KEY, marker);
+      }
+    }
+    return { ...marker, scannedBlocks: scanned };
+  } finally { await client.query("SELECT pg_advisory_unlock(hashtext($1),hashtext($2))", [JOBS_DISCOVERY_META_KEY, NETWORK]); }
+}
+
 async function latestBlockScanCheckpoint(client, options = {}) {
   if (
     options.useStoredCheckpoint !== true &&
@@ -26055,6 +26181,9 @@ async function backfillBlockScanSource(client, source) {
 
     await client.query("BEGIN");
     try {
+      // Acquire before canonical rows are touched. Bootstrap takes the same
+      // session lock before hydration, avoiding inverted row/advisory locks.
+      await client.query("SELECT pg_advisory_xact_lock(hashtext($1),hashtext($2))", [JOBS_DISCOVERY_META_KEY, NETWORK]);
       await persistCanonicalBlock(client, block, height, blockHash);
       for (const prepared of preparedTransactions) {
         currentTxid = prepared.txid;
@@ -26164,6 +26293,9 @@ async function backfillBlockScanSource(client, source) {
       await advanceCodeDiscoveryCheckpoint(client, { height, blockHash: nextIndexedThroughBlockHash,
         previousBlockHash: String(block.previousblockhash).toLowerCase(),
         candidates: preparedTransactions.filter(prepared => protocolMessagesFromTx(prepared.rawTx).some(message => message.prefix === "pwc1:")).map(prepared => prepared.rawTx) });
+      await advanceJobsDiscoveryCheckpoint(client, { height, blockHash: nextIndexedThroughBlockHash,
+        previousBlockHash: String(block.previousblockhash).toLowerCase(),
+        candidates: preparedTransactions.filter(prepared => jobsCandidateParts(prepared.rawTx).length > 0).map(prepared => prepared.rawTx) });
       await client.query("COMMIT");
       indexed += blockIndexed;
       skipped += blockSkipped;
@@ -37924,6 +38056,7 @@ if (DRY_RUN) {
         auditWorkAtomsOnly: AUDIT_WORK_ATOMS_ONLY,
         dryRun: true,
         bootstrapCodeCandidatesOnly: BOOTSTRAP_CODE_CANDIDATES_ONLY,
+        bootstrapJobsCandidatesOnly: BOOTSTRAP_JOBS_CANDIDATES_ONLY,
         hydrateTransactionDetailsOnly: HYDRATE_TRANSACTION_DETAILS_ONLY,
         maxPages: MAX_PAGES,
         mempoolScanBudgetMs: MEMPOOL_SCAN_BUDGET_MS,
@@ -37934,7 +38067,7 @@ if (DRY_RUN) {
         pendingOnlyPersistenceHeadroomMs:
           PENDING_ONLY_PERSISTENCE_HEADROOM_MS,
         pendingOnlyVerifierMaxMs: PENDING_ONLY_VERIFIER_MAX_MS,
-        postSourceMaintenance: !PENDING_ONLY_BACKFILL && !BOOTSTRAP_CODE_CANDIDATES_ONLY,
+        postSourceMaintenance: !PENDING_ONLY_BACKFILL && !(BOOTSTRAP_CODE_CANDIDATES_ONLY || BOOTSTRAP_JOBS_CANDIDATES_ONLY),
         verifyWorkAtomsPostBootstrapOnly:
           VERIFY_WORK_ATOMS_POST_BOOTSTRAP_ONLY,
         network: NETWORK,
@@ -37968,9 +38101,9 @@ if (DRY_RUN) {
         prepareCanonicalRebuildOnly: PREPARE_CANONICAL_REBUILD_ONLY,
         prepareCanonicalPwtRangeReplayOnly:
           PREPARE_CANONICAL_PWT_RANGE_REPLAY_ONLY,
-        sources: BOOTSTRAP_CODE_CANDIDATES_ONLY ? ["code-core-candidate-discovery"] : SOURCES.map((source) => source.label),
-        storeCanonicalSummarySnapshot: !BOOTSTRAP_CODE_CANDIDATES_ONLY && STORE_CANONICAL_SUMMARY_SNAPSHOT,
-        storeLedgerSnapshot: !BOOTSTRAP_CODE_CANDIDATES_ONLY && STORE_LEDGER_SNAPSHOT,
+        sources: BOOTSTRAP_JOBS_CANDIDATES_ONLY ? ["jobs-core-candidate-discovery"] : BOOTSTRAP_CODE_CANDIDATES_ONLY ? ["code-core-candidate-discovery"] : SOURCES.map((source) => source.label),
+        storeCanonicalSummarySnapshot: !(BOOTSTRAP_CODE_CANDIDATES_ONLY || BOOTSTRAP_JOBS_CANDIDATES_ONLY) && STORE_CANONICAL_SUMMARY_SNAPSHOT,
+        storeLedgerSnapshot: !(BOOTSTRAP_CODE_CANDIDATES_ONLY || BOOTSTRAP_JOBS_CANDIDATES_ONLY) && STORE_LEDGER_SNAPSHOT,
         transactionDetailHydration: {
           afterBlockIndex: TX_DETAIL_HYDRATION_AFTER_BLOCK_INDEX,
           afterHeight: TX_DETAIL_HYDRATION_AFTER_HEIGHT,
@@ -37997,9 +38130,11 @@ const pool = createProofIndexPool({
 try {
   const client = await pool.connect();
   try {
-    const pwtRangeReplayRuntime = BOOTSTRAP_CODE_CANDIDATES_ONLY ? { active: false } :
+    const pwtRangeReplayRuntime = (BOOTSTRAP_CODE_CANDIDATES_ONLY || BOOTSTRAP_JOBS_CANDIDATES_ONLY) ? { active: false } :
       await canonicalPwtRangeReplayRuntime(client);
-    if (BOOTSTRAP_CODE_CANDIDATES_ONLY) {
+    if (BOOTSTRAP_JOBS_CANDIDATES_ONLY) {
+      console.log(JSON.stringify({ ok: true, network: NETWORK, jobsDiscovery: await bootstrapJobsCandidates(client) }, null, 2));
+    } else if (BOOTSTRAP_CODE_CANDIDATES_ONLY) {
       console.log(JSON.stringify({ ok: true, network: NETWORK, codeDiscovery: await bootstrapCodeCandidates(client) }, null, 2));
     } else if (HYDRATE_TRANSACTION_DETAILS_ONLY) {
       const hydration = await hydrateHistoricalCanonicalTransactionDetails(

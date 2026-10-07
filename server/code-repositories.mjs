@@ -23,7 +23,7 @@ function codeRawHash256(parts) {
  * not independently verify transaction Merkle or witness commitments. A positive
  * must use getblock(2), exact candidate parity and the existing hydration/seals.
  */
-export function prefilterCodeRawBlock(rawHex, { blockHash, previousBlockHash } = {}) {
+export function prefilterCodeRawBlock(rawHex, { blockHash, previousBlockHash, candidatePredicate = decoded => decoded.prefix === 'pwc1:' } = {}) {
   const refuse = detail => { throw new Error(`Code Core raw block admission failed: ${detail}.`); };
   if (!TXID.test(blockHash ?? '') || !TXID.test(previousBlockHash ?? '')) refuse('exact hash and parent required');
   if (typeof rawHex !== 'string' || rawHex.length < 162 || rawHex.length > CODE_RAW_BLOCK_MAX_BYTES * 2 || rawHex.length % 2) refuse('invalid or oversized hex');
@@ -75,7 +75,7 @@ export function prefilterCodeRawBlock(rawHex, { blockHash, previousBlockHash } =
       if (script[0] !== 0x6a) continue;
       const scriptPubKeyHex = script.toString('hex');
       const decoded = decodeCanonicalOpReturnOutput({ scriptPubKey: { hex: scriptPubKeyHex } });
-      if (decoded.prefix === 'pwc1:') transactionCandidates.push({ transactionIndex, vout, scriptPubKeyHex });
+      if (candidatePredicate(decoded)) transactionCandidates.push({ transactionIndex, vout, scriptPubKeyHex });
     }
     const strippedEnd = offset;
     if (witness) {
@@ -98,13 +98,13 @@ export function prefilterCodeRawBlock(rawHex, { blockHash, previousBlockHash } =
 }
 
 /** Bind every physical candidate in a positive raw prefilter to Core's JSON. */
-export function assertCodeRawBlockCandidatesMatch(prefilter, block) {
+export function assertCodeRawBlockCandidatesMatch(prefilter, block, candidatePredicate = decoded => decoded.prefix === 'pwc1:') {
   if (block?.hash !== prefilter.blockHash || block.previousblockhash !== prefilter.previousBlockHash ||
       Number(block.time) !== prefilter.time || Number(block.nTx) !== prefilter.transactionCount ||
       !Array.isArray(block.tx) || block.tx.length !== prefilter.transactionCount) throw new Error('Code Core raw/decoded block envelope differs.');
   const candidates = block.tx.flatMap((tx, transactionIndex) => (tx.vout ?? []).flatMap((output, vout) => {
     const decoded = decodeCanonicalOpReturnOutput(output);
-    return decoded.prefix === 'pwc1:' ? [{ transactionIndex, vout, txid: tx.txid, scriptPubKeyHex: decoded.scriptPubKeyHex }] : [];
+    return candidatePredicate(decoded) ? [{ transactionIndex, vout, txid: tx.txid, scriptPubKeyHex: decoded.scriptPubKeyHex }] : [];
   }));
   if (!prefilter.candidates.length || candidates.length !== prefilter.candidates.length || candidates.some((candidate, index) => {
     const expected = prefilter.candidates[index];

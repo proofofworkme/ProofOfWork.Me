@@ -48,7 +48,7 @@ class SearchPromotion(unittest.TestCase):
             with self.subTest(candidate=candidate), self.assertRaises(ValueError):
                 install.check_plan(candidate)
 
-    def test_reload_requires_same_release_commit_tree_and_all_nineteen_roots(self):
+    def test_reload_requires_same_release_commit_tree_and_all_twenty_roots(self):
         value = plan(); fields = published(value); install.check_published(encode(fields), value)
         cases = []
         for key in ('commit', 'source_tree', 'release_id'):

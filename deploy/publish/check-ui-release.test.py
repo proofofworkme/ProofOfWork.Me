@@ -82,9 +82,10 @@ class ReleaseRefusals(unittest.TestCase):
     def tearDown(self):
         self.temp.cleanup()
 
-    def test_every_current_surface_vector_includes_the_same_nineteen_roots(self):
+    def test_every_current_surface_vector_includes_the_same_twenty_roots(self):
         expected = set(self.release.SURFACES)
-        self.assertEqual(len(expected), 19)
+        self.assertEqual(len(expected), 20)
+        self.assertIn('jobs', expected)
         self.assertIn('search', expected)
         vectors = [('build.py', 'SURFACES'), ('remote_transport.py', 'SURFACES'),
                    ('phase_capacity.py', 'SURFACES'), ('https_smoke.py', 'HOSTS'),
@@ -209,8 +210,9 @@ class ReleaseRefusals(unittest.TestCase):
             self.assertGreaterEqual(plan['admissions'][kind + '-receive']['inodes'], 4000)
         self.assertGreater(plan['stageArchiveUpperBoundBytes'], 123456 + 32 * 1024**2)
 
-    def test_19_surface_plan_binds_phase_capacity_and_committed_wrapper_sources(self):
-        self.assertEqual(len(self.release.SURFACES), 19)
+    def test_20_surface_plan_binds_phase_capacity_and_committed_wrapper_sources(self):
+        self.assertEqual(len(self.release.SURFACES), 20)
+        self.assertIn('jobs', self.release.SURFACES)
         self.assertIn('publish', self.release.SURFACES)
         self.assertIn('search', self.release.SURFACES)
         self.assertEqual(self.release.REPO, ROOT.parents[1])
@@ -391,7 +393,7 @@ class PublishCompatibilityTimeout(unittest.TestCase):
         self.live.mkdir()
         self.stage.mkdir()
         self.surfaces = ('activity', 'browser', 'boost', 'code', 'computer', 'desktop',
-                         'dns', 'growth', 'id', 'inception', 'infinity', 'landing',
+                         'dns', 'growth', 'id', 'inception', 'infinity', 'jobs', 'landing',
                          'marketplace', 'nft', 'publish', 'search', 'token', 'wallet', 'work')
         self.asset_bytes = b'export const prior = 1;\n'
         for surface in self.surfaces:
@@ -440,7 +442,7 @@ class PublishCompatibilityTimeout(unittest.TestCase):
         result = self.run_parser()
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.stdout.strip(),
-                         f'ui_release_compatibility dependencies=19 bytes={19 * len(self.asset_bytes)}')
+                         f'ui_release_compatibility dependencies=20 bytes={20 * len(self.asset_bytes)}')
         self.assertTrue(self.after_parser.exists())
         self.assertEqual(self.tree(), before)
 
@@ -469,14 +471,21 @@ class PublishCompatibilityTimeout(unittest.TestCase):
 
 
 class PublishProvenance(unittest.TestCase):
-    def test_actual_helper_records_and_verifies_14_15_16_17_18_19_surface_history(self):
+    def test_retention_recognizes_complete_historical_families_and_refuses_gaps(self):
+        retention = safe_module('../proofofwork-ui-verified-retention.py')
+        self.assertEqual(sorted(len(value) for value in retention.SURFACE_FAMILIES), list(range(14, 21)))
+        self.assertIn(retention.SURFACES - {'jobs'}, retention.SURFACE_FAMILIES)
+        self.assertNotIn(retention.SURFACES - {'code'}, retention.SURFACE_FAMILIES)
+        self.assertNotIn(retention.SURFACES - {'publish'}, retention.SURFACE_FAMILIES)
+
+    def test_actual_helper_records_and_verifies_all_14_through_20_surface_history(self):
         surfaces = safe_module('release.py').SURFACES
         capacity = ROOT.parents[1] / 'deploy/proofofwork-ui-capacity.py'
         provenance = ROOT.parents[1] / 'deploy/proofofwork-ui-release-provenance.sh'
         with tempfile.TemporaryDirectory(prefix='pow-publish-history-', dir='/tmp') as name:
             base = Path(name).resolve()
-            for omitted in ({'code', 'search', 'publish', 'dns', 'boost'}, {'code', 'search', 'publish', 'dns'},
-                            {'code', 'search', 'publish'}, {'code', 'search'}, {'code'}, set()):
+            for omitted in ({'jobs', 'code', 'search', 'publish', 'dns', 'boost'}, {'jobs', 'code', 'search', 'publish', 'dns'},
+                            {'jobs', 'code', 'search', 'publish'}, {'jobs', 'code', 'search'}, {'jobs', 'code'}, {'jobs'}, set()):
                 included = [surface for surface in surfaces if surface not in omitted]
                 case = base / str(len(included)); case.mkdir(mode=0o700)
                 www, archives, scratch = [case / label for label in ('www', 'archives', 'scratch')]
@@ -507,11 +516,12 @@ class PublishProvenance(unittest.TestCase):
                 self.assertEqual('surface.publish.sha256=' in manifest, 'publish' in included)
                 self.assertEqual('surface.search.sha256=' in manifest, 'search' in included)
                 self.assertEqual('surface.code.sha256=' in manifest, 'code' in included)
+                self.assertEqual('surface.jobs.sha256=' in manifest, 'jobs' in included)
                 self.assertEqual(list(scratch.iterdir()), [])
 
 
 class PublishCapacity(unittest.TestCase):
-    def test_all_19_incoming_roots_are_required_and_links_refused(self):
+    def test_all_20_incoming_roots_are_required_and_links_refused(self):
         capacity = safe_module('phase_capacity.py')
         with tempfile.TemporaryDirectory(prefix='pow-publish-capacity-', dir='/tmp') as name:
             root = Path(name).resolve()
@@ -522,7 +532,7 @@ class PublishCapacity(unittest.TestCase):
                 (target / 'index.html').chmod(0o644)
             result = capacity.tree_budget(root, owner=os.geteuid())
             self.assertGreater(result['archiveUpperBoundBytes'], 19 * len(b'exact UI'))
-            omitted = root / 'code'
+            omitted = root / 'jobs'
             omitted.rename(root / 'other')
             with self.assertRaisesRegex(ValueError, 'complete managed set'):
                 capacity.tree_budget(root, owner=os.geteuid())
@@ -532,12 +542,12 @@ class PublishCapacity(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'link|Unsafe'):
                 capacity.tree_budget(root, owner=os.geteuid())
 
-    def test_preflight_accounts_historical_16_17_18_and_next_19_surface_roots(self):
+    def test_preflight_accounts_historical_16_through_19_and_next_20_surface_roots(self):
         code = statement_range('preflight.py', 'old_managed', 'storage')
         with tempfile.TemporaryDirectory(prefix='pow-publish-preflight-', dir='/tmp') as name:
             root = Path(name).resolve()
             for surface in safe_module('release.py').SURFACES:
-                if surface in ('publish', 'search', 'code'): continue
+                if surface in ('publish', 'search', 'code', 'jobs'): continue
                 target = root / ('proofofwork-' + surface)
                 target.mkdir()
                 (target / 'index.html').write_bytes(b'123')
@@ -564,6 +574,11 @@ class PublishCapacity(unittest.TestCase):
             exec(code, namespace)
             self.assertEqual(namespace['old_managed']['regularFiles'], 19)
             self.assertEqual(namespace['old_managed']['logicalBytes'], 69)
+            (root / 'proofofwork-jobs').mkdir()
+            (root / 'proofofwork-jobs/index.html').write_bytes(b'12345678901')
+            exec(code, namespace)
+            self.assertEqual(namespace['old_managed']['regularFiles'], 20)
+            self.assertEqual(namespace['old_managed']['logicalBytes'], 80)
 
 
 class PreservedTransport(unittest.TestCase):
@@ -1192,10 +1207,10 @@ class HttpsRefusals(unittest.TestCase):
         args, receipt = self.archive()
         with patch.dict(self.smoke.check.__globals__, compare_https=lambda url, body, timeout, **kw: len(body)):
             self.smoke.check(args, receipt)
-        self.assertEqual(receipt['publicSurfaces'], 18)
+        self.assertEqual(receipt['publicSurfaces'], 19)
         self.assertEqual(receipt['archiveFilesSkippedNft'], 1)
-        self.assertEqual(receipt['archivedFilesChecked'], 18)
-        self.assertEqual(receipt['hostnameRootsChecked'], 18)
+        self.assertEqual(receipt['archivedFilesChecked'], 19)
+        self.assertEqual(receipt['hostnameRootsChecked'], 19)
         self.assertTrue(receipt['apexRedirectVerified'] and receipt['finalLocalEvidenceReverified'])
 
     def test_archive_traversal_duplicates_links_unknown_or_missing_root_refuse(self):
@@ -1203,7 +1218,7 @@ class HttpsRefusals(unittest.TestCase):
                    ([('surfaces/work/index.html', b'other', tarfile.REGTYPE)], ()),
                    ([('surfaces/work/link', b'', tarfile.SYMTYPE)], ()),
                    ([('surfaces/unknown/index.html', b'x', tarfile.REGTYPE)], ()),
-                   ([], ('nft',)), ([], ('computer',)), ([], ('search',)), ([], ('code',))]
+                   ([], ('nft',)), ([], ('computer',)), ([], ('search',)), ([], ('code',)), ([], ('jobs',))]
         for extra, omit in changes:
             with self.subTest(extra=extra, omit=omit):
                 args, receipt = self.archive(extra, omit)

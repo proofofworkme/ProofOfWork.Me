@@ -93,6 +93,7 @@
       "PUBLISH.md",
       "SEARCH.md",
       "CODE.md",
+      "JOBS.md",
       "REPOSITORY_HYGIENE.md"
     ],
     "ledger-and-audit-evidence": [
@@ -214,6 +215,7 @@
       "BOOST_GROWTH_ACCOUNTING_PROPOSAL.md"
     ],
     "support-notes": [
+      "deploy/jobs/README.md",
       "TRADEMARKS.md",
       "test-api/README.md",
       "deploy/audit29/INVOCATION.md",

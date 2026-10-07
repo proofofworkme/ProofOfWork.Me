@@ -23,6 +23,7 @@ Product roles follow the [public surface map](../README.md), [ID rules](../PROOF
 
 | Product | Role | Economic owner / lane | Activity and boundary |
 | --- | --- | --- | --- |
+| Jobs | shared | Mail / Files / Existing Mail / Files lanes | Briefs, proposals, assignments, delivery and accepted proof payments.. Included in existing Mail/Files demand; no independent job count or reward forecast is assumed. |
 | Code | shared | Mail / Files / mailSats / driveSats; codeWrites + codeVbytes (nonadditive) | Wallet-owned repositories and source revision records. Source and controls reuse existing carrier demand and payments once; only Code metadata adds bytes. Reads and downloads create no activity. |
 | Publish | shared | Mail / Files / Browser authoring / Existing content lanes | Articles built from existing public content. Article views, search and identity display do not add payments or transaction demand. |
 | Search | read-only | Underlying activity products / No incremental lane | Search projection of confirmed records. Discovery adds no payment or write to the indexed activity. |
@@ -80,6 +81,14 @@ Historical observations and their source notes are retained in the [archived rep
 | 50 years | 50 | 100% |
 
 ## Explicit product assumptions
+
+### Jobs
+
+- Usage: A subset of Mail/Files demand; no independent usage estimate.
+- Value: Existing confirmed Mail/Files payment attribution, counted once. Offered rewards contribute zero.
+- Fee elasticity: Inherited from the owning Mail/Files carrier.
+- Blockspace: Included in existing carrier assumptions; no separate transaction basket.
+- Attribution: Complete confirmed Jobs observations describe its own checkpoint. They do not change canonical network value or WORK-floor arithmetic.
 
 ### IDs
 
@@ -294,6 +303,7 @@ The compatibility filename `volatility` now contains a translation sensitivity c
 
 ## Scope limits
 
+- Jobs uses the existing Mail/Files allocation. Offered rewards and confirmed activity observations are nonadditive; no independent Jobs demand, payment multiplier, or extra transaction basket is assumed.
 - Code source puts are a subset of non-HTML Files demand. Repository creation, deletion and empty source puts share ordinary Mail controls. Only Code metadata adds bytes; counts are nonadditive diagnostics, not another payment or transaction basket.
 - The May 11, 2026 baseline, node sample, adoption horizons, and historical modeled USD path are retained. New scenario assumptions are not current chain calibration.
 - All-product coverage maps every public app to its economic owner or shared/read-only role. It is not an exact canonical replay or a forecast of every possible action variant.

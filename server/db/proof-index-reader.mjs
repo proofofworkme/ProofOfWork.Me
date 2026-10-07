@@ -11,6 +11,8 @@ import {
 import { compareCanonicalUtf8 } from "../canonical-order.mjs";
 import { decodeCanonicalOpReturnOutput } from "../canonical-op-return.mjs";
 import { readCodeSnapshot } from "./code-reader.mjs";
+import { readJobsSnapshot } from "./jobs-reader.mjs";
+import { jobsReadError, jobsPayload, jobPayload } from "../jobs.mjs";
 import { codeReadError, codeRepositoriesPayload, codeRepositoryPayload } from "../code-repositories.mjs";
 import { readBoostGrowthObservation } from "./boost-growth-reader.mjs";
 import {
@@ -44549,6 +44551,23 @@ export function compareProofIndexHistoryPayloads(canonical, indexed) {
   }
 
   return mismatches;
+}
+
+export async function proofIndexJobsPayload(network, searchParams, options = {}) {
+  const pool = proofIndexPool();
+  if (!pool) throw jobsReadError("Jobs requires the canonical database index.");
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
+    const state = await readJobsSnapshot(client, network, searchParams, options);
+    const result = options.events ? { events: state.events, pendingEvents: state.pendingEvents, snapshot: state.snapshot }
+      : options.detail ? jobPayload(state, searchParams) : jobsPayload(state, searchParams);
+    await client.query("COMMIT");
+    return result;
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally { client.release(); }
 }
 
 export async function proofIndexCodePayload(network, searchParams, options = {}) {
