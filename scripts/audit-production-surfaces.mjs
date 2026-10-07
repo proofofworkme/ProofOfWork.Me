@@ -130,6 +130,12 @@ const SURFACES = [
     ],
   },
   {
+    key: "jobs",
+    title: "jobs.proofofwork.me",
+    url: "https://jobs.proofofwork.me/",
+    probes: [{ label: "confirmed Jobs", url: apiUrl("/api/v1/jobs?network=livenet&limit=1"), validate: validateJobs }],
+  },
+  {
     key: "boost",
     title: "boost.proofofwork.me",
     url: "https://boost.proofofwork.me/",
@@ -314,6 +320,23 @@ function validateIndexedJson(json) {
     "tipHeight",
   ]);
   assertCondition(checkpoint !== null, "missing indexed block checkpoint");
+}
+
+function validateJobs(json) {
+  validateIndexedJson(json);
+  assertCondition(json.complete === true && json.network === "livenet" &&
+    json.source === "proof-indexer-exact-canonical-jobs-replay", "Jobs replay is incomplete");
+  assertCondition(json.activationHeight === 970404 && json.activationPreviousBlockHash ===
+    "00000000000000000000cf98017be585521a2a84e4030e20021565479c6218fe", "Jobs admission boundary disagrees");
+  assertCondition(json.indexedThroughBlock >= 970403 &&
+    (json.indexedThroughBlock !== 970403 || json.indexedThroughBlockHash === json.activationPreviousBlockHash) &&
+    json.snapshot?.checkpointHeight === json.indexedThroughBlock &&
+    /^[0-9a-f]{64}$/u.test(json.indexedThroughBlockHash ?? "") &&
+    json.snapshot?.checkpointHash === json.indexedThroughBlockHash && json.snapshot?.id,
+    "Jobs checkpoint evidence disagrees");
+  assertCondition(Array.isArray(json.jobs) && Number.isSafeInteger(json.stats?.jobs) &&
+    json.stats.jobs >= 0 && json.stats.acceptedPayments === json.stats.paid &&
+    /^(0|[1-9][0-9]*)$/u.test(json.stats.paidProofs ?? ""), "Jobs receipt totals are malformed");
 }
 
 function validateRegistrySummary(json) {

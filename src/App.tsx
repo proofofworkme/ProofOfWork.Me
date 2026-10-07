@@ -37,6 +37,7 @@ import {
   CheckCircle2,
   Clock,
   Code2,
+  CheckSquare,
   Copy,
   Download,
   FilePenLine,
@@ -84,10 +85,12 @@ import {
   BOOST_APP_URL,
   PUBLISH_APP_URL,
   CODE_APP_URL,
+  JOBS_APP_URL,
   LOCAL_BROWSER_APP_URL,
   LOCAL_BOOST_APP_URL,
   LOCAL_PUBLISH_APP_URL,
   LOCAL_CODE_APP_URL,
+  LOCAL_JOBS_APP_URL,
   LOCAL_COMPUTER_APP_URL,
   LOCAL_DESKTOP_APP_URL,
   LOCAL_DNS_APP_URL,
@@ -280,6 +283,8 @@ const BoostRoot = lazy(() => import("./features/boost/BoostRoot"));
 const PublishRoot = lazy(() => import("./features/publish/PublishRoot"));
 const SearchRoot = lazy(() => import("./features/search/SearchRoot"));
 const CodeRoot = lazy(() => import("./features/code/CodeRoot"));
+const JobsRoot = lazy(() => import("./features/jobs/JobsRoot"));
+const JobsActivitySummary = lazy(() => import("./features/growth/JobsActivitySummary"));
 const CodeActivitySummary = lazy(() => import("./features/growth/CodeActivitySummary"));
 const BoostGrowthDetails = lazy(
   () => import("./features/growth/BoostGrowthDetails"),
@@ -393,6 +398,7 @@ type Folder =
   | "publish"
   | "search"
   | "code"
+  | "jobs"
   | "ids"
   | "dns"
   | "marketplace"
@@ -420,6 +426,7 @@ const COMPUTER_ROUTE_FOLDERS: Folder[] = [
   "publish",
   "search",
   "code",
+  "jobs",
   "ids",
   "dns",
   "marketplace",
@@ -441,6 +448,7 @@ const STANDALONE_ROUTE_PARAMS = [
   "publish",
   "search-app",
   "code",
+  "jobs",
   "marketplace",
   "credit",
   "token",
@@ -1363,6 +1371,7 @@ type PowActivityItem = {
   id?: string;
   kind: PowActivityKind;
   listingId?: string;
+  jobs?: { ready: boolean; action?: string; jobTxid?: string; applied?: boolean; valid?: boolean; validationErrors?: string[] };
   liveNetworkValueSats?: number;
   marketplaceMutationFeeSats?: number;
   minerFeeSats?: number;
@@ -4235,6 +4244,7 @@ function folderLabel(folder: Folder) {
   if (folder === "publish") return "Publish";
   if (folder === "search") return "Search";
   if (folder === "code") return "Code";
+  if (folder === "jobs") return "Jobs";
 
   if (folder === "contacts") {
     return "Contacts";
@@ -4319,6 +4329,7 @@ function folderSubtitle(folder: Folder) {
   if (folder === "publish") return "ProofOfWork articles and shared social activity";
   if (folder === "search") return "Search Computer protocols and public data";
   if (folder === "code") return "On-chain source repositories and revision history";
+  if (folder === "jobs") return "Commission work, inspect delivery, and pay in proofs";
 
   if (folder === "contacts") {
     return "Local address book";
@@ -26221,7 +26232,7 @@ export default function App() {
     !busy;
   const refreshInProgress = refreshing || checkingBroadcasts;
   const refreshDisabled =
-    activeFolder === "code"
+    activeFolder === "code" || activeFolder === "jobs"
       ? busy || refreshInProgress
     : activeFolder === "contacts"
       ? busy || refreshInProgress || !registryAddress
@@ -28068,6 +28079,9 @@ export default function App() {
     const url = new URL(window.location.href);
     STANDALONE_ROUTE_PARAMS.forEach((param) => url.searchParams.delete(param));
     ["write", "article", "profile", "profileTab"].forEach(param => url.searchParams.delete(param));
+    if (activeFolder === "jobs" && folder !== "jobs") {
+      ["job", "mode", "q", "status", "cursor"].forEach(param => url.searchParams.delete(param));
+    }
     if (activeFolder === "code" && folder !== "code") {
       ["repo", "version", "path", "tab"].forEach(param => url.searchParams.delete(param));
     }
@@ -28241,6 +28255,9 @@ export default function App() {
   }
 
   function canLeavePublishWriter() {
+    if (activeFolder === "jobs") return window.dispatchEvent(
+      new Event("proofofwork:before-jobs-writer-leave", { cancelable: true }),
+    );
     if (activeFolder === "code") return window.dispatchEvent(
       new Event("proofofwork:before-code-writer-leave", { cancelable: true }),
     );
@@ -37414,6 +37431,7 @@ export default function App() {
     activeFolder === "browser" ? "is-browser-workspace" : "",
     activeFolder === "search" ? "is-search-workspace" : "",
     activeFolder === "code" ? "is-code-workspace" : "",
+    activeFolder === "jobs" ? "is-jobs-workspace" : "",
     activeFolder === "boost" || activeFolder === "publish" ? "is-boost-workspace" : "",
   ]
     .filter(Boolean)
@@ -37470,6 +37488,11 @@ export default function App() {
                     includeWorkFloor: true,
                     label: "AMO data",
                   });
+                  return;
+                }
+
+                if (activeFolder === "jobs") {
+                  window.dispatchEvent(new Event("proofofwork:jobs-refresh"));
                   return;
                 }
 
@@ -37757,6 +37780,13 @@ export default function App() {
                 <Code2 size={17} />
                 <span>Code</span>
               </span>
+            </button>
+            <button
+              aria-current={activeFolder === "jobs"}
+              onClick={() => openFolder("jobs")}
+              type="button"
+            >
+              <span className="folder-label"><CheckSquare size={17} /><span>Jobs</span></span>
             </button>
             <span className="folder-group-label">Identity &amp; value</span>
             <button
@@ -38473,6 +38503,10 @@ export default function App() {
         ) : activeFolder === "search" ? (
           <Suspense fallback={<div role="status" aria-busy="true">Loading Search…</div>}>
             <SearchRoot embedded initialNetwork={network} />
+          </Suspense>
+        ) : activeFolder === "jobs" ? (
+          <Suspense fallback={<div role="status" aria-busy="true">Loading Jobs…</div>}>
+            <JobsRoot embedded initialAddress={address} initialNetwork={network} />
           </Suspense>
         ) : activeFolder === "code" ? (
           <Suspense fallback={<div role="status" aria-busy="true">Loading Code…</div>}>
@@ -40624,6 +40658,8 @@ function ActivityFeed({
                 <h4>{title}</h4>
                 <strong>{summary}</strong>
                 {item.id ? <p>{item.description}</p> : null}
+                {item.jobs ? <p className="field-note">{item.jobs.ready ? `Jobs ${activityKindDisplay(item.jobs.action ?? "record")} · ${item.jobs.applied ? "Applied confirmed record" : "Unapplied record"}` : "Jobs lifecycle evidence unavailable"}</p> : null}
+                {item.jobs?.ready && !item.jobs.applied && item.jobs.validationErrors?.length ? <p className="field-note">{item.jobs.validationErrors.join(" · ")}</p> : null}
                 {item.detail ? (
                   <span className="activity-detail">{item.detail}</span>
                 ) : null}
@@ -40685,6 +40721,9 @@ function ActivityFeed({
                   <span>View TX</span>
                 </span>
               </a>
+              {item.jobs?.ready && /^[a-f0-9]{64}$/u.test(item.jobs.jobTxid ?? "") ? (
+                <a className="secondary small" href={`${appHref(JOBS_APP_URL, LOCAL_JOBS_APP_URL)}${appHref(JOBS_APP_URL, LOCAL_JOBS_APP_URL).includes("?") ? "&" : "?"}job=${item.jobs.jobTxid}&network=${item.network}`}>Open Jobs receipt</a>
+              ) : null}
               {item.listingId && item.listingId !== item.txid ? (
                 <a
                   className="secondary small"
@@ -49420,6 +49459,18 @@ function GrowthWorkspace({
               <CodeActivitySummary network={activeNetwork} refreshing={busy} />
             </Suspense>
             <a className="secondary small growth-boost-link" href={appHref(CODE_APP_URL, LOCAL_CODE_APP_URL)}>Open Code</a>
+          </GrowthProductCard>
+          <GrowthProductCard
+            actual="Confirmed activity" actualLabel="Jobs checkpoint observations"
+            icon={<CheckSquare size={24} />} name="Jobs"
+            modelOneYear="Included in Mail / Files" modelFiveYear="Included in Mail / Files"
+            modelOneYearLabel="shared carriers" modelFiveYearLabel="shared carriers" modelLabel="shared activity"
+            note="Briefs, proposals, assignments, delivery, and accepted payments use existing Mail/Files carriers. Offered rewards add no value; confirmed payments are attributed once through their existing lane."
+          >
+            <Suspense fallback={<p className="field-note" role="status">Loading Jobs observations…</p>}>
+              <JobsActivitySummary network={activeNetwork} refreshing={busy} />
+            </Suspense>
+            <a className="secondary small growth-boost-link" href={appHref(JOBS_APP_URL, LOCAL_JOBS_APP_URL)}>Open Jobs</a>
           </GrowthProductCard>
           <GrowthProductCard
             actual={growthSats(actualValue.infinityBondSats)}

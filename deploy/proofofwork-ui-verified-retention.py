@@ -18,11 +18,12 @@ import subprocess
 
 RELEASE = re.compile(r'[0-9a-f]{7,64}-[0-9]{8}T[0-9]{6}Z\Z')
 STAGE = re.compile(r'proofofwork-ui-(source|surfaces)-([0-9a-f]{7,64}-[0-9]{8}T[0-9]{6}Z)(\.tgz(?:\.sha256)?)?\Z')
-SURFACES = frozenset('activity boost browser code computer desktop dns growth id inception infinity landing marketplace nft publish search token wallet work'.split())
+SURFACES = frozenset('activity boost browser code computer desktop dns growth id inception infinity jobs landing marketplace nft publish search token wallet work'.split())
 
-SURFACE_FAMILIES = {SURFACES, SURFACES - {'code'}, SURFACES - {'code', 'search'},
-                    SURFACES - {'code', 'search', 'publish'}, SURFACES - {'code', 'search', 'publish', 'dns'},
-                    SURFACES - {'code', 'search', 'publish', 'dns', 'boost'}}
+PRE_JOBS_SURFACES = SURFACES - {'jobs'}
+SURFACE_FAMILIES = {SURFACES, PRE_JOBS_SURFACES, PRE_JOBS_SURFACES - {'code'}, PRE_JOBS_SURFACES - {'code', 'search'},
+                    PRE_JOBS_SURFACES - {'code', 'search', 'publish'}, PRE_JOBS_SURFACES - {'code', 'search', 'publish', 'dns'},
+                    PRE_JOBS_SURFACES - {'code', 'search', 'publish', 'dns', 'boost'}}
 
 
 def sha256(path):

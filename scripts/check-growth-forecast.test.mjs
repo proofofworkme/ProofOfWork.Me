@@ -170,7 +170,7 @@ function quietInputs(overrides = {}) {
 test("all products and workspaces have explicit economic or shared ownership", () => {
   assert.deepEqual(GROWTH_PRODUCT_COVERAGE.map((product) => product.product).sort(), [
     "amo", "boost", "browser", "code", "computer", "credit", "desktop", "files", "growth",
-    "home", "ids", "inception", "infinity", "log", "mail", "publish", "search", "wallet", "work",
+    "home", "ids", "inception", "infinity", "jobs", "log", "mail", "publish", "search", "wallet", "work",
   ]);
   for (const entry of GROWTH_PRODUCT_COVERAGE) {
     for (const field of ["name", "role", "owner", "modeledLane", "activity", "assumption", "source"]) {

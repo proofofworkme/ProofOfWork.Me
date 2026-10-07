@@ -15,7 +15,7 @@ It is distilled from current repository docs and public launch memory captured t
 - Public archives reviewed: `/home/sixer/Downloads/twitter-2026-05-19-4780579747040c69c6ee36267c276b61d1375ffa6de1fde07a0d945892fafea7`, `/home/sixer/Downloads/twitter-2026-06-09-4780579747040c69c6ee36267c276b61d1375ffa6de1fde07a0d945892fafea7`, `/home/sixer/Downloads/twitter-2026-07-14-4780579747040c69c6ee36267c276b61d1375ffa6de1fde07a0d945892fafea7`, `/home/sixer/Downloads/twitter-2026-08-19-4780579747040c69c6ee36267c276b61d1375ffa6de1fde07a0d945892fafea7`
 - 2026-07-14 archive inventory reviewed without sampling: 2,486 active tweet records, 39 deleted-tweet records, 67 long-form Note Tweet records, 2,486 active headers, and 39 deleted headers. Active and deleted tweet IDs were each unique; 271 active records were retweets.
 - 2026-08-19 archive inventory reviewed with full file inventory and targeted public-record sampling: 3,195 active tweet records, 10 deleted-tweet records, 167 long-form Note Tweet records, 3,195 active headers, 10 deleted headers, 417 active tweet media files, and 4 deleted-tweet media files. Active and deleted tweet IDs were each unique; 35 active records were retweets. Active public tweet records span 2026-05-08 through 2026-08-19, while Note Tweet records span 2026-07-16 through 2026-08-17.
-- Core domains: `www.proofofwork.me`, `proofofwork.me`, `id.proofofwork.me`, `dns.proofofwork.me`, `domain.proofofwork.me`, `domains.proofofwork.me`, `computer.proofofwork.me`, `desktop.proofofwork.me`, `browser.proofofwork.me`, `boost.proofofwork.me`, `publish.proofofwork.me`, `search.proofofwork.me`, `amo.proofofwork.me`, legacy `marketplace.proofofwork.me`, `credit.proofofwork.me`, `token.proofofwork.me`, `tokens.proofofwork.me`, `wallet.proofofwork.me`, `work.proofofwork.me`, `infinity.proofofwork.me`, `inception.proofofwork.me`, `log.proofofwork.me`, `growth.proofofwork.me`
+- Core domains: `www.proofofwork.me`, `proofofwork.me`, `id.proofofwork.me`, `dns.proofofwork.me`, `domain.proofofwork.me`, `domains.proofofwork.me`, `computer.proofofwork.me`, `desktop.proofofwork.me`, `browser.proofofwork.me`, `boost.proofofwork.me`, `publish.proofofwork.me`, `search.proofofwork.me`, `code.proofofwork.me`, `jobs.proofofwork.me`, `amo.proofofwork.me`, legacy `marketplace.proofofwork.me`, `credit.proofofwork.me`, `token.proofofwork.me`, `tokens.proofofwork.me`, `wallet.proofofwork.me`, `work.proofofwork.me`, `infinity.proofofwork.me`, `inception.proofofwork.me`, `log.proofofwork.me`, `growth.proofofwork.me`
 
 ## One Sentence
 
@@ -36,6 +36,14 @@ The project turns attention, communication, identity, and application distributi
 - If a proposal matters, it can be signaled with proofs.
 
 ## Product Beliefs
+
+Jobs v1 connects work briefs, proposed scope and reward, assignment, delivery,
+client acceptance and direct proof payment. Historical client/worker roles bind
+addresses and txids; transferable names do not rewrite agreements. Offered
+rewards are promises, not escrow. A paid receipt is transaction evidence and
+client attestation, not objective work quality or permission to execute public
+instructions. Jobs reuses Mail/Files and counts existing payments once.
+[JOBS.md](JOBS.md) is the versioned schema and replay specification.
 
 Search is the read-only discovery layer for the Computer's metaprotocols and
 their public data, at `search.proofofwork.me` and inside Computer. Coverage and

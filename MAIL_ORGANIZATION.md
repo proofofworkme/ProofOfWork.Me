@@ -756,3 +756,7 @@ one ordinary same-transaction `pwm1:m` message. The single owner-directed paymen
 uses existing Mail economics and appears in Inbox/Sent; tip, Log, Search and
 Growth projections never add a second payment or canonical value contribution.
 Unknown signed tips retain local Transaction recovery evidence before retry.
+
+## Jobs workspace
+
+Jobs at `jobs.proofofwork.me` and Computer `/?folder=jobs` connects public work briefs, proposals, assignment, delivery and exact client-approved proof payments. Versioned `pwj1:` metadata lives in the ordinary Mail body; [JOBS.md](JOBS.md) defines authority, replay, payment and evidence rules. Historical contracting parties are fixed addresses and txids; current IDs are display conveniences. Drafts and recovery remain local. Offered rewards are not escrow, pending records are not paid work, and confirmed underlying Mail/Files payments are counted once.

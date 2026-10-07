@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { parseJobBody } from "../src/shared/protocol/jobs.mjs";
 
 import {
   PROOF_INDEX_RENDERED_MAIL_KINDS,
@@ -272,6 +273,17 @@ export function proofIndexEventRefsForItem(item) {
   add("target-txid", source.targetTxid);
   add("parent-txid", source.parentTxid);
   add("repository-txid", source.repoTxid);
+  if (source.protocol === "pwm1") {
+    const body = typeof source.memo === "string" ? source.memo : typeof source.body === "string" ? source.body : "";
+    if (body.startsWith("pwj1:")) {
+      const jobs = parseJobBody(body);
+      add("app", "Jobs");
+      add("job-action", jobs?.action ?? "invalid");
+      add("job-txid", jobs?.action === "brief" ? source.txid : jobs?.metadata?.job);
+      for (const key of ["proposal", "assignment", "delivery"]) add(`job-${key}-txid`, jobs?.metadata?.[key]);
+      for (const txid of jobs?.metadata?.artifacts ?? []) add("job-artifact-txid", txid);
+    }
+  }
   if (source.protocol === "pwc1") {
     add("source-path", source.path);
     add("source-sha256", source.metadata?.sha256 ?? source.source?.sha256);

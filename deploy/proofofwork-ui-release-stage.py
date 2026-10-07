@@ -36,6 +36,7 @@ SURFACES = (
     "id",
     "inception",
     "infinity",
+    "jobs",
     "landing",
     "marketplace",
     "nft",
@@ -45,12 +46,13 @@ SURFACES = (
     "wallet",
     "work",
 )
-PRE_CODE_SURFACES = tuple(surface for surface in SURFACES if surface != "code")
+PRE_JOBS_SURFACES = tuple(surface for surface in SURFACES if surface != "jobs")
+PRE_CODE_SURFACES = tuple(surface for surface in PRE_JOBS_SURFACES if surface != "code")
 PRE_SEARCH_SURFACES = tuple(surface for surface in PRE_CODE_SURFACES if surface != "search")
-PRE_PUBLISH_SURFACES = tuple(surface for surface in SURFACES if surface not in {"code", "publish", "search"})
-LEGACY_SURFACES = tuple(surface for surface in SURFACES if surface not in {"code", "dns", "publish", "search"})
+PRE_PUBLISH_SURFACES = tuple(surface for surface in PRE_JOBS_SURFACES if surface not in {"code", "publish", "search"})
+LEGACY_SURFACES = tuple(surface for surface in PRE_JOBS_SURFACES if surface not in {"code", "dns", "publish", "search"})
 PRE_BOOST_SURFACES = tuple(
-    surface for surface in SURFACES if surface not in {"code", "boost", "dns", "publish", "search"}
+    surface for surface in PRE_JOBS_SURFACES if surface not in {"code", "boost", "dns", "publish", "search"}
 )
 COMPATIBILITY_MODEL = "proofofwork-ui-prior-asset-closure-v1"
 MAXIMUM_INDEX_BYTES = 2 * 1024 * 1024
@@ -784,6 +786,8 @@ def live_surface_names(root: Path) -> tuple[str, ...]:
         return PRE_SEARCH_SURFACES
     if not os.path.lexists(root / "proofofwork-code"):
         return PRE_CODE_SURFACES
+    if not os.path.lexists(root / "proofofwork-jobs"):
+        return PRE_JOBS_SURFACES
     return SURFACES
 
 

@@ -331,6 +331,7 @@ surfaces=(
   id
   inception
   infinity
+  jobs
   landing
   marketplace
   nft
@@ -340,12 +341,20 @@ surfaces=(
   wallet
   work
 )
-if ((${#surfaces[@]} != 19)); then
-  echo "UI publisher surface set must contain exactly 19 entries." >&2
+if ((${#surfaces[@]} != 20)); then
+  echo "UI publisher surface set must contain exactly 20 entries." >&2
+  exit 70
+fi
+pre_jobs_surfaces=()
+for surface in "${surfaces[@]}"; do
+  [[ "${surface}" == "jobs" ]] || pre_jobs_surfaces+=("${surface}")
+done
+if ((${#pre_jobs_surfaces[@]} != 19)); then
+  echo "UI publisher pre-Jobs surface set must contain exactly 19 entries." >&2
   exit 70
 fi
 pre_code_surfaces=()
-for surface in "${surfaces[@]}"; do
+for surface in "${pre_jobs_surfaces[@]}"; do
   [[ "${surface}" == "code" ]] || pre_code_surfaces+=("${surface}")
 done
 if ((${#pre_code_surfaces[@]} != 18)); then
@@ -431,8 +440,10 @@ verify_prior_asset_compatibility() {
     prior_surfaces=("${pre_search_surfaces[@]}")
   elif [[ ! -e "${www_root}/proofofwork-code" && ! -L "${www_root}/proofofwork-code" ]]; then
     prior_surfaces=("${pre_code_surfaces[@]}")
+  elif [[ ! -e "${www_root}/proofofwork-jobs" && ! -L "${www_root}/proofofwork-jobs" ]]; then
+    prior_surfaces=("${pre_jobs_surfaces[@]}")
   fi
-  # Bound the nineteen-root compatibility scan to 120 seconds so it cannot
+  # Bound the twenty-root compatibility scan to 120 seconds so it cannot
   # hold the deployment lock indefinitely. The manifest-driven checks below
   # remain authoritative; timeout is a safe failure that leaves production
   # untouched. Keep the five-second kill grace and independent asset limits.

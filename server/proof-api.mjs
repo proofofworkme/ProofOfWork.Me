@@ -309,10 +309,12 @@ import {
 } from "./incb-range-replay-witness.mjs";
 import { searchPayload, searchDetailPayload } from "./db/search-reader.mjs";
 import { CODE_SNAPSHOT_MODEL, qualifyCodeLogPayload } from "./code-repositories.mjs";
+import { JOBS_SNAPSHOT_MODEL, jobsLogPayloadHasCandidates, qualifyJobsLogPayload } from "./jobs.mjs";
 import {
   compareProofIndexHistoryPayloads,
   proofIndexActivityPayload,
   proofIndexCodePayload,
+  proofIndexJobsPayload,
   proofIndexAddressMailPayload,
   verifiedMailArticleFields,
   revalidateMailArticleMessage,
@@ -35105,6 +35107,20 @@ async function dnsRegistryPayload(network) {
 }
 
 async function logPayloadWithDnsSubdomainAuthority(payload, network) {
+  if (jobsLogPayloadHasCandidates(payload)) {
+    const params = new URLSearchParams();
+    const checkpointHeight = Number(payload.indexedThroughBlock);
+    const checkpointHash = payload.indexedThroughBlockHash ?? payload.checkpointHash;
+    if (Number.isSafeInteger(checkpointHeight) && checkpointHeight > 0 && /^[0-9a-f]{64}$/u.test(checkpointHash ?? "")) {
+      params.set("snapshot", Buffer.from(JSON.stringify({ model: JOBS_SNAPSHOT_MODEL, network, checkpointHeight, checkpointHash })).toString("base64url"));
+    }
+    try {
+      const state = await proofIndexJobsPayload(network, params, { events: true, verifyCheckpoint: async height => {
+        const result = await bitcoinRpc("getblockhash", [height]); return result?.ok ? result.result : null;
+      } });
+      payload = qualifyJobsLogPayload(payload, [...state.events, ...state.pendingEvents], state.snapshot);
+    } catch (error) { payload = qualifyJobsLogPayload(payload, [], null, "jobs-discovery-unavailable"); }
+  }
   const hasCode = [payload?.items, payload?.events, payload?.activity].some(items => Array.isArray(items) && items.some(item => item?.protocol === "pwc1"));
   if (hasCode) {
     const params = new URLSearchParams();
@@ -80906,6 +80922,26 @@ async function handleRequest(request, response) {
         }
       }
       errorResponse(response, 404, "Database event history is not available.");
+      return;
+    }
+
+    if (url.pathname === "/api/v1/jobs" || url.pathname === "/api/v1/job") {
+      const payload = await proofIndexJobsPayload(network, url.searchParams, {
+        detail: url.pathname === "/api/v1/job",
+        verifyCheckpoint: async height => {
+          const result = await bitcoinRpc("getblockhash", [height]);
+          return result?.ok ? result.result : null;
+        },
+      });
+      if (freshRead && !url.searchParams.has("snapshot") && !url.searchParams.has("cursor")) {
+        const jobsReadGate = canonicalReadGate ?? await canonicalPublicReadGate(network, { force: true });
+        if (jobsReadGate?.available !== true || jobsReadGate?.atTip !== true ||
+            payload.indexedThroughBlock !== Number(jobsReadGate.indexedThroughBlock) ||
+            payload.indexedThroughBlockHash !== jobsReadGate.canonicalHash) {
+          throw freshDataUnavailableError("Jobs discovery has not reached the exact canonical checkpoint.");
+        }
+      }
+      jsonResponse(response, 200, payload, "no-store");
       return;
     }
 

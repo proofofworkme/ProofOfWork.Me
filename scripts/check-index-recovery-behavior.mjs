@@ -1,4 +1,7 @@
 import { canonicalSealTime } from "../server/canonical-seal-time.mjs";
+import { JOBS_ACTIVATION_HEIGHT } from "../src/shared/protocol/jobs.mjs";
+import { JOBS_DISCOVERY_MODEL, JOBS_DISCOVERY_META_KEY, advanceJobsCandidateDigest, jobsCandidateParts } from "../server/jobs.mjs";
+import { CODE_DISCOVERY_MODEL, CODE_DISCOVERY_META_KEY, advanceCodeCandidateDigest } from "../server/code-repositories.mjs";
 import { REVIEWED_INCB_REPLAY_BASELINE, reviewedIncbReplayBaselineEvidence, reviewedIncbReplayBaselineFromEvidence } from "../server/incb-replay-baseline.mjs";
 import { SCOPED_INCB_ORACLE_PIN, scopedIncbOracleProjectionRows, storedScopedIncbOracle, canonicalSummarySnapshotIdOutsideScopedOracle } from "../server/incb-scoped-oracle.mjs";
 import { canonicalIncbReplayComponents } from "../server/incb-replay-components.mjs";
@@ -1273,6 +1276,16 @@ function isolatedFunction(path, name, globals = {}) {
     URLSearchParams,
     APPLY_WORK_ATOMIC_MIGRATION: false,
     AUDIT_WORK_ATOMS_ONLY: false,
+    BOOTSTRAP_CODE_CANDIDATES_ONLY: false,
+    BOOTSTRAP_JOBS_CANDIDATES_ONLY: false,
+    CODE_DISCOVERY_MODEL,
+    CODE_DISCOVERY_META_KEY,
+    JOBS_ACTIVATION_HEIGHT,
+    JOBS_DISCOVERY_MODEL,
+    JOBS_DISCOVERY_META_KEY,
+    advanceCodeCandidateDigest,
+    advanceJobsCandidateDigest,
+    jobsCandidateParts,
     CANONICAL_REBUILD_META_KEY: "canonical:rebuild",
     REPAIR_POST_V5_INCB_ISSUANCE_ONLY: false,
     APPLY_POST_V5_INCB_ISSUANCE_REPAIR: false,
@@ -1889,6 +1902,10 @@ function isolatedFunction(path, name, globals = {}) {
         }
     : path.href === BACKFILL_PATH.href
       ? {
+          backfillBlockScanSource: [
+            "advanceCodeDiscoveryCheckpoint",
+            "advanceJobsDiscoveryCheckpoint",
+          ],
           assertCanonicalWorkProjection: [
             "currentWorkProjectionState",
             "workProjectionModelForState",
@@ -34906,6 +34923,7 @@ check("block verification completes before the atomic block transaction", async 
   assert.deepEqual(events, [
     "verify",
     "BEGIN",
+    "SELECT pg_advisory_xact_lock(hashtext($1),hashtext($2))",
     "block",
     "raw",
     "volatile-cleanup",
@@ -34914,6 +34932,7 @@ check("block verification completes before the atomic block transaction", async 
     "persist",
     "balances",
     "checkpoint",
+    "SELECT pg_advisory_xact_lock(hashtext($1),hashtext($2))",
     "COMMIT",
   ]);
 
@@ -34926,6 +34945,7 @@ check("block verification completes before the atomic block transaction", async 
   assert.deepEqual(events, [
     "verify",
     "BEGIN",
+    "SELECT pg_advisory_xact_lock(hashtext($1),hashtext($2))",
     "block",
     "raw",
     "volatile-cleanup",
@@ -45696,6 +45716,7 @@ check("canonical rebuild reset and hashed bootstrap are one transaction", async 
     "pwm1",
     "pwa1",
     "pwb1",
+    "pwc1",
   ]);
   assert.ok(calls.includes("seed-work"));
   assert.ok(calls.includes("migrate-credit-units"));
@@ -66750,7 +66771,7 @@ check("AMO V5 current readers reject a globally duplicated canonical position", 
   assert.match(auditSql, /event_block\.canonical = true/u);
   assert.match(
     auditSql,
-    /ARRAY\['pwm1','pwa1','pwid1','pwdns1','pwb1','pwt1'\]/u,
+    /ARRAY\['pwm1','pwa1','pwid1','pwdns1','pwb1','pwt1','pwc1'\]/u,
   );
   assert.match(auditSql, /event_row\.status = 'confirmed'/u);
   assert.match(auditSql, /event_row\.block_height >= \$2/u);
@@ -81036,7 +81057,7 @@ check("AMO V5 canonical positions and immutable projections are schema-bound", (
   );
   for (const required of [
     /event_row\.record_ordinal IS NULL/u,
-    /duplicate_event\.protocol = ANY\(\s*ARRAY\['pwm1','pwa1','pwid1','pwdns1','pwb1','pwt1'\]::text\[\]\s*\)/u,
+    /duplicate_event\.protocol = ANY\(\s*ARRAY\['pwm1','pwa1','pwid1','pwdns1','pwb1','pwt1','pwc1'\]::text\[\]\s*\)/u,
     /duplicate_tx\.block_height = duplicate_event\.block_height/u,
     /duplicate_tx\.block_index = duplicate_event\.block_index/u,
     /duplicate_block\.canonical = true/u,

@@ -185,6 +185,15 @@
 	}
 }
 
+(common_jobs_app) {
+	import common_static_policy
+	handle {
+		root * /var/www/proofofwork-jobs
+		try_files {path} /index.html
+		file_server
+	}
+}
+
 (common_search_app) {
 	import common_static_policy
 	handle {
@@ -239,6 +248,7 @@ http://boost.proofofwork.me,
 http://publish.proofofwork.me,
 http://search.proofofwork.me,
 http://code.proofofwork.me,
+http://jobs.proofofwork.me,
 http://amo.proofofwork.me,
 http://marketplace.proofofwork.me,
 http://growth.proofofwork.me,
@@ -307,6 +317,10 @@ search.proofofwork.me {
 
 code.proofofwork.me {
 	import common_code_app
+}
+
+jobs.proofofwork.me {
+	import common_jobs_app
 }
 
 amo.proofofwork.me {

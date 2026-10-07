@@ -165,6 +165,16 @@
   },
   "productCoverage": [
     {
+      "product": "jobs",
+      "name": "Jobs",
+      "activity": "Briefs, proposals, assignments, delivery and accepted proof payments.",
+      "assumption": "Included in existing Mail/Files demand; no independent job count or reward forecast is assumed.",
+      "owner": "Mail / Files",
+      "role": "shared",
+      "modeledLane": "Existing Mail / Files lanes",
+      "source": "JOBS.md; complete checkpoint-bound Jobs observations"
+    },
+    {
       "product": "code",
       "name": "Code",
       "role": "shared",
@@ -357,6 +367,14 @@
   ],
   "assumptions": [
     {
+      "product": "Jobs",
+      "usage": "A subset of Mail/Files demand; no independent usage estimate.",
+      "value": "Existing confirmed Mail/Files payment attribution, counted once. Offered rewards contribute zero.",
+      "elasticity": "Inherited from the owning Mail/Files carrier.",
+      "blockspace": "Included in existing carrier assumptions; no separate transaction basket.",
+      "attribution": "Complete confirmed Jobs observations describe its own checkpoint. They do not change canonical network value or WORK-floor arithmetic."
+    },
+    {
       "product": "IDs",
       "usage": "Projected agent nodes × adoption; ID writes use the original ID fee multiplier.",
       "value": "N² × 268.68933906745133 proofs density × fee multiplier; registration fees are in Registry events.",
@@ -462,6 +480,7 @@
     }
   ],
   "limitations": [
+    "Jobs uses the existing Mail/Files allocation. Offered rewards and confirmed activity observations are nonadditive; no independent Jobs demand, payment multiplier, or extra transaction basket is assumed.",
     "Code source puts are a subset of non-HTML Files demand. Repository creation, deletion and empty source puts share ordinary Mail controls. Only Code metadata adds bytes; counts are nonadditive diagnostics, not another payment or transaction basket.",
     "The May 11, 2026 baseline, node sample, adoption horizons, and historical modeled USD path are retained. New scenario assumptions are not current chain calibration.",
     "All-product coverage maps every public app to its economic owner or shared/read-only role. It is not an exact canonical replay or a forecast of every possible action variant.",

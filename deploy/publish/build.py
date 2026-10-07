@@ -19,6 +19,7 @@ SURFACES = {
     'desktop': ('desktop', 'VITE_DESKTOP_ONLY'), 'browser': ('browser', 'VITE_BROWSER_ONLY'),
     'boost': ('boost', 'VITE_BOOST_ONLY'), 'publish': ('publish', 'VITE_PUBLISH_ONLY'),
     'search': ('search', 'VITE_SEARCH_ONLY'), 'code': ('code', 'VITE_CODE_ONLY'),
+    'jobs': ('jobs', 'VITE_JOBS_ONLY'),
     'marketplace': ('amo', 'VITE_MARKETPLACE_ONLY'), 'token': ('credit', 'VITE_TOKEN_ONLY'),
     'wallet': ('wallet', 'VITE_WALLET_ONLY'), 'work': ('work', 'VITE_WORK_TOKEN_ONLY'),
     'infinity': ('infinity', 'VITE_INFINITY_ONLY'), 'inception': ('inception', 'VITE_INCEPTION_ONLY'),
