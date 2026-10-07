@@ -1,5 +1,68 @@
 # ProofOfWork OP_RETURN Infrastructure
 
+## Code v1 local candidate and discovery gate
+
+The implemented local Code candidate targets `code.proofofwork.me` and
+Computer's `/?folder=code`, with standalone preview `/?code=1` and build flag
+`VITE_CODE_ONLY=1`. [CODE.md](CODE.md) specifies additive `pwc1:repo` and
+`pwc1:commit` records, raw input authority, exact UTF-8 Files bytes, empty-file
+commitments, one confirmed head and nonadditive Mail/Files accounting. The
+shared runtime is `src/shared/protocol/codeRepository.mjs`; node source
+packaging includes it and the Code readers. This is candidate scope, not a
+production release, live-domain claim or canonical economic migration.
+
+First-party routes are `GET /api/v1/code-repositories` and
+`GET /api/v1/code-repository`. List reads include complete Code activity
+statistics and support owner/query filters and bounded pagination.
+Repository reads bind creation
+txid, accepted version, exact path and history to one snapshot. Their complete
+evidence includes checkpoint height/hash, opaque snapshot identity, explicit
+source and continuation. Missing discovery returns 503; a reorganized snapshot
+returns a restart conflict. An unavailable tree cannot be presented as empty.
+
+The `canonical-code-candidate-discovery-v1` witness under
+`code:candidate-discovery` proves a complete Core scan beginning at height one,
+including malformed raw-prefix candidates, exact transaction positions and
+hydrated prevouts. It records a hash-bound boundary, candidate count and rolling
+raw-candidate digest. Public readers independently verify canonical block
+hashes through the first-party full node and recheck the count/digest before
+replay. A Search generation, event page or address-only scan cannot establish
+this coverage. Pending observations never change the confirmed tree.
+
+The supervised mode is
+`npm run indexer:backfill -- --bootstrap-code-candidates`, with configured Core
+RPC and the existing guarded database/runtime settings. This is an operator
+mutation, not something the public reader runs. It is exclusive with canonical
+rebuild and summary-repair modes. `--dry-run` previews the configured invocation
+without scanning history or publishing a completion marker.
+`POW_INDEX_CODE_BOOTSTRAP_MAX_BLOCKS` bounds each resumable
+invocation to 1,000 blocks by default and at most 10,000; its target is the
+existing hash-bound block-scan checkpoint. Prior post-V5 canonical seals can bind a
+candidate population produced before `pwc1:` discovery. If a historical Code
+candidate was omitted from those seals, bootstrap must refuse and require
+separately supervised canonical replay. It cannot append into sealed history,
+reset prior commitments or silently change H-1/WORK authority. A bounded or
+interrupted bootstrap does not establish completion.
+
+The ordinary scanner extends the Code witness only from a contiguous exact
+previous checkpoint. Missing markers, gaps, unknown metadata or reorgs fail
+readiness closed while preserving earlier evidence. Stable reads may use a
+verified last-good boundary during supervised catchup; fresh first pages must
+match the canonical admission gate's height and hash. Page limits are 1–200;
+there is no silent total-history truncation. A missing exact path returns
+`file:null`, while verified source includes standard `contentBase64`, exact
+hash/size and raw output evidence.
+
+Candidate UI build, staging, provenance, publishing, capacity and HTTPS maps
+use nineteen managed roots: eighteen public surfaces plus NFT's byte-identical
+Computer alias. Fourteen- through eighteen-root archives/manifests remain
+verifiable under their historical absence rules. Code's candidate Caddy route
+serves `/var/www/proofofwork-code` with the same-origin API proxy. Installed
+production helpers/configuration still require exact-byte review and an
+explicitly approved cutover; the dated production handoffs below remain their
+own evidence and are not relabeled by this local change. Existing capacity,
+retention, lock, rollback and Search-job hold/restore controls remain required.
+
 ## Search projection and release contract
 
 Search exposes `/api/v1/search` and `/api/v1/search/detail` through the same
@@ -17,7 +80,7 @@ Search counts and copies never contribute a second payment to Growth or WORK.
 The separate bounded Search service/timer cannot delay the canonical worker's
 confirmed summary publication.
 
-The active UI release tooling includes eighteen managed roots: seventeen
+The Search production handoff used eighteen managed roots: seventeen
 public surfaces plus NFT's retained Computer alias. Historical fourteen,
 fifteen, sixteen and seventeen-root manifests remain verifiable rollback
 material. `deploy/search/install-ui.py` promotes only exact pinned
@@ -60,7 +123,8 @@ seventeenth public surface, bringing current releases to eighteen managed
 roots. Historical fourteen- through seventeen-root archives retain their
 exact verification compatibility.
 
-The current UI orchestration is `deploy/publish/`: `build.py` creates fresh
+Before the local Code candidate, UI orchestration in `deploy/publish/` used
+`build.py` to create fresh
 lockfile-installed source, seventeen public surface builds and the copied
 NFT Computer alias. It emits one eighteen-root surfaces bundle, a separate
 source bundle and a build receipt;

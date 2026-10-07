@@ -2,6 +2,7 @@ import {
   ArrowUpRight,
   AtSign,
   Clock,
+  Code2,
   FilePenLine,
   FileText,
   GitBranch,
@@ -23,6 +24,7 @@ import {
   BOOST_APP_URL,
   PUBLISH_APP_URL,
   SEARCH_APP_URL,
+  CODE_APP_URL,
   BROWSER_APP_URL,
   COMPUTER_APP_URL,
   DESKTOP_APP_URL,
@@ -35,6 +37,7 @@ import {
   LOCAL_BOOST_APP_URL,
   LOCAL_PUBLISH_APP_URL,
   LOCAL_SEARCH_APP_URL,
+  LOCAL_CODE_APP_URL,
   LOCAL_COMPUTER_APP_URL,
   LOCAL_DESKTOP_APP_URL,
   LOCAL_DNS_APP_URL,
@@ -61,6 +64,7 @@ import {
 import { AppHeader } from "../../shared/components/AppHeader";
 import { AppStatusRow } from "../../shared/components/AppStatusRow";
 import { SocialFooter } from "../../shared/components/SocialFooter";
+import CodeActivitySummary from "../growth/CodeActivitySummary";
 import "./landing.css";
 
 type LandingRegistryCounts = {
@@ -135,6 +139,13 @@ const LANDING_APP_GROUPS = [
         icon: Search,
         label: "Search",
         localHref: LOCAL_SEARCH_APP_URL,
+      },
+      {
+        description: "Publish source files in wallet-owned repositories with verifiable on-chain revision history.",
+        href: CODE_APP_URL,
+        icon: Code2,
+        label: "Code",
+        localHref: LOCAL_CODE_APP_URL,
       },
     ],
   },
@@ -490,6 +501,10 @@ export function LandingApp({
               </section>
             ))}
           </div>
+          <section aria-label="Code activity">
+            <h3>Code on chain</h3>
+            <CodeActivitySummary network="livenet" refreshing={registryLoading || dnsRegistryLoading} />
+          </section>
         </section>
 
         <section

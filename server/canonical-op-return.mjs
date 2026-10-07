@@ -7,6 +7,7 @@ export const CANONICAL_PROTOCOL_PREFIXES = Object.freeze([
   "pwdns1:",
   "pwb1:",
   "pwt1:",
+  "pwc1:",
 ]);
 
 export const CANONICAL_OP_RETURN_SCRIPT_MALFORMED =

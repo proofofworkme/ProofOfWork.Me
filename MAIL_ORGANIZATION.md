@@ -325,6 +325,28 @@ checks fresh exact-txid confirmed article evidence before rendering the full
 text. Body bytes, whitespace, attachments and ordinary Mail behavior remain
 subject to their existing rules; social actions are not new Mail event kinds.
 
+## Code source repositories — local candidate
+
+Code is a standalone candidate and Computer workspace, not a mailbox
+organization folder. Its `pwc1:` creation/commit records define one immutable
+address owner and one confirmed head. Code drafts are browser-local preparation
+state; they do not change ownership, repository history or mailbox organization.
+[CODE.md](CODE.md) defines exact paths, canonical replay and source verification.
+
+Nonempty source commits reuse one same-transaction verified Files attachment
+named `source.txt` with MIME `text/plain`, up to 60,000 raw bytes. Repository
+path stays separate exact Code metadata, so Mail filename normalization cannot
+rewrite it. The normal self-send appears through existing Inbox/Sent and Files
+projections; that Mail/Files payment contributes once. Code history and Search
+do not add another payment or new Mail event kind. Empty files use a Code
+zero-byte hash commitment with no attachment, preserving existing Files rules.
+
+The Code reader displays source as inert text, never as wallet-capable HTML or
+executable code. Confirmed trees require complete hash-bound Code discovery;
+pending receipts and stale parents do not move the head. Local review uses the
+shared funding, fee, signature and unknown-outcome recovery contracts. These
+implemented candidate paths do not establish a production Code release.
+
 ## Boost Profile Images
 
 Boost's Profile images picker reuses confirmed Inbox/Sent attachments, including images received from another sender. It deduplicates self-sends by file transaction/hash and excludes pending or dropped mail. PNG, JPEG, GIF, WebP, and AVIF previews require matching hash, size, MIME, and name. A missing file library offers guidance to send an image to the connected address and wait for confirmation.

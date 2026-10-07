@@ -45,6 +45,15 @@ and report incomplete coverage. Search adds no protocol action, payment or
 network-value contribution; indexed copies never create a second economic event.
 Public file text requires verified bytes.
 
+Code v1 is a local candidate for `code.proofofwork.me` and Computer: public
+source repositories with one address owner, one confirmed head and exact
+UTF-8 file commits. Keep source inert, paths exact and history replayable from
+complete hash-bound discovery. Reuse Mail/Files bytes and count their payment
+once. A stale commit remains visible without changing the head. Empty source
+is an explicit zero-byte Code commitment, not a new empty Files attachment.
+[CODE.md](CODE.md) defines the additive `pwc1:` protocol. This memory records
+an implemented candidate, not a production launch or deployment approval.
+
 1. The source of truth is the chain.
 2. Confirmed records are canonical. Pending mempool visibility is useful gossip.
 3. Wallet signing stays local. The app must never hold seed phrases or private keys.
@@ -326,6 +335,11 @@ Future agents must preserve these unless the user explicitly asks for a migratio
 - `browser.proofofwork.me` is the standalone public HTML renderer.
 - `boost.proofofwork.me` is the public Proof-ranked social feed over confirmed `pwb1:` records; original posts reuse Mail/Files, and paid actions and asset trades use the Boost protocol. The feed leads with people and posts; proof evidence and exact signal lanes remain inspectable through disclosures. Compact display quantities never become ranking, payment, or signing authority.
 - `publish.proofofwork.me` is text-only blogging over that same social record. Give writers a dedicated page, the remaining OP_RETURN script budget, private drafts, exact review and local signing. Mail Compose opens the shared writer while preserving its separate Mail draft; article self-sends appear in Inbox and Sent with verified full text. Boost and Publish share selected confirmed PowIDs, public profiles, likes, replies, reboosts and follows; preserve one transaction ID and count shared payments once. [PUBLISH.md](PUBLISH.md) specifies the article and identity bridge.
+- The Code local candidate targets `code.proofofwork.me`; it is a source
+  repository workspace, not mailbox organization or Git transport. Its
+  creation txid identifies the repository, immutable input authority controls
+  commits, and pending data never changes the confirmed tree. Do not expose an
+  authoritative head before complete Code discovery proves its checkpoint.
 - `amo.proofofwork.me` is the canonical Autonomous Money Organization surface for governed WORK units and the existing ID, DNS, credit, bond, and Boost sale-ticket markets.
 - `marketplace.proofofwork.me` is a retained compatibility hostname for AMO; it is not a separate protocol or state plane.
 - `credit.proofofwork.me` is the standalone credit creation and mint app.

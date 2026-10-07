@@ -25,17 +25,17 @@
 <text x="1490" y="844" font-size="18" fill="#666b61" font-weight="400" text-anchor="middle">10 years</text>
 <line x1="160" x2="202" y1="143" y2="143" stroke="#a4772d" stroke-width="4"/>
 <text x="214" y="150" font-size="18" fill="#242820" font-weight="400" text-anchor="start">Raw demand</text>
-<polyline fill="none" stroke="#a4772d" stroke-width="4" points="160,750.51 230,671.697 370,572.644 790,436.374 1490,223.366"/>
-<circle cx="160" cy="750.51" r="5" fill="#f7f5ef" stroke="#a4772d" stroke-width="3"/>
-<circle cx="230" cy="671.697" r="5" fill="#f7f5ef" stroke="#a4772d" stroke-width="3"/>
-<circle cx="370" cy="572.644" r="5" fill="#f7f5ef" stroke="#a4772d" stroke-width="3"/>
-<circle cx="790" cy="436.374" r="5" fill="#f7f5ef" stroke="#a4772d" stroke-width="3"/>
-<circle cx="1490" cy="223.366" r="5" fill="#f7f5ef" stroke="#a4772d" stroke-width="3"/>
+<polyline fill="none" stroke="#a4772d" stroke-width="4" points="160,748.97 230,670.286 370,571.493 790,435.652 1490,223.102"/>
+<circle cx="160" cy="748.97" r="5" fill="#f7f5ef" stroke="#a4772d" stroke-width="3"/>
+<circle cx="230" cy="670.286" r="5" fill="#f7f5ef" stroke="#a4772d" stroke-width="3"/>
+<circle cx="370" cy="571.493" r="5" fill="#f7f5ef" stroke="#a4772d" stroke-width="3"/>
+<circle cx="790" cy="435.652" r="5" fill="#f7f5ef" stroke="#a4772d" stroke-width="3"/>
+<circle cx="1490" cy="223.102" r="5" fill="#f7f5ef" stroke="#a4772d" stroke-width="3"/>
 <line x1="580" x2="622" y1="143" y2="143" stroke="#60713f" stroke-width="4"/>
 <text x="634" y="150" font-size="18" fill="#242820" font-weight="400" text-anchor="start">Executed scenario demand</text>
-<polyline fill="none" stroke="#60713f" stroke-width="4" points="160,750.51 230,671.697 370,663.467 790,663.467 1490,663.467"/>
-<circle cx="160" cy="750.51" r="5" fill="#f7f5ef" stroke="#60713f" stroke-width="3"/>
-<circle cx="230" cy="671.697" r="5" fill="#f7f5ef" stroke="#60713f" stroke-width="3"/>
+<polyline fill="none" stroke="#60713f" stroke-width="4" points="160,748.97 230,670.286 370,663.467 790,663.467 1490,663.467"/>
+<circle cx="160" cy="748.97" r="5" fill="#f7f5ef" stroke="#60713f" stroke-width="3"/>
+<circle cx="230" cy="670.286" r="5" fill="#f7f5ef" stroke="#60713f" stroke-width="3"/>
 <circle cx="370" cy="663.467" r="5" fill="#f7f5ef" stroke="#60713f" stroke-width="3"/>
 <circle cx="790" cy="663.467" r="5" fill="#f7f5ef" stroke="#60713f" stroke-width="3"/>
 <circle cx="1490" cy="663.467" r="5" fill="#f7f5ef" stroke="#60713f" stroke-width="3"/>
@@ -45,5 +45,5 @@
 <text x="825" y="880" font-size="18" fill="#666b61" font-weight="400" text-anchor="middle">Years from the historical May 11, 2026 model origin</text>
 <line x1="70" y1="911" x2="1530" y2="911" stroke="#d9dccf"/>
 <text x="70" y="946" font-size="18" fill="#666b61" font-weight="400" text-anchor="start">The ceiling is not reserved app capacity. All service flows share it; the inherited N² identity stock remains unthrottled.</text>
-<text x="70" y="975" font-size="17" fill="#666b61" font-weight="400" text-anchor="start">2026-09-05-all-products-v1 · revised 2026-09-05 · baseline 2026-05-11</text>
+<text x="70" y="975" font-size="17" fill="#666b61" font-weight="400" text-anchor="start">2026-10-06-code-v1 · revised 2026-10-06 · baseline 2026-05-11</text>
 </svg>

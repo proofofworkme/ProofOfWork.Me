@@ -1,6 +1,6 @@
 # ProofOfWork Computer growth model
 
-Current scenario: **2026-09-05-all-products-v1**. Revised **2026-09-05**. Historical model origin: **2026-05-11**.
+Current scenario: **2026-10-06-code-v1**. Revised **2026-10-06**. Historical model origin: **2026-05-11**.
 
 This report models all current product surfaces through eleven economic activity lanes and explicit shared or read-only mappings. It is an uncalibrated scenario extension of historical May inputs. It does not publish a new current-chain measurement or change canonical network value, WORK floors, balances, INCB issuance, or frozen sale-ticket terms.
 
@@ -23,6 +23,9 @@ Product roles follow the [public surface map](../README.md), [ID rules](../PROOF
 
 | Product | Role | Economic owner / lane | Activity and boundary |
 | --- | --- | --- | --- |
+| Code | shared | Mail / Files / mailSats / driveSats; codeWrites + codeVbytes (nonadditive) | Wallet-owned repositories and source revision records. Source and controls reuse existing carrier demand and payments once; only Code metadata adds bytes. Reads and downloads create no activity. |
+| Publish | shared | Mail / Files / Browser authoring / Existing content lanes | Articles built from existing public content. Article views, search and identity display do not add payments or transaction demand. |
+| Search | read-only | Underlying activity products / No incremental lane | Search projection of confirmed records. Discovery adds no payment or write to the indexed activity. |
 | Home | read-only | None / No incremental lane | Landing page and apex redirect. Navigation creates no chain activity. |
 | IDs | economic | IDs / Registry events / idSats + computerEventSats | ID stock, registrations, receiver updates, and direct ownership transfers. Identity stock and registry payments are separate components; registration bytes occur once. |
 | Computer | aggregate | Underlying activity products / totalSats | Shell, Mail, Files, embedded workspaces, and NFT route alias. Aggregate of owned activity lanes; the shell and NFT alias add no second copy. |
@@ -166,6 +169,14 @@ Historical observations and their source notes are retained in the [archived rep
 - Blockspace: 350 vB per additional mutation; registration bytes remain only in IDs.
 - Attribution: Known nonmarket ID registry flow only. No generic fee is assigned to Log itself, and AMO mutations remain in AMO.
 
+### Code
+
+- Usage: 4 source puts and 0.3 repository/delete/empty-file controls per ID per year, capped by existing Files and ordinary Mail demand.
+- Value: Zero additional value; underlying Mail/Files payments remain allocated once.
+- Fee elasticity: Inherited from Files for source puts and Mail for controls.
+- Blockspace: 350 additional vB per Code record; a scenario average, not a measured transaction fee.
+- Attribution: Code counts are a subset of carrier transactions. File source bytes remain in Files and controls exclude the Boost-original subset.
+
 ### WORK diagnostic
 
 - Usage: Standalone WORK transfers from Wallet plus WORK sale movements from AMO, referenced once.
@@ -199,13 +210,13 @@ AMO sale lifecycles include list, seal, and buy; canceled lifecycles include lis
 
 | Horizon | Raw demand (vB/year) | Executed (vB/year) | Demand fulfilled | Physical writes/year |
 | --- | ---: | ---: | ---: | ---: |
-| 6 months | 19,614,337,667 | 19,614,337,667 | 100.0000% | 5,396,491 |
-| 12 months | 47,882,710,764 | 47,882,710,764 | 100.0000% | 20,114,358 |
-| 24 months | 147,002,933,084 | 52,560,000,000 | 35.7544% | 37,498,562 |
-| 5 years | 687,865,289,145 | 52,560,000,000 | 7.6410% | 62,782,198 |
-| 10 years | 7,675,114,118,440 | 52,560,000,000 | 0.6848% | 89,680,414 |
-| 25 years | 6,648,302,456,350,000 | 52,560,000,000 | 0.0008% | 104,550,082 |
-| 50 years | 571,742,075,696,000,000,000 | 52,560,000,000 | 0.0000% | 105,118,051 |
+| 6 months | 19,959,345,357 | 19,959,345,357 | 100.0000% | 5,396,491 |
+| 12 months | 48,654,171,411 | 48,654,171,411 | 100.0000% | 20,114,358 |
+| 24 months | 148,931,584,702 | 52,560,000,000 | 35.2914% | 37,012,959 |
+| 5 years | 693,515,635,682 | 52,560,000,000 | 7.5788% | 62,270,687 |
+| 10 years | 7,698,105,437,360 | 52,560,000,000 | 0.6828% | 89,412,572 |
+| 25 years | 6,649,037,590,510,000 | 52,560,000,000 | 0.0008% | 104,538,523 |
+| 50 years | 571,742,291,905,000,000,000 | 52,560,000,000 | 0.0000% | 105,118,011 |
 
 The capacity ceiling is a hypothetical allocation of the entire inherited theoretical chain budget. It does not establish available relay policy, economic demand, app market share, or future protocol capacity. When demand exceeds capacity, new product traffic displaces some execution in every shared service lane; ID stock is still governed by the inherited N² assumption.
 
@@ -216,17 +227,17 @@ The capacity ceiling is a hypothetical allocation of the entire inherited theore
 | Lane (proofs) | 12 months | 5 years | 10 years |
 | --- | ---: | ---: | ---: |
 | IDs | 14,129,084,927 | 757,943,179,259 | 12,549,148,322,100 |
-| Mail | 49,490,545,697 | 202,917,485,008 | 301,113,518,097 |
-| Files / Drive | 16,313,721,914 | 9,129,906,366 | 3,329,459,055 |
-| Browser authoring | 2,718,953,652 | 1,521,651,061 | 554,909,842 |
-| AMO | 1,056,112,332 | 591,048,858 | 215,541,419 |
-| Credits | 246,447,668 | 137,923,408 | 50,297,377 |
-| Boost | 3,193,440,624 | 1,787,195,714 | 651,747,643 |
-| Infinity | 48,350,593 | 27,059,208 | 9,867,847 |
-| Inception | 48,350,593 | 27,059,208 | 9,867,847 |
-| Wallet transfers | 1,053,475,507 | 589,573,170 | 215,003,271 |
-| Registry events | 90,675,419 | 50,746,120 | 18,505,899 |
-| Total | 88,389,158,927 | 974,722,827,379 | 12,855,317,040,400 |
+| Mail | 49,490,545,697 | 201,264,235,896 | 300,214,206,314 |
+| Files / Drive | 16,313,721,914 | 9,055,521,403 | 3,319,515,224 |
+| Browser authoring | 2,718,953,652 | 1,509,253,567 | 553,252,537 |
+| AMO | 1,056,112,332 | 586,233,349 | 214,897,678 |
+| Credits | 246,447,668 | 136,799,692 | 50,147,158 |
+| Boost | 3,193,440,624 | 1,772,634,723 | 649,801,120 |
+| Infinity | 48,350,593 | 26,838,745 | 9,838,376 |
+| Inception | 48,350,593 | 26,838,745 | 9,838,376 |
+| Wallet transfers | 1,053,475,507 | 584,769,684 | 214,361,137 |
+| Registry events | 90,675,419 | 50,332,671 | 18,450,629 |
+| Total | 88,389,158,927 | 972,956,637,734 | 12,854,402,630,700 |
 
 All seven horizon rows and every lane are in the [current JSON](proofofwork-computer-growth-model.json). Shared and read-only surfaces have no independent summand. WORK movement counts and the scenario floor below are diagnostic outputs and must not be added to the total.
 
@@ -234,10 +245,10 @@ All seven horizon rows and every lane are in the [current JSON](proofofwork-comp
 | --- | ---: | ---: | ---: | ---: |
 | 6 months | 1,368 | 23,797,193,680 | 1,133.199699 | 88,450 |
 | 12 months | 3,058 | 88,389,158,927 | 4,209.007568 | 197,779 |
-| 24 months | 7,645 | 221,062,983,778 | 10,526.808751 | 176,787 |
-| 5 years | 22,397 | 974,722,827,379 | 46,415.372732 | 110,686 |
-| 10 years | 91,134 | 12,855,317,040,400 | 612,157.954306 | 40,365 |
-| 25 years | 2,913,967 | 12,830,149,710,800,000 | 610,959,510.037000 | 1,490 |
+| 24 months | 7,645 | 219,343,802,006 | 10,444.942953 | 174,498 |
+| 5 years | 22,397 | 972,956,637,734 | 46,331.268464 | 109,785 |
+| 10 years | 91,134 | 12,854,402,630,700 | 612,114.410985 | 40,244 |
+| 25 years | 2,913,967 | 12,830,149,671,500,000 | 610,959,508.165000 | 1,490 |
 | 50 years | 857,022,930 | 1,109,775,976,120,000,000,000 | 52,846,475,053,200.000000 | 5 |
 
 ## AMO baskets
@@ -264,10 +275,10 @@ The inherited USD path uses `mu = ln(May_2026_USD / May_2016_USD) / 10`, then `U
 | --- | ---: | ---: |
 | 6 months | $104,818.38 | $24,943,833.77 |
 | 12 months | $135,843.03 | $120,070,515.00 |
-| 24 months | $228,158.79 | $504,374,622.16 |
-| 5 years | $1,081,027.35 | $10,537,020,319.80 |
-| 10 years | $14,448,934.29 | $1,857,456,311,980.00 |
-| 25 years | $34,501,122,303.60 | $4,426,545,643,450,000,000.00 |
+| 24 months | $228,158.79 | $500,452,157.88 |
+| 5 years | $1,081,027.35 | $10,517,927,326.80 |
+| 10 years | $14,448,934.29 | $1,857,324,189,520.00 |
+| 25 years | $34,501,122,303.60 | $4,426,545,629,880,000,000.00 |
 | 50 years | $14,717,325,677,700,000.00 | $163,329,344,698,000,000,000,000,000,000.00 |
 
 ![Sensitivity to the USD translation path](proofofwork-computer-model-volatility.svg)
@@ -276,13 +287,14 @@ The compatibility filename `volatility` now contains a translation sensitivity c
 
 | Scenario fee (sat/vB) | 12m total (proofs) | 5y total (proofs) | 10y total (proofs) |
 | --- | ---: | ---: | ---: |
-| 0.01000 | 4,358,770,792 | 220,821,400,960 | 2,578,477,908,590 |
-| 0.00100 | 10,564,248,686 | 513,647,878,541 | 4,307,590,308,950 |
-| 0.00010 | 28,732,117,266 | 686,326,022,484 | 7,383,345,791,470 |
-| 0.00001 | 88,389,158,927 | 974,722,827,379 | 12,855,317,040,400 |
+| 0.01000 | 4,358,770,792 | 220,821,400,960 | 2,578,253,575,650 |
+| 0.00100 | 10,564,248,686 | 513,647,878,541 | 4,307,221,319,470 |
+| 0.00010 | 28,732,117,266 | 684,845,352,951 | 7,382,751,174,150 |
+| 0.00001 | 88,389,158,927 | 972,956,637,734 | 12,854,402,630,700 |
 
 ## Scope limits
 
+- Code source puts are a subset of non-HTML Files demand. Repository creation, deletion and empty source puts share ordinary Mail controls. Only Code metadata adds bytes; counts are nonadditive diagnostics, not another payment or transaction basket.
 - The May 11, 2026 baseline, node sample, adoption horizons, and historical modeled USD path are retained. New scenario assumptions are not current chain calibration.
 - All-product coverage maps every public app to its economic owner or shared/read-only role. It is not an exact canonical replay or a forecast of every possible action variant.
 - Mail means ordinary text messages, including text-only Boost originals, excluding file, HTML-page, and bond publications. Non-HTML files belong to Drive; HTML publication belongs exclusively to Browser authoring, whether carried as a Mail body or Files attachment. Reading the same record adds no transaction or value.

@@ -20,6 +20,9 @@ Before modifying ProofOfWork.Me, read `SOUL.md`.
 
 This repository is built for agent collaboration. `SOUL.md` explains the project's voice, thesis, and long-term direction. Protocol behavior lives in `README.md`, `PROOFOFWORK_IDS.md`, `PROOFOFWORK_DNS.md`, `MARKETPLACE.md`, and the source code.
 
+Code changes also require [CODE.md](CODE.md), the additive repository protocol
+and its complete-discovery, exact-source, local-review and replay contracts.
+
 Public language uses `proofs` for sat-denominated value across ProofOfWork.Me social copy, dashboards, and user-facing labels. Agents must still preserve exact protocol/API names such as `amountSats`, `priceSats`, `paidSats`, `networkValueSats`, and `floorSats`; `proofs` is display language, not a JSON or serialized protocol rename. Public/social copy uses ProofOfWork and ProofOfWork-native language and must not use Bitcoin or BTC. Every ProofOfWork.Me public/social post carries `$WORK $POWB $INCB` unless the user explicitly requests different cashtags. The recurring six-post market structure lives in `SOUL.md`.
 
 ## Phase 1 Launch
@@ -89,6 +92,46 @@ Production app roles:
 - The landing page links to the current public YouTube overview video.
 
 Every public app header and footer should expose the current public surfaces: Home, IDs, DNS, Computer, Desktop, Browser, Boost, Publish, Search, AMO, Credit, Wallet, WORK, Infinity, Inception, Log, and Growth. Public social links should include X, YouTube, and GitHub.
+
+### Code v1 local candidate
+
+The repository includes an implemented candidate for `code.proofofwork.me`,
+with a matching Code workspace inside Computer. This section does not add
+Code to the production launch list above or claim a deployed release.
+Local standalone preview uses `/?code=1`; Computer uses `/?folder=code`.
+`VITE_CODE_ONLY=1` selects its dedicated build. Candidate navigation and
+release maps include Code alongside the existing products.
+
+Code creates public repositories and a linear history of one-file puts and
+deletes. Creation txid is repository identity and initial head; every input's
+hydrated prevout establishes the immutable address owner. Exact-parent commits
+advance only confirmed state. Paths preserve Unicode/case, source preserves
+UTF-8 whitespace/newlines, and invalid/stale attempts remain inspectable.
+Nonempty source reuses one verified `source.txt` / `text/plain` Files attachment
+up to 60,000 raw bytes. Empty files use an explicit zero-byte Code hash
+commitment without an attachment. The aggregate 100,000-byte OP_RETURN script
+limit includes all carrier overhead. Each transaction self-pays at least
+546 proofs before its carriers, uses ordinary Mail/Files economics once and
+adds the separately reviewed miner fee. There is no extra Code registry fee,
+Git transport, private repository, branch, merge, ownership transfer or code
+execution in v1. [CODE.md](CODE.md) defines the exact wire rules.
+
+The first-party reads are `/api/v1/code-repositories` and
+`/api/v1/code-repository`; repository-list responses include complete Code
+activity statistics. They remain unavailable
+until a complete raw Core scan proves Code candidates, malformed history,
+canonical positions and source inputs at a hash-bound checkpoint. The
+supervised indexer `--bootstrap-code-candidates` mode establishes that witness;
+it cannot silently append omitted candidates into already sealed canonical
+history. Existing post-V5 seals that omitted Code candidates require separately
+supervised canonical replay. A recent event page or Search corpus cannot prove
+the repository head. Cursors and selected versions retain their snapshot
+evidence; failed reads show unavailable state instead of an invented empty tree.
+
+The candidate release set is nineteen managed roots: eighteen public builds
+plus NFT's verified Computer alias. Historical fourteen- through eighteen-root
+families remain verifiable. Production configuration, deployment, signing,
+commit and push remain outside this local candidate's scope.
 
 ### Audit Workflow
 

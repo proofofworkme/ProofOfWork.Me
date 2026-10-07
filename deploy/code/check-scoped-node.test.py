@@ -1,0 +1,109 @@
+#!/usr/bin/env python3
+"""Local filesystem tests; never contact production or invoke services."""
+import base64, copy, importlib.util, json, os, pathlib, tempfile, unittest
+from unittest.mock import patch
+
+spec = importlib.util.spec_from_file_location('code_scoped_node', pathlib.Path(__file__).with_name('scoped-node.py'))
+module = importlib.util.module_from_spec(spec); spec.loader.exec_module(module)
+
+class ControllerTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory(); self.addCleanup(self.temp.cleanup)
+        self.root = pathlib.Path(self.temp.name)/'runtime'; self.root.mkdir(mode=0o700)
+        self.backup = pathlib.Path(self.temp.name)/'backup'; self.backup.mkdir(mode=0o700)
+        rows = []; self.metadata = {}
+        for index, path in enumerate(sorted(module.ALLOWED)):
+            before = None if path in module.NEW else b'// accepted Audit31 bytes\nexport {};\n'
+            after = b'// accepted Audit31 bytes\n// additive Code delta\nexport {};\n'
+            file = self.root/path; file.parent.mkdir(parents=True, exist_ok=True)
+            if before is not None: file.write_bytes(before); file.chmod(0o640)
+            if before is not None: (self.backup/f'before-{index}.mjs').write_bytes(before)
+            (self.backup/f'candidate-{index}.mjs').write_bytes(after)
+            self.metadata[path] = (os.getuid(), os.getgid(), 0o640)
+            rows.append({'path':path, 'before':module.sha(before) if before is not None else None,
+                'after':module.sha(after), 'base64':base64.b64encode(after).decode()})
+        for path in ('scripts/backfill-proof-search.mjs', 'package.json', 'package-lock.json'):
+            (self.root/path).parent.mkdir(parents=True,exist_ok=True)
+            (self.root/path).write_bytes(b'{}\n' if path.endswith('.json') else b'export {};\n')
+            (self.root/path).chmod(0o640)
+        deps = {str(path.relative_to(self.root)):module.sha(path.read_bytes())
+            for path in self.root.rglob('*') if path.is_file()}
+        self.manifest = {'format':'proof-of-work-code-scoped-runtime-v1',
+            'releaseId':'abcdef123456-20261007T010000Z', 'services':list(module.UNITS),
+            'sourceCommit':'abcdef123456'+'a'*28, 'baselineHead':'b'*40, 'sources':rows,
+            'dependencies':deps, 'nodeSha256':'c'*64,
+            'searchHold':{'markerSha256':'d'*64, 'bindings':{
+                'releaseId':'abcdef123456-20261007T010000Z', 'attempt':'initial',
+                'files':{name:'e'*64 for name in module.SEARCH}}}}
+
+    def test_exact_manifest_and_complete_fence(self):
+        candidates = module.validate_manifest(self.manifest)
+        module.fence(self.root,self.manifest,candidates)
+
+    def test_allowlist_duplication_or_extra_write_refuses(self):
+        for change in ('duplicate','extra'):
+            manifest = copy.deepcopy(self.manifest)
+            if change == 'duplicate': manifest['sources'][0] = manifest['sources'][1]
+            else: manifest['sources'][0]['path'] = 'server/unrelated-audit.mjs'
+            with self.assertRaisesRegex(ValueError,'allowlist'): module.validate_manifest(manifest)
+
+    def test_candidate_corruption_and_missing_hold_refuse(self):
+        manifest = copy.deepcopy(self.manifest); manifest['sources'][0]['base64']=base64.b64encode(b'changed').decode()
+        with self.assertRaisesRegex(ValueError,'bytes'): module.validate_manifest(manifest)
+        manifest = copy.deepcopy(self.manifest); del manifest['searchHold']
+        with self.assertRaisesRegex(ValueError,'Search hold'): module.validate_manifest(manifest)
+
+    def test_release_id_binds_exact_source_commit(self):
+        manifest=copy.deepcopy(self.manifest); manifest['sourceCommit']='f'*40
+        with self.assertRaisesRegex(ValueError,'bind source commit'): module.validate_manifest(manifest)
+
+    def test_drift_refuses_before_any_write(self):
+        path=self.root/'server/proof-api.mjs'; path.write_bytes(b'unrelated concurrent audit change')
+        with self.assertRaisesRegex(ValueError,'Source changed'): module.fence(self.root,self.manifest,module.validate_manifest(self.manifest))
+        self.assertEqual(path.read_bytes(),b'unrelated concurrent audit change')
+        with self.assertRaisesRegex(ValueError,'unexpected source'):
+            module.install(self.root,self.backup,self.manifest['sources'],self.metadata,True,'test')
+        self.assertFalse((self.root/'server/code-repositories.mjs').exists())
+
+    def test_new_relative_import_requires_dependency_pin(self):
+        file=self.root/'server/unrelated-audit.mjs'; file.write_bytes(b'export {};\n'); file.chmod(0o640)
+        candidates=module.validate_manifest(self.manifest)
+        candidates['server/proof-api.mjs']=b"import './unrelated-audit.mjs';\n"
+        with self.assertRaisesRegex(ValueError,'Unpinned runtime'): module.fence(self.root,self.manifest,candidates)
+
+    def test_symlink_and_path_escape_refuse(self):
+        for path in ('../outside.mjs','server/../../outside.mjs','/tmp/outside.mjs','server//x.mjs'):
+            with self.assertRaises(ValueError): module.source_path(path)
+        target=self.root/'server/proof-api.mjs'; target.unlink(); target.symlink_to(self.root/'server/work-amo-v5.mjs')
+        with self.assertRaisesRegex(ValueError,'Unsafe source'): module.safe_read(target)
+
+    def test_install_and_rollback_preserve_original_bytes_metadata_and_new_helpers(self):
+        module.install(self.root,self.backup,self.manifest['sources'],self.metadata,True,'test')
+        for row in self.manifest['sources']:
+            self.assertEqual(module.sha((self.root/row['path']).read_bytes()),row['after'])
+            self.assertEqual((self.root/row['path']).stat().st_mode & 0o777,0o640)
+        module.install(self.root,self.backup,self.manifest['sources'],self.metadata,False,'test')
+        for row in self.manifest['sources']:
+            self.assertEqual(module.sha((self.root/row['path']).read_bytes()),row['before'] or row['after'])
+
+    def test_partial_install_recovers_without_erasing_external_change(self):
+        real_replace=os.replace; writes=0
+        def interrupted(source,target):
+            nonlocal writes
+            writes+=1
+            if writes==3: raise OSError('injected filesystem failure')
+            return real_replace(source,target)
+        with patch.object(module.os,'replace',side_effect=interrupted):
+            with self.assertRaisesRegex(OSError,'injected'):
+                module.install(self.root,self.backup,self.manifest['sources'],self.metadata,True,'partial')
+        module.install(self.root,self.backup,self.manifest['sources'],self.metadata,False,'partial')
+        for row in self.manifest['sources']:
+            file=self.root/row['path']
+            self.assertEqual(module.sha(file.read_bytes()) if file.exists() else None,
+                row['before'] if row['before'] is not None else row['after'] if file.exists() else None)
+        file=self.root/'server/proof-api.mjs'; file.write_bytes(b'new audit authority')
+        with self.assertRaisesRegex(ValueError,'unexpected source'):
+            module.install(self.root,self.backup,self.manifest['sources'],self.metadata,False,'refuse')
+        self.assertEqual(file.read_bytes(),b'new audit authority')
+
+if __name__ == '__main__': unittest.main()

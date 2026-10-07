@@ -121,6 +121,9 @@ export type GrowthModelInputs = {
   boostMarketWritesPerSale: number;
   boostVbytesPerSale: number;
   idRegistrationFeeSats: number;
+  codeSourcePutsPerIdPerYear: number;
+  codeControlWritesPerIdPerYear: number;
+  codeMetadataVbytesPerWrite: number;
   idMutationFeeSats: number;
   idMutationsPerIdPerYear: number;
   idMutationVbytesPerWrite: number;
@@ -212,6 +215,10 @@ export type BoostGrowthForecastRow = {
   totalWrites: number;
 };
 export type AllProductsGrowthForecastRow = BoostGrowthForecastRow & {
+  codeSourcePuts: number;
+  codeControlWrites: number;
+  codeWrites: number;
+  codeVbytes: number;
   tokenCreateWrites: number;
   tokenMintWrites: number;
   walletSats: number;
@@ -293,6 +300,10 @@ export type AllProductsGrowthForecastRow = BoostGrowthForecastRow & {
   workFloorSats: number;
 };
 export type GrowthForecastRow = BoostGrowthForecastRow & Partial<{
+  codeSourcePuts: number;
+  codeControlWrites: number;
+  codeWrites: number;
+  codeVbytes: number;
   tokenCreateWrites: number;
   tokenMintWrites: number;
   walletSats: number;

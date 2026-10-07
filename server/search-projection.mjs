@@ -1,8 +1,9 @@
 import { createHash } from 'node:crypto';
 import { TextDecoder } from 'node:util';
 import { decodeCanonicalOpReturnOutput, CANONICAL_PROTOCOL_PREFIXES } from './canonical-op-return.mjs';
+import { CODE_EMPTY_SHA256 } from '../src/shared/protocol/codeRepository.mjs';
 
-export const SEARCH_INDEX_VERSION = 'proof-search-v1';
+export const SEARCH_INDEX_VERSION = 'proof-search-v2-code';
 export const SEARCH_MAX_DETAIL_BYTES = 2_000_000;
 export const SEARCH_PROTOCOLS = Object.freeze([...CANONICAL_PROTOCOL_PREFIXES.map(prefix=>prefix.slice(0,-1)),'unknown','transaction']);
 const decoder = new TextDecoder('utf-8', { fatal: true });
@@ -82,14 +83,18 @@ export function buildSearchDocument(source, sourceHash) {
   if (!source || typeof source !== 'object' || !string(source.id) || !/^[0-9a-f]{64}$/u.test(string(source.txid))) throw searchError('Search source has no exact identity.');
   const payload = source.payload && typeof source.payload === 'object' ? source.payload : {};
   const contentBytes = typeof source.contentBase64 === 'string' ? Buffer.from(source.contentBase64, 'base64') : null;
-  const declaredAttachment = payload.attachment ?? source.file;
+  const declaredAttachment = payload.attachment ?? (source.protocol === 'pwc1' ? payload.source : null) ?? source.file;
   const carrierAttachment=searchAttachmentFromCarriers(rawCarriers(source));
   const declaredCarrierMatch=!declaredAttachment || (carrierAttachment &&
     String(declaredAttachment.sha256).toLowerCase()===carrierAttachment.file.sha256 &&
     numeric(declaredAttachment.size??declaredAttachment.size_bytes)===carrierAttachment.file.size &&
     string(declaredAttachment.name)===carrierAttachment.file.name &&
     string(declaredAttachment.mime??declaredAttachment.mimeType??declaredAttachment.mime_type)===carrierAttachment.file.mimeType);
-  const verified = verifiedSearchAttachment(declaredAttachment, contentBytes) ?? (declaredCarrierMatch?carrierAttachment:null);
+  const verified = source.protocol === 'pwc1'
+    ? (declaredAttachment?.size === 0 && declaredAttachment.sha256 === CODE_EMPTY_SHA256 &&
+        payload.metadata?.size === 0 && payload.metadata.sha256 === CODE_EMPTY_SHA256 && !carrierAttachment
+      ? verifiedSearchAttachment(declaredAttachment, Buffer.alloc(0)) : declaredCarrierMatch ? carrierAttachment : null)
+    : verifiedSearchAttachment(declaredAttachment, contentBytes) ?? (declaredCarrierMatch?carrierAttachment:null);
   const file = verified?.file ?? (source.file ? { name: string(source.file.name), mimeType: string(source.file.mimeType ?? source.file.mime_type), size: numeric(source.file.size), sha256: string(source.file.sha256) } : undefined);
   const fileText = verifiedSearchFileText(verified);
   const attachmentInvalid = Boolean(declaredAttachment && !verified);
@@ -97,16 +102,20 @@ export function buildSearchDocument(source, sourceHash) {
     id: source.id, txid: source.txid, protocol: string(source.protocol) || 'unknown', kind: string(source.kind) || 'raw-carrier',
     status: string(source.status), valid: attachmentInvalid ? false : typeof source.valid === 'boolean' ? source.valid : null,
     validationErrors: [...(Array.isArray(source.validationErrors) ? source.validationErrors : []), ...(attachmentInvalid ? ['search-attachment-bytes-unverified'] : [])],
-    title: string(payload.article?.title) || string(payload.title) || string(payload.subject) || string(file?.name) || `${source.protocol || 'Raw'} ${source.kind || 'carrier'}`,
+    title: string(payload.article?.title) || string(payload.title) || string(payload.subject) || string(payload.metadata?.name) || string(payload.path) || string(file?.name) || `${source.protocol || 'Raw'} ${source.kind || 'carrier'}`,
     amountSats: exactProofs(source.amountSats), dataBytes: numeric(source.dataBytes) ?? 0,
     blockHeight: numeric(source.blockHeight), blockHash: string(source.blockHash), blockIndex: numeric(source.blockIndex),
     timestamp: Number.isFinite(Date.parse(source.timestamp)) ? new Date(source.timestamp).toISOString() : '', canonical: source.canonical === true,
     participants: Array.isArray(source.participants) ? source.participants : [], refs: Array.isArray(source.refs) ? source.refs : [],
     source: { vout: numeric(source.vout), ordinal: numeric(source.ordinal), type: string(source.sourceClass) },
+    ...(source.protocol === 'pwc1' ? { codeAuthority: { model: 'exact-code-transaction-observation', applied: null,
+      requiresRepositoryReplay: true } } : {}),
     ...(file ? { file: { ...file, verified: Boolean(verified), textIndexed: Boolean(fileText) } } : {}),
   };
   const rawPayload = string(source.rawPayload);
-  const searchText = [record.title, readableText(record), readableText(payload), rawPayload, string(source.rawHex), readableText(file), fileText].join('\n');
+  const searchablePayload = source.protocol === 'pwc1' && payload.source
+    ? { ...payload, source: { name: payload.source.name, mime: payload.source.mime, size: payload.source.size, sha256: payload.source.sha256 } } : payload;
+  const searchText = [record.title, readableText(record), readableText(searchablePayload), rawPayload, string(source.rawHex), readableText(file), fileText].join('\n');
   return { record, payload, rawPayload, searchText, sourceHash,
     evidence: { sourceHash, rawHex: string(source.rawHex), ...(source.scriptHex ? { scriptHex: source.scriptHex } : {}),
       ...(verified ? { fileSha256: verified.file.sha256, fileSize: verified.file.size, fileVerified: true } : {}),
@@ -136,7 +145,7 @@ WITH tx AS NOT MATERIALIZED (
         FROM proof_indexer.event_participants p WHERE p.event_id=e.event_id),'[]'::jsonb),
       'refs',COALESCE((SELECT jsonb_agg(jsonb_build_object('type',r.ref_type,'value',r.ref_value) ORDER BY r.ref_type,r.ref_value)
         FROM proof_indexer.event_refs r WHERE r.event_id=e.event_id),'[]'::jsonb),
-      'attachmentCarriers',CASE WHEN e.kind='file' OR e.payload ? 'attachment' THEN
+      'attachmentCarriers',CASE WHEN e.kind='file' OR e.payload ? 'attachment' OR e.protocol='pwc1' THEN
         COALESCE((SELECT jsonb_agg(o.payload_text ORDER BY o.vout,o.output_index) FROM proof_indexer.op_returns o
           WHERE o.network=e.network AND o.txid=e.txid AND o.payload_text LIKE 'pwm1:a:%'),'[]'::jsonb) ELSE '[]'::jsonb END) AS source
   FROM proof_indexer.events e JOIN tx t ON t.txid=e.txid WHERE e.network=$1
