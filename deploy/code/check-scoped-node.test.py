@@ -57,6 +57,15 @@ class ControllerTests(unittest.TestCase):
         manifest=copy.deepcopy(self.manifest); manifest['sourceCommit']='f'*40
         with self.assertRaisesRegex(ValueError,'bind source commit'): module.validate_manifest(manifest)
 
+    def test_held_timer_has_no_main_pid_and_service_must_be_drained(self):
+        held={module.SEARCH[0]:{'ActiveState':'inactive','MainPID':'0'},
+            module.SEARCH[1]:{'ActiveState':'inactive'}}
+        module.require_search_held(held)
+        for service,timer in [({'ActiveState':'inactive','MainPID':'123'},held[module.SEARCH[1]]),
+                (held[module.SEARCH[0]],{'ActiveState':'active'})]:
+            with self.assertRaisesRegex(ValueError,'Search not held'):
+                module.require_search_held({module.SEARCH[0]:service,module.SEARCH[1]:timer})
+
     def test_drift_refuses_before_any_write(self):
         path=self.root/'server/proof-api.mjs'; path.write_bytes(b'unrelated concurrent audit change')
         with self.assertRaisesRegex(ValueError,'Source changed'): module.fence(self.root,self.manifest,module.validate_manifest(self.manifest))
