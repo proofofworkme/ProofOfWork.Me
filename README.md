@@ -52,6 +52,7 @@ browser.proofofwork.me
 boost.proofofwork.me
 publish.proofofwork.me
 search.proofofwork.me
+code.proofofwork.me
 amo.proofofwork.me
 marketplace.proofofwork.me -> https://amo.proofofwork.me/
 credit.proofofwork.me
@@ -78,6 +79,7 @@ Production app roles:
 - `boost.proofofwork.me` is the public Proof-ranked social feed for confirmed Boost posts and profiles.
 - `publish.proofofwork.me` is text-only blogging with a dedicated `/write` page, local drafts, full verified articles and Boost's shared profiles, selected PowIDs and engagement. Mail Compose opens the same writer; self-sent articles appear in Inbox and Sent. See [PUBLISH.md](PUBLISH.md).
 - `search.proofofwork.me` is read-only discovery across Computer metaprotocols, public content, verified readable files and source transaction evidence. The same workspace lives at Computer's `?folder=search`. See [SEARCH.md](SEARCH.md).
+- `code.proofofwork.me` is public source repositories with one confirmed main history, exact UTF-8 file commits, verified source/history/diffs and ZIP downloads. The same workspace lives at Computer's `?folder=code`. See [CODE.md](CODE.md).
 - `amo.proofofwork.me` is the canonical Autonomous Money Organization surface. Governed WORK units plus ID, DNS, credit, POWB, and INCB sale-ticket markets share this app.
 - `marketplace.proofofwork.me` is a retained URI-preserving compatibility route to AMO.
 - `credit.proofofwork.me` is the standalone mainnet credit creation and mint app.
@@ -91,16 +93,16 @@ Production app roles:
 - The root landing page can feature public on-chain social proof, with testimonial links pointing directly to their ProofOfWork transactions.
 - The landing page links to the current public YouTube overview video.
 
-Every public app header and footer should expose the current public surfaces: Home, IDs, DNS, Computer, Desktop, Browser, Boost, Publish, Search, AMO, Credit, Wallet, WORK, Infinity, Inception, Log, and Growth. Public social links should include X, YouTube, and GitHub.
+Every public app header and footer should expose the current public surfaces: Home, IDs, DNS, Computer, Desktop, Browser, Boost, Publish, Search, Code, AMO, Credit, Wallet, WORK, Infinity, Inception, Log, and Growth. Public social links should include X, YouTube, and GitHub.
 
-### Code v1 local candidate
+### Code v1
 
-The repository includes an implemented candidate for `code.proofofwork.me`,
-with a matching Code workspace inside Computer. This section does not add
-Code to the production launch list above or claim a deployed release.
+Code is available at `code.proofofwork.me`, with a matching workspace inside
+Computer. Production verification on **2026-10-07** is
+recorded in [audits/2026-10-07-code-v1-production-release.md](audits/2026-10-07-code-v1-production-release.md).
 Local standalone preview uses `/?code=1`; Computer uses `/?folder=code`.
-`VITE_CODE_ONLY=1` selects its dedicated build. Candidate navigation and
-release maps include Code alongside the existing products.
+`VITE_CODE_ONLY=1` selects its dedicated build. Navigation and release maps
+include Code alongside the existing products.
 
 Code creates public repositories and a linear history of one-file puts and
 deletes. Creation txid is repository identity and initial head; every input's
@@ -119,8 +121,10 @@ execution in v1. [CODE.md](CODE.md) defines the exact wire rules.
 The first-party reads are `/api/v1/code-repositories` and
 `/api/v1/code-repository`; repository-list responses include complete Code
 activity statistics. They remain unavailable
-until a complete raw Core scan proves Code candidates, malformed history,
-canonical positions and source inputs at a hash-bound checkpoint. The
+until complete authenticated Core discovery covers earlier uses of the `pwc1:`
+marker, including malformed records, canonical positions and source inputs at
+a hash-bound checkpoint. Core provides accepted-chain/body/consensus authority;
+this record scan does not independently validate block consensus or Merkle proofs. The
 supervised indexer `--bootstrap-code-candidates` mode establishes that witness;
 it cannot silently append omitted candidates into already sealed canonical
 history. Existing post-V5 seals that omitted Code candidates require separately
@@ -128,10 +132,18 @@ supervised canonical replay. A recent event page or Search corpus cannot prove
 the repository head. Cursors and selected versions retain their snapshot
 evidence; failed reads show unavailable state instead of an invented empty tree.
 
-The candidate release set is nineteen managed roots: eighteen public builds
+The current release set is nineteen managed roots: eighteen public builds
 plus NFT's verified Computer alias. Historical fourteen- through eighteen-root
-families remain verifiable. Production configuration, deployment, signing,
-commit and push remain outside this local candidate's scope.
+families remain verifiable. The verified UI was built from `13ddf6d7f401`;
+the active discovery repair derives from `ed0fc2c5df56` while retaining the
+accepted Audit31 runtime overlay. Historical discovery from height 1 completed at 970323 /
+`00000000000000000000d4401afd7a7795ee06e4d333308e61961cece32dd47c`, with no earlier uses
+of the marker. Ordinary scanning then extended the complete marker to 970324;
+independent fresh public Code reads passed at that exact boundary /
+`00000000000000000000bab1afd1d7d07c7b7b177bc836f704f51d3d8b8699ca` on 2026-10-07 at 09:59:55 UTC.
+After publication, they passed again at 970328 /
+`00000000000000000000989d8a9d2814d1ff919799b7b4aa3e214dcdcf6a8bf1` at 10:17:44 UTC. Wallet signing stays local. Live Code signing
+and broadcast were not exercised during release verification.
 
 ### Audit Workflow
 

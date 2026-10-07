@@ -10,9 +10,9 @@ remains available to earlier Log/Boost routes. Search requires no wallet.
 The derived corpus contains current and historical validator events, decoded
 OP_RETURN carriers, undecodable OP_RETURN scripts, source transactions and
 verified file records. Protocol prefixes include `pwid1`, `pwdns1`, `pwm1`,
-`pwb1`, `pwt1` and `pwa1`; a family with no source records remains supported
+`pwb1`, `pwt1`, `pwa1` and `pwc1`; a family with no source records remains supported
 without inventing records. IDs, DNS/subdomains, Mail, Files/HTML, Boost/Publish,
-Credits/WORK, Infinity/Inception and AMO actions retain their original forms.
+Credits/WORK, Infinity/Inception, AMO and Code actions retain their original forms.
 
 Search matches parsed fields, names, identifiers, participants, references,
 exact proof quantities, public text, metadata and raw payloads. Readable file
@@ -108,9 +108,9 @@ remain separately inspectable source records; multiple Search results do not
 represent multiple payments. The existing bounded Search job discovers new tips
 without a schema or historical corpus migration.
 
-## Code v1 local candidate
+## Code v1 integration
 
-The local Code integration adds `pwc1` carriers and `code-repository` /
+The Code integration adds `pwc1` carriers and `code-repository` /
 `code-commit` events to discovery, with repository/parent references, exact
 path, source size/hash and address authority. [CODE.md](CODE.md) defines the
 validator. Verified nonempty source remains the same Files text; empty source
@@ -118,10 +118,13 @@ is reconstructed from its explicit zero-byte Code commitment. Code metadata,
 Mail and raw carriers may each be searchable evidence without representing
 additional payments. Source remains inert text.
 
-The candidate Search codec version changes for a complete derived-corpus
-rebuild. Earlier ready generations retain their original version and evidence;
-the separate bounded Search job preserves all source transactions/events/files.
-Code's confirmed tree and head still require its own complete raw candidate
-discovery and canonical replay. Search results cannot prove that discovery,
-and malformed/stale attempts retain their distinct validity. This candidate
-integration does not claim a deployed Search or Code release.
+The Code-capable Search projection uses `proof-search-v3-code-shared-confirmed`.
+Its production integration was verified on **2026-10-07**, as recorded in
+[audits/2026-10-07-code-v1-production-release.md](audits/2026-10-07-code-v1-production-release.md).
+Earlier ready generations retain their original version and evidence; versioned
+derived-corpus rebuilds and the separate bounded Search job preserve all source
+transactions/events/files. Code's confirmed tree and head still require its own
+complete raw candidate discovery and canonical replay. Search results cannot
+prove that discovery or establish a commit was accepted into the repository
+head. Code observations retain structural record evidence; malformed and stale
+attempts remain inspectable under their distinct validation and replay results.

@@ -173,6 +173,15 @@ must expose their verified boundary and lag. Cursors bind to a coherent
 snapshot and changed checkpoints require restarting pagination. Incomplete
 reads cannot claim no repositories, full history or an authoritative head.
 
+Historical discovery looks for earlier uses of the `pwc1:` marker at protocol
+payload boundaries, including malformed records. These are called candidates
+in discovery metadata; detection does not establish a valid repository or commit.
+Authenticated first-party Core supplies accepted-chain/body/consensus authority.
+The scanner binds header hashes, parent continuity, complete transaction framing
+and exact output scripts, then verifies positive record/source/seal evidence.
+It does not independently validate block consensus or transaction Merkle/witness
+roots. The scan itself requires no wallet signing or broadcast.
+
 The bounded discovery bootstrap scans every Core block from height one with
 authenticated `getblock(hash, 0)`. A server-only walker verifies the requested
 header hash, predecessor hash, canonical CompactSize framing and complete byte
@@ -224,6 +233,24 @@ The canonical database, existing seals, authority services and configuration
 are outside this source controller's write scope. Discovery bootstrap and the
 versioned Search rebuild remain separate supervised steps; source installation
 does not establish complete Code history.
+
+### Production verification — 2026-10-07
+
+Code v1 is available at `code.proofofwork.me` and in Computer. The UI release
+is `13ddf6d7f401-20261007T030045Z`; the active scanner repair derives from
+`ed0fc2c5df56`, preserving the accepted Audit31/native/Search overlay. The
+historical discovery checkpoint completed from height 1 through 970323 /
+`00000000000000000000d4401afd7a7795ee06e4d333308e61961cece32dd47c`, count 0, no blockers,
+digest `38a551871e844eab776d536642267b0d313630a76e5de06240bfb950c9920587`. Ordinary canonical
+scanning extended the still-complete marker to 970324 /
+`00000000000000000000bab1afd1d7d07c7b7b177bc836f704f51d3d8b8699ca`; independent public
+health/fresh-Code/health admission passed there at 2026-10-07 09:59:55 UTC.
+Post-publication admission passed again at 970328 /
+`00000000000000000000989d8a9d2814d1ff919799b7b4aa3e214dcdcf6a8bf1` at 10:17:44 UTC. The release audit records final
+fresh Code reads, Search coverage, UI/Caddy/HTTPS/browser receipts and
+unexercised live transaction paths: [audits/2026-10-07-code-v1-production-release.md](audits/2026-10-07-code-v1-production-release.md).
+These dated observations do not replace the ongoing readiness, reorg,
+source-verification and local-signing rules above.
 
 `scripts/check-code-repositories.mjs` checks canonical codec rejection, exact
 Unicode/content preservation, zero-byte files, raw attachment reconstruction,

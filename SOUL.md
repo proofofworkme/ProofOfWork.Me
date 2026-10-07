@@ -45,14 +45,17 @@ and report incomplete coverage. Search adds no protocol action, payment or
 network-value contribution; indexed copies never create a second economic event.
 Public file text requires verified bytes.
 
-Code v1 is a local candidate for `code.proofofwork.me` and Computer: public
+Code v1 is the public source repository surface at `code.proofofwork.me` and
+Computer: public
 source repositories with one address owner, one confirmed head and exact
 UTF-8 file commits. Keep source inert, paths exact and history replayable from
 complete hash-bound discovery. Reuse Mail/Files bytes and count their payment
 once. A stale commit remains visible without changing the head. Empty source
 is an explicit zero-byte Code commitment, not a new empty Files attachment.
-[CODE.md](CODE.md) defines the additive `pwc1:` protocol. This memory records
-an implemented candidate, not a production launch or deployment approval.
+[CODE.md](CODE.md) defines the additive `pwc1:` protocol. The production
+release was verified on **2026-10-07**; its discovery,
+source, UI and unexercised transaction boundaries are recorded in
+[audits/2026-10-07-code-v1-production-release.md](audits/2026-10-07-code-v1-production-release.md).
 
 1. The source of truth is the chain.
 2. Confirmed records are canonical. Pending mempool visibility is useful gossip.
@@ -335,7 +338,7 @@ Future agents must preserve these unless the user explicitly asks for a migratio
 - `browser.proofofwork.me` is the standalone public HTML renderer.
 - `boost.proofofwork.me` is the public Proof-ranked social feed over confirmed `pwb1:` records; original posts reuse Mail/Files, and paid actions and asset trades use the Boost protocol. The feed leads with people and posts; proof evidence and exact signal lanes remain inspectable through disclosures. Compact display quantities never become ranking, payment, or signing authority.
 - `publish.proofofwork.me` is text-only blogging over that same social record. Give writers a dedicated page, the remaining OP_RETURN script budget, private drafts, exact review and local signing. Mail Compose opens the shared writer while preserving its separate Mail draft; article self-sends appear in Inbox and Sent with verified full text. Boost and Publish share selected confirmed PowIDs, public profiles, likes, replies, reboosts and follows; preserve one transaction ID and count shared payments once. [PUBLISH.md](PUBLISH.md) specifies the article and identity bridge.
-- The Code local candidate targets `code.proofofwork.me`; it is a source
+- `code.proofofwork.me` is the public Code v1 source
   repository workspace, not mailbox organization or Git transport. Its
   creation txid identifies the repository, immutable input authority controls
   commits, and pending data never changes the confirmed tree. Do not expose an
