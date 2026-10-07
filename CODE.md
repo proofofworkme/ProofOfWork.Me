@@ -195,7 +195,10 @@ An approved Code rollout over an active runtime uses
 `deploy/code/scoped-node.py` with an exact eleven-file allowlist, committed
 source identity, before/after hashes and complete dependency pins. It preserves
 active audit changes and immutable rollback evidence, and requires the independent
-Search job's exact held-state receipt before restarting only API and worker.
+Search job's exact held-state receipt before restarting API and worker. It pins
+the existing API gateway socket/service bytes and activation, drains the socket
+before its proxy and the applications, then restores their prior activation
+without changing configuration or enablement.
 Where accepted native transition storage is active, the overlay supplies
 reconstructed full transition records to the unchanged Code seal-closure check.
 The canonical database, existing seals, authority services and configuration
