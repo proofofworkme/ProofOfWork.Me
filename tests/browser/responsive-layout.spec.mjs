@@ -2434,13 +2434,48 @@ test("public menus close on keyboard exit and restore visible focus after resizi
   await expect(page.locator("html")).not.toHaveClass(/app-menu-open/u);
 });
 
-test("Boost footer category menus remain contained on mobile", async ({ page }) => {
+test("Boost mobile menus stay above fixed navigation and contain their products", async ({ page }) => {
   await installApiFixtures(page);
   const baseUrl = COMPUTER_BASE_URL || MARKETPLACE_BASE_URL;
+  const assertCenterIsTouchable = async (target, label) => {
+    const isTouchable = await target.evaluate((element) => {
+      const box = element.getBoundingClientRect();
+      const hit = document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2);
+      return Boolean(hit && element.contains(hit));
+    });
+    expect(isTouchable, label).toBe(true);
+  };
+  const assertBackdropCoversDock = async (label) => {
+    const dock = page.locator(".boost-compact-nav");
+    await expect(dock).toBeVisible();
+    const box = await dock.boundingBox();
+    const backdrop = page.locator(".app-menu-scrim:visible");
+    await expect(backdrop).toBeVisible();
+    const coversDock = await backdrop.evaluate((element, point) =>
+      document.elementFromPoint(point.x, point.y) === element,
+      { x: box.x + 4, y: box.y + box.height / 2 });
+    expect(coversDock, label).toBe(true);
+  };
   for (const width of [320, 390, 480]) {
     await page.setViewportSize({ height: VIEWPORT_HEIGHT, width });
-    await openFixtureRoute(page, surfaceUrl(baseUrl, "/?boost=1"), `Boost footer ${width}px`);
+    await openFixtureRoute(page, surfaceUrl(baseUrl, "/?boost=1"), `Boost menus ${width}px`);
     await expect(page.locator(".boost-public-app")).toBeVisible();
+    const applications = page.locator(".topbar .app-menu-trigger");
+    await applications.click();
+    const applicationSheet = page.getByRole("dialog", { name: "Applications" });
+    await expect(applicationSheet).toBeVisible();
+    const products = applicationSheet.getByRole("menuitem");
+    await expect(products).toHaveCount(17);
+    await products.first().focus();
+    await page.keyboard.press("End");
+    const search = products.last();
+    await expect(search.locator("strong")).toHaveText("SEARCH");
+    await expect(search).toBeFocused();
+    await assertCenterIsTouchable(search, `Boost Search hit target ${width}px`);
+    await assertBackdropCoversDock(`Boost Applications backdrop ${width}px`);
+    await page.keyboard.press("Escape");
+    await expect(applications).toBeFocused();
+
     const footer = page.locator(".app-footer");
     await footer.scrollIntoViewIfNeeded();
     const categories = footer.locator(".domain-nav-groups").getByRole("button");
@@ -2451,7 +2486,13 @@ test("Boost footer category menus remain contained on mobile", async ({ page }) 
     await finance.click();
     const dialog = page.getByRole("dialog", { name: "FINANCE" });
     await expect(dialog).toBeVisible();
-    await expect(dialog.getByRole("menuitem")).toHaveCount(6);
+    const financeProducts = dialog.getByRole("menuitem");
+    await expect(financeProducts).toHaveCount(6);
+    for (const product of await financeProducts.all()) {
+      await product.focus();
+      await assertCenterIsTouchable(product, `Boost footer product hit target ${width}px`);
+    }
+    await assertBackdropCoversDock(`Boost footer backdrop ${width}px`);
     await page.keyboard.press("Escape");
     await expect(finance).toBeFocused();
     await assertNoDocumentOverflow(page, `Boost footer ${width}px`);
