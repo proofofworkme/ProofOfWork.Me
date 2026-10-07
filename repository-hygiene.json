@@ -194,7 +194,8 @@
       "audits/2026-10-04-publish-layout-release.evidence.json",
       "audits/2026-10-04-search-product-release.md",
       "audits/2026-10-04-search-product-release.evidence.json",
-      "audits/2026-10-07-code-v1-production-release.md"
+      "audits/2026-10-07-code-v1-production-release.md",
+      "audits/2026-10-07-grouped-navigation-release.md"
     ],
     "presentation-and-generated-notes": [
       "PROOFOFWORK_GENERAL_DECK.md",
