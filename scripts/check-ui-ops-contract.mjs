@@ -227,7 +227,7 @@ assert.match(publisher, /quoted_reference_pattern[\s\S]*\[\^"'`\?#\\x00-\\x20\]\
 assert.match(publisher, /reference\.startswith\("\/"\)[\s\S]*os\.path\.normpath/u);
 assert.match(publisher, /verify_current_rollback_capability/u);
 assert.match(publisher, /"\$\{provenance_script\}" verify-rollback/u);
-assert.match(publisher, /maximum_dependencies = 1024/u);
+assert.match(publisher, /maximum_dependencies = 1536/u);
 assert.match(publisher, /maximum_reference_edges = 4096/u);
 assert.match(publisher, /maximum_reference_candidates = 1048576/u);
 assert.match(publisher, /maximum_asset_bytes = 64 \* 1024 \* 1024/u);
@@ -261,7 +261,7 @@ assert.match(
   stager,
   /COMPATIBILITY_MODEL = "proofofwork-ui-prior-asset-closure-v1"/u,
 );
-assert.match(stager, /MAXIMUM_DEPENDENCIES = 1024/u);
+assert.match(stager, /MAXIMUM_DEPENDENCIES = 1536/u);
 assert.match(stager, /MAXIMUM_REFERENCE_EDGES = 4096/u);
 assert.match(stager, /MAXIMUM_REFERENCE_CANDIDATES = 1048576/u);
 assert.match(stager, /MAXIMUM_ASSET_BYTES = 64 \* 1024 \* 1024/u);
@@ -431,18 +431,18 @@ sys.dont_write_bytecode = True
 spec = importlib.util.spec_from_file_location("ui_stage_contract", "deploy/proofofwork-ui-release-stage.py")
 stage = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(stage)
-assert stage.MAXIMUM_DEPENDENCIES == 1024
+assert stage.MAXIMUM_DEPENDENCIES == 1536
 assert len(stage.SURFACES) == 19
 publisher = Path("deploy/proofofwork-ui-release-publish.sh").read_text()
 publisher_function = publisher.split("verify_prior_asset_compatibility() {", 1)[1]
 publisher_code = publisher_function.split("<<'PY'\n", 1)[1].split("\nPY\n", 1)[0]
-assert "maximum_dependencies = 1024" in publisher_code
+assert "maximum_dependencies = 1536" in publisher_code
 
 # Execute both shipped parsers at the exact finite reference-candidate ceiling.
 # Seed only the aggregate counter to avoid a million redundant file lookups; the
 # token counting and refusal branches are the actual functions. Dependency copy
 # and publisher accept/reject branches are exercised below with a lowered ceiling
-# after the source-level assertions pin the production 1024-file limit.
+# after the source-level assertions pin the production 1536-file limit.
 assert stage.MAXIMUM_REFERENCE_CANDIDATES == 1048576
 saved_argv = sys.argv
 try:
@@ -517,7 +517,7 @@ with tempfile.TemporaryDirectory(prefix="ui-dependency-contract-") as temporary:
     root = Path(temporary)
     original_maximum_dependencies = stage.MAXIMUM_DEPENDENCIES
     boundary_publisher_code = publisher_code.replace(
-        "maximum_dependencies = 1024",
+        "maximum_dependencies = 1536",
         "maximum_dependencies = 2",
     )
     try:
