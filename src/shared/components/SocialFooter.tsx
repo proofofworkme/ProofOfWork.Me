@@ -1,15 +1,13 @@
 import { GitBranch, X } from "lucide-react";
-import { APP_LINKS, GITHUB_URL, X_URL, YOUTUBE_URL } from "../../app/appLinks";
+import { GITHUB_URL, HOME_APP_URL, LOCAL_HOME_APP_URL, X_URL, YOUTUBE_URL } from "../../app/appLinks";
 import { appHref } from "../../app/routeRegistry";
+import { DomainNav } from "./DomainNav";
 
 export function SocialFooter({ compact = false, quiet = false }: { compact?: boolean; quiet?: boolean }) {
-  const apps = <nav className="footer-app-nav" aria-label="ProofOfWork.Me app links">
-    {APP_LINKS.map(link => <a href={appHref(link.href, link.localHref)} key={link.href}>{link.label}</a>)}
-  </nav>;
   return (
     <footer className={`app-footer${compact ? " compact" : ""}${quiet ? " boost-footer" : ""}`}>
-      <span className="app-footer-brand">ProofOfWork.Me</span>
-      {quiet ? <details className="boost-footer-apps"><summary>Explore ProofOfWork apps</summary>{apps}</details> : apps}
+      <a className="app-footer-brand" href={appHref(HOME_APP_URL, LOCAL_HOME_APP_URL)} aria-label="ProofOfWork.Me home">ProofOfWork.Me</a>
+      <DomainNav placement="footer" />
       <nav className="social-nav" aria-label="Official ProofOfWork.Me links">
         <a
           href={X_URL}

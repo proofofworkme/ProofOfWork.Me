@@ -30,6 +30,7 @@ const files = [
   "src/shared/components/FeeRateControl.tsx",
   "src/shared/components/HeaderActionsMenu.tsx",
   "src/shared/components/ProgressBar.tsx",
+  "src/shared/components/SocialFooter.tsx",
   "src/shared/protocol/idRegistry.ts",
   "src/ui/SegmentedTabs.tsx",
   "src/styles.css",
@@ -219,9 +220,8 @@ function cssContrastRatio(foregroundName, backgroundName) {
   return (lighter + 0.05) / (darker + 0.05);
 }
 
-const max1400Css = cssMediaBlock("max-width: 1400px");
-const max1180Css = cssMediaBlock("max-width: 1180px");
 const max1100Css = cssMediaBlock("max-width: 1100px");
+const max900Css = cssMediaBlock("max-width: 900px");
 const topbarActionsBlock = cssBlock(".topbar-actions");
 const mailSendBlock = cssBlock(".mail-send-button");
 const mailSendReadyBlock = cssBlock('.mail-send-button[data-state="ready"]');
@@ -511,6 +511,40 @@ expect(
 );
 
 const appLinks = contents.get("src/app/appLinks.ts");
+const appLinksRuntimeSource = ts.transpileModule(appLinks, {
+  compilerOptions: {
+    module: ts.ModuleKind.ES2022,
+    target: ts.ScriptTarget.ES2022,
+  },
+}).outputText;
+const { APP_LINKS, APP_MENU_GROUPS } = await import(
+  `data:text/javascript;base64,${Buffer.from(appLinksRuntimeSource).toString("base64")}`
+);
+const expectedAppMenus = [
+  ["UTILITY", ["COMPUTER", "DESKTOP", "BROWSER", "CODE"]],
+  ["ID&SOC", ["ID", "DNS", "BOOST", "PUBLISH"]],
+  ["FINANCE", ["WALLET", "AMO", "CREDIT", "WORK", "INFINITY", "INCEPTION"]],
+  ["INSIGHTS", ["LOG", "GROWTH", "SEARCH"]],
+];
+const menuLinks = APP_MENU_GROUPS?.flatMap((group) => group.links) ?? [];
+expect(
+  "public menus preserve the approved category, product and ordering contract",
+  JSON.stringify(APP_MENU_GROUPS?.map((group) => [
+    group.label,
+    group.links.map((link) => link.displayLabel),
+  ])) === JSON.stringify(expectedAppMenus),
+);
+expect(
+  "public menus include every app once and preserve its canonical label and destinations",
+  menuLinks.length === APP_LINKS.length - 1 &&
+    new Set(menuLinks.map((link) => link.label)).size === menuLinks.length &&
+    APP_LINKS.filter((link) => link.label !== "Home").every((canonical) => {
+      const link = menuLinks.find((candidate) => candidate.label === canonical.label);
+      return link?.href === canonical.href &&
+        link?.localHref === canonical.localHref &&
+        typeof link?.description === "string" && link.description.trim().length > 0;
+    }),
+);
 expect("app links include Wallet", /label:\s*"Wallet"/.test(appLinks));
 expect("app links include Growth", /label:\s*"Growth"/.test(appLinks));
 expect(
@@ -536,13 +570,22 @@ expect(
 expect("app links include no Pay2Speak label", !/Pay2Speak/.test(appLinks));
 
 const domainNav = contents.get("src/shared/components/DomainNav.tsx");
+const socialFooter = contents.get("src/shared/components/SocialFooter.tsx");
+expect(
+  "header and footer render the same approved menu data",
+  /APP_MENU_GROUPS/.test(domainNav) &&
+    /<DomainNav\s+placement="footer"/.test(socialFooter) &&
+    !/APP_LINKS\.map/.test(socialFooter),
+);
 expect(
   "DomainNav has one shared desktop contract",
   !/compact\??:|compact\s*=|domain-nav\.compact/.test(domainNav),
 );
 expect(
   "DomainNav only intercepts explicit Computer-handled navigation",
-  /handled\s*===\s*true/.test(domainNav) && !/handled\s*!==\s*false/.test(domainNav),
+  /onNavigate\?\.\(label\)\s*===\s*true/.test(domainNav) &&
+    /event\.button !== 0 \|\| event\.metaKey \|\| event\.ctrlKey \|\| event\.altKey \|\| event\.shiftKey/.test(domainNav) &&
+    !/handled\s*!==\s*false/.test(domainNav),
 );
 expect(
   "mobile DomainNav is a contained modal sheet with focus restoration",
@@ -1046,9 +1089,7 @@ expect(
     /marketplace\.proofofwork\.me\s*\{[\s\S]*redir https:\/\/amo\.proofofwork\.me\{uri\} 308/.test(
       caddyfile,
     ) &&
-    /window\.location\.hostname === "amo\.proofofwork\.me"/.test(
-      domainNav,
-    ) &&
+    /\["amo\.proofofwork\.me", "marketplace\.proofofwork\.me"\]\.includes\(window\.location\.hostname\)/.test(domainNav) &&
     /link\.label === "AMO"/.test(domainNav),
 );
 expect(
@@ -3067,9 +3108,9 @@ expect(
   /token-wallet-public-app/.test(app) && /token-wallet-workspace/.test(app),
 );
 expect(
-  "desktop nav links collapse only through the shared compact breakpoint",
-  !/\.domain-nav-links\s*\{[\s\S]*display:\s*none/.test(max1400Css) &&
-    !/\.domain-nav-links\s*\{[\s\S]*display:\s*none/.test(max1180Css) &&
+  "public navigation uses category controls instead of selectively hiding app links",
+  !/APP_LINKS\.map/.test(domainNav) &&
+    !/\.domain-nav-links\s+a:nth-child\(/.test(css) &&
     !/domain-nav\.compact/.test(css),
 );
 expect(
@@ -3079,9 +3120,13 @@ expect(
   ),
 );
 expect(
-  "compact nav uses dropdown at the shared breakpoint",
-  /\.domain-nav-links\s*\{[\s\S]*display:\s*none/.test(max1100Css) &&
-    /\.app-menu-trigger\s*\{[\s\S]*display:\s*inline-flex/.test(max1100Css),
+  "compact header uses the full categorized menu at the shared 900px breakpoint",
+  /display:\s*none/.test(cssSelectorBlock(".topbar .grouped-domain-nav .domain-nav-groups", max900Css)) &&
+    /display:\s*inline-flex/.test(cssSelectorBlock(".topbar .grouped-domain-nav .app-menu-trigger", max900Css)),
+);
+expect(
+  "footer categories remain visible when standalone Boost styles load",
+  /display:\s*flex/.test(cssSelectorBlock(".app-footer .domain-nav-footer .domain-nav-groups")),
 );
 expect(
   "topbar is a single flex row and never creates a second nav row",

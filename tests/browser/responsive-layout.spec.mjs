@@ -33,6 +33,12 @@ const VIEWPORT_WIDTHS = [
   1800,
 ];
 const MOBILE_VIEWPORT_WIDTHS = VIEWPORT_WIDTHS.filter((width) => width <= 620);
+const PUBLIC_APP_MENUS = [
+  { label: "UTILITY", products: ["COMPUTER", "DESKTOP", "BROWSER", "CODE"] },
+  { label: "ID&SOC", products: ["ID", "DNS", "BOOST", "PUBLISH"] },
+  { label: "FINANCE", products: ["WALLET", "AMO", "CREDIT", "WORK", "INFINITY", "INCEPTION"] },
+  { label: "INSIGHTS", products: ["LOG", "GROWTH", "SEARCH"] },
+];
 const VIEWPORT_HEIGHT = 900;
 const NOW = "2026-07-22T12:00:00.000Z";
 const HASH = "1".repeat(64);
@@ -974,7 +980,7 @@ async function assertTabControlsLabelledPanel(page, tab, label) {
 }
 
 async function assertMobileDomainNav(page, label) {
-  const trigger = page.locator(".app-menu-trigger").first();
+  const trigger = page.locator(".topbar .app-menu-trigger");
   await expect(trigger).toBeVisible();
   await expect(trigger).toHaveAccessibleName("Open application menu");
   await expect(trigger).toHaveAttribute("aria-expanded", "false");
@@ -985,7 +991,15 @@ async function assertMobileDomainNav(page, label) {
   await expect(trigger).toHaveAttribute("aria-expanded", "true");
   await expect(trigger).toHaveAccessibleName("Close application menu");
   await assertLocatorWithinViewport(page, dialog, `${label} application sheet`);
-  await expect(page.locator(".app-menu-scrim")).toBeVisible();
+  await expect(page.locator(".app-menu-scrim:visible")).toHaveCount(1);
+  for (const group of PUBLIC_APP_MENUS) {
+    await expect(dialog.getByText(group.label, { exact: true })).toBeVisible();
+  }
+  const products = dialog.getByRole("menuitem");
+  await expect(products).toHaveCount(17);
+  for (const [index, product] of PUBLIC_APP_MENUS.flatMap((group) => group.products).entries()) {
+    await expect(products.nth(index)).toContainText(product);
+  }
   await expect
     .poll(() =>
       dialog.evaluate((element) => element.contains(document.activeElement)),
@@ -2032,7 +2046,7 @@ async function assertSingleColumnProtocolTabs(page, label) {
   await assertNoDocumentOverflow(page, label);
 }
 
-async function assertTopbarGeometry(page, label, width) {
+async function assertTopbarGeometry(page, label, width, { hasActions = true } = {}) {
   const topbar = page.locator(".topbar");
   const brand = topbar.locator(".brand");
   const nav = topbar.locator(".domain-nav");
@@ -2040,7 +2054,7 @@ async function assertTopbarGeometry(page, label, width) {
   await expect(topbar, `${label} topbar did not render`).toBeVisible();
   await expect(brand, `${label} brand did not render`).toBeVisible();
   await expect(nav, `${label} app navigation did not render`).toBeVisible();
-  await expect(actions, `${label} header actions did not render`).toBeVisible();
+  if (hasActions) await expect(actions, `${label} header actions did not render`).toBeVisible();
 
   const [brandBox, navBox, actionsBox] = await Promise.all([
     brand.boundingBox(),
@@ -2049,40 +2063,41 @@ async function assertTopbarGeometry(page, label, width) {
   ]);
   expect(brandBox, `${label} brand has no geometry`).not.toBeNull();
   expect(navBox, `${label} app navigation has no geometry`).not.toBeNull();
-  expect(actionsBox, `${label} header actions have no geometry`).not.toBeNull();
+  if (hasActions) expect(actionsBox, `${label} header actions have no geometry`).not.toBeNull();
   expect(
     brandBox.x + brandBox.width,
     `${label} brand overlaps app navigation`,
   ).toBeLessThanOrEqual(navBox.x + 1);
-  expect(
-    navBox.x + navBox.width,
-    `${label} app navigation overlaps header actions`,
-  ).toBeLessThanOrEqual(actionsBox.x + 1);
-  expect(
-    actionsBox.x + actionsBox.width,
-    `${label} header actions escape the viewport`,
-  ).toBeLessThanOrEqual(width + 1);
+  if (hasActions) {
+    expect(
+      navBox.x + navBox.width,
+      `${label} app navigation overlaps header actions`,
+    ).toBeLessThanOrEqual(actionsBox.x + 1);
+    expect(
+      actionsBox.x + actionsBox.width,
+      `${label} header actions escape the viewport`,
+    ).toBeLessThanOrEqual(width + 1);
+  } else {
+    expect(navBox.x + navBox.width, `${label} app navigation escapes the viewport`).toBeLessThanOrEqual(width + 1);
+  }
 
-  const links = nav.locator(".domain-nav-links");
+  const links = nav.locator(".domain-nav-groups");
   const menu = nav.locator(".app-menu-trigger");
-  if (width <= 1100) {
+  if (width <= 900) {
     await expect(menu, `${label} compact app menu is missing`).toBeVisible();
     await expect(
       links,
-      `${label} clipped desktop links are still active`,
+      `${label} desktop category controls are still active`,
     ).toBeHidden();
-  } else if (width <= 1799) {
-    await expect(menu, `${label} compact app menu is missing`).toBeVisible();
-    await expect(links, `${label} priority app links are missing`).toBeVisible();
-    await expect(
-      links.locator("a:visible"),
-      `${label} has no priority app links`,
-    ).not.toHaveCount(0);
-    await assertElementContainsItsLayout(links, `${label} priority app links`);
   } else {
     await expect(menu, `${label} compact app menu did not close`).toBeHidden();
-    await expect(links, `${label} desktop app links are missing`).toBeVisible();
-    await assertElementContainsItsLayout(links, `${label} desktop app links`);
+    await expect(links, `${label} desktop category menus are missing`).toBeVisible();
+    const categories = links.getByRole("button");
+    await expect(categories).toHaveCount(PUBLIC_APP_MENUS.length);
+    for (const [index, group] of PUBLIC_APP_MENUS.entries()) {
+      await expect(categories.nth(index)).toHaveText(group.label);
+    }
+    await assertElementContainsItsLayout(links, `${label} desktop category menus`);
   }
 }
 
@@ -2328,6 +2343,120 @@ async function assertMarketplaceGeometry(page, mode, width) {
     ).toContainText("1-25 of 94");
   }
 }
+
+test("shared header and footer menus preserve approved products and keyboard navigation", async ({ page }) => {
+  await installApiFixtures(page);
+  const baseUrl = COMPUTER_BASE_URL || MARKETPLACE_BASE_URL;
+  for (const width of [390, 900, 901, 1440]) {
+    await page.setViewportSize({ height: VIEWPORT_HEIGHT, width });
+    await openFixtureRoute(page, surfaceUrl(baseUrl, "/?landing=1"), `menus at ${width}px`);
+    await expect(page.locator(".landing-app")).toBeVisible();
+    await assertTopbarGeometry(page, "Home menu navigation", width, { hasActions: false });
+    if (width <= 620) await assertMobileDomainNav(page, "Home");
+    if (width > 620 && width <= 900) {
+      const trigger = page.locator(".topbar .app-menu-trigger");
+      await trigger.click();
+      const popup = page.locator(".grouped-domain-popover:visible");
+      await expect(popup.getByRole("menuitem")).toHaveCount(17);
+      await assertLocatorWithinViewport(page, popup, `compact applications at ${width}px`);
+      await page.keyboard.press("Escape");
+      await expect(trigger).toBeFocused();
+    }
+
+    const navs = [page.locator(".app-footer .domain-nav")];
+    if (width > 900) navs.unshift(page.locator(".topbar .domain-nav"));
+    for (const nav of navs) {
+      const triggers = nav.locator(".domain-nav-groups").getByRole("button");
+      await expect(triggers).toHaveCount(PUBLIC_APP_MENUS.length);
+      for (const [index, group] of PUBLIC_APP_MENUS.entries()) {
+        const trigger = triggers.nth(index);
+        await expect(trigger).toHaveText(group.label);
+        await trigger.click();
+        const popup = page.locator(".grouped-domain-popover:visible");
+        await expect(popup).toHaveCount(1);
+        await assertLocatorWithinViewport(page, popup, `${group.label} at ${width}px`);
+        const products = popup.getByRole("menuitem");
+        await expect(products).toHaveCount(group.products.length);
+        for (const [productIndex, product] of group.products.entries()) {
+          await expect(products.nth(productIndex)).toContainText(product);
+        }
+        await products.first().focus();
+        await page.keyboard.press("End");
+        await expect(products.last()).toBeFocused();
+        await page.keyboard.press("Home");
+        await expect(products.first()).toBeFocused();
+        await page.keyboard.press("ArrowUp");
+        await expect(products.last()).toBeFocused();
+        await page.keyboard.press("ArrowDown");
+        await expect(products.first()).toBeFocused();
+        if (width <= 620) {
+          await products.last().focus();
+          await page.keyboard.press("Tab");
+          await expect(popup.locator(".app-menu-sheet-close")).toBeFocused();
+          await page.keyboard.press("Shift+Tab");
+          await expect(products.last()).toBeFocused();
+        }
+        await page.keyboard.press("Escape");
+        await expect(popup).toHaveCount(0);
+        await expect(trigger).toBeFocused();
+      }
+    }
+    await assertNoDocumentOverflow(page, `shared menus at ${width}px`);
+  }
+});
+
+test("public menus close on keyboard exit and restore visible focus after resizing", async ({ page }) => {
+  await installApiFixtures(page);
+  const baseUrl = COMPUTER_BASE_URL || MARKETPLACE_BASE_URL;
+  await page.setViewportSize({ height: VIEWPORT_HEIGHT, width: 1440 });
+  await openFixtureRoute(page, surfaceUrl(baseUrl, "/?landing=1"), "menu keyboard exit");
+  const utility = page.locator(".topbar .domain-nav-groups").getByRole("button", { name: "UTILITY" });
+  const popup = page.locator(".grouped-domain-popover:visible");
+  await utility.focus();
+  await page.keyboard.press("ArrowUp");
+  await expect(popup.getByRole("menuitem").last()).toBeFocused();
+  await page.keyboard.press("Tab");
+  await expect(popup).toHaveCount(0);
+
+  await utility.focus();
+  await page.keyboard.press("ArrowDown");
+  await expect(popup.getByRole("menuitem").first()).toBeFocused();
+  await page.setViewportSize({ height: VIEWPORT_HEIGHT, width: 390 });
+  const compactTrigger = page.locator(".topbar .app-menu-trigger");
+  await expect(popup).toHaveCount(0);
+  await expect(compactTrigger).toBeFocused();
+  await compactTrigger.click();
+  await expect(page.getByRole("dialog", { name: "Applications" })).toBeVisible();
+  await expect(page.locator("html")).toHaveClass(/app-menu-open/u);
+  await page.setViewportSize({ height: VIEWPORT_HEIGHT, width: 1440 });
+  await expect(popup).toHaveCount(0);
+  await expect(utility).toBeFocused();
+  await expect(page.locator("html")).not.toHaveClass(/app-menu-open/u);
+});
+
+test("Boost footer category menus remain contained on mobile", async ({ page }) => {
+  await installApiFixtures(page);
+  const baseUrl = COMPUTER_BASE_URL || MARKETPLACE_BASE_URL;
+  for (const width of [320, 390, 480]) {
+    await page.setViewportSize({ height: VIEWPORT_HEIGHT, width });
+    await openFixtureRoute(page, surfaceUrl(baseUrl, "/?boost=1"), `Boost footer ${width}px`);
+    await expect(page.locator(".boost-public-app")).toBeVisible();
+    const footer = page.locator(".app-footer");
+    await footer.scrollIntoViewIfNeeded();
+    const categories = footer.locator(".domain-nav-groups").getByRole("button");
+    await expect(categories).toHaveCount(4);
+    await assertElementContainsItsLayout(footer, `Boost footer ${width}px`);
+    await assertLocatorWithinViewport(page, footer.locator(".domain-nav"), `Boost footer menus ${width}px`);
+    const finance = footer.getByRole("button", { name: "FINANCE" });
+    await finance.click();
+    const dialog = page.getByRole("dialog", { name: "FINANCE" });
+    await expect(dialog).toBeVisible();
+    await expect(dialog.getByRole("menuitem")).toHaveCount(6);
+    await page.keyboard.press("Escape");
+    await expect(finance).toBeFocused();
+    await assertNoDocumentOverflow(page, `Boost footer ${width}px`);
+  }
+});
 
 test("mobile navigation, exact metrics, counted AMO tabs, status, and sort remain contained", async ({
   page,
