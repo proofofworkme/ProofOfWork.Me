@@ -137,6 +137,11 @@ def states(units):
     return {unit: dict(line.split('=', 1) for line in ctl('show', unit, '-p', 'ActiveState',
         '-p', 'MainPID', '-p', 'WorkingDirectory').splitlines()) for unit in units}
 
+def require_search_held(search):
+    service, timer = search[SEARCH[0]], search[SEARCH[1]]
+    require(service['ActiveState'] in ('inactive','failed') and service['MainPID'] == '0'
+        and timer['ActiveState'] == 'inactive', 'Search not held')
+
 def durable(path, raw):
     fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
     with os.fdopen(fd, 'wb') as output: output.write(raw); output.flush(); os.fsync(output.fileno())
@@ -183,8 +188,7 @@ def main():
     for name, expected in m['searchHold']['bindings']['files'].items():
         require(sha(safe_read(Path('/etc/systemd/system')/name,65536)) == expected, 'Search unit changed')
     search, authority, services = states(SEARCH), states(AUTHORITY), states(UNITS)
-    require(all(row['ActiveState'] in ('inactive','failed') and row['MainPID'] == '0'
-        for row in search.values()), 'Search not held')
+    require_search_held(search)
     require(all(row['ActiveState'] == 'active' and row['WorkingDirectory'] == str(ROOT) and
         int(row['MainPID']) > 0 for row in services.values()), 'Service baseline changed')
     require(all(row['ActiveState'] == 'active' and int(row['MainPID']) > 0
