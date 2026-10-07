@@ -325,9 +325,9 @@ checks fresh exact-txid confirmed article evidence before rendering the full
 text. Body bytes, whitespace, attachments and ordinary Mail behavior remain
 subject to their existing rules; social actions are not new Mail event kinds.
 
-## Code source repositories — local candidate
+## Code source repositories
 
-Code is a standalone candidate and Computer workspace, not a mailbox
+Code is a standalone public surface and Computer workspace, not a mailbox
 organization folder. Its `pwc1:` creation/commit records define one immutable
 address owner and one confirmed head. Code drafts are browser-local preparation
 state; they do not change ownership, repository history or mailbox organization.
@@ -344,8 +344,9 @@ zero-byte hash commitment with no attachment, preserving existing Files rules.
 The Code reader displays source as inert text, never as wallet-capable HTML or
 executable code. Confirmed trees require complete hash-bound Code discovery;
 pending receipts and stale parents do not move the head. Local review uses the
-shared funding, fee, signature and unknown-outcome recovery contracts. These
-implemented candidate paths do not establish a production Code release.
+shared funding, fee, signature and unknown-outcome recovery contracts. The
+production release and actual unexercised live transaction boundaries are
+recorded in [audits/2026-10-07-code-v1-production-release.md](audits/2026-10-07-code-v1-production-release.md).
 
 ## Boost Profile Images
 

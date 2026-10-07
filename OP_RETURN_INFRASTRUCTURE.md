@@ -1,15 +1,16 @@
 # ProofOfWork OP_RETURN Infrastructure
 
-## Code v1 local candidate and discovery gate
+## Code v1 production surface and discovery gate
 
-The implemented local Code candidate targets `code.proofofwork.me` and
+Code v1 is available at `code.proofofwork.me` and
 Computer's `/?folder=code`, with standalone preview `/?code=1` and build flag
 `VITE_CODE_ONLY=1`. [CODE.md](CODE.md) specifies additive `pwc1:repo` and
 `pwc1:commit` records, raw input authority, exact UTF-8 Files bytes, empty-file
 commitments, one confirmed head and nonadditive Mail/Files accounting. The
 shared runtime is `src/shared/protocol/codeRepository.mjs`; node source
-packaging includes it and the Code readers. This is candidate scope, not a
-production release, live-domain claim or canonical economic migration.
+packaging includes it and the Code readers. The verified release is recorded
+in [audits/2026-10-07-code-v1-production-release.md](audits/2026-10-07-code-v1-production-release.md);
+it introduces no canonical economic migration.
 
 First-party routes are `GET /api/v1/code-repositories` and
 `GET /api/v1/code-repository`. List reads include complete Code activity
@@ -53,15 +54,49 @@ there is no silent total-history truncation. A missing exact path returns
 `file:null`, while verified source includes standard `contentBase64`, exact
 hash/size and raw output evidence.
 
-Candidate UI build, staging, provenance, publishing, capacity and HTTPS maps
+Current UI build, staging, provenance, publishing, capacity and HTTPS maps
 use nineteen managed roots: eighteen public surfaces plus NFT's byte-identical
 Computer alias. Fourteen- through eighteen-root archives/manifests remain
-verifiable under their historical absence rules. Code's candidate Caddy route
-serves `/var/www/proofofwork-code` with the same-origin API proxy. Installed
-production helpers/configuration still require exact-byte review and an
-explicitly approved cutover; the dated production handoffs below remain their
-own evidence and are not relabeled by this local change. Existing capacity,
+verifiable under their historical absence rules. Code's Caddy route serves
+`/var/www/proofofwork-code` with the same-origin API proxy. Every later
+production helper/configuration change still requires exact-byte review and
+an explicitly approved cutover; dated production handoffs remain their own
+evidence and are not relabeled by the current release. Existing capacity,
 retention, lock, rollback and Search-job hold/restore controls remain required.
+
+## Code v1 verified production handoff — 2026-10-07
+
+UI release `13ddf6d7f401-20261007T030045Z` uses source 13dd and tree
+`edc04af413dbabea8fa044bd2677b22cc3543e7a`. The product runtime overlay
+preserves accepted Audit31 P2/P3/native transition storage and Search shared
+confirmed generations. Deployment controller repairs derive from PR102/103;
+only the two server discovery paths changed for PR104/source `ed0fc2c5df56`.
+The verified scoped runtime retains 196 exact path pins and authority identities.
+The full audit preserves earlier refusals, rollback roots, sample/wrapper
+corrections and preserved supervised attempts: [audits/2026-10-07-code-v1-production-release.md](audits/2026-10-07-code-v1-production-release.md).
+
+Historical `canonical-code-candidate-discovery-v1` coverage from height 1
+completed at 970323 / `00000000000000000000d4401afd7a7795ee06e4d333308e61961cece32dd47c`,
+with no earlier uses of the marker, count 0, no blockers and digest
+`38a551871e844eab776d536642267b0d313630a76e5de06240bfb950c9920587`. Ordinary scanning extended
+the complete marker to 970324 / `00000000000000000000bab1afd1d7d07c7b7b177bc836f704f51d3d8b8699ca`.
+Final backend verification retained all 196 source pins, four unit pins and six
+authority identities; Search was unheld/HTTP 200. Independent public Code HTTP 200
+and its snapshot/pagination/statistics matched the exact 970324 canonical
+boundary at 2026-10-07 09:59:55 UTC. After publication, the same pinned runtime
+and independent public admission passed at 970328 /
+`00000000000000000000989d8a9d2814d1ff919799b7b4aa3e214dcdcf6a8bf1` at 10:16:50 and 10:17:44 UTC.
+The separate preceding runtime health timeout remains preserved in the audit;
+no cause is inferred from the later passed gate. Search `proof-search-v3-code-shared-confirmed` coverage,
+all 19 UI roots, Caddy before/after pins, off-host HTTPS and live standalone/
+Computer desktop/mobile browser checks are bound by the audit's final receipts.
+The authenticated Core raw negative walker searches earlier uses of the
+`pwc1:` marker at exact protocol payload boundaries, including malformed records.
+It checks complete transaction framing and exact output scripts; positive
+blocks retain raw/verbose parity, hydration and sealed closure. Core supplies
+accepted-chain/body/consensus authority. The scanner does not independently
+validate block consensus or transaction Merkle/witness roots. Reorg/gap/
+incomplete history still fails closed.
 
 ## Search projection and release contract
 
@@ -118,12 +153,12 @@ shared identity bridge and nonadditive Growth attribution. The node release
 must include `src/shared/protocol/publishArticle.mjs` and the portable signature
 module in `src/features/identity/` imported by the API/indexer. No schema or
 canonical ID/economic migration is required. The prior Publish rollout used
-sixteen public surfaces plus NFT: seventeen managed roots. Search adds the
-seventeenth public surface, bringing current releases to eighteen managed
-roots. Historical fourteen- through seventeen-root archives retain their
+sixteen public surfaces plus NFT: seventeen managed roots. The Search rollout added the
+seventeenth public surface, bringing that historical release family to eighteen
+managed roots. Historical fourteen- through seventeen-root archives retain their
 exact verification compatibility.
 
-Before the local Code candidate, UI orchestration in `deploy/publish/` used
+Before the Code v1 release, UI orchestration in `deploy/publish/` used
 `build.py` to create fresh
 lockfile-installed source, seventeen public surface builds and the copied
 NFT Computer alias. It emits one eighteen-root surfaces bundle, a separate
