@@ -432,11 +432,11 @@ verify_prior_asset_compatibility() {
   elif [[ ! -e "${www_root}/proofofwork-code" && ! -L "${www_root}/proofofwork-code" ]]; then
     prior_surfaces=("${pre_code_surfaces[@]}")
   fi
-  # Bound the compatibility scan so a large retained rollback tree cannot
+  # Bound the nineteen-root compatibility scan to 120 seconds so it cannot
   # hold the deployment lock indefinitely. The manifest-driven checks below
   # remain authoritative; timeout is a safe failure that leaves production
-  # untouched.
-  timeout --signal=TERM --kill-after=5s 45s \
+  # untouched. Keep the five-second kill grace and independent asset limits.
+  timeout --signal=TERM --kill-after=5s 120s \
     /usr/bin/python3 -I - "${www_root}" "${stage_root}" "${prior_surfaces[@]}" <<'PY'
 import hashlib
 import os
