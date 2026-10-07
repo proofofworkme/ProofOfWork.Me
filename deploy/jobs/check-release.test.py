@@ -114,6 +114,19 @@ async function bootstrapJobsCandidates(client) { return 'untouched'; }
             with patch.object(R.subprocess,'run',return_value=result),contextlib.redirect_stdout(io.StringIO()) as printed:
                 with self.assertRaisesRegex(ValueError,'rollout refused'):R.overlay(args)
             self.assertEqual(printed.getvalue(),'');self.assertEqual(json.loads(args.receipt.read_text())['exitCode'],1)
+    def test_remote_timeout_preserves_uncertain_receipt_without_claiming_installed(self):
+        with tempfile.TemporaryDirectory(dir='/tmp') as name:
+            root=Path(name);plan=root/'plan';plan.write_text(json.dumps({'format':'proof-of-work-jobs-rollout-plan-v1','releaseId':'example',
+                'rolloutSupervisorSha256':R.sha((ROOT/'rollout-node.py').read_bytes())}))
+            args=types.SimpleNamespace(plan=plan,receipt=root/'receipt',phase='overlay')
+            timeout=R.subprocess.TimeoutExpired('ssh',1200,output=b'{"hold":"retained"}',stderr=b'controller interrupted')
+            with patch.object(R.subprocess,'run',side_effect=timeout),contextlib.redirect_stdout(io.StringIO()) as printed:
+                with self.assertRaisesRegex(ValueError,'state is uncertain'):R.overlay(args)
+            receipt=json.loads(args.receipt.read_text())
+            self.assertEqual(printed.getvalue(),'');self.assertIsNone(receipt['exitCode'])
+            self.assertEqual(receipt['dispatchStatus'],'uncertain-timeout');self.assertEqual(receipt['phase'],'overlay')
+            self.assertEqual(receipt['stdout'],'{"hold":"retained"}');self.assertEqual(receipt['stderr'],'controller interrupted')
+            self.assertNotIn('installed',receipt)
     def test_creation_only_evidence_refuses_overwrite_and_symlink(self):
         with tempfile.TemporaryDirectory(dir='/tmp') as name:
             path=Path(name)/'receipt';R.save(path,b'original')

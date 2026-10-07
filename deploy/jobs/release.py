@@ -144,9 +144,19 @@ def overlay(args):
     if preview.get('format') != 'proof-of-work-jobs-rollout-plan-v1' or sha(script) != preview[key]:
         raise ValueError('Rollout supervisor differs from the reviewed plan')
     remote_command = shlex.join(['sudo','-n','/usr/bin/python3','-I','-B','-c',script.decode()])
-    result = subprocess.run([*NODE_SSH,remote_command],input=raw,capture_output=True,timeout=1200)
+    try:
+        result = subprocess.run([*NODE_SSH,remote_command],input=raw,capture_output=True,timeout=1200)
+    except subprocess.TimeoutExpired as error:
+        receipt = {'format':'proof-of-work-jobs-local-dispatch-receipt-v1','planSha256':sha(raw),
+            'releaseId':preview['releaseId'],'phase':args.phase,'exitCode':None,
+            'dispatchStatus':'uncertain-timeout','timeoutSeconds':1200,
+            'stdout':(error.stdout or b'').decode(errors='replace')[-1024*1024:],
+            'stderr':(error.stderr or b'').decode(errors='replace')[-65536:]}
+        save(args.receipt, encoded(receipt))
+        raise ValueError('Node rollout timed out; state is uncertain. Inspect preserved receipt and remote controller/hold evidence before recovery: '+str(args.receipt)) from None
     receipt = {'format':'proof-of-work-jobs-local-dispatch-receipt-v1','planSha256':sha(raw),
         'releaseId':preview['releaseId'],'phase':args.phase,'exitCode':result.returncode,
+        'dispatchStatus':'completed' if result.returncode == 0 else 'refused',
         'stdout':result.stdout.decode(errors='replace')[-1024*1024:],
         'stderr':result.stderr.decode(errors='replace')[-65536:]}
     save(args.receipt, encoded(receipt))
