@@ -1,8 +1,9 @@
 #!/usr/bin/python3 -I
 """Hash-fenced Code overlay; Search must already be held by its pinned controller.
 
-Changes only the fixed runtime allowlist and API/worker activation. No database,
-config, timer, Git or authority-service mutation. New helpers survive rollback.
+Changes only the fixed runtime allowlist and API/worker plus pinned gateway
+activation. No database, config, timer, Git or authority-service mutation.
+New helpers survive rollback.
 """
 import base64, datetime, fcntl, hashlib, json, os, re, stat, subprocess, sys
 from pathlib import Path, PurePosixPath
@@ -12,6 +13,7 @@ BACKUPS = Path('/data/proofofwork-release-backups')
 LOCK = Path('/run/proofofwork-audit29-ops.lock')
 HOLD = Path('/run/proofofwork-search-release.hold')
 UNITS = ('proofofwork-api.service', 'proofofwork-indexer-worker.service')
+GATEWAY = ('proofofwork-api-wg.socket', 'proofofwork-api-wg.service')
 AUTHORITY = ('bitcoind.service', 'electrs.service', 'postgresql@16-main.service')
 SEARCH = ('proofofwork-search-index.service', 'proofofwork-search-index.timer')
 ALLOWED = frozenset({'server/canonical-op-return.mjs', 'server/code-repositories.mjs',
@@ -111,6 +113,14 @@ def validate_manifest(m):
     for path, expected in deps.items():
         source_path(path); require(isinstance(expected, str) and SHA.fullmatch(expected), 'Invalid dependency pin')
     require(isinstance(m.get('nodeSha256'), str) and SHA.fullmatch(m['nodeSha256']), 'Missing Node pin')
+    gateway = m.get('gateway')
+    require(isinstance(gateway, dict) and set(gateway) == {'files', 'active', 'unitFileStates'}
+        and all(isinstance(gateway[key], dict) and set(gateway[key]) == set(GATEWAY)
+            for key in gateway), 'Missing gateway pins')
+    require(all(isinstance(value, str) and SHA.fullmatch(value) for value in gateway['files'].values())
+        and all(value in ('active', 'inactive') for value in gateway['active'].values())
+        and all(isinstance(value, str) and value in ('enabled', 'disabled', 'static')
+            for value in gateway['unitFileStates'].values()), 'Invalid gateway pins')
     hold = m.get('searchHold')
     require(isinstance(hold, dict) and set(hold) == {'markerSha256', 'bindings'} and
         SHA.fullmatch(hold['markerSha256']), 'Missing Search hold')
@@ -141,6 +151,37 @@ def require_search_held(search):
     service, timer = search[SEARCH[0]], search[SEARCH[1]]
     require(service['ActiveState'] in ('inactive','failed') and service['MainPID'] == '0'
         and timer['ActiveState'] == 'inactive', 'Search not held')
+
+def gateway_states():
+    return {unit: dict(line.split('=', 1) for line in ctl('show', unit,
+        '-p', 'ActiveState', '-p', 'UnitFileState', '-p', 'MainPID').splitlines()) for unit in GATEWAY}
+
+def require_gateway_baseline(actual, pins):
+    require(all(actual[unit]['ActiveState'] == pins['active'][unit]
+        and actual[unit]['UnitFileState'] == pins['unitFileStates'][unit]
+        for unit in GATEWAY), 'Gateway activation or enablement changed')
+
+def require_apps_drained():
+    gateway = gateway_states()
+    require(all(row['ActiveState'] == 'inactive' for row in gateway.values())
+        and gateway[GATEWAY[1]]['MainPID'] == '0'
+        and all(row['ActiveState'] == 'inactive' and row['MainPID'] == '0'
+            for row in states(UNITS).values()), 'Apps or gateway not drained')
+
+def drain_apps():
+    # Disable socket activation before stopping its Requires=API proxy. This
+    # matches the accepted Audit23 drain and prevents a request canceling stop.
+    for unit in (*GATEWAY, UNITS[1], UNITS[0]):
+        subprocess.run(['/usr/bin/systemctl', 'stop', unit], check=True, timeout=120)
+    require_apps_drained()
+
+def restore_apps(gateway_pins):
+    for unit in UNITS:
+        subprocess.run(['/usr/bin/systemctl', 'start', unit], check=True, timeout=60)
+    for unit in GATEWAY:
+        if gateway_pins['active'][unit] == 'active':
+            subprocess.run(['/usr/bin/systemctl', 'start', unit], check=True, timeout=60)
+    require_gateway_baseline(gateway_states(), gateway_pins)
 
 def durable(path, raw):
     fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
@@ -189,6 +230,9 @@ def main():
         require(sha(safe_read(Path('/etc/systemd/system')/name,65536)) == expected, 'Search unit changed')
     search, authority, services = states(SEARCH), states(AUTHORITY), states(UNITS)
     require_search_held(search)
+    for name, expected in m['gateway']['files'].items():
+        require(sha(safe_read(Path('/etc/systemd/system')/name,65536)) == expected, 'Gateway unit changed')
+    require_gateway_baseline(gateway_states(), m['gateway'])
     require(all(row['ActiveState'] == 'active' and row['WorkingDirectory'] == str(ROOT) and
         int(row['MainPID']) > 0 for row in services.values()), 'Service baseline changed')
     require(all(row['ActiveState'] == 'active' and int(row['MainPID']) > 0
@@ -199,7 +243,7 @@ def main():
     backup = BACKUPS/('code-'+m['releaseId']+'-'+stamp); backup.mkdir(mode=0o700)
     receipt = {'format':m['format'], 'releaseId':m['releaseId'], 'sourceCommit':m['sourceCommit'],
         'baselineHead':head, 'manifestSha256':sha(raw), 'rollbackRoot':str(backup),
-        'dependencyCount':len(m['dependencies']), 'authority':authority, 'installed':False,
+        'dependencyCount':len(m['dependencies']), 'authority':authority, 'gateway':m['gateway'], 'installed':False,
         'rolledBack':False, 'sources':[{k:v for k,v in row.items() if k != 'base64'} for row in m['sources']]}
     def save():
         temp = backup/'receipt.tmp'; durable(temp,(json.dumps(receipt,indent=2)+'\n').encode())
@@ -215,8 +259,7 @@ def main():
     durable(backup/'manifest.json',raw); save(); fence(ROOT,m,candidates)
     try:
         receipt['stopRequested']=True; save()
-        subprocess.run(['/usr/bin/systemctl','stop',*UNITS],check=True,timeout=120)
-        require(all(row['MainPID']=='0' for row in states(UNITS).values()), 'Services not drained')
+        drain_apps()
         require(states(AUTHORITY)==authority and states(SEARCH)==search and safe_read(HOLD,65536)==hold_raw,
             'Unrelated state changed'); fence(ROOT,m,candidates)
         receipt['sourceWritesStarted']=True; save()
@@ -224,7 +267,8 @@ def main():
         require(all(sha(safe_read(ROOT/row['path']))==row['after'] for row in m['sources']), 'Installed bytes differ')
         require(all(sha(safe_read(ROOT/path))==expected for path,expected in m['dependencies'].items()
             if path not in ALLOWED), 'Unrelated source changed')
-        subprocess.run(['/usr/bin/systemctl','start',*UNITS],check=True,timeout=60)
+        require_apps_drained()
+        restore_apps(m['gateway'])
         require(all(row['ActiveState']=='active' and row['WorkingDirectory']==str(ROOT)
             for row in states(UNITS).values()), 'Services not restarted')
         require(states(AUTHORITY)==authority and states(SEARCH)==search and safe_read(HOLD,65536)==hold_raw,
@@ -232,10 +276,10 @@ def main():
         receipt['completedAt']=datetime.datetime.now(datetime.timezone.utc).isoformat(); save(); print(json.dumps(receipt),flush=True)
     except BaseException as error:
         receipt['errorClass']=type(error).__name__
-        subprocess.run(['/usr/bin/systemctl','stop',*UNITS],check=True,timeout=120)
+        drain_apps()
         if receipt.get('sourceWritesStarted'):
             install(ROOT,backup,m['sources'],metadata,False,stamp)
-        subprocess.run(['/usr/bin/systemctl','start',*UNITS],check=True,timeout=60)
+        restore_apps(m['gateway'])
         receipt['rolledBack']=True; receipt['newHelpersRetained']=True; save(); print(json.dumps(receipt),flush=True); raise
 
 if __name__ == '__main__': main()

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Local filesystem tests; never contact production or invoke services."""
-import base64, copy, importlib.util, json, os, pathlib, tempfile, unittest
+import base64, copy, importlib.util, json, os, pathlib, subprocess, tempfile, unittest
 from unittest.mock import patch
 
 spec = importlib.util.spec_from_file_location('code_scoped_node', pathlib.Path(__file__).with_name('scoped-node.py'))
@@ -32,6 +32,9 @@ class ControllerTests(unittest.TestCase):
             'releaseId':'abcdef123456-20261007T010000Z', 'services':list(module.UNITS),
             'sourceCommit':'abcdef123456'+'a'*28, 'baselineHead':'b'*40, 'sources':rows,
             'dependencies':deps, 'nodeSha256':'c'*64,
+            'gateway':{'files':{unit:'f'*64 for unit in module.GATEWAY},
+                'active':{unit:'active' for unit in module.GATEWAY},
+                'unitFileStates':{module.GATEWAY[0]:'enabled',module.GATEWAY[1]:'static'}},
             'searchHold':{'markerSha256':'d'*64, 'bindings':{
                 'releaseId':'abcdef123456-20261007T010000Z', 'attempt':'initial',
                 'files':{name:'e'*64 for name in module.SEARCH}}}}
@@ -65,6 +68,46 @@ class ControllerTests(unittest.TestCase):
                 (held[module.SEARCH[0]],{'ActiveState':'active'})]:
             with self.assertRaisesRegex(ValueError,'Search not held'):
                 module.require_search_held({module.SEARCH[0]:service,module.SEARCH[1]:timer})
+
+    def test_gateway_pins_and_baseline_must_be_exact(self):
+        for key in ('files', 'active', 'unitFileStates'):
+            manifest=copy.deepcopy(self.manifest); del manifest['gateway'][key]
+            with self.assertRaisesRegex(ValueError,'gateway pins'): module.validate_manifest(manifest)
+        pins=self.manifest['gateway']
+        actual={unit:{'ActiveState':pins['active'][unit],
+            'UnitFileState':pins['unitFileStates'][unit]} for unit in module.GATEWAY}
+        module.require_gateway_baseline(actual,pins)
+        actual[module.GATEWAY[0]]['UnitFileState']='disabled'
+        with self.assertRaisesRegex(ValueError,'enablement'): module.require_gateway_baseline(actual,pins)
+
+    def test_socket_activation_cannot_cancel_drain_and_failure_restores_gateway(self):
+        live={unit:'active' for unit in (*module.GATEWAY,*module.UNITS)}; calls=[]
+        pins=self.manifest['gateway']
+        def run(argv,**kwargs):
+            action,unit=argv[1:];calls.append((action,unit))
+            # Production failure: requests on the listening socket activate a
+            # proxy requiring API and cancel the API stop transaction.
+            if action=='stop' and unit==module.UNITS[0] and live[module.GATEWAY[0]]=='active':
+                raise subprocess.CalledProcessError(1,argv,'API stop job canceled')
+            live[unit]='inactive' if action=='stop' else 'active'
+        def gateway():
+            return {unit:{'ActiveState':live[unit],'UnitFileState':pins['unitFileStates'][unit],
+                **({'MainPID':'321' if live[unit]=='active' else '0'} if unit.endswith('.service') else {})}
+                for unit in module.GATEWAY}
+        def states(units):
+            return {unit:{'ActiveState':live[unit],'MainPID':'123' if live[unit]=='active' else '0'} for unit in units}
+        with patch.object(module.subprocess,'run',side_effect=run), patch.object(module,'states',side_effect=states), \
+                patch.object(module,'gateway_states',side_effect=gateway):
+            with self.assertRaises(subprocess.CalledProcessError): run(['/usr/bin/systemctl','stop',module.UNITS[0]])
+            calls.clear(); module.drain_apps()
+            self.assertEqual(calls,[('stop',u) for u in (*module.GATEWAY,module.UNITS[1],module.UNITS[0])])
+            self.assertTrue(all(state=='inactive' for state in live.values()))
+            # The same recovery path is used following partial install failure.
+            module.restore_apps(pins)
+            self.assertEqual(calls[4:],[('start',u) for u in (*module.UNITS,*module.GATEWAY)])
+            self.assertTrue(all(state=='active' for state in live.values()))
+            module.drain_apps(); live[module.GATEWAY[1]]='active'
+            with self.assertRaisesRegex(ValueError,'not drained'): module.require_apps_drained()
 
     def test_drift_refuses_before_any_write(self):
         path=self.root/'server/proof-api.mjs'; path.write_bytes(b'unrelated concurrent audit change')
