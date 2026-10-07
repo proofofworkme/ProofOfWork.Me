@@ -9008,7 +9008,7 @@ pre {
     display: block;
     inset: 0;
     position: fixed;
-    z-index: 65;
+    z-index: 89;
   }
 
   .app-menu-popover {
@@ -9530,6 +9530,7 @@ html
     right: max(12px, env(safe-area-inset-right));
     top: max(12px, env(safe-area-inset-top));
     width: auto;
+    z-index: 90;
   }
   .grouped-domain-popover .domain-menu-products { grid-template-columns: minmax(0, 1fr); }
   .app-footer .domain-nav-footer .domain-menu-trigger { font-size: .76rem; padding: 8px; }
