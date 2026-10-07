@@ -4123,9 +4123,12 @@ executables, then create the
 publisher's exact rollback-parent prerequisite before the first publish:
 
 Before an approved installation, compare each deployed helper with the reviewed
-candidate and reconcile any production differences. The current publisher source
-preserves the 45-second compatibility-scan timeout observed in Audit 19. Do not
-overwrite any additional deployed difference without reviewing it first.
+candidate and reconcile any production differences. Audit 19's 45-second
+compatibility-scan bound remains historical evidence. The current prior-asset
+scan uses a finite 120-second timeout, sends TERM, and retains the five-second
+kill grace. Dependency, edge, candidate, byte, ownership, path, collision,
+capacity, provenance and rollback guards remain independent and unchanged.
+Do not overwrite any additional deployed difference without reviewing it first.
 
 ```bash
 systemctl stop proofofwork-ui-release-provenance.timer \

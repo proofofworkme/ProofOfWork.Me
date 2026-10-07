@@ -12,6 +12,7 @@ import hashlib
 import io
 import json
 import os
+import shlex
 from pathlib import Path
 import subprocess
 import sys
@@ -378,6 +379,93 @@ class ReleaseRefusals(unittest.TestCase):
                 namespace['run'](['/usr/bin/python3', '-I', '-B', '-c', 'import time; time.sleep(3)'],
                                  'too-slow.log', timeout=0.01)
         finally: os.close(descriptor)
+
+
+class PublishCompatibilityTimeout(unittest.TestCase):
+    """Run the actual bounded publisher parser only against isolated local roots."""
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory(prefix='pow-ui-compatibility-timeout-', dir='/tmp')
+        self.base = Path(self.temp.name).resolve()
+        self.live, self.stage = self.base / 'live', self.base / 'stage'
+        self.live.mkdir()
+        self.stage.mkdir()
+        self.surfaces = ('activity', 'browser', 'boost', 'code', 'computer', 'desktop',
+                         'dns', 'growth', 'id', 'inception', 'infinity', 'landing',
+                         'marketplace', 'nft', 'publish', 'search', 'token', 'wallet', 'work')
+        self.asset_bytes = b'export const prior = 1;\n'
+        for surface in self.surfaces:
+            for root in (self.live, self.stage):
+                directory = root / ('proofofwork-' + surface)
+                (directory / 'assets').mkdir(parents=True)
+                (directory / 'assets/prior.js').write_bytes(self.asset_bytes)
+                (directory / 'index.html').write_bytes(b'<script src="/assets/prior.js"></script>')
+        publisher = (ROOT.parent / 'proofofwork-ui-release-publish.sh').read_text()
+        self.function = 'verify_prior_asset_compatibility() {' + publisher.split(
+            'verify_prior_asset_compatibility() {', 1)[1].split(
+            '\n}\n\npassthrough_digest()', 1)[0] + '\n}\n'
+        self.timeout = 'timeout --signal=TERM --kill-after=5s 120s'
+        self.assertEqual(self.function.count(self.timeout), 1)
+        self.assertNotIn('timeout --signal=TERM --kill-after=5s 45s', self.function)
+        self.after_parser = self.base / 'after-parser'
+
+    def tearDown(self):
+        self.temp.cleanup()
+
+    def tree(self):
+        return [(str(path.relative_to(self.base)), path.stat().st_mode,
+                 path.read_bytes() if path.is_file() else None)
+                for root in (self.live, self.stage) for path in sorted(root.rglob('*'))]
+
+    def run_parser(self, scaled_timeout=None):
+        if self.after_parser.exists():
+            self.after_parser.unlink()
+        function = self.function
+        if scaled_timeout is not None:
+            # Change only the time budget in this local fixture; the actual
+            # parser, TERM signal and five-second kill grace remain unchanged.
+            replacement = 'timeout --signal=TERM --kill-after=5s ' + scaled_timeout
+            function = function.replace(self.timeout, replacement)
+            self.assertEqual(function.replace(replacement, self.timeout), self.function)
+        script = ('set -euo pipefail\nwww_root=' + shlex.quote(str(self.live)) +
+                  '\nstage_root=' + shlex.quote(str(self.stage)) + '\nsurfaces=(' +
+                  ' '.join(shlex.quote(surface) for surface in self.surfaces) + ')\n' +
+                  function + '\nverify_prior_asset_compatibility\n: > ' +
+                  shlex.quote(str(self.after_parser)) + '\n')
+        return subprocess.run(['/usr/bin/bash'], input=script, capture_output=True,
+                              text=True, timeout=10)
+
+    def test_valid_prior_closure_passes_actual_120_second_wrapper(self):
+        before = self.tree()
+        result = self.run_parser()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout.strip(),
+                         f'ui_release_compatibility dependencies=19 bytes={19 * len(self.asset_bytes)}')
+        self.assertTrue(self.after_parser.exists())
+        self.assertEqual(self.tree(), before)
+
+    def test_scaled_timeout_refuses_before_next_step_without_changing_roots(self):
+        before = self.tree()
+        result = self.run_parser('0.001s')
+        self.assertEqual(result.returncode, 124, result.stderr)
+        self.assertFalse(self.after_parser.exists())
+        self.assertEqual(self.tree(), before)
+
+    def test_longer_timeout_preserves_missing_and_collision_refusals(self):
+        target = self.stage / 'proofofwork-activity/assets/prior.js'
+        before = self.tree()
+        target.unlink()
+        result = self.run_parser()
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertIn('Staged UI release is missing prior dependency:', result.stderr)
+        self.assertFalse(self.after_parser.exists())
+        target.write_bytes(self.asset_bytes + b'changed')
+        result = self.run_parser()
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertIn('Staged UI compatibility dependency collision differs from prior bytes:', result.stderr)
+        self.assertFalse(self.after_parser.exists())
+        target.write_bytes(self.asset_bytes)
+        self.assertEqual(self.tree(), before)
 
 
 class PublishProvenance(unittest.TestCase):
