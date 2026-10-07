@@ -146,6 +146,8 @@ function quietInputs(overrides = {}) {
     canonicalFee: 0.01,
     blockspaceVbytesPerYear: 1e30,
     mailMessagesPerPairPerYear: 0,
+    codeSourcePutsPerIdPerYear: 0,
+    codeControlWritesPerIdPerYear: 0,
     driveFilesPerIdPerYear: 0,
     browserPagesPerIdPerYear: 0,
     tokenMintsPerIdPerYear: 0,
@@ -167,8 +169,8 @@ function quietInputs(overrides = {}) {
 
 test("all products and workspaces have explicit economic or shared ownership", () => {
   assert.deepEqual(GROWTH_PRODUCT_COVERAGE.map((product) => product.product).sort(), [
-    "amo", "boost", "browser", "computer", "credit", "desktop", "files", "growth",
-    "home", "ids", "inception", "infinity", "log", "mail", "wallet", "work",
+    "amo", "boost", "browser", "code", "computer", "credit", "desktop", "files", "growth",
+    "home", "ids", "inception", "infinity", "log", "mail", "publish", "search", "wallet", "work",
   ]);
   for (const entry of GROWTH_PRODUCT_COVERAGE) {
     for (const field of ["name", "role", "owner", "modeledLane", "activity", "assumption", "source"]) {
@@ -195,7 +197,7 @@ test("all-product lanes share the physical cap and WORK remains nonadditive", ()
       row.tokenCreateWrites * inputs.creditCreateVbytesPerWrite + row.boostVbytes +
       row.marketplaceWrites * inputs.marketplaceVbytesPerWrite + row.walletWrites * inputs.walletVbytesPerTransfer +
       row.infinityWrites * inputs.infinityVbytesPerAction + row.inceptionWrites * inputs.inceptionVbytesPerAction +
-      row.computerEventWrites * inputs.idMutationVbytesPerWrite;
+      row.computerEventWrites * inputs.idMutationVbytesPerWrite + row.codeVbytes;
     close(bytes, row.executedBlockspaceVbytes, `${row.label} all physical bytes`);
     assert.ok(bytes <= inputs.blockspaceVbytesPerYear * (1 + 1e-12));
     close(row.totalWrites, row.idWrites + row.mailWrites + row.driveWrites + row.browserWrites +
@@ -355,4 +357,24 @@ test("generator reproduces all-product and narrow Boost artifacts without touchi
   } finally {
     rmSync(temporaryRoot, { recursive: true, force: true });
   }
+});
+
+test("Code shares carrier value and writes, adds metadata, and uses the shared capacity cap", () => {
+  const inputs = { ...GROWTH_MODEL_INPUTS, blockspaceVbytesPerYear: 1e30, codeSourcePutsPerIdPerYear: 2, codeControlWritesPerIdPerYear: 0.1 };
+  const horizon = inputs.horizons[0];
+  const withCode = growthModelRow(horizon, inputs);
+  const withoutCode = growthModelRow(horizon, { ...inputs, codeSourcePutsPerIdPerYear: 0, codeControlWritesPerIdPerYear: 0 });
+  assert.ok(withCode.codeWrites > 0);
+  assert.ok(withCode.codeSourcePuts <= withCode.driveWrites);
+  assert.ok(withCode.codeControlWrites <= withCode.mailWrites - withCode.boostOriginalPosts);
+  assert.equal(withCode.totalSats, withoutCode.totalSats);
+  assert.equal(withCode.totalWrites, withoutCode.totalWrites);
+  close(withCode.rawBlockspaceVbytes - withoutCode.rawBlockspaceVbytes, withCode.codeVbytes, "Code metadata only");
+  const capped = growthModelRow(horizon, { ...inputs, blockspaceVbytesPerYear: withCode.rawBlockspaceVbytes / 2 });
+  close(capped.codeWrites, withCode.codeWrites / 2, "Code shared throttle");
+  close(capped.codeVbytes, withCode.codeVbytes / 2, "Code metadata shared throttle");
+  assert.equal(GROWTH_VALUE_LANES.some((lane) => lane.key === "codeSats"), false);
+  const saturated = growthModelRow(horizon, { ...inputs, codeSourcePutsPerIdPerYear: 1e15, codeControlWritesPerIdPerYear: 1e15 });
+  assert.equal(saturated.codeSourcePuts, saturated.driveWrites);
+  close(saturated.codeControlWrites, saturated.mailWrites - saturated.boostOriginalPosts, "controls cap without Boost overlap");
 });

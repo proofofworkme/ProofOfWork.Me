@@ -1,7 +1,7 @@
 #!/usr/bin/python3 -I
 """Promote exact Search UI helpers or Caddy config, retaining every prior byte.
 
-Helpers go first. Caddy reload requires the exact eighteen-root release to be
+Helpers go first. Caddy reload requires the exact nineteen-root release to be
 serving and verified. Both phases use the shared deploy lock; timers, holds,
 historical trees and application services remain protected.
 """
@@ -22,7 +22,7 @@ FILES = {
     'deploy/proofofwork-ui-release-publish.sh': '/usr/local/sbin/proofofwork-ui-release-publish',
     'deploy/Caddyfile': '/etc/caddy/Caddyfile',
 }
-SURFACES = 'activity boost browser computer desktop dns growth id inception infinity landing marketplace nft publish search token wallet work'.split()
+SURFACES = 'activity boost browser code computer desktop dns growth id inception infinity landing marketplace nft publish search token wallet work'.split()
 CAPACITY = Path('/usr/local/sbin/proofofwork-ui-capacity')
 RETAINED = Path('/usr/local/sbin/proofofwork-ui-retained-root')
 CADDY = Path('/usr/bin/caddy')
@@ -98,7 +98,7 @@ def check_published(raw, plan):
         manifest.get('release_id') == plan['releaseId'] and manifest.get('commit') == plan['commit'] and
         manifest.get('source_tree') == plan['tree'], 'Caddy requires the exact published Search release')
     names = {key.split('.')[1] for key in manifest if key.startswith('surface.')}
-    require(names == set(SURFACES), 'Caddy requires all eighteen managed roots')
+    require(names == set(SURFACES), 'Caddy requires all nineteen managed roots')
     for name in SURFACES:
         require(HEX64.fullmatch(manifest.get('surface.'+name+'.sha256', '')) and
             re.fullmatch('[1-9][0-9]*', manifest.get('surface.'+name+'.file_count', '')),

@@ -1,4 +1,6 @@
 import { parseBoostTip } from "../src/shared/protocol/boostTip.mjs";
+import { verifyCodeTransaction } from "../src/shared/protocol/codeRepository.mjs";
+import { CODE_DISCOVERY_MODEL, CODE_DISCOVERY_META_KEY, CODE_DISCOVERY_EMPTY_SHA256, advanceCodeCandidateDigest, exactCodeOutputProofs, codeCandidateEventClosure } from "../server/code-repositories.mjs";
 import {
   normalizePublishArticleMetadata, publishArticleBodyFromRecords,
   publishArticleDataCarrierBytes, PUBLISH_ARTICLE_VERIFICATION, PUBLISH_DATA_CARRIER_LIMIT,
@@ -940,7 +942,8 @@ const MEMPOOL_SCAN_SEEN_LIMIT = Number(
   process.env.POW_INDEX_MEMPOOL_SCAN_SEEN_LIMIT ?? 10_000,
 );
 // Only protocols with a canonical block-scan parser/verifier belong here.
-const PROTOCOL_PREFIXES = ["pwm1:", "pwa1:", "pwid1:", "pwdns1:", "pwb1:", "pwt1:"];
+const PROTOCOL_PREFIXES = ["pwm1:", "pwa1:", "pwid1:", "pwdns1:", "pwb1:", "pwt1:", "pwc1:"];
+const BOOTSTRAP_CODE_CANDIDATES_ONLY = process.argv.includes("--bootstrap-code-candidates");
 const MAIL_ATTACHMENT_MAX_BYTES = 60_000;
 const INCLUDE_SCOPED_HOLDERS = !/^(?:0|false|no)$/iu.test(
   String(process.env.POW_INDEX_BACKFILL_HOLDERS ?? "1"),
@@ -1119,6 +1122,7 @@ function assertCanonicalRebuildConfiguration() {
     typeof REBUILD_CREDIT_BALANCES_ONLY !== "undefined" &&
     REBUILD_CREDIT_BALANCES_ONLY;
   const exclusiveMaintenanceModes = [
+    BOOTSTRAP_CODE_CANDIDATES_ONLY,
     HYDRATE_TRANSACTION_DETAILS_ONLY,
     PREPARE_CANONICAL_REBUILD_ONLY,
     PREPARE_CANONICAL_PWT_RANGE_REPLAY_ONLY,
@@ -1142,6 +1146,9 @@ function assertCanonicalRebuildConfiguration() {
     throw new Error(
       "Indexer audit, migration, rebuild, bootstrap, hydration, and repair modes are mutually exclusive.",
     );
+  }
+  if (BOOTSTRAP_CODE_CANDIDATES_ONLY && ((!DRY_RUN && !BITCOIN_RPC_URL) || CANONICAL_REBUILD || /^(?:1|true|yes)$/iu.test(String(process.env.POW_INDEX_DB_SUMMARY_REPAIR ?? "")))) {
+    throw new Error("Code discovery bootstrap requires Core RPC and is exclusive with canonical rebuild or summary repair.");
   }
   if (
     repairCanonicalMailProjectionOnly !== repairCanonicalMailProjectionApply
@@ -1592,6 +1599,7 @@ function pendingOnlyBackfillMaintenanceMode() {
     typeof REPAIR_MARKETPLACE_PROJECTIONS_ONLY !== "undefined" &&
     REPAIR_MARKETPLACE_PROJECTIONS_ONLY;
   return (
+    BOOTSTRAP_CODE_CANDIDATES_ONLY ||
     HYDRATE_TRANSACTION_DETAILS_ONLY ||
     PREPARE_CANONICAL_REBUILD_ONLY ||
     PREPARE_CANONICAL_PWT_RANGE_REPLAY_ONLY ||
@@ -5305,6 +5313,25 @@ function boostItemFromMessage(tx, message) {
 }
 
 function protocolItemsFromTx(tx, message) {
+  if (message.prefix === "pwc1:") {
+    const base = baseProtocolItem(tx, message, "code-commit");
+    const output = item => {
+      const scriptpubkey = String(item?.scriptpubkey ?? item?.scriptPubKey?.hex ?? "");
+      let scriptpubkey_address = "";
+      try { scriptpubkey_address = bitcoin.address.fromOutputScript(Buffer.from(scriptpubkey, "hex"), NETWORK === "livenet" ? bitcoin.networks.bitcoin : bitcoin.networks.testnet); } catch { /* non-address-bearing script */ }
+      return { value: exactCodeOutputProofs(item) ?? "", scriptpubkey, scriptpubkey_address };
+    };
+    const event = verifyCodeTransaction({ txid: tx.txid, status: base.confirmed ? "confirmed" : "pending",
+      blockHeight: base.blockHeight, blockHash: base.blockHash, blockTransactionIndex: base.blockIndex,
+      vin: (tx.vin ?? []).map(input => ({ ...input, ...(input.prevout ? { prevout: output(input.prevout) } : {}) })),
+      vout: (tx.vout ?? []).map(output),
+    }, { sha256: bytes => createHash("sha256").update(bytes).digest("hex") });
+    return [{ ...base, ...event, protocolVout: message.voutIndex, recordOrdinal: 0,
+      amountSats: "0", dataBytes: 0, selfPaymentSats: event?.amountSats ?? "0",
+      title: event?.metadata?.name ?? event?.path ?? "Code candidate",
+      payload: message.text, tags: ["Code"], validationMode: "exact-code-transaction-observation",
+      structuralValid: event?.valid === true, codeAuthority: "requires-complete-repository-head-replay" }];
+  }
   if (message?.decodeValid === false) {
     const invalidKind = {
       "pwa1:": "work-usd-quote",
@@ -5644,7 +5671,7 @@ function rawProtocolItemsForTx(tx, messages) {
     ...canonicalBondMintItemsFromMailItem(mailItem),
     ...messages
       .filter((message) =>
-        ["pwa1:", "pwid1:", "pwdns1:", "pwb1:", "pwt1:"].includes(message?.prefix),
+        ["pwa1:", "pwid1:", "pwdns1:", "pwb1:", "pwt1:", "pwc1:"].includes(message?.prefix),
       )
       .flatMap((message) => protocolItemsFromTx(tx, message)),
   ];
@@ -7813,7 +7840,8 @@ async function canonicalRecoveryItemsForTx(tx, messages, options = {}) {
     if (
       rawItem?.protocol === "pwm1" ||
       rawItem?.protocol === "pwa1" ||
-      rawItem?.protocol === "pwb1"
+      rawItem?.protocol === "pwb1" ||
+      rawItem?.protocol === "pwc1"
     ) {
       normalizedRecovered.push({
         item: rawItem,
@@ -8156,6 +8184,7 @@ async function persistPreparedProtocolItems(client, preparedItems) {
         "pwid1",
         "pwdns1",
         "pwt1",
+        "pwc1",
       ].includes(String(item?.protocol ?? "").trim().toLowerCase());
       const confirmedGoverned =
         item?.confirmed === true && governedProtocol;
@@ -12206,6 +12235,7 @@ function stableEventKey({ item, kind, protocol, sourceLabel, txid }) {
     "pwid1",
     "pwdns1",
     "pwt1",
+    "pwc1",
   ].includes(String(protocol ?? "").trim().toLowerCase());
   const confirmed =
     item?.confirmed === true ||
@@ -12502,7 +12532,7 @@ function canonicalTransactionDetailRows(tx) {
 async function persistCanonicalTransactionDetails(
   client,
   tx,
-  { details = canonicalTransactionDetailRows(tx), spentAt = null } = {},
+  { details = canonicalTransactionDetailRows(tx), spentAt = null, linkCanonicalSpends = true } = {},
 ) {
   const txid = String(tx?.txid ?? "").trim().toLowerCase();
   if (!isHexTxid(txid)) {
@@ -12639,7 +12669,7 @@ async function persistCanonicalTransactionDetails(
       [NETWORK, txid, JSON.stringify(details.opReturns)],
     );
   }
-  if (details.inputs.some((input) => input.prev_txid !== null)) {
+  if (linkCanonicalSpends && details.inputs.some((input) => input.prev_txid !== null)) {
     const lockedSpendLinks = await client.query(
       `
         WITH incoming AS (
@@ -14278,6 +14308,7 @@ async function upsertEvent(client, sourceLabel, item, { preserveCanonicalTransac
     "pwdns1",
     "pwb1",
     "pwt1",
+    "pwc1",
   ].includes(protocol);
   const eventKey = stableEventKey({
     item: indexedInput,
@@ -21583,7 +21614,7 @@ async function prepareCanonicalRebuild(client) {
         WHERE network = $1
           AND protocol = ANY($2::text[])
       `,
-      [NETWORK, ["pwid1", "pwdns1", "pwt1", "pwm1", "pwa1", "pwb1"]],
+      [NETWORK, ["pwid1", "pwdns1", "pwt1", "pwm1", "pwa1", "pwb1", "pwc1"]],
     );
     await client.query(`DELETE FROM proof_indexer.id_records WHERE network = $1`, [
       NETWORK,
@@ -24562,7 +24593,7 @@ export function bindPreparedTransactionsToWorkAmoV5Replay(
   preparedTransactions,
   transition,
 ) {
-  const protocols = new Set(["pwa1", "pwid1", "pwdns1", "pwm1", "pwb1", "pwt1"]);
+  const protocols = new Set(["pwa1", "pwid1", "pwdns1", "pwm1", "pwb1", "pwt1", "pwc1"]);
   const replayByPosition = new Map();
   for (const record of Array.isArray(transition?.replayRecords)
     ? transition.replayRecords
@@ -24913,7 +24944,7 @@ async function workAmoV5CanonicalBlockEventSet(client, transition) {
         AND event_row.status = 'confirmed'
         AND event_row.block_height = $2
         AND event_row.protocol = ANY(
-          ARRAY['pwm1','pwa1','pwid1','pwdns1','pwb1','pwt1']::text[]
+          ARRAY['pwm1','pwa1','pwid1','pwdns1','pwb1','pwt1','pwc1']::text[]
         )
       ORDER BY
         event_row.block_index,
@@ -25310,6 +25341,100 @@ async function persistWorkAmoV5BlockTransition(client, transition) {
       `Canonical AMO V5 transition changed at block ${transition.blockHeight}.`,
     );
   }
+}
+
+async function advanceCodeDiscoveryCheckpoint(client, { height, blockHash, previousBlockHash, candidates }) {
+  const marker = await proofIndexerMetaValue(client, CODE_DISCOVERY_META_KEY);
+  if (marker?.model !== CODE_DISCOVERY_MODEL || marker?.network !== NETWORK || marker?.complete !== true ||
+      marker.indexedThroughBlock !== height - 1 || marker.indexedThroughBlockHash !== previousBlockHash) return;
+  await storeProofIndexerMeta(client, CODE_DISCOVERY_META_KEY, { ...marker,
+    indexedThroughBlock: height, indexedThroughBlockHash: blockHash,
+    candidateCount: marker.candidateCount + candidates.length,
+    candidateSha256: candidates.reduce(advanceCodeCandidateDigest, marker.candidateSha256), generatedAt: new Date().toISOString() });
+}
+
+/** Cold, resumable discovery over all Core blocks. It never resets sealed AMO. */
+async function storedCodeCandidateEventClosure(client, tx, position) {
+  const [events, transition] = await Promise.all([
+    client.query("SELECT * FROM proof_indexer.events WHERE network=$1 AND txid=$2 AND protocol='pwc1'", [NETWORK, tx.txid]),
+    client.query("SELECT block_height,block_hash,payload FROM proof_indexer.work_amo_block_transitions WHERE network=$1 AND block_height=$2 AND block_hash=$3", [NETWORK, position.blockHeight, position.blockHash]),
+  ]);
+  return transition.rows.length === 1 && codeCandidateEventClosure(tx, events.rows, position, transition.rows[0]);
+}
+
+async function bootstrapCodeCandidates(client) {
+  const locked = await client.query("SELECT pg_try_advisory_lock(hashtext($1),hashtext($2)) AS locked", [CODE_DISCOVERY_META_KEY, NETWORK]);
+  if (locked.rows[0]?.locked !== true) throw new Error("Another Code discovery bootstrap is active.");
+  try {
+    const target = await latestBlockScanCheckpoint(client, { useStoredCheckpoint: true });
+    let marker = await proofIndexerMetaValue(client, CODE_DISCOVERY_META_KEY);
+    if (marker && (marker.model !== CODE_DISCOVERY_MODEL || marker.network !== NETWORK || marker.fromHeight !== 1)) throw new Error("Unknown Code discovery metadata; preserve it for operator review.");
+    if (!marker) marker = { model: CODE_DISCOVERY_MODEL, network: NETWORK, fromHeight: 1,
+      indexedThroughBlock: 0, indexedThroughBlockHash: String(await bitcoinRpc("getblockhash", [0])),
+      candidateCount: 0, candidateSha256: CODE_DISCOVERY_EMPTY_SHA256, complete: false, blockedCandidates: [] };
+    if (String(await bitcoinRpc("getblockhash", [marker.indexedThroughBlock])) !== marker.indexedThroughBlockHash) throw new Error("Code discovery checkpoint was reorganized; preserve witnesses and perform supervised replay.");
+    if (marker.complete === true && marker.indexedThroughBlock === target.height && marker.indexedThroughBlockHash === target.blockHash) return marker;
+    const lastGood = marker.complete === true ? marker : marker.lastGood;
+    const maxBlocks = Math.max(1, Math.min(10_000, Math.floor(Number(process.env.POW_INDEX_CODE_BOOTSTRAP_MAX_BLOCKS ?? 1000))));
+    if (!Number.isSafeInteger(maxBlocks)) throw new Error("Invalid Code bootstrap block budget.");
+    let scanned = 0;
+    while (marker.indexedThroughBlock < target.height && scanned < maxBlocks) {
+      const height = marker.indexedThroughBlock + 1;
+      const hash = String(await bitcoinRpc("getblockhash", [height])).toLowerCase();
+      const block = await bitcoinRpc("getblock", [hash, 2]);
+      if (String(block.previousblockhash) !== marker.indexedThroughBlockHash) throw new Error("Code discovery encountered a chain discontinuity.");
+      const candidates = [];
+      const blockedCandidates = [...(marker.blockedCandidates ?? [])];
+      for (const [index, tx] of (block.tx ?? []).entries()) {
+        const messages = protocolMessagesFromTx(tx).filter(message => message.prefix === "pwc1:");
+        if (!messages.length) continue;
+        const raw = await transactionWithInputPrevouts({ ...tx, height, _powBlockIndex: index, _powBlockHash: hash, blocktime: block.time });
+        candidates.push({ raw, messages });
+        if (height >= WORK_AMO_V5_ACTIVATION_HEIGHT) {
+          const closed = await storedCodeCandidateEventClosure(client, raw, { blockHeight: height, blockHash: hash, blockTransactionIndex: index });
+          if (!closed && !blockedCandidates.includes(tx.txid)) blockedCandidates.push(tx.txid);
+        }
+      }
+      if (String(await bitcoinRpc("getblockhash", [height])) !== hash) throw new Error("Code discovery block changed before witness persistence.");
+      if (height === target.height && hash !== target.blockHash) throw new Error("Code discovery target checkpoint changed; preserve witnesses and restart supervised discovery.");
+      await client.query("BEGIN");
+      try {
+        // Existing blocks/transactions remain canonical evidence. Only newly
+        // discovered candidate details are hydrated; post-V5 event seals are
+        // admitted exclusively by the ordinary canonical block sequencer.
+        for (const { raw, messages } of candidates) {
+          await persistCanonicalBlock(client, block, height, hash);
+          await persistCanonicalRawTransaction(client, raw, { blockHash: hash, blockTime: block.time, height });
+          if (height < WORK_AMO_V5_ACTIVATION_HEIGHT) {
+            await persistPreparedProtocolItems(client, messages.flatMap(message => protocolItemsFromTx(raw, message))
+              .map(item => ({ item, sourceLabel: "log" })));
+          }
+        }
+        marker = { ...marker, ...(lastGood ? { lastGood } : {}), indexedThroughBlock: height, indexedThroughBlockHash: hash,
+          candidateCount: marker.candidateCount + candidates.length,
+          candidateSha256: candidates.map(candidate => candidate.raw).reduce(advanceCodeCandidateDigest, marker.candidateSha256),
+          blockedCandidates, complete: height === target.height && blockedCandidates.length === 0,
+          targetHeight: target.height, targetHash: target.blockHash, generatedAt: new Date().toISOString(),
+          reason: blockedCandidates.length ? "historical-code-amo-closure-requires-supervised-canonical-replay" : height < target.height ? "code-discovery-in-progress" : "" };
+        await storeProofIndexerMeta(client, CODE_DISCOVERY_META_KEY, marker);
+        await client.query("COMMIT");
+      } catch (error) { await client.query("ROLLBACK"); throw error; }
+      scanned++;
+    }
+    // A resumed supervised replay can close previously discovered records
+    // without rescanning or erasing the historical discovery evidence.
+    if (marker.indexedThroughBlock === target.height && marker.blockedCandidates?.length) {
+      const rows = await client.query("SELECT txid,raw_tx,block_height,block_hash,block_index FROM proof_indexer.transactions WHERE network=$1 AND txid=ANY($2::text[])", [NETWORK, marker.blockedCandidates]);
+      let closed = rows.rows.length === marker.blockedCandidates.length;
+      for (const row of rows.rows) closed = await storedCodeCandidateEventClosure(client, row.raw_tx,
+        { blockHeight: Number(row.block_height), blockHash: row.block_hash, blockTransactionIndex: Number(row.block_index) }) && closed;
+      if (closed) {
+        marker = { ...marker, complete: true, blockedCandidates: [], reason: "", generatedAt: new Date().toISOString() };
+        await storeProofIndexerMeta(client, CODE_DISCOVERY_META_KEY, marker);
+      }
+    }
+    return { ...marker, scannedBlocks: scanned };
+  } finally { await client.query("SELECT pg_advisory_unlock(hashtext($1),hashtext($2))", [CODE_DISCOVERY_META_KEY, NETWORK]); }
 }
 
 async function latestBlockScanCheckpoint(client, options = {}) {
@@ -26026,6 +26151,9 @@ async function backfillBlockScanSource(client, source) {
         stopReason: nextStopReason,
         tipHeight,
       });
+      await advanceCodeDiscoveryCheckpoint(client, { height, blockHash: nextIndexedThroughBlockHash,
+        previousBlockHash: String(block.previousblockhash).toLowerCase(),
+        candidates: preparedTransactions.filter(prepared => protocolMessagesFromTx(prepared.rawTx).some(message => message.prefix === "pwc1:")).map(prepared => prepared.rawTx) });
       await client.query("COMMIT");
       indexed += blockIndexed;
       skipped += blockSkipped;
@@ -29283,7 +29411,7 @@ async function persistExactWorkQ16PendingWitness(
       [
         NETWORK,
         stage.replayTxids,
-        ["pwa1", "pwid1", "pwdns1", "pwm1", "pwb1", "pwt1"],
+        ["pwa1", "pwid1", "pwdns1", "pwm1", "pwb1", "pwt1", "pwc1"],
       ],
     );
     const expectedStagedEventOutcomes =
@@ -29544,7 +29672,7 @@ async function persistExactWorkQ16PendingWitness(
         "WORK Q16 pending membership contains a malformed or unresolved persisted WORK row.",
       );
     }
-    const governedProtocols = ["pwa1", "pwid1", "pwdns1", "pwm1", "pwb1", "pwt1"];
+    const governedProtocols = ["pwa1", "pwid1", "pwdns1", "pwm1", "pwb1", "pwt1", "pwc1"];
     const projectionEventResult = await client.query(
       `
         SELECT
@@ -30891,7 +31019,7 @@ function assertWorkQ16PendingCompanionCoverage(
   companionPrepared,
   txid,
 ) {
-  const governedProtocols = new Set(["pwa1", "pwid1", "pwdns1", "pwm1", "pwb1"]);
+  const governedProtocols = new Set(["pwa1", "pwid1", "pwdns1", "pwm1", "pwb1", "pwc1"]);
   const records = (Array.isArray(rawRecords) ? rawRecords : []).filter(
     (record) => governedProtocols.has(normalizedLowerText(record?.protocol)),
   );
@@ -31127,7 +31255,7 @@ async function clearWorkQ16PendingStageDecision(client, txid) {
         AND event.protocol = ANY($3::text[])
         AND event.status IN ('pending', 'dropped', 'orphaned')
     `,
-    [NETWORK, txid, ["pwa1", "pwid1", "pwdns1", "pwm1", "pwb1", "pwt1"]],
+    [NETWORK, txid, ["pwa1", "pwid1", "pwdns1", "pwm1", "pwb1", "pwt1", "pwc1"]],
   );
   await client.query(
     `
@@ -31755,6 +31883,12 @@ async function backfillMempoolScanSource(client, source) {
         ];
       });
       const result = await persistPreparedProtocolItems(client, prepared);
+      if (messages.some(message => message.prefix === "pwc1:")) {
+        const evidence = await client.query(`UPDATE proof_indexer.transactions SET raw_tx=COALESCE(raw_tx,'{}'::jsonb)||$3::jsonb,
+          updated_at=now() WHERE network=$1 AND txid=$2 AND status='pending'
+          AND NOT (COALESCE(raw_tx,'{}'::jsonb)?'canonicalBlockScan') RETURNING txid`, [NETWORK, txid, JSON.stringify(hydrated)]);
+        if (evidence.rows.length === 1) await persistCanonicalTransactionDetails(client, hydrated, { linkCanonicalSpends: false });
+      }
       const beforeCommit = await freshRawTransactionFromCore(txid);
       if (!beforeCommit) {
         throw new Error(
@@ -37779,6 +37913,7 @@ if (DRY_RUN) {
           ALLOW_REPAIRABLE_WORK_EVENT_PRECISION_AUDIT,
         auditWorkAtomsOnly: AUDIT_WORK_ATOMS_ONLY,
         dryRun: true,
+        bootstrapCodeCandidatesOnly: BOOTSTRAP_CODE_CANDIDATES_ONLY,
         hydrateTransactionDetailsOnly: HYDRATE_TRANSACTION_DETAILS_ONLY,
         maxPages: MAX_PAGES,
         mempoolScanBudgetMs: MEMPOOL_SCAN_BUDGET_MS,
@@ -37789,7 +37924,7 @@ if (DRY_RUN) {
         pendingOnlyPersistenceHeadroomMs:
           PENDING_ONLY_PERSISTENCE_HEADROOM_MS,
         pendingOnlyVerifierMaxMs: PENDING_ONLY_VERIFIER_MAX_MS,
-        postSourceMaintenance: !PENDING_ONLY_BACKFILL,
+        postSourceMaintenance: !PENDING_ONLY_BACKFILL && !BOOTSTRAP_CODE_CANDIDATES_ONLY,
         verifyWorkAtomsPostBootstrapOnly:
           VERIFY_WORK_ATOMS_POST_BOOTSTRAP_ONLY,
         network: NETWORK,
@@ -37823,9 +37958,9 @@ if (DRY_RUN) {
         prepareCanonicalRebuildOnly: PREPARE_CANONICAL_REBUILD_ONLY,
         prepareCanonicalPwtRangeReplayOnly:
           PREPARE_CANONICAL_PWT_RANGE_REPLAY_ONLY,
-        sources: SOURCES.map((source) => source.label),
-        storeCanonicalSummarySnapshot: STORE_CANONICAL_SUMMARY_SNAPSHOT,
-        storeLedgerSnapshot: STORE_LEDGER_SNAPSHOT,
+        sources: BOOTSTRAP_CODE_CANDIDATES_ONLY ? ["code-core-candidate-discovery"] : SOURCES.map((source) => source.label),
+        storeCanonicalSummarySnapshot: !BOOTSTRAP_CODE_CANDIDATES_ONLY && STORE_CANONICAL_SUMMARY_SNAPSHOT,
+        storeLedgerSnapshot: !BOOTSTRAP_CODE_CANDIDATES_ONLY && STORE_LEDGER_SNAPSHOT,
         transactionDetailHydration: {
           afterBlockIndex: TX_DETAIL_HYDRATION_AFTER_BLOCK_INDEX,
           afterHeight: TX_DETAIL_HYDRATION_AFTER_HEIGHT,
@@ -37852,9 +37987,11 @@ const pool = createProofIndexPool({
 try {
   const client = await pool.connect();
   try {
-    const pwtRangeReplayRuntime =
+    const pwtRangeReplayRuntime = BOOTSTRAP_CODE_CANDIDATES_ONLY ? { active: false } :
       await canonicalPwtRangeReplayRuntime(client);
-    if (HYDRATE_TRANSACTION_DETAILS_ONLY) {
+    if (BOOTSTRAP_CODE_CANDIDATES_ONLY) {
+      console.log(JSON.stringify({ ok: true, network: NETWORK, codeDiscovery: await bootstrapCodeCandidates(client) }, null, 2));
+    } else if (HYDRATE_TRANSACTION_DETAILS_ONLY) {
       const hydration = await hydrateHistoricalCanonicalTransactionDetails(
         client,
       );

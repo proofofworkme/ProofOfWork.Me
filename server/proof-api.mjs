@@ -308,9 +308,11 @@ import {
   normalizeIncbReplaySnapshotDescriptor,
 } from "./incb-range-replay-witness.mjs";
 import { searchPayload, searchDetailPayload } from "./db/search-reader.mjs";
+import { CODE_SNAPSHOT_MODEL, qualifyCodeLogPayload } from "./code-repositories.mjs";
 import {
   compareProofIndexHistoryPayloads,
   proofIndexActivityPayload,
+  proofIndexCodePayload,
   proofIndexAddressMailPayload,
   verifiedMailArticleFields,
   revalidateMailArticleMessage,
@@ -26887,7 +26889,7 @@ function activityKey(item) {
   const protocol = String(item?.protocol ?? "").trim().toLowerCase();
   if (
     item?.confirmed !== true &&
-    ["pwm1", "pwa1", "pwid1", "pwdns1", "pwt1"].includes(protocol)
+    ["pwm1", "pwa1", "pwid1", "pwdns1", "pwt1", "pwc1"].includes(protocol)
   ) {
     const protocolVout = exactPositionInteger("protocolVout");
     const recordOrdinal = exactPositionInteger("recordOrdinal");
@@ -35103,6 +35105,28 @@ async function dnsRegistryPayload(network) {
 }
 
 async function logPayloadWithDnsSubdomainAuthority(payload, network) {
+  const hasCode = [payload?.items, payload?.events, payload?.activity].some(items => Array.isArray(items) && items.some(item => item?.protocol === "pwc1"));
+  if (hasCode) {
+    const params = new URLSearchParams();
+    const checkpointHeight = Number(payload.indexedThroughBlock);
+    const checkpointHash = payload.indexedThroughBlockHash ?? payload.checkpointHash;
+    if (Number.isSafeInteger(checkpointHeight) && checkpointHeight > 0 && /^[0-9a-f]{64}$/u.test(checkpointHash ?? "")) {
+      params.set("snapshot", Buffer.from(JSON.stringify({ model: CODE_SNAPSHOT_MODEL, network, checkpointHeight, checkpointHash })).toString("base64url"));
+    }
+    try {
+      const state = await proofIndexCodePayload(network, params, { events: true, verifyCheckpoint: async height => {
+        const result = await bitcoinRpc("getblockhash", [height]); return result?.ok ? result.result : null;
+      } });
+      payload = qualifyCodeLogPayload(payload, [...state.events, ...state.pendingEvents], state.snapshot);
+    } catch (error) {
+      const qualify = item => item?.protocol === "pwc1" ? { ...item, applied: false,
+        codeAuthority: { ready: false, reason: "code-discovery-unavailable", detail: errorSummary(error) } } : item;
+      payload = { ...payload,
+        ...(Array.isArray(payload.items) ? { items: payload.items.map(qualify) } : {}),
+        ...(Array.isArray(payload.events) ? { events: payload.events.map(qualify) } : {}),
+        ...(Array.isArray(payload.activity) ? { activity: payload.activity.map(qualify) } : {}) };
+    }
+  }
   if (!dnsSubdomainLogPayloadHasChildren(payload)) return payload;
   try {
     return qualifyDnsSubdomainLogPayload(payload, await dnsRegistryPayload(network));
@@ -80882,6 +80906,26 @@ async function handleRequest(request, response) {
         }
       }
       errorResponse(response, 404, "Database event history is not available.");
+      return;
+    }
+
+    if (url.pathname === "/api/v1/code-repositories" || url.pathname === "/api/v1/code-repository") {
+      const payload = await proofIndexCodePayload(network, url.searchParams, {
+        detail: url.pathname === "/api/v1/code-repository",
+        verifyCheckpoint: async height => {
+          const result = await bitcoinRpc("getblockhash", [height]);
+          return result?.ok ? result.result : null;
+        },
+      });
+      if (freshRead && !url.searchParams.has("snapshot") && !url.searchParams.has("cursor")) {
+        const codeReadGate = canonicalReadGate ?? await canonicalPublicReadGate(network, { force: true });
+        if (codeReadGate?.available !== true || codeReadGate?.atTip !== true ||
+            payload.indexedThroughBlock !== Number(codeReadGate.indexedThroughBlock) ||
+            payload.indexedThroughBlockHash !== codeReadGate.canonicalHash) {
+          throw freshDataUnavailableError("Code discovery has not reached the exact canonical checkpoint.");
+        }
+      }
+      jsonResponse(response, 200, payload, "no-store");
       return;
     }
 

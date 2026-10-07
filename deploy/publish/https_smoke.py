@@ -29,7 +29,7 @@ HOSTS = {
     'inception':'inception.proofofwork.me', 'infinity':'infinity.proofofwork.me',
     'landing':'www.proofofwork.me', 'marketplace':'amo.proofofwork.me',
     'publish':'publish.proofofwork.me', 'token':'credit.proofofwork.me', 'wallet':'wallet.proofofwork.me',
-    'search':'search.proofofwork.me',
+    'search':'search.proofofwork.me', 'code':'code.proofofwork.me',
     'work':'work.proofofwork.me',
 }
 MAX_FILE_BYTES = 64*1024**2
@@ -167,7 +167,7 @@ def check(args,receipt):
             if total_declared>MAX_ARCHIVE_BYTES: raise ValueError('Uncompressed archive byte bound exceeded')
             if surface=='nft': continue
             files.append((member,surface,'/'.join(parts[2:])))
-        if surface_set != set(HOSTS)|{'nft'}: raise ValueError('Archive surface set differs from all 18 managed roots')
+        if surface_set != set(HOSTS)|{'nft'}: raise ValueError('Archive surface set differs from all 19 managed roots')
         receipt['archiveFilesSkippedNft'] = sum(1 for m in members if m.isfile() and PurePosixPath(m.name).parts[1]=='nft')
         receipt['expectedPublicFiles'] = len(files)
         # Extract on one thread, then keep only a bounded batch of <=8 expected

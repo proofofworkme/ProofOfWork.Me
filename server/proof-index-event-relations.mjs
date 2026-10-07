@@ -271,6 +271,11 @@ export function proofIndexEventRefsForItem(item) {
   add("boost-txid", source.boostTxid);
   add("target-txid", source.targetTxid);
   add("parent-txid", source.parentTxid);
+  add("repository-txid", source.repoTxid);
+  if (source.protocol === "pwc1") {
+    add("source-path", source.path);
+    add("source-sha256", source.metadata?.sha256 ?? source.source?.sha256);
+  }
   add("closed-txid", source.closedTxid);
   add("seal-txid", source.sealTxid);
   for (const credit of Array.isArray(source.attachedCredits)

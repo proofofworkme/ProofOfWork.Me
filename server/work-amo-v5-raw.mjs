@@ -1,5 +1,7 @@
 import { createHash } from "node:crypto";
 import * as bitcoin from "bitcoinjs-lib";
+import { verifyCodeTransaction } from "../src/shared/protocol/codeRepository.mjs";
+import { exactCodeOutputProofs } from "./code-repositories.mjs";
 import {
   DNS_SUBDOMAIN_ACTIVATION_HEIGHT,
   DNS_SUBDOMAIN_PREFIX,
@@ -4093,6 +4095,28 @@ function evaluatePwb() {
   };
 }
 
+// Code is a chain-readable observation of the same ordinary Mail envelope.
+// It cannot claim an output, charge another transaction fee, or mutate AMO.
+function evaluatePwc(record) {
+  const output = value => ({
+    value: exactCodeOutputProofs(value) ?? "",
+    scriptpubkey: exactTransactionOutputScript(value) ?? "",
+    scriptpubkey_address: outputAddress(value),
+  });
+  const event = verifyCodeTransaction({
+    txid: record.txid,
+    status: "confirmed",
+    ...record.position,
+    vin: (record.tx.vin ?? []).map(input => ({ ...input, prevout: output(input.prevout) })),
+    vout: (record.tx.vout ?? []).map(output),
+  }, { sha256: bytes => createHash("sha256").update(bytes).digest("hex") });
+  if (!event?.valid) return invalidOutcome(event?.validationErrors?.[0] ?? "code-record-invalid", event?.metadata ?? null, event?.kind ?? "code-commit");
+  const { source, ...observation } = event;
+  return { derived: [], output: { ...observation, amountSats: "0", dataBytes: 0 }, parsed: event.metadata,
+    reasonCode: "", semanticKind: event.kind, stateDelta: emptyStateDelta(),
+    chargesTransactionFee: false, valid: true };
+}
+
 function evaluateRecord(record, context) {
   if (record.protocol === "pwa1") {
     return evaluatePwa(record, context);
@@ -4111,6 +4135,9 @@ function evaluateRecord(record, context) {
   }
   if (record.protocol === "pwb1") {
     return evaluatePwb();
+  }
+  if (record.protocol === "pwc1") {
+    return evaluatePwc(record);
   }
   return invalidOutcome(
     "work-amo-v5-raw-protocol-unsupported",
@@ -4133,7 +4160,7 @@ function canonicalRecord(record) {
   if (
     !txid ||
     !position ||
-    !["pwa1", "pwm1", "pwid1", "pwdns1", "pwb1", "pwt1"].includes(protocol) ||
+    !["pwa1", "pwm1", "pwid1", "pwdns1", "pwb1", "pwt1", "pwc1"].includes(protocol) ||
     !record?.tx ||
     !transactionMinerFeeSats ||
     (

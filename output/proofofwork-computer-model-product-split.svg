@@ -18,75 +18,75 @@
 <rect x="465" y="255" width="310" height="42" rx="6" fill="rgb(117,133,93)"/>
 <text x="620" y="284" font-size="20" fill="#ffffff" font-weight="400" text-anchor="middle">49.49 B proofs</text>
 <rect x="805" y="255" width="310" height="42" rx="6" fill="rgb(111,127,85)"/>
-<text x="960" y="284" font-size="20" fill="#ffffff" font-weight="400" text-anchor="middle">202.92 B proofs</text>
+<text x="960" y="284" font-size="20" fill="#ffffff" font-weight="400" text-anchor="middle">201.26 B proofs</text>
 <rect x="1145" y="255" width="310" height="42" rx="6" fill="rgb(109,126,83)"/>
-<text x="1300" y="284" font-size="20" fill="#ffffff" font-weight="400" text-anchor="middle">301.11 B proofs</text>
+<text x="1300" y="284" font-size="20" fill="#ffffff" font-weight="400" text-anchor="middle">300.21 B proofs</text>
 <text x="85" y="336" font-size="21" fill="#242820" font-weight="500" text-anchor="start">Files / Drive</text>
 <rect x="465" y="305" width="310" height="42" rx="6" fill="rgb(123,138,99)"/>
 <text x="620" y="334" font-size="20" fill="#ffffff" font-weight="400" text-anchor="middle">16.31 B proofs</text>
-<rect x="805" y="305" width="310" height="42" rx="6" fill="rgb(125,140,102)"/>
-<text x="960" y="334" font-size="20" fill="#ffffff" font-weight="400" text-anchor="middle">9.13 B proofs</text>
+<rect x="805" y="305" width="310" height="42" rx="6" fill="rgb(126,140,102)"/>
+<text x="960" y="334" font-size="20" fill="#ffffff" font-weight="400" text-anchor="middle">9.06 B proofs</text>
 <rect x="1145" y="305" width="310" height="42" rx="6" fill="rgb(130,145,107)"/>
-<text x="1300" y="334" font-size="20" fill="#ffffff" font-weight="400" text-anchor="middle">3.33 B proofs</text>
+<text x="1300" y="334" font-size="20" fill="#ffffff" font-weight="400" text-anchor="middle">3.32 B proofs</text>
 <text x="85" y="386" font-size="21" fill="#242820" font-weight="500" text-anchor="start">Browser authoring</text>
 <rect x="465" y="355" width="310" height="42" rx="6" fill="rgb(131,146,108)"/>
 <text x="620" y="384" font-size="20" fill="#ffffff" font-weight="400" text-anchor="middle">2.72 B proofs</text>
 <rect x="805" y="355" width="310" height="42" rx="6" fill="rgb(134,148,111)"/>
-<text x="960" y="384" font-size="20" fill="#ffffff" font-weight="400" text-anchor="middle">1.52 B proofs</text>
+<text x="960" y="384" font-size="20" fill="#ffffff" font-weight="400" text-anchor="middle">1.51 B proofs</text>
 <rect x="1145" y="355" width="310" height="42" rx="6" fill="rgb(139,152,117)"/>
-<text x="1300" y="384" font-size="20" fill="#ffffff" font-weight="400" text-anchor="middle">554.91 M proofs</text>
+<text x="1300" y="384" font-size="20" fill="#ffffff" font-weight="400" text-anchor="middle">553.25 M proofs</text>
 <text x="85" y="436" font-size="21" fill="#242820" font-weight="500" text-anchor="start">AMO</text>
 <rect x="465" y="405" width="310" height="42" rx="6" fill="rgb(136,150,113)"/>
 <text x="620" y="434" font-size="20" fill="#ffffff" font-weight="400" text-anchor="middle">1.06 B proofs</text>
 <rect x="805" y="405" width="310" height="42" rx="6" fill="rgb(139,152,117)"/>
-<text x="960" y="434" font-size="20" fill="#ffffff" font-weight="400" text-anchor="middle">591.05 M proofs</text>
+<text x="960" y="434" font-size="20" fill="#ffffff" font-weight="400" text-anchor="middle">586.23 M proofs</text>
 <rect x="1145" y="405" width="310" height="42" rx="6" fill="rgb(143,156,122)"/>
-<text x="1300" y="434" font-size="20" fill="#ffffff" font-weight="400" text-anchor="middle">215.54 M proofs</text>
+<text x="1300" y="434" font-size="20" fill="#ffffff" font-weight="400" text-anchor="middle">214.90 M proofs</text>
 <text x="85" y="486" font-size="21" fill="#242820" font-weight="500" text-anchor="start">Credits</text>
 <rect x="465" y="455" width="310" height="42" rx="6" fill="rgb(143,156,121)"/>
 <text x="620" y="484" font-size="20" fill="#ffffff" font-weight="400" text-anchor="middle">246.45 M proofs</text>
 <rect x="805" y="455" width="310" height="42" rx="6" fill="rgb(146,158,124)"/>
-<text x="960" y="484" font-size="20" fill="#ffffff" font-weight="400" text-anchor="middle">137.92 M proofs</text>
+<text x="960" y="484" font-size="20" fill="#ffffff" font-weight="400" text-anchor="middle">136.80 M proofs</text>
 <rect x="1145" y="455" width="310" height="42" rx="6" fill="rgb(150,162,130)"/>
-<text x="1300" y="484" font-size="20" fill="#ffffff" font-weight="400" text-anchor="middle">50.30 M proofs</text>
+<text x="1300" y="484" font-size="20" fill="#ffffff" font-weight="400" text-anchor="middle">50.15 M proofs</text>
 <text x="85" y="536" font-size="21" fill="#242820" font-weight="500" text-anchor="start">Boost</text>
 <rect x="465" y="505" width="310" height="42" rx="6" fill="rgb(131,145,107)"/>
 <text x="620" y="534" font-size="20" fill="#ffffff" font-weight="400" text-anchor="middle">3.19 B proofs</text>
 <rect x="805" y="505" width="310" height="42" rx="6" fill="rgb(133,147,111)"/>
-<text x="960" y="534" font-size="20" fill="#ffffff" font-weight="400" text-anchor="middle">1.79 B proofs</text>
+<text x="960" y="534" font-size="20" fill="#ffffff" font-weight="400" text-anchor="middle">1.77 B proofs</text>
 <rect x="1145" y="505" width="310" height="42" rx="6" fill="rgb(138,152,116)"/>
-<text x="1300" y="534" font-size="20" fill="#ffffff" font-weight="400" text-anchor="middle">651.75 M proofs</text>
+<text x="1300" y="534" font-size="20" fill="#ffffff" font-weight="400" text-anchor="middle">649.80 M proofs</text>
 <text x="85" y="586" font-size="21" fill="#242820" font-weight="500" text-anchor="start">Infinity</text>
 <rect x="465" y="555" width="310" height="42" rx="6" fill="rgb(151,162,130)"/>
 <text x="620" y="584" font-size="20" fill="#ffffff" font-weight="400" text-anchor="middle">48.35 M proofs</text>
 <rect x="805" y="555" width="310" height="42" rx="6" fill="rgb(153,165,133)"/>
-<text x="960" y="584" font-size="20" fill="#242820" font-weight="400" text-anchor="middle">27.06 M proofs</text>
-<rect x="1145" y="555" width="310" height="42" rx="6" fill="rgb(158,169,138)"/>
-<text x="1300" y="584" font-size="20" fill="#242820" font-weight="400" text-anchor="middle">9.87 M proofs</text>
+<text x="960" y="584" font-size="20" fill="#242820" font-weight="400" text-anchor="middle">26.84 M proofs</text>
+<rect x="1145" y="555" width="310" height="42" rx="6" fill="rgb(158,169,139)"/>
+<text x="1300" y="584" font-size="20" fill="#242820" font-weight="400" text-anchor="middle">9.84 M proofs</text>
 <text x="85" y="636" font-size="21" fill="#242820" font-weight="500" text-anchor="start">Inception</text>
 <rect x="465" y="605" width="310" height="42" rx="6" fill="rgb(151,162,130)"/>
 <text x="620" y="634" font-size="20" fill="#ffffff" font-weight="400" text-anchor="middle">48.35 M proofs</text>
 <rect x="805" y="605" width="310" height="42" rx="6" fill="rgb(153,165,133)"/>
-<text x="960" y="634" font-size="20" fill="#242820" font-weight="400" text-anchor="middle">27.06 M proofs</text>
-<rect x="1145" y="605" width="310" height="42" rx="6" fill="rgb(158,169,138)"/>
-<text x="1300" y="634" font-size="20" fill="#242820" font-weight="400" text-anchor="middle">9.87 M proofs</text>
+<text x="960" y="634" font-size="20" fill="#242820" font-weight="400" text-anchor="middle">26.84 M proofs</text>
+<rect x="1145" y="605" width="310" height="42" rx="6" fill="rgb(158,169,139)"/>
+<text x="1300" y="634" font-size="20" fill="#242820" font-weight="400" text-anchor="middle">9.84 M proofs</text>
 <text x="85" y="686" font-size="21" fill="#242820" font-weight="500" text-anchor="start">Wallet transfers</text>
 <rect x="465" y="655" width="310" height="42" rx="6" fill="rgb(136,150,113)"/>
 <text x="620" y="684" font-size="20" fill="#ffffff" font-weight="400" text-anchor="middle">1.05 B proofs</text>
 <rect x="805" y="655" width="310" height="42" rx="6" fill="rgb(139,152,117)"/>
-<text x="960" y="684" font-size="20" fill="#ffffff" font-weight="400" text-anchor="middle">589.57 M proofs</text>
+<text x="960" y="684" font-size="20" fill="#ffffff" font-weight="400" text-anchor="middle">584.77 M proofs</text>
 <rect x="1145" y="655" width="310" height="42" rx="6" fill="rgb(143,156,122)"/>
-<text x="1300" y="684" font-size="20" fill="#ffffff" font-weight="400" text-anchor="middle">215.00 M proofs</text>
+<text x="1300" y="684" font-size="20" fill="#ffffff" font-weight="400" text-anchor="middle">214.36 M proofs</text>
 <text x="85" y="736" font-size="21" fill="#242820" font-weight="500" text-anchor="start">Registry events</text>
 <rect x="465" y="705" width="310" height="42" rx="6" fill="rgb(148,160,127)"/>
 <text x="620" y="734" font-size="20" fill="#ffffff" font-weight="400" text-anchor="middle">90.68 M proofs</text>
 <rect x="805" y="705" width="310" height="42" rx="6" fill="rgb(150,162,130)"/>
-<text x="960" y="734" font-size="20" fill="#ffffff" font-weight="400" text-anchor="middle">50.75 M proofs</text>
+<text x="960" y="734" font-size="20" fill="#ffffff" font-weight="400" text-anchor="middle">50.33 M proofs</text>
 <rect x="1145" y="705" width="310" height="42" rx="6" fill="rgb(155,167,135)"/>
-<text x="1300" y="734" font-size="20" fill="#242820" font-weight="400" text-anchor="middle">18.51 M proofs</text>
+<text x="1300" y="734" font-size="20" fill="#242820" font-weight="400" text-anchor="middle">18.45 M proofs</text>
 <text x="85" y="820" font-size="20" fill="#666b61" font-weight="400" text-anchor="start">Each cell shows its complete lane value; color intensity uses one logarithmic scale.</text>
 <text x="85" y="858" font-size="20" fill="#666b61" font-weight="400" text-anchor="start">WORK is derived. Shared interfaces and read-only surfaces add no independent summand.</text>
 <line x1="70" y1="911" x2="1530" y2="911" stroke="#d9dccf"/>
 <text x="70" y="946" font-size="18" fill="#666b61" font-weight="400" text-anchor="start">These illustrative stock/flow scores are not a treasury balance, market price, or canonical economic accounting.</text>
-<text x="70" y="975" font-size="17" fill="#666b61" font-weight="400" text-anchor="start">2026-09-05-all-products-v1 · revised 2026-09-05 · baseline 2026-05-11</text>
+<text x="70" y="975" font-size="17" fill="#666b61" font-weight="400" text-anchor="start">2026-10-06-code-v1 · revised 2026-10-06 · baseline 2026-05-11</text>
 </svg>

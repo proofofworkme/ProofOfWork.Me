@@ -17,6 +17,7 @@ export const BROWSER_APP_URL = "https://browser.proofofwork.me";
 export const BOOST_APP_URL = "https://boost.proofofwork.me";
 export const PUBLISH_APP_URL = "https://publish.proofofwork.me";
 export const SEARCH_APP_URL = "https://search.proofofwork.me";
+export const CODE_APP_URL = "https://code.proofofwork.me";
 export const MARKETPLACE_APP_URL = "https://amo.proofofwork.me";
 export const TOKEN_APP_URL = "https://credit.proofofwork.me";
 export const WALLET_APP_URL = "https://wallet.proofofwork.me";
@@ -35,6 +36,7 @@ export const LOCAL_BROWSER_APP_URL = "/?browser=1";
 export const LOCAL_BOOST_APP_URL = "/?boost=1";
 export const LOCAL_PUBLISH_APP_URL = "/?publish=1";
 export const LOCAL_SEARCH_APP_URL = "/?search-app=1";
+export const LOCAL_CODE_APP_URL = "/?code=1";
 export const LOCAL_MARKETPLACE_APP_URL = "/?marketplace=1";
 export const LOCAL_TOKEN_APP_URL = "/?credit=1";
 export const LOCAL_WALLET_APP_URL = "/?wallet=1";
@@ -58,6 +60,7 @@ export const APP_LINKS: AppLink[] = [
   { href: BOOST_APP_URL, label: "Boost", localHref: LOCAL_BOOST_APP_URL },
   { href: PUBLISH_APP_URL, label: "Publish", localHref: LOCAL_PUBLISH_APP_URL },
   { href: SEARCH_APP_URL, label: "Search", localHref: LOCAL_SEARCH_APP_URL },
+  { href: CODE_APP_URL, label: "Code", localHref: LOCAL_CODE_APP_URL },
   {
     href: MARKETPLACE_APP_URL,
     label: "AMO",

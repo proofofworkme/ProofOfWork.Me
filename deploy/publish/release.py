@@ -26,7 +26,7 @@ SSH = ['ssh', '-i', '/home/sixer/.ssh/proofofwork_me_ed25519',
 HEX40 = re.compile('[0-9a-f]{40}')
 HEX64 = re.compile('[0-9a-f]{64}')
 RELEASE = re.compile('[0-9a-f]{12}-[0-9]{8}T[0-9]{6}Z')
-SURFACES = 'activity boost browser computer desktop dns growth id inception infinity landing marketplace nft publish search token wallet work'.split()
+SURFACES = 'activity boost browser code computer desktop dns growth id inception infinity landing marketplace nft publish search token wallet work'.split()
 DEPLOYMENT_ONLY_PATHS = frozenset({
     'deploy/proofofwork-ui-release-stage.py',
     'deploy/proofofwork-ui-release-provenance.sh',

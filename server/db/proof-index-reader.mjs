@@ -10,6 +10,8 @@ import {
 } from "../../src/shared/protocol/publishArticle.mjs";
 import { compareCanonicalUtf8 } from "../canonical-order.mjs";
 import { decodeCanonicalOpReturnOutput } from "../canonical-op-return.mjs";
+import { readCodeSnapshot } from "./code-reader.mjs";
+import { codeReadError, codeRepositoriesPayload, codeRepositoryPayload } from "../code-repositories.mjs";
 import { readBoostGrowthObservation } from "./boost-growth-reader.mjs";
 import {
   createCanonicalWorkWalletCapacityReader,
@@ -11279,7 +11281,7 @@ async function assertCurrentAmoV5CanonicalPositionUniqueness(pool, network) {
         AND event_row.op_return_vout >= 0
         AND event_row.record_ordinal >= 0
         AND event_row.protocol = ANY(
-          ARRAY['pwm1','pwa1','pwid1','pwdns1','pwb1','pwt1']::text[]
+          ARRAY['pwm1','pwa1','pwid1','pwdns1','pwb1','pwt1','pwc1']::text[]
         )
       GROUP BY
         event_row.block_height,
@@ -11419,7 +11421,7 @@ export async function proofIndexWorkAmoCanonicalEvents(
           AND event_row.status = 'confirmed'
           AND event_tx.status = 'confirmed'
           AND event_row.protocol = ANY(
-            ARRAY['pwm1','pwa1','pwid1','pwdns1','pwb1','pwt1']::text[]
+          ARRAY['pwm1','pwa1','pwid1','pwdns1','pwb1','pwt1','pwc1']::text[]
           )
           AND event_tx.block_height BETWEEN $2 AND $3
       )
@@ -11510,7 +11512,7 @@ export async function proofIndexWorkAmoCanonicalEvents(
       WHERE event_row.network = $1
         AND event_row.status = 'confirmed'
         AND event_row.protocol = ANY(
-          ARRAY['pwm1','pwa1','pwid1','pwdns1','pwb1','pwt1']::text[]
+          ARRAY['pwm1','pwa1','pwid1','pwdns1','pwb1','pwt1','pwc1']::text[]
         )
         AND event_row.block_height BETWEEN $2 AND $3
         AND (
@@ -13595,7 +13597,7 @@ export async function proofIndexWorkAmoReplayReadiness(
               WHERE duplicate_event.network = $1
                 AND duplicate_event.status = 'confirmed'
                 AND duplicate_event.protocol = ANY(
-                  ARRAY['pwm1','pwa1','pwid1','pwdns1','pwb1','pwt1']::text[]
+          ARRAY['pwm1','pwa1','pwid1','pwdns1','pwb1','pwt1','pwc1']::text[]
                 )
                 AND duplicate_event.block_height BETWEEN $5 AND $3
                 AND duplicate_event.block_height >= 1
@@ -13902,7 +13904,7 @@ export async function proofIndexWorkAmoReplayReadiness(
           AND event_row.status = 'confirmed'
           AND event_tx.status = 'confirmed'
           AND event_row.protocol = ANY(
-            ARRAY['pwm1','pwa1','pwid1','pwdns1','pwb1','pwt1']::text[]
+          ARRAY['pwm1','pwa1','pwid1','pwdns1','pwb1','pwt1','pwc1']::text[]
           )
           AND event_tx.block_height BETWEEN $5 AND $3
       `,
@@ -21729,7 +21731,7 @@ function historyActivityKey(item) {
   const protocol = normalizedLowerText(item?.protocol);
   if (
     item?.confirmed !== true &&
-    ["pwm1", "pwa1", "pwid1", "pwdns1", "pwb1", "pwt1"].includes(protocol)
+    ["pwm1", "pwa1", "pwid1", "pwdns1", "pwb1", "pwt1", "pwc1"].includes(protocol)
   ) {
     const protocolVout = exactPositionInteger("protocolVout");
     const recordOrdinal = exactPositionInteger("recordOrdinal");
@@ -44547,6 +44549,23 @@ export function compareProofIndexHistoryPayloads(canonical, indexed) {
   }
 
   return mismatches;
+}
+
+export async function proofIndexCodePayload(network, searchParams, options = {}) {
+  const pool = proofIndexPool();
+  if (!pool) throw codeReadError("Code requires the canonical database index.");
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
+    const state = await readCodeSnapshot(client, network, searchParams, options);
+    const result = options.events ? { events: state.events, pendingEvents: state.pendingEvents, snapshot: state.snapshot }
+      : options.detail ? codeRepositoryPayload(state, searchParams) : codeRepositoriesPayload(state, searchParams);
+    await client.query("COMMIT");
+    return result;
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally { client.release(); }
 }
 
 export async function proofIndexRecentTransactionIds(

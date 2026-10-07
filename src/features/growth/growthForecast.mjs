@@ -359,8 +359,8 @@ export const LEGACY_GROWTH_MODEL_ROWS = LEGACY_GROWTH_MODEL_INPUTS.horizons.map(
 );
 export const LEGACY_GROWTH_MODEL_CHART_ROWS = [boostGrowthModelStartRow(), ...LEGACY_GROWTH_MODEL_ROWS];
 
-export const GROWTH_MODEL_VERSION = "2026-09-05-all-products-v1";
-export const GROWTH_MODEL_GENERATED_ON = "2026-09-05";
+export const GROWTH_MODEL_VERSION = "2026-10-06-code-v1";
+export const GROWTH_MODEL_GENERATED_ON = "2026-10-06";
 export const GROWTH_MODEL_CALIBRATION = "Uncalibrated all-product scenario; historical May 11 baseline retained";
 
 // Each entry is a disjoint non-Boost AMO activity basket. A completed sale
@@ -368,6 +368,10 @@ export const GROWTH_MODEL_CALIBRATION = "Uncalibrated all-product scenario; hist
 // and refunds are not revenue, and trades are not standalone Wallet transfers.
 export const GROWTH_MODEL_INPUTS = {
   ...BOOST_GROWTH_MODEL_INPUTS,
+  // Code is a subset of existing content demand; only its metadata is incremental.
+  codeSourcePutsPerIdPerYear: 4,
+  codeControlWritesPerIdPerYear: 0.3,
+  codeMetadataVbytesPerWrite: 350,
   idRegistrationFeeSats: 1_000,
   idMutationFeeSats: 546,
   idMutationsPerIdPerYear: 0.1,
@@ -421,6 +425,7 @@ export const GROWTH_VALUE_LANES = [
 ];
 
 export const GROWTH_MODEL_LIMITATIONS = [
+  "Code source puts are a subset of non-HTML Files demand. Repository creation, deletion and empty source puts share ordinary Mail controls. Only Code metadata adds bytes; counts are nonadditive diagnostics, not another payment or transaction basket.",
   "The May 11, 2026 baseline, node sample, adoption horizons, and historical modeled USD path are retained. New scenario assumptions are not current chain calibration.",
   "All-product coverage maps every public app to its economic owner or shared/read-only role. It is not an exact canonical replay or a forecast of every possible action variant.",
   "Mail means ordinary text messages, including text-only Boost originals, excluding file, HTML-page, and bond publications. Non-HTML files belong to Drive; HTML publication belongs exclusively to Browser authoring, whether carried as a Mail body or Files attachment. Reading the same record adds no transaction or value.",
@@ -487,8 +492,13 @@ export function growthModelRow(horizon, inputs = GROWTH_MODEL_INPUTS) {
     .reduce((sum, asset) => sum + asset[field], 0);
   const marketplaceWrites = marketSum("writes");
   const marketplaceSats = marketSum("valueSats");
+  const codeSourcePuts = Math.min(raw.driveWrites, usage(inputs.codeSourcePutsPerIdPerYear, inputs.elasticities.drive));
+  const codeControlWrites = Math.min(Math.max(0, raw.mailWrites - raw.boostOriginalPosts),
+    usage(inputs.codeControlWritesPerIdPerYear, inputs.elasticities.mail));
+  const codeWrites = codeSourcePuts + codeControlWrites;
+  const codeVbytes = codeWrites * inputs.codeMetadataVbytesPerWrite;
   const rawBlockspaceVbytes =
-    raw.idWrites * inputs.idVbytesPerWrite +
+    codeVbytes + raw.idWrites * inputs.idVbytesPerWrite +
     raw.mailWrites * inputs.mailVbytesPerWrite +
     raw.driveWrites * inputs.driveVbytesPerWrite +
     raw.browserWrites * inputs.browserVbytesPerPage +
@@ -507,6 +517,10 @@ export function growthModelRow(horizon, inputs = GROWTH_MODEL_INPUTS) {
     blockspaceUsageRatio: ratio,
     rawBlockspaceVbytes,
     executedBlockspaceVbytes: rawBlockspaceVbytes * ratio,
+    codeSourcePuts: codeSourcePuts * ratio,
+    codeControlWrites: codeControlWrites * ratio,
+    codeWrites: codeWrites * ratio,
+    codeVbytes: codeVbytes * ratio,
     idWrites: raw.idWrites * ratio,
     mailSats: raw.mailSats * ratio,
     mailWrites: raw.mailWrites * ratio,
@@ -560,6 +574,10 @@ export function growthModelStartRow() {
   // into that origin as if they were confirmed September measurements.
   const row = {
     ...boostGrowthModelStartRow(),
+    codeSourcePuts: 0,
+    codeControlWrites: 0,
+    codeWrites: 0,
+    codeVbytes: 0,
     tokenCreateWrites: 0,
     tokenMintWrites: 0,
     walletSats: 0,
@@ -667,6 +685,14 @@ export const GROWTH_ASSUMPTIONS = [
     attribution: "Known nonmarket ID registry flow only. No generic fee is assigned to Log itself, and AMO mutations remain in AMO.",
   },
   {
+    product: "Code",
+    usage: `${assumption.codeSourcePutsPerIdPerYear} source puts and ${assumption.codeControlWritesPerIdPerYear} repository/delete/empty-file controls per ID per year, capped by existing Files and ordinary Mail demand.`,
+    value: "Zero additional value; underlying Mail/Files payments remain allocated once.",
+    elasticity: "Inherited from Files for source puts and Mail for controls.",
+    blockspace: `${assumption.codeMetadataVbytesPerWrite} additional vB per Code record; a scenario average, not a measured transaction fee.`,
+    attribution: "Code counts are a subset of carrier transactions. File source bytes remain in Files and controls exclude the Boost-original subset.",
+  },
+  {
     product: "WORK diagnostic",
     usage: "Standalone WORK transfers from Wallet plus WORK sale movements from AMO, referenced once.",
     value: `Scenario total / ${assumption.workMaxSupply} WORK; diagnostic only, no added capitalization or endogenous movement value.`,
@@ -677,6 +703,9 @@ export const GROWTH_ASSUMPTIONS = [
 ];
 
 export const GROWTH_PRODUCT_COVERAGE = [
+  { product: "code", name: "Code", role: "shared", owner: "Mail / Files", modeledLane: "mailSats / driveSats; codeWrites + codeVbytes (nonadditive)", activity: "Wallet-owned repositories and source revision records", assumption: "Source and controls reuse existing carrier demand and payments once; only Code metadata adds bytes. Reads and downloads create no activity.", source: "CODE.md; complete checkpoint-bound Code API observations" },
+  { product: "publish", name: "Publish", role: "shared", owner: "Mail / Files / Browser authoring", modeledLane: "Existing content lanes", activity: "Articles built from existing public content", assumption: "Article views, search and identity display do not add payments or transaction demand.", source: "MAIL_ORGANIZATION.md; article projection" },
+  { product: "search", name: "Search", role: "read-only", owner: "Underlying activity products", modeledLane: "No incremental lane", activity: "Search projection of confirmed records", assumption: "Discovery adds no payment or write to the indexed activity.", source: "SEARCH.md" },
   { product: "home", name: "Home", role: "read-only", owner: "None", modeledLane: "No incremental lane", activity: "Landing page and apex redirect", assumption: "Navigation creates no chain activity.", source: "README.md production app roles" },
   { product: "ids", name: "IDs", role: "economic", owner: "IDs / Registry events", modeledLane: "idSats + computerEventSats", activity: "ID stock, registrations, receiver updates, and direct ownership transfers", assumption: "Identity stock and registry payments are separate components; registration bytes occur once.", source: "PROOFOFWORK_IDS.md; confirmed registry and Growth summary" },
   { product: "computer", name: "Computer", role: "aggregate", owner: "Underlying activity products", modeledLane: "totalSats", activity: "Shell, Mail, Files, embedded workspaces, and NFT route alias", assumption: "Aggregate of owned activity lanes; the shell and NFT alias add no second copy.", source: "MAIL_ORGANIZATION.md; confirmed Mail/Files and Growth summary" },

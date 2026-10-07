@@ -134,6 +134,7 @@ surfaces=(
   activity
   browser
   boost
+  code
   computer
   desktop
   dns
@@ -150,12 +151,20 @@ surfaces=(
   wallet
   work
 )
-if ((${#surfaces[@]} != 18)); then
-  echo "UI provenance surface set must contain exactly 18 entries." >&2
+if ((${#surfaces[@]} != 19)); then
+  echo "UI provenance surface set must contain exactly 19 entries." >&2
+  exit 70
+fi
+pre_code_surfaces=()
+for surface in "${surfaces[@]}"; do
+  [[ "${surface}" == "code" ]] || pre_code_surfaces+=("${surface}")
+done
+if ((${#pre_code_surfaces[@]} != 18)); then
+  echo "UI provenance pre-Code surface set must contain exactly 18 entries." >&2
   exit 70
 fi
 pre_search_surfaces=()
-for surface in "${surfaces[@]}"; do
+for surface in "${pre_code_surfaces[@]}"; do
   [[ "${surface}" == "search" ]] || pre_search_surfaces+=("${surface}")
 done
 if ((${#pre_search_surfaces[@]} != 17)); then
@@ -220,7 +229,7 @@ for surface in "${surfaces[@]}"; do
   surface_seen["${surface}"]=1
 done
 unset surface_seen surface
-surface_pattern='activity|browser|boost|computer|desktop|dns|growth|id|inception|infinity|landing|marketplace|nft|publish|search|token|wallet|work'
+surface_pattern='activity|browser|boost|code|computer|desktop|dns|growth|id|inception|infinity|landing|marketplace|nft|publish|search|token|wallet|work'
 
 surface_directory() {
   printf '%s/proofofwork-%s\n' "${ui_root}" "$1"
@@ -893,6 +902,9 @@ verify_archive_payload() {
   local -n expected_digests="${digests_name}"
   local -a archive_surfaces=("${surfaces[@]}")
 
+  if [[ -z "${expected_counts[code]:-}" && -z "${expected_digests[code]:-}" ]]; then
+    archive_surfaces=("${pre_code_surfaces[@]}")
+  fi
   if [[ -z "${expected_counts[search]:-}" && -z "${expected_digests[search]:-}" ]]; then
     archive_surfaces=("${pre_search_surfaces[@]}")
   fi
@@ -1030,7 +1042,7 @@ verify_archive_payload() {
       echo "Release archive must contain only the surfaces root." >&2
       exit 1
     fi
-    for surface in boost dns publish search; do
+    for surface in boost dns publish search code; do
       if [[ -z "${expected_counts[${surface}]:-}" &&
         -e "${extraction_root}/surfaces/${surface}" ]]; then
         echo "Legacy release archive contains unexpected ${surface} surface evidence." >&2
@@ -1116,6 +1128,8 @@ record_rollback_evidence() {
     record_surfaces=("${pre_publish_surfaces[@]}")
   elif [[ ! -e "$(surface_directory search)" && ! -L "$(surface_directory search)" ]]; then
     record_surfaces=("${pre_search_surfaces[@]}")
+  elif [[ ! -e "$(surface_directory code)" && ! -L "$(surface_directory code)" ]]; then
+    record_surfaces=("${pre_code_surfaces[@]}")
   fi
 
   for surface in "${record_surfaces[@]}"; do
@@ -1481,6 +1495,13 @@ verify_manifest() {
     echo "Active UI release manifest does not preserve the NFT compatibility alias." >&2
     exit 1
   fi
+  if [[ -z "${values[surface.code.file_count]:-}" && -z "${values[surface.code.sha256]:-}" ]]; then
+    if [[ -e "$(surface_directory code)" || -L "$(surface_directory code)" ]]; then
+      echo "Active UI release manifest is missing surface evidence: code" >&2
+      exit 1
+    fi
+    manifest_surfaces=("${pre_code_surfaces[@]}")
+  fi
   if [[ -z "${values[surface.search.file_count]:-}" && -z "${values[surface.search.sha256]:-}" ]]; then
     if [[ -e "$(surface_directory search)" || -L "$(surface_directory search)" ]]; then
       echo "Active UI release manifest is missing surface evidence: search" >&2
@@ -1618,6 +1639,13 @@ verify_rollback_evidence() {
     "${values[surface.nft.sha256]:-}" != "${values[surface.computer.sha256]:-}" ]]; then
     echo "UI rollback evidence does not preserve the NFT compatibility alias." >&2
     exit 1
+  fi
+  if [[ -z "${values[surface.code.file_count]:-}" && -z "${values[surface.code.sha256]:-}" ]]; then
+    if [[ -e "$(surface_directory code)" || -L "$(surface_directory code)" ]]; then
+      echo "UI rollback evidence is missing surface evidence: code" >&2
+      exit 1
+    fi
+    evidence_surfaces=("${pre_code_surfaces[@]}")
   fi
   if [[ -z "${values[surface.search.file_count]:-}" && -z "${values[surface.search.sha256]:-}" ]]; then
     if [[ -e "$(surface_directory search)" || -L "$(surface_directory search)" ]]; then

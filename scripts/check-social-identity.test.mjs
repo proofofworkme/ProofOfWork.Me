@@ -94,6 +94,7 @@ test("selection comparison is chronological and exact origins are allowlisted", 
   assert.deepEqual(newestSocialIdentityIntent(first, second), second);
   assert.deepEqual(newestSocialIdentityIntent(second, first), second);
   assert.equal(trustedSocialIdentityOrigin("https://boost.proofofwork.me", "https://computer.proofofwork.me"), true);
+  assert.equal(trustedSocialIdentityOrigin("https://code.proofofwork.me", "https://computer.proofofwork.me"), true);
   for (const origin of ["https://evil.proofofwork.me", "https://boost.proofofwork.me.evil.test", "http://boost.proofofwork.me", "null"]) {
     assert.equal(trustedSocialIdentityOrigin(origin, "https://computer.proofofwork.me"), false);
   }

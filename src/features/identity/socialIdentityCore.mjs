@@ -10,6 +10,7 @@ export const SOCIAL_IDENTITY_CHANGED = "proofofwork.socialIdentity.changed.v1";
 export const SOCIAL_IDENTITY_ORIGINS = Object.freeze([
   "https://boost.proofofwork.me",
   "https://publish.proofofwork.me",
+  "https://code.proofofwork.me",
   "https://computer.proofofwork.me",
 ]);
 

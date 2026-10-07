@@ -36,6 +36,7 @@ import {
   ChevronRight,
   CheckCircle2,
   Clock,
+  Code2,
   Copy,
   Download,
   FilePenLine,
@@ -82,9 +83,11 @@ import {
   INFINITY_APP_URL,
   BOOST_APP_URL,
   PUBLISH_APP_URL,
+  CODE_APP_URL,
   LOCAL_BROWSER_APP_URL,
   LOCAL_BOOST_APP_URL,
   LOCAL_PUBLISH_APP_URL,
+  LOCAL_CODE_APP_URL,
   LOCAL_COMPUTER_APP_URL,
   LOCAL_DESKTOP_APP_URL,
   LOCAL_DNS_APP_URL,
@@ -276,6 +279,8 @@ import { mailArticleFromTransaction, verifiedMailArticle, type MailArticleEviden
 const BoostRoot = lazy(() => import("./features/boost/BoostRoot"));
 const PublishRoot = lazy(() => import("./features/publish/PublishRoot"));
 const SearchRoot = lazy(() => import("./features/search/SearchRoot"));
+const CodeRoot = lazy(() => import("./features/code/CodeRoot"));
+const CodeActivitySummary = lazy(() => import("./features/growth/CodeActivitySummary"));
 const BoostGrowthDetails = lazy(
   () => import("./features/growth/BoostGrowthDetails"),
 );
@@ -387,6 +392,7 @@ type Folder =
   | "boost"
   | "publish"
   | "search"
+  | "code"
   | "ids"
   | "dns"
   | "marketplace"
@@ -413,6 +419,7 @@ const COMPUTER_ROUTE_FOLDERS: Folder[] = [
   "boost",
   "publish",
   "search",
+  "code",
   "ids",
   "dns",
   "marketplace",
@@ -433,6 +440,7 @@ const STANDALONE_ROUTE_PARAMS = [
   "browser",
   "publish",
   "search-app",
+  "code",
   "marketplace",
   "credit",
   "token",
@@ -4226,6 +4234,7 @@ function folderLabel(folder: Folder) {
 
   if (folder === "publish") return "Publish";
   if (folder === "search") return "Search";
+  if (folder === "code") return "Code";
 
   if (folder === "contacts") {
     return "Contacts";
@@ -4309,6 +4318,7 @@ function folderSubtitle(folder: Folder) {
 
   if (folder === "publish") return "ProofOfWork articles and shared social activity";
   if (folder === "search") return "Search Computer protocols and public data";
+  if (folder === "code") return "On-chain source repositories and revision history";
 
   if (folder === "contacts") {
     return "Local address book";
@@ -26211,7 +26221,9 @@ export default function App() {
     !busy;
   const refreshInProgress = refreshing || checkingBroadcasts;
   const refreshDisabled =
-    activeFolder === "contacts"
+    activeFolder === "code"
+      ? busy || refreshInProgress
+    : activeFolder === "contacts"
       ? busy || refreshInProgress || !registryAddress
       : activeFolder === "desktop"
         ? desktopLoading || !desktopProfile
@@ -28056,6 +28068,9 @@ export default function App() {
     const url = new URL(window.location.href);
     STANDALONE_ROUTE_PARAMS.forEach((param) => url.searchParams.delete(param));
     ["write", "article", "profile", "profileTab"].forEach(param => url.searchParams.delete(param));
+    if (activeFolder === "code" && folder !== "code") {
+      ["repo", "version", "path", "tab"].forEach(param => url.searchParams.delete(param));
+    }
     if (activeFolder === "search" && folder !== "search") {
       ["q", "protocol", "kind", "status", "valid", "sort", "record", "cursor"].forEach(param => url.searchParams.delete(param));
       url.searchParams.set("network", network);
@@ -28226,6 +28241,9 @@ export default function App() {
   }
 
   function canLeavePublishWriter() {
+    if (activeFolder === "code") return window.dispatchEvent(
+      new Event("proofofwork:before-code-writer-leave", { cancelable: true }),
+    );
     return activeFolder !== "publish" || window.dispatchEvent(
       new Event("proofofwork:before-publish-writer-leave", { cancelable: true }),
     );
@@ -37395,6 +37413,7 @@ export default function App() {
     activeFolder === "dns" ? "is-dns-workspace" : "",
     activeFolder === "browser" ? "is-browser-workspace" : "",
     activeFolder === "search" ? "is-search-workspace" : "",
+    activeFolder === "code" ? "is-code-workspace" : "",
     activeFolder === "boost" || activeFolder === "publish" ? "is-boost-workspace" : "",
   ]
     .filter(Boolean)
@@ -37404,6 +37423,7 @@ export default function App() {
     <main className="mail-app">
       <AppHeader
         afterHeader={actionUi}
+        onDomainNavigate={() => !canLeavePublishWriter()}
         onRefreshRecovery={() => void refreshActionRecovery()}
         accountStats={connectedAccountStats}
         address={address}
@@ -37450,6 +37470,11 @@ export default function App() {
                     includeWorkFloor: true,
                     label: "AMO data",
                   });
+                  return;
+                }
+
+                if (activeFolder === "code") {
+                  window.dispatchEvent(new Event("proofofwork:code-refresh"));
                   return;
                 }
 
@@ -37721,6 +37746,16 @@ export default function App() {
               <span className="folder-label">
                 <Search size={17} />
                 <span>Search</span>
+              </span>
+            </button>
+            <button
+              aria-current={activeFolder === "code"}
+              onClick={() => openFolder("code")}
+              type="button"
+            >
+              <span className="folder-label">
+                <Code2 size={17} />
+                <span>Code</span>
               </span>
             </button>
             <span className="folder-group-label">Identity &amp; value</span>
@@ -38438,6 +38473,10 @@ export default function App() {
         ) : activeFolder === "search" ? (
           <Suspense fallback={<div role="status" aria-busy="true">Loading Search…</div>}>
             <SearchRoot embedded initialNetwork={network} />
+          </Suspense>
+        ) : activeFolder === "code" ? (
+          <Suspense fallback={<div role="status" aria-busy="true">Loading Code…</div>}>
+            <CodeRoot embedded initialAddress={address} initialNetwork={network} />
           </Suspense>
         ) : activeFolder === "log" ? (
           <ActivityWorkspace
@@ -48694,6 +48733,7 @@ function GrowthApp({
       />
 
       <GrowthWorkspace
+        activeNetwork={activeNetwork}
         btcUsd={btcUsd}
         busy={busy}
         growthSummary={growthSummary}
@@ -48715,6 +48755,7 @@ function GrowthApp({
 }
 
 function GrowthWorkspace({
+  activeNetwork,
   btcUsd,
   busy,
   growthSummary,
@@ -48729,6 +48770,7 @@ function GrowthWorkspace({
   workFloorQuote,
   onRefresh,
 }: {
+  activeNetwork: BitcoinNetwork;
   btcUsd: number;
   busy: boolean;
   growthSummary?: GrowthSummarySnapshot;
@@ -49133,7 +49175,7 @@ function GrowthWorkspace({
           <h3>Candle-gold is the success case. Olive is ProofOfWork history.</h3>
           <p>
             The model asks what the ProofOfWork Computer can become if IDs, Mail,
-            Boost, Infinity Bonds, Inception Bonds, Drive, DNS, AMO, Browser, Credits, and Wallet
+            Boost, Code, Infinity Bonds, Inception Bonds, Drive, DNS, AMO, Browser, Credits, and Wallet
             compound together. Boost is included in the revised scenario. The real line only counts confirmed mainnet
             records that already exist.
           </p>
@@ -49361,6 +49403,23 @@ function GrowthWorkspace({
             <a className="secondary small growth-boost-link" href={appHref(PUBLISH_APP_URL, LOCAL_PUBLISH_APP_URL)}>
               Open Publish
             </a>
+          </GrowthProductCard>
+          <GrowthProductCard
+            actual="Confirmed activity"
+            actualLabel="Code checkpoint observations"
+            icon={<Code2 size={24} />}
+            modelOneYear={forecastVersion === "all-products" ? (oneYear.codeWrites ?? 0).toLocaleString(undefined, { maximumFractionDigits: 0 }) : "Not modeled"}
+            modelFiveYear={forecastVersion === "all-products" ? (fiveYear.codeWrites ?? 0).toLocaleString(undefined, { maximumFractionDigits: 0 }) : "Not modeled"}
+            modelOneYearLabel="shared carrier records"
+            modelFiveYearLabel="shared carrier records"
+            modelLabel="scenario activity"
+            name="Code"
+            note="Repository and revision activity shares Mail/Files value and transaction demand. Code metadata adds bytes to the scenario."
+          >
+            <Suspense fallback={<p className="field-note" role="status">Loading Code observations…</p>}>
+              <CodeActivitySummary network={activeNetwork} refreshing={busy} />
+            </Suspense>
+            <a className="secondary small growth-boost-link" href={appHref(CODE_APP_URL, LOCAL_CODE_APP_URL)}>Open Code</a>
           </GrowthProductCard>
           <GrowthProductCard
             actual={growthSats(actualValue.infinityBondSats)}

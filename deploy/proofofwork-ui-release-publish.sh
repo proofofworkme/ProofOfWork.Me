@@ -323,6 +323,7 @@ surfaces=(
   activity
   browser
   boost
+  code
   computer
   desktop
   dns
@@ -339,12 +340,20 @@ surfaces=(
   wallet
   work
 )
-if ((${#surfaces[@]} != 18)); then
-  echo "UI publisher surface set must contain exactly 18 entries." >&2
+if ((${#surfaces[@]} != 19)); then
+  echo "UI publisher surface set must contain exactly 19 entries." >&2
+  exit 70
+fi
+pre_code_surfaces=()
+for surface in "${surfaces[@]}"; do
+  [[ "${surface}" == "code" ]] || pre_code_surfaces+=("${surface}")
+done
+if ((${#pre_code_surfaces[@]} != 18)); then
+  echo "UI publisher pre-Code surface set must contain exactly 18 entries." >&2
   exit 70
 fi
 pre_search_surfaces=()
-for surface in "${surfaces[@]}"; do
+for surface in "${pre_code_surfaces[@]}"; do
   [[ "${surface}" == "search" ]] || pre_search_surfaces+=("${surface}")
 done
 if ((${#pre_search_surfaces[@]} != 17)); then
@@ -420,6 +429,8 @@ verify_prior_asset_compatibility() {
     prior_surfaces=("${pre_publish_surfaces[@]}")
   elif [[ ! -e "${www_root}/proofofwork-search" && ! -L "${www_root}/proofofwork-search" ]]; then
     prior_surfaces=("${pre_search_surfaces[@]}")
+  elif [[ ! -e "${www_root}/proofofwork-code" && ! -L "${www_root}/proofofwork-code" ]]; then
+    prior_surfaces=("${pre_code_surfaces[@]}")
   fi
   # Bound the compatibility scan so a large retained rollback tree cannot
   # hold the deployment lock indefinitely. The manifest-driven checks below

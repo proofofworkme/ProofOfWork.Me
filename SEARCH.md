@@ -107,3 +107,21 @@ exact amount, payer and recipient evidence. Their companion Mail and raw carrier
 remain separately inspectable source records; multiple Search results do not
 represent multiple payments. The existing bounded Search job discovers new tips
 without a schema or historical corpus migration.
+
+## Code v1 local candidate
+
+The local Code integration adds `pwc1` carriers and `code-repository` /
+`code-commit` events to discovery, with repository/parent references, exact
+path, source size/hash and address authority. [CODE.md](CODE.md) defines the
+validator. Verified nonempty source remains the same Files text; empty source
+is reconstructed from its explicit zero-byte Code commitment. Code metadata,
+Mail and raw carriers may each be searchable evidence without representing
+additional payments. Source remains inert text.
+
+The candidate Search codec version changes for a complete derived-corpus
+rebuild. Earlier ready generations retain their original version and evidence;
+the separate bounded Search job preserves all source transactions/events/files.
+Code's confirmed tree and head still require its own complete raw candidate
+discovery and canonical replay. Search results cannot prove that discovery,
+and malformed/stale attempts retain their distinct validity. This candidate
+integration does not claim a deployed Search or Code release.

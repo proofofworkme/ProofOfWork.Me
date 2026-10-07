@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import * as bitcoin from "bitcoinjs-lib";
+import { encodeCodeRepository } from "../src/shared/protocol/codeRepository.mjs";
 import {
   CanonicalConvergenceTimeoutError,
   MarketplaceRegressionHttpError,
@@ -7037,5 +7038,33 @@ await assert.rejects(
 assert.equal(convergenceClockMs, 25);
 assert.equal(boundedConvergenceReads, 3);
 assert.deepEqual(boundedSleepDelays, [10, 10, 5]);
+
+for (const codeMessage of [encodeCodeRepository({ v: 1, name: "source", description: "" }), "pwc1:repo:invalid"]) {
+  const transaction = withCode => ({
+    vin: [{ txid: hash("a"), vout: 0, prevout: { scriptpubkey_address: rawAdversarialActor } }],
+    vout: [{ value: 546, scriptpubkey_address: rawAdversarialActor },
+      { value: 0, scriptpubkey: rawAdversarialOpReturnScript("pwm1:m:Code repository") },
+      ...(withCode ? [{ value: 0, scriptpubkey: rawAdversarialOpReturnScript(codeMessage) }] : [])],
+  });
+  const replayCodeFixture = withCode => {
+    const tx = transaction(withCode);
+    return replayRawAdversarialRecords([1, ...(withCode ? [2] : [])].map(protocolVout => rawAdversarialRecord({
+      blockHash: rawAdversarialBlockHash, blockHeight: rawAdversarialBlockHeight, blockTransactionIndex: 1,
+      feeSats: 17, protocolVout, tx,
+    })));
+  };
+  const baseline = replayCodeFixture(false), withCode = replayCodeFixture(true);
+  assert.equal(withCode.economicState.networkValueQ8, baseline.economicState.networkValueQ8);
+  assert.deepEqual(withCode.feeTransitions.map(item => ({ valid: item.valid, fee: item.feeSats })),
+    baseline.feeTransitions.map(item => ({ valid: item.valid, fee: item.feeSats })));
+  const mail = withCode.events.find(event => event.protocol === "pwm1");
+  assert.deepEqual(mail.stateDelta, baseline.events[0].stateDelta);
+  const code = withCode.events.find(event => event.protocol === "pwc1");
+  assert.ok(code);
+  assert.equal(code.valid, codeMessage !== "pwc1:repo:invalid");
+  assert.equal(code.stateDelta.baseContributions.length, 0);
+  assert.equal(code.stateDelta.creditFixedQ8, "0");
+  assert.equal(withCode.events.length, baseline.events.length + 1);
+}
 
 console.log("WORK AMO V5 checks passed.");

@@ -1,5 +1,5 @@
 #!/usr/bin/python3
-"""Conservative 18-surface candidate/archive budgets; no filesystem mutations.
+"""Conservative 19-surface candidate/archive budgets; no filesystem mutations.
 
 The release plan pins this helper source and its installed stager authority.
 Historical phase helpers remain unchanged.
@@ -17,7 +17,7 @@ from pathlib import Path
 import stat
 import types
 
-SURFACES = 'activity boost browser computer desktop dns growth id inception infinity landing marketplace nft publish search token wallet work'.split()
+SURFACES = 'activity boost browser code computer desktop dns growth id inception infinity landing marketplace nft publish search token wallet work'.split()
 EXPECTED_STAGER_SHA256 = None
 
 

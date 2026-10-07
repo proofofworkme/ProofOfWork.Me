@@ -68,6 +68,27 @@ test('raw carriers remain unclassified instead of receiving semantic validation'
   assert.equal(doc.record.valid,null);
   assert.ok(doc.searchText.includes('list2'));
 });
+test('Code observations index verified carrier bytes and explicitly require repository replay',()=>{
+  const file={...attachment('const chainSource = "verified";'),name:'source.txt',mime:'text/plain'};
+  const payload={metadata:{v:1,repo:TXID,parent:TXID,op:'put',path:'src/main.mjs',message:'publish source',sha256:file.sha256,size:file.size},path:'src/main.mjs',source:{...file,content:'unverified injected words'}};
+  const doc=buildSearchDocument(source({protocol:'pwc1',kind:'code-commit',amountSats:'0',payload,attachmentCarriers:carriers(file)}),HASH);
+  assert.equal(doc.record.title,'src/main.mjs');
+  assert.equal(doc.record.file.verified,true);
+  assert.ok(doc.searchText.includes('chainSource'));
+  assert.ok(!doc.searchText.includes('unverified injected words'));
+  assert.equal(doc.record.codeAuthority.applied,null);
+  assert.equal(doc.record.codeAuthority.requiresRepositoryReplay,true);
+  const absent=buildSearchDocument(source({protocol:'pwc1',kind:'code-commit',payload}),HASH);
+  assert.equal(absent.record.valid,false);
+  assert.ok(!absent.searchText.includes('unverified injected words'));
+});
+test('zero-byte Code puts are verified without synthesizing a Files carrier',()=>{
+  const sha256=searchSha256(Buffer.alloc(0));
+  const doc=buildSearchDocument(source({protocol:'pwc1',kind:'code-commit',amountSats:'0',payload:{metadata:{size:0,sha256},source:{name:'source.txt',mime:'text/plain',size:0,sha256,data:''}}}),HASH);
+  assert.equal(doc.record.valid,true);
+  assert.equal(doc.record.file.verified,true);
+  assert.equal(doc.record.file.size,0);
+});
 test('checkpoint proof is fail-closed and cannot be replaced by caller metadata',async()=>{
   await verifySearchCheckpoint(async height=>{assert.equal(height,969829);return HASH;},'livenet',969829,HASH);
   await assert.rejects(()=>verifySearchCheckpoint(undefined,'livenet',969829,HASH),/unavailable/);
