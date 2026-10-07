@@ -1,6 +1,6 @@
 import { parseBoostTip } from "../src/shared/protocol/boostTip.mjs";
 import { verifyCodeTransaction } from "../src/shared/protocol/codeRepository.mjs";
-import { CODE_DISCOVERY_MODEL, CODE_DISCOVERY_META_KEY, CODE_DISCOVERY_EMPTY_SHA256, advanceCodeCandidateDigest, exactCodeOutputProofs, codeCandidateEventClosure } from "../server/code-repositories.mjs";
+import { CODE_DISCOVERY_MODEL, CODE_DISCOVERY_META_KEY, CODE_DISCOVERY_EMPTY_SHA256, advanceCodeCandidateDigest, exactCodeOutputProofs, codeCandidateEventClosure, prefilterCodeRawBlock, assertCodeRawBlockCandidatesMatch } from "../server/code-repositories.mjs";
 import {
   normalizePublishArticleMetadata, publishArticleBodyFromRecords,
   publishArticleDataCarrierBytes, PUBLISH_ARTICLE_VERIFICATION, PUBLISH_DATA_CARRIER_LIMIT,
@@ -25381,7 +25381,17 @@ async function bootstrapCodeCandidates(client) {
     while (marker.indexedThroughBlock < target.height && scanned < maxBlocks) {
       const height = marker.indexedThroughBlock + 1;
       const hash = String(await bitcoinRpc("getblockhash", [height])).toLowerCase();
-      const block = await bitcoinRpc("getblock", [hash, 2]);
+      const prefilter = prefilterCodeRawBlock(await bitcoinRpc("getblock", [hash, 0]), {
+        blockHash: hash, previousBlockHash: marker.indexedThroughBlockHash,
+      });
+      // Negatives have complete Core byte coverage. Positives keep the original
+      // decoded transaction, prevout and sealed-event path, with exact parity.
+      const block = prefilter.noCodeCandidates ? { hash, previousblockhash: prefilter.previousBlockHash,
+        time: prefilter.time, tx: [] } : await bitcoinRpc("getblock", [hash, 2]);
+      if (!prefilter.noCodeCandidates) {
+        assertCanonicalBlockEnvelope(block, height, hash);
+        assertCodeRawBlockCandidatesMatch(prefilter, block);
+      }
       if (String(block.previousblockhash) !== marker.indexedThroughBlockHash) throw new Error("Code discovery encountered a chain discontinuity.");
       const candidates = [];
       const blockedCandidates = [...(marker.blockedCandidates ?? [])];

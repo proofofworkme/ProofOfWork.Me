@@ -8,6 +8,110 @@ export const CODE_SNAPSHOT_MODEL = 'proof-code-snapshot-v1';
 export const CODE_DISCOVERY_EMPTY_SHA256 = createHash('sha256').update('ProofOfWork.Me/Code/candidate-discovery/v1\n').digest('hex');
 const TXID = /^[0-9a-f]{64}$/u;
 const sha256 = bytes => createHash('sha256').update(bytes).digest('hex');
+const CODE_RAW_BLOCK_MAX_BYTES = 8_000_000;
+const CODE_RAW_ZERO_HASH = Buffer.alloc(32);
+function codeRawHash256(parts) {
+  const first = createHash('sha256');
+  for (const part of parts) first.update(part);
+  return createHash('sha256').update(first.digest()).digest();
+}
+
+/**
+ * Negative discovery admission for authenticated first-party Core getblock(0).
+ * Body/consensus authority remains Core's, as in the getblock(2) scanner. This
+ * checks header hash/parent and complete canonical transaction framing; it does
+ * not independently verify transaction Merkle or witness commitments. A positive
+ * must use getblock(2), exact candidate parity and the existing hydration/seals.
+ */
+export function prefilterCodeRawBlock(rawHex, { blockHash, previousBlockHash } = {}) {
+  const refuse = detail => { throw new Error(`Code Core raw block admission failed: ${detail}.`); };
+  if (!TXID.test(blockHash ?? '') || !TXID.test(previousBlockHash ?? '')) refuse('exact hash and parent required');
+  if (typeof rawHex !== 'string' || rawHex.length < 162 || rawHex.length > CODE_RAW_BLOCK_MAX_BYTES * 2 || rawHex.length % 2) refuse('invalid or oversized hex');
+  const raw = Buffer.from(rawHex, 'hex');
+  // Buffer's decoder can silently stop at invalid hex; exact reencoding closes
+  // that behavior without a costly grouped regexp over the entire block body.
+  if (raw.length * 2 !== rawHex.length || raw.toString('hex') !== rawHex) refuse('noncanonical hex');
+  if (codeRawHash256([raw.subarray(0, 80)]).reverse().toString('hex') !== blockHash) refuse('header hash differs');
+  const parent = Buffer.from(raw.subarray(4, 36)).reverse().toString('hex');
+  if (parent !== previousBlockHash) refuse('parent differs');
+  let offset = 80;
+  function take(length) {
+    if (!Number.isSafeInteger(length) || length < 0 || offset + length > raw.length) refuse('truncated framing');
+    const bytes = raw.subarray(offset, offset + length); offset += length; return bytes;
+  }
+  function compactSize() {
+    const tag = take(1)[0];
+    if (tag < 253) return tag;
+    const size = tag === 253 ? 2 : tag === 254 ? 4 : 8;
+    const bytes = take(size);
+    const value = size === 2 ? BigInt(bytes.readUInt16LE()) : size === 4 ? BigInt(bytes.readUInt32LE()) : bytes.readBigUInt64LE();
+    if (value < (size === 2 ? 253n : size === 4 ? 65536n : 4294967296n) || value > BigInt(Number.MAX_SAFE_INTEGER)) refuse('noncanonical CompactSize');
+    return Number(value);
+  }
+  function count(minimumBytes, label, allowZero = false) {
+    const value = compactSize();
+    if ((!allowZero && value === 0) || value > Math.floor((raw.length - offset) / minimumBytes)) refuse(`impossible ${label} count`);
+    return value;
+  }
+  const transactionCount = count(60, 'transaction');
+  const candidates = [];
+  for (let transactionIndex = 0; transactionIndex < transactionCount; transactionIndex++) {
+    const version = take(4); let witness = false;
+    if (raw[offset] === 0) {
+      take(1); if (take(1)[0] !== 1) refuse('unsupported witness flags'); witness = true;
+    }
+    const strippedStart = offset;
+    const inputs = count(41, 'input');
+    for (let i = 0; i < inputs; i++) {
+      const outpoint = take(36);
+      const coinbase = outpoint.subarray(0, 32).equals(CODE_RAW_ZERO_HASH) && outpoint.readUInt32LE(32) === 0xffffffff;
+      if ((transactionIndex === 0 && (inputs !== 1 || !coinbase)) || (transactionIndex > 0 && coinbase)) refuse('coinbase placement');
+      take(compactSize()); take(4);
+    }
+    const outputs = count(9, 'output');
+    const transactionCandidates = [];
+    for (let vout = 0; vout < outputs; vout++) {
+      take(8); const script = take(compactSize());
+      if (script[0] !== 0x6a) continue;
+      const scriptPubKeyHex = script.toString('hex');
+      const decoded = decodeCanonicalOpReturnOutput({ scriptPubKey: { hex: scriptPubKeyHex } });
+      if (decoded.prefix === 'pwc1:') transactionCandidates.push({ transactionIndex, vout, scriptPubKeyHex });
+    }
+    const strippedEnd = offset;
+    if (witness) {
+      let present = false;
+      for (let i = 0; i < inputs; i++) {
+        const items = count(1, 'witness item', true); if (items) present = true;
+        for (let j = 0; j < items; j++) take(compactSize());
+      }
+      if (!present) refuse('superfluous witness record');
+    }
+    const locktime = take(4);
+    if (transactionCandidates.length) {
+      const txid = codeRawHash256([version, raw.subarray(strippedStart, strippedEnd), locktime]).reverse().toString('hex');
+      candidates.push(...transactionCandidates.map(candidate => ({ ...candidate, txid })));
+    }
+  }
+  if (offset !== raw.length) refuse('trailing block bytes');
+  return { blockHash, previousBlockHash: parent, time: raw.readUInt32LE(68), transactionCount, candidates,
+    noCodeCandidates: candidates.length === 0, bodyAuthority: 'authenticated-first-party-core', transactionRootsVerified: false };
+}
+
+/** Bind every physical candidate in a positive raw prefilter to Core's JSON. */
+export function assertCodeRawBlockCandidatesMatch(prefilter, block) {
+  if (block?.hash !== prefilter.blockHash || block.previousblockhash !== prefilter.previousBlockHash ||
+      Number(block.time) !== prefilter.time || Number(block.nTx) !== prefilter.transactionCount ||
+      !Array.isArray(block.tx) || block.tx.length !== prefilter.transactionCount) throw new Error('Code Core raw/decoded block envelope differs.');
+  const candidates = block.tx.flatMap((tx, transactionIndex) => (tx.vout ?? []).flatMap((output, vout) => {
+    const decoded = decodeCanonicalOpReturnOutput(output);
+    return decoded.prefix === 'pwc1:' ? [{ transactionIndex, vout, txid: tx.txid, scriptPubKeyHex: decoded.scriptPubKeyHex }] : [];
+  }));
+  if (!prefilter.candidates.length || candidates.length !== prefilter.candidates.length || candidates.some((candidate, index) => {
+    const expected = prefilter.candidates[index];
+    return candidate.transactionIndex !== expected.transactionIndex || candidate.vout !== expected.vout ||
+      candidate.txid !== expected.txid || candidate.scriptPubKeyHex !== expected.scriptPubKeyHex;
+  })) throw new Error('Code Core raw/decoded candidate positions or scripts differ.');
+}
 export function exactCodeOutputProofs(output) {
   const supplied = output?.valueSats;
   if (supplied !== undefined || !output?.scriptPubKey) {
