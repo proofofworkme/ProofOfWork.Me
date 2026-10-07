@@ -461,10 +461,11 @@ css_import_pattern = re.compile(
 maximum_index_bytes = 2 * 1024 * 1024
 maximum_asset_bytes = 64 * 1024 * 1024
 maximum_total_bytes = 512 * 1024 * 1024
-# The current 16-surface split bundle has 560 reachable prior assets (35 per
-# surface). Keep this served-path ceiling aligned with the canonical stager;
-# byte, reference-edge, candidate and per-file limits remain independent.
-maximum_dependencies = 1024
+# The historical 16-surface bundle had 560 reachable prior assets. The
+# October 7 nineteen-root Code release has 1,045 (55 per surface). Keep this
+# served-path ceiling aligned with the canonical stager; byte, reference-edge,
+# candidate and per-file limits remain independent.
+maximum_dependencies = 1536
 maximum_reference_edges = 4096
 # The September 5 live 15-surface closure produces 527,332 candidates; the
 # pre-v3 input had 421,994. Keep this finite scan bound aligned with the stager

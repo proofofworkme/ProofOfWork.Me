@@ -4186,6 +4186,13 @@ bytes; do not weaken those pins or reuse them as current installers. Before any
 approved helper installation, compare the deployed helper with the repository
 and preserve separately reviewed production differences.
 
+The sixteen-primary/seventeen-managed family and its corresponding literal
+commands below are historical, from before Search and Code. Current releases
+use eighteen public builds plus the NFT alias (nineteen managed roots) through
+`deploy/publish/build.py` and `deploy/publish/release.py`. The ownership, hash
+and immediate-prior compatibility invariants remain current; older receipts
+retain their original counts and identities.
+
 Build the 16 primary surfaces from one detached source checkout and copy
 Computer byte-for-byte as the `nft` compatibility alias. Prepare one complete
 staged clone of `/var/www` at the publisher's release-bound path, remove the
@@ -4203,9 +4210,14 @@ This retains an old entry chunk, its imported Rolldown chunks, and their CSS or
 image resources, while assets retained for the preceding release but no longer
 reachable from the immediate prior HTML are not carried again. A pre-existing
 path is accepted only when its bytes equal the immediate prior dependency. The
-stager and publisher bound this one-release compatibility set to 1,024
+stager and publisher bound this one-release compatibility set to 1,536
 dependencies, 64 MiB per file, and 512 MiB total, and refuse a missing or
-byte-divergent collision. The September 5 measured split bundle contains 525
+byte-divergent collision. The October 7 nineteen-root Code UI closure has
+1,045 reachable prior assets (55 per surface), 3,572 resolved edges,
+914,196 reference candidates and 63,525,507 dependency bytes. The former
+1,024-file ceiling refused a successor to that valid deployed release.
+The edge, candidate, byte, path and collision limits remain independent.
+The September 5 measured split bundle contains 525
 reachable prior assets across 15 surfaces (35 per surface), totaling
 43,199,809 bytes. The former global 256-file ceiling could not publish a
 successor to that valid deployed bundle. Each served path still counts even
