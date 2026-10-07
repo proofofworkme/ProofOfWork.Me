@@ -94,3 +94,58 @@ export const APP_LINKS: AppLink[] = [
   { href: LOG_APP_URL, label: "Log", localHref: LOCAL_LOG_APP_URL },
   { href: GROWTH_APP_URL, label: "Growth", localHref: LOCAL_GROWTH_APP_URL },
 ];
+
+export type AppMenuGroup = {
+  label: string;
+  links: (AppLink & { displayLabel: string; description: string })[];
+};
+
+function appMenuLink(
+  label: string,
+  displayLabel: string,
+  description: string,
+): AppMenuGroup["links"][number] {
+  const link = APP_LINKS.find((candidate) => candidate.label === label);
+  if (!link) throw new Error(`Unknown public app: ${label}`);
+  return { ...link, displayLabel, description };
+}
+
+export const APP_MENU_GROUPS: AppMenuGroup[] = [
+  {
+    label: "UTILITY",
+    links: [
+      appMenuLink("Computer", "COMPUTER", "Mail, files and workspaces"),
+      appMenuLink("Desktop", "DESKTOP", "Public files by address"),
+      appMenuLink("Browser", "BROWSER", "Verified pages by transaction"),
+      appMenuLink("Code", "CODE", "Public source repositories"),
+    ],
+  },
+  {
+    label: "ID&SOC",
+    links: [
+      appMenuLink("IDs", "ID", "Claim your ProofOfWork ID"),
+      appMenuLink("DNS", "DNS", "Claim and search .pow names"),
+      appMenuLink("Boost", "BOOST", "Proof-ranked posts and people"),
+      appMenuLink("Publish", "PUBLISH", "Write and read articles"),
+    ],
+  },
+  {
+    label: "FINANCE",
+    links: [
+      appMenuLink("Wallet", "WALLET", "Balances, transfers and history"),
+      appMenuLink("AMO", "AMO", "Listings, seals and markets"),
+      appMenuLink("Credit", "CREDIT", "Create and mint credits"),
+      appMenuLink("WORK", "WORK", "WORK dashboard and floor"),
+      appMenuLink("Infinity", "INFINITY", "Infinity Bonds and POWB"),
+      appMenuLink("Inception", "INCEPTION", "Inception Bonds and INCB"),
+    ],
+  },
+  {
+    label: "INSIGHTS",
+    links: [
+      appMenuLink("Log", "LOG", "Transaction-backed activity"),
+      appMenuLink("Growth", "GROWTH", "Network value and growth"),
+      appMenuLink("Search", "SEARCH", "Find records and content"),
+    ],
+  },
+];

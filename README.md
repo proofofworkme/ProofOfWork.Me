@@ -93,7 +93,21 @@ Production app roles:
 - The root landing page can feature public on-chain social proof, with testimonial links pointing directly to their ProofOfWork transactions.
 - The landing page links to the current public YouTube overview video.
 
-Every public app header and footer should expose the current public surfaces: Home, IDs, DNS, Computer, Desktop, Browser, Boost, Publish, Search, Code, AMO, Credit, Wallet, WORK, Infinity, Inception, Log, and Growth. Public social links should include X, YouTube, and GitHub.
+Every public app header and footer expose the same product menus, in this
+order:
+
+| Menu | Products in order |
+| --- | --- |
+| UTILITY | COMPUTER, DESKTOP, BROWSER, CODE |
+| ID&SOC | ID, DNS, BOOST, PUBLISH |
+| FINANCE | WALLET, AMO, CREDIT, WORK, INFINITY, INCEPTION |
+| INSIGHTS | LOG, GROWTH, SEARCH |
+
+The brand links to Home. Menu display labels are uppercase; ID is singular in
+these menus while the existing IDs workspace and internal app label remain
+unchanged. `APP_MENU_GROUPS` in `src/app/appLinks.ts` supplies both shared
+navbars from the canonical `APP_LINKS` destinations and local routes. Public
+social links include X, YouTube, and GitHub.
 
 ### Code v1
 

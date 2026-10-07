@@ -12,6 +12,23 @@ controls remain reachable. Keyboard focus wraps within the sheet; Escape or
 choosing a workspace closes it and restores focus to More. Moving above the
 compact-width breakpoint closes the sheet and releases its scroll lock.
 
+## Shared product navigation
+
+The public header and footer share the same product menus and order:
+
+| Menu | Products in order |
+| --- | --- |
+| UTILITY | COMPUTER, DESKTOP, BROWSER, CODE |
+| ID&SOC | ID, DNS, BOOST, PUBLISH |
+| FINANCE | WALLET, AMO, CREDIT, WORK, INFINITY, INCEPTION |
+| INSIGHTS | LOG, GROWTH, SEARCH |
+
+The brand opens Home. ID is the singular menu label for the existing IDs app;
+its internal label, registry behavior and Computer workspace stay unchanged.
+Category menus organize public app entry points, separate from Computer's
+mailbox folders and workspace controls. Local development keeps the existing
+local app routes; standalone builds keep their production app destinations.
+
 ## Current Launch Status
 
 The Phase 1 public launch surfaces are:

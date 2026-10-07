@@ -468,6 +468,14 @@ focus, and reduced-motion preferences are honored. The interface should feel
 like a precise instrument: quiet around evidence, dramatic only where product
 orientation benefits from it.
 
+Shared header and footer navigation use the same four product menus in the
+approved order: UTILITY (COMPUTER, DESKTOP, BROWSER, CODE), ID&SOC (ID, DNS,
+BOOST, PUBLISH), FINANCE (WALLET, AMO, CREDIT, WORK, INFINITY, INCEPTION), and
+INSIGHTS (LOG, GROWTH, SEARCH). Keep every product reachable through these
+menus and Home through the brand. Grouping is product orientation; existing
+routes, Computer workspaces and their authority remain unchanged. ID is the
+menu display label for the existing IDs app.
+
 AMO Listings, Seals, and Sales are activity projections over the existing
 sale-ticket lifecycle. They may organize, search, and paginate already
 recognized events, but they do not define new protocol events, fees,

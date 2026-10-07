@@ -9265,33 +9265,6 @@ pre {
   }
 }
 
-@media (min-width: 1101px) and (max-width: 1799px) {
-  .domain-nav-links {
-    display: flex;
-  }
-
-  .domain-nav-links a {
-    display: none;
-  }
-
-  .domain-nav-links a:nth-child(1),
-  .domain-nav-links a:nth-child(3),
-  .domain-nav-links a:nth-child(7) {
-    display: inline-flex;
-  }
-
-  .app-menu-trigger {
-    display: inline-flex;
-  }
-}
-
-@media (min-width: 1400px) and (max-width: 1799px) {
-  .domain-nav-links a:nth-child(9),
-  .domain-nav-links a:nth-child(10) {
-    display: inline-flex;
-  }
-}
-
 /* Proof Instrument interaction contract. Component styles may choose a
    denser visual treatment, but the operable box stays at least 44 by 44px. */
 html button:not([hidden]),
@@ -9471,3 +9444,97 @@ html
 .action-recovery-actions .field-note { flex: 1 1 240px; margin: 0; }
 
 .review-protocol { font-family: var(--font-mono); }
+
+/* Shared product categories: identical destinations in header and footer. */
+.grouped-domain-nav .domain-nav-groups {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 4px;
+  overflow: visible;
+}
+.domain-menu-trigger {
+  align-items: center;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  display: inline-flex;
+  flex: 0 0 auto;
+  font-size: .8rem;
+  font-weight: 500;
+  gap: 5px;
+  min-height: 44px;
+  padding: 8px 10px;
+  white-space: nowrap;
+}
+.domain-menu-trigger:hover,
+.domain-menu-trigger[aria-expanded="true"],
+.domain-menu-trigger.has-current-app {
+  background: var(--accent-soft);
+  border-color: var(--border);
+  color: var(--accent-strong);
+}
+.topbar .grouped-domain-nav .domain-nav-groups { display: flex; }
+.topbar .grouped-domain-nav .app-menu-trigger { display: none; }
+.grouped-domain-popover {
+  background: var(--surface);
+  border-color: var(--border-strong);
+  grid-template-rows: auto minmax(0, 1fr);
+  left: 12px;
+  max-height: min(460px, calc(100dvh - 24px));
+  min-width: 0;
+  opacity: 1;
+  padding: 12px;
+  pointer-events: auto;
+  position: fixed;
+  right: auto;
+  top: 12px;
+  transform: none;
+  transition: none;
+  width: min(600px, calc(100vw - 24px));
+  z-index: 75;
+}
+.grouped-domain-popover.is-open { transform: none; }
+.grouped-domain-popover[hidden] { display: none; }
+.grouped-domain-list {
+  gap: 16px;
+  max-height: none;
+  min-height: 0;
+  overflow-y: auto;
+}
+.domain-menu-group { min-width: 0; }
+.domain-menu-group-label {
+  color: var(--accent);
+  display: block;
+  font-size: .78rem;
+  font-weight: 500;
+  margin: 2px 8px 8px;
+}
+.domain-menu-products { display: grid; gap: 4px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.grouped-domain-list .domain-menu-products a { min-height: 64px; padding: 10px; }
+.grouped-domain-list small { font-size: .76rem; overflow: visible; text-overflow: clip; white-space: normal; }
+.grouped-domain-list strong { font-weight: 500; }
+.app-footer .domain-nav-footer { flex: 0 1 auto; max-width: none; }
+.app-footer .domain-nav-footer .domain-nav-groups { display: flex; flex-wrap: wrap; justify-content: center; }
+.boost-footer .domain-nav-footer { grid-column: 1 / -1; grid-row: 2; }
+@media (max-width: 900px) {
+  .topbar .grouped-domain-nav .domain-nav-groups { display: none; }
+  .topbar .grouped-domain-nav .app-menu-trigger { display: inline-flex; }
+}
+@media (max-width: 620px) {
+  .grouped-domain-popover.is-mobile-sheet {
+    bottom: max(12px, env(safe-area-inset-bottom));
+    left: max(12px, env(safe-area-inset-left));
+    max-height: calc(100dvh - 24px);
+    padding: 8px;
+    right: max(12px, env(safe-area-inset-right));
+    top: max(12px, env(safe-area-inset-top));
+    width: auto;
+  }
+  .grouped-domain-popover .domain-menu-products { grid-template-columns: minmax(0, 1fr); }
+  .app-footer .domain-nav-footer .domain-menu-trigger { font-size: .76rem; padding: 8px; }
+  .app-footer .domain-nav-footer .domain-nav-groups { gap: 2px; }
+}
+@media (max-width: 480px) {
+  .boost-footer .domain-nav-footer { grid-row: 3; }
+}
