@@ -31,7 +31,7 @@ function dnsReader({ changedTip = false, changedHistory = false, hydrationFailur
   idRegistryStateFromTransactions: () => ({records:[],listings:[]}),
   // This historical root-coverage fixture isolates the additive child adapter;
   // complete child discovery/replay has its independent regression suite.
-  dnsPayloadWithSubdomains: async payload => payload,
+  dnsPayloadWithAdditiveRecords: async payload => payload,
   dnsActivityItemsFromEvents: () => [], parseDnsEventPayload: () => null,
   DNS_PROTOCOL_PREFIX:'pwdns1:', DNS_SALE_AUTH_VERSION_TICKET:'pwdns-sale-v1',
   filterSpendableListings: async value => value,

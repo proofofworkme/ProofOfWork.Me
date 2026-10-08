@@ -1,0 +1,12 @@
+{
+  "method": "plan",
+  "request": {
+    "operationId": "example_mail_operation_0001",
+    "action": "mail.send",
+    "payload": {
+      "recipients": [{ "address": "REPLACE_WITH_RECIPIENT_ADDRESS", "proofs": "1000" }],
+      "subject": "Example",
+      "body": "Example message for inspection only."
+    }
+  }
+}

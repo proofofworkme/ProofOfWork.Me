@@ -18,6 +18,8 @@ const RootApp =
       ? lazy(() => import("./features/publish/PublishRoot"))
       : appSurface === "jobs"
         ? lazy(() => import("./features/jobs/JobsRoot"))
+      : appSurface === "permission"
+        ? lazy(() => import("./features/permission/PermissionRoot"))
       : appSurface === "code"
         ? lazy(() => import("./features/code/CodeRoot"))
       : appSurface === "search"

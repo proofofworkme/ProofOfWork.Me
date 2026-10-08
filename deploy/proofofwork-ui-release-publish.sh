@@ -347,6 +347,11 @@ if ((${#surfaces[@]} != 20)); then
 fi
 v3_surfaces=("${surfaces[@]}")
 pages_surfaces=("${surfaces[@]}" pages)
+permission_surfaces=("${pages_surfaces[@]}" permission)
+if ((${#permission_surfaces[@]} != 22)); then
+  echo "UI V5 publisher surface set must contain exactly 22 entries." >&2
+  exit 70
+fi
 if ((${#pages_surfaces[@]} != 21)); then
   echo "UI V4 publisher surface set must contain exactly 21 entries." >&2
   exit 70
@@ -433,7 +438,12 @@ for surface in "${surfaces[@]}"; do
   surface_seen["${surface}"]=1
 done
 unset surface_seen surface
-if [[ -e "${stage_root}/proofofwork-pages" || -L "${stage_root}/proofofwork-pages" ]]; then
+if [[ -e "${stage_root}/proofofwork-permission" || -L "${stage_root}/proofofwork-permission" ]]; then
+  surfaces=("${permission_surfaces[@]}")
+elif [[ -e "${www_root}/proofofwork-permission" || -L "${www_root}/proofofwork-permission" ]]; then
+  echo "A candidate cannot drop the live Permission product; use verified rollback." >&2
+  exit 1
+elif [[ -e "${stage_root}/proofofwork-pages" || -L "${stage_root}/proofofwork-pages" ]]; then
   surfaces=("${pages_surfaces[@]}")
 elif [[ -e "${www_root}/proofofwork-pages" || -L "${www_root}/proofofwork-pages" ]]; then
   echo "A V3 candidate cannot replace a live V4 Pages release; use verified rollback." >&2
@@ -442,7 +452,9 @@ fi
 
 verify_prior_asset_compatibility() {
   local -a prior_surfaces=("${surfaces[@]}")
-  if [[ -e "${www_root}/proofofwork-pages" || -L "${www_root}/proofofwork-pages" ]]; then
+  if [[ -e "${www_root}/proofofwork-permission" || -L "${www_root}/proofofwork-permission" ]]; then
+    prior_surfaces=("${permission_surfaces[@]}")
+  elif [[ -e "${www_root}/proofofwork-pages" || -L "${www_root}/proofofwork-pages" ]]; then
     prior_surfaces=("${pages_surfaces[@]}")
   elif [[ ! -e "${www_root}/proofofwork-boost" && ! -L "${www_root}/proofofwork-boost" ]]; then
     prior_surfaces=("${pre_boost_surfaces[@]}")

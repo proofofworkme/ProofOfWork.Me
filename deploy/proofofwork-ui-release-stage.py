@@ -49,6 +49,7 @@ SURFACES = (
 # Keep the accepted V3 vector and all historical families unchanged. Pages is
 # the additional, exact V4 surface; archived V3 roots remain independently valid.
 PAGES_SURFACES = tuple(sorted((*SURFACES, "pages")))
+PERMISSION_SURFACES = tuple(sorted((*PAGES_SURFACES, "permission")))
 PRE_JOBS_SURFACES = tuple(surface for surface in SURFACES if surface != "jobs")
 PRE_CODE_SURFACES = tuple(surface for surface in PRE_JOBS_SURFACES if surface != "code")
 PRE_SEARCH_SURFACES = tuple(surface for surface in PRE_CODE_SURFACES if surface != "search")
@@ -205,7 +206,7 @@ class CandidateManagedDeduplicator:
     def open_file(self, relative: str):
         safe_relative(relative, "managed deduplication")
         parts = relative.split("/")
-        if len(parts) < 2 or parts[0] not in {f"proofofwork-{surface}" for surface in PAGES_SURFACES}:
+        if len(parts) < 2 or parts[0] not in {f"proofofwork-{surface}" for surface in PERMISSION_SURFACES}:
             fail(f"Managed deduplication path is outside managed surfaces: {relative}")
         root_details = self.root.lstat()
         if (root_details.st_dev, root_details.st_ino) != self.root_identity:
@@ -324,7 +325,7 @@ class CandidateManagedDeduplicator:
                         os.unlink(temporary, dir_fd=target_parent)
 
     def add_surface(self, surface: str) -> None:
-        if surface not in PAGES_SURFACES:
+        if surface not in PERMISSION_SURFACES:
             fail(f"Unknown managed deduplication surface: {surface}")
         before = surface_fingerprint(self.root, surface, self.owner)
         relative_root = f"proofofwork-{surface}"
@@ -777,6 +778,8 @@ def payload_surface_fingerprint(
 
 
 def live_surface_names(root: Path) -> tuple[str, ...]:
+    if os.path.lexists(root / "proofofwork-permission"):
+        return PERMISSION_SURFACES
     if os.path.lexists(root / "proofofwork-pages"):
         return PAGES_SURFACES
     boost = root / "proofofwork-boost"
@@ -798,10 +801,10 @@ def live_surface_names(root: Path) -> tuple[str, ...]:
 
 def payload_surface_names(root: Path) -> tuple[str, ...]:
     actual = {entry.name for entry in os.scandir(root)}
-    for surfaces in (SURFACES, PAGES_SURFACES):
+    for surfaces in (SURFACES, PAGES_SURFACES, PERMISSION_SURFACES):
         if actual == set(surfaces):
             return surfaces
-    fail("New-build surfaces root must contain exactly the V3 20 or V4 21 surfaces; "
+    fail("New-build surfaces root must contain exactly the V3 20 or V4 21 or V5 22 surfaces; "
          f"received={sorted(actual)}")
 
 
@@ -885,7 +888,7 @@ def bounded_managed_fingerprint(
 
 
 def passthrough_fingerprint(root: Path) -> tuple[int, int, str]:
-    excluded = {MANIFEST_NAME, *(f"proofofwork-{surface}" for surface in PAGES_SURFACES)}
+    excluded = {MANIFEST_NAME, *(f"proofofwork-{surface}" for surface in PERMISSION_SURFACES)}
     return tree_fingerprint(root, excluded_top_level=excluded)
 
 
@@ -1373,6 +1376,8 @@ def main() -> int:
             www_details.st_gid,
         )
         live_surfaces = live_surface_names(www_root)
+        if "permission" in live_surfaces and "permission" not in incoming_surfaces:
+            fail("A payload cannot drop a live Permission product; use its verified rollback capability.")
         if "pages" in live_surfaces and "pages" not in incoming_surfaces:
             fail("A V3 payload cannot replace a live V4 Pages release; use its verified rollback capability.")
         live_managed_before = managed_fingerprint(

@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "network": "livenet",
+  "walletAddress": "REPLACE_WITH_EXACT_OWNER_WALLET_ADDRESS",
+  "walletScriptPubKey": "51200000000000000000000000000000000000000000000000000000000000000000",
+  "grantTxid": "0000000000000000000000000000000000000000000000000000000000000000",
+  "policyApiBase": "https://permission.proofofwork.me",
+  "stateDirectory": "/var/lib/proofofwork-permission",
+  "agentUids": [1000],
+  "autonomousSigning": false,
+  "secretReference": { "provider": "secret-service", "item": "unisat_local" },
+  "socketPath": "/run/proofofwork-permission/controller.sock",
+  "accessTokenFile": "/var/lib/proofofwork-permission/access-token"
+}

@@ -54,6 +54,7 @@ publish.proofofwork.me
 search.proofofwork.me
 code.proofofwork.me
 jobs.proofofwork.me         public work briefs, delivery and payment receipts
+permission.proofofwork.me   wallet-bound on-chain agent permissions
 amo.proofofwork.me
 marketplace.proofofwork.me -> https://amo.proofofwork.me/
 credit.proofofwork.me
@@ -82,6 +83,7 @@ Production app roles:
 - `search.proofofwork.me` is read-only discovery across Computer metaprotocols, public content, verified readable files and source transaction evidence. The same workspace lives at Computer's `?folder=search`. See [SEARCH.md](SEARCH.md).
 - `code.proofofwork.me` is public source repositories with one confirmed main history, exact UTF-8 file commits, verified source/history/diffs and ZIP downloads. The same workspace lives at Computer's `?folder=code`. See [CODE.md](CODE.md).
 - `jobs.proofofwork.me` is public work briefs, proposals, assignment, delivery and client-approved direct proof payments, with the same workspace at Computer `/?folder=jobs`. See [JOBS.md](JOBS.md).
+- `permission.proofofwork.me` manages confirmed wallet-bound agent grants and their replacement/revocation history, also at Computer `/?folder=permission`. Human grant writes use local UniSat review; autonomous signing stays closed until its protected bridge is verified. See [PERMISSION.md](PERMISSION.md).
 - `amo.proofofwork.me` is the canonical Autonomous Money Organization surface. Governed WORK units plus ID, DNS, credit, POWB, and INCB sale-ticket markets share this app.
 - `marketplace.proofofwork.me` is a retained URI-preserving compatibility route to AMO.
 - `credit.proofofwork.me` is the standalone mainnet credit creation and mint app.
@@ -100,7 +102,7 @@ order:
 
 | Menu | Products in order |
 | --- | --- |
-| UTILITY | COMPUTER, DESKTOP, BROWSER, CODE |
+| UTILITY | COMPUTER, DESKTOP, BROWSER, PAGES, CODE, JOBS, PERMISSION |
 | ID&SOC | ID, DNS, BOOST, PUBLISH |
 | FINANCE | WALLET, AMO, CREDIT, WORK, INFINITY, INCEPTION |
 | INSIGHTS | LOG, GROWTH, SEARCH |

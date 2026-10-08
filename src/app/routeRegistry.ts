@@ -11,6 +11,7 @@ export type AppSurface =
   | "search"
   | "code"
   | "jobs"
+  | "permission"
   | "identity-bridge"
   | "marketplace"
   | "token"
@@ -117,6 +118,11 @@ export function isSearchRoute() {
 export function isJobsRoute() {
   return import.meta.env.VITE_JOBS_ONLY === "1" ||
     hostname() === "jobs.proofofwork.me" || searchFlag("jobs");
+}
+
+export function isPermissionRoute() {
+  return import.meta.env.VITE_PERMISSION_ONLY === "1" ||
+    hostname() === "permission.proofofwork.me" || searchFlag("permission-app");
 }
 
 export function isCodeRoute() {
@@ -236,6 +242,7 @@ export function detectAppSurface(): AppSurface {
   if (isSearchRoute()) return "search";
   if (isCodeRoute()) return "code";
   if (isJobsRoute()) return "jobs";
+  if (isPermissionRoute()) return "permission";
   if (isMarketplaceRoute()) return "marketplace";
   if (isTokenRoute()) return "token";
   if (isWalletRoute()) return "wallet";

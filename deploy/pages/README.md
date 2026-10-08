@@ -1,5 +1,10 @@
 # Pages deployment
 
+These instructions preserve the initial Pages V4 release workflow. The current
+Permission V5/22-root release is documented in
+[Permission deployment](../permission/README.md). Use the explicit V4 build
+selection below when rehearsing this historical Pages release contract.
+
 Pages adds one managed UI surface and a four-file node/API overlay. The active
 node checkout contains accepted uncommitted Audit31, Code, Jobs and content-tip
 changes. Preserve those live bytes. Do not deploy a full checkout, reset Git, or
@@ -117,12 +122,12 @@ root reserve, the deploy lock, retained roots and the Audit28 retention hold.
 
 ```sh
 python3 -I -B deploy/publish/release.py preflight /tmp/pages-ui-baseline.json
-python3 -I -B deploy/publish/build.py "$PWD" "$candidate_commit" /tmp/pages-ui-build
+python3 -I -B deploy/publish/build.py "$PWD" "$candidate_commit" /tmp/pages-ui-build --release-format v4
 ```
 
 `preflight` reads production provenance, helper hashes, live/retained root
 fingerprints and capacity under the existing deploy lock. The build uses a fresh
-lockfile checkout and defaults to V4/21. New transport plans carry
+lockfile checkout with the explicit V4/21 selection. Pages transport plans carry
 `releaseFormat=proofofwork-ui-release-v4` and the exact 21 `managedSurfaces`;
 historical V3 plans continue to bind 20. Follow the current preserving transport,
 publication and collect/HTTPS verification phases; do not bypass a scratch or

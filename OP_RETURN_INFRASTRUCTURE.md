@@ -1,5 +1,23 @@
 # ProofOfWork OP_RETURN Infrastructure
 
+## Permission v1 discovery and release
+
+Permission uses the existing Mail body lane and adds no ledger economics or
+database migration. Independent Core raw-block scanning begins at 970492 with
+the immutable parent pin in [PERMISSION.md](PERMISSION.md), binds every raw
+protocol carrier to sealed index witnesses, and checks the exact current Core
+tip before returning authority. The reader preserves the accepted native
+transition-payload accessor when installed. `/api/v1/permissions` and
+`/api/v1/permission` fail closed on incomplete history; `inspect=1` permits only
+single-record inspection and never asserts current lifecycle status.
+
+The Permission scoped node release preserves live source overlays, dependency
+hashes, gateway/worker behavior and authority-service state. UI release V5 adds
+Permission to the complete 22-root contract; V3/V4 archives remain replayable
+recovery history. Human grant management is separate from the local controller's
+autonomous-signing gate, which remains closed pending verified isolation and a
+real UniSat bridge. See [deployment](deploy/permission/README.md).
+
 ## Code v1 production surface and discovery gate
 
 Code v1 is available at `code.proofofwork.me` and

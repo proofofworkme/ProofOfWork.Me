@@ -12,6 +12,7 @@ import { compareCanonicalUtf8 } from "../canonical-order.mjs";
 import { decodeCanonicalOpReturnOutput } from "../canonical-op-return.mjs";
 import { readCodeSnapshot } from "./code-reader.mjs";
 import { readJobsSnapshot } from "./jobs-reader.mjs";
+import { createPermissionIndexDiscovery } from "./permission-reader.mjs";
 import { jobsReadError, jobsPayload, jobPayload } from "../jobs.mjs";
 import { codeReadError, codeRepositoriesPayload, codeRepositoryPayload } from "../code-repositories.mjs";
 import { readBoostGrowthObservation } from "./boost-growth-reader.mjs";
@@ -516,6 +517,10 @@ const HISTORICAL_WORK_LISTING_SCOPE_AUTH_VERSIONS = new Set([
   ...WORK_AMO_V8_LEGACY_AUTH_VERSIONS,
   WORK_AMO_V7_AUTH_VERSION,
 ]);
+
+export const proofIndexPermissionDiscovery = createPermissionIndexDiscovery({
+  pool: proofIndexPool, readScan: latestProofIndexScanMetadata,
+});
 
 function proofIndexPool() {
   if (!proofIndexDatabaseConfigured()) {

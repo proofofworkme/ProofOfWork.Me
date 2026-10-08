@@ -290,6 +290,7 @@ const PublishRoot = lazy(() => import("./features/publish/PublishRoot"));
 const SearchRoot = lazy(() => import("./features/search/SearchRoot"));
 const CodeRoot = lazy(() => import("./features/code/CodeRoot"));
 const JobsRoot = lazy(() => import("./features/jobs/JobsRoot"));
+const PermissionRoot = lazy(() => import("./features/permission/PermissionRoot"));
 const JobsActivitySummary = lazy(() => import("./features/growth/JobsActivitySummary"));
 const CodeActivitySummary = lazy(() => import("./features/growth/CodeActivitySummary"));
 const BoostGrowthDetails = lazy(
@@ -406,6 +407,7 @@ type Folder =
   | "search"
   | "code"
   | "jobs"
+  | "permission"
   | "ids"
   | "dns"
   | "marketplace"
@@ -435,6 +437,7 @@ const COMPUTER_ROUTE_FOLDERS: Folder[] = [
   "search",
   "code",
   "jobs",
+  "permission",
   "ids",
   "dns",
   "marketplace",
@@ -457,6 +460,7 @@ const STANDALONE_ROUTE_PARAMS = [
   "search-app",
   "code",
   "jobs",
+  "permission-app",
   "pages",
   "marketplace",
   "credit",
@@ -4258,6 +4262,7 @@ function folderLabel(folder: Folder) {
   if (folder === "search") return "Search";
   if (folder === "code") return "Code";
   if (folder === "jobs") return "Jobs";
+  if (folder === "permission") return "Permission";
 
   if (folder === "contacts") {
     return "Contacts";
@@ -4347,6 +4352,7 @@ function folderSubtitle(folder: Folder) {
   if (folder === "search") return "Search Computer protocols and public data";
   if (folder === "code") return "On-chain source repositories and revision history";
   if (folder === "jobs") return "Commission work, inspect delivery, and pay in proofs";
+  if (folder === "permission") return "Wallet-bound agent grants and verified permission history";
 
   if (folder === "contacts") {
     return "Local address book";
@@ -26305,7 +26311,7 @@ export default function App() {
     !busy;
   const refreshInProgress = refreshing || checkingBroadcasts;
   const refreshDisabled =
-    activeFolder === "code" || activeFolder === "jobs"
+    activeFolder === "code" || activeFolder === "jobs" || activeFolder === "permission"
       ? busy || refreshInProgress
     : activeFolder === "contacts"
       ? busy || refreshInProgress || !registryAddress
@@ -28165,6 +28171,9 @@ export default function App() {
     if (activeFolder === "jobs" && folder !== "jobs") {
       ["job", "mode", "q", "status", "cursor"].forEach(param => url.searchParams.delete(param));
     }
+    if (activeFolder === "permission" && folder !== "permission") {
+      ["permission", "txid", "mode"].forEach(param => url.searchParams.delete(param));
+    }
     if (activeFolder === "code" && folder !== "code") {
       ["repo", "version", "path", "tab"].forEach(param => url.searchParams.delete(param));
     }
@@ -28341,6 +28350,9 @@ export default function App() {
   }
 
   function canLeavePublishWriter() {
+    if (activeFolder === "permission") return window.dispatchEvent(
+      new Event("proofofwork:before-permission-writer-leave", { cancelable: true }),
+    );
     if (activeFolder === "jobs") return window.dispatchEvent(
       new Event("proofofwork:before-jobs-writer-leave", { cancelable: true }),
     );
@@ -37724,6 +37736,7 @@ export default function App() {
     activeFolder === "search" ? "is-search-workspace" : "",
     activeFolder === "code" ? "is-code-workspace" : "",
     activeFolder === "jobs" ? "is-jobs-workspace" : "",
+    activeFolder === "permission" ? "is-permission-workspace" : "",
     activeFolder === "boost" || activeFolder === "publish" ? "is-boost-workspace" : "",
     activeFolder === "pages" ? "is-browser-workspace is-pages-workspace" : "",
   ]
@@ -37786,6 +37799,11 @@ export default function App() {
 
                 if (activeFolder === "jobs") {
                   window.dispatchEvent(new Event("proofofwork:jobs-refresh"));
+                  return;
+                }
+
+                if (activeFolder === "permission") {
+                  window.dispatchEvent(new Event("proofofwork:permission-refresh"));
                   return;
                 }
 
@@ -38083,6 +38101,9 @@ export default function App() {
               type="button"
             >
               <span className="folder-label"><CheckSquare size={17} /><span>Jobs</span></span>
+            </button>
+            <button aria-current={activeFolder === "permission"} onClick={() => openFolder("permission")} type="button">
+              <span className="folder-label"><CheckSquare size={17} /><span>Permission</span></span>
             </button>
             <span className="folder-group-label">Identity &amp; value</span>
             <button
@@ -38805,6 +38826,10 @@ export default function App() {
         ) : activeFolder === "jobs" ? (
           <Suspense fallback={<div role="status" aria-busy="true">Loading Jobs…</div>}>
             <JobsRoot embedded initialAddress={address} initialNetwork={network} />
+          </Suspense>
+        ) : activeFolder === "permission" ? (
+          <Suspense fallback={<div role="status" aria-busy="true">Loading Permission…</div>}>
+            <PermissionRoot embedded initialAddress={address} initialNetwork={network} />
           </Suspense>
         ) : activeFolder === "code" ? (
           <Suspense fallback={<div role="status" aria-busy="true">Loading Code…</div>}>

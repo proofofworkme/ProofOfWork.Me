@@ -76,15 +76,19 @@ retained = [fingerprint(p) for p in roots]
 manifest_path = Path('/var/www/.proofofwork-ui-release')
 assert manifest_path.stat().st_size <= 65536
 active_manifest = dict(line.split('=',1) for line in manifest_path.read_text().splitlines())
-assert active_manifest['format'] in ('proofofwork-ui-release-v3', 'proofofwork-ui-release-v4')
+assert active_manifest['format'] in ('proofofwork-ui-release-v3', 'proofofwork-ui-release-v4', 'proofofwork-ui-release-v5')
 hold = Path('/etc/proofofwork-retention/audit28.hold')
 assert hold.is_file() and not hold.is_symlink() and hold.stat().st_uid == 0
 old_managed = {'entries':0, 'logicalBytes':0, 'regularFiles':0}
 managed_surfaces = 'activity boost browser code computer desktop dns growth id inception infinity jobs landing marketplace nft publish search token wallet work'.split()
-if active_manifest['format'] == 'proofofwork-ui-release-v4':
+if active_manifest['format'] in ('proofofwork-ui-release-v4', 'proofofwork-ui-release-v5'):
     managed_surfaces.append('pages')
 else:
     assert not os.path.lexists(Path('/var/www/proofofwork-pages')) and 'surface.pages.sha256' not in active_manifest
+if active_manifest['format'] == 'proofofwork-ui-release-v5':
+    managed_surfaces.append('permission')
+else:
+    assert not os.path.lexists(Path('/var/www/proofofwork-permission')) and 'surface.permission.sha256' not in active_manifest
 for name in managed_surfaces:
     root = Path('/var/www/proofofwork-'+name)
     if name in ('publish', 'search', 'code', 'jobs') and not os.path.lexists(root):

@@ -24,6 +24,7 @@ FILES = {
 }
 SURFACES = 'activity boost browser code computer desktop dns growth id inception infinity jobs landing marketplace nft publish search token wallet work'.split()
 PAGES_SURFACES = [*SURFACES, 'pages']
+PERMISSION_SURFACES = [*PAGES_SURFACES, 'permission']
 PAGES_FILES = {**FILES,
     'deploy/proofofwork-ui-verified-retention.py': '/usr/local/sbin/proofofwork-ui-verified-retention'}
 CAPACITY = Path('/usr/local/sbin/proofofwork-ui-capacity')
@@ -73,8 +74,8 @@ def directory(path):
 
 
 def check_plan(plan):
-    require(plan['schema'] in ('proof-of-work-search-ui-install-v1', 'proof-of-work-pages-ui-install-v1'), 'Wrong installation schema')
-    files = PAGES_FILES if plan['schema'] == 'proof-of-work-pages-ui-install-v1' else FILES
+    require(plan['schema'] in ('proof-of-work-search-ui-install-v1', 'proof-of-work-pages-ui-install-v1', 'proof-of-work-permission-ui-install-v1'), 'Wrong installation schema')
+    files = PAGES_FILES if plan['schema'] in ('proof-of-work-pages-ui-install-v1', 'proof-of-work-permission-ui-install-v1') else FILES
     require(re.fullmatch('[0-9a-f]{40}', plan['commit']) and re.fullmatch('[0-9a-f]{40}', plan['tree']),
         'Installation must pin full application commit/tree')
     require(re.fullmatch('[0-9a-f]{12}-[0-9]{8}T[0-9]{6}Z', plan['releaseId']) and
@@ -99,8 +100,9 @@ def parse_manifest(raw):
 def check_published(raw, plan):
     manifest = parse_manifest(raw)
     pages = plan['schema'] == 'proof-of-work-pages-ui-install-v1'
-    surfaces = PAGES_SURFACES if pages else SURFACES
-    release_format = 'proofofwork-ui-release-v4' if pages else 'proofofwork-ui-release-v3'
+    permission = plan['schema'] == 'proof-of-work-permission-ui-install-v1'
+    surfaces = PERMISSION_SURFACES if permission else PAGES_SURFACES if pages else SURFACES
+    release_format = 'proofofwork-ui-release-v5' if permission else 'proofofwork-ui-release-v4' if pages else 'proofofwork-ui-release-v3'
     require(manifest.get('format') == release_format and
         manifest.get('release_id') == plan['releaseId'] and manifest.get('commit') == plan['commit'] and
         manifest.get('source_tree') == plan['tree'], 'Caddy requires the exact published product release')
@@ -164,9 +166,10 @@ def main():
         'Installation manifest hash differs')
     plan = json.loads(raw); check_plan(plan)
     pages = plan['schema'] == 'proof-of-work-pages-ui-install-v1'
-    product = 'pages' if pages else 'search'
-    files = PAGES_FILES if pages else FILES
-    surfaces = PAGES_SURFACES if pages else SURFACES
+    permission = plan['schema'] == 'proof-of-work-permission-ui-install-v1'
+    product = 'permission' if permission else 'pages' if pages else 'search'
+    files = PAGES_FILES if pages or permission else FILES
+    surfaces = PERMISSION_SURFACES if permission else PAGES_SURFACES if pages else SURFACES
     require(args.source == Path('/var/tmp/proofofwork-deploy/'+product+'-tools-'+plan['releaseId']),
         'Source must use the exact release-bound private tools namespace')
     directory(args.source); directory(args.source/'deploy')

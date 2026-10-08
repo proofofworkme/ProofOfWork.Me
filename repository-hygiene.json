@@ -95,6 +95,7 @@
       "CODE.md",
       "JOBS.md",
       "PAGES.md",
+      "PERMISSION.md",
       "REPOSITORY_HYGIENE.md"
     ],
     "ledger-and-audit-evidence": [
@@ -221,6 +222,8 @@
       "deploy/jobs/README.md",
       "deploy/pages/README.md",
       "deploy/pages/UI_STORAGE.md",
+      "deploy/permission/README.md",
+      "local/permission-controller/README.md",
       "TRADEMARKS.md",
       "test-api/README.md",
       "deploy/audit29/INVOCATION.md",

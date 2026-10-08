@@ -28,6 +28,7 @@ HEX64 = re.compile('[0-9a-f]{64}')
 RELEASE = re.compile('[0-9a-f]{12}-[0-9]{8}T[0-9]{6}Z')
 SURFACES = 'activity boost browser code computer desktop dns growth id inception infinity jobs landing marketplace nft publish search token wallet work'.split()
 PAGES_SURFACES = [*SURFACES, 'pages']
+PERMISSION_SURFACES = [*PAGES_SURFACES, 'permission']
 DEPLOYMENT_ONLY_PATHS = frozenset({
     'deploy/proofofwork-ui-release-stage.py',
     'deploy/proofofwork-ui-release-provenance.sh',
@@ -231,9 +232,9 @@ def load_plan(path):
     assert p['releaseId'].startswith(p['commit'][:12] + '-')
     assert re.fullmatch('[a-z0-9][a-z0-9-]{0,30}', p['publicationAttempt'])
     release_format = p.get('releaseFormat', 'proofofwork-ui-release-v3')
-    assert release_format in ('proofofwork-ui-release-v3', 'proofofwork-ui-release-v4')
-    if release_format == 'proofofwork-ui-release-v4' or 'managedSurfaces' in p:
-        surfaces = PAGES_SURFACES if release_format == 'proofofwork-ui-release-v4' else SURFACES
+    assert release_format in ('proofofwork-ui-release-v3', 'proofofwork-ui-release-v4', 'proofofwork-ui-release-v5')
+    if release_format in ('proofofwork-ui-release-v4', 'proofofwork-ui-release-v5') or 'managedSurfaces' in p:
+        surfaces = PERMISSION_SURFACES if release_format == 'proofofwork-ui-release-v5' else PAGES_SURFACES if release_format == 'proofofwork-ui-release-v4' else SURFACES
         assert set(p['managedSurfaces']) == set(surfaces) and len(p['managedSurfaces']) == len(surfaces)
     return p, hashlib.sha256(raw).hexdigest(), raw
 
@@ -270,9 +271,9 @@ def make_plan(args):
     b = json.loads(Path(args.build_receipt).read_bytes())
     p = json.loads(Path(args.preflight).read_bytes())
     release_format = b.get('releaseFormat', 'proofofwork-ui-release-v3')
-    assert release_format in ('proofofwork-ui-release-v3', 'proofofwork-ui-release-v4')
-    surfaces = PAGES_SURFACES if release_format == 'proofofwork-ui-release-v4' else SURFACES
-    if release_format == 'proofofwork-ui-release-v4' or 'surfaces' in b:
+    assert release_format in ('proofofwork-ui-release-v3', 'proofofwork-ui-release-v4', 'proofofwork-ui-release-v5')
+    surfaces = PERMISSION_SURFACES if release_format == 'proofofwork-ui-release-v5' else PAGES_SURFACES if release_format == 'proofofwork-ui-release-v4' else SURFACES
+    if release_format in ('proofofwork-ui-release-v4', 'proofofwork-ui-release-v5') or 'surfaces' in b:
         assert set(b['surfaces']) == set(surfaces) and len(b['surfaces']) == len(surfaces)
     assert HEX40.fullmatch(b['commit']) and HEX40.fullmatch(b['tree']) and RELEASE.fullmatch(b['releaseId'])
     assert b['releaseId'].startswith(b['commit'][:12] + '-') and p['retentionDeferred'] is True

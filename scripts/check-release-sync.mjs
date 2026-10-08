@@ -19,12 +19,12 @@ const manifest = execFileSync('ssh', ['-i', '/home/sixer/.ssh/proofofwork_me_ed2
 const manifestLines = manifest.trim().split("\n");
 assert.equal(new Set(manifestLines.map(line => line.slice(0, line.indexOf("=")))).size, manifestLines.length, "Production manifest has duplicate fields");
 const fields = Object.fromEntries(manifest.trim().split('\n').map(line => { const n = line.indexOf('='); assert(n > 0); return [line.slice(0, n), line.slice(n + 1)]; }));
-assert.equal(fields.format, "proofofwork-ui-release-v4", "Production requires the complete Pages release contract");
-assert.equal(Object.keys(fields).filter(key => /^surface\.[^.]+\.sha256$/u.test(key)).length, 21, "Production must preserve all 21 managed products");
+assert.equal(fields.format, "proofofwork-ui-release-v5", "Production requires the complete Permission release contract");
+assert.equal(Object.keys(fields).filter(key => /^surface\.[^.]+\.sha256$/u.test(key)).length, 22, "Production must preserve all 22 managed products");
 assert.equal(fields.commit, commit, 'Production manifest differs from GitHub main');
 assert.equal(fields.source_tree, tree, 'Production source tree differs from primary main');
 const results = [];
-for (const url of ['http://127.0.0.1:4175/source-provenance.json', 'https://pages.proofofwork.me/source-provenance.json', 'https://computer.proofofwork.me/source-provenance.json']) {
+for (const url of ['http://127.0.0.1:4175/source-provenance.json', 'https://permission.proofofwork.me/source-provenance.json', 'https://pages.proofofwork.me/source-provenance.json', 'https://computer.proofofwork.me/source-provenance.json']) {
   const response = await fetch(url, { cache: 'no-store', redirect: 'error', signal: AbortSignal.timeout(30_000) });
   assert(response.ok, `Unavailable source provenance: ${url}`);
   const source = await response.json();

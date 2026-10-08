@@ -19,6 +19,7 @@ import types
 
 SURFACES = 'activity boost browser code computer desktop dns growth id inception infinity jobs landing marketplace nft publish search token wallet work'.split()
 PAGES_SURFACES = [*SURFACES, 'pages']
+PERMISSION_SURFACES = [*PAGES_SURFACES, 'permission']
 EXPECTED_STAGER_SHA256 = None
 
 
@@ -32,7 +33,8 @@ def tree_budget(root, *, owner=0, managed=False):
     if not stat.S_ISDIR(base.st_mode) or root.resolve() != root:
         raise ValueError('Capacity root is not canonical')
     pages = root / ('proofofwork-pages' if managed else 'pages')
-    surfaces = PAGES_SURFACES if os.path.lexists(pages) else SURFACES
+    permission = root / ('proofofwork-permission' if managed else 'permission')
+    surfaces = PERMISSION_SURFACES if os.path.lexists(permission) else PAGES_SURFACES if os.path.lexists(pages) else SURFACES
     names = [('proofofwork-' if managed else '') + name for name in surfaces]
     if not managed and sorted(p.name for p in root.iterdir()) != sorted(names):
         raise ValueError('Incoming surface set differs from the complete managed set')
@@ -101,7 +103,7 @@ def closed_managed_archive_budget(incoming, compatibility, order):
     reduces a file's logical tar contribution.
     """
     order = list(order)
-    if len(order) != len(set(order)) or set(order) not in (set(SURFACES), set(PAGES_SURFACES)):
+    if len(order) != len(set(order)) or set(order) not in (set(SURFACES), set(PAGES_SURFACES), set(PERMISSION_SURFACES)):
         raise ValueError('Closed archive requires the exact managed surface set')
     if set(incoming) != set(order) or not set(compatibility) <= set(order):
         raise ValueError('Closed archive row surface set differs')

@@ -521,7 +521,7 @@ const { APP_LINKS, APP_MENU_GROUPS } = await import(
   `data:text/javascript;base64,${Buffer.from(appLinksRuntimeSource).toString("base64")}`
 );
 const expectedAppMenus = [
-  ["UTILITY", ["COMPUTER", "DESKTOP", "BROWSER", "PAGES", "CODE", "JOBS"]],
+  ["UTILITY", ["COMPUTER", "DESKTOP", "BROWSER", "PAGES", "CODE", "JOBS", "PERMISSION"]],
   ["ID&SOC", ["ID", "DNS", "BOOST", "PUBLISH"]],
   ["FINANCE", ["WALLET", "AMO", "CREDIT", "WORK", "INFINITY", "INCEPTION"]],
   ["INSIGHTS", ["LOG", "GROWTH", "SEARCH"]],

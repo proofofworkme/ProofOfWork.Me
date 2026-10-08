@@ -1,5 +1,15 @@
 #!/usr/bin/env node
 import {
+  PERMISSION_ACTIVATION_HEIGHT, PERMISSION_ACTIVATION_PREVIOUS_BLOCK_HASH,
+} from "../src/shared/protocol/permissions.mjs";
+import {
+  createPermissionDiscovery, permissionCandidates, permissionCoreBlockWitness,
+} from "./permission-discovery.mjs";
+import {
+  createPermissionSnapshot, permissionsPayload, permissionPayload,
+  permissionRecordPayload, permissionSnapshotRequest, permissionReadError,
+} from "./permissions.mjs";
+import {
   DNS_SUBDOMAIN_ACTIVATION_HEIGHT, DNS_SUBDOMAIN_PREFIX,
   DNS_SUBDOMAIN_SELF_PAYMENT_SATS, parseDnsSubdomainName, replayDnsSubdomains,
 } from "../src/shared/protocol/dnsSubdomains.mjs";
@@ -350,6 +360,7 @@ import {
   proofIndexLogHistoryReadEligibility,
   proofIndexLogHistoryPayload,
   proofIndexOperationalStatusPayload,
+  proofIndexPermissionDiscovery,
   proofIndexReadinessEpochCheckpoint,
   proofIndexWorkAmoV8DeclarationCandidates,
   proofIndexReadFeatureEnabled,
@@ -35013,6 +35024,62 @@ const discoverDnsPageLinks = createDnsPageLinkDiscovery({
       .map(record => dnsPageLinkEnvelope(record, tx));
   },
 });
+
+const discoverPermissions = createPermissionDiscovery({
+  readIndex: proofIndexPermissionDiscovery,
+  async readCoreHash(height) {
+    const result = await bitcoinRpc("getblockhash", [height]);
+    const hash = String(result?.ok ? result.result : "").trim().toLowerCase();
+    if (!/^[0-9a-f]{64}$/u.test(hash)) throw permissionReadError("Permission Core binding is unavailable.");
+    return hash;
+  },
+  async readCoreBlock(row) {
+    const context = await canonicalVerifierCurrentBlock("livenet", Number(row.height), row.previous_block_hash, row.block_hash);
+    const envelope = workAmoV5RawBlockDiscoveryEnvelope({
+      blockTransactions: context.blockTransactions, blockHeaderHex: context.blockHeaderHex,
+      blockHash: row.block_hash, blockHeight: Number(row.height), previousBlockHash: row.previous_block_hash,
+    });
+    const transactions = new Map(context.transactions.map(tx => [transactionTxid(tx), tx]));
+    const candidates = permissionCandidates(envelope.records).map(record => {
+      const tx = transactions.get(record.txid);
+      if (!tx || tx._powCanonicalRpcHydration !== true || !transactionHasCompleteCanonicalPrevouts(tx) ||
+          transactionBlockHash(tx) !== row.block_hash || transactionBlockHeight(tx) !== Number(row.height) ||
+          transactionBlockIndex(tx) !== record.blockTransactionIndex) {
+        throw permissionReadError("Permission Core carrier hydration is incomplete.");
+      }
+      return { ...tx, blockTransactionIndex: transactionBlockIndex(tx), timestamp: tx.status?.block_time ?? null };
+    });
+    return permissionCoreBlockWitness(envelope, candidates, { blockHeight: Number(row.height), blockHash: row.block_hash });
+  },
+  async hydratePending(txid, network) {
+    const tx = await fetchTransactionFromBitcoinRpc(txid, network, { bypassCache: true, cacheResult: false, requireCanonicalPrevouts: true });
+    const entry = await bitcoinRpc("getmempoolentry", [txid]);
+    if (!entry?.ok || !tx || transactionTxid(tx) !== txid || transactionConfirmed(tx) || !transactionHasCompleteCanonicalPrevouts(tx)) return [];
+    return permissionCandidates(canonicalRawProtocolRecordSetFromTransaction(tx).records).length
+      ? [{ ...tx, blockTransactionIndex: undefined, timestamp: entry.result?.time ?? null }] : [];
+  },
+});
+
+async function verifiedPermissionPayload(network, params, detail) {
+  const checkpoint = exactCoreTipFromBlockchainInfo(await bitcoinRpc("getblockchaininfo", []));
+  if (network !== "livenet" || !checkpoint) throw permissionReadError("Permission requires an exact livenet Core tip.");
+  const requested = permissionSnapshotRequest(params, network).snapshot;
+  if (requested && (requested.checkpointHeight !== checkpoint.height || requested.checkpointHash !== checkpoint.blockHash)) {
+    throw permissionReadError("Permission history changed; restart the read.", 409, "PERMISSION_SNAPSHOT_STALE");
+  }
+  const discovery = await discoverPermissions(network, checkpoint, PERMISSION_ACTIVATION_HEIGHT, PERMISSION_ACTIVATION_PREVIOUS_BLOCK_HASH);
+  if (discovery.coverage.complete !== true) throw permissionReadError("Complete Permission history is unavailable.");
+  const state = createPermissionSnapshot({ network, checkpointHeight: checkpoint.height, checkpointHash: checkpoint.blockHash,
+    transactions: discovery.transactions, generatedAt: new Date().toISOString(), writesEnabled: true });
+  state.discoveryWitnessSha256 = discovery.coverage.witnessSha256 ?? discovery.coverage.witnessHash ?? null;
+  state.pendingWarnings = discovery.pendingWarnings ?? [];
+  const payload = detail ? permissionPayload(state, params) : permissionsPayload(state, params);
+  const finalTip = exactCoreTipFromBlockchainInfo(await bitcoinRpc("getblockchaininfo", []));
+  if (finalTip?.height !== checkpoint.height || finalTip.blockHash !== checkpoint.blockHash) {
+    throw permissionReadError("The Core tip changed during Permission verification.");
+  }
+  return { ...payload, tip: { height: checkpoint.height, hash: checkpoint.blockHash } };
+}
 
 function dnsSubdomainPublicRecord(record, network, root = null) {
   return { ...record, network, id: record.name.replace(/\.pow$/u, ""),
@@ -80578,12 +80645,14 @@ async function handleRequest(request, response) {
 
     const network = networkFromSearch(url.searchParams);
     const freshRead = freshReadRequested(url.searchParams);
+    const permissionInspectionRead = url.pathname === "/api/v1/permission" && url.searchParams.get("inspect") === "1";
 
     const authenticatedLoopbackRead = internalVerifierRequestAllowed(request);
     let canonicalReadGate = null;
     let serveFreshLastGood = false;
     if (
       canonicalPublicReadGateApplies(url.pathname) &&
+      !permissionInspectionRead &&
       !authenticatedLoopbackRead
     ) {
       const gate = await canonicalPublicReadGate(network, { force: freshRead });
@@ -81084,6 +81153,28 @@ async function handleRequest(request, response) {
         }
       }
       errorResponse(response, 404, "Database event history is not available.");
+      return;
+    }
+
+    if (url.pathname === "/api/v1/permissions" || url.pathname === "/api/v1/permission") {
+      if (permissionInspectionRead) {
+        const txid = url.searchParams.get("permission") ?? url.searchParams.get("txid") ?? "";
+        if (!/^[0-9a-f]{64}$/u.test(txid)) throw permissionReadError("Permission must be a transaction ID.", 400, "PERMISSION_TXID_INVALID");
+        if (network !== "livenet") throw permissionReadError("Permission v1 is available on livenet.", 400, "PERMISSION_NETWORK_INVALID");
+        let tx = await fetchTransactionFromBitcoinRpc(txid, network, { bypassCache: true, cacheResult: false, requireCanonicalPrevouts: true });
+        if (!tx || tx._powCanonicalRpcHydration !== true || !transactionHasCompleteCanonicalPrevouts(tx)) {
+          throw permissionReadError("Permission transaction authority cannot be hydrated.");
+        }
+        if (transactionConfirmed(tx)) {
+          [tx] = await annotateBlockOrder([tx], network, { hydrateAllMissingConfirmedIndexes: true });
+          const canonical = await bitcoinRpc("getblockhash", [transactionBlockHeight(tx)]);
+          if (!canonical?.ok || canonical.result !== transactionBlockHash(tx)) throw permissionReadError("Permission record is no longer canonical.");
+        }
+        const payload = permissionRecordPayload({ ...tx, blockTransactionIndex: transactionBlockIndex(tx), timestamp: tx.status?.block_time ?? null }, { network });
+        jsonResponse(response, 200, payload, "no-store");
+      } else {
+        jsonResponse(response, 200, await verifiedPermissionPayload(network, url.searchParams, url.pathname === "/api/v1/permission"), "no-store");
+      }
       return;
     }
 

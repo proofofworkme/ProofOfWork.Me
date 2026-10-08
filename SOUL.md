@@ -677,3 +677,13 @@ broadcast and preserve unknown-outcome retry protection.
 - 2026-10-08: A product release is one source state across production, GitHub `main`, the primary local `main` checkout and the local preview. Every release must finish the sync, rebuild/restart the local app, and verify exact commit provenance on all four before it is called complete. Preserve concurrent local work in recoverable custody, integrate current `main`, and keep accepted node overlays through their guarded source/hash provenance; do not leave the user on an older audit branch or stale build after deploying a new product.
 
 The final release synchronization check is `npm run check:release-sync`. It verifies actual GitHub `main`, clean primary local `main`, production manifest commit/tree, and clean source provenance from the local preview plus public Pages and Computer. An unavailable or failed check leaves the release incomplete; fix the mismatch before announcing.
+
+Permission makes agent authority inspectable from confirmed chain records. Keep
+the original wallet as authority even when a display ID moves. Public immutable
+policy and private signing enforcement are separate responsibilities: a TXID
+cannot constrain an agent that has unrestricted wallet access. Human grant
+management may ship with autonomous signing closed; never describe an unverified
+UniSat/keyring bridge as enforced automation. Preserve pending commitments and
+uncertain signatures across grant changes and restarts. Duration and named-agent
+binding are outside Permission v1. The release synchronization gate now also
+verifies public Permission provenance.

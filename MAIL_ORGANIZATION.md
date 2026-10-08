@@ -1,5 +1,16 @@
 # Mail Organization
 
+## Permission workspace
+
+Computer `/?folder=permission` and `permission.proofofwork.me` share the Permission
+grant manager. Drafts and signed transaction recovery are local browser state;
+confirmed wallet authority and lifecycle come from complete chain replay. The
+workspace checks the connected wallet before local grant signing, preserves
+uncertain broadcast receipts, and leaves autonomous signing closed. It never
+collects a wallet password. See [PERMISSION.md](PERMISSION.md) for the public
+schema and [local controller](local/permission-controller/README.md) for protected
+credential references and budget accounting.
+
 Notes for mailbox features that make ProofOfWork.Me feel like a normal mail app while respecting ProofOfWork permanence.
 
 ## Computer navigation on short screens

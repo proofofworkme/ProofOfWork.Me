@@ -157,6 +157,11 @@ if ((${#surfaces[@]} != 20)); then
   exit 70
 fi
 pages_surfaces=("${surfaces[@]}" pages)
+permission_surfaces=("${pages_surfaces[@]}" permission)
+if ((${#permission_surfaces[@]} != 22)); then
+  echo "UI V5 provenance surface set must contain exactly 22 entries." >&2
+  exit 70
+fi
 if ((${#pages_surfaces[@]} != 21)); then
   echo "UI V4 provenance surface set must contain exactly 21 entries." >&2
   exit 70
@@ -243,7 +248,7 @@ for surface in "${surfaces[@]}"; do
   surface_seen["${surface}"]=1
 done
 unset surface_seen surface
-surface_pattern='activity|browser|boost|code|computer|desktop|dns|growth|id|inception|infinity|jobs|landing|marketplace|nft|pages|publish|search|token|wallet|work'
+surface_pattern='activity|browser|boost|code|computer|desktop|dns|growth|id|inception|infinity|jobs|landing|marketplace|nft|pages|permission|publish|search|token|wallet|work'
 
 surface_directory() {
   printf '%s/proofofwork-%s\n' "${ui_root}" "$1"
@@ -918,6 +923,9 @@ verify_archive_payload() {
   if [[ -n "${expected_counts[pages]:-}" || -n "${expected_digests[pages]:-}" ]]; then
     archive_surfaces=("${pages_surfaces[@]}")
   fi
+  if [[ -n "${expected_counts[permission]:-}" || -n "${expected_digests[permission]:-}" ]]; then
+    archive_surfaces=("${permission_surfaces[@]}")
+  fi
 
   if [[ -z "${expected_counts[jobs]:-}" && -z "${expected_digests[jobs]:-}" ]]; then
     archive_surfaces=("${pre_jobs_surfaces[@]}")
@@ -977,6 +985,11 @@ verify_archive_payload() {
       archive_name="${archive_names[${index}]}"
       archive_type="${verbose_entries[${index}]:0:1}"
       normalized_name="${archive_name%/}"
+      if [[ "${normalized_name}" == surfaces/permission || "${normalized_name}" == surfaces/permission/* ]] &&
+        [[ -z "${expected_counts[permission]:-}" || -z "${expected_digests[permission]:-}" ]]; then
+        echo "Release archive contains unexpected Permission payload without V5 evidence." >&2
+        exit 1
+      fi
       if [[ "${normalized_name}" == surfaces/pages || "${normalized_name}" == surfaces/pages/* ]] &&
         [[ -z "${expected_counts[pages]:-}" || -z "${expected_digests[pages]:-}" ]]; then
         echo "Release archive contains unexpected Pages payload without V4 evidence." >&2
@@ -1101,6 +1114,10 @@ verify_archive_payload() {
 }
 
 record_rollback_evidence() {
+  if [[ -e "$(surface_directory permission)" || -L "$(surface_directory permission)" ]]; then
+    echo "Permission rollback roots require attributed V5 release provenance." >&2
+    return 1
+  fi
   if [[ -e "$(surface_directory pages)" || -L "$(surface_directory pages)" ]]; then
     echo "Pages rollback roots require attributed V4 release provenance." >&2
     return 1
@@ -1255,6 +1272,10 @@ process_release_manifest() {
   if [[ -e "$(surface_directory pages)" || -L "$(surface_directory pages)" ]]; then
     record_surfaces=("${pages_surfaces[@]}")
     release_format=proofofwork-ui-release-v4
+  fi
+  if [[ -e "$(surface_directory permission)" || -L "$(surface_directory permission)" ]]; then
+    record_surfaces=("${permission_surfaces[@]}")
+    release_format=proofofwork-ui-release-v5
   fi
   declare -A counts=()
   declare -A digests=()
@@ -1494,7 +1515,7 @@ verify_manifest() {
       format | release_id | commit | source_tree | source_attestation | source_dependency_model | source_dependency_entry_count | source_dependency_bytes | source_dependency_sha256 | deployed_at | archive_name | archive_sha256 | archive_payload_model) ;;
       *)
         allowed_key=false
-        for surface in "${pages_surfaces[@]}"; do
+        for surface in "${permission_surfaces[@]}"; do
           if [[ "${key}" == "surface.${surface}.file_count" ||
             "${key}" == "surface.${surface}.sha256" ]]; then
             allowed_key=true
@@ -1511,7 +1532,7 @@ verify_manifest() {
     values["${key}"]="${value}"
   done <"${manifest}"
 
-  if [[ "${values[format]:-}" != "proofofwork-ui-release-v3" && "${values[format]:-}" != "proofofwork-ui-release-v4" ]] ||
+  if [[ "${values[format]:-}" != "proofofwork-ui-release-v3" && "${values[format]:-}" != "proofofwork-ui-release-v4" && "${values[format]:-}" != "proofofwork-ui-release-v5" ]] ||
     [[ ! "${values[release_id]:-}" =~ ^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$ ]] ||
     [[ ! "${values[commit]:-}" =~ ^([0-9a-f]{40}|[0-9a-f]{64})$ ]] ||
     [[ ! "${values[source_tree]:-}" =~ ^([0-9a-f]{40}|[0-9a-f]{64})$ ]] ||
@@ -1532,11 +1553,24 @@ verify_manifest() {
     echo "Active UI release manifest does not preserve the NFT compatibility alias." >&2
     exit 1
   fi
-  if [[ "${values[format]}" == proofofwork-ui-release-v4 ]]; then
+  if [[ "${values[format]}" != proofofwork-ui-release-v5 ]] &&
+    [[ -n "${seen[surface.permission.file_count]:-}" || -n "${seen[surface.permission.sha256]:-}" ||
+    -e "$(surface_directory permission)" || -L "$(surface_directory permission)" ]]; then
+    echo "Pre-V5 UI release manifest cannot contain Permission surface evidence or payload." >&2
+    return 1
+  fi
+  if [[ "${values[format]}" == proofofwork-ui-release-v4 || "${values[format]}" == proofofwork-ui-release-v5 ]]; then
     manifest_surfaces=("${pages_surfaces[@]}")
+    if [[ "${values[format]}" == proofofwork-ui-release-v5 ]]; then
+      manifest_surfaces=("${permission_surfaces[@]}")
+    fi
     for surface in "${manifest_surfaces[@]}"; do
       if [[ -z "${values[surface.${surface}.file_count]:-}" || -z "${values[surface.${surface}.sha256]:-}" ]]; then
-        echo "V4 UI release manifest is missing surface evidence: ${surface}" >&2
+        if [[ "${values[format]}" == proofofwork-ui-release-v5 ]]; then
+          echo "V5 UI release manifest is missing surface evidence: ${surface}" >&2
+        else
+          echo "V4 UI release manifest is missing surface evidence: ${surface}" >&2
+        fi
         return 1
       fi
     done
@@ -1815,7 +1849,7 @@ verify_rollback_capability() {
     exit 1
   fi
   case "${format_value}" in
-    proofofwork-ui-release-v3 | proofofwork-ui-release-v4)
+    proofofwork-ui-release-v3 | proofofwork-ui-release-v4 | proofofwork-ui-release-v5)
       verify_manifest
       ;;
     proofofwork-ui-rollback-evidence-v1)

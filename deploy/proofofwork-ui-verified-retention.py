@@ -20,6 +20,7 @@ RELEASE = re.compile(r'[0-9a-f]{7,64}-[0-9]{8}T[0-9]{6}Z\Z')
 STAGE = re.compile(r'proofofwork-ui-(source|surfaces)-([0-9a-f]{7,64}-[0-9]{8}T[0-9]{6}Z)(\.tgz(?:\.sha256)?)?\Z')
 SURFACES = frozenset('activity boost browser code computer desktop dns growth id inception infinity jobs landing marketplace nft publish search token wallet work'.split())
 PAGES_SURFACES = SURFACES | {'pages'}
+PERMISSION_SURFACES = PAGES_SURFACES | {'permission'}
 
 PRE_JOBS_SURFACES = SURFACES - {'jobs'}
 SURFACE_FAMILIES = {SURFACES, PRE_JOBS_SURFACES, PRE_JOBS_SURFACES - {'code'}, PRE_JOBS_SURFACES - {'code', 'search'},
@@ -49,7 +50,7 @@ def manifest(path):
         if not separator or key in fields:
             raise ValueError('Invalid release manifest fields')
         fields[key] = value
-    if fields.get('format') not in {'proofofwork-ui-release-v3', 'proofofwork-ui-release-v4'} or not RELEASE.fullmatch(fields.get('release_id', '')):
+    if fields.get('format') not in {'proofofwork-ui-release-v3', 'proofofwork-ui-release-v4', 'proofofwork-ui-release-v5'} or not RELEASE.fullmatch(fields.get('release_id', '')):
         raise ValueError('Unsupported release provenance')
     return fields
 
@@ -59,10 +60,10 @@ def verified_release(path, archives):
     fields = manifest(path)
     surface_fields = {key.split('.')[1] for key in fields if key.startswith('surface.') and key.endswith('.sha256')}
     surface_counts = {key.split('.')[1] for key in fields if key.startswith('surface.') and key.endswith('.file_count')}
-    families = {PAGES_SURFACES} if fields['format'] == 'proofofwork-ui-release-v4' else SURFACE_FAMILIES
+    families = {PERMISSION_SURFACES} if fields['format'] == 'proofofwork-ui-release-v5' else {PAGES_SURFACES} if fields['format'] == 'proofofwork-ui-release-v4' else SURFACE_FAMILIES
     if frozenset(surface_fields) not in families or surface_counts != surface_fields:
         raise ValueError('Incomplete release surface coverage')
-    for surface in PAGES_SURFACES - surface_fields:
+    for surface in PERMISSION_SURFACES - surface_fields:
         if os.path.lexists(path / ('proofofwork-' + surface)):
             raise ValueError('Undeclared release surface: ' + surface)
     for surface in sorted(surface_fields):
@@ -95,7 +96,7 @@ def verified_release(path, archives):
 def passthrough_fingerprint(root):
     """Require non-release content in a retired root to remain in recovery."""
     fields = manifest(root)
-    surfaces = PAGES_SURFACES if fields['format'] == 'proofofwork-ui-release-v4' else SURFACES
+    surfaces = PERMISSION_SURFACES if fields['format'] == 'proofofwork-ui-release-v5' else PAGES_SURFACES if fields['format'] == 'proofofwork-ui-release-v4' else SURFACES
     managed = {'proofofwork-' + surface for surface in surfaces}
     digest = hashlib.sha256()
     for path in sorted(root.rglob('*'), key=lambda value: os.fsencode(value.relative_to(root))):
