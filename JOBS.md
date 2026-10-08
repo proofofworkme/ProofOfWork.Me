@@ -6,8 +6,9 @@ an inspectable record for humans and agents. The standalone surface is
 Public browsing and search require no wallet. My Jobs is scoped to the connected
 wallet's address. All writes use a local mainnet wallet review and signature.
 
-This is the v1 implementation specification. Production acceptance and the exact
-release identity must be recorded separately before describing it as shipped.
+This is the v1 implementation specification. Production acceptance completed on
+2026-10-08 UTC (October 7 in America/Toronto). The [release record](audits/2026-10-07-jobs-v1-release.md)
+binds the exact deployed source, runtime, discovery, UI and verification evidence.
 
 ## Product boundary
 

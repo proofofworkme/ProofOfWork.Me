@@ -7008,5 +7008,7 @@ payments without counting them twice.
 The [Jobs release runbook](deploy/jobs/README.md) preserves current node overlays
 with a hash-pinned scoped merge and Search hold. UI publication adds the twentieth
 managed root, nineteenth public build, complete prior-asset closure and guarded
-Caddy host activation. This section describes the implementation contract;
-production acceptance is recorded separately after the release gates pass.
+Caddy host activation. Production acceptance completed on 2026-10-08 UTC
+(October 7 in America/Toronto); the [release record](audits/2026-10-07-jobs-v1-release.md)
+binds source `fc396c9a9abd`, the scoped runtime, complete discovery and the
+verified twenty-root UI release. Existing protocol and economic rules remain authoritative.
