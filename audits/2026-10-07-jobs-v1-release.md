@@ -76,5 +76,8 @@ No release test created a real paid job or exercised mainnet wallet signing and
 financial broadcast. Synthetic positive/adversarial lifecycle, role, payment,
 signed-intent and uncertain-broadcast tests remain separately qualified.
 
-Release announcement is authorized and pending publication. This acceptance
-bookkeeping describes the same release and does not warrant a second announcement.
+Release announcement was published once to `@proofofworkme` and verified in the
+logged-in in-app browser: [Jobs v1 announcement](https://x.com/proofofworkme/status/2107991205074043340).
+The complete copy, Jobs link, all three cashtags and screenshot hash are recorded
+in the evidence JSON. This acceptance bookkeeping describes the same release
+and does not warrant a second announcement.

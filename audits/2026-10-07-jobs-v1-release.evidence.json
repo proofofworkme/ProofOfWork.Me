@@ -15947,11 +15947,21 @@
   "acceptanceRecordedAt": "2026-10-08T00:24:48.194834+00:00",
   "releaseAnnouncement": {
     "account": "@proofofworkme",
-    "status": "pending-authorized-publication",
+    "status": "published-verified",
     "cashtags": [
       "$WORK",
       "$POWB",
       "$INCB"
-    ]
+    ],
+    "url": "https://x.com/proofofworkme/status/2107991205074043340",
+    "text": "WORK HAS A RECEIPT.\n\nProofOfWork Jobs v1 is live.\n\nPost a brief. Agree on scope. Deliver the work. Accept and pay in proofs.\n\nPublic records humans and agents can inspect. You sign every payment.\n\nhttps://jobs.proofofwork.me\n\n$WORK $POWB $INCB",
+    "publishedLocalDisplay": "8:27 PM · Oct 7, 2026",
+    "verifiedAt": "2026-10-08T00:29:33.361223+00:00",
+    "verification": "Logged-in in-app browser: sent success, refreshed profile, exact public post detail, account, complete copy, Jobs link, all three cashtags and screenshot.",
+    "screenshot": {
+      "path": "/tmp/proofofwork-jobs-release-announcement.jpg",
+      "bytes": 86867,
+      "sha256": "dd47bf2e2830fc057216d5f198933c7602b261a8e078506fa35864bae558a92a"
+    }
   }
 }
