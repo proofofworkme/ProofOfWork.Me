@@ -130,23 +130,54 @@ test('autosave is verified and unreadable receipts never silently become empty d
 });
 
 let currentDetail = detail, activeAddress = requester, reserved = [], fundingPresent = true, corruptPayment = false;
-const sameAddress = (a, b) => Boolean(a && b && a === b);
 const paymentReview = await loadClient('src/shared/wallet/paymentReview.ts', { 'bitcoinjs-lib': bitcoin });
 const funding = new bitcoin.Transaction(); funding.addInput(Buffer.alloc(32, 1), 0); funding.addOutput(bitcoin.address.toOutputScript(requester), 2000000n);
-const wallet = await loadClient('src/features/jobs/jobsWallet.ts', {
-  'bitcoinjs-lib': bitcoin, './jobsApi': { ...api, fetchJobs: async () => evidence, fetchJob: async () => structuredClone(currentDetail) }, './jobsProtocol': plans,
-  '../../shared/api/proofApiClient': { fetchProofApiJson: async path => path.includes('/utxo') ? fundingPresent ? [{ txid: funding.getId(), vout: 0, status: { confirmed: true } }] : [] : { txid: path.split('/').at(-1), status: { confirmed: true } } },
-  '../../shared/wallet/paymentReview': paymentReview,
-  '../code/codeWallet': { sameCodeAddress: sameAddress, codeReservedAnchors: async () => reserved },
-  '../boost/boostWallet': { ensureWalletNetwork: async (_wallet, _network, address) => { if (address !== activeAddress) throw new Error('Account changed'); }, assertActiveWalletAddress: async (_wallet, address) => { if (address !== activeAddress) throw new Error('Account changed'); },
-    buildBoostPaymentPsbt: async ({ fromAddress, payments, protocolPayloads }) => {
+const reservationScopes = ['', 'd4e5ebf11d104d6a63fb74e42094364b25a5f7199a09e5c0e71408972466a8b8',
+  'a3d0bc8528f91dfc52400a885bed7e49235396aa82aa9f95db41be629f1d5562',
+  '3cb25745f937f2b4e5508e5400189fe8fe679cd8e84bfa1e9176d70c9761f15d'];
+const scopedReserved = new Map(), creditChanges = new Map(), reservationRequests = [], paymentBuilds = [];
+const walletApi = { fetchProofApiJson: async (path, network) => {
+  if (path.includes('/utxo')) return fundingPresent ? [{ txid: funding.getId(), vout: 0, status: { confirmed: true } }] : [];
+  if (path.startsWith('/api/v1/registry?')) return { network, records: [], listings: [], coverage: { complete: true } };
+  if (path.startsWith('/api/v1/boost?')) return { network, complete: true, items: [], hasMore: false };
+  if (path.startsWith('/api/v1/token?')) {
+    const params = new URL(path, 'https://fixture.test').searchParams, scope = params.get('asset');
+    reservationRequests.push({ address: params.get('address'), scope, fresh: params.get('fresh'), wallet: params.get('wallet') });
+    const anchors = [...(scope === '' ? reserved : []), ...(scopedReserved.get(scope) ?? [])];
+    return { network, authoritativeWallet: true, walletScoped: true,
+      source: 'proof-indexer-wallet-token-overlay+proof-indexer-wallet-address-state', summaryOnly: true,
+      listings: anchors.map(anchor => ({ listingId: anchor.txid, sellerAddress: requester,
+        saleAuthorization: { anchorTxid: anchor.txid, anchorVout: anchor.vout } })), ...creditChanges.get(scope) };
+  }
+  return { txid: path.split('/').at(-1), status: { confirmed: true } };
+} };
+const boostWallet = { ensureWalletNetwork: async (_wallet, _network, address) => { if (address !== activeAddress) throw new Error('Account changed'); }, assertActiveWalletAddress: async (_wallet, address) => { if (address !== activeAddress) throw new Error('Account changed'); },
+    scriptForAddress: address => bitcoin.address.toOutputScript(address),
+    fetchReservedAmoAnchorOutpoints: async (_address, _network, additional) => additional,
+    buildBoostPaymentPsbt: async options => {
+      paymentBuilds.push(options);
+      const { fromAddress, payments, protocolPayloads } = options;
       const psbt = new bitcoin.Psbt(); psbt.addInput({ hash: funding.getId(), index: 0, witnessUtxo: funding.outs[0] });
       const amount = payments[0].amountSats + (corruptPayment ? 1 : 0), fee = 1000, change = 2000000 - amount - fee;
       psbt.addOutput({ address: payments[0].address, value: BigInt(amount) });
       for (const payload of protocolPayloads) psbt.addOutput({ script: bitcoin.payments.embed({ data: [Buffer.from(payload)] }).output, value: 0n });
       psbt.addOutput({ address: fromAddress, value: BigInt(change) });
       return { psbtHex: psbt.toHex(), feeSats: fee, changeSats: change, dustFeeSats: 0, inputCount: 1, walletInputIndexes: [0] };
-    } },
+    } };
+const surfaceReadState = await loadClient('src/shared/api/surfaceReadState.ts');
+const reservations = await loadClient('src/features/code/codeReservations.ts', {
+  '../../shared/api/surfaceReadState': surfaceReadState,
+});
+const codeWallet = await loadClient('src/features/code/codeWallet.ts', {
+  'bitcoinjs-lib': bitcoin, '../../shared/api/proofApiClient': walletApi,
+  '../../shared/wallet/paymentReview': paymentReview, './codeReservations': reservations,
+  './codeApi': { fetchCodeRepository: async () => { throw new Error('Unexpected repository read'); } },
+  '../boost/boostProtocol': { boostListingAnchorOutpoints: () => [] }, '../boost/boostWallet': boostWallet,
+});
+const wallet = await loadClient('src/features/jobs/jobsWallet.ts', {
+  'bitcoinjs-lib': bitcoin, './jobsApi': { ...api, fetchJobs: async () => evidence, fetchJob: async () => structuredClone(currentDetail) }, './jobsProtocol': plans,
+  '../../shared/api/proofApiClient': walletApi, '../../shared/wallet/paymentReview': paymentReview,
+  '../code/codeWallet': codeWallet, '../boost/boostWallet': boostWallet,
 });
 const acceptance = plans.buildJobsPlan({ ...plans.emptyJobsDraft, action: 'accept', job: job.txid, expectedHead: job.headTxid, delivery: job.deliveryTxid });
 test('acceptance freezes requester, assigned worker, exact reward and latest confirmed delivery', async () => {
@@ -174,4 +205,38 @@ test('cancellation before payment and fresh funding reservations are guarded', a
   reserved = []; fundingPresent = false;
   await assert.rejects(wallet.verifyJobsFunding(prepared), /funding|changed/i);
   fundingPresent = true;
+});
+test('posting a job accepts production wallet summaries and excludes reservations from every credit and bond scope', async () => {
+  reservationRequests.length = 0;
+  const brief = plans.buildJobsPlan({ ...plans.emptyJobsDraft, title: 'Welcome To Jobs', scope: 'Test Job Listing.' });
+  const emptyPrepared = await wallet.prepareJobsTransaction(brief, requester, 'livenet', () => {});
+  assert.equal(emptyPrepared.destination, requester);
+  assert.equal(emptyPrepared.amountSats, '546');
+  assert.deepEqual(reservationRequests.map(request => request.scope).sort(), [...reservationScopes].sort());
+  assert.ok(reservationRequests.every(request => request.address === requester && request.fresh === '1' && request.wallet === '1'));
+  for (const [index, scope] of reservationScopes.entries()) {
+    scopedReserved.set(scope, [{ txid: id(index + 40), vout: index }]);
+    creditChanges.set(scope, { hasMore: true, collectionHasMore: { listings: false, transfers: true }, totalCounts: { listings: 1 } });
+  }
+  const prepared = await wallet.prepareJobsTransaction(brief, requester, 'livenet', () => {});
+  assert.deepEqual(Array.from(paymentBuilds.at(-1).excludeOutpoints, item => `${item.txid}:${item.vout}`).sort(),
+    reservationScopes.map((_scope, index) => `${id(index + 40)}:${index}`).sort());
+  await wallet.verifyJobsFunding(prepared);
+  scopedReserved.set(reservationScopes[3], [{ txid: funding.getId(), vout: 0 }]);
+  await assert.rejects(wallet.verifyJobsFunding(prepared), /reserved|changed/i);
+  scopedReserved.clear(); creditChanges.clear();
+});
+test('Jobs preparation and fresh funding reject explicitly incomplete or nonauthoritative wallet reservations', async () => {
+  const brief = plans.buildJobsPlan({ ...plans.emptyJobsDraft, title: 'Welcome To Jobs', scope: 'Test Job Listing.' });
+  const prepared = await wallet.prepareJobsTransaction(brief, requester, 'livenet', () => {});
+  for (const change of [{ authoritativeWallet: false }, { walletScoped: false }, { source: ' ' },
+    { source: 'summary-cache' }, { listings: undefined }, { listingBookComplete: false },
+    { collectionHasMore: { listings: true } }, { totalCounts: { listings: 1 } }]) {
+    creditChanges.set(reservationScopes[2], change);
+    const priorBuilds = paymentBuilds.length;
+    await assert.rejects(wallet.prepareJobsTransaction(brief, requester, 'livenet', () => {}), /reservations/i);
+    assert.equal(paymentBuilds.length, priorBuilds);
+    await assert.rejects(wallet.verifyJobsFunding(prepared), /reservations/i);
+  }
+  creditChanges.clear();
 });

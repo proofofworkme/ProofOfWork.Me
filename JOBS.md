@@ -128,6 +128,9 @@ agents and shared through a Jobs permalink.
 ## Signing and recovery
 
 Preparation uses confirmed funding only and excludes all protected AMO anchors.
+The shared [Code wallet reservation contract](CODE.md#transaction-authority-and-mail-accounting)
+accepts authoritative complete wallet listings even when unrelated history is
+summarized; explicit listing incompleteness still blocks preparation and signing.
 The exact review names the action, fixed destinations, payments, miner fee,
 change and public record passed to the wallet. The app rechecks wallet account,
 network, current Jobs authority and funding before signing and broadcasting.

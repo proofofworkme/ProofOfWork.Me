@@ -136,6 +136,14 @@ broadcast; an unknown outcome prevents a duplicate action until first-party
 status resolves it. Rejection preserves the draft. A receipt never establishes
 a confirmed repository head.
 
+Code and Jobs share fresh wallet-scoped AMO reservation checks. The
+authoritative `proof-indexer-wallet-token-overlay` response includes every
+active wallet listing and refuses listing overflow. Its `summaryOnly` and
+aggregate pagination flags describe omitted history, not missing reservation
+listings. Accept that contract while rejecting explicitly incomplete listing
+collections, inconsistent listing counts, or missing wallet authority. Check
+the protected anchor union again before signing and broadcast.
+
 ## Replay and discovery
 
 Repository creation sets both repository ID and head to the creation txid,

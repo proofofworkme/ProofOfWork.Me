@@ -58,7 +58,7 @@ async function fixture(page, { unavailable = false, wallet = false, corruptSourc
     if (url.pathname.endsWith("/hex")) return route.fulfill({ json: { hex: funding.toHex() } });
     if (url.pathname.endsWith("/status")) return route.fulfill({ json: { status: "confirmed", confirmed: true } });
     if (url.pathname === "/api/v1/registry") return route.fulfill({ json: { network: "livenet", records: [], listings: [], coverage: { complete: true }, collectionHasMore: { listings: false } } });
-    if (url.pathname === "/api/v1/token") return route.fulfill({ json: { network: "livenet", records: [], listings: [], source: "proof-indexer-fixture", walletScoped: true, authoritativeWallet: true, collectionHasMore: { listings: false } } });
+    if (url.pathname === "/api/v1/token") return route.fulfill({ json: { network: "livenet", listings: [], source: "proof-indexer-wallet-token-overlay+proof-indexer-wallet-address-state", walletScoped: true, authoritativeWallet: true, summaryOnly: true } });
     if (url.pathname === "/api/v1/boost") return route.fulfill({ json: { network: "livenet", complete: true, items: [], hasMore: false } });
     return route.fulfill({ json: { records: [], items: [], listings: [], complete: true, minimumFee: 0.1, fastestFee: 1, halfHourFee: 1, hourFee: 1 } });
   });
@@ -137,6 +137,19 @@ test("embedded editor preserves drafts and prevents leaving when storage cannot 
   await page.getByRole("button", { name: "Resume draft", exact: true }).click();
   await expect(page.getByRole("textbox", { name: "Description", exact: true })).toHaveValue("Exact unsent work");
 });
+
+for (const url of ["/?code=1", "/?folder=code"]) {
+  test(`${url} authoritative wallet summaries permit repository review before signing`, async ({ page }) => {
+    await fixture(page, { wallet: true });
+    await page.goto(url);
+    await page.getByRole("button", { name: "Connect UniSat", exact: true }).first().click();
+    await page.getByRole("button", { name: "New repository", exact: true }).click();
+    await page.getByRole("textbox", { name: "Repository name", exact: true }).fill("Wallet summary regression");
+    await page.getByRole("button", { name: "Review repository", exact: true }).click();
+    await expect(page.getByRole("dialog", { name: "Create public repository", exact: true })).toBeVisible();
+    expect(await page.evaluate(() => window.codeSignatureCalls)).toBe(0);
+  });
+}
 
 test("wallet account change invalidates an exact review before any signature", async ({ page }) => {
   await fixture(page, { wallet: true });

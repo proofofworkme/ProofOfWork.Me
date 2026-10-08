@@ -11,7 +11,7 @@ const hash = bytes => createHash("sha256").update(bytes).digest("hex");
 const id = value => value.toString(16).padStart(64, "0");
 let response;
 let lastRequest;
-async function loadClient(path, imports = {}) {
+async function loadClient(path, imports = {}, globals = {}) {
   const source = await readFile(path, "utf8");
   const compiled = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS,
     target: ts.ScriptTarget.ES2022 }, fileName: path }).outputText;
@@ -20,7 +20,7 @@ async function loadClient(path, imports = {}) {
     if (Object.hasOwn(imports, name)) return imports[name];
     if (name === "buffer") return { Buffer };
     throw new Error(`Unexpected test dependency: ${name}`);
-  }, Blob, TextEncoder, TextDecoder, URLSearchParams, Uint8Array, Uint32Array, DataView, Buffer }, { filename: path });
+  }, Blob, TextEncoder, TextDecoder, URLSearchParams, Uint8Array, Uint32Array, DataView, Buffer, ...globals }, { filename: path });
   return exports;
 }
 const api = await loadClient("src/features/code/codeApi.ts", {
@@ -231,9 +231,123 @@ test("funding reservations accept authoritative complete books and reject trunca
   const credits = { listings: [], authoritativeWallet: true, walletScoped: true, source: "canonical-fixture" };
   assert.doesNotThrow(() => reservations.assertCodeCreditReservations(credits));
   assert.doesNotThrow(() => reservations.assertCodeCreditReservations({ ...credits, listingBookComplete: true, summaryOnly: true, hasMore: true, totalCounts: { listings: 0 } }));
+  const walletOverlay = { ...credits, summaryOnly: true,
+    source: "proof-indexer-wallet-token-overlay+proof-indexer-wallet-address-state" };
+  assert.doesNotThrow(() => reservations.assertCodeCreditReservations(walletOverlay));
+  assert.doesNotThrow(() => reservations.assertCodeCreditReservations({ ...walletOverlay, hasMore: true }));
   for (const change of [{ authoritativeWallet: false }, { walletScoped: false }, { source: " " },
     { listings: undefined }, { summaryOnly: true }, { hasMore: true }, { listingBookComplete: false },
     { collectionHasMore: { listings: true } }, { totalCounts: { listings: 1 } }, { totalCounts: { listings: 0.5 } }]) {
     assert.throws(() => reservations.assertCodeCreditReservations({ ...credits, ...change }), /reservations/i);
+  }
+  for (const change of [{ authoritativeWallet: false }, { walletScoped: false }, { source: "canonical-fixture" },
+    { source: "other-proof-indexer-wallet-token-overlay" }, { listings: undefined }, { listingBookComplete: false },
+    { collectionHasMore: { listings: true } }, { totalCounts: { listings: 1 } }, { totalCounts: { listings: -1 } }]) {
+    assert.throws(() => reservations.assertCodeCreditReservations({ ...walletOverlay, ...change }), /reservations/i);
+  }
+});
+
+const reservationScopes = ["", "d4e5ebf11d104d6a63fb74e42094364b25a5f7199a09e5c0e71408972466a8b8",
+  "a3d0bc8528f91dfc52400a885bed7e49235396aa82aa9f95db41be629f1d5562",
+  "3cb25745f937f2b4e5508e5400189fe8fe679cd8e84bfa1e9176d70c9761f15d"];
+const creatingWallet = "1KNkUBREnfno2BeV7QsBf8XCWZN6YFfxPH";
+const creditWalletOverlay = listings => ({ network: "livenet", authoritativeWallet: true, walletScoped: true,
+  source: "proof-indexer-wallet-token-overlay+proof-indexer-wallet-address-state", summaryOnly: true, listings });
+async function codeWalletFixture() {
+  const funding = new bitcoin.Transaction();
+  funding.addInput(Buffer.alloc(32, 1), 0);
+  funding.addOutput(bitcoin.address.toOutputScript(creatingWallet), 100000n);
+  const creditResponses = new Map(reservationScopes.map(scope => [scope, creditWalletOverlay([])]));
+  const requests = [], builds = [];
+  let fundingConfirmed = true;
+  const client = { fetchProofApiJson: async (path, network) => {
+    requests.push({ path, network });
+    if (path.startsWith("/api/v1/registry?")) return { network, records: [], listings: [], coverage: { complete: true } };
+    if (path.startsWith("/api/v1/boost?")) return { network, complete: true, items: [], hasMore: false };
+    if (path.startsWith("/api/v1/token?")) {
+      const params = new URL(path, "https://fixture.test").searchParams;
+      assert.equal(params.get("address"), creatingWallet);
+      assert.equal(params.get("wallet"), "1");
+      assert.equal(params.get("fresh"), "1");
+      return structuredClone(creditResponses.get(params.get("asset")));
+    }
+    if (path.includes("/utxo?")) return [{ txid: funding.getId(), vout: 0, status: { confirmed: fundingConfirmed } }];
+    throw new Error(`Unexpected reservation request: ${path}`);
+  } };
+  const paymentReview = await loadClient("src/shared/wallet/paymentReview.ts", { "bitcoinjs-lib": bitcoin });
+  const wallet = await loadClient("src/features/code/codeWallet.ts", {
+    "bitcoinjs-lib": bitcoin, "../../shared/api/proofApiClient": client,
+    "../../shared/wallet/paymentReview": paymentReview,
+    "./codeReservations": reservations, "./codeApi": api,
+    "../boost/boostProtocol": { boostListingAnchorOutpoints: () => [] },
+    "../boost/boostWallet": {
+      scriptForAddress: address => bitcoin.address.toOutputScript(address),
+      ensureWalletNetwork: async () => {}, assertActiveWalletAddress: async () => {},
+      fetchReservedAmoAnchorOutpoints: async (_address, _network, additional) => additional,
+      buildBoostPaymentPsbt: async options => {
+        builds.push(options);
+        const psbt = new bitcoin.Psbt();
+        psbt.addInput({ hash: funding.getId(), index: 0, nonWitnessUtxo: funding.toBuffer() });
+        psbt.addOutput({ address: options.payments[0].address, value: BigInt(options.payments[0].amountSats) });
+        for (const payload of options.protocolPayloads) psbt.addOutput({ script: bitcoin.payments.embed({ data: [Buffer.from(payload)] }).output, value: 0n });
+        const feeSats = 1000, changeSats = 100000 - options.payments[0].amountSats - feeSats;
+        psbt.addOutput({ address: options.fromAddress, value: BigInt(changeSats) });
+        return { psbtHex: psbt.toHex(), feeSats, changeSats, dustFeeSats: 0, inputCount: 1, walletInputIndexes: [0] };
+      },
+    },
+  }, { window: { unisat: {} } });
+  return { wallet, creditResponses, requests, builds, funding,
+    setFundingConfirmed(value) { fundingConfirmed = value; } };
+}
+
+test("fresh Code reservations accept the production wallet overlay and retain anchors across all credit scopes", async () => {
+  const fixture = await codeWalletFixture();
+  assert.equal((await fixture.wallet.codeReservedAnchors(creatingWallet, "livenet")).length, 0);
+  const scopes = fixture.requests.filter(request => request.path.startsWith("/api/v1/token?"))
+    .map(request => new URL(request.path, "https://fixture.test").searchParams.get("asset"));
+  assert.deepEqual(scopes.sort(), [...reservationScopes].sort());
+  for (const [index, scope] of reservationScopes.entries()) {
+    fixture.creditResponses.set(scope, { ...creditWalletOverlay([
+      { listingId: id(index + 40), sellerAddress: creatingWallet, saleAuthorization: { anchorTxid: id(index + 40), anchorVout: index } },
+      { listingId: id(index + 50), sellerAddress: "1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa" },
+    ]), hasMore: true, collectionHasMore: { listings: false, transfers: true }, totalCounts: { listings: 2 } });
+  }
+  const anchors = await fixture.wallet.codeReservedAnchors(creatingWallet, "livenet");
+  assert.deepEqual(Array.from(anchors, item => `${item.txid}:${item.vout}`).sort(),
+    reservationScopes.map((_scope, index) => `${id(index + 40)}:${index}`).sort());
+});
+
+test("repository preparation uses wallet reservation evidence and rechecks newly reserved or unconfirmed funding", async () => {
+  const fixture = await codeWalletFixture();
+  fixture.creditResponses.set(reservationScopes[2], creditWalletOverlay([
+    { listingId: id(60), sellerAddress: creatingWallet, saleAuthorization: { anchorTxid: id(60), anchorVout: 3 } },
+  ]));
+  const creation = plan.buildCodePlan({ ...plan.emptyCodeDraft, name: "Welcome", description: "My First Repo" });
+  const prepared = await fixture.wallet.prepareCodeTransaction(creation, creatingWallet, "livenet", () => {});
+  assert.equal(prepared.review.title, "Create public repository");
+  assert.ok(fixture.builds[0].excludeOutpoints.some(item => item.txid === id(60) && item.vout === 3));
+  await fixture.wallet.verifyCodeFunding(prepared);
+  fixture.creditResponses.set(reservationScopes[3], creditWalletOverlay([
+    { listingId: fixture.funding.getId(), sellerAddress: creatingWallet,
+      saleAuthorization: { anchorTxid: fixture.funding.getId(), anchorVout: 0 } },
+  ]));
+  await assert.rejects(fixture.wallet.verifyCodeFunding(prepared), /funding changed|reserved/i);
+  fixture.creditResponses.set(reservationScopes[3], creditWalletOverlay([]));
+  fixture.setFundingConfirmed(false);
+  await assert.rejects(fixture.wallet.verifyCodeFunding(prepared), /funding changed/i);
+});
+
+test("Code preparation and funding remain closed when a wallet reservation lane is incomplete", async () => {
+  const fixture = await codeWalletFixture();
+  const creation = plan.buildCodePlan({ ...plan.emptyCodeDraft, name: "Welcome", description: "My First Repo" });
+  const prepared = await fixture.wallet.prepareCodeTransaction(creation, creatingWallet, "livenet", () => {});
+  for (const change of [{ authoritativeWallet: false }, { walletScoped: false }, { source: " " },
+    { source: "summary-cache" }, { listings: undefined }, { listingBookComplete: false },
+    { collectionHasMore: { listings: true } }, { totalCounts: { listings: 1 } }]) {
+    fixture.creditResponses.set(reservationScopes[2], { ...creditWalletOverlay([]), ...change });
+    const priorBuilds = fixture.builds.length;
+    await assert.rejects(fixture.wallet.prepareCodeTransaction(creation, creatingWallet, "livenet", () => {}), /reservations/i);
+    assert.equal(fixture.builds.length, priorBuilds);
+    await assert.rejects(fixture.wallet.verifyCodeFunding(prepared), /reservations/i);
   }
 });

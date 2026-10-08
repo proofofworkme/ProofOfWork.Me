@@ -61,7 +61,7 @@ async function fixture(page, { unavailable = false, empty = false, wallet = fals
       ? { status: 503, json: { error: 'Fixture transaction status unavailable' } }
       : { json: { status: 'confirmed', confirmed: true } });
     if (url.pathname === '/api/v1/registry') return route.fulfill({ json: { network: 'livenet', records: [], listings: [], coverage: { complete: true }, collectionHasMore: { listings: false } } });
-    if (url.pathname === '/api/v1/token') return route.fulfill({ json: { network: 'livenet', records: [], listings: [], source: 'proof-indexer-fixture', walletScoped: true, authoritativeWallet: true, collectionHasMore: { listings: false } } });
+    if (url.pathname === '/api/v1/token') return route.fulfill({ json: { network: 'livenet', listings: [], source: 'proof-indexer-wallet-token-overlay+proof-indexer-wallet-address-state', walletScoped: true, authoritativeWallet: true, summaryOnly: true } });
     if (url.pathname === '/api/v1/boost') return route.fulfill({ json: { network: 'livenet', complete: true, items: [], hasMore: false } });
     return route.fulfill({ json: { records: [], items: [], listings: [], complete: true, minimumFee: 0.1, fastestFee: 1, halfHourFee: 1, hourFee: 1 } });
   });
@@ -156,6 +156,13 @@ test('embedded Jobs autosaves exact fields, fences failed storage and restores t
   await page.reload(); await page.getByRole('button', { name: 'Resume draft', exact: true }).click();
   await expect(page.getByRole('textbox', { name: 'Brief and acceptance criteria', exact: true })).toHaveValue('Exact unsent work\n');
 });
+for (const url of ['/?jobs=1', '/?folder=jobs']) {
+  test(`${url} authoritative wallet summaries permit job review before signing`, async ({ page }) => {
+    await fixture(page, { wallet: true }); await page.goto(url); await connect(page); await prepareBrief(page);
+    await expect(page.getByRole('dialog', { name: 'Publish job', exact: true })).toBeVisible();
+    expect(await page.evaluate(() => window.jobsSignatureCalls)).toBe(0);
+  });
+}
 test('disposable rejected signature preserves the reviewed brief without changing chain state', async ({ page }) => {
   await fixture(page, { wallet: true }); await page.goto('/?jobs=1'); await connect(page); await prepareBrief(page);
   await expect(page.getByRole('dialog', { name: 'Publish job', exact: true })).toBeVisible();

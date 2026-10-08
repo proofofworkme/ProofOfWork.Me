@@ -15,13 +15,16 @@ export function assertCodeRegistryReservations(payload: CodeReservationPayload) 
 }
 export function assertCodeCreditReservations(payload: CodeReservationPayload) {
   const count = payload.totalCounts?.listings;
+  const authoritativeWalletBook = payload.authoritativeWallet === true && payload.walletScoped === true &&
+    payload.source?.split("+").includes("proof-indexer-wallet-token-overlay") === true;
   if (!Array.isArray(payload.listings) || payload.collectionHasMore?.listings === true || payload.listingBookComplete === false ||
-    (payload.listingBookComplete !== true && (payload.summaryOnly === true || payload.hasMore === true)) ||
+    (!authoritativeWalletBook && payload.listingBookComplete !== true && (payload.summaryOnly === true || payload.hasMore === true)) ||
     (count !== undefined && count !== null && (!Number.isSafeInteger(count) || count < 0 || count !== payload.listings.length))) {
     throw new Error("Complete wallet credit reservations are unavailable.");
   }
-  // The full authoritative wallet endpoints can omit display pagination
-  // metadata. Any explicit incomplete, summary, or inconsistent count fails.
+  // The fresh wallet overlay returns every active listing and fails on overflow.
+  // Its summary flags describe omitted history, not an incomplete reservation book.
+  // Explicit listing incompleteness and inconsistent counts still fail closed.
   if (payload.authoritativeWallet !== true || payload.walletScoped !== true || !payload.source?.trim()) {
     throw new Error("Fresh authoritative wallet credit reservations are unavailable.");
   }
