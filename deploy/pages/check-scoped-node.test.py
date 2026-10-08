@@ -45,10 +45,10 @@ class ControllerTests(unittest.TestCase):
         candidates = module.validate_manifest(self.manifest)
         module.fence(self.root,self.manifest,candidates)
 
-    def test_exact_four_writes_and_api_only_restart(self):
+    def test_exact_four_writes_and_api_dependent_worker_restart(self):
         self.assertEqual(module.ALLOWED, {'server/proof-api.mjs', 'server/db/proof-index-reader.mjs',
             'server/dns-page-link-discovery.mjs', 'src/shared/protocol/dnsPages.mjs'})
-        self.assertEqual(module.UNITS, ('proofofwork-api.service',))
+        self.assertEqual(module.UNITS, ('proofofwork-api.service', 'proofofwork-indexer-worker.service'))
         self.assertEqual(module.PROTECTED, ('proofofwork-indexer-worker.service',))
 
     def test_protected_worker_state_and_unit_pins_are_required(self):
@@ -114,25 +114,82 @@ class ControllerTests(unittest.TestCase):
             if action=='stop' and unit==module.UNITS[0] and live[module.GATEWAY[0]]=='active':
                 raise subprocess.CalledProcessError(1,argv,'API stop job canceled')
             live[unit]='inactive' if action=='stop' else 'active'
+            # The accepted worker unit is PartOf=API: stopping API also stops
+            # the worker, while starting API does not start the worker again.
+            if action=='stop' and unit==module.UNITS[0]: live[module.UNITS[1]]='inactive'
         def gateway():
             return {unit:{'ActiveState':live[unit],'UnitFileState':pins['unitFileStates'][unit],
                 **({'MainPID':'321' if live[unit]=='active' else '0'} if unit.endswith('.service') else {})}
                 for unit in module.GATEWAY}
         def states(units):
-            return {unit:{'ActiveState':live[unit],'MainPID':'123' if live[unit]=='active' else '0'} for unit in units}
+            return {unit:{'ActiveState':live[unit],'MainPID':'123' if live[unit]=='active' else '0',
+                'WorkingDirectory':str(module.ROOT)} for unit in units}
         with patch.object(module.subprocess,'run',side_effect=run), patch.object(module,'states',side_effect=states), \
                 patch.object(module,'gateway_states',side_effect=gateway):
             with self.assertRaises(subprocess.CalledProcessError): run(['/usr/bin/systemctl','stop',module.UNITS[0]])
             calls.clear(); module.drain_apps()
-            self.assertEqual(calls,[('stop',u) for u in (*module.GATEWAY,*module.UNITS)])
+            self.assertEqual(calls,[('stop',u) for u in (*module.GATEWAY,module.UNITS[1],module.UNITS[0])])
             self.assertTrue(all(live[unit]=='inactive' for unit in (*module.GATEWAY,*module.UNITS)))
-            self.assertTrue(all(live[unit]=='active' for unit in module.PROTECTED))
             # The same recovery path is used following partial install failure.
             module.restore_apps(pins)
-            self.assertEqual(calls[3:],[('start',u) for u in (*module.UNITS,*module.GATEWAY)])
+            self.assertEqual(calls[4:],[('start',u) for u in (*module.UNITS,*module.GATEWAY)])
             self.assertTrue(all(state=='active' for state in live.values()))
             module.drain_apps(); live[module.GATEWAY[1]]='active'
             with self.assertRaisesRegex(ValueError,'not drained'): module.require_apps_drained()
+
+    def test_worker_phase_fence_accepts_new_pid_only_after_verified_restore(self):
+        pins=self.manifest['protectedServices'];unit=module.PROTECTED[0]
+        with patch.object(module,'safe_read',return_value=b'unit'),patch.object(module,'sha',return_value='f'*64):
+            for phase,row in [('drained',{'ActiveState':'inactive','MainPID':'0','WorkingDirectory':str(module.ROOT)}),
+                    ('restored',{'ActiveState':'active','MainPID':'789','WorkingDirectory':str(module.ROOT)})]:
+                with patch.object(module,'states',return_value={unit:row}):module.require_protected_services(pins,phase)
+            for row in [{'ActiveState':'inactive','MainPID':'0','WorkingDirectory':str(module.ROOT)},
+                    {'ActiveState':'active','MainPID':'0','WorkingDirectory':str(module.ROOT)},
+                    {'ActiveState':'active','MainPID':'789','WorkingDirectory':'/wrong-runtime'}]:
+                with patch.object(module,'states',return_value={unit:row}):
+                    with self.assertRaisesRegex(ValueError,'worker not restored'):module.require_protected_services(pins,'restored')
+            with patch.object(module,'states',return_value=pins['states']):
+                with self.assertRaisesRegex(ValueError,'worker not drained'):module.require_protected_services(pins,'drained')
+            with patch.object(module,'states',return_value={unit:{'ActiveState':'active','MainPID':'789','WorkingDirectory':str(module.ROOT)}}):
+                with self.assertRaisesRegex(ValueError,'Protected service changed'):module.require_protected_services(pins,'baseline')
+
+    def test_partof_worker_normal_and_rollback_restore_require_active_worker(self):
+        authority={unit:{'ActiveState':'active','MainPID':'321','WorkingDirectory':''} for unit in module.AUTHORITY}
+        search={module.SEARCH[0]:{'ActiveState':'inactive','MainPID':'0','WorkingDirectory':''},
+            module.SEARCH[1]:{'ActiveState':'inactive','MainPID':'0','WorkingDirectory':''}}
+        for mode in ('normal','rollback','worker-start-failed'):
+            live={unit:'active' for unit in (*module.GATEWAY,*module.UNITS)};calls=[]
+            def run(argv,**kwargs):
+                action,unit=argv[1:];calls.append((action,unit))
+                if action=='stop':
+                    live[unit]='inactive'
+                    if unit==module.UNITS[0]:live[module.UNITS[1]]='inactive'
+                elif not (mode=='worker-start-failed' and unit==module.UNITS[1]):live[unit]='active'
+            def states(units):
+                if units==module.AUTHORITY:return authority
+                if units==module.SEARCH:return search
+                return {unit:{'ActiveState':live[unit],'MainPID':'789' if live[unit]=='active' else '0',
+                    'WorkingDirectory':str(module.ROOT)} for unit in units}
+            def gateway():
+                return {unit:{'ActiveState':live[unit],'MainPID':'789' if live[unit]=='active' else '0',
+                    'UnitFileState':self.manifest['gateway']['unitFileStates'][unit]} for unit in module.GATEWAY}
+            receipt={'installed':False,'rolledBack':False}
+            with patch.object(module.subprocess,'run',side_effect=run),patch.object(module,'states',side_effect=states), \
+                    patch.object(module,'gateway_states',side_effect=gateway),patch.object(module,'safe_read',return_value=b'held-marker'), \
+                    patch.object(module,'sha',return_value='f'*64):
+                module.drain_apps();self.assertEqual(live[module.UNITS[1]],'inactive')
+                if mode=='worker-start-failed':
+                    with self.assertRaisesRegex(ValueError,'Runtime services not restored'):
+                        module.restore_verified_apps(self.manifest,authority,search,b'held-marker')
+                    self.assertFalse(receipt['rolledBack']);self.assertFalse(receipt['installed'])
+                else:
+                    services=module.restore_verified_apps(self.manifest,authority,search,b'held-marker')
+                    receipt['rolledBack' if mode=='rollback' else 'installed']=True
+                    self.assertEqual(services[module.UNITS[1]]['ActiveState'],'active')
+                    self.assertEqual(services[module.UNITS[1]]['MainPID'],'789')
+                    self.assertTrue(receipt['rolledBack' if mode=='rollback' else 'installed'])
+                starts=[unit for action,unit in calls if action=='start']
+                self.assertEqual(starts[:2],list(module.UNITS))
 
     def test_drift_refuses_before_any_write(self):
         path=self.root/'server/proof-api.mjs'; path.write_bytes(b'unrelated concurrent audit change')

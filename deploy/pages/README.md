@@ -17,9 +17,13 @@ The exact write allowlist is:
 The controller does not change the indexer, worker source, SQL, runtime config,
 Git state, dependency lockfiles or authority services. Pages discovery reads
 canonical indexed evidence and raw Core history through the API; it needs no
-database bootstrap or migration. Only the API and the pinned gateway are drained
-and restarted. The worker remains running and its unit bytes and service state
-are fenced before and after the change.
+database bootstrap or migration. The API, its dependent indexer worker and the
+pinned gateway are briefly drained and restored. The accepted worker unit has
+`PartOf=proofofwork-api.service postgresql@16-main.service`: stopping the API also
+stops the worker, while starting the API does not start the worker. Its source and
+unit bytes remain unchanged. The controller fences its exact captured state before
+drain, requires inactive/PID-zero while drained, then requires active state, the
+original runtime working directory and a positive new PID after restoration.
 
 Run from the exact clean, committed Pages shipping checkout. The pre-Pages
 repository base is `38916b914510f3d1514ce87d31d497081a319a35`, which includes the
@@ -86,11 +90,17 @@ protected worker bindings, requires authority availability, and preserves origin
 and candidate bytes plus fsynced receipts under
 `/data/proofofwork-release-backups/pages-RELEASE-TIMESTAMP`.
 
-Gateway socket activation is stopped before its proxy and the API. Source
+Gateway socket activation is stopped before its proxy, the worker and the API. Source
 replacement is atomic and refuses unexpected concurrent bytes. After restart,
-the original authority, worker and Search states must remain unchanged. A failed
+the original authority and Search states must remain unchanged. Restore order is
+API, worker, then the previously active gateway units. Both application services
+must be active with a positive PID and the original working directory, and worker
+unit bytes must still match. A failed
 install restores the two original files; new unused helpers remain as recovery
-evidence. The supervisor restores Search after a verified rollback. An
+evidence. A rollback is verified only after those same application/worker checks
+and authority/Search/hold checks pass; `rolledBack=true` cannot be recorded while
+the worker is inactive. Receipts retain before and restored service states. The
+supervisor restores Search after a verified rollback. An
 interrupted controller is signaled and given time to finish rollback. If recovery
 is still running, fails, or has no verified rollback receipt, Search stays held.
 An SSH timeout is recorded as uncertain; inspect remote backup/hold evidence
@@ -205,6 +215,7 @@ python3 -I -B deploy/pages/check-release.test.py
 ```
 
 These checks use temporary files and mocked services/SSH. They cover the exact
-four writes, API-only drain order, worker preservation, candidate/dependency
+four writes, socket/worker/API drain order, immutable worker source/unit pins,
+the accepted `PartOf` coupling and verified worker restoration, candidate/dependency
 drift, path/hash refusals, explicit conflict review, partial install rollback,
 retained helpers, Search restoration and uncertain/incomplete recovery.

@@ -1,7 +1,7 @@
 #!/usr/bin/python3 -I
 """Hash-fenced Pages overlay; Search must already be held by its pinned controller.
 
-Changes only the fixed runtime allowlist and API plus pinned gateway
+Changes only the fixed runtime allowlist and API/dependent-worker plus pinned gateway
 activation. No database, config, timer, Git or authority-service mutation.
 New helpers survive rollback.
 """
@@ -12,7 +12,7 @@ ROOT = Path('/opt/proofofwork-api')
 BACKUPS = Path('/data/proofofwork-release-backups')
 LOCK = Path('/run/proofofwork-audit29-ops.lock')
 HOLD = Path('/run/proofofwork-search-release.hold')
-UNITS = ('proofofwork-api.service',)
+UNITS = ('proofofwork-api.service', 'proofofwork-indexer-worker.service')
 PROTECTED = ('proofofwork-indexer-worker.service',)
 GATEWAY = ('proofofwork-api-wg.socket', 'proofofwork-api-wg.service')
 AUTHORITY = ('bitcoind.service', 'electrs.service', 'postgresql@16-main.service')
@@ -154,8 +154,19 @@ def states(units):
     return {unit: dict(line.split('=', 1) for line in ctl('show', unit, '-p', 'ActiveState',
         '-p', 'MainPID', '-p', 'WorkingDirectory').splitlines()) for unit in units}
 
-def require_protected_services(pins):
-    require(states(PROTECTED) == pins['states'], 'Protected service changed')
+def require_protected_services(pins, phase='baseline'):
+    require(phase in ('baseline', 'drained', 'restored'), 'Unknown protected service phase')
+    actual = states(PROTECTED)
+    if phase == 'baseline':
+        require(actual == pins['states'], 'Protected service changed')
+    elif phase == 'drained':
+        require(all(row['ActiveState'] == 'inactive' and row['MainPID'] == '0'
+            and row['WorkingDirectory'] == str(ROOT) for row in actual.values()),
+            'Dependent worker not drained')
+    else:
+        require(all(row['ActiveState'] == 'active' and row['WorkingDirectory'] == str(ROOT)
+            and row['MainPID'].isdigit() and int(row['MainPID']) > 0 for row in actual.values()),
+            'Dependent worker not restored')
     for name, expected in pins['files'].items():
         require(sha(safe_read(Path('/etc/systemd/system')/name,65536)) == expected,
             'Protected service unit changed')
@@ -184,7 +195,7 @@ def require_apps_drained():
 def drain_apps():
     # Disable socket activation before stopping its Requires=API proxy. This
     # matches the accepted Audit23 drain and prevents a request canceling stop.
-    for unit in (*GATEWAY, *UNITS):
+    for unit in (*GATEWAY, UNITS[1], UNITS[0]):
         subprocess.run(['/usr/bin/systemctl', 'stop', unit], check=True, timeout=120)
     require_apps_drained()
 
@@ -194,7 +205,17 @@ def restore_apps(gateway_pins):
     for unit in GATEWAY:
         if gateway_pins['active'][unit] == 'active':
             subprocess.run(['/usr/bin/systemctl', 'start', unit], check=True, timeout=60)
+    require(all(row['ActiveState'] == 'active' and row['WorkingDirectory'] == str(ROOT)
+        and row['MainPID'].isdigit() and int(row['MainPID']) > 0
+        for row in states(UNITS).values()), 'Runtime services not restored')
     require_gateway_baseline(gateway_states(), gateway_pins)
+
+def restore_verified_apps(m, authority, search, hold_raw):
+    restore_apps(m['gateway'])
+    require_protected_services(m['protectedServices'], 'restored')
+    require(states(AUTHORITY)==authority and states(SEARCH)==search
+        and safe_read(HOLD,65536)==hold_raw, 'Unrelated recovery state changed')
+    return states(UNITS)
 
 def durable(path, raw):
     fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
@@ -242,7 +263,6 @@ def main():
     for name, expected in m['searchHold']['bindings']['files'].items():
         require(sha(safe_read(Path('/etc/systemd/system')/name,65536)) == expected, 'Search unit changed')
     search, authority, services = states(SEARCH), states(AUTHORITY), states(UNITS)
-    protected = states(PROTECTED)
     require_protected_services(m['protectedServices'])
     require_search_held(search)
     for name, expected in m['gateway']['files'].items():
@@ -259,7 +279,7 @@ def main():
     receipt = {'format':m['format'], 'releaseId':m['releaseId'], 'sourceCommit':m['sourceCommit'],
         'baselineHead':head, 'manifestSha256':sha(raw), 'rollbackRoot':str(backup),
         'dependencyCount':len(m['dependencies']), 'authority':authority, 'gateway':m['gateway'],
-        'protectedServices':m['protectedServices'], 'installed':False,
+        'protectedServices':m['protectedServices'], 'servicesBefore':services, 'installed':False,
         'rolledBack':False, 'sources':[{k:v for k,v in row.items() if k != 'base64'} for row in m['sources']]}
     def save():
         temp = backup/'receipt.tmp'; durable(temp,(json.dumps(receipt,indent=2)+'\n').encode())
@@ -276,8 +296,8 @@ def main():
     try:
         receipt['stopRequested']=True; save()
         drain_apps()
-        require_protected_services(m['protectedServices'])
-        require(states(AUTHORITY)==authority and states(PROTECTED)==protected
+        require_protected_services(m['protectedServices'], 'drained')
+        require(states(AUTHORITY)==authority
             and states(SEARCH)==search and safe_read(HOLD,65536)==hold_raw,
             'Unrelated state changed'); fence(ROOT,m,candidates)
         receipt['sourceWritesStarted']=True; save()
@@ -286,13 +306,7 @@ def main():
         require(all(sha(safe_read(ROOT/path))==expected for path,expected in m['dependencies'].items()
             if path not in ALLOWED), 'Unrelated source changed')
         require_apps_drained()
-        restore_apps(m['gateway'])
-        require_protected_services(m['protectedServices'])
-        require(all(row['ActiveState']=='active' and row['WorkingDirectory']==str(ROOT)
-            for row in states(UNITS).values()), 'Services not restarted')
-        require(states(AUTHORITY)==authority and states(PROTECTED)==protected
-            and states(SEARCH)==search and safe_read(HOLD,65536)==hold_raw,
-            'Unrelated state changed')
+        receipt['servicesAfter']=restore_verified_apps(m, authority, search, hold_raw)
         receipt['completedAt']=datetime.datetime.now(datetime.timezone.utc).isoformat(); save(); print(json.dumps(receipt),flush=True)
     except BaseException as error:
         receipt['errorClass']=type(error).__name__
@@ -300,7 +314,7 @@ def main():
             drain_apps()
             if receipt.get('sourceWritesStarted'):
                 install(ROOT,backup,m['sources'],metadata,False,stamp)
-            restore_apps(m['gateway'])
+            receipt['servicesAfterRollback']=restore_verified_apps(m, authority, search, hold_raw)
             receipt['rolledBack']=True; receipt['newHelpersRetained']=True
         except BaseException as recovery_error:
             receipt['recoveryIncomplete']=True; receipt['recoveryErrorClass']=type(recovery_error).__name__
