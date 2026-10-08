@@ -118,7 +118,16 @@ verified host key when the local user namespace has UID 0. The remote managed
 unit uses a 30-minute maximum, 50% CPU, 1 GiB memory without swap, 64 tasks,
 private umask and idle I/O. The production writer accepts no test layout or guard
 override. It verifies the exact approved deploy-lock inode against both pathname
-and held descriptor before the intent and each whole-root guard. Existing
+and held descriptor before the intent and each whole-root guard. The pinned
+installed provenance helper opens this zero-sized coordination lock with
+truncation and `chmod 0600` before taking `flock`, so the lock's modification and
+change timestamps can advance independently of who holds it. Only those two
+coordination timestamps are qualified against the captured census and acquisition
+state. Device, inode, type, permissions, ownership, links, size, blocks, access
+time and all other recorded fields remain exact; the current pathname and held
+FD must have identical full current metadata. Intent, completion and failure
+receipts retain each captured, acquired and current lock observation. This
+qualification does not relax any source-root, helper, hold or timer fence. Existing
 operation namespaces are checked again while holding the lock; any prior intent
 requires explicit reconciliation rather than an automatic second attempt.
 

@@ -804,6 +804,8 @@ class RetirementTests(unittest.TestCase):
         self.assertEqual(failure['status'], 'failed')
         self.assertTrue(failure['reconciliationRequired'])
         self.assertFalse(failure['automaticRetryAllowed'])
+        self.assertTrue(failure['deployLockObservations'])
+        self.assertEqual(failure['deployLockObservations'][0]['capturedIdentity'], self.proposal['deployLock']['identity'])
         self.assertFalse((receipt / 'completed.json').exists())
         self.assertTrue((receipt / 'intent.json').exists())
         self.assertTrue((receipt / 'actions.jsonl').read_text().strip())
@@ -899,6 +901,85 @@ class RetirementTests(unittest.TestCase):
         self.assertFalse((self.receipt() / 'completed.json').exists())
         self.assertTrue(all(pathlib.Path(r['root']).exists() for r in self.proposal['selectedRoots'][1:]))
 
+    def assert_lock_evidence(self, observations, captured):
+        self.assertTrue(observations)
+        allowed = {'st_mtime_ns', 'st_ctime_ns'}
+        for observed in observations:
+            self.assertEqual(observed['path'], str(self.lock))
+            self.assertEqual(observed['capturedIdentity'], captured)
+            self.assertEqual(set(observed['qualifiedCoordinationTimestampFields']), allowed)
+            self.assertTrue(observed['qualification'])
+            for identity in (observed['acquiredIdentity'], observed['currentIdentity']):
+                self.assertEqual(set(identity), set(captured))
+                self.assertEqual({k: v for k, v in identity.items() if k not in allowed},
+                                 {k: v for k, v in captured.items() if k not in allowed})
+
+    def advance_lock_times(self):
+        before = self.writer.E.identity(self.lock.lstat())
+        os.utime(self.lock, ns=(before['st_atime_ns'], before['st_mtime_ns'] + 1000000))
+        # The accepted installed helper chmods the same empty lock before flock.
+        os.chmod(self.lock, 0o600)
+        current = self.writer.E.identity(self.lock.lstat())
+        self.assertGreater(current['st_mtime_ns'], before['st_mtime_ns'])
+        self.assertGreater(current['st_ctime_ns'], before['st_ctime_ns'])
+        self.assertEqual({k: v for k, v in current.items() if k not in ('st_mtime_ns', 'st_ctime_ns')},
+                         {k: v for k, v in before.items() if k not in ('st_mtime_ns', 'st_ctime_ns')})
+        return current
+
+    def test_same_empty_lock_timestamp_advance_has_explicit_intent_and_result_evidence(self):
+        captured = copy.deepcopy(self.proposal['deployLock']['identity'])
+        acquired = self.advance_lock_times()
+        result = self.retire()
+        intent = json.loads((self.receipt() / 'intent.json').read_bytes())
+        self.assert_lock_evidence(intent['deployLockObservations'], captured)
+        self.assert_lock_evidence(result['deployLockObservations'], captured)
+        self.assertEqual(result['deployLockObservations'][:len(intent['deployLockObservations'])], intent['deployLockObservations'])
+        self.assertEqual(result['deployLockObservations'][0]['acquiredIdentity'], acquired)
+        self.assertEqual(result['deployLockObservations'][0]['currentIdentity'], acquired)
+        self.assertEqual(result['status'], 'completed')
+
+    def test_same_held_lock_timestamp_advance_is_qualified_on_later_guards(self):
+        captured = copy.deepcopy(self.proposal['deployLock']['identity'])
+        first = self.proposal['selectedRoots'][0]['root']; advanced = []
+        def advance(phase, action):
+            if phase == 'after-unlink' and action['root'] == first and action['path'] == '.':
+                advanced.append(self.advance_lock_times())
+        result = self.retire(action_hook=advance)
+        self.assertEqual(len(advanced), 1)
+        self.assert_lock_evidence(result['deployLockObservations'], captured)
+        self.assertTrue(any(row['currentIdentity'] == advanced[0] for row in result['deployLockObservations']))
+        self.assertEqual(result['status'], 'completed')
+
+    def test_real_noncoordination_lock_drift_refuses_before_intent(self):
+        captured = copy.deepcopy(self.proposal['deployLock']['identity'])
+        alias = self.base / 'external-lock-alias'
+        for mutation in ('mode', 'nlink', 'payload', 'atime'):
+            with self.subTest(mutation=mutation):
+                descriptor = os.open(self.lock, os.O_RDONLY | os.O_NOFOLLOW | os.O_NOATIME)
+                try:
+                    self.writer.lock_observation(self.lock, descriptor, self.proposal['deployLock'],
+                                                 self.writer.E.identity(os.fstat(descriptor)))
+                finally: os.close(descriptor)
+                if mutation == 'mode': self.lock.chmod(0o640)
+                elif mutation == 'nlink': os.link(self.lock, alias)
+                elif mutation == 'payload': self.lock.write_bytes(b'unapproved mutable coordination payload')
+                else: os.utime(self.lock, ns=(captured['st_atime_ns'] + 1, self.lock.lstat().st_mtime_ns))
+                with self.assertRaises(ValueError): self.retire()
+                self.assertEqual(self.writer.E.names(self.evidence), [])
+                self.assertTrue(all(pathlib.Path(r['root']).exists() for r in self.proposal['selectedRoots']))
+                if mutation == 'mode': self.lock.chmod(0o600)
+                elif mutation == 'nlink': alias.unlink()
+                elif mutation == 'payload': self.lock.write_bytes(b'')
+                else: os.utime(self.lock, ns=(captured['st_atime_ns'], self.lock.lstat().st_mtime_ns))
+
+    def test_coordination_timestamp_exception_never_relaxes_root_metadata(self):
+        row = self.proposal['selectedRoots'][0]
+        root = pathlib.Path(row['root']); identity = row['inventory'][0]['identity']
+        os.utime(root, ns=(identity['st_atime_ns'], identity['st_mtime_ns'] + 1))
+        with self.assertRaises(ValueError): self.retire()
+        self.assertEqual(self.writer.E.names(self.evidence), [])
+        self.assertTrue(all(pathlib.Path(r['root']).exists() for r in self.proposal['selectedRoots']))
+
     def valid_custody_metadata(self):
         custody = copy.deepcopy(self.custody); e = self.writer.E
         durable = pathlib.Path('/home/approved-offhost-custody')
@@ -977,6 +1058,42 @@ class RetirementTests(unittest.TestCase):
                         altered = copy.deepcopy(custody); altered['exporterSha256'] = 'b' * 64
                         raw = e.encoded(altered); changed['custodyRawBase64'] = base64.b64encode(raw).decode(); changed['custodySha256'] = e.digest(raw)
                     with self.assertRaises(ValueError): self.writer.decode_request(e.encoded(changed), 'a' * 64, source_sha)
+
+
+class LockObservationTests(unittest.TestCase):
+    def setUp(self):
+        self.writer = load('pages_ui_storage_writer', 'ui-storage.py')
+        self.temp = tempfile.TemporaryDirectory(prefix='pages-ui-lock-observation-test-')
+        self.addCleanup(self.temp.cleanup)
+        self.base = pathlib.Path(self.temp.name)
+        self.lock = self.base / 'deploy.lock'; self.lock.write_bytes(b''); self.lock.chmod(0o600)
+        self.fd = os.open(self.lock, os.O_RDONLY | os.O_NOFOLLOW | os.O_NOATIME)
+        self.addCleanup(os.close, self.fd)
+        self.acquired = self.writer.E.identity(os.fstat(self.fd))
+        self.census = {'path': str(self.lock), 'identity': copy.deepcopy(self.acquired)}
+
+    def test_every_captured_and_acquired_non_timestamp_identity_field_stays_exact(self):
+        self.writer.lock_observation(self.lock, self.fd, self.census, self.acquired)
+        for field in set(self.writer.E.STAT_FIELDS) - {'st_mtime_ns', 'st_ctime_ns'}:
+            for where in ('captured', 'acquired'):
+                with self.subTest(field=field, where=where):
+                    census = copy.deepcopy(self.census); acquired = copy.deepcopy(self.acquired)
+                    target = census['identity'] if where == 'captured' else acquired
+                    target[field] += 1
+                    with self.assertRaises(ValueError):
+                        self.writer.lock_observation(self.lock, self.fd, census, acquired)
+
+    def test_incomplete_identity_path_or_descriptor_binding_never_qualifies(self):
+        for mutation in ('missing-captured', 'extra-captured', 'missing-acquired', 'census-path', 'descriptor-path'):
+            with self.subTest(mutation=mutation):
+                census = copy.deepcopy(self.census); acquired = copy.deepcopy(self.acquired); path = self.lock
+                if mutation == 'missing-captured': census['identity'].pop('st_atime_ns')
+                elif mutation == 'extra-captured': census['identity']['unapproved'] = 0
+                elif mutation == 'missing-acquired': acquired.pop('st_mtime_ns')
+                elif mutation == 'census-path': census['path'] = str(self.base / 'different-lock')
+                else:
+                    path = self.base / 'different-lock'; path.write_bytes(b''); path.chmod(0o600)
+                with self.assertRaises(ValueError): self.writer.lock_observation(path, self.fd, census, acquired)
 
 
 class DispatcherTests(unittest.TestCase):

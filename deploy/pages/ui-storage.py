@@ -314,6 +314,19 @@ class Journal:
         if stage=='completed':self.count+=1
     def close(self):os.close(self.fd)
 
+LOCK_TIMESTAMP_FIELDS=('st_mtime_ns','st_ctime_ns')
+
+def lock_observation(path,descriptor,census,acquired_identity):
+    current=E.identity(os.fstat(descriptor))
+    E.require(E.identity(Path(path).lstat())==current,'Deploy lock pathname or descriptor changed')
+    E.require(str(path)==census['path'],'Deploy lock differs from exact approved census')
+    original=census['identity']
+    E.require(set(original)==set(acquired_identity)==set(current)==set(E.STAT_FIELDS),'Deploy lock identity fields differ')
+    E.require(all(current[k]==original[k]==acquired_identity[k] for k in E.STAT_FIELDS if k not in LOCK_TIMESTAMP_FIELDS),'Deploy lock differs from exact approved census')
+    return dict(path=str(path),capturedIdentity=original,acquiredIdentity=acquired_identity,currentIdentity=current,
+        qualifiedCoordinationTimestampFields=list(LOCK_TIMESTAMP_FIELDS),
+        qualification='The pinned installed provenance helper opens the zero-sized coordination lock with truncation and chmod0600 before flock; only mtime/ctime are qualified. All other identity fields remain exact, and current pathname/full descriptor identity must agree.')
+
 def retire_exact(proposal,approval,custody,layout,*,fence=None,reference_check=None,capacity_check=None,action_hook=None,execution_id=None,proposal_raw=None,approval_raw=None,custody_raw=None,source_pins=None):
     scope_fence(proposal,layout)
     if layout.production:
@@ -329,11 +342,11 @@ def retire_exact(proposal,approval,custody,layout,*,fence=None,reference_check=N
         import fcntl
         fcntl.flock(descriptor,fcntl.LOCK_EX|fcntl.LOCK_NB)
     held_lock_identity=E.identity(os.fstat(descriptor))
-    remaining=[r['root'] for r in proposal['selectedRoots']];finished=[];receipt=None;journal=None;started=time.monotonic()
+    remaining=[r['root'] for r in proposal['selectedRoots']];finished=[];receipt=None;journal=None;started=time.monotonic();lock_observations=[]
     def guard():
         E.require(time.monotonic()-started<1800,'Retirement deadline exceeded')
-        E.require(E.identity(layout.lock.lstat())==held_lock_identity and E.identity(os.fstat(descriptor))==held_lock_identity,'Deploy lock pathname or descriptor changed')
-        if 'deployLock' in proposal:E.require(held_lock_identity==proposal['deployLock']['identity'] and str(layout.lock)==proposal['deployLock']['path'],'Deploy lock differs from exact approved census')
+        if 'deployLock' in proposal:lock_observations.append(lock_observation(layout.lock,descriptor,proposal['deployLock'],held_lock_identity))
+        else:E.require(E.identity(layout.lock.lstat())==held_lock_identity and E.identity(os.fstat(descriptor))==held_lock_identity,'Deploy lock pathname or descriptor changed')
         if fence:fence(remaining)
         elif layout.production:E.production_fence(proposal,remaining)
         else:
@@ -354,7 +367,7 @@ def retire_exact(proposal,approval,custody,layout,*,fence=None,reference_check=N
         if proposal_raw is not None:E.save_new(receipt/'proposal.json',proposal_raw)
         if approval_raw is not None:E.save_new(receipt/'human-approval.json',approval_raw)
         if custody_raw is not None:E.save_new(receipt/'custody.json',custody_raw)
-        intent=dict(schema='proof-of-work-pages-ui-retirement-intent-v1',status='approved-intent',proposalSha256=E.PROPOSAL_SHA,approvalSha256=E.APPROVAL_SHA,custodySha256=E.digest(custody_raw or E.encoded(custody)),sourcePins=source_pins,selectedRoots=[{k:r[k] for k in ('root','manifestSha256','treeSha256','entries','regularBytes')} for r in proposal['selectedRoots']],protected=proposal['protected'],references=references)
+        intent=dict(schema='proof-of-work-pages-ui-retirement-intent-v1',status='approved-intent',proposalSha256=E.PROPOSAL_SHA,approvalSha256=E.APPROVAL_SHA,custodySha256=E.digest(custody_raw or E.encoded(custody)),sourcePins=source_pins,selectedRoots=[{k:r[k] for k in ('root','manifestSha256','treeSha256','entries','regularBytes')} for r in proposal['selectedRoots']],protected=proposal['protected'],references=references,deployLockObservations=list(lock_observations))
         E.save_new(receipt/'intent.json',E.encoded(intent));journal=Journal(receipt/'actions.jsonl')
         for number in (signal.SIGTERM,signal.SIGHUP,signal.SIGINT):old_handlers[number]=signal.signal(number,interrupted)
         for row in proposal['selectedRoots']:
@@ -368,11 +381,11 @@ def retire_exact(proposal,approval,custody,layout,*,fence=None,reference_check=N
             beforeAvailableBytes=before_available,beforeAvailableInodes=before_inodes,availableBytes=space.f_bavail*space.f_frsize,availableInodes=space.f_favail,
             measuredAvailableBytesDelta=space.f_bavail*space.f_frsize-before_available,measuredAvailableInodesDelta=space.f_favail-before_inodes,
             measurementQualification='Filesystem endpoints include new durable receipts and concurrent background writes; the observed delta is not the sum of logical or hardlinked sizes.',
-            receipt=str(receipt),seconds=round(time.monotonic()-started,3),sourcePins=source_pins)
+            receipt=str(receipt),seconds=round(time.monotonic()-started,3),sourcePins=source_pins,deployLockObservations=list(lock_observations))
         E.save_new(receipt/'completed.json',E.encoded(done));return done
     except BaseException as error:
         if receipt is not None:
-            failed=dict(schema='proof-of-work-pages-ui-retirement-result-v1',status='failed',errorClass=type(error).__name__,error=str(error),completed=finished,remaining=remaining,receipt=str(receipt),journalCompletedActions=journal.count if journal else 0,reconciliationRequired=True,automaticRetryAllowed=False)
+            failed=dict(schema='proof-of-work-pages-ui-retirement-result-v1',status='failed',errorClass=type(error).__name__,error=str(error),completed=finished,remaining=remaining,receipt=str(receipt),journalCompletedActions=journal.count if journal else 0,reconciliationRequired=True,automaticRetryAllowed=False,deployLockObservations=list(lock_observations))
             E.save_new(receipt/'failure.json',E.encoded(failed))
         raise
     finally:
