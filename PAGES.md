@@ -164,7 +164,12 @@ while revoke/recreate and every root transfer/purchase invalidate the prior
 binding. The approved opening is **970499**, following Core predecessor 970498 /
 `00000000000000000001683a72df9a22322b2117aab9a1b264c5284045702d51`.
 Complete accepted root/child history and independent raw child page-link coverage
-at the same checkpoint remain mandatory. Pending records never route. The
+at the same checkpoint remain mandatory. New child links also require a verified
+current-owner signature committing every output, including the exact carrier;
+`NONE`/`SINGLE` signatures alone cannot authorize them. Local child preparation
+requests `ALL` and verifies every final signature uses `ALL` or Taproot `DEFAULT`
+before broadcasting. Historical root and child payment-resolution rules remain
+unchanged. Pending records never route. The
 546-proof owner self-payment and miner fee keep existing accounting once.
 The exact canonical wire, lifecycle and discovery rules remain in
 [`PROOFOFWORK_DNS.md`](PROOFOFWORK_DNS.md).

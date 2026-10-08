@@ -1,5 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import * as bitcoin from "bitcoinjs-lib";
+import { createOwnerOutputCommitmentFixture } from "../../../tests/fixtures/ownerOutputCommitment.mjs";
 import {
   DNS_SUBDOMAIN_PAGE_LINK_PREFIX, DNS_SUBDOMAIN_PAGE_LINK_ACTIVATION_HEIGHT,
   DNS_SUBDOMAIN_PAGE_LINK_PREDECESSOR_HASH, buildDnsSubdomainPageLinkPayload,
@@ -7,12 +9,12 @@ import {
   replayDnsSubdomainPageLinks, normalizeDnsSubdomainPageLinkName,
 } from "./dnsSubdomainPages.mjs";
 
-const OWNER = "1F1p9UEHuH5KTFR7Zsx93Khdrqhj6t5nFv";
+const OWNER = createOwnerOutputCommitmentFixture().ownerAddress;
 const OTHER = "1F1zepCJ8VPcPoeMt6G4BPKuE3CYAxCKNY";
 const RECEIVER = "bc1qfwytlzyr3ym3enz2eutwtjsf9kkf6uqkjydk3e";
 const hash = number => number.toString(16).padStart(64, "0");
 const identity = event => ({ txid: event.txid, protocolVout: event.protocolVout, recordOrdinal: event.recordOrdinal });
-const validateAddress = value => [OWNER, OTHER, RECEIVER].includes(value);
+const validateAddress = value => { try { bitcoin.address.toOutputScript(value, bitcoin.networks.bitcoin); return true; } catch { return false; } };
 const root = (number = 1, blockHeight = 10, action = "register", ownerAddress = OWNER) => ({
   action, name: "alice", ownerAddress, resolverAddress: OWNER,
   txid: hash(number), blockHeight, txIndex: number, protocolVout: 1, recordOrdinal: 0,
@@ -28,12 +30,13 @@ const record = (action = "set", child = childEpoch, boundEpoch = epoch) => ({
   action, parent: "alice", label: "app", epoch: boundEpoch, child,
   ...(action === "set" ? { pageTxid: hash(500) } : {}),
 });
-const link = (number = 3, blockHeight = 12, action = "set", child = childEpoch, boundEpoch = epoch) => ({
-  payload: buildDnsSubdomainPageLinkPayload(record(action, child, boundEpoch)),
-  txid: hash(number), blockHeight, txIndex: number, protocolVout: 1, recordOrdinal: 0,
-  subdomainPageLinkCarrierCount: 1, inputAddresses: [OWNER],
-  outputs: [{ vout: 0, address: OWNER, valueSats: 546 }],
-});
+const link = (number = 3, blockHeight = 12, action = "set", child = childEpoch, boundEpoch = epoch, options = {}) => {
+  const payload = buildDnsSubdomainPageLinkPayload({ ...record(action, child, boundEpoch),
+    ...(action === "set" && options.pageTxid ? { pageTxid: options.pageTxid } : {}) });
+  const signed = createOwnerOutputCommitmentFixture({ payload, number, ...options });
+  return { ...signed, payload, blockHeight, txIndex: number, protocolVout: 1, recordOrdinal: 0,
+    subdomainPageLinkCarrierCount: 1 };
+};
 const replay = options => replayDnsSubdomainPageLinks({ rootEvents: [initialRoot], subdomainEvents: [initialChild],
   activationHeight: 12, validateAddress, ...options });
 const wire = text => DNS_SUBDOMAIN_PAGE_LINK_PREFIX + Buffer.from(text).toString("base64url");
@@ -66,10 +69,12 @@ test("subpage1 builders normalize child labels; wire parsing requires exact JSON
 });
 
 test("one owner self-payment is exact, individual, and before the protocol output", () => {
-  for (const valueSats of [546, "546", 546n, "9007199254740992", 9007199254740992n]) {
-    assert.equal(dnsSubdomainPageLinkSelfSendAuthor({ ...link(), outputs: [{ vout: 0, address: OWNER, valueSats }] }, { validateAddress }), OWNER);
+  for (const valueSats of [546, "546", 546n, "2099999999990000", 2099999999990000n]) {
+    const event = link(3, 12, "set", childEpoch, epoch, { selfPaymentSats: valueSats });
+    event.outputs[0].valueSats = valueSats;
+    assert.equal(dnsSubdomainPageLinkSelfSendAuthor(event, { validateAddress }), OWNER);
   }
-  for (const valueSats of [545, -1, 546.1, 9007199254740992, "0546", "546.0", "5.46e2", "-546", " 546", true]) {
+  for (const valueSats of [545, -1, 546.1, 9007199254740992, "0546", "546.0", "5.46e2", "-546", " 546", "9".repeat(100000), true]) {
     assert.equal(dnsSubdomainPageLinkSelfSendAuthor({ ...link(), outputs: [{ vout: 0, address: OWNER, valueSats }] }, { validateAddress }), null);
   }
   for (const outputs of [
@@ -82,7 +87,7 @@ test("one owner self-payment is exact, individual, and before the protocol outpu
 });
 
 test("authorized confirmed set, replacement and clear preserve inspectable history", () => {
-  const first = link(), replacement = link(4, 13); replacement.payload = buildDnsSubdomainPageLinkPayload({ ...record(), pageTxid: hash(501) });
+  const first = link(), replacement = link(4, 13, "set", childEpoch, epoch, { pageTxid: hash(501) });
   const result = replay({ pageLinkEvents: [replacement, first] });
   assert.equal(result.records[0].name, "app.alice.pow");
   assert.equal(result.records[0].pageTxid, hash(501));
@@ -103,13 +108,14 @@ test("zero and pre-activation records fail closed without rewriting child author
 test("every input must prove the current root owner; mixed/unknown/coinbase cannot authorize", () => {
   for (const [overrides, reason] of [
     [{ inputAddresses: [OWNER, OTHER] }, "mixed-input-authors"],
-    [{ inputAddresses: [OTHER], outputs: [{ vout: 0, address: OTHER, valueSats: 546 }] }, "unauthorized-owner"],
     [{ inputAddresses: [null] }, "unknown-or-coinbase-input"],
     [{ inputAddresses: [] }, "unknown-or-coinbase-input"],
     [{ inputAddresses: ["unknown"] }, "unknown-or-coinbase-input"],
     [{ hasCoinbaseInput: true }, "unknown-or-coinbase-input"],
     [{ outputs: [{ vout: 0, address: OWNER, valueSats: 545 }] }, "missing-self-payment"],
   ]) assert.equal(replay({ pageLinkEvents: [{ ...link(), ...overrides }] }).history[0].reason, reason);
+  const foreign = link(3, 12, "set", childEpoch, epoch, { spendPath: "p2wpkh" });
+  assert.equal(replay({ pageLinkEvents: [foreign] }).history[0].reason, "unauthorized-owner");
 });
 
 test("malformed matching carriers count; duplicate evidence cannot authorize an action", () => {
@@ -147,11 +153,11 @@ test("resolver updates retain original CREATE identity and a confirmed content l
 test("revoke/recreate invalidates former links; reorg replay restores surviving lifecycle", () => {
   const revoke = child(4, 13, "revoke"), recreate = child(5, 14), fresh = link(7, 16, "set", identity(recreate));
   const result = replay({ subdomainEvents: [initialChild, revoke, recreate], pageLinkEvents: [link(), link(6, 15), fresh] });
-  assert.equal(result.records[0].txid, hash(7));
+  assert.equal(result.records[0].txid, fresh.txid);
   assert.equal(result.history[1].reason, "stale-subdomain-lifecycle");
   assert.equal(result.historicalRecords[0].invalidationReason, "subdomain-revoked");
   assert.deepEqual(result.children[0].childLifecycle, identity(recreate));
-  assert.equal(replay({ pageLinkEvents: [link()] }).records[0].txid, hash(3));
+  assert.equal(replay({ pageLinkEvents: [link()] }).records[0].txid, link().txid);
   assert.equal(replay({ subdomainEvents: [initialChild, revoke], pageLinkEvents: [link()] }).records.length, 0);
 });
 
@@ -162,7 +168,7 @@ test("direct transfers and purchases reset root epoch including same-owner cycle
       pageLinkEvents: [link(), link(6, 15), link(7, 16, "set", identity(recreated), identity(transfer))] });
     assert.equal(result.history[1].reason, "stale-ownership-epoch");
     assert.equal(result.historicalRecords[0].invalidationReason, "root-ownership-change");
-    assert.equal(result.records[0].txid, hash(7));
+    assert.equal(result.records[0].txid, link(7, 16, "set", identity(recreated), identity(transfer)).txid);
   }
   const toBob = root(4, 13, "transfer", OTHER), toAlice = root(5, 14, "transfer", OWNER);
   assert.equal(replay({ rootEvents: [initialRoot, toBob, toAlice], pageLinkEvents: [link(), link(6, 15)] }).history[1].reason, "stale-ownership-epoch");
@@ -175,7 +181,7 @@ test("pending set/clear is visibility only and cannot bootstrap pending state", 
   assert.equal(empty.pendingEvents[0].valid, true);
   assert.equal(empty.pendingEvents[1].reason, "page-link-not-active");
   const existing = replay({ pageLinkEvents: [link(), pendingClear] });
-  assert.equal(existing.records[0].txid, hash(3));
+  assert.equal(existing.records[0].txid, link().txid);
   assert.equal(existing.pendingEvents[0].valid, true);
   const stale = replay({ subdomainEvents: [initialChild, child(6, 13, "revoke"), child(7, 14)], pageLinkEvents: [pendingSet] });
   assert.equal(stale.pendingEvents[0].reason, "stale-subdomain-lifecycle");
@@ -195,4 +201,58 @@ test("incomplete or ambiguous accepted canonical positions fail the entire proje
   assert.throws(() => replay({ pageLinkEvents: [{ ...link(), blockHeight: 10, txIndex: 1, txid: initialRoot.txid }] }), /record position/iu);
   assert.throws(() => replay({ activationHeight: 1.2 }), /activation height/iu);
   assert.equal(replay({ pageLinkEvents: [{ ...link(), txIndex: undefined }] }).history[0].reason, "invalid-canonical-position");
+});
+
+
+test("child replay requires real output commitment, accepts safe ALL|ACP, and binds complete spend evidence", () => {
+  for (const hashType of [2, 3, 130, 131]) {
+    const event = link(3, 12, "set", childEpoch, epoch, { hashTypes: [hashType] });
+    assert.equal(replay({ pageLinkEvents: [event] }).history[0].reason, "owner-output-commitment-unavailable");
+    assert.equal(replay({ pageLinkEvents: [{ ...event, blockHeight: null, txIndex: null }] }).pendingEvents[0].valid, false);
+  }
+  for (const hashTypes of [[1], [129], [2, 1], [130, 129]]) {
+    assert.equal(replay({ pageLinkEvents: [link(3, 12, "set", childEpoch, epoch, { hashTypes })] }).records.length, 1);
+  }
+  for (const mutate of [
+    event => { delete event.transactionEvidence; },
+    event => { event.transactionEvidence = { valid: true, commitsAllOutputs: true }; },
+    event => { event.transactionEvidence.prevouts[0].txid = hash(999); },
+    event => { event.transactionEvidence.prevouts[0].scriptPubKeyHex = "51"; },
+    event => { event.txid = hash(999); },
+    event => { event.payload = buildDnsSubdomainPageLinkPayload({ ...record(), pageTxid: hash(501) }); },
+    event => { event.outputs[0].valueSats = 547; },
+    event => { event.outputs[1].address = OWNER; },
+    event => { event.outputs.pop(); },
+    event => { event.protocolVout = 2; },
+    event => { event.recordOrdinal = 1; },
+    event => { event.rawPayloadHex = "00"; },
+    event => { event.decodeValid = false; },
+  ]) {
+    const event = link(); mutate(event);
+    assert.equal(replay({ pageLinkEvents: [event] }).records.length, 0);
+  }
+});
+
+test("post-signature target mutation cannot gain child authority even when a weak signature remains valid", () => {
+  for (const hashType of [1, 2, 3, 129, 130, 131]) {
+    const event = link(3, 12, "set", childEpoch, epoch, { hashTypes: [hashType] });
+    const transaction = bitcoin.Transaction.fromHex(event.transactionEvidence.rawTransactionHex);
+    const before = transaction.hashForSignature(0, Buffer.from(event.transactionEvidence.prevouts[0].scriptPubKeyHex, "hex"), hashType);
+    const payload = buildDnsSubdomainPageLinkPayload({ ...record(), pageTxid: hash(501) });
+    transaction.outs[1].script = bitcoin.script.compile([bitcoin.opcodes.OP_RETURN, Buffer.from(payload)]);
+    const after = transaction.hashForSignature(0, Buffer.from(event.transactionEvidence.prevouts[0].scriptPubKeyHex, "hex"), hashType);
+    assert.equal(Buffer.from(before).equals(Buffer.from(after)), [2, 3, 130, 131].includes(hashType));
+    event.payload = payload; event.txid = transaction.getId();
+    event.transactionEvidence.rawTransactionHex = transaction.toHex(); event.transactionEvidence.txid = event.txid;
+    assert.equal(replay({ pageLinkEvents: [event] }).records.length, 0);
+  }
+});
+
+
+test("witness signature value commitment binds the canonical prevout amount", () => {
+  const event = link(3, 12, "set", childEpoch, epoch, { spendPath: "p2wpkh" });
+  const rootEvent = { ...initialRoot, ownerAddress: event.ownerAddress, resolverAddress: event.ownerAddress };
+  assert.equal(replay({ rootEvents: [rootEvent], pageLinkEvents: [event] }).records.length, 1);
+  event.transactionEvidence.prevouts[0].valueSats = "99999";
+  assert.equal(replay({ rootEvents: [rootEvent], pageLinkEvents: [event] }).history[0].reason, "owner-output-commitment-unavailable");
 });

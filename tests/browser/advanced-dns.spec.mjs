@@ -1,4 +1,7 @@
 import { expect, test } from "@playwright/test";
+import * as bitcoin from "bitcoinjs-lib";
+import { signOwnerOutputCommitmentPsbt } from "../fixtures/ownerOutputCommitment.mjs";
+import { verifyOwnerOutputCommitment } from "../../src/shared/protocol/ownerOutputCommitment.mjs";
 import { ADDRESS, OTHER_ADDRESS, HASH, PAGE_TXID, FILE_TXID, LINK_TXID, DNS_EPOCH, NOW,
   fixture, connect, expectNoSignature, dnsPageSnapshot, activeDnsPageLink } from "../fixtures/pagesFixture.mjs";
 import { dnsChildPageSnapshot } from "../fixtures/dnsChildPageSnapshot.mjs";
@@ -26,7 +29,7 @@ async function advancedFixture(page) {
     subdomainCoverage: child.subdomainCoverage, subdomainAdmission: child.subdomainAdmission,
     subdomainPageLinkCoverage: child.subdomainPageLinkCoverage,
     subdomainPageLinkAdmission: child.subdomainPageLinkAdmission,
-    subdomainPageLinkEvents: [], subdomainPageLinkPendingEvents: [] };
+    subdomainPageLinkEvents: child.subdomainPageLinkEvents, subdomainPageLinkPendingEvents: [] };
   state.dnsRoot = root;
   state.dnsRegistry = { ...root, id: undefined, name: undefined, record: undefined };
   state.dnsReply = url => /app\.alice(?:\.pow)?$/u.test(decodeURIComponent(url.pathname))
@@ -114,7 +117,8 @@ test("Advanced DNS refuses a recreated child before requesting its wallet signat
   const child = state.dnsRoot.subdomains[0];
   const changed = { ...child.childLifecycle, txid: FILE_TXID };
   child.childLifecycle = changed; child.createdTxid = changed.txid; child.txid = changed.txid; child.updatedTxid = changed.txid;
-  child.subdomainPageLink.child = changed;
+  child.subdomainPageLink = null;
+  state.dnsRoot.subdomainPageLinkEvents = [];
   Object.assign(state.dnsRoot.subdomainEvents[0], changed);
   await review.getByRole("button", { name: "Continue to wallet", exact: true }).click();
   await expect(card).toContainText("revoked or recreated");
@@ -134,12 +138,13 @@ test("Advanced DNS rechecks the root ownership epoch before requesting a wallet 
   await expectNoSignature(page, state);
 });
 
-for (const kind of ["root", "child"]) {
+for (const kind of ["root", "child", "child signed proof"]) {
   test(`Advanced DNS rejects an inconsistent unselected ${kind} link before rendering a confirmed route`, async ({ page }) => {
     const state = await advancedFixture(page);
     state.dnsRoot.pageLink = { ...activeDnsPageLink(), blockHeight: state.dnsRoot.indexedThroughBlock - 1 };
     if (kind === "root") state.dnsRoot.pageLink.ownerAddress = OTHER_ADDRESS;
-    else state.dnsRoot.subdomains[0].subdomainPageLink.child = { ...DNS_EPOCH, txid: FILE_TXID };
+    else if (kind === "child") state.dnsRoot.subdomains[0].subdomainPageLink.child = { ...DNS_EPOCH, txid: FILE_TXID };
+    else delete state.dnsRoot.subdomainPageLinkEvents[0].transactionEvidence;
     const card = await openAdvanced(page);
     if (kind === "root") await card.getByRole("button", { name: "app.alice.pow", exact: true }).click();
     const name = kind === "root" ? "alice.pow" : "app.alice.pow";
@@ -194,3 +199,95 @@ for (const [label, path] of [["standalone", "/?dns-launch=1"], ["Computer", "/?f
     await expectNoSignature(page, state);
   });
 }
+
+
+async function signedWalletFixture(page, hashType, allowBroadcast = false) {
+  const state = await advancedFixture(page);
+  state.signing = []; state.broadcasts = [];
+  await page.exposeFunction("__signAdvancedDnsFixture", (psbtHex, options) => {
+    const prepared = bitcoin.Psbt.fromHex(psbtHex);
+    const signedPsbtHex = signOwnerOutputCommitmentPsbt(psbtHex, { hashType });
+    const signed = bitcoin.Psbt.fromHex(signedPsbtHex).extractTransaction();
+    const prevouts = prepared.txInputs.map((input, index) => {
+      const data = prepared.data.inputs[index];
+      const previous = data.nonWitnessUtxo ? bitcoin.Transaction.fromBuffer(data.nonWitnessUtxo) : null;
+      const prevout = data.witnessUtxo ?? previous.outs[input.index];
+      return { txid: Buffer.from(input.hash).reverse().toString("hex"), vout: input.index,
+        scriptPubKeyHex: Buffer.from(prevout.script).toString("hex"), valueSats: prevout.value.toString() };
+    });
+    const evidence = { rawTransactionHex: signed.toHex(), prevouts };
+    state.signing.push({ options, requestedHashTypes: prepared.data.inputs.map(input => input.sighashType),
+      txid: signed.getId(), evidence, outputProof: verifyOwnerOutputCommitment(evidence, { ownerAddress: ADDRESS, network: "livenet" }) });
+    return signedPsbtHex;
+  });
+  await page.addInitScript(() => {
+    if (window !== window.top) return;
+    window.unisat.signPsbt = async (psbtHex, options) => {
+      window.__pagesFixture.signCalls++;
+      return window.__signAdvancedDnsFixture(psbtHex, options);
+    };
+  });
+  if (allowBroadcast) await page.route("**/api/v1/broadcast/tx*", async route => {
+    expect(route.request().method()).toBe("POST");
+    const { txHex } = route.request().postDataJSON();
+    const txid = bitcoin.Transaction.fromHex(txHex).getId();
+    state.writes.push("POST /api/v1/broadcast/tx"); state.broadcasts.push({ txHex, txid });
+    return route.fulfill({ contentType: "application/json", body: JSON.stringify({ txid, source: "node" }) });
+  });
+  return state;
+}
+function expectChildAllRequest(state) {
+  expect(state.signing).toHaveLength(1);
+  expect(state.signing[0].requestedHashTypes.every(type => type === bitcoin.Transaction.SIGHASH_ALL)).toBe(true);
+  expect(state.signing[0].options.toSignInputs).toHaveLength(state.signing[0].requestedHashTypes.length);
+  expect(state.signing[0].options.toSignInputs.every(input => input.address === ADDRESS &&
+    JSON.stringify(input.sighashTypes) === "[1]")).toBe(true);
+}
+
+for (const hashType of [2, 3, 130, 131, 129]) {
+  test(`child link requests ALL and rejects genuine final sighash ${hashType} before broadcast`, async ({ page }) => {
+    const state = await signedWalletFixture(page, hashType);
+    const card = await openAdvanced(page);
+    const review = await reviewChild(page, card);
+    await review.getByRole("button", { name: "Continue to wallet", exact: true }).click();
+    await expect(card).toContainText("signatures committing all reviewed outputs");
+    expectChildAllRequest(state);
+    expect(await page.evaluate(() => window.__pagesFixture.signCalls)).toBe(1);
+    expect(state.writes).toEqual([]); expect(state.broadcasts).toEqual([]);
+    expect(state.signing[0].outputProof.valid).toBe(hashType === 129);
+    if (hashType !== 129) expect(state.signing[0].outputProof.reason).toBe("owner-output-commitment-all-output-signature-required");
+  });
+}
+
+test("child ALL wallet signature submits the exact reviewed transaction through a mocked endpoint", async ({ page }) => {
+  const state = await signedWalletFixture(page, 1, true);
+  const card = await openAdvanced(page);
+  const review = await reviewChild(page, card);
+  await review.getByRole("button", { name: "Continue to wallet", exact: true }).click();
+  await expect(card).toContainText("Broadcast submitted.");
+  expectChildAllRequest(state);
+  expect(state.signing[0].outputProof.valid).toBe(true);
+  expect(state.writes).toEqual(["POST /api/v1/broadcast/tx"]);
+  expect(state.broadcasts).toHaveLength(1);
+  expect(state.broadcasts[0].txid).toBe(state.signing[0].txid);
+  expect(state.broadcasts[0].txHex).toBe(state.signing[0].evidence.rawTransactionHex);
+  const records = bitcoin.Transaction.fromHex(state.broadcasts[0].txHex).outs.filter(output => output.script[0] === bitcoin.opcodes.OP_RETURN)
+    .map(output => Buffer.from(bitcoin.script.decompile(output.script)[1]).toString("utf8"));
+  expect(parseDnsSubdomainPageLinkPayload(records[1])).toEqual({ action: "set", parent: "alice", label: "app",
+    epoch: state.dnsRoot.record.ownershipEpoch, child: state.dnsRoot.subdomains[0].childLifecycle, pageTxid: FILE_TXID });
+});
+
+test("historical root page preparation and signing keep their existing default behavior", async ({ page }) => {
+  const state = await signedWalletFixture(page, 2, true);
+  const card = await openAdvanced(page);
+  await card.getByLabel("Published page txid", { exact: true }).fill(FILE_TXID);
+  await card.getByRole("button", { name: "Review page link", exact: true }).click();
+  const review = page.getByRole("dialog", { name: "Review .pow page link", exact: true });
+  await review.getByRole("button", { name: "Continue to wallet", exact: true }).click();
+  await expect(card).toContainText("Broadcast submitted.");
+  expect(state.signing).toHaveLength(1);
+  expect(state.signing[0].requestedHashTypes.every(type => type === undefined)).toBe(true);
+  expect(state.signing[0].options.toSignInputs).toBeUndefined();
+  expect(state.writes).toEqual(["POST /api/v1/broadcast/tx"]);
+  expect(state.broadcasts).toHaveLength(1);
+});

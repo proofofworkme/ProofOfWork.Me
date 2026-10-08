@@ -1,9 +1,10 @@
 import { expect, test } from "@playwright/test";
 import * as bitcoin from "bitcoinjs-lib";
+import { createOwnerOutputCommitmentFixture } from "../fixtures/ownerOutputCommitment.mjs";
 import { dnsChildPageSnapshot } from "../fixtures/dnsChildPageSnapshot.mjs";
 import { readDnsSubdomainPageLinkSnapshot } from "../../src/features/pages/dnsSubdomainPageLinkClient.mjs";
 
-const OWNER = "1BPVvi1GK4QkfqFMU4jHGjsQjyGwjJJJ7x";
+const OWNER = createOwnerOutputCommitmentFixture().ownerAddress;
 const OTHER = "1F1p9UEHuH5KTFR7Zsx93Khdrqhj6t5nFv";
 const HASH = "a".repeat(64);
 const PAGE = "b".repeat(64);
@@ -142,7 +143,7 @@ for (const route of ["/?browser=1", "/?folder=browser"]) {
     await expectPage(page);
     await expect(page.getByLabel("Transaction ID or .pow name", { exact: true })).toHaveValue("app.alice.pow");
     await expect(page.locator(".browser-proof-card")).toContainText("app.alice.pow");
-    await expect(page.locator(".browser-proof-card")).toContainText(LINK);
+    await expect(page.locator(".browser-proof-card")).toContainText(state.dns.subdomainPageLink.txid);
     expect(state.requests.some(url => url.pathname === "/api/v1/dns/app.alice")).toBe(true);
     expect(state.requests.some(url => url.pathname === "/api/v1/dns/alice")).toBe(false);
     if (route.includes("browser=1")) {
@@ -156,6 +157,13 @@ for (const route of ["/?browser=1", "/?folder=browser"]) {
 for (const [label, mutate] of [
   ["stale child lifecycle", state => { state.dns.subdomainPageLink.child = { ...EPOCH, txid: SECOND }; }],
   ["incomplete child page-link coverage", state => { state.dns.subdomainPageLinkCoverage.complete = false; }],
+  ["missing signed child event", state => { state.dns.subdomainPageLinkEvents = []; }],
+  ["forged signed child proof", state => { delete state.dns.subdomainPageLinkEvents[0].transactionEvidence; }],
+  ["weak signed child proof", state => {
+    const event = state.dns.subdomainPageLinkEvents[0];
+    const signed = createOwnerOutputCommitmentFixture({ payload: event.payload, number: 3, hashTypes: [2] });
+    Object.assign(event, signed); state.dns.subdomainPageLink.txid = signed.txid;
+  }],
 ]) {
   test(`Browser rejects ${label} before requesting child content`, async ({ page }) => {
     const state = await fixture(page); state.dns = dnsChildPageSnapshot(); mutate(state);

@@ -5,6 +5,7 @@ import { BrowserWindow } from "./features/browser/BrowserWindow";
 import { AdvancedDns } from "./features/dns/AdvancedDns";
 import { assertDnsSubdomainPageLinkAction, readDnsSubdomainPageLinkSnapshot, type DnsSubdomainPageLinkSnapshot } from "./features/pages/dnsSubdomainPageLinkClient.mjs";
 import { buildDnsSubdomainPageLinkPayload } from "./shared/protocol/dnsSubdomainPages.mjs";
+import { verifyOwnerOutputCommitment, type OwnerOutputCommitmentEvidence } from "./shared/protocol/ownerOutputCommitment.mjs";
 import { assertDnsPageLinkAction, readDnsPageLinkSnapshot } from "./features/pages/dnsPageLinkClient.mjs";
 import { buildDnsPageLinkPayload, dnsPageLinkNameError, DNS_PAGE_LINK_SELF_PAYMENT_SATS, normalizeDnsPageLinkName } from "./shared/protocol/dnsPages.mjs";
 import { readActionReceipts, saveActionReceipt, type ActionReceipt } from "./shared/wallet/actionRecovery";
@@ -20336,6 +20337,7 @@ async function buildPaymentPsbt({
   prefetchedWalletUtxos,
   requireConfirmedUtxos = true,
   requireWalletUtxos = false,
+  strictOwnerOutputCommitment = false,
   protocolPayloads,
   toAddress,
   utxoSelectionStrategy = "default",
@@ -20352,6 +20354,7 @@ async function buildPaymentPsbt({
   prefetchedWalletUtxos?: MempoolUtxo[];
   requireConfirmedUtxos?: boolean;
   requireWalletUtxos?: boolean;
+  strictOwnerOutputCommitment?: boolean;
   protocolPayloads: string[];
   toAddress?: string;
   utxoSelectionStrategy?: UtxoSelectionStrategy;
@@ -20525,6 +20528,7 @@ async function buildPaymentPsbt({
     psbt.addInput({
       ...input,
       ...utxoInputData(utxo),
+      ...(strictOwnerOutputCommitment ? { sighashType: bitcoin.Transaction.SIGHASH_ALL } : {}),
     });
   }
 
@@ -20589,6 +20593,7 @@ async function buildPaymentPsbt({
       postProtocolOpReturnScripts.length +
       (selection.changeSats >= DUST_SATS ? 1 : 0),
     psbtHex: psbt.toHex(),
+    ...(strictOwnerOutputCommitment ? { strictOwnerOutputCommitment: true } : {}),
   };
 }
 
@@ -21459,6 +21464,29 @@ function assertSignedTransactionIntent(
   }
 }
 
+function ownerOutputEvidenceFromPreparedPayment(
+  prepared: bitcoin.Psbt,
+  signed: bitcoin.Transaction,
+): OwnerOutputCommitmentEvidence {
+  const prevouts = prepared.txInputs.map((input, index) => {
+    const data = prepared.data.inputs[index];
+    const previous = data.nonWitnessUtxo ? bitcoin.Transaction.fromBuffer(data.nonWitnessUtxo) : undefined;
+    if (previous && bytesToHex(previous.getHash()) !== bytesToHex(input.hash)) {
+      throw new Error("Prepared child link prevout does not match its funding outpoint.");
+    }
+    const prior = previous?.outs[input.index];
+    if (previous && !prior) throw new Error("Prepared child link funding output is missing from the supplied previous transaction.");
+    if (prior && data.witnessUtxo && (prior.value !== data.witnessUtxo.value || bytesToHex(prior.script) !== bytesToHex(data.witnessUtxo.script))) {
+      throw new Error("Prepared child link prevout script or value is inconsistent.");
+    }
+    const prevout = data.witnessUtxo ?? prior;
+    if (!prevout) throw new Error("Prepared child link prevout evidence is unavailable.");
+    return { txid: bytesToHex(Uint8Array.from(input.hash).reverse()), vout: input.index,
+      scriptPubKeyHex: bytesToHex(prevout.script), valueSats: prevout.value.toString() };
+  });
+  return { rawTransactionHex: signed.toHex(), prevouts };
+}
+
 function countOpReturnOutputs(rawTx: string, network: BitcoinNetwork) {
   try {
     const transaction = bitcoin.Transaction.fromHex(rawTx);
@@ -21744,6 +21772,7 @@ async function signAndBroadcastPsbtDetailed({
   psbtHex,
   signInputIndexes,
   signingAddress,
+  strictOwnerOutputCommitment = false,
   wallet,
 }: {
   allowedReservedListingAnchorOutpoints?: PowIdSpentOutpoint[];
@@ -21755,6 +21784,7 @@ async function signAndBroadcastPsbtDetailed({
   psbtHex: string;
   signInputIndexes?: number[];
   signingAddress?: string;
+  strictOwnerOutputCommitment?: boolean;
   wallet: UnisatWallet;
 }): Promise<TransactionBroadcastResult> {
   if (!wallet.signPsbt) {
@@ -21775,9 +21805,15 @@ async function signAndBroadcastPsbtDetailed({
   });
 
   let signedPsbtHex = "";
-  const requestedSignInputs = signInputIndexes?.map((index) => ({
+  if (strictOwnerOutputCommitment && network !== "livenet") throw new Error("Child page-link signing requires Mainnet.");
+  if (strictOwnerOutputCommitment && (!signingAddress || unsignedPsbt.data.inputs.some(input => input.sighashType !== bitcoin.Transaction.SIGHASH_ALL))) {
+    throw new Error("Child link preparation must request owner signatures committing all reviewed outputs.");
+  }
+  const requestedSignInputs = (signInputIndexes ?? (strictOwnerOutputCommitment
+    ? Array.from({ length: inputCount }, (_, index) => index) : undefined))?.map((index) => ({
     address: signingAddress,
     index,
+    ...(strictOwnerOutputCommitment ? { sighashTypes: [bitcoin.Transaction.SIGHASH_ALL] } : {}),
   }));
   try {
     signedPsbtHex = await wallet.signPsbt(
@@ -21812,6 +21848,7 @@ async function signAndBroadcastPsbtDetailed({
       ).map((index) => ({
         index,
         publicKey,
+        ...(strictOwnerOutputCommitment ? { sighashTypes: [bitcoin.Transaction.SIGHASH_ALL] } : {}),
       })),
     });
   }
@@ -21828,6 +21865,11 @@ async function signAndBroadcastPsbtDetailed({
     expectedIntent,
     rawUnsignedTransactionIntent(signedTransaction),
   );
+  if (strictOwnerOutputCommitment) {
+    const commitment = verifyOwnerOutputCommitment(ownerOutputEvidenceFromPreparedPayment(unsignedPsbt, signedTransaction),
+      { ownerAddress: signingAddress!, network: "livenet", requireAllInputsCommitted: true, allowAnyoneCanPay: false });
+    if (commitment.valid !== true) throw new Error("Wallet did not return owner signatures committing all reviewed outputs. No transaction was broadcast.");
+  }
   const rawTx = signedTransaction.toHex();
 
   await beforeBroadcast?.();
@@ -24160,7 +24202,7 @@ export default function App() {
       await preflight();
       setStatus({ tone: "idle", text: "Waiting for your local wallet signature…" });
       const result = await signAndBroadcastPsbtDetailed({ ...prepared, network, signingAddress: address,
-        wallet: context.wallet!, beforeBroadcast: preflight,
+        strictOwnerOutputCommitment: prepared.strictOwnerOutputCommitment, wallet: context.wallet!, beforeBroadcast: preflight,
         allowedReservedListingAnchorOutpoints: marketplace?.allowedAnchors, signInputIndexes: marketplace?.signInputIndexes,
         onBroadcastAttempt: txid => {
           context.assertCurrent();
@@ -28512,7 +28554,7 @@ export default function App() {
       context.assertCurrent();
       const prepared = await buildPaymentPsbt({ amountSats: DNS_PAGE_LINK_SELF_PAYMENT_SATS, feeRate,
         fromAddress: address, toAddress: address, network, requireConfirmedUtxos: true,
-        protocolPayloads: expectedRecords, excludeOutpoints: activeListingAnchorOutpointsForAddress(dnsState.listings, address, { network }) });
+        strictOwnerOutputCommitment: Boolean(subdomain), protocolPayloads: expectedRecords, excludeOutpoints: activeListingAnchorOutpointsForAddress(dnsState.listings, address, { network }) });
       const revalidate = async () => {
         const current = await readCurrent();
         if (child) assertDnsSubdomainPageLinkAction(current as DnsSubdomainPageLinkSnapshot, target, address, epoch, child.childLifecycle);

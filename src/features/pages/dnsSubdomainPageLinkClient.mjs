@@ -1,5 +1,5 @@
-import { DNS_SUBDOMAIN_PAGE_LINK_PREFIX, DNS_SUBDOMAIN_PAGE_LINK_SELF_PAYMENT_SATS,
-  normalizeDnsSubdomainPageLinkName } from "../../shared/protocol/dnsSubdomainPages.mjs";
+import { DNS_SUBDOMAIN_PAGE_LINK_PREFIX, DNS_SUBDOMAIN_PAGE_LINK_SELF_PAYMENT_SATS, DNS_SUBDOMAIN_PAGE_LINK_AUTHORITY_MODEL,
+  normalizeDnsSubdomainPageLinkName, parseDnsSubdomainPageLinkPayload, dnsSubdomainPageLinkSelfSendAuthor } from "../../shared/protocol/dnsSubdomainPages.mjs";
 import { dnsOwnershipEpoch, dnsSubdomainAddressIdentity, parseDnsSubdomainName } from "../../shared/protocol/dnsSubdomains.mjs";
 import { sameDnsPageEpoch } from "./dnsPageLinkClient.mjs";
 
@@ -43,6 +43,7 @@ export function readDnsSubdomainPageLinkSnapshot(value, requestedName, { network
       admission?.ready !== true || admission.network !== network || admission.indexedThroughBlock !== height ||
       admission.checkpointHash !== checkpoint || admission.activationHeight !== coverage.activationHeight ||
       admission.minSelfPaymentSats !== DNS_SUBDOMAIN_PAGE_LINK_SELF_PAYMENT_SATS || admission.protocolPrefix !== DNS_SUBDOMAIN_PAGE_LINK_PREFIX ||
+      admission.authorityModel !== DNS_SUBDOMAIN_PAGE_LINK_AUTHORITY_MODEL ||
       !Array.isArray(data.records) || !Array.isArray(data.subdomains) || !Array.isArray(data.subdomainEvents) ||
       !Array.isArray(data.subdomainPageLinkEvents) || !Array.isArray(data.subdomainPageLinkPendingEvents) ||
       !Object.hasOwn(data, "subdomainPageLink") ||
@@ -91,8 +92,46 @@ export function readDnsSubdomainPageLinkSnapshot(value, requestedName, { network
       !uint(link.protocolVout) || link.protocolVout > 0xffffffff || !uint(link.recordOrdinal))) {
     throw new Error("The Pages link does not match this child .pow name's current confirmed lifecycle.");
   }
+  function verifiedSignedEvent(event, pending) {
+    const record = parseDnsSubdomainPageLinkPayload(event?.payload);
+    if (!record || record.parent !== query.parent || record.label !== query.label ||
+        !sameDnsPageEpoch(record.epoch, root.ownershipEpoch) || !sameDnsPageEpoch(record.child, child.childLifecycle) ||
+        (event.name !== undefined && event.name !== query.name) ||
+        (event.record !== undefined && JSON.stringify(event.record) !== JSON.stringify(record)) ||
+        !hash(event.txid) || !uint(event.protocolVout) || event.protocolVout > 0xffffffff || !uint(event.recordOrdinal) ||
+        event.valid !== true || (pending ? event.confirmed !== false || event.blockHeight !== null || event.txIndex != null
+          : event.confirmed !== true || !uint(event.txIndex) || !uint(event.blockHeight) ||
+            event.blockHeight <= child.createdAtBlock || event.blockHeight < coverage.activationHeight || event.blockHeight > height) ||
+        identity(dnsSubdomainPageLinkSelfSendAuthor(event, { validateAddress })) !== identity(root.ownerAddress)) {
+      throw new Error("The child Pages link lacks verified signed owner output commitment.");
+    }
+    return record;
+  }
+  if (link !== null) {
+    const events = data.subdomainPageLinkEvents.filter(event => event?.txid === link.txid &&
+      event.protocolVout === link.protocolVout && event.recordOrdinal === link.recordOrdinal);
+    if (events.length !== 1 || events[0].blockHeight !== link.blockHeight) {
+      throw new Error("The active child Pages link has no exact accepted signed event.");
+    }
+    const record = verifiedSignedEvent(events[0], false);
+    if (record.action !== "set" || record.pageTxid !== link.pageTxid) {
+      throw new Error("The active child Pages link differs from its signed carrier.");
+    }
+  }
+  const pendingEvents = data.subdomainPageLinkPendingEvents.map(event => {
+    if (event?.valid !== true) return event;
+    const record = parseDnsSubdomainPageLinkPayload(event.payload);
+    if (!record) throw new Error("The pending child Pages link lacks verified signed owner output commitment.");
+    if (`${record.label}.${record.parent}.pow` !== query.name ||
+        !sameDnsPageEpoch(record.epoch, root.ownershipEpoch) || !sameDnsPageEpoch(record.child, child.childLifecycle)) {
+      return { ...event, record, valid: false };
+    }
+    verifiedSignedEvent(event, true);
+    if (record.action === "clear" && !link) throw new Error("A pending child unlink has no active confirmed link.");
+    return { ...event, record };
+  });
   return { name: query.name, root, child, pageLink: link,
-    pageLinkPendingEvents: data.subdomainPageLinkPendingEvents,
+    pageLinkPendingEvents: pendingEvents,
     indexedThroughBlock: height, checkpointHash: checkpoint, admission };
 }
 

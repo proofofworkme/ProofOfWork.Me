@@ -1,18 +1,32 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
+import vm from "node:vm";
+import ts from "typescript";
+import * as bitcoin from "bitcoinjs-lib";
+import { createOwnerOutputCommitmentFixture } from "../../../tests/fixtures/ownerOutputCommitment.mjs";
+import { buildDnsSubdomainPageLinkPayload } from "../../shared/protocol/dnsSubdomainPages.mjs";
 import { readDnsSubdomainPageLinkSnapshot, assertDnsSubdomainPageLinkAction } from "./dnsSubdomainPageLinkClient.mjs";
 
-const OWNER = "1F1p9UEHuH5KTFR7Zsx93Khdrqhj6t5nFv";
+const OWNER = createOwnerOutputCommitmentFixture().ownerAddress;
 const OTHER = "1F1zepCJ8VPcPoeMt6G4BPKuE3CYAxCKNY";
 const RECEIVER = "bc1qfwytlzyr3ym3enz2eutwtjsf9kkf6uqkjydk3e";
 const hash = number => number.toString(16).padStart(64, "0");
 const epoch = { txid: hash(1), protocolVout: 1, recordOrdinal: 0 };
 const childLifecycle = { txid: hash(2), protocolVout: 1, recordOrdinal: 0 };
 const options = { network: "livenet", validateAddress: address => [OWNER, OTHER, RECEIVER].includes(address) };
+function signedEvent({ confirmed = true, boundEpoch = epoch, boundChild = childLifecycle, label = "app", hashTypes = [1] } = {}) {
+  const record = { action: "set", parent: "alice", label, epoch: boundEpoch, child: boundChild, pageTxid: hash(500) };
+  const payload = buildDnsSubdomainPageLinkPayload(record);
+  return { ...createOwnerOutputCommitmentFixture({ payload, number: confirmed ? 3 : 4, hashTypes }), record, payload,
+    name: `${label}.alice.pow`, blockHeight: confirmed ? 12 : null, txIndex: confirmed ? 3 : null, protocolVout: 1,
+    recordOrdinal: 0, subdomainPageLinkCarrierCount: 1, hasCoinbaseInput: false, valid: true, confirmed };
+}
 function fixture(active = false, nested = true) {
+  const event = signedEvent();
   const link = active ? { name: "app.alice.pow", parent: "alice", label: "app", network: "livenet", confirmed: true,
     status: "active", active: true, valid: true, ownerAddress: OWNER, epoch, child: childLifecycle,
-    txid: hash(3), protocolVout: 2, recordOrdinal: 0, blockHeight: 12, pageTxid: hash(500) } : null;
+    txid: event.txid, protocolVout: 1, recordOrdinal: 0, blockHeight: 12, pageTxid: hash(500) } : null;
   const root = { id: "alice", network: "livenet", confirmed: true, ownerAddress: OWNER,
     receiveAddress: RECEIVER, ownershipEpoch: epoch, ownershipEpochBlockHeight: 10 };
   const child = { name: "app.alice.pow", parent: "alice", label: "app", network: "livenet", confirmed: true,
@@ -28,12 +42,12 @@ function fixture(active = false, nested = true) {
     subdomainAdmission: { ready: true },
     subdomainEvents: [{ ...childLifecycle, blockHeight: 11, txIndex: 2, valid: true, confirmed: true,
       record: { action: "create", parent: "alice", label: "app", epoch, resolver: null } }],
-    subdomainPageLink: link, pageLink: link, subdomainPageLinkEvents: [], subdomainPageLinkPendingEvents: [],
+    subdomainPageLink: link, pageLink: link, subdomainPageLinkEvents: active ? [event] : [], subdomainPageLinkPendingEvents: [],
     subdomainPageLinkCoverage: { complete: true, model: "dns-subdomain-page-link-core-raw-block-coverage-v1", network: "livenet",
       indexedThroughBlock: 20, checkpointHash: hash(8), witnessSha256: hash(11), subdomainPageLinkSha256: hash(12),
       activationHeight: 12, blockCount: 9 },
     subdomainPageLinkAdmission: { ready: true, network: "livenet", indexedThroughBlock: 20, checkpointHash: hash(8),
-      activationHeight: 12, minSelfPaymentSats: 546, protocolPrefix: "pwdns1:subpage1:" } }));
+      activationHeight: 12, minSelfPaymentSats: 546, protocolPrefix: "pwdns1:subpage1:", authorityModel: "owner-signed-all-outputs-v1" } }));
 }
 const read = value => readDnsSubdomainPageLinkSnapshot(value, " APP.ALICE.POW ", options);
 
@@ -95,6 +109,8 @@ test("both child and page discovery must bind the same current complete checkpoi
     value => { value.subdomainPageLinkAdmission.indexedThroughBlock = 19; },
     value => { value.subdomainPageLinkAdmission.minSelfPaymentSats = 0; },
     value => { value.subdomainPageLinkAdmission.protocolPrefix = "pwdns1:page1:"; },
+    value => { delete value.subdomainPageLinkAdmission.authorityModel; },
+    value => { value.subdomainPageLinkAdmission.authorityModel = "input-address-only-v1"; },
     value => { value.subdomainPageLinkAdmission.ready = false; },
     value => { delete value.subdomainPageLink; },
     value => { delete value.subdomainPageLinkEvents; },
@@ -137,18 +153,65 @@ test("signing preflight fences owner, root epoch, child lifecycle, target and cl
 });
 
 test("pending evidence never changes routing; only current valid lifecycle blocks repeated action", () => {
-  const pending = { name: "app.alice.pow", valid: true, record: { parent: "alice", label: "app", epoch, child: childLifecycle } };
+  const pending = signedEvent({ confirmed: false });
   const value = fixture(true); value.subdomainPageLinkPendingEvents = [pending];
   assert.equal(read(value).pageLink.pageTxid, hash(500));
   assert.throws(() => assertDnsSubdomainPageLinkAction(read(value), { name: "app.alice.pow", pageTxid: hash(501) }, OWNER), /pending/iu);
   for (const update of [
     { ...pending, valid: false },
-    { ...pending, record: { ...pending.record, child: { ...childLifecycle, txid: hash(6) } } },
-    { ...pending, record: { ...pending.record, epoch: { ...epoch, txid: hash(6) } } },
-    { ...pending, name: "other.alice.pow", record: { ...pending.record, label: "other" } },
+    signedEvent({ confirmed: false, boundChild: { ...childLifecycle, txid: hash(6) } }),
+    signedEvent({ confirmed: false, boundEpoch: { ...epoch, txid: hash(6) } }),
+    signedEvent({ confirmed: false, label: "other" }),
   ]) {
     const stale = fixture(); stale.subdomainPageLinkPendingEvents = [update];
     const snapshot = read(stale); assert.equal(snapshot.pageLink, null);
     assert.doesNotThrow(() => assertDnsSubdomainPageLinkAction(snapshot, { name: "app.alice.pow", pageTxid: hash(501) }, OWNER));
   }
+});
+
+
+test("active child route and pending signing fence require exact signed owner proof rather than flags", () => {
+  for (const mutate of [
+    value => { value.subdomainPageLinkEvents = []; },
+    value => { value.subdomainPageLinkEvents.push(value.subdomainPageLinkEvents[0]); },
+    value => { delete value.subdomainPageLinkEvents[0].transactionEvidence; },
+    value => { value.subdomainPageLinkEvents[0].transactionEvidence = { valid: true, commitsAllOutputs: true }; },
+    value => { value.subdomainPageLinkEvents[0].blockHeight = 13; },
+    value => { value.subdomainPageLinkEvents[0].outputs[0].valueSats = 547; },
+    value => { value.subdomainPageLinkEvents[0].record.pageTxid = hash(501); },
+    value => { value.subdomainPageLinkEvents[0].record.child.txid = hash(6); },
+    value => { value.subdomainPageLink.pageTxid = hash(501); },
+  ]) { const value = fixture(true); mutate(value); assert.throws(() => read(value)); }
+  for (const hashType of [2, 3, 130, 131]) {
+    const value = fixture(true), event = signedEvent({ hashTypes: [hashType] });
+    value.subdomainPageLink.txid = event.txid; value.pageLink.txid = event.txid;
+    for (const row of [value.record, ...value.records, ...value.subdomains]) row.subdomainPageLink.txid = event.txid;
+    value.subdomainPageLinkEvents = [event];
+    assert.throws(() => read(value), /signed.*commitment/iu);
+    const pending = fixture(); pending.subdomainPageLinkPendingEvents = [signedEvent({ confirmed: false, hashTypes: [hashType] })];
+    assert.throws(() => read(pending), /signed.*commitment/iu);
+  }
+  const fakePending = fixture(); fakePending.subdomainPageLinkPendingEvents = [{ name: "app.alice.pow", valid: true,
+    record: { action: "set", parent: "alice", label: "app", epoch, child: childLifecycle, pageTxid: hash(500) } }];
+  assert.throws(() => read(fakePending), /signed.*commitment/iu);
+});
+
+
+test("final child signature evidence refuses an inconsistent supplied full funding transaction", async () => {
+  const source = await readFile(new URL("../../App.tsx", import.meta.url), "utf8");
+  const region = source.slice(source.indexOf("function ownerOutputEvidenceFromPreparedPayment("), source.indexOf("function countOpReturnOutputs("));
+  const context = vm.createContext({ bitcoin, bytesToHex: value => Buffer.from(value).toString("hex") });
+  vm.runInContext(ts.transpileModule(region, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText, context);
+  const funding = new bitcoin.Transaction(); funding.addInput(Buffer.alloc(32), 0xffffffff);
+  funding.addOutput(bitcoin.address.toOutputScript(OWNER), 20000n);
+  const signed = new bitcoin.Transaction(); signed.addInput(funding.getHash(), 0); signed.addOutput(funding.outs[0].script, 546n);
+  const prepared = { txInputs: [{ hash: funding.getHash(), index: 0 }], data: { inputs: [
+    { nonWitnessUtxo: funding.toBuffer(), witnessUtxo: funding.outs[0] }] } };
+  const evidence = context.ownerOutputEvidenceFromPreparedPayment(prepared, signed);
+  assert.equal(evidence.prevouts[0].txid, funding.getId());
+  assert.equal(evidence.prevouts[0].valueSats, "20000");
+  prepared.txInputs[0].index = 1;
+  assert.throws(() => context.ownerOutputEvidenceFromPreparedPayment(prepared, signed), /funding output is missing/iu);
+  prepared.txInputs[0].index = 0; prepared.data.inputs[0].witnessUtxo = { ...funding.outs[0], value: 19000n };
+  assert.throws(() => context.ownerOutputEvidenceFromPreparedPayment(prepared, signed), /inconsistent/iu);
 });

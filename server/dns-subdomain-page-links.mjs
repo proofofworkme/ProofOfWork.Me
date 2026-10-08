@@ -1,4 +1,4 @@
-import { DNS_SUBDOMAIN_PAGE_LINK_PREFIX } from "../src/shared/protocol/dnsSubdomainPages.mjs";
+import { DNS_SUBDOMAIN_PAGE_LINK_PREFIX, DNS_SUBDOMAIN_PAGE_LINK_AUTHORITY_MODEL } from "../src/shared/protocol/dnsSubdomainPages.mjs";
 const prefixHex = Buffer.from(DNS_SUBDOMAIN_PAGE_LINK_PREFIX).toString("hex");
 const key = (record) => [record.txid, record.position?.protocolVout ?? record.protocolVout,
   record.position?.recordOrdinal ?? record.recordOrdinal].join(":");
@@ -29,6 +29,7 @@ export function qualifyDnsSubdomainPageLinkLogPayload(payload, dns) {
   const checkpointHash = payload?.indexedThroughBlockHash ?? payload?.checkpointHash ??
     payload?.provenance?.indexedThroughBlockHash;
   if (dns?.subdomainPageLinkCoverage?.complete !== true || dns?.subdomainPageLinkAdmission?.ready !== true ||
+      dns.subdomainPageLinkAdmission.authorityModel !== DNS_SUBDOMAIN_PAGE_LINK_AUTHORITY_MODEL ||
       checkpointHeight !== dns.indexedThroughBlock || checkpointHash !== dns.checkpointHash ||
       dns.subdomainPageLinkCoverage.indexedThroughBlock !== checkpointHeight || dns.subdomainPageLinkCoverage.checkpointHash !== checkpointHash ||
       dns.subdomainPageLinkAdmission.indexedThroughBlock !== checkpointHeight || dns.subdomainPageLinkAdmission.checkpointHash !== checkpointHash) {

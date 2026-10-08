@@ -404,6 +404,10 @@ Future agents must preserve these unless the user explicitly asks for a migratio
   recipients never control links, pending records never route, and incomplete
   coverage never becomes false empty state. Pages and Advanced DNS inspect the
   same chain records; local receipts never create a second link registry.
+  New child link authority verifies owner signatures committing all outputs
+  from exact raw spend evidence. Active links and signing-relevant pending
+  events require that proof; local child signing requires ALL/default for every
+  input. Historical root page-link and child payment-resolution rules remain.
 - Current mail prefix: `pwm1:`
 - Mailbox projections must preserve subject/body separation: `pwm1:s` supplies the subject, `pwm1:m` supplies the body, and `mail_items.body_text` plus UI memo rendering must not use Log display detail as a substitute for decoded message content.
 - Current credit prefix: `pwt1:`

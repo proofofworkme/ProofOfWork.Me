@@ -346,7 +346,27 @@ prevouts, missing input addresses, mixed authors and coinbase inputs fail
 authorization. One explicit output of at least **546 proofs** must pay that owner
 before the link's protocol output; several smaller payments cannot be summed.
 Exactly one `subpage1` carrier is permitted per transaction, including malformed
-matching carriers. Payment evidence uses exact nonnegative integers. The
+matching carriers. Child page-link authority additionally requires at least one
+cryptographically verified current-owner signature that commits **all outputs**,
+including the exact link carrier and self-payment. `SIGHASH_ALL`,
+`SIGHASH_ALL | ANYONECANPAY`, and Taproot key-spend `SIGHASH_DEFAULT` provide
+that output commitment; `SIGHASH_NONE` or `SIGHASH_SINGLE` alone do not. Every
+input still belongs to the current owner. Replay verifies recognized executed
+single-key spend paths against the exact serialized transaction and ordered
+canonical prevout scripts and values; unsupported paths or missing evidence
+fail closed. This added rule applies only to `subpage1`; historical root
+`page1`, `sub1`, and registry admission retain their existing rules.
+
+The child admission model is `owner-signed-all-outputs-v1`. An active child
+lookup includes its exact accepted set event and signed spend evidence. Browser,
+Pages, and Advanced DNS verify that proof locally against the current owner,
+carrier, self-payment, ownership epoch and child create identity; a model tag or
+`valid` flag is never the authority proof. Current-lifecycle pending events must
+pass the same check before fencing another local action. Pages and Advanced
+DNS require that exact model, request `SIGHASH_ALL` for local child actions, and
+verify the returned final spend uses `ALL` or Taproot `DEFAULT` for every input
+before broadcast. An unchanged unsigned transaction does not establish that
+its signatures commit the reviewed output bytes. Payment evidence uses exact nonnegative integers. The
 self-payment is not a registry fee or new Growth/WORK value; a companion ordinary
 Mail carrier retains its existing payment and fee accounting once.
 

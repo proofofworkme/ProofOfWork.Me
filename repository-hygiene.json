@@ -221,6 +221,7 @@
     "support-notes": [
       "deploy/jobs/README.md",
       "deploy/browser-dns/README.md",
+      "deploy/browser-dns/TRANSPORT_CUSTODY.md",
       "deploy/pages/README.md",
       "deploy/pages/UI_STORAGE.md",
       "deploy/permission/README.md",

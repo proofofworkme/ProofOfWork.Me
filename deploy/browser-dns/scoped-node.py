@@ -19,9 +19,10 @@ AUTHORITY = ('bitcoind.service', 'electrs.service', 'postgresql@16-main.service'
 SEARCH = ('proofofwork-search-index.service', 'proofofwork-search-index.timer')
 ALLOWED = frozenset({'server/db/proof-index-reader.mjs', 'server/proof-api.mjs',
     'server/dns-page-link-discovery.mjs', 'server/dns-subdomain-discovery.mjs',
-    'server/dns-subdomain-page-links.mjs', 'src/shared/protocol/dnsSubdomainPages.mjs'})
+    'server/dns-subdomain-page-links.mjs', 'src/shared/protocol/dnsSubdomainPages.mjs',
+    'src/shared/protocol/ownerOutputCommitment.mjs'})
 NEW = frozenset({'server/dns-subdomain-page-links.mjs',
-    'src/shared/protocol/dnsSubdomainPages.mjs'})
+    'src/shared/protocol/dnsSubdomainPages.mjs', 'src/shared/protocol/ownerOutputCommitment.mjs'})
 ENTRYPOINTS = ('server/proof-api.mjs', 'scripts/backfill-proof-indexer.mjs',
     'scripts/backfill-proof-search.mjs')
 IMPORT = re.compile(r'''(?:\b(?:import|export)\s+[^;]*?\bfrom\s*|\bimport\s*\(?\s*)['"](\.[^'"]+)['"]''')

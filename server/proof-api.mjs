@@ -27,7 +27,7 @@ import {
 } from "./dns-page-link-discovery.mjs";
 import {
   DNS_SUBDOMAIN_PAGE_LINK_ACTIVATION_HEIGHT, DNS_SUBDOMAIN_PAGE_LINK_PREDECESSOR_HASH,
-  DNS_SUBDOMAIN_PAGE_LINK_PREFIX, DNS_SUBDOMAIN_PAGE_LINK_SELF_PAYMENT_SATS, replayDnsSubdomainPageLinks,
+  DNS_SUBDOMAIN_PAGE_LINK_PREFIX, DNS_SUBDOMAIN_PAGE_LINK_SELF_PAYMENT_SATS, DNS_SUBDOMAIN_PAGE_LINK_AUTHORITY_MODEL, replayDnsSubdomainPageLinks,
 } from "../src/shared/protocol/dnsSubdomainPages.mjs";
 import {
   dnsSubdomainPageLinkCandidates, qualifyDnsSubdomainPageLinkLogPayload, dnsSubdomainPageLinkLogPayloadHasLinks,
@@ -35033,6 +35033,37 @@ const discoverDnsPageLinks = createDnsPageLinkDiscovery({
 });
 
 function dnsSubdomainPageLinkEnvelope(record, transaction) {
+  // Only exact Core hydration can supply trusted spent-output scripts/values.
+  // The child replay independently verifies executed owner signatures from raw
+  // spend bytes; this envelope does not assert transaction authority.
+  const rawTransactionHex = String(transaction?.hex ?? "").trim().toLowerCase();
+  let rawTransaction;
+  try { rawTransaction = bitcoin.Transaction.fromHex(rawTransactionHex); } catch {}
+  if (transaction?._powCanonicalRpcHydration !== true || !transactionHasCompleteCanonicalPrevouts(transaction) ||
+      !/^(?:[0-9a-f]{2})+$/u.test(rawTransactionHex) || !rawTransaction ||
+      rawTransaction.getId() !== transactionTxid(transaction) ||
+      rawTransaction.ins.length !== transaction.vin.length || rawTransaction.outs.length !== transaction.vout.length ||
+      rawTransaction.ins.some((input, index) => {
+        const hydrated = transaction.vin[index];
+        return Buffer.from(input.hash).reverse().toString("hex") !== hydrated.txid ||
+          input.index !== hydrated.vout || (hydrated.sequence !== undefined && input.sequence !== hydrated.sequence) ||
+          (hydrated.scriptsig !== undefined && Buffer.from(input.script).toString("hex") !== hydrated.scriptsig);
+      }) || rawTransaction.outs.some((output, index) => {
+        const hydrated = transaction.vout[index];
+        return Buffer.from(output.script).toString("hex") !== hydrated.scriptpubkey ||
+          String(output.value) !== String(hydrated.value);
+      })) throw new Error("DNS subdomain page-link raw transaction does not bind exact Core hydration.");
+  const prevouts = transaction.vin.map(input => {
+    const scriptPubKeyHex = String(input.prevout?.scriptpubkey ?? "").toLowerCase();
+    const value = input.prevout?.value;
+    if (!/^[0-9a-f]{64}$/u.test(input.txid ?? "") || !Number.isSafeInteger(input.vout) || input.vout < 0 ||
+        !/^(?:[0-9a-f]{2})*$/u.test(scriptPubKeyHex) ||
+        !/^(?:0|[1-9][0-9]*)$/u.test(String(value)) || !Number.isSafeInteger(Number(value)) || Number(value) < 0 ||
+        input.is_coinbase === true || input.coinbase !== undefined) {
+      throw new Error("DNS subdomain page-link exact Core prevout evidence is incomplete.");
+    }
+    return { txid: input.txid, vout: input.vout, scriptPubKeyHex, valueSats: String(value) };
+  });
   const prefixHex = Buffer.from(DNS_SUBDOMAIN_PAGE_LINK_PREFIX).toString("hex");
   const part = record.rawRecordParts?.find(part => String(part.payloadHex ?? "").startsWith(prefixHex));
   const confirmed = transactionConfirmed(transaction);
@@ -35043,9 +35074,10 @@ function dnsSubdomainPageLinkEnvelope(record, transaction) {
     txIndex: confirmed ? transactionBlockIndex(transaction) : null,
     protocolVout: record.protocolVout, recordOrdinal: record.recordOrdinal,
     subdomainPageLinkCarrierCount: dnsSubdomainPageLinkCandidates(canonicalRawProtocolRecordSetFromTransaction(transaction).records).length,
-    inputAddresses: (transaction.vin ?? []).map(input => input?.prevout?.scriptpubkey_address ?? null),
+    transactionEvidence: { rawTransactionHex, prevouts },
+    inputAddresses: (transaction.vin ?? []).map(input => input?.prevout?.scriptpubkey_address || null),
     hasCoinbaseInput: (transaction.vin ?? []).some(input => input?.is_coinbase === true || input?.coinbase !== undefined),
-    outputs: (transaction.vout ?? []).map((output, vout) => ({ vout, address: output.scriptpubkey_address ?? null, valueSats: output.value })),
+    outputs: (transaction.vout ?? []).map((output, vout) => ({ vout, address: output.scriptpubkey_address || null, valueSats: output.value })),
   };
 }
 
@@ -35075,7 +35107,7 @@ const discoverDnsSubdomainPageLinks = createDnsPageLinkDiscovery({
     return dnsPageLinkCoreBlockWitness(envelope, events);
   },
   async hydratePending(txid, network) {
-    const tx = await fetchTransactionFromBitcoinRpc(txid, network, { bypassCache: true, cacheResult: false, requireCanonicalPrevouts: true });
+    const tx = await fetchTransactionFromBitcoinRpc(txid, network, { bypassCache: true, cacheResult: false, requireCanonicalPrevouts: true, includeRawHex: true });
     const entry = await bitcoinRpc("getmempoolentry", [txid]);
     if (!entry?.ok || !tx || transactionTxid(tx) !== txid || transactionConfirmed(tx) || !transactionHasCompleteCanonicalPrevouts(tx)) return [];
     return dnsSubdomainPageLinkCandidates(canonicalRawProtocolRecordSetFromTransaction(tx).records).map(record => dnsSubdomainPageLinkEnvelope(record, tx));
@@ -35296,6 +35328,7 @@ function dnsSubdomainPageLinkPublicEvent(event, network) {
 async function dnsPayloadWithSubdomainPageLinks(payload, state, checkpoint, network) {
   const activationHeight = DNS_SUBDOMAIN_PAGE_LINK_ACTIVATION_HEIGHT;
   const baseAdmission = { network, activationHeight, minSelfPaymentSats: DNS_SUBDOMAIN_PAGE_LINK_SELF_PAYMENT_SATS,
+    authorityModel: DNS_SUBDOMAIN_PAGE_LINK_AUTHORITY_MODEL,
     activationPreviousBlockHash: DNS_SUBDOMAIN_PAGE_LINK_PREDECESSOR_HASH,
     indexedThroughBlock: checkpoint.height, checkpointHash: checkpoint.blockHash, protocolPrefix: DNS_SUBDOMAIN_PAGE_LINK_PREFIX };
   let discovery = { events: [], coverage: { complete: false, network, activationHeight,

@@ -1,8 +1,10 @@
+import type { OwnerOutputCommitmentEvidence } from "./ownerOutputCommitment.mjs";
 import type { DnsOwnershipEpoch, DnsSubdomainRootEvent } from "./dnsSubdomains.mjs";
 import type { DnsPageLinkRoot } from "./dnsPages.mjs";
 export type { DnsOwnershipEpoch } from "./dnsSubdomains.mjs";
 export const DNS_SUBDOMAIN_PAGE_LINK_PREFIX: "pwdns1:subpage1:";
 export const DNS_SUBDOMAIN_PAGE_LINK_SELF_PAYMENT_SATS: 546;
+export const DNS_SUBDOMAIN_PAGE_LINK_AUTHORITY_MODEL: "owner-signed-all-outputs-v1";
 /** Livenet opening 970499; zero explicitly disables replay admission. */
 export const DNS_SUBDOMAIN_PAGE_LINK_ACTIVATION_HEIGHT: number;
 export const DNS_SUBDOMAIN_PAGE_LINK_PREDECESSOR_HASH: "00000000000000000001683a72df9a22322b2117aab9a1b264c5284045702d51";
@@ -24,6 +26,7 @@ export type DnsSubdomainPageLinkEvent = {
   rawPayloadHex?: string; decodeValid?: boolean;
   protocolVout: number; recordOrdinal: number; subdomainPageLinkCarrierCount: number;
   inputAddresses: (string | null)[]; hasCoinbaseInput?: boolean;
+  transactionEvidence?: OwnerOutputCommitmentEvidence;
   outputs: { vout: number; address: string | null; valueSats: number | string | bigint }[];
 };
 export type DnsSubdomainPageLinkState = {
@@ -41,8 +44,10 @@ export type DnsSubdomainPageLinkChild = {
   txid: string; blockHeight: number; txIndex: number; protocolVout: number; recordOrdinal: number; status: "active";
 };
 export type DnsSubdomainPageLinkHistory = {
-  payload: string; rawPayloadHex?: string; decodeValid?: boolean;
+  payload: string; rawPayloadHex?: string; decodeValid?: boolean; transactionEvidence?: OwnerOutputCommitmentEvidence;
   txid: string; blockHeight: number | null; txIndex: number | null; protocolVout: number; recordOrdinal: number;
+  inputAddresses: (string | null)[]; hasCoinbaseInput: boolean; subdomainPageLinkCarrierCount: number;
+  outputs: { vout: number; address: string | null; valueSats: number | string | bigint }[];
   record: DnsSubdomainPageLinkRecord | null; valid: boolean; status: "accepted" | "rejected" | "pending";
   reason: string | null; state?: DnsSubdomainPageLinkState;
 };

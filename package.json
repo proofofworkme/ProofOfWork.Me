@@ -33,7 +33,7 @@
     "check:wallet-utxo-refresh": "node --test scripts/check-wallet-utxo-refresh.mjs",
     "check:dns-subdomains": "node scripts/check-dns-subdomains.mjs && node --test scripts/check-dns-subdomain-raw.test.mjs server/dns-subdomain-discovery.test.mjs",
     "check:dns-pages": "node --test scripts/check-dns-page-links.test.mjs scripts/check-dns-page-links-raw.test.mjs server/dns-page-link-discovery.test.mjs src/features/pages/dnsPageLinkClient.test.mjs",
-    "check:dns-subdomain-pages": "node --test src/shared/protocol/dnsSubdomainPages.test.mjs src/features/pages/dnsSubdomainPageLinkClient.test.mjs server/dns-subdomain-page-links.test.mjs server/dns-page-link-integration.test.mjs",
+    "check:dns-subdomain-pages": "node --test src/shared/protocol/ownerOutputCommitment.test.mjs src/shared/protocol/dnsSubdomainPages.test.mjs src/features/pages/dnsSubdomainPageLinkClient.test.mjs server/dns-subdomain-page-links.test.mjs server/dns-page-link-integration.test.mjs",
     "check:browser-dns:deploy": "python3 -I -B deploy/browser-dns/check-scoped-node.test.py && python3 -I -B deploy/browser-dns/check-release.test.py",
     "check:audit19-accounting": "node server/canonical-credit-aggregates.test.mjs && node server/work-wallet-capacity.test.mjs && node scripts/check-h19-work-capacity-admission.mjs && node scripts/check-h19-work-capacity-client.mjs",
     "check:work-amo-v8-peak": "node --expose-gc scripts/check-work-amo-v8-peak.mjs",

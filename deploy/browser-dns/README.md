@@ -17,9 +17,16 @@ The complete write allowlist is:
 - `server/dns-subdomain-discovery.mjs` (existing)
 - `server/dns-subdomain-page-links.mjs` (new)
 - `src/shared/protocol/dnsSubdomainPages.mjs` (new)
+- `src/shared/protocol/ownerOutputCommitment.mjs` (new)
+
+The child-only authority model is `owner-signed-all-outputs-v1`. Exact Core raw spend
+bytes and ordered spent-output evidence are exposed for independent signature
+verification. Every input belongs to the current owner, and at least one verified
+owner signature commits all outputs. Client preparation requires ALL/default on
+every supported input. Legacy root `page1` and child registry `sub1` remain unchanged.
 
 Only the four existing files accept three-way merges or exact reviewed conflict
-resolutions. Both new helpers are creation-only: they must be absent from the
+resolutions. All three new helpers are creation-only: they must be absent from the
 capture and remain absent at rollout. The manifest also requires their `before`
 hashes to be null. A previously installed or concurrently created helper refuses;
 its bytes are preserved for explicit recovery.
@@ -157,6 +164,13 @@ The final synchronization gate is mandatory:
 npm run check:release-sync
 ```
 
+## Approved historical transport custody
+
+[The exact six-payload custody runbook](TRANSPORT_CUSTODY.md) records the
+separately approved historical source/surface backup, verified local restoration,
+and guarded removal/recovery controls. Completed custody is distinct from a
+production removal receipt; all other history remains protected.
+
 ## Offline checks
 
 ```sh
@@ -164,8 +178,8 @@ python3 -I -B deploy/browser-dns/check-scoped-node.test.py
 python3 -I -B deploy/browser-dns/check-release.test.py
 ```
 
-These temporary-filesystem and mocked-service/SSH checks cover the exact six writes,
-two creation-only helpers, four reviewed existing-file merges, real helper import
+These temporary-filesystem and mocked-service/SSH checks cover the exact seven writes,
+three creation-only helpers, four reviewed existing-file merges, real helper import
 pins, complete source fences, wrong formats and merge bases, drift/path refusals,
 retained metadata, partial-install rollback, socket/worker/API ordering, worker
 coupling and restoration, Search restoration or deferred recovery, controller

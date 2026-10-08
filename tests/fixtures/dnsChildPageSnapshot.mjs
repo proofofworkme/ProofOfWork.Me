@@ -1,12 +1,13 @@
+import { createOwnerOutputCommitmentFixture } from "./ownerOutputCommitment.mjs";
 import { DNS_SUBDOMAIN_ACTIVATION_HEIGHT, parseDnsSubdomainName } from "../../src/shared/protocol/dnsSubdomains.mjs";
 import { DNS_SUBDOMAIN_PAGE_LINK_ACTIVATION_HEIGHT, DNS_SUBDOMAIN_PAGE_LINK_PREFIX,
-  DNS_SUBDOMAIN_PAGE_LINK_SELF_PAYMENT_SATS } from "../../src/shared/protocol/dnsSubdomainPages.mjs";
+  DNS_SUBDOMAIN_PAGE_LINK_SELF_PAYMENT_SATS, DNS_SUBDOMAIN_PAGE_LINK_AUTHORITY_MODEL, buildDnsSubdomainPageLinkPayload } from "../../src/shared/protocol/dnsSubdomainPages.mjs";
 
 // Coherent first-party exact lookup: root ownership, active child CREATE and both
 // complete coverage commitments share a canonical checkpoint. Tests use the
 // production client validator rather than substituting a successful resolver.
 export function dnsChildPageSnapshot({ name = "app.alice.pow", pageTxid = "b".repeat(64),
-  ownerAddress = "1BPVvi1GK4QkfqFMU4jHGjsQjyGwjJJJ7x",
+  ownerAddress = createOwnerOutputCommitmentFixture().ownerAddress,
   receiveAddress = "1F1p9UEHuH5KTFR7Zsx93Khdrqhj6t5nFv" } = {}) {
   const { label, parent } = parseDnsSubdomainName(name);
   const network = "livenet", checkpointHash = "a".repeat(64);
@@ -19,7 +20,10 @@ export function dnsChildPageSnapshot({ name = "app.alice.pow", pageTxid = "b".re
     [commitment]: checkpointHash, blockCount: indexedThroughBlock - activationHeight + 1, model });
   const root = { id: parent, network, confirmed: true, ownerAddress, receiveAddress,
     ownershipEpoch: epoch, ownershipEpochBlockHeight: createdAtBlock - 1 };
-  const pageLink = { name, parent, label, network, pageTxid, txid: "d".repeat(64), ownerAddress,
+  const record = { action: "set", parent, label, epoch, child: childLifecycle, pageTxid };
+  const payload = buildDnsSubdomainPageLinkPayload(record);
+  const signed = createOwnerOutputCommitmentFixture({ payload, number: 3 });
+  const pageLink = { name, parent, label, network, pageTxid, txid: signed.txid, ownerAddress,
     epoch, child: childLifecycle, blockHeight: indexedThroughBlock - 1,
     protocolVout: 1, recordOrdinal: 0, confirmed: true, status: "active", active: true, valid: true };
   const child = { name, parent, label, network, confirmed: true, status: "active", active: true,
@@ -35,8 +39,11 @@ export function dnsChildPageSnapshot({ name = "app.alice.pow", pageTxid = "b".re
       "dns-subdomain-page-link-core-raw-block-coverage-v1", "subdomainPageLinkSha256"),
     subdomainPageLinkAdmission: { network, ready: true, indexedThroughBlock, checkpointHash,
       activationHeight: DNS_SUBDOMAIN_PAGE_LINK_ACTIVATION_HEIGHT,
-      minSelfPaymentSats: DNS_SUBDOMAIN_PAGE_LINK_SELF_PAYMENT_SATS, protocolPrefix: DNS_SUBDOMAIN_PAGE_LINK_PREFIX },
+      minSelfPaymentSats: DNS_SUBDOMAIN_PAGE_LINK_SELF_PAYMENT_SATS, protocolPrefix: DNS_SUBDOMAIN_PAGE_LINK_PREFIX,
+      authorityModel: DNS_SUBDOMAIN_PAGE_LINK_AUTHORITY_MODEL },
     subdomainEvents: [{ ...childLifecycle, name, blockHeight: createdAtBlock, valid: true, confirmed: true,
       record: { action: "create", parent, label, epoch, resolver: null } }],
-    subdomainPageLinkEvents: [], subdomainPageLinkPendingEvents: [] };
+    subdomainPageLinkEvents: [{ ...signed, payload, record, name, blockHeight: pageLink.blockHeight, txIndex: 3,
+      protocolVout: 1, recordOrdinal: 0, subdomainPageLinkCarrierCount: 1, hasCoinbaseInput: false, valid: true, confirmed: true }],
+    subdomainPageLinkPendingEvents: [] };
 }

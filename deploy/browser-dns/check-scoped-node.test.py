@@ -45,16 +45,17 @@ class ControllerTests(unittest.TestCase):
         candidates = module.validate_manifest(self.manifest)
         module.fence(self.root,self.manifest,candidates)
 
-    def test_exact_six_writes_and_api_dependent_worker_restart(self):
+    def test_exact_seven_writes_and_api_dependent_worker_restart(self):
         self.assertEqual(module.ALLOWED, {'server/proof-api.mjs', 'server/db/proof-index-reader.mjs',
             'server/dns-subdomain-page-links.mjs', 'src/shared/protocol/dnsSubdomainPages.mjs',
-            'server/dns-page-link-discovery.mjs', 'server/dns-subdomain-discovery.mjs'})
+            'server/dns-page-link-discovery.mjs', 'server/dns-subdomain-discovery.mjs',
+            'src/shared/protocol/ownerOutputCommitment.mjs'})
         self.assertEqual(module.NEW, {'server/dns-subdomain-page-links.mjs',
-            'src/shared/protocol/dnsSubdomainPages.mjs'})
+            'src/shared/protocol/dnsSubdomainPages.mjs', 'src/shared/protocol/ownerOutputCommitment.mjs'})
         self.assertEqual(module.UNITS, ('proofofwork-api.service', 'proofofwork-indexer-worker.service'))
         self.assertEqual(module.PROTECTED, ('proofofwork-indexer-worker.service',))
 
-    def test_both_new_helpers_refuse_existing_unreviewed_bytes(self):
+    def test_all_three_new_helpers_refuse_existing_unreviewed_bytes(self):
         candidates = module.validate_manifest(self.manifest)
         for name in sorted(module.NEW):
             file = self.root/name

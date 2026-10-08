@@ -5428,7 +5428,7 @@ Single-flight background warm-up advances the same reads at a fresh Core tip,
 including after a request timeout, while pending hydration stays best effort.
 
 [deploy/browser-dns/README.md](deploy/browser-dns/README.md) governs the scoped
-Browser/DNS runtime overlay: four exact existing sources plus two creation-only
+Browser/DNS runtime overlay: four exact existing sources plus three creation-only
 helpers, source/dependency hashes, guarded gateway/worker/API drain, recoverable
 backups, verified rollback and Search restoration. It preserves accepted
 Audit31, Code, Jobs, Pages, Permission and content-tip overlays and changes no
@@ -5436,6 +5436,13 @@ database schema/data, configuration, indexer/worker source or live Git state.
 The Browser/DNS UI release candidate requires V5 coverage of all 22 managed
 surfaces, including Permission, and preserves prior release evidence. Runtime overlay source/hash provenance and the mandatory release
 synchronization check remain separate from the node checkout's Git HEAD.
+
+The additive child page-link lane uses `owner-signed-all-outputs-v1`: exact Core
+raw spend bytes and ordered canonical prevouts support independent owner
+signature verification. Active and signing-relevant pending client links bind
+their exact signed carrier; local child signing requires every input to commit
+all reviewed outputs. Historical root `page1` and child `sub1` admission remain
+unchanged.
 
 Local route and build support do not attest to a production rollout. The
 original Pages V4 contract approved on 2026-10-08 extended 20 managed surfaces
@@ -5456,6 +5463,28 @@ immediate prior, sealed release archives, source and audit/transport/recovery
 evidence stay on the host. Existing locks, timer masks, retention holds and
 root/scratch/inode reserves remain enforced. Approval is not execution evidence;
 only sealed export, restoration and retirement receipts establish completion.
+
+The separate 2026-10-08 six-payload transport approval is SHA-256
+`cba4fa57c76b3e958df7120dd82224eb8c7f813513747973c66623c1abbbc1cb`.
+It covers only the extracted source/surface pairs for
+`38ac6e2bff2a-20261003T190512Z`, `d5a8493119ba-20261003T222517Z`, and
+`01ec4968caa9-20261007T150110Z`.
+[The custody runbook](deploy/browser-dns/TRANSPORT_CUSTODY.md) preserves the
+pre-dispatch checkpoint and records completed private backup, actual local
+restoration, and the subsequent approved removal of exactly those six extracted
+payload trees. Fourteen receipts account for all 26,702 entries; read-only host
+postverification confirmed actual absence, eighteen preserved parent objects,
+all five rollback roots, all ten deployment helpers, configuration, other
+transport evidence, the persistent Audit28 hold and masked/inactive prune timers.
+The normal deployment lock was acquirable before and after postverification.
+Observed root availability increased by 1,595,817,984 bytes to 12,969,054,208;
+this does not replace fresh admission for the following release. The original
+public verification included the still-unactivated concurrent Permission hostname
+and retained its TLS failure. Individual Browser, Computer, Pages and DNS HTTPS
+probes confirmed the existing clean ABA release, while protected Caddy state
+remained unchanged. Permission activation and the final release-sync gate remain
+required for that separate release. Terminal and independent receipt-review
+hashes, all limitations, and custody provenance are recorded in the runbook.
 
 DNS subdomain self-messages use a dedicated complete discovery lane after the
 protocol's pinned activation height. Registry-address Electrum history still

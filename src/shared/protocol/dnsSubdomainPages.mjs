@@ -1,9 +1,11 @@
 // Additive child page links. Root DNS, child payment resolution and existing
 // page1/sub1 history retain their original rules and accounting.
 import { dnsOwnershipEpoch, dnsSubdomainAddressIdentity, parseDnsSubdomainName } from "./dnsSubdomains.mjs";
+import { verifyOwnerOutputCommitment } from "./ownerOutputCommitment.mjs";
 
 export const DNS_SUBDOMAIN_PAGE_LINK_PREFIX = "pwdns1:subpage1:";
 export const DNS_SUBDOMAIN_PAGE_LINK_SELF_PAYMENT_SATS = 546;
+export const DNS_SUBDOMAIN_PAGE_LINK_AUTHORITY_MODEL = "owner-signed-all-outputs-v1";
 // Opens after the exact independently checked Core predecessor. Zero remains
 // an explicit fail-closed replay option; pre-activation carriers gain no state.
 export const DNS_SUBDOMAIN_PAGE_LINK_ACTIVATION_HEIGHT = 970499;
@@ -90,7 +92,62 @@ function address(value, validateAddress) {
 function sats(value) {
   if (typeof value === "bigint") return value >= 0n ? value : null;
   if (typeof value === "number") return unsigned(value) ? BigInt(value) : null;
-  return typeof value === "string" && /^(?:0|[1-9][0-9]*)$/u.test(value) ? BigInt(value) : null;
+  return typeof value === "string" && value.length <= 16 && /^(?:0|[1-9][0-9]*)$/u.test(value) ? BigInt(value) : null;
+}
+// Decode nulldata push bytes exactly, including a malformed matching carrier.
+// Prefix discovery uses available bytes; only a complete fatal-UTF8 decode may
+// authorize. OP_0 and PUSHDATA1/2/4 follow the canonical raw carrier grammar.
+function childCarrier(output) {
+  const hex = output.scriptPubKeyHex;
+  if (typeof hex !== "string" || !/^(?:[0-9a-f]{2})+$/u.test(hex)) return null;
+  const script = Uint8Array.from(hex.match(/../gu), value => Number.parseInt(value, 16));
+  if (script[0] !== 0x6a) return null;
+  const chunks = []; let offset = 1, valid = true;
+  while (offset < script.length) {
+    const opcode = script[offset++]; let length = 0, width = 0;
+    if (opcode <= 0x4b) length = opcode;
+    else if (opcode === 0x4c) width = 1;
+    else if (opcode === 0x4d) width = 2;
+    else if (opcode === 0x4e) width = 4;
+    else { valid = false; break; }
+    if (width) {
+      if (offset + width > script.length) { valid = false; break; }
+      for (let index = 0; index < width; index++) length += script[offset + index] * 2 ** (8 * index);
+      offset += width;
+    }
+    if (offset + length > script.length) { chunks.push(script.subarray(offset)); valid = false; break; }
+    chunks.push(script.subarray(offset, offset + length)); offset += length;
+  }
+  const bytes = new Uint8Array(chunks.reduce((sum, chunk) => sum + chunk.length, 0));
+  let cursor = 0;
+  for (const chunk of chunks) { bytes.set(chunk, cursor); cursor += chunk.length; }
+  const prefix = new TextEncoder().encode(DNS_SUBDOMAIN_PAGE_LINK_PREFIX);
+  if (bytes.length < prefix.length || prefix.some((byte, index) => bytes[index] !== byte)) return null;
+  let payload = "";
+  try { payload = new TextDecoder("utf-8", { fatal: true }).decode(bytes); if (payload.includes("\0")) valid = false; }
+  catch { valid = false; }
+  return { vout: output.vout, valid, payload,
+    payloadHex: Array.from(bytes, byte => byte.toString(16).padStart(2, "0")).join("") };
+}
+function committedEnvelope(event, author, validateAddress) {
+  const proof = verifyOwnerOutputCommitment(event.transactionEvidence, { ownerAddress: author, network: "livenet",
+    requireAllInputsCommitted: false, allowAnyoneCanPay: true });
+  if (proof.valid !== true) return "owner-output-commitment-unavailable";
+  if (proof.txid !== event.txid) return "transaction-evidence-txid-mismatch";
+  if (proof.inputAddresses.length !== event.inputAddresses.length || proof.inputAddresses.some((value, index) =>
+    address(value, validateAddress) !== address(event.inputAddresses[index], validateAddress))) return "transaction-evidence-inputs-mismatch";
+  if (event.outputs.length !== proof.outputs.length || proof.outputs.some((output, index) => {
+    const diagnostic = event.outputs[index];
+    return diagnostic?.vout !== output.vout || sats(diagnostic.valueSats)?.toString() !== output.valueSats ||
+      (output.address === null ? diagnostic.address !== null : address(diagnostic.address, validateAddress) !== address(output.address, validateAddress));
+  })) return "transaction-evidence-outputs-mismatch";
+  const carriers = proof.outputs.map(childCarrier).filter(Boolean);
+  if (carriers.length !== 1 || carriers.length !== event.subdomainPageLinkCarrierCount) return "multiple-subdomain-page-link-carriers";
+  const carrier = carriers[0];
+  if (!carrier.valid || carrier.vout !== event.protocolVout || event.recordOrdinal !== 0 || carrier.payload !== event.payload ||
+      (event.rawPayloadHex !== undefined && event.rawPayloadHex !== carrier.payloadHex) ||
+      (event.decodeValid !== undefined && event.decodeValid !== carrier.valid)) return "transaction-evidence-carrier-mismatch";
+  return "";
 }
 function authorization(event, validateAddress) {
   if (!event || typeof event !== "object") return { reason: "invalid-envelope", author: null };
@@ -114,9 +171,11 @@ function authorization(event, validateAddress) {
     if (amount === null) return { reason: "invalid-self-payment", author: null };
     if (amount >= BigInt(DNS_SUBDOMAIN_PAGE_LINK_SELF_PAYMENT_SATS)) paid = true;
   }
-  return paid ? { reason: "", author } : { reason: "missing-self-payment", author: null };
+  if (!paid) return { reason: "missing-self-payment", author: null };
+  const commitmentReason = committedEnvelope(event, author, validateAddress);
+  return commitmentReason ? { reason: commitmentReason, author: null } : { reason: "", author };
 }
-// Structural author proof; complete replay separately proves owner/lifecycle.
+// Exact signed spend proof; complete replay separately proves owner/lifecycle.
 export function dnsSubdomainPageLinkSelfSendAuthor(event, { validateAddress } = {}) {
   return authorization(event, validateAddress).author;
 }
@@ -134,13 +193,17 @@ function envelope(event) {
     protocolVout: event.protocolVout, recordOrdinal: event.recordOrdinal };
 }
 function carrierEvidence(event) {
-  return { payload: event.payload,
+  return { payload: event.payload, inputAddresses: event.inputAddresses, outputs: event.outputs,
+    hasCoinbaseInput: event.hasCoinbaseInput === true, subdomainPageLinkCarrierCount: event.subdomainPageLinkCarrierCount,
+    ...(event.transactionEvidence ? { transactionEvidence: event.transactionEvidence } : {}),
     ...(typeof event.rawPayloadHex === "string" ? { rawPayloadHex: event.rawPayloadHex } : {}),
     ...(typeof event.decodeValid === "boolean" ? { decodeValid: event.decodeValid } : {}) };
 }
 function fingerprint(event) {
   return JSON.stringify({ ...envelope(event), ...carrierEvidence(event), inputAddresses: event.inputAddresses,
     hasCoinbaseInput: event.hasCoinbaseInput === true, subdomainPageLinkCarrierCount: event.subdomainPageLinkCarrierCount,
+    transactionEvidence: event.transactionEvidence ? { ...event.transactionEvidence,
+      prevouts: Array.isArray(event.transactionEvidence.prevouts) ? event.transactionEvidence.prevouts.map(output => ({ ...output, valueSats: typeof output.valueSats === "bigint" ? `${output.valueSats}n` : output.valueSats })) : event.transactionEvidence.prevouts } : undefined,
     outputs: event.outputs?.map(output => ({ ...output, valueSats: typeof output.valueSats === "bigint" ? `${output.valueSats}n` : output.valueSats })) });
 }
 

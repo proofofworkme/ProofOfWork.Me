@@ -429,7 +429,7 @@ function browserReadHarness(owner = "BrowserApp") {
     pageLinkAdmission: { network: "livenet", ready: true, activationHeight: 9, indexedThroughBlock: 11,
       checkpointHash: epoch.txid, minSelfPaymentSats: 546, protocolPrefix: "pwdns1:page1:" },
     pageLinkEvents: [], pageLinkPendingEvents: [] };
-  const childSnapshot = dnsChildPageSnapshot({ ownerAddress: "owner", receiveAddress: "receiver" });
+  const childSnapshot = dnsChildPageSnapshot();
   for (const dnsSnapshot of [snapshot, childSnapshot]) for (const stage of ["dns", "page"]) {
     const dns = readDeferred(), page = readDeferred(), controller = new AbortController(), requests = [];
     const load = appFunction("fetchBrowserTargetPage", {

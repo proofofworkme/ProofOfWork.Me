@@ -16,7 +16,7 @@ export type DnsSubdomainPageClientPending = {
 export type DnsSubdomainPageLinkSnapshot = {
   name: string; root: DnsPageLinkRoot; child: DnsSubdomainPageClientChild; pageLink: DnsSubdomainPageActiveLink | null;
   pageLinkPendingEvents: DnsSubdomainPageClientPending[]; indexedThroughBlock: number; checkpointHash: string;
-  admission: { ready: true; activationHeight: number; minSelfPaymentSats: number; protocolPrefix: string };
+  admission: { ready: true; activationHeight: number; minSelfPaymentSats: number; protocolPrefix: string; authorityModel: "owner-signed-all-outputs-v1" };
 };
 export function readDnsSubdomainPageLinkSnapshot(value: unknown, requestedName: string,
   options: { network: string; validateAddress: (address: string) => boolean }): DnsSubdomainPageLinkSnapshot;

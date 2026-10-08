@@ -1,8 +1,9 @@
 import { expect } from "@playwright/test";
 import { createHash } from "node:crypto";
 import * as bitcoin from "bitcoinjs-lib";
+import { createOwnerOutputCommitmentFixture } from "./ownerOutputCommitment.mjs";
 
-export const ADDRESS = "1BPVvi1GK4QkfqFMU4jHGjsQjyGwjJJJ7x";
+export const ADDRESS = createOwnerOutputCommitmentFixture().ownerAddress;
 export const OTHER_ADDRESS = "1F1p9UEHuH5KTFR7Zsx93Khdrqhj6t5nFv";
 export const HASH = "a".repeat(64);
 export const PAGE_TXID = "b".repeat(64);
@@ -181,7 +182,7 @@ export async function connect(page) {
   const button = page.getByRole("button", { name: "Connect UniSat", exact: true });
   await expect(button).toBeVisible();
   await button.click();
-  await expect(page.locator(".topbar-wallet-button")).toContainText("1BPVvi1G");
+  await expect(page.locator(".topbar-wallet-button")).toContainText(ADDRESS.slice(0, 8));
 }
 
 export async function expectNoSignature(page, state) {
