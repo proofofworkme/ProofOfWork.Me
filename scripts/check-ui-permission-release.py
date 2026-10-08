@@ -19,6 +19,7 @@ exec(compile((ROOT / "scripts/check-ui-pages-release.py").read_bytes(), namespac
 PagesRelease = namespace["PagesRelease"]
 stage, builder, write, module = (namespace[name] for name in ("stage", "builder", "write", "module"))
 retention = module("permission_release_retention", ROOT / "deploy/proofofwork-ui-verified-retention.py")
+retained_root = module("permission_release_retained_root", ROOT / "deploy/proofofwork-ui-retained-root.py")
 https = module("permission_release_https", ROOT / "deploy/publish/https_smoke.py")
 
 
@@ -119,7 +120,10 @@ class PermissionRelease(unittest.TestCase):
             self.assertFalse(downgrade.exists())
         shutil.rmtree(future / "proofofwork-permission")
         future_archive = self.archive(future, stage.PAGES_SURFACES, self.commit[:12] + "-20261008T010003Z")
-        rejected = self.run_command(self.publish_args(self.commit[:12] + "-20261008T010003Z", future_archive), success=False)
+        preserved = retained_root.fingerprint(rollback)
+        classified = rollback.name + ":" + preserved["manifestSha256"] + ":" + preserved["treeSha256"]
+        rejected = self.run_command(self.publish_args(self.commit[:12] + "-20261008T010003Z", future_archive) +
+                                    ["--retain-rollback-root", classified], success=False)
         self.assertIn("drop the live Permission", rejected.stderr)
 
     def test_v5_missing_or_downgraded_manifest_evidence_is_rejected(self):
