@@ -3,7 +3,7 @@ import type { BitcoinNetwork } from "../../shared/bitcoin/networks";
 import { fetchProofApiJson } from "../../shared/api/proofApiClient";
 import { inspectPreparedPayment } from "../../shared/wallet/paymentReview";
 import type { ActionReview } from "../../shared/components/ActionTransactionReview";
-import { assertActiveWalletAddress, buildBoostPaymentPsbt, ensureWalletNetwork, scriptForAddress, type BoostPaymentPsbt } from "../boost/boostWallet";
+import { assertActiveWalletAddress, assertMainnetP2pkhWallet, buildBoostPaymentPsbt, ensureWalletNetwork, scriptForAddress, type BoostPaymentPsbt } from "../boost/boostWallet";
 import { codeReservedAnchors, sameCodeAddress } from "../code/codeWallet";
 import { fetchPermission, fetchPermissions, permissionPublicationReady } from "./permissionApi";
 import { PERMISSION_ACTION_LABELS, type PermissionPlan } from "./permissionProtocol";
@@ -14,7 +14,9 @@ export async function verifyPermissionAuthority(plan: PermissionPlan, address: s
   assertCurrent();
   const wallet = window.unisat;
   if (!wallet || !address || network !== "livenet") throw new Error("Connect your mainnet UniSat wallet before publishing permissions.");
+  assertMainnetP2pkhWallet(address, network);
   await ensureWalletNetwork(wallet, network, address); await assertActiveWalletAddress(wallet, address);
+  if (!wallet.getAccounts || !sameCodeAddress((await wallet.getAccounts())[0] ?? "", address, network)) throw new Error("The active UniSat P2PKH wallet could not be verified. Prepare a new Permission review.");
   for (const recipient of plan.policy?.allowedRecipients ?? []) scriptForAddress(recipient, network, "Permitted recipient");
   if (plan.draft.action === "grant") {
     const inventory = await fetchPermissions(network, { address, fresh: true });
@@ -33,7 +35,7 @@ export async function preparePermissionTransaction(plan: PermissionPlan, address
   await verifyPermissionAuthority(plan, address, network, assertCurrent);
   const excludeOutpoints = await codeReservedAnchors(address, network); assertCurrent();
   const payment = await buildBoostPaymentPsbt({ excludeOutpoints, feeRate: plan.draft.feeRate, fromAddress: address, network,
-    payments: [{ address, amountSats: 546 }], protocolPayloads: plan.payloads });
+    payments: [{ address, amountSats: 546 }], protocolPayloads: plan.payloads, requireP2pkhAllInputs: true });
   const evidence = inspectPreparedPayment({ psbtHex: payment.psbtHex, network: bitcoin.networks.bitcoin, paymentCount: 1, registryPaymentCount: 0, feeSats: payment.feeSats, changeSats: payment.changeSats });
   const recipient = evidence.outputs.find(output => output.kind === "payment");
   if (!recipient || !sameCodeAddress(recipient.address, address, network) || recipient.proofs !== "546" || JSON.stringify(evidence.records) !== JSON.stringify(plan.payloads)) throw new Error("Prepared permission record or self-payment differs from the reviewed intent.");

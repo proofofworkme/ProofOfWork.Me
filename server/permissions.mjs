@@ -1,4 +1,6 @@
 import { createHash } from 'node:crypto';
+import * as bitcoin from 'bitcoinjs-lib';
+import * as ecc from '@bitcoinerlab/secp256k1';
 import {
   parsePermissionBody, permissionPolicyEnv, PERMISSION_BODY_PREFIX,
   PERMISSION_ACTIVATION_HEIGHT, PERMISSION_ACTIVATION_PREVIOUS_BLOCK_HASH,
@@ -45,6 +47,86 @@ function subjectValid(text) {
   catch { return false; }
 }
 
+const rawScriptHex = output => output?.scriptpubkey ?? output?.scriptPubKey?.hex;
+function permissionScriptBytes(hex) {
+  return typeof hex === 'string' && hex.length % 2 === 0 && /^[0-9a-f]*$/iu.test(hex) ? Buffer.from(hex, 'hex') : null;
+}
+/**
+ * V1 deliberately supports only ordinary P2PKH inputs. A confirmed spend alone
+ * does not prove approval of its capsule: NONE/SINGLE signatures omit outputs.
+ * Verify the exact owner key and ALL digest of every supported input; unsupported
+ * script paths remain visible rejected records instead of permission authority.
+ */
+export function permissionInputCommitmentErrors(tx, walletAddress, network = 'livenet') {
+  const errors = [], reject = reason => { if (!errors.includes(reason)) errors.push(reason); };
+  const inputs = Array.isArray(tx.vin) ? tx.vin : [];
+  const checked = [];
+  if (!inputs.length) { reject('permission-input-signature-unavailable'); return errors; }
+  for (const input of inputs) {
+    const prevout = input.prevout ?? input.previousOutput;
+    const script = permissionScriptBytes(rawScriptHex(prevout));
+    if (!script || !/^76a914[0-9a-f]{40}88ac$/u.test(script.toString('hex'))) {
+      reject('permission-input-spend-path-unsupported'); continue;
+    }
+    let derivedAddress = '';
+    try { derivedAddress = bitcoin.address.fromOutputScript(script, bitcoin.networks.bitcoin); } catch {}
+    if (network !== 'livenet' || !walletAddress || derivedAddress !== walletAddress || address(prevout) !== derivedAddress) {
+      reject('permission-input-public-key-mismatch'); continue;
+    }
+    const bytes = permissionScriptBytes(input.scriptsig ?? input.scriptSig?.hex);
+    // Two minimal direct pushes: strict DER signature plus SEC public key. This
+    // closes extra stack items, redeem scripts, executable tails and PUSHDATA.
+    const signatureLength = bytes?.[0] ?? 0;
+    const publicKeyLength = bytes?.[signatureLength + 1] ?? 0;
+    if (!bytes || signatureLength < 9 || signatureLength > 73 ||
+        ![33, 65].includes(publicKeyLength) || bytes.length !== signatureLength + publicKeyLength + 2 ||
+        (Array.isArray(input.witness) && input.witness.length > 0) ||
+        (Array.isArray(input.txinwitness) && input.txinwitness.length > 0)) {
+      reject('permission-input-signature-unavailable'); continue;
+    }
+    const signatureBytes = bytes.subarray(1, signatureLength + 1);
+    let signature;
+    try { signature = bitcoin.script.signature.decode(signatureBytes); }
+    catch { reject('permission-input-signature-unavailable'); continue; }
+    if (signature.hashType !== bitcoin.Transaction.SIGHASH_ALL) {
+      reject('permission-input-signature-sighash-unsupported'); continue;
+    }
+    const publicKey = bytes.subarray(signatureLength + 2);
+    if (!((publicKey.length === 33 && (publicKey[0] === 2 || publicKey[0] === 3)) ||
+          (publicKey.length === 65 && publicKey[0] === 4)) || !ecc.isPoint(publicKey) ||
+        !Buffer.from(bitcoin.crypto.hash160(publicKey)).equals(script.subarray(3, 23))) {
+      reject('permission-input-public-key-mismatch'); continue;
+    }
+    checked.push({ script, signature: signature.signature, publicKey });
+  }
+  if (!inputs.length || checked.length !== inputs.length) return errors;
+  let transaction;
+  try {
+    if (!Number.isSafeInteger(tx.version) || tx.version < -0x80000000 || tx.version > 0x7fffffff ||
+        !Number.isSafeInteger(tx.locktime) || tx.locktime < 0 || tx.locktime > 0xffffffff || !TXID.test(tx.txid ?? '')) throw new Error();
+    transaction = new bitcoin.Transaction(); transaction.version = tx.version; transaction.locktime = tx.locktime;
+    for (const input of inputs) {
+      if (!TXID.test(input.txid ?? '') || !Number.isSafeInteger(input.vout) || input.vout < 0 || input.vout > 0xffffffff ||
+          !Number.isSafeInteger(input.sequence) || input.sequence < 0 || input.sequence > 0xffffffff) throw new Error();
+      transaction.addInput(Buffer.from(input.txid, 'hex').reverse(), input.vout, input.sequence,
+        permissionScriptBytes(input.scriptsig ?? input.scriptSig?.hex));
+    }
+    for (const output of tx.vout) {
+      const script = permissionScriptBytes(rawScriptHex(output)), proofs = exactCodeOutputProofs(output);
+      if (!script || proofs === null) throw new Error();
+      transaction.addOutput(script, BigInt(proofs));
+    }
+    if (transaction.getId() !== tx.txid) throw new Error();
+  } catch { reject('permission-signature-transaction-invalid'); return errors; }
+  for (const [index, input] of checked.entries()) {
+    try {
+      const digest = transaction.hashForSignature(index, input.script, bitcoin.Transaction.SIGHASH_ALL);
+      if (!ecc.verify(digest, input.publicKey, input.signature, false)) reject('permission-input-signature-invalid');
+    } catch { reject('permission-input-signature-invalid'); }
+  }
+  return errors;
+}
+
 /** Raw scripts and independently hydrated prevouts establish authority, never a claimed PowID. */
 export function verifyPermissionTransaction(tx, { network = 'livenet', activationHeight = PERMISSION_ACTIVATION_HEIGHT } = {}) {
   const candidates = permissionCandidateParts(tx);
@@ -67,12 +149,15 @@ export function verifyPermissionTransaction(tx, { network = 'livenet', activatio
   const authors = inputs.map(input => address(input.prevout ?? input.previousOutput));
   const walletAddress = authors[0] ?? '';
   if (!walletAddress || inputs.length === 0 || inputs.some(input => input.coinbase !== undefined) || authors.some(value => value !== walletAddress)) reject('permission-input-authority-unavailable');
+  const inputCommitmentErrors = permissionInputCommitmentErrors(tx, walletAddress, network);
+  inputCommitmentErrors.forEach(reject);
+  const walletScriptHex = String(rawScriptHex(inputs[0]?.prevout ?? inputs[0]?.previousOutput) ?? '').toLowerCase();
   let selfPayment = 0n;
   tx.vout.forEach((output, index) => {
     const value = exactCodeOutputProofs(output);
     if (value === null) reject('permission-output-value-invalid');
     else if (decoded[index].scriptPubKeyHex.startsWith('6a') && value !== '0') reject('permission-funded-carrier-invalid');
-    else if (index < (carriers[0]?.vout ?? 0) && address(output) === walletAddress) selfPayment += BigInt(value);
+    else if (index < (carriers[0]?.vout ?? 0) && address(output) === walletAddress && decoded[index].scriptPubKeyHex === walletScriptHex) selfPayment += BigInt(value);
   });
   if (selfPayment < BigInt(PERMISSION_MIN_SELF_PAYMENT_PROOFS)) reject('permission-self-payment-insufficient');
   const confirmed = tx.status?.confirmed === true;
@@ -87,7 +172,7 @@ export function verifyPermissionTransaction(tx, { network = 'livenet', activatio
     parentTxid: parsed?.metadata.parent ?? '', confirmed, status: confirmed ? 'confirmed' : 'pending',
     blockHeight, blockHash, blockTransactionIndex, blockTime: tx.timestamp ?? null,
     protocolVout: first.vout, recordOrdinal: 0, rawBody: first.decoded.decodeValid ? first.decoded.text.slice(7) : '',
-    selfPaymentProofs: selfPayment.toString(), carrierBytes, valid: errors.length === 0,
+    selfPaymentProofs: selfPayment.toString(), carrierBytes, ownerSignatureOutputCommitmentVerified: inputCommitmentErrors.length === 0 && inputs.length > 0, valid: errors.length === 0,
     applied: false, validationErrors: errors };
 }
 export function replayPermissionTransactions(transactions, options = {}) {

@@ -87,8 +87,45 @@ def selected_merge(name, merged, conflict, active, base, candidate, reviewed):
         raise ValueError('Reviewed merge source identity differs: '+name)
     return row['mergedBytes'], {key:value for key,value in row.items() if key != 'mergedBytes'}
 
-def helper_baseline(name, current, candidate, preserve_existing):
-    """Repeat deployments preserve exact committed helpers; never upgrade them."""
+def reviewed_helper_upgrades(path, ns, base_commit, candidate_commit):
+    """Authorize only committed helper replacements with exact reviewed pins."""
+    if path is None: return {}
+    value = json.loads(ns.safe_read(path, 65536))
+    if not isinstance(value, dict) or set(value) != {'format', 'baseCommit', 'sourceCommit', 'sources'} or value['format'] != 'proof-of-work-permission-reviewed-helper-upgrades-v1':
+        raise ValueError('Wrong reviewed helper upgrade manifest')
+    if value['baseCommit'] != base_commit or value['sourceCommit'] != candidate_commit:
+        raise ValueError('Reviewed helper upgrade commit identity differs')
+    rows = value['sources']
+    if not isinstance(rows, list) or not 1 <= len(rows) <= len(ns.NEW):
+        raise ValueError('Wrong reviewed helper upgrade count')
+    result = {}
+    fields = {'path', 'activeSha256', 'baseSha256', 'repositoryCandidateSha256', 'reason'}
+    for row in rows:
+        if not isinstance(row, dict) or set(row) != fields or row['path'] not in ns.NEW or row['path'] in result:
+            raise ValueError('Wrong reviewed helper upgrade allowlist')
+        if not all(isinstance(row[key], str) and ns.SHA.fullmatch(row[key]) for key in ('activeSha256', 'baseSha256', 'repositoryCandidateSha256')):
+            raise ValueError('Invalid reviewed helper upgrade source pin')
+        if not isinstance(row['reason'], str) or not row['reason'].strip() or len(row['reason']) > 2000:
+            raise ValueError('Reviewed helper upgrade requires an explicit review reason')
+        result[row['path']] = row
+    return result
+
+def helper_baseline(name, current, candidate, preserve_existing, *, upgrade_mode=False, base=None, upgrade=None):
+    """Keep first-install/preservation behavior; upgrades need distinct review."""
+    if upgrade_mode:
+        if preserve_existing: raise ValueError('Conflicting Permission helper modes')
+        if current is None: raise ValueError('Missing existing Permission helper: '+name)
+        raw = base64.b64decode(current['base64'], validate=True)
+        if sha(raw) != current['sha256']: raise ValueError('Captured source hash differs: '+name)
+        if raw != base: raise ValueError('Existing Permission helper differs from exact base commit: '+name)
+        if candidate == base:
+            if upgrade is not None: raise ValueError('Reviewed helper upgrade does not change helper: '+name)
+        else:
+            if upgrade is None: raise ValueError('Permission helper upgrade requires explicit review: '+name)
+            if any(upgrade[key] != sha(value) for key, value in [('activeSha256',raw), ('baseSha256',base), ('repositoryCandidateSha256',candidate)]):
+                raise ValueError('Reviewed helper upgrade source identity differs: '+name)
+        return current['sha256']
+    if upgrade is not None or base is not None: raise ValueError('Helper upgrade review requires explicit upgrade mode')
     if not preserve_existing:
         if current is not None: raise ValueError('New Permission helper already exists: '+name)
         return None
@@ -120,8 +157,14 @@ def plan(args):
             raise ValueError('Tool differs from committed candidate: '+path.name)
     preserve_existing = getattr(args, 'preserve_existing_helpers', False)
     if type(preserve_existing) is not bool: raise ValueError('Invalid preserve-existing-helpers mode')
+    upgrade_path = getattr(args, 'reviewed_helper_upgrades', None)
+    upgrade_mode = upgrade_path is not None
+    if preserve_existing and upgrade_mode: raise ValueError('Conflicting Permission helper modes')
+    upgrades = reviewed_helper_upgrades(upgrade_path, ns, args.base_commit, args.commit)
     helper_candidates = {name:git(repo, 'show', args.commit+':'+name) for name in sorted(ns.NEW)}
-    helper_before = {name:helper_baseline(name, snapshot['sources'].get(name), candidate, preserve_existing)
+    helper_bases = {name:git(repo, 'show', args.base_commit+':'+name) for name in sorted(ns.NEW)} if upgrade_mode else {}
+    helper_before = {name:helper_baseline(name, snapshot['sources'].get(name), candidate, preserve_existing,
+        upgrade_mode=upgrade_mode, base=helper_bases.get(name), upgrade=upgrades.get(name))
         for name, candidate in helper_candidates.items()}
     args.output.mkdir(mode=0o700)
     active_root = args.output/'captured-runtime'; active_root.mkdir(mode=0o700)
@@ -153,7 +196,8 @@ def plan(args):
         candidates[name] = merged
         rows.append({'path':name,'before':before,'after':sha(merged),'base64':base64.b64encode(merged).decode()})
         reviews.append({'path':name,'before':before,'after':sha(merged),'repositoryCandidateSha256':sha(candidate),
-            'cleanThreeWayMerge':not conflict, 'explicitResolution':resolution, 'syntaxVerified':True})
+            'cleanThreeWayMerge':not conflict, 'explicitResolution':resolution, 'syntaxVerified':True,
+            'explicitHelperUpgrade':upgrades.get(name)})
     deps = {name:row['sha256'] for name,row in snapshot['sources'].items()}
     if set(reviewed) - candidates.keys(): raise ValueError('Unused reviewed merge input')
     for row in rows:
@@ -170,7 +214,7 @@ def plan(args):
         'searchHoldControllerSha256':sha(holder.read_bytes()),'searchHoldControllerBase64':base64.b64encode(holder.read_bytes()).decode(),
         'runtimeManifestTemplate':template,'nodePath':snapshot['nodePath'],
         'rolloutSupervisorSha256':sha((ROOT/'rollout-node.py').read_bytes()),
-        'reviews':reviews,'productionMutation':False}
+        'reviews':reviews,'reviewedHelperUpgrades':list(upgrades.values()),'productionMutation':False}
     raw = encoded(preview)
     if len(raw) > 20*1024**2: raise ValueError('Rollout manifest exceeds controller bound')
     save(args.output/'plan.json',raw); save(args.output/'review.json',encoded(reviews))
@@ -210,8 +254,11 @@ def main():
     p = sub.add_parser('plan'); p.add_argument('repository', type=Path); p.add_argument('commit');
     p.add_argument('base_commit'); p.add_argument('capture', type=Path); p.add_argument('output', type=Path)
     p.add_argument('--release-id'); p.add_argument('--reviewed-merges', type=Path)
-    p.add_argument('--preserve-existing-helpers', action='store_true',
+    helper_mode = p.add_mutually_exclusive_group()
+    helper_mode.add_argument('--preserve-existing-helpers', action='store_true',
         help='Require all four Permission helpers to exist and match committed candidate bytes exactly; no helper upgrade')
+    helper_mode.add_argument('--reviewed-helper-upgrades', type=Path,
+        help='Review-bound committed helper upgrades; require every current helper to match the exact base commit')
     p.set_defaults(fn=plan)
     p = sub.add_parser('overlay'); p.add_argument('plan',type=Path); p.add_argument('receipt',type=Path); p.set_defaults(fn=overlay,phase='overlay')
     args = parser.parse_args(); os.umask(0o077); args.fn(args)

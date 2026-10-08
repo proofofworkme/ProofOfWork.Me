@@ -68,7 +68,7 @@
     "check:code": "node scripts/check-code-repositories.mjs && node --test scripts/check-code-client.test.mjs server/code-repositories.test.mjs server/db/code-reader.test.mjs",
     "check:code:browser": "playwright test --config playwright.ui.config.mjs code-ui.spec.mjs",
     "check:jobs": "node --test server/jobs*.test.mjs server/db/jobs*.test.mjs scripts/check-jobs*.test.mjs",
-    "check:permission": "node --test server/permissions.test.mjs server/permission-discovery.test.mjs server/permission-api.test.mjs server/db/permission-reader.test.mjs local/permission-controller/controller.test.mjs",
+    "check:permission": "node --test server/permissions.test.mjs server/permission-signature-commitment.test.mjs server/permission-discovery.test.mjs server/permission-api.test.mjs server/db/permission-reader.test.mjs local/permission-controller/controller.test.mjs && node scripts/check-permission-wallet-commitment.test.mjs",
     "check:permission:browser": "playwright test --config playwright.ui.config.mjs permission-ui.spec.mjs",
     "check:permission:deploy": "python3 -I -B deploy/permission/check-scoped-node.test.py && python3 -I -B deploy/permission/check-release.test.py && python3 -I -B scripts/check-ui-permission-release.py",
     "check:jobs:browser": "playwright test --config playwright.ui.config.mjs jobs-ui.spec.mjs",

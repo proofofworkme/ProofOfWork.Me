@@ -679,8 +679,11 @@ broadcast and preserve unknown-outcome retry protection.
 The final release synchronization check is `npm run check:release-sync`. It verifies actual GitHub `main`, clean primary local `main`, production manifest commit/tree, and clean source provenance from the local preview plus public Pages and Computer. An unavailable or failed check leaves the release incomplete; fix the mismatch before announcing.
 
 Permission makes agent authority inspectable from confirmed chain records. Keep
-the original wallet as authority even when a display ID moves. Public immutable
-policy and private signing enforcement are separate responsibilities: a TXID
+the original wallet as authority even when a display ID moves. A valid confirmed
+spend is insufficient when its signature omits the permission outputs. Require
+verified output commitments from every supported owner input, and keep weaker
+signatures or unsupported paths inspectable without granting authority. Public
+immutable policy and private signing enforcement are separate responsibilities: a TXID
 cannot constrain an agent that has unrestricted wallet access. Human grant
 management may ship with autonomous signing closed; never describe an unverified
 UniSat/keyring bridge as enforced automation. Preserve pending commitments and

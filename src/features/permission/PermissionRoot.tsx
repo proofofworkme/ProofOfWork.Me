@@ -9,7 +9,7 @@ import { explorerTxUrl, type BitcoinNetwork } from "../../shared/bitcoin/network
 import { fetchProofApiJson } from "../../shared/api/proofApiClient";
 import { useUnisatPresence } from "../../shared/wallet/useUnisatPresence";
 import { readActionReceipts, saveActionReceipt, type ActionReceipt } from "../../shared/wallet/actionRecovery";
-import { ensureWalletNetwork, getWalletNetwork, signAndBroadcastBoostPsbt } from "../boost/boostWallet";
+import { assertMainnetP2pkhWallet, ensureWalletNetwork, getWalletNetwork, signAndBroadcastBoostPsbt } from "../boost/boostWallet";
 import { shortAddress } from "../../functions";
 import { PERMISSION_ACTIONS, permissionPolicyEnv } from "../../shared/protocol/permissions.mjs";
 import { fetchPermission, fetchPermissionInspection, fetchPermissions, hasVerifiedPermissionHistory, permissionPublicationReady, permissionCheckpoint, PERMISSION_TXID, type PermissionDetail, type PermissionInspection, type PermissionList, type PermissionRecord } from "./permissionApi";
@@ -77,7 +77,8 @@ export default function PermissionRoot({ embedded = false, initialAddress = "", 
   const current = detail?.currentPermission ?? detail?.permission;
   const verified = Boolean(detail && hasVerifiedPermissionHistory(detail));
   const owner = Boolean(current && samePermissionAddress(current.walletAddress, address, network));
-  const canManage = Boolean(verified && current?.status === "active" && owner && detail && permissionPublicationReady(detail) && !readBusy && !actionBusy);
+  const supportedWallet = useMemo(() => { try { assertMainnetP2pkhWallet(address, network); return true; } catch { return false; } }, [address, network]);
+  const canManage = Boolean(verified && current?.status === "active" && owner && supportedWallet && detail && permissionPublicationReady(detail) && !readBusy && !actionBusy);
   const visibleReceipts = receipts.filter(item => item.network === network && samePermissionAddress(item.address, address, network));
 
   function preserveDraft() {
@@ -195,7 +196,7 @@ export default function PermissionRoot({ embedded = false, initialAddress = "", 
     try {
       await assertNoDuplicate(reviewed.plan.key); assertCurrent(); await verifyPermissionAuthority(reviewed.plan, reviewed.address, reviewed.network, assertCurrent); await verifyPermissionFunding(reviewed); await verifyPermissionAuthority(reviewed.plan, reviewed.address, reviewed.network, assertCurrent); assertCurrent();
       const result = await signAndBroadcastBoostPsbt({ wallet: window.unisat!, network: reviewed.network, signingAddress: reviewed.address, psbtHex: reviewed.payment.psbtHex,
-        inputCount: reviewed.payment.inputCount, signInputIndexes: reviewed.payment.walletInputIndexes,
+        inputCount: reviewed.payment.inputCount, signInputIndexes: reviewed.payment.walletInputIndexes, requireP2pkhAllInputs: true,
         onSigned: txid => { receipt = { txid, address: reviewed.address, network: reviewed.network, title: PERMISSION_ACTION_LABELS[reviewed.plan.draft.action], key: reviewed.plan.key, createdAt: new Date().toISOString(), status: "unknown", fields: permissionDraftFields(reviewed.plan.draft) }; unsavedReceipt.current = receipt; retainReceipt(receipt); receiptPersisted = true; unsavedReceipt.current = undefined; },
         beforeBroadcast: async () => { assertCurrent(); await assertNoDuplicate(reviewed.plan.key, receipt?.txid); await verifyPermissionAuthority(reviewed.plan, reviewed.address, reviewed.network, assertCurrent); await verifyPermissionFunding(reviewed); assertCurrent(); },
       });
@@ -253,6 +254,7 @@ export default function PermissionRoot({ embedded = false, initialAddress = "", 
         onRestore={item => { if (!preserveDraft()) return; const restored = restorePermissionDraft(item.fields); if (restored) { setDraft(restored); setPrepared(undefined); setEditor(true); setStatus("Retained task restored for inspection. Verify current confirmed history before preparing a new review."); } }} onCheck={() => void checkReceipts()}
         workspaceHref={item => `/?${new URLSearchParams({ ...(embedded ? { folder: "permission" } : { "permission-app": "1" }), network: item.network, permission: item.txid })}`} />
       {editor ? <section className="permission-editor" aria-label="Permission editor"><div className="permission-editor-top"><ShieldCheck size={17} /><span>Authorizing and permitted wallet · {address || "Connect UniSat before review"}</span></div>
+        {address && !supportedWallet && <p className="permission-notice" role="status">Permission v1 requires a mainnet P2PKH UniSat address beginning with 1. Choose that wallet before preparing a review.</p>}
         <form className="permission-form" onSubmit={prepare}><div className="permission-editor-grid"><div>
           {draft.action !== "grant" && <div className="permission-muted">Original grant <code>{draft.grant}</code><p>Reviewed confirmed head <code>{draft.parent}</code></p></div>}
           {draft.action !== "revoke" ? <><label>Permission label<input required maxLength={200} value={draft.label} onChange={event => updateDraft({ label: event.target.value })} disabled={actionBusy} placeholder="Computer automation" autoComplete="off" /></label>
@@ -269,7 +271,7 @@ export default function PermissionRoot({ embedded = false, initialAddress = "", 
           <FeeRateControl feeRate={draft.feeRate} setFeeRate={feeRate => { if (!actionBusy) updateDraft({ feeRate }); }} />
         </div><aside className="permission-editor-aside"><h3>{draft.action === "revoke" ? "Revocation reference" : "On-chain permission preview"}</h3><pre className="permission-code" aria-label="Permission terms preview"><code>{preview}</code></pre><p className="permission-muted">Version one has no expiry and no named-agent binding. Daily budgets reset at 00:00 UTC. Replacing a grant preserves spending and outstanding commitments.</p><p className="permission-muted">The 546-proof self-payment returns to this wallet. Miner fees are reviewed separately. Passwords and secret references are never included in the public grant.</p>{draft.allowedActions.includes("amo.buywork") && BigInt(/^\d+$/u.test(draft.maxTransactionProofs) ? draft.maxTransactionProofs : "0") < 25000n && <p className="permission-muted">The 5,000-proof default transaction cap cannot authorize the current 25,000-proof WORK purchase, before fees. Choosing an action does not override its spending cap.</p>}</aside></div>
           {draftError && <p className="permission-notice is-error" role="alert">{draftError}</p>}{!planResult.plan && <p className="permission-muted">{planResult.error}</p>}
-          <div className="permission-editor-footer"><p className="permission-muted">Local draft · no wallet signature requested until you continue from exact review.</p><button type="submit" className="primary" disabled={!address || network !== "livenet" || actionBusy || !planResult.plan || Boolean(draftError) || draftLoaded !== draftKey}><ShieldCheck size={17} /> {actionBusy ? "Preparing review…" : "Review permission"}</button></div>
+          <div className="permission-editor-footer"><p className="permission-muted">Local draft · no wallet signature requested until you continue from exact review.</p><button type="submit" className="primary" disabled={!address || !supportedWallet || network !== "livenet" || actionBusy || !planResult.plan || Boolean(draftError) || draftLoaded !== draftKey}><ShieldCheck size={17} /> {actionBusy ? "Preparing review…" : "Review permission"}</button></div>
         </form></section> : <>
         <div className="permission-tools"><form onSubmit={event => { event.preventDefault(); if (PERMISSION_TXID.test(search.trim())) navigate(search.trim()); else setActionError("Enter a 64-character lowercase permission transaction ID."); }}><label className="sr-only" htmlFor="permission-txid">Permission transaction ID</label><input id="permission-txid" value={search} onChange={event => setSearch(event.target.value)} placeholder="Inspect a permission transaction ID" autoComplete="off" /><button type="submit" className="secondary"><Search size={17} /><span>Inspect</span></button></form><button type="button" className="secondary" onClick={() => setAttempt(value => value + 1)} disabled={readBusy}><RefreshCw size={16} /> Refresh</button></div>
         {selected && <button type="button" className="permission-back" onClick={() => navigate("")}><ArrowLeft size={16} /> Back to permissions</button>}

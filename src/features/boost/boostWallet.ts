@@ -150,6 +150,23 @@ export function scriptForAddress(
   }
 }
 
+export function assertMainnetP2pkhWallet(
+  address: string,
+  network: BitcoinNetwork,
+) {
+  try {
+    const decoded = bitcoin.address.fromBase58Check(address);
+    const script = bitcoin.address.toOutputScript(address, bitcoin.networks.bitcoin);
+    if (network !== "livenet" || decoded.version !== bitcoin.networks.bitcoin.pubKeyHash ||
+      !/^76a914[0-9a-f]{40}88ac$/u.test(Buffer.from(script).toString("hex"))) {
+      throw new Error();
+    }
+    return script;
+  } catch {
+    throw new Error("Permission v1 requires a mainnet P2PKH UniSat address beginning with 1. Choose that wallet before preparing a review.");
+  }
+}
+
 function varIntSize(value: number) {
   if (value < 0xfd) return 1;
   if (value <= 0xffff) return 3;
@@ -474,6 +491,7 @@ export async function buildBoostPaymentPsbt({
   postProtocolPayments = [],
   postProtocolPayloads = [],
   protocolPayloads,
+  requireP2pkhAllInputs = false,
 }: {
   excludeOutpoints?: BoostSpentOutpoint[];
   feeRate: number;
@@ -483,7 +501,10 @@ export async function buildBoostPaymentPsbt({
   postProtocolPayments?: BoostPaymentOutput[];
   postProtocolPayloads?: string[];
   protocolPayloads: string[];
+  requireP2pkhAllInputs?: boolean;
 }): Promise<BoostPaymentPsbt> {
+  const requiredFundingScript = requireP2pkhAllInputs
+    ? assertMainnetP2pkhWallet(fromAddress, network) : undefined;
   if (payments.length === 0 && postProtocolPayments.length === 0) {
     throw new Error("Add at least one Boost transaction payment.");
   }
@@ -554,22 +575,32 @@ export async function buildBoostPaymentPsbt({
       `No confirmed UTXOs found for ${shortAddress(fromAddress)}. Wait for wallet funds to confirm before broadcasting.`,
     );
   }
+  const checkedUtxos = requiredFundingScript ? await Promise.all(utxos.map(async utxo => {
+    const hydrated = await loadUtxoPreviousOutput(utxo, network);
+    const previous = bitcoin.Transaction.fromHex(hydrated.previousTxHex);
+    if (previous.getId() !== utxo.txid || hydrated.previousOutput.value !== BigInt(utxo.value) ||
+      !Buffer.from(hydrated.previousOutput.script).equals(Buffer.from(requiredFundingScript))) {
+      throw new Error("Permission funding must be confirmed P2PKH outputs belonging to the reviewed wallet with exact previous-transaction evidence. No transaction was prepared.");
+    }
+    return hydrated;
+  })) : undefined;
   const selection = selectUtxos(
-    utxos,
+    checkedUtxos ?? utxos,
     totalAmountSats,
     feeRate,
     fixedOutputVbytes,
     changeOutputVbytes,
   );
-  const selectedWithPreviousTx = await Promise.all(
-    selection.selected.map((utxo) => loadUtxoPreviousOutput(utxo, network)),
-  );
+  const selectedWithPreviousTx = checkedUtxos
+    ? selection.selected.map(utxo => checkedUtxos.find(item => item.txid === utxo.txid && item.vout === utxo.vout)!)
+    : await Promise.all(selection.selected.map((utxo) => loadUtxoPreviousOutput(utxo, network)));
   const psbt = new bitcoin.Psbt({ network: selectedNetwork });
   for (const utxo of selectedWithPreviousTx) {
     psbt.addInput({
       hash: utxo.txid,
       index: utxo.vout,
       ...utxoInputData(utxo),
+      ...(requireP2pkhAllInputs ? { sighashType: bitcoin.Transaction.SIGHASH_ALL } : {}),
     });
   }
   for (const payment of normalizedPayments) {
@@ -682,6 +713,53 @@ function assertSignedTransactionIntent(
       "UniSat changed the transaction inputs, outputs, amounts, fee, version, or locktime. No transaction was broadcast.",
     );
   }
+}
+
+function p2pkhAllPreviousOutputs(psbt: bitcoin.Psbt, address: string, network: BitcoinNetwork) {
+  const expectedScript = assertMainnetP2pkhWallet(address, network);
+  if (!psbt.inputCount) throw new Error("Permission funding inputs are unavailable.");
+  return psbt.txInputs.map((input, index) => {
+    const data = psbt.data.inputs[index];
+    if (!data.nonWitnessUtxo || data.witnessUtxo || data.sighashType !== bitcoin.Transaction.SIGHASH_ALL) {
+      throw new Error("Permission requires P2PKH funding and explicit SIGHASH_ALL on every prepared input. No signature was requested.");
+    }
+    const previous = bitcoin.Transaction.fromBuffer(data.nonWitnessUtxo);
+    const output = previous.outs[input.index];
+    if (!Buffer.from(previous.getHash()).equals(Buffer.from(input.hash)) || !output ||
+      !Buffer.from(output.script).equals(Buffer.from(expectedScript))) {
+      throw new Error("Permission funding does not belong to the reviewed P2PKH wallet. No signature was requested.");
+    }
+    return output;
+  });
+}
+
+function assertP2pkhAllSignedInputs(
+  transaction: bitcoin.Transaction,
+  previousOutputs: bitcoin.Transaction["outs"],
+) {
+  if (transaction.ins.length !== previousOutputs.length) throw new Error("Permission signed input count changed. No transaction was broadcast.");
+  transaction.ins.forEach((input, index) => {
+    const chunks = bitcoin.script.decompile(input.script);
+    if (input.witness.length || !chunks || chunks.length !== 2 ||
+      typeof chunks[0] === "number" || typeof chunks[1] === "number" ||
+      !Buffer.from(bitcoin.script.compile(chunks)).equals(Buffer.from(input.script)) ||
+      !((chunks[1].length === 33 && (chunks[1][0] === 2 || chunks[1][0] === 3)) ||
+        (chunks[1].length === 65 && chunks[1][0] === 4)) ||
+      !ecc.isPoint(chunks[1])) {
+      throw new Error("Permission requires a canonical P2PKH signature on every input. No transaction was broadcast.");
+    }
+    let decoded: ReturnType<typeof bitcoin.script.signature.decode>;
+    try { decoded = bitcoin.script.signature.decode(chunks[0]); }
+    catch { throw new Error("Permission returned a malformed input signature. No transaction was broadcast."); }
+    if (decoded.hashType !== bitcoin.Transaction.SIGHASH_ALL) {
+      throw new Error("Permission requires exact SIGHASH_ALL (0x01) on every signed input. No transaction was broadcast.");
+    }
+    const script = previousOutputs[index].script;
+    if (!Buffer.from(bitcoin.crypto.hash160(chunks[1])).equals(Buffer.from(script.subarray(3, 23))) ||
+      !ecc.verify(transaction.hashForSignature(index, script, bitcoin.Transaction.SIGHASH_ALL), chunks[1], decoded.signature, false)) {
+      throw new Error("Permission signature does not authorize the reviewed wallet and transaction. No transaction was broadcast.");
+    }
+  });
 }
 
 function countOpReturnOutputs(rawTx: string, network: BitcoinNetwork) {
@@ -827,6 +905,7 @@ export async function signAndBroadcastBoostPsbt({
   signInputIndexes,
   signingAddress,
   wallet,
+  requireP2pkhAllInputs = false,
 }: {
   beforeBroadcast?: () => Promise<void>;
   onSigned?: (txid: string) => void | Promise<void>;
@@ -836,6 +915,7 @@ export async function signAndBroadcastBoostPsbt({
   signInputIndexes?: number[];
   signingAddress: string;
   wallet: UnisatWallet;
+  requireP2pkhAllInputs?: boolean;
 }): Promise<BoostTransactionBroadcastResult> {
   if (!wallet.signPsbt) {
     throw new Error(
@@ -846,9 +926,18 @@ export async function signAndBroadcastBoostPsbt({
     network: bitcoinNetwork(network),
   });
   const expectedIntent = psbtUnsignedTransactionIntent(unsignedPsbt);
-  const requestedInputs = signInputIndexes?.map((index) => ({
+  const previousOutputs = requireP2pkhAllInputs
+    ? p2pkhAllPreviousOutputs(unsignedPsbt, signingAddress, network) : undefined;
+  const strictIndexes = requireP2pkhAllInputs ? Array.from({ length: unsignedPsbt.inputCount }, (_, index) => index) : undefined;
+  if (strictIndexes && (inputCount !== unsignedPsbt.inputCount || (signInputIndexes &&
+    (signInputIndexes.length !== strictIndexes.length || new Set(signInputIndexes).size !== strictIndexes.length ||
+      strictIndexes.some(index => !signInputIndexes.includes(index)))))) {
+    throw new Error("Permission requires every funding input to be signed by the reviewed wallet. No signature was requested.");
+  }
+  const requestedInputs = (strictIndexes ?? signInputIndexes)?.map((index) => ({
     address: signingAddress,
     index,
+    ...(requireP2pkhAllInputs ? { sighashTypes: [bitcoin.Transaction.SIGHASH_ALL] } : {}),
   }));
   let signedPsbtHex = "";
   try {
@@ -873,7 +962,9 @@ export async function signAndBroadcastBoostPsbt({
       autoFinalized: true,
       toSignInputs: (
         signInputIndexes ?? Array.from({ length: inputCount }, (_, index) => index)
-      ).map((index) => ({ index, publicKey })),
+      ).map((index) => ({ index, publicKey,
+        ...(requireP2pkhAllInputs ? { sighashTypes: [bitcoin.Transaction.SIGHASH_ALL] } : {}),
+      })),
     });
   }
   const signedPsbt = bitcoin.Psbt.fromHex(signedPsbtHex, {
@@ -888,6 +979,7 @@ export async function signAndBroadcastBoostPsbt({
     expectedIntent,
     rawUnsignedTransactionIntent(signedTransaction),
   );
+  if (previousOutputs) assertP2pkhAllSignedInputs(signedTransaction, previousOutputs);
   await onSigned?.(signedTransaction.getId());
   await beforeBroadcast?.();
   return broadcastRawTransaction(signedTransaction.toHex(), network);

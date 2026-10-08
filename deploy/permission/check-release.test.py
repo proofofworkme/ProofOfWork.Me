@@ -305,4 +305,118 @@ class RepeatDeploymentTests(unittest.TestCase):
             self.assertEqual((self.root/row['path']).stat().st_mode & 0o777,0o640)
         self.assertEqual(helpers,{name:(self.root/name).read_bytes() for name in self.C.NEW})
 
+class ReviewedHelperUpgradeTests(unittest.TestCase):
+    def setUp(self):
+        self.repeat=RepeatDeploymentTests(); self.repeat.setUp()
+        self.addCleanup(self.repeat.doCleanups)
+        self.C=self.repeat.C; self.root=self.repeat.root
+
+    def upgrade_fixture(self):
+        args,original_git=self.repeat.plan_fixture(preserve=False)
+        target='server/permissions.mjs'
+        captured=json.loads(args.capture.read_bytes())
+        base={name:base64.b64decode(captured['sources'][name]['base64']) for name in self.C.NEW}
+        candidate=base[target]+b'// reviewed owner ALL signature commitment repair\n'
+        row={'path':target,'activeSha256':R.sha(base[target]),'baseSha256':R.sha(base[target]),
+            'repositoryCandidateSha256':R.sha(candidate),'reason':'Approved exact owner-signed output commitment verification'}
+        manifest={'format':'proof-of-work-permission-reviewed-helper-upgrades-v1',
+            'baseCommit':args.base_commit,'sourceCommit':args.commit,'sources':[row]}
+        review=self.root.parent/'helper-review.json'; review.write_text(json.dumps(manifest)); review.chmod(0o600)
+        args.reviewed_helper_upgrades=review
+        def git(repo,*argv):
+            if argv[0]=='show':
+                revision,name=argv[1].split(':',1)
+                if revision==args.base_commit and name in base: return base[name]
+                if revision==args.commit and name==target: return candidate
+            return original_git(repo,*argv)
+        return args,git,manifest,captured
+
+    def test_exact_reviewed_upgrade_plan_pins_before_after_and_retains_other_helpers(self):
+        args,git,review,_=self.upgrade_fixture()
+        with patch.object(R,'git',side_effect=git),contextlib.redirect_stdout(io.StringIO()):R.plan(args)
+        plan=json.loads((args.output/'plan.json').read_bytes()); manifest=plan['runtimeManifestTemplate']
+        rows={row['path']:row for row in manifest['sources']}
+        changed=rows['server/permissions.mjs']; self.assertNotEqual(changed['before'],changed['after'])
+        self.assertEqual(changed['before'],review['sources'][0]['activeSha256'])
+        self.assertEqual(changed['after'],review['sources'][0]['repositoryCandidateSha256'])
+        self.assertEqual(manifest['dependencies']['server/permissions.mjs'],changed['before'])
+        for name in self.C.NEW-{'server/permissions.mjs'}:self.assertEqual(rows[name]['before'],rows[name]['after'])
+        self.assertEqual(plan['reviewedHelperUpgrades'],review['sources'])
+        self.C.fence(args.output/'captured-runtime',manifest,self.C.validate_manifest(manifest))
+
+    def test_real_controller_upgrade_and_rollback_restore_exact_helper_bytes_and_metadata(self):
+        args,git,_,_=self.upgrade_fixture()
+        with patch.object(R,'git',side_effect=git),contextlib.redirect_stdout(io.StringIO()):R.plan(args)
+        manifest=json.loads((args.output/'plan.json').read_bytes())['runtimeManifestTemplate']
+        original={name:(self.root/name).read_bytes() for name in self.C.NEW}
+        # The production controller stages the exact reviewed candidate bytes
+        # before installation; exercise its real atomic install/rollback here.
+        for index,row in enumerate(manifest['sources']):
+            (self.repeat.backup/f'candidate-{index}.mjs').write_bytes(base64.b64decode(row['base64']))
+        self.C.install(self.root,self.repeat.backup,manifest['sources'],self.repeat.fixture.metadata,True,'reviewed-upgrade')
+        self.assertNotEqual((self.root/'server/permissions.mjs').read_bytes(),original['server/permissions.mjs'])
+        self.C.install(self.root,self.repeat.backup,manifest['sources'],self.repeat.fixture.metadata,False,'reviewed-upgrade')
+        for name,raw in original.items():
+            self.assertEqual((self.root/name).read_bytes(),raw)
+            self.assertEqual((self.root/name).stat().st_mode&0o777,0o640)
+
+    def test_helper_upgrade_pin_drift_refuses_before_output(self):
+        for key in ['activeSha256','baseSha256','repositoryCandidateSha256']:
+            with self.subTest(pin=key):
+                args,git,review,_=self.upgrade_fixture();review['sources'][0][key]='f'*64
+                args.reviewed_helper_upgrades.write_text(json.dumps(review))
+                with patch.object(R,'git',side_effect=git):
+                    with self.assertRaisesRegex(ValueError,'source identity differs'):R.plan(args)
+                self.assertFalse(args.output.exists())
+
+    def test_live_helper_must_match_exact_base_commit_before_output(self):
+        args,git,_,captured=self.upgrade_fixture();name='server/permissions.mjs'
+        raw=b'// unreviewed live helper drift\nexport {};\n'
+        captured['sources'][name]={'sha256':R.sha(raw),'base64':base64.b64encode(raw).decode()};args.capture.write_text(json.dumps(captured))
+        with patch.object(R,'git',side_effect=git):
+            with self.assertRaisesRegex(ValueError,'exact base commit'):R.plan(args)
+        self.assertFalse(args.output.exists())
+
+    def test_unreviewed_second_helper_change_refuses_before_output(self):
+        args,git,_,_=self.upgrade_fixture();original_git=git;other='src/shared/protocol/permissions.mjs'
+        def changed_git(repo,*argv):
+            raw=original_git(repo,*argv)
+            return raw+b'// unreviewed change\n' if argv==('show',args.commit+':'+other) else raw
+        with patch.object(R,'git',side_effect=changed_git):
+            with self.assertRaisesRegex(ValueError,'requires explicit review'):R.plan(args)
+        self.assertFalse(args.output.exists())
+
+    def test_upgrade_modes_and_commit_binding_refuse_before_output(self):
+        args,git,review,_=self.upgrade_fixture();args.preserve_existing_helpers=True
+        with patch.object(R,'git',side_effect=git):
+            with self.assertRaisesRegex(ValueError,'Conflicting'):R.plan(args)
+        self.assertFalse(args.output.exists())
+        args.preserve_existing_helpers=False;review['sourceCommit']='c'*40;args.reviewed_helper_upgrades.write_text(json.dumps(review))
+        with patch.object(R,'git',side_effect=git):
+            with self.assertRaisesRegex(ValueError,'commit identity differs'):R.plan(args)
+        self.assertFalse(args.output.exists())
+
+    def test_review_manifest_is_closed_helper_only_and_never_overrides_bytes(self):
+        args,_,review,_=self.upgrade_fixture()
+        def load(value):
+            args.reviewed_helper_upgrades.write_text(json.dumps(value))
+            return R.reviewed_helper_upgrades(args.reviewed_helper_upgrades,self.C,args.base_commit,args.commit)
+        self.assertEqual(len(load(review)),1)
+        for mutate,reason in [
+            (lambda v:v['sources'][0].update(path='server/proof-api.mjs'),'allowlist'),
+            (lambda v:v['sources'][0].update(reason=''),'review reason'),
+            (lambda v:v['sources'][0].update(mergedPath='/tmp/arbitrary'),'allowlist'),
+            (lambda v:v['sources'].append(copy.deepcopy(v['sources'][0])),'allowlist'),
+            (lambda v:v.update(sources=[]),'count'),
+        ]:
+            changed=copy.deepcopy(review);mutate(changed)
+            with self.assertRaisesRegex(ValueError,reason):load(changed)
+
+    def test_missing_existing_helper_and_unchanged_review_are_not_upgrades(self):
+        name='server/permissions.mjs';raw=b'export {};\n';current={'sha256':R.sha(raw),'base64':base64.b64encode(raw).decode()}
+        with self.assertRaisesRegex(ValueError,'Missing existing'):
+            R.helper_baseline(name,None,raw,False,upgrade_mode=True,base=raw)
+        with self.assertRaisesRegex(ValueError,'does not change helper'):
+            R.helper_baseline(name,current,raw,False,upgrade_mode=True,base=raw,upgrade={})
+
 if __name__ == '__main__':unittest.main()

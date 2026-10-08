@@ -70,6 +70,46 @@ present helpers and retains their bytes and metadata through verified rollback.
 Use the prior Permission source commit as the base for the HTML classification
 repair; preserve accepted node overlays and the four current helper files.
 
+A separately approved helper repair uses `--reviewed-helper-upgrades` instead
+of `--preserve-existing-helpers`. Every existing helper must exactly match the
+previous released `baseCommit` bytes from the fresh capture. Each changed helper
+requires an explicit review bound to active, base and committed candidate hashes:
+
+```json
+{
+  "format": "proof-of-work-permission-reviewed-helper-upgrades-v1",
+  "baseCommit": "<previous released 40-character source commit>",
+  "sourceCommit": "<reviewed candidate 40-character source commit>",
+  "sources": [{
+    "path": "server/permissions.mjs",
+    "activeSha256": "<captured active helper SHA-256>",
+    "baseSha256": "<exact base-commit helper SHA-256>",
+    "repositoryCandidateSha256": "<reviewed committed replacement SHA-256>",
+    "reason": "Verify every supported owner P2PKH signature commits all Permission outputs."
+  }]
+}
+```
+
+The manifest accepts only the four existing helper paths and never supplies
+replacement bytes or a merge override. All replacement bytes come from the
+exact clean committed candidate checkout. Missing helpers, base drift, wrong
+commit/hash pins, unreviewed changes and unnecessary unchanged-helper reviews
+refuse before a plan directory is created. This distinct mode preserves the
+original creation-only and byte-identical preservation modes. The rollout's
+existing before/after/dependency fences and verified metadata-preserving
+rollback apply to helper upgrades as well.
+
+The initial supported owner authorization path is mainnet P2PKH: exact ordinary
+P2PKH prevouts, a canonical two-push strict-DER signature and SEC public key,
+exact `SIGHASH_ALL` (`0x01`) on every input, owner key/script/address binding, and
+independent verification against the complete reconstructed transaction.
+`NONE`, `SINGLE`, `ANYONECANPAY`, script-hash and witness/Taproot spending paths
+remain inspectable rejected Permission records. The human writer selects this
+strict mode before funding/fee preparation, pins ALL on prepared inputs and
+checks each final signature before broadcast. No new witness hydration,
+autonomous signing, Mail economics, wire schema or activation migration is
+introduced by this admission correction.
+
 A conflict refuses with its source inputs and conflicted output preserved.
 After independently reviewing active, base, repository candidate and resolved
 bytes, a fresh plan may use `--reviewed-merges /tmp/permission-reviewed-merges.json`:
@@ -169,7 +209,8 @@ python3 -I -B deploy/permission/check-release.test.py
 ```
 
 These use temporary files and mocked services/SSH. They verify the six writes,
-four creation-only helpers or explicitly preserved byte-identical helpers,
+four creation-only helpers, explicitly preserved byte-identical helpers, or
+independently reviewed hash-bound helper upgrades,
 actual Permission import pins, complete source
 fences, source drift/path refusals, retained metadata, partial-install rollback,
 socket/worker/API ordering, accepted worker coupling and verified restoration,

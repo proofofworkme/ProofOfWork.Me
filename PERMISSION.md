@@ -8,9 +8,15 @@ binding. The authorizing wallet remains the only wallet the grant can authorize.
 
 ## Authority and lifecycle
 
-Authority comes from the independently hydrated input owners of a confirmed
-transaction, never from its label or a claimed PowID. Every input must identify
-the same wallet. A label such as `armyofyouth@proofofwork.me` is display data;
+Authority requires independently hydrated previous outputs and verified wallet
+signatures that commit to every output, including the Permission capsule. v1
+accepts only mainnet P2PKH inputs, each with a canonical signature using
+`SIGHASH_ALL` (without `ANYONECANPAY`). Every public key must match its actual
+previous-output script and the same wallet address. The reader reconstructs the
+transaction, verifies its TXID and independently checks every signature. Missing
+signature evidence, weaker sighashes and unsupported script paths remain
+inspectable rejected records and cannot grant, replace or revoke authority.
+Authority never comes from a label or a claimed PowID. A label such as `armyofyouth@proofofwork.me` is display data;
 transferring that ID does not transfer a grant. The connected account must equal
 the verified grant wallet before every owner operation.
 
@@ -125,7 +131,12 @@ does not claim that on-chain immutability prevents a holder of unrestricted
 wallet access from bypassing a policy. Immutability protects the record; the
 isolated signer enforces its limits.
 
-Human grant management can ship while this gate remains closed. Any required
+Human grant management supports a mainnet P2PKH UniSat address beginning with
+`1`. Unsupported accounts are refused before preparing funding or requesting a
+signature. The writer verifies exact previous transactions and wallet scripts,
+requests `SIGHASH_ALL` for every input, and checks the final signed transaction
+against the reviewed intent and its output commitments before broadcasting.
+Human grant management can ship while the autonomous gate remains closed. Any required
 real-wallet unlock, signature or broadcast during acceptance is brought to the
 owner with exact action, wallet, outputs, carrier, fee and expected TXID for
 review. No unattended signing activation is implied by product publication.

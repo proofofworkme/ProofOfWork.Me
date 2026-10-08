@@ -6,7 +6,12 @@ Permission uses the existing Mail body lane and adds no ledger economics or
 database migration. Independent Core raw-block scanning begins at 970492 with
 the immutable parent pin in [PERMISSION.md](PERMISSION.md), binds every raw
 protocol carrier to sealed index witnesses, and checks the exact current Core
-tip before returning authority. The reader preserves the accepted native
+tip before returning authority. Owner authority also requires a supported
+mainnet P2PKH spend path and independently verified `SIGHASH_ALL` signatures
+committing every input owner to the complete transaction outputs. The reader
+reconstructs the exact transaction and checks its TXID, key/script/address binding
+and signatures. Weaker sighashes, unsupported paths and incomplete evidence
+remain inspectable rejected records. The reader preserves the accepted native
 transition-payload accessor when installed. `/api/v1/permissions` and
 `/api/v1/permission` fail closed on incomplete history; `inspect=1` permits only
 single-record inspection and never asserts current lifecycle status.
@@ -16,7 +21,12 @@ hashes, gateway/worker behavior and authority-service state. UI release V5 adds
 Permission to the complete 22-root contract; V3/V4 archives remain replayable
 recovery history. Human grant management is separate from the local controller's
 autonomous-signing gate, which remains closed pending verified isolation and a
-real UniSat bridge. See [deployment](deploy/permission/README.md).
+real UniSat bridge. A later reviewed helper repair uses the explicit
+`--reviewed-helper-upgrades` plan mode: all current helpers must equal the exact
+released base commit, and every changed helper requires full source-commit and
+active/base/candidate hash pins. Initial creation-only and byte-preservation
+modes retain their previous restrictions; runtime fences and verified rollback
+remain mandatory. See [deployment](deploy/permission/README.md).
 
 The accompanying Browser/Mail projection repair recognizes HTML in a canonical
 message `memo` alongside existing detail/tag detection, only for qualified

@@ -3,8 +3,10 @@ import { test } from 'node:test';
 import { encodePermissionRecord, parsePermissionBody, normalizePermissionPolicy, permissionPolicyEnv } from '../src/shared/protocol/permissions.mjs';
 import { verifyPermissionTransaction, replayPermissionTransactions, createPermissionSnapshot, permissionsPayload, permissionPayload,
   permissionRecordPayload, permissionCandidateParts, advancePermissionCandidateDigest, PERMISSION_DISCOVERY_EMPTY_SHA256 } from './permissions.mjs';
-const owner = '1F1p9UEHuH5KTFR7Zsx93Khdrqhj6t5nFv', other = '1KNkUBREnfno2BeV7QsBf8XCWZN6YFfxPH';
-const hash = 'b'.repeat(64), txid = number => number.toString(16).padStart(64, '0');
+import { permissionFixture, fixtureOwner, fixtureKeys, signPermissionFixture } from './permission-test-fixtures.mjs';
+const owner = fixtureOwner().address, other = fixtureOwner(fixtureKeys[1]).address;
+const fixtureTxids = new Map();
+const hash = 'b'.repeat(64), txid = number => fixtureTxids.get(number) ?? number.toString(16).padStart(64, '0');
 const activationHeight = 100, options = { network: 'livenet', activationHeight };
 const policy = { signingEnabled: true, allowedActions: ['mail.send', 'boost.post'], maxTransactionProofs: '5000', dailyLimitProofs: '30000',
   maxMinerFeeProofs: '1000', allowedRecipients: [], workLimits: null };
@@ -13,11 +15,10 @@ function op(text) {
   return Buffer.concat([Buffer.from([0x6a, 0x4d, bytes.length & 255, bytes.length >> 8]), bytes]).toString('hex');
 }
 function transaction(id, action = 'grant', metadata = {}, extra = {}) {
-  const body = encodePermissionRecord(action, { v: 1, network: 'livenet', ...(action === 'revoke' ? {} : { label: 'Daily Computer', policy }), ...metadata });
-  return { txid: txid(id), vin: [{ prevout: { scriptpubkey_address: owner, value: '10000', scriptpubkey: '51' } }],
-    vout: [{ scriptpubkey_address: owner, value: '546', scriptpubkey: '51' }, { value: '0', scriptpubkey: op('pwm1:m:' + body) }],
-    status: { confirmed: true, block_height: activationHeight + id, block_hash: hash }, blockTransactionIndex: id, ...extra };
+  const tx = permissionFixture({ nonce:id, action, metadata, policy, height:activationHeight+id, hash, index:id });
+  fixtureTxids.set(id,tx.txid); return { ...tx,...extra };
 }
+
 test('closed canonical schema preserves exact proof strings and rejects executable or alternate metadata', () => {
   const encoded = encodePermissionRecord('grant', { v: 1, network: 'livenet', label: 'Computer', policy });
   assert.equal(parsePermissionBody(encoded).metadata.policy.maxTransactionProofs, '5000');
@@ -64,7 +65,10 @@ test('exact-parent replacement and owner revocation defeat stale and third-party
   const grant = transaction(1), replace = transaction(2, 'replace', { grant: txid(1), parent: txid(1), label: 'Reduced', policy: { ...policy, maxTransactionProofs: '4000' } });
   const stale = transaction(3, 'replace', { grant: txid(1), parent: txid(1) });
   const attacker = transaction(4, 'revoke', { grant: txid(1), parent: txid(2) });
-  attacker.vin[0].prevout.scriptpubkey_address = other; attacker.vout[0].scriptpubkey_address = other;
+  const attackerOwner = fixtureOwner(fixtureKeys[1]);
+  attacker.vin[0].prevout.scriptpubkey_address = other; attacker.vin[0].prevout.scriptpubkey = attackerOwner.script;
+  attacker.vout[0].scriptpubkey_address = other; attacker.vout[0].scriptpubkey = attackerOwner.script;
+  signPermissionFixture(attacker, { keys:[fixtureKeys[1]] }); fixtureTxids.set(4,attacker.txid);
   const revoke = transaction(5, 'revoke', { grant: txid(1), parent: txid(2) });
   const resurrection = transaction(6, 'replace', { grant: txid(1), parent: txid(5) });
   const state = replayPermissionTransactions([resurrection, revoke, attacker, stale, replace, grant], options);

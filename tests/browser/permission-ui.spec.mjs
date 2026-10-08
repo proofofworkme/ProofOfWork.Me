@@ -3,7 +3,9 @@ import * as bitcoin from "bitcoinjs-lib";
 import { encodePermissionRecord, PERMISSION_ACTIVATION_HEIGHT, PERMISSION_ACTIVATION_PREVIOUS_BLOCK_HASH } from "../../src/shared/protocol/permissions.mjs";
 
 const id = value => value.toString(16).padStart(64, "0");
-const owner = "bc1qfwytlzyr3ym3enz2eutwtjsf9kkf6uqkjydk3e";
+// Disposable public fixture account; no connected wallet is used.
+const owner = "1FvyAqqELFiQyaEWdhFbWF8MZapKPZS8J7";
+const unsupportedOwner = "bc1qfwytlzyr3ym3enz2eutwtjsf9kkf6uqkjydk3e";
 const foreign = "1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa";
 const height = Math.max(PERMISSION_ACTIVATION_HEIGHT + 2, 100);
 const policy = { signingEnabled: true, allowedActions: ["amo.buywork", "amo.listwork", "amo.sealwork", "boost.post", "mail.send", "publish.article"],
@@ -19,10 +21,15 @@ const evidence = { network: "livenet", complete: true, source: "proof-indexer-ex
   admission: { ready: PERMISSION_ACTIVATION_HEIGHT > 0, writesEnabled: true, activationHeight: PERMISSION_ACTIVATION_HEIGHT,
     activationPreviousBlockHash: PERMISSION_ACTIVATION_PREVIOUS_BLOCK_HASH, minimumSelfPaymentProofs: "546", autonomousSigningEnabled: false },
   budget: { available: false, reason: "protected-controller-required" } };
-const funding = new bitcoin.Transaction(); funding.addInput(Buffer.alloc(32, 1), 0); funding.addOutput(bitcoin.address.toOutputScript(owner), 2_000_000n);
-const utxo = { txid: funding.getId(), vout: 0, value: 2_000_000, status: { confirmed: true } };
+function fundingFor(address) {
+  const transaction = new bitcoin.Transaction(); transaction.addInput(Buffer.alloc(32, 1), 0);
+  transaction.addOutput(bitcoin.address.toOutputScript(address), 2_000_000n); return transaction;
+}
 
-async function fixture(page, { unavailable = false, wallet = false, empty = false, raw = false, malformed = false } = {}) {
+async function fixture(page, { unavailable = false, wallet = false, empty = false, raw = false, malformed = false, unsupportedWallet = false } = {}) {
+  const walletAddress = unsupportedWallet ? unsupportedOwner : owner;
+  const funding = fundingFor(walletAddress);
+  const utxo = { txid: funding.getId(), vout: 0, value: 2_000_000, status: { confirmed: true } };
   if (wallet) await page.addInitScript(({ owner, utxo }) => {
     const handlers = new Map(); window.permissionSignatureCalls = 0; window.permissionAccounts = [owner];
     window.permissionWalletEvent = (event, values) => { if (event === "accountsChanged") window.permissionAccounts = values; for (const handler of handlers.get(event) ?? []) handler(values); };
@@ -31,7 +38,7 @@ async function fixture(page, { unavailable = false, wallet = false, empty = fals
       on: (event, handler) => handlers.set(event, [...(handlers.get(event) ?? []), handler]),
       removeListener: (event, handler) => handlers.set(event, (handlers.get(event) ?? []).filter(value => value !== handler)),
       signPsbt: async () => { window.permissionSignatureCalls++; throw new Error("Rejected by disposable test wallet"); } };
-  }, { owner, utxo });
+  }, { owner: walletAddress, utxo });
   await page.route("**/api/v1/**", async route => {
     const url = new URL(route.request().url());
     if (route.request().method() !== "GET") return route.abort("blockedbyclient");
@@ -131,5 +138,16 @@ test("wallet grant review requests no signature and account switch invalidates r
   await page.evaluate(value => window.permissionWalletEvent("accountsChanged", [value]), foreign);
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await expect(page.getByText("Wallet account changed. Review Permission actions again.", { exact: true })).toBeVisible();
+  expect(await page.evaluate(() => window.permissionSignatureCalls)).toBe(0);
+});
+
+test("unsupported wallet shows its reason and cannot prepare a permission review", async ({ page }) => {
+  await fixture(page, { wallet: true, empty: true, unsupportedWallet: true }); await page.goto("/?permission-app=1");
+  await page.getByRole("button", { name: "Connect UniSat", exact: true }).click();
+  await page.getByRole("button", { name: "New permission", exact: true }).click();
+  await page.getByRole("textbox", { name: "Permission label", exact: true }).fill("Unsupported wallet fixture");
+  await expect(page.getByRole("status").filter({ hasText: "Permission v1 requires a mainnet P2PKH UniSat address beginning with 1." })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Review permission", exact: true })).toBeDisabled();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
   expect(await page.evaluate(() => window.permissionSignatureCalls)).toBe(0);
 });
