@@ -102,7 +102,19 @@ unshare --user --map-root-user python3 -I -B deploy/pages/ui-storage.py apply \
   --log "$custody/retirement-dispatch.json"
 ```
 
-Apply repeats off-host custody verification before dispatch. The remote managed
+The initial dispatcher attempt on 2026-10-08 refused SSH host-key lookup before
+connecting because its isolated UID 0 selected a different home directory. Keep
+the original request and `retirement-dispatch.json`; verify that the managed unit
+and retirement intent are absent and the original root fingerprints unchanged.
+The corrected source-bound request and log must use fresh creation-only paths,
+such as `/tmp/pages-five-roots-retire-b7ec8574-knownhosts.json` and
+`retirement-dispatch-knownhosts.json`. Never overwrite or silently retry the
+original attempt.
+
+Apply repeats off-host custody verification before dispatch. SSH explicitly uses
+`/home/sixer/.ssh/known_hosts`, the original operator trust store, while retaining
+strict host-key checking and the fixed deployment identity. This keeps the same
+verified host key when the local user namespace has UID 0. The remote managed
 unit uses a 30-minute maximum, 50% CPU, 1 GiB memory without swap, 64 tasks,
 private umask and idle I/O. The production writer accepts no test layout or guard
 override. It verifies the exact approved deploy-lock inode against both pathname

@@ -979,5 +979,59 @@ class RetirementTests(unittest.TestCase):
                     with self.assertRaises(ValueError): self.writer.decode_request(e.encoded(changed), 'a' * 64, source_sha)
 
 
+class DispatcherTests(unittest.TestCase):
+    def test_root_namespace_dispatch_uses_operator_trust_store_and_strict_host_key_check(self):
+        import base64
+        import shlex
+        writer = load('pages_ui_storage_writer', 'ui-storage.py'); e = writer.E
+        with tempfile.TemporaryDirectory(prefix='pages-ui-dispatch-test-') as temporary:
+            base = pathlib.Path(temporary)
+            request_path = base / 'request.json'; request_raw = b'{"fixture":"bound-request"}\n'
+            request_path.write_bytes(request_raw); request_path.chmod(0o600)
+            log = base / 'dispatch.json'
+            custody = {'durableDirectory': str(base / 'fixture-custody')}; custody_raw = e.encoded(custody)
+            request = {'executionId': 'fixture-knownhosts', 'custodySha256': e.digest(custody_raw)}
+            source, _ = e.read_regular(pathlib.Path(__file__).with_name('ui-storage.py'))
+            exporter_source, _ = e.read_regular(pathlib.Path(__file__).with_name('ui-storage-export.py'))
+            self.assertEqual(e.digest(exporter_source), '098924a20c920c26167cc30b7f961496f86a7da4a9c7209c834b31bfbc1955c3')
+            parsed = (request, {}, {}, custody, b'{}', b'{}', custody_raw)
+            fresh = ({}, {}, custody, b'{}', b'{}', custody_raw)
+            called = []
+            def dispatch(args, **kwargs):
+                called.append(args)
+                self.assertEqual(args[:-4], e.SSH[:-1])
+                self.assertEqual(args[-4:-2], ['-o', 'UserKnownHostsFile=/home/sixer/.ssh/known_hosts'])
+                self.assertEqual(args[-2], 'root@77.42.91.106')
+                self.assertIn('StrictHostKeyChecking=yes', args)
+                self.assertIn('IdentitiesOnly=yes', args)
+                self.assertIn('BatchMode=yes', args)
+                self.assertEqual(args[args.index('-i') + 1], '/home/sixer/.ssh/proofofwork_me_ed25519')
+                self.assertNotIn('StrictHostKeyChecking=no', args)
+                command = shlex.split(args[-1])
+                self.assertEqual(command[0], '/usr/bin/systemd-run')
+                self.assertIn('--unit=pages-storage-b7ec8574-fixture-knownhosts', command)
+                self.assertEqual(command[-4:], ['/usr/bin/python3', '-I', '-B', '-'])
+                program = kwargs['input']
+                self.assertIsInstance(program, bytes)
+                self.assertIn(base64.b64encode(source), program)
+                self.assertIn(base64.b64encode(exporter_source), program)
+                self.assertIn(base64.b64encode(request_raw), program)
+                self.assertIn(e.digest(source).encode(), program)
+                self.assertIn(e.digest(exporter_source).encode(), program)
+                return subprocess.CompletedProcess(args, 0, b'{"status":"fixture-dispatched"}\n', b'')
+            # Reproduce the namespace's root identity while all transport is
+            # intercepted; full-suite unshare runs also exercise actual UID0.
+            with patch.object(writer.os, 'geteuid', return_value=0), \
+                    patch.object(writer, 'decode_request', return_value=parsed), \
+                    patch.object(writer, 'verify_custody_directory', return_value=fresh), \
+                    patch.object(writer.subprocess, 'run', side_effect=dispatch):
+                result = writer.apply(request_path, log)
+            self.assertEqual(result, {'status': 'fixture-dispatched'})
+            self.assertEqual(len(called), 1)
+            receipt = json.loads(log.read_bytes())
+            self.assertEqual(receipt['returnCode'], 0)
+            self.assertEqual(receipt['requestSha256'], e.digest(request_raw))
+
+
 if __name__ == '__main__':
     unittest.main()

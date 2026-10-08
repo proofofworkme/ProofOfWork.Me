@@ -411,7 +411,8 @@ def apply(request_path,log):
         '--unit=pages-storage-b7ec8574-'+r['executionId'],'--property=RuntimeMaxSec=1800','--property=CPUQuota=50%',
         '--property=MemoryMax=1G','--property=MemorySwapMax=0','--property=TasksMax=64','--property=UMask=0077',
         '--property=Nice=15','--property=IOSchedulingClass=idle','/usr/bin/python3','-I','-B','-']
-    try:p=subprocess.run(E.SSH+[shlex_join(command)],input=program.encode(),stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=1900)
+    ssh=E.SSH[:-1]+['-o','UserKnownHostsFile=/home/sixer/.ssh/known_hosts',E.SSH[-1]]
+    try:p=subprocess.run(ssh+[shlex_join(command)],input=program.encode(),stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=1900)
     except subprocess.TimeoutExpired as error:
         E.save_new(log,E.encoded(dict(status='uncertain',errorClass='TimeoutExpired',stdout=(error.stdout or b'')[-1024**2:].decode(errors='replace'),stderr=(error.stderr or b'')[-1024**2:].decode(errors='replace'),requestSha256=E.digest(raw),managedUnit='pages-storage-b7ec8574-'+r['executionId'],automaticRetryAllowed=False)))
         raise ValueError('Retirement dispatcher timed out; inspect managed unit and durable remote receipt before recovery or further action') from error
