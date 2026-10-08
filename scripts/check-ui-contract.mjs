@@ -19,6 +19,9 @@ const files = [
   "src/features/landing/LandingRoot.tsx",
   "src/features/boost/BoostRoot.tsx",
   "src/features/boost/boostProtocol.ts",
+  "src/features/browser/BrowserWindow.tsx",
+  "src/features/browser/browserAppDocument.ts",
+  "public/pages-runner.html",
   "src/main.tsx",
   "src/shared/activity/logHistoryCache.ts",
   "src/shared/api/proofApiClient.ts",
@@ -1865,6 +1868,9 @@ expect(
 ].forEach((pattern) =>
   notContains("src/App.tsx", pattern, `no per-route AppHeader override ${pattern}`),
 );
+const browserWindow = contents.get("src/features/browser/BrowserWindow.tsx");
+const browserAppDocument = contents.get("src/features/browser/browserAppDocument.ts");
+const pagesRunner = contents.get("public/pages-runner.html");
 const browserAppBlock = topLevelFunctionSource(app, "BrowserApp");
 const browserWorkspaceBlock = topLevelFunctionSource(app, "BrowserWorkspace");
 expect(
@@ -1883,29 +1889,44 @@ expect(
   !/allow="clipboard-write"/.test(app),
 );
 expect(
-  "standalone and Computer Browser share verified DNS page-link loading",
+  "standalone and Computer Browser share verified loading and browser controls",
   /fetchBrowserTargetPage\(txid, targetNetwork, controller\.signal\)/.test(browserAppBlock) &&
-    /fetchBrowserTargetPage\(txid, network, controller\.signal\)/.test(browserWorkspaceBlock) &&
+    /fetchBrowserTargetPage\(txid, targetNetwork, controller\.signal\)/.test(browserWorkspaceBlock) &&
+    /<BrowserWindow/.test(browserAppBlock) && /<BrowserWindow embedded/.test(browserWorkspaceBlock) &&
     /params\.set\(isName \? "name" : "txid", normalizedTxid\)/.test(app) &&
-    /page\.dnsLink\.name/.test(browserAppBlock) && /page\.dnsLink\.name/.test(browserWorkspaceBlock) &&
-    /if \(!page\.confirmed\) throw new Error/.test(app),
+    /displayedPage\.dnsLink\.name/.test(browserWindow) && /if \(!page\.confirmed\) throw new Error/.test(app),
 );
 expect(
-  "confirmed and pending Browser pages share one static iframe renderer",
+  "confirmed and pending Browser pages retain one static iframe renderer by default",
   /function BrowserPageFrame\(\{ page \}: \{ page: BrowserPage \}\)/.test(app) &&
-    /sandbox=""[\s\S]{0,100}srcDoc=\{browserStaticDocument\(page\.html\)\}/.test(
-      app,
-    ) &&
+    /sandbox=""[\s\S]{0,100}srcDoc=\{browserStaticDocument\(page\.html\)\}/.test(app) &&
     (app.match(/<BrowserPageFrame\b/g) || []).length === 2 &&
+    /activeRuntime \? <iframe/.test(browserWindow) && /: renderStaticPage\(displayedPage\)/.test(browserWindow) &&
     !/<ConfirmedBrowserPageFrame\b/.test(app),
 );
 expect(
-  "Browser rendering has no script bridge, context injection, or bridge assets",
-  !/allow-scripts|allow-same-origin|postMessage|POW_CONTEXT|browserPageContext|browser-sandbox/.test(
-    app,
-  ) &&
-    !existsSync("public/browser-sandbox.html") &&
-    !existsSync("public/browser-sandbox.js"),
+  "Browser app execution is explicit, opaque, and has no parent or wallet bridge",
+  /function runApp\(\)/.test(browserWindow) &&
+    /browserAppDocument\(displayedPage\.html, document\)/.test(browserWindow) &&
+    /sandbox="allow-scripts"/.test(browserWindow) && /src=\{`\/pages-runner\.html#/.test(browserWindow) &&
+    !/allow-same-origin|postMessage|POW_CONTEXT|browserPageContext|browser-sandbox/.test(browserWindow + browserAppDocument + pagesRunner) &&
+    !existsSync("public/browser-sandbox.html") && !existsSync("public/browser-sandbox.js"),
+);
+expect(
+  "Browser app sanitizer preserves inline behavior and memory-only media under a deny-network CSP",
+  /document\.createElement\("template"\)/.test(browserAppDocument) &&
+    /script\[src\]/.test(browserAppDocument) && /connect-src 'none'/.test(browserAppDocument) &&
+    /img-src data: blob:/.test(browserAppDocument) && /media-src data: blob:/.test(browserAppDocument) &&
+    /form-action 'none'/.test(browserAppDocument) && /worker-src 'none'/.test(browserAppDocument) &&
+    /frame-src 'none'/.test(browserAppDocument) && /clean\(nested\.content\)/.test(browserAppDocument),
+);
+expect(
+  "Browser tabs and navigation stop app execution and retain collapsible evidence",
+  /role="tablist"/.test(browserWindow) && /aria-label="Back"/.test(browserWindow) &&
+    /aria-label="Forward"/.test(browserWindow) && /aria-label="Reload page"/.test(browserWindow) &&
+    /function navigate[\s\S]*?setRuntime\(undefined\)/.test(browserWindow) &&
+    /function selectTab[\s\S]*?setRuntime\(undefined\)/.test(browserWindow) &&
+    /<details className="browser-proof-card"/.test(browserWindow) && /<details className="browser-source-card"/.test(browserWindow),
 );
 expect(
   "Browser static HTML is sanitized in an inert template before serialization",
@@ -2765,11 +2786,12 @@ expect(
     /options\.signal\?\.addEventListener\("abort"/.test(proofApiClient) &&
     /options\.signal\?\.removeEventListener\("abort"/.test(proofApiClient),
 );
-const browserSearchForm = browserAppBlock.match(/<form[\s\S]*?<\/form>/)?.[0] ?? "";
+const browserSearchForm = browserWindow.match(/<form[\s\S]*?<\/form>/)?.[0] ?? "";
 const browserHeaderTag = browserAppBlock.match(/<AppHeader[\s\S]*?\/>/)?.[0] ?? "";
 expect(
   "standalone Browser keeps the network selector in the form, not the shared topbar",
-  /<BrowserNetworkTabs\s+network=\{network\}\s+onChange=\{changeBrowserNetwork\}/.test(browserSearchForm) &&
+  /<BrowserNetworkTabs\s+network=\{network\}/.test(browserSearchForm) &&
+    /onNetworkChange=\{changeBrowserNetwork\}/.test(browserAppBlock) &&
     /function changeBrowserNetwork\(nextNetwork: BitcoinNetwork\)[\s\S]*?loadGenerationRef\.current \+= 1;[\s\S]*?loadControllerRef\.current\?\.abort\(\);[\s\S]*?setNetwork\(nextNetwork\)/.test(browserAppBlock) &&
     Boolean(browserHeaderTag) && !/onNetworkChange=/.test(browserHeaderTag),
 );

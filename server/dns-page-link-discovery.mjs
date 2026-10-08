@@ -69,17 +69,36 @@ export function createDnsPageLinkDiscovery({ readIndex, readCoreBlock, readCoreH
   const inFlight = new Map();
   const checkpointReads = new Map();
   const verifiedPrefixes = new Map();
+  const targets = new Map();
   let cacheBytes = 0;
-  async function blockWitness(row) {
-    const blockKey = `${row.height}:${row.block_hash}`;
-    if (verifiedBlocks.has(blockKey)) return verifiedBlocks.get(blockKey);
+  const prefixScope = (network, activationHeight) => `${network}:${activationHeight}`;
+  function progress(network, activationHeight) {
+    const scope = prefixScope(network, activationHeight);
+    const prefix = verifiedPrefixes.get(scope);
+    return { verifiedThroughBlock: prefix?.height ?? activationHeight - 1,
+      verifiedThroughBlockHash: prefix?.blockHash ?? null,
+      targetHeight: targets.get(scope) ?? null };
+  }
+  async function blockWitness(network, row) {
+    const blockKey = `${network}:${row.height}:${row.block_hash}`;
+    const retained = verifiedBlocks.get(blockKey);
+    if (retained) {
+      // Immutable witnesses are replaceable performance state. A full cache
+      // must not permanently prevent the verified prefix from advancing.
+      verifiedBlocks.delete(blockKey);
+      verifiedBlocks.set(blockKey, retained);
+      return retained.core;
+    }
     if (!inFlight.has(blockKey)) {
-      const task = readCoreBlock(row).then(core => {
+      const task = Promise.resolve().then(() => readCoreBlock(row)).then(core => {
         const bytes = Buffer.byteLength(JSON.stringify(core));
-        if (cacheBytes + bytes > maxCacheBytes) {
-          throw new Error("DNS page-link immutable verification cache reached its byte budget.");
+        if (bytes > maxCacheBytes) throw new Error("DNS page-link immutable verification cache reached its byte budget.");
+        while (cacheBytes + bytes > maxCacheBytes && verifiedBlocks.size) {
+          const oldest = verifiedBlocks.keys().next().value;
+          cacheBytes -= verifiedBlocks.get(oldest).bytes;
+          verifiedBlocks.delete(oldest);
         }
-        verifiedBlocks.set(blockKey, core);
+        verifiedBlocks.set(blockKey, { core, bytes });
         cacheBytes += bytes;
         return core;
       }).finally(() => inFlight.delete(blockKey));
@@ -89,19 +108,29 @@ export function createDnsPageLinkDiscovery({ readIndex, readCoreBlock, readCoreH
   }
   async function read(network, checkpoint, activationHeight) {
     const deadline = now() + readBudgetMs;
+    const scope = prefixScope(network, activationHeight);
+    targets.set(scope, checkpoint.height);
     const withinBudget = () => {
-      if (now() > deadline) throw new Error("DNS page-link verification exceeded its read budget; retry to continue verified catch-up.");
+      if (now() > deadline) {
+        const error = new Error("DNS page-link verification exceeded its read budget; retry to continue verified catch-up.");
+        error.code = "DNS_DISCOVERY_CATCH_UP";
+        error.progress = progress(network, activationHeight);
+        throw error;
+      }
     };
-    const prefixScope = `${network}:${activationHeight}`;
-    let prefix = verifiedPrefixes.get(prefixScope);
+    let prefix = verifiedPrefixes.get(scope);
     if (prefix && (prefix.height > checkpoint.height || typeof readCoreHash !== "function" ||
         await readCoreHash(prefix.height, network) !== prefix.blockHash)) {
-      verifiedPrefixes.delete(prefixScope);
+      verifiedPrefixes.delete(scope);
       prefix = null;
     }
     withinBudget();
     const confirmed = prefix ? [...prefix.events] : [];
     let projectionBytes = prefix?.projectionBytes ?? 0;
+    let nextHeight = prefix ? prefix.height + 1 : activationHeight;
+    let previousHash = prefix?.blockHash ?? "";
+    let witnessSha256 = prefix?.witnessSha256 ?? createHash("sha256")
+      .update(JSON.stringify(["dns-page-link-block-witness-chain-v1", network, activationHeight])).digest("hex");
     const coverage = await readIndex(network, {
       activationHeight, expectedHeight: checkpoint.height, expectedHash: checkpoint.blockHash,
       ...(prefix ? { fromHeight: prefix.height + 1,
@@ -109,25 +138,43 @@ export function createDnsPageLinkDiscovery({ readIndex, readCoreBlock, readCoreH
           witnessSha256: prefix.witnessSha256 } } : {}),
       async onBlock(row) {
         withinBudget();
-        const core = await blockWitness(row);
+        if (Number(row.height) !== nextHeight || nextHeight > checkpoint.height ||
+            !/^[0-9a-f]{64}$/u.test(row.block_hash ?? "") ||
+            (previousHash && row.previous_block_hash !== previousHash)) {
+          throw new Error("DNS page-link verification block sequence has a gap or fork.");
+        }
+        const core = await blockWitness(network, row);
         const pageLinks = assertDnsPageLinkRawBlockCoverage(row, core);
-        withinBudget();
-        projectionBytes += Buffer.byteLength(JSON.stringify(pageLinks));
-        if (projectionBytes > maxProjectionBytes) throw new Error("DNS page-link projection reached its byte budget.");
+        const bytes = Buffer.byteLength(JSON.stringify(pageLinks));
+        if (projectionBytes + bytes > maxProjectionBytes) throw new Error("DNS page-link projection reached its byte budget.");
+        projectionBytes += bytes;
         confirmed.push(...pageLinks);
+        witnessSha256 = createHash("sha256").update(JSON.stringify([witnessSha256, nextHeight,
+          row.block_hash, row.payload?.blockDescriptorCommitment,
+          row.payload?.replayDescriptorCommitment])).digest("hex");
+        previousHash = row.block_hash;
+        nextHeight += 1;
+        // This is internal resumable verification, never a coverage/admission
+        // result. Every retained row has complete independently checked Core
+        // bytes and an unbroken hash chain. A retry rebinds its last hash to
+        // Core and the unique canonical index anchor before skipping the prefix.
+        // Save before the time check so even one slow block makes safe progress.
+        const prior = verifiedPrefixes.get(scope);
+        if (typeof readCoreHash === "function" && (!prior || prior.height <= Number(row.height))) {
+          verifiedPrefixes.set(scope, { height: Number(row.height), blockHash: row.block_hash,
+            witnessSha256, projectionBytes, events: [...confirmed] });
+        }
+        withinBudget();
       },
     });
     if (coverage?.complete !== true || coverage.indexedThroughBlock !== checkpoint.height ||
         coverage.checkpointHash !== checkpoint.blockHash || coverage.activationHeight !== activationHeight ||
-        coverage.blockCount !== checkpoint.height - activationHeight + 1) {
+        coverage.blockCount !== checkpoint.height - activationHeight + 1 ||
+        nextHeight !== checkpoint.height + 1 || previousHash !== checkpoint.blockHash ||
+        coverage.witnessSha256 !== witnessSha256) {
       throw new Error("DNS page-link discovery lacks exact checkpoint coverage.");
     }
     withinBudget();
-    const previousPrefix = verifiedPrefixes.get(prefixScope);
-    if (typeof readCoreHash === "function" && (!previousPrefix || previousPrefix.height <= checkpoint.height)) {
-      verifiedPrefixes.set(prefixScope, { height: checkpoint.height, blockHash: checkpoint.blockHash,
-        witnessSha256: coverage.witnessSha256, projectionBytes, events: [...confirmed] });
-    }
     const pending = [];
     for (const txid of coverage.pendingTxids ?? []) {
       if (now() > deadline) break;
@@ -143,12 +190,15 @@ export function createDnsPageLinkDiscovery({ readIndex, readCoreBlock, readCoreH
     return { events: [...confirmed, ...pending], coverage: { ...coverage,
       pendingTxids: undefined, model: "dns-page-link-core-raw-block-coverage-v1", pageLinkSha256 } };
   }
-  return async function discover(network, checkpoint, activationHeight) {
+  async function discover(network, checkpoint, activationHeight) {
     const scope = `${network}:${activationHeight}:${checkpoint.height}:${checkpoint.blockHash}`;
     if (!checkpointReads.has(scope)) checkpointReads.set(scope,
       read(network, checkpoint, activationHeight).finally(() => checkpointReads.delete(scope)));
     return checkpointReads.get(scope);
-  };
+  }
+  // Operator catch-up progress is not complete namespace or signing authority.
+  discover.progress = progress;
+  return discover;
 }
 
 function pageLinkHexes(item) {

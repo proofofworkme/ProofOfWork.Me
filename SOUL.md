@@ -343,7 +343,13 @@ Future agents must preserve these unless the user explicitly asks for a migratio
   focused DNS app's canonical reads, local signing, and recovery. Root resolver
   changes, direct transfers, and trading stay in AMO's DNS tab.
 - `desktop.proofofwork.me` is the public read-only file desktop.
-- `browser.proofofwork.me` is the standalone public HTML renderer.
+- `browser.proofofwork.me` and Computer Browser share tabs, a txid/`.pow`
+  address bar, back/forward, reload, expanded viewport and full screen. Source
+  and proof details remain available in collapsed inspectors. Static rendering
+  is the default; explicit Run app starts inline JavaScript in an opaque,
+  memory-only runner with no parent, wallet, network or persistent storage
+  authority. Navigation, tab/network changes and reload stop execution; history
+  reloads verified content and never restores permission to run.
 - Pages is the HTML page/app authoring product for `pages.proofofwork.me` and
   Computer's Pages workspace. It reuses confirmed identity and Code source,
   Files, Browser, and Mail tools. Static preview remains the default;
@@ -351,14 +357,19 @@ Future agents must preserve these unless the user explicitly asks for a migratio
   wallet provider, or parent signing lane. Publishing stages existing Mail
   review and local wallet signing without replacing an unsent Mail draft.
   HTML publication adds no new carrier or duplicate Growth/WORK value. Pages
-  also prepares owner-reviewed root `.pow` page links through the additive
-  `pwdns1:page1` protocol. Confirmed ownership epochs govern set/clear and reset
-  on every transfer or purchase; payment resolution stays independent. Browser
-  follows only confirmed, covered links to independently verified static HTML.
-  The approved page-link opening is 970426, with independently complete raw
-  discovery required for writes and routing. Local UI and fixtures never establish
-  real-chain authority. The release must verify the hostname and all 21 managed
-  surfaces under the contract documented in `PAGES.md`.
+  also prepares owner-reviewed root and active one-level child `.pow` page
+  links, shared with Advanced DNS in the standalone DNS app and Computer.
+  Root `pwdns1:page1` keeps its opening at 970426. Additive `pwdns1:subpage1`
+  opens at 970499 and binds the current root ownership event plus the child's
+  original accepted create event. Resolver updates retain links; revocation,
+  recreation and every root transfer or purchase invalidate former authority.
+  Payment resolution stays independent. Browser follows only confirmed,
+  covered links to independently verified HTML, initially in static mode.
+  Independently complete raw discovery is required for writes and routing.
+  Verified contiguous catch-up can resume after a bounded read without making
+  partial progress namespace authority. Local UI and fixtures never establish
+  real-chain authority. The Browser/DNS release must verify the hostname and all
+  22 managed surfaces under the V5 contract documented in `PAGES.md`.
 - `boost.proofofwork.me` is the public Proof-ranked social feed over confirmed `pwb1:` records; original posts reuse Mail/Files, and paid actions and asset trades use the Boost protocol. The feed leads with people and posts; proof evidence and exact signal lanes remain inspectable through disclosures. Compact display quantities never become ranking, payment, or signing authority.
 - `publish.proofofwork.me` is text-only blogging over that same social record. Give writers a dedicated page, the remaining OP_RETURN script budget, private drafts, exact review and local signing. Mail Compose opens the shared writer while preserving its separate Mail draft; article self-sends appear in Inbox and Sent with verified full text. Boost and Publish share selected confirmed PowIDs, public profiles, likes, replies, reboosts and follows; preserve one transaction ID and count shared payments once. [PUBLISH.md](PUBLISH.md) specifies the article and identity bridge.
 - `code.proofofwork.me` is the public Code v1 source
@@ -386,10 +397,13 @@ Future agents must preserve these unless the user explicitly asks for a migratio
 - DNS mutation price: `546` proofs for resolver updates, direct transfers, AMO listings, seals, delistings, and buyer-funded AMO transfers.
 - Current DNS event: `pwdns1:r1:<name-base64url>:<owner-address>:<resolver-address>`
 - DNS names are displayed with `.pow`, but users type the bare prefix and the app implies the suffix.
-- Root DNS page links use the separately gated V1 protocol. Set/clear requires
-  an owner self-payment of at least 546 proofs and binds the current confirmed
-  ownership event. Resolver recipients never control links, pending records
-  never route, and incomplete coverage never becomes false empty state.
+- Root and one-level child DNS page links use separately gated V1 protocols.
+  Set/clear requires an owner self-payment of at least 546 proofs and binds the
+  current confirmed ownership event; child links also bind the original accepted
+  create tuple. Both authorities must be confirmed in earlier blocks. Resolver
+  recipients never control links, pending records never route, and incomplete
+  coverage never becomes false empty state. Pages and Advanced DNS inspect the
+  same chain records; local receipts never create a second link registry.
 - Current mail prefix: `pwm1:`
 - Mailbox projections must preserve subject/body separation: `pwm1:s` supplies the subject, `pwm1:m` supplies the body, and `mail_items.body_text` plus UI memo rendering must not use Log display detail as a substitute for decoded message content.
 - Current credit prefix: `pwt1:`

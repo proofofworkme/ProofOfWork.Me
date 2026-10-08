@@ -3890,6 +3890,7 @@ test("public search and generated source keep persistent labels in both hosts", 
   }
   for (const path of ["/?browser=1", "/?folder=browser"]) {
     await page.goto(path);
+    await page.locator(".browser-template-disclosure > summary").click();
     await expect(page.getByRole("textbox", { name: "Generated HTML source", exact: true })).toBeVisible();
   }
 });

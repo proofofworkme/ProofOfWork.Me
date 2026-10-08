@@ -17,7 +17,7 @@ Do not change these without an explicit migration plan:
 - Registration price: `1000` proofs
 - Mutation price: `546` proofs for resolver updates, transfers, on-chain listings, seals, delistings, and buyer-funded marketplace transfers
 - Subdomain action payment: one `546`-proof self-payment to the root owner for create, update, or revoke; this is not a registry mutation fee
-- Page-link action payment: one `546`-proof self-payment to the root owner for set or clear; production admission opens at height 970426 only with complete canonical page-link coverage
+- Page-link action payment: one explicit self-payment of at least `546` proofs to the root owner for set or clear; root `page1` opens at 970426 and child `subpage1` at 970499, each requiring complete canonical coverage
 - Protocol prefix: `pwdns1:`
 - Registration event: `pwdns1:r1:<name-base64url>:<owner-address>:<resolver-address>`
 - Resolver update event: `pwdns1:u:<name-base64url>:<resolver-address>`
@@ -35,13 +35,13 @@ Do not change these without an explicit migration plan:
 ## Product Surfaces
 
 ```text
-dns.proofofwork.me      focused .pow claim/search and owner-controlled subdomains
+dns.proofofwork.me      .pow claim/search, owner-controlled subdomains, Advanced DNS
 domain.proofofwork.me   redirect to https://dns.proofofwork.me/
 domains.proofofwork.me  redirect to https://dns.proofofwork.me/
 amo.proofofwork.me      DNS tab for root management, subdomains, and trading
-computer.proofofwork.me DNS workspace for claims/search/subdomains; AMO for root management/trading
-pages.proofofwork.me    intended local-candidate root-name page linking/HTML authoring
-browser.proofofwork.me  reads confirmed root-name page links after activation
+computer.proofofwork.me DNS workspace with Advanced DNS; AMO for root management/trading
+pages.proofofwork.me    HTML authoring and shared root/active-child page linking
+browser.proofofwork.me  reads confirmed covered root/child links; explicit Run app
 ```
 
 Computer exposes a dedicated DNS workspace beside IDs at `/?folder=dns`, also
@@ -70,6 +70,15 @@ of the Computer:
 /api/v1/dns?network=livenet
 /api/v1/dns/:name?network=livenet
 ```
+
+Advanced DNS in standalone DNS and Computer shows root and active one-level
+child content links, current confirmed status, pending actions, history and
+Open in Browser. It supports owner-reviewed set, replacement and clear to an
+existing confirmed HTML txid. Pages uses the same canonical `page1`/`subpage1`
+records and signing preparation; confirmed links created in Pages automatically
+appear in Advanced DNS after refresh. These content pointers do not change payment-address resolution. Public reads
+remain available disconnected; writes require the current confirmed root owner,
+complete checkpoint evidence, exact review and local wallet signing.
 
 The standalone DNS build uses:
 
@@ -293,6 +302,108 @@ txid when present, self-payment, miner fee, change, and exact public wire record
 The target must be confirmed HTML verified through the existing Browser reader.
 Signing stays local. Browser accepts a full root name such as `alice.pow`,
 requires an active confirmed link plus complete matching checkpoint coverage,
-then verifies the target transaction independently and renders it statically.
+then verifies the target transaction independently and opens it in static mode.
+An explicit Run app action can start inline JavaScript in the isolated Browser
+runner; name resolution itself never grants execution or wallet authority.
 Pending, missing, cleared, invalidated, or unverified targets do not resolve to
 a page. Payment-address lookup continues to return the existing resolver.
+
+## Owner-controlled subdomain page links V1
+
+The additive `pwdns1:subpage1` lane binds an active one-level child such as
+`app.alice.pow` to a page txid. It does not extend `page1`, alter `sub1`, or
+rewrite root ownership, payment resolution, registration, mutation or AMO fees.
+The current confirmed root owner controls set and clear.
+
+```text
+pwdns1:subpage1:<canonical-json-base64url>
+```
+
+Set uses this exact key order:
+
+```json
+{"action":"set","parent":"alice","label":"app","epoch":{"txid":"<root-ownership-event-txid>","protocolVout":1,"recordOrdinal":0},"child":{"txid":"<accepted-child-create-txid>","protocolVout":1,"recordOrdinal":0},"pageTxid":"<published-html-txid>"}
+```
+
+Clear omits `pageTxid`:
+
+```json
+{"action":"clear","parent":"alice","label":"app","epoch":{"txid":"<root-ownership-event-txid>","protocolVout":1,"recordOrdinal":0},"child":{"txid":"<accepted-child-create-txid>","protocolVout":1,"recordOrdinal":0}}
+```
+
+`parent` and `label` follow canonical lowercase `sub1` label rules. `epoch`
+identifies the current accepted root registration, transfer or purchase.
+`child` identifies the accepted **create** event for the current child lifecycle,
+never its latest resolver update. Both identities have exactly the keys `txid`,
+`protocolVout`, `recordOrdinal`: lowercase 64-hex txid, uint32 output index and
+nonnegative safe-integer ordinal. Exact canonical JSON/UTF-8/unpadded base64url
+and the 2,048-character carrier limit match `page1`: extra/duplicate keys,
+alternate order, whitespace, escaped equivalents, alternate number encodings
+and unused-bit encodings are invalid. Clear requires an existing active link.
+
+Every transaction input must resolve to the same current root owner. Unknown
+prevouts, missing input addresses, mixed authors and coinbase inputs fail
+authorization. One explicit output of at least **546 proofs** must pay that owner
+before the link's protocol output; several smaller payments cannot be summed.
+Exactly one `subpage1` carrier is permitted per transaction, including malformed
+matching carriers. Payment evidence uses exact nonnegative integers. The
+self-payment is not a registry fee or new Growth/WORK value; a companion ordinary
+Mail carrier retains its existing payment and fee accounting once.
+
+Replay consumes complete accepted root history, complete accepted `sub1` history,
+and independently discovered raw `subpage1` carriers at one canonical checkpoint.
+Order is exact block height, transaction index, protocol output and ordinal;
+incomplete or ambiguous accepted positions fail the whole read closed. At the
+link's position the root must have the bound ownership epoch and the child must
+still be active with the bound create identity. Root ownership and child create
+must each be confirmed in an **earlier block** than a confirmed link action.
+
+Set creates or replaces the child link. Parent/child resolver updates retain it.
+Revoke immediately invalidates the child's link; recreating that spelling opens
+a fresh create identity and cannot restore the former link. Every accepted root
+transfer or purchase invalidates its children and child links, including
+same-address transfers and Alice → Bob → Alice ownership cycles. Listings,
+seals and delistings do not reset either identity. Replaced, cleared, invalidated
+and rejected events remain history. Reorg replay rebuilds from the surviving
+chain. Pending actions never route or authorize another pending action, and a
+stale epoch/create binding remains rejected even if signed before the change.
+
+The approved opening is **970499**, exported as
+`DNS_SUBDOMAIN_PAGE_LINK_ACTIVATION_HEIGHT`. Its independently checked Core
+predecessor at 970498 is
+`00000000000000000001683a72df9a22322b2117aab9a1b264c5284045702d51`, exported as
+`DNS_SUBDOMAIN_PAGE_LINK_PREDECESSOR_HASH`. Zero disables admission; below-opening
+carriers acquire no authority. The index reader binds the opening predecessor,
+then independently checks every raw carrier through the exact current checkpoint.
+Complete `sub1` history and complete child page-link coverage are separate gates.
+
+API child records include `childLifecycle` and `createdAtBlock`; child lookups
+also include the confirmed `parentRecord` ownership epoch and its block height.
+The new lane exposes `subdomainPageLink`, `subdomainPageLinks`,
+`subdomainPageLinkEvents`, `subdomainPageLinkPendingEvents`,
+`subdomainPageLinkHistoricalRecords`, `subdomainPageLinkCoverage` and
+`subdomainPageLinkAdmission`. Coverage uses
+`dns-subdomain-page-link-core-raw-block-coverage-v1`, the exact checkpoint,
+rolling witness and `subdomainPageLinkSha256`. Child lookup `pageLink` is a
+consistent Browser alias; root `pageLink` retains its existing meaning. Missing
+or incomplete coverage is unavailable, never a verified empty namespace.
+
+Pages and Advanced DNS review the full child name, current root owner, root
+epoch, original child create tuple, target txid, self-payment, miner fee, change
+and exact public record. The target must be confirmed HTML independently checked
+by Browser before review and routing. Signing stays local. Browser opens only a
+confirmed active link after coherent root/child/link coverage, then independently
+verifies target bytes. Run app remains explicit and isolated.
+
+## Resumable verified discovery
+
+The `sub1`, `page1` and `subpage1` lanes retain independently Core-proven contiguous
+prefixes when a bounded read runs out of time. A retry rebinds the retained end
+hash to Core and the unique canonical index anchor before verifying the next
+tail. Every saved block already passed complete raw-carrier bytes/positions and
+descriptor checks, including malformed carriers. Reorgs discard invalid prefixes.
+Complete admission still requires exact checkpoint and rolling-witness closure;
+progress is operator state, never routing, empty-state or signing authority.
+Bounded background warming advances these same shared reads without user actions.
+See [deploy/browser-dns/README.md](deploy/browser-dns/README.md) for the scoped
+runtime controller and accepted-overlay preservation.

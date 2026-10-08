@@ -43,7 +43,8 @@ identity markup.
 Pages uses the first-party API readers already used by Computer, Files, IDs,
 and Browser. HTML publication introduces no registration, identity mutation,
 registry fee, or new external content carrier. The separately gated DNS link
-record below binds an existing root name to an existing published transaction.
+records below bind an existing root or active one-level child name to an
+existing published transaction.
 
 ## Preview and app execution
 
@@ -63,7 +64,7 @@ navigation, or wallet provider. A local interactive app can use in-memory page
 state. It cannot call a live API or request a wallet signature through the
 preview.
 
-Inline script can attempt to navigate its own frame. Pages installs a parent
+Inline script can attempt to navigate its own frame. Pages and Browser install a parent
 `frame-src 'self'` policy, also enforced by production serving headers, to
 contain external document navigation. The runner's content policy alone is not
 a complete navigation boundary. The production release must verify both
@@ -73,7 +74,11 @@ runner headers when testing this boundary.
 Stopping the app returns to the static preview. Source edits, imports, draft
 changes, and account or network changes stop execution. Run state is not saved
 or restored with a draft. The public Browser continues to render published
-HTML statically; publication does not grant app execution or signing authority.
+HTML statically by default. The standalone/Computer Browser's separate Run
+app action can execute published inline JavaScript in this same memory-only
+runner. Publishing or resolving a name never grants execution or signing
+authority. Browser tabs, navigation, history, reload and network changes stop
+execution; returning to a page requires new verification and an explicit run.
 
 ## Publication through Mail
 
@@ -102,17 +107,18 @@ The publication's Mail/Files proofs and any valid WORK attachment are counted
 through their existing lanes once. Local edits, downloads, previews, and app
 runs add no chain event or duplicate Growth/WORK network value.
 
-## Root .pow page links
+## .pow page links
 
 Pages includes a **DNS page linking** card. A connected Mainnet root
-owner can enter `alice` or `alice.pow` and the transaction ID of confirmed HTML,
+owner can enter `alice`, `alice.pow`, or an active one-level child such as
+`app.alice.pow`, and the transaction ID of confirmed HTML,
 then review a set or clear action with the shared miner-fee control. The target
 must pass Browser's existing transaction/attachment checks and be confirmed.
 Linking never publishes an unsaved draft. Only an unchanged source imported as
 confirmed supplies its txid automatically; editing that source removes this
 automatic suggestion. A manually entered published txid is verified again.
 
-The additive `pwdns1:page1` record names the current root ownership event and
+A root link's additive `pwdns1:page1` record names the current ownership event and
 either sets a lowercase page txid or clears the existing link. Every input
 must belong to the current confirmed root owner. At least 546 proofs return to
 that owner before the record, plus the miner fee; this is a self-payment, not
@@ -126,7 +132,9 @@ root and page-link history at one verified checkpoint, and opens the referenced
 HTML transaction using its normal static renderer. Unavailable coverage,
 cleared or invalidated links, pending records, and pending target pages never
 become a working name route. Names do not redirect to arbitrary external URLs,
-and resolving a name grants no scripts or wallet access.
+and resolving a name grants no scripts or wallet access. Browser's separate
+Run app action can execute the opened page's inline scripts in its isolated
+runner; static mode remains the initial state.
 
 Set and clear actions use the existing exact transaction review, local wallet
 signature, broadcast tracking, and browser-local action receipts. Canceling
@@ -142,6 +150,24 @@ writes still require complete independent page-link raw discovery and one
 verified checkpoint; unavailable coverage fails closed. A zero boundary remains
 an explicit disabled mode for fixtures or future configuration. Page-link self-payments add no new
 Growth/WORK contribution and do not count the target's publication a second time.
+
+Advanced DNS on standalone DNS and Computer uses these same confirmed chain
+records for root and child links. A Pages link automatically appears there on
+refresh, with status, pending actions, history and Open in Browser. Set/replacement
+and clear from either surface use the same review, funding and local signing
+preflights; there is no second browser-local link registry.
+
+Active child links use the additive `pwdns1:subpage1` protocol. They bind both the
+current root ownership epoch and the child's original accepted create tuple;
+both must be confirmed in earlier blocks. Child resolver updates retain a link,
+while revoke/recreate and every root transfer/purchase invalidate the prior
+binding. The approved opening is **970499**, following Core predecessor 970498 /
+`00000000000000000001683a72df9a22322b2117aab9a1b264c5284045702d51`.
+Complete accepted root/child history and independent raw child page-link coverage
+at the same checkpoint remain mandatory. Pending records never route. The
+546-proof owner self-payment and miner fee keep existing accounting once.
+The exact canonical wire, lifecycle and discovery rules remain in
+[`PROOFOFWORK_DNS.md`](PROOFOFWORK_DNS.md).
 
 ## Local drafts
 
@@ -167,6 +193,7 @@ The local model and protocol boundary checks are reproducible with:
 ```bash
 node --test src/features/pages/pagesModel.test.mjs
 npm run check:dns-pages
+npm run check:dns-subdomain-pages
 npm run check:ui
 npm run check:surface-read-state
 npm run build
@@ -195,13 +222,19 @@ The focused production build switch is:
 VITE_PAGES_ONLY=1 VITE_POW_API_BASE=https://pages.proofofwork.me npm run build
 ```
 
-The user approved hosting and release scope. The V4 UI contract covers all
-21 managed surfaces, preserving the existing 20 products and their rollback
-history. Before publication,
-verify same-origin first-party API access and serving security headers, and
+The original Pages rollout approved on 2026-10-08 uses the V4 UI contract,
+extending 20 managed surfaces to 21 while preserving prior rollback history.
+That acceptance remains historical evidence. The Browser/Advanced DNS release
+candidate requires the V5 UI contract covering all 22 managed surfaces,
+including Permission, with every prior product and rollback record retained.
+Before publication, verify same-origin first-party API access and serving security headers, and
 audit the exact standalone bundle before Computer integration. Preserve the
 current release and rollback evidence. Local route/build support is not proof
 that the public domain is serving Pages.
+
+The Browser/Advanced DNS extension uses
+[deploy/browser-dns/README.md](deploy/browser-dns/README.md) for its exact scoped
+API/runtime overlay and preservation of accepted node changes.
 
 Release completion includes the mandatory four-way source check: production UI,
 GitHub `main`, primary local `main` and its rebuilt preview must match the release

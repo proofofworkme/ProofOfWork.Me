@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import vm from "node:vm";
 import {
@@ -35,6 +36,15 @@ function fixture() {
   return { row, core, raw, event };
 }
 
+function coverageWitness(rows, activationHeight = height, prior = null) {
+  let digest = prior ?? createHash("sha256")
+    .update(JSON.stringify(["dns-page-link-block-witness-chain-v1", "livenet", activationHeight])).digest("hex");
+  for (const row of rows) digest = createHash("sha256")
+    .update(JSON.stringify([digest, Number(row.height), row.block_hash,
+      row.payload?.blockDescriptorCommitment, row.payload?.replayDescriptorCommitment])).digest("hex");
+  return digest;
+}
+
 test("discovery includes raw rejected/malformed page-link records and proves their complete bytes and positions", () => {
   const { row, core, raw, event } = fixture();
   assert.equal(dnsPageLinkCandidates([raw]).length, 1);
@@ -59,7 +69,7 @@ test("immutable Core verification is reused without accepting a changed index co
   const discovery = createDnsPageLinkDiscovery({
     async readIndex(network, options) { await options.onBlock(row); return {
       complete: true, activationHeight: height, indexedThroughBlock: height,
-      checkpointHash: HASH, blockCount: 1, pendingTxids: ["missing"] }; },
+      checkpointHash: HASH, blockCount: 1, witnessSha256: coverageWitness([row]), pendingTxids: ["missing"] }; },
     async readCoreBlock() { coreReads += 1; return core; },
     async hydratePending() { throw new Error("dropped"); },
   });
@@ -100,7 +110,6 @@ function readerRuntime({ rows, scans, anchors = [{ block_hash: HASH }] }) {
   // Inject Node hashing explicitly; the reader stays read-only in the mocked SQL transaction.
   return { context, client, released: () => released, pendingReads: () => pendingReads };
 }
-const { createHash } = await import("node:crypto");
 function scan() { return { indexed_through_block: height, payload: { complete: true, tipHeight: height,
   indexedThroughBlockHash: HASH }, consistency: { ok: true, status: "block-scan-current" } }; }
 
@@ -251,6 +260,7 @@ test("full DNS response preserves Pages authority when child history is unavaila
     dnsRegistryRootRead: async () => ({ payload: apiPayload(), state: {}, checkpoint: { height, blockHash: HASH } }),
     dnsPayloadWithSubdomains: async payload => ({ ...payload, subdomainAdmission: { ready: false }, subdomains: [] }),
     dnsPayloadWithPageLinks: async payload => ({ ...payload, pageLinkAdmission: { ready: true }, pageLinks: [{ name: "alice.pow", pageTxid: TXID }] }),
+    dnsPayloadWithSubdomainPageLinks: async payload => ({ ...payload, subdomainPageLinkAdmission: { ready: false } }),
   });
   vm.runInContext(source, runtime);
   const result = await runtime.dnsPayloadWithAdditiveRecords(apiPayload(), {}, { height, blockHash: HASH }, "livenet");
@@ -361,4 +371,197 @@ test("Log binds page-link qualification to complete exact-checkpoint byte and po
   assert.equal(qualifyDnsPageLinkLogPayload(nested.payload, nested.dns).items[0].protocolValid, true);
   nested.item.payload.rawRecordParts[0].payloadHex += "00";
   assert.throws(() => qualifyDnsPageLinkLogPayload(nested.payload, nested.dns), /bytes/u);
+});
+
+function chainFixture(count = 3) {
+  const chain = [];
+  for (let offset = 0; offset < count; offset += 1) {
+    const { row, raw, event } = fixture();
+    row.height = height + offset;
+    row.block_hash = (offset + 50).toString(16).padStart(64, "0");
+    row.previous_block_hash = chain.at(-1)?.row.block_hash ?? PREV;
+    raw.txid = event.txid = (offset + 60).toString(16).padStart(64, "0");
+    event.blockHeight = row.height;
+    const record = row.payload.replayRecords[0];
+    record.txid = raw.txid;
+    record.position.blockHeight = row.height;
+    record.position.blockHash = row.block_hash;
+    row.payload.replayDescriptorCommitment = commit([record]);
+    row.payload.blockDescriptorCommitment = commit({ completeFullCoreBlock: true, records: [raw] });
+    const core = dnsPageLinkCoreBlockWitness({ records: [raw], rawProtocolCandidateCount: 1,
+      blockDescriptorCommitment: row.payload.blockDescriptorCommitment }, [event]);
+    chain.push({ row, core, event });
+  }
+  return chain;
+}
+function chainReader(chain, starts = [], coverageFault = value => value) {
+  return async (network, options) => {
+    starts.push(options.fromHeight ?? options.activationHeight);
+    const selected = chain.filter(value => value.row.height <= options.expectedHeight);
+    if (options.verifiedPrefix) {
+      const prefixRows = selected.filter(value => value.row.height < options.fromHeight).map(value => value.row);
+      assert.equal(options.verifiedPrefix.blockHash, prefixRows.at(-1).block_hash);
+      assert.equal(options.verifiedPrefix.witnessSha256, coverageWitness(prefixRows));
+    }
+    for (const value of selected) if (value.row.height >= (options.fromHeight ?? options.activationHeight)) {
+      await options.onBlock(value.row);
+    }
+    return coverageFault({ complete: true, activationHeight: options.activationHeight,
+      indexedThroughBlock: options.expectedHeight, checkpointHash: options.expectedHash,
+      blockCount: options.expectedHeight - options.activationHeight + 1,
+      witnessSha256: coverageWitness(selected.map(value => value.row)), pendingTxids: ["pending"] });
+  };
+}
+
+test("each slow verified block advances catch-up, while routing stays unavailable until exact closure", async () => {
+  const chain = chainFixture(), starts = [];
+  let clock = 0, coreReads = 0, pendingReads = 0;
+  const discovery = createDnsPageLinkDiscovery({ readBudgetMs: 25, now: () => clock,
+    readIndex: chainReader(chain, starts),
+    readCoreHash: async value => chain.find(item => item.row.height === value)?.row.block_hash,
+    async readCoreBlock(row) { coreReads += 1; clock += 30;
+      return chain.find(value => value.row.height === Number(row.height)).core; },
+    async hydratePending() { pendingReads += 1; return []; },
+  });
+  const checkpoint = { height: chain.at(-1).row.height, blockHash: chain.at(-1).row.block_hash };
+  for (let offset = 0; offset < chain.length; offset += 1) {
+    clock = 0;
+    await assert.rejects(discovery("livenet", checkpoint, height), error => {
+      assert.equal(error.code, "DNS_DISCOVERY_CATCH_UP");
+      assert.equal(error.progress.verifiedThroughBlock, height + offset);
+      assert.equal(error.progress.targetHeight, checkpoint.height);
+      return true;
+    });
+    assert.equal(pendingReads, 0, "pending hydration cannot hide incomplete confirmed coverage");
+  }
+  clock = 0;
+  const result = await discovery("livenet", checkpoint, height);
+  assert.deepEqual(result.events, chain.map(value => value.event));
+  assert.equal(result.coverage.complete, true);
+  assert.equal(result.coverage.witnessSha256, coverageWitness(chain.map(value => value.row)));
+  assert.equal(coreReads, chain.length);
+  assert.deepEqual(starts, [height, height + 1, height + 2, height + 3]);
+});
+
+test("catch-up carries a verified prefix forward when the current checkpoint advances", async () => {
+  const chain = chainFixture(), starts = [];
+  let clock = 0, slow = true;
+  const discovery = createDnsPageLinkDiscovery({ readBudgetMs: 25, now: () => clock,
+    readIndex: chainReader(chain, starts),
+    readCoreHash: async value => chain.find(item => item.row.height === value)?.row.block_hash,
+    async readCoreBlock(row) { clock += slow ? 30 : 1;
+      return chain.find(value => value.row.height === Number(row.height)).core; }, hydratePending: async () => [],
+  });
+  await assert.rejects(discovery("livenet", { height: height + 1, blockHash: chain[1].row.block_hash }, height), /read budget/u);
+  clock = 0; slow = false;
+  const result = await discovery("livenet", { height: height + 2, blockHash: chain[2].row.block_hash }, height);
+  assert.equal(result.events.length, 3); assert.deepEqual(starts, [height, height + 1]);
+  assert.equal(discovery.progress("livenet", height).targetHeight, height + 2);
+});
+
+test("a reorg drops partial catch-up evidence before independently verifying the replacement", async () => {
+  const chain = chainFixture(), starts = [];
+  let clock = 0, slow = true, coreReads = 0;
+  const discovery = createDnsPageLinkDiscovery({ readBudgetMs: 25, now: () => clock,
+    readIndex: chainReader(chain, starts),
+    readCoreHash: async value => chain.find(item => item.row.height === value)?.row.block_hash,
+    async readCoreBlock(row) { coreReads += 1; clock += slow ? 30 : 1;
+      return chain.find(value => value.row.height === Number(row.height)).core; }, hydratePending: async () => [],
+  });
+  const checkpoint = { height: height + 2, blockHash: chain[2].row.block_hash };
+  await assert.rejects(discovery("livenet", checkpoint, height), /read budget/u);
+  chain[0].row.block_hash = HASH;
+  chain[0].row.payload.replayRecords[0].position.blockHash = HASH;
+  chain[0].row.payload.replayDescriptorCommitment = commit(chain[0].row.payload.replayRecords);
+  chain[0].event.txid = "99".repeat(32);
+  chain[1].row.previous_block_hash = HASH;
+  clock = 0; slow = false;
+  const result = await discovery("livenet", checkpoint, height);
+  assert.deepEqual(starts, [height, height]); assert.equal(coreReads, 4);
+  assert.equal(result.events[0].txid, "99".repeat(32));
+});
+
+test("a partial prefix never skips a gap, fork, raw mismatch, or forged closing witness", async () => {
+  for (const fault of ["gap", "fork", "raw", "witness", "closing"]) {
+    const chain = chainFixture();
+    if (fault === "gap") chain[1].row.height += 1;
+    if (fault === "fork") chain[1].row.previous_block_hash = HASH;
+    if (fault === "raw") chain[1].row.payload.blockDescriptorCommitment.sha256 = PREV;
+    const discovery = createDnsPageLinkDiscovery({
+      readIndex: chainReader(chain, [], value => fault === "witness" ? { ...value, witnessSha256: PREV } :
+        fault === "closing" ? { ...value, complete: false } : value),
+      readCoreHash: async value => chain.find(item => item.row.height === value)?.row.block_hash,
+      readCoreBlock: async row => chain.find(value => value.row.height === Number(row.height)).core,
+      hydratePending: async () => [],
+    });
+    await assert.rejects(discovery("livenet", { height: height + 2, blockHash: chain[2].row.block_hash }, height),
+      /gap|fork|descriptor|coverage/u);
+    const progress = discovery.progress("livenet", height);
+    assert.equal(progress.verifiedThroughBlock, ["witness", "closing"].includes(fault) ? height + 2 : height);
+  }
+});
+
+test("bounded immutable LRU eviction permits catch-up and reconstructs an evicted witness", async () => {
+  const chain = chainFixture(2);
+  const maxCacheBytes = Math.max(...chain.map(value => Buffer.byteLength(JSON.stringify(value.core))));
+  let coreReads = 0;
+  const discovery = createDnsPageLinkDiscovery({ maxCacheBytes,
+    readIndex: chainReader(chain),
+    readCoreHash: async value => chain.find(item => item.row.height === value)?.row.block_hash,
+    async readCoreBlock(row) { coreReads += 1; return chain.find(value => value.row.height === Number(row.height)).core; },
+    hydratePending: async () => [],
+  });
+  await discovery("livenet", { height: height + 1, blockHash: chain[1].row.block_hash }, height);
+  await discovery("livenet", { height, blockHash: chain[0].row.block_hash }, height);
+  assert.equal(coreReads, 3, "eviction is a performance loss, never a coverage or byte-limit bypass");
+});
+
+test("projection overflow retains only the earlier fully verified contiguous prefix", async () => {
+  const chain = chainFixture(2);
+  const maxProjectionBytes = Buffer.byteLength(JSON.stringify([chain[0].event]));
+  const discovery = createDnsPageLinkDiscovery({ maxProjectionBytes,
+    readIndex: chainReader(chain),
+    readCoreHash: async value => chain.find(item => item.row.height === value)?.row.block_hash,
+    readCoreBlock: async row => chain.find(value => value.row.height === Number(row.height)).core,
+    hydratePending: async () => [],
+  });
+  await assert.rejects(discovery("livenet", { height: height + 1, blockHash: chain[1].row.block_hash }, height), /byte budget/u);
+  assert.equal(discovery.progress("livenet", height).verifiedThroughBlock, height);
+});
+
+
+test("resumable Core prefix matches the actual read-only index reader rolling witness", async () => {
+  const chain = chainFixture(), starts = [], runtimes = [];
+  let clock = 0;
+  const discovery = createDnsPageLinkDiscovery({ readBudgetMs: 25, now: () => clock,
+    async readIndex(network, options) {
+      const start = options.fromHeight ?? options.activationHeight;
+      starts.push(start);
+      const checkpointScan = { indexed_through_block: options.expectedHeight,
+        payload: { complete: true, tipHeight: options.expectedHeight,
+          indexedThroughBlockHash: options.expectedHash }, consistency: { ok: true, status: "block-scan-current" } };
+      const runtime = readerRuntime({ rows: chain.filter(value => value.row.height >= start).map(value => value.row),
+        scans: [checkpointScan, checkpointScan],
+        anchors: [{ block_hash: options.verifiedPrefix?.blockHash ?? HASH }] });
+      runtimes.push(runtime);
+      vm.runInContext(functionSource, runtime.context);
+      return runtime.context.proofIndexDnsPageLinkDiscovery(network, options);
+    },
+    readCoreHash: async value => chain.find(item => item.row.height === value)?.row.block_hash,
+    async readCoreBlock(row) { clock += 30; return chain.find(value => value.row.height === Number(row.height)).core; },
+    hydratePending: async () => [],
+  });
+  const checkpoint = { height: height + 2, blockHash: chain[2].row.block_hash };
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    clock = 0;
+    await assert.rejects(discovery("livenet", checkpoint, height), /read budget/u);
+    assert.equal(runtimes.at(-1).released(), true);
+    assert.equal(runtimes.at(-1).pendingReads(), 0);
+  }
+  clock = 0;
+  const result = await discovery("livenet", checkpoint, height);
+  assert.equal(result.coverage.witnessSha256, coverageWitness(chain.map(value => value.row)));
+  assert.deepEqual(result.events, chain.map(value => value.event));
+  assert.deepEqual(starts, [height, height + 1, height + 2, height + 3]);
+  assert.equal(runtimes.at(-1).released(), true);
 });

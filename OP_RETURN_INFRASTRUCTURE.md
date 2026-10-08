@@ -1468,15 +1468,20 @@ remote ports and both client-address fields are deleted. Rotation is capped at
 a synthetic query proves that the query, headers, and client address do not
 reach the log before treating access logging as healthy.
 
-Browser HTML is always rendered as static content inside an opaque
-iframe with both scripts and forms disabled; confirmed content never receives a
-wallet-provider execution lane. Before `srcdoc` serialization, the Browser parses
+Browser HTML initially renders as static content inside an opaque iframe
+with scripts and forms disabled; confirmed content never receives a wallet
+provider or signing lane. Before static `srcdoc` serialization, Browser parses
 HTML in an inert template, removes meta/base/executable/embed elements, strips
 navigation and form URLs, replaces forms with inert containers, and permits only
-in-memory `data:`/`blob:` media. The child deny-all CSP and the shared parent
-frame policy then provide independent network and navigation defenses. Only the
-landing-page header policy grants the separate YouTube frame origins used by its
-public video.
+in-memory `data:`/`blob:` media. The child deny-all CSP and shared parent frame
+policy provide independent network and navigation defenses. Explicit Run app
+uses the separate first-party runner with only `allow-scripts`: inline app code
+can maintain in-memory state but external scripts/resources, connections, nested
+frames, workers, forms, persistent storage and wallet/provider bridges remain
+blocked. The runner's HTTP sandbox and the parent `frame-src 'self'` serving
+policy must both verify; script execution permission does not grant external
+document navigation. Only the landing-page header policy grants the separate
+YouTube frame origins used by its public video.
 
 The worker requires the real production cluster unit
 `postgresql@16-main.service`, is installed under both `multi-user.target` and
@@ -5360,9 +5365,14 @@ Its standalone hostname is `pages.proofofwork.me`, with local
 build switch. It uses the existing first-party identity, Files, Browser
 transaction, and Mail preparation/broadcast paths; HTML publication needs no
 Pages API, database migration, new content carrier, registry fee, or extra
-network-value lane. Static Browser preview remains the default. Optional local inline
-JavaScript runs only in an opaque, network-blocked sandbox without a wallet or
-parent signing bridge. Imported or chain-loaded source never auto-runs.
+network-value lane. Static preview remains the default. Pages and the shared
+standalone/Computer Browser allow explicit Run app for inline JavaScript and
+in-memory app state in the existing opaque runner, without network, persistent
+storage, wallet or parent signing authority. Imported or chain-loaded source
+never auto-runs. Browser provides local tabs, txid/`.pow` address navigation,
+back/forward, reload, expanded/fullscreen viewport and collapsed source/proof
+inspectors. Navigation, tab/network changes and reload stop execution; history
+re-verifies content rather than restoring app permission.
 
 Pages publication stages the exact HTML into the current-origin Mail composer,
 preserving an existing unsent Mail draft. Mail retains its exact transaction
@@ -5393,9 +5403,44 @@ Browser name reads; real signing remains a separate local wallet action.
 The 546-proof owner self-payment is not a registry payment or additional
 Growth/WORK value. Local task receipts never establish confirmed authority.
 
+The additive child page-link lane uses `pwdns1:subpage1` and opens at 970499,
+bound to exact Core predecessor 970498 /
+`00000000000000000001683a72df9a22322b2117aab9a1b264c5284045702d51`.
+The index reader pins that predecessor separately from root `page1`; complete
+accepted root and `sub1` histories feed child replay. A link binds the current
+root ownership event and original accepted child create tuple, each confirmed
+in an earlier block. Resolver updates retain it; revoke/recreate and every root
+transfer/purchase invalidate it. Child APIs expose original `childLifecycle`,
+`createdAtBlock`, separate `subdomainPageLink*` collections/coverage/admission,
+and a consistent child lookup `pageLink` alias. Target HTML is independently
+verified and must be confirmed for name routing and transaction preparation.
+Pages and Advanced DNS in DNS/Computer use the same chain records and local
+signing preflights, without a second registry or duplicate economic lane.
+
+All three additive DNS discovery lanes retain only independently Core-proven
+contiguous prefix evidence across 25-second bounded read slices. Every retry
+rebinds the prefix hash to Core and a unique canonical index anchor, verifies
+the tail, and requires exact checkpoint/rolling-witness closure before admission.
+Malformed carriers remain complete discovery evidence. Reorgs discard invalid
+prefixes; partial progress never authorizes routing, empty namespaces or signing.
+Immutable verification caches stay bounded to 128 MiB and projections to 64 MiB.
+Single-flight background warm-up advances the same reads at a fresh Core tip,
+including after a request timeout, while pending hydration stays best effort.
+
+[deploy/browser-dns/README.md](deploy/browser-dns/README.md) governs the scoped
+Browser/DNS runtime overlay: four exact existing sources plus two creation-only
+helpers, source/dependency hashes, guarded gateway/worker/API drain, recoverable
+backups, verified rollback and Search restoration. It preserves accepted
+Audit31, Code, Jobs, Pages, Permission and content-tip overlays and changes no
+database schema/data, configuration, indexer/worker source or live Git state.
+The Browser/DNS UI release candidate requires V5 coverage of all 22 managed
+surfaces, including Permission, and preserves prior release evidence. Runtime overlay source/hash provenance and the mandatory release
+synchronization check remain separate from the node checkout's Git HEAD.
+
 Local route and build support do not attest to a production rollout. The
-approved V4 UI contract extends 20 managed surfaces to 21 with Pages while
-retaining older manifest families as historical rollback evidence. Verify DNS,
+original Pages V4 contract approved on 2026-10-08 extended 20 managed surfaces
+to 21; that acceptance and older manifest families remain historical rollback
+evidence. The Browser/DNS candidate must pass V5 coverage of all 22 surfaces. Verify DNS,
 hosting, same-origin `/api/*`, serving security headers, the exact standalone
 bundle, and Computer integration. Preserve every prior product and rollback
 root unless a separately approved exact archival retirement passes its complete
@@ -5788,7 +5833,7 @@ The tx endpoint:
 - Returns a normalized transaction payload from the same local/pending source order.
 - Lets Browser reconstruct HTML from `pwm1:m` message bodies or verified `pwm1:a` attachments by txid without depending on public mempool.space from production browsers.
 - Does not turn pending transactions into canonical history; Browser labels pending pages as pending.
-- Keeps both confirmed and pending Browser pages script- and form-disabled in an opaque static sandbox. On-chain HTML receives no wallet-provider or signing execution lane.
+- Opens both confirmed and pending Browser pages in an opaque static sandbox. Explicit Run app permits inline JavaScript only in the memory-only runner, with external resources/navigation, storage and form submissions blocked by runner and parent policies. Pending pages retain their status; no page receives wallet-provider or signing authority.
 - The API never receives seed phrases, private keys, or wallet authority.
 
 Files/Desktop projection:

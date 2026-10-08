@@ -25,6 +25,13 @@ import {
   createDnsPageLinkDiscovery, dnsPageLinkCandidates, dnsPageLinkCoreBlockWitness,
   qualifyDnsPageLinkLogPayload, dnsPageLinkLogPayloadHasLinks,
 } from "./dns-page-link-discovery.mjs";
+import {
+  DNS_SUBDOMAIN_PAGE_LINK_ACTIVATION_HEIGHT, DNS_SUBDOMAIN_PAGE_LINK_PREDECESSOR_HASH,
+  DNS_SUBDOMAIN_PAGE_LINK_PREFIX, DNS_SUBDOMAIN_PAGE_LINK_SELF_PAYMENT_SATS, replayDnsSubdomainPageLinks,
+} from "../src/shared/protocol/dnsSubdomainPages.mjs";
+import {
+  dnsSubdomainPageLinkCandidates, qualifyDnsSubdomainPageLinkLogPayload, dnsSubdomainPageLinkLogPayloadHasLinks,
+} from "./dns-subdomain-page-links.mjs";
 import { reviewedIncbReplayBaselineEvidence, reviewedIncbReplayBaselineFromEvidence } from "./incb-replay-baseline.mjs";
 import { boostTextMatchesTag } from "../src/shared/protocol/boostText.mjs";
 import {
@@ -35025,6 +35032,56 @@ const discoverDnsPageLinks = createDnsPageLinkDiscovery({
   },
 });
 
+function dnsSubdomainPageLinkEnvelope(record, transaction) {
+  const prefixHex = Buffer.from(DNS_SUBDOMAIN_PAGE_LINK_PREFIX).toString("hex");
+  const part = record.rawRecordParts?.find(part => String(part.payloadHex ?? "").startsWith(prefixHex));
+  const confirmed = transactionConfirmed(transaction);
+  return {
+    payload: part?.decodeValid === true ? part.text : DNS_SUBDOMAIN_PAGE_LINK_PREFIX,
+    rawPayloadHex: part?.payloadHex, decodeValid: part?.decodeValid === true,
+    txid: transactionTxid(transaction), blockHeight: confirmed ? transactionBlockHeight(transaction) : null,
+    txIndex: confirmed ? transactionBlockIndex(transaction) : null,
+    protocolVout: record.protocolVout, recordOrdinal: record.recordOrdinal,
+    subdomainPageLinkCarrierCount: dnsSubdomainPageLinkCandidates(canonicalRawProtocolRecordSetFromTransaction(transaction).records).length,
+    inputAddresses: (transaction.vin ?? []).map(input => input?.prevout?.scriptpubkey_address ?? null),
+    hasCoinbaseInput: (transaction.vin ?? []).some(input => input?.is_coinbase === true || input?.coinbase !== undefined),
+    outputs: (transaction.vout ?? []).map((output, vout) => ({ vout, address: output.scriptpubkey_address ?? null, valueSats: output.value })),
+  };
+}
+
+const discoverDnsSubdomainPageLinks = createDnsPageLinkDiscovery({
+  readIndex: (network, options) => proofIndexDnsPageLinkDiscovery(network, {
+    ...options, protocolPrefix: DNS_SUBDOMAIN_PAGE_LINK_PREFIX,
+    activationPreviousBlockHash: DNS_SUBDOMAIN_PAGE_LINK_PREDECESSOR_HASH,
+  }),
+  async readCoreHash(height) {
+    const result = await bitcoinRpc("getblockhash", [height]);
+    const hash = String(result?.ok ? result.result : "").trim().toLowerCase();
+    if (!/^[0-9a-f]{64}$/u.test(hash)) throw new Error("DNS subdomain page-link Core binding is unavailable.");
+    return hash;
+  },
+  async readCoreBlock(row) {
+    const context = await canonicalVerifierCurrentBlock("livenet", Number(row.height), row.previous_block_hash, row.block_hash);
+    const envelope = workAmoV5RawBlockDiscoveryEnvelope({ blockTransactions: context.blockTransactions,
+      blockHeaderHex: context.blockHeaderHex, blockHash: row.block_hash, blockHeight: Number(row.height), previousBlockHash: row.previous_block_hash });
+    const transactions = new Map(context.transactions.map(tx => [transactionTxid(tx), tx]));
+    const events = dnsSubdomainPageLinkCandidates(envelope.records).map(record => {
+      const transaction = transactions.get(record.txid);
+      if (!transaction || transaction._powCanonicalRpcHydration !== true || !transactionHasCompleteCanonicalPrevouts(transaction) ||
+          transactionBlockHash(transaction) !== row.block_hash || transactionBlockHeight(transaction) !== Number(row.height) ||
+          transactionBlockIndex(transaction) !== record.blockTransactionIndex) throw new Error("DNS subdomain page-link Core hydration is incomplete.");
+      return dnsSubdomainPageLinkEnvelope(record, transaction);
+    });
+    return dnsPageLinkCoreBlockWitness(envelope, events);
+  },
+  async hydratePending(txid, network) {
+    const tx = await fetchTransactionFromBitcoinRpc(txid, network, { bypassCache: true, cacheResult: false, requireCanonicalPrevouts: true });
+    const entry = await bitcoinRpc("getmempoolentry", [txid]);
+    if (!entry?.ok || !tx || transactionTxid(tx) !== txid || transactionConfirmed(tx) || !transactionHasCompleteCanonicalPrevouts(tx)) return [];
+    return dnsSubdomainPageLinkCandidates(canonicalRawProtocolRecordSetFromTransaction(tx).records).map(record => dnsSubdomainPageLinkEnvelope(record, tx));
+  },
+});
+
 const discoverPermissions = createPermissionDiscovery({
   readIndex: proofIndexPermissionDiscovery,
   async readCoreHash(height) {
@@ -35124,7 +35181,7 @@ async function dnsPayloadWithSubdomains(payload, state, checkpoint, network) {
   else if (checkpoint.height < activationHeight) unavailableReason = "DNS subdomain activation has not been reached.";
   else {
     try { discovery = await discoverDnsSubdomains(network, checkpoint, activationHeight); }
-    catch (error) { unavailableReason = `DNS subdomain coverage is unavailable: ${errorSummary(error)}`; }
+    catch (error) { unavailableReason = `DNS subdomain coverage is unavailable: ${errorSummary(error)}`; discovery.coverage.progress = discoverDnsSubdomains.progress?.(network, activationHeight); }
   }
   const replay = replayDnsSubdomains({ rootEvents, subdomainEvents: discovery.events,
     activationHeight, validateAddress: address => isValidBitcoinAddress(address, network) });
@@ -35194,7 +35251,7 @@ async function dnsPayloadWithPageLinks(payload, state, checkpoint, network) {
   else if (checkpoint.height < activationHeight) { unavailableReason = "DNS page-link activation has not been reached."; reasonCode = "dns-page-link-not-active"; }
   else {
     try { discovery = await discoverDnsPageLinks(network, checkpoint, activationHeight); }
-    catch (error) { unavailableReason = `DNS page-link coverage is unavailable: ${errorSummary(error)}`; reasonCode = "dns-page-link-coverage-unavailable"; }
+    catch (error) { unavailableReason = `DNS page-link coverage is unavailable: ${errorSummary(error)}`; reasonCode = "dns-page-link-coverage-unavailable"; discovery.coverage.progress = discoverDnsPageLinks.progress?.(network, activationHeight); }
   }
   const replay = replayDnsPageLinks({ rootEvents: dnsAcceptedRootEvents(state), pageLinkEvents: discovery.events,
     activationHeight, validateAddress: address => isValidBitcoinAddress(address, network) });
@@ -35223,12 +35280,59 @@ async function dnsPayloadWithPageLinks(payload, state, checkpoint, network) {
   };
 }
 
+function dnsSubdomainPageLinkPublicRecord(record, network) {
+  return { ...record, network, id: record.name.replace(/\.pow$/u, ""), confirmed: true,
+    active: record.status === "active", valid: record.status === "active", ownershipEpoch: record.epoch };
+}
+function dnsSubdomainPageLinkPublicEvent(event, network) {
+  const record = event.record;
+  return { ...event, network, action: record?.action,
+    name: record ? `${record.label}.${record.parent}.pow` : undefined,
+    id: record ? `${record.label}.${record.parent}` : undefined, parent: record?.parent, label: record?.label,
+    epoch: record?.epoch, child: record?.child, pageTxid: record?.pageTxid,
+    confirmed: event.blockHeight !== null, kind: `dns-subdomain-page-link-${record?.action ?? "event"}`,
+    reasonCode: event.reason ?? "", ...(event.state ? { state: dnsSubdomainPageLinkPublicRecord(event.state, network) } : {}) };
+}
+async function dnsPayloadWithSubdomainPageLinks(payload, state, checkpoint, network) {
+  const activationHeight = DNS_SUBDOMAIN_PAGE_LINK_ACTIVATION_HEIGHT;
+  const baseAdmission = { network, activationHeight, minSelfPaymentSats: DNS_SUBDOMAIN_PAGE_LINK_SELF_PAYMENT_SATS,
+    activationPreviousBlockHash: DNS_SUBDOMAIN_PAGE_LINK_PREDECESSOR_HASH,
+    indexedThroughBlock: checkpoint.height, checkpointHash: checkpoint.blockHash, protocolPrefix: DNS_SUBDOMAIN_PAGE_LINK_PREFIX };
+  let discovery = { events: [], coverage: { complete: false, network, activationHeight,
+    indexedThroughBlock: checkpoint.height, checkpointHash: checkpoint.blockHash } };
+  let reason = "";
+  if (!activationHeight || checkpoint.height < activationHeight) reason = "DNS subdomain page-link activation has not been reached.";
+  else if (payload.subdomainCoverage?.complete !== true || payload.subdomainAdmission?.ready !== true) reason = payload.subdomainAdmission?.reason ?? "Complete subdomain history is unavailable.";
+  else {
+    try { discovery = await discoverDnsSubdomainPageLinks(network, checkpoint, activationHeight); }
+    catch (error) { reason = `DNS subdomain page-link coverage is unavailable: ${errorSummary(error)}`; discovery.coverage.progress = discoverDnsSubdomainPageLinks.progress?.(network, activationHeight); }
+  }
+  const acceptedChildren = (payload.subdomainEvents ?? []).filter(event => event.confirmed === true && event.valid === true && event.record)
+    .map(event => ({ ...event, ...event.record }));
+  const replay = replayDnsSubdomainPageLinks({ rootEvents: dnsAcceptedRootEvents(state), subdomainEvents: acceptedChildren,
+    pageLinkEvents: discovery.events, activationHeight, validateAddress: address => isValidBitcoinAddress(address, network) });
+  const links = reason ? [] : replay.records.map(record => dnsSubdomainPageLinkPublicRecord(record, network));
+  const subdomains = (payload.subdomains ?? []).map(record => {
+    const child = replay.children.find(child => child.name === record.name);
+    return { ...record, ...(child ? { childLifecycle: child.childLifecycle, createdAtBlock: child.createdAtBlock } : {}),
+      subdomainPageLink: links.find(link => link.name === record.name) ?? null };
+  });
+  const final = exactCoreTipFromBlockchainInfo(await bitcoinRpc("getblockchaininfo", []));
+  if (final?.height !== checkpoint.height || final.blockHash !== checkpoint.blockHash) throw new Error("DNS subdomain page-link checkpoint changed during the read.");
+  return { ...payload, subdomains, subdomainPageLinks: links,
+    subdomainPageLinkEvents: reason ? [] : replay.history.map(event => dnsSubdomainPageLinkPublicEvent(event, network)),
+    subdomainPageLinkPendingEvents: reason ? [] : replay.pendingEvents.map(event => dnsSubdomainPageLinkPublicEvent(event, network)),
+    subdomainPageLinkHistoricalRecords: reason ? [] : replay.historicalRecords.map(record => dnsSubdomainPageLinkPublicRecord(record, network)),
+    subdomainPageLinkCoverage: { ...discovery.coverage, network, complete: !reason && discovery.coverage.complete === true,
+      model: "dns-subdomain-page-link-core-raw-block-coverage-v1", subdomainPageLinkSha256: discovery.coverage.pageLinkSha256 },
+    subdomainPageLinkAdmission: { ...baseAdmission, ready: !reason, reason: reason || "Complete confirmed Core/index coverage verified.",
+      reasonCode: reason ? "dns-subdomain-page-link-coverage-unavailable" : "" } };
+}
 async function dnsPayloadWithAdditiveRecords(payload, state, checkpoint, network) {
   const [children, pages] = await Promise.all([
-    dnsPayloadWithSubdomains(payload, state, checkpoint, network),
-    dnsPayloadWithPageLinks(payload, state, checkpoint, network),
+    dnsPayloadWithSubdomains(payload, state, checkpoint, network), dnsPayloadWithPageLinks(payload, state, checkpoint, network),
   ]);
-  return { ...children, ...pages };
+  return dnsPayloadWithSubdomainPageLinks({ ...children, ...pages }, state, checkpoint, network);
 }
 
 async function dnsRegistryPayload(network) {
@@ -35364,18 +35468,20 @@ async function logPayloadWithDnsSubdomainAuthority(payload, network) {
   }
   const children = dnsSubdomainLogPayloadHasChildren(payload);
   const pages = dnsPageLinkLogPayloadHasLinks(payload);
-  if (!children && !pages) return payload;
+  const childPages = dnsSubdomainPageLinkLogPayloadHasLinks(payload);
+  if (!children && !pages && !childPages) return payload;
   try {
     const dns = await dnsRegistryPayload(network);
     const qualified = children ? qualifyDnsSubdomainLogPayload(payload, dns) : payload;
-    return pages ? qualifyDnsPageLinkLogPayload(qualified, dns) : qualified;
+    const rootQualified = pages ? qualifyDnsPageLinkLogPayload(qualified, dns) : qualified;
+    return childPages ? qualifyDnsSubdomainPageLinkLogPayload(rootQualified, dns) : rootQualified;
   } catch (error) {
     throw freshDataUnavailableError(`DNS ${pages ? "page-link" : "subdomain"} Log authority unavailable: ${errorSummary(error)}`);
   }
 }
 
 async function strictPublicDnsRegistryPayload(network, options = {}) {
-  const payload = await dnsRegistryPayload(network);
+  const payload = await deduplicatedSummaryRead(`dns-registry:${network}`, () => dnsRegistryPayload(network));
   if (options.fresh === true) {
     return payload;
   }
@@ -80983,6 +81089,11 @@ async function handleRequest(request, response) {
           indexedAt: registry.indexedAt, indexedThroughBlock: registry.indexedThroughBlock,
           checkpointHash: registry.checkpointHash, source: registry.source, coverage: registry.coverage,
           subdomainCoverage: registry.subdomainCoverage, subdomainAdmission: registry.subdomainAdmission,
+          pageLink: record?.subdomainPageLink ?? null, subdomainPageLink: record?.subdomainPageLink ?? null,
+          subdomainPageLinkEvents: (registry.subdomainPageLinkEvents ?? []).filter(event => event.name === childName.name),
+          subdomainPageLinkPendingEvents: (registry.subdomainPageLinkPendingEvents ?? []).filter(event => event.name === childName.name),
+          subdomainPageLinkHistoricalRecords: (registry.subdomainPageLinkHistoricalRecords ?? []).filter(record => record.name === childName.name),
+          subdomainPageLinkCoverage: registry.subdomainPageLinkCoverage, subdomainPageLinkAdmission: registry.subdomainPageLinkAdmission,
         }, freshRead ? FRESH_READ_CACHE_CONTROL : EXPENSIVE_READ_CACHE_CONTROL);
         return;
       }
@@ -81046,6 +81157,11 @@ async function handleRequest(request, response) {
         pageLinkPendingEvents: (registry.pageLinkPendingEvents ?? []).filter(event => event.id === id),
         pageLinkHistoricalRecords: (registry.pageLinkHistoricalRecords ?? []).filter(record => record.id === id),
         pageLinkAdmission: registry.pageLinkAdmission, pageLinkCoverage: registry.pageLinkCoverage,
+        subdomainPageLinks: (registry.subdomainPageLinks ?? []).filter(record => record.parent === id),
+        subdomainPageLinkEvents: (registry.subdomainPageLinkEvents ?? []).filter(event => event.parent === id),
+        subdomainPageLinkPendingEvents: (registry.subdomainPageLinkPendingEvents ?? []).filter(event => event.parent === id),
+        subdomainPageLinkHistoricalRecords: (registry.subdomainPageLinkHistoricalRecords ?? []).filter(record => record.parent === id),
+        subdomainPageLinkCoverage: registry.subdomainPageLinkCoverage, subdomainPageLinkAdmission: registry.subdomainPageLinkAdmission,
         indexedThroughBlock: registry.indexedThroughBlock, checkpointHash: registry.checkpointHash,
         coverage: registry.coverage,
         routable: Boolean(confirmed),
@@ -82561,6 +82677,38 @@ function scheduleWarmJsonCache(cacheKey, producer, ttlMs, staleMs, delayMs) {
   }, delay);
 }
 
+let dnsCoverageWarmInFlight = false;
+async function warmDnsVerifiedCoverage() {
+  if (dnsCoverageWarmInFlight || !BITCOIN_RPC_URL) return;
+  dnsCoverageWarmInFlight = true;
+  let nextDelay = 60_000;
+  try {
+    const checkpoint = exactCoreTipFromBlockchainInfo(await bitcoinRpc("getblockchaininfo", []));
+    if (!checkpoint) throw new Error("DNS warm-up Core checkpoint is unavailable.");
+    const lanes = [["subdomains", discoverDnsSubdomains, DNS_SUBDOMAIN_ACTIVATION_HEIGHT],
+      ["root-pages", discoverDnsPageLinks, DNS_PAGE_LINK_ACTIVATION_HEIGHT],
+      ["child-pages", discoverDnsSubdomainPageLinks, DNS_SUBDOMAIN_PAGE_LINK_ACTIVATION_HEIGHT]];
+    // Each lane shares its in-flight checkpoint read with public callers and
+    // retains only fully verified contiguous progress. No partial warm-up is
+    // namespace authority, and every next slice obtains the current Core tip.
+    for (const [lane, discover, opening] of lanes) {
+      if (!opening || checkpoint.height < opening) continue;
+      try { await discover("livenet", checkpoint, opening); }
+      catch (error) {
+        nextDelay = Math.min(nextDelay, error?.code === "DNS_DISCOVERY_CATCH_UP" ? 2_000 : 15_000);
+        console.log(JSON.stringify({ event: "dns-verified-catch-up", lane, complete: false,
+          progress: discover.progress("livenet", opening), reason: errorSummary(error) }));
+      }
+    }
+  } catch (error) {
+    nextDelay = 15_000;
+    console.log(JSON.stringify({ event: "dns-verified-catch-up", complete: false, reason: errorSummary(error) }));
+  } finally {
+    dnsCoverageWarmInFlight = false;
+    setTimeout(() => { void warmDnsVerifiedCoverage(); }, nextDelay).unref();
+  }
+}
+
 function prewarmExpensiveReadCaches() {
   if (!ENABLE_STARTUP_EXPENSIVE_PREWARM) {
     return;
@@ -82581,4 +82729,5 @@ server.listen(PORT, HOST, () => {
   console.log(`Mainnet mempool source: ${MEMPOOL_BASE_MAINNET}`);
   void pruneGeneratedPersistedCacheTemps();
   prewarmExpensiveReadCaches();
+  setTimeout(() => { void warmDnsVerifiedCoverage(); }, 5_000).unref();
 });

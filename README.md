@@ -150,10 +150,11 @@ supervised canonical replay. A recent event page or Search corpus cannot prove
 the repository head. Cursors and selected versions retain their snapshot
 evidence; failed reads show unavailable state instead of an invented empty tree.
 
-The current release set is nineteen managed roots: eighteen public builds
-plus NFT's verified Computer alias. Historical fourteen- through eighteen-root
-families remain verifiable. The verified UI was built from `13ddf6d7f401`;
-the active discovery repair derives from `ed0fc2c5df56` while retaining the
+Code's 2026-10-07 release set comprised nineteen managed roots: eighteen
+public builds plus NFT's verified Computer alias. Later products extend that
+set; historical fourteen- through nineteen-root families remain verifiable.
+That Code UI was built from `13ddf6d7f401`;
+its discovery repair derived from `ed0fc2c5df56` while retaining the
 accepted Audit31 runtime overlay. Historical discovery from height 1 completed at 970323 /
 `00000000000000000000d4401afd7a7795ee06e4d333308e61961cece32dd47c`, with no earlier uses
 of the marker. Ordinary scanning then extended the complete marker to 970324;
@@ -169,10 +170,13 @@ Pages is the approved HTML page/app authoring product for
 `pages.proofofwork.me` and Computer's Pages workspace. It reuses confirmed
 identity, verified Code HTML, Files, Browser, and reviewed Mail publication.
 See [`PAGES.md`](PAGES.md) for execution isolation, draft storage, publication
-and root `.pow` page links. Mainnet link admission is pinned to opening 970426
-and requires complete independent canonical coverage. Production acceptance
-requires the exact V4/21 release and the mandatory local/GitHub/main/source
-synchronization check.
+and root/one-level child `.pow` page links. Root admission keeps opening
+970426; additive child page links open at 970499, bound to predecessor
+`00000000000000000001683a72df9a22322b2117aab9a1b264c5284045702d51`.
+Both require complete independent canonical coverage. Production acceptance
+requires the Browser/DNS V5/22 managed-surface release and the mandatory
+local/GitHub/main/source synchronization check. Earlier Pages V4/21 acceptance
+remains historical release evidence.
 
 ### Audit Workflow
 
@@ -332,7 +336,17 @@ children, including a transfer back to the same wallet. Each action returns
 at least 546 proofs to the signing owner before the protocol record, plus
 miner fee. Children inherit the current parent resolver unless explicitly
 overridden. The DNS app, Computer's DNS workspace, and its AMO DNS panel expose these controls;
-subdomain trading and delegation are outside this version. See
+subdomain trading and delegation are outside this version. Advanced DNS on
+standalone DNS and Computer inspects, sets, replaces and clears root and active
+one-level child links to confirmed HTML txids, with current status, pending
+actions, history and Browser links. Pages uses the same canonical records and
+signing preparation; confirmed links created in Pages automatically appear in
+Advanced DNS on refresh. Root `page1`
+links retain their ownership-epoch rules; additive `subpage1` links also bind
+the original accepted child create tuple. Resolver updates retain a link;
+revoking/recreating the child or transferring/purchasing its root invalidates
+the old link. Each action self-pays at least 546 proofs to the root owner plus
+miner fee, without an additional registry or network-value contribution. See
 [`PROOFOFWORK_DNS.md`](PROOFOFWORK_DNS.md) for activation, authority,
 discovery, and replay rules.
 
@@ -631,7 +645,8 @@ Current production behavior:
 - The WORK floor announcement is part of project history as ProofOfWork mail tx `cbb8a1b4af2ea8665129e799a85dfba31cea87ef38b9a99bcf198d827c12a58c`: `$work now has a permanent ProofOfWork Computer floor.` Live indexers determine whether that tx is pending or confirmed; once confirmed, ProofOfWork history is the permanent source.
 - The log API exposes a normalized ProofOfWork Computer feed for registrations, receiver updates, direct transfers, listings, seals, delistings, buyer-funded marketplace purchases, messages, replies, files, attachments, credit creations, credit mints, credit transfers, credit listings, and credit sales. Address, confirmed ID, txid, protocol kind, or app label search narrows that same log surface to a specific account or transaction. The log also reports total indexed ProofOfWork protocol bytes across discovered app records.
 - Browser renders ProofOfWork HTML by txid from either the `pwm1:m` message body or a verified `pwm1:a` file attachment. It does not introduce an outside carrier; attachments keep the same size/SHA-256 verification as Files/Desktop, and message-body HTML remains bound to the transaction that carries it.
-- Confirmed and pending Browser pages render as sanitized static HTML in an opaque sandbox. The renderer strips refresh/base/navigation URLs, neutralizes forms, permits only in-memory `data:`/`blob:` media, and applies a deny-all CSP so on-chain content cannot make external requests or reach a wallet signing lane.
+- Browser uses the same window in standalone and Computer: local tabs, a txid/`.pow` address bar, back/forward, reload, expanded viewport, full screen and collapsed source/proof inspectors. Returning to a tab or history entry verifies its content again; it never restores app execution.
+- Confirmed and pending HTML opens statically in an opaque sandbox. Explicit **Run app** permits inline JavaScript and in-memory app state through the existing isolated runner. Scripts receive no parent, wallet provider, network, persistent storage, popup or signing bridge. External scripts/subresources, nested frames, workers, form submissions and external document navigation remain blocked by the runner plus parent serving policies. Stop, navigation, reload and tab/network changes return to static mode; pending content remains labeled pending.
 - Files/Desktop treat Browser-readable `pwm1:m` HTML bodies as derived `.html` files for navigation and opening, while the original transaction remains a message-body record on-chain.
 - The canonical welcome page txid is `8c2fd17b10a6550896035b9f725054d3c6e10c314911808d8f7aaa2955c3015b`. Files/Desktop/Browser may show it only from verified transaction body or attachment data returned by the first-party API; no hardcoded client artifact may impersonate the transaction.
 - Growth reads the same registry, log, Credit, and WORK floor endpoints, then auto-refreshes real confirmed network value with the same live node-backed BTC/USD benchmark used by the rest of the app. Merged apps are regular applications: once merged, they should appear in shared navigation, landing app cards, local route maps, production app lists, GitHub docs, and Growth metrics.
@@ -738,6 +753,11 @@ pwdns1:buy5:<listing-txid>:<new-owner-address>:<new-resolver-address?>
 `pwdns1:r1` registrations require 1,000 proofs to the DNS registry. DNS
 mutations and AMO writes require a 546-proof DNS registry mutation payment.
 DNS sale tickets use `pwdns-sale-v1`; no DNS event includes a PGP key.
+Additive owner self-message lanes are `pwdns1:sub1` for one-level child payment
+resolution, `pwdns1:page1` for root content links, and `pwdns1:subpage1` for
+active child content links. Their 546-proof owner self-payments are independent
+of registry mutation fees and add no duplicate Growth/WORK accounting. Exact
+wire, activation and checkpoint rules are in [PROOFOFWORK_DNS.md](PROOFOFWORK_DNS.md).
 
 ## Boost Protocol
 
@@ -980,7 +1000,7 @@ To build the public Browser app for production:
 VITE_BROWSER_ONLY=1 VITE_POW_API_BASE=https://browser.proofofwork.me npm run build
 ```
 
-To build the Pages candidate for a separately approved production rollout:
+To build the standalone Pages app for production:
 
 ```bash
 VITE_PAGES_ONLY=1 VITE_POW_API_BASE=https://pages.proofofwork.me npm run build
@@ -1273,7 +1293,8 @@ Important implementation points:
 - ID registry constants: `ID_PROTOCOL_PREFIX`, `ID_REGISTRATION_PRICE_SATS`, `ID_MUTATION_PRICE_SATS`, and `ID_REGISTRY_ADDRESSES` in `src/App.tsx`.
 - Local contacts storage: `CONTACTS_KEY`, `loadContacts()`, `saveContacts()`, and `ContactsWorkspace` in `src/App.tsx`.
 - Public Desktop UI: `DesktopApp`, `DesktopWorkspace`, `publicDesktopMail()`, and `fetchAddressMail()` in `src/App.tsx`.
-- Public Browser UI: `BrowserApp`, `fetchBrowserPage()`, `browserPageFromTransaction()`, and `browserTemplateHtml()` in `src/App.tsx`.
+- Public/Computer Browser window and isolated runtime: `src/features/browser/`; transaction verification and name resolution remain in `fetchBrowserPage()` and `browserPageFromTransaction()` in `src/App.tsx`.
+- Advanced DNS: `src/features/dns/AdvancedDns.tsx`, with shared Pages transaction preparation and root/child snapshot verification. Additive child content links use `src/shared/protocol/dnsSubdomainPages.mjs`.
 - Pages UI and isolated app preview: `src/features/pages/`, with existing
   Browser, Files, confirmed-ID, and Mail adapters in `src/App.tsx`. Product
   boundaries and local release status: `PAGES.md`.

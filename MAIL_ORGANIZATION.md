@@ -48,7 +48,7 @@ The Phase 1 public launch surfaces are:
 www.proofofwork.me          canonical landing page
 proofofwork.me              permanent redirect to https://www.proofofwork.me/
 id.proofofwork.me           focused ProofOfWork ID registry onboarding app
-dns.proofofwork.me          focused ProofOfWork DNS .pow claim/search app
+dns.proofofwork.me          .pow claim/search, subdomains and Advanced DNS
 domain.proofofwork.me       redirect to https://dns.proofofwork.me/
 domains.proofofwork.me      redirect to https://dns.proofofwork.me/
 computer.proofofwork.me     full mailbox/computer app
@@ -90,7 +90,7 @@ Mail organization features that are already implemented in the full app:
 - Browser-rendered HTML stays separate from wallet signing.
 - The canonical `Welcome to ProofOfWork.Me.html` system reference is pinned by txid. Files/Desktop may show it only after fetching and verifying its actual chain-backed bytes; label it as a system reference and show an explicit unavailable state when it cannot be verified.
 - Browser-readable HTML message bodies appear in Files/Desktop as derived `.html` files, even when no attachment exists.
-- Browser workspace inside the Computer shell for viewing HTML txids and creating consistent Computer-native page templates.
+- Browser workspace inside Computer and its standalone app share tabs, txid/`.pow` navigation, back/forward, reload, expanded/fullscreen viewport and collapsed proof/source inspectors. Tabs/history remain local in-memory navigation state and never persist app execution permission.
 - Dedicated DNS workspace beside IDs at `/?folder=dns`, reachable through mobile More, for Mainnet `.pow` claims/searches, owned names, public records, and owner-controlled subdomains. It shares the focused DNS app's canonical reads and local signing, supports disconnected public refresh, and restores retained registration/subdomain tasks without submitting them. Users type the bare prefix while the app implies `.pow`; root resolver changes, transfers, and trading remain in Computer's AMO DNS tab.
 - AMO workspace for confirmed ID and DNS listings, seals, delistings, and buyer-funded transfers.
 - Credit workspace for mainnet credit creation and minting, Wallet workspace for credit balances, transfers, listings, delistings, and sale history, plus WORK, Infinity, and Inception workspaces for the dedicated WORK credit dashboard and POWB/INCB bond markets. Creation pays the `tokens@proofofwork.me` index fee; mints, transfers, listings, seals, delistings, and buys pay each credit registry directly.
@@ -306,16 +306,18 @@ passed on their own.
 Behavior:
 
 - Accept a ProofOfWork txid on mainnet, testnet4, or testnet3.
-- Accept a full root `.pow` name on Mainnet through the separately gated page-link
-  candidate, require complete confirmed root/link coverage, and verify the linked
-  HTML transaction independently before static rendering. Pending, missing,
+- Accept full root or active one-level child `.pow` names on Mainnet through
+  separately gated page-link protocols, require complete coherent root/child/link
+  coverage, and verify the target HTML transaction independently before opening
+  in static mode. Pending, missing,
   cleared, or invalidated links never become active routes.
 - Fetch the transaction through the ProofOfWork API when configured.
 - Render HTML-like message bodies directly from `pwm1:m` chunks.
 - Reconstruct HTML attachments through the same size and SHA-256 checks as Files/Desktop.
 - Render only HTML-like content: message bodies that look like HTML, or attachments marked `text/html`, `application/xhtml+xml`, `.html`, or `.xhtml`.
 - Sanitize both pending and confirmed pages into the same opaque static iframe: remove refresh/base/navigation URLs, neutralize forms, keep only in-memory media, and disable scripts plus external requests with CSP.
-- Keep wallet signing outside Browser iframes. Browser renders verified static HTML and provides no parent or injected-provider signing lane.
+- Offer explicit Run app/Stop app for inline JavaScript and in-memory state in the existing opaque runner. Its HTTP sandbox, deny-network content policy and parent frame policy block external resources/navigation, persistent storage, nested frames, workers, popups and wallet/provider bridges. Opening content never auto-runs it; navigation, history, reload and tab/network changes stop execution.
+- Keep wallet signing outside Browser iframes. Static and running pages receive no parent or injected-provider signing lane.
 - Show proof metadata: txid, status, network, sender, proofs, protocol bytes, size, and SHA-256.
 - Expose a simple Computer-native HTML template users can copy before publishing as a message body or download before publishing as a normal ProofOfWork file attachment.
 - Treat pending pages as pending visibility, not final truth.
@@ -398,7 +400,9 @@ Static Browser preview is the default. Imported and chain-loaded source never
 auto-runs. The explicit Run app action permits inline JavaScript only in an
 opaque, network-blocked iframe with no wallet provider or signing bridge.
 Source, draft, account, and network changes stop execution. Published Browser
-pages retain the existing static sandbox.
+pages initially use the static sandbox and can run only after Browser's own
+explicit Run app action. Browser app state stays memory-only and execution
+permission is never restored by tabs or history.
 
 Review publication stages HTML into the existing Mail composer on the current
 origin. An unsent Mail draft blocks staging instead of being overwritten.
@@ -408,16 +412,28 @@ verified `pwm1:a` file attachment carrier, so confirmed Pages output follows
 the normal Files/Desktop and Browser rules. No new protocol fee or second
 Growth/WORK value contribution is created.
 
-Pages includes root DNS page-link set/clear review. It uses
-an existing confirmed HTML txid, not unsaved source; only unchanged confirmed
-imports prefill the field. Mainnet owners review the exact `pwdns1:page1` record,
-current ownership epoch, at least 546 proofs paid back to themselves, and miner
+Pages and Advanced DNS in standalone DNS/Computer share root and active
+one-level child DNS page-link set/replacement/clear review and canonical chain
+reads and signing preparation. Confirmed links created in Pages automatically
+appear in Advanced DNS on refresh. They use an existing confirmed HTML txid, not unsaved source; only unchanged confirmed
+imports prefill the field. Mainnet owners review the exact `pwdns1:page1` root
+or `pwdns1:subpage1` child record, current ownership epoch, original accepted
+child create tuple when applicable, at least 546 proofs paid back to themselves, and miner
 fee before local signing. Browser resolves only confirmed active links with
 complete checkpoint coverage. Existing root payment resolution stays intact,
 and every accepted transfer or purchase invalidates a prior link. Pending
 broadcasts and restored browser-local receipts remain visibility/task recovery,
 not authority. Mainnet activation is pinned to opening height 970426 and
-requires complete canonical page-link coverage; see [`PROOFOFWORK_DNS.md`](PROOFOFWORK_DNS.md).
+requires complete canonical page-link coverage. Additive child `subpage1`
+opens at 970499, following predecessor 970498 /
+`00000000000000000001683a72df9a22322b2117aab9a1b264c5284045702d51`; it additionally
+binds the child's original accepted create tuple. Root ownership and child create
+must each be confirmed in earlier blocks. Resolver updates retain links;
+revoke/recreate and every root transfer/purchase invalidate old child links.
+Pending actions, local receipts and in-memory verification progress never route.
+Advanced DNS exposes current status, pending/history and Browser links without
+changing payment resolution or mailbox organization. See
+[`PROOFOFWORK_DNS.md`](PROOFOFWORK_DNS.md).
 
 Pages source drafts are browser-local and scoped by network/address, including
 a disconnected scope. They are outside the current organization-backup

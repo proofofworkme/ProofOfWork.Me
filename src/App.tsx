@@ -1,6 +1,10 @@
 import { ActionTransactionReview, type ActionReview } from "./shared/components/ActionTransactionReview";
 import { ActionRecoveryPanel } from "./shared/components/ActionRecoveryPanel";
 import { PagesWorkspace, type PagesPublicationDraft, type PagesDnsLinkRequest } from "./features/pages/PagesWorkspace";
+import { BrowserWindow } from "./features/browser/BrowserWindow";
+import { AdvancedDns } from "./features/dns/AdvancedDns";
+import { assertDnsSubdomainPageLinkAction, readDnsSubdomainPageLinkSnapshot, type DnsSubdomainPageLinkSnapshot } from "./features/pages/dnsSubdomainPageLinkClient.mjs";
+import { buildDnsSubdomainPageLinkPayload } from "./shared/protocol/dnsSubdomainPages.mjs";
 import { assertDnsPageLinkAction, readDnsPageLinkSnapshot } from "./features/pages/dnsPageLinkClient.mjs";
 import { buildDnsPageLinkPayload, dnsPageLinkNameError, DNS_PAGE_LINK_SELF_PAYMENT_SATS, normalizeDnsPageLinkName } from "./shared/protocol/dnsPages.mjs";
 import { readActionReceipts, saveActionReceipt, type ActionReceipt } from "./shared/wallet/actionRecovery";
@@ -10,7 +14,7 @@ import { BackupPreview } from "./shared/components/BackupPreview";
 import { applyLocalRestore, isBackupStorageKey, prepareLocalRestore, type RestorePlan } from "./shared/localBackup";
 import { inspectPreparedPayment } from "./shared/wallet/paymentReview";
 import { DnsSubdomains, assertDnsSubdomainAction, readDnsSubdomainSnapshot, type DnsSubdomainDraft } from "./features/dns/DnsSubdomains";
-import { buildDnsSubdomainPayload, DNS_SUBDOMAIN_SELF_PAYMENT_SATS, normalizeDnsSubdomainLabel } from "./shared/protocol/dnsSubdomains.mjs";
+import { buildDnsSubdomainPayload, DNS_SUBDOMAIN_SELF_PAYMENT_SATS, normalizeDnsSubdomainLabel, parseDnsSubdomainName } from "./shared/protocol/dnsSubdomains.mjs";
 import { assertFeeRatePrecision } from "./walletUtxos";
 import { canonicalWorkCapacityAddress, requireCanonicalWorkCapacity, type CanonicalWorkCapacity } from "./shared/work/canonicalWorkCapacity";
 import { assertCompleteTokenDirectory, assertCompleteIdReservations, walletReservationsReady, listingDisplayProjectionFingerprint } from "./shared/api/surfaceReadState";
@@ -24092,6 +24096,8 @@ export default function App() {
       `/api/v1/dns/${encodeURIComponent(query)}?current=1&fresh=1`, network, { signal });
     return readDnsSubdomainSnapshot(payload, query, { network, validateAddress: value => isValidBitcoinAddress(value, network) });
   }, [network]);
+  const loadAdvancedDnsState = useCallback((query: string, signal?: AbortSignal) =>
+    fetchProofApiJson<unknown>(`/api/v1/dns/${encodeURIComponent(query)}?current=1&fresh=1`, network, { signal }), [network]);
   async function reviewAndSendAction({ prepared, title, fields, payload, expectedRecords, returnedSelfPayment = false, registry, registryProofs,
     key, context, revalidate, marketplace }: {
     prepared: Awaited<ReturnType<typeof buildPaymentPsbt>>; title: string; fields: [string, string][];
@@ -28466,7 +28472,9 @@ export default function App() {
     if (busy || mailSendBusy || mailReview || actionInFlightRef.current || pagesDnsLinkInFlightRef.current) {
       throw new Error("Finish the current transaction task before changing a Pages link.");
     }
-    const name = normalizeDnsPageLinkName(request.name);
+    const subdomain = parseDnsSubdomainName(request.name);
+    const name = subdomain ? subdomain.name : normalizeDnsPageLinkName(request.name);
+    const displayName = subdomain ? name : `${name}.pow`;
     const target = { name, pageTxid: request.pageTxid === null ? null : request.pageTxid.trim().toLowerCase() };
     pagesDnsLinkInFlightRef.current = true;
     setPagesDnsLinkTask(undefined);
@@ -28474,27 +28482,30 @@ export default function App() {
     const context = captureActionContext();
     const readCurrent = async () => {
       const payload = await fetchProofApiJson<unknown>(`/api/v1/dns/${encodeURIComponent(name)}?current=1&fresh=1`, network);
-      return readDnsPageLinkSnapshot(payload, name, { network, validateAddress: value => isValidBitcoinAddress(value, network) });
+      const options = { network, validateAddress: (value: string) => isValidBitcoinAddress(value, network) };
+      return subdomain ? readDnsSubdomainPageLinkSnapshot(payload, name, options) : readDnsPageLinkSnapshot(payload, name, options);
     };
-    const linkIdentity = (link: ReturnType<typeof readDnsPageLinkSnapshot>["pageLink"]) =>
+    const linkIdentity = (link: ReturnType<typeof readDnsPageLinkSnapshot>["pageLink"] | DnsSubdomainPageLinkSnapshot["pageLink"]) =>
       link ? JSON.stringify([link.txid, link.pageTxid, link.epoch]) : "";
     try {
       if (network !== "livenet" || !address || !window.unisat) throw new Error("Connect the confirmed .pow owner wallet on Mainnet first.");
-      if (dnsPageLinkNameError(name)) throw new Error("Enter a valid root .pow name.");
+      if (!subdomain && dnsPageLinkNameError(name)) throw new Error("Enter a valid root or one-level subdomain .pow name.");
       assertFeeRatePrecision(feeRate);
       setStatus({ tone: "idle", text: "Verifying .pow ownership, complete page-link history, and the confirmed HTML target…" });
       const snapshot = await readCurrent();
       context.assertCurrent();
-      const owner = assertDnsPageLinkAction(snapshot, target, address);
+      const child = subdomain ? assertDnsSubdomainPageLinkAction(snapshot as DnsSubdomainPageLinkSnapshot, target, address).child : undefined;
+      const owner = child ? snapshot.root : assertDnsPageLinkAction(snapshot as ReturnType<typeof readDnsPageLinkSnapshot>, target, address);
       const epoch = owner.ownershipEpoch;
       const currentLink = linkIdentity(snapshot.pageLink);
       const page = target.pageTxid ? await fetchBrowserPage(target.pageTxid, network) : undefined;
       context.assertCurrent();
       if (page && !page.confirmed) throw new Error("The Pages target is pending. Link a confirmed HTML transaction.");
-      const payload = buildDnsPageLinkPayload(target.pageTxid
-        ? { action: "set", name, epoch, pageTxid: target.pageTxid }
-        : { action: "clear", name, epoch });
-      const expectedRecords = [...buildProtocolPayloads("", `${name}.pow Pages link`), payload];
+      const payload = subdomain && child ? buildDnsSubdomainPageLinkPayload(target.pageTxid
+        ? { action: "set", parent: subdomain.parent, label: subdomain.label, epoch, child: child.childLifecycle, pageTxid: target.pageTxid }
+        : { action: "clear", parent: subdomain.parent, label: subdomain.label, epoch, child: child.childLifecycle })
+        : buildDnsPageLinkPayload(target.pageTxid ? { action: "set", name, epoch, pageTxid: target.pageTxid } : { action: "clear", name, epoch });
+      const expectedRecords = [...buildProtocolPayloads("", `${displayName} Pages link`), payload];
       await ensureWalletNetwork(context.wallet!, network, address);
       context.assertCurrent();
       const dnsState = await fetchDnsRegistryState(network, true);
@@ -28504,7 +28515,8 @@ export default function App() {
         protocolPayloads: expectedRecords, excludeOutpoints: activeListingAnchorOutpointsForAddress(dnsState.listings, address, { network }) });
       const revalidate = async () => {
         const current = await readCurrent();
-        assertDnsPageLinkAction(current, target, address, epoch);
+        if (child) assertDnsSubdomainPageLinkAction(current as DnsSubdomainPageLinkSnapshot, target, address, epoch, child.childLifecycle);
+        else assertDnsPageLinkAction(current as ReturnType<typeof readDnsPageLinkSnapshot>, target, address, epoch);
         if (currentLink !== linkIdentity(current.pageLink)) throw new Error("The current Pages link changed. Prepare and review a new transaction.");
         if (page && target.pageTxid) {
           const freshPage = await fetchBrowserPage(target.pageTxid, network);
@@ -28521,16 +28533,18 @@ export default function App() {
       };
       const txid = await reviewAndSendAction({ prepared,
         title: target.pageTxid ? "Review .pow page link" : "Review .pow page unlink",
-        fields: [["DNS name", `${name}.pow`], ["Link action", target.pageTxid ? "set" : "clear"],
+        fields: [["DNS name", displayName], ["Link action", target.pageTxid ? "set" : "clear"],
           ["Confirmed owner", owner.ownerAddress], ["Ownership period", `${epoch.txid}:${epoch.protocolVout}:${epoch.recordOrdinal}`],
+          ...(child ? [["Subdomain creation", `${child.childLifecycle.txid}:${child.childLifecycle.protocolVout}:${child.childLifecycle.recordOrdinal}`] as [string, string]] : []),
           ["Pages transaction", target.pageTxid || ""], ["Page source SHA-256", page?.attachment.sha256 || ""],
           ["Current link transaction", snapshot.pageLink?.txid || ""], ["Address resolver", owner.receiveAddress]],
         payload, expectedRecords, returnedSelfPayment: true, registry: address,
         registryProofs: DNS_PAGE_LINK_SELF_PAYMENT_SATS, key: `dns-page-link:${name}`, context, revalidate,
         marketplace: { payments: [{ address, amountSats: DNS_PAGE_LINK_SELF_PAYMENT_SATS }], labels: ["546-proof self-payment to the confirmed .pow owner"],
-          explanation: "The self-payment stays in your owner wallet; the net wallet cost is the miner fee. This page link belongs to the reviewed ownership period and retires on a confirmed name transfer or purchase. Browser routing changes only after confirmation." },
+          explanation: "The self-payment stays in your owner wallet; the net wallet cost is the miner fee. This link retires on a confirmed root transfer or purchase. A subdomain link also retires when its child is revoked or recreated. Browser routing changes only after confirmation." },
       });
-      setStatus(goodBroadcastStatus(`${name}.pow ${target.pageTxid ? "link" : "unlink"} broadcast. Browser routing changes only after confirmation.`, txid, network));
+      setDnsSubdomainRefreshNonce(value => value + 1);
+      setStatus(goodBroadcastStatus(`${displayName} ${target.pageTxid ? "link" : "unlink"} broadcast. Browser routing changes only after confirmation.`, txid, network));
     } catch (error) {
       setStatus({ tone: "bad", text: errorMessage(error, "Pages link failed. Task retained.") });
       throw error;
@@ -36970,7 +36984,7 @@ export default function App() {
   const computerDnsRecoveryMode = actionComputerMode && !marketplaceMode && !desktopRoute && !browserRoute && !activityMode && !growthMode && !landingMode;
   function canRestoreActionHere(receipt: ActionReceipt) {
     if (receipt.fields.some(([label]) => label === "Listing transaction")) return false;
-    if (receipt.key.startsWith("dns-page-link:")) return pagesRoute || computerDnsRecoveryMode;
+    if (receipt.key.startsWith("dns-page-link:")) return pagesRoute || dnsLaunchMode || computerDnsRecoveryMode;
     if (receipt.key.startsWith("registerDns:")) return dnsLaunchMode || computerDnsRecoveryMode;
     if (receipt.key.startsWith("dns-subdomain:")) return dnsLaunchMode || actionComputerMode || marketplaceMode;
     if (receipt.key.startsWith("registerId:")) return idLaunchMode || actionComputerMode;
@@ -36996,7 +37010,7 @@ export default function App() {
     } else if (receipt.key.startsWith("dns-page-link:")) {
       setPagesDnsLinkTask({ name: field("DNS name"), pageTxid: field("Link action") === "clear" ? null : field("Pages transaction"), scope: `${network}:${address}` });
       setPagesDnsLinkRestoreNonce(value => value + 1);
-      if (!pagesRoute) openFolder("pages");
+      if (computerDnsRecoveryMode) openFolder("dns");
     } else if (receipt.key.startsWith("id-mutation:")) {
       setManagedIdName(receipt.key.slice("id-mutation:".length));
       if (field("New owner")) { setIdTransferOwnerAddress(field("New owner")); setIdTransferReceiveAddress(field("Mail receiver after transfer")); }
@@ -37022,7 +37036,7 @@ export default function App() {
       canRestore={canRestoreActionHere}
       onRestore={restoreActionTask}
       onCheck={() => void refreshActionRecovery()}
-      workspaceHref={item => item.key.startsWith("dns-page-link:") ? computerDnsRecoveryMode ? "?folder=pages" : appHref(PAGES_APP_URL, LOCAL_PAGES_APP_URL) : item.key.startsWith("marketplace:") || item.fields.some(([label]) => label === "Listing transaction") ? appHref(MARKETPLACE_APP_URL, LOCAL_MARKETPLACE_APP_URL) : item.key.startsWith("registerDns:") || item.key.startsWith("dns-subdomain:") ? computerDnsRecoveryMode ? "?folder=dns" : appHref(DNS_APP_URL, LOCAL_DNS_APP_URL) : appHref(COMPUTER_APP_URL, LOCAL_COMPUTER_APP_URL)}
+      workspaceHref={item => item.key.startsWith("dns-page-link:") ? computerDnsRecoveryMode ? "?folder=dns" : dnsLaunchMode ? appHref(DNS_APP_URL, LOCAL_DNS_APP_URL) : appHref(PAGES_APP_URL, LOCAL_PAGES_APP_URL) : item.key.startsWith("marketplace:") || item.fields.some(([label]) => label === "Listing transaction") ? appHref(MARKETPLACE_APP_URL, LOCAL_MARKETPLACE_APP_URL) : item.key.startsWith("registerDns:") || item.key.startsWith("dns-subdomain:") ? computerDnsRecoveryMode ? "?folder=dns" : appHref(DNS_APP_URL, LOCAL_DNS_APP_URL) : appHref(COMPUTER_APP_URL, LOCAL_COMPUTER_APP_URL)}
     />
     {actionReview ? <ActionTransactionReview review={actionReview} returnFocus={actionReturnFocusRef.current} onCancel={() => finishActionReview(false)} onApprove={() => finishActionReview(true)} /> : null}
   </>;
@@ -37032,6 +37046,13 @@ export default function App() {
     draft={dnsSubdomainDraft} setDraft={setDnsSubdomainDraft} load={loadDnsSubdomainState}
     submit={submitDnsSubdomain} validateAddress={value => isValidBitcoinAddress(value, network)}
     transactionUrl={txid => explorerTxUrl(txid, network)} refreshNonce={dnsSubdomainRefreshNonce}
+    feeControl={<fieldset disabled={busy} style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}><FeeRateControl feeRate={feeRate} setFeeRate={setFeeRate} /></fieldset>} />;
+  const dnsPageLinkUi = <AdvancedDns address={address} network={network} busy={busy}
+    roots={dnsRegistry} load={loadAdvancedDnsState} submit={linkPagesDns}
+    validateAddress={value => isValidBitcoinAddress(value, network)}
+    browserHref={name => `${appHref(BROWSER_APP_URL, LOCAL_BROWSER_APP_URL)}${isLocalPreviewHost() ? "&" : "/?"}name=${encodeURIComponent(name)}`} transactionHref={txid => explorerTxUrl(txid, network)}
+    refreshNonce={dnsSubdomainRefreshNonce}
+    restore={pagesDnsLinkTask?.scope === `${network}:${address}` ? { ...pagesDnsLinkTask, nonce: pagesDnsLinkRestoreNonce } : undefined}
     feeControl={<fieldset disabled={busy} style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}><FeeRateControl feeRate={feeRate} setFeeRate={setFeeRate} /></fieldset>} />;
 
   if (idLaunchMode) {
@@ -37080,6 +37101,7 @@ export default function App() {
         recoveryUi={actionUi}
         onRefreshRecovery={() => void refreshActionRecovery()}
         dnsSubdomainUi={dnsSubdomainUi}
+        dnsPageLinkUi={dnsPageLinkUi}
         accountStats={connectedAccountStats}
         address={address}
         busy={busy}
@@ -38380,6 +38402,7 @@ export default function App() {
             dnsName={dnsName}
             dnsReceiveAddress={dnsReceiveAddress}
             dnsSubdomainUi={dnsSubdomainUi}
+            dnsPageLinkUi={dnsPageLinkUi}
             feeRate={feeRate}
             lastRegisteredDns={lastRegisteredDns?.network === network ? lastRegisteredDns : undefined}
             network={network}
@@ -39313,21 +39336,24 @@ type BrowserResolvedPage = BrowserPage & { dnsLink?: BrowserDnsPageLink };
 function normalizeBrowserTarget(value: string) {
   const target = value.trim().toLowerCase();
   return /^[0-9a-f]{64}$/u.test(target) ||
-    /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.pow$/u.test(target)
+    /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.pow$/u.test(target) ||
+    parseDnsSubdomainName(target)
     ? target
     : "";
 }
 
 async function fetchBrowserTargetPage(target: string, network: BitcoinNetwork, signal?: AbortSignal): Promise<BrowserResolvedPage> {
   const normalized = normalizeBrowserTarget(target);
-  if (!normalized) throw new Error("Enter a valid ProofOfWork txid or root .pow name.");
+  if (!normalized) throw new Error("Enter a valid ProofOfWork txid or .pow name, such as alice.pow or app.alice.pow.");
   if (!normalized.endsWith(".pow")) return fetchBrowserPage(normalized, network, signal);
   if (network !== "livenet") throw new Error(".pow Pages links are available on Mainnet only.");
   const params = new URLSearchParams({ current: "1", fresh: "1" });
   const payload = await fetchProofApiJson<unknown>(`/api/v1/dns/${encodeURIComponent(normalized.slice(0, -4))}?${params.toString()}`, network, { signal });
   signal?.throwIfAborted();
-  const snapshot = readDnsPageLinkSnapshot(payload, normalized, { network,
-    validateAddress: value => isValidBitcoinAddress(value, network) });
+  const options = { network, validateAddress: (value: string) => isValidBitcoinAddress(value, network) };
+  const snapshot = parseDnsSubdomainName(normalized)
+    ? readDnsSubdomainPageLinkSnapshot(payload, normalized, options)
+    : readDnsPageLinkSnapshot(payload, normalized, options);
   if (!snapshot.pageLink) throw new Error("This .pow name has no confirmed Pages link.");
   const dnsLink: BrowserDnsPageLink = { name: snapshot.name, pageTxid: snapshot.pageLink.pageTxid,
     txid: snapshot.pageLink.txid, ownerAddress: snapshot.pageLink.ownerAddress, blockHeight: snapshot.pageLink.blockHeight,
@@ -39355,6 +39381,12 @@ function browserRoutePath(txid: string, network: BitcoinNetwork) {
   const params = new URLSearchParams();
   if (network !== "livenet") {
     params.set("network", network);
+  }
+
+  if (!normalizedTxid) {
+    if (isLocalPreviewHost()) params.set("browser", "1");
+    const query = params.toString();
+    return `/${query ? `?${query}` : ""}`;
   }
 
   if (isLocalPreviewHost()) {
@@ -39766,25 +39798,9 @@ function BrowserApp({
     tone: "idle",
     text: "Enter a ProofOfWork txid or .pow name to load verified HTML.",
   });
-  const [templateTitle, setTemplateTitle] = useState("My ProofOfWork Page");
-  const [templateKicker, setTemplateKicker] = useState(
-    "ProofOfWork.Me Browser",
-  );
-  const [templateBody, setTemplateBody] = useState(
-    "This page lives as HTML carried by the ProofOfWork Computer.",
-  );
-  const [templateCopied, setTemplateCopied] = useState(false);
   const initialLoadRef = useRef(false);
   const loadGenerationRef = useRef(0);
   const loadControllerRef = useRef<AbortController>();
-  const template = useMemo(() => browserTemplateHtml(templateTitle, templateKicker, templateBody), [templateBody, templateKicker, templateTitle]);
-  const templateBytes = useMemo(() => byteLength(template), [template]);
-  const templateSha256 = useMemo(
-    () => sha256Hex(new TextEncoder().encode(template)),
-    [template],
-  );
-  const templateHref = `data:text/html;charset=utf-8,${encodeURIComponent(template)}`;
-
   const loadPage = useCallback(
     async (
       target = query,
@@ -39902,264 +39918,30 @@ function BrowserApp({
     return () => window.removeEventListener("popstate", restoreBrowserLocation);
   }, [loadPage]);
 
-  async function copyTemplate() {
-    await copyTextToClipboard(template);
-    setTemplateCopied(true);
-    window.setTimeout(() => setTemplateCopied(false), 1600);
-  }
-
   return (
     <main className="desktop-public-app browser-public-app has-route-status">
-      <AppHeader
-        accountStats={accountStats}
-        subtitle="HTML from ProofOfWork"
-        title="ProofOfWork Browser"
-      />
-
+      <AppHeader accountStats={accountStats} subtitle="Pages and apps from ProofOfWork" title="ProofOfWork Browser" />
       <AppStatusRow className="desktop-route-status" persistent status={status} />
-
       <section className="browser-workspace">
-        <WorkspaceSectionNav
-          label="Browser sections"
-          items={[
-            { href: "#browser-render", label: "Render" },
-            { href: "#browser-evidence", label: "Evidence" },
-            { href: "#browser-template", label: "Page template" },
-          ]}
+        <BrowserWindow
+        page={page} query={query} network={network} loading={loading}
+        normalizeTarget={normalizeBrowserTarget}
+        onQueryChange={setQuery} onNetworkChange={changeBrowserNetwork}
+        onNavigate={(target, targetNetwork) => loadPage(target, targetNetwork)}
+        onClear={() => {
+          loadGenerationRef.current += 1;
+          loadControllerRef.current?.abort();
+          setPage(undefined); setLoading(false);
+          syncBrowserRoute("", network);
+          setStatus({ tone: "idle", text: "Enter a ProofOfWork txid or .pow name to open a page." });
+        }}
+        renderStaticPage={(currentPage) => <BrowserPageFrame page={currentPage} />}
+        explorerHref={(currentPage) => explorerTxUrl(currentPage.txid, currentPage.network)}
+        editHref={(currentPage) => pagesTxUrl(currentPage.txid, currentPage.network)}
+        createHref={appHref(PAGES_APP_URL, LOCAL_PAGES_APP_URL)}
+        templateTools={<BrowserTemplateTools />}
         />
-        <section className="browser-hero" id="browser-render">
-          <div>
-            <span className="browser-kicker">ProofOfWork-native browser</span>
-            <h2>Enter a .pow name or txid.</h2>
-            <p>
-              HTML pages are ProofOfWork message bodies or file attachments,
-              reconstructed from OP_RETURN chunks and rendered inside a static,
-              script-disabled sandbox.
-            </p>
-          </div>
-          <form
-            className="browser-search-card"
-            onSubmit={(event) => {
-              event.preventDefault();
-              void loadPage();
-            }}
-          >
-            <label>
-              Transaction ID or .pow name
-              <input
-                autoComplete="off"
-                onChange={(event) => setQuery(event.target.value)}
-                placeholder="alice.pow or 64 character txid"
-                spellCheck={false}
-                value={query}
-              />
-            </label>
-            <div className="browser-form-row">
-              <BrowserNetworkTabs network={network} onChange={changeBrowserNetwork} />
-              <button className="primary" disabled={loading} type="submit">
-                <span className="button-content">
-                  <Search size={16} />
-                  <span>{loading ? "Loading" : "View Page"}</span>
-                </span>
-              </button>
-            </div>
-          </form>
-        </section>
-
-        {page ? (
-          <section className="browser-page-grid" id="browser-evidence">
-            <article className="browser-preview-card">
-              <div className="browser-card-head">
-                <div>
-                  <span>Sandboxed preview</span>
-                  <h3>{page.attachment.name}</h3>
-                </div>
-                <a
-                  className="secondary small link-button"
-                  href={explorerTxUrl(page.txid, page.network)}
-                  rel="noreferrer"
-                  target="_blank"
-                >
-                  <span className="button-content">
-                    <span>View TX</span>
-                    <ArrowUpRight size={14} />
-                  </span>
-                </a>
-              </div>
-              <BrowserPageFrame
-                key={`${page.network}:${page.txid}:${page.attachment.sha256}`}
-                page={page}
-              />
-            </article>
-
-            <aside className="browser-proof-card">
-              <div className="empty-icon" aria-hidden="true">
-                <CheckCircle2 size={24} />
-              </div>
-              <h3>Verified page</h3>
-              <a className="secondary link-button" href={pagesTxUrl(page.txid, page.network)}>Edit in Pages</a>
-              <dl>
-                {page.dnsLink ? <>
-                  <div><dt>.pow name</dt><dd>{page.dnsLink.name}</dd></div>
-                  <div><dt>DNS link TXID</dt><dd>{page.dnsLink.txid}</dd></div>
-                  <div><dt>DNS owner</dt><dd>{shortAddress(page.dnsLink.ownerAddress)}</dd></div>
-                  <div><dt>DNS checkpoint</dt><dd>{page.dnsLink.indexedThroughBlock.toLocaleString()} · {page.dnsLink.checkpointHash}</dd></div>
-                </> : null}
-                <div>
-                  <dt>Status</dt>
-                  <dd>{page.confirmed ? "Confirmed" : "Pending"}</dd>
-                </div>
-                <div>
-                  <dt>Network</dt>
-                  <dd>{networkLabel(page.network)}</dd>
-                </div>
-                <div>
-                  <dt>Source</dt>
-                  <dd>
-                    {page.source === "attachment"
-                      ? "HTML attachment"
-                      : "Message body"}
-                  </dd>
-                </div>
-                <div>
-                  <dt>Size</dt>
-                  <dd>{formatBytes(page.attachment.size)}</dd>
-                </div>
-                <div>
-                  <dt>Protocol bytes</dt>
-                  <dd>{formatBytes(page.protocolBytes)}</dd>
-                </div>
-                <div>
-                  <dt>Sender</dt>
-                  <dd>{shortAddress(page.sender)}</dd>
-                </div>
-                <div>
-                  <dt>Payment</dt>
-                  <dd>{page.amountSats.toLocaleString()} proofs</dd>
-                </div>
-                <div>
-                  <dt>SHA-256</dt>
-                  <dd>{page.attachment.sha256}</dd>
-                </div>
-                <div>
-                  <dt>TXID</dt>
-                  <dd>{page.txid}</dd>
-                </div>
-              </dl>
-            </aside>
-
-            <article className="browser-source-card">
-              <div className="browser-card-head">
-                <div>
-                  <span>Source</span>
-                  <h3>Verified HTML</h3>
-                </div>
-                <button
-                  className="secondary small"
-                  onClick={() => void copyTextToClipboard(page.html)}
-                  type="button"
-                >
-                  <span className="button-content">
-                    <Copy size={14} />
-                    <span>Copy</span>
-                  </span>
-                </button>
-              </div>
-              <pre>{page.html}</pre>
-            </article>
-          </section>
-        ) : (
-          <section className="browser-empty" id="browser-evidence">
-            <div className="empty-icon" aria-hidden="true">
-              <Monitor size={26} />
-            </div>
-            <h3>No page loaded</h3>
-            <p>
-              Browser opens confirmed Pages links for .pow names, or confirmed and pending
-              txids with HTML in the message body or a verified HTML attachment.
-            </p>
-          </section>
-        )}
-
-        <section className="browser-template-card" id="browser-template">
-          <div className="browser-card-head">
-            <div>
-              <span>Page template</span>
-              <h3>Computer-native HTML</h3>
-            </div>
-            <div className="browser-template-actions">
-              <a className="primary link-button" href={appHref(PAGES_APP_URL, LOCAL_PAGES_APP_URL)}>Create in Pages</a>
-              <button
-                className="secondary small"
-                onClick={() => void copyTemplate()}
-                type="button"
-              >
-                <span className="button-content">
-                  <Copy size={14} />
-                  <span>{templateCopied ? "Copied" : "Copy HTML"}</span>
-                </span>
-              </button>
-              <a
-                className="secondary small link-button"
-                download="proof-page.html"
-                href={templateHref}
-              >
-                <span className="button-content">
-                  <Download size={14} />
-                  <span>Download</span>
-                </span>
-              </a>
-            </div>
-          </div>
-
-          <div className="browser-template-grid">
-            <div className="browser-template-fields">
-              <label>
-                Title
-                <input
-                  onChange={(event) => setTemplateTitle(event.target.value)}
-                  value={templateTitle}
-                />
-              </label>
-              <label>
-                Kicker
-                <input
-                  onChange={(event) => setTemplateKicker(event.target.value)}
-                  value={templateKicker}
-                />
-              </label>
-              <label>
-                Body
-                <textarea
-                  onChange={(event) => setTemplateBody(event.target.value)}
-                  rows={5}
-                  value={templateBody}
-                />
-              </label>
-              <dl className="browser-template-meta">
-                <div>
-                  <dt>Bytes</dt>
-                  <dd>{formatBytes(templateBytes)}</dd>
-                </div>
-                <div>
-                  <dt>SHA-256</dt>
-                  <dd>{templateSha256}</dd>
-                </div>
-              </dl>
-            </div>
-            <label className="browser-source-label">
-              Generated HTML source
-              <textarea
-                className="browser-template-source"
-                readOnly
-                rows={18}
-                value={template}
-              />
-            </label>
-          </div>
-        </section>
       </section>
-
       <SocialFooter />
     </main>
   );
@@ -40178,27 +39960,8 @@ function BrowserWorkspace({
     tone: "idle",
     text: "Ready. Enter a txid or .pow name to render verified HTML.",
   });
-  const [templateTitle, setTemplateTitle] = useState("My ProofOfWork Page");
-  const [templateKicker, setTemplateKicker] = useState(
-    "ProofOfWork.Me Browser",
-  );
-  const [templateBody, setTemplateBody] = useState(
-    "This page lives as HTML carried by the ProofOfWork Computer.",
-  );
-  const [templateCopied, setTemplateCopied] = useState(false);
   const loadGenerationRef = useRef(0);
   const loadControllerRef = useRef<AbortController>();
-  const template = useMemo(
-    () => browserTemplateHtml(templateTitle, templateKicker, templateBody),
-    [templateBody, templateKicker, templateTitle],
-  );
-  const templateBytes = useMemo(() => byteLength(template), [template]);
-  const templateSha256 = useMemo(
-    () => sha256Hex(new TextEncoder().encode(template)),
-    [template],
-  );
-  const templateHref = `data:text/html;charset=utf-8,${encodeURIComponent(template)}`;
-
   useEffect(() => {
     loadGenerationRef.current += 1;
     loadControllerRef.current?.abort();
@@ -40216,7 +39979,7 @@ function BrowserWorkspace({
   }, [activeNetwork]);
 
   const loadPage = useCallback(
-    async (target = query) => {
+    async (target = query, targetNetwork = network) => {
       const generation = ++loadGenerationRef.current;
       loadControllerRef.current?.abort();
       const controller = new AbortController();
@@ -40235,12 +39998,13 @@ function BrowserWorkspace({
         text: "Resolving verified page from ProofOfWork...",
       });
       try {
-        const loadedPage = await fetchBrowserTargetPage(txid, network, controller.signal);
+        const loadedPage = await fetchBrowserTargetPage(txid, targetNetwork, controller.signal);
         if (generation !== loadGenerationRef.current || controller.signal.aborted) {
           return;
         }
         setPage(loadedPage);
         setQuery(txid);
+        setNetwork(targetNetwork);
         setStatus({
           tone: loadedPage.confirmed ? "good" : "idle",
           text: loadedPage.dnsLink
@@ -40279,260 +40043,49 @@ function BrowserWorkspace({
     });
   }
 
-  async function copyTemplate() {
-    await copyTextToClipboard(template);
-    setTemplateCopied(true);
-    window.setTimeout(() => setTemplateCopied(false), 1600);
-  }
-
   return (
     <section className="browser-workspace browser-computer-workspace">
-      <AppStatusRow
-        className="browser-workspace-status"
-        persistent
-        status={status}
+      <AppStatusRow className="browser-workspace-status" persistent status={status} />
+      <BrowserWindow embedded
+        page={page} query={query} network={network} loading={loading}
+        normalizeTarget={normalizeBrowserTarget}
+        onQueryChange={setQuery} onNetworkChange={changeBrowserWorkspaceNetwork}
+        onNavigate={(target, targetNetwork) => loadPage(target, targetNetwork)}
+        onClear={() => {
+          loadGenerationRef.current += 1;
+          loadControllerRef.current?.abort();
+          setPage(undefined); setLoading(false);
+          setStatus({ tone: "idle", text: "Enter a ProofOfWork txid or .pow name to open a page." });
+        }}
+        renderStaticPage={(currentPage) => <BrowserPageFrame page={currentPage} />}
+        explorerHref={(currentPage) => explorerTxUrl(currentPage.txid, currentPage.network)}
+        editHref={(currentPage) => pagesTxUrl(currentPage.txid, currentPage.network)}
+        createHref={appHref(PAGES_APP_URL, LOCAL_PAGES_APP_URL)}
+        templateTools={<BrowserTemplateTools />}
       />
-
-      <WorkspaceSectionNav
-        label="Browser sections"
-        items={[
-          { href: "#browser-render", label: "Render" },
-          { href: "#browser-evidence", label: "Evidence" },
-          { href: "#browser-template", label: "Page template" },
-        ]}
-      />
-      <section className="browser-hero" id="browser-render">
-        <div>
-          <span className="browser-kicker">ProofOfWork-native browser</span>
-          <h2>Browser</h2>
-          <p>
-            Enter a .pow name or txid to render HTML from a ProofOfWork message body or the
-            same verified attachment protocol used by Files and Desktop. Pages
-            stay static: scripts, forms, navigation, and external network
-            requests are disabled.
-          </p>
-        </div>
-        <form
-          className="browser-search-card"
-          onSubmit={(event) => {
-            event.preventDefault();
-            void loadPage();
-          }}
-        >
-          <label>
-            Transaction ID or .pow name
-            <input
-              autoComplete="off"
-              onChange={(event) => setQuery(event.target.value)}
-              placeholder="alice.pow or 64 character txid"
-              spellCheck={false}
-              value={query}
-            />
-          </label>
-          <div className="browser-form-row">
-            <BrowserNetworkTabs network={network} onChange={changeBrowserWorkspaceNetwork} />
-            <button className="primary" disabled={loading} type="submit">
-              <span className="button-content">
-                <Search size={16} />
-                <span>{loading ? "Loading" : "View Page"}</span>
-              </span>
-            </button>
-          </div>
-        </form>
-      </section>
-
-      {page ? (
-        <section className="browser-page-grid" id="browser-evidence">
-          <article className="browser-preview-card">
-            <div className="browser-card-head">
-              <div>
-                <span>Sandboxed preview</span>
-                <h3>{page.attachment.name}</h3>
-              </div>
-              <a
-                className="secondary small link-button"
-                href={explorerTxUrl(page.txid, page.network)}
-                rel="noreferrer"
-                target="_blank"
-              >
-                <span className="button-content">
-                  <span>View TX</span>
-                  <ArrowUpRight size={14} />
-                </span>
-              </a>
-            </div>
-            <BrowserPageFrame
-              key={`${page.network}:${page.txid}:${page.attachment.sha256}`}
-              page={page}
-            />
-          </article>
-
-          <aside className="browser-proof-card">
-            <div className="empty-icon" aria-hidden="true">
-              <CheckCircle2 size={24} />
-            </div>
-            <h3>Verified page</h3>
-            <dl>
-              {page.dnsLink ? <>
-                <div><dt>.pow name</dt><dd>{page.dnsLink.name}</dd></div>
-                <div><dt>DNS link TXID</dt><dd>{page.dnsLink.txid}</dd></div>
-                <div><dt>DNS owner</dt><dd>{shortAddress(page.dnsLink.ownerAddress)}</dd></div>
-                <div><dt>DNS checkpoint</dt><dd>{page.dnsLink.indexedThroughBlock.toLocaleString()} · {page.dnsLink.checkpointHash}</dd></div>
-              </> : null}
-              <div>
-                <dt>Status</dt>
-                <dd>{page.confirmed ? "Confirmed" : "Pending"}</dd>
-              </div>
-              <div>
-                <dt>Network</dt>
-                <dd>{networkLabel(page.network)}</dd>
-              </div>
-              <div>
-                <dt>Source</dt>
-                <dd>
-                  {page.source === "attachment"
-                    ? "HTML attachment"
-                    : "Message body"}
-                </dd>
-              </div>
-              <div>
-                <dt>Size</dt>
-                <dd>{formatBytes(page.attachment.size)}</dd>
-              </div>
-              <div>
-                <dt>Protocol bytes</dt>
-                <dd>{formatBytes(page.protocolBytes)}</dd>
-              </div>
-              <div>
-                <dt>Sender</dt>
-                <dd>{shortAddress(page.sender)}</dd>
-              </div>
-              <div>
-                <dt>Payment</dt>
-                <dd>{page.amountSats.toLocaleString()} proofs</dd>
-              </div>
-              <div>
-                <dt>SHA-256</dt>
-                <dd>{page.attachment.sha256}</dd>
-              </div>
-              <div>
-                <dt>TXID</dt>
-                <dd>{page.txid}</dd>
-              </div>
-            </dl>
-          </aside>
-
-          <article className="browser-source-card">
-            <div className="browser-card-head">
-              <div>
-                <span>Source</span>
-                <h3>Verified HTML</h3>
-              </div>
-              <button
-                className="secondary small"
-                onClick={() => void copyTextToClipboard(page.html)}
-                type="button"
-              >
-                <span className="button-content">
-                  <Copy size={14} />
-                  <span>Copy</span>
-                </span>
-              </button>
-            </div>
-            <pre>{page.html}</pre>
-          </article>
-        </section>
-      ) : (
-        <section className="browser-empty" id="browser-evidence">
-          <div className="empty-icon" aria-hidden="true">
-            <Monitor size={26} />
-          </div>
-          <h3>No page loaded</h3>
-          <p>
-            Browser opens confirmed Pages links for .pow names, or confirmed and pending
-            txids with HTML in the message body or a verified HTML attachment.
-          </p>
-        </section>
-      )}
-
-      <section className="browser-template-card" id="browser-template">
-        <div className="browser-card-head">
-          <div>
-            <span>Page template</span>
-            <h3>Computer-native HTML</h3>
-          </div>
-          <div className="browser-template-actions">
-            <button
-              className="secondary small"
-              onClick={() => void copyTemplate()}
-              type="button"
-            >
-              <span className="button-content">
-                <Copy size={14} />
-                <span>{templateCopied ? "Copied" : "Copy HTML"}</span>
-              </span>
-            </button>
-            <a
-              className="secondary small link-button"
-              download="proof-page.html"
-              href={templateHref}
-            >
-              <span className="button-content">
-                <Download size={14} />
-                <span>Download</span>
-              </span>
-            </a>
-          </div>
-        </div>
-
-        <div className="browser-template-grid">
-          <div className="browser-template-fields">
-            <label>
-              Title
-              <input
-                onChange={(event) => setTemplateTitle(event.target.value)}
-                value={templateTitle}
-              />
-            </label>
-            <label>
-              Kicker
-              <input
-                onChange={(event) => setTemplateKicker(event.target.value)}
-                value={templateKicker}
-              />
-            </label>
-            <label>
-              Body
-              <textarea
-                onChange={(event) => setTemplateBody(event.target.value)}
-                rows={5}
-                value={templateBody}
-              />
-            </label>
-            <dl className="browser-template-meta">
-              <div>
-                <dt>Bytes</dt>
-                <dd>{formatBytes(templateBytes)}</dd>
-              </div>
-              <div>
-                <dt>SHA-256</dt>
-                <dd>{templateSha256}</dd>
-              </div>
-            </dl>
-          </div>
-          <label className="browser-source-label">
-            Generated HTML source
-            <textarea
-              className="browser-template-source"
-              readOnly
-              rows={18}
-              value={template}
-            />
-          </label>
-        </div>
-      </section>
     </section>
   );
+}
+
+function BrowserTemplateTools() {
+  const [title, setTitle] = useState("My ProofOfWork Page");
+  const [kicker, setKicker] = useState("ProofOfWork.Me Browser");
+  const [body, setBody] = useState("This page lives as HTML carried by the ProofOfWork Computer.");
+  const [copied, setCopied] = useState(false);
+  const template = useMemo(() => browserTemplateHtml(title, kicker, body), [title, kicker, body]);
+  return <section className="browser-template-card" id="browser-template">
+    <div className="browser-card-head"><h3>Computer-native HTML</h3><div className="browser-template-actions">
+      <a className="primary link-button" href={appHref(PAGES_APP_URL, LOCAL_PAGES_APP_URL)}>Create in Pages</a>
+      <button className="secondary small" type="button" onClick={() => void copyTextToClipboard(template).then(() => { setCopied(true); window.setTimeout(() => setCopied(false), 1600); })}><Copy size={14} />{copied ? "Copied" : "Copy HTML"}</button>
+      <a className="secondary small link-button" download="proof-page.html" href={`data:text/html;charset=utf-8,${encodeURIComponent(template)}`}><Download size={14} />Download</a>
+    </div></div>
+    <div className="browser-template-grid"><div className="browser-template-fields">
+      <label>Title<input value={title} onChange={(event) => setTitle(event.target.value)} /></label>
+      <label>Kicker<input value={kicker} onChange={(event) => setKicker(event.target.value)} /></label>
+      <label>Body<textarea rows={5} value={body} onChange={(event) => setBody(event.target.value)} /></label>
+      <dl className="browser-template-meta"><div><dt>Bytes</dt><dd>{formatBytes(byteLength(template))}</dd></div><div><dt>SHA-256</dt><dd>{sha256Hex(new TextEncoder().encode(template))}</dd></div></dl>
+    </div><label className="browser-source-label">Generated HTML source<textarea className="browser-template-source" readOnly rows={18} value={template} /></label></div>
+  </section>;
 }
 
 function DesktopApp({
@@ -50400,6 +49953,7 @@ function IdLaunchApp({
 
 type DnsWorkspaceProps = {
   dnsSubdomainUi?: ReactNode;
+  dnsPageLinkUi?: ReactNode;
   address: string;
   busy: boolean;
   canRegister: boolean;
@@ -50472,6 +50026,7 @@ function DnsLaunchApp({
 
 function DnsWorkspace({
   dnsSubdomainUi,
+  dnsPageLinkUi,
   address,
   busy,
   canRegister,
@@ -50804,6 +50359,7 @@ function DnsWorkspace({
         </div>
 
         {dnsSubdomainUi}
+        {dnsPageLinkUi}
 
         <section className="id-launch-card" id="dns-registry">
           <div className="id-launch-section-head">

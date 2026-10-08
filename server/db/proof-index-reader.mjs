@@ -27954,8 +27954,12 @@ export async function proofIndexCanonicalInceptionMintWitnessesPayload(
 export async function proofIndexDnsPageLinkDiscovery(network, options = {}) {
   const pool = proofIndexPool();
   const { activationHeight, expectedHeight, expectedHash, onBlock, verifiedPrefix } = options;
+  const protocolPrefix = options.protocolPrefix ?? "pwdns1:page1:";
+  const activationPreviousBlockHash = options.activationPreviousBlockHash;
   const fromHeight = options.fromHeight ?? activationHeight;
   if (!pool || network !== "livenet" ||
+      !["pwdns1:page1:", "pwdns1:subpage1:"].includes(protocolPrefix) ||
+      (protocolPrefix === "pwdns1:subpage1:" && !/^[0-9a-f]{64}$/u.test(activationPreviousBlockHash ?? "")) ||
       !Number.isSafeInteger(activationHeight) || activationHeight < WORK_AMO_V5_ACTIVATION_HEIGHT ||
       !Number.isSafeInteger(expectedHeight) || expectedHeight < activationHeight ||
       !/^[0-9a-f]{64}$/u.test(expectedHash ?? "") || typeof onBlock !== "function" ||
@@ -27991,7 +27995,7 @@ export async function proofIndexDnsPageLinkDiscovery(network, options = {}) {
       }
     }
     let height = fromHeight;
-    let previousHash = verifiedPrefix?.blockHash ?? "";
+    let previousHash = verifiedPrefix?.blockHash ?? activationPreviousBlockHash ?? "";
     let witnessSha256 = verifiedPrefix?.witnessSha256 ?? createHash("sha256")
       .update(JSON.stringify(["dns-page-link-block-witness-chain-v1", network, activationHeight])).digest("hex");
     while (height <= expectedHeight) {
@@ -28047,10 +28051,10 @@ export async function proofIndexDnsPageLinkDiscovery(network, options = {}) {
       FROM proof_indexer.op_returns carrier
       JOIN proof_indexer.transactions tx ON tx.network = carrier.network AND tx.txid = carrier.txid
       WHERE carrier.network = $1 AND carrier.protocol = 'pwdns1' AND tx.status = 'pending'
-        AND left(carrier.payload_text, 13) = 'pwdns1:page1:'
+        AND left(carrier.payload_text, length($2::text)) = $2::text
       ORDER BY carrier.txid
       LIMIT 256
-    `, [network]);
+    `, [network, protocolPrefix]);
     await client.query("COMMIT");
     const finalScan = await latestProofIndexScanMetadata(pool, network);
     const finalHash = normalizedLowerText(finalScan?.payload?.indexedThroughBlockHash ??

@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import ts from "typescript";
+import { parseDnsSubdomainName } from "../src/shared/protocol/dnsSubdomains.mjs";
+import { readDnsSubdomainPageLinkSnapshot } from "../src/features/pages/dnsSubdomainPageLinkClient.mjs";
+import { dnsChildPageSnapshot } from "../tests/fixtures/dnsChildPageSnapshot.mjs";
 const transpile = (source) => ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext } }).outputText;
 const source = await readFile("src/shared/api/surfaceReadState.ts", "utf8");
 const { completeRegistryCounts, assertCompleteTokenDirectory, assertCompleteIdReservations, walletReservationsReady, listingDisplayProjectionFingerprint } = await import(`data:text/javascript;base64,${Buffer.from(transpile(source)).toString("base64")}`);
@@ -378,7 +381,7 @@ function browserReadHarness(owner = "BrowserApp") {
     network: "livenet", activeNetwork: "livenet", query: previous.txid,
     loadGenerationRef: { current: 0 }, loadControllerRef: { current: undefined }, AbortController,
     initialLoadRef: { current: false },
-    normalizeBrowserTarget: appFunction("normalizeBrowserTarget"),
+    normalizeBrowserTarget: appFunction("normalizeBrowserTarget", { parseDnsSubdomainName }),
     fetchBrowserTargetPage: (txid, network, signal) => {
       const request = { ...readDeferred(), txid, network, signal };
       requests.push(request); return request.promise;
@@ -395,9 +398,10 @@ function browserReadHarness(owner = "BrowserApp") {
   };
 }
 {
-  const normalize = appFunction("normalizeBrowserTarget");
+  const normalize = appFunction("normalizeBrowserTarget", { parseDnsSubdomainName });
   assert.equal(normalize(" ALICE.POW "), "alice.pow");
-  for (const invalid of ["alice", "abc.alice.pow", "https://alice.pow", "-alice.pow", "alice.pow/", "a".repeat(64) + ".pow"]) {
+  assert.equal(normalize(" APP.ALICE.POW "), "app.alice.pow");
+  for (const invalid of ["alice", "deep.app.alice.pow", "https://alice.pow", "-alice.pow", "-app.alice.pow", "alice.pow/", "a".repeat(64) + ".pow"]) {
     assert.equal(normalize(invalid), "", invalid);
   }
   const location = { search: "?browser=1&name=ALICE.POW", pathname: "/" };
@@ -409,6 +413,7 @@ function browserReadHarness(owner = "BrowserApp") {
   assert.equal(fromLocation(), "a".repeat(64));
   const route = appFunction("browserRoutePath", { normalizeBrowserTarget: normalize, isLocalPreviewHost: () => false });
   assert.equal(route("alice.pow", "livenet"), "/name/alice.pow");
+  assert.equal(route("app.alice.pow", "livenet"), "/name/app.alice.pow");
   assert.equal(route("a".repeat(64), "testnet4"), "/tx/" + "a".repeat(64) + "?network=testnet4");
 }
 {
@@ -424,19 +429,22 @@ function browserReadHarness(owner = "BrowserApp") {
     pageLinkAdmission: { network: "livenet", ready: true, activationHeight: 9, indexedThroughBlock: 11,
       checkpointHash: epoch.txid, minSelfPaymentSats: 546, protocolPrefix: "pwdns1:page1:" },
     pageLinkEvents: [], pageLinkPendingEvents: [] };
-  for (const stage of ["dns", "page"]) {
+  const childSnapshot = dnsChildPageSnapshot({ ownerAddress: "owner", receiveAddress: "receiver" });
+  for (const dnsSnapshot of [snapshot, childSnapshot]) for (const stage of ["dns", "page"]) {
     const dns = readDeferred(), page = readDeferred(), controller = new AbortController(), requests = [];
     const load = appFunction("fetchBrowserTargetPage", {
-      normalizeBrowserTarget: appFunction("normalizeBrowserTarget"), readDnsPageLinkSnapshot,
+      normalizeBrowserTarget: appFunction("normalizeBrowserTarget", { parseDnsSubdomainName }),
+      parseDnsSubdomainName, readDnsPageLinkSnapshot, readDnsSubdomainPageLinkSnapshot,
       isValidBitcoinAddress: () => true,
       fetchProofApiJson: (path, network, options) => { requests.push({ path, network, signal: options.signal }); return dns.promise; },
       fetchBrowserPage: (txid, network, signal) => { requests.push({ txid, network, signal }); return page.promise; },
     });
-    const pending = load("alice.pow", "livenet", controller.signal);
-    if (stage === "page") { dns.resolve(snapshot); await new Promise(resolve => setImmediate(resolve)); }
+    const pending = load(dnsSnapshot.name, "livenet", controller.signal);
+    assert.equal(requests[0].path, `/api/v1/dns/${dnsSnapshot.id}?current=1&fresh=1`);
+    if (stage === "page") { dns.resolve(dnsSnapshot); await new Promise(resolve => setImmediate(resolve)); }
     controller.abort();
-    if (stage === "dns") dns.resolve(snapshot);
-    else page.resolve({ txid: snapshot.pageLink.pageTxid, confirmed: true });
+    if (stage === "dns") dns.resolve(dnsSnapshot);
+    else page.resolve({ txid: dnsSnapshot.pageLink.pageTxid, confirmed: true });
     await assert.rejects(pending, { name: "AbortError" });
     assert.equal(requests.length, stage === "dns" ? 1 : 2);
     assert.equal(requests.every(request => request.signal === controller.signal), true);
@@ -562,7 +570,7 @@ for (const outcome of ["success", "failure"]) {
   assert.equal(h.statuses.length, statusCount);
   assert.equal(h.loading.length, loadingCount);
 }
-console.log(JSON.stringify({ ok: true, coverage: ["desktop-latest-target-status-loading", "desktop-network-workspace-clear-cleanup-fences", "desktop-id-cancellation", "mail-scoped-envelope-failure", "mail-node-testnet-compatibility", "mail-complete-indexed-enrichment-warning", "browser-manual-network-cancellation", "browser-proof-url-preservation", "browser-unmount-fence", "computer-browser-manual-global-network-cancellation", "computer-browser-latest-request-and-unmount-fences", "computer-browser-strictmode-replay"] }));
+console.log(JSON.stringify({ ok: true, coverage: ["desktop-latest-target-status-loading", "desktop-network-workspace-clear-cleanup-fences", "desktop-id-cancellation", "mail-scoped-envelope-failure", "mail-node-testnet-compatibility", "mail-complete-indexed-enrichment-warning", "browser-manual-network-cancellation", "browser-root-child-dns-html-cancellation", "browser-proof-url-preservation", "browser-unmount-fence", "computer-browser-manual-global-network-cancellation", "computer-browser-latest-request-and-unmount-fences", "computer-browser-strictmode-replay"] }));
 
 const checkpointMatches = appFunction("completeTokenListingHistoryMatchesCheckpoint");
 const stateMatches = appFunction("completeTokenListingHistoryMatchesState", {
